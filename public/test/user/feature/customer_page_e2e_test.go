@@ -169,8 +169,10 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 		if strings.Contains(body, "other@example.com") {
 			t.Errorf("关键词筛选取不到的效果：另一个客户也出现在结果里")
 		}
-		// 计数是全局口径（不受筛选影响）。
-		if !strings.Contains(body, "全部 2") {
+		// 计数是全局口径（不受筛选影响）。计数条已改成「徽章即筛选」的形态：
+		// 标签与数字仍在同一枚徽章里，选中的那枚用 <strong>✓ 全部</strong> 标记
+		//（未选中时是「全部 2」的平铺形态 —— 计数在 <strong> 之后，故断言带闭合标签）。
+		if !strings.Contains(body, "全部</strong> 2") {
 			t.Errorf("计数条应显示全部 2 个账号")
 		}
 	})

@@ -93,6 +93,26 @@ func startsWithTagWord(tag, word string) bool {
 	return false
 }
 
+// yieldTakesContent 判断 yield 是否为「内容槽」形式（{{yield b(args) content}} … {{end}}）。
+//
+// Jet 的 yield 有两种形态，配平要求相反：
+//   - 无内容：{{yield b(args)}}          —— 不需要 end；
+//   - 带内容：{{yield b(args) content}}  —— 语法上必须配一个 end。
+//
+// 只把后者计入 opens。漏掉这条判据会让内容槽形式被误判成「end 多 1」：本项目抽
+// bulk-bar 片段时用过内容槽写法，16 个模板同时报错，而模板本身是完全合法的 Jet。
+// 反过来若把无内容的 yield 也计入，则每个正常调用都会报「缺 end」。
+//
+// 判据用「最后一个词恰好是 content」而不是 HasSuffix("content")：
+// {{yield b mycontent}} 的末词是 mycontent，不该被当成内容槽。
+func yieldTakesContent(tag string) bool {
+	if !startsWithTagWord(tag, "yield") {
+		return false
+	}
+	fields := strings.Fields(tag)
+	return len(fields) >= 3 && fields[len(fields)-1] == "content"
+}
+
 // hasRangeVarT 判断标记是不是一个以 t 作循环变量的 range（range _, t := …）。
 func hasRangeVarT(tag string) bool {
 	if !startsWithTagWord(tag, "range") {
@@ -122,6 +142,9 @@ func templateProblems(src string) []string {
 			ends++
 		case startsWithTagWord(tag, "if"), startsWithTagWord(tag, "range"),
 			startsWithTagWord(tag, "block"), startsWithTagWord(tag, "with"):
+			opens++
+		case yieldTakesContent(tag):
+			// yield 的「内容槽」形式同样开一个必须闭合的块，见 yieldTakesContent。
 			opens++
 		}
 		if hasRangeVarT(tag) {

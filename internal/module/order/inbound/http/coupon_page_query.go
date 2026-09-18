@@ -35,7 +35,7 @@ func couponSaveReqFromForm(c *gin.Context) *orderdto.CouponSaveReq {
 		Status:        couponFormInt(c, "status"),
 		Remark:        strings.TrimSpace(c.PostForm("remark")),
 		// 操作人由会话覆盖写入，绝不受表单影响。
-		OperatorID:   couponOperatorID(c),
+		OperatorID:   shell.CurrentUserID(c),
 		OperatorName: builtin.GetUsername(c),
 	}
 }
@@ -59,14 +59,6 @@ func couponFormInt64(c *gin.Context, key string) int64 {
 		return 0
 	}
 	return v
-}
-
-// couponOperatorID 当前登录管理员 id（写进券的 create_by / update_by）。
-func couponOperatorID(c *gin.Context) uint64 {
-	if id := builtin.GetUserID(c); id > 0 {
-		return uint64(id)
-	}
-	return 0
 }
 
 // —— 表单与文案工具 ——

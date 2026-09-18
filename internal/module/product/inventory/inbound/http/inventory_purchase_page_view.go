@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	productdto "go_wp/internal/module/product/dto"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 )
@@ -90,13 +91,16 @@ func (h *inventoryPurchasePageHandle) purchaseHistoryRows(ctx context.Context, p
 	return out
 }
 
-// sourceOptions 货源下拉（sourceType 非空时只看该类型：生产入库只列内部货源）。
-func (h *inventoryPurchasePageHandle) sourceOptions(ctx context.Context, projectID, sourceType string) (out []gin.H) {
+// sourceOptions 货源下拉（sourceType 非空时只看该类型：内部类型 = 自家工厂 / 集团内关联公司）。
+//
+// 包级函数而非某个 handler 的方法：库存管理与采购入库两个页面都要用 ——
+// 「生产入库」已从采购页归位到库存管理（它与采购单无关，本质是「手动改库存 + 写成本价」）。
+func sourceOptions(ctx context.Context, svc inventorycontract.InventoryService, projectID, sourceType string) (out []gin.H) {
 	out = []gin.H{}
 	if projectID == "" {
 		return out
 	}
-	rows, err := h.inventory.ListSources(ctx, &inventorydto.ListSourceReq{
+	rows, err := svc.ListSources(ctx, &inventorydto.ListSourceReq{
 		ProjectID: projectID, Type: sourceType,
 	})
 	if err != nil {

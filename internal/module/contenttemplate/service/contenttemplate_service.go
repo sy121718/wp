@@ -198,6 +198,48 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	return toResp(e), nil
 }
 
+// Delete 删除模板（连带它的全部历史版本与内容模板级组件版本锁定行）。
+//
+// 逐工程定位模板（与 Update 同口径）：入口只带 id，而 content_templates 带 FORCE 策略，
+// 不设作用域的按 id 操作在非超级角色下静默 0 行（表现为「模板不存在」）。
+//
+// 被自动发布实例引用的模板：presentation_instances.template_id 的外键会拒绝删除。
+// 那是「不许删」这个业务语义本身，不是故障 —— 换成可判定的 ErrTemplateInUse，
+// 既不把 SQL 原文透给调用方，也不顺手把实例一起删掉。
+func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq) (err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return errors.New(contenttemplateenums.ErrInvalidParam)
+	}
+	e, err := s.locateTemplate(ctx, req.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New(contenttemplateenums.ErrNotFound)
+		}
+		return err
+	}
+	if err = s.m.DeleteWithHistory(ctx, e.ProjectID, e.ID); err != nil {
+		if isForeignKeyViolation(err) {
+			return errors.New(contenttemplateenums.ErrTemplateInUse)
+		}
+		logger.Scene("contenttemplate").With("templateId", e.ID).Error(err, "删除内容模板失败")
+		return err
+	}
+	return nil
+}
+
+// isForeignKeyViolation 错误链里是否含 PostgreSQL 外键冲突（SQLSTATE 23503）。
+//
+// 用 SQLState() 接口判定而不是 import 具体 driver 包：contenttemplate 不该为了一个错误码
+// 绑定数据库驱动的实现细节（pgx 属于 pkg/database）。gorm 的 TranslateError 开不开由部署
+// 决定，这里只认错误链自身携带的 SQLSTATE —— 翻译与否都成立。
+func isForeignKeyViolation(err error) bool {
+	var state interface{ SQLState() string }
+	if errors.As(err, &state) {
+		return state.SQLState() == "23503"
+	}
+	return false
+}
+
 // Get 按 ID 查询。
 //
 // 逐工程定位（DB-009 第三批）：入口只带 id，而 content_templates 带 FORCE 策略。

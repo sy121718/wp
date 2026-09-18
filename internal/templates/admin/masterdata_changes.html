@@ -1,149 +1,208 @@
 {* admin/masterdata_changes.html — 主数据变更记录：商品 / 变体 / 货源的字段级变更历史（issue #19） *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；比较用中缀；map 用 ["key"] 索引。 *}
+{* 版式遵循列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §2.1/§7）：
+     · 两段领域说明（配置变更 vs 库存流水的分工）与筛选口径整段进 .help 悬浮；
+     · 筛选条件横向紧凑排列；「逐条记录 / 按实体汇总」是同一数据的两种看法 → 用 .tabs 切；
+     · 标签切换是纯前端行为，两张表都由服务端渲染好（URL 的 view 参数只决定初始选中）。 *}
 {* 只读页面：没有任何写表单 —— 记录由业务模块在写操作里追加，后台不提供「补一条」的口子。 *}
 {{extends "layout.html"}}
 {{block body()}}
-{* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{{showEntities := .ViewMode == "entities"}}
 <div class="stack masterdata-page">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.masterdata.title", "变更记录") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.masterdata.partial_error", "部分数据未取到：") }}{{.Err}}</p>
-        {{end}}
-        <p class="hint">
-            {{ .["t"]("admin.masterdata.intro1.lead", "这张表记的是") }}<strong>{{ .["t"]("admin.masterdata.intro1.strong", "配置变更") }}</strong>{{ .["t"]("admin.masterdata.intro1.after", "：谁在什么时候把哪条主数据的哪个字段从什么改成了什么（商品 / 变体 / 货源）。一次写操作改了几个字段就是几条记录，新增与删除同样逐字段落行。") }}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.masterdata.intro2.lead", "它与") }}<strong>{{ .["t"]("admin.masterdata.intro2.strong1", "库存流水") }}</strong>{{ .["t"]("admin.masterdata.intro2.after1", "分工不同：流水记「库存数量怎么变的」（入库 / 出库 / 盘点），本表记「主数据字段怎么变的」。同一次采购收货会同时出现在两处 —— 流水里是「+10」，这里是「成本价 12.00 → 13.50」，回答的是两个问题。记录一旦写入") }}<strong>{{ .["t"]("admin.masterdata.intro2.strong2", "不可改写") }}</strong>{{ .["t"]("admin.masterdata.intro2.tail", "（数据库层拒绝 UPDATE / DELETE），本页也没有编辑入口。") }}
-        </p>
-        <form method="get" action="/admin/masterdata/changes" class="form-inline">
-            <select class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-    </section>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.masterdata.title", "变更记录") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.masterdata.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">
+                        {{ .["t"]("admin.masterdata.intro1.lead", "这张表记的是") }}<strong>{{ .["t"]("admin.masterdata.intro1.strong", "配置变更") }}</strong>{{ .["t"]("admin.masterdata.intro1.after", "：谁在什么时候把哪条主数据的哪个字段从什么改成了什么（商品 / 变体 / 货源）。一次写操作改了几个字段就是几条记录，新增与删除同样逐字段落行。") }}
+                        {{ .["t"]("admin.masterdata.intro2.lead", "它与") }}<strong>{{ .["t"]("admin.masterdata.intro2.strong1", "库存流水") }}</strong>{{ .["t"]("admin.masterdata.intro2.after1", "分工不同：流水记「库存数量怎么变的」（入库 / 出库 / 盘点），本表记「主数据字段怎么变的」。同一次采购收货会同时出现在两处 —— 流水里是「+10」，这里是「成本价 12.00 → 13.50」，回答的是两个问题。记录一旦写入") }}<strong>{{ .["t"]("admin.masterdata.intro2.strong2", "不可改写") }}</strong>{{ .["t"]("admin.masterdata.intro2.tail", "（数据库层拒绝 UPDATE / DELETE），本页也没有编辑入口。") }}
+                        {{ .["t"]("admin.masterdata.filter.hint", "实体类型 + 实体 id 一起填即锁定单个实体，页面给出它的完整字段级时间线；时间区间是半开区间：since 含当天、until 含当天（内部转成次日零点）。") }}
+                    </span>
+                </span>
+            </div>
+            {{if isset(.FilterSpecific)}}{{if .FilterSpecific}}{{if isset(.Current)}}{{if .Current}}
+            <p class="page-sub">
+                {{.Current.EntityTypeLabel}}{{ .["t"]("admin.masterdata.current.paren_open", "（") }}{{.Current.EntityType}}{{ .["t"]("admin.masterdata.current.paren_close", "）") }}·
+                {{ .["t"]("admin.masterdata.current.entity_id_label", "实体 id ") }}<code>{{.Current.EntityID}}</code> ·
+                {{ .["t"]("admin.masterdata.current.snapshot", "名称快照 ") }}<strong>{{.Current.EntityLabel}}</strong> ·
+                {{ .["t"]("admin.masterdata.current.total_pre", "共 ") }}{{.Current.Total}}{{ .["t"]("admin.masterdata.current.total_post", " 条变更记录") }}
+            </p>
+            {{end}}{{end}}{{end}}{{end}}
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/masterdata/changes">
+                <label class="sr-only" for="md-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="md-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.masterdata.filter.title", "筛选（按实体查变更历史）") }}</h2>
-        <form method="get" action="/admin/masterdata/changes" class="form-stack">
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.masterdata.partial_error", "部分数据未取到：") }}{{.Err}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        <form class="filter-bar" method="get" action="/admin/masterdata/changes">
             <input type="hidden" name="project" value="{{selectedProject}}">
-            <div class="form-inline">
-                <select class="form-select" name="entityType">
-                    <option value="">{{ .["t"]("admin.masterdata.option.entity_all", "（实体类型：全部）") }}</option>
-                    {{range _, t := .EntityTypes}}
-                    <option value="{{t.Value}}" {{if t.Value == .FilterEntityType}}selected{{end}}>{{t.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="text" class="form-input" name="entityId" value="{{.FilterEntityID}}" placeholder="{{ .["t"]("admin.masterdata.ph.entity_id", "实体 id（uuid）") }}" autocomplete="off">
-                <input type="text" class="form-input" name="field" value="{{.FilterField}}" placeholder="{{ .["t"]("admin.masterdata.ph.field", "字段（如 price / status）") }}" autocomplete="off">
-                <select class="form-select" name="action">
-                    <option value="">{{ .["t"]("admin.masterdata.option.action_all", "（动作：全部）") }}</option>
-                    {{range _, a := .Actions}}
-                    <option value="{{a.Value}}" {{if a.Value == .FilterAction}}selected{{end}}>{{a.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="text" class="form-input" name="keyword" value="{{.FilterKeyword}}" placeholder="{{ .["t"]("admin.masterdata.ph.keyword", "实体名关键词") }}" autocomplete="off">
-                <input type="text" class="form-input" name="operatorId" value="{{.FilterOperatorID}}" placeholder="{{ .["t"]("admin.masterdata.ph.operator", "操作人") }}" autocomplete="off">
-                <input type="date" class="form-input" name="since" value="{{.FilterSince}}">
-                <input type="date" class="form-input" name="until" value="{{.FilterUntil}}">
-                <button type="submit" class="btn">{{ .["t"]("admin.masterdata.action.filter", "筛选") }}</button>
+            <div class="filter-fields">
+                <div class="filter-field">
+                    <label for="md-entity-type">{{ .["t"]("admin.masterdata.col.entity", "实体") }}</label>
+                    <select class="form-select" id="md-entity-type" name="entityType">
+                        <option value="">{{ .["t"]("admin.masterdata.option.entity_all", "（实体类型：全部）") }}</option>
+                        {{range _, t := .EntityTypes}}
+                        <option value="{{t.Value}}" {{if t.Value == .FilterEntityType}}selected{{end}}>{{t.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="md-entity-id">{{ .["t"]("admin.masterdata.label.entity_id", "实体 id") }}</label>
+                    <input class="form-input" id="md-entity-id" type="text" name="entityId" value="{{.FilterEntityID}}" placeholder="{{ .["t"]("admin.masterdata.ph.entity_id", "uuid") }}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="md-field">{{ .["t"]("admin.masterdata.col.field", "字段") }}</label>
+                    <input class="form-input" id="md-field" type="text" name="field" value="{{.FilterField}}" placeholder="{{ .["t"]("admin.masterdata.ph.field", "price / status") }}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="md-action">{{ .["t"]("admin.masterdata.col.action", "动作") }}</label>
+                    <select class="form-select" id="md-action" name="action">
+                        <option value="">{{ .["t"]("admin.masterdata.option.action_all", "（动作：全部）") }}</option>
+                        {{range _, a := .Actions}}
+                        <option value="{{a.Value}}" {{if a.Value == .FilterAction}}selected{{end}}>{{a.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="md-keyword">{{ .["t"]("admin.masterdata.label.keyword", "实体名") }}</label>
+                    <input class="form-input" id="md-keyword" type="text" name="keyword" value="{{.FilterKeyword}}" placeholder="{{ .["t"]("admin.masterdata.ph.keyword", "关键词") }}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="md-operator">{{ .["t"]("admin.masterdata.col.operator", "操作人") }}</label>
+                    <input class="form-input" id="md-operator" type="text" name="operatorId" value="{{.FilterOperatorID}}" placeholder="{{ .["t"]("admin.masterdata.ph.operator", "用户名") }}" autocomplete="off">
+                </div>
+                {* 时间区间是一个条件（两个端点），不是两个条件：拆成「起」「止」两个字段时，
+                   标签本身没有信息量（谁的起？谁的止？），合并成一个区间标签 + 箭头更清楚。 *}
+                <div class="filter-field">
+                    <label for="md-since">{{ .["t"]("admin.masterdata.label.range", "时间区间") }}</label>
+                    <input class="form-input" id="md-since" type="date" name="since" value="{{.FilterSince}}">
+                    <span class="filter-sep" aria-hidden="true">→</span>
+                    <input class="form-input" id="md-until" type="date" name="until" value="{{.FilterUntil}}" aria-label="{{ .["t"]("admin.masterdata.ph.until", "结束日期") }}">
+                </div>
+            </div>
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.masterdata.action.filter", "筛选") }}</button>
                 <a class="btn btn-ghost" href="/admin/masterdata/changes?project={{selectedProject}}">{{ .["t"]("admin.masterdata.action.reset", "重置") }}</a>
             </div>
         </form>
-        <p class="hint">
-            {{ .["t"]("admin.masterdata.filter.hint", "实体类型 + 实体 id 一起填即锁定单个实体，页面给出它的完整字段级时间线；时间区间是半开区间：since 含当天、until 含当天（内部转成次日零点）。") }}
-        </p>
-    </section>
 
-    {{if .FilterSpecific}}
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.masterdata.current.title", "当前实体") }}</h2>
-        {{if .Current}}
-        <p class="hint">
-            {{.Current.EntityTypeLabel}}{{ .["t"]("admin.masterdata.current.paren_open", "（") }}{{.Current.EntityType}}{{ .["t"]("admin.masterdata.current.paren_close", "）") }}·
-            {{ .["t"]("admin.masterdata.current.entity_id_label", "实体 id ") }}<code>{{.Current.EntityID}}</code> ·
-            {{ .["t"]("admin.masterdata.current.snapshot", "名称快照 ") }}<strong>{{.Current.EntityLabel}}</strong> ·
-            {{ .["t"]("admin.masterdata.current.total_pre", "共 ") }}{{.Current.Total}}{{ .["t"]("admin.masterdata.current.total_post", " 条变更记录") }}
-        </p>
-        {{else}}
-        <p class="hint">{{ .["t"]("admin.masterdata.current.empty", "该实体没有任何变更记录（从没被改过，或历史在别处）。") }}</p>
-        {{end}}
-    </section>
-    {{end}}
+        <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist" aria-label="{{ .["t"]("admin.masterdata.view.label", "视图") }}">
+                <button type="button" class="tab" role="tab" id="md-tab-records" aria-controls="md-panel-records"
+                        aria-selected="{{if showEntities}}false{{else}}true{{end}}" tabindex="{{if showEntities}}-1{{else}}0{{end}}">{{ .["t"]("admin.masterdata.view.records", "逐条记录") }}</button>
+                <button type="button" class="tab" role="tab" id="md-tab-entities" aria-controls="md-panel-entities"
+                        aria-selected="{{if showEntities}}true{{else}}false{{end}}" tabindex="{{if showEntities}}0{{else}}-1{{end}}">{{ .["t"]("admin.masterdata.view.entities", "按实体汇总") }}</button>
+            </div>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.masterdata.rows.heading", "字段级变更（共 ") }}{{.Total}}{{ .["t"]("admin.masterdata.rows.headingClose", " 条）") }}</h2>
-        {{if len(.Rows) == 0}}
-        <p class="hint">{{ .["t"]("admin.masterdata.rows.empty", "没有符合条件的变更记录。改一次商品价格或货源资料，这里就会出现一条。") }}</p>
-        {{else}}
-        <div class="table-wrap" tabindex="0">
-        <table class="data-table data-table-wide masterdata-page-table">
-            <thead>
-            <tr><th>{{ .["t"]("admin.masterdata.col.time", "时间") }}</th><th>{{ .["t"]("admin.masterdata.col.entity", "实体") }}</th><th>{{ .["t"]("admin.masterdata.col.action", "动作") }}</th><th>{{ .["t"]("admin.masterdata.col.field", "字段") }}</th><th>{{ .["t"]("admin.masterdata.col.old", "旧值") }}</th><th>{{ .["t"]("admin.masterdata.col.new", "新值") }}</th><th>{{ .["t"]("admin.masterdata.col.origin", "来源") }}</th><th>{{ .["t"]("admin.masterdata.col.operator", "操作人") }}</th></tr>
-            </thead>
-            <tbody>
-            {{range _, r := .Rows}}
-            <tr>
-                <td data-label="{{tr("admin.masterdata.col.time", "时间")}}">{{r.Time}}</td>
-                <td data-label="{{tr("admin.masterdata.col.entity", "实体")}}">
-                    {{r.EntityTypeLabel}} · <strong>{{r.EntityLabel}}</strong>
-                    <span class="masterdata-meta">{{r.EntityID}}</span>
-                </td>
-                <td data-label="{{tr("admin.masterdata.col.action", "动作")}}">{{r.ActionLabel}}</td>
-                <td data-label="{{tr("admin.masterdata.col.field", "字段")}}">{{r.FieldLabel}} <span class="masterdata-meta">{{r.Field}}</span></td>
-                <td data-label="{{tr("admin.masterdata.col.old", "旧值")}}">{{r.OldValue}}</td>
-                <td data-label="{{tr("admin.masterdata.col.new", "新值")}}">{{r.NewValue}}</td>
-                <td data-label="{{tr("admin.masterdata.col.origin", "来源")}}"><span class="badge badge-mute">{{r.Origin}}</span></td>
-                <td data-label="{{tr("admin.masterdata.col.operator", "操作人")}}">{{r.OperatorID}}</td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table>
+            {* ===== 面板一：逐条记录（默认） ===== *}
+            <div class="tab-panel" role="tabpanel" id="md-panel-records" aria-labelledby="md-tab-records" {{if showEntities}}hidden{{end}}>
+                {{if len(.Rows) == 0}}
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.masterdata.rows.emptyTitle", "没有符合条件的变更记录") }}</p>
+                    <p class="empty-desc">
+                        {{if .FilterSpecific}}{{ .["t"]("admin.masterdata.current.empty", "该实体没有任何变更记录（从没被改过，或历史在别处）。") }}{{else}}{{ .["t"]("admin.masterdata.rows.empty", "没有符合条件的变更记录。改一次商品价格或货源资料，这里就会出现一条。") }}{{end}}
+                    </p>
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/masterdata/changes?project={{selectedProject}}">{{ .["t"]("admin.masterdata.action.reset", "重置") }}</a>
+                    </div>
+                </div>
+                {{else}}
+                <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.masterdata.rows.aria", "字段级变更记录") }}">
+                    <table class="data-table data-table-wide masterdata-page-table">
+                        <thead>
+                        <tr>
+                            <th>{{ .["t"]("admin.masterdata.col.time", "时间") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.entity", "实体") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.action", "动作") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.field", "字段") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.old", "旧值") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.new", "新值") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.origin", "来源") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col.operator", "操作人") }}</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{range _, r := .Rows}}
+                        <tr>
+                            <td>{{r.Time}}</td>
+                            <td>{{r.EntityTypeLabel}} · <strong>{{r.EntityLabel}}</strong> <span class="masterdata-meta">{{r.EntityID}}</span></td>
+                            <td>{{r.ActionLabel}}</td>
+                            <td>{{r.FieldLabel}} <span class="masterdata-meta">{{r.Field}}</span></td>
+                            <td>{{r.OldValue}}</td>
+                            <td>{{r.NewValue}}</td>
+                            <td><span class="badge badge-mute">{{r.Origin}}</span></td>
+                            <td>{{r.OperatorID}}</td>
+                        </tr>
+                        {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{include "partials/pagination.html"}}
+                {{end}}
+            </div>
+
+            {* ===== 面板二：按实体汇总（谁被改得最多 → 点进去看它的时间线） ===== *}
+            <div class="tab-panel" role="tabpanel" id="md-panel-entities" aria-labelledby="md-tab-entities" {{if !showEntities}}hidden{{end}}>
+                {{if len(.Entities) == 0}}
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.masterdata.entities.emptyTitle", "没有任何变更记录") }}</p>
+                    <p class="empty-desc">{{ .["t"]("admin.masterdata.entities.empty", "还没有任何主数据变更记录。") }}</p>
+                </div>
+                {{else}}
+                <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.masterdata.entities.aria", "按实体汇总") }}">
+                    <table class="data-table data-table-wide masterdata-page-table">
+                        <thead>
+                        <tr>
+                            <th>{{ .["t"]("admin.masterdata.col.entity", "实体") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col2.changes", "变更条数") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col2.last_action", "最后一次动作") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col2.last_field", "最后变更字段") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col2.last_time", "最后变更时间") }}</th>
+                            <th>{{ .["t"]("admin.masterdata.col2.last_operator", "最后操作人") }}</th>
+                            <th class="col-actions">{{ .["t"]("admin.masterdata.col.actions", "操作") }}</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{range _, e := .Entities}}
+                        <tr>
+                            <td>{{e.EntityTypeLabel}} · <strong>{{e.EntityLabel}}</strong> <span class="masterdata-meta">{{e.EntityID}}</span></td>
+                            <td>{{e.ChangeCount}}</td>
+                            <td>{{e.LastActionLabel}}</td>
+                            <td>{{e.LastFieldLabel}} <span class="masterdata-meta">{{e.LastField}}</span></td>
+                            <td>{{e.LastAt}}</td>
+                            <td>{{e.LastOperatorID}}</td>
+                            <td class="col-actions">
+                                <a class="btn btn-sm" href="{{e.URL}}">{{tr("admin.masterdata.action.view_history", "查看历史")}}</a>
+                            </td>
+                        </tr>
+                        {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="hint">{{ .["t"]("admin.masterdata.entities.hint", "点「查看历史」即锁定该实体（等价于在上面填实体类型 + 实体 id）。") }}</p>
+                {{if .EntityTruncated}}
+                <p class="hint">{{ .["t"]("admin.masterdata.truncated.pre", "共 ") }}{{.EntityTotal}}{{ .["t"]("admin.masterdata.truncated.mid", " 个实体，本页列出前 ") }}{{.EntityShown}}{{ .["t"]("admin.masterdata.truncated.post", " 个 —— 用上面的筛选条件收窄范围。") }}</p>
+                {{end}}
+                {{end}}
+            </div>
         </div>
-        {{include "partials/pagination.html"}}
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.masterdata.entities.heading", "按实体汇总（共 ") }}{{.EntityTotal}}{{ .["t"]("admin.masterdata.entities.headingClose", " 个实体）") }}</h2>
-        {{if len(.Entities) == 0}}
-        <p class="hint">{{ .["t"]("admin.masterdata.entities.empty", "还没有任何主数据变更记录。") }}</p>
-        {{else}}
-        <p class="hint">{{ .["t"]("admin.masterdata.entities.hint", "点「查看历史」即锁定该实体（等价于在上面填实体类型 + 实体 id）。") }}</p>
-        <div class="table-wrap" tabindex="0">
-        <table class="data-table data-table-wide masterdata-page-table">
-            <thead>
-            <tr><th>{{ .["t"]("admin.masterdata.col.entity", "实体") }}</th><th>{{ .["t"]("admin.masterdata.col2.changes", "变更条数") }}</th><th>{{ .["t"]("admin.masterdata.col2.last_action", "最后一次动作") }}</th><th>{{ .["t"]("admin.masterdata.col2.last_field", "最后变更字段") }}</th><th>{{ .["t"]("admin.masterdata.col2.last_time", "最后变更时间") }}</th><th>{{ .["t"]("admin.masterdata.col2.last_operator", "最后操作人") }}</th><th>{{ .["t"]("admin.masterdata.col.actions", "操作") }}</th></tr>
-            </thead>
-            <tbody>
-            {{range _, e := .Entities}}
-            <tr>
-                <td data-label="{{tr("admin.masterdata.col.entity", "实体")}}">
-                    {{e.EntityTypeLabel}} · <strong>{{e.EntityLabel}}</strong>
-                    <span class="masterdata-meta">{{e.EntityID}}</span>
-                </td>
-                <td data-label="{{tr("admin.masterdata.col2.changes", "变更条数")}}">{{e.ChangeCount}}</td>
-                <td data-label="{{tr("admin.masterdata.col2.last_action", "最后一次动作")}}">{{e.LastActionLabel}}</td>
-                <td data-label="{{tr("admin.masterdata.col2.last_field", "最后变更字段")}}">{{e.LastFieldLabel}} <span class="masterdata-meta">{{e.LastField}}</span></td>
-                <td data-label="{{tr("admin.masterdata.col2.last_time", "最后变更时间")}}">{{e.LastAt}}</td>
-                <td data-label="{{tr("admin.masterdata.col2.last_operator", "最后操作人")}}">{{e.LastOperatorID}}</td>
-                <td data-label="{{tr("admin.masterdata.col.actions", "操作")}}">
-                    <a class="btn btn-sm" href="{{e.URL}}">{{tr("admin.masterdata.action.view_history", "查看历史")}}</a>
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table>
-        </div>
-        {{if .EntityTruncated}}
-        <p class="hint">{{ .["t"]("admin.masterdata.truncated.pre", "共 ") }}{{.EntityTotal}}{{ .["t"]("admin.masterdata.truncated.mid", " 个实体，本页列出前 ") }}{{.EntityShown}}{{ .["t"]("admin.masterdata.truncated.post", " 个 —— 用上面的筛选条件收窄范围。") }}</p>
-        {{end}}
-        {{end}}
     </section>
 </div>
 {{end}}

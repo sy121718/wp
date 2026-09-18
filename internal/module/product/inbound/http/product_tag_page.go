@@ -5,10 +5,12 @@
 //
 // 本页承载本票的验收 1 / 2 / 4：
 //
-//	· 建手工标签并挂到商品（挂载表单在 /admin/products 的「商品标签」折叠区）；
+//	· 建手工标签并挂到商品（挂载表单在商品**详情页**的「商品标签」区块 ——
+//	  标签归属是商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）；
 //	· 自动标签只给内置规则类型 + 白名单参数（规则类型下拉来自 service 的注册表，
 //	  参数输入框固定三格：days / minPrice / maxPrice，服务端按规则类型取值并严格校验）；
-//	· 每个标签展开即可看到当前命中的商品列表（规则标签额外显示规则描述与重算时间）。
+//	· 标签列表用标准表格（标签 / URL 段 / 类型 / 规则 / 命中 / 重算时间 / 操作），
+//	  「命中的商品」是一张平坦关系表，规则标签额外显示规则描述与重算时间。
 //
 // 重算时机在页面上写明（商品/变体写操作后、标签定义变更后、这里的「重算」按钮）。
 package producthttp
@@ -17,7 +19,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +82,8 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		"Tags":            rows,
 		"RuleTypes":       h.products.ListTagRuleTypes(ctx),
 		"Err":             strings.TrimSpace(c.Query("err")),
+		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductTagsBulkDelete）。
+		"Done": strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -127,6 +133,37 @@ func (h *productPageHandle) ProductTagsDelete(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
 }
 
+// ProductTagsBulkDelete 批量删除标签（手工 / 自动一视同仁：删除即解绑商品上的该标签）。
+//
+// 逐条走同一条删除路径：失败的那一条由服务端拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	target := "/admin/product-tags?project=" + url.QueryEscape(projectID)
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, target+"&err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	switch {
+	case skipped > 0:
+		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（标签不存在或已被删除）", deleted, skipped))
+	case deleted > 0:
+		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个标签", deleted))
+	}
+	c.Redirect(http.StatusFound, target)
+}
+
 // ProductTagsRecalc 手动重算（tagId 为空即重算该工程全部自动标签）。
 func (h *productPageHandle) ProductTagsRecalc(c *gin.Context) {
 	projectID := c.PostForm("projectId")
@@ -152,12 +189,12 @@ func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
 	if tagIDs == nil {
 		tagIDs = []string{}
 	}
-	req := &productdto.UpdateReq{ID: c.PostForm("id"), TagIDs: tagIDs}
+	req := &productdto.UpdateReq{ID: formProductID(c), TagIDs: tagIDs}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, err.Error()))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))
 }
 
 // listTags 取某工程的标签列表（工程为空时返回空列表）。

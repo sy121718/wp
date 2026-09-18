@@ -1,0 +1,60 @@
+-- 233 · i18n 词条 seed（商品详情拆页：25 个 key）
+--
+-- 背景：商品详情从列表页拆出（变体 / 评分 / SEO 检查 / 属性引用等子资源搬进详情页），
+--       列表页只保留商品表。新页面与新列头产生了一批文案位。
+--       模板兜底只在缺词条时显示中文，英文界面会回落中文，故成对 seed。
+-- 覆盖：25 个 key / zh-CN 25 行 / en-US 25 行（人工编写）。
+-- 语义：ON CONFLICT DO NOTHING。幂等：ConditionSQL 取本批 3 个代表 key 的 zh-CN 行数作门槛。
+INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
+VALUES
+('admin.product_detail.title', 'en-US', 'Product detail', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.title', 'zh-CN', '商品详情', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.back', 'en-US', 'Back to list', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.back', 'zh-CN', '返回列表', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.basic.title', 'en-US', 'Basic information', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.basic.title', 'zh-CN', '基本信息', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.notFound.title', 'en-US', 'Product not found', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.notFound.title', 'zh-CN', '商品不存在', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.notFound', 'en-US', 'This product cannot be read: it may belong to another project, or it has been deleted.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.notFound', 'zh-CN', '这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.label', 'en-US', 'Show help', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.label', 'zh-CN', '查看说明', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.attrs', 'en-US', '"Attribute references" takes attribute group ids (comma separated; clearing it unbinds all of them). Attribute groups are defined on the', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.attrs', 'zh-CN', '「属性引用」填的是属性组 id（逗号分隔，清空即解绑全部）：属性组在', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.attrsTail', 'en-US', 'page, and one group can be referenced by several products.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.attrsTail', 'zh-CN', '页定义，同一个组可以被多个商品引用。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.taxonomy', 'en-US', 'A product can be attached to several categories (one of them primary, and the primary must be among the attached ones); the brand is optional. Both are defined on the', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.taxonomy', 'zh-CN', '分类可以挂多个（其中一个为主分类，主分类必属于已挂载的分类）；品牌可选一个。两者分别在', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.taxonomyTail', 'en-US', 'pages.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.taxonomyTail', 'zh-CN', '页定义。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.tags', 'en-US', 'Manual tags are attached here by ticking them; automatic tags are read-only - their membership is maintained by rule recalculation, so manual edits get overwritten on the next run.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.tags', 'zh-CN', '手工标签在这里勾选挂载；自动标签只读 —— 它的归属由规则重算维护，手工改会被下一次重算覆盖。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.variants', 'en-US', 'Fields left empty on a variant inherit the product-level default; the owning warehouse decides which warehouse holds each variant''s stock record. Deleting a variant deletes its stock records too.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.variants', 'zh-CN', '变体留空的字段继承商品级默认值；「归属仓」决定每个变体的库存记录落在哪个仓。变体删除会连它的库存记录一起删。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.rating', 'en-US', 'Ratings live in their own detail table: the average and count are derived from it, and editing a rating never touches the product''s own fields. No ratings and rated 0 are different things - the former does not take part in minimum-rating filters.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.rating', 'zh-CN', '评分是独立明细：平均值与条数由明细算出，改评分不改动商品字段；「没有评分」与「评分 0 分」是两回事，它不参与最低评分筛选。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.seo', 'en-US', 'SEO check is read-only: it writes nothing to the database and changes no artifacts. A title that repeats elsewhere on the site gets listed.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.product_detail.help.seo', 'zh-CN', '「SEO 检查」只读计算，不写库、不改产物；同一个标题在站内重复会被列出来。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.col.priceRange', 'en-US', 'Price range', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.col.priceRange', 'zh-CN', '价格区间', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.col.categories', 'en-US', 'Categories', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.col.categories', 'zh-CN', '分类', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.col.brand', 'en-US', 'Brand', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.col.brand', 'zh-CN', '品牌', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.row.detail', 'en-US', 'Detail', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.row.detail', 'zh-CN', '详情', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.row.previewDetail', 'en-US', 'Preview detail page', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.row.previewDetail', 'zh-CN', '预览详情页', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.attrs.label', 'en-US', 'Referenced attribute group ids', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.attrs.label', 'zh-CN', '引用的属性组 id', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.rating.sep', 'en-US', ' · ', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.rating.sep', 'zh-CN', ' · ', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.rating.countTail', 'en-US', ' ratings', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.rating.countTail', 'zh-CN', ' 条', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.hint.detailLead', 'en-US', 'Variants and ratings belong to a single product and are maintained on that product''s', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.hint.detailLead', 'zh-CN', '变体与评分属于单个商品，在商品的', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.hint.detailStrong', 'en-US', 'detail', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.hint.detailStrong', 'zh-CN', '详情', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.hint.detailTail', 'en-US', 'page (open it via Detail in the row). Ratings live in their own detail table: the average and count are derived from it, and editing a rating never touches the product''s own fields. No ratings and rated 0 are different things.', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now()),
+('admin.products.hint.detailTail', 'zh-CN', '里维护（点行的「详情」进入）。评分是独立明细：平均值与条数由明细算出，改评分不改动商品字段；「没有评分」与「评分 0 分」是两回事。', 200, 'admin', '商品详情拆页配套（列表页只留商品表）', 1, now(), now())
+ON CONFLICT (item_key, lang) DO NOTHING;

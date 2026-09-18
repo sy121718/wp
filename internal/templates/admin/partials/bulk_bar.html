@@ -1,0 +1,51 @@
+{* admin/partials/bulk_bar.html — 列表页的「批量操作条」（bulk-bar）。
+   抽出来之前，这段 HTML 在 28 处列表页里各抄一遍（div.bulk-bar + span.bulk-count + 按钮），
+   改一次结构、加一个 data 属性要改 28 个文件。
+
+   为什么是 import + yield 而不是 include：bulk-bar 的中间不只是按钮 —— 优惠券 / 订单 /
+   退货 / 邮件营销联系人四个页面在计数行与按钮之间还夹着自己的表单字段（目标状态 select、
+   备注 input）。Jet 的 include 只能传 context、传不了「一段模板内容」，所以外壳拆成
+   bulkBarOpen / bulkBarClose 两个块，中间（字段与按钮）归调用点。
+
+   为什么不用「yield ... content」的内容槽：那种写法要求调用点配一个 {{end}}，而
+   admin_template_integrity_test.go 的控制块配平判据只统计 if / range / block / with 的
+   end，不认识 yield 的 end —— 每处会多出一个 end，整包模板测试红。开/闭两块没有这个代价。
+
+   Jet v6 实测约束（这条路径已由 internal/templates/i18n_jet_test.go 钉住）：
+   · import 必须在模板最前面（extends 之后、任何 block 之前），写进 block 里会解析报错
+     "'import' statements must be at the beginning of the template"；
+   · import 进来的块不会在定义处立即渲染（直接用 {{block}} 定义则会立即渲染一次）；
+   · yield 的参数在**调用点作用域**求值 —— 调用点顶部声明的 {{tr := .["t"]}} 在参数里可直接用；
+     但 .["t"] 不能直接写在参数里（Jet 报 unexpected node type），必须经 tr 变量。
+
+   用法：
+     {{extends "layout.html"}}
+     {{import "partials/bulk_bar.html"}}
+     {{block body()}}
+     {{tr := .["t"]}}
+         {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+         {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.products.bulkDeleteConfirm", "删除选中的商品及其全部变体？"), danger=true)}}
+         {{yield bulkBarClose()}}
+
+   取词一律留在调用点（tr(...)），片段只接收成品文案 —— admin_group_f_i18n_test.go 按
+   「模板文本里出现的取词调用」做正反双向判据，把取词搬进片段会让那些 key 变成孤儿词条。
+
+   保留的契约（static/js/admin.js 依赖，不得增删属性名）：
+   data-bulk-bar / data-bulk-count / data-bulk-template / data-confirm / data-confirm-danger /
+   formaction。 *}
+
+{* bulkBarOpen：外壳开标签 + 计数行；中间的字段与按钮由调用点自己写。 *}
+{{block bulkBarOpen(count)}}<div class="bulk-bar" data-bulk-bar hidden>
+    <span class="bulk-count" data-bulk-count data-bulk-template="{{count}}"></span>{{end}}
+
+{* bulkBarClose：外壳闭标签。 *}
+{{block bulkBarClose()}}</div>{{end}}
+
+{* bulkBtn：标准批量按钮，除 label 外全部可省。
+   cls        按钮类（默认危险删除按钮）；cls="btn btn-sm" 用于「批量启用 / 改状态」这类非删除动作
+   confirm    data-confirm 文案（省略即不渲染该属性）
+   danger     是否加 data-confirm-danger（确认弹窗按危险样式呈现）
+   formaction 改投端点（同一表单里的第二个动作：优惠券 / 订单 / 退货 / 客户解锁）
+   name/value 靠提交按钮带参数（客户页的 toStatus） *}
+{{block bulkBtn(label, cls="btn btn-sm btn-danger", confirm="", danger=false, formaction="", name="", value="")}}<button type="submit" class="{{cls}}"{{if formaction != ""}} formaction="{{formaction}}"{{end}}{{if name != ""}} name="{{name}}" value="{{value}}"{{end}}{{if confirm != ""}}
+        data-confirm="{{confirm}}"{{end}}{{if danger}} data-confirm-danger{{end}}>{{label}}</button>{{end}}

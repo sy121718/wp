@@ -29,6 +29,9 @@ func NewHandle(svc ordercontract.OrderService) *Handle { return &Handle{svc: svc
 // operatorFromContext 取当前后台操作人（id + 用户名）。
 //
 // 客户端传什么都不看：操作人是审计字段，能被伪造的审计等于没有审计。
+//
+// 不走 shell.CurrentUserID：这里要 id 与登录名一次取出（shell 入口只给 id），
+// 且保留非 int64 原始值分支（含字符串 id 的解析），统一入口只认 int64。
 func operatorFromContext(c *gin.Context) (id uint64, name string) {
 	name = strings.TrimSpace(builtin.GetUsername(c))
 	if v, exists := c.Get("user_id"); exists {

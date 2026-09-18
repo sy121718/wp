@@ -1,77 +1,121 @@
 {* admin/content_templates.html — 内容模板列表（EDT-001） *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§7）：
+     · 领域说明与两条入口链接整段进页头 .help 悬浮，正文零说明文字；
+     · 筛选（工程 / 实体类型）并入列表卡 .filter-bar，单工程时不渲染工程下拉；
+     · 列表进 .table-scroll（表头吸顶），操作列放末列 .col-actions。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {{selectedProject := .SelectedProject}}
 {* range 内 . 指向元素（且模板项变量名就是 t），故先存成变量 tr，在 range 内用它取词。 *}
 {{tr := .["t"]}}
 <div class="stack">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.content.templates.heading", "内容模板") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.content.templates.errorLead", "提示：") }}{{.Err}}</p>
-        {{end}}
-        {{if !.Ready}}
-        <p class="hint">{{ .["t"]("admin.content.templates.notReady", "内容模板能力未装配，本页暂不可用。") }}</p>
-        {{else}}
-        <p class="hint">{{ .["t"]("admin.content.templates.intro", "内容模板决定商品 / 文章等详情页的排版。可视化编辑在工作台进行，预览需绑定一条样例实体以解析字段绑定。") }}</p>
-        <form method="get" action="/admin/content-templates" class="form-inline">
-            <label>{{ .["t"]("admin.content.templates.projectLabel", "工程") }}
-                <select class="form-select" name="project" onchange="this.form.submit()">
-                    {{range _, p := .Projects}}
-                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                    {{end}}
-                </select>
-            </label>
-            <label>{{ .["t"]("admin.content.templates.entityTypeLabel", "实体类型") }}
-                <select class="form-select" name="entityType" onchange="this.form.submit()">
-                    <option value="" {{if .EntityType == ""}}selected{{end}}>{{ .["t"]("admin.content.templates.entityAll", "全部") }}</option>
-                    <option value="product" {{if .EntityType == "product"}}selected{{end}}>product</option>
-                    <option value="article" {{if .EntityType == "article"}}selected{{end}}>article</option>
-                </select>
-            </label>
-        </form>
-        {{end}}
-    </section>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.content.templates.heading", "内容模板") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.content.templates.intro", "内容模板决定商品 / 文章等详情页的排版。可视化编辑在工作台进行，预览需绑定一条样例实体以解析字段绑定。") }}<br><br>{{ .["t"]("admin.content.templates.footerLead", "商品详情模板的新建 / 发布仍在") }}<a href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.content.templates.footerProductsLink", "商品列表 → 详情页模板") }}</a>{{ .["t"]("admin.content.templates.footerMiddle", "；文章发布在") }}<a href="/admin/articles?project={{selectedProject}}">{{ .["t"]("admin.content.templates.footerArticlesLink", "文章编辑页") }}</a>{{ .["t"]("admin.content.templates.footerTail", "。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.content.templates.errorLead", "提示：") }}{{.Err}}</p>
+    {{end}}
+    {* 可选键一律 isset 包裹：缺失键会让整页在此中断（HTTP 仍 200，列表整块消失）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+    {{if !.Ready}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.content.templates.notReady", "内容模板能力未装配，本页暂不可用。") }}</p>
+    {{end}}
 
     {{if .Ready}}
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.content.templates.listHeading", "模板列表（") }}{{.TemplateCount}}{{ .["t"]("admin.content.templates.listHeadingClose", "）") }}</h2>
+    <section class="card list-card">
+        <div class="filter-bar">
+            <form method="get" action="/admin/content-templates" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                {{if len(.Projects) > 1}}
+                <div class="filter-field">
+                    <label for="ct-project">{{ .["t"]("admin.content.templates.projectLabel", "工程") }}</label>
+                    <select class="form-select" id="ct-project" name="project" onchange="this.form.submit()">
+                        {{range _, p := .Projects}}
+                        <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{end}}
+                <div class="filter-field">
+                    <label for="ct-entity-type">{{ .["t"]("admin.content.templates.entityTypeLabel", "实体类型") }}</label>
+                    <select class="form-select" id="ct-entity-type" name="entityType" onchange="this.form.submit()">
+                        <option value="" {{if .EntityType == ""}}selected{{end}}>{{ .["t"]("admin.content.templates.entityAll", "全部") }}</option>
+                        <option value="product" {{if .EntityType == "product"}}selected{{end}}>product</option>
+                        <option value="article" {{if .EntityType == "article"}}selected{{end}}>article</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+
         {{if .TemplateCount == 0}}
-        <p class="hint">{{ .["t"]("admin.content.templates.empty", "还没有任何内容模板。商品侧可在「详情页模板」页新建；文章侧需先跑迁移种子或 API 创建。") }}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.content.templates.empty.title", "还没有内容模板") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.content.templates.empty", "还没有任何内容模板。商品侧可在「详情页模板」页新建；文章侧需先跑迁移种子或 API 创建。") }}</p>
+        </div>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.content.templates.tableAria", "内容模板列表") }}"><table class="data-table data-table-wide">
-            <thead>
-            <tr>
-                <th>{{ .["t"]("admin.content.templates.colName", "名称") }}</th>
-                <th>{{ .["t"]("admin.content.templates.colEntityType", "实体类型") }}</th>
-                <th>{{ .["t"]("admin.content.templates.colRevision", "版本") }}</th>
-                <th>{{ .["t"]("admin.content.templates.colUpdatedAt", "更新时间") }}</th>
-                <th>{{ .["t"]("admin.content.templates.colActions", "操作") }}</th>
-            </tr>
-            </thead>
-            <tbody>
-            {{range _, t := .Templates}}
-            <tr>
-                <td>{{t.Name}}</td>
-                <td><code>{{t.EntityType}}</code></td>
-                <td>v{{t.DraftVersion}}</td>
-                <td>{{t.UpdatedAt}}</td>
-                <td>
-                    {{if t.EditURL != ""}}
-                    <a class="btn btn-sm" href="{{t.EditURL}}">{{tr("admin.content.templates.visualEdit", "可视化编辑") }}</a>
-                    <a class="btn btn-sm btn-ghost" href="/admin/content-templates/edit?id={{t.ID}}&projectId={{selectedProject}}">{{tr("admin.content.templates.editEntry", "编辑入口") }}</a>
-                    {{else}}
-                    <span class="hint">{{t.SampleErr}}</span>
-                    {{end}}
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table></div>
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.content.templates.listHeading", "模板列表（") }}{{.TemplateCount}}{{ .["t"]("admin.content.templates.listHeadingClose", "）") }}</strong>
+        </div>
+        {* 勾选框与批量动作同属一个 form（<form> 包 <table> 是合法的）：提交时浏览器直接带上
+           所有勾中的 ids，不需要在提交前注入隐藏域。projectId / entityType 回带筛选状态。 *}
+        <form method="post" action="/admin/content-templates/bulk-delete">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="entityType" value="{{ .EntityType }}">
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.content.templates.bulkDeleteConfirm", "删除选中的模板？删除会连带清掉它的历史版本；被自动发布实例引用的模板不会被删除。"), danger=true)}}
+        {{yield bulkBarClose()}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.content.templates.tableAria", "内容模板列表") }}">
+            <table class="data-table data-table-wide">
+                <thead>
+                <tr>
+                    <th class="col-check">
+                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                    </th>
+                    <th>{{ .["t"]("admin.content.templates.colName", "名称") }}</th>
+                    <th>{{ .["t"]("admin.content.templates.colEntityType", "实体类型") }}</th>
+                    <th>{{ .["t"]("admin.content.templates.colRevision", "版本") }}</th>
+                    <th>{{ .["t"]("admin.content.templates.colUpdatedAt", "更新时间") }}</th>
+                    <th class="col-actions">{{ .["t"]("admin.content.templates.colActions", "操作") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{range _, t := .Templates}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{t.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{t.Name}}</td>
+                    <td><code>{{t.EntityType}}</code></td>
+                    <td>v{{t.DraftVersion}}</td>
+                    <td class="text-mute text-sm">{{t.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        {{if t.EditURL != ""}}
+                        <a class="btn btn-sm" href="{{t.EditURL}}">{{tr("admin.content.templates.visualEdit", "可视化编辑") }}</a>
+                        <a class="btn btn-sm btn-ghost" href="/admin/content-templates/edit?id={{t.ID}}&projectId={{selectedProject}}">{{tr("admin.content.templates.editEntry", "编辑入口") }}</a>
+                        {{else}}
+                        <span class="text-mute text-sm">{{t.SampleErr}}</span>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
         {{end}}
-        <p class="hint mt-md">{{ .["t"]("admin.content.templates.footerLead", "商品详情模板的新建 / 发布仍在") }}
-            <a href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.content.templates.footerProductsLink", "商品列表 → 详情页模板") }}</a>{{ .["t"]("admin.content.templates.footerMiddle", "；文章发布在") }}
-            <a href="/admin/articles?project={{selectedProject}}">{{ .["t"]("admin.content.templates.footerArticlesLink", "文章编辑页") }}</a>{{ .["t"]("admin.content.templates.footerTail", "。") }}</p>
     </section>
     {{end}}
 </div>

@@ -62,12 +62,13 @@ func TestAdminRoutesBuild(t *testing.T) {
 
 	res, err := e.svc.AdminRoutes(ctx, userID, "zh-CN")
 	wantErr(t, err, "")
-	if len(res.Routes) != 1 {
-		t.Fatalf("路由树应含 1 个目录: %d", len(res.Routes))
-	}
-	root := res.Routes[0]
-	if root.Meta.Title != "路由目录" {
-		t.Fatalf("目录标题不符: %s", root.Meta.Title)
+	// 这里不再断言「路由树恰好 1 个根」：库里的菜单由迁移 seed（如 229 从「商品与库存」
+	// 拆出的一级目录「库存」），根的数量由环境数据决定，不是本测试的契约 ——
+	// 按标题定位本测试造的那个目录。本测试守的是「按授权过滤」：
+	// 本测试的目录要出现、子结构正确，未被授权的节点不出现（见下面的子节点与 auths 断言）。
+	root := findRouteByTitle(res.Routes, "路由目录")
+	if root == nil {
+		t.Fatalf("授权目录应出现在路由树里: %+v", res.Routes)
 	}
 	if len(root.Children) != 1 {
 		t.Fatalf("目录下应有菜单A: %d", len(root.Children))
@@ -210,10 +211,49 @@ func TestBuildAuthorizedTree(t *testing.T) {
 
 	tree, err := e.svc.BuildAuthorizedTree(ctx, []string{code})
 	wantErr(t, err, "")
-	if len(tree) != 1 {
-		t.Fatalf("应只有授权目录一个根: %d", len(tree))
+	// 同样不断言「恰好一个根」：迁移会在库里 seed 目录（229 的「库存」，其下的
+	// 「仓库管理」「变动原因字典」标了 is_public=1，任何登录用户都能看见），
+	// 根的数量不是本测试的契约。本测试守的是「按授权过滤」这两件事：
+	// ① 授权目录在且结构正确；② 未授权的那条菜单不出现。
+	root := findMenuNodeByTitle(tree, "授权目录")
+	if root == nil {
+		t.Fatalf("授权目录应出现在授权树里: %+v", tree)
 	}
-	if tree[0].Title != "授权目录" || len(tree[0].Children) != 1 || tree[0].Children[0].Title != "授权菜单" {
-		t.Fatalf("授权树结构不符: %+v", tree)
+	if len(root.Children) != 1 || root.Children[0].Title != "授权菜单" {
+		t.Fatalf("授权树结构不符: %+v", root)
 	}
+	if hasMenuNodeTitle(tree, "未授权菜单") {
+		t.Fatalf("未授权菜单不应出现在授权树里: %+v", tree)
+	}
+}
+
+// findRouteByTitle 在动态路由树里按标题定位节点。
+// 测试库带着迁移 seed 的菜单数据，结果里不止测试自己造的那一个根，所以按标题找而非取下标。
+func findRouteByTitle(routes []admindto.RouteNode, title string) *admindto.RouteNode {
+	for i := range routes {
+		if routes[i].Meta.Title == title {
+			return &routes[i]
+		}
+	}
+	return nil
+}
+
+// findMenuNodeByTitle 在菜单树里按标题定位节点（同上：不依赖「根只有一个」）。
+func findMenuNodeByTitle(nodes []admindto.MenuTreeNode, title string) *admindto.MenuTreeNode {
+	for i := range nodes {
+		if nodes[i].Title == title {
+			return &nodes[i]
+		}
+	}
+	return nil
+}
+
+// hasMenuNodeTitle 递归查找树里是否出现指定标题（断言「未授权节点不出现」用）。
+func hasMenuNodeTitle(nodes []admindto.MenuTreeNode, title string) bool {
+	for _, n := range nodes {
+		if n.Title == title || hasMenuNodeTitle(n.Children, title) {
+			return true
+		}
+	}
+	return false
 }

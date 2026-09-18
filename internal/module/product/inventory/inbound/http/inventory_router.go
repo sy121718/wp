@@ -106,10 +106,16 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 		inventoryPages := NewInventoryPageHandle(svc, project, nil)
 		pageCatalogConsumers = append(pageCatalogConsumers, inventoryPages)
 		pages.GET("/inventory", inventoryPages.InventoryPage)
+		// 拆页（2026-09 评审第三轮）：仓库与原因字典各自独立成页 —— 原先它们与
+		// 「手动改库存 / 看流水」挤在同一页靠 <details> 折叠，折叠不是解法。
+		pages.GET("/inventory/warehouses", inventoryPages.InventoryWarehousesPage)
+		pages.GET("/inventory/reasons", inventoryPages.InventoryReasonsPage)
 		pages.POST("/inventory/warehouse/create", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/create"), inventoryPages.InventoryWarehouseCreate)
 		pages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseUpdate)
 		pages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseDefault)
 		pages.POST("/inventory/warehouse/delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), inventoryPages.InventoryWarehouseDelete)
+		// 批量删除复用单条删除的权限点：批量不是新能力，只是把 N 次单条动作压成一次提交。
+		pages.POST("/inventory/warehouses/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/delete"), inventoryPages.InventoryWarehousesBulkDelete)
 		// 库存变动与原因字典（issue #16）：变动走真源行锁 + 流水，原因新建走原因字典。
 		pages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), inventoryPages.InventoryStockChange)
 		pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), inventoryPages.InventoryReasonCreate)
@@ -120,6 +126,7 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 		pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), sourcePages.InventorySourceCreate)
 		pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.InventorySourceUpdate)
 		pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourceDelete)
+		pages.POST("/inventory/sources/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourcesBulkDelete)
 
 		// 采购入库页（issue #18）：采购单 → 逐行收货入库（复用 #16 的变动契约）+ 生产入库 + 进货历史。
 		purchasePages := NewInventoryPurchasePageHandle(svc, project, nil)
@@ -128,6 +135,9 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 		pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
 		pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
 		pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
+		// 生产入库的表单已归位到库存管理页，页面 action 走这个更贴合归属的路径；
+		// 权限点仍是 api/inventory/purchase/production（权限点是声明真源，不随页面走）。
+		pages.POST("/inventory/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
 	}
 
 	return svc

@@ -24,6 +24,10 @@ import (
 const (
 	tableNameContentTemplates        = "content_templates"
 	tableNameContentTemplateVersions = "content_template_versions"
+	// 内容模板级组件版本锁定表（迁移 069 已把 component_id / pinned_version_id 两个外键
+	// 降级为弱引用，但 template_id → content_templates(id) 的外键仍在）：删模板前必须
+	// 连带清掉本表里指向它的行，否则外键会拒绝删除。
+	tableNameContentTemplatePins = "content_template_component_pins"
 )
 
 // 模板角色（审计 EDT-004）：真源在 contract。
@@ -227,6 +231,29 @@ func (m *Model) SaveWithVersion(ctx context.Context, projectID string, v *Versio
 			"current_version_id": e.CurrentVersionID,
 			"update_time":        e.UpdatedAt,
 		}).Error
+	})
+}
+
+// DeleteWithHistory 删除模板行 + 它的全部历史版本 + 组件版本锁定行（同一事务）。
+//
+// 三张表同属一个聚合（模板 / 版本 / 组件锁定）：留下孤儿版本行会让「模板不存在但版本还在」
+// 成为永久垃圾，而版本表没有反向查找入口，事后无法清理 —— 所以删除必须是原子的。
+//
+// 为什么**不**级联处理 presentation_instances.template_id：那是跨聚合引用（自动发布实例
+// 是用户数据），删模板顺手删掉实例是最不该发生的事。被实例引用时最后一步的外键约束会拒绝，
+// 整笔事务回滚 —— 调用方据此判定「这一条不能删」，而不是让库副作用留一半。
+func (m *Model) DeleteWithHistory(ctx context.Context, projectID, id string) error {
+	// content_templates 带 FORCE 策略：本工程作用域既约束模板行，也让同事务里两张
+	// 无 project_id 的从表操作走同一条连接。
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		// 表名是包内常量（无外部输入），id 参数化 —— 组件锁定表没有实体，用 Exec 直删。
+		if err := tx.Exec("DELETE FROM "+tableNameContentTemplatePins+" WHERE template_id = ?", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("template_id = ?", id).Delete(&VersionEntity{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ? AND project_id = ?", id, projectID).Delete(&TemplateEntity{}).Error
 	})
 }
 

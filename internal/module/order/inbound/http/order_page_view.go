@@ -24,6 +24,8 @@ func orderListRow(o *orderdto.OrderResp, filter orderFilter, projectID string, p
 	vals["page"] = strconv.Itoa(page)
 	vals["limit"] = strconv.Itoa(limit)
 	return gin.H{
+		// ID 是批量表单里勾选框的值（字符串形态，与其它页的行 id 一致）。
+		"ID":            strconv.FormatUint(o.ID, 10),
 		"OrderNo":       o.OrderNo,
 		"Status":        o.Status,
 		"StatusLabel":   orderStatusLabel(o.Status),
@@ -167,10 +169,17 @@ func orderStatusCounter(value, label, badge string, count int64, filter orderFil
 	}
 }
 
-// orderStatusOptions 状态下拉（筛选用：全部 + 六个状态）。
-func orderStatusOptions() []gin.H {
+// orderBulkTargets 批量流转的目标状态候选（只有通用流转的三个）。
+//
+// 取消（要归还库存）与退款（要记流水号）各有独立用例，通用流转入口会拒绝它们 ——
+// 放进候选只会让运营选到一个「全被跳过」的目标。
+func orderBulkTargets() []gin.H {
 	options := make([]gin.H, 0, len(orderStatusViews))
 	for _, view := range orderStatusViews {
+		switch view.Value {
+		case orderStatusCancelled, orderStatusRefunded:
+			continue
+		}
 		options = append(options, gin.H{"Value": view.Value, "Label": view.Label})
 	}
 	return options

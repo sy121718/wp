@@ -50,6 +50,8 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
 	pages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)
+	// 批量删除复用单条删除的权限点（不新增权限点、不写迁移）：能删一篇的人就能删一批。
+	pages.POST("/articles/bulk-delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticlesBulkDelete)
 
 	// 文章翻译工作台（审计 I18N-006）：对称商品的 /admin/products/translations。
 	// 保存复用「保存内容」权限点（与文章编辑同源）—— 译文是文章内容的一部分，

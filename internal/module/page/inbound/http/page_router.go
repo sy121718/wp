@@ -81,6 +81,18 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	if pages != nil {
 		pages.GET("/pages", adminHandle.PagesList)
 		pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
+		// 单条删除与批量删除复用「删除页面」权限点（/api/page/delete，迁移 151）：
+		// 两者走同一个 svc.Delete —— 权限点、拒绝规则、访问面下线动作都不会分叉。
+		// 批量删除不能自成一个权限点：它只是单条删除的加速器，不是另一件事。
+		pages.POST("/pages/delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), adminHandle.DeletePage)
+		pages.POST("/pages/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), adminHandle.PagesBulkDelete)
+		// 重定向的批量删除挂**后台页面组**、而不是 /api 组：
+		// authorizedAPI 组统一按实际请求路径 enforce（scripts/check-permission-gaps.sh 专盯这条），
+		// 新路径在 sys_permission 里没有条目 → 含超管在内一律 403；而补一条权限点必须写迁移，
+		// 批量删除只是单条删除的加速器，不值得为它单开权限点。
+		// 于是与商品 / 导航 / 文案三个域的批量端点同构：挂 /admin 组（Session + CSRF 已具备）
+		// + 显式复用单条删除的权限点路径 /api/page/redirect/delete。
+		pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), handle.RedirectBulkDelete)
 		// 翻译工作台（多语言 P5c，docs/06-D §7.8）：入口在页面列表行内「多语言」按钮。
 		// 保存写 sys_translation（engine=manual）并触发全站标记待重建，鉴权复用「保存草稿」权限点。
 		pages.GET("/page/translations", adminHandle.PageTranslations)

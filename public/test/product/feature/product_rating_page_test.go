@@ -3,7 +3,7 @@
 // 覆盖：
 //
 //	· 页面渲染评分区块（有评分时显示投影出的平均分与条数 + 明细；无评分时是明确的空态）；
-//	· 添加 / 删除动作走真实的页面表单链路（302 回列表，再渲染能看到变化）；
+//	· 添加 / 删除动作走真实的页面表单链路（302 回**该商品的详情页**，再渲染能看到变化）；
 //	· 非法分值被拒且**不落库**（0~5 之外、非数字）。
 //
 // 用真实 Jet 模板渲染（与生产同一 template root），断言的是「页面里到底有没有那几样东西」。
@@ -34,11 +34,26 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
+	// 评分是商品的子资源：明细表与「添加评分」入口在商品详情页。
+	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.POST("/admin/products/rating/add", handle.ProductsRatingAdd)
 	engine.POST("/admin/products/rating/delete", handle.ProductsRatingDelete)
 	return engine, f
+}
+
+// productDetailBody 取某个商品的详情页 HTML。
+func productDetailBody(t *testing.T, engine *gin.Engine, projectID, productID string) string {
+	t.Helper()
+	path := "/admin/products/detail?project=" + projectID + "&product=" + productID
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("商品详情页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
 }
 
 // productsPageBody 取商品页 HTML（可选带上错误回显查询串）。
@@ -82,23 +97,25 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 		}
 	}
 
-	body := productsPageBody(t, engine, f.projectID, "")
-	// 平均 4.50、2 条 —— 这是投影算出来的，不是任何列上存着的值。
-	for _, want := range []string{"评分（4.50 分 / 2 条）", "添加评分", "products/rating/add", "products/rating/delete"} {
+	// 有评分：徽章里的 4.50 · 2 条是**投影算出来的**，不是任何列上存着的值。
+	// 详情页一次只渲染一个商品的子资源，所以有评分 / 无评分要分别请求。
+	body := productDetailBody(t, engine, f.projectID, rated)
+	for _, want := range []string{"4.50", "2 条", "添加评分", "products/rating/add", "products/rating/delete"} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("有评分的商品页应包含 %q", want)
+			t.Fatalf("有评分的商品详情页应包含 %q", want)
 		}
 	}
 	// 两条明细各自的分值都在（4.00 与 5.00）。
 	if !strings.Contains(body, "4.00") || !strings.Contains(body, "5.00") {
 		t.Fatalf("页面应列出每条评分的分值")
 	}
-	// 无评分的商品是「暂无」而不是「0.00 分」—— 这个区分是本页最容易写错的地方。
-	if !strings.Contains(body, "评分（暂无）") {
-		t.Fatalf("无评分商品应显示「评分（暂无）」空态")
+	// 无评分的商品显示明确的空态，而不是「0.00 分 / 0 条」—— 这个区分是本页最容易写错的地方。
+	unratedBody := productDetailBody(t, engine, f.projectID, unrated)
+	if !strings.Contains(unratedBody, "这个商品还没有评分。") {
+		t.Fatalf("无评分商品应显示明确的空态文案")
 	}
-	if strings.Contains(body, "评分（0.00 分 / 0 条）") {
-		t.Fatalf("无评分不该被渲染成「0.00 分 / 0 条」（没有评分 ≠ 0 分）")
+	if strings.Contains(unratedBody, "0.00") {
+		t.Fatalf("无评分不该被渲染成 0.00（没有评分 ≠ 0 分）")
 	}
 }
 
@@ -113,12 +130,12 @@ func TestProductRatingPageAddAndDelete(t *testing.T) {
 	loc := postRatingForm(t, engine, "/admin/products/rating/add", url.Values{
 		"projectId": {f.projectID}, "productId": {product}, "score": {"4.5"},
 	})
-	if strings.Contains(loc, "err=") {
-		t.Fatalf("合法评分不该带错误回显：%s", loc)
+	if loc != detailLocation(f.projectID, product) {
+		t.Fatalf("加评分后应留在该商品的详情页，实际 Location=%q", loc)
 	}
-	body := productsPageBody(t, engine, f.projectID, "")
-	if !strings.Contains(body, "评分（4.50 分 / 1 条）") {
-		t.Fatalf("添加后页面应显示 4.50 分 / 1 条")
+	body := productDetailBody(t, engine, f.projectID, product)
+	if !strings.Contains(body, "4.50") || !strings.Contains(body, "1 条") {
+		t.Fatalf("添加后详情页应显示 4.50 · 1 条")
 	}
 
 	// 取一条明细的 id 删掉它。
@@ -126,15 +143,16 @@ func TestProductRatingPageAddAndDelete(t *testing.T) {
 	if err != nil || len(res.Items) != 1 {
 		t.Fatalf("应有 1 条评分明细：%v %+v", err, res)
 	}
+	// 页面表单里 productId 与 id（评分 id）是一起提交的：id 是评分 id，回跳的商品靠 productId。
 	loc = postRatingForm(t, engine, "/admin/products/rating/delete", url.Values{
-		"projectId": {f.projectID}, "id": {res.Items[0].ID},
+		"projectId": {f.projectID}, "productId": {product}, "id": {res.Items[0].ID},
 	})
-	if strings.Contains(loc, "err=") {
-		t.Fatalf("删除不该报错：%s", loc)
+	if loc != detailLocation(f.projectID, product) {
+		t.Fatalf("删评分后应留在该商品的详情页，实际 Location=%q", loc)
 	}
-	body = productsPageBody(t, engine, f.projectID, "")
-	if !strings.Contains(body, "评分（暂无）") {
-		t.Fatalf("删除后该商品应回到「暂无」空态")
+	body = productDetailBody(t, engine, f.projectID, product)
+	if !strings.Contains(body, "这个商品还没有评分。") {
+		t.Fatalf("删除后该商品应回到「还没有评分」空态")
 	}
 }
 
@@ -151,6 +169,10 @@ func TestProductRatingPageRejectsInvalidScore(t *testing.T) {
 		loc := postRatingForm(t, engine, "/admin/products/rating/add", url.Values{
 			"projectId": {f.projectID}, "productId": {product}, "score": {bad},
 		})
+		// 失败也留在详情页（用户就在这一页操作），只把错误经 ?err= 带回。
+		if !strings.HasPrefix(loc, detailLocation(f.projectID, product)) {
+			t.Fatalf("非法分值 %q 应回该商品的详情页，实际 %s", bad, loc)
+		}
 		if !strings.Contains(loc, "err=") {
 			t.Fatalf("非法分值 %q 应带错误回显，实际 %s", bad, loc)
 		}

@@ -17,11 +17,13 @@ package inventoryhttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"go_wp/internal/middleware/builtin"
 	productcontract "go_wp/internal/module/product/contract"
@@ -113,7 +115,17 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		shell.PageError(c, "inventory", err)
 		return
 	}
-	movements, err := h.listMovements(ctx, selected, sku)
+	// 内部货源：生产入库（自带手工成本价，见 RegisterProductionInbound）只允许从内部货源入库。
+	// 它原先挂在采购入库页 —— 与采购单无关（自家工厂没有采购单），已归位到本页。
+	internalSources := sourceOptions(ctx, h.inventory, selected, inventoryenums.SourceTypeInternal)
+
+	// 流水筛选：SKU 与「某 SKU 各仓库存」共用同一个 query；仓库 / 方向 / 原因三个维度
+	// 承接了原先挂在采购页的「进货历史」—— 查某 SKU 的历次进货，就是流水按
+	// 原因（采购入库 / 生产入库）过滤，不必再单独做一张表。
+	filterWarehouse := strings.TrimSpace(c.Query("warehouseId"))
+	filterDirection := strings.TrimSpace(c.Query("direction"))
+	filterReason := strings.TrimSpace(c.Query("reasonCode"))
+	movements, err := h.listMovements(ctx, selected, sku, filterWarehouse, filterDirection, filterReason)
 	if err != nil {
 		shell.PageError(c, "inventory", err)
 		return
@@ -132,6 +144,78 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		"Reasons":         reasons,
 		"Directions":      directionOptions(),
 		"Movements":       movements,
+		"InternalSources": internalSources,
+		"FilterWarehouse": filterWarehouse,
+		"FilterDirection": filterDirection,
+		"FilterReason":    filterReason,
+		// 一次性幂等键：生产入库表单一次渲染一个，双击只产生一张入库单。
+		"ProductionRequestID": uuid.NewString(),
+		"Err":                 strings.TrimSpace(c.Query("err")),
+		"Ok":                  strings.TrimSpace(c.Query("ok")),
+	}))
+}
+
+// InventoryWarehousesPage 仓库管理页（从库存主页拆出）。
+//
+// 为什么拆页而不是折叠：库存管理原先把「仓库配置 / 变动原因字典 / 手动改库存 / 看流水」
+// 四件事压在同一页，靠 <details> 收纳 —— 折叠只是把「平铺」换成「叠起来」，
+// 一页装多了就该拆页。仓库是与货源同构的独立实体，配一次长期不动，
+// 不该占库存日常操作的版面（评审判据见 docs/02-H-admin-page-shell.md §7）。
+func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
+	ctx := c.Request.Context()
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		shell.PageError(c, "inventory", err)
+		return
+	}
+	selected := strings.TrimSpace(c.Query("project"))
+	if selected == "" && len(projects) > 0 {
+		selected = projects[0].ID
+	}
+	warehouses, err := h.listWarehouses(ctx, selected)
+	if err != nil {
+		shell.PageError(c, "inventory", err)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/inventory_warehouses.html", shell.Prepare(c, gin.H{
+		"title":           "仓库管理",
+		"menu":            "inventory-warehouses",
+		"Projects":        projects,
+		"SelectedProject": selected,
+		"Warehouses":      warehouses,
+		"Err":             strings.TrimSpace(c.Query("err")),
+		"Ok":              strings.TrimSpace(c.Query("ok")),
+		"Done":            strings.TrimSpace(c.Query("done")),
+	}))
+}
+
+// InventoryReasonsPage 变动原因字典页（从库存主页拆出）。
+//
+// 理由同仓库管理页：原因字典是配置（内置原因不可改、自定义原因偶尔新增），
+// 它是「库存变动的取值范围」的定义处，不是库存日常操作的一部分。
+func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
+	ctx := c.Request.Context()
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		shell.PageError(c, "inventory", err)
+		return
+	}
+	selected := strings.TrimSpace(c.Query("project"))
+	if selected == "" && len(projects) > 0 {
+		selected = projects[0].ID
+	}
+	reasons, err := h.listReasons(ctx, selected)
+	if err != nil {
+		shell.PageError(c, "inventory", err)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/inventory_reasons.html", shell.Prepare(c, gin.H{
+		"title":           "变动原因字典",
+		"menu":            "inventory-reasons",
+		"Projects":        projects,
+		"SelectedProject": selected,
+		"Reasons":         reasons,
+		"Directions":      directionOptions(),
 		"Err":             strings.TrimSpace(c.Query("err")),
 		"Ok":              strings.TrimSpace(c.Query("ok")),
 	}))
@@ -194,6 +278,37 @@ func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/inventory?project="+projectID)
+}
+
+// InventoryWarehousesBulkDelete 批量删除仓库。
+//
+// 逐条走同一条删除路径：默认仓、仓内仍有非零库存的那一条由服务端拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」回带仓库管理页，避免静默的部分成功。
+func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, "/admin/inventory/warehouses?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.inventory.DeleteWarehouse(c.Request.Context(), &inventorydto.DeleteWarehouseReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	target := "/admin/inventory/warehouses?project=" + url.QueryEscape(projectID)
+	switch {
+	case skipped > 0:
+		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）", deleted, skipped))
+	case deleted > 0:
+		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个仓库", deleted))
+	}
+	c.Redirect(http.StatusFound, target)
 }
 
 // InventoryStockChange 后台表单发起的库存变动（入库 / 出库 / 调整）。
@@ -290,13 +405,16 @@ func (h *inventoryPageHandle) listReasons(ctx context.Context, projectID string)
 }
 
 // listMovements 最近一批库存流水（可按 SKU 收窄）。
-func (h *inventoryPageHandle) listMovements(ctx context.Context, projectID, sku string) (out []gin.H, err error) {
+// listMovements 流水列表。过滤维度直接透传给 ListMovements（服务端已支持
+// 仓库 / 变体 / SKU / 方向 / 原因 / 来源类型 / 来源引用），页面不再自己筛。
+func (h *inventoryPageHandle) listMovements(ctx context.Context, projectID, sku, warehouseID, direction, reasonCode string) (out []gin.H, err error) {
 	out = []gin.H{}
 	if projectID == "" {
 		return out, nil
 	}
 	rows, err := h.inventory.ListMovements(ctx, &inventorydto.ListMovementReq{
-		ProjectID: projectID, SKUCode: sku, Size: inventoryMovementPageSize,
+		ProjectID: projectID, SKUCode: sku, WarehouseID: warehouseID,
+		Direction: direction, ReasonCode: reasonCode, Size: inventoryMovementPageSize,
 	})
 	if err != nil {
 		return nil, err

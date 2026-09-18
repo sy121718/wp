@@ -15,6 +15,7 @@
 package mailhttp
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -55,8 +56,10 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 		"title":     "邮箱设置",
 		"Accounts":  accounts,
 		"Templates": templates,
-		"Err":       c.Query("err"),
-		"Ok":        c.Query("ok"),
+		"Err":       strings.TrimSpace(c.Query("err")),
+		"Ok":        strings.TrimSpace(c.Query("ok")),
+		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。模板用 isset 认这个可选键。
+		"Done": strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -163,4 +166,131 @@ func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
 // 该包内只有后台页面会拼 ?err= / ?ok= 回显，所以留在页面文件里。
 func urlQueryEscape(value string) string {
 	return url.QueryEscape(value)
+}
+
+// —— 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）——
+//
+// 账号 / 模板的批量端点在配置页，联系人 / 活动的在营销页（mail_marketing_page_handle.go），
+// 但形状是同一个，与产品、订单、优惠码域一致：**逐条走同一条单条路径**，
+// 失败只计跳过、不中断整批 —— 批量操作不能因为一条被服务端拒绝就整批回滚，
+// 那会让人以为「一条都没做」然后反复重试；也不能静默部分成功，所以结论按
+// 「成功 N / 跳过 M」如实回带列表页。
+//
+// 权限点一律复用对应单条动作的路径（见 mail_page_router.go 的 CasbinMiddlewareForPath），
+// 不新增权限点、不写迁移。
+
+// MailAccountsBulkDelete 批量删除发信账号（POST /admin/mail/accounts/bulk-delete）。
+//
+// 单条路径 = DeleteAccount，权限点复用 /api/mail/account/delete。
+// 注意：账号行没有软删除、也没有「被活动引用」的数据库级校验（mail_campaigns.account_id
+// 无外键），所以服务端拒绝只来自「账号不存在 / 数据库报错」；将来引用校验加上来，
+// 这里自然按跳过处理，不需要改一处。
+func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if err := h.mail.DeleteAccount(c.Request.Context(), id); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	done, warn := mailBulkOutcome("删除", "发信账号", deleted, skipped)
+	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, done, warn))
+}
+
+// MailTemplatesBulkDelete 批量删除邮件模板（POST /admin/mail/templates/bulk-delete）。
+//
+// 模板的唯一键是 key + locale（单条动作 DeleteTemplate 就按这两者删，没有按 id 删的口子），
+// 而勾选框提交的是行的主键 id，所以这里先把 id 映射回 key / locale，再逐条调用**同一条**
+// DeleteTemplate —— 删除语义仍然只有 service / model 那一份，不在这里另写一套匹配条件
+// （抄一份 key+locale 的 where 就是两份真相，抄错时不会报错、只会删错行）。
+func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
+	ctx := c.Request.Context()
+	list, err := h.mail.ListTemplates(ctx, "")
+	if err != nil {
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "",
+			"读取模板列表失败，本次没有删除任何模板。"))
+		return
+	}
+	type templateRef struct{ key, locale string }
+	byID := make(map[uint64]templateRef, len(list))
+	for _, t := range list {
+		if t != nil {
+			byID[t.ID] = templateRef{key: t.TemplateKey, locale: t.Locale}
+		}
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		ref, ok := byID[shell.ParseUint(raw)]
+		if !ok {
+			skipped++
+			continue
+		}
+		if err := h.mail.DeleteTemplate(ctx, ref.key, ref.locale); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	done, warn := mailBulkOutcome("删除", "邮件模板", deleted, skipped)
+	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, done, warn))
+}
+
+// mailBulkOutcome 把「成功 N / 跳过 M」折成两条回带文案。
+//
+// 有跳过时走警告（?err=）而不是成功（?done=）：部分成功必须说出来，
+// 否则只看到「已删除 2 个」的人会以为选中的都删了。
+func mailBulkOutcome(verb, noun string, done, skipped int) (doneText, warnText string) {
+	switch {
+	case done == 0 && skipped == 0:
+		return "", ""
+	case skipped == 0:
+		return fmt.Sprintf("已%s %d 个%s。", verb, done, noun), ""
+	case done == 0:
+		return "", fmt.Sprintf("0 个%s被%s：%d 个被跳过（不存在或被服务端拒绝）。", noun, verb, skipped)
+	default:
+		return "", fmt.Sprintf("已%s %d 个%s，另有 %d 个被跳过（不存在或被服务端拒绝）。", verb, done, noun, skipped)
+	}
+}
+
+// mailBulkLocation 拼批量动作的回跳 URL：结论走 ?done= / ?err=（值经 urlQueryEscape），
+// backParams 里的表单字段原样带回 —— 批量改完被弹回未筛选的第一页，等于让人重新筛一遍。
+//
+// backParams 是「表单字段名 → URL 参数名」的配对而不是一份字段名清单：营销页表单里的
+// status 是**目标状态**，列表筛选参数也叫 status，同名直接回带会把筛选条件写成目标状态。
+func mailBulkLocation(c *gin.Context, path string, backParams [][2]string, doneText, warnText string) string {
+	parts := make([]string, 0, len(backParams)+1)
+	for _, p := range backParams {
+		formKey, queryKey := p[0], p[1]
+		if v := strings.TrimSpace(c.PostForm(formKey)); v != "" {
+			parts = append(parts, queryKey+"="+urlQueryEscape(v))
+		}
+	}
+	switch {
+	case warnText != "":
+		parts = append(parts, "err="+urlQueryEscape(warnText))
+	case doneText != "":
+		parts = append(parts, "done="+urlQueryEscape(doneText))
+	}
+	if len(parts) == 0 {
+		return path
+	}
+	return path + "?" + strings.Join(parts, "&")
 }

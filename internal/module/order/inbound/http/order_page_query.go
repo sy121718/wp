@@ -8,7 +8,6 @@ import (
 
 	orderenums "go_wp/internal/module/order/enums"
 
-	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/web/shell"
 )
 
@@ -25,14 +24,6 @@ func orderListWindow(c *gin.Context) (page, limit int) {
 		page = offset/limit + 1
 	}
 	return page, limit
-}
-
-// orderOperatorID 当前登录管理员 id（写进状态流转记录的操作人 id）。
-func orderOperatorID(c *gin.Context) uint64 {
-	if id := builtin.GetUserID(c); id > 0 {
-		return uint64(id)
-	}
-	return 0
 }
 
 // orderQueryID 解析 orderId 查询参数（非法即 0 = 不渲染详情块）。

@@ -1,4 +1,5 @@
-{* admin/theme_settings.html — 单主题设置：Woodmart 级全量设计令牌面板 *}
+{* admin/theme_settings.html — 单主题设置：Woodmart 级全量设计令牌面板
+   版式遵循 theme.css「后台页面骨架」段：标题与主行动进页头，正文零说明文字（说明进 .help）。 *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
 {* 提交键名严格对齐 backend SaveThemeSettings 的点分约定：
     colors.* / typography.{heading,body,link}.* / button.* / surface.* / motion.*
@@ -7,10 +8,22 @@
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.theme_settings.heading", "主题设置：") }}{{.ThemeName}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.theme_settings.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.theme_settings.notes", "所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量（--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、--sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——组件中 var(--sky-*) 全局生效；已发布页面需重新构建才会带新主题。页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。没有候选块？先到「全局块」新建页眉/页脚块。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <a class="btn" href="/admin/themes?project={{.ProjectID}}">{{ .["t"]("admin.theme_settings.back", "返回列表") }}</a>
+        </div>
+    </header>
+
     <section class="card card-body">
-        <h2>{{ .["t"]("admin.theme_settings.heading", "主题设置：") }}{{.ThemeName}}
-            <a class="btn" href="/admin/themes?project={{.ProjectID}}" style="float:right">{{ .["t"]("admin.theme_settings.back", "返回列表") }}</a>
-        </h2>
         {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
            用了 unsafe 输出真实 JSON 到 application/json 脚本块；服务端已由 ParseThemeSettings 校验过值安全。 *}
         <script type="application/json" id="theme-settings-json">{{ .ThemeSettings | unsafe }}</script>
@@ -82,12 +95,6 @@
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>
             </div>
         </form>
-    </section>
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.theme_settings.notes_heading", "说明") }}</h2>
-        <p class="text-mute text-sm">
-            {{ .["t"]("admin.theme_settings.notes", "所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量（--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、--sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——组件中 var(--sky-*) 全局生效；已发布页面需重新构建才会带新主题。页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。没有候选块？先到「全局块」新建页眉/页脚块。") }}
-        </p>
     </section>
 </div>
 <script>

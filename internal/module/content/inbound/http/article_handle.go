@@ -8,7 +8,9 @@ package contenthttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -128,8 +130,12 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	if err != nil {
 		pageErr = firstNonEmpty(pageErr, articleFacingError(c, err))
 	}
-	c.HTML(http.StatusOK, "admin/articles.html",
-		shell.Prepare(c, articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk)))
+	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk)
+	// 批量动作的结果走独立的 ?done=：本页的 ?err= 要过 articleFacingMessages 白名单
+	// （防数据库原文直出），带计数的动态文案登记不进白名单，走 err 会被换成兜底文案、
+	// 计数信息整块丢失。Jet 默认转义，回显是安全的。
+	data["Done"] = strings.TrimSpace(c.Query("done"))
+	c.HTML(http.StatusOK, "admin/articles.html", shell.Prepare(c, data))
 }
 
 // ArticleEditPage 文章编辑页（GET /admin/articles/edit?id=）；不带 id 即新建。
@@ -204,6 +210,44 @@ func (h *articlePageHandle) ArticleDelete(c *gin.Context) {
 		return
 	}
 	articleRedirectList(c, "", articleDeletedText)
+}
+
+// ArticlesBulkDelete 批量删除文章（POST /admin/articles/bulk-delete，权限点 content:delete）。
+//
+// 逐条走**同一条单条删除路径**（h.contents.Delete）：某一条失败不中断整批 ——
+// 批量操作因为一条失败就整批回滚时，用户会以为「一条都没删」然后反复重试。
+// 结果按「已删除 N 篇 / 跳过 M 篇」回带列表页（回带通道见 ArticlesPage 的 Done）。
+func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		articleRedirectList(c, berr.Error(), "")
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.contents.Delete(c.Request.Context(), &contentdto.DeleteReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusFound, "/admin/articles?done="+url.QueryEscape(articleBulkDeleteResult(deleted, skipped)))
+}
+
+// articleBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚，
+// 不能只报「操作完成」（部分成功被静默成全部成功，用户不会再去看剩下那几篇）。
+func articleBulkDeleteResult(deleted, skipped int) string {
+	switch {
+	case deleted == 0 && skipped == 0:
+		return "没有选中任何文章，列表未改动。"
+	case skipped == 0:
+		return fmt.Sprintf("已删除 %d 篇文章。", deleted)
+	case deleted == 0:
+		return fmt.Sprintf("%d 篇文章都未能删除，列表未改动。", skipped)
+	default:
+		return fmt.Sprintf("已删除 %d 篇，%d 篇未能删除（可能已被删除）。", deleted, skipped)
+	}
 }
 
 // ArticleScorePanel 渲染 SEO 评分侧栏片段（POST /admin/articles/score）。

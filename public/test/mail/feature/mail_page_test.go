@@ -157,7 +157,9 @@ func TestMailPageRendersEmpty(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("空状态页面状态码 %d", recorder.Code)
 	}
-	if !strings.Contains(recorder.Body.String(), "还没有配置发信账号") {
+	// 空态文案随第四轮后台改造统一成「标题 + 一句话」的 .empty-state 形态，
+	// 原文案是 hint 段落里的「还没有配置发信账号。…」。
+	if !strings.Contains(recorder.Body.String(), "还没有发信账号") {
 		t.Fatal("空状态提示缺失")
 	}
 }

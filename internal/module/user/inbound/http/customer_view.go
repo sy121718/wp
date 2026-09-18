@@ -1,6 +1,7 @@
 package userhttp
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -29,15 +30,18 @@ func customerListPageData(list *userdto.CustomerListResp, filter customerFilter,
 		}
 	}
 	return gin.H{
-		"title":             customerPageTitle,
-		"menu":              "customers",
-		"Rows":              rows,
-		"Total":             customerTotal(list),
-		"Page":              page,
-		"Limit":             limit,
-		"Counters":          counters,
-		"StatusOptions":     customerStatusOptions(filter.Status),
-		"VerifiedOptions":   customerVerifiedOptions(filter.EmailVerified),
+		"title":    customerPageTitle,
+		"menu":     "customers",
+		"Rows":     rows,
+		"Total":    customerTotal(list),
+		"Page":     page,
+		"Limit":    limit,
+		"Counters": counters,
+		// 计数徽章就是状态 / 邮箱 / 锁定三个维度的**筛选控件**（可点击链接，信息与操作合一）：
+		// 同一维度不再另配下拉 —— 两套控件表达同一维度时，用户无法确定它们是否等价。
+		"CounterTabs":       customerCounterTabs(counters, filter),
+		"FilterActive":      customerFilterActive(filter),
+		"FilterLocked":      filter.Locked,
 		"FilterKeyword":     filter.Keyword,
 		"FilterStatus":      filter.Status,
 		"FilterVerified":    filter.EmailVerified,
@@ -166,22 +170,90 @@ func customerRow(item *userdto.CustomerResp) gin.H {
 	return row
 }
 
-// customerStatusOptions 状态下拉（含「全部」，当前值预选）。
-func customerStatusOptions(selected int) []gin.H {
-	out := make([]gin.H, 0, len(customerStatusViews))
-	for _, v := range customerStatusViews {
-		out = append(out, gin.H{"Value": v.Value, "Label": v.Label, "Selected": v.Value == selected})
+// customerCounterTabs 页头计数徽章 → 可点击的筛选链接（信息与操作合一）。
+//
+// 为什么徽章与下拉不能并存（admin-ui-logic §7「同一维度只给一种筛选控件」）：
+// 两套控件表达同一个维度时，用户无法确定它们是否等价 —— 要么不敢点，
+// 要么点了发现结果对不上，最后两组控件都失去可信度。带计数的徽章胜出：
+// 它把「有多少个」与「看哪些」合并成了一个动作。
+//
+// URL 一律在这里生成（模板不拼查询串）：只动自己那个维度的参数，其余条件原样保留；
+// 「全部」清掉状态 / 邮箱 / 锁定三个维度的取值，回到「不按维度筛」（关键词与时间仍在）。
+// 计数为 0 的徽章同样可点 —— 点进去看到空列表是合理预期，禁用反而像功能坏了。
+func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilter) []gin.H {
+	setStatus := func(v int) func(url.Values) {
+		return func(q url.Values) {
+			if v == customerStatusAll {
+				q.Del("status")
+				return
+			}
+			q.Set("status", strconv.Itoa(v))
+		}
+	}
+	setVerified := func(v int) func(url.Values) {
+		return func(q url.Values) {
+			if v == userdto.EmailVerifiedAll {
+				q.Del("emailVerified")
+				return
+			}
+			q.Set("emailVerified", strconv.Itoa(v))
+		}
+	}
+	tabs := []struct {
+		Key      string
+		LabelKey string
+		Label    string
+		Count    int64
+		Badge    string
+		Active   bool
+		Apply    func(url.Values)
+	}{
+		{"all", "admin.customers.badge.all", "全部", counters.Total, "badge-mute",
+			filter.Status == customerStatusAll && filter.EmailVerified == userdto.EmailVerifiedAll && !filter.Locked,
+			func(q url.Values) { q.Del("status"); q.Del("emailVerified"); q.Del("locked") }},
+		{"active", "admin.customers.badge.active", "正常", counters.Active, "badge-success",
+			filter.Status == customerStatusActive, setStatus(customerStatusActive)},
+		{"disabled", "admin.customers.badge.disabled", "已停用", counters.Disabled, "badge-danger",
+			filter.Status == customerStatusDisabled, setStatus(customerStatusDisabled)},
+		{"pending", "admin.customers.badge.pending", "待激活", counters.Pending, "badge-warning",
+			filter.Status == customerStatusPending, setStatus(customerStatusPending)},
+		{"locked", "admin.customers.badge.locked", "已锁定", counters.Locked, "badge-info",
+			filter.Locked, func(q url.Values) { q.Set("locked", "1") }},
+		{"verified", "admin.customers.badge.verified", "邮箱已验证", counters.Verified, "badge-mute",
+			filter.EmailVerified == userdto.EmailVerifiedYes, setVerified(userdto.EmailVerifiedYes)},
+		{"unverified", "admin.customers.badge.unverified", "邮箱未验证", counters.Unverified, "badge-mute",
+			filter.EmailVerified == userdto.EmailVerifiedNo, setVerified(userdto.EmailVerifiedNo)},
+	}
+	out := make([]gin.H, 0, len(tabs))
+	for _, t := range tabs {
+		q := url.Values{}
+		for k, val := range customerFilterValues(filter) {
+			if val != "" {
+				q.Set(k, val)
+			}
+		}
+		t.Apply(q)
+		target := customerListPath
+		if len(q) > 0 {
+			target += "?" + q.Encode()
+		}
+		out = append(out, gin.H{
+			"Key": t.Key, "LabelKey": t.LabelKey, "Label": t.Label,
+			"Count": t.Count, "Badge": t.Badge, "Active": t.Active, "URL": target,
+		})
 	}
 	return out
 }
 
-// customerVerifiedOptions 邮箱验证下拉。
-func customerVerifiedOptions(selected int) []gin.H {
-	out := make([]gin.H, 0, len(customerEmailVerifiedViews))
-	for _, v := range customerEmailVerifiedViews {
-		out = append(out, gin.H{"Value": v.Value, "Label": v.Label, "Selected": v.Value == selected})
-	}
-	return out
+// customerFilterActive 当前是否带着筛选条件（空态文案据此给出不同的下一步：
+// 「筛太窄了」与「一个账号都还没有」是两件事，用一句话兜住会让运营白等）。
+func customerFilterActive(filter customerFilter) bool {
+	return strings.TrimSpace(filter.Keyword) != "" ||
+		filter.Status != customerStatusAll ||
+		filter.EmailVerified != userdto.EmailVerifiedAll ||
+		filter.Locked ||
+		strings.TrimSpace(filter.RegisteredFrom) != "" ||
+		strings.TrimSpace(filter.RegisteredTo) != ""
 }
 
 // customerFilterValues 列表页链接要保留的筛选条件（空值由 shell.FilterBaseURL 丢弃）。
@@ -190,6 +262,7 @@ func customerFilterValues(filter customerFilter) map[string]string {
 		"keyword":        filter.Keyword,
 		"status":         customerStatusQueryValue(filter.Status),
 		"emailVerified":  customerVerifiedQueryValue(filter.EmailVerified),
+		"locked":         customerLockedQueryValue(filter.Locked),
 		"registeredFrom": filter.RegisteredFrom,
 		"registeredTo":   filter.RegisteredTo,
 	}
@@ -202,6 +275,14 @@ func customerStatusQueryValue(status int) string {
 		return ""
 	}
 	return strconv.Itoa(status)
+}
+
+// customerLockedQueryValue 锁定筛选 → 查询参数值（不筛就不写进 URL）。
+func customerLockedQueryValue(locked bool) string {
+	if !locked {
+		return ""
+	}
+	return "1"
 }
 
 // customerVerifiedQueryValue 邮箱验证 → 查询参数值（0 = 全部，不写进 URL）。

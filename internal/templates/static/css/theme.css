@@ -263,7 +263,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .source-page .action-row .btn { width: 100%; }
 }
 
-
 /* ===== 采购入库（admin/inventory_purchases.html，issue #18） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
@@ -324,7 +323,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .masterdata-page .form-inline input[type="date"],
 .masterdata-page .form-inline select,
 .masterdata-page .form-inline .wbs { width: min(100%, 220px); }
-.masterdata-meta { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; }
+.masterdata-meta { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; word-break: break-all; }
 .masterdata-page-table { table-layout: fixed; }
 .masterdata-page-table th, .masterdata-page-table td { word-break: break-word; overflow-wrap: anywhere; }
 /* 手机：表格改堆叠块，列名用 data-label 回显；输入占满整行。 */
@@ -442,14 +441,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
    注：桥接给的是 width: 100%（基座控件口径），这里原本想要的 220px 固定宽度没有生效过，
    若要恢复那个布局意图，应在 ui.css 的桥接层声明（已记入待办）。 */
 
-
 /* ===== 主题设置页 ===== */
 .theme-color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .theme-color-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
 .theme-color-grid input[type=color] { width: 100%; height: 40px; padding: 2px; border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; background: var(--sky-c-surface, #fff); cursor: pointer; }
 .theme-actions { margin-top: 16px; }
 .theme-form h3 { margin: 16px 0 10px; font-size: 14px; }
-
 
 
 /* ==========================================================================
@@ -474,7 +471,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .list-toolbar .toolbar-spacer { flex: 1; }
 .hidden-form { display: none; }
-
 
 /* ==========================================================================
    侧边栏：一级图标栏（.rail）+ 二级递归树（.subnav）
@@ -600,7 +596,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .pagination-btn.is-active { background: var(--sky-c-primary-bg); color: var(--sky-c-primary); font-weight: 600; }
 .pagination-btn.is-disabled { color: var(--sky-c-text-faint); cursor: not-allowed; opacity: .6; }
 
-
 /* ==========================================================================
    图标选择器（WPIcons.picker）— 后台表单选图标，可不选
    ========================================================================== */
@@ -662,7 +657,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .sky-ip-clear:hover { color: var(--sky-c-danger, #dc2626); border-color: currentColor; }
 }
 
-
 /* ===== 商品定价工具（admin/product_pricing.html，issue #13） =====
    多端适配（硬规则）：
      · 表单行用 form-inline（flex + wrap，宽度 min(100%, 220px)），窄屏折行不撑破卡片；
@@ -702,7 +696,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     display: flex; align-items: center; gap: 8px;
     padding: 0 8px 10px; border-bottom: 1px solid var(--sky-c-border); margin-bottom: 10px;
 }
-
 
 /* 菜单列表图标列 */
 .col-icon { width: 44px; }
@@ -820,3 +813,332 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     .datarule-row { grid-template-columns: 1fr; }
     .datarule-row .btn { justify-self: start; }
 }
+
+/* ==========================================================================
+   后台页面骨架与信息密度治理（admin page shell）—— 设计评审治理层
+   ==========================================================================
+   评审结论（全站 39 个后台页面实测）：
+     · 领域说明被当正文渲染：settings 一页 1662 字 / 596px（0.66 屏），全站 17 页超 300 字；
+     · 一页多职能纵向堆叠：inventory 7 块、analytics 7 块、purchases/sources/blocks 各 5 块；
+     · 筛选独立成卡、列表无高度约束：orders 首屏 866px 零条数据；menus 一页 6.83 屏；
+     · 间距失序：.form-field 从未定义（字段零间距堆叠）、.hint 为 margin:0（紧贴输入框）。
+
+   本段只做「收口」，不改既有规则：新类由页面显式采用，老页面不受影响。
+   多端硬规则：宽度一律 min(100%, <设计宽度>)；触屏靠 :focus-within（:hover 包在 hover:hover 里）；
+   滚动高度用 dvh 并在窄屏放开；动效遵守 prefers-reduced-motion。
+   ========================================================================== */
+
+/* ── 1. 页头：标题 + 副标题 + 主动作，替代「把标题塞进第一个 card」 ───────── */
+.page-head {
+    display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+    gap: var(--ui-sp-md) var(--ui-sp-lg);
+    padding-bottom: var(--ui-sp-lg);
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.page-head-main { display: flex; flex-direction: column; gap: var(--ui-sp-xxs); min-width: 0; }
+/* 标题与它的说明必须同行：help 作为独立 flex 子项会被 space-between 推到页头中间，悬空。 */
+.page-title-row { display: flex; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
+.page-head h1, .page-title {
+    margin: 0; font-size: 20px; font-weight: 600; line-height: 1.35;
+    letter-spacing: -0.01em; color: var(--sky-c-text, #1a1d21);
+}
+.page-head .page-sub { margin: 0; font-size: 13px; line-height: 1.5; color: var(--sky-c-text-mute, #6b7280); }
+.page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); }
+/* 页头里的工程/站点切换：它是上下文选择器，不是表单字段，收窄以免抢焦点。 */
+.page-head .page-context { display: flex; align-items: center; gap: var(--ui-sp-sm); }
+/* 窄屏：页头改纵向堆叠，动作行独占一行并左对齐 ——
+   并排时标题、主行动、工程选择三者互相挤压（606px 实测标题与按钮只隔 5px 空白）。 */
+@media (max-width: 900px) {
+    .page-head { flex-direction: column; align-items: stretch; gap: var(--ui-sp-md); }
+    .page-head .page-actions { justify-content: flex-start; }
+    .page-head .page-context { flex: 1 1 auto; min-width: 0; }
+    .page-head .page-context .form-select, .page-head .page-context .wbs { width: 100%; }
+}
+.page-head .page-context .form-select, .page-head .page-context .wbs { width: min(100%, 240px); }
+
+/* ── 2. 领域说明：默认 0 高度，悬浮 / 聚焦展开 ──────────────────────────
+   说明文字承载的是「这个功能怎么设计的」（需求语言），日常操作不需要它占版面。
+   纯 CSS 可用的最简形态：<span class="help"><button class="help-btn">?</button><span class="help-pop">…</span></span>
+   键盘：Tab 聚焦按钮即展开；触屏：点按按钮（获得焦点）即展开；Esc / 外点关闭由 admin.js 增强。 */
+.help { position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
+.help-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; padding: 0; flex: none;
+    font-family: inherit; font-size: 11px; line-height: 1; font-weight: 600;
+    color: var(--sky-c-text-mute, #6b7280);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    border: 1px solid var(--sky-c-border-strong, #d1d5db); border-radius: 50%;
+    cursor: help;
+    transition: background var(--tr-fast), color var(--tr-fast), border-color var(--tr-fast);
+}
+.help-pop {
+    position: absolute; z-index: 50; top: calc(100% + 8px); left: 0;
+    display: none;
+    width: max-content; max-width: min(86vw, 440px);
+    padding: var(--ui-sp-md) var(--ui-sp-lg);
+    font-size: 13px; line-height: 1.75; font-weight: 400; text-align: left;
+    color: var(--sky-c-text-secondary, #4b5563);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: var(--ui-r-md);
+    box-shadow: var(--shadow-md);
+    white-space: normal;
+}
+.help-pop code {
+    padding: 1px 4px; font-size: 12px; border-radius: var(--r-xs);
+    background: var(--sky-c-bg-soft, #f4f5f6); color: var(--sky-c-text, #1a1d21);
+}
+.help-pop strong { color: var(--sky-c-text, #1a1d21); font-weight: 600; }
+.help:hover .help-pop, .help:focus-within .help-pop, .help[data-open] .help-pop { display: block; }
+/* 靠右边缘的说明往左展开，避免越出视口（页面在 .help 上标 data-align="end"）。 */
+.help[data-align="end"] .help-pop { left: auto; right: 0; }
+@media (hover: hover) {
+    .help-btn:hover { color: var(--sky-c-text, #1a1d21); border-color: var(--sky-c-primary-soft, #5b6572); }
+}
+.help-btn:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
+.help-btn:active { background: var(--sky-c-bg-active, #e4e4e4); }
+/* 触屏：hover 不成立，靠点按聚焦 —— 点按钮展开后，点页面别处任一控件即失焦收起。 */
+@media (hover: none) {
+    .help-btn { width: 22px; height: 22px; font-size: 12px; }
+}
+
+/* 说明文字的「收进行内」形态：标签旁边跟一个 ? ，正文不再另起一段。 */
+.field-label-row { display: flex; align-items: center; gap: var(--ui-sp-xs); min-width: 0; }
+.field-label-row > label { margin: 0; }
+
+/* ── 3. 表单字段节奏：补齐从未定义的 .form-field ─────────────────────── */
+.form-field { display: flex; flex-direction: column; gap: var(--ui-sp-xs); margin: 0 0 var(--ui-sp-lg); }
+.form-field > label, .form-field > .field-label-row { font-size: 13px; font-weight: 500; color: var(--sky-c-text-secondary, #4b5563); }
+.form-field > label { display: block; }
+.form-field .hint, .form-field .form-hint { margin-top: var(--ui-sp-xxs); }
+.form-field:last-child { margin-bottom: 0; }
+/* 字段多的表单：两列（宽屏）—— 一列铺到底会让页面长得像文档。 */
+.form-grid { display: grid; gap: var(--ui-sp-lg); grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
+/* 三列会让「站点名称」这种短字段挤成一条 —— 宽屏最多两列，窄屏自动落单列。 */
+@media (min-width: 1320px) { .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.form-grid > .form-field { margin-bottom: 0; }
+.form-grid .form-field--wide { grid-column: 1 / -1; }
+
+/* hint 自身：贴在同一字段下方时留出与输入框的呼吸，不再 margin:0 紧贴。 */
+.form-field > .hint, .form-field > .form-hint { line-height: 1.6; }
+
+/* ── 4. 列表卡：工具行 + 撑满剩余视口的滚动区 ────────────────────────── */
+.list-card { display: flex; flex-direction: column; min-height: 0; }
+/* 工具行并入列表卡（复用既有 .list-toolbar，这里补齐与卡片内边距的对齐）。 */
+.list-card > .list-toolbar, .list-card > .filter-bar { border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
+.filter-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
+    padding: var(--ui-sp-md) var(--ui-sp-lg);
+}
+.filter-bar .filter-search { flex: 1 1 200px; max-width: 320px; min-width: 0; }
+.filter-bar .filter-spacer { flex: 1 1 auto; }
+.filter-bar .form-select, .filter-bar .form-input, .filter-bar .wbs { width: min(100%, 200px); }
+.filter-bar .form-input.filter-search { width: 100%; }
+/* 「更多筛选」：次要条件收进原生 details，默认不占高度。 */
+.filter-more > summary {
+    display: inline-flex; align-items: center; gap: var(--ui-sp-xs);
+    padding: 6px 10px; font-size: 13px; color: var(--sky-c-text-mute, #6b7280);
+    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: var(--ui-r-sm);
+    cursor: pointer; list-style: none; background: transparent;
+}
+.filter-more > summary::-webkit-details-marker { display: none; }
+.filter-more > summary::after { content: '▾'; font-size: 10px; }
+.filter-more[open] > summary::after { content: '▴'; }
+.filter-more > .filter-bar { padding: 0; margin-top: var(--ui-sp-sm); flex-basis: 100%; }
+@media (hover: hover) { .filter-more > summary:hover { color: var(--sky-c-text, #1a1d21); background: var(--sky-c-bg-hover, #ececec); } }
+
+/* 表格滚动区：表头吸顶 + 高度封顶 —— 「列表被压得不能用」的直接解药。
+   默认最多占「视口减去页头/工具行/内边距」的剩余空间，最少 240px。 */
+.table-wrap.table-scroll, .table-scroll {
+    overflow: auto;
+    max-height: var(--list-max-h, max(240px, calc(100dvh - 300px)));
+    overscroll-behavior: contain;
+}
+.table-wrap.table-scroll thead th, .table-scroll thead th {
+    position: sticky; top: 0; z-index: 2;
+    /* 吸顶必须是不透明背景，否则行内容会从表头下透出来。 */
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    box-shadow: inset 0 -1px 0 var(--sky-c-border, #e5e7eb);
+}
+/* 窄屏：整页滚动 + 表格堆叠态是主路径，吸顶失去意义，放开高度让页面自然流动。 */
+@media (max-width: 720px) {
+    .table-wrap.table-scroll, .table-scroll { max-height: none; overflow-y: visible; }
+    .table-wrap.table-scroll thead th, .table-scroll thead th { position: static; box-shadow: none; }
+}
+
+/* ── 5. 空状态：一句话 + 一个主行动，不是又一坨说明 ───────────────────── */
+.empty-state {
+    display: flex; flex-direction: column; align-items: center; gap: var(--ui-sp-sm);
+    padding: var(--ui-sp-xxl) var(--ui-sp-lg); text-align: center;
+}
+.empty-state .empty-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--sky-c-text-secondary, #4b5563); }
+.empty-state .empty-desc { margin: 0; max-width: 46ch; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, #6b7280); }
+.empty-state .empty-actions { display: flex; flex-wrap: wrap; gap: var(--ui-sp-sm); justify-content: center; margin-top: var(--ui-sp-xs); }
+
+/* ── 6. 区块标题层级：h2 只做锚点，不再与页头 h1 抢等同重量 ────────────── */
+.card-body > h2:first-child { margin-top: 0; }
+/* ── 8. 区块标题与动作行的呼吸：h2 前必须有上间距 ─────────────────────
+   否则「联系邮箱」输入框下面直接贴上「搜索引擎与统计集成」，两个区块黏在一起。 */
+.card > h2, .card-body > h2 { margin: var(--ui-sp-xl) 0 var(--ui-sp-md); font-size: 15px; font-weight: 600; line-height: 1.4; }
+.card-body > .action-row { margin-top: var(--ui-sp-xl); }
+.card-body > .form-grid + h2, .card-body > form + h2 { margin-top: var(--ui-sp-xxl); }
+
+/* ── 9. 筛选行分组：一行放快捷筛选（状态徽章），一行放条件表单 ───────── */
+.filter-bar > .filter-row {
+    flex-basis: 100%;
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
+    min-width: 0;
+}
+.filter-bar > .filter-row + .filter-row { margin-top: var(--ui-sp-xxs); }
+
+/* ── 10. 详情键值对：把「标签 + 值」从松散文本变成可扫读的网格 ────────
+   订单 / 退货 / 客户详情原先是一串 <p>：客户、金额、时间、地址各占一行且行距不一致，
+   竖向读起来像段落。网格化之后同类信息横向对齐，标签固定、值可换行。 */
+.kv {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: var(--ui-sp-md) var(--ui-sp-xl);
+    margin: 0;
+}
+.kv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kv-item--wide { grid-column: 1 / -1; }
+.kv dt { margin: 0; font-size: 12px; font-weight: 500; color: var(--sky-c-text-mute, #6b7280); }
+.kv dd { margin: 0; font-size: 13px; line-height: 1.6; color: var(--sky-c-text, #1a1d21); overflow-wrap: anywhere; }
+.kv dd .badge { margin-right: var(--ui-sp-xs); }
+
+/* ── 11. 筛选区：项目名在左、控件在右，横向紧凑排列 ─────────────────────
+   第三轮修正（前两轮都做错了，记在这里避免再走回去）：
+     · 最初把筛选控件铺满一行、靠 placeholder 解释语义 —— 控件互相挤压且语义不清；
+     · 第二轮改成「一行一个条件」的固定网格 —— 宽屏上 4 个条件被拉成 4 行、右侧整片
+       留白，比原来更浪费（YG：「一个筛选一行，你想干嘛」）。
+   正解：每个条件是「label + 控件」的**紧凑单元**，横向排列、自动换行；
+   label 不换行、控件限宽，宽屏一行放 3~4 个，窄屏自动折行。
+   注意 .filter-fields 在 .filter-bar（flex 容器）里必须 flex: 1 1 100% 占满整行，
+   否则它会收缩到 min-content 退化成单列 —— 这正是第二轮「一行一个」的成因。 */
+.filter-bar > .filter-fields { flex: 1 1 100%; }
+.filter-fields {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: var(--ui-sp-sm) var(--ui-sp-xl);
+    min-width: 0;
+}
+.filter-field { display: flex; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
+.filter-field > label {
+    flex: none; font-size: 13px; white-space: nowrap;
+    color: var(--sky-c-text-mute, #6b7280);
+}
+.filter-field .form-select, .filter-field .form-input, .filter-field .form-textarea, .filter-field .wbs {
+    width: min(100%, 200px); min-width: 120px;
+}
+.filter-field .form-input.filter-search { width: min(100%, 260px); }
+/* 区间条件（时间区间、金额区间）的分隔符：不属于任何控件，只做视觉连接。 */
+.filter-sep { flex: none; color: var(--sky-c-text-mute, #6b7280); font-size: 13px; }
+.filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); }
+
+/* ── 10. 列表批量选择：首列勾选框 + 全选 + 选中态 + 批量条 ──────────────
+   勾选在最左、操作在最右：两个高频热区不打架，中间留给数据。
+   批量动作与勾选框同属一个 form（<form> 包 <table> 是合法的），
+   所以这里只负责视觉与计数，提交路径不需要注入隐藏域（见 admin.js 同段逻辑）。 */
+.data-table .col-check { width: 1%; padding-left: var(--ui-sp-lg); padding-right: 0; }
+.data-table .col-check input[type="checkbox"] {
+    display: block; width: 16px; height: 16px; margin: 0;
+    cursor: pointer; accent-color: var(--sky-c-primary, #3d444f);
+}
+.data-table tbody tr.is-selected,
+.data-table tbody tr.is-selected:hover { background: var(--sky-c-bg-active, #eceff2); }
+.bulk-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
+    padding: var(--ui-sp-sm) var(--ui-sp-lg);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.bulk-bar[hidden] { display: none; }
+.bulk-bar .bulk-count { font-size: 13px; font-weight: 500; color: var(--sky-c-text-secondary, #4b5563); }
+
+/* ── 11. 概览统计卡：一行 N 个数字，窄屏自动落行 ────────────────────────
+   数字是给人扫的，不是给人读的：标签小、数值大、口径说明一行小字。
+   min(100%, 180px) 保证窄屏不会把数值挤出卡片（不用经验比例 25%）。 */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    gap: var(--ui-sp-md);
+}
+.stat-card { padding: var(--ui-sp-md) var(--ui-sp-lg); }
+.stat-label { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
+.stat-value {
+    margin-top: var(--ui-sp-xxs); font-size: 26px; font-weight: 600;
+    line-height: 1.2; letter-spacing: -0.02em; color: var(--sky-c-text, #1a1d21);
+}
+.stat-note { margin-top: 2px; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.stat-note.tone-warn { color: var(--sky-c-warning, #8a6d3b); }
+.stat-note.tone-ok { color: var(--sky-c-success, #3f6b4f); }
+
+/* ── 12. 描述类字段的控件基座：富文本容器与字数提示 ────────────────────
+   控件选型见 admin-ui-logic §9 —— 可含格式的多段描述用 Trix 富文本
+   （.rich-editor，落库前过 core.SanitizeRichHTML 白名单清洗）；
+   meta 类字段（SEO 标题 / 描述）必须是纯文本，用 textarea + 实时字数提示：
+   搜索引擎读的是纯文本，富文本标签会直接进 meta。 */
+.rich-editor {
+    display: block; min-height: 148px; padding: var(--ui-sp-sm) var(--ui-sp-md);
+    font-size: 14px; line-height: 1.7;
+    color: var(--sky-c-text, #1a1d21);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border-input, #c6ccd4);
+    border-radius: var(--ui-r-md);
+}
+.rich-editor:focus, .rich-editor:focus-visible {
+    outline: none; border-color: var(--sky-c-primary, #3d444f);
+    box-shadow: 0 0 0 3px var(--sky-c-primary-bg, #eceef1);
+}
+/* 字数提示：上限是**建议值**，超出转警告色而不是拦截输入
+   （meta 长度影响的是搜索结果里的展示截断，不是能不能存）。 */
+.field-counter {
+    display: block; margin-top: 2px; font-size: 12px; line-height: 1.5;
+    color: var(--sky-c-text-mute, #6b7280);
+}
+.field-counter.is-over { color: var(--sky-c-warning, #8a6d3b); }
+
+/* ── 13. 列表卡的标题行 ────────────────────────────────────────────────
+   .fold-title 只在 .section-fold > summary 里有效，被列表卡标题借用时是零样式
+   （能跑，但没有字体权重，看上去像普通正文）。这里给列表卡自己的标题定样式。 */
+.list-card .filter-bar .card-title,
+.list-card .list-toolbar .card-title {
+    margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4;
+    color: var(--sky-c-text, #1a1d21);
+}
+
+/* ── 14. 表格里的父实体分组行 ──────────────────────────────────────────
+   一张表按父实体分段时（如「变体」表按商品分组、明细表按单据分组），
+   段首行是合并整行的标题行。选择器用 td[colspan] —— 分组行必须合并整行，
+   常规数据行不会用到 colspan；空态行同样合并整行，样式上兼容。 */
+.data-table tbody tr > td[colspan] {
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    font-weight: 600;
+    color: var(--sky-c-text, #1a1d21);
+}
+
+/* 极窄屏：每个条件独占一行，控件拉到满宽（触摸目标不缩小）。 */
+@media (max-width: 560px) {
+    .filter-field { flex: 1 1 100%; }
+    .filter-field .form-select, .filter-field .form-input, .filter-field .wbs { width: 100%; }
+}
+
+.card-body > h3 { margin: var(--ui-sp-lg) 0 var(--ui-sp-sm); font-size: 14px; font-weight: 600; }
+
+/* ── 7. 次要职能折叠区：一个页面里多职能时，非主职能默认收起 ──────────── */
+.section-fold > summary {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
+    padding: var(--ui-sp-lg) clamp(16px, 2vw, 24px);
+    cursor: pointer; list-style: none;
+}
+.section-fold > summary::-webkit-details-marker { display: none; }
+.section-fold > summary::after { content: '▾'; margin-left: auto; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.section-fold[open] > summary::after { content: '▴'; }
+.section-fold > summary .fold-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, #1a1d21); }
+.section-fold > summary .fold-note { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
+.section-fold[open] > summary { border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
+.section-fold > .fold-body { padding: 0 clamp(16px, 2vw, 24px) clamp(16px, 2vw, 24px); }
+/* 折叠区自身是卡片时（<details class="section-fold card">），
+   summary 与 fold-body 承担内边距，卡片不再叠一层 .card-body。 */
+.section-fold.card > summary { padding: var(--ui-sp-lg) clamp(16px, 2vw, 24px); }
+.section-fold.card > .fold-body { padding: 0 clamp(16px, 2vw, 24px) var(--ui-sp-lg); }
+@media (hover: hover) { .section-fold > summary:hover { background: var(--sky-c-bg-hover, #ececec); } }
+

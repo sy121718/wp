@@ -319,3 +319,247 @@
         document.body.addEventListener('htmx:timeout', function (e) { report(e, 'timeout'); });
     })();
 })();
+
+/* ==========================================================================
+   说明浮层（.help）：领域说明默认不占版面，「?」按钮 hover / 聚焦展开。
+   样式在 theme.css 的「后台页面骨架」段，纯 CSS 已能 hover / focus-within 展开 ——
+   这里只补三件 CSS 做不到的事：Esc 收起、点页面别处收起、贴右边缘时自动左翻。
+   ========================================================================== */
+(function () {
+    'use strict';
+
+    function popOf(host) { return host.querySelector('.help-pop'); }
+    function btnOf(host) { return host.querySelector('.help-btn'); }
+
+    function close(host) {
+        if (!host) return;
+        host.removeAttribute('data-open');
+        var b = btnOf(host);
+        if (b) b.setAttribute('aria-expanded', 'false');
+    }
+    function closeAll(except) {
+        var open = document.querySelectorAll('.help[data-open]');
+        for (var i = 0; i < open.length; i++) {
+            if (open[i] !== except) close(open[i]);
+        }
+    }
+    // 贴右边缘的说明往左展开：展开态才有真实盒尺寸，所以先展开再校正。
+    function align(host) {
+        var pop = popOf(host);
+        if (!pop) return;
+        host.removeAttribute('data-align');
+        var r = pop.getBoundingClientRect();
+        if (r.right > window.innerWidth - 8) host.setAttribute('data-align', 'end');
+    }
+
+    document.addEventListener('click', function (e) {
+        var host = e.target && e.target.closest ? e.target.closest('.help') : null;
+        if (!host) { closeAll(null); return; }
+        if (!e.target.closest('.help-btn')) { closeAll(host); return; }
+        var on = host.hasAttribute('data-open');
+        closeAll(host);
+        if (on) { close(host); return; }
+        host.setAttribute('data-open', '');
+        var b = btnOf(host);
+        if (b) b.setAttribute('aria-expanded', 'true');
+        align(host);
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' || e.key === 'Esc') closeAll(null);
+    });
+
+    // Tab 走开时同步收起 aria 状态（视觉收起已由 :focus-within 负责）。
+    document.addEventListener('focusin', function (e) {
+        var host = e.target && e.target.closest ? e.target.closest('.help') : null;
+        closeAll(host);
+    });
+
+    // 鼠标路径也校正一次对齐：CSS :hover 展开时没有 data-open，只有这一次机会量。
+    document.addEventListener('mouseover', function (e) {
+        var host = e.target && e.target.closest ? e.target.closest('.help') : null;
+        if (!host || host.hasAttribute('data-align') || host.dataset.helpAligned) return;
+        host.dataset.helpAligned = '1';
+        align(host);
+    });
+})();
+
+/* 描述类字段的字数提示（评审规则 admin-ui-logic §9）。
+   控件上标 data-counter="<建议上限>"，配套输出元素 data-counter-out="<控件 id>"。
+   上限只是**建议值**：超出转警告色，不拦截输入 —— SEO 标题 / 描述超长影响的是
+   搜索结果里的展示截断，不是能不能存。 */
+(function () {
+    // 注意：这里**不能**写「页面加载时找不到字段就直接 return」——描述字段几乎都在抽屉里，
+    // 而抽屉内容打开时才进 DOM，初始化时一个都没有。提前返回会把下面的委托监听器
+    // 一起跳过，表现是「计数永远是空的」，而且刷新页面不会好（每次加载都提前返回）。
+    function refresh(el) {
+        var out = document.querySelector('[data-counter-out="' + el.id + '"]');
+        if (!out) return;
+        var max = parseInt(el.getAttribute('data-counter'), 10) || 0;
+        var n = (el.value || '').length;
+        var tpl = out.getAttribute('data-counter-template') || '{n} / {max}';
+        out.textContent = tpl.replace('{n}', String(n)).replace('{max}', String(max));
+        out.classList.toggle('is-over', max > 0 && n > max);
+    }
+
+    // 事件委托 + 抽屉打开时补初始化：描述字段主要出现在抽屉里，而抽屉内容是
+    // 打开时才从 <template> 克隆进 DOM 的 —— 只在页面加载时 querySelectorAll 一次，
+    // 这些字段永远绑不上（表现为计数一直是空的）。
+    document.addEventListener('input', function (e) {
+        var t = e.target;
+        if (t && t.hasAttribute && t.hasAttribute('data-counter')) refresh(t);
+    });
+    document.addEventListener('wbui:drawer-open', function () {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-counter]'), refresh);
+    });
+    // 注意这里不要把初始化写成「遍历页面加载时找到的字段」——那需要提前查一次
+    // querySelectorAll，而抽屉里的字段那时还不存在；真正生效的是上面两个委托监听器。
+})();
+
+/* 列表客户端筛选：输入即过滤行，不发请求。
+   模板契约：输入框标 [data-filter-input]，可筛选的行标 [data-filter-text="参与匹配的文本"]，
+   可选的结果为空提示标 [data-filter-empty]。
+   作用域取最近的 .list-card / .card / form —— 一个页面可能有多张列表，互不干扰。
+   匹配规则：关键词按空白分词，**全部命中**才算匹配（AND），不区分大小写。
+   背景：模板里长期写着「admin.js 按 data-filter-text 匹配」但实现从未落地，
+   于是「筛选框」是个死控件 —— 能输入、无反应，且不会报错。 */
+(function () {
+    function filterScope(el) {
+        return (el.closest && el.closest('.list-card, .card, form')) || document;
+    }
+
+    function applyFilter(input) {
+        var scope = filterScope(input);
+        var raw = (input.value || '').trim().toLowerCase();
+        var terms = raw ? raw.split(/\s+/) : [];
+        var rows = scope.querySelectorAll('[data-filter-text]');
+        var shown = 0;
+        Array.prototype.forEach.call(rows, function (row) {
+            var hay = (row.getAttribute('data-filter-text') || '').toLowerCase();
+            var hit = true;
+            for (var i = 0; i < terms.length; i++) {
+                if (hay.indexOf(terms[i]) < 0) { hit = false; break; }
+            }
+            row.hidden = !hit;
+            if (hit) shown++;
+            // 被筛掉的行不参与批量提交：hidden 只影响显示，浏览器照样会提交隐藏表格行里的
+            // checkbox（用 hidden 属性判断做不到）。所以筛掉时把该行的勾选一并撤销，
+            // 并让 change 冒泡通知下面的批量选择模块刷新计数与全选态。
+            if (!hit && row.querySelector) {
+                var box = row.querySelector('[data-check-item]');
+                if (box && box.checked) {
+                    box.checked = false;
+                    box.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        });
+        // 空结果提示：让「被筛掉了」与「本来就没数据」在界面上可区分。
+        var note = scope.querySelector('[data-filter-empty]');
+        if (note) note.hidden = !(terms.length > 0 && shown === 0);
+    }
+
+    document.addEventListener('input', function (e) {
+        var t = e.target;
+        if (t && t.hasAttribute && t.hasAttribute('data-filter-input')) applyFilter(t);
+    });
+    // 抽屉注入的列表同样适用（与字数提示同一考虑：不能只在页面加载时绑一次）。
+    document.addEventListener('wbui:drawer-open', function () {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-filter-input]'), applyFilter);
+    });
+})();
+
+/* 标签页（评审规则 admin-ui-logic §7 附则）：同一数据的多视图切换。
+   按 WAI-ARIA tabs 模式实现 —— 点击切换，左右方向键在标签间移动，Home/End 到首尾，
+   选中态用 aria-selected，面板用 hidden 控制（不用 display:none 内联样式，
+   否则打印与"仅 CSS 可见性"的断言都会失真）。
+   面板在服务端全部渲染好，切换是纯前端行为，不产生请求。 */
+(function () {
+    var roots = document.querySelectorAll('[data-tabs]');
+    if (!roots.length) return;
+
+    function activate(root, target) {
+        var tabs = root.querySelectorAll('[role="tab"]');
+        Array.prototype.forEach.call(tabs, function (t) {
+            var on = t === target;
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+            t.setAttribute('tabindex', on ? '0' : '-1');
+            var id = t.getAttribute('aria-controls');
+            var panel = id ? root.querySelector('#' + id) : null;
+            if (panel) panel.hidden = !on;
+        });
+    }
+
+    Array.prototype.forEach.call(roots, function (root) {
+        var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+        tabs.forEach(function (t, i) {
+            t.addEventListener('click', function () {
+                activate(root, t);
+                t.focus();
+            });
+            t.addEventListener('keydown', function (e) {
+                var next = null;
+                if (e.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+                else if (e.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
+                else if (e.key === 'Home') next = tabs[0];
+                else if (e.key === 'End') next = tabs[tabs.length - 1];
+                if (!next) return;
+                e.preventDefault();
+                activate(root, next);
+                next.focus();
+            });
+        });
+    });
+})();
+
+/* 列表批量选择（评审规则 admin-ui-logic §7）：全选联动 + 选中计数 + 批量条显隐 + 行选中态。
+   勾选框本身就是批量表单的字段（name="ids"），所以这里只做视觉与计数 ——
+   提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
+   作用域取勾选框所在的 form：一个页面可以有多个列表，互不干扰。 */
+(function () {
+    var boxes = document.querySelectorAll('[data-check-all]');
+    if (!boxes.length) return;
+
+    function scopeOf(el) {
+        return (el.closest && el.closest('form')) || document;
+    }
+
+    function refresh(scope) {
+        var items = scope.querySelectorAll('[data-check-item]');
+        var checked = 0;
+        Array.prototype.forEach.call(items, function (it) {
+            var tr = it.closest ? it.closest('tr') : null;
+            if (tr) tr.classList.toggle('is-selected', !!it.checked);
+            if (it.checked) checked++;
+        });
+        var box = scope.querySelector('[data-check-all]');
+        if (box) {
+            box.checked = checked > 0 && checked === items.length;
+            box.indeterminate = checked > 0 && checked < items.length;
+        }
+        var bar = scope.querySelector('[data-bulk-bar]');
+        if (bar) bar.hidden = checked === 0;
+        var count = scope.querySelector('[data-bulk-count]');
+        if (count) {
+            var tpl = count.getAttribute('data-bulk-template') || '已选 {n} 项';
+            count.textContent = tpl.replace('{n}', String(checked));
+        }
+    }
+
+    Array.prototype.forEach.call(boxes, function (box) {
+        box.addEventListener('change', function () {
+            var scope = scopeOf(box);
+            Array.prototype.forEach.call(scope.querySelectorAll('[data-check-item]'), function (it) {
+                it.checked = box.checked;
+            });
+            refresh(scope);
+        });
+    });
+
+    // 行首勾选框没有属性值，getAttribute('data-check-item') 返回空串（falsy），
+    // 必须用 hasAttribute 判断是否存在 —— 否则单行勾选静默失效（全选仍正常，极易漏测）。
+    document.addEventListener('change', function (e) {
+        var t = e.target;
+        if (!t || !t.hasAttribute || !t.hasAttribute('data-check-item')) return;
+        refresh(scopeOf(t));
+    });
+})();

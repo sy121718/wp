@@ -2,6 +2,9 @@
 {* 与商品翻译工作台同构：按文章分组、逐字段给原文与译文、整表提交。 *}
 {* 关键约定：每个字段块内必须同时输出 rowContext / rowHash / rowTarget 且顺序一致 —— *}
 {* 保存端用 PostFormArray 按位置对齐三组值，错位会把译文写到别的字段上。 *}
+{* 版式遵循后台页壳标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
+     · 两段领域说明进页头 .help 悬浮，正文零说明文字；
+     · 语言切换与「保存译文」同一行置于 .page-head（保存按钮用 form="<id>" 关联整表表单）。 *}
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
@@ -12,43 +15,63 @@
 {* range 内 . 指向元素，取不到根数据的 t 函数，故先存成变量 tr，在 range 内用它取词。 *}
 {{tr := .["t"]}}
 <div class="stack">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.article.translations.heading", "文章翻译") }}</h2>
-        <p class="hint">{{ .["t"]("admin.article.translations.addressHint", "译文只按「原文 + 语境」寻址，所以同一句话在多篇文章里共用一份译文；改原文后旧译文自动失效（按内容哈希比对），构建期回退原文，不会出现错位的译文。") }}</p>
-        <p class="hint">{{ .["t"]("admin.article.translations.richHint", "正文是富文本：译文需与原文**形态一致**（原文含 HTML 标签时译文也要含）。标签白名单在构建期统一清洗，这里只挡住「整段丢了标签」这类明显错误。") }}</p>
-        {{if .Saved}}<p class="hint" role="status">{{.SavedNote}}</p>{{end}}
-        {{if len(errors) > 0}}
-        <ul class="hint" role="alert">
-            {{range _, e := errors}}<li>{{e}}</li>{{end}}
-        </ul>
-        {{end}}
-        <p class="hint">{{ .["t"]("admin.article.translations.summaryLead", "共 ") }}{{.Total}}{{ .["t"]("admin.article.translations.summaryArticles", " 篇文章 / ") }}{{.RowCount}}{{ .["t"]("admin.article.translations.summaryFields", " 个可翻译字段，已翻译 ") }}{{.Done}}{{ .["t"]("admin.article.translations.summaryTail", " 个。") }}</p>
-        <form method="get" action="/admin/articles/translations" class="row">
-            <select name="lang">
-                {{range _, l := langs}}
-                <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
-                {{end}}
-            </select>
-            <button type="submit" class="btn btn-secondary">{{ .["t"]("admin.article.translations.switchLang", "切换语言") }}</button>
-        </form>
-    </section>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.article.translations.heading", "文章翻译") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.translations.addressHint", "译文只按「原文 + 语境」寻址，所以同一句话在多篇文章里共用一份译文；改原文后旧译文自动失效（按内容哈希比对），构建期回退原文，不会出现错位的译文。") }}<br><br>{{ .["t"]("admin.article.translations.richHint", "正文是富文本：译文需与原文形态一致（原文含 HTML 标签时译文也要含）。标签白名单在构建期统一清洗，这里只挡住「整段丢了标签」这类明显错误。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <span class="badge badge-mute">{{ .["t"]("admin.article.translations.summaryLead", "共 ") }}{{.Total}}{{ .["t"]("admin.article.translations.summaryArticles", " 篇文章 / ") }}{{.RowCount}}{{ .["t"]("admin.article.translations.summaryFields", " 个可翻译字段，已翻译 ") }}{{.Done}}{{ .["t"]("admin.article.translations.summaryTail", " 个。") }}</span>
+            <form class="page-context" method="get" action="/admin/articles/translations">
+                <label class="sr-only" for="article-tr-lang">{{ .["t"]("admin.article.translations.lang_label", "语言") }}</label>
+                <select class="form-select" id="article-tr-lang" name="lang" onchange="this.form.submit()">
+                    {{range _, l := langs}}
+                    <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
+                    {{end}}
+                </select>
+                <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.article.translations.switchLang", "切换语言") }}</button></noscript>
+            </form>
+            {{if len(groups) > 0}}
+            <button type="submit" form="article-translations-form" class="btn btn-primary">{{ .["t"]("admin.article.translations.saveSubmit", "保存译文") }}</button>
+            {{end}}
+        </div>
+    </header>
 
-    {{if len(groups) > 0}}
-    <form method="post" action="/admin/articles/translations/save">
+    {{if .Saved}}<p class="badge badge-success" role="status">{{.SavedNote}}</p>{{end}}
+    {{if len(errors) > 0}}
+    <div class="tr-alert" role="alert">
+        <ul class="list-reset">{{range _, e := errors}}<li>{{e}}</li>{{end}}</ul>
+    </div>
+    {{end}}
+
+    {{if len(groups) == 0}}
+    <section class="card list-card">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.article.translations.empty.title", "没有可翻译的文章内容") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.article.translations.empty.desc", "先在「文章」页写正文与标题，再回来填译文。") }}</p>
+        </div>
+    </section>
+    {{else}}
+    <form id="article-translations-form" method="post" action="/admin/articles/translations/save">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="lang" value="{{lang}}">
         {{range _, g := groups}}
         <section class="card card-body">
-            <h3>{{g.Title}}</h3>
-            <p class="hint">{{g.Subtitle}}</p>
+            <h2>{{g.Title}}</h2>
+            <p class="text-mute text-sm">{{g.Subtitle}}</p>
             {{range _, r := g.Rows}}
             <div class="field">
                 <label>{{r.FieldLabel}}{{if r.Translated}} · {{tr("admin.article.translations.hasTarget", "已有译文")}}{{end}}</label>
-                <p class="hint">{{tr("admin.article.translations.sourceLabel", "原文：")}}{{r.Source}}</p>
+                <span class="text-mute text-sm">{{tr("admin.article.translations.sourceLabel", "原文：")}}{{r.Source}}</span>
                 {{if r.Rich}}
-                <textarea name="rowTarget" rows="5">{{r.Target}}</textarea>
+                <textarea class="form-textarea" name="rowTarget" rows="5">{{r.Target}}</textarea>
                 {{else}}
-                <input type="text" name="rowTarget" value="{{r.Target}}">
+                <input type="text" class="form-input" name="rowTarget" value="{{r.Target}}">
                 {{end}}
                 <input type="hidden" name="rowContext" value="{{r.Context}}">
                 <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
@@ -56,7 +79,6 @@
             {{end}}
         </section>
         {{end}}
-        <button type="submit" class="btn">{{ .["t"]("admin.article.translations.saveSubmit", "保存译文") }}</button>
     </form>
     {{end}}
 </div>

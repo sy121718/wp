@@ -89,9 +89,12 @@ const (
 	// 内容更新（POST /api/content/update）
 	ContentUpdate Perm = "content:update"
 
-	// —— contenttemplate（4）——
+	// —— contenttemplate（5）——
 	// 模板创建（POST /api/contenttemplate/create）
 	ContenttemplateCreate Perm = "contenttemplate:create"
+	// 模板删除（POST /api/contenttemplate/delete）。后台列表页的批量删除也走这一条：
+	// 删除会连带清掉该模板的全部历史版本与组件版本锁定行，被自动发布实例引用的会被拒绝。
+	ContenttemplateDelete Perm = "contenttemplate:delete"
 	// 模板详情（GET /api/contenttemplate/get）
 	ContenttemplateGet Perm = "contenttemplate:get"
 	// 模板列表（GET /api/contenttemplate/list）
@@ -662,6 +665,7 @@ var specs = map[Perm]spec{
 
 	// —— contenttemplate ——
 	ContenttemplateCreate: {module: "contenttemplate", name: "模板创建"},
+	ContenttemplateDelete: {module: "contenttemplate", name: "模板删除"},
 	ContenttemplateGet:    {module: "contenttemplate", name: "模板详情"},
 	ContenttemplateList:   {module: "contenttemplate", name: "模板列表"},
 	ContenttemplateUpdate: {module: "contenttemplate", name: "模板更新"},

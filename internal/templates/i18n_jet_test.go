@@ -407,7 +407,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	base := map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"), "title": "文案词条",
 		"t": TranslateFunc("zh-CN"), "csrf_token": "tok",
-		"Total": 1, "Page": 1, "Pages": 1,
+		"PermSet": map[string]bool{"i18n:manage": true},
 		"Keyword": "", "LangFilter": "", "CatFilter": "",
 		"Saved": "site.component.gallery.prev · en-US", "Errored": "",
 		"Entries": []i18n.Entry{{
@@ -420,33 +420,56 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
+	// 断言覆盖新版式的三处要点：领域说明进 .help（不再铺在首屏）、筛选并入列表卡、
+	// 行内编辑 / 删除与新建抽屉模板都在（原版这三块分散在三张卡里）。
 	for _, want := range []string{
-		"文案词条", "site.component.gallery.prev", "Previous",
-		"共 1 条，第 1 / 1 页",
-		"新增 / 编辑", "/admin/i18n/save", "/admin/i18n/delete",
-		"csrf_token",
+		"文案词条", "page-head", "help-pop",
+		"filter-bar", "table-scroll", "data-table",
+		"site.component.gallery.prev", "Previous",
+		"/admin/i18n/save", "/admin/i18n/delete", "csrf_token",
+		`data-drawer-open="#tpl-i18n-create"`, "tpl-i18n-create",
+		`data-drawer-open="#tpl-i18n-edit-0"`, "tpl-i18n-edit-0",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("词条页缺少 %q（模板可能中途中断）", want)
 		}
 	}
 
-	// 空分类 / 空列表：模板仍应完整渲染（不依赖任何可选键存在）。
+	// 空分类 / 空列表：列表区退化为空状态，但新建抽屉模板必须仍在 ——
+	// 否则运营连第一条词条都建不出来。
 	empty := map[string]any{}
 	for k, v := range base {
 		empty[k] = v
 	}
 	empty["Entries"] = []i18n.Entry{}
 	empty["Categories"] = []string{}
-	empty["Total"] = 0
-	empty["Pages"] = 0
 	empty["Saved"] = ""
 	out, err = render(t, set, "admin/i18n", empty)
 	if err != nil {
 		t.Fatalf("空列表渲染失败: %v", err)
 	}
-	if !strings.Contains(out, "新增 / 编辑") {
-		t.Fatalf("空列表时保存表单仍应渲染（否则运营无法新增第一条）")
+	for _, want := range []string{"empty-state", "tpl-i18n-create"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("空列表缺少 %q", want)
+		}
+	}
+
+	// 无 i18n:manage 权限：管理入口（编辑 / 新建）必须消失，但列表与筛选照常 ——
+	// 权限缺失要 fail closed，页面上不该留下点了会被拒的按钮。
+	readonly := map[string]any{}
+	for k, v := range base {
+		readonly[k] = v
+	}
+	readonly["PermSet"] = map[string]bool{}
+	out, err = render(t, set, "admin/i18n", readonly)
+	if err != nil {
+		t.Fatalf("无管理权限渲染失败: %v", err)
+	}
+	if strings.Contains(out, "data-drawer-open") {
+		t.Fatalf("无 i18n:manage 权限时不应出现编辑 / 新建抽屉入口")
+	}
+	if !strings.Contains(out, "filter-bar") || !strings.Contains(out, "site.component.gallery.prev") {
+		t.Fatalf("无管理权限时列表与筛选仍应渲染")
 	}
 }
 

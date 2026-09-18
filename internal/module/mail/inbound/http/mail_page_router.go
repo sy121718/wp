@@ -30,12 +30,19 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	pages.POST("/mail/account/test", builtin.CasbinMiddlewareForPath("/api/mail/account/test"), mailPage.MailAccountTest)
 	pages.POST("/mail/template/save", builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
 	pages.POST("/mail/template/delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
+	// 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）。
+	// 权限点与对应单条动作**完全同源**（同一个 CasbinMiddlewareForPath、同一组 API 路径），
+	// 不新增权限点、不写迁移 —— 单列一条策略就等于把「能删一个」的人挡在批量外。
+	pages.POST("/mail/accounts/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountsBulkDelete)
+	pages.POST("/mail/templates/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplatesBulkDelete)
 	pages.GET("/mail/marketing", mailPage.MailMarketingPage)
 	pages.POST("/mail/contact/import", builtin.CasbinMiddlewareForPath("/api/mail/contact/import"), mailPage.MailContactImport)
 	pages.POST("/mail/contact/status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactStatus)
+	pages.POST("/mail/contacts/bulk-status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactsBulkStatus)
 	pages.POST("/mail/campaign/save", builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
 	pages.POST("/mail/campaign/start", builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
 	pages.POST("/mail/campaign/delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignDelete)
+	pages.POST("/mail/campaigns/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignsBulkDelete)
 	// 活动报表（#38 P1）：打开 / 点击 / 退订与收件人明细。报表是只读，权限沿用活动列表。
 	pages.GET("/mail/campaign", mailPage.MailCampaignPage)
 	// 自动化（#38 P3，目标 ⑦）：表单式流程编辑 + 实例排障。

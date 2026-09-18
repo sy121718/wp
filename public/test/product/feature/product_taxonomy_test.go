@@ -30,6 +30,7 @@ import (
 
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	"go_wp/public/migrations"
 )
@@ -371,6 +372,14 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 页头主行动与行内编辑 / 删除按钮按权限渲染（shell.Prepare 读 PermSetKey）：
+	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在写入口」这类断言保持有效。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{
+			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
+			"product:category_create": true, "product:category_update": true, "product:category_delete": true,
+		})
+	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/product-categories", handle.ProductCategoriesPage)
@@ -379,6 +388,8 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/product-brands", handle.ProductBrandsPage)
 	engine.POST("/admin/product-brands/create", handle.ProductBrandsCreate)
 	engine.GET("/admin/products", handle.ProductsPage)
+	// 商品级表单（分类 / 品牌 / 标签）已整块移到商品详情页，这里一并注册。
+	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.POST("/admin/products/taxonomy", handle.ProductsTaxonomySet)
 	return engine, f
 }
@@ -414,7 +425,9 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("分类页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"商品分类", "男装", "衬衫", "men", "shirts", "新建分类", "删除分类"} {
+	// 行内按钮文案随改造按「动词 + 对象」收紧：行内不再重复实体名，
+	// 「删除分类」= 行内「删除」（「新建分类」是页头主行动的按钮文案，保留）。
+	for _, want := range []string{"商品分类", "男装", "衬衫", "men", "shirts", "新建分类", ">删除</button>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("分类页缺少 %q", want)
 		}
@@ -437,7 +450,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("品牌页应 200，实际 %d", rec.Code)
 	}
 	brandBody := rec.Body.String()
-	for _, want := range []string{"商品品牌", "山野", "shanye", "/img/logo.svg", "新建品牌", "删除品牌"} {
+	for _, want := range []string{"商品品牌", "山野", "shanye", "/img/logo.svg", "新建品牌", ">删除</button>"} {
 		if !strings.Contains(brandBody, want) {
 			t.Fatalf("品牌页缺少 %q", want)
 		}
@@ -461,6 +474,10 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("POST 商品分类品牌应 302，实际 %d", rec.Code)
 	}
+	// 保存后留在该商品的详情页（表单隐藏域是 id，其值就是商品 id）。
+	if loc := rec.Header().Get("Location"); loc != detailLocation(f.projectID, p.ID) {
+		t.Fatalf("保存分类与品牌后应留在该商品的详情页，实际 Location=%q", loc)
+	}
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -472,10 +489,12 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("主分类应被自动纳入挂载列表（父级 + 子级），实际 %v", got.CategoryIDs)
 	}
 
-	// 商品页 HTML 里能看到分类名与品牌名（验证后台可读回）。
-	rec = httptestGet(engine, "/admin/products?project="+f.projectID)
+	// 商品 HTML 里能看到分类名与品牌名（验证后台可读回）：换目标页面到商品详情页 ——
+	// 改造后列表页只回答「有哪些商品」，「分类与品牌」表单整块移到 /admin/products/detail
+	// （引擎上方已同步注册该路由）。
+	rec = httptestGet(engine, "/admin/products/detail?project="+f.projectID+"&product="+p.ID)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("商品页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("商品详情页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	pageBody := rec.Body.String()
 	for _, want := range []string{"分类与品牌", "山野", "衬衫", "保存分类与品牌"} {

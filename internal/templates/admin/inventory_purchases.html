@@ -1,222 +1,134 @@
-{* admin/inventory_purchases.html — 采购入库：采购单 → 逐行收货 → 生产入库 → 进货历史（issue #18） *}
-{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+{* admin/inventory_purchases.html — 采购入库：采购单 → 逐行收货（issue #18）
+   本页只负责一件事：**采购单与对单收货**。
+   列表形态遵循项目既有标准（对齐 admin/menus.html）：**表格 + 右侧操作列**。
+   早前每张采购单是一个 <details> 展开块 —— 要先展开才看得到单头与收货入口，
+   一屏比对不了几张单的状态。现在单头进表格，「登记入库」在操作列打开抽屉，
+   行明细与收货表单在抽屉里（抽屉是项目既有的 data-drawer-open 机制）。
+   原先把「生产入库」「进货历史」也挂在本页，已按功能归属移走：
+     · 生产入库 → 库存管理（与采购单无关，是「手动改库存 + 写成本价」）；
+     · 进货历史 → 库存流水的 SKU / 原因筛选。 *}
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{orders := .Orders}}
-{{history := .History}}
 {{filterStatus := .FilterStatus}}
 {{filterSource := .FilterSource}}
 {{filterKeyword := .FilterKeyword}}
-{{historySKU := .HistorySKU}}
 {{receiptRequestID := .ReceiptRequestID}}
-{{productionRequestID := .ProductionRequestID}}
 <div class="stack purchase-page">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.inventory_purchases.title", "采购入库") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.inventory_purchases.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-        {{end}}
-        {{if .Ok != ""}}
-        <p class="badge badge-success">{{ .["t"]("admin.inventory_purchases.lastOk", "上一次操作已完成。") }}</p>
-        {{end}}
-        <p class="hint">
-            <strong>{{ .["t"]("admin.inventory_purchases.intro.boldOrder", "采购单") }}</strong>{{ .["t"]("admin.inventory_purchases.intro.mid", "的来源是「货源管理」里的货源（外部供应商 / 集团内关联公司），单头记收货仓，行记 SKU × 采购数量 × 采购单价。行上的") }}<strong>{{ .["t"]("admin.inventory_purchases.intro.boldReceived", "已入库数量") }}</strong>{{ .["t"]("admin.inventory_purchases.intro.tail", "由收货原子递增，单据状态（未入库 / 部分入库 / 已入库）直接由「已入库数量 与 采购数量」推出 —— 没有人工改状态的入口。") }}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.inventory_purchases.receipt.lead", "登记入库会做三件事：经") }}<strong>{{ .["t"]("admin.inventory_purchases.receipt.boldContract", "库存变动契约") }}</strong>{{ .["t"]("admin.inventory_purchases.receipt.mid", "把对应 SKU 的库存加上去并写流水（原因 = 采购入库，来源引用 = 采购单号）、按采购单价") }}<strong>{{ .["t"]("admin.inventory_purchases.receipt.boldCost", "更新该 SKU 的成本价") }}</strong>{{ .["t"]("admin.inventory_purchases.receipt.mid2", "、把已入库数量与单据状态推进。同一张单据重复提交由") }}<strong>{{ .["t"]("admin.inventory_purchases.receipt.boldIdem", "幂等键") }}</strong>{{ .["t"]("admin.inventory_purchases.receipt.tail", "挡住：同一个键只会产生一张入库单，不会重复加库存。") }}
-        </p>
-        <form method="get" action="/admin/inventory/purchases" class="form-inline">
-            <select class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.inventory_purchases.create.title", "新建采购单") }}</h2>
-        {{if len(.Sources) == 0}}
-        <p class="hint">
-            {{ .["t"]("admin.inventory_purchases.noSources.lead", "这个工程还没有启用中的货源 —— 先去") }}<a href="/admin/inventory/sources?project={{selectedProject}}">{{ .["t"]("admin.inventory_purchases.noSources.link", "货源管理") }}</a>
-            {{ .["t"]("admin.inventory_purchases.noSources.tail", "建一个（外部供应商或集团内关联公司），采购单的来源就是它。") }}
-        </p>
-        {{else}}
-        {{if isset(.PermSet["inventory:purchase_create"])}}
-        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-purchase-create" data-drawer-title="{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}">＋ {{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
-        {{end}}
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.inventory_purchases.list.titleLead", "采购单（") }}{{len(orders)}}{{ .["t"]("admin.inventory_purchases.list.titleTail", "）") }}</h2>
-        <form method="get" action="/admin/inventory/purchases" class="form-stack">
-            <input type="hidden" name="project" value="{{selectedProject}}">
-            <div class="form-inline">
-                <select class="form-select" name="status">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.filter.optionStatusAll", "（状态：全部）") }}</option>
-                    {{range _, s := .StatusOptions}}
-                    <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{s.Label}}</option>
-                    {{end}}
-                </select>
-                <select class="form-select" name="sourceId">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.filter.optionSourceAll", "（来源：全部）") }}</option>
-                    {{range _, s := .Sources}}
-                    <option value="{{s.ID}}" {{if s.ID == filterSource}}selected{{end}}>{{s.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="text" class="form-input" name="keyword" value="{{filterKeyword}}" placeholder="{{ .["t"]("admin.inventory_purchases.filter.phKeyword", "单号 / 备注关键词") }}" autocomplete="off">
-                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory_purchases.filter.submit", "筛选") }}</button>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.inventory_purchases.title", "采购入库") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory_purchases.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip"><strong>{{ .["t"]("admin.inventory_purchases.intro.boldOrder", "采购单") }}</strong>{{ .["t"]("admin.inventory_purchases.intro.mid", "的来源是「货源管理」里的外部货源，单头记收货仓，行记 SKU × 采购数量 × 采购单价。行上的") }}<strong>{{ .["t"]("admin.inventory_purchases.intro.boldReceived", "已入库数量") }}</strong>{{ .["t"]("admin.inventory_purchases.intro.tail", "由收货原子递增，单据状态（未入库 / 部分入库 / 已入库）直接由「已入库数量 与 采购数量」推出 —— 没有人工改状态的入口。") }} {{ .["t"]("admin.inventory_purchases.receipt.lead", "登记入库会做三件事：经") }}<strong>{{ .["t"]("admin.inventory_purchases.receipt.boldContract", "库存变动契约") }}</strong>{{ .["t"]("admin.inventory_purchases.receipt.mid", "把对应 SKU 的库存加上去并写流水（原因 = 采购入库，来源引用 = 采购单号）、按采购单价") }}<strong>{{ .["t"]("admin.inventory_purchases.receipt.boldCost", "更新该 SKU 的成本价") }}</strong>{{ .["t"]("admin.inventory_purchases.receipt.mid2", "、把已入库数量与单据状态推进。同一张单据重复提交由") }}<strong>{{ .["t"]("admin.inventory_purchases.receipt.boldIdem", "幂等键") }}</strong>{{ .["t"]("admin.inventory_purchases.receipt.tail", "挡住：同一个键只会产生一张入库单，不会重复加库存。") }}</span>
+                </span>
             </div>
-        </form>
+        </div>
+        <div class="page-actions">
+            {{if isset(.PermSet["inventory:purchase_create"])}}
+            {{if len(.Sources) > 0}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-purchase-create" data-drawer-title="{{ .["t"]("admin.inventory_purchases.create.title", "新建采购单") }}">＋ {{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
+            {{else}}
+            <button type="button" class="btn btn-primary" disabled data-drawer-title="{{ .["t"]("admin.inventory_purchases.create.title", "新建采购单") }}" title="{{ .["t"]("admin.inventory_purchases.noSources.lead", "这个工程还没有启用中的货源 —— 先去") }}{{ .["t"]("admin.inventory_purchases.noSources.link", "货源管理") }}{{ .["t"]("admin.inventory_purchases.noSources.tail", "建一个（外部供应商或集团内关联公司），采购单的来源就是它。") }}">＋ {{ .["t"]("admin.inventory_purchases.create.title", "新建采购单") }}</button>
+            {{end}}
+            {{end}}
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/inventory/purchases">
+                <label class="sr-only" for="po-project">{{ .["t"]("admin.inventory.field.project", "站点工程") }}</label>
+                <select class="form-select" id="po-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
 
-        {{if len(orders) == 0}}
-        <p class="hint">{{ .["t"]("admin.inventory_purchases.list.empty", "没有符合条件的采购单。用上面的表单建一张（货源来自货源管理，收货仓缺省用默认仓）。") }}</p>
-        {{else}}
-        {{range _, o := .Orders}}
-        <details class="disclosure">
-            <summary class="card-header">
-                <strong>{{o.Code}}</strong>
-                {{if o.Status == "received"}}
-                <span class="badge badge-success">{{o.StatusLabel}}</span>
-                {{else if o.Status == "partial"}}
-                <span class="badge badge-warning">{{o.StatusLabel}}</span>
-                {{else}}
-                <span class="badge badge-mute">{{o.StatusLabel}}</span>
-                {{end}}
-                <span class="hint">{{o.SourceName}}（{{o.SourceTypeLabel}}）· {{o.WarehouseName}}</span>
-                <span class="hint">{{ .["t"]("admin.inventory_purchases.list.receivedLead", "已入库 ") }}{{o.ReceivedQuantity}} / {{o.TotalQuantity}}</span>
-            </summary>
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.inventory_purchases.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory_purchases.lastOk", "上一次操作已完成。") }}</p>
+    {{end}}
 
-            <div class="table-wrap" tabindex="0">
-            <table class="data-table data-table-wide purchase-page-table">
-                <thead><tr><th>SKU</th><th>{{ .["t"]("admin.inventory_purchases.col.qty", "采购数量") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.received", "已入库") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.receipt", "登记入库") }}</th></tr></thead>
-                <tbody>
-                {{range _, l := o.Lines}}
-                <tr>
-                    <td data-label="SKU"><code>{{l.SKUCode}}</code></td>
-                    <td data-label="{{ .["t"]("admin.inventory_purchases.col.qty", "采购数量") }}">{{l.Quantity}}</td>
-                    <td data-label="{{ .["t"]("admin.inventory_purchases.col.received", "已入库") }}">{{l.ReceivedQuantity}}</td>
-                    <td data-label="{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }}">{{l.OutstandingQuantity}}</td>
-                    <td data-label="{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }}">{{l.UnitPrice}}</td>
-                    <td data-label="{{ .["t"]("admin.inventory_purchases.col.receipt", "登记入库") }}">
-                        {{if l.Open}}
-                        <form method="post" action="/admin/inventory/purchases/receipt" class="receipt-form">
-                            <input type="hidden" name="csrf_token" value="{{csrf}}">
-                            <input type="hidden" name="projectId" value="{{selectedProject}}">
-                            <input type="hidden" name="orderId" value="{{o.ID}}">
-                            <input type="hidden" name="lineId" value="{{l.ID}}">
-                            <input type="hidden" name="requestId" value="{{o.RequestID}}">
-                            <input type="number" class="form-input" name="quantity" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phQty", "本次数量") }}" inputmode="numeric" step="1" min="1" max="{{l.OutstandingQuantity}}" required>
-                            <input type="number" class="form-input" name="unitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phUnitPrice", "本次到货价（留空 = 采购价）") }}" inputmode="decimal" step="0.01" min="0.01">
-                            <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.inventory_purchases.col.receipt", "登记入库") }}</button>
-                        </form>
-                        {{else}}
-                        <span class="hint">{{ .["t"]("admin.inventory_purchases.receipt.full", "已收满") }}</span>
+    <section class="card list-card">
+        <div class="filter-bar">
+            <form method="get" action="/admin/inventory/purchases" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <div class="filter-field">
+                    <label for="po-status">{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}</label>
+                    <select class="form-select" id="po-status" name="status">
+                        <option value="">{{ .["t"]("admin.inventory_purchases.filter.optionStatusAll", "（全部）") }}</option>
+                        {{range _, s := .StatusOptions}}
+                        <option value="{{s.Value}}" {{if s.Value == filterStatus}}selected{{end}}>{{s.Label}}</option>
                         {{end}}
-                    </td>
-                </tr>
-                {{end}}
-                </tbody>
-            </table>
-            </div>
-            <p class="hint">
-                {{ .["t"]("admin.inventory_purchases.detail.orderedLead", "下单时间 ") }}{{o.OrderedAt}}{{ .["t"]("admin.inventory_purchases.detail.operatorLead", " · 操作人 ") }}{{if o.OperatorID != ""}}{{o.OperatorID}}{{else}}—{{end}}
-                {{if o.Remark != ""}}{{ .["t"]("admin.inventory_purchases.detail.remarkLead", " · 备注 ") }}{{o.Remark}}{{end}}
-                {{ .["t"]("admin.inventory_purchases.detail.tail", "· 本次登记入库只允许 ≤ 未入库数量（超收会被拒绝），提交后库存 / 流水 / 成本价一并更新。") }}
-            </p>
-        </details>
-        {{end}}
-        {{end}}
-    </section>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="po-source">{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}</label>
+                    <select class="form-select" id="po-source" name="sourceId">
+                        <option value="">{{ .["t"]("admin.inventory_purchases.filter.optionSourceAll", "（全部）") }}</option>
+                        {{range _, s := .Sources}}
+                        <option value="{{s.ID}}" {{if s.ID == filterSource}}selected{{end}}>{{s.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="po-keyword">{{ .["t"]("admin.inventory_purchases.filter.labelKeyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="po-keyword" name="keyword" value="{{filterKeyword}}" placeholder="{{ .["t"]("admin.inventory_purchases.filter.phKeyword", "单号 / 备注") }}" autocomplete="off">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory_purchases.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory_purchases.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+        </div>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.inventory_purchases.production.title", "生产入库（自家工厂）") }}</h2>
-        <p class="hint">
-            {{ .["t"]("admin.inventory_purchases.production.lead", "自家工厂") }}<strong>{{ .["t"]("admin.inventory_purchases.production.boldNoOrder", "不走采购单") }}</strong>{{ .["t"]("admin.inventory_purchases.production.mid", "：没有采购单价可以引用，因此成本价在这里") }}<strong>{{ .["t"]("admin.inventory_purchases.production.boldManual", "手工填写") }}</strong>{{ .["t"]("admin.inventory_purchases.production.mid2", "。来源只能选") }}<strong>{{ .["t"]("admin.inventory_purchases.production.boldInternal", "内部货源") }}</strong>{{ .["t"]("admin.inventory_purchases.production.tail", "（自家工厂 / 集团内关联公司）；库存变动同样走库存变动契约（原因 = 生产入库，来源引用 = 本入库单号）。") }}
-        </p>
-        {{if len(.InternalSources) == 0}}
-        <p class="hint">
-            {{ .["t"]("admin.inventory_purchases.noInternal.lead", "还没有内部货源 —— 去") }}<a href="/admin/inventory/sources?project={{selectedProject}}">{{ .["t"]("admin.inventory_purchases.noSources.link", "货源管理") }}</a>
-            {{ .["t"]("admin.inventory_purchases.noInternal.tail", "建一个「内部」类型的自家工厂货源。") }}
-        </p>
+        {{if len(.Sources) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.inventory_purchases.noSources.heading", "还没有启用中的货源") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.inventory_purchases.noSources.lead", "这个工程还没有启用中的货源 —— 先去") }}{{ .["t"]("admin.inventory_purchases.noSources.link", "货源管理") }}{{ .["t"]("admin.inventory_purchases.noSources.tail", "建一个（外部供应商或集团内关联公司），采购单的来源就是它。") }}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/inventory/sources?project={{selectedProject}}">{{ .["t"]("admin.inventory_purchases.noSources.link", "货源管理") }}</a></div>
+        </div>
+        {{else if len(orders) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.inventory_purchases.list.emptyHeading", "没有符合条件的采购单") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.inventory_purchases.list.empty", "没有符合条件的采购单。用右上角「新建采购单」建一张，收货仓缺省用默认仓。") }}</p>
+        </div>
         {{else}}
-        <form method="post" action="/admin/inventory/purchases/production" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="requestId" value="{{productionRequestID}}">
-            <div class="form-inline">
-                <select class="form-select" name="sourceId" required>
-                    <option value="">{{ .["t"]("admin.inventory_purchases.production.optionSource", "（内部货源：自家工厂）") }}</option>
-                    {{range _, s := .InternalSources}}
-                    <option value="{{s.ID}}">{{s.Label}}</option>
-                    {{end}}
-                </select>
-                <select class="form-select" name="variantId" required>
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
-                    {{range _, o := .VariantOptions}}
-                    <option value="{{o.VariantID}}">{{o.Label}}</option>
-                    {{end}}
-                </select>
-                <select class="form-select" name="warehouseId">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.production.optionWarehouse", "（入库仓：默认仓）") }}</option>
-                    {{range _, w := .Warehouses}}
-                    <option value="{{w.ID}}">{{w.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="number" class="form-input" name="quantity" placeholder="{{ .["t"]("admin.inventory_purchases.production.phQty", "入库数量") }}" inputmode="numeric" step="1" min="1" required>
-                <input type="number" class="form-input" name="unitCost" placeholder="{{ .["t"]("admin.inventory_purchases.production.phUnitCost", "手工成本价（必填）") }}" inputmode="decimal" step="0.01" min="0" required>
-                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory_purchases.production.phRemark", "备注（如 生产批次）") }}" autocomplete="off">
-            </div>
-            <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.production.submit", "生产入库") }}</button>
-            </div>
-        </form>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.inventory_purchases.history.title", "进货历史") }}</h2>
-        <p class="hint">
-            {{ .["t"]("admin.inventory_purchases.history.lead", "按 SKU 查历次进货：单据号、数量、") }}<strong>{{ .["t"]("admin.inventory_purchases.history.bold", "当时单价快照") }}</strong>{{ .["t"]("admin.inventory_purchases.history.tail", "、来源、收货仓与时间。采购收货与生产入库都在这一张表里（类型列区分）。") }}
-        </p>
-        <form method="get" action="/admin/inventory/purchases" class="form-stack">
-            <input type="hidden" name="project" value="{{selectedProject}}">
-            <div class="form-inline">
-                <select class="form-select" name="sku">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.history.optionAllSku", "（全部 SKU）") }}</option>
-                    {{range _, o := .VariantOptions}}
-                    <option value="{{o.SKUCode}}" {{if o.SKUCode == historySKU}}selected{{end}}>{{o.Label}}</option>
-                    {{end}}
-                </select>
-                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory_purchases.history.submit", "查进货历史") }}</button>
-            </div>
-        </form>
-        {{if len(history) == 0}}
-        <p class="hint">{{ .["t"]("admin.inventory_purchases.history.empty", "没有找到进货记录 —— 换一个 SKU，或先登记一次入库。") }}</p>
-        {{else}}
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide purchase-page-table">
-            <thead><tr><th>{{ .["t"]("admin.inventory_purchases.col.time", "时间") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.doc", "单据") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.kind", "类型") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.order", "采购单") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.source", "来源") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.warehouse", "仓库") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory_purchases.col.qtySum", "数量") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.inventory_purchases.col.operator", "操作人") }}</th></tr></thead>
-            <tbody>
-            {{range _, r := history}}
+            <thead>
             <tr>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.time", "时间") }}">{{r.ReceivedAt}}</td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.doc", "单据") }}"><code>{{r.ReceiptCode}}</code></td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.kind", "类型") }}">{{r.KindLabel}}</td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.order", "采购单") }}">{{if r.OrderCode != ""}}{{r.OrderCode}}{{else}}—{{end}}</td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.source", "来源") }}">{{r.SourceName}} <span class="move-meta">{{r.SourceTypeLabel}}</span></td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.warehouse", "仓库") }}">{{r.WarehouseName}}</td>
-                <td data-label="SKU"><code>{{r.SKUCode}}</code></td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.qtySum", "数量") }}">{{r.Quantity}}</td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }}">{{r.UnitPrice}}</td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.costPrice", "成本价") }}">
-                    {{if r.CostUpdated}}<span class="badge badge-success">{{ .["t"]("admin.inventory_purchases.history.costWritten", "已写回") }}</span>
-                    {{else}}<span class="badge badge-warning">{{ .["t"]("admin.inventory_purchases.history.costNotWritten", "未写回") }}</span>{{end}}
+                <th>{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}</th>
+                <th>{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}</th>
+                <th>{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}</th>
+                <th>{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}</th>
+                <th>{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}</th>
+                <th>{{ .["t"]("admin.inventory_purchases.col.orderedAt", "下单时间") }}</th>
+                <th class="col-actions">{{ .["t"]("admin.common.col.actions", "操作") }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range _, o := .Orders}}
+            <tr>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}"><code>{{o.Code}}</code></td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}">{{o.SourceName}} <span class="hint">{{o.SourceTypeLabel}}</span></td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}">{{o.WarehouseName}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}">
+                    {{if o.Status == "received"}}<span class="badge badge-success">{{o.StatusLabel}}</span>
+                    {{else if o.Status == "partial"}}<span class="badge badge-warning">{{o.StatusLabel}}</span>
+                    {{else}}<span class="badge badge-mute">{{o.StatusLabel}}</span>{{end}}
                 </td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.operator", "操作人") }}">{{if r.OperatorID != ""}}{{r.OperatorID}}{{else}}—{{end}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}">{{o.ReceivedQuantity}} / {{o.TotalQuantity}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.orderedAt", "下单时间") }}">{{o.OrderedAt}}</td>
+                <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
+                    <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-receipt-{{o.ID}}" data-drawer-title="{{ .["t"]("admin.inventory_purchases.receipt.drawerTitle", "登记入库：") }}{{o.Code}}">{{ .["t"]("admin.inventory_purchases.receipt.open", "登记入库") }}</button>
+                </td>
             </tr>
             {{end}}
             </tbody>
@@ -225,31 +137,83 @@
         {{end}}
     </section>
 
+    {* ===== 逐行收货（每个采购单一份抽屉模板） ===== *}
+    {{range _, o := .Orders}}
+    <template id="tpl-receipt-{{o.ID}}">
+        <p class="hint">
+            {{ .["t"]("admin.inventory_purchases.detail.orderedLead", "下单时间 ") }}{{o.OrderedAt}}{{ .["t"]("admin.inventory_purchases.detail.operatorLead", " · 操作人 ") }}{{if o.OperatorID != ""}}{{o.OperatorID}}{{else}}—{{end}}
+            {{if o.Remark != ""}}{{ .["t"]("admin.inventory_purchases.detail.remarkLead", " · 备注 ") }}{{o.Remark}}{{end}}
+        </p>
+        {{if len(o.Lines) == 0}}
+        <p class="hint">{{ .["t"]("admin.inventory_purchases.receipt.noLines", "这张采购单没有采购行。") }}</p>
+        {{else}}
+        {{range _, l := o.Lines}}
+        <div class="receipt-row">
+            <div class="receipt-head">
+                <code>{{l.SKUCode}}</code>
+                {* 四个信号各自成块（徽章），不拼成一句话：采购数量 / 已入库 / 未入库 / 单价
+                   是四个独立字段，拼起来既扫不动也没法单独对齐（评审：单元格是值不是句子）。 *}
+                <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.qty", "采购数量") }} {{l.Quantity}}</span>
+                <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.received", "已入库") }} {{l.ReceivedQuantity}}</span>
+                <span class="badge {{if l.Open}}badge-warning{{else}}badge-success{{end}}">{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }} {{l.OutstandingQuantity}}</span>
+                <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }} {{l.UnitPrice}}</span>
+            </div>
+            {{if l.Open}}
+            <form method="post" action="/admin/inventory/purchases/receipt" class="form-inline">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="orderId" value="{{o.ID}}">
+                <input type="hidden" name="lineId" value="{{l.ID}}">
+                <input type="hidden" name="requestId" value="{{o.RequestID}}">
+                <input type="number" class="form-input" name="quantity" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phQty", "本次数量") }}" inputmode="numeric" step="1" min="1" max="{{l.OutstandingQuantity}}" required>
+                <input type="number" class="form-input input-wide" name="unitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phUnitPrice", "本次到货价（留空 = 采购价）") }}" inputmode="decimal" step="0.01" min="0.01">
+                <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.inventory_purchases.col.receipt", "登记入库") }}</button>
+            </form>
+            {{else}}
+            <p class="hint">{{ .["t"]("admin.inventory_purchases.receipt.full", "已收满") }}</p>
+            {{end}}
+        </div>
+        {{end}}
+        {{end}}
+    </template>
+    {{end}}
+
+    {* ===== 新建采购单（抽屉模板） ===== *}
     {{if isset(.PermSet["inventory:purchase_create"])}}
     <template id="tpl-purchase-create">
         <form method="post" action="/admin/inventory/purchases/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_purchases.ph.code", "采购单号（如 PO-20260101-001）") }}" required autocomplete="off">
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}</label>
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_purchases.ph.code", "如 PO-20260101-001") }}" required autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory_purchases.create.optionSource", "来源") }}</label>
                 <select class="form-select" name="sourceId" required>
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（来源：选择货源）") }}</option>
+                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（选择货源）") }}</option>
                     {{range _, s := .Sources}}
                     <option value="{{s.ID}}">{{s.Label}}</option>
                     {{end}}
                 </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "收货仓") }}</label>
                 <select class="form-select" name="warehouseId">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（收货仓：默认仓）") }}</option>
+                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（默认仓）") }}</option>
                     {{range _, w := .Warehouses}}
                     <option value="{{w.ID}}">{{w.Label}}</option>
                     {{end}}
                 </select>
-                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory_purchases.ph.remark", "备注（如 合同号 / 到货批次）") }}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory_purchases.ph.remark", "备注") }}</label>
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory_purchases.ph.remark", "合同号 / 到货批次") }}" autocomplete="off">
             </div>
             <p class="hint">{{ .["t"]("admin.inventory_purchases.create.linesHint", "采购行（每行一个 SKU；空行会被忽略；同一张单里同一个 SKU 只能出现一次）：") }}</p>
             {{range _, row := .DraftLines}}
             <div class="form-inline">
-                <select class="form-select" name="lineVariantId">
+                <select class="form-select" name="lineVariantId" aria-label="{{ .["t"]("admin.inventory_purchases.create.optionSku", "选择 SKU") }}">
                     <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
                     {{range _, o := .VariantOptions}}
                     <option value="{{o.VariantID}}">{{o.Label}}</option>
@@ -260,7 +224,7 @@
             </div>
             {{end}}
             <div class="action-row">
-            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
             </div>
         </form>

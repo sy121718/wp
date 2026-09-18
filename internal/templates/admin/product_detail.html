@@ -1,0 +1,356 @@
+{* admin/product_detail.html — 商品详情：基本信息 / 变体 / 评分 *}
+{* 拆页依据（评审见 ~/.dsh/skills/admin-ui-logic §1）：列表页只回答「有哪些商品」；
+   变体与评分是**某个商品的子资源**，属于该商品的详情。原来三张表平铺在列表页上，
+   等于让列表页承载实体详情 —— 装不下就该拆页，折叠只是把「平铺」换成「叠起来」。
+   本页承接：原编辑抽屉的四个商品级表单（属性引用 / 分类与品牌 / 标签 / SEO 检查）
+   + 原变体表与它的两个抽屉 + 原评分表与它的抽屉。
+   版式：§2.1 正文零说明文字（商品级说明整段进 .help 悬浮）、§2.2 页级动作与页头同行、
+   §7 子资源表沿用标准骨架（.list-card + .list-toolbar + .data-table + .col-actions）、
+   §3 一列一个概念（单元格放值不拼句子）、只读事实用 .kv 的「标签 + 值」成对形态。
+   表单协议一字未改：action 与字段名与原来逐字相同（改版式不改协议）。
+   行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
+{{extends "layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{warehouseOptions := .WarehouseOptions}}
+{{canUpdate := isset(.PermSet["product:update"])}}
+{{canVariantCreate := isset(.PermSet["product:variant_create"])}}
+{{canVariantGenerate := isset(.PermSet["product:variant_generate"])}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}</h1>
+                {{if .HasProduct}}<span class="badge">{{.Product.Status}}</span>{{end}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_detail.help.attrs", "「属性引用」填的是属性组 id（逗号分隔，清空即解绑全部）：属性组在") }}<a href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.products.hint.attrLink", "商品属性") }}</a>{{ .["t"]("admin.product_detail.help.attrsTail", "页定义，同一个组可以被多个商品引用。") }}<br><br>{{ .["t"]("admin.product_detail.help.taxonomy", "分类可以挂多个（其中一个为主分类，主分类必属于已挂载的分类）；品牌可选一个。两者分别在") }}<a href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.products.hint.categoryLink", "商品分类") }}</a>{{ .["t"]("admin.products.hint.and", "与") }}<a href="/admin/product-brands?project={{selectedProject}}">{{ .["t"]("admin.products.hint.brandLink", "商品品牌") }}</a>{{ .["t"]("admin.product_detail.help.taxonomyTail", "页定义。") }}<br><br>{{ .["t"]("admin.product_detail.help.tags", "手工标签在这里勾选挂载；自动标签只读 —— 它的归属由规则重算维护，手工改会被下一次重算覆盖。") }}<br><br>{{ .["t"]("admin.product_detail.help.variants", "变体留空的字段继承商品级默认值；「归属仓」决定每个变体的库存记录落在哪个仓。变体删除会连它的库存记录一起删。") }}<br><br>{{ .["t"]("admin.product_detail.help.rating", "评分是独立明细：平均值与条数由明细算出，改评分不改动商品字段；「没有评分」与「评分 0 分」是两回事，它不参与最低评分筛选。") }}<br><br>{{ .["t"]("admin.product_detail.help.seo", "「SEO 检查」只读计算，不写库、不改产物；同一个标题在站内重复会被列出来。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-ghost" href="{{.BackURL}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+            {{if .HasProduct}}
+            <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
+            <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</a>
+            <button type="submit" form="product-preview-{{.Product.ID}}" class="btn">{{ .["t"]("admin.products.row.previewDetail", "预览详情页") }}</button>
+            <button type="submit" form="product-del-{{.Product.ID}}" class="btn btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+            {{end}}
+        </div>
+    </header>
+
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.products.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+
+    {{if !.HasProduct}}
+    <section class="card card-body">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_detail.notFound.title", "商品不存在") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_detail.notFound", "这个商品读不出来：链接里的商品可能在另一个工程，或者它已经被删除。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="{{.BackURL}}">{{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
+            </div>
+        </div>
+    </section>
+    {{else}}
+    {{p := .Product}}
+
+    {* ==== 基本信息：只读事实（.kv，标签 + 值成对）+ 四个商品级表单 ==== *}
+    <section class="card card-body">
+        <h2 class="card-title">{{ .["t"]("admin.product_detail.basic.title", "基本信息") }}</h2>
+        <dl class="kv">
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.name", "商品") }}</dt><dd>{{p.Name}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.slug", "URL 段") }}</dt><dd>{{if p.Slug != ""}}<code>/{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.status", "状态") }}</dt><dd><span class="badge">{{p.Status}}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.variants", "变体数") }}</dt><dd>{{p.VariantCount}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</dt><dd>{{p.PriceMin}} ~ {{p.PriceMax}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</dt><dd>{{if len(p.Attributes) == 0}}<span class="text-mute">—</span>{{else}}{{range _, a := p.Attributes}}<span class="badge {{if a.IsVariation}}badge-info{{else}}badge-mute{{end}}">{{a.Name}}{{if a.IsVariation}}{{ .["t"]("admin.products.row.variationSuffix", "（参与变体）") }}{{end}} × {{a.ValueCount}}</span>{{end}}{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.categories", "分类") }}</dt><dd>{{if isset(p.CategoryCell)}}{{if p.CategoryCell != ""}}{{p.CategoryCell}}{{if isset(p.CategoryOthers)}}{{if p.CategoryOthers > 0}} <span class="badge badge-mute">+{{p.CategoryOthers}}</span>{{end}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.brand", "品牌") }}</dt><dd>{{if isset(p.BrandName)}}{{if p.BrandName != ""}}{{p.BrandName}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
+        </dl>
+
+        <h3>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</h3>
+        <form method="post" action="/admin/products/attributes">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{p.ID}}">
+            <label class="form-label" for="product-attrs-{{p.ID}}">{{ .["t"]("admin.products.attrs.label", "引用的属性组 id") }}</label>
+            <input type="text" class="form-input input-wide" id="product-attrs-{{p.ID}}" name="attributeIds" value="{{p.AttributeIDsCSV}}"
+                   placeholder="{{ .["t"]("admin.products.attrs.ph", "逗号分隔，清空即解绑") }}" autocomplete="off">
+            <div class="action-row">
+                <button type="submit" class="btn">{{ .["t"]("admin.products.attrs.save", "保存属性引用") }}</button>
+            </div>
+        </form>
+
+        {* 分类可多选（原生 checkbox + label，鼠标 / 触屏 / 键盘都可用，窄屏由 .var-value 折行承担）；
+           「主分类必属于挂载分类」的不变量由服务端维持。 *}
+        <h3>{{ .["t"]("admin.products.taxonomy.title", "分类与品牌") }}</h3>
+        <form method="post" action="/admin/products/taxonomy">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{p.ID}}">
+            {{if len(p.CategoryChecks) > 0}}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.taxonomy.legendCategories", "挂载分类（可多选，一个都不勾即解绑全部）") }}</legend>
+                {{range _, c := p.CategoryChecks}}
+                <label class="var-value">
+                    <input type="checkbox" name="categoryIds" value="{{c.ID}}" {{if c.Checked}}checked{{end}}> {{c.Label}}
+                </label>
+                {{end}}
+            </fieldset>
+            {{else}}
+            <p class="text-mute text-sm">{{ .["t"]("admin.products.taxonomy.noCategoriesLead", "这个工程还没有分类，先到") }}<a href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.products.hint.categoryLink", "商品分类") }}</a>{{ .["t"]("admin.products.taxonomy.noCategoriesTail", "页建一个。") }}</p>
+            {{end}}
+            <div class="form-inline">
+                <label>{{ .["t"]("admin.products.taxonomy.primaryLabel", "主分类") }}
+                    <select class="form-select" name="primaryCategoryId">
+                        {{range _, o := p.PrimaryOptions}}
+                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                    </select>
+                </label>
+                <label>{{ .["t"]("admin.products.taxonomy.brandLabel", "品牌") }}
+                    <select class="form-select" name="brandId">
+                        {{range _, o := p.BrandOptions}}
+                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                    </select>
+                </label>
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn">{{ .["t"]("admin.products.taxonomy.save", "保存分类与品牌") }}</button>
+            </div>
+        </form>
+
+        {* 手工标签可勾选挂载；自动标签只读 —— 归属由规则重算维护，手工改会被下一次重算覆盖。 *}
+        <h3>{{ .["t"]("admin.products.tags.title", "标签") }}</h3>
+        <form method="post" action="/admin/products/tags">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{p.ID}}">
+            {{if len(p.TagChecks) > 0}}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.tags.legendManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
+                {{range _, t := p.TagChecks}}
+                <label class="var-value">
+                    <input type="checkbox" name="tagIds" value="{{t.ID}}" {{if t.Checked}}checked{{end}}> {{t.Name}}
+                </label>
+                {{end}}
+            </fieldset>
+            {{else}}
+            <p class="text-mute text-sm">{{ .["t"]("admin.products.tags.noManualLead", "这个工程还没有手工标签，先到") }}<a href="/admin/product-tags?project={{selectedProject}}">{{ .["t"]("admin.products.hint.tagLink", "商品标签") }}</a>{{ .["t"]("admin.products.taxonomy.noCategoriesTail", "页建一个。") }}</p>
+            {{end}}
+            {{if len(p.AutoTags) > 0}}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
+                {{range _, t := p.AutoTags}}
+                <span class="var-value">{{t.Name}}{{if t.RuleLabel != ""}}（{{t.RuleLabel}}）{{end}}</span>
+                {{end}}
+            </fieldset>
+            {{end}}
+            <div class="action-row">
+                <button type="submit" class="btn">{{ .["t"]("admin.products.tags.save", "保存手工标签") }}</button>
+            </div>
+        </form>
+
+        {* SEO 评分（审计 SEO-016）：商品详情页按 ProductProfile 评分，并做 title 唯一性检查（SEO-018）。
+           只读计算，不写库不改产物。 *}
+        <h3>{{ .["t"]("admin.products.seo.title", "SEO 检查") }}</h3>
+        <form method="post" action="/admin/products/seo-score"
+              hx-post="/admin/products/seo-score" hx-target="#product-seo-score-{{p.ID}}" hx-swap="innerHTML">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{p.ID}}">
+            <button type="submit" class="btn">{{ .["t"]("admin.products.row.seoScore", "SEO 评分") }}</button>
+        </form>
+        {* SEO 评分结果容器：点上面的「SEO 评分」后由片段填充（空容器不占位）。 *}
+        <div id="product-seo-score-{{p.ID}}" class="wb-seo-panel"></div>
+    </section>
+
+    {* ==== 变体：子资源表 + 它的两个入口（新建变体 / 生成组合） ==== *}
+    <section class="card list-card">
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.products.variants.title", "变体") }}</strong>
+            <span class="toolbar-spacer"></span>
+            {{if canVariantGenerate}}{{if len(p.VariationAttributes) > 0}}
+            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-variant-generate-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.combo.generate", "生成组合") }}">{{ .["t"]("admin.products.combo.generate", "生成组合") }}</button>
+            {{end}}{{end}}
+            {{if canVariantCreate}}
+            <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-variant-create-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.variant.create", "新建变体") }}">＋ {{ .["t"]("admin.products.variant.create", "新建变体") }}</button>
+            {{end}}
+        </div>
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
+            <table class="data-table data-table-wide">
+                {* 库存展示值（issue #32）：缓存列已删，这里读的是**查询期投影**（真源跨仓汇总，
+                   一次批量取）。可用量判定一律走真源，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
+                <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
+                <tbody>
+                {{if len(p.Variants) == 0}}
+                <tr><td colspan="8" class="text-mute text-sm">{{ .["t"]("admin.products.variants.empty", "这个商品还没有变体。") }}</td></tr>
+                {{end}}
+                {{range _, v := p.Variants}}
+                <tr>
+                    <td><code>{{v.SKUCode}}</code></td>
+                    <td>{{v.Spec}}</td>
+                    <td>{{v.Price}}</td>
+                    <td>{{v.ComparePrice}}</td>
+                    <td>{{v.CostPrice}}</td>
+                    <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
+                    <td>{{v.StockTotal}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
+                        <button type="submit" form="variant-del-{{v.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {* ==== 评分：子资源表 + 它的入口（添加评分） ==== *}
+    <section class="card list-card">
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.products.rating.label", "评分") }}</strong>
+            <span class="badge badge-mute">{{if p.HasRating}}{{p.RatingAvg}}{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
+            <span class="toolbar-spacer"></span>
+            {{if canUpdate}}
+            <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-rating-add-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.rating.add", "添加评分") }}">＋ {{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
+            {{end}}
+        </div>
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.ratings.aria", "商品评分") }}">
+            <table class="data-table">
+                <thead><tr><th>{{ .["t"]("admin.products.rating.label", "评分") }}</th><th>{{ .["t"]("admin.products.ratings.colSource", "来源") }}</th><th>{{ .["t"]("admin.products.ratings.colTime", "时间") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
+                <tbody>
+                {{if len(p.Ratings) == 0}}
+                <tr><td colspan="4" class="text-mute text-sm">{{ .["t"]("admin.products.ratings.empty", "这个商品还没有评分。") }}</td></tr>
+                {{end}}
+                {{range _, r := p.Ratings}}
+                <tr>
+                    <td>{{r.Score}}</td>
+                    <td>{{r.Source}}</td>
+                    <td>{{r.CreatedAt}}</td>
+                    <td class="col-actions">
+                        <button type="submit" form="rating-del-{{r.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {* ==== 行内表单：全部放表格外，按钮用 form="<id>" 关联 ==== *}
+    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" target="_blank">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="productId" value="{{p.ID}}">
+    </form>
+    <form id="product-del-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/delete"
+          data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+    </form>
+    {{range _, v := p.Variants}}
+    <form id="variant-del-{{v.ID}}" class="hidden-form" method="post" action="/admin/products/variant/delete"
+          data-confirm="{{ .["t"]("admin.products.variant.deleteConfirm", "删除该变体？它的库存记录会一并删除。") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{v.ID}}">
+        {* 删除后要回到**这个商品**的详情页：上一行的 id 是变体 id，回跳的商品只能另给 productId。 *}
+        <input type="hidden" name="productId" value="{{p.ID}}">
+    </form>
+    {{end}}
+    {{range _, r := p.Ratings}}
+    <form id="rating-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/products/rating/delete"
+          data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+        {* 同上：id 是评分 id，回跳的商品由 productId 给出。 *}
+        <input type="hidden" name="productId" value="{{p.ID}}">
+    </form>
+    {{end}}
+
+    {* ==== 抽屉 ==== *}
+    <template id="tpl-variant-create-{{p.ID}}">
+        <form method="post" action="/admin/products/variant/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{p.ID}}">
+            <input type="text" class="form-input" name="skuCode" placeholder="{{ .["t"]("admin.products.variant.phSku", "SKU 编码（留空自动生成）") }}">
+            <input type="text" class="form-input" name="price" placeholder="{{ .["t"]("admin.products.variant.phPrice", "价格（留空继承商品默认值）") }}">
+            {{if len(warehouseOptions) > 0}}
+            <label class="form-label" for="variant-warehouse-{{p.ID}}">{{ .["t"]("admin.products.warehouse.label", "归属仓") }}</label>
+            <select class="form-select" id="variant-warehouse-{{p.ID}}" name="warehouseId">
+                <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
+                {{range _, w := warehouseOptions}}
+                <option value="{{w.ID}}">{{w.Label}}</option>
+                {{end}}
+            </select>
+            {{end}}
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.variant.add", "新增变体") }}</button>
+            </div>
+        </form>
+    </template>
+
+    {{if len(p.VariationAttributes) > 0}}
+    {* 组合生成：勾选属性值 → 笛卡尔积；不勾选用「生成全部组合」。
+       勾选控件是原生 checkbox + label：鼠标 / 触屏 / 键盘（Tab + 空格）都可用。 *}
+    <template id="tpl-variant-generate-{{p.ID}}">
+        <form method="post" action="/admin/products/variant/generate" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{p.ID}}">
+            {* 归属仓（issue #15）：本批新变体统一落在该仓，并为每个新变体生成库存记录 *}
+            {{if len(warehouseOptions) > 0}}
+            <label class="form-label" for="generate-warehouse-{{p.ID}}">{{ .["t"]("admin.products.warehouse.label", "归属仓") }}</label>
+            <select class="form-select" id="generate-warehouse-{{p.ID}}" name="warehouseId">
+                <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
+                {{range _, w := warehouseOptions}}
+                <option value="{{w.ID}}">{{w.Label}}</option>
+                {{end}}
+            </select>
+            {{end}}
+            {{range _, a := p.VariationAttributes}}
+            <fieldset class="var-group">
+                <legend>{{a.Name}}</legend>
+                {{range _, v := a.Values}}
+                {{if v.Enabled}}
+                <label class="var-value">
+                    <input type="checkbox" name="attr:{{a.ID}}" value="{{v.ID}}"> {{v.Label}}
+                </label>
+                {{end}}
+                {{end}}
+            </fieldset>
+            {{end}}
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary" name="mode" value="selected">{{ .["t"]("admin.products.combo.generateSelected", "生成勾选组合") }}</button>
+                <button type="submit" class="btn" name="mode" value="all">{{ .["t"]("admin.products.combo.generateAll", "生成全部组合") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+
+    <template id="tpl-rating-add-{{p.ID}}">
+        <form method="post" action="/admin/products/rating/add" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{p.ID}}">
+            <input type="number" class="form-input" name="score" min="0" max="5" step="0.01" inputmode="decimal" placeholder="{{ .["t"]("admin.products.rating.phScore", "评分 0~5") }}" required>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+</div>
+{{end}}

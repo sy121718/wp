@@ -22,6 +22,11 @@ type UpdateReq struct {
 	DraftDocument json.RawMessage `json:"draftDocument" binding:"required"`
 }
 
+// DeleteReq 删除模板。
+type DeleteReq struct {
+	ID string `json:"id" binding:"required"`
+}
+
 // GetReq 按 ID 查询。
 type GetReq struct {
 	ID string `form:"id" binding:"required"`

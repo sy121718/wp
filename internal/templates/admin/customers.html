@@ -1,15 +1,20 @@
 {* admin/customers.html — 客户管理：客户列表 + 组合筛选 + 停用启用 / 解除锁定 *}
+{* 版式遵循 theme.css「后台页壳」段（admin 页面设计评审，见 docs/02-H-admin-page-shell.md）：
+     · 三段领域说明（客户是谁 / 停用与锁定的区别 / 未验证邮箱）合并进页头 .help，
+       首屏只留「哪些账号在等处理」；
+     · 「筛选」不再独占一张卡：计数徽章与条件表单并入列表卡的 .filter-bar；
+     · 列表进 .table-scroll（表头吸顶 + 高度封顶），空数据改 .empty-state。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；range 内访问外层值先在 block 顶部存变量。 *}
 {* 无 JS 也能用：筛选是普通 GET 表单；写操作是原生表单 POST + csrf_token 隐藏域， *}
 {* 提交后 302 回本页并把结论经 ?ok= / ?err= 回显（回显同样过服务端白名单）。 *}
 {* 注意：写操作的目标状态字段叫 toStatus，与「保留筛选」的 status 分开 —— *}
 {* 同名的话回跳时会把目标状态当成筛选条件，列表看起来像是「筛选没了」。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
 {{rows := .Rows}}
-{{counters := .Counters}}
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 {{fVerified := .FilterVerified}}
@@ -18,91 +23,131 @@
 {{fPage := .Page}}
 {{fLimit := .Limit}}
 <div class="stack customers-page">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.customers.heading", "客户管理") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.customers.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-        {{end}}
-        {{if .Ok != ""}}
-        <p class="badge badge-success">{{.Ok}}</p>
-        {{end}}
-        <p class="hint">
-            {{ .["t"]("admin.customers.hint.who.lead", "这里的「客户」是") }}<strong>{{ .["t"]("admin.customers.hint.who.strong", "站点访客账号") }}</strong>{{ .["t"]("admin.customers.hint.who.tail", "：在前台注册、下单或订阅的人。它与后台管理员账号是两套完全独立的东西（不同的表、不同的登录入口）—— 在这里停用任何账号，都不会影响任何后台账号。") }}
-        </p>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.customers.hint.disable.strong", "「停用」和「锁定」不是一回事") }}</strong>{{ .["t"]("admin.customers.hint.disable.mid", "：停用是管理动作，账号从此登不上去，需要你在这里重新启用；锁定是连续输错密码触发的") }}<strong>{{ .["t"]("admin.customers.hint.disable.strong_temp", "临时") }}</strong>{{ .["t"]("admin.customers.hint.disable.tail", "状态，到时间会自己解除。客户只是多输错了几次密码时，点「解除锁定」就够了，不必停用他。") }}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.customers.hint.unverified.lead", "邮箱") }}<strong>{{ .["t"]("admin.customers.hint.unverified.strong", "未验证") }}</strong>{{ .["t"]("admin.customers.hint.unverified.tail", "的账号本来就登不上去（客户还没点验证邮件里的链接）—— 那属于正常流程，不是需要处理的问题。") }}
-        </p>
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.customers.filter.heading", "筛选") }}</h2>
-        <p class="hint">
-            {{ .["t"]("admin.customers.filter.hint.lead", "计数回答的是「一共有多少账号、各是什么状态」，") }}<strong>{{ .["t"]("admin.customers.filter.hint.strong", "不受下面的筛选影响") }}</strong>{{ .["t"]("admin.customers.filter.hint.tail", "；列表则按筛选条件显示。") }}
-        </p>
-        <div class="action-row">
-            <span class="badge badge-mute">{{ .["t"]("admin.customers.badge.all", "全部") }} {{counters.Total}}</span>
-            <span class="badge badge-success">{{ .["t"]("admin.customers.badge.active", "正常") }} {{counters.Active}}</span>
-            <span class="badge badge-danger">{{ .["t"]("admin.customers.badge.disabled", "已停用") }} {{counters.Disabled}}</span>
-            <span class="badge badge-warning">{{ .["t"]("admin.customers.badge.pending", "待激活") }} {{counters.Pending}}</span>
-            <span class="badge badge-info">{{ .["t"]("admin.customers.badge.locked", "已锁定") }} {{counters.Locked}}</span>
-            <span class="badge badge-mute">{{ .["t"]("admin.customers.badge.verified", "邮箱已验证") }} {{counters.Verified}}</span>
-            <span class="badge badge-mute">{{ .["t"]("admin.customers.badge.unverified", "邮箱未验证") }} {{counters.Unverified}}</span>
-        </div>
-        <form method="get" action="/admin/customers" class="form-stack">
-            <div class="form-inline">
-                <input type="text" class="form-input" name="keyword" value="{{fKeyword}}"
-                       placeholder="{{ .["t"]("admin.customers.ph.keyword", "关键词：邮箱 / 用户名 / 昵称 / 展示名") }}" autocomplete="off">
-                <select class="form-select" name="status">
-                    <option value="">{{ .["t"]("admin.customers.ph.status_all", "（状态：全部）") }}</option>
-                    {{range _, s := .StatusOptions}}
-                    {{if s.Value >= 0}}
-                    <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{s.Label}}</option>
-                    {{end}}
-                    {{end}}
-                </select>
-                <select class="form-select" name="emailVerified">
-                    <option value="">{{ .["t"]("admin.customers.ph.email_all", "（邮箱：全部）") }}</option>
-                    {{range _, v := .VerifiedOptions}}
-                    {{if v.Value > 0}}
-                    <option value="{{v.Value}}" {{if v.Selected}}selected{{end}}>{{v.Label}}</option>
-                    {{end}}
-                    {{end}}
-                </select>
-                <label class="hint" for="registeredFrom">{{ .["t"]("admin.customers.field.registered_at", "注册时间") }}</label>
-                <input type="date" class="form-input" id="registeredFrom" name="registeredFrom" value="{{fFrom}}">
-                <span class="hint">{{ .["t"]("admin.customers.field.registered_to", "至") }}</span>
-                <input type="date" class="form-input" name="registeredTo" value="{{fTo}}">
-                <button type="submit" class="btn">{{ .["t"]("admin.customers.filter.submit", "筛选") }}</button>
-                <a class="btn btn-ghost" href="/admin/customers">{{ .["t"]("admin.customers.filter.reset", "重置") }}</a>
+    {* 页头：标题 + 三段领域说明（谁 / 停用与锁定的区别 / 未验证邮箱）。 *}
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.customers.heading", "客户管理") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customers.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.customers.hint.who.lead", "这里的「客户」是") }}<strong>{{ .["t"]("admin.customers.hint.who.strong", "站点访客账号") }}</strong>{{ .["t"]("admin.customers.hint.who.tail", "：在前台注册、下单或订阅的人。它与后台管理员账号是两套完全独立的东西（不同的表、不同的登录入口）—— 在这里停用任何账号，都不会影响任何后台账号。") }}<br><br><strong>{{ .["t"]("admin.customers.hint.disable.strong", "「停用」和「锁定」不是一回事") }}</strong>{{ .["t"]("admin.customers.hint.disable.mid", "：停用是管理动作，账号从此登不上去，需要你在这里重新启用；锁定是连续输错密码触发的") }}<strong>{{ .["t"]("admin.customers.hint.disable.strong_temp", "临时") }}</strong>{{ .["t"]("admin.customers.hint.disable.tail", "状态，到时间会自己解除。客户只是多输错了几次密码时，点「解除锁定」就够了，不必停用他。") }}<br><br>{{ .["t"]("admin.customers.hint.unverified.lead", "邮箱") }}<strong>{{ .["t"]("admin.customers.hint.unverified.strong", "未验证") }}</strong>{{ .["t"]("admin.customers.hint.unverified.tail", "的账号本来就登不上去（客户还没点验证邮件里的链接）—— 那属于正常流程，不是需要处理的问题。") }}</span>
+                </span>
             </div>
-            <p class="hint">{{ .["t"]("admin.customers.filter.hint.inclusive.lead", "注册时间的结束日期") }}<strong>{{ .["t"]("admin.customers.filter.hint.inclusive.strong", "包含当天") }}</strong>{{ .["t"]("admin.customers.filter.hint.inclusive.tail", "（填 9 月 30 日，当天注册的客户也在结果里）。") }}</p>
-        </form>
-    </section>
+        </div>
+    </header>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.customers.list.heading", "客户") }}{{ .["t"]("admin.customers.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.customers.list.total_tail", " 个）") }}</h2>
-        {{if .CapabilityMissing}}
-        <p class="hint">
-            {{ .["t"]("admin.customers.capability_missing", "客户管理能力没有接进来（装配问题），下面只有页面框架。请联系开发确认用户模块的后台契约是否已注入 —— 页面本身没有问题。") }}
-        </p>
-        {{end}}
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.customers.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+    {* 批量动作的结果摘要（已处理 N 个 / 未处理 M 个）。可选键一律 isset 包裹：
+       直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+    {{if .CapabilityMissing}}
+    <p class="badge badge-warning" role="alert">
+        {{ .["t"]("admin.customers.capability_missing", "客户管理能力没有接进来（装配问题），下面只有页面框架。请联系开发确认用户模块的后台契约是否已注入 —— 页面本身没有问题。") }}
+    </p>
+    {{end}}
+
+    {* ===== 主区：状态计数 + 组合筛选（工具行）+ 列表，同一张卡 ===== *}
+    <section class="card list-card">
+        <div class="filter-bar">
+            <div class="filter-row">
+                {* 计数徽章**就是**筛选控件：一个徽章一个链接（URL 由服务端生成，模板不拼查询串），
+                   点一下 = 按那个口径筛一遍，条件之间可以叠加（叠加时两个徽章同时高亮）。
+                   同一维度不另配下拉 —— 徽章把「有多少」与「看哪些」合成一个动作，
+                   两套控件并存只会让人怀疑它们是否等价（admin-ui-logic §7）。
+                   选中态：aria-current + ✓ 图标 + 加粗（不只靠颜色深浅区分）。
+                   计数为 0 的徽章照样可点：点进去看到空态是合理预期，禁用反而像坏了。 *}
+                {{range _, tab := .CounterTabs}}
+                <a class="badge {{tab.Badge}}" href="{{tab.URL}}"{{if tab.Active}} aria-current="true"{{end}}>{{if tab.Active}}<strong>✓ {{tr(tab.LabelKey, tab.Label)}}</strong>{{else}}{{tr(tab.LabelKey, tab.Label)}}{{end}} {{tab.Count}}</a>
+                {{end}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customers.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.customers.filter.hint.lead", "计数回答的是「一共有多少账号、各是什么状态」，") }}<strong>{{ .["t"]("admin.customers.filter.hint.strong", "不受下面的筛选影响") }}</strong>{{ .["t"]("admin.customers.filter.hint.tail", "；列表则按筛选条件显示。") }}<br><br>{{ .["t"]("admin.customers.filter.hint.inclusive.lead", "注册时间的结束日期") }}<strong>{{ .["t"]("admin.customers.filter.hint.inclusive.strong", "包含当天") }}</strong>{{ .["t"]("admin.customers.filter.hint.inclusive.tail", "（填 9 月 30 日，当天注册的客户也在结果里）。") }}<br><br>{{ .["t"]("admin.customers.filter.hint.clickable", "上面的徽章本身就是筛选：点一下就按那个口径筛一遍，可以叠加（叠加时会有多个徽章同时高亮），点「全部」回到不按状态 / 邮箱 / 锁定筛。") }}<br><br>{{ .["t"]("admin.customers.footer.lead", "筛选条件在翻页时保留。停用 / 解除锁定按钮只对有权限的账号显示（权限点：停用启用") }} <code>user:customer_status</code>{{ .["t"]("admin.customers.footer.mid", "、解除锁定") }} <code>user:customer_unlock</code>{{ .["t"]("admin.customers.footer.tail", "）。") }}</span>
+                </span>
+            </div>
+            <form method="get" action="/admin/customers" class="filter-fields">
+                <div class="filter-field">
+                    <label for="customers-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="customers-filter-keyword" name="keyword" value="{{fKeyword}}"
+                           placeholder="{{ .["t"]("admin.customers.ph.keyword_short", "邮箱 / 用户名 / 昵称 / 展示名") }}" autocomplete="off">
+                </div>
+                {* 状态 / 邮箱 / 锁定三个维度由上方徽章筛选，这里不再放下拉（同一维度只给一种控件）。
+                   但取值要用隐藏域带过这个 GET 表单 —— GET 提交会替换整个查询串，
+                   不带就变成了「点一下筛选，徽章选的维度悄悄丢了」。 *}
+                <input type="hidden" name="status" value="{{if fStatus >= 0}}{{fStatus}}{{end}}">
+                <input type="hidden" name="emailVerified" value="{{if fVerified > 0}}{{fVerified}}{{end}}">
+                <input type="hidden" name="locked" value="{{if .FilterLocked}}1{{end}}">
+                <div class="filter-field">
+                    <label for="registeredFrom">{{ .["t"]("admin.customers.field.registered_at", "注册时间") }}</label>
+                    <input type="date" class="form-input" id="registeredFrom" name="registeredFrom" value="{{fFrom}}">
+                    <label for="registeredTo">{{ .["t"]("admin.customers.field.registered_to", "至") }}</label>
+                    <input type="date" class="form-input" id="registeredTo" name="registeredTo" value="{{fTo}}">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.customers.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/customers">{{ .["t"]("admin.customers.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+        </div>
+
         {{if len(rows) == 0}}
-        <p class="hint">
-            {{ .["t"]("admin.customers.empty", "没有符合条件的客户。站点还没有访客注册，或者上面的筛选条件太窄了 —— 先点「重置」看一眼全部账号。") }}
-        </p>
+        {* 空态分两种：筛出来的空（这个口径下暂时没有账号）与真的一个都没有。
+           两者下一步完全不同 —— 用一句话兜住，运营会以为站点里没人注册过。 *}
+        <div class="empty-state">
+            {{if .FilterActive}}
+            <p class="empty-title">{{ .["t"]("admin.customers.list.empty_filtered_heading", "该筛选条件下暂时没有账号") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.customers.list.empty_filtered_desc", "徽章上的数字是各口径的总数（不受筛选影响），点进来为空说明这个口径下确实没有账号。换个徽章，或点「重置」回到全部账号。") }}</p>
+            {{else}}
+            <p class="empty-title">{{ .["t"]("admin.customers.list.empty_heading", "还没有客户") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.customers.list.empty_desc", "客户是访客在站点上自己注册出来的，后台不能直接新建 —— 完成注册后会出现在这里。") }}</p>
+            {{end}}
+            <div class="empty-actions"><a class="btn" href="/admin/customers">{{ .["t"]("admin.customers.filter.reset", "重置") }}</a></div>
+        </div>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
-        <table class="data-table data-table-wide customers-page-table">
-            <thead>
-            <tr><th>{{ .["t"]("admin.customers.col.customer", "客户") }}</th><th>{{ .["t"]("admin.customers.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.customers.col.status", "状态") }}</th><th>{{ .["t"]("admin.customers.col.last_login", "最近登录") }}</th><th>{{ .["t"]("admin.customers.col.registered_at", "注册时间") }}</th><th>{{ .["t"]("admin.customers.col.actions", "操作") }}</th></tr>
-            </thead>
-            <tbody>
-            {{range _, r := rows}}
-            <tr>
-                <td data-label="{{tr("admin.customers.col.customer", "客户")}}">
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
+           提交时浏览器直接带上所有勾中的 ids（admin.js 只做计数与显隐，不注入字段）。
+           行内写操作表单必须留在 </form> 之后 —— HTML 不允许 form 嵌套。 *}
+        <form method="post" action="/admin/customers/bulk-status">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            {* 保留筛选与翻页（与行内表单同一组字段）：回跳后列表位置不变。
+               注意 status 与批量目标状态 toStatus 是两个字段 —— 同名会让回跳后的列表
+               把「目标状态」当成筛选条件，看起来像「筛选没了」。 *}
+            <input type="hidden" name="keyword" value="{{fKeyword}}">
+            <input type="hidden" name="status" value="{{if fStatus >= 0}}{{fStatus}}{{end}}">
+            <input type="hidden" name="emailVerified" value="{{if fVerified > 0}}{{fVerified}}{{end}}">
+            <input type="hidden" name="locked" value="{{if .FilterLocked}}1{{end}}">
+            <input type="hidden" name="registeredFrom" value="{{fFrom}}">
+            <input type="hidden" name="registeredTo" value="{{fTo}}">
+            <input type="hidden" name="page" value="{{fPage}}">
+            <input type="hidden" name="limit" value="{{fLimit}}">
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {* 目标状态靠按钮的 name/value 带（requestSubmit(submitter) 会保留它）；
+                    解除锁定用 formaction 改投另一个端点，勾选状态与筛选字段照旧带上。 *}
+                {{yield bulkBtn(label=tr("admin.customers.bulk.enable", "批量启用"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.enableConfirm", "启用选中的客户？启用后他们可以重新登录。"), name="toStatus", value="1")}}
+                {{yield bulkBtn(label=tr("admin.customers.bulk.disable", "批量停用"), confirm=tr("admin.customers.bulk.disableConfirm", "停用选中的客户？停用后他们立刻登不上去，且不会自动恢复。"), danger=true, name="toStatus", value="0")}}
+                {{yield bulkBtn(label=tr("admin.customers.bulk.unlock", "批量解除锁定"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.unlockConfirm", "解除选中客户的登录锁定？只清登录失败计数与锁定时间，不改账号状态。"), formaction="/admin/customers/bulk-unlock")}}
+            {{yield bulkBarClose()}}
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
+            <table class="data-table data-table-wide customers-page-table">
+                <thead>
+                <tr>
+                    <th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>
+                    <th>{{ .["t"]("admin.customers.col.customer", "客户") }}</th><th>{{ .["t"]("admin.customers.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.customers.col.status", "状态") }}</th><th>{{ .["t"]("admin.customers.col.last_login", "最近登录") }}</th><th>{{ .["t"]("admin.customers.col.registered_at", "注册时间") }}</th><th class="col-actions">{{ .["t"]("admin.customers.col.actions", "操作") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{range _, r := rows}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td data-label="{{tr("admin.customers.col.customer", "客户")}}">
                     <a href="{{r.DetailURL}}">{{r.DisplayLabel}}</a>
                     <div class="hint">{{tr("admin.customers.field.username", "登录名")}} {{r.Username}}</div>
                 </td>
@@ -127,52 +172,58 @@
                     {{r.RegisteredAtText}}
                     <div class="hint">{{r.RegisterIP}}{{if r.RegisterLocation}} · {{r.RegisterLocation}}{{end}}</div>
                 </td>
-                <td data-label="{{tr("admin.customers.col.actions", "操作")}}" class="action-row">
+                <td class="col-actions" data-label="{{tr("admin.customers.col.actions", "操作")}}">
                     <a class="btn btn-sm" href="{{r.DetailURL}}">{{tr("admin.customers.action.detail", "详情")}}</a>
                     {{if r.Actionable}}
-                    <form method="post" action="/admin/customers/status" class="form-inline">
-                        <input type="hidden" name="csrf_token" value="{{csrf}}">
-                        <input type="hidden" name="customerId" value="{{r.ID}}">
-                        <input type="hidden" name="toStatus" value="{{r.NextStatus}}">
-                        <input type="hidden" name="keyword" value="{{fKeyword}}">
-                        <input type="hidden" name="status" value="">
-                        <input type="hidden" name="emailVerified" value="{{fVerified}}">
-                        <input type="hidden" name="registeredFrom" value="{{fFrom}}">
-                        <input type="hidden" name="registeredTo" value="{{fTo}}">
-                        <input type="hidden" name="page" value="{{fPage}}">
-                        <input type="hidden" name="limit" value="{{fLimit}}">
-                        <button type="submit" class="btn btn-sm">{{r.StatusActionLabel}}</button>
-                    </form>
+                    <button type="submit" form="customer-status-{{r.ID}}" class="btn btn-sm">{{r.StatusActionLabel}}</button>
                     {{end}}
                     {{if r.Locked}}
-                    <form method="post" action="/admin/customers/unlock" class="form-inline">
-                        <input type="hidden" name="csrf_token" value="{{csrf}}">
-                        <input type="hidden" name="customerId" value="{{r.ID}}">
-                        <input type="hidden" name="keyword" value="{{fKeyword}}">
-                        <input type="hidden" name="emailVerified" value="{{fVerified}}">
-                        <input type="hidden" name="registeredFrom" value="{{fFrom}}">
-                        <input type="hidden" name="registeredTo" value="{{fTo}}">
-                        <input type="hidden" name="page" value="{{fPage}}">
-                        <input type="hidden" name="limit" value="{{fLimit}}">
-                        <button type="submit" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
-                    </form>
+                    <button type="submit" form="customer-unlock-{{r.ID}}" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
                     {{end}}
                 </td>
             </tr>
             {{if r["PendingHint"]}}
-            <tr><td colspan="6" class="hint">{{ r["PendingHint"] }}</td></tr>
+            <tr><td colspan="7" class="hint">{{ r["PendingHint"] }}</td></tr>
             {{end}}
             {{if r["LockHint"]}}
-            <tr><td colspan="6" class="hint">{{ r["LockHint"] }}</td></tr>
+            <tr><td colspan="7" class="hint">{{ r["LockHint"] }}</td></tr>
             {{end}}
             {{end}}
             </tbody>
-        </table>
-        </div>
+            </table>
+            </div>
+        </form>
+        {* 行内写操作表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+           按钮用 form="<id>" 关联；表单带齐筛选与翻页字段，提交后 302 回本页时列表位置不变。 *}
+        {{range _, r := rows}}
+        {{if r.Actionable}}
+        <form id="customer-status-{{r.ID}}" class="hidden-form" method="post" action="/admin/customers/status">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="customerId" value="{{r.ID}}">
+            <input type="hidden" name="toStatus" value="{{r.NextStatus}}">
+            <input type="hidden" name="keyword" value="{{fKeyword}}">
+            <input type="hidden" name="status" value="">
+            <input type="hidden" name="emailVerified" value="{{fVerified}}">
+            <input type="hidden" name="registeredFrom" value="{{fFrom}}">
+            <input type="hidden" name="registeredTo" value="{{fTo}}">
+            <input type="hidden" name="page" value="{{fPage}}">
+            <input type="hidden" name="limit" value="{{fLimit}}">
+        </form>
+        {{end}}
+        {{if r.Locked}}
+        <form id="customer-unlock-{{r.ID}}" class="hidden-form" method="post" action="/admin/customers/unlock">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="customerId" value="{{r.ID}}">
+            <input type="hidden" name="keyword" value="{{fKeyword}}">
+            <input type="hidden" name="emailVerified" value="{{fVerified}}">
+            <input type="hidden" name="registeredFrom" value="{{fFrom}}">
+            <input type="hidden" name="registeredTo" value="{{fTo}}">
+            <input type="hidden" name="page" value="{{fPage}}">
+            <input type="hidden" name="limit" value="{{fLimit}}">
+        </form>
+        {{end}}
+        {{end}}
         {{include "partials/pagination.html"}}
-        <p class="hint">
-            {{ .["t"]("admin.customers.footer.lead", "筛选条件在翻页时保留。停用 / 解除锁定按钮只对有权限的账号显示（权限点：停用启用") }} <code>user:customer_status</code>{{ .["t"]("admin.customers.footer.mid", "、解除锁定") }} <code>user:customer_unlock</code>{{ .["t"]("admin.customers.footer.tail", "）。") }}
-        </p>
         {{end}}
     </section>
 </div>

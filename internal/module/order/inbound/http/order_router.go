@@ -115,6 +115,10 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		pages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)
 		// 后台备注（迁移 146 的 order:note）：只改 admin_note 一列，不写状态流转。
 		pages.POST("/orders/note", builtin.CasbinMiddlewareForPath("/api/order/note"), orderPages.OrderNoteSave)
+		// 列表级批量动作：逐条走上面那两条单条路径的 service 用例，权限点也逐字复用它们，
+		// 不新增权限点、不写迁移（新增权限点就要同批 seed，否则含超管在内全员 403）。
+		pages.POST("/orders/bulk-status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderBulkStatus)
+		pages.POST("/orders/bulk-cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderBulkCancel)
 
 		// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 		// **先入库、后退款**的强顺序由 service 保证（见 return_review.go）。
@@ -123,6 +127,9 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		pages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
 		pages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
 		pages.POST("/returns/receive", builtin.CasbinMiddlewareForPath("/api/order/return/receive"), returnPages.ReturnReceive)
+		// 批量审核：同意与拒绝各复用单条动作的权限点。
+		pages.POST("/returns/bulk-approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnBulkApprove)
+		pages.POST("/returns/bulk-reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnBulkReject)
 
 		// 优惠码管理页：列表 + 新建 + 修改（含停用 / 启用）+ 删除 + 核销记录。
 		// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果（核销明细是真源）。
@@ -131,6 +138,9 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		pages.POST("/coupons/create", builtin.CasbinMiddlewareForPath("/api/order/coupon/create"), couponPages.CouponCreate)
 		pages.POST("/coupons/update", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponUpdate)
 		pages.POST("/coupons/delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponDelete)
+		// 批量删除 / 启停：启停走 /api/order/coupon/update（单条启停也走它）。
+		pages.POST("/coupons/bulk-delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponBulkDelete)
+		pages.POST("/coupons/bulk-toggle", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponBulkToggle)
 	}
 
 	return svc

@@ -28,8 +28,12 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 		"title": analyticsPageTitle, "menu": "analytics",
 		"csrf_token": "test-token", "lang": lang,
 		"t": templates.TranslateFunc(lang), "langs": templates.LanguageOptions(lang),
-		"lang_redirect":   "/admin/analytics",
-		"Projects":        []projectcontract.ProjectResp{{ID: "p-1", Name: "演示站"}},
+		"lang_redirect": "/admin/analytics",
+		// 两个工程：单工程时页面不渲染工程下拉（唯一选项的下拉是纯占位，见项目既有约定），
+		// 给一个工程就断言不到「工程选择」这条渲染路径。
+		"Projects": []projectcontract.ProjectResp{
+			{ID: "p-1", Name: "演示站"}, {ID: "p-2", Name: "备用站"},
+		},
 		"SelectedProject": "p-1",
 		"FilterFrom":      "2026-01-01", "FilterTo": "2026-01-15",
 		"RangeFrom": "2026-01-01", "RangeTo": "2026-01-15",

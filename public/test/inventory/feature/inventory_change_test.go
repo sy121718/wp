@@ -822,12 +822,27 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 		t.Fatalf("库存页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
+	// 写入口按钮按「动词 + 对象」收紧：原来的「库存变动（入库 / 出库 / 调整）」把抽屉标题
+	// 当按钮文案，现在按钮直接说能做什么 ——「入库 / 出库 / 调整」，抽屉标题仍是「登记库存变动」。
 	for _, want := range []string{
-		"库存变动（入库 / 出库 / 调整）", "变动原因字典", "库存流水", "采购入库", "赠品出库",
-		"提交变动", "新建自定义原因", "PO-PAGE-1", "csrf_token",
+		"入库 / 出库 / 调整", "库存流水", "采购入库", "赠品出库",
+		"提交变动", "PO-PAGE-1", "csrf_token",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("库存页缺少 %q", want)
+		}
+	}
+
+	// 「变动原因字典」与「新建自定义原因」已按「配置不是日常操作」拆到独立页
+	// /admin/inventory/reasons，断言随之搬家（引擎上方已注册该路由并注入 inventory:reason_create）。
+	rec = httptestGet(engine, "/admin/inventory/reasons?project="+f.projectID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("变动原因字典页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	reasonBody := rec.Body.String()
+	for _, want := range []string{"变动原因字典", "新建自定义原因", "采购入库", "赠品出库"} {
+		if !strings.Contains(reasonBody, want) {
+			t.Fatalf("变动原因字典页缺少 %q", want)
 		}
 	}
 

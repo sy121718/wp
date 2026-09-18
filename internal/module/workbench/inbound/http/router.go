@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
+	"time"
 
 	"go_wp/internal/builder/core"
 
@@ -13,6 +15,7 @@ import (
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	pagecontract "go_wp/internal/module/page/contract"
+	pagedto "go_wp/internal/module/page/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productcontract "go_wp/internal/module/product/contract"
@@ -21,6 +24,7 @@ import (
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -93,10 +97,88 @@ func (h *Handle) pageOf(c *gin.Context, pageID string) (*pagecontract.PageResp, 
 }
 
 // Dashboard 仪表盘首页（模板 admin/dashboard.html 由 internal/templates 集中管理）。
+//
+// 只放真实数据：统计口径全部来自 page / project 契约的只读面，本页不做任何计数缓存 ——
+// 缓存会让「刚发布的页面」在概览里迟到，而概览的全部价值就是「现在是什么状态」。
 func (h *Handle) Dashboard(c *gin.Context) {
+	// 依赖缺失（空 Handle）时降级为空概览，而不是 panic：生产装配必然注入这些契约，
+	// 但「只挂外壳、不装业务服务」的渲染测试与降级装配路径都可能走到这里 ——
+	// 首页是登录后的第一跳，它挂掉等于后台进不去。
+	if h.projects == nil || h.pages == nil {
+		c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
+			"title": workbenchenums.MsgDashboardTitle,
+			"menu":  "dashboard",
+		}))
+		return
+	}
+
+	ctx := c.Request.Context()
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		// 概览是**只读汇总页**：数据源读不到不该让整页 500 —— 页面壳照常渲染、
+		// 统计区退回空态、页头说明口径暂时不可用，用户仍然能用侧栏去别的页面干活。
+		// （整页 500 会把导航一起打掉，把一个"概览暂时没有数字"变成"后台进不去"。）
+		c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
+			"title": workbenchenums.MsgDashboardTitle,
+			"menu":  "dashboard",
+			"Err":   err.Error(),
+		}))
+		return
+	}
+
+	type dashRow struct {
+		updated time.Time
+		data    gin.H
+	}
+	var (
+		pageTotal, pagePublished, pageStale int
+		rows                                []dashRow
+	)
+	for _, p := range projects {
+		list, lerr := h.pages.List(ctx, &pagedto.ListReq{ProjectID: p.ID})
+		if lerr != nil {
+			// 单个工程读失败不让整个概览不可用：跳过它，其余照常汇总。
+			continue
+		}
+		for _, pg := range list {
+			published := pg.ActiveArtifactID != nil || pg.ActivePath != nil
+			pageTotal++
+			if published {
+				pagePublished++
+			}
+			if pg.Stale {
+				pageStale++
+			}
+			rows = append(rows, dashRow{
+				updated: pg.UpdatedAt.Time(),
+				data: gin.H{
+					"ID": pg.ID, "Project": p.Name, "Path": pg.DraftPath, "Kind": pg.Kind,
+					"Published": published, "Stale": pg.Stale, "Version": pg.DraftVersion,
+					"UpdatedAt": pg.UpdatedAt.Time().Format(utils.LayoutSecond),
+				},
+			})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].updated.After(rows[j].updated) })
+	// 概览只列最近的一屏：更早的走 /admin/pages 的完整列表与筛选。
+	const recentLimit = 8
+	recentPages := make([]gin.H, 0, recentLimit)
+	for i, r := range rows {
+		if i >= recentLimit {
+			break
+		}
+		recentPages = append(recentPages, r.data)
+	}
+
 	c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
-		"title": workbenchenums.MsgDashboardTitle,
-		"menu":  "dashboard",
+		"title":         workbenchenums.MsgDashboardTitle,
+		"menu":          "dashboard",
+		"ProjectCount":  len(projects),
+		"PageTotal":     pageTotal,
+		"PagePublished": pagePublished,
+		"PageDraft":     pageTotal - pagePublished,
+		"PageStale":     pageStale,
+		"RecentPages":   recentPages,
 	}))
 }
 
@@ -123,8 +205,11 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 		products: products, contentStore: contentStore,
 	}
 	g := workbenchPages
-	// 仪表盘首页。
+	// 仪表盘首页同时挂 / 与 /admin：菜单树里「仪表盘」的 path 是 /admin（与其它菜单同构），
+	// 而历史入口是 /。两处指到同一个 handler —— 路由与菜单不一致时，
+	// 点侧栏第一项会 404（登录后第一眼就报错），dev-login 的默认跳转也落在那里。
 	g.GET("/", h.Dashboard)
+	g.GET("/admin", h.Dashboard)
 	// 编辑器外壳（?id= 页面 / ?block= 全局块 / ?template= 内容模板）。
 	g.GET("/workbench", h.Workbench)
 	// 预览编译直出（GET 已保存草稿 / POST 未保存草稿）。

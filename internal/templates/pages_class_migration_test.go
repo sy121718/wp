@@ -78,10 +78,14 @@ func TestMailAdminTemplatesUseSharedClasses(t *testing.T) {
 			t.Fatalf("读取 %s 失败: %v", page, err)
 		}
 		body := string(data)
-		for _, want := range []string{`<div class="stack">`, `class="card card-body"`} {
-			if !strings.Contains(body, want) {
-				t.Errorf("%s 缺少公共类 %s（旧类被删除后此处会掉样式）", page, want)
-			}
+		if !strings.Contains(body, `<div class="stack">`) {
+			t.Errorf("%s 缺少公共类 <div class=\"stack\">（旧类被删除后此处会掉样式）", page)
+		}
+		// 页面壳要么是「内容卡」（card card-body，有说明/表单区块），
+		// 要么是「列表卡」（card list-card，纯列表页 —— 见 admin-ui-logic §7 标准骨架）。
+		// 两者都是合规形态，早期只认前者会让纯列表页误报。
+		if !strings.Contains(body, `class="card card-body"`) && !strings.Contains(body, `class="card list-card"`) {
+			t.Errorf("%s 既没有 card card-body 也没有 card list-card（页面缺少卡片壳）", page)
 		}
 	}
 }

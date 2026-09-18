@@ -1,5 +1,7 @@
 {* admin/analytics.html — 访问统计（BIZ-8）：按天 / 按路径聚合 + 时间范围筛选 + 路径表分页。 *}
 {* 只读页：没有任何写操作，全部是 GET（工程切换 / 时间范围 / 分页）。 *}
+{* 版式遵循列表页标准骨架（评审规则 admin-ui-logic §7）：页头一行（标题 + ? 悬浮说明 + 工程选择），
+   口径说明（打点来源 / PV-UV 定义 / UTC 日界 / 各维度口径）一律进 .help 悬浮，正文零说明文字。 *}
 {* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件里 or 不支持（用 ||）。 *}
 {{extends "layout.html"}}
 {{block body()}}
@@ -13,144 +15,197 @@
 {{langs := .Langs}}
 {{rankLimit := .RankLimit}}
 <div class="stack analytics-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.analytics.title", "访问统计") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.analytics.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.analytics.intro.lead", "数据由访客浏览器打点（") }}<code>POST /analytics/collect</code>{{ .["t"]("admin.analytics.intro.after", "）：访问面是静态产物直出，服务端不在访客请求路径上，所以计数只能从客户端来。打点失败静默丢弃 —— 统计永远不会影响访客看到的页面。") }}<br><br>{{ .["t"]("admin.analytics.metrics.lead", "「浏览数」是页面打开次数（PV）；「独立访客」按匿名标识去重（UV）—— 匿名标识由客户端派生、服务端再加盐哈希后落库，库里既没有 IP 明文，也没有原始 cookie 值。日期按 ") }}<strong>{{ .["t"]("admin.analytics.metrics.strong", "UTC 日界") }}</strong>{{ .["t"]("admin.analytics.metrics.tail", "切分：产物由全球访客访问，用 UTC 才不会有跨时区的口径歧义。") }}<br><br>{{ .["t"]("admin.analytics.range.actual_post", "（含当天）。两个日期留空即最近 30 天；结束日期不会超过今天。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/analytics">
+                <label class="sr-only" for="analytics-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="analytics-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.analytics.error", "统计读取失败：") }}{{.Err}}</p>
+    {{end}}
+
+    {{if len(.Projects) == 0}}
     <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.title", "访问统计") }}</h2>
-        <p class="hint">
-            {{ .["t"]("admin.analytics.intro.lead", "数据由访客浏览器打点（") }}<code>POST /analytics/collect</code>{{ .["t"]("admin.analytics.intro.after", "）：访问面是静态产物直出，服务端不在访客请求路径上，所以计数只能从客户端来。打点失败静默丢弃 —— 统计永远不会影响访客看到的页面。") }}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.analytics.metrics.lead", "「浏览数」是页面打开次数（PV）；「独立访客」按匿名标识去重（UV）—— 匿名标识由客户端派生、服务端再加盐哈希后落库，库里既没有 IP 明文，也没有原始 cookie 值。日期按 ") }}<strong>{{ .["t"]("admin.analytics.metrics.strong", "UTC 日界") }}</strong>{{ .["t"]("admin.analytics.metrics.tail", "切分：产物由全球访客访问，用 UTC 才不会有跨时区的口径歧义。") }}
-        </p>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.analytics.error", "统计读取失败：") }}{{.Err}}</p>
-        {{end}}
-        <form method="get" action="/admin/analytics" class="form-inline">
-            <select class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-        {{if len(.Projects) == 0}}
-        <p class="hint">{{ .["t"]("admin.analytics.no_project.lead", "还没有站点工程 —— 统计按工程归集，先去") }}<a href="/admin/pages">{{ .["t"]("admin.analytics.no_project.link", "页面管理") }}</a>{{ .["t"]("admin.analytics.no_project.tail", "建一个工程并发布页面。") }}</p>
-        {{end}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.analytics.no_project.lead", "还没有站点工程 —— 统计按工程归集，先去") }}<a href="/admin/pages">{{ .["t"]("admin.analytics.no_project.link", "页面管理") }}</a>{{ .["t"]("admin.analytics.no_project.tail", "建一个工程并发布页面。") }}</p>
+        </div>
     </section>
+    {{end}}
 
     {{if selectedProject != ""}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.analytics.range.title", "时间范围") }}</h2>
         <form method="get" action="/admin/analytics" class="form-inline">
             <input type="hidden" name="project" value="{{selectedProject}}">
-            <label>{{ .["t"]("admin.analytics.range.from", "起始日期") }} <input type="date" name="from" value="{{.FilterFrom}}"></label>
-            <label>{{ .["t"]("admin.analytics.range.to", "结束日期") }} <input type="date" name="to" value="{{.FilterTo}}"></label>
+            <div class="filter-field">
+                <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
+                <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
+            </div>
+            <div class="filter-field">
+                <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
+                <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
+            </div>
             <button type="submit" class="btn btn-primary">{{ .["t"]("admin.analytics.range.submit", "查询") }}</button>
             <a class="btn btn-sm" href="/admin/analytics?project={{selectedProject}}">{{ .["t"]("admin.analytics.range.last30", "最近 30 天") }}</a>
         </form>
-        {{if .RangeFrom != ""}}
-        <p class="hint">{{ .["t"]("admin.analytics.range.actual_pre", "实际统计窗口：") }}<strong>{{.RangeFrom}}</strong>{{ .["t"]("admin.analytics.range.actual_mid", " 至 ") }}<strong>{{.RangeTo}}</strong>{{ .["t"]("admin.analytics.range.actual_post", "（含当天）。两个日期留空即最近 30 天；结束日期不会超过今天。") }}</p>
-        {{end}}
         <div class="action-row">
+            {{if .RangeFrom != ""}}
+            <span class="badge">{{ .["t"]("admin.analytics.range.actual_pre", "实际统计窗口：") }}<strong>{{.RangeFrom}}</strong>{{ .["t"]("admin.analytics.range.actual_mid", " 至 ") }}<strong>{{.RangeTo}}</strong></span>
+            {{end}}
             <span class="badge">{{ .["t"]("admin.analytics.badge.views", "总浏览数") }} {{.Total}}</span>
             <span class="badge">{{ .["t"]("admin.analytics.badge.visitors", "独立访客") }} {{.Visitors}}</span>
             <span class="badge">{{ .["t"]("admin.analytics.badge.paths", "不同路径") }} {{.PathTotal}}</span>
         </div>
     </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.daily.title", "按天") }}</h2>
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.analytics.daily.title", "按天") }}</span>
+        </div>
         {{if len(daily) == 0}}
-        <p class="hint">
-            {{ .["t"]("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。") }}<strong>{{ .["t"]("admin.analytics.daily.empty.strong", "发布页面之后") }}</strong>{{ .["t"]("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。") }}
-        </p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。") }}<strong>{{ .["t"]("admin.analytics.daily.empty.strong", "发布页面之后") }}</strong>{{ .["t"]("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。") }}</p>
+        </div>
         {{else}}
-        <table class="table">
-            <thead><tr><th>{{ .["t"]("admin.analytics.col.day", "日期（UTC）") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
-            <tbody>
-                {{range _, d := daily}}
-                <tr><td>{{d.Day}}</td><td>{{d.Views}}</td><td>{{d.Visitors}}</td></tr>
-                {{end}}
-            </tbody>
-        </table>
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table">
+                <thead><tr><th>{{ .["t"]("admin.analytics.col.day", "日期（UTC）") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                <tbody>
+                    {{range _, d := daily}}
+                    <tr><td>{{d.Day}}</td><td>{{d.Views}}</td><td>{{d.Visitors}}</td></tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
     </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.paths.title", "按路径") }}</h2>
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.analytics.paths.title", "按路径") }}</span>
+        </div>
         {{if len(paths) == 0}}
-        <p class="hint">{{ .["t"]("admin.analytics.paths.empty", "没有路径数据。") }}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.analytics.paths.empty", "没有路径数据。") }}</p>
+        </div>
         {{else}}
-        <table class="table">
-            <thead><tr><th>{{ .["t"]("admin.analytics.col.path", "路径") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
-            <tbody>
-                {{range _, p := paths}}
-                <tr><td><code>{{p.Path}}</code></td><td>{{p.Views}}</td><td>{{p.Visitors}}</td></tr>
-                {{end}}
-            </tbody>
-        </table>
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table">
+                <thead><tr><th>{{ .["t"]("admin.analytics.col.path", "路径") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                <tbody>
+                    {{range _, p := paths}}
+                    <tr><td><code>{{p.Path}}</code></td><td>{{p.Views}}</td><td>{{p.Visitors}}</td></tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
         {{include "partials/pagination.html"}}
     </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.referrers.title", "来源域") }}</h2>
-        <p class="hint">
-            {{ .["t"]("admin.analytics.referrers.hint", "打点只上报域名（服务端再去掉协议与路径），所以同一站点的不同页面算同一个来源。空值是没有来源的访问：从地址栏输入、书签打开，或客户端没有发送 referrer。") }}
-            {{ .["t"]("admin.analytics.rank.hint_lead", "下面三个维度榜各取前") }}<strong>{{rankLimit}}</strong>{{ .["t"]("admin.analytics.rank.hint_tail", "条，按浏览数降序、并列时按取值升序（顺序是确定的，刷新不会换名次）；它们恒定读访问明细，与上方的「取数来源」无关。") }}
-        </p>
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.analytics.referrers.title", "来源域") }}</span>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.analytics.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.analytics.referrers.hint", "打点只上报域名（服务端再去掉协议与路径），所以同一站点的不同页面算同一个来源。空值是没有来源的访问：从地址栏输入、书签打开，或客户端没有发送 referrer。") }}<br><br>{{ .["t"]("admin.analytics.rank.hint_lead", "下面三个维度榜各取前") }}<strong>{{rankLimit}}</strong>{{ .["t"]("admin.analytics.rank.hint_tail", "条，按浏览数降序、并列时按取值升序（顺序是确定的，刷新不会换名次）；它们恒定读访问明细，与上方的「取数来源」无关。") }}</span>
+            </span>
+        </div>
         {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-        <p class="hint">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
         {{end}}
         {{if len(referrers) == 0}}
-        <p class="hint">{{ .["t"]("admin.analytics.referrers.empty", "没有来源数据。") }}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.analytics.referrers.empty", "没有来源数据。") }}</p>
+        </div>
         {{else}}
-        <table class="table">
-            <thead><tr><th>{{ .["t"]("admin.analytics.col.referrer", "来源域") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
-            <tbody>
-                {{range _, v := referrers}}
-                <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.referrers.unknown", "（无来源）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
-                {{end}}
-            </tbody>
-        </table>
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table">
+                <thead><tr><th>{{ .["t"]("admin.analytics.col.referrer", "来源域") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                <tbody>
+                    {{range _, v := referrers}}
+                    <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.referrers.unknown", "（无来源）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
     </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.ua.title", "设备分类") }}</h2>
-        <p class="hint">{{ .["t"]("admin.analytics.ua.hint", "分类由服务端按请求头判定（desktop / tablet / mobile / bot），不采信上报里的字段 —— 客户端可以自称任何设备。空值是请求没有带 UA。") }}</p>
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.analytics.ua.title", "设备分类") }}</span>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.analytics.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.analytics.ua.hint", "分类由服务端按请求头判定（desktop / tablet / mobile / bot），不采信上报里的字段 —— 客户端可以自称任何设备。空值是请求没有带 UA。") }}</span>
+            </span>
+        </div>
         {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-        <p class="hint">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
         {{end}}
         {{if len(uaClasses) == 0}}
-        <p class="hint">{{ .["t"]("admin.analytics.ua.empty", "没有设备数据。") }}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.analytics.ua.empty", "没有设备数据。") }}</p>
+        </div>
         {{else}}
-        <table class="table">
-            <thead><tr><th>{{ .["t"]("admin.analytics.col.ua_class", "设备分类") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
-            <tbody>
-                {{range _, v := uaClasses}}
-                <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.ua.unknown", "（未识别）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
-                {{end}}
-            </tbody>
-        </table>
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table">
+                <thead><tr><th>{{ .["t"]("admin.analytics.col.ua_class", "设备分类") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                <tbody>
+                    {{range _, v := uaClasses}}
+                    <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.ua.unknown", "（未识别）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
     </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.langs.title", "语言") }}</h2>
-        <p class="hint">{{ .["t"]("admin.analytics.langs.hint", "语言由产物在构建期烘进打点配置，所以它反映的是页面自己声明的语言，不是访客的浏览器语言。空值是这一页没有上报语言。") }}</p>
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.analytics.langs.title", "语言") }}</span>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.analytics.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.analytics.langs.hint", "语言由产物在构建期烘进打点配置，所以它反映的是页面自己声明的语言，不是访客的浏览器语言。空值是这一页没有上报语言。") }}</span>
+            </span>
+        </div>
         {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-        <p class="hint">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
         {{end}}
         {{if len(langs) == 0}}
-        <p class="hint">{{ .["t"]("admin.analytics.langs.empty", "没有语言数据。") }}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.analytics.langs.empty", "没有语言数据。") }}</p>
+        </div>
         {{else}}
-        <table class="table">
-            <thead><tr><th>{{ .["t"]("admin.analytics.col.lang", "语言") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
-            <tbody>
-                {{range _, v := langs}}
-                <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.langs.unknown", "（未上报）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
-                {{end}}
-            </tbody>
-        </table>
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table">
+                <thead><tr><th>{{ .["t"]("admin.analytics.col.lang", "语言") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                <tbody>
+                    {{range _, v := langs}}
+                    <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.langs.unknown", "（未上报）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
     </section>
     {{end}}

@@ -1,37 +1,68 @@
-{* admin/permissions.html — 权限资源：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
+{* admin/permissions.html — 权限资源：列表页标准骨架（评审规则 admin-ui-logic §7）。
+    · 页头一行：标题 + 右侧主行动；筛选与列表同卡；行内表单放表格外。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{* 首列勾选与批量删除：权限点复用单条删除的 /api/permission/delete（页面侧不新增权限点）。 *}
+{{canDelete := isset(.PermSet["permission:delete"])}}
 <div class="stack">
-    <section class="card">
-        <div class="card-header">
-            <span class="card-title">{{ .["t"]("admin.permissions.list.heading", "权限资源列表（共") }} {{.Total}}{{ .["t"]("admin.permissions.list.headingClose", "）") }}</span>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.permissions.list.heading", "权限资源列表（共") }} {{.Total}}{{ .["t"]("admin.permissions.list.headingClose", "）") }}</h1>
+            </div>
         </div>
-        {* 服务端筛选：GET 提交，条件进 SQL（与分页同源，翻页保留筛选）。 *}
-        <form class="list-toolbar" method="get" action="/admin/permissions">
-            <div class="toolbar-search">
-                <input type="text" name="code" value="{{.["FilterCode"]}}" placeholder="{{ .["t"]("admin.permissions.ph.code", "权限编码") }}" class="form-input">
-            </div>
-            <div class="toolbar-search">
-                <input type="text" name="module" value="{{.["FilterModule"]}}" placeholder="{{ .["t"]("admin.permissions.ph.module", "所属模块") }}" class="form-input">
-            </div>
-            <button type="submit" class="btn">{{ .["t"]("admin.permissions.action.filter", "筛选") }}</button>
-            <a class="btn btn-ghost" href="/admin/permissions">{{ .["t"]("admin.permissions.action.reset", "重置") }}</a>
+        <div class="page-actions">
             {{include "partials/toolbar_create.html" map("allowed", isset(.PermSet["permission:create"]), "tpl", "#tpl-perm-create", "title", tr("admin.permissions.action.create", "新建权限点"), "label", tr("admin.permissions.action.create", "新建权限点"))}}
-        </form>
-        <div class="card-body">
-            {{if len(.Rows) == 0}}
-            <p class="hint">{{ .["t"]("admin.permissions.empty", "还没有权限点，点右上「新建权限点」创建一个。") }}</p>
-            {{else}}
-            <div class="table-wrap">
+        </div>
+    </header>
+
+    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
+       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {* 服务端筛选：GET 提交，条件进 SQL（与分页同源，翻页保留筛选）。 *}
+        <div class="filter-bar">
+            <form class="filter-row" method="get" action="/admin/permissions">
+                <input type="text" name="code" value="{{.["FilterCode"]}}" placeholder="{{ .["t"]("admin.permissions.ph.code", "权限编码") }}" aria-label="{{ .["t"]("admin.permissions.ph.code", "权限编码") }}" class="form-input">
+                <input type="text" name="module" value="{{.["FilterModule"]}}" placeholder="{{ .["t"]("admin.permissions.ph.module", "所属模块") }}" aria-label="{{ .["t"]("admin.permissions.ph.module", "所属模块") }}" class="form-input">
+                <button type="submit" class="btn">{{ .["t"]("admin.permissions.action.filter", "筛选") }}</button>
+                <a class="btn btn-ghost" href="/admin/permissions">{{ .["t"]("admin.permissions.action.reset", "重置") }}</a>
+            </form>
+        </div>
+
+        {{if len(.Rows) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.permissions.empty", "还没有权限点，点右上「新建权限点」创建一个。") }}</p>
+        </div>
+        {{else}}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接带上所有勾中的 ids，
+           不需要在提交前注入隐藏域。行内删除表单留在表格外（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联。 *}
+        <form method="post" action="/admin/permissions/bulk-delete">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {{if canDelete}}
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.permissions.confirm.delete", "确认删除？"), danger=true)}}
+        {{yield bulkBarClose()}}
+        {{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region">
             <table class="data-table">
                 <thead>
-                <tr><th>{{ .["t"]("admin.permissions.col.code", "编码") }}</th><th>{{ .["t"]("admin.permissions.col.name", "名称") }}</th><th>{{ .["t"]("admin.permissions.col.module", "模块") }}</th><th>{{ .["t"]("admin.permissions.col.api_path", "API 路径") }}</th><th>{{ .["t"]("admin.permissions.col.method", "方法") }}</th><th>{{ .["t"]("admin.permissions.col.status", "状态") }}</th><th>{{ .["t"]("admin.permissions.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.permissions.col.actions", "操作") }}</th></tr>
+                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th>{{ .["t"]("admin.permissions.col.code", "编码") }}</th><th>{{ .["t"]("admin.permissions.col.name", "名称") }}</th><th>{{ .["t"]("admin.permissions.col.module", "模块") }}</th><th>{{ .["t"]("admin.permissions.col.api_path", "API 路径") }}</th><th>{{ .["t"]("admin.permissions.col.method", "方法") }}</th><th>{{ .["t"]("admin.permissions.col.status", "状态") }}</th><th>{{ .["t"]("admin.permissions.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.permissions.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
                 {{range _, p := .Rows}}
                 <tr data-filter-text="{{p.PermissionCode}} {{p.PermissionName}} {{p.Module}} {{p.APIPath}} {{p.APIMethod}} {{if p.Remark}}{{p.Remark}}{{end}}">
+                {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 <td class="text-mute">{{p.PermissionCode}}</td>
                 <td>{{p.PermissionName}}</td>
                 <td>{{p.Module}}</td>
@@ -41,27 +72,34 @@
                 <td>{{if p.Remark}}{{p.Remark}}{{end}}</td>
                 <td class="col-actions">
                     {{if isset(.PermSet["permission:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-perm-edit-{{p.ID}}" data-drawer-title="{{tr("admin.permissions.edit.title", "编辑权限点：")}}{{p.PermissionName}}">{{tr("admin.permissions.action.edit", "编辑")}}</button>{{end}}
-                    {{if isset(.PermSet["permission:delete"])}}<button type="submit" form="perm-del-{{p.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.permissions.confirm.delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.permissions.action.delete", "删除")}}</button>{{end}}
-                    <form id="perm-del-{{p.ID}}" method="post" action="/admin/permissions/delete" class="hidden-form">
-                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                        <input type="hidden" name="id" value="{{p.ID}}">
-                    </form>
+                    {{if isset(.PermSet["permission:delete"])}}<button type="submit" form="perm-del-{{p.ID}}" class="btn btn-sm btn-danger">{{tr("admin.permissions.action.delete", "删除")}}</button>{{end}}
                 </td>
                 </tr>
                 {{end}}
                 </tbody>
             </table>
-            </div>
-        {{include "partials/pagination.html"}}
-            {{end}}
         </div>
+        </form>
+        {{include "partials/pagination.html"}}
+        {{end}}
     </section>
+
+    {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
+    {{range _, p := .Rows}}
+    {{if isset(.PermSet["permission:delete"])}}
+    <form id="perm-del-{{p.ID}}" method="post" action="/admin/permissions/delete" class="hidden-form"
+          data-confirm="{{tr("admin.permissions.confirm.delete", "确认删除？")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+    </form>
+    {{end}}
+    {{end}}
 </div>
 
 {* ===== 新建权限点（抽屉表单模板） ===== *}
 <template id="tpl-perm-create">
     <form method="post" action="/admin/permissions/create">
-        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.permissions.field.code", "权限编码") }}</label>
             <input type="text" name="permission_code" class="form-input" required maxlength="100" placeholder="{{ .["t"]("admin.permissions.ph.code_example", "如：role:list") }}">
@@ -107,7 +145,7 @@
 {{range _, p := .Rows}}
 <template id="tpl-perm-edit-{{p.ID}}">
     <form method="post" action="/admin/permissions/update">
-        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{p.ID}}">
         <input type="hidden" name="permission_code" value="{{p.PermissionCode}}">
         <div class="form-group">

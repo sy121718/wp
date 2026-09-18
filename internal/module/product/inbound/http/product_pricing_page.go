@@ -74,7 +74,7 @@ func (h *productPageHandle) ProductPricingApply(c *gin.Context) {
 		PricingRuleReq: *req,
 		Note:           strings.TrimSpace(c.PostForm("note")),
 		// 操作人取自会话，客户端的表单字段不作数（留痕不可伪造）。
-		OperatorID: pricingOperatorID(c),
+		OperatorID: shell.CurrentUserIDText(c),
 	})
 	if err != nil {
 		c.Redirect(http.StatusFound, "/admin/product-pricing?project="+req.ProjectID+"&err="+err.Error())
@@ -299,25 +299,6 @@ func defaultPricingForm(rules []*productdto.PricingRuleTypeResp, roundings []*pr
 		form.Rounding = roundings[0].Value
 	}
 	return form
-}
-
-// pricingOperatorID 从会话取操作人 id（缺失返回空串）。
-func pricingOperatorID(c *gin.Context) (id string) {
-	value, exists := c.Get("user_id")
-	if !exists {
-		return ""
-	}
-	switch v := value.(type) {
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case int:
-		return strconv.Itoa(v)
-	case string:
-		return v
-	case uint64:
-		return strconv.FormatUint(v, 10)
-	}
-	return ""
 }
 
 // pricingTimeLabel RFC3339 → 后台展示文本（同样的压轴规则见标签页的 recalcLabel）。

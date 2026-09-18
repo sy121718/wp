@@ -1,268 +1,110 @@
+{* admin/dashboard.html — 仪表盘：真实概览（站点工程 / 页面发布状态 / 最近更新） *}
+{* 版式遵循列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §2.1/§7）：
+     · 正文零说明文字，口径说明进 .help 悬浮；
+     · 统计卡只放契约能查到的真实值 —— 本页曾整页是静态演示数据（假管理员 128 人、
+       假表单、组件展台），运营会把示例数字当真实统计，属 P0 缺陷。 *}
 {{extends "layout.html"}}
-{* dashboard.jet — 组件演示页面，展示所有 UI 组件的视觉效果 *}
 {{block body()}}
-{* 本页样式（审计 UI-012）：原先 12 处散在标签上的内联 style 收敛到这里，用语义类复用；
-   颜色一律走主题令牌，暗色模式下自动跟随（内联硬编码色值是审计点名的主题失效原因）。 *}
-<style>
-.dash-title { font-size: 22px; font-weight: 300; letter-spacing: -0.22px; }
-.dash-h2 { font-size: 18px; font-weight: 300; }
-.dash-stat { font-size: 32px; font-weight: 300; letter-spacing: -0.64px; margin-top: 4px; }
-.dash-tone-success { color: var(--c-success, #3f6b4f); margin-top: 4px; }
-.dash-tone-warning { color: var(--c-warning, #8a6d3b); margin-top: 4px; }
-.dash-tone-danger, .dash-tone-danger:hover { color: var(--c-danger, #b34a4a); }
-</style>
-
-{* 数据口径标注（审计 UI-012）：本页目前是静态演示页 —— 统计数字、列表与表单都是示例值，
-   没有任何后端数据源（Dashboard handler 只注入 title/menu）。在接入真实指标前必须显式标注，
-   否则运营会把这些数字当成真实统计。真实数据在下面这些页面里。 *}
-<p class="hint" role="note">
-    {{ .["t"]("admin.dashboard.placeholder.lead", "演示占位：本页数值、列表与表单均为示例数据，不代表真实统计。") }}
-    {{ .["t"]("admin.dashboard.placeholder.links", "真实数据见：") }}
-    <a href="/admin/analytics">{{ .["t"]("admin.dashboard.placeholder.analytics", "访问统计") }}</a>
-    ·
-    <a href="/admin/orders">{{ .["t"]("admin.dashboard.placeholder.orders", "订单") }}</a>
-    ·
-    <a href="/admin/inventory">{{ .["t"]("admin.dashboard.placeholder.inventory", "库存") }}</a>
-</p>
-
-{* ===== 页面操作栏 ===== *}
-<div class="flex items-center justify-between mb-lg">
-    <div>
-        <h1 class="dash-title">{{ .["t"]("admin.dashboard.title", "仪表盘") }}</h1>
-        <p class="text-mute text-sm mt-xs">{{ .["t"]("admin.dashboard.subtitle", "系统概览与组件演示") }}</p>
-    </div>
-    <div class="flex items-center gap-sm">
-        <button class="btn btn-secondary">{{ .["t"]("admin.dashboard.action.export", "导出") }}</button>
-        <button class="btn btn-primary">+ {{ .["t"]("admin.dashboard.action.new_admin", "新增管理员") }}</button>
-    </div>
-</div>
-
-{* ===== 统计卡片 ===== *}
-<div class="form-row mb-xl">
-    <div class="card">
-        <div class="card-body">
-            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.admins", "管理员总数") }}</div>
-            <div class="dash-stat">128</div>
-            <div class="text-sm dash-tone-success">{{ .["t"]("admin.dashboard.stat.admins_delta", "+12 本月") }}</div>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-body">
-            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.online", "在线用户") }}</div>
-            <div class="dash-stat">34</div>
-            <div class="text-sm text-mute mt-xs">{{ .["t"]("admin.dashboard.stat.online_note", "实时") }}</div>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-body">
-            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.published", "已发布页面") }}</div>
-            <div class="dash-stat">56</div>
-            <div class="text-sm text-mute mt-xs">{{ .["t"]("admin.dashboard.stat.published_note", "静态 Artifact") }}</div>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-body">
-            <div class="text-mute text-sm">{{ .["t"]("admin.dashboard.stat.pending", "待审核内容") }}</div>
-            <div class="dash-stat">7</div>
-            <div class="text-sm dash-tone-warning">{{ .["t"]("admin.dashboard.stat.pending_note", "需要处理") }}</div>
-        </div>
-    </div>
-</div>
-
-{* ===== 表格 ===== *}
-<div class="flex items-center justify-between mb-md">
-    <h2 class="dash-h2">{{ .["t"]("admin.dashboard.list.title", "管理员列表") }}</h2>
-    {* 此处原有一个 hx-get="/admin/administrators/search" 搜索框：该路由从未注册，
-       每次输入都产生一次 404；且本页表格是静态占位数据，本来也没有可搜索的数据源。
-       带筛选的真实管理员列表在 /admin/administrators，故移除该输入框。 *}
-</div>
-
-<div class="table-wrap">
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>{{ .["t"]("admin.dashboard.col.username", "用户名") }}</th>
-                <th>{{ .["t"]("admin.dashboard.col.name", "姓名") }}</th>
-                <th>{{ .["t"]("admin.dashboard.col.role", "角色") }}</th>
-                <th>{{ .["t"]("admin.dashboard.col.dept", "部门") }}</th>
-                <th>{{ .["t"]("admin.dashboard.col.status", "状态") }}</th>
-                <th>{{ .["t"]("admin.dashboard.col.last_login", "最后登录") }}</th>
-                <th class="col-actions">{{ .["t"]("admin.dashboard.col.actions", "操作") }}</th>
-            </tr>
-        </thead>
-        <tbody id="table-body">
-            <tr>
-                <td><strong>admin</strong></td>
-                <td>{{ .["t"]("admin.dashboard.role.super_admin", "超级管理员") }}</td>
-                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.super_admin", "超级管理员") }}</span></td>
-                <td>{{ .["t"]("admin.dashboard.dept.tech", "技术部") }}</td>
-                <td><span class="dot dot-success"></span>{{ .["t"]("admin.dashboard.status.enabled", "启用") }}</td>
-                <td class="text-mute text-sm">2026-07-29 10:23</td>
-                <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
-                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
-                </td>
-            </tr>
-            <tr>
-                <td><strong>editor01</strong></td>
-                <td>{{ .["t"]("admin.dashboard.row.name_zhang", "张三") }}</td>
-                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.editor", "编辑") }}</span></td>
-                <td>{{ .["t"]("admin.dashboard.dept.content", "内容部") }}</td>
-                <td><span class="dot dot-success"></span>{{ .["t"]("admin.dashboard.status.enabled", "启用") }}</td>
-                <td class="text-mute text-sm">2026-07-28 16:45</td>
-                <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
-                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
-                </td>
-            </tr>
-            <tr>
-                <td><strong>viewer02</strong></td>
-                <td>{{ .["t"]("admin.dashboard.row.name_li", "李四") }}</td>
-                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.viewer", "访客") }}</span></td>
-                <td>{{ .["t"]("admin.dashboard.dept.market", "市场部") }}</td>
-                <td><span class="dot dot-warning"></span>{{ .["t"]("admin.dashboard.status.pending", "待激活") }}</td>
-                <td class="text-mute text-sm">{{ .["t"]("admin.dashboard.row.never_login", "从未登录") }}</td>
-                <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
-                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
-                </td>
-            </tr>
-            <tr>
-                <td><strong>dev03</strong></td>
-                <td>{{ .["t"]("admin.dashboard.row.name_wang", "王五") }}</td>
-                <td><span class="badge badge-mute">{{ .["t"]("admin.dashboard.role.developer", "开发者") }}</span></td>
-                <td>{{ .["t"]("admin.dashboard.dept.tech", "技术部") }}</td>
-                <td><span class="dot dot-danger"></span>{{ .["t"]("admin.dashboard.status.disabled_row", "已禁用") }}</td>
-                <td class="text-mute text-sm">2026-06-15 09:12</td>
-                <td class="col-actions">
-                    <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.action.edit", "编辑") }}</button>
-                    <button class="btn btn-ghost btn-sm dash-tone-danger">{{ .["t"]("admin.dashboard.action.delete", "删除") }}</button>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-    <div class="pagination">
-        <div class="pagination-info">{{ .["t"]("admin.dashboard.pager.summary", "共 128 条，第 1-4 条") }}</div>
-        <div class="pagination-pages">
-            <a href="#">{{ .["t"]("admin.dashboard.pager.prev", "上一页") }}</a>
-            <a href="#" class="active">1</a>
-            <a href="#">2</a>
-            <a href="#">3</a>
-            <a href="#">...</a>
-            <a href="#">32</a>
-            <a href="#">{{ .["t"]("admin.dashboard.pager.next", "下一页") }}</a>
-        </div>
-    </div>
-</div>
-
-{* ===== 表单组件 ===== *}
-<div class="card mt-xl">
-    <div class="card-header">
-        <div class="card-title">{{ .["t"]("admin.dashboard.action.new_admin", "新增管理员") }}</div>
-    </div>
-    <div class="card-body">
-        <div class="form-row">
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.dashboard.field.username", "用户名") }} <span class="req">*</span></label>
-                <input type="text" class="form-input" placeholder="{{ .["t"]("admin.dashboard.ph.username", "输入用户名") }}">
-                <div class="form-hint">{{ .["t"]("admin.dashboard.hint.username", "3-20 个字符，仅字母数字下划线") }}</div>
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.dashboard.field.name", "姓名") }} <span class="req">*</span></label>
-                <input type="text" class="form-input" placeholder="{{ .["t"]("admin.dashboard.ph.name", "输入姓名") }}">
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.dashboard.field.email", "邮箱") }}</label>
-                <input type="email" class="form-input" placeholder="user@example.com">
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.dashboard.title", "仪表盘") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.dashboard.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.dashboard.intro", "统计口径：工程数取站点工程总数；页面数按草稿是否已激活产物区分「已发布」与「草稿 / 待发布」；「有更新未发布」指草稿在发布之后又改过、线上还是旧版本。全部为实时查询，不做缓存。") }}</span>
+                </span>
             </div>
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.dashboard.field.role", "角色") }} <span class="req">*</span></label>
-                <select class="form-select">
-                    <option>{{ .["t"]("admin.dashboard.option.role_placeholder", "请选择角色") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.role.super_admin", "超级管理员") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.role.editor", "编辑") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.role.viewer", "访客") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.role.developer", "开发者") }}</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.dashboard.field.dept", "部门") }}</label>
-                <select class="form-select">
-                    <option>{{ .["t"]("admin.dashboard.option.dept_placeholder", "请选择部门") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.dept.tech", "技术部") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.dept.content", "内容部") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.dept.market", "市场部") }}</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.dashboard.field.status", "状态") }}</label>
-                <select class="form-select">
-                    <option>{{ .["t"]("admin.dashboard.status.enabled", "启用") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.status.pending", "待激活") }}</option>
-                    <option>{{ .["t"]("admin.dashboard.status.disabled", "禁用") }}</option>
-                </select>
-            </div>
+        <div class="page-actions">
+            <a class="btn" href="/admin/pages">{{ .["t"]("admin.dashboard.action.pages", "页面管理") }}</a>
+            <a class="btn" href="/admin/products">{{ .["t"]("admin.dashboard.action.products", "商品管理") }}</a>
         </div>
-        <div class="form-group">
-            <label class="form-label">{{ .["t"]("admin.dashboard.field.remark", "备注") }}</label>
-            <textarea class="form-textarea" placeholder="{{ .["t"]("admin.dashboard.ph.remark", "可选备注信息") }}"></textarea>
-        </div>
-        <div class="form-group">
-            <label class="checkbox">
-                <input type="checkbox" checked> {{ .["t"]("admin.dashboard.checkbox.welcome_mail", "发送欢迎邮件") }}
-            </label>
-        </div>
-    </div>
-    <div class="card-footer flex items-center justify-between">
-        <span class="text-mute text-sm">{{ .["t"]("admin.dashboard.form.required_hint", "所有标记 * 的字段为必填") }}</span>
-        <div class="flex gap-sm">
-            <button class="btn btn-secondary">{{ .["t"]("admin.dashboard.action.cancel", "取消") }}</button>
-            <button class="btn btn-primary">{{ .["t"]("admin.dashboard.action.save", "保存") }}</button>
-        </div>
-    </div>
-</div>
+    </header>
 
-{* ===== 徽章组件演示 ===== *}
-<div class="card mt-xl">
-    <div class="card-header">
-        <div class="card-title">{{ .["t"]("admin.dashboard.badges.title", "徽章与状态") }}</div>
-    </div>
-    <div class="card-body">
-        <div class="flex gap-md mb-md">
-            <span class="badge badge-success">{{ .["t"]("admin.dashboard.badge.published", "已发布") }}</span>
-            <span class="badge badge-warning">{{ .["t"]("admin.dashboard.badge.pending_review", "待审核") }}</span>
-            <span class="badge badge-danger">{{ .["t"]("admin.dashboard.badge.rejected", "已拒绝") }}</span>
-            <span class="badge badge-mute">{{ .["t"]("admin.dashboard.badge.draft", "草稿") }}</span>
-        </div>
-        <div class="flex gap-md">
-            <span><span class="dot dot-success"></span>{{ .["t"]("admin.dashboard.health.ok", "正常运行") }}</span>
-            <span><span class="dot dot-warning"></span>{{ .["t"]("admin.dashboard.health.degraded", "部分降级") }}</span>
-            <span><span class="dot dot-danger"></span>{{ .["t"]("admin.dashboard.health.down", "服务中断") }}</span>
-            <span><span class="dot dot-mute"></span>{{ .["t"]("admin.dashboard.health.unknown", "未知") }}</span>
-        </div>
-    </div>
-</div>
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.dashboard.loadError", "概览数据暂时读不到：") }}{{.Err}}</p>
+    {{end}}{{end}}
 
-{* ===== 按钮组件演示 ===== *}
-<div class="card mt-xl">
-    <div class="card-header">
-        <div class="card-title">{{ .["t"]("admin.dashboard.buttons.title", "按钮") }}</div>
-    </div>
-    <div class="card-body">
-        <div class="flex gap-sm mb-md">
-            <button class="btn btn-primary">Primary</button>
-            <button class="btn btn-secondary">Secondary</button>
-            <button class="btn btn-ghost">Ghost</button>
-            <button class="btn btn-danger">Danger</button>
+    {* 概览数据块整体用 isset 守卫：本模板也被「只渲染外壳」的测试直接加载，
+       那些数据里没有统计键 —— 直接取用缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.RecentPages)}}
+    <div class="stat-grid">
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.projects", "站点工程") }}</div>
+            <div class="stat-value">{{.ProjectCount}}</div>
         </div>
-        <div class="flex gap-sm">
-            <button class="btn btn-primary btn-sm">{{ .["t"]("admin.dashboard.buttons.small", "小按钮") }}</button>
-            <button class="btn btn-secondary btn-sm">{{ .["t"]("admin.dashboard.buttons.small", "小按钮") }}</button>
-            <button class="btn btn-ghost btn-sm">{{ .["t"]("admin.dashboard.buttons.small", "小按钮") }}</button>
-            <button class="btn btn-primary" disabled>{{ .["t"]("admin.dashboard.status.disabled", "禁用") }}</button>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.pages", "页面总数") }}</div>
+            <div class="stat-value">{{.PageTotal}}</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.published", "已发布") }}</div>
+            <div class="stat-value">{{.PagePublished}}</div>
+            <div class="stat-note tone-ok">{{ .["t"]("admin.dashboard.stat.publishedNote", "线上可访问") }}</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.draft", "草稿 / 待发布") }}</div>
+            <div class="stat-value">{{.PageDraft}}</div>
+            {{if isset(.PageStale)}}{{if .PageStale}}
+            <div class="stat-note tone-warn">{{ .["t"]("admin.dashboard.stat.staleLead", "其中 ") }}{{.PageStale}}{{ .["t"]("admin.dashboard.stat.staleTail", " 个有更新未发布") }}</div>
+            {{else}}
+            <div class="stat-note">{{ .["t"]("admin.dashboard.stat.staleNone", "没有待发布的改动") }}</div>
+            {{end}}{{end}}
         </div>
     </div>
+
+    <section class="card list-card">
+        <div class="filter-bar">
+            <h2 class="card-title">{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}</h2>
+            <a class="btn btn-sm" href="/admin/pages">{{ .["t"]("admin.dashboard.recent.all", "查看全部") }}</a>
+        </div>
+        {{if len(.RecentPages) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.dashboard.recent.emptyTitle", "还没有页面") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.dashboard.recent.emptyDesc", "先建一个站点工程，再建页面；页面在画布编辑后发布，线上才可访问。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/pages">＋ {{ .["t"]("admin.dashboard.recent.create", "去建页面") }}</a>
+            </div>
+        </div>
+        {{else}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>{{ .["t"]("admin.dashboard.col.path", "页面路径") }}</th>
+                    <th>{{ .["t"]("admin.dashboard.col.project", "所属工程") }}</th>
+                    <th>{{ .["t"]("admin.dashboard.col.kind", "类型") }}</th>
+                    <th>{{ .["t"]("admin.dashboard.col.status", "状态") }}</th>
+                    <th>{{ .["t"]("admin.dashboard.col.version", "草稿版本") }}</th>
+                    <th>{{ .["t"]("admin.dashboard.col.updated", "更新时间") }}</th>
+                    <th class="col-actions">{{ .["t"]("admin.dashboard.col.actions", "操作") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{range _, p := .RecentPages}}
+                <tr>
+                    <td class="text-mono">{{p.Path}}</td>
+                    <td>{{p.Project}}</td>
+                    <td>{{p.Kind}}</td>
+                    <td>
+                        {{if p.Published}}
+                        <span class="badge badge-success">{{ .["t"]("admin.dashboard.status.published", "已发布") }}</span>
+                        {{if p.Stale}}<span class="badge badge-warning">{{ .["t"]("admin.dashboard.status.stale", "有更新未发布") }}</span>{{end}}
+                        {{else}}<span class="badge badge-mute">{{ .["t"]("admin.dashboard.status.draft", "草稿") }}</span>{{end}}
+                    </td>
+                    <td>v{{p.Version}}</td>
+                    <td class="text-mute text-sm">{{p.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{ .["t"]("admin.common.action.edit", "编辑") }}</a>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}
+    </section>
+    {{end}}
 </div>
 {{end}}

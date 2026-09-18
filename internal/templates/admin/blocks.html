@@ -1,35 +1,70 @@
 {* admin/blocks.html — 全局块管理：页眉/页脚/区块（编辑进工作台） *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§7）：
+     · 原「说明」卡整段进页头 .help 悬浮，正文零说明文字；
+     · 工程选择器与「新建并编辑」同一行置于 .page-head .page-actions，不再自占一张卡；
+     · 三张列表卡并成一张列表卡，内分三段（页眉 / 页脚 / 区块），操作列统一 .col-actions；
+     · 行内删除表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{canCreate := isset(.PermSet["block:create"])}}
+{{canDelete := isset(.PermSet["block:delete"])}}
 <div class="stack">
     {{if len(.Projects) == 0}}
-    <section class="card card-body">
-        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.no_project", "请先在「页面」里创建一个站点工程，再管理全局块。") }}</p>
+    <section class="card list-card">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.blocks.no_project.title", "还没有站点工程") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.blocks.no_project", "请先在「页面」里创建一个站点工程，再管理全局块。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.common.action.pages", "页面管理") }}</a>
+            </div>
+        </div>
     </section>
     {{else}}
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.blocks.heading", "全局块") }}</h2>
-        {* 工程切换 *}
-        <form method="get" action="/admin/blocks" class="form-inline">
-            <select name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-        {* 新建块走右侧抽屉（原生 POST，自带 CSRF 隐藏域；hx-headers 只对 htmx 请求生效） *}
-        {{if isset(.PermSet["block:create"])}}
-        <button type="button" class="btn btn-primary mt-md" data-drawer-open="#tpl-block-create" data-drawer-title="{{ .["t"]("admin.blocks.create", "新建并编辑") }}">＋ {{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
-        {{end}}
-    </section>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.blocks.heading", "全局块") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.blocks.notes", "全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；块内容变更后，绑定了它的主题下页面自动标为待重建。") }}<br><br>{{ .["t"]("admin.blocks.notes_reuse_lead", "复用方式（docs/02-D）：") }}<b>{{ .["t"]("admin.blocks.notes_reuse_global", "全局引用") }}</b>{{ .["t"]("admin.blocks.notes_reuse_global_tail", "＝页面存引用，改一处所有引用页一起更新（页眉/公告栏/信任徽章）；") }}<b>{{ .["t"]("admin.blocks.notes_reuse_template", "一次性复制") }}</b>{{ .["t"]("admin.blocks.notes_reuse_template_tail", "＝插入时复制完整结构，此后与源块互不影响（商品卡/表单/弹窗）。被引用的全局块删除前须先解除引用。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/blocks">
+                <label class="sr-only" for="blocks-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="blocks-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            {{if canCreate}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-block-create" data-drawer-title="{{ .["t"]("admin.blocks.create", "新建并编辑") }}">＋ {{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+            {{end}}
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：缺失键会让整页在此中断（HTTP 仍 200，列表整块消失）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.blocks.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
 
     <template id="tpl-block-create">
         <form method="post" action="/admin/blocks/create">
-            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-row">
                 <div class="form-group">
                     <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.blocks.name_placeholder", "块名称，如：站点页眉") }}" required>
@@ -72,102 +107,142 @@
         </form>
     </template>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.blocks.headers_heading", "页眉") }}</h2>
+    {* 批量删除：勾选框与批量动作必须同属一个 form —— 本页列表按页眉 / 页脚 / 区块三段渲染，
+       三段里的勾选框要能被同一个全选框与同一次提交带上（脚本按最近的 form 作用域工作）。
+       form 包在 .list-card 外层而不是内层：admin.js 与 theme.css 都用「.list-card 的直接子元素」
+       定位分段标题，插一层 form 会让三段的 .list-toolbar 全部失去下边框。 *}
+    <form method="post" action="/admin/blocks/bulk-delete">
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <input type="hidden" name="projectId" value="{{selectedProject}}">
+    <section class="card list-card">
+        {{if canDelete}}
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.blocks.bulk_delete_confirm", "删除选中的块？被页面引用的全局块需先解除引用，其余照常删除。"), danger=true)}}
+        {{yield bulkBarClose()}}
+        {{end}}
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.blocks.headers_heading", "页眉") }}</strong>
+        </div>
         {{if len(.Headers) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.headers_empty", "还没有页眉块。在「主题管理 → 设置」里把页眉块绑定到主题后，整站页面构建时自动内联。") }}</p>
+        <div class="empty-state">
+            <p class="empty-desc">{{ .["t"]("admin.blocks.headers_empty", "还没有页眉块。在「主题管理 → 设置」里把页眉块绑定到主题后，整站页面构建时自动内联。") }}</p>
+        </div>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.headers_aria", "页眉块") }}"><table class="data-table">
-            <thead><tr><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
-            <tbody>
-            {{range _, b := .Headers}}
-            <tr>
-                <td>{{b.Name}}</td>
-                <td>{{b.UpdatedAt}}</td>
-                <td class="action-row">
-                    <a class="btn" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-                    <form method="post" action="/admin/blocks/delete" class="inline-form"
-                          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}">
-                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                        <input type="hidden" name="id" value="{{b.ID}}">
-                        <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                        <button type="submit" class="btn">{{tr("admin.blocks.action.delete", "删除")}}</button>
-                    </form>
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table></div>
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.headers_aria", "页眉块") }}">
+            <table class="data-table">
+                {* 全选框全页只有一个：admin.js 的 refresh 用 scope.querySelector('[data-check-all]') 取第一个，
+                   放多个会让后两个框的状态在逐行勾选时不被回写（看起来像失灵）。所以它落在
+                   「第一段有行的表格」表头上，三段都不空时不会重复。 *}
+                <thead><tr><th class="col-check">{{if len(.Headers) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
+                <tbody>
+                {{range _, b := .Headers}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{b.Name}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
-    </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.blocks.footers_heading", "页脚") }}</h2>
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.blocks.footers_heading", "页脚") }}</strong>
+        </div>
         {{if len(.Footers) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.footers_empty", "还没有页脚块。") }}</p>
+        <div class="empty-state">
+            <p class="empty-desc">{{ .["t"]("admin.blocks.footers_empty", "还没有页脚块。") }}</p>
+        </div>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.footers_aria", "页脚块") }}"><table class="data-table">
-            <thead><tr><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
-            <tbody>
-            {{range _, b := .Footers}}
-            <tr>
-                <td>{{b.Name}}</td>
-                <td>{{b.UpdatedAt}}</td>
-                <td class="action-row">
-                    <a class="btn" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-                    <form method="post" action="/admin/blocks/delete" class="inline-form"
-                          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}">
-                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                        <input type="hidden" name="id" value="{{b.ID}}">
-                        <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                        <button type="submit" class="btn">{{tr("admin.blocks.action.delete", "删除")}}</button>
-                    </form>
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table></div>
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.footers_aria", "页脚块") }}">
+            <table class="data-table">
+                <thead><tr><th class="col-check">{{if len(.Headers) == 0}}{{if len(.Footers) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
+                <tbody>
+                {{range _, b := .Footers}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{b.Name}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
-    </section>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.blocks.blocks_heading", "区块 / 复用资产") }}</h2>
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.blocks.blocks_heading", "区块 / 复用资产") }}</strong>
+        </div>
         {{if len(.Blocks) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.blocks.blocks_empty", "还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。") }}</p>
+        <div class="empty-state">
+            <p class="empty-desc">{{ .["t"]("admin.blocks.blocks_empty", "还没有区块。区块用于跨页面复用的结构片段（对应 WP 的同步块），工作台「全局块」页签可一键引用。") }}</p>
+        </div>
         {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.blocks_aria", "复用区块") }}"><table class="data-table">
-            <thead><tr><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.kind", "类型") }}</th><th>{{ .["t"]("admin.blocks.col.reuse", "复用方式") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
-            <tbody>
-            {{range _, b := .Blocks}}
-            <tr>
-                <td>{{b.Name}}</td>
-                <td>{{b.KindLabel}}</td>
-                <td>{{b.ReuseModeLabel}}</td>
-                <td>{{b.UpdatedAt}}</td>
-                <td class="action-row">
-                    <a class="btn" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-                    <form method="post" action="/admin/blocks/delete" class="inline-form"
-                          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}">
-                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                        <input type="hidden" name="id" value="{{b.ID}}">
-                        <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-                        <button type="submit" class="btn">{{tr("admin.blocks.action.delete", "删除")}}</button>
-                    </form>
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table></div>
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.blocks_aria", "复用区块") }}">
+            <table class="data-table">
+                <thead><tr><th class="col-check">{{if len(.Headers) == 0}}{{if len(.Footers) == 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.kind", "类型") }}</th><th>{{ .["t"]("admin.blocks.col.reuse", "复用方式") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
+                <tbody>
+                {{range _, b := .Blocks}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{b.Name}}</td>
+                    <td>{{b.KindLabel}}</td>
+                    <td>{{b.ReuseModeLabel}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
         {{end}}
     </section>
+    </form>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.blocks.notes_heading", "说明") }}</h2>
-        <p class="text-mute text-sm">
-            {{ .["t"]("admin.blocks.notes", "全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；块内容变更后，绑定了它的主题下页面自动标为待重建。") }}<br>
-            {{ .["t"]("admin.blocks.notes_reuse_lead", "复用方式（docs/02-D）：") }}<b>{{ .["t"]("admin.blocks.notes_reuse_global", "全局引用") }}</b>{{ .["t"]("admin.blocks.notes_reuse_global_tail", "＝页面存引用，改一处所有引用页一起更新（页眉/公告栏/信任徽章）；") }}<b>{{ .["t"]("admin.blocks.notes_reuse_template", "一次性复制") }}</b>{{ .["t"]("admin.blocks.notes_reuse_template_tail", "＝插入时复制完整结构，此后与源块互不影响（商品卡/表单/弹窗）。被引用的全局块删除前须先解除引用。") }}
-        </p>
-    </section>
+    {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+       三类块同属 blocks 表，id 全局唯一，故这里按类别各生成一组也不会撞 id。 *}
+    {{range _, b := .Headers}}
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+    </form>
+    {{end}}
+    {{range _, b := .Footers}}
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+    </form>
+    {{end}}
+    {{range _, b := .Blocks}}
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+    </form>
+    {{end}}
     {{end}}
 </div>
 {{end}}

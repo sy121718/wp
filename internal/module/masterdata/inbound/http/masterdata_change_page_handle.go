@@ -32,6 +32,13 @@ import (
 // masterDataEntityPageSize 实体清单一次展示的条数（后台核对用；完整清单走接口分页）。
 const masterDataEntityPageSize = 50
 
+// 变更记录页的两种视图。记录视图逐条列流水（默认），实体视图按实体聚合成一行 ——
+// 后者是「哪个实体改得最多」的入口，点「查看历史」即切回记录视图并锁定该实体。
+const (
+	masterDataViewRecords  = "records"
+	masterDataViewEntities = "entities"
+)
+
 // masterDataChangePageHandle 变更记录页处理器。
 type masterDataChangePageHandle struct {
 	changes  masterdatacontract.MasterDataService
@@ -173,6 +180,16 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		entityTotal = count
 	}
 
+	// 视图：同一批筛选条件下的两种看法 —— 记录（逐条流水）/ 实体（按实体聚合）。
+	// **一次只渲染一张表**：两者是同一数据的两种切法，并列渲染等于把 7 屏塞进一页，
+	// 而用户每次只关心其中一种。锁定单个实体时强制记录视图 —— 那时「按实体汇总」只剩一行。
+	viewMode := strings.TrimSpace(c.Query("view"))
+	if viewMode != masterDataViewEntities || filter.specific() {
+		viewMode = masterDataViewRecords
+	}
+	// 分页与视图切换链接都基于同一份筛选条件（切视图不丢筛选）。
+	base := shell.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
+
 	data := shell.Prepare(c, gin.H{
 		"title":           masterdataenums.MsgMasterDataChangesTitle,
 		"menu":            "masterdata-changes",
@@ -200,8 +217,10 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		// 实体清单被截断时给一句提示（比较运算留在 handler，模板只做判断）。
 		"EntityTruncated": entityTotal > int64(len(entityRows)),
 		"Err":             pageErr,
+		"ViewMode":        viewMode,
+		"RecordsViewURL":  base,
+		"EntitiesViewURL": base + "&view=" + masterDataViewEntities,
 	})
-	base := shell.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}

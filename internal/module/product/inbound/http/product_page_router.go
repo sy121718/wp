@@ -50,12 +50,17 @@ func SetupProductPages(pages *gin.RouterGroup,
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
 	pages.GET("/products", productPages.ProductsPage)
+	// 商品详情页：变体与评分是某个商品的子资源，连同四个商品级表单一起从列表页拆出来。
+	// 页面 GET 同样走页面组（Session+CSRF，无 Casbin）；页内写动作复用各自既有权限点。
+	pages.GET("/products/detail", productPages.ProductDetailPage)
 	pages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	pages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
 	pages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)
 	// 变体组合生成（issue #8）：勾选属性值 → 笛卡尔积；不勾选则按全部启用值生成。
 	pages.POST("/products/variant/generate", builtin.CasbinMiddlewareForPath("/api/product/variant/generate"), productPages.ProductsVariantGenerate)
 	pages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
+	// 批量删除：与单条删除共用同一个权限点与同一条 service 路径，逐条处理、单条失败不整批回滚。
+	pages.POST("/products/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsBulkDelete)
 	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
 	pages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
 	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
@@ -91,6 +96,8 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/product-attributes/update", builtin.CasbinMiddlewareForPath("/api/product/attribute/update"), productPages.ProductAttributesUpdate)
 	pages.POST("/product-attributes/set-values", builtin.CasbinMiddlewareForPath("/api/product/attribute/set-values"), productPages.ProductAttributesSetValues)
 	pages.POST("/product-attributes/delete", builtin.CasbinMiddlewareForPath("/api/product/attribute/delete"), productPages.ProductAttributesDelete)
+	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
+	pages.POST("/product-attributes/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/attribute/delete"), productPages.ProductAttributesBulkDelete)
 	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
 	pages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
 
@@ -100,10 +107,14 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/product-categories/create", builtin.CasbinMiddlewareForPath("/api/product/category/create"), productPages.ProductCategoriesCreate)
 	pages.POST("/product-categories/update", builtin.CasbinMiddlewareForPath("/api/product/category/update"), productPages.ProductCategoriesUpdate)
 	pages.POST("/product-categories/delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesDelete)
+	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
+	pages.POST("/product-categories/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesBulkDelete)
 	pages.GET("/product-brands", productPages.ProductBrandsPage)
 	pages.POST("/product-brands/create", builtin.CasbinMiddlewareForPath("/api/product/brand/create"), productPages.ProductBrandsCreate)
 	pages.POST("/product-brands/update", builtin.CasbinMiddlewareForPath("/api/product/brand/update"), productPages.ProductBrandsUpdate)
 	pages.POST("/product-brands/delete", builtin.CasbinMiddlewareForPath("/api/product/brand/delete"), productPages.ProductBrandsDelete)
+	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
+	pages.POST("/product-brands/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/brand/delete"), productPages.ProductBrandsBulkDelete)
 	// 商品挂载分类（多个 + 主分类）与品牌：属于商品更新，复用商品更新权限点。
 	pages.POST("/products/taxonomy", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTaxonomySet)
 
@@ -113,6 +124,8 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/product-tags/create", builtin.CasbinMiddlewareForPath("/api/product/tag/create"), productPages.ProductTagsCreate)
 	pages.POST("/product-tags/update", builtin.CasbinMiddlewareForPath("/api/product/tag/update"), productPages.ProductTagsUpdate)
 	pages.POST("/product-tags/delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsDelete)
+	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
+	pages.POST("/product-tags/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsBulkDelete)
 	pages.POST("/product-tags/recalc", builtin.CasbinMiddlewareForPath("/api/product/tag/recalc"), productPages.ProductTagsRecalc)
 	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
 	pages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)

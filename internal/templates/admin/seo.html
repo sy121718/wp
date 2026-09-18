@@ -1,42 +1,55 @@
+{* admin/seo.html — SEO 控制台：产物体检 / 热门路径
+   列表页标准骨架（评审规则 admin-ui-logic §7）：页头一行（标题 + ? 悬浮说明 + 工程选择），
+   正文零说明文字，主区是标准表格卡；空状态、失败提示用统一形态。 *}
 {{extends "layout.html"}}
 {{block body()}}
+{{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{paths := .Paths}}
-<div class="admin-content admin-page">
-    <header class="page-header">
-        <div>
-            <p class="eyebrow">{{ .["t"]("admin.seo.eyebrow.visibility", "站点可见性") }}</p>
-            <h1>{{ .["t"]("admin.seo.title", "SEO 控制台") }}</h1>
-            <p class="text-muted">{{ .["t"]("admin.seo.subtitle", "查看当前站点的产物体检入口、热门路径与能力接入状态。") }}</p>
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.seo.title", "SEO 控制台") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.seo.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.seo.subtitle", "查看当前站点的产物体检入口、热门路径与能力接入状态。") }}<br><br><strong>{{ .["t"]("admin.seo.pending.heading", "尚未接入的能力") }}</strong><br>{{ .["t"]("admin.seo.sources.unavailable", "来源统计当前不可用：analytics 已采集来源域，但只读聚合契约尚未提供来源排行。") }}<br>{{ .["t"]("admin.seo.site_files.unavailable", "sitemap / feed 实时状态当前不可用：publication 尚未提供只读状态契约。") }}<br>{{ .["t"]("admin.seo.external.unavailable", "外部搜索平台数据当前不可用：未配置 Search Console、Bing Webmaster Tools 等外部 API。") }}</span>
+                </span>
+            </div>
         </div>
-        <form class="toolbar" method="get" action="/admin/seo">
-            <label for="seo-project">{{ .["t"]("admin.seo.label.project", "站点") }}</label>
-            <select id="seo-project" name="project" class="form-select" onchange="this.form.submit()">
-                {{range _, project := .Projects}}
-                <option value="{{project.ID}}"{{if project.ID == selectedProject}} selected{{end}}>{{project.Name}}</option>
-                {{end}}
-            </select>
-            <noscript><button class="btn btn-secondary" type="submit">{{ .["t"]("admin.seo.action.view", "查看") }}</button></noscript>
-        </form>
+        {{if len(.Projects) > 1}}
+        <div class="page-actions">
+            <form class="page-context" method="get" action="/admin/seo">
+                <label class="sr-only" for="seo-project">{{ .["t"]("admin.seo.label.project", "站点") }}</label>
+                <select id="seo-project" name="project" class="form-select" onchange="this.form.submit()">
+                    {{range _, project := .Projects}}
+                    <option value="{{project.ID}}"{{if project.ID == selectedProject}} selected{{end}}>{{project.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+        </div>
+        {{end}}
     </header>
 
     {{if isset(.ProjectError)}}
-    <div class="alert alert-error" role="alert">{{ .["t"]("admin.seo.err.project_list", "站点列表暂时读取失败。") }}</div>
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.seo.err.project_list", "站点列表暂时读取失败。") }}</p>
     {{end}}
 
-    <section class="card stack-gap" aria-labelledby="seo-audit-title">
-        <div class="section-header">
-            <div>
-                <p class="eyebrow">{{ .["t"]("admin.seo.eyebrow.issues", "当前问题") }}</p>
-                <h2 id="seo-audit-title">{{ .["t"]("admin.seo.audit.title", "产物 SEO 体检") }}</h2>
-            </div>
-        </div>
-        <p>{{ .["t"]("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。") }}</p>
+    {* ===== 主职能：产物 SEO 体检 ===== *}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.seo.audit.title", "产物 SEO 体检") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.seo.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。") }}</span>
+            </span>
+        </h2>
         {{if isset(.PermSet["seo:audit"])}}
         <form method="post" action="/api/publication/seo-audit" data-seo-audit-action>
-            <input type="hidden" name="csrf_token" value="{{.["csrf_token"]}}">
-            <input type="hidden" name="project" value="{{.SelectedProject}}">
-            <button class="btn btn-primary" type="submit"{{if .SelectedProject == ""}} disabled{{end}}>{{ .["t"]("admin.seo.audit.run", "运行当前站点体检") }}</button>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <div class="action-row">
+                <button class="btn btn-primary" type="submit"{{if selectedProject == ""}} disabled{{end}}>{{ .["t"]("admin.seo.audit.run", "运行当前站点体检") }}</button>
+            </div>
         </form>
         <div class="stack" data-seo-audit-result aria-live="polite"
              data-msg-loading="{{ .["t"]("admin.seo.audit.loading", "正在读取当前已激活产物…") }}"
@@ -49,59 +62,48 @@
              data-msg-col-level="{{ .["t"]("admin.seo.audit.col.level", "级别") }}"
              data-msg-col-path="{{ .["t"]("admin.seo.audit.col.path", "路径") }}"
              data-msg-col-issue="{{ .["t"]("admin.seo.audit.col.issue", "问题") }}">
-            <p class="text-muted">{{ .["t"]("admin.seo.audit.placeholder", "运行体检后，此处显示当前产物中的 SEO 问题。") }}</p>
+            <div class="empty-state">
+                <p class="empty-title">{{ .["t"]("admin.seo.audit.placeholder", "运行体检后，此处显示当前产物中的 SEO 问题。") }}</p>
+            </div>
         </div>
         {{else}}
-        <p class="text-muted">{{ .["t"]("admin.seo.audit.no_permission", "需要 SEO 体检权限才能运行检查。") }}</p>
+        <p class="badge badge-warning">{{ .["t"]("admin.seo.audit.no_permission", "需要 SEO 体检权限才能运行检查。") }}</p>
         {{end}}
     </section>
 
-    <div class="content-grid content-grid-2">
-        <section class="card" aria-labelledby="seo-paths-title">
-            <div class="section-header">
-                <div>
-                    <p class="eyebrow">{{ .["t"]("admin.seo.paths.eyebrow", "近 30 天") }}</p>
-                    <h2 id="seo-paths-title">{{ .["t"]("admin.seo.paths.title", "热门路径") }}</h2>
-                </div>
-            </div>
-            {{if .AnalyticsError}}
-            <p class="text-muted">{{ .["t"]("admin.seo.paths.error", "热门路径暂时读取失败。") }}</p>
-            {{else if .HasPaths}}
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>{{ .["t"]("admin.seo.paths.col.path", "路径") }}</th><th>{{ .["t"]("admin.seo.paths.col.views", "浏览") }}</th><th>{{ .["t"]("admin.seo.paths.col.visitors", "访客") }}</th></tr></thead>
-                    <tbody>
-                    {{range _, item := paths}}
-                    <tr><td><code>{{item.Path}}</code></td><td>{{item.Views}}</td><td>{{item.Visitors}}</td></tr>
-                    {{end}}
-                    </tbody>
-                </table>
-            </div>
-            {{else}}
-            <p class="text-muted">{{ .["t"]("admin.seo.paths.empty", "当前站点还没有可展示的访问数据。") }}</p>
-            {{end}}
-        </section>
-
-        <section class="card" aria-labelledby="seo-sources-title">
-            <p class="eyebrow">{{ .["t"]("admin.seo.sources.eyebrow", "流量发现") }}</p>
-            <h2 id="seo-sources-title">{{ .["t"]("admin.seo.sources.title", "热门来源") }}</h2>
-            <p class="text-muted">{{ .["t"]("admin.seo.sources.unavailable", "来源统计当前不可用：analytics 已采集来源域，但只读聚合契约尚未提供来源排行。") }}</p>
-        </section>
-    </div>
-
-    <div class="content-grid content-grid-2">
-        <section class="card" aria-labelledby="seo-site-files-title">
-            <p class="eyebrow">{{ .["t"]("admin.seo.site_files.eyebrow", "站点文件") }}</p>
-            <h2 id="seo-site-files-title">{{ .["t"]("admin.seo.site_files.title", "Sitemap / Feed 状态") }}</h2>
-            <p class="text-muted">{{ .["t"]("admin.seo.site_files.unavailable", "sitemap / feed 实时状态当前不可用：publication 尚未提供只读状态契约。") }}</p>
-        </section>
-
-        <section class="card" aria-labelledby="seo-external-title">
-            <p class="eyebrow">{{ .["t"]("admin.seo.external.eyebrow", "搜索平台") }}</p>
-            <h2 id="seo-external-title">{{ .["t"]("admin.seo.external.title", "外部搜索数据") }}</h2>
-            <p class="text-muted">{{ .["t"]("admin.seo.external.unavailable", "外部搜索平台数据当前不可用：未配置 Search Console、Bing Webmaster Tools 等外部 API。") }}</p>
-        </section>
-    </div>
+    {* ===== 热门路径：有数据才成表，没数据就是一个空状态 ===== *}
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.seo.paths.title", "热门路径") }}</span>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.seo.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.seo.paths.eyebrow", "近 30 天") }}</span>
+            </span>
+        </div>
+        {* isset 只判「键存在」——handler 总是注入 AnalyticsError（默认 false），
+           所以这里必须再判值。写成 {{if isset(.AnalyticsError)}} 会恒真：
+           「热门路径」永远显示读取失败，路径表永远不渲染（功能坏了但不报错）。 *}
+        {{if isset(.AnalyticsError)}}{{if .AnalyticsError}}
+        <p class="badge badge-warning">{{ .["t"]("admin.seo.paths.error", "热门路径暂时读取失败。") }}</p>
+        {{end}}{{end}}
+        {{if .HasPaths}}
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table data-table-wide">
+                <thead><tr><th>{{ .["t"]("admin.seo.paths.col.path", "路径") }}</th><th>{{ .["t"]("admin.seo.paths.col.views", "浏览") }}</th><th>{{ .["t"]("admin.seo.paths.col.visitors", "访客") }}</th></tr></thead>
+                <tbody>
+                {{range _, item := paths}}
+                <tr><td><code>{{item.Path}}</code></td><td>{{item.Views}}</td><td>{{item.Visitors}}</td></tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.seo.paths.empty", "当前站点还没有可展示的访问数据。") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.seo.paths.empty_desc", "页面被访问后，这里按浏览量列出前 30 天的路径。") }}</p>
+        </div>
+        {{end}}
+    </section>
 </div>
 <script>
 {* 文案由服务端按请求语言渲染进 data-msg-* 属性（与 login.html 同一手法）。 *}
@@ -124,7 +126,7 @@
         event.preventDefault();
         var button = form.querySelector('button[type="submit"]');
         button.disabled = true;
-        result.innerHTML = '<p class="text-muted">' + escapeHTML(msg('loading')) + '</p>';
+        result.innerHTML = '<p class="badge badge-info">' + escapeHTML(msg('loading')) + '</p>';
         fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin'})
             .then(function (response) { return response.json().then(function (body) { return {ok: response.ok, body: body}; }); })
             .then(function (response) {
@@ -132,16 +134,18 @@
                 var data = response.body.data;
                 var issues = Array.isArray(data.issues) ? data.issues : [];
                 if (issues.length === 0) {
-                    result.innerHTML = '<p class="badge badge-success">' + escapeHTML(msg('clean-lead', '')) + escapeHTML(data.scanned) + escapeHTML(msg('clean-tail', '')) + '</p>';
+                    result.innerHTML = '<p class="badge badge-success">' + escapeHTML(msg('clean-lead')) + escapeHTML(data.scanned) + escapeHTML(msg('clean-tail')) + '</p>';
                     return;
                 }
                 var rows = issues.map(function (issue) {
                     return '<tr><td><span class="badge">' + escapeHTML(issue.Level) + '</span></td><td><code>' + escapeHTML(issue.Path) + '</code></td><td>' + escapeHTML(issue.Message) + '</td></tr>';
                 }).join('');
-                result.innerHTML = '<p>' + escapeHTML(msg('issues-lead', '')) + escapeHTML(data.scanned) + escapeHTML(msg('issues-mid', '')) + escapeHTML(data.count) + escapeHTML(msg('issues-tail', '')) + '</p><div class="table-wrap"><table><thead><tr><th>' + escapeHTML(msg('col-level', '')) + '</th><th>' + escapeHTML(msg('col-path', '')) + '</th><th>' + escapeHTML(msg('col-issue', '')) + '</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+                result.innerHTML = '<p>' + escapeHTML(msg('issues-lead')) + escapeHTML(data.scanned) + escapeHTML(msg('issues-mid')) + escapeHTML(data.count) + escapeHTML(msg('issues-tail')) + '</p><div class="table-wrap"><table class="data-table data-table-wide"><thead><tr><th>' + escapeHTML(msg('col-level')) + '</th><th>' + escapeHTML(msg('col-path')) + '</th><th>' + escapeHTML(msg('col-issue')) + '</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
             })
-            .catch(function (err) { result.innerHTML = '<p class="alert alert-error" role="alert">' + escapeHTML(err.message) + '</p>'; })
-            .finally(function () { button.disabled = false; });
+            .catch(function (error) {
+                result.innerHTML = '<p class="badge badge-warning">' + escapeHTML(error && error.message ? error.message : msg('failed')) + '</p>';
+            })
+            .then(function () { button.disabled = false; });
     });
 })();
 </script>

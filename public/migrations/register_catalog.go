@@ -522,4 +522,40 @@ func registerCatalogAndInventory() {
 			  )`,
 		SQL: mustSQL("073_blueprint_ddl_align.sql"),
 	})
+
+	// 229：库存独立成一级目录，仓库与变动原因字典各自成页（2026-09 设计评审第三轮）。
+	//
+	// 原先「库存管理 / 货源管理 / 采购入库」混在「商品与库存」目录下，与商品八项并列 ——
+	// 直接的后果是库存管理页靠 <details> 折叠把「流水 + 改库存 + 仓库配置 + 原因字典」
+	// 四件事塞进一页。折叠不是解法：装不下就该拆页，并把模块边界反映到菜单上。
+	// CheckSQL 以新增页 /admin/inventory/warehouses 的菜单行为门槛（整条迁移只跑一次）。
+	register(Migration{
+		Version:   "229-inventory-menu-split",
+		TableName: "sys_menus",
+		// 约定：自定义 CheckSQL 必须接收迁移器传入的表名参数（migrator_test.go 会检查）。
+		// 注意 ? 是**值占位**（会被替换成 $1），只能出现在值的位置 ——
+		// 写成 "FROM ?" 会得到 FROM $1 的语法错误（实测踩过）。
+		CheckSQL: "SELECT COUNT(*) FROM sys_menus " +
+			"WHERE path = '/admin/inventory/warehouses' AND to_regclass(?) IS NOT NULL",
+		SQL:       mustSQL("229_inventory_menu_split.sql"),
+	})
+
+	// 236：修正 229 给三个菜单误置的 is_public = 1（库存目录 / 仓库管理 / 变动原因字典）。
+	//
+	// 229 把这三个当成了「登录即可见」，但它们是有权限点的业务页面 ——
+	// 结果是任何登录用户在侧栏都看得到、点进去却 403（「看得到点不了」）。
+	// 224 的约定是只有「无子节点的直接链接」（仪表盘）才 is_public = 1；
+	// 目录的可见性由授权树按「有可见子孙」自动补齐，不需要这个开关。
+	// CheckSQL 判「这三条是否都已归零」：已修则跳过（幂等）。
+	register(Migration{
+		Version:   "236-fix-inventory-menu-visibility",
+		TableName: "sys_menus",
+		// 迁移器的约定：CheckSQL **返回 0 = 执行、非零 = 跳过**（见 229 的写法 ——
+		// 菜单行已存在返回 1 即跳过）。所以这里「还有没归零的」要返回 0。
+		CheckSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 0 ELSE 1 END FROM sys_menus " +
+			"WHERE to_regclass(?) IS NOT NULL AND deleted_at IS NULL AND is_public = 1 AND (" +
+			"path IN ('/admin/inventory/warehouses','/admin/inventory/reasons') " +
+			"OR (type = 1 AND parent_id = 0 AND title = '库存'))",
+		SQL: mustSQL("236_fix_inventory_menu_visibility.sql"),
+	})
 }

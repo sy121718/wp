@@ -69,7 +69,16 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/mail_automation.html", shell.Prepare(c, data))
 		return
 	}
-	data["Automations"] = automations.Items
+	// 列表行按模板需要投影：触发方式给中文标签（枚举不直接进界面），其余字段原样透出。
+	autoRows := make([]gin.H, 0, len(automations.Items))
+	for _, a := range automations.Items {
+		autoRows = append(autoRows, gin.H{
+			"ID": a.ID, "Name": a.Name, "Description": a.Description,
+			"Status": a.Status, "Version": a.Version,
+			"TriggerLabel": triggerLabelOf(a.TriggerType),
+		})
+	}
+	data["Automations"] = autoRows
 	data["AutoTotal"] = automations.Total
 
 	// 实例列表（可按流程 / 状态筛）：它是排障入口。
@@ -135,21 +144,37 @@ func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/mail_automation_edit.html", shell.Prepare(c, data))
 }
 
+// automationTriggerLabels 触发方式的枚举与中文标签。
+//
+// 下拉选项与列表展示**共用这一份**：此前列表直接把枚举值（manual / contact_created…）
+// 打进表格，同一个值在下拉里叫「新联系人产生」、在列表里叫 contact_created ——
+// 界面自相矛盾，而且把内部标识露给了用户。
+var automationTriggerLabels = []struct{ Value, Label string }{
+	{"manual", "手工添加（后台选人加入）"},
+	{"contact_created", "新联系人产生"},
+	{"contact_subscribed", "变为已订阅"},
+	{"email_opened", "打开过营销邮件"},
+	{"email_clicked", "点击过营销链接"},
+	{"tag_added", "被打上某个标签"},
+}
+
+// triggerLabelOf 枚举 → 中文标签；未知枚举原样返回（不吞掉不认识的取值）。
+func triggerLabelOf(value string) string {
+	for _, o := range automationTriggerLabels {
+		if o.Value == value {
+			return o.Label
+		}
+	}
+	return value
+}
+
 // triggerOptions 触发方式下拉的选项（带选中态）。
 func triggerOptions(selected string) []gin.H {
 	if selected == "" {
 		selected = "manual"
 	}
-	all := []struct{ Value, Label string }{
-		{"manual", "手工添加（后台选人加入）"},
-		{"contact_created", "新联系人产生"},
-		{"contact_subscribed", "变为已订阅"},
-		{"email_opened", "打开过营销邮件"},
-		{"email_clicked", "点击过营销链接"},
-		{"tag_added", "被打上某个标签"},
-	}
-	opts := make([]gin.H, 0, len(all))
-	for _, o := range all {
+	opts := make([]gin.H, 0, len(automationTriggerLabels))
+	for _, o := range automationTriggerLabels {
 		opts = append(opts, gin.H{"Value": o.Value, "Label": o.Label, "Selected": o.Value == selected})
 	}
 	return opts

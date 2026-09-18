@@ -13,6 +13,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 
+	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/web/shell"
 )
 
@@ -269,6 +270,8 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		"Limit":           limit,
 		"Err":             pageErr,
 		"Ok":              pageOk,
+		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
+		"Done": strings.TrimSpace(c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/coupons", couponFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -331,6 +334,141 @@ func (h *couponPageHandle) CouponDelete(c *gin.Context) {
 	}
 	// 券没了，回跳时丢掉 couponId：否则展开区会去取一张已经不存在的券并报「优惠码不存在」。
 	couponRedirectSkip(c, orderenums.MsgCouponDeleted, "", "couponId")
+}
+
+// CouponBulkDelete 批量删除优惠码（POST /admin/coupons/bulk-delete）。
+//
+// 逐条走同一条单条删除路径：有核销记录的券由服务端拒绝（删了记录就指向一张查不到的券，
+// 对账时分不清是数据坏了还是券被删了），只跳过它并计入跳过数，其余照常删除。
+func (h *couponPageHandle) CouponBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		couponRedirect(c, "", berr.Error())
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := orderQueryID(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if err := h.orders.DeleteCoupon(c.Request.Context(), id); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	// 券没了，回跳时丢掉 couponId：否则展开区会去取一张已经不存在的券并报「优惠码不存在」。
+	couponBulkRedirectSkip(c, bulkSummary("已删除", "优惠码", deleted, skipped), "couponId")
+}
+
+// CouponBulkToggle 批量停用 / 启用（POST /admin/coupons/bulk-toggle，表单带目标状态 status）。
+//
+// 与单条启停走同一个 UpdateCoupon —— 它是**整体更新**，所以这里逐条先取当前券、
+// 把全部可改字段原样回送、只改 status：漏送字段会被静默写成零值（把门槛清零、
+// 把时间窗改成不限），而那正是「批量停用顺手改坏了券」的成因。
+func (h *couponPageHandle) CouponBulkToggle(c *gin.Context) {
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	target, ok := couponToggleTarget(c.PostForm("status"))
+	if !ok {
+		couponBulkRedirect(c, "目标状态不合法，本次没有处理任何优惠码。")
+		return
+	}
+	verb := "已停用"
+	if target == 1 {
+		verb = "已启用"
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		couponRedirect(c, "", berr.Error())
+		return
+	}
+	changed, skipped := 0, 0
+	for _, raw := range ids {
+		id := orderQueryID(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		cp, gerr := h.orders.GetCoupon(c.Request.Context(), id)
+		if gerr != nil || cp == nil {
+			skipped++
+			continue
+		}
+		// 表单里的 couponId 与 projectId 是两个独立字段，切了工程之后可能还留着别的工程的券：
+		// 越界的那张不处理，而不是替用户跨工程改一张他看不见的券。
+		if projectID != "" && cp.ProjectID != projectID {
+			skipped++
+			continue
+		}
+		_, uerr := h.orders.UpdateCoupon(c.Request.Context(), &orderdto.CouponSaveReq{
+			ID:            cp.ID,
+			ProjectID:     cp.ProjectID,
+			Code:          cp.Code,
+			Name:          cp.Name,
+			DiscountType:  cp.DiscountType,
+			DiscountValue: cp.DiscountValue,
+			MinSubtotal:   cp.MinSubtotal,
+			MaxUses:       cp.MaxUses,
+			PerUserLimit:  cp.PerUserLimit,
+			StartsAt:      couponFormTime(cp.StartsAt.TimePtr()),
+			EndsAt:        couponFormTime(cp.EndsAt.TimePtr()),
+			Status:        target,
+			Remark:        cp.Remark,
+			// 操作人由会话覆盖写入，绝不受表单影响。
+			OperatorID:   shell.CurrentUserID(c),
+			OperatorName: builtin.GetUsername(c),
+		})
+		if uerr != nil {
+			skipped++
+			continue
+		}
+		changed++
+	}
+	couponBulkRedirect(c, bulkSummary(verb, "优惠码", changed, skipped))
+}
+
+// couponToggleTarget 批量启停的目标状态：只认 1（启用）/ 0（停用），其余一律不合法。
+//
+// 不把非法值归一成 0：归一等于「填错就悄悄把券全停了」，而运营看到的是「批量启用成功」。
+func couponToggleTarget(raw string) (int, bool) {
+	switch strings.TrimSpace(raw) {
+	case "1":
+		return 1, true
+	case "0":
+		return 0, true
+	}
+	return 0, false
+}
+
+// couponBulkRedirect 批量动作回列表页：结论走 ?done=。
+func couponBulkRedirect(c *gin.Context, doneText string) {
+	couponBulkRedirectSkip(c, doneText, "")
+}
+
+// couponBulkRedirectSkip 同上，但先丢掉一个回跳参数（批量删除后必须丢掉 couponId）。
+func couponBulkRedirectSkip(c *gin.Context, doneText, skipKey string) {
+	q := url.Values{}
+	if parsed, err := url.ParseQuery(strings.TrimSpace(c.PostForm("returnQuery"))); err == nil {
+		// 只透传白名单键：returnQuery 同样来自客户端，不能让它往回跳 URL 里塞任意参数。
+		for key, vals := range parsed {
+			if _, ok := couponBackKeys[key]; ok && len(vals) > 0 {
+				q.Set(key, vals[0])
+			}
+		}
+	}
+	q.Del("ok")
+	q.Del("err")
+	if skipKey != "" {
+		q.Del(skipKey)
+	}
+	if doneText != "" {
+		q.Set("done", doneText)
+	}
+	c.Redirect(http.StatusFound, "/admin/coupons?"+q.Encode())
 }
 
 // —— 页面取数（视图组装：模板不做逻辑与算术）——

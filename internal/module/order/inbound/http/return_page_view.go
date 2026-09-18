@@ -175,15 +175,6 @@ func returnStatusCounter(value, label, badge string, highlight bool, count int64
 	}
 }
 
-// returnStatusOptions 状态下拉（筛选用：全部 + 六个状态）。
-func returnStatusOptions() []gin.H {
-	options := make([]gin.H, 0, len(returnStatusViews))
-	for _, view := range returnStatusViews {
-		options = append(options, gin.H{"Value": view.Value, "Label": view.Label})
-	}
-	return options
-}
-
 // returnFilterValues 列表页链接要保留的筛选条件（空值由 shell.FilterBaseURL 丢弃）。
 //
 // 这里**不含 returnId**：点状态、翻页这些动作的语义是「换一批单看」，

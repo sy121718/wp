@@ -84,20 +84,33 @@ func casbinMiddleware(forcedObj string) gin.HandlerFunc {
 
 // GetUserID 从 gin.Context 中提取已认证的用户 ID。
 // 如果未找到则返回 0，由调用方自行处理空值。
+//
+// 类型断言带 ok 检查：值来自会话上下文，任何类型异常都应当降级成「未登录」，
+// 而不是让裸断言把请求打成 500 —— 中间件写入的是 int64（auth.go），
+// 但这层保护让「写入方改了类型」表现为登录态丢失（可观测、可回滚），而不是线上 panic。
 func GetUserID(c *gin.Context) int64 {
-	userID, exists := c.Get("user_id")
+	v, exists := c.Get("user_id")
 	if !exists {
 		return 0
 	}
-	return userID.(int64)
+	id, ok := v.(int64)
+	if !ok {
+		return 0
+	}
+	return id
 }
 
 // GetUsername 从 gin.Context 中提取已认证的用户名。
 // 如果未找到则返回空字符串，由调用方自行处理空值。
+// 类型断言同样带 ok 检查，理由见 GetUserID。
 func GetUsername(c *gin.Context) string {
-	username, exists := c.Get("username")
+	v, exists := c.Get("username")
 	if !exists {
 		return ""
 	}
-	return username.(string)
+	name, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return name
 }

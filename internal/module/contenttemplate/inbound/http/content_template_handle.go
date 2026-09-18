@@ -25,6 +25,9 @@ import (
 
 const contentTemplatesListPath = "/admin/content-templates"
 
+// contentTemplatesNotReadyText 能力未装配时的回执（本页在 h.templates 为空时整体降级）。
+const contentTemplatesNotReadyText = "内容模板能力未装配，无法删除。"
+
 // contentTemplatePageHandle 内容模板后台页。
 type contentTemplatePageHandle struct {
 	templates contenttemplatecontract.ContentTemplateService
@@ -85,7 +88,71 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	data["Templates"] = rows
 	data["TemplateCount"] = len(rows)
 	data["Ready"] = true
+	// 可选键一律由 handler 注入（模板用 isset 包裹）：本页此前只有 ?err=，
+	// 批量删除的「成功 N 个 / 跳过 M 个」需要一条正向回执通道。
+	data["Done"] = strings.TrimSpace(c.Query("done"))
 	c.HTML(http.StatusOK, "admin/content_templates.html", shell.Prepare(c, data))
+}
+
+// ContentTemplatesBulkDelete 批量删除内容模板（POST /admin/content-templates/bulk-delete）。
+//
+// 逐条走**同一条单条删除路径**（h.templates.Delete）：被自动发布实例引用的模板由数据库
+// 外键拒绝，其余照常删除 —— 单条失败不中断整批（整批回滚会让用户以为「一个都没删」然后反复重试）。
+// 结果按「已删除 N 个 / 跳过 M 个」回带列表页，并保留工程与实体类型筛选。
+func (h *contentTemplatePageHandle) ContentTemplatesBulkDelete(c *gin.Context) {
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	entityType := strings.TrimSpace(c.PostForm("entityType"))
+	q := url.Values{}
+	if projectID != "" {
+		q.Set("project", projectID)
+	}
+	if entityType != "" {
+		q.Set("entityType", entityType)
+	}
+	if h.templates == nil {
+		q.Set("err", contentTemplatesNotReadyText)
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
+		return
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		q.Set("err", berr.Error())
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.templates.Delete(c.Request.Context(), &contenttemplatedto.DeleteReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
+	if msg := contentTemplatesBulkDeleteResult(deleted, skipped); msg != "" {
+		if skipped > 0 {
+			q.Set("err", msg)
+		} else {
+			q.Set("done", msg)
+		}
+	}
+	c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
+}
+
+// contentTemplatesBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
+// （只报「操作完成」等于把部分成功静默成全部成功，用户不会再去看剩下那几个）。
+func contentTemplatesBulkDeleteResult(deleted, skipped int) string {
+	switch {
+	case deleted == 0 && skipped == 0:
+		return "没有选中任何模板，列表未改动。"
+	case skipped == 0:
+		return fmt.Sprintf("已删除 %d 个模板。", deleted)
+	case deleted == 0:
+		return fmt.Sprintf("%d 个模板都未能删除，列表未改动（被自动发布实例引用的模板不能删除）。", skipped)
+	default:
+		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（被自动发布实例引用的模板不能删除）。", deleted, skipped)
+	}
 }
 
 // ContentTemplateEditPage GET /admin/content-templates/edit：302 到工作台（保留 query）。

@@ -8,7 +8,9 @@ package blockhttp
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
@@ -55,6 +57,10 @@ type blocksPageData struct {
 	Headers           []blockRow
 	Footers           []blockRow
 	Blocks            []blockRow
+	// Err / Done 上一次写动作的回执（删除结果、部分失败计数）。本页此前没有任何回执通道，
+	// 删除成不成功在页面上看不出来 —— 批量动作必须把「跳过几个」说清楚。
+	Err  string
+	Done string
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
@@ -67,6 +73,8 @@ func (d *blocksPageData) templateMap() gin.H {
 		"Headers":         d.Headers,
 		"Footers":         d.Footers,
 		"Blocks":          d.Blocks,
+		"Err":             d.Err,
+		"Done":            d.Done,
 	}
 }
 
@@ -136,6 +144,8 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 		Title:    blocksPageTitle,
 		Menu:     "blocks",
 		Projects: projects,
+		Err:      strings.TrimSpace(c.Query("err")),
+		Done:     strings.TrimSpace(c.Query("done")),
 	}
 	if sel := strings.TrimSpace(c.Query("project")); sel != "" {
 		data.SelectedProjectID = sel
@@ -197,6 +207,67 @@ func (h *blockPageHandle) DeleteBlock(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/blocks")
+}
+
+// BlocksBulkDelete 批量删除全局块（POST /admin/blocks/bulk-delete，权限点 block:delete）。
+//
+// 逐条走**同一条单条删除路径**（h.blocks.Delete）：被页面引用的全局块由服务端拒绝，
+// 其余照常删除 —— 单条失败不中断整批（整批回滚会让用户以为「一个都没删」然后反复重试）。
+// 结果按「已删除 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		q := url.Values{}
+		if projectID != "" {
+			q.Set("project", projectID)
+		}
+		q.Set("err", berr.Error())
+		c.Redirect(http.StatusSeeOther, "/admin/blocks?"+q.Encode())
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id}); err != nil {
+			logger.Scene("block").With("op", "BlocksBulkDelete").Error(err, "批量删除全局块失败")
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	q := url.Values{}
+	if projectID != "" {
+		q.Set("project", projectID)
+	}
+	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
+	if msg := blocksBulkDeleteResult(deleted, skipped); msg != "" {
+		if skipped > 0 {
+			q.Set("err", msg)
+		} else {
+			q.Set("done", msg)
+		}
+	}
+	target := "/admin/blocks"
+	if enc := q.Encode(); enc != "" {
+		target += "?" + enc
+	}
+	c.Redirect(http.StatusSeeOther, target)
+}
+
+// blocksBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
+// （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
+func blocksBulkDeleteResult(deleted, skipped int) string {
+	switch {
+	case deleted == 0 && skipped == 0:
+		return "没有选中任何块，列表未改动。"
+	case skipped == 0:
+		return fmt.Sprintf("已删除 %d 个块。", deleted)
+	case deleted == 0:
+		return fmt.Sprintf("%d 个块都未能删除，列表未改动。", skipped)
+	default:
+		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（被页面引用的全局块需先解除引用）。", deleted, skipped)
+	}
 }
 
 // SaveBlockContent 工作台保存块内容（POST /admin/blocks/save-content，JSON）。
@@ -263,5 +334,7 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/blocks", h.BlocksList)
 	adminPages.POST("/blocks/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.CreateBlock)
 	adminPages.POST("/blocks/delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), h.DeleteBlock)
+	// 批量删除复用单条删除的权限点（不新增权限点、不写迁移）：能删一个块的人就能删一批。
+	adminPages.POST("/blocks/bulk-delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), h.BlocksBulkDelete)
 	adminPages.POST("/blocks/save-content", builtin.CasbinMiddlewareForPath("/api/block/update"), h.SaveBlockContent)
 }

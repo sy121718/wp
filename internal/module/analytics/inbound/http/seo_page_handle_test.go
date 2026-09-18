@@ -42,8 +42,10 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 		"t":             templates.TranslateFunc(lang),
 		"langs":         templates.LanguageOptions(lang),
 		"lang_redirect": "/admin/seo",
+		// 两个工程：单工程时页面不渲染工程下拉（唯一选项的下拉是纯占位），
+		// 只给一个工程就断言不到「工程选择」这条渲染路径。
 		"Projects": []projectcontract.ProjectResp{
-			{ID: "p-1", Name: "演示站"},
+			{ID: "p-1", Name: "演示站"}, {ID: "p-2", Name: "备用站"},
 		},
 		"SelectedProject": "p-1",
 		"Paths": []analyticscontract.PathCount{

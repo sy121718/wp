@@ -45,4 +45,11 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 		builtin.CasbinMiddlewareForPath("/api/customer/status"), h.CustomerStatusSave)
 	pages.POST("/customers/unlock",
 		builtin.CasbinMiddlewareForPath("/api/customer/unlock"), h.CustomerUnlock)
+	// 批量动作**复用单条动作的权限点**（/api/customer/status、/api/customer/unlock）：
+	// 同一条写入路径、同一个授权，页面只是把「一次一个」变成「一次一批」。
+	// 不新增权限点也就不需要迁移 —— 多一个权限点只会多一处需要维护的授权真相。
+	pages.POST("/customers/bulk-status",
+		builtin.CasbinMiddlewareForPath("/api/customer/status"), h.CustomerBulkStatusSave)
+	pages.POST("/customers/bulk-unlock",
+		builtin.CasbinMiddlewareForPath("/api/customer/unlock"), h.CustomerBulkUnlock)
 }

@@ -8,27 +8,9 @@ import (
 
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
 )
-
-// operatorID 取当前操作人 id（会话中间件写入，只用于留痕，不参与鉴权判断）。
-func operatorID(c *gin.Context) uint64 {
-	if v, exists := c.Get("user_id"); exists {
-		switch n := v.(type) {
-		case uint64:
-			return n
-		case int64:
-			if n > 0 {
-				return uint64(n)
-			}
-		case int:
-			if n > 0 {
-				return uint64(n)
-			}
-		}
-	}
-	return 0
-}
 
 // AutomationSave 新建 / 更新流程（保存前校验图：无环 + 可达 + 形状）。
 func (h *Handle) AutomationSave(c *gin.Context) {
@@ -37,7 +19,7 @@ func (h *Handle) AutomationSave(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = operatorID(c)
+	req.OperatorID = shell.CurrentUserID(c)
 	item, err := h.svc.SaveAutomation(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
@@ -93,7 +75,7 @@ func (h *Handle) AutomationStatus(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = operatorID(c)
+	req.OperatorID = shell.CurrentUserID(c)
 	if err := h.svc.SetAutomationStatus(c.Request.Context(), &req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -120,7 +102,7 @@ func (h *Handle) AutomationStartRun(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = operatorID(c)
+	req.OperatorID = shell.CurrentUserID(c)
 	started, err := h.svc.StartRun(c.Request.Context(), req.AutomationID, req.ContactID, "manual")
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)

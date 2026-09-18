@@ -11,6 +11,7 @@ package adminhttp
 // 页面文案标题沿用原有 i18n 词条 key（与 dashboard 副本逐字一致，保证渲染不变）。
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -59,6 +60,25 @@ func NewAdminPagesHandle(admins admincontract.AdminService, roles admincontract.
 	return &AdminPagesHandle{admins: admins, roles: roles, perms: perms, menus: menus, depts: depts, rules: rules}
 }
 
+// --- 六领域公共：批量动作 ---
+//
+// 批量删除一律「逐条走同一条单条删除路径 + 单条失败不中断整批」：一条被服务端拒绝
+// （删自己或超管、系统角色、已分配的权限点、有子级的菜单 / 部门）不能把整批回滚 ——
+// 那会让人以为「一条都没删」，然后反复重试。结果按「已删除 N 个 / M 个未能删除」
+// 回带列表页，避免静默的部分成功。权限点复用各自单条删除的业务 API，不新增权限点。
+
+// adminBulkResultURL 批量动作结果回带：有跳过走 ?err=（含成功条数），全成功走 ?done=。
+func adminBulkResultURL(path, noun string, deleted, skipped int) string {
+	switch {
+	case skipped > 0:
+		return path + "?err=" + url.QueryEscape(
+			fmt.Sprintf("已删除 %d 个%s，%d 个未能删除（受保护或被引用）", deleted, noun, skipped))
+	case deleted > 0:
+		return path + "?done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个%s", deleted, noun))
+	}
+	return path
+}
+
 // --- 管理员 administrators ---
 
 // AdministratorsPage 管理员列表页（GET /admin/administrators）。
@@ -76,6 +96,8 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		"menu":  "admins",
 		"Rows":  res.List,
 		"Total": res.Total,
+		"Err":   strings.TrimSpace(c.Query("err")),
+		"Done":  strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -118,17 +140,53 @@ func (h *AdminPagesHandle) AdministratorsUpdate(c *gin.Context) {
 }
 
 // AdministratorsDelete 删除管理员（POST /admin/administrators/delete）。
+//
+// OperatorID 必须从会话注入：AdminDelete 的「不能删自己」判定依赖它，缺省 0 时该判定
+// 静默失效（只剩超管保护兜底）—— 单条端点此前漏了注入，而批量端点从一开始就带，
+// 于是出现「批量比单条更严」的错位。
 func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
 		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
 		return
 	}
-	if _, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{Id: []uint64{id}}); err != nil {
+	if _, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
+		Id: []uint64{id}, OperatorID: shell.CurrentUserID(c),
+	}); err != nil {
 		shell.AdminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
+}
+
+// AdministratorsBulkDelete 批量删除管理员（POST /admin/administrators/bulk-delete）。
+//
+// 逐条走同一条单条删除路径：删自己、超管由 service 拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 操作者 id 从会话注入（页面的单条删除没有注入，这里补上，否则「不能删自己」判定不生效）。
+func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
+	operatorID := shell.CurrentUserID(c)
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, "/admin/administrators?err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			continue
+		}
+		if _, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
+			Id: []uint64{id}, OperatorID: operatorID,
+		}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/administrators", "管理员", deleted, skipped))
 }
 
 // --- 角色 roles ---
@@ -145,6 +203,8 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 		"menu":  "roles",
 		"Rows":  res.List,
 		"Total": res.Total,
+		"Err":   strings.TrimSpace(c.Query("err")),
+		"Done":  strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -200,6 +260,31 @@ func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
 }
 
+// RolesBulkDelete 批量删除角色（POST /admin/roles/bulk-delete）。
+//
+// 系统内置角色由 service 拒绝、其余照常删除；单条失败只计数不中断整批。
+func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, "/admin/roles?err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			continue
+		}
+		if err := h.roles.RoleDelete(c.Request.Context(), &admindto.RoleDeleteReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/roles", "角色", deleted, skipped))
+}
+
 // --- 权限点 permissions ---
 
 // PermissionsPage 权限资源列表页（GET /admin/permissions）。
@@ -224,6 +309,8 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		"Total":        res.Total,
 		"FilterCode":   code,
 		"FilterModule": module,
+		"Err":          strings.TrimSpace(c.Query("err")),
+		"Done":         strings.TrimSpace(c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/permissions", map[string]string{"code": code, "module": module})
 	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -297,6 +384,32 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
 }
 
+// PermissionsBulkDelete 批量删除权限点（POST /admin/permissions/bulk-delete）。
+//
+// 已分配给角色或被菜单引用的权限点由 service 拒绝、其余照常删除；
+// 单条失败只计数不中断整批。
+func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, "/admin/permissions?err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			continue
+		}
+		if _, err := h.perms.PermDelete(c.Request.Context(), &admindto.PermDeleteReq{IDs: []uint64{id}}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/permissions", "权限点", deleted, skipped))
+}
+
 // --- 菜单 menus（树） ---
 
 // adminMenuRow 菜单树展平行。
@@ -361,6 +474,8 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 		"menu":    "menus",
 		"Rows":    rows,
 		"Parents": rows,
+		"Err":     strings.TrimSpace(c.Query("err")),
+		"Done":    strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -415,6 +530,31 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
+}
+
+// MenusBulkDelete 批量删除菜单（POST /admin/menus/bulk-delete）。
+//
+// 系统菜单与有子菜单的节点由 service 拒绝、其余照常删除；单条失败只计数不中断整批。
+func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, "/admin/menus?err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			continue
+		}
+		if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: []uint64{id}}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/menus", "菜单", deleted, skipped))
 }
 
 // --- 部门 departments（树） ---
@@ -476,6 +616,8 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 		"menu":    "depts",
 		"Rows":    rows,
 		"Parents": rows,
+		"Err":     strings.TrimSpace(c.Query("err")),
+		"Done":    strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -532,6 +674,31 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
 }
 
+// DepartmentsBulkDelete 批量删除部门（POST /admin/departments/bulk-delete）。
+//
+// 有子部门或部门下有管理员的由 service 拒绝、其余照常删除；单条失败只计数不中断整批。
+func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, "/admin/departments?err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			continue
+		}
+		if err := h.depts.DeptDelete(c.Request.Context(), &admindto.DeptDeleteReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/departments", "部门", deleted, skipped))
+}
+
 // --- 数据权限 datarules ---
 
 // DatarulesPage 数据权限列表页（GET /admin/datarules）。
@@ -552,6 +719,8 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 		"Rows":    res.List,
 		"Total":   res.Total,
 		"Domains": domains,
+		"Err":     strings.TrimSpace(c.Query("err")),
+		"Done":    strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -652,6 +821,31 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
 }
 
+// DatarulesBulkDelete 批量删除数据规则（POST /admin/datarules/bulk-delete）。
+//
+// 逐条走同一条单条删除路径（含该规则的分配记录清理）；单条失败只计数不中断整批。
+func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, "/admin/datarules?err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			continue
+		}
+		if err := h.rules.RuleDelete(c.Request.Context(), &admindto.RuleDeleteReq{IDs: []uint64{id}}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/datarules", "数据规则", deleted, skipped))
+}
+
 // --- 文案词条页（审计 I18N-003） ---
 //
 // 迁移 seed 是默认值来源（ON CONFLICT DO NOTHING，不覆盖这里的修改）；
@@ -695,19 +889,29 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	if page < 1 {
 		page = 1
 	}
-	pages := int((total + adminI18nEntryPageSize - 1) / adminI18nEntryPageSize)
 	data := gin.H{
 		"title":      "文案词条",
 		"Entries":    items,
-		"Total":      total,
-		"Page":       page,
-		"Pages":      pages,
 		"Keyword":    filter.Keyword,
 		"LangFilter": filter.Lang,
 		"CatFilter":  filter.Category,
 		"Categories": categories,
 		"Saved":      strings.TrimSpace(c.Query("saved")),
 		"Errored":    strings.TrimSpace(c.Query("errored")),
+		// 批量删除的结果条（?done= / ?err=）：与全站列表页同一对键，文案由服务端拼装
+		// （受控文本 + 计数），模板侧 Jet 默认 HTML 转义。
+		"Done": strings.TrimSpace(c.Query("done")),
+		"Err":  strings.TrimSpace(c.Query("err")),
+	}
+	// 分页条：原版只渲染「第 X / Y 页」文字，没有页码链接 —— Total 超过一页时第 2 页起
+	// 完全不可达（列表页最要紧的缺陷）。链接与筛选同源，翻页不丢 keyword / lang / category。
+	base := shell.FilterBaseURL("/admin/i18n", map[string]string{
+		"keyword":  filter.Keyword,
+		"lang":     filter.Lang,
+		"category": filter.Category,
+	})
+	for k, v := range shell.BuildPagination(total, page, adminI18nEntryPageSize, base, shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
 	}
 	c.HTML(http.StatusOK, "admin/i18n", shell.Prepare(c, data))
 }
@@ -739,6 +943,64 @@ func (h *adminI18nEntryHandle) I18nEntryDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", "已删除 "+strings.TrimSpace(key)+" · "+strings.TrimSpace(lang)))
+}
+
+// adminI18nEntryKeySeparator 批量删除的复合键分隔符（"key|lang"）。
+//
+// 词条的唯一标识是 (key, lang) 二元组 —— 只带 key 会把其它语言下的同名词条
+// 一起删掉（删 zh-CN 顺手删了 en-US）。分隔符选 "|"：key 是点分标识、
+// lang 是 BCP-47（zh-CN），两者都不含它。万一真有人建了带 "|" 的 key，
+// Cut 出来 lang 为空 → 计跳过，绝不会误删别的行（fail-safe，不是 fail-open）。
+const adminI18nEntryKeySeparator = "|"
+
+// I18nEntriesBulkDelete POST /admin/i18n/bulk-delete —— 批量删除词条。
+//
+// 逐条走同一条单条删除路径（同一个 i18n.DeleteEntry）：某一条失败（已不存在、
+// key/lang 非法）只计入跳过数，整批不中断 —— 整批回滚会让用户以为「一条都没删」，
+// 然后反复重试。结果按「已删除 N 条 / 跳过 M 条」回带，筛选与页码原样保留。
+func (h *adminI18nEntryHandle) I18nEntriesBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "err", berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		key, lang, ok := strings.Cut(strings.TrimSpace(raw), adminI18nEntryKeySeparator)
+		key, lang = strings.TrimSpace(key), strings.TrimSpace(lang)
+		if !ok || key == "" || lang == "" {
+			skipped++
+			continue
+		}
+		if err := i18n.DeleteEntry(c.Request.Context(), key, lang); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
+	msg := adminI18nBulkDeleteResult(deleted, skipped)
+	if skipped > 0 {
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "err", msg))
+		return
+	}
+	c.Redirect(http.StatusFound, adminI18nBackURL(c, "done", msg))
+}
+
+// adminI18nBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
+// （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几条）。
+func adminI18nBulkDeleteResult(deleted, skipped int) string {
+	switch {
+	case deleted == 0 && skipped == 0:
+		return "没有勾选任何词条，列表未改动。"
+	case skipped == 0:
+		return fmt.Sprintf("已删除 %d 条词条（构建时回退到组件包内的中文兜底）。", deleted)
+	case deleted == 0:
+		return fmt.Sprintf("%d 条词条都未能删除，列表未改动。", skipped)
+	default:
+		return fmt.Sprintf("已删除 %d 条，%d 条未能删除（可能已被删除）。", deleted, skipped)
+	}
 }
 
 // adminI18nBackURL 回列表并带上筛选与提示（只回填站内相对路径，避免开放重定向）。

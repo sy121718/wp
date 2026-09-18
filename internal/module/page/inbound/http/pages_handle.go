@@ -7,7 +7,9 @@ package pagehttp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"
@@ -84,6 +86,10 @@ type pagesPageData struct {
 	// Blueprints 蓝图候选（审计 VIS-010）：「从蓝图开始」是新建页面流程里的一个选项，
 	// 不是另一个需要先去的页面。
 	Blueprints []blueprintOption
+	// Err / Done 是列表页回带的操作结论（?err= / ?done=）：单条删除与批量删除共用这一对键。
+	// 批量结果按「已删除 N 个页面 / 跳过 M 个」写进 Done（有跳过时写 Err，警告条更显眼）。
+	Err  string
+	Done string
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。
@@ -100,6 +106,8 @@ func (d *pagesPageData) templateMap() gin.H {
 		"Projects":   d.Projects,
 		"Pages":      d.Pages,
 		"Blueprints": d.Blueprints,
+		"Err":        d.Err,
+		"Done":       d.Done,
 	}
 }
 
@@ -167,6 +175,10 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 		// 蓝图候选（审计 VIS-010）：把「从蓝图开始」放进新建页面流程，
 		// 而不是要求编辑者先去另一个页面建好蓝图再回来。
 		Blueprints: h.blueprintOptions(ctx),
+		// 操作结论走 query 回带（PRG）：单条删除与批量删除共用这一对键，
+		// 页面本身不做筛选，故回跳不带其它参数。
+		Err:  strings.TrimSpace(c.Query("err")),
+		Done: strings.TrimSpace(c.Query("done")),
 	}, nil
 }
 
@@ -214,4 +226,85 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/pages")
+}
+
+// DeletePage 单条删除页面（POST /admin/pages/delete）。
+//
+// 语义**逐字复用** API 的 /api/page/delete（同一个 svc.Delete）：页面有已激活产物时
+// 不拒绝，而是先按 active 路径把访问面下线、清掉路由占用与媒体引用，再软删页面
+// （见 service/page_delete.go）。批量删除必须走这同一条路径 —— 单条拒绝 / 批量跳过的
+// 规则都由 service 决定，handler 不另立一套。
+func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
+	id := strings.TrimSpace(c.PostForm("id"))
+	if id == "" {
+		c.Redirect(http.StatusSeeOther, pagesBackURL("缺少页面 id，未执行删除。", ""))
+		return
+	}
+	if err := h.pages.Delete(c.Request.Context(), &pagecontract.DeleteReq{ID: id}); err != nil {
+		logger.Scene("page").With("pageId", id).Error(err, "删除页面失败")
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageErrorMessage(err), ""))
+		return
+	}
+	c.Redirect(http.StatusSeeOther, pagesBackURL("", "已删除 1 个页面。"))
+}
+
+// PagesBulkDelete 批量删除页面（POST /admin/pages/bulk-delete）。
+//
+// 逐条走同一条单条删除路径：某一条失败（已不存在、路径清理失败等）只计入跳过数，
+// 整批不中断 —— 整批回滚会让用户以为「一个都没删」，然后反复重试。
+// 结果按「已删除 N 个 / 跳过 M 个」回带列表页，不静默部分成功。
+func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, pagesBackURL(berr.Error(), ""))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.pages.Delete(c.Request.Context(), &pagecontract.DeleteReq{ID: id}); err != nil {
+			logger.Scene("page").With("pageId", id).Error(err, "批量删除页面失败")
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
+	msg := pagesBulkDeleteResult(deleted, skipped)
+	if skipped > 0 {
+		c.Redirect(http.StatusSeeOther, pagesBackURL(msg, ""))
+		return
+	}
+	c.Redirect(http.StatusSeeOther, pagesBackURL("", msg))
+}
+
+// pagesBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
+// （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
+func pagesBulkDeleteResult(deleted, skipped int) string {
+	switch {
+	case deleted == 0 && skipped == 0:
+		return "没有勾选任何页面，列表未改动。"
+	case skipped == 0:
+		return fmt.Sprintf("已删除 %d 个页面。", deleted)
+	case deleted == 0:
+		return fmt.Sprintf("%d 个页面都未能删除，列表未改动。", skipped)
+	default:
+		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（可能已被删除或路径清理失败）。", deleted, skipped)
+	}
+}
+
+// pagesBackURL 列表页回跳地址（PRG）。两条文案都由服务端拼装（受控文本 + 计数），
+// 经 QueryEscape 回带；模板侧 Jet 默认 HTML 转义，不构成注入面。
+func pagesBackURL(errText, doneText string) string {
+	q := url.Values{}
+	if errText != "" {
+		q.Set("err", errText)
+	}
+	if doneText != "" {
+		q.Set("done", doneText)
+	}
+	if enc := q.Encode(); enc != "" {
+		return "/admin/pages?" + enc
+	}
+	return "/admin/pages"
 }

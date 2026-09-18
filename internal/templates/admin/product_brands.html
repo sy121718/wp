@@ -1,96 +1,169 @@
 {* admin/product_brands.html — 商品品牌管理：logo + 描述 + slug + SEO 字段（issue #10） *}
+{* 版式遵循 theme.css「后台页壳」段（评审规则见 ~/.dsh/skills/admin-ui-logic SKILL §2.1/§2.2）：
+     · 正文零说明文字 —— 领域说明整段进 .help 悬浮，默认 0 高度；
+     · 主行动与工程选择器同一行置于 .page-head，不再单独占一张卡；
+     · 列表是标准表格 + 右侧操作列（.col-actions），行内表单放表格外用 form="id" 关联；
+     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）。 *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{{canCreate := isset(.PermSet["product:brand_create"])}}
+{{canUpdate := isset(.PermSet["product:brand_update"])}}
+{{canDelete := isset(.PermSet["product:brand_delete"])}}
 <div class="stack">
-    <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_brands.title", "商品品牌") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.product_brands.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-        {{end}}
-        <p class="text-mute text-sm">
-            {{ .["t"]("admin.product_brands.intro", "品牌是独立实体：名称、slug（工程内唯一）、logo、描述与 SEO 字段都定义一次，多个商品可以引用同一个品牌；被商品引用的品牌不能删除。") }}
-        </p>
-        <form method="get" action="/admin/product-brands" class="form-inline">
-            <select aria-label="{{ .["t"]("admin.product_brands.projectAria", "站点工程") }}" class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-    </section>
-
-    <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_brands.create.title", "新建品牌") }}</h2>
-        {{if isset(.PermSet["product:brand_create"])}}
-        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-brand-create" data-drawer-title="{{ .["t"]("admin.product_brands.create.title", "新建品牌") }}">＋ {{ .["t"]("admin.product_brands.create.title", "新建品牌") }}</button>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_brands.list.title", "品牌列表") }}</h2>
-        {{if len(.Brands) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.product_brands.list.empty", "这个工程还没有品牌。用上面的表单建一个，之后在商品页可以挂到商品上。") }}</p>
-        {{else}}
-        {{range _, b := .Brands}}
-        <details class="disclosure">
-            <summary class="card-header">
-                <strong>{{b.Name}}</strong>
-                <code>{{b.Slug}}</code>
-                <span class="text-mute text-sm">{{ .["t"]("admin.product_brands.list.sortLead", "排序 ") }}{{b.Sort}}</span>
-                {{if b.Logo != ""}}
-                <span class="badge badge-info">logo</span>
-                {{end}}
-            </summary>
-
-            {{if isset(.PermSet["product:brand_update"])}}
-            <button type="button" class="btn btn-sm" data-drawer-open="#tpl-brand-edit-{{b.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
-            {{end}}
-            <template id="tpl-brand-edit-{{b.ID}}">
-            <form method="post" action="/admin/product-brands/update">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="projectId" value="{{selectedProject}}">
-                <input type="hidden" name="id" value="{{b.ID}}">
-                <div class="form-inline">
-                    <input aria-label="{{ .["t"]("admin.product_brands.label.name", "品牌名称") }}" class="form-input" type="text" name="name" value="{{b.Name}}" placeholder="{{ .["t"]("admin.product_brands.label.name", "品牌名称") }}" required>
-                    <input aria-label="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" class="form-input" type="text" name="slug" value="{{b.Slug}}" placeholder="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" autocomplete="off">
-                    <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="{{b.Sort}}" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                    <input aria-label="{{ .["t"]("admin.product_brands.label.logo", "logo URL") }}" class="form-input" type="text" name="logo" value="{{b.Logo}}" placeholder="{{ .["t"]("admin.product_brands.label.logo", "logo URL") }}" autocomplete="off">
-                </div>
-                <div class="form-inline">
-                    <input aria-label="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}" class="form-input" type="text" name="seoTitle" value="{{b.SEOTitle}}" placeholder="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}">
-                    <input aria-label="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}" class="form-input" type="text" name="seoDescription" value="{{b.SEODescription}}" placeholder="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}">
-                    <input aria-label="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}" class="form-input" type="text" name="description" value="{{b.Description}}" placeholder="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}">
-                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
-                    {* SEO 评分（审计 SEO-016）：品牌页按落地页权重评分；title 唯一性检查
-                       （SEO-018）列出冲突页面。hx-include 取本表单的字段（含 id / projectId / csrf）。
-                       只读计算，不写库不改产物。 *}
-                    <button type="button" class="btn btn-sm"
-                            hx-post="/admin/product-brands/seo-score" hx-include="closest form"
-                            hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
-                </div>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.product_brands.title", "商品品牌") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_brands.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_brands.intro", "品牌是独立实体：名称、slug（工程内唯一）、logo、描述与 SEO 字段都定义一次，多个商品可以引用同一个品牌；被商品引用的品牌不能删除。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/product-brands">
+                <label class="sr-only" for="brands-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="brands-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
             </form>
-            </template>
+            {{end}}
+            {{if canCreate}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-brand-create" data-drawer-title="{{ .["t"]("admin.product_brands.create.title", "新建品牌") }}">＋ {{ .["t"]("admin.product_brands.create.title", "新建品牌") }}</button>
+            {{end}}
+        </div>
+    </header>
 
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_brands.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {{if len(.Brands) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_brands.empty.title", "还没有品牌") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_brands.empty.desc", "建一个品牌后，可以在商品页把它挂到商品上；被商品引用的品牌不能删除。") }}</p>
+            {{if canCreate}}
+            <div class="empty-actions">
+                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-brand-create" data-drawer-title="{{ .["t"]("admin.product_brands.create.title", "新建品牌") }}">＋ {{ .["t"]("admin.product_brands.create.title", "新建品牌") }}</button>
+            </div>
+            {{end}}
+        </div>
+        {{else}}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
+           提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
+        <form method="post" action="/admin/product-brands/bulk-delete">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            {{if canDelete}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。"), danger=true)}}
+            {{yield bulkBarClose()}}
+            {{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_brands.list.title", "品牌列表") }}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th class="col-check">
+                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                    </th>
+                    <th>{{ .["t"]("admin.product_brands.col.name", "品牌") }}</th>
+                    <th>{{ .["t"]("admin.product_brands.col.slug", "URL 段") }}</th>
+                    <th>{{ .["t"]("admin.product_brands.col.sort", "排序") }}</th>
+                    <th>{{ .["t"]("admin.product_brands.col.seo", "SEO 标题") }}</th>
+                    <th>{{ .["t"]("admin.product_brands.col.updated", "更新时间") }}</th>
+                    <th class="col-actions">{{ .["t"]("admin.product_brands.col.actions", "操作") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{range _, b := .Brands}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>
+                        <strong>{{b.Name}}</strong>
+                        {{if b.Logo != ""}}<span class="badge badge-mute">logo</span>{{end}}
+                    </td>
+                    <td>{{if b.Slug != ""}}<code>{{b.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{b.Sort}}</td>
+                    <td>{{if b.SEOTitle != ""}}{{b.SEOTitle}}{{else}}<span class="text-mute">{{ .["t"]("admin.product_brands.seo.unset", "未填") }}</span>{{end}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        {{if canUpdate}}
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-brand-edit-{{b.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        {{end}}
+                        {{if canDelete}}
+                        <button type="submit" form="brand-del-{{b.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
+        {{end}}
+    </section>
+
+    {* 行内表单与抽屉模板必须放在表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器
+       提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
+    {{range _, b := .Brands}}
+    {{if canDelete}}
+    <form id="brand-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/product-brands/delete"
+          data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+    </form>
+    {{end}}
+    {{if canUpdate}}
+    <template id="tpl-brand-edit-{{b.ID}}">
+        <form method="post" action="/admin/product-brands/update">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{b.ID}}">
+            <div class="form-inline">
+                <input aria-label="{{ .["t"]("admin.product_brands.label.name", "品牌名称") }}" class="form-input" type="text" name="name" value="{{b.Name}}" placeholder="{{ .["t"]("admin.product_brands.label.name", "品牌名称") }}" required>
+                <input aria-label="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" class="form-input" type="text" name="slug" value="{{b.Slug}}" placeholder="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" autocomplete="off">
+                <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="{{b.Sort}}" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
+                <input aria-label="{{ .["t"]("admin.product_brands.label.logo", "logo URL") }}" class="form-input" type="text" name="logo" value="{{b.Logo}}" placeholder="{{ .["t"]("admin.product_brands.label.logo", "logo URL") }}" autocomplete="off">
+            </div>
+            <div class="form-inline">
+                <input aria-label="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}" class="form-input" type="text" name="seoTitle" value="{{b.SEOTitle}}" placeholder="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}">
+                <input aria-label="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}" class="form-input" type="text" name="seoDescription" value="{{b.SEODescription}}" placeholder="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}">
+                <input aria-label="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}" class="form-input" type="text" name="description" value="{{b.Description}}" placeholder="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                {* SEO 评分（审计 SEO-016）：品牌页按落地页权重评分；title 唯一性检查（SEO-018）
+                   列出冲突页面。hx-include 取本表单字段（含 id / projectId / csrf）。
+                   只读计算，不写库不改产物，故与保存一样只走页面组 Session + CSRF。 *}
+                <button type="button" class="btn"
+                        hx-post="/admin/product-brands/seo-score" hx-include="closest form"
+                        hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
+            </div>
             {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。 *}
             <div id="brand-seo-score-{{b.ID}}" class="wb-seo-panel"></div>
+        </form>
+    </template>
+    {{end}}
+    {{end}}
 
-            <form method="post" action="/admin/product-brands/delete"
-                  data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="projectId" value="{{selectedProject}}">
-                <input type="hidden" name="id" value="{{b.ID}}">
-                <button type="submit" class="btn btn-danger btn-sm">{{ .["t"]("admin.product_brands.list.delete", "删除品牌") }}</button>
-            </form>
-        </details>
-        {{end}}
-        {{end}}
-    </section>
-
-    {{if isset(.PermSet["product:brand_create"])}}
+    {{if canCreate}}
     <template id="tpl-brand-create">
         <form method="post" action="/admin/product-brands/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -106,9 +179,9 @@
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}" class="form-input" type="text" name="seoDescription" placeholder="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}" class="form-input" type="text" name="description" placeholder="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}">
             </div>
-            <div class="form-inline">
+            <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
             </div>
         </form>
     </template>

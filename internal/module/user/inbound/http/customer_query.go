@@ -26,7 +26,7 @@ import (
 func customerDetailBackURL(c *gin.Context) string {
 	q := url.Values{}
 	if c != nil {
-		for _, key := range []string{"keyword", "status", "emailVerified", "registeredFrom", "registeredTo", "page", "limit"} {
+		for _, key := range []string{"keyword", "status", "emailVerified", "locked", "registeredFrom", "registeredTo", "page", "limit"} {
 			if v := strings.TrimSpace(c.Query(key)); v != "" {
 				q.Set(key, v)
 			}
@@ -120,6 +120,14 @@ func customerPageStatus(raw string) int {
 	default:
 		return customerStatusAll
 	}
+}
+
+// customerPageLocked 解析「只看锁定」筛选（只有 ?locked=1 为真）。
+//
+// 与状态筛选是两条轴：被锁定的账号 status 仍是「正常」（锁定只写 locked_until_time），
+// 所以它必须是一个独立的查询参数，不能拿状态下拉去表达。
+func customerPageLocked(raw string) bool {
+	return strings.TrimSpace(raw) == "1"
 }
 
 // customerPageEmailVerified 解析邮箱验证筛选（空串 → 全部）。

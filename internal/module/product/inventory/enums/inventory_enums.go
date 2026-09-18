@@ -214,7 +214,9 @@ const (
 // 字面量取值，页面搬回本模块后在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
 const (
 	// MsgInventorySourcesTitle 货源管理页标题（issue #17）。
+	// 值就是 i18n key：shell.Prepare 会做 t(title, title)，词条命中则显示译文、未命中回退字面量。
+	// 因此**新增这两个常量必须同批 seed 词条**（迁移 217），否则顶栏会把 key 原样显示出来。
 	MsgInventorySourcesTitle = "MsgInventorySourcesTitle"
-	// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。
+	// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。同上，词条见迁移 217。
 	MsgInventoryPurchasesTitle = "MsgInventoryPurchasesTitle"
 )

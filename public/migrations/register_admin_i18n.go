@@ -802,4 +802,15 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.analytics.col.lang', 'admin.analytics.breakdown.retention_hint')",
 		SQL: mustSQL("222_i18n_seed_analytics_dimensions.sql"),
 	})
+
+	// 234：内容模板删除权限点与超管策略（后台列表页批量删除）。
+	// 判定把权限点代码写进 SQL 字面量：Seed 的 ConditionSQL 不接收参数，
+	// 且用 LIKE 'contenttemplate:%' 会被将来同模块的权限点顺带满足（本批被静默跳过）。
+	// 权限点与超管策略同批落：只补权限点不补策略会留下「接口上线但超管也点不动」的空窗。
+	registerSeed(Seed{
+		Version:      "234-contenttemplate-delete-permission",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code = 'contenttemplate:delete'",
+		SQL:          mustSQL("234_contenttemplate_delete_permission.sql"),
+	})
 }

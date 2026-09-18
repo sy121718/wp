@@ -451,13 +451,33 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     padding: var(--ui-sp-md) var(--ui-sp-lg);
     border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
     color: var(--sky-c-text, #1a1d21);
+    /* 默认不折行：中文在窄列里会被逐字竖排（「联调测试商品」变成一列竖字），
+       比横向滚动难读得多。列多放不下时由 .table-scroll 横向滚动承担 ——
+       表格的价值本来就是横向比对，压成竖排反而失去意义。
+       需要折行的单元格显式加 .cell-wrap（长描述、备注这类）。 */
+    white-space: nowrap;
 }
+.data-table tbody td.cell-wrap { white-space: normal; }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background var(--ui-tr-fast); }
 @media (hover: hover) {
 .data-table tbody tr:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
 }
+/* 操作列固定在右侧：列多的表格横向滚动时，操作列不跟着滚出视野。
+   表头同样吸顶，所以表头的操作列要压在普通表头之上（z-index 更高）。
+   必须给不透明背景，否则横向滚动时下面的单元格会从它背后透出来。 */
 .data-table .col-actions { text-align: right; white-space: nowrap; }
+.data-table td.col-actions {
+    position: sticky; right: 0; z-index: 1;
+    background: var(--sky-c-surface, #fff);
+    box-shadow: inset 1px 0 0 var(--sky-c-border, #e5e7eb);
+}
+.data-table thead th.col-actions {
+    position: sticky; right: 0; z-index: 3;
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    box-shadow: inset 1px 0 0 var(--sky-c-border, #e5e7eb);
+}
+.data-table tbody tr.is-selected td.col-actions { background: var(--sky-c-bg-active, #eceff2); }
 
 /* ==========================================================================
    表单
@@ -607,6 +627,17 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .badge-danger  { background: var(--sky-c-danger-bg, #2b1c1c);  color: var(--sky-c-danger, #cf8080); }
 .badge-info { background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f); }
 .badge-mute    { background: var(--sky-c-bg-hover, #1f242b);   color: var(--sky-c-text-mute, #8a9199); }
+
+/* 徽章当筛选器用时的「当前项」：把整行计数徽章做成可点击筛选之后（见 admin-ui-logic §2），
+   选中态必须一眼可辨 —— 只靠一个 ✓ 前缀在 12px 的 pill 里几乎看不出来。
+   aria-current 是语义标记（屏幕阅读器读得到），这里是它的视觉对应。
+   用 currentColor 描边而不是写死颜色：徽章本身有 success/warning/danger/mute 多种语义色，
+   描边跟着它走才不会给「已停用」配一圈绿色。 */
+.badge[aria-current],
+.badge.is-active {
+    box-shadow: inset 0 0 0 1.5px currentColor;
+    font-weight: 600;
+}
 
 .dot {
     display: inline-block;
@@ -764,3 +795,44 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     white-space: nowrap;
     border: 0;
 }
+
+/* ==========================================================================
+   页签（tabs）基座 —— UIK-011
+   ==========================================================================
+   判据来自审计 UIK-011：**基座只归纳有实际使用点的组件**。复核当时后台零页签用法，
+   所以 ui.css 刻意没有这一块，并由 ui_css_ownership_test.go 双向守卫
+   （既禁「无使用点的预置样式」，也禁「有用法却没基座」）。
+   现在后台确实有了用法（admin/masterdata_changes.html 的「逐条记录 / 按实体汇总」），
+   基座随之在此补齐 —— 这是当初约定的补齐时机，不是新增死样式。
+
+   与 workbench 的边界：工作台另有一套（workbench.css 的 .wb-tabs / .wb-subtab），
+   那是检查器里的等分分段控件，用 is-active 类名、宽度等分；这里的 .tabs 是后台通用的
+   内容区页签（role=tablist/tab/tabpanel + aria-selected），两类互不复用、互不引用。
+
+   选择器用 [role="tab"] 而不是只认类名：role 是 tabs 模式的必需属性，模板不会漏写。
+   曾经只写 .tab 而模板漏了类名，样式整段落空，页签退化成浏览器默认的描边方块按钮。 */
+.tabs { display: flex; flex-direction: column; min-width: 0; }
+.tab-list {
+    display: flex; flex-wrap: wrap; gap: var(--ui-sp-xxs);
+    padding: 0 var(--ui-sp-lg);
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.tab-list > [role="tab"] {
+    appearance: none; -webkit-appearance: none;
+    padding: var(--ui-sp-sm) var(--ui-sp-md); margin-bottom: -1px;
+    font: inherit; font-size: 13px; font-weight: 500; line-height: 1.4;
+    color: var(--sky-c-text-mute, #6b7280);
+    background: none; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0;
+    cursor: pointer;
+}
+@media (hover: hover) {
+    .tab-list > [role="tab"]:hover { color: var(--sky-c-text, #1a1d21); }
+}
+.tab-list > [role="tab"][aria-selected="true"] {
+    color: var(--sky-c-text, #1a1d21);
+    border-bottom-color: var(--sky-c-primary, #3d444f);
+}
+.tab-list > [role="tab"]:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: -2px; }
+.tab-panel { min-width: 0; }
+.tab-panel[hidden] { display: none; }

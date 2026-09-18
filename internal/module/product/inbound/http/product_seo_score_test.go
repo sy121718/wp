@@ -101,17 +101,21 @@ func TestSeoScoreFragmentRendersEntityEmptyState(t *testing.T) {
 
 // TestProductScorePanelsAreWiredIntoAdminTemplates 三个后台页面的评分入口与结果容器。
 func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
-	products := renderAdminTemplate(t, "admin/products.html", productPageLayoutData(gin.H{
-		"title": "商品", "menu": "products",
+	// SEO 检查跟着商品走：它已从列表页的折叠区搬进**商品详情页**
+	// （评分/变体/SEO 都是某个商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）。
+	products := renderAdminTemplate(t, "admin/product_detail.html", productPageLayoutData(gin.H{
+		"title": "商品详情", "menu": "products",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
-		"WarehouseOptions": []gin.H{}, "Products": []gin.H{productRowForRender()}, "Err": "",
+		"WarehouseOptions": []gin.H{}, "Err": "",
+		"HasProduct": true, "ProductID": "p1", "BackURL": "/admin/products",
+		"Product": productRowForRender(),
 	}))
 	for _, want := range []string{
 		"hx-post=\"/admin/products/seo-score\"", "id=\"product-seo-score-p1\"",
 		"name=\"productId\" value=\"p1\"",
 	} {
 		if !strings.Contains(products, want) {
-			t.Fatalf("商品页应包含 %q，实际输出：%s", want, products)
+			t.Fatalf("商品详情页应包含 %q，实际输出：%s", want, products)
 		}
 	}
 
@@ -120,7 +124,9 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Projects": []gin.H{}, "SelectedProject": "proj-1", "Options": []gin.H{},
 		"Categories": []gin.H{{"ID": "c1", "Name": "男装", "Slug": "men", "Label": "男装", "Sort": 0,
 			"SEOTitle": "", "SEODescription": "", "Description": "", "Image": "", "ParentID": ""}},
-		"Err": "",
+		// SEO 按钮在每行的编辑抽屉里，而抽屉由权限决定显隐 —— 不给权限时整块不渲染。
+		"PermSet": map[string]any{"product:category_update": true},
+		"Err":     "",
 	}))
 	for _, want := range []string{"hx-post=\"/admin/product-categories/seo-score\"", "id=\"category-seo-score-c1\""} {
 		if !strings.Contains(categories, want) {
@@ -133,7 +139,8 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
 		"Brands": []gin.H{{"ID": "b1", "Name": "示例品牌", "Slug": "demo", "Sort": 0,
 			"Logo": "", "SEOTitle": "", "SEODescription": "", "Description": ""}},
-		"Err": "",
+		"PermSet": map[string]any{"product:brand_update": true},
+		"Err":     "",
 	}))
 	for _, want := range []string{"hx-post=\"/admin/product-brands/seo-score\"", "id=\"brand-seo-score-b1\""} {
 		if !strings.Contains(brands, want) {

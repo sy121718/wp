@@ -38,6 +38,7 @@ import (
 
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -514,18 +515,34 @@ func TestInventoryAdminPage(t *testing.T) {
 		t.Fatalf("在第二个仓生成库存记录失败: %v", err)
 	}
 
-	// 页面：仓库列表 + 默认仓徽标 + SKU 各仓库存表。
+	// 页面：SKU 各仓库存表（库存页只做「看流水 + 改库存」，仓库管理已拆成独立页）。
 	rec = httptestGet(engine, "/admin/inventory?project="+f.projectID+"&sku="+url.QueryEscape(v.SKUCode))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("库存页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
+	// 「该 SKU 的各仓库存」是这一区块现在的标题（原为「某 SKU 的各仓库存」）；
+	// 「查看各仓库存」那个入口已随改造移除 —— 该视图并入 SKU 筛选的结果，
+	// 同一查询对象不再需要第二个入口（读的人不关心，只是从哪个入口进来）。
 	for _, want := range []string{
-		"库存管理", "新建仓库", "苏州仓", "上海仓", "SZ", "默认仓",
-		v.SKUCode, "某 SKU 的各仓库存", "查看各仓库存",
+		"库存管理", "苏州仓", "上海仓", "SZ", "默认仓",
+		v.SKUCode, "该 SKU 的各仓库存", `class="table-wrap"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("库存页缺少 %q", want)
+		}
+	}
+
+	// 仓库管理连同「新建仓库」已按「配置不是日常操作」拆到 /admin/inventory/warehouses，
+	// 断言搬过去（引擎上方已注册该路由）。
+	rec = httptestGet(engine, "/admin/inventory/warehouses?project="+f.projectID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("仓库管理页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	whBody := rec.Body.String()
+	for _, want := range []string{"仓库管理", "新建仓库", "苏州仓", "上海仓", "SZ", "默认仓"} {
+		if !strings.Contains(whBody, want) {
+			t.Fatalf("仓库管理页缺少 %q", want)
 		}
 	}
 	// 两行仓库维度（同一 SKU 在两个仓各一行）。
@@ -581,6 +598,11 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
+	// 新建商品抽屉（首个变体的「归属仓」下拉在里面）按权限渲染：这条链路不挂鉴权中间件，
+	// 注入一份权限，让「商品页存在归属仓下拉」这条断言保持有效。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{"product:create": true, "product:variant_create": true})
+	})
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
@@ -591,6 +613,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 		t.Fatalf("商品页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
+	// 归属仓下拉现在在新建商品抽屉（tpl-product-create）里 —— 它是商品级字段，
+	// 与「首个变体落在哪」绑定，随主行动一起进抽屉；文案与选项一字未改。
 	for _, want := range []string{"归属仓", "苏州仓（SZ）", "上海仓（SH）", "（默认仓）"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("商品页缺少归属仓下拉内容 %q", want)
@@ -669,9 +693,21 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 主行动按钮按权限渲染（shell.Prepare 读 PermSetKey）：这条链路不挂鉴权中间件，
+	// 注入一份权限，让「页面里存在写入口」这类断言保持有效。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{
+			"inventory:warehouse_create": true, "inventory:warehouse_update": true,
+			"inventory:warehouse_delete": true, "inventory:reason_create": true,
+		})
+	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", handle.InventoryPage)
+	// 仓库管理与变动原因字典已按「配置不是日常操作」从库存主页拆成独立页，
+	// 相关断言随之搬家，这里同步注册这两个页面路由。
+	engine.GET("/admin/inventory/warehouses", handle.InventoryWarehousesPage)
+	engine.GET("/admin/inventory/reasons", handle.InventoryReasonsPage)
 	engine.POST("/admin/inventory/warehouse/create", handle.InventoryWarehouseCreate)
 	engine.POST("/admin/inventory/warehouse/update", handle.InventoryWarehouseUpdate)
 	engine.POST("/admin/inventory/warehouse/default", handle.InventoryWarehouseDefault)

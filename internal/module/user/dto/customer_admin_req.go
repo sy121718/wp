@@ -30,8 +30,14 @@ type CustomerListReq struct {
 	// RegisteredFrom / RegisteredTo 注册时间范围（闭区间，nil = 该端不限）。
 	RegisteredFrom *utils.JSONTime
 	RegisteredTo   *utils.JSONTime
-	Offset         int
-	Limit          int
+	// LockedOnly 只取**当前**处于锁定状态的账号（locked_until_time 在未来）。
+	//
+	// 与 Status 是两条轴（停用与锁定分开，见 service 文件头）：锁定由连续登录失败触发、
+	// 到点自己过期，停用是管理动作。做成独立开关而不是塞进 Status 的某个取值，
+	// 否则「已锁定的正常账号」这个真实存在的组合无法表达。
+	LockedOnly bool
+	Offset     int
+	Limit      int
 }
 
 // CustomerStatusAll 列表筛选里「状态不过滤」的取值。

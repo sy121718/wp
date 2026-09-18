@@ -87,8 +87,11 @@ func TestSiteSettingsRendersLocaleGroup(t *testing.T) {
 		t.Fatalf("GET /admin/settings -> %d", recorder.Code)
 	}
 	body := recorder.Body.String()
+	// 「语言」分组已从 <h2> 改成可折叠区块的标题（<details class="section-fold"> 里的
+	// <span class="fold-title">）—— 站点设置是长页面，「站点语言清单」这类配置项折叠收纳，
+	// 标题层级因此从 h2 变成 .fold-title；分组还是同一个分组。
 	for _, want := range []string{
-		"<h2>语言</h2>",
+		`<span class="fold-title">语言</span>`,
 		`action="/admin/settings/locales/save"`,
 		`id="locale-rows"`,
 		`name="langs" value="zh-CN"`,

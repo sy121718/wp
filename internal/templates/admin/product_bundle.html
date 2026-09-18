@@ -1,4 +1,8 @@
 {* admin/product_bundle.html — 捆绑配置：选商品 → 配选项规则 → 前台配置器预览（issue #20）。 *}
+{* 版式（评审见 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
+     · 正文零说明文字：领域口径（跨商品 SKU / 必选与数量 / 库存真源）整段进页头 .help；
+     · 工程与商品选择器是页级上下文，与 SKU 计数同行放在 .page-head .page-actions；
+     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）。 *}
 {* 表单是原生并行数组（同名多值），零自定义 JS；表格外层 .table-wrap 在窄屏可横向滚动。 *}
 {{extends "layout.html"}}
 {{block body()}}
@@ -7,38 +11,51 @@
 {{selectedProduct := .SelectedProduct}}
 {{maxOptions := .MaxOptions}}
 <div class="stack">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.product_bundle.saveError", "保存未完成：") }}{{.Err}}</p>
-        {{end}}
-        <p class="hint">
-            {{ .["t"]("admin.product_bundle.intro.lead", "捆绑套餐 = 主体自定价 + 若干") }}<b>{{ .["t"]("admin.product_bundle.intro.skuBold", "跨商品挑选的已存在 SKU") }}</b>{{ .["t"]("admin.product_bundle.intro.mid", "。每个选项可设必选 / 可选与默认 / 最小 / 最大数量（最大填 0 = 不设上限，只受库存约束）；主体可设选项数量上限与整单最小 / 最大总件数（整单下限按") }}<b>{{ .["t"]("admin.product_bundle.intro.totalBold", "总件数") }}</b>{{ .["t"]("admin.product_bundle.intro.tail", "判定，不是单项）。数量上限同时受库存可用量约束，可用量读") }}<b>{{ .["t"]("admin.product_bundle.intro.sourceBold", "仓库真源") }}</b>{{ .["t"]("admin.product_bundle.intro.end", "，与商品列表里的展示缓存无关。") }}
-        </p>
-        <form method="get" action="/admin/products/bundle" class="form-inline">
-            <select class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-        <form method="get" action="/admin/products/bundle" class="form-inline">
-            <input type="hidden" name="project" value="{{selectedProject}}">
-            <select class="form-select" name="product" onchange="this.form.submit()">
-                <option value="">{{ .["t"]("admin.product_bundle.selectProductPlaceholder", "— 选择捆绑商品 —") }}</option>
-                {{range _, p := .Products}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProduct}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-            <span class="hint">{{ .["t"]("admin.product_bundle.skuCountLead", "可选 SKU 共 ") }}{{.SkuCount}}{{ .["t"]("admin.product_bundle.skuCountTail", " 个（跨商品，只列启用中的变体）") }}</span>
-        </form>
-    </section>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_bundle.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_bundle.intro.lead", "捆绑套餐 = 主体自定价 + 若干") }}<b>{{ .["t"]("admin.product_bundle.intro.skuBold", "跨商品挑选的已存在 SKU") }}</b>{{ .["t"]("admin.product_bundle.intro.mid", "。每个选项可设必选 / 可选与默认 / 最小 / 最大数量（最大填 0 = 不设上限，只受库存约束）；主体可设选项数量上限与整单最小 / 最大总件数（整单下限按") }}<b>{{ .["t"]("admin.product_bundle.intro.totalBold", "总件数") }}</b>{{ .["t"]("admin.product_bundle.intro.tail", "判定，不是单项）。数量上限同时受库存可用量约束，可用量读") }}<b>{{ .["t"]("admin.product_bundle.intro.sourceBold", "仓库真源") }}</b>{{ .["t"]("admin.product_bundle.intro.end", "，与商品列表里的展示缓存无关。") }}<br>{{ .["t"]("admin.product_bundle.preview.hint", "预览区渲染的就是访客看到并操作的片段（与前台同一条渲染路径）。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/products/bundle">
+                <label class="sr-only" for="bundle-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="bundle-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            <form class="page-context" method="get" action="/admin/products/bundle">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <label class="sr-only" for="bundle-product">{{ .["t"]("admin.product_bundle.selectProductPlaceholder", "选择捆绑商品") }}</label>
+                <select class="form-select" id="bundle-product" name="product" onchange="this.form.submit()">
+                    <option value="">{{ .["t"]("admin.product_bundle.selectProductPlaceholder", "— 选择捆绑商品 —") }}</option>
+                    {{range _, p := .Products}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProduct}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            <span class="badge badge-mute">{{ .["t"]("admin.product_bundle.skuCountLead", "可选 SKU 共 ") }}{{.SkuCount}}{{ .["t"]("admin.product_bundle.skuCountTail", " 个（跨商品，只列启用中的变体）") }}</span>
+        </div>
+    </header>
+
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_bundle.saveError", "保存未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
 
     {{if selectedProduct != ""}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
-        <p class="hint">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}{{ .["t"]("admin.product_bundle.rule.basePriceTail", "。子项价格不参与前台展示，成本仍在后台保留。") }}</p>
+        {* 套餐价是**数据**，用徽章；口径（子项价格不进前台展示）在页头 .help 里。 *}
+        <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
         <form method="post" action="/admin/products/bundle/save">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="productId" value="{{selectedProduct}}">
@@ -53,7 +70,7 @@
                     <input type="number" class="form-input" name="maxTotalQty" min="0" value="{{.Detail.Config.MaxTotalQty}}">
                 </label>
             </div>
-            <div class="table-wrap" tabindex="0">
+            <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_bundle.cfg.tableAria", "捆绑选项") }}">
                 <table class="data-table data-table-wide">
                     <thead>
                         <tr>
@@ -64,40 +81,42 @@
                         {{range _, row := .Rows}}
                         <tr>
                             <td>
-                                <select class="form-select" name="variantId">
+                                <select class="form-select" name="variantId" aria-label="SKU">
                                     {{range _, o := row.Options}}
                                     <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
                                     {{end}}
                                 </select>
                             </td>
                             <td>
-                                <select class="form-select" name="required">
+                                <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
                                     <option value="1" {{if row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>
                                     <option value="0" {{if !row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</option>
                                 </select>
                             </td>
-                            <td><input type="number" class="form-input" name="defaultQty" min="0" value="{{row.DefaultQty}}"></td>
-                            <td><input type="number" class="form-input" name="minQty" min="0" value="{{row.MinQty}}"></td>
-                            <td><input type="number" class="form-input" name="maxQty" min="0" value="{{row.MaxQty}}"></td>
+                            <td><input type="number" class="form-input" name="defaultQty" min="0" value="{{row.DefaultQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}"></td>
+                            <td><input type="number" class="form-input" name="minQty" min="0" value="{{row.MinQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}"></td>
+                            <td><input type="number" class="form-input" name="maxQty" min="0" value="{{row.MaxQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}"></td>
                             <td>{{if row.VariantID != ""}}{{row.Available}}{{else}}—{{end}}</td>
                         </tr>
                         {{end}}
                     </tbody>
                 </table>
             </div>
-            <div class="form-inline mt-md">
+            <div class="action-row">
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_bundle.cfg.save", "保存配置") }}</button>
             </div>
         </form>
         {{else}}
-        <p class="hint">{{ .["t"]("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。") }}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_bundle.detailFailedTitle", "配置读取失败") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。") }}</p>
+        </div>
         {{end}}
     </section>
 
     {{if .Detail}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.preview.title", "前台配置器预览") }}</h2>
-        <p class="hint">{{ .["t"]("admin.product_bundle.preview.hint", "这一份就是访客看到并操作的片段（与前台同一条渲染路径）。") }}</p>
         <div hx-get="/_fragments/bundleConfigurator?productId={{selectedProduct}}" hx-trigger="load" hx-swap="innerHTML"></div>
     </section>
     {{end}}

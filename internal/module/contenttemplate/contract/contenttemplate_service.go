@@ -28,6 +28,12 @@ type ContentTemplateService interface {
 	Create(ctx context.Context, req *contenttemplatedto.CreateReq) (res *contenttemplatedto.TemplateResp, err error)
 	// Update 修改模板 → 产生新不可变版本（draft_version 递增）。
 	Update(ctx context.Context, req *contenttemplatedto.UpdateReq) (res *contenttemplatedto.TemplateResp, err error)
+	// Delete 删除模板（连带它的全部历史版本与内容模板级组件版本锁定行）。
+	//
+	// 被自动发布实例（presentation_instances.template_id）引用的模板会被数据库外键拒绝，
+	// 返回 ErrTemplateInUse：实例是用户数据，删模板不该顺手删掉它们。
+	Delete(ctx context.Context, req *contenttemplatedto.DeleteReq) (err error)
+
 	// Get 按 ID 查询（工程作用域取唯一工程；多工程部署用 GetScoped）。
 	Get(ctx context.Context, req *contenttemplatedto.GetReq) (res *contenttemplatedto.TemplateResp, err error)
 	// GetScoped 在显式工程作用域内按 id 取模板（DB-009 第二批）。

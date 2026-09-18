@@ -11,6 +11,7 @@ package contenttemplatehttp
 import (
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -35,4 +36,9 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
 	pages.GET("/content-templates", contentTemplatePages.ContentTemplatesPage)
 	pages.GET("/content-templates/edit", contentTemplatePages.ContentTemplateEditPage)
+	// 批量删除：权限点 contenttemplate:delete（迁移 234 seed）。本模块此前没有任何删除能力，
+	// 这条权限点与 contract 的 Delete、路由的 enforce 路径同批补上。
+	pages.POST("/content-templates/bulk-delete",
+		builtin.CasbinMiddlewareForPath("/api/contenttemplate/delete"),
+		contentTemplatePages.ContentTemplatesBulkDelete)
 }

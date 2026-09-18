@@ -164,23 +164,26 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Statuses":        counters,
-		"StatusOptions":   returnStatusOptions(),
-		"FilterStatus":    filter.Status,
-		"FilterLabel":     returnStatusLabel(filter.Status),
-		"FilterKeyword":   filter.Keyword,
-		"FilterOrderID":   returnOrderIDText(filter.OrderID),
-		"ClearOrderURL":   shell.FilterBaseURL("/admin/returns", returnFilterValues(selected, returnFilter{Status: filter.Status, Keyword: filter.Keyword})),
-		"PendingHint":     returnPendingHint(counters),
-		"Rows":            rows,
-		"Total":           total,
-		"Warehouses":      h.warehouseOptions(ctx, selected),
-		"Detail":          detail,
+		// 状态维度**只有**计数徽章一种入口（徽章行已经能点，再摆一个同维度的下拉，
+		// 用户会怀疑两者是否等价，见 admin-ui-logic §3）。
+		"FilterStatus":  filter.Status,
+		"FilterLabel":   returnStatusLabel(filter.Status),
+		"FilterKeyword": filter.Keyword,
+		"FilterOrderID": returnOrderIDText(filter.OrderID),
+		"ClearOrderURL": shell.FilterBaseURL("/admin/returns", returnFilterValues(selected, returnFilter{Status: filter.Status, Keyword: filter.Keyword})),
+		"PendingHint":   returnPendingHint(counters),
+		"Rows":          rows,
+		"Total":         total,
+		"Warehouses":    h.warehouseOptions(ctx, selected),
+		"Detail":        detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这个键决定要不要渲染详情块。
 		"HasDetail": len(detail) > 0,
 		"Page":      page,
 		"Limit":     limit,
 		"Err":       pageErr,
 		"Ok":        pageOk,
+		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
+		"Done": strings.TrimSpace(c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/returns", returnFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -207,7 +210,7 @@ func (h *returnPageHandle) ReturnApprove(c *gin.Context) {
 		TransactionID: strings.TrimSpace(c.PostForm("transactionId")),
 		// 操作人由会话覆盖写入，绝不受表单影响。
 		OperatorType: returnOperatorTypeAdmin,
-		OperatorID:   orderOperatorID(c),
+		OperatorID:   shell.CurrentUserID(c),
 		OperatorName: builtin.GetUsername(c),
 	})
 	if err != nil {
@@ -240,7 +243,7 @@ func (h *returnPageHandle) ReturnReject(c *gin.Context) {
 		ReturnID:     returnID,
 		Remark:       remark,
 		OperatorType: returnOperatorTypeAdmin,
-		OperatorID:   orderOperatorID(c),
+		OperatorID:   shell.CurrentUserID(c),
 		OperatorName: builtin.GetUsername(c),
 	}); err != nil {
 		returnRedirect(c, "", returnFacingError(c, err))
@@ -270,13 +273,111 @@ func (h *returnPageHandle) ReturnReceive(c *gin.Context) {
 		TransactionID: strings.TrimSpace(c.PostForm("transactionId")),
 		Remark:        strings.TrimSpace(c.PostForm("remark")),
 		OperatorType:  returnOperatorTypeAdmin,
-		OperatorID:    orderOperatorID(c),
+		OperatorID:    shell.CurrentUserID(c),
 		OperatorName:  builtin.GetUsername(c),
 	}); err != nil {
 		returnRedirect(c, "", returnFacingError(c, err))
 		return
 	}
 	returnRedirect(c, orderenums.MsgReturnReceived, "")
+}
+
+// ReturnBulkApprove 批量同意退货申请（POST /admin/returns/bulk-approve）。
+//
+// 逐条走**同一条单条审核路径**：不在「待审核」的单（已被别人审过、已撤销）由服务端拒绝，
+// 只跳过它并计入跳过数，其余照常同意 —— 一条不合规的申请不该让整批停下。
+//
+// **不批量自动入库**：autoReceive 会把「同意 → 入库 → 退款」一步做完，批量点一下等于
+// 对一批单同时加库存与放款，那不是批量操作该承担的确认强度。批量只走「同意」这一步，
+// 入库与退款仍按单确认。
+func (h *returnPageHandle) ReturnBulkApprove(c *gin.Context) {
+	remark := strings.TrimSpace(c.PostForm("remark"))
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		returnRedirect(c, "", berr.Error())
+		return
+	}
+	approved, skipped := 0, 0
+	for _, raw := range ids {
+		id := orderQueryID(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		_, err := h.orders.ApproveReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
+			ReturnID:    id,
+			Remark:      remark,
+			AutoReceive: false,
+			// 操作人由会话覆盖写入，绝不受表单影响。
+			OperatorType: returnOperatorTypeAdmin,
+			OperatorID:   shell.CurrentUserID(c),
+			OperatorName: builtin.GetUsername(c),
+		})
+		if err != nil {
+			skipped++
+			continue
+		}
+		approved++
+	}
+	returnBulkRedirect(c, bulkSummary("已同意", "退货申请", approved, skipped))
+}
+
+// ReturnBulkReject 批量拒绝退货申请（POST /admin/returns/bulk-reject）。
+//
+// 理由**必填**（与单条一致）：客户要知道为什么，否则他会再申请一次。缺理由时整批不处理
+// 并原样回带提示 —— 静默跳过会让人以为「选中的单都审不了」。
+func (h *returnPageHandle) ReturnBulkReject(c *gin.Context) {
+	remark := strings.TrimSpace(c.PostForm("remark"))
+	if remark == "" {
+		returnBulkRedirect(c, "批量拒绝需要先填理由（表单里的备注框），本次没有处理任何退货申请。")
+		return
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		returnRedirect(c, "", berr.Error())
+		return
+	}
+	rejected, skipped := 0, 0
+	for _, raw := range ids {
+		id := orderQueryID(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		_, err := h.orders.RejectReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
+			ReturnID:     id,
+			Remark:       remark,
+			OperatorType: returnOperatorTypeAdmin,
+			OperatorID:   shell.CurrentUserID(c),
+			OperatorName: builtin.GetUsername(c),
+		})
+		if err != nil {
+			skipped++
+			continue
+		}
+		rejected++
+	}
+	returnBulkRedirect(c, bulkSummary("已拒绝", "退货申请", rejected, skipped))
+}
+
+// returnBulkRedirect 批量动作回列表页：结论走 ?done=，当前筛选与窗口原样带回。
+//
+// 不带 returnId：批量是列表级动作，把某一张单的展开态带回来只会让人以为批量审的是那一单。
+func returnBulkRedirect(c *gin.Context, doneText string) {
+	q := url.Values{}
+	for _, key := range []string{"project", "status", "keyword", "orderId", "page", "limit"} {
+		if v := strings.TrimSpace(c.PostForm(key)); v != "" {
+			q.Set(key, v)
+		}
+	}
+	q.Del("ok")
+	q.Del("err")
+	if doneText != "" {
+		q.Set("done", doneText)
+	}
+	c.Redirect(http.StatusFound, "/admin/returns?"+q.Encode())
 }
 
 // —— 页面取数（视图组装：模板不做逻辑与算术）——

@@ -1,6 +1,7 @@
 package userhttp
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -82,19 +83,21 @@ const (
 // 不登记的话，运营看到的是「系统内部错误，请稍后重试」，而真实原因（编号不合法 /
 // 能力没装）被自己吞掉了。
 const (
-	customerUnavailableText       = "客户管理能力未装配（装配缺陷），本页只显示列表框架。"
-	customerInvalidIDText         = "客户编号不合法，请回到列表页重新操作。"
-	customerOrdersUnavailableText = "订单摘要不可用：订单模块未装配（装配缺陷），客户资料本身不受影响。"
+	customerUnavailableText         = "客户管理能力未装配（装配缺陷），本页只显示列表框架。"
+	customerInvalidIDText           = "客户编号不合法，请回到列表页重新操作。"
+	customerOrdersUnavailableText   = "订单摘要不可用：订单模块未装配（装配缺陷），客户资料本身不受影响。"
+	customerBulkNothingSelectedText = "批量操作：没有勾选任何账号，请先勾选左侧复选框再执行。"
 )
 
 // customerLocalMessageSet 本页自造文案的集合（查表用）。
 var customerLocalMessageSet = map[string]struct{}{
-	customerUnavailableText:       {},
-	customerInvalidIDText:         {},
-	customerOrdersUnavailableText: {},
+	customerUnavailableText:         {},
+	customerInvalidIDText:           {},
+	customerOrdersUnavailableText:   {},
+	customerBulkNothingSelectedText: {},
 }
 
-// customerStatusViews 状态 → 中文标签 + 徽章样式 + 筛选链接用的取值。
+// customerStatusViews 状态 → 中文标签 + 徽章样式（列表行与计数徽章共用同一套取值口径）。
 var customerStatusViews = []struct {
 	Value int
 	Label string
@@ -104,16 +107,6 @@ var customerStatusViews = []struct {
 	{customerStatusActive, "正常", "badge-success"},
 	{customerStatusDisabled, "已停用", "badge-danger"},
 	{customerStatusPending, "待激活", "badge-warning"},
-}
-
-// customerEmailVerifiedViews 邮箱验证筛选（0 = 全部，取值口径与 userdto 一致）。
-var customerEmailVerifiedViews = []struct {
-	Value int
-	Label string
-}{
-	{userdto.EmailVerifiedAll, "全部"},
-	{userdto.EmailVerifiedYes, "已验证"},
-	{userdto.EmailVerifiedNo, "未验证"},
 }
 
 // customerPageHandle 客户管理页处理器。
@@ -141,6 +134,7 @@ type customerFilter struct {
 	Keyword        string
 	Status         int
 	EmailVerified  int
+	Locked         bool   // 只看当前被锁定的账号（与「停用」是两条轴）
 	RegisteredFrom string // 原样保留（date 字符串，回显与回跳都用它）
 	RegisteredTo   string
 }
@@ -153,6 +147,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		Keyword:        strings.TrimSpace(c.Query("keyword")),
 		Status:         customerPageStatus(c.Query("status")),
 		EmailVerified:  customerPageEmailVerified(c.Query("emailVerified")),
+		Locked:         customerPageLocked(c.Query("locked")),
 		RegisteredFrom: strings.TrimSpace(c.Query("registeredFrom")),
 		RegisteredTo:   strings.TrimSpace(c.Query("registeredTo")),
 	}
@@ -170,6 +165,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 			Keyword:        filter.Keyword,
 			Status:         filter.Status,
 			EmailVerified:  filter.EmailVerified,
+			LockedOnly:     filter.Locked,
 			RegisteredFrom: utils.NewJSONTimePtr(customerPageDayStart(filter.RegisteredFrom)),
 			RegisteredTo:   utils.NewJSONTimePtr(customerPageDayEnd(filter.RegisteredTo)),
 			Offset:         (page - 1) * limit,
@@ -183,6 +179,9 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	}
 
 	data := shell.Prepare(c, customerListPageData(list, filter, page, limit, pageErr, pageOk, h.users == nil))
+	// 批量动作的结果摘要经 ?done= 回带（单条动作仍走 ?ok= / ?err=，见 customerBulkRedirect）。
+	// 可选键：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。
+	data["Done"] = strings.TrimSpace(c.Query("done"))
 	base := shell.FilterBaseURL(customerListPath, customerFilterValues(filter))
 	for k, v := range shell.BuildPagination(customerTotal(list), page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
@@ -324,6 +323,158 @@ func (h *customerPageHandle) CustomerUnlock(c *gin.Context) {
 	}
 }
 
+// CustomerBulkStatusSave 批量启用 / 停用（POST /admin/customers/bulk-status）。
+//
+// 逐条走**同一条单条写入路径**（h.users.SetCustomerStatus，与 /admin/customers/status 一致）：
+// 某一条失败不中断整批 —— 整批回滚会让运营以为「一条都没做」，然后反复重试。
+// 结果按「已处理 N 个 / 未处理 M 个」回带，不做静默的部分成功。
+func (h *customerPageHandle) CustomerBulkStatusSave(c *gin.Context) {
+	if h.users == nil {
+		customerRedirect(c, "", customerUnavailableText)
+		return
+	}
+	// 目标状态取自 toStatus（表单里的 status 仍是「保留列表筛选」用的，两者同名会让
+	// 回跳后的列表看起来「筛选没了」）；只接受「正常 / 已停用」两个值，与单条动作同口径。
+	status := customerPageStatus(c.PostForm("toStatus"))
+	if status != customerStatusActive && status != customerStatusDisabled {
+		customerRedirect(c, "", userenums.ErrCustomerStatusInvalid)
+		return
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		customerRedirect(c, "", berr.Error())
+		return
+	}
+	if len(ids) == 0 {
+		// 表单是客户端可伪造的：一条都没勾就直接提交是可能的，不能当成功处理。
+		customerRedirect(c, "", customerBulkNothingSelectedText)
+		return
+	}
+	ctx := c.Request.Context()
+	done, skipped := 0, 0
+	for _, raw := range ids {
+		id := customerQueryID(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if _, err := h.users.SetCustomerStatus(ctx, &userdto.CustomerStatusReq{
+			CustomerID: id, Status: status,
+		}); err != nil {
+			skipped++
+			continue
+		}
+		done++
+	}
+	customerBulkRedirect(c, customerBulkSummary(customerStatusActionVerb(status), done, skipped))
+}
+
+// CustomerBulkUnlock 批量解除登录锁定（POST /admin/customers/bulk-unlock）。
+//
+// 同一批里三种情况分开计数（真的解开了 / 本来就没事 / 未处理）：
+// 把「本来就没事」混进「失败」会让运营以为有账号没解锁成功而去点第二次，
+// 混进「成功」则是谎报 —— 而它其实是这条批量指令里最需要被解释的一种结果。
+func (h *customerPageHandle) CustomerBulkUnlock(c *gin.Context) {
+	if h.users == nil {
+		customerRedirect(c, "", customerUnavailableText)
+		return
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		customerRedirect(c, "", berr.Error())
+		return
+	}
+	if len(ids) == 0 {
+		customerRedirect(c, "", customerBulkNothingSelectedText)
+		return
+	}
+	ctx := c.Request.Context()
+	unlocked, noop, skipped := 0, 0, 0
+	for _, raw := range ids {
+		id := customerQueryID(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		res, err := h.users.UnlockCustomer(ctx, &userdto.CustomerUnlockReq{CustomerID: id})
+		switch {
+		case err != nil:
+			skipped++
+		case res != nil && res.Unlocked:
+			unlocked++
+		default:
+			noop++
+		}
+	}
+	customerBulkRedirect(c, customerBulkUnlockSummary(unlocked, noop, skipped))
+}
+
+// customerBulkSummary 批量状态动作的结果摘要（成功数与未处理数分开说）。
+func customerBulkSummary(verb string, done, skipped int) string {
+	parts := make([]string, 0, 2)
+	if done > 0 {
+		parts = append(parts, fmt.Sprintf("%s %d 个", verb, done))
+	}
+	if skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个未处理（账号不存在，或当前状态不允许这个动作）", skipped))
+	}
+	if len(parts) == 0 {
+		return "批量操作：没有可处理的账号。"
+	}
+	return "批量操作：" + strings.Join(parts, "，") + "。"
+}
+
+// customerBulkUnlockSummary 批量解锁的结果摘要（解开 / 本来就没事 / 未处理三件事分开说）。
+func customerBulkUnlockSummary(unlocked, noop, skipped int) string {
+	parts := make([]string, 0, 3)
+	if unlocked > 0 {
+		parts = append(parts, fmt.Sprintf("已解除锁定 %d 个", unlocked))
+	}
+	if noop > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个本来就未锁定", noop))
+	}
+	if skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个未处理（账号不存在）", skipped))
+	}
+	if len(parts) == 0 {
+		return "批量解除锁定：没有可处理的账号。"
+	}
+	return "批量解除锁定：" + strings.Join(parts, "，") + "。"
+}
+
+// customerStatusActionVerb 目标状态 → 摘要里的动词（回执按**目标状态**给，与单条动作一致）。
+func customerStatusActionVerb(status int) string {
+	if status == customerStatusActive {
+		return "已启用"
+	}
+	return "已停用"
+}
+
+// customerBulkRedirect 批量动作回列表页：结果摘要经 ?done= 回带。
+//
+// 为什么不复用单条动作的 ?ok= / ?err=：本页的 ?err= 要过一遍面向访客文案白名单
+// （见 customerFacingText），而批量摘要是带数字的动态句子，过白名单只会被替换成
+// 「系统内部错误」—— 那等于把「有 3 个没做成」这件事吞掉，比不显示更糟。
+// 摘要经 ?done= 走独立通道，模板以 {{.Done}} 渲染（Jet 默认 HTML 转义，
+// 查询参数不会被当成脚本执行）。
+//
+// 恒回列表页（批量动作只在列表页发起），并保留筛选与翻页，让运营回到原来看的那一屏。
+func customerBulkRedirect(c *gin.Context, summary string) {
+	q := url.Values{}
+	for _, key := range []string{"keyword", "status", "emailVerified", "locked",
+		"registeredFrom", "registeredTo", "page", "limit"} {
+		if v := strings.TrimSpace(c.PostForm(key)); v != "" {
+			q.Set(key, v)
+		}
+	}
+	if summary != "" {
+		q.Set("done", summary)
+	}
+	c.Redirect(http.StatusFound, customerListPath+"?"+q.Encode())
+}
+
 // —— 视图组装（模板不做判断与算术）——
 
 // customerRedirect 回列表页或详情页并把结论经查询参数回显（成功 ?ok=、失败 ?err=）。
@@ -333,7 +484,7 @@ func (h *customerPageHandle) CustomerUnlock(c *gin.Context) {
 func customerRedirect(c *gin.Context, okText, errText string) {
 	q := url.Values{}
 	// 回跳要保留的：页面位置（customerId 决定回哪个页面）与筛选条件。
-	for _, key := range []string{"customerId", "keyword", "status", "emailVerified",
+	for _, key := range []string{"customerId", "keyword", "status", "emailVerified", "locked",
 		"registeredFrom", "registeredTo", "page", "limit", "project"} {
 		if v := strings.TrimSpace(c.PostForm(key)); v != "" {
 			q.Set(key, v)

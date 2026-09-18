@@ -11,7 +11,9 @@
 package producthttp
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,6 +66,8 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 		"Attributes":      rows,
 		"NewRowsCtx":      attrRowsCtx{GroupID: "new", Rows: nil},
 		"Err":             strings.TrimSpace(c.Query("err")),
+		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductAttributesBulkDelete）。
+		"Done": strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -259,6 +263,37 @@ func (h *productPageHandle) ProductAttributesDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
+}
+
+// ProductAttributesBulkDelete 批量删除属性组（连同其全部属性值，由 service 保证）。
+//
+// 逐条走同一条删除路径：被商品引用的那一条由服务端拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.products.DeleteAttribute(c.Request.Context(), &productdto.DeleteAttributeReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	target := "/admin/product-attributes?project=" + url.QueryEscape(projectID)
+	switch {
+	case skipped > 0:
+		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（属性组不存在或被商品引用）", deleted, skipped))
+	case deleted > 0:
+		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个属性组（连同其全部属性值）", deleted))
+	}
+	c.Redirect(http.StatusFound, target)
 }
 
 // parseIntOr 解析十进制整数，失败返回兜底值（后台表单容错，不因一个脏字段 500）。

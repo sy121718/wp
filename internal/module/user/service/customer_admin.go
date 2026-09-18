@@ -55,6 +55,8 @@ func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListRe
 		EmailVerified:  customerEmailVerifiedFilter(req.EmailVerified),
 		RegisteredFrom: req.RegisteredFrom.TimePtr(),
 		RegisteredTo:   req.RegisteredTo.TimePtr(),
+		LockedOnly:     req.LockedOnly,
+		Now:            now,
 		Offset:         offset,
 		Limit:          limit,
 	})

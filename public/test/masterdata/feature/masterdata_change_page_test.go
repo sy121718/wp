@@ -14,6 +14,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -80,7 +81,9 @@ func TestMasterDataChangePageByEntity(t *testing.T) {
 		t.Fatalf("按实体查询应 200，实际 %d", rec.Code)
 	}
 	body = rec.Body.String()
-	for _, want := range []string{"当前实体", v.SKUCode, v.ID} {
+	// 「当前实体」原本是独立卡片，现降级为页头下方的一行上下文（.page-sub）：
+	// 同一屏里再放一张只承载这一行信息的卡片，等于白占一张卡的版面。
+	for _, want := range []string{"实体 id", v.SKUCode, v.ID} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("按实体查询的页面缺少 %q", want)
 		}
@@ -155,7 +158,9 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
 	// 容器类由 pages-table-wrap 迁到公共类 table-wrap（滚动与键盘聚焦都在 .table-wrap 上）。
-	if !strings.Contains(body, `table-wrap" tabindex="0"`) {
+	// 容器类为 .table-wrap.table-scroll 一**组**：滚动与键盘聚焦在 .table-wrap、
+	// 高度封顶与表头吸顶在 .table-scroll，所以断言用正则而不是整串相等匹配。
+	if !regexp.MustCompile(`table-wrap[^"]*"[ ]+tabindex="0"`).MatchString(body) {
 		t.Fatalf("表格应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
 	}
 	// 这一页自己的模板不含任何 <script>：交互全由原生表单（GET 筛选）完成。

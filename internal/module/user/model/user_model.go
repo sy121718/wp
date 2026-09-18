@@ -134,6 +134,16 @@ type UserFilter struct {
 	// RegisteredFrom / RegisteredTo 注册时间范围（闭区间，nil = 该端不限）。
 	RegisteredFrom *time.Time
 	RegisteredTo   *time.Time
+	// LockedOnly 只取**当前**处于锁定的账号（locked_until_time 在未来）。
+	//
+	// 「锁定」是时间点比较（时间过去之后列里还留着值），所以判定需要一个 now：
+	// 由调用方传入，model 不自己取时间（与 IncrLoginFailure 同口径）。
+	LockedOnly bool
+	// Now 判定锁定用的基准时间；零值由 List 兜底成 time.Now()。
+	//
+	// 兜底而不是报错：忘了传会让条件退化成「锁定数永远是 0」的静默空列表，
+	// 那比多一次 time.Now() 调用难查得多。
+	Now time.Time
 	// IncludeDeleted 是否包含**已注销**用户（默认不含）。
 	//
 	// 管理员有时要查「谁注销过」，所以这里给一个显式开关，而不是让默认查询看得见 ——
@@ -205,6 +215,13 @@ func (m *UserModel) List(ctx context.Context, f UserFilter) (list []*UserEntity,
 		q = q.Where("email_verified_at IS NOT NULL")
 	case EmailVerifiedNone:
 		q = q.Where("email_verified_at IS NULL")
+	}
+	if f.LockedOnly {
+		now := f.Now
+		if now.IsZero() {
+			now = time.Now()
+		}
+		q = q.Where("locked_until_time IS NOT NULL AND locked_until_time > ?", now)
 	}
 	if f.RegisteredFrom != nil {
 		q = q.Where("registered_at >= ?", *f.RegisteredFrom)

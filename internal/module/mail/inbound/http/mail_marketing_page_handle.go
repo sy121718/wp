@@ -56,8 +56,10 @@ func (h *mailPageHandle) MailMarketingPage(c *gin.Context) {
 		"Page":         page,
 		"Keyword":      c.Query("keyword"),
 		"Status":       c.Query("status"),
-		"Err":          c.Query("err"),
-		"Ok":           c.Query("ok"),
+		"Err":          strings.TrimSpace(c.Query("err")),
+		"Ok":           strings.TrimSpace(c.Query("ok")),
+		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。模板用 isset 认这个可选键。
+		"Done": strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -186,4 +188,93 @@ func (h *mailPageHandle) MailCampaignDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok=1")
+}
+
+// —— 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）——
+//
+// 与配置页的批量删除同一形状（见 mail_page_handle.go 的 mailBulkOutcome / mailBulkLocation）：
+// 逐条走**同一条单条路径**，失败只计跳过、不中断整批，结论按「成功 N / 跳过 M」回带列表页。
+// 权限点一律复用对应单条动作的路径，不新增权限点、不写迁移。
+
+// mailMarketingBackParams 批量动作回跳时带回的列表状态（表单字段名 → URL 参数名）。
+//
+// 两者刻意不同名：表单里的 status 是**目标状态**（批量改状态用），而列表筛选参数也叫
+// status —— 同名直接回带会把筛选条件写成目标状态，于是「筛了已退订 → 批量改回订阅」
+// 之后列表会莫名其妙变成筛选「订阅」。
+var mailMarketingBackParams = [][2]string{
+	{"returnKeyword", "keyword"},
+	{"returnStatus", "status"},
+	{"returnPage", "page"},
+}
+
+// MailContactsBulkStatus 批量改联系人订阅状态（POST /admin/mail/contacts/bulk-status）。
+//
+// 单条路径 = UpdateContactStatus，权限点复用 /api/mail/contact/status。
+//
+// 目标状态只收单条抽屉里的那三个（订阅 / 待确认 / 退订）：bounced / complained 是投递反馈的
+// **事实记录**，不该由后台手工往那个方向改 —— 手工把联系人标成「硬退信」既没有投递证据，
+// 又会顺带写进抑制名单。
+// 批量不带「来源备注」：单条抽屉里那句备注是给一次人工操作留痕的，批量套用同一句来源，
+// consent_source 里留下的会是与事实不符的记录。
+func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
+	target := strings.TrimSpace(c.PostForm("status"))
+	switch target {
+	case "subscribed", "pending", "unsubscribed":
+	default:
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing",
+			mailMarketingBackParams, "", "目标状态不合法，本次没有处理任何联系人。"))
+		return
+	}
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, "", berr.Error()))
+		return
+	}
+	changed, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if err := h.mail.UpdateContactStatus(c.Request.Context(), &maildto.UpdateContactStatusReq{
+			ID: id, Status: target,
+		}); err != nil {
+			skipped++
+			continue
+		}
+		changed++
+	}
+	done, warn := mailBulkOutcome("更新", "联系人", changed, skipped)
+	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, done, warn))
+}
+
+// MailCampaignsBulkDelete 批量删除群发活动（POST /admin/mail/campaigns/bulk-delete）。
+//
+// 单条路径 = DeleteCampaign，权限点复用 /api/mail/campaign/delete。
+// 发送中的活动由服务端拒绝（ErrCampaignSending）→ 只跳过它、其余照常删除：
+// 删掉发送中的活动，后台分批展开的收件人任务会在中途找不到活动，留下一批半截记录。
+func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, "", berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if err := h.mail.DeleteCampaign(c.Request.Context(), id); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	done, warn := mailBulkOutcome("删除", "群发活动", deleted, skipped)
+	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, done, warn))
 }

@@ -65,7 +65,9 @@ func TestMailAutomationPageRenders(t *testing.T) {
 		t.Fatalf("状态码 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"自动化流程", "新建流程", "运行实例", "补投延时实例", "还没有流程"} {
+	// 「补投延时实例」→「补投到点实例」：按钮文案改准确了 —— 补的是**到点的**延时实例，
+	// 不是"补一次投递"。空态同样是「标题 + 一句话」形态。
+	for _, want := range []string{"自动化流程", "新建流程", "运行实例", "补投到点实例", "还没有流程"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("列表页缺少 %q；前 600 字：\n%s", want, firstN(body, 600))
 		}

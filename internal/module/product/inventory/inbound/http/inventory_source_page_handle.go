@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -115,6 +116,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		"FilterKeyword":   filterKeyword,
 		"Err":             pageErr,
 		"Ok":              strings.TrimSpace(c.Query("ok")),
+		"Done":            strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -190,6 +192,37 @@ func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&ok=1")
+}
+
+// InventorySourcesBulkDelete 批量删除货源。
+//
+// 逐条走同一条删除路径：被采购单等历史数据引用的那一条由服务端拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」回带货源管理页，避免静默的部分成功。
+func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.inventory.DeleteSource(c.Request.Context(), &inventorydto.DeleteSourceReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	target := "/admin/inventory/sources?project=" + urlQueryEscape(projectID)
+	switch {
+	case skipped > 0:
+		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（仍被采购单或历史流水引用）", deleted, skipped))
+	case deleted > 0:
+		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个货源", deleted))
+	}
+	c.Redirect(http.StatusFound, target)
 }
 
 // sourceSummary 关联方统计（验收 4）。统计失败不阻断页面：置空并附带提示。

@@ -14,6 +14,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,6 +55,15 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 		}
 		c.Next()
 	})
+	// 后台页面路由由 shell.PermContextMiddleware 注入权限码集合，主行动按钮与抽屉按权限渲染；
+	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在表单写入口」这类断言保持有效。
+	router.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{
+			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
+			"product:category_create": true, "product:category_update": true, "product:category_delete": true,
+			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
+		})
+	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(f.svc, f.projects)
 	router.GET("/admin/product-brands", h.ProductBrandsPage)
@@ -89,8 +99,16 @@ func TestTaxonomyPagesUsePublicUI(t *testing.T) {
 			if strings.Contains(body, `class="pages-`) || strings.Contains(body, `class="attr-form`) {
 				t.Fatal("页面仍依赖旧类")
 			}
-			if !strings.Contains(body, `class="form-input"`) || !strings.Contains(body, `class="disclosure"`) {
-				t.Fatal("页面未接公共表单与折叠组件")
+			// 公共表单控件仍在（抽屉里的 .form-input）；说明文字已从折叠区块（.disclosure）
+			// 改为页头 ? 悬浮（.help-pop）—— 正文零说明文字，折叠只是把平铺换成叠起来。
+			if !strings.Contains(body, `class="form-input"`) || !strings.Contains(body, `class="help-pop"`) {
+				t.Fatal("页面未接公共表单控件与页头悬浮说明")
+			}
+			// 列表页标准骨架：勾选列 + 全选 + 批量操作栏 + 数据表格。
+			for _, want := range []string{`class="data-table"`, `class="col-check"`, "data-check-all", `class="bulk-bar"`} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("列表页缺少标准列表骨架 %q", want)
+				}
 			}
 		})
 	}

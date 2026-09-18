@@ -1,31 +1,63 @@
-{* admin/menus.html — 菜单管理：顶部筛选 + 新建/编辑走右侧抽屉（admin.js），列表纯展示。 *}
+{* admin/menus.html — 菜单管理：列表页标准骨架（评审规则 admin-ui-logic §7）。
+    · 页头一行：标题 + 右侧主行动；筛选与列表同卡；行内表单放表格外。 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{* 首列勾选与批量删除：权限点复用单条删除的 /api/menu/delete（页面侧不新增权限点）。 *}
+{{canDelete := isset(.PermSet["menu:delete"])}}
 <div class="stack">
-    <section class="card">
-        <div class="card-header">
-            <span class="card-title">{{ .["t"]("admin.menus.heading", "菜单管理") }}{{ .["t"]("admin.menus.count_prefix", "（共 ") }}{{len(.Rows)}}{{ .["t"]("admin.menus.count_suffix", "）") }}</span>
-        </div>
-        <div class="list-toolbar">
-            <div class="toolbar-search">
-                <input type="text" data-filter-input placeholder="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注…") }}" class="form-input">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.menus.heading", "菜单管理") }}{{ .["t"]("admin.menus.count_prefix", "（共 ") }}{{len(.Rows)}}{{ .["t"]("admin.menus.count_suffix", "）") }}</h1>
             </div>
+        </div>
+        <div class="page-actions">
             {{include "partials/toolbar_create.html" map("allowed", isset(.PermSet["menu:create"]), "tpl", "#tpl-menu-create", "title", tr("admin.menus.create_drawer_title", "新建菜单"), "label", tr("admin.menus.create", "新建菜单"))}}
         </div>
-        <div class="card-body">
-            {{if len(.Rows) == 0}}
-            <p class="hint">{{ .["t"]("admin.menus.empty", "还没有菜单，点右上「新建菜单」创建一个。") }}</p>
-            {{else}}
-            <div class="table-wrap">
+    </header>
+
+    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
+       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {* 客户端筛选：输入即过滤行（admin.js 按 data-filter-text 匹配），不发请求。 *}
+        <div class="filter-bar">
+            <input type="text" data-filter-input placeholder="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注…") }}" aria-label="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注…") }}" class="form-input filter-search">
+        </div>
+
+        {{if len(.Rows) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.menus.empty", "还没有菜单，点右上「新建菜单」创建一个。") }}</p>
+        </div>
+        {{else}}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接带上所有勾中的 ids，
+           不需要在提交前注入隐藏域。行内删除表单留在表格外（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联。 *}
+        <form method="post" action="/admin/menus/bulk-delete">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {{if canDelete}}
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.menus.confirm_delete", "确认删除？"), danger=true)}}
+        {{yield bulkBarClose()}}
+        {{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region">
             <table class="data-table">
                 <thead>
-                <tr><th class="col-icon">{{ .["t"]("admin.menus.col.icon", "图标") }}</th><th>{{ .["t"]("admin.menus.col.title", "标题") }}</th><th>{{ .["t"]("admin.menus.col.type", "类型") }}</th><th>{{ .["t"]("admin.menus.col.path", "路径") }}</th><th>{{ .["t"]("admin.menus.col.status", "状态") }}</th><th>{{ .["t"]("admin.menus.col.sort", "排序") }}</th><th>{{ .["t"]("admin.menus.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.menus.col.actions", "操作") }}</th></tr>
+                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th class="col-icon">{{ .["t"]("admin.menus.col.icon", "图标") }}</th><th>{{ .["t"]("admin.menus.col.title", "标题") }}</th><th>{{ .["t"]("admin.menus.col.type", "类型") }}</th><th>{{ .["t"]("admin.menus.col.path", "路径") }}</th><th>{{ .["t"]("admin.menus.col.status", "状态") }}</th><th>{{ .["t"]("admin.menus.col.sort", "排序") }}</th><th>{{ .["t"]("admin.menus.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.menus.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
                 {{range _, m := .Rows}}
                 <tr data-filter-text="{{m.Title}} {{m.Path}} {{m.Remark}}">
+                {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{m.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 {* 图标由 admin.js 在图标库加载后填充 SVG（data-icon-name 为图标库键名） *}
                 <td class="col-icon"><span class="menu-icon" data-icon-name="{{if m.Icon}}{{m.Icon}}{{end}}"></span></td>
                 <td>{{m.Indent}}{{m.Title}}</td>
@@ -36,26 +68,33 @@
                 <td>{{if m.Remark}}{{m.Remark}}{{end}}</td>
                 <td class="col-actions">
                     {{if isset(.PermSet["menu:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-menu-edit-{{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{tr("admin.menus.action.edit", "编辑")}}</button>{{end}}
-                    {{if isset(.PermSet["menu:delete"])}}<button type="submit" form="menu-del-{{m.ID}}" class="btn btn-sm btn-danger" data-confirm="{{tr("admin.menus.confirm_delete", "确认删除？")}}" data-confirm-danger>{{tr("admin.menus.action.delete", "删除")}}</button>{{end}}
-                    <form id="menu-del-{{m.ID}}" method="post" action="/admin/menus/delete" class="hidden-form">
-                        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                        <input type="hidden" name="id" value="{{m.ID}}">
-                    </form>
+                    {{if isset(.PermSet["menu:delete"])}}<button type="submit" form="menu-del-{{m.ID}}" class="btn btn-sm btn-danger">{{tr("admin.menus.action.delete", "删除")}}</button>{{end}}
                 </td>
                 </tr>
                 {{end}}
                 </tbody>
             </table>
-            </div>
-            {{end}}
         </div>
+        </form>
+        {{end}}
     </section>
+
+    {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
+    {{range _, m := .Rows}}
+    {{if isset(.PermSet["menu:delete"])}}
+    <form id="menu-del-{{m.ID}}" method="post" action="/admin/menus/delete" class="hidden-form"
+          data-confirm="{{tr("admin.menus.confirm_delete", "确认删除？")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{m.ID}}">
+    </form>
+    {{end}}
+    {{end}}
 </div>
 
 {* ===== 新建菜单（抽屉表单模板） ===== *}
 <template id="tpl-menu-create">
     <form method="post" action="/admin/menus/create">
-        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.menus.field.title", "菜单标题") }}</label>
             <input type="text" name="title" class="form-input" required maxlength="50" placeholder="{{ .["t"]("admin.menus.field.title_placeholder", "如：菜单管理") }}">
@@ -118,7 +157,7 @@
 {{range _, m := .Rows}}
 <template id="tpl-menu-edit-{{m.ID}}">
     <form method="post" action="/admin/menus/update">
-        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{m.ID}}">
         <input type="hidden" name="parent_id" value="{{m.ParentID}}">
         <div class="form-group">

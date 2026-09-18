@@ -25,6 +25,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
@@ -42,6 +43,13 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 属性组行内操作与值编辑器抽屉按权限渲染（shell.Prepare 读 PermSetKey）：
+	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在值编辑器」这类断言保持有效。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{
+			"product:attribute_create": true, "product:attribute_update": true, "product:attribute_delete": true,
+		})
+	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/product-attributes", handle.ProductAttributesPage)
@@ -84,6 +92,12 @@ func TestProductAttributesPageRendersGroupsAndValues(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q", want)
+		}
+	}
+	// 列表页标准骨架：勾选列 + 全选 + 批量删除栏 + 数据表格（属性组表已改成表格形态）。
+	for _, want := range []string{`class="data-table"`, `class="col-check"`, "data-check-all", `class="bulk-bar"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("属性组列表缺少标准表格骨架 %q", want)
 		}
 	}
 }

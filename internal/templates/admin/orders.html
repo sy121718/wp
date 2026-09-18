@@ -1,8 +1,16 @@
-{* admin/orders.html — 订单管理：状态计数 / 筛选 / 列表 / 详情 / 状态流转 · 取消 · 退款（BIZ-1 销售侧） *}
-{* Jet 方言：extends 相对本目录；range 用 range 关键字；map 用 ["key"] 索引；range 内访问外层值先存变量。 *}
-{* 无 JS 也能用：列表与详情都是普通 GET 链接（同一页面靠 orderId 参数展开）， *}
-{* 三个写操作都是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。 *}
+{* admin/orders.html — 订单管理：状态计数 / 筛选 / 列表 / 详情 / 状态流转 · 取消 · 退款（BIZ-1 销售侧）
+   版式遵循 theme.css「后台页面骨架」段（admin 页面设计评审）：
+     · 领域说明收进 .help 悬浮，不再铺成正文（原版三张卡各带一段说明，首屏零条数据）；
+     · 状态快捷筛选与条件筛选合并进列表卡的 .filter-bar，筛选不再独占一张卡；
+     · 列表容器 .table-scroll 撑满剩余视口并表头吸顶，翻页与排序不再把列表挤出屏幕；
+     · 详情里的「标签 + 值」改用 .kv 网格，扫读替代段落。
+   无 JS 也能用：列表与详情都是普通 GET 链接（同一页面靠 orderId 参数展开），
+   写操作都是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。
+   状态维度只有徽章一种入口（不再配同维度下拉）：徽章本身就是筛选链接，信息与操作合一。
+   列表首列勾选 + 批量条（批量流转 / 批量取消）是列表级动作，处理的是「一批单」，
+   所以不进详情区；结论按「成功 N 个 / 跳过 M 个」经 ?done= 回带。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
@@ -11,86 +19,175 @@
 {{detail := .Detail}}
 {{statuses := .Statuses}}
 <div class="stack orders-page">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.orders.heading", "订单管理") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.orders.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-        {{end}}
-        {{if .Ok != ""}}
-        <p class="badge badge-success">{{.Ok}}</p>
-        {{end}}
-        <p class="hint">
-            {{ .["t"]("admin.orders.hint.snapshot.lead", "这里的每一单都是") }}<strong>{{ .["t"]("admin.orders.hint.snapshot.strong", "下单当时的事实快照") }}</strong>{{ .["t"]("admin.orders.hint.snapshot.mid", "：商品后来改名改价，历史订单里的商品名、规格与单价都不变。金额一律以") }}<strong>{{ .["t"]("admin.orders.hint.snapshot.strong_cent", "分") }}</strong>{{ .["t"]("admin.orders.hint.snapshot.tail", "存储，页面上换算成元展示（保留两位小数）。") }}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.orders.hint.flow.lead", "状态流转有") }}<strong>{{ .["t"]("admin.orders.hint.flow.strong_edges", "合法边") }}</strong>{{ .["t"]("admin.orders.hint.flow.mid", "：待付款 → 已付款 → 已发货 → 已完成；待付款 / 已付款可以取消（取消会归还尚未发货那部分库存）；已付款 / 已发货 / 已完成可以退款（") }}<strong>{{ .["t"]("admin.orders.hint.flow.strong_refund", "退款不归还库存") }}</strong>{{ .["t"]("admin.orders.hint.flow.mid2", " —— 钱与货分开，退货入库是另一件事）。页面只列出「可能」的目标，") }}<strong>{{ .["t"]("admin.orders.hint.flow.strong_server", "合法性由服务端裁决") }}</strong>{{ .["t"]("admin.orders.hint.flow.tail", "：选了不允许的边，服务端会把中文原因回显在页面顶部。") }}
-        </p>
-        <form method="get" action="/admin/orders" class="form-inline">
-            <select class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-        {{if len(.Projects) == 0}}
-        <p class="hint">{{ .["t"]("admin.orders.no_project.lead", "还没有站点工程 —— 先去") }}<a href="/admin/pages">{{ .["t"]("admin.orders.no_project.link", "页面管理") }}</a>{{ .["t"]("admin.orders.no_project.tail", "建一个工程，订单是挂在工程下的。") }}</p>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.orders.status.heading", "状态与筛选") }}</h2>
-        <p class="hint">{{ .["t"]("admin.orders.status.hint", "点下面的状态即按该状态筛选（再点一次「全部」清掉）。计数回答的是「各状态各有多少单」，不受下面的筛选影响。") }}</p>
-        <div class="action-row">
-            {{range _, s := statuses}}
-            <a class="badge {{s.Badge}}" href="{{s.URL}}" {{if s.Active}}aria-current="page"{{end}}>{{s.Label}} {{s.Count}}</a>
-            {{end}}
+    {* 页头：标题 + 工程上下文；领域语义（快照 / 合法边）收进 ? 悬浮。 *}
+    <header class="page-head">
+        <div class="page-head-main">
+        <div class="page-title-row">
+            <h1>{{ .["t"]("admin.orders.heading", "订单管理") }}</h1>
+        <span class="help">
+            <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.orders.help.label", "查看说明") }}" aria-expanded="false">?</button>
+            <span class="help-pop" role="tooltip">{{ .["t"]("admin.orders.hint.snapshot.lead", "这里的每一单都是") }}<strong>{{ .["t"]("admin.orders.hint.snapshot.strong", "下单当时的事实快照") }}</strong>{{ .["t"]("admin.orders.hint.snapshot.mid", "：商品后来改名改价，历史订单里的商品名、规格与单价都不变。金额一律以") }}<strong>{{ .["t"]("admin.orders.hint.snapshot.strong_cent", "分") }}</strong>{{ .["t"]("admin.orders.hint.snapshot.tail", "存储，页面上换算成元展示（保留两位小数）。") }} {{ .["t"]("admin.orders.hint.flow.lead", "状态流转有") }}<strong>{{ .["t"]("admin.orders.hint.flow.strong_edges", "合法边") }}</strong>{{ .["t"]("admin.orders.hint.flow.mid", "：待付款 → 已付款 → 已发货 → 已完成；待付款 / 已付款可以取消（取消会归还尚未发货那部分库存）；已付款 / 已发货 / 已完成可以退款（") }}<strong>{{ .["t"]("admin.orders.hint.flow.strong_refund", "退款不归还库存") }}</strong>{{ .["t"]("admin.orders.hint.flow.mid2", " —— 钱与货分开，退货入库是另一件事）。页面只列出「可能」的目标，") }}<strong>{{ .["t"]("admin.orders.hint.flow.strong_server", "合法性由服务端裁决") }}</strong>{{ .["t"]("admin.orders.hint.flow.tail", "：选了不允许的边，服务端会把中文原因回显在页面顶部。") }}</span>
+        </span>
         </div>
-        <form method="get" action="/admin/orders" class="form-stack">
-            <input type="hidden" name="project" value="{{selectedProject}}">
-            <div class="form-inline">
-                <select class="form-select" name="status">
-                    <option value="">{{ .["t"]("admin.orders.status.all_option", "（状态：全部）") }}</option>
-                    {{range _, s := .StatusOptions}}
-                    <option value="{{s.Value}}" {{if s.Value == .FilterStatus}}selected{{end}}>{{s.Label}}</option>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/orders">
+                <label class="sr-only" for="orders-project">{{ .["t"]("admin.orders.field.project", "站点工程") }}</label>
+                <select class="form-select" id="orders-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
                     {{end}}
                 </select>
-                <input type="text" class="form-input" name="keyword" value="{{.FilterKeyword}}" placeholder="{{ .["t"]("admin.orders.ph.keyword", "关键词：订单号 / 客户邮箱 / 客户姓名") }}" autocomplete="off">
-                <input type="text" class="form-input" name="paymentMethod" value="{{.FilterPayment}}" placeholder="{{ .["t"]("admin.orders.ph.payment", "支付方式（如 paypal）") }}" autocomplete="off">
-                <button type="submit" class="btn">{{ .["t"]("admin.orders.filter.submit", "筛选") }}</button>
-                <a class="btn btn-ghost" href="/admin/orders?project={{selectedProject}}">{{ .["t"]("admin.orders.filter.reset", "重置") }}</a>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.orders.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    {* ===== 主区：筛选工具行 + 列表，同一张卡 ===== *}
+    <section class="card list-card">
+        <div class="filter-bar">
+            {* 快捷筛选：点状态即筛（再点「全部」清掉）。计数不受下面的条件筛选影响。 *}
+            {* 状态维度只有这一种入口：徽章本身就是筛选链接（信息与操作合一），同维度的下拉已删除
+               —— 两套控件表达同一维度时，用户会怀疑它们是否等价。
+               选中项用 ✓ 前缀 + is-active 做形态区分（不只靠颜色深浅），并对读屏标注 aria-current；
+               计数为 0 的徽章照样可点（点进去看到空态是合理预期），不禁用。
+               链接由 handler 生成，保留关键词 / 支付方式 / 工程等其它筛选条件。 *}
+            <div class="filter-row">
+                {{range _, s := statuses}}
+                <a class="badge {{s.Badge}}{{if s.Active}} is-active{{end}}" href="{{s.URL}}" {{if s.Active}}aria-current="page"{{end}}>{{if s.Active}}✓ {{end}}{{s.Label}} {{s.Count}}</a>
+                {{end}}
             </div>
+            <form method="get" action="/admin/orders" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                {* 状态维度已由上面的徽章表达，这里只把它原样带回：条件筛选（关键词 / 支付方式）
+                   提交时若丢掉 status，点了「筛选」就会被弹回全部状态。 *}
+                <input type="hidden" name="status" value="{{.FilterStatus}}">
+                <div class="filter-field">
+                    <label for="orders-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="orders-filter-keyword" name="keyword" value="{{.FilterKeyword}}" placeholder="{{ .["t"]("admin.orders.ph.keyword_short", "订单号 / 客户邮箱 / 客户姓名") }}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="orders-filter-payment">{{ .["t"]("admin.orders.col.payment", "支付方式") }}</label>
+                    <input type="text" class="form-input" id="orders-filter-payment" name="paymentMethod" value="{{.FilterPayment}}" placeholder="{{ .["t"]("admin.orders.ph.payment_short", "如 paypal") }}" autocomplete="off">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.orders.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/orders?project={{selectedProject}}">{{ .["t"]("admin.orders.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+        </div>
+
+        {{if len(rows) == 0}}
+        <div class="empty-state">
+            {{if len(.Projects) == 0}}
+            <p class="empty-title">{{ .["t"]("admin.orders.no_project.heading", "还没有站点工程") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.orders.no_project.lead", "还没有站点工程 —— 先去") }}{{ .["t"]("admin.orders.no_project.link", "页面管理") }}{{ .["t"]("admin.orders.no_project.tail", "建一个工程，订单是挂在工程下的。") }}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.orders.no_project.link", "页面管理") }}</a></div>
+            {{else}}
+            <p class="empty-title">{{if selectedProject}}{{ .["t"]("admin.orders.list.empty_project", "这个工程还没有订单") }}{{else}}{{ .["t"]("admin.orders.list.empty_no_project", "还没有站点工程") }}{{end}}</p>
+            <p class="empty-desc">{{ .["t"]("admin.orders.list.empty_tail", "台前下单后（或后台代客建单）就会出现在这里。若已经下过单，检查上面的筛选条件是不是过窄了。") }}</p>
+            {{end}}
+        </div>
+        {{else}}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
+           提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
+           批量取消用 formaction 打到另一个端点 —— 一个 form 只有一个 action，而两个动作
+           要分别走 /bulk-status 与 /bulk-cancel。目标状态用 toStatus（与单条流转同名字段），
+           表单里的 status 是「回跳时保留的筛选维度」，两者不能同名。 *}
+        <form method="post" action="/admin/orders/bulk-status">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <input type="hidden" name="status" value="{{.FilterStatus}}">
+            <input type="hidden" name="keyword" value="{{.FilterKeyword}}">
+            <input type="hidden" name="paymentMethod" value="{{.FilterPayment}}">
+            <input type="hidden" name="page" value="{{.Page}}">
+            <input type="hidden" name="limit" value="{{.Limit}}">
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                <select class="form-select" name="toStatus" aria-label="{{ .["t"]("admin.orders.bulk.target", "目标状态") }}">
+                    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 BulkTargets，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+                    {{if isset(.BulkTargets)}}{{range _, o := .BulkTargets}}
+                    <option value="{{o.Value}}">{{o.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+                <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{ .["t"]("admin.orders.ph.bulk_remark", "备注（可选；批量取消时作为取消原因，必填）") }}">
+                {{yield bulkBtn(label=tr("admin.orders.bulk.status", "批量流转"), cls="btn btn-sm btn-primary")}}
+                {{yield bulkBtn(label=tr("admin.orders.bulk.cancel", "批量取消"), confirm=tr("admin.orders.bulkCancelConfirm", "取消选中的订单？尚未发货的那部分库存会归还，已发货 / 已完成的会被跳过。"), danger=true, formaction="/admin/orders/bulk-cancel")}}
+            {{yield bulkBarClose()}}
+            <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table data-table-wide orders-page-table">
+            <thead>
+            <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.orders.col.order_no", "订单号") }}</th><th>{{ .["t"]("admin.orders.col.status", "状态") }}</th><th>{{ .["t"]("admin.orders.col.customer", "客户") }}</th><th>{{ .["t"]("admin.orders.col.amount", "金额") }}</th><th>{{ .["t"]("admin.orders.col.payment", "支付方式") }}</th><th>{{ .["t"]("admin.orders.col.created_at", "下单时间") }}</th><th class="col-actions">{{ .["t"]("admin.orders.col.actions", "操作") }}</th></tr>
+            </thead>
+            <tbody>
+            {{range _, o := rows}}
+            <tr>
+                <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{o.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
+                <td data-label="{{tr("admin.orders.col.order_no", "订单号")}}"><code>{{o.OrderNo}}</code></td>
+                <td data-label="{{tr("admin.orders.col.status", "状态")}}"><span class="badge {{o.Badge}}">{{o.StatusLabel}}</span></td>
+                <td data-label="{{tr("admin.orders.col.customer", "客户")}}">{{o.CustomerName}} <span class="hint">{{o.CustomerEmail}}</span></td>
+                <td data-label="{{tr("admin.orders.col.amount", "金额")}}"><strong>{{o.TotalLabel}}</strong></td>
+                <td data-label="{{tr("admin.orders.col.payment", "支付方式")}}">{{o.PaymentLabel}}</td>
+                <td data-label="{{tr("admin.orders.col.created_at", "下单时间")}}">{{o.CreatedAt}}</td>
+                <td class="col-actions" data-label="{{tr("admin.orders.col.actions", "操作")}}">
+                    {{if o.Expanded}}
+                    <a class="btn btn-sm" href="{{o.DetailURL}}">{{tr("admin.orders.action.collapse", "收起详情")}}</a>
+                    {{else}}
+                    <a class="btn btn-sm" href="{{o.DetailURL}}">{{tr("admin.orders.action.view", "查看详情")}}</a>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
         </form>
+        {{include "partials/pagination.html"}}
+        {{end}}
     </section>
 
     {{if .HasDetail}}
     <section class="card card-body">
-        <h2>{{ .["t"]("admin.orders.detail.heading", "订单详情") }} <code>{{detail.Head.OrderNo}}</code></h2>
-        <p class="hint">
-            <span class="badge {{detail.Head.Badge}}">{{detail.Head.StatusLabel}}</span>
-            <strong>{{ .["t"]("admin.orders.detail.customer", "客户") }}</strong> {{detail.Head.CustomerName}} · {{detail.Head.CustomerEmail}} · {{detail.Head.CustomerPhone}}
-        </p>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.orders.detail.amount", "金额") }}</strong>{{ .["t"]("admin.orders.detail.amount_total", " 合计 ") }}<strong>{{detail.Head.TotalLabel}}</strong>
-            {{ .["t"]("admin.orders.detail.breakdown.subtotal", "（小计 ") }}{{detail.Head.SubtotalLabel}}{{ .["t"]("admin.orders.detail.breakdown.discount", " · 优惠 ") }}{{detail.Head.DiscountLabel}}{{ .["t"]("admin.orders.detail.breakdown.shipping", " · 运费 ") }}{{detail.Head.ShippingLabel}}{{ .["t"]("admin.orders.detail.breakdown.tax", " · 税 ") }}{{detail.Head.TaxLabel}}{{ .["t"]("admin.orders.detail.breakdown.close", "）") }}
-            · <strong>{{ .["t"]("admin.orders.detail.pay", "支付") }}</strong> {{detail.Head.PaymentLabel}}{{ .["t"]("admin.orders.detail.pay_txn", " · 通道流水号 ") }}{{detail.Head.TransactionID}}
-        </p>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.orders.detail.created_at", "下单时间") }}</strong> {{detail.Head.CreatedAt}} · <strong>{{ .["t"]("admin.orders.detail.paid_at", "付款时间") }}</strong> {{detail.Head.PaidAt}}
-            · <strong>{{ .["t"]("admin.orders.detail.completed_at", "完成时间") }}</strong> {{detail.Head.CompletedAt}} · <strong>{{ .["t"]("admin.orders.detail.via", "入口") }}</strong> {{detail.Head.CreatedViaLabel}}
-            · <strong>IP</strong> {{detail.Head.IPAddress}}
-        </p>
-        <p class="hint"><strong>{{ .["t"]("admin.orders.detail.shipping_address", "收货地址") }}</strong> {{if detail.Head.ShippingAddress}}{{detail.Head.ShippingAddress}}{{else}}{{ .["t"]("admin.orders.detail.not_filled", "（未填写）") }}{{end}}</p>
-        <p class="hint"><strong>{{ .["t"]("admin.orders.detail.billing_address", "账单地址") }}</strong> {{if detail.Head.BillingAddress}}{{detail.Head.BillingAddress}}{{else}}{{ .["t"]("admin.orders.detail.not_filled", "（未填写）") }}{{end}}</p>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.orders.detail.customer_note", "客户备注") }}</strong> {{detail.Head.Remark}} · <strong>{{ .["t"]("admin.orders.detail.admin_note", "后台备注") }}</strong> {{detail.Head.AdminNote}}
-            {{if detail.Head.CancelReason != "—"}}· <strong>{{ .["t"]("admin.orders.detail.cancel_reason", "取消原因") }}</strong> {{detail.Head.CancelReason}}{{end}}
-        </p>
+        <h2>{{ .["t"]("admin.orders.detail.heading", "订单详情") }} <code>{{detail.Head.OrderNo}}</code> <span class="badge {{detail.Head.Badge}}">{{detail.Head.StatusLabel}}</span></h2>
+        {* 详情头部：标签 + 值走 .kv 网格，扫读替代原来的一串段落。 *}
+        <dl class="kv">
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.customer", "客户") }}</dt><dd>{{detail.Head.CustomerName}} · {{detail.Head.CustomerEmail}} · {{detail.Head.CustomerPhone}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.amount", "金额") }}</dt><dd><strong>{{detail.Head.TotalLabel}}</strong>{{ .["t"]("admin.orders.detail.amount_total", " 合计 ") }}<span class="hint">{{ .["t"]("admin.orders.detail.breakdown.subtotal", "（小计 ") }}{{detail.Head.SubtotalLabel}}{{ .["t"]("admin.orders.detail.breakdown.discount", " · 优惠 ") }}{{detail.Head.DiscountLabel}}{{ .["t"]("admin.orders.detail.breakdown.shipping", " · 运费 ") }}{{detail.Head.ShippingLabel}}{{ .["t"]("admin.orders.detail.breakdown.tax", " · 税 ") }}{{detail.Head.TaxLabel}}{{ .["t"]("admin.orders.detail.breakdown.close", "）") }}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.pay", "支付") }}</dt><dd>{{detail.Head.PaymentLabel}}{{ .["t"]("admin.orders.detail.pay_txn", " · 通道流水号 ") }}{{detail.Head.TransactionID}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.created_at", "下单时间") }}</dt><dd>{{detail.Head.CreatedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.paid_at", "付款时间") }}</dt><dd>{{detail.Head.PaidAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.completed_at", "完成时间") }}</dt><dd>{{detail.Head.CompletedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.via", "入口") }}</dt><dd>{{detail.Head.CreatedViaLabel}} · IP {{detail.Head.IPAddress}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.customer_note", "客户备注") }}</dt><dd>{{detail.Head.Remark}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.admin_note", "后台备注") }}</dt><dd>{{detail.Head.AdminNote}}</dd></div>
+            {{if detail.Head.CancelReason != "—"}}
+            <div class="kv-item"><dt>{{ .["t"]("admin.orders.detail.cancel_reason", "取消原因") }}</dt><dd>{{detail.Head.CancelReason}}</dd></div>
+            {{end}}
+            <div class="kv-item kv-item--wide"><dt>{{ .["t"]("admin.orders.detail.shipping_address", "收货地址") }}</dt><dd>{{if detail.Head.ShippingAddress}}{{detail.Head.ShippingAddress}}{{else}}{{ .["t"]("admin.orders.detail.not_filled", "（未填写）") }}{{end}}</dd></div>
+            <div class="kv-item kv-item--wide"><dt>{{ .["t"]("admin.orders.detail.billing_address", "账单地址") }}</dt><dd>{{if detail.Head.BillingAddress}}{{detail.Head.BillingAddress}}{{else}}{{ .["t"]("admin.orders.detail.not_filled", "（未填写）") }}{{end}}</dd></div>
+        </dl>
 
-        <h3>{{ .["t"]("admin.orders.items.heading", "订单项") }}</h3>
+        <h3>{{ .["t"]("admin.orders.items.heading", "订单项") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.orders.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.orders.items.snapshot_hint.lead", "订单项是") }}<strong>{{ .["t"]("admin.orders.items.snapshot_hint.strong", "下单时的快照") }}</strong>{{ .["t"]("admin.orders.items.snapshot_hint.tail", "（含当时的价格与规格），不是商品当前的值。") }}</span>
+            </span>
+        </h3>
         {{if len(detail.Items) == 0}}
         <p class="hint">{{ .["t"]("admin.orders.items.empty", "这一单没有订单项 —— 正常下单不会出现这种情况，请人工核查。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide orders-page-table">
             <thead>
             <tr><th>{{ .["t"]("admin.orders.col.product", "商品") }}</th><th>{{ .["t"]("admin.orders.col.variant", "规格") }}</th><th>SKU</th><th>{{ .["t"]("admin.orders.col.unit_price", "单价") }}</th><th>{{ .["t"]("admin.orders.col.quantity", "数量") }}</th><th>{{ .["t"]("admin.orders.col.line_subtotal", "行小计") }}</th><th>{{ .["t"]("admin.orders.col.line_discount", "优惠") }}</th><th>{{ .["t"]("admin.orders.col.line_tax", "税") }}</th><th>{{ .["t"]("admin.orders.col.line_total", "行合计") }}</th></tr>
@@ -112,14 +209,13 @@
             </tbody>
         </table>
         </div>
-        <p class="hint">{{ .["t"]("admin.orders.items.snapshot_hint.lead", "订单项是") }}<strong>{{ .["t"]("admin.orders.items.snapshot_hint.strong", "下单时的快照") }}</strong>{{ .["t"]("admin.orders.items.snapshot_hint.tail", "（含当时的价格与规格），不是商品当前的值。") }}</p>
         {{end}}
 
         <h3>{{ .["t"]("admin.orders.logs.heading", "状态流转链") }}</h3>
         {{if len(detail.Logs) == 0}}
         <p class="hint">{{ .["t"]("admin.orders.logs.empty", "这一单还没有任何流转记录。") }}</p>
         {{else}}
-        <div class="table-wrap" tabindex="0">
+        <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide orders-page-table">
             <thead>
             <tr><th>{{ .["t"]("admin.orders.col.time", "时间") }}</th><th>{{ .["t"]("admin.orders.logs.col.from", "从") }}</th><th>{{ .["t"]("admin.orders.logs.col.to", "到") }}</th><th>{{ .["t"]("admin.orders.logs.col.operator_type", "操作人类型") }}</th><th>{{ .["t"]("admin.orders.logs.col.operator", "操作人") }}</th><th>{{ .["t"]("admin.orders.logs.col.remark", "备注") }}</th></tr>
@@ -140,7 +236,12 @@
         </div>
         {{end}}
 
-        <h3>{{ .["t"]("admin.orders.actions.heading", "操作") }}</h3>
+        <h3>{{ .["t"]("admin.orders.actions.heading", "操作") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.orders.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.orders.hint.cancel_refund.lead", "取消与退款各是独立用例：取消会归还") }}<strong>{{ .["t"]("admin.orders.hint.cancel_refund.strong", "尚未发货") }}</strong>{{ .["t"]("admin.orders.hint.cancel_refund.tail", "那部分库存，退款只动钱与状态（不归还库存）。") }}</span>
+            </span>
+        </h3>
         {{if len(detail.Transitions) > 0}}
         <form method="post" action="/admin/orders/status" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -151,12 +252,12 @@
             <input type="hidden" name="paymentMethod" value="{{detail.Form.PaymentMethod}}">
             <input type="hidden" name="page" value="{{detail.Form.Page}}">
             <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
-            <select class="form-select" name="toStatus" required>
+            <select class="form-select" name="toStatus" required aria-label="{{ .["t"]("admin.orders.action.transition", "流转状态") }}">
                 {{range _, t := detail.Transitions}}
                 <option value="{{t.Value}}">{{t.Label}}</option>
                 {{end}}
             </select>
-            <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.orders.ph.transition_remark", "流转备注（可选，如「已联系快递」）") }}" autocomplete="off">
+            <input type="text" class="form-input input-wide" name="remark" placeholder="{{ .["t"]("admin.orders.ph.transition_remark", "流转备注（可选，如「已联系快递」）") }}" autocomplete="off">
             <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.orders.action.transition", "流转状态") }}</button>
         </form>
         {{else}}
@@ -173,7 +274,7 @@
             <input type="hidden" name="paymentMethod" value="{{detail.Form.PaymentMethod}}">
             <input type="hidden" name="page" value="{{detail.Form.Page}}">
             <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
-            <input type="text" class="form-input" name="reason" placeholder="{{ .["t"]("admin.orders.ph.cancel_reason", "取消原因（必填）") }}" required autocomplete="off">
+            <input type="text" class="form-input input-wide" name="reason" placeholder="{{ .["t"]("admin.orders.ph.cancel_reason", "取消原因（必填）") }}" required autocomplete="off">
             <button type="submit" class="btn btn-sm">{{ .["t"]("admin.orders.action.cancel", "取消订单") }}</button>
         </form>
         {{end}}
@@ -188,20 +289,18 @@
             <input type="hidden" name="paymentMethod" value="{{detail.Form.PaymentMethod}}">
             <input type="hidden" name="page" value="{{detail.Form.Page}}">
             <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
-            <input type="text" class="form-input" name="reason" placeholder="{{ .["t"]("admin.orders.ph.refund_reason", "退款原因（必填）") }}" required autocomplete="off">
-            <input type="text" class="form-input" name="transactionId" placeholder="{{ .["t"]("admin.orders.ph.txn_optional", "通道流水号（可选，留空则沿用原流水号）") }}" autocomplete="off">
+            <input type="text" class="form-input input-wide" name="reason" placeholder="{{ .["t"]("admin.orders.ph.refund_reason", "退款原因（必填）") }}" required autocomplete="off">
+            <input type="text" class="form-input input-wide" name="transactionId" placeholder="{{ .["t"]("admin.orders.ph.txn_optional", "通道流水号（可选，留空则沿用原流水号）") }}" autocomplete="off">
             <button type="submit" class="btn btn-sm">{{ .["t"]("admin.orders.action.refund", "退款") }}</button>
         </form>
         {{end}}
 
-        <p class="hint">
-            {{ .["t"]("admin.orders.hint.cancel_refund.lead", "取消与退款各是独立用例：取消会归还") }}<strong>{{ .["t"]("admin.orders.hint.cancel_refund.strong", "尚未发货") }}</strong>{{ .["t"]("admin.orders.hint.cancel_refund.tail", "那部分库存，退款只动钱与状态（不归还库存）。") }}
-        </p>
-
-        <h3>{{ .["t"]("admin.orders.note.heading", "后台备注") }}</h3>
-        <p class="hint">
-            {{ .["t"]("admin.orders.note.hint.lead", "备注记的是") }}<strong>{{ .["t"]("admin.orders.note.hint.strong_judgement", "人对这张单的判断") }}</strong>{{ .["t"]("admin.orders.note.hint.mid", "（客服记客户说了什么、仓库记为什么改地址），它") }}<strong>{{ .["t"]("admin.orders.note.hint.strong_state", "不改变订单状态") }}</strong>{{ .["t"]("admin.orders.note.hint.tail", "，也不会写进下面的状态流转链 —— 那一列回答的是「订单处在哪一步」，混进备注就再也看不出什么时候发的货。客户自己填的备注在详情上方另有一栏，两者互不覆盖。") }}
-        </p>
+        <h3>{{ .["t"]("admin.orders.note.heading", "后台备注") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.orders.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.orders.note.hint.lead", "备注记的是") }}<strong>{{ .["t"]("admin.orders.note.hint.strong_judgement", "人对这张单的判断") }}</strong>{{ .["t"]("admin.orders.note.hint.mid", "（客服记客户说了什么、仓库记为什么改地址），它") }}<strong>{{ .["t"]("admin.orders.note.hint.strong_state", "不改变订单状态") }}</strong>{{ .["t"]("admin.orders.note.hint.tail", "，也不会写进上面的状态流转链 —— 那一列回答的是「订单处在哪一步」，混进备注就再也看不出什么时候发的货。客户自己填的备注在详情上方另有一栏，两者互不覆盖。") }}</span>
+            </span>
+        </h3>
         <form method="post" action="/admin/orders/note" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="orderId" value="{{ detail.Head.ID }}">
@@ -212,43 +311,5 @@
         </form>
     </section>
     {{end}}
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.orders.list.heading", "订单") }}{{ .["t"]("admin.orders.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.orders.list.total_tail", " 单）") }}</h2>
-        {{if len(rows) == 0}}
-        <p class="hint">
-            {{if selectedProject}}{{ .["t"]("admin.orders.list.empty_project", "这个工程还没有订单") }}{{else}}{{ .["t"]("admin.orders.list.empty_no_project", "还没有站点工程") }}{{end}} ——
-            {{ .["t"]("admin.orders.list.empty_tail", "台前下单后（或后台代客建单）就会出现在这里。若已经下过单，检查上面的筛选条件是不是过窄了。") }}
-        </p>
-        {{else}}
-        <div class="table-wrap" tabindex="0">
-        <table class="data-table data-table-wide orders-page-table">
-            <thead>
-            <tr><th>{{ .["t"]("admin.orders.col.order_no", "订单号") }}</th><th>{{ .["t"]("admin.orders.col.status", "状态") }}</th><th>{{ .["t"]("admin.orders.col.customer", "客户") }}</th><th>{{ .["t"]("admin.orders.col.amount", "金额") }}</th><th>{{ .["t"]("admin.orders.col.payment", "支付方式") }}</th><th>{{ .["t"]("admin.orders.col.created_at", "下单时间") }}</th><th>{{ .["t"]("admin.orders.col.actions", "操作") }}</th></tr>
-            </thead>
-            <tbody>
-            {{range _, o := rows}}
-            <tr>
-                <td data-label="{{tr("admin.orders.col.order_no", "订单号")}}"><code>{{o.OrderNo}}</code></td>
-                <td data-label="{{tr("admin.orders.col.status", "状态")}}"><span class="badge {{o.Badge}}">{{o.StatusLabel}}</span></td>
-                <td data-label="{{tr("admin.orders.col.customer", "客户")}}">{{o.CustomerName}} <span class="hint">{{o.CustomerEmail}}</span></td>
-                <td data-label="{{tr("admin.orders.col.amount", "金额")}}"><strong>{{o.TotalLabel}}</strong></td>
-                <td data-label="{{tr("admin.orders.col.payment", "支付方式")}}">{{o.PaymentLabel}}</td>
-                <td data-label="{{tr("admin.orders.col.created_at", "下单时间")}}">{{o.CreatedAt}}</td>
-                <td data-label="{{tr("admin.orders.col.actions", "操作")}}">
-                    {{if o.Expanded}}
-                    <a class="btn btn-sm" href="{{o.DetailURL}}">{{tr("admin.orders.action.collapse", "收起详情")}}</a>
-                    {{else}}
-                    <a class="btn btn-sm" href="{{o.DetailURL}}">{{tr("admin.orders.action.view", "查看详情")}}</a>
-                    {{end}}
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table>
-        </div>
-        {{include "partials/pagination.html"}}
-        {{end}}
-    </section>
 </div>
 {{end}}

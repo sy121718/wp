@@ -1,94 +1,123 @@
 {* admin/customer_detail.html — 客户详情：资料 + 登录事实 + 订单摘要 + 停用启用 / 解除锁定 *}
+{* 版式遵循列表页/详情页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §2.1 / §2.2 / §7）：
+     · 正文零说明文字 —— IP 口径、停用与锁定的区别、累计消费口径三段进 .help 悬浮；
+     · 原「只有标题 + 返回链接」的壳卡已删除，标题进 .page-head，返回链接进 .page-actions；
+     · .kv 的每对「标签 + 值」包进 .kv-item，网格才对得上（裸 dt/dd 会被拆成两格）。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；可能缺键的 map 用 ["key"] 索引访问。 *}
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <div class="stack customer-detail-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.customer_detail.heading", "客户详情") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer_detail.ip_hint", "「最近登录 IP」是客户上一次成功登录时的地址；「注册来源」是他注册时的地址。客服判断「是不是本人操作」时看这两个。") }}<br><br>{{ .["t"]("admin.customer_detail.back_hint", "返回列表时会保留你的筛选条件。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-ghost" href="{{.ListURL}}">← {{ .["t"]("admin.customer_detail.back", "返回客户列表") }}</a>
+        </div>
+    </header>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.customer_detail.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+
+    {{if not .HasDetail}}
     <section class="card card-body">
-        <h2>{{ .["t"]("admin.customer_detail.heading", "客户详情") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.customer_detail.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-        {{end}}
-        {{if .Ok != ""}}
-        <p class="badge badge-success">{{.Ok}}</p>
-        {{end}}
-        <p class="hint"><a href="{{.ListURL}}">← {{ .["t"]("admin.customer_detail.back", "返回客户列表") }}</a>{{ .["t"]("admin.customer_detail.back_hint", "（返回时保留你的筛选条件）") }}</p>
-        {{if not .HasDetail}}
-        <p class="hint">
-            {{ .["t"]("admin.customer_detail.no_detail", "客户信息读不出来（多半是装配问题），页面只显示这个外壳。请联系开发确认用户模块的后台客户能力是否已注入。") }}
-        </p>
-        {{end}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.customer_detail.no_detail.title", "客户信息读不出来") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.customer_detail.no_detail", "客户信息读不出来（多半是装配问题），页面只显示这个外壳。请联系开发确认用户模块的后台客户能力是否已注入。") }}</p>
+        </div>
     </section>
+    {{end}}
 
     {{if .HasDetail}}
     <section class="card card-body">
         <h2>{{.DisplayLabel}} <span class="badge {{.StatusBadge}}">{{.StatusLabel}}</span></h2>
         <dl class="kv">
-            <dt>{{ .["t"]("admin.customer_detail.field.username", "登录名") }}</dt><dd>{{.Username}}</dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge {{if .EmailVerified}}badge-success{{else}}badge-warning{{end}}">{{.EmailVerifiedLabel}}</span></dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.registered_at", "注册时间") }}</dt><dd>{{.RegisteredAtText}}</dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.register_source", "注册来源") }}</dt><dd>{{.RegisterIP}}{{if .RegisterLocation}} · {{.RegisterLocation}}{{end}}</dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.last_login", "最近登录") }}</dt><dd>{{.LastLoginTimeText}}</dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.last_login_ip", "最近登录 IP") }}</dt><dd>{{.LastLoginIP}}{{if .LastLoginLocation}} · {{.LastLoginLocation}}{{end}}</dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.login_failures", "登录失败次数") }}</dt><dd>{{.LoginFailureCount}}</dd>
-            <dt>{{ .["t"]("admin.customer_detail.field.lock_status", "锁定状态") }}</dt>
-            <dd>
-                {{if .Locked}}
-                <span class="badge badge-warning">{{ .["t"]("admin.customer_detail.lock.locked", "已锁定") }}</span>{{ .["t"]("admin.customer_detail.lock.until", " 至 ") }}{{.LockedUntilText}}{{ .["t"]("admin.customer_detail.lock.auto", "（到时间会自动解除）") }}
-                {{else}}
-                <span class="badge badge-mute">{{ .["t"]("admin.customer_detail.lock.unlocked", "未锁定") }}</span>
-                {{end}}
-            </dd>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.username", "登录名") }}</dt><dd>{{.Username}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge {{if .EmailVerified}}badge-success{{else}}badge-warning{{end}}">{{.EmailVerifiedLabel}}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.registered_at", "注册时间") }}</dt><dd>{{.RegisteredAtText}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.register_source", "注册来源") }}</dt><dd>{{.RegisterIP}}{{if .RegisterLocation}} · {{.RegisterLocation}}{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login", "最近登录") }}</dt><dd>{{.LastLoginTimeText}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login_ip", "最近登录 IP") }}</dt><dd>{{.LastLoginIP}}{{if .LastLoginLocation}} · {{.LastLoginLocation}}{{end}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.login_failures", "登录失败次数") }}</dt><dd>{{.LoginFailureCount}}</dd></div>
+            <div class="kv-item">
+                <dt>{{ .["t"]("admin.customer_detail.field.lock_status", "锁定状态") }}</dt>
+                <dd>
+                    {{if .Locked}}
+                    <span class="badge badge-warning">{{ .["t"]("admin.customer_detail.lock.locked", "已锁定") }}</span>{{ .["t"]("admin.customer_detail.lock.until", " 至 ") }}{{.LockedUntilText}}{{ .["t"]("admin.customer_detail.lock.auto", "（到时间会自动解除）") }}
+                    {{else}}
+                    <span class="badge badge-mute">{{ .["t"]("admin.customer_detail.lock.unlocked", "未锁定") }}</span>
+                    {{end}}
+                </dd>
+            </div>
         </dl>
-        <p class="hint">
-            {{ .["t"]("admin.customer_detail.ip_hint", "「最近登录 IP」是客户上一次成功登录时的地址；「注册来源」是他注册时的地址。客服判断「是不是本人操作」时看这两个。") }}
-        </p>
-        {{if .["LockHint"]}}<p class="hint">{{ .["LockHint"] }}</p>{{end}}
+        {{if isset(.LockHint)}}{{if .LockHint != ""}}<p class="hint">{{ .LockHint }}</p>{{end}}{{end}}
     </section>
 
     <section class="card card-body">
-        <h2>{{ .["t"]("admin.customer_detail.orders.heading", "订单摘要") }}</h2>
+        <h2>{{ .["t"]("admin.customer_detail.orders.heading", "订单摘要") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer_detail.orders.spend_hint.lead", "累计消费只统计") }}<strong>{{ .["t"]("admin.customer_detail.orders.spend_hint.strong", "已付款 / 已发货 / 已完成") }}</strong>{{ .["t"]("admin.customer_detail.orders.spend_hint.mid", "的订单实付总额：待付款的单还没付钱，取消与退款的单的钱没有留下 —— 把三类都算进去会得到一个「比实际流水大」的数字。切换上面的工程可以看他在别的站点的情况。这里只给摘要：具体单据在") }}<a href="/admin/orders">{{ .["t"]("admin.customer_detail.orders.spend_hint.link", "订单管理") }}</a>{{ .["t"]("admin.customer_detail.orders.spend_hint.tail", "里，上面「最近一单」的订单号点进去就是那一单。") }}</span>
+            </span>
+        </h2>
+        {* 工程上下文：多工程才渲染下拉；只有一个工程时它是唯一选项，下拉是纯占位 ——
+           改成静态徽章，既省掉一个交互控件，又保留「这一屏统计的是哪个工程」这个信息。 *}
         {{if .HasProjects}}
-        <form method="get" action="/admin/customers/detail" class="form-inline">
+        {{if len(.Projects) > 1}}
+        <form method="get" action="/admin/customers/detail" class="page-context">
             <input type="hidden" name="id" value="{{.ID}}">
-            <select class="form-select" name="project" onchange="this.form.submit()">
+            <label class="sr-only" for="customer-detail-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+            <select class="form-select" id="customer-detail-project" name="project" onchange="this.form.submit()">
                 {{range _, p := .Projects}}
                 <option value="{{p.ID}}" {{if p.ID == .SelectedProject}}selected{{end}}>{{p.Name}}</option>
                 {{end}}
             </select>
         </form>
+        {{else}}
+        <p><span class="badge badge-mute">{{range _, p := .Projects}}{{p.Name}}{{end}}</span></p>
+        {{end}}
         {{end}}
         {{if .SummaryFailed}}
         <p class="hint">{{ .["t"]("admin.customer_detail.orders.summary_failed", "订单摘要暂时读不出来 —— 客户资料本身不受影响，可以稍后重新打开本页。") }}</p>
         {{else if not .HasProjects}}
-        <p class="hint">
-            {{ .["t"]("admin.customer_detail.orders.no_projects.lead", "还没有站点工程，因此没有订单可统计。客户资料本身不受影响；在") }}<a href="/admin/pages">{{ .["t"]("admin.customer_detail.orders.no_projects.link", "页面管理") }}</a>{{ .["t"]("admin.customer_detail.orders.no_projects.tail", "里建好工程后，这一块会显示该客户在这个工程的消费情况。") }}
-        </p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.customer_detail.orders.no_projects.title", "还没有站点工程") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.customer_detail.orders.no_projects.lead", "还没有站点工程，因此没有订单可统计。客户资料本身不受影响；在") }}{{ .["t"]("admin.customer_detail.orders.no_projects.link", "页面管理") }}{{ .["t"]("admin.customer_detail.orders.no_projects.tail", "里建好工程后，这一块会显示该客户在这个工程的消费情况。") }}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.customer_detail.orders.no_projects.link", "页面管理") }}</a></div>
+        </div>
         {{else if .HasSummary}}
         <div class="action-row">
             <span class="badge badge-mute">{{ .["t"]("admin.customer_detail.orders.count_lead", "订单数 ") }}{{.OrderCount}}</span>
             <span class="badge badge-success">{{ .["t"]("admin.customer_detail.orders.paid_lead", "计入消费 ") }}{{.PaidOrderCount}}{{ .["t"]("admin.customer_detail.orders.paid_tail", " 单") }}</span>
             <span class="badge badge-info">{{ .["t"]("admin.customer_detail.orders.spend_lead", "累计消费 ¥") }}{{.TotalAmountLabel}}</span>
         </div>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.customer_detail.orders.last_order", "最近一单") }}</strong>
-            {{if .LastOrderTimeText}}
-            <a href="{{.LastOrderURL}}"><code>{{.LastOrderNo}}</code></a> · {{.LastOrderStatusLabel}} · {{.LastOrderTimeText}}
-            {{else}}
-            {{ .["t"]("admin.customer_detail.orders.no_order", "这个客户在当前工程里还没有下过单。") }}
-            {{end}}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.customer_detail.orders.spend_hint.lead", "累计消费只统计") }}<strong>{{ .["t"]("admin.customer_detail.orders.spend_hint.strong", "已付款 / 已发货 / 已完成") }}</strong>{{ .["t"]("admin.customer_detail.orders.spend_hint.mid", "的订单实付总额：待付款的单还没付钱，取消与退款的单的钱没有留下 —— 把三类都算进去会得到一个「比实际流水大」的数字。切换上面的工程可以看他在别的站点的情况。这里只给摘要：具体单据在") }}<a href="/admin/orders">{{ .["t"]("admin.customer_detail.orders.spend_hint.link", "订单管理") }}</a>{{ .["t"]("admin.customer_detail.orders.spend_hint.tail", "里，上面「最近一单」的订单号点进去就是那一单。") }}
-        </p>
+        <dl class="kv">
+            <div class="kv-item kv-item--wide">
+                <dt>{{ .["t"]("admin.customer_detail.orders.last_order", "最近一单") }}</dt>
+                <dd>{{if .LastOrderTimeText}}<a href="{{.LastOrderURL}}"><code>{{.LastOrderNo}}</code></a> · {{.LastOrderStatusLabel}} · {{.LastOrderTimeText}}{{else}}{{ .["t"]("admin.customer_detail.orders.no_order", "这个客户在当前工程里还没有下过单。") }}{{end}}</dd>
+            </div>
+        </dl>
         {{end}}
     </section>
 
     <section class="card card-body">
-        <h2>{{ .["t"]("admin.customer_detail.actions.heading", "操作") }}</h2>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.customer_detail.actions.disable_strong", "停用") }}</strong>{{ .["t"]("admin.customer_detail.actions.disable_mid", "是管理动作：账号从此登不上去（数据全部保留），需要在这里重新启用。") }}<strong>{{ .["t"]("admin.customer_detail.actions.unlock_strong", "解除锁定") }}</strong>{{ .["t"]("admin.customer_detail.actions.unlock_tail", "只针对连续输错密码被临时锁住的账号：那个状态到时间会自己解除，这里只是让客户不用等。") }}
-        </p>
+        <h2>{{ .["t"]("admin.customer_detail.actions.heading", "操作") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip"><strong>{{ .["t"]("admin.customer_detail.actions.disable_strong", "停用") }}</strong>{{ .["t"]("admin.customer_detail.actions.disable_mid", "是管理动作：账号从此登不上去（数据全部保留），需要在这里重新启用。") }}<strong>{{ .["t"]("admin.customer_detail.actions.unlock_strong", "解除锁定") }}</strong>{{ .["t"]("admin.customer_detail.actions.unlock_tail", "只针对连续输错密码被临时锁住的账号：那个状态到时间会自己解除，这里只是让客户不用等。") }}</span>
+            </span>
+        </h2>
         {{if .Actionable}}
         <form method="post" action="/admin/customers/status" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -99,7 +128,7 @@
         </form>
         {{else}}
         <p class="hint">
-            {{if .["PendingHint"]}}{{ .["PendingHint"] }}{{else}}{{ .["t"]("admin.customer_detail.status_locked", "这个账号的状态当前不能在这里修改。") }}{{end}}
+            {{if isset(.PendingHint)}}{{ .PendingHint }}{{else}}{{ .["t"]("admin.customer_detail.status_locked", "这个账号的状态当前不能在这里修改。") }}{{end}}
         </p>
         {{end}}
         {{if .Locked}}

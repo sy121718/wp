@@ -230,4 +230,91 @@ func registerI18nDataLayer() {
 		CheckSQL:  "SELECT COUNT(*) FROM pg_policies WHERE schemaname = current_schema() AND tablename = ? AND policyname = 'project_isolation'",
 		SQL:       mustSQL("199_rls_project_locales.sql"),
 	})
+
+	// 228：后台页面标题 Msg*Title 词条补缺（4 key × 2 语言，zh-CN 4 行 / en-US 4 行）。
+	//
+	// 为什么必须 seed：shell.Prepare 对渲染数据里的 title 做 t(title, title) —— 词条命中
+	// 显示译文，未命中**回退字面量**。因此 handler 传 Msg*Title 而词条缺失时，顶栏与
+	// <title> 会把 key 原样显示（"MsgMasterDataChangesTitle — go_wp 管理后台"）。
+	// 2026-09 后台页面设计评审全量实测 4 个页面命中，见 SQL 头部注释。
+	// 新增传 Msg*Title 的页面时，务必同批 seed 词条 —— 否则它的顶栏会直接露出 key。
+	registerSeed(Seed{
+		Version:      "228-i18n-seed-page-titles",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('MsgContentTemplatesTitle','MsgInventorySourcesTitle','MsgInventoryPurchasesTitle','MsgMasterDataChangesTitle')",
+		SQL:          mustSQL("228_i18n_seed_page_titles.sql"),
+	})
+
+	// 229：后台页壳改造配套词条（13 key × 2 语言，zh-CN 13 行 / en-US 13 行）。
+	//
+	// 逐页改造（docs/02-H-admin-page-shell.md）新增的固定文案位：页头说明按钮的
+	// 无障碍标签、列表空状态（标题 + 一句话）、操作列表头、筛选行「重置」。
+	// 与 228 同理：模板兜底只在缺词条时显示中文，英文界面会因此回落中文，
+	// 所以新 key 必须同批 seed（门禁见 admin_group_f_i18n_test.go 的双向校验）。
+	registerSeed(Seed{
+		Version:      "229-i18n-seed-admin-page-shell",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 13 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.common.action.reset','admin.common.field.project','admin.customers.help.label','admin.customers.list.empty_heading','admin.i18n.col.actions','admin.i18n.help.label','admin.i18n.list.empty_desc','admin.i18n.list.empty_title','admin.product_pricing.help.label','admin.product_pricing.history.note','admin.product_pricing.history.noteTail','admin.product_pricing.rules.note','admin.returns.help.label')",
+		SQL:          mustSQL("229_i18n_seed_admin_page_shell.sql"),
+	})
+
+	// 230：列表页标准骨架配套词条（77 key × 2 语言，zh-CN 77 行 / en-US 77 行）。
+	//
+	// 本轮引入的固定文案位：① 骨架通用件 —— 首列勾选框与批量条（全选 / 选中计数 /
+	// 批量删除 / 行勾选无障碍标签）；② 仪表盘改为真实概览后的统计卡与最近页面列表；
+	// ③ 商品分类 / 商品品牌表格化的列头、空状态与批量删除确认。
+	// 与 228 / 229 同理：模板兜底只在缺词条时显示中文，英文界面会回落中文。
+	// ConditionSQL 取本批 3 个代表 key 的 zh-CN 行数作门槛（不用全库计数，
+	// 否则存量库永远满足、补词条永远不会执行）。
+	registerSeed(Seed{
+		Version:      "230-i18n-seed-list-skeleton",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.common.bulk.selectAll','admin.dashboard.stat.projects','admin.product_categories.empty.title')",
+		SQL:          mustSQL("230_i18n_seed_list_skeleton.sql"),
+	})
+
+	// 231：列表页标准骨架第二轮（通用件 + 变更记录页签，20 key × 2 语言）。
+	//
+	// 通用件（说明按钮、操作列表头、预览动作、字数提示）已被多页复用；
+	// 变更记录页把「逐条记录 / 按实体汇总」改成页签后新增了页签组与两个表格的无障碍标签。
+	// 本轮其余页面的新增文案位（223 个 key）尚未翻译，清单见 docs/02-I-admin-i18n-todo.md。
+	registerSeed(Seed{
+		Version:      "231-i18n-seed-list-skeleton-two",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.common.help.label','admin.masterdata.view.records','admin.masterdata.label.range')",
+		SQL:          mustSQL("231_i18n_seed_list_skeleton_two.sql"),
+	})
+
+	// 232：第四轮后台页面改造的全部新增文案位（223 key × 2 语言）。
+	//
+	// 本轮改造覆盖 55 个后台页面，产生了大量新文案位（页签组、空态标题、筛选标签、
+	// 行内动作、危险操作确认……）。模板兜底只在缺词条时生效，英文界面会回落中文，
+	// 故成对 seed。逐条中文对照见 docs/02-I-admin-i18n-todo.md。
+	registerSeed(Seed{
+		Version:      "232-i18n-seed-admin-pages-round4",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.products.col.name','admin.inventory.change.actionLabel','admin.mail.marketing.status.hint')",
+		SQL:          mustSQL("232_i18n_seed_admin_pages_round4.sql"),
+	})
+
+	// 233：商品详情拆页配套词条（25 key × 2 语言）。
+	//
+	// 商品详情从列表页拆出后，详情页自身（标题 / 返回 / 各区块标题 / 各区块说明）
+	// 与列表页新列头（价格区间 / 分类 / 品牌 / 详情 / 预览详情页）都产生了新文案位。
+	registerSeed(Seed{
+		Version:      "233-i18n-seed-product-detail",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('admin.product_detail.title','admin.products.col.categories','admin.products.row.detail')",
+		SQL:          mustSQL("233_i18n_seed_product_detail.sql"),
+	})
+
+	// 235：仪表盘降级提示（1 key × 2 语言）。
+	//
+	// 仪表盘改为真实概览后，数据源读取失败不再整页 500，而是渲染页面壳 + 一条提示。
+	registerSeed(Seed{
+		Version:      "235-i18n-seed-dashboard-degrade",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.dashboard.loadError'",
+		SQL:          mustSQL("235_i18n_seed_dashboard_degrade.sql"),
+	})
 }

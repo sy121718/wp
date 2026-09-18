@@ -6,6 +6,7 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminservice "go_wp/internal/module/admin/service"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/auth"
 	r "go_wp/pkg/response"
 
@@ -102,6 +103,9 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 }
 
 // AdminLogout 注销当前登录会话。
+//
+// 这里取的是「当前会话主体」而非审计操作人，且要区分「未登录(401)」与「会话值
+// 类型异常(500)」两种失败 —— shell.CurrentUserID 会把两者都压成 0，故不换它。
 func (h *Handle) AdminLogout(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -129,6 +133,8 @@ func (h *Handle) AdminLogout(c *gin.Context) {
 }
 
 // AdminProfile 获取当前登录用户信息。
+//
+// 同 AdminLogout：会话主体 + 401/500 两种失败要分开，不走 shell 入口。
 func (h *Handle) AdminProfile(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -206,13 +212,13 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 		return
 	}
 
-	userID, exists := c.Get("user_id")
-	uid, ok := userID.(int64)
-	if !exists || !ok || uid <= 0 {
+	// 操作人取统一入口（会话注入，禁止前端伪造）；取不到即视为未登录。
+	uid := shell.CurrentUserID(c)
+	if uid == 0 {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
 		return
 	}
-	req.OperatorID = uint64(uid)
+	req.OperatorID = uid
 
 	res, err := h.admin.AdminDelete(c.Request.Context(), &req)
 	if err != nil {
@@ -245,14 +251,13 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	// 注入当前操作者（超管保护判定依据，禁止前端伪造）。
-	userID, exists := c.Get("user_id")
-	uid, ok := userID.(int64)
-	if !exists || !ok || uid <= 0 {
+	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
+	uid := shell.CurrentUserID(c)
+	if uid == 0 {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
 		return
 	}
-	req.OperatorID = uint64(uid)
+	req.OperatorID = uid
 	res, err := h.admin.AdminRoleSave(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())
@@ -292,6 +297,8 @@ func (h *Handle) AdminMenuSave(c *gin.Context) {
 }
 
 // AdminRoutes 动态路由权限投影。
+//
+// 同 AdminLogout：会话主体 + 401/500 两种失败要分开，不走 shell 入口。
 func (h *Handle) AdminRoutes(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {

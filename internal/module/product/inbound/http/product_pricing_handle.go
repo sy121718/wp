@@ -95,6 +95,9 @@ func (h *Handle) GetPriceAdjustment(c *gin.Context) {
 // 后台页面路径也一直是用登录名）。登录名缺失（脚本 / 测试路径）时退回数值 id ——
 // 会话中间件写入的 user_id 是 int64，这里只做展示用的文本化，不参与任何鉴权判断。
 // 两者都没有时返回空串：留痕字段允许为空。
+//
+// 不走 shell.CurrentUserIDText：要保留「先登录名、后 id 文本」的组合语义，且非 int64
+// 原始值分支要照旧（脚本 / 测试路径可能写入别的形状），shell 入口只认 int64。
 func operatorFromContext(c *gin.Context) (id string) {
 	if name := strings.TrimSpace(builtin.GetUsername(c)); name != "" {
 		return name

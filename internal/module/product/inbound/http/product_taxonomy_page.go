@@ -9,7 +9,9 @@ package producthttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -54,6 +56,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
 		"Options": categoryPickOptions(flat),
 		"Err":     strings.TrimSpace(c.Query("err")),
+		"Done":    strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -111,6 +114,37 @@ func (h *productPageHandle) ProductCategoriesDelete(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID)
 }
 
+// ProductCategoriesBulkDelete 批量删除分类。
+//
+// 逐条走同一条删除路径：有子分类或被商品引用的那一条由服务端拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	target := "/admin/product-categories?project=" + url.QueryEscape(projectID)
+	switch {
+	case skipped > 0:
+		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（有子分类或被商品引用）", deleted, skipped))
+	case deleted > 0:
+		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个分类", deleted))
+	}
+	c.Redirect(http.StatusFound, target)
+}
+
 // ProductBrandsPage 品牌管理页：工程切换 + 品牌列表 + 内联新建表单。
 func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -135,6 +169,7 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 		"SelectedProject": selected,
 		"Brands":          brands,
 		"Err":             strings.TrimSpace(c.Query("err")),
+		"Done":            strings.TrimSpace(c.Query("done")),
 	}))
 }
 
@@ -190,6 +225,37 @@ func (h *productPageHandle) ProductBrandsDelete(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID)
 }
 
+// ProductBrandsBulkDelete 批量删除品牌。
+//
+// 逐条走同一条删除路径：被商品引用的那一条由服务端拒绝，其余照常删除 ——
+// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, "/admin/product-brands?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	target := "/admin/product-brands?project=" + url.QueryEscape(projectID)
+	switch {
+	case skipped > 0:
+		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（品牌不存在或被商品引用）", deleted, skipped))
+	case deleted > 0:
+		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个品牌", deleted))
+	}
+	c.Redirect(http.StatusFound, target)
+}
+
 // ProductsTaxonomySet 整体替换某商品挂的分类与品牌（issue #10）。
 //
 // 分类勾选框一个都没勾时浏览器不发该字段，而「一个都不勾」在这里是明确的
@@ -204,16 +270,16 @@ func (h *productPageHandle) ProductsTaxonomySet(c *gin.Context) {
 	primary := strings.TrimSpace(c.PostForm("primaryCategoryId"))
 	brand := strings.TrimSpace(c.PostForm("brandId"))
 	req := &productdto.UpdateReq{
-		ID:                c.PostForm("id"),
+		ID:                formProductID(c),
 		CategoryIDs:       categoryIDs,
 		PrimaryCategoryID: &primary,
 		BrandID:           &brand,
 	}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/products?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, err.Error()))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/products?project="+projectID)
+	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))
 }
 
 // flatCategories 取某工程的分类树并摊平成 DFS 前序列表（工程为空时返回空列表）。

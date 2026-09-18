@@ -1,72 +1,129 @@
 {* admin/pages.html — 页面管理列表：站点工程/页面新建与工作台入口 *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§7）：
+     · 两个「新建」卡删除：主行动（创建工程 / 创建页面）并进页头 .page-actions；
+     · 领域说明进页头 .help 悬浮，正文零说明文字；
+     · 列表是 .list-card 内的标准表格，操作列放末列 .col-actions。 *}
 {* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "layout.html"}}
+{{import "partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{canCreateProject := isset(.PermSet["project:create"])}}
+{{canCreatePage := isset(.PermSet["page:create"])}}
+{{canDelete := isset(.PermSet["page:delete"])}}
 <div class="stack">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.pages.create_project_heading", "新建站点工程") }}</h2>
-        {* 两个创建表单各自一个抽屉（本页两个实体：站点工程 / 页面）。 *}
-        {{if isset(.PermSet["project:create"])}}
-        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-project-create" data-drawer-title="{{ .["t"]("admin.pages.create_project_heading", "新建站点工程") }}">＋ {{ .["t"]("admin.pages.create_project_submit", "创建工程") }}</button>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}</h2>
-        {{if len(.Projects) > 0}}
-        {{if isset(.PermSet["page:create"])}}
-        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-page-create" data-drawer-title="{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}">＋ {{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
-        {{end}}
-        {{else}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.pages.no_project", "先创建一个站点工程，再新建页面。") }}</p>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</h2>
-        {{if len(.Pages) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.pages.empty", "还没有页面，先用上方表单创建一个。") }}</p>
-        {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.pages.table_aria", "页面列表") }}"><table class="data-table">
-            <thead>
-            <tr><th>{{ .["t"]("admin.pages.col.path", "路径") }}</th><th>{{ .["t"]("admin.pages.col.kind", "类型") }}</th><th>{{ .["t"]("admin.pages.col.status", "状态") }}</th><th>{{ .["t"]("admin.pages.col.version", "草稿版本") }}</th><th>{{ .["t"]("admin.pages.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.pages.col.actions", "操作") }}</th></tr>
-            </thead>
-            <tbody>
-            {{range _, p := .Pages}}
-            <tr>
-                <td class="text-mono">{{p.DraftPath}}</td>
-                <td>{{p.Kind}}</td>
-                <td>
-                    {{if p.Active}}
-                    <span class="badge badge-success">{{tr("admin.pages.status.published", "已发布")}}</span>
-                    {{if p.Stale}}<span class="badge badge-warning">{{tr("admin.pages.status.stale", "有更新未发布")}}</span>{{end}}
-                    {{else if p.Staged}}<span class="badge badge-info">{{tr("admin.pages.status.staged", "已暂存待发布")}}</span>
-                    {{else}}<span class="badge badge-mute">{{tr("admin.pages.status.draft", "草稿")}}</span>{{end}}
-                </td>
-                <td>v{{p.Version}}</td>
-                <td>{{p.UpdatedAt}}</td>
-                <td class="action-row">
-                    <a class="btn" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
-                    <a class="btn" href="/workbench/preview?id={{p.ID}}" target="_blank">{{tr("admin.pages.action.preview", "预览")}}</a>
-                    {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
-                    <a class="btn" href="/admin/page/translations?pageId={{p.ID}}">{{tr("admin.pages.action.translations", "多语言")}}</a>
-                    {{if p.Active}}
-                    <a class="btn" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
-                    {{end}}
-                </td>
-            </tr>
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.pages.help.intro", "页面是手工搭建的产物：在画布（工作台）里编辑草稿，构建后发布到访问面。列表里的「多语言」进入该页的译文工作台；「已暂存待发布」表示草稿已经构建过但还没激活到线上。") }}<br><br>{{ .["t"]("admin.pages.no_project", "先创建一个站点工程，再新建页面。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if canCreateProject}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-project-create" data-drawer-title="{{ .["t"]("admin.pages.create_project_heading", "新建站点工程") }}">＋ {{ .["t"]("admin.pages.create_project_submit", "创建工程") }}</button>
             {{end}}
-            </tbody>
-        </table></div>
+            {{if len(.Projects) > 0}}
+            {{if canCreatePage}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-page-create" data-drawer-title="{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}">＋ {{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
+            {{end}}
+            {{end}}
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err / Done，
+       缺失键会让整页在这一行中断（HTTP 仍 200，后半部分整块消失）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.pages.last_error", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {{if len(.Pages) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.pages.empty.title", "还没有页面") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.pages.empty", "还没有页面，先用上方表单创建一个。") }}</p>
+        </div>
+        {{else}}
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</strong>
+        </div>
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的（HTML 不允许 form 嵌套，
+           所以行内删除表单放表格外、按钮用 form="<id>" 关联）。form 只包 .table-wrap 而不是
+           整张 .list-card：.list-toolbar 必须保持 .list-card 的直接子元素（样式与脚本按此定位）。 *}
+        <form method="post" action="/admin/pages/bulk-delete">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            {{if canDelete}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.pages.bulk_delete_confirm", "删除选中的页面？页面已发布的路径会一并从线上下线（旧链接直接 404），草稿与产物一并删除。"), danger=true)}}
+            {{yield bulkBarClose()}}
+            {{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.pages.table_aria", "页面列表") }}">
+            <table class="data-table">
+                <thead>
+                <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.pages.col.path", "路径") }}</th><th>{{ .["t"]("admin.pages.col.kind", "类型") }}</th><th>{{ .["t"]("admin.pages.col.status", "状态") }}</th><th>{{ .["t"]("admin.pages.col.version", "草稿版本") }}</th><th>{{ .["t"]("admin.pages.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.pages.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                {{range _, p := .Pages}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{p.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td class="text-mono">{{p.DraftPath}}</td>
+                    <td>{{p.Kind}}</td>
+                    <td>
+                        {{if p.Active}}
+                        <span class="badge badge-success">{{tr("admin.pages.status.published", "已发布")}}</span>
+                        {{if p.Stale}}<span class="badge badge-warning">{{tr("admin.pages.status.stale", "有更新未发布")}}</span>{{end}}
+                        {{else if p.Staged}}<span class="badge badge-info">{{tr("admin.pages.status.staged", "已暂存待发布")}}</span>
+                        {{else}}<span class="badge badge-mute">{{tr("admin.pages.status.draft", "草稿")}}</span>{{end}}
+                    </td>
+                    <td>v{{p.Version}}</td>
+                    <td class="text-mute text-sm">{{p.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
+                        <a class="btn btn-sm btn-ghost" href="/workbench/preview?id={{p.ID}}" target="_blank">{{tr("admin.pages.action.preview", "预览")}}</a>
+                        {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
+                        <a class="btn btn-sm btn-ghost" href="/admin/page/translations?pageId={{p.ID}}">{{tr("admin.pages.action.translations", "多语言")}}</a>
+                        {{if p.Active}}
+                        <a class="btn btn-sm btn-ghost" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
+                        {{end}}
+                        {{if canDelete}}
+                        <button type="submit" form="page-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
         {{end}}
     </section>
 
-    {{if isset(.PermSet["project:create"])}}
+    {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+       表单本身带 data-confirm / data-confirm-danger —— 提交前二次确认，路径会从线上下线。 *}
+    {{range _, p := .Pages}}
+    {{if canDelete}}
+    <form id="page-del-{{p.ID}}" class="hidden-form" method="post" action="/admin/pages/delete"
+          data-confirm="{{tr("admin.pages.list.delete_confirm_prefix", "确定删除页面「")}}{{p.DraftPath|safeJs}}{{tr("admin.pages.list.delete_confirm_suffix", "」？已发布的路径会从线上下线（旧链接直接 404）。")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+    </form>
+    {{end}}
+    {{end}}
+
+    {{if canCreateProject}}
     <template id="tpl-project-create">
         <form method="post" action="/admin/projects/create">
-            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
             <div class="form-row">
                 <div class="form-group">
                     <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.pages.project_name_placeholder", "站点工程名称，如：官网") }}" required>
@@ -80,10 +137,10 @@
     </template>
     {{end}}
 
-    {{if isset(.PermSet["page:create"])}}
+    {{if canCreatePage}}
     <template id="tpl-page-create">
         <form method="post" action="/admin/pages/create">
-            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">{{ .["t"]("admin.pages.col_project", "所属工程") }}</label>

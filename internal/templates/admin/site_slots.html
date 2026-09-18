@@ -1,4 +1,9 @@
 {* admin/site_slots.html — 系统页面槽位：把「结算页是哪一页」这类事实固定下来（BIZ-1） *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§3/§7）：
+     · 三段领域说明与两条口径提示整段进页头 .help 悬浮，正文零说明文字；
+     · 工程选择器与概览统计同一行置于 .page-head；
+     · 槽位是 .data-table，末列 .col-actions 放绑定 / 解绑；
+     · 行内表单放表格外，绑定用的下拉与按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；map 取值用 ["key"]；range 内访问外层值先在 block 顶部存变量。 *}
 {* 无 JS 也能用：工程切换是原生 form GET，绑定 / 换绑 / 解绑都是原生表单 POST + csrf_token 隐藏域， *}
 {* 提交后服务端 302 回本页，结论经 ?ok= / ?err= 回显（两者都过服务端白名单）。 *}
@@ -10,129 +15,139 @@
 {{rows := .Rows}}
 {{tr := .["t"]}}
 <div class="stack site-slots-page">
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.site_slots.title", "系统页面") }}</h2>
-        {{if .Err != ""}}
-        <p class="badge badge-warning">{{ .["t"]("admin.site_slots.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-        {{end}}
-        {{if .Ok != ""}}
-        <p class="badge badge-success">{{.Ok}}</p>
-        {{end}}
-        <p class="hint">
-            {{ .["t"]("admin.site_slots.intro1.lead", "这一页把「") }}<strong>{{ .["t"]("admin.site_slots.intro1.strong", "结算页是哪一页") }}</strong>{{ .["t"]("admin.site_slots.intro1.mid", "」这类事实固定下来：购物车片段的「去结算」、访客订单列表的「查看订单」、登录页与注册页的互跳，都来这里取路径。") }}
-            <strong>{{ .["t"]("admin.site_slots.intro1.strong2", "改页面的 URL 不影响这里的绑定") }}</strong>{{ .["t"]("admin.site_slots.intro1.tail", " —— 槽位绑的是页面本身，页面换了访问路径，指向它的链接自动跟着走。") }}
-        </p>
-        <p class="hint">
-            {{ .["t"]("admin.site_slots.intro2.lead", "一个槽位最多绑一页，但") }}<strong>{{ .["t"]("admin.site_slots.intro2.strong", "一页可以同时担任多个槽位") }}</strong>{{ .["t"]("admin.site_slots.intro2.mid", "（「个人中心页同时是订单页」是常见用法）。") }}<strong>{{ .["t"]("admin.site_slots.intro2.strong2", "槽位空着不是错误") }}</strong>{{ .["t"]("admin.site_slots.intro2.tail", " —— 这个站没有博客、没有结算页，就让它空着。") }}
-        </p>
-        <p class="hint">
-            <strong>{{ .["t"]("admin.site_slots.intro3.strong", "改完记得重新构建。") }}</strong>{{ .["t"]("admin.site_slots.intro3.mid1", "槽位的路径是") }}<strong>{{ .["t"]("admin.site_slots.intro3.strong2", "构建期") }}</strong>{{ .["t"]("admin.site_slots.intro3.mid2", "烘进产物里的链接：这里保存之后，该工程的页面会被标记为") }}<strong>{{ .["t"]("admin.site_slots.intro3.strong3", "待重建") }}</strong>{{ .["t"]("admin.site_slots.intro3.tail", "，重新构建那些页面，新链接才会出现在访问面（已经发布的静态产物不会自己变）。") }}
-        </p>
-        <form method="get" action="/admin/site-slots" class="form-inline">
-            <select class="form-select" name="project" onchange="this.form.submit()">
-                {{range _, p := .Projects}}
-                <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
-                {{end}}
-            </select>
-        </form>
-        {{if len(.Projects) == 0}}
-        <p class="hint">{{ .["t"]("admin.site_slots.no_project.lead", "还没有站点工程 —— 先去") }}<a href="/admin/pages">{{ .["t"]("admin.site_slots.pages_link", "页面管理") }}</a>{{ .["t"]("admin.site_slots.no_project.tail", "建一个工程，槽位是挂在工程下的。") }}</p>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.site_slots.overview.title", "概览") }}</h2>
-        <div class="action-row">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.site_slots.title", "系统页面") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.site_slots.intro1.lead", "这一页把「") }}<strong>{{ .["t"]("admin.site_slots.intro1.strong", "结算页是哪一页") }}</strong>{{ .["t"]("admin.site_slots.intro1.mid", "」这类事实固定下来：购物车片段的「去结算」、访客订单列表的「查看订单」、登录页与注册页的互跳，都来这里取路径。") }}<strong>{{ .["t"]("admin.site_slots.intro1.strong2", "改页面的 URL 不影响这里的绑定") }}</strong>{{ .["t"]("admin.site_slots.intro1.tail", " —— 槽位绑的是页面本身，页面换了访问路径，指向它的链接自动跟着走。") }}<br><br>{{ .["t"]("admin.site_slots.intro2.lead", "一个槽位最多绑一页，但") }}<strong>{{ .["t"]("admin.site_slots.intro2.strong", "一页可以同时担任多个槽位") }}</strong>{{ .["t"]("admin.site_slots.intro2.mid", "（「个人中心页同时是订单页」是常见用法）。") }}<strong>{{ .["t"]("admin.site_slots.intro2.strong2", "槽位空着不是错误") }}</strong>{{ .["t"]("admin.site_slots.intro2.tail", " —— 这个站没有博客、没有结算页，就让它空着。") }}<br><br><strong>{{ .["t"]("admin.site_slots.intro3.strong", "改完记得重新构建。") }}</strong>{{ .["t"]("admin.site_slots.intro3.mid1", "槽位的路径是") }}<strong>{{ .["t"]("admin.site_slots.intro3.strong2", "构建期") }}</strong>{{ .["t"]("admin.site_slots.intro3.mid2", "烘进产物里的链接：这里保存之后，该工程的页面会被标记为") }}<strong>{{ .["t"]("admin.site_slots.intro3.strong3", "待重建") }}</strong>{{ .["t"]("admin.site_slots.intro3.tail", "，重新构建那些页面，新链接才会出现在访问面（已经发布的静态产物不会自己变）。") }}<br><br>{{ .["t"]("admin.site_slots.overview.hint.lead", "「已绑定」只说明这个位置指到了某一页；") }}<strong>{{ .["t"]("admin.site_slots.overview.hint.strong", "访问面上到底有没有东西，还要看那一页发布没有") }}</strong>{{ .["t"]("admin.site_slots.overview.hint.mid", "。未发布时链接生成方会跳过该槽位（宁可没有链接，也不输出一个 404 的死链），所以上面后两个计数是") }}<strong>{{ .["t"]("admin.site_slots.overview.hint.strong2", "需要处理") }}</strong>{{ .["t"]("admin.site_slots.overview.hint.tail", "的信号，不是可以忽略的统计。") }}<br><br>{{ .["t"]("admin.site_slots.foot.lead", "下拉里显示的是") }}<strong>{{ .["t"]("admin.site_slots.foot.strong", "页面的草稿路径") }}</strong>{{ .["t"]("admin.site_slots.foot.tail", "：页面没有「标题」这个概念，路径是它唯一稳定的身份。绑的是页面本身（id 不可变），所以之后改页面 URL 不用回来重绑。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/site-slots">
+                <label class="sr-only" for="slots-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="slots-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            <span class="sr-only">{{ .["t"]("admin.site_slots.overview.title", "概览") }}</span>
             <span class="badge badge-mute">{{ .["t"]("admin.site_slots.bound_count", "已绑定") }} {{.BoundCount}} / {{.Total}}</span>
             <span class="badge {{if .UnpublishedCount != 0}}badge-warning{{else}}badge-mute{{end}}">{{ .["t"]("admin.site_slots.unpublished_count", "已绑定但未发布") }} {{.UnpublishedCount}}</span>
             <span class="badge {{if .DeletedCount != 0}}badge-danger{{else}}badge-mute{{end}}">{{ .["t"]("admin.site_slots.deleted_count", "绑定的页面已被删除") }} {{.DeletedCount}}</span>
         </div>
-        <p class="hint">
-            {{ .["t"]("admin.site_slots.overview.hint.lead", "「已绑定」只说明这个位置指到了某一页；") }}<strong>{{ .["t"]("admin.site_slots.overview.hint.strong", "访问面上到底有没有东西，还要看那一页发布没有") }}</strong>{{ .["t"]("admin.site_slots.overview.hint.mid", "。未发布时链接生成方会跳过该槽位（宁可没有链接，也不输出一个 404 的死链），所以上面后两个计数是") }}<strong>{{ .["t"]("admin.site_slots.overview.hint.strong2", "需要处理") }}</strong>{{ .["t"]("admin.site_slots.overview.hint.tail", "的信号，不是可以忽略的统计。") }}
-        </p>
-    </section>
+    </header>
 
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.site_slots.slots.title", "槽位") }}（{{.Total}}{{ .["t"]("admin.site_slots.slots.count_suffix", " 个") }}）</h2>
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.site_slots.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+    {{if len(.Projects) == 0}}
+    <p class="badge badge-warning">{{ .["t"]("admin.site_slots.no_project.lead", "还没有站点工程 —— 先去") }}<a href="/admin/pages">{{ .["t"]("admin.site_slots.pages_link", "页面管理") }}</a>{{ .["t"]("admin.site_slots.no_project.tail", "建一个工程，槽位是挂在工程下的。") }}</p>
+    {{end}}
+
+    <section class="card list-card">
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.site_slots.slots.title", "槽位") }}（{{.Total}}{{ .["t"]("admin.site_slots.slots.count_suffix", " 个") }}）</strong>
+        </div>
         {{if selectedProject == ""}}
-        <p class="hint">{{ .["t"]("admin.site_slots.pick_project", "先在上面选一个站点工程。") }}</p>
+        <div class="empty-state">
+            <p class="empty-desc">{{ .["t"]("admin.site_slots.pick_project", "先在上面选一个站点工程。") }}</p>
+        </div>
         {{else if len(rows) == 0}}
-        <p class="hint">{{ .["t"]("admin.site_slots.no_rows", "没有取到槽位清单 —— 刷新重试；若一直为空，检查后端日志。") }}</p>
+        <div class="empty-state">
+            <p class="empty-desc">{{ .["t"]("admin.site_slots.no_rows", "没有取到槽位清单 —— 刷新重试；若一直为空，检查后端日志。") }}</p>
+        </div>
         {{else}}
         {{if .NoPages}}
-        <p class="hint">
-            {{ .["t"]("admin.site_slots.no_pages.lead", "这个工程") }}<strong>{{ .["t"]("admin.site_slots.no_pages.strong", "还没有页面") }}</strong> —— <strong>{{ .["t"]("admin.site_slots.no_pages.strong2", "先建页面，再回来把槽位指过去") }}</strong>{{ .["t"]("admin.site_slots.no_pages.mid", "：去") }}<a href="/admin/pages">{{ .["t"]("admin.site_slots.pages_link", "页面管理") }}</a>{{ .["t"]("admin.site_slots.no_pages.tail", "建一个页面（结算页 / 登录页……），再回到这里把它指给对应的槽位。现在不给选择框，是因为一个空下拉只会让你点一个必然失败的提交。") }}
-        </p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.site_slots.no_pages.lead", "这个工程") }}{{ .["t"]("admin.site_slots.no_pages.strong", "还没有页面") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.site_slots.no_pages.strong2", "先建页面，再回来把槽位指过去") }}{{ .["t"]("admin.site_slots.no_pages.mid", "：去") }}{{ .["t"]("admin.site_slots.no_pages.tail", "建一个页面（结算页 / 登录页……），再回到这里把它指给对应的槽位。现在不给选择框，是因为一个空下拉只会让你点一个必然失败的提交。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.site_slots.pages_link", "页面管理") }}</a>
+            </div>
+        </div>
         {{end}}
-        <div class="table-wrap" tabindex="0">
-        <table class="data-table data-table-wide site-slots-table">
-            <thead>
-            <tr><th>{{ .["t"]("admin.site_slots.col.slot", "槽位") }}</th><th>{{ .["t"]("admin.site_slots.col.usage", "用途") }}</th><th>{{ .["t"]("admin.site_slots.col.bound", "当前绑定") }}</th><th>{{ .["t"]("admin.site_slots.col.actions", "操作") }}</th></tr>
-            </thead>
-            <tbody>
-            {{range _, r := rows}}
-            <tr>
-                <td data-label="槽位">
-                    <strong>{{r.SlotName}}</strong>
-                    <span class="hint"><code>{{r.Slot}}</code></span>
-                    <span class="badge {{r.Badge}}">{{r.StateLabel}}</span>
-                </td>
-                <td data-label="用途">{{r.Usage}}</td>
-                <td data-label="当前绑定">
-                    {{if r.Unbound}}
-                    <span class="hint">{{tr("admin.site_slots.unbound", "未绑定（正常状态：这个站没有这个页面，就不用绑）。")}}</span>
-                    {{else if r.PageDeleted}}
-                    <p class="badge badge-danger">{{tr("admin.site_slots.page_deleted", "绑定的页面已被删除，请重新绑定或解绑")}}</p>
-                    <p class="hint">
-                        {{tr("admin.site_slots.deleted_page.lead", "这个槽位现在指向一个已经不存在的页面：链接生成方会跳过它，访问面这块是空的 —— 这是")}}<strong>{{tr("admin.site_slots.deleted_page.strong", "需要立刻修")}}</strong>{{tr("admin.site_slots.deleted_page.tail", "的状态。右侧可以换绑到别的页面，或直接解绑。")}}
-                    </p>
-                    {{else}}
-                    <p class="hint">{{tr("admin.site_slots.draft_path", "草稿路径")}} <code>{{r.DraftPath}}</code></p>
-                    {{if r.Published}}
-                    <p class="hint">{{tr("admin.site_slots.public_path", "线上路径")}} <a href="{{r.PublicURL}}" target="_blank" rel="noopener noreferrer">{{r.Path}}</a></p>
-                    {{else}}
-                    <p class="badge badge-warning">{{tr("admin.site_slots.unpublished.lead", "已绑定但")}}<strong>{{tr("admin.site_slots.unpublished.strong", "尚未发布")}}</strong>{{tr("admin.site_slots.unpublished.tail", " —— 链接生成方会跳过它（不会输出死链）")}}</p>
-                    <p class="hint">
-                        {{tr("admin.site_slots.unpublished.lead2", "这一页还没发布（或这个语言还没发布），所以现在没有线上路径。去")}}<a href="/admin/pages">{{tr("admin.site_slots.pages_link", "页面管理")}}</a>{{tr("admin.site_slots.unpublished.tail2", "把它发布，或在右侧换绑到已发布的页面。")}}
-                    </p>
-                    {{end}}
-                    {{end}}
-                </td>
-                <td data-label="操作">
-                    {{if r.Bound}}
-                    <form method="post" action="/admin/site-slots/unbind" class="form-inline">
-                        <input type="hidden" name="csrf_token" value="{{csrf}}">
-                        <input type="hidden" name="projectId" value="{{selectedProject}}">
-                        <input type="hidden" name="slot" value="{{r.Slot}}">
-                        <button type="submit" class="btn btn-sm">{{tr("admin.site_slots.action.unbind", "解绑")}}</button>
-                    </form>
-                    {{end}}
-                    {{if len(r.PageOptions) == 0}}
-                    <span class="hint">{{tr("admin.site_slots.no_pages_inline", "这个工程还没有页面，先去页面管理建一个，再回来把它指给这个槽位。")}}</span>
-                    {{else}}
-                    <form method="post" action="/admin/site-slots/bind" class="form-inline">
-                        <input type="hidden" name="csrf_token" value="{{csrf}}">
-                        <input type="hidden" name="projectId" value="{{selectedProject}}">
-                        <input type="hidden" name="slot" value="{{r.Slot}}">
-                        <select class="form-select" name="pageId" required>
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.site_slots.slots.title", "槽位") }}">
+            <table class="data-table data-table-wide site-slots-table">
+                <thead>
+                <tr><th>{{ .["t"]("admin.site_slots.col.slot", "槽位") }}</th><th>{{ .["t"]("admin.site_slots.col.usage", "用途") }}</th><th>{{ .["t"]("admin.site_slots.col.bound", "当前绑定") }}</th><th class="col-actions">{{ .["t"]("admin.site_slots.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                {{range _, r := rows}}
+                <tr>
+                    <td>
+                        <strong>{{r.SlotName}}</strong>
+                        <span class="text-mute text-sm"><code>{{r.Slot}}</code></span>
+                        <span class="badge {{r.Badge}}">{{r.StateLabel}}</span>
+                    </td>
+                    <td>{{r.Usage}}</td>
+                    <td>
+                        {{if r.Unbound}}
+                        <span class="text-mute text-sm">{{tr("admin.site_slots.unbound", "未绑定（正常状态：这个站没有这个页面，就不用绑）。")}}</span>
+                        {{else if r.PageDeleted}}
+                        <p class="badge badge-danger">{{tr("admin.site_slots.page_deleted", "绑定的页面已被删除，请重新绑定或解绑")}}</p>
+                        <p class="text-mute text-sm">{{tr("admin.site_slots.deleted_page.lead", "这个槽位现在指向一个已经不存在的页面：链接生成方会跳过它，访问面这块是空的 —— 这是")}}<strong>{{tr("admin.site_slots.deleted_page.strong", "需要立刻修")}}</strong>{{tr("admin.site_slots.deleted_page.tail", "的状态。右侧可以换绑到别的页面，或直接解绑。")}}</p>
+                        {{else}}
+                        <p class="text-mute text-sm">{{tr("admin.site_slots.draft_path", "草稿路径")}} <code>{{r.DraftPath}}</code></p>
+                        {{if r.Published}}
+                        <p class="text-mute text-sm">{{tr("admin.site_slots.public_path", "线上路径")}} <a href="{{r.PublicURL}}" target="_blank" rel="noopener noreferrer">{{r.Path}}</a></p>
+                        {{else}}
+                        <p class="badge badge-warning">{{tr("admin.site_slots.unpublished.lead", "已绑定但")}}<strong>{{tr("admin.site_slots.unpublished.strong", "尚未发布")}}</strong>{{tr("admin.site_slots.unpublished.tail", " —— 链接生成方会跳过它（不会输出死链）")}}</p>
+                        {{end}}
+                        {{end}}
+                    </td>
+                    <td class="col-actions">
+                        {{if r.Bound}}
+                        <button type="submit" form="slot-unbind-{{r.Slot}}" class="btn btn-sm">{{tr("admin.site_slots.action.unbind", "解绑")}}</button>
+                        {{end}}
+                        {{if len(r.PageOptions) == 0}}
+                        <span class="text-mute text-sm">{{tr("admin.site_slots.no_pages_inline", "这个工程还没有页面，先去页面管理建一个，再回来把它指给这个槽位。")}}</span>
+                        {{else}}
+                        <select class="form-select" form="slot-bind-{{r.Slot}}" name="pageId" required aria-label="{{tr("admin.site_slots.select_page", "（选择页面：显示的是页面草稿路径）")}}">
                             <option value="">{{tr("admin.site_slots.select_page", "（选择页面：显示的是页面草稿路径）")}}</option>
                             {{range _, o := r.PageOptions}}
                             <option value="{{o.ID}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>
                             {{end}}
                         </select>
-                        <button type="submit" class="btn btn-sm btn-primary">{{r.BindLabel}}</button>
-                    </form>
-                    {{end}}
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table>
+                        <button type="submit" form="slot-bind-{{r.Slot}}" class="btn btn-sm btn-primary">{{r.BindLabel}}</button>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
         </div>
-        <p class="hint">
-            {{ .["t"]("admin.site_slots.foot.lead", "下拉里显示的是") }}<strong>{{ .["t"]("admin.site_slots.foot.strong", "页面的草稿路径") }}</strong>{{ .["t"]("admin.site_slots.foot.tail", "：页面没有「标题」这个概念，路径是它唯一稳定的身份。绑的是页面本身（id 不可变），所以之后改页面 URL 不用回来重绑。") }}
-        </p>
         {{end}}
     </section>
+
+    {* 行内表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+       绑定用的下拉留在单元格里，但用 form="<id>" 指回这里的表单（HTML5 允许控件跨树关联）。 *}
+    {{if selectedProject != ""}}
+    {{range _, r := rows}}
+    {{if r.Bound}}
+    <form id="slot-unbind-{{r.Slot}}" class="hidden-form" method="post" action="/admin/site-slots/unbind"
+          data-confirm="{{tr("admin.site_slots.confirm.unbind", "解绑这个槽位？指向它的链接将不再生成（页面本身不受影响）。")}}">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="slot" value="{{r.Slot}}">
+    </form>
+    {{end}}
+    {{if len(r.PageOptions) != 0}}
+    <form id="slot-bind-{{r.Slot}}" class="hidden-form" method="post" action="/admin/site-slots/bind">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="slot" value="{{r.Slot}}">
+    </form>
+    {{end}}
+    {{end}}
+    {{end}}
 </div>
 {{end}}

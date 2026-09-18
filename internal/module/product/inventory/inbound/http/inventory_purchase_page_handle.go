@@ -82,14 +82,14 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 	filterSource := strings.TrimSpace(c.Query("sourceId"))
 	filterKeyword := strings.TrimSpace(c.Query("keyword"))
 
-	sources := h.sourceOptions(ctx, selected, "")
-	internalSources := h.sourceOptions(ctx, selected, inventoryenums.SourceTypeInternal)
+	// 本页只负责「采购单 → 逐行收货」这一件事。
+	// 「生产入库」与「进货历史」原先也挂在这里，属于功能归属错误，已分别归位：
+	//   · 生产入库 → 库存管理（它与采购单无关，是「手动改库存 + 写成本价」）；
+	//   · 进货历史 → 库存流水的 SKU / 原因筛选（它就是「按 SKU 看过往入库流水」）。
+	sources := sourceOptions(ctx, h.inventory, selected, "")
 	warehouses := h.purchaseWarehouseOptions(ctx, selected)
 	variants := h.purchaseVariantOptions(ctx, selected)
 	orders := h.purchaseOrderRows(ctx, selected, filterStatus, filterSource, filterKeyword, &pageErr)
-
-	historySKU := strings.TrimSpace(c.Query("sku"))
-	history := h.purchaseHistoryRows(ctx, selected, historySKU, &pageErr)
 
 	c.HTML(http.StatusOK, "admin/inventory_purchases.html", shell.Prepare(c, gin.H{
 		"title":           inventoryenums.MsgInventoryPurchasesTitle,
@@ -97,7 +97,6 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Sources":         sources,
-		"InternalSources": internalSources,
 		"Warehouses":      warehouses,
 		"VariantOptions":  variants,
 		"DraftLines":      purchaseDraftLines(),
@@ -106,13 +105,10 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 		"FilterStatus":    filterStatus,
 		"FilterSource":    filterSource,
 		"FilterKeyword":   filterKeyword,
-		"HistorySKU":      historySKU,
-		"History":         history,
 		// 一次性幂等键：每个表单一次渲染一个，双击提交只会产生一张入库单。
-		"ReceiptRequestID":    uuid.NewString(),
-		"ProductionRequestID": uuid.NewString(),
-		"Err":                 pageErr,
-		"Ok":                  strings.TrimSpace(c.Query("ok")),
+		"ReceiptRequestID": uuid.NewString(),
+		"Err":              pageErr,
+		"Ok":               strings.TrimSpace(c.Query("ok")),
 	}))
 }
 

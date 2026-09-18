@@ -184,11 +184,23 @@ func TestDrawerChromeLivesInBase(t *testing.T) {
 	}
 }
 
-// TestAdminTabsStayOutOfBaseUntilDesigned 后台没有页签用法之前，基座不加 tabs 块。
-func TestAdminTabsStayOutOfBaseUntilDesigned(t *testing.T) {
+// TestAdminTabsBaseAndUsageStayInSync 后台页签用法与 ui.css 基座块必须同时存在。
+//
+// 原判据（审计 UIK-011）是单向的：后台零用法之前基座不加 tabs 块，避免预置死样式，
+// 并约定等真正出现用法时「按这些用法归纳基座类，与 workbench.css 的 .wb-tabs / .wb-subtabs 划清边界」。
+// 现在后台确实有了用法（admin/masterdata_changes.html 的「逐条记录 / 按实体汇总」），
+// 基座已按约定补进 ui.css —— 判据随之转成双向守卫：
+//
+//	· 有用法、无基座 → 页签退化成浏览器默认的描边方块按钮（本仓库真踩过一次）；
+//	· 无用法、有基座 → 死样式。
+//
+// 边界：基座只管通用 .tabs / .tab-list / .tab / .tab-panel；
+// 工作台专用的 .wb-tabs / .wb-subtab 归 workbench.css，不在本判据范围内。
+func TestAdminTabsBaseAndUsageStayInSync(t *testing.T) {
 	tabTokens := map[string]bool{
 		"tab": true, "tabs": true, "nav-tabs": true, "tab-nav": true, "tab-btn": true,
 		"tab-panel": true, "tab-content": true, "tablist": true, "tab-item": true, "subtab": true,
+		"tab-list": true,
 	}
 	var found []string
 	files, err := filepath.Glob("admin/*.html")
@@ -205,15 +217,17 @@ func TestAdminTabsStayOutOfBaseUntilDesigned(t *testing.T) {
 		}
 	}
 	sort.Strings(found)
-	if len(found) > 0 {
-		t.Errorf("后台出现页签结构 %v：审计 UIK-011 要求 ui.css 提供 tabs 基座块（当前刻意没加，因为复核时后台零使用）。"+
-			"请先按这些用法归纳基座类，并与 workbench.css 的 .wb-tabs / .wb-subtabs 划清边界，再补样式", found)
-	}
-	ui := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
-	for _, sel := range []string{".tabs", ".tab", ".nav-tabs"} {
-		if uiCssHasSelector(uiCssSelectors(ui), sel) {
-			t.Errorf("ui.css 预置了 %s 选择器，但后台没有任何使用点：这是新增死样式（复核结论见 docs/audit 的 UIK-011）", sel)
-		}
+
+	sels := uiCssSelectors(uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css")))
+	hasBase := uiCssHasSelector(sels, ".tabs") &&
+		uiCssHasSelector(sels, ".tab-list") &&
+		uiCssHasSelector(sels, ".tab-panel")
+	switch {
+	case len(found) > 0 && !hasBase:
+		t.Errorf("后台出现了页签用法 %v，但 ui.css 没有对应基座块（.tabs / .tab-list / .tab-panel）："+
+			"缺基座时页签会退化成浏览器默认的描边方块按钮（role / aria 都对，只是看上去不是一个页签）", found)
+	case len(found) == 0 && hasBase:
+		t.Error("ui.css 预置了页签基座，但后台没有任何使用点：这是新增死样式（审计 UIK-011）")
 	}
 }
 

@@ -12,10 +12,12 @@ package userhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -61,10 +63,16 @@ func renderCustomerAdminTemplate(t *testing.T, name string, data gin.H) string {
 // —— 替身：后台客户契约（四条方法）与订单聚合（一条方法）——
 
 type fakeCustomerAdmin struct {
-	list       *userdto.CustomerListResp
-	detail     *userdto.CustomerResp
-	err        error
+	list   *userdto.CustomerListResp
+	detail *userdto.CustomerResp
+	err    error
+	// failIDs 这些 id 的单条写入失败（批量用例靠它构造「一条失败、其余照常」）。
+	failIDs map[uint64]bool
+	// unlockByID 按 id 指定解锁结果（不设则用 unlockRes / 默认「刚解锁」）。
+	unlockByID map[uint64]*userdto.CustomerUnlockResp
 	statusReq  *userdto.CustomerStatusReq
+	// statusIDs 依次收到的 id：钉住「批量确实逐条走了单条路径」。
+	statusIDs  []uint64
 	unlockRes  *userdto.CustomerUnlockResp
 	lastListRe *userdto.CustomerListReq
 }
@@ -86,8 +94,12 @@ func (f *fakeCustomerAdmin) GetCustomer(_ context.Context, _ uint64) (*userdto.C
 
 func (f *fakeCustomerAdmin) SetCustomerStatus(_ context.Context, req *userdto.CustomerStatusReq) (*userdto.CustomerStatusResp, error) {
 	f.statusReq = req
+	f.statusIDs = append(f.statusIDs, req.CustomerID)
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.failIDs[req.CustomerID] {
+		return nil, errors.New(userenums.ErrUserNotFound)
 	}
 	return &userdto.CustomerStatusResp{CustomerID: req.CustomerID, Status: req.Status, StatusLabel: "已停用"}, nil
 }
@@ -95,6 +107,9 @@ func (f *fakeCustomerAdmin) SetCustomerStatus(_ context.Context, req *userdto.Cu
 func (f *fakeCustomerAdmin) UnlockCustomer(_ context.Context, req *userdto.CustomerUnlockReq) (*userdto.CustomerUnlockResp, error) {
 	if f.err != nil {
 		return nil, f.err
+	}
+	if res, ok := f.unlockByID[req.CustomerID]; ok {
+		return res, nil
 	}
 	if f.unlockRes != nil {
 		return f.unlockRes, nil
@@ -161,6 +176,8 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	engine.GET("/admin/customers/detail", h.CustomerDetailPage)
 	engine.POST("/admin/customers/status", h.CustomerStatusSave)
 	engine.POST("/admin/customers/unlock", h.CustomerUnlock)
+	engine.POST("/admin/customers/bulk-status", h.CustomerBulkStatusSave)
+	engine.POST("/admin/customers/bulk-unlock", h.CustomerBulkUnlock)
 	return engine
 }
 
@@ -177,10 +194,23 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		"2026-09-01 10:30", "2026-09-20 08:05", "中国 北京",
 		"/admin/customers/detail?id=42", "/admin/customers/status",
 		"邮箱已验证 1", "user:customer_status",
+		// 首列勾选 + 批量条 + 两个批量端点（缺一整套批量都是摆设）
+		`action="/admin/customers/bulk-status"`, "/admin/customers/bulk-unlock",
+		"data-check-all", "data-check-item", "data-bulk-bar", `name="ids" value="42"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页渲染结果缺少 %q", want)
 		}
+	}
+
+	// 结构顺序：批量 form 包住表格，行内写操作表单必须在它**外面**。
+	// HTML 不允许 form 嵌套 —— 嵌套时解析器会丢掉内层 form 标签，
+	// 表现是「行内的停用 / 解除锁定按钮点了没反应」，且只有真实浏览器才暴露。
+	bulkForm := strings.Index(body, `action="/admin/customers/bulk-status"`)
+	table := strings.Index(body, `customers-page-table`)
+	rowForm := strings.Index(body, `id="customer-status-42"`)
+	if bulkForm < 0 || table < 0 || rowForm < 0 || !(bulkForm < table && table < rowForm) {
+		t.Errorf("批量 form / 表格 / 行内表单的顺序不对：bulk=%d table=%d row=%d", bulkForm, table, rowForm)
 	}
 }
 
@@ -204,6 +234,10 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 	}
 	if !strings.Contains(body, "客户还没完成邮箱验证") {
 		t.Errorf("待激活账号应当有说明文案")
+	}
+	// 说明行跨满所有列：加了首列勾选后是 colspan=7，否则表格错列。
+	if !strings.Contains(body, `colspan="7"`) {
+		t.Errorf("说明行的 colspan 应与列数一致（7）")
 	}
 }
 
@@ -229,11 +263,21 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 }
 
 // TestCustomersListTemplateEmptyState 没有数据时给明确说法，而不是空表格。
+//
+// 两种空要分开说（这是「徽章即筛选」的直接后果）：点「已停用 0」进来看到的是
+// 「该筛选条件下暂时没有账号」，而站点一个客户都没有时是「还没有客户」——
+// 用同一句话兜住，运营会以为站点里没人注册过（admin-ui-logic §7）。
 func TestCustomersListTemplateEmptyState(t *testing.T) {
-	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+	plain := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
 		customerListPageData(nil, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
-	if !strings.Contains(body, "没有符合条件的客户") {
-		t.Errorf("空列表应当给出说明文案")
+	if !strings.Contains(plain, "还没有客户") {
+		t.Errorf("无筛选的空列表应当说明「还没有客户」")
+	}
+
+	filtered := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+		customerListPageData(nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", "", false)))
+	if !strings.Contains(filtered, "该筛选条件下暂时没有账号") {
+		t.Errorf("带筛选的空列表应当说明「该筛选条件下暂时没有账号」")
 	}
 }
 
@@ -422,5 +466,182 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 				t.Errorf("回执文案应含 %q，实际 %s", tc.want, loc)
 			}
 		})
+	}
+}
+
+// TestCustomersBulkStatusRejectsUnknownTarget 与单条动作同口径：
+// 非法目标状态（待激活是注册流程的中间态）一律拒绝，且一条都不写。
+func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
+	fake := &fakeCustomerAdmin{}
+	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
+	engine := newCustomerTestEngine(h)
+
+	form := url.Values{"ids": {"42", "43"}, "toStatus": {"2"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-status", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if len(fake.statusIDs) != 0 {
+		t.Fatalf("非法目标状态不应调用 service：%v", fake.statusIDs)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "err=") {
+		t.Errorf("应当带错误提示回跳，实际 %s", loc)
+	}
+}
+
+// TestCustomersBulkNothingSelected 一条都没勾就提交：不当成功处理（表单是客户端可控的）。
+func TestCustomersBulkNothingSelected(t *testing.T) {
+	fake := &fakeCustomerAdmin{}
+	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
+	engine := newCustomerTestEngine(h)
+
+	form := url.Values{"toStatus": {"0"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-status", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if len(fake.statusIDs) != 0 {
+		t.Fatalf("没有勾选时不应调用 service：%v", fake.statusIDs)
+	}
+	loc := rec.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("回跳地址不可解析：%s", loc)
+	}
+	if u.Query().Get("done") != "" {
+		t.Errorf("没有勾选不应回带成功摘要：%s", loc)
+	}
+	if u.Query().Get("err") == "" {
+		t.Errorf("没有勾选应给出提示，实际 %s", loc)
+	}
+}
+
+// TestCustomersBulkUnlockDistinguishesNoop 「本来就没事」的账号不计入「已解除锁定」：
+// 混进成功是谎报，混进失败会让运营点第二次（而第二次结果一模一样）。
+func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
+	fake := &fakeCustomerAdmin{unlockByID: map[uint64]*userdto.CustomerUnlockResp{
+		42: {CustomerID: 42, Unlocked: true},
+		43: {CustomerID: 43},
+	}}
+	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
+	engine := newCustomerTestEngine(h)
+
+	form := url.Values{"ids": {"42", "43"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-unlock", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	loc := rec.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("回跳地址不可解析：%s", loc)
+	}
+	done := u.Query().Get("done")
+	for _, want := range []string{"已解除锁定 1 个", "1 个本来就未锁定"} {
+		if !strings.Contains(done, want) {
+			t.Errorf("回带的结果应含 %q，实际 %q", want, done)
+		}
+	}
+}
+
+// —— 计数徽章即筛选（同一维度只给一种控件）——
+
+// TestCustomersCounterTabsAreClickableFilters 徽章是链接，URL 由服务端生成：
+// 只动自己那个维度，其他条件保留；当前生效的那个带 aria-current 与图标。
+func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
+	data := customerListPageData(customerListSample(),
+		customerFilter{Status: customerStatusActive}, 1, 20, "", "", false)
+	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(data))
+
+	for _, want := range []string{"aria-current=\"true\"", "✓"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("徽章缺少选中态标记 %q", want)
+		}
+	}
+	// 链接按解析后的形态比对：Jet 会把属性值里的 & 转义（&amp; / &#38;），
+	// 断言原文会把「转义正确」这件事误判成「链接错了」。
+	hrefs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`href="(/admin/customers[^"]*)"`).FindAllStringSubmatch(body, -1) {
+		raw := strings.ReplaceAll(m[1], "&amp;", "&")
+		raw = strings.ReplaceAll(raw, "&#38;", "&")
+		hrefs[raw] = true
+	}
+	for _, want := range []string{
+		"/admin/customers",                          // 全部：不带任何维度取值
+		"/admin/customers?status=0",                 // 已停用：只改状态维度
+		"/admin/customers?locked=1&status=1",        // 已锁定：独立维度，状态保留
+		"/admin/customers?emailVerified=2&status=1", // 邮箱未验证：状态保留
+	} {
+		if !hrefs[want] {
+			t.Errorf("徽章链接缺少 %q，实际 %v", want, hrefs)
+		}
+	}
+	// 同一维度不能同时存在徽章与下拉：两套控件表达一个维度时，用户无法判断它们是否等价。
+	for _, gone := range []string{
+		`id="customers-filter-status"`,
+		`id="customers-filter-verified"`,
+	} {
+		if strings.Contains(body, gone) {
+			t.Errorf("状态 / 邮箱维度应当只剩徽章，不应再有下拉：%s", gone)
+		}
+	}
+}
+
+// TestCustomersPageHandlerParsesLockedFilter 「已锁定」是独立维度，必须真的进查询
+// （锁定只写 locked_until_time，账号状态仍是「正常」，拿状态筛选表达不了）。
+func TestCustomersPageHandlerParsesLockedFilter(t *testing.T) {
+	fake := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?locked=1", nil))
+
+	if fake.lastListRe == nil || !fake.lastListRe.LockedOnly {
+		t.Fatalf("locked=1 没有进查询条件：%+v", fake.lastListRe)
+	}
+}
+
+// —— 批量动作（POST /admin/customers/bulk-status、/admin/customers/bulk-unlock）——
+
+// TestCustomersBulkStatusKeepsGoingAfterOneFailure 单条失败不中断整批。
+//
+// 整批回滚是这里最要命的错误实现：运营看到「一条都没做」会反复重试，
+// 而每次重试都会把已经成功的那些再做一遍（重复写库、update_time 反复变化）。
+func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
+	fake := &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}}
+	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
+	engine := newCustomerTestEngine(h)
+
+	form := url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}, "keyword": {"alice"}, "page": {"2"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-status", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("批量动作应 302 回列表页，实际 %d", rec.Code)
+	}
+	if len(fake.statusIDs) != 3 {
+		t.Fatalf("三条都应逐条走到单条写入路径，实际 %v", fake.statusIDs)
+	}
+	loc := rec.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("回跳地址不可解析：%s", loc)
+	}
+	done := u.Query().Get("done")
+	for _, want := range []string{"已停用 2 个", "1 个未处理"} {
+		if !strings.Contains(done, want) {
+			t.Errorf("回带的结果应含 %q，实际 %q", want, done)
+		}
+	}
+	for _, want := range []string{"keyword=alice", "page=2"} {
+		if !strings.Contains(loc, want) {
+			t.Errorf("回跳应保留筛选 %q：%s", want, loc)
+		}
 	}
 }

@@ -1,64 +1,92 @@
-{* admin/plugins.html — 插件管理：列表/上传安装/启停/卸载（docs/06-plugin-system.md） *}
+{* admin/plugins.html — 插件管理：列表/上传安装/启停/卸载（docs/06-plugin-system.md）
+   列表页标准骨架（评审规则 admin-ui-logic §7）：
+     · 页头一行：标题 + ? 悬浮说明；正文零说明文字；
+     · 已安装插件占主区（列表卡），「安装插件」降为页尾区块（低频动作不占首屏）；
+     · 列表是标准表格 + 右侧操作列，行内表单放表格外（form 不能嵌套）。 *}
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
-    <section class="card card-body">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.plugins.list.title", "已安装插件") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.plugins.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.plugins.install.hint", "上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {{if isset(.Error)}}{{if .Error}}
+    <p class="badge badge-warning" role="alert">{{.Error}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {{if len(.Plugins) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.plugins.list.empty", "还没有安装插件。上传 zip 包安装你的第一个插件。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="#plugin-install">{{ .["t"]("admin.plugins.install.title", "安装插件") }}</a>
+            </div>
+        </div>
+        {{else}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.plugins.list.title", "已安装插件") }}">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>{{ .["t"]("admin.plugins.col.name", "名称") }}</th>
+                        <th>ID</th>
+                        <th>{{ .["t"]("admin.plugins.col.version", "版本") }}</th>
+                        <th>{{ .["t"]("admin.plugins.col.component_count", "组件数") }}</th>
+                        <th>{{ .["t"]("admin.plugins.col.status", "状态") }}</th>
+                        <th>{{ .["t"]("admin.plugins.col.installed_at", "安装时间") }}</th>
+                        <th class="col-actions">{{ .["t"]("admin.plugins.col.actions", "操作") }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range _, p := .Plugins}}
+                    <tr>
+                        <td><strong>{{p.Name}}</strong></td>
+                        <td><code>{{p.ID}}</code></td>
+                        <td>{{p.Version}}</td>
+                        <td>{{p.ComponentCount}}</td>
+                        <td>{{if p.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.plugins.status.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.plugins.status.disabled", "停用") }}</span>{{end}}</td>
+                        <td class="text-mute text-sm">{{p.InstalledAt}}</td>
+                        <td class="col-actions">
+                            <button type="submit" form="plugin-toggle-{{p.ID}}" class="btn btn-sm">{{if p.Enabled}}{{ .["t"]("admin.plugins.status.disabled", "停用") }}{{else}}{{ .["t"]("admin.plugins.status.enabled", "启用") }}{{end}}</button>
+                            <button type="submit" form="plugin-uninstall-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.plugins.action.uninstall", "卸载") }}</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}
+    </section>
+
+    {* 行内表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套在 <td> 里）。 *}
+    {{range _, p := .Plugins}}
+    <form id="plugin-toggle-{{p.ID}}" method="post" action="/admin/plugins/toggle" class="hidden-form">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+        <input type="hidden" name="enabled" value="{{if p.Enabled}}false{{else}}true{{end}}">
+    </form>
+    <form id="plugin-uninstall-{{p.ID}}" method="post" action="/admin/plugins/uninstall" class="hidden-form"
+          data-confirm="{{ .["t"]("admin.plugins.confirm.uninstall", "卸载将删除插件文件，确认？") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+    </form>
+    {{end}}
+
+    {* 安装：低频动作（装一次就不再动），放列表之后，不占首屏。 *}
+    <section class="card card-body" id="plugin-install">
         <h2>{{ .["t"]("admin.plugins.install.title", "安装插件") }}</h2>
-        <p class="hint">{{ .["t"]("admin.plugins.install.hint", "上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。") }}</p>
-        <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="form-inline mt-md">
+        <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="file" name="file" accept=".zip" required>
             <button type="submit" class="btn btn-primary">{{ .["t"]("admin.plugins.install.submit", "上传并安装") }}</button>
         </form>
-        {{if .Error}}
-        <p class="text-mute text-sm">{{.Error}}</p>
-        {{end}}
-    </section>
-
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.plugins.list.title", "已安装插件") }}</h2>
-        {{if len(.Plugins) == 0}}
-        <p class="text-mute text-sm">{{ .["t"]("admin.plugins.list.empty", "还没有安装插件。上传 zip 包安装你的第一个插件。") }}</p>
-        {{else}}
-        <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.plugins.list.title", "已安装插件") }}"><table class="data-table">
-            <thead>
-                <tr>
-                    <th>{{ .["t"]("admin.plugins.col.name", "名称") }}</th>
-                    <th>ID</th>
-                    <th>{{ .["t"]("admin.plugins.col.version", "版本") }}</th>
-                    <th>{{ .["t"]("admin.plugins.col.component_count", "组件数") }}</th>
-                    <th>{{ .["t"]("admin.plugins.col.status", "状态") }}</th>
-                    <th>{{ .["t"]("admin.plugins.col.installed_at", "安装时间") }}</th>
-                    <th>{{ .["t"]("admin.plugins.col.actions", "操作") }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range _, p := .Plugins}}
-                <tr>
-                    <td>{{p.Name}}</td>
-                    <td><code>{{p.ID}}</code></td>
-                    <td>{{p.Version}}</td>
-                    <td>{{p.ComponentCount}}</td>
-                    <td>{{if p.Enabled}}<span class="badge badge-ok">{{ .["t"]("admin.plugins.status.enabled", "启用") }}</span>{{else}}<span class="badge">{{ .["t"]("admin.plugins.status.disabled", "停用") }}</span>{{end}}</td>
-                    <td>{{p.InstalledAt}}</td>
-                    <td>
-                        <form method="post" action="/admin/plugins/toggle" class="inline-form">
-                            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                            <input type="hidden" name="id" value="{{p.ID}}">
-                            <input type="hidden" name="enabled" value="{{if p.Enabled}}false{{else}}true{{end}}">
-                            <button type="submit" class="btn btn-secondary btn-sm">{{if p.Enabled}}{{ .["t"]("admin.plugins.status.disabled", "停用") }}{{else}}{{ .["t"]("admin.plugins.status.enabled", "启用") }}{{end}}</button>
-                        </form>
-                        <form method="post" action="/admin/plugins/uninstall" class="inline-form" data-confirm="{{ .["t"]("admin.plugins.confirm.uninstall", "卸载将删除插件文件，确认？") }}">
-                            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-                            <input type="hidden" name="id" value="{{p.ID}}">
-                            <button type="submit" class="btn btn-danger btn-sm">{{ .["t"]("admin.plugins.action.uninstall", "卸载") }}</button>
-                        </form>
-                    </td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table></div>
-        {{end}}
     </section>
 </div>
 {{end}}

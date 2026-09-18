@@ -50,6 +50,12 @@ func (s *stubTemplateService) List(context.Context, *contenttemplatedto.ListReq)
 	return nil, nil
 }
 
+// Delete 删除模板：呈现侧的解析链路不消费这个能力（契约随 contenttemplate 的删除权限点一起扩），
+// 桩件只要形状对得上 —— 没有它这个包连编译都过不去。
+func (s *stubTemplateService) Delete(context.Context, *contenttemplatedto.DeleteReq) error {
+	return nil
+}
+
 func (s *stubTemplateService) ResolveTemplate(context.Context, string) (*contenttemplatecontract.ResolvedTemplate, error) {
 	return s.resolved, s.resolveErr
 }

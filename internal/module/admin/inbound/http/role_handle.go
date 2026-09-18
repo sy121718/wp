@@ -3,6 +3,7 @@ package adminhttp
 import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
+	"go_wp/internal/web/shell"
 	r "go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -102,14 +103,13 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	// 注入当前操作者（超管保护判定依据，禁止前端伪造）。
-	userID, exists := c.Get("user_id")
-	uid, ok := userID.(int64)
-	if !exists || !ok || uid <= 0 {
+	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
+	uid := shell.CurrentUserID(c)
+	if uid == 0 {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
 		return
 	}
-	req.OperatorID = uint64(uid)
+	req.OperatorID = uid
 	res, err := h.role.RoleMenuSave(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())
@@ -140,14 +140,13 @@ func (h *Handle) RoleUserSave(c *gin.Context) {
 		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
 		return
 	}
-	// 注入当前操作者（超管保护判定依据，禁止前端伪造）。
-	userID, exists := c.Get("user_id")
-	uid, ok := userID.(int64)
-	if !exists || !ok || uid <= 0 {
+	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
+	uid := shell.CurrentUserID(c)
+	if uid == 0 {
 		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
 		return
 	}
-	req.OperatorID = uint64(uid)
+	req.OperatorID = uid
 	res, err := h.role.RoleUserSave(c.Request.Context(), &req)
 	if err != nil {
 		r.ErrorWithMessage(c, 400, err.Error())

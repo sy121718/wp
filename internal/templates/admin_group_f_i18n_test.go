@@ -40,6 +40,61 @@ var groupFTemplates = []string{
 	"admin/analytics.html",
 }
 
+// groupFRetiredKeys 随版式改版退役的词条。
+//
+// 它们由 193（历史迁移，按约定保持原样）seed，但取用它们的版式已被取代：词条留在库里
+// 只占一行、不影响任何页面，只是不再有任何模板取用。显式登记，而不是回头去删 193 里的行 ——
+// 改历史迁移既违反约定，也不会让已跑过的库丢掉这些词条，只会让「新库少几行、老库多几行」
+// 这种差异变得不可见。
+var groupFRetiredKeys = map[string]bool{
+	// admin/i18n.html 从「三张卡」改为「页头 + 列表卡」：分页文字说明改由 shell 的分页条
+	// 承担（shell.pagination.info，见 internal/web/shell/pagination.go），页尾那张
+	// 「新增 / 编辑」卡片由页头的新建按钮取代。
+	"admin.i18n.pager.total_pre":  true,
+	"admin.i18n.pager.total_post": true,
+	"admin.i18n.pager.page_post":  true,
+	"admin.i18n.form.title":       true,
+	// admin/masterdata_changes.html：「记录表 / 实体汇总表」改为按视图二选一，
+	// 两个表头里的「（共 N 条 / 个）」计数随之退役 —— 记录视图的总数改由分页条给出，
+	// 实体视图只在被截断时才提示，标题不再拼计数（标题拼计数会让表头长度随数据变化）。
+	"admin.masterdata.rows.headingClose":     true,
+	"admin.masterdata.entities.headingClose": true,
+	// 两张卡各自的标题（「筛选（按实体查变更历史）」「当前实体」）随卡片合并退役：
+	// 筛选栏不再有独立标题，「当前实体」降级为页头下方的一行上下文（.page-sub）。
+	"admin.masterdata.filter.title":  true,
+	"admin.masterdata.current.title": true,
+	// 两张表的标题（「字段级变更（共 N 条）」「按实体汇总（共 N 个实体）」）改成 .tabs 的
+	// 标签后退役：同一份数据的两种看法由标签切换承担，标题不再重复它们的名字。
+	"admin.masterdata.rows.heading":     true,
+	"admin.masterdata.entities.heading": true,
+	// admin/dashboard.html 从「组件演示页」改为「真实概览」：原页面的统计卡、假管理员表格、
+	// 8 字段示例表单、徽章与按钮展台全部删除，取用它们的 64 个词条随之退役。
+	// 留在库里不影响任何页面（只是不再被取用）；改 193 既违反「历史迁移保持原样」，
+	// 也不会让已跑过的库少掉这些行。
+	"admin.dashboard.action.cancel": true, "admin.dashboard.action.delete": true, "admin.dashboard.action.edit": true,
+	"admin.dashboard.action.export": true, "admin.dashboard.action.new_admin": true, "admin.dashboard.action.save": true,
+	"admin.dashboard.badge.draft": true, "admin.dashboard.badge.pending_review": true, "admin.dashboard.badge.published": true,
+	"admin.dashboard.badge.rejected": true, "admin.dashboard.badges.title": true, "admin.dashboard.buttons.small": true,
+	"admin.dashboard.buttons.title": true, "admin.dashboard.checkbox.welcome_mail": true, "admin.dashboard.col.dept": true,
+	"admin.dashboard.col.last_login": true, "admin.dashboard.col.name": true, "admin.dashboard.col.role": true,
+	"admin.dashboard.col.username": true, "admin.dashboard.dept.content": true, "admin.dashboard.dept.market": true,
+	"admin.dashboard.dept.tech": true, "admin.dashboard.field.dept": true, "admin.dashboard.field.email": true,
+	"admin.dashboard.field.name": true, "admin.dashboard.field.remark": true, "admin.dashboard.field.role": true,
+	"admin.dashboard.field.status": true, "admin.dashboard.field.username": true, "admin.dashboard.form.required_hint": true,
+	"admin.dashboard.health.degraded": true, "admin.dashboard.health.down": true, "admin.dashboard.health.ok": true,
+	"admin.dashboard.health.unknown": true, "admin.dashboard.hint.username": true, "admin.dashboard.list.title": true,
+	"admin.dashboard.option.dept_placeholder": true, "admin.dashboard.option.role_placeholder": true, "admin.dashboard.pager.next": true,
+	"admin.dashboard.pager.prev": true, "admin.dashboard.pager.summary": true, "admin.dashboard.ph.name": true,
+	"admin.dashboard.ph.remark": true, "admin.dashboard.ph.username": true, "admin.dashboard.role.developer": true,
+	"admin.dashboard.role.editor": true, "admin.dashboard.role.super_admin": true, "admin.dashboard.role.viewer": true,
+	"admin.dashboard.row.name_li": true, "admin.dashboard.row.name_wang": true, "admin.dashboard.row.name_zhang": true,
+	"admin.dashboard.row.never_login": true, "admin.dashboard.stat.admins": true, "admin.dashboard.stat.admins_delta": true,
+	"admin.dashboard.stat.online": true, "admin.dashboard.stat.online_note": true, "admin.dashboard.stat.pending": true,
+	"admin.dashboard.stat.pending_note": true, "admin.dashboard.stat.published_note": true, "admin.dashboard.status.disabled": true,
+	"admin.dashboard.status.disabled_row": true, "admin.dashboard.status.enabled": true, "admin.dashboard.status.pending": true,
+	"admin.dashboard.subtitle": true,
+}
+
 // groupFCallRe 匹配两种取词写法：{{ .["t"]("k","兜底") }} 与 range 内的 {{tr("k","兜底")}}。
 var groupFCallRe = regexp.MustCompile(`(?:\.\["t"\]|\btr)\("([^"]+)",\s*"((?:[^"\\]|\\.)*)"\)`)
 
@@ -144,6 +199,9 @@ func TestGroupFI18nTemplateKeysMatchSeed(t *testing.T) {
 	}
 	// 反向：本批 seed 必须恰好覆盖「模板新增的 key」，不能多也不能少。
 	for key := range seededF {
+		if groupFRetiredKeys[key] {
+			continue
+		}
 		if _, ok := keys[key]; !ok {
 			t.Errorf("本批 seed 词条 %q 未被本批模板使用（词条与模板失去同步）", key)
 		}
@@ -192,15 +250,20 @@ func TestGroupFDashboardRenders(t *testing.T) {
 		"title": "仪表盘", "lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
 		"csrf_token": "tok", "HasSubnav": true, "SidebarPinned": true,
 		"t": TranslateFunc("zh-CN"),
+		// 概览数据由 Dashboard handler 注入（真实查询，不再有静态演示值）。
+		"ProjectCount": 1, "PageTotal": 3, "PagePublished": 2, "PageDraft": 1, "PageStale": 1,
+		"RecentPages": []map[string]any{{
+			"ID": "p1", "Project": "官网", "Path": "/about", "Kind": "page",
+			"Published": true, "Stale": true, "Version": 4, "UpdatedAt": "2026-09-18 09:00:00",
+		}},
 	}
 	out, err := render(t, set, "admin/dashboard", base)
 	if err != nil {
 		t.Fatalf("仪表盘渲染失败: %v", err)
 	}
 	for _, want := range []string{
-		"仪表盘", "系统概览与组件演示", "导出", "新增管理员",
-		"管理员总数", "已发布页面", "管理员列表", "最后登录",
-		"共 128 条，第 1-4 条", "发送欢迎邮件", "徽章与状态", "小按钮",
+		"仪表盘", "站点工程", "页面总数", "已发布", "草稿 / 待发布",
+		"最近更新的页面", "/about", "有更新未发布", "编辑",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("仪表盘缺少 %q（模板可能中途中断）", want)
@@ -209,9 +272,9 @@ func TestGroupFDashboardRenders(t *testing.T) {
 
 	en := map[string]string{
 		"admin.dashboard.title":         "Dashboard",
-		"admin.dashboard.action.export": "Export",
+		"admin.dashboard.stat.projects": "Site projects",
 		"admin.dashboard.col.actions":   "Actions",
-		"admin.dashboard.buttons.small": "Small button",
+		"admin.dashboard.recent.title":  "Recently updated pages",
 	}
 	enData := map[string]any{}
 	for k, v := range base {
@@ -231,13 +294,16 @@ func TestGroupFDashboardRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("仪表盘英文渲染失败: %v", err)
 	}
-	for _, want := range []string{"Dashboard", "Export", "Actions", "Small button"} {
+	for _, want := range []string{"Dashboard", "Site projects", "Actions", "Recently updated pages"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("仪表盘英文渲染缺少 %q", want)
 		}
 	}
-	if strings.Contains(out, "仪表盘") || strings.Contains(out, "小按钮") {
-		t.Error("注入英文翻译后不应再出现这些中文原文")
+	// 只检查被上方 en map 覆盖的 key 对应的中文。未覆盖的 key 按设计回落中文兜底
+	// （「英文界面回落中文」本身是漏 seed 的表现，由 TestGroupFI18nTemplateKeysMatchSeed 守门）；
+	// 也不能去扫「站点工程」这类词 —— 它同样出现在未覆盖的 intro 说明里。
+	if strings.Contains(out, "仪表盘") {
+		t.Error("注入英文翻译后不应再出现中文标题")
 	}
 }
 
@@ -296,9 +362,7 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		i18nData[k] = v
 	}
 	i18nData["title"] = "文案词条"
-	i18nData["Total"] = 1
-	i18nData["Page"] = 1
-	i18nData["Pages"] = 1
+	i18nData["PermSet"] = map[string]any{"i18n:manage": true}
 	i18nData["Keyword"] = ""
 	i18nData["LangFilter"] = ""
 	i18nData["CatFilter"] = ""
@@ -314,9 +378,8 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
 	for _, want := range []string{
-		"文案词条", "共 1 条，第 1 / 1 页（每页 50 条，按 key 升序）",
-		"site.component.gallery.prev", "编辑", "删除",
-		"新增 / 编辑", "来源或修改原因",
+		"文案词条", "site.component.gallery.prev", "编辑", "删除",
+		`data-drawer-open="#tpl-i18n-edit-0"`, "tpl-i18n-create", "来源或修改原因",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("词条页缺少 %q（range 可能在 tr 取词处中断）", want)

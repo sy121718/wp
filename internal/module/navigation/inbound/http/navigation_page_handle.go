@@ -8,6 +8,7 @@ package navigationhttp
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
@@ -75,6 +76,10 @@ type navigationsPageData struct {
 	ParentOptions []navMenuRow
 	// SourceGroups 可加入菜单的来源候选（页面/文章/产品/分类，按来源分组）。
 	SourceGroups []navigationcontract.SourceGroup
+	// Err / Done 是列表页回带的操作结论（?err= / ?done=）：批量删除按
+	// 「已删除 N 个 / 跳过 M 个」写进 Done（有跳过时写 Err，警告条更显眼）。
+	Err  string
+	Done string
 }
 
 // templateMap 转为模板所需的小写键 map（layout.html 以 {{.title}}/{{.menu}} 取值）。
@@ -88,6 +93,8 @@ func (d *navigationsPageData) templateMap() gin.H {
 		"Rows":            d.Rows,
 		"ParentOptions":   d.ParentOptions,
 		"SourceGroups":    d.SourceGroups,
+		"Err":             d.Err,
+		"Done":            d.Done,
 	}
 }
 
@@ -137,6 +144,9 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		Title: navigationsPageTitle, Menu: "navigations",
 		Projects: projects, SelectedProject: selected, Kind: kind,
 		Rows: rows, ParentOptions: parents, SourceGroups: groups,
+		// 操作结论走 query 回带（PRG）：批量删除的结果条。
+		Err:  strings.TrimSpace(c.Query("err")),
+		Done: strings.TrimSpace(c.Query("done")),
 	}, nil
 }
 
@@ -168,7 +178,25 @@ func normalizeNavKind(kind string) string {
 
 // navListURL 列表页回跳地址（保留工程与位置筛选）。
 func navListURL(projectID, kind string) string {
-	return "/admin/navigations?project=" + projectID + "&kind=" + kind
+	return navListURLWith(projectID, kind, "", "")
+}
+
+// navListURLWith 带操作结论的回跳地址（批量删除用）。
+// 两条文案都由服务端拼装（受控文本 + 计数），经 QueryEscape 回带；
+// 模板侧 Jet 默认 HTML 转义，不构成注入面。
+func navListURLWith(projectID, kind, errText, doneText string) string {
+	q := url.Values{}
+	if p := strings.TrimSpace(projectID); p != "" {
+		q.Set("project", p)
+	}
+	q.Set("kind", normalizeNavKind(kind))
+	if errText != "" {
+		q.Set("err", errText)
+	}
+	if doneText != "" {
+		q.Set("done", doneText)
+	}
+	return "/admin/navigations?" + q.Encode()
 }
 
 // NavigationCreate 新增菜单项（默认自定义链接；指定父级则成为二级项）。
@@ -293,6 +321,54 @@ func (h *navigationPageHandle) NavigationDelete(c *gin.Context) {
 	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
 }
 
+// NavigationsBulkDelete 批量删除菜单项（POST /admin/navigations/bulk-delete）。
+//
+// 逐条走同一条单条删除路径（NavigationDelete 用的同一个 navigations.Delete）：
+// 「子项一并删除」的规则由 service 决定，handler 不复制一套。某一条失败（已不存在等）
+// 只计入跳过数、整批不中断 —— 整批回滚会让用户以为「一个都没删」，然后反复重试。
+// 结果按「已删除 N 个 / 跳过 M 个」回带列表页，保留工程与位置筛选。
+func (h *navigationPageHandle) NavigationsBulkDelete(c *gin.Context) {
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	kind := normalizeNavKind(c.PostForm("kind"))
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusSeeOther, navListURLWith(projectID, kind, berr.Error(), ""))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.navigations.Delete(c.Request.Context(), &navigationdto.DeleteReq{ID: id}); err != nil {
+			logger.Scene("page").With("id", id).Error(err, "批量删除导航项失败")
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
+	msg := navigationsBulkDeleteResult(deleted, skipped)
+	if skipped > 0 {
+		c.Redirect(http.StatusSeeOther, navListURLWith(projectID, kind, msg, ""))
+		return
+	}
+	c.Redirect(http.StatusSeeOther, navListURLWith(projectID, kind, "", msg))
+}
+
+// navigationsBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
+// （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
+func navigationsBulkDeleteResult(deleted, skipped int) string {
+	switch {
+	case deleted == 0 && skipped == 0:
+		return "没有勾选任何菜单项，列表未改动。"
+	case skipped == 0:
+		return fmt.Sprintf("已删除 %d 个菜单项。", deleted)
+	case deleted == 0:
+		return fmt.Sprintf("%d 个菜单项都未能删除，列表未改动。", skipped)
+	default:
+		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（可能已被删除）。", deleted, skipped)
+	}
+}
+
 // NavigationMove 同级上移/下移（与相邻项交换 sort_order）。
 func (h *navigationPageHandle) NavigationMove(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -376,6 +452,9 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/navigations/add-source", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.NavigationAddSource)
 	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationUpdate)
 	adminPages.POST("/navigations/delete", builtin.CasbinMiddlewareForPath("/api/navigation/delete"), h.NavigationDelete)
+	// 批量删除复用同一条删除路径与权限点（/api/navigation/delete）：批量只是单条的加速器，
+	// 不是另一件事 —— 另立权限点会让「能删一个、不能删十个」这种状态出现。
+	adminPages.POST("/navigations/bulk-delete", builtin.CasbinMiddlewareForPath("/api/navigation/delete"), h.NavigationsBulkDelete)
 	adminPages.POST("/navigations/move", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationMove)
 
 	// 导航译文工作台（审计 I18N-007）：菜单标签不在页面文档里，页面翻译工作台看不到它，

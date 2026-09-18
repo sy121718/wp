@@ -31,6 +31,7 @@ import (
 
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	"go_wp/public/migrations"
 )
@@ -464,6 +465,14 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 标签页的行内按钮与抽屉按权限渲染（shell.Prepare 读 PermSetKey）：这条链路不挂鉴权中间件，
+	// 注入一份权限，让「页面里存在写入口」这类断言保持有效。
+	engine.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, map[string]bool{
+			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
+			"product:update": true, "product:variant_create": true, "product:variant_generate": true,
+		})
+	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/product-tags", handle.ProductTagsPage)
@@ -472,6 +481,8 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.POST("/admin/product-tags/delete", handle.ProductTagsDelete)
 	engine.POST("/admin/product-tags/recalc", handle.ProductTagsRecalc)
 	engine.GET("/admin/products", handle.ProductsPage)
+	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
+	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.POST("/admin/products/tags", handle.ProductsTagsSet)
 	return engine, f
 }
@@ -530,6 +541,10 @@ func TestTagAdminPages(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("POST 商品挂标签应 302，实际 %d", rec.Code)
 	}
+	// 保存后留在该商品的详情页（表单隐藏域是 id，其值就是商品 id）。
+	if loc := rec.Header().Get("Location"); loc != detailLocation(f.projectID, p.ID) {
+		t.Fatalf("保存手工标签后应留在该商品的详情页，实际 Location=%q", loc)
+	}
 
 	// 标签页：标签名、类型、规则描述、重算时间、命中商品都要渲染出来。
 	rec = httptestGet(engine, "/admin/product-tags?project="+f.projectID)
@@ -537,21 +552,25 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("标签页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
+	// 行内按钮文案随改造按「动词 + 对象」收紧：标签页里行内按钮不再重复实体名，
+	// 「立即重算这个标签」= 行内「重算」、「删除标签」= 行内「删除」。
 	for _, want := range []string{
 		"商品标签", "清仓", "新品", "手工", "自动", "上架 30 天内",
-		"上架商品", "命中的商品", "内置规则类型", "立即重算这个标签", "删除标签",
+		"上架商品", "命中的商品", "内置规则类型", ">重算</button>", ">删除</button>",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("标签页缺少 %q", want)
 		}
 	}
-	// 商品页：手工标签勾选框 + 自动标签只读展示。
-	rec = httptestGet(engine, "/admin/products?project="+f.projectID)
+	// 标签挂载：换目标页面到商品详情页 —— 改造后商品列表页只回答「有哪些商品」，
+	// 手工标签勾选框与「保存手工标签」随商品级表单整块移到 /admin/products/detail
+	// （引擎上方已同步注册该路由）。
+	rec = httptestGet(engine, "/admin/products/detail?project="+f.projectID+"&product="+p.ID)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("商品页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("商品详情页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	pageBody := rec.Body.String()
-	for _, want := range []string{"商品标签", `name="tagIds"`, "保存手工标签", "自动标签（按规则重算维护，不能手工改动）"} {
+	for _, want := range []string{"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`, "保存手工标签", "自动标签（按规则重算维护，不能手工改动）"} {
 		if !strings.Contains(pageBody, want) {
 			t.Fatalf("商品页缺少 %q", want)
 		}

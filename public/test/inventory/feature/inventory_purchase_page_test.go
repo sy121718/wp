@@ -51,6 +51,11 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.POST("/admin/inventory/purchases/create", handle.InventoryPurchaseCreate)
 	engine.POST("/admin/inventory/purchases/receipt", handle.InventoryPurchaseReceipt)
 	engine.POST("/admin/inventory/purchases/production", handle.InventoryPurchaseProduction)
+	// 「生产入库（自家工厂）」与「进货历史」已按功能归属移出采购页：
+	// 前者是「手动改库存 + 写成本价」，与采购单无关；后者是库存流水的 SKU / 原因筛选。
+	// 相关断言随之搬到库存页，这里同步注册该页面路由。
+	pageHandle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
+	engine.GET("/admin/inventory", pageHandle.InventoryPage)
 	return engine, f
 }
 
@@ -80,15 +85,27 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		t.Fatalf("采购入库页应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	// 空白态：建单表单与生产入库表单都在（收货表单要等有采购单才会出现）。
+	// 空白态：建单抽屉与它的写入口都在（收货表单要等有采购单才会出现）。
+	// 本页现在只负责「采购单与对单收货」：生产入库表单与进货历史表已移到库存页，
+	// 它们不在这批断言里（见下面「生产入库 / 进货历史」那段，断言换到库存页）。
 	for _, want := range []string{
-		"采购入库", "新建采购单", "生产入库（自家工厂）", "进货历史",
+		"采购入库", "新建采购单",
 		"name=\"csrf_token\"",
 		"action=\"/admin/inventory/purchases/create\"",
-		"action=\"/admin/inventory/purchases/production\"",
+		"data-drawer-open=\"#tpl-purchase-create\"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("采购入库页缺少 %s", want)
+		}
+	}
+
+	// 生产入库（自家工厂）：入口与表单都在库存页（/admin/inventory），断言搬过去。
+	invBody := httptestGet(engine, "/admin/inventory?project="+f.projectID).Body.String()
+	for _, want := range []string{
+		"生产入库（自家工厂）", "action=\"/admin/inventory/production\"",
+	} {
+		if !strings.Contains(invBody, want) {
+			t.Fatalf("库存页缺少生产入库入口 %s", want)
 		}
 	}
 
@@ -170,14 +187,17 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	}
 
 	// 进货历史按 SKU 过滤：采购收货与生产入库都在同一张历史里。
-	rec = httptestGet(engine, "/admin/inventory/purchases?project="+f.projectID+"&sku="+url.QueryEscape(v.SKUCode))
+	// 这张历史已随改造并入库存流水（按 SKU / 原因筛选），采购页不再挂它 —— 断言换目标页面到
+	// /admin/inventory（引擎上方已注册）。采购收货与生产入库是两条原因不同的流水，
+	// 用流水行里的原因 code 快照来断言（页头按钮也写着「生产入库」，只断言那四个字会失真）。
+	rec = httptestGet(engine, "/admin/inventory?project="+f.projectID+"&sku="+url.QueryEscape(v.SKUCode))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("进货历史页应 200，实际 %d", rec.Code)
+		t.Fatalf("库存流水页应 200，实际 %d", rec.Code)
 	}
 	body = rec.Body.String()
-	for _, want := range []string{"PO-PAGE-1", "采购收货", "生产入库", v.SKUCode} {
+	for _, want := range []string{"PO-PAGE-1", "purchase_in", "production_in", v.SKUCode} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("进货历史缺少 %s", want)
+			t.Fatalf("库存流水缺少 %s", want)
 		}
 	}
 
@@ -218,12 +238,15 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("页面缺少多端适配的根类 purchase-page")
 	}
 	// 键盘可滚的表格容器（宽表在窄视口下靠它横向滚动，且能 Tab 聚焦后用方向键滚）。
-	// 容器类由 pages-table-wrap 迁到公共类 table-wrap（滚动与键盘聚焦都在 .table-wrap 上）。
-	if !strings.Contains(body, "table-wrap\" tabindex=\"0\"") {
-		t.Fatalf("采购行 / 进货历史表应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
+	// 容器类由 pages-table-wrap 迁到公共类 table-wrap（滚动与键盘聚焦都在 .table-wrap 上）；
+	// 采购单表同时带 .table-scroll（宽表横向滚动），两者与 tabindex 同在一个容器上。
+	if !strings.Contains(body, `class="table-wrap table-scroll" tabindex="0"`) {
+		t.Fatalf("采购单表应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
 	}
 	// 窄屏堆叠态靠 data-label 回显列名（列名不随表头消失而丢失）。
-	if !strings.Contains(body, "data-label=\"登记入库\"") || !strings.Contains(body, "data-label=\"单价\"") {
+	// 列集合随改造换了：单头进表格（采购单号 / 货源 / 收货仓 / 单据状态 / 收货进度 / 下单时间 /
+	// 操作），行明细与「登记入库 / 单价」在抽屉里，所以这里断言表格真实的列。
+	if !strings.Contains(body, "data-label=\"采购单号\"") || !strings.Contains(body, "data-label=\"操作\"") {
 		t.Fatalf("表格单元应带 data-label（窄屏堆叠时回显列名）")
 	}
 	// 模板不含任何 <script>：交互全由原生表单提交完成（layout 里的全局壳不算本页引入）。
@@ -241,12 +264,13 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		}
 	}
 	// 每个写表单（POST）都带 csrf_token 隐藏域（原生表单的 CSRF 契约）：
-	// 建单 / 收货 / 生产入库三个写入口各一处；GET 的筛选与工程切换表单不带。
-	if got := strings.Count(string(tplRaw), "name=\"csrf_token\""); got != 3 {
-		t.Fatalf("三个写表单各要带一处 csrf_token 隐藏域，模板里有 %d 处", got)
+	// 本页只剩建单 / 收货两个写入口，各一处（生产入库表单连它一起移到库存页了）；
+	// GET 的筛选与工程切换表单不带。
+	if got := strings.Count(string(tplRaw), "name=\"csrf_token\""); got != 2 {
+		t.Fatalf("建单与收货两个写表单各要带一处 csrf_token 隐藏域，模板里有 %d 处", got)
 	}
-	if got := strings.Count(string(tplRaw), "method=\"get\""); got != 3 {
-		t.Fatalf("工程切换 + 采购单筛选 + 进货历史筛选都用 GET，模板里有 %d 处", got)
+	if got := strings.Count(string(tplRaw), "method=\"get\""); got != 2 {
+		t.Fatalf("工程切换 + 采购单筛选都用 GET，模板里有 %d 处", got)
 	}
 
 	// 样式表契约：断点内的堆叠块 + 宽度 min(100%, …) 收口 + 输入不写死像素。
