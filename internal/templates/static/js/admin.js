@@ -567,8 +567,21 @@
 /* 菜单项悬浮面板预览（超级菜单）：服务端渲染触发器与 iframe（见 admin/navigations.html），
    这里只绑行为。事件全部委托到 document —— 抽屉内容来自 <template> 克隆，
    每次打开都是新节点，逐个绑监听会随开合次数累积成泄漏。
-   三路等价：hover（仅真 hover 设备）/ click（触屏的等价路径）/ 键盘（按钮可聚焦）+ Esc 关闭。 */
+
+   两个状态维度（F1 的修复依据）：
+     · is-open   —— 浮层当前可见；
+     · is-pinned —— 用户**主动点过**按钮把它固定住。
+   有 hover 能力的设备上鼠标移入就会 is-open（mouseover）。若把 click 写成「纯开关」，
+   用户「移上去看到浮层 → 点一下」必然得到「关掉」—— mouseover 已经先打开了，是错位。
+   所以 click 的语义是**固定 / 取消固定**：未固定 → 固定并确保可见（视觉上常常「无变化」，
+   这正是期望）；已固定 → 取消并关闭。无 hover 的设备（触屏）没有 mouseover，
+   click 就是唯一的开合路径 —— 同一套语义下「点一下打开、再点关闭」依然成立，
+   不需要为触屏另写一条分支（那正是 AddHover 等价形态要避免的「只有一边能用」）。 */
 (function () {
+    // 是否具备悬停能力：只有真 hover 设备才绑 mouseover/mouseout。
+    // 触屏上这两条路径不存在，click 的 pin 语义承担全部开合。
+    var canHover = !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+
     function closest(el, sel) {
         return (el && el.closest) ? el.closest(sel) : null;
     }
@@ -576,7 +589,7 @@
         return closest(el, '[data-panel-preview]');
     }
 
-    // setOpen 是唯一的开合实现：iframe 的 src 只在**首次打开**时写入 ——
+    // setOpen 是唯一的可见性实现：iframe 的 src 只在**首次打开**时写入 ——
     // 一个菜单项一个 iframe，整页渲染就等于同时发起几十次预览编译。
     function setOpen(root, on) {
         var btn = root.querySelector('[data-panel-preview-toggle]');
@@ -591,46 +604,78 @@
         root.classList.toggle('is-open', on);
     }
 
+    function setPinned(root, on) {
+        root.classList.toggle('is-pinned', on);
+    }
+
+    // close 是唯一的关闭路径：取消固定 + 收起。两者必须一起做，否则会留下
+    // 「已固定但不可见」的状态，下一次 mouseout 会因为它而拒绝收起。
+    function close(root) {
+        setPinned(root, false);
+        setOpen(root, false);
+    }
+
+    function focusTrigger(root) {
+        var btn = root.querySelector('[data-panel-preview-toggle]');
+        if (btn) btn.focus();
+    }
+
     function closeAll(except) {
-        Array.prototype.forEach.call(document.querySelectorAll('[data-panel-preview].is-open'), function (root) {
-            if (root !== except) setOpen(root, false);
+        var open = document.querySelectorAll('[data-panel-preview].is-open, [data-panel-preview].is-pinned');
+        Array.prototype.forEach.call(open, function (root) {
+            if (root !== except) close(root);
         });
     }
 
-    // 点击：按钮开合（触屏的等价路径）、关闭按钮收起、点外部收起。
+    // 点击：按钮固定/取消固定（触屏的唯一开合路径）、关闭按钮收起、点外部收起。
     document.addEventListener('click', function (e) {
         var root = rootOf(e.target);
         if (root) {
             if (closest(e.target, '[data-panel-preview-close]')) {
                 e.preventDefault();
-                setOpen(root, false);
-                var back = root.querySelector('[data-panel-preview-toggle]');
-                if (back) back.focus();
+                close(root);
+                focusTrigger(root);
                 return;
             }
             if (closest(e.target, '[data-panel-preview-toggle]')) {
                 e.preventDefault();
-                var willOpen = !root.classList.contains('is-open');
-                closeAll(root);
-                setOpen(root, willOpen);
+                if (root.classList.contains('is-pinned')) {
+                    // 已固定：这是用户主动收起（有 hover 与无 hover 都走这一条）。
+                    close(root);
+                } else {
+                    // 未固定：固定住并确保可见。有 hover 的设备上浮层往往已经因 mouseover
+                    // 打开 —— 此时「click 后仍然打开」正是 F1 要的结果；无 hover 的设备上
+                    // 这一步就是打开。两条路径共用同一段实现。
+                    closeAll(root);
+                    setPinned(root, true);
+                    setOpen(root, true);
+                }
                 return;
             }
         }
         closeAll(root);
     });
 
-    // Esc 关闭并把焦点还给触发按钮（键盘用户不丢位置）。
+    // Esc 的作用域是「最上层的可关闭层」。
+    //
+    // ui/drawer.js 的 Esc 处理挂在 document 的**冒泡**阶段、而且不看浮层：浮层开着时它会
+    // 先把整个抽屉关掉，而 closeDrawer 里 body.innerHTML='' —— 浮层节点一起被清掉，
+    // 于是「只关浮层并把焦点还给触发按钮」永远不可达（F 线实测：Esc 后抽屉关闭、
+    // 浮层 DOM 消失、焦点掉到 body）。
+    // 这里用**捕获阶段**先跑并阻止继续传播，把 Esc 优先交给浮层；浮层没开时直接 return，
+    // 不拦事件，抽屉的 Esc 行为原样保留。
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         var open = document.querySelector('[data-panel-preview].is-open');
         if (!open) return;
-        setOpen(open, false);
-        var btn = open.querySelector('[data-panel-preview-toggle]');
-        if (btn) btn.focus();
-    });
+        e.preventDefault();
+        e.stopPropagation();
+        close(open);
+        focusTrigger(open);
+    }, true);
 
-    // 悬停触发：只在真正具备悬停能力的设备上绑（触屏没有 hover，走上面的点击等价路径）。
-    if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+    // 悬停触发：只在真正具备悬停能力的设备上绑（触屏没有 hover，走上面 click 的 pin 语义）。
+    if (canHover) {
         document.addEventListener('mouseover', function (e) {
             var root = rootOf(e.target);
             if (!root) return;
@@ -640,6 +685,8 @@
         document.addEventListener('mouseout', function (e) {
             var root = rootOf(e.target);
             if (!root || !root.classList.contains('is-open')) return;
+            // 被固定住的浮层不随鼠标移开而关闭（用户点它就是为了让它留在屏幕上）。
+            if (root.classList.contains('is-pinned')) return;
             if (e.relatedTarget && root.contains(e.relatedTarget)) return;
             // 焦点还在浮层里（键盘用户正在操作 iframe）时不收。
             if (root.contains(document.activeElement)) return;
