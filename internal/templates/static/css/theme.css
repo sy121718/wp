@@ -1149,3 +1149,34 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .section-fold.card > .fold-body { padding: 0 clamp(16px, 2vw, 24px) var(--ui-sp-lg); }
 @media (hover: hover) { .section-fold > summary:hover { background: var(--sky-c-bg-hover, #ececec); } }
 
+
+/* ── 15. 菜单项悬浮面板预览（超级菜单）──────────────────────────────────
+   编辑抽屉里的「预览面板」：iframe 指向块预览端点（/workbench/block/preview）。
+   交互三路等价（见 admin.js 的 initPanelPreview）：鼠标悬停只在真 hover 设备上绑；
+   点击是触屏的等价路径；按钮本身可聚焦，所以键盘同样可达，Esc 关闭。
+   浮层用 fixed + 左右 margin auto 居中、宽度 max-width: min(720px, 100vw - 24px)：
+   抽屉贴着屏幕右侧，absolute 朝右展开在窄视口必然溢出；居中 + 视口封顶与两侧空间无关。 */
+.nav-panel-preview { display: inline-block; }
+.nav-panel-preview-pop {
+    position: fixed; z-index: 60;
+    top: calc(var(--ui-sp-lg, 16px) + 52px);
+    left: 0; right: 0; margin-left: auto; margin-right: auto;
+    width: 100%; max-width: min(720px, calc(100vw - 24px));
+    max-height: min(72vh, 620px);
+    display: flex; flex-direction: column;
+    background: var(--sky-c-surface, #ffffff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 10px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .18);
+    overflow: hidden;
+}
+/* [hidden] 必须显式压过上面的 display: flex：浏览器默认的 [hidden]{display:none}
+   优先级低于类选择器，不写这一条浮层会「永远显示」。 */
+.nav-panel-preview-pop[hidden] { display: none; }
+.nav-panel-preview-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-sm, 8px);
+    padding: var(--ui-sp-sm, 8px) var(--ui-sp-lg, 16px);
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+}
+.nav-panel-preview-frame { flex: 1 1 auto; width: 100%; min-height: 240px; border: 0; background: #fff; }

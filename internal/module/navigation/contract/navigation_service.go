@@ -70,6 +70,19 @@ type SourceCandidate struct {
 	URL string
 }
 
+// FacingTexter 把本模块的业务错误转成「指定语言下可直接展示的一句话」。
+//
+// 为什么契约里要有它：消费者（如工作台检查器在画布内就地新建菜单项）只依赖 contract 与
+// 不可变 dto，拿不到本模块的 enums 白名单。没有这个出口，消费者只剩两条路 ——
+// 直出 err.Error()（把 PostgreSQL 原文漏出去）或一律通用提示（把「路径已被占用」这类
+// 可行动差异吞掉）；两条都在本仓库踩过（CQ-009 与其反向缺陷）。
+//
+// 实现必须与 inbound/http 的出口同源：命中白名单 → 业务文案（按语言翻译、key：定位 拼好）；
+// 未命中 → 模块归口文案（原文只进日志，由消费者记）。
+type FacingTexter interface {
+	FacingText(lang string, err error) string
+}
+
 // NavigationService 公开站点导航管理契约。
 type NavigationService interface {
 	// Create 新建导航项。

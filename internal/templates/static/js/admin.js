@@ -563,3 +563,103 @@
         refresh(scopeOf(t));
     });
 })();
+
+/* 菜单项悬浮面板预览（超级菜单）：服务端渲染触发器与 iframe（见 admin/navigations.html），
+   这里只绑行为。事件全部委托到 document —— 抽屉内容来自 <template> 克隆，
+   每次打开都是新节点，逐个绑监听会随开合次数累积成泄漏。
+   三路等价：hover（仅真 hover 设备）/ click（触屏的等价路径）/ 键盘（按钮可聚焦）+ Esc 关闭。 */
+(function () {
+    function closest(el, sel) {
+        return (el && el.closest) ? el.closest(sel) : null;
+    }
+    function rootOf(el) {
+        return closest(el, '[data-panel-preview]');
+    }
+
+    // setOpen 是唯一的开合实现：iframe 的 src 只在**首次打开**时写入 ——
+    // 一个菜单项一个 iframe，整页渲染就等于同时发起几十次预览编译。
+    function setOpen(root, on) {
+        var btn = root.querySelector('[data-panel-preview-toggle]');
+        var pop = root.querySelector('.nav-panel-preview-pop');
+        var frame = root.querySelector('[data-panel-preview-frame]');
+        if (!btn || !pop || !frame) return;
+        if (on && !frame.getAttribute('src')) {
+            frame.setAttribute('src', btn.getAttribute('data-preview-src') || '');
+        }
+        pop.hidden = !on;
+        btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+        root.classList.toggle('is-open', on);
+    }
+
+    function closeAll(except) {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-panel-preview].is-open'), function (root) {
+            if (root !== except) setOpen(root, false);
+        });
+    }
+
+    // 点击：按钮开合（触屏的等价路径）、关闭按钮收起、点外部收起。
+    document.addEventListener('click', function (e) {
+        var root = rootOf(e.target);
+        if (root) {
+            if (closest(e.target, '[data-panel-preview-close]')) {
+                e.preventDefault();
+                setOpen(root, false);
+                var back = root.querySelector('[data-panel-preview-toggle]');
+                if (back) back.focus();
+                return;
+            }
+            if (closest(e.target, '[data-panel-preview-toggle]')) {
+                e.preventDefault();
+                var willOpen = !root.classList.contains('is-open');
+                closeAll(root);
+                setOpen(root, willOpen);
+                return;
+            }
+        }
+        closeAll(root);
+    });
+
+    // Esc 关闭并把焦点还给触发按钮（键盘用户不丢位置）。
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        var open = document.querySelector('[data-panel-preview].is-open');
+        if (!open) return;
+        setOpen(open, false);
+        var btn = open.querySelector('[data-panel-preview-toggle]');
+        if (btn) btn.focus();
+    });
+
+    // 悬停触发：只在真正具备悬停能力的设备上绑（触屏没有 hover，走上面的点击等价路径）。
+    if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+        document.addEventListener('mouseover', function (e) {
+            var root = rootOf(e.target);
+            if (!root) return;
+            closeAll(root);
+            setOpen(root, true);
+        });
+        document.addEventListener('mouseout', function (e) {
+            var root = rootOf(e.target);
+            if (!root || !root.classList.contains('is-open')) return;
+            if (e.relatedTarget && root.contains(e.relatedTarget)) return;
+            // 焦点还在浮层里（键盘用户正在操作 iframe）时不收。
+            if (root.contains(document.activeElement)) return;
+            setOpen(root, false);
+        });
+    }
+})();
+
+/* 菜单页回跳（?menu=<id>）：自动打开对应菜单项的编辑抽屉。
+   面板块「新建并编辑」跳到工作台，块保存后带着 ?menu= 回到本页 —— 用户回来时抽屉已经
+   开着，看到的就是刚操作过的那一项，不必在几十行里重新找。
+   window load 之后执行：控件基座（drawer.js）的 click 委托在 DOMContentLoaded 注册，
+   早于它触发点击会静默无效（按钮点了没反应，且没有任何报错）。 */
+(function () {
+    function autoOpen() {
+        var btn = document.querySelector('[data-drawer-auto]');
+        if (!btn || btn.getAttribute('data-drawer-auto-done')) return;
+        btn.setAttribute('data-drawer-auto-done', '1');
+        btn.click();
+    }
+    if (document.readyState === 'complete') window.setTimeout(autoOpen, 0);
+    else window.addEventListener('load', function () { window.setTimeout(autoOpen, 0); });
+})();

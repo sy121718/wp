@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -52,18 +53,25 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
 		return
 	}
+	// menu 是「回跳后仍要展开的那一项」：面板设置与菜单项编辑共用一个抽屉，
+	// 保存后抽屉重新打开，用户不用在几十行里重新找它。
+	menuID := strings.TrimSpace(c.PostForm("menu"))
 	// 空串 = 清除面板（服务层把空块 id 归一成 NULL；nil 才是「不改动」）。
 	blockID := strings.TrimSpace(c.PostForm("panelBlockId"))
 	req := &navigationdto.UpdateReq{ID: id, PanelBlockID: &blockID}
 	if w := strings.TrimSpace(c.PostForm("panelWidth")); w != "" {
 		req.PanelWidth = &w
 	}
+	// 乐观锁：保存面板同样是一次 navigation 更新，冲突语义与编辑菜单项一致。
+	if v := strings.TrimSpace(c.PostForm("expectedUpdatedAt")); v != "" {
+		req.ExpectedUpdatedAt = &v
+	}
 	if _, err := h.navigations.Update(c.Request.Context(), req); err != nil {
 		logger.Scene("page").With("id", id).Error(err, "设置菜单悬浮面板失败")
-		shell.PageErrorBadRequest(c, "navigation", err)
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navigationErrPageText(c, err), ""))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
+	c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, "", ""))
 }
 
 // PanelCreate POST /admin/navigations/panel/create：新建面板块并跳块编辑器。
@@ -74,6 +82,8 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
 	title := strings.TrimSpace(c.PostForm("title"))
+	// 菜单项 id：块保存后要带着它回到菜单编辑器并重新展开这一项。
+	menuID := strings.TrimSpace(c.PostForm("id"))
 	if h.blocks == nil {
 		shell.PageErrorBadRequest(c, "navigation", errPanelUnavailable)
 		return
@@ -87,8 +97,16 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 		shell.PageErrorBadRequest(c, "navigation", err)
 		return
 	}
-	// 跳块编辑器：把面板结构画出来。保存后回列表在面板下拉里选它挂上。
-	c.Redirect(http.StatusSeeOther, "/workbench?block="+created.ID)
+	// 跳块编辑器：把面板结构画出来。
+	//
+	// returnUrl：块保存后回到本页**并重新展开这一项**（?menu=<id>）。此前不带回跳，
+	// 用户在工作台存完块就停在那里，得自己回菜单页、再在几十行里找回刚建的那一项。
+	// 回跳目标由服务端构造、消费侧（块保存路径）再校验一次（只接受站内相对路径）。
+	target := "/workbench?block=" + url.QueryEscape(created.ID)
+	if back := navListURLMenu(projectID, kind, menuID, "", ""); back != "" {
+		target += "&returnUrl=" + url.QueryEscape(back)
+	}
+	c.Redirect(http.StatusSeeOther, target)
 }
 
 // panelBlockName 面板块的默认名（可辨认来源）。

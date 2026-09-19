@@ -141,6 +141,37 @@ func (m *Model) Save(ctx context.Context, projectID, id string, updates map[stri
 	})
 }
 
+// SaveWithExpected 按 ID 部分更新，并把「库内 update_time 仍是 expected」写进 WHERE 条件。
+//
+// 为什么是条件 UPDATE 而不是「事务里读出来比较、再写回去」：后者的两步之间没有锁，
+// 两个入口并发时后写的一方照样覆盖（AGENTS.md「读-改-写必须有行锁或原子 SQL」）。
+// 条件更新由数据库在同一条语句里完成「比较 + 写」：受影响行数为 0 即表示
+// 记录不存在 / 越界 / 版本已变，由 service 区分（实体已定位过，所以只可能是版本已变）。
+//
+// projectID 非空时在工程作用域内写（与 Save 同一条越权防护）；乐观锁路径总是从
+// 已定位的实体出发，因此实际调用都带作用域。
+func (m *Model) SaveWithExpected(ctx context.Context, projectID, id string,
+	updates map[string]any, expected time.Time) (rows int64, err error) {
+	build := func(db *gorm.DB) *gorm.DB {
+		q := db.Model(&NavigationEntity{}).
+			Where("id = ? AND update_time = ?", id, expected)
+		if strings.TrimSpace(projectID) != "" {
+			q = q.Where("project_id = ?", projectID)
+		}
+		return q
+	}
+	if strings.TrimSpace(projectID) == "" {
+		res := build(m.db.WithContext(ctx)).Updates(updates)
+		return res.RowsAffected, res.Error
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res := build(tx).Updates(updates)
+		rows = res.RowsAffected
+		return res.Error
+	})
+	return rows, err
+}
+
 // Delete 按 ID 删除导航项。
 // projectID 非空时在工程作用域内删（越界删在换角色后会被策略拒绝，而不是删掉别的工程）。
 func (m *Model) Delete(ctx context.Context, projectID, id string) error {

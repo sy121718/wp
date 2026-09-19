@@ -40,6 +40,12 @@ type UpdateReq struct {
 	PanelBlockID *string `json:"panelBlockId"`
 	// PanelWidth 面板宽度 auto / full（nil = 不改动）。
 	PanelWidth *string `json:"panelWidth"`
+	// ExpectedUpdatedAt 乐观锁：调用方读到的 update_time（精确到微秒的 RFC3339 串）。
+	//
+	// 后台菜单页与工作台检查器是同一份数据的两个入口，此前是 last-write-wins ——
+	// 两处同时改会静默覆盖。带上该值后，库内当前值与之不等即拒绝（打回给人，不自动合并）。
+	// nil / 空串 = 不做校验（既有调用方与内部路径的兼容形态）。
+	ExpectedUpdatedAt *string `json:"expectedUpdatedAt"`
 }
 
 // GetReq 按 ID 查询导航项。
@@ -96,7 +102,10 @@ type NavigationNode struct {
 	Target     string  `json:"target"`
 	SortOrder  int     `json:"sortOrder"`
 	// PanelBlockID / PanelWidth 悬浮面板（超级菜单）：面板内容存块，展示形态存菜单项。
-	PanelBlockID *string           `json:"panelBlockId"`
-	PanelWidth   string            `json:"panelWidth"`
-	Children     []*NavigationNode `json:"children,omitempty"`
+	PanelBlockID *string `json:"panelBlockId"`
+	PanelWidth   string  `json:"panelWidth"`
+	// UpdatedAt 该项 update_time 的精确取值（乐观锁 token，管理页编辑表单原样回带）。
+	// 与 NavigationResp.UpdatedAt 的展示串不同：那个是给人看的分钟串，这个是给比较用的。
+	UpdatedAt string            `json:"updatedAt"`
+	Children  []*NavigationNode `json:"children,omitempty"`
 }

@@ -72,6 +72,9 @@ type navMenuRow struct {
 	PanelBlockID   string
 	PanelBlockName string
 	PanelWidth     string
+	// UpdatedAt 乐观锁 token（精确到微秒的 RFC3339 串）：编辑抽屉原样回带，
+	// 服务端据此判断「打开抽屉之后这一项有没有被别处改过」。
+	UpdatedAt string
 }
 
 // navigationsPageData 导航菜单管理页数据。
@@ -100,6 +103,12 @@ type navigationsPageData struct {
 	// 「已删除 N 个 / 跳过 M 个」写进 Done（有跳过时写 Err，警告条更显眼）。
 	Err  string
 	Done string
+	// MenuID 要自动展开编辑抽屉的菜单项 id（?menu=）。
+	//
+	// 用途：面板块「新建并编辑」跳到工作台，块保存后带着这个参数回到菜单编辑器 ——
+	// 用户回来时抽屉已经开着，能看到刚挂上面板的那一项（否则要在几十行里自己找）。
+	// 落在列表里的项才生效；非列表值不渲染任何东西（它也从不进 HTML，只用作行比对）。
+	MenuID string
 }
 
 // templateMap 转为模板所需的小写键 map（layout.html 以 {{.title}}/{{.menu}} 取值）。
@@ -117,6 +126,7 @@ func (d *navigationsPageData) templateMap() gin.H {
 		"PanelAvail":      d.PanelAvail,
 		"Err":             d.Err,
 		"Done":            d.Done,
+		"MenuID":          d.MenuID,
 	}
 }
 
@@ -194,7 +204,27 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		// 读侧一律经 navigation_err.go 的白名单出口（查询参数不是可信边界）。
 		Err:  navigationPageErr(c),
 		Done: navigationPageDone(c),
+		// 面板块保存后回菜单编辑器时要把对应那一项的抽屉重新打开（?menu=）。
+		MenuID: normalizeMenuFocus(c.Query("menu")),
 	}, nil
+}
+
+// normalizeMenuFocus 收敛 ?menu= 的菜单项 id：只认 uuid 形状（本表主键是 uuid），
+// 其余一律空串。它只参与「哪一行自动展开抽屉」的行比对、从不进 HTML；
+// 收死形状是为了将来有人把它渲染出去时也是安全的（查询参数不是可信边界）。
+func normalizeMenuFocus(raw string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" || len(v) > 64 {
+		return ""
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'f', r >= 'A' && r <= 'F', r == '-':
+		default:
+			return ""
+		}
+	}
+	return v
 }
 
 // flattenNavRows 深度优先展平菜单树（同级首末标记用于按钮禁用态）。
@@ -211,6 +241,7 @@ func flattenNavRows(nodes []*navigationdto.NavigationNode, depth int, out *[]nav
 			SourceType: n.SourceType,
 			First:      i == 0, Last: i == len(nodes)-1,
 			PanelBlockID: panelBlockIDOf(n), PanelWidth: n.PanelWidth,
+			UpdatedAt: n.UpdatedAt,
 		})
 		flattenNavRows(n.Children, depth+1, out)
 	}
@@ -239,14 +270,24 @@ func navListURL(projectID, kind string) string {
 }
 
 // navListURLWith 带操作结论的回跳地址（批量删除用）。
-// 两条文案都由服务端拼装（受控文本 + 计数），经 QueryEscape 回带；
-// 模板侧 Jet 默认 HTML 转义，不构成注入面。
 func navListURLWith(projectID, kind, errText, doneText string) string {
+	return navListURLMenu(projectID, kind, "", errText, doneText)
+}
+
+// navListURLMenu 列表页回跳地址的**唯一构造点**：保留工程/位置筛选，可带操作结论文案与
+// 「保存块后要重新展开的那一项」（?menu=）。
+//
+// 两条文案都由服务端拼装（受控文本 + 计数），经 QueryEscape 回带；模板侧 Jet 默认 HTML
+// 转义，不构成注入面。menuID 只认 uuid 形状（normalizeMenuFocus），非法值丢掉。
+func navListURLMenu(projectID, kind, menuID, errText, doneText string) string {
 	q := url.Values{}
 	if p := strings.TrimSpace(projectID); p != "" {
 		q.Set("project", p)
 	}
 	q.Set("kind", normalizeNavKind(kind))
+	if id := normalizeMenuFocus(menuID); id != "" {
+		q.Set("menu", id)
+	}
 	if errText != "" {
 		q.Set("err", errText)
 	}
@@ -339,6 +380,9 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
+	// menu 是「冲突/失败后仍要展开的那一项」：带着它回跳，用户刷新后抽屉还开着，
+	// 能立刻看到库里的当前值并决定怎么改。
+	menuID := strings.TrimSpace(c.PostForm("menu"))
 	if id == "" {
 		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
 		return
@@ -353,9 +397,15 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 	if v := strings.TrimSpace(c.PostForm("target")); v != "" {
 		req.Target = &v
 	}
+	// 乐观锁：编辑抽屉把打开时的 update_time 原样回带（见 navMenuRow.UpdatedAt）。
+	if v := strings.TrimSpace(c.PostForm("expectedUpdatedAt")); v != "" {
+		req.ExpectedUpdatedAt = &v
+	}
 	if _, err := h.navigations.Update(c.Request.Context(), req); err != nil {
+		// 业务文案必须回到页面上：冲突（已被别处改过）与「路径被占用」这类结论
+		// 都要让操作者知道该刷新重做还是改字段 —— 通用提示会把这些区别全吞掉。
 		logger.Scene("page").With("id", id).Error(err, "更新导航项失败")
-		shell.PageErrorBadRequest(c, "navigation", err)
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navigationErrPageText(c, err), ""))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
@@ -470,12 +520,20 @@ func (h *navigationPageHandle) NavigationMove(c *gin.Context) {
 		return
 	}
 	a, b := siblings[idx], siblings[next]
-	if _, err = h.navigations.Update(ctx, &navigationdto.UpdateReq{ID: a.ID, SortOrder: &b.SortOrder}); err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
+	// 交换前带上各自读到的 update_time（乐观锁）：排序也是这份数据的一次写入，
+	// 谁在这期间改过哪一条就拒绝哪一条，而不是把对方的修改顺手抹平。
+	if _, err = h.navigations.Update(ctx, &navigationdto.UpdateReq{
+		ID: a.ID, SortOrder: &b.SortOrder, ExpectedUpdatedAt: &a.UpdatedAt,
+	}); err != nil {
+		logger.Scene("page").With("id", a.ID).Error(err, "调整导航项排序失败")
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, id, navigationErrPageText(c, err), ""))
 		return
 	}
-	if _, err = h.navigations.Update(ctx, &navigationdto.UpdateReq{ID: b.ID, SortOrder: &a.SortOrder}); err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
+	if _, err = h.navigations.Update(ctx, &navigationdto.UpdateReq{
+		ID: b.ID, SortOrder: &a.SortOrder, ExpectedUpdatedAt: &b.UpdatedAt,
+	}); err != nil {
+		logger.Scene("page").With("id", b.ID).Error(err, "调整导航项排序失败")
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, id, navigationErrPageText(c, err), ""))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))

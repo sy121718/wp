@@ -19,9 +19,17 @@ import (
 	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
+
+// errFacingDetailSep 业务文案与定位信息的分隔符（乐观锁冲突等带定位的场景）。
+//
+// 写侧（service.staleVersionMessage）固定用全角「：」拼装；这里同时认半角「: 」，
+// 是为了与 shell.FacingNotice 的形态 3（两种分隔符都认）保持同一套读法 ——
+// 将来写侧按语言改用半角时，读侧不必跟着改。
+const errFacingDetailSep = "："
 
 // navigationErrScene 日志场景名（与 navigation 模块其它 logger.Scene("navigation") 一致）。
 const navigationErrScene = "navigation"
@@ -39,12 +47,44 @@ func navigationFacingText(err error) (string, bool) {
 	if err != nil {
 		msg = err.Error()
 	}
-	for _, m := range navigationenums.NavigationFacingMessages {
-		if msg == m || strings.HasPrefix(msg, m+"|") {
-			return msg, true
-		}
+	// 命中判据与白名单同源（enums.HitFacingMessage）：三种形态 ——
+	// 整串相等 / key|param / key：定位信息。本函数只多负责「不命中就记日志」那一层。
+	return navigationenums.HitFacingMessage(msg)
+}
+
+// localizeFacing 把白名单命中的文案转成**当前语言下可直接渲染**的一句。
+//
+// 三种形态（与 navigationFacingText 的判据一一对应）：
+//
+//   - key —— 裸 key，交给 pkg/response 的取词（它本来就是为这个出口设计的）；
+//   - key|param —— 带参协议，同样交给 pkg/response（词条里的 %s 由它填）；
+//   - key：<定位> —— 本模块自己拼的形态（乐观锁冲突就长这样），必须自己翻：
+//     response 的 translate 不认识全角「：」，不翻的话页面上会原样出现裸 key。
+//
+// 页面与 JSON 两个出口共用它，因此「同一个错误在页面与接口上说法一致」不是靠两边各写一遍。
+func localizeFacing(c *gin.Context, msg string) string {
+	if key, detail, ok := cutFacingDetail(msg); ok {
+		return shell.TranslateFor(c)(key, key) + facingDetailSep(c) + detail
 	}
-	return "", false
+	return response.TranslateMessage(c, msg)
+}
+
+// cutFacingDetail 从白名单文案里拆出「key + 定位信息」；不是该形态返回 ok=false。
+// 判据在 enums（与白名单同一文件、同一份读法）：service 侧的 FacingText 用的是同一个，
+// 所以页面出口与 contract 出口不会对「哪一段是 key、哪一段是定位」产生分歧。
+func cutFacingDetail(msg string) (key, detail string, ok bool) {
+	return navigationenums.SplitFacingDetail(msg)
+}
+
+// facingDetailSep 定位信息的分隔符：中文用全角冒号，其余语言用「: 」。
+//
+// 读侧 shell.FacingNotice 的形态 3 两种都认，所以写读两侧不会因语言切换而失配
+// （写侧固定发全角、这里按语言渲染，是因为提示条最终是给人看的一句话）。
+func facingDetailSep(c *gin.Context) string {
+	if strings.HasPrefix(response.RequestLanguage(c), "zh") {
+		return errFacingDetailSep
+	}
+	return ": "
 }
 
 // navigationErrText 把 service 错误收敛为可对外展示的文案（JSON 接口）。
@@ -52,7 +92,7 @@ func navigationFacingText(err error) (string, bool) {
 // 命中白名单 → 原样返回；未命中 → 记一条结构化日志并返回归口文案。
 func navigationErrText(c *gin.Context, err error) string {
 	if msg, ok := navigationFacingText(err); ok {
-		return msg
+		return localizeFacing(c, msg)
 	}
 
 	logger.Scene(navigationErrScene).
@@ -70,7 +110,7 @@ func navigationErrText(c *gin.Context, err error) string {
 // 未命中 → 归口到 navigationenums.ErrInternal 并翻成当前语言，数据库原文只进日志。
 func navigationErrPageText(c *gin.Context, err error) string {
 	if msg, ok := navigationFacingText(err); ok {
-		return msg
+		return localizeFacing(c, msg)
 	}
 	return shell.TranslateFor(c)(navigationenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）")
 }

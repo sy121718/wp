@@ -60,4 +60,6 @@ func init() {
 	registerPluginPatrolI18n()
 	registerBulkNoticeI18n()
 	registerAdminRemainingTemplatesI18n()
+	// 290：导航菜单页 + 工作台检查器的补漏词条（见 register_navigation_menu_i18n.go）。
+	registerNavigationMenuI18n()
 }

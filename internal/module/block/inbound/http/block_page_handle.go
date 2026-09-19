@@ -316,6 +316,11 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		ID       string          `json:"id" binding:"required"`
 		Name     string          `json:"name"`
 		Document json.RawMessage `json:"document"`
+		// ReturnURL 保存成功后的回跳目标（站内相对路径）。
+		//
+		// 来源：菜单页「新建面板块并编辑」跳到 /workbench?block=ID&returnUrl=...，
+		// 工作台把它随保存请求体带回来 —— 块存完能直接回到菜单编辑器并重新展开那一项。
+		ReturnURL string `json:"returnUrl"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.String(http.StatusBadRequest, "参数不合法")
@@ -335,6 +340,19 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		ID: req.ID, Name: name, Document: req.Document,
 	}); err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
+		return
+	}
+	// 回跳（303 PRG）：只有**站内相对路径**才接受，其它一律拒绝并落默认列表页。
+	//
+	// 开放重定向在后台同样是「看起来像本站自己发起的跳转」：//evil.example.com 是协议
+	// 相对 URL，浏览器会当外站处理；绝对 URL 更直接。判据与语言切换回跳共用同一份
+	//（shell.LocalReturnPath）。没传（普通块编辑）时不跳，保存后留在工作台。
+	if raw := strings.TrimSpace(req.ReturnURL); raw != "" {
+		target := shell.LocalReturnPath(raw)
+		if target == "" {
+			target = "/admin/blocks"
+		}
+		c.Redirect(http.StatusSeeOther, target)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "已保存，关联页面将标记为待重建"})

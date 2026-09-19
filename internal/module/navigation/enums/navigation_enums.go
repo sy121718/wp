@@ -1,6 +1,8 @@
 // Package navigationenums 统一管理 navigation 模块响应消息（0-C）。
 package navigationenums
 
+import "strings"
+
 // 成功消息（未接 i18n 前中文常量）。
 const (
 	MsgCreateSuccess = "MsgCreateSuccess" // 导航项创建成功
@@ -26,6 +28,13 @@ const (
 	// 而工程清单为空或读不到。显式失败而不是静默返回「找不到」——后者会把
 	// 「读不到工程表」伪装成「导航项不存在」。
 	ErrProjectRequired = "ErrProjectRequired" // 缺少可作用域的工程，无法定位导航项的工程归属
+	// ErrStaleVersion 乐观锁冲突：调用方手上的 update_time 与库内当前值不一致。
+	//
+	// 后台菜单页与工作台检查器是同一份数据的两个入口，两处同时改此前是静默覆盖
+	//（last-write-wins）。冲突一律**打回给人**：不自动合并、不加后缀、不丢弃其中一方。
+	// 文案后接「：<菜单项标题>」的定位信息（形态与 shell.FacingNotice 的形态 3 对齐：
+	// 页面路径经 ?err= 回带时靠「候选文案 + ：」命中，所以本词条内不带 %s 占位符）。
+	ErrStaleVersion = "ErrStaleVersion"
 	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名 / 文件路径等）对外归口文案。
 	//
 	// 值刻意带模块前缀：sys_i18n 的主键是 (item_key, lang)，裸 key "ErrInternal" 已被
@@ -44,4 +53,40 @@ const (
 var NavigationFacingMessages = []string{
 	ErrInvalidParam, ErrNotFound, ErrInvalidKind, ErrPathTaken,
 	ErrInvalidSource, ErrInvalidTarget, ErrInvalidParent, ErrProjectRequired,
+	ErrStaleVersion,
+}
+
+// —— 白名单的两种读法（本模块内共享，别在各处再抄一份判据）——
+//
+// 白名单命中判定与「key + 定位信息」的拆分此前只存在于 inbound/http 的一处循环里；
+// 消费者侧（工作台检查器要就地建菜单项）需要的正是同一份判据 —— 它拿不到本模块的
+// enums，只能经 contract 的出口取文案。把判据放在白名单旁边，两侧就不会各判一套。
+
+// FacingDetailSep 业务文案与定位信息的分隔符（写侧固定用全角「：」）。
+// 半角「: 」只出现在读侧（shell.FacingNotice 的形态 3 两种都认）。
+const FacingDetailSep = "："
+
+// HitFacingMessage 判定错误文本是否命中白名单，命中返回原文。
+// 三种形态：整串相等 / key|param 带参 / key：<定位信息>。
+func HitFacingMessage(msg string) (string, bool) {
+	for _, m := range NavigationFacingMessages {
+		if msg == m || strings.HasPrefix(msg, m+"|") ||
+			strings.HasPrefix(msg, m+FacingDetailSep) || strings.HasPrefix(msg, m+": ") {
+			return msg, true
+		}
+	}
+	return "", false
+}
+
+// SplitFacingDetail 从白名单文案里拆出「key + 定位信息」；不是该形态返回 ok=false。
+func SplitFacingDetail(msg string) (key, detail string, ok bool) {
+	for _, m := range NavigationFacingMessages {
+		if rest, found := strings.CutPrefix(msg, m+FacingDetailSep); found {
+			return m, rest, true
+		}
+		if rest, found := strings.CutPrefix(msg, m+": "); found {
+			return m, rest, true
+		}
+	}
+	return "", "", false
 }

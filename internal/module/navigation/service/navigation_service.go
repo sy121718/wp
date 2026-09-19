@@ -12,7 +12,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -79,6 +81,40 @@ func (s *Service) SourceGroups(ctx context.Context, projectID string) (groups []
 		return nil, nil
 	}
 	return s.sources.Candidates(ctx, projectID)
+}
+
+// 编译期断言：业务错误文案出口（工作台检查器这类跨模块消费者用）。
+var _ navigationcontract.FacingTexter = (*Service)(nil)
+
+// FacingText 把本模块业务错误转成指定语言下可直接展示的一句话（契约 FacingTexter）。
+//
+// 与 inbound/http 的两个出口同源：同一份白名单、同一个「key：定位」拆法（判据都在 enums），
+// 差别只在取词入口 —— 这里走 pkg/i18n.Translate（消费者拿不到 *gin.Context），
+// 那里走 pkg/response 的取词。两处说法因此不会漂。
+func (s *Service) FacingText(lang string, err error) string {
+	tr := func(key, fallback string) string { return i18n.Translate(key, fallback, lang) }
+	if err != nil {
+		if msg, ok := navigationenums.HitFacingMessage(err.Error()); ok {
+			if key, detail, hasDetail := navigationenums.SplitFacingDetail(msg); hasDetail {
+				return tr(key, key) + facingDetailSepForLang(lang) + detail
+			}
+			if key, param, hasParam := strings.Cut(msg, "|"); hasParam {
+				// 带参形态：%s 由这里填（pkg/i18n 只做取词，不做占位符替换）。
+				return strings.Replace(tr(key, key), "%s", param, 1)
+			}
+			return tr(msg, msg)
+		}
+	}
+	return tr(navigationenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）")
+}
+
+// facingDetailSepForLang 定位信息的分隔符按语言取（中文全角，其余「: 」）。
+// 与 inbound/http 的 facingDetailSep 同一取值口径：提示条最终是给人看的一句话。
+func facingDetailSepForLang(lang string) string {
+	if strings.HasPrefix(strings.TrimSpace(lang), "zh") {
+		return navigationenums.FacingDetailSep
+	}
+	return ": "
 }
 
 // 编译期契约断言。
@@ -241,8 +277,27 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 		}
 	}
 
-	if err = s.m.Save(ctx, e.ProjectID, e.ID, updates); err != nil {
-		return nil, err
+	// 乐观锁（两个入口的并发保护）：ExpectedUpdatedAt 非空时，库内 update_time 必须仍是
+	// 调用方手上的那个值，否则整条更新不落库并回可定位的错误。
+	// 不自动合并、不追加后缀、不丢弃其中一方 —— 「两边同时改」这件事只有人能裁决。
+	expected, perr := parseExpectedUpdatedAt(req.ExpectedUpdatedAt)
+	if perr != nil {
+		return nil, perr
+	}
+	if expected == nil {
+		if err = s.m.Save(ctx, e.ProjectID, e.ID, updates); err != nil {
+			return nil, err
+		}
+	} else {
+		// 受影响行数 0：实体上一步已定位过（不存在会在上面返回 ErrNotFound），
+		// 所以这里只可能是「库内 update_time 已经不是期望值」——另一处入口改过这一项。
+		rows, serr := s.m.SaveWithExpected(ctx, e.ProjectID, e.ID, updates, *expected)
+		if serr != nil {
+			return nil, serr
+		}
+		if rows == 0 {
+			return nil, errors.New(staleVersionMessage(s.staleTitle(ctx, e)))
+		}
 	}
 	// 失效派发放在写成功之后、回读之前：回读失败不该让「已经提交的导航变更」漏掉派发。
 	// 位置可能被一起改（header ↔ footer），新旧两个位置都要失效 —— 旧位置的产物里
@@ -469,6 +524,8 @@ func buildNode(n *navigationmodel.NavigationEntity, children map[string][]*navig
 		SourceType: n.SourceType, SourceID: n.SourceID, Target: n.Target,
 		SortOrder:    n.SortOrder,
 		PanelBlockID: n.PanelBlockID, PanelWidth: n.PanelWidth,
+		// 乐观锁 token：管理页用它原样回带（精确到微秒，展示串只到分钟，不能拿来比较）。
+		UpdatedAt: n.UpdatedAt.Format(time.RFC3339Nano),
 	}
 	for _, k := range children[n.ID] {
 		node.Children = append(node.Children, buildNode(k, children))
@@ -663,6 +720,72 @@ func normalizeSourceID(p *string) *string {
 		return nil
 	}
 	return &v
+}
+
+// —— 乐观锁辅助（本批新增）——
+
+// parseExpectedUpdatedAt 解析调用方回带的 update_time（乐观锁）。
+//
+// 主形态是 RFC3339Nano（Go 的 time.Time 默认格式，微秒精度）：管理页表单原样回带它，
+// 时区偏移一并带着，解析回来是同一时刻（库列是 timestamptz，比较的是时刻不是字符串）。
+// 另接受空格分隔的秒级格式（utils.LayoutSecond）：外部脚本按项目既有口径传值时不必转换
+// —— 秒级串只在 update_time 恰好落在整秒时命中，属于调用方的责任。
+// 空 / nil = 不做校验（既有调用方与内部路径的兼容形态）；给了却解析不了 = 参数错误
+// （不能静默忽略：那样并发保护会被一个坏参数悄悄绕过）。
+func parseExpectedUpdatedAt(raw *string) (*time.Time, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	s := strings.TrimSpace(*raw)
+	if s == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, utils.LayoutSecond} {
+		if t, perr := time.ParseInLocation(layout, s, time.Local); perr == nil {
+			return &t, nil
+		}
+	}
+	return nil, errors.New(navigationenums.ErrInvalidParam)
+}
+
+// staleVersionMessage 乐观锁冲突的对外文案：白名单 key + 「：<定位>」。
+//
+// 用「：」而不是带参的 key|param 形态：定位信息是菜单项标题（任意文本），
+// 而页面路径经 ?err= 回带后要过 shell.FacingNotice 的受控文案判定 —— 那里认的是
+// 「候选文案 + ：」前缀（形态 3），不是「模板 + 任意参数」。走带参形态的话，
+// 读侧只有带 %s 的词条模板，永远匹配不上填好参的整句，提示会静默消失。
+func staleVersionMessage(title string) string {
+	return navigationenums.ErrStaleVersion + "：" + compactLocation(title)
+}
+
+// compactLocation 定位信息（菜单项标题）的收敛：去控制字符、限长。
+//
+// 标题来自用户输入，而页面提示条有长度上限（shell.NoticeMaxBytes = 512 字节）：
+// 撑破上限的提示会被判定为伪造而整条丢弃 —— 等于没有提示。
+func compactLocation(title string) string {
+	title = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, title))
+	if title == "" {
+		return "-"
+	}
+	const maxRunes = 40
+	if rs := []rune(title); len(rs) > maxRunes {
+		return string(rs[:maxRunes]) + "…"
+	}
+	return title
+}
+
+// staleTitle 冲突提示里的定位信息：优先取库内**当前**标题（冲突之后它才是真相），
+// 读不到（已被删除 / 作用域异常）时回退调用方手上的旧标题。
+func (s *Service) staleTitle(ctx context.Context, e *navigationmodel.NavigationEntity) string {
+	if cur, err := s.m.Get(ctx, e.ProjectID, e.ID); err == nil && cur != nil && strings.TrimSpace(cur.Title) != "" {
+		return cur.Title
+	}
+	return e.Title
 }
 
 // toResp 实体 → 响应。

@@ -155,6 +155,15 @@ func LangRedirectPath(raw string) string {
 	return raw
 }
 
+// LocalReturnPath 通用「站内相对路径」白名单（returnUrl 这类回跳参数用）。
+//
+// 与语言切换回跳**共用同一份判据**（LangRedirectPath）：以 "/" 开头、不含 "//"、
+// 不含反斜杠或控制字符、且不超过 512 字节；不合规一律返回空串。
+// 为什么复用而不是各写一份：开放重定向要挡的就是同一批形态（协议相对 URL
+// "//evil.example.com"、绝对 URL、"\" 归一成的双斜杠、换行拆头），分支写两份必然漂移，
+// 而漏掉的那份只会在某次安全复核里才被发现。**返回空串表示拒绝**，兜底由调用方决定。
+func LocalReturnPath(raw string) string { return LangRedirectPath(raw) }
+
 // LangRedirect 语言切换表单 redirect 隐藏域的取值。
 //
 // 取值链（改前先读过）：admin/layout.html 的

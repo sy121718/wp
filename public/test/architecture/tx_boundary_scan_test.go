@@ -235,6 +235,10 @@ var txBoundaryAllow = map[string]string{
 	"internal/module/mail/service/mail_automation.go#SaveAutomation":                     "误报：CreateAutomation 与 UpdateAutomationFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支 —— 与 mail_campaign.go#SaveCampaign 同形",
 	"internal/module/mail/service/mail_automation_run.go#RunAutomation":                  "误报：两处 UpdateRunFields 落在不同节点类型的分支里（delay 节点写完 waiting 即挂起返回 / email 节点发信失败写 error 后重试），同一次调用只落一支。发信与入队是跨系统边界（不可回滚），本函数按「一步一提交 + node_logs 幂等判重（NodeLogExists）+ 游标先推进」设计，包成一个大事务反而让行锁横跨 SMTP 往返",
 	"internal/module/presentation/service/presentation_archive.go#EnsureArchiveInstance": "可接受：**幂等可重跑** —— CreateInstance 对「同实体同角色」自身幂等（presentation_instance.go:51 已有实例即返回），第二处 UpdateURL 只在 slug 变化时把归档页迁到新路径；失败后重跑会走幂等分支再修正。且 CreateInstance 内部含编译 + 发布 + 文件系统激活（跨系统），包进一个 DB 事务不现实",
+	// —— 2026-09-19 第七批（导航乐观锁引入 SaveWithExpected 后新命中）——
+	// 同一个方法里出现两条写路径：有 expected token 走 SaveWithExpected（条件 UPDATE），
+	// 没有则走 Save。二者是**互斥分支**，单次调用只执行一支。
+	"internal/module/navigation/service/navigation_service.go#Update": "误报：Save 与 SaveWithExpected 是「有 / 无乐观锁 token」的互斥分支（req.ExpectedUpdatedAt 为空走 Save、非空走 SaveWithExpected），单次调用只执行一支；SaveWithExpected 本身是条件 UPDATE（WHERE update_time = expected），原子性由 SQL 保证，不存在半截状态 —— 与 mail_campaign.go#SaveCampaign 同形。",
 }
 
 func TestServiceWritePathsHaveTransactionBoundary(t *testing.T) {

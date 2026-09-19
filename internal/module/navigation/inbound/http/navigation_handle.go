@@ -102,6 +102,10 @@ func navigationErrorStatus(err error) int {
 	switch {
 	case strings.Contains(msg, navigationenums.ErrNotFound):
 		return http.StatusNotFound
+	// 乐观锁冲突用 409：与「你填错了」（400）和「系统坏了」（500）都不同 ——
+	// 这一次请求本身没问题，是数据在这期间被别人改过，客户端该刷新后重做。
+	case strings.Contains(msg, navigationenums.ErrStaleVersion):
+		return http.StatusConflict
 	case strings.Contains(msg, navigationenums.ErrInvalidParam),
 		strings.Contains(msg, navigationenums.ErrInvalidKind),
 		strings.Contains(msg, navigationenums.ErrPathTaken):
