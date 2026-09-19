@@ -162,7 +162,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		c.String(http.StatusInternalServerError, "块文档序列化失败")
 		return
 	}
-	metaJSON, err := json.Marshal(gin.H{
+	meta := gin.H{
 		// target 编辑目标描述符（EDT-017）。
 		"target":    workbenchTargetOf(EditTargetBlock),
 		"pageId":    block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
@@ -172,7 +172,17 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"kind":      block.Kind,
 		"draftPath": "",
 		"version":   0,
-	})
+	}
+	// returnUrl：菜单页「新建面板块并编辑」一路带过来的回跳目标。
+	//
+	// 白名单收敛在这一处（shell.LocalReturnPath）：不是站内相对路径的值直接**丢弃** ——
+	// meta 里没有这个键，保存后留在工作台，与普通块编辑完全一样。这里不做兜底跳转，
+	// 因为「没带 returnUrl」与「带了非法 returnUrl」对用户是同一件事：不该离开编辑器。
+	// 消费侧（SaveBlockContent）会再校验一次：meta 只是搬运，不是信任边界。
+	if back := shell.LocalReturnPath(c.Query("returnUrl")); back != "" {
+		meta["returnUrl"] = back
+	}
+	metaJSON, err := json.Marshal(meta)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
 		return

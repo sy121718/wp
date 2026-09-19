@@ -22,6 +22,23 @@
             {{if f.Value == ""}}<option value="" selected>（默认）</option>{{end}}
             {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
         </select>
+        {{if f.NavNewRef != ""}}
+        {* 就地新建菜单项：写回走 /workbench/navigation/create（navigation 契约的 Create，
+           权限点沿用 navigation:create），客户端把返回的新项插进上面的下拉并写回当前节点。
+           用 <details> 折叠：检查器面板本来就窄，常年展开的表单会把下面的字段挤下去。 *}
+        <details class="wb-nav-new" data-wb-nav-new="{{f.Key}}">
+            <summary class="wb-btn wb-btn-sm wb-btn-secondary">{{ .["t"]("workbench.nav.new", "新建菜单项") }}</summary>
+            <div class="wb-nav-new-body">
+                <input type="text" data-wb-nav-field="title" placeholder="{{ .["t"]("workbench.nav.title", "菜单文字，如：关于我们") }}">
+                <input type="text" data-wb-nav-field="path" placeholder="{{ .["t"]("workbench.nav.path", "链接，如 /about") }}">
+                <select data-wb-nav-field="kind" aria-label="{{ .["t"]("workbench.nav.kind", "导航位置") }}">
+                    {{range _, o := f.KindOptions}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+                </select>
+                <p class="wb-hint" data-wb-nav-msg role="status"></p>
+                <button type="button" class="wb-btn wb-btn-primary wb-btn-sm" data-wb-nav-create>{{ .["t"]("workbench.nav.create", "创建并选用") }}</button>
+            </div>
+        </details>
+        {{end}}
     </div>
     {{else if f.UI == "multientityref"}}
     {* 多选实体（标签 id 列表等，EDT-007）：容器持有 data-wb-path/kind，复选框只带

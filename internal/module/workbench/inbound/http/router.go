@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/middleware/builtin"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
@@ -233,5 +234,9 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	g.POST("/workbench/template/preview", h.TemplatePreviewDraft)
 	// 实例编辑模式保存（docs/04-C）：覆盖文档 + 重编译发布，只改本实例。
 	g.POST("/workbench/instance/save", h.InstanceSave)
+	// 检查器内就地新建菜单项（nav 组件的「具体菜单项」字段）：写回走 navigation 契约的
+	// Create，权限点沿用既有 /api/navigation/create —— workbenchPages 组只挂了
+	// Session+CSRF+权限上下文，Casbin 要在这里显式挂，否则是「页面没挂鉴权」。
+	g.POST("/workbench/navigation/create", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.InspectorNavigationCreate)
 	return h
 }

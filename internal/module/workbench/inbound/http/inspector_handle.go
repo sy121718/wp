@@ -9,6 +9,8 @@ import (
 
 	"go_wp/internal/builder"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	"go_wp/internal/templates"
+	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -100,6 +102,12 @@ type inspectorField struct {
 	// HTML 非空表示该字段的整块结构已由服务端生成（重复项面板等）：模板原样输出，
 	// 客户端只绑行为 —— 结构只有一处定义（inspector_repeater.go）。
 	HTML string
+	// NavNewRef 非空表示该 entityref 字段支持「就地新建」（当前只有 navigation）：
+	// 模板据此渲染一个折叠的新建表单，客户端提交后把新项写回本字段。
+	// 端口未注入 / 无工程上下文时不置位 —— 入口整体不渲染，不留一个点了没反应的表单。
+	NavNewRef string
+	// KindOptions 新建菜单项时的位置选项（只随 NavNewRef 一起用）。
+	KindOptions []inspectorOption
 }
 
 // inspectorSection 面板分组（WP 式折叠分组）。
@@ -167,6 +175,9 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
 		"NodeID": nodeID, "NodeType": node.Type,
 		"Sections": sections,
+		// 片段模板的取词函数（与后台页面同一份 TranslateFunc）：片段不经 shell.Prepare，
+		// 不注入的话新增文案只能写死在模板里，英文界面上会留下中文。
+		"t": templates.TranslateFunc(response.RequestLanguage(c)),
 	})
 }
 

@@ -1123,3 +1123,13 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 .wb-hint { font-size: 11px; line-height: 1.5; color: var(--sky-c-text-dim, #8a93a3); }
 
 
+
+/* 检查器内就地新建菜单项（nav 组件的「具体菜单项」字段）。
+   折叠表单：面板本来就窄，常年展开会把下面的字段挤下去。
+   宽度跟随面板（不写死），输入控件满宽 —— 触屏下点得到、键盘下 Tab 得通。 */
+.wb-nav-new { margin-top: 6px; }
+.wb-nav-new > summary { cursor: pointer; list-style: none; display: inline-block; }
+.wb-nav-new > summary::-webkit-details-marker { display: none; }
+.wb-nav-new-body { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.wb-nav-new-body input, .wb-nav-new-body select { width: 100%; }
+.wb-nav-new-body .wb-hint { min-height: 1em; margin: 0; }

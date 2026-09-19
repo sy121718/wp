@@ -106,17 +106,77 @@ export const inspectorMethods = {
                     var el = e.target && e.target.closest ? e.target.closest('[data-wb-path]') : null;
                     if (el && panel.contains(el)) commit(el);
                 };
-                panel.onclick = function (e) {
-                    var btn = e.target && e.target.closest ? e.target.closest('[data-wb-media-pick]') : null;
-                    if (!btn) return;
-                    var key = btn.getAttribute('data-wb-media-pick');
-                    var input = panel.querySelector('[data-wb-path="' + key + '"]');
-                    self.openMediaPicker(function (url) {
-                        if (input) input.value = url;
-                        self.snapshot();
-                        setPath(key, url);
-                        self.renderTree(); self.refreshCanvas(); self.renderUI();
+                // createNav 检查器内就地新建菜单项（nav 组件的「具体菜单项」字段）。
+                //
+                // 写回走服务端端点（/workbench/navigation/create → navigation 模块的 Create
+                // 契约，权限点沿用 navigation:create）：客户端只负责把返回的新项塞进当前字段。
+                // 为什么不在本地先占位、保存时再建 —— 那样一次保存会带上两处写，失败时
+                // 「菜单项建了、页面没存」这种半截状态没人能收拾。
+                function createNav(btn) {
+                    var box = btn.closest('[data-wb-nav-new]');
+                    if (!box) return;
+                    var fieldKey = box.getAttribute('data-wb-nav-new');
+                    var projectId = (meta.projectId || '').trim();
+                    var titleEl = box.querySelector('[data-wb-nav-field="title"]');
+                    var pathEl = box.querySelector('[data-wb-nav-field="path"]');
+                    var kindEl = box.querySelector('[data-wb-nav-field="kind"]');
+                    var msg = box.querySelector('[data-wb-nav-msg]');
+                    var title = titleEl ? titleEl.value.trim() : '';
+                    var path = pathEl ? pathEl.value.trim() : '';
+                    var kind = kindEl ? kindEl.value : 'header';
+                    function say(text) { if (msg) msg.textContent = text || ''; }
+                    if (!projectId) { say('当前文档没有站点工程上下文，无法新建菜单项。'); return; }
+                    if (!title || !path) { say('标题与链接都要填。'); return; }
+
+                    var body = new URLSearchParams();
+                    body.set('projectId', projectId);
+                    body.set('title', title);
+                    body.set('path', path);
+                    body.set('kind', kind);
+                    btn.disabled = true;
+                    say('');
+                    fetch('/workbench/navigation/create', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+                        body: body.toString()
+                    }).then(function (r) { return r.json(); }).then(function (j) {
+                        btn.disabled = false;
+                        if (!j || (j.code && j.code >= 400) || !j.data) {
+                            say((j && j.message) || '新建失败，请稍后重试。');
+                            return;
+                        }
+                        var sel = panel.querySelector('select[data-wb-path="' + fieldKey + '"]');
+                        if (!sel) { return; }
+                        var opt = document.createElement('option');
+                        opt.value = j.data.id;
+                        opt.textContent = j.data.label || j.data.title || j.data.id;
+                        sel.appendChild(opt);
+                        sel.value = j.data.id;
+                        if (titleEl) titleEl.value = '';
+                        if (pathEl) pathEl.value = '';
+                        // 与手工选择同一条提交路径：commit 会写回 AST 并刷新画布与结构树。
+                        commit(sel);
+                    }).catch(function () {
+                        btn.disabled = false;
+                        say('新建失败，请稍后重试。');
                     });
+                }
+                panel.onclick = function (e) {
+                    var pick = e.target && e.target.closest ? e.target.closest('[data-wb-media-pick]') : null;
+                    if (pick) {
+                        var key = pick.getAttribute('data-wb-media-pick');
+                        var input = panel.querySelector('[data-wb-path="' + key + '"]');
+                        self.openMediaPicker(function (url) {
+                            if (input) input.value = url;
+                            self.snapshot();
+                            setPath(key, url);
+                            self.renderTree(); self.refreshCanvas(); self.renderUI();
+                        });
+                        return;
+                    }
+                    var create = e.target && e.target.closest ? e.target.closest('[data-wb-nav-create]') : null;
+                    if (create) { e.preventDefault(); createNav(create); }
                 };
             },
             // refreshFieldHints 提交后按模型刷新联动提示（值补全 → 提示立刻消失）。

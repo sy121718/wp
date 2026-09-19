@@ -86,14 +86,31 @@ export const apiMethods = {
                         method: 'POST',
                         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify(payload)
-                    }).then(function (r) { return r.json(); });
+                    }).then(function (r) {
+                        // 服务端可能直接 303 回跳（「块保存后回菜单编辑器」那条链，PRG）：
+                        // fetch 自动跟随重定向，跟随后的响应是整页 HTML 而不是 JSON ——
+                        // 直接 r.json() 会把一次成功的保存判成失败。这里只取最终 URL，
+                        // 由调用点跳转（跟随行为与 302 的语义一致，只是由前端落地）。
+                        if (r.redirected) { return { redirected: true, url: r.url }; }
+                        return r.json();
+                    });
                 }
                 send(false).then(function (j) {
+                    if (j && j.redirected) {
+                        self.busy = false; self.saveState = 'saved';
+                        window.location.href = j.url;
+                        return;
+                    }
                     // 用描述符判定实例目标（分派一律走 target，见上面的说明）。
                     if (j && j.code === 409 && target.type === 'instance') {
                         if (window.confirm(j.message || '这次改动会让本商品转为独立文档，继续？')) {
                             return send(true).then(function (j2) {
                                 self.busy = false;
+                                if (j2 && j2.redirected) {
+                                    self.saveState = 'saved';
+                                    window.location.href = j2.url;
+                                    return;
+                                }
                                 if (j2 && j2.code && j2.code >= 400) {
                                     self.saveState = 'error'; self.renderUI();
                                     alert(j2.message || '保存失败');

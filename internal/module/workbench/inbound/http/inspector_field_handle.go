@@ -25,6 +25,13 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 			refKind = ctl.Options[0].Value
 		}
 		f.Options = entityRefInspectorOptions(ctx, h, projectID, refKind, value)
+		// 导航菜单项：检查器里可以就地新建（写回走 navigation 契约的 Create）。
+		// 三个条件缺一不可 —— refKind 是 navigation、端口已注入、有工程上下文；
+		// 少任何一个都会渲染出一个「提交必然失败」的入口，比不显示更糟。
+		if refKind == "navigation" && h != nil && h.navigations != nil && projectID != "" {
+			f.NavNewRef = refKind
+			f.KindOptions = navigationKindOptions()
+		}
 	case "multientityref":
 		// 多选实体（标签 id 列表等，审计 EDT-007）：值仍是逗号分隔串（读写兼容），
 		// 但勾选状态由当前值直接渲染 —— 打开面板就知道已经选了哪几个，
