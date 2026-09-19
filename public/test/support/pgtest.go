@@ -178,6 +178,16 @@ const templatePrefix = "wp_test_tpl_"
 // templateLockKey 建模板库的跨进程互斥键（多个测试进程会同时启动）。
 const templateLockKey int64 = 0x6770775f74657374 // "gwp_test"
 
+// templateCleanupEnv 开启「清理其它指纹的模板库」的环境变量开关。
+//
+// 为什么默认关：清理**无法判断别的指纹的模板是否正被使用**。多个 worktree（各自一份迁移
+// 代码 = 各自一个指纹）并发跑测试时，A 刚建好自己的模板，B 建模板时「顺手清理」就把它
+// DROP 了 —— 表现是 A 的 CREATE DATABASE ... TEMPLATE 报 3D000「template database does
+// not exist」，且只在并行时出现、单跑必绿（2026-09-20 实测：main 与 4 个并行 worktree
+// 同时跑测试时复现）。残留的模板库只是一份库结构（几十 MB），比随机红的测试便宜得多；
+// 需要清理时显式 WP_TEST_TPL_CLEANUP=1 跑一次即可。
+const templateCleanupEnv = "WP_TEST_TPL_CLEANUP"
+
 var (
 	templateOnce sync.Once
 	templateDB   string
@@ -192,8 +202,8 @@ var (
 // 约 65ms（快 15 倍），复制出来的库还自带 ext_shared 与 pg_trgm，连扩展都不用再装。
 //
 // 模板名带迁移指纹（migrations.Fingerprint()）：迁移一改就换一个新名字重建，绝不去 DROP
-// 正在被别的测试进程使用的旧模板 —— 并发下那是必然冲突。旧模板库会残留，在建模板时顺手
-// 清理（清理失败只说明有进程正在用，忽略即可）。
+// 正在被别的测试进程使用的旧模板 —— 并发下那是必然冲突。旧模板库会残留（默认不清理：
+// 跨 worktree 的「顺手清理」会互删正在使用的模板，见 templateCleanupEnv 的注释）。
 func ensureTemplateDB(ep PGEndpoint) (string, error) {
 	templateOnce.Do(func() {
 		admin, err := gorm.Open(postgres.Open(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database)), &gorm.Config{})
@@ -240,11 +250,14 @@ func ensureTemplateDB(ep PGEndpoint) (string, error) {
 					sdb.Close()
 				}
 			}
-			// 顺手清理其它指纹的旧模板（尽力而为：正被别的进程用时 DROP 会失败）。
-			var stale []string
-			conn.Raw("SELECT datname FROM pg_database WHERE datname LIKE ? AND datname <> ?", templatePrefix+"%", name).Scan(&stale)
-			for _, old := range stale {
-				conn.Exec("DROP DATABASE IF EXISTS " + old)
+			// 其它指纹的模板库默认不动（见 templateCleanupEnv 的注释：跨 worktree 并发时
+			// 「顺手清理」会把别的进程正在使用的模板删掉，表现为随机的 3D000）。
+			if os.Getenv(templateCleanupEnv) == "1" {
+				var stale []string
+				conn.Raw("SELECT datname FROM pg_database WHERE datname LIKE ? AND datname <> ?", templatePrefix+"%", name).Scan(&stale)
+				for _, old := range stale {
+					conn.Exec("DROP DATABASE IF EXISTS " + old)
+				}
 			}
 			return nil
 		})
