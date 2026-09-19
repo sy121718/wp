@@ -510,7 +510,7 @@ func productViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 		// 而 contentAtomViewOf 只接受 func(*Props, ContentResolver) (View, error)
 		// （与 cardViewOf 同路）。工程取自构建上下文，组件包不感知它从哪来。
 		func(p *productPkg.Props, content core.ContentResolver) (productPkg.View, error) {
-			return productPkg.BuildView(p, content, ctx.ProjectID)
+			return productPkg.BuildView(p, content, ctx.ProjectID, ctx.Lang)
 		})
 }
 
@@ -520,7 +520,11 @@ func productViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 // 集合项作用域（item.* 取当前商品），集合外是页面级解析器（product.* 取当前实体）。
 // 越界字段在编译期报错，不静默渲染成空卡。
 func productCardViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return contentAtomViewOf(node, topLevel, ctx, productcardPkg.Type, "product_card", productcardPkg.CompileCSS, productcardPkg.BuildView)
+	// 闭包适配：站内链接本地化要传 ctx，而 contentAtomViewOf 只接受
+	// func(*Props, core.ContentResolver)（与 card 同一写法，审计 I18N-015）。
+	return contentAtomViewOf(node, topLevel, ctx, productcardPkg.Type, "product_card", productcardPkg.CompileCSS, func(p *productcardPkg.Props, content core.ContentResolver) (productcardPkg.View, error) {
+		return productcardPkg.BuildView(p, content, ctx.ResolveSiteLink)
+	})
 }
 
 // headingViewOf 转换 heading 节点（对应 core.Atom 基座的 Render 流程）。
@@ -708,7 +712,7 @@ func productSelectorViewOf(node *core.Node, topLevel bool, ctx *core.RenderConte
 	return contentAtomViewOf(node, topLevel, ctx, productselectorPkg.Type, "product_selector", productselectorPkg.CompileCSS,
 		// 与商品详情同一条闭包适配：规格选择器也要把工程 id 烘进片段 URL。
 		func(p *productselectorPkg.Props, content core.ContentResolver) (productselectorPkg.View, error) {
-			return productselectorPkg.BuildView(p, content, ctx.ProjectID)
+			return productselectorPkg.BuildView(p, content, ctx.ProjectID, ctx.Lang)
 		})
 }
 
@@ -833,7 +837,7 @@ func addToCartViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	addtocartPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view, err := addtocartPkg.BuildView(&p, ctx.Content, ctx.ProjectID)
+	view, err := addtocartPkg.BuildView(&p, ctx.Content, ctx.ProjectID, ctx.Lang)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
@@ -882,7 +886,10 @@ func faqViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeVi
 }
 
 func quoteViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return atomViewOf(node, topLevel, ctx, quotePkg.Type, "quote", quotePkg.CompileCSS, quotePkg.BuildView)
+	// 闭包适配：出处链接的站内本地化要传 ctx（审计 I18N-015）。
+	return atomViewOf(node, topLevel, ctx, quotePkg.Type, "quote", quotePkg.CompileCSS, func(p *quotePkg.Props) quotePkg.View {
+		return quotePkg.BuildView(p, ctx.ResolveSiteLink)
+	})
 }
 
 func countdownViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
@@ -930,7 +937,10 @@ func listViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 
 // infoboxViewOf 转换 infobox 节点（对应 Component.Render 流程，无 Advanced 层）。
 func infoboxViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	return leafViewOf(node, topLevel, ctx, infoboxPkg.Type, "infobox", infoboxPkg.CompileCSS, infoboxPkg.BuildView)
+	// 闭包适配：整卡链接的站内本地化要传 ctx（审计 I18N-015）。
+	return leafViewOf(node, topLevel, ctx, infoboxPkg.Type, "infobox", infoboxPkg.CompileCSS, func(p *infoboxPkg.Props) infoboxPkg.View {
+		return infoboxPkg.BuildView(p, ctx.ResolveSiteLink)
+	})
 }
 
 // socialbuttonsViewOf 转换 socialbuttons 节点（对应 Component.Render 流程，无 Advanced 层）。
@@ -965,7 +975,8 @@ func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 	classes := []string{core.NodeClass(node.ID)}
 	classes = append(classes, extraClasses...)
 
-	view, err := galleryPkg.BuildView(node.ID, &p, ctx.Content)
+	// 站内链接本地化（审计 I18N-015）：图集项与兜底链接里作者手填的站内路径按语言加前缀。
+	view, err := galleryPkg.BuildView(node.ID, &p, ctx.Content, ctx.ResolveSiteLink)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}

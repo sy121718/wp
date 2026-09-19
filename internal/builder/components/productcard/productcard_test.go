@@ -131,7 +131,7 @@ func TestBuildViewRendersDeclaredFields(t *testing.T) {
 		"item.tags":         `["新品","纯棉"]`,
 		"item.slug":         "summer-shirt",
 	}}
-	view, err := BuildView(&p, resolver)
+	view, err := BuildView(&p, resolver, nil)
 	if err != nil {
 		t.Fatalf("组装视图失败: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestBuildViewSkipsEmptyFields(t *testing.T) {
 	})
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
 		"item.name": "只有标题",
-	}})
+	}}, nil)
 	if err != nil {
 		t.Fatalf("组装视图失败: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestBuildViewImageFromJSONArray(t *testing.T) {
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
 		"product.images": `["/storage/a.jpg","/storage/b.jpg"]`,
 		"product.name":   "外套",
-	}})
+	}}, nil)
 	if err != nil {
 		t.Fatalf("组装视图失败: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestBuildViewHrefVariants(t *testing.T) {
 		})
 		view, err := BuildView(&p, stubResolver{values: map[string]string{
 			"item.name": "衬衫", "item.slug": c.value,
-		}})
+		}}, nil)
 		if err != nil {
 			t.Fatalf("组装视图失败: %v", err)
 		}
@@ -227,7 +227,7 @@ func TestBuildViewHrefVariants(t *testing.T) {
 // TestBuildViewPropagatesResolveError 解析失败（越界字段）必须上抛：不静默出空卡。
 func TestBuildViewPropagatesResolveError(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"titleField": "item.bogus"})
-	if _, err := BuildView(&p, stubResolver{errOn: "item.bogus"}); err == nil {
+	if _, err := BuildView(&p, stubResolver{errOn: "item.bogus"}, nil); err == nil {
 		t.Fatalf("越界字段应上抛解析错误")
 	}
 }
@@ -235,7 +235,7 @@ func TestBuildViewPropagatesResolveError(t *testing.T) {
 // TestBuildViewRequiresResolver 缺解析器（装配缺陷）时报错而不是渲染空卡。
 func TestBuildViewRequiresResolver(t *testing.T) {
 	p := decodePropsOf(t, map[string]any{"titleField": "item.name"})
-	if _, err := BuildView(&p, nil); err == nil {
+	if _, err := BuildView(&p, nil, nil); err == nil {
 		t.Fatalf("缺解析器应报错")
 	}
 }

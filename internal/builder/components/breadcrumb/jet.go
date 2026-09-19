@@ -103,7 +103,14 @@ func BuildView(p *Props, ctx *core.RenderContext) View {
 		items = nil
 		v.homeIndex = -1
 	}
-	v.Items = itemViews(items, sep)
+	// 站内链接本地化（审计 I18N-015）：只对**作者手填**的层级项 URL 生效 ——
+	// 它们的语义是站内逻辑路径（/about），要按当前语言加前缀；派生模式的 URL 来自
+	// ctx.CurrentPath（已是当前语言的访问路径），再过一次前缀会变成 /en/en/about。
+	siteLink := (func(string) string)(nil)
+	if !derived {
+		siteLink = ctx.ResolveSiteLink
+	}
+	v.Items = itemViews(items, sep, siteLink)
 	v.Visible = len(v.Items) > 0
 	return v
 }
@@ -178,12 +185,19 @@ func deriveItems(rawPath, homeLabel string) []Item {
 }
 
 // itemViews 转换层级项并标记末项：末项即当前页（输出 is-current / aria-current）。
-func itemViews(items []Item, sep string) []ItemView {
+//
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：只对作者手填的 URL 传入，
+// 派生模式传 nil（那些 URL 已经是当前语言的访问路径）。
+func itemViews(items []Item, sep string, siteLink func(string) string) []ItemView {
 	out := make([]ItemView, 0, len(items))
 	for i, it := range items {
+		raw := strings.TrimSpace(it.URL)
+		if raw != "" && siteLink != nil {
+			raw = siteLink(raw)
+		}
 		iv := ItemView{
 			Label:   strings.TrimSpace(it.Label),
-			URL:     strings.TrimSpace(it.URL),
+			URL:     raw,
 			Current: i == len(items)-1,
 		}
 		if i < len(items)-1 {

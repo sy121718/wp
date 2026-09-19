@@ -45,7 +45,8 @@ type View struct {
 //
 // projectID 为本次编译的站点工程 id（core.RenderContext.ProjectID），经 ParseVariantOptions
 // 烘进实时价格核对片段的 URL（口径只有一份：与商品详情组件共用同一个解析函数）。
-func BuildView(p *Props, content core.ContentResolver, projectID string) (View, error) {
+// lang 同理进那两个片段 URL（I18N-011）：片段语言只从 lang 参数来，不带就回落工程默认语言。
+func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (View, error) {
 	if p == nil {
 		return View{}, fmt.Errorf("规格选择器属性为空")
 	}
@@ -63,7 +64,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID string) (View, 
 	}
 
 	groups := product.ParseOptionGroups(strings.TrimSpace(optionsRaw))
-	rows := product.ParseVariantOptions(strings.TrimSpace(variantsRaw), groups, EffectiveCurrency(p), projectID)
+	rows := product.ParseVariantOptions(strings.TrimSpace(variantsRaw), groups, EffectiveCurrency(p), projectID, lang)
 
 	view := View{
 		OptionGroups:   groups,

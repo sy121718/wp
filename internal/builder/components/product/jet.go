@@ -153,7 +153,11 @@ type variantJSON struct {
 // projectID 为本次编译的站点工程 id（core.RenderContext.ProjectID）：只用于把工程烘进
 // 实时价格核对片段的 URL（见 livePriceFragmentURL 的长注释）。工程为空时该片段不请求，
 // 但页面其余部分照常渲染 —— 与其他「站点级资源」组件同一口径（缺工程是降级而不是失败）。
-func BuildView(p *Props, content core.ContentResolver, projectID string) (View, error) {
+//
+// lang 为本次编译的目标语言（core.RenderContext.Lang）：同样只进那两个片段 URL。
+// 片段语言只从 lang 查询参数来，不带它请求就恒回落工程默认语言（英文站里价格核对位
+// 会拿中文词条拼文案）；空语言（单语言站点 / 独立编译）时不带该参数。
+func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (View, error) {
 	source := effectiveSource(p)
 	slots := p.slotFields()
 	declared := 0
@@ -234,7 +238,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID string) (View, 
 	}
 	// 规格选择器：有维度且可展示的组合 ≥2 才输出 —— 单变体商品不输出选择器。
 	view.OptionGroups = ParseOptionGroups(rawOptions)
-	view.VariantOptions = ParseVariantOptions(rawVariants, view.OptionGroups, view.Currency, projectID)
+	view.VariantOptions = ParseVariantOptions(rawVariants, view.OptionGroups, view.Currency, projectID, lang)
 	view.HasOptions = len(view.OptionGroups) > 0 && len(view.VariantOptions) > 1
 	return view, nil
 }
@@ -284,7 +288,9 @@ func ParseOptionGroups(raw string) []OptionGroup {
 //
 // projectID 只透传给实时价格核对片段的 URL（见 livePriceFragmentURL）：三个调用方
 // （商品详情 / 独立选择器 / 加购）都必须给出自己那份构建上下文里的工程 id。
-func ParseVariantOptions(raw string, groups []OptionGroup, currency, projectID string) []VariantOption {
+//
+// lang 与 projectID 一样只透传给那两个片段 URL：片段语言只能从 lang 查询参数来（见 BuildView）。
+func ParseVariantOptions(raw string, groups []OptionGroup, currency, projectID, lang string) []VariantOption {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(groups) == 0 {
 		return nil
@@ -335,12 +341,12 @@ func ParseVariantOptions(raw string, groups []OptionGroup, currency, projectID s
 		}
 		// 实时可用量位（issue #24）：与价格核对位同形 —— 构建期只烘「变体 id + 工程 id」，
 		// 可用量每次请求现取（烘进产物等于发布一份过期库存）。
-		row.StockAvailabilityGet = stockAvailabilityFragmentURL(r.ID, projectID)
+		row.StockAvailabilityGet = stockAvailabilityFragmentURL(r.ID, projectID, lang)
 		// 实时价格核对（BIZ-2）：价格形状可解析时才烘 URL —— 解析不出来的价拿去比对
 		// 只会得到一句错话，不如不请求。
 		if cents, ok := priceYuanCents(r.Price); ok {
 			row.PriceCents = cents
-			row.LivePriceGet = livePriceFragmentURL(r.ID, cents, currency, projectID)
+			row.LivePriceGet = livePriceFragmentURL(r.ID, cents, currency, projectID, lang)
 		}
 		if strings.TrimSpace(r.ComparePrice) != "" {
 			row.ComparePrice = currency + r.ComparePrice
@@ -380,7 +386,11 @@ const paramProjectID = "projectId"
 //
 // 工程为空时返回空串（不请求片段）：URL 里带一个空的 projectId 会被片段端判成「缺少参数」
 // 并返回 500，与「价格形状不可解析就不请求」是同一条判断 —— 没有工程就没有核对可言。
-func livePriceFragmentURL(variantID string, cents int64, currency, projectID string) string {
+//
+// lang 同理必须进 URL（I18N-011）：片段语言只从 lang 参数来，端点不读 Accept-Language、
+// 不读任何语言 cookie；不带它请求就恒回落工程默认语言，英文站的核对文案会是中文。
+// 语言为空（单语言站点 / 独立编译）时不带该参数 —— 空值只让片段多做一次无用判断。
+func livePriceFragmentURL(variantID string, cents int64, currency, projectID, lang string) string {
 	if strings.TrimSpace(variantID) == "" {
 		return ""
 	}
@@ -395,6 +405,9 @@ func livePriceFragmentURL(variantID string, cents int64, currency, projectID str
 	if strings.TrimSpace(currency) != "" {
 		q.Set("currency", currency)
 	}
+	if l := strings.TrimSpace(lang); l != "" {
+		q.Set("lang", l)
+	}
 	return LivePriceFragmentPath + "?" + q.Encode()
 }
 
@@ -406,7 +419,10 @@ func livePriceFragmentURL(variantID string, cents int64, currency, projectID str
 //
 // 缺工程 id 时返回空串：不请求一个必然被判「缺少参数」的 URL。调用方（模板）据此不输出
 // hx-get，该位退化为纯兜底文案 —— 访客看到的是「以结算时库存为准」，而不是一个永远空着的位。
-func stockAvailabilityFragmentURL(variantID, projectID string) string {
+//
+// lang 与工程同理进 URL（I18N-011）：片段语言只从它来，不带就恒回落工程默认语言。
+// 为空时不带该参数。
+func stockAvailabilityFragmentURL(variantID, projectID, lang string) string {
 	if strings.TrimSpace(variantID) == "" {
 		return ""
 	}
@@ -417,6 +433,9 @@ func stockAvailabilityFragmentURL(variantID, projectID string) string {
 	q := url.Values{}
 	q.Set(paramProjectID, projectID)
 	q.Set("variantIds", variantID)
+	if l := strings.TrimSpace(lang); l != "" {
+		q.Set("lang", l)
+	}
 	return StockAvailabilityFragmentPath + "?" + q.Encode()
 }
 

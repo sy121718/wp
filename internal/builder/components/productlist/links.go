@@ -101,11 +101,21 @@ func parseQuery(raw string) url.Values {
 //
 // 只放白名单参数：片段端会再校验一遍（字段槽位过商品字段白名单），
 // 这里拼错也只是被拒，不会变成任意配置注入。
+//
+// lang 也在这份实例配置里（I18N-011）：片段语言只从 ?lang= 来（端点不读
+// Accept-Language、不读语言 cookie，见 runtimefragment.resolveRequestLang）——
+// 不带 lang 的请求恒回落**工程默认语言**，于是英文站刷新列表就出中文。
+// 只在非空时带上：单语言站点多一个空 lang 参数只会让片段多做一次无用判断。
 func fragmentQuery(nodeID string, p *Props, ctx *core.RenderContext) string {
 	q := url.Values{}
 	q.Set("nodeId", nodeID)
-	if ctx != nil && strings.TrimSpace(ctx.ProjectID) != "" {
-		q.Set("projectId", strings.TrimSpace(ctx.ProjectID))
+	if ctx != nil {
+		if projectID := strings.TrimSpace(ctx.ProjectID); projectID != "" {
+			q.Set("projectId", projectID)
+		}
+		if lang := strings.TrimSpace(ctx.Lang); lang != "" {
+			q.Set("lang", lang)
+		}
 	}
 	for param, value := range map[string]string{
 		"layout":            effectiveLayout(p),

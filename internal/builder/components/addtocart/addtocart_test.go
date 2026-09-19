@@ -73,7 +73,7 @@ func TestValidateExtra(t *testing.T) {
 
 // TestBuildViewSingleMode 单变体模式：只输出一行，取第一个启用变体，不带规格标签。
 func TestBuildViewSingleMode(t *testing.T) {
-	v, err := BuildView(baseProps(), baseContent(), "proj-1")
+	v, err := BuildView(baseProps(), baseContent(), "proj-1", "")
 	if err != nil {
 		t.Fatalf("BuildView 失败: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBuildViewPerVariantMode(t *testing.T) {
 	p := baseProps()
 	p.VariantMode = ModePerVariant
 	p.ShowQuantity = true
-	v, err := BuildView(p, baseContent(), "proj-1")
+	v, err := BuildView(p, baseContent(), "proj-1", "")
 	if err != nil {
 		t.Fatalf("BuildView 失败: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestBuildViewPerVariantMode(t *testing.T) {
 // TestBuildViewEmptyVariantsRendersNotice 没有启用变体时留提示，不让整页构建失败。
 func TestBuildViewEmptyVariantsRendersNotice(t *testing.T) {
 	content := stubContent{"product.options": optionsJSON, "product.variants": ""}
-	v, err := BuildView(baseProps(), content, "proj-1")
+	v, err := BuildView(baseProps(), content, "proj-1", "")
 	if err != nil {
 		t.Fatalf("无变体属于数据状态，不该让构建失败: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestBuildViewEmptyVariantsRendersNotice(t *testing.T) {
 // 一个按钮坏了整页发布不了，而页面其余部分明明好好的。
 func TestBuildViewWithoutProjectIDRendersNotice(t *testing.T) {
 	for _, pid := range []string{"", "   "} {
-		v, err := BuildView(baseProps(), baseContent(), pid)
+		v, err := BuildView(baseProps(), baseContent(), pid, "")
 		if err != nil {
 			t.Fatalf("缺工程 id 不该让构建失败（实际 %v）", err)
 		}
@@ -163,7 +163,7 @@ func TestBuildViewWithoutProjectIDRendersNotice(t *testing.T) {
 
 // TestBuildViewRequiresContentResolver 缺内容解析器时报错（字段根本无法解析）。
 func TestBuildViewRequiresContentResolver(t *testing.T) {
-	if _, err := BuildView(baseProps(), nil, "proj-1"); err == nil {
+	if _, err := BuildView(baseProps(), nil, "proj-1", ""); err == nil {
 		t.Fatal("缺内容解析器时应构建失败")
 	}
 }
@@ -171,7 +171,7 @@ func TestBuildViewRequiresContentResolver(t *testing.T) {
 // TestBuildViewPropagatesResolveError 字段越界 / 解析失败原样上抛。
 func TestBuildViewPropagatesResolveError(t *testing.T) {
 	content := stubContent{"product.options": optionsJSON} // 缺 variants 字段
-	if _, err := BuildView(baseProps(), content, "proj-1"); err == nil {
+	if _, err := BuildView(baseProps(), content, "proj-1", ""); err == nil {
 		t.Fatal("变体字段解析失败时应上抛错误")
 	}
 }

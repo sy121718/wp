@@ -51,7 +51,9 @@ type View struct {
 // content 为构建期注入的解析器：集合里是集合项作用域（item.* 取当前商品），
 // 集合外是页面级解析器（product.* 取当前实体）。未注入且声明了槽位即报错 ——
 // 静默渲染成空卡比构建失败危险得多（页面上看不出少了什么）。
-func BuildView(p *Props, content core.ContentResolver) (view View, err error) {
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：LinkPrefix 是作者填的站内逻辑路径
+// （如 /products/），拼出的详情地址要按当前语言加前缀。
+func BuildView(p *Props, content core.ContentResolver, siteLink func(string) string) (view View, err error) {
 	if p == nil {
 		return View{}, fmt.Errorf("商品卡属性为空")
 	}
@@ -99,7 +101,8 @@ func BuildView(p *Props, content core.ContentResolver) (view View, err error) {
 		case slotTags:
 			view.Tags = ParseTagNames(value)
 		case slotLink:
-			view.Href = CardHref(p.LinkPrefix, value)
+			// 只本地化作者填的**前缀**，CMS 字段值原样参与拼接（见 LocalizePrefix）。
+			view.Href = CardHref(LocalizePrefix(p.LinkPrefix, siteLink), value)
 		}
 	}
 	// 主图 alt：作者填的 alt 字段优先，缺失回退标题（有图才有 alt 的意义）。
@@ -197,6 +200,19 @@ func CardHref(prefix, value string) string {
 		return ""
 	}
 	return v
+}
+
+// LocalizePrefix 作者填的链接前缀 → 当前语言的访问路径（审计 I18N-015，可空解析器）。
+//
+// 只本地化**前缀**，不碰字段值：前缀是作者在组件上填的站内逻辑路径（/products/），
+// 而字段值是 CMS 数据，它可能是纯 slug（"shirt"），也可能是完整路径（"/products/shirt"）
+// 或外链 —— 后两种由 CardHref 原样返回，再前缀一次就会指到不存在的地址
+// （与 button 的 ActionLink「CMS 绑定值不本地化」同一条口径）。
+func LocalizePrefix(prefix string, siteLink func(string) string) string {
+	if strings.TrimSpace(prefix) == "" {
+		return prefix
+	}
+	return core.SiteLinkOrSame(siteLink, prefix)
 }
 
 // hasScheme 判断字符串是否带协议前缀（"javascript:alert(1)" / "https://…" / "mailto:…"）。

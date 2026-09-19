@@ -146,7 +146,7 @@ func collectionCards(node *core.Node, p *Props, ctx *core.RenderContext) ([]Card
 	if err != nil {
 		return nil, err
 	}
-	return buildCollectionCards(p, items), nil
+	return buildCollectionCards(p, items, ctx.ResolveSiteLink), nil
 }
 
 // resolveItems 解析集合源 → 字段列表：限额、白名单校验（有元数据契约时严格校验并裁剪，
@@ -251,8 +251,29 @@ func cropBySchema(items []map[string]any, schemas []core.CollectionSchema, p *Pr
 	return out
 }
 
+// localizedLinkPrefix 作者填的链接前缀 → 当前语言的访问路径（审计 I18N-015，可空解析器）。
+//
+// 只本地化**前缀**，不碰字段值：前缀是作者在组件上填的站内逻辑路径（/article/），
+// 字段值是 CMS 数据（纯 slug），再前缀一次会指到不存在的地址 —— 与 button 的
+// ActionLink「CMS 绑定值不本地化」同一条口径。
+//
+// 本组件按「前缀 + 字段值」直接拼接，尾斜杠是分隔符：本地化会规范化路径（去掉尾斜杠），
+// 不按原前缀的形状补回来的话，/article/ 会被拼成 /en/articlefirst。
+func localizedLinkPrefix(prefix string, siteLink func(string) string) string {
+	if strings.TrimSpace(prefix) == "" {
+		return prefix
+	}
+	localized := core.SiteLinkOrSame(siteLink, prefix)
+	if strings.HasSuffix(prefix, "/") && !strings.HasSuffix(localized, "/") {
+		localized += "/"
+	}
+	return localized
+}
+
 // buildCollectionCards 集合项 → 卡片视图（字段映射在 props 里）。
-func buildCollectionCards(p *Props, items []map[string]any) []CardView {
+//
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：CardLinkPrefix 是作者填的站内逻辑路径。
+func buildCollectionCards(p *Props, items []map[string]any, siteLink func(string) string) []CardView {
 	cards := make([]CardView, 0, len(items))
 
 	for _, item := range items {
@@ -262,7 +283,7 @@ func buildCollectionCards(p *Props, items []map[string]any) []CardView {
 		image := fieldText(item, p.CardImageField)
 		href := ""
 		if p.CardLinkField != "" {
-			href = p.CardLinkPrefix + fieldText(item, p.CardLinkField)
+			href = strings.TrimSpace(localizedLinkPrefix(p.CardLinkPrefix, siteLink) + fieldText(item, p.CardLinkField))
 		}
 		// 无障碍描述：优先标题，其次「第 N 张」。
 		aria := "放大第 " + strconv.Itoa(len(cards)+1) + " 张卡片"

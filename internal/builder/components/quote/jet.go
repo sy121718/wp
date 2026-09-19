@@ -6,6 +6,8 @@
 package quote
 
 import (
+	"strings"
+
 	"go_wp/internal/builder/core"
 )
 
@@ -30,11 +32,18 @@ type View struct {
 }
 
 // BuildView 生成引用渲染视图：作者/出处可选分支。
-func BuildView(p *Props) View {
+//
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：出处链接若是作者手填的站内路径
+// （"/about"），要按当前语言加前缀；外链由 core.ResolveSiteLink 自行放行。
+func BuildView(p *Props, siteLink func(string) string) View {
+	source := p.Source
+	if strings.TrimSpace(source) != "" {
+		source = core.SiteLinkOrSame(siteLink, source)
+	}
 	return View{
 		Text:      core.RichTextHTML(p.Text),
 		Author:    p.Author,
-		Source:    p.Source,
+		Source:    source,
 		HasAuthor: p.Author != "",
 		HasSource: p.Source != "",
 	}

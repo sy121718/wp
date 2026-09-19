@@ -70,6 +70,13 @@ type Props struct {
 	// SubmitLabel 提交按钮文字。
 	SubmitLabel string `json:"submitLabel,omitempty" ct:"text,maxlen=50,sec=content,label=提交按钮文字"`
 	// Action 提交地址。
+	//
+	// **刻意不过 core.ResolveSiteLink（站内链接本地化）**，判据是「值的角色」而非字符串形状：
+	// 它是**提交目标**，不是站内页面链接 —— 静态发布站的 POST 目标只可能是
+	// /_fragments/* 片段端点或外部服务（本站没有服务端表单处理），而这两类
+	// 在 ResolveSiteLink 里本就原样放行（保留前缀 / 外链），前缀化几乎是恒等操作；
+	// 反过来若作者填的是站内页面路径，前缀化也救不了它（静态站处理不了 POST）。
+	// 详见 docs/06-D-site-i18n.md §15.5 第 5 条「仍未接线」。
 	Action string `json:"action,omitempty" ct:"text,maxlen=500,sec=content,label=提交地址"`
 	// Method 提交方式：post / get（默认 post）。
 	Method string `json:"method,omitempty" ct:"select,post=POST,get=GET,default=post,sec=content,label=提交方式"`

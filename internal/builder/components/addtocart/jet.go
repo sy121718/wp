@@ -34,6 +34,11 @@ type View struct {
 	Target string
 	// ProjectID 站点工程 id（构建上下文提供）。
 	ProjectID string
+	// Lang 本次编译的目标语言（core.RenderContext.Lang），输出为表单 hidden input。
+	//
+	// 加购是 POST：片段端点收集参数时只读 PostForm，**忽略 query** —— 语言只能走表单域，
+	// 不能像 GET 片段那样拼在 action 的查询串里。空语言（单语言站点）不输出该域。
+	Lang string
 	// ButtonText 按钮文字（参与内容翻译）。
 	ButtonText string
 	// ShowQuantity 是否输出数量输入。
@@ -82,11 +87,15 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 //
 // content 为构建期注入的解析器（商品实体解析器）：两个槽位字段都必须取到值 ——
 // 取不到说明字段写错或数据源不对，构建期报错比产出一个点不动的按钮好。
-func BuildView(p *Props, content core.ContentResolver, projectID string) (View, error) {
+//
+// lang 为本次编译的目标语言（core.RenderContext.Lang）：加购是 POST，语言只能经表单域传
+// （片段端点收集参数时只读 PostForm），不带它就恒回落工程默认语言。
+func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (View, error) {
 	view := View{
 		Action:       CartAddPath,
 		Target:       effectiveTarget(p),
 		ProjectID:    strings.TrimSpace(projectID),
+		Lang:         strings.TrimSpace(lang),
 		ButtonText:   effectiveButtonText(p),
 		ShowQuantity: p.ShowQuantity,
 	}
@@ -115,7 +124,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID string) (View, 
 	}
 
 	groups := product.ParseOptionGroups(rawOptions)
-	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p), view.ProjectID)
+	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p), view.ProjectID, view.Lang)
 	if len(options) == 0 {
 		// 没有启用变体（未上架 / 全部停用）：留一句提示，不做成一个点了没反应的按钮。
 		view.Notice = "暂无可购买的规格"

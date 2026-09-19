@@ -64,7 +64,10 @@ type View struct {
 }
 
 // BuildView 生成信息框渲染视图：body 内容字段准备 + 链接/按钮化分支标志。
-func BuildView(p *Props) View {
+//
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：作者手填的站内路径要按当前语言加前缀，
+// 否则英文站点上的信息框点过去会跳回默认语言版本。
+func BuildView(p *Props, siteLink func(string) string) View {
 	v := View{}
 
 	// 媒体图优先于图标（与旧 Render 一致）。
@@ -90,7 +93,7 @@ func BuildView(p *Props) View {
 
 	if strings.TrimSpace(p.Link) != "" {
 		v.HasLink = true
-		v.Link = p.Link
+		v.Link = core.SiteLinkOrSame(siteLink, p.Link)
 		if strings.TrimSpace(p.BtnText) != "" {
 			v.HasBtn = true
 			v.BtnText = p.BtnText

@@ -51,7 +51,7 @@ const testProjectID = "proj-1"
 
 // buildViewFor 补上构建期工程 id 的 BuildView 包装（用例只关心组件本身时用它）。
 func buildViewFor(p *Props, content core.ContentResolver) (View, error) {
-	return BuildView(p, content, testProjectID)
+	return BuildView(p, content, testProjectID, "")
 }
 
 const (
@@ -215,7 +215,7 @@ func TestBuildViewStockFragmentURLCarriesRenderProject(t *testing.T) {
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
 		"product.options":  testOptions,
 		"product.variants": testVariants,
-	}}, projectID)
+	}}, projectID, "")
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
 	}

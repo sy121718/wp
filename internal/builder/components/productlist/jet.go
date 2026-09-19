@@ -281,7 +281,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		}
 	}
 	for _, item := range items {
-		view.Cards = append(view.Cards, cardViewOf(p, item))
+		view.Cards = append(view.Cards, cardViewOf(p, item, ctx.ResolveSiteLink))
 	}
 
 	view.FragmentQuery = lc.instanceQuery
@@ -318,7 +318,9 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 }
 
 // cardViewOf 把一条集合项映射成卡片视图（逐槽位取值，空值不输出节点）。
-func cardViewOf(p *Props, item map[string]any) CardView {
+//
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：LinkPrefix 是作者填的站内逻辑路径。
+func cardViewOf(p *Props, item map[string]any, siteLink func(string) string) CardView {
 	view := CardView{TitleTag: effectiveTitleTag(p)}
 	var rawImageAlt, rawTitle string
 	for _, s := range p.slotFields() {
@@ -343,7 +345,8 @@ func cardViewOf(p *Props, item map[string]any) CardView {
 		case slotTags:
 			view.Tags = productcard.ParseTagNames(value)
 		case slotLink:
-			view.Href = productcard.CardHref(p.LinkPrefix, value)
+			// 只本地化作者填的**前缀**，CMS 字段值原样参与拼接（见 productcard.LocalizePrefix）。
+			view.Href = productcard.CardHref(productcard.LocalizePrefix(p.LinkPrefix, siteLink), value)
 		}
 	}
 	// 主图 alt：作者字段优先，缺失回退标题（仅当确有图）。

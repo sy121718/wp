@@ -115,14 +115,17 @@ type ItemView struct {
 
 // BuildView 生成图集渲染视图：数据源解析（绑定优先/静态兜底）+ 单图项视图准备
 // + 轮播属性拼装（与 render 输出结构一致）。
-func BuildView(nodeID string, p *Props, content core.ContentResolver) (View, error) {
+//
+// siteLink 站内链接本地化器（审计 I18N-015，可空）：作者手填的站内路径要按当前语言加前缀，
+// 否则英文站点上的图集点过去会跳回默认语言版本。
+func BuildView(nodeID string, p *Props, content core.ContentResolver, siteLink func(string) string) (View, error) {
 	// 与旧 render 一致：空模式回落 grid，并写回 p.Mode（compileCSS 依赖它选择分支）。
 	if p.Mode == "" {
 		p.Mode = LayoutGrid
 	}
 	mode := p.Mode
 
-	items, err := resolveSourceContent(p, content)
+	items, fromAuthor, err := resolveSourceContent(p, content)
 	if err != nil {
 		return View{}, err
 	}
@@ -132,7 +135,7 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver) (View, err
 
 	views := make([]ItemView, 0, len(items))
 	for i, r := range items {
-		iv := buildItemView(p, r)
+		iv := buildItemView(p, r, siteLink, fromAuthor)
 		if mode == LayoutCarousel {
 			iv.AnchorID = "sky-gslide-" + nodeID + "-" + strconv.Itoa(i)
 		}
@@ -167,10 +170,18 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver) (View, err
 
 // buildItemView 单图项渲染视图：img 字段 + 点击动作分支 + 图注包裹判定
 // （与旧 renderItem 输出结构一致）。
-func buildItemView(p *Props, r Item) ItemView {
+//
+// linkFromAuthor 表示集合项的 Link 来自**作者手填**还是 CMS 绑定值：前者是站内逻辑路径，
+// 按当前语言本地化；后者是内容作者掌握的完整地址，再前缀一次可能指到不存在的页面。
+// 判据只能用数据来源 —— 两种值都是 "/xxx" 形态，从字符串上分辨不出来。
+func buildItemView(p *Props, r Item, siteLink func(string) string, linkFromAuthor bool) ItemView {
 	href := r.Link
-	if href == "" {
-		href = p.DefaultLink
+	if href != "" && linkFromAuthor {
+		href = core.SiteLinkOrSame(siteLink, href)
+	}
+	if href == "" && strings.TrimSpace(p.DefaultLink) != "" {
+		// 兜底链接是作者在组件属性上填的，永远本地化。
+		href = core.SiteLinkOrSame(siteLink, p.DefaultLink)
 	}
 
 	iv := ItemView{URL: r.URL, Alt: r.Alt, Caption: r.Caption, Loading: r.Loading, FetchPriority: r.FetchPriority}
@@ -191,28 +202,31 @@ func buildItemView(p *Props, r Item) ItemView {
 
 // resolveSourceContent 图集数据源解析（绑定优先/静态兜底），与 render 内部的
 // resolveSource 逻辑等价，参数改为 ContentResolver 接口（避免依赖 AtomRender 结构）。
-func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item, err error) {
+//
+// 第二个返回值 fromAuthor 表示这批条目来自作者手填（p.Items）还是 CMS 绑定值：
+// 站内链接本地化只对前者生效（见 buildItemView）。
+func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item, fromAuthor bool, err error) {
 	if p.Binding == nil || p.Binding.Field == "" {
-		return p.Items, nil
+		return p.Items, true, nil
 	}
 	if content == nil {
-		return nil, fmt.Errorf("编译上下文缺少内容解析器")
+		return nil, false, fmt.Errorf("编译上下文缺少内容解析器")
 	}
 	v, err := content.ResolveString(p.Binding.Field)
 	if err != nil {
-		return nil, fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
+		return nil, false, fmt.Errorf("解析绑定 %q 失败: %w", p.Binding.Field, err)
 	}
 	if v != "" {
 		items, err = parseValues(v)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return filterUnsafeItems(items), nil
+		return filterUnsafeItems(items), false, nil
 	}
 	if p.Binding.Placeholder != "" {
-		return filterUnsafeItems([]Item{{URL: p.Binding.Placeholder}}), nil
+		return filterUnsafeItems([]Item{{URL: p.Binding.Placeholder}}), false, nil
 	}
-	return nil, nil // 隐藏组件
+	return nil, false, nil // 隐藏组件
 }
 
 // filterUnsafeItems 过滤 URL 未过协议校验的绑定项（对齐 button 组件「降级不阻断编译」：
