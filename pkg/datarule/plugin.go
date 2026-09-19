@@ -1,6 +1,30 @@
 // Package datarule 提供基于 GORM 插件的数据权限控制能力。
-// 通过注册数据域（Domain）与规则提供者（RuleProvider），
-// 在 GORM Query 回调中自动注入行级数据过滤条件（WHERE 子句与 Omit 字段）。
+// 通过注册数据域（Domain）与规则提供者（RuleProvider），把「谁能看、谁能改」下沉到 GORM 回调链。
+//
+// 覆盖范围（读写两路，改这个包之前请先读完这段）：
+//
+//   - Query（读）：行级读保护 —— 注入 WHERE；字段级读屏蔽 —— 注入 Omits，
+//     GORM 在 SELECT 语义下把它解释为「不查询该列」。
+//   - Create（写）：值校验。Create 没有 WHERE 可以注入，语义是 CASL 式的
+//     「检查将要创建的对象」：从 db.Statement.Dest 反射取值，逐条与条件组比对，
+//     不满足即拒绝落库（批量创建逐元素校验）。**这是行为变更** ——
+//     在此之前 Create 完全不受数据权限约束。求值失败（字段在 Dest 上取不到、
+//     类型不认识、Dest 形状不支持）一律 fail-closed 拒绝，绝不静默放过。
+//   - Update（写）：行级写保护 —— 注入与 Query **完全相同**的行条件（与 Query
+//     共用同一份条件构造，不另写一套，否则两套语义会漂移）；字段级写屏蔽 ——
+//     复用同一份 OmitFields，GORM 在 UPDATE 语义下把 Omits 解释为「不更新该列」。
+//     语句执行后影响行数为 0 时返回明确错误（原因与方言边界见 beforeUpdate / afterUpdate 的注释）。
+//   - Delete（写）：行级写保护 —— 同样复用 Query 的行条件构造；执行后 0 行同样报错。
+//     DELETE 没有字段概念，因此不注入 Omits。
+//
+// 规则取不到（provider 报错）→ 直接 AddError 并终止该回调（与 Query 路一致）；
+// 规则集为空表示「该用户在该域没有任何限制」→ 放行，这是既有语义。
+//
+// **Query 之外的路径没有任何兜底**：本插件只在 GORM 的 Query / Create / Update / Delete
+// 回调链上生效。裸 SQL（db.Raw / db.Exec）、未经 context 传入 UserContext 的调用
+// （GetUserContext 返回 nil）、以及**未注册数据域的表**，全部不经过这里 —— 它们在数据权限
+// 意义上等于「不受约束」。要保护一张表：先在本包注册它的数据域，再保证写它的语句走 GORM
+// 回调链且 context 里带着 UserContext。
 package datarule
 
 import (
@@ -11,8 +35,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// DataRulePlugin GORM 插件，在 gorm:query 阶段自动注入数据权限规则。
-// 通过拦截 Query 回调，根据用户上下文和数据域配置动态追加 WHERE 条件和 Omit 字段。
+// DataRulePlugin GORM 插件：按用户上下文与数据域配置，在 GORM 读、写两路回调上注入数据权限约束。
+// 读路（Query）注入行级 WHERE 与字段级 Omits；写路：Create 做值校验、
+// Update/Delete 注入同一份行条件并做 0 行判定、Update 另外复用 Omits 做字段级写屏蔽。
+// 完整覆盖范围与「Query 之外没有兜底」的边界见包注释。
 type DataRulePlugin struct {
 	provider RuleProvider // 规则查询接口，用于获取用户的数据权限规则
 }
@@ -27,34 +53,102 @@ func (p *DataRulePlugin) Name() string {
 	return "datarule"
 }
 
-// Initialize 注册 GORM Query 阶段回调（在 gorm:query 之前插入 datarule:before_query）。
-// 如果 provider 未设置则返回错误。
+// GORM 回调名。集中声明，避免注册侧与测试清理侧写不一致的字符串常量。
+const (
+	callbackBeforeQuery  = "datarule:before_query"
+	callbackBeforeCreate = "datarule:before_create"
+	callbackBeforeUpdate = "datarule:before_update"
+	callbackAfterUpdate  = "datarule:after_update"
+	callbackBeforeDelete = "datarule:before_delete"
+	callbackAfterDelete  = "datarule:after_delete"
+)
+
+// appliedScopeKey db.Statement.Settings 里的标记：本语句已被数据权限接管
+// （Before 阶段解析出了该域对该用户的有效规则）。After 阶段据此决定是否做 0 行检查。
+//
+// 为什么需要这个标记：0 行检查的**唯一**目的是把「没权限，所以什么也没改成」如实报出来。
+// 对未注册数据域的表、对该域没有任何规则的用户，插件从头到尾没有参与这条语句，
+// 此时再报「数据权限拒绝」既是错的（与权限无关），也会把全站「更新/删除一个不存在的 id」
+// 的正常业务错误改写成权限错误。所以「插件参与了这条语句」才是报错的前提。
+const appliedScopeKey = "datarule:applied"
+
+// Initialize 注册读、写两路的 GORM 回调。如果 provider 未设置则返回错误。
+//
+// 读路径的注册位置与改造前**逐字相同**（Query 链、gorm:query 之前），Query 行为不变。
+// 写路径：
+//   - Update：Before 注入行级 WHERE + 字段级 Omits，After 做 0 行检查；
+//   - Delete：Before 注入行级 WHERE，After 做 0 行检查；
+//   - Create：Before 对 Dest 做值校验（Create 没有 WHERE 可注入）。
+//
+// Update/Delete 的 Before 挂在 gorm:update / gorm:delete **之前**、After 挂在**之后**：
+// 0 行检查必须发生在 gorm 主回调之后（那时 RowsAffected 才被填上），同时又在
+// gorm:commit_or_rollback_transaction 之前 —— 所以这里 AddError 会让 gorm 回滚该语句。
+// 对 0 行来说本来就没有改动需要回滚，回滚只是让「什么都没改成」这件事在调用方可见。
+//
+// 另需确认的一点：gorm 的 ErrMissingWhereClause 检查在 gorm:update / gorm:delete
+// **主回调内部**（callbacks.checkMissingWhereConditions）、在我们的 Before 之后读
+// Statement.Clauses["WHERE"]，所以这里注入的条件能挡住「无条件全表更新」的误判 ——
+// 有规则时，不带 WHERE 的 Update/Delete 是被允许的，且只会命中可见行。
 func (p *DataRulePlugin) Initialize(db *gorm.DB) error {
 	if p.provider == nil {
 		return fmt.Errorf("datarule RuleProvider 未设置")
 	}
-	return db.Callback().Query().Before("gorm:query").Register("datarule:before_query", p.beforeQuery)
-}
 
-// beforeQuery GORM Query 阶段的前置回调，作为 gorm:query 钩子在每次查询前执行。
-// 主要步骤：
-//  1. 从 context 中提取用户上下文（UserContext），非业务查询直接跳过。
-//  2. 根据当前查询的表名匹配已注册的数据域（Domain），未匹配则跳过。
-//  3. 通过 provider 查询该用户在指定数据域下的所有规则。
-//  4. 合并所有命中主体的限制规则。
-//  5. 注入 Omit 字段屏蔽不需要的列。
-//  6. 将规则中的条件组转换为 WHERE 子句并追加到查询中。
-func (p *DataRulePlugin) beforeQuery(db *gorm.DB) {
-	// 1. 获取用户上下文
-	uc := GetUserContext(db.Statement.Context)
-	if uc == nil {
-		return // 非业务查询不做拦截
+	// 读路径。
+	if err := db.Callback().Query().Before("gorm:query").Register(callbackBeforeQuery, p.beforeQuery); err != nil {
+		return err
 	}
 
-	// 2. 确定数据域
+	// 写路径 - Update。
+	if err := db.Callback().Update().Before("gorm:update").Register(callbackBeforeUpdate, p.beforeUpdate); err != nil {
+		return err
+	}
+	if err := db.Callback().Update().After("gorm:update").Register(callbackAfterUpdate, p.afterUpdate); err != nil {
+		return err
+	}
+
+	// 写路径 - Delete。
+	if err := db.Callback().Delete().Before("gorm:delete").Register(callbackBeforeDelete, p.beforeDelete); err != nil {
+		return err
+	}
+	if err := db.Callback().Delete().After("gorm:delete").Register(callbackAfterDelete, p.afterDelete); err != nil {
+		return err
+	}
+
+	// 写路径 - Create（值校验，没有 WHERE 可注入）。
+	if err := db.Callback().Create().Before("gorm:create").Register(callbackBeforeCreate, p.beforeCreate); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ruleScope 一次语句级的数据权限解析结果。
+type ruleScope struct {
+	merged RuleConfig   // 合并后的规则：OmitFields 取并集、条件组全部保留（组间 AND）
+	user   *UserContext // 求值 dept.scope:* 引用表达式所需的用户上下文
+}
+
+// resolveRuleScope 是 Query / Create / Update / Delete 四路**共用**的规则解析入口。
+// 返回 ok=false 表示本语句不受数据权限约束，调用方应当完全不介入：
+//   - context 里没有 UserContext（非业务查询）；
+//   - 表名未注册数据域（resolveDomain 未命中）；
+//   - provider 报错（此时已 AddError，fail-closed 终止本回调）；
+//   - 该用户在该域没有任何规则（空规则集 = 无限制，既有语义）。
+//
+// 提取成共用方法的目的是**语义只有一份**：写路径若另写一套条件构造，两边的 AND/OR 组合、
+// 部门范围方向、方言引用符会各自漂移，而这类漂移在测试里表现为「读不到、写却能改」——
+// 正是本插件最初只挂 Query 时踩过的坑。
+func (p *DataRulePlugin) resolveRuleScope(db *gorm.DB) (ruleScope, bool) {
+	// 1. 用户上下文：没有就说明不是业务请求，不做任何拦截。
+	uc := GetUserContext(db.Statement.Context)
+	if uc == nil {
+		return ruleScope{}, false
+	}
+
+	// 2. 解析数据域（表名优先取 Statement.Table，缺失时回退模型的 TableName()）。
 	tableName := db.Statement.Table
 	if tableName == "" {
-		// 尝试从模型获取表名
 		if stmt := db.Statement; stmt.Model != nil {
 			if tn, ok := getTableName(stmt.Model); ok && tn != "" {
 				tableName = tn
@@ -64,28 +158,50 @@ func (p *DataRulePlugin) beforeQuery(db *gorm.DB) {
 
 	domain := resolveDomain(tableName)
 	if domain == "" {
-		return // 未注册数据域，不拦截
+		return ruleScope{}, false // 未注册数据域，不拦截
 	}
 
-	// 3. 查询规则
+	// 3. 查询规则。取不到规则一律终止本回调（fail-closed），不允许退化成「无限制」。
 	rules, err := p.provider.GetRules(db.Statement.Context, uc, domain)
 	if err != nil {
 		db.AddError(err)
-		return
+		return ruleScope{}, false
 	}
 	if len(rules) == 0 {
-		return
+		return ruleScope{}, false
 	}
 
-	// 4. 合并所有命中规则，行条件保持 AND，字段屏蔽取并集。
-	merged := mergeRules(rules)
+	// 4. 合并所有命中规则：行条件保持 AND（逐组注入），字段屏蔽取并集。
+	// 同时标记「本语句已被数据权限接管」，供 After 阶段判断是否要做 0 行检查。
+	db.Statement.Settings.Store(appliedScopeKey, true)
+	return ruleScope{merged: mergeRules(rules), user: uc}, true
+}
 
-	// 5. 注入 Omit 字段
+// scopeApplied 报告 Before 阶段是否已经把数据权限规则挂到了这条语句上。
+func scopeApplied(db *gorm.DB) bool {
+	if db.Statement == nil {
+		return false
+	}
+	_, ok := db.Statement.Settings.Load(appliedScopeKey)
+	return ok
+}
+
+// applyOmitFields 注入字段屏蔽列表。
+//
+// **同一个字段、两种含义**：Query 语义下 GORM 把 Omits 解释为「不 SELECT 该列」
+// （字段级读保护）；Update 语义下 callbacks.ConvertToAssignments 经
+// Statement.SelectAndOmitColumns 用同一份 Omits 过滤 SET 子句，于是它变成
+// 「不 UPDATE 该列」（字段级写保护）。规则里只声明一份 OmitFields，读写两侧各取所需 ——
+// 这也是写路径必须复用这里、不能另起一份字段列表的原因。
+func applyOmitFields(db *gorm.DB, merged RuleConfig) {
 	if len(merged.OmitFields) > 0 {
 		db.Statement.Omits = merged.OmitFields
 	}
+}
 
-	// 6. 注入 WHERE 条件（方言决定标识符引用符与部门范围子查询写法）
+// applyRowConditions 注入行级 WHERE 条件，Query / Update / Delete 三路**同一份实现**。
+// 组间为 AND（逐组 AddClause），方言决定标识符引用符与部门范围子查询写法。
+func applyRowConditions(db *gorm.DB, merged RuleConfig, uc *UserContext) {
 	dialect := dialectOf(db)
 	for _, group := range merged.ConditionGroups {
 		condition, ok := buildConditions(group, uc, dialect)
@@ -96,6 +212,19 @@ func (p *DataRulePlugin) beforeQuery(db *gorm.DB) {
 			clause.Expr{SQL: "(" + condition.Query + ")", Vars: condition.Args},
 		}})
 	}
+}
+
+// beforeQuery GORM Query 阶段的前置回调（行级读保护 + 字段级读屏蔽）。
+// 改造只是把原来内联的步骤拆成 resolveRuleScope / applyOmitFields / applyRowConditions，
+// 执行顺序与注入的 SQL、参数**逐字不变**（既有断言见 plugin_test.go）。
+func (p *DataRulePlugin) beforeQuery(db *gorm.DB) {
+	scope, ok := p.resolveRuleScope(db)
+	if !ok {
+		return
+	}
+	// 5/6. 字段屏蔽 + WHERE 条件，顺序与改造前一致。
+	applyOmitFields(db, scope.merged)
+	applyRowConditions(db, scope.merged, scope.user)
 }
 
 // dialectOf 返回当前查询所属数据库的方言名（postgres/mysql/sqlite/sqlserver...）。
@@ -130,7 +259,10 @@ func getTableName(model interface{}) (string, bool) {
 // resolveDomain 根据数据库表名在已注册的数据域中查找对应的业务域标识。
 // 未找到匹配则返回空字符串。
 func resolveDomain(tableName string) string {
-	for _, cfg := range registeredDomains {
+	// 读的是不可变快照（engine.go 的 domainsSnapshot），热路径零锁。
+	// 此前这里直接遍历包级 map 且未加锁，与 engine.go 注释声称的
+	// 「读写一律经 registeredDomainMu」不符 —— 见 registeredDomains 的说明。
+	for _, cfg := range domainsSnapshot() {
 		if cfg.TableName == tableName {
 			return cfg.Domain
 		}

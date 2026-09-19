@@ -1,6 +1,30 @@
 // Package datarule 提供基于 GORM 插件的数据权限控制能力。
-// 通过注册数据域（Domain）与规则提供者（RuleProvider），
-// 在 GORM Query 回调中自动注入行级数据过滤条件（WHERE 子句与 Omit 字段）。
+// 通过注册数据域（Domain）与规则提供者（RuleProvider），把「谁能看、谁能改」下沉到 GORM 回调链。
+//
+// 覆盖范围（读写两路，改这个包之前请先读完这段）：
+//
+//   - Query（读）：行级读保护 —— 注入 WHERE；字段级读屏蔽 —— 注入 Omits，
+//     GORM 在 SELECT 语义下把它解释为「不查询该列」。
+//   - Create（写）：值校验。Create 没有 WHERE 可以注入，语义是 CASL 式的
+//     「检查将要创建的对象」：从 db.Statement.Dest 反射取值，逐条与条件组比对，
+//     不满足即拒绝落库（批量创建逐元素校验）。**这是行为变更** ——
+//     在此之前 Create 完全不受数据权限约束。求值失败（字段在 Dest 上取不到、
+//     类型不认识、Dest 形状不支持）一律 fail-closed 拒绝，绝不静默放过。
+//   - Update（写）：行级写保护 —— 注入与 Query **完全相同**的行条件（与 Query
+//     共用同一份条件构造，不另写一套，否则两套语义会漂移）；字段级写屏蔽 ——
+//     复用同一份 OmitFields，GORM 在 UPDATE 语义下把 Omits 解释为「不更新该列」。
+//     语句执行后影响行数为 0 时返回明确错误（原因与方言边界见 beforeUpdate / afterUpdate 的注释）。
+//   - Delete（写）：行级写保护 —— 同样复用 Query 的行条件构造；执行后 0 行同样报错。
+//     DELETE 没有字段概念，因此不注入 Omits。
+//
+// 规则取不到（provider 报错）→ 直接 AddError 并终止该回调（与 Query 路一致）；
+// 规则集为空表示「该用户在该域没有任何限制」→ 放行，这是既有语义。
+//
+// **Query 之外的路径没有任何兜底**：本插件只在 GORM 的 Query / Create / Update / Delete
+// 回调链上生效。裸 SQL（db.Raw / db.Exec）、未经 context 传入 UserContext 的调用
+// （GetUserContext 返回 nil）、以及**未注册数据域的表**，全部不经过这里 —— 它们在数据权限
+// 意义上等于「不受约束」。要保护一张表：先在本包注册它的数据域，再保证写它的语句走 GORM
+// 回调链且 context 里带着 UserContext。
 package datarule
 
 import (
@@ -10,14 +34,34 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
-// registeredDomains 已注册的数据域集合，key 为业务域标识，value 为域配置信息。
-// 装配期写入、请求期读取（GetRules 每查询一次都读），读写一律经 registeredDomainMu。
+// registeredDomains 已注册数据域的**不可变快照**（key 为业务域标识，value 为域配置）。
+//
+// **读写一律经 domainsSnapshot()（atomic.Pointer 全量替换）**：注册只发生在装配期
+// （罕见），而读发生在**每一条** GORM 语句上 —— resolveDomain（plugin.go）是热路径，
+// 每条语句都要按表名匹配域。所以这里用「不可变快照 + 原子替换」：读侧零锁零竞争，
+// 克隆在写侧做、并由 registerMu 串行（防并发注册丢更新）。与 pkg/casbin 的
+// urlCodeMap 是同一套手法。
+//
+// 此前这里是「裸 map + sync.RWMutex」，但 resolveDomain 直接遍历 map **没有加锁** ——
+// 注释声称「读写一律经 registeredDomainMu」而实现并非如此，同时形式上是一处 map
+// 并发读写（Go 里可能直接 fatal）。现已收口：**不要绕过 domainsSnapshot() 直接读**。
 var (
-	registeredDomainMu sync.RWMutex
-	registeredDomains  = make(map[string]DomainConfig)
+	registeredDomains atomic.Pointer[map[string]DomainConfig]
+	registerMu        sync.Mutex // 只保护写侧的「克隆 + 替换」；读侧完全不经过它
 )
+
+func init() {
+	empty := make(map[string]DomainConfig)
+	registeredDomains.Store(&empty)
+}
+
+// domainsSnapshot 返回当前域快照；**调用方只读、不得修改**（改了会污染其它 goroutine）。
+func domainsSnapshot() map[string]DomainConfig {
+	return *registeredDomains.Load()
+}
 
 // RegisterDomain 校验并注册数据域配置，供后续查询时按表名匹配。
 //
@@ -28,26 +72,29 @@ func RegisterDomain(cfg DomainConfig) error {
 	if err := validateDomainConfig(cfg); err != nil {
 		return err
 	}
-	registeredDomainMu.Lock()
-	defer registeredDomainMu.Unlock()
-	registeredDomains[cfg.Domain] = cfg
+	registerMu.Lock()
+	defer registerMu.Unlock()
+	current := domainsSnapshot()
+	next := make(map[string]DomainConfig, len(current)+1)
+	for k, v := range current {
+		next[k] = v
+	}
+	next[cfg.Domain] = cfg
+	registeredDomains.Store(&next)
 	return nil
 }
 
 // GetDomain 按业务域标识返回已注册的域配置。
 func GetDomain(domain string) (DomainConfig, bool) {
-	registeredDomainMu.RLock()
-	defer registeredDomainMu.RUnlock()
-	cfg, ok := registeredDomains[domain]
+	cfg, ok := domainsSnapshot()[domain]
 	return cfg, ok
 }
 
 // GetRegisteredDomains 返回所有已注册的数据域配置快照列表。
 func GetRegisteredDomains() []DomainConfig {
-	registeredDomainMu.RLock()
-	defer registeredDomainMu.RUnlock()
-	result := make([]DomainConfig, 0, len(registeredDomains))
-	for _, cfg := range registeredDomains {
+	snapshot := domainsSnapshot()
+	result := make([]DomainConfig, 0, len(snapshot))
+	for _, cfg := range snapshot {
 		result = append(result, cfg)
 	}
 	return result
