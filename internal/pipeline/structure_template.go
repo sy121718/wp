@@ -35,7 +35,7 @@ type StructureTemplatePort interface {
 //
 // 结构模板在构建期被解析成 root 节点，用 builder.StructureTemplateRef 生成一个
 // 只存在于本次编译的引用 ID；布局槽节点因此仍走 core.layoutSlot 的既有通道
-//（防环 / 深度上限 / ID 前缀重写 / main 地标跳过全部复用），不必另开一条模板通道。
+// （防环 / 深度上限 / ID 前缀重写 / main 地标跳过全部复用），不必另开一条模板通道。
 type structureSlotResolver struct {
 	inner core.BlockResolver
 	refs  map[string][]*core.Node

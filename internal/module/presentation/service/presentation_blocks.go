@@ -87,7 +87,7 @@ var _ core.BlockResolver = (*blockResolverAdapter)(nil)
 // 绑定的结构模板文档来源。
 //
 // 薄适配：版本解析与文档严格校验都在 contenttemplate 契约里
-//（ResolveTemplateByIDScoped 按模板类型校验，并拒绝结构模板里的字段绑定），
+// （ResolveTemplateByIDScoped 按模板类型校验，并拒绝结构模板里的字段绑定），
 // 这里只把「契约未装配 / 模板不存在 / 文档为空」统一成错误 —— 三者对构建期的含义
 // 是同一个：这套模板不可用，回退到该槽位的块绑定（见 pipeline.BuildStructureSlots）。
 func (s *Service) ResolveStructureDocument(ctx context.Context, projectID, templateID string) ([]byte, error) {

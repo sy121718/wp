@@ -113,7 +113,6 @@ type ContentTemplateService interface {
 	Impact(ctx context.Context, req *contenttemplatedto.ImpactReq) (res *contenttemplatedto.ImpactResp, err error)
 }
 
-
 // TemplateImpactPort 模板引用反查端口（消费者侧最窄接口）。
 //
 // 只表达「这个工程里谁引用了模板」这一件事：调用方（contenttemplate）不需要知道

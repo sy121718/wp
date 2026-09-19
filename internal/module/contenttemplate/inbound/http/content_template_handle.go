@@ -150,7 +150,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 // ContentTemplatesActivate 切换生效模板（POST /admin/content-templates/activate）。
 //
 // 与 JSON 接口 POST /api/contenttemplate/activate 是同一个动作、同一条权限点
-//（contenttemplate:activate）：同一（工程, 类型）下**多套存着、单套生效**，
+// （contenttemplate:activate）：同一（工程, 类型）下**多套存着、单套生效**，
 // 切换后旧的那套不再生效。页面上的「设为生效」按钮走这里，不重复实现业务规则 ——
 // service 内部负责事务（旧的置 false、目标置 true）与依赖扇出。
 //

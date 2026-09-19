@@ -155,9 +155,10 @@ func contentTemplateRoleLabel(role string) string {
 // contentTemplateImpactNote 影响面状态提示（空串 = 无需提示）。
 //
 // 三种状态各说各话，不能合并：
-//   · 读取失败 —— 归口文案（错误原文只进日志，见 content_template_err.go）；
-//   · 端口未装配 —— 「查不出来」，不是「没有引用」；
-//   · 有文档解析不了 —— 影响面可能不完整（>0 的计数必须显示出来）。
+//
+//	· 读取失败 —— 归口文案（错误原文只进日志，见 content_template_err.go）；
+//	· 端口未装配 —— 「查不出来」，不是「没有引用」；
+//	· 有文档解析不了 —— 影响面可能不完整（>0 的计数必须显示出来）。
 func contentTemplateImpactNote(c *gin.Context, impact *contenttemplatedto.ImpactResp, err error) string {
 	if err != nil {
 		return contentTemplateInternalText(c, err)

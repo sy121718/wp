@@ -88,8 +88,8 @@ type ProjectService interface {
 // 只带下拉需要的字段：id / 名字 / 类型（header / footer）/ 是否当前生效。
 // 文档与版本不进这里 —— 下拉不预览排版，选了之后由构建期解析。
 type StructureTemplateOption struct {
-	ID         string
-	Name       string
+	ID   string
+	Name string
 	// EntityType header / footer（只要这两种会出现在下拉里）。
 	EntityType string
 	// IsDefault 是否是该类型的当前生效模板（页面在选项后标注「当前生效」）。
@@ -100,7 +100,7 @@ type StructureTemplateOption struct {
 //
 // 为什么由 project 声明、由装配层实现：project 不认识 content_templates 表，
 // 也不 import contenttemplate 的 service/model —— 端口留在消费者侧是本项目的既有形状
-//（与 LocaleRetirePort 同一手法）。
+// （与 LocaleRetirePort 同一手法）。
 type StructureTemplateOptionsPort interface {
 	// ListStructureTemplateOptions 列出工程内全部结构模板（页眉 / 页脚）。
 	ListStructureTemplateOptions(ctx context.Context, projectID string) (opts []StructureTemplateOption, err error)

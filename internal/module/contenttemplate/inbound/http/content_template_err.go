@@ -42,8 +42,8 @@ const contentTemplateErrInternalFallback = "系统内部错误，请稍后重试
 // 漏登记只会让页面少一句可读提示（一眼可见），而漏判的方向恰好相反 ——
 // 内部字符串只要长得像 key 就会被透出。
 var contentTemplateFacingMessages = map[string]string{
-	contenttemplateenums.ErrInvalidParam:           "参数不完整，请检查工程、模板名与实体类型。",
-	contenttemplateenums.ErrNotFound:               "这套模板不存在，可能已被删除。",
+	contenttemplateenums.ErrInvalidParam: "参数不完整，请检查工程、模板名与实体类型。",
+	contenttemplateenums.ErrNotFound:     "这套模板不存在，可能已被删除。",
 	// 页面文档里的 settings.structure 绑定与实例的 template_id 共用这条 key：
 	// 两者的处置都是「先去那个引用方解绑」，而明细（页面名 / 实例实体）在服务日志里。
 	contenttemplateenums.ErrTemplateInUse:          "这套模板仍被页面或自动发布实例引用，不能删除（引用方见列表的「引用」列）。",
