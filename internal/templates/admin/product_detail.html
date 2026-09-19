@@ -37,19 +37,54 @@
             <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</a>
             <button type="submit" form="product-preview-{{.Product.ID}}" class="btn">{{ .["t"]("admin.products.row.previewDetail", "预览详情页") }}</button>
             <button type="submit" form="product-del-{{.Product.ID}}" class="btn btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
-    {* 详情页模板面板（docs/04-C-instance-override.md §5）：绑定状态 + 预览 + 进入自定义。 *}
+    {* 详情页模板面板（docs/04-C-instance-override.md §5，双轨版）：
+       模式徽标 + 两个模式各自的入口 —— template 模式下改布局的正确位置是**模板**
+      （改一次、全站跟随的商品都变）；document 模式才改这个商品自己的文档。
+       影响面（影响 N 个商品）写在按钮上：不写就让用户凭猜，而猜错是整站一起变样。 *}
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Avail}}
     <section class="card card-body">
-        <h2 class="card-title mb-lg">详情页模板</h2>
+        <h2 class="card-title mb-lg">详情页模板{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}<span class="badge badge-info">独立文档</span>{{else}}<span class="badge badge-mute">跟随模板</span>{{end}}{{end}}</h2>
         {{if isset(.TplPanel.InstanceID)}}
         <p class="kv"><span>当前模板</span><span>{{.TplPanel.TemplateID}}</span></p>
         {{if .TplPanel.Published}}
         <div class="flex gap-sm">
             <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?{{.TplPanel.PreviewQS}}">预览</a>
-            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">进入自定义</a>
+            {{if .TplPanel.IsDocumentMode}}
+            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">进入自定义（仅此商品）</a>
+            {{else}}
+            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}&editor=1">编辑模板{{if isset(.TplPanel.AffectedCount)}}（影响 {{.TplPanel.AffectedCount}} 个商品）{{end}}</a>
+            {{end}}
         </div>
-        <p class="hint">自定义只影响这一个商品：画布改组件、保存即重新发布；共享模板与其他商品不受影响。</p>
+        {{if .TplPanel.IsDocumentMode}}
+        <p class="hint">这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。</p>
+        {{if isset(.TplPanel.PresetUpdated)}}<p class="hint">模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。</p>{{end}}
+        <form method="post" action="/admin/products/reapply-preset" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <input type="hidden" name="productId" value="{{.ProductID}}">
+            <button type="submit" class="btn btn-ghost">重新套用预设（回到跟随模板）</button>
+        </form>
+        {{if isset(.TplPanel.Snapshots)}}
+        {{if len(.TplPanel.Snapshots) > 0}}
+        <form method="post" action="/admin/products/rollback-document" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <input type="hidden" name="productId" value="{{.ProductID}}">
+            <label class="form-label" for="rollback-snapshot">回滚到历史版本</label>
+            <select class="form-select" id="rollback-snapshot" name="snapshotId">
+                {{range _, snap := .TplPanel.Snapshots}}
+                <option value="{{snap.ID}}">{{snap.CreatedAt}}</option>
+                {{end}}
+            </select>
+            <button type="submit" class="btn btn-ghost">回滚文档并重发</button>
+        </form>
+        <p class="hint">回滚取该历史版本的文档重新发布（实体数据取最新）。</p>
+        {{end}}
+        {{end}}
+        {{else}}
+        <p class="hint">布局改动请到模板编辑器：改一次，跟随该模板的商品一起更新。想把某个商品单独改，保存结构改动时会提示你转为独立文档。</p>
+        {{end}}
         {{else}}
         <p class="hint">模板已绑定但尚未发布：先在上方完成首次发布，再进入可视化自定义。</p>
         {{end}}

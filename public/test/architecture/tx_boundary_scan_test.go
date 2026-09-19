@@ -124,17 +124,18 @@ var writeCalls = map[string]bool{
 //	  属预防性覆盖，不是已发现的缺陷。
 //
 // **已知盲区（本轮明确不加，写在这里免得后来人以为覆盖全了）**：
-//   · Delete* / Update* 仍**不是**前缀（与 Add* 同理：Add 一次就冒出 17 处 time.AddDate 噪音）。
-//     代价是真实的写变体仍在漏 —— 实测 service 目录里有 DeleteEventsBefore / DeleteLogsBefore /
-//     DeleteNodeLogsBefore（mail 保留期）、DeleteViewsBefore（analytics）、DeleteStaleRevisions（page）
-//     这类**真写**方法，一个都不在识别表里。它们所在函数目前多数只有这一处写，所以不产生候选；
-//     一旦有人在这些函数里再加一处写，扫描器同样看不见。
-//   · 同样**不加 Claim* / Release***：webhook 的 DeliverDelivery 是「认领 → 出站 HTTP → 落定」的
-//     跨系统边界流程（ClaimDelivery / ReleaseDeliveryClaim / MarkDeliveryResult 三处写**刻意不共事务**：
-//     包进事务会让「投递中」的租约行锁横跨一次网络往返，正是 AGENTS.md 允许补偿/非事务的跨系统场景）。
-//     它现在只被识别出 MarkDeliveryResult 一处写，所以不构成候选；一旦有人给 Claim* / Release* 加前缀，
-//     它就会变成一条**假红** —— 那时的正确动作是往允许清单里写明理由，而不是去「修」它。
-//   · 同名前缀的放大效应没变：前台任何一次加前缀，都必须像这一批一样「加完立刻看命中」。
+//
+//	· Delete* / Update* 仍**不是**前缀（与 Add* 同理：Add 一次就冒出 17 处 time.AddDate 噪音）。
+//	  代价是真实的写变体仍在漏 —— 实测 service 目录里有 DeleteEventsBefore / DeleteLogsBefore /
+//	  DeleteNodeLogsBefore（mail 保留期）、DeleteViewsBefore（analytics）、DeleteStaleRevisions（page）
+//	  这类**真写**方法，一个都不在识别表里。它们所在函数目前多数只有这一处写，所以不产生候选；
+//	  一旦有人在这些函数里再加一处写，扫描器同样看不见。
+//	· 同样**不加 Claim* / Release***：webhook 的 DeliverDelivery 是「认领 → 出站 HTTP → 落定」的
+//	  跨系统边界流程（ClaimDelivery / ReleaseDeliveryClaim / MarkDeliveryResult 三处写**刻意不共事务**：
+//	  包进事务会让「投递中」的租约行锁横跨一次网络往返，正是 AGENTS.md 允许补偿/非事务的跨系统场景）。
+//	  它现在只被识别出 MarkDeliveryResult 一处写，所以不构成候选；一旦有人给 Claim* / Release* 加前缀，
+//	  它就会变成一条**假红** —— 那时的正确动作是往允许清单里写明理由，而不是去「修」它。
+//	· 同名前缀的放大效应没变：前台任何一次加前缀，都必须像这一批一样「加完立刻看命中」。
 var writePrefixes = []string{"Ensure", "Create", "Upsert", "Replace", "Mark", "Apply", "Attach", "Bulk", "Batch", "Incr", "Stop", "Persist", "Import", "Dispatch", "Purge", "Save"}
 
 // libraryReceivers 是「同名方法挂在标准库/工具包上」的接收方 —— 它们不是持久化写入。
@@ -180,6 +181,7 @@ var txBoundaryAllow = map[string]string{
 	"internal/module/build/service/build_worker.go#execute":                         "误报：MarkFailed / MarkSucceeded 是 if/else 互斥分支，同一执行路径只会触发一支，不存在半截状态",
 	"internal/module/page/service/page_artifact_rebuild.go#GarbageCollectArtifacts": "可接受：产物文件删除 + MarkPayloadState 逐条记录失败原因，且能按 source_document 重建 —— 幂等可重跑",
 
+	"internal/module/presentation/service/presentation_stale.go#MarkStaleByDependency": "误报：两处写是互斥分支（模板换代只标 template 模式，其余依赖源两种模式都标），单次调用只执行一支；跨工程循环内每工程各一条带 RLS 作用域的 UPDATE，无需合并事务。",
 	// —— 2026-09-19 第三批（识别表补漏后新命中的三条，逐条核实结论）——
 	// 这三条是「扩了识别表才看得见」的：Update*/Incr* 此前不在表里，它们一个都不会被扫到。
 	"internal/module/mail/service/mail_campaign.go#SaveCampaign":  "误报：CreateCampaign 与 UpdateCampaignFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支，不存在半截状态 —— 与 build_worker.go#execute 同形",

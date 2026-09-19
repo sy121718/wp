@@ -80,7 +80,8 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if err = s.m.CreateInstance(ctx, inst); err != nil {
 		return nil, err
 	}
-	if _, err = s.publishAllLangs(ctx, inst, tpl, logicalPath); err != nil {
+	// mode=nil：创建实例不改渲染模式（默认 template，首次编辑才可能转独立）。
+	if _, err = s.publishAllLangs(ctx, inst, tpl, logicalPath, nil); err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
 	return s.toResp(ctx, inst)
@@ -263,14 +264,19 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	if e.CurrentSnapshotID != nil {
 		resp.SnapshotID = *e.CurrentSnapshotID
 	}
-	// 可编辑底稿（docs/04-C-instance-override.md）：workbench 实例模式与后台面板
-	// 需要拿到当前生效文档 —— 覆盖优先，否则取当前快照。读失败按无文档处理
-	//（编辑入口对空文档有显式降级提示）。
-	if len(e.OverrideDocument) > 0 {
+	// 渲染模式（迁移 282）与可编辑底稿（docs/04-C-instance-override.md）：
+	//   document → 覆盖文档即该商品当前文档；
+	//   template → 取当前快照文档，供 workbench 以「当前生效布局」为起点编辑
+	//             （首次编辑即播种，避免空白画布），并用它判定「文档结构是否真的变了」。
+	resp.RenderMode = presentationmodel.NormalizeRenderMode(e.RenderMode)
+	if presentationmodel.IsDocumentMode(e.RenderMode) && len(e.OverrideDocument) > 0 {
 		resp.Document = e.OverrideDocument
 	} else if e.CurrentSnapshotID != nil {
 		if snap, serr := s.m.GetSnapshot(ctx, *e.CurrentSnapshotID); serr == nil {
 			resp.Document = snap.Document
+			// 「预设有新版本」的判定依据：document 模式不会自动跟随模板，
+			// 只能靠快照记录的模板版本与模板最新版比对来提示用户。
+			resp.SourceTemplateVersionID = snap.SourceTemplateVersionID
 		}
 	}
 	return resp, nil

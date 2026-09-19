@@ -15,6 +15,8 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 
+	"go_wp/internal/pipeline"
+
 	"gorm.io/gorm"
 
 	"go_wp/pkg/logger"
@@ -38,12 +40,23 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 		return nil, err
 	}
 	at := time.Now().UTC()
+	// 模板换代的分流（商品页双轨，迁移 282）：document 模式的实例有自己的文档，
+	// 模板更新与它无关 —— 标记它只会让一张不受影响的页面挂上 stale 徽标、
+	// 并在消费时白重建一次。其余依赖源（导航 / 全局块 / 译文）对两种模式**都**有效，
+	// 绝不能分流：漏掉 document 模式会表现为「改了导航但商品页不更新」且无任何报错。
+	templateKind := kind == pipeline.DepKindContentTemplate
 	seen := make(map[string]bool)
 	for _, p := range projects {
 		if ctx.Err() != nil {
 			break
 		}
-		hit, herr := s.m.MarkStaleByDependency(ctx, p.ID, kind, key, at)
+		var hit []string
+		var herr error
+		if templateKind {
+			hit, herr = s.m.MarkStaleTemplateModeByDependency(ctx, p.ID, kind, key, at)
+		} else {
+			hit, herr = s.m.MarkStaleByDependency(ctx, p.ID, kind, key, at)
+		}
 		if herr != nil {
 			return nil, herr
 		}
@@ -148,7 +161,7 @@ func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error 
 	}
 	// 依赖失效是内容变更触发的自动重建：实例带覆盖文档时沿用（docs/04-C），
 	// 否则一次实体数据更新就会把可视化自定义静默冲回模板文档。
-	tpl = withInstanceDocument(inst, tpl)
+	tpl = instanceDocumentFor(inst, tpl)
 	_, err = s.rebuildInstance(ctx, inst, tpl)
 	return err
 }

@@ -46,6 +46,11 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 归属仓下拉（issue #15）：建商品与新增变体时可选仓库（不选即默认仓）。
 	productPages.SetInventoryDeps(inventories)
 	// 编辑期 title 唯一性检查的全站数据源（审计 SEO-018）：页面草稿与文章标题
+	// 双轨能力（迁移 282）：presentation 的 contract 未声明这些方法（另一批工作正在
+	// 维护它），故运行时断言注入；断言失败时详情页只显示基础面板（降级可见）。
+	if modePort, ok := presentations.(ProductDetailTemplateModePort); ok {
+		productPages.SetDetailTemplateModePort(modePort)
+	}
 	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
@@ -77,6 +82,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/products/bulk-pricing", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsBulkPricing)
 	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
 	pages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
+	// 双轨写动作（迁移 282，docs/04-C-instance-override.md）：只改这一个商品的呈现。
+	// 权限复用商品更新（同一改动面：改的都是这个商品详情页的内容），不新增权限点。
+	// 成功不写 ?done=（页面上的模式徽标就是结果），失败走 ?err= 白名单。
+	pages.POST("/products/reapply-preset", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsReapplyPreset)
+	pages.POST("/products/rollback-document", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackDocument)
+	pages.POST("/products/rollback-artifact", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackArtifact)
 	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
 	// 评分属商品维护，不另立权限点与菜单。
 	pages.POST("/products/rating/add", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingAdd)

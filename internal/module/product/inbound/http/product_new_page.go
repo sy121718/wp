@@ -63,7 +63,7 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 		"Projects": projects, "SelectedProject": selected,
 		"WarehouseOptions": warehouseOptions, "AttributeOptions": attributeOptions,
 		"WarehouseSKUOptions": warehouseSKUGroups,
-		"Templates": tplRows, "DefaultTemplateID": defaultID, "TemplatesAvail": tplAvail,
+		"Templates":           tplRows, "DefaultTemplateID": defaultID, "TemplatesAvail": tplAvail,
 		"Err": productPageErr(c),
 	}))
 }

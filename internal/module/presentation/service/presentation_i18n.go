@@ -75,7 +75,8 @@ func (s *Service) ensureLogicalPathFree(ctx context.Context, projectID, logicalP
 
 // publishAllLangs 按站点启用语言构建、逐语言结案，整批成功后才推进实例指针。
 func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	tpl *contenttemplatecontract.ResolvedTemplate, logicalPath string) (primaryArtifactID string, err error) {
+	tpl *contenttemplatecontract.ResolvedTemplate, logicalPath string,
+	mode *instanceModePending) (primaryArtifactID string, err error) {
 	logicalPath = pipeline.LogicalPathOf(ctx, s.project, inst.ProjectID, logicalPath)
 	if logicalPath == "" {
 		logicalPath = s.instanceLogicalPath(ctx, inst)
@@ -104,7 +105,7 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 	previousArtifacts := s.publishedArtifactsByLang(ctx, inst.ID)
 
 	now := time.Now().UTC()
-	primaryArtifactID, snapID, err := s.persistMultiLangArtifacts(ctx, inst, tpl, results, now, logicalPath, defaultLang)
+	primaryArtifactID, snapID, err := s.persistMultiLangArtifacts(ctx, inst, tpl, results, now, logicalPath, defaultLang, mode)
 	if err != nil {
 		return "", err
 	}
@@ -233,7 +234,7 @@ func (s *Service) publishedArtifactsByLang(ctx context.Context, instanceID strin
 // 写入 —— 把「记账」与「上线」分开，才有 AR2-003 要的那条不变式。
 func (s *Service) persistMultiLangArtifacts(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	tpl *contenttemplatecontract.ResolvedTemplate, results []langBuildResult, now time.Time,
-	logicalPath, defaultLang string) (primaryArtifactID, snapID string, err error) {
+	logicalPath, defaultLang string, mode *instanceModePending) (primaryArtifactID, snapID string, err error) {
 	snapID = uuid.NewString()
 	snap := &presentationmodel.SnapshotEntity{
 		ID: snapID, PresentationInstanceID: inst.ID,
@@ -245,11 +246,35 @@ func (s *Service) persistMultiLangArtifacts(ctx context.Context, inst *presentat
 		if cerr := s.m.CreateSnapshotTx(tx, snap); cerr != nil {
 			return cerr
 		}
+		// 渲染模式与独立文档（双轨，迁移 282）与快照/产物/指针同事务：
+		// 分开写会留下「文档已换、模式没换」的中间态，下一次模板更新就会按
+		// template 模式把它重建回模板文档 —— 用户的自定义凭空消失。
+		if mode != nil {
+			if uerr := s.m.UpdateInstanceModeTx(tx, inst.ProjectID, inst.ID, mode.renderMode, mode.document, now); uerr != nil {
+				return uerr
+			}
+			inst.RenderMode = mode.renderMode
+			if mode.renderMode == presentationmodel.RenderModeDocument {
+				inst.OverrideDocument = mode.document
+			} else {
+				inst.OverrideDocument = nil
+			}
+		}
 		if inst.TemplateID != tpl.TemplateID {
 			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ProjectID, inst.ID, tpl.TemplateID, now); uerr != nil {
 				return uerr
 			}
 			inst.TemplateID = tpl.TemplateID
+			// 换底稿 = 放弃独立文档（双轨语义）：产物已按新模板编译，文档列若留着旧自定义，
+			// 下次重建又会拿旧文档盖掉新模板 —— 与本次「切换」自相矛盾。
+			// mode != nil 时上面已处理（ReapplyPreset 的「换模板 + 回跟随」路径同时给两者）。
+			if mode == nil && (presentationmodel.IsDocumentMode(inst.RenderMode) || len(inst.OverrideDocument) > 0) {
+				if cerr := s.m.ClearInstanceModeTx(tx, inst.ProjectID, inst.ID, now); cerr != nil {
+					return cerr
+				}
+				inst.RenderMode = presentationmodel.RenderModeTemplate
+				inst.OverrideDocument = nil
+			}
 		}
 		if logicalPath != "" && inst.URLPath != logicalPath {
 			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ProjectID, inst.ID, logicalPath, now); uerr != nil {

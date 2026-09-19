@@ -64,6 +64,26 @@ type ProductDetailTemplatePort interface {
 	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
 }
 
+// ProductDetailTemplateModePort 双轨能力（迁移 282）：独立文档保存、重新套用预设、
+// 两类回滚与「编辑模板影响 N 个商品」的影响面计数。
+//
+// 为什么单独一个接口 + 运行时断言注入：presentation 的 contract 接口正由另一批
+// 工作维护（MarkStaleForI18n 等），本批不改它；缺失时详情页降级为「只有基础面板」
+// （绑定 / 预览 / 发布），不 panic、不静默 —— 降级必须可见。
+type ProductDetailTemplateModePort interface {
+	SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error)
+	ReapplyPreset(ctx context.Context, req *presentationdto.ReapplyPresetReq) (res *presentationdto.InstanceResp, err error)
+	RollbackDocument(ctx context.Context, req *presentationdto.RollbackDocumentReq) (res *presentationdto.InstanceResp, err error)
+	RollbackArtifact(ctx context.Context, req *presentationdto.RollbackArtifactReq) (res *presentationdto.InstanceResp, err error)
+	ListSnapshots(ctx context.Context, req *presentationdto.ListSnapshotsReq) (list []*presentationdto.SnapshotSummary, err error)
+	CountByTemplate(ctx context.Context, req *presentationdto.CountByTemplateReq) (res *presentationdto.CountByTemplateResp, err error)
+}
+
+// SetDetailTemplateModePort 注入双轨能力（可空降级；装配期在类型断言成功时调用）。
+func (h *productPageHandle) SetDetailTemplateModePort(port ProductDetailTemplateModePort) {
+	h.modePort = port
+}
+
 // SetDetailTemplateDeps 注入「详情页模板」页所需的两份契约（装配期调用）。
 //
 // 用 setter 而非构造参数：既有装配（含页面测试）按两参数构造商品页 handle，

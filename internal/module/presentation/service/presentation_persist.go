@@ -46,8 +46,9 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	if err != nil {
 		return nil, err
 	}
+	// 非切换：按渲染模式取底稿（document 模式用该商品文档，模板照常解析数据）。
 	if !switching {
-		tpl = withInstanceDocument(inst, tpl)
+		tpl = instanceDocumentFor(inst, tpl)
 	}
 	return s.rebuildInstance(ctx, inst, tpl)
 }
@@ -73,7 +74,7 @@ func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.I
 	lock.Lock()
 	defer lock.Unlock()
 
-	if _, err = s.publishAllLangs(ctx, inst, tpl, inst.URLPath); err != nil {
+	if _, err = s.publishAllLangs(ctx, inst, tpl, inst.URLPath, nil); err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}
 	return s.toResp(ctx, inst)

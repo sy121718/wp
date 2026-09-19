@@ -77,7 +77,8 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, err
 	}
-	primaryArtifactID, err := s.publishAllLangs(ctx, inst, tpl, newLogical)
+	// mode=nil：改 URL 不是改渲染模式。
+	primaryArtifactID, err := s.publishAllLangs(ctx, inst, tpl, newLogical, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}

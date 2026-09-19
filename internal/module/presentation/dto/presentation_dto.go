@@ -59,6 +59,10 @@ type SaveOverrideReq struct {
 	ProjectID string `json:"projectId"`
 	// Document 覆盖后的文档（含 binding 节点，编译期照常解析实体数据）。
 	Document json.RawMessage `json:"document" binding:"required"`
+	// ConfirmDetach 从「跟随模板」转入「独立文档」的确认标记（双轨，迁移 282）。
+	// 判据是文档**结构真的变了**，只有服务端算得准（前端拿不到生效底稿的权威字节），
+	// 因此先请求、未带确认时服务端回 ErrDetachConfirmRequired，前端据此弹确认再重试。
+	ConfirmDetach bool `json:"confirmDetach"`
 }
 
 // ClearOverrideReq 清除实例级文档覆盖（放弃自定义，按模板重建）。
@@ -68,6 +72,16 @@ type ClearOverrideReq struct {
 	ProjectID  string `json:"projectId"`
 	TemplateID string `json:"templateId"`
 }
+
+// 渲染模式取值（迁移 282）。真值在 presentationmodel.RenderMode*；这里为跨模块消费者
+// 提供一份可 import 的镜像（模块间只允许依赖 contract 与不可变 DTO，不能 import 对方 model），
+// 一致性由 public/test/presentation/unit 的用例钉住。
+const (
+	// RenderModeTemplate 跟随绑定模板（默认）：模板更新可全局下发。
+	RenderModeTemplate = "template"
+	// RenderModeDocument 该商品独立文档（override_document）：模板更新不影响它。
+	RenderModeDocument = "document"
+)
 
 // UpdateURLReq 修改已发布实例的线上路径（改 URL）。
 //
@@ -102,6 +116,19 @@ type ListSnapshotsReq struct {
 	InstanceID string `form:"instanceId" json:"instanceId" binding:"required"`
 	ProjectID  string `form:"projectId" json:"projectId"`
 	Limit      int    `form:"limit" json:"limit"`
+}
+
+// CountByTemplateReq 按模板统计影响面（后台「编辑模板（影响 N 个商品）」）。
+type CountByTemplateReq struct {
+	TemplateID string `json:"templateId" form:"templateId" binding:"required"`
+	ProjectID  string `json:"projectId" form:"projectId"`
+}
+
+// CountByTemplateResp 影响面：template 模式的实例会被模板更新波及，document 模式不会。
+type CountByTemplateResp struct {
+	TemplateMode int64 `json:"templateMode"`
+	DocumentMode int64 `json:"documentMode"`
+	Total        int64 `json:"total"`
 }
 
 // SnapshotSummary 历史快照投影（只给选择回滚目标需要的字段）。

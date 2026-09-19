@@ -45,6 +45,10 @@
         </div>
 
         <div class="wb-topbar-right">
+            {{if isset(.instanceMode)}}
+            {* 双轨状态条（迁移 282）：编辑者必须随时知道改的是共享模板还是这一个商品。 *}
+            <span class="wb-status" id="wb-instance-mode" title="{{.renderModeLabel}}">{{.renderModeLabel}}</span>
+            {{end}}
             <span class="wb-status" id="wb-status">就绪</span>
             {{if .isTemplate}}
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/template/preview?{{.previewQS}}" target="_blank">预览</a>

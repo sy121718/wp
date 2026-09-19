@@ -26,7 +26,7 @@ import (
 // SaveOverrideDocument 保存商品独立文档并重建发布。
 //
 // 模式与文档的落库发生在 publishAllLangs → persistMultiLangArtifacts 的同一个事务里
-//（与快照/产物/指针一体），不是先写一列再发布 —— 理由见 instanceModePending 注释。
+// （与快照/产物/指针一体），不是先写一列再发布 —— 理由见 instanceModePending 注释。
 func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || len(req.Document) == 0 {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
@@ -117,7 +117,7 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 // ClearOverride 兼容旧契约：语义等同「重新套用预设」（放弃独立文档、回到跟随模板）。
 //
 // 保留它是因为商品详情页/模板面板既有调用点都用它；新代码请直接用 ReapplyPreset
-//（名字与双轨语义一致，避免「清覆盖」被读成「清空内容」）。
+// （名字与双轨语义一致，避免「清覆盖」被读成「清空内容」）。
 func (s *Service) ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil {
 		return nil, errors.New(presentationenums.ErrInvalidParam)

@@ -90,3 +90,39 @@ document = inst.OverrideDocument 非空 ? inst.OverrideDocument : tpl.Document
 - [ ] 路由只用 GET/POST；新接口挂 authorizedAPI 必带权限点 seed。
 - [ ] `go vet` / `make test` / `check-no-internal-error-leak.sh` 全绿。
 - [ ] 完成后 `code-review-graph update`。
+
+---
+
+## 8. 双轨定稿（2026-09）：render_mode 显式成列
+
+> 实施：迁移 282（`presentation_instances.render_mode`）。本节取代前文「靠 override 是否为空推断」的表述。
+
+### 8.1 两种模式
+
+| 模式 | 文档来源 | 编辑入口 | 模板更新 |
+|---|---|---|---|
+| `template`（默认） | 绑定模板的文档（每次构建参与） | 模板编辑器（影响 N 个商品，全局刷新） | 自动下发到全部 template 模式实例 |
+| `document` | `override_document`（该商品自己的文档） | 商品预览点进去（workbench `?instance=`，仅此商品） | 不下发；详情页提示「预设已更新」，可一键重新套用 |
+
+为什么显式成列而不是靠 `override_document` 空/非空推断：**「改了又改回去（与模板一致）」与「重新套用预设后」两种状态用空值推断会漂移**；而且模板更新的 stale 传播要在 SQL 里按模式分流（只重建 `template`），需要一列可判定条件而不是一次 JSON 比较。
+
+### 8.2 分叉判据：结构变了才分叉
+
+- 改名称 / 价格 / 描述等**实体数据** → 不属于文档变更（binding 在编译期解析），**不分叉**；
+- 改文档结构（增删组件、改版式）→ 触发转独立；未确认时保存被拒（`ErrDetachConfirmRequired`），前端弹确认并说明：**将放弃模板、后续不能全站同步，可随时「重新套用预设」退回**；
+- 与模板内容一致的结构改动**视为未分叉**（文档归一化后比较），避免「改了又改回去」把商品变成独立文档。
+
+### 8.3 回滚两层（复用既有内核，不引入 page_revisions）
+
+| 层 | 实现 | 语义 |
+|---|---|---|
+| 产物指针回滚 | `RollbackArtifact` → publication `Activate` + 指针单事务 | 秒级、不重编译；线上立刻恢复 |
+| 快照文档回滚 | `RollbackDocument` → 取历史 `document_snapshots` 文档重发（带归属校验，跨实例快照拒绝） | 回到某个历史版本的**文档**再发布 |
+
+### 8.4 已知边界（实施时明确记录）
+
+1. **模板换代的触发链尚未接线**：`content_template` 依赖键当前没有来源模块触发（`presentation_render.go` 注释同此），分流逻辑已就位但触发点待接；
+2. 产物回滚**未写发布回执**（page 侧会写 `ReceiptActionRollback`）——回执是跨模块调用，未纳入本批；
+3. 新增的 4 条错误文案走 product 兜底表，**尚未 seed i18n 词条**（需与 `i18n_seed_functional_test.go` 的行数基线同批更新）；
+4. 换模板（Rebuild 带显式 `TemplateID`）= 放弃自定义：同事务清独立文档并回到 `template` 模式；
+5. `presentation_persist.go` 的 `persistBuild` 当前**无调用者**（死代码，内含一份重复的 override 清理逻辑），清理属独立批次。

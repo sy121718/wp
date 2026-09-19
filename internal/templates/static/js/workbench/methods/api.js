@@ -73,25 +73,60 @@ export const apiMethods = {
                     }
                 }
                 self.busy = true; self.renderUI();
-                fetch(target.save.path, {
-                    method: 'POST',
-                    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-                    body: JSON.stringify(body)
-                }).then(function (r) { return r.json(); })
-                  .then(function (j) {
-                      self.busy = false;
-                      if (j.code && j.code >= 400) {
-                          self.saveState = 'error'; self.renderUI();
-                          alert(j.message || '保存失败');
-                          return;
-                      }
-                      var data = j.data || {};
-                      self.draftVersion = data.draftVersion || (self.draftVersion + 1);
-                      self.saveState = 'saved';
-                      self.clearBackup();
-                      self.flushCanvas();
-                  })
-                  .catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
+                // 双轨（迁移 282）：实例保存可能触发「转为独立文档」。服务端回 409 时
+                // 先确认再重试 —— 判据（文档结构是否真的变了）只有服务端算得准，
+                // 所以顺序是「先请求、再确认」，而不是一进编辑就弹窗打断浏览。
+                function send(confirmDetach) {
+                    var payload = body;
+                    if (confirmDetach) {
+                        payload = JSON.parse(JSON.stringify(body));
+                        payload.confirmDetach = true;
+                    }
+                    return fetch(target.save.path, {
+                        method: 'POST',
+                        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify(payload)
+                    }).then(function (r) { return r.json(); });
+                }
+                send(false).then(function (j) {
+                    // 用描述符判定实例目标（分派一律走 target，见上面的说明）。
+                    if (j && j.code === 409 && target.type === 'instance') {
+                        if (window.confirm(j.message || '这次改动会让本商品转为独立文档，继续？')) {
+                            return send(true).then(function (j2) {
+                                self.busy = false;
+                                if (j2 && j2.code && j2.code >= 400) {
+                                    self.saveState = 'error'; self.renderUI();
+                                    alert(j2.message || '保存失败');
+                                    return;
+                                }
+                                self.afterSave((j2 && j2.data) || {});
+                            });
+                        }
+                        self.busy = false; self.renderUI();
+                        return;
+                    }
+                    self.busy = false;
+                    if (j && j.code && j.code >= 400) {
+                        self.saveState = 'error'; self.renderUI();
+                        alert(j.message || '保存失败');
+                        return;
+                    }
+                    self.afterSave((j && j.data) || {});
+                }).catch(function () { self.busy = false; self.saveState = 'error'; self.renderUI(); });
+            },
+            // afterSave 保存成功后的统一收尾（含双轨状态条即时切换）。
+            afterSave(data) {
+                this.draftVersion = data.draftVersion || (this.draftVersion + 1);
+                this.saveState = 'saved';
+                this.clearBackup();
+                this.flushCanvas();
+                if (data.renderMode && meta.renderMode && data.renderMode !== meta.renderMode) {
+                    // 刚保存的这次改动已让商品转为独立文档：状态条即时切换，
+                    // 免得用户以为还在跟随模板（下一次模板更新不再同步到这里）。
+                    meta.renderMode = data.renderMode;
+                    var badge = document.getElementById('wb-instance-mode');
+                    if (badge) { badge.textContent = '独立文档（只影响这个商品）'; }
+                }
             },
             publishFlow() {
                 var self = this;

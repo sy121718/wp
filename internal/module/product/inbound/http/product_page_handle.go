@@ -17,11 +17,12 @@ import (
 
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	pagecontract "go_wp/internal/module/page/contract"
-	productcontract "go_wp/internal/module/product/contract"
-contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
-		productdto "go_wp/internal/module/product/dto"
+	presentationenums "go_wp/internal/module/presentation/enums"
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
@@ -59,6 +60,10 @@ type productPageHandle struct {
 	instances ProductDetailTemplatePort
 	// inventories 仓库清单（issue #15）：变体新增表单的「归属仓」下拉，
 	// 「不选」即兜底该工程的默认仓。经 SetInventoryDeps 注入 —— 未注入时
+	// modePort 双轨能力（迁移 282）：独立文档 / 重新套用预设 / 回滚 / 影响面计数。
+	// 单独字段而不是并入 instances：presentation 的 contract 未声明这些方法，
+	// 由装配期类型断言注入，未注入时页面降级为只有基础面板。
+	modePort ProductDetailTemplateModePort
 	// 表单不带仓库下拉（商品页其余功能一字不变，既有测试构造签名也不受影响）。
 	inventories inventorycontract.InventoryService
 	// seoPages / seoContents 编辑期 title 唯一性检查的另外两个数据源（审计 SEO-018）：
@@ -167,11 +172,11 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		"WarehouseSKUOptions": warehouseSKUGroups,
 		// 建表单片段（partials/product_create_form.html）在列表页是抽屉形态：
 		// 渲染「取消」按钮关闭抽屉；新建整页不设该键。
-		"InDrawer": true,
-		"Rules":               pricingRules,
-		"Roundings":           pricingRoundings,
-		"Form":                defaultPricingForm(pricingRules, pricingRoundings),
-		"Products":            rows,
+		"InDrawer":  true,
+		"Rules":     pricingRules,
+		"Roundings": pricingRoundings,
+		"Form":      defaultPricingForm(pricingRules, pricingRoundings),
+		"Products":  rows,
 		// 上一步的错误（上限拒绝 / 参数错误）经查询串回显 —— 读侧一律过白名单
 		//（product_err.go）：查询参数不是可信边界。
 		"Err": productPageErr(c),
@@ -388,26 +393,58 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 		"Done": productPageDone(c),
 	}
 	// 详情页模板面板（docs/04-C-instance-override.md §5）：当前绑定与可视化自定义入口。
-// 三态：未绑定（引导首次发布）/ 已绑定（预览 + 进入自定义）/ 能力未装配（降级提示）。
-tplPanel := gin.H{"Avail": false}
-if hasProduct && h.templates != nil && h.instances != nil {
-	tplPanel["Avail"] = true
-	if inst, ierr := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
-		EntityType: productEntityType, EntityID: productID, ProjectID: selected,
-	}); ierr == nil && inst != nil {
-		tplPanel["InstanceID"] = inst.ID
-		tplPanel["TemplateID"] = inst.TemplateID
-		tplPanel["Published"] = inst.Status == "published" || inst.Status == "active"
-		tplPanel["URLPath"] = inst.URLPath
-		tplPanel["PreviewQS"] = "template=" + inst.TemplateID + "&entityType=product&entityId=" +
-			productID + "&projectId=" + selected
+	// 三态：未绑定（引导首次发布）/ 已绑定（预览 + 进入自定义）/ 能力未装配（降级提示）。
+	tplPanel := gin.H{"Avail": false}
+	if hasProduct && h.templates != nil && h.instances != nil {
+		tplPanel["Avail"] = true
+		if inst, ierr := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
+			EntityType: productEntityType, EntityID: productID, ProjectID: selected,
+		}); ierr == nil && inst != nil {
+			tplPanel["InstanceID"] = inst.ID
+			tplPanel["TemplateID"] = inst.TemplateID
+			tplPanel["Published"] = inst.Status == "published" || inst.Status == "active"
+			tplPanel["URLPath"] = inst.URLPath
+			tplPanel["PreviewQS"] = "template=" + inst.TemplateID + "&entityType=product&entityId=" +
+				productID + "&projectId=" + selected
+			// 双轨（迁移 282）：模式徽标 + 两个模式的入口分流。
+			// document：可进入自定义、可重新套用预设、可按历史快照回滚；
+			// template：布局的正确修改位置是模板 —— 按钮写成「编辑模板（影响 N 个商品）」，
+			// 影响面用真实计数（含该模板下 template 模式的实例数），不写就让用户凭猜。
+			isDoc := inst.RenderMode == presentationdto.RenderModeDocument
+			tplPanel["RenderMode"] = presentationdto.RenderModeTemplate
+			if isDoc {
+				tplPanel["RenderMode"] = presentationdto.RenderModeDocument
+			}
+			tplPanel["IsDocumentMode"] = isDoc
+			// 「预设有新版本」：document 模式不会自动跟随模板，只能靠快照记录的
+			// 模板版本与模板最新版比对来提示（判定依据由 toResp 给出）。
+			if isDoc {
+				if tpl, rerr := h.templates.ResolveTemplate(ctx, productEntityType); rerr == nil && tpl != nil &&
+					inst.SourceTemplateVersionID != "" && tpl.VersionID != inst.SourceTemplateVersionID {
+					tplPanel["PresetUpdated"] = true
+				}
+				if h.modePort != nil {
+					if snaps, serr := h.modePort.ListSnapshots(ctx, &presentationdto.ListSnapshotsReq{
+						InstanceID: inst.ID, ProjectID: selected, Limit: 8,
+					}); serr == nil {
+						tplPanel["Snapshots"] = snaps
+					}
+				}
+			}
+			if h.modePort != nil {
+				if counts, cerr := h.modePort.CountByTemplate(ctx, &presentationdto.CountByTemplateReq{
+					TemplateID: inst.TemplateID, ProjectID: selected,
+				}); cerr == nil && counts != nil {
+					tplPanel["AffectedCount"] = counts.TemplateMode
+				}
+			}
+		}
+		if rows, terr := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType}); terr == nil {
+			tplPanel["Templates"] = rows
+		}
 	}
-	if rows, terr := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType}); terr == nil {
-		tplPanel["Templates"] = rows
-	}
-}
-data["TplPanel"] = tplPanel
-c.HTML(http.StatusOK, "admin/product_detail.html", shell.Prepare(c, data))
+	data["TplPanel"] = tplPanel
+	c.HTML(http.StatusOK, "admin/product_detail.html", shell.Prepare(c, data))
 }
 
 // variantSelectionFromForm 收「生成组合」表单里按前缀提交的勾选（attr:<属性组 id> → 值 id）。
@@ -941,6 +978,13 @@ var productErrSentinels = []string{
 	productenums.ErrCategoryProjectMismatch,
 	productenums.ErrCategorySlugTaken,
 	productenums.ErrCollectionFilterInvalid,
+	// 双轨写动作（迁移 282）：四条都是 presentation 侧的业务错误，会经 ?err= 回带详情页。
+	// 漏登记就只剩「系统内部错误」—— 用户看不到「回滚目标不在位」「快照不属于该商品」
+	// 这些**可行动**的区别（该换一个版本 / 该重新发布一次）。
+	presentationenums.ErrDetachConfirmRequired,
+	presentationenums.ErrRollbackTargetMiss,
+	presentationenums.ErrRollbackFailed,
+	presentationenums.ErrSnapshotMismatch,
 	productenums.ErrCollectionSourceInvalid,
 	productenums.ErrInvalidField,
 	productenums.ErrInvalidType,
@@ -1007,6 +1051,10 @@ var productErrFallbacks = map[string]string{
 	inventoryenums.ErrWarehouseDisabled:            "已停用的仓库不能作为归属仓",
 	inventoryenums.ErrWarehouseProjectMismatch:     "仓库不属于该工程",
 	inventoryenums.ErrWarehouseDefaultMissing:      "该工程没有默认仓可兜底，请先建一个仓库并设为默认仓",
+	presentationenums.ErrDetachConfirmRequired:     "该操作会放弃模板同步（商品页转为独立文档），需要先确认",
+	presentationenums.ErrRollbackTargetMiss:        "回滚目标不存在：该版本不属于这个商品，或产物文件已缺失",
+	presentationenums.ErrRollbackFailed:            "回滚失败：线上版本保持不变",
+	presentationenums.ErrSnapshotMismatch:          "该版本不属于这个商品，不能用来回滚",
 	productenums.ErrPricingRuleTypeInvalid:         "定价规则类型不是内置类型",
 	productenums.ErrPricingRuleParamsInvalid:       "定价规则参数不合法（参数键 / 类型 / 取值范围）",
 	productenums.ErrPricingRoundingInvalid:         "尾数处理不是内置选项",
