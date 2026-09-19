@@ -126,4 +126,9 @@ type PublicationService interface {
 	RenameReservedTx(ctx context.Context, tx *gorm.DB, req *pubdto.RenameReservedReq) (err error)
 	ReservePathTx(ctx context.Context, tx *gorm.DB, req *pubdto.ReserveReq) (err error)
 	DeleteRoutesByPageTx(ctx context.Context, tx *gorm.DB, req *pubdto.DeleteRoutesReq) (err error)
+	// DeleteRoutesByPresentationTx 清理展示实例全部路径占用（实例删除时释放，幂等）。
+	//
+	// 调用方是 presentation 的实例删除：实例行归它、page_routes 行归本模块，
+	// 两处写必须同一个事务 —— 所以这里给的是事务形态而不是让调用方各提交一次。
+	DeleteRoutesByPresentationTx(ctx context.Context, tx *gorm.DB, req *pubdto.DeleteRoutesByPresentationReq) (err error)
 }

@@ -183,7 +183,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		"Err":       pageErr,
 		"Ok":        pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
-		"Done": orderPageDone(c.Query("done")),
+		"Done": orderPageDone(c, c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/returns", returnFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -320,7 +320,7 @@ func (h *returnPageHandle) ReturnBulkApprove(c *gin.Context) {
 		}
 		approved++
 	}
-	returnBulkRedirect(c, bulkSummary("已同意", "退货申请", approved, skipped))
+	returnBulkRedirect(c, bulkSummary(c, orderBulkVerbApproved, orderBulkNounReturn, approved, skipped))
 }
 
 // ReturnBulkReject 批量拒绝退货申请（POST /admin/returns/bulk-reject）。
@@ -359,7 +359,7 @@ func (h *returnPageHandle) ReturnBulkReject(c *gin.Context) {
 		}
 		rejected++
 	}
-	returnBulkRedirect(c, bulkSummary("已拒绝", "退货申请", rejected, skipped))
+	returnBulkRedirect(c, bulkSummary(c, orderBulkVerbRejected, orderBulkNounReturn, rejected, skipped))
 }
 
 // returnBulkRedirect 批量动作回列表页：结论走 ?done=，当前筛选与窗口原样带回。

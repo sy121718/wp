@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -227,7 +228,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"Err":       pageErr,
 		"Ok":        pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
-		"Done": orderPageDone(c.Query("done")),
+		"Done": orderPageDone(c, c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/orders", orderFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -369,7 +370,7 @@ func (h *orderPageHandle) OrderBulkStatus(c *gin.Context) {
 		}
 		changed++
 	}
-	orderBulkRedirect(c, bulkSummary("已流转", "订单", changed, skipped))
+	orderBulkRedirect(c, bulkSummary(c, orderBulkVerbFlowed, orderBulkNounOrder, changed, skipped))
 }
 
 // OrderBulkCancel 批量取消订单（POST /admin/orders/bulk-cancel）。
@@ -415,23 +416,26 @@ func (h *orderPageHandle) OrderBulkCancel(c *gin.Context) {
 		}
 		cancelled++
 	}
-	orderBulkRedirect(c, bulkSummary("已取消", "订单", cancelled, skipped))
+	orderBulkRedirect(c, bulkSummary(c, orderBulkVerbCancelled, orderBulkNounOrder, cancelled, skipped))
 }
 
 // bulkSummary 批量动作的结果文案（成功 N 个 / 跳过 M 个）；订单与退货申请共用。
 //
 // 「跳过」必须出现在文案里：只报成功数会让「选了 10 个、实际改了 6 个」看起来像全做完了，
 // 而剩下的那几个会在下次列表刷新时莫名其妙地回到原状。
-func bulkSummary(verb, noun string, done, skipped int) string {
+// 动词与名词都由调用方以 orderBulkText 传入（key + 中文原文），文案模板与词一样经
+// orderBulkTextOf 按当前语言取 —— 与读侧 orderDoneTexts 同一个取法。
+func bulkSummary(c *gin.Context, verb, noun orderBulkText, done, skipped int) string {
+	v, n := orderBulkTextOf(c, verb), orderBulkTextOf(c, noun)
 	switch {
 	case done == 0 && skipped == 0:
-		return fmt.Sprintf(orderBulkNothingSelected, noun)
+		return fmt.Sprintf(orderBulkTextOf(c, orderBulkNothingSelected), n)
 	case skipped == 0:
-		return fmt.Sprintf(orderBulkAllDone, verb, done, noun)
+		return fmt.Sprintf(orderBulkTextOf(c, orderBulkAllDone), v, strconv.Itoa(done), n)
 	case done == 0:
-		return fmt.Sprintf(orderBulkAllSkipped, noun, verb, skipped)
+		return fmt.Sprintf(orderBulkTextOf(c, orderBulkAllSkipped), n, v, strconv.Itoa(skipped))
 	default:
-		return fmt.Sprintf(orderBulkPartial, verb, done, noun, skipped)
+		return fmt.Sprintf(orderBulkTextOf(c, orderBulkPartial), v, strconv.Itoa(done), n, strconv.Itoa(skipped))
 	}
 }
 

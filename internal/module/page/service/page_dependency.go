@@ -56,29 +56,24 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 		return nil, err
 	}
 	at := time.Now().UTC()
-	seen := make(map[string]bool)
-	ids := make([]string, 0, 8)
+	// 聚合走与整站标记同一份 staleIDCollector（去重只有一份实现）。
+	hit := &staleIDCollector{}
 	for _, projectID := range projectIDs {
 		if ctx.Err() != nil {
 			break
 		}
-		hit, herr := s.model.MarkStaleByDependency(ctx, projectID, kind, key, at)
+		ids, herr := s.model.MarkStaleByDependency(ctx, projectID, kind, key, at)
 		if herr != nil {
 			return nil, herr
 		}
-		for _, id := range hit {
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			ids = append(ids, id)
-		}
+		hit.add(ids)
 	}
+	affected := hit.list()
 	// 影响面回执（只读，失败不影响主流程）：这里是 PIPE-3 精确扇出的唯一出口，
 	// 「这次内容改动影响了哪几个页面」只有这一刻手里有完整答案 —— 过了这里
 	// 就只剩 pages.stale 这个布尔列，再想回答就得靠反查全部 stale 页面去近似。
-	s.logStaleImpact(ctx, "dependency:"+kind+":"+key, ids)
-	return ids, nil
+	s.logStaleImpact(ctx, "dependency:"+kind+":"+key, affected)
+	return affected, nil
 }
 
 // RebuildStale 实现 pipeline.StaleRebuilder：重建受影响的页面。

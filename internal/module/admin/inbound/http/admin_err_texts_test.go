@@ -40,8 +40,8 @@ import (
 //
 // 清单来自对 internal/module/admin/inbound/http 的 grep 复核（2026-09），逐个写侧生产点：
 //
-//  1. adminBulkResultURL —— skipped > 0 时 Sprintf(adminBulkPartialTemplate) 进 ?err=
-//     （六个列表页名词各一条）；
+//  1. adminBulkResultURL —— skipped > 0 时 Sprintf(adminBulkPartialText 的当前语言模板) 进 ?err=
+//     （六个列表页名词各一条；模板与名词都经 adminBulkTextOf 取词）；
 //  2. adminI18nBulkDeleteResult —— 词条页批量删除「全跳过」与「部分跳过」两个分支，
 //     经 adminI18nBackURL(c, "err", …) 回带；
 //  3. shell.BulkIDsFacingText —— 批量 id 超限的受控出口（六个列表页的 ?err= 与词条页的
@@ -55,20 +55,20 @@ func adminErrWriterValues(t *testing.T, c *gin.Context) []string {
 
 	// 1) 六个列表页的「部分成功」结论（deleted > 0 且 skipped > 0 走 ?err=）。
 	for _, noun := range adminBulkNouns {
-		loc := adminBulkResultURL("/admin/x", noun, 3, 2)
+		loc := adminBulkResultURL(c, "/admin/x", noun, 3, 2)
 		parsed, err := url.Parse(loc)
 		if err != nil {
 			t.Fatalf("写侧回跳地址无法解析：%v", err)
 		}
 		if got := parsed.Query().Get("err"); got == "" {
-			t.Fatalf("有跳过时应走 ?err=（noun=%q）：%s", noun, loc)
+			t.Fatalf("有跳过时应走 ?err=（noun=%q）：%s", noun.key, loc)
 		} else {
 			values = append(values, got)
 		}
 	}
 
 	// 2) 词条页批量删除的两个「有跳过」分支（全跳过 / 部分跳过）。
-	values = append(values, adminI18nBulkDeleteResult(0, 3), adminI18nBulkDeleteResult(2, 3))
+	values = append(values, adminI18nBulkDeleteResult(c, 0, 3), adminI18nBulkDeleteResult(c, 2, 3))
 
 	// 3) 批量 id 超限（shell 的受控出口）。
 	values = append(values, shell.BulkIDsFacingText(c, &shell.BulkIDsError{Count: 500, Max: shell.MaxBulkIDs}))
@@ -193,7 +193,7 @@ func TestAdminErrTextsAcceptsBulkIDsNotice(t *testing.T) {
 
 // adminErrHintProducerAllowlist 写侧 ?err= / ?errored= 取值表达式的允许来源（首标识符 → 理由）。
 var adminErrHintProducerAllowlist = map[string]string{
-	"fmt.Sprintf":               "adminBulkResultURL 用它把 adminBulkPartialTemplate 填成整句",
+	"fmt.Sprintf":               "adminBulkResultURL / adminI18nBulkDeleteResult 用它把当前语言模板填成整句",
 	"shell.BulkIDsFacingText":   "批量 id 超限的受控出口",
 	"adminErrParam":             "命中白名单 / 未命中归口的统一出口",
 	"adminI18nBulkDeleteResult": "词条页批量删除的结论文案",

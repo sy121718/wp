@@ -160,6 +160,61 @@ func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *P
 	})
 }
 
+// CreateArtifactTx 在外层事务内插入产物元数据行（page_artifacts）。
+//
+// 与 CreateArtifactObjectTx / EnsureContentObjectTx 同一批：Record 把「产物行 + 共享内容
+// 对象 + 闭包」三类**本模块表**的写入放进同一个事务原子提交（AGENTS.md「model 层定位」
+// 允许聚合内原子组合），因此三条写入都以 …Tx 具名方法暴露、句柄由 service 透传 ——
+// service 不再在事务回调里拼 Create。唯一冲突是不是业务错误（版本冲突）由 service 判定：
+// 那是「映射成哪个业务错误」的决策，不是 SQL，所以本方法只把原始错误原样返回。
+//
+// SQL 文本与原 service 内联实现逐字一致（GORM 的 Create）。
+func (m *Model) CreateArtifactTx(ctx context.Context, tx *gorm.DB, e *PageArtifactEntity) error {
+	return tx.WithContext(ctx).Create(e).Error
+}
+
+// CreateArtifactObjectTx 在外层事务内插入「产物 → 内容对象」闭包行（page_artifact_objects）。
+//
+// 调用方必须先写完 content_objects 再写闭包行：content_hash 有外键指向 content_objects，
+// 顺序反过来就是「先插引用、后插被引用行」的外键违例（见 ReplaceArtifactContent 同一段注释）。
+func (m *Model) CreateArtifactObjectTx(ctx context.Context, tx *gorm.DB, o *PageArtifactObjectEntity) error {
+	return tx.WithContext(ctx).Create(o).Error
+}
+
+// EnsureContentObjectTx 在外层事务内幂等写入共享内容对象（content_objects，content_hash 为主键）。
+//
+// 语义：内容寻址下同一 content_hash 代表同一内容字节，其物理位置应当唯一，
+// 因此采用 first-writer-wins —— 首个引用该 hash 的 (provider, object_key)
+// 即该对象的规范 Locator，后续引用（即使 provider/object_key 不同）只共享
+// 对象行，不更新、不覆盖。这是有意的设计权衡而非缺陷：
+//   - content_hash 主键约束保证一行一对象，位置唯一，不做多存储冗余登记；
+//   - 确定性构建不变量（同输入同产物）保证正常路径下同内容同位置，
+//     不同 provider 引用同一 hash 是跨存储冗余信号，首个写入即权威；
+//   - 若改为 last-writer-wins，同一对象位置会随引用顺序漂移，
+//     破坏内容寻址的不可变语义，且并发写入存在竞态。
+//
+// 产物行（page_artifacts.artifact_provider/artifact_key）各自记录其自身位置，
+// 不受本方法的 first-writer-wins 影响。
+//
+// 单条 INSERT ... ON CONFLICT DO NOTHING（PG 方言）原子幂等写入，替代原 Count→Create 读-改-写：
+// 并发 EnsureRecord 同一 hash 时，原实现双双 Count=0、一方 Create 撞 content_hash 主键，
+// 被误报为 ErrArtifactMismatch；ON CONFLICT 在语句内原子消化唯一冲突，无 TOCTOU。
+// 冲突 target 必须收窄到 content_hash（主键）：无 target 的 DO NOTHING 会把**任何**唯一冲突
+// 都静默吞掉 —— 包括「同一产物的两个文件共用一个 object_key」这种真错，
+// 表现为「内容对象行没写进去」，随后闭包插入报外键违例，排查方向直接被带偏。
+func (m *Model) EnsureContentObjectTx(ctx context.Context, tx *gorm.DB, contentHash, provider, objectKey string, now time.Time) error {
+	return tx.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "content_hash"}},
+		DoNothing: true,
+	}).Create(&ContentObjectEntity{
+		ContentHash: contentHash,
+		Provider:    provider,
+		ObjectKey:   objectKey,
+		ByteSize:    0,
+		CreatedAt:   now,
+	}).Error
+}
+
 // GetByID 按产物行 ID 查询产物记录。
 func (m *Model) GetByID(ctx context.Context, id string) (e *PageArtifactEntity, err error) {
 	e = &PageArtifactEntity{}

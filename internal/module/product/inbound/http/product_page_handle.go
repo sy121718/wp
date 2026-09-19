@@ -621,9 +621,12 @@ func variantSaveNotice(c *gin.Context, res *productdto.SaveVariantListResp) stri
 		return tr(shell.MsgInternalError, productErrInternalFallback)
 	}
 	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
-		return productVariantSaveNoChange
+		return productBulkTextOf(c, productVariantSaveNoChange)
 	}
-	parts := []string{fmt.Sprintf(productVariantSaveSaved, res.Created, res.Updated, res.Deleted)}
+	// 模板取当前语言（与读侧 productNoticeTexts / productVariantNoticeMatches 同一个取法），
+	// 数字一律 strconv.Itoa 成字符串后填入（词条只允许 %s）。
+	parts := []string{fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved),
+		strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted))}
 	if len(res.Skipped) > 0 {
 		// 只报**原因**，不再把「哪个 SKU / 什么规格」拼进 URL：
 		// 这条文案经 ?done= 回到详情页再渲染，而 URL 不是可信边界 ——
@@ -634,7 +637,8 @@ func variantSaveNotice(c *gin.Context, res *productdto.SaveVariantListResp) stri
 		for _, skip := range res.Skipped {
 			items = append(items, tr(skip.Reason, variantSkipFallbacks[skip.Reason]))
 		}
-		parts = append(parts, fmt.Sprintf(productVariantSaveSkipped, len(res.Skipped), strings.Join(items, "；")))
+		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
+			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
 	}
 	return strings.Join(parts, " ")
 }
@@ -827,7 +831,10 @@ const (
 )
 
 // bulkPricingNothingSelected 没勾选就提交的意见（与批量删除同一口径：说清怎么继续）。
-const bulkPricingNothingSelected = "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"
+//
+// 与其它批量回执同一个形状（key + 中文原文）：写侧 productBulkTextOf 取当前语言，
+// 读侧 productNoticeTexts 用同一份取词 —— 两处若各写一份，英文页面上这条提示会静默消失。
+var bulkPricingNothingSelected = productBulkText{productenums.BulkPricingNoneSelected, "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}
 
 // productListURL 商品列表页的回跳地址（PRG）：保留工程上下文并带上一条结论文案。
 //
@@ -1291,7 +1298,7 @@ func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
 		return
 	}
 	if len(ids) == 0 {
-		redirectWhere(c, productListURL(projectID, listErrMark, bulkPricingNothingSelected))
+		redirectWhere(c, productListURL(projectID, listErrMark, productBulkTextOf(c, bulkPricingNothingSelected)))
 		return
 	}
 	note := strings.TrimSpace(c.PostForm("note"))
@@ -1325,28 +1332,31 @@ func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
 		mark = listErrMark
 	}
 	redirectWhere(c, productListURL(projectID, mark,
-		bulkPricingResultMsg(changedVariants, unchangedProducts, skipped, skipReason)))
+		bulkPricingResultMsg(c, changedVariants, unchangedProducts, skipped, skipReason)))
 }
 
 // bulkPricingResultMsg 批量改价的结论文案（四类结果各一句话）。
 //
 // 「一个都没改」与「跳过若干」必须能区分：两者都写成「没有变化」时，用户无法判断是
 // 规则填错了、商品本来就在目标价上，还是这批商品根本没有变体。
-func bulkPricingResultMsg(changedVariants, unchangedProducts, skipped int, reason string) string {
+func bulkPricingResultMsg(c *gin.Context, changedVariants, unchangedProducts, skipped int, reason string) string {
 	if strings.TrimSpace(reason) == "" {
 		reason = productErrFallbacks[productenums.ErrPricingTargetNotFound]
 	}
 	// 模板取自 product_err.go：那里同时按这些模板（与原因枚举组合）生成读侧候选文案，
-	// 写侧改措辞时读侧跟着变，不会静默失配成归口文案。
+	// 且写读共用 productBulkTextOf 这一个取法 —— 写侧改措辞时读侧跟着变，
+	// 不会静默失配成归口文案；英文页面上也不会是中文。
 	switch {
 	case skipped == 0 && changedVariants == 0:
-		return fmt.Sprintf(productPricingNoChange, unchangedProducts)
+		return fmt.Sprintf(productBulkTextOf(c, productPricingNoChange), strconv.Itoa(unchangedProducts))
 	case skipped == 0:
-		return fmt.Sprintf(productPricingApplied, changedVariants, unchangedProducts)
+		return fmt.Sprintf(productBulkTextOf(c, productPricingApplied),
+			strconv.Itoa(changedVariants), strconv.Itoa(unchangedProducts))
 	case changedVariants == 0:
-		return fmt.Sprintf(productPricingAllSkip, skipped, reason)
+		return fmt.Sprintf(productBulkTextOf(c, productPricingAllSkip), strconv.Itoa(skipped), reason)
 	default:
-		return fmt.Sprintf(productPricingPartial, changedVariants, skipped, reason)
+		return fmt.Sprintf(productBulkTextOf(c, productPricingPartial),
+			strconv.Itoa(changedVariants), strconv.Itoa(skipped), reason)
 	}
 }
 
@@ -1374,9 +1384,10 @@ func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
 	target := "/admin/products?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkPartial, deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productBulkPartial),
+			strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkDone, deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productBulkDone), strconv.Itoa(deleted)))
 	}
 	c.Redirect(http.StatusFound, target)
 }

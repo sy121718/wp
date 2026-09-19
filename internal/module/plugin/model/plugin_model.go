@@ -100,6 +100,16 @@ func (m *Model) Exec(ctx context.Context, sql string) error {
 	return m.db.WithContext(ctx).Exec(sql).Error
 }
 
+// ExecTx 在**调用方已开启的事务句柄**上执行一条 SQL（L1 数据层迁移执行器的整包事务）。
+//
+// 与 Exec 同源同义：跑的是插件自带的 DDL / SCHEMA 语句（不是 plugin_registry 的行访问），
+// migrateSchema 把「清理旧 schema → 锁 search_path → 逐条执行迁移文件」放在一个事务里，
+// 任一条失败整体回滚。执行口只有这一个 —— 非事务路径走 Exec、事务路径走 ExecTx，
+// 句柄由 service 透传，避免「事务里直接拼 tx.Exec」与 model 的两套写法并存。
+func (m *Model) ExecTx(ctx context.Context, tx *gorm.DB, sql string) error {
+	return tx.WithContext(ctx).Exec(sql).Error
+}
+
 // Transaction 在底层裸连接上开启事务（供 L1 迁移执行器整包执行、失败回滚）。
 func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)

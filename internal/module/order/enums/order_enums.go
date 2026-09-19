@@ -145,3 +145,34 @@ const (
 	ErrCouponMinSubtotal   = "order.err.couponMinSubtotal"
 	ErrCouponInUse         = "order.err.couponInUse"
 )
+
+// 批量操作的结论文案（页面回执）。
+//
+// 与 admin 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀** ——
+// 这几句不是 service 错误（不进 UserFacingMessages 错误白名单），而是 handler 按计数
+// 拼出的整句回执（?done= 通道）。动词与名词也各自是一条词条：中文模板里它们是 %s 占位，
+// 英文语序与中文不同，把动词/名词焊进模板就等于按「3 名词 × 7 动词 × 4 分支」抄一份句子表，
+// 既没法复用也无法逐条翻译。
+//
+// 中文原文留在 inbound/http/order_page_query.go（与写读共用的那份结构体绑在一起）。
+const (
+	BulkNoneSelected = "order.bulk.noneSelected" // 没有勾选任何%s。
+	BulkAllDone      = "order.bulk.allDone"      // %s %s 个%s。
+	BulkAllSkipped   = "order.bulk.allSkipped"   // 0 个%s%s，%s 个被跳过（…）。
+	BulkPartial      = "order.bulk.partial"      // %s %s 个%s，跳过 %s 个（…）。
+
+	BulkVerbFlowed    = "order.bulk.verb.flowed"    // 已流转
+	BulkVerbCancelled = "order.bulk.verb.cancelled" // 已取消
+	BulkVerbApproved  = "order.bulk.verb.approved"  // 已同意
+	BulkVerbRejected  = "order.bulk.verb.rejected"  // 已拒绝
+	BulkVerbDeleted   = "order.bulk.verb.deleted"   // 已删除
+	BulkVerbDisabled  = "order.bulk.verb.disabled"  // 已停用
+	BulkVerbEnabled   = "order.bulk.verb.enabled"   // 已启用
+
+	BulkNounOrder  = "order.bulk.noun.order"  // 订单
+	BulkNounReturn = "order.bulk.noun.return" // 退货申请
+	BulkNounCoupon = "order.bulk.noun.coupon" // 优惠码
+
+	// BulkCouponTargetInvalid 批量启停优惠码时目标状态非法（走 ?done= 的参数级回执）。
+	BulkCouponTargetInvalid = "order.bulk.couponTargetInvalid"
+)

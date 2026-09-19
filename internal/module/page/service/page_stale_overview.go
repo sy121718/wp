@@ -36,6 +36,12 @@ const (
 	staleOverviewLimit = 8
 	// staleImpactSampleLimit 写侧日志 / 回执里最多列出的页面数（前 K 个）。
 	staleImpactSampleLimit = 5
+	// staleImpactIDChunkSize 影响面反查时单条 IN 查询最多带多少个 id。
+	//
+	// 整站标记（主题 / 块 / 词条）一次就能返回成千上万个 id：500 远低于 PostgreSQL 的
+	// 参数上限 65535，同时把单条 SQL 的 IN 元素规模压在一个 planner 处理起来很便宜的
+	// 量级（分块的正确性与取舍见 StaleImpactOfIDs 的注释）。
+	staleImpactIDChunkSize = 500
 )
 
 // ListStalePages 只读反查：列出待重建页面（ProjectID 为空 = 全部工程）。
@@ -128,17 +134,37 @@ func (s *Service) StaleImpactOfIDs(ctx context.Context, ids []string) *pagedto.S
 	if len(uniq) == 0 {
 		return nil
 	}
+	// 分块 IN 查询（整站标记接影响面回执时新增的规模处理）：
+	//
+	// 整站标记一次就能返回成千上万个 id，而这里是一条 `WHERE id IN (…)` —— PG 的参数
+	// 上限是 65535，且单个 IN 的元素越多，planner 为它构造的表达式与内存占用增长越快。
+	// 每块最多 staleImpactIDChunkSize 个，块内取前 limit 条，最后与其它块一起全局归并。
+	//
+	// 为什么选「分块」而不是「超过阈值就降级成只记条数 + 按标记时间取样本」：
+	//   · 分块后的样本仍然**精确属于本次 id 集合**；降级法给出的样本是按时间近似的，
+	//     读者无法区分「这次改动影响的页」与「同一时刻被别的改动标记的页」——
+	//     而整站标记本身正是「一次改动标记全站」，样本里混进别处的概率不低；
+	//   · 降级法要新增一条「按标记时间取样本」的取数口径，那等于给「样本从哪来」
+	//     留下两个答案（本包刻意只保留一份：id 集合反查 + 同一份排序 / 截断）。
+	// 代价：查询条数从 1 条变成 ceil(N/500) 条（每块都是主键索引 + LIMIT K）。整站标记
+	// 本身就要逐工程 UPDATE 一次全站，这点只读开销属于同一量级，且只发生在罕见的
+	// 文案 / 主题变更路径上；失败语义不变（任一块读失败即整体放弃，见下）。
+	//
+	// 归并的正确性：全局前 K 条一定落在「各块前 K 条」的并集里（标准 top-K 归并性质），
+	// 所以分块不会让样本变样。
 	for _, projectID := range projectIDs {
 		if ctx.Err() != nil {
 			return nil
 		}
-		rows, lerr := s.model.ListBriefsByIDs(ctx, projectID, uniq, limit, pagemodel.StaleOrderUpdateTime, true)
-		if lerr != nil {
-			// 单个工程读失败即整体放弃：给出一份少了某个工程的摘要，
-			// 比不给摘要更容易误导（读者会以为那就是全部）。
-			return nil
+		for _, chunk := range chunkIDs(uniq, staleImpactIDChunkSize) {
+			rows, lerr := s.model.ListBriefsByIDs(ctx, projectID, chunk, limit, pagemodel.StaleOrderUpdateTime, true)
+			if lerr != nil {
+				// 单个工程（或其中一块）读失败即整体放弃：给出一份少了某个工程、
+				// 或某一块的摘要，比不给摘要更容易误导（读者会以为那就是全部）。
+				return nil
+			}
+			parts = append(parts, rows)
 		}
-		parts = append(parts, rows)
 	}
 	merged := mergeStaleRows(parts, limit, pagemodel.StaleOrderUpdateTime, true)
 	pages := make([]pagedto.StalePageResp, 0, len(merged))
@@ -153,29 +179,107 @@ func (s *Service) StaleImpactOfIDs(ctx context.Context, ids []string) *pagedto.S
 	}
 }
 
+// chunkIDs 把 id 集合切成每块最多 size 个（纯函数，便于单测）。
+//
+// 分块本身不会报错：切错了只会让样本少几行 —— 而「影响面样本少了几行」正是这一批
+// 要消灭的那种静默偏差，所以它单独被测。
+//
+// 保持原顺序（块内 = 输入次序，块 = 输入次序）：样本的最终次序由 mergeStaleRows 按
+// 标记时间重排，与分块次序无关；保序只是为了「同一个 id 集合每次都得到同一组 SQL」。
+//
+// size <= 0（调用方给了不合法的值）时退回单块，**不静默丢 id**：丢 id 在本函数的语义里
+// 等于「这些页面不存在」，那是最不该出现的失败形态。
+func chunkIDs(ids []string, size int) [][]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	if size <= 0 || len(ids) <= size {
+		return [][]string{ids}
+	}
+	out := make([][]string, 0, (len(ids)+size-1)/size)
+	for start := 0; start < len(ids); start += size {
+		end := start + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		out = append(out, ids[start:end])
+	}
+	return out
+}
+
+// staleImpactLogPlan 一次影响面日志的「写什么」（纯数据，便于单测）。
+type staleImpactLogPlan struct {
+	// Total 本次受影响的页面数（去重后的 id 条数）。
+	Total int
+	// NoSample 摘要不可用：这一次只能记条数。
+	NoSample bool
+	// Sample 人类可读样本（标题优先、回落路径）；NoSample 时为空。
+	Sample string
+	// SampleShown 样本条数。
+	SampleShown int
+	// Truncated 样本被截断（总数大于样本条数）。
+	Truncated bool
+	// Message 日志正文（唯一一份文案）。
+	Message string
+}
+
+// planStaleImpactLog 决定这次记什么（纯函数，便于单测）。
+//
+// 总数以调用方给的 affected 为准，而不是 impact.Total：affected 是**已经发生的事实**
+// （这一次扇出真正返回了多少个不同页面），而 summary 是一次只读反查的产物 ——
+// 反查少了几行不该把日志里的总数也改小，那会让「日志说 3、实际标了 8」这种偏差
+// 永远查不出来。两者的口径由调用方保证一致（同一个归一化后的 id 集合）。
+func planStaleImpactLog(affected int, impact *pagedto.StaleImpactSummary) staleImpactLogPlan {
+	plan := staleImpactLogPlan{Total: affected}
+	if impact == nil {
+		plan.NoSample = true
+		plan.Message = "依赖失效：本次影响 " + strconv.Itoa(affected) + " 个页面（影响面摘要不可用，仅记条数）"
+		return plan
+	}
+	plan.Sample = formatStaleImpactSample(impact.Pages)
+	plan.SampleShown = len(impact.Pages)
+	plan.Truncated = impact.Truncated
+	plan.Message = "依赖失效：本次影响 " + strconv.Itoa(affected) +
+		" 个页面（前 " + strconv.Itoa(plan.SampleShown) + " 个：标题 / 路径）"
+	return plan
+}
+
 // logStaleImpact 记一条「本次影响 N 个页面（最多列前 K 个：标题 / 路径）」的结构化日志。
 //
-// 通道复用现有的 logger（scene=dependency），不新造回执通道；文案只有这一份。
-// 摘要取不到时降级为「只记条数」，写侧主流程（返回的 ids / error）完全不受影响。
+// 通道复用现有的 logger（scene=dependency），不新造回执通道；文案只有这一份
+// （planStaleImpactLog）。摘要取不到时降级为「只记条数」；写侧主流程（返回的 ids / error）
+// 完全不受影响 —— 这是观测，不是业务结果。
+//
+// 边界（写清是为了让后来者知道这条日志能当什么证据、不能当什么）：
+//   - 空集合（或全是空白 id）**不记**：那不是「影响面为 0 个页面」，是「这次什么都没被
+//     标记」；每次整站标记都留一行「影响 0 个页面」只会把 dependency 场景淹掉；
+//   - 调用方因 ctx 取消提前中断扇出时，这里的 affected 是**已经标记掉的那部分**，
+//     不是「本应标记的全部」—— 日志只陈述已发生的事实，不替调用方承诺完整范围；
+//   - 样本是按**本次 id 集合**反查出来的（不是按「谁刚变成 stale」猜的），所以它不会
+//     混进别的改动标记的页面；整站规模下的取数代价与取舍见 StaleImpactOfIDs 的注释。
 func (s *Service) logStaleImpact(ctx context.Context, reason string, ids []string) {
-	if s == nil || len(ids) == 0 {
+	if s == nil {
 		return
 	}
+	// 归一化复用逐工程聚合那一份实现（staleIDCollector）：口径分叉的表现是
+	// 「日志里的总数」与「摘要里的总数」对不上，而两处都只在日志里看得见。
+	c := &staleIDCollector{}
+	c.add(ids)
+	uniq := c.list()
+	if len(uniq) == 0 {
+		return
+	}
+	plan := planStaleImpactLog(len(uniq), s.StaleImpactOfIDs(ctx, uniq))
 	entry := logger.Scene("dependency").
 		With("reason", reason).
-		With("affected", len(ids))
-	impact := s.StaleImpactOfIDs(ctx, ids)
-	if impact == nil {
+		With("affected", plan.Total).
+		With("sample_limit", staleImpactSampleLimit)
+	if plan.NoSample {
 		// 摘要不可用：至少留下条数与场景，不让「谁受影响了」整体消失。
-		entry.With("sample_limit", staleImpactSampleLimit).
-			Info("依赖失效：本次影响 " + strconv.Itoa(len(ids)) + " 个页面（影响面摘要不可用，仅记条数）")
+		entry.Info(plan.Message)
 		return
 	}
-	entry.With("sample_limit", impact.Limit).
-		With("truncated", impact.Truncated).
-		With("sample", formatStaleImpactSample(impact.Pages)).
-		Info("依赖失效：本次影响 " + strconv.Itoa(impact.Total) +
-			" 个页面（前 " + strconv.Itoa(len(impact.Pages)) + " 个：标题 / 路径）")
+	entry.With("truncated", plan.Truncated).With("sample", plan.Sample).Info(plan.Message)
 }
 
 // formatStaleImpactSample 把影响面样本压成一行（标题优先、回落路径）。

@@ -217,7 +217,7 @@
         <div class="form-grid">
           <div class="form-field">
             <label class="form-label" for="mk-import-tags">{{ .["t"]("admin.mail.marketing.import.tags", "批量标签（逗号分隔）") }}</label>
-            <input class="form-input" id="mk-import-tags" type="text" name="tags" placeholder="vip,华南">
+            <input class="form-input" id="mk-import-tags" type="text" name="tags" placeholder="{{ .["t"]("admin.mail.marketing.import.tags.ph", "vip,华南") }}">
           </div>
           <div class="form-field">
             <label class="form-label" for="mk-import-consent-source">{{ .["t"]("admin.mail.marketing.import.consent_source", "同意来源") }}</label>
@@ -232,7 +232,7 @@
         </div>
         <div class="form-field form-field--wide">
           <label class="form-label" for="mk-import-content">{{ .["t"]("admin.mail.marketing.import.content", "内容") }}</label>
-          <textarea class="form-textarea" id="mk-import-content" name="content" rows="10" placeholder="a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags"></textarea>
+          <textarea class="form-textarea" id="mk-import-content" name="content" rows="10" placeholder="{{ .["t"]("admin.mail.marketing.import.content.ph", "a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags") }}"></textarea>
         </div>
         <div class="action-row">
           <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.import.submit", "导入") }}</button>

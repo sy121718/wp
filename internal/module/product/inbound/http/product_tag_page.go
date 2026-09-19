@@ -159,9 +159,10 @@ func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
 	}
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf(productTagBulkPartial, deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productTagBulkPartial),
+			strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf(productTagBulkDone, deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productTagBulkDone), strconv.Itoa(deleted)))
 	}
 	c.Redirect(http.StatusFound, target)
 }

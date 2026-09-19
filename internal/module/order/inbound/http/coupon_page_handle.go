@@ -271,7 +271,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		"Err":             pageErr,
 		"Ok":              pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
-		"Done": orderPageDone(c.Query("done")),
+		"Done": orderPageDone(c, c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/coupons", couponFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -361,7 +361,7 @@ func (h *couponPageHandle) CouponBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	// 券没了，回跳时丢掉 couponId：否则展开区会去取一张已经不存在的券并报「优惠码不存在」。
-	couponBulkRedirectSkip(c, bulkSummary("已删除", "优惠码", deleted, skipped), "couponId")
+	couponBulkRedirectSkip(c, bulkSummary(c, orderBulkVerbDeleted, orderBulkNounCoupon, deleted, skipped), "couponId")
 }
 
 // CouponBulkToggle 批量停用 / 启用（POST /admin/coupons/bulk-toggle，表单带目标状态 status）。
@@ -373,12 +373,13 @@ func (h *couponPageHandle) CouponBulkToggle(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	target, ok := couponToggleTarget(c.PostForm("status"))
 	if !ok {
-		couponBulkRedirect(c, couponBulkTargetInvalidText)
+		couponBulkRedirect(c, orderBulkTextOf(c, couponBulkTargetInvalidText))
 		return
 	}
-	verb := "已停用"
+	// 动词也是词条（order.bulk.verb.disabled / enabled）：语序不同，不能只翻模板。
+	verb := orderBulkVerbDisabled
 	if target == 1 {
-		verb = "已启用"
+		verb = orderBulkVerbEnabled
 	}
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
@@ -428,11 +429,11 @@ func (h *couponPageHandle) CouponBulkToggle(c *gin.Context) {
 		}
 		changed++
 	}
-	couponBulkRedirect(c, bulkSummary(verb, "优惠码", changed, skipped))
+	couponBulkRedirect(c, bulkSummary(c, verb, orderBulkNounCoupon, changed, skipped))
 }
 
 // couponBulkTargetInvalidText 批量启停的目标状态不合法时的回执（走 ?done=，因此与批量结论一起登记）。
-const couponBulkTargetInvalidText = "目标状态不合法，本次没有处理任何优惠码。"
+var couponBulkTargetInvalidText = orderBulkText{orderenums.BulkCouponTargetInvalid, "目标状态不合法，本次没有处理任何优惠码。"}
 
 // couponToggleTarget 批量启停的目标状态：只认 1（启用）/ 0（停用），其余一律不合法。
 //

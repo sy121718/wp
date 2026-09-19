@@ -11,7 +11,6 @@ import (
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/pkg/pathkit"
 	"go_wp/pkg/utils"
-	"gorm.io/gorm/clause"
 )
 
 // normalizePath 规范化路由路径：路由占用（预留 / 改名 / 激活）之前的统一入口口径。
@@ -107,13 +106,5 @@ func (o routeOwner) match() (string, []any) {
 	return "page_id = ?", []any{o.pageID}
 }
 
-// ownershipExpr ON CONFLICT DO UPDATE 的归属者一致性判定。
-//
-// 用 IS NOT DISTINCT FROM 而不是 = ：展示实例的行 page_id 为 NULL，而
-// NULL = NULL 在 SQL 里求值为 NULL（不成立），按 page_id 比会让实例连
-// 「重复激活自己」都失败（第二次发布会误判成 ErrRouteOccupied）。
-// IS NOT DISTINCT FROM 把 NULL 当作可比较值，两类归属者都能正确判等。
-func (o routeOwner) ownershipExpr() clause.Expression {
-	return clause.Expr{SQL: "page_routes.page_id IS NOT DISTINCT FROM EXCLUDED.page_id" +
-		" AND page_routes.presentation_id IS NOT DISTINCT FROM EXCLUDED.presentation_id"}
-}
+// ON CONFLICT DO UPDATE 用的归属者一致性判定（ownershipExprSQL）已下移到 model：
+// 见 pubmodel.ActivateRouteTx —— 它是一段 SQL 片段，与使用它的 upsert 语句同处一地。

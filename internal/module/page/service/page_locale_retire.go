@@ -20,6 +20,8 @@ import (
 	"context"
 	"strings"
 
+	"gorm.io/gorm"
+
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 )
@@ -41,9 +43,22 @@ func (s *Service) LocaleRetireImpact(ctx context.Context, projectID, lang string
 
 // RetireLocale 下线该语言的全部已激活路由，并清理它的发布 / 暂存指针。
 //
-// 顺序：先 DB 路由占用、再访问面符号链接、最后发布指针。
-// 访问面必须在发布指针之前清 —— 指针没了就会有人在后台看到「这个页面未发布」，
-// 而访问面上产物还在服务；反过来（先清指针）留下的窗口里，符号链接是唯一线索。
+// 两段，顺序刻意如此（2026-09 收口；原实现是三段各自提交）：
+//
+//  1. **先清访问面符号链接**（deactivatePaths）：跨系统动作，不能进数据库事务 ——
+//     事务回滚撤不掉已经删掉的符号链接，把它塞进事务只是换一种半截状态
+//     （DB 回滚了、访问面却已经下线）。它自身幂等（删不存在的链接不报错），
+//     所以「链接已删、后面的事务失败」是可重跑收敛的：page_publications 的指针还在，
+//     下一次 RetireLocale 仍能从它重新算出这批路径。
+//  2. **再在一个事务里做全部数据库写入**：publication 的 page_routes 占用解除
+//     （契约里的 DeactivateTx）+ page 自己的发布 / 暂存指针删除（两个 …Tx 变体）。
+//     这两半此前各自提交，中途失败会留下「页面已退役但路径仍占用」或「路径已释放
+//     但指针还在（后台仍显示已发布）」；现在要么都生效、要么都不生效。
+//
+// 为什么符号链接必须排在事务**之前**而不是提交之后：待清理的路径是从 page_publications
+// 反查出来的（localeActiveRoutes），指针一旦提交删除就再也没有入口能算出该清哪些链接 ——
+// 那时若符号链接删除失败（权限 / IO），残留链接会永久留在访问面上且无人认领，重跑也找不到它。
+// 反过来（先删链接、事务再失败）数据库保持完整，重跑即收敛，方向是 fail closed。
 func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (retired int, err error) {
 	routes, err := s.localeActiveRoutes(ctx, projectID, lang)
 	if err != nil {
@@ -55,36 +70,51 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 	if s.routes == nil {
 		return 0, nil // 降级装配（单测 / 精简部署）：没有路由契约就没有可下线的路径
 	}
-	paths := make([]string, 0, len(routes))
-	for _, r := range routes {
-		if derr := s.routes.Deactivate(ctx, &pubcontract.DeactivateReq{
-			ProjectID: projectID, Path: r.Path,
-		}); derr != nil {
-			return retired, derr
-		}
-		paths = append(paths, r.Path)
-		retired++
-	}
 	// 只删 DB 行会让 /site 继续输出旧产物（符号链接才是访问面的真源），
 	// 且此后没有任何入口能查到该清哪个链接 —— 与页面删除同一根因。
-	if err = s.deactivatePaths(paths); err != nil {
-		return retired, err
-	}
-	// 发布 / 暂存指针：**只删该语言** —— 另一语言还在服务，整页删会让它失去已发布状态。
-	seen := map[string]bool{}
+	paths := make([]string, 0, len(routes))
+	seenPath := map[string]bool{}
 	for _, r := range routes {
-		if seen[r.PageID] {
+		if seenPath[r.Path] {
 			continue
 		}
-		seen[r.PageID] = true
-		if perr := s.model.DeletePublicationsByLang(ctx, r.PageID, lang); perr != nil && err == nil {
-			err = perr
-		}
-		if serr := s.model.DeleteStagingsByLang(ctx, r.PageID, lang); serr != nil && err == nil {
-			err = serr
-		}
+		seenPath[r.Path] = true
+		paths = append(paths, r.Path)
 	}
-	return retired, err
+	if err = s.deactivatePaths(paths); err != nil {
+		return 0, err
+	}
+	// 事务：page_routes 占用解除 + page 的发布 / 暂存指针，两半同进同出。
+	// 作用域由 TransactionScoped 设（不要在这里再调 rls.InProjectScope：它自带事务边界，
+	// 会在事务里另开一个 —— 见 pkg/rls.ScopeTx 的论证）。
+	if terr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		for _, r := range routes {
+			if derr := s.routes.DeactivateTx(ctx, tx, &pubcontract.DeactivateReq{
+				ProjectID: projectID, Path: r.Path,
+			}); derr != nil {
+				return derr
+			}
+		}
+		// 发布 / 暂存指针：**只删该语言** —— 另一语言还在服务，整页删会让它失去已发布状态。
+		seenPage := map[string]bool{}
+		for _, r := range routes {
+			if seenPage[r.PageID] {
+				continue
+			}
+			seenPage[r.PageID] = true
+			if perr := s.model.DeletePublicationsByLangTx(ctx, tx, projectID, r.PageID, lang); perr != nil {
+				return perr
+			}
+			if serr := s.model.DeleteStagingsByLangTx(ctx, tx, projectID, r.PageID, lang); serr != nil {
+				return serr
+			}
+		}
+		return nil
+	}); terr != nil {
+		// 事务回滚 ⇒ 一条路由都没退役：返回 0，而不是把事务里数到一半的计数当成功报出去。
+		return 0, terr
+	}
+	return len(routes), nil
 }
 
 // localeActiveRoutes 该语言在本工程的全部已激活路由。

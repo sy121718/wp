@@ -143,18 +143,30 @@ func redirectBulkBack(c *gin.Context, projectID string, deleted, skipped int) {
 	c.Redirect(http.StatusFound, redirectPagePath+"?"+q.Encode())
 }
 
+// redirectBulkText 重定向批量删除的结论文案模板（i18n key + 中文原文，pageBulkText 同型）。
+//
+// 与列表页的批量回执不同，本页的结论文案**不进 URL** —— 回带的是 ok=bulk&dn=N&sk=M 三个受控参数，
+// 文案由服务端按计数重新拼装（见 redirectBulkCounts），所以不存在「读侧候选」这一层。
+// 即便如此仍按同一套取法（pageBulkTextOf）取当前语言：否则英文界面上这四个分支永远是中文。
+var (
+	redirectBulkNoneSelected = pageBulkText{pageenums.BulkRedirectNoneSelected, "没有勾选任何重定向，列表未改动。"}
+	redirectBulkAllDeleted   = pageBulkText{pageenums.BulkRedirectAllDeleted, "已删除 %s 条重定向。"}
+	redirectBulkAllSkipped   = pageBulkText{pageenums.BulkRedirectAllSkipped, "%s 条重定向都未能删除，列表未改动。"}
+	redirectBulkPartial      = pageBulkText{pageenums.BulkRedirectPartial, "已删除 %s 条，%s 条未能删除（可能已不存在或访问面不可用）。"}
+)
+
 // redirectBulkDeleteText 批量删除的结果文案（成功几条、跳过几条都要说清楚 ——
 // 只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几条）。
-func redirectBulkDeleteText(deleted, skipped int) string {
+func redirectBulkDeleteText(c *gin.Context, deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有勾选任何重定向，列表未改动。"
+		return pageBulkTextOf(c, redirectBulkNoneSelected)
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 条重定向。", deleted)
+		return fmt.Sprintf(pageBulkTextOf(c, redirectBulkAllDeleted), strconv.Itoa(deleted))
 	case deleted == 0:
-		return fmt.Sprintf("%d 条重定向都未能删除，列表未改动。", skipped)
+		return fmt.Sprintf(pageBulkTextOf(c, redirectBulkAllSkipped), strconv.Itoa(skipped))
 	default:
-		return fmt.Sprintf("已删除 %d 条，%d 条未能删除（可能已不存在或访问面不可用）。", deleted, skipped)
+		return fmt.Sprintf(pageBulkTextOf(c, redirectBulkPartial), strconv.Itoa(deleted), strconv.Itoa(skipped))
 	}
 }
 
@@ -206,9 +218,9 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 	doneText, errText := "", ""
 	if deleted, skipped, bulk := redirectBulkCounts(c); bulk {
 		if skipped > 0 {
-			errText = redirectBulkDeleteText(deleted, skipped)
+			errText = redirectBulkDeleteText(c, deleted, skipped)
 		} else {
-			doneText = redirectBulkDeleteText(deleted, skipped)
+			doneText = redirectBulkDeleteText(c, deleted, skipped)
 		}
 	}
 	// 全部键都预置默认值：Jet 模板读到**缺失**的键会在那一行中断渲染，

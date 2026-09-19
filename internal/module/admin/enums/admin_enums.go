@@ -159,3 +159,39 @@ const (
 	ErrI18nLangEmpty  = "admin.err.i18nLangEmpty"  // 词条语言不能为空
 	ErrI18nValueEmpty = "admin.err.i18nValueEmpty" // 词条内容不能为空
 )
+
+// --- 批量操作的结论文案（页面回执，不是错误白名单）---
+//
+// 这一组与上面那些常量同形（值 = sys_i18n 的 item_key），但**刻意不带 Err / Msg 前缀**：
+// admin_enums_test.go 按前缀逐个常量对账 AdminFacingMessages，而那张白名单管的是
+// 「service 返回的错误能不能透出」。批量结论是 handler 按计数自己拼出的整句回执
+// （进 ?done= / ?err=），既不是 service 错误、也不该进错误白名单 ——
+// 误加进去会让「读侧候选必须能由写侧复现」那条对账用例变红。
+//
+// 为什么 key 放 enums 而不是 handler 包：模块的对外文案 key 一律以 enums 为唯一登记处，
+// 回执文案同属对外文案，不该是例外。中文原文（模板 + 名词）留在 inbound/http ——
+// 它与「写侧按当前语言取词」的那一份绑在同一个结构体里（见 admin_err.go 的 adminBulkText）。
+const (
+	// BulkDoneKey 批量删除全部成功的结论模板（两个 %s：删除数、名词译文）。
+	BulkDoneKey = "admin.bulk.done"
+	// BulkPartialKey 批量删除部分成功的结论模板（三个 %s：删除数、名词译文、未删除数）。
+	BulkPartialKey = "admin.bulk.partial"
+)
+
+// 批量删除文案里的名词 key（写侧代入模板，读侧候选同样先代入再归一）。
+const (
+	BulkNounAdmin      = "admin.bulk.noun.admin"
+	BulkNounRole       = "admin.bulk.noun.role"
+	BulkNounPermission = "admin.bulk.noun.permission"
+	BulkNounMenu       = "admin.bulk.noun.menu"
+	BulkNounDept       = "admin.bulk.noun.dept"
+	BulkNounDatarule   = "admin.bulk.noun.datarule"
+)
+
+// 词条页批量删除的四个结论分支。
+const (
+	BulkI18nNoneSelected = "admin.i18nBulk.noneSelected"
+	BulkI18nAllDeleted   = "admin.i18nBulk.allDeleted"
+	BulkI18nAllSkipped   = "admin.i18nBulk.allSkipped"
+	BulkI18nPartial      = "admin.i18nBulk.partial"
+)

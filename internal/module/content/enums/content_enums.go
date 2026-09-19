@@ -20,3 +20,16 @@ const (
 	// ErrCollectionUnsupported 当前内容服务未实现集合元数据契约。
 	ErrCollectionUnsupported = "ErrCollectionUnsupported"
 )
+
+// 批量操作的结论文案（页面回执，不是错误白名单）。
+//
+// 与 admin / order / product / page 的 Bulk* 同口径：值 = sys_i18n 的 item_key，
+// **不带 Err / Msg 前缀** —— 这四句是文章列表页批量删除的结论文案（进 ?done=），
+// 由 handler 按计数拼出，不是 service 错误，因而不属于 articleFacingMessages
+// 那张错误白名单。中文原文留在 inbound/http/article_handle.go（写读共用同一份）。
+const (
+	BulkArticleNoneSelected = "content.bulk.noneSelected"
+	BulkArticleAllDeleted   = "content.bulk.allDeleted"
+	BulkArticleAllSkipped   = "content.bulk.allSkipped"
+	BulkArticlePartial      = "content.bulk.partial"
+)

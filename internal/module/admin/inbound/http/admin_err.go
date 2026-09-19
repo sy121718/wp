@@ -35,6 +35,7 @@ import (
 
 	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	r "go_wp/pkg/response"
 
@@ -140,8 +141,9 @@ const adminPageErrParamMaxBytes = 200
 //
 // 候选**全部来自写侧真实生产点**，读侧不许自己发明一句话（AGENTS.md「不要新造第二份真相」）：
 //
-//  1. adminBulkPartialTemplate × adminBulkNouns —— adminBulkResultURL 在 skipped > 0 时
-//     Sprintf 出的「已删除 N 个角色，M 个未能删除（受保护或被引用）」；
+//  1. adminBulkPartialText × adminBulkNouns —— adminBulkResultURL 在 skipped > 0 时
+//     Sprintf 出的「已删除 N 个角色，M 个未能删除（受保护或被引用）」（**当前语言**：
+//     模板与名词都经 adminBulkTextOf 取词，与写侧同一个取法）；
 //  2. adminI18nBulkAllSkipped / adminI18nBulkPartial —— adminI18nBulkDeleteResult 里
 //     会进 ?err= 的两个分支（词条页批量删除「有跳过」）；
 //  3. shell.BulkIDsNoticeTemplate(c) —— shell.BulkIDsFacingText 的超限提示，读侧直接取
@@ -152,10 +154,11 @@ const adminPageErrParamMaxBytes = 200
 //  5. adminenums.ErrInternal 的当前语言译文 —— adminErrParam 未命中时的归口文案，
 //     同一个 ?errored= 通道的另一半。
 //
-// 为什么必须带 c：第 3 条要按当前语言取 shell 的模板，第 4/5 条要按当前语言翻译 ——
-// 写侧 adminErrParam 返回的就是**当前语言**的文本，候选不按同一语言取，英文页面上
-// 真实的提示会被判成伪造而静默消失（这是本函数与 adminDoneTexts 的唯一区别：
-// 批量结论文案是中文常量，不随语言变）。
+// 为什么必须带 c：第 1 条要按当前语言取批量结论模板与名词（adminBulkTextOf），第 3 条要按
+// 当前语言取 shell 的模板，第 4/5 条要按当前语言翻译 —— 写侧产出的全是**当前语言**的文本，
+// 候选不按同一语言取，英文页面上真实的提示会被判成伪造而静默消失。
+// 本批之前只有第 3/4/5 条按语言取，批量结论文案是中文常量（不随语言变），
+// 于是英文页面上那两条回执必然失配 —— adminDoneTexts 同此，两处现在都按当前语言取。
 //
 // 带参形态（key|param）**不在候选里**：本页路径上唯一带参的白名单文案是 ErrAccountLocked，
 // 它只出现在登录 API 路径；词条页 ?errored= 的值域只有「三个缺项文案 + 归口文案」。
@@ -163,14 +166,18 @@ const adminPageErrParamMaxBytes = 200
 // admin_err_texts_test.go 的写侧对账用例会在候选不足时失败。
 func adminErrTexts(c *gin.Context) []string {
 	out := make([]string, 0, len(adminBulkNouns)+2+len(adminenums.AdminFacingMessages)+1)
+	// 取当前语言的模板：写侧 adminBulkResultURL / adminI18nBulkDeleteResult 也走 adminBulkTextOf，
+	// 两处同源。候选若按中文原文构造，英文页面上真实的提示会被判成伪造而静默消失。
+	partial := adminBulkTextOf(c, adminBulkPartialText)
 	for _, noun := range adminBulkNouns {
 		// 名词要 Sprintf 进去再归一：模板里的 %s 是名词（不是计数），先把占位替掉，
 		// 否则 NoticeTemplate 会把名词一起归一成 "0"，候选就永远对不上真实文案。
-		out = append(out, shell.NoticeTemplate(fmt.Sprintf(adminBulkPartialTemplate, 0, noun, 0)))
+		// 名词译文同样取自 adminBulkTextOf（写侧就是这么取的，两处必须同语言）。
+		out = append(out, shell.NoticeTemplate(fmt.Sprintf(partial, "0", adminBulkTextOf(c, noun), "0")))
 	}
 	out = append(out,
-		shell.NoticeTemplate(adminI18nBulkAllSkipped),
-		shell.NoticeTemplate(adminI18nBulkPartial),
+		shell.NoticeTemplate(adminBulkTextOf(c, adminI18nBulkAllSkipped)),
+		shell.NoticeTemplate(adminBulkTextOf(c, adminI18nBulkPartial)),
 		shell.BulkIDsNoticeTemplate(c),
 	)
 	for _, m := range adminenums.AdminFacingMessages {
@@ -282,46 +289,83 @@ func adminBindFail(c *gin.Context, err error) {
 //	  形状的构造与校验同样由写读共用。
 // 未命中一律落空串：成功提示没有「必须说点什么」的语义，落归口文案反而会凭空多出一条错误提示。
 
-// adminBulkDoneTemplate / adminBulkPartialTemplate 批量删除的结论文案模板。
+// adminBulkText 批量结论文案的一条模板 / 名词（i18n key + 中文原文）。
 //
-// **写侧与读侧共用这一份字面量**：写侧 adminBulkResultURL 用它 Sprintf 出文案
-// （全成功进 ?done=、有跳过进 ?err=），读侧 adminDoneTexts 与 adminErrTexts 都取它
-// （经 shell.NoticeTemplate 归一）判定 URL 回显。各写一份的后果是静默的 ——
-// 写侧改了措辞，读侧候选不再命中，运营看到的是「没有这条提示」（两个通道都落空串）。
-const (
-	adminBulkDoneTemplate    = "已删除 %d 个%s"
-	adminBulkPartialTemplate = "已删除 %d 个%s，%d 个未能删除（受保护或被引用）"
+// **key 与中文原文只有这一份**：写侧 adminBulkResultURL / adminI18nBulkDeleteResult 拿它
+// Sprintf 出整句，读侧 adminDoneTexts / adminErrTexts 拿**同一个值**、经同一处取词
+// （adminBulkTextOf）得到当前语言模板再归一比对。读侧若另抄一份中文字面量，
+// 词条一改措辞候选就静默失配 —— 写侧提示可见，页面上却变成「没有这条提示」（两个通道都落空串），
+// 既没有报错也没有日志。
+type adminBulkText struct{ key, fallback string }
+
+// adminBulkTextOf 取一条批量结论文案的当前语言文本（写侧与读侧**共用这一个取法**）。
+//
+// 词条被写坏（混进 %d 之类协议外占位符）时回落中文原文：本文件里的模板一律只允许 %s
+// （数字在 Go 侧 strconv.Itoa 之后再填），混进 %d 会让 Sprintf 把参数渲染成 int 而不是字符串 ——
+// 而这条路是直接给运营看的。与 shell.BulkIDsFacingText 的兜底同一判据。
+func adminBulkTextOf(c *gin.Context, t adminBulkText) string {
+	text := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(text) {
+		return t.fallback
+	}
+	return text
+}
+
+// 批量删除的结论文案模板（%s 依次是：删除数、名词译文、[未删除数]）。
+//
+// **写侧与读侧共用这一份**：写侧 adminBulkResultURL 用它 Sprintf 出文案
+// （全成功进 ?done=、有跳过进 ?err=），读侧 adminDoneTexts 与 adminErrTexts 取同一份
+// 当前语言模板（经 shell.NoticeTemplate 归一）判定 URL 回显。
+var (
+	adminBulkDoneText    = adminBulkText{adminenums.BulkDoneKey, "已删除 %s 个%s"}
+	adminBulkPartialText = adminBulkText{adminenums.BulkPartialKey, "已删除 %s 个%s，%s 个未能删除（受保护或被引用）"}
 )
 
 // adminBulkNouns 批量删除文案里出现过的名词（= 各列表页 adminBulkResultURL 的实参）。
 //
 // 读侧要靠它派生候选（模板里的 %s 是名词而不是计数，不能被归一成占位），所以新增列表页时
 // 必须在这里补一个 —— 漏登记的症状是该页「删完了却没有回执」，可见但不致命；不会变成伪造面。
-var adminBulkNouns = []string{"管理员", "角色", "权限点", "菜单", "部门", "数据规则"}
+var (
+	adminBulkNounAdmin      = adminBulkText{adminenums.BulkNounAdmin, "管理员"}
+	adminBulkNounRole       = adminBulkText{adminenums.BulkNounRole, "角色"}
+	adminBulkNounPermission = adminBulkText{adminenums.BulkNounPermission, "权限点"}
+	adminBulkNounMenu       = adminBulkText{adminenums.BulkNounMenu, "菜单"}
+	adminBulkNounDept       = adminBulkText{adminenums.BulkNounDept, "部门"}
+	adminBulkNounDatarule   = adminBulkText{adminenums.BulkNounDatarule, "数据规则"}
+
+	adminBulkNouns = []adminBulkText{
+		adminBulkNounAdmin, adminBulkNounRole, adminBulkNounPermission,
+		adminBulkNounMenu, adminBulkNounDept, adminBulkNounDatarule,
+	}
+)
 
 // 词条页批量删除的四个结论分支（写读共用）。
 //
 // 前两条在 skipped == 0 时进 ?done=，后两条进 ?err=（?err= 一侧另有 adminPageErrText 做形状
 // 清洗）。拆成两个切片登记，是为了让 ?done= 的候选**不多不少**正好是写侧会放进去的那几条。
-const (
-	adminI18nBulkNoneSelected = "没有勾选任何词条，列表未改动。"
-	adminI18nBulkAllDeleted   = "已删除 %d 条词条（构建时回退到组件包内的中文兜底）。"
-	adminI18nBulkAllSkipped   = "%d 条词条都未能删除，列表未改动。"
-	adminI18nBulkPartial      = "已删除 %d 条，%d 条未能删除（可能已被删除）。"
+var (
+	adminI18nBulkNoneSelected = adminBulkText{adminenums.BulkI18nNoneSelected, "没有勾选任何词条，列表未改动。"}
+	adminI18nBulkAllDeleted   = adminBulkText{adminenums.BulkI18nAllDeleted, "已删除 %s 条词条（构建时回退到组件包内的中文兜底）。"}
+	adminI18nBulkAllSkipped   = adminBulkText{adminenums.BulkI18nAllSkipped, "%s 条词条都未能删除，列表未改动。"}
+	adminI18nBulkPartial      = adminBulkText{adminenums.BulkI18nPartial, "已删除 %s 条，%s 条未能删除（可能已被删除）。"}
 )
 
-// adminI18nDoneTemplates 其中会走 ?done= 的两条（skipped == 0 的两支）；
+// adminI18nDoneTexts 其中会走 ?done= 的两条（skipped == 0 的两支）；
 // 另外两条只在 ?err= 通道上（那一侧由 adminPageErrText 做形状清洗，不在这里登记）。
-var adminI18nDoneTemplates = []string{adminI18nBulkNoneSelected, adminI18nBulkAllDeleted}
+var adminI18nDoneTexts = []adminBulkText{adminI18nBulkNoneSelected, adminI18nBulkAllDeleted}
 
-// adminDoneTexts 列表页 ?done= 可以原样展示的受控文案（数字归一后可比）。
-func adminDoneTexts() []string {
-	out := make([]string, 0, len(adminBulkNouns)+len(adminI18nDoneTemplates))
+// adminDoneTexts 列表页 ?done= 可以原样展示的受控文案（**当前语言**，数字归一后可比）。
+//
+// 与写侧 adminBulkResultURL / adminI18nBulkDeleteResult 共用 adminBulkTextOf 这一个取法 ——
+// 这是「英文页面上真实回执不被判成伪造」的全部依据（详见 adminBulkText 的注释）。
+func adminDoneTexts(c *gin.Context) []string {
+	out := make([]string, 0, len(adminBulkNouns)+len(adminI18nDoneTexts))
+	done := adminBulkTextOf(c, adminBulkDoneText)
 	for _, noun := range adminBulkNouns {
-		out = append(out, shell.NoticeTemplate(fmt.Sprintf(adminBulkDoneTemplate, 0, noun)))
+		out = append(out, shell.NoticeTemplate(fmt.Sprintf(done, "0", adminBulkTextOf(c, noun))))
 	}
-	for _, tpl := range adminI18nDoneTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
+	for _, tpl := range adminI18nDoneTexts {
+		out = append(out, shell.NoticeTemplate(adminBulkTextOf(c, tpl)))
 	}
 	return out
 }
@@ -330,9 +374,9 @@ func adminDoneTexts() []string {
 //
 // 判定用 shell.FacingNotice 的**整体**匹配（逐字 / 数字归一 / 「候选 + ：」），不是
 // strings.Contains —— 后者只要夹带一段已知文案就能往页面上塞任意前缀 / 后缀。
-func adminPageDone(raw string) string {
+func adminPageDone(c *gin.Context, raw string) string {
 	return shell.FacingQueryText(raw, "", func(msg string) string {
-		return shell.FacingNotice(msg, adminDoneTexts())
+		return shell.FacingNotice(msg, adminDoneTexts(c))
 	})
 }
 

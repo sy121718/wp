@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -140,9 +141,10 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 	target := "/admin/product-categories?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf(productCategoryBulkPartial, deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productCategoryBulkPartial),
+			strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf(productCategoryBulkDone, deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productCategoryBulkDone), strconv.Itoa(deleted)))
 	}
 	c.Redirect(http.StatusFound, target)
 }
@@ -252,9 +254,10 @@ func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
 	target := "/admin/product-brands?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBrandBulkPartial, deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productBrandBulkPartial),
+			strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBrandBulkDone, deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productBrandBulkDone), strconv.Itoa(deleted)))
 	}
 	c.Redirect(http.StatusFound, target)
 }

@@ -23,9 +23,9 @@ import (
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagecontract "go_wp/internal/module/page/contract"
-	pageservice "go_wp/internal/module/page/service"
 	pagedto "go_wp/internal/module/page/dto"
 	pagehttp "go_wp/internal/module/page/inbound/http"
+	pageservice "go_wp/internal/module/page/service"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -172,16 +172,25 @@ func (a *assembly) buildPublishingModules() {
 	// i18n 失效扇出（翻译底座）：page.MarkStaleForI18n 是四条 i18n 保存路径的既有入口，
 	// 自动发布实例由这里挂上去 —— 否则「改了译文，商品页仍是旧字节」且无任何报错。
 	// 类型断言而不是静态依赖：两个模块互不 import，装配点负责接线（同文件其它端口的写法）。
-	if peer, ok := presentationSvc.(interface {
-		MarkStaleForI18n(ctx context.Context) error
-	}); ok {
-		// pageService 在装配里是契约接口，具体 setter 用断言取（同文件其它端口写法）。
-		if setter, sok := pageService.(interface {
-			SetI18nStalePeer(pageservice.I18nStalePeer)
-		}); sok {
-			setter.SetI18nStalePeer(peer)
-		}
+	// 断言到页面模块的端口类型本身（而不是内联旧接口）：端口现在要求 …Tx 变体 ——
+	// 只有能在调用方事务里标记的来源才能接上来，把「接了但事务各写各的」变成编译期不成立。
+	peer, ok := presentationSvc.(pageservice.I18nStalePeer)
+	if !ok {
+		// 就地断言而不是静默跳过（第五批收口）：漏接的表现是「改了译文，商品页仍旧字节」
+		// 而且**没有任何报错** —— 比相邻那条观测缺失更该炸，所以用同一判据。
+		// 同时登记到 wiring 的 required-port 清单（见 portPageI18nStalePeer），
+		// 让「这条端口没接上」在装配末尾的 mustAllPortsWired 里也能被一次报出来。
+		panic("自动发布模块未实现 i18n 失效端口（I18nStalePeer）：译文 / 词条变更不会传导到自动发布实例")
 	}
+	// pageService 在装配里是契约接口，具体 setter 用断言取（同文件其它端口写法）。
+	setter, ok := pageService.(interface {
+		SetI18nStalePeer(pageservice.I18nStalePeer)
+	})
+	if !ok {
+		panic("page 模块未暴露 SetI18nStalePeer（i18n 失效扇出的接线点）")
+	}
+	setter.SetI18nStalePeer(peer)
+	marks.mark(portPageI18nStalePeer)
 	// 断言而不是静默跳过：漏接的表现是 /readyz 里少了这个来源 —— 运维会把它读成
 	// 「这里没有积压」，而实际是「没人在看」。待收敛回执本身就是「线上与库不一致」的窗口，
 	// 让它在观测层静默消失是最不该有的降级（审计 CQ-019 的同一判据）。

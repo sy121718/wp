@@ -77,12 +77,17 @@ func NewAdminPagesHandle(admins admincontract.AdminService, roles admincontract.
 // （那正是本轮要避免的反向缺陷）；service 返回的 err 值域包含 SQLSTATE，所以走助手。
 //
 // adminBulkResultURL 批量动作结果回带：有跳过走 ?err=（含成功条数），全成功走 ?done=。
-func adminBulkResultURL(path, noun string, deleted, skipped int) string {
+// 模板与名词都经 adminBulkTextOf 按当前语言取（与读侧 adminDoneTexts / adminErrTexts 同一个取法）：
+// 文案里的数字一律先 strconv.Itoa 成字符串再填（词条只允许 %s，理由见 pkg/i18n.HasStringPlaceholdersOnly）。
+func adminBulkResultURL(c *gin.Context, path string, noun adminBulkText, deleted, skipped int) string {
+	nounText := adminBulkTextOf(c, noun)
 	switch {
 	case skipped > 0:
-		return path + "?err=" + url.QueryEscape(fmt.Sprintf(adminBulkPartialTemplate, deleted, noun, skipped))
+		tpl := adminBulkTextOf(c, adminBulkPartialText)
+		return path + "?err=" + url.QueryEscape(fmt.Sprintf(tpl, strconv.Itoa(deleted), nounText, strconv.Itoa(skipped)))
 	case deleted > 0:
-		return path + "?done=" + url.QueryEscape(fmt.Sprintf(adminBulkDoneTemplate, deleted, noun))
+		tpl := adminBulkTextOf(c, adminBulkDoneText)
+		return path + "?done=" + url.QueryEscape(fmt.Sprintf(tpl, strconv.Itoa(deleted), nounText))
 	}
 	return path
 }
@@ -105,7 +110,7 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		"Rows":  res.List,
 		"Total": res.Total,
 		"Err":   adminPageErrText(c, c.Query("err")),
-		"Done":  adminPageDone(c.Query("done")),
+		"Done":  adminPageDone(c, c.Query("done")),
 	}))
 }
 
@@ -195,7 +200,7 @@ func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/administrators", "管理员", deleted, skipped))
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL(c, "/admin/administrators", adminBulkNounAdmin, deleted, skipped))
 }
 
 // --- 角色 roles ---
@@ -213,7 +218,7 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 		"Rows":  res.List,
 		"Total": res.Total,
 		"Err":   adminPageErrText(c, c.Query("err")),
-		"Done":  adminPageDone(c.Query("done")),
+		"Done":  adminPageDone(c, c.Query("done")),
 	}))
 }
 
@@ -292,7 +297,7 @@ func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/roles", "角色", deleted, skipped))
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL(c, "/admin/roles", adminBulkNounRole, deleted, skipped))
 }
 
 // --- 权限点 permissions ---
@@ -320,7 +325,7 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		"FilterCode":   code,
 		"FilterModule": module,
 		"Err":          adminPageErrText(c, c.Query("err")),
-		"Done":         adminPageDone(c.Query("done")),
+		"Done":         adminPageDone(c, c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/permissions", map[string]string{"code": code, "module": module})
 	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -418,7 +423,7 @@ func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/permissions", "权限点", deleted, skipped))
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL(c, "/admin/permissions", adminBulkNounPermission, deleted, skipped))
 }
 
 // --- 菜单 menus（树） ---
@@ -486,7 +491,7 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 		"Rows":    rows,
 		"Parents": rows,
 		"Err":     adminPageErrText(c, c.Query("err")),
-		"Done":    adminPageDone(c.Query("done")),
+		"Done":    adminPageDone(c, c.Query("done")),
 	}))
 }
 
@@ -566,7 +571,7 @@ func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/menus", "菜单", deleted, skipped))
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL(c, "/admin/menus", adminBulkNounMenu, deleted, skipped))
 }
 
 // --- 部门 departments（树） ---
@@ -629,7 +634,7 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 		"Rows":    rows,
 		"Parents": rows,
 		"Err":     adminPageErrText(c, c.Query("err")),
-		"Done":    adminPageDone(c.Query("done")),
+		"Done":    adminPageDone(c, c.Query("done")),
 	}))
 }
 
@@ -709,7 +714,7 @@ func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/departments", "部门", deleted, skipped))
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL(c, "/admin/departments", adminBulkNounDept, deleted, skipped))
 }
 
 // --- 数据权限 datarules ---
@@ -733,7 +738,7 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 		"Total":   res.Total,
 		"Domains": domains,
 		"Err":     adminPageErrText(c, c.Query("err")),
-		"Done":    adminPageDone(c.Query("done")),
+		"Done":    adminPageDone(c, c.Query("done")),
 	}))
 }
 
@@ -864,7 +869,7 @@ func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusSeeOther, adminBulkResultURL("/admin/datarules", "数据规则", deleted, skipped))
+	c.Redirect(http.StatusSeeOther, adminBulkResultURL(c, "/admin/datarules", adminBulkNounDatarule, deleted, skipped))
 }
 
 // --- 文案词条页（审计 I18N-003） ---
@@ -923,7 +928,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		// （受控文本 + 计数）。读侧一律过受控出口 —— ?done= 走 adminPageDone（与写侧共用
 		// 模板字面量、整体匹配），?err= / ?errored= 走 adminPageErrText —— 因为**页面不是
 		// 可信边界**：手拼一个 ?done=任意文案 就能伪造一条顶着「成功」样式的消息。
-		"Done": adminPageDone(c.Query("done")),
+		"Done": adminPageDone(c, c.Query("done")),
 		"Err":  adminPageErrText(c, c.Query("err")),
 	}
 	// 分页条：原版只渲染「第 X / Y 页」文字，没有页码链接 —— Total 超过一页时第 2 页起
@@ -1057,7 +1062,7 @@ func (h *adminI18nEntryHandle) I18nEntriesBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
-	msg := adminI18nBulkDeleteResult(deleted, skipped)
+	msg := adminI18nBulkDeleteResult(c, deleted, skipped)
 	if skipped > 0 {
 		c.Redirect(http.StatusFound, adminI18nBackURL(c, "err", msg))
 		return
@@ -1067,16 +1072,16 @@ func (h *adminI18nEntryHandle) I18nEntriesBulkDelete(c *gin.Context) {
 
 // adminI18nBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几条）。
-func adminI18nBulkDeleteResult(deleted, skipped int) string {
+func adminI18nBulkDeleteResult(c *gin.Context, deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return adminI18nBulkNoneSelected
+		return adminBulkTextOf(c, adminI18nBulkNoneSelected)
 	case skipped == 0:
-		return fmt.Sprintf(adminI18nBulkAllDeleted, deleted)
+		return fmt.Sprintf(adminBulkTextOf(c, adminI18nBulkAllDeleted), strconv.Itoa(deleted))
 	case deleted == 0:
-		return fmt.Sprintf(adminI18nBulkAllSkipped, skipped)
+		return fmt.Sprintf(adminBulkTextOf(c, adminI18nBulkAllSkipped), strconv.Itoa(skipped))
 	default:
-		return fmt.Sprintf(adminI18nBulkPartial, deleted, skipped)
+		return fmt.Sprintf(adminBulkTextOf(c, adminI18nBulkPartial), strconv.Itoa(deleted), strconv.Itoa(skipped))
 	}
 }
 

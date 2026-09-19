@@ -141,7 +141,6 @@ var deptUpdateColumns = []string{
 	"sort_order", "status", "remark",
 }
 
-
 // Transaction 透传事务：移动部门节点时「自身行 + 全部子孙行」两处持久化写必须同事务
 // （子孙 ancestors 更新失败会让 pkg/datarule 的部门范围匹配错乱），边界由 service 决定。
 func (m *DeptModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
@@ -185,7 +184,6 @@ func (m *DeptModel) UpdateTx(ctx context.Context, tx *gorm.DB, e *DeptEntity) er
 	return tx.WithContext(ctx).Model(&DeptEntity{}).Where("id = ?", e.ID).
 		Select(deptUpdateColumns).Updates(e).Error
 }
-
 
 // UpdateAncestorsTx 在调用方事务内批量更新子孙 ancestors（**唯一的写入口** ——
 // 非事务版 UpdateAncestors 已删除：它只可能产出「自身改了、子孙没跟上」的半截状态）。

@@ -285,13 +285,40 @@ func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string, at time.
 		return 0, errors.New("project id is required")
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		res := tx.Model(&InstanceEntity{}).
-			Where("project_id = ? AND deleted_at IS NULL", projectID).
-			Updates(map[string]any{"stale": true, "update_time": at})
-		n = res.RowsAffected
-		return res.Error
+		var merr error
+		n, merr = m.markStaleForI18nIn(ctx, tx, projectID, at)
+		return merr
 	})
 	return n, err
+}
+
+// markStaleForI18nIn 整站标记的 SQL 本体：MarkStaleForI18n（自带事务）与
+// MarkStaleForI18nTx（在调用方事务内，见下）两条入口共用同一段语句 —— 两处各写一遍
+// 会让「自带事务」与「透传事务」两条路径对同一批实例产生不同的标记结果。
+func (m *Model) markStaleForI18nIn(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) (n int64, err error) {
+	res := tx.WithContext(ctx).Model(&InstanceEntity{}).
+		Where("project_id = ? AND deleted_at IS NULL", projectID).
+		Updates(map[string]any{"stale": true, "update_time": at})
+	return res.RowsAffected, res.Error
+}
+
+// MarkStaleForI18nTx 在**外部事务**内把本工程全部未删除实例标记为待重建
+// （page 的译文失效扇出用，见 page 侧 I18nStalePeer 的 Tx 变体）。
+//
+// 与 MarkStaleForI18n 是同一段 SQL，差别只有事务边界：page 的 MarkStaleForI18n 要把
+// pages 的标记与这里的实例标记放进**同一个事务**（同库跨模块的写必须同进同出，AGENTS.md
+// 「写操作的事务与回滚」）—— 否则会停在「页面已标、实例未标」的半截状态，而实例这一侧
+// 没有任何自动补的入口（要等下一次词条保存才偶然收敛），表现为「改了译文，商品详情页
+// 仍是旧字节」且日志里什么都没有。作用域仍在这里设：set_config(..., is_local => true)
+// 在事务内可重复设置，外层设过也不冲突（见 pkg/rls.ScopeTx 的分工）。
+func (m *Model) MarkStaleForI18nTx(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) (n int64, err error) {
+	if projectID == "" {
+		return 0, errors.New("project id is required")
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return 0, serr
+	}
+	return m.markStaleForI18nIn(ctx, tx, projectID, at)
 }
 
 // DeleteInstance 删除实例及其聚合内从属行（解引用 → 依赖 → 产物 → 快照 → 实例）。
@@ -305,25 +332,46 @@ func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string, at time.
 // 等），不清空指针就删产物会被这些外键挡住。
 func (m *Model) DeleteInstance(ctx context.Context, projectID, id string) error {
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		if err := tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
-			"current_snapshot_id": nil,
-			"staged_snapshot_id":  nil,
-			"staged_artifact_id":  nil,
-			"active_artifact_id":  nil,
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("presentation_id = ?", id).Delete(&DependencyEntity{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("presentation_instance_id = ?", id).Delete(&ArtifactEntity{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("presentation_instance_id = ?", id).Delete(&SnapshotEntity{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id = ? AND project_id = ?", id, projectID).Delete(&InstanceEntity{}).Error
+		return m.deleteInstanceRows(tx, projectID, id)
 	})
+}
+
+// DeleteInstanceTx 在**调用方已开启的事务**内删除实例及其聚合内从属行
+// （语句与错误语义逐条同 DeleteInstance，只是不做事务边界）。
+//
+// 为什么需要它：调用方（presentation 的 Delete）还要在同一事务里清理 publication 的
+// page_routes 行 —— 跨模块 DB 写必须 tx 透传（AGENTS.md「写操作的事务与回滚」，
+// 补偿只允许用于跨库/外部系统）。走 DeleteInstance（经 rls.InProjectScope）会
+// 另开事务、另取一条连接：外层那条 page_routes 删行在本事务里看不见，原子性也没了。
+// 这里只用 rls.ScopeTx 把工程作用域设进**调用方的事务**，不碰事务边界。
+func (m *Model) DeleteInstanceTx(tx *gorm.DB, projectID, id string) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return m.deleteInstanceRows(tx, projectID, id)
+}
+
+// deleteInstanceRows 实例级联删除的全部语句（事务 / 非事务两条入口共用一份，
+// 顺序与每一步的理由见 DeleteInstance 的注释）。
+func (m *Model) deleteInstanceRows(tx *gorm.DB, projectID, id string) error {
+	if err := tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
+		"current_snapshot_id": nil,
+		"staged_snapshot_id":  nil,
+		"staged_artifact_id":  nil,
+		"active_artifact_id":  nil,
+	}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("presentation_id = ?", id).Delete(&DependencyEntity{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("presentation_instance_id = ?", id).Delete(&ArtifactEntity{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("presentation_instance_id = ?", id).Delete(&SnapshotEntity{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("id = ? AND project_id = ?", id, projectID).Delete(&InstanceEntity{}).Error
 }
 
 // CreateSnapshot 写快照。

@@ -14,6 +14,8 @@ package pageservice
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -239,8 +241,7 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 		return nil, err
 	}
 	at := time.Now().UTC()
-	seen := make(map[string]bool, len(ids))
-	marked := make([]string, 0, len(ids))
+	marked := &staleIDCollector{}
 	for _, projectID := range projectIDs {
 		if ctx.Err() != nil {
 			break
@@ -249,20 +250,15 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 		if merr != nil {
 			return nil, merr
 		}
-		for _, id := range hit {
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			marked = append(marked, id)
-		}
+		marked.add(hit)
 	}
-	logger.Scene("page").With("count", len(marked)).With("registryVersion", current).
+	out := marked.list()
+	logger.Scene("page").With("count", len(out)).With("registryVersion", current).
 		Info("组件注册表版本变化：相关页面已标记待重建")
 	// 影响面回执：组件一变往往是一批页面一起过期，只有这里同时握着「哪个组件版本」
 	// 与「哪几页」两件事 —— 过了这里两者就再也对不上。
-	s.logStaleImpact(ctx, "registry:"+current, marked)
-	return marked, nil
+	s.logStaleImpact(ctx, "registry:"+current, out)
+	return out, nil
 }
 
 // I18nStalePeer 文案词条 / 内容译文变更时的**其它发布来源**失效端口（消费者侧最窄接口）。
@@ -272,7 +268,20 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 // 都记得补一次调用，漏接面就是 N 处；集中到 1 处后漏接只可能是「装配没接」。
 // 未注入 = 只标页面（既有行为不变）。
 type I18nStalePeer interface {
+	// MarkStaleForI18n 是该来源的自足入口（自己枚举工程、各自提交）。
+	//
+	// 保留在这里与 …Tx 配对，和 publication 契约「非 Tx + Tx 同列」的形态一致：
+	// 没有外层事务的调用方（运维脚本之类）用它即可。
 	MarkStaleForI18n(ctx context.Context) error
+	// MarkStaleForI18nTx 在**调用方的事务**内标记该工程的其它发布来源。
+	//
+	// 本模块的扇出只走这一条：pages 的标记与 peer 的标记是同一批失效判定
+	//（同一批词条 / 译文变更的两个后果），各自提交必然留下「页面已标、实例未标」的
+	// 半截状态 —— 而实例那一侧**没有任何自动补的入口**（要等下一次词条保存才会收敛），
+	// 现象是「改了译文，商品详情页仍是旧字节」且日志里什么都没有。Tx 变体让两侧落进
+	// 同一个事务：要么都标上，要么一起回滚、由调用方重试（标记幂等，重跑无副作用）。
+	// 工程由调用方给定（它自己逐工程扇出），作用域由实现方在传入的 tx 上设置。
+	MarkStaleForI18nTx(ctx context.Context, tx *gorm.DB, projectID string) error
 }
 
 // SetI18nStalePeer 注入其它发布来源的译文失效端口（装配期调用；可空 = 只标页面）。
@@ -280,7 +289,7 @@ func (s *Service) SetI18nStalePeer(peer I18nStalePeer) {
 	s.i18nPeer = peer
 }
 
-// MarkStaleForI18n 把全部页面标记为待重建（文案词条变更后调用）。
+// MarkStaleForI18n 把全部页面与**其它发布来源**标记为待重建（文案词条变更后调用）。
 //
 // 与 Manifest 的 i18n 依赖条目（DependencyKind=i18n）配套：
 // 依赖条目负责「产物字节与词条 revision 的对应关系」，本方法负责「变更后重新排队」。
@@ -289,28 +298,58 @@ func (s *Service) SetI18nStalePeer(peer I18nStalePeer) {
 // 逐工程扇出（DB-009 第三批）：这是本模块最典型的「跨工程扇出」入口。pages 带 FORCE
 // 策略时，「整站标记」只能由每个工程各自一次作用域内的 UPDATE 拼出来；不设作用域的
 // 全表 UPDATE 在换非超级角色后匹配 0 行且不报错 —— 文案改了，站点却一直是旧的。
+//
+// 其余发布来源（自动发布实例等）集中在**这一个入口**扇出：它们同样在构建期取词注入字节，
+// 词条 / 译文一变同样过期。为什么不让四条保存路径各自记得调一次（商品翻译 / 页面翻译 /
+// 站点设置 / 导航翻译）—— 漏一处的表现是「改了译文，那一类页面仍是旧字节」且日志里
+// 什么都没有（本项目反复吃过的静默失效）。
+//
+// **每个工程一个事务，页面侧与 peer 同进同出**（2026-09 收口）：此前 peer 的标记排在
+// 页面侧扇出之后各自提交，pages 已标、peer 未标时本方法直接返回错误 —— 而 peer 那一侧
+// 没有任何自动补的入口，自动发布实例会一直渲染旧字节，直到下一次词条保存才偶然收敛。
+// 同库跨模块的写按 AGENTS.md 用 tx 透传（peer 的 …Tx 变体，接口见 I18nStalePeer，
+// 装配接线见 routers/assembly_publish.go）：任一步失败整个工程一起回滚 —— 要么两边都标上，
+// 要么两边都没标，由调用方重试（幂等）。这也是为什么日志只在事务提交后记：回滚的工程
+// 什么都没发生，不该出现在「本次影响面」里。
+//
+// 单个工程失败不中断其余工程：多工程之间本来就是各自独立的事务（RLS 作用域是单值
+// 会话变量，不能合并成一次查询），一个工程的数据库错误不该让别的工程停在旧字节。
+// 全部工程处理完后用 errors.Join 汇总返回 —— 不吞错，也不谎报成功。
 func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
 		return err
 	}
+	hit := &staleIDCollector{}
+	at := time.Now().UTC()
+	var failed []error
 	for _, projectID := range projectIDs {
 		if ctx.Err() != nil {
 			break
 		}
-		if err := s.model.MarkStaleForI18n(ctx, projectID); err != nil {
-			return err
+		var ids []string
+		terr := s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+			got, merr := s.model.MarkStaleForI18nTx(ctx, tx, projectID, at)
+			if merr != nil {
+				return merr
+			}
+			ids = got
+			if s.i18nPeer != nil {
+				return s.i18nPeer.MarkStaleForI18nTx(ctx, tx, projectID)
+			}
+			return nil
+		})
+		if terr != nil {
+			// 该工程两侧都已随事务回滚（什么都没标），记下是哪个工程并继续处理其余工程。
+			failed = append(failed, fmt.Errorf("工程 %s 的译文失效标记失败: %w", projectID, terr))
+			continue
 		}
+		hit.add(ids)
 	}
-	// 其余发布来源（自动发布实例等）集中在**这一个入口**扇出：它们同样在构建期取词
-	// 注入字节，词条/译文一变同样过期。为什么不让四条保存路径各自记得调一次
-	//（商品翻译 / 页面翻译 / 站点设置 / 导航翻译）—— 漏一处的表现是「改了译文，
-	// 那一类页面仍是旧字节」且日志里什么都没有（本项目反复吃过的静默失效）。
-	// peer 的失败原样返回：这是标记与重建，不是内容写入的可忽略后置副作用。
-	if s.i18nPeer != nil {
-		if perr := s.i18nPeer.MarkStaleForI18n(ctx); perr != nil {
-			return perr
-		}
+	// 影响面回执：只记**已提交**的命中集合 —— 回滚的工程不在其中，两份记录不会互相撒谎。
+	s.logStaleImpact(ctx, "i18n", hit.list())
+	if len(failed) > 0 {
+		return errors.Join(failed...)
 	}
 	return nil
 }

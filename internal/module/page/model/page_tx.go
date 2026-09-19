@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -91,6 +92,53 @@ func (m *Model) SaveDraftWithRevisionTx(
 		return ErrDraftVersionConflict
 	}
 	return tx.WithContext(ctx).Create(revision).Error
+}
+
+// MarkStaleForI18nTx 在外部事务内把该工程全部未删除页面标记为待重建，返回真正命中的页面 ID。
+//
+// 与 MarkStaleForI18n 共用同一段 SQL（markStaleForI18nIn），差别只有事务边界：
+// service 的 MarkStaleForI18n 要把「pages 标记」与跨模块 peer（其它发布来源，如自动发布
+// 实例）的标记放进**同一个事务** —— 同库跨模块的写必须同进同出（AGENTS.md「写操作的事务
+// 与回滚」），否则 peer 失败时会留下「页面已标、实例未标」的半截状态，而那一侧没有任何
+// 自动补的入口。作用域仍在这里设：set_config(..., is_local => true) 在事务内可重复设置，
+// 外层设过也不冲突（见 pkg/rls.ScopeTx 的分工说明）。
+func (m *Model) MarkStaleForI18nTx(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) (ids []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	if err = rls.ScopeTx(tx, projectID); err != nil {
+		return nil, err
+	}
+	return m.markStaleForI18nIn(ctx, tx, projectID, at)
+}
+
+// DeletePublicationsByLangTx 在外部事务内删除某页面某语言的发布指针（幂等）。
+//
+// 与 DeletePublicationsByLang 同一段 SQL（只按 page_id + lang 删，绝不整页删 ——
+// 其它语言的指针必须留着）。语义差别是与 publication 的 DeactivateTx 落在同一事务里：
+// 「路径占用解除 + 发布指针删除」是一次退役动作的两半，各自提交会留下
+// 「页面已退役但路径仍占用」或反过来。作用域在此显式设置：page_publications 带 FORCE 策略。
+func (m *Model) DeletePublicationsByLangTx(ctx context.Context, tx *gorm.DB, projectID, pageID, lang string) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	if err = rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Model(&PublicationEntity{}).
+		Where("page_id = ? AND lang = ?", pageID, lang).Delete(&PublicationEntity{}).Error
+}
+
+// DeleteStagingsByLangTx 在外部事务内删除某页面某语言的暂存指针（幂等，理由同上）。
+func (m *Model) DeleteStagingsByLangTx(ctx context.Context, tx *gorm.DB, projectID, pageID, lang string) (err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	if err = rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Model(&StagingEntity{}).
+		Where("page_id = ? AND lang = ?", pageID, lang).Delete(&StagingEntity{}).Error
 }
 
 // MoveDraftPathTx 在外部事务内同步草稿路径（逻辑路径，不含语言前缀）。

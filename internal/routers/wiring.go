@@ -70,6 +70,7 @@ const (
 	portPageBlueprints                 = "page.SetBlueprints"
 	portPageBuildQueue                 = "page.SetBuildQueue"
 	portPageProductDataSource          = "page.SetProductDataSource"
+	portPageI18nStalePeer              = "page.SetI18nStalePeer"
 	portPresentationBuildQueue         = "presentation.SetBuildQueue"
 	portPresentationProductDataSource  = "presentation.SetProductDataSource"
 	portPresentationSiteAssembly       = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
@@ -173,6 +174,8 @@ var wiringManifest = []wiringEntry{
 	// —— 工程 / 页面 / 发布域 ——
 	{portProjectLocaleRetire, "page", "project", wiringRequiredPort,
 		"禁用语言只记日志不下路由，该语言的站点仍在线上可访问"},
+	{portPageI18nStalePeer, "presentation", "page", wiringRequiredPort,
+		"改了词条 / 译文后自动发布实例不跟进重建（商品页继续渲染旧字节，且**没有任何报错**）"},
 	{portPageExternalArtifactOwners, "presentation", "page", wiringRequiredPort,
 		"反向产物对账把自动发布实例的产物误报成孤儿（一份看不出真假的对账结果）"},
 	{portPageBlueprints, "blueprint", "page", wiringRequiredPort,

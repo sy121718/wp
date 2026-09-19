@@ -26,7 +26,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 // —— 批量删除的结论文案模板（写侧与读侧共用这一份字面量）——
@@ -34,21 +36,42 @@ import (
 // 写侧各页的 BulkDelete 用它 Sprintf 出文案，读侧 productNoticeTexts 用它
 // （经 shell.NoticeTemplate 归一）判定 URL 回显。各写一份的后果是静默的：
 // 写侧改了措辞，读侧白名单不再命中，运营看到的就从「已删除 3 个标签」退化成归口文案。
-const (
-	productTagBulkPartial      = "已删除 %d 个，%d 个未能删除（标签不存在或已被删除）"
-	productTagBulkDone         = "已删除 %d 个标签"
-	productAttrBulkPartial     = "已删除 %d 个，%d 个未能删除（属性组不存在或被商品引用）"
-	productAttrBulkDone        = "已删除 %d 个属性组（连同其全部属性值）"
-	productCategoryBulkPartial = "已删除 %d 个，%d 个未能删除（有子分类或被商品引用）"
-	productCategoryBulkDone    = "已删除 %d 个分类"
-	productBrandBulkPartial    = "已删除 %d 个，%d 个未能删除（品牌不存在或被商品引用）"
-	productBrandBulkDone       = "已删除 %d 个品牌"
-	productBulkPartial         = "已删除 %d 个，%d 个未能删除（商品不存在或被其它数据引用）"
-	productBulkDone            = "已删除 %d 个商品（连同其全部变体）"
+// productBulkText 批量结论文案的一条模板（i18n key + 中文原文）。
+//
+// **key 与中文原文只有这一份**：写侧各页的 BulkDelete / 批量改价 / 变体清单保存拿它 Sprintf
+// 出文案，读侧 productNoticeTexts 拿**同一个值**、经同一处取词（productBulkTextOf）得到
+// 当前语言模板再归一比对。读侧另抄一份中文的后果是静默的 —— 写侧改了措辞候选就失配，
+// 运营看到的就从「已删除 3 个标签」退化成归口文案。
+type productBulkText struct{ key, fallback string }
+
+// productBulkTextOf 取一条批量结论文案的当前语言模板（写侧与读侧**共用这一个取法**）。
+//
+// 词条混进 %d 之类协议外占位符时回落中文原文（模板一律只允许 %s，数字先经 strconv.Itoa）——
+// 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看（与 shell.BulkIDsFacingText 同理）。
+func productBulkTextOf(c *gin.Context, t productBulkText) string {
+	text := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(text) {
+		return t.fallback
+	}
+	return text
+}
+
+// 批量删除：五个实体各一对（部分成功 / 全部成功）。%s 是计数（Go 侧 strconv.Itoa 后填入）。
+var (
+	productTagBulkPartial      = productBulkText{productenums.BulkTagPartial, "已删除 %s 个，%s 个未能删除（标签不存在或已被删除）"}
+	productTagBulkDone         = productBulkText{productenums.BulkTagDone, "已删除 %s 个标签"}
+	productAttrBulkPartial     = productBulkText{productenums.BulkAttrPartial, "已删除 %s 个，%s 个未能删除（属性组不存在或被商品引用）"}
+	productAttrBulkDone        = productBulkText{productenums.BulkAttrDone, "已删除 %s 个属性组（连同其全部属性值）"}
+	productCategoryBulkPartial = productBulkText{productenums.BulkCategoryPartial, "已删除 %s 个，%s 个未能删除（有子分类或被商品引用）"}
+	productCategoryBulkDone    = productBulkText{productenums.BulkCategoryDone, "已删除 %s 个分类"}
+	productBrandBulkPartial    = productBulkText{productenums.BulkBrandPartial, "已删除 %s 个，%s 个未能删除（品牌不存在或被商品引用）"}
+	productBrandBulkDone       = productBulkText{productenums.BulkBrandDone, "已删除 %s 个品牌"}
+	productBulkPartial         = productBulkText{productenums.BulkProductPartial, "已删除 %s 个，%s 个未能删除（商品不存在或被其它数据引用）"}
+	productBulkDone            = productBulkText{productenums.BulkProductDone, "已删除 %s 个商品（连同其全部变体）"}
 )
 
 // productBulkResultTemplates 上面那组模板的集合（读侧候选直接由它派生）。
-var productBulkResultTemplates = []string{
+var productBulkResultTemplates = []productBulkText{
 	productTagBulkPartial, productTagBulkDone,
 	productAttrBulkPartial, productAttrBulkDone,
 	productCategoryBulkPartial, productCategoryBulkDone,
@@ -61,19 +84,19 @@ var productBulkResultTemplates = []string{
 // productQuantityInvalidText 新建商品时数量字段的校验文案（写侧硬编码，读侧登记）。
 const productQuantityInvalidText = "数量必须是非负整数"
 
-// 批量改价的结论文案模板（%d 是计数，%s 是跳过原因）。
-const (
-	productPricingNoChange = "按该规则算下来没有价格变化：%d 个商品已是目标价，未写入调价记录。"
-	productPricingApplied  = "已按规则改价：共改 %d 个变体（%d 个商品已是目标价）。"
-	productPricingAllSkip  = "没有可改价的变体：%d 个商品被跳过（%s）。"
-	productPricingPartial  = "已改 %d 个变体，另有 %d 个商品被跳过（%s）。"
+// 批量改价的结论文案模板（%s 是计数或跳过原因）。
+var (
+	productPricingNoChange = productBulkText{productenums.BulkPricingNoChange, "按该规则算下来没有价格变化：%s 个商品已是目标价，未写入调价记录。"}
+	productPricingApplied  = productBulkText{productenums.BulkPricingApplied, "已按规则改价：共改 %s 个变体（%s 个商品已是目标价）。"}
+	productPricingAllSkip  = productBulkText{productenums.BulkPricingAllSkip, "没有可改价的变体：%s 个商品被跳过（%s）。"}
+	productPricingPartial  = productBulkText{productenums.BulkPricingPartial, "已改 %s 个变体，另有 %s 个商品被跳过（%s）。"}
 )
 
 // 变体清单保存的结论文案（详情页 ?done=）。
-const (
-	productVariantSaveNoChange = "变体清单与库里一致，没有需要保存的变化。"
-	productVariantSaveSaved    = "已保存变体清单：新增 %d 个、修改 SKU %d 个、删除 %d 个。"
-	productVariantSaveSkipped  = "跳过 %d 个：%s"
+var (
+	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
+	productVariantSaveSaved    = productBulkText{productenums.BulkVariantSaved, "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。"}
+	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
 )
 
 // productReasonTexts 可原样展示的**业务错误文案**（当前语言）。
@@ -130,27 +153,27 @@ func productNoticeTexts(c *gin.Context) []string {
 		tr(shell.MsgInternalError, productErrInternalFallback),
 		shell.BulkIDsNoticeTemplate(c),
 		productQuantityInvalidText,
-		bulkPricingNothingSelected,
-		productVariantSaveNoChange,
+		productBulkTextOf(c, bulkPricingNothingSelected),
+		productBulkTextOf(c, productVariantSaveNoChange),
 	)
 	out = append(out, own...)
-	// 模板直接过 NoticeTemplate（它已经把 %d 换成占位并归一数字）。
+	// 纯计数模板直接过 NoticeTemplate（它把 %s 换成占位并归一数字）。
 	// 不能写成 Sprintf(tpl, 0, 0)：单占位符的模板会多出 %!(EXTRA int=0)，
 	// 候选与写侧文案从此**永远**不相等 —— 五条「已删除 N 个XX」的批量回执
 	// 会静默变成「没有这条提示」。
 	for _, tpl := range productBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
+		out = append(out, shell.NoticeTemplate(productBulkTextOf(c, tpl)))
 	}
-	out = append(out, shell.NoticeTemplate(fmt.Sprintf(productVariantSaveSaved, 0, 0, 0)))
 	out = append(out,
-		shell.NoticeTemplate(fmt.Sprintf(productPricingNoChange, 0)),
-		shell.NoticeTemplate(fmt.Sprintf(productPricingApplied, 0, 0)),
+		shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved), "0", "0", "0")),
+		shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productPricingNoChange), "0")),
+		shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productPricingApplied), "0", "0")),
 	)
 	// 带跳过原因的两种形态：原因取值的每一种都与模板组合一次（reason 本身是受控文案）。
 	for _, reason := range reasons {
 		out = append(out,
-			shell.NoticeTemplate(fmt.Sprintf(productPricingAllSkip, 0, reason)),
-			shell.NoticeTemplate(fmt.Sprintf(productPricingPartial, 0, 0, reason)),
+			shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productPricingAllSkip), "0", reason)),
+			shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productPricingPartial), "0", "0", reason)),
 		)
 	}
 	return out
@@ -180,23 +203,40 @@ func productFacingNotice(c *gin.Context, raw string) string {
 // 前半句按模板归一比对；跳过段按**分号逐段**校验，每段都必须是 productReasonTexts 里的
 // 受控原因文案 —— 也就是说这一句里除了计数与原因枚举，不可能夹带别的文字。
 func productVariantNoticeMatches(c *gin.Context, msg string) bool {
-	if msg == productVariantSaveNoChange {
+	if msg == productBulkTextOf(c, productVariantSaveNoChange) {
 		return true
 	}
-	head, tail, hasTail := strings.Cut(msg, " ")
-	saved := shell.NoticeTemplate(fmt.Sprintf(productVariantSaveSaved, 0, 0, 0))
-	if shell.NormalizeNoticeDigits(head) != saved {
-		return false
-	}
-	if !hasTail {
+	saved := shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved), "0", "0", "0"))
+	if shell.NormalizeNoticeDigits(msg) == saved {
 		return true
 	}
-	return productSkipListMatches(tail, productReasonTexts(c))
+	reasons := productReasonTexts(c)
+	// 写侧用**单个空格**把「已保存…」与「跳过…」两段 join 起来，而两段各自都可能含空格 ——
+	// 英文模板就是如此（"Variant list saved: %s added, %s SKU updated, %s deleted."）。
+	// 此前按**第一个**空格切（strings.Cut）是拿中文模板当隐含前提：中文句子里没有空格，
+	// 于是它一直是对的；一旦按当前语言取到英文，第一个空格落在句首那段里，
+	// 「已保存变体清单」这条回执就会被判成伪造而静默消失。
+	// 现在逐个空格位置试切：前缀与模板归一后相等、后缀是合法的跳过列表即命中。
+	for i, r := range msg {
+		if r != ' ' {
+			continue
+		}
+		if shell.NormalizeNoticeDigits(msg[:i]) != saved {
+			continue
+		}
+		if productSkipListMatches(c, msg[i+1:], reasons) {
+			return true
+		}
+	}
+	return false
 }
 
 // productSkipListMatches 判定「跳过 N 个：原因1；原因2」形态。
-func productSkipListMatches(tail string, reasons []string) bool {
-	prefix := shell.NoticeTemplate(fmt.Sprintf(productVariantSaveSkipped, 0, ""))
+//
+// 前缀模板同样走 productBulkTextOf（写侧 variantSaveNotice 用的是同一个取法），
+// 否则英文页面上这条逐段校验会整体失配、把真实的保存回执判成伪造。
+func productSkipListMatches(c *gin.Context, tail string, reasons []string) bool {
+	prefix := shell.NoticeTemplate(fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped), "0", ""))
 	norm := shell.NormalizeNoticeDigits(tail)
 	if !strings.HasPrefix(norm, prefix) {
 		return false

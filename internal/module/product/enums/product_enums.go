@@ -350,3 +350,38 @@ const (
 	// BundleMemberOptionsExceeded 加到配置的选项数量上限了（其余候选逐条列出，不静默截断）。
 	BundleMemberOptionsExceeded = "BundleMemberOptionsExceeded"
 )
+
+// --- 批量操作的结论文案（页面回执，不是错误白名单）---
+//
+// 与 admin / order 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀**。
+// 这些句子是 handler 按计数拼出的整句回执（进 ?done= / ?err=），不是 service 返回的错误，
+// 因此不进 productErrFallbacks / productErrSentinels 那套错误白名单 ——
+// 它们走的是 product_err.go 的 productNoticeTexts 回执白名单。
+//
+// 中文原文全部留在 inbound/http/product_err.go（与写侧共用的那份 bulkTemplate 表绑在一起），
+// 这里的常量只声明 key。
+const (
+	// 批量删除：五个实体各一对（部分成功 / 全部成功）。
+	BulkTagPartial      = "product.bulk.tagPartial"
+	BulkTagDone         = "product.bulk.tagDone"
+	BulkAttrPartial     = "product.bulk.attrPartial"
+	BulkAttrDone        = "product.bulk.attrDone"
+	BulkCategoryPartial = "product.bulk.categoryPartial"
+	BulkCategoryDone    = "product.bulk.categoryDone"
+	BulkBrandPartial    = "product.bulk.brandPartial"
+	BulkBrandDone       = "product.bulk.brandDone"
+	BulkProductPartial  = "product.bulk.productPartial"
+	BulkProductDone     = "product.bulk.productDone"
+
+	// 批量改价：没勾选 / 四种结论。
+	BulkPricingNoneSelected = "product.bulk.pricingNoneSelected"
+	BulkPricingNoChange     = "product.bulk.pricingNoChange"
+	BulkPricingApplied      = "product.bulk.pricingApplied"
+	BulkPricingAllSkip      = "product.bulk.pricingAllSkip"
+	BulkPricingPartial      = "product.bulk.pricingPartial"
+
+	// 变体清单保存：无变化 / 已保存 / 跳过段。
+	BulkVariantNoChange = "product.bulk.variantSaveNoChange"
+	BulkVariantSaved    = "product.bulk.variantSaveSaved"
+	BulkVariantSkipped  = "product.bulk.variantSaveSkipped"
+)

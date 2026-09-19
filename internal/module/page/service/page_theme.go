@@ -121,19 +121,30 @@ func (s *Service) RefreshStructureForTheme(ctx context.Context, themeID string, 
 // 逐工程扇出（DB-009 第三批）：入口只有 themeID，说不出工程；pages 带 FORCE 策略，
 // 不逐工程设作用域时这条 UPDATE 在换非超级角色后静默匹配 0 行 —— 现象是「换了主题
 // 或改了页眉块，页面却一直不被标记待重建」，站点上继续跑旧产物。
+//
+// 影响面回执（逐页样本）：逐工程 UPDATE 返回的命中 id 在这里聚合去重，扇出结束后记一条
+// 「本次影响 N 个页面 + 前 K 条标题 / 路径」的结构化日志（logStaleImpact）。整站标记原先
+// 没有任何逐页凭据，读者只能看到一个全局 stale 计数 —— 而「主题一变全站都 stale」正是
+// 那个计数最没有区分度的场景。
+//
+// 方法签名与 contract 不变（调用方依赖它）：样本只进日志，不出现在返回值里。
 func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
 		return err
 	}
+	hit := &staleIDCollector{}
 	for _, projectID := range projectIDs {
 		if ctx.Err() != nil {
 			break
 		}
-		if err := s.model.MarkStaleForTheme(ctx, projectID, themeID); err != nil {
-			return err
+		ids, merr := s.model.MarkStaleForTheme(ctx, projectID, themeID)
+		if merr != nil {
+			return merr
 		}
+		hit.add(ids)
 	}
+	s.logStaleImpact(ctx, "theme:"+themeID, hit.list())
 	return nil
 }
 
@@ -142,19 +153,27 @@ func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
 //
 // 逐工程扇出（DB-009 第三批）：块 id 是跨工程语义（调用方只给 id），而作用域只能是
 // 某一个具体工程 —— 逐个工程各设一次，命中集合是各工程之和，不做「不限工程」的默认。
+//
+// 影响面回执同 MarkStaleForTheme：逐工程命中的页面在扇出结束后聚合成一条
+// 「N 个页面 + 前 K 条标题 / 路径」的日志 —— 一个全局 stale 计数回答不了
+// 「改了这块，是哪些页面要重建」。
 func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) error {
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
 		return err
 	}
+	hit := &staleIDCollector{}
 	for _, projectID := range projectIDs {
 		if ctx.Err() != nil {
 			break
 		}
-		if err := s.model.MarkStaleForBlock(ctx, projectID, blockID); err != nil {
-			return err
+		ids, merr := s.model.MarkStaleForBlock(ctx, projectID, blockID)
+		if merr != nil {
+			return merr
 		}
+		hit.add(ids)
 	}
+	s.logStaleImpact(ctx, "block:"+blockID, hit.list())
 	return nil
 }
 

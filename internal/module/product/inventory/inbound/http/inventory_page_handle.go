@@ -39,6 +39,7 @@ import (
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -378,13 +379,11 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	extra := url.Values{}
-	tr := shell.TranslateFor(c)
 	switch {
 	case skipped > 0:
-		extra.Set("err", fmt.Sprintf(tr("admin.inventory.bulk.partial",
-			"已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）"), deleted, skipped))
+		extra.Set("err", fmt.Sprintf(inventoryBulkText(c, inventoryBulkWarehousePartial), deleted, skipped))
 	case deleted > 0:
-		extra.Set("done", fmt.Sprintf(tr("admin.inventory.bulk.deleted", "已删除 %d 个仓库"), deleted))
+		extra.Set("done", fmt.Sprintf(inventoryBulkText(c, inventoryBulkWarehouseDone), deleted))
 	}
 	c.Redirect(http.StatusFound, inventoryURL(inventoryWarehousesPath, projectID, extra))
 }
@@ -967,15 +966,46 @@ const (
 	inventoryActionDoneFallback = "操作已完成"
 )
 
-// inventoryBulkNoticeTemplates 批量操作的结论文案模板（与写侧共用同一份 fallback 字面量）。
+// inventoryBulkNoticeTemplate 批量结论文案的一条模板（i18n key + 中文兜底）。
 //
-// 写侧 InventoryWarehousesBulkDelete 用 tr(key, fallback) 取词后 Sprintf；读侧按当前语言
-// 取同一条词条再归一比对（数字归一后相等）。两处若各写一份字面量，
-// 改词条时读侧会静默失配（提示在写侧可见、到了页面上变成归口文案）。
-var inventoryBulkNoticeTemplates = []struct{ key, fallback string }{
-	{"admin.inventory.bulk.partial", "已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）"},
-	{"admin.inventory.bulk.deleted", "已删除 %d 个仓库"},
+// 本批把它从匿名结构体提成具名类型，是为了让**写侧与读侧共用同一个取法**
+// （inventoryBulkText）：此前读侧走 tr(tpl.key, tpl.fallback)、写侧各写各的，
+// 货源页（inventory_source_page_handle.go）干脆还是硬编码中文。
+type inventoryBulkNoticeTemplate struct {
+	key, fallback string
+	// strict 只允许 %s 占位符：词条被写坏时回落中文兜底。
+	//
+	// 仓库的两条是迁移 243 已落库的词条（中英都用 %d），保持宽松路径 = 与旧行为逐字一致；
+	// **新增**的词条一律 strict（%s + strconv.Itoa），因为 %d 会让「占位符个数写错」
+	// 在 Sprintf 时静默产出 %!d(MISSING) 之类的东西，而这条路直接给运营看。
+	strict bool
 }
+
+// inventoryBulkText 取一条批量结论文案的当前语言模板（写侧与读侧**共用这一个取法**）。
+func inventoryBulkText(c *gin.Context, t inventoryBulkNoticeTemplate) string {
+	text := shell.TranslateFor(c)(t.key, t.fallback)
+	if t.strict && !i18n.HasStringPlaceholdersOnly(text) {
+		return t.fallback
+	}
+	return text
+}
+
+// inventoryBulkNoticeTemplates 批量操作的结论文案模板（写侧与读侧共用同一份）。
+//
+// 写侧各 BulkDelete 用 inventoryBulkText 取词后 Sprintf；读侧 inventoryNoticeTexts 从
+// **同一张表**取同一条词条再归一比对（数字归一后相等）。两处若各写一份字面量，
+// 改词条时读侧会静默失配（提示在写侧可见、到了页面上变成归口文案）。
+var (
+	inventoryBulkWarehousePartial = inventoryBulkNoticeTemplate{"admin.inventory.bulk.partial", "已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）", false}
+	inventoryBulkWarehouseDone    = inventoryBulkNoticeTemplate{"admin.inventory.bulk.deleted", "已删除 %d 个仓库", false}
+	inventoryBulkSourcePartial    = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourcePartial", "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）", true}
+	inventoryBulkSourceDone       = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourceDone", "已删除 %s 个货源", true}
+
+	inventoryBulkNoticeTemplates = []inventoryBulkNoticeTemplate{
+		inventoryBulkWarehousePartial, inventoryBulkWarehouseDone,
+		inventoryBulkSourcePartial, inventoryBulkSourceDone,
+	}
+)
 
 // inventoryNoticeTexts 库存模块各页面可以原样展示的回执文案（当前语言）。
 func inventoryNoticeTexts(c *gin.Context) []string {
@@ -994,7 +1024,7 @@ func inventoryNoticeTexts(c *gin.Context) []string {
 		shell.BulkIDsNoticeTemplate(c),
 	)
 	for _, tpl := range inventoryBulkNoticeTemplates {
-		out = append(out, shell.NoticeTemplate(tr(tpl.key, tpl.fallback)))
+		out = append(out, shell.NoticeTemplate(inventoryBulkText(c, tpl)))
 	}
 	return out
 }

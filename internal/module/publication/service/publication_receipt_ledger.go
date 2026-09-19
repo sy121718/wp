@@ -81,7 +81,7 @@ func (s *Service) BeginPublishReceipt(ctx context.Context, req *pubdto.BeginPubl
 	if id := strings.TrimSpace(req.FromArtifactID); id != "" {
 		entity.FromArtifact = &id
 	}
-	if err = s.model.ReceiptDB(ctx).Create(entity).Error; err != nil {
+	if err = s.model.CreateReceipt(ctx, entity); err != nil {
 		return "", err
 	}
 	return strconv.FormatInt(entity.ID, 10), nil
@@ -108,9 +108,7 @@ func (s *Service) finishReceipt(ctx context.Context, receiptID, state string) (e
 	if perr != nil {
 		return errors.New(pubenums.ErrInvalidParam)
 	}
-	return s.model.ReceiptDB(ctx).
-		Where("id = ? AND receipt_state = ?", rid, pubmodel.ReceiptPending).
-		Updates(map[string]any{"receipt_state": state, "completed_at": time.Now().UTC()}).Error
+	return s.model.FinishPendingReceipt(ctx, rid, state, time.Now().UTC())
 }
 
 // ListPendingReceipts 列出未完成的回执（启动全量恢复的输入）。

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -313,7 +314,7 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	if id == "" {
-		c.Redirect(http.StatusSeeOther, pagesBackURL(pagesLocalNoticeMissingID, ""))
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageBulkTextOf(c, pagesLocalNoticeMissingID), ""))
 		return
 	}
 	if err := h.pages.Delete(c.Request.Context(), &pagecontract.DeleteReq{ID: id}); err != nil {
@@ -322,7 +323,7 @@ func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 		c.Redirect(http.StatusSeeOther, pagesBackURL(pageFacingOrInternal(c, err), ""))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, pagesBackURL("", fmt.Sprintf(pagesBulkResultTemplates[1], 1)))
+	c.Redirect(http.StatusSeeOther, pagesBackURL("", fmt.Sprintf(pageBulkTextOf(c, pagesBulkResultTemplates[1]), strconv.Itoa(1))))
 }
 
 // PagesBulkDelete 批量删除页面（POST /admin/pages/bulk-delete）。
@@ -348,7 +349,7 @@ func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
-	msg := pagesBulkDeleteResult(deleted, skipped)
+	msg := pagesBulkDeleteResult(c, deleted, skipped)
 	if skipped > 0 {
 		c.Redirect(http.StatusSeeOther, pagesBackURL(msg, ""))
 		return
@@ -358,16 +359,16 @@ func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
 
 // pagesBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
-func pagesBulkDeleteResult(deleted, skipped int) string {
+func pagesBulkDeleteResult(c *gin.Context, deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return pagesBulkResultTemplates[0]
+		return pageBulkTextOf(c, pagesBulkResultTemplates[0])
 	case skipped == 0:
-		return fmt.Sprintf(pagesBulkResultTemplates[1], deleted)
+		return fmt.Sprintf(pageBulkTextOf(c, pagesBulkResultTemplates[1]), strconv.Itoa(deleted))
 	case deleted == 0:
-		return fmt.Sprintf(pagesBulkResultTemplates[2], skipped)
+		return fmt.Sprintf(pageBulkTextOf(c, pagesBulkResultTemplates[2]), strconv.Itoa(skipped))
 	default:
-		return fmt.Sprintf(pagesBulkResultTemplates[3], deleted, skipped)
+		return fmt.Sprintf(pageBulkTextOf(c, pagesBulkResultTemplates[3]), strconv.Itoa(deleted), strconv.Itoa(skipped))
 	}
 }
 

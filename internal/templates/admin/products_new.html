@@ -33,13 +33,13 @@
                     </li>
                     {{end}}
                 </ul>
-                <p class="hint">创建后在商品详情页绑定模板、预览并进入可视化自定义（只影响该商品）。</p>
+                <p class="hint">{{ .["t"]("admin.products.new.template.boundHint", "创建后在商品详情页绑定模板、预览并进入可视化自定义（只影响该商品）。") }}</p>
                 {{else}}
-                <p class="hint">暂无商品详情模板，将使用默认结构发布。</p>
+                <p class="hint">{{ .["t"]("admin.products.new.template.noneHint", "暂无商品详情模板，将使用默认结构发布。") }}</p>
                 {{end}}
                 {{end}}
             {{else}}
-            <p class="hint">模板能力未装配，商品将使用默认结构发布。</p>
+            <p class="hint">{{ .["t"]("admin.products.new.template.unavailableHint", "模板能力未装配，商品将使用默认结构发布。") }}</p>
             {{end}}
         </section>
     </div>

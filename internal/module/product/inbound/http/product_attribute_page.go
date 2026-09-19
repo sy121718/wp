@@ -291,9 +291,10 @@ func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
 	target := "/admin/product-attributes?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf(productAttrBulkPartial, deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productAttrBulkPartial),
+			strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf(productAttrBulkDone, deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productAttrBulkDone), strconv.Itoa(deleted)))
 	}
 	c.Redirect(http.StatusFound, target)
 }

@@ -16,7 +16,6 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // normalizeLang 归一化产物语言：空 → 站点默认语言（i18n.default_lang，未初始化回退 zh-CN）。
@@ -100,11 +99,12 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 
 	lang := normalizeLang(req.Lang)
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		if err := tx.Create(entity).Error; err != nil {
-			if database.IsUniqueViolation(err) {
+		// 唯一冲突是不是「版本冲突」是业务判定，留在 service；SQL 在 model 的具名方法里。
+		if cerr := s.model.CreateArtifactTx(ctx, tx, entity); cerr != nil {
+			if database.IsUniqueViolation(cerr) {
 				return errArtifactVersionConflict
 			}
-			return err
+			return cerr
 		}
 		// 内容对象闭包：manifest.files 的每个文件哈希都是一条共享内容对象。
 		//
@@ -121,14 +121,14 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 				continue
 			}
 			seenHashes[fileHash] = struct{}{}
-			if err := ensureContentObject(tx, fileHash, req.ArtifactProvider, artifactObjectKey(req.ArtifactKey, fileName), now); err != nil {
-				return err
+			if cerr := s.model.EnsureContentObjectTx(ctx, tx, fileHash, req.ArtifactProvider, artifactObjectKey(req.ArtifactKey, fileName), now); cerr != nil {
+				return cerr
 			}
-			if err := tx.Create(&artifactmodel.PageArtifactObjectEntity{
+			if cerr := s.model.CreateArtifactObjectTx(ctx, tx, &artifactmodel.PageArtifactObjectEntity{
 				ArtifactID:  entity.ID,
 				ContentHash: fileHash,
-			}).Error; err != nil {
-				return err
+			}); cerr != nil {
+				return cerr
 			}
 		}
 		return nil
@@ -318,36 +318,9 @@ func artifactObjectKey(artifactKey, fileName string) string {
 	return base + "/" + name
 }
 
-// ensureContentObject 幂等写入共享内容对象（content_objects，content_hash 为主键）。
-//
-// 语义：内容寻址下同一 content_hash 代表同一内容字节，其物理位置应当唯一，
-// 因此采用 first-writer-wins —— 首个引用该 hash 的 (provider, object_key)
-// 即该对象的规范 Locator，后续引用（即使 provider/object_key 不同）只共享
-// 对象行，不更新、不覆盖。这是有意的设计权衡而非缺陷：
-//   - content_hash 主键约束保证一行一对象，位置唯一，不做多存储冗余登记；
-//   - 确定性构建不变量（同输入同产物）保证正常路径下同内容同位置，
-//     不同 provider 引用同一 hash 是跨存储冗余信号，首个写入即权威；
-//   - 若改为 last-writer-wins，同一对象位置会随引用顺序漂移，
-//     破坏内容寻址的不可变语义，且并发写入存在竞态。
-//
-// 产物行（page_artifacts.artifact_provider/artifact_key）各自记录其自身位置，
-// 不受本函数的 first-writer-wins 影响。
-func ensureContentObject(tx *gorm.DB, contentHash, provider, objectKey string, now time.Time) error {
-	// 单条 INSERT ... ON CONFLICT DO NOTHING（PG 方言）原子幂等写入，替代原
-	// Count→Create 读-改-写：并发 EnsureRecord 同一 hash 时，原实现双双 Count=0、
-	// 一方 Create 撞 content_hash 主键，被 mapPersistenceError 误报为
-	// ErrArtifactMismatch；ON CONFLICT 在语句内原子消化唯一冲突，无 TOCTOU。
-	// 冲突 target 必须收窄到 content_hash（主键）：无 target 的 DO NOTHING 会把**任何**唯一冲突
-	// 都静默吞掉 —— 包括「同一产物的两个文件共用一个 object_key」这种真错，
-	// 表现为「内容对象行没写进去」，随后闭包插入报外键违例，排查方向直接被带偏。
-	return tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "content_hash"}}, DoNothing: true}).Create(&artifactmodel.ContentObjectEntity{
-		ContentHash: contentHash,
-		Provider:    provider,
-		ObjectKey:   objectKey,
-		ByteSize:    0,
-		CreatedAt:   now,
-	}).Error
-}
+// 共享内容对象（content_objects）的幂等写入已下移到 model：见
+// artifactmodel.EnsureContentObjectTx —— ON CONFLICT (content_hash) DO NOTHING 与
+// first-writer-wins 的完整论证跟 SQL 放在一起，避免同一份判定分居两处。
 
 func defaultCreator(createdBy string) string {
 	if strings.TrimSpace(createdBy) == "" {

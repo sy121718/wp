@@ -58,6 +58,32 @@ const (
 	MsgRedirectMerged  = "MsgRedirectMerged"  // 重定向链已合并
 )
 
+// --- 批量操作的结论文案（页面回执，不是错误白名单）---
+//
+// 与其它模块的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀** ——
+// 这几句是 handler 按计数拼出的整句回执（进 ?done= / ?err=），不是 service 错误，
+// 因此不进 pageFacingKeys（那一张是「业务错误能不能原样透出」的白名单）。
+//
+// 中文原文留在 inbound/http/page_err.go 与 page_redirect_handle.go
+// （与写读共用的那份模板结构体绑在一起），这里只声明 key。
+const (
+	// 页面列表批量删除的四个结论分支（四条都是读侧候选，走 ?done= / ?err=）。
+	BulkPageNoneSelected = "page.bulk.pageNoneSelected"
+	BulkPageAllDeleted   = "page.bulk.pageAllDeleted"
+	BulkPageAllSkipped   = "page.bulk.pageAllSkipped"
+	BulkPagePartial      = "page.bulk.pagePartial"
+	// BulkPageMissingID 单条删除时缺少页面 id（?err= 上的参数级提示）。
+	BulkPageMissingID = "page.bulk.pageMissingID"
+
+	// 重定向批量删除的四个结论分支。它走的是 ?ok=bulk&dn=N&sk=M 计数回带
+	//（文案由服务端按计数重拼），伪造面比列表页的 ?done= 少一层，但同样要 key 化 ——
+	// 否则英文界面上这四个分支永远显示中文。
+	BulkRedirectNoneSelected = "page.bulk.redirectNoneSelected"
+	BulkRedirectAllDeleted   = "page.bulk.redirectAllDeleted"
+	BulkRedirectAllSkipped   = "page.bulk.redirectAllSkipped"
+	BulkRedirectPartial      = "page.bulk.redirectPartial"
+)
+
 // 系统页面槽位：把「结算页是哪一页」这类事实固定下来（BIZ-1）。
 //
 // 键名会进数据库、API 参数与后台表单 —— **新增可以，改名等于破坏既有绑定**

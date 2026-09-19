@@ -64,10 +64,10 @@ func (s *Service) ActivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.Activ
 		ToArtifact: strPtr(req.ArtifactID), ReceiptState: pubmodel.ReceiptPending,
 		ReceiptData: receiptData, CreateTime: now,
 	}
-	if cerr := tx.WithContext(ctx).Create(receipt).Error; cerr != nil {
+	if cerr := s.model.CreateReceiptTx(ctx, tx, receipt); cerr != nil {
 		return nil, cerr
 	}
-	if aerr := activateRouteIn(tx.WithContext(ctx), req, path, owner, now); aerr != nil {
+	if aerr := s.model.ActivateRouteTx(ctx, tx, req.ProjectID, path, owner.pageIDPtr(), owner.presentationIDPtr(), req.ArtifactID, now); aerr != nil {
 		if errors.Is(aerr, errRouteOccupied) {
 			return nil, errors.New(pubenums.ErrRouteOccupied)
 		}
@@ -91,7 +91,7 @@ func (s *Service) DeactivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.Dea
 	if nerr != nil {
 		return nerr
 	}
-	if derr := deactivateIn(tx.WithContext(ctx), req, path).Error; derr != nil {
+	if derr := s.model.DeactivateRouteTx(ctx, tx, req.ProjectID, path, req.PageID, req.PresentationID); derr != nil {
 		return derr
 	}
 	return nil
@@ -129,7 +129,7 @@ func (s *Service) RedirectTx(ctx context.Context, tx *gorm.DB, req *pubdto.Redir
 		ToArtifact: toArtifact, ReceiptState: pubmodel.ReceiptPending,
 		ReceiptData: receiptData, CreateTime: now,
 	}
-	if cerr := tx.WithContext(ctx).Create(receipt).Error; cerr != nil {
+	if cerr := s.model.CreateReceiptTx(ctx, tx, receipt); cerr != nil {
 		return nil, cerr
 	}
 	if rerr := s.model.RedirectInTx(ctx, tx, req.ProjectID, oldPath, owner.pageID, owner.presentationID, toArtifact, now); rerr != nil {
@@ -184,7 +184,7 @@ func (s *Service) ReservePathTx(ctx context.Context, tx *gorm.DB, req *pubdto.Re
 	if nerr != nil {
 		return nerr
 	}
-	if rerr := reservePathIn(tx.WithContext(ctx), req, path, time.Now().UTC()); rerr != nil {
+	if rerr := s.model.ReservePathTx(ctx, tx, req.ProjectID, path, req.PageID, time.Now().UTC()); rerr != nil {
 		if errors.Is(rerr, errRouteOccupied) {
 			return errors.New(pubenums.ErrRouteOccupied)
 		}
@@ -201,5 +201,20 @@ func (s *Service) DeleteRoutesByPageTx(ctx context.Context, tx *gorm.DB, req *pu
 	if req == nil {
 		return errors.New(pubenums.ErrInvalidParam)
 	}
-	return deleteRoutesByPageIn(tx.WithContext(ctx), req)
+	return s.model.DeleteRoutesByPageTx(ctx, tx, req.ProjectID, req.PageID)
+}
+
+// DeleteRoutesByPresentationTx 在外层事务内清理展示实例全部路径占用（幂等）。
+//
+// 与 DeleteRoutesByPageTx 同形，区别只在归属列。调用方是 presentation 的
+// DeleteInstance —— 它要删的实例行在 presentation 模块，而这里的 page_routes 行
+// 在 publication 模块，两处必须同一个事务（跨模块 DB 写不做补偿）。
+func (s *Service) DeleteRoutesByPresentationTx(ctx context.Context, tx *gorm.DB, req *pubdto.DeleteRoutesByPresentationReq) (err error) {
+	if tx == nil {
+		return errTxRequired
+	}
+	if req == nil {
+		return errors.New(pubenums.ErrInvalidParam)
+	}
+	return s.model.DeleteRoutesByPresentationTx(ctx, tx, req.ProjectID, req.PresentationID)
 }

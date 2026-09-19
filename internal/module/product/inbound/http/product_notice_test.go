@@ -135,10 +135,14 @@ func TestProductPageErrFallsBackForForged(t *testing.T) {
 
 // TestProductPageDoneMissesToEmpty 成功态的 fallback 是空串（不是归口文案）。
 func TestProductPageDoneMissesToEmpty(t *testing.T) {
-	if got := productPageDone(productDoneCtx(t, "已删除 3 个标签")); got != "已删除 3 个标签" {
-		t.Errorf("写侧批量结论应被放行，实际 %q", got)
+	// 写侧文案从**同一个取法**（productBulkTextOf）构造，不手抄中文 ——
+	// 手抄的第二份真相会在改词条时静默漂移（本包单跑时 i18n 未初始化，取到的是中文兜底）。
+	c := productDoneCtx(t, "")
+	written := fmt.Sprintf(productBulkTextOf(c, productTagBulkDone), "3")
+	if got := productPageDone(productDoneCtx(t, written)); got != written {
+		t.Errorf("写侧批量结论应被放行，实际 %q（want %q）", got, written)
 	}
-	for _, raw := range []string{"", "伪造的成功文案", strings.Repeat("已删除 3 个标签", 100)} {
+	for _, raw := range []string{"", "伪造的成功文案", strings.Repeat(written, 100)} {
 		if got := productPageDone(productDoneCtx(t, raw)); got != "" {
 			t.Errorf("未命中应落空串，实际 %q（raw=%q）", got, raw)
 		}
@@ -183,14 +187,21 @@ func TestProductDetailTemplateBackURLRoundTrip(t *testing.T) {
 // 品牌 / 商品」的批量回执于是**永远**匹配不上，页面上的成功提示静默消失。
 // 按占位符个数生成实例（写侧就是这么 Sprintf 的），逐个走一遍判定。
 func TestProductBulkTemplatesAreAllRecognised(t *testing.T) {
+	c := productDoneCtx(t, "")
 	for _, tpl := range productBulkResultTemplates {
-		args := make([]any, strings.Count(tpl, "%d"))
-		for i := range args {
-			args[i] = 3
+		// 模板取**当前语言**（与写侧同一个取法）：词条改措辞、或英文页面上取到英文，
+		// 读侧候选都必须跟着变，否则这条回执会在页面上静默消失。
+		text := productBulkTextOf(c, tpl)
+		if strings.TrimSpace(text) == "" {
+			t.Fatalf("%s 取词为空（i18n key 打错或词条被写坏）", tpl.key)
 		}
-		rendered := fmt.Sprintf(tpl, args...)
+		args := make([]any, strings.Count(text, "%s"))
+		for i := range args {
+			args[i] = "3"
+		}
+		rendered := fmt.Sprintf(text, args...)
 		if got := productPageDone(productDoneCtx(t, rendered)); got != rendered {
-			t.Errorf("模板 %q 的实例读侧认不出来（got %q）—— 写侧放进去的回执会在页面上消失", tpl, got)
+			t.Errorf("模板 %q 的实例读侧认不出来（got %q）—— 写侧放进去的回执会在页面上消失", tpl.key, got)
 		}
 	}
 }

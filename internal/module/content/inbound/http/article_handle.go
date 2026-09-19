@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 const (
@@ -138,7 +140,7 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	// （防数据库原文直出），带计数的动态文案进不了那张表（值互不相同）。回显因此走
 	// articlePageDone 的受控出口 —— 值由服务端拼装，但**页面不是可信边界**：
 	// ?done=任意文案 谁都能手写，原样渲染出来就是一条顶着「成功」样式的伪造消息。
-	data["Done"] = articlePageDone(c.Query("done"))
+	data["Done"] = articlePageDone(c, c.Query("done"))
 	c.HTML(http.StatusOK, "admin/articles.html", shell.Prepare(c, data))
 }
 
@@ -237,41 +239,60 @@ func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	c.Redirect(http.StatusFound, "/admin/articles?done="+url.QueryEscape(articleBulkDeleteResult(deleted, skipped)))
+	c.Redirect(http.StatusFound, "/admin/articles?done="+url.QueryEscape(articleBulkDeleteResult(c, deleted, skipped)))
 }
 
-// articleBulkResultTemplates 批量删除的四个结论分支（**写读共用这一份字面量**）。
+// articleBulkText 批量结论文案的一条模板（i18n key + 中文原文）。
 //
-// 写侧 articleBulkDeleteResult 用它 Sprintf 出文案，读侧 articleDoneTexts 用它经
-// shell.NoticeTemplate 归一后整体比对。各写一份的后果是静默的 —— 写侧改了措辞，
-// 读侧候选不再命中，运营看到的是「没有这条提示」（成功态未命中落空串）。
-var articleBulkResultTemplates = []string{
-	"没有选中任何文章，列表未改动。",
-	"已删除 %d 篇文章。",
-	"%d 篇文章都未能删除，列表未改动。",
-	"已删除 %d 篇，%d 篇未能删除（可能已被删除）。",
+// **key 与中文原文只有这一份**：写侧 articleBulkDeleteResult 拿它 Sprintf 出整句，
+// 读侧 articleDoneTexts 拿**同一个值**、经同一处取词（articleBulkTextOf）得到当前语言模板
+// 再归一比对。读侧另抄一份中文的后果是静默的 —— 写侧改了措辞候选就失配，
+// 页面上变成「没有这条提示」（成功态未命中落空串）。
+type articleBulkText struct{ key, fallback string }
+
+// articleBulkTextOf 取一条批量结论文案的当前语言文本（写侧与读侧**共用这一个取法**）。
+//
+// 词条混进 %d 之类协议外占位符时回落中文原文（本文件的模板一律只允许 %s，
+// 数字先经 strconv.Itoa）—— 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
+func articleBulkTextOf(c *gin.Context, t articleBulkText) string {
+	text := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(text) {
+		return t.fallback
+	}
+	return text
+}
+
+// articleBulkResultTemplates 批量删除的四个结论分支（**写读共用这一份**）。
+//
+// 写侧 articleBulkDeleteResult 用它 Sprintf 出文案，读侧 articleDoneTexts 用它（当前语言）
+// 经 shell.NoticeTemplate 归一后整体比对。
+var articleBulkResultTemplates = []articleBulkText{
+	{contentenums.BulkArticleNoneSelected, "没有选中任何文章，列表未改动。"},
+	{contentenums.BulkArticleAllDeleted, "已删除 %s 篇文章。"},
+	{contentenums.BulkArticleAllSkipped, "%s 篇文章都未能删除，列表未改动。"},
+	{contentenums.BulkArticlePartial, "已删除 %s 篇，%s 篇未能删除（可能已被删除）。"},
 }
 
 // articleBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚，
 // 不能只报「操作完成」（部分成功被静默成全部成功，用户不会再去看剩下那几篇）。
-func articleBulkDeleteResult(deleted, skipped int) string {
+func articleBulkDeleteResult(c *gin.Context, deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return articleBulkResultTemplates[0]
+		return articleBulkTextOf(c, articleBulkResultTemplates[0])
 	case skipped == 0:
-		return fmt.Sprintf(articleBulkResultTemplates[1], deleted)
+		return fmt.Sprintf(articleBulkTextOf(c, articleBulkResultTemplates[1]), strconv.Itoa(deleted))
 	case deleted == 0:
-		return fmt.Sprintf(articleBulkResultTemplates[2], skipped)
+		return fmt.Sprintf(articleBulkTextOf(c, articleBulkResultTemplates[2]), strconv.Itoa(skipped))
 	default:
-		return fmt.Sprintf(articleBulkResultTemplates[3], deleted, skipped)
+		return fmt.Sprintf(articleBulkTextOf(c, articleBulkResultTemplates[3]), strconv.Itoa(deleted), strconv.Itoa(skipped))
 	}
 }
 
-// articleDoneTexts 列表页 ?done= 可以原样展示的受控文案（数字归一后可比）。
-func articleDoneTexts() []string {
+// articleDoneTexts 列表页 ?done= 可以原样展示的受控文案（**当前语言**，数字归一后可比）。
+func articleDoneTexts(c *gin.Context) []string {
 	out := make([]string, 0, len(articleBulkResultTemplates))
 	for _, tpl := range articleBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
+		out = append(out, shell.NoticeTemplate(articleBulkTextOf(c, tpl)))
 	}
 	return out
 }
@@ -281,9 +302,9 @@ func articleDoneTexts() []string {
 // 判定用 shell.FacingNotice 的**整体**匹配（逐字 / 数字归一 / 「候选 + ：」），不是
 // strings.Contains —— 后者只要夹带一段已知文案就能往页面上塞任意前缀 / 后缀。
 // 未命中不落归口文案：成功提示没有「必须说点什么」的语义。
-func articlePageDone(raw string) string {
+func articlePageDone(c *gin.Context, raw string) string {
 	return shell.FacingQueryText(raw, "", func(msg string) string {
-		return shell.FacingNotice(msg, articleDoneTexts())
+		return shell.FacingNotice(msg, articleDoneTexts(c))
 	})
 }
 

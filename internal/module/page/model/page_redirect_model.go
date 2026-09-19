@@ -45,11 +45,6 @@ type PageRouteEntity struct {
 
 func (PageRouteEntity) TableName() string { return tableNamePageRoutes }
 
-// RouteDB 返回已绑定 page_routes 表的 GORM 实例。
-func (m *Model) RouteDB(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Model(&PageRouteEntity{})
-}
-
 // ListRedirectRoutes 列出工程下全部重定向行（路径升序，确定性输出）。
 func (m *Model) ListRedirectRoutes(ctx context.Context, projectID string) (list []PageRouteEntity, err error) {
 	if projectID == "" {

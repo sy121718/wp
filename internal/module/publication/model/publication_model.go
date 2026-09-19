@@ -122,6 +122,71 @@ func (m *Model) GetRoute(ctx context.Context, projectID, path string) (e *RouteE
 	return e, nil
 }
 
+// ListRoutePathsByPage 返回页面已激活（active/redirect）的路径集合。
+//
+// 访问面（/site）直接服务 active 目录的文件系统状态：调用方清理页面时必须
+// 按这些路径解除激活（删除符号链接），只删 DB 路由行不会让内容下线。
+// 空结果返回空的非 nil 切片（调用方按 [] 序列化，不是 null）。
+func (m *Model) ListRoutePathsByPage(ctx context.Context, projectID, pageID string) (paths []string, err error) {
+	paths = []string{}
+	if err = m.RouteDB(ctx).
+		Where("project_id = ? AND page_id = ? AND route_kind IN ?",
+			projectID, pageID, []string{RouteActive, RouteRedirect}).
+		Pluck("path", &paths).Error; err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+// ListRoutePathsByPresentation 返回展示实例已激活（active/redirect）的路径集合。
+//
+// 改过 URL 的实例有两条路径：新路径（active）与旧路径（redirect）。删除实例时
+// 必须按这两条都解除访问面激活 —— 只删 DB 路由行会让旧路径的符号链接留在
+// active 目录里继续 301，指向一个已经不存在的页面。
+func (m *Model) ListRoutePathsByPresentation(ctx context.Context, projectID, presentationID string) (paths []string, err error) {
+	paths = []string{}
+	if err = m.RouteDB(ctx).
+		Where("project_id = ? AND presentation_id = ? AND route_kind IN ?",
+			projectID, presentationID, []string{RouteActive, RouteRedirect}).
+		Pluck("path", &paths).Error; err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+// DeleteRoutesByPresentation 清理展示实例全部路径占用（实例删除时释放）。
+// 幂等（无占用时 RowsAffected=0 不报错）。
+//
+// 与 DeleteRoutesByPresentationTx 共用同一份删除条件（见
+// publication_route_tx_model.go 的 deleteRoutesByPresentationScope）。
+func (m *Model) DeleteRoutesByPresentation(ctx context.Context, projectID, presentationID string) error {
+	return m.deleteRoutesByPresentationScope(m.db.WithContext(ctx), projectID, presentationID).
+		Delete(&RouteEntity{}).Error
+}
+
+// IsPathOccupied 查询路径是否被其他实体占用（page_id 为空即展示实例占用，
+// page_id 非 excludePageID 即他人页面占用），供页面创建 / 发布前预检。
+//
+// 三个排除条件都带默认值语义，由调用方原样传入（model 不写业务口径）：
+//   - ExcludePageID 为空时**不能**加 uuid 比较条件：把空串当 uuid 传给 PG 会直接报
+//     invalid input syntax for type uuid: ""（新建页预检不携带排除项，必踩此路径）；
+//   - 展示实例改 URL 时排除自身：它的行 page_id 为 NULL，用 ExcludePageID
+//     排除不掉自己，会把「自己占着旧路径」误判成冲突而无法改名。
+func (m *Model) IsPathOccupied(ctx context.Context, projectID, path, excludePageID, excludePresentationID string) (occupied bool, err error) {
+	var foreign int64
+	q := m.RouteDB(ctx).Where("project_id = ? AND path = ?", projectID, path)
+	if exclude := strings.TrimSpace(excludePageID); exclude != "" {
+		q = q.Where("(page_id IS NULL OR page_id <> ?)", exclude)
+	}
+	if exclude := strings.TrimSpace(excludePresentationID); exclude != "" {
+		q = q.Where("(presentation_id IS NULL OR presentation_id <> ?)", exclude)
+	}
+	if err = q.Count(&foreign).Error; err != nil {
+		return false, err
+	}
+	return foreign > 0, nil
+}
+
 // ListPendingReceipts 读取全部 pending 回执（启动全量恢复扫描）。
 //
 // 不限量、不加锁：调用方（RecoverPendingPublications）在启动时一次收干净，
@@ -194,6 +259,44 @@ func (m *Model) ClaimPendingReceipts(ctx context.Context, sourceType string, act
 func (m *Model) CountPendingReceipts(ctx context.Context, sourceType string, actions []string) (n int64, err error) {
 	err = m.pendingReceiptsQuery(ctx, sourceType, actions).Count(&n).Error
 	return n, err
+}
+
+// —— 回执的写入口（非事务形态）——
+//
+// 与 publication_route_tx_model.go 的 CreateReceiptTx / MarkReceiptStateTx 成对：
+// 事务形态由 service 透传外层句柄（发布链要它与路由写同生共死），本文件这三个是
+// 独立登记 / 独立结案。两条路径都必须走 model 的具名方法 —— service 不得再拿
+// ReceiptDB(ctx) 拼 .Create()/.Where()（AGENTS.md「model 层定位」）。
+//
+// 为什么不能只留事务形态：BeginPublishReceipt / RollbackReceipts 的语义恰恰是
+// 「与后续步骤**不同生共死**」—— 回执先独立落库，后续步骤崩了才有据可查。
+
+// CreateReceipt 写一条发布回执（pending），gorm 回填自增主键（调用方按 e.ID 返回回执 id）。
+func (m *Model) CreateReceipt(ctx context.Context, e *ReceiptEntity) error {
+	return m.ReceiptDB(ctx).Create(e).Error
+}
+
+// RollbackPendingReceipts 把全部 pending 回执标记为 rolled_back（启动恢复），返回处理行数。
+//
+// WHERE 只认 receipt_state = pending：已 committed / rolled_back 的行是既有结论，
+// 恢复流程不得覆盖（进程重复启动时因此是幂等的）。
+func (m *Model) RollbackPendingReceipts(ctx context.Context, now time.Time) (n int64, err error) {
+	result := m.ReceiptDB(ctx).
+		Where("receipt_state = ?", ReceiptPending).
+		Updates(map[string]any{"receipt_state": ReceiptRolledBack, "completed_at": now})
+	return result.RowsAffected, result.Error
+}
+
+// FinishPendingReceipt 把一条 pending 回执置为终态（committed / rolled_back）。
+//
+// WHERE 里的 receipt_state = pending 是**幂等守卫**：重复调用（重试）与并发结案都不会
+// 覆盖已定稿的行。与 MarkReceiptStateTx 是同一列上的两种语义，不能互换 ——
+// 那个按 id 无条件回写（写的是发布事务内刚建出来的 pending 行，必须能一起回滚），
+// 这个只能「从 pending 前进」（跨进程收敛，行可能已被另一个实例结案）。
+func (m *Model) FinishPendingReceipt(ctx context.Context, id int64, state string, now time.Time) error {
+	return m.ReceiptDB(ctx).
+		Where("id = ? AND receipt_state = ?", id, ReceiptPending).
+		Updates(map[string]any{"receipt_state": state, "completed_at": now}).Error
 }
 
 // ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（GC 保护集合）。

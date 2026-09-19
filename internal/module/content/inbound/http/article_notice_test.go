@@ -11,19 +11,34 @@ package contenthttp
 // 所以这里按写侧的四个分支穷举：写侧能产出多少种结论，读侧就要认多少种。
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
+
+// articleBulkCtx 纯函数用例用的上下文：批量结论文案的模板要按当前语言取
+// （articleBulkTextOf），取词必须带 c。本包单跑时 i18n 未初始化，取词回落到中文原文。
+func articleBulkCtx(t *testing.T) *gin.Context {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/admin/articles", nil)
+	return c
+}
 
 // TestArticlePageDoneAcceptsEveryWriterShape 写侧四个分支的每一种结局都要被认出来。
 func TestArticlePageDoneAcceptsEveryWriterShape(t *testing.T) {
+	c := articleBulkCtx(t)
 	for _, deleted := range []int{0, 1, 3} {
 		for _, skipped := range []int{0, 1, 3} {
-			msg := articleBulkDeleteResult(deleted, skipped)
+			msg := articleBulkDeleteResult(c, deleted, skipped)
 			if strings.TrimSpace(msg) == "" {
 				t.Fatalf("写侧文案为空：deleted=%d skipped=%d", deleted, skipped)
 			}
-			if got := articlePageDone(msg); got != msg {
+			if got := articlePageDone(c, msg); got != msg {
 				t.Errorf("写侧结论读侧认不出来（页面上会没有提示）：got %q want %q", got, msg)
 			}
 		}
@@ -35,7 +50,8 @@ func TestArticlePageDoneAcceptsEveryWriterShape(t *testing.T) {
 // 落空串而不是归口文案：成功提示没有「必须说点什么」的语义，
 // 在成功的位置上顶一条错误提示比什么都不显示更糟。
 func TestArticlePageDoneRejectsForged(t *testing.T) {
-	msg := articleBulkDeleteResult(3, 0)
+	c := articleBulkCtx(t)
+	msg := articleBulkDeleteResult(c, 3, 0)
 	for _, raw := range []string{
 		"",
 		"   ",
@@ -46,7 +62,7 @@ func TestArticlePageDoneRejectsForged(t *testing.T) {
 		msg + "<script>alert(1)</script>",
 		strings.Repeat(msg, 100),
 	} {
-		if got := articlePageDone(raw); got != "" {
+		if got := articlePageDone(c, raw); got != "" {
 			t.Errorf("未命中应返回空串，实际 %q（raw=%q）", got, raw)
 		}
 	}
@@ -60,11 +76,13 @@ func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	if len(articleBulkResultTemplates) != 4 {
 		t.Fatalf("四个分支应当各有一条模板，实际 %d 条", len(articleBulkResultTemplates))
 	}
+	c := articleBulkCtx(t)
 	seen := make(map[string]int, len(articleBulkResultTemplates))
 	for i, tpl := range articleBulkResultTemplates {
-		key := strings.TrimSpace(tpl)
+		// 比较**当前语言**的模板：词条写重了同样要红（中文相同、英文不同也算重）。
+		key := strings.TrimSpace(articleBulkTextOf(c, tpl))
 		if prev, ok := seen[key]; ok {
-			t.Errorf("第 %d 与第 %d 条模板完全相同：%q", prev, i, tpl)
+			t.Errorf("第 %d 与第 %d 条模板完全相同：%q", prev, i, key)
 		}
 		seen[key] = i
 	}

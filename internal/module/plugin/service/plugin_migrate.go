@@ -63,13 +63,13 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 	// 单事务执行：重装先 DROP 旧 schema，再逐条执行全部迁移。
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if existing != nil {
-			if err := tx.Exec(dropSchemaSQL(m.ID)).Error; err != nil {
+			if err := s.m.ExecTx(ctx, tx, dropSchemaSQL(m.ID)); err != nil {
 				return fmt.Errorf("清理旧 schema %s: %w", schemaName, err)
 			}
 		}
 		// 锁定 search_path：迁移里未限定 schema 的对象全部落在插件自己的 schema，
 		// 不会外溢到 public（与 validatePluginStatement 的 public. 拒绝互为纵深）。
-		if err := tx.Exec("SET LOCAL search_path TO " + quoteSchemaIdent(schemaName)).Error; err != nil {
+		if err := s.m.ExecTx(ctx, tx, "SET LOCAL search_path TO "+quoteSchemaIdent(schemaName)); err != nil {
 			return fmt.Errorf("锁定 search_path 到 %s 失败: %w", schemaName, err)
 		}
 		for _, name := range names {
@@ -80,7 +80,7 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 				if verr := validatePluginStatement(stmt); verr != nil {
 					return fmt.Errorf("迁移文件 %s: %w", name, verr)
 				}
-				if err := tx.Exec(stmt).Error; err != nil {
+				if err := s.m.ExecTx(ctx, tx, stmt); err != nil {
 					return fmt.Errorf("迁移文件 %s 执行失败: %w", name, err)
 				}
 			}

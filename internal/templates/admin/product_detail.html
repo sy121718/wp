@@ -44,26 +44,26 @@
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Avail}}
     <section class="card card-body">
-        <h2 class="card-title mb-lg">详情页模板{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}<span class="badge badge-info">独立文档</span>{{else}}<span class="badge badge-mute">跟随模板</span>{{end}}{{end}}</h2>
+        <h2 class="card-title mb-lg">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}<span class="badge badge-info">{{ .["t"]("admin.product_detail.template.mode.document", "独立文档") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.product_detail.template.mode.template", "跟随模板") }}</span>{{end}}{{end}}</h2>
         {{if isset(.TplPanel.InstanceID)}}
-        <p class="kv"><span>当前模板</span><span>{{.TplPanel.TemplateID}}</span></p>
+        <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.TemplateID}}</span></p>
         {{if .TplPanel.Published}}
         <div class="flex gap-sm">
-            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?{{.TplPanel.PreviewQS}}">预览</a>
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?{{.TplPanel.PreviewQS}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
             {{if .TplPanel.IsDocumentMode}}
-            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">进入自定义（仅此商品）</a>
+            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.product_detail.template.customize", "进入自定义（仅此商品）") }}</a>
             {{else}}
-            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}&editor=1">编辑模板{{if isset(.TplPanel.AffectedCount)}}（影响 {{.TplPanel.AffectedCount}} 个商品）{{end}}</a>
+            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}&editor=1">{{ .["t"]("admin.product_detail.template.edit", "编辑模板") }}{{if isset(.TplPanel.AffectedCount)}}{{ .["t"]("admin.product_detail.template.affectedLead", "（影响 ") }}{{.TplPanel.AffectedCount}}{{ .["t"]("admin.product_detail.template.affectedTail", " 个商品）") }}{{end}}</a>
             {{end}}
         </div>
         {{if .TplPanel.IsDocumentMode}}
-        <p class="hint">这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。</p>
-        {{if isset(.TplPanel.PresetUpdated)}}<p class="hint">模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。</p>{{end}}
+        <p class="hint">{{ .["t"]("admin.product_detail.template.docHint", "这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。") }}</p>
+        {{if isset(.TplPanel.PresetUpdated)}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
         <form method="post" action="/admin/products/reapply-preset" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="productId" value="{{.ProductID}}">
-            <button type="submit" class="btn btn-ghost">重新套用预设（回到跟随模板）</button>
+            <button type="submit" class="btn btn-ghost">{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
         {{if isset(.TplPanel.Snapshots)}}
         {{if len(.TplPanel.Snapshots) > 0}}
@@ -71,25 +71,25 @@
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="productId" value="{{.ProductID}}">
-            <label class="form-label" for="rollback-snapshot">回滚到历史版本</label>
+            <label class="form-label" for="rollback-snapshot">{{ .["t"]("admin.product_detail.template.rollbackLabel", "回滚到历史版本") }}</label>
             <select class="form-select" id="rollback-snapshot" name="snapshotId">
                 {{range _, snap := .TplPanel.Snapshots}}
                 <option value="{{snap.ID}}">{{snap.CreatedAt}}</option>
                 {{end}}
             </select>
-            <button type="submit" class="btn btn-ghost">回滚文档并重发</button>
+            <button type="submit" class="btn btn-ghost">{{ .["t"]("admin.product_detail.template.rollbackSubmit", "回滚文档并重发") }}</button>
         </form>
-        <p class="hint">回滚取该历史版本的文档重新发布（实体数据取最新）。</p>
+        <p class="hint">{{ .["t"]("admin.product_detail.template.rollbackHint", "回滚取该历史版本的文档重新发布（实体数据取最新）。") }}</p>
         {{end}}
         {{end}}
         {{else}}
-        <p class="hint">布局改动请到模板编辑器：改一次，跟随该模板的商品一起更新。想把某个商品单独改，保存结构改动时会提示你转为独立文档。</p>
+        <p class="hint">{{ .["t"]("admin.product_detail.template.presetModeHint", "布局改动请到模板编辑器：改一次，跟随该模板的商品一起更新。想把某个商品单独改，保存结构改动时会提示你转为独立文档。") }}</p>
         {{end}}
         {{else}}
-        <p class="hint">模板已绑定但尚未发布：先在上方完成首次发布，再进入可视化自定义。</p>
+        <p class="hint">{{ .["t"]("admin.product_detail.template.unpublishedHint", "模板已绑定但尚未发布：先在上方完成首次发布，再进入可视化自定义。") }}</p>
         {{end}}
         {{else}}
-        <p class="hint">该商品还没有发布详情页：完成首次发布后可在此预览与进入可视化自定义。</p>
+        <p class="hint">{{ .["t"]("admin.product_detail.template.noPublicationHint", "该商品还没有发布详情页：完成首次发布后可在此预览与进入可视化自定义。") }}</p>
         {{end}}
     </section>
     {{end}}

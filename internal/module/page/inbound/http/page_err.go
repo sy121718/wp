@@ -28,6 +28,7 @@ import (
 	"go_wp/internal/builder"
 	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -153,21 +154,41 @@ func pageTranslationRowText(c *gin.Context, err error) string {
 // 任何人手拼 /admin/pages?err=任意文案 就能在页面上塞一条顶着「上一次操作未完成」
 // 样式的伪造消息。查询参数与响应体、模板数据一样**不是可信边界**。
 
-// pagesBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
+// pageBulkText 批量结论文案的一条模板 / 自造回执（i18n key + 中文原文）。
 //
-// **写侧与读侧共用这一份字面量**：写侧 pagesBulkDeleteResult 用它 Sprintf，
-// 读侧 pageNoticeTexts 用它（经 shell.NoticeTemplate 归一）判定 URL 回显。
-var pagesBulkResultTemplates = []string{
-	"没有勾选任何页面，列表未改动。",
-	"已删除 %d 个页面。",
-	"%d 个页面都未能删除，列表未改动。",
-	"已删除 %d 个，%d 个未能删除（可能已被删除或路径清理失败）。",
+// **key 与中文原文只有这一份**：写侧 pagesBulkDeleteResult / 单条删除路径拿它 Sprintf 出整句，
+// 读侧 pageNoticeTexts 拿**同一个值**、经同一处取词（pageBulkTextOf）得到当前语言模板再归一比对。
+// 读侧另抄一份中文的后果是静默的 —— 写侧改了措辞候选就失配，页面上变成
+// 「上一次操作未完成」的归口文案（?err=）或什么都不显示（?done=）。
+type pageBulkText struct{ key, fallback string }
+
+// pageBulkTextOf 取一条批量结论文案的当前语言文本（写侧与读侧**共用这一个取法**）。
+//
+// 词条混进 %d 之类协议外占位符时回落中文原文（本批的模板一律只允许 %s，
+// 数字先经 strconv.Itoa）—— 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
+func pageBulkTextOf(c *gin.Context, t pageBulkText) string {
+	text := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(text) {
+		return t.fallback
+	}
+	return text
+}
+
+// pagesBulkResultTemplates 批量删除的结论文案模板（%s 是计数字段）。
+//
+// 写侧 pagesBulkDeleteResult 用它 Sprintf，读侧 pageNoticeTexts 用它（经 shell.NoticeTemplate 归一）
+// 判定 URL 回显 —— 四条**同时**是读侧候选（写读共用这一份）。
+var pagesBulkResultTemplates = []pageBulkText{
+	{pageenums.BulkPageNoneSelected, "没有勾选任何页面，列表未改动。"},
+	{pageenums.BulkPageAllDeleted, "已删除 %s 个页面。"},
+	{pageenums.BulkPageAllSkipped, "%s 个页面都未能删除，列表未改动。"},
+	{pageenums.BulkPagePartial, "已删除 %s 个，%s 个未能删除（可能已被删除或路径清理失败）。"},
 }
 
 // pagesLocalNotices 页面管理页自造、可原样展示的回执文案。
-const pagesLocalNoticeMissingID = "缺少页面 id，未执行删除。"
+var pagesLocalNoticeMissingID = pageBulkText{pageenums.BulkPageMissingID, "缺少页面 id，未执行删除。"}
 
-var pagesLocalNotices = []string{pagesLocalNoticeMissingID}
+var pagesLocalNotices = []pageBulkText{pagesLocalNoticeMissingID}
 
 // pageFacingKeys 可以原样展示给运营的 page 业务错误 key。
 //
@@ -200,9 +221,11 @@ func pageNoticeTexts(c *gin.Context) []string {
 		shell.PageInternalText(c),
 		shell.BulkIDsNoticeTemplate(c),
 	)
-	out = append(out, pagesLocalNotices...)
+	for _, notice := range pagesLocalNotices {
+		out = append(out, pageBulkTextOf(c, notice))
+	}
 	for _, tpl := range pagesBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
+		out = append(out, shell.NoticeTemplate(pageBulkTextOf(c, tpl)))
 	}
 	return out
 }

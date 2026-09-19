@@ -23,32 +23,33 @@ import (
 )
 
 // adminDoneValues 写侧会放进 ?done= 的全部取值（从写侧的构造函数里取，不手抄文案）。
-func adminDoneValues(t *testing.T) []string {
+func adminDoneValues(t *testing.T, c *gin.Context) []string {
 	t.Helper()
 	values := make([]string, 0, len(adminBulkNouns)+2)
 	for _, noun := range adminBulkNouns {
 		for _, deleted := range []int{1, 3, 12} {
-			loc := adminBulkResultURL("/admin/x", noun, deleted, 0)
+			loc := adminBulkResultURL(c, "/admin/x", noun, deleted, 0)
 			parsed, err := url.Parse(loc)
 			if err != nil {
 				t.Fatalf("写侧回跳地址无法解析：%v", err)
 			}
 			if got := parsed.Query().Get("done"); got == "" {
-				t.Fatalf("全成功的批量删除应当走 ?done=（noun=%q deleted=%d）：%s", noun, deleted, loc)
+				t.Fatalf("全成功的批量删除应当走 ?done=（noun=%q deleted=%d）：%s", noun.key, deleted, loc)
 			} else {
 				values = append(values, got)
 			}
 		}
 	}
 	// 词条页的两条 ?done= 分支（skipped == 0 的两支）。
-	values = append(values, adminI18nBulkDeleteResult(0, 0), adminI18nBulkDeleteResult(3, 0))
+	values = append(values, adminI18nBulkDeleteResult(c, 0, 0), adminI18nBulkDeleteResult(c, 3, 0))
 	return values
 }
 
 // TestAdminPageDoneAcceptsEveryWriterShape 写侧每一种取值都必须被读侧整体认出来。
 func TestAdminPageDoneAcceptsEveryWriterShape(t *testing.T) {
-	for _, raw := range adminDoneValues(t) {
-		if got := adminPageDone(raw); got != raw {
+	c := newPageErrContext(t)
+	for _, raw := range adminDoneValues(t, c) {
+		if got := adminPageDone(c, raw); got != raw {
 			t.Errorf("写侧文案应被受控出口原样放行，实际 %q（raw=%q）—— 这条提示会在页面上消失", got, raw)
 		}
 	}
@@ -57,6 +58,7 @@ func TestAdminPageDoneAcceptsEveryWriterShape(t *testing.T) {
 // TestAdminPageDoneRejectsForged 不是写侧放的取值一律落空串（不落归口文案：
 // 成功位置上顶一条错误提示比什么都不显示更糟）。
 func TestAdminPageDoneRejectsForged(t *testing.T) {
+	c := newPageErrContext(t)
 	rejected := []string{
 		"",
 		"   ",
@@ -67,7 +69,7 @@ func TestAdminPageDoneRejectsForged(t *testing.T) {
 		strings.Repeat("已删除 3 个角色", 200),
 	}
 	for _, raw := range rejected {
-		if got := adminPageDone(raw); got != "" {
+		if got := adminPageDone(c, raw); got != "" {
 			t.Errorf("未命中应返回空串，实际 %q（raw=%q）", got, raw)
 		}
 	}
@@ -79,7 +81,8 @@ func TestAdminPageDoneRejectsForged(t *testing.T) {
 // 业务文案后补一句定位信息，所以「已删除 0 个角色」后面跟「：」是合法的；
 // 但**前缀 / 后缀夹带**必须不命中，否则手拼 URL 就能变成「夹一段已知文案 + 任意内容」。
 func TestAdminPageDoneRequiresWholeMatch(t *testing.T) {
-	base := adminBulkResultURL("/admin/roles", "角色", 3, 0)
+	c := newPageErrContext(t)
+	base := adminBulkResultURL(c, "/admin/roles", adminBulkNounRole, 3, 0)
 	parsed, err := url.Parse(base)
 	if err != nil {
 		t.Fatalf("解析回跳地址失败：%v", err)
@@ -93,18 +96,19 @@ func TestAdminPageDoneRequiresWholeMatch(t *testing.T) {
 		msg + "<script>alert(1)</script>",
 		"伪造前缀 " + msg,
 	} {
-		if got := adminPageDone(raw); got != "" {
+		if got := adminPageDone(c, raw); got != "" {
 			t.Errorf("夹带内容不该命中（必须整体相等），实际 %q", got)
 		}
 	}
-	if got := adminPageDone(msg + "：外部编码 xyz"); got != msg+"：外部编码 xyz" {
+	if got := adminPageDone(c, msg+"：外部编码 xyz"); got != msg+"：外部编码 xyz" {
 		t.Errorf("「受控文案 + ：+ 定位信息」是 shell 的形态 3，应当放行，实际 %q", got)
 	}
 }
 
 // TestAdminPageDoneIsDigitInsensitive 计数可以变，措辞不能变。
 func TestAdminPageDoneIsDigitInsensitive(t *testing.T) {
-	if got := adminPageDone("已删除 999 个数据规则"); got == "" {
+	c := newPageErrContext(t)
+	if got := adminPageDone(c, "已删除 999 个数据规则"); got == "" {
 		t.Error("计数不同不该让整句话失配（归一后应与模板相等）")
 	}
 }

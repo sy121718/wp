@@ -144,7 +144,6 @@ var permissionUpdateColumns = []string{
 	"status", "remark", "update_by", "update_time",
 }
 
-
 // Transaction 透传事务：一次写操作里「权限点行 + Casbin 策略行」两处持久化写
 // 必须同事务，边界由 service 决定（见 AGENTS.md「写操作的事务与回滚」）。
 func (m *PermissionModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {

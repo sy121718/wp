@@ -253,25 +253,41 @@ func (m *Model) UpdateStructureSnapshot(ctx context.Context, projectID, pageID s
 	})
 }
 
-// MarkStaleForTheme 把**本工程内**挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
+// MarkStaleForTheme 把**本工程内**挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用），
+// 返回本次 UPDATE **真正命中**的页面 ID。
+//
+// 为什么改成 RETURNING id（影响面回执那一批）：整站标记原先只回 error，service 的逐工程
+// 扇出手里因此没有任何逐页凭据 —— 「这次换主题 / 改页眉块影响了哪些页面」只剩「全站 stale
+// 数」这一个近似值，而主题一变恰恰是全站都 stale，那个数字最没有区分度。写法与既有
+// MarkStaleByDependency 一致（幂等：重复标记同一页仍会返回它）。
 //
 // projectID 必填（DB-009 第三批）：themeID 只说明「哪套主题」，说不出「哪个工程」；
 // pages 带 FORCE 策略，漏作用域时这条 UPDATE 在非超级角色下匹配 0 行且不报错 ——
 // 现象是「换了主题设置但页面不被标记待重建」，站点上一直跑旧产物。
-func (m *Model) MarkStaleForTheme(ctx context.Context, projectID, themeID string) (err error) {
+func (m *Model) MarkStaleForTheme(ctx context.Context, projectID, themeID string) (ids []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
-		return ErrProjectRequired
+		return nil, ErrProjectRequired
 	}
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Exec(
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
 			"UPDATE pages SET stale = true, update_time = ? "+
-				"WHERE project_id = ? AND theme_id = ? AND deleted_at IS NULL",
+				"WHERE project_id = ? AND theme_id = ? AND deleted_at IS NULL "+
+				"RETURNING id",
 			time.Now().UTC(), projectID, themeID,
-		).Error
+		).Scan(&ids).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
-// MarkStaleForI18n 把**本工程内**全部未删除页面标记为待重建（界面文案词条变更后调用）。
+// MarkStaleForI18n 把**本工程内**全部未删除页面标记为待重建（界面文案词条变更后调用），
+// 返回本次 UPDATE **真正命中**的页面 ID（RETURNING id，与 MarkStaleForTheme 同形）。
+//
+// 这是本模块命中面最大的整站标记（一条 UPDATE 覆盖全站），也正是最需要逐页样本的地方：
+// 只有「N 个页面」时读者无法判断这次改动是否真的按预期铺开，而样本能让「哪些页被标了」
+// 落到具体标题 / 路径上。
 //
 // 文案词条（sys_i18n）参与构建：组件固定文案由构建期取词注入 HTML 字节
 // （docs/06-D §10）。词条改动后所有页面产物都可能过期，故整站标记 stale；
@@ -281,27 +297,62 @@ func (m *Model) MarkStaleForTheme(ctx context.Context, projectID, themeID string
 // projectID 必填（DB-009 第三批）：本方法原是「全表更新」，即模型层唯一一处隐含的
 // 「不限工程」。词条变更的调用方（后台翻译页）没有工程上下文，所以「全站」由 service
 // 层逐工程拼出来 —— 这里的 project_id 条件与策略是双保险，缺作用域直接显式失败。
-func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string) (err error) {
+func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string) (ids []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
-		return ErrProjectRequired
+		return nil, ErrProjectRequired
 	}
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Exec(
-			"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
-			time.Now().UTC(), projectID,
-		).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		var merr error
+		ids, merr = m.markStaleForI18nIn(ctx, tx, projectID, time.Now().UTC())
+		return merr
 	})
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
-// MarkStaleByIDs 在**指定工程作用域内**按页面 ID 列表标记待重建，返回被标记的 ID。
+// markStaleForI18nIn 整站标记的 SQL 本体：MarkStaleForI18n（自带事务）与
+// MarkStaleForI18nTx（在调用方事务内，见 page_tx.go）两条入口共用同一段语句 ——
+// 两处各写一遍 SQL 的话，改动时漏一处会让「自带事务」与「透传事务」两条路径
+// 对同一批页面产生不同的标记结果，而两者在调用方眼里是同一个语义。
+func (m *Model) markStaleForI18nIn(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) (ids []string, err error) {
+	err = tx.Raw(
+		"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL "+
+			"RETURNING id",
+		at, projectID,
+	).Scan(&ids).Error
+	return ids, err
+}
+
+// MarkStaleByIDs 在**指定工程作用域内**按页面 ID 列表标记待重建，返回**本次真正命中**的页面 ID。
 //
 // 与 MarkStaleForI18n 的整站标记区分：调用方已经算出了精确的影响集合
 // （如「产物由旧组件产出」的页面），不做无谓的全站标记。
+//
+// 返回值是 RETURNING id 的回读结果，**不是入参 ids 的回显**（2026-09 收口，与
+// MarkStaleForTheme / MarkStaleByDependency / MarkStaleForBlock 同形）：
+// 入参里可能混着已删除、已换工程或根本不存在的 id，回显入参会让「日志说标了 8 个、
+// 其实只有 3 个存在」永远查不出来 —— 而调用方（MarkStaleByRegistryVersion）正是拿
+// 这个集合做影响面日志与回执的。幂等：重复标记同一页仍会返回它。
 //
 // projectID 必填（DB-009 第三批）。调用方（组件版本变更）手里的 ids 来自 artifact 元数据，
 // 可能横跨多个工程 —— 这也是为什么这里的 WHERE 同时带上 project_id：每个工程各自一次
 // 独立作用域的事务（service 层逐工程调用），本工程之外的行由 project_id 条件与策略双重拦下，
 // 不存在「把多个工程的 id 并进一次查询」的依赖。漏作用域时这条 UPDATE 会静默 0 行。
+//
+// 为什么是 id = ANY(string_to_array(?, ',')::uuid[]) 而不是 gorm 的 id IN ?（参数规模）：
+// 入参来自「全站待重建 id 列表」，一次组件更新可能上万，而 gorm 的 IN ? 会把它展开成
+// 同数量的绑定参数、逼近 PostgreSQL 的 65535 参数上限（超限直接报错，结果是组件更新后
+// 全站一个页面都标不上）。ANY(数组) 只占一个参数、仍是**单条语句**（原子性与 IN ? 完全相同，
+// 不需要退化成「事务 + 分块」），并且 `id = ANY(uuid[])` 仍能走 pages 的主键索引
+// （写成 id::text = ANY(text[]) 也能跑，但类型转换会让主键索引失效，上万 id 时退化成全表扫）。
+// 数组以逗号拼接传入：pages.id 是 uuid（形如 8-4-4-4-12 十六进制，不含逗号），分隔安全。
+// 数组元素类型必须是 uuid 而不是 text：pages.id 的列型是 uuid，PostgreSQL 没有
+// uuid = text 算子（实测报 `operator does not exist: uuid = text`），
+// 而 ::uuid[] 对非法 id 的报错与原先 IN ? 的绑定参数取 uuid 时完全一致。
+// 这也解释了为什么不能照抄 order/model 里 `status = ANY(string_to_array(?, ',')::text[])`
+// 的写法 —— 那里比较的是 text 列，这里比较的是 uuid 列。
 // at 参数保留给未来的 update_time 写入，当前实现与原行为一致（不动 update_time）。
 func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []string, at time.Time) (marked []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
@@ -311,14 +362,17 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 		return nil, nil
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&PageEntity{}).
-			Where("project_id = ? AND deleted_at IS NULL AND id IN ?", projectID, ids).
-			Update("stale", true).Error
+		return tx.Raw(
+			"UPDATE pages SET stale = true WHERE project_id = ? AND deleted_at IS NULL "+
+				"AND id = ANY(string_to_array(?, ',')::uuid[]) "+
+				"RETURNING id",
+			projectID, strings.Join(ids, ","),
+		).Scan(&marked).Error
 	})
 	if err != nil {
 		return nil, err
 	}
-	return ids, nil
+	return marked, nil
 }
 
 // blockRefMatchCond 块引用匹配条件（JSONB 路径查询）。
@@ -367,25 +421,31 @@ func (m *Model) CountBlockReference(ctx context.Context, projectID, blockID stri
 
 // MarkStaleForBlock 把**本工程内**文档中经 core.globalref 引用（draft_document 树内
 // "blockId": "<blockID>" 节点）或 settings.structure 页眉/页脚自选绑定
-// （headerBlockId/footerBlockId，页面级覆盖，非主题默认）该块的页面标记为待重建。
+// （headerBlockId/footerBlockId，页面级覆盖，非主题默认）该块的页面标记为待重建，
+// 返回本次 UPDATE **真正命中**的页面 ID（RETURNING id）。
 // 与 MarkStaleForTheme 可能重叠命中同一页面，stale=true 幂等，无妨。
 //
 // projectID 必填（DB-009 第三批）：块 id 说不出工程，而这条 UPDATE 的可见范围由策略决定。
 // 「全站标记」由 service 层逐工程调用拼出来；漏作用域时它静默匹配 0 行 ——
 // 现象是「改了全局块，引用它的页面不被标记」，站点上一直显示旧块内容。
-func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string) (err error) {
+func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string) (ids []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
-		return ErrProjectRequired
+		return nil, ErrProjectRequired
 	}
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Exec(
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
 			"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL AND ("+
 				blockRefMatchCond+
 				" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
-				" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
+				" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?) "+
+				"RETURNING id",
 			time.Now().UTC(), projectID, blockID, blockID, blockID,
-		).Error
+		).Scan(&ids).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // AttachThemeToUnassigned 把工程内尚未挂主题的页面挂到指定主题。

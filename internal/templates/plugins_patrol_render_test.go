@@ -48,7 +48,7 @@ func pluginsPatrolData(patrol any) map[string]any {
 			{"ID": "hello", "Name": "示例插件", "Version": "1.0.0", "ComponentCount": 2,
 				"Enabled": true, "InstalledAt": "2026-01-01 00:00:00"},
 		},
-		"Error":        "",
+		"Error":          "",
 		"ArtifactPatrol": patrol,
 	}
 }

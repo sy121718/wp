@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 )
 
 // CreateInstance 创建自动发布实例：解析模板 → 编译 → 发布 → 记快照/产物/依赖。
@@ -177,16 +178,40 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 			return fmt.Errorf("删除实例前反激活 URL 失败 %s: %w", p, derr)
 		}
 	}
-	// 路由占用同步释放：只删实例行会把 page_routes 里本实例的 active/redirect
-	// 行留成悬空引用（外键指向已删除的实例），同路径再发布永远被拒。
-	if s.routes != nil {
-		if rerr := s.routes.DeleteRoutesByPresentation(ctx, &pubcontract.DeleteRoutesByPresentationReq{
-			ProjectID: inst.ProjectID, PresentationID: inst.ID,
-		}); rerr != nil {
-			return fmt.Errorf("删除实例前释放路由占用失败: %w", rerr)
+	// 路由占用同步释放 + 实例行删除：两处都是持久化写入，且分属两个模块
+	// （page_routes 在 publication、实例行在 presentation），按 AGENTS.md
+	// 「写操作的事务与回滚」必须落进**同一个事务**（tx 透传，不做补偿）。
+	//
+	// 只删实例行会把 page_routes 里本实例的 active/redirect 行留成悬空引用
+	// （外键指向已删除的实例），同路径再发布永远被拒；反过来只删路由行则留下
+	// 「实例还在、路径已释放」的分裂状态。两种半截状态都由这个事务消除。
+	//
+	// 反激活（上面的循环）**刻意留在事务外**：它删的是访问面目录里的符号链接 ——
+	// 文件系统不在数据库事务边界内，属 AGENTS.md 允许的「补偿只用于跨库/外部系统」
+	// 那一类，且 Deactivate 幂等、可重跑。顺序也是刻意的：先反激活再开事务，
+	// 事务回滚时链接已下线（线上 404，而不是把已删内容继续挂在旧路径上），
+	// 重跑一次 Delete 会再走一遍幂等反激活 + 事务即可收敛；把反激活放到提交之后，
+	// 失败就留下「实例没了、链接还在」的死路径，且再没有实例行可以据以定位它们。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		// 工程作用域由**调用方**设进这个事务：publication 的 …Tx 变体的契约就是
+		// 「调用方负责开启事务 + 设置作用域」（见 publication_route_tx.go 文件头），
+		// 而 page_routes 带 FORCE 策略（迁移 215）—— 不设作用域时那条删行在非超级
+		// 角色下匹配 0 行且不报错（fail closed），随后删实例行会被外键拒绝。
+		if serr := rls.ScopeTx(tx, inst.ProjectID); serr != nil {
+			return serr
 		}
+		if s.routes != nil {
+			if rerr := s.routes.DeleteRoutesByPresentationTx(ctx, tx, &pubcontract.DeleteRoutesByPresentationReq{
+				ProjectID: inst.ProjectID, PresentationID: inst.ID,
+			}); rerr != nil {
+				return fmt.Errorf("删除实例前释放路由占用失败: %w", rerr)
+			}
+		}
+		return s.m.DeleteInstanceTx(tx, projectID, req.ID)
+	}); err != nil {
+		return err
 	}
-	return s.m.DeleteInstance(ctx, projectID, req.ID)
+	return nil
 }
 
 // instanceActivePaths 实例在访问面上已激活的全部路径（当前路径 + 历史 301 路径）。

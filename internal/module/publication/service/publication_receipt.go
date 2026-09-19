@@ -12,11 +12,7 @@ import (
 
 // RollbackReceipts 启动恢复：全部 pending 回执标记 rolled_back，返回处理数量。
 func (s *Service) RollbackReceipts(ctx context.Context) (count int64, err error) {
-	now := time.Now().UTC()
-	result := s.model.ReceiptDB(ctx).
-		Where("receipt_state = ?", pubmodel.ReceiptPending).
-		Updates(map[string]any{"receipt_state": pubmodel.ReceiptRolledBack, "completed_at": now})
-	return result.RowsAffected, result.Error
+	return s.model.RollbackPendingReceipts(ctx, time.Now().UTC())
 }
 
 func receiptAction(action, fallback string) string {
@@ -36,4 +32,3 @@ var errRouteOccupied = pubmodel.ErrRouteOccupied
 type receiptPayload struct {
 	To string `json:"to,omitempty"`
 }
-

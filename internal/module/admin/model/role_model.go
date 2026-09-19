@@ -148,7 +148,6 @@ func (m *RoleModel) GetEnabledIDsByCodes(ctx context.Context, codes []string) (i
 	return ids, err
 }
 
-
 // Transaction 透传事务：一次写操作里「角色行 + Casbin g2 启用标记」两处持久化写
 // 必须同事务，边界由 service 决定。
 func (m *RoleModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
@@ -178,7 +177,6 @@ func (m *RoleModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*Ro
 	}
 	return &entity, nil
 }
-
 
 // roleUpdateColumns UpdateTx 专用的显式列集合（含 status 零值）。
 var roleUpdateColumns = []string{"role_name", "status", "sort_order", "remark", "update_by", "update_time"}

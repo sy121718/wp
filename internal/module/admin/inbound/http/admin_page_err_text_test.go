@@ -114,14 +114,14 @@ func TestAdminPageErrParamCleanCleansBeforeTruncating(t *testing.T) {
 func TestAdminPageErrTextAcceptsBulkPartial(t *testing.T) {
 	c := newPageErrContext(t)
 	for _, noun := range adminBulkNouns {
-		loc := adminBulkResultURL("/admin/x", noun, 3, 2)
+		loc := adminBulkResultURL(c, "/admin/x", noun, 3, 2)
 		parsed, err := url.Parse(loc)
 		if err != nil {
 			t.Fatalf("写侧回跳地址无法解析：%v", err)
 		}
 		raw := parsed.Query().Get("err")
 		if raw == "" {
-			t.Fatalf("有跳过时应走 ?err=（noun=%q）：%s", noun, loc)
+			t.Fatalf("有跳过时应走 ?err=（noun=%q）：%s", noun.key, loc)
 		}
 		if got := adminPageErrText(c, raw); got != raw {
 			t.Errorf("写侧的批量结论应原样透出，got %q（raw=%q）", got, raw)
@@ -158,14 +158,15 @@ func TestAdminPageErrTextRejectsForged(t *testing.T) {
 func TestAdminPageErrTextRequiresWholeMatch(t *testing.T) {
 	c := newPageErrContext(t)
 	for _, noun := range adminBulkNouns {
-		msg := fmt.Sprintf(adminBulkPartialTemplate, 3, noun, 2)
+		// 计数与名词都按**写侧同一个取法**填：模板取当前语言、名词取当前语言、计数 strconv 化成串。
+		msg := fmt.Sprintf(adminBulkTextOf(c, adminBulkPartialText), "3", adminBulkTextOf(c, noun), "2")
 		for _, forged := range []string{
 			"<script>alert(1)</script>" + msg,
 			msg + "<script>alert(1)</script>",
 			"伪造前缀 " + msg,
 		} {
 			if got := adminPageErrText(c, forged); got != "" {
-				t.Errorf("夹带内容不该命中（必须整体相等），实际 %q（noun=%q）", got, noun)
+				t.Errorf("夹带内容不该命中（必须整体相等），实际 %q（noun=%q）", got, noun.key)
 			}
 		}
 		if got := adminPageErrText(c, msg+"：外部编码 xyz"); got != msg+"：外部编码 xyz" {

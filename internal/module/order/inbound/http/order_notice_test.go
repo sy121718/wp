@@ -12,31 +12,52 @@ package orderhttp
 // 穷举一遍：写侧真会产出多少种文案，读侧就要认多少种。
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	orderenums "go_wp/internal/module/order/enums"
 )
+
+// orderBulkCtx 纯函数用例用的上下文。
+//
+// 这里的批量结论是「模板 + 动词 + 名词」三段词条拼出来的，取词必须带 c
+// （shell.TranslateFor）。本包单跑时 i18n 缓存未初始化，取词回落到中文原文 ——
+// 断言因此写中文是稳定的，但**不再手抄**：动词/名词文本一律从 orderBulkTextOf 取。
+func orderBulkCtx(t *testing.T) *gin.Context {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/admin/orders", nil)
+	return c
+}
 
 // TestOrderPageDoneAcceptsEveryWriterShape 写侧能产出的每一种结局都要被读侧认出来。
 func TestOrderPageDoneAcceptsEveryWriterShape(t *testing.T) {
 	if len(orderBulkActions) == 0 {
 		t.Fatal("orderBulkActions 为空 —— 读侧候选没有来源，这条测试就失去意义了")
 	}
+	c := orderBulkCtx(t)
 	for _, action := range orderBulkActions {
 		verb, noun := action[0], action[1]
 		for _, done := range []int{0, 1, 3} {
 			for _, skipped := range []int{0, 1, 3} {
-				msg := bulkSummary(verb, noun, done, skipped)
+				msg := bulkSummary(c, verb, noun, done, skipped)
 				if msg == "" {
-					t.Fatalf("写侧文案为空：%s / %s / done=%d skipped=%d", verb, noun, done, skipped)
+					t.Fatalf("写侧文案为空：%s / %s / done=%d skipped=%d", verb.key, noun.key, done, skipped)
 				}
-				if got := orderPageDone(msg); got != msg {
+				if got := orderPageDone(c, msg); got != msg {
 					t.Errorf("写侧结论读侧认不出来（会变成「没有这条提示」）：got %q want %q", got, msg)
 				}
 			}
 		}
 	}
 	// 优惠码页还有一条不走 bulkSummary、但同样进 ?done= 的参数级提示。
-	if got := orderPageDone(couponBulkTargetInvalidText); got != couponBulkTargetInvalidText {
+	targetInvalid := orderBulkTextOf(c, couponBulkTargetInvalidText)
+	if got := orderPageDone(c, targetInvalid); got != targetInvalid {
 		t.Errorf("批量启停的目标状态非法提示应被放行，实际 %q", got)
 	}
 }
@@ -46,7 +67,8 @@ func TestOrderPageDoneAcceptsEveryWriterShape(t *testing.T) {
 // 落空串而不是归口文案：成功提示没有「必须说点什么」的语义，
 // 在成功的位置上顶一条错误提示比什么都不显示更糟。
 func TestOrderPageDoneRejectsForged(t *testing.T) {
-	msg := bulkSummary("已流转", "订单", 3, 0)
+	c := orderBulkCtx(t)
+	msg := bulkSummary(c, orderBulkVerbFlowed, orderBulkNounOrder, 3, 0)
 	for _, raw := range []string{
 		"",
 		"   ",
@@ -57,7 +79,7 @@ func TestOrderPageDoneRejectsForged(t *testing.T) {
 		msg + "<script>alert(1)</script>",
 		strings.Repeat(msg, 100),
 	} {
-		if got := orderPageDone(raw); got != "" {
+		if got := orderPageDone(c, raw); got != "" {
 			t.Errorf("未命中应返回空串，实际 %q（raw=%q）", got, raw)
 		}
 	}
@@ -69,21 +91,22 @@ func TestOrderPageDoneRejectsForged(t *testing.T) {
 // 「批量操作完成了却没有回执」。这条断言把当前的全部组合写死在测试里，
 // 新增调用点时至少会被提醒一次（要么补表、要么确认它走别的通道）。
 func TestOrderBulkActionsCoverEveryCallSite(t *testing.T) {
+	// 键是 (动词词条 key, 名词词条 key) —— 用 key 而不是中文，措辞变化不会让这条用例失去意义。
 	want := map[string]bool{
-		"已流转|订单":   true,
-		"已取消|订单":   true,
-		"已同意|退货申请": true,
-		"已拒绝|退货申请": true,
-		"已删除|优惠码":  true,
-		"已停用|优惠码":  true,
-		"已启用|优惠码":  true,
+		orderenums.BulkVerbFlowed + "|" + orderenums.BulkNounOrder:    true,
+		orderenums.BulkVerbCancelled + "|" + orderenums.BulkNounOrder: true,
+		orderenums.BulkVerbApproved + "|" + orderenums.BulkNounReturn: true,
+		orderenums.BulkVerbRejected + "|" + orderenums.BulkNounReturn: true,
+		orderenums.BulkVerbDeleted + "|" + orderenums.BulkNounCoupon:  true,
+		orderenums.BulkVerbDisabled + "|" + orderenums.BulkNounCoupon: true,
+		orderenums.BulkVerbEnabled + "|" + orderenums.BulkNounCoupon:  true,
 	}
 	if len(orderBulkActions) != len(want) {
 		t.Fatalf("动作表条目数变了（%d，期望 %d）—— 新增 / 删除批量动作时请同步更新本用例",
 			len(orderBulkActions), len(want))
 	}
 	for _, action := range orderBulkActions {
-		key := action[0] + "|" + action[1]
+		key := action[0].key + "|" + action[1].key
 		if !want[key] {
 			t.Errorf("出现了未登记在用例里的动作组合 %q", key)
 		}

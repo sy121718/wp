@@ -10,6 +10,7 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 // order_page_query.go - 订单管理页的查询参数解析与对外文案出口。
@@ -76,55 +77,95 @@ func orderFacingText(raw string) string {
 // 判据与其它模块的读侧出口一致：与写侧**共用同一份模板字面量**，整体匹配（数字归一后相等，
 // 计数因此可以变），未命中落空串 —— 成功提示没有「必须说点什么」的语义。
 
+// orderBulkText 批量结论文案的一条模板 / 动作词（i18n key + 中文原文）。
+//
+// **key 与中文原文只有这一份**：写侧 bulkSummary 拿它 Sprintf 出整句，读侧 orderDoneTexts
+// 拿**同一个值**、经同一处取词（orderBulkTextOf）得到当前语言模板再归一比对。
+// 读侧另抄一份中文的后果是静默的 —— 写侧改了措辞候选就失配，页面上变成「没有这条提示」。
+type orderBulkText struct{ key, fallback string }
+
+// orderBulkTextOf 取一条批量结论文案的当前语言文本（写侧与读侧**共用这一个取法**）。
+//
+// 词条混进 %d 之类协议外占位符时回落中文原文（本文件的模板一律只允许 %s，数字先经
+// strconv.Itoa）：否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
+func orderBulkTextOf(c *gin.Context, t orderBulkText) string {
+	text := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(text) {
+		return t.fallback
+	}
+	return text
+}
+
 // 批量动作结论文案的四个分支：写侧 bulkSummary 用它 Sprintf 出文案，
-// 读侧 orderDoneTexts 用同一批字面量经 shell.NoticeTemplate 归一后比对。
-// 各写一份的后果是静默的 —— 写侧改了措辞，读侧候选不再命中，运营看到的是「没有这条提示」。
-const (
-	orderBulkNothingSelected = "没有勾选任何%s。"
-	orderBulkAllDone         = "%s %d 个%s。"
-	orderBulkAllSkipped      = "0 个%s%s，%d 个被跳过（状态不允许或已不存在）。"
-	orderBulkPartial         = "%s %d 个%s，跳过 %d 个（状态不允许或已不存在）。"
+// 读侧 orderDoneTexts 用同一批模板（当前语言）经 shell.NoticeTemplate 归一后比对。
+var (
+	orderBulkNothingSelected = orderBulkText{orderenums.BulkNoneSelected, "没有勾选任何%s。"}
+	orderBulkAllDone         = orderBulkText{orderenums.BulkAllDone, "%s %s 个%s。"}
+	orderBulkAllSkipped      = orderBulkText{orderenums.BulkAllSkipped, "0 个%s%s，%s 个被跳过（状态不允许或已不存在）。"}
+	orderBulkPartial         = orderBulkText{orderenums.BulkPartial, "%s %s 个%s，跳过 %s 个（状态不允许或已不存在）。"}
+)
+
+// 批量动作的动词（i18n key + 中文原文）：**动词也 key 化**，否则英文界面上会出现
+// 「Moved 3 个订单」这种中英混排 —— 语序不同，不能只翻模板。
+var (
+	orderBulkVerbFlowed    = orderBulkText{orderenums.BulkVerbFlowed, "已流转"}
+	orderBulkVerbCancelled = orderBulkText{orderenums.BulkVerbCancelled, "已取消"}
+	orderBulkVerbApproved  = orderBulkText{orderenums.BulkVerbApproved, "已同意"}
+	orderBulkVerbRejected  = orderBulkText{orderenums.BulkVerbRejected, "已拒绝"}
+	orderBulkVerbDeleted   = orderBulkText{orderenums.BulkVerbDeleted, "已删除"}
+	orderBulkVerbDisabled  = orderBulkText{orderenums.BulkVerbDisabled, "已停用"}
+	orderBulkVerbEnabled   = orderBulkText{orderenums.BulkVerbEnabled, "已启用"}
+)
+
+// 批量动作的名词（i18n key + 中文原文）。
+var (
+	orderBulkNounOrder  = orderBulkText{orderenums.BulkNounOrder, "订单"}
+	orderBulkNounReturn = orderBulkText{orderenums.BulkNounReturn, "退货申请"}
+	orderBulkNounCoupon = orderBulkText{orderenums.BulkNounCoupon, "优惠码"}
 )
 
 // orderBulkActions 批量动作的（动词，名词）对（= 各页 bulkSummary 的实参）。
 //
 // 写侧每个调用点都要在这里有一行：漏登记的症状是该页「批量操作完成了却没有回执」
 // （可见、不致命），而不是伪造面。
-var orderBulkActions = [][2]string{
-	{"已流转", "订单"},
-	{"已取消", "订单"},
-	{"已同意", "退货申请"},
-	{"已拒绝", "退货申请"},
-	{"已删除", "优惠码"},
-	{"已停用", "优惠码"},
-	{"已启用", "优惠码"},
+var orderBulkActions = [][2]orderBulkText{
+	{orderBulkVerbFlowed, orderBulkNounOrder},
+	{orderBulkVerbCancelled, orderBulkNounOrder},
+	{orderBulkVerbApproved, orderBulkNounReturn},
+	{orderBulkVerbRejected, orderBulkNounReturn},
+	{orderBulkVerbDeleted, orderBulkNounCoupon},
+	{orderBulkVerbDisabled, orderBulkNounCoupon},
+	{orderBulkVerbEnabled, orderBulkNounCoupon},
 }
 
 // orderBulkExtraNotices 不走 bulkSummary、但也进 ?done= 的本模块自造文案。
-var orderBulkExtraNotices = []string{couponBulkTargetInvalidText}
+var orderBulkExtraNotices = []orderBulkText{couponBulkTargetInvalidText}
 
-// orderDoneTexts 列表页 ?done= 可以原样展示的受控文案（数字归一后可比）。
-func orderDoneTexts() []string {
+// orderDoneTexts 列表页 ?done= 可以原样展示的受控文案（**当前语言**，数字归一后可比）。
+func orderDoneTexts(c *gin.Context) []string {
 	out := make([]string, 0, len(orderBulkActions)*4+len(orderBulkExtraNotices))
 	for _, action := range orderBulkActions {
-		verb, noun := action[0], action[1]
+		verb, noun := orderBulkTextOf(c, action[0]), orderBulkTextOf(c, action[1])
 		out = append(out,
-			shell.NoticeTemplate(fmt.Sprintf(orderBulkNothingSelected, noun)),
-			shell.NoticeTemplate(fmt.Sprintf(orderBulkAllDone, verb, 0, noun)),
-			shell.NoticeTemplate(fmt.Sprintf(orderBulkAllSkipped, noun, verb, 0)),
-			shell.NoticeTemplate(fmt.Sprintf(orderBulkPartial, verb, 0, noun, 0)),
+			shell.NoticeTemplate(fmt.Sprintf(orderBulkTextOf(c, orderBulkNothingSelected), noun)),
+			shell.NoticeTemplate(fmt.Sprintf(orderBulkTextOf(c, orderBulkAllDone), verb, "0", noun)),
+			shell.NoticeTemplate(fmt.Sprintf(orderBulkTextOf(c, orderBulkAllSkipped), noun, verb, "0")),
+			shell.NoticeTemplate(fmt.Sprintf(orderBulkTextOf(c, orderBulkPartial), verb, "0", noun, "0")),
 		)
 	}
-	return append(out, orderBulkExtraNotices...)
+	for _, extra := range orderBulkExtraNotices {
+		out = append(out, orderBulkTextOf(c, extra))
+	}
+	return out
 }
 
 // orderPageDone 列表页 ?done= 的受控出口（成功提示：未命中落空串）。
 //
 // 判定用 shell.FacingNotice 的**整体**匹配（逐字 / 数字归一 / 「候选 + ：」），不是
 // strings.Contains —— 后者只要夹带一段已知文案就能往页面上塞任意前缀 / 后缀。
-func orderPageDone(raw string) string {
+func orderPageDone(c *gin.Context, raw string) string {
 	return shell.FacingQueryText(raw, "", func(msg string) string {
-		return shell.FacingNotice(msg, orderDoneTexts())
+		return shell.FacingNotice(msg, orderDoneTexts(c))
 	})
 }
 

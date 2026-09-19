@@ -222,11 +222,16 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	target := "/admin/inventory/sources?project=" + urlQueryEscape(projectID)
+	// 结论与仓库页同一口径：模板取 inventoryBulkNoticeTemplates 里那条（key + 中文兜底），
+	// 经 inventoryBulkText 按当前语言取词后再 Sprintf —— 读侧 inventoryNoticeTexts 从
+	// **同一张表、同一个取法**派生候选，英文页面上这条回执才不会被判成伪造。
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（仍被采购单或历史流水引用）", deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(
+			inventoryBulkText(c, inventoryBulkSourcePartial), strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个货源", deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(
+			inventoryBulkText(c, inventoryBulkSourceDone), strconv.Itoa(deleted)))
 	}
 	c.Redirect(http.StatusFound, target)
 }
