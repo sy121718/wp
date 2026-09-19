@@ -10,9 +10,12 @@ package pageservice
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"go_wp/internal/builder"
+	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
@@ -199,6 +202,69 @@ func (s *Service) CountBlockReference(ctx context.Context, blockID string) (int6
 		total += n
 	}
 	return total, nil
+}
+
+// ListBlockSourceRefs 列出引用该块的页面（审计 ARCH-02）：逐条给出页面路径与命中通道
+// （文档树 / settings.structure 的页眉·页脚·槽位绑定），供装配层合并成块删除保护的判据。
+//
+// 为什么另开一条而不是把 CountBlockReference 的返回值改成明细：那条的消费者是
+// 块列表页的「影响面」列（只要一个数），改签名会连带动一片；而删除保护要的是
+// 「哪一类引用、哪些实体」——两件事共用同一组 model 匹配条件，口径不会分叉。
+//
+// 逐工程扇出（DB-009 第三批）：与 CountBlockReference 同一理由 —— 块 id 说不出工程，
+// 而 pages 带 FORCE 策略；漏作用域时这条查询静默返回空，删除保护会据此**放行**。
+func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error) {
+	projectIDs, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]blockcontract.BlockUsage, 0, 2)
+	for _, projectID := range projectIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		rows, rerr := s.model.ListBlockSourceRefs(ctx, projectID, blockID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		for i := range rows {
+			row := rows[i]
+			label := strings.TrimSpace(row.Path)
+			if label == "" {
+				label = row.ID
+			}
+			// 同一页面可同时走两条通道（正文插块 + 页眉绑定），各记一条：
+			// 解除路径不同，合并成一条会让操作者以为改完一处就够。
+			if row.InDocument {
+				out = append(out, blockcontract.BlockUsage{
+					Kind: blockcontract.UsageKindPageDocument, ProjectID: projectID, EntityID: row.ID, Label: label,
+				})
+			}
+			if row.InStructure {
+				out = append(out, blockcontract.BlockUsage{
+					Kind: blockcontract.UsageKindPageStructure, ProjectID: projectID, EntityID: row.ID,
+					Label: label, Detail: "header/footer/slots",
+				})
+			}
+		}
+		// 历史修订（ARCH-02 补齐）：当前草稿已经不再引用、但某一版修订仍引用。
+		// 单独一类而不是并进 PageDocument：回滚是唯一会暴露断链的路径，处置方式不同。
+		revs, rerr := s.model.ListBlockRevisionRefs(ctx, projectID, blockID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		for i := range revs {
+			label := strings.TrimSpace(revs[i].Path)
+			if label == "" {
+				label = revs[i].PageID
+			}
+			out = append(out, blockcontract.BlockUsage{
+				Kind: blockcontract.UsageKindPageRevision, ProjectID: projectID, EntityID: revs[i].PageID,
+				Label: label, Detail: fmt.Sprintf("revision v%d", revs[i].Version),
+			})
+		}
+	}
+	return out, nil
 }
 
 // AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。

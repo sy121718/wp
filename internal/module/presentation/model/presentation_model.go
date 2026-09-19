@@ -653,3 +653,45 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 	}
 	return ids, nil
 }
+
+// BlockDocRefRow 文档树里引用了目标块的自动发布实例（覆盖文档或快照）。
+type BlockDocRefRow struct {
+	InstanceID   string `gorm:"column:instance_id"`
+	URLPath      string `gorm:"column:url_path"`
+	EntityType   string `gorm:"column:entity_type"`
+	EntityID     string `gorm:"column:entity_id"`
+	FromSnapshot bool   `gorm:"column:from_snapshot"`
+}
+
+// ListBlockDocumentRefs 列出**本工程内**文档树引用了 blockID 的自动发布实例（审计 ARCH-02）。
+//
+// 两个来源都要查，因为它们回答的是不同的事实：
+//   - override_document：实例级文档覆盖（迁移 281 的「独立文档模式」，render_mode=document）——
+//     这份文档不在任何模板里，模板侧与页面侧的扫描都看不见它；
+//   - document_snapshots.document：模板派生出的快照。快照是**可编辑源码的派生输入**
+//     （不是编译产物），删块后重建该实例就会缺一段 —— 所以它阻断删除；
+//     真正不阻断的是 presentation_artifacts 里那些不可变产物字节（由 GC 策略处理）。
+//
+// document_snapshots 没有 project_id 列（属主是实例），作用域由 JOIN 的实例行承担。
+func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID string) (rows []BlockDocRefRow, err error) {
+	if projectID == "" {
+		return nil, errors.New("project id is required")
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(`
+			SELECT i.id::text AS instance_id, i.url_path, i.entity_type, i.entity_id, false AS from_snapshot
+			FROM presentation_instances i
+			WHERE i.project_id = ? AND i.deleted_at IS NULL
+			  AND jsonb_path_query_array(i.override_document, '$.**.blockId') @> jsonb_build_array(?::text)
+			UNION ALL
+			SELECT i.id::text, i.url_path, i.entity_type, i.entity_id, true
+			FROM presentation_instances i
+			JOIN document_snapshots s ON s.presentation_instance_id = i.id
+			WHERE i.project_id = ? AND i.deleted_at IS NULL
+			  AND jsonb_path_query_array(s.document, '$.**.blockId') @> jsonb_build_array(?::text)
+			ORDER BY 2 ASC, 1 ASC, 5 ASC`,
+			projectID, blockID, projectID, blockID,
+		).Scan(&rows).Error
+	})
+	return rows, err
+}

@@ -4,6 +4,7 @@ package blockmodel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -11,6 +12,13 @@ import (
 
 	"go_wp/pkg/rls"
 )
+
+// ErrProjectRequired 调用方没有给出工程作用域（与 page model 同形）。
+//
+// blocks 带 FORCE 策略（迁移 215）：不设 app.project_id 的读取在换非超级角色后
+// **静默返回 0 行**，而「查不到引用」在删除保护里等于放行 —— 所以缺作用域必须
+// 显式失败，不能退化成空集合。
+var ErrProjectRequired = errors.New("block: 需要显式工程作用域")
 
 const tableNameBlocks = "blocks"
 
@@ -164,6 +172,38 @@ func (m *Model) UpdateDocument(ctx context.Context, projectID, id string, name, 
 			"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode, "document": document, "update_time": updatedAt,
 		}).Error
 	})
+}
+
+// BlockDocRefRow 文档树里引用了目标块的其它全局块（只读定位数据，审计 ARCH-02）。
+type BlockDocRefRow struct {
+	ID   string `gorm:"column:id"`
+	Name string `gorm:"column:name"`
+}
+
+// ListBlockDocumentRefs 列出**本工程内**文档树引用了 blockID 的其它全局块。
+//
+// 这是 ARCH-02 补上的第三类引用：块引用块（嵌套 globalref）此前完全不在删除保护
+// 的判据里 —— 删掉内层块，外层块在下次构建时静默少一段，只有在产物上才看得出来。
+//
+// 排除自身：构建期的防环（visited 集合）已经拦下自引用，但库里若存在这样的行，
+// 它不该让「删除这个块」被它自己挡住。
+//
+// 与页面侧同一判定形态（jsonb_path_query_array + @>）：blocks 表没有块引用索引，
+// 这里按工程小范围扫描 —— 单工程块数量在几十量级，且删除是低频动作。
+func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID string) (rows []BlockDocRefRow, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
+			"SELECT id::text AS id, name FROM blocks "+
+				"WHERE project_id = ? AND id::text <> ?::text "+
+				"AND jsonb_path_query_array(document, '$.**.blockId') @> jsonb_build_array(?::text) "+
+				"ORDER BY name ASC, id ASC",
+			projectID, blockID, blockID,
+		).Scan(&rows).Error
+	})
+	return rows, err
 }
 
 // Delete 删除块。

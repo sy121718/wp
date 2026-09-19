@@ -18,10 +18,100 @@ package blockhttp
 // 而不是什么都不显示），?done= 落空串（成功提示未命中的唯一正确表现是「没有这条提示」）。
 
 import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/gin-gonic/gin"
 
+	blockcontract "go_wp/internal/module/block/contract"
+	blockenums "go_wp/internal/module/block/enums"
 	"go_wp/internal/web/shell"
 )
+
+// blockRefDetailMaxBytes 引用明细允许占用的字节上限。
+//
+// 整串（受控文案 + "：" + 明细）要能通过读侧的形状判定（shell.NoticeMaxBytes = 512），
+// 所以明细自己必须封顶 —— 超长的 ?err= 会被读侧判成伪造消息，页面反而显示
+// 「系统内部错误」，把一次**有定位信息**的拒绝变成一句看不懂的兜底话。
+const blockRefDetailMaxBytes = 420
+
+// blockUsageKindKey 引用类别 → i18n key（真文案在 sys_i18n，迁移 297）。
+//
+// switch 穷举而不是拼字符串（"MsgBlockUsage" + ...）：类别是枚举，新增取值时
+// 漏改这里会静默退回渲染成英文枚举值（"page_structure"），而它看起来"像"一个正常文案。
+func blockUsageKindKey(kind blockcontract.BlockUsageKind) string {
+	switch kind {
+	case blockcontract.UsageKindPageDocument:
+		return blockenums.MsgBlockUsagePageDocument
+	case blockcontract.UsageKindPageStructure:
+		return blockenums.MsgBlockUsagePageStructure
+	case blockcontract.UsageKindPageRevision:
+		return blockenums.MsgBlockUsagePageRevision
+	case blockcontract.UsageKindThemeSlot:
+		return blockenums.MsgBlockUsageThemeSlot
+	case blockcontract.UsageKindBlockDocument:
+		return blockenums.MsgBlockUsageBlockDocument
+	case blockcontract.UsageKindContentTemplate:
+		return blockenums.MsgBlockUsageContentTemplate
+	case blockcontract.UsageKindPresentationInstance:
+		return blockenums.MsgBlockUsagePresentationInstance
+	default:
+		return string(kind)
+	}
+}
+
+// blockRefUsageText 把拒绝错误里的引用明细渲染成当前语言的定位串（无明细返回空串）。
+//
+// 同类引用合并成一行（类别 + 至多 3 个定位 + 「等 N 处」）：块引用常常一次命中同一类
+// 的几十个页面，逐条铺开既超长又不可读 —— 而这条文案的用途恰恰是「让人立刻知道去哪解除引用」。
+func blockRefUsageText(c *gin.Context, err error) string {
+	usages := blockcontract.BlockUsages(err)
+	if len(usages) == 0 {
+		return ""
+	}
+	tr := shell.TranslateFor(c)
+	order := make([]blockcontract.BlockUsageKind, 0, len(usages))
+	grouped := map[blockcontract.BlockUsageKind][]string{}
+	for _, u := range usages {
+		loc := strings.TrimSpace(u.Label)
+		if loc == "" {
+			loc = strings.TrimSpace(u.EntityID)
+		}
+		if detail := strings.TrimSpace(u.Detail); detail != "" {
+			loc = loc + "（" + detail + "）"
+		}
+		if _, ok := grouped[u.Kind]; !ok {
+			order = append(order, u.Kind)
+		}
+		grouped[u.Kind] = append(grouped[u.Kind], loc)
+	}
+	parts := make([]string, 0, len(order))
+	for _, kind := range order {
+		key := blockUsageKindKey(kind)
+		locs := grouped[kind]
+		shown := locs
+		tail := ""
+		if len(locs) > 3 {
+			shown = locs[:3]
+			tail = " 等 " + strconv.Itoa(len(locs)) + " 处"
+		}
+		parts = append(parts, tr(key, key)+"："+strings.Join(shown, "、")+tail)
+	}
+	return truncateRunes(strings.Join(parts, "；"), blockRefDetailMaxBytes)
+}
+
+// truncateRunes 按字节上限截断（不切断多字节字符），超出时以「…」收尾。
+func truncateRunes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
+}
 
 // blockBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
 //
@@ -33,7 +123,35 @@ var blockBulkResultTemplates = []string{
 	"没有选中任何块，列表未改动。",
 	"已删除 %d 个块。",
 	"%d 个块都未能删除，列表未改动。",
-	"已删除 %d 个，%d 个未能删除（被页面引用的全局块需先解除引用）。",
+	"已删除 %d 个，%d 个未能删除（被引用的全局块需先解除引用）。",
+}
+
+// blockRefErrText 块删除被拒时的页面文案：受控文案 + "：" + 引用明细。
+//
+// 明细是可定位的数据（哪一类引用、哪些实体），受控文案是白名单的来源 ——
+// 形状「候选文案 + ：+ 定位」正是 shell.FacingNotice 的形态 3，读侧才能原样放行；
+// 长度封顶同样必须由写侧做（读侧超 512 字节一律判伪造，页面会退化成「系统内部错误」）。
+func blockRefErrText(c *gin.Context, err error) string {
+	msg := blockErrText(c, err)
+	if detail := blockRefUsageText(c, err); detail != "" {
+		msg = truncateRunes(msg+"："+detail, shell.NoticeMaxBytes-1)
+	}
+	return msg
+}
+
+// blockRefSkipDetail 批量删除中单个块的跳过原因（块名 + 受控原因 + 引用明细）。
+//
+// 带块名而不是只带 id：批量列表里用户看的是「名字」，一串 uuid 定位不了任何东西。
+// 名字取不到时由调用方退化成 id 前缀。
+func blockRefSkipDetail(c *gin.Context, name string, err error) string {
+	reason := blockErrText(c, err)
+	if detail := blockRefUsageText(c, err); detail != "" {
+		reason = reason + "：" + detail
+	}
+	if strings.TrimSpace(name) == "" {
+		return reason
+	}
+	return strings.TrimSpace(name) + "：" + reason
 }
 
 // blockNoticeTexts 本页可以原样展示的回执文案（当前语言）。

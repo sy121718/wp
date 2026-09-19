@@ -12,6 +12,7 @@ import (
 	"go_wp/internal/builder/core"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	blockcontract "go_wp/internal/module/block/contract"
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	buildcontract "go_wp/internal/module/build/contract"
@@ -168,10 +169,15 @@ func (a *assembly) buildPublishingModules() {
 	}); ok {
 		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService, presentationSvc))
 	}
+	// 删除保护的引用检查（审计 ARCH-02）：五条来源在 BlockReferenceChecker 内合并。
+	// 断言而不是「命中即跳过」：漏接的表现是「删除保护整体失效或只覆盖一部分」，
+	// 而它不会让任何测试或启动日志变红 —— 只会在块被删掉后的下一次构建才暴露。
 	if checker, ok := blockSvc.(interface {
-		SetReferenceChecker(func(ctx context.Context, blockID string) (bool, error))
+		SetReferenceUsageChecker(func(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error))
 	}); ok {
-		checker.SetReferenceChecker(BlockReferenceChecker(pageService, projectService))
+		checker.SetReferenceUsageChecker(BlockReferenceChecker(blockSvc, pageService, projectService, presentationSvc, contentTemplateSvc))
+	} else {
+		panic("block 模块未提供引用明细注入点（SetReferenceUsageChecker）")
 	}
 	if wired, ok := blockSvc.(interface{ RequireWiring() }); ok {
 		wired.RequireWiring()

@@ -12,6 +12,8 @@ package contenttemplatemodel
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"time"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -354,4 +356,50 @@ func (m *Model) GetVersion(ctx context.Context, templateID string, version int64
 		return nil, err
 	}
 	return &row, nil
+}
+
+// ErrProjectRequired 调用方没有给出工程作用域（与 page / block model 同形）。
+//
+// content_templates 带 FORCE 策略（迁移 215）：不设 app.project_id 的读取在换非超级角色后
+// **静默返回 0 行**，而「查不到引用」在删除保护里等于放行 —— 缺作用域必须显式失败。
+var ErrProjectRequired = errors.New("contenttemplate: 需要显式工程作用域")
+
+// BlockDocRefRow 文档树里引用了目标块的模板（草稿或历史版本）。
+type BlockDocRefRow struct {
+	ID          string `gorm:"column:id"`
+	Name        string `gorm:"column:name"`
+	Version     int64  `gorm:"column:version"`
+	FromVersion bool   `gorm:"column:from_version"`
+}
+
+// ListBlockDocumentRefs 列出**本工程内**文档树引用了 blockID 的内容模板（审计 ARCH-02）。
+//
+// 两个来源缺一不可：
+//   - 模板草稿（draft_document）——「未发布、还没构建过」的模板也要拦：
+//     它一旦被激活或绑定为结构模板，块缺失就在下一次构建时暴露；
+//   - 历史版本文档（content_template_versions.document）—— 版本是可编辑源码的
+//     不可变快照，不是编译产物，删块同样会留下断裂引用（历史 artifact 才不阻断）。
+//
+// 历史版本命中的行按 (模板, 版本) 各记一条：同一条 UPDATE 会重跑同一模板的多个版本，
+// 只报模板名说不清是哪一版还在引用。
+func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID string) (rows []BlockDocRefRow, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
+			"SELECT t.id::text AS id, t.name, 0::bigint AS version, false AS from_version "+
+				"FROM content_templates t "+
+				"WHERE t.project_id = ? "+
+				"AND jsonb_path_query_array(t.draft_document, '$.**.blockId') @> jsonb_build_array(?::text) "+
+				"UNION ALL "+
+				"SELECT t.id::text, t.name, v.version, true "+
+				"FROM content_template_versions v JOIN content_templates t ON t.id = v.template_id "+
+				"WHERE t.project_id = ? "+
+				"AND jsonb_path_query_array(v.document, '$.**.blockId') @> jsonb_build_array(?::text) "+
+				"ORDER BY 2 ASC, 1 ASC, 3 ASC",
+			projectID, blockID, projectID, blockID,
+		).Scan(&rows).Error
+	})
+	return rows, err
 }

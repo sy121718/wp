@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/module/contenttemplate/dto"
 )
 
@@ -102,6 +103,17 @@ type ContentTemplateService interface {
 	ResolveTemplateByRoleScoped(ctx context.Context, projectID, entityType, role string) (res *ResolvedTemplate, err error)
 	// ResolveTemplateByIDScoped 在显式工程作用域内按模板 ID 解析当前版本。
 	ResolveTemplateByIDScoped(ctx context.Context, projectID, templateID string) (res *ResolvedTemplate, err error)
+
+	// ListBlockSourceRefs 列出文档树引用了该块的内容模板（审计 ARCH-02：块被模板消费）。
+	//
+	// 覆盖模板草稿与全部历史版本：两者都是**可编辑源码**（版本是源码的不可变快照，
+	// 不是编译产物），删块都会留下断裂引用。装配层把它与 page / presentation / block
+	// 的同名方法合并成块删除保护的完整判据。
+	//
+	// 不复用 Impact 的扫描：那条走的是装配层注入的 TemplateImpactPort（扫页面与实例文档），
+	// 方向是「谁引用了模板」；这里问的是「谁引用了块」，数据源是本模块自己的两张表，
+	// 语义与方向都不同。
+	ListBlockSourceRefs(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error)
 
 	// Impact 列出工程内引用了各模板的页面与实例（影响面提示与删除保护共用一次扫描）。
 	//

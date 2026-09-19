@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 
@@ -72,6 +73,12 @@ func (s *stubTemplateService) Delete(context.Context, *contenttemplatedto.Delete
 // 避免测试里凭空出现引用数据（那会让删除保护看起来生效、实际没有任何引用来源）。
 func (s *stubTemplateService) Impact(context.Context, *contenttemplatedto.ImpactReq) (*contenttemplatedto.ImpactResp, error) {
 	return &contenttemplatedto.ImpactResp{Available: false, References: []contenttemplatedto.TemplateReference{}}, nil
+}
+
+// ListBlockSourceRefs 块引用反查（审计 ARCH-02）：呈现侧的解析链路不消费它，
+// 桩件返回空集合 —— 单测关心的是模板解析的错误分类，不是块删除保护。
+func (s *stubTemplateService) ListBlockSourceRefs(context.Context, string) ([]blockcontract.BlockUsage, error) {
+	return nil, nil
 }
 
 func (s *stubTemplateService) ResolveTemplate(context.Context, string) (*contenttemplatecontract.ResolvedTemplate, error) {

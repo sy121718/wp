@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	pagedto "go_wp/internal/module/page/dto"
 )
 
@@ -219,9 +220,15 @@ type PageService interface {
 	// RebuildStale 重建指定页面（依赖失效后的自动重建端口，PIPE-3）：
 	// 按站点启用语言逐个构建（只产生 staged Artifact），此前已发布的语言自动发布。
 	RebuildStale(ctx context.Context, ids []string) error
-	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
+	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 页眉·页脚·槽位绑定），
 	// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
 	CountBlockReference(ctx context.Context, blockID string) (int64, error)
+	// ListBlockSourceRefs 列出引用该块的页面（审计 ARCH-02）：逐条给出页面路径与命中通道
+	//（文档树 / settings.structure 槽位绑定），供装配层合并成块删除保护的判据。
+	//
+	// 与 CountBlockReference 的关系是「同一个事实的两种投影」：那条给计数（列表页影响面列），
+	// 这条给可定位的实体与类别（删除拒绝时的提示）。
+	ListBlockSourceRefs(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error)
 	// ListStalePages 只读反查：列出待重建页面（ProjectID 为空 = 全部工程），
 	// 带完整计数与截断标记。limit 与排序由调用方给出（方法内不写死业务口径）。
 	//

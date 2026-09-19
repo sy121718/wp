@@ -4,6 +4,7 @@ package presentationcontract
 import (
 	"context"
 
+	blockcontract "go_wp/internal/module/block/contract"
 	"go_wp/internal/module/presentation/dto"
 )
 
@@ -58,6 +59,12 @@ type PresentationService interface {
 	// 编排层在依赖源变化时把失效范围落到具体实例上，而不是全量重建。
 	// 键的构造用 pipeline.DirectContentKey / ContentCollectionKey（与构建期登记逐字一致）。
 	MarkStaleByDependency(ctx context.Context, kind, key string) (ids []string, err error)
+	// ListBlockSourceRefs 列出文档树引用了该块的自动发布实例（审计 ARCH-02）。
+	//
+	// 覆盖实例级覆盖文档（独立文档模式）与全部文档快照：两者都是可编辑源码（或它的
+	// 派生输入），删块会让下一次重建缺一段。**不含** presentation_artifacts 里的
+	// 不可变产物 —— 那部分的保留由 GC 策略决定，不阻断源码删除。
+	ListBlockSourceRefs(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error)
 	// ListArtifactHashes 列出本模块认领的全部产物 hash（IDX-015 反向对账的属主清单）。
 	// 只读且不含内容：对账只需要回答「这些磁盘目录是不是我们产出的」。
 	ListArtifactHashes(ctx context.Context) (hashes []string, err error)

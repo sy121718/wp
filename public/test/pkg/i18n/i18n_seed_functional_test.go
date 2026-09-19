@@ -123,9 +123,10 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("sys_menus 应存在 title_key 列，实际 %d", got)
 	}
 
-	// 4) 干净迁移库的精确总量。228 角色权限页新增 15 对词条，原账本漏记了这批。
+	// 4) 干净迁移库的精确总量。228 角色权限页新增 15 对词条，原账本漏记了这批；
+	// 297 块删除保护的引用类别词条又新增 7 对（MsgBlockUsage*，中英各 7 行）。
 	// 业务词条仍在下文按 key 和语言逐项校验，总量不能替代语义检查。
-	for lang, want := range map[string]int64{"zh-CN": 3769, "en-US": 3654} {
+	for lang, want := range map[string]int64{"zh-CN": 3776, "en-US": 3661} {
 		if got := countRows(t, db, "sys_i18n", "lang = ?", lang); got != want {
 			t.Fatalf("sys_i18n %s 词条数量：want=%d got=%d（新增 seed 时同步核对各语言）", lang, want, got)
 		}

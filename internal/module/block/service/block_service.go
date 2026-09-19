@@ -30,8 +30,16 @@ type Service struct {
 	// block 不直接依赖 page 模块，传播由注入的回调完成，避免 block↔page 装配循环。
 	propagate func(ctx context.Context, blockID string) error
 	// referenced 引用检查器（编排层注入，可空）：global 块删除 / global→template 切换前
-	// 判断是否仍被页面（globalref/structure）或主题槽位引用。未注入时不拦截（兼容直连装配）。
+	// 判断是否仍被源码引用。未注入时不拦截（兼容直连装配）。
+	//
+	// 与 usages 二选一：它只回答「有没有」，说不清「是哪一类、哪几个实体」——
+	// 生产装配用 usages，本字段保留给只关心布尔结果的装配与单测。
 	referenced func(ctx context.Context, blockID string) (bool, error)
+	// usages 引用明细检查器（编排层注入，可空）：返回引用该块的全部源码引用。
+	//
+	// 为什么要明细：块引用散在文档 JSONB 的任意深度（页面正文 / 页眉页脚 / 槽位 /
+	// 其它块 / 模板 / 实例快照），只说「被引用」等于让操作者自己把整站翻一遍。
+	usages func(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error)
 }
 
 // NewService 创建全局块服务。
@@ -51,25 +59,48 @@ func (s *Service) SetReferenceChecker(r func(ctx context.Context, blockID string
 	s.referenced = r
 }
 
+// SetReferenceUsageChecker 注入引用明细检查器（生产装配用；见 SetReferenceChecker）。
+//
+// 与 SetReferenceChecker 的关系：两处都注入时以本检查器为准（它能回答「哪些实体」，
+// 布尔检查器只能回答「有没有」）—— 不做「两个都查、取或」是因为那会把两套口径
+// 拼在一起，一处漏改就变成「明明被引用却放行」。
+func (s *Service) SetReferenceUsageChecker(r func(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error)) {
+	s.usages = r
+}
+
 // RequireWiring 编排完成后调用：传播器或引用检查器未注入则 fail-fast。
 func (s *Service) RequireWiring() {
-	if s.propagate == nil || s.referenced == nil {
+	if s.propagate == nil || (s.referenced == nil && s.usages == nil) {
 		panic("block.Service: stale 传播器与引用检查器必须注入（dashboard 装配后调用 RequireWiring）")
 	}
 }
 
-// blockReferenced 判断块是否仍被引用（检查器未注入视为仍被引用，宁拒勿删）。
-func (s *Service) blockReferenced(ctx context.Context, blockID string) bool {
-	if s.referenced == nil {
-		return true
+// blockRefState 取「仍被哪些源码引用」：明细检查器优先，退回布尔检查器。
+//
+// 两个方向的失败都朝**拒绝**走（删除不可逆，宁拒勿删）：
+//   - 检查器报错：按被引用处理（拿不到引用清单不能当成没有引用）；
+//   - 检查器未注入：同样视为被引用。
+//
+// 返回的 usages 可能为空而 referenced 为 true（布尔检查器命中 / 检查失败）：
+// 那种情况下拒绝依然成立，只是提示退回到通用文案。
+func (s *Service) blockRefState(ctx context.Context, blockID string) (usages []blockcontract.BlockUsage, referenced bool) {
+	if s.usages != nil {
+		list, err := s.usages(ctx, blockID)
+		if err != nil {
+			logger.Scene("block").With("block_id", blockID).Error(err, "块引用明细检查失败，按被引用处理")
+			return nil, true
+		}
+		return list, len(list) > 0
 	}
-	ok, err := s.referenced(ctx, blockID)
-	if err != nil {
-		// 检查失败按「被引用」处理（宁拒勿删，删除是不可逆操作）。
-		logger.Scene("block").With("block_id", blockID).Error(err, "块引用检查失败，按被引用处理")
-		return true
+	if s.referenced != nil {
+		ok, err := s.referenced(ctx, blockID)
+		if err != nil {
+			logger.Scene("block").With("block_id", blockID).Error(err, "块引用检查失败，按被引用处理")
+			return nil, true
+		}
+		return nil, ok
 	}
-	return ok
+	return nil, true
 }
 
 // propagateStale 块内容变更/删除后触发引用方 stale 传播。
@@ -233,9 +264,10 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 		}
 		// global→template 切换防御：仍被引用的 global 块一旦切成 template，
 		// 引用页面将悬空（stale 不再传播），必须先解除引用。
-		if entity.ReuseMode == blockmodel.ReuseGlobal && reuseMode == blockmodel.ReuseTemplate &&
-			s.blockReferenced(ctx, entity.ID) {
-			return nil, ErrBlockInUse
+		if entity.ReuseMode == blockmodel.ReuseGlobal && reuseMode == blockmodel.ReuseTemplate {
+			if usages, inUse := s.blockRefState(ctx, entity.ID); inUse {
+				return nil, blockcontract.NewBlockInUseError(usages)
+			}
 		}
 	}
 	document := entity.Document
@@ -269,8 +301,12 @@ func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err erro
 	if err != nil {
 		return err
 	}
-	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force && s.blockReferenced(ctx, entity.ID) {
-		return ErrBlockInUse
+	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force {
+		if usages, inUse := s.blockRefState(ctx, entity.ID); inUse {
+			// 明细随错误返回：拒绝必须可定位（哪一类引用、哪些实体），
+			// 日志与页面提示共用同一份清单，不允许各拼一套。
+			return blockcontract.NewBlockInUseError(usages)
+		}
 	}
 	if err = s.model.Delete(ctx, entity.ProjectID, entity.ID); err != nil {
 		return err
@@ -299,6 +335,33 @@ func (s *Service) CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *bl
 		return nil, ErrInvalidDoc
 	}
 	return &blockdto.CloneResp{Document: out}, nil
+}
+
+// ListBlockSourceRefs 列出引用该块的**其它全局块**（审计 ARCH-02：嵌套块引用）。
+//
+// 逐工程扇出（DB-009）：块 id 说不出工程，而 blocks 带 FORCE 策略 —— 漏作用域时
+// 这条查询静默返回空，删除保护会据此放行。
+func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) (out []blockcontract.BlockUsage, err error) {
+	ids, err := s.projectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, projectID := range ids {
+		if ctx.Err() != nil {
+			break
+		}
+		rows, rerr := s.model.ListBlockDocumentRefs(ctx, projectID, blockID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		for i := range rows {
+			out = append(out, blockcontract.BlockUsage{
+				Kind: blockcontract.UsageKindBlockDocument, ProjectID: projectID,
+				EntityID: rows[i].ID, Label: rows[i].Name,
+			})
+		}
+	}
+	return out, nil
 }
 
 // getExistingBlock 按块 id 定位块（请求只带 id 的入口：更新 / 删除 / 复制 AST）。

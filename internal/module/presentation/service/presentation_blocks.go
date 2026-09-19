@@ -14,7 +14,9 @@ package presentationservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
@@ -106,3 +108,50 @@ func (s *Service) ResolveStructureDocument(ctx context.Context, projectID, templ
 
 // 编译期断言：本服务是结构模板解析端口（结构槽位的模板来源）。
 var _ pipeline.StructureTemplatePort = (*Service)(nil)
+
+// ListBlockSourceRefs 列出文档树引用了该块的自动发布实例（审计 ARCH-02）。
+//
+// 逐工程扇出（DB-009 第二批）：块 id 说不出工程，而 presentation_instances 带 FORCE 策略 ——
+// 漏作用域时这条查询静默返回空，删除保护会据此**放行**（正是本 finding 要拦住的形态）。
+//
+// Detail 区分 override_document 与 snapshot：两者的解除路径不同（改实例文档 vs
+// 改模板后重建），合并成一条会让操作者以为改完一处就够。
+func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) (out []blockcontract.BlockUsage, err error) {
+	if s == nil || s.project == nil {
+		// 没有工程契约就枚举不出工程，而 instances 带 FORCE 策略：宁可显式失败，
+		// 也不返回空集合 —— 空集合在删除保护里等于「没有引用」。
+		return nil, errors.New("project 契约未装配，无法逐工程反查自动发布实例的块引用")
+	}
+	projects, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range projects {
+		projectID := strings.TrimSpace(projects[i].ID)
+		if projectID == "" {
+			continue
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		rows, rerr := s.m.ListBlockDocumentRefs(ctx, projectID, blockID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		for j := range rows {
+			label := strings.TrimSpace(rows[j].URLPath)
+			if label == "" {
+				label = strings.TrimSpace(rows[j].EntityType) + ":" + strings.TrimSpace(rows[j].EntityID)
+			}
+			detail := "snapshot"
+			if !rows[j].FromSnapshot {
+				detail = "override_document"
+			}
+			out = append(out, blockcontract.BlockUsage{
+				Kind: blockcontract.UsageKindPresentationInstance, ProjectID: projectID,
+				EntityID: rows[j].InstanceID, Label: label, Detail: detail,
+			})
+		}
+	}
+	return out, nil
+}

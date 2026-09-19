@@ -237,7 +237,8 @@ func (h *blockPageHandle) DeleteBlock(c *gin.Context) {
 	force := strings.TrimSpace(c.PostForm("force")) == "1"
 	if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id, Force: force}); err != nil {
 		logger.Scene("block").With("op", "DeleteBlock").With("block_id", id).Error(err, "删除全局块失败")
-		c.Redirect(http.StatusSeeOther, blockListURL(projectID, blockErrText(c, err)))
+		// blockRefErrText：被引用拒绝时把「哪一类引用、哪些实体」一起带回列表页（ARCH-02）。
+		c.Redirect(http.StatusSeeOther, blockListURL(projectID, blockRefErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, blockListURL(projectID, ""))
@@ -263,11 +264,32 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 		c.Redirect(http.StatusSeeOther, "/admin/blocks?"+q.Encode())
 		return
 	}
+	// 明细要带块名：批量列表里用户按名字认块，一串 uuid 定位不了任何东西。
+	// 取名字是一次只读列表，失败只影响文案（记日志），不阻断删除流程。
+	nameByID := map[string]string{}
+	if projectID != "" {
+		if list, lerr := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: projectID}); lerr == nil {
+			for i := range list {
+				nameByID[list[i].ID] = list[i].Name
+			}
+		} else {
+			logger.Scene("block").With("op", "BlocksBulkDelete").Error(lerr, "批量删除前取块名失败，提示退化为 id 前缀")
+		}
+	}
 	deleted, skipped := 0, 0
+	// 逐条记跳过原因，最多带 3 条回列表页（整串有 512 字节的形状上限，读侧超限判伪造）。
+	details := make([]string, 0, 3)
 	for _, id := range ids {
 		if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id}); err != nil {
-			logger.Scene("block").With("op", "BlocksBulkDelete").Error(err, "批量删除全局块失败")
+			logger.Scene("block").With("op", "BlocksBulkDelete").With("block_id", id).Error(err, "批量删除全局块失败")
 			skipped++
+			if len(details) < 3 {
+				name := strings.TrimSpace(nameByID[id])
+				if name == "" {
+					name = shortBlockID(id)
+				}
+				details = append(details, blockRefSkipDetail(c, name, err))
+			}
 			continue
 		}
 		deleted++
@@ -277,7 +299,7 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 		q.Set("project", projectID)
 	}
 	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
-	if msg := blocksBulkDeleteResult(deleted, skipped); msg != "" {
+	if msg := blocksBulkDeleteResult(deleted, skipped, details); msg != "" {
 		if skipped > 0 {
 			q.Set("err", msg)
 		} else {
@@ -293,19 +315,37 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 
 // blocksBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
-func blocksBulkDeleteResult(deleted, skipped int) string {
+// details 是逐条跳过原因（最多几条，由调用方截断）：全部跳过 / 部分跳过时附在结论之后，
+// 形状是「受控模板句 + ：+ 定位」，读侧白名单按形态 3（前缀匹配）放行。
+func blocksBulkDeleteResult(deleted, skipped int, details []string) string {
 	// 模板取自 block_err.go 的 blockBulkResultTemplates —— 那里同时也是读侧的
 	// 白名单来源：写侧改措辞时读侧跟着变，不会静默失配成「系统内部错误」。
+	tail := ""
+	if len(details) > 0 {
+		tail = "：" + strings.Join(details, "；")
+		if skipped > len(details) {
+			tail += "…"
+		}
+	}
 	switch {
 	case deleted == 0 && skipped == 0:
 		return blockBulkResultTemplates[0]
 	case skipped == 0:
 		return fmt.Sprintf(blockBulkResultTemplates[1], deleted)
 	case deleted == 0:
-		return fmt.Sprintf(blockBulkResultTemplates[2], skipped)
+		return truncateRunes(fmt.Sprintf(blockBulkResultTemplates[2], skipped)+tail, shell.NoticeMaxBytes-1)
 	default:
-		return fmt.Sprintf(blockBulkResultTemplates[3], deleted, skipped)
+		return truncateRunes(fmt.Sprintf(blockBulkResultTemplates[3], deleted, skipped)+tail, shell.NoticeMaxBytes-1)
 	}
+}
+
+// shortBlockID 取块 id 的前 8 位做提示里的退化定位（取名字失败时用）。
+func shortBlockID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8] + "…"
 }
 
 // SaveBlockContent 工作台保存块内容（POST /admin/blocks/save-content，JSON）。

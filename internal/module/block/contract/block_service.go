@@ -35,4 +35,11 @@ type BlockService interface {
 	// CloneAST 复制块文档为独立 AST（全部节点重生成 ID，docs/02-D §5.2「插入-复制」动作）。
 	// 返回的文档与源块脱钩：此后源块修改不传播到已并入的页面。
 	CloneAST(ctx context.Context, req *blockdto.CloneReq) (res *blockdto.CloneResp, err error)
+	// ListBlockSourceRefs 列出**其它全局块**文档树里对该块的引用（审计 ARCH-02：块引用块）。
+	//
+	// 与 page / presentation / contenttemplate 契约上的同名方法一起，由装配层合并成
+	// 块删除保护的完整判据；块自己那一份必须由本模块提供 —— 嵌套引用写在 blocks.document
+	// 这个 JSONB 里，别的模块看不见，而它此前完全不在判据内（删掉内层块，外层块在下次
+	// 构建时静默少一段）。
+	ListBlockSourceRefs(ctx context.Context, blockID string) ([]BlockUsage, error)
 }

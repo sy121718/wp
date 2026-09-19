@@ -22,6 +22,20 @@ const (
 
 	MsgBlockCloned = "MsgBlockCloned" // 已复制块内容，副本与源块独立
 
+	// 有效源码引用的类别文案（审计 ARCH-02，块删除保护的定位提示）。
+	//
+	// 为什么单独给类别建词条：拒绝删除时要回答「是哪一类引用在挡路」——
+	// 「页面文档树」与「内容模板」的解除路径完全不同（改页面 vs 改模板），
+	// 只说「被引用」等于让操作者自己把整站文档翻一遍。
+	// 值是 i18n key，真文案在 sys_i18n（迁移 297）。
+	MsgBlockUsagePageDocument         = "MsgBlockUsagePageDocument"         // 页面文档树
+	MsgBlockUsagePageStructure        = "MsgBlockUsagePageStructure"        // 页面的页眉/页脚/槽位绑定
+	MsgBlockUsagePageRevision         = "MsgBlockUsagePageRevision"         // 页面的历史修订（可回滚的源码历史）
+	MsgBlockUsageThemeSlot            = "MsgBlockUsageThemeSlot"            // 主题的页眉/页脚槽位绑定
+	MsgBlockUsageBlockDocument        = "MsgBlockUsageBlockDocument"        // 其它全局块的文档树
+	MsgBlockUsageContentTemplate      = "MsgBlockUsageContentTemplate"      // 内容模板
+	MsgBlockUsagePresentationInstance = "MsgBlockUsagePresentationInstance" // 自动发布实例
+
 	// MsgInternalError 块服务内部错误统一兜底提示（禁止直出 err.Error() 泄露内部细节）。
 	MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
 )

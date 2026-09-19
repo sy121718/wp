@@ -396,9 +396,25 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 // （public/test/page/unit 有等价性与 EXPLAIN 断言守住）。
 const blockRefMatchCond = `jsonb_path_query_array(draft_document, '$.**.blockId') @> jsonb_build_array(?::text)`
 
+// blockStructureMatchCond settings.structure 的槽位绑定匹配条件（页眉 / 页脚 / 其余槽位）。
+//
+// 三个通道：headerBlockId / footerBlockId 是既有字段，Slots 是「槽位名 → 全局块 ID」
+// 的合并通道（合并规则见 builder.StructureBindings.SlotBindings，Slots 优先）。
+// 漏掉 Slots 的后果是确定的：公告条 / 侧边栏这类槽位绑定的块**查不出引用** ——
+// 块被删掉、页面在下次构建后少一个区块，而删除动作一路绿灯（审计 ARCH-02）。
+//
+// 为什么用 jsonb_path_query_array 收集槽位值而不是拼字符串：Slots 的值是 JSON 字符串，
+// LIKE '%"id"%' 会同时命中「正文里恰好写了这个 id」的噪音 —— 引用保护宁可多拦一次
+// （人工确认），不可制造一堆假引用让人忽略提示。也不用 jsonb_each_text：它对非 object
+// 的 slots（历史数据 / 手工改坏的文档）会直接报错，让删除入口 500；路径查询对缺失、
+// null、非 object 一律返回空序列，语义是「没有这条引用」。
+const blockStructureMatchCond = `(draft_document->'settings'->'structure'->>'headerBlockId' = ?::text
+			OR draft_document->'settings'->'structure'->>'footerBlockId' = ?::text
+			OR jsonb_path_query_array(draft_document, '$.settings.structure.slots.*') @> jsonb_build_array(?::text))`
+
 // CountBlockReference 统计**本工程内**引用该块的未删除页面数（与 MarkStaleForBlock 同一匹配条件）：
-// core.globalref 节点（blockId）或 settings.structure 页眉/页脚自选绑定。
-// 供 block 模块删除/切换 global→template 前的引用拦截（docs/02-D §9）。
+// core.globalref 节点（blockId）或 settings.structure 的页眉/页脚/槽位绑定。
+// 供 block 模块删除/切换 global→template 前的引用拦截（docs/02-D §9）与块列表页的「影响面」列。
 //
 // projectID 必填（DB-009 第三批）：块 id 本身说不出工程，而 pages 带 FORCE 策略。
 // 「全站引用数」由调用方（service）逐工程调用后求和 —— 这正是 block 模块删块前那道
@@ -410,20 +426,95 @@ func (m *Model) CountBlockReference(ctx context.Context, projectID, blockID stri
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageEntity{}).
 			Where("project_id = ? AND deleted_at IS NULL AND ("+
-				blockRefMatchCond+
-				" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
-				" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?)",
-				projectID, blockID, blockID, blockID,
+				blockRefMatchCond+" OR "+blockStructureMatchCond+")",
+				projectID, blockID, blockID, blockID, blockID,
 			).Count(&count).Error
 	})
 	return count, err
 }
 
+// BlockSourceRefRow 引用某块的页面行（审计 ARCH-02 的删除保护读模型）。
+//
+// 两个通道分列而不是合并成一条：页眉绑定与正文里插一块的**解除路径不同**
+// （页面设置 vs 编辑器），提示里说清是哪一条，操作者才知道去哪里改。
+type BlockSourceRefRow struct {
+	ID          string `gorm:"column:id"`
+	Path        string `gorm:"column:draft_path"`
+	InDocument  bool   `gorm:"column:in_document"`
+	InStructure bool   `gorm:"column:in_structure"`
+}
+
+// ListBlockSourceRefs 列出**本工程内**引用了该块的未删除页面，并标出命中通道
+// （文档树 / settings.structure 槽位绑定；同一页面可同时命中两条）。
+//
+// 与 CountBlockReference 的区别只在形状：那条回答「有几处」，这条回答「是哪些、走哪条通道」——
+// 删除保护要把「哪一类引用、哪些实体」告诉操作者，计数说不出实体。
+// 两者共用同一组匹配条件（blockRefMatchCond + blockStructureMatchCond），
+// 改一处不改另一处就会出现「计数说有引用、明细却是空的」这种自相矛盾的提示。
+func (m *Model) ListBlockSourceRefs(ctx context.Context, projectID, blockID string) (rows []BlockSourceRefRow, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
+			"SELECT id::text AS id, draft_path, ("+blockRefMatchCond+") AS in_document, ("+blockStructureMatchCond+") AS in_structure "+
+				"FROM pages WHERE project_id = ? AND deleted_at IS NULL AND ("+
+				"("+blockRefMatchCond+") OR ("+blockStructureMatchCond+")) "+
+				"ORDER BY draft_path ASC, id ASC",
+			blockID, blockID, blockID, blockID, // SELECT：文档树 1 + 结构 3
+			projectID,
+			blockID, blockID, blockID, blockID, // WHERE：文档树 1 + 结构 3
+		).Scan(&rows).Error
+	})
+	return rows, err
+}
+
+// BlockRevisionRefRow 引用了某块的历史修订（审计 ARCH-02 补齐的第三类页面引用）。
+//
+// 带修订版本号而不是只给页面：修订是可回滚的源码历史，操作者要判断的是
+// 「这一版还该不该留」，只说「页面 /x」等于让他自己去翻修订列表。
+type BlockRevisionRefRow struct {
+	PageID  string `gorm:"column:page_id"`
+	Path    string `gorm:"column:draft_path"`
+	Version int64  `gorm:"column:version"`
+}
+
+// ListBlockRevisionRefs 列出**本工程内**历史修订文档引用了该块的页面修订（审计 ARCH-02）。
+//
+// 为什么历史修订也要算源码引用：page_revisions 是**可回滚的源码历史**（回滚是一个显式动作，
+// 回滚后引用就回到当前草稿上），与 content_template_versions 是同一类事实 ——
+// 只查当前草稿会让「删掉块 → 回滚到旧修订」在回滚那一刻才暴露断链（最难排查的一类）。
+// 与「历史 artifact 不阻断」不冲突：修订不是编译产物，它有保留期兜底
+// （page_retention：90 天 / 每页最近 20 个版本），不会造成永久阻断。
+//
+// page_revisions 没有 project_id 列（属主是页面），工程作用域由 JOIN 的 pages 行承担；
+// 页面已软删时其修订不再阻断（修订跟着页面走，页面都不在了谈不上回滚）。
+func (m *Model) ListBlockRevisionRefs(ctx context.Context, projectID, blockID string) (rows []BlockRevisionRefRow, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
+			"SELECT r.page_id::text AS page_id, p.draft_path, r.version "+
+				"FROM page_revisions r JOIN pages p ON p.id = r.page_id "+
+				"WHERE p.project_id = ? AND p.deleted_at IS NULL "+
+				"AND jsonb_path_query_array(r.draft_document, '$.**.blockId') @> jsonb_build_array(?::text) "+
+				"ORDER BY p.draft_path ASC, r.version ASC",
+			projectID, blockID,
+		).Scan(&rows).Error
+	})
+	return rows, err
+}
+
 // MarkStaleForBlock 把**本工程内**文档中经 core.globalref 引用（draft_document 树内
-// "blockId": "<blockID>" 节点）或 settings.structure 页眉/页脚自选绑定
-// （headerBlockId/footerBlockId，页面级覆盖，非主题默认）该块的页面标记为待重建，
+// "blockId": "<blockID>" 节点）或 settings.structure 的页眉/页脚/槽位绑定
+// （headerBlockId / footerBlockId / slots，页面级覆盖，非主题默认）该块的页面标记为待重建，
 // 返回本次 UPDATE **真正命中**的页面 ID（RETURNING id）。
 // 与 MarkStaleForTheme 可能重叠命中同一页面，stale=true 幂等，无妨。
+//
+// 匹配条件与 CountBlockReference / ListBlockSourceRefs 共用同一组常量：
+// 删除保护说「这个块被引用」而变更传播不覆盖同一处引用时，两边会各说各话 ——
+// 现象是「删不掉，但改了它，页面也从不重建」（ARCH-02 的同一处缺口）。
 //
 // projectID 必填（DB-009 第三批）：块 id 说不出工程，而这条 UPDATE 的可见范围由策略决定。
 // 「全站标记」由 service 层逐工程调用拼出来；漏作用域时它静默匹配 0 行 ——
@@ -435,11 +526,9 @@ func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Raw(
 			"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL AND ("+
-				blockRefMatchCond+
-				" OR draft_document->'settings'->'structure'->>'headerBlockId' = ?"+
-				" OR draft_document->'settings'->'structure'->>'footerBlockId' = ?) "+
+				blockRefMatchCond+" OR "+blockStructureMatchCond+") "+
 				"RETURNING id",
-			time.Now().UTC(), projectID, blockID, blockID, blockID,
+			time.Now().UTC(), projectID, blockID, blockID, blockID, blockID,
 		).Scan(&ids).Error
 	})
 	if err != nil {

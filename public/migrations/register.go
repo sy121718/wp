@@ -70,4 +70,6 @@ func init() {
 	registerFragmentLoginPanelI18n()
 	// 294：文案词条页的只读权限点 i18n:view（补 178 的读侧缺口，见 register_i18n_view_permission.go）。
 	registerI18nViewPermission()
+	// 297：块删除保护的引用类别词条（MsgBlockUsage*，见 register_block_usage_i18n.go）。
+	registerBlockUsageI18n()
 }

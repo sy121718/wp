@@ -17,6 +17,7 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
+	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
@@ -90,6 +91,39 @@ func (s *Service) validEntityType(entityType string) bool {
 
 // 编译期契约断言。
 var _ contenttemplatecontract.ContentTemplateService = (*Service)(nil)
+
+// ListBlockSourceRefs 列出文档树引用了该块的内容模板（审计 ARCH-02）。
+//
+// 逐工程扇出（DB-009 第三批）：块 id 说不出工程，而 content_templates 带 FORCE 策略 ——
+// 漏作用域时这条查询静默返回空，删除保护会据此放行。
+//
+// 历史版本按 (模板, 版本) 各记一条：Detail 写出版本号，提示里才说得清「是哪一版还在引用」。
+func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) (out []blockcontract.BlockUsage, err error) {
+	ids, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, projectID := range ids {
+		if ctx.Err() != nil {
+			break
+		}
+		rows, rerr := s.m.ListBlockDocumentRefs(ctx, projectID, blockID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		for i := range rows {
+			detail := ""
+			if rows[i].FromVersion {
+				detail = fmt.Sprintf("version %d", rows[i].Version)
+			}
+			out = append(out, blockcontract.BlockUsage{
+				Kind: blockcontract.UsageKindContentTemplate, ProjectID: projectID,
+				EntityID: rows[i].ID, Label: rows[i].Name, Detail: detail,
+			})
+		}
+	}
+	return out, nil
+}
 
 // fanoutProjectIDs 逐工程扇出用的工程清单（DB-009 第三批）。
 //
