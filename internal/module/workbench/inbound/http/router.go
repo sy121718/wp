@@ -14,6 +14,7 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -46,6 +47,8 @@ type Handle struct {
 	contenttemplates contenttemplatecontract.ContentTemplateService
 	// templatePreview 模板预览实例端口（presentation 的最窄能力）。
 	templatePreview TemplatePreviewPort
+	// instances 实例编辑模式端口（docs/04-C：?instance= 画布改覆盖文档）。
+	instances presentationcontract.PresentationService
 	// blueprints 蓝图候选端口（可空降级；当前编辑器本体未消费，装配位保留）。
 	blueprints blueprintcontract.BlueprintService
 	// products 商品构建期数据源（检查器 entityref 下拉，可空降级）。
@@ -226,5 +229,7 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	// 内容模板画布预览（EDT-001）：GET 已保存 / POST 未保存草稿。
 	g.GET("/workbench/template/preview", h.TemplatePreview)
 	g.POST("/workbench/template/preview", h.TemplatePreviewDraft)
+	// 实例编辑模式保存（docs/04-C）：覆盖文档 + 重编译发布，只改本实例。
+	g.POST("/workbench/instance/save", h.InstanceSave)
 	return h
 }

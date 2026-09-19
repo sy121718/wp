@@ -37,12 +37,39 @@
             <a class="btn" href="/admin/products/template?project={{selectedProject}}&amp;product={{.Product.ID}}">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</a>
             <button type="submit" form="product-preview-{{.Product.ID}}" class="btn">{{ .["t"]("admin.products.row.previewDetail", "预览详情页") }}</button>
             <button type="submit" form="product-del-{{.Product.ID}}" class="btn btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+    {* 详情页模板面板（docs/04-C-instance-override.md §5）：绑定状态 + 预览 + 进入自定义。 *}
+    {{if isset(.TplPanel)}}
+    {{if .TplPanel.Avail}}
+    <section class="card card-body">
+        <h2 class="card-title mb-lg">详情页模板</h2>
+        {{if isset(.TplPanel.InstanceID)}}
+        <p class="kv"><span>当前模板</span><span>{{.TplPanel.TemplateID}}</span></p>
+        {{if .TplPanel.Published}}
+        <div class="flex gap-sm">
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?{{.TplPanel.PreviewQS}}">预览</a>
+            <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">进入自定义</a>
+        </div>
+        <p class="hint">自定义只影响这一个商品：画布改组件、保存即重新发布；共享模板与其他商品不受影响。</p>
+        {{else}}
+        <p class="hint">模板已绑定但尚未发布：先在上方完成首次发布，再进入可视化自定义。</p>
+        {{end}}
+        {{else}}
+        <p class="hint">该商品还没有发布详情页：完成首次发布后可在此预览与进入可视化自定义。</p>
+        {{end}}
+    </section>
+    {{end}}
+    {{end}}
             {{end}}
         </div>
     </header>
 
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.products.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    {* 变体清单保存的结论（?done=）：新增 / 改 SKU / 删除的计数与逐条跳过原因。
+       与 ?err= 分开是必须的 —— 保存成功但有跳过时两条提示都要能看见。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{ .["t"]("admin.products.lastNotice", "上一次保存结果：") }}{{.Done}}</p>
     {{end}}{{end}}
 
     {{if !.HasProduct}}
@@ -64,6 +91,10 @@
         <dl class="kv">
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.name", "商品") }}</dt><dd>{{p.Name}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.slug", "URL 段") }}</dt><dd>{{if p.Slug != ""}}<code>/{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
+            {* 主体 SKU（products.sku_code，迁移 246）：只读展示。它的唯一性范围是**本工程** ——
+               同工程的两个商品不能共用同一主体 SKU（部分唯一索引 uq_products_project_sku_code），
+               变体 SKU 以它为主体拼接；跨工程 / 跨仓库可以有同名编码。 *}
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</dt><dd>{{if isset(p.SKUCode)}}{{if p.SKUCode != ""}}<code>{{p.SKUCode}}</code>{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}} <span class="text-mute text-sm">{{ .["t"]("admin.product_detail.sku.scope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.status", "状态") }}</dt><dd><span class="badge">{{p.Status}}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.variants", "变体数") }}</dt><dd>{{p.VariantCount}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</dt><dd>{{p.PriceMin}} ~ {{p.PriceMax}}</dd></div>
@@ -170,7 +201,70 @@
         <div id="product-seo-score-{{p.ID}}" class="wb-seo-panel"></div>
     </section>
 
-    {* ==== 变体：子资源表 + 它的两个入口（新建变体 / 生成组合） ==== *}
+    {* ==== 捆绑构成：按商品类型出现的编辑区（type=bundle 才有）==== *}
+    {* 数据键 Bundle 由 handler 在 type=bundle 时注入；type=variant 没有这个键，
+       可选键一律 isset 判断 —— 直接参与 if 会在缺键那一行中断渲染（状态码仍 200，
+       之后的变体表与评分表整块消失）。 *}
+    {* 口径（admin-ui-logic §2.1）：说明文字进 .help 悬浮，正文只放数据。
+       成员价是**参考值**：套餐金额只由容器价得出，故列头直接写明「不参与套餐价」。 *}
+    {{if isset(p.Bundle)}}
+    {{b := p.Bundle}}
+    <section class="card list-card">
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.product_detail.bundle.title", "捆绑构成") }}</strong>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_detail.bundle.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_detail.bundle.help.text", "捆绑容器只有一个对外价格（容器价）。成员只作为选项与履约 / 库存明细：成员价与成员成本都不参与套餐价，成员的挂牌价仅作参考（核对配置用），成员成本只进后台毛利口径。选项规则与整单上下限在「编辑捆绑构成」里改。") }}</span>
+            </span>
+            {{if b.Loaded}}<span class="badge">{{ .["t"]("admin.product_detail.bundle.containerPrice", "容器价（套餐价）") }} {{b.BasePrice}}</span>{{end}}
+            <span class="toolbar-spacer"></span>
+            <a class="btn btn-sm" href="/admin/products/bundle?projectId={{selectedProject}}&amp;productId={{p.ID}}">{{ .["t"]("admin.product_detail.bundle.edit", "编辑捆绑构成") }}</a>
+        </div>
+        {{if b.ErrorText != ""}}
+        {* 配置读不出来时不静默：区块留在页面上并说明原因（商品不存在 / 库存真源未接入）。 *}
+        <p class="badge badge-warning" role="alert">{{b.ErrorText}}</p>
+        {{else}}{{if b.OptionCount == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_detail.bundle.empty.title", "还没有配置捆绑构成") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_detail.bundle.empty.desc", "这个捆绑容器还没有成员，前台套餐目前只能买到一个空组合。到「编辑捆绑构成」里挑选成员 SKU 并设置必选与数量。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/products/bundle?projectId={{selectedProject}}&amp;productId={{p.ID}}">{{ .["t"]("admin.product_detail.bundle.edit", "编辑捆绑构成") }}</a>
+            </div>
+        </div>
+        {{else}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_detail.bundle.tableAria", "捆绑构成成员") }}">
+            <table class="data-table data-table-wide">
+                <thead><tr><th>SKU</th><th>{{ .["t"]("admin.product_detail.bundle.col.source", "成员来源") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.product", "所属商品") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.required", "必选") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.defaultQty", "默认数量") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.minQty", "最小数量") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.maxQty", "最大数量（0 = 不限）") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.available", "库存可用量") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.cost", "成员成本（后台口径）") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.itemPrice", "成员挂牌价（参考 · 不参与套餐价）") }}</th><th>{{ .["t"]("admin.product_detail.bundle.col.state", "状态") }}</th></tr></thead>
+                <tbody>
+                {{range _, o := b.Options}}
+                <tr>
+                    {* SKU 已被删除时配置里只剩变体 id：照常出行并标出，运维才有线索去修配置。 *}
+                    <td>{{if o.SKUCode != ""}}<code>{{o.SKUCode}}</code>{{else}}<code class="text-mute">{{o.VariantID}}</code>{{end}}</td>
+                    {* 成员来源（docs/14 §1.2）：三种来源的溯源快照，空 = 手工指定 / 历史配置。
+                       只展示，不参与任何计价与库存判定（成员身份恒为 variantId）。 *}
+                    <td>{{if isset(o.SourceLabel)}}{{if o.SourceLabel != ""}}{{o.SourceLabel}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{if o.ProductName != ""}}{{o.ProductName}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{if o.Required}}<span class="badge badge-info">{{ .["t"]("admin.product_bundle.option.required", "必选") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</span>{{end}}</td>
+                    <td>{{o.DefaultQty}}</td>
+                    <td>{{o.MinQty}}</td>
+                    <td>{{if o.MaxQty > 0}}{{o.MaxQty}}{{else}}<span class="text-mute">{{ .["t"]("admin.product_detail.bundle.noLimit", "不限") }}</span>{{end}}</td>
+                    <td>{{if o.Missing}}<span class="text-mute">—</span>{{else}}{{o.Available}}{{end}}</td>
+                    <td>{{o.CostPrice}}</td>
+                    <td>{{o.ItemPrice}}</td>
+                    <td>{{if o.Missing}}<span class="badge badge-warning">{{ .["t"]("admin.product_detail.bundle.state.missing", "成员 SKU 已删除") }}</span>{{else}}{{if o.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}{{end}}</td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}{{end}}
+    </section>
+    {{end}}
+
+    {* ==== 变体清单（docs/14 §8 预览—保存模型）====
+       「生成」只把组合追加进这张清单（不落库）、「移除」只把行移出清单（不落库、不弹确认），
+       只有「保存变体清单」才以清单为准落库。初始行 = 库里已有的变体（不是重算笛卡尔积），
+       所以上次删掉的组合不会自己冒出来。表单与 JS 的交互见文件末尾的 script。 *}
     <section class="card list-card">
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.products.variants.title", "变体") }}</strong>
@@ -182,33 +276,69 @@
             <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-variant-create-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.variant.create", "新建变体") }}">＋ {{ .["t"]("admin.products.variant.create", "新建变体") }}</button>
             {{end}}
         </div>
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
-            <table class="data-table data-table-wide">
-                {* 库存展示值（issue #32）：缓存列已删，这里读的是**查询期投影**（真源跨仓汇总，
-                   一次批量取）。可用量判定一律走真源，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
-                <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
-                <tbody>
-                {{if len(p.Variants) == 0}}
-                <tr><td colspan="8" class="text-mute text-sm">{{ .["t"]("admin.products.variants.empty", "这个商品还没有变体。") }}</td></tr>
+        <p class="text-mute text-sm">{{ .["t"]("admin.products.variants.listHint", "清单里的「生成 / 移除」都不写库：生成只是把组合显示在这里，「保存变体清单」才落库。") }}</p>
+        <form method="post" action="/admin/products/variant/save" data-variant-form
+              data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单序列化失败，请刷新页面后重试。") }}">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="productId" value="{{p.ID}}">
+            {* rows 由提交时的 JS 用清单 DOM 组装（JSON 数组）：行上的 variantId / skuCode / optionValues *}
+            <input type="hidden" name="rows" data-variant-rows>
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
+                <table class="data-table data-table-wide">
+                    {* 库存展示值（issue #32）：缓存列已删，这里读的是**查询期投影**（真源跨仓汇总，
+                       一次批量取）。可用量判定一律走真源，点「各仓库存」到 /admin/inventory 按 SKU 查。 *}
+                    <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
+                    <tbody data-variant-list>
+                    {{if len(p.Variants) == 0}}
+                    <tr data-variant-empty><td colspan="8" class="text-mute text-sm">{{ .["t"]("admin.products.variants.empty", "这个商品还没有变体。") }}</td></tr>
+                    {{end}}
+                    {{range _, v := p.Variants}}
+                    <tr data-variant-row data-variant-id="{{v.ID}}" data-option-values="{{v.OptionValues}}">
+                        <td><input type="text" class="form-input" data-variant-sku value="{{v.SKUCode}}" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
+                        <td>{{v.Spec}}</td>
+                        <td>{{v.Price}}</td>
+                        <td>{{v.ComparePrice}}</td>
+                        <td>{{v.CostPrice}}</td>
+                        <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
+                        <td>{{v.StockTotal}}</td>
+                        <td class="col-actions">
+                            <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
+                            <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+            </div>
+            <div class="action-row">
+                {{if len(warehouseOptions) > 0}}
+                <label class="form-label" for="variant-save-warehouse-{{p.ID}}">{{ .["t"]("admin.products.variant.saveWarehouse", "新增变体的归属仓") }}</label>
+                <select class="form-select" id="variant-save-warehouse-{{p.ID}}" name="warehouseId">
+                    <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
+                    {{range _, w := warehouseOptions}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
                 {{end}}
-                {{range _, v := p.Variants}}
-                <tr>
-                    <td><code>{{v.SKUCode}}</code></td>
-                    <td>{{v.Spec}}</td>
-                    <td>{{v.Price}}</td>
-                    <td>{{v.ComparePrice}}</td>
-                    <td>{{v.CostPrice}}</td>
-                    <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
-                    <td>{{v.StockTotal}}</td>
-                    <td class="col-actions">
-                        <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
-                        <button type="submit" form="variant-del-{{v.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
-                    </td>
-                </tr>
-                {{end}}
-                </tbody>
-            </table>
-        </div>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.variant.saveList", "保存变体清单") }}</button>
+            </div>
+        </form>
+        {* 清单行的结构只写一份：JS 追加新行时克隆它（列数、按钮、data 属性与既有行逐字一致）。 *}
+        <template data-variant-row-tpl>
+            <tr data-variant-row data-variant-id="" data-option-values="">
+                <td><input type="text" class="form-input" data-variant-sku value="" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
+                <td data-cell-spec></td>
+                <td>—</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="badge badge-mute">{{ .["t"]("admin.products.variant.pendingSave", "保存后生效") }}</span></td>
+                <td>—</td>
+                <td class="col-actions">
+                    <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
+                </td>
+            </tr>
+        </template>
     </section>
 
     {* ==== 评分：子资源表 + 它的入口（添加评分） ==== *}
@@ -255,16 +385,8 @@
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
     </form>
-    {{range _, v := p.Variants}}
-    <form id="variant-del-{{v.ID}}" class="hidden-form" method="post" action="/admin/products/variant/delete"
-          data-confirm="{{ .["t"]("admin.products.variant.deleteConfirm", "删除该变体？它的库存记录会一并删除。") }}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="id" value="{{v.ID}}">
-        {* 删除后要回到**这个商品**的详情页：上一行的 id 是变体 id，回跳的商品只能另给 productId。 *}
-        <input type="hidden" name="productId" value="{{p.ID}}">
-    </form>
-    {{end}}
+    {* 变体删除的行内表单已移除（docs/14 §8）：清单里的「移除」只把行移出前端清单，
+       落库的删除统一发生在「保存变体清单」那一步（含删除清单外、且没有库存 / 引用的既有变体）。 *}
     {{range _, r := p.Ratings}}
     <form id="rating-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/products/rating/delete"
           data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
@@ -301,17 +423,21 @@
     </template>
 
     {{if len(p.VariationAttributes) > 0}}
-    {* 组合生成：勾选属性值 → 笛卡尔积；不勾选用「生成全部组合」。
-       勾选控件是原生 checkbox + label：鼠标 / 触屏 / 键盘（Tab + 空格）都可用。 *}
+    {* 组合生成（docs/14 §8）：勾选属性值 → 笛卡尔积 → **追加进清单**（不落库）；
+       「生成全部组合」= 不勾选任何值（服务端按全部启用值展开，与接口路径同一条语义）。
+       勾选控件是原生 checkbox + label：鼠标 / 触屏 / 键盘（Tab + 空格）都可用。
+       本模板不是表单：点生成走 JS 取数（data-* 上的 URL 与提示文案），清单由 JS 追加。 *}
     <template id="tpl-variant-generate-{{p.ID}}">
-        <form method="post" action="/admin/products/variant/generate" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="productId" value="{{p.ID}}">
-            {* 归属仓（issue #15）：本批新变体统一落在该仓，并为每个新变体生成库存记录 *}
+        <div class="form-stack" data-variant-generate
+             data-product="{{p.ID}}" data-project="{{selectedProject}}" data-csrf="{{csrf}}"
+             data-preview-url="/admin/products/variant/preview"
+             data-msg-added="{{ .["t"]("admin.products.combo.added", "已追加 %d 行到清单（还没保存）") }}"
+             data-msg-none="{{ .["t"]("admin.products.combo.none", "没有需要追加的组合：清单与库里都已有") }}"
+             data-msg-failed="{{ .["t"]("admin.products.combo.failed", "生成失败：") }}">
+            <p class="text-mute text-sm">{{ .["t"]("admin.products.combo.previewHint", "生成只是把组合显示在清单里，点「保存变体清单」才写入数据库。") }}</p>
             {{if len(warehouseOptions) > 0}}
             <label class="form-label" for="generate-warehouse-{{p.ID}}">{{ .["t"]("admin.products.warehouse.label", "归属仓") }}</label>
-            <select class="form-select" id="generate-warehouse-{{p.ID}}" name="warehouseId">
+            <select class="form-select" id="generate-warehouse-{{p.ID}}" data-generate-warehouse>
                 <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
                 <option value="{{w.ID}}">{{w.Label}}</option>
@@ -330,12 +456,13 @@
                 {{end}}
             </fieldset>
             {{end}}
+            <p class="text-mute text-sm" data-generate-status role="status"></p>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary" name="mode" value="selected">{{ .["t"]("admin.products.combo.generateSelected", "生成勾选组合") }}</button>
-                <button type="submit" class="btn" name="mode" value="all">{{ .["t"]("admin.products.combo.generateAll", "生成全部组合") }}</button>
+                <button type="button" class="btn btn-primary" data-generate-selected>{{ .["t"]("admin.products.combo.generateSelected", "生成勾选组合") }}</button>
+                <button type="button" class="btn" data-generate-all>{{ .["t"]("admin.products.combo.generateAll", "生成全部组合") }}</button>
             </div>
-        </form>
+        </div>
     </template>
     {{end}}
 
@@ -351,6 +478,151 @@
             </div>
         </form>
     </template>
+
+{* 变体清单的交互（docs/14 §8 预览—保存模型）。
+   三条规则决定这段脚本的形态：
+   1. 事件用 document 级委托 —— 抽屉内容是从 <template> 克隆进 DOM 的，逐个绑监听会在
+      抽屉关闭（body.innerHTML = ''）时失效；委托对克隆前后的元素一视同仁。
+   2. 「生成」是一次**不落库**的取数：POST 到 /admin/products/variant/preview，
+      把返回的行按清单行的同一种结构（<template data-variant-row-tpl>）追加进 DOM。
+   3. 「保存」才组装 rows（JSON）交给服务端；「移除」只是 tr.remove()。
+   文案一律从 data-msg-* 取（服务端按当前语言渲染），脚本里不写死文案。 *}
+<script>
+(function () {
+    'use strict';
+
+    function variantListBody() {
+        return document.querySelector('[data-variant-list]');
+    }
+
+    // 清单里每行的 option_values（规范化 JSON 文本）：原样回传给预览接口做去重判据。
+    function variantListOptionValues() {
+        var out = [];
+        document.querySelectorAll('[data-variant-row]').forEach(function (tr) {
+            var raw = tr.getAttribute('data-option-values');
+            if (raw) { out.push(raw); }
+        });
+        return out;
+    }
+
+    function appendVariantRows(rows) {
+        var body = variantListBody();
+        var tpl = document.querySelector('[data-variant-row-tpl]');
+        if (!body || !tpl) { return; }
+        rows.forEach(function (row) {
+            var frag = tpl.content.cloneNode(true);
+            var tr = frag.querySelector('tr');
+            if (!tr) { return; }
+            tr.setAttribute('data-option-values', JSON.stringify(row.optionValues || {}));
+            var spec = tr.querySelector('[data-cell-spec]');
+            if (spec) { spec.textContent = row.spec || ''; }
+            var sku = tr.querySelector('[data-variant-sku]');
+            if (sku) { sku.value = row.skuCode || ''; }
+            body.appendChild(frag);
+        });
+        hideVariantEmptyRow();
+    }
+
+    // 空态行：有行时隐藏。hidden 之外再给一次行内 display —— 页面样式里若给行设过
+    // display，UA 的 [hidden] 规则会被盖掉（.btn 与 [hidden] 的同一个坑）。
+    function hideVariantEmptyRow() {
+        var body = variantListBody();
+        if (!body) { return; }
+        var empty = body.querySelector('[data-variant-empty]');
+        if (!empty) { return; }
+        var hasRow = !!body.querySelector('[data-variant-row]');
+        if (hasRow) {
+            empty.hidden = true;
+            empty.style.display = 'none';
+        } else {
+            empty.hidden = false;
+            empty.style.display = '';
+        }
+    }
+
+    function setGenerateStatus(text) {
+        document.querySelectorAll('[data-generate-status]').forEach(function (el) {
+            el.textContent = text || '';
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        var remove = e.target.closest('[data-variant-remove]');
+        if (remove) {
+            var tr = remove.closest('[data-variant-row]');
+            if (tr) { tr.remove(); }
+            hideVariantEmptyRow();
+            return;
+        }
+        var trigger = e.target.closest('[data-generate-selected], [data-generate-all]');
+        if (!trigger) { return; }
+        var box = trigger.closest('[data-variant-generate]');
+        if (!box) { return; }
+        var fd = new FormData();
+        fd.append('projectId', box.getAttribute('data-project') || '');
+        fd.append('productId', box.getAttribute('data-product') || '');
+        var warehouse = box.querySelector('[data-generate-warehouse]');
+        fd.append('warehouseId', warehouse ? warehouse.value : '');
+        if (!trigger.hasAttribute('data-generate-all')) {
+            box.querySelectorAll('input[type=checkbox][name^="attr:"]:checked').forEach(function (cb) {
+                fd.append(cb.name, cb.value);
+            });
+        }
+        variantListOptionValues().forEach(function (raw) { fd.append('optionValues', raw); });
+        setGenerateStatus('');
+        fetch(box.getAttribute('data-preview-url') || '', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': box.getAttribute('data-csrf') || '' },
+            body: fd
+        }).then(function (res) {
+            return res.json().catch(function () { return null; });
+        }).then(function (data) {
+            if (!data || !data.ok) {
+                var reason = data && data.message ? data.message : '';
+                setGenerateStatus((box.getAttribute('data-msg-failed') || '') + reason);
+                return;
+            }
+            var rows = data.rows || [];
+            appendVariantRows(rows);
+            if (rows.length) {
+                setGenerateStatus((box.getAttribute('data-msg-added') || '').replace('%d', String(rows.length)));
+            } else {
+                setGenerateStatus(box.getAttribute('data-msg-none') || '');
+            }
+        }).catch(function () {
+            setGenerateStatus(box.getAttribute('data-msg-failed') || '');
+        });
+    });
+
+    // 保存：把清单 DOM 组装成 rows（JSON）交给服务端 —— 前端提交的形状一律不被服务端信任，
+    // 这里只做「把界面上的东西如实报上去」，组合合法性与唯一性由服务端重算。
+    document.addEventListener('submit', function (e) {
+        var form = e.target.closest('[data-variant-form]');
+        if (!form) { return; }
+        var holder = form.querySelector('[data-variant-rows]');
+        if (!holder) { return; }
+        var rows = [];
+        document.querySelectorAll('[data-variant-row]').forEach(function (tr) {
+            var sku = tr.querySelector('[data-variant-sku]');
+            var opts = {};
+            try { opts = JSON.parse(tr.getAttribute('data-option-values') || '{}'); } catch (err) { opts = {}; }
+            rows.push({
+                variantId: tr.getAttribute('data-variant-id') || '',
+                skuCode: sku ? sku.value : '',
+                optionValues: opts
+            });
+        });
+        try {
+            holder.value = JSON.stringify(rows);
+        } catch (err) {
+            e.preventDefault();
+            window.alert(form.getAttribute('data-msg-failed') || '');
+        }
+    });
+})();
+</script>
+
+{* 评分抽屉的 if 收口（与脚本无关，脚本插在它之后只是为了把 JS 收在文件末尾）。 *}
     {{end}}
 </div>
 {{end}}

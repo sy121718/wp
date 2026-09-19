@@ -314,4 +314,67 @@ func registerCoreSchemaAndAccess() {
 		) THEN 0 ELSE 1 END`,
 		SQL: mustSQL("051_superadmin_all_policies.sql"),
 	})
+
+	// 267：publication_receipts 的 pending 部分索引。
+	//
+	// 回执收敛（page 侧 ConvergePendingReceipts）与 pending 计数都在 receipt_state = 'pending'
+	// 上做等值过滤并按 create_time 排序，而这条查询绝大多数时刻是空转 —— 没有索引就是全表扫描，
+	// 成本随「只增不删」的回执表一起长。回执表已由 002 创建，默认的表存在检查会误跳过，
+	// 故仿 037/038 按索引名判断（同样限定 current_schema()，否则残留 schema 的同名索引会误判）。
+	register(Migration{
+		Version:   "267-publication-receipts-pending-index",
+		TableName: "publication_receipts",
+		CheckSQL:  "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_publication_receipts_pending'",
+		SQL:       mustSQL("267_publication_receipts_pending_index.sql"),
+	})
+
+	// 281：presentation_instances 实例级文档覆盖列（docs/04-C-instance-override.md，方案 B）。
+	//
+	// 商品级可视化自定义：override_document 非空 = 实例发布/重建以此文档为准（binding
+	// 照常解析，实体数据更新不丢自定义）；NULL = 跟随模板（既有行为零回归）。
+	// presentation_instances 已由 002 创建，默认表存在检查会误跳过，
+	// 仿 047/049 按列是否存在判断（限定 current_schema()）。
+	register(Migration{
+		Version:   "281-presentation-override-document",
+		TableName: "presentation_instances",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'override_document'",
+		SQL:       mustSQL("281_presentation_override_document.sql"),
+	})
+
+	// 269：navigation 内部错误归口文案（审计 CQ-009）。
+	// enums 的值就是 i18n key（navigationenums.ErrInternal）—— 不 seed，响应层 translate
+	// 未命中会把 key 原样返回给前端。判据按本批自己的 key 计数：用总量会被同期其它批次
+	// 的行满足而静默跳过（060 / 221 / 268 都记过这个坑）。
+	registerSeed(Seed{
+		Version:      "269-navigation-err-internal",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'navigation.err.internal'",
+		SQL:          mustSQL("269_navigation_err_internal_i18n.sql"),
+	})
+
+	// 277：批量 id 超限的受控提示词条（shell.err.bulkIdsTooMany，中英各一行）。
+	//
+	// 与 shell.ErrBulkIDsTooMany / *shell.BulkIDsError 同批落地：受控性由**类型**表达之后，
+	// 对外文案需要一个带 key 的出口 —— shell.BulkIDsFacingText 按当前语言取这条词条，
+	// 两个 %s 依次是上限与本次条数（「当前 N 项」只有 shell 知道，这正是模块别重算的理由）。
+	// 判定限定在本批自己的 key 上：用全库行数会被同期其它批次的行满足而静默跳过（理由见 226）。
+	registerSeed(Seed{
+		Version:      "277-shell-bulk-ids-too-many-i18n",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'shell.err.bulkIdsTooMany'",
+		SQL:          mustSQL("277_i18n_seed_shell_bulk_ids.sql"),
+	})
+
+	// 280：库存页成功回执的受控文案（admin.inventory.actionDone，中英各一行）。
+	//
+	// 与读侧收口同批落地：库存页的写入口成功时回带 ?ok=1 / ?done=1，模板直接渲染该值，
+	// 于是页面上出现的是裸「1」。读侧现在把它收敛成一句翻译过的固定文案
+	//（inventory_page_handle.go 的 inventoryNoticeSuccess），本词条就是那句话。
+	// 判定限定在本批自己的 key 上：用全库行数会被同期其它批次的行满足而静默跳过（理由见 226）。
+	registerSeed(Seed{
+		Version:      "280-inventory-action-done-i18n",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.actionDone'",
+		SQL:          mustSQL("280_inventory_action_done_i18n.sql"),
+	})
 }

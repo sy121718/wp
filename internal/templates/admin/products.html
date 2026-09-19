@@ -19,6 +19,7 @@
 {{warehouseOptions := .WarehouseOptions}}
 {{canCreate := isset(.PermSet["product:create"])}}
 {{canDelete := isset(.PermSet["product:delete"])}}
+{{canUpdate := isset(.PermSet["product:update"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -42,7 +43,7 @@
             </form>
             {{end}}
             {{if canCreate}}
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-product-create" data-drawer-title="{{ .["t"]("admin.products.create.submit", "新建商品") }}">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</button>
+<a class="btn btn-primary" href="/admin/products/new">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
             {{end}}
         </div>
     </header>
@@ -63,7 +64,7 @@
             <p class="empty-desc">{{ .["t"]("admin.products.list.empty", "新建一个商品，系统会自动生成它的第一个变体。") }}</p>
             {{if canCreate}}
             <div class="empty-actions">
-                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-product-create" data-drawer-title="{{ .["t"]("admin.products.create.submit", "新建商品") }}">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</button>
+    <a class="btn btn-primary" href="/admin/products/new">＋ {{ .["t"]("admin.products.create.submit", "新建商品") }}</a>
             </div>
             {{end}}
         </div>
@@ -74,9 +75,17 @@
         <form method="post" action="/admin/products/bulk-delete">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            {{if canDelete}}
+            {{if canDelete || canUpdate}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{if canDelete}}
                 {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.products.bulkDeleteConfirm", "删除选中的商品及其全部变体？"), danger=true)}}
+                {{end}}
+                {{if canUpdate}}
+                {* 按规则改价（本批）：定价工具的入口收进批量操作区 —— 它作用的对象本来就是
+                   「选出来的这几个商品」。按钮只负责开抽屉（type=button，不提交批量表单），
+                   规则参数在抽屉里填，提交方式见页尾 tpl-product-pricing 的说明。 *}
+                <button type="button" class="btn btn-sm" data-drawer-open="#tpl-product-pricing" data-drawer-title="{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}">{{ .["t"]("admin.product_pricing.apply.title", "按规则改价") }}</button>
+                {{end}}
             {{yield bulkBarClose()}}
             {{end}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.list.title", "商品列表") }}">
@@ -91,6 +100,7 @@
                     <th>{{ .["t"]("admin.products.col.status", "状态") }}</th>
                     <th>{{ .["t"]("admin.products.col.variants", "变体数") }}</th>
                     <th>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</th>
+                    <th>{{ .["t"]("admin.products.col.stock", "库存") }}</th>
                     <th>{{ .["t"]("admin.products.col.categories", "分类") }}</th>
                     <th>{{ .["t"]("admin.products.col.brand", "品牌") }}</th>
                     <th>{{ .["t"]("admin.products.tags.title", "标签") }}</th>
@@ -111,6 +121,42 @@
                     <td><span class="badge">{{p.Status}}</span></td>
                     <td>{{p.VariantCount}}</td>
                     <td>{{p.PriceMin}} ~ {{p.PriceMax}}</td>
+                    {* 库存列（docs/14 §1.4）：三态 + 分仓明细。
+                       · 任一仓不跟踪 → ∞（**绝不求和** —— 求和等于把无限当 0，页面会显示成有货）；
+                       · 全部跟踪 → 各仓数量之和（0 就显示 0）；
+                       · 任何仓都没有这一行 → 未入库。
+                       展开用 details/summary 而不是纯 hover：触屏与键盘都能开（同一份数据两种入口），
+                       鼠标用户点一下也一样。 *}
+                    <td>
+                        {{if isset(p.Stock)}}
+                        {{stock := p.Stock}}
+                        <details class="stock-cell">
+                            <summary aria-label="{{ .["t"]("admin.products.stock.expand", "展开分仓库存") }}">
+                                {{if stock.State == "infinite"}}<span class="badge badge-info">{{ .["t"]("admin.products.stock.infinite", "∞ 无限") }}</span>
+                                {{else}}
+                                    {{if stock.State == "tracked"}}{{stock.Total}}
+                                    {{else}}<span class="text-mute">{{ .["t"]("admin.products.stock.none", "未入库") }}</span>{{end}}
+                                {{end}}
+                            </summary>
+                            {{if isset(stock.Rows)}}
+                            {{if len(stock.Rows) > 0}}
+                            <ul class="stock-rows">
+                                {{range _, r := stock.Rows}}
+                                <li>
+                                    <span class="stock-wh">{{r.WarehouseLabel}}</span>
+                                    {{if r.State == "infinite"}}<span>{{ .["t"]("admin.products.stock.infiniteShort", "∞") }}</span>
+                                    {{else}}
+                                        {{if r.State == "tracked"}}<span>{{r.Quantity}}</span>
+                                        {{else}}<span class="text-mute">{{ .["t"]("admin.products.stock.none", "未入库") }}</span>{{end}}
+                                    {{end}}
+                                </li>
+                                {{end}}
+                            </ul>
+                            {{end}}
+                            {{end}}
+                        </details>
+                        {{else}}<span class="text-mute">—</span>{{end}}
+                    </td>
                     {* 分类列只放一个值：主分类（没设主分类时退回挂载的第一个分类），
                        其余分类数用 +N 徽章跟在后面 —— 不把「挂载 N 个分类 · 主分类 X」拼成句子。 *}
                     <td>{{if isset(p.CategoryCell)}}{{if p.CategoryCell != ""}}{{p.CategoryCell}}{{if isset(p.CategoryOthers)}}{{if p.CategoryOthers > 0}} <span class="badge badge-mute">+{{p.CategoryOthers}}</span>{{end}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{end}}</td>
@@ -153,22 +199,144 @@
 
     {{if canCreate}}
     <template id="tpl-product-create">
-        <form method="post" action="/admin/products/create" class="form-stack">
+        <form method="post" action="/admin/products/create" class="form-stack" data-product-create-form>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.products.ph.name", "商品名称") }}" required>
-            <input type="text" class="form-input" name="slug" placeholder="{{ .["t"]("admin.products.ph.slug", "URL 段（留空自动生成）") }}">
-            <input type="text" class="form-input" name="defaultPrice" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（首个变体继承）") }}">
-            <input type="text" class="form-input input-wide" name="attributeIds" placeholder="{{ .["t"]("admin.products.ph.attributeIds", "引用的属性组 id（逗号分隔，可留空）") }}" autocomplete="off">
-            {{if len(warehouseOptions) > 0}}
-            {* 归属仓（issue #15）：首个变体落在这个仓，短码即 SKU 编码前缀；不选即默认仓 *}
-            <label class="form-label" for="create-warehouse">{{ .["t"]("admin.products.warehouse.label", "归属仓") }}</label>
-            <select class="form-select" id="create-warehouse" name="warehouseId">
-                <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
-                {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Label}}</option>
-                {{end}}
+            {* 商品类型（迁移 238）：bundle 不生成首个变体，价格只有容器价（defaultPrice）。
+               选「捆绑商品」时上面的默认价格是**必填**的容器价（服务端 ErrBundlePriceRequired 兜底）。 *}
+            <select class="form-select" name="type" aria-label="{{ .["t"]("admin.products.label.type", "商品类型") }}">
+                <option value="variant">{{ .["t"]("admin.products.type.variant", "变体商品（本商品自己的 SKU）") }}</option>
+                <option value="bundle">{{ .["t"]("admin.products.type.bundle", "捆绑商品（组合多个变体，只有套餐价）") }}</option>
             </select>
+            <input type="text" class="form-input" name="slug" placeholder="{{ .["t"]("admin.products.ph.slug", "URL 段（留空自动生成）") }}">
+            {* 主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）：这是商品的**身份编码**。
+               变体商品：可留空（服务端按 URL 段派生；填了并选了归属仓时自动加仓库码前缀，已带前缀不重复加）。
+               捆绑商品：**必填**（服务端 ErrBundleSKURequired）—— 抽屉打开 / 类型切到 bundle 时
+               预填建议值 <商品段>_B，运营可改、可一键重新生成；编码必须被看见并确认，不再静默派生。
+               增强脚本在页尾（算法与 Go 侧的 productCodeSegment 同口径，只作用于本页、不改共享 JS）。 *}
+            {* SKU 来源（docs/14 §1.1 的两条入口）：① 自己创建 —— 填下面的「SKU 编码」
+               （选了仓库自动加仓库码前缀）；② 从仓库选 —— 选该仓的一条货，主体 SKU 由
+               服务端拼成 <仓短码>_<仓库 SKU>。捆绑商品不存在于仓库：切到 bundle 时这个
+               入口被禁用（服务端 ErrWarehouseSKUBundleNotAllowed 同款硬拒兜底）。
+               可选键：未接库存契约 / 该工程没有任何仓库 SKU 时整块不渲染。 *}
+            {{if isset(.WarehouseSKUOptions)}}
+            {{skuGroups := .WarehouseSKUOptions}}
+            {{if len(skuGroups) > 0}}
+            <label class="form-label" for="create-sku-source">{{ .["t"]("admin.products.skuSource.label", "SKU 来源") }}</label>
+            <select class="form-select" id="create-sku-source" name="skuSource" data-sku-source>
+                <option value="custom">{{ .["t"]("admin.products.skuSource.custom", "自己创建（自己填编码，选了仓库自动加仓库码前缀）") }}</option>
+                <option value="warehouse">{{ .["t"]("admin.products.skuSource.warehouse", "从仓库选（取仓库里那条货的编码）") }}</option>
+            </select>
+            {{end}}
+            {{end}}
+            <label class="form-label" for="create-sku">{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</label>
+            <div class="form-inline">
+                <input type="text" class="form-input" id="create-sku" name="sku" data-sku-input
+                       list="create-sku-candidates"
+                       placeholder="{{ .["t"]("admin.products.ph.sku", "留空自动生成；填了并选择了仓库时自动加仓库码前缀") }}"
+                       data-sku-placeholder-bundle="{{ .["t"]("admin.products.ph.skuBundle", "系统建议值，可直接修改（捆绑商品必填，编码恒以 _B 结尾）") }}"
+                       aria-describedby="create-sku-hint" autocomplete="off">
+                <button type="button" class="btn btn-sm" data-sku-regenerate style="display:none" hidden>{{ .["t"]("admin.products.sku.regenerate", "重新生成") }}</button>
+            </div>
+            {* SKU 编码的候选（**可搜索下拉 + 可自由输入**，2026-09-19 口径，docs/14 §1.1）：
+               一个控件承担两种意图 ——
+                 · 下拉里选到某仓已有的**裸码** → 那一行本来就在，直接**认领 / 复用**（不新建行）；
+                 · 自己打一个新码 → 在勾选的每个仓各建一行（仓库侧写裸码）。
+               候选只由服务端渲一次（这个 datalist），前端按**勾选的仓库**过滤；
+               没有 JS 时它退化成普通的可自由输入文本框，功能不会卡死。 *}
+            <datalist id="create-sku-candidates" data-sku-candidates>
+                {{if isset(.WarehouseSKUOptions)}}
+                {{skuGroups := .WarehouseSKUOptions}}
+                {{range _, g := skuGroups}}
+                {{range _, it := g.Items}}
+                <option value="{{it.SKUCode}}" data-warehouse="{{g.WarehouseID}}" label="{{g.Label}} · {{it.SKUCode}}"></option>
+                {{end}}
+                {{end}}
+                {{end}}
+            </datalist>
+            {* 两条提示行互斥：bundle 给建议值说明；建议值为空（名称与 URL 段都不含 ASCII）时改说「请手填」。
+               初始都隐藏 —— 抽屉打开时类型默认是变体商品，此时 SKU 仍可留空。 *}
+            <p class="hint" id="create-sku-hint" data-sku-hint style="display:none" hidden>{{ .["t"]("admin.products.sku.bundleHint", "这是系统建议的唯一身份编码，可直接修改；捆绑商品的编码恒以 _B 结尾。") }}</p>
+            <p class="hint" data-sku-manual style="display:none" hidden>{{ .["t"]("admin.products.sku.bundleManual", "商品名称与 URL 段都不含 ASCII 字符，派生不出建议值，请手动填写 SKU 编码。") }}</p>
+            {* 预览：这个编码会变成什么（<认领仓短码>_<编码>），或「已存在 → 复用那一行」。
+               只是把服务端的规则**显示**出来；真源与复核都在服务端（前端不参与命名决策）。 *}
+            <p class="hint" data-sku-preview style="display:none" hidden
+               data-preview-label="{{ .["t"]("admin.products.skuSource.previewLabel", "将要生成的主体 SKU：") }}"
+               data-reuse-label="{{ .["t"]("admin.products.sku.reuseLabel", "该仓已有这条编码，将复用那一行（不新建）：") }}"
+               data-new-label="{{ .["t"]("admin.products.sku.newLabel", "新编码，将在勾选的每个仓各建一行：") }}"></p>
+            {* 候选的机器可读来源（不直接展示）：服务端只渲一次候选，combobox 的候选与
+               「从仓库选」的服务端复核都从这里取 —— 两处各渲一份，字段名与取值迟早分叉。
+               这两个 select 保持隐藏但**参与提交**：skuSource 默认 custom（= 自己创建）、
+               warehouseSku 留空即不指定仓库货 —— 两条意图现在由「编码在该仓是否已存在」在服务端判定。 *}
+            {{if isset(.WarehouseSKUOptions)}}
+            {{skuGroups := .WarehouseSKUOptions}}
+            {{if len(skuGroups) > 0}}
+            <div hidden data-legacy-picker>
+                <select class="form-select" id="create-sku-source" name="skuSource" data-sku-source hidden>
+                    <option value="custom" selected>{{ .["t"]("admin.products.skuSource.custom", "自己创建（自己填编码，选了仓库自动加仓库码前缀）") }}</option>
+                    <option value="warehouse">{{ .["t"]("admin.products.skuSource.warehouse", "从仓库选（取仓库里那条货的编码）") }}</option>
+                </select>
+                <select class="form-select" id="create-warehouse-sku" name="warehouseSku" data-warehouse-sku hidden>
+                    <option value="">{{ .["t"]("admin.products.ph.warehouseSku", "选择所选仓库里的一条货") }}</option>
+                    {{range _, g := skuGroups}}
+                    <optgroup label="{{g.Label}}" data-warehouse="{{g.WarehouseID}}" data-code="{{g.WarehouseCode}}" data-default="{{if g.IsDefault}}1{{end}}">
+                        {{range _, it := g.Items}}
+                        <option value="{{it.SKUCode}}" data-external="{{it.ExternalSKU}}">{{it.Label}}</option>
+                        {{end}}
+                    </optgroup>
+                    {{end}}
+                </select>
+            </div>
+            {{end}}
+            {{end}}
+            <label class="form-label" for="create-external-sku">{{ .["t"]("admin.products.label.externalSku", "外部编码（可选）") }}</label>
+            <input type="text" class="form-input" id="create-external-sku" name="externalSku" data-external-sku-input
+                   placeholder="{{ .["t"]("admin.products.ph.externalSku", "该仓的第三方编码，留空即用我们自己的 SKU") }}" autocomplete="off">
+            <p class="hint">{{ .["t"]("admin.products.skuSource.warehouseHint", "新建时主体 SKU = 认领仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
+            <input type="text" class="form-input" name="defaultPrice" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（变体商品：首个变体继承；捆绑商品：套餐价，必填）") }}">
+            {* 引用的属性组（本批改版）：原来是「逗号分隔的 UUID」输入框 —— 用户手上没有 UUID，
+               只能去属性页复制粘贴，打错一个字符要到提交才知道（ErrAttrNotFound）。
+               现在勾选列表，可选值由服务端给出（AttributeOptions）；勾选即按名重复提交，
+               handler 用 c.PostFormArray 收（见 attributeIDsFromForm），仍兼容老的逗号分隔形态。 *}
+            {{if isset(.AttributeOptions)}}
+            {{if len(.AttributeOptions) > 0}}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
+                {{range _, a := .AttributeOptions}}
+                <label class="var-value">
+                    <input type="checkbox" name="attributeIds" value="{{a.ID}}"> {{a.Label}}{{if a.IsVariation}} <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>{{end}}
+                </label>
+                {{end}}
+            </fieldset>
+            {{else}}
+            <p class="text-mute text-sm">{{ .["t"]("admin.products.create.noAttributesLead", "这个工程还没有属性组，先到") }}<a href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.products.hint.attrLink", "商品属性") }}</a>{{ .["t"]("admin.products.create.noAttributesTail", "页建一个（可留空，之后在商品详情页也能挂）。") }}</p>
+            {{end}}
+            {{end}}
+            {{if len(warehouseOptions) > 0}}
+            {* 多仓勾选（2026-09-19 口径）：**勾了哪些仓就在哪些仓各建一行**（仓库侧写裸码）。
+               第一个勾中的仓（按本表顺序）是**认领仓**，只有它决定主体 SKU 的仓码前缀；
+               一个都不勾即默认仓。提交顺序 = 表内顺序（浏览器行为），服务端据此取认领仓。
+               同一张表里勾两次同一个仓会被服务端按仓 id 去重，不会建出两行。 *}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.warehouses.label", "建在哪些仓（可多选，不勾即默认仓）") }}</legend>
+                {{range _, w := warehouseOptions}}
+                <label class="var-value">
+                    <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{w.Label}}" {{if w.IsDefault}}data-default="1"{{end}}> {{w.Label}}
+                </label>
+                {{end}}
+                <p class="hint">{{ .["t"]("admin.products.warehouses.hint", "按本表顺序第一个勾中的仓是认领仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>
+            </fieldset>
+            {* 数量（迁移 261）：**不填 = 不跟踪 = 无限**。开关没勾时数量框禁用且留空 ——
+               **绝不预填 0**：0 是「明确没货」这个具体事实，与「无限」是两种状态。 *}
+            <label class="var-value">
+                <input type="checkbox" name="trackQuantity" value="1" data-track-quantity> {{ .["t"]("admin.products.quantity.track", "跟踪数量（不勾 = 无限）") }}
+            </label>
+            <div class="form-inline">
+                <input type="number" class="form-input" name="quantity" data-quantity-input min="0" step="1" disabled
+                       placeholder="{{ .["t"]("admin.products.ph.quantity", "不跟踪时留空（无限）；跟踪时填数量，0 = 没货") }}">
+            </div>
+            <p class="hint">{{ .["t"]("admin.products.quantity.hint", "不填数量 = 不跟踪 = 无限；显式填数字 = 跟踪并写入该数量（0 是合法的明确值）。") }}</p>
             {{end}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
@@ -177,5 +345,301 @@
         </form>
     </template>
     {{end}}
+
+    {* ===== 按规则改价抽屉（本批）：勾选若干商品后按内置规则批量改价 =====
+       为什么必须是 htmx 而不是普通表单提交：抽屉内容被克隆到 document 级（见 ui/drawer.js），
+       而勾选框在**批量表单**里 —— 普通提交一个字都带不上来。hx-include="[name='ids']"
+       把全页勾选的 ids 并进这次请求（htmx 自己会跳过未勾选项），服务端回 HX-Redirect
+       让浏览器整页跳转回列表页（htmx 跟随 302 后读不到 Location，只能靠这个响应头）。
+       这里**不写 data-confirm**：htmx 不理会 preventDefault（它自己发请求），配上项目的
+       确认弹窗会出现「确认框还开着、调价已经落库」；原生 hx-confirm 的 window.confirm
+       又与 ui/confirm.js 的替代方案相悖。改为把「售价会立刻写库」作为可见提示行呈现，
+       抽屉本身的填写与点击就是那次确认。
+       「规则 + 尾数」两行与定价工具页共用同一片段，字段名不会分叉。 *}
+    {{if canUpdate}}
+    <template id="tpl-product-pricing">
+        <form class="form-stack" method="post" action="/admin/products/bulk-pricing"
+              hx-post="/admin/products/bulk-pricing" hx-include="[name='ids']" hx-swap="none">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <p class="hint">{{ .["t"]("admin.products.bulkPricing.scopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
+            <p class="hint">{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ .["t"]("admin.products.bulkPricing.previewHintLead", "想先看每个 SKU 的「原价 → 新价」，去") }}<a href="/admin/product-pricing?project={{selectedProject}}">{{ .["t"]("admin.product_pricing.title", "定价工具") }}</a>{{ .["t"]("admin.products.bulkPricing.previewHintTail", "页试算（不落库）。") }}</p>
+            {{if isset(.Rules)}}{{include "partials/pricing_rule_fields.html"}}{{end}}
+            <div class="form-inline">
+                <input type="text" class="form-input" name="note" placeholder="{{ .["t"]("admin.product_pricing.apply.phNote", "备注（写进留痕台账，如「国庆前提价」）") }}" autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+
+
+<script>
+/* 新建商品抽屉的「主体 SKU」增强（只作用于本页；不改 static/js 下的共享文件）。
+   背景：捆绑商品的主体 SKU 是**必填**的（服务端 ErrBundleSKURequired），但运营不该从零手打 ——
+   打开抽屉 / 把类型切到 bundle 时按商品段预填建议值 <商品段>_B，可改、可一键重新生成。
+   变体商品保持原状：不 required、不预填，留空仍由服务端按 URL 段派生。
+   抽屉内容是从 <template> 克隆进 document 的（见 ui/drawer.js），所以只能在
+   wbui:drawer-open 之后取节点；事件挂在 document 上，注册时机早于基座脚本也没关系。
+   幂等：同一个表单只增强一次（dataset 标记），重复触发不会叠加监听。 */
+(function () {
+    'use strict';
+
+    // 商品段派生：与 Go 侧的 productCodeSegment 同口径 —— 逐字符 Unicode 大写，只保留 A-Z 与 0-9。
+    // 多字符展开（ß 变 SS、ﬁ 变 FI）直接丢弃：Go 的 unicode.ToUpper 按单码点映射，
+    // 展开前的字符本身非 ASCII，同样会被丢掉。
+    function codeSegment(raw) {
+        var text = String(raw == null ? '' : raw), out = '', i, up;
+        for (i = 0; i < text.length; i++) {
+            up = text.charAt(i).toUpperCase();
+            if (up.length === 1 && ((up >= 'A' && up <= 'Z') || (up >= '0' && up <= '9'))) {
+                out += up;
+            }
+        }
+        return out;
+    }
+
+    function trim(value) {
+        return String(value == null ? '' : value).replace(/^\s+|\s+$/g, '');
+    }
+
+    // 显隐用行内 display 而不是只挂 hidden：.btn 自带 display:inline-flex，
+    // 作者样式会盖掉 [hidden] 的 UA 规则（那样按钮在变体商品下也一直可见）。
+    function show(el, on) {
+        if (!el) { return; }
+        el.style.display = on ? '' : 'none';
+        if (on) {
+            el.removeAttribute('hidden');
+        } else {
+            el.setAttribute('hidden', 'hidden');
+        }
+    }
+
+    function enhance(form) {
+        if (!form || form.dataset.skuEnhanced === '1') { return; }
+        var input = form.querySelector('[data-sku-input]');
+        var typeSelect = form.querySelector('select[name="type"]');
+        if (!input || !typeSelect) { return; }
+        form.dataset.skuEnhanced = '1';
+
+        var slugInput = form.querySelector('input[name="slug"]');
+        var nameInput = form.querySelector('input[name="name"]');
+        var regen = form.querySelector('[data-sku-regenerate]');
+        var hint = form.querySelector('[data-sku-hint]');
+        var manual = form.querySelector('[data-sku-manual]');
+        var placeholderVariant = input.getAttribute('placeholder') || '';
+        var placeholderBundle = input.getAttribute('data-sku-placeholder-bundle') || placeholderVariant;
+        // 运营是否在这个字段上打过字。系统预填只在「没被打过字」时写入 ——
+        // 覆盖用户手写的值比少一次预填糟糕得多；想回到建议值有「重新生成」按钮。
+        var dirty = false;
+
+        function suggestion() {
+            // 与 Go 侧一致：URL 段填了就用它（派生不出商品段时也不回落名称），没填才用商品名；
+            // 两者都派生不出 → 留空，由提示行要求手填。
+            var slug = trim(slugInput && slugInput.value);
+            var segment = codeSegment(slug !== '' ? slug : (nameInput ? nameInput.value : ''));
+            return segment === '' ? '' : segment + '_B';
+        }
+
+        function apply(follow) {
+            var bundle = typeSelect.value === 'bundle';
+            var want = bundle ? suggestion() : '';
+            input.required = bundle;
+            input.setAttribute('aria-required', bundle ? 'true' : 'false');
+            input.setAttribute('placeholder', bundle ? placeholderBundle : placeholderVariant);
+            if (bundle && follow && !dirty) { input.value = want; }
+            show(regen, bundle);
+            show(hint, bundle);
+            show(manual, bundle && want === '' && trim(input.value) === '');
+            if (sourceSelect) {
+                // 捆绑商品不存在于仓库：这个入口对 bundle 不成立（服务端同款硬拒兜底）。
+                // 禁用后浏览器不提交这个字段，服务端把空值归一成「自己创建」—— 正是想要的语义。
+                sourceSelect.disabled = bundle;
+                if (bundle) { sourceSelect.value = 'custom'; }
+            }
+            applySource();
+        }
+
+        // —— SKU 编码：**可搜索下拉 + 可自由输入**（2026-09-19 口径，docs/14 §1.1）——
+        // 前端只做两件不涉及业务规则的事：把候选按**勾选的仓库**过滤、把结果预览出来。
+        // 「编码在该仓已存在 → 复用那一行」「新码 → 建行」都由服务端按 (仓, 裸码) 判定，
+        // 前端不参与命名决策 —— 预览骗人比没有预览更糟。
+        var sourceSelect = form.querySelector('[data-sku-source]');
+        var warehouseChecks = Array.prototype.slice.call(form.querySelectorAll('[data-warehouse-check]'));
+        var skuPick = form.querySelector('[data-warehouse-sku]');
+        var candidateList = form.querySelector('[data-sku-candidates]');
+        var externalInput = form.querySelector('[data-external-sku-input]');
+        var trackSwitch = form.querySelector('[data-track-quantity]');
+        var quantityInput = form.querySelector('[data-quantity-input]');
+        var preview = form.querySelector('[data-sku-preview]');
+
+        // 仓库候选（服务端只渲一次的那份机器可读清单）：按仓分组的 optgroup。
+        function warehouseGroups() {
+            if (!skuPick) { return []; }
+            return Array.prototype.slice.call(skuPick.querySelectorAll('optgroup'));
+        }
+
+        // 勾选的仓（按**表内顺序**）：第一个即认领仓 —— 与服务端「取第一个」同一条规则。
+        function checkedWarehouses() {
+            return warehouseChecks.filter(function (box) { return box.checked; });
+        }
+
+        function claimWarehouse() {
+            var checked = checkedWarehouses();
+            if (checked.length > 0) { return checked[0]; }
+            for (var i = 0; i < warehouseChecks.length; i++) {
+                if (warehouseChecks[i].dataset.default === '1') { return warehouseChecks[i]; }
+            }
+            return null;
+        }
+
+        // 正在生效的仓集合：不勾任何仓 = 默认仓（与服务端的兜底一致）。
+        function effectiveWarehouses() {
+            var checked = checkedWarehouses();
+            if (checked.length > 0) { return checked; }
+            return warehouseChecks.filter(function (box) { return box.dataset.default === '1'; });
+        }
+
+        // 候选裸码表（大写 → {code, external}）：只收当前生效的仓。
+        function candidateCodes() {
+            var ids = {};
+            effectiveWarehouses().forEach(function (box) { ids[box.value] = true; });
+            var codes = {};
+            warehouseGroups().forEach(function (group) {
+                if (!ids[group.dataset.warehouse]) { return; }
+                Array.prototype.slice.call(group.querySelectorAll('option')).forEach(function (option) {
+                    var code = trim(option.value);
+                    if (code !== '') {
+                        codes[code.toUpperCase()] = { code: code, external: trim(option.dataset.external) };
+                    }
+                });
+            });
+            return codes;
+        }
+
+        // 把 <datalist> 的候选按生效的仓收窄：不生效的置 disabled（不可选，但仍可自由输入）。
+        function syncCandidates() {
+            if (!candidateList) { return; }
+            var ids = {};
+            effectiveWarehouses().forEach(function (box) { ids[box.value] = true; });
+            Array.prototype.slice.call(candidateList.querySelectorAll('option')).forEach(function (option) {
+                option.disabled = !ids[option.dataset.warehouse];
+            });
+        }
+
+        // 预览「将要生成的主体 SKU」：拼法必须与服务端的 attachWarehousePrefix 同口径。
+        // 那条规则是幂等的：编码已经以仓短码 + '_' 开头时不再重复拼接，
+        // 朴素拼接会显示成 SZ_SZ_xxx，而服务端实际存的是 SZ_xxx。
+        function previewContainerSKU(warehouseCode, skuCode) {
+            var code = String(warehouseCode == null ? '' : warehouseCode).toUpperCase().replace(/^\s+|\s+$/g, '');
+            var value = String(skuCode == null ? '' : skuCode);
+            if (code !== '' && value.toUpperCase().indexOf(code + '_') !== 0) {
+                return code + '_' + value;
+            }
+            return value;
+        }
+
+        function syncPreview() {
+            if (!preview) { return; }
+            var text = '';
+            var value = trim(input && input.value);
+            var bundle = typeSelect.value === 'bundle';
+            if (!bundle && value !== '') {
+                var claim = claimWarehouse();
+                var claimCode = claim && claim.dataset.code ? claim.dataset.code : '';
+                var known = candidateCodes()[value.toUpperCase()];
+                if (known) {
+                    // 已存在：服务端会复用那一行（不新建），顺带把该仓登记的外码带出来。
+                    text = (preview.dataset.reuseLabel || '') + previewContainerSKU(claimCode, known.code);
+                    if (known.external && externalInput && trim(externalInput.value) === '') {
+                        externalInput.value = known.external;
+                    }
+                } else {
+                    text = (preview.dataset.previewLabel || '') + previewContainerSKU(claimCode, value);
+                }
+            }
+            preview.textContent = text;
+            show(preview, text !== '');
+        }
+
+        // 数量开关（迁移 261）：不跟踪（无限）时数量框**禁用且留空** —— 绝不预填 0。
+        // 0 是「明确没货」这个具体事实，只有运营自己打出来才算数。
+        function syncQuantity() {
+            if (!quantityInput) { return; }
+            var tracked = !!(trackSwitch && trackSwitch.checked);
+            quantityInput.disabled = !tracked;
+            if (!tracked) { quantityInput.value = ''; }
+        }
+
+        function applySource() {
+            syncCandidates();
+            syncQuantity();
+            syncPreview();
+        }
+
+        if (sourceSelect) {
+            sourceSelect.addEventListener('change', function () {
+                var fromWarehouse = sourceSelect.value === 'warehouse';
+                if (input) {
+                    // 「从仓库选」这条隐藏来路（接口 / 脚本仍在用）：主体 SKU 由服务端拼成，
+                    // 手填没有意义，所以置只读并清空（服务端在这条路径上不读 sku 字段）。
+                    input.readOnly = fromWarehouse;
+                    if (fromWarehouse) { input.value = ''; }
+                }
+                if (skuPick) { skuPick.required = fromWarehouse; }
+                applySource();
+            });
+        }
+        warehouseChecks.forEach(function (box) {
+            box.addEventListener('change', applySource);
+        });
+        if (trackSwitch) { trackSwitch.addEventListener('change', syncQuantity); }
+        if (input) { input.addEventListener('input', syncPreview); }
+        if (skuPick) {
+            skuPick.addEventListener('change', function () {
+                var option = skuPick.options[skuPick.selectedIndex];
+                if (option && option.value && externalInput && trim(externalInput.value) === '') {
+                    // 带入那条货登记的对方编码；没登记就用它自己的 SKU。
+                    // 运营仍可改 —— 服务端以显式填的为准。
+                    var external = trim(option.dataset.external);
+                    externalInput.value = external !== '' ? external : trim(option.value);
+                }
+                syncPreview();
+            });
+        }
+
+        // 打开抽屉先算一次（类型默认是变体商品：不预填、不 required）。
+        apply(true);
+        typeSelect.addEventListener('change', function () { apply(true); });
+        input.addEventListener('input', function () {
+            dirty = true;
+            apply(false);
+        });
+        if (regen) {
+            regen.addEventListener('click', function () {
+                dirty = false;
+                apply(true);
+                input.focus();
+            });
+        }
+        // 商品名 / URL 段改动时跟随建议值 —— 同样只在字段没被打过字时生效
+        //（选了捆绑再补 URL 段，是这条路径最常见的用法）。
+        function followSource() {
+            if (typeSelect.value === 'bundle' && !dirty) { apply(true); }
+        }
+        if (slugInput) { slugInput.addEventListener('input', followSource); }
+        if (nameInput) { nameInput.addEventListener('input', followSource); }
+    }
+
+    document.addEventListener('wbui:drawer-open', function (event) {
+        var body = event.detail && event.detail.body;
+        if (!body) { return; }
+        enhance(body.querySelector('form[data-product-create-form]'));
+    });
+})();
+</script>
 </div>
 {{end}}

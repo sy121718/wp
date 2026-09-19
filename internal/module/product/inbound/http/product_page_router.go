@@ -50,6 +50,8 @@ func SetupProductPages(pages *gin.RouterGroup,
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
 	pages.GET("/products", productPages.ProductsPage)
+	// 商品新建整页（docs/04-C §5，弃抽屉）：左表单右模板卡片。
+	pages.GET("/products/new", productPages.ProductNewPage)
 	// 商品详情页：变体与评分是某个商品的子资源，连同四个商品级表单一起从列表页拆出来。
 	// 页面 GET 同样走页面组（Session+CSRF，无 Casbin）；页内写动作复用各自既有权限点。
 	pages.GET("/products/detail", productPages.ProductDetailPage)
@@ -57,10 +59,22 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
 	pages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)
 	// 变体组合生成（issue #8）：勾选属性值 → 笛卡尔积；不勾选则按全部启用值生成。
+	// **落库口径一字未改**（接口 / 导入 / 批量生成仍走它），抽屉的「生成」自本批起走下面的预览。
 	pages.POST("/products/variant/generate", builtin.CasbinMiddlewareForPath("/api/product/variant/generate"), productPages.ProductsVariantGenerate)
+	// 变体清单的「预览—保存」模型（docs/14 §8）：
+	//   · preview —— 只算不写（纯计算，**不挂 Casbin**，与 /product-attributes/value-rows 同一先例：
+	//     页面组已有 Session + CSRF，而这个端点落不了任何库）；
+	//   · save —— 以清单为准落库（新增 / 改 SKU / 删清单外），复用组合生成的权限点：
+	//     改动的都是「这个商品的规格组合」这一件事，不新增权限点。
+	pages.POST("/products/variant/preview", productPages.ProductsVariantPreview)
+	pages.POST("/products/variant/save", builtin.CasbinMiddlewareForPath("/api/product/variant/generate"), productPages.ProductsVariantSave)
 	pages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
 	// 批量删除：与单条删除共用同一个权限点与同一条 service 路径，逐条处理、单条失败不整批回滚。
 	pages.POST("/products/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsBulkDelete)
+	// 批量「按规则改价」（本批）：定价工具的入口收进商品列表的批量操作，作用对象就是
+	// 勾选出来的商品集。权限点复用商品更新（同一改动面：改的都是商品变体的售价），
+	// 不新增权限点 —— /api/product/update 该路径已有策略，超管与拥有该权限的角色都能用。
+	pages.POST("/products/bulk-pricing", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsBulkPricing)
 	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
 	pages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
 	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
@@ -80,6 +94,10 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 捆绑配置（issue #20）：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
 	pages.GET("/products/bundle", productPages.ProductBundlePage)
 	pages.POST("/products/bundle/save", builtin.CasbinMiddlewareForPath("/api/product/bundle/set"), productPages.ProductBundleSave)
+	// 成员来源解析（docs/14 §1.2 的三种来源，本批）：只解析、**不落库** ——
+	// 与 /products/variant/preview 同一先例（页面组已有 Session + CSRF，端点落不了任何库），
+	// 因此不叠加 Casbin 权限点，也就不会出现「有路由、无权限点」的全员 403。
+	pages.POST("/products/bundle/members/resolve", productPages.ProductsBundleMembersResolve)
 	pages.GET("/products/template", productPages.ProductDetailTemplatePage)
 	pages.POST("/products/template/create", builtin.CasbinMiddlewareForPath("/api/contenttemplate/create"), productPages.ProductDetailTemplateCreate)
 	pages.POST("/products/template/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), productPages.ProductDetailTemplatePublish)

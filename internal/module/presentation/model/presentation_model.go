@@ -14,6 +14,7 @@ package presentationmodel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -57,6 +58,11 @@ type InstanceEntity struct {
 	InstanceRole      string  `gorm:"column:instance_role;not null;default:detail"`
 	URLPath           string  `gorm:"column:url_path;not null"`
 	TemplateID        string  `gorm:"column:template_id;not null"`
+	// OverrideDocument 实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）。
+	// NULL = 跟随模板（既有行为不变）；非空 = 发布/重建以此文档为准，
+	// binding 照常经 ContentResolver 解析，实体数据更新后重建不丢自定义。
+	// json.RawMessage gorm 无法推断列型，保留 type 标签属 model 不声明列型的例外清单。
+	OverrideDocument json.RawMessage `gorm:"column:override_document;type:jsonb"`
 	CurrentSnapshotID *string `gorm:"column:current_snapshot_id"`
 	StagedSnapshotID  *string `gorm:"column:staged_snapshot_id"`
 	StagedArtifactID  *string `gorm:"column:staged_artifact_id"`
@@ -455,6 +461,42 @@ func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, projectID, id, urlPath string, 
 		"url_path":    urlPath,
 		"update_time": at,
 	}).Error
+}
+
+// UpdateInstanceOverrideTx 事务内写入实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）。
+//
+// 与快照/产物/指针同一事务落库：产物已按覆盖文档编译、实例却还记着「跟随模板」，
+// 下次重建就会静默退回模板文档 —— 自定义凭空消失。document 必须非空；清空走
+// ClearInstanceOverrideTx（语义不同：那是放弃自定义，不是保存）。
+func (m *Model) UpdateInstanceOverrideTx(tx *gorm.DB, projectID, id string, document json.RawMessage, at time.Time) error {
+	if len(document) == 0 {
+		return errors.New("override document is empty")
+	}
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(map[string]any{
+		"override_document": document,
+		"update_time":       at,
+	}).Error
+}
+
+// ClearInstanceOverrideTx 事务内清除实例级文档覆盖（放弃自定义 / 换模板底稿后的重新同步）。
+//
+// templateID 非空时同事务切换 template_id（换底稿 = 放弃自定义，两件事一体成型），
+// 调用方随后以新文档重建；只清不切用于「模板有新版，放弃自定义跟进新版」。
+func (m *Model) ClearInstanceOverrideTx(tx *gorm.DB, projectID, id, templateID string, at time.Time) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	updates := map[string]any{
+		"override_document": nil,
+		"update_time":       at,
+	}
+	if templateID != "" {
+		updates["template_id"] = templateID
+	}
+	return tx.Model(&InstanceEntity{}).Where("id = ? AND project_id = ?", id, projectID).Updates(updates).Error
 }
 
 // FindInstanceByPath 查同工程内占用该路径的其他展示实例（改 URL 的占用预检）。

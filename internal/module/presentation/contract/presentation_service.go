@@ -33,6 +33,11 @@ type PresentationService interface {
 	// 直接取消激活（与手工页面 page.Service.UpdateURL 同一语义）。
 	// 详情页 URL 因此不再需要「删实例再重建」才能改。
 	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
+	// SaveOverrideDocument 保存实例级文档覆盖并按其重建发布（迁移 281，docs/04-C-instance-override.md）：
+	// workbench 实例模式的保存通道；只改本实例，不影响共享模板与同模板的其他实例。
+	SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error)
+	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
+	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)
 	// Get 按 ID 查询。
 	Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error)
 	// List 按类型列表。

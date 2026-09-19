@@ -51,6 +51,24 @@ type RebuildReq struct {
 	TemplateID string `json:"templateId"`
 }
 
+// SaveOverrideReq 保存实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）：
+// workbench 实例模式的保存通道。Document 必须是合法的 Page Document JSON。
+type SaveOverrideReq struct {
+	InstanceID string `json:"instanceId" binding:"required"`
+	// ProjectID 实例所属工程（DB-009 第二批）；可空时经 project 契约解析。
+	ProjectID string `json:"projectId"`
+	// Document 覆盖后的文档（含 binding 节点，编译期照常解析实体数据）。
+	Document json.RawMessage `json:"document" binding:"required"`
+}
+
+// ClearOverrideReq 清除实例级文档覆盖（放弃自定义，按模板重建）。
+// TemplateID 非空 = 同时切换绑定的模板（换底稿）；可空 = 沿用当前绑定。
+type ClearOverrideReq struct {
+	InstanceID string `json:"instanceId" binding:"required"`
+	ProjectID  string `json:"projectId"`
+	TemplateID string `json:"templateId"`
+}
+
 // UpdateURLReq 修改已发布实例的线上路径（改 URL）。
 //
 // 实例定位二选一：ID，或 EntityType + EntityID（后台页面通常只持有实体，

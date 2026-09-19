@@ -38,9 +38,16 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
 	// req.TemplateID 非空 = 切换绑定并重新发布（验收 4：切换模板重新发布后产物随之变化）。
+	// 换底稿 = 放弃自定义（docs/04-C）：切换路径不应用实例覆盖文档，产物按新模板编译，
+	// 覆盖列在 persistBuild 的事务里一并清除；非切换路径则优先用实例自己的文档
+	//（binding 照常解析，实体数据更新不丢自定义）。
+	switching := strings.TrimSpace(req.TemplateID) != ""
 	tpl, err := s.resolveBoundTemplate(ctx, inst, req.TemplateID)
 	if err != nil {
 		return nil, err
+	}
+	if !switching {
+		tpl = withInstanceDocument(inst, tpl)
 	}
 	return s.rebuildInstance(ctx, inst, tpl)
 }
@@ -110,6 +117,14 @@ func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.Inst
 				return uerr
 			}
 			inst.TemplateID = tpl.TemplateID
+			// 换底稿 = 放弃自定义（docs/04-C）：产物已按新模板编译，覆盖列若不清除，
+			// 下次重建又会拿旧自定义文档覆盖新模板 —— 与本次「切换」的语义自相矛盾。
+			if len(inst.OverrideDocument) > 0 {
+				if cerr := s.m.ClearInstanceOverrideTx(tx, inst.ProjectID, inst.ID, "", now); cerr != nil {
+					return cerr
+				}
+				inst.OverrideDocument = nil
+			}
 		}
 		// 改 URL 与快照/产物/指针同事务：产物烘的是新路径的 canonical，实例
 		// 必须同步指向新路径，否则下次重建会拿旧路径重编，线上内容与路由脱节。

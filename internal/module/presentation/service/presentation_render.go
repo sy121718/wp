@@ -92,6 +92,23 @@ func (s *Service) resolveBoundTemplate(ctx context.Context, inst *presentationmo
 	return s.resolveTemplate(ctx, inst.ProjectID, inst.EntityType, "")
 }
 
+// withInstanceDocument 实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）：
+// 实例带 override_document 时以它为编译底稿（binding 照常解析，实体数据照常刷新），
+// 否则原样返回模板 —— 既有行为零回归。
+//
+// 复制 ResolvedTemplate 只换 Document：TemplateID/VersionID 等身份字段保持模板侧
+// 真值，下游的模板切换判定与快照 source_template_version_id 语义不变。
+// 显式切换模板（换底稿 = 放弃自定义）的调用方**不得**包这层，见 Rebuild 的 switching 分支。
+func withInstanceDocument(inst *presentationmodel.InstanceEntity,
+	tpl *contenttemplatecontract.ResolvedTemplate) *contenttemplatecontract.ResolvedTemplate {
+	if inst != nil && len(inst.OverrideDocument) > 0 {
+		override := *tpl
+		override.Document = inst.OverrideDocument
+		return &override
+	}
+	return tpl
+}
+
 // buildArtifact 编译模板 AST（经 entity resolver）→ 产物落盘（**不激活**）。
 //
 // 激活由调用方在实例落库成功后单独执行（见 activate）：先激活后落库时，
@@ -101,7 +118,11 @@ func (s *Service) resolveBoundTemplate(ctx context.Context, inst *presentationmo
 // hreflang 判定 —— 调用方必须传它逐语言结案用的那一份，不要在中间重新推导。
 func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
 	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate) (built builtArtifact, err error) {
-	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, targetLangs, tpl)
+	// 编译期依赖线索收集器（审计遗留缺口）：模板里的 core.nav 绑定菜单位置时，
+	// 渲染期经 RenderContext.UseMenu 记录本次真正消费了哪个位置，构建后写进依赖表。
+	// 不收集的表现是「改了导航，自动发布详情页永远停在旧字节」且没有任何报错。
+	usage := &pipeline.CompileUsage{}
+	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, targetLangs, tpl, usage)
 	if err != nil {
 		return built, err
 	}
@@ -115,7 +136,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		SourceHash:                sourceHash,
 		BuildInputHash:            sourceHash,
 		Lang:                      strings.TrimSpace(lang),
-		Dependencies:              presentationDependencies(entityType, entityID, tpl.TemplateID),
+		Dependencies:              presentationDependencies(entityType, entityID, tpl.TemplateID, projectID, usage),
 	})
 	if err != nil {
 		return built, err
@@ -140,7 +161,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 // 按它生成，而不是回头读「某个语言是否已结案」—— 批次是「先构建全部语言、再逐语言
 // 结案」，账本行在构建时还不存在，读它会让首发布产出的互指全部落空。
 func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
-	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate) (html []byte, err error) {
+	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate, usage *pipeline.CompileUsage) (html []byte, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
 		return nil, err
@@ -219,6 +240,10 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		compileOpts = append(compileOpts, builder.WithThemeSettings(page.Settings.Theme))
 	}
 	compileOpts = append(compileOpts, pipeline.ClientAssetOptions()...)
+	// 依赖线索收集器只在发布路径注入；预览传 nil（预览不落依赖表，收集了也无处可写）。
+	if usage != nil {
+		compileOpts = append(compileOpts, builder.WithUsageRecorder(usage))
+	}
 	var contentTranslator *i18n.ContentTranslator
 	var contentCandidates int
 	compileOpts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(
@@ -263,8 +288,13 @@ func (s *Service) activate(urlPath string, built builtArtifact) error {
 //   - direct_content:{type}:{id}    —— 内容实体字段变化（PIPE-3 自动重建的触发键，
 //     与 content 模块 notifyContentChanged 声明的键逐字一致）；
 //   - content_template:{templateID} —— 模板版本变化（kind 见 pipeline.DepKindContentTemplate；
-//     当前无来源模块触发该键，登记用于审计与后续接入）。
-func presentationDependencies(entityType, entityID, templateID string) []pipeline.Dependency {
+//     当前无来源模块触发该键，登记用于审计与后续接入）；
+//   - menu:{projectID}:{kind} —— 模板里的 core.nav 绑定了该菜单位置（编译期消费记录，
+//     键构造见 pipeline.MenuKey；与手工页面路径用同一个构造函数，两侧必须一致）。
+//
+// projectID 为空（极罕见：调用方未解析出工程）时不登记导航依赖：菜单键必须带工程，
+// 猜一个工程 ID 会把失效范围指到别的站点上。
+func presentationDependencies(entityType, entityID, templateID, projectID string, usage *pipeline.CompileUsage) []pipeline.Dependency {
 	dep := pipeline.DirectContentKey(entityType, entityID)
 	out := []pipeline.Dependency{{Kind: dep.Kind, Key: dep.Key}}
 	if strings.TrimSpace(templateID) != "" {
@@ -272,6 +302,12 @@ func presentationDependencies(entityType, entityID, templateID string) []pipelin
 			Kind: pipeline.DepKindContentTemplate,
 			Key:  "content_template:" + templateID,
 		})
+	}
+	if pid := strings.TrimSpace(projectID); pid != "" {
+		for _, kind := range usage.MenuList() {
+			k := pipeline.MenuKey(pid, kind)
+			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+		}
 	}
 	return out
 }

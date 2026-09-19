@@ -146,6 +146,9 @@ func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error 
 	if err != nil {
 		return err
 	}
+	// 依赖失效是内容变更触发的自动重建：实例带覆盖文档时沿用（docs/04-C），
+	// 否则一次实体数据更新就会把可视化自定义静默冲回模板文档。
+	tpl = withInstanceDocument(inst, tpl)
 	_, err = s.rebuildInstance(ctx, inst, tpl)
 	return err
 }
@@ -207,7 +210,8 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	// 这是预览与发布在字节上的唯一有意差异（见 presentation_seo.go 取舍 2）。
 	// targetLangs 传 nil：预览没有批次概念，语言切换器按线上访问面现状输出；而且
 	// urlPath 为空时 logicalPath 也是空，alternates 分支本来就不会走（SEO-026）。
-	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl)
+	// usage 传 nil：预览不落依赖表，收集编译期消费线索没有写入点。
+	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}

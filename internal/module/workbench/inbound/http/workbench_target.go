@@ -16,6 +16,9 @@ const (
 	EditTargetPage     = "page"
 	EditTargetBlock    = "block"
 	EditTargetTemplate = "template"
+	// EditTargetInstance 实例编辑模式（迁移 281，docs/04-C-instance-override.md）：
+	// 画布改的是该实例自己的覆盖文档，保存只影响本实例。
+	EditTargetInstance = "instance"
 )
 
 // TargetEndpoint 目标的一个端点（method 省略即 POST：项目的写操作一律 POST）。
@@ -88,6 +91,17 @@ var workbenchTargets = map[string]EditTarget{
 		Save:     TargetEndpoint{Path: "/api/contenttemplate/update"},
 		SaveBody: TargetSaveBody{IDKey: "id", DocumentKey: "draftDocument"},
 		// 模板保存即产生新版本（无独立发布动作），也没有自己的 URL。
+		Caps: TargetCapabilities{},
+	},
+	// 实例编辑模式（迁移 281，docs/04-C-instance-override.md）：保存只影响本实例
+	//（覆盖文档 + 重编译发布），不产生模板新版本，也没有自己的 URL。
+	EditTargetInstance: {
+		Type: EditTargetInstance,
+		Save: TargetEndpoint{Path: "/workbench/instance/save"},
+		SaveBody: TargetSaveBody{
+			IDKey: "id", DocumentKey: "draftDocument",
+			Extras: map[string]string{"projectId": "projectId"},
+		},
 		Caps: TargetCapabilities{},
 	},
 }

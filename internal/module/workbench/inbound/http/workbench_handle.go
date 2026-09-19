@@ -38,6 +38,10 @@ func (h *Handle) Workbench(c *gin.Context) {
 		h.workbenchTemplate(c, templateID)
 		return
 	}
+	if instanceID := strings.TrimSpace(c.Query("instance")); instanceID != "" {
+		h.workbenchInstance(c, instanceID)
+		return
+	}
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
 		c.String(http.StatusBadRequest, "缺少页面 id")

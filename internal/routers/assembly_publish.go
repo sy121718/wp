@@ -166,6 +166,21 @@ func (a *assembly) buildPublishingModules() {
 	a.pluginSvc = pluginSvc
 	a.collectionResolver = collectionResolver
 	a.pageService = pageService
+
+	// 收敛积压的只读观测接入 /readyz（pendingReceipts 字段，见 readyz_receipts.go）。
+	// 断言而不是静默跳过：漏接的表现是 /readyz 里少了这个来源 —— 运维会把它读成
+	// 「这里没有积压」，而实际是「没人在看」。待收敛回执本身就是「线上与库不一致」的窗口，
+	// 让它在观测层静默消失是最不该有的降级（审计 CQ-019 的同一判据）。
+	presentationObserver, ok := presentationSvc.(pendingReceiptBacklog)
+	if !ok {
+		panic("自动发布模块未实现待收敛回执观测（PendingReceiptBacklog）")
+	}
+	a.pendingReceipts.register("presentation", presentationObserver)
+	pageObserver, ok := pageService.(pendingReceiptBacklog)
+	if !ok {
+		panic("页面模块未实现待收敛回执观测（PendingReceiptBacklog）")
+	}
+	a.pendingReceipts.register("page", pageObserver)
 }
 
 // wirePublishingPorts 发布侧的端口注入：页面与发布实例互相接线、构建队列执行器注册、
@@ -405,6 +420,21 @@ func (a *assembly) startRuntimeTasks() {
 	marks.mark(portPipelinePresentationRebuilder)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
+	// 导航变更 → 依赖失效（审计遗留缺口：DepKindMenu 有常量、无发射点）：
+	// navigation 侧只表达「哪个工程哪个位置变了」，键构造（pipeline.MenuKey）与扇出
+	// 都在发布内核，这里用适配器把两端接起来。键带工程 ID —— 导航是工程级资源，
+	// 位置名只有 header/footer，不带工程会让「A 工程改页眉导航」误标 B 工程的页面。
+	//
+	// 断言 + fail-fast（与 block 的 SetStalePropagator 同一手法）：漏接的表现是
+	// 「改导航后已发布页面永远不更新」，页眉/页脚全站可见却没有任何报错。
+	navigationDispatcherSetter, ok := navigationSvc.(interface {
+		SetMenuStaleDispatcher(navigationcontract.MenuStaleDispatcher)
+	})
+	if !ok {
+		panic("导航模块未提供失效派发注入点（SetMenuStaleDispatcher）")
+	}
+	navigationDispatcherSetter.SetMenuStaleDispatcher(pipeline.NewMenuStaleAdapter(fanout))
+	marks.mark(portNavigationMenuDispatcher)
 
 	// 导航来源实体解析（page/article/product/category/block → 标题 + URL）：
 	// 依赖 page/content/presentation/block 契约，故在它们全部装配完成后注入。
@@ -437,7 +467,10 @@ func (a *assembly) mountAdminPages() {
 	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD)
 	adminhttp.SetupAdminShellPages(a.router)
 
-	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService)
+	// pageService 作为可选第 4 参传入：块的「待重建影响面」要经 page 的只读反查（引用数 +
+	// stale 页面清单）。不接也能编译，但页面会显示「页面能力未装配」且引用数一律「未知」——
+	// 那不是 0，是「没能力回答」，所以宁可不接也不能假装查过（见 block_page_impact.go）。
+	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService, a.pageService)
 	mediahttp.SetupMediaPages(a.adminPages)
 	pluginhttp.SetupPluginPages(a.adminPages, a.pluginSvc)
 	navigationhttp.SetupNavigationPages(a.adminPages, a.navigationSvc, a.projectService, a.pageService)
@@ -453,9 +486,11 @@ func (a *assembly) mountAdminPages() {
 
 	// 编辑器平台（workbench 模块）：仪表盘首页 + /workbench/* 全部路由。
 	// contentStore 传 nil：未注入时模块内部惰性回退默认实现（与原行为一致）。
-	workbenchhttp.SetupWorkbenchRoutes(a.workbenchPages, a.pageService, a.projectService,
+	workbenchHandle := workbenchhttp.SetupWorkbenchRoutes(a.workbenchPages, a.pageService, a.projectService,
 		a.blockSvc, a.pluginSvc, a.collectionResolver, a.contentTemplateSvc, a.presentationSvc,
 		a.blueprintSvc, a.productSvc, nil)
+	// 实例编辑模式（docs/04-C）：?instance= 画布改覆盖文档，保存走 SaveOverrideDocument。
+	workbenchHandle.SetInstanceOverrideDeps(a.presentationSvc)
 	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
 	marks.mark(portDashboardBlueprints)
 }
