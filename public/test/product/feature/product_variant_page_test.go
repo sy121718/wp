@@ -132,8 +132,14 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	if !strings.HasPrefix(loc, detailLocation(f.projectID, product.ID)) {
 		t.Fatalf("被拒应回该商品的详情页，实际 Location=%q", loc)
 	}
-	if !strings.Contains(loc, url.QueryEscape(productenums.ErrVariationSelectionEmpty)) {
-		t.Fatalf("未勾选应提示 %s，实际 Location=%q", productenums.ErrVariationSelectionEmpty, loc)
+	// 提示必须**可读**：这里原先断言 Location 里带 enums 裸 key（ErrVariationSelectionEmpty），
+	// 而那正是「把 enums 常量铺到页面上」的形态（第三波 CQ-009 形态②）。
+	// 现在 handler 统一经 productErrText 取词，断言的是中文文案 + 不再出现裸 key。
+	if !strings.Contains(loc, url.QueryEscape("未勾选任何属性值")) {
+		t.Fatalf("未勾选应提示「未勾选任何属性值」，实际 Location=%q", loc)
+	}
+	if strings.Contains(loc, productenums.ErrVariationSelectionEmpty) {
+		t.Fatalf("Location 不应出现 enums 裸 key，实际 Location=%q", loc)
 	}
 	if got, _ := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID}); got.VariantCount != 1 {
 		t.Fatalf("拒绝时不应写入变体，实际 %d 个", got.VariantCount)

@@ -765,9 +765,12 @@ func TestSourcePermissionsAndMenuSeeded(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询 inventory 权限点失败: %v", err)
 	}
-	// 100（#15 九个）+ 104（#16 十个）+ 106（#17 六个）+ 109（#18 采购单与入库七个）。
-	if n != 32 {
-		t.Fatalf("inventory 模块应有 32 个权限点，实际 %d", n)
+	// 100（#15 九个）+ 104（#16 **八个**）+ 106（#17 六个）+ 109（#18 采购单与入库七个）= 30。
+	// 104 原为十个：inventory:cache_sync / cache_reconcile 随库存缓存下线、由迁移 122 删除，
+	// 2026-09 把 104 的 SQL 与条件同批收到 8 个（详见 inventory_warehouse_test.go 里那条
+	// 「死权限点必须不存在」的反向断言）。数字下降不是漏 seed，而是那两条本来就不该存在。
+	if n != 30 {
+		t.Fatalf("inventory 模块应有 30 个权限点（104 已从 10 收到 8），实际 %d", n)
 	}
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '货源管理' AND deleted_at IS NULL").Scan(&n).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)

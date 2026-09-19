@@ -49,6 +49,11 @@ var defaultDTOExposureAllow = map[string]string{
 	"AccountItem.HasPassword":         "布尔开关：只回答「有没有设过密码」，不回显任何凭据值",
 	"GuestAccountResp.PasswordMailed": "布尔开关：只回答「初始密码有没有寄出去」，字段里没有密码本身",
 	"EndpointItem.HasSecret":          "布尔开关：只回答「这个外部集成端点配没配签名密钥」。webhook 的 HMAC 密钥以密文落库、明文只在保存那一刻出现，**没有任何读回接口**（连密文都不出），响应用 HasSecret 而不是回显密钥物 —— 这正是 SEC-009 想要的形状，不是漏网",
+	// 第三方仓对接配置（迁移 240，inventory）：出参形状刻意只留三个「非秘密」字段 ——
+	// 明文不落库（AES-GCM 密文），密文不出接口，客户端连密文都拿不到。
+	"WarehouseThirdPartyResp.HasCredential":    "布尔开关：只回答「这个仓配没配过对接凭据」（存了密文或引用名），字段里没有凭据本体",
+	"WarehouseThirdPartyResp.CredentialMasked": "恒为常量掩码占位（inventoryenums.CredentialMask，****），供表单回显「已配置」；服务端不按用户输入回显任何内容",
+	"WarehouseThirdPartyResp.SecretRef":        "凭据的**引用名**（如部署侧的环境变量名）：系统只知道值在别处叫什么、不知道值是什么；名字本身不是秘密，秘密在部署侧",
 }
 
 // DTOExposureOptions 扫描参数（零值即默认口径：扫 internal 下所有 dto 目录）。

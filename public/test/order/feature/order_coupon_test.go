@@ -7,7 +7,8 @@ package feature
 //   · 核销与建单同生共死：券用尽 → 订单也不该留下（不能出现「券用完了但单还在」）；
 //   · 幂等：同一 requestId 重复提交既不重复扣库存，也不重复记核销；
 //   · 试算是纯读：不占次数、不落核销；
-//   · 有核销记录的券不许删（删了那些记录就指向一张查不到的券）。
+//   · 有核销记录的券不许删（删了那些记录就指向一张查不到的券）；
+//   · **取消订单把核销回退**（cancel 与 create 的 redeem 对称，见 TestOrderCancelReleasesCoupon）。
 
 import (
 	"context"
@@ -16,6 +17,7 @@ import (
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	ordermodel "go_wp/internal/module/order/model"
 )
 
 // addCoupon 建一张券（工程 id 由夹具补上）。
@@ -403,4 +405,101 @@ func TestOrderCouponCreateRejectsInvalidRule(t *testing.T) {
 	if _, err := f.orders.CreateCoupon(ctx, base()); err == nil || !strings.Contains(err.Error(), orderenums.ErrCouponCodeTaken) {
 		t.Fatalf("重复券码应拒绝，实际: %v", err)
 	}
+}
+
+// TestOrderCancelReleasesCoupon 取消订单把券核销**一并回退**（与建单 redeem 对称）。
+//
+// 建单用券做三件事：占一次 used_count、写一条核销明细、扣库存。取消必须把这三件都还回去，
+// 而且是在**同一个事务**里（状态 / 流转 / 库存 / 券，任一步失败整体回滚）——
+// 「订单取消了、券次数没还」是商家白吃亏，「券还了、订单没取消」是券被重复用。
+//
+// 断言分四层：券计数与明细（真源是明细，used_count 是并发守卫依赖的投影）、订单状态、
+// 库存归还，以及**券确实重新可用**（有人只把 used_count 改了、明细没删，或反过来，
+// 单看一个数都会漏 —— 这里两个都断言，最后再真用一次）。
+func TestOrderCancelReleasesCoupon(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	_, vid := f.addProduct(t, "用券可取消", 100.00, 10)
+	c := f.addCoupon(t, &orderdto.CouponSaveReq{Code: "cancel10", DiscountType: "fixed", DiscountValue: 1000})
+	ctx := context.Background()
+
+	// 大小写不敏感地带上券码建单（2 件，100 元 × 2 = 20000 分，减 1000 分）。
+	req := f.createBaseReq(vid, 2)
+	req.CouponCode = "CANCEL10"
+	res, err := f.orders.CreateOrder(ctx, req)
+	if err != nil {
+		t.Fatalf("带券建单失败: %v", err)
+	}
+	if res.Total != 19000 {
+		t.Fatalf("带券总额应为 19000 分，实际 %d", res.Total)
+	}
+	// 建单后：券占一次、明细一条、库存扣 2。
+	if got := f.couponUsedCount(t, c.ID); got != 1 {
+		t.Fatalf("建单后 used_count 应为 1，实际 %d", got)
+	}
+	if n := f.redemptionCount(t, c.ID); n != 1 {
+		t.Fatalf("建单后应有 1 条核销明细，实际 %d", n)
+	}
+	if got := f.stockOf(t, vid); got != 8 {
+		t.Fatalf("建单后库存应为 8，实际 %d", got)
+	}
+
+	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
+		OrderID: res.ID, Reason: "买家改主意", OperatorName: "tester",
+	}); err != nil {
+		t.Fatalf("取消失败: %v", err)
+	}
+
+	// ① 券回退：used_count 与核销明细都要回到 0（投影与真源一起）。
+	if got := f.couponUsedCount(t, c.ID); got != 0 {
+		t.Fatalf("取消后 used_count 应回退为 0，实际 %d", got)
+	}
+	if n := f.redemptionCount(t, c.ID); n != 0 {
+		t.Fatalf("取消后核销明细应清空，实际 %d 条", n)
+	}
+	// ② 订单状态 cancelled。
+	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
+	if err != nil {
+		t.Fatalf("读订单详情失败: %v", err)
+	}
+	if detail.Head == nil || detail.Head.Status != ordermodel.OrderStatusCancelled {
+		t.Fatalf("取消后状态应为 cancelled，实际 %+v", detail.Head)
+	}
+	// ③ 库存归还。
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("取消后库存应归还到 10，实际 %d", got)
+	}
+	// ④ 重复取消被拒，且**不会把已经回退的券再减一次**（否则 used_count 会变成负数）。
+	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
+		OrderID: res.ID, Reason: "再来一次",
+	}); err == nil {
+		t.Fatalf("重复取消应被拒绝")
+	}
+	if got := f.couponUsedCount(t, c.ID); got != 0 {
+		t.Fatalf("重复取消不应再动券计数，实际 %d", got)
+	}
+	// ⑤ 券确实重新可用：再建一单同码券仍能核销（次数真的还回去了，不是只改了其中一个数）。
+	req2 := f.createBaseReq(vid, 1)
+	req2.CouponCode = "cancel10"
+	if _, err := f.orders.CreateOrder(ctx, req2); err != nil {
+		t.Fatalf("取消回退后券应可再次使用: %v", err)
+	}
+	if got := f.couponUsedCount(t, c.ID); got != 1 {
+		t.Fatalf("再次使用后 used_count 应为 1，实际 %d", got)
+	}
+	if n := f.redemptionCount(t, c.ID); n != 1 {
+		t.Fatalf("再次使用后应有 1 条核销明细，实际 %d", n)
+	}
+}
+
+// couponUsedCount 读券的已用次数（used_count 是投影，真源是核销明细 —— 两者都要断言）。
+func (f *orderFixture) couponUsedCount(t *testing.T, couponID uint64) int {
+	t.Helper()
+	res, err := f.orders.GetCoupon(context.Background(), couponID)
+	if err != nil {
+		t.Fatalf("读优惠码失败: %v", err)
+	}
+	return res.UsedCount
 }

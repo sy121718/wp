@@ -98,6 +98,7 @@ func seedTaxonomyProduct(t *testing.T, db *gorm.DB, projectID, name string) taxo
 	if err := m.CreateWithVariants(ctx, &productmodel.ProductEntity{
 		ID: s.productID, ProjectID: projectID, Name: name, Slug: "tax-" + s.productID,
 		Status: productenums.StatusDraft, BrandID: &s.brandID, PrimaryCategoryID: &s.categoryID,
+		Type:        productmodel.TypeVariant, // 同上：空串会撞 products_type_check，必须显式给
 		Description: []byte("{}"), Images: []byte("[]"), ImageAlts: []byte("[]"),
 		AttributeIDs: attrs, CategoryIDs: cats, TagIDs: tags, RelatedIDs: []byte("[]"),
 		Metadata: []byte("{}"), BundleItems: []byte("{\"options\":[]}"),

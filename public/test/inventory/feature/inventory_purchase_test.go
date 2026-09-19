@@ -487,8 +487,10 @@ func TestPurchaseReceiptUpdatesVariantCost(t *testing.T) {
 		t.Fatalf("成本价应被本次到货价覆盖为 8.25，实际 %v", cost)
 	}
 	// 进货历史里的单价是「当时快照」，两行不同价可分别回溯（验收 6 的数据基础）。
+	// 历史的 SKU 维度是**仓库侧裸码**：入库单行落库时就按目标仓归一了（带前缀的商品侧编码
+	// 不落仓库侧单据），所以这里必须用剥掉仓码前缀的那个编码去查。
 	history, herr := f.inventory.ListPurchaseHistory(ctx, &inventorydto.ListPurchaseHistoryReq{
-		ProjectID: f.projectID, SKUCode: v.SKUCode,
+		ProjectID: f.projectID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 	})
 	if herr != nil || len(history) != 2 {
 		t.Fatalf("同一 SKU 应有两条进货记录：%v %+v", herr, history)
@@ -595,8 +597,10 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 		[]inventorydto.PurchaseLineReq{purchaseLine(other, ov, 1, 2)})
 	mustReceiveLine(t, f, order2.ID, order2.Lines[0].ID, 1, "REQ-H2")
 
+	// 按 SKU 查历史的维度是**仓库侧裸码**（入库单行落的是裸码），商品侧 v.SKUCode 带前缀。
+	bare := bareSKU(v.SKUCode, wh.Code)
 	history, err := f.inventory.ListPurchaseHistory(ctx, &inventorydto.ListPurchaseHistoryReq{
-		ProjectID: f.projectID, SKUCode: v.SKUCode,
+		ProjectID: f.projectID, SKUCode: bare,
 	})
 	if err != nil {
 		t.Fatalf("查进货历史失败: %v", err)
@@ -607,7 +611,7 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 	kinds := map[string]bool{}
 	prices := map[float64]bool{}
 	for _, h := range history {
-		if h.SKUCode != v.SKUCode || h.VariantID != v.ID {
+		if h.SKUCode != bare || h.VariantID != v.ID {
 			t.Fatalf("进货历史串了 SKU：%+v", h)
 		}
 		if h.SourceName == "" || h.WarehouseName != "苏州仓" {
@@ -633,16 +637,17 @@ func TestPurchaseHistoryBySKU(t *testing.T) {
 		t.Fatalf("按变体查进货历史结果不一致：%v %+v", err, byVariant)
 	}
 	bySource, err := f.inventory.ListPurchaseHistory(ctx, &inventorydto.ListPurchaseHistoryReq{
-		ProjectID: f.projectID, SKUCode: v.SKUCode, SourceID: factory.ID,
+		ProjectID: f.projectID, SKUCode: bare, SourceID: factory.ID,
 	})
 	if err != nil || len(bySource) != 1 || bySource[0].Kind != inventoryenums.ReceiptKindProduction {
 		t.Fatalf("按货源收窄进货历史失败：%v %+v", err, bySource)
 	}
 	// 另一个 SKU 的历史独立。
+	otherBare := bareSKU(ov.SKUCode, wh.Code)
 	otherHistory, err := f.inventory.ListPurchaseHistory(ctx, &inventorydto.ListPurchaseHistoryReq{
-		ProjectID: f.projectID, SKUCode: ov.SKUCode,
+		ProjectID: f.projectID, SKUCode: otherBare,
 	})
-	if err != nil || len(otherHistory) != 1 || otherHistory[0].SKUCode != ov.SKUCode {
+	if err != nil || len(otherHistory) != 1 || otherHistory[0].SKUCode != otherBare {
 		t.Fatalf("另一个 SKU 的进货历史不正确：%v %+v", err, otherHistory)
 	}
 }

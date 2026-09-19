@@ -1,0 +1,16 @@
+# service 层数据访问边界的豁免清单 —— 由 scripts/check-service-db-boundary.sh 判据 ①b 读取。
+#
+# 格式：<键><TAB><理由>      （键 = 仓库相对路径#函数名；以 # 开头的整行是注释）
+# 键与理由之间必须是**一个 TAB**（理由里可以有空格）。
+#
+# 纪律：
+#   · 每条必须写明**具体理由** —— 这张表是给下一个读代码的人看的，不是给自己用的；
+#   · 条目不再命中（已改成 model 具名方法 / 函数改名 / 被删）脚本会失败，必须删掉：
+#     只增不减的清单等于没有门禁；
+#   · 判据 ①b 是启发式，只认「句柄 .Model(」这一个入口：tx.Where(...) / tx.Create(...) /
+#     tx.Updates(...) 同样绕过 model 具名方法却不在扫描范围内。**清单为空不代表边界干净**。
+#
+# 历史：publication 批曾有 3 条豁免（markReceipt / renameReservedIn / redirectIn 在事务
+# 句柄上直接拼 SQL），已把 SQL 原样搬进 internal/module/publication/model 的具名方法
+# （MarkReceiptStateTx / RenameReservedTx / RedirectInTx，含 23505 → pubmodel.ErrRouteOccupied
+# 归一），service 只透传句柄 —— 条目随之删除，修复记录留在这里给下一个读代码的人。

@@ -18,12 +18,22 @@ import (
 	"testing"
 )
 
-// enumsSeedPairs 模块 → (enums 文件, seed 文件)。
-var enumsSeedPairs = map[string][2]string{
-	"cart":  {"internal/module/cart/enums/cart_enums.go", "public/migrations/179_i18n_seed_cart.sql"},
-	"order": {"internal/module/order/enums/order_enums.go", "public/migrations/180_i18n_seed_order.sql"},
-	"user":  {"internal/module/user/enums/user_enums.go", "public/migrations/181_i18n_seed_user.sql"},
-	"mail":  {"internal/module/mail/enums/mail_enums.go", "public/migrations/182_i18n_seed_mail.sql"},
+// enumsFiles 模块 → enums 文件（只列**要检查**的模块）。
+//
+// 判据是「全库 seed 里有没有这个 key」，所以这里不再写「该模块的 seed 文件」。
+// 原来写的是 (enums 文件, seed 文件) 配对，而那个配对从第二批起就在腐烂：
+// 每个模块后来又各自加了归口文案与补漏词条的迁移（mail 的 276、navigation 的 269、
+// admin 的 268/271…），列表里却只有一个文件 —— 于是**后续批次新增的 key 一律被判成漏配**。
+// 实测：`mail.err.internal`（276 seed 得很完整，中英各一行）在这一版里就是红的，
+// 而这个门禁从那时起一直在报假红。假红的门禁比没有门禁更糟：它会被改宽或被忽略。
+//
+// sys_i18n 是全局表，key 落在哪个迁移文件里不影响「有没有词条」；
+// 真正要抓的漏配是「任何地方都没有」—— 那用全库扫描判就够了，且不需要维护。
+var enumsFiles = map[string]string{
+	"cart":  "internal/module/cart/enums/cart_enums.go",
+	"order": "internal/module/order/enums/order_enums.go",
+	"user":  "internal/module/user/enums/user_enums.go",
+	"mail":  "internal/module/mail/enums/mail_enums.go",
 }
 
 func TestEnumsKeysHaveSeedEntries(t *testing.T) {
@@ -31,14 +41,31 @@ func TestEnumsKeysHaveSeedEntries(t *testing.T) {
 	enumsRe := regexp.MustCompile(`(?m)^\s*\w+\s*=\s*"([a-z][a-z0-9]*\.(?:msg|err|test)\.[A-Za-z0-9_.]+)"`)
 	seedRe := regexp.MustCompile(`(?m)^\s*\(\s*'([^']+)'`)
 
-	for module, files := range enumsSeedPairs {
-		enumsSrc, err := os.ReadFile(filepath.Join(root, files[0]))
+	// 全库 seed 的 key 集合：一次扫完 public/migrations 下全部 .sql。
+	// 单独抽出来只扫一遍，顺带让「扫到了几个 key」可断言 —— 扫到 0 个说明判据坏了，
+	// 而那种情况下所有模块都会「全部漏配」或「全部通过」，两种都看不出判据已经失效。
+	have := map[string]bool{}
+	seedFiles, err := filepath.Glob(filepath.Join(root, "public", "migrations", "*.sql"))
+	if err != nil {
+		t.Fatalf("枚举 seed 文件失败: %v", err)
+	}
+	for _, sf := range seedFiles {
+		src, rerr := os.ReadFile(sf)
+		if rerr != nil {
+			t.Fatalf("读取 seed %s 失败: %v", sf, rerr)
+		}
+		for _, m := range seedRe.FindAllStringSubmatch(string(src), -1) {
+			have[m[1]] = true
+		}
+	}
+	if len(have) == 0 {
+		t.Fatalf("全库 seed 里没扫到任何 key（共 %d 个 .sql）—— 判据或目录结构变了", len(seedFiles))
+	}
+
+	for module, enumsFile := range enumsFiles {
+		enumsSrc, err := os.ReadFile(filepath.Join(root, enumsFile))
 		if err != nil {
 			t.Fatalf("读取 %s 的 enums 失败: %v", module, err)
-		}
-		seedSrc, err := os.ReadFile(filepath.Join(root, files[1]))
-		if err != nil {
-			t.Fatalf("读取 %s 的 seed 失败: %v", module, err)
 		}
 		want := map[string]bool{}
 		for _, m := range enumsRe.FindAllStringSubmatch(string(enumsSrc), -1) {
@@ -46,10 +73,6 @@ func TestEnumsKeysHaveSeedEntries(t *testing.T) {
 		}
 		if len(want) == 0 {
 			t.Fatalf("%s：enums 里没扫到任何 key，判据可能已失效", module)
-		}
-		have := map[string]bool{}
-		for _, m := range seedRe.FindAllStringSubmatch(string(seedSrc), -1) {
-			have[m[1]] = true
 		}
 		var missing []string
 		for k := range want {

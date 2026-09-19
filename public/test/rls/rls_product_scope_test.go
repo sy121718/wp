@@ -41,7 +41,10 @@ func seedProductWithVariant(t *testing.T, db *gorm.DB, projectID, name string) (
 	err := productmodel.NewModel(db).CreateWithVariants(context.Background(), &productmodel.ProductEntity{
 		ID: productID, ProjectID: projectID,
 		Name: name, Slug: "guard-" + productID,
-		Status:      "draft",
+		Status: "draft",
+		// Type 必须显式给：DDL 有 DEFAULT 'variant'，但 gorm 会把 string 零值（空串）**显式写进去**，
+		// 撞 products_type_check（迁移 238）—— 这是刻意的：漏设类型要在写入时就失败，而不是静默落成 variant。
+		Type:        productmodel.TypeVariant,
 		Description: []byte("{}"), Images: []byte("[]"), ImageAlts: []byte("[]"),
 		AttributeIDs: []byte("[]"), CategoryIDs: []byte("[]"), TagIDs: []byte("[]"),
 		RelatedIDs: []byte("[]"), Metadata: []byte("{}"),
@@ -84,6 +87,10 @@ func seedWarehouse(t *testing.T, db *gorm.DB, projectID, code string) string {
 	err := inventorymodel.NewModel(db).CreateWarehouse(context.Background(), &inventorymodel.WarehouseEntity{
 		ID: id, ProjectID: projectID, Code: code, Name: "护栏仓 " + code,
 		Status: "active", IsDefault: false, Sort: 0,
+		// Type（迁移 240 的 inventory_warehouses_type_check）与 Config（NOT NULL）都必须显式给：
+		// gorm 会把 string 零值写空串、把 nil 的 json.RawMessage 写成 NULL，两者都不会落到 DDL 默认值上。
+		Type:     "self",
+		Config:   []byte("{}"),
 		Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
 	}, false)
 	if err != nil {
@@ -113,10 +120,12 @@ func seedStock(t *testing.T, db *gorm.DB, projectID, productID, variantID, wareh
 	t.Helper()
 	now := time.Now()
 	id := uuid.NewString()
+	// 带具体数量的行必须是「跟踪」行：迁移 261 的 CHECK (track_quantity OR quantity = 0)
+	// 不允许「不跟踪（无限）却又带着数字」。
 	out, err := inventorymodel.NewModel(db).EnsureStock(context.Background(), &inventorymodel.StockEntity{
 		ID: id, ProjectID: projectID, WarehouseID: warehouseID,
 		ProductID: productID, VariantID: variantID, SKUCode: "SKU-" + variantID[:8],
-		Quantity: 7, Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
+		Quantity: 7, TrackQuantity: true, Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		t.Fatalf("写入库存行失败: %v", err)

@@ -19,6 +19,7 @@ import (
 
 	"gorm.io/gorm"
 
+	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
@@ -50,9 +51,23 @@ type orderFixture struct {
 	db        *gorm.DB
 	projectID string
 	warehouse string
+
+	// 底层 model 留一份引用：故障注入用例要用同一批 model 换掉库存端口重建 service
+	//（见 serviceWithStock），否则「建单要真实端口、取消要失败端口」在同一个夹具上做不了。
+	orderModel  *ordermodel.OrderModel
+	itemModel   *ordermodel.OrderItemModel
+	logModel    *ordermodel.OrderStatusLogModel
+	couponModel *ordermodel.CouponModel
+	returnModel *ordermodel.ReturnModel
 }
 
 func newOrderFixture(t *testing.T) *orderFixture {
+	return newOrderFixtureWithStock(t, nil)
+}
+
+// newOrderFixtureWithStock 与 newOrderFixture 同装配，但允许换掉库存端口：
+// stock 为 nil 时用真实的 orderstock 适配器（真实跨模块链路，默认路径）。
+func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *orderFixture {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if err := migrations.RunSeeds(db); err != nil {
@@ -86,21 +101,35 @@ func newOrderFixture(t *testing.T) *orderFixture {
 		usermodel.NewUserPreferenceModel(db),
 		mail, "测试站",
 	)
+	if stock == nil {
+		stock = orderstock.New(inv)
+	}
+	orderModel := ordermodel.NewOrderModel(db)
+	itemModel := ordermodel.NewOrderItemModel(db)
+	logModel := ordermodel.NewOrderStatusLogModel(db)
+	couponModel := ordermodel.NewCouponModel(db)
+	returnModel := ordermodel.NewReturnModel(db)
 	orders := orderservice.NewService(
-		ordermodel.NewOrderModel(db),
-		ordermodel.NewOrderItemModel(db),
-		ordermodel.NewOrderStatusLogModel(db),
-		ordermodel.NewCouponModel(db),
-		ordermodel.NewReturnModel(db),
+		orderModel, itemModel, logModel, couponModel, returnModel,
 		products,
-		orderstock.New(inv),
+		stock,
 		users,
 		nil, // webhooks：本用例不接线外部集成通道
 	)
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
 		db: db, projectID: project.ID, warehouse: wh.ID,
+		orderModel: orderModel, itemModel: itemModel, logModel: logModel,
+		couponModel: couponModel, returnModel: returnModel,
 	}
+}
+
+// serviceWithStock 用同一批 model 换一个库存端口重建 service（故障注入用）。
+func (f *orderFixture) serviceWithStock(stock ordercontract.StockOperator) *orderservice.Service {
+	return orderservice.NewService(
+		f.orderModel, f.itemModel, f.logModel, f.couponModel, f.returnModel,
+		f.products, stock, f.users, nil,
+	)
 }
 
 // addProduct 建商品 + 一个带价的变体，并把指定数量的货补进默认仓。
@@ -190,8 +219,11 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	if it.ProductName != "T恤" || it.UnitPrice != 9950 || it.LineSubtotal != 19900 {
 		t.Fatalf("订单项快照不对: %+v", it)
 	}
-	if it.CostPrice != 4975 {
-		t.Fatalf("成本快照应为 4975 分，实际 %d", it.CostPrice)
+	// 成本快照来自**该行归属仓的当前成本**（(仓库, SKU)，迁移 256）：
+	// 本用例只建了变体级成本、库存行尚未核算，所以这里必须是 null ——
+	// 用 0 冒充「未知成本」会让毛利凭空多出一笔（0 是合法的显式成本：赠品 / 内部划拨）。
+	if it.CostPrice != nil {
+		t.Fatalf("库存行未核算时订单行成本应为 null，实际 %d", *it.CostPrice)
 	}
 }
 
@@ -252,8 +284,12 @@ func TestOrderCreateIsIdempotentByRequestID(t *testing.T) {
 	}
 }
 
-// TestOrderCreateRejectsInsufficientStockAndCancels：库存不足 → 整单失败，且订单留痕为已取消。
-func TestOrderCreateRejectsInsufficientStockAndCancels(t *testing.T) {
+// TestOrderCreateRejectsInsufficientStockAndRollsBack 库存不足 → **整单回滚**，不留半截状态。
+//
+// 口径变化（2026-09-19 事务收口）：扣减与订单落在同一个事务里，任一步失败整单不存在 ——
+// 不再有「订单先落库、再补偿成已取消」那条路径（补偿调用本身还是 `_ =` 吞错的形态，
+// 补偿再失败就留下「有单没扣库存」的僵尸单，事后无从分辨到底发没发货）。
+func TestOrderCreateRejectsInsufficientStockAndRollsBack(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
@@ -271,16 +307,22 @@ func TestOrderCreateRejectsInsufficientStockAndCancels(t *testing.T) {
 	if got := f.stockOf(t, vid); got != 1 {
 		t.Fatalf("失败的单不该扣走库存，实际 %d", got)
 	}
-	// 失败的订单要留在库里并标记取消 —— 静默丢弃会让「为什么没下单」无从查起。
-	var count int64
-	if err := f.db.Model(&ordermodel.OrderEntity{}).
-		Where("project_id = ? AND status = ?", f.projectID, ordermodel.OrderStatusCancelled).
-		Count(&count).Error; err != nil {
-		t.Fatalf("统计已取消订单失败: %v", err)
+	// 整单回滚：订单头 / 订单项 / 流转流水一条都不该留下（含「建单」与旧的「自动取消」）。
+	for _, table := range []string{"orders", "order_items", "order_status_logs"} {
+		if n := f.tableCount(t, table); n != 0 {
+			t.Fatalf("库存不足必须整单回滚，%s 里应 0 行，实际 %d", table, n)
+		}
 	}
-	if count != 1 {
-		t.Fatalf("应有 1 条因库存不足而取消的订单，实际 %d", count)
+}
+
+// tableCount 直读某张表的行数（表名是测试内的字面量，不来自输入）。
+func (f *orderFixture) tableCount(t *testing.T, table string) int64 {
+	t.Helper()
+	var n int64
+	if err := f.db.Raw("SELECT COUNT(*) FROM " + table).Scan(&n).Error; err != nil {
+		t.Fatalf("统计 %s 失败: %v", table, err)
 	}
+	return n
 }
 
 // TestOrderCreateRejectsUnknownVariant：离谱的规格 id 必须报错，而不是静默少一行。

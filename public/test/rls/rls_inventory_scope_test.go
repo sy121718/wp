@@ -82,10 +82,14 @@ func seedInvProject(t *testing.T, db *gorm.DB, projectID, sfx string) (warehouse
 func seedStockQty(t *testing.T, db *gorm.DB, projectID, productID, variantID, warehouseID string, qty int) {
 	t.Helper()
 	now := time.Now()
+	// TrackQuantity 必须与数量一致：迁移 261 加的不变量是
+	// CHECK (track_quantity OR quantity = 0) ——「不跟踪（无限）却又带着数字」在库里非法。
+	// 本夹具要的就是「有具体数量的跟踪行」，所以显式置 true。
+	track := true
 	_, err := inventorymodel.NewModel(db).EnsureStock(context.Background(), &inventorymodel.StockEntity{
 		ID: uuid.NewString(), ProjectID: projectID, WarehouseID: warehouseID,
 		ProductID: productID, VariantID: variantID, SKUCode: "SKU-" + variantID[:8],
-		Quantity: qty, Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
+		Quantity: qty, TrackQuantity: track, Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
 		t.Fatalf("写入库存行失败（RLS 生效时写入必须经 InProjectScope）: %v", err)

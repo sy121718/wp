@@ -111,6 +111,14 @@ func (f *invFixture) firstVariant(t *testing.T, productID string) *productdto.Va
 	return detail.Variants[0]
 }
 
+// bareSKU 仓库侧裸码：库存行与流水的 sku_code 存的是**剥掉仓码前缀**后的编码
+// （商品 / 变体侧仍带前缀，如 SZ_TEE1 → 仓库侧 TEE1；规则见 docs/14 §1.1 与
+// productservice.StripWarehousePrefix）。库存侧的读写与断言都用它换算 ——
+// 拿商品侧编码去查库存表 / 断言流水，钉的就是已被废弃的旧口径。
+func bareSKU(code, warehouseCode string) string {
+	return productservice.StripWarehousePrefix(code, warehouseCode)
+}
+
 // stockQty 直读真源表的数量（断言落库结果，不经 service）。
 func (f *invFixture) stockQty(t *testing.T, variantID, warehouseID string) int {
 	t.Helper()
@@ -257,20 +265,28 @@ func TestVariantCreateGeneratesStockRow(t *testing.T) {
 		t.Fatalf("建商品失败: %v", err)
 	}
 	v1 := f.firstVariant(t, p.ID)
-	if !strings.HasPrefix(v1.SKUCode, "SZ_TEE_") {
-		t.Fatalf("SKU 编码应以归属仓短码开头（SZ_TEE_），实际 %q", v1.SKUCode)
+	if !strings.HasPrefix(v1.SKUCode, "SZ_TEE") {
+		t.Fatalf("SKU 编码应以归属仓短码开头（SZ_TEE…），实际 %q", v1.SKUCode)
 	}
 	if got := f.stockQty(t, v1.ID, sz.ID); got != 0 {
 		t.Fatalf("首个变体应在默认仓有一条 0 库存记录，实际 %d", got)
 	}
 
-	// 新增变体时指定仓库 → 落在指定仓（不是默认仓），SKU 前缀跟着变。
+	// 新增变体时指定仓库 → 库存记录落在指定仓，但 **SKU 编码不变**。
+	//
+	// 这是新 SKU 规则（docs/14 §4）刻意定下的：容器主体在**商品创建时**就定了（含归属仓短码），
+	// 变体 SKU = 主体_属性值…_V。仓库是**库存与成本**的维度，不是编码维度 ——
+	// 同一 SKU 允许存在于多个仓库（(仓库, SKU) 唯一即可），所以「换个仓加变体」不改写编码；
+	// 若这里又按所选仓重拼前缀，同一件货在两个仓就会出现两个身份，与容器主体唯一直接冲突。
 	v2, err := f.products.CreateVariant(ctx, &productdto.CreateVariantReq{ProductID: p.ID, WarehouseID: sh.ID})
 	if err != nil {
 		t.Fatalf("指定仓库新增变体失败: %v", err)
 	}
-	if !strings.HasPrefix(v2.SKUCode, "SH_TEE_") {
-		t.Fatalf("指定仓库后 SKU 前缀应为 SH_TEE_，实际 %q", v2.SKUCode)
+	if !strings.HasPrefix(v2.SKUCode, "SZ_TEE") {
+		t.Fatalf("变体 SKU 应沿用商品容器主体前缀（SZ_TEE…），实际 %q", v2.SKUCode)
+	}
+	if strings.HasPrefix(v2.SKUCode, "SH_") {
+		t.Fatalf("新增变体的仓库选择不应改写 SKU 编码，实际 %q", v2.SKUCode)
 	}
 	if got := f.stockQty(t, v2.ID, sh.ID); got != 0 {
 		t.Fatalf("变体应在指定仓有一条 0 库存记录，实际 %d", got)
@@ -333,8 +349,8 @@ func TestVariantCreateGeneratesStockRow(t *testing.T) {
 			}
 			continue
 		}
-		if !strings.HasPrefix(v.SKUCode, "SH_TEE_") {
-			t.Fatalf("生成路径的 SKU 前缀应为指定仓 SH_TEE_，实际 %q", v.SKUCode)
+		if !strings.HasPrefix(v.SKUCode, "SZ_TEE") {
+			t.Fatalf("生成路径的变体 SKU 应沿用容器主体前缀（SZ_TEE…），实际 %q", v.SKUCode)
 		}
 		newOnes++
 		if _, gerr := f.inventory.GetStock(ctx, &inventorydto.GetStockReq{VariantID: v.ID, WarehouseID: sh.ID}); gerr != nil {
@@ -384,16 +400,19 @@ func TestStockPerSkuPerWarehouse(t *testing.T) {
 		t.Fatalf("建商品失败: %v", err)
 	}
 	v := f.firstVariant(t, p.ID)
+	// 仓库侧维度一律是**裸码**（剥掉仓码前缀的编码）：库存行、流水、按 SKU 的查询都是它。
+	// 商品 / 变体侧的 v.SKUCode 仍带前缀，两者不是同一个值。
+	bare := bareSKU(v.SKUCode, sz.Code)
 
 	// 归属仓之外再显式生成一行：同一 SKU 在两个仓各有一行。
 	if _, err = f.inventory.EnsureStock(ctx, &inventorydto.EnsureStockReq{
-		ProjectID: f.projectID, ProductID: p.ID, VariantID: v.ID, SKUCode: v.SKUCode, WarehouseID: sh.ID,
+		ProjectID: f.projectID, ProductID: p.ID, VariantID: v.ID, SKUCode: bare, WarehouseID: sh.ID,
 	}); err != nil {
 		t.Fatalf("在第二个仓生成库存记录失败: %v", err)
 	}
 	// 幂等：重复 ensure 不产生第二行。
 	if _, err = f.inventory.EnsureStock(ctx, &inventorydto.EnsureStockReq{
-		ProjectID: f.projectID, ProductID: p.ID, VariantID: v.ID, SKUCode: v.SKUCode, WarehouseID: sh.ID,
+		ProjectID: f.projectID, ProductID: p.ID, VariantID: v.ID, SKUCode: bare, WarehouseID: sh.ID,
 	}); err != nil {
 		t.Fatalf("重复生成库存记录失败: %v", err)
 	}
@@ -406,13 +425,13 @@ func TestStockPerSkuPerWarehouse(t *testing.T) {
 	}
 	// 数据库唯一约束按 (变体, 仓库)：直接插重复行必须被拒绝。
 	if err = f.db.Exec("INSERT INTO inventory_stocks (project_id, warehouse_id, product_id, variant_id, sku_code) VALUES (?,?,?,?,?)",
-		f.projectID, sh.ID, p.ID, v.ID, v.SKUCode).Error; err == nil {
+		f.projectID, sh.ID, p.ID, v.ID, bare).Error; err == nil {
 		t.Fatalf("(变体, 仓库) 重复插入应被唯一约束拒绝")
 	}
 
-	// 按 SKU 查各仓：两行，带仓库名与短码，默认仓在最前。
+	// 按 SKU 查各仓：两行，带仓库名与短码，默认仓在最前。查询维度是仓库侧裸码。
 	rows, err := f.inventory.ListStocksBySKU(ctx, &inventorydto.ListStockBySKUReq{
-		ProjectID: f.projectID, SKUCode: v.SKUCode,
+		ProjectID: f.projectID, SKUCode: bare,
 	})
 	if err != nil {
 		t.Fatalf("按 SKU 查库存失败: %v", err)
@@ -430,8 +449,8 @@ func TestStockPerSkuPerWarehouse(t *testing.T) {
 		if r.Quantity != 0 {
 			t.Fatalf("初始库存应为 0，实际 %d", r.Quantity)
 		}
-		if r.SKUCode != v.SKUCode || r.VariantID != v.ID {
-			t.Fatalf("库存维度应指向同一 SKU / 变体：%+v", r)
+		if r.SKUCode != bare || r.VariantID != v.ID {
+			t.Fatalf("库存维度应指向同一仓库侧 SKU（裸码 %q）/ 变体：%+v", bare, r)
 		}
 	}
 }
@@ -459,8 +478,10 @@ func TestStockReadsTrueSourceNotCache(t *testing.T) {
 	if row.Quantity != 0 {
 		t.Fatalf("库存必须读真源（0），实际读了缓存？得到 %d", row.Quantity)
 	}
+	// 查询维度是仓库侧裸码（库存行里存的就是它）。
+	bare := bareSKU(v.SKUCode, sz.Code)
 	rows, err := f.inventory.ListStocksBySKU(ctx, &inventorydto.ListStockBySKUReq{
-		ProjectID: f.projectID, SKUCode: v.SKUCode,
+		ProjectID: f.projectID, SKUCode: bare,
 	})
 	if err != nil {
 		t.Fatalf("按 SKU 查库存失败: %v", err)
@@ -581,7 +602,8 @@ func TestInventoryAdminPage(t *testing.T) {
 }
 
 // TestProductPageWarehouseSelect 验收 2（后台表单路径）：
-// 商品页的「归属仓」下拉来自仓库模块，提交后变体落在所选仓、SKU 带该仓短码前缀。
+// 商品页的「归属仓」下拉来自仓库模块，提交后**库存记录**落在所选仓；
+// SKU 编码沿用商品容器主体（不随所选仓改写，理由见 TestVariantCreateGeneratesStockRow 的注释）。
 func TestProductPageWarehouseSelect(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -613,15 +635,23 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 		t.Fatalf("商品页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// 归属仓下拉现在在新建商品抽屉（tpl-product-create）里 —— 它是商品级字段，
-	// 与「首个变体落在哪」绑定，随主行动一起进抽屉；文案与选项一字未改。
-	for _, want := range []string{"归属仓", "苏州仓（SZ）", "上海仓（SH）", "（默认仓）"} {
+	// 归属仓控件现在在新建商品抽屉（tpl-product-create）里，形态已是**多仓勾选**
+	//（2026-09-19 口径：勾了哪些仓就在哪些仓各建一行，按表内顺序第一个勾中的仓是认领仓、
+	// 决定主体 SKU 的仓码前缀；一个都不勾即默认仓）。断言钉住新形态的字段名与选项文案，
+	// 不放宽成「包含仓库名即可」—— 控件换成下拉 / 单值就会红。
+	for _, want := range []string{
+		"建在哪些仓（可多选，不勾即默认仓）",
+		`name="warehouseIds"`,
+		"苏州仓（SZ） · 默认仓",
+		"上海仓（SH）",
+		"按本表顺序第一个勾中的仓是认领仓",
+	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("商品页缺少归属仓下拉内容 %q", want)
+			t.Fatalf("商品页缺少归属仓（多仓勾选）内容 %q", want)
 		}
 	}
 
-	// 表单提交时指定 SH → 变体落在 SH，SKU 前缀为 SH_TEE_。
+	// 表单提交时指定 SH → 变体落在 SH，SKU 前缀是归属仓短码（SH_TEE…）。
 	rec = postForm(engine, "/admin/products/variant/create", url.Values{
 		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {sh.ID},
 	})
@@ -632,14 +662,21 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
+	// 认「表单新建的那个变体」不能再靠 SKU 前缀（新规则下它沿用容器主体前缀 SZ_TEE），
+	// 改为按「在指定仓有库存行」来认 —— 这正是本次要验的事实：仓库选择落到库存维度。
 	var picked *productdto.VariantResp
 	for _, v := range detail.Variants {
-		if strings.HasPrefix(v.SKUCode, "SH_TEE_") {
-			picked = v
+		if got := f.stockQty(t, v.ID, sh.ID); got == 0 {
+			if _, gerr := f.inventory.GetStock(ctx, &inventorydto.GetStockReq{VariantID: v.ID, WarehouseID: sh.ID}); gerr == nil {
+				picked = v
+			}
 		}
 	}
 	if picked == nil {
-		t.Fatalf("表单指定仓库后应生成 SH_ 前缀的变体，实际 %+v", detail.Variants)
+		t.Fatalf("表单指定仓库后应在该仓生成库存记录，实际 %+v", detail.Variants)
+	}
+	if !strings.HasPrefix(picked.SKUCode, "SZ_TEE") {
+		t.Fatalf("表单路径的变体 SKU 也应沿用容器主体前缀（SZ_TEE…），实际 %q", picked.SKUCode)
 	}
 	if got := f.stockQty(t, picked.ID, sh.ID); got != 0 {
 		t.Fatalf("表单路径也应在归属仓生成 0 库存记录，实际 %d", got)
@@ -660,20 +697,44 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 / 对账 10 个）
-	// + 106（#17 货源 6 个）+ 109（#18 采购单与入库 7 个）。
-	if n != 32 {
-		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 32 个 inventory 权限点，实际 %d", n)
+	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 **8 个**）
+	// + 106（#17 货源 6 个）+ 109（#18 采购单与入库 7 个）= 30。
+	//
+	// 104 原为 10 个，其中 inventory:cache_sync / cache_reconcile 随库存缓存一起下线（迁移 122
+	// 负责从存量库删除）。**那两行曾留在 104 的 seed 与幂等条件里，导致 122 每轮删完又被重新插回**
+	//（Migrations 台账先跑、Seeds 台账后跑），库里长期存在指向不存在路由的死授权。
+	// 2026-09 把 104 的 SQL 与条件同批收到 8 个之后，这里的期望值随之从 32 落到 30 ——
+	// 数字下降不是漏 seed，而是**那两条权限点本来就不该存在**。
+	if n != 30 {
+		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 30 个 inventory 权限点（104 已从 10 收到 8），实际 %d", n)
 	}
+	// 104 仍然持有的 8 个权限点：逐个断言存在（数量对得上但 key 写错也会在这里暴露）。
 	for _, code := range []string{"inventory:stock_change", "inventory:stock_deduct", "inventory:movement_list",
 		"inventory:reason_list", "inventory:reason_create", "inventory:reason_update",
-		"inventory:bom_set", "inventory:bom_get", "inventory:cache_sync", "inventory:cache_reconcile"} {
+		"inventory:bom_set", "inventory:bom_get"} {
 		var hit int64
 		if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE permission_code = ?", code).Scan(&hit).Error; err != nil {
 			t.Fatalf("查询权限点 %s 失败: %v", code, err)
 		}
 		if hit != 1 {
 			t.Fatalf("权限点 %s 应已 seed，实际 %d 条", code, hit)
+		}
+	}
+	// 随库存缓存下线、由迁移 122 删除的两个权限点：断言**不存在**。
+	//
+	// 这两条断言是本轮从「反向」改过来的：它们原先写在上面那个循环里，要求这两个码
+	// **必须存在**（「权限点 %s 应已 seed」）—— 等于给那个复活缺陷立了一道守卫：
+	// 谁把它修好，测试反而先红。而根因是 104 的 seed 与幂等条件里还留着这两个码，
+	// 加上 Migrations 台账先跑、Seeds 台账后跑，122 每轮删完又被插回 ——
+	// 库里长期存在指向不存在路由的死授权（后台勾选毫无作用，误导配置者）。
+	// 现在断言反转为「必须不存在」：**删能力要连 seed 一起收口**，这条断言守的就是那句话。
+	for _, code := range []string{"inventory:cache_sync", "inventory:cache_reconcile"} {
+		var hit int64
+		if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE permission_code = ?", code).Scan(&hit).Error; err != nil {
+			t.Fatalf("查询权限点 %s 失败: %v", code, err)
+		}
+		if hit != 0 {
+			t.Fatalf("权限点 %s 已随库存缓存下线（迁移 122 删除），不该再出现，实际 %d 条 —— 检查 104 的 seed 与幂等条件是否又把它加了回来", code, hit)
 		}
 	}
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND title = '库存管理' AND deleted_at IS NULL").Scan(&n).Error; err != nil {
@@ -699,6 +760,8 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 		c.Set(shell.PermSetKey, map[string]bool{
 			"inventory:warehouse_create": true, "inventory:warehouse_update": true,
 			"inventory:warehouse_delete": true, "inventory:reason_create": true,
+			// 库存调整入口（盘点 / 报损）与原因启停：两者都按权限显隐，测试外壳给全集。
+			"inventory:stock_change": true, "inventory:reason_update": true,
 		})
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
@@ -714,6 +777,7 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.POST("/admin/inventory/warehouse/delete", handle.InventoryWarehouseDelete)
 	engine.POST("/admin/inventory/stock/change", handle.InventoryStockChange)
 	engine.POST("/admin/inventory/reason/create", handle.InventoryReasonCreate)
+	engine.POST("/admin/inventory/reason/update", handle.InventoryReasonUpdate)
 	return engine, f
 }
 

@@ -882,8 +882,13 @@ func TestPricingAdminPages(t *testing.T) {
 	bad.Set("scope", productenums.PricingScopeProduct)
 	bad.Set("targetId", p.ID)
 	rec = postForm(engine, "/admin/product-pricing/preview", bad)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), productenums.ErrPricingRuleParamsInvalid) {
+	// 页内提示必须是**可读文案**：原先断言 body 里带 enums 裸 key，而裸 key 铺到页面上
+	// 正是第三波 CQ-009 形态③要收口的形态。现在统一经 productErrText 取词。
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "定价规则参数不合法") {
 		t.Fatalf("非法参数应在页内提示，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), productenums.ErrPricingRuleParamsInvalid) {
+		t.Fatalf("页面上不应出现 enums 裸 key，实际 %s", rec.Body.String())
 	}
 
 	// 应用：302 回列表并带 applied=1，价格落库、留痕可见。

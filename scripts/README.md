@@ -30,14 +30,23 @@ bash scripts/check-permission-gaps.sh   # 需要本地数据库
 ArtifactStore、PublicationStore 和静态交付链路已经实现；失效的旧脚本仍不代表当前发行流程。生产构建用 `go build -o app ./cmd`，后台模板和静态文件须一并交付。发行包设计见 `docs/11-foundation-and-open-source.md`。
 ## 巡检与守卫脚本
 
-CI 里跑的四个门禁（改了权限点 / service 层数据访问 / 后台文案 / 多端 CSS 之后，本地先过一遍再推）：
+CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台文案 / 内部错误出口 / 多端 CSS / 库存 SKU 之后，本地先过一遍再推）：
 
 | 脚本 | 拦什么 | 依赖 |
 |---|---|---|
 | `check-permission-gaps.sh` | 有路由但没有对应权限点（该组挂 CasbinMiddleware 按实际路径 enforce，缺权限点时**含超管全员 403**） | 本地数据库 |
-| `check-service-db-boundary.sh` | service 层直查数据库、跨模块引用 model/service | 无 |
+| `check-service-db-boundary.sh` | 非 admin 的 service 直查数据库（**含事务回调句柄上的 `.Model(` 裸查询**）、跨模块引用 model/service | 脚本内置豁免清单 `service-db-boundary-allow.txt` |
 | `check-i18n-coverage.sh` | 后台模板里的硬编码中文超出基线（基线数值在 `i18n-coverage-baseline.txt`） | 无 |
 | `check-multidevice-css.sh` | 组件产出里的裸 `:hover`、写死宽度等违反多端硬规则的写法（`SKY_CSS_GUARD=error` 时是硬门禁） | 无 |
+| `check-no-internal-error-leak.sh` | 后台 handler 把 `err.Error()` 直出——响应写入 / 重定向 query / 模板数据**三种形态一起判**（豁免按文件 + 形态记账） | 无 |
+| `check-stock-sku-prefix-collisions.sh` | 迁移 262 剥掉仓库 SKU 的前缀后会撞成同一 `(warehouse_id, sku_code)` 的存量行（迁移会在启动时 RAISE，脚本把它提前） | psql + `config.yaml` |
+| `check-inventory-sku-format.sh` | 库存侧 SKU 的**存量格式**三类问题：空编码 / 带仓码前缀 / 采购行同类（只读巡检，命中即打回给人） | psql + `config.yaml` |
+
+每个门禁怎么跑、失败意味着什么：
+
+- `bash scripts/check-no-internal-error-leak.sh`（无依赖，秒级）。exit 1 = 某处把内部错误原文写进了响应、重定向 query 或模板数据；改走模块的归口助手（如 `admin_err.go`）或 `shell.PageError`，确实受控的写进脚本顶部 `EXEMPT`（按**文件 + 形态**记账，条目不再命中也会失败）。
+- `bash scripts/check-service-db-boundary.sh`（无外部依赖，秒级）。exit 1 = ① 非 admin 的 service 出现 `DB(ctx)`/`RevisionDB(ctx)`；①b 它在**事务回调的句柄**上直接拼查询（`tx.WithContext(ctx).Model(...)` / `tx.Model(...)` / `session.Model(...)`）；② 跨模块 import 对方 model/service。修法都是「给 model 加具名方法」（要落在同一事务里就加 `…Tx` 变体、句柄由 service 透传）。①b 的暂缓条目写进 `scripts/service-db-boundary-allow.txt`，**每条必须写理由**，条目不再命中脚本会失败（只增不减等于没有门禁）。**判据 ①b 是启发式**：只认 tx/txn/trx/session/dbtx/dbx/db 这几个句柄名上的 `.Model(`，`tx.Where(...)` / `tx.Create(...)` / `tx.Exec(...)` 仍是同类漏网 —— 脚本绿 ≠ 边界干净。
+- `bash scripts/check-stock-sku-prefix-collisions.sh` 与 `bash scripts/check-inventory-sku-format.sh`（需要 `psql`，库连接从 `config.yaml` 的 `database` 段读取，脚本里不另存口令）。两个都是**只读 SELECT**：exit 1 = 有命中（明细已打印），先把人拉进来定「留哪一行、改成什么码」——迁移与脚本都不做自动改码（自动加后缀 / 静默合并 / 丢行都是数据篡改）。第一个要在跑迁移 262 之前跑，第二个用于日常巡检存量。
 
 运维脚本：
 

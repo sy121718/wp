@@ -127,6 +127,45 @@ func TestRLS_BlockLocate_ServiceFindsOwnerAcrossProjects(t *testing.T) {
 	}
 }
 
+// TestRLS_BlockLocate_DetailByIdFindsOwner 详情入口的**只带 id** 形态也必须定位到归属工程。
+//
+// 为什么单独守这一条：工作台块编辑（/workbench?block=ID）、块预览与
+// /admin/blocks/save-content 三条路径的请求里都没有工程参数，它们调的就是 Detail。
+// Detail 曾一律要求 ProjectID ⇒ 三条路径全部拿到 ErrParamRequired，调用方又把它折叠成
+// 404「全局块不存在」—— 现象是「块在列表页看得见（List 带工程参数是好的），
+// 点『编辑』或新建后的跳转却永远打不开编辑器」。
+//
+// 把 Detail 改回「一律要求 ProjectID」，本用例第一条断言立刻红（失败能力所在）。
+func TestRLS_BlockLocate_DetailByIdFindsOwner(t *testing.T) {
+	db, svc, pA, pB := blockScopeFixture(t)
+	ctx := context.Background()
+	idA := seedScopeBlock(t, db, pA, "A 的块")
+	idB := seedScopeBlock(t, db, pB, "B 的块")
+
+	for _, tc := range []struct{ id, projectID string }{{idA, pA}, {idB, pB}} {
+		got, err := svc.Detail(ctx, &blockdto.DetailReq{ID: tc.id})
+		if err != nil {
+			t.Fatalf("只带 id 查详情应成功（逐工程定位）: %v", err)
+		}
+		if got.ProjectID != tc.projectID {
+			t.Fatalf("应定位到工程 %s，实际 %s", tc.projectID, got.ProjectID)
+		}
+	}
+
+	// 带工程参数的老形态不受影响；拿别的工程的作用域查本块必须查不到（防 IDOR）。
+	if got, err := svc.Detail(ctx, &blockdto.DetailReq{ProjectID: pA, ID: idA}); err != nil || got.ID != idA {
+		t.Fatalf("带工程参数的详情查询应成功，实际 %+v（err=%v）", got, err)
+	}
+	if _, err := svc.Detail(ctx, &blockdto.DetailReq{ProjectID: pA, ID: idB}); !errors.Is(err, blockservice.ErrNotFound) {
+		t.Fatalf("拿工程 A 的作用域查工程 B 的块应 ErrNotFound，实际 %v", err)
+	}
+
+	// 不存在的 id：逐工程全部未命中 → 模块的 ErrNotFound（不是静默空响应）。
+	if _, err := svc.Detail(ctx, &blockdto.DetailReq{ID: uuid.NewString()}); !errors.Is(err, blockservice.ErrNotFound) {
+		t.Fatalf("不存在的块应 ErrNotFound，实际 %v", err)
+	}
+}
+
 // TestRLS_BlockLocate_WritesLandOnOwnerRow 定位到归属后事务内可正常读写。
 //
 // 断言不只是「更新没报错」：必须回读到改动真的落在**工程 B 的那一行**上

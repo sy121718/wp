@@ -174,8 +174,13 @@ func TestBundlePriceIsBasePriceCostKept(t *testing.T) {
 	if res.TotalCost < 6.99 || res.TotalCost > 7.01 {
 		t.Fatalf("子项成本合计应为 7.00，实际 %v", res.TotalCost)
 	}
-	if len(res.Items) != 1 || res.Items[0].UnitPrice != 9.9 || res.Items[0].CostPrice == nil || *res.Items[0].CostPrice != 3.5 {
-		t.Fatalf("展开行应带子项价格与成本快照: %+v", res.Items)
+	// 展开行的**计价字段恒为 0**（成员在套餐里没有价）：订单侧照此快照就等于
+	// 天然不会把成员价加进合计。成员挂牌价只作为参考值放在 MemberPrice，成本照旧保留。
+	if len(res.Items) != 1 || res.Items[0].UnitPrice != 0 {
+		t.Fatalf("展开行的成员计价单价应为 0（成员价不参与套餐金额）: %+v", res.Items)
+	}
+	if res.Items[0].MemberPrice != 9.9 || res.Items[0].CostPrice == nil || *res.Items[0].CostPrice != 3.5 {
+		t.Fatalf("展开行应保留成员挂牌价（参考）与成本快照: %+v", res.Items[0])
 	}
 
 	// 配置详情（后台口径）同样保留子项价格与成本。

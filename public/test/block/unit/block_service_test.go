@@ -232,6 +232,34 @@ func TestBlockDetailInvalidRequest(t *testing.T) {
 	})
 }
 
+// TestBlockDetailByIdOnly 只带 id 的详情入口（工作台块编辑 / 块预览 / /admin/blocks/save-content）。
+//
+// 这三条路径的请求里没有工程参数，Detail 若一律要求 ProjectID 就全部失败 → 调用方折叠成
+// 404「全局块不存在」→ 块在列表页看得见、点「编辑」或新建后的跳转却打不开编辑器。
+// 非超级角色下的护栏见 public/test/rls/rls_block_scope_test.go（本包跑在超级用户上，
+// 「不限工程直查」也能读到行，抓不住这个缺陷）。
+func TestBlockDetailByIdOnly(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	created := e.createBlock(t, "页脚块", blockmodel.KindFooter)
+
+	res, err := e.svc.Detail(ctx, &blockdto.DetailReq{ID: created.ID})
+	if err != nil {
+		t.Fatalf("只带 id 查详情应成功: %v", err)
+	}
+	if res.ID != created.ID || res.ProjectID != e.projectID || res.Name != "页脚块" {
+		t.Fatalf("详情字段不一致: %#v", res)
+	}
+
+	// 合法但不存在的 uuid → 仍然报「块不存在」，不是静默空响应。
+	_, err = e.svc.Detail(ctx, &blockdto.DetailReq{ID: uuid.NewString()})
+	errContains(t, err, blockenums.ErrBlockNotFound)
+
+	// 非法形状的 id 判「不存在」（与 Update / Delete 同口径，不落到 PG 报 22P02）。
+	_, err = e.svc.Detail(ctx, &blockdto.DetailReq{ID: "not-a-uuid"})
+	errContains(t, err, blockenums.ErrBlockNotFound)
+}
+
 func TestBlockDetailNotFound(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

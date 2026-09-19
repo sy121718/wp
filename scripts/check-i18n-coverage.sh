@@ -33,6 +33,15 @@ tpl_dir, out_path = sys.argv[1], sys.argv[2]
 cjk = re.compile('[一-鿿぀-ヿ]')
 jet_comment = re.compile(r'\{\*.*?\*\}', re.S)
 html_comment = re.compile(r'<!--.*?-->', re.S)
+# <script> 整段剔除：JS 里的中文分两类，都不是「模板文案未 key 化」——
+#   · JS 注释（脚本原本只剥 Jet / HTML 注释，剥不到 script 里的 // 与 /* */）；
+#   · 兜底文案（msgOf(el, 'msgNetwork', '网络异常')：真文案由服务端按请求语言
+#     渲染进 data-msg-* 属性，字符串只是属性缺失时的原文兜底，与 t(key, 中文兜底) 同性质）。
+# 不剥会让门禁数字虚高，而虚高的数字会让人不再相信这个门禁。
+script_block = re.compile(r'<script\b.*?</script>', re.S)
+# 语言自称（简体中文 / 繁體中文 / 日本語 / English / 한국어）在语言下拉里**刻意不翻译**：
+# 语言名按自称显示，否则用户用看不懂的语言看到自己的语言名。整行豁免。
+lang_self_name = re.compile('简体中文|繁體中文|日本語|한국어|English')
 # 取词调用的两种写法都要认：
 #   .["t"]("key", "兜底")            —— 直接调用
 #   {{tr := .["t"]}} 然后 tr("key","兜底") —— range 内取词的唯一写法
@@ -45,10 +54,13 @@ for path in sorted(glob.glob(os.path.join(tpl_dir, '*.html'))):
     src = open(path, encoding='utf-8').read()
     src = jet_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     src = html_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
+    src = script_block.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     for i, line in enumerate(src.split('\n'), 1):
         if not cjk.search(line):
             continue
         if t_call.search(line):
+            continue
+        if lang_self_name.search(line):
             continue
         rows.append('%s:%d:%s' % (os.path.relpath(path, os.path.dirname(tpl_dir.rstrip('/'))), i, line.strip()[:120]))
 with open(out_path, 'w', encoding='utf-8') as f:

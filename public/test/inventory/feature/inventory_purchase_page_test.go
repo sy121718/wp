@@ -43,20 +43,50 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	// 新建采购单进右侧抽屉后，表单与写入口都按权限渲染（shell.Prepare 读 PermSetKey）；
 	// 这条链路不走鉴权中间件，注入一份权限，让断言「页面里存在原生表单写入口」保持有效。
+	// 生产入库表单也在本页（本批补回），所以权限集合要一并注入：页面按 PermSetKey 决定
+	// 表单渲染不渲染，漏注入的表现是「表单没渲染」而不是模板报错。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{"inventory:purchase_create": true})
+		c.Set(shell.PermSetKey, map[string]bool{
+			"inventory:purchase_create":     true,
+			"inventory:purchase_production": true,
+		})
 	})
 	handle := inventoryhttp.NewInventoryPurchasePageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory/purchases", handle.InventoryPurchasesPage)
 	engine.POST("/admin/inventory/purchases/create", handle.InventoryPurchaseCreate)
 	engine.POST("/admin/inventory/purchases/receipt", handle.InventoryPurchaseReceipt)
 	engine.POST("/admin/inventory/purchases/production", handle.InventoryPurchaseProduction)
-	// 「生产入库（自家工厂）」与「进货历史」已按功能归属移出采购页：
-	// 前者是「手动改库存 + 写成本价」，与采购单无关；后者是库存流水的 SKU / 原因筛选。
-	// 相关断言随之搬到库存页，这里同步注册该页面路由。
+	// 生产入库（自家工厂）的表单**在本页**（本批补回：路由与权限点一直在，缺的是页面入口）；
+	// 进货历史已并入库存流水的 SKU / 原因筛选，这里同步注册库存页路由供下面那段断言使用。
 	pageHandle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", pageHandle.InventoryPage)
 	return engine, f
+}
+
+// purchaseLineSkuField 新建采购单里「一行 SKU」的字段名（"<变体ID>|<商品ID>|<仓库侧裸码>"）。
+//
+// 这里独立写一份字面量而**不**引用 inventoryhttp 的常量：测试要断言的正是「页面渲染出来的
+// 字段名」，从被测包取常量就变成了自证 —— 改了字段名而漏改模板时测试照样绿。
+const purchaseLineSkuField = "lineSku"
+
+// renderedLineSkuOption 从渲染出的采购页 HTML 里取出某变体的 SKU 选项值
+// （"<变体ID>|<商品ID>|<仓库侧裸码>"）。
+//
+// 刻意**解析渲染结果**而不是在测试里拼一份期望值：模板与 handler 的字段名 / 值形状
+// 对不上时（本批修掉的正是这类缺陷），手写的测试会照样通过 —— 只有从页面里取才钉得住。
+func renderedLineSkuOption(t *testing.T, body, variantID string) string {
+	t.Helper()
+	marker := "<option value=\"" + variantID + "|"
+	idx := strings.Index(body, marker)
+	if idx < 0 {
+		t.Fatalf("采购页没有渲染变体 %s 的 SKU 选项值（模板字段名 / 值形状与 handler 对不上？）", variantID)
+	}
+	start := idx + len("<option value=\"")
+	end := strings.Index(body[start:], "\"")
+	if end < 0 {
+		t.Fatalf("采购页的 SKU 选项值引号未闭合")
+	}
+	return body[start : start+end]
 }
 
 // seedPurchasePage 铺页面所需数据：默认仓 + 外部货源 + 内部货源 + 商品（含首个变体）。
@@ -79,19 +109,22 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	}
 	ctx := context.Background()
 	wh, ext, factory, p, v := seedPurchasePage(t, f)
+	// 仓库侧（库存行 / 流水 / 采购行）一律用**裸码**：前缀只留在商品 / 变体侧。
+	bare := bareSKU(v.SKUCode, wh.Code)
 
 	rec := httptestGet(engine, "/admin/inventory/purchases?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("采购入库页应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	// 空白态：建单抽屉与它的写入口都在（收货表单要等有采购单才会出现）。
-	// 本页现在只负责「采购单与对单收货」：生产入库表单与进货历史表已移到库存页，
-	// 它们不在这批断言里（见下面「生产入库 / 进货历史」那段，断言换到库存页）。
+	// 空白态：建单抽屉与它的写入口都在（收货表单要等有采购单才会出现）；
+	// 生产入库表单同样在（它不依赖采购单），完整的「解析 → 提交 → 落账」断言见
+	// inventory_production_form_test.go。
 	for _, want := range []string{
 		"采购入库", "新建采购单",
 		"name=\"csrf_token\"",
 		"action=\"/admin/inventory/purchases/create\"",
+		"action=\"/admin/inventory/purchases/production\"",
 		"data-drawer-open=\"#tpl-purchase-create\"",
 	} {
 		if !strings.Contains(body, want) {
@@ -99,14 +132,32 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		}
 	}
 
-	// 生产入库（自家工厂）：入口与表单都在库存页（/admin/inventory），断言搬过去。
+	// 库存管理页已退化为只读视图 + 盘点 / 报损调整入口：生产入库的表单不再挂在它上面，
+	// 但页面必须给出**指向正确位置的提示**（「入库 / 出库请走单据」），否则用户会照旧找
+	// 那个已经不存在的按钮。这里断言那条边界提示与它的去处。
 	invBody := httptestGet(engine, "/admin/inventory?project="+f.projectID).Body.String()
 	for _, want := range []string{
-		"生产入库（自家工厂）", "action=\"/admin/inventory/production\"",
+		"生产入库", "/admin/inventory/purchases",
 	} {
 		if !strings.Contains(invBody, want) {
-			t.Fatalf("库存页缺少生产入库入口 %s", want)
+			t.Fatalf("库存页缺少「入库走单据」的边界提示 %s", want)
 		}
+	}
+	if strings.Contains(invBody, "action=\"/admin/inventory/production\"") {
+		t.Fatalf("库存管理页不应再有内联的生产入库表单")
+	}
+
+	// 每行 SKU 的**字段名**必须由模板渲染出来，且与 handler 读的是同一个名字。
+	// 这条断言钉的是原缺陷：handler 读 lineSKUCode、模板里根本没有这个字段 →
+	// 空串静默通过，采购行的仓库侧编码一直是空的（入库建库存行时才会炸）。
+	if !strings.Contains(body, "name=\""+purchaseLineSkuField+"\"") {
+		t.Fatalf("新建采购单表单必须渲染出 handler 读取的 SKU 字段 %q", purchaseLineSkuField)
+	}
+	// 选项值就是**页面真实渲染的东西**：从渲染结果里取，而不是在测试里手写一份
+	// 「我以为的字段名 + 值形状」—— 两边对不上时手写的测试照样会通过（这正是原来的 bug）。
+	lineSku := renderedLineSkuOption(t, body, v.ID)
+	if !strings.HasSuffix(lineSku, "|"+bare) {
+		t.Fatalf("选项值应带上仓库侧裸码 %q，实际 %q", bare, lineSku)
 	}
 
 	// 原生表单建采购单（一行）。
@@ -116,9 +167,7 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	form.Set("code", "po-page-1")
 	form.Set("sourceId", ext.ID)
 	form.Set("warehouseId", wh.ID)
-	form.Add("lineVariantId", v.ID)
-	form.Add("lineProductId", p.ID)
-	form.Add("lineSKUCode", v.SKUCode)
+	form.Add(purchaseLineSkuField, lineSku)
 	form.Add("lineQuantity", "4")
 	form.Add("lineUnitPrice", "6.5")
 	rec = postForm(engine, "/admin/inventory/purchases/create", form)
@@ -135,6 +184,23 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	}
 	if order.Lines[0].UnitPrice != 6.5 {
 		t.Fatalf("表单单价未落库：%+v", order.Lines[0])
+	}
+	// 表单送上来的三个快照列都要落对：变体 / 商品 / **仓库侧裸码**（后者是本次的核心）。
+	if order.Lines[0].VariantID != v.ID || order.Lines[0].ProductID != p.ID || order.Lines[0].SKUCode != bare {
+		t.Fatalf("采购行快照不正确（SKU 必须是仓库侧裸码 %q）：%+v", bare, order.Lines[0])
+	}
+	// 表单没提交该字段时（例如有人只改了模板、或外部直接构造请求）不再是「空串静默通过」：
+	// 服务端当场拒绝，并把可行动的原因经 ?err= 回显。
+	rec = postForm(engine, "/admin/inventory/purchases/create", url.Values{
+		"csrf_token": {"test-csrf"}, "projectId": {f.projectID}, "code": {"po-page-empty"},
+		"sourceId": {ext.ID}, "warehouseId": {wh.ID},
+		"lineQuantity": {"1"}, "lineUnitPrice": {"1"},
+	})
+	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
+		t.Fatalf("缺 SKU 字段的建单应回列表并带错误提示，实际 %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if got, lerr := f.inventory.ListPurchaseOrders(ctx, &inventorydto.ListPurchaseOrderReq{ProjectID: f.projectID}); lerr != nil || len(got) != 1 {
+		t.Fatalf("被拒绝的建单不应留下采购单：%v %+v", lerr, got)
 	}
 
 	// 有单据后重新渲染：每一行都带「登记入库」原生表单（幂等键来自页面的隐藏域）。
@@ -170,12 +236,15 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		t.Fatalf("重复提交不应产生第二张入库单，实际 %d", got)
 	}
 
-	// 生产入库表单：无采购单 + 成本价手工填写。
-	rec = postForm(engine, "/admin/inventory/purchases/production", url.Values{
-		"csrf_token": {"test-csrf"}, "projectId": {f.projectID}, "sourceId": {factory.ID},
-		"variantId": {v.ID}, "productId": {p.ID}, "skuCode": {v.SKUCode},
-		"warehouseId": {wh.ID}, "quantity": {"2"}, "unitCost": {"3.5"}, "requestId": {"PAGE-PROD-1"},
-	})
+	// 生产入库表单：无采购单 + 成本价手工填写。字段与值全部**从渲染出的 HTML 解析**
+	//（不手写字段名）：字段名对不上正是原始缺陷的根因，手写字段名的测试钉不住它。
+	prodForm, _ := renderProductionForm(t, engine, f.projectID)
+	if got := prodForm.Get("sourceId"); got != factory.ID {
+		t.Fatalf("生产入库的来源应只列内部货源 %s，实际 %q", factory.ID, got)
+	}
+	prodForm.Set("quantity", "2")
+	prodForm.Set("unitCost", "3.5")
+	rec = postForm(engine, productionFormAction, prodForm)
 	if rec.Code != http.StatusFound {
 		t.Fatalf("生产入库表单应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
 	}
@@ -190,12 +259,13 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	// 这张历史已随改造并入库存流水（按 SKU / 原因筛选），采购页不再挂它 —— 断言换目标页面到
 	// /admin/inventory（引擎上方已注册）。采购收货与生产入库是两条原因不同的流水，
 	// 用流水行里的原因 code 快照来断言（页头按钮也写着「生产入库」，只断言那四个字会失真）。
-	rec = httptestGet(engine, "/admin/inventory?project="+f.projectID+"&sku="+url.QueryEscape(v.SKUCode))
+	// 库存页的 SKU 筛选是仓库侧维度：流水与库存行存的都是裸码。
+	rec = httptestGet(engine, "/admin/inventory?project="+f.projectID+"&sku="+url.QueryEscape(bare))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("库存流水页应 200，实际 %d", rec.Code)
 	}
 	body = rec.Body.String()
-	for _, want := range []string{"PO-PAGE-1", "purchase_in", "production_in", v.SKUCode} {
+	for _, want := range []string{"PO-PAGE-1", "purchase_in", "production_in", bare} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("库存流水缺少 %s", want)
 		}
@@ -206,8 +276,10 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		"csrf_token": {"test-csrf"}, "projectId": {f.projectID}, "orderId": {order.ID},
 		"lineId": {order.Lines[0].ID}, "quantity": {"1"}, "requestId": {"PAGE-RECV-2"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err="+inventoryenums.ErrReceiptOrderDone) {
-		t.Fatalf("业务错误应经 ?err= 回显，实际 %d %s", rec.Code, rec.Header().Get("Location"))
+	// 业务错误的**文案**（不是裸 key）经 ?err= 回显：回显已收口到 inventoryErrText。
+	if rec.Code != http.StatusFound ||
+		!strings.Contains(rec.Header().Get("Location"), url.QueryEscape("采购单已全部入库，无需再收")) {
+		t.Fatalf("业务错误应经 ?err= 回显为中文文案，实际 %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 }
 
@@ -264,10 +336,9 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		}
 	}
 	// 每个写表单（POST）都带 csrf_token 隐藏域（原生表单的 CSRF 契约）：
-	// 本页只剩建单 / 收货两个写入口，各一处（生产入库表单连它一起移到库存页了）；
-	// GET 的筛选与工程切换表单不带。
-	if got := strings.Count(string(tplRaw), "name=\"csrf_token\""); got != 2 {
-		t.Fatalf("建单与收货两个写表单各要带一处 csrf_token 隐藏域，模板里有 %d 处", got)
+	// 本页三个写入口 —— 建单 / 逐行收货 / 生产入库，各一处；GET 的筛选与工程切换表单不带。
+	if got := strings.Count(string(tplRaw), "name=\"csrf_token\""); got != 3 {
+		t.Fatalf("建单 / 收货 / 生产入库三个写表单各要带一处 csrf_token 隐藏域，模板里有 %d 处", got)
 	}
 	if got := strings.Count(string(tplRaw), "method=\"get\""); got != 2 {
 		t.Fatalf("工程切换 + 采购单筛选都用 GET，模板里有 %d 处", got)

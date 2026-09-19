@@ -103,9 +103,25 @@ func TestMasterDataChangePageByEntity(t *testing.T) {
 	}
 
 	// ④ 非法筛选值不把页面打挂（错误回显，仍 200）。
+	//
+	// 这条断言在 2026-09 被**收紧过两次**，两次都值得记住：
+	//   · 最初它用 mentionsMasterDataError（「裸 key 或中文命中其一即可」），而当时页面渲染的是
+	//     `masterdata.err.invalidParam` 这个**裸 key** —— 断言被裸 key 满足，泄漏一直看不出来；
+	//   · 收口成归口文案之后，业务错误又被一起吞掉（页面显示「系统内部错误，请稍后重试」，
+	//     而实际是「你填错了」）—— CQ-009 的反向缺陷，运营不知道该改什么。
+	// 现在两侧都钉住：**必须出现可行动的中文译文，且不得出现裸 key**。
+	// JSON 接口那侧（masterdata_change_test.go）仍按 API 协议返回 key —— key 是给前端翻译的契约，
+	// 与「后台页面不许显示裸 key」是两件事，别把两边的判据混起来。
 	rec = httptestGet(engine, "/admin/masterdata/changes?project="+f.projectID+"&entityId=not-a-uuid")
-	if rec.Code != http.StatusOK || !mentionsMasterDataError(rec.Body.String(), masterdataenums.ErrInvalidParam, "参数不合法") {
-		t.Fatalf("非法实体 id 应回显错误且仍 200，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("非法实体 id 不应把页面打挂（仍 200），实际 %d", rec.Code)
+	}
+	pageBody := rec.Body.String()
+	if !strings.Contains(pageBody, "参数不合法") {
+		t.Fatalf("非法实体 id 是客户端输入问题，应回显可行动的「参数不合法」，实际未出现")
+	}
+	if strings.Contains(pageBody, masterdataenums.ErrInvalidParam) {
+		t.Fatalf("页面不应出现 enums 裸 key %q —— 应经 masterDataErrText 取当前语言译文", masterdataenums.ErrInvalidParam)
 	}
 }
 

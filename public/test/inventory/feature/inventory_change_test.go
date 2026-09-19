@@ -306,8 +306,14 @@ func TestInventoryMovementRecordsDirectionReasonSource(t *testing.T) {
 	if len(m.ID) != 36 || m.ID[14] != '7' {
 		t.Fatalf("流水主键应为 UUIDv7，实际 id=%q", m.ID)
 	}
-	if m.BatchID == "" || m.VariantID != v.ID || m.SKUCode != v.SKUCode || m.WarehouseID != wh.ID {
-		t.Fatalf("流水应带上批次号与库存维度：%+v", m)
+	// 库存维度里的 SKU 是**仓库侧裸码**（剥掉仓码前缀的编码）；前缀只留在商品 / 变体侧。
+	// 下面两条一起钉住两侧口径：流水必须是裸码，而 v.SKUCode 仍带前缀。
+	if m.BatchID == "" || m.VariantID != v.ID || m.SKUCode != bareSKU(v.SKUCode, wh.Code) ||
+		m.WarehouseID != wh.ID {
+		t.Fatalf("流水应带上批次号与库存维度（SKU 为仓库侧裸码 %q）：%+v", bareSKU(v.SKUCode, wh.Code), m)
+	}
+	if !strings.HasPrefix(v.SKUCode, wh.Code+"_") {
+		t.Fatalf("商品 / 变体侧的 SKU 应仍带仓码前缀 %s_…，实际 %q", wh.Code, v.SKUCode)
 	}
 
 	// 出库流水：方向为 out，delta 为负。
@@ -592,12 +598,14 @@ func TestInventoryDeductExpandsBOM(t *testing.T) {
 	if len(res.Movements) != 2 {
 		t.Fatalf("一步展开应写 2 条子项流水（PartA / PartB），实际 %d", len(res.Movements))
 	}
+	// 流水里的 SKU 是仓库侧裸码，取用时按同一口径换算（商品侧 av.SKUCode 仍带前缀）。
 	parents := map[string]string{}
 	for _, m := range res.Movements {
 		parents[m.SKUCode] = m.ParentVariantID
 	}
-	if parents[av.SKUCode] != bv.ID || parents[cv.SKUCode] != bv.ID {
-		t.Fatalf("子项流水应记录直接父 SKU：%+v", parents)
+	if parents[bareSKU(av.SKUCode, wh.Code)] != bv.ID || parents[bareSKU(cv.SKUCode, wh.Code)] != bv.ID {
+		t.Fatalf("子项流水应记录直接父 SKU（子项 SKU 为裸码 %q / %q）：%+v",
+			bareSKU(av.SKUCode, wh.Code), bareSKU(cv.SKUCode, wh.Code), parents)
 	}
 	if res.BatchID == "" {
 		t.Fatalf("一次展开扣减应共用一个批次号")
@@ -761,11 +769,15 @@ func TestInventoryAvailabilityReadsTrueSourceNotCache(t *testing.T) {
 	if err != nil || row.Quantity != 0 {
 		t.Fatalf("库存读取必须走真源（0）：%v %+v", err, row)
 	}
+	// 库存侧的查询维度是**仓库侧裸码**（与库存行存的值同一口径）。
 	rows, err := f.inventory.ListStocksBySKU(ctx, &inventorydto.ListStockBySKUReq{
-		ProjectID: f.projectID, SKUCode: v.SKUCode,
+		ProjectID: f.projectID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 	})
 	if err != nil || len(rows) != 1 || rows[0].Quantity != 0 {
 		t.Fatalf("列表也必须读真源：%v %+v", err, rows)
+	}
+	if rows[0].SKUCode != bareSKU(v.SKUCode, wh.Code) {
+		t.Fatalf("库存行应存仓库侧裸码 %q，实际 %q", bareSKU(v.SKUCode, wh.Code), rows[0].SKUCode)
 	}
 	// 扣减之后**没有缓存要同步**（issue #32：商品侧缓存列已删）：
 	// 展示值按需从真源投影，所以这里直接核对真源仍是 0。
@@ -787,17 +799,37 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 	p := mustProduct(t, f, "Tee")
 	v := f.firstVariant(t, p.ID)
 
-	// 后台表单入库 → 302 回列表并带 ok=1。
+	// 后台「库存调整（盘点 / 报损）」表单：盘点（adjust，目标绝对量）→ 302 回列表并带 ok=1。
+	// 入库 / 出库不在本页 —— 它们必须挂采购单 / 发货单，见页面上的边界提示。
 	rec := postForm(engine, "/admin/inventory/stock/change", url.Values{
 		"projectId": {f.projectID}, "variantId": {v.ID}, "warehouseId": {wh.ID},
-		"direction": {"in"}, "quantity": {"8"}, "reasonCode": {"purchase_in"},
-		"sourceType": {"purchase"}, "sourceRef": {"PO-PAGE-1"}, "remark": {"后台入库"},
+		"direction": {"adjust"}, "quantity": {"8"}, "reasonCode": {"stocktake_adjust"},
+		"sourceType": {"stocktake"}, "sourceRef": {"PO-PAGE-1"}, "remark": {"盘点：后台调整"},
 	})
 	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "ok=1") {
-		t.Fatalf("后台入库应 302 并带 ok=1，实际 %d %s：%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+		t.Fatalf("后台盘点调整应 302 并带 ok=1，实际 %d %s：%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
 	}
 	if got := f.stockQty(t, v.ID, wh.ID); got != 8 {
-		t.Fatalf("后台入库后真源应为 8，实际 %d", got)
+		t.Fatalf("盘点调整到 8 后真源应为 8，实际 %d", got)
+	}
+	// 入库方向在本页被拒绝（入库必须走单据）：整批不生效，并回带可读的错误。
+	rec = postForm(engine, "/admin/inventory/stock/change", url.Values{
+		"projectId": {f.projectID}, "variantId": {v.ID}, "warehouseId": {wh.ID},
+		"direction": {"in"}, "quantity": {"5"}, "reasonCode": {"purchase_in"}, "remark": {"试图直接入库"},
+	})
+	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
+		t.Fatalf("库存管理页不应接受入库方向，实际 %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if got := f.stockQty(t, v.ID, wh.ID); got != 8 {
+		t.Fatalf("被拒绝的入库不应改动真源，实际 %d", got)
+	}
+	// 备注必填：盘点 / 报损是「没有单据承载」的写入口，没有备注的调整事后无法解释。
+	rec = postForm(engine, "/admin/inventory/stock/change", url.Values{
+		"projectId": {f.projectID}, "variantId": {v.ID}, "direction": {"adjust"},
+		"quantity": {"9"}, "reasonCode": {"stocktake_adjust"},
+	})
+	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
+		t.Fatalf("缺备注的调整应被拒绝并回带错误，实际 %d %s", rec.Code, rec.Header().Get("Location"))
 	}
 
 	// 后台表单新建自定义原因 → 302。
@@ -817,20 +849,29 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 	}
 
 	// 页面：三块新内容 + 流水 + 原因字典 + csrf_token。
-	rec = httptestGet(engine, "/admin/inventory?project="+f.projectID+"&sku="+url.QueryEscape(v.SKUCode))
+	// 库存页的 SKU 筛选就是仓库侧维度：用裸码查（流水 / 库存行存的都是裸码）。
+	rec = httptestGet(engine, "/admin/inventory?project="+f.projectID+
+		"&sku="+url.QueryEscape(bareSKU(v.SKUCode, wh.Code)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("库存页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// 写入口按钮按「动词 + 对象」收紧：原来的「库存变动（入库 / 出库 / 调整）」把抽屉标题
-	// 当按钮文案，现在按钮直接说能做什么 ——「入库 / 出库 / 调整」，抽屉标题仍是「登记库存变动」。
+	// 页面只读化后：唯一的写入口是「库存调整（盘点 / 报损）」，入库 / 出库只剩一条指向
+	// 单据页的边界提示；流水与原因都按 code 呈现（词条缓存未初始化时回退到 code，
+	// 不会显示 inventory.reason.* 这种裸 key）。
 	for _, want := range []string{
-		"入库 / 出库 / 调整", "库存流水", "采购入库", "赠品出库",
-		"提交变动", "PO-PAGE-1", "csrf_token",
+		"库存调整（盘点 / 报损）", "库存流水", "stocktake_adjust",
+		"提交变动", "PO-PAGE-1", "csrf_token", "生产入库",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("库存页缺少 %q", want)
 		}
+	}
+	if strings.Contains(body, "inventory.reason.") {
+		t.Fatalf("库存页不应出现裸 i18n key（原因名要翻译后渲染）")
+	}
+	if strings.Contains(body, "action=\"/admin/inventory/production\"") {
+		t.Fatalf("库存管理页不应再有内联的生产入库表单")
 	}
 
 	// 「变动原因字典」与「新建自定义原因」已按「配置不是日常操作」拆到独立页
@@ -840,10 +881,50 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 		t.Fatalf("变动原因字典页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	reasonBody := rec.Body.String()
-	for _, want := range []string{"变动原因字典", "新建自定义原因", "采购入库", "赠品出库"} {
+	// 原因名在页面上是**取词结果**：词条缓存未初始化时回退到 code（短、可辨认），
+	// 但绝不显示 inventory.reason.* 这种裸 key。
+	for _, want := range []string{"变动原因字典", "新建自定义原因", "purchase_in", "gift_out"} {
 		if !strings.Contains(reasonBody, want) {
 			t.Fatalf("变动原因字典页缺少 %q", want)
 		}
+	}
+	if strings.Contains(reasonBody, "inventory.reason.") {
+		t.Fatalf("变动原因字典页不应出现裸 i18n key")
+	}
+	// name 列存的是 i18n key（迁移 241 收口）：内置与自定义都不例外。
+	var badName int64
+	if err := f.db.Raw("SELECT COUNT(*) FROM inventory_change_reasons WHERE name NOT LIKE 'inventory.reason.%'").Scan(&badName).Error; err != nil {
+		t.Fatalf("统计原因 name 失败: %v", err)
+	}
+	if badName != 0 {
+		t.Fatalf("变动原因的 name 应全部是 i18n key，实际有 %d 行不是", badName)
+	}
+	// 内置原因的 key 必须已经从 242 取到词条（中英成对）——缺词条时页面显示裸 key，
+	// 而英文界面回落中文这种缺陷只有在这里钉住才不会漏。
+	var seeded int64
+	if err := f.db.Raw("SELECT COUNT(*) FROM sys_i18n WHERE item_key = 'inventory.reason.purchase_in'").Scan(&seeded).Error; err != nil {
+		t.Fatalf("查询内置原因词条失败: %v", err)
+	}
+	if seeded != 2 {
+		t.Fatalf("内置原因词条应有 zh-CN / en-US 两行，实际 %d", seeded)
+	}
+	// 启停入口：自定义原因可停用；内置原因也能停用（只读 ≠ 不能停用，只是不给改名按钮）。
+	var customReasonID string
+	if err := f.db.Raw("SELECT id FROM inventory_change_reasons WHERE project_id IS NOT NULL AND code = 'gift_out'").Scan(&customReasonID).Error; err != nil || customReasonID == "" {
+		t.Fatalf("未找到自定义原因 gift_out：%v %q", err, customReasonID)
+	}
+	rec = postForm(engine, "/admin/inventory/reason/update", url.Values{
+		"projectId": {f.projectID}, "id": {customReasonID}, "status": {"disabled"},
+	})
+	if rec.Code != http.StatusFound || strings.Contains(rec.Header().Get("Location"), "err=") {
+		t.Fatalf("停用自定义原因应成功并回列表，实际 %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	var reasonStatus string
+	if err := f.db.Raw("SELECT status FROM inventory_change_reasons WHERE id = ?", customReasonID).Scan(&reasonStatus).Error; err != nil {
+		t.Fatalf("读原因状态失败: %v", err)
+	}
+	if reasonStatus != inventoryenums.StatusDisabled {
+		t.Fatalf("停用未生效，实际 %q", reasonStatus)
 	}
 
 	// JSON 接口：绑定 + 响应结构（走真实的 handle 层）。
@@ -887,9 +968,11 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	// 100（#15 九个）+ 104（#16 十个）+ 106（#17 货源六个）+ 109（#18 采购单与入库七个）。
-	if n != 32 {
-		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 32 个 inventory 权限点，实际 %d", n)
+	// 100（#15 九个）+ 104（#16 **八个**）+ 106（#17 货源六个）+ 109（#18 采购单与入库七个）= 30。
+	// 104 原为十个：inventory:cache_sync / cache_reconcile 随库存缓存下线（迁移 122 删除），
+	// 2026-09 把 104 的 SQL 与幂等条件同批收到 8 个之后，这里的期望值随之从 32 落到 30。
+	if n != 30 {
+		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 30 个 inventory 权限点（104 已从 10 收到 8），实际 %d", n)
 	}
 	var builtin int64
 	if err := f.db.Raw("SELECT COUNT(*) FROM inventory_change_reasons WHERE project_id IS NULL").Scan(&builtin).Error; err != nil {
