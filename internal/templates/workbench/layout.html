@@ -50,7 +50,13 @@
             <span class="wb-status" id="wb-instance-mode" title="{{.renderModeLabel}}">{{.renderModeLabel}}</span>
             {{end}}
             <span class="wb-status" id="wb-status">就绪</span>
-            {{if .isTemplate}}
+            {* 可选键必须用 isset 判断（internal/templates/CLAUDE.md 第一节）：页面模式与块模式的
+               数据里**没有** isTemplate —— 写 {{if .isTemplate}} 会让 Jet 在缺键上类型不符，
+               表现为「HTTP 200 + 这一行之后的 HTML 整块消失」（缺陷 B1，页面/块编辑器整页截断）。
+               && 的短路是必须的：isset 为假时右侧不再求值（v6.3.2 实测），
+               等价写法是双层 {{if isset}} 嵌套，但那要把下面的页面分支整段复制一遍。
+               回归守卫：public/test/workbench/feature/workbench_layout_render_test.go *}
+            {{if isset(.isTemplate) && .isTemplate}}
             {* 结构模板（页眉 / 页脚）没有实体来源：预览不解析字段绑定。这条提示要在编辑器里
                看得见，否则作者会以为「该出现的实体字段没出现」是渲染坏了。多端：纯文本状态条，
                宽度自适应（不写死），触屏与键盘下都只是可读文本，无交互依赖。 *}
@@ -130,7 +136,7 @@
         {* ===== 中央画布 ===== *}
         <section class="wb-canvas-wrap">
             <div class="wb-canvas-frame" id="wb-canvas-frame">
-                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="{{if .isBlock}}/workbench/block/preview?id={{.pageId}}&editor=1{{else if .isTemplate}}/workbench/template/preview?{{.previewQS}}{{else}}/workbench/preview?id={{.pageId}}&editor=1{{end}}"></iframe>
+                <iframe id="wb-canvas" name="wb-canvas" title="画布" src="{{if .isBlock}}/workbench/block/preview?id={{.pageId}}&editor=1{{else if isset(.isTemplate) && .isTemplate}}/workbench/template/preview?{{.previewQS}}{{else}}/workbench/preview?id={{.pageId}}&editor=1{{end}}"></iframe>
             </div>
         </section>
 

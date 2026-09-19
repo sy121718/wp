@@ -77,6 +77,11 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		"document": string(documentJSON), "meta": string(metaJSON), "schemas": string(schemasJSON),
 		"previewQS": "instance=" + inst.ID + "&entityType=" + inst.EntityType +
 			"&entityId=" + inst.EntityID + "&editor=1&projectId=" + inst.ProjectID,
+		// jsVer 是 layout.html 的**必需键**（脚本 / 样式 / Trix 的缓存版本）：另外三种模式
+		//（页面 / 块 / 模板）都给，唯独这里漏了。漏掉的后果与缺陷 B1 同一类，但更早 ——
+		// 模板第 17 行就取它，于是实例编辑器整页在 <head> 里中断，只回 445 字节。
+		// 回归守卫：public/test/workbench/feature/workbench_layout_render_test.go 的「实例模式」。
+		"jsVer": workbenchJsVer(),
 	})
 }
 

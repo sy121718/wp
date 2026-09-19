@@ -336,9 +336,14 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	if strings.TrimSpace(req.Name) != "" {
 		name = strings.TrimSpace(req.Name)
 	}
-	if _, err := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
+	if _, uerr := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
 		ID: req.ID, Name: name, Document: req.Document,
-	}); err != nil {
+	}); uerr != nil {
+		// 这条分支原先**只回 500 归口文案、不落任何日志**（F 线实测：合成 payload 触发 500，
+		// 日志里空空如也，排障无从下手）。响应形状不变（仍是归口文案），
+		// 错误原文只进结构化日志 —— 与同文件其它写路径（CreateBlock / DeleteBlock）的写法一致。
+		logger.Scene("block").With("op", "SaveBlockContent").With("block_id", req.ID).
+			With("path", c.Request.URL.Path).Error(uerr, "工作台保存块内容失败")
 		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
 		return
 	}
