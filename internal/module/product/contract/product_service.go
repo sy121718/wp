@@ -83,13 +83,18 @@ type ProductService interface {
 	//   · 自动标签只接受内置规则类型与白名单参数，不接受自由表达式，非法规则被拒绝；
 	//   · 自动标签的归属由明确定义的重算时机维护（商品/变体写操作后、标签定义变更后、
 	//     显式调用），重算只替换自己那一个 tag id，绝不覆盖手工标签；
-	//   · GetTag / ListTagProducts 提供「某标签命中哪些商品」（后台核对用）。
+	//   · GetTag / ListTagProducts / ListTagProductsPage 提供「某标签命中哪些商品」
+	//     （后台核对用；页面走按页的那个，见审计 PERF-02）。
 	CreateTag(ctx context.Context, req *productdto.CreateTagReq) (res *productdto.TagResp, err error)
 	UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (res *productdto.TagResp, err error)
 	GetTag(ctx context.Context, req *productdto.GetTagReq) (res *productdto.TagResp, err error)
 	ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error)
 	// ListTagProducts 某标签命中的商品（limit <= 0 用服务端默认上限）。
 	ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (list []*productdto.TagProductResp, err error)
+	// ListTagProductsPage 某标签命中商品的一页（后台展开区按需取；审计 PERF-02）。
+	// 与 ListTagProducts 并列而不是替换它：接口形态仍要「一次拿一段」的语义，
+	// 页面形态要的是「总数 + 第几页 + 本页行」。
+	ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsPageResp, err error)
 	DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error)
 	// ListTagRuleTypes 内置规则类型清单（后台规则下拉与参数说明的唯一来源）。
 	ListTagRuleTypes(ctx context.Context) (list []*productdto.TagRuleTypeResp)

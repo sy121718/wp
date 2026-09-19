@@ -52,13 +52,17 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
-// GetTag 按 ID 查标签。
+// GetTag 按 ID 查标签（工程内）。
 //
-// projectID 由调用方给出：product_tags 在迁移 215 名单里，跨工程的行不可见。
+// project_id 显式写进谓词，而不是只靠迁移 215 的策略：策略读会话变量 app.project_id，
+// 而**超级用户角色会绕过 RLS**（DB-009 至今如此），换角色之前「按 id 单查」实际能读到
+// 别的工程的行 —— 表现为「拿别的工程的标签 id 能查出它的名字」。按 id 读是本方法唯一的
+// 入口语义，所以隔离必须写在查询里，不能停在策略上。
 func (m *Model) GetTag(ctx context.Context, id, projectID string) (e *ProductTagEntity, err error) {
 	e = &ProductTagEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&ProductTagEntity{}).Where("id = ?", id).First(e).Error
+		return tx.WithContext(ctx).Model(&ProductTagEntity{}).
+			Where("id = ? AND project_id = ?", id, projectID).First(e).Error
 	})
 	return e, err
 }
@@ -160,21 +164,34 @@ func (m *Model) DeleteTagTx(tx *gorm.DB, id string) (err error) {
 // ListProductsByTag 反查挂了某标签的商品（后台「某标签命中哪些商品」）。
 //
 // tag_ids 是 JSONB 数组：用包含谓词命中 GIN 索引；limit <= 0 表示不限条数。
+// 按页取用 ListProductsByTagPage（本方法就是它的第一页）。
 //
 // projectID 由**调用方**给出：反查的是 products（迁移 215 名单），工程上下文只有调用方有。
 // 缺作用域时这里静默返回空列表（fail closed 不报错）—— 表现为「标签明明命中商品，
 // 列表却是空的」，比报错更难排查。
 func (m *Model) ListProductsByTag(ctx context.Context, tagID, projectID string, limit int) (list []*ProductEntity, err error) {
+	return m.ListProductsByTagPage(ctx, tagID, projectID, 0, limit)
+}
+
+// ListProductsByTagPage 反查挂了某标签的商品，带偏移（后台展开区一页一取）。
+//
+// offset <= 0 时不写 OFFSET —— PG 对 OFFSET 0 与省略等价，少一段拼接少一处出错。
+// project_id 显式写进谓词（不是只靠 RLS）：RLS 在超级用户连接上不生效，
+// 「空工程不得拿到其它工程的商品」这条不能只指望策略。
+func (m *Model) ListProductsByTagPage(ctx context.Context, tagID, projectID string, offset, limit int) (list []*ProductEntity, err error) {
 	probe, merr := json.Marshal([]string{tagID})
 	if merr != nil {
 		return nil, merr
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductEntity{}).
-			Where("tag_ids @> ?::jsonb", string(probe)).
+			Where("project_id = ? AND tag_ids @> ?::jsonb", projectID, string(probe)).
 			Order("sort ASC, create_time ASC, id ASC")
 		if limit > 0 {
 			q = q.Limit(limit)
+		}
+		if offset > 0 {
+			q = q.Offset(offset)
 		}
 		return q.Find(&list).Error
 	})
@@ -192,9 +209,57 @@ func (m *Model) CountProductsByTag(ctx context.Context, tagID, projectID string)
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&ProductEntity{}).
-			Where("tag_ids @> ?::jsonb", string(probe)).Count(&n).Error
+			Where("project_id = ? AND tag_ids @> ?::jsonb", projectID, string(probe)).Count(&n).Error
 	})
 	return n, err
+}
+
+// TagHitCount 一个标签的命中数（批量聚合的一行）。
+type TagHitCount struct {
+	TagID string `gorm:"column:tag_id"`
+	Total int64  `gorm:"column:total"`
+}
+
+// CountProductsByTagIDs 一次聚合出这批标签各自的命中商品数（PERF-02）。
+//
+// 为什么必须是批量：列表页的「命中 N 个商品」此前是每个标签发一条 Count ——
+// 页面 SQL 条数随标签数线性增长（1000 个标签就是 1000 条查询）。
+// 这里用一条语句把「标签集 × 其命中的商品」按 tag_id 分组数出来：
+// 未命中的标签不会出现在结果里（调用方按缺省 0 处理）。
+//
+// 形状上刻意与单条 CountProductsByTag 同源：project_id 显式写进谓词
+// （RLS 在超级用户连接上不生效，工程隔离不能只指望策略），包含谓词命中
+// products.tag_ids 的 GIN 索引。
+//
+// 入参 tagIDs 由调用方从本工程的 product_tags 读出，故只会是本工程的值；
+// 空列表直接返回空表，不发 SQL（空 IN 是语法错误，也白跑一趟）。
+func (m *Model) CountProductsByTagIDs(ctx context.Context, projectID string, tagIDs []string) (out map[string]int64, err error) {
+	out = make(map[string]int64, len(tagIDs))
+	if projectID == "" || len(tagIDs) == 0 {
+		return out, nil
+	}
+	probe, merr := json.Marshal(tagIDs)
+	if merr != nil {
+		return nil, merr
+	}
+	// wanted 把标签 id 列表展开成行（jsonb 数组参数展开，避免动态拼 IN 列表）。
+	// 用 LEFT JOIN 而不是 JOIN：INNER JOIN 会把「一个商品都没命中」的标签整个丢掉，
+	// 调用方就分不清「0 个商品」与「这次没查到」。
+	const q = "SELECT w.tag_id::text AS tag_id, COUNT(p.id) AS total " +
+		"FROM (SELECT (jsonb_array_elements_text(?::jsonb))::uuid AS tag_id) w " +
+		"LEFT JOIN products p ON p.project_id = ? AND p.tag_ids @> jsonb_build_array(w.tag_id::text) " +
+		"GROUP BY w.tag_id"
+	var rows []TagHitCount
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Raw(q, string(probe), projectID).Scan(&rows).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.TagID] = r.Total
+	}
+	return out, nil
 }
 
 // ReplaceTagProductsTx 把某标签的商品归属整体替换为 productIDs（service 编排的原子组合）。

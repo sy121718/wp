@@ -150,6 +150,11 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 商品标签管理页（issue #11）：手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
 	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
 	pages.GET("/product-tags", productPages.ProductTagsPage)
+	// 命中商品片段（审计 PERF-02）：标签页首屏不再逐标签内联命中商品，展开时按页取。
+	// 只读渲染、不落库，故与同组的 /products/seo-score、/products/variant/preview 同一先例
+	// 不叠加 Casbin（页面组已有 Session + CSRF；凭空加权限点反而会造出「有路由无权限点 ⇒
+	// 含超管全员 403」那种缺口）。
+	pages.GET("/product-tags/hits", productPages.ProductTagHitsFragment)
 	pages.POST("/product-tags/create", builtin.CasbinMiddlewareForPath("/api/product/tag/create"), productPages.ProductTagsCreate)
 	pages.POST("/product-tags/update", builtin.CasbinMiddlewareForPath("/api/product/tag/update"), productPages.ProductTagsUpdate)
 	pages.POST("/product-tags/delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsDelete)

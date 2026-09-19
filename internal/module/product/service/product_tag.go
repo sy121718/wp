@@ -12,7 +12,8 @@
 //     · 显式调用（接口 / 后台「重算」按钮，可按标签或按工程）。
 //     重算只替换**自己那一个 tag id** 的商品归属（model.ReplaceTagProductsTx 按元素
 //     摘挂），因此永远不会覆盖手工标签，也不会动其它自动标签；
-//  4. 后台可查看某标签命中哪些商品（GetTag / ListTagProducts + 页面内联命中列表）。
+//  4. 后台可查看某标签命中哪些商品（GetTag / ListTagProducts 接口 + 页面按需片段：
+//     首屏只给数量，展开某个标签才按页取，见 ListTagProductsPage）。
 //
 // 边界：标签只描述「商品有什么标记」，不生成 URL、不写产物；静态化在发布管线里。
 package productservice
@@ -35,10 +36,15 @@ import (
 )
 
 const (
-	// defaultTagProducts 后台「某标签命中哪些商品」的默认展示条数。
+	// defaultTagProducts 后台「某标签命中哪些商品」的默认展示条数（接口形态）。
 	defaultTagProducts = 100
 	// maxTagProducts 该列表的条数上限（防止一个标签挂了几千商品把页面拖死）。
 	maxTagProducts = 500
+	// tagProductsPageSize 后台展开区「命中商品」每页条数（审计 PERF-02）。
+	// 比接口默认值小：展开区是页面里的一小块，一页 50 行已经要滚动才能看完。
+	tagProductsPageSize = 50
+	// maxTagProductsPageSize 每页条数上限（调用方给得再大也只给这么多）。
+	maxTagProductsPageSize = 200
 )
 
 // CreateTag 新建标签（默认手工类型；规则型建好即按规则重算一次）。
@@ -253,13 +259,17 @@ func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *p
 // ListTags 标签列表（工程内；kind 为空表示手工 + 自动都返回）。
 //
 // 每个标签带当前归属数量：列表页要能一眼看出自动规则命中了多少商品。
+//
+// 命中数是**一次批量聚合**出来的（审计 PERF-02）：此前逐个标签发一条 Count，
+// 页面 SQL 条数随标签数线性增长 —— 「标签是个位数」只是当时的假设，协议没有使它成立。
+// 现在无论 1 个还是 1000 个标签，这里都只多一条 SQL。
 func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error) {
 	var projectID, kind, keyword string
 	rawProjectID := ""
 	if req != nil {
 		rawProjectID, kind, keyword = req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
 	}
-	// 工程作用域必填（DB-009）：下面的 CountProductsByTag 反查的是 products，
+	// 工程作用域必填（DB-009）：下面的批量计数反查的是 products，
 	// 没有作用域时每个标签的命中数会静默变成 0（fail closed 不报错）。
 	// 这与 Products.List 同一口径：不显式指定工程时取唯一工程，多于一个工程即报错，
 	// 不再有「projectID 为空 = 不限工程」这条在策略下必然退化成空结果的旧语义。
@@ -271,14 +281,19 @@ func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (lis
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	counts, cerr := s.m.CountProductsByTagIDs(ctx, projectID, ids)
+	if cerr != nil {
+		return nil, cerr
+	}
 	list = make([]*productdto.TagResp, 0, len(rows))
 	for _, r := range rows {
 		resp := toTagResp(r)
-		n, cerr := s.m.CountProductsByTag(ctx, r.ID, projectID)
-		if cerr != nil {
-			return nil, cerr
-		}
-		resp.ProductCount = int(n)
+		// 未命中的标签不在聚合结果里，缺省 0（不是「没查到」）。
+		resp.ProductCount = int(counts[r.ID])
 		list = append(list, resp)
 	}
 	return list, nil
@@ -308,6 +323,65 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 		return nil, err
 	}
 	return toTagProductResps(rows), nil
+}
+
+// ListTagProductsPage 某标签命中商品的一页（后台展开区按需取；审计 PERF-02）。
+//
+// 与 ListTagProducts 的分工：那个是接口形态（不翻页、只要一个上限），这个是后台页形态。
+// 命中商品从首屏移到这里之后，标签页的 SQL 条数与标签数彻底脱钩：展开一个标签才会
+// 发这一组查询（标签存在性 + 总数 + 本页行），与页面上有多少标签无关。
+//
+// 越界的 page 不报错：收敛到最后一页（Total 仍是真实值），不会把一个翻页越界
+// 变成一条错误提示 —— 翻页本来就是可以走到头再点一下的操作。
+func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsPageResp, err error) {
+	if req == nil || req.TagID == "" {
+		return nil, errors.New(productenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	tag, gerr := s.m.GetTag(ctx, req.TagID, projectID)
+	if gerr != nil {
+		return nil, mapTagNotFound(gerr)
+	}
+	size := req.Size
+	if size <= 0 {
+		size = tagProductsPageSize
+	}
+	if size > maxTagProductsPageSize {
+		size = maxTagProductsPageSize
+	}
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	total, cerr := s.m.CountProductsByTag(ctx, tag.ID, projectID)
+	if cerr != nil {
+		return nil, cerr
+	}
+	// 偏移量按「最长一页也不越界」算：page 很大时 offset 会溢出 int，先按页数封顶。
+	totalPage := pagesOf(int(total), size)
+	if page > totalPage {
+		page = totalPage
+	}
+	rows, lerr := s.m.ListProductsByTagPage(ctx, tag.ID, projectID, (page-1)*size, size)
+	if lerr != nil {
+		return nil, lerr
+	}
+	return &productdto.TagProductsPageResp{
+		TagID: tag.ID, TagName: tag.Name,
+		Total: int(total), Page: page, PageSize: size, TotalPage: totalPage,
+		Items: toTagProductResps(rows),
+	}, nil
+}
+
+// pagesOf 总页数（空列表也算 1 页：页面要显示「第 1 / 1 页」，而不是「第 1 / 0 页」）。
+func pagesOf(total, size int) int {
+	if size <= 0 || total <= 0 {
+		return 1
+	}
+	return (total + size - 1) / size
 }
 
 // DeleteTag 删除标签：先把引用从商品上解绑，再删标签行（同一事务）。
@@ -561,6 +635,9 @@ func (s *Service) filterProjectProductIDs(ctx context.Context, projectID string,
 }
 
 // tagDetail 实体 → 详情响应（含命中商品列表）。
+//
+// ProductCount 取**真实命中数**，不是 len(Products)：Products 有 maxTagProducts 上限
+// 截断，此前两者混用会让「命中 800 个」的标签在详情里显示 500（与列表接口的数字对不上）。
 func (s *Service) tagDetail(ctx context.Context, e *productmodel.ProductTagEntity) (res *productdto.TagResp, err error) {
 	// 工程作用域取标签自身的工程：tagDetail 的入参就是标签实体（ProjectID 非空列），
 	// 不必再由调用方多传一个参数。
@@ -568,9 +645,13 @@ func (s *Service) tagDetail(ctx context.Context, e *productmodel.ProductTagEntit
 	if lerr != nil {
 		return nil, lerr
 	}
+	total, cerr := s.m.CountProductsByTag(ctx, e.ID, e.ProjectID)
+	if cerr != nil {
+		return nil, cerr
+	}
 	resp := toTagResp(e)
 	resp.Products = toTagProductResps(rows)
-	resp.ProductCount = len(resp.Products)
+	resp.ProductCount = int(total)
 	return resp, nil
 }
 

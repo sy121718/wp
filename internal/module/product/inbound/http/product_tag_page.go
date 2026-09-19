@@ -10,7 +10,8 @@
 //	· 自动标签只给内置规则类型 + 白名单参数（规则类型下拉来自 service 的注册表，
 //	  参数输入框固定三格：days / minPrice / maxPrice，服务端按规则类型取值并严格校验）；
 //	· 标签列表用标准表格（标签 / URL 段 / 类型 / 规则 / 命中 / 重算时间 / 操作），
-//	  「命中的商品」是一张平坦关系表，规则标签额外显示规则描述与重算时间。
+//	  规则标签额外显示规则描述与重算时间；「命中的商品」按需加载（审计 PERF-02）：
+//	  首屏只给数量，展开某个标签才按页取片段，见 ProductTagHitsFragment。
 //
 // 重算时机在页面上写明（商品/变体写操作后、标签定义变更后、这里的「重算」按钮）。
 package producthttp
@@ -60,17 +61,15 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		shell.PageError(c, "product_tag", terr)
 		return
 	}
-	// 每个标签再取一次详情拿命中商品（验收 4）：列表接口为了保持轻量只给数量，
-	// 后台页要把命中商品直接铺在展开区里。标签数量是个位数，逐条取可以接受。
+	// 命中商品**不在这里取**（审计 PERF-02）：此前对每个标签再调一次 GetTag 拿命中商品，
+	// 页面 SQL 条数随标签数线性增长；而「标签是个位数」只是当时的假设，协议没有使它成立。
+	// 现在首屏只发「工程列表 + 标签列表 + 一次批量计数」，命中商品由展开区按页拉片段
+	// （见 ProductTagHitsFragment）—— 1 / 100 / 1000 个标签的首屏 SQL 条数一样。
+	// 注意不要用「开 goroutine 并发 N 次查询」来掩盖它：那是把 N 条 SQL 并行发出去，
+	// 连接池压力与总条数都没变。
 	rows := make([]gin.H, 0, len(tags))
 	for _, t := range tags {
-		detail, derr := h.products.GetTag(ctx, &productdto.GetTagReq{ProjectID: selected, ID: t.ID})
-		if derr != nil {
-			// 单个标签读失败不该让整页打不开：退回列表态（数量在、命中列表为空）。
-			rows = append(rows, tagPageRow(t))
-			continue
-		}
-		rows = append(rows, tagPageRow(detail))
+		rows = append(rows, tagPageRow(t))
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
 	// 与其它后台页面同一渲染入口。
@@ -86,6 +85,79 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductTagsBulkDelete）。
 		"Done": productPageDone(c),
 	}))
+}
+
+// ProductTagHitsFragment 标签「命中商品」片段（审计 PERF-02 的展开区）。
+//
+// 为什么按需取：标签页首屏此前对每个标签取一次命中商品（GetTag），SQL 条数与标签数
+// 成正比，且命中数据（每标签最多 500 行）会一起撑大页面。现在首屏只给数量，
+// 展开某个标签时才发这一组查询（标签存在性 + 总数 + 本页行），与页面上有多少标签无关。
+//
+// 归属：挂在后台**页面组**（Session + CSRF），不叠加 Casbin 权限点 —— 与同组的
+// /products/seo-score、/products/variant/preview 同一先例：它是只读渲染，不落任何库
+// （写面仍然逐个挂 Casbin），因此不需要新权限点，也不会出现「有路由无权限点 ⇒ 含超管
+// 全员 403」。渲染出的商品行只读，行内没有任何写入口。
+//
+// 失败也回 200 的片段（不是整页错误页）：它替换的是页面里的一小块，
+// 回整页 HTML 会把展开区之外的内容一起换掉；错误文案过 productErrText 白名单。
+func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
+	req := &productdto.ListTagProductsPageReq{
+		TagID:     strings.TrimSpace(c.Query("id")),
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Page:      parseIntOr(c.Query("page"), 1),
+		Size:      parseIntOr(c.Query("size"), 0),
+	}
+	data := gin.H{
+		"TagID":     req.TagID,
+		"ProjectID": req.ProjectID,
+	}
+	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
+	if err != nil {
+		data["Err"] = productErrText(c, err)
+		c.HTML(http.StatusOK, "admin/partials/product_tag_hits.html", shell.Prepare(c, data))
+		return
+	}
+	data["TagName"] = res.TagName
+	data["Total"] = res.Total
+	data["Page"] = res.Page
+	data["PageSize"] = res.PageSize
+	data["TotalPage"] = res.TotalPage
+	data["Items"] = tagProductRows(res.Items)
+	// 分页条文案复用 shell 的同一词条（shell.pagination.info）：后台各处的
+	// 「共 N 条，第 X-Y 条」只有这一份取法，片段里再造一句就会与列表页不一致。
+	data["PageInfo"] = tagHitsPageInfo(c, res.Total, res.Page, res.PageSize, len(res.Items))
+	// 翻页链接由服务端算好（页数边界只有一处判断）：模板不做「还有没有下一页」的推断。
+	if res.Page > 1 {
+		data["PrevURL"] = tagHitsURL(req.ProjectID, res.TagID, res.Page-1)
+	}
+	if res.Page < res.TotalPage {
+		data["NextURL"] = tagHitsURL(req.ProjectID, res.TagID, res.Page+1)
+	}
+	c.HTML(http.StatusOK, "admin/partials/product_tag_hits.html", shell.Prepare(c, data))
+}
+
+// tagHitsPageInfo 命中商品片段的分页文案（「共 N 条，第 X-Y 条」）。
+//
+// 复用 shell.pagination.info 这一个词条（占位符统一 %s，走 strconv 填数字），
+// 与 buildPagination 的取法一致 —— 两处各写一份的后果是静默的：
+// 后台列表页改了措辞，展开区还是旧句子。
+func tagHitsPageInfo(c *gin.Context, total, page, size, items int) string {
+	from, to := 0, 0
+	if items > 0 {
+		from = (page-1)*size + 1
+		to = from + items - 1
+	}
+	return fmt.Sprintf(shell.TranslateFor(c)("shell.pagination.info", "共 %s 条，第 %s-%s 条"),
+		strconv.Itoa(total), strconv.Itoa(from), strconv.Itoa(to))
+}
+
+// tagHitsURL 命中商品片段的翻页地址（展开区用 hx-get 打回本片段，不走整页）。
+func tagHitsURL(projectID, tagID string, page int) string {
+	q := url.Values{}
+	q.Set("project", projectID)
+	q.Set("id", tagID)
+	q.Set("page", strconv.Itoa(page))
+	return "/admin/product-tags/hits?" + q.Encode()
 }
 
 // ProductTagsCreate 新建标签（手工 / 自动；自动标签建好即按规则重算一次）。
@@ -276,7 +348,8 @@ func tagRuleParamsFromForm(c *gin.Context, ruleType string) (raw json.RawMessage
 	return json.Marshal(params)
 }
 
-// tagPageRow 标签 → 模板行（规则描述与命中商品都由服务端算好，模板不做第二套解释）。
+// tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；
+// 命中商品本身不在这里，展开时才由 ProductTagHitsFragment 给 —— 审计 PERF-02）。
 func tagPageRow(t *productdto.TagResp) gin.H {
 	row := gin.H{
 		"ID": t.ID, "Name": t.Name, "Slug": t.Slug, "Kind": t.Kind,
@@ -284,7 +357,6 @@ func tagPageRow(t *productdto.TagResp) gin.H {
 		"RuleType": t.RuleType, "RuleLabel": t.RuleLabel,
 		"RecalcAt":     recalcLabel(t.RecalcAt),
 		"ProductCount": t.ProductCount, "Sort": t.Sort,
-		"Products":      tagProductRows(t.Products),
 		"HasRuleParams": t.Kind == productenums.TagKindRule,
 		"RuleDays":      ruleParamText(t.RuleParams, "days"),
 		"RuleMinPrice":  ruleParamText(t.RuleParams, "minPrice"),

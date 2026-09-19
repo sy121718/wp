@@ -1,4 +1,7 @@
 {* admin/product_tags.html — 商品标签：手工标签 + 内置规则自动标签（issue #11） *}
+{* 命中商品按需加载（审计 PERF-02）：首屏只给「命中 N 个商品」的数量，
+   点它才用 HTMX 取一页商品（片段端点 /admin/product-tags/hits）—— 首屏 SQL 条数
+   不随标签数增长，命中数据也不会把首屏撑大。 *}
 {* 列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §7）：
      · 页头一行：标题 + ? 悬浮说明；右侧工程选择、重算与主行动同行；
      · 正文零说明文字（原 intro / 规则口径 / 新建表单旁的解释整段进 .help 悬浮）；
@@ -111,7 +114,16 @@
                     <td>{{if t.Slug != ""}}<code>{{t.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td><span class="badge {{if t.IsRule}}badge-info{{else}}badge-mute{{end}}">{{t.KindLabel}}</span></td>
                     <td>{{if t.RuleLabel != ""}}{{t.RuleLabel}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td>{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</td>
+                    {* 命中数按需展开（审计 PERF-02）：首屏只给数量（一次批量聚合算出），
+                       点它才去片段端点取这一页商品 —— 首屏 SQL 条数与标签数无关，
+                       命中数据也不会把首屏撑大。0 个商品时没有可看的内容，不做成按钮。 *}
+                    <td>
+                        {{if t.ProductCount > 0}}
+                        <button type="button" class="btn btn-sm"
+                                hx-get="/admin/product-tags/hits?project={{selectedProject}}&id={{t.ID}}&page=1"
+                                hx-target="#tag-hits-panel" hx-swap="innerHTML">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
+                        {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
+                    </td>
                     <td>{{if t.RecalcAt != ""}}{{t.RecalcAt}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
@@ -134,25 +146,13 @@
     </section>
 
     {{if len(.Tags) > 0}}
-    {* 命中关系是一张平坦表（标签 × 商品）：能用表格表达的不要用折叠区块。 *}
+    {* 命中关系（标签 × 商品）按需加载（审计 PERF-02）：首屏只渲染数量，
+       点开某个标签才由片段端点按页取 —— 关系是一张平坦表，所以要占满整宽，
+       塞进列表的窄列里没法看。片段模板见 partials/product_tag_hits.html。 *}
     <section class="card card-body">
         <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.hitTitle", "命中的商品") }}</h2>
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}">
-            <table class="data-table data-table-wide">
-                <thead><tr><th>{{ .["t"]("admin.product_tags.col.tag", "标签") }}</th><th>{{ .["t"]("admin.product_tags.col.product", "商品") }}</th><th>{{ .["t"]("admin.product_tags.col.slug", "URL 段") }}</th><th>{{ .["t"]("admin.product_tags.col.state", "状态") }}</th></tr></thead>
-                <tbody>
-                {{range _, t := .Tags}}
-                {{range _, p := t.Products}}
-                <tr>
-                    <td>{{t.Name}}</td>
-                    <td><strong>{{p.Name}}</strong></td>
-                    <td><code>{{p.Slug}}</code></td>
-                    <td><span class="badge">{{p.Status}}</span></td>
-                </tr>
-                {{end}}
-                {{end}}
-                </tbody>
-            </table>
+        <div id="tag-hits-panel" role="region" aria-live="polite" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}">
+            <p class="hint">{{ .["t"]("admin.product_tags.list.hitHint", "点标签列表里「命中」列的条数，在这里按页查看该标签命中的商品。") }}</p>
         </div>
     </section>
     {{end}}

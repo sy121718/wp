@@ -58,6 +58,19 @@ type ListTagProductsReq struct {
 	Limit int `form:"limit"`
 }
 
+// ListTagProductsPageReq 按页取某标签命中的商品（审计 PERF-02）。
+//
+// 与 ListTagProductsReq 的分工：那个是接口形态（只要一个上限），这个是后台页形态 ——
+// 标签页首屏不再内联命中商品，展开某个标签时按页拉一段，页面 SQL 条数与标签数无关。
+type ListTagProductsPageReq struct {
+	TagID     string `form:"id"`
+	ProjectID string `form:"projectId"`
+	// Page 从 1 开始（<=0 归一为 1）。
+	Page int `form:"page"`
+	// Size 每页条数（<=0 用服务端默认；超过上限按上限截断，不由调用方决定）。
+	Size int `form:"size"`
+}
+
 // DeleteTagReq 删除标签（连同它在商品上的引用一起解绑）。
 type DeleteTagReq struct {
 	ID        string `json:"id" binding:"required"`

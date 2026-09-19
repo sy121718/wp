@@ -476,6 +476,8 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.GET("/admin/product-tags", handle.ProductTagsPage)
+	// 命中商品片段（PERF-02）：标签页首屏只给数量，展开时按页取这一段。
+	engine.GET("/admin/product-tags/hits", handle.ProductTagHitsFragment)
 	engine.POST("/admin/product-tags/create", handle.ProductTagsCreate)
 	engine.POST("/admin/product-tags/update", handle.ProductTagsUpdate)
 	engine.POST("/admin/product-tags/delete", handle.ProductTagsDelete)
@@ -546,7 +548,8 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("保存手工标签后应留在该商品的详情页，实际 Location=%q", loc)
 	}
 
-	// 标签页：标签名、类型、规则描述、重算时间、命中商品都要渲染出来。
+	// 标签页：标签名、类型、规则描述、重算时间都要渲染出来；命中商品**不在首屏**
+	// （审计 PERF-02）：首屏只给数量与展开入口，商品行由片段端点按需给。
 	rec = httptestGet(engine, "/admin/product-tags?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("标签页应 200，实际 %d：%s", rec.Code, rec.Body.String())
@@ -556,10 +559,27 @@ func TestTagAdminPages(t *testing.T) {
 	// 「立即重算这个标签」= 行内「重算」、「删除标签」= 行内「删除」。
 	for _, want := range []string{
 		"商品标签", "清仓", "新品", "手工", "自动", "上架 30 天内",
-		"上架商品", "命中的商品", "内置规则类型", ">重算</button>", ">删除</button>",
+		"命中的商品", "内置规则类型", ">重算</button>", ">删除</button>",
+		// 命中商品的展开入口（片段端点 + 落点容器）：列表里那个「N 个商品」是按钮。
+		`hx-get="/admin/product-tags/hits?project=`, `hx-target="#tag-hits-panel"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("标签页缺少 %q", want)
+		}
+	}
+	// 首屏**不得**内联命中商品：这条是本次整改的核心形状（首屏 SQL 与页面体积都不再
+	// 随命中数据增长）。商品名只允许出现在片段响应里 —— 紧随其后验证片段确实给了它。
+	if strings.Contains(body, "上架商品") {
+		t.Fatal("标签页首屏不应内联命中商品（PERF-02：命中商品改为展开时按页取）")
+	}
+	rec = httptestGet(engine, "/admin/product-tags/hits?project="+f.projectID+"&id="+manualID+"&page=1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("命中商品片段应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	hitsBody := rec.Body.String()
+	for _, want := range []string{"上架商品", "清仓", "命中", "个商品"} {
+		if !strings.Contains(hitsBody, want) {
+			t.Fatalf("命中商品片段缺少 %q：%s", want, hitsBody)
 		}
 	}
 	// 标签挂载：换目标页面到商品详情页 —— 改造后商品列表页只回答「有哪些商品」，

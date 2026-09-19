@@ -40,6 +40,23 @@ type TagProductResp struct {
 	Status string `json:"status"`
 }
 
+// TagProductsPageResp 命中商品的一页（审计 PERF-02）。
+//
+// 分页元数据与商品行分开：后台展开区要能显示「共 N 条，第 X-Y 条」，而商品行本身
+// 只占一小段 —— 只回行不回元数据的话，翻页链接与总数就得由前端另算一次。
+type TagProductsPageResp struct {
+	TagID   string `json:"tagId"`
+	TagName string `json:"tagName"`
+	// Total 该标签命中的商品总数（不受本页条数影响）。
+	Total int `json:"total"`
+	// Page 当前页（从 1 开始）；TotalPage 至少为 1（空列表也算一页）。
+	Page      int `json:"page"`
+	PageSize  int `json:"pageSize"`
+	TotalPage int `json:"totalPage"`
+	// Items 本页的商品行。
+	Items []*TagProductResp `json:"items"`
+}
+
 // TagRuleTypeResp 内置规则类型（后台规则下拉与参数说明的唯一来源）。
 type TagRuleTypeResp struct {
 	Type string `json:"type"`

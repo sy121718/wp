@@ -72,4 +72,6 @@ func init() {
 	registerI18nViewPermission()
 	// 297：块删除保护的引用类别词条（MsgBlockUsage*，见 register_block_usage_i18n.go）。
 	registerBlockUsageI18n()
+	// 298：商品标签页「命中商品」展开区的词条（审计 PERF-02，见 register_product_tag_hits_i18n.go）。
+	registerProductTagHitsI18n()
 }
