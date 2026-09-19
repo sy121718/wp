@@ -51,7 +51,7 @@
 | 列 | 迁移 | 语义 |
 |---|---|---|
 | `override_document` | 281 | jsonb，**NULL = 跟随模板**；非空 = 该实例自己的文档。发布/重建按它取底稿，binding 仍照常解析实体数据（补数据不丢自定义） |
-| `render_mode` | 282 | text，DDL CHECK 闭集 `template` / `document`，默认 `template`。**它是模式的唯一判定依据** —— 不要用 `override_document` 空/非空推断（「改了又改回去」「重新套用预设」两种状态会漂移）；模板换代的 stale 传播只标 `template` 模式的实例 |
+| `render_mode` | 282 | text，DDL CHECK 闭集 `template` / `document`，默认 `template`。**它是模式的唯一判定依据** —— 不要用 `override_document` 空/非空推断（「改了又改回去」「重新套用预设」两种状态会漂移）；正文模板换代仅标记 `template` 模式；页眉/页脚等结构模板依赖对两种模式均生效（gpt 专项复核修正） |
 
 两列的写路径都收在同一次发布的事务里（模式/文档 + 快照 + 产物行 + 指针），换模板 = 放弃自定义（同事务清 `render_mode` 与文档）。
 

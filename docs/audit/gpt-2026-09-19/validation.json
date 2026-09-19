@@ -1,0 +1,215 @@
+{
+  "基线": {
+    "测试节点": {
+      "pass": 4870,
+      "skip": 15,
+      "fail": 19
+    },
+    "包": {
+      "skip": 132,
+      "pass": 167,
+      "fail": 2
+    },
+    "条件跳过": [
+      {
+        "包": "go_wp/internal/module/workbench/inbound/http",
+        "测试": "TestRepeaterBrowserFixture"
+      },
+      {
+        "包": "go_wp/internal/routers",
+        "测试": "TestDumpRoutesForAudit"
+      },
+      {
+        "包": "go_wp/internal/routers",
+        "测试": "TestRouteSnapshotStable"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminRolesPageErrParamIsSanitized"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminRolePermissionsPageRendersCheckedNodes"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminRolePermissionsPageRedirectsWithoutRoleID"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminRolePermissionsSaveParsesMenuIDs"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminRolePermissionsSaveEmptySelectionIsSubmitted"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminRolePermissionsSaveRejectsMissingRoleID"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminShellI18nSwitchesWithCookie"
+      },
+      {
+        "包": "go_wp/public/test/admin/feature",
+        "测试": "TestAdminShellI18nNoRawKeys"
+      },
+      {
+        "包": "go_wp/public/test/mail/feature",
+        "测试": "TestLiveAccountTestSend"
+      },
+      {
+        "包": "go_wp/public/test/product/feature",
+        "测试": "TestAdminUIBrowserFixture"
+      },
+      {
+        "包": "go_wp/public/test/pkg/i18n",
+        "测试": "TestSiteLangURLModeFromConfigFile"
+      },
+      {
+        "包": "go_wp/public/test/pkg/i18n",
+        "测试": "TestSiteLangURLModeConfigFile"
+      }
+    ],
+    "计数说明": "测试节点包含子用例；包级 skip 主要表示无测试文件，不能与条件用例 skip 混算。"
+  },
+  "完整普通回归": {
+    "测试节点": {
+      "pass": 4925,
+      "skip": 7
+    },
+    "包": {
+      "skip": 132,
+      "pass": 169
+    },
+    "条件跳过": [
+      {
+        "包": "go_wp/internal/module/workbench/inbound/http",
+        "测试": "TestRepeaterBrowserFixture"
+      },
+      {
+        "包": "go_wp/internal/routers",
+        "测试": "TestDumpRoutesForAudit"
+      },
+      {
+        "包": "go_wp/internal/routers",
+        "测试": "TestRouteSnapshotStable"
+      },
+      {
+        "包": "go_wp/public/test/mail/feature",
+        "测试": "TestLiveAccountTestSend"
+      },
+      {
+        "包": "go_wp/public/test/product/feature",
+        "测试": "TestAdminUIBrowserFixture"
+      },
+      {
+        "包": "go_wp/public/test/pkg/i18n",
+        "测试": "TestSiteLangURLModeFromConfigFile"
+      },
+      {
+        "包": "go_wp/public/test/pkg/i18n",
+        "测试": "TestSiteLangURLModeConfigFile"
+      }
+    ],
+    "计数说明": "测试节点包含子用例；包级 skip 主要表示无测试文件，不能与条件用例 skip 混算。"
+  },
+  "完整竞态回归": {
+    "测试节点": {
+      "pass": 4925,
+      "skip": 7
+    },
+    "包": {
+      "skip": 132,
+      "pass": 169
+    },
+    "条件跳过": [
+      {
+        "包": "go_wp/internal/module/workbench/inbound/http",
+        "测试": "TestRepeaterBrowserFixture"
+      },
+      {
+        "包": "go_wp/internal/routers",
+        "测试": "TestDumpRoutesForAudit"
+      },
+      {
+        "包": "go_wp/internal/routers",
+        "测试": "TestRouteSnapshotStable"
+      },
+      {
+        "包": "go_wp/public/test/mail/feature",
+        "测试": "TestLiveAccountTestSend"
+      },
+      {
+        "包": "go_wp/public/test/product/feature",
+        "测试": "TestAdminUIBrowserFixture"
+      },
+      {
+        "包": "go_wp/public/test/pkg/i18n",
+        "测试": "TestSiteLangURLModeFromConfigFile"
+      },
+      {
+        "包": "go_wp/public/test/pkg/i18n",
+        "测试": "TestSiteLangURLModeConfigFile"
+      }
+    ],
+    "计数说明": "测试节点包含子用例；包级 skip 主要表示无测试文件，不能与条件用例 skip 混算。"
+  },
+  "命令": [
+    {
+      "命令": "go test -json -count=1 -p 8 ./...",
+      "结果": "通过"
+    },
+    {
+      "命令": "go test -race -json -count=1 -p 6 ./...",
+      "结果": "通过"
+    },
+    {
+      "命令": "go vet ./...",
+      "结果": "通过"
+    },
+    {
+      "命令": "go build -o /tmp/wp-gpt-audit/app ./cmd",
+      "结果": "通过"
+    },
+    {
+      "命令": "bash scripts/check-workbench.sh",
+      "结果": "通过，包含 Node 契约校验"
+    },
+    {
+      "命令": "bash scripts/check-no-internal-error-leak.sh",
+      "结果": "通过，24 个 inbound/http 目录"
+    },
+    {
+      "命令": "bash scripts/check-service-db-boundary.sh",
+      "结果": "通过，保留脚本本身的启发式边界"
+    },
+    {
+      "命令": "bash scripts/check-i18n-coverage.sh",
+      "结果": "通过，未 key 化中文基线 0"
+    },
+    {
+      "命令": "SKY_CSS_GUARD=error bash scripts/check-multidevice-css.sh",
+      "结果": "通过，44 组件/147 样式/0 未豁免违规/8 原有豁免"
+    }
+  ],
+  "未执行": [
+    "业务库 DBX schema/统计/执行计划审计：当前工具列表没有 DBX，未绕过项目约定用 psql 查业务库。",
+    "check-permission-gaps.sh：脚本依赖业务配置与 psql，未宣称通过；无新增 API 路由/权限点。",
+    "真实外部 SMTP 发信：不执行对外发送。",
+    "生产 CDN、搜索平台数据、完整 RTL、读屏全站、生产压测和断电/多进程故障注入未做。"
+  ],
+  "源码冻结说明": "完整 race 在最后两份纯 CSS 媒体查询调整前通过；之后额外跑模板/builder/product 的 race 回归与最终全量普通回归。文档更新不改变业务实现。",
+  "补充回归": {
+    "命令": "go test -race ./internal/middleware/builtin ./internal/templates ./internal/builder/... ./public/test/product/feature",
+    "说明": "覆盖最后纯 CSS 修改及 HEAD/模板加载失败断言；以 final-assets-race.log 确认结果。",
+    "结果": "通过"
+  },
+  "浏览器夹具": {
+    "版本": "gpt 当前代码",
+    "命令": "GOWP_ADMIN_UI_BROWSER=1 GOWP_ADMIN_UI_BROWSER_ADDR=127.0.0.1:19128 GOWP_ADMIN_UI_BROWSER_DURATION=4m go test ./public/test/product/feature -run ^TestAdminUIBrowserFixture$ -v -timeout 6m",
+    "结果": "PASS，夹具正常退出并运行隔离库清理。",
+    "范围": "两工程品牌/分类/标签保存；抽屉可访问性和 375/1440 布局；未覆盖生产认证链。"
+  }
+}
