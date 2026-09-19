@@ -341,6 +341,19 @@ func registerCoreSchemaAndAccess() {
 		SQL:       mustSQL("281_presentation_override_document.sql"),
 	})
 
+	// 282：presentation_instances 渲染模式（商品页双轨，docs/04-C-instance-override.md）。
+	//
+	// template（默认）= 跟随绑定模板（现状零回归）；document = 该商品独立文档（override_document）。
+	// 显式成列的原因：模板更新的 stale 分流要在 SQL 里可判定，且「改了又改回去」这类
+	// 状态用「override 是否为空」推断会漂移。presentation_instances 已由 002 创建，
+	// 默认表存在检查会误跳过，仿 281 按列是否存在判断（限定 current_schema()）。
+	register(Migration{
+		Version:   "282-presentation-render-mode",
+		TableName: "presentation_instances",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'render_mode'",
+		SQL:       mustSQL("282_presentation_render_mode.sql"),
+	})
+
 	// 269：navigation 内部错误归口文案（审计 CQ-009）。
 	// enums 的值就是 i18n key（navigationenums.ErrInternal）—— 不 seed，响应层 translate
 	// 未命中会把 key 原样返回给前端。判据按本批自己的 key 计数：用总量会被同期其它批次

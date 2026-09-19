@@ -317,4 +317,48 @@ func registerI18nDataLayer() {
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.dashboard.loadError'",
 		SQL:          mustSQL("235_i18n_seed_dashboard_degrade.sql"),
 	})
+
+	// 237：block 模块补漏 —— ErrBlockProjectRequired（1 key × 2 语言）。
+	//
+	// DB-009 第六批给 block 加了该哨兵，但词条没同批 seed；缺词条时它会被原样显示成
+	// ErrBlockProjectRequired（enums 常量的值就是 key）。判定只看自己的 key。
+	registerSeed(Seed{
+		Version:      "237-i18n-seed-block-project-required",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrBlockProjectRequired'",
+		SQL:          mustSQL("237_i18n_seed_block_project_required.sql"),
+	})
+
+	// 253：变体清单「预览—保存」模型的词条（docs/14 §8，2026-09-19 用户拍板）——
+	// 「保存」时服务端重算清单行得出的两条业务错误（ErrVariantSKUEmpty /
+	// ErrVariantOptionsInvalid）+ 四个跳过原因（VariantSkip*：仍有库存 / 被 BOM 引用 /
+	// 行重复 / 变体已被别处删除），加上商品详情页清单区块与生成抽屉的新文案位。
+	// enums 常量值即 i18n key，不 seed 就会在页面上原样显示裸 key；判定只看自己的 key。
+	registerSeed(Seed{
+		Version:      "253-i18n-seed-product-variant-list",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrVariantSKUEmpty'",
+		SQL:          mustSQL("253_product_variant_list_i18n.sql"),
+	})
+
+	// 264：商品侧第一批（仓库侧裸码 / 多仓与认领复用 / 无限库存 / 主体 SKU 唯一性预检）的词条。
+	// 一条业务错误（ErrContainerSKUTaken，enums 常量值即 key）+ 商品列表库存三态与新建抽屉
+	// 的新文案位（多仓勾选 / SKU 认领与新建预览 / 数量不填 = 无限）。判定只看自己的 key。
+	registerSeed(Seed{
+		Version:      "264-i18n-seed-product-warehouse-stock",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrContainerSKUTaken'",
+		SQL:          mustSQL("264_product_warehouse_stock_i18n.sql"),
+	})
+
+	// 258：ErrAuditFailed（publication 模块）词条 —— 修 CQ-009 的连带项。
+	// SEO 体检接口此前把 service 错误原文交给 response.ErrorWithMessage（基础设施错误会带
+	// 产物路径甚至 SQL 片段）；改成固定归口 key 之后必须有词条，否则 translate 查不到会原样
+	// 返回 ErrAuditFailed 这个裸 key。判定只看自己的 key。
+	registerSeed(Seed{
+		Version:      "258-i18n-seed-publication-audit-failed",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrAuditFailed'",
+		SQL:          mustSQL("258_publication_audit_failed_i18n.sql"),
+	})
 }

@@ -130,4 +130,65 @@ func registerOrderAndSiteSlots() {
 			"AND table_name = 'page_views'",
 		SQL: mustSQL("147_page_views.sql"),
 	})
+
+	// 256：成本快照口径收口（2026-09-19 商品域评审）—— 订单行的成本从「变体级
+	// product_variants.cost_price」改为「该变体在该行归属仓的当前成本」后，两处结构要跟上：
+	//   1. order_items.cost_price 可空（NULL = 下单时该 (仓库, SKU) 尚未核算，
+	//      绝不用 0 冒充；0 是合法的显式成本）；
+	//   2. inventory_stock_movements.unit_cost（出库时刻的成本留痕，numeric(12,2)）。
+	// CheckSQL 判「列已可空且无默认值 / unit_cost 列已存在」，**不是**只判列存在：
+	// cost_price 自 135 起就在，只判存在会永远为真、迁移被静默跳过，而「列在但仍是
+	// NOT NULL DEFAULT 0」的状态永远修不好（DB-015 的坑，240/244/251 同手法）。
+	register(Migration{
+		Version:   "256-order-item-cost-nullable-movement-unit-cost",
+		TableName: "order_items",
+		CheckSQL: "SELECT CASE WHEN (" +
+			"SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name = 'order_items' AND column_name = 'cost_price' " +
+			"AND is_nullable = 'YES' AND column_default IS NULL" +
+			") = 1 AND (" +
+			"SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() " +
+			"AND table_name = 'inventory_stock_movements' AND column_name = 'unit_cost'" +
+			") = 1 THEN 1 ELSE 0 END",
+		SQL: mustSQL("256_order_item_cost_nullable.sql"),
+	})
+
+	// 270：入库入口的 SKU 编码校验词条 ErrStockSKURequired（中英各一行）。
+	//
+	// 词条本身属于**库存域**（internal/module/product/inventory/enums），但本批的注册文件
+	// 授权只到 register_order.go（其余 register_*.go 属别的批次），所以按批次约定登记在这里。
+	// 判定按本批自己的 key 计数：用「全库总量」会被其它批次的行满足而静默跳过
+	//（058 踩过，见 226 的注释）；ConditionSQL 里**不能出现 ?** —— 它不接受迁移器传参，
+	// 带了 ? 会让判定恒为 0、每次启动都重跑。
+	registerSeed(Seed{
+		Version:      "270-inventory-stock-sku-required-i18n",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'ErrStockSKURequired'",
+		SQL:          mustSQL("270_inventory_stock_sku_required_i18n.sql"),
+	})
+
+	// 272：采购入库页补回「生产入库」表单时新增的 11 个文案位（中英成对，22 行）。
+	//
+	// 路由 /admin/inventory/purchases/production、权限点 inventory:purchase_production 与
+	// handler 一直在，缺的只是页面入口 —— 本批把表单补回采购入库页
+	//（internal/templates/admin/inventory_purchases.html）。模板文案一律走 t(key, 中文兜底)，
+	// 词条必须同批 seed 中英各一行：缺 en-US 不会有任何断言变红，只会让英文界面显示中文。
+	//
+	// 判定按**本批自己的 key 列表**计数（用「全库总量」会被其它批次的行满足而静默跳过，
+	// 058 踩过；用 LIKE 前缀也会被将来新增的同前缀 key 带跑）；ConditionSQL 里不能出现 ? ——
+	// 它不接受迁移器传参，带了 ? 会让判定恒为 0、每次启动都重跑。
+	registerSeed(Seed{
+		Version:   "272-inventory-production-inbound-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 22 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key IN (" +
+			"'admin.inventory_purchases.production.title', 'admin.inventory_purchases.production.open', " +
+			"'admin.inventory_purchases.production.noInternal', 'admin.inventory_purchases.production.labelSource', " +
+			"'admin.inventory_purchases.production.optionSource', 'admin.inventory_purchases.production.labelSku', " +
+			"'admin.inventory_purchases.production.optionSku', 'admin.inventory_purchases.production.labelQuantity', " +
+			"'admin.inventory_purchases.production.labelCost', 'admin.inventory_purchases.production.hintCost', " +
+			"'admin.inventory_purchases.production.submit')",
+		SQL: mustSQL("272_inventory_production_inbound_i18n.sql"),
+	})
 }

@@ -1,0 +1,95 @@
+-- 259 · 捆绑成员的三种来源 + 变体删除守卫补引用面（docs/14 §1.2 / §8，批次 C）。
+--
+-- 本批新增的 enums 常量值就是 i18n key，真文案在这张表里；缺词条的后果是页面上原样显示
+-- BundleMemberNotOnProduct 这种裸 key（既不中文也不是话），所以新增常量必须同批 seed。
+--
+-- 两类常量 + 两类模板文案：
+--   · 删除守卫的两个新引用面（VariantSkipBundleReferenced / VariantSkipHasMovement）——
+--     「保存变体清单」与单条删除都会逐条回带它们（不整批失败、不静默）；
+--   · 成员来源（BundleSource*）与解析期错误 / 逐条跳过原因（ErrBundleSource*、
+--     BundleMember*）—— 三条来源共用一套「成功 N / 跳过 M + 逐条原因」口径；
+--   · 捆绑配置页的成员来源面板（来源选择 / 候选 / 解析按钮 / 状态行 / 来源列）；
+--   · 商品详情页「捆绑构成」表新增的成员来源列。
+--
+-- 幂等：ON CONFLICT (item_key, lang) DO NOTHING —— seed 是默认值来源，后台是真相来源。
+INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
+VALUES
+('VariantSkipBundleReferenced', 'zh-CN', '该变体被捆绑成员引用，未删除（请先在捆绑配置里解除引用）', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('VariantSkipBundleReferenced', 'en-US', 'Referenced by a bundle member, not deleted (remove the reference in the bundle config first)', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('VariantSkipHasMovement', 'zh-CN', '该变体有过库存流水（已被订单或库存变动用过），未删除（请改为停用）', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('VariantSkipHasMovement', 'en-US', 'This variant has stock movements (used by orders or stock changes), not deleted (disable it instead)', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleSourceProduct', 'zh-CN', '从商品导入', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleSourceProduct', 'en-US', 'Import from a product', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleSourceWarehouse', 'zh-CN', '从仓库选', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleSourceWarehouse', 'en-US', 'Pick from a warehouse', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleSourceAttributes', 'zh-CN', '自选属性组合', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleSourceAttributes', 'en-US', 'Compose from attribute values', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('ErrBundleSourceInvalid', 'zh-CN', '成员来源不合法：只支持「从商品导入」「从仓库选」「自选属性值组合」', 400, 'product', 'internal/module/product/enums', 1, now(), now()),
+('ErrBundleSourceInvalid', 'en-US', 'Invalid member source: only product import, warehouse pick, and attribute composition are supported', 400, 'product', 'internal/module/product/enums', 1, now(), now()),
+('ErrBundleSourceProductRequired', 'zh-CN', '该来源必须先选一个来源商品', 400, 'product', 'internal/module/product/enums', 1, now(), now()),
+('ErrBundleSourceProductRequired', 'en-US', 'This source requires picking a source product first', 400, 'product', 'internal/module/product/enums', 1, now(), now()),
+('ErrBundleSourceWarehouseRequired', 'zh-CN', '从仓库选时必须指定仓库并至少勾选一条仓库 SKU', 400, 'product', 'internal/module/product/enums', 1, now(), now()),
+('ErrBundleSourceWarehouseRequired', 'en-US', 'Picking from a warehouse requires a warehouse and at least one warehouse SKU', 400, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberNotOnProduct', 'zh-CN', '该属性值组合在商品侧没有对应变体，未加入（请先到该商品上生成这个规格的变体）', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberNotOnProduct', 'en-US', 'No variant exists for this attribute combination, not added (generate that variant on the product first)', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberSkippedInList', 'zh-CN', '该 SKU 已在成员清单里，未重复加入', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberSkippedInList', 'en-US', 'This SKU is already in the member list, not added again', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberWarehouseSKUMissing', 'zh-CN', '该仓库里没有这条仓库 SKU，未加入（请确认仓库选对了，或先在该仓建好这条货）', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberWarehouseSKUMissing', 'en-US', 'This warehouse has no such warehouse SKU, not added (check the warehouse, or create this item there first)', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberVariantDisabled', 'zh-CN', '该变体已停用，未加入（停用的 SKU 挂进套餐会变成前台选不了又躲不开的必选项）', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberVariantDisabled', 'en-US', 'This variant is disabled, not added (a disabled SKU in a bundle becomes an unavoidable option on the storefront)', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberOptionsExceeded', 'zh-CN', '已达该捆绑配置的选项数量上限，未加入（可先调大上限再解析）', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('BundleMemberOptionsExceeded', 'en-US', 'The option limit of this bundle config is reached, not added (raise the limit and resolve again)', 200, 'product', 'internal/module/product/enums', 1, now(), now()),
+('admin.product_bundle.intro.sources', 'zh-CN', '成员有三种来源：从商品导入 / 从仓库选 / 自选属性值组合 —— 解析只把候选行追加到成员清单，点「保存配置」才落库。成员引用的永远是变体，来源只作溯源与展示。', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.intro.sources', 'en-US', 'Members come from three sources: import from a product / pick from a warehouse / compose attribute values. Resolving only appends candidate rows to the member list; nothing is persisted until you save the config. A member always references a variant; the source is provenance for display only.', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.title', 'zh-CN', '成员来源', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.title', 'en-US', 'Member sources', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.hint', 'zh-CN', '解析只把候选行追加到成员清单，不写库；点「保存配置」才落库。三条来源共用同一套去重与逐条原因：同一 SKU 只出现一次，某一条解析不出来只跳过它并说明原因。', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.hint', 'en-US', 'Resolving only appends candidate rows to the member list; nothing is written until you save. All three sources share one dedupe rule and one per-row reason report: the same SKU appears once, and a row that cannot be resolved is skipped with a reason.', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.kind', 'zh-CN', '来源', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.kind', 'en-US', 'Source', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.productLabel', 'zh-CN', '来源商品', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.productLabel', 'en-US', 'Source product', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseLabel', 'zh-CN', '来源仓库', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseLabel', 'en-US', 'Source warehouse', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehousePlaceholder', 'zh-CN', '— 选择仓库 —', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehousePlaceholder', 'en-US', '— pick a warehouse —', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.refresh', 'zh-CN', '刷新候选', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.refresh', 'en-US', 'Refresh candidates', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseEmpty', 'zh-CN', '先选一个来源仓库：这里会列出该仓的仓库 SKU，勾选即代表「这条货在这个仓」。', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseEmpty', 'en-US', 'Pick a source warehouse first: its warehouse SKUs will be listed here; selecting one means this item in that warehouse.', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseNoSku', 'zh-CN', '这个仓还没有任何库存记录：先到库存页为该仓建货，再回来选。', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseNoSku', 'en-US', 'This warehouse has no stock records yet: create stock for it on the inventory page, then come back.', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseSkuLegend', 'zh-CN', '仓库 SKU（可多选；选中即定位到该仓那条货的变体）', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseSkuLegend', 'en-US', 'Warehouse SKUs (multi-select; selecting one resolves to that item''s variant)', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.attrEmpty', 'zh-CN', '先选一个来源商品（且该商品已配好「参与变体」的属性组）：这里会列出它的属性值，勾选后由服务端按属性组固定顺序重算组合。', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.attrEmpty', 'en-US', 'Pick a source product first: its variation attribute values will be listed here, and the server recomputes the combinations in the fixed attribute-group order.', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.resolve', 'zh-CN', '解析并追加成员', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.resolve', 'en-US', 'Resolve and append members', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.remove', 'zh-CN', '移除', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.remove', 'en-US', 'Remove', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.col.source', 'zh-CN', '来源', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.col.source', 'en-US', 'Source', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.added', 'zh-CN', '已追加 %d 行到成员清单（还没保存）', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.added', 'en-US', '%d row(s) appended to the member list (not saved yet)', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.none', 'zh-CN', '没有解析出任何候选成员', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.none', 'en-US', 'No candidate members were resolved', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.skipped', 'zh-CN', '跳过 %d 条：', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.skipped', 'en-US', '%d row(s) skipped: ', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.failed', 'zh-CN', '解析失败：', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.status.failed', 'en-US', 'Resolve failed: ', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.product', 'zh-CN', '从商品导入', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.product', 'en-US', 'Imported from a product', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouse', 'zh-CN', '从仓库选', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouse', 'en-US', 'Picked from a warehouse', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.attributes', 'zh-CN', '自选属性组合', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.attributes', 'en-US', 'Composed from attribute values', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.none', 'zh-CN', '手工指定', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.none', 'en-US', 'Manual', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseSkuLabel', 'zh-CN', '仓库 SKU', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.warehouseSkuLabel', 'en-US', 'warehouse SKU', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.externalSkuLabel', 'zh-CN', '外部编码', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_bundle.source.externalSkuLabel', 'en-US', 'external code', 200, 'product', 'internal/templates/admin/product_bundle.html', 1, now(), now()),
+('admin.product_detail.bundle.col.source', 'zh-CN', '成员来源', 200, 'product', 'internal/templates/admin/product_detail.html', 1, now(), now()),
+('admin.product_detail.bundle.col.source', 'en-US', 'Member source', 200, 'product', 'internal/templates/admin/product_detail.html', 1, now(), now())
+ON CONFLICT (item_key, lang) DO NOTHING;

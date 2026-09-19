@@ -71,7 +71,7 @@ func registerAdminI18nSeedsAndLatest() {
 	registerSeed(Seed{
 		Version:      "180-i18n-seed-order",
 		TableName:    "sys_i18n",
-		ConditionSQL: `SELECT CASE WHEN COUNT(*) >= 62 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('order.msg.createSuccess', 'order.msg.statusChanged', 'order.msg.cancelled', 'order.msg.cancelledStockWarning', 'order.msg.refunded', 'order.msg.paid', 'order.msg.noteUpdated', 'order.err.invalidParam', 'order.err.projectRequired', 'order.err.itemsRequired', 'order.err.itemLimitExceeded', 'order.err.quantityInvalid', 'order.err.customerEmailRequired', 'order.err.customerEmailInvalid', 'order.err.orderNoInvalid', 'order.err.statusInvalid', 'order.err.noteTooLong', 'order.err.orderNotFound', 'order.err.orderNoTaken', 'order.err.orderHasNoItems', 'order.err.statusTransition', 'order.err.orderNotCancellable', 'order.err.orderNotRefundable', 'order.err.alreadyCancelled', 'order.err.alreadyRefunded', 'order.err.cancelReasonRequired', 'order.err.paymentMethodRequired', 'order.err.paymentChannelFailed', 'order.msg.returnRequested', 'order.msg.returnApproved', 'order.msg.returnRejected', 'order.msg.returnReceived', 'order.msg.returnCancelled', 'order.err.returnNotFound', 'order.err.returnItemsRequired', 'order.err.returnQuantityInvalid', 'order.err.returnQuantityExceeded', 'order.err.returnReasonRequired', 'order.err.returnNotCancellable', 'order.err.returnOrderNotReturnable', 'order.err.returnNotReviewable', 'order.err.returnNotReceivable', 'order.err.returnRejectReasonRequired', 'order.err.variantNotFound', 'order.err.stockInsufficient', 'order.err.stockUnavailable', 'order.msg.couponCreated', 'order.msg.couponUpdated', 'order.msg.couponDeleted', 'order.err.couponNotFound', 'order.err.couponCodeRequired', 'order.err.couponCodeTaken', 'order.err.couponTypeInvalid', 'order.err.couponValueInvalid', 'order.err.couponWindowInvalid', 'order.err.couponDisabled', 'order.err.couponNotStarted', 'order.err.couponExpired', 'order.err.couponExhausted', 'order.err.couponUserLimit', 'order.err.couponMinSubtotal', 'order.err.couponInUse')`,
+		ConditionSQL: `SELECT CASE WHEN COUNT(*) >= 61 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN ('order.msg.createSuccess', 'order.msg.statusChanged', 'order.msg.cancelled', 'order.msg.refunded', 'order.msg.paid', 'order.msg.noteUpdated', 'order.err.invalidParam', 'order.err.projectRequired', 'order.err.itemsRequired', 'order.err.itemLimitExceeded', 'order.err.quantityInvalid', 'order.err.customerEmailRequired', 'order.err.customerEmailInvalid', 'order.err.orderNoInvalid', 'order.err.statusInvalid', 'order.err.noteTooLong', 'order.err.orderNotFound', 'order.err.orderNoTaken', 'order.err.orderHasNoItems', 'order.err.statusTransition', 'order.err.orderNotCancellable', 'order.err.orderNotRefundable', 'order.err.alreadyCancelled', 'order.err.alreadyRefunded', 'order.err.cancelReasonRequired', 'order.err.paymentMethodRequired', 'order.err.paymentChannelFailed', 'order.msg.returnRequested', 'order.msg.returnApproved', 'order.msg.returnRejected', 'order.msg.returnReceived', 'order.msg.returnCancelled', 'order.err.returnNotFound', 'order.err.returnItemsRequired', 'order.err.returnQuantityInvalid', 'order.err.returnQuantityExceeded', 'order.err.returnReasonRequired', 'order.err.returnNotCancellable', 'order.err.returnOrderNotReturnable', 'order.err.returnNotReviewable', 'order.err.returnNotReceivable', 'order.err.returnRejectReasonRequired', 'order.err.variantNotFound', 'order.err.stockInsufficient', 'order.err.stockUnavailable', 'order.msg.couponCreated', 'order.msg.couponUpdated', 'order.msg.couponDeleted', 'order.err.couponNotFound', 'order.err.couponCodeRequired', 'order.err.couponCodeTaken', 'order.err.couponTypeInvalid', 'order.err.couponValueInvalid', 'order.err.couponWindowInvalid', 'order.err.couponDisabled', 'order.err.couponNotStarted', 'order.err.couponExpired', 'order.err.couponExhausted', 'order.err.couponUserLimit', 'order.err.couponMinSubtotal', 'order.err.couponInUse')`,
 		SQL:          mustSQL("180_i18n_seed_order.sql"),
 	})
 
@@ -812,5 +812,56 @@ func registerAdminI18nSeedsAndLatest() {
 		TableName:    "sys_permission",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code = 'contenttemplate:delete'",
 		SQL:          mustSQL("234_contenttemplate_delete_permission.sql"),
+	})
+
+	// 254：把 188 的 4 条「富文本说明」文案纠正成真实行为（h1~h5 原样保留、表格/折叠块/水平线在白名单内）。
+	// 188 用 INSERT ... ON CONFLICT DO NOTHING，改它的 SQL 对存量库无效；历史迁移 SQL 也不回改
+	//（AGENTS.md：seed 可重复执行要同步改，历史迁移保持原样），所以这里补一条 UPDATE 迁移，
+	// 让新库与存量库最终一致。判定看自己这批的关键字（写进 SQL 字面量，ConditionSQL 不接收参数）。
+	registerSeed(Seed{
+		Version:      "254-admin-richtext-hint-fix",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.article.edit.bodyHint' AND item_value LIKE '%h1~h5 原样保留%'",
+		SQL:          mustSQL("254_admin_richtext_hint_i18n_fix.sql"),
+	})
+
+	// 268：admin 内部错误归口文案（审计 CQ-009/CQ-010 的 admin 收口）。
+	// enums 的值就是 i18n key（adminenums.ErrInternal）—— 不 seed，响应层 translate 未命中
+	// 会把 key 原样返回给前端。判据按本批自己的 key 枚举计数：用总量会被同期其它批次的行
+	// 满足而静默跳过（060 / 221 都记过这个坑）。
+	registerSeed(Seed{
+		Version:      "268-admin-err-internal",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrInternal'",
+		SQL:          mustSQL("268_admin_err_internal_i18n.sql"),
+	})
+
+	// 271：admin 错误文案第二组 —— 列表排序参数与文案词条表单缺项（5 个 key × 中英 = 10 行）。
+	// 这两组此前都不在白名单里：排序错误是 service 里的中文原文（被归口成通用提示），
+	// 表单缺项则三项共用一句「必填字段不能为空」。判据按本批自己的 key **全集合枚举**计数：
+	// 用总量或前缀（admin.err.%）会被同期其它批次的行满足，本批就被静默跳过了（060 / 221 记过这个坑）。
+	registerSeed(Seed{
+		Version:   "271-admin-err-sort-and-i18n-form-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 5 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN (" +
+			"'admin.err.sortFieldInvalid', 'admin.err.sortDirectionInvalid', " +
+			"'admin.err.i18nKeyEmpty', 'admin.err.i18nLangEmpty', 'admin.err.i18nValueEmpty')",
+		SQL: mustSQL("271_admin_err_sort_and_i18n_form_i18n.sql"),
+	})
+
+	// 278：页面列表页的「发布回执收敛状态」词条（admin.pages.receipts.*，5 个 key × 中英 = 10 行）。
+	// 状态条渲染在 /admin/pages：待收敛条数 / 最老一条已等待多久 / 最近一次收敛 / 建议操作。
+	// 判据按本批自己的 key **全集合枚举**计数：用总量或前缀（admin.pages.%）会被同期其它批次
+	// 的行满足，本批就被静默跳过了（060 / 221 记过这个坑）。
+	registerSeed(Seed{
+		Version:   "278-page-pending-receipts-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 5 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN (" +
+			"'admin.pages.receipts.pending', 'admin.pages.receipts.oldest', " +
+			"'admin.pages.receipts.last_converge', 'admin.pages.receipts.action', " +
+			"'admin.pages.receipts.ok')",
+		SQL: mustSQL("278_page_pending_receipts_i18n.sql"),
 	})
 }

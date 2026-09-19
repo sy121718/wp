@@ -13,8 +13,6 @@ VALUES
     ('order.msg.statusChanged', 'en-US', 'Order status updated', 'order', '', 1, 200, now(), now()),
     ('order.msg.cancelled', 'zh-CN', '订单已取消', 'order', '', 1, 200, now(), now()),
     ('order.msg.cancelled', 'en-US', 'Order cancelled', 'order', '', 1, 200, now(), now()),
-    ('order.msg.cancelledStockWarning', 'zh-CN', '订单已取消，但库存归还未完成，请人工处理', 'order', '', 1, 200, now(), now()),
-    ('order.msg.cancelledStockWarning', 'en-US', 'Order cancelled, but stock was not returned; manual handling required', 'order', '', 1, 200, now(), now()),
     ('order.msg.refunded', 'zh-CN', '订单已退款', 'order', '', 1, 200, now(), now()),
     ('order.msg.refunded', 'en-US', 'Order refunded', 'order', '', 1, 200, now(), now()),
     ('order.msg.paid', 'zh-CN', '支付成功，订单已确认', 'order', '', 1, 200, now(), now()),

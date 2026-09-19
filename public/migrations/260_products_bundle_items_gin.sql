@@ -1,0 +1,21 @@
+-- 260 · products.bundle_items 的 GIN 索引（删除守卫的「被捆绑成员引用」查询）
+--
+-- 背景：批次 C 给变体删除守卫加了第四个引用面 —— 某个变体是否被某个捆绑商品的成员清单引用
+-- （products.bundle_items.options[].variantId）。查询最初写成嵌套表达式：
+--     bundle_items -> 'options' @> jsonb_build_array(jsonb_build_object('variantId', ?::text))
+-- 并打算在整列上建 GIN。**实测证明那条路不可行**（本地 PG，enable_seqscan=off 的 EXPLAIN）：
+--   · 整列 GIN + 整列包含   bundle_items @> …                       → Index Cond ✅
+--   · 整列 GIN + 嵌套表达式 bundle_items -> 'options' @> …          → 无 Index Cond ❌
+--   · 表达式 GIN + 嵌套表达式                                       → Index Cond ✅
+-- GIN 的可索引操作符作用在**被索引的表达式**上，所以「整列索引 + 嵌套表达式」永远走不进索引。
+-- 于是选**整列包含**这种写法（语义等价：options 数组里存在一个含该 variantId 的元素），
+-- 索引也就能用上；顺带保住「整列包含」这个更通用的形状（将来问「哪些捆绑含商品 X」同样命中）。
+--
+-- jsonb_path_ops 而不是默认 jsonb_ops：只支持 @> 这类包含判定，体积更小、更贴合本用途；
+-- 代价是它**不支持 ? / ?| / ?& 的键存在查询**（067 的注释记过这个取舍）——
+-- 将来真需要键存在查询时再补一条 jsonb_ops 的索引，不要在这条上改。
+--
+-- 幂等：CREATE INDEX IF NOT EXISTS；注册侧 CheckSQL 判本索引是否已在（限定 current_schema()，
+-- 否则并发测试或残留 schema 里的同名索引会让判定恒为真而静默跳过）。
+CREATE INDEX IF NOT EXISTS idx_products_bundle_items_gin
+    ON products USING gin (bundle_items jsonb_path_ops);

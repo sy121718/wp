@@ -125,4 +125,17 @@ func registerIdentityAndMail() {
 			"'fk_product_price_adjustment_items_product', 'fk_product_price_adjustment_items_variant')",
 		SQL: mustSQL("134_inventory_reference_fks.sql"),
 	})
+
+	// 276：mail 页面错误归口文案（审计 CQ-009 / 第三波收口，中英各一行）。
+	//
+	// 词条属于邮箱模块（internal/module/mail/enums/mail_enums.go 的 ErrInternal），
+	// 注册在 identity_mail 这一份里（按主题归属）。判定按**本批自己的 key** 计数：
+	// 用「全库总量」会被其它批次的行满足而静默跳过（058 踩过，见 226 的注释）；
+	// ConditionSQL 里**不能出现 ?** —— 它不接受迁移器传参，带了 ? 会让判定恒为 0、每次启动都重跑。
+	registerSeed(Seed{
+		Version:      "276-mail-err-internal-i18n",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'mail.err.internal'",
+		SQL:          mustSQL("276_mail_err_internal_i18n.sql"),
+	})
 }

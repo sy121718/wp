@@ -57,4 +57,5 @@ func init() {
 	registerOrderAndSiteSlots()
 	registerAnalyticsSeoAndPermissions()
 	registerAdminI18nSeedsAndLatest()
+	registerPluginPatrolI18n()
 }

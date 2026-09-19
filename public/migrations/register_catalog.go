@@ -297,15 +297,23 @@ func registerCatalogAndInventory() {
 		SQL: mustSQL("103_inventory_reasons_seed.sql"),
 	})
 
-	// 104：库存变动 / 流水 / 原因字典 / 物料清单 / 缓存对账 10 个权限点 + 超管策略（issue #16）。
+	// 104：库存变动 / 流水 / 原因字典 / 物料清单 8 个权限点 + 超管策略（issue #16）。
 	// 条件只看本票自己的权限点，与 100 的宽匹配（inventory:%）互不干扰。
+	//
+	// 2026-09 修正：原先这里是 10 个（多 inventory:cache_sync / cache_reconcile）。那两个随
+	// 库存缓存一起下线、由迁移 122 从存量库删除，但**留在本 seed 与条件里会让删除被撤回**：
+	// 122 删掉 2 个 → 本条件（要求 10 个）立刻不满足 → 重新插回；而 Migrations 台账先跑、
+	// Seeds 台账后跑（migrator.go 的 runAll 与 RunSeeds），终态永远是「死权限点又回来了」——
+	// 后台于是存在指向不存在路由的死授权（勾选后毫无作用、误导配置者）。
+	// 条件与 SQL 同批收到 8 个：**删能力时必须连 seed 一起收口**。
+	// 回归判据：migrations_retired_permission_test.go（删过的码不得再被任何 seed 写入）。
 	registerSeed(Seed{
 		Version:   "104-inventory-change-permissions",
 		TableName: "sys_permission",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 10 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
 			"'inventory:stock_change', 'inventory:stock_deduct', 'inventory:movement_list', " +
 			"'inventory:reason_list', 'inventory:reason_create', 'inventory:reason_update', " +
-			"'inventory:bom_set', 'inventory:bom_get', 'inventory:cache_sync', 'inventory:cache_reconcile')",
+			"'inventory:bom_set', 'inventory:bom_get')",
 		SQL: mustSQL("104_inventory_change_permissions.sql"),
 	})
 
@@ -537,7 +545,7 @@ func registerCatalogAndInventory() {
 		// 写成 "FROM ?" 会得到 FROM $1 的语法错误（实测踩过）。
 		CheckSQL: "SELECT COUNT(*) FROM sys_menus " +
 			"WHERE path = '/admin/inventory/warehouses' AND to_regclass(?) IS NOT NULL",
-		SQL:       mustSQL("229_inventory_menu_split.sql"),
+		SQL: mustSQL("229_inventory_menu_split.sql"),
 	})
 
 	// 236：修正 229 给三个菜单误置的 is_public = 1（库存目录 / 仓库管理 / 变动原因字典）。
@@ -557,5 +565,312 @@ func registerCatalogAndInventory() {
 			"path IN ('/admin/inventory/warehouses','/admin/inventory/reasons') " +
 			"OR (type = 1 AND parent_id = 0 AND title = '库存'))",
 		SQL: mustSQL("236_fix_inventory_menu_visibility.sql"),
+	})
+
+	// 238：商品类型列（variant / bundle）+ 存量捆绑品回填。
+	// CheckSQL 判列是否存在：已加则返回非零跳过（约定见 236）。
+	register(Migration{
+		Version:   "238-product-type",
+		TableName: "products",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'type'",
+		SQL: mustSQL("238_product_type.sql"),
+	})
+
+	// 239：新错误词条（商品类型 / 捆绑容器价）+ 新建商品抽屉的「商品类型」文案。
+	// 判定只看自己的 key（058 那种全库计数在存量库永远判定已灌满）。
+	registerSeed(Seed{
+		Version:      "239-i18n-seed-product-type",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrProductTypeInvalid'",
+		SQL:          mustSQL("239_i18n_seed_product_type.sql"),
+	})
+
+	// 240：仓库类型（self / third_party / virtual）与第三方对接配置 config jsonb（库存域收口）。
+	//
+	// 存量「is_default 那一行」按自营（self）处理，理由写在 SQL 注释里：默认仓是
+	// 「未指定仓库」时的兜底，必须有实体收发能力；虚拟仓不能作为默认仓（service 同款守卫）。
+	// CheckSQL 判「两列 + check 约束都在位」：只判列会在「列已加、约束没建成」时静默跳过，
+	// 那样类型就不再受 DDL 兜底（DB-015 的教训）。
+	register(Migration{
+		Version:   "240-inventory-warehouse-type-config",
+		TableName: "inventory_warehouses",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM (" +
+			"SELECT 1 FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name IN ('type', 'config') " +
+			"UNION ALL " +
+			"SELECT 1 FROM pg_constraint " +
+			"WHERE conrelid = 'inventory_warehouses'::regclass " +
+			"AND conname = 'inventory_warehouses_type_check' AND convalidated" +
+			") x",
+		SQL: mustSQL("240_inventory_warehouse_type_config.sql"),
+	})
+
+	// 241：变动原因的 name 收口为 i18n key（库存域收口）。
+	//
+	// 内置原因 → inventory.reason.<code>；存量自定义原因 → 原文案写进 sys_i18n 后再改成
+	// inventory.reason.custom.<project_id>.<code>。
+	//
+	// 为什么是 registerSeed 而不是 register：它处理的是**数据**，而写数据的 103 在 seed 阶段。
+	// 结构迁移阶段（Run）执行时表还是空的 —— 判定返回「没有需要处理的行」直接跳过，
+	// 随后 103 才把中文名插进去，新库的 name 就永远停在旧形态上（老库因为早有数据反而正常）。
+	// 注册在 103 之后，RunSeeds 按注册顺序执行，两个阶段的库都收口。
+	// CheckSQL 的 ? 由迁移器传入表名（约定见 229 / migrator_test.go）；
+	// 判定「还有没 key 化的行」：重跑时条件不再成立，不会覆盖已经写好的词条。
+	registerSeed(Seed{
+		Version:   "241-inventory-reason-i18n-key",
+		TableName: "inventory_change_reasons",
+		// ConditionSQL 里**不能出现 ?**：seed 的检查走 db.Raw(sql) 且不传参（Migration 的 apply
+		// 不同：它只在 SQL 含 ? 时才传表名）。多写一个占位符会让整条 seed 直接报
+		// "expected 0 arguments, got 1"，每次启动都失败、原因还指向检查语句。
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM inventory_change_reasons " +
+			"WHERE name <> '' AND name NOT LIKE 'inventory.reason.%'",
+		SQL: mustSQL("241_inventory_reason_i18n_key.sql"),
+	})
+
+	// 242：库存域错误词条 + 内置变动原因词条（中英成对）。
+	// 判定只看自己的 key：库存域此前从未 seed 过错误词条，页面一旦不再直出 err.Error()，
+	// 缺词条就会显示 ErrWarehouseNotFound 这种裸 key。
+	registerSeed(Seed{
+		Version:      "242-inventory-i18n-seed",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'inventory.reason.purchase_in'",
+		SQL:          mustSQL("242_inventory_reason_i18n.sql"),
+	})
+
+	// 243：库存三个后台页的新文案词条（调整入口 / 时间筛选 / 仓库类型与第三方配置 / 原因启停）。
+	registerSeed(Seed{
+		Version:      "243-inventory-page-i18n-seed",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.adjust.title'",
+		SQL:          mustSQL("243_i18n_seed_inventory_pages.sql"),
+	})
+
+	// 244：仓库侧成本（inventory_stocks.cost_price）+ 仓库内 SKU 唯一（批次 A）。
+	//
+	// 口径见 docs/14 §4（用户 2026-09-19 确认）：成本写到**仓库侧**、只记一个当前值
+	//（不做成本流水），(仓库, SKU) 与库存同维度；NULL = 尚未核算，0 是合法的显式成本。
+	// 仓库内唯一（UNIQUE (warehouse_id, sku_code)）在建约束**之前**先扫存量重复：
+	// 有重复就带样例 RAISE EXCEPTION（迁移失败、数据不动），绝不静默丢数据、也不留一个
+	// 没有上下文的 23505。CheckSQL 判「列 + 约束都在位」—— 只判列会在「列已加、约束没建成」
+	// 时静默跳过，那样仓库内唯一就不再受 DDL 兜底（DB-015 的教训，与 240 同一手法）。
+	register(Migration{
+		Version:   "244-inventory-stock-cost",
+		TableName: "inventory_stocks",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM (" +
+			"SELECT 1 FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'cost_price' " +
+			"UNION ALL " +
+			"SELECT 1 FROM pg_constraint " +
+			"WHERE conrelid = 'inventory_stocks'::regclass " +
+			"AND conname = 'uq_inventory_stocks_warehouse_sku' " +
+			"AND contype = 'u' AND convalidated" +
+			") x",
+		SQL: mustSQL("244_inventory_stock_cost.sql"),
+	})
+
+	// 245：仓库侧成本的词条（批次 A）—— 新增的 ErrStockCostInvalid 与「未核算」展示兜底。
+	// 判定只看自己的 key（同 239/247/248）。
+	registerSeed(Seed{
+		Version:      "245-i18n-seed-inventory-cost",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrStockCostInvalid'",
+		SQL:          mustSQL("245_i18n_seed_inventory_cost.sql"),
+	})
+
+	// 246：商品的容器主体 SKU（products.sku_code）+ 项目内唯一偏索引。
+	//
+	// 新 SKU 规则下「容器主体」是商品的对外身份（变体商品 = <仓短码>_<仓库里那条 SKU>；
+	// 捆绑 = 自定义、以 _B 结尾），而 products 此前**没有 SKU 列** —— 捆绑自 238 起不再生成
+	// 首个变体，主体 SKU 无处可放；变体商品的「主体」同样没有落点（变体行只存变体自己的 SKU）。
+	// 唯一性口径见 docs/14 §4：主体唯一（本索引）/ 变体不额外收紧 / 捆绑成员不校验。
+	// CheckSQL 判列是否存在：已加则跳过（约定见 236）。
+	register(Migration{
+		Version:   "246-product-container-sku",
+		TableName: "products",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'sku_code'",
+		SQL: mustSQL("246_product_container_sku.sql"),
+	})
+
+	// 247：商品域后续词条（捆绑构成区块 19 / 多语言空态 4 / 新建抽屉属性组多选与批量改价 6）
+	// + 退役旧的 admin.products.ph.attributeIds（属性引用文本框时代的占位符，改版后无模板取用）。
+	// 判定只看自己的 key（058 那种全库计数在存量库永远判定已灌满）。
+	registerSeed(Seed{
+		Version:      "247-i18n-seed-product-followups",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.product_detail.bundle.title'",
+		SQL:          mustSQL("247_i18n_seed_product_followups.sql"),
+	})
+
+	// 248：商品主体 SKU（2026-09-19 评审第四轮）的词条 ——
+	// ErrSkuContainerMissing / ErrContainerSkuInvalid 两条业务错误（enums 常量值即 i18n key，
+	// 不 seed 就会在页面上原样显示裸 key），加上新建抽屉的「SKU 编码」字段文案与详情页
+	// 主体 SKU 的唯一性说明（三个模板 key）。判定只看自己的 key（同 239/247）。
+	registerSeed(Seed{
+		Version:      "248-i18n-seed-product-sku",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrSkuContainerMissing'",
+		SQL:          mustSQL("248_product_sku_error_i18n.sql"),
+	})
+
+	// 249：捆绑商品主体 SKU 必填（2026-09-19 用户拍板）的词条 ——
+	// ErrBundleSKURequired 一条业务错误（常量值即 i18n key，不 seed 就会在页面上原样显示裸 key），
+	// 加上新建抽屉的四个文案位（「重新生成」按钮 / 建议值说明 / 请手填提示 / 捆绑占位符）。
+	// 变体商品一字未动，248 的三条 key 继续有效、不退役。判定只看自己的 key（同 239/247/248）。
+	registerSeed(Seed{
+		Version:      "249-i18n-seed-product-bundle-sku",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrBundleSKURequired'",
+		SQL:          mustSQL("249_product_bundle_sku_i18n.sql"),
+	})
+
+	// 250：商品目录菜单归属收口（2026-09-19 评审第四轮）——
+	//   定价工具 / 捆绑配置 下线（status = 0），商品详情模板从「商品与库存」改挂「内容」。
+	// 这里必须是 seed 而不是 Migration：这三行菜单由 097 / 116（seed）与 224（seed）建出来，
+	// 而 migrations.Run 先于 RunSeeds —— 按 Migration 注册会在干净库上判定「无菜单可改」而跳过，
+	// 新装环境拿不到归位（229 能按 Migration 写是因为它自己建菜单）。
+	// ConditionSQL 表达「已无待修项」：两处下线都已归零、且模板菜单的父级已是「内容」；
+	// 缺「内容」目录时 EXISTS 为假 → 判为「无需修」跳过（该场景下 UPDATE 本身也不会命中，语义一致）。
+	registerSeed(Seed{
+		Version:   "250-admin-menu-product-scope",
+		TableName: "sys_menus",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM sys_menus m " +
+			"WHERE m.deleted_at IS NULL AND (" +
+			"(m.status <> 0 AND m.path IN ('/admin/product-pricing','/admin/products/bundle')) " +
+			"OR (m.path = '/admin/products/template' " +
+			"AND EXISTS (SELECT 1 FROM sys_menus p WHERE coalesce(p.parent_id, 0) = 0 AND p.type = 1 AND p.title = '内容' AND p.deleted_at IS NULL) " +
+			"AND m.parent_id IS DISTINCT FROM (SELECT p2.id FROM sys_menus p2 WHERE coalesce(p2.parent_id, 0) = 0 AND p2.type = 1 AND p2.title = '内容' AND p2.deleted_at IS NULL ORDER BY p2.id ASC LIMIT 1)))",
+		SQL: mustSQL("250_admin_menu_product_scope.sql"),
+	})
+
+	// 251：仓库侧外部编码（inventory_stocks.external_sku）+ 按外码反查的普通索引。
+	//
+	// 口径见 docs/14 §9.3（2026-09-19 用户补充确认）：属性属于商品，仓库侧只回答
+	// 「这条货在这个仓叫什么」—— 本列就是那个「叫什么」。映射是 **N:1**
+	//（同一个商品的十几个口味在仓库侧共用同一条 SKU / 同一个价格），
+	// 所以**只建普通索引、不建唯一索引**：UNIQUE (warehouse_id, external_sku)
+	// 会把「多口味共用一个外码」这种合法数据判成冲突。
+	// 唯一性改由 service 弱校验（同一仓内同一外码必须指向同一个 product_id），
+	// UNIQUE (warehouse_id, sku_code)（我们自己的 SKU 仓内唯一，迁移 244）保持不动。
+	// CheckSQL 判「列 + 索引都在位」：只判列会在「列已加、索引没建成」时静默跳过，
+	// 那样按外码反查就退化成全表扫描（DB-015 的教训，与 240/244 同一手法）。
+	register(Migration{
+		Version:   "251-inventory-external-sku",
+		TableName: "inventory_stocks",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM (" +
+			"SELECT 1 FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'external_sku' " +
+			"UNION ALL " +
+			"SELECT 1 FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = 'inventory_stocks' " +
+			"AND indexname = 'idx_inventory_stocks_warehouse_external_sku'" +
+			") x",
+		SQL: mustSQL("251_inventory_external_sku.sql"),
+	})
+
+	// 252：仓库 SKU 外部编码的词条（迁移 251 配套）——
+	// 7 条库存域业务错误（常量值即 i18n key，不 seed 就会在页面上原样显示裸 key）
+	// 加 10 个模板文案位（新建商品抽屉的「SKU 来源」整块 9 个 + 库存页「外部编码」列 1 个）。
+	// 判定只看自己的 key（同 239/247/248/249）。
+	registerSeed(Seed{
+		Version:      "252-i18n-seed-inventory-external-sku",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrExternalSKUProductConflict'",
+		SQL:          mustSQL("252_i18n_seed_inventory_external_sku.sql"),
+	})
+
+	// 255：库存页「外部编码」行内编辑的文案位（迁移 251 的字段终于有了可编辑入口）——
+	// 三个模板文案位（占位符 / 保存按钮 / 按钮说明），中英各一行。
+	// 业务错误的词条（ErrExternalSKUInvalid / ErrExternalSKUProductConflict）在 252 已 seed，
+	// 本批不重复；本批也没有新增 enums 常量。
+	//
+	// 为什么是 seed 而不是 Migration：它只往 sys_i18n 写词条，与 242/243/252 同性质 ——
+	// seed 可重复执行，且后台改过的文案不会被覆盖（ON CONFLICT DO NOTHING）。
+	// 判定只看自己的 key：count >= 1 即视为已 seed（同 239/247/248/249/252）。
+	registerSeed(Seed{
+		Version:      "255-i18n-seed-inventory-external-sku-edit",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.sku.externalSku.save'",
+		SQL:          mustSQL("255_inventory_external_sku_edit_i18n.sql"),
+	})
+
+	// 259：捆绑成员的三种来源 + 变体删除守卫补引用面（docs/14 §1.2 / §8，批次 C）——
+	// 两类 enums 常量（常量值即 i18n key，不 seed 就原样返回裸 key）：
+	//   · 删除守卫的两个新引用面：被捆绑成员引用 / 有过库存流水；
+	//   · 成员来源（BundleSource*）与解析期错误 / 逐条跳过原因（ErrBundleSource*、BundleMember*）；
+	// 加两类模板文案：捆绑配置页的成员来源面板、商品详情页「捆绑构成」的来源列。
+	// 判定只看自己的 key：count >= 1 即视为已 seed（同 239/247/248/249/252/253/255）。
+	registerSeed(Seed{
+		Version:      "259-i18n-seed-product-bundle-member-source",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'BundleMemberNotOnProduct'",
+		SQL:          mustSQL("259_product_bundle_member_source_i18n.sql"),
+	})
+
+	// 260：products.bundle_items 的 GIN 索引（批次 C 的删除守卫查询）。
+	// 为什么是结构迁移而不是「顺手加一句 DDL」：这条查询在**每次删除变体 / 保存变体清单**时
+	// 都要按变体 id 判定「是否被某个捆绑引用」，没有索引就是全表扫 products 的 jsonb 列。
+	// 注意查询必须写成**整列包含**（bundle_items @> …）才能命中它 —— 迁移文件注释里记了
+	// 三条 EXPLAIN 实测（整列索引 + 嵌套表达式用不上）。
+	// CheckSQL 判本索引是否已在：限定 current_schema()，否则并发测试或残留 schema 里的
+	// 同名索引会让判定恒为真、迁移被静默跳过（167 / p7_index_audit_test 都踩过）。
+	register(Migration{
+		Version:   "260-products-bundle-items-gin",
+		TableName: "products",
+		CheckSQL: "SELECT COUNT(*) FROM pg_indexes " +
+			"WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_products_bundle_items_gin'",
+		SQL: mustSQL("260_products_bundle_items_gin.sql"),
+	})
+
+	// 261：无限库存（不跟踪数量）开关 —— inventory_stocks.track_quantity（库存域第一批）。
+	//
+	// 口径（用户 2026-09-19 拍板）：无限用**显式开关**表达（false = 不跟踪 = 无限），
+	// quantity 保持 NOT NULL DEFAULT 0 并加 CHECK (track_quantity OR quantity = 0)；
+	// **存量行一律 track_quantity = true（保守）** —— 存量那些 0 无法区分为「建行占位」
+	// 还是「卖光了」，把卖光的行判成无限会直接导致超卖（无限行扣减不校验可用量）。
+	// 新建行才默认无限，理由逐条写在 SQL 注释里。
+	// 存量 UPDATE 只在「本次真的新增了这一列」时执行（DO 块内判 added），
+	// 重跑不会把运营手工改成无限的存量行重新掰回跟踪。
+	// CheckSQL 判列是否存在：已加则跳过（约定见 236）。
+	register(Migration{
+		Version:   "261-inventory-stock-track-quantity",
+		TableName: "inventory_stocks",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'track_quantity'",
+		SQL: mustSQL("261_inventory_stock_track_quantity.sql"),
+	})
+
+	// 262：仓库里的 SKU 永远是裸码 —— 剥掉存量库存行 sku_code 上多余的仓码前缀。
+	//
+	// 口径：仓库里的 SKU 不带仓码前缀（商品侧才带，前缀标注归属 / 认领仓），
+	// 所以 inventory_stocks.sku_code 应当是裸码。规则 = upper(sku_code) 以
+	// upper(warehouse.code) + '_' 开头则去掉这一节，只对能 JOIN 到仓库的行做。
+	// **先扫描再更新**：剥掉后同一 (warehouse_id, sku_code) 出现重复时显式
+	// RAISE EXCEPTION 带冲突明细，绝不静默合并两行（两行是两份事实，合并就是丢账）。
+	// CheckSQL 判「是否还有带前缀的行」：没有则跳过（返回 1）；用 to_regclass(?) 锚定
+	// 本迁移自己的对象，保证约定要求的表名占位符真的出现在语句里（同 229 的手法）。
+	register(Migration{
+		Version:   "262-inventory-stock-sku-strip-warehouse-prefix",
+		TableName: "inventory_stocks",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 0 ELSE 1 END FROM inventory_stocks s " +
+			"JOIN inventory_warehouses w ON w.id = s.warehouse_id " +
+			"WHERE to_regclass(?) IS NOT NULL " +
+			"AND length(s.sku_code) > length(w.code) + 1 " +
+			"AND upper(left(s.sku_code, length(w.code))) = upper(w.code) " +
+			"AND substr(s.sku_code, length(w.code) + 1, 1) = '_'",
+		SQL: mustSQL("262_inventory_stock_sku_strip_warehouse_prefix.sql"),
+	})
+
+	// 263：无限库存的新文案词条（无限 / 不跟踪 / 跟踪库存 / 未入库 / 数量提示 等），
+	// 中英成对；含本批两条新业务错误（ErrStockQuantityRequired / ErrStockUntrackedQuantity，
+	// 常量值即 i18n key，不 seed 就会在页面上原样显示裸 key）。
+	// 判定只看自己的 key：count >= 1 即视为已 seed（同 239/247/248/249/252/255）。
+	// ConditionSQL 里**不能出现 ?**：seed 的检查走 db.Raw(sql) 且不传参（同 241）。
+	registerSeed(Seed{
+		Version:      "263-i18n-seed-inventory-track-quantity",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.stock.unlimited'",
+		SQL:          mustSQL("263_inventory_track_quantity_i18n.sql"),
 	})
 }
