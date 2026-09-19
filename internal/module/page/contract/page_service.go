@@ -69,6 +69,52 @@ var (
 	ErrPreviewCompileFailed = errors.New("预览编译失败")
 )
 
+// DependencyPageRef 按依赖键反查命中的页面（**最小**只读投影）。
+//
+// 只有两个字段：ID 用来定位，Title 用来给人看（pages 表没有标题列，
+// 取的是文档 settings.seo.title；可能为空，读侧不替它编一个名字）。
+//
+// 刻意不带路径 / 状态 / 文档：带齐就成了第二个「页面列表」投影（PageResp 已有），
+// 而反查面的调用方（模板引用反查的装配层）只需要拦住一次删除。
+// 也刻意不带「该页是否待重建」：当前消费端读不出它（contenttemplate 的
+// TemplateReference 没有对应字段），而契约字段是一份承诺 —— 先不给没人读的东西。
+// 将来真要区分「已构建会坏 / 未构建不会坏」时再加，命中口径（活跃或暂存产物的依赖行）
+// 本来就不依赖这个字段。
+//
+// 形状（不是 dto 重导出，也不是 model 的行类型）：它只有反查这一个消费者，
+// 走 contract 定义可以避免为了两个字段在 dto 里再加一组结构 —— 先例是
+// contenttemplate 契约里的 ResolvedTemplate。跨模块调用方只依赖 contract。
+type DependencyPageRef struct {
+	// ID 页面 id。
+	ID string
+	// Title 作者在文档 SEO 段里填的标题；**可能为空**（读侧不替它编一个名字）。
+	Title string
+}
+
+// PageDependencyLookup 按依赖键**只读**反查页面引用（反查面）。
+//
+// 与 PageService 上已有的 MarkStaleByDependency 严格区分，两者签名相近、语义相反：
+// 那条是**写路径** —— 它按 (kind,key) 把命中的页面 UPDATE 成 stale = true；
+// 本接口只回答「谁声明过这条依赖」，实现里没有任何写语句（尤其不碰 stale 列）。
+//
+// 为什么必须单独成接口而不是复用 MarkStaleByDependency：拿一次只读反查去调写路径，
+// 等于「只想看一眼影响面，却顺手改动了全站页面的 stale 列」—— 而且返回的 id 集合
+// 与真实影响面还不同（写路径返回的是「这次被标记的」，反查要的是「现在声明着它的」）。
+type PageDependencyLookup interface {
+	// FindPagesByDependency 在**指定工程作用域内**按依赖键 (dependencyKind, dependencyKey)
+	// 反查声明过该依赖的页面（最小投影，见 DependencyPageRef）。
+	//
+	// 命中口径：该页面的**活跃或暂存**产物在 page_dependencies 里声明了这条键 ——
+	// 与 MarkStaleByDependency 的命中集合逐字一致（同一张表、同一对指针），
+	// 于是「按依赖标记」与「按依赖反查」回答的永远是同一批页面。
+	//
+	// projectID 必填：pages 带 FORCE 策略，空工程 id 一律拒绝（**不**退化成「不限工程」，
+	// 那会把别的工程的页面混进删除保护的影响面里）。可空入参不是错误：kind / key
+	// 任一为空时返回空集合（不存在「按空键反查」这回事）。
+	FindPagesByDependency(ctx context.Context, projectID, dependencyKind, dependencyKey string) (
+		refs []DependencyPageRef, err error)
+}
+
 // BuildQueueEnqueuer 构建队列的入队端口（审计 DB-007）。
 //
 // 由 build 模块实现、装配期注入。接口定义在**本模块**（而不是反向 import build 的契约）：
@@ -84,6 +130,8 @@ type BuildQueueEnqueuer interface {
 type PageService interface {
 	// SitePageResolver 槽位解析（构建期与片段层经这个只读面取「结算页在哪」）。
 	SitePageResolver
+	// PageDependencyLookup 按依赖键只读反查页面（反查面；写路径是下面的 MarkStaleByDependency）。
+	PageDependencyLookup
 
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
