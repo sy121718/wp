@@ -93,6 +93,7 @@
 | CMP-13 | htmx 官方扩展引入（head-support / response-targets / loading-states / class-tools 等） | \`06-C-htmx-extensions.md\` §二（L21-37） | 部分完成：idiomorph 已引入（\`layout.html:181\` + \`core.js\` \`morphHTML\`）；其余待评估 | 低 | 无 |
 | CMP-14 | 结构树拖拽 DOM 级自动化测试 | \`09-session-handoff.md\` §3 交互走查补充（L268） | 未开始（\`moveNode\` 已有 Go 侧行为覆盖） | 低 | 无 |
 | CMP-15 | 富文本 ⇄ 可视化组件树的等价转换（\`06-B\` 决策 5） | \`06-B-dual-track-adr.md\` 决策 5（L52-59） | **转换能力已落地（2026-09）**：\`internal/builder/richdoc\` 的 \`HTMLToNodes\`（块级标签 → 组件：h1~h6→heading / p→text / ul,ol→list / blockquote→quote / pre→text / img,figure→image / hr→divider / table→table；行级格式留在 core.text 内）与 \`NodesToHTML\`（可逆子集反向导出：heading / text / list / quote / image / divider / table / **core.accordion → \`<details><summary>摘要</summary>正文…</details>\` 序列**，items ↔ children 一一对应时才导出；不可逆组件与结构对不上的手风琴输出占位并标 \`Lossless=false\`）+ fuzz 背书（\`FuzzRichTextRoundTrip\` 90 秒 72.9 万次执行通过，历史失败用例留在 \`testdata/fuzz/\`；畸形嵌套如 \`<a>\` 里嵌 \`<table>\` 的序列化不是自身解析的不动点，该类往返仍可能漂移，见 \`06-B\` 决策 5 落地状态）。**入口已落地（2026-09）**：文章编辑页「导入到画布」区块 —— 预览（纯计算，展示组件统计与损失清单）→ 创建页面草稿并跳工作台；端到端实测（正文 → 6 组件 → Page 草稿 → 预览编译出真实 HTML）。**未做**：① 真源改造（文章 body 仍存 HTML 字符串，「双视图单真源」还不成立）② 模板起稿入口（只做了文章 → 页面） | 中 | 无 |
+| CMP-16 | 结构模板画布预览是否引入「宿主页面」参数（可选 `hostPageId`） | `03-A-workbench.md`、`13-module-inventory.md` 的 `contenttemplate` 行（L58）、本仓 `pkg/datarule` 之外的同类开放项对照 | **待决策（开放产品决策，不是缺陷）**：结构模板（header / footer 两个结构类型）在画布上编辑时，预览**是否需要宿主页面上下文** —— 即「用哪个页面的 `BuildContext` 来渲染这一版页眉 / 页脚」。当前实现**不使用**宿主上下文，默认行为保持不变，发布链不受影响（发布时宿主上下文来自真实引用方页面）。**要引入的话，代价在语义而不在数据模型**：它会让「预览所见 == 发布所得」这个既有保证变弱 —— 预览渲染的是**我选的那个宿主页面**的上下文，发布渲染的是**引用方页面**的上下文，两者不同时预览就会说谎。所以这是「预览要多准」的产品取舍，不是补一个参数那么简单。**决定前不要动手**；真要做，先明确：多宿主场景（一个页眉被 5 个页面引用）预览该怎么表达、未选宿主时的默认值是什么 | 低 | 无 |
 
 ---
 
@@ -103,8 +104,8 @@
 | I18N-1 | 灰度开关 \`i18n.site_lang_prefix\` 默认 \`false\`，多语言**不能同时在线** | \`06-D-site-i18n.md\` §15.3（L953-965）、§15.8 语义口径（L1044）、§15.9 遗留（L1133） | ✅ **已解决（2026-09 复核）**：\`config.yaml:66\` 与 \`config.yaml.example:65\` 均为 \`site_lang_prefix: true\`，开关已启用（原记录「默认关闭」已过时） | 高 | 无 |
 | I18N-2 | 块内文本不翻译（\`compileBlockFragment\` 未传 lang 与取词器） | \`06-D\` §15.11 已知缺口（L1269-1271）、§15.12（L1365-1366） | ✅ **已落地（2026-09 复核）**：\`compileBlockFragment(ctx, blockID, lang string, translator *i18n.ContentTranslator)\` 已带 lang 与取词器，调用点（\`page_assemble.go\` 的页眉 / 页脚内联）两个参数都传了。**本次回填修正**：「未传 lang 与取词器」这句已不成立 | — | 无 |
 | I18N-3 | \`core.nav\` 菜单标签多语言归属未定（标签来自 navigation 数据） | \`06-D\` §15.11（L1272-1273）、§15.12（L1370-1371） | 未开始（未定论） | 中 | 无 |
-| I18N-4 | 站内链接本地化只覆盖导航（按钮/图片/文本内链接仍是逻辑路径） | \`06-D\` §15.5 第 5 条（L984）、§15.8 仍属后续（L1064） | 未开始 | 中 | 无 |
-| I18N-5 | Runtime Fragment 语言（\`/_fragments\` 无 \`lang\`、无 \`Vary\`） | \`06-D\` §15.5 第 7 条（L986）、§11（L855） | 未开始 | 中 | 无 |
+| I18N-4 | 站内链接本地化只覆盖导航（按钮/图片/文本内链接仍是逻辑路径） | \`06-D\` §15.5 第 5 条（L992）、§15.8 仍属后续（L1064） | ✅ **已落地（2026-09）**：统一入口 `core.RenderContext.ResolveSiteLink`（`internal/builder/core/render.go:311`），由 `builder.WithSiteLinkResolver` 注入，与页面路径规则同源；补齐 infobox / quote / gallery / breadcrumb（作者手填层级）/ productcard / productlist / cardstack，导航另行经装配层 `LocalizeMenuURL`。判据是**数据来源不是字符串形状**：作者手填 props → 本地化；CMS 绑定值 → 原样。**仍未接线**：① 富文本正文 `<a href>`（需在 `core.RichTextHTML` 之后加「扫描不到站内候选就原样返回」的短路通道，否则重新序列化会改掉全站富文本页面字节）② `form.action`（`internal/builder/components/form/form.go:72-80`，刻意不本地化，判据在字段注释里）③ 面包屑「派生」层级的首页与中间段（`breadcrumb/jet.go:159-181`，带前缀方案下不可达，属既有缺口，修它要改「派生源是访问路径还是逻辑路径」的设计）。**不要照抄旧建议里的 `pipeline.LangPath`**（`internal/pipeline/lang.go:306` 会把默认语言也加前缀，与站点方案相反） | — | 无 |
+| I18N-5 | Runtime Fragment 语言（\`/_fragments\` 无 \`lang\`、无 \`Vary\`） | \`06-D\` §15.5 第 7 条（L992）、§11（L855） | ✅ **已落地（2026-09）**：端点按 `?lang` 取词（经 `project_locales` 启用清单校验，非法值回落工程默认语言）并输出 `Content-Language`；**Vary 刻意不写 `Accept-Language`** —— 语言只由 URL 决定，声明一个不参与选择的头只会让 CDN 为同一份字节多建缓存桶（语言进 URL 即进缓存键，服务端片段缓存键也含语言）；构建期片段 lang 注入已覆盖 carticon / searchresults / orderlist / userforms / productlist / product / productselector / addtocart（GET 走 query、POST 走 hidden 表单域）；登录面板两句文案已接取词（迁移 293）。**剩余缺口**：① 片段响应**未声明缓存策略**，读身份的能力（`cartView` / `ordersList` / `accountProfileForm`）在共享缓存下有串个人数据风险 —— 需按能力区分公开可缓存 / 读身份 `Cache-Control: private, no-store`，**属产品口径，待拍板** ② `endpoint.go` 的协议错误文案（400/404/500）未国际化，属独立项 | — | 无 |
 | I18N-6 | 后台 i18n 词条 CRUD（D7）+ \`MarkStaleForI18n\` 调用方不完整 | \`06-D\` §15.5 第 6 条（L985）、§14 D7（L912） | 未开始（仅 \`/admin/lang\` 语言切换路由，无词条管理页） | 中 | 无 |
 | I18N-7 | CMS 内容字段翻译（P5d，\`sys_translation\` 接 content 模块） | \`06-D\` §13 P4（L895）、§15.11 范围（L1186） | 未开始（\`content/service\` 无翻译接入） | 中 | BIZ-1 或内容页先行 |
 | I18N-8 | 一键 AI 翻译（\`engine='ai'\`，当前按钮灰置预留） | \`06-D\` §7.9（L611-649）、§15.12（L1283） | 未开始（明确本期不做） | 低 | I18N-7 |
@@ -265,18 +266,40 @@
 
 ---
 
+## 11. 重构遗留的测试覆盖缺口
+
+来源：2026-09-19 修复 `scripts/check-workbench.sh`（它引用的 `internal/module/dashboard` 已不存在）时，
+用 `git show -M --summary e7405ca9`（*refactor(web): 解体 dashboard 巨型模块，页面按归属回到各业务模块*）
+逐项比对该次重构的 delete / rename 明细，发现**三个能力的测试被 delete 且无 rename 替代**。
+它们与门禁修复本身无关，但都是「代码还在、断言没了」——**重构不会让它们报错，只会在某天回归时才发现**。
+
+| # | 能力 | 出处 | 现状 | 优先级 | 依赖/前置 |
+|---|---|---|---|---|---|
+| COV-1 | workbench 编辑目标注册表无断言 | `internal/module/workbench/inbound/http/workbench_target.go:126`（`EditTargetFor`）/ `:132`（`WorkbenchTargets`），注释自称「测试与前端契约共用」；原测试 `dashboard/inbound/http/workbench_target_test.go`（`TestWorkbenchTargetRegistry`）随 `e7405ca9` 删除且无 rename | 未开始（全树 grep `EditTarget` / `WorkbenchTargets` 在 `*_test.go` 中零命中） | 中 | 无 |
+| COV-2 | `internal/web/shell/nav.go` 整包无断言 | `nav.go:56` `BuildNav` / `:89` `buildNavNodes` / `:113` `firstNavPath` / `:126` `containsActive` / `:160` `NavPathAlias` / `:173` `NavPathFor`；旧 `nav_path_alias_test.go`（`TestNavPathFor`）与 `nav_normalize_contract_test.go`（`TestDashboardNormalizePathMatrix`）随 `e7405ca9` 删除且无 rename | 未开始（`internal/web/shell` 现只有 `bulk_test.go` / `errors_test.go` / `notice_test.go`）。这些是**纯函数**（路径归一、别名映射、父级展开态计算），按 CQ-020 二层策略正属「模块内就近单测」 | 中 | 无 |
+| COV-3 | 页面路由渲染覆盖台账无替代 | 旧 `public/test/dashboard/feature/dashboard_route_coverage_ledger_test.go`（`TestDashboardRoutesHaveRenderTests`）随 `e7405ca9` 删除 | 未开始（全树 grep `RoutesHaveRenderTests` / `routeCoverage` 零命中）。台账的语义是「每个后台路由都有对应的渲染测试」——它消失意味着**新增页面漏测渲染不再有系统级提醒** | 中 | 无 |
+| COV-4 | ~~语言切换的开放重定向防护无覆盖~~ **已核实为误判** | 旧 `dashboard/inbound/http/lang_handle_test.go`（`TestLangSwitch` / `TestLangSwitchOpenRedirectGuard`）确随 `e7405ca9` 删除 | ✅ **覆盖已转移，不是缺口（2026-09 核实）**：判据在重构中**单源化**到 `internal/web/shell/notice.go:151` 的 `LangRedirectPath`，由 `notice_test.go:112` 的 `TestLangRedirectPathIsTheOnlyCriterion` + `TestLangRedirectConverges` 断言，消费侧另有 `admin/inbound/http/admin_notice_test.go:190-242` 的对照用例（含 `//evil.example.com` 这类反例）。运行时入口 `AdminLangSwitch`（`admin/inbound/http/admin_pages_handle.go:1158`）经 `adminSafeLangRedirect` 调同一份判据。**不要另派工补这一条** | — | 无 |
+
+> **COV-4 的判定过程本身是个教训**：初次盘点按**函数名字面量**（`LangSwitch`）grep，得出「无替代测试」；
+> 而重构把那项能力**改名并拆到另一层**（`AdminLangSwitch` + `shell.LangRedirectPath`）。
+> 判断「测试是否丢失」要按**能力**追，不能按**名字**追 —— 同类误判之所以没在 COV-1/COV-2 上发生，
+> 只是因为那两处的函数名恰好没改。**盘点结论在下发补工之前必须先按能力复核一遍。**
+
+---
+
 ## 附：条目索引速查
 
 | 分组 | 编号区间 | 条数 | 未开始 | 部分完成 | 文档滞后 | 待决策 |
 |---|---|---|---|---|---|---|
 | SEO | SEO-1 ~ SEO-10 | 10 | 7 | 3 | 0 | 0 |
 | 插件体系 | PLG-1 ~ PLG-10 | 10 | 9 | 1 | 0 | 0 |
-| 组件与构建器 | CMP-1 ~ CMP-14 | 14 | 9 | 1 | 4 | 0 |
+| 组件与构建器 | CMP-1 ~ CMP-16 | 16 | 9 | 2 | 4 | 1 |
+| 重构遗留覆盖缺口 | COV-1 ~ COV-4 | 4 | 3 | 1 | 0 | 0 |
 | 多语言 | I18N-1 ~ I18N-18 | 18 | 16 | 1 | 0 | 1 |
 | 发布管线 | PIPE-1 ~ PIPE-13 | 13 | 10 | 1 | 2 | 0 |
 | 商品与业务 | BIZ-1 ~ BIZ-9 | 9 | 8 | 0 | 1 | 0 |
 | 基础设施 | INF-1 ~ INF-11 | 11 | 6 | 1 | 4 | 0 |
 | 文档一致性 | DOC-1 ~ DOC-13 | 13 | 0 | 0 | 13 | 0 |
-| **合计** | — | **98** | **65** | **8** | **24** | **1** |
+| **合计** | — | **104** | **68** | **10** | **24** | **2** |
 
 > 说明：\`BIZ-9\` 与 \`INF-10\` 分别计为「文档滞后（含部分完成语义）」与「文档滞后」；\`CMP-9\`/\`CMP-10\`/\`CMP-6\` 等已核销项保留在表中以便追溯，**不应重复施工**。
