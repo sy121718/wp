@@ -83,17 +83,17 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 配置编辑器片段：纯渲染、不落库，因此不挂 Casbin（写入仍走 /datarules/update）。
 	adminPages.POST("/datarules/config-editor", handle.DataruleConfigEditor)
 
-	// 文案词条页（审计 I18N-003）：**读页面暂不挂 Casbin**，因为 178 只为它建了写权限点
-	// （i18n:manage → POST /api/i18n/save），没有对应的 GET 权限点。若照抄 /api/i18n/save
-	// 挂到 GET 上，enforce 的 act 是 GET 而策略里只有 POST，**连超管都会被 403**。
-	// 要收紧需先新增一个 i18n 查看权限点（GET），属于独立一批 seed。
-	// 词条文案不属于个人数据，优先级低于六领域，故此处留白并记录原因，不静默漏掉。
-	// 写操作挂 i18n:manage（/api/i18n/save）——漏挂等于任何登录管理员都能改全站文案。
+	// 文案词条页（审计 I18N-003）：读页面挂 i18n:view（迁移 294 新增的只读权限点），
+	// 写操作挂 i18n:manage（/api/i18n/save）—— 漏挂等于任何登录管理员都能改全站文案。
+	//
+	// 为什么读页面要一个**独立的**权限点、不能复用 i18n:manage：CasbinMiddlewareForPath
+	// 的 act 取自实际请求方法，页面是 GET 而 i18n:manage 的策略只有 POST ——
+	// 复用会让 enforce 匹配不到任何策略，**含超管在内全员 403**。
 	i18nPages := NewAdminI18nEntryHandle()
 	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
 	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
 	i18nPages.SetPageMarker(pages)
-	adminPages.GET("/i18n", i18nPages.I18nEntriesPage)
+	adminPages.GET("/i18n", builtin.CasbinMiddlewareForPath("/api/i18n/list"), i18nPages.I18nEntriesPage)
 	adminPages.POST("/i18n/save", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntrySave)
 	adminPages.POST("/i18n/delete", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryDelete)
 	// 批量删除复用同一条删除路径与权限点（i18n:manage → /api/i18n/save）：

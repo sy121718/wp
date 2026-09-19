@@ -68,4 +68,6 @@ func init() {
 	registerWorkbenchFacingI18n()
 	// 293：运行时片段「登录面板」的访客文案（site.fragment.login_panel.*，见 register_fragment_login_panel_i18n.go）。
 	registerFragmentLoginPanelI18n()
+	// 294：文案词条页的只读权限点 i18n:view（补 178 的读侧缺口，见 register_i18n_view_permission.go）。
+	registerI18nViewPermission()
 }
