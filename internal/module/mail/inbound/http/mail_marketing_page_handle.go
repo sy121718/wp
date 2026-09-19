@@ -8,8 +8,8 @@
 package mailhttp
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -36,12 +36,12 @@ func (h *mailPageHandle) MailMarketingPage(c *gin.Context) {
 		PageSize: mailMarketingPageSize,
 	})
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, gin.H{"title": "邮件营销", "Err": err.Error()}))
+		c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
 		return
 	}
 	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: 1, PageSize: mailMarketingPageSize})
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, gin.H{"title": "邮件营销", "Err": err.Error()}))
+		c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
 		return
 	}
 	accounts, _ := h.mail.ListAccounts(ctx, "")
@@ -56,11 +56,33 @@ func (h *mailPageHandle) MailMarketingPage(c *gin.Context) {
 		"Page":         page,
 		"Keyword":      c.Query("keyword"),
 		"Status":       c.Query("status"),
-		"Err":          strings.TrimSpace(c.Query("err")),
-		"Ok":           strings.TrimSpace(c.Query("ok")),
+		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
+		"Err": mailPageErr(c),
+		"Ok":  mailPageOk(c),
 		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。模板用 isset 认这个可选键。
-		"Done": strings.TrimSpace(c.Query("done")),
+		"Done": mailPageDone(c),
 	}))
+}
+
+// mailMarketingErrData 取数失败时的页面数据：归口文案 + 让模板能整页渲染完的空值。
+//
+// 为什么空值不是可选的：admin/mail_marketing.html 在提示条之后就用 .Keyword / .Status /
+// .Page / .ContactTotal / len(.Contacts) / len(.Campaigns) 渲染列表，缺键会让 Jet
+// **在那一行中断**（HTTP 仍是 200、正文整块消失）。只注入 Err 的分支因此渲染不完，
+// 运营连那句归口文案都只能看到半页。
+func mailMarketingErrData(c *gin.Context, err error) gin.H {
+	return gin.H{
+		"title":        "邮件营销",
+		"Err":          mailErrPageText(c, err),
+		"Contacts":     []any{},
+		"ContactTotal": int64(0),
+		"Campaigns":    []any{},
+		"Accounts":     []any{},
+		"Templates":    []any{},
+		"Page":         1,
+		"Keyword":      "",
+		"Status":       "",
+	}
 }
 
 // MailContactImport 导入联系人。
@@ -83,12 +105,12 @@ func (h *mailPageHandle) MailContactImport(c *gin.Context) {
 	}
 	res, err := h.mail.ImportContacts(c.Request.Context(), req)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	msg := "导入完成：新增 " + strconv.Itoa(res.Imported) + "，更新 " + strconv.Itoa(res.Updated) +
-		"，跳过 " + strconv.Itoa(res.Skipped) + "，抑制名单命中 " + strconv.Itoa(res.Suppressed) +
-		"，非法 " + strconv.Itoa(len(res.Errors))
+	// 与 mail_err.go 的 mailCountedNoticeTemplates[2] 同形（数字归一后可判定）。
+	msg := fmt.Sprintf("导入完成：新增 %d，更新 %d，跳过 %d，抑制名单命中 %d，非法 %d",
+		res.Imported, res.Updated, res.Skipped, res.Suppressed, len(res.Errors))
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok="+urlQueryEscape(msg))
 }
 
@@ -100,7 +122,7 @@ func (h *mailPageHandle) MailContactStatus(c *gin.Context) {
 		Note:   c.PostForm("note"),
 	}
 	if err := h.mail.UpdateContactStatus(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok=1")
@@ -123,7 +145,7 @@ func (h *mailPageHandle) MailCampaignSave(c *gin.Context) {
 		}
 	}
 	if _, err := h.mail.SaveCampaign(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok=1")
@@ -135,10 +157,11 @@ func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
 		CampaignID: shell.ParseUint(c.PostForm("id")),
 	})
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	msg := "活动已开始发送，目标 " + strconv.FormatInt(res.Total, 10) + " 人；进度可在下方列表刷新查看。"
+	// 与 mail_err.go 的 mailCountedNoticeTemplates[3] 同形（数字归一后可判定）。
+	msg := fmt.Sprintf("活动已开始发送，目标 %d 人；进度可在下方列表刷新查看。", res.Total)
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok="+urlQueryEscape(msg))
 }
 
@@ -155,14 +178,14 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	}
 	report, err := h.mail.CampaignReport(ctx, id, page, mailMarketingPageSize)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.HTML(http.StatusOK, "admin/mail_campaign.html", shell.Prepare(c, gin.H{
 		"title": "活动报表",
 		"R":     report,
 		"Page":  page,
-		"Err":   c.Query("err"),
+		"Err":   mailPageErr(c),
 	}))
 }
 
@@ -184,7 +207,7 @@ func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
 // MailCampaignDelete 删除活动。
 func (h *mailPageHandle) MailCampaignDelete(c *gin.Context) {
 	if err := h.mail.DeleteCampaign(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail/marketing?ok=1")
@@ -222,13 +245,13 @@ func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
 	case "subscribed", "pending", "unsubscribed":
 	default:
 		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing",
-			mailMarketingBackParams, "", "目标状态不合法，本次没有处理任何联系人。"))
+			mailMarketingBackParams, "", mailContactStatusBadText))
 		return
 	}
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, "", berr.Error()))
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, "", mailBulkIDsText(c, berr)))
 		return
 	}
 	changed, skipped := 0, 0
@@ -259,7 +282,7 @@ func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, "", berr.Error()))
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/marketing", mailMarketingBackParams, "", mailBulkIDsText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0

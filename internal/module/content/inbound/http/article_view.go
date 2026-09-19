@@ -20,7 +20,11 @@ import (
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 )
+
+// articleErrScene 日志场景名（与 content 模块其它 logger.Scene("content") 一致）。
+const articleErrScene = "content"
 
 // —— 数据取值 ——
 
@@ -210,8 +214,24 @@ func articleRedirect(c *gin.Context, path, id, errText, okText string) {
 	c.Redirect(http.StatusFound, target)
 }
 
-// articleFacingError 把 content 契约的错误转成可展示文案。
-func articleFacingError(c *gin.Context, err error) string {
+// articleInternalText 未命中任何白名单时的统一出口（错误文案三件套的第三件）：
+// 原文只进日志（场景 + user_id + 原始错误），对外给归口文案。
+//
+// 页面上出现 "pq: duplicate key value violates unique constraint" 或
+// `relation "contents" does not exist` 既看不懂，也把库表结构泄了出去 ——
+// ?err= 回带与模板数据 Errors 都会被原样渲染，和 JSON body 一样不是可信边界。
+func articleInternalText(c *gin.Context, err error) string {
+	if err != nil {
+		logger.Scene(articleErrScene).
+			With("user_id", shell.CurrentUserID(c)).
+			Error(err, "content 后台页操作失败（非业务错误，只对外给归口文案）")
+	}
+	return shell.PageInternalText(c)
+}
+
+// articleFacingOrInternal 不记日志的文案出口：调用点已经记过一条更具体的日志
+// （带 lang）时用它，免得同一个错误在日志里出现两遍。
+func articleFacingOrInternal(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
@@ -219,6 +239,43 @@ func articleFacingError(c *gin.Context, err error) string {
 		return msg
 	}
 	return shell.PageInternalText(c)
+}
+
+// articleFacingError 把 content 契约的错误转成可展示文案（未命中 → 日志 + 归口文案）。
+func articleFacingError(c *gin.Context, err error) string {
+	if err == nil {
+		return ""
+	}
+	if msg := articleFacingText(err.Error()); msg != "" {
+		return msg
+	}
+	return articleInternalText(c, err)
+}
+
+// articleErrControlledPrefixes 受控提示的前缀白名单。
+//
+// 它们不是 enums key（因此进不了 articleFacingMessages），但整句都由本仓库自己拼出：
+// 不含表名 / SQLSTATE / 路径，且带着运营照着做的数字。目前只有一条 ——
+// shell.BulkIDs 的上限拒绝「一次最多操作 N 项，当前 M 项，请分批进行」（internal/web/shell/bulk.go）。
+//
+// 按**前缀**判而不是按来源直接透出：上游将来改成上抛别的错误时前缀不再命中，
+// 会自动退回归口文案 / 回显 fallback，不会把不认识的原文顺出去。
+var articleErrControlledPrefixes = []string{
+	fmt.Sprintf("一次最多操作 %d 项", shell.MaxBulkIDs),
+}
+
+// articleControlledText 受控提示 → 原样透出（保留可行动信息）；未命中返回空串。
+func articleControlledText(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	for _, prefix := range articleErrControlledPrefixes {
+		if strings.HasPrefix(raw, prefix) {
+			return raw
+		}
+	}
+	return ""
 }
 
 // articleFacingText 白名单校验：命中返回可展示文案，未命中返回空串。
@@ -233,6 +290,12 @@ func articleFacingText(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
+	}
+	// 受控提示（shell.BulkIDs 的上限拒绝）放行：不是 enums key，但整句由本仓库拼出。
+	// 写入侧（articleRedirectList）与回显侧（articleQueryText）共用这一份判据 ——
+	// 少了它，「一次最多操作 10 项」会在回显时被自己的白名单吞掉（用户看不到任何提示）。
+	if msg := articleControlledText(raw); msg != "" {
+		return msg
 	}
 	if msg, ok := articleFacingMessages[raw]; ok {
 		return msg

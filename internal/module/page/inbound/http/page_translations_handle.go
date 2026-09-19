@@ -267,7 +267,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 			continue
 		}
 		if verr := builder.ValidateContentTarget(contextName, source, target); verr != nil {
-			rowErrors = append(rowErrors, contextName+"："+verr.Error())
+			rowErrors = append(rowErrors, contextName+"："+pageTranslationRowText(c, verr))
 			continue
 		}
 		items = append(items, i18n.ContentWriteItem{

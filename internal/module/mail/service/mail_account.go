@@ -148,8 +148,7 @@ func (s *Service) SetDefaultAccount(ctx context.Context, id uint64) (err error) 
 		if cerr := s.m.ClearDefaultAccounts(ctx, tx, e.Purpose); cerr != nil {
 			return cerr
 		}
-		return tx.WithContext(ctx).Model(&mailmodel.MailAccountEntity{}).
-			Where("id = ?", id).Updates(map[string]any{"is_default": true, "update_time": time.Now()}).Error
+		return s.m.MarkAccountDefaultTx(ctx, tx, id)
 	})
 }
 

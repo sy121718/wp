@@ -12,12 +12,12 @@ import (
 func (h *Handle) RuleList(c *gin.Context) {
 	var req admindto.RuleListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.rule.RuleList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -27,12 +27,12 @@ func (h *Handle) RuleList(c *gin.Context) {
 func (h *Handle) RuleDetail(c *gin.Context) {
 	var req admindto.RuleDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.rule.RuleDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -42,11 +42,11 @@ func (h *Handle) RuleDetail(c *gin.Context) {
 func (h *Handle) RuleCreate(c *gin.Context) {
 	var req admindto.RuleCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.rule.RuleCreate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -56,11 +56,11 @@ func (h *Handle) RuleCreate(c *gin.Context) {
 func (h *Handle) RuleUpdate(c *gin.Context) {
 	var req admindto.RuleUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.rule.RuleUpdate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -70,11 +70,11 @@ func (h *Handle) RuleUpdate(c *gin.Context) {
 func (h *Handle) RuleDelete(c *gin.Context) {
 	var req admindto.RuleDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.rule.RuleDelete(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -84,7 +84,7 @@ func (h *Handle) RuleDelete(c *gin.Context) {
 func (h *Handle) RuleSchemaList(c *gin.Context) {
 	res, err := h.rule.RuleSchemaList(c.Request.Context())
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -94,12 +94,12 @@ func (h *Handle) RuleSchemaList(c *gin.Context) {
 func (h *Handle) RuleSchemaDetail(c *gin.Context) {
 	var req admindto.RuleSchemaDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.rule.RuleSchemaDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	if res == nil {
@@ -113,12 +113,12 @@ func (h *Handle) RuleSchemaDetail(c *gin.Context) {
 func (h *Handle) RuleAssignmentList(c *gin.Context) {
 	var req admindto.RuleAssignmentListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.rule.RuleAssignmentList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -128,11 +128,11 @@ func (h *Handle) RuleAssignmentList(c *gin.Context) {
 func (h *Handle) RuleAssignmentSave(c *gin.Context) {
 	var req admindto.RuleAssignmentSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.rule.RuleAssignmentSave(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)

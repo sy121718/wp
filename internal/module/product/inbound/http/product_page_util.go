@@ -29,6 +29,19 @@ func productDetailLocation(projectID, productID, errMsg string) string {
 	return loc
 }
 
+// productDetailLocationWith 详情页写操作的完整回跳地址：?err=（警告）与 ?done=（信息）两个渲染位。
+//
+// 变体清单的保存是**部分成功**语义（清单外要删的行可能因有库存 / 被引用被跳过），
+// 所以「成功但有跳过」必须能同时看见两个信号 —— 只给 err 会让用户以为整批没保存，
+// 只给 done 又会让跳过原因被淹没。
+func productDetailLocationWith(projectID, productID, errMsg, doneMsg string) string {
+	loc := productDetailLocation(projectID, productID, errMsg)
+	if doneMsg != "" {
+		loc += "&done=" + url.QueryEscape(doneMsg)
+	}
+	return loc
+}
+
 // formProductID 取表单里的商品 id：优先 productId，再回落 id。
 //
 // 两个名字都是**既有字段名**，不下令重命名：详情页的商品级表单（属性引用 / 分类与品牌 /

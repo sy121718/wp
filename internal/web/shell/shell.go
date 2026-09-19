@@ -145,7 +145,9 @@ func injectI18n(c *gin.Context, data gin.H) gin.H {
 	data["lang"] = lang
 	data["t"] = t
 	data["langs"] = templates.LanguageOptions(lang)
-	data["lang_redirect"] = requestURI(c)
+	// 语言切换表单的 redirect 隐藏域：当前页 URI 经 LangRedirect 收敛
+	//（只允许站内相对路径、最长 langRedirectMaxBytes 字节），详见 notice.go。
+	data["lang_redirect"] = LangRedirect(c)
 
 	// 页面标题：enums 常量已是 key（如 MsgPagesTitle），此处按当前语言翻译；
 	// 非 key 的字面量标题（如登录页）走 fallback 原样返回，不改变行为。

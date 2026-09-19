@@ -40,6 +40,10 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 	if err != nil {
 		return nil, err
 	}
+	typ, err := normalizeWarehouseType(req.Type)
+	if err != nil {
+		return nil, err
+	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -56,11 +60,20 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 		return nil, lerr
 	}
 	asDefault := req.IsDefault || len(existing) == 0
+	// 虚拟仓没有实体收发能力，不能当兜底仓：默认仓是「未指定仓库」时的落点。
+	if asDefault && typ == inventoryenums.WarehouseTypeVirtual {
+		return nil, errors.New(inventoryenums.ErrWarehouseTypeVirtualDefault)
+	}
+	config, err := s.applyThirdPartyConfig(typ, req.ThirdParty, nil)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	e := &inventorymodel.WarehouseEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
-		Code: code, Name: name, Status: status,
+		Code: code, Name: name, Type: typ, Status: status,
 		IsDefault: asDefault, Sort: req.Sort,
+		Config:    config,
 		Metadata:  orJSON(req.Metadata, "{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -116,6 +129,24 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 	if req.Sort != nil {
 		e.Sort = *req.Sort
 	}
+	if req.Type != nil {
+		typ, terr := normalizeWarehouseType(*req.Type)
+		if terr != nil {
+			return nil, terr
+		}
+		// 默认仓不能改成虚拟仓：那等于把「未指定仓库」的兜底挪到一个不出货的仓上。
+		if e.IsDefault && typ == inventoryenums.WarehouseTypeVirtual {
+			return nil, errors.New(inventoryenums.ErrWarehouseTypeVirtualDefault)
+		}
+		e.Type = typ
+	}
+	// 对接配置：只有第三方仓写 config；未传配置时既有值原样保留
+	//（类型可来回切换，切回去配置还在）。凭据按「未改动则不覆盖」处理。
+	config, cerr := s.applyThirdPartyConfig(e.Type, req.ThirdParty, e.Config)
+	if cerr != nil {
+		return nil, cerr
+	}
+	e.Config = config
 	if req.Metadata != nil {
 		e.Metadata = orJSON(req.Metadata, "{}")
 	}
@@ -295,11 +326,16 @@ func toWarehouseResp(e *inventorymodel.WarehouseEntity) *inventorydto.WarehouseR
 	if e == nil {
 		return nil
 	}
-	return &inventorydto.WarehouseResp{
+	resp := &inventorydto.WarehouseResp{
 		ID: e.ID, ProjectID: e.ProjectID, Code: e.Code, Name: e.Name,
-		Status: e.Status, IsDefault: e.IsDefault, Sort: e.Sort,
+		Type: e.Type, Status: e.Status, IsDefault: e.IsDefault, Sort: e.Sort,
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
+	// 只有第三方仓带对接配置，且给出的是**脱敏后**的结构（凭据只有掩码与布尔值）。
+	if e.Type == inventoryenums.WarehouseTypeThirdParty {
+		resp.ThirdParty = warehouseThirdPartyResp(e.Config)
+	}
+	return resp
 }
 
 // orJSON jsonb 列的兜底值。

@@ -1,0 +1,32 @@
+{* admin/partials/rich_editor.html — 全站统一的富文本字段片段（Trix + rich-editor 扩展）。
+ *
+ * 为什么要它：Trix 编辑器的接线（隐藏 input 的 id、trix-editor 的 input 关联、扩展脚本）
+ * 在文章正文、商品分类描述、商品品牌描述三处各抄过一遍，加一个块级能力要改三处。
+ * 抽成片段后调用点只给「字段名 + 唯一 key + 初始 HTML」。
+ *
+ * 用法（import 必须写在 extends 之后、任何 block 之前）：
+ *     {{extends "layout.html"}}
+ *     {{import "partials/rich_editor.html"}}
+ *     {{block body()}}
+ *         {{yield richEditor(field="description", key=b.ID, value=b.Description)}}
+ *
+ * 四条约定：
+ *   · value 传的是**库里的原始值**：Jet 输出时会转义一次（属性安全），浏览器解析后
+ *     隐藏 input 拿到的是原文；纯文本的「先转义再交给编辑器」由 rich-editor/index.js 的
+ *     装载流程完成（口径与 Go 侧 core.RichTextHTML 一致）；
+ *   · key 只用来拼唯一 id（同一个字段在一个页面里会出现 N 次：每一行一个抽屉）；
+ *   · Trix 会为每个编辑器自动创建一个内部 <trix-toolbar>（vendor 源码 trix.umd.js:13781），
+ *     工具条内容由 rich-editor/toolbar.js 整体替换，这里不需要写工具条结构；
+ *   · 片段只出结构，三个资源由**调用方页面自己引**：/static/vendor/trix/trix.css、
+ *     /static/css/rich-editor.css、/static/vendor/trix/trix.umd.js。扩展入口 index.js 由本
+ *     片段带出；vendor 脚本在文末时入口会先于 Trix 执行，靠 index.js 的补启动在 Trix 就绪后
+ *     完成装配（调用方在文末再引一次 index.js 是允许的，也是推荐做法）。
+ *
+ * 本片段不含任何中文文案：可见的字段标题由调用点自己用 t() 取词渲染 ——
+ * 片段只收结构，不抢调用点的文案（与 bulk_bar.html 的分工一致）。 *}
+
+{{block richEditor(field, key, value)}}<div class="rich-editor-field" data-rich-editor="{{field}}">
+    <input type="hidden" id="rich-{{field}}-{{key}}" name="{{field}}" value="{{value}}">
+    <trix-editor input="rich-{{field}}-{{key}}" class="trix-content rich-editor"></trix-editor>
+    <script src="/static/js/rich-editor/index.js"></script>
+</div>{{end}}

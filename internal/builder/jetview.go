@@ -1111,6 +1111,10 @@ func resolveNavMenu(node *core.Node, p *navPkg.Props, ctx *core.RenderContext) e
 	if err != nil {
 		return fmt.Errorf("节点 %s: 导航位置 %q 解析失败: %w", node.ID, kind, err)
 	}
+	// 取值即记录（审计 VIS-006 同一口径）：本次编译确实把该位置的导航烘进了产物，
+	// 产物依赖里就必须留下 menu:{projectID}:{kind}，否则改导航后该产物不会被标 stale。
+	// 解析失败会让整次编译失败（无产物、也就无依赖可失效），故只记成功路径。
+	ctx.UseMenu(kind)
 	p.Items = navPkg.ItemsOf(items)
 	return navPkg.ValidateItems(p.Items, node.ID)
 }

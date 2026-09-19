@@ -18,6 +18,7 @@ import (
 	"context"
 	"hash/fnv"
 	"sync"
+	"sync/atomic"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -89,9 +90,39 @@ type Service struct {
 	// 不同步重建 —— 进程内分片锁在多实例部署下拦不住两个实例同时重建同一实例，
 	// 队列消费侧的 SKIP LOCKED claim 才是跨实例互斥的落点；nil 时回退原同步重建。
 	buildQueue presentationcontract.BuildQueueEnqueuer
+
+	// convergeWake 发布回执收敛的进程内快通道（容量 1）。
+	//
+	// 主链写路径在**事务落定之后**非阻塞地推一下，正常路径毫秒级收敛；
+	// 通道满时丢弃信号，由定时器兜底（详见 presentation_converge.go）。
+	convergeWake chan struct{}
+	// lastConvergeAt 最近一次收敛运行时刻（Unix 秒；0 = 本进程还没跑过）。
+	//
+	// 进程内观测值，供 PendingReceiptStatus 判断「本实例的收敛还在跑」；
+	// 多实例部署下每个实例各记各的，不做全局真源（这是进程健康信号，不是业务状态）。
+	lastConvergeAt atomic.Int64
+	// converging 本进程正在进行中的收敛轮数（并发触发时可能 > 1）。
+	//
+	// 收敛的批次重跑（convergeInstanceBatch → RebuildInstance）会重新走一遍主链写路径，
+	// 那条路径失败时按正常口径推快通道信号 —— 而它此刻正是被收敛驱动的，推回去就成了
+	// 「收敛 → 重放 → 重跑批次 → 推信号 → 立刻再收敛」的自激热循环。
+	// 用这个计数把「恢复驱动的写入」与「用户驱动的写入」区分开：收敛进行中不推信号
+	// （非阻塞信号本就可丢，下一轮由 ticker 兜底）。
+	//
+	// 用计数而不是 bool：收敛可能被定时器与写路径快通道同时触发（也允许用例直接调），
+	// bool 会被先结束的那一轮提前清掉，后一轮恢复驱动的写入又开始推信号。
+	converging atomic.Int32
 }
 
 // lockInstance 取某实体的实例级锁（按 entity 维度：创建与重建互斥同一把）。
+//
+// ⚠️ **前提：单实例部署**（2026-09-19 用户确认）。这把锁是**进程内**的（分片 sync.Mutex），
+// 它挡得住同一进程里的并发创建/重建，挡不住**两个实例**同时处理同一个实体 —— 多实例部署下
+// 「构建 → 落库 → 激活」会交错，产物指针与路由可能互相覆盖。
+// 唯一的跨实例互斥落点是数据库：构建任务队列消费侧的 SKIP LOCKED claim（见本文件 buildQueue
+// 的注释与 RebuildStale 的入队分支），它只覆盖**自动重建**，创建/改 URL 这两条同步路径不在队列里。
+// 将来要支持多实例，必须把这两条路径也换成 DB 锁（行锁或 advisory lock）+ 幂等重放，
+// 而不是把这里的 mutex 换成别的进程内原语。
 func (s *Service) lockInstance(entityType, entityID string) *sync.Mutex {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(entityType + ":" + entityID))
@@ -116,6 +147,8 @@ func NewService(m *presentationmodel.Model,
 		store:       &pipeline.LocalStore{Root: pipeline.DefaultArtifactRoot()},
 		publication: &pipeline.LocalPublicationStore{ActiveRoot: pipeline.ActiveRoot()},
 		routes:      routes,
+		// 容量 1：同一时刻只留一个待处理信号，多次写入合并成一次收敛。
+		convergeWake: make(chan struct{}, 1),
 	}
 }
 

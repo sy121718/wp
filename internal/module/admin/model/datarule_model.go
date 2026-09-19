@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 表常量：规则主表
@@ -146,6 +147,36 @@ func (m *SysRuleModel) DeleteByIDs(ctx context.Context, ids []uint64) (int64, er
 	return result.RowsAffected, result.Error
 }
 
+// Transaction 透传事务：一次删除里「规则分配行（sys_rule_assignment）+ 规则行（sys_rule）」
+// 两处持久化写必须同事务，边界由 service 决定（model 不替 service 决定事务范围）。
+func (m *SysRuleModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// LockByIDsTx 在调用方事务内按主键批量加行锁读取（SELECT ... FOR UPDATE，按 id 升序）。
+// 删除规则是读-改-写（先复核存在性再删），不加锁时并发的删/改会越过这次复核：
+// 复核通过的行可能在真正删除前已被别人改掉或删掉。
+// 返回实际锁到并仍存在的行，由调用方按数量复核。
+func (m *SysRuleModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]SysRuleEntity, error) {
+	list := make([]SysRuleEntity, 0, len(ids))
+	if len(ids) == 0 {
+		return list, nil
+	}
+	err := tx.WithContext(ctx).Model(&SysRuleEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
+// DeleteByIDsTx 在调用方事务内按主键批量删除规则，返回影响行数。
+func (m *SysRuleModel) DeleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := tx.WithContext(ctx).Model(&SysRuleEntity{}).Where("id IN ?", ids).Delete(&SysRuleEntity{})
+	return result.RowsAffected, result.Error
+}
+
 // SysRuleAssignmentModel 规则分配表（sys_rule_assignment）数据访问。
 type SysRuleAssignmentModel struct {
 	db *gorm.DB
@@ -188,6 +219,14 @@ func (m *SysRuleAssignmentModel) ReplaceByRuleID(
 // DeleteByRuleID 按规则 ID 删除所有分配记录。
 func (m *SysRuleAssignmentModel) DeleteByRuleID(ctx context.Context, ruleID uint64) error {
 	return m.DB(ctx).Where("rule_id = ?", ruleID).Delete(&SysRuleAssignmentEntity{}).Error
+}
+
+// DeleteByRuleIDTx 在调用方事务内按规则 ID 删除分配记录。
+// 与规则行（sys_rule）的删除同事务：分配行先删、规则行删除失败时必须一起回滚，
+// 否则留下「规则还在、授权全没了」—— 该规则对谁都不再生效，而列表页上看不出来。
+func (m *SysRuleAssignmentModel) DeleteByRuleIDTx(ctx context.Context, tx *gorm.DB, ruleID uint64) error {
+	return tx.WithContext(ctx).Model(&SysRuleAssignmentEntity{}).
+		Where("rule_id = ?", ruleID).Delete(&SysRuleAssignmentEntity{}).Error
 }
 
 // BatchCreate 批量插入分配记录。传入空切片时直接返回 nil。

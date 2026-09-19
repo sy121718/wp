@@ -3,18 +3,43 @@ package inventorydto
 
 import "encoding/json"
 
+// WarehouseThirdPartyReq 第三方仓的对接配置（迁移 240）。
+//
+// 非敏感项（对接方 / 外部仓代码 / 地址 / 联系人 / 是否允许发货）明文进 config；
+// 凭据只以**密文**或**引用名**落库：APICredential 是写入方向的明文，
+// service 加密后立刻替换成密文，明文既不落库也不回显（见 WarehouseThirdPartyResp）。
+type WarehouseThirdPartyReq struct {
+	Provider       string `json:"provider"`
+	ExternalCode   string `json:"externalCode"`
+	Address        string `json:"address"`
+	Contact        string `json:"contact"`
+	AllowsShipping bool   `json:"allowsShipping"`
+	// APICredential 本次要写入的**明文**凭据；为空或等于掩码 **** 表示「不改凭据」
+	// （未改动就不覆盖 —— 后台回显的是掩码，直接保存不该把真凭据清掉）。
+	APICredential string `json:"apiCredential"`
+	// ClearCredential 显式清除已配置的凭据（指针为 nil 表达不了「改成没有」）。
+	ClearCredential bool `json:"clearCredential"`
+	// SecretRef 凭据的引用名（无可用加密能力时的替代形态）：系统只记名字，值在部署侧。
+	SecretRef string `json:"secretRef"`
+}
+
 // CreateWarehouseReq 新建仓库（验收 1）。
 //
 // Code 是仓库短码：工程内唯一，且是 SKU 编码的前缀（{仓短码}_{商品码}_{序号}）。
 // IsDefault 为真表示同时把它设为该工程的默认仓（「未指定仓库」时的兜底）。
+// Type 是仓库类型；第三方仓（third_party）的对接配置走 ThirdParty。
 type CreateWarehouseReq struct {
-	ProjectID string          `json:"projectId"`
-	Code      string          `json:"code" binding:"required"`
-	Name      string          `json:"name" binding:"required"`
+	ProjectID string `json:"projectId"`
+	Code      string `json:"code" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	// Type 空串按 self 归一（存量语义：不加类型就是自营仓）。
+	Type      string          `json:"type"`
 	IsDefault bool            `json:"isDefault"`
 	Status    string          `json:"status"`
 	Sort      int             `json:"sort"`
 	Metadata  json.RawMessage `json:"metadata"`
+	// ThirdParty 非 nil 且类型为 third_party 时写入 config；其余类型忽略它。
+	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty"`
 }
 
 // UpdateWarehouseReq 修改仓库（逐字段可选；nil = 本次不改）。
@@ -26,10 +51,14 @@ type UpdateWarehouseReq struct {
 	Name      *string `json:"name"`
 	// IsDefault 置真即「切换默认仓」（同工程唯一）；置假在已是默认仓时被拒绝 ——
 	// 取消默认会让「未指定仓库」失去兜底，必须先指定另一个默认仓。
-	IsDefault *bool           `json:"isDefault"`
-	Status    *string         `json:"status"`
-	Sort      *int            `json:"sort"`
-	Metadata  json.RawMessage `json:"metadata"`
+	IsDefault *bool   `json:"isDefault"`
+	Status    *string `json:"status"`
+	Sort      *int    `json:"sort"`
+	// Type 仓库类型；nil = 本次不改。
+	Type     *string         `json:"type"`
+	Metadata json.RawMessage `json:"metadata"`
+	// ThirdParty 非 nil 表示本次整体替换对接配置（凭据按「未改动则不覆盖」处理）。
+	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty"`
 }
 
 // GetWarehouseReq 按 ID 查询仓库。
@@ -62,6 +91,25 @@ type EnsureStockReq struct {
 	WarehouseID string `json:"warehouseId"`
 }
 
+// UpdateStockTrackingReq 库存页行内编辑「跟踪开关 + 数量」（迁移 261）。
+//
+// TrackQuantity 为 false 即**无限**（不跟踪）：此时 Quantity 必须为空 / 0 ——
+// 不跟踪的行不允许带数字（DDL 侧 CHECK (track_quantity OR quantity = 0) 兜底，
+// 这里提前给一条可读的业务错误）。表单在无限态把数量框禁用并留空，
+// **绝不预填 0**：0 是「卖光」这个具体事实，要写就得用户自己打出来。
+//
+// TrackQuantity 为 true 时数量必填：数量与开关一起写回，并且经变动契约
+// （原因 = 手工调整）落一条流水 —— 数量的任何变化都要有痕迹。
+type UpdateStockTrackingReq struct {
+	ProjectID   string `json:"projectId"`
+	WarehouseID string `json:"warehouseId" binding:"required"`
+	VariantID   string `json:"variantId" binding:"required"`
+	// TrackQuantity 跟踪开关：false = 无限（不跟踪）。
+	TrackQuantity bool `json:"trackQuantity"`
+	// Quantity 仅在 TrackQuantity 为真时生效；为假时必须为 0。
+	Quantity int `json:"quantity"`
+}
+
 // GetStockReq 单条库存记录（按 id，或按 变体 × 仓库 定位）。
 type GetStockReq struct {
 	ID          string `form:"id"`
@@ -84,8 +132,44 @@ type ListStockReq struct {
 	ProductID   string `form:"productId"`
 	VariantID   string `form:"variantId"`
 	SKUCode     string `form:"skuCode"`
+	// ExternalSKU 按该仓的外部编码过滤（迁移 251）：N:1 下同一个外码会命中同一商品的
+	// 多个变体行 —— 「这个外码在本仓有多少条货」正是这么查的。
+	ExternalSKU string `form:"externalSku"`
 	Page        int    `form:"page"`
 	Size        int    `form:"size"`
+}
+
+// —— 仓库 SKU 与外部编码（迁移 251，docs/14 §9.3）——
+
+// ListWarehouseSKUReq 按工程 / 仓库列出可选的仓库 SKU（新建商品抽屉「从仓库选」的数据源）。
+//
+// WarehouseID 为空 = 列全部仓（后台核对场景）；Keyword 同时匹配我们自己的 sku_code
+// 与外部编码（运营手上可能是其中任意一个）。
+type ListWarehouseSKUReq struct {
+	ProjectID   string `form:"projectId"`
+	WarehouseID string `form:"warehouseId"`
+	Keyword     string `form:"keyword"`
+	Page        int    `form:"page"`
+	Size        int    `form:"size"`
+}
+
+// GetWarehouseSKUReq 「从仓库选」的最小查询：给定仓库 + 我们自己那条仓库 SKU，返回该行。
+type GetWarehouseSKUReq struct {
+	ProjectID   string `form:"projectId"`
+	WarehouseID string `form:"warehouseId" binding:"required"`
+	SKUCode     string `form:"skuCode" binding:"required"`
+}
+
+// BindExternalSKUReq 绑定 / 更新某 (仓库, 变体) 库存行的外部编码。
+//
+// ExternalSKU 空串是**合法值**：清空 = 该仓改回用我们自己的 SKU（自营仓的常态）。
+// 非空时的弱校验在 service：同一仓内同一外码必须指向同一个 product_id
+// （同一商品的多个变体共用合法；跨商品报 ErrExternalSKUProductConflict）。
+type BindExternalSKUReq struct {
+	ProjectID   string `json:"projectId"`
+	WarehouseID string `json:"warehouseId" binding:"required"`
+	VariantID   string `json:"variantId" binding:"required"`
+	ExternalSKU string `json:"externalSku"`
 }
 
 // —— 库存变动与流水（issue #16）——
@@ -102,6 +186,15 @@ type StockChangeLineReq struct {
 	SKUCode     string `json:"skuCode"`
 	// Quantity 语义随方向而定：in / out 是正数增减量；adjust 是目标绝对量（>= 0）。
 	Quantity int `json:"quantity"`
+	// CostPrice 可选：本次变动要写入的**当前成本价**（(仓库, SKU) 维度，覆盖式，迁移 244）。
+	//
+	// nil = 本次变动不碰成本 —— 出库、盘点、报损的默认行为就是不动成本（调成本不是
+	// 它们的事）；给出值即按显式值写，且**与数量是否变化无关**（数量没变但要改成本
+	// 是合法诉求，例如外部核算后导入）。
+	//
+	// 注意 nil 与「成本为空」是两回事：成本列可空表示尚未核算，显式给出的值必须
+	// >= 0 且有限（0 合法：赠品 / 内部划拨）。
+	CostPrice *float64 `json:"costPrice"`
 }
 
 // ChangeStockReq 按 SKU 增减库存（issue #16 验收 1/2/3/4）。
@@ -150,8 +243,12 @@ type ListMovementReq struct {
 	SourceType  string `form:"sourceType"`
 	SourceRef   string `form:"sourceRef"`
 	BatchID     string `form:"batchId"`
-	Page        int    `form:"page"`
-	Size        int    `form:"size"`
+	// TimeFrom / TimeTo 流水时间区间（闭区间）：接受 2006-01-02 或 2006-01-02 15:04:05；
+	// TimeTo 只给日期时按当日 23:59:59 收口（否则「截止今天」会把今天整天漏掉）。
+	TimeFrom string `form:"timeFrom"`
+	TimeTo   string `form:"timeTo"`
+	Page     int    `form:"page"`
+	Size     int    `form:"size"`
 }
 
 // —— 变动原因字典（issue #16 验收 4）——
@@ -164,7 +261,10 @@ type ListReasonReq struct {
 	IncludeDisabled bool   `form:"includeDisabled"`
 }
 
-// CreateReasonReq 新建自定义变动原因（内置原因由迁移 103 seed，全工程可见）。
+// CreateReasonReq 新建自定义变动原因（内置原因由迁移 103 seed，全工程可见、只读）。
+//
+// Name 是**给人读的文案**（运营填的）：service 把它写成 sys_i18n 里的一条词条，
+// 原因行本身只存自动派生的 i18n key —— 全站文案的唯一真源是文案词条，不是这张表。
 type CreateReasonReq struct {
 	ProjectID string `json:"projectId"`
 	Code      string `json:"code" binding:"required"`
@@ -173,7 +273,10 @@ type CreateReasonReq struct {
 	Sort      int    `json:"sort"`
 }
 
-// UpdateReasonReq 修改自定义变动原因（逐字段可选；内置原因一律拒绝）。
+// UpdateReasonReq 修改自定义变动原因（逐字段可选）。
+//
+// 内置原因只读：改 Name 一律拒绝（它的 key 由系统按 code 派生），仅允许改启停与排序。
+// 自定义原因改 Name 时同步更新 sys_i18n 里的那条词条。
 type UpdateReasonReq struct {
 	ID     string  `json:"id" binding:"required"`
 	Name   *string `json:"name"`

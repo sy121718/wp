@@ -23,6 +23,14 @@ func SetupPluginRoutes(rg *permission.RouteGroup, db *gorm.DB, adminAuthz adminc
 	m := pluginmodel.NewModel(db)
 	svc := pluginservice.NewService(m)
 	svc.SetAdminAuthz(adminAuthz)
+
+	// 插件三处产物（L1 schema / 注册行 / 存储目录）的定时对账巡检。
+	// 卸载的三步里有两处能同事务、但存储目录是跨库动作（故意忽略错误），因此每一步都可能
+	// 单独失败留下残片；而残片没有任何接口能发现（孤儿 schema 里可能装着真实业务数据、
+	// 缺 schema 会让构建装配在建表时炸、缺目录会让装配静默跳过该插件）。
+	// 巡检**只报告不清理**；装配在这里启动一次，每个进程只起一个 goroutine。
+	pluginservice.StartPluginPatrolScheduler(svc)
+
 	handle := NewHandle(svc)
 
 	g := rg.Group("/plugin")

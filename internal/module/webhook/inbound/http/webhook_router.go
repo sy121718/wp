@@ -30,6 +30,13 @@ func SetupWebhookRoutes(rg *permission.RouteGroup, db *gorm.DB) webhookcontract.
 	// 投递 worker 与 service 用同一份密钥（注册幂等，路由装配期调一次）。
 	webhookservice.RegisterWebhookTaskHandler(db, secret)
 
+	// 陈旧 pending 投递的定时重放调度：入队在事务提交后失败（Redis 抖动 / 队列未启用）时，
+	// 那一行会永远停在 pending —— 投递的真源是 pending 行、队列只是加速器，重放是它唯一的
+	// 补偿入口。调度只对「pending 已超过 replayMinAge」的行重新入队（幂等），
+	// 间隔取 1 小时、显著大于那个 5 分钟的陈旧阈值（详见 service/webhook_replay_scheduler.go）。
+	// 装配在这里启动一次：本函数每个进程只会被调用一次，调度器也就只起一个 goroutine。
+	webhookservice.StartWebhookReplayScheduler(svc)
+
 	h := NewHandle(svc)
 	g := rg.Group("/webhook")
 	// 端点（白名单）管理。

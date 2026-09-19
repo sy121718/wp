@@ -31,7 +31,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, navigationenums.MsgCreateSuccess, res)
@@ -46,7 +46,7 @@ func (h *Handle) Update(c *gin.Context) {
 	}
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, navigationenums.MsgUpdateSuccess, res)
@@ -61,7 +61,7 @@ func (h *Handle) Get(c *gin.Context) {
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, navigationenums.MsgDetailSuccess, res)
@@ -76,7 +76,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, navigationenums.MsgListSuccess, list)
@@ -90,7 +90,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())
+		response.ErrorWithMessage(c, navigationErrorStatus(err), navigationErrText(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, navigationenums.MsgDeleteSuccess, nil)

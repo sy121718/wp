@@ -128,15 +128,28 @@ func (m *Model) ListTagsByIDs(ctx context.Context, ids []string) (list []*Produc
 // CreateTag 写入标签。
 func (m *Model) CreateTag(ctx context.Context, e *ProductTagEntity) (err error) {
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
-		return tx.Model(&ProductTagEntity{}).Create(e).Error
+		return m.CreateTagTx(ctx, tx, e)
 	})
+}
+
+// CreateTagTx 复用调用方事务写入标签（product_tags 带策略，调用方须先 rls.ScopeTx）。
+//
+// service 需要「标签行 + 该标签的归属重算」原子：规则型标签建好即算一次，
+// 分开提交时会留下「有标签、没归属」的半截状态（列表里显示命中 0，直到下一次重算）。
+func (m *Model) CreateTagTx(ctx context.Context, tx *gorm.DB, e *ProductTagEntity) (err error) {
+	return tx.WithContext(ctx).Model(&ProductTagEntity{}).Create(e).Error
 }
 
 // UpdateTag 更新标签（整行保存）。
 func (m *Model) UpdateTag(ctx context.Context, e *ProductTagEntity) (err error) {
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
-		return tx.Model(&ProductTagEntity{}).Where("id = ?", e.ID).Save(e).Error
+		return m.UpdateTagTx(ctx, tx, e)
 	})
+}
+
+// UpdateTagTx 复用调用方事务更新标签行（同上：与归属重算 / RecalcAt 同事务）。
+func (m *Model) UpdateTagTx(ctx context.Context, tx *gorm.DB, e *ProductTagEntity) (err error) {
+	return tx.WithContext(ctx).Model(&ProductTagEntity{}).Where("id = ?", e.ID).Save(e).Error
 }
 
 // DeleteTagTx 在给定事务里删除标签行（service 编排：先解绑引用再删）。

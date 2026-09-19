@@ -73,6 +73,43 @@ type ClearOverrideReq struct {
 //
 // 实例定位二选一：ID，或 EntityType + EntityID（后台页面通常只持有实体，
 // 拿不到实例 id）。NewPath 为空或定位信息不全属于参数错误。
+
+// ReapplyPresetReq 重新套用预设：放弃该商品独立文档，回到跟随模板（可反悔的另一半）。
+type ReapplyPresetReq struct {
+	InstanceID string `json:"instanceId" binding:"required"`
+	ProjectID  string `json:"projectId"`
+	// TemplateID 可选：同时切换到另一套模板（换底稿 = 放弃独立文档）。
+	TemplateID string `json:"templateId"`
+}
+
+// RollbackArtifactReq 产物指针回滚（秒级，不重新编译；要求历史产物文件仍在磁盘上）。
+type RollbackArtifactReq struct {
+	InstanceID string `json:"instanceId" binding:"required"`
+	ProjectID  string `json:"projectId"`
+	// TargetHash 目标产物的内容哈希（presentation_artifacts.artifact_hash）。
+	TargetHash string `json:"targetHash" binding:"required"`
+}
+
+// RollbackDocumentReq 快照级文档回滚：取历史快照的文档重新发布（重新编译，数据取最新）。
+type RollbackDocumentReq struct {
+	InstanceID string `json:"instanceId" binding:"required"`
+	ProjectID  string `json:"projectId"`
+	SnapshotID string `json:"snapshotId" binding:"required"`
+}
+
+// ListSnapshotsReq 实例历史快照清单（回滚目标选择）。
+type ListSnapshotsReq struct {
+	InstanceID string `form:"instanceId" json:"instanceId" binding:"required"`
+	ProjectID  string `form:"projectId" json:"projectId"`
+	Limit      int    `form:"limit" json:"limit"`
+}
+
+// SnapshotSummary 历史快照投影（只给选择回滚目标需要的字段）。
+type SnapshotSummary struct {
+	ID                      string `json:"id"`
+	SourceTemplateVersionID string `json:"sourceTemplateVersionId"`
+	CreatedAt               string `json:"createdAt"`
+}
 type UpdateURLReq struct {
 	ID         string `json:"id" form:"id"`
 	EntityType string `json:"entityType" form:"entityType"`
@@ -153,14 +190,19 @@ type InstanceResp struct {
 	EntityID   string `json:"entityId"`
 	// InstanceRole 实例角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
 	// 同一个分类可以同时有这两张页面；空值按 detail 处理（既有行为不变）。
-	InstanceRole string          `json:"instanceRole,omitempty"`
-	URLPath      string          `json:"urlPath"`
-	TemplateID   string          `json:"templateId"`
-	Status       string          `json:"status"`
-	Stale        bool            `json:"stale"`
-	ArtifactID   string          `json:"artifactId,omitempty"`
-	ArtifactHash string          `json:"artifactHash,omitempty"`
-	SnapshotID   string          `json:"snapshotId,omitempty"`
-	Document     json.RawMessage `json:"document,omitempty"`
-	UpdatedAt    string          `json:"updatedAt"`
+	InstanceRole string `json:"instanceRole,omitempty"`
+	URLPath      string `json:"urlPath"`
+	TemplateID   string `json:"templateId"`
+	// RenderMode 渲染模式（迁移 282）：template=跟随模板 | document=该商品独立文档。
+	RenderMode string `json:"renderMode,omitempty"`
+	// SourceTemplateVersionID 当前快照依据的模板版本：与模板最新版对比即可提示
+	// 「预设有新版本」（document 模式不会自动跟随，只能靠它提示用户）。
+	SourceTemplateVersionID string          `json:"sourceTemplateVersionId,omitempty"`
+	Status                  string          `json:"status"`
+	Stale                   bool            `json:"stale"`
+	ArtifactID              string          `json:"artifactId,omitempty"`
+	ArtifactHash            string          `json:"artifactHash,omitempty"`
+	SnapshotID              string          `json:"snapshotId,omitempty"`
+	Document                json.RawMessage `json:"document,omitempty"`
+	UpdatedAt               string          `json:"updatedAt"`
 }

@@ -280,6 +280,17 @@ func (m *ReturnModel) ItemsByReturnID(ctx context.Context, returnID uint64) (ite
 	return items, err
 }
 
+// ItemsByReturnIDTx 事务内取某张退货单的明细。
+//
+// 为什么要有 Tx 版：调用方已经在退货 / 订单事务里（入库与状态推进必须整体回滚），
+// 用非 Tx 版读会走另一条连接 —— 读到事务外的快照，且缺工程作用域时
+// order_return_items 的 FORCE 策略会让它在非超级角色下静默返回空集。
+func (m *ReturnModel) ItemsByReturnIDTx(ctx context.Context, tx *gorm.DB, returnID uint64) (items []*ReturnItemEntity, err error) {
+	err = tx.WithContext(ctx).Model(&ReturnItemEntity{}).
+		Where("return_id = ?", returnID).Order("id ASC").Find(&items).Error
+	return items, err
+}
+
 // ItemsByReturnIDs 批量取明细（列表页一次取齐，不做 N+1）。
 func (m *ReturnModel) ItemsByReturnIDs(ctx context.Context, returnIDs []uint64) (items []*ReturnItemEntity, err error) {
 	if len(returnIDs) == 0 {

@@ -22,6 +22,8 @@ import (
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+
+	"gorm.io/gorm"
 )
 
 // buildLang 解析本次构建语言：请求显式指定优先，否则站点默认语言（i18n.default_lang）。
@@ -142,6 +144,44 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID,
 	return nil
 }
 
+// renameReservedAllLangsTx 在**调用方的事务**内按启用语言逐语言迁移路径占用。
+//
+// 与 renameReservedAllLangs 的差别只有事务边界：这里不做「失败逐个迁回」的补偿 ——
+// 外层事务回滚会把已迁移的行一并撤销，补偿反而会在回滚后写出撤销不掉的残留
+// （且补偿本身失败时只能记日志，留下一半旧路径一半新路径的路由表）。
+// 判据与语义（targetLang 的作用、OnlyReserved 的取舍）与非 Tx 版本逐字一致。
+func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, projectID, pageID, oldLogical, newLogical, targetLang string) error {
+	if s.routes == nil {
+		return nil
+	}
+	oldEntries, err := s.siteRouteEntries(ctx, projectID, oldLogical)
+	if err != nil {
+		return ErrInvalidPath
+	}
+	newEntries, err := s.siteRouteEntries(ctx, projectID, newLogical)
+	if err != nil {
+		return ErrInvalidPath
+	}
+	if len(oldEntries) != len(newEntries) {
+		// 语言清单在迁移中途变化（极罕见）：不做半途改名，交由调用方重试。
+		return ErrInvalidPath
+	}
+	for i := range oldEntries {
+		oldPath, newPath := oldEntries[i].Path, newEntries[i].Path
+		if oldPath == newPath {
+			continue
+		}
+		onlyReserved := targetLang != "" && oldEntries[i].Lang != targetLang
+		if rerr := s.routes.RenameReservedTx(ctx, tx, &pubcontract.RenameReservedReq{
+			ProjectID: projectID, PageID: pageID, OldPath: oldPath, NewPath: newPath,
+			OnlyReserved: onlyReserved,
+		}); rerr != nil {
+			return rerr
+		}
+	}
+	return nil
+}
+
 // enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
 func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
 	return pipeline.EnabledLangs(ctx, s.project, projectID)
@@ -219,6 +259,9 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	}
 	logger.Scene("page").With("count", len(marked)).With("registryVersion", current).
 		Info("组件注册表版本变化：相关页面已标记待重建")
+	// 影响面回执：组件一变往往是一批页面一起过期，只有这里同时握着「哪个组件版本」
+	// 与「哪几页」两件事 —— 过了这里两者就再也对不上。
+	s.logStaleImpact(ctx, "registry:"+current, marked)
 	return marked, nil
 }
 
@@ -288,6 +331,22 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 	// 站点上旧链接继续生效且无人报错。
 	for _, slot := range in.Usage.SiteSlotList() {
 		deps = append(deps, pipeline.Dependency{Kind: pipeline.DepKindSiteSlot, Key: slot})
+	}
+	// 公开站点导航（审计遗留缺口）：判据与槽位逐字一致 —— 只登记**本次编译真实消费过**
+	// 的菜单位置（core.nav 绑定 menu=header/footer，渲染期经 RenderContext.UseMenu 记录）。
+	//
+	// 为什么用编译期记录而不是静态扫文档：绑定可能藏在页眉/页脚块里（块文档不参与
+	// 本页文档的静态扫描），也可能来自 presentation 的模板文档 —— 记录下来的才是
+	// 「产物字节里确实烘了这份菜单」的事实。
+	//
+	// 键带工程 ID（pipeline.MenuKey）：导航是工程级资源，位置名只有 header/footer，
+	// 不带工程 ID 时反查会跨工程误标。projectID 读不到（页面定位失败）时不登记，
+	// 与上面 pageDependencyKeys 的降级口径一致。
+	if pid := strings.TrimSpace(projectID); pid != "" {
+		for _, kind := range in.Usage.MenuList() {
+			k := pipeline.MenuKey(pid, kind)
+			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+		}
 	}
 	// 页面依赖源（PIPE-3）：用开头那次定位的结果；读不到页面时降级为不登记这些依赖
 	// （依赖失效时该页不再自动重建），但不阻断构建。

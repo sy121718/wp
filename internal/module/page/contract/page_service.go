@@ -33,6 +33,12 @@ type (
 	SiteSlotListResp  = pagedto.SiteSlotListResp
 	SiteSlotItem      = pagedto.SiteSlotItem
 
+	// 待重建页面的只读反查（反查面）。跨模块调用方只依赖 contract，不直接 import page/dto。
+	StalePageListReq   = pagedto.StalePageListReq
+	StalePageListResp  = pagedto.StalePageListResp
+	StalePageResp      = pagedto.StalePageResp
+	StaleImpactSummary = pagedto.StaleImpactSummary
+
 	// 重定向管理（审计 SEO-025）。
 	RedirectListReq       = pagedto.RedirectListReq
 	RedirectListResp      = pagedto.RedirectListResp
@@ -168,6 +174,13 @@ type PageService interface {
 	// CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），
 	// 供 block 模块删除或切换 global→template 前的引用拦截（docs/02-D §9）。
 	CountBlockReference(ctx context.Context, blockID string) (int64, error)
+	// ListStalePages 只读反查：列出待重建页面（ProjectID 为空 = 全部工程），
+	// 带完整计数与截断标记。limit 与排序由调用方给出（方法内不写死业务口径）。
+	//
+	// 存在的理由：pages.stale 此前只是一个布尔列 —— 后台能看见「有多少页待重建」，
+	// 看不见「是哪些页、最近被谁标记」。本方法把「这次改动影响哪几个页面」变成
+	// 一个可以直接读出来的投影（按标记时间倒序时，最近被标记的排在最前）。
+	ListStalePages(ctx context.Context, req *pagedto.StalePageListReq) (res *pagedto.StalePageListResp, err error)
 	// AttachThemeToUnassigned 把工程内未挂主题的页面挂到指定主题（工程首个主题创建后回填历史页面）。
 	AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) error
 	// ReattachProjectPagesToTheme 把工程内全部页面（含已挂其他主题的）转挂到指定主题，

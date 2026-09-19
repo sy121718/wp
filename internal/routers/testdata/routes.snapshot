@@ -245,11 +245,12 @@ POST /admin/departments/update
 POST /admin/i18n/bulk-delete
 POST /admin/i18n/delete
 POST /admin/i18n/save
-POST /admin/inventory/production
+POST /admin/inventory/external-sku
 POST /admin/inventory/purchases/create
 POST /admin/inventory/purchases/production
 POST /admin/inventory/purchases/receipt
 POST /admin/inventory/reason/create
+POST /admin/inventory/reason/update
 POST /admin/inventory/sources/bulk-delete
 POST /admin/inventory/sources/create
 POST /admin/inventory/sources/delete
@@ -333,6 +334,7 @@ POST /admin/product-tags/recalc
 POST /admin/product-tags/update
 POST /admin/products/attributes
 POST /admin/products/bulk-delete
+POST /admin/products/bulk-pricing
 POST /admin/products/bundle/save
 POST /admin/products/create
 POST /admin/products/delete
@@ -350,6 +352,8 @@ POST /admin/products/translations/save
 POST /admin/products/variant/create
 POST /admin/products/variant/delete
 POST /admin/products/variant/generate
+POST /admin/products/variant/preview
+POST /admin/products/variant/save
 POST /admin/projects/create
 POST /admin/returns/approve
 POST /admin/returns/bulk-approve

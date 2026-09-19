@@ -136,11 +136,9 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
-	msg := orderenums.MsgCancelled
-	if resp != nil && len(resp.Warnings) > 0 {
-		msg = resp.Warnings[0]
-	}
-	response.SuccessWithMessage(c, msg, resp)
+	// 取消的结果只有「成功 / 失败」两种：归还库存与释放券核销都在同一个事务里，
+	// 失败即 err != nil 并整体回滚，没有「状态已取消、库存没回来」这种带警告的成功。
+	response.SuccessWithMessage(c, orderenums.MsgCancelled, resp)
 }
 
 // RefundOrder 退款。
@@ -349,7 +347,13 @@ func (h *Handle) GetReturn(c *gin.Context) {
 	}
 	res, gerr := h.svc.GetReturn(c.Request.Context(), id)
 	if gerr != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, gerr.Error())
+		// 不把 err.Error() 直接交给响应：基础设施错误的原文会带表名 / SQL 片段（审计 CQ-009）。
+		// 复用页面层同一份白名单：命中业务文案原样返回，其余落到统一提示。
+		if msg := orderFacingText(gerr.Error()); msg != "" {
+			response.ErrorWithMessage(c, http.StatusBadRequest, msg)
+		} else {
+			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInternal)
+		}
 		return
 	}
 	response.Success(c, res)

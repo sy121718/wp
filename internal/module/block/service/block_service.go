@@ -117,10 +117,26 @@ func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockd
 }
 
 // Detail 按 ID 查询块。
+//
+// ProjectID 非空时按工程作用域直查（REST 契约入口）；为空表示**只带 id 的入口**，
+// 逐工程探测归属（见 block_scope.go 的 locateBlockEntity）—— 工作台块编辑
+// （/workbench?block=ID）、块预览与 /admin/blocks/save-content 三条路径的请求里
+// 本来就没有工程参数。
+//
+// 这里曾经一律要求 ProjectID，于是那三条路径全部拿到 ErrParamRequired，调用方再把它
+// 折叠成 404「全局块不存在」：块在列表页看得见（List 带工程参数，是好的），点「编辑」或
+// 新建后的跳转却永远打不开编辑器 —— 表现为「块明明在，却报不存在」。
 func (s *Service) Detail(ctx context.Context, req *blockdto.DetailReq) (res *blockdto.BlockResp, err error) {
-	// 参数缺失（nil/空 ID/空 projectID）是调用方错误，与「ID 对应块不存在」区分开。
-	if req == nil || strings.TrimSpace(req.ID) == "" || strings.TrimSpace(req.ProjectID) == "" {
+	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开。
+	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, ErrParamRequired
+	}
+	if strings.TrimSpace(req.ProjectID) == "" {
+		entity, lerr := s.getExistingBlock(ctx, req.ID)
+		if lerr != nil {
+			return nil, lerr
+		}
+		return blockRespPtr(entity), nil
 	}
 	if err = s.requireProject(ctx, req.ProjectID); err != nil {
 		return nil, err

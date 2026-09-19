@@ -10,6 +10,8 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
+
+	"gorm.io/gorm"
 )
 
 // DeptTree 查询完整部门树。
@@ -98,81 +100,94 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 }
 
 // DeptUpdate 更新部门（含移动节点 ancestors 维护）。
+//
+// 事务：移动节点要写「自身行 + 全部子孙行」两处持久化数据，必须同事务。旧实现自身 Update 与
+// 子孙 UpdateAncestors 分两次提交：子孙祖先链更新失败时自身已经改完，库里留下「父变了、子孙
+// 还在旧祖先链」的树 —— pkg/datarule 的部门范围（SELF_AND_CHILDREN）会匹配到错误的部门集合
+// （多看到 / 少看到别的部门数据），而且这个过程不报错。现在任一步失败整体回滚。
+//
+// 顺带修掉同一实体的两次 Update：旧实现在父级变更分支里先 Update 一次（ancestors/parent_id），
+// 末尾再 Update 一次（其余字段），两次之间失败会留下半截行。这里合并为一次 UpdateTx。
+//
+// 读-改-写加行锁（LockByIDTx）：先读旧 ancestors 才能算子孙前缀，不加锁并发移动同一子树会按
+// 各自的旧快照改写，把祖先链写错。
 func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) error {
-	entity, err := s.dm.GetByID(ctx, req.ID)
-	if err != nil {
-		return err
-	}
-	if entity == nil {
-		return errors.New(adminenums.ErrDeptNotFound)
-	}
-
-	// 编码变更检查
-	if req.DeptCode != entity.DeptCode {
-		existing, err := s.dm.GetByCode(ctx, req.DeptCode)
+	return s.dm.Transaction(ctx, func(tx *gorm.DB) error {
+		current, err := s.dm.LockByIDTx(ctx, tx, req.ID)
 		if err != nil {
 			return err
 		}
-		if existing != nil && existing.ID != req.ID {
-			return errors.New(adminenums.ErrDeptCodeExists)
-		}
-	}
-
-	// 父级变更：防止环 + 维护 ancestors
-	if req.ParentID != entity.ParentID {
-		if req.ParentID == req.ID {
-			return errors.New(adminenums.ErrDeptCircle)
-		}
-		if req.ParentID != 0 {
-			if err := s.deptCheckCircle(ctx, req.ID, req.ParentID); err != nil {
-				return err
-			}
+		if current == nil {
+			return errors.New(adminenums.ErrDeptNotFound)
 		}
 
-		// 计算新 ancestors
-		var newAncestors string
-		if req.ParentID == 0 {
-			newAncestors = "0"
-		} else {
-			parent, err := s.dm.GetByID(ctx, req.ParentID)
+		// 编码变更检查（同事务内读；并发插入由 sys_dept.dept_code 唯一索引兜底，不自动加后缀）
+		if req.DeptCode != current.DeptCode {
+			existing, err := s.dm.GetByCodeTx(ctx, tx, req.DeptCode)
 			if err != nil {
 				return err
 			}
-			if parent == nil {
-				return errors.New(adminenums.ErrDeptNotFound)
+			if existing != nil && existing.ID != req.ID {
+				return errors.New(adminenums.ErrDeptCodeExists)
 			}
-			newAncestors = parent.Ancestors + "," + fmt.Sprintf("%d", parent.ID)
 		}
 
-		// 旧 ancestors 前缀 → 新前缀，批量改子孙
-		oldAncestors := entity.Ancestors
-		entity.ParentID = req.ParentID
-		entity.Ancestors = newAncestors
-		// 更新自身
-		if err := s.dm.Update(ctx, entity); err != nil {
+		// 父级变更：防止环 + 维护 ancestors（自身与子孙一起改）
+		moved := req.ParentID != current.ParentID
+		oldAncestors := current.Ancestors
+		if moved {
+			if req.ParentID == req.ID {
+				return errors.New(adminenums.ErrDeptCircle)
+			}
+			if req.ParentID != 0 {
+				if err = s.deptCheckCircleTx(ctx, tx, req.ID, req.ParentID); err != nil {
+					return err
+				}
+			}
+
+			// 计算新 ancestors
+			if req.ParentID == 0 {
+				current.Ancestors = "0"
+			} else {
+				parent, err := s.dm.GetByIDTx(ctx, tx, req.ParentID)
+				if err != nil {
+					return err
+				}
+				if parent == nil {
+					return errors.New(adminenums.ErrDeptNotFound)
+				}
+				current.Ancestors = parent.Ancestors + "," + fmt.Sprintf("%d", parent.ID)
+			}
+			current.ParentID = req.ParentID
+		}
+
+		// 基本字段（与 ancestors/parent_id 一起，只写一次）
+		current.DeptName = req.DeptName
+		current.DeptCode = req.DeptCode
+		current.LeaderID = req.LeaderID
+		current.SortOrder = req.SortOrder
+		current.Status = req.Status
+		if req.Remark != "" {
+			current.Remark = &req.Remark
+		} else {
+			current.Remark = nil
+		}
+
+		if err = s.dm.UpdateTx(ctx, tx, current); err != nil {
 			return err
 		}
-		// 批量更新子孙 ancestors
-		oldPrefix := oldAncestors + "," + fmt.Sprintf("%d", entity.ID)
-		newPrefix := newAncestors + "," + fmt.Sprintf("%d", entity.ID)
-		if err := s.dm.UpdateAncestors(ctx, oldPrefix, newPrefix); err != nil {
-			return err
+		if !moved {
+			return nil
 		}
-	}
 
-	// 更新基本字段
-	entity.DeptName = req.DeptName
-	entity.DeptCode = req.DeptCode
-	entity.LeaderID = req.LeaderID
-	entity.SortOrder = req.SortOrder
-	entity.Status = req.Status
-	if req.Remark != "" {
-		entity.Remark = &req.Remark
-	} else {
-		entity.Remark = nil
-	}
-
-	return s.dm.Update(ctx, entity)
+		// 批量更新子孙 ancestors（旧前缀 → 新前缀），与自身行同事务
+		oldPrefix := oldAncestors + "," + fmt.Sprintf("%d", current.ID)
+		newPrefix := current.Ancestors + "," + fmt.Sprintf("%d", current.ID)
+		if err = s.dm.UpdateAncestorsTx(ctx, tx, oldPrefix, newPrefix); err != nil {
+			return fmt.Errorf("部门已移动但子孙祖先链更新失败，本次移动已整体回滚: %w", err)
+		}
+		return nil
+	})
 }
 
 // DeptDelete 删除部门。
@@ -226,14 +241,15 @@ func (s *Service) DeptUserSave(ctx context.Context, req *admindto.DeptUserSaveRe
 	})
 }
 
-// deptCheckCircle 检查将 targetID 的 parent 设为 newParentID 是否形成环。
-func (s *Service) deptCheckCircle(ctx context.Context, targetID, newParentID uint64) error {
+// deptCheckCircleTx 检查将 targetID 的 parent 设为 newParentID 是否形成环，
+// 沿父链的读取与 DeptUpdate 的写在同一个事务里（看到一致快照）。
+func (s *Service) deptCheckCircleTx(ctx context.Context, tx *gorm.DB, targetID, newParentID uint64) error {
 	cursor := newParentID
 	for cursor != 0 {
 		if cursor == targetID {
 			return errors.New(adminenums.ErrDeptCircle)
 		}
-		parent, err := s.dm.GetByID(ctx, cursor)
+		parent, err := s.dm.GetByIDTx(ctx, tx, cursor)
 		if err != nil {
 			return err
 		}

@@ -145,8 +145,9 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		Projects: projects, SelectedProject: selected, Kind: kind,
 		Rows: rows, ParentOptions: parents, SourceGroups: groups,
 		// 操作结论走 query 回带（PRG）：批量删除的结果条。
-		Err:  strings.TrimSpace(c.Query("err")),
-		Done: strings.TrimSpace(c.Query("done")),
+		// 读侧一律经 navigation_err.go 的白名单出口（查询参数不是可信边界）。
+		Err:  navigationPageErr(c),
+		Done: navigationPageDone(c),
 	}, nil
 }
 
@@ -333,7 +334,11 @@ func (h *navigationPageHandle) NavigationsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, navListURLWith(projectID, kind, berr.Error(), ""))
+		// 超限是 shell 的**受控错误**（shell.BulkIDsError：值域只有 Count/Max 两个整数），
+		// 走 shell 的受控文案出口：按当前语言给出「一次最多操作 N 项，当前 M 项，请分批进行」——
+		// 这是运营照着做的可操作提示，不能换成通用文案；出口只认类型，不认文本，
+		// 因此将来 shell 把上层原文拼进错误也不会跟着出来。
+		c.Redirect(http.StatusSeeOther, navListURLWith(projectID, kind, shell.BulkIDsFacingText(c, berr), ""))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -357,15 +362,17 @@ func (h *navigationPageHandle) NavigationsBulkDelete(c *gin.Context) {
 // navigationsBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
 func navigationsBulkDeleteResult(deleted, skipped int) string {
+	// 模板取自 navigation_err.go 的 navigationsBulkResultTemplates ——
+	// 那里同时是读侧候选文案的来源：写侧改措辞时读侧跟着变，不会静默失配。
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有勾选任何菜单项，列表未改动。"
+		return navigationsBulkResultTemplates[0]
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 个菜单项。", deleted)
+		return fmt.Sprintf(navigationsBulkResultTemplates[1], deleted)
 	case deleted == 0:
-		return fmt.Sprintf("%d 个菜单项都未能删除，列表未改动。", skipped)
+		return fmt.Sprintf(navigationsBulkResultTemplates[2], skipped)
 	default:
-		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（可能已被删除）。", deleted, skipped)
+		return fmt.Sprintf(navigationsBulkResultTemplates[3], deleted, skipped)
 	}
 }
 
@@ -468,6 +475,12 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 		if marker, ok := pageSvc.(navTranslationPageMarker); ok {
 			translations.SetPageMarker(marker)
 		}
+	}
+	// 自动发布实例侧同样要标：菜单文字也烘在 presentation 实例的产物里，而那些实例
+	// 只认 menu:{projectID}:{kind} 依赖（与导航项增删改走同一条派发链、同一份键）。
+	// 实现方是本模块自己的 Service（持有 SetMenuStaleDispatcher 注入的端口）。
+	if invalidator, ok := navigations.(navTranslationMenuInvalidator); ok {
+		translations.SetMenuInvalidator(invalidator)
 	}
 	adminPages.GET("/navigations/translations", translations.NavigationTranslations)
 	adminPages.POST("/navigations/translations/save", builtin.CasbinMiddlewareForPath("/api/navigation/update"), translations.SaveNavigationTranslations)

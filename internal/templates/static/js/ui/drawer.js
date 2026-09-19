@@ -28,6 +28,14 @@
         if (!tpl || !drawer) { return; }
         body.innerHTML = '';
         body.appendChild(tpl.content.cloneNode(true));
+        // htmx 只扫描「首次加载的文档」与「它自己换进来的片段」——<template> 里的内容
+        // 在克隆进 DOM 之前根本不在文档里，克隆本身不触发扫描。不在这里补一次 process，
+        // 抽屉里所有 hx-* 指令（hx-post / hx-include / hx-target）都是死的：
+        // 按钮点下去毫无反应（「+ 添加值」点不动就是这么来的），而页面上的同类按钮却正常。
+        // 顺序：先 process（认领 hx-* 属性）再 scan（增强原生控件），两者互不依赖。
+        if (global.htmx && typeof global.htmx.process === 'function') {
+            global.htmx.process(body);
+        }
         if (titleEl) { titleEl.textContent = titleText || ''; }
         drawer.hidden = false;
         mask.hidden = false;

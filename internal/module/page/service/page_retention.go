@@ -12,6 +12,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	"go_wp/internal/retention"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -113,6 +114,9 @@ func (s *Service) PurgeRetention(ctx context.Context) (deletedRevisions int64, e
 // 进程内 goroutine + ticker，与 analytics / order 的既有调度同形（先跑一次再等间隔）：
 // 单实例部署够用；多实例部署下重复执行是安全的（删除按时间分界幂等）。
 func StartPageRetentionScheduler(svc *Service) {
+	if utils.IsTestProcess() {
+		return // 测试进程不启动：调度首跑会动真实库与存储，测试的行为必须由用例自己触发（见 utils.IsTestProcess）。
+	}
 	if svc == nil {
 		return
 	}

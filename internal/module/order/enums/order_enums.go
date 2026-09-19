@@ -5,13 +5,24 @@
 package orderenums
 
 const (
-	MsgCreateSuccess         = "order.msg.createSuccess"
-	MsgStatusChanged         = "order.msg.statusChanged"
-	MsgCancelled             = "order.msg.cancelled"
-	MsgCancelledStockWarning = "order.msg.cancelledStockWarning"
-	MsgRefunded              = "order.msg.refunded"
-	MsgPaid                  = "order.msg.paid"
-	MsgNoteUpdated           = "order.msg.noteUpdated"
+	MsgCreateSuccess = "order.msg.createSuccess"
+	MsgStatusChanged = "order.msg.statusChanged"
+	MsgCancelled     = "order.msg.cancelled"
+	// MsgCancelledStockWarning 已彻底删除（2026-09 事务收口 + 词条收口两批完成）。
+	//
+	// 它曾是「先提交状态、再动库存、失败写一条 Warnings 留痕」那条跨模块补偿路径的对外文案。
+	// 事务收口后，取消订单的状态 / 流转 / 库存归还 / 券释放全在**同一个事务**里，归还失败即整体
+	// 回滚并返回 error，不存在「订单已取消、库存没回来」这个中间态 —— 它没有任何可渲染的场景。
+	//
+	// 当时它只被废弃、没连词条一起删，原因是那个词条的 seed 在迁移 180，而 180 的存在性判定
+	// 按「本批 key 计数且包含本 key」—— 单删词条行会让判定为假、下次启动又灌回来。
+	// 后来 180_i18n_seed_order.sql 的两行、register_admin_i18n.go 的判定 key 列表与门槛
+	//（>=62 → >=61）已同批改掉，常量与词条这才一起删净。
+	// 教训：**删能力要连 seed 的判定一起收口**，否则「删了」只是看起来删了。
+	// 同类回归由 public/migrations/register_retired_permission_test.go 在权限点维度兜底。
+	MsgRefunded    = "order.msg.refunded"
+	MsgPaid        = "order.msg.paid"
+	MsgNoteUpdated = "order.msg.noteUpdated"
 )
 
 // 参数与校验。

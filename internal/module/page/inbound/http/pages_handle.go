@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
@@ -90,6 +91,17 @@ type pagesPageData struct {
 	// 批量结果按「已删除 N 个页面 / 跳过 M 个」写进 Done（有跳过时写 Err，警告条更显眼）。
 	Err  string
 	Done string
+
+	// 发布回执收敛的只读观测（本轮接入）：待收敛条数 / 最老一条已等待多久 / 本进程最近一次
+	// 收敛时刻。列表页是运维每天的落点，积压只写在日志与 /readyz 里等于不可见 ——
+	// /readyz 又不参与就绪判定，没有人会因为它去看。
+	//
+	// ReceiptAlert 由条数派生（> 0），模板据此在「警告条」与「正常」之间分流：
+	// 把判断留在 Go 侧，模板不必为 int64 与字面量的类型匹配操心（Jet 的比较要求同型）。
+	ReceiptPending      int64
+	ReceiptOldest       string
+	ReceiptLastConverge string
+	ReceiptAlert        bool
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。
@@ -108,6 +120,11 @@ func (d *pagesPageData) templateMap() gin.H {
 		"Blueprints": d.Blueprints,
 		"Err":        d.Err,
 		"Done":       d.Done,
+
+		"ReceiptPending":      d.ReceiptPending,
+		"ReceiptOldest":       d.ReceiptOldest,
+		"ReceiptLastConverge": d.ReceiptLastConverge,
+		"ReceiptAlert":        d.ReceiptAlert,
 	}
 }
 
@@ -169,6 +186,9 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 			Version: p.DraftVersion, UpdatedAt: p.UpdatedAt.Time().Format("2006-01-02 15:04"),
 		})
 	}
+	// 待收敛回执观测（只读）：读取失败只记日志，页面照常渲染 ——
+	// 一个观测字段不该让整张列表页 500。
+	receiptPending, receiptOldest, receiptLast := h.receiptBacklog(ctx)
 	return &pagesPageData{
 		Title: pageenums.MsgPagesTitle, Menu: "pages",
 		Projects: projects, Pages: rows,
@@ -177,9 +197,65 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 		Blueprints: h.blueprintOptions(ctx),
 		// 操作结论走 query 回带（PRG）：单条删除与批量删除共用这一对键，
 		// 页面本身不做筛选，故回跳不带其它参数。
-		Err:  strings.TrimSpace(c.Query("err")),
-		Done: strings.TrimSpace(c.Query("done")),
+		// 读侧一律经 page_err.go 的白名单出口（查询参数不是可信边界）。
+		Err:  pagePageErr(c),
+		Done: pagePageDone(c),
+
+		ReceiptPending:      receiptPending,
+		ReceiptOldest:       receiptOldest,
+		ReceiptLastConverge: receiptLast,
+		ReceiptAlert:        receiptPending > 0,
 	}, nil
+}
+
+// receiptBacklogObserver 收敛积压的只读观测（page service 实现）。
+//
+// 用隐式接口而不是扩 pagecontract：可观测不是跨模块能力（与 routers 侧的
+// pendingReceiptBacklog 同一判据），契约扩一次会让所有测试替身跟着实现一遍，
+// 而这只服务列表页上的一个状态条。
+type receiptBacklogObserver interface {
+	PendingReceiptBacklog(ctx context.Context) (pending int64, oldestAge time.Duration, lastConvergeAt time.Time, err error)
+}
+
+// receiptBacklog 读取待收敛回执的观测值，转成可直接渲染的三元文本。
+//
+// 未实现观测（测试替身 / 降级装配）与读取失败都返回零值：状态条退化成「正常」那一支，
+// 列表页本身不受影响。失败只记日志 —— 这是观测，不是页面数据
+// （原文不进模板，见 AGENTS.md 的错误文案三件套）。
+func (h *pagesAdminHandle) receiptBacklog(ctx context.Context) (pending int64, oldest, last string) {
+	observer, ok := h.pages.(receiptBacklogObserver)
+	if !ok {
+		return 0, "", ""
+	}
+	count, oldestAge, lastConvergeAt, err := observer.PendingReceiptBacklog(ctx)
+	if err != nil {
+		logger.Scene("page").With("err", err).Warn("读取待收敛发布回执失败（列表页不显示回执状态）")
+		return 0, "", ""
+	}
+	if count > 0 && oldestAge > 0 {
+		oldest = formatReceiptAge(oldestAge)
+	}
+	if !lastConvergeAt.IsZero() {
+		last = lastConvergeAt.Local().Format("2006-01-02 15:04:05")
+	}
+	return count, oldest, last
+}
+
+// formatReceiptAge 把等待时长压成人读的一行（秒 / 分 / 小时 / 天）。
+//
+// 不做 i18n：单位是 SI 记法（s/m/h/d），中英文都读得懂，也不需要复数规则 ——
+// 为它造四条词条只会让词条表更长，不带来任何可读性。
+func formatReceiptAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
+	}
 }
 
 // CreateProject 新建站点工程（HTMX 表单提交，成功后整页刷新列表）。
@@ -237,15 +313,16 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	if id == "" {
-		c.Redirect(http.StatusSeeOther, pagesBackURL("缺少页面 id，未执行删除。", ""))
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pagesLocalNoticeMissingID, ""))
 		return
 	}
 	if err := h.pages.Delete(c.Request.Context(), &pagecontract.DeleteReq{ID: id}); err != nil {
 		logger.Scene("page").With("pageId", id).Error(err, "删除页面失败")
-		c.Redirect(http.StatusSeeOther, pagesBackURL(pageErrorMessage(err), ""))
+		// 页面路径的文案出口：业务 sentinel 翻成中文，其余落归口文案（原文只进日志）。
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageFacingOrInternal(c, err), ""))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, pagesBackURL("", "已删除 1 个页面。"))
+	c.Redirect(http.StatusSeeOther, pagesBackURL("", fmt.Sprintf(pagesBulkResultTemplates[1], 1)))
 }
 
 // PagesBulkDelete 批量删除页面（POST /admin/pages/bulk-delete）。
@@ -257,7 +334,8 @@ func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, pagesBackURL(berr.Error(), ""))
+		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageErrPageText(c, berr), ""))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -283,13 +361,13 @@ func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
 func pagesBulkDeleteResult(deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有勾选任何页面，列表未改动。"
+		return pagesBulkResultTemplates[0]
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 个页面。", deleted)
+		return fmt.Sprintf(pagesBulkResultTemplates[1], deleted)
 	case deleted == 0:
-		return fmt.Sprintf("%d 个页面都未能删除，列表未改动。", skipped)
+		return fmt.Sprintf(pagesBulkResultTemplates[2], skipped)
 	default:
-		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（可能已被删除或路径清理失败）。", deleted, skipped)
+		return fmt.Sprintf(pagesBulkResultTemplates[3], deleted, skipped)
 	}
 }
 

@@ -205,6 +205,12 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 	return items, subtotal, nil
 }
 
+// 成本快照的责任分工（迁移 256 之后）：
+//
+//	product 侧给出 *int64（nil = 该变体在归属仓尚未核算），order 侧原样落库 ——
+//	order_items.cost_price 可空，NULL（没核算）与 0（赠品 / 内部划拨这类合法显式成本）
+//	严格区分，绝不用 0 冒充未知。跨模块契约里不再有数量哨兵，消费方不必知道编码约定。
+
 // resolveCoupon 优惠码试算：给了码就以**服务端试算**的折扣为准。
 //
 // 这里只做「券自身」的判定（状态 / 时间窗 / 门槛 / 总数），每人限次要等 userID 解析

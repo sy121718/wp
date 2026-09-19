@@ -141,6 +141,8 @@ func (im *importer) block(n *html.Node) ([]*core.Node, error) {
 		return im.divider()
 	case atom.Table:
 		return im.table(n)
+	case atom.Details:
+		return im.details(n)
 	}
 
 	// 结构标签：剥壳保内容。内容还在，只是少了这一层 ——
@@ -252,14 +254,43 @@ func (im *importer) blockquote(n *html.Node) ([]*core.Node, error) {
 }
 
 // pre → core.text（保留 <pre> 本身：白名单里有它，代码块是正文的一部分而不是独立组件）。
+//
+// 用 html.Render 渲染**整个 pre 元素**，而不是自己拼 `<pre>` + inner + `</pre>`：
+// Trix 的代码块把语言写在 language 属性上（vendor/trix.umd.js 的 htmlAttributes: ["language"]），
+// 自己拼标签会把语言顺手丢掉（编辑器里选的 go 到了画布上就没了）。
+// 属性不在这里筛 —— sanitizeText 走的就是 core 的唯一白名单，非法与危险属性照旧被剥。
 func (im *importer) pre(n *html.Node) ([]*core.Node, error) {
+	var raw strings.Builder
+	if err := html.Render(&raw, n); err != nil {
+		return nil, err
+	}
+	textValue := sanitizeText(raw.String())
+	if !hasVisibleContent(textValue) {
+		im.warn("pre", ActionTrim, "空代码块已忽略")
+		return nil, nil
+	}
+	node, err := newNode(textpkg.Type, textpkg.Props{Mode: textpkg.ModeRichText, Text: textValue})
+	if err != nil {
+		return nil, err
+	}
+	return []*core.Node{node}, nil
+}
+
+// details → core.text（整块折叠结构当富文本保留）。
+//
+// 为什么不拆成组件：组件树里没有与 <details> 等价的容器 —— 手风琴（core.accordion）要求
+// items 与 children **一一对应**，一个折叠块要落成一个 item，就得给「摘要 + 若干正文块」
+// 再造一层容器节点；那条路要么丢结构，要么在导出方向退化成占位块。而 <details>/<summary>
+// 本来就在富文本白名单里（core/richtext.go），整块原样留在 core.text 的 richtext 字段里，
+// 详情页与画布上是同一个折叠块 —— 与 <pre> 同一条理由：块级结构留在富文本里比拆散更保真。
+func (im *importer) details(n *html.Node) ([]*core.Node, error) {
 	inner, err := renderInner(n)
 	if err != nil {
 		return nil, err
 	}
-	textValue := sanitizeText("<pre>" + inner + "</pre>")
+	textValue := sanitizeText("<details>" + inner + "</details>")
 	if !hasVisibleContent(textValue) {
-		im.warn("pre", ActionTrim, "空代码块已忽略")
+		im.warn("details", ActionTrim, "空折叠块已忽略")
 		return nil, nil
 	}
 	node, err := newNode(textpkg.Type, textpkg.Props{Mode: textpkg.ModeRichText, Text: textValue})
@@ -537,11 +568,16 @@ var markupTags = map[atom.Atom]bool{
 }
 
 // structuralTags 只是分组语义、没有对应组件的结构标签：剥壳保内容。
+//
+// details 不在这里 —— 它有专门分支（im.details），整块折叠结构进 core.text 的富文本字段，
+// 不再当通用壳剥掉（剥掉就等于把用户写的折叠块拆成裸段落，而且不会报错）。
+// summary 保留在本表：它只在 <details> 里有意义，那个分支整体接管；游离的 <summary>
+// 仍然只是个壳（没有对应组件），按剥壳保内容处理。
 var structuralTags = map[atom.Atom]bool{
 	atom.Div: true, atom.Section: true, atom.Article: true, atom.Aside: true,
 	atom.Header: true, atom.Footer: true, atom.Main: true, atom.Nav: true,
 	atom.Address: true, atom.Dl: true, atom.Dt: true, atom.Dd: true,
-	atom.Center: true, atom.Font: true, atom.Details: true, atom.Summary: true,
+	atom.Center: true, atom.Font: true, atom.Summary: true,
 }
 
 // dropTags 不能进静态产物的标签：整块丢弃（内容也一起消失，必须警告）。

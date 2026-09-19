@@ -2,11 +2,17 @@
 //
 // 「变动原因覆盖出 / 入 / 调整各枚举，含自定义原因（引用可维护字典，不用自由文本）」：
 //
-//	· 内置原因：迁移 103 seed，project_id IS NULL（全工程可见，不可修改）；
+//	· 内置原因：迁移 103 seed，project_id IS NULL（全工程可见，**只读**：不可改名、
+//	  不可删除，只能停用 / 启用 —— 名称由系统按 code 派生 i18n key，见迁移 241）；
 //	· 自定义原因：工程内 code 唯一，可改名 / 停用（停用后不再能被新变动引用，
 //	  历史流水不受影响 —— 流水里存的是 code 快照）。
 //
 // 变动入口只接受字典里存在的 code，且原因方向必须与本次变动方向一致。
+//
+// 文案不算本模块的数据（2026-09 收口）：inventory_change_reasons.name 存的是 **i18n key**，
+// 真文案在 sys_i18n（内容 → 文案词条，全站唯一真源）。本模块只负责「有哪些原因、方向、启停」，
+// 自定义原因保存时把运营填的文案写成 sys_i18n 的一条词条 —— 运营改文案、加语言都在同一个地方，
+// 而不是回到库存模块里再维护一份平行的名称表。
 package inventoryservice
 
 import (
@@ -21,10 +27,57 @@ import (
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 // maxReasonCodeLen 原因 code 长度上限。
 const maxReasonCodeLen = 32
+
+// reasonI18nPrefix 原因词条的 key 前缀（内置：inventory.reason.<code>）。
+const reasonI18nPrefix = "inventory.reason."
+
+// builtinReasonKey 内置原因的 i18n key（形如 inventory.reason.purchase_in）。
+//
+// 内置原因全工程共用一条词条，因此 key 里不带工程 —— 文案改了所有工程一起变，
+// 这正是内置的含义（它是产品预置的取值范围，不是某个工程的自定义项）。
+func builtinReasonKey(code string) string { return reasonI18nPrefix + strings.ToLower(code) }
+
+// customReasonKey 自定义原因的 i18n key。
+//
+// key 里带工程 id：sys_i18n 是全局表，两个工程各建一个同 code 的自定义原因时，
+// 不带工程 id 的 key 会互相覆盖（后建的工程把前一个的文案悄悄改掉）。
+func customReasonKey(projectID, code string) string {
+	return reasonI18nPrefix + "custom." + strings.ToLower(strings.TrimSpace(projectID)) + "." + strings.ToLower(code)
+}
+
+// reasonTextCategory sys_i18n 里的分类（后台词条页按它筛选）。
+const reasonTextCategory = "inventory"
+
+// saveReasonText 把原因文案写进 sys_i18n（该 key 的 zh-CN 一行），并重载词条缓存。
+//
+// 失败**不阻断**原因本身的写入，只记一条日志：原因是业务数据（流水要引用它的 code），
+// 文案是展示层；把「i18n 组件不可用」（纯库存单测 / 未初始化）升级成「原因建不了」
+// 是拿一个更贵的故障换一个更便宜的。en-US 不写 —— 按项目约定，新词条不伪造译文，
+// 英文界面取不到时按默认语言（zh-CN）回退。
+func saveReasonText(ctx context.Context, key, text string) (err error) {
+	return i18n.SaveEntry(ctx, i18n.Entry{
+		Key:      key,
+		Lang:     "zh-CN",
+		Value:    text,
+		Category: reasonTextCategory,
+		Remark:   "internal/module/product/inventory/service/inventory_reason.go",
+	})
+}
+
+// writeReasonText 写词条并吞掉失败（记日志），返回是否写入成功。
+func writeReasonText(ctx context.Context, key, text string) (ok bool) {
+	if err := saveReasonText(ctx, key, text); err != nil {
+		logger.Scene("inventory").With("key", key).With("err", err).Warn("变动原因文案写入 sys_i18n 失败")
+		return false
+	}
+	return true
+}
 
 // ListReasons 变动原因列表（工程自定义 + 全部内置）。
 func (s *Service) ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error) {
@@ -79,10 +132,14 @@ func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReas
 	} else if taken {
 		return nil, errors.New(inventoryenums.ErrReasonCodeTaken)
 	}
+	// 原因行只存 i18n key，运营填的文案写成 sys_i18n 的一条词条。
+	// 顺序「先词条、后原因」：反过来会出现「原因已能选、页面却显示裸 key」的窗口。
+	key := customReasonKey(projectID, code)
+	writeReasonText(ctx, key, name)
 	now := time.Now().UTC()
 	pid := projectID
 	e := &inventorymodel.ReasonEntity{
-		ProjectID: &pid, Code: code, Name: name, Direction: direction,
+		ProjectID: &pid, Code: code, Name: key, Direction: direction,
 		IsBuiltin: false, Status: inventoryenums.StatusActive, Sort: req.Sort,
 		CreateTime: now, UpdatedAt: now,
 	}
@@ -109,7 +166,9 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 	if err != nil {
 		return nil, mapReasonNotFound(err)
 	}
-	if e.IsBuiltin {
+	// 内置原因只读：它的名称就是系统按 code 派生的 key（inventory.reason.<code>），
+	// 允许改文案等于让「内置」名不副实 —— 停用 / 排序则允许（那是使用范围，不是身份）。
+	if e.IsBuiltin && req.Name != nil {
 		return nil, errors.New(inventoryenums.ErrReasonBuiltin)
 	}
 	if req.Name != nil {
@@ -117,7 +176,8 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 		if name == "" {
 			return nil, errors.New(inventoryenums.ErrReasonNameRequired)
 		}
-		e.Name = name
+		// key 不变（它派生自 code 与工程），改的是词条的值。
+		writeReasonText(ctx, e.Name, name)
 	}
 	if req.Status != nil {
 		status := strings.ToLower(strings.TrimSpace(*req.Status))

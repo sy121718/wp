@@ -13,6 +13,8 @@ import (
 	"context"
 	"time"
 
+	"gorm.io/gorm"
+
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/mailer"
 )
@@ -80,20 +82,35 @@ func (s *Service) sendNowOutcome(ctx context.Context, logID, accountID uint64, t
 	switch e.Kind {
 	case mailer.KindTemporary:
 		// 保持 pending，交给队列退避重试；只累加计数与原因。
-		_ = s.m.IncrLogRetry(ctx, logID)
-		_ = s.m.UpdateLogResult(ctx, logID, map[string]any{
-			"error_kind": outcome.Kind, "error_message": outcome.Message,
+		// 计数与原因**同事务**：各自提交时「重试 +1 但原因没写」会让排障看到一个没有原因的重试。
+		// 发信本身（sender.Send）在事务外 —— 外部副作用不进事务，这里只包回写。
+		_ = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+			if rerr := s.m.IncrLogRetryTx(ctx, tx, logID); rerr != nil {
+				return rerr
+			}
+			return s.m.UpdateLogResultTx(ctx, tx, logID, map[string]any{
+				"error_kind": outcome.Kind, "error_message": outcome.Message,
+			})
 		})
 	case mailer.KindPermanent:
-		// 硬退信：标失败并**加入抑制名单** —— 再发只会继续伤域名声誉。
+		// 硬退信：标失败 + **加入抑制名单** + 联系人标 bounced —— 再发只会继续伤域名声誉。
+		// 三处写**同事务**：分开提交时「日志说失败了、地址却没进抑制名单」的下一次活动还会发；
+		// 反过来的半截状态（进了名单、日志还是 pending）会让队列重发同一封信。
+		// 外部副作用（sender.Send）已经在事务之外，这里只包回写。
 		outcome.Permanent = true
-		_ = s.m.UpdateLogResult(ctx, logID, map[string]any{
-			"status": mailmodel.LogStatusFailed, "error_kind": outcome.Kind, "error_message": outcome.Message,
+		_ = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+			if uerr := s.m.UpdateLogResultTx(ctx, tx, logID, map[string]any{
+				"status": mailmodel.LogStatusFailed, "error_kind": outcome.Kind, "error_message": outcome.Message,
+			}); uerr != nil {
+				return uerr
+			}
+			if aerr := s.m.AddSuppressionTx(ctx, tx, &mailmodel.MailSuppressionEntity{
+				Email: to, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("smtp"),
+			}); aerr != nil {
+				return aerr
+			}
+			return s.m.UpdateContactStatusByEmailTx(ctx, tx, to, mailmodel.ContactStatusBounced, now)
 		})
-		_ = s.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
-			Email: to, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("smtp"),
-		})
-		_ = s.m.UpdateContactStatusByEmail(ctx, to, mailmodel.ContactStatusBounced, now)
 	default:
 		_ = s.m.UpdateLogResult(ctx, logID, map[string]any{
 			"status": mailmodel.LogStatusFailed, "error_kind": outcome.Kind, "error_message": outcome.Message,

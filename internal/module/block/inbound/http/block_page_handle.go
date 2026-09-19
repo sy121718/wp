@@ -15,6 +15,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
+	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
@@ -30,11 +31,24 @@ const blocksPageTitle = "MsgBlocksTitle"
 type blockPageHandle struct {
 	blocks   blockcontract.BlockService
 	projects projectcontract.ProjectService
+	// pages 页面契约（只读用：块变更的影响面 —— 引用该块的页面数、待重建页面清单）。
+	//
+	// 可空：未注入时页面明确写「页面能力未装配，无法统计影响面」，而不是显示一个
+	// 「0 个页面引用」的假结论（见 block_page_impact.go）。注入点是装配层
+	// mountAdminPages 里的 SetupBlockPages 调用（可选变参）。
+	pages pagecontract.PageService
 }
 
 // NewBlockPageHandle 创建全局块管理页处理器。
-func NewBlockPageHandle(blocks blockcontract.BlockService, projects projectcontract.ProjectService) *blockPageHandle {
-	return &blockPageHandle{blocks: blocks, projects: projects}
+//
+// pages 为可选变参：装配层尚未传入时页面照常工作，只是不显示影响面。
+func NewBlockPageHandle(blocks blockcontract.BlockService, projects projectcontract.ProjectService,
+	pages ...pagecontract.PageService) *blockPageHandle {
+	h := &blockPageHandle{blocks: blocks, projects: projects}
+	if len(pages) > 0 {
+		h.pages = pages[0]
+	}
+	return h
 }
 
 // blockRow 全局块列表行投影。
@@ -46,6 +60,9 @@ type blockRow struct {
 	ReuseMode      string
 	ReuseModeLabel string
 	UpdatedAt      string
+	// RefCountText 影响面：该块当前被多少页面引用（只读统计）。
+	// 复制模式（template）显示「—」——它插入时已复制 AST，改它不影响任何页面。
+	RefCountText string
 }
 
 // blocksPageData 全局块管理页数据。
@@ -61,6 +78,8 @@ type blocksPageData struct {
 	// 删除成不成功在页面上看不出来 —— 批量动作必须把「跳过几个」说清楚。
 	Err  string
 	Done string
+	// StaleImpact 只读影响面：待重建页面数与清单（块 / 内容 / 主题 / 导航变更都会产生）。
+	StaleImpact gin.H
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
@@ -75,6 +94,7 @@ func (d *blocksPageData) templateMap() gin.H {
 		"Blocks":          d.Blocks,
 		"Err":             d.Err,
 		"Done":            d.Done,
+		"StaleImpact":     d.StaleImpact,
 	}
 }
 
@@ -144,8 +164,10 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 		Title:    blocksPageTitle,
 		Menu:     "blocks",
 		Projects: projects,
-		Err:      strings.TrimSpace(c.Query("err")),
-		Done:     strings.TrimSpace(c.Query("done")),
+		// 回执文案经本模块白名单收口（读侧不允许原样回显查询参数，见 block_err.go）：
+		// ?err= 未命中落归口文案、?done= 未命中落空串。
+		Err:  blockPageErr(c),
+		Done: blockPageDone(c),
 	}
 	if sel := strings.TrimSpace(c.Query("project")); sel != "" {
 		data.SelectedProjectID = sel
@@ -161,26 +183,42 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 		data.Headers = toBlockRows(blocks, "header")
 		data.Footers = toBlockRows(blocks, "footer")
 		data.Blocks = toOtherBlockRows(blocks)
+		// 只读影响面（见 block_page_impact.go）：逐块引用页面数 + 待重建页面清单。
+		h.fillRefCounts(c.Request.Context(), data.Headers)
+		h.fillRefCounts(c.Request.Context(), data.Footers)
+		h.fillRefCounts(c.Request.Context(), data.Blocks)
 	}
+	// 影响面在两种分支（有工程 / 无工程）下都要给：模板是同一份，
+	// 缺这个键会让取值链中断（HTTP 仍 200、后半页整块消失）。
+	data.StaleImpact = h.blockStaleImpact(c.Request.Context())
 	c.HTML(http.StatusOK, "admin/blocks", shell.Prepare(c, data.templateMap()))
 }
 
 // CreateBlock 新建全局块（POST /admin/blocks/create），成功后进工作台编辑内容。
+//
+// 失败一律 PRG 回列表页的 ?err= 通道（列表页早有「上一次操作未完成」提示条，批量删除在用）。
+// 此前这里走 c.String(400, blockBizError(err))，而业务错误的 Error() 是 enums 常量、也就是
+// i18n key —— 浏览器上落成一张**只有 ErrBlockDuplicate 字样的空白页**：没有页面壳、不是中文、
+// 也没有任何回列表的入口（用户报告的现象）。同名冲突这类高频分支恰恰最需要说清楚。
 func (h *blockPageHandle) CreateBlock(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	name := strings.TrimSpace(c.PostForm("name"))
 	kind := strings.TrimSpace(c.PostForm("kind"))
 	reuseMode := strings.TrimSpace(c.PostForm("reuseMode"))
 	if projectID == "" || name == "" {
-		c.String(http.StatusBadRequest, "工程与块名称不能为空")
+		badReq := blockcontract.ErrParamRequired
+		if name == "" {
+			badReq = blockcontract.ErrNameRequired
+		}
+		c.Redirect(http.StatusSeeOther, blockListURL(projectID, blockErrText(c, badReq)))
 		return
 	}
 	block, err := h.blocks.Create(c.Request.Context(), &blockcontract.CreateReq{
 		ProjectID: projectID, Name: name, Kind: kind, ReuseMode: reuseMode,
 	})
 	if err != nil {
-		logger.Scene("block").With("op", "CreateBlock").Error(err, "创建全局块失败")
-		c.String(http.StatusBadRequest, blockBizError(err))
+		logger.Scene("block").With("op", "CreateBlock").With("project_id", projectID).Error(err, "创建全局块失败")
+		c.Redirect(http.StatusSeeOther, blockListURL(projectID, blockErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/workbench?block="+block.ID)
@@ -193,20 +231,16 @@ func (h *blockPageHandle) DeleteBlock(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	if id == "" {
-		c.String(http.StatusBadRequest, "缺少块 id")
+		c.Redirect(http.StatusSeeOther, blockListURL(projectID, blockErrText(c, blockcontract.ErrParamRequired)))
 		return
 	}
 	force := strings.TrimSpace(c.PostForm("force")) == "1"
 	if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id, Force: force}); err != nil {
-		logger.Scene("block").With("op", "DeleteBlock").Error(err, "删除全局块失败")
-		c.String(http.StatusBadRequest, blockBizError(err))
+		logger.Scene("block").With("op", "DeleteBlock").With("block_id", id).Error(err, "删除全局块失败")
+		c.Redirect(http.StatusSeeOther, blockListURL(projectID, blockErrText(c, err)))
 		return
 	}
-	if projectID != "" {
-		c.Redirect(http.StatusSeeOther, "/admin/blocks?project="+projectID)
-		return
-	}
-	c.Redirect(http.StatusSeeOther, "/admin/blocks")
+	c.Redirect(http.StatusSeeOther, blockListURL(projectID, ""))
 }
 
 // BlocksBulkDelete 批量删除全局块（POST /admin/blocks/bulk-delete，权限点 block:delete）。
@@ -223,7 +257,9 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 		if projectID != "" {
 			q.Set("project", projectID)
 		}
-		q.Set("err", berr.Error())
+		// 超限是 shell 的受控错误（值域只有 Count/Max）：走它的受控文案出口，
+		// 而不是把 err.Error() 拼进 URL（读侧白名单也只认这条文案的归一形态）。
+		q.Set("err", shell.BulkIDsFacingText(c, berr))
 		c.Redirect(http.StatusSeeOther, "/admin/blocks?"+q.Encode())
 		return
 	}
@@ -258,15 +294,17 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 // blocksBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
 func blocksBulkDeleteResult(deleted, skipped int) string {
+	// 模板取自 block_err.go 的 blockBulkResultTemplates —— 那里同时也是读侧的
+	// 白名单来源：写侧改措辞时读侧跟着变，不会静默失配成「系统内部错误」。
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有选中任何块，列表未改动。"
+		return blockBulkResultTemplates[0]
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 个块。", deleted)
+		return fmt.Sprintf(blockBulkResultTemplates[1], deleted)
 	case deleted == 0:
-		return fmt.Sprintf("%d 个块都未能删除，列表未改动。", skipped)
+		return fmt.Sprintf(blockBulkResultTemplates[2], skipped)
 	default:
-		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（被页面引用的全局块需先解除引用）。", deleted, skipped)
+		return fmt.Sprintf(blockBulkResultTemplates[3], deleted, skipped)
 	}
 }
 
@@ -302,35 +340,89 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "已保存，关联页面将标记为待重建"})
 }
 
-// blockBizError 把 block 业务错误映射为用户可见文案；非业务错误（基础设施故障）回退兜底文案，
-// 原文仅进日志不外泄（对齐「不直出 err.Error()」约定）。
-func blockBizError(err error) string {
-	switch {
-	case errors.Is(err, blockcontract.ErrParamRequired),
-		errors.Is(err, blockcontract.ErrNotFound),
-		errors.Is(err, blockcontract.ErrProjectNotFound),
-		errors.Is(err, blockcontract.ErrNameRequired),
-		errors.Is(err, blockcontract.ErrInvalidDoc),
-		errors.Is(err, blockcontract.ErrInvalidKind),
-		errors.Is(err, blockcontract.ErrInvalidCategory),
-		errors.Is(err, blockcontract.ErrDuplicate),
-		errors.Is(err, blockcontract.ErrInvalidReuseMode),
-		errors.Is(err, blockcontract.ErrBlockInUse):
-		return err.Error()
-	default:
-		return shell.MsgInternalError
+// blockListURL 全局块列表页回跳地址（PRG）：保留工程上下文，并带上操作结论文案。
+//
+// 结论文案统一走 ?err=（列表页已有渲染位与「上一次操作未完成」前缀），本页不再有
+// 「直出裸文本、没有页面壳」的第二条反馈通道。
+func blockListURL(projectID, errText string) string {
+	q := url.Values{}
+	if p := strings.TrimSpace(projectID); p != "" {
+		q.Set("project", p)
 	}
+	if e := strings.TrimSpace(errText); e != "" {
+		q.Set("err", e)
+	}
+	if enc := q.Encode(); enc != "" {
+		return "/admin/blocks?" + enc
+	}
+	return "/admin/blocks"
+}
+
+// blockErrInternalFallback 非业务错误（基础设施故障）的兜底文案：中文原文，兼作取词兜底。
+const blockErrInternalFallback = "系统内部错误，请稍后重试"
+
+// blockErrText 业务错误 → 当前语言文案。
+//
+// 业务错误的 Error() 就是 enums 常量，而 enums 常量即 i18n key（真文案在 sys_i18n，
+// 迁移 058 + 237 已 seed 全部 ErrBlock* 词条），所以这里按请求语言取词、以 key 作兜底：
+// 直接把 err.Error() 铺到页面上正是「页面上出现 ErrBlockDuplicate 裸 key」的来源。
+// 非业务错误原文只进日志（调用方已按操作记过一条），对外回通用提示。
+func blockErrText(c *gin.Context, err error) string {
+	tr := shell.TranslateFor(c)
+	if key := blockErrKey(err); key != "" {
+		return tr(key, key)
+	}
+	return tr(shell.MsgInternalError, blockErrInternalFallback)
+}
+
+// blockErrSentinels 全部 block 业务 sentinel（= 词条 key 的来源）。
+// 新增业务错误时在此同步登记：漏登记的后果是它被当成内部故障（通用提示 + 日志），
+// 方向是安全的（不泄漏内部细节），但用户拿到的是不可行动的提示。
+var blockErrSentinels = []error{
+	blockcontract.ErrParamRequired,
+	blockcontract.ErrNotFound,
+	blockcontract.ErrProjectNotFound,
+	blockcontract.ErrProjectRequired,
+	blockcontract.ErrNameRequired,
+	blockcontract.ErrInvalidDoc,
+	blockcontract.ErrInvalidKind,
+	blockcontract.ErrInvalidCategory,
+	blockcontract.ErrDuplicate,
+	blockcontract.ErrInvalidReuseMode,
+	blockcontract.ErrBlockInUse,
+}
+
+// blockErrKey 业务错误 → i18n 词条 key（非业务错误返回空串，按内部故障处理）。
+//
+// 一律取 **sentinel 自己的 Error()**（enums 常量、也即词条 key），不能取 err.Error()：
+// 被 fmt.Errorf("...: %w", err) 包过的错误，Error() 是整句话，拿去查词条必然查不到
+// —— 页面上就会出现那句内部包装文案。
+func blockErrKey(err error) string {
+	if err == nil {
+		return ""
+	}
+	for _, sentinel := range blockErrSentinels {
+		if errors.Is(err, sentinel) {
+			return sentinel.Error()
+		}
+	}
+	return ""
 }
 
 // SetupBlockPages 注册全局块管理页（/admin 组，中间件链由装配层统一挂好）。
 // 函数名沿用 SetupXxxPages 先例：本包已有 REST 路由的 SetupBlockRoutes，不能同名。
 // adminPages 为 nil 时整体跳过。
+//
+// pages 为可选变参（装配层传入 page 契约后「影响面」才可用，见 block_page_impact.go）。
+// 用变参而不是必填参数：漏传时页面降级为「影响面未装配」的明确提示，而不是启动失败 ——
+// 这一批只做可见性，不该把块管理页的可用性与它绑死。
 func SetupBlockPages(adminPages *gin.RouterGroup,
-	blocks blockcontract.BlockService, projects projectcontract.ProjectService) {
+	blocks blockcontract.BlockService, projects projectcontract.ProjectService,
+	pages ...pagecontract.PageService) {
 	if adminPages == nil {
 		return
 	}
-	h := NewBlockPageHandle(blocks, projects)
+	h := NewBlockPageHandle(blocks, projects, pages...)
 	adminPages.GET("/blocks", h.BlocksList)
 	adminPages.POST("/blocks/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.CreateBlock)
 	adminPages.POST("/blocks/delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), h.DeleteBlock)

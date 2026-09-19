@@ -69,7 +69,9 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *inventorydto.Cre
 	}
 	// 单头 id 先定，行在同一事务里带着它一起写（外键 NOT NULL）。
 	orderID := uuid.NewString()
-	lines, err := buildPurchaseLines(projectID, orderID, req.Lines)
+	// 收货仓的短码一起传下去：采购行的 sku_code 是**仓库侧快照**，
+	// 建行时就要按目标仓口径归一旦校验（口径与理由见 inventory_stock_sku.go）。
+	lines, err := buildPurchaseLines(projectID, orderID, wh.Code, req.Lines)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +122,17 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 		}
 		order.WarehouseID = wh.ID
 	}
+	// 行的 sku_code 快照按**改单后的**收货仓归一（改单可能同时换了仓）：仓库侧编码是
+	// 「这条货在这个仓叫什么」，换仓后旧前缀不再成立 —— 与建单走同一条归一入口。
+	// 只在真要换行时解析：改备注这类不动行的调用不该因为「当年的收货仓后来被停用」而失败。
+	var orderWarehouseCode string
+	if req.ReplaceLines {
+		orderWarehouse, werr := s.resolveWarehouse(ctx, projectID, order.WarehouseID)
+		if werr != nil {
+			return nil, werr
+		}
+		orderWarehouseCode = orderWarehouse.Code
+	}
 	if req.ExpectedAt != nil {
 		order.ExpectedAt = normalizeTime(req.ExpectedAt.TimePtr())
 	}
@@ -155,7 +168,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 					return errors.New(inventoryenums.ErrPurchaseLinesLocked)
 				}
 			}
-			replaced, berr := buildPurchaseLines(projectID, order.ID, req.Lines)
+			replaced, berr := buildPurchaseLines(projectID, order.ID, orderWarehouseCode, req.Lines)
 			if berr != nil {
 				return berr
 			}
@@ -240,8 +253,13 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *inventorydto.List
 
 // —— 内部工具 ——
 
-// buildPurchaseLines 归一入参并构造采购行（校验集中在此：数量 / 单价 / 重复 SKU）。
-func buildPurchaseLines(projectID, orderID string, rows []inventorydto.PurchaseLineReq) (lines []*inventorymodel.PurchaseLineEntity, err error) {
+// buildPurchaseLines 归一入参并构造采购行（校验集中在此：数量 / 单价 / 重复 SKU / 仓库侧 SKU 编码）。
+//
+// warehouseCode 是该单的收货仓短码：行的 sku_code 是**仓库侧快照**，按它归一并校验
+// （幂等剥前缀 + 空串拒绝，见 inventory_stock_sku.go）。空的 sku_code 不再静默落库 ——
+// 那正是「页面表单没提交该字段」时被放过的那条路：行建出来了、编码是空的，
+// 一路带到登记入库，最后在库存真源上留下一条没有身份的货（或撞唯一约束）。
+func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []inventorydto.PurchaseLineReq) (lines []*inventorymodel.PurchaseLineEntity, err error) {
 	if len(rows) == 0 {
 		return nil, errors.New(inventoryenums.ErrPurchaseLinesRequired)
 	}
@@ -271,10 +289,16 @@ func buildPurchaseLines(projectID, orderID string, rows []inventorydto.PurchaseL
 		if sortValue == 0 {
 			sortValue = i
 		}
+		// 仓库侧编码的归一与校验：空串（含只给了仓码前缀的编码）一律拒绝 ——
+		// 「没给编码」必须当场变成一句可行动的错误，而不是一条没有身份的采购行。
+		skuCode, serr := normalizeStockSKU(row.SKUCode, warehouseCode)
+		if serr != nil {
+			return nil, serr
+		}
 		lines = append(lines, &inventorymodel.PurchaseLineEntity{
 			ID: uuid.NewString(), OrderID: orderID, ProjectID: projectID,
 			ProductID: strings.TrimSpace(row.ProductID), VariantID: variantID,
-			SKUCode:  strings.TrimSpace(row.SKUCode),
+			SKUCode:  skuCode,
 			Quantity: row.Quantity, ReceivedQuantity: 0, UnitPrice: row.UnitPrice,
 			Sort: sortValue, Remark: strings.TrimSpace(row.Remark),
 			Metadata: orJSON(nil, "{}"), CreatedAt: now, UpdatedAt: now,

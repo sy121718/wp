@@ -18,7 +18,6 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubenums "go_wp/internal/module/publication/enums"
 	"go_wp/internal/pipeline"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 	"gorm.io/gorm"
 )
@@ -73,18 +72,17 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 		ID: uuid.NewString(), PageID: page.ID, Version: page.DraftVersion,
 		DraftPath: path, DraftDocument: doc, SourceHash: hash(doc), CreatedAt: now,
 	}
-	// 先经 publication contract 预留草稿路径（冲突返回 ErrPathOccupied），
-	// 成功后再原子创建 page + revision；建页失败释放预留（可恢复，无永久分裂）。
-	if err = s.reservePath(ctx, page.ProjectID, path, page.ID); err != nil {
-		return nil, err
-	}
-	if err = s.model.CreateWithRevision(ctx, page, revision); err != nil {
-		// 建页失败：释放已预留的路径，避免「路径占用残留但页面不存在」。
-		if s.routes != nil {
-			if derr := s.routes.DeleteRoutesByPage(ctx, &pubcontract.DeleteRoutesReq{ProjectID: page.ProjectID, PageID: page.ID}); derr != nil {
-				logger.Scene("page").With("pageId", page.ID).Error(derr, "建页失败后释放预留路径失败")
-			}
+	// 预留路由（N 条，按站点启用语言）与建页必须落在**同一个事务**里：两处都是库内的
+	// 写入（page_routes 归 publication、pages/page_revisions 归本模块），旧实现靠
+	// 「建页失败再删预留」补偿，补偿本身失败时只剩一行日志，留下「预留了但页面不存在」
+	// 的孤儿占用（路径永久被占、且没有任何入口能查到它）。
+	// 事务回滚把两侧一起撤掉，补偿路径不存在，也就不存在补偿失败。
+	if err = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		if rerr := s.reservePathTx(ctx, tx, page.ProjectID, path, page.ID); rerr != nil {
+			return rerr
 		}
+		return s.model.CreateWithRevisionTx(ctx, tx, page, revision)
+	}); err != nil {
 		return nil, mapPersistenceError(err)
 	}
 	return pageResp(page), nil
@@ -108,13 +106,14 @@ func (s *Service) initFromBlueprint(ctx context.Context, blueprintID string) (js
 	return doc, nil
 }
 
-// reservePath 经 publication contract 预留草稿路径（页面创建前置）。
+// reservePathTx 在**调用方的事务**内经 publication contract 预留草稿路径（页面创建前置）。
 // 占用冲突归一为 page 的 ErrPathOccupied；系统错误原样返回。
 // routes 为 nil（降级/测试）时跳过预留。
 //
 // 多语言 P3：按站点启用语言（project_locales）逐语言登记占用行，一行冲突即整体失败
-// 并释放本次已预留的行（避免「半套路由」与草稿路径脱节）。
-func (s *Service) reservePath(ctx context.Context, projectID, path, pageID string) error {
+// —— 失败由外层事务回滚，不留「半套路由」与已建页面（旧实现是删掉本次已预留的行，
+// 删除失败只能记日志）。
+func (s *Service) reservePathTx(ctx context.Context, tx *gorm.DB, projectID, path, pageID string) error {
 	if s.routes == nil {
 		return nil
 	}
@@ -122,15 +121,10 @@ func (s *Service) reservePath(ctx context.Context, projectID, path, pageID strin
 	if err != nil {
 		return ErrInvalidPath
 	}
-	for i, routePath := range routePaths {
-		rerr := s.routes.ReservePath(ctx, &pubcontract.ReserveReq{ProjectID: projectID, Path: routePath, PageID: pageID})
+	for _, routePath := range routePaths {
+		rerr := s.routes.ReservePathTx(ctx, tx, &pubcontract.ReserveReq{ProjectID: projectID, Path: routePath, PageID: pageID})
 		if rerr == nil {
 			continue
-		}
-		if i > 0 {
-			if derr := s.routes.DeleteRoutesByPage(ctx, &pubcontract.DeleteRoutesReq{ProjectID: projectID, PageID: pageID}); derr != nil {
-				logger.Scene("page").With("pageId", pageID).Error(derr, "预留失败后释放已预留路由失败")
-			}
 		}
 		// 占用冲突归一：唯一约束冲突，或 publication 的 ErrRouteOccupied（资源 key）。
 		// 注意不能按中文文案匹配——enums 值已 key 化，文案随语言变化。
@@ -247,22 +241,19 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 		DraftPath: path, DraftDocument: doc, SourceHash: hash(doc), CreatedAt: now,
 	}
 	changedPath := page.DraftPath != path
-	// 改路径时先经 publication contract 迁移 reserved 占用：改到他人占用路径
-	// 在此失败（RenameReserved 撞 newPath 唯一约束），草稿尚未提交，保持原路径
-	// 与版本不变（保留原三表事务的「路径冲突整体回滚」语义）。
-	if changedPath && s.routes != nil {
-		if rerr := s.renameReservedAllLangs(ctx, page.ProjectID, page.ID, page.DraftPath, path, ""); rerr != nil {
-			return nil, mapPersistenceError(rerr)
-		}
-	}
-	if err = s.model.SaveDraftWithRevision(ctx, page.ProjectID, page.ID, page.DraftVersion,
-		path, doc, nextVersion, now, revision); err != nil {
-		// 草稿提交失败（版本冲突）：已迁移的 reserved 需回迁，保持路径占用与草稿一致。
-		if changedPath && s.routes != nil {
-			if rerr := s.renameReservedAllLangs(ctx, page.ProjectID, page.ID, path, page.DraftPath, ""); rerr != nil {
-				logger.Scene("page").With("pageId", page.ID).Error(rerr, "草稿提交失败后回迁保留路由失败")
+	// 路径占用迁移与草稿提交落在**同一个事务**里：改到他人占用路径在此失败
+	//（RenameReserved 撞 newPath 唯一约束），草稿保持原路径与版本不变；版本冲突
+	//（乐观锁）时路径迁移随事务一并撤销。旧实现是「先迁路由、失败再回迁」，
+	// 回迁失败只有一行日志 —— 路由表会停在「路径已改名、草稿没提交」的错位状态。
+	if err = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
+		if changedPath {
+			if rerr := s.renameReservedAllLangsTx(ctx, tx, page.ProjectID, page.ID, page.DraftPath, path, ""); rerr != nil {
+				return rerr
 			}
 		}
+		return s.model.SaveDraftWithRevisionTx(ctx, tx, page.ProjectID, page.ID, page.DraftVersion,
+			path, doc, nextVersion, now, revision)
+	}); err != nil {
 		return nil, mapPersistenceError(err)
 	}
 	page.DraftPath = path

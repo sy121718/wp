@@ -6,7 +6,7 @@ import { csrfHeaders } from '../../core.js';
 
 // 富文本编辑器（Trix 2.x，本地 vendor 资源 /static/vendor/trix/）：
 // 工具条与构建期白名单对齐（加粗/斜体/删除线/列表/引用/代码/链接），
-// 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗（h1 统一降级为 h2）。
+// 提交 HTML 在发布构建时经 sanitizeRichHTML 白名单清洗（h1~h5 原样保留，不做标题层级降级）。
 // 正文内容由 Trix 自动同步进关联的 <input type="hidden">（见 Trix README
 // 「Integrating with Forms」），因此不写任何表单同步 / 提交钩子 JS。
 //

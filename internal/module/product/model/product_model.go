@@ -18,6 +18,15 @@ import (
 	"go_wp/pkg/rls"
 )
 
+// 商品类型（迁移 238）。
+const (
+	// TypeVariant 常规变体商品：价格与库存在自己的变体上。
+	TypeVariant = "variant"
+	// TypeBundle 捆绑容器：只有一个对外价格（products.default_price），
+	// 成员变体只作为选项/履约明细，价格不参与计价与展示。
+	TypeBundle = "bundle"
+)
+
 // ProductEntity 商品主体。价格与库存在变体上；关联关系走 JSON 列。
 type ProductEntity struct {
 	ID          string          `gorm:"column:id;primaryKey"`
@@ -27,6 +36,18 @@ type ProductEntity struct {
 	Description json.RawMessage `gorm:"column:description;type:jsonb;not null"`
 	Slug        string          `gorm:"column:slug;not null"`
 	Status      string          `gorm:"column:status;not null"`
+	// Type 商品类型（迁移 238）：TypeVariant = 常规变体商品（主体卖自己的 SKU）；
+	// TypeBundle = 捆绑容器（只有容器价，成员价不参与计价与展示，库存按成员 BOM 扣减）。
+	Type string `gorm:"column:type;not null"`
+	// SKUCode 容器主体 SKU（迁移 246）—— 商品身份编码，不是「某个变体的 SKU」：
+	//   · 变体商品：从仓库选 = <仓短码大写>_<仓库里那条 SKU 原样>；
+	//     自己创建 = 运营填的编码（选了仓则自动附加仓码前缀）。
+	//   · 捆绑商品：运营自定义，恒以 _B 结尾。
+	// 变体商品的变体 SKU = 本值 + 属性值段… + _V（拼接在 service）。
+	// 唯一性：同工程内唯一，由 uq_products_project_sku_code 部分唯一索引（sku_code <> ''）
+	// 保证；**不要求全局唯一**（同一段编码可出现在不同仓库 / 不同工程）。
+	// 存量商品为空串（新编码规则只作用于新建商品与新生成的变体，存量一律不重写）。
+	SKUCode string `gorm:"column:sku_code;not null"`
 	// PublishedAt 上架时间（issue #11）：最近一次进入 published 的时刻，由 service 在
 	// 状态转 published 时写入；自动标签的「新品」规则以它为判定基准（不用 create_time，
 	// 否则「建了草稿很久才上架」的商品会被误判成新品）。
@@ -133,16 +154,30 @@ func (m *Model) CreateWithVariants(ctx context.Context, e *ProductEntity, varian
 	// RLS（迁移 215）：products 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 	// 变体表（product_variants）不在 215 的覆盖清单内，但同一事务里不受影响。
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
-		if err := tx.Create(e).Error; err != nil {
+		return m.CreateWithVariantsTx(ctx, tx, e, variants)
+	})
+}
+
+// CreateWithVariantsTx 与 CreateWithVariants 相同，但复用**调用方已开启的事务**。
+//
+// 事务边界由 service 决定（CQ-026）：一次商品保存要同时落「商品 + 首个变体 + 各仓库存行
+// + 变更记录」，任一步失败必须整体回滚 —— 半截状态（有商品没有库存行、有变体没有留痕）
+// 只能靠人工对账发现。tx 必须已由调用方设好工程作用域（rls.ScopeTx / InProjectScope），
+// model 不再另开事务：另开会**另取一条连接**，外层未提交的数据在新连接里看不见，
+// 原子性被悄悄破坏。
+func (m *Model) CreateWithVariantsTx(ctx context.Context, tx *gorm.DB, e *ProductEntity, variants []*VariantEntity) (err error) {
+	if err = tx.WithContext(ctx).Create(e).Error; err != nil {
+		return err
+	}
+	for _, v := range variants {
+		if v == nil {
+			continue
+		}
+		if err = tx.WithContext(ctx).Create(v).Error; err != nil {
 			return err
 		}
-		for _, v := range variants {
-			if err := tx.Create(v).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // Get 按 ID 查商品。
@@ -206,6 +241,37 @@ func (m *Model) SlugExists(ctx context.Context, projectID, slug, excludeID strin
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductEntity{}).
 			Where("project_id = ? AND slug = ?", projectID, slug)
+		if excludeID != "" {
+			q = q.Where("id <> ?", excludeID)
+		}
+		var n int64
+		if cerr := q.Count(&n).Error; cerr != nil {
+			return cerr
+		}
+		exists = n > 0
+		return nil
+	})
+	return exists, err
+}
+
+// SKUCodeExists 主体 SKU（products.sku_code）在本工程内是否已被**其它商品**占用。
+//
+// 唯一性范围是**工程**（迁移 246 的偏唯一索引 uq_products_project_sku_code，sku_code <> ”),
+// 与变体 SKU 的「同商品内唯一」（UNIQUE (product_id, sku_code)）是两条不同的约束 ——
+// 对应的两个业务错误也不是同一件事（见 enums 的 ErrContainerSKUTaken / ErrSkuTaken）。
+// excludeID 是编辑自己时排除自身（新建传空串）。
+//
+// 必须带工程作用域：products 有 FORCE 策略，缺作用域时计数恒 0 ⇒ 「不存在」⇒
+// 重复创建被静默放行，随后在落库时撞唯一索引 —— 那正是要把原始 SQL 错误挡在页面外的原因。
+// 空编码直接返回 false：偏索引排除空串，存量商品的主体编码为空是合法状态。
+func (m *Model) SKUCodeExists(ctx context.Context, projectID, skuCode, excludeID string) (exists bool, err error) {
+	code := strings.TrimSpace(skuCode)
+	if code == "" {
+		return false, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("project_id = ? AND sku_code = ?", projectID, code)
 		if excludeID != "" {
 			q = q.Where("id <> ?", excludeID)
 		}
@@ -450,8 +516,13 @@ func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n
 // Update 更新商品行（全字段保存）。
 func (m *Model) Update(ctx context.Context, e *ProductEntity) (err error) {
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
-		return tx.Model(&ProductEntity{}).Where("id = ?", e.ID).Save(e).Error
+		return m.UpdateTx(ctx, tx, e)
 	})
+}
+
+// UpdateTx 与 Update 相同，但复用调用方事务（tx 已设好工程作用域，CQ-026）。
+func (m *Model) UpdateTx(ctx context.Context, tx *gorm.DB, e *ProductEntity) (err error) {
+	return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ?", e.ID).Save(e).Error
 }
 
 // Delete 删除商品（变体由外键 ON DELETE CASCADE 连带删除）。
@@ -460,8 +531,13 @@ func (m *Model) Update(ctx context.Context, e *ProductEntity) (err error) {
 // 0 行（不报错、也不删）——「点了删除但商品还在」正是本批要消灭的 fail-silent。
 func (m *Model) Delete(ctx context.Context, id, projectID string) (err error) {
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ?", id).Delete(&ProductEntity{}).Error
+		return m.DeleteTx(ctx, tx, id)
 	})
+}
+
+// DeleteTx 与 Delete 相同，但复用调用方事务（删除与留痕同一事务，CQ-026）。
+func (m *Model) DeleteTx(ctx context.Context, tx *gorm.DB, id string) (err error) {
+	return tx.WithContext(ctx).Model(&ProductEntity{}).Where("id = ?", id).Delete(&ProductEntity{}).Error
 }
 
 // ListVariants 某商品全部变体。
@@ -491,6 +567,39 @@ func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string) (list []*Va
 	return list, err
 }
 
+// VariantReferencedByBundleItems 该变体是否被某个捆绑商品的成员清单引用
+// （products.bundle_items.options[].variantId，docs/14 §8 的删除守卫补引用面）。
+//
+// 为什么是 jsonb 查询而不是全表扫 + 内存过滤：成员清单是 JSONB 列，把整个工程的行拉进
+// 内存逐个比对在「商品多、每个捆绑都有十几个成员」时是纯粹的浪费，而且会随数据增长变成
+// 拖慢删除的隐藏成本。这里用包含语义下推：
+//
+//	bundle_items @> jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text)))
+//
+// 语义与「bundle_items -> 'options' @> […]」等价（PG 的 jsonb 包含是「右边数组的每个元素
+// 都被左边某个元素包含」），但**只有整列包含这种写法能用上 GIN 索引** —— 迁移 260 的注释里
+// 记了三条 EXPLAIN 实测：GIN 的可索引操作符作用在**被索引的表达式**上，所以「整列索引 +
+// 嵌套表达式（bundle_items -> 'options' @> …）」永远走不进索引，写成整列包含才有 Index Cond。
+// 索引：idx_products_bundle_items_gin（jsonb_path_ops，占位 260）。
+//
+// projectID 必填（products 在迁移 215 名单里）：缺作用域时策略谓词为 NULL，
+// 查询静默返回「没被引用」——那正是最糟的形态（守卫看似生效、其实全放行）。
+func (m *Model) VariantReferencedByBundleItems(ctx context.Context, projectID, variantID string) (referenced bool, err error) {
+	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(variantID) == "" {
+		return false, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		var n int64
+		cerr := tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("bundle_items @> jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text)))",
+				variantID).
+			Limit(1).Count(&n).Error
+		referenced = n > 0
+		return cerr
+	})
+	return referenced, err
+}
+
 // GetVariant 按 ID 查变体。
 func (m *Model) GetVariant(ctx context.Context, id string) (e *VariantEntity, err error) {
 	e = &VariantEntity{}
@@ -511,32 +620,54 @@ func (m *Model) SKUExists(ctx context.Context, productID, skuCode, excludeID str
 	return n > 0, nil
 }
 
-// CountVariants 某商品的变体数量（SKU 序号生成的前置计数）。
-func (m *Model) CountVariants(ctx context.Context, productID string) (n int64, err error) {
-	err = m.VariantDB(ctx).Where("product_id = ?", productID).Count(&n).Error
-	return n, err
-}
-
 // CreateVariant 写入变体。
 func (m *Model) CreateVariant(ctx context.Context, e *VariantEntity) (err error) {
-	return m.VariantDB(ctx).Create(e).Error
+	return m.CreateVariantTx(ctx, m.db, e)
+}
+
+// CreateVariantTx 写入变体（复用调用方事务；product_variants 无 RLS 策略，无需作用域）。
+func (m *Model) CreateVariantTx(ctx context.Context, tx *gorm.DB, e *VariantEntity) (err error) {
+	return tx.WithContext(ctx).Create(e).Error
+}
+
+// UpdateVariantTx 更新变体（复用调用方事务）。
+func (m *Model) UpdateVariantTx(ctx context.Context, tx *gorm.DB, e *VariantEntity) (err error) {
+	return tx.WithContext(ctx).Model(&VariantEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+// DeleteVariantTx 删除变体（复用调用方事务；库存行由外键级联删除）。
+func (m *Model) DeleteVariantTx(ctx context.Context, tx *gorm.DB, id string) (err error) {
+	return tx.WithContext(ctx).Model(&VariantEntity{}).Where("id = ?", id).Delete(&VariantEntity{}).Error
 }
 
 // UpdateVariant 更新变体。
 func (m *Model) UpdateVariant(ctx context.Context, e *VariantEntity) (err error) {
-	return m.VariantDB(ctx).Where("id = ?", e.ID).Save(e).Error
+	return m.UpdateVariantTx(ctx, m.db, e)
 }
 
 // DeleteVariant 删除变体。
 func (m *Model) DeleteVariant(ctx context.Context, id string) (err error) {
-	return m.VariantDB(ctx).Where("id = ?", id).Delete(&VariantEntity{}).Error
+	return m.DeleteVariantTx(ctx, m.db, id)
 }
 
 // UpdateVariantCost 写变体成本价（只动 cost_price 一列，issue #18 的入库单价回写）。
 //
 // 售价、划线价、库存缓存一律不碰：成本口径与售价口径是两条独立的账。
 func (m *Model) UpdateVariantCost(ctx context.Context, variantID string, cost float64, at time.Time) (err error) {
-	res := m.VariantDB(ctx).Where("id = ?", variantID).
+	return m.UpdateVariantCostTx(ctx, nil, variantID, cost, at)
+}
+
+// UpdateVariantCostTx 与 UpdateVariantCost 相同，但复用调用方事务。
+//
+// 成本价回写与它的主数据变更记录必须同事务：分成两次提交时，留痕失败会留下
+// 「成本价改了、时间线上没有这一笔」—— 而成本价正是定价工具的成本口径，错账只能靠对账发现。
+// tx 为 nil 即退化为按 ctx 取句柄（与不带 Tx 后缀的同名方法等价）。
+func (m *Model) UpdateVariantCostTx(ctx context.Context, tx *gorm.DB, variantID string, cost float64, at time.Time) (err error) {
+	handle := tx
+	if handle == nil {
+		handle = m.db.WithContext(ctx)
+	}
+	res := handle.WithContext(ctx).Model(&VariantEntity{}).Where("id = ?", variantID).
 		Updates(map[string]any{"cost_price": cost, "update_time": at})
 	if res.Error != nil {
 		return res.Error

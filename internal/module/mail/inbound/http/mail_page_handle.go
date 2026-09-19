@@ -41,14 +41,19 @@ func NewMailPageHandle(mail mailcontract.MailService) *mailPageHandle {
 // MailPage 发信账号 + 邮件模板页。
 func (h *mailPageHandle) MailPage(c *gin.Context) {
 	ctx := c.Request.Context()
+	// 取数失败只回一条归口文案（service 的 i18n key 翻成中文；基础设施错误只进日志）。
+	//
+	// **必须带小写 title**：layout.html 用 {{.title}} 取值，缺这个键会让渲染在 layout 里
+	// 中断（HTTP 仍是 200、正文整块为空）—— 也就是说「取数失败」会变成「白页」，
+	// 运营连那句归口文案都看不到。这两条分支此前正是这样。
 	accounts, err := h.mail.ListAccounts(ctx, "")
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail.html", shell.Prepare(c, gin.H{"Err": err.Error()}))
+		c.HTML(http.StatusOK, "admin/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
 		return
 	}
 	templates, err := h.mail.ListTemplates(ctx, "")
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail.html", shell.Prepare(c, gin.H{"Err": err.Error()}))
+		c.HTML(http.StatusOK, "admin/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
 		return
 	}
 	// 注意用小写 title：layout.html 的字段访问是 {{.title}}，缺 key 会渲染报错。
@@ -56,11 +61,28 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 		"title":     "邮箱设置",
 		"Accounts":  accounts,
 		"Templates": templates,
-		"Err":       strings.TrimSpace(c.Query("err")),
-		"Ok":        strings.TrimSpace(c.Query("ok")),
+		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
+		"Err": mailPageErr(c),
+		"Ok":  mailPageOk(c),
 		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。模板用 isset 认这个可选键。
-		"Done": strings.TrimSpace(c.Query("done")),
+		"Done": mailPageDone(c),
 	}))
+}
+
+// mailPageErrData 取数失败时的页面数据：归口文案 + 让模板能整页渲染完的空列表。
+//
+// 为什么空列表不是可选的：admin/mail.html 在提示条之后就用 len(.Accounts) / range 取列表，
+// 缺键会让 Jet **在那一行中断**（HTTP 仍是 200、正文整块消失，本项目出过多次）。
+// 只注入 Err 的分支因此永远渲染不完 —— 运营既看不到列表，也只有半页 HTML。
+//
+// **title 必须是小写 key**：layout.html 用 {{.title}} 取值，缺它同样会中断。
+func mailPageErrData(c *gin.Context, err error) gin.H {
+	return gin.H{
+		"title":     "邮箱设置",
+		"Err":       mailErrPageText(c, err),
+		"Accounts":  []any{},
+		"Templates": []any{},
+	}
 }
 
 // MailAccountSave 保存发信账号（id 为 0 即新建）。
@@ -87,7 +109,7 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 		_, err = h.mail.CreateAccount(c.Request.Context(), req)
 	}
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
@@ -96,7 +118,7 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 // MailAccountDelete 删除发信账号。
 func (h *mailPageHandle) MailAccountDelete(c *gin.Context) {
 	if err := h.mail.DeleteAccount(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
@@ -105,7 +127,7 @@ func (h *mailPageHandle) MailAccountDelete(c *gin.Context) {
 // MailAccountDefault 设为该用途的默认账号。
 func (h *mailPageHandle) MailAccountDefault(c *gin.Context) {
 	if err := h.mail.SetDefaultAccount(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
@@ -118,12 +140,14 @@ func (h *mailPageHandle) MailAccountTest(c *gin.Context) {
 		ToEmail:   c.PostForm("to_email"),
 	})
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	if !res.OK {
-		msg := "发送失败（" + res.ErrorKind + "）：" + res.Error
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(msg))
+		// SMTP 的响应码与主机名只进日志（mailTestSendFailedText 里记）：它们既不是给运营看的，
+		// 也不该经 302 的 Location 留在浏览器历史里。对外只给「可重试 / 永久拒绝 / 配置问题」。
+		c.Redirect(http.StatusFound, "/admin/mail?err="+
+			urlQueryEscape(mailTestSendFailedText(c, res.ErrorKind, res.Error)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
@@ -147,7 +171,7 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 		}
 	}
 	if _, err := h.mail.UpsertTemplate(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
@@ -156,7 +180,7 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 // MailTemplateDelete 删除邮件模板。
 func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
 	if err := h.mail.DeleteTemplate(c.Request.Context(), c.PostForm("template_key"), c.PostForm("locale")); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
@@ -189,7 +213,7 @@ func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", berr.Error()))
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", mailBulkIDsText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -220,7 +244,7 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 	list, err := h.mail.ListTemplates(ctx, "")
 	if err != nil {
 		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "",
-			"读取模板列表失败，本次没有删除任何模板。"))
+			mailTemplateListFailedText))
 		return
 	}
 	type templateRef struct{ key, locale string }
@@ -233,7 +257,7 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", berr.Error()))
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", mailBulkIDsText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -258,15 +282,17 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 // 有跳过时走警告（?err=）而不是成功（?done=）：部分成功必须说出来，
 // 否则只看到「已删除 2 个」的人会以为选中的都删了。
 func mailBulkOutcome(verb, noun string, done, skipped int) (doneText, warnText string) {
+	// 模板取自 mail_err.go 的 mailBulkResultTemplates —— 那里同时是读侧候选文案的来源
+	//（按 mailBulkVerbs × mailBulkNouns 展开）：写侧改措辞时读侧跟着变，不会静默失配。
 	switch {
 	case done == 0 && skipped == 0:
 		return "", ""
 	case skipped == 0:
-		return fmt.Sprintf("已%s %d 个%s。", verb, done, noun), ""
+		return fmt.Sprintf(mailBulkResultTemplates[0], verb, done, noun), ""
 	case done == 0:
-		return "", fmt.Sprintf("0 个%s被%s：%d 个被跳过（不存在或被服务端拒绝）。", noun, verb, skipped)
+		return "", fmt.Sprintf(mailBulkResultTemplates[1], noun, verb, skipped)
 	default:
-		return "", fmt.Sprintf("已%s %d 个%s，另有 %d 个被跳过（不存在或被服务端拒绝）。", verb, done, noun, skipped)
+		return "", fmt.Sprintf(mailBulkResultTemplates[2], verb, done, noun, skipped)
 	}
 }
 

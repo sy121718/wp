@@ -1,0 +1,227 @@
+/* static/css/rich-editor.css — 富文本编辑器（Trix 扩展）的样式。
+ *
+ * 归属：本文件只服务 rich_editor.html 这个统一 partial 与 rich-editor/ 下的 JS 扩展，
+ * 由使用它的后台页面各自 <link> 引入（不进 ui.css 基座：基座管的是通用控件外观，
+ * 这里管的是富文本这一个控件的内部结构）。
+ *
+ * 令牌口径：后台色板统一走 --sky-c-* 命名空间（值由 theme.css 的 [data-theme] 别名段转供），
+ * 每处都带兜底值 —— 缺令牌时退化成可读的亮色值，而不是解析失败变透明。
+ */
+
+/* ── 字段容器与编辑器本体 ─────────────────────────────────────────────── */
+.rich-editor-field {
+    display: block;
+    width: 100%;
+    margin-top: 4px;
+}
+
+trix-editor.rich-editor {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 160px;
+    padding: 10px 12px;
+    border: 1px solid var(--sky-c-border, #d5d9e0);
+    border-radius: var(--ui-radius, 8px);
+    background: var(--sky-c-bg, #ffffff);
+    color: var(--sky-c-text, #1f2430);
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+trix-editor.rich-editor:focus {
+    outline: 2px solid var(--sky-c-primary, #2f6fed);
+    outline-offset: 1px;
+}
+
+/* 编辑器内容的最小排版：标题层级、引用、代码块、表格、折叠块各就各位。 */
+trix-editor.rich-editor h1 { font-size: 1.6em; margin: 12px 0 8px; }
+trix-editor.rich-editor h2 { font-size: 1.4em; margin: 12px 0 8px; }
+trix-editor.rich-editor h3 { font-size: 1.22em; margin: 10px 0 6px; }
+trix-editor.rich-editor h4 { font-size: 1.1em; margin: 10px 0 6px; }
+trix-editor.rich-editor h5 { font-size: 1em; margin: 8px 0 6px; }
+trix-editor.rich-editor p { margin: 0 0 8px; }
+trix-editor.rich-editor blockquote {
+    margin: 8px 0;
+    padding: 4px 12px;
+    border-left: 3px solid var(--sky-c-border, #d5d9e0);
+    color: var(--sky-c-text-mute, #5b6472);
+}
+trix-editor.rich-editor pre {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--sky-c-bg-soft, #f4f6f9);
+    overflow-x: auto;
+}
+/* 代码块语言：Trix 的 language 属性（htmlAttributes: ["language"]）与服务端归一后的
+   class="language-xxx"（见 internal/builder/core/richtext.go 的 renderPreAttrs）。
+   这里只给等宽字体与轻微的字号区分，语法高亮留给主题与产物 CSS —— 不新增别人的类名。 */
+trix-editor.rich-editor pre[class*="language-"] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+}
+trix-editor.rich-editor table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+}
+trix-editor.rich-editor th,
+trix-editor.rich-editor td {
+    border: 1px solid var(--sky-c-border, #d5d9e0);
+    padding: 6px 8px;
+    text-align: left;
+}
+trix-editor.rich-editor hr {
+    border: 0;
+    border-top: 1px solid var(--sky-c-border, #d5d9e0);
+    margin: 14px 0;
+}
+trix-editor.rich-editor details {
+    margin: 8px 0;
+    padding: 8px 12px;
+    border: 1px solid var(--sky-c-border, #d5d9e0);
+    border-radius: 6px;
+}
+trix-editor.rich-editor summary { cursor: pointer; font-weight: 600; }
+
+/* ── 工具条：Trix 默认按钮是图标方块，这里全部换成带文字的原生按钮 ───────── */
+trix-toolbar .sre-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 0;
+}
+
+trix-toolbar .sre-toolbar-btn {
+    min-width: 34px;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--sky-c-border, #d5d9e0);
+    border-radius: 6px;
+    background: var(--sky-c-bg, #ffffff);
+    color: var(--sky-c-text, #1f2430);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+trix-toolbar .sre-toolbar-btn:hover {
+    background: var(--sky-c-bg-soft, #f4f6f9);
+}
+
+/* 键盘焦点必须可见：工具条的键盘可达性靠它才成立。 */
+trix-toolbar .sre-toolbar-btn:focus-visible,
+trix-toolbar .trix-button:focus-visible {
+    outline: 2px solid var(--sky-c-primary, #2f6fed);
+    outline-offset: 1px;
+}
+
+trix-toolbar .sre-toolbar-btn--active,
+trix-toolbar .sre-toolbar-btn[aria-pressed="true"],
+trix-toolbar .trix-button.trix-active {
+    border-color: var(--sky-c-primary, #2f6fed);
+    background: var(--sky-c-primary-soft, #e8f0ff);
+    color: var(--sky-c-primary, #2f6fed);
+}
+
+/* ── 扩展块在编辑器里的卡片形态（Trix 的 attachment） ─────────────────── */
+.rich-editor .sre-attachment {
+    display: block;
+    padding: 8px 10px;
+    border: 1px dashed var(--sky-c-border, #d5d9e0);
+    border-radius: 6px;
+    background: var(--sky-c-bg-soft, #f4f6f9);
+}
+
+.rich-editor .sre-attachment__badge {
+    font-size: 13px;
+    color: var(--sky-c-text-mute, #5b6472);
+}
+
+/* ── 扩展块的编辑对话框 ─────────────────────────────────────────────── */
+dialog.sre-dialog {
+    width: min(96vw, 560px);
+    max-height: 86vh;
+    padding: 0;
+    border: 1px solid var(--sky-c-border, #d5d9e0);
+    border-radius: 10px;
+    background: var(--sky-c-bg, #ffffff);
+    color: var(--sky-c-text, #1f2430);
+    overflow: auto;
+}
+
+dialog.sre-dialog::backdrop {
+    background: rgba(15, 20, 30, 0.42);
+}
+
+.sre-dialog-form {
+    display: block;
+    padding: 16px;
+}
+
+.sre-dialog-title {
+    margin: 0 0 12px;
+    font-size: 16px;
+}
+
+.sre-dialog-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sre-dialog-field {
+    display: block;
+}
+
+.sre-dialog-field__label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: var(--sky-c-text-mute, #5b6472);
+}
+
+.sre-dialog-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--sky-c-border, #d5d9e0);
+    border-radius: 6px;
+    background: var(--sky-c-bg, #ffffff);
+    color: var(--sky-c-text, #1f2430);
+    font-size: 14px;
+}
+
+.sre-dialog-input--area {
+    min-height: 96px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.sre-dialog-extra {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.sre-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* 窄屏（手机 / 平板）下工具条按钮放大到可点尺寸，编辑器高度按视口收。 */
+@media (max-width: 640px) {
+    trix-toolbar .sre-toolbar-btn {
+        min-width: 40px;
+        height: 36px;
+        font-size: 14px;
+    }
+
+    trix-editor.rich-editor {
+        min-height: min(45vh, 240px);
+    }
+}

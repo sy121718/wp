@@ -5,11 +5,13 @@ import (
 	"strings"
 
 	pubcontract "go_wp/internal/module/publication/contract"
+	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/permission"
 
 	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +40,9 @@ func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.
 		}
 		issues, scanned, aerr := svc.RunSEOAudit(c.Request.Context(), projectID)
 		if aerr != nil {
-			response.ErrorWithMessage(c, http.StatusBadRequest, aerr.Error())
+			// 原文（可能含产物路径 / SQL 片段）只进日志，对外给可翻译的归口文案（CQ-009）。
+			logger.Scene("publication").Error(aerr, "SEO 体检失败")
+			response.ErrorWithMessage(c, http.StatusBadRequest, pubenums.ErrAuditFailed)
 			return
 		}
 		response.Success(c, gin.H{"scanned": scanned, "issues": issues, "count": len(issues)})

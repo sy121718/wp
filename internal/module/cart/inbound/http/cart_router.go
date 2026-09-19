@@ -17,6 +17,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/pkg/logger"
+
 	cartcontract "go_wp/internal/module/cart/contract"
 	cartdto "go_wp/internal/module/cart/dto"
 	cartenums "go_wp/internal/module/cart/enums"
@@ -65,10 +67,38 @@ func (h *CallbackHandle) PaymentCallback(c *gin.Context) {
 	if serr != nil {
 		// 非 2xx 会让通道重试：验签失败与订单找不到都属于「重试也不会有结果」，
 		// 所以用 4xx 明确告诉对方别再发了；网关侧一般会对 4xx 停止重试。
-		response.ErrorWithMessage(c, http.StatusBadRequest, serr.Error())
+		//
+		// 但**消息不能直接用 err.Error()**：通道是第三方，基础设施错误的原文会带表名、
+		// 列名甚至 SQL 片段（审计 CQ-009 同一条判据 —— 那给运维看的东西不该出网）。
+		// 只放行回调自身的四条业务 key，其余一律收口到 cart.err.internal，原文进日志。
+		if msg := callbackErrorKey(serr.Error()); msg != "" {
+			response.ErrorWithMessage(c, http.StatusBadRequest, msg)
+		} else {
+			logger.Scene("cart").Error(serr, "支付回调处理失败")
+			response.ErrorWithMessage(c, http.StatusBadRequest, cartenums.ErrInternal)
+		}
 		return
 	}
 	response.SuccessWithMessage(c, "回调已接收", res)
+}
+
+// callbackErrorKey 回调对外只认这四条业务 key（命中返回 key，未命中返回空串）。
+//
+// 两种形态都认：整串等于 key，或以 "key：" 开头 —— service 用
+// fmt.Errorf("%s：补充说明", key) 把 key 拼进整句话，补充说明只记日志、不回给通道。
+func callbackErrorKey(raw string) string {
+	msg := strings.TrimSpace(raw)
+	for _, key := range []string{
+		cartenums.ErrCallbackSignature,
+		cartenums.ErrCallbackOrderMissing,
+		cartenums.ErrCallbackAmountMismatch,
+		cartenums.ErrPaymentFailed,
+	} {
+		if msg == key || strings.HasPrefix(msg, key+"：") || strings.HasPrefix(msg, key+":") {
+			return key
+		}
+	}
+	return ""
 }
 
 // SetupCartRoutes 注册购物车的 HTTP 路由（当前只有支付回调）。

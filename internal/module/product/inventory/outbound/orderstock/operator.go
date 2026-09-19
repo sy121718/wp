@@ -18,6 +18,8 @@ package orderstock
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	ordercontract "go_wp/internal/module/order/contract"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryservice "go_wp/internal/module/product/inventory/service"
@@ -71,6 +73,39 @@ func (o *Operator) ChangeStock(ctx context.Context, in *ordercontract.StockAdjus
 		Lines:      toStockLines(in.Lines),
 	})
 	return err
+}
+
+// DeductStockTx 建单出库的**事务透传版**：扣减落在订单自己的事务里。
+//
+// 适配层不做任何额外处理 —— 事务句柄原样交给库存服务，库存侧自己不会再开事务。
+func (o *Operator) DeductStockTx(ctx context.Context, tx *gorm.DB, in *ordercontract.StockDeduction) (err error) {
+	if in == nil {
+		return nil
+	}
+	return o.svc.DeductStockTx(ctx, tx, &inventorydto.DeductStockReq{
+		ProjectID:  in.ProjectID,
+		ReasonCode: in.ReasonCode,
+		SourceType: in.SourceType,
+		SourceRef:  in.SourceRef,
+		Remark:     in.Remark,
+		Lines:      toStockLines(in.Lines),
+	})
+}
+
+// ChangeStockTx 把货加回库存的**事务透传版**（取消归还 / 退货入库），Direction 恒为 in。
+func (o *Operator) ChangeStockTx(ctx context.Context, tx *gorm.DB, in *ordercontract.StockAdjustment) (err error) {
+	if in == nil {
+		return nil
+	}
+	return o.svc.ChangeStockTx(ctx, tx, &inventorydto.ChangeStockReq{
+		ProjectID:  in.ProjectID,
+		Direction:  "in",
+		ReasonCode: in.ReasonCode,
+		SourceType: in.SourceType,
+		SourceRef:  in.SourceRef,
+		Remark:     in.Remark,
+		Lines:      toStockLines(in.Lines),
+	})
 }
 
 // toStockLines 契约行 → 库存 dto 行。

@@ -6,7 +6,9 @@
 {* 版式（评审见 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
      · 页头一行：标题 + ? 悬浮说明；右侧工程 / 语言选择、完成度与返回工程入口同行；
      · 正文零说明文字：可翻译范围、写入口径与富文本约束整段进 .help（表头 .help 就近承载字段级约束）；
-     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）。 *}
+     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）；
+     · 语言下拉只列**目标语言**（源语言 = 站点默认语言，由 handler 从启用语言里剔掉）：
+       只剩源语言一种时整页走可行动空态，把「去哪儿加语言」指向站点设置的语言清单。 *}
 {{extends "layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
@@ -32,6 +34,7 @@
                 </select>
                 {{end}}
                 {{if .ProductID}}<input type="hidden" name="product" value="{{.ProductID}}">{{end}}
+                {{if len(.Langs) > 0}}
                 <label class="sr-only" for="tr-lang">{{ .["t"]("admin.product_translations.label.lang", "语言") }}</label>
                 <select class="form-select" id="tr-lang" name="lang" onchange="this.form.submit()">
                     {{range _, l := .Langs}}
@@ -40,6 +43,7 @@
                 </select>
                 <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_translations.noscriptSwitch", "切换") }}</button></noscript>
                 <span class="badge badge-mute">{{ .["t"]("admin.product_translations.doneLead", "完成度 ") }}{{.Done}} / {{.Total}}{{ .["t"]("admin.product_translations.doneTail", " 条") }}</span>
+                {{end}}
                 {{if .ProductID}}<a class="btn btn-sm btn-secondary" href="/admin/products/translations?project={{.ProjectID}}">{{ .["t"]("admin.product_translations.viewProject", "查看整个工程") }}</a>{{end}}
             </form>
         </div>
@@ -60,7 +64,20 @@
     <p class="badge badge-info" role="status">{{.SavedNote}}</p>
     {{end}}
 
-    {{if len(.Groups) == 0}}
+    {{if isset(.NoTargetLang) && .NoTargetLang}}
+    {* 可行动空态：站点只有源语言一种启用语言，翻译无从下手 —— 说明原因并直接给出
+       语言清单入口（站点设置）。这一步必须发生在「没有可翻译文本」之前：否则用户看到的是
+       「没有可翻译文本」，真正的原因（没有目标语言）与出口都不在页面上。 *}
+    <section class="card card-body">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_translations.noTargetLang.title", "没有可翻译的目标语言") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_translations.noTargetLang.desc", "站点语言清单里只有默认语言") }}{{if isset(.SourceLang)}}{{if .SourceLang}}「{{ .["SourceLang"] }}」{{end}}{{end}}{{ .["t"]("admin.product_translations.noTargetLang.descTail", "（它就是翻译的源语言），没有第二种语言可以作为翻译目标。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/settings{{if .ProjectID}}?project={{.ProjectID}}{{end}}">{{ .["t"]("admin.product_translations.noTargetLang.action", "去站点设置启用更多语言") }}</a>
+            </div>
+        </div>
+    </section>
+    {{else if len(.Groups) == 0}}
     <section class="card card-body">
         <div class="empty-state">
             <p class="empty-title">{{ .["t"]("admin.product_translations.emptyTitle", "没有可翻译文本") }}</p>

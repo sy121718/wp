@@ -8,6 +8,8 @@ import (
 	"time"
 
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
 	productmodel "go_wp/internal/module/product/model"
 )
 
@@ -82,6 +84,10 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	}
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
 	resp.BundleItems = orJSON(e.BundleItems, string(defaultBundleItemsJSON))
+	resp.Type = e.Type
+	// 主体 SKU（products.sku_code，迁移 246）：详情页只读展示它的唯一性范围（本工程内唯一），
+	// 运营据此核对「新建时填过的编码」有没有落库。
+	resp.SKUCode = e.SKUCode
 	resp.DefaultPrice = e.DefaultPrice
 	resp.DefaultImage = e.DefaultImage
 	resp.Metadata = orJSON(e.Metadata, "{}")
@@ -93,6 +99,9 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	}
 	// 库存展示值查询期投影（issue #32）：一次批量取真源汇总。
 	s.fillVariantStock(ctx, resp.ProjectID, resp.Variants)
+	// 商品级库存聚合（列表「库存」列的三态，docs/14 §1.4）：详情接口同样带上，
+	// 后台列表页逐商品取详情时就不必再单独打一次库存接口。
+	s.fillProductStock(ctx, resp.ProjectID, []*productdto.ProductResp{resp})
 	// 引用到的属性组（组 + 值），供后台与详情页直接渲染规格选择器。
 	if groups, aerr := s.attributeRespByProduct(ctx, []*productmodel.ProductEntity{e}); aerr != nil {
 		return nil, aerr
@@ -106,6 +115,113 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		return nil, rerr
 	}
 	return resp, nil
+}
+
+// fillProductStock 查询期聚合商品列表的「库存」列（docs/14 §1.4，2026-09-19 口径）。
+//
+// 真源是 inventory_stocks（商品侧不留任何副本，issue #32）——这里一次批量读回若干商品在
+// 各仓的库存行，按**三态**归并：
+//
+//	· 没有任何行 → none（未入库）；
+//	· 任一行不跟踪 → infinite（∞）——**混合状态绝不求和**：求和等于把无限当 0，
+//	               页面会显示成「有货」，而实际是「卖不完」；多规格商品里任一规格不跟踪同理；
+//	· 全部跟踪   → tracked，StockTotal = 各行数量之和（**0 就显示 0**，与「未入库」不同）。
+//
+// 失败不阻断商品读取：库存列是展示投影，读不到就保持零值（页面按未入库显示）；
+// 未装库存用例（纯商品单测路径）时空转。可用量判断一律走库存真源的带行锁路径，绝不看这个投影。
+func (s *Service) fillProductStock(ctx context.Context, projectID string, resps []*productdto.ProductResp) {
+	if s.invSvc == nil || len(resps) == 0 || strings.TrimSpace(projectID) == "" {
+		return
+	}
+	ids := make([]string, 0, len(resps))
+	for _, r := range resps {
+		if r != nil && r.ID != "" {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := s.invSvc.WarehouseStocksByProducts(ctx, projectID, ids)
+	if err != nil {
+		return
+	}
+	byProduct := make(map[string][]inventorydto.ProductWarehouseStock, len(ids))
+	for _, row := range rows {
+		byProduct[row.ProductID] = append(byProduct[row.ProductID], row)
+	}
+	for _, resp := range resps {
+		if resp == nil {
+			continue
+		}
+		items := byProduct[resp.ID]
+		if len(items) == 0 {
+			resp.StockState = productenums.StockStateNone
+			continue
+		}
+		state, total := aggregateStockState(items)
+		resp.StockState = state
+		if state == productenums.StockStateTracked {
+			resp.StockTotal = total
+		}
+		resp.StockWarehouses = warehouseStockRows(items)
+	}
+}
+
+// aggregateStockState 一组库存行的三态结论：任一行不跟踪即「无限」，否则求和。
+//
+// 抽成函数而不是内联：商品级与「分仓」两处用的是**同一条**口径，
+// 各写一遍必然分叉（一处求和、一处显示 ∞，页面上两行数字对不上）。
+func aggregateStockState(rows []inventorydto.ProductWarehouseStock) (state string, total int) {
+	if len(rows) == 0 {
+		return productenums.StockStateNone, 0
+	}
+	for _, r := range rows {
+		if !r.TrackQuantity {
+			return productenums.StockStateInfinite, 0
+		}
+		total += r.Quantity
+	}
+	return productenums.StockStateTracked, total
+}
+
+// warehouseStockRows 按仓归并分仓明细（保持服务端返回的顺序，不额外排序）。
+//
+// 一行一个仓：同一仓里多规格多行时，该仓的 State / Quantity 是**归并后的结论**
+// （同一条 aggregateStockState 口径）；SKUCode 与 CostPrice 取该仓第一条有值的
+// （SKU 串只用于展示与对账，身份恒为 variantId；成本是 (仓库, SKU) 维度的事实）。
+func warehouseStockRows(rows []inventorydto.ProductWarehouseStock) []*productdto.ProductWarehouseStockResp {
+	order := make([]string, 0, len(rows))
+	grouped := make(map[string][]inventorydto.ProductWarehouseStock, len(rows))
+	for _, r := range rows {
+		if _, ok := grouped[r.WarehouseID]; !ok {
+			order = append(order, r.WarehouseID)
+		}
+		grouped[r.WarehouseID] = append(grouped[r.WarehouseID], r)
+	}
+	out := make([]*productdto.ProductWarehouseStockResp, 0, len(order))
+	for _, id := range order {
+		items := grouped[id]
+		state, total := aggregateStockState(items)
+		row := &productdto.ProductWarehouseStockResp{WarehouseID: id, State: state}
+		for _, it := range items {
+			if row.WarehouseCode == "" {
+				row.WarehouseCode, row.WarehouseName = it.WarehouseCode, it.WarehouseName
+			}
+			if row.SKUCode == "" {
+				row.SKUCode = it.SKUCode
+			}
+			if row.CostPrice == nil {
+				row.CostPrice = it.CostPrice
+			}
+		}
+		if state == productenums.StockStateTracked {
+			row.TrackQuantity = true
+			row.Quantity = total
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // fillRelated 把商品引用的分类 / 品牌 / 标签填入详情响应（失败不阻断详情读取）。
@@ -164,9 +280,21 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 	return resp
 }
 
-// applyPriceRange 用变体算出商品的价格区间（商品主体不存价格，区间是只读派生）。
+// applyPriceRange 算出商品的价格区间（只读派生）。
+//
+// 两种商品的来源不同，别混：
+//
+//	· variant 商品：区间由**变体**派生（主体不存价，区间是展示用的汇总）；
+//	· bundle 容器：只有一个对外价格 = 容器价（products.default_price）。它没有自己的 SKU，
+//	  若还从变体派生，就会把自动生成的价 0 变体当成售价（列表显示 0.00 的成因）。
 func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.VariantEntity) {
 	resp.VariantCount = len(variants)
+	if resp.Type == productmodel.TypeBundle {
+		if resp.DefaultPrice != nil {
+			resp.PriceMin, resp.PriceMax = *resp.DefaultPrice, *resp.DefaultPrice
+		}
+		return
+	}
 	if len(variants) == 0 {
 		return
 	}

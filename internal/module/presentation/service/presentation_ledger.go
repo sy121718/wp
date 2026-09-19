@@ -32,11 +32,12 @@ import (
 )
 
 const (
-	// presentationReceiptAction 访问面切换类回执的动作名（与 publication 侧登记时
-	// 写死的 publishReceiptAction 逐字一致；恢复时按它筛掉普通路由变更回执）。
-	presentationReceiptAction = "switch_active"
-	// presentationReceiptSourceType 本模块回执的来源类型（publication_receipts.source_type）。
-	presentationReceiptSourceType = "presentation"
+	// presentationReceiptAction 访问面切换类回执的动作名。
+	//
+	// 取值等于 pubcontract.ReceiptActionSwitchActive，这里只留一个字面量常量供
+	// presentation_converge.go 构造领取词表（作用域限定在本模块，避免那个文件
+	// 再抄一遍字面量）。归属（source_type）与动作词的权威定义都在 publication 契约。
+	presentationReceiptAction = pubcontract.ReceiptActionSwitchActive
 	// artifactLocatorKeyPrefix 访问面 Locator.Key 的产物前缀（Inspect 还原 locator 后剥掉）。
 	artifactLocatorKeyPrefix = "artifacts/"
 )
@@ -86,51 +87,16 @@ func (s *Service) abortPublishReceipt(ctx context.Context, receiptID, reason str
 	}
 }
 
-// RecoverPendingPublications 启动恢复：判定未结案的多语言发布回执该补齐还是该回滚。
+// RecoverPendingPublications（启动 / 运维全量恢复）与 ConvergePendingReceipts（定时 + 快通道）
+// 都在 presentation_converge.go —— 两种入口共用同一段重放实现（convergePendingReceipts），
+// 在这里再写一份判定只会让「定时收敛说已收敛、重启恢复又改一遍」迟早发生。
+//
+// 本文件的职责收窄为：回执的登记 / 结案（beginPublishReceipt / completePublishReceipt /
+// abortPublishReceipt）与单条重放判定（recoverOneReceipt + 它的证据读取）。
 //
 // 判据与 page 侧同源（符号链接实际指向哪个产物），只在证据充分时补齐：
 // 判定错会写出错误的发布账本，而「不判定、只告警」至少不会把状态改得更糟，
 // 所以证据不足一律走回滚分支并记日志。
-func (s *Service) RecoverPendingPublications(ctx context.Context) (recovered, rolledBack int, err error) {
-	if s == nil || s.routes == nil || s.publication == nil {
-		return 0, 0, nil
-	}
-	pending, lerr := s.routes.ListPendingReceipts(ctx)
-	if lerr != nil {
-		return 0, 0, lerr
-	}
-	// 涉及的实例：回执只能证明「单个语言的切换是否生效」，批次是否收敛要看语言账本
-	// 与实例指针（见 convergeInstanceBatch）。
-	touched := make(map[string]string)
-	for _, item := range pending {
-		if item.Action != presentationReceiptAction || item.SourceType != presentationReceiptSourceType {
-			continue
-		}
-		done, rerr := s.recoverOneReceipt(ctx, item)
-		if rerr != nil {
-			logger.Scene("publication").With("receiptId", item.ID).
-				Error(rerr, "多语言发布回执恢复失败")
-			continue
-		}
-		touched[item.SourceID] = item.ProjectID
-		if done {
-			recovered++
-		} else {
-			rolledBack++
-		}
-	}
-	for instanceID, projectID := range touched {
-		if ctx.Err() != nil {
-			break
-		}
-		s.convergeInstanceBatch(ctx, projectID, instanceID)
-	}
-	if recovered > 0 || rolledBack > 0 {
-		logger.Scene("publication").With("recovered", recovered).With("rolledBack", rolledBack).
-			Info("多语言发布回执恢复完成")
-	}
-	return recovered, rolledBack, nil
-}
 
 // convergeInstanceBatch 批次收敛：语言账本没铺满、或实例指针没推进的实例重跑一次发布。
 //

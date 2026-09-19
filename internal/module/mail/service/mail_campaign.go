@@ -23,6 +23,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
+	"go_wp/pkg/logger"
 )
 
 // SaveCampaign 新建 / 更新活动（只有草稿可改）。
@@ -179,7 +180,15 @@ func (s *Service) StartCampaign(ctx context.Context, req *maildto.StartCampaignR
 		// 收件人上万时体验很差，但比「显示发送中却没人干活」强。
 		if derr := s.DispatchCampaign(ctx, c.ID, 0); derr != nil {
 			// 降级也失败：状态退回草稿，避免留下脏状态。
-			_ = s.m.UpdateCampaignFields(ctx, c.ID, map[string]any{"status": mailmodel.CampaignStatusDraft, "update_time": now})
+			//
+			// 补偿不能静默（原先这里是 `_ =`）：退回失败意味着活动停在「发送中」而没有任何人在
+			// 干活 —— 运营看不见、日志里也没有。按 AGENTS.md「补偿必须幂等 + 留痕 + 可重放」，
+			// 把失败写进结构化日志（带 campaign_id）：状态本身可以靠后台重新保存收敛，
+			// 但「有人遇到过这个问题」必须留得下来。
+			if rerr := s.m.UpdateCampaignFields(ctx, c.ID, map[string]any{"status": mailmodel.CampaignStatusDraft, "update_time": now}); rerr != nil {
+				logger.Scene("mail").With("campaign_id", c.ID).
+					Error(rerr, "启动失败后状态退回草稿也失败：活动停在发送中且无人投递")
+			}
 			return nil, derr
 		}
 	}

@@ -89,7 +89,12 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 	for _, want := range []string{
 		"第一篇", "hello-world", "摘要一", "SEO 标题", "SEO 描述", "关键词",
 		"/storage/image/cover.webp",
-		"trix-editor", "article-body", "/admin/articles/score", "/admin/articles/update",
+		// 正文编辑器与商品分类 / 品牌描述共用 partials/rich_editor.html：隐藏 input（name=body）、
+		// trix-editor、扩展入口与扩展样式都由片段给出 —— 这里钉住它们真的渲染出来了
+		//（片段没接上时页面不报错，只是编辑器退化成一块没有工具条的空白区）。
+		"trix-editor", `rich-body-article`, `data-rich-editor="body"`, `name="body"`,
+		"/static/js/rich-editor/index.js", "/static/css/rich-editor.css",
+		"/admin/articles/score", "/admin/articles/update",
 		"SEO 评测", "重新评分", "保存",
 		// 导入到画布区块（06-B 决策 5 的入口）：能力未装配时给提示而不是按钮。
 		"导入到画布",

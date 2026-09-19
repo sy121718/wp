@@ -11,6 +11,7 @@ package adminhttp
 // 页面文案标题沿用原有 i18n 词条 key（与 dashboard 副本逐字一致，保证渲染不变）。
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ import (
 
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
+	adminenums "go_wp/internal/module/admin/enums"
 )
 
 // 页面标题与统一提示（沿用原 i18n 词条 key，词条缺失时前端回退中文注释值）。
@@ -67,14 +69,20 @@ func NewAdminPagesHandle(admins admincontract.AdminService, roles admincontract.
 // 那会让人以为「一条都没删」，然后反复重试。结果按「已删除 N 个 / M 个未能删除」
 // 回带列表页，避免静默的部分成功。权限点复用各自单条删除的业务 API，不新增权限点。
 
+// 超限（berr）为什么可以展示、而 service 错误必须走 adminErrParam：
+// berr 来自 shell.BulkIDs，它是**带 sentinel 的类型**（shell.BulkIDsError，值域只有 Count/Max
+// 两个整数）——「受控」因此是类型事实，而不是注释里的人肉判断。
+// 展示一律走 shell.BulkIDsFacingText：它只认类型、按当前语言拼出
+// 「一次最多操作 N 项，当前 M 项，请分批进行」，这句可行动提示不会被归口助手抹成通用提示
+// （那正是本轮要避免的反向缺陷）；service 返回的 err 值域包含 SQLSTATE，所以走助手。
+//
 // adminBulkResultURL 批量动作结果回带：有跳过走 ?err=（含成功条数），全成功走 ?done=。
 func adminBulkResultURL(path, noun string, deleted, skipped int) string {
 	switch {
 	case skipped > 0:
-		return path + "?err=" + url.QueryEscape(
-			fmt.Sprintf("已删除 %d 个%s，%d 个未能删除（受保护或被引用）", deleted, noun, skipped))
+		return path + "?err=" + url.QueryEscape(fmt.Sprintf(adminBulkPartialTemplate, deleted, noun, skipped))
 	case deleted > 0:
-		return path + "?done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个%s", deleted, noun))
+		return path + "?done=" + url.QueryEscape(fmt.Sprintf(adminBulkDoneTemplate, deleted, noun))
 	}
 	return path
 }
@@ -96,8 +104,8 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		"menu":  "admins",
 		"Rows":  res.List,
 		"Total": res.Total,
-		"Err":   strings.TrimSpace(c.Query("err")),
-		"Done":  strings.TrimSpace(c.Query("done")),
+		"Err":   adminPageErrText(c, c.Query("err")),
+		"Done":  adminPageDone(c.Query("done")),
 	}))
 }
 
@@ -115,7 +123,7 @@ func (h *AdminPagesHandle) AdministratorsCreate(c *gin.Context) {
 		Username: username, Email: email, Password: password,
 		Phone: shell.FieldValue(c, "phone"), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
@@ -133,7 +141,7 @@ func (h *AdminPagesHandle) AdministratorsUpdate(c *gin.Context) {
 		Id: id, Username: shell.FieldValue(c, "username"), Phone: shell.FieldValue(c, "phone"),
 		Email: shell.FieldValue(c, "email"), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
@@ -153,7 +161,7 @@ func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 	if _, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
 		Id: []uint64{id}, OperatorID: shell.CurrentUserID(c),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
@@ -169,7 +177,8 @@ func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, "/admin/administrators?err="+url.QueryEscape(berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusSeeOther, "/admin/administrators?err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -203,8 +212,8 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 		"menu":  "roles",
 		"Rows":  res.List,
 		"Total": res.Total,
-		"Err":   strings.TrimSpace(c.Query("err")),
-		"Done":  strings.TrimSpace(c.Query("done")),
+		"Err":   adminPageErrText(c, c.Query("err")),
+		"Done":  adminPageDone(c.Query("done")),
 	}))
 }
 
@@ -221,7 +230,7 @@ func (h *AdminPagesHandle) RolesCreate(c *gin.Context) {
 		RoleCode: roleCode, RoleName: roleName, Status: shell.ParseStatusPtr(c.PostForm("status")),
 		SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
@@ -240,7 +249,7 @@ func (h *AdminPagesHandle) RolesUpdate(c *gin.Context) {
 		ID: id, RoleName: roleName, Status: shell.ParseStatus(c.PostForm("status")),
 		SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
@@ -254,7 +263,7 @@ func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 		return
 	}
 	if err := h.roles.RoleDelete(c.Request.Context(), &admindto.RoleDeleteReq{ID: id}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
@@ -267,7 +276,8 @@ func (h *AdminPagesHandle) RolesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, "/admin/roles?err="+url.QueryEscape(berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusSeeOther, "/admin/roles?err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -309,8 +319,8 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		"Total":        res.Total,
 		"FilterCode":   code,
 		"FilterModule": module,
-		"Err":          strings.TrimSpace(c.Query("err")),
-		"Done":         strings.TrimSpace(c.Query("done")),
+		"Err":          adminPageErrText(c, c.Query("err")),
+		"Done":         adminPageDone(c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/permissions", map[string]string{"code": code, "module": module})
 	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -339,7 +349,7 @@ func (h *AdminPagesHandle) PermissionsCreate(c *gin.Context) {
 		APIPath: apiPath, APIMethod: apiMethod, Status: shell.ParseStatus(c.PostForm("status")),
 		Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
@@ -364,7 +374,7 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 		PermissionName: name, Module: module, APIPath: apiPath, APIMethod: apiMethod,
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
@@ -378,7 +388,7 @@ func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 		return
 	}
 	if _, err := h.perms.PermDelete(c.Request.Context(), &admindto.PermDeleteReq{IDs: []uint64{id}}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
@@ -392,7 +402,8 @@ func (h *AdminPagesHandle) PermissionsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, "/admin/permissions?err="+url.QueryEscape(berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusSeeOther, "/admin/permissions?err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -474,8 +485,8 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 		"menu":    "menus",
 		"Rows":    rows,
 		"Parents": rows,
-		"Err":     strings.TrimSpace(c.Query("err")),
-		"Done":    strings.TrimSpace(c.Query("done")),
+		"Err":     adminPageErrText(c, c.Query("err")),
+		"Done":    adminPageDone(c.Query("done")),
 	}))
 }
 
@@ -492,7 +503,7 @@ func (h *AdminPagesHandle) MenusCreate(c *gin.Context) {
 		Type: shell.ParseStatus(c.PostForm("type")), Path: shell.FieldValue(c, "path"),
 		Status: shell.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
@@ -512,7 +523,7 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 		Type: shell.ParseStatus(c.PostForm("type")), Path: shell.FieldValue(c, "path"),
 		Status: shell.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
@@ -526,7 +537,7 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 		return
 	}
 	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: []uint64{id}}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
@@ -539,7 +550,8 @@ func (h *AdminPagesHandle) MenusBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, "/admin/menus?err="+url.QueryEscape(berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusSeeOther, "/admin/menus?err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -616,8 +628,8 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 		"menu":    "depts",
 		"Rows":    rows,
 		"Parents": rows,
-		"Err":     strings.TrimSpace(c.Query("err")),
-		"Done":    strings.TrimSpace(c.Query("done")),
+		"Err":     adminPageErrText(c, c.Query("err")),
+		"Done":    adminPageDone(c.Query("done")),
 	}))
 }
 
@@ -634,7 +646,7 @@ func (h *AdminPagesHandle) DepartmentsCreate(c *gin.Context) {
 		ParentID: shell.ParseUint(c.PostForm("parent_id")), DeptName: deptName, DeptCode: deptCode,
 		SortOrder: sortOrder, Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
@@ -654,7 +666,7 @@ func (h *AdminPagesHandle) DepartmentsUpdate(c *gin.Context) {
 		ID: id, ParentID: shell.ParseUint(c.PostForm("parent_id")), DeptName: deptName, DeptCode: deptCode,
 		SortOrder: sortOrder, Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
@@ -668,7 +680,7 @@ func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 		return
 	}
 	if err := h.depts.DeptDelete(c.Request.Context(), &admindto.DeptDeleteReq{ID: id}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
@@ -681,7 +693,8 @@ func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, "/admin/departments?err="+url.QueryEscape(berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusSeeOther, "/admin/departments?err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -719,8 +732,8 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 		"Rows":    res.List,
 		"Total":   res.Total,
 		"Domains": domains,
-		"Err":     strings.TrimSpace(c.Query("err")),
-		"Done":    strings.TrimSpace(c.Query("done")),
+		"Err":     adminPageErrText(c, c.Query("err")),
+		"Done":    adminPageDone(c.Query("done")),
 	}))
 }
 
@@ -739,7 +752,7 @@ func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
 		RuleName: ruleName, Domain: domain, Config: admindto.RuleConfigDTO{},
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
@@ -791,8 +804,15 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 		config = dataruleDropEmptyGroups(dataruleConfigFromForm(c))
 	} else {
 		detail, detailErr := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
-		if detailErr != nil || detail == nil {
-			shell.AdminWriteFailed(c, detailErr)
+		if detailErr != nil {
+			adminWriteFailed(c, detailErr)
+			return
+		}
+		if detail == nil {
+			// 「查不到但也没报错」必须给一条可行动的业务文案（规则不存在 / 不在本工程作用域内），
+			// 不能像修复前那样拿 nil 去调错误出口（旧出口对 nil 直接 return → 200 空体，
+			// 前端看到「点了没反应」而日志里什么都没有）。
+			adminWriteFailed(c, errors.New(adminenums.ErrRuleNotFound))
 			return
 		}
 		config = detail.Config
@@ -801,7 +821,7 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 		ID: id, RuleName: ruleName, Domain: domain, Config: config,
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
@@ -815,7 +835,7 @@ func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 		return
 	}
 	if err := h.rules.RuleDelete(c.Request.Context(), &admindto.RuleDeleteReq{IDs: []uint64{id}}); err != nil {
-		shell.AdminWriteFailed(c, err)
+		adminWriteFailed(c, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
@@ -828,7 +848,8 @@ func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusSeeOther, "/admin/datarules?err="+url.QueryEscape(berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusSeeOther, "/admin/datarules?err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -896,12 +917,14 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		"LangFilter": filter.Lang,
 		"CatFilter":  filter.Category,
 		"Categories": categories,
-		"Saved":      strings.TrimSpace(c.Query("saved")),
-		"Errored":    strings.TrimSpace(c.Query("errored")),
+		"Saved":      adminPageSaved(c.Query("saved")),
+		"Errored":    adminPageErrText(c, c.Query("errored")),
 		// 批量删除的结果条（?done= / ?err=）：与全站列表页同一对键，文案由服务端拼装
-		// （受控文本 + 计数），模板侧 Jet 默认 HTML 转义。
-		"Done": strings.TrimSpace(c.Query("done")),
-		"Err":  strings.TrimSpace(c.Query("err")),
+		// （受控文本 + 计数）。读侧一律过受控出口 —— ?done= 走 adminPageDone（与写侧共用
+		// 模板字面量、整体匹配），?err= / ?errored= 走 adminPageErrText —— 因为**页面不是
+		// 可信边界**：手拼一个 ?done=任意文案 就能伪造一条顶着「成功」样式的消息。
+		"Done": adminPageDone(c.Query("done")),
+		"Err":  adminPageErrText(c, c.Query("err")),
 	}
 	// 分页条：原版只渲染「第 X / Y 页」文字，没有页码链接 —— Total 超过一页时第 2 页起
 	// 完全不可达（列表页最要紧的缺陷）。链接与筛选同源，翻页不丢 keyword / lang / category。
@@ -916,33 +939,86 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/i18n", shell.Prepare(c, data))
 }
 
+// adminI18nSaveMissingMsg 保存词条时的缺项判定：返回**具体**缺哪一项的 enums 文案
+// （按表单从上到下的顺序报第一项），都不缺时返回空串。
+//
+// 为什么不继续共用 MsgFieldRequired：那句话只说「有必填项没填」，而这张表单有三行 ——
+// 运营得逐个试才知道是哪一行。三条文案的判据相同（都是客户端输入问题），差别只在
+// 「说得够不够具体」。空值校验留在 handler 是因为 i18n.SaveEntry 把「空值」与
+// 「存储不可用」都当同一条 error 返回，混在一起就没法在归口助手里区分了。
+func adminI18nSaveMissingMsg(key, lang, value string) string {
+	switch {
+	case key == "":
+		return adminenums.ErrI18nKeyEmpty
+	case lang == "":
+		return adminenums.ErrI18nLangEmpty
+	case strings.TrimSpace(value) == "":
+		return adminenums.ErrI18nValueEmpty
+	}
+	return ""
+}
+
+// adminI18nDeleteMissingMsg 删除词条时的缺项判定（只有 key 与语言两个输入，没有内容项）。
+func adminI18nDeleteMissingMsg(key, lang string) string {
+	switch {
+	case key == "":
+		return adminenums.ErrI18nKeyEmpty
+	case lang == "":
+		return adminenums.ErrI18nLangEmpty
+	}
+	return ""
+}
+
 // I18nEntrySave POST /admin/i18n/save —— 新增或更新一条词条。
+//
+// 空值校验留在 handler（与同文件其它表单一致：administrators/roles/… 都先查必填再进 service）：
+// i18n.SaveEntry 把「key/语言/内容为空」与「存储不可用 / 驱动报错」都当同一条 error 返回，
+// 而下游的归口助手（adminErrParam）只放行 admin enums 白名单 —— 两类混在一起没法在那儿区分。
+// 不在这里先拦，运营少填一个字段就会看到「操作失败」这种通用提示（任务 1 那种反向缺陷）。
+// 拦掉之后，剩下能走到归口助手的只可能是基础设施错误。
 func (h *adminI18nEntryHandle) I18nEntrySave(c *gin.Context) {
+	key := strings.TrimSpace(c.PostForm("key"))
+	lang := strings.TrimSpace(c.PostForm("lang"))
+	value := c.PostForm("value")
+	if missing := adminI18nSaveMissingMsg(key, lang, value); missing != "" {
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored",
+			response.TranslateMessage(c, missing)))
+		return
+	}
 	entry := i18n.Entry{
-		Key:      c.PostForm("key"),
-		Lang:     c.PostForm("lang"),
-		Value:    c.PostForm("value"),
+		Key:      key,
+		Lang:     lang,
+		Value:    value,
 		Category: c.PostForm("category"),
 		Remark:   c.PostForm("remark"),
 		Status:   1,
 	}
 	if err := i18n.SaveEntry(c.Request.Context(), entry); err != nil {
-		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", err.Error()))
+		// 只到这里才可能是基础设施错误：走页面路径归口（业务文案原样，原文进日志）。
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", adminErrParam(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", strings.TrimSpace(entry.Key)+" · "+strings.TrimSpace(entry.Lang)))
+	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", adminI18nEntryIdentity(key, lang)))
 }
 
 // I18nEntryDelete POST /admin/i18n/delete —— 删除一条词条。
 // 删除后构建期回退到组件包内的中文兜底（可见降级，不是空白）。
+//
+// 空值校验同 I18nEntrySave：DeleteEntry 的空 key/语言与存储不可用是两类错误，
+// 前者必须让运营看见「哪个字段没填」，后者才走归口文案。
 func (h *adminI18nEntryHandle) I18nEntryDelete(c *gin.Context) {
-	key := c.PostForm("key")
-	lang := c.PostForm("lang")
-	if err := i18n.DeleteEntry(c.Request.Context(), key, lang); err != nil {
-		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", err.Error()))
+	key := strings.TrimSpace(c.PostForm("key"))
+	lang := strings.TrimSpace(c.PostForm("lang"))
+	if missing := adminI18nDeleteMissingMsg(key, lang); missing != "" {
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored",
+			response.TranslateMessage(c, missing)))
 		return
 	}
-	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", "已删除 "+strings.TrimSpace(key)+" · "+strings.TrimSpace(lang)))
+	if err := i18n.DeleteEntry(c.Request.Context(), key, lang); err != nil {
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", adminErrParam(c, err)))
+		return
+	}
+	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", adminI18nDeletedIdentity(key, lang)))
 }
 
 // adminI18nEntryKeySeparator 批量删除的复合键分隔符（"key|lang"）。
@@ -962,7 +1038,8 @@ func (h *adminI18nEntryHandle) I18nEntriesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, adminI18nBackURL(c, "err", berr.Error()))
+		// 超限是受控错误（理由见 adminBulkResultURL 上方）：文案走 shell 的受控出口，不直传原文。
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "err", shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -993,13 +1070,13 @@ func (h *adminI18nEntryHandle) I18nEntriesBulkDelete(c *gin.Context) {
 func adminI18nBulkDeleteResult(deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有勾选任何词条，列表未改动。"
+		return adminI18nBulkNoneSelected
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 条词条（构建时回退到组件包内的中文兜底）。", deleted)
+		return fmt.Sprintf(adminI18nBulkAllDeleted, deleted)
 	case deleted == 0:
-		return fmt.Sprintf("%d 条词条都未能删除，列表未改动。", skipped)
+		return fmt.Sprintf(adminI18nBulkAllSkipped, skipped)
 	default:
-		return fmt.Sprintf("已删除 %d 条，%d 条未能删除（可能已被删除）。", deleted, skipped)
+		return fmt.Sprintf(adminI18nBulkPartial, deleted, skipped)
 	}
 }
 
@@ -1036,20 +1113,23 @@ func AdminLangSwitch(c *gin.Context) {
 	c.Redirect(http.StatusFound, adminSafeLangRedirect(c.Query("redirect")))
 }
 
-// adminSafeLangRedirect 校验回跳地址：只允许站内绝对路径，其余一律回首页 "/"。
-// 拒绝：不以 "/" 开头、含 "//"、含反斜杠或控制字符。
+// adminSafeLangRedirect 校验回跳地址：只允许站内相对路径，其余一律回首页 "/"。
+//
+// 判据**只有一份**：shell.LangRedirectPath（渲染侧把值写进隐藏域时调的也是它）。
+// 此前这里重抄了一遍判据（adminLangRedirectAllowed），靠 admin_notice_test.go 的对照用例
+// 防漂移 —— 两份实现的漂移方向是静默的：放宽 = 多一个开放重定向面，收紧 = 运营切了语言
+// 回不到原页面。现在判据归口到 shell，本函数只剩「拒绝时回首页」这一条消费侧语义。
+//
+// 为什么消费侧**必须**再校验一遍（而不是信任渲染侧写进隐藏域的值）：这个值从 query 带回来，
+// 请求方可以直接改（admin/lang?redirect=//evil.example.com）。消费侧拿到的还是**已解码**
+// 的值 —— 反斜杠、换行、NUL 都能出现，比渲染侧的 RequestURI 面更宽，而 LangRedirectPath
+// 的判据本身就覆盖了这些（不含反斜杠 / 无控制字符），两边不需要各写一套。
 func adminSafeLangRedirect(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if raw == "" || !strings.HasPrefix(raw, "/") {
-		return "/"
+	if p := shell.LangRedirectPath(raw); p != "" {
+		return p
 	}
-	if strings.Contains(raw, "//") {
-		return "/"
-	}
-	if strings.ContainsAny(raw, "\\\r\n\t") {
-		return "/"
-	}
-	return raw
+	return "/"
 }
 
 // AdminLoginPage 后台登录页（独立布局，供未登录的页面请求 302 跳转，也支持直接访问）。

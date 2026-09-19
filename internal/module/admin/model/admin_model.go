@@ -10,6 +10,7 @@ import (
 	adminenums "go_wp/internal/module/admin/enums"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNameSysAdmin = "sys_admin"
@@ -122,6 +123,36 @@ func (m *AdminModel) GetByID(ctx context.Context, id uint64) (*AdminEntity, erro
 // DeleteByIDs 批量删除管理员。
 func (m *AdminModel) DeleteByIDs(ctx context.Context, ids []uint64) (deleted int64, err error) {
 	result := m.DB(ctx).Where("id IN ?", ids).Delete(&AdminEntity{})
+	return result.RowsAffected, result.Error
+}
+
+// Transaction 透传事务：删管理员时「sys_admin 行 + 该账号的全部策略行」两处持久化写
+// 必须同事务，边界由 service 决定（见 AdminDelete 的注释）。
+func (m *AdminModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// LockByIDsTx 在调用方事务内按主键批量加行锁读取（SELECT ... FOR UPDATE）。
+//
+// 删管理员是读-改-写：先读实体判断「是不是自己 / 是不是超管」，再删行。不加锁的话，
+// 校验与删除之间该行可能已被改成超管（另一请求），于是删除绕过超管保护。
+// **按 id 升序加锁**：两个并发删除请求锁同一组 id 时，顺序不一致会互等成死锁。
+func (m *AdminModel) LockByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) ([]AdminEntity, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var entities []AdminEntity
+	if err := tx.WithContext(ctx).Model(&AdminEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).Order("id ASC").Find(&entities).Error; err != nil {
+		return nil, err
+	}
+	return entities, nil
+}
+
+// DeleteByIDsTx 在调用方事务内批量删除管理员（语义与 DeleteByIDs 一致）。
+func (m *AdminModel) DeleteByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
+	result := tx.WithContext(ctx).Model(&AdminEntity{}).Where("id IN ?", ids).Delete(&AdminEntity{})
 	return result.RowsAffected, result.Error
 }
 

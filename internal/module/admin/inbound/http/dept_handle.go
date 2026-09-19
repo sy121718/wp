@@ -12,7 +12,7 @@ import (
 func (h *Handle) DeptTree(c *gin.Context) {
 	list, err := h.dept.DeptTree(c.Request.Context())
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, list)
@@ -22,12 +22,12 @@ func (h *Handle) DeptTree(c *gin.Context) {
 func (h *Handle) DeptDetail(c *gin.Context) {
 	var req admindto.DeptDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.dept.DeptDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -37,11 +37,11 @@ func (h *Handle) DeptDetail(c *gin.Context) {
 func (h *Handle) DeptCreate(c *gin.Context) {
 	var req admindto.DeptCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.dept.DeptCreate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -51,11 +51,11 @@ func (h *Handle) DeptCreate(c *gin.Context) {
 func (h *Handle) DeptUpdate(c *gin.Context) {
 	var req admindto.DeptUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.dept.DeptUpdate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -65,11 +65,11 @@ func (h *Handle) DeptUpdate(c *gin.Context) {
 func (h *Handle) DeptDelete(c *gin.Context) {
 	var req admindto.DeptDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.dept.DeptDelete(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -79,12 +79,12 @@ func (h *Handle) DeptDelete(c *gin.Context) {
 func (h *Handle) DeptUserList(c *gin.Context) {
 	var req admindto.DeptUserListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.dept.DeptUserList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -94,11 +94,11 @@ func (h *Handle) DeptUserList(c *gin.Context) {
 func (h *Handle) DeptUserSave(c *gin.Context) {
 	var req admindto.DeptUserSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.dept.DeptUserSave(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)

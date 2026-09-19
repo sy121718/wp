@@ -49,7 +49,7 @@ func (h *Handle) DevLogin(c *gin.Context) {
 	res, err := h.admin.DevLogin(c.Request.Context(), strings.TrimSpace(c.Query("user")))
 	if err != nil {
 		logger.Scene("admin").Error(err, "开发登录失败")
-		c.String(http.StatusInternalServerError, "开发登录失败: "+err.Error())
+		c.String(http.StatusInternalServerError, "开发登录失败，详情见服务端日志")
 		return
 	}
 
@@ -60,11 +60,13 @@ func (h *Handle) DevLogin(c *gin.Context) {
 		SessionID: res.SessionID,
 		IssuedAt:  res.IssuedAt,
 	}, false); err != nil {
-		c.String(http.StatusInternalServerError, "写会话失败: "+err.Error())
+		logger.Scene("admin").Error(err, "开发登录写会话失败")
+		c.String(http.StatusInternalServerError, "写会话失败，详情见服务端日志")
 		return
 	}
 	if _, err := builtin.RotateCSRFToken(c); err != nil {
-		c.String(http.StatusInternalServerError, "轮换 CSRF token 失败: "+err.Error())
+		logger.Scene("admin").Error(err, "开发登录轮换 CSRF token 失败")
+		c.String(http.StatusInternalServerError, "轮换 CSRF token 失败，详情见服务端日志")
 		return
 	}
 

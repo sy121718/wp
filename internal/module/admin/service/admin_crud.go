@@ -3,6 +3,7 @@ package adminservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -48,13 +49,13 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 		field := strings.ToLower(strings.TrimSpace(req.SortField))
 		dir := strings.ToUpper(strings.TrimSpace(req.SortOrder))
 		if dir != "ASC" && dir != "DESC" {
-			return nil, errors.New("无效的排序方向")
+			return nil, errors.New(adminenums.ErrSortDirectionInvalid)
 		}
 		switch field {
 		case "id", "username", "name", "email", "phone", "status", "create_time", "last_login_time":
 			orderClause = field + " " + dir
 		default:
-			return nil, errors.New("无效的排序字段")
+			return nil, errors.New(adminenums.ErrSortFieldInvalid)
 		}
 	}
 
@@ -229,6 +230,19 @@ func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (re
 }
 
 // AdminDelete 删除普通管理员，并撤销其会话和授权。
+//
+// 事务：sys_admin 行与 sys_casbin_rule 里这批账号的全部策略行（p 直接权限 + g 角色绑定）
+// 是两处持久化写，必须同事务。旧实现先提交删除、再逐条删策略：中途失败就留下
+// 「管理员没了、策略还在」（残留下一次同名同 id 复用即静默继承旧权限），
+// 反向的半截状态（策略先删、实体没删）则是账号还在却已失权。
+//
+// 三个动作分属三种存储边界，按这个顺序：
+//  1. 事务外**只读**校验 —— 给出可读错误，并保证「被拒的删除请求」不会先撤掉目标账号的
+//     会话（撤会话是不可回滚的 Redis 写，被拒的请求不该有副作用）；
+//  2. 撤销会话（Redis，**在事务之外**，不能用事务覆盖）：删除提交后会话若还在，
+//     已删除账号仍能凭 Redis 会话通过认证。失败即中止（fail closed）。
+//     反向的半截状态（会话已撤、账号还在）只是要求重新登录，不产生权限真空；
+//  3. 一个数据库事务：**行锁复核** + 删 sys_admin 行 + 删策略行，任一步失败整体回滚。
 func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq) (res *admindto.AdminDeleteResp, err error) {
 	ids := uniqueAdminIDs(req.Id)
 	if len(ids) == 0 {
@@ -258,17 +272,51 @@ func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq)
 		}
 	}
 
-	deleted, err := s.am.DeleteByIDs(ctx, ids)
+	reloadPolicy := false
+	var deleted int64
+	err = s.am.Transaction(ctx, func(tx *gorm.DB) error {
+		// 行锁复核：从上面那次校验到这里之间，目标行可能已被并发改成超管 ——
+		// 不加锁的校验会被绕过（AGENTS.md：读-改-写必须有行锁或原子 SQL）。
+		locked, err := s.am.LockByIDsTx(ctx, tx, ids)
+		if err != nil {
+			return err
+		}
+		if len(locked) != len(ids) {
+			return errors.New(adminenums.ErrAdminNotFound)
+		}
+		for _, entity := range locked {
+			if entity.ID == req.OperatorID {
+				return errors.New(adminenums.ErrDeleteSelf)
+			}
+			if entity.IsSuperAdmin() {
+				return errors.New(adminenums.ErrDeleteSuperAdmin)
+			}
+		}
+
+		deleted, err = s.am.DeleteByIDsTx(ctx, tx, ids)
+		if err != nil {
+			return err
+		}
+		if deleted != int64(len(ids)) {
+			return errors.New(adminenums.ErrAdminNotFound)
+		}
+
+		// 该账号的全部策略行与 sys_admin 行同事务（跨模块只传 *gorm.DB 给 …Tx 方法）。
+		for _, id := range ids {
+			changed, err := casbin.DeleteUserAllPoliciesTx(ctx, tx, strconv.FormatUint(id, 10))
+			if err != nil {
+				return fmt.Errorf("管理员行已删但策略清理失败，本次删除已整体回滚: %w", err)
+			}
+			reloadPolicy = reloadPolicy || changed
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if deleted != int64(len(ids)) {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
-	}
-
-	for _, id := range ids {
-		if err = casbin.DeleteUserAllPolicies(strconv.FormatUint(id, 10)); err != nil {
-			return nil, err
+	if reloadPolicy {
+		if err = casbin.ReloadPolicy(); err != nil {
+			return nil, fmt.Errorf("管理员已删除，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
 		}
 	}
 	return &admindto.AdminDeleteResp{DeletedCount: deleted}, nil

@@ -169,7 +169,10 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/tags"`, `name="tagIds"`,
 		`action="/admin/products/seo-score"`, `id="product-seo-score-p1"`,
 		`action="/admin/products/variant/create"`,
-		`action="/admin/products/variant/generate"`,
+		// 变体组合生成自本批起走「预览—保存」模型（docs/14 §8）：抽屉不再是表单（没有 action），
+		// 生成走 JS + 预览端点（不落库），落库统一在 /variant/save —— 协议确实变了，断言随之更新。
+		`data-preview-url="/admin/products/variant/preview"`,
+		`action="/admin/products/variant/save"`,
 		`action="/admin/products/rating/add"`,
 		`action="/admin/products/delete"`,
 	} {
@@ -439,9 +442,12 @@ func TestGroupDPurchasesPageRenders(t *testing.T) {
 		}},
 	})
 	// 尾部锚点选抽屉模板里的字段（页面最后一屏）——它出现即说明整页（含订单展开行与收货表单）
-	// 没有被中途截断。2026-09 第二轮结构评审把「生产入库（自家工厂）」与「进货历史」移到了
-	// 库存管理页（前者本质是手动改库存 + 写成本价，后者就是流水筛选），本页只剩
-	// 「采购单 / 对单收货」两件事，断言随之收窄。
+	// 没有被中途截断。本页只剩「采购单 / 对单收货」两件事（进货历史就是库存页的流水筛选）。
+	//
+	// 2026-09 第四轮评审又收了一次：**入库 / 出库 / 调整不再由库存管理页直接录**，必须来自单据
+	//（采购入库走本页、销售出库走发货、退货入库走退货单、盘盈亏走盘点单）；库存管理页退化为只读视图
+	// + 一个受权限约束的「库存调整（盘点/报损）」入口。此前那句「生产入库移到库存管理页」已过时：
+	// 该页面入口已随本轮下线（API 保留），断言随之收窄。
 	// 行内 label 已经写明「采购单号」，placeholder 不再重复前缀；列表改标准表格 + 操作列
 	// 后「登记入库」进操作列抽屉。断言跟随实现。
 	assertGroupDPage(t, "inventory_purchases", data,

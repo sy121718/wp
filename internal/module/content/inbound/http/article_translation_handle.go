@@ -16,7 +16,6 @@
 package contenthttp
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,7 +78,7 @@ var articleFieldLabel = map[string]string{
 
 // ArticleTranslations GET /admin/articles/translations。
 func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
-	data := h.build(c.Request.Context(), strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("project")))
+	data := h.build(c, strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("project")))
 	if saved := strings.TrimSpace(c.Query("saved")); saved == "1" {
 		n, _ := strconv.Atoi(strings.TrimSpace(c.Query("n")))
 		data.Saved = true
@@ -97,7 +96,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
 	lang := strings.TrimSpace(c.PostForm("lang"))
 	projectID := strings.TrimSpace(c.PostForm("project"))
-	data := h.build(ctx, lang, projectID)
+	data := h.build(c, lang, projectID)
 
 	contexts := c.PostFormArray("rowContext")
 	hashes := c.PostFormArray("rowHash")
@@ -179,8 +178,12 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 		var uerr error
 		written, uerr = h.writer.Upsert(ctx, pending)
 		if uerr != nil {
-			logger.Scene("content").With("lang", lang).Error(uerr, "写入文章译文失败")
-			data.Errors = []string{"保存失败：" + uerr.Error()}
+			logger.Scene("content").
+				With("lang", lang).
+				With("user_id", shell.CurrentUserID(c)).
+				Error(uerr, "写入文章译文失败")
+			// 这一处已记过带 lang 的日志：文案出口用不记日志的版本，避免同一错误记两条。
+			data.Errors = []string{"保存失败：" + articleFacingOrInternal(c, uerr)}
 			c.HTML(http.StatusOK, "admin/article_translations.html", shell.Prepare(c, data.templateMap()))
 			return
 		}
@@ -253,7 +256,8 @@ func articleTranslationLocation(projectID, lang string, written int) string {
 //
 // 译文**批量预载**（LoadTargets 一次查询）再回填：按行逐条查会随文章数放大成 N 次 SQL，
 // 而工作台一屏就要列出 50 篇的全部可翻译字段。
-func (h *articleTranslationHandle) build(ctx context.Context, lang, projectID string) *articleTranslationsData {
+func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID string) *articleTranslationsData {
+	ctx := c.Request.Context()
 	data := &articleTranslationsData{
 		Title: "文章翻译", Menu: "article-translations", Lang: lang,
 		Groups: []articleTranslationGroup{},
@@ -270,7 +274,8 @@ func (h *articleTranslationHandle) build(ctx context.Context, lang, projectID st
 	}
 	list, err := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: 50})
 	if err != nil {
-		data.Errors = []string{"读取文章列表失败：" + err.Error()}
+		// 形态③（模板数据 Errors）：err.Error() 直接拼进来会把 PG 原文摆到页面上。
+		data.Errors = []string{"读取文章列表失败：" + articleFacingError(c, err)}
 		return data
 	}
 	fields := contentcontract.TranslatableFields("article")

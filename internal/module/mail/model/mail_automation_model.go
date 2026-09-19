@@ -154,7 +154,15 @@ func (m *MailModel) UpdateAutomationFields(ctx context.Context, id uint64, field
 
 // DeleteAutomation 删除流程（进行中的实例由 service 先停止）。
 func (m *MailModel) DeleteAutomation(ctx context.Context, id uint64) (err error) {
-	return m.tx(ctx).Where("id = ?", id).Delete(&MailAutomationEntity{}).Error
+	return m.DeleteAutomationTx(ctx, nil, id)
+}
+
+// DeleteAutomationTx 与 DeleteAutomation 相同，但复用调用方事务。
+//
+// 「停实例 + 删流程」必须同事务：分开提交时第二步失败会留下「实例停了、流程还在」——
+// 运营以为删掉了，界面刷新后它又出现，而它的实例已经不会再推进。
+func (m *MailModel) DeleteAutomationTx(ctx context.Context, tx *gorm.DB, id uint64) (err error) {
+	return m.txOr(ctx, tx).Where("id = ?", id).Delete(&MailAutomationEntity{}).Error
 }
 
 // ---- 实例 ----
@@ -244,7 +252,13 @@ func (m *MailModel) CountRunsByStatus(ctx context.Context, automationID uint64) 
 
 // StopRunsOfAutomation 停止某流程所有进行中的实例（删流程前调用，避免留下孤儿实例）。
 func (m *MailModel) StopRunsOfAutomation(ctx context.Context, automationID uint64, at time.Time) (err error) {
-	return m.tx(ctx).Model(&MailAutomationRunEntity{}).
+	return m.StopRunsOfAutomationTx(ctx, nil, automationID, at)
+}
+
+// StopRunsOfAutomationTx 与 StopRunsOfAutomation 相同，但复用调用方事务
+// （与 DeleteAutomationTx 同批写，见 mail_automation.go#DeleteAutomation）。
+func (m *MailModel) StopRunsOfAutomationTx(ctx context.Context, tx *gorm.DB, automationID uint64, at time.Time) (err error) {
+	return m.txOr(ctx, tx).Model(&MailAutomationRunEntity{}).
 		Where("automation_id = ? AND status IN ?", automationID, []string{RunStatusRunning, RunStatusWaiting}).
 		Updates(map[string]any{"status": RunStatusStopped, "finished_at": at, "update_time": at}).Error
 }

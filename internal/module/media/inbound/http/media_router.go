@@ -22,6 +22,13 @@ func SetupMediaRoutes(rg *permission.RouteGroup, db *gorm.DB) mediacontract.Medi
 	// 变体生成任务：handler 注册（queue.Init 前暂存、Init 后即时挂 mux，无时序要求）。
 	mediaservice.RegisterVariantTaskHandler(db)
 
+	// 存储巡检调度：只读对账（文件系统 ↔ 数据库）+ 变体补偿重放。
+	// 这两个入口此前没有任何调用方，而它们盯的两种不一致都只能靠时间驱动发现：
+	// 对账找不到「有记录没文件 / 有文件没记录 / 草稿残留」的第二个驱动源，
+	// 变体重试耗尽后也没有任何人会再碰那条附件（详见 service/media_reconcile_scheduler.go）。
+	// 装配在这里启动一次：本函数每个进程只会被调用一次，调度器也就只起一个 goroutine。
+	mediaservice.StartMediaReconcileScheduler(svc)
+
 	g := rg.Group("/media", builtin.SessionAuthMiddleware())
 	{
 		g.POST("/upload", permission.MediaUpload, handle.Upload)

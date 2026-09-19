@@ -79,7 +79,8 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	}
 
 	sources := []gin.H{}
-	pageErr := strings.TrimSpace(c.Query("err"))
+	// 读侧一律经白名单出口（见 inventory_page_handle.go 的 inventoryPageErr）：查询参数不是可信边界。
+	pageErr := inventoryPageErr(c)
 	list, lerr := h.inventory.ListSources(ctx, &inventorydto.ListSourceReq{
 		ProjectID: selected, Type: filterType, RelatedParty: filterRelated,
 		Status: filterStatus, Keyword: filterKeyword,
@@ -87,8 +88,10 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	})
 	if lerr != nil {
 		// 筛选参数不合法等：把业务错误回显到页面，不把内部细节直出。
+		// 统一走库存域的「错误文案三件套」：命中白名单 → 原样业务文案；否则记结构化日志 + 归口文案
+		//（模板只渲染这一份成品文案，不再对 .Err 二次取词）。
 		if pageErr == "" {
-			pageErr = lerr.Error()
+			pageErr = inventoryErrText(c, lerr)
 		}
 	} else {
 		for _, s := range list {
@@ -96,7 +99,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		}
 	}
 
-	summary, hasSummary := h.sourceSummary(ctx, selected, &pageErr)
+	summary, hasSummary := h.sourceSummary(c, ctx, selected, &pageErr)
 
 	c.HTML(http.StatusOK, "admin/inventory_sources.html", shell.Prepare(c, gin.H{
 		"title":           inventoryenums.MsgInventorySourcesTitle,
@@ -115,8 +118,8 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		"FilterStatusAll": sourceStatusFilterAll,
 		"FilterKeyword":   filterKeyword,
 		"Err":             pageErr,
-		"Ok":              strings.TrimSpace(c.Query("ok")),
-		"Done":            strings.TrimSpace(c.Query("done")),
+		"Ok":              inventoryPageOk(c),
+		"Done":            inventoryPageDone(c),
 	}))
 }
 
@@ -204,7 +207,10 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		// 超限是 shell 的**受控错误**（shell.BulkIDsError：值域只有 Count/Max 两个整数，
+		// 装不下表名 / 约束名 / SQLSTATE），文案走 shell 的受控出口 —— 它按当前语言拼出
+		//「一次最多操作 N 项，当前 M 项，请分批进行」，不会把可行动提示抹成通用提示。
+		c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&err="+url.QueryEscape(shell.BulkIDsFacingText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -226,15 +232,19 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 }
 
 // sourceSummary 关联方统计（验收 4）。统计失败不阻断页面：置空并附带提示。
-func (h *inventorySourcePageHandle) sourceSummary(ctx context.Context, projectID string, pageErr *string) (out gin.H, ok bool) {
+// c 是给「错误文案三件套」用的（翻译 + 记日志时的 user_id）：取数失败要走 inventoryErrText，
+// 而不是把 err.Error() 铺进模板。
+func (h *inventorySourcePageHandle) sourceSummary(c *gin.Context, ctx context.Context, projectID string, pageErr *string) (out gin.H, ok bool) {
 	out = gin.H{"Groups": []gin.H{}}
 	if projectID == "" {
 		return out, false
 	}
 	res, err := h.inventory.SourceSummary(ctx, &inventorydto.SourceSummaryReq{ProjectID: projectID})
 	if err != nil {
+		// 同上：跨模块取数失败也可能是基础设施错误（表名 / SQLSTATE），走同一套归口，
+		// 绝不用 err.Error() 直接铺到页面上。
 		if *pageErr == "" {
-			*pageErr = err.Error()
+			*pageErr = inventoryErrText(c, err)
 		}
 		return out, false
 	}
@@ -371,6 +381,9 @@ func prettyJSON(raw json.RawMessage) string {
 }
 
 // redirectSourceErr 回列表并把业务错误经 ?err= 回显。
+//
+// 走 inventoryErrURL —— 它内部会用 inventoryErrText 过一遍白名单：业务错误原样可见，
+// 基础设施错误只给归口文案（原文进日志）。与库存页其余写入口是同一套助手。
 func redirectSourceErr(c *gin.Context, projectID string, err error) {
-	c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&err="+url.QueryEscape(err.Error()))
+	c.Redirect(http.StatusFound, inventoryErrURL(c, "/admin/inventory/sources", projectID, err))
 }

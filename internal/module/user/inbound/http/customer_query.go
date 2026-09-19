@@ -9,6 +9,7 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/sitetz"
 	"net/url"
 )
@@ -56,10 +57,17 @@ func customerDetailURL(id uint64) string {
 	return customerDetailPath + "?id=" + strconv.FormatUint(id, 10)
 }
 
-// customerFacingError 把 user 模块的错误转成可展示文案。
+// customerFacingError 把 user 模块的错误转成可展示文案（后台客户页的错误文案归口出口）。
 //
-// 只放行 userenums.UserFacingMessages 白名单，其余一律落到统一提示：
-// 未命中的通常是数据库错误的 Error()，带表名甚至 SQL 片段，那是给运维看的。
+// 三件套（对齐 AGENTS.md「响应与错误处理」，样板见 admin_err.go / navigation_err.go）：
+//
+//	· 白名单 —— customerFacingText（userenums.UserFacingMessages + 本页自造文案）；
+//	· 归口文案 —— shell.PageInternalText(c)（MsgInternalError 的当前语言译文）；
+//	· 结构化日志 —— 未命中时记一条带场景 / user_id / 路径的日志，原文只进日志。
+//
+// 未命中的通常是数据库 / Redis 错误的 Error()，带表名甚至 SQL 片段，那是给运维看的；
+// 页面上给一句通用提示，日志里留全文 —— 否则「页面上什么都没说」会变成最难查的一类问题
+// （这一条此前缺失：函数直接返回了归口文案而没有记日志）。
 func customerFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
@@ -67,7 +75,26 @@ func customerFacingError(c *gin.Context, err error) string {
 	if msg := customerFacingText(err.Error()); msg != "" {
 		return msg
 	}
+	logger.Scene(userErrScene).
+		With("user_id", shell.CurrentUserID(c)).
+		With("path", c.Request.URL.Path).
+		Error(err, "后台客户页处理失败")
 	return shell.PageInternalText(c)
+}
+
+// userErrScene 后台客户页的日志场景名（与 user 模块其它 logger.Scene("user") 调用点一致）。
+const userErrScene = "user"
+
+// customerBulkIDsText shell.BulkIDs 的失败文案（单次提交的 id 超过上限）。
+//
+// 只是转调 shell 的受控出口：超限错误是 shell 的类型（shell.BulkIDsError），
+// 「一次最多操作 N 项，当前 M 项，请分批进行」按当前语言生成，其中**当前 M 项**
+// （去重后的条数）只有 shell 知道 —— 本模块不再用 shell.MaxBulkIDs 重算一遍：
+// 那是第二份真相，而且必然丢掉 Count（旧的实现正是如此）。
+// 判据也不再是「文案来自哪里」而是类型：出口只认 sentinel，认不出就回落归口文案。
+// 留痕（哪个操作人、哪个页面触发）由 shell 的出口统一记日志。
+func customerBulkIDsText(c *gin.Context, err error) string {
+	return shell.BulkIDsFacingText(c, err)
 }
 
 // customerFacingText 白名单校验：命中返回原文，未命中返回空串。

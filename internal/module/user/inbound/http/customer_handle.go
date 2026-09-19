@@ -180,8 +180,9 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 
 	data := shell.Prepare(c, customerListPageData(list, filter, page, limit, pageErr, pageOk, h.users == nil))
 	// 批量动作的结果摘要经 ?done= 回带（单条动作仍走 ?ok= / ?err=，见 customerBulkRedirect）。
+	// 读侧过受控出口（customerPageDone）：查询参数是用户可编辑的，未命中落空串。
 	// 可选键：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。
-	data["Done"] = strings.TrimSpace(c.Query("done"))
+	data["Done"] = customerPageDone(c)
 	base := shell.FilterBaseURL(customerListPath, customerFilterValues(filter))
 	for k, v := range shell.BuildPagination(customerTotal(list), page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
@@ -343,7 +344,7 @@ func (h *customerPageHandle) CustomerBulkStatusSave(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		customerRedirect(c, "", berr.Error())
+		customerRedirect(c, "", customerBulkIDsText(c, berr))
 		return
 	}
 	if len(ids) == 0 {
@@ -383,7 +384,7 @@ func (h *customerPageHandle) CustomerBulkUnlock(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		customerRedirect(c, "", berr.Error())
+		customerRedirect(c, "", customerBulkIDsText(c, berr))
 		return
 	}
 	if len(ids) == 0 {
@@ -452,13 +453,66 @@ func customerStatusActionVerb(status int) string {
 	return "已停用"
 }
 
+// customerBulkNoticeCandidates 批量摘要的候选集合（数字归一后整体比对用）。
+//
+// **由真实写侧函数产出**，不是手抄第二份：写侧 `customerBulkSummary` / `customerBulkUnlockSummary`
+// 改措辞时候选自动跟着变，读侧不会静默失配 —— 手抄一份的下场是「写侧改了、读侧再也认不出」，
+// 而那种失败表现为**成功回执整体消失**（不报错、日志里也没有），最难被发现。
+//
+// 计数取 {0,1,3} 三种代表值：归一只保留「有几位数」以外的差别，所以更大/更小的计数同样命中。
+var customerBulkNoticeCandidates = func() []string {
+	out := make([]string, 0, 24)
+	add := func(s string) { out = append(out, shell.NoticeTemplate(s)) }
+	// 空结果分支（写侧 parts 为空时返回的固定句）。
+	add(customerBulkSummary("", 0, 0))
+	add(customerBulkUnlockSummary(0, 0, 0))
+	counts := []int{0, 1, 3}
+	for _, status := range []int{customerStatusActive, customerStatusDisabled} {
+		verb := customerStatusActionVerb(status)
+		for _, done := range counts {
+			for _, skipped := range counts {
+				if done == 0 && skipped == 0 {
+					continue // 与「空结果」等价，已单列
+				}
+				add(customerBulkSummary(verb, done, skipped))
+			}
+		}
+	}
+	for _, unlocked := range counts {
+		for _, noop := range counts {
+			for _, skipped := range counts {
+				if unlocked == 0 && noop == 0 && skipped == 0 {
+					continue
+				}
+				add(customerBulkUnlockSummary(unlocked, noop, skipped))
+			}
+		}
+	}
+	return out
+}()
+
+// customerPageDone 列表页 ?done= 的受控出口。
+//
+// `?done=` 是**用户可编辑的查询参数**，模板直接渲染它等于「手拼一个 URL 就能在页面上
+// 贴一条看起来来自系统的提示」。这里按写侧真实会产出的那几种句子整体比对（数字归一），
+// 未命中落空串 —— 成功态没有「必须说点什么」的语义。
+//
+// 与单条动作的 ?ok= / ?err= 是两条通道：那些是短 token / 白名单文案，本通道是带计数的
+// 动态整句（「批量操作：已停用 3 个，1 个未处理（…）。」），所以判定方式不同、不用同一个函数。
+func customerPageDone(c *gin.Context) string {
+	return shell.FacingNotice(c.Query("done"), customerBulkNoticeCandidates)
+}
+
 // customerBulkRedirect 批量动作回列表页：结果摘要经 ?done= 回带。
 //
 // 为什么不复用单条动作的 ?ok= / ?err=：本页的 ?err= 要过一遍面向访客文案白名单
 // （见 customerFacingText），而批量摘要是带数字的动态句子，过白名单只会被替换成
 // 「系统内部错误」—— 那等于把「有 3 个没做成」这件事吞掉，比不显示更糟。
-// 摘要经 ?done= 走独立通道，模板以 {{.Done}} 渲染（Jet 默认 HTML 转义，
-// 查询参数不会被当成脚本执行）。
+// 摘要经 ?done= 走独立通道，模板以 {{.Done}} 渲染。
+//
+// 2026-09 修订：**不能只靠 Jet 的 HTML 转义**。转义只挡「脚本执行」，不挡「伪造系统提示」——
+// 手拼 ?done=<任意文案> 同样会以系统口吻显示在页面上。现在读侧过 customerPageDone，
+// 按写侧真实产出的句子整体比对（数字归一），未命中落空串。
 //
 // 恒回列表页（批量动作只在列表页发起），并保留筛选与翻页，让运营回到原来看的那一屏。
 func customerBulkRedirect(c *gin.Context, summary string) {

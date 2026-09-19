@@ -57,6 +57,33 @@
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.blocks.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}{{end}}
+
+    {* 只读影响面：块内容变更后，依赖它的页面会被标记待重建（运维经构建 / 发布消费这个标记）。
+       本批只做可见性 —— 这里没有任何「立即重建」按钮，不改任何构建行为。 *}
+    {{if isset(.StaleImpact)}}
+    <section class="card">
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.blocks.impact.heading", "待重建影响面") }}</strong>
+        </div>
+        {{if .StaleImpact.Available}}
+            {{if .StaleImpact.Total}}
+            <p class="stat-note tone-warn">{{ .["t"]("admin.blocks.impact.lead", "当前有 ") }}{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.tail", " 个页面处于「有更新未发布」：块、内容、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。") }}</p>
+            <ul>
+                {{range p := .StaleImpact.Pages}}
+                <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span></li>
+                {{end}}
+            </ul>
+            {{if .StaleImpact.Truncated}}
+            <p class="stat-note">{{ .["t"]("admin.blocks.impact.moreLead", "（清单只列了前 ") }}{{ .StaleImpact.Limit }}{{ .["t"]("admin.blocks.impact.moreTail", " 条，其余只有计数；完整清单请到页面列表逐个查看。）") }}</p>
+            {{end}}
+            {{else}}
+            <p class="stat-note">{{ .["t"]("admin.blocks.impact.none", "当前没有待重建的页面：所有页面的产物都与最新内容一致。") }}</p>
+            {{end}}
+        {{else}}
+        <p class="stat-note">{{ .StaleImpact.Hint }}</p>
+        {{end}}
+    </section>
+    {{end}}
     {{if isset(.Done)}}{{if .Done != ""}}
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
@@ -133,7 +160,7 @@
                 {* 全选框全页只有一个：admin.js 的 refresh 用 scope.querySelector('[data-check-all]') 取第一个，
                    放多个会让后两个框的状态在逐行勾选时不被回写（看起来像失灵）。所以它落在
                    「第一段有行的表格」表头上，三段都不空时不会重复。 *}
-                <thead><tr><th class="col-check">{{if len(.Headers) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
+                <thead><tr><th class="col-check">{{if len(.Headers) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.impact", "影响面") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
                 <tbody>
                 {{range _, b := .Headers}}
                 <tr>
@@ -142,6 +169,7 @@
                     </td>
                     <td>{{b.Name}}</td>
                     <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
                         <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
@@ -163,7 +191,7 @@
         {{else}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.footers_aria", "页脚块") }}">
             <table class="data-table">
-                <thead><tr><th class="col-check">{{if len(.Headers) == 0}}{{if len(.Footers) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
+                <thead><tr><th class="col-check">{{if len(.Headers) == 0}}{{if len(.Footers) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.impact", "影响面") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
                 <tbody>
                 {{range _, b := .Footers}}
                 <tr>
@@ -172,6 +200,7 @@
                     </td>
                     <td>{{b.Name}}</td>
                     <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
                         <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
@@ -193,7 +222,7 @@
         {{else}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.blocks_aria", "复用区块") }}">
             <table class="data-table">
-                <thead><tr><th class="col-check">{{if len(.Headers) == 0}}{{if len(.Footers) == 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.kind", "类型") }}</th><th>{{ .["t"]("admin.blocks.col.reuse", "复用方式") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
+                <thead><tr><th class="col-check">{{if len(.Headers) == 0}}{{if len(.Footers) == 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}{{end}}</th><th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th><th>{{ .["t"]("admin.blocks.col.kind", "类型") }}</th><th>{{ .["t"]("admin.blocks.col.reuse", "复用方式") }}</th><th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th><th>{{ .["t"]("admin.blocks.col.impact", "影响面") }}</th><th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th></tr></thead>
                 <tbody>
                 {{range _, b := .Blocks}}
                 <tr>
@@ -204,6 +233,7 @@
                     <td>{{b.KindLabel}}</td>
                     <td>{{b.ReuseModeLabel}}</td>
                     <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
                         <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>

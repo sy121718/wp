@@ -1,6 +1,11 @@
 package pubservice
 
 // publication_route.go — 路由占用与激活（占用预检、激活/取消激活、重定向、按页面或实例删除路由）。
+//
+// 每个写入口都拆成「校验 + 内层 *In 实现」两层：内层只接收一个 *gorm.DB 句柄，
+// 由调用方决定事务边界（本文件的方法自开事务，事务透传变体见 publication_route_tx.go）。
+// 事务透传是 AGENTS.md「写操作的事务与回滚」的硬要求 —— 同库跨模块的写入必须能与
+// 调用方（page 的改 URL / 回滚 / 建页）落在同一个事务里，不能各写各的再补偿。
 
 import (
 	"context"
@@ -35,56 +40,15 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 		return nil
 	}
 	now := time.Now().UTC()
-	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		// 区分「旧路径无任何占用」与「旧路径不是 reserved」：
-		// 前者视为幂等成功（草稿路由可能尚未建立）；后者需按归属判断——
-		// 本页 active/redirect 行是页面改 URL 流程（UpdateURL）的 DB 同步步骤
-		// （发布时 reserved 被原地升级为 active，无独立 reserved 行），必须允许迁移；
-		// 他人 active/redirect 行禁止直接改名（不应触碰他人线上路径）。
-		var existing pubmodel.RouteEntity
-		switch ferr := tx.Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
-			First(&existing).Error; {
-		case errors.Is(ferr, gorm.ErrRecordNotFound):
-			return nil
-		case ferr != nil:
-			return ferr
+	if err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.model.RenameReservedTx(ctx, tx, req.ProjectID, req.PageID, oldPath, newPath, req.OnlyReserved, now)
+	}); err != nil {
+		if errors.Is(err, errRouteOccupied) {
+			return errors.New(pubenums.ErrRouteOccupied)
 		}
-		if existing.RouteKind != pubmodel.RouteReserved {
-			// OnlyReserved：调用方（多语言下改其他语言 URL）只希望迁移草稿占用，
-			// 明确要求不动本页 active/redirect 行。
-			if req.OnlyReserved {
-				return nil
-			}
-			if existing.PageID == nil || *existing.PageID != req.PageID {
-				return errors.New(pubenums.ErrRouteActiveRename)
-			}
-		}
-		// 先清理新路径上本页 active 残留（避免迁移行与 (project_id, path)
-		// 唯一约束冲突），再迁移旧路径行（reserved 或本页 active）。
-		if err := tx.Where("project_id = ? AND path = ? AND page_id = ? AND route_kind = ?",
-			req.ProjectID, newPath, req.PageID, pubmodel.RouteActive).
-			Delete(&pubmodel.RouteEntity{}).Error; err != nil {
-			return err
-		}
-		result := tx.Model(&pubmodel.RouteEntity{}).
-			Where("project_id = ? AND path = ? AND page_id = ?", req.ProjectID, oldPath, req.PageID).
-			Updates(map[string]any{"path": newPath, "update_time": now})
-		if result.Error != nil {
-			// 新路径被他人占用时 UPDATE 撞 (project_id, path) 唯一约束——
-			// 归一为 ErrRouteOccupied（语义：改名目标路径已被其他页面占用）。
-			if errors.Is(result.Error, gorm.ErrDuplicatedKey) || strings.Contains(result.Error.Error(), "23505") {
-				return errRouteOccupied
-			}
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			// 旧路径被其他页面 reserved 占用（page_id 不匹配）：保持幂等成功，
-			// 不触碰他人草稿占用。
-			return nil
-		}
-		return nil
-	})
-	return err
+		return err
+	}
+	return nil
 }
 
 // Activate 把路径占用切换为 active（两段式回执，docs/03-pipeline.md §9）：
@@ -141,32 +105,15 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	// 消除原实现 SELECT→CREATE 的 TOCTOU 窗口：并发抢占时败者不再产生失败的
 	// CREATE 撞 23505 与补偿回执，唯一约束冲突在语句内被原子消化。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		result := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "project_id"}, {Name: "path"}},
-			// DO UPDATE 仅当冲突行归属者本人：页面按 page_id、展示实例按
-			// presentation_id 比对（用 IS NOT DISTINCT FROM 让 NULL 也能相等，
-			// 否则「实例行 page_id 为 NULL」这一半永远匹配不上）。他人时
-			// WHERE 不成立 → 0 行 → occupied。
-			Where:     clause.Where{Exprs: []clause.Expression{owner.ownershipExpr()}},
-			DoUpdates: clause.AssignmentColumns([]string{"route_kind", "artifact_id", "update_time"}),
-		}).Create(&pubmodel.RouteEntity{
-			ProjectID: req.ProjectID, Path: path,
-			PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
-			RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
-		})
-		if result.Error != nil {
-			return result.Error
+		if aerr := activateRouteIn(tx, req, path, owner, now); aerr != nil {
+			return aerr
 		}
-		if result.RowsAffected == 0 {
-			// 目标路径被其他实体占用：ON CONFLICT 未执行更新。
-			return errRouteOccupied
-		}
-		return markReceipt(tx, receipt.ID, pubmodel.ReceiptCommitted, now)
+		return s.model.MarkReceiptStateTx(ctx, tx, receipt.ID, pubmodel.ReceiptCommitted, now)
 	})
 	if err != nil {
 		// 路由事务失败：pending → rolled_back（补偿失败保持 pending 供恢复）。
 		if rberr := s.model.Transaction(ctx, func(tx *gorm.DB) error {
-			return markReceipt(tx, receipt.ID, pubmodel.ReceiptRolledBack, time.Now().UTC())
+			return s.model.MarkReceiptStateTx(ctx, tx, receipt.ID, pubmodel.ReceiptRolledBack, time.Now().UTC())
 		}); rberr != nil {
 			logger.Scene("publication").With("url", path).With("receiptId", receipt.ID).
 				Error(rberr, "pending 回执补偿失败（保持 pending 供恢复流程处理）")
@@ -187,6 +134,55 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	return routeResp(route), nil
 }
 
+// activateRouteIn 在给定句柄上完成路由激活（占用归属校验 + 原子 upsert）。
+//
+// 原子抢占：单条 INSERT ... ON CONFLICT DO UPDATE（PG 方言，主库）。语义：
+//   - 无既有占用          → 插入 active 行（RowsAffected=1）；
+//   - 既有占用且归属者本人  → 原地升级 active（含 reserved 升级，RowsAffected=1，幂等重复激活）；
+//   - 既有占用且非归属者    → DO UPDATE WHERE 不匹配，PG 静默 DO NOTHING
+//     （RowsAffected=0）→ errRouteOccupied。
+//
+// 消除原实现 SELECT→CREATE 的 TOCTOU 窗口：并发抢占时败者不再产生失败的
+// CREATE 撞 23505 与补偿回执，唯一约束冲突在语句内被原子消化。
+//
+// 抽成自由函数是事务透传的前提（见 publication_route_tx.go）：Activate 在自己的
+// 事务里调它，ActivateTx 在外层事务里调它，两边的抢占语义必须逐字一致。
+func activateRouteIn(tx *gorm.DB, req *pubdto.ActivateReq, path string, owner routeOwner, now time.Time) error {
+	result := tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "project_id"}, {Name: "path"}},
+		// DO UPDATE 仅当冲突行归属者本人：页面按 page_id、展示实例按
+		// presentation_id 比对（用 IS NOT DISTINCT FROM 让 NULL 也能相等，
+		// 否则「实例行 page_id 为 NULL」这一半永远匹配不上）。他人时
+		// WHERE 不成立 → 0 行 → occupied。
+		Where:     clause.Where{Exprs: []clause.Expression{owner.ownershipExpr()}},
+		DoUpdates: clause.AssignmentColumns([]string{"route_kind", "artifact_id", "update_time"}),
+	}).Create(&pubmodel.RouteEntity{
+		ProjectID: req.ProjectID, Path: path,
+		PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
+		RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		// 目标路径被其他实体占用：ON CONFLICT 未执行更新。
+		return errRouteOccupied
+	}
+	return nil
+}
+
+// activatedRouteEntity 组装「刚写入的 active 行」的读回投影。
+//
+// 事务内不能用 GetRoute 回读：它走 model 的裸句柄（连接池另取一条连接），
+// 看不见本事务尚未提交的行。Tx 变体因此按写入参数直接组装响应。
+func activatedRouteEntity(req *pubdto.ActivateReq, path string, owner routeOwner, now time.Time) *pubmodel.RouteEntity {
+	return &pubmodel.RouteEntity{
+		ProjectID: req.ProjectID, Path: path,
+		PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
+		RouteKind: pubmodel.RouteActive, ArtifactID: strPtr(req.ArtifactID), UpdatedAt: now,
+	}
+}
+
 // ReservePath 创建草稿路径 reserved 占用（页面创建时预留）。
 // 路径已被其他实体占用（含展示实例）时返回 ErrRouteOccupied——
 // 替代原 page model 三表事务里直接 INSERT reserved 撞主键的检测方式，
@@ -200,23 +196,28 @@ func (s *Service) ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err 
 		return err
 	}
 	now := time.Now().UTC()
-	pageIDCopy := req.PageID
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		if cerr := tx.Create(&pubmodel.RouteEntity{
-			ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
-			RouteKind: pubmodel.RouteReserved, UpdatedAt: now,
-		}).Error; cerr != nil {
-			if errors.Is(cerr, gorm.ErrDuplicatedKey) || strings.Contains(cerr.Error(), "23505") {
-				return errRouteOccupied
-			}
-			return cerr
-		}
-		return nil
+		return reservePathIn(tx, req, path, now)
 	})
 	if errors.Is(err, errRouteOccupied) {
 		return errors.New(pubenums.ErrRouteOccupied)
 	}
 	return err
+}
+
+// reservePathIn 在给定句柄上写一条 reserved 占用（外层事务由调用方决定）。
+func reservePathIn(tx *gorm.DB, req *pubdto.ReserveReq, path string, now time.Time) error {
+	pageIDCopy := req.PageID
+	if cerr := tx.Create(&pubmodel.RouteEntity{
+		ProjectID: req.ProjectID, Path: path, PageID: &pageIDCopy,
+		RouteKind: pubmodel.RouteReserved, UpdatedAt: now,
+	}).Error; cerr != nil {
+		if errors.Is(cerr, gorm.ErrDuplicatedKey) || strings.Contains(cerr.Error(), "23505") {
+			return errRouteOccupied
+		}
+		return cerr
+	}
+	return nil
 }
 
 // DeleteRoutesByPage 清理页面全部路径占用（reserved/active/redirect 任一 kind），
@@ -229,6 +230,12 @@ func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRout
 		Where("project_id = ? AND page_id = ?", req.ProjectID, req.PageID).
 		Delete(&pubmodel.RouteEntity{})
 	return result.Error
+}
+
+// deleteRoutesByPageIn 在给定句柄上清理页面的全部路径占用（幂等）。
+func deleteRoutesByPageIn(tx *gorm.DB, req *pubdto.DeleteRoutesReq) error {
+	return tx.Where("project_id = ? AND page_id = ?", req.ProjectID, req.PageID).
+		Delete(&pubmodel.RouteEntity{}).Error
 }
 
 // DeleteRoutesByPresentation 清理展示实例全部路径占用（实例删除时释放）。
@@ -327,8 +334,19 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 	if err != nil {
 		return err
 	}
-	q := s.model.RouteDB(ctx).
-		Where("project_id = ? AND path = ? AND route_kind = ?", req.ProjectID, path, pubmodel.RouteActive)
+	if derr := deactivateIn(s.model.RouteDB(ctx), req, path).Error; derr != nil {
+		logger.Scene("publication").With("url", path).With("kind", "deactivate").Error(derr, "路由取消失败")
+		return derr
+	}
+	return nil
+}
+
+// deactivateIn 在给定句柄上取消路径占用（归属者三分支见 Deactivate 注释）。
+//
+// 返回的是 *gorm.DB（而不是 error）：调用方要区分「语句失败」与「受影响行数」，
+// 而 RowsAffected 只在 chain 上。事务变体据此把错误原样返回给外层事务。
+func deactivateIn(db *gorm.DB, req *pubdto.DeactivateReq, path string) *gorm.DB {
+	q := db.Where("project_id = ? AND path = ? AND route_kind = ?", req.ProjectID, path, pubmodel.RouteActive)
 	switch {
 	case strings.TrimSpace(req.PresentationID) != "":
 		q = q.Where("presentation_id = ?", strings.TrimSpace(req.PresentationID))
@@ -337,12 +355,7 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 	default:
 		q = q.Where("page_id IS NOT NULL")
 	}
-	result := q.Delete(&pubmodel.RouteEntity{})
-	if result.Error != nil {
-		logger.Scene("publication").With("url", path).With("kind", "deactivate").Error(result.Error, "路由取消失败")
-		return result.Error
-	}
-	return nil
+	return q.Delete(&pubmodel.RouteEntity{})
 }
 
 // Redirect 把旧路径占用改为 redirect 并指向重定向产物（两段式回执，与 Activate 对齐）。
@@ -391,45 +404,15 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 
 	// 第二段：路由事务（占用切换 + 置 committed）。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		matchSQL, matchArgs := owner.match()
-		q := tx.Model(&pubmodel.RouteEntity{}).
-			Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
-			Where(matchSQL, matchArgs...)
-		result := q.Updates(map[string]any{
-			"route_kind":  pubmodel.RouteRedirect,
-			"update_time": now,
-		})
-		if result.Error != nil {
-			return result.Error
+		if rerr := s.model.RedirectInTx(ctx, tx, req.ProjectID, oldPath, owner.pageID, owner.presentationID, toArtifact, now); rerr != nil {
+			return rerr
 		}
-		if result.RowsAffected == 0 {
-			// 无既有占用时直接建立 redirect 行（幂等）。
-			if err := tx.Create(&pubmodel.RouteEntity{
-				ProjectID: req.ProjectID, Path: oldPath,
-				PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
-				RouteKind: pubmodel.RouteRedirect, UpdatedAt: now,
-			}).Error; err != nil {
-				// 对他人占用路径建 redirect 行撞 (project_id, path) 唯一约束——
-				// 归一为 ErrRouteOccupied（语义：重定向目标路径已被其他页面占用）。
-				if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(err.Error(), "23505") {
-					return errRouteOccupied
-				}
-				return err
-			}
-		}
-		if toArtifact != nil {
-			if err := tx.Model(&pubmodel.RouteEntity{}).
-				Where("project_id = ? AND path = ?", req.ProjectID, oldPath).
-				Update("artifact_id", *toArtifact).Error; err != nil {
-				return err
-			}
-		}
-		return markReceipt(tx, receipt.ID, pubmodel.ReceiptCommitted, now)
+		return s.model.MarkReceiptStateTx(ctx, tx, receipt.ID, pubmodel.ReceiptCommitted, now)
 	})
 	if err != nil {
 		// 路由事务失败：pending → rolled_back（补偿失败保持 pending 供恢复）。
 		if rberr := s.model.Transaction(ctx, func(tx *gorm.DB) error {
-			return markReceipt(tx, receipt.ID, pubmodel.ReceiptRolledBack, time.Now().UTC())
+			return s.model.MarkReceiptStateTx(ctx, tx, receipt.ID, pubmodel.ReceiptRolledBack, time.Now().UTC())
 		}); rberr != nil {
 			logger.Scene("publication").With("url", oldPath).With("receiptId", receipt.ID).
 				Error(rberr, "pending 回执补偿失败（保持 pending 供恢复流程处理）")
@@ -448,4 +431,13 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 		return nil, err
 	}
 	return routeResp(route), nil
+}
+
+// redirectedRouteEntity 组装「刚写入的 redirect 行」的读回投影（事务内无法回读，见 activatedRouteEntity）。
+func redirectedRouteEntity(req *pubdto.RedirectReq, oldPath string, owner routeOwner, toArtifact *string, now time.Time) *pubmodel.RouteEntity {
+	return &pubmodel.RouteEntity{
+		ProjectID: req.ProjectID, Path: oldPath,
+		PageID: owner.pageIDPtr(), PresentationID: owner.presentationIDPtr(),
+		RouteKind: pubmodel.RouteRedirect, ArtifactID: toArtifact, UpdatedAt: now,
+	}
 }

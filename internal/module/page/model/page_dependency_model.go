@@ -110,6 +110,9 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 		return nil, nil
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		// 影响面摘要不走这条语句：标题 / 路径的取数口径在 service 的 StaleImpactOfIDs
+		// （按返回的 ids 反查），让「标 stale」与「读摘要」各自保持单一职责 ——
+		// 在这里 JOIN 标题会把两条口径焊死在一条 SQL 里，改任何一个都得动另一个。
 		return tx.Raw(`
 			WITH affected AS (
 				SELECT DISTINCT d.page_id AS page_id

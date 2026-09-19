@@ -45,6 +45,21 @@
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
+    {* 发布回执收敛状态（只读观测）：待收敛回执是「访问面已切换、数据库还差一步」的窗口，
+       收敛例程每分钟兜底一次。列表页是运维的日常落点 —— 积压只写在日志与 /readyz 里等于
+       不可见（/readyz 不影响就绪判定，也就没人会因为它去看）。
+       可选键一律 isset 包裹：直接渲染本模板的单测不带这几个键，缺键会让整页在那一行中断。 *}
+    {{if isset(.ReceiptAlert)}}{{if .ReceiptAlert}}
+    <p class="badge badge-warning" role="status">
+        {{ .["t"]("admin.pages.receipts.pending", "待收敛发布回执") }}：{{if isset(.ReceiptPending)}}{{ .ReceiptPending }}{{end}}
+        {{if isset(.ReceiptOldest)}}{{if .ReceiptOldest != ""}}· {{ .["t"]("admin.pages.receipts.oldest", "最老一条已等待") }} {{ .ReceiptOldest }}{{end}}{{end}}
+        {{if isset(.ReceiptLastConverge)}}{{if .ReceiptLastConverge != ""}}· {{ .["t"]("admin.pages.receipts.last_converge", "最近一次收敛") }} {{ .ReceiptLastConverge }}{{end}}{{end}}
+        · {{ .["t"]("admin.pages.receipts.action", "收敛例程每分钟兜底一次；持续积压请查服务日志（scene=publication）与线上路径一致性，必要时人工核对后再处理。") }}
+    </p>
+    {{else}}
+    <p class="badge badge-mute" role="status">{{ .["t"]("admin.pages.receipts.ok", "发布回执收敛正常：没有待收敛的回执。") }}</p>
+    {{end}}{{end}}
+
     <section class="card list-card">
         {{if len(.Pages) == 0}}
         <div class="empty-state">

@@ -12,6 +12,8 @@ package inventoryservice
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
@@ -53,9 +55,26 @@ func sourceChangeInput(e *inventorymodel.SourceEntity, action, operator string,
 }
 
 // recordChanges 记录主数据变更（端口未注入时空转：纯库存单测路径）。
+//
+// **新代码优先用 recordChangesTx**：业务行与留痕必须同事务（见下）。本方法留给
+// 「这次写操作只有留痕一处写入」、或确实无法进事务的路径。
 func (s *Service) recordChanges(ctx context.Context, inputs ...*masterdatacontract.ChangeInput) (err error) {
 	if s.changes == nil || len(inputs) == 0 {
 		return nil
 	}
 	return s.changes.RecordChanges(ctx, inputs)
+}
+
+// recordChangesTx 在**调用方事务内**记录主数据变更（端口未注入时空转，与上面同口径）。
+//
+// 与 recordChanges 只差一个参数：写的是调用方的 tx。这个差别是本质的 ——
+// master_data_changes 是 append-only（迁移 111 的触发器拒绝 UPDATE / DELETE）：
+// 业务行提交了而留痕没提交，等于**永久缺一条审计**，事后只能靠人工补一条「说明性」记录；
+// 反过来则是「审计里有、业务没变」。所以只要有主实体写，留痕就必须在同一事务里。
+// 先例：masterdata.RecordChangesTx（product 模块的三处写路径同此形状）。
+func (s *Service) recordChangesTx(ctx context.Context, tx *gorm.DB, inputs ...*masterdatacontract.ChangeInput) (err error) {
+	if s.changes == nil || len(inputs) == 0 {
+		return nil
+	}
+	return s.changes.RecordChangesTx(ctx, tx, inputs)
 }

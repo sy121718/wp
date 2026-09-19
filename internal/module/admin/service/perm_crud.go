@@ -134,52 +134,70 @@ func (s *Service) PermCreate(ctx context.Context, req *admindto.PermCreateReq) (
 }
 
 // PermUpdate 更新权限点定义，并同步已分配的 Casbin 策略。
+//
+// 事务：sys_permission 行与 sys_casbin_rule 里该权限点的 p 行是**两处持久化写入**，
+// 必须同事务（见 AGENTS.md「写操作的事务与回滚」）。旧实现分两次提交、失败时手工回滚
+// 权限点行，手工回滚本身再失败就会留下「旧策略已删、新策略没写完」——该权限点连带
+// 超管全员 403（072/077/078/079 踩过的同一形态）。现在两处写在一个事务里，
+// 任一步失败由数据库整体回滚，不再需要补偿。
+//
+// 读-改-写加行锁（LockByIDTx）：先读旧定义、再算新定义、再写回，不加锁会与并发更新互相覆盖。
+// 策略行的刷新是派生动作：事务提交成功后重建 Enforcer 内存副本（回滚时不动副本，两者一致）。
 func (s *Service) PermUpdate(ctx context.Context, req *admindto.PermUpdateReq) (res *admindto.PermUpdateResp, err error) {
-	entity, err := s.pm.GetByID(ctx, req.ID)
+	reloadPolicy := false
+	err = s.pm.Transaction(ctx, func(tx *gorm.DB) error {
+		entity, err := s.pm.LockByIDTx(ctx, tx, req.ID)
+		if err != nil {
+			return err
+		}
+		if entity == nil {
+			return errors.New(adminenums.ErrPermissionNotFound)
+		}
+		if req.PermissionCode != entity.PermissionCode {
+			return errors.New(adminenums.ErrCodeImmutable)
+		}
+
+		assigned, err := casbin.HasPermissionPolicies(entity.PermissionCode)
+		if err != nil {
+			return err
+		}
+		if req.Status == adminmodel.PermissionStatusDisabled && assigned {
+			return errors.New(adminenums.ErrPermissionAssigned)
+		}
+
+		definitionChanged := req.APIPath != entity.APIPath || req.APIMethod != entity.APIMethod
+		entity.PermissionName = req.PermissionName
+		entity.Module = req.Module
+		entity.APIPath = req.APIPath
+		entity.APIMethod = req.APIMethod
+		entity.Status = req.Status
+		if req.Remark != "" {
+			entity.Remark = &req.Remark
+		} else {
+			entity.Remark = nil
+		}
+
+		if err = s.pm.UpdateTx(ctx, tx, entity); err != nil {
+			return err
+		}
+		if !definitionChanged || !assigned {
+			return nil
+		}
+		changed, err := casbin.ReplacePermissionDefinitionTx(ctx, tx, entity.PermissionCode, entity.APIPath, entity.APIMethod)
+		if err != nil {
+			return fmt.Errorf("权限点已改但策略同步失败，本次修改已整体回滚: %w", err)
+		}
+		reloadPolicy = changed
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if entity == nil {
-		return nil, errors.New(adminenums.ErrPermissionNotFound)
-	}
-
-	if req.PermissionCode != entity.PermissionCode {
-		return nil, errors.New(adminenums.ErrCodeImmutable)
-	}
-
-	assigned, err := casbin.HasPermissionPolicies(entity.PermissionCode)
-	if err != nil {
-		return nil, err
-	}
-	if req.Status == adminmodel.PermissionStatusDisabled && assigned {
-		return nil, errors.New(adminenums.ErrPermissionAssigned)
-	}
-
-	oldEntity := *entity
-	definitionChanged := req.APIPath != entity.APIPath || req.APIMethod != entity.APIMethod
-	entity.PermissionName = req.PermissionName
-	entity.Module = req.Module
-	entity.APIPath = req.APIPath
-	entity.APIMethod = req.APIMethod
-	entity.Status = req.Status
-	if req.Remark != "" {
-		entity.Remark = &req.Remark
-	} else {
-		entity.Remark = nil
-	}
-
-	if err = s.pm.Update(ctx, entity); err != nil {
-		return nil, err
-	}
-	if definitionChanged && assigned {
-		if err = casbin.ReplacePermissionDefinition(entity.PermissionCode, entity.APIPath, entity.APIMethod); err != nil {
-			if rollbackErr := s.pm.Update(ctx, &oldEntity); rollbackErr != nil {
-				return nil, fmt.Errorf("同步 Casbin 策略失败: %v；恢复权限点失败: %w", err, rollbackErr)
-			}
-			return nil, err
+	if reloadPolicy {
+		if err = casbin.ReloadPolicy(); err != nil {
+			return nil, fmt.Errorf("权限点已保存，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
 		}
 	}
-
 	return &admindto.PermUpdateResp{ID: req.ID}, nil
 }
 

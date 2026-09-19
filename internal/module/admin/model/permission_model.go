@@ -2,9 +2,11 @@ package adminmodel
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNameSysPermission = "sys_permission"
@@ -136,13 +138,43 @@ func (m *PermissionModel) Create(ctx context.Context, e *PermissionEntity) error
 	return m.DB(ctx).Create(e).Error
 }
 
-// Update 全量更新权限点。
-// 显式 Select 列（含 status 零值）：否则 Updates(struct) 跳过零值字段，
+// permissionUpdateColumns UpdateTx 专用的显式列集合（含 status 零值）。
+var permissionUpdateColumns = []string{
+	"permission_code", "permission_name", "module", "api_path", "api_method",
+	"status", "remark", "update_by", "update_time",
+}
+
+
+// Transaction 透传事务：一次写操作里「权限点行 + Casbin 策略行」两处持久化写
+// 必须同事务，边界由 service 决定（见 AGENTS.md「写操作的事务与回滚」）。
+func (m *PermissionModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// UpdateTx 在调用方事务内更新权限点（**唯一的写入口** —— 非事务版 Update 已删除：
+// 权限点变更必然与 Casbin 策略行同事务，留下裸句柄版本只会让人写错）。
+// 显式 Select permissionUpdateColumns（含 status 零值）：否则 Updates(struct) 跳过零值字段，
 // 显式禁用（status=0）不落库，权限点保持启用。
-func (m *PermissionModel) Update(ctx context.Context, e *PermissionEntity) error {
-	return m.DB(ctx).Where("id = ?", e.ID).
-		Select("permission_code", "permission_name", "module", "api_path", "api_method", "status", "remark", "update_by", "update_time").
-		Updates(e).Error
+func (m *PermissionModel) UpdateTx(ctx context.Context, tx *gorm.DB, e *PermissionEntity) error {
+	return tx.WithContext(ctx).Model(&PermissionEntity{}).Where("id = ?", e.ID).
+		Select(permissionUpdateColumns).Updates(e).Error
+}
+
+// LockByIDTx 在调用方事务内按主键加行锁读取（SELECT ... FOR UPDATE）。
+// 读-改-写路径必须用这个：先读出旧定义、再算新定义、再写回，不加锁就会与并发更新互相覆盖。
+// 记录不存在返回 nil, nil（调用方判空后给出业务错误，不把 gorm 的内部错误透出去）。
+func (m *PermissionModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*PermissionEntity, error) {
+	var entity PermissionEntity
+	err := tx.WithContext(ctx).Model(&PermissionEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
 }
 
 // DeleteByIDs 批量删除权限点。

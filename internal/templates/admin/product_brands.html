@@ -7,6 +7,7 @@
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "layout.html"}}
 {{import "partials/bulk_bar.html"}}
+{{import "partials/rich_editor.html"}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -14,6 +15,10 @@
 {{canCreate := isset(.PermSet["product:brand_create"])}}
 {{canUpdate := isset(.PermSet["product:brand_update"])}}
 {{canDelete := isset(.PermSet["product:brand_delete"])}}
+{* 富文本字段的资源：Trix 走本地 vendor（零 CDN），rich-editor 是本项目在 Trix 上的扩展。
+   样式在这里引一次；trix.umd.js 与扩展入口在文件末尾引（见「资源」段）。 *}
+<link rel="stylesheet" href="/static/vendor/trix/trix.css">
+<link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -144,8 +149,11 @@
             <div class="form-inline">
                 <input aria-label="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}" class="form-input" type="text" name="seoTitle" value="{{b.SEOTitle}}" placeholder="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}">
                 <input aria-label="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}" class="form-input" type="text" name="seoDescription" value="{{b.SEODescription}}" placeholder="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}">
-                <input aria-label="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}" class="form-input" type="text" name="description" value="{{b.Description}}" placeholder="{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}">
             </div>
+            {* 品牌描述是「一段话」，单行 input 放不下 —— 改用全站统一的富文本片段。
+               存量纯文本由 rich-editor/index.js 在装载时转义 + 分段（纯文本绝不当作 HTML 直接塞给编辑器）。 *}
+            <label class="form-label" for="rich-description-{{b.ID}}">{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}</label>
+            {{yield richEditor(field="description", key=b.ID, value=b.Description)}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 {* SEO 评分（审计 SEO-016）：品牌页按落地页权重评分；title 唯一性检查（SEO-018）
@@ -177,8 +185,9 @@
             <div class="form-inline">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}" class="form-input" type="text" name="seoTitle" placeholder="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}" class="form-input" type="text" name="seoDescription" placeholder="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}" class="form-input" type="text" name="description" placeholder="{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}">
             </div>
+            <label class="form-label" for="rich-description-new">{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}</label>
+            {{yield richEditor(field="description", key="new", value="")}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
@@ -187,4 +196,7 @@
     </template>
     {{end}}
 </div>
+{* 资源：Trix 本体 + 本项目在它之上的扩展入口（入口幂等，抽屉每次打开重复引入也不会重复初始化）。 *}
+<script src="/static/vendor/trix/trix.umd.js"></script>
+<script src="/static/js/rich-editor/index.js"></script>
 {{end}}

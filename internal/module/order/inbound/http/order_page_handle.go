@@ -227,7 +227,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"Err":       pageErr,
 		"Ok":        pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
-		"Done": strings.TrimSpace(c.Query("done")),
+		"Done": orderPageDone(c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/orders", orderFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -299,16 +299,13 @@ func (h *orderPageHandle) OrderCancel(c *gin.Context) {
 		OperatorID:   shell.CurrentUserID(c),
 		OperatorName: builtin.GetUsername(c),
 	}
-	resp, err := h.orders.CancelOrder(c.Request.Context(), req)
-	if err != nil {
+	if _, err := h.orders.CancelOrder(c.Request.Context(), req); err != nil {
 		orderRedirect(c, "", orderFacingError(c, err))
 		return
 	}
-	msg := orderenums.MsgCancelled
-	if resp != nil && len(resp.Warnings) > 0 {
-		msg = resp.Warnings[0]
-	}
-	orderRedirect(c, msg, "")
+	// 取消只有「成功 / 失败」两种结果（归还库存与释放券核销同事务，失败即回滚），
+	// 历史遗留的「带警告成功」出口已随事务收口删除。
+	orderRedirect(c, orderenums.MsgCancelled, "")
 }
 
 // OrderRefund 退款（POST /admin/orders/refund）：**不归还库存**（退货入库是另一件事）。
@@ -347,7 +344,7 @@ func (h *orderPageHandle) OrderBulkStatus(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		orderRedirect(c, "", berr.Error())
+		orderRedirect(c, "", orderBulkIDsText(c, berr))
 		return
 	}
 	changed, skipped := 0, 0
@@ -393,7 +390,7 @@ func (h *orderPageHandle) OrderBulkCancel(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		orderRedirect(c, "", berr.Error())
+		orderRedirect(c, "", orderBulkIDsText(c, berr))
 		return
 	}
 	cancelled, skipped := 0, 0
@@ -428,13 +425,13 @@ func (h *orderPageHandle) OrderBulkCancel(c *gin.Context) {
 func bulkSummary(verb, noun string, done, skipped int) string {
 	switch {
 	case done == 0 && skipped == 0:
-		return fmt.Sprintf("没有勾选任何%s。", noun)
+		return fmt.Sprintf(orderBulkNothingSelected, noun)
 	case skipped == 0:
-		return fmt.Sprintf("%s %d 个%s。", verb, done, noun)
+		return fmt.Sprintf(orderBulkAllDone, verb, done, noun)
 	case done == 0:
-		return fmt.Sprintf("0 个%s%s，%d 个被跳过（状态不允许或已不存在）。", noun, verb, skipped)
+		return fmt.Sprintf(orderBulkAllSkipped, noun, verb, skipped)
 	default:
-		return fmt.Sprintf("%s %d 个%s，跳过 %d 个（状态不允许或已不存在）。", verb, done, noun, skipped)
+		return fmt.Sprintf(orderBulkPartial, verb, done, noun, skipped)
 	}
 }
 

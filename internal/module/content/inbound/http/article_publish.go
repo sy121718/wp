@@ -271,7 +271,8 @@ func articlePublishFacingError(c *gin.Context, err error) string {
 	if msg := articleFacingText(raw); msg != "" {
 		return msg
 	}
-	return shell.PageInternalText(c)
+	// 未命中：原文只进日志（带 user_id），对外给归口文案。
+	return articleInternalText(c, err)
 }
 
 // articlePublishURL 发布 / 重建表单的动作地址（当前页路径，集中一处便于改名）。

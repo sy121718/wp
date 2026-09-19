@@ -4,6 +4,8 @@ package ordercontract
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 )
@@ -70,8 +72,11 @@ type OrderService interface {
 	// 网关重复通知、访客连点两次、失败重试都会走到这条路径上，
 	// 把重复当错误会让对方无限重试。
 	PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res *orderdto.PayOrderResp, err error)
-	// CancelOrder 取消订单：归还库存 + 记流转。
-	// 订单状态已取消但库存归还失败时返回 Warnings（不视为整体失败）。
+	// CancelOrder 取消订单：改状态 + 记流转 + **同一事务内**归还库存 + 释放券核销。
+	//
+	// 全有或全无：任一步（含库存归还）失败则整体回滚，订单仍是原状态。
+	// 不再有「状态已取消、库存没回来 → 返回 Warnings 留痕给人工」这条半截路径 ——
+	// 那正是 AGENTS.md 禁止的跨模块补偿（同库跨模块必须事务透传）。
 	CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (res *orderdto.CancelOrderResp, err error)
 	// UpdateOrderNote 改订单的后台备注（adminNote）。
 	//
@@ -159,6 +164,18 @@ type StockOperator interface {
 	// 方向写死在类型里（恒为入库）：订单域没有任何「把货减掉」的场景 ——
 	// 出库走 DeductStock。让调用方能传任意方向，等于允许它绕过扣减的可用量守卫。
 	ChangeStock(ctx context.Context, in *StockAdjustment) (err error)
+
+	// DeductStockTx / ChangeStockTx —— **事务透传版**：与上面两条同语义，但在**调用方
+	// 的事务**里执行（tx 非 nil，由订单侧负责提交 / 回滚）。
+	//
+	// 为什么必须有它们：库存与订单在同一个库，一次用户可感知的写操作（建单 / 取消 /
+	// 退货入库）里任何一步失败都必须整体回滚。原先「订单事务先提交 → 再动库存 →
+	// 失败再补偿」会在补偿也失败时留下「有单没扣库存 / 已取消没归还库存」，而错误还被
+	// 吞掉。跨模块只传句柄（先例 masterdata.RecordChangesTx），对端不再自己开事务。
+	//
+	// 约定：不自己开事务；错误原样返回（含库存不足），由调用方决定呈现方式。
+	DeductStockTx(ctx context.Context, tx *gorm.DB, in *StockDeduction) (err error)
+	ChangeStockTx(ctx context.Context, tx *gorm.DB, in *StockAdjustment) (err error)
 }
 
 // StockLine 一次库存变动里的一行：动哪个 SKU、动多少件。

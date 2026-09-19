@@ -19,6 +19,8 @@ type (
 	DetailReq        = plugindto.DetailReq
 	ComponentSummary = plugindto.ComponentSummary
 	PresetSummary    = plugindto.PresetSummary
+	SchemaInfo       = plugindto.SchemaInfo
+	PatrolResp       = plugindto.PatrolResp
 )
 
 // PluginService 插件管理契约：安装/列表/启停/卸载 + 编译装配查询。
@@ -37,6 +39,14 @@ type PluginService interface {
 	Uninstall(ctx context.Context, req *plugindto.UninstallReq) (err error)
 	// Detail 插件详情（含 manifest）。
 	Detail(ctx context.Context, req *plugindto.DetailReq) (res *plugindto.PluginResp, err error)
+	// PatrolArtifacts 巡检插件在三处存储上的一致性（只读，不修任何数据）。
+	//
+	// 三处产物：L1 schema（PG）/ 注册行（PG）/ 存储目录（文件系统）。后者的清理不参与事务，
+	// 所以每一步都可能单独失败，而残片没有任何入口能发现。报告四类不一致：孤儿 schema、
+	// 缺 schema 的注册行、孤儿存储目录、目录缺失的注册行。
+	// 按「冲突与数据不一致一律打回给人」的约定，本方法只报告、不自动 DROP / 不自动删目录 ——
+	// 孤儿里可能有真实业务数据或还没迁走的资产。
+	PatrolArtifacts(ctx context.Context) (res *plugindto.PatrolResp, err error)
 	// EnabledAssembly 启用插件的编译装配素材（模板 FS + 组件规格 + 检查器 schema）。
 	EnabledAssembly(ctx context.Context) (asm *Assembly, err error)
 	// AdminAuthz 返回注入的 admin 权限上下文查询服务。

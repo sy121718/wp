@@ -31,6 +31,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/rls"
 )
 
 const (
@@ -73,14 +74,29 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.CreateTag(ctx, e); err != nil {
-		return nil, err
-	}
-	// 重算时机之一：规则型标签建好即算一次，避免刚建出来「一个都没命中」的假象。
+	// 规则命中集合**先在事务外求值**：规则求值内部走 rls.InProjectScope（自带事务、另取连接），
+	// 塞进已开的事务里既看不到未提交数据又可能自锁（见 pkg/rls.ScopeTx 的说明）。
+	var hitIDs []string
 	if e.Kind == productenums.TagKindRule {
-		if _, rerr := s.recalcTag(ctx, e); rerr != nil {
-			return nil, rerr
+		if hitIDs, err = s.ruleHitProductIDs(ctx, projectID, e.RuleType, e.RuleParams); err != nil {
+			return nil, err
 		}
+	}
+	// 标签行与它的首次归属重算**同事务**：规则型标签建好即算一次（避免「刚建出来一个都没命中」
+	// 的假象），而「有标签、没归属」或反过来的半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if cerr := s.m.CreateTagTx(ctx, tx, e); cerr != nil {
+			return cerr
+		}
+		if e.Kind != productenums.TagKindRule {
+			return nil
+		}
+		return s.recalcTagTx(ctx, tx, e, hitIDs, time.Now().UTC())
+	}); err != nil {
+		return nil, err
 	}
 	return s.tagDetail(ctx, e)
 }
@@ -129,14 +145,29 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 		}
 	}
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateTag(ctx, e); err != nil {
-		return nil, err
-	}
-	// 重算时机之一：规则定义变更后立刻按新规则重算（手工标签不动任何归属）。
+	// 命中集合先在事务外求值（同 CreateTag：规则求值自带事务，不能嵌进已开的事务）。
+	var hitIDs []string
 	if e.Kind == productenums.TagKindRule {
-		if _, rerr := s.recalcTag(ctx, e); rerr != nil {
-			return nil, rerr
+		if hitIDs, err = s.ruleHitProductIDs(ctx, e.ProjectID, e.RuleType, e.RuleParams); err != nil {
+			return nil, err
 		}
+	}
+	// 标签定义变更与按新规则重算**同事务**：分开提交时「改了规则、归属还是旧的」会让
+	// 后台的命中列表与新规则不一致，而这正是运营用来核对规则写对没有的那一屏。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if uerr := s.m.UpdateTagTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		// 重算时机之一：规则定义变更后立刻按新规则重算（手工标签不动任何归属）。
+		if e.Kind != productenums.TagKindRule {
+			return nil
+		}
+		return s.recalcTagTx(ctx, tx, e, hitIDs, time.Now().UTC())
+	}); err != nil {
+		return nil, err
 	}
 	return s.tagDetail(ctx, e)
 }
@@ -409,6 +440,10 @@ func (s *Service) resolveTagIDs(ctx context.Context, projectID string, in []stri
 }
 
 // recalcTag 按规则重算单个标签的商品归属（手工标签直接返回 0，一个字都不动）。
+//
+// 命中集合的求值（读）在事务外完成：规则求值是多表只读查询，且内部走 rls.InProjectScope
+// （自带事务），放进外层事务只会拉长持锁时间并可能自锁。「替换归属 + 记重算时间」两处写
+// 落在同一个事务里（recalcTagTx）。
 func (s *Service) recalcTag(ctx context.Context, tag *productmodel.ProductTagEntity) (n int, err error) {
 	if tag == nil || tag.Kind != productenums.TagKindRule {
 		return 0, nil
@@ -419,17 +454,29 @@ func (s *Service) recalcTag(ctx context.Context, tag *productmodel.ProductTagEnt
 	}
 	now := time.Now().UTC()
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		return s.m.ReplaceTagProductsTx(tx, tag.ID, tag.ProjectID, ids, now)
+		return s.recalcTagTx(ctx, tx, tag, ids, now)
 	}); err != nil {
 		return 0, err
+	}
+	return len(ids), nil
+}
+
+// recalcTagTx 在调用方事务里「整体替换该标签的商品归属 + 记重算时间」——两处写必须原子。
+//
+// 原先这两步分属两个事务：归属已经替换、UpdateTag 失败时 recalc_at 还是上一次的值，
+// 后台按它核对「重算时机」会得出错误结论（看起来最近没重算过，实际归属已经变了）。
+func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmodel.ProductTagEntity,
+	ids []string, now time.Time) (err error) {
+	if serr := rls.ScopeTx(tx, tag.ProjectID); serr != nil {
+		return serr
+	}
+	if rerr := s.m.ReplaceTagProductsTx(tx, tag.ID, tag.ProjectID, ids, now); rerr != nil {
+		return rerr
 	}
 	// 记录重算时间（后台可见，用来核对「重算时机」是否真的发生过）。
 	tag.RecalcAt = &now
 	tag.UpdatedAt = now
-	if err = s.m.UpdateTag(ctx, tag); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
+	return s.m.UpdateTagTx(ctx, tx, tag)
 }
 
 // recalcAutoTags 重算某工程下的全部自动标签（商品 / 变体写操作后的隐式重算入口）。

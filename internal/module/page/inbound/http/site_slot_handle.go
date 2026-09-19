@@ -38,6 +38,7 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 )
 
 const (
@@ -63,6 +64,9 @@ const (
 // 键分两类：
 //   - page 模块的错误常量名（pageenums.ErrXxx 的值就是常量名本身），值是面向运营的中文；
 //   - 本页自造的成功 / 参数级文案，值等于自身（它们会进 ?ok= / ?err=）。
+//
+// 取值时**键与值都算命中**（见 siteSlotFacingText）：写侧回填 ?err= 的既有常量名形态、
+// 也有已经转好的中文形态，两种都要能过。
 //
 // 用常量做键而不是手抄字符串：page 模块调整常量值时这里跟着一起变，不会静默失配。
 var siteSlotFacingMessages = map[string]string{
@@ -303,13 +307,51 @@ func siteSlotFacingError(c *gin.Context, err error) string {
 	if msg := siteSlotFacingText(err.Error()); msg != "" {
 		return msg
 	}
+	// 未命中：原文只进日志（场景 + user_id + 原始错误），对外给归口文案。
+	// 少了这一条，未归类的失败在日志与页面上**同时消失** —— 页面看不到、日志也查不到。
+	logger.Scene(pageErrScene).
+		With("user_id", shell.CurrentUserID(c)).
+		Error(err, "站点槽位页操作失败（非业务错误，只对外给归口文案）")
 	return siteSlotInternalText(c)
 }
 
+// siteSlotFacingValues siteSlotFacingMessages 的**值集合**（由上面那张 map 派生，不手抄一份）。
+//
+// 用途见 siteSlotFacingText：写侧回填 ?err= 时有「常量名」与「中文译文」两种形态，
+// 后者是 map 的值而不是键。派生而不是手写，是为了让「加一条白名单」只改一个地方 ——
+// 手抄两份的下场是新增文案只加进 map、值集合忘了加，于是那条提示又被自己吞掉。
+var siteSlotFacingValues = func() map[string]bool {
+	m := make(map[string]bool, len(siteSlotFacingMessages))
+	for _, v := range siteSlotFacingMessages {
+		m[v] = true
+	}
+	return m
+}()
+
 // siteSlotFacingText 白名单校验：命中返回可展示文案，未命中返回空串。
+//
+// **键与值两种形态都要认**（原来的实现只认键，是个真缺陷）：
+//
+//	· 写侧把 page 模块错误常量放进 ?err= 时，串是常量的**值**（= 常量名，如 "ErrSlotPageMiss"）
+//	  → 命中 map 的键，取其中文译文；
+//	· 写侧把 siteSlotFacingError 已经转好的**中文文案**放进 ?err= 时，串是 map 的**值**。
+//
+// 只认键会让第二种一律落空，于是该页**所有业务错误都显示归口文案**「系统内部错误，请稍后重试」——
+// 文案明明准备好了却永远不出现，运营看到的是「系统出错了，重试吧」，而实际是「请先选页面」。
+//
+// 值形态必须**整体相等**才算命中，不能用 Contains：否则任何人手拼一个 ?err=、
+// 只要串里包含某条已知文案就能绕过白名单，把任意前缀 / 后缀显示到页面上。
 func siteSlotFacingText(raw string) string {
-	if msg, ok := siteSlotFacingMessages[strings.TrimSpace(raw)]; ok {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return ""
+	}
+	if msg, ok := siteSlotFacingMessages[key]; ok {
 		return msg
+	}
+	if siteSlotFacingValues[key] {
+		// 已经是白名单里的成品文案：原样放行（返回 key 即该文案本身）。
+		return key
 	}
 	return ""
 }

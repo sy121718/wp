@@ -11,6 +11,7 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/retention"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -109,6 +110,9 @@ func (s *Service) PurgeRetention(ctx context.Context) (deleted int64, err error)
 
 // StartMailRetentionScheduler 启动每日邮件明细清理（与 analytics / order 的既有调度同形）。
 func StartMailRetentionScheduler(svc *Service) {
+	if utils.IsTestProcess() {
+		return // 测试进程不启动：调度首跑会动真实库与存储，测试的行为必须由用例自己触发（见 utils.IsTestProcess）。
+	}
 	if svc == nil {
 		return
 	}

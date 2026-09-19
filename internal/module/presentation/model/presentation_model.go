@@ -55,14 +55,18 @@ type InstanceEntity struct {
 	EntityID   string `gorm:"column:entity_id;not null"`
 	// InstanceRole 实例角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
 	// 同一个分类可以同时有这两张页面，所以唯一键是（实体 + 角色）而不是实体。
-	InstanceRole      string  `gorm:"column:instance_role;not null;default:detail"`
-	URLPath           string  `gorm:"column:url_path;not null"`
-	TemplateID        string  `gorm:"column:template_id;not null"`
+	InstanceRole string `gorm:"column:instance_role;not null;default:detail"`
+	URLPath      string `gorm:"column:url_path;not null"`
+	TemplateID   string `gorm:"column:template_id;not null"`
 	// OverrideDocument 实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）。
 	// NULL = 跟随模板（既有行为不变）；非空 = 发布/重建以此文档为准，
 	// binding 照常经 ContentResolver 解析，实体数据更新后重建不丢自定义。
 	// json.RawMessage gorm 无法推断列型，保留 type 标签属 model 不声明列型的例外清单。
 	OverrideDocument json.RawMessage `gorm:"column:override_document;type:jsonb"`
+	// RenderMode 渲染模式（迁移 282，商品页双轨）：template=跟随绑定模板（默认，
+	// 模板更新可全局下发）| document=该商品独立文档（override_document）。
+	// 取值与判定见 RenderModeTemplate / RenderModeDocument 与 NormalizeRenderMode。
+	RenderMode        string  `gorm:"column:render_mode;not null;default:template"`
 	CurrentSnapshotID *string `gorm:"column:current_snapshot_id"`
 	StagedSnapshotID  *string `gorm:"column:staged_snapshot_id"`
 	StagedArtifactID  *string `gorm:"column:staged_artifact_id"`

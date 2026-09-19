@@ -131,10 +131,14 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 		pageErr = firstNonEmpty(pageErr, articleFacingError(c, err))
 	}
 	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk)
+	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
+	// 本批只做可见性，不做自动重建（见 article_stale_impact.go）。
+	data["StaleImpact"] = articleStaleImpact(ctx, h)
 	// 批量动作的结果走独立的 ?done=：本页的 ?err= 要过 articleFacingMessages 白名单
-	// （防数据库原文直出），带计数的动态文案登记不进白名单，走 err 会被换成兜底文案、
-	// 计数信息整块丢失。Jet 默认转义，回显是安全的。
-	data["Done"] = strings.TrimSpace(c.Query("done"))
+	// （防数据库原文直出），带计数的动态文案进不了那张表（值互不相同）。回显因此走
+	// articlePageDone 的受控出口 —— 值由服务端拼装，但**页面不是可信边界**：
+	// ?done=任意文案 谁都能手写，原样渲染出来就是一条顶着「成功」样式的伪造消息。
+	data["Done"] = articlePageDone(c.Query("done"))
 	c.HTML(http.StatusOK, "admin/articles.html", shell.Prepare(c, data))
 }
 
@@ -221,7 +225,8 @@ func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		articleRedirectList(c, berr.Error(), "")
+		// 受控提示（一次最多操作 N 项）保持可见，但同样经白名单判定来源。
+		articleRedirectList(c, articleFacingOrInternal(c, berr), "")
 		return
 	}
 	deleted, skipped := 0, 0
@@ -235,19 +240,51 @@ func (h *articlePageHandle) ArticlesBulkDelete(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/admin/articles?done="+url.QueryEscape(articleBulkDeleteResult(deleted, skipped)))
 }
 
+// articleBulkResultTemplates 批量删除的四个结论分支（**写读共用这一份字面量**）。
+//
+// 写侧 articleBulkDeleteResult 用它 Sprintf 出文案，读侧 articleDoneTexts 用它经
+// shell.NoticeTemplate 归一后整体比对。各写一份的后果是静默的 —— 写侧改了措辞，
+// 读侧候选不再命中，运营看到的是「没有这条提示」（成功态未命中落空串）。
+var articleBulkResultTemplates = []string{
+	"没有选中任何文章，列表未改动。",
+	"已删除 %d 篇文章。",
+	"%d 篇文章都未能删除，列表未改动。",
+	"已删除 %d 篇，%d 篇未能删除（可能已被删除）。",
+}
+
 // articleBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚，
 // 不能只报「操作完成」（部分成功被静默成全部成功，用户不会再去看剩下那几篇）。
 func articleBulkDeleteResult(deleted, skipped int) string {
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有选中任何文章，列表未改动。"
+		return articleBulkResultTemplates[0]
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 篇文章。", deleted)
+		return fmt.Sprintf(articleBulkResultTemplates[1], deleted)
 	case deleted == 0:
-		return fmt.Sprintf("%d 篇文章都未能删除，列表未改动。", skipped)
+		return fmt.Sprintf(articleBulkResultTemplates[2], skipped)
 	default:
-		return fmt.Sprintf("已删除 %d 篇，%d 篇未能删除（可能已被删除）。", deleted, skipped)
+		return fmt.Sprintf(articleBulkResultTemplates[3], deleted, skipped)
 	}
+}
+
+// articleDoneTexts 列表页 ?done= 可以原样展示的受控文案（数字归一后可比）。
+func articleDoneTexts() []string {
+	out := make([]string, 0, len(articleBulkResultTemplates))
+	for _, tpl := range articleBulkResultTemplates {
+		out = append(out, shell.NoticeTemplate(tpl))
+	}
+	return out
+}
+
+// articlePageDone 列表页 ?done= 的受控出口（成功提示：未命中落空串）。
+//
+// 判定用 shell.FacingNotice 的**整体**匹配（逐字 / 数字归一 / 「候选 + ：」），不是
+// strings.Contains —— 后者只要夹带一段已知文案就能往页面上塞任意前缀 / 后缀。
+// 未命中不落归口文案：成功提示没有「必须说点什么」的语义。
+func articlePageDone(raw string) string {
+	return shell.FacingQueryText(raw, "", func(msg string) string {
+		return shell.FacingNotice(msg, articleDoneTexts())
+	})
 }
 
 // ArticleScorePanel 渲染 SEO 评分侧栏片段（POST /admin/articles/score）。

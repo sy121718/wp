@@ -4,14 +4,10 @@ package pubservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
-	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
-
-	"gorm.io/gorm"
 )
 
 // RollbackReceipts 启动恢复：全部 pending 回执标记 rolled_back，返回处理数量。
@@ -31,15 +27,13 @@ func receiptAction(action, fallback string) string {
 }
 
 // errRouteOccupied 事务内占位冲突哨兵，外层映射为 pubenums.ErrRouteOccupied。
-var errRouteOccupied = errors.New(pubenums.ErrRouteOccupied)
+// 本体在 model 侧（pubmodel.ErrRouteOccupied）：路由/回执的 …Tx 具名方法在唯一键
+// 冲突时归一返回它，service 这边只做「哨兵 → 用户文案」的映射，两侧共用同一哨兵，
+// errors.Is 的匹配不会因为哨兵分居两包而失效。
+var errRouteOccupied = pubmodel.ErrRouteOccupied
 
 // receiptPayload 回执数据结构化序列化（替代手工拼接 JSON，避免特殊字符生成非法 jsonb）。
 type receiptPayload struct {
 	To string `json:"to,omitempty"`
 }
 
-func markReceipt(tx *gorm.DB, id int64, state string, now time.Time) error {
-	return tx.Model(&pubmodel.ReceiptEntity{}).
-		Where("id = ?", id).
-		Updates(map[string]any{"receipt_state": state, "completed_at": now}).Error
-}

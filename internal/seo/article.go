@@ -107,7 +107,7 @@ func articlePlainText(body string) string {
 
 // articleHeadings 提取正文里的标题结构（h1..h6 按出现顺序）。
 //
-// 文章的 H1 通常由详情页模板渲染（正文里的 h1 会被编辑器降级成 h2），
+// 文章的 H1 通常由详情页模板渲染（正文里的 h1 原样保留（编辑器不再降级标题层级）），
 // 但这里不做假设：正文写了什么就是什么，缺 H1 该扣分就扣分。
 func articleHeadings(body string) []scoring.Heading {
 	matches := headingRe.FindAllStringSubmatch(body, -1)

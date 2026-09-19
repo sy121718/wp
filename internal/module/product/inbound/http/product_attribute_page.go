@@ -65,9 +65,10 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 		"SelectedProject": selected,
 		"Attributes":      rows,
 		"NewRowsCtx":      attrRowsCtx{GroupID: "new", Rows: nil},
-		"Err":             strings.TrimSpace(c.Query("err")),
+		// 读侧一律过白名单（product_err.go）：查询参数不是可信边界。
+		"Err": productPageErr(c),
 		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductAttributesBulkDelete）。
-		"Done": strings.TrimSpace(c.Query("done")),
+		"Done": productPageDone(c),
 	}))
 }
 
@@ -217,7 +218,7 @@ func (h *productPageHandle) ProductAttributesCreate(c *gin.Context) {
 	isVariation := c.PostForm("isVariation") == "1"
 	req.IsVariation = &isVariation
 	if _, err := h.products.CreateAttribute(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
@@ -235,7 +236,7 @@ func (h *productPageHandle) ProductAttributesUpdate(c *gin.Context) {
 		ID: id, Name: &name, Key: &key, IsVariation: &isVariation, Sort: &sortV,
 	}
 	if _, err := h.products.UpdateAttribute(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
@@ -249,7 +250,7 @@ func (h *productPageHandle) ProductAttributesSetValues(c *gin.Context) {
 		Values: attrRowsFromForm(c),
 	}
 	if _, err := h.products.SetAttributeValues(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
@@ -259,7 +260,7 @@ func (h *productPageHandle) ProductAttributesSetValues(c *gin.Context) {
 func (h *productPageHandle) ProductAttributesDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	if err := h.products.DeleteAttribute(c.Request.Context(), &productdto.DeleteAttributeReq{ID: c.PostForm("id")}); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
@@ -275,7 +276,8 @@ func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+url.QueryEscape(projectID)+
+			"&err="+url.QueryEscape(productErrText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -289,9 +291,9 @@ func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
 	target := "/admin/product-attributes?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（属性组不存在或被商品引用）", deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productAttrBulkPartial, deleted, skipped))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个属性组（连同其全部属性值）", deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productAttrBulkDone, deleted))
 	}
 	c.Redirect(http.StatusFound, target)
 }

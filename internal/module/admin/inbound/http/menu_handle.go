@@ -12,13 +12,13 @@ import (
 func (h *Handle) MenuTree(c *gin.Context) {
 	var req admindto.MenuTreeReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	list, err := h.menu.MenuTree(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, list)
@@ -28,13 +28,13 @@ func (h *Handle) MenuTree(c *gin.Context) {
 func (h *Handle) MenuDetail(c *gin.Context) {
 	var req admindto.MenuDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.menu.MenuDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -44,12 +44,12 @@ func (h *Handle) MenuDetail(c *gin.Context) {
 func (h *Handle) MenuCreate(c *gin.Context) {
 	var req admindto.MenuCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	if err := h.menu.MenuCreate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -59,12 +59,12 @@ func (h *Handle) MenuCreate(c *gin.Context) {
 func (h *Handle) MenuUpdate(c *gin.Context) {
 	var req admindto.MenuUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	if err := h.menu.MenuUpdate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -74,12 +74,12 @@ func (h *Handle) MenuUpdate(c *gin.Context) {
 func (h *Handle) MenuDelete(c *gin.Context) {
 	var req admindto.MenuDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	if err := h.menu.MenuDelete(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)

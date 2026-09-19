@@ -66,11 +66,17 @@ func handleTrackEvent(db *gorm.DB) queue.Handler {
 			}
 			e.UserAgent = &ua
 		}
-		if err := m.CreateEvent(ctx, e); err != nil {
+		// 事件行与联系人「最近活跃」**同事务**：分开提交时「事件记了、活跃时间没更新」
+		// 会让报表与列表对不上（AGENTS.md「写操作的事务与回滚」）。
+		if err := m.Transaction(ctx, func(tx *gorm.DB) error {
+			if cerr := m.CreateEventTx(ctx, tx, e); cerr != nil {
+				return cerr
+			}
+			// 联系人活跃时间：退订等状态变更已在端点里做过，这里只更新「最近活跃」。
+			return m.UpdateContactFieldsTx(ctx, tx, p.ContactID, map[string]any{"last_activity_at": time.Now()})
+		}); err != nil {
 			return err
 		}
-		// 联系人活跃时间：退订等状态变更已在端点里做过，这里只更新「最近活跃」。
-		_ = m.UpdateContactFields(ctx, p.ContactID, map[string]any{"last_activity_at": time.Now()})
 
 		// 触发自动化（#38 P3）：打开 / 点击是**逐条**触发的 —— 事件量级远小于导入，
 		// 且「打开了邮件」这类信号的价值就在于实时（等一分钟再发下一条就没意义了）。

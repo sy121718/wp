@@ -23,6 +23,10 @@ type pluginsPageData struct {
 	Menu    string
 	Plugins []*plugincontract.PluginResp
 	Error   string
+	// ArtifactPatrol 插件三处产物的对账巡检结果（只读）。见 service/plugin_patrol.go：
+	// 报告孤儿 schema / 缺 schema 的注册行 / 孤儿存储目录 / 目录缺失的注册行四类不一致。
+	// 恒定非 nil：模板按「有没有不一致」分流，nil 会让它多一个判空分支。
+	ArtifactPatrol *plugincontract.PatrolResp
 }
 
 // pluginPageHandle 插件管理页处理器。
@@ -30,9 +34,23 @@ type pluginPageHandle struct {
 	plugins plugincontract.PluginService
 }
 
+// emptyPatrol 巡检的空结果（非 nil）。
+//
+// 巡检失败时**不**把页面打成错误页：它是只读附加信息，挂了不该连带插件列表一起看不见。
+// 但也不能让模板拿到 nil 指针（Jet 取 nil 的字段会中断整页渲染，HTTP 仍 200 ——
+// 见 internal/templates/CLAUDE.md），所以失败时给这个空值。
+func emptyPatrol() *plugincontract.PatrolResp {
+	return &plugincontract.PatrolResp{
+		OrphanSchemas:  []plugincontract.SchemaInfo{},
+		MissingSchemas: []string{},
+		OrphanStorage:  []string{},
+		MissingStorage: []string{},
+	}
+}
+
 // PluginsPage 插件管理列表页。
 func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
-	data := &pluginsPageData{Title: "插件管理", Menu: "plugins"}
+	data := &pluginsPageData{Title: "插件管理", Menu: "plugins", ArtifactPatrol: emptyPatrol()}
 	if h.plugins != nil {
 		list, err := h.plugins.List(c.Request.Context())
 		if err != nil {
@@ -40,10 +58,17 @@ func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 		} else {
 			data.Plugins = list
 		}
+		// 只读巡检：失败只记日志降级为空报告，不影响列表与安装入口。
+		if patrol, perr := h.plugins.PatrolArtifacts(c.Request.Context()); perr != nil {
+			logger.Scene("plugin").Error(perr, "插件产物巡检失败")
+		} else if patrol != nil {
+			data.ArtifactPatrol = patrol
+		}
 	}
 	c.HTML(http.StatusOK, "admin/plugins", shell.Prepare(c, gin.H{
 		"title": data.Title, "menu": data.Menu,
 		"Plugins": data.Plugins, "Error": data.Error,
+		"ArtifactPatrol": data.ArtifactPatrol,
 	}))
 }
 

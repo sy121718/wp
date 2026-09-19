@@ -8,6 +8,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -33,7 +34,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageCreated, res)
@@ -48,7 +49,7 @@ func (h *Handle) Detail(c *gin.Context) {
 	}
 	res, err := h.svc.Detail(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageDetail, res)
@@ -63,7 +64,7 @@ func (h *Handle) List(c *gin.Context) {
 	}
 	res, err := h.svc.List(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, pageErrorMessage(err))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, pageErrorMessage(c, err))
 		return
 	}
 	response.Success(c, res)
@@ -78,7 +79,7 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 	}
 	res, err := h.svc.SaveDraft(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgDraftSaved, res)
@@ -93,7 +94,7 @@ func (h *Handle) Build(c *gin.Context) {
 	}
 	res, err := h.svc.Build(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgBuildReady, res)
@@ -108,7 +109,7 @@ func (h *Handle) Publish(c *gin.Context) {
 	}
 	res, err := h.svc.Publish(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPublished, res)
@@ -123,7 +124,7 @@ func (h *Handle) RebuildArtifact(c *gin.Context) {
 	}
 	res, err := h.svc.RebuildArtifact(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.Success(c, res)
@@ -138,7 +139,7 @@ func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
 	}
 	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.Success(c, res)
@@ -148,7 +149,7 @@ func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
 func (h *Handle) AuditPublication(c *gin.Context) {
 	res, err := h.svc.AuditPublication(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.Success(c, res)
@@ -163,7 +164,7 @@ func (h *Handle) Rollback(c *gin.Context) {
 	}
 	res, err := h.svc.Rollback(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgRollbackDone, res)
@@ -178,7 +179,7 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateURL(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgURLUpdated, res)
@@ -192,7 +193,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageDeleted, nil)
@@ -207,7 +208,7 @@ func (h *Handle) ListRevisions(c *gin.Context) {
 	}
 	res, err := h.svc.ListRevisions(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgRevisionsListed, res)
@@ -246,9 +247,12 @@ func pageErrorStatus(err error) int {
 // 已知业务错误（sentinel）其 Error() 即 pageenums 文案，直接下发；
 // 未知系统错误（pageErrorStatus 归为 500）改用兜底文案下发，原文只进日志，
 // 避免 err.Error() 把内部细节（SQL 错误、连接信息）泄露给客户端。
-func pageErrorMessage(err error) string {
+func pageErrorMessage(c *gin.Context, err error) string {
 	if pageErrorStatus(err) == http.StatusInternalServerError {
-		logger.Scene("page").Error(err, "page 接口内部错误")
+		// 结构化日志带 user_id：事后才能回答「谁点了哪个按钮」。
+		logger.Scene(pageErrScene).
+			With("user_id", shell.CurrentUserID(c)).
+			Error(err, "page 接口内部错误")
 		return pageenums.MsgInternalError
 	}
 	return err.Error()
@@ -263,7 +267,7 @@ func (h *Handle) ListSiteSlots(c *gin.Context) {
 	}
 	res, err := h.svc.ListSiteSlots(c.Request.Context(), &req)
 	if err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgPageDetail, res)
@@ -280,7 +284,7 @@ func (h *Handle) BindSiteSlot(c *gin.Context) {
 		return
 	}
 	if err := h.svc.BindSiteSlot(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgSiteSlotBound, nil)
@@ -294,7 +298,7 @@ func (h *Handle) UnbindSiteSlot(c *gin.Context) {
 		return
 	}
 	if err := h.svc.UnbindSiteSlot(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(err))
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
 	response.SuccessWithMessage(c, pageenums.MsgSiteSlotUnbound, nil)

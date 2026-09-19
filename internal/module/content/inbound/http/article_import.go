@@ -26,7 +26,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	pageenums "go_wp/internal/module/page/enums"
-	"go_wp/internal/web/shell"
 )
 
 // 导入页面的固定取值。
@@ -278,7 +277,8 @@ func articleImportFacingError(c *gin.Context, err error) string {
 	if msg := articleFacingText(raw); msg != "" {
 		return msg
 	}
-	return shell.PageInternalText(c)
+	// 未命中：原文只进日志（带 user_id），对外给归口文案。
+	return articleInternalText(c, err)
 }
 
 // articleImportFacingMessages 导入流程可展示的文案白名单（page 模块错误常量的值）。

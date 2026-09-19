@@ -51,6 +51,10 @@ type Service struct {
 	projects projectcontract.ProjectService
 	// sources 来源实体解析器（装配层注入；未注入时来源项退化为记录自身 title/path）。
 	sources navigationcontract.SourceResolver
+	// staleMenu 导航变更后的依赖失效派发端口（装配层注入；见 navigation_stale.go）。
+	// navigation 不 import page / presentation / pipeline，只把「哪个工程哪个位置变了」
+	// 交给注入方；未注入时写操作照常成功但不会让任何产物失效（必需端口，装配期自检拦）。
+	staleMenu navigationcontract.MenuStaleDispatcher
 }
 
 // NewService 构造（model 与工程契约注入，不持有 *gorm.DB）。
@@ -130,6 +134,8 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 	if err = s.m.Create(ctx, e); err != nil {
 		return nil, err
 	}
+	// 失效派发（写已提交之后）：新菜单项会改变该位置产出的 HTML。
+	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
 	return toResp(e), nil
 }
 
@@ -215,6 +221,13 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 	if err = s.m.Save(ctx, e.ProjectID, e.ID, updates); err != nil {
 		return nil, err
 	}
+	// 失效派发放在写成功之后、回读之前：回读失败不该让「已经提交的导航变更」漏掉派发。
+	// 位置可能被一起改（header ↔ footer），新旧两个位置都要失效 —— 旧位置的产物里
+	// 同样烘着这份菜单，只失效新位置会让旧页面上留着已经改掉的菜单项。
+	s.invalidateMenu(ctx, e.ProjectID, kind)
+	if e.Kind != kind {
+		s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	}
 	updated, err := s.m.Get(ctx, e.ProjectID, e.ID)
 	if err != nil {
 		return nil, err
@@ -278,7 +291,12 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 	if err != nil {
 		return err
 	}
-	return s.m.DeleteMany(ctx, e.ProjectID, navDescendantIDs(rows, id))
+	if derr := s.m.DeleteMany(ctx, e.ProjectID, navDescendantIDs(rows, id)); derr != nil {
+		return derr
+	}
+	// 失效派发（删除已提交之后）：被删的整棵子树会从该位置的产物里消失。
+	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	return nil
 }
 
 // navDescendantIDs 返回自身 + 全部子孙 ID（深度优先）。

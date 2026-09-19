@@ -24,6 +24,7 @@ import (
 
 	maildto "go_wp/internal/module/mail/dto"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 )
 
 // maxAutomationNodes 表单最多支持多少个节点行。
@@ -61,11 +62,17 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		"Page":      page,
 		"FilterID":  c.Query("automationId"),
 		"FilterRun": c.Query("runStatus"),
-		"Err":       c.Query("err"),
-		"Ok":        c.Query("ok"),
+		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
+		"Err": mailPageErr(c),
+		"Ok":  mailPageOk(c),
 	}
 	if err != nil {
-		data["Err"] = err.Error()
+		// 取数失败：归口文案 + 空列表。
+		// 空列表不可省 —— 模板随后就用 len(.Automations) / .AutoTotal 渲染列表，
+		// 缺键会让 Jet 在那一行中断（HTTP 仍是 200、正文整块消失）。
+		data["Err"] = mailErrPageText(c, err)
+		data["Automations"] = []any{}
+		data["AutoTotal"] = 0
 		c.HTML(http.StatusOK, "admin/mail_automation.html", shell.Prepare(c, data))
 		return
 	}
@@ -112,13 +119,14 @@ func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 		"Types":    nodeTypeOptions,
 		"Triggers": triggerOptions(""),
 		"Rows":     []gin.H{},
-		"Err":      c.Query("err"),
-		"Ok":       c.Query("ok"),
+		// 同列表页：回执文案过白名单（表单校验文案也在候选里，见 mail_err.go）。
+		"Err": mailPageErr(c),
+		"Ok":  mailPageOk(c),
 	}
 	if id > 0 {
 		item, err := h.mail.GetAutomation(ctx, id)
 		if err != nil {
-			c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(err.Error()))
+			c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 			return
 		}
 		data["A"] = item
@@ -166,6 +174,25 @@ func triggerLabelOf(value string) string {
 		}
 	}
 	return value
+}
+
+// automationStatusLabel 自动化流程状态 → 中文标签。
+//
+// 为什么要这一层：状态回执此前是 `"状态已更新为 " + status`，而 status 直接来自表单字段 ——
+// 提交方可以塞任意字符串，它会经 302 的 Location 与页面提示条原样显示出来。
+// 现在只有三个已知状态能拼进文案，其余（含空串）回落到「草稿」以外的中性说法：
+// 「状态已更新。」（读侧白名单只认这三条标签组合）。
+func automationStatusLabel(status string) string {
+	switch strings.TrimSpace(status) {
+	case "active":
+		return mailStatusLabelActive
+	case "paused":
+		return mailStatusLabelPaused
+	case "draft":
+		return mailStatusLabelDraft
+	default:
+		return "未知状态"
+	}
 }
 
 // triggerOptions 触发方式下拉的选项（带选中态）。
@@ -236,16 +263,20 @@ func automationFormRows(item *maildto.AutomationItem) []gin.H {
 func (h *mailPageHandle) MailAutomationSave(c *gin.Context) {
 	req, err := parseAutomationForm(c)
 	if err != nil {
-		h.redirectAutomationEdit(c, shell.ParseUint(c.PostForm("id")), err.Error())
+		// 表单校验文案由本页组装（「第 3 行：…」），是运营照着改的依据：
+		// 走 mailFormErrText 原样回带（判据见 mail_err.go 里对该函数的说明），不进白名单。
+		h.redirectAutomationEdit(c, shell.ParseUint(c.PostForm("id")), mailFormErrText(err))
 		return
 	}
 	item, err := h.mail.SaveAutomation(c.Request.Context(), req)
 	if err != nil {
-		// 图校验失败（有环 / 悬空边 / 不可达 / 形状不对）走到这里，错误里带定位信息。
-		h.redirectAutomationEdit(c, shell.ParseUint(c.PostForm("id")), err.Error())
+		// 图校验失败（有环 / 悬空边 / 不可达 / 形状不对）走到这里，错误里带定位信息；
+		// 但也可能是数据库错误 —— 所以必须过白名单：命中 → 翻成中文回带，未命中 → 归口文案 + 日志。
+		h.redirectAutomationEdit(c, shell.ParseUint(c.PostForm("id")), mailErrPageText(c, err))
 		return
 	}
-	ok := "已保存（版本 " + strconv.Itoa(item.Version) + "）"
+	// 与 mail_err.go 的 mailCountedNoticeTemplates[0] 同形（数字归一后可判定）。
+	ok := fmt.Sprintf(mailCountedNoticeTemplates[0], item.Version)
 	c.Redirect(http.StatusFound, fmt.Sprintf("/admin/mail/automation/edit?id=%d&ok=%s", item.ID, urlQueryEscape(ok)))
 }
 
@@ -262,32 +293,32 @@ func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	status := strings.TrimSpace(c.PostForm("status"))
 	if err := h.mail.SetAutomationStatus(c.Request.Context(), &maildto.SetAutomationStatusReq{ID: id, Status: status}); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape("状态已更新为 "+status))
+	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape("状态已更新为 "+automationStatusLabel(status)+"。"))
 }
 
 // MailAutomationDelete 删除流程。
 func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 	if err := h.mail.DeleteAutomation(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape("已删除"))
+	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape(mailAutomationDeletedText))
 }
 
 // MailAutomationRunDetail 实例排障详情页（「这个人卡在哪一步、为什么」）。
 func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 	detail, err := h.mail.AutomationRunDetail(c.Request.Context(), shell.ParseUint(c.Query("id")))
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	c.HTML(http.StatusOK, "admin/mail_automation_run.html", shell.Prepare(c, gin.H{
 		"title": "实例排障",
 		"D":     detail,
-		"Err":   c.Query("err"),
+		"Err":   mailPageErr(c),
 	}))
 }
 
@@ -295,10 +326,11 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 func (h *mailPageHandle) MailAutomationTick(c *gin.Context) {
 	n, err := h.mail.EnqueueDueRuns(c.Request.Context(), 500)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	ok := fmt.Sprintf("已补投 %d 个到点实例", n)
+	// 与 mail_err.go 的 mailCountedNoticeTemplates[1] 同形（数字归一后可判定）。
+	ok := fmt.Sprintf(mailCountedNoticeTemplates[1], n)
 	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape(ok))
 }
 
@@ -373,9 +405,13 @@ func parseAutomationForm(c *gin.Context) (*maildto.SaveAutomationReq, error) {
 	if len(nodes) == 0 {
 		return nil, errors.New("至少要填一个节点")
 	}
-	raw, err := json.Marshal(map[string]any{"entry": entry, "nodes": nodes})
-	if err != nil {
-		return nil, err
+	raw, merr := json.Marshal(map[string]any{"entry": entry, "nodes": nodes})
+	if merr != nil {
+		// 理论上不可达（节点只含字符串 / 整数 / 切片），但这一层的返回值会经
+		// mailFormErrText 原样进重定向 —— 所以不把 Go 的原文交出去，换成一句可行动的文案，
+		// 原文只进日志。判据与 mailErrPageText 同源：能进响应的只有受控文案。
+		logger.Scene(mailErrScene).Error(merr, "邮箱自动化表单组装失败")
+		return nil, errors.New("流程定义组装失败，请检查各行的填写内容后重试")
 	}
 	return &maildto.SaveAutomationReq{
 		ID:          shell.ParseUint(c.PostForm("id")),

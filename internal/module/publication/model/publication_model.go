@@ -5,9 +5,11 @@ package pubmodel
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -120,10 +122,78 @@ func (m *Model) GetRoute(ctx context.Context, projectID, path string) (e *RouteE
 	return e, nil
 }
 
-// ListPendingReceipts 读取全部 pending 回执（恢复流程扫描）。
+// ListPendingReceipts 读取全部 pending 回执（启动全量恢复扫描）。
+//
+// 不限量、不加锁：调用方（RecoverPendingPublications）在启动时一次收干净，
+// 多实例并发由每条回执结案语句的 receipt_state = 'pending' 守卫兜住。
+// 定时 / 快通道收敛走 ClaimPendingReceipts（分批 + SKIP LOCKED），不要在这里加 LIMIT ——
+// 两种口径混用会让「启动恢复」在不经意间退化成「只收一批」。
 func (m *Model) ListPendingReceipts(ctx context.Context) (list []ReceiptEntity, err error) {
 	err = m.ReceiptDB(ctx).Where("receipt_state = ?", ReceiptPending).Order("create_time ASC").Find(&list).Error
 	return list, err
+}
+
+// pendingReceiptsQuery 在查询上叠加「未结案 + 归属 + 动作」三个条件（领取与统计共用）。
+//
+// 三个条件都是调用方给的参数：本表叠着多套恢复职责（见 ReceiptsQueryReq 注释），
+// 「哪些行该我管」由调用方决定，model 不写死业务口径。
+func (m *Model) pendingReceiptsQuery(ctx context.Context, sourceType string, actions []string) *gorm.DB {
+	q := m.ReceiptDB(ctx).Where("receipt_state = ?", ReceiptPending)
+	if s := strings.TrimSpace(sourceType); s != "" {
+		q = q.Where("source_type = ?", s)
+	}
+	if len(actions) > 0 {
+		q = q.Where("action IN ?", actions)
+	}
+	return q
+}
+
+// ClaimPendingReceipts 领取一批待收敛的未结案回执（多实例安全）。
+//
+// 四个要点，少一个都会出错：
+//   - FOR UPDATE SKIP LOCKED：同一瞬间只有一个实例能领到这批行，其余实例直接领下一批，
+//     不排队、不重复（与 build_jobs 的取任务同一手法）；
+//   - ORDER BY create_time ASC：先登记的先收敛 —— 残留越久越该先收，否则新残留会插队；
+//   - LIMIT 由调用方给：一批一批来，不制造长事务，也不让一次收敛把启动链拖住；
+//   - 覆盖索引：WHERE receipt_state = 'pending' + ORDER BY create_time 由迁移 267 的
+//     部分索引 idx_publication_receipts_pending 直接服务，空转时是一次极廉价的索引扫描。
+//
+// 为什么锁不跨越重放（重放由调用方在领取事务之外做）：重放会经 page / publication
+// 两个服务各写各的表，其中「回执结案」正是对本表这一行的 UPDATE —— 在外层事务里持锁
+// 重放，那条 UPDATE 会从连接池取另一条连接、等自己持有的锁，直到死锁超时。
+// 领取事务只回答「谁拿到哪一批」；DB 侧的真正互斥由结案语句的
+// WHERE receipt_state = 'pending' 守卫给出（只有一个实例能改到行），
+// 且重放的每一步都是幂等的（upsert / 内容寻址 / 按归属重复激活），
+// 因此并发重叠只会浪费一次重放，不会写出错误状态。
+func (m *Model) ClaimPendingReceipts(ctx context.Context, sourceType string, actions []string, limit int) (list []ReceiptEntity, err error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	list = make([]ReceiptEntity, 0, limit)
+	err = m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		q := tx.Model(&ReceiptEntity{}).Where("receipt_state = ?", ReceiptPending)
+		if s := strings.TrimSpace(sourceType); s != "" {
+			q = q.Where("source_type = ?", s)
+		}
+		if len(actions) > 0 {
+			q = q.Where("action IN ?", actions)
+		}
+		return q.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Order("create_time ASC").Limit(limit).Find(&list).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// CountPendingReceipts 统计仍未结案的回执数（可观测：健康检查 / 后台）。
+//
+// 与领取用同一套过滤条件，两者看到的必须是同一批行 —— 口径一旦分叉，
+// 会出现「健康检查报 0 而实际有残留」这种最难查的一类不一致。
+func (m *Model) CountPendingReceipts(ctx context.Context, sourceType string, actions []string) (n int64, err error) {
+	err = m.pendingReceiptsQuery(ctx, sourceType, actions).Count(&n).Error
+	return n, err
 }
 
 // ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（GC 保护集合）。

@@ -16,8 +16,12 @@ import (
 // inventory_purchase_page_view.go - 采购入库页的视图构造（采购单/历史行、货源与仓库/变体下拉、状态文案）。
 
 // purchaseOrderRows 采购单列表 + 逐行视图（含「还能收多少」与一次性幂等键）。
-func (h *inventoryPurchasePageHandle) purchaseOrderRows(ctx context.Context, projectID, status, sourceID, keyword string,
+//
+// 取数失败回显走 inventoryErrText（业务 key → 当前语言文案，其余 → 归口文案 + 结构化日志），
+// 与写路径同一口径：列表页的失败提示不允许比写路径多泄漏一个字符。
+func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectID, status, sourceID, keyword string,
 	pageErr *string) (out []gin.H) {
+	ctx := c.Request.Context()
 	out = []gin.H{}
 	if projectID == "" {
 		return out
@@ -28,7 +32,7 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(ctx context.Context, pro
 	})
 	if err != nil {
 		if *pageErr == "" {
-			*pageErr = err.Error()
+			*pageErr = inventoryErrText(c, err)
 		}
 		return out
 	}
@@ -63,7 +67,12 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(ctx context.Context, pro
 }
 
 // purchaseHistoryRows 按 SKU（可空 = 全部）取进货历史。
-func (h *inventoryPurchasePageHandle) purchaseHistoryRows(ctx context.Context, projectID, sku string, pageErr *string) (out []gin.H) {
+//
+// 当前页面不再渲染这张表（「按 SKU 看过往入库」已并入库存管理页的流水筛选），
+// 但取数口保留：接口侧与将来的页面入口共用同一投影。错误回显同样走 inventoryErrText——
+// 留着 err.Error() 就等于在同一个文件里留了一条尚未被页面用到的泄漏路径。
+func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projectID, sku string, pageErr *string) (out []gin.H) {
+	ctx := c.Request.Context()
 	out = []gin.H{}
 	if projectID == "" {
 		return out
@@ -73,7 +82,7 @@ func (h *inventoryPurchasePageHandle) purchaseHistoryRows(ctx context.Context, p
 	})
 	if err != nil {
 		if *pageErr == "" {
-			*pageErr = err.Error()
+			*pageErr = inventoryErrText(c, err)
 		}
 		return out
 	}
@@ -136,6 +145,12 @@ func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Conte
 }
 
 // purchaseVariantOptions 变体下拉（带商品名 / SKU / 当前成本价，选行时一眼可见成本口径）。
+//
+// 每一项额外带 **BareSKU（仓库侧裸码）**：采购行的 sku_code 是仓库侧快照，必须按裸码落库
+// （仓库里的 SKU 永远不带仓码前缀，见 docs/14 §1.1 与迁移 262）。裸码取自本模块自己的
+// 库存真源（inventory_stocks.sku_code）—— 它就是「这条货在仓库里叫什么」的权威答案，
+// 商品侧的 v.SKUCode 只是它加了认领仓前缀的投影。没有库存行的变体退回商品侧编码，
+// 由服务端在入库入口按目标仓短码归一（inventory_stock_sku.go）。
 func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context, projectID string) (out []gin.H) {
 	out = []gin.H{}
 	// 商品契约未注入（装配漏接）时下拉为空，页面照常渲染 —— 不因一处装配缺失 500。
@@ -151,15 +166,42 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 		if derr != nil {
 			continue
 		}
+		bare := h.productBareSKUs(ctx, projectID, p.ID)
 		for _, v := range detail.Variants {
 			cost := "未填"
 			if v.CostPrice != nil {
 				cost = strconv.FormatFloat(*v.CostPrice, 'f', 2, 64)
 			}
+			sku := bare[v.ID]
+			if sku == "" {
+				sku = v.SKUCode
+			}
 			out = append(out, gin.H{
-				"VariantID": v.ID, "ProductID": p.ID, "SKUCode": v.SKUCode,
+				"VariantID": v.ID, "ProductID": p.ID, "SKUCode": v.SKUCode, "BareSKU": sku,
 				"Label": detail.Name + " · " + v.SKUCode + "（成本 " + cost + "）",
 			})
+		}
+	}
+	return out
+}
+
+// productBareSKUs 某商品全部变体的**仓库侧裸码**（变体 id → inventory_stocks.sku_code）。
+//
+// 一次取回该商品在各仓的库存行（按商品过滤，与页面既有的「逐商品取详情」同量级），
+// 变体在哪个仓有行都算 —— 裸码是变体的仓库侧身份，与具体哪个仓无关。
+// 读失败不抛给页面（返回空 map，调用方退回商品侧编码）：采购页不该因为一次展示取数
+// 失败而 500，真正的守门在入库入口的归一路径上。
+func (h *inventoryPurchasePageHandle) productBareSKUs(ctx context.Context, projectID, productID string) map[string]string {
+	out := map[string]string{}
+	rows, err := h.inventory.ListStocks(ctx, &inventorydto.ListStockReq{
+		ProjectID: projectID, ProductID: productID, Size: inventoryPurchaseStockProbeSize,
+	})
+	if err != nil {
+		return out
+	}
+	for _, r := range rows {
+		if r.VariantID != "" && r.SKUCode != "" {
+			out[r.VariantID] = r.SKUCode
 		}
 	}
 	return out

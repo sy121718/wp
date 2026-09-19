@@ -27,6 +27,8 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
+
+	"gorm.io/gorm"
 )
 
 // maxAutoRebuildPages 单次依赖失效触发的自动重建上限。
@@ -72,6 +74,10 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 			ids = append(ids, id)
 		}
 	}
+	// 影响面回执（只读，失败不影响主流程）：这里是 PIPE-3 精确扇出的唯一出口，
+	// 「这次内容改动影响了哪几个页面」只有这一刻手里有完整答案 —— 过了这里
+	// 就只剩 pages.stale 这个布尔列，再想回答就得靠反查全部 stale 页面去近似。
+	s.logStaleImpact(ctx, "dependency:"+kind+":"+key, ids)
 	return ids, nil
 }
 
@@ -177,16 +183,48 @@ func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
 		Info("超限的自动重建已交给构建队列")
 }
 
-// persistDependencies 把本次产物的依赖集合写入 page_dependencies。
+// persistDependencies 把本次产物的依赖集合写入 page_dependencies（自足入口：自带事务）。
 //
-// 失败只记日志：依赖记录是失效追踪的投影，不是构建输入，不阻断发布主链。
+// 失败只记日志。**仅用于「补写投影」的旁路**（发布时按 Manifest 补齐、恢复时补归档）：
+// 那些调用点的主链状态已经落定，依赖投影缺失只会让该页在依赖源变更时少一次自动重建，
+// 不值得把已经完成的发布打回去。构建主链（Build）不走这里 —— 它要求依赖记写失败
+// 与暂存指针一起回滚，用 persistDependenciesTx。
+//
 // revision 为 null 的 runtime 依赖同样落库（Manifest 声明），但失效查询会跳过。
 // projectID 必填（DB-009 第四批）：page_dependencies 没有 project_id 列、不受策略约束，
 // 归属由 model 经 page_artifacts → pages 校验；缺它时一次越界的 artifactID 就能改写
 // 别的工程的依赖投影（而它不报任何错）。
 func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, artifactID string, deps []pipeline.Dependency) {
-	if strings.TrimSpace(pageID) == "" || strings.TrimSpace(artifactID) == "" {
+	rows, rerr := dependencyRows(pageID, artifactID, deps)
+	if rerr != nil {
 		return
+	}
+	if err := s.model.ReplaceDependencies(ctx, projectID, artifactID, rows); err != nil {
+		logger.Scene("dependency").With("page_id", pageID).With("artifact_id", artifactID).
+			Error(err, "依赖记录写入失败（已降级，不影响构建结果）")
+	}
+}
+
+// persistDependenciesTx 在**调用方的事务**内写依赖记录，失败原样返回（不降级）。
+//
+// 与 persistDependencies 的分工：构建主链用它，把「依赖记录 + 暂存指针」收在一个
+// 事务里 —— 依赖写失败必须让整次构建失败，否则该页在依赖源变更时不再被精确标
+// stale（站点长期旧内容，且只在日志里留一行）。
+func (s *Service) persistDependenciesTx(ctx context.Context, tx *gorm.DB, projectID, pageID, artifactID string, deps []pipeline.Dependency) error {
+	rows, rerr := dependencyRows(pageID, artifactID, deps)
+	if rerr != nil {
+		return rerr
+	}
+	return s.model.ReplaceDependenciesTx(ctx, tx, projectID, artifactID, rows)
+}
+
+// dependencyRows 把 Manifest 的依赖集合转成依赖行（去重 + 过滤空值）。
+//
+// pageID / artifactID 任一为空时返回错误：主键的第一个与第二个分量缺一就是写不出
+// 有意义的一行，静默跳过等于「构建成功但依赖表空着」。
+func dependencyRows(pageID, artifactID string, deps []pipeline.Dependency) ([]pagemodel.DependencyEntity, error) {
+	if strings.TrimSpace(pageID) == "" || strings.TrimSpace(artifactID) == "" {
+		return nil, nil
 	}
 	now := time.Now().UTC()
 	rows := make([]pagemodel.DependencyEntity, 0, len(deps))
@@ -212,10 +250,7 @@ func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, ar
 		}
 		rows = append(rows, row)
 	}
-	if err := s.model.ReplaceDependencies(ctx, projectID, artifactID, rows); err != nil {
-		logger.Scene("dependency").With("page_id", pageID).With("artifact_id", artifactID).
-			Error(err, "依赖记录写入失败（已降级，不影响构建结果）")
-	}
+	return rows, nil
 }
 
 // persistDependenciesFromManifest 从产物 Manifest 反序列化依赖并落库。
@@ -243,8 +278,10 @@ func (s *Service) persistDependenciesFromManifest(ctx context.Context, projectID
 //  2. direct_content    —— 页面绑定的内容实体（pages.content_target_type/id）；
 //  3. content_collection—— 文档中「声明了集合绑定」的插件组件所使用的集合源。
 //
-// i18n 依赖由 buildDependencies 单独补（已有实现，不在此重复）。
-// 菜单/媒体/主题设置依赖暂未登记（见本轮遗留项：需要构建期解析点回传）。
+// i18n 依赖由 buildDependencies 单独补（已有实现，不在此重复）；
+// 菜单依赖同样在 buildDependencies 里按**编译期消费记录**登记（core.nav 绑定菜单位置），
+// 不在这里静态推导 —— 绑定可能藏在页眉/页脚块里，静态扫本页文档看不到。
+// 媒体/主题设置依赖暂未登记（需要构建期解析点回传）。
 func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEntity) []pipeline.Dependency {
 	if page == nil {
 		return nil

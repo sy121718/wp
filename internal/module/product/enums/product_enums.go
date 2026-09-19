@@ -70,6 +70,66 @@ const (
 	ErrVariationAttributeInvalid = "ErrVariationAttributeInvalid" // 勾选的属性组未参与该商品的变体
 	ErrVariationValueInvalid     = "ErrVariationValueInvalid"     // 勾选的属性值不属于该属性组或已停用
 	ErrVariationSelectionEmpty   = "ErrVariationSelectionEmpty"   // 未勾选任何属性值
+
+	// —— 变体清单：预览—保存模型（docs/14 §8，2026-09-19 用户拍板，迁移 253 配套）——
+	//
+	// 清单里的「生成 / 删除」都不落库，只有「保存」才是权威动作；因此服务端对清单行
+	// 承担与「直接写库」同等的校验责任（不信任前端提交的形状）。
+	//
+	//	ErrVariantSKUEmpty      —— 行上的 SKU 为空（或规范化后为空）且系统生成不出编码；
+	//	ErrVariantOptionsInvalid —— 新增行的规格组合不合法（空组合 / 组不属于商品 / 取值越界）。
+	ErrVariantSKUEmpty       = "ErrVariantSKUEmpty"       // 变体的 SKU 编码不能为空
+	ErrVariantOptionsInvalid = "ErrVariantOptionsInvalid" // 变体的规格组合不合法
+
+	// 保存时被跳过的一行（不整批失败，逐条回带原因；值即 i18n key）。
+	// 与定价工具的 PricingSkip* 同一形态：跳过是「这一行没做」，不是「整批失败」。
+	VariantSkipHasStock       = "VariantSkipHasStock"       // 该变体仍有非零库存
+	VariantSkipReferenced     = "VariantSkipReferenced"     // 该变体被 BOM 清单引用
+	VariantSkipDuplicated     = "VariantSkipDuplicated"     // 清单里重复的规格组合（只保留第一行）
+	VariantSkipVariantMissing = "VariantSkipVariantMissing" // 清单引用的既有变体已不存在（并发删除）
+
+	// 删除守卫的另外两个引用面（docs/14 §8「待补」两项，迁移 259 配套）：
+	//   · 捆绑成员引用 —— products.bundle_items.options[].variantId 指向这个变体；
+	//   · 有过任何库存流水 —— 订单一旦建单就必然产生扣减流水，所以「有流水」等价于
+	//     「被订单用过」（历史单据按 variant_id 追溯，不允许硬删）。
+	// 与非零库存互补：卖出后补货清零的变体库存为 0 却仍被用过，两个守卫都要。
+	VariantSkipBundleReferenced = "VariantSkipBundleReferenced" // 该变体被捆绑成员引用
+	VariantSkipHasMovement      = "VariantSkipHasMovement"      // 该变体有过库存流水（被订单用过）
+
+	// —— 商品主体 SKU 编码（2026-09-19 评审第四轮，迁移 248 配套）——
+	// 两条都是「可行动的」错误：运营要么显式填一个编码，要么把 URL 段改成 ASCII。
+	ErrSkuContainerMissing = "ErrSkuContainerMissing" // 商品 URL 段不含 ASCII 字符，派生不出主体 SKU 编码
+	ErrContainerSkuInvalid = "ErrContainerSkuInvalid" // 显式填的主体 SKU 编码不合法（空串）
+	// ErrBundleSKURequired 捆绑商品的主体 SKU 必填（2026-09-19 用户拍板，迁移 249 配套）。
+	//
+	// 与变体商品不同：捆绑不生成自己的变体，主体 SKU 就是它唯一的对外身份 ——
+	// 旧实现「留空即静默按 <商品段>_B 派生」被否掉，理由是编码要**被运营看见并确认**；
+	// 前台改为预填建议值、允许修改，服务端不再接受空值（静默派生会让运营以为没填也行）。
+	ErrBundleSKURequired = "ErrBundleSKURequired" // 捆绑商品必须填写主体 SKU 编码
+
+	// ErrContainerSKUTaken 主体 SKU 在本工程已被**其它商品**占用（主体编码在工程内唯一）。
+	//
+	// 与 ErrSkuTaken 的分工是**唯一性范围**，不是措辞差异：
+	//   · ErrSkuTaken        —— 变体 SKU 在**同一商品内**重复（UNIQUE (product_id, sku_code)）；
+	//   · ErrContainerSKUTaken —— 主体 SKU 在**整个工程内**重复（迁移 246 的偏唯一索引
+	//     uq_products_project_sku_code）。
+	// 两条路都回带这一条（新建预检与编辑预检各一次），并且**唯一索引冲突的兜底也必须映射到它** ——
+	// 直接把 23505 的原文（索引名 / SQLSTATE）铺到页面上既读不懂，也把库结构泄了出去（CQ-009）。
+	ErrContainerSKUTaken = "ErrContainerSKUTaken"
+)
+
+// 商品列表「库存」列的三态（docs/14 §1.4，2026-09-19 口径）。
+//
+// 一个状态只用一种表达方式：「无限」不写进数量列，「还没入库」也不写成一行 0。
+// 三态是**互斥**的，混合状态（有的仓无限、有的仓跟踪）按「无限」显示 ——
+// 求和等于把无限当 0，那是最糟的一种错（页面显示有货、其实卖不完）。
+const (
+	// StockStateInfinite 任一仓 track_quantity = false（不跟踪 = 无限）→ 显示 ∞。
+	StockStateInfinite = "infinite"
+	// StockStateTracked 全部仓都跟踪 → 显示各仓数量之和（0 就显示 0）。
+	StockStateTracked = "tracked"
+	// StockStateNone 该商品在任何仓都没有库存行 → 显示「未入库」。
+	StockStateNone = "none"
 )
 
 // 商品状态。
@@ -190,6 +250,14 @@ const (
 	// MsgBundleValidateSuccess 整单校验通过。
 	MsgBundleValidateSuccess = "MsgBundleValidateSuccess"
 
+	// ErrProductTypeInvalid 商品类型不合法（仅支持 variant / bundle）。
+	ErrProductTypeInvalid = "ErrProductTypeInvalid"
+	// ErrProductTypeImmutable 商品类型不可在创建后更改（变体 ↔ 捆绑涉及存量数据差异）。
+	ErrProductTypeImmutable = "ErrProductTypeImmutable"
+	// ErrBundlePriceRequired 捆绑容器必须自定价（容器价 > 0）—— 成员价不参与计价，
+	// 容器价为空就是「0 元套餐」，列表与详情会显示 0.00，前台也分不清是免费还是没配。
+	ErrBundlePriceRequired = "ErrBundlePriceRequired"
+
 	// ErrBundleShapeInvalid 捆绑配置形状非法（既不是空值，也不是 JSON 对象）。
 	ErrBundleShapeInvalid = "ErrBundleShapeInvalid"
 	// ErrBundleNotConfigured 该商品没有配置捆绑选项（不是捆绑品）。
@@ -236,4 +304,49 @@ const (
 	ErrBundleQtyAboveStock = "ErrBundleQtyAboveStock"
 	// ErrBundleStockUnavailable 读不到库存可用量（inventory 端口未注入）：整单校验 fail-closed。
 	ErrBundleStockUnavailable = "ErrBundleStockUnavailable"
+)
+
+// 捆绑成员的三种来源（docs/14 §1.2，批次 C）。
+//
+// 成员引用的**永远是变体**（inventory_stocks.variant_id 是 NOT NULL，
+// 所以「从仓库选」一定能定位到变体；刻意不造「无变体的成员」）。
+// 来源只是**溯源与展示**，不是身份：身份恒为 variantId。
+//
+// 三种来源都走同一条出口（ResolveBundleMembers）：去重、单条失败不整批失败、
+// 组合由服务端重算（不信任前端提交的行）。
+const (
+	// BundleSourceProduct 从商品导入：选中一个商品 → 其全部启用变体一次导入为成员。
+	BundleSourceProduct = "BundleSourceProduct"
+	// BundleSourceWarehouse 从仓库选：按仓列出仓库 SKU，选中即定位到该仓那条货的变体。
+	BundleSourceWarehouse = "BundleSourceWarehouse"
+	// BundleSourceAttributes 自选属性值笛卡尔积：服务端按属性组固定顺序重算组合，
+	// 只接受「商品侧确实存在对应变体」的组合。
+	BundleSourceAttributes = "BundleSourceAttributes"
+)
+
+// 捆绑成员来源解析的业务错误与逐条跳过原因（常量值即 i18n key）。
+//
+// 跳过原因是「这一条没加进来」，不是「整批失败」—— 与变体清单的 VariantSkip* 同一口径：
+// 一条失败不能把整批回滚（运营会以为「一条都没加」然后反复重试）。
+const (
+	// ErrBundleSourceInvalid 来源标识不合法（不是 product / warehouse / attributes）。
+	ErrBundleSourceInvalid = "ErrBundleSourceInvalid"
+	// ErrBundleSourceProductRequired 该来源必须先选一个来源商品。
+	ErrBundleSourceProductRequired = "ErrBundleSourceProductRequired"
+	// ErrBundleSourceWarehouseRequired 从仓库选时必须指定仓库并至少给一条仓库 SKU。
+	ErrBundleSourceWarehouseRequired = "ErrBundleSourceWarehouseRequired"
+
+	// BundleMemberNotOnProduct 该属性值组合在商品侧**没有对应变体** ——
+	// 明确拒绝并在结果里逐条列出（提示先到商品上生成该规格的变体），绝不静默丢弃、
+	// 也不造无变体成员（成员的身份恒为 variantId）。
+	BundleMemberNotOnProduct = "BundleMemberNotOnProduct"
+	// BundleMemberSkippedInList 该变体已经在成员清单里（同一变体只出现一次）。
+	BundleMemberSkippedInList = "BundleMemberSkippedInList"
+	// BundleMemberWarehouseSKUMissing 该仓没有这条仓库 SKU（库存行不存在）。
+	BundleMemberWarehouseSKUMissing = "BundleMemberWarehouseSKUMissing"
+	// BundleMemberVariantDisabled 该变体已停用（停用的 SKU 挂进套餐会变成
+	// 前台「选不了又躲不开」的必选项，与 ListBundleSKUs 只列启用变体同一口径）。
+	BundleMemberVariantDisabled = "BundleMemberVariantDisabled"
+	// BundleMemberOptionsExceeded 加到配置的选项数量上限了（其余候选逐条列出，不静默截断）。
+	BundleMemberOptionsExceeded = "BundleMemberOptionsExceeded"
 )

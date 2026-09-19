@@ -44,6 +44,13 @@ type ProductService interface {
 	// （重复勾选不产生重复变体）；不传勾选即「全部参与变体的属性组 × 全部启用值」，
 	// 无表单路径（批量生成 / 导入 / 接口）与表单路径共用同一份填充规则。
 	GenerateVariants(ctx context.Context, req *productdto.GenerateVariantsReq) (res *productdto.GenerateVariantsResp, err error)
+	// PreviewVariantCombinations / SaveVariantList —— 变体清单的「预览—保存」模型
+	//（docs/14 §8，2026-09-19 用户拍板）：抽屉打开时清单的初始行是**库里已有的变体**
+	//（不是重算笛卡尔积）；「生成」只把组合追加进前端清单（不落库）、「删除」只把行
+	// 移出清单；只有 SaveVariantList 才以清单为准落库（新增缺失的、更新改过的 SKU、
+	// 删除清单外的既有变体 —— 有非零库存或被 BOM 引用时逐条跳过并回带原因）。
+	PreviewVariantCombinations(ctx context.Context, req *productdto.PreviewVariantReq) (res *productdto.PreviewVariantResp, err error)
+	SaveVariantList(ctx context.Context, req *productdto.SaveVariantListReq) (res *productdto.SaveVariantListResp, err error)
 
 	// 属性组与属性值（issue #7）：属性组可跨商品复用，商品只存引用。
 	// 变体的笛卡尔积生成在 GenerateVariants（#8）；本组接口只保证属性数据
@@ -128,4 +135,13 @@ type ProductService interface {
 	SetBundleConfig(ctx context.Context, req *productdto.SetBundleConfigReq) (res *productdto.BundleConfigResp, err error)
 	ValidateBundleSelection(ctx context.Context, req *productdto.ValidateBundleSelectionReq) (res *productdto.BundleSelectionResp, err error)
 	ListBundleSKUs(ctx context.Context, req *productdto.ListBundleSKUReq) (list []*productdto.BundleSKUResp, err error)
+	// ResolveBundleMembers 捆绑成员的三种来源（docs/14 §1.2，批次 C）：从商品导入 /
+	// 从仓库选 / 自选属性值笛卡尔积。与变体清单的「预览—保存」同一形态 ——
+	// 本方法**不落库**，只解析出候选成员交回前端清单；写入的唯一入口仍是 SetBundleConfig。
+	//
+	// 三条共用口径：同一变体只出现一次（去重）；单条失败不整批失败（成功 N / 跳过 M +
+	// 逐条原因）；服务端不信任前端（组合由服务端按属性组固定顺序重算、仓库 SKU 回仓复核）。
+	// 属性组合在商品侧没有对应变体时**明确拒绝并逐条列出**（BundleMemberNotOnProduct），
+	// 绝不静默丢弃、也不造无变体成员（成员身份恒为 variantId）。
+	ResolveBundleMembers(ctx context.Context, req *productdto.ResolveBundleMembersReq) (res *productdto.ResolveBundleMembersResp, err error)
 }

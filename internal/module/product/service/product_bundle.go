@@ -19,16 +19,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/rls"
 )
 
 // bundleOrigin 捆绑配置变更的记录来源（issue #19 的 origin 口径）。
@@ -139,12 +144,19 @@ func (s *Service) SetBundleConfig(ctx context.Context, req *productdto.SetBundle
 	}
 	e.BundleItems = raw
 	e.UpdatedAt = time.Now().UTC()
-	if uerr := s.m.Update(ctx, e); uerr != nil {
+	// 捆绑配置与它的主数据变更记录**同事务**（AGENTS.md「写操作的事务与回滚」）。
+	// 留痕不再是「写完之后另起一次写」：分开提交时配置改了而时间线上没有这一笔，
+	// 事后没人能说清这份配置是谁在什么时候改成这样的。
+	if uerr := s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if xerr := s.m.UpdateTx(ctx, tx, e); xerr != nil {
+			return xerr
+		}
+		return s.recordChangesTx(ctx, tx, bundleChangeInput(e, req.OperatorID, before, cfg))
+	}); uerr != nil {
 		return nil, uerr
-	}
-	// 留痕在写操作之后（跨模块写不进同一事务）：配置变了就在商品的时间线上留一行。
-	if rerr := s.recordChanges(ctx, bundleChangeInput(e, req.OperatorID, before, cfg)); rerr != nil {
-		return nil, rerr
 	}
 	return s.bundleConfigResp(ctx, e, cfg)
 }
@@ -230,7 +242,19 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 		}
 		seen[vid] = true
 
-		item := productdto.BundleOption{VariantID: vid, Required: o.Required}
+		// 来源快照随行保存（docs/14 §1.2）：只作溯源与展示，**不是身份** ——
+		// 因此这里只做形状归一（未知来源拒绝、非仓库来源清空仓库字段），
+		// 不回查「那条仓库 SKU 现在还在不在」：仓库侧改码不该让成员配置保存不了
+		//（成员的身份是 variantId，已经在上面校验过存在性与工程归属）。
+		src, serr := normalizeBundleMemberSource(o)
+		if serr != nil {
+			return out, serr
+		}
+		item := productdto.BundleOption{
+			VariantID: vid, Required: o.Required,
+			SourceKind: src.Kind, WarehouseID: src.WarehouseID,
+			WarehouseSKU: src.WarehouseSKU, ExternalSKU: src.ExternalSKU,
+		}
 		if o.DefaultQty < 0 || o.MinQty < 0 || o.MaxQty < 0 ||
 			o.DefaultQty > productdto.BundleMaxQtyLimit || o.MaxQty > productdto.BundleMaxQtyLimit ||
 			o.MinQty > productdto.BundleMaxQtyLimit {
@@ -320,6 +344,30 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 	return out, nil
 }
 
+// normalizeBundleMemberSource 归一成员来源快照（服务端不信任前端提交的来源字段）。
+//
+// 三值白名单：unknown → ErrBundleSourceInvalid（不静默降级成「手工指定」——
+// 那会让一个拼错的来源看起来像一条正常的历史配置）。
+// 非仓库来源的仓库字段一律清空：来源快照要能自解释，不能留半截字段让人误读。
+func normalizeBundleMemberSource(o productdto.BundleOption) (src productdto.BundleMemberSource, err error) {
+	kind := strings.TrimSpace(o.SourceKind)
+	switch kind {
+	case "":
+		return src, nil
+	case productenums.BundleSourceProduct, productenums.BundleSourceWarehouse, productenums.BundleSourceAttributes:
+	default:
+		return src, errors.New(productenums.ErrBundleSourceInvalid)
+	}
+	src.Kind = kind
+	if kind != productenums.BundleSourceWarehouse {
+		return src, nil
+	}
+	src.WarehouseID = strings.TrimSpace(o.WarehouseID)
+	src.WarehouseSKU = strings.TrimSpace(o.WarehouseSKU)
+	src.ExternalSKU = strings.TrimSpace(o.ExternalSKU)
+	return src, nil
+}
+
 // bundleConfigResp 组装读模型：配置 + 每项 SKU 快照 + 真源可用量 + 套餐主体价。
 func (s *Service) bundleConfigResp(ctx context.Context, e *productmodel.ProductEntity, cfg productdto.BundleConfig) (res *productdto.BundleConfigResp, err error) {
 	res = &productdto.BundleConfigResp{
@@ -405,6 +453,284 @@ func (s *Service) bundleBasePrice(ctx context.Context, e *productmodel.ProductEn
 		}
 	}
 	return best
+}
+
+// —— 捆绑成员的三种来源（docs/14 §1.2，批次 C）——
+//
+// 与变体清单的「预览—保存」模型同一形态（docs/14 §8）：本段**一个字节都不写库**，
+// 只把候选行交回前端清单；写入的唯一入口仍是 SetBundleConfig。
+//
+// 三条共用的口径（三者必须一致，否则同一个成员会因来路不同而行为不同）：
+//
+//	· **去重**：同一变体在成员清单里只出现一次（库里的既有成员 + 本批已解析的 + 前端清单里的）；
+//	· **单条失败不整批失败**：某一条解析不出来（组合在商品侧没有变体 / 该仓没有这条 SKU /
+//	  变体已停用 / 超上限）只跳过它，逐条回带原因（沿用本模块的「成功 N / 跳过 M」口径）；
+//	· **服务端不信任前端**：组合由服务端按属性组固定顺序重算，仓库 SKU 一律回该仓复核，
+//	  前端提交的 variantId 只在「去重」这一件事上被当输入。
+//
+// 成员的身份恒为 variantId（uuid）：来源快照（warehouseId / warehouseSku / externalSku）
+// 只作溯源与展示 —— 仓库换码、商品换仓都不影响成员引用。
+
+// BundleMemberResolveLimit 单次解析的候选上限（仓库来源一次提交的仓库 SKU 条数上限）。
+//
+// 商品来源与属性来源的上限另有出处：前者受变体总数约束，后者复用 MaxVariantCombinations；
+// 这一条管的是「前端一次能交上来多少条仓库 SKU」—— 没有上限就等于把循环次数交给请求方。
+const BundleMemberResolveLimit = 200
+
+// ResolveBundleMembers 解析一批候选成员（不落库；写入只发生在 SetBundleConfig）。
+func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.ResolveBundleMembersReq) (res *productdto.ResolveBundleMembersResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProductID) == "" {
+		return nil, errors.New(productenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	container, cerr := s.m.Get(ctx, strings.TrimSpace(req.ProductID), projectID)
+	if cerr != nil {
+		return nil, mapNotFound(cerr)
+	}
+	source := strings.TrimSpace(req.Source)
+	switch source {
+	case productenums.BundleSourceProduct, productenums.BundleSourceWarehouse, productenums.BundleSourceAttributes:
+	default:
+		return nil, errors.New(productenums.ErrBundleSourceInvalid)
+	}
+	// 上限取该容器自己的配置（运营设的 maxOptions）：解析时就把超出的候选逐条列出来，
+	// 而不是先追加一屏、等保存时再整批报「选项数超过上限」。
+	maxOptions := decodeBundleConfig(container.BundleItems).MaxOptions
+	if maxOptions <= 0 || maxOptions > productdto.BundleMaxOptionsLimit {
+		maxOptions = productdto.BundleDefaultMaxOptions
+	}
+	res = &productdto.ResolveBundleMembersResp{
+		ProductID: container.ID, Source: source,
+		Members: []*productdto.BundleMemberDraft{}, Skipped: []productdto.BundleMemberSkip{},
+	}
+	// 去重集合：前端清单里已有的 + 本批已解析出来的（服务端自己维护，前端传的形状不作数）。
+	seen := make(map[string]bool, len(req.ExistingVariantIDs)+maxOptions)
+	for _, id := range req.ExistingVariantIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			seen[id] = true
+		}
+	}
+	// add 收编一条候选：去重 / 上限 / 停用都在这里判，跳过的逐条记原因（不静默）。
+	// v 为 nil 表示「这一组规格在商品侧没有对应变体」（属性来源的唯一形态）。
+	add := func(v *productmodel.VariantEntity, src productdto.BundleMemberSource, optRaw json.RawMessage) {
+		res.Total++
+		if v == nil {
+			res.Skipped = append(res.Skipped, productdto.BundleMemberSkip{
+				Reason: productenums.BundleMemberNotOnProduct, OptionValues: optRaw,
+			})
+			return
+		}
+		switch {
+		case seen[v.ID]:
+			res.Skipped = append(res.Skipped, bundleMemberSkipOf(v, optRaw, productenums.BundleMemberSkippedInList))
+			return
+		case len(res.Members) >= maxOptions:
+			res.Skipped = append(res.Skipped, bundleMemberSkipOf(v, optRaw, productenums.BundleMemberOptionsExceeded))
+			return
+		case !v.Enabled:
+			res.Skipped = append(res.Skipped, bundleMemberSkipOf(v, optRaw, productenums.BundleMemberVariantDisabled))
+			return
+		}
+		seen[v.ID] = true
+		res.Members = append(res.Members, &productdto.BundleMemberDraft{
+			VariantID: v.ID, SKUCode: v.SKUCode, ProductID: v.ProductID, Enabled: v.Enabled,
+			OptionValues: orJSON(v.OptionValues, "{}"),
+			Source:       src,
+		})
+	}
+
+	switch source {
+	case productenums.BundleSourceProduct:
+		// ① 从商品导入：选中一个商品 → 其全部（启用）变体一次导入为成员。
+		src, serr := s.bundleSourceProduct(ctx, projectID, container.ID, req.SourceProductID)
+		if serr != nil {
+			return nil, serr
+		}
+		variants, verr := s.m.ListVariants(ctx, src.ID)
+		if verr != nil {
+			return nil, verr
+		}
+		for _, v := range variants {
+			if v == nil {
+				continue
+			}
+			add(v, productdto.BundleMemberSource{Kind: source}, orJSON(v.OptionValues, "{}"))
+		}
+
+	case productenums.BundleSourceWarehouse:
+		// ② 从仓库选：按 (仓库, 仓库 SKU) 定位那条库存行 → 它的 variant_id 就是成员身份。
+		// inventory_stocks.variant_id 是 NOT NULL，所以这条来路一定能定位到变体 ——
+		// 本实现刻意不造「无变体的成员」。
+		if s.invSvc == nil {
+			return nil, errors.New(productenums.ErrBundleStockUnavailable)
+		}
+		warehouseID := strings.TrimSpace(req.WarehouseID)
+		skus := normalizeBundleWarehouseSKUs(req.WarehouseSKUs)
+		if warehouseID == "" || len(skus) == 0 {
+			return nil, errors.New(productenums.ErrBundleSourceWarehouseRequired)
+		}
+		if len(skus) > BundleMemberResolveLimit {
+			skus = skus[:BundleMemberResolveLimit]
+		}
+		for _, code := range skus {
+			picked, perr := s.invSvc.GetWarehouseSKU(ctx, &inventorydto.GetWarehouseSKUReq{
+				ProjectID: projectID, WarehouseID: warehouseID, SKUCode: code,
+			})
+			if perr != nil {
+				// 只有「这个仓里没有这条货」算逐条跳过；其余错误（仓库不存在等）原样抛出，
+				// 不能把它们一起吞成「这条 SKU 没有」。
+				if strings.TrimSpace(perr.Error()) != inventoryenums.ErrWarehouseSKUNotFound {
+					return nil, perr
+				}
+				res.Total++
+				res.Skipped = append(res.Skipped, productdto.BundleMemberSkip{
+					WarehouseID: warehouseID, WarehouseSKU: code,
+					Reason: productenums.BundleMemberWarehouseSKUMissing,
+				})
+				continue
+			}
+			src := productdto.BundleMemberSource{
+				Kind: source, WarehouseID: warehouseID,
+				WarehouseSKU: picked.SKUCode, ExternalSKU: picked.ExternalSKU,
+			}
+			v, gerr := s.m.GetVariant(ctx, picked.VariantID)
+			if gerr != nil {
+				res.Total++
+				res.Skipped = append(res.Skipped, productdto.BundleMemberSkip{
+					WarehouseID: warehouseID, WarehouseSKU: code,
+					Reason: productenums.BundleMemberWarehouseSKUMissing,
+				})
+				continue
+			}
+			// 自引用：那条货就是我们自己这个捆绑容器的变体（同 SetBundleConfig 的口径）。
+			if v.ProductID == container.ID {
+				res.Total++
+				res.Skipped = append(res.Skipped, bundleMemberSkipOf(v, nil, productenums.ErrBundleSelfReference))
+				continue
+			}
+			add(v, src, orJSON(v.OptionValues, "{}"))
+		}
+
+	case productenums.BundleSourceAttributes:
+		// ③ 自选属性值笛卡尔积：勾选进服务端，组合由服务端按**属性组固定顺序**重算，
+		// 且只接受「商品侧确实存在对应变体」的组合 —— 不存在的逐条拒绝并说明，
+		// 绝不静默丢弃、也不造无变体成员。
+		src, serr := s.bundleSourceProduct(ctx, projectID, container.ID, req.SourceProductID)
+		if serr != nil {
+			return nil, serr
+		}
+		attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(src.AttributeIDs))
+		if aerr != nil {
+			return nil, aerr
+		}
+		// 与变体生成 / 预览共用同一套维度归一与上限保护（同一个组合在两边必须是同一个结论）。
+		dims, derr := buildVariationDimensions(src, attrs, req.Selections)
+		if derr != nil {
+			return nil, derr
+		}
+		total := combinationCount(dims)
+		if total > MaxVariantCombinations {
+			return nil, fmt.Errorf("%s：%d 个组合超过上限 %d（请减少勾选的属性值或属性维度）",
+				productenums.ErrVariationCountLimit, total, MaxVariantCombinations)
+		}
+		variants, verr := s.m.ListVariants(ctx, src.ID)
+		if verr != nil {
+			return nil, verr
+		}
+		byKey := make(map[string]*productmodel.VariantEntity, len(variants))
+		for _, v := range variants {
+			byKey[optionKey(decodeOptionPairs(v.OptionValues))] = v
+		}
+		for _, pairs := range expandCombinations(dims) {
+			raw := encodeOptionPairs(pairs)
+			add(byKey[optionKey(pairs)], productdto.BundleMemberSource{Kind: source}, raw)
+		}
+	}
+
+	if err = s.fillBundleMemberProductNames(ctx, projectID, res.Members); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// bundleSourceProduct 解析来源商品（product / attributes 两种来源共用）。
+//
+// 自引用在请求层面就拒（来源商品就是捆绑容器自己）—— 与 SetBundleConfig 的自引用判定同一口径，
+// 只是这里能更早地给出结论，不必等保存。
+func (s *Service) bundleSourceProduct(ctx context.Context, projectID, containerID, sourceProductID string) (p *productmodel.ProductEntity, err error) {
+	id := strings.TrimSpace(sourceProductID)
+	if id == "" {
+		return nil, errors.New(productenums.ErrBundleSourceProductRequired)
+	}
+	if id == containerID {
+		return nil, errors.New(productenums.ErrBundleSelfReference)
+	}
+	p, err = s.m.Get(ctx, id, projectID)
+	if err != nil {
+		return nil, mapNotFound(err)
+	}
+	return p, nil
+}
+
+// normalizeBundleWarehouseSKUs 归一仓库 SKU 编码：去空白、去重、保持提交顺序。
+//
+// 空串一律丢掉（表单里的空选项不是一条货）；重复的只在解析层留一条，
+// 去重后的「重复」由上层按「已在清单里」逐条回带，不在这里静默吞掉。
+func normalizeBundleWarehouseSKUs(codes []string) (out []string) {
+	out = make([]string, 0, len(codes))
+	seen := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" || seen[code] {
+			continue
+		}
+		seen[code] = true
+		out = append(out, code)
+	}
+	return out
+}
+
+// bundleMemberSkipOf 组装「跳过一条成员」的回带信息（原因取 enums 常量 = i18n key）。
+func bundleMemberSkipOf(v *productmodel.VariantEntity, optRaw json.RawMessage, reason string) productdto.BundleMemberSkip {
+	out := productdto.BundleMemberSkip{Reason: reason, OptionValues: optRaw}
+	if v != nil {
+		out.VariantID, out.SKUCode = v.ID, v.SKUCode
+	}
+	return out
+}
+
+// fillBundleMemberProductNames 回填候选成员的商品名（一次批量取，避免逐行查）。
+func (s *Service) fillBundleMemberProductNames(ctx context.Context, projectID string, drafts []*productdto.BundleMemberDraft) (err error) {
+	if len(drafts) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(drafts))
+	seen := make(map[string]bool, len(drafts))
+	for _, d := range drafts {
+		if d == nil || d.ProductID == "" || seen[d.ProductID] {
+			continue
+		}
+		seen[d.ProductID] = true
+		ids = append(ids, d.ProductID)
+	}
+	owners, oerr := s.m.ListProductsByIDs(ctx, ids, projectID)
+	if oerr != nil {
+		return oerr
+	}
+	nameOf := make(map[string]string, len(owners))
+	for _, p := range owners {
+		nameOf[p.ID] = p.Name
+	}
+	for _, d := range drafts {
+		if d == nil {
+			continue
+		}
+		d.ProductName = nameOf[d.ProductID]
+	}
+	return nil
 }
 
 // bundleChangeInput 组装捆绑配置的变更记录输入（issue #19：origin=bundle）。

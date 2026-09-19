@@ -27,6 +27,8 @@ import (
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
+
+	"go_wp/pkg/rls"
 )
 
 const (
@@ -90,12 +92,20 @@ func (s *Service) CreateSource(ctx context.Context, req *inventorydto.CreateSour
 		Metadata:  orJSON(req.Metadata, "{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.CreateSource(ctx, e); err != nil {
-		return nil, err
-	}
+	// 主实体与变更记录**同一个事务**：分开提交时「有货源没留痕」或「有留痕没货源」都可能发生，
+	// 而 master_data_changes 是 append-only（迁移 111 的触发器直接 RAISE），写错了改不回来。
+	// 事务边界在 service，作用域设在 tx 上（rls.ScopeTx）。
 	// issue #19：新增货源 → 变更记录（编码 / 名称 / 类型 / 关联方 / 结算价 / 状态 / 对接配置）。
-	if err = s.recordChanges(ctx, sourceChangeInput(e, masterdataenums.ActionCreate,
-		req.OperatorID, nil, sourceChangeSnapshot(e))); err != nil {
+	change := sourceChangeInput(e, masterdataenums.ActionCreate, req.OperatorID, nil, sourceChangeSnapshot(e))
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if cerr := s.m.CreateSourceTx(ctx, tx, e); cerr != nil {
+			return cerr
+		}
+		return s.recordChangesTx(ctx, tx, change)
+	}); err != nil {
 		return nil, err
 	}
 	return toSourceResp(e), nil
@@ -110,91 +120,116 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.m.GetSource(ctx, req.ID, projectID)
-	if err != nil {
-		return nil, mapSourceNotFound(err)
-	}
-	// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
-	before := sourceChangeSnapshot(e)
+	// 编码唯一性预检放在事务外：SourceCodeExists 内部走 rls.InProjectScope（自带事务、另取连接），
+	// 塞进已开的写事务里既看不到未提交数据、又可能与自己的行锁互相等待（见 pkg/rls.ScopeTx 说明）。
+	// 它只是「让错误早一点、友好一点」的预检，真正的守卫是 inventory_sources 上的唯一约束；
+	// 并发撞车由约束拒绝，错误一样会打回给人，不存在静默放行。
+	var newCode string
 	if req.Code != nil {
 		code, cerr := normalizeSourceCode(*req.Code)
 		if cerr != nil {
 			return nil, cerr
 		}
-		if taken, xerr := s.m.SourceCodeExists(ctx, e.ProjectID, code, e.ID); xerr != nil {
+		if taken, xerr := s.m.SourceCodeExists(ctx, projectID, code, req.ID); xerr != nil {
 			return nil, xerr
 		} else if taken {
 			return nil, errors.New(inventoryenums.ErrSourceCodeTaken)
 		}
-		e.Code = code
+		newCode = code
 	}
-	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return nil, errors.New(inventoryenums.ErrSourceNameRequired)
+
+	var updated *inventorymodel.SourceEntity
+	// 读-改-写必须同一个事务 + 行锁：并发的两次保存会各自按**旧快照**算字段级 diff，
+	// 于是留痕与实际落库的字段对不上；而 master_data_changes 是 append-only（迁移 111 的
+	// 触发器直接 RAISE），写错了连改都改不回来。事务边界在 service，作用域设在 tx 上。
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
 		}
-		e.Name = name
-	}
-	// 类型可能变：先算出最终类型，再据此校验关联方与结算价（顺序不能反）。
-	sourceType := e.Type
-	if req.Type != nil {
-		if sourceType, err = normalizeSourceType(*req.Type); err != nil {
-			return nil, err
+		e, lerr := s.m.LockSourceTx(ctx, tx, req.ID, projectID)
+		if lerr != nil {
+			return mapSourceNotFound(lerr)
 		}
-	}
-	related, err := resolveSourceRelatedParty(sourceType, e.RelatedParty, req.RelatedParty)
+		// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
+		before := sourceChangeSnapshot(e)
+		if req.Code != nil {
+			e.Code = newCode
+		}
+		if req.Name != nil {
+			name := strings.TrimSpace(*req.Name)
+			if name == "" {
+				return errors.New(inventoryenums.ErrSourceNameRequired)
+			}
+			e.Name = name
+		}
+		// 类型可能变：先算出最终类型，再据此校验关联方与结算价（顺序不能反）。
+		sourceType := e.Type
+		if req.Type != nil {
+			st, terr := normalizeSourceType(*req.Type)
+			if terr != nil {
+				return terr
+			}
+			sourceType = st
+		}
+		related, rerr := resolveSourceRelatedParty(sourceType, e.RelatedParty, req.RelatedParty)
+		if rerr != nil {
+			return rerr
+		}
+		// 结算价：显式清空优先；显式赋值必须与最终类型相容；改类型为外部时必须显式清空。
+		if req.ClearSettlePrice {
+			e.SettlePrice = nil
+		}
+		if req.SettlePrice != nil {
+			if sourceType != inventoryenums.SourceTypeInternal {
+				return errors.New(inventoryenums.ErrSourceSettleNotInternal)
+			}
+			if *req.SettlePrice < 0 {
+				return errors.New(inventoryenums.ErrSourceSettleInvalid)
+			}
+			e.SettlePrice = req.SettlePrice
+		}
+		if sourceType != inventoryenums.SourceTypeInternal && e.SettlePrice != nil {
+			return errors.New(inventoryenums.ErrSourceSettleNotInternal)
+		}
+		if req.Status != nil {
+			status, serr := normalizeSourceStatus(*req.Status)
+			if serr != nil {
+				return serr
+			}
+			e.Status = status
+		}
+		if req.Config != nil {
+			config, cerr := normalizeSourceConfig(req.Config)
+			if cerr != nil {
+				return cerr
+			}
+			e.Config = config
+		}
+		if req.Sort != nil {
+			e.Sort = *req.Sort
+		}
+		if req.Metadata != nil {
+			e.Metadata = orJSON(req.Metadata, "{}")
+		}
+		e.Type = sourceType
+		e.RelatedParty = related
+		e.UpdatedAt = time.Now().UTC()
+		if uerr := s.m.UpdateSourceTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		// issue #19：字段级变更留痕（类型 / 关联方 / 结算价 / 状态 / 对接配置 / 编码 / 名称）。
+		// 只写真正变化的字段 —— 打开表单什么都没改就保存，审计里不留痕迹。
+		if cerr := s.recordChangesTx(ctx, tx, sourceChangeInput(e, masterdataenums.ActionUpdate,
+			req.OperatorID, before, sourceChangeSnapshot(e))); cerr != nil {
+			return cerr
+		}
+		updated = e
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	// 结算价：显式清空优先；显式赋值必须与最终类型相容；改类型为外部时必须显式清空。
-	if req.ClearSettlePrice {
-		e.SettlePrice = nil
-	}
-	if req.SettlePrice != nil {
-		if sourceType != inventoryenums.SourceTypeInternal {
-			return nil, errors.New(inventoryenums.ErrSourceSettleNotInternal)
-		}
-		if *req.SettlePrice < 0 {
-			return nil, errors.New(inventoryenums.ErrSourceSettleInvalid)
-		}
-		e.SettlePrice = req.SettlePrice
-	}
-	if sourceType != inventoryenums.SourceTypeInternal && e.SettlePrice != nil {
-		return nil, errors.New(inventoryenums.ErrSourceSettleNotInternal)
-	}
-	if req.Status != nil {
-		status, serr := normalizeSourceStatus(*req.Status)
-		if serr != nil {
-			return nil, serr
-		}
-		e.Status = status
-	}
-	if req.Config != nil {
-		config, cerr := normalizeSourceConfig(req.Config)
-		if cerr != nil {
-			return nil, cerr
-		}
-		e.Config = config
-	}
-	if req.Sort != nil {
-		e.Sort = *req.Sort
-	}
-	if req.Metadata != nil {
-		e.Metadata = orJSON(req.Metadata, "{}")
-	}
-	e.Type = sourceType
-	e.RelatedParty = related
-	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateSource(ctx, e); err != nil {
-		return nil, err
-	}
-	// issue #19：字段级变更留痕（类型 / 关联方 / 结算价 / 状态 / 对接配置 / 编码 / 名称）。
-	// 只写真正变化的字段 —— 打开表单什么都没改就保存，审计里不留痕迹。
-	if err = s.recordChanges(ctx, sourceChangeInput(e, masterdataenums.ActionUpdate,
-		req.OperatorID, before, sourceChangeSnapshot(e))); err != nil {
-		return nil, err
-	}
-	return toSourceResp(e), nil
+	return toSourceResp(updated), nil
 }
 
 // GetSource 货源详情。
@@ -222,16 +257,26 @@ func (s *Service) DeleteSource(ctx context.Context, req *inventorydto.DeleteSour
 	if err != nil {
 		return err
 	}
-	e, err := s.m.GetSource(ctx, req.ID, projectID)
-	if err != nil {
-		return mapSourceNotFound(err)
-	}
-	// issue #19：删除前取快照（删完之后连名称都查不到了），删成功后落 delete 记录。
-	before := sourceChangeSnapshot(e)
-	if err = s.m.DeleteSource(ctx, e.ID); err != nil {
-		return err
-	}
-	return s.recordChanges(ctx, sourceChangeInput(e, masterdataenums.ActionDelete, req.OperatorID, before, nil))
+	// 不再在事务外预读：读-改-写要在事务里带行锁读（LockSourceTx），
+	// 事务外那一读既拿不到锁、又会让「记的快照」与「真正删掉的那一版」出现窗口。
+	// 删除 + 留痕同事务：删成功而留痕失败会永久缺一条审计（append-only，补不回来）。
+	// 快照在事务内的**行锁读**之后取，保证记的就是真正被删的那一版。
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		locked, lerr := s.m.LockSourceTx(ctx, tx, req.ID, projectID)
+		if lerr != nil {
+			return mapSourceNotFound(lerr)
+		}
+		// issue #19：删除前取快照（删完之后连名称都查不到了），删成功后落 delete 记录。
+		before := sourceChangeSnapshot(locked)
+		if derr := s.m.DeleteSourceTx(ctx, tx, locked.ID); derr != nil {
+			return derr
+		}
+		return s.recordChangesTx(ctx, tx, sourceChangeInput(locked, masterdataenums.ActionDelete,
+			req.OperatorID, before, nil))
+	})
 }
 
 // ListSources 货源列表（验收 4：类型 / 关联方 / 状态 / 关键词都是可组合的筛选维度）。

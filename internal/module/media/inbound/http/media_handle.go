@@ -14,6 +14,7 @@ import (
 	mediacontract "go_wp/internal/module/media/contract"
 	mediadto "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -150,7 +151,7 @@ func (h *Handle) CategoryTree(c *gin.Context) {
 func (h *Handle) CategoryCreate(c *gin.Context) {
 	var req mediadto.CategoryCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	res, err := h.svc.CreateCategory(c.Request.Context(), &req)
@@ -165,7 +166,7 @@ func (h *Handle) CategoryCreate(c *gin.Context) {
 func (h *Handle) CategoryUpdate(c *gin.Context) {
 	var req mediadto.CategoryUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	if err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
@@ -179,7 +180,7 @@ func (h *Handle) CategoryUpdate(c *gin.Context) {
 func (h *Handle) CategoryDelete(c *gin.Context) {
 	var req mediadto.CategoryDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
@@ -193,7 +194,7 @@ func (h *Handle) CategoryDelete(c *gin.Context) {
 func (h *Handle) UpdateAttachment(c *gin.Context) {
 	var req mediadto.AttachmentUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	if err := h.svc.UpdateAttachment(c.Request.Context(), &req); err != nil {
@@ -208,7 +209,7 @@ func (h *Handle) UpdateAttachment(c *gin.Context) {
 func (h *Handle) GenerateVariants(c *gin.Context) {
 	var req mediadto.VariantsGenerateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	variants, err := h.svc.GenerateVariants(c.Request.Context(), req.ID)
@@ -347,4 +348,23 @@ func intMin(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// paramBindFail 请求绑定失败的统一出口（400 + 受控文案）。
+//
+// 不把绑定错误原文拼进响应：gin 的绑定错误会带上 Go 结构体与字段名
+// （如 `json: cannot unmarshal string into Go struct field CreateReq.title of type string`），
+// 那是实现细节 —— 对外只说「参数不合法」，原文进日志供排障。
+//
+// 原先这里是 `response.ParamError(c, err.Error())`。它一直待在门禁盲区里：形态 ① 只认
+// `*.ErrorWithMessage(` 与 `c.String(`，而 `ParamError` 是同一个包里的同族出口却不在判据里。
+// 2026-09 第三批把 ParamError 纳入判据后，本模块这几处立刻被扫出来 —— 判据是**形状**，
+// 不是字面量；同族出口漏一个就等于那一族都没管住。
+func paramBindFail(c *gin.Context, err error) {
+	if err != nil {
+		// 绑定失败是客户端输入问题，按 warn 记（不污染错误日志）。
+		logger.Scene("media").With("path", c.Request.URL.Path).
+			With("detail", err.Error()).Warn("media 接口请求绑定失败")
+	}
+	response.ParamError(c)
 }

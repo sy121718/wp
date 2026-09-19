@@ -97,6 +97,15 @@ func (m *FileCategoryModel) catDB(ctx context.Context) *gorm.DB {
 
 // --- AttachmentModel 方法 ---
 
+// Transaction 起事务并把 *gorm.DB 句柄交给调用方编排（AGENTS.md「写操作的事务与回滚」）。
+//
+// 定位：model 不自持事务边界。media 的写路径横跨「附件行 + 变体行」两张表，
+// 单一真源要求这两处同事务，边界由 service 决定（见 media_crud.go 的 Upload 注释）。
+// 事务内一律走本文件的 …Tx 方法，不混用自带连接的非 Tx 形态。
+func (m *AttachmentModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
 // Create 新增一条附件记录。
 func (m *AttachmentModel) Create(ctx context.Context, e *AttachmentEntity) error {
 	return m.attrDB(ctx).Create(e).Error
@@ -262,6 +271,35 @@ func (m *FileCategoryModel) DeleteCategory(ctx context.Context, id uint64) error
 // AttachmentUpdate 更新附件字段（文件名 / 分类 / ExtraInfo JSON）。
 func (m *AttachmentModel) AttachmentUpdate(ctx context.Context, id uint64, updates map[string]any) error {
 	return m.attrDB(ctx).Where("id = ?", id).Updates(updates).Error
+}
+
+// AttachmentUpdateTx 在调用方给的事务句柄上回填附件字段。
+//
+// 上传的「落盘后回填」必须与同一批的变体登记同事务（Upload 的两阶段登记第二段）：
+// 只在事务内写变体、事务外写元数据，一旦进程在这两步之间退出，就会留下
+// 「文件已落盘、附件行仍是草稿（status=0）、变体行却已有」的错位状态 ——
+// 访问面看不到这个附件，而变体记录又占着位。事务边界由 service 决定。
+func (m *AttachmentModel) AttachmentUpdateTx(ctx context.Context, tx *gorm.DB, id uint64, updates map[string]any) error {
+	return tx.WithContext(ctx).Model(&AttachmentEntity{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// ListForAudit 只读列出附件行（含 status=0 的历史行），按 id 升序，供存储对账扫描。
+//
+// 为什么不能改用分页 List：对账要的是「全量真相」——分页 List 只取 status=1，
+// 而「草稿残留」（status=0 且 file_path 为空）恰恰是待发现的对象之一。
+// 仍带 limit：对账是一次人工触发的巡检，不是请求路径上的查询，宁可截断并显式
+// 报告「清单被截断」，也不做无上限的全表拉取。
+func (m *AttachmentModel) ListForAudit(ctx context.Context, limit int) ([]AttachmentEntity, error) {
+	var list []AttachmentEntity
+	err := m.attrDB(ctx).Order("id ASC").Limit(limit).Find(&list).Error
+	return list, err
+}
+
+// CountForAudit 统计附件行总数（对账报告里判断「清单是否被截断」用）。
+func (m *AttachmentModel) CountForAudit(ctx context.Context) (int64, error) {
+	var n int64
+	err := m.attrDB(ctx).Count(&n).Error
+	return n, err
 }
 
 // extraKeyRe ExtraInfo 业务键名白名单格式：内联进 SQL 之前逐键校验，杜绝拼接注入。

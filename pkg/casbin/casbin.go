@@ -245,64 +245,10 @@ func HasPermissionPolicies(code string) (bool, error) {
 	return len(rules) > 0, nil
 }
 
-// ReplacePermissionDefinition 保留授权主体并替换权限的请求路径和方法。
-func ReplacePermissionDefinition(code, path, method string) error {
-	e := GetEnforcer()
-	if e == nil {
-		return fmt.Errorf("casbin 未初始化")
-	}
-	if code == "" || path == "" || method == "" {
-		return fmt.Errorf("权限编码、请求路径和方法不能为空")
-	}
-
-	policyMu.Lock()
-	defer policyMu.Unlock()
-
-	rules, err := e.GetFilteredPolicy(3, code)
-	if err != nil {
-		return fmt.Errorf("查询权限策略失败: %w", err)
-	}
-	if len(rules) == 0 {
-		return nil
-	}
-
-	oldRules := make([][]string, len(rules))
-	for i, rule := range rules {
-		oldRules[i] = append([]string(nil), rule...)
-	}
-
-	if _, err = e.RemoveFilteredPolicy(3, code); err != nil {
-		return fmt.Errorf("删除权限旧策略失败: %w", err)
-	}
-	for _, rule := range oldRules {
-		if len(rule) < 4 {
-			continue
-		}
-		if _, err = e.AddPolicy(rule[0], path, strings.ToUpper(method), code); err != nil {
-			return restorePermissionPolicies(e, code, oldRules, err)
-		}
-	}
-
-	return reloadPolicyLocked()
-}
-
-func restorePermissionPolicies(e *casbinlib.SyncedEnforcer, code string, rules [][]string, cause error) error {
-	if _, err := e.RemoveFilteredPolicy(3, code); err != nil {
-		logger.Scene("casbin").Error(err, "权限策略替换后恢复失败")
-	}
-	for _, rule := range rules {
-		if len(rule) < 4 {
-			continue
-		}
-		if _, err := e.AddPolicy(rule[0], rule[1], rule[2], rule[3]); err != nil {
-			logger.Scene("casbin").Error(err, "权限策略替换后恢复失败")
-		}
-	}
-	if err := reloadPolicyLocked(); err != nil {
-		return fmt.Errorf("替换权限策略失败: %v；恢复策略失败: %w", cause, err)
-	}
-	return fmt.Errorf("替换权限策略失败: %w", cause)
-}
+// ReplacePermissionDefinition / ActivateRole / DeactivateRole 三个入口
+// 已迁到 policy_tx.go：策略行（sys_casbin_rule）改为**在事务内**用调用方的
+// *gorm.DB 直接读写，使「业务行 + 策略行」能落在同一个事务里，提交后再重建
+// Enforcer 的内存副本。见 policy_tx.go 文件头的完整论证与调用约定。
 
 // ReplaceRolePermissions 全量替换角色拥有的权限策略。
 // 删除该 role_code 在 p 中所有记录，然后按 codes 反查到的 path/method 重新写入。
@@ -506,55 +452,6 @@ func ReplaceUserPermissions(userID string, policies [][3]string) error {
 		}
 	}
 
-	return reloadPolicyLocked()
-}
-
-// ActivateRole 启用角色：写入 g2, roleCode, active。
-// 如果已存在则幂等返回。
-func ActivateRole(roleCode string) error {
-	e := GetEnforcer()
-	if e == nil {
-		return fmt.Errorf("casbin 未初始化")
-	}
-	if roleCode == "" {
-		return fmt.Errorf("角色编码不能为空")
-	}
-
-	// 写入统一纳入 policyMu，保证与其他管理写互斥（审计 H2）
-	policyMu.Lock()
-	defer policyMu.Unlock()
-
-	exists, err := e.HasNamedGroupingPolicy("g2", roleCode, "active")
-	if err != nil {
-		return fmt.Errorf("检查角色启用状态失败: %w", err)
-	}
-	if exists {
-		return nil
-	}
-	if _, err := e.AddNamedGroupingPolicy("g2", roleCode, "active"); err != nil {
-		return fmt.Errorf("启用角色失败: %w", err)
-	}
-	return reloadPolicyLocked()
-}
-
-// DeactivateRole 禁用角色：删除 g2, roleCode, active。
-// 不删除 p/g 关联，重新启用时恢复 ActivateRole 即可。
-func DeactivateRole(roleCode string) error {
-	e := GetEnforcer()
-	if e == nil {
-		return fmt.Errorf("casbin 未初始化")
-	}
-	if roleCode == "" {
-		return fmt.Errorf("角色编码不能为空")
-	}
-
-	// 写入统一纳入 policyMu，保证与其他管理写互斥（审计 H2）
-	policyMu.Lock()
-	defer policyMu.Unlock()
-
-	if _, err := e.RemoveNamedGroupingPolicy("g2", roleCode, "active"); err != nil {
-		return fmt.Errorf("禁用角色失败: %w", err)
-	}
 	return reloadPolicyLocked()
 }
 

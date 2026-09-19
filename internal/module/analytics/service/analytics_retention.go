@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 // PurgeExpiredViews 删除超过工程保留期的 page_views 明细（IDX-001）。
@@ -38,6 +39,9 @@ const analyticsRetentionInterval = 24 * time.Hour
 
 // StartAnalyticsRetentionScheduler 每日清理过期访问明细（IDX-001）。
 func StartAnalyticsRetentionScheduler(svc *Service) {
+	if utils.IsTestProcess() {
+		return // 测试进程不启动：调度首跑会动真实库与存储，测试的行为必须由用例自己触发（见 utils.IsTestProcess）。
+	}
 	if svc == nil {
 		return
 	}

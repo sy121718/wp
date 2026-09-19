@@ -42,6 +42,33 @@
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
+    {* 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
+       本批只做可见性 —— 这里没有任何「立即重建」入口，重建仍走既有的构建 / 发布流程。 *}
+    {{if isset(.StaleImpact)}}
+    <section class="card">
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.article.list.staleHeading", "待重建影响面") }}</strong>
+        </div>
+        {{if .StaleImpact.Available}}
+            {{if .StaleImpact.Total}}
+            <p class="stat-note tone-warn">{{ .["t"]("admin.article.list.staleLead", "当前有 ") }}{{ .StaleImpact.Total }}{{ .["t"]("admin.article.list.staleTail", " 个页面处于「有更新未发布」：内容、块、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。") }}</p>
+            <ul>
+                {{range page := .StaleImpact.Pages}}
+                <li><code>{{page.Path}}</code> <span class="stat-note">{{page.ProjectName}}</span></li>
+                {{end}}
+            </ul>
+            {{if .StaleImpact.Truncated}}
+            <p class="stat-note">{{ .["t"]("admin.article.list.staleMoreLead", "（清单只列了前 ") }}{{ .StaleImpact.Limit }}{{ .["t"]("admin.article.list.staleMoreTail", " 条，其余只有计数；完整清单请按页面视图逐个查看。）") }}</p>
+            {{end}}
+            {{else}}
+            <p class="stat-note">{{ .["t"]("admin.article.list.staleNone", "当前没有待重建的页面：所有页面的产物都与最新内容一致。") }}</p>
+            {{end}}
+        {{else}}
+        <p class="stat-note">{{ .StaleImpact.Hint }}</p>
+        {{end}}
+    </section>
+    {{end}}
+
     <section class="card list-card">
         {{if .Empty}}
         <div class="empty-state">

@@ -325,7 +325,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .masterdata-page .form-inline .wbs { width: min(100%, 220px); }
 .masterdata-meta { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; word-break: break-all; }
 .masterdata-page-table { table-layout: fixed; }
-.masterdata-page-table th, .masterdata-page-table td { word-break: break-word; overflow-wrap: anywhere; }
+/* white-space 必须显式复位：ui.css 的 .data-table tbody td 默认 nowrap（列多时靠横向滚动），
+   而本表是 table-layout: fixed 的 8 列宽表 —— 等宽列里放不下的长值（实体标题 + 36 位 uuid）
+   不会换行也不会被裁剪，而是**直接画到右边那一列上**，看起来就是「字全部叠在一起」。
+   overflow-wrap/word-break 只在允许折行时才有意义，这两条规则缺一不可。 */
+/* 选择器必须带 tbody：单类 + 元素的 (0,1,1) 打不过 ui.css 的 `.data-table tbody td` (0,1,2)，
+   nowrap 会照样生效（写完规则、量出来还是 nowrap，就是这个原因）。 */
+.masterdata-page .masterdata-page-table tbody td,
+.masterdata-page .masterdata-page-table thead th { white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
 /* 手机：表格改堆叠块，列名用 data-label 回显；输入占满整行。 */
 @media (max-width: 720px) {
     .masterdata-page-table thead { display: none; }

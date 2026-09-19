@@ -135,6 +135,10 @@ type assembly struct {
 	marks  wiringMarks
 	// db 在 buildFoundation 里取得；取不到时装配整体跳过（原行为：log + return）。
 	db *gorm.DB
+	// pendingReceipts 收敛积压的只读观测源（page / presentation 各自一条）：发布模块
+	// 装配完成后注册，/readyz 据此输出 pendingReceipts 字段（形状见 readyz_receipts.go）。
+	// **只是可观测性**：无论积压多少都不参与就绪判定。
+	pendingReceipts pendingReceiptRegistry
 
 	api *gin.RouterGroup
 	// authorizedAPI 是**声明式权限路由组**（审计 SEC-011）：挂在它下面的每条路由
@@ -240,13 +244,24 @@ func (a *assembly) buildFoundation(ready func() error) {
 		})
 	})
 
+	// /readyz：组件级就绪 + 只读观测字段。
+	//
+	// pendingReceipts 是本轮接入的观测字段（待收敛回执：条数 / 最老一条年龄 / 最近一次收敛），
+	// 形状与注册见 readyz_receipts.go。**硬要求：pending > 0 绝不影响就绪判定** ——
+	// 它是「线上与库可能暂时不一致」的信号，收敛例程会自己收掉；拿它当门会让一次发布失败
+	// 把整个实例摘出负载均衡。就绪与否只看 ready()。
 	router.GET("/readyz", func(c *gin.Context) {
+		data := gin.H{
+			"status":          "ready",
+			"pendingReceipts": a.pendingReceipts.snapshot(c.Request.Context()),
+		}
 		if ready != nil {
 			if err := ready(); err != nil {
+				data["status"] = "not_ready"
 				c.JSON(http.StatusServiceUnavailable, response.Response{
 					Code:    http.StatusServiceUnavailable,
 					Message: err.Error(),
-					Data:    gin.H{"status": "not_ready"},
+					Data:    data,
 				})
 				return
 			}
@@ -254,7 +269,7 @@ func (a *assembly) buildFoundation(ready func() error) {
 		c.JSON(http.StatusOK, response.Response{
 			Code:    http.StatusOK,
 			Message: "ok",
-			Data:    gin.H{"status": "ready"},
+			Data:    data,
 		})
 	})
 

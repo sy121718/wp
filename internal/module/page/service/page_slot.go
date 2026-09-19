@@ -110,35 +110,45 @@ func (s *Service) BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq
 		return errors.New(pageenums.ErrSlotPageMiss)
 	}
 	now := time.Now().UTC()
-	if err = s.model.UpsertSiteSlot(ctx, &pagemodel.SiteSlotEntity{
-		ProjectID: projectID, Slot: slot, PageID: pageID,
-		CreateTime: now, UpdatedAt: now,
-	}); err != nil {
-		return err
-	}
-	// 槽位换了 → 把该槽位路径烘进链接的产物过期。
-	//
-	// 影响集合来自构建期记录的 site_slot 依赖（审计 VIS-006）：只有真的引用了这个槽位的
-	// 页面才需要重建。此前是整个工程全量标记 —— 大站点上「改一次结算页绑定」等于全站重建。
-	// 依赖表里一条都没有（页面从未构建过）时退回全量标记：宁可多标，不可漏标。
-	return s.markProjectStaleForSlot(ctx, projectID, slot, now)
+	// 换绑与「标记受影响页面待重建」落在同一个事务里：
+	//   · 只换绑不标记 → 引用了该槽位的页面继续输出指向旧页面的链接（线上死链）；
+	//   · 只标记不换绑 → 白重建一遍（产物字节不变）。
+	// 两处都是库内写入（page_site_slots 与 pages），没有任何理由分属两个事务。
+	return s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		if uerr := s.model.UpsertSiteSlotTx(ctx, tx, &pagemodel.SiteSlotEntity{
+			ProjectID: projectID, Slot: slot, PageID: pageID,
+			CreateTime: now, UpdatedAt: now,
+		}); uerr != nil {
+			return uerr
+		}
+		return s.markProjectStaleForSlotTx(ctx, tx, projectID, slot, now)
+	})
 }
 
-// markProjectStaleForSlot 标记「引用了该槽位」的页面待重建（审计 VIS-006）。
+// markProjectStaleForSlotTx 在**调用方的事务**内标记「引用了该槽位」的页面待重建
+// （审计 VIS-006）。
 //
 // 依赖记录里的 site_slot 条目是构建期写入的（页面真的渲染过该槽位的链接），
 // 因此「只标记受影响的页面」与「不漏标」是同一件事：查得到就精确标，查不到就退回全量。
-func (s *Service) markProjectStaleForSlot(ctx context.Context, projectID, slot string, now time.Time) error {
-	ids, err := s.MarkStaleByDependency(ctx, pipeline.DepKindSiteSlot, slot)
+//
+// 影响面**限于本次换绑的工程**：槽位绑定按 project_id 隔离，一个工程的换绑不会让
+// 另一个工程的页面产物过期；依赖键（槽位名）本身不带工程，跨工程扇出会把无关工程
+// 全标一遍（而且在单事务里也撞 RLS —— 会话变量只有一个值）。
+func (s *Service) markProjectStaleForSlotTx(ctx context.Context, tx *gorm.DB, projectID, slot string, now time.Time) error {
+	ids, err := s.model.MarkStaleByDependencyTx(ctx, tx, projectID, pipeline.DepKindSiteSlot, slot, now)
 	if err != nil {
 		return err
 	}
 	if len(ids) > 0 {
+		// 精确命中：影响面在这里记下来（只读，失败不影响换绑主流程）。
+		// 兜底分支（没有任何页面登记过该槽位依赖）不记 —— 那是「按工程全量标记」，
+		// 影响面就是全工程的页面清单，/admin/pages 的待重建区块本来就是它的反查面。
+		s.logStaleImpact(ctx, "site_slot:"+slot, ids)
 		return nil
 	}
 	// 没有任何页面登记过这个槽位依赖：可能确实没人用，也可能页面还没构建过
 	// （依赖随构建写入）。这两种情况无法从依赖表区分，因此按工程兜底标记。
-	return s.model.MarkStaleForProject(ctx, projectID, now)
+	return s.model.MarkStaleForProjectTx(ctx, tx, projectID, now)
 }
 
 // UnbindSiteSlot 解绑槽位（幂等：本来没绑也返回成功）。
@@ -154,11 +164,13 @@ func (s *Service) UnbindSiteSlot(ctx context.Context, req *pagedto.SiteSlotUnbin
 	if !pageenums.IsSiteSlot(slot) {
 		return errors.New(pageenums.ErrInvalidSlot)
 	}
-	if _, err = s.model.DeleteSiteSlot(ctx, projectID, slot); err != nil {
-		return err
-	}
-	// 解绑同样是「该槽位的链接失效」：按依赖精确标记（见 markProjectStaleForSlot）。
-	return s.markProjectStaleForSlot(ctx, projectID, slot, time.Now().UTC())
+	// 解绑同样是「该槽位的链接失效」：解绑与标记待重建同事务（见 markProjectStaleForSlotTx）。
+	return s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
+		if _, derr := s.model.DeleteSiteSlotTx(ctx, tx, projectID, slot); derr != nil {
+			return derr
+		}
+		return s.markProjectStaleForSlotTx(ctx, tx, projectID, slot, time.Now().UTC())
+	})
 }
 
 // ResolveSitePages 解析「槽位 → 当前语言线上路径」，只含已发布的绑定。

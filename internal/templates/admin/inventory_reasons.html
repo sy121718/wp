@@ -54,7 +54,7 @@
         {{else}}
         <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>{{ .["t"]("admin.inventory.reasons.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.name", "名称") }}</th><th>code</th><th>{{ .["t"]("admin.inventory.reasons.col.origin", "来源") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.state", "状态") }}</th></tr></thead>
+            <thead><tr><th>{{ .["t"]("admin.inventory.reasons.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.name", "名称") }}</th><th>code</th><th>{{ .["t"]("admin.inventory.reasons.col.origin", "来源") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.state", "状态") }}</th><th class="col-actions">{{ .["t"]("admin.common.col.actions", "操作") }}</th></tr></thead>
             <tbody>
             {{range _, r := .Reasons}}
             <tr>
@@ -63,6 +63,24 @@
                 <td><code>{{r.Code}}</code></td>
                 <td>{{if r.IsBuiltin}}{{ .["t"]("admin.inventory.reasons.builtin", "内置") }}{{else}}{{ .["t"]("admin.inventory.reasons.custom", "自定义") }}{{end}}</td>
                 <td>{{r.StatusLabel}}</td>
+                <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
+                    {* 内置原因同样可以停用（只能停用）：它的名称是系统按 code 派生的词条，
+                       改名入口因此根本不给 —— 内置的「只读」体现在没有改名按钮，而不是不能停用。 *}
+                    {{if isset(.PermSet["inventory:reason_update"])}}
+                    <form method="post" action="/admin/inventory/reason/update" class="inline-form">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="projectId" value="{{selectedProject}}">
+                        <input type="hidden" name="id" value="{{r.ID}}">
+                        {{if r.Status == "active"}}
+                        <input type="hidden" name="status" value="disabled">
+                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
+                        {{else}}
+                        <input type="hidden" name="status" value="active">
+                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
+                        {{end}}
+                    </form>
+                    {{end}}
+                </td>
             </tr>
             {{end}}
             </tbody>

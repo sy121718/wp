@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -119,6 +120,9 @@ func (s *Service) rollupOne(ctx context.Context, projectID string, day, from, to
 
 // StartAnalyticsRollupScheduler 启动每小时汇总（先跑一次再等间隔，与其它调度同形）。
 func StartAnalyticsRollupScheduler(svc *Service) {
+	if utils.IsTestProcess() {
+		return // 测试进程不启动：调度首跑会动真实库与存储，测试的行为必须由用例自己触发（见 utils.IsTestProcess）。
+	}
 	if svc == nil {
 		return
 	}

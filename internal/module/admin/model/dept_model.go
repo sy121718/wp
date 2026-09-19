@@ -4,9 +4,11 @@ package adminmodel
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNameSysDept = "sys_dept"
@@ -93,6 +95,19 @@ func (m *DeptModel) GetByCode(ctx context.Context, code string) (*DeptEntity, er
 	return &entity, nil
 }
 
+// GetByCodeTx 在调用方事务内按部门编码查询，不存在返回 nil, nil。
+func (m *DeptModel) GetByCodeTx(ctx context.Context, tx *gorm.DB, code string) (*DeptEntity, error) {
+	var entity DeptEntity
+	err := tx.WithContext(ctx).Model(&DeptEntity{}).Where("dept_code = ?", code).First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
 // ListAll 查询全部部门，按 sort_order、id 升序排列。
 func (m *DeptModel) ListAll(ctx context.Context) ([]DeptEntity, error) {
 	var list []DeptEntity
@@ -120,22 +135,68 @@ func (m *DeptModel) Create(ctx context.Context, e *DeptEntity) error {
 	return m.DB(ctx).Create(e).Error
 }
 
-// Update 按主键更新部门记录。
-// 显式 Select 全字段，避免 Updates 对零值（如 status=0 禁用）不落库。
-func (m *DeptModel) Update(ctx context.Context, e *DeptEntity) error {
-	return m.DB(ctx).Where("id = ?", e.ID).
-		Select("parent_id", "ancestors", "dept_name", "dept_code", "leader_id", "sort_order", "status", "remark").
-		Updates(e).Error
+// deptUpdateColumns UpdateTx 专用的显式列集合（含 status 零值）。
+var deptUpdateColumns = []string{
+	"parent_id", "ancestors", "dept_name", "dept_code", "leader_id",
+	"sort_order", "status", "remark",
 }
 
-// UpdateAncestors 批量更新子孙节点的 ancestors 前缀（移动部门时使用）。
-// 将 oldPrefix 开头的 ancestors 替换为 newPrefix。
+
+// Transaction 透传事务：移动部门节点时「自身行 + 全部子孙行」两处持久化写必须同事务
+// （子孙 ancestors 更新失败会让 pkg/datarule 的部门范围匹配错乱），边界由 service 决定。
+func (m *DeptModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
+// GetByIDTx 在调用方事务内按主键查询部门（不加锁），不存在返回 nil, nil。
+func (m *DeptModel) GetByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*DeptEntity, error) {
+	var entity DeptEntity
+	err := tx.WithContext(ctx).Model(&DeptEntity{}).Where("id = ?", id).First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// LockByIDTx 在调用方事务内按主键加行锁读取（SELECT ... FOR UPDATE）。
+// 移动节点是读-改-写（读旧 ancestors 算子孙前缀、写自身、再批量改子孙）：被移动的行
+// 必须锁住，否则并发移动同一子树会按各自的旧快照算前缀，把子孙链改错。
+func (m *DeptModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*DeptEntity, error) {
+	var entity DeptEntity
+	err := tx.WithContext(ctx).Model(&DeptEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+// UpdateTx 在调用方事务内按主键更新部门记录（**唯一的写入口** —— 非事务版 Update 已删除：
+// 部门移动必然与子孙 ancestors 批量更新同事务）。
+// 显式 Select deptUpdateColumns，避免 Updates 对零值（如 status=0 禁用）不落库。
+func (m *DeptModel) UpdateTx(ctx context.Context, tx *gorm.DB, e *DeptEntity) error {
+	return tx.WithContext(ctx).Model(&DeptEntity{}).Where("id = ?", e.ID).
+		Select(deptUpdateColumns).Updates(e).Error
+}
+
+
+// UpdateAncestorsTx 在调用方事务内批量更新子孙 ancestors（**唯一的写入口** ——
+// 非事务版 UpdateAncestors 已删除：它只可能产出「自身改了、子孙没跟上」的半截状态）。
+// 与「自身 UpdateTx」必须同事务：只改了自身 ancestors 而子孙没跟上，会让 SELF_AND_CHILDREN
+// 数据范围匹配到错误的部门集合（多看到 / 少看到别的部门数据），且不会报错。
 //
 // 逗号边界匹配：直属子 ancestors = oldPrefix，更深层以 oldPrefix+"," 开头。
 // 旧实现用 `LIKE oldPrefix%` 会把 ID 前缀重叠的无关部门卷进来
 // （如移动部门 2 时误匹配部门 21 的 ancestors "0,20"），损坏部门树。
-func (m *DeptModel) UpdateAncestors(ctx context.Context, oldPrefix, newPrefix string) error {
-	return m.DB(ctx).Model(&DeptEntity{}).
+func (m *DeptModel) UpdateAncestorsTx(ctx context.Context, tx *gorm.DB, oldPrefix, newPrefix string) error {
+	return tx.WithContext(ctx).Model(&DeptEntity{}).
 		Where("ancestors = ? OR ancestors LIKE ?", oldPrefix, oldPrefix+",%").
 		Update("ancestors", gorm.Expr("REPLACE(ancestors, ?, ?)", oldPrefix, newPrefix)).Error
 }

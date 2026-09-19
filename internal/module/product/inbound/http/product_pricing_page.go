@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -61,7 +62,8 @@ func (h *productPageHandle) ProductPricingPreview(c *gin.Context) {
 	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req})
 	if err != nil {
 		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
-		h.renderPricingPageWith(c, &form, nil, err.Error())
+		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
+		h.renderPricingPageWith(c, &form, nil, productErrText(c, err))
 		return
 	}
 	h.renderPricingPageWith(c, &form, preview, "")
@@ -77,7 +79,8 @@ func (h *productPageHandle) ProductPricingApply(c *gin.Context) {
 		OperatorID: shell.CurrentUserIDText(c),
 	})
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-pricing?project="+req.ProjectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-pricing?project="+url.QueryEscape(req.ProjectID)+
+			"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-pricing?project="+req.ProjectID+"&applied="+strconv.Itoa(res.ChangedCount))
@@ -115,8 +118,10 @@ func (h *productPageHandle) renderPricingPageWith(c *gin.Context, form *pricingF
 		"PreviewSummary":  pricingPreviewSummary(preview),
 		"PreviewRows":     pricingLineRows(previewLines(preview)),
 		"History":         h.pricingHistory(ctx, selected),
-		"Err":             firstNonEmpty(errMsg, strings.TrimSpace(c.Query("err"))),
-		"Applied":         strings.TrimSpace(c.Query("applied")),
+		// errMsg 是本页 handler 的产物（productErrText）；query 那一路过白名单（product_err.go）。
+		"Err": firstNonEmpty(errMsg, productPageErr(c)),
+		// ?applied= 只承载计数：只放行纯数字。
+		"Applied": productAppliedToken(c),
 	}))
 }
 
@@ -254,6 +259,19 @@ func readPricingForm(c *gin.Context) (form pricingForm, req *productdto.PricingR
 		RuleParams: pricingParamsFromForm(form),
 	}
 	return form, req
+}
+
+// pricingRuleReqFromForm 读「按规则改价」表单并套上指定的作用范围。
+//
+// 两个入口共用：独立定价页（/admin/product-pricing/preview|apply，范围由表单的 scope /
+// targetId 决定）与商品列表的批量改价抽屉（逐个商品套 scope=product + 该商品 id）。
+// 规则类型、规则参数、尾数的解析只有一份（readPricingForm + pricingParamsFromForm）——
+// 抽屉若另抄一份，最先出问题的是「填了 amount 却被当成 multiplier」这类静默错配。
+func pricingRuleReqFromForm(c *gin.Context, scope, targetID string) (req *productdto.PricingRuleReq) {
+	_, req = readPricingForm(c)
+	req.Scope = scope
+	req.TargetID = targetID
+	return req
 }
 
 // pricingParamsFromForm 按规则类型从表单拼规则参数（只取本类型用得到的键）。

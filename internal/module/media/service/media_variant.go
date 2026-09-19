@@ -162,38 +162,51 @@ func produceVariant(src image.Image, variantType string, key string) (variantPro
 	return variantProduceResult{Width: img.Bounds().Dx(), Height: img.Bounds().Dy(), Size: int64(len(data))}, nil
 }
 
-// EnsureVariantRecords 上传切入点：图片类附件登记三条变体初始记录。
-// header 探测通过 → pending（等待异步/同步生成）；探测失败或超大 → failed（跳过生成，
-// 对应规格「边长 >6000px 或解码失败则跳过变体（status=failed），不阻塞上传」）。
-// 仅记录日志与状态，任何错误都不影响上传主流程。
-func (s *Service) EnsureVariantRecords(ctx context.Context, att *mediamodel.AttachmentEntity) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Scene("media").With("attachment_id", att.ID).Error(fmt.Errorf("panic: %v", r), "变体登记异常（已降级）")
-		}
-	}()
-
+// probeVariantStatus 只读探测该附件变体的初始状态（不写库）：
+// 不可变体（非图片 / svg / gif）返回空串，表示「不该有变体记录」；
+// header 探测通过 → pending；探测失败、源路径非法或超大 → failed
+// （对应规格「边长 >6000px 或解码失败则跳过变体（status=failed），不阻塞上传」）。
+//
+// 拆出来的理由：上传路径要把「探测」（读文件系统，慢）与「建记录」（写库，要进事务）
+// 分开 —— 读盘不该占着事务与连接。EnsureVariantRecords 仍是一次做完，供存量回填/测试用。
+func (s *Service) probeVariantStatus(ctx context.Context, att *mediamodel.AttachmentEntity) string {
+	if att == nil {
+		return ""
+	}
 	sourceKey := attachmentStorageKey(att)
 	if sourceKey == "" || !variantEligible(att.FileType, att.FileName) {
-		return
+		return ""
 	}
-
-	status := mediamodel.VariantStatusPending
 	if srcPath, perr := localObjectPath(sourceKey); perr != nil {
-		status = mediamodel.VariantStatusFailed
 		logger.Scene("media").With("attachment_id", att.ID).Error(perr, "变体源路径非法，跳过生成")
+		return mediamodel.VariantStatusFailed
 	} else if f, oerr := os.Open(srcPath); oerr != nil {
-		status = mediamodel.VariantStatusFailed
 		logger.Scene("media").With("attachment_id", att.ID).Error(oerr, "打开上传原图失败，变体跳过")
+		return mediamodel.VariantStatusFailed
 	} else {
 		_, _, derr := probeImage(f)
 		_ = f.Close()
 		if derr != nil {
-			status = mediamodel.VariantStatusFailed
 			logger.Scene("media").With("attachment_id", att.ID).Error(derr, "图片探测未通过，变体跳过")
+			return mediamodel.VariantStatusFailed
 		}
 	}
+	return mediamodel.VariantStatusPending
+}
 
+// variantRecordsFor 按探测结果构造三条变体初始记录（纯函数，不写库）。
+//
+// status 为空串（不可变体）时返回 nil —— 调用方据此跳过写入。
+// 纯函数的意义：同一批记录可以在**事务内**构造并随元数据回填一起提交，
+// 不必在事务里做磁盘探测。
+func variantRecordsFor(att *mediamodel.AttachmentEntity, status string) []*mediamodel.MediaVariantEntity {
+	if att == nil || status == "" {
+		return nil
+	}
+	sourceKey := attachmentStorageKey(att)
+	if sourceKey == "" {
+		return nil
+	}
 	records := make([]*mediamodel.MediaVariantEntity, 0, len(mediamodel.VariantTypes()))
 	for _, vt := range mediamodel.VariantTypes() {
 		records = append(records, &mediamodel.MediaVariantEntity{
@@ -202,6 +215,26 @@ func (s *Service) EnsureVariantRecords(ctx context.Context, att *mediamodel.Atta
 			FilePath:     variantObjectKey(sourceKey, vt),
 			Status:       status,
 		})
+	}
+	return records
+}
+
+// EnsureVariantRecords 图片类附件登记三条变体初始记录（自足入口：探测 + 批量插入）。
+//
+// 上传主路径**不再直接调用它** —— 上传的第二段事务里要的是「同一批记录与元数据回填
+// 一起提交」，所以那里改用 probeVariantStatus + variantRecordsFor + CreateBatchTx。
+// 本方法保留给「已落库的存量附件补登记」与单测使用，行为与接入事务前逐字一致
+// （记录插入失败只记日志、不回滚任何东西）。
+func (s *Service) EnsureVariantRecords(ctx context.Context, att *mediamodel.AttachmentEntity) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Scene("media").With("attachment_id", att.ID).Error(fmt.Errorf("panic: %v", r), "变体登记异常（已降级）")
+		}
+	}()
+
+	records := variantRecordsFor(att, s.probeVariantStatus(ctx, att))
+	if len(records) == 0 {
+		return
 	}
 	if err := s.vm.CreateBatch(ctx, records); err != nil {
 		logger.Scene("media").With("attachment_id", att.ID).Error(err, "变体记录登记失败（已降级，不回滚上传）")
@@ -232,14 +265,51 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 	}
 
 	// 幂等：重跑先清旧记录（规格：asynq handler 重跑先清旧记录）。
-	if err := s.vm.DeleteByAttachment(ctx, attachmentID); err != nil {
-		return nil, err
+	//
+	// 「清旧 + 登记新」必须**同一个事务**（AGENTS.md「写操作的事务与回滚」）：
+	// 两步各自提交时，第二步失败就留下「旧变体没了、新变体也没有」的附件 ——
+	// 三个变体槽全空，而磁盘上旧变体文件还在（没有任何记录能指向它们），
+	// 只能靠人工再点一次「重新生成」恢复。
+	//
+	// 事务里只建记录（纯 SQL），文件的生成/写盘放在事务**外**逐个做：
+	// 文件系统是跨库动作，不参与事务（为什么不能用事务覆盖见 media_reconcile.go 头部）。
+	records := make([]*mediamodel.MediaVariantEntity, 0, len(mediamodel.VariantTypes()))
+	for _, vt := range mediamodel.VariantTypes() {
+		records = append(records, &mediamodel.MediaVariantEntity{
+			AttachmentID: attachmentID,
+			VariantType:  vt,
+			FilePath:     variantObjectKey(sourceKey, vt),
+			Status:       mediamodel.VariantStatusProcessing,
+		})
+	}
+	if terr := s.vm.Transaction(ctx, func(tx *gorm.DB) error {
+		if derr := s.vm.DeleteByAttachmentTx(ctx, tx, attachmentID); derr != nil {
+			return derr
+		}
+		return s.vm.CreateBatchTx(ctx, tx, records)
+	}); terr != nil {
+		return nil, terr
 	}
 
 	failAll := func(reason error) {
 		logger.Scene("media").With("attachment_id", attachmentID).Error(reason, "变体生成整体跳过")
-		for _, vt := range mediamodel.VariantTypes() {
-			rec := s.insertVariant(ctx, attachmentID, vt, variantObjectKey(sourceKey, vt), mediamodel.VariantStatusFailed)
+		at := time.Now()
+		// 三条一起标 failed：同事务，避免留下「一半 failed、一半 processing」——
+		// processing 是不会自愈的中间态（没有别的东西会再来推进它）。
+		if uerr := s.vm.Transaction(ctx, func(tx *gorm.DB) error {
+			for _, rec := range records {
+				if xerr := s.vm.UpdateTx(ctx, tx, rec.ID, map[string]any{
+					"status": mediamodel.VariantStatusFailed, "update_time": at,
+				}); xerr != nil {
+					return xerr
+				}
+			}
+			return nil
+		}); uerr != nil {
+			logger.Scene("media").With("attachment_id", attachmentID).Error(uerr, "变体整体跳过状态回写失败")
+		}
+		for _, rec := range records {
+			rec.Status = mediamodel.VariantStatusFailed
 			res = append(res, variantEntityToResp(rec))
 		}
 	}
@@ -264,9 +334,9 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 		return res, nil
 	}
 
-	for _, vt := range mediamodel.VariantTypes() {
-		key := variantObjectKey(sourceKey, vt)
-		rec := s.insertVariant(ctx, attachmentID, vt, key, mediamodel.VariantStatusProcessing)
+	for _, rec := range records {
+		vt := rec.VariantType
+		key := rec.FilePath
 		produced, gerr := produceVariant(src, vt, key)
 		if gerr != nil {
 			_ = s.vm.Update(ctx, rec.ID, map[string]any{"status": mediamodel.VariantStatusFailed, "update_time": time.Now()})
@@ -287,21 +357,6 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 		res = append(res, variantEntityToResp(rec))
 	}
 	return res, nil
-}
-
-// insertVariant 插入一条指定状态的变体记录（GenerateVariants 内部流水使用）。
-func (s *Service) insertVariant(ctx context.Context, attachmentID uint64, vt string, key string, status string) *mediamodel.MediaVariantEntity {
-	rec := &mediamodel.MediaVariantEntity{
-		AttachmentID: attachmentID,
-		VariantType:  vt,
-		FilePath:     key,
-		Status:       status,
-	}
-	if err := s.vm.Create(ctx, rec); err != nil {
-		// 记录插入失败不阻断文件生成：状态照常返回，日志留痕。
-		logger.Scene("media").With("attachment_id", attachmentID).With("variant", vt).Error(err, "变体记录插入失败")
-	}
-	return rec
 }
 
 // decodeFile 从本地路径解码原图（复用 decodeImage，AUTO 方向摆正）。

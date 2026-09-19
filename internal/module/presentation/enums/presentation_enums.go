@@ -34,6 +34,17 @@ const (
 	// ErrPathOccupied 目标路径已被其他页面或展示实例占用。
 	// 与 page 侧 ErrPathOccupied 同一文案口径（改 URL 抢路径的失败原因对用户是同一件事）。
 	ErrPathOccupied = "ErrPathOccupied"
+
+	// ErrDetachConfirmRequired 转入独立文档需要用户确认（会放弃模板同步）。
+	// 服务层在未确认时返回它，前端据它弹确认并带 confirmDetach 重试 ——
+	// 不用「先弹窗再请求」是因为判据（文档结构是否真的变了）只有服务端算得准。
+	ErrDetachConfirmRequired = "ErrDetachConfirmRequired"
+	// ErrRollbackTargetMiss 回滚目标不存在（hash / 快照找不到或产物文件已缺失）。
+	ErrRollbackTargetMiss = "ErrRollbackTargetMiss"
+	// ErrRollbackFailed 回滚激活失败（线上版本保持不变）。
+	ErrRollbackFailed = "ErrRollbackFailed"
+	// ErrSnapshotMismatch 目标快照不属于该实例（防止拿别人的快照回滚自己）。
+	ErrSnapshotMismatch = "ErrSnapshotMismatch"
 )
 
 // 实例发布状态（由指针列推导，非表列）。

@@ -11,6 +11,8 @@ import (
 	adminenums "go_wp/internal/module/admin/enums"
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/pkg/datarule"
+
+	"gorm.io/gorm"
 )
 
 // RuleDetail 数据规则详情。
@@ -120,16 +122,58 @@ func (s *Service) RuleUpdate(ctx context.Context, req *admindto.RuleUpdateReq) e
 }
 
 // RuleDelete 批量删除数据规则。
+//
+// 事务：sys_rule_assignment 的分配行与 sys_rule 的规则行是两处持久化写，必须同事务。
+// 旧实现「先逐条删分配（各自提交）、再删规则」—— 第二步失败就留下「规则还在、分配全没了」：
+// 该规则对任何角色/用户/部门都不再生效（数据权限静默放开），而报错只回给这一次请求，
+// 列表页上完全看不出异常。现在任一步失败整体回滚：要么规则与分配一起消失，要么都保持原样。
+//
+// 读-改-写加行锁复核（LockByIDsTx）：从拿到 req.IDs 到真正删除之间，目标行可能已被
+// 并发删掉，不锁的复核删的是「快照里的 id」。数量对不上即 ErrRuleNotFound
+// （与 AdminDelete 同形：冲突与不一致打回给人，不静默跳过）。
 func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) error {
-	// 先清理该规则的分配记录，避免外键残留
-	for _, id := range req.IDs {
-		if err := s.dram.DeleteByRuleID(ctx, id); err != nil {
+	ids := uniqueRuleIDs(req.IDs)
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.drm.Transaction(ctx, func(tx *gorm.DB) error {
+		locked, err := s.drm.LockByIDsTx(ctx, tx, ids)
+		if err != nil {
 			return err
 		}
+		if len(locked) != len(ids) {
+			return errors.New(adminenums.ErrRuleNotFound)
+		}
+		// 先删分配行再删规则行（保持原顺序，与外键方向一致）；两步同事务。
+		for _, id := range ids {
+			if err = s.dram.DeleteByRuleIDTx(ctx, tx, id); err != nil {
+				return err
+			}
+		}
+		if _, err = s.drm.DeleteByIDsTx(ctx, tx, ids); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// uniqueRuleIDs 剔除 0 并去重（与 uniqueAdminIDs 同形）。
+// 不去重时 LockByIDsTx 锁到的是**去重后**的行数，复核会把它误判成「有行不存在」，
+// 于是一次重复提交就被整批拒绝，还报「规则不存在」。
+func uniqueRuleIDs(ids []uint64) []uint64 {
+	seen := make(map[uint64]struct{}, len(ids))
+	out := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
-	// 再批量删除规则本身
-	_, err := s.drm.DeleteByIDs(ctx, req.IDs)
-	return err
+	return out
 }
 
 // validateRuleConfig 校验规则配置只能引用该数据域白名单内的字段与该字段声明的操作符，

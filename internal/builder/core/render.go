@@ -214,6 +214,11 @@ type NavigationResolver interface {
 // 由 pipeline 侧的收集器实现；core 只声明接口，不认识具体实现（避免反向 import）。
 type UsageRecorder interface {
 	UseSiteSlot(slot string)
+	// UseMenu 记录一次导航菜单消费（菜单位置 header / footer）。
+	//
+	// 与 UseSiteSlot 同一理由：页面文档里「绑定了导航位置」这件事要经渲染才算数，
+	// 记录下来的才是事实（静态扫节点类型要维护一张「组件 → 依赖」映射表，迟早漂移）。
+	UseMenu(kind string)
 }
 
 // SetArchiveEntity 注入当前归档实例的实体（构建期由装配层传入）。
@@ -314,6 +319,21 @@ func (c *RenderContext) SitePage(slot string) string {
 		c.usage.UseSiteSlot(slot)
 	}
 	return c.sitePages[slot]
+}
+
+// UseMenu 记录一次导航菜单消费（菜单位置 header / footer）。
+//
+// 记录时机与 SitePage 同源（审计 VIS-006 的口径）：**取值即记录**。
+// 漏记的表现是「改了导航，引用它的页面不被标记待重建」—— 导航在页眉/页脚，
+// 全站可见，产物里却一直是旧链接，且没有任何报错。
+// 未注入收集器时（预览 / 单测直连）是空操作，调用方不必自己判断。
+func (c *RenderContext) UseMenu(kind string) {
+	if c == nil || c.usage == nil {
+		return
+	}
+	if k := strings.TrimSpace(kind); k != "" {
+		c.usage.UseMenu(k)
+	}
 }
 
 // 权威定义在 page 模块的 enums（SiteSlotDefs，带展示名与用途），但 builder **不依赖任何

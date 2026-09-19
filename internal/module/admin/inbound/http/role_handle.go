@@ -13,12 +13,12 @@ import (
 func (h *Handle) RoleList(c *gin.Context) {
 	var req admindto.RoleListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.role.RoleList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -28,12 +28,12 @@ func (h *Handle) RoleList(c *gin.Context) {
 func (h *Handle) RoleDetail(c *gin.Context) {
 	var req admindto.RoleDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.role.RoleDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -43,11 +43,11 @@ func (h *Handle) RoleDetail(c *gin.Context) {
 func (h *Handle) RoleCreate(c *gin.Context) {
 	var req admindto.RoleCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.role.RoleCreate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -57,11 +57,11 @@ func (h *Handle) RoleCreate(c *gin.Context) {
 func (h *Handle) RoleUpdate(c *gin.Context) {
 	var req admindto.RoleUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.role.RoleUpdate(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -71,11 +71,11 @@ func (h *Handle) RoleUpdate(c *gin.Context) {
 func (h *Handle) RoleDelete(c *gin.Context) {
 	var req admindto.RoleDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	if err := h.role.RoleDelete(c.Request.Context(), &req); err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, nil)
@@ -85,12 +85,12 @@ func (h *Handle) RoleDelete(c *gin.Context) {
 func (h *Handle) RoleMenuList(c *gin.Context) {
 	var req admindto.RoleMenuListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.role.RoleMenuList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -100,7 +100,7 @@ func (h *Handle) RoleMenuList(c *gin.Context) {
 func (h *Handle) RoleMenuSave(c *gin.Context) {
 	var req admindto.RoleMenuSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -112,7 +112,7 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 	req.OperatorID = uid
 	res, err := h.role.RoleMenuSave(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
@@ -122,12 +122,12 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 func (h *Handle) RoleUserList(c *gin.Context) {
 	var req admindto.RoleUserListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.role.RoleUserList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -137,7 +137,7 @@ func (h *Handle) RoleUserList(c *gin.Context) {
 func (h *Handle) RoleUserSave(c *gin.Context) {
 	var req admindto.RoleUserSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -149,7 +149,7 @@ func (h *Handle) RoleUserSave(c *gin.Context) {
 	req.OperatorID = uid
 	res, err := h.role.RoleUserSave(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)

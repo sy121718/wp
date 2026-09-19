@@ -6,9 +6,54 @@ package adminenums
 
 const (
 	MsgSuccess      = "msg_operation_success" // 操作成功
-	MsgBadRequest   = "ErrInvalidParams"      // 请求参数错误（拼 ": "+err.Error() 使用）
+	MsgBadRequest   = "ErrInvalidParams"      // 请求参数错误
 	MsgUnauthorized = "ErrUnauthorized"       // 未登录或登录已过期
+	// ErrInternal 未归类的内部错误（SQL / 约束名 / 文件路径等）对外归口文案。
+	// 细节只进日志：handler 不再把 err.Error() 拼进响应（审计 CQ-009/CQ-010 的 admin 收口）。
+	// 与 user / cart 的 user.err.internal / cart.err.internal 同义；本模块其余常量沿用
+	// 「常量名即资源 key」的形态，所以这里保持同形（形态判定见 pkg/response.IsBusinessError）。
+	ErrInternal = "ErrInternal"
 )
+
+// AdminFacingMessages 可以原样展示给前端的管理面业务文案（**白名单**）。
+//
+// 存在的理由：service 的业务错误全部来自本包，而基础设施错误的原文
+// （PostgreSQL 的 23505、约束名 uq_sys_role_role_code、表名、文件路径）不该出网。
+// handler 侧的归口助手（internal/module/admin/inbound/http/admin_err.go）拿这张表做白名单：
+// 命中 → 原样透出（前端据此提示「哪一项不合法」）；未命中 → 记日志 + ErrInternal 归口文案。
+//
+// 白名单而不是黑名单：漏写只会让前端看到一句通用提示（一眼可见，且
+// admin_enums_test.go 会按本文件逐个常量对账），黑名单漏写则会把内部细节摆到页面上。
+//
+// 不含三类：成功文案（MsgSuccess / MsgLogoutSuccess，永远不会作为错误返回）、
+// 归口文案 ErrInternal（它是未命中时的返回值，不是业务文案）、以及任何非字符串常量。
+var AdminFacingMessages = []string{
+	// 通用
+	MsgBadRequest, MsgUnauthorized,
+	// 管理员
+	ErrCaptchaExpired, ErrBadCredentials, ErrAccountLocked, ErrAccountDisabled,
+	ErrAdminNotFound, ErrSuperAdminExists, ErrFieldProtected, ErrEmailExists,
+	ErrUsernameExists, ErrPhoneExists, ErrUserNotFound, ErrDeleteSelf,
+	ErrDeleteSuperAdmin, ErrSuperAdminOnly, MsgWrongUserType,
+	// 角色
+	ErrRoleNotFound, ErrRoleCodeExists, ErrRoleIsSystem, ErrRoleCodeNumeric,
+	// 菜单
+	ErrMenuNotFound, ErrMenuHasChildren, ErrMenuIsSystem, ErrMenuCircle,
+	ErrMenuParentNotFound, ErrMenuParentMustBeDir, ErrMenuDepthExceeded,
+	ErrCodeNotBindable, ErrCodeRequired, ErrCodeNotEnabled, ErrComponentRequired,
+	ErrComponentNotAllowed, ErrComponentInvalid,
+	// 权限点
+	ErrPermissionNotFound, ErrCodeExists, ErrCodeImmutable, ErrInvalidMethod,
+	ErrPermissionAssigned, ErrMenuReferenced,
+	// 部门
+	ErrDeptNotFound, ErrDeptHasChildren, ErrDeptHasUsers, ErrDeptCircle, ErrDeptCodeExists,
+	// 数据权限规则
+	ErrRuleNotFound, ErrInvalidDomain, ErrInvalidAssignment, ErrRuleConfigInvalid,
+	ErrRuleFieldNotAllowed, ErrRuleOpNotAllowed, ErrRuleLogicNotAllowed,
+	// 列表排序参数与文案词条表单
+	ErrSortFieldInvalid, ErrSortDirectionInvalid,
+	ErrI18nKeyEmpty, ErrI18nLangEmpty, ErrI18nValueEmpty,
+}
 
 // --- 管理员 ---
 
@@ -89,4 +134,28 @@ const (
 	ErrRuleFieldNotAllowed = "ErrRuleFieldNotAllowed" // 规则引用了数据域白名单之外的字段
 	ErrRuleOpNotAllowed    = "ErrRuleOpNotAllowed"    // 规则使用了该字段不支持的操作符
 	ErrRuleLogicNotAllowed = "ErrRuleLogicNotAllowed" // 条件组的组合逻辑只能是 AND 或 OR
+)
+
+// --- 列表排序参数 ---
+//
+// 这一组此前是 service 里的中文原文（errors.New("无效的排序字段")）：文案不来自本包、
+// 于是既不进白名单（页面/接口一律被归口成「操作失败，请稍后重试」），也无法翻译。
+// 参数错误是**客户端输入问题**，必须让调用方看见「哪一项不对」——
+// 与白名单里其它业务文案同一条判据，只是来源从 service 的业务判定换成了入参校验。
+
+const (
+	ErrSortFieldInvalid     = "admin.err.sortFieldInvalid"     // 无效的排序字段
+	ErrSortDirectionInvalid = "admin.err.sortDirectionInvalid" // 无效的排序方向
+)
+
+// --- 文案词条表单 ---
+//
+// 空 key / 空语言 / 空内容此前共用 MsgFieldRequired（「必填字段不能为空」）：
+// 运营点保存后只知道「有个字段没填」，页面上却不说是哪一个 —— 三行表单只能逐个试。
+// 三者拆成三条文案：判据相同（都是客户端输入问题），差别只在「说得够不够具体」。
+
+const (
+	ErrI18nKeyEmpty   = "admin.err.i18nKeyEmpty"   // 词条 key 不能为空
+	ErrI18nLangEmpty  = "admin.err.i18nLangEmpty"  // 词条语言不能为空
+	ErrI18nValueEmpty = "admin.err.i18nValueEmpty" // 词条内容不能为空
 )

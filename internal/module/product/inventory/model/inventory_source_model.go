@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -182,4 +183,43 @@ func (m *Model) UpdateSource(ctx context.Context, e *SourceEntity) (err error) {
 // DeleteSource 删除货源（硬删除；引用守卫属采购单一侧，issue #18 在 service 层补）。
 func (m *Model) DeleteSource(ctx context.Context, id string) (err error) {
 	return m.SourceDB(ctx).Where("id = ?", id).Delete(&SourceEntity{}).Error
+}
+
+// —— 事务透传变体（2026-09 事务收口）——
+//
+// 为什么需要它们：货源的增 / 改 / 删都要同时写一条字段级变更记录（master_data_changes），
+// 而留痕表是 append-only 的 —— 分开提交时「有货源没留痕」或「有留痕没货源」都可能发生，
+// 写错了连改都改不回来（迁移 111 的 BEFORE UPDATE/DELETE 触发器直接 RAISE）。
+// 事务边界由 service 决定；作用域（rls.ScopeTx）也由调用方设在 tx 上 ——
+// 上面那几个非 Tx 方法自带 rls.InProjectScope（另起事务），**不能**在已开事务里调用。
+
+// CreateSourceTx 在调用方事务内写入货源行。
+func (m *Model) CreateSourceTx(ctx context.Context, tx *gorm.DB, e *SourceEntity) error {
+	return tx.WithContext(ctx).Model(&SourceEntity{}).Create(e).Error
+}
+
+// LockSourceTx 在调用方事务内按主键加行锁查货源（SELECT … FOR UPDATE）。
+//
+// 修改与删除都是读-改-写（读旧值算 diff → 写新值 → 记留痕）：被改的那一行必须锁住，
+// 否则并发两次保存会各自按旧快照算字段级 diff，留痕与实际落库的字段对不上。
+// projectID 一并进 WHERE：inventory_sources 在迁移 215 的 RLS 名单里，跨工程的行不可见。
+func (m *Model) LockSourceTx(ctx context.Context, tx *gorm.DB, id, projectID string) (*SourceEntity, error) {
+	var e SourceEntity
+	err := tx.WithContext(ctx).Model(&SourceEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND project_id = ?", id, projectID).First(&e).Error
+	if err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// UpdateSourceTx 在调用方事务内更新货源行（列集合与非 Tx 版一致）。
+func (m *Model) UpdateSourceTx(ctx context.Context, tx *gorm.DB, e *SourceEntity) error {
+	return tx.WithContext(ctx).Model(&SourceEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+// DeleteSourceTx 在调用方事务内删除货源行。
+func (m *Model) DeleteSourceTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Model(&SourceEntity{}).Where("id = ?", id).Delete(&SourceEntity{}).Error
 }

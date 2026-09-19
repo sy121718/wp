@@ -20,6 +20,17 @@
 //	  hr         → core.divider   {}
 //	  table      → core.table     {caption, headers[], rows[][]}
 //	  pre        → core.text      {mode: richtext, text: 保留 <pre>}
+//	  details    → core.text      {mode: richtext, text: 保留 <details>/<summary>}
+//	            （折叠块整块留在富文本里：组件树没有与之等价的容器，
+//	              拆成手风琴要在「摘要 + 多段正文」上再造一层，反而丢结构）
+//
+// 反向（导出方向）额外覆盖一个组件：
+//
+//	core.accordion → 一串 <details><summary>摘要</summary>正文…</details>
+//	          每个 item 对一个 children（正文取该 children 的渲染结果），与导入方向的
+//	          details 分支对称 —— 画布上建的折叠块导出后可以被再导入回来，内容不丢；
+//	          items 与 children 对不上（数量不等 / 缺摘要）时按占位或如实记损导出，
+//	          理由见 export.go 的 writeAccordion（绝不把 Lossless 硬翻成 true）。
 //
 // 行级格式（strong / em / s / u / del / code / a / br）**不单独成组件**：
 // 它们留在 core.text 的富文本字段里（决策 5 明文规定），因此 core.text 是唯一
@@ -115,8 +126,13 @@ func newNode(componentType string, props any) (*core.Node, error) {
 }
 
 // sanitizeText 富文本片段统一入口（白名单唯一来源在 core）。
+//
+// 清洗前后各 TrimSpace 一次，顺序不能省：清洗本身会**删掉**节点（注释、非法标签），
+// 删完留下的空白就是新的首尾空白 —— `<!--0--> 00` 清洗后是 `" 00"`，
+// 只在外层 trim 一次的话，这个值第二次进清洗会被 trim 成 "00"，于是 sanitizeText 不幂等，
+// 「无损」的往返在**节点树**上对不上（往返 fuzz 抓到过：HTML 字节收敛，节点文本却差一个空格）。
 func sanitizeText(src string) string {
-	return core.SanitizeRichHTML(strings.TrimSpace(src))
+	return strings.TrimSpace(core.SanitizeRichHTML(strings.TrimSpace(src)))
 }
 
 // hasVisibleContent 清洗后的片段是否还有可见内容。

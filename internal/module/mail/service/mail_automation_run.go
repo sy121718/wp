@@ -32,6 +32,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -300,45 +302,63 @@ func (s *Service) logNode(ctx context.Context, runID uint64, node AutomationNode
 }
 
 // applyTags 应用标签节点的增删，返回（新增、移除）。幂等：已存在的标签不重复加。
+//
+// 「读标签 → 算增减 → 写回」是典型的**读-改-写**，所以整段落进一个事务，读用
+// SELECT … FOR UPDATE 锁住联系人行（AGENTS.md「读-改-写必须有行锁或原子 SQL」）：
+// 不加锁时两个自动化节点、或标签节点与后台手工改标签并发，后写者会拿旧快照覆盖前者的结果
+// （标签是整列写回，丢的是别人的整个标签集，不只是自己那一项）。
+// 单行按主键加锁，不涉及多行加锁顺序，无死锁面。
 func (s *Service) applyTags(ctx context.Context, contactID uint64, params map[string]any) (added, removed []string, err error) {
 	add := toStringSlice(params["add"])
 	remove := toStringSlice(params["remove"])
 	if len(add) == 0 && len(remove) == 0 {
 		return nil, nil, nil
 	}
-	current, err := s.m.GetContactTags(ctx, contactID)
+	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		current, lerr := s.m.LockContactTagsTx(ctx, tx, contactID)
+		if lerr != nil {
+			return lerr
+		}
+		present := make(map[string]bool, len(current))
+		for _, t := range current {
+			present[t] = true
+		}
+		removeSet := make(map[string]bool, len(remove))
+		for _, t := range remove {
+			removeSet[t] = true
+		}
+		nextAdded := make([]string, 0, len(add))
+		nextRemoved := make([]string, 0, len(remove))
+		next := make([]string, 0, len(current)+len(add))
+		for _, t := range current {
+			if removeSet[t] {
+				nextRemoved = append(nextRemoved, t)
+				continue
+			}
+			next = append(next, t)
+		}
+		for _, t := range add {
+			if present[t] {
+				continue
+			}
+			next = append(next, t)
+			nextAdded = append(nextAdded, t)
+		}
+		if len(nextAdded) == 0 && len(nextRemoved) == 0 {
+			return nil
+		}
+		if uerr := s.m.UpdateContactFieldsTx(ctx, tx, contactID, map[string]any{
+			"tags": mailmodel.StringArray(next), "update_time": time.Now(),
+		}); uerr != nil {
+			return uerr
+		}
+		added, removed = nextAdded, nextRemoved
+		return nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	present := make(map[string]bool, len(current))
-	for _, t := range current {
-		present[t] = true
-	}
-	removeSet := make(map[string]bool, len(remove))
-	for _, t := range remove {
-		removeSet[t] = true
-	}
-	next := make([]string, 0, len(current)+len(add))
-	for _, t := range current {
-		if removeSet[t] {
-			removed = append(removed, t)
-			continue
-		}
-		next = append(next, t)
-	}
-	for _, t := range add {
-		if present[t] {
-			continue
-		}
-		next = append(next, t)
-		added = append(added, t)
-	}
-	if len(added) == 0 && len(removed) == 0 {
-		return nil, nil, nil
-	}
-	return added, removed, s.m.UpdateContactFields(ctx, contactID, map[string]any{
-		"tags": mailmodel.StringArray(next), "update_time": time.Now(),
-	})
+	return added, removed, nil
 }
 
 // automationVars 组装发信节点的模板变量：先放联系人字段，再放节点自己配的。

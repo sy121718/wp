@@ -17,7 +17,6 @@
 {{selectedProject := .SelectedProject}}
 {{form := .Form}}
 {{rules := .Rules}}
-{{roundings := .Roundings}}
 <div class="stack pricing-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -61,24 +60,11 @@
         <form method="post" action="/admin/product-pricing/preview" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            {* 「规则 + 参数 + 尾数」三件套与商品列表的批量改价抽屉共用同一个片段：
+               字段名与取词只有一份（分叉会让抽屉提交的参数被判成缺参数）。
+               范围 / 目标 / 筛选条件只属于本页 —— 抽屉的作用范围恒为「勾选的商品」。 *}
+            {{include "partials/pricing_rule_fields.html"}}
             <div class="form-inline">
-                <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelRule", "规则") }}</span>
-                <select class="form-select" name="ruleType" aria-label="{{ .["t"]("admin.product_pricing.apply.ruleTypeAria", "定价规则类型") }}">
-                    {{range _, r := rules}}
-                    <option value="{{r.Type}}" {{if r.Type == form.RuleType}}selected{{end}}>{{r.Name}}</option>
-                    {{end}}
-                </select>
-                <input type="text" class="form-input" name="multiplier" value="{{form.Multiplier}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMultiplier", "multiplier（成本乘倍数）") }}" inputmode="decimal" autocomplete="off">
-                <input type="text" class="form-input" name="amount" value="{{form.Amount}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phAmount", "amount（成本加价 / 统一售价）") }}" inputmode="decimal" autocomplete="off">
-                <input type="text" class="form-input" name="margin" value="{{form.Margin}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMargin", "margin（目标毛利率，0.3 = 30%）") }}" inputmode="decimal" autocomplete="off">
-            </div>
-            <div class="form-inline">
-                <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelRounding", "尾数") }}</span>
-                <select class="form-select" name="rounding" aria-label="{{ .["t"]("admin.product_pricing.apply.roundingAria", "尾数处理") }}">
-                    {{range _, r := roundings}}
-                    <option value="{{r.Value}}" {{if r.Value == form.Rounding}}selected{{end}}>{{r.Name}}</option>
-                    {{end}}
-                </select>
                 <span class="hint">{{ .["t"]("admin.product_pricing.apply.labelScope", "范围") }}</span>
                 <select class="form-select" name="scope" aria-label="{{ .["t"]("admin.product_pricing.apply.scopeAria", "作用范围") }}">
                     <option value="sku" {{if form.Scope == "sku"}}selected{{end}}>{{ .["t"]("admin.product_pricing.apply.scopeSku", "单个 SKU（变体 id）") }}</option>

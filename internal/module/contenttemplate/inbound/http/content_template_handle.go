@@ -44,6 +44,18 @@ func newContentTemplatePageHandle(templates contenttemplatecontract.ContentTempl
 	}
 }
 
+// ContentTemplatePageHandle 导出类型别名：外部测试包（public/test/contenttemplate/feature）
+// 需要命名构造器返回的句柄类型才能驱动页面处理器。
+// 别名指向未导出类型是合法 Go，读起来也明确指向后者（对齐 page 模块的 PagesAdminHandle）。
+type ContentTemplatePageHandle = contentTemplatePageHandle
+
+// NewContentTemplatePageHandle 构造内容模板后台页处理器（装配与测试共用同一入口）。
+func NewContentTemplatePageHandle(templates contenttemplatecontract.ContentTemplateService,
+	projects projectcontract.ProjectService, products productcontract.ProductService,
+	contents contentcontract.ContentService) *ContentTemplatePageHandle {
+	return newContentTemplatePageHandle(templates, projects, products, contents)
+}
+
 // ContentTemplatesPage GET /admin/content-templates：按实体类型列出模板，跳转可视化编辑。
 func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -60,7 +72,9 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	data := gin.H{
 		"title": "MsgContentTemplatesTitle", "menu": "content-templates",
 		"Projects": projects, "SelectedProject": selected,
-		"EntityType": entityType, "Err": strings.TrimSpace(c.Query("err")),
+		"EntityType": entityType,
+		// 回执文案经本页白名单收口（查询参数不是可信边界，见 content_template_err.go）。
+		"Err": contentTemplatePageErr(c),
 	}
 	if h.templates == nil {
 		data["Ready"] = false
@@ -74,15 +88,16 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	rows := make([]gin.H, 0, len(list))
 	for _, t := range list {
-		sampleID, sampleErr := h.sampleEntityID(ctx, selected, t.EntityType)
+		sampleID, sampleHint, sampleErr := h.sampleEntityID(ctx, selected, t.EntityType)
 		editURL := ""
-		if sampleErr == nil && sampleID != "" {
+		if sampleErr == nil && strings.TrimSpace(sampleHint) == "" && sampleID != "" {
 			editURL = workbenchTemplateURL(t.ID, t.EntityType, sampleID, selected)
 		}
 		rows = append(rows, gin.H{
 			"ID": t.ID, "Name": t.Name, "EntityType": t.EntityType,
 			"DraftVersion": t.DraftVersion, "UpdatedAt": t.UpdatedAt,
-			"EditURL": editURL, "SampleErr": sampleErrMsg(sampleErr, t.EntityType),
+			// SampleErr 是**模板数据**（形态③）：依赖错误只能出归口文案，原文进日志。
+			"EditURL": editURL, "SampleErr": sampleErrText(c, sampleHint, sampleErr),
 		})
 	}
 	data["Templates"] = rows
@@ -90,7 +105,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	data["Ready"] = true
 	// 可选键一律由 handler 注入（模板用 isset 包裹）：本页此前只有 ?err=，
 	// 批量删除的「成功 N 个 / 跳过 M 个」需要一条正向回执通道。
-	data["Done"] = strings.TrimSpace(c.Query("done"))
+	data["Done"] = contentTemplatePageDone(c)
 	c.HTML(http.StatusOK, "admin/content_templates.html", shell.Prepare(c, data))
 }
 
@@ -117,7 +132,8 @@ func (h *contentTemplatePageHandle) ContentTemplatesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		q.Set("err", berr.Error())
+		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
+		q.Set("err", contentTemplateErrText(c, berr))
 		c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
 		return
 	}
@@ -143,15 +159,17 @@ func (h *contentTemplatePageHandle) ContentTemplatesBulkDelete(c *gin.Context) {
 // contentTemplatesBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」等于把部分成功静默成全部成功，用户不会再去看剩下那几个）。
 func contentTemplatesBulkDeleteResult(deleted, skipped int) string {
+	// 模板取自 content_template_err.go 的 contentTemplatesBulkResultTemplates ——
+	// 那里同时是读侧白名单的来源：写侧改措辞时读侧跟着变，不会静默失配成归口文案。
 	switch {
 	case deleted == 0 && skipped == 0:
-		return "没有选中任何模板，列表未改动。"
+		return contentTemplatesBulkResultTemplates[0]
 	case skipped == 0:
-		return fmt.Sprintf("已删除 %d 个模板。", deleted)
+		return fmt.Sprintf(contentTemplatesBulkResultTemplates[1], deleted)
 	case deleted == 0:
-		return fmt.Sprintf("%d 个模板都未能删除，列表未改动（被自动发布实例引用的模板不能删除）。", skipped)
+		return fmt.Sprintf(contentTemplatesBulkResultTemplates[2], skipped)
 	default:
-		return fmt.Sprintf("已删除 %d 个，%d 个未能删除（被自动发布实例引用的模板不能删除）。", deleted, skipped)
+		return fmt.Sprintf(contentTemplatesBulkResultTemplates[3], deleted, skipped)
 	}
 }
 
@@ -159,7 +177,7 @@ func contentTemplatesBulkDeleteResult(deleted, skipped int) string {
 func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	templateID := strings.TrimSpace(c.Query("id"))
 	if templateID == "" {
-		c.Redirect(http.StatusFound, contentTemplatesListPath+"?err=缺少模板 id")
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?err="+url.QueryEscape(contentTemplateMissingIDText))
 		return
 	}
 	entityID := strings.TrimSpace(c.Query("entityId"))
@@ -168,7 +186,7 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	if entityID == "" && h.templates != nil {
 		tpl, err := h.templates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
 		if err != nil {
-			c.Redirect(http.StatusFound, contentTemplatesListPath+"?err=模板不存在")
+			c.Redirect(http.StatusFound, contentTemplatesListPath+"?err="+url.QueryEscape(contentTemplateNotFoundText))
 			return
 		}
 		if entityType == "" {
@@ -177,15 +195,16 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 		if projectID == "" {
 			projectID = strings.TrimSpace(c.Query("project"))
 		}
-		sampleID, serr := h.sampleEntityID(c.Request.Context(), projectID, entityType)
-		if serr != nil {
-			c.Redirect(http.StatusFound, contentTemplatesListPath+"?project="+projectID+"&err="+url.QueryEscape(serr.Error()))
+		sampleID, hint, serr := h.sampleEntityID(c.Request.Context(), projectID, entityType)
+		if serr != nil || strings.TrimSpace(hint) != "" {
+			c.Redirect(http.StatusFound, contentTemplatesListPath+"?project="+url.QueryEscape(projectID)+
+				"&err="+url.QueryEscape(sampleErrText(c, hint, serr)))
 			return
 		}
 		entityID = sampleID
 	}
 	if entityID == "" || entityType == "" {
-		c.Redirect(http.StatusFound, contentTemplatesListPath+"?err=缺少预览样例实体")
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?err="+url.QueryEscape(contentTemplateSampleMissingText))
 		return
 	}
 	c.Redirect(http.StatusFound, workbenchTemplateURL(templateID, entityType, entityID, projectID))
@@ -202,40 +221,41 @@ func workbenchTemplateURL(templateID, entityType, entityID, projectID string) st
 	return "/workbench?" + q.Encode()
 }
 
-func (h *contentTemplatePageHandle) sampleEntityID(ctx context.Context, projectID, entityType string) (string, error) {
+// sampleEntityID 为某实体类型选一条预览样例。
+//
+// 两个返回值分开是**故意的**：hint 是可直接展示的可行动提示（依赖没装配 / 工程内还没有
+// 可预览的实体 / 该实体类型不支持），err 是依赖错误（products.List / contents.List 上抛，
+// 可能是 PG 原文，带表名与 SQLSTATE）。合成一个 error 就再也分不清「该给运营看」还是
+// 「只该进日志」—— 这一页的 ?err= 与 SampleErr 都会被原样渲染。
+func (h *contentTemplatePageHandle) sampleEntityID(ctx context.Context, projectID, entityType string) (id, hint string, err error) {
 	switch entityType {
 	case "product":
 		if h.products == nil {
-			return "", fmt.Errorf("商品模块未装配")
+			return "", contentTemplateHintProductNoMod, nil
 		}
-		list, err := h.products.List(ctx, &productdto.ListReq{ProjectID: projectID, Page: 1, Size: 1})
-		if err != nil {
-			return "", err
+		list, lerr := h.products.List(ctx, &productdto.ListReq{ProjectID: projectID, Page: 1, Size: 1})
+		if lerr != nil {
+			return "", "", lerr
 		}
 		if len(list) == 0 {
-			return "", fmt.Errorf("工程内还没有商品，无法预览商品详情模板")
+			return "", contentTemplateHintNoProduct, nil
 		}
-		return list[0].ID, nil
+		return list[0].ID, "", nil
 	case "article":
 		if h.contents == nil {
-			return "", fmt.Errorf("内容模块未装配")
+			return "", contentTemplateHintContentNoMod, nil
 		}
-		list, err := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: 1})
-		if err != nil {
-			return "", err
+		list, lerr := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: 1})
+		if lerr != nil {
+			return "", "", lerr
 		}
 		if len(list) == 0 {
-			return "", fmt.Errorf("工程内还没有文章，无法预览文章详情模板")
+			return "", contentTemplateHintNoArticle, nil
 		}
-		return list[0].ID, nil
+		return list[0].ID, "", nil
 	default:
-		return "", fmt.Errorf("暂不支持 entityType=%s 的样例实体自动选取", entityType)
+		// 实体类型来自查询参数：只回一句**固定**文案，不回显入参 ——
+		// 回显等于把请求方的输入原样反射进 ?err= / SampleErr 再渲染一次。
+		return "", contentTemplateHintEntityTypeMiss, nil
 	}
-}
-
-func sampleErrMsg(err error, entityType string) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

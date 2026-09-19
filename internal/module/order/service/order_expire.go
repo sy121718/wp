@@ -12,6 +12,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -78,6 +79,9 @@ func (s *Service) ExpirePendingOrders(ctx context.Context, olderThan time.Durati
 
 // StartPendingOrderExpiryScheduler 启动后台定时扫描（进程内 goroutine，失败不 panic）。
 func StartPendingOrderExpiryScheduler(svc *Service) {
+	if utils.IsTestProcess() {
+		return // 测试进程不启动：调度首跑会动真实库与存储，测试的行为必须由用例自己触发（见 utils.IsTestProcess）。
+	}
 	if svc == nil {
 		return
 	}

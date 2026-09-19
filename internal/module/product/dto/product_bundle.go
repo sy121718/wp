@@ -12,6 +12,8 @@
 // 用 0 表示「不设上限」比 null 少一层分支。
 package productdto
 
+import "encoding/json"
+
 // —— 服务端护栏常量 ——
 
 const (
@@ -37,6 +39,20 @@ type BundleOption struct {
 	MinQty int `json:"minQty"`
 	// MaxQty 单项最大数量；0 = 留空（不设上限，只受库存约束）。
 	MaxQty int `json:"maxQty"`
+
+	// —— 成员来源快照（docs/14 §1.2 的三种来源：迁移 259 配套）——
+	//
+	// **仅作溯源与展示，不是身份**：成员的身份恒为 VariantID（uuid），
+	// 仓库那串编码只是「这条货在这个仓叫什么」（§9.3），仓库换码不影响成员的引用。
+	// 手工指定的历史配置没有这段快照（全空串），照常可用。
+	//
+	// SourceKind 取 productenums.BundleSource*（空 = 手工指定 / 历史配置）。
+	SourceKind string `json:"sourceKind,omitempty"`
+	// WarehouseID / WarehouseSKU 来自「从仓库选」那条来路（仓储侧的仓与仓内 SKU）。
+	WarehouseID  string `json:"warehouseId,omitempty"`
+	WarehouseSKU string `json:"warehouseSku,omitempty"`
+	// ExternalSKU 该 (仓库, 变体) 库存行登记的外部 / 第三方编码（迁移 251，可为空）。
+	ExternalSKU string `json:"externalSku,omitempty"`
 }
 
 // BundleConfig 捆绑品配置（products.bundle_items 的完整形状）。
@@ -140,14 +156,102 @@ type ValidateBundleSelectionReq struct {
 }
 
 // BundleSelectedItem 校验通过后的展开结果（订单侧快照的形状：哪个 SKU、各多少）。
+//
+// 成员在套餐里**没有价格**：UnitPrice 恒为 0，套餐金额只算容器价（商品的默认价）。
+// 这条是类型不变量（迁移 238）的一部分：成员只作为选项与履约/库存明细，成员原价只有
+// 后台配置器可见（见 BundleOptionDetail.ItemPrice）。CostPrice 照旧保留，供后台毛利口径。
 type BundleSelectedItem struct {
-	VariantID   string   `json:"variantId"`
-	SKUCode     string   `json:"skuCode"`
-	ProductName string   `json:"productName"`
-	Qty         int      `json:"qty"`
-	UnitPrice   float64  `json:"unitPrice"`
+	VariantID   string  `json:"variantId"`
+	SKUCode     string  `json:"skuCode"`
+	ProductName string  `json:"productName"`
+	Qty         int     `json:"qty"`
+	UnitPrice   float64 `json:"unitPrice"`
+	// MemberPrice 成员自己的挂牌价（参考值，**禁止参与任何金额计算**）：
+	// 后台看毛利/核对配置时要用，但套餐金额只能由容器价得出。
+	// 需要成员价的地方一律显式读这个字段，读 UnitPrice 只会拿到 0。
+	MemberPrice float64  `json:"memberPrice"`
 	CostPrice   *float64 `json:"costPrice"`
 	Available   int      `json:"available"`
+}
+
+// —— 捆绑成员的三种来源（docs/14 §1.2，批次 C）——
+//
+// 与变体清单的「预览—保存」模型同一形态（docs/14 §8）：解析**不落库**，
+// 只把候选行交回前端清单；点「保存配置」（SetBundleConfig）才写入 products.bundle_items。
+//
+// 三种来源共用一个出口，因此去重口径、跳过口径、上限口径都只有一份：
+//
+//	① product    —— 选中一个商品 → 其全部**启用**变体一次导入为成员（VariantDisabled 的跳过）；
+//	② warehouse  —— 按仓给出仓库 SKU（我们自己的编码），选中即定位到该仓那条货的变体，
+//	                并记下来源快照（warehouseId / warehouseSku / externalSku）；
+//	③ attributes —— 勾选属性值 → **服务端按属性组固定顺序重算笛卡尔积**，
+//	                只接受「商品侧确实存在对应变体」的组合；不存在的组合明确拒绝
+//	                并逐条回带原因（BundleMemberNotOnProduct，提示先去商品上生成该规格的变体）。
+type ResolveBundleMembersReq struct {
+	// ProductID 捆绑容器（成员挂到它身上）。
+	ProductID string `json:"productId" binding:"required"`
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `json:"projectId"`
+	// Source 来源（productdto 之外只认 productenums.BundleSource* 三个值）。
+	Source string `json:"source"`
+	// SourceProductID 来源商品（product / attributes 两种来源必填）。
+	SourceProductID string `json:"sourceProductId"`
+	// WarehouseID / WarehouseSKUs 仓库来源：仓 + 该仓的仓库 SKU 编码（服务端按
+	// (仓库, SKU) 复核，前端提交的只是线索 —— 与新建商品「从仓库选」同一口径）。
+	WarehouseID   string   `json:"warehouseId"`
+	WarehouseSKUs []string `json:"warehouseSkus"`
+	// Selections 属性组合来源的勾选（属性组 id → 属性值 id，多值）。
+	Selections []VariantSelectionReq `json:"selections"`
+	// ExistingVariantIDs 前端清单里已有的成员变体 id：服务端据此去重（同一变体只出现一次），
+	// 前端提交的形状一律不作数 —— 它只影响「哪些行不再追加」。
+	ExistingVariantIDs []string `json:"existingVariantIds"`
+}
+
+// BundleMemberDraft 解析出的一条候选成员（尚未落库；前端把它追加进成员清单）。
+type BundleMemberDraft struct {
+	VariantID   string `json:"variantId"`
+	SKUCode     string `json:"skuCode"`
+	ProductID   string `json:"productId"`
+	ProductName string `json:"productName"`
+	Enabled     bool   `json:"enabled"`
+	// OptionValues 该变体的规格组合（jsonb 对象；前端据它展示可读规格）。
+	OptionValues json.RawMessage `json:"optionValues"`
+	// Source 来源快照（直接可落进 BundleOption 的四个字段）。
+	Source BundleMemberSource `json:"source"`
+}
+
+// BundleMemberSource 成员来源快照（不是身份，见 BundleOption 的说明）。
+type BundleMemberSource struct {
+	Kind         string `json:"kind"`
+	WarehouseID  string `json:"warehouseId,omitempty"`
+	WarehouseSKU string `json:"warehouseSku,omitempty"`
+	ExternalSKU  string `json:"externalSku,omitempty"`
+}
+
+// BundleMemberSkip 本次没有加进来的那一条（不整批失败，逐条回带原因）。
+//
+// Reason 是 enums 常量（= i18n key），由 inbound 取词后展示；
+// OptionValues 原样带回，供页面把它拼成可读规格文本（属性组合来源的「组合不存在」
+// 就靠它指出来是哪一组）。
+type BundleMemberSkip struct {
+	VariantID    string          `json:"variantId,omitempty"`
+	SKUCode      string          `json:"skuCode,omitempty"`
+	WarehouseID  string          `json:"warehouseId,omitempty"`
+	WarehouseSKU string          `json:"warehouseSku,omitempty"`
+	OptionValues json.RawMessage `json:"optionValues,omitempty"`
+	Reason       string          `json:"reason"`
+}
+
+// ResolveBundleMembersResp 来源解析结论：成功 N（Members）/ 跳过 M（Skipped）+ 逐条原因。
+type ResolveBundleMembersResp struct {
+	ProductID string `json:"productId"`
+	Source    string `json:"source"`
+	// Members 本次解析出的候选成员（已去重，尚未落库）。
+	Members []*BundleMemberDraft `json:"members"`
+	// Skipped 没有加进来的那几条（原因逐条可读；一条失败不影响其余）。
+	Skipped []BundleMemberSkip `json:"skipped"`
+	// Total 去重前的候选总数（含被跳过与已存在的）。
+	Total int `json:"total"`
 }
 
 // BundleSelectionResp 整单校验结论。

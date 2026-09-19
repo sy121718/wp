@@ -26,4 +26,22 @@ const (
 	// 而工程清单为空或读不到。显式失败而不是静默返回「找不到」——后者会把
 	// 「读不到工程表」伪装成「导航项不存在」。
 	ErrProjectRequired = "ErrProjectRequired" // 缺少可作用域的工程，无法定位导航项的工程归属
+	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名 / 文件路径等）对外归口文案。
+	//
+	// 值刻意带模块前缀：sys_i18n 的主键是 (item_key, lang)，裸 key "ErrInternal" 已被
+	// admin 批占用（迁移 268）；形态与 cart / user 的 "cart.err.internal" 一致。
+	ErrInternal = "navigation.err.internal" // 操作失败，请稍后重试（细节只进日志）
 )
+
+// NavigationFacingMessages 可以原样展示给前端的导航业务文案（**白名单**）。
+//
+// 命中 → 原样透出（前端据此提示「哪一项不合法」「路径已被占用」）；
+// 未命中 → inbound/http 的 navigationErrText 记结构化日志并返回 ErrInternal。
+// 方向是安全的：漏写一个常量只会让前端看到一句通用提示（一眼可见），
+// 而不会把 service 上抛的 PostgreSQL 原文（表名 / 约束名 / SQLSTATE）透出去。
+//
+// ErrInternal 本身不进白名单：它是未命中时的返回值，不是业务文案。
+var NavigationFacingMessages = []string{
+	ErrInvalidParam, ErrNotFound, ErrInvalidKind, ErrPathTaken,
+	ErrInvalidSource, ErrInvalidTarget, ErrInvalidParent, ErrProjectRequired,
+}

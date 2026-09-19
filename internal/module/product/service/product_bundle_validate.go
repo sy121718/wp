@@ -171,9 +171,15 @@ func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, var
 			VariantID:   v.ID,
 			SKUCode:     v.SKUCode,
 			ProductName: nameOf[v.ProductID],
-			UnitPrice:   v.Price,
-			CostPrice:   v.CostPrice,
-			Available:   avail[v.ID],
+			// 成员单价恒为 0：成员价**不参与任何对外金额**（套餐只有容器价，见产品类型不变量）。
+			// 这里不是「查不到价」，而是「成员在套餐里没有价」—— 订单行照此快照即天然不会
+			// 把成员价加进合计；成员原价只在后台配置器（BundleOptionDetail.ItemPrice）可见。
+			UnitPrice: 0,
+			// 成员挂牌价单独放 MemberPrice：它只是参考值，绝不参与金额计算。
+			MemberPrice: v.Price,
+			// 成本保留：后台毛利口径要它（TotalCost = 成员成本合计 × 数量），不对访客露出。
+			CostPrice: v.CostPrice,
+			Available: avail[v.ID],
 		}
 	}
 	return out, nil

@@ -17,10 +17,17 @@ const (
 )
 
 // 投递状态。
+//
+// 四态而不是「待投 + 两个终态」：**投递是要花时间的**（出站 HTTP，客户端超时 15s），
+// 「还没投」与「正在投」必须分开 —— 否则两个 worker 可以同时从 pending 出发，
+// 同一个外部系统会收到两次同样的签名请求，而两边的事后落定只有一个能成功。
+// delivering 是**抢占态**（认领 + 租约），语义与租约取值见 model 的 ClaimDelivery
+// 与 service 的 deliverLease。
 const (
-	DeliveryStatusPending   = "pending"
-	DeliveryStatusDelivered = "delivered"
-	DeliveryStatusFailed    = "failed"
+	DeliveryStatusPending    = "pending"
+	DeliveryStatusDelivering = "delivering"
+	DeliveryStatusDelivered  = "delivered"
+	DeliveryStatusFailed     = "failed"
 )
 
 // 响应消息（handle 与 service 不硬编码文案，一律取这里）。

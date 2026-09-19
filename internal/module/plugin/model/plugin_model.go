@@ -104,3 +104,39 @@ func (m *Model) Exec(ctx context.Context, sql string) error {
 func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)
 }
+
+// SchemaInfo 一个插件 L1 schema 的巡检条目（plugin_schema_patrol.go 使用）。
+//
+// TableCount = 这个 schema 里有几张普通表。它是给人做判断用的：空 schema 可以判为
+// 「卸载没清干净」，有表的孤儿 schema 里可能是真实业务数据 —— 必须先看清再决定，
+// 不能因为「注册表里没有」就当它不存在。
+type SchemaInfo struct {
+	Name       string `gorm:"column:schema_name"`
+	TableCount int    `gorm:"column:table_count"`
+}
+
+// ListSchemas 列出库里全部 plugin_ 前缀 schema 及其表数量（只读巡检）。
+//
+// 为什么查 PG 目录而不是本模块的注册表：**只有绕过注册表直接问数据库，才看得见
+// 「注册表里没有、数据库里还在」的孤儿 schema** —— 那正是要巡检的东西。
+// 这是本 model 唯一一处不落在 plugin_registry 上的查询，用途限定为对账；
+// 它不写任何数据，也不参与业务路径。
+//
+// 用 left(nspname, 7) 而不是 LIKE 'plugin_%'：LIKE 里下划线是单字符通配符，
+// 'plugin_%' 会把 pluginXxx 之类的 schema 一起匹进来（要转义才等价，容易写错）。
+func (m *Model) ListSchemas(ctx context.Context) (list []SchemaInfo, err error) {
+	err = m.db.WithContext(ctx).Raw(
+		`SELECT n.nspname AS schema_name, COUNT(c.oid)::int AS table_count
+		   FROM pg_namespace n
+		   LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relkind = 'r'
+		  WHERE left(n.nspname, length(?)) = ?
+		  GROUP BY n.nspname
+		  ORDER BY n.nspname`, schemaPrefix, schemaPrefix).Scan(&list).Error
+	return list, err
+}
+
+// schemaPrefix 与 service 层的 schemaNameFor 同源（plugin_<id>，docs/06 §8）。
+// 在 model 里重声明一份常量而不是 import service：model 不能依赖 service（依赖方向是
+// service → model），而巡检的 SQL 需要这个前缀。两处一致由
+// plugin/service 的 plugin_schema_patrol_test.go 钉住。
+const schemaPrefix = "plugin_"

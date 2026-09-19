@@ -33,6 +33,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"go_wp/pkg/queue"
 
 	maildto "go_wp/internal/module/mail/dto"
@@ -224,16 +226,21 @@ func (s *Service) UnsubscribeByToken(ctx context.Context, token, ip, ua string) 
 		return "", errors.New("退订链接缺少联系人信息")
 	}
 	now := time.Now()
-	if uerr := s.m.UpdateContactFields(ctx, contact.ID, map[string]any{
-		"status": mailmodel.ContactStatusUnsubscribed, "update_time": now,
+	// 状态与抑制名单**同事务**：只改一边的话，换个活动又会被发出去 ——
+	// 「点了退订却还能被发出去」比不点退订更糟（本文件头也是这个口径）。
+	if uerr := s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if uerr := s.m.UpdateContactFieldsTx(ctx, tx, contact.ID, map[string]any{
+			"status": mailmodel.ContactStatusUnsubscribed, "update_time": now,
+		}); uerr != nil {
+			return uerr
+		}
+		return s.m.AddSuppressionTx(ctx, tx, &mailmodel.MailSuppressionEntity{
+			Email: contact.Email, Reason: mailmodel.SuppressionReasonUnsubscribe, Source: strPtr("email"),
+		})
 	}); uerr != nil {
 		return "", uerr
 	}
-	if uerr := s.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
-		Email: contact.Email, Reason: mailmodel.SuppressionReasonUnsubscribe, Source: strPtr("email"),
-	}); uerr != nil {
-		return "", uerr
-	}
+	// 事件记录留在事务外：它只是入队（访客点击路径不等待落库），不是本次退订的一部分。
 	s.RecordTrackEvent(ctx, p, mailmodel.EventTypeUnsubscribe, ip, ua)
 	return contact.Email, nil
 }

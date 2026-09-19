@@ -64,6 +64,11 @@ func (m *MediaVariantModel) varDB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&MediaVariantEntity{})
 }
 
+// Transaction 起事务并把句柄交给调用方编排（「清旧记录 + 登记新记录」必须同事务）。
+func (m *MediaVariantModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
+}
+
 // Create 新增一条变体记录。
 func (m *MediaVariantModel) Create(ctx context.Context, e *MediaVariantEntity) error {
 	return m.varDB(ctx).Create(e).Error
@@ -83,9 +88,42 @@ func (m *MediaVariantModel) DeleteByAttachment(ctx context.Context, attachmentID
 	return m.varDB(ctx).Where("attachment_id = ?", attachmentID).Delete(&MediaVariantEntity{}).Error
 }
 
+// DeleteByAttachmentTx 在调用方给的事务句柄上物理删除指定附件的全部变体记录。
+//
+// 与下面的 CreateBatchTx 成对使用：「清旧 + 登记新」必须落在同一个事务里。
+// 分成两步各自提交时，第二步失败就留下「旧变体没了、新变体也没有」的附件 ——
+// 界面上三个变体槽全空，而磁盘上旧变体文件还在（没有记录能指向它们）。
+func (m *MediaVariantModel) DeleteByAttachmentTx(ctx context.Context, tx *gorm.DB, attachmentID uint64) error {
+	return tx.WithContext(ctx).Model(&MediaVariantEntity{}).Where("attachment_id = ?", attachmentID).Delete(&MediaVariantEntity{}).Error
+}
+
+// CreateBatchTx 在调用方给的事务句柄上批量登记变体记录。
+func (m *MediaVariantModel) CreateBatchTx(ctx context.Context, tx *gorm.DB, list []*MediaVariantEntity) error {
+	if len(list) == 0 {
+		return nil
+	}
+	return tx.WithContext(ctx).Model(&MediaVariantEntity{}).Create(&list).Error
+}
+
+// ListForAudit 只读列出变体行，按 id 升序，供存储对账扫描（判断某个变体文件是否有记录）。
+func (m *MediaVariantModel) ListForAudit(ctx context.Context, limit int) ([]MediaVariantEntity, error) {
+	var list []MediaVariantEntity
+	err := m.varDB(ctx).Order("id ASC").Limit(limit).Find(&list).Error
+	return list, err
+}
+
 // Update 按 ID 更新变体字段（状态流转 / 生成结果回填）。
 func (m *MediaVariantModel) Update(ctx context.Context, id uint64, updates map[string]any) error {
 	return m.varDB(ctx).Where("id = ?", id).Updates(updates).Error
+}
+
+// UpdateTx 在调用方给的事务句柄上更新变体字段。
+//
+// 「一批变体一起改状态」（如整体跳过时三条一起标 failed）必须同事务：
+// 逐条各自提交时中途失败会留下「一半 failed、一半 processing」的记录集，
+// 而 processing 是个不会自愈的中间态（没有任何东西会再来推进它）。
+func (m *MediaVariantModel) UpdateTx(ctx context.Context, tx *gorm.DB, id uint64, updates map[string]any) error {
+	return tx.WithContext(ctx).Model(&MediaVariantEntity{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // GetByFilePath 按变体存储相对路径查询变体记录（构建期从产物 URL 反查附件用：

@@ -12,13 +12,13 @@ import (
 func (h *Handle) PermList(c *gin.Context) {
 	var req admindto.PermListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.perm.PermList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -28,13 +28,13 @@ func (h *Handle) PermList(c *gin.Context) {
 func (h *Handle) PermDetail(c *gin.Context) {
 	var req admindto.PermDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.perm.PermDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -44,13 +44,13 @@ func (h *Handle) PermDetail(c *gin.Context) {
 func (h *Handle) PermOptions(c *gin.Context) {
 	var req admindto.PermOptionsReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.perm.PermOptions(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -60,13 +60,13 @@ func (h *Handle) PermOptions(c *gin.Context) {
 func (h *Handle) PermCreate(c *gin.Context) {
 	var req admindto.PermCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.perm.PermCreate(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
@@ -76,13 +76,13 @@ func (h *Handle) PermCreate(c *gin.Context) {
 func (h *Handle) PermUpdate(c *gin.Context) {
 	var req admindto.PermUpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.perm.PermUpdate(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
@@ -92,13 +92,13 @@ func (h *Handle) PermUpdate(c *gin.Context) {
 func (h *Handle) PermDelete(c *gin.Context) {
 	var req admindto.PermDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.perm.PermDelete(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)

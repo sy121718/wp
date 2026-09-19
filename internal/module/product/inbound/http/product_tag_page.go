@@ -81,9 +81,10 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		"SelectedProject": selected,
 		"Tags":            rows,
 		"RuleTypes":       h.products.ListTagRuleTypes(ctx),
-		"Err":             strings.TrimSpace(c.Query("err")),
+		// 读侧一律过白名单（product_err.go）：查询参数不是可信边界。
+		"Err": productPageErr(c),
 		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductTagsBulkDelete）。
-		"Done": strings.TrimSpace(c.Query("done")),
+		"Done": productPageDone(c),
 	}))
 }
 
@@ -96,7 +97,7 @@ func (h *productPageHandle) ProductTagsCreate(c *gin.Context) {
 		Kind: form.kind, RuleType: form.ruleType, RuleParams: form.params, Sort: form.sort,
 	}
 	if _, err := h.products.CreateTag(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
@@ -117,7 +118,7 @@ func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
 		req.RuleParams = form.params
 	}
 	if _, err := h.products.UpdateTag(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
@@ -127,7 +128,7 @@ func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
 func (h *productPageHandle) ProductTagsDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ID: c.PostForm("id")}); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
@@ -144,7 +145,8 @@ func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, target+"&err="+url.QueryEscape(berr.Error()))
+		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
+		c.Redirect(http.StatusFound, target+"&err="+url.QueryEscape(productErrText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -157,9 +159,9 @@ func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
 	}
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（标签不存在或已被删除）", deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productTagBulkPartial, deleted, skipped))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个标签", deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productTagBulkDone, deleted))
 	}
 	c.Redirect(http.StatusFound, target)
 }
@@ -172,7 +174,7 @@ func (h *productPageHandle) ProductTagsRecalc(c *gin.Context) {
 		TagID:     strings.TrimSpace(c.PostForm("tagId")),
 	}
 	if _, err := h.products.RecalcTags(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
@@ -191,7 +193,7 @@ func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
 	}
 	req := &productdto.UpdateReq{ID: formProductID(c), TagIDs: tagIDs}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, err.Error()))
+		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))

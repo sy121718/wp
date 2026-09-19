@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	pagemodel "go_wp/internal/module/page/model"
 	pubcontract "go_wp/internal/module/publication/contract"
@@ -24,6 +23,28 @@ import (
 // ErrPublishLedgerUnavailable 发布回执登记失败（无法判定状态，因此不切换访问面）。
 var ErrPublishLedgerUnavailable = errors.New("发布回执登记失败，未切换访问面")
 
+// publishReceiptInput 登记 pending 回执的入参。
+//
+// 用结构体而不是 8 个位置参数：三种动作（发布 / 改 URL / 回滚）各有几个专属字段
+// （改 URL 的 OldPath 与 Redirect、回滚的 FromArtifactID），位置参数下一个调用点
+// 传错顺序编译器不会报错，而错的是「恢复按哪个路径补哪一步」。
+type publishReceiptInput struct {
+	// Action 见 pubcontract.ReceiptAction*：决定恢复流程分派到哪个补齐例程。
+	Action         string
+	ProjectID      string
+	PageID         string
+	Path           string
+	Lang           string
+	FromArtifactID string
+	// ToArtifactID 本次要激活的产物行 id；Action 为 update_url 时必须留空
+	// （产物按新路径现编译，登记时还不存在对应行，见 publication 侧字段注释）。
+	ToArtifactID string
+	// OldPath 切换前该语言的线上路径（改 URL / 回滚用它处置旧路径）。
+	OldPath string
+	// Redirect 旧路径是否登记为 301（仅 update_url 使用）。
+	Redirect bool
+}
+
 // beginPublishReceipt 登记 pending 回执，返回回执 id 与失败原因（AR2-002 / TX-009）。
 //
 // 必须在访问面切换**之前**调用：切换是不可逆的副作用，登记放在之后，崩溃窗口里就
@@ -32,20 +53,24 @@ var ErrPublishLedgerUnavailable = errors.New("发布回执登记失败，未切�
 //
 // 唯一不算失败的是路由契约未装配（s.routes == nil）：此时发布链本身也不写路由行，
 // 属于「这台实例没有回执设施」而不是「登记失败」，返回空 id + nil 让发布按原样继续。
-func (s *Service) beginPublishReceipt(ctx context.Context, projectID, pageID, path, lang,
-	fromArtifactID, toArtifactID string) (string, error) {
+func (s *Service) beginPublishReceipt(ctx context.Context, in publishReceiptInput) (string, error) {
 	if s == nil || s.routes == nil {
 		return "", nil
 	}
+	action := strings.TrimSpace(in.Action)
+	if action == "" {
+		action = pubcontract.ReceiptActionSwitchActive
+	}
 	id, err := s.routes.BeginPublishReceipt(ctx, &pubcontract.BeginPublishReceiptReq{
-		ProjectID: projectID, Path: path, PageID: pageID,
-		FromArtifactID: fromArtifactID, ToArtifactID: toArtifactID, Lang: lang,
+		ProjectID: in.ProjectID, Path: in.Path, PageID: in.PageID,
+		FromArtifactID: in.FromArtifactID, ToArtifactID: in.ToArtifactID, Lang: in.Lang,
+		Action: action, OldPath: in.OldPath, Redirect: in.Redirect,
 	})
 	if err == nil && strings.TrimSpace(id) == "" {
 		err = errors.New("发布回执登记未返回 id")
 	}
 	if err != nil {
-		logger.Scene("publication").With("pageId", pageID).With("path", path).
+		logger.Scene("publication").With("pageId", in.PageID).With("path", in.Path).With("action", action).
 			Error(err, "发布回执登记失败（不切换访问面）")
 		return "", ErrPublishLedgerUnavailable
 	}
@@ -78,14 +103,20 @@ func (s *Service) publishWindowFaultHit() error {
 }
 
 // keepPublishReceiptPending 收敛「无法判定」的失败：访问面可能已经切换，此刻把回执
-// 标成 rolled_back 会让启动恢复以为这次发布从未生效 —— 错误判定比不判定更糟。
-// 因此只记日志、保留 pending，交给启动恢复按符号链接的实际指向补齐或回滚。
+// 标成 rolled_back 会让恢复流程以为这次发布从未生效 —— 错误判定比不判定更糟。
+// 因此只记日志、保留 pending，交给收敛例程按符号链接的实际指向补齐或回滚。
+//
+// 同时推一次进程内快通道：调用点都在**事务已经落定之后**（DB 事务失败的回滚已发生、
+// 或文件系统那一步已失败），此刻正是「库里有 pending、线上状态未知」——
+// 让收敛立刻跑一遍，而不是等下一个定时间隔（正常情况下毫秒级收敛，见
+// page_publish_converge.go）。信号非阻塞，且收敛本身幂等。
 func (s *Service) keepPublishReceiptPending(receiptID, reason string) {
 	if s == nil || strings.TrimSpace(receiptID) == "" {
 		return
 	}
 	logger.Scene("publication").With("receiptId", receiptID).
-		Warn("发布中断在「已切换访问面、数据库未跟上」窗口，回执保持 pending 交启动恢复判定：" + reason)
+		Warn("发布中断在「已切换访问面、数据库未跟上」窗口，回执保持 pending 交收敛例程判定：" + reason)
+	s.NotifyPendingReceipt()
 }
 
 // completePublishReceipt 结案（访问面与数据库已一致）。
@@ -107,93 +138,44 @@ func (s *Service) abortPublishReceipt(ctx context.Context, receiptID, reason str
 	}
 }
 
-// RecoverPendingPublications 启动恢复：判定未结案的发布回执该补完成还是该回滚。
+// recoverableReceiptActions 本模块认得的访问面切换回执动作名（与 publication 的登记端
+// 同一份词汇表）。
 //
-// 只在证据充分时补完成（符号链接确实指向本次产物）：判定错会写出错误的活跃指针，
-// 而「不判定、只告警」至少不会把状态改得更糟，所以证据不足一律走回滚分支并记日志。
-func (s *Service) RecoverPendingPublications(ctx context.Context) (recovered, rolledBack int, err error) {
-	if s == nil || s.routes == nil || s.publication == nil {
-		return 0, 0, nil
-	}
-	pending, lerr := s.routes.ListPendingReceipts(ctx)
-	if lerr != nil {
-		return 0, 0, lerr
-	}
-	for _, item := range pending {
-		// 只处理手工页面的访问面切换回执：自动发布实例的恢复属于 presentation 的职责
-		// （它的活跃指针在别的表上，用同一套恢复逻辑会写错地方）。
-		if item.Action != publishReceiptActionName || item.SourceType != "page" {
-			continue
-		}
-		done, rerr := s.recoverOne(ctx, item)
-		if rerr != nil {
-			logger.Scene("publication").With("receiptId", item.ID).Error(rerr, "发布回执恢复失败")
-			continue
-		}
-		if done {
-			recovered++
-		} else {
-			rolledBack++
-		}
-	}
-	if recovered > 0 || rolledBack > 0 {
-		logger.Scene("publication").With("recovered", recovered).With("rolledBack", rolledBack).
-			Info("发布回执恢复完成")
-	}
-	return recovered, rolledBack, nil
+// 为什么必须显式在册：publication_receipts 是**共用表** —— 只处理手工页面的回执
+// （自动发布实例的活跃指针在别的表上，用同一套恢复逻辑会写错地方），
+// 而路由变更回执（Activate 的 activate / Redirect 的 redirect）也落在这里、
+// 由各自事务内的结案与补偿处理：拿发布形态的判据去「补齐」一条路由回执，
+// 会把路由变更纠正成发布状态。
+//
+// 三种动作「已切换访问面、数据库没跟上」时要补的数据库步骤不同，因此还必须按动作分派。
+// 这份清单同时是**领取条件**（ClaimPendingReceipts 的 action IN）与**判定条件**
+// （recoverableReceiptAction）——两处各写一套筛选条件，迟早出现「领得到却判不出来」的空转。
+var recoverableReceiptActions = []string{
+	pubcontract.ReceiptActionSwitchActive,
+	pubcontract.ReceiptActionUpdateURL,
+	pubcontract.ReceiptActionRollback,
 }
 
-// publishReceiptActionName 与 publication 侧登记的 Action 一致（筛出切换类回执）。
-const publishReceiptActionName = "switch_active"
+// recoverableReceiptAction 判断某个动作是否在本模块的收敛范围内（不在册一律跳过，
+// 而不是当成发布形态硬套）。
+func recoverableReceiptAction(action string) bool {
+	for _, known := range recoverableReceiptActions {
+		if known == action {
+			return true
+		}
+	}
+	return false
+}
 
 // recoverOne 判定单条回执。返回 true 表示已补完成，false 表示已标回滚。
 func (s *Service) recoverOne(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
-	state, ierr := s.publication.Inspect(item.Path)
-	if ierr != nil {
-		s.abortPublishReceipt(ctx, item.ID, "读取访问面状态失败")
-		return false, nil
+	// 新形态先分派：改 URL（路径迁移 + 旧路径处置）与回滚（活跃指针 + 旧路径下线）
+	// 要补的步骤与发布不同，各自实现见 page_publish_recover.go。
+	switch item.Action {
+	case pubcontract.ReceiptActionUpdateURL:
+		return s.recoverUpdateURLReceipt(ctx, item)
+	case pubcontract.ReceiptActionRollback:
+		return s.recoverRollbackReceipt(ctx, item)
 	}
-	// 访问面当前指向的产物 hash（Kind 不是 page 时说明这个路径现在是重定向或空）。
-	actualHash := ""
-	if state != nil && state.Locator != nil {
-		actualHash = strings.TrimPrefix(state.Locator.Key, "artifacts/")
-	}
-	expectedHash, herr := s.model.ArtifactHashByID(ctx, item.ToArtifactID)
-	if herr != nil {
-		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
-		return false, nil
-	}
-	if actualHash == "" || expectedHash == "" || actualHash != expectedHash {
-		// 切换没发生（或指向的还是旧产物）：数据库保持原样即可，只结案。
-		logger.Scene("publication").With("receiptId", item.ID).With("path", item.Path).
-			With("actual", actualHash).With("expected", expectedHash).
-			Warn("未结案的发布回执判定为「未生效」，标记回滚")
-		s.abortPublishReceipt(ctx, item.ID, "访问面未指向本次产物")
-		return false, nil
-	}
-	// 切换已生效、数据库没跟上：补齐活跃指针与路由行（两步都是幂等写）。
-	// 逐工程定位（DB-009 第四批）：对账只带 pageId，pages 带 FORCE 策略。
-	page, perr := s.locatePageInProjects(ctx, item.SourceID)
-	if perr != nil {
-		s.abortPublishReceipt(ctx, item.ID, "页面不存在")
-		return false, nil
-	}
-	lang := buildLang(item.Lang)
-	if merr := s.model.MarkPublishedLang(ctx, pagemodel.PublicationRecord{
-		PageID: page.ID, Lang: lang, ActivePath: item.Path,
-		ArtifactID: item.ToArtifactID, ArtifactHash: expectedHash, PublishedAt: time.Now().UTC(),
-	}); merr != nil {
-		return false, merr
-	}
-	if _, aerr := s.routes.Activate(ctx, &pubcontract.ActivateReq{
-		ProjectID: page.ProjectID, Path: item.Path, PageID: page.ID, ArtifactID: item.ToArtifactID,
-	}); aerr != nil {
-		return false, aerr
-	}
-	if cerr := s.completePublishReceipt(ctx, item.ID); cerr != nil {
-		return false, cerr
-	}
-	logger.Scene("publication").With("pageId", page.ID).With("path", item.Path).
-		Info("发布在崩溃前已生效，已补齐数据库状态")
-	return true, nil
+	return s.recoverSwitchActiveReceipt(ctx, item)
 }

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -208,14 +210,19 @@ func (s *Service) SetAutomationStatus(ctx context.Context, req *maildto.SetAutom
 }
 
 // DeleteAutomation 删除流程（进行中的实例先停掉，避免留下孤儿实例）。
+//
+// 「停实例 + 删流程」**同事务**：分开提交时第二步失败会留下「实例停了、流程还在」——
+// 运营以为删掉了，刷新后它又出现，而它的实例再也不会推进（AGENTS.md「写操作的事务与回滚」）。
 func (s *Service) DeleteAutomation(ctx context.Context, id uint64) (err error) {
 	if _, gerr := s.m.GetAutomation(ctx, id); gerr != nil {
 		return errors.New(mailenums.ErrAutomationNotFound)
 	}
-	if err = s.m.StopRunsOfAutomation(ctx, id, time.Now()); err != nil {
-		return err
-	}
-	return s.m.DeleteAutomation(ctx, id)
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := s.m.StopRunsOfAutomationTx(ctx, tx, id, time.Now()); serr != nil {
+			return serr
+		}
+		return s.m.DeleteAutomationTx(ctx, tx, id)
+	})
 }
 
 func validTrigger(t string) bool {

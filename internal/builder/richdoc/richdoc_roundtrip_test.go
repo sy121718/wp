@@ -32,8 +32,15 @@ var roundTripSeeds = []string{
 	`<ol><li>一</li><li>二</li></ol>`,
 	`<blockquote>引用正文<cite>某人</cite></blockquote>`,
 	`<pre>func main() {}</pre>`,
+	// 代码语言（Trix 的 language 属性 / 既有 class 两种来源，清洗时归一到 class）：
+	// 它必须能穿过 导入 → props → 导出 这条链路，否则编辑器里选的 go 到画布上就没了。
+	`<pre class="language-go">func main() {}</pre>`,
 	`<img src="/a.webp" alt="图一" title="标题一">`,
 	`<figure><img src="/b.webp" alt="图二"><figcaption>图注</figcaption></figure>`,
+	// 没有 alt 的正文图（Trix 附件就是这样产出的）：往返必须收敛，
+	// 且图注回填（alt 补写）不能在第二轮再变一次。
+	`<figure><img src="/d.webp"><figcaption>没有 alt 的图注</figcaption></figure>`,
+	`<figure><img src="/e.webp"><figcaption>图注里的 <strong>行内格式</strong></figcaption></figure>`,
 	`<hr>`,
 	`<table><caption>表题</caption><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>`,
 	`<p>文字<img src="/c.webp" alt="c">尾巴</p>`,

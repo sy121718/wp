@@ -75,8 +75,10 @@
             <div class="topbar-title">{{.title}}</div>
             <div class="topbar-actions">
                 {* ===== 语言切换：GET /admin/lang（写语言 Cookie + 302 回当前页）。
-                       纯表单提交，无额外 JS；redirect 为服务端注入的当前页 URI（含 query），
-                       由该路由再次校验为站内路径。缺 t/langs 时整块不渲染，不影响页面。 *}
+                       纯表单提交，无额外 JS；redirect 为服务端注入的当前页 URI（含 query）——
+                       渲染侧已由 shell.LangRedirect 收敛（只允许站内相对路径、最长 512 字节，
+                       超出回落当前路径），消费端 /admin/lang 会再校验一次站内路径。
+                       两道关卡各自完整。缺 t/langs 时整块不渲染，不影响页面。 *}
                 {{if .["langs"]}}
                 <form class="lang-switch" method="get" action="/admin/lang">
                     <input type="hidden" name="redirect" value="{{ .["lang_redirect"] }}">

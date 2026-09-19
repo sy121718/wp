@@ -59,7 +59,7 @@ func (h *Handle) List(c *gin.Context) {
 func (h *Handle) Detail(c *gin.Context) {
 	var req blockdto.DetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	res, err := h.svc.Detail(c.Request.Context(), &req)
@@ -74,7 +74,7 @@ func (h *Handle) Detail(c *gin.Context) {
 func (h *Handle) Create(c *gin.Context) {
 	var req blockdto.CreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), &req)
@@ -89,7 +89,7 @@ func (h *Handle) Create(c *gin.Context) {
 func (h *Handle) Update(c *gin.Context) {
 	var req blockdto.UpdateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	res, err := h.svc.Update(c.Request.Context(), &req)
@@ -104,7 +104,7 @@ func (h *Handle) Update(c *gin.Context) {
 func (h *Handle) Delete(c *gin.Context) {
 	var req blockdto.DeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
@@ -118,7 +118,7 @@ func (h *Handle) Delete(c *gin.Context) {
 func (h *Handle) CloneAST(c *gin.Context) {
 	var req blockdto.CloneReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, err.Error())
+		paramBindFail(c, err)
 		return
 	}
 	res, err := h.svc.CloneAST(c.Request.Context(), &req)
@@ -164,4 +164,23 @@ func blockErrorMessage(err error) string {
 		return blockenums.MsgInternalError
 	}
 	return err.Error()
+}
+
+// paramBindFail 请求绑定失败的统一出口（400 + 受控文案）。
+//
+// 不把绑定错误原文拼进响应：gin 的绑定错误会带上 Go 结构体与字段名
+// （如 `json: cannot unmarshal string into Go struct field CreateReq.title of type string`），
+// 那是实现细节 —— 对外只说「参数不合法」，原文进日志供排障。
+//
+// 原先这里是 `response.ParamError(c, err.Error())`。它一直待在门禁盲区里：形态 ① 只认
+// `*.ErrorWithMessage(` 与 `c.String(`，而 `ParamError` 是同一个包里的同族出口却不在判据里。
+// 2026-09 第三批把 ParamError 纳入判据后，本模块这几处立刻被扫出来 —— 判据是**形状**，
+// 不是字面量；同族出口漏一个就等于那一族都没管住。
+func paramBindFail(c *gin.Context, err error) {
+	if err != nil {
+		// 绑定失败是客户端输入问题，按 warn 记（不污染错误日志）。
+		logger.Scene("block").With("path", c.Request.URL.Path).
+			With("detail", err.Error()).Warn("block 接口请求绑定失败")
+	}
+	response.ParamError(c)
 }

@@ -55,8 +55,9 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		"Categories":      rows,
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
 		"Options": categoryPickOptions(flat),
-		"Err":     strings.TrimSpace(c.Query("err")),
-		"Done":    strings.TrimSpace(c.Query("done")),
+		// 读侧一律过白名单（product_err.go）：查询参数不是可信边界。
+		"Err":  productPageErr(c),
+		"Done": productPageDone(c),
 	}))
 }
 
@@ -75,7 +76,7 @@ func (h *productPageHandle) ProductCategoriesCreate(c *gin.Context) {
 		Sort:           parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.products.CreateCategory(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID)
@@ -98,7 +99,7 @@ func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 		SEOTitle: &seoTitle, SEODescription: &seoDescription, Sort: &sortValue,
 	}
 	if _, err := h.products.UpdateCategory(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID)
@@ -108,7 +109,7 @@ func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 func (h *productPageHandle) ProductCategoriesDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ID: c.PostForm("id")}); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID)
@@ -124,7 +125,8 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(projectID)+
+			"&err="+url.QueryEscape(productErrText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -138,9 +140,9 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 	target := "/admin/product-categories?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（有子分类或被商品引用）", deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productCategoryBulkPartial, deleted, skipped))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个分类", deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productCategoryBulkDone, deleted))
 	}
 	c.Redirect(http.StatusFound, target)
 }
@@ -168,8 +170,8 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Brands":          brands,
-		"Err":             strings.TrimSpace(c.Query("err")),
-		"Done":            strings.TrimSpace(c.Query("done")),
+		"Err":             productPageErr(c),
+		"Done":            productPageDone(c),
 	}))
 }
 
@@ -187,7 +189,7 @@ func (h *productPageHandle) ProductBrandsCreate(c *gin.Context) {
 		Sort:           parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.products.CreateBrand(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID)
@@ -209,7 +211,7 @@ func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
 		SEODescription: &seoDescription, Sort: &sortValue,
 	}
 	if _, err := h.products.UpdateBrand(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID)
@@ -219,7 +221,7 @@ func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
 func (h *productPageHandle) ProductBrandsDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ID: c.PostForm("id")}); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID)
@@ -235,7 +237,8 @@ func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, "/admin/product-brands?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(berr.Error()))
+		c.Redirect(http.StatusFound, "/admin/product-brands?project="+url.QueryEscape(projectID)+
+			"&err="+url.QueryEscape(productErrText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -249,9 +252,9 @@ func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
 	target := "/admin/product-brands?project=" + url.QueryEscape(projectID)
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个，%d 个未能删除（品牌不存在或被商品引用）", deleted, skipped))
+		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBrandBulkPartial, deleted, skipped))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf("已删除 %d 个品牌", deleted))
+		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBrandBulkDone, deleted))
 	}
 	c.Redirect(http.StatusFound, target)
 }
@@ -276,7 +279,7 @@ func (h *productPageHandle) ProductsTaxonomySet(c *gin.Context) {
 		BrandID:           &brand,
 	}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, err.Error()))
+		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, productErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))

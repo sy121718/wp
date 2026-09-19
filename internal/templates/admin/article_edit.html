@@ -3,14 +3,17 @@
      · 标题与页面动作进 .page-head（返回列表 / 查看线上 / 编辑详情页模板）；
      · 字段级说明全部收进行内 .help 悬浮（字段旁 ? ），正文零说明文字；
      · SEO 字段保持纯文本：seoTitle 用 input + 字数提示，seoDescription 用 textarea + 字数提示，
-       正文（body）用 Trix 富文本 —— meta 不能带标签，正文才需要格式。 *}
+       正文（body）用 Trix 富文本，且与商品分类 / 品牌描述共用 partials/rich_editor.html ——
+       meta 不能带标签，正文才需要格式；编辑器接线只留一份。 *}
 {* Jet 方言：extends 相对本目录；{{include}} 共享当前数据上下文；map 取值用 ["key"]。 *}
 {{extends "layout.html"}}
+{{import "partials/rich_editor.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{form := .Form}}
 {{listURL := .ListURL}}
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
+<link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack article-edit-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -87,16 +90,17 @@
                           placeholder="{{ .["t"]("admin.article.edit.excerptPlaceholder", "列表卡片上显示的一句话") }}">{{form.Excerpt}}</textarea>
 
                 <div class="field-label-row">
-                    <label class="form-label" for="article-body">{{ .["t"]("admin.article.edit.contentLabel", "内容") }}</label>
+                    <label class="form-label" for="rich-body-article">{{ .["t"]("admin.article.edit.contentLabel", "内容") }}</label>
                     <span class="help">
                         <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.bodyHint", "正文支持标题、列表、引用、代码块、链接与图片（受白名单限制，脚本类标签会被清洗掉）。正文里写的 h2/h3 会进入 SEO 的标题结构评测。") }}</span>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.bodyHint", "正文支持标题（h1~h5 原样保留，不降级）、段落、列表、引用、代码块、表格、折叠块、水平线、链接与图片；白名单之外的元素（script / style / iframe 等）与一切 on* 事件属性会在保存时被清洗掉。正文里写的标题会进入 SEO 的标题结构评测。") }}</span>
                     </span>
                 </div>
-                {* Trix：本地 vendor，零 CDN。编辑器把富文本写回隐藏 input（name=body），
-                   服务端落库前过 core.SanitizeRichHTML 白名单清洗。 *}
-                <input id="article-body" type="hidden" name="body" value="{{form.Body}}">
-                <trix-editor input="article-body" class="trix-content article-trix"></trix-editor>
+                {* 正文编辑器统一走 partials/rich_editor.html（Trix 本地 vendor + 本项目的 rich-editor
+                   扩展）：隐藏 input（name=body）、trix-editor 与扩展入口都由片段给出，本页不再自己
+                   接一套（工具条、表格 / 折叠块附件、CSS 因此三处同源）。落库前仍过
+                   core.SanitizeRichHTML 白名单清洗。 *}
+                {{yield richEditor(field="body", key="article", value=form.Body)}}
 
                 <div class="field-label-row">
                     <label class="form-label" for="article-cover">{{ .["t"]("admin.article.edit.coverLabel", "封面图") }}</label>
@@ -245,7 +249,7 @@
                 <h2>{{ .["t"]("admin.article.edit.importHeading", "导入到画布") }}
                     <span class="help">
                         <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.importIntro", "把正文转换成") }}<strong>{{ .["t"]("admin.article.edit.importIntroStrong", "组件树") }}</strong>{{ .["t"]("admin.article.edit.importIntroTail", "，新建一个页面草稿并在工作台里打开它。这是一次") }}<strong>{{ .["t"]("admin.article.edit.importCopyStrong", "复制") }}</strong>{{ .["t"]("admin.article.edit.importCopyTail", "而不是绑定：之后改文章不会改页面，改页面也不会改文章 —— 两边各有各的真源，互不影响。") }}<br><br>{{ .["t"]("admin.article.edit.importPreviewLead", "预览读的是") }}<strong>{{ .["t"]("admin.article.edit.importPreviewStrong", "已保存") }}</strong>{{ .["t"]("admin.article.edit.importPreviewTail", "的正文（预览与创建必须基于同一份内容，否则「预览没问题的」和「创建出来的」会不一样）：改完正文先保存，再预览。") }}<br><br><strong>{{ .["t"]("admin.article.edit.importWhitelistLead", "只有存得进正文的元素才能被导入。") }}</strong>{{ .["t"]("admin.article.edit.importWhitelistMid", "正文保存时会过一遍富文本白名单（段落、标题、列表、引用、代码块、链接、图片），") }}<strong>{{ .["t"]("admin.article.edit.importWhitelistStrong", "分隔线与表格不在白名单里") }}</strong>{{ .["t"]("admin.article.edit.importWhitelistTail", " —— 它们在保存那一刻就被剥掉了，导入自然也看不到。需要分隔线或表格，请到画布里添加对应组件。") }}</span>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.importIntro", "把正文转换成") }}<strong>{{ .["t"]("admin.article.edit.importIntroStrong", "组件树") }}</strong>{{ .["t"]("admin.article.edit.importIntroTail", "，新建一个页面草稿并在工作台里打开它。这是一次") }}<strong>{{ .["t"]("admin.article.edit.importCopyStrong", "复制") }}</strong>{{ .["t"]("admin.article.edit.importCopyTail", "而不是绑定：之后改文章不会改页面，改页面也不会改文章 —— 两边各有各的真源，互不影响。") }}<br><br>{{ .["t"]("admin.article.edit.importPreviewLead", "预览读的是") }}<strong>{{ .["t"]("admin.article.edit.importPreviewStrong", "已保存") }}</strong>{{ .["t"]("admin.article.edit.importPreviewTail", "的正文（预览与创建必须基于同一份内容，否则「预览没问题的」和「创建出来的」会不一样）：改完正文先保存，再预览。") }}<br><br><strong>{{ .["t"]("admin.article.edit.importWhitelistLead", "只有存得进正文的元素才能被导入。") }}</strong>{{ .["t"]("admin.article.edit.importWhitelistMid", "正文保存时会过一遍富文本白名单（段落、标题 h1~h5、列表、引用、代码块、表格、折叠块、水平线、链接、图片），") }}<strong>{{ .["t"]("admin.article.edit.importWhitelistStrong", "白名单之外的元素") }}</strong>{{ .["t"]("admin.article.edit.importWhitelistTail", " —— 它们在保存那一刻就被剥掉了，导入自然也看不到。需要别的块级组件，请到画布里添加。") }}</span>
                     </span>
                 </h2>
                 {{if .["ImportAvailable"]}}
@@ -281,5 +285,9 @@
         </aside>
     </div>
 </div>
+{* 资源：Trix 本体 + 扩展入口。扩展入口在片段里已引过一次；这里再引一次是刻意的 ——
+   片段里的那个 <script> 在本页靠前的位置执行，vendor 的 trix.umd.js 在文末才加载，
+   入口幂等（见 rich-editor/index.js 顶部），第二次执行负责在 Trix 就绪后补启动。 *}
 <script src="/static/vendor/trix/trix.umd.js"></script>
+<script src="/static/js/rich-editor/index.js"></script>
 {{end}}

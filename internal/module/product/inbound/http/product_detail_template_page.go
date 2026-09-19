@@ -22,12 +22,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productdto "go_wp/internal/module/product/dto"
@@ -88,7 +90,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	data := gin.H{
 		"title": "商品详情页模板", "menu": "products",
 		"Projects": projects, "SelectedProject": selected,
-		"Err": strings.TrimSpace(c.Query("err")),
+		"Err": productPageErr(c),
 	}
 	if h.templates == nil || h.instances == nil {
 		c.HTML(http.StatusOK, "admin/product_detail_template.html",
@@ -101,7 +103,8 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	}
 	product, err := h.products.Get(ctx, &productdto.GetReq{ID: productID})
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/products?project="+selected+"&err="+err.Error())
+		c.Redirect(http.StatusFound, "/admin/products?project="+url.QueryEscape(selected)+
+			"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
 	// 模板清单（多套命名模板）与当前默认模板：默认模板 = 该类型当前解析到的那套，
@@ -175,18 +178,18 @@ func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	copyFrom := strings.TrimSpace(c.PostForm("copyFrom"))
 	if name == "" {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, "模板名不能为空"))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, productDetailTemplateNameRequired))
 		return
 	}
 	doc, err := h.templateDocument(c.Request.Context(), projectID, copyFrom)
 	if err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateTemplateErrText(c, err)))
 		return
 	}
 	if _, err = h.templates.Create(c.Request.Context(), &contenttemplatedto.CreateReq{
 		EntityType: productEntityType, Name: name, DraftDocument: doc, ProjectID: projectID,
 	}); err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateTemplateErrText(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
@@ -226,7 +229,7 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 	if req.URLPath == "" {
 		product, err := h.products.Get(c.Request.Context(), &productdto.GetReq{ID: productID})
 		if err != nil {
-			c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, err.Error()))
+			c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, productErrText(c, err)))
 			return
 		}
 		// 路径按站点 URL 规则派生（SiteSettings.urlPatterns，未配置则用 siteurl 的默认模式）：
@@ -235,7 +238,7 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 			siteurl.KindProduct, product.Slug, productID)
 	}
 	if _, err := h.instances.CreateInstance(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(err)))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
@@ -255,7 +258,7 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 	productID := c.PostForm("productId")
 	newPath := strings.TrimSpace(c.PostForm("newPath"))
 	if newPath == "" {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, "请填写新的访问路径。"))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, productDetailTemplatePathRequired))
 		return
 	}
 	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationdto.UpdateURLReq{
@@ -264,7 +267,7 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 		NewPath:      newPath,
 		WithRedirect: c.PostForm("withRedirect") != "",
 	}); err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(err)))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
@@ -282,7 +285,7 @@ func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 	if _, err := h.instances.Rebuild(c.Request.Context(), &presentationdto.RebuildReq{
 		EntityID: productID, TemplateID: strings.TrimSpace(c.PostForm("templateId")),
 	}); err != nil {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(err)))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(c, err)))
 		return
 	}
 	c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, ""))
@@ -327,33 +330,82 @@ var detailTemplateFacingMessages = map[string]string{
 	presentationenums.ErrPathOccupied:         "这个路径已被其他页面或详情页占用，换一个再试。",
 }
 
-// detailTemplateFacingError 把 presentation 的错误翻译成可展示文案。
-// 拿不到映射时原样返回：宁可显示原始错误，也不要吞掉一个没见过的失败原因。
-func detailTemplateFacingError(err error) string {
-	if err == nil {
-		return ""
-	}
-	raw := strings.TrimSpace(err.Error())
-	if msg, ok := detailTemplateFacingMessages[raw]; ok {
+// detailTemplateTemplateMessages 模板契约（contenttemplate）的业务错误 → 可展示文案。
+//
+// 这一页的 err 来自三个依赖（product / contenttemplate / presentation），三份白名单
+// **分开**查：同名 key 在各自语境下含义不同（contenttemplate 的 ErrNotFound 是「模板不存在」，
+// product 的是「商品不存在」），合并成一张表必然吃掉一边。
+var detailTemplateTemplateMessages = map[string]string{
+	contenttemplateenums.ErrInvalidParam:        "参数不完整，请检查工程、模板名与复制来源。",
+	contenttemplateenums.ErrNotFound:            "这套模板不存在，可能已被删除。",
+	contenttemplateenums.ErrTemplateInUse:       "这套模板仍被自动发布实例引用，不能删除。",
+	contenttemplateenums.ErrInvalidType:         "不支持的内容类型（本页只处理商品详情模板）。",
+	contenttemplateenums.ErrDataInvalid:         "模板文档格式非法：请回到工作台重新保存后再复制。",
+	contenttemplateenums.ErrFieldBindingInvalid: "模板里的字段绑定越界：请回到工作台改用本模板数据源内的字段。",
+	contenttemplateenums.ErrProjectRequired:     "站点里有多个工程，请显式选择这套模板所属的工程。",
+	contenttemplateenums.ErrProjectNotFound:     "选择的站点工程不存在，请刷新后重试。",
+}
+
+// facingLookup 在「裸 key」或「key: 明细」两种形态的白名单里查文案；未命中返回空串。
+//
+// 只在这两种形态里认：service 会用 fmt.Errorf("%s: %w", enumsKey, err) 把 key 拼进整句话，
+// 精确匹配会让这类错误全部落到归口文案 —— 运营看到「系统内部错误」而实际问题只是
+// 路径撞车。这与 content 模块 articleFacingText 的 key 前缀判定是同一判据。
+func facingLookup(raw string, table map[string]string) string {
+	raw = strings.TrimSpace(raw)
+	if msg, ok := table[raw]; ok {
 		return msg
 	}
-	// service 会用 fmt.Errorf("%s: %w", enumsKey, err) 包装，取冒号前的 key 再查一次。
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
-		if msg, ok := detailTemplateFacingMessages[strings.TrimSpace(raw[:idx])]; ok {
+		if msg, ok := table[strings.TrimSpace(raw[:idx])]; ok {
 			return msg
 		}
 	}
-	return raw
+	return ""
+}
+
+// detailTemplateFacingError 把 presentation 的错误翻译成可展示文案。
+//
+// 未命中白名单时**不再原样返回**：原先的「宁可显示原始错误」正是把构建器 / 文件系统
+// 细节铺到 ?err= 上的那条路（?err= 会被页面原样渲染）。现在原文只进日志，对外给归口文案。
+func detailTemplateFacingError(c *gin.Context, err error) string {
+	if err == nil {
+		return ""
+	}
+	if msg := facingLookup(err.Error(), detailTemplateFacingMessages); msg != "" {
+		return msg
+	}
+	return productInternalText(c, err)
+}
+
+// detailTemplateTemplateErrText 模板契约错误 → 可展示文案（同一骨架，白名单换成模板那份）。
+func detailTemplateTemplateErrText(c *gin.Context, err error) string {
+	if err == nil {
+		return ""
+	}
+	if msg := facingLookup(err.Error(), detailTemplateTemplateMessages); msg != "" {
+		return msg
+	}
+	return productInternalText(c, err)
 }
 
 // detailTemplateBackURL 详情页模板页的回跳地址（带工程与商品，错误经查询串回显）。
+//
+// 文案一律 QueryEscape：中文与「，」会原样进 Location，而文案里只要出现 & 或 #，
+// 手拼的查询串就会被截断成另一条提示（编码只在这一处做，调用点不再各自转义）。
 func (h *productPageHandle) detailTemplateBackURL(projectID, productID, errMsg string) string {
-	url := productDetailTemplatePath + "?project=" + projectID + "&product=" + productID
+	loc := productDetailTemplatePath + "?project=" + url.QueryEscape(projectID) + "&product=" + url.QueryEscape(productID)
 	if strings.TrimSpace(errMsg) != "" {
-		url += "&err=" + errMsg
+		loc += "&err=" + url.QueryEscape(errMsg)
 	}
-	return url
+	return loc
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。
 const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模板或自动发布契约）"
+
+// 本页的两个参数级提示（同样进 ?err=，因此在 product_err.go 的读侧候选里登记）。
+const (
+	productDetailTemplateNameRequired = "模板名不能为空"
+	productDetailTemplatePathRequired = "请填写新的访问路径。"
+)

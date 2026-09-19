@@ -234,7 +234,10 @@ func fieldWritable(writable []string, name string) bool {
 // （仍然只有一份清洗口径，不另写一套去标签逻辑）。
 // 注意 br 的写法要容得下 <br> / <br/> / <br />：漏了带空格那种（HTML 里很常见），
 // 换行就会被当成"没有边界"，前后两段文字直接粘在一起。
-var blockBoundaryRe = regexp.MustCompile(`(?i)</(p|div|li|h[1-6]|tr|td|th|blockquote)>|<br\s*/?>`)
+// 块边界集合要跟着富文本白名单走：白名单新增块级元素（summary/details/thead/tbody/tfoot/
+// caption，见 core/richtext.go）而这里不补，去标签后「标题」与「正文」会**粘成一串**
+// （<summary>标题</summary><p>正文</p> → 标题正文），meta 描述与 JSON-LD 都会带上这种噪声。
+var blockBoundaryRe = regexp.MustCompile(`(?i)</(p|div|li|h[1-6]|tr|td|th|blockquote|summary|details|thead|tbody|tfoot|caption|dt|dd)>|<br\s*/?>`)
 
 // seoPlainText 实体字段值 → 可进 <head> 的纯文本。
 //

@@ -28,7 +28,12 @@ const (
 	DepKindContentCollection = "content_collection"
 	// DepKindContentTemplate ContentTemplate 版本变化。
 	DepKindContentTemplate = "content_template"
-	// DepKindMenu 菜单项变化。
+	// DepKindMenu 公开站点导航变化（navigations 表：菜单项增删改、排序、位置调整）。
+	//
+	// 键的构造见 MenuKey：**带工程 ID**。导航与块不同 —— block 的 key 是全局唯一
+	// 的块 id（block:{id}），而导航的位置名只有 header/footer 两个，跨工程必然重名；
+	// 而依赖反查是逐工程各查一次 (kind,key)，不带工程 ID 时「A 工程改页眉导航」
+	// 会把 B 工程里同样绑了 header 的页面一并标 stale（跨工程误标）。
 	DepKindMenu = "menu"
 	// DepKindMedia 媒体内容变化。
 	DepKindMedia = "media"
@@ -74,6 +79,17 @@ func SiteSlotKey(slot string) DepKey {
 
 func BlockKey(blockID string) DepKey {
 	return DepKey{Kind: DepKindBlock, Key: "block:" + blockID}
+}
+
+// MenuKey 公开站点导航依赖键，如 menu:{projectID}:{kind}（kind = header / footer）。
+//
+// 为什么键里带工程 ID：导航是**工程级**资源（navigations.project_id），位置名却只有
+// header/footer 两个。反查是逐工程各一次 (kind,key) 匹配（RLS 的 FORCE 策略要求
+// UPDATE 落在具体工程作用域内），键里不带工程 ID 时每个工程都会命中同一个 key ——
+// 「A 工程改页眉导航」会把 B 工程里绑了 header 的页面全部标 stale。
+// key 由 page 与 presentation 两条构建路径用同一个构造函数产出，两侧必须一致。
+func MenuKey(projectID, kind string) DepKey {
+	return DepKey{Kind: DepKindMenu, Key: "menu:" + projectID + ":" + kind}
 }
 
 // DependencyTarget 依赖失效目标：一个可被依赖源变更标记的发布来源

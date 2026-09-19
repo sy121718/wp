@@ -170,6 +170,17 @@ func NewMailModel(db *gorm.DB) *MailModel { return &MailModel{db: db} }
 // tx 内部句柄（不导出：本 model 多表，对外只给具名方法）。
 func (m *MailModel) tx(ctx context.Context) *gorm.DB { return m.db.WithContext(ctx) }
 
+// txOr 返回调用方事务（非 nil 时）或按 ctx 取句柄 —— …Tx 变体与它们的非 Tx 门面共用一条实现。
+//
+// 传 nil 即「没有外层事务」，与不带 Tx 后缀的同名方法完全等价；传了句柄就用它，
+// 于是「抑制名单 + 联系人状态」这类两处写能落进同一个事务（AGENTS.md「写操作的事务与回滚」）。
+func (m *MailModel) txOr(ctx context.Context, tx *gorm.DB) *gorm.DB {
+	if tx != nil {
+		return tx.WithContext(ctx)
+	}
+	return m.tx(ctx)
+}
+
 // Transaction 透传事务：跨表编排由 service 决定边界。
 func (m *MailModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)
@@ -219,8 +230,22 @@ func (m *MailModel) UpdateAccountFields(ctx context.Context, id uint64, fields m
 
 // ClearDefaultAccounts 清掉某用途下的默认标记（切换默认账号时先清后设，同一事务内）。
 func (m *MailModel) ClearDefaultAccounts(ctx context.Context, tx *gorm.DB, purpose string) (err error) {
-	return tx.WithContext(ctx).Model(&MailAccountEntity{}).
+	return m.txOr(ctx, tx).Model(&MailAccountEntity{}).
 		Where("purpose = ? AND is_default", purpose).Update("is_default", false).Error
+}
+
+// MarkAccountDefaultTx 在调用方事务内把某个账号置为该用途的默认账号。
+//
+// 与 ClearDefaultAccounts **配对使用**：调用方（service）先清同用途的旧默认、再置新的，
+// 两步落在同一个事务里，中途失败整体回滚 —— 否则会留下「该用途没有默认账号」
+// 或「两个默认账号」的半截状态，而事务邮件的取号路径正是按 (purpose, is_default) 定位。
+//
+// 之所以把它收进 model：service 层只能用 model 具名方法访问本模块表（AGENTS.md「model 层定位」），
+// 原先 service 在事务回调里直接写 tx.WithContext(ctx).Model(&MailAccountEntity{}) 拼 UPDATE，
+// 正是那条约定要拦的写法（scripts/check-service-db-boundary.sh 判据 ①b）。
+func (m *MailModel) MarkAccountDefaultTx(ctx context.Context, tx *gorm.DB, id uint64) (err error) {
+	return m.txOr(ctx, tx).Model(&MailAccountEntity{}).
+		Where("id = ?", id).Updates(map[string]any{"is_default": true, "update_time": time.Now()}).Error
 }
 
 // DeleteAccount 删除账号。
@@ -311,15 +336,28 @@ func (m *MailModel) CreateLogsInBatches(ctx context.Context, list []*MailLogEnti
 
 // UpdateLogResult 回写发送结果（状态 / provider / 错误分类 / 消息 id）。
 func (m *MailModel) UpdateLogResult(ctx context.Context, id uint64, fields map[string]any) (err error) {
+	return m.UpdateLogResultTx(ctx, nil, id, fields)
+}
+
+// UpdateLogResultTx 与 UpdateLogResult 相同，但复用调用方事务。
+//
+// 投递失败的回写是**一组**写（日志状态 + 抑制名单 + 联系人状态）：任一步独立提交，
+// 中途失败就会留下「日志说失败了但地址没进抑制名单」这种下次还会再发的半截状态。
+func (m *MailModel) UpdateLogResultTx(ctx context.Context, tx *gorm.DB, id uint64, fields map[string]any) (err error) {
 	if len(fields) == 0 {
 		return nil
 	}
-	return m.tx(ctx).Model(&MailLogEntity{}).Where("id = ?", id).Updates(fields).Error
+	return m.txOr(ctx, tx).Model(&MailLogEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
 // IncrLogRetry 原子递增重试次数（并发重试时不会互相覆盖）。
 func (m *MailModel) IncrLogRetry(ctx context.Context, id uint64) (err error) {
-	return m.tx(ctx).Model(&MailLogEntity{}).Where("id = ?", id).
+	return m.IncrLogRetryTx(ctx, nil, id)
+}
+
+// IncrLogRetryTx 与 IncrLogRetry 相同，但复用调用方事务（与 UpdateLogResultTx 同批写）。
+func (m *MailModel) IncrLogRetryTx(ctx context.Context, tx *gorm.DB, id uint64) (err error) {
+	return m.txOr(ctx, tx).Model(&MailLogEntity{}).Where("id = ?", id).
 		Update("retry_count", gorm.Expr("retry_count + 1")).Error
 }
 
@@ -386,7 +424,15 @@ func (m *MailModel) SuppressedEmails(ctx context.Context, emails []string) (bloc
 
 // AddSuppression 加入抑制名单（已存在则忽略，不报错 —— 退订是幂等动作）。
 func (m *MailModel) AddSuppression(ctx context.Context, e *MailSuppressionEntity) (err error) {
-	return m.tx(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(e).Error
+	return m.AddSuppressionTx(ctx, nil, e)
+}
+
+// AddSuppressionTx 与 AddSuppression 相同，但复用调用方事务。
+//
+// 抑制名单与联系人状态是同一件事的两面（「这个地址不能再发」）：只写一边的话，
+// 后台点了退订却还能被发出去 —— 那比不点退订更糟（见 mail_contact.go 的说明）。
+func (m *MailModel) AddSuppressionTx(ctx context.Context, tx *gorm.DB, e *MailSuppressionEntity) (err error) {
+	return m.txOr(ctx, tx).Clauses(clause.OnConflict{DoNothing: true}).Create(e).Error
 }
 
 // ListSuppressions 列抑制名单。

@@ -52,13 +52,13 @@ func NewHandleWithDeps(
 func (h *Handle) AdminList(c *gin.Context) {
 	var req admindto.AdminListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.admin.AdminList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -69,13 +69,13 @@ func (h *Handle) AdminList(c *gin.Context) {
 func (h *Handle) AdminLogin(c *gin.Context) {
 	var req admindto.AdminLoginReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.admin.AdminLogin(c.Request.Context(), &req, c.ClientIP())
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 		SessionID: res.SessionID,
 		IssuedAt:  res.IssuedAt,
 	}, res.RememberMe); err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 	// token，后台所有 POST 会被 CSRF 中间件 403。
 	csrfToken, err := builtin.RotateCSRFToken(c)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -118,13 +118,13 @@ func (h *Handle) AdminLogout(c *gin.Context) {
 		return
 	}
 	if err := h.admin.AdminLogout(c.Request.Context(), uint64(uid)); err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
 	// 清空 cookie session（Redis 会话已在 service 层删除）
 	if err := auth.ClearSession(c); err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -150,7 +150,7 @@ func (h *Handle) AdminProfile(c *gin.Context) {
 
 	res, err := h.admin.AdminProfile(c.Request.Context(), uint64(uid))
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -161,12 +161,12 @@ func (h *Handle) AdminProfile(c *gin.Context) {
 func (h *Handle) AdminCreate(c *gin.Context) {
 	var req admindto.AdminCreateReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.admin.AdminCreate(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -176,12 +176,12 @@ func (h *Handle) AdminCreate(c *gin.Context) {
 func (h *Handle) AdminEdit(c *gin.Context) {
 	var req admindto.AdminEditReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.admin.AdminEdit(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -191,13 +191,13 @@ func (h *Handle) AdminEdit(c *gin.Context) {
 func (h *Handle) AdminDetail(c *gin.Context) {
 	var req admindto.AdminDetailReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
 	res, err := h.admin.AdminDetail(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -208,7 +208,7 @@ func (h *Handle) AdminDetail(c *gin.Context) {
 func (h *Handle) AdminDelete(c *gin.Context) {
 	var req admindto.AdminDeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 
@@ -222,7 +222,7 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 
 	res, err := h.admin.AdminDelete(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 
@@ -233,12 +233,12 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 func (h *Handle) AdminRoleList(c *gin.Context) {
 	var req admindto.AdminRoleListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.admin.AdminRoleList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -248,7 +248,7 @@ func (h *Handle) AdminRoleList(c *gin.Context) {
 func (h *Handle) AdminRoleSave(c *gin.Context) {
 	var req admindto.AdminRoleSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -260,7 +260,7 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 	req.OperatorID = uid
 	res, err := h.admin.AdminRoleSave(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
@@ -270,12 +270,12 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 func (h *Handle) AdminMenuList(c *gin.Context) {
 	var req admindto.AdminMenuListReq
 	if err := c.ShouldBindQuery(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.admin.AdminMenuList(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)
@@ -285,12 +285,12 @@ func (h *Handle) AdminMenuList(c *gin.Context) {
 func (h *Handle) AdminMenuSave(c *gin.Context) {
 	var req admindto.AdminMenuSaveReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		r.ErrorWithMessage(c, 400, adminenums.MsgBadRequest+": "+err.Error())
+		adminBindFail(c, err)
 		return
 	}
 	res, err := h.admin.AdminMenuSave(c.Request.Context(), &req)
 	if err != nil {
-		r.ErrorWithMessage(c, 400, err.Error())
+		adminFail(c, err)
 		return
 	}
 	r.SuccessWithMessage(c, adminenums.MsgSuccess, res)
@@ -312,7 +312,7 @@ func (h *Handle) AdminRoutes(c *gin.Context) {
 	}
 	res, err := h.admin.AdminRoutes(c.Request.Context(), uint64(uid), r.RequestLanguage(c))
 	if err != nil {
-		r.ErrorInternal(c, "admin", err)
+		adminFail(c, err)
 		return
 	}
 	r.Success(c, res)

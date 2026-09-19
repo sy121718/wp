@@ -32,7 +32,7 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	id := shell.ParseUint(c.Query("id"))
 	item, err := h.mail.GetAutomation(ctx, id)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(err.Error()))
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	nodesJSON, merr := json.Marshal(item.Nodes)
@@ -60,7 +60,7 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 		"MetaJSON":  shell.JsonSafe(string(metaJSON)),
 		"Templates": templates,
 		"jsVer":     automationJsVer(),
-		"Err":       c.Query("err"),
+		"Err":       mailPageErr(c),
 		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
 		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
 		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-up"}),

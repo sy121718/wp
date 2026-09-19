@@ -21,8 +21,14 @@ type VariantSnapshot struct {
 	VariantLabel string
 	SKU          string
 	Price        int64
-	CostPrice    int64
-	Enabled      bool
+	// CostPrice 该变体在**归属仓**的当前成本（分）。
+	//
+	// **nil = 尚未核算**，绝不是 0：库存行的 cost_price 可空（迁移 244），0 是
+	// 「赠品 / 内部划拨」这类合法的显式成本 —— 用 0 冒充未知会让订单利润凭空多出一笔。
+	// 早先用 int64 + 负值哨兵表达未知，2026-09-19 收口成指针：哨兵把「契约能不能表达
+	// 未知」这件事藏进了实现侧的两处注释里，换个消费方就会漏判。
+	CostPrice *int64
+	Enabled   bool
 }
 
 // VariantSnapshotPort 供订单域按下单快照取商品事实。

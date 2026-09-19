@@ -83,6 +83,7 @@
                    复用它会让表头直接显示「启用中」—— t(key, fallback) 的 fallback 只在
                    词条缺失时生效，已有词条会盖掉它。 *}
                 <th>{{ .["t"]("admin.inventory.label.name", "仓库名称") }}</th>
+                <th>{{ .["t"]("admin.inventory.col.type", "类型") }}</th>
                 <th>{{ .["t"]("admin.inventory.label.code", "短码") }}</th>
                 <th>{{ .["t"]("admin.inventory.col.status", "状态") }}</th>
                 <th>{{ .["t"]("admin.inventory.ph.sort", "排序") }}</th>
@@ -99,6 +100,7 @@
                     {{if isset(.PermSet["inventory:warehouse_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{w.Name}}</button>{{else}}{{w.Name}}{{end}}
                     {{if w.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.inventory.defaultWarehouse", "默认仓") }}</span>{{end}}
                 </td>
+                <td data-label="{{ .["t"]("admin.inventory.col.type", "类型") }}">{{w.TypeLabel}}{{if w.HasThirdParty}}{{if w.Provider}} <span class="move-meta">{{w.Provider}}</span>{{end}}{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.label.code", "短码") }}"><code>{{w.Code}}</code></td>
                 <td data-label="{{ .["t"]("admin.inventory.col.status", "状态") }}">{{w.StatusLabel}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.ph.sort", "排序") }}">{{w.Sort}}</td>
@@ -162,6 +164,43 @@
             <label class="var-value">
                 <input type="checkbox" name="isDefault" value="1"> {{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}
             </label>
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory.col.type", "类型") }}</label>
+                <select class="form-select" name="type">
+                    {{if isset(.WarehouseTypes)}}{{range _, t := .WarehouseTypes}}
+                    <option value="{{t.Value}}">{{t.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+                <p class="form-hint">{{ .["t"]("admin.inventory.warehouse.typeHint", "自营仓为自有实体仓；第三方仓由外部服务商运营（下面的对接配置只对它生效）；虚拟仓只用于分组记账，不能作为默认仓。") }}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.provider", "对接方") }}</label>
+                <input type="text" class="form-input" name="provider" placeholder="{{ .["t"]("admin.inventory.warehouse.phProvider", "第三方服务商名称，如 菜鸟仓配") }}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.externalCode", "外部仓代码") }}</label>
+                <input type="text" class="form-input" name="externalCode" placeholder="{{ .["t"]("admin.inventory.warehouse.phExternalCode", "对方系统里的仓库代码") }}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.address", "仓库地址") }}</label>
+                <input type="text" class="form-input" name="address" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.contact", "联系人") }}</label>
+                <input type="text" class="form-input" name="contact" autocomplete="off">
+            </div>
+            <label class="var-value">
+                <input type="checkbox" name="allowsShipping" value="1"> {{ .["t"]("admin.inventory.warehouse.allowsShipping", "允许发货") }}
+            </label>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.credential", "API 凭据") }}</label>
+                <input type="password" class="form-input" name="apiCredential" autocomplete="new-password" placeholder="{{ .["t"]("admin.inventory.warehouse.phCredential", "留空表示不修改；填写后加密存储，页面只回显掩码") }}">
+                <p class="form-hint">{{ .["t"]("admin.inventory.warehouse.credentialHint", "凭据以 AES-256-GCM 加密后存入仓库配置，接口与页面都不返回明文（只显示 ****）。若部署侧用密钥管理服务，可改填下面的引用名。") }}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.secretRef", "凭据引用名") }}</label>
+                <input type="text" class="form-input" name="secretRef" placeholder="{{ .["t"]("admin.inventory.warehouse.phSecretRef", "如 kms://warehouse/nanjing，值由部署侧配置") }}" autocomplete="off">
+            </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
@@ -184,6 +223,44 @@
             <div class="form-group">
                 <label class="form-label req">{{ .["t"]("admin.inventory.label.code", "仓库短码") }}</label>
                 <input type="text" class="form-input" name="code" value="{{w.Code}}" required autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.col.type", "类型") }}</label>
+                <select class="form-select" name="type">
+                    {{if isset(.WarehouseTypes)}}{{range _, t := .WarehouseTypes}}
+                    <option value="{{t.Value}}" {{if t.Value == w.Type}}selected{{end}}>{{t.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.provider", "对接方") }}</label>
+                <input type="text" class="form-input" name="provider" value="{{if isset(w.Provider)}}{{w.Provider}}{{end}}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.externalCode", "外部仓代码") }}</label>
+                <input type="text" class="form-input" name="externalCode" value="{{if isset(w.ExternalCode)}}{{w.ExternalCode}}{{end}}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.address", "仓库地址") }}</label>
+                <input type="text" class="form-input" name="address" value="{{if isset(w.Address)}}{{w.Address}}{{end}}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.contact", "联系人") }}</label>
+                <input type="text" class="form-input" name="contact" value="{{if isset(w.Contact)}}{{w.Contact}}{{end}}" autocomplete="off">
+            </div>
+            <label class="var-value">
+                <input type="checkbox" name="allowsShipping" value="1" {{if isset(w.AllowsShipping)}}{{if w.AllowsShipping}}checked{{end}}{{end}}> {{ .["t"]("admin.inventory.warehouse.allowsShipping", "允许发货") }}
+            </label>
+            {* 凭据回显永远是掩码：模板里根本没有明文可渲染 —— 服务端返回的 ThirdParty 结构
+               里只有 HasCredential 与 CredentialMasked（见 dto.WarehouseThirdPartyResp）。 *}
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.credential", "API 凭据") }}</label>
+                <input type="password" class="form-input" name="apiCredential" autocomplete="new-password"
+                       placeholder="{{if isset(w.HasCredential)}}{{if w.HasCredential}}{{ .["t"]("admin.inventory.warehouse.phCredentialSet", "已配置（****）：留空表示不修改") }}{{else}}{{ .["t"]("admin.inventory.warehouse.phCredential", "留空表示不修改；填写后加密存储，页面只回显掩码") }}{{end}}{{end}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.secretRef", "凭据引用名") }}</label>
+                <input type="text" class="form-input" name="secretRef" value="{{if isset(w.SecretRef)}}{{w.SecretRef}}{{end}}" autocomplete="off">
             </div>
             <div class="form-group">
                 <label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label>

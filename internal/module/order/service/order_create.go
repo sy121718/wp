@@ -2,15 +2,14 @@ package orderservice
 
 // order_create.go — 建单（BIZ-1 销售侧）：**编排**。
 //
-// 事务边界与补偿策略照采购入库（#18）的既有先例：
-//   ① 先在**一个事务**里写订单头 + 订单项 + 流转流水（订单是主记录，也是扣减的依据）；
-//   ② 提交之后再动库存（跨模块，不可能共用一个事务）；
-//   ③ 库存不足或库存服务不可用 → **补偿**：把订单标记为已取消并记流水。
+// 事务边界（2026-09-19 收口）：订单头 + 订单项 + 流转流水 + 券核销 + **扣库存**
+// 全部落在**同一个事务**里（见 order_create_persist.go）。跨模块只传 *gorm.DB 句柄
+// （stock.DeductStockTx），库存侧不再自己开事务。
 //
-// 为什么不「先扣库存再写单」：扣减的 source_ref 要用订单号，而订单号不依赖订单 id，
-// 两种顺序都能做。选「先写单」是因为它让失败**留痕** —— 补偿后库里留下一条
-// 「因库存不足而失败」的已取消订单，能看出发生过什么；反过来先扣库存、写单失败，
-// 就只能把库存悄悄归还，事后查不出任何痕迹。
+// 为什么不再「先写单、提交、再扣库存、失败补偿成已取消」：
+//   补偿本身也会失败（旧代码还把它 `_ =` 吞掉），失败时库里会同时留下
+//   「有订单」「库存没动」两处事实，谁也没法从数据上判断到底发没发货。同库跨模块
+//   必须事务透传，任一步失败整体回滚 —— 失败的单干脆不存在，调用方拿到明确错误。
 //
 // 文件分工（CQ-023：此前是 278 行的单函数）：
 //   · 本文件 —— 编排、入参校验、幂等查、订单号与展示辅助；
@@ -67,7 +66,8 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 		return nil, err
 	}
 
-	// ① 订单（头 + 项 + 流水 + 券核销）一个事务。
+	// 订单（头 + 项 + 流水 + 券核销）与扣库存**同一个事务**：任一步失败整单不存在，
+	// 不再有「先提交、再扣库存、失败补偿成已取消」的半截路径。
 	if err = s.persistOrder(ctx, draft); err != nil {
 		// 并发同键撞唯一索引：另一个请求已经把单建出来了，回读它原样返回。
 		if database.IsUniqueViolation(err) {
@@ -75,11 +75,6 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 				return dup, nil
 			}
 		}
-		return nil, err
-	}
-
-	// ② 扣库存（跨模块，落在订单事务之外）；③ 失败补偿在同一函数内。
-	if err = s.deductStockOrCompensate(ctx, draft); err != nil {
 		return nil, err
 	}
 

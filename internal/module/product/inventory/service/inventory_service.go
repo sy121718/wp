@@ -49,11 +49,21 @@ type Service struct {
 	// 采购入库 / 生产入库登记后（库存变动已提交）经它把单价写进
 	// product_variants.cost_price；未注入时按回写失败记在入库单行上（cost_error），
 	// 不回滚已经落地的真源库存。依赖方向同样是 inventory → product。
+	//
+	// 成本的主载体自批次 A 起是**仓库侧**（inventory_stocks.cost_price，(仓库, SKU)
+	// 的当前值，迁移 244），它在 ChangeStock 的事务里随库存一起写好、不依赖本端口；
+	// 本端口是商品侧的兼容写回（未注入不影响仓库侧成本）。
 	variantCost productcontract.VariantCostPort
 	// changes 主数据变更记录端口（issue #19，由 masterdata 模块实现）。
 	// 货源资料的字段级变更（编码 / 类型 / 关联方 / 结算价 / 状态 / 对接配置）经它留痕；
 	// 未注入时静默跳过（纯库存单测路径），生产装配恒注入。
 	changes masterdatacontract.MasterDataService
+	// cipherSecret 敏感配置加密密钥（仓库第三方对接凭据，迁移 240）。
+	//
+	// 装配期由 inbound 从 config.yaml 的 app.secret 读入后注入（模块自己不读配置，
+	// 与 mail / webhook 同一模式）。为空时不写明文凭据，而是明确报错 ——
+	// 「没有密钥」是配置问题，不该降级成「凭据明文落库」。
+	cipherSecret string
 }
 
 // NewService 构造。
@@ -65,6 +75,12 @@ func NewService(m *inventorymodel.Model, project projectcontract.ProjectService)
 //
 // 注入时机在商品模块装配之后（缓存端口的实现属商品模块），
 // 与 product.SetVariantStock 同一模式：可选依赖不进构造参数。
+
+// SetCipherSecret 注入敏感配置加密密钥（装配期从 config 的 app.secret 读入后调用）。
+//
+// 未注入时第三方仓的凭据无法加密：写入明文凭据会被拒绝（ErrWarehouseCredentialKeyMissing），
+// 走引用名（secretRef）的路径不受影响 —— 系统只记名字，不记值。
+func (s *Service) SetCipherSecret(secret string) { s.cipherSecret = secret }
 
 // SetVariantCost 注入商品侧成本价写回端口（issue #18，装配期调用；**必须注入**）。
 //

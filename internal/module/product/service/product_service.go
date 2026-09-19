@@ -23,6 +23,9 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/rls"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -158,6 +161,19 @@ var (
 	// 成本价写回端口（issue #18）：库存模块经它把入库单价写进 product_variants.cost_price。
 	_ productcontract.VariantCostPort = (*Service)(nil)
 )
+
+// transactionScope 在**调用方已开启的事务**上设置工程作用域（工程 id 为空时跳过）。
+//
+// 为什么允许空 id 跳过：纯商品单测路径（未注入留痕端口）拿不到工程上下文，
+// 而 product_variants 本就没有 RLS 策略 —— 为它编一个工程 id 只会把「没作用域」
+// 伪装成「有作用域」。涉及 products（有 FORCE 策略）的路径工程 id 必非空，
+// 空串在那里是编程错误，由 rls 直接拒掉，不在这里兜。
+func transactionScope(tx *gorm.DB, projectID string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return nil
+	}
+	return rls.ScopeTx(tx, projectID)
+}
 
 // resolveProjectID 解析工程：显式指定优先，否则取唯一工程。
 func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id string, err error) {

@@ -7,6 +7,7 @@
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "layout.html"}}
 {{import "partials/bulk_bar.html"}}
+{{import "partials/rich_editor.html"}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -15,9 +16,11 @@
 {{canCreate := isset(.PermSet["product:category_create"])}}
 {{canUpdate := isset(.PermSet["product:category_update"])}}
 {{canDelete := isset(.PermSet["product:category_delete"])}}
-{* 描述类字段用富文本（评审规则 admin-ui-logic §9）：分类描述是「一段话」，
-   单行 input 放不下；富文本走项目既有链路（页面内引 Trix + 服务端白名单清洗）。 *}
+{* 描述类字段用富文本（评审规则 admin-ui-logic §9）：分类描述是「一段话」，单行 input 放不下。
+   字段结构统一走 partials/rich_editor.html（隐藏 input + trix-editor + 扩展脚本），
+   页面不再各写一套 trix-editor。 *}
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
+<link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -158,9 +161,8 @@
             <textarea aria-label="{{ .["t"]("admin.product_categories.label.seoDesc", "SEO 描述") }}" class="form-textarea" name="seoDescription" id="cat-seo-desc-{{row.ID}}" rows="3" data-counter="155"
                       placeholder="{{ .["t"]("admin.product_categories.ph.seoDesc", "SEO 描述（可留空）") }}">{{row.SEODescription}}</textarea>
             <span class="field-counter" data-counter-out="cat-seo-desc-{{row.ID}}" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <label class="form-label" for="cat-desc-{{row.ID}}">{{ .["t"]("admin.product_categories.label.description", "分类描述") }}</label>
-            <input id="cat-desc-{{row.ID}}" type="hidden" name="description" value="{{row.Description}}">
-            <trix-editor input="cat-desc-{{row.ID}}" class="trix-content rich-editor"></trix-editor>
+            <label class="form-label" for="rich-description-{{row.ID}}">{{ .["t"]("admin.product_categories.label.description", "分类描述") }}</label>
+            {{yield richEditor(field="description", key=row.ID, value=row.Description)}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 {* SEO 评分（审计 SEO-016）：分类页按落地页权重评分；title 唯一性检查（SEO-018）
@@ -201,9 +203,8 @@
             <textarea aria-label="{{ .["t"]("admin.product_categories.ph.seoDesc", "SEO 描述（可留空）") }}" class="form-textarea" name="seoDescription" id="cat-new-seo-desc" rows="3" data-counter="155"
                       placeholder="{{ .["t"]("admin.product_categories.ph.seoDesc", "SEO 描述（可留空）") }}"></textarea>
             <span class="field-counter" data-counter-out="cat-new-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <label class="form-label" for="cat-new-desc">{{ .["t"]("admin.product_categories.label.description", "分类描述") }}</label>
-            <input id="cat-new-desc" type="hidden" name="description">
-            <trix-editor input="cat-new-desc" class="trix-content rich-editor"></trix-editor>
+            <label class="form-label" for="rich-description-new">{{ .["t"]("admin.product_categories.label.description", "分类描述") }}</label>
+            {{yield richEditor(field="description", key="new", value="")}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button>
@@ -213,4 +214,5 @@
     {{end}}
 </div>
 <script src="/static/vendor/trix/trix.umd.js"></script>
+<script src="/static/js/rich-editor/index.js"></script>
 {{end}}

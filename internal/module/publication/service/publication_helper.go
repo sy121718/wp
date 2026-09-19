@@ -64,11 +64,15 @@ func parseRouteOwner(pageID, presentationID string) (routeOwner, error) {
 }
 
 // sourceType 回执来源类型（publication_receipts.source_type）。
+//
+// 字面量取 pubdto 的常量而不是就地写：page / presentation 两侧的收敛例程按这个值
+// 筛选「自己该管的那一批回执」，各写一遍字面量迟早分叉，而分叉的表现是
+// 「回执留在 pending 但没有任何收敛例程认领它」。
 func (o routeOwner) sourceType() string {
 	if o.presentationID != "" {
-		return "presentation"
+		return pubdto.ReceiptSourcePresentation
 	}
-	return "page"
+	return pubdto.ReceiptSourcePage
 }
 
 // sourceID 回执来源 id（source_id 是 uuid NOT NULL 列，必须写归属者本身）。

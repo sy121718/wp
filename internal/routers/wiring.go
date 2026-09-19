@@ -77,6 +77,7 @@ const (
 	portPipelinePresentationRebuilder  = "pipeline.Fanout.SetRebuilder(presentation)"
 	portContentDependencyInvalidator   = "content.SetDependencyInvalidator"
 	portNavigationSourceResolver       = "navigation.SetSourceResolver"
+	portNavigationMenuDispatcher       = "navigation.SetMenuStaleDispatcher"
 	portDashboardBlueprints            = "dashboard.SetBlueprints"
 	portRuntimeFragBundle              = "runtimefragment.SetBundleProvider"
 	portRuntimeFragVariantAvailability = "runtimefragment.SetVariantAvailabilityProvider"
@@ -194,6 +195,8 @@ var wiringManifest = []wiringEntry{
 		"内容变更不触发精确失效（行为与本端口接入前逐字一致）"},
 	{portNavigationSourceResolver, "navsource", "navigation", wiringOptionalDegraded,
 		"来源菜单项退化为记录自身的 title/path（不解析目标实体）"},
+	{portNavigationMenuDispatcher, "pipeline.Fanout", "navigation", wiringRequiredPort,
+		"改公开站点导航不派发任何失效：已发布页面的页眉/页脚永远停在旧菜单（全站可见且无报错）"},
 	{portDashboardBlueprints, "blueprint", "dashboard", wiringOptionalDegraded,
 		"新建页面表单不显示「从蓝图开始」下拉（建页照常走空白草稿）"},
 

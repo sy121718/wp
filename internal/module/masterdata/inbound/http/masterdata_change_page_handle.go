@@ -27,6 +27,7 @@ import (
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 )
 
 // masterDataEntityPageSize 实体清单一次展示的条数（后台核对用；完整清单走接口分页）。
@@ -114,7 +115,11 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	filter := masterDataFilterOf(c)
 	page, limit := shell.PageParams(c)
 
-	pageErr := strings.TrimSpace(c.Query("err"))
+	// 本页**没有** ?err= 回执通道：它是只读页，没有任何写入口会往这里回带文案
+	//（grep 过：全仓没有 redirect 到 /admin/masterdata/changes?...err=）。
+	// 此前从 query 里读 err 并原样渲染，是一条纯伪造面 —— 手拼一个 URL 就能往
+	// 「部分数据未取到：」后面塞任意文案。页面提示只由取数失败产生（见 masterDataInternalText）。
+	pageErr := ""
 	rows := []gin.H{}
 	var total int64
 	var current *gin.H
@@ -132,7 +137,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 			Page: page, Size: limit,
 		})
 		if terr != nil {
-			pageErr = firstNonEmpty(pageErr, terr.Error())
+			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, terr))
 		} else {
 			total = timeline.Total
 			current = &gin.H{
@@ -146,7 +151,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	} else {
 		list, lerr := h.changes.ListChanges(ctx, listReq)
 		if lerr != nil {
-			pageErr = firstNonEmpty(pageErr, lerr.Error())
+			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, lerr))
 		} else {
 			for _, row := range list {
 				rows = append(rows, changeRow(row))
@@ -155,7 +160,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		if count, cerr := h.changes.CountChanges(ctx, listReq); cerr == nil {
 			total = count
 		} else {
-			pageErr = firstNonEmpty(pageErr, cerr.Error())
+			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, cerr))
 		}
 	}
 
@@ -170,7 +175,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	}
 	entities, eerr := h.changes.ListEntities(ctx, entityReq)
 	if eerr != nil {
-		pageErr = firstNonEmpty(pageErr, eerr.Error())
+		pageErr = firstNonEmpty(pageErr, masterDataErrText(c, eerr))
 	} else {
 		for _, item := range entities {
 			entityRows = append(entityRows, entityRow(item, filter, selected))
@@ -225,6 +230,48 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		data[k] = v
 	}
 	c.HTML(http.StatusOK, "admin/masterdata_changes.html", data)
+}
+
+// masterDataErrScene 结构化日志的场景名（与模块其它 logger.Scene 调用点一致）。
+const masterDataErrScene = "masterdata"
+
+// masterDataFacingTexts 本页可以原样展示给运营的**业务**错误（key → 中文兜底）。
+//
+// 只登记「客户端输入导致」的那几个：非法实体 id / 非法筛选值属于「你填错了」，
+// 让运营看到「系统内部错误，请稍后重试」是 CQ-009 的**反向缺陷** —— 他不知道该改什么，
+// 只会反复重试（本页实测就是这样：`entityId=not-a-uuid` 原本显示归口文案）。
+// 一边要挡住内部错误，一边不能把业务错误一起吞掉，判据是「这个 err 是不是本模块可透出的
+// 业务错误」，不是「它长什么样」。
+//
+// 取值不手抄：enums 的值就是 key，文案由 198 迁移 seed（zh/en 成对），缺词条时回落这里的中文。
+var masterDataFacingTexts = map[string]string{
+	masterdataenums.ErrInvalidParam:      "参数不合法，请检查筛选条件。",
+	masterdataenums.ErrEntityTypeInvalid: "实体类型不在变更记录的白名单内。",
+	masterdataenums.ErrActionInvalid:     "变更动作不合法。",
+	masterdataenums.ErrEntityIDRequired:  "实体 id 必填。",
+	masterdataenums.ErrProjectRequired:   "未指定工程，也无法从数据里解析出唯一工程。",
+	masterdataenums.ErrTimeRangeInvalid:  "时间范围不合法：起始时间不能晚于结束时间。",
+}
+
+// masterDataErrText 取数 / 参数错误的对外文案（「错误文案三件套」的页内出口）。
+//
+//   ① 命中白名单 → 取**当前语言的译文**（缺词条回落中文兜底），页面上不出现裸 key；
+//   ② 未命中 → 原文只进结构化日志（场景 + user_id），对外给归口文案。
+//
+// ② 覆盖的是 List / Count / Timeline 这类**取数**失败：一旦是 PG 原文（表名、SQLSTATE），
+// 它就会顶着「部分数据未取到：」摆到运营眼前 —— 那正是「响应不是可信边界」要挡的东西。
+func masterDataErrText(c *gin.Context, err error) string {
+	if err == nil {
+		return ""
+	}
+	key := strings.TrimSpace(err.Error())
+	if fallback, ok := masterDataFacingTexts[key]; ok {
+		return shell.TranslateFor(c)(key, fallback)
+	}
+	logger.Scene(masterDataErrScene).
+		With("user_id", shell.CurrentUserID(c)).
+		Error(err, "主数据变更记录页取数失败（非业务错误，只对外给归口文案）")
+	return shell.PageInternalText(c)
 }
 
 // changeRow 变更记录行 → 模板视图（时间与取值都先格式化，模板不做逻辑）。

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
@@ -74,30 +76,38 @@ func (s *Service) UpdateContactStatus(ctx context.Context, req *maildto.UpdateCo
 			fields["consent_source"] = src
 		}
 	}
-	if err = s.m.UpdateContactFields(ctx, req.ID, fields); err != nil {
+	// 状态变更与抑制名单是同一件事的两面，**必须同事务**（AGENTS.md「写操作的事务与回滚」）：
+	// 分开提交时第二步失败会留下「后台点了退订、地址却不在抑制名单里」——换一个活动照样会发出去，
+	// 这比「没点退订」更糟（联系人以为已经退订了）。退订 / 投诉 / 硬退信三种终态都进名单。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if uerr := s.m.UpdateContactFieldsTx(ctx, tx, req.ID, fields); uerr != nil {
+			return uerr
+		}
+		switch req.Status {
+		case mailmodel.ContactStatusUnsubscribed:
+			return s.m.AddSuppressionTx(ctx, tx, &mailmodel.MailSuppressionEntity{
+				Email: row.Email, Reason: mailmodel.SuppressionReasonUnsubscribe, Source: strPtr("manual"),
+				Note: strPtr(req.Note),
+			})
+		case mailmodel.ContactStatusComplained:
+			return s.m.AddSuppressionTx(ctx, tx, &mailmodel.MailSuppressionEntity{
+				Email: row.Email, Reason: mailmodel.SuppressionReasonComplaint, Source: strPtr("manual"),
+			})
+		case mailmodel.ContactStatusBounced:
+			return s.m.AddSuppressionTx(ctx, tx, &mailmodel.MailSuppressionEntity{
+				Email: row.Email, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("manual"),
+			})
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	// 变为已订阅时才触发自动化（#38 P3）。判断「原来不是订阅」而不是「现在是订阅」——
 	// 否则重复保存一次订阅状态就会给人再塞进一条欢迎流程。触发失败不影响状态变更。
+	//
+	// 触发**留在事务外**：它要建实例、可能入队发信（外部副作用），不属于本次状态写入的原子范围。
 	if req.Status == mailmodel.ContactStatusSubscribed && row.Status != mailmodel.ContactStatusSubscribed {
 		s.OnContactSubscribed(ctx, req.ID)
-	}
-
-	// 退订 / 投诉 / 硬退信一律进抑制名单（发送前必查），避免换个活动又发出去。
-	switch req.Status {
-	case mailmodel.ContactStatusUnsubscribed:
-		return s.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
-			Email: row.Email, Reason: mailmodel.SuppressionReasonUnsubscribe, Source: strPtr("manual"),
-			Note: strPtr(req.Note),
-		})
-	case mailmodel.ContactStatusComplained:
-		return s.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
-			Email: row.Email, Reason: mailmodel.SuppressionReasonComplaint, Source: strPtr("manual"),
-		})
-	case mailmodel.ContactStatusBounced:
-		return s.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
-			Email: row.Email, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("manual"),
-		})
 	}
 	return nil
 }

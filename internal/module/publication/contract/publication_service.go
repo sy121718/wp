@@ -5,6 +5,24 @@ import (
 	"context"
 
 	pubdto "go_wp/internal/module/publication/dto"
+
+	"gorm.io/gorm"
+)
+
+// 访问面切换回执的动作名（恢复流程按它分派补齐例程）。
+//
+// 由 publication 定义、page 消费：回执落的是这张表，动作名是这张表的词汇表，
+// 调用方按名登记与查询，不各自维护一份字面量（两处各写一遍迟早分叉，
+// 而分叉的表现是「回执留在 pending 但恢复例程根本不认识它」）。
+const (
+	ReceiptActionSwitchActive = pubdto.ReceiptActionSwitchActive
+	ReceiptActionUpdateURL    = pubdto.ReceiptActionUpdateURL
+	ReceiptActionRollback     = pubdto.ReceiptActionRollback
+
+	// 回执归属（publication_receipts.source_type）。收敛例程按它筛出「自己该管的那一批」：
+	// page 与 presentation 的活跃指针在不同表上，用同一套补齐逻辑会写错地方。
+	ReceiptSourcePage         = pubdto.ReceiptSourcePage
+	ReceiptSourcePresentation = pubdto.ReceiptSourcePresentation
 )
 
 // 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import publication/dto。
@@ -26,6 +44,7 @@ type (
 	// 同一模块的其余 8 个文件都走 pubcontract，只有这一处破例，属遗漏而非设计。
 	BeginPublishReceiptReq = pubdto.BeginPublishReceiptReq
 	PendingReceiptResp     = pubdto.PendingReceiptResp
+	ReceiptsQueryReq       = pubdto.ReceiptsQueryReq
 )
 
 // PublicationService URL 占用、激活与回滚控制能力。
@@ -47,8 +66,17 @@ type PublicationService interface {
 	CompletePublishReceipt(ctx context.Context, receiptID string) (err error)
 	// AbortPublishReceipt 把回执标记为已回滚（切换尚未发生或明确失败）。
 	AbortPublishReceipt(ctx context.Context, receiptID string) (err error)
-	// ListPendingReceipts 列出未完成的回执（启动恢复扫描）。
+	// ListPendingReceipts 列出未完成的回执（启动全量恢复扫描）。
 	ListPendingReceipts(ctx context.Context) (list []pubdto.PendingReceiptResp, err error)
+	// ClaimPendingReceipts 领取一批待收敛的未结案回执（收敛例程的输入）。
+	//
+	// 与 ListPendingReceipts 的区别是**领取**而不是**列举**：分批（Limit）+ 行锁
+	// （FOR UPDATE SKIP LOCKED），多实例部署下同一瞬间只有一个实例领到同一批行。
+	// 过滤条件由调用方给（归属 + 认得的动作名）—— 同一张回执表上叠着多套恢复职责。
+	ClaimPendingReceipts(ctx context.Context, req *pubdto.ReceiptsQueryReq) (list []pubdto.PendingReceiptResp, err error)
+	// CountPendingReceipts 统计未结案回执数（只读观测：健康检查 / 后台）。
+	// 与 ClaimPendingReceipts 同口径，避免「报 0 而实际有残留」。
+	CountPendingReceipts(ctx context.Context, req *pubdto.ReceiptsQueryReq) (n int64, err error)
 	// RenameReserved 修改页面的草稿路径占用（reserved 状态改名）。
 	RenameReserved(ctx context.Context, req *pubdto.RenameReservedReq) (err error)
 	// ReservePath 创建草稿路径 reserved 占用（页面创建时预留，冲突返回占用错误）。
@@ -82,4 +110,20 @@ type PublicationService interface {
 	// ListReferencedArtifactIDs 返回全部被路由引用的产物行 ID（产物 GC 的保护集合）。
 	// 路由指向的产物文件被删除意味着线上直接 404，且路由行不会因文件消失而失效。
 	ListReferencedArtifactIDs(ctx context.Context) (ids []string, err error)
+
+	// —— 事务透传变体（AGENTS.md「写操作的事务与回滚」）——
+	//
+	// 同库跨模块的写必须能与调用方自己的表落在**同一个事务**里：调用方
+	// （page 的建页 / 存草稿 / 改 URL / 回滚 / 删页）先开事务并设置工程作用域，
+	// 再把 *gorm.DB 句柄传进来。这些方法**不新开事务、不做补偿、不回读**，
+	// 失败原样返回给外层——由外层统一回滚。
+	//
+	// 为什么不能用「先写 A 再补偿 B」：补偿只允许用于跨库/外部系统（文件、Redis、
+	// 第三方），同库的两处写用补偿意味着中途崩溃或进程被杀死时留下半截状态。
+	ActivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.ActivateReq) (res *pubdto.RouteResp, err error)
+	DeactivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.DeactivateReq) (err error)
+	RedirectTx(ctx context.Context, tx *gorm.DB, req *pubdto.RedirectReq) (res *pubdto.RouteResp, err error)
+	RenameReservedTx(ctx context.Context, tx *gorm.DB, req *pubdto.RenameReservedReq) (err error)
+	ReservePathTx(ctx context.Context, tx *gorm.DB, req *pubdto.ReserveReq) (err error)
+	DeleteRoutesByPageTx(ctx context.Context, tx *gorm.DB, req *pubdto.DeleteRoutesReq) (err error)
 }

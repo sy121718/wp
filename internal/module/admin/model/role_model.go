@@ -3,11 +3,13 @@ package adminmodel
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go_wp/pkg/database"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNameSysRole = "sys_role"
@@ -146,27 +148,64 @@ func (m *RoleModel) GetEnabledIDsByCodes(ctx context.Context, codes []string) (i
 	return ids, err
 }
 
-// Create 新建角色。
-// Status 已无 default tag（见字段注释），零值 0（禁用）可直接落库，无需显式 Select 列。
-func (m *RoleModel) Create(ctx context.Context, e *RoleEntity) error {
-	return m.DB(ctx).Create(e).Error
+
+// Transaction 透传事务：一次写操作里「角色行 + Casbin g2 启用标记」两处持久化写
+// 必须同事务，边界由 service 决定。
+func (m *RoleModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return m.db.WithContext(ctx).Transaction(fn)
 }
 
-// Update 更新角色元信息。
-// 显式指定列（含 status 零值），否则 gorm 结构体更新会跳过零值字段，
+// CreateTx 在调用方事务内新建角色（**唯一的写入口** —— 非事务版 Create 已删除：
+// 角色的新建必然与 Casbin g2 策略行同事务，留下裸句柄版本只会让人写错）。
+// Status 已无 default tag（见字段注释），零值 0（禁用）可直接落库，无需显式 Select 列。
+func (m *RoleModel) CreateTx(ctx context.Context, tx *gorm.DB, e *RoleEntity) error {
+	return tx.WithContext(ctx).Model(&RoleEntity{}).Create(e).Error
+}
+
+// LockByIDTx 在调用方事务内按主键加行锁读取（SELECT ... FOR UPDATE）。
+// 启停角色是读-改-写（先读旧 status 判断要不要动 g2），必须加锁，否则并发启停会互相覆盖。
+// 记录不存在返回 nil, nil。
+func (m *RoleModel) LockByIDTx(ctx context.Context, tx *gorm.DB, id uint64) (*RoleEntity, error) {
+	var entity RoleEntity
+	err := tx.WithContext(ctx).Model(&RoleEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", id).First(&entity).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entity, nil
+}
+
+
+// roleUpdateColumns UpdateTx 专用的显式列集合（含 status 零值）。
+var roleUpdateColumns = []string{"role_name", "status", "sort_order", "remark", "update_by", "update_time"}
+
+// UpdateTx 在调用方事务内更新角色元信息（**唯一的写入口** —— 非事务版 Update 已删除）。
+// 显式 Select roleUpdateColumns（含 status 零值），否则 gorm 结构体更新会跳过零值字段，
 // 导致停用角色（status=0）落库失败、重新启用时状态比对失真。
 // 注意：Model(&RoleEntity{}) + Updates(e) 时 gorm 的 BeforeUpdate hook 在 Model 的
 // 空实例上触发，修改不会进入 SET 子句（见 gorm callbacks.SetupUpdateReflectValue），
 // 因此这里显式刷新 e.UpdateTime；update_by 保留调用方传入值（service 层未传时
 // 沿用实体原值），与 SysRule/Permission 的 Update 列模式一致。
-func (m *RoleModel) Update(ctx context.Context, e *RoleEntity) error {
+func (m *RoleModel) UpdateTx(ctx context.Context, tx *gorm.DB, e *RoleEntity) error {
 	now := time.Now()
 	e.UpdateTime = &now
-	return m.DB(ctx).Where("id = ?", e.ID).
-		Select("role_name", "status", "sort_order", "remark", "update_by", "update_time").Updates(e).Error
+	return tx.WithContext(ctx).Model(&RoleEntity{}).Where("id = ?", e.ID).
+		Select(roleUpdateColumns).Updates(e).Error
 }
 
 // Delete 删除角色记录。
 func (m *RoleModel) Delete(ctx context.Context, id uint64) error {
 	return m.DB(ctx).Where("id = ?", id).Delete(&RoleEntity{}).Error
+}
+
+// DeleteTx 在调用方事务内删除角色记录（语义与 Delete 一致）。
+//
+// 删角色同时要清掉 sys_casbin_rule 里该角色的全部策略行，两处写必须同事务，
+// 边界由 service 决定（见 RoleDelete 的注释）。
+func (m *RoleModel) DeleteTx(ctx context.Context, tx *gorm.DB, id uint64) error {
+	return tx.WithContext(ctx).Model(&RoleEntity{}).Where("id = ?", id).Delete(&RoleEntity{}).Error
 }

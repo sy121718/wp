@@ -21,6 +21,9 @@ import (
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/rls"
+
+	"gorm.io/gorm"
 )
 
 // UpdateVariantCost 写变体成本价（只动 cost_price 一列）并留痕。
@@ -42,15 +45,25 @@ func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID st
 			return err
 		}
 	}
-	if err = s.m.UpdateVariantCost(ctx, variantID, cost, time.Now().UTC()); err != nil {
-		return err
-	}
+	now := time.Now().UTC()
 	if s.changes == nil || v == nil {
-		return nil
+		// 留痕端口未注入（纯商品单测路径）：只做成本价回写本身。
+		return s.m.UpdateVariantCost(ctx, variantID, cost, now)
 	}
 	before := variantChangeSnapshot(v, nil)
 	after := variantChangeSnapshot(v, nil)
 	after["cost_price"] = masterdatacontract.FormatPrice(cost)
-	return s.recordChanges(ctx, variantChangeInput(resolved, v, masterdataenums.ActionUpdate,
-		masterdataenums.OriginReceipt, operatorID, before, after))
+	// 成本价回写与它的变更记录**同事务**（AGENTS.md「写操作的事务与回滚」）：
+	// 成本价是定价工具的成本口径，改了却没留下这一笔就是错账，只能靠对账发现。
+	// 留痕端口未注入时 recordChangesTx 空转（与原先的 recordChanges 一致）。
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, resolved); serr != nil {
+			return serr
+		}
+		if uerr := s.m.UpdateVariantCostTx(ctx, tx, variantID, cost, now); uerr != nil {
+			return uerr
+		}
+		return s.recordChangesTx(ctx, tx, variantChangeInput(resolved, v, masterdataenums.ActionUpdate,
+			masterdataenums.OriginReceipt, operatorID, before, after))
+	})
 }

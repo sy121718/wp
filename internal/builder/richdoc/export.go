@@ -3,14 +3,16 @@ package richdoc
 // export.go — 组件树 → 富文本 HTML（决策 5 的导出方向）。
 //
 // 与 import.go 对称：只处理**可逆子集**（heading / text / list / quote / image /
-// divider / table），其余组件输出占位文字并记 Lossless=false —— 富文本视图装不下
-// 组件树里的全部信息，这一点必须让调用方知道（有损的导出拿去覆盖原文就会真的丢东西）。
+// divider / table / accordion），其余组件输出占位文字并记 Lossless=false —— 富文本视图
+// 装不下组件树里的全部信息，这一点必须让调用方知道（有损的导出拿去覆盖原文就会真的丢东西）。
 
 import (
 	"encoding/json"
+	"fmt"
 	stdhtml "html"
 	"strings"
 
+	accordionpkg "go_wp/internal/builder/components/accordion"
 	dividerpkg "go_wp/internal/builder/components/divider"
 	headingpkg "go_wp/internal/builder/components/heading"
 	imagepkg "go_wp/internal/builder/components/image"
@@ -82,8 +84,64 @@ func (exp *exporter) writeNode(sb *strings.Builder, n *core.Node) error {
 		return nil
 	case tablepkg.Type:
 		return exp.writeTable(sb, n)
+	case accordionpkg.Type:
+		return exp.writeAccordion(sb, n)
 	}
 	return exp.writePlaceholder(sb, n)
+}
+
+// writeAccordion 手风琴：按 items ↔ children **一一对应**导出成
+// `<details><summary>摘要</summary>正文…</details>`（正文取该 item 对应的 children 渲染结果）。
+//
+// 与导入方向对称：导入把每个 <details> 整块落进 core.text 的富文本字段（结构与语义都留在
+// 富文本里），所以这里导出的每一个折叠块都能被再导入回来，内容一个字节都不丢。
+//
+// 结构对不上时不做"尽力而为"的映射：标题数与内容数不等时，无论怎么配都会把某一项的内容挂到
+// 别人的标题下面 —— 用户看到的是"内容串项了"，比直接失败难查得多。这种情况导成占位文字并记
+// Lossless=false：宁可诚实地告诉调用方这次导出有损，也不假装无损。
+func (exp *exporter) writeAccordion(sb *strings.Builder, n *core.Node) error {
+	props, err := decodeProps[accordionpkg.Props](n)
+	if err != nil {
+		return err
+	}
+	if len(props.Items) == 0 || len(props.Items) != len(n.Children) {
+		exp.warn(accordionpkg.Type, ActionPlaceholder, fmt.Sprintf(
+			"折叠项标题数（%d）与内容数（%d）不一致，无法一一对应，已导出为占位文字；请在画布上补齐折叠项后再导出",
+			len(props.Items), len(n.Children)))
+		sb.WriteString(placeholderHTML(accordionpkg.Type))
+		return nil
+	}
+	for i, item := range props.Items {
+		title := strings.TrimSpace(item.Title)
+		if title == "" {
+			// 空 <summary> 不是"没法导出"（正文照常导出），是"这一项的标题丢了"：
+			// 导入方向对没有可见内容的折叠块整块判空，导回画布时这一项会消失。如实记损。
+			exp.warn(accordionpkg.Type, ActionTrim, fmt.Sprintf(
+				"第 %d 个折叠项没有标题，`<summary>` 为空，导回画布时这一项会被丢弃", i+1))
+		}
+		sb.WriteString("<details><summary>" + stdhtml.EscapeString(title) + "</summary>")
+		var inner strings.Builder
+		if err := exp.writeNodes(&inner, n.Children[i:i+1]); err != nil {
+			return err
+		}
+		sb.WriteString(inner.String())
+		sb.WriteString("</details>")
+	}
+	// 组件状态在富文本里没有载体：details 的 open 属性与"同时只开一个"都不在白名单内
+	// （core/richtext.go 刻意剥掉 open —— 少一个属性就少一个注入面）。导出仍完整，
+	// 但这份 HTML 不是组件状态的等价物，必须让调用方知道。
+	if props.OneOpen {
+		exp.warn(accordionpkg.Type, ActionTrim,
+			"「同时只开一个」是组件行为，富文本里没有对应属性，导回画布后每个折叠块各自独立")
+	}
+	for _, item := range props.Items {
+		if item.Open {
+			exp.warn(accordionpkg.Type, ActionTrim,
+				"「默认展开」是组件状态，富文本不保留 details 的 open 属性（白名单刻意剥掉），导回画布后全部收起")
+			break
+		}
+	}
+	return nil
 }
 
 // writeHeading 标题：h1~h6 原样，其余语义标签（div/span）在富文本里没有等价物。
@@ -240,8 +298,19 @@ func (exp *exporter) writePlaceholder(sb *strings.Builder, n *core.Node) error {
 	}
 	exp.warn(name, ActionPlaceholder,
 		"该组件在富文本里没有等价物，已导出为占位文字；在富文本里编辑后无法还原为组件，要改它请回画布")
-	sb.WriteString("<p>［组件：" + stdhtml.EscapeString(name) + "｜该组件不能在富文本中编辑］</p>")
+	sb.WriteString(placeholderHTML(name))
 	return nil
+}
+
+// placeholderHTML 占位块的可读文本（形如 <p>［组件：core.tabs｜该组件不能在富文本中编辑］</p>）。
+//
+// 占位是**给人在富文本里看的**，不是可还原标记 —— 多个分支（不可逆组件、结构对不上的手风琴）
+// 用的是同一段文字，抽出来只此一份。
+func placeholderHTML(name string) string {
+	if strings.TrimSpace(name) == "" {
+		name = "未知组件"
+	}
+	return "<p>［组件：" + stdhtml.EscapeString(name) + "｜该组件不能在富文本中编辑］</p>"
 }
 
 // decodeProps 解出组件属性（props 为空时给零值：组件按缺省值渲染）。

@@ -271,7 +271,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		"Err":             pageErr,
 		"Ok":              pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
-		"Done": strings.TrimSpace(c.Query("done")),
+		"Done": orderPageDone(c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/coupons", couponFilterValues(selected, filter))
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
@@ -344,7 +344,7 @@ func (h *couponPageHandle) CouponBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		couponRedirect(c, "", berr.Error())
+		couponRedirect(c, "", orderBulkIDsText(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -373,7 +373,7 @@ func (h *couponPageHandle) CouponBulkToggle(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	target, ok := couponToggleTarget(c.PostForm("status"))
 	if !ok {
-		couponBulkRedirect(c, "目标状态不合法，本次没有处理任何优惠码。")
+		couponBulkRedirect(c, couponBulkTargetInvalidText)
 		return
 	}
 	verb := "已停用"
@@ -383,7 +383,7 @@ func (h *couponPageHandle) CouponBulkToggle(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		couponRedirect(c, "", berr.Error())
+		couponRedirect(c, "", orderBulkIDsText(c, berr))
 		return
 	}
 	changed, skipped := 0, 0
@@ -430,6 +430,9 @@ func (h *couponPageHandle) CouponBulkToggle(c *gin.Context) {
 	}
 	couponBulkRedirect(c, bulkSummary(verb, "优惠码", changed, skipped))
 }
+
+// couponBulkTargetInvalidText 批量启停的目标状态不合法时的回执（走 ?done=，因此与批量结论一起登记）。
+const couponBulkTargetInvalidText = "目标状态不合法，本次没有处理任何优惠码。"
 
 // couponToggleTarget 批量启停的目标状态：只认 1（启用）/ 0（停用），其余一律不合法。
 //

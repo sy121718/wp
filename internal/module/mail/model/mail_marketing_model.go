@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 联系人来源。
@@ -458,19 +459,50 @@ func (m *MailModel) CountSubscribedByTags(ctx context.Context, tags []string) (c
 
 // UpdateContactFields 按主键更新指定列。
 func (m *MailModel) UpdateContactFields(ctx context.Context, id uint64, fields map[string]any) (err error) {
+	return m.UpdateContactFieldsTx(ctx, nil, id, fields)
+}
+
+// UpdateContactFieldsTx 与 UpdateContactFields 相同，但复用调用方事务
+// （联系人状态 + 抑制名单必须同事务，见 mail_contact.go / mail_tracking.go）。
+func (m *MailModel) UpdateContactFieldsTx(ctx context.Context, tx *gorm.DB, id uint64, fields map[string]any) (err error) {
 	if len(fields) == 0 {
 		return nil
 	}
-	return m.tx(ctx).Model(&MailContactEntity{}).Where("id = ?", id).Updates(fields).Error
+	return m.txOr(ctx, tx).Model(&MailContactEntity{}).Where("id = ?", id).Updates(fields).Error
 }
 
 // UpdateContactStatusByEmail 按邮箱改状态（退订 / 退信回写用，幂等）。
 func (m *MailModel) UpdateContactStatusByEmail(ctx context.Context, email, status string, at time.Time) (err error) {
+	return m.UpdateContactStatusByEmailTx(ctx, nil, email, status, at)
+}
+
+// UpdateContactStatusByEmailTx 与 UpdateContactStatusByEmail 相同，但复用调用方事务
+// （SMTP 硬退信的回写是一组：日志失败 + 抑制名单 + 联系人标 bounced）。
+func (m *MailModel) UpdateContactStatusByEmailTx(ctx context.Context, tx *gorm.DB, email, status string, at time.Time) (err error) {
 	fields := map[string]any{"status": status, "update_time": at}
 	if status == ContactStatusSubscribed {
 		fields["subscribed_at"] = at
 	}
-	return m.tx(ctx).Model(&MailContactEntity{}).Where("lower(email) = lower(?)", strings.TrimSpace(email)).Updates(fields).Error
+	return m.txOr(ctx, tx).Model(&MailContactEntity{}).Where("lower(email) = lower(?)", strings.TrimSpace(email)).Updates(fields).Error
+}
+
+// LockContactTagsTx 在事务里**加行锁**读出联系人的标签（自动化标签节点的读-改-写前置）。
+//
+// 标签节点的语义是「读出当前标签 → 增减 → 写回」，必须先 SELECT … FOR UPDATE 锁住该行：
+// 两个节点（或标签节点与手工改标签）并发时，不加锁的后写者会拿旧快照覆盖掉前者的结果。
+// 行锁按主键取单行，不存在多行加锁顺序问题（不涉及死锁）。
+//
+// 行不存在时返回 gorm.ErrRecordNotFound，由 service 决定如何处理。
+func (m *MailModel) LockContactTagsTx(ctx context.Context, tx *gorm.DB, contactID uint64) (tags StringArray, err error) {
+	var row struct{ Tags StringArray }
+	err = m.txOr(ctx, tx).Model(&MailContactEntity{}).
+		Select("tags").Where("id = ?", contactID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return row.Tags, nil
 }
 
 // DeleteContact 删除联系人。
@@ -529,10 +561,18 @@ func (m *MailModel) UpdateCampaignFields(ctx context.Context, id uint64, fields 
 // 并发投递时多个 worker 会同时回写同一个活动行：读-改-写在并发下必然丢计数，
 // 所以计数在 SQL 里做（sent_count = sent_count + n），不经过 Go 侧。
 func (m *MailModel) IncrCampaignCounts(ctx context.Context, id uint64, sent, failed int) (err error) {
+	return m.IncrCampaignCountsTx(ctx, nil, id, sent, failed)
+}
+
+// IncrCampaignCountsTx 与 IncrCampaignCounts 相同，但复用调用方事务。
+//
+// 计数与日志状态是同一批回写（「这封信送到了」= 日志 sent + 活动 sent_count +1）：
+// 分开提交时计数会与日志明细对不上，而报表正是拿这两者算送达率。
+func (m *MailModel) IncrCampaignCountsTx(ctx context.Context, tx *gorm.DB, id uint64, sent, failed int) (err error) {
 	if sent == 0 && failed == 0 {
 		return nil
 	}
-	return m.tx(ctx).Model(&MailCampaignEntity{}).Where("id = ?", id).
+	return m.txOr(ctx, tx).Model(&MailCampaignEntity{}).Where("id = ?", id).
 		Updates(map[string]any{
 			"sent_count":   gorm.Expr("sent_count + ?", sent),
 			"failed_count": gorm.Expr("failed_count + ?", failed),
@@ -543,7 +583,13 @@ func (m *MailModel) IncrCampaignCounts(ctx context.Context, id uint64, sent, fai
 
 // CreateEvent 写一条事件。
 func (m *MailModel) CreateEvent(ctx context.Context, e *MailCampaignEventEntity) (err error) {
-	return m.tx(ctx).Create(e).Error
+	return m.CreateEventTx(ctx, nil, e)
+}
+
+// CreateEventTx 与 CreateEvent 相同，但复用调用方事务
+// （事件行 + 联系人「最近活跃」是同一批写，见 mail_tracking_task.go）。
+func (m *MailModel) CreateEventTx(ctx context.Context, tx *gorm.DB, e *MailCampaignEventEntity) (err error) {
+	return m.txOr(ctx, tx).Create(e).Error
 }
 
 // ListCampaignsWithExpiredEvents 列出「全部事件都已过期」的活动 id（IDX-012）。

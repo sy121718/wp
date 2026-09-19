@@ -22,6 +22,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// 单一真源与对账口径（AGENTS.md「写操作的事务与回滚」的跨库分支）：
+//
+//   - **数据库是元数据真源**：一条 status=1 的 sys_attachment 行（file_path 指向磁盘）
+//     就是「这个媒体存在」的唯一判据；访问面（/storage/<id>.<ext>）也由它推导。
+//   - **文件系统是内容真源**：字节在磁盘上，DB 只存路径与校验值。
+//   - 两者**不可能用一个事务覆盖** —— 文件系统没有回滚语义。所以这里采用
+//     「两阶段 + 补偿」，并配套一个可跑的只读对账入口（media_reconcile.go 的
+//     ReconcileStorage）把「有文件没记录」「有记录没文件」找出来**打回给人**。
+//   - 补偿（compensateDelete）只在**同一进程**内尽力而为；进程在下述任一步之间退出，
+//     留下的半成品由对账入口发现，**绝不自动删除**（自动删会把「可能只是没扫到」
+//     直接变成数据丢失）。
+//
+// 两阶段的切分点固定在「主键可见」这一件事上：对象 key 由主键推导（<id>.<ext>），
+// 所以草稿行必须先提交，落盘才可能发生。
+
 // compensateDelete 上传中途失败时清掉半成品附件记录。
 //
 // 补偿本身失败不能改变原始错误（调用方要看到的是上传失败原因），但必须留下
@@ -40,9 +55,12 @@ func (s *Service) compensateDelete(ctx context.Context, id uint64) {
 //  1. 流式算 md5（复用 multipart 的多次 Open，不改动 pkg/upload 的校验路径）；
 //  2. 「md5 + file_type」命中启用中的附件 → 直接复用已有记录：不重复落盘、不重复入库，
 //     响应带回原 URL 与变体信息（Duplicate=true 供前端提示）；
-//  3. 未命中 → 两阶段登记：先插入草稿记录拿主键 ID，再用 ID 命名落盘
-//     <id>.<ext>（URL 与文件内容解耦，换图后 URL 不变），最后回填路径/URL/大小并置为启用；
-//     落盘或回填失败即物理删除草稿记录，不留半成品。
+//  3. 未命中 → 两阶段登记：
+//     第一段（独立提交）：插入草稿记录拿主键 ID（status=0，对外查询不可见）；
+//     —— 这里是文件系统（跨库动作），不参与事务 ——
+//     第二段（**同一个事务**）：用 ID 命名落盘 <id>.<ext>（URL 与文件内容解耦，
+//     换图后 URL 不变）之后，回填路径/URL/大小并置为启用 **+ 登记变体记录**，
+//     两者要么都成功要么都回滚；落盘或第二段失败即物理删除草稿记录，不留半成品。
 //
 // 存量附件路径不动：历史随机名继续按原 file_path 提供访问，构建期探测按 file_path 反查。
 func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, categoryID *uint64) (*mediato.AttachmentResp, error) {
@@ -114,20 +132,7 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
 	}
 
-	if err := s.am.AttachmentUpdate(ctx, entity.ID, map[string]any{
-		"file_path":    result.Key,
-		"storage_path": result.Key,
-		"url":          result.URL,
-		"file_size":    result.Size,
-		"storage_type": result.Provider,
-		"status":       mediamodel.AttachmentStatusEnabled,
-		"update_time":  time.Now(),
-	}); err != nil {
-		s.compensateDelete(ctx, entity.ID)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
-	}
-
-	// 回填响应字段（避免再查一次库）。
+	// 回填内存实体（避免再查一次库）：变体记录的 file_path 由它推导，必须在建记录之前。
 	entity.FilePath = result.Key
 	entity.StoragePath = &result.Key
 	entity.URL = &result.URL
@@ -138,9 +143,43 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		entity.Generation = 1
 	}
 
-	// 图片变体（048 改造）：图片类且非 svg/gif 时登记变体记录并投递异步生成任务；
-	// 变体任何失败一律降级（failed 记录/日志），不回滚主上传、不影响本响应。
-	s.EnsureVariantRecords(ctx, entity)
+	// 变体初始状态探测（只读文件系统）：放在事务**外**做，别让 os.Open / 解码
+	// 这类慢动作占着连接与行锁。
+	variantStatus := s.probeVariantStatus(ctx, entity)
+
+	// 第二段：元数据回填 + 变体记录登记**同一个事务**。
+	//
+	// 为什么这两处必须同事务：只写其中一处就是半截状态 ——
+	//   · 只回填元数据：附件已可见，但三个变体槽永远是空的（缩略图 404），
+	//     而磁盘上没有任何东西提示「这里本该有变体记录」；
+	//   · 只登记变体：草稿行（status=0）永远不可见，变体行却挂着，
+	//     且附件 URL 为空 —— 一堆指向不存在 URL 的变体记录。
+	// 事务内的两条写各自命中不同的表（sys_attachment / sys_media_variant），
+	// 边界由 service 决定，句柄经 model 的 …Tx 方法往下传（AGENTS.md）。
+	updatedAt := time.Now()
+	if terr := s.am.Transaction(ctx, func(tx *gorm.DB) error {
+		if uerr := s.am.AttachmentUpdateTx(ctx, tx, entity.ID, map[string]any{
+			"file_path":    result.Key,
+			"storage_path": result.Key,
+			"url":          result.URL,
+			"file_size":    result.Size,
+			"storage_type": result.Provider,
+			"status":       mediamodel.AttachmentStatusEnabled,
+			"update_time":  updatedAt,
+		}); uerr != nil {
+			return uerr
+		}
+		return s.vm.CreateBatchTx(ctx, tx, variantRecordsFor(entity, variantStatus))
+	}); terr != nil {
+		// 回滚已经发生（元数据与变体记录都没落库），补偿只负责清掉草稿行与磁盘文件。
+		s.compensateDelete(ctx, entity.ID)
+		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, terr)
+	}
+
+	// 变体生成任务投递留在事务外：入队是队列侧（asynq/Redis）的写，跨系统动作，
+	// 放进事务里会出现「任务先被 worker 取走、事务还没提交」的竞态
+	//（worker 回库读不到附件 → 静默跳过 → 变体永远不生成）。生成入口本身幂等，
+	// 所以「提交后再投递」失败也能由 media_reconcile.go 的重放入口补齐。
 	s.scheduleVariants(ctx, entity.ID)
 
 	return entityToResp(entity), nil

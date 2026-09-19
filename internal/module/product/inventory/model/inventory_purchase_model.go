@@ -419,20 +419,6 @@ func (m *Model) IncrPurchaseLineReceivedTx(ctx context.Context, tx *gorm.DB, lin
 	return res.RowsAffected, res.Error
 }
 
-// DecrPurchaseLineReceivedTx 回退已入库数量（库存变动失败时的补偿），返回受影响行数。
-func (m *Model) DecrPurchaseLineReceivedTx(ctx context.Context, tx *gorm.DB, lineID string, delta int, projectID string, at time.Time) (rows int64, err error) {
-	if serr := rls.ScopeTx(tx, projectID); serr != nil {
-		return 0, serr
-	}
-	res := tx.WithContext(ctx).Model(&PurchaseLineEntity{}).
-		Where("id = ? AND received_quantity >= ?", lineID, delta).
-		Updates(map[string]any{
-			"received_quantity": gorm.Expr("received_quantity - ?", delta),
-			"update_time":       at,
-		})
-	return res.RowsAffected, res.Error
-}
-
 // —— 入库单 ——
 
 // receiptDB 入库单表句柄（同上，仅本 model 内部使用）。
@@ -464,15 +450,17 @@ func (m *Model) CreateReceiptTx(ctx context.Context, tx *gorm.DB, e *ReceiptEnti
 	return tx.WithContext(ctx).CreateInBatches(&items, 100).Error
 }
 
-// SetReceiptMovement 写回入库单的库存批次号与单据状态。
+// SetReceiptMovementTx 在给定事务内写回入库单的库存批次号与单据状态。
 //
-// 这是**库存变动提交之后**的独立步骤（跨模块写不进同一事务）：
-// 单据先以 pending 落库，变动成功后才置 posted 并记下批次号。
-func (m *Model) SetReceiptMovement(ctx context.Context, receiptID, batchID, status, projectID string) (err error) {
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&ReceiptEntity{}).Where("id = ?", receiptID).
-			Updates(map[string]any{"movement_batch_id": batchID, "status": status}).Error
-	})
+// **必须与库存变动同事务**：单据的「已 posted + 批次号」如果落在库存变动之外，
+// 就又会造出「库存动没动」与「单据什么状态」两处不一致（原先正是提交后的独立步骤，
+// 而且错误被调用方的 if 吞掉 —— 库存动了、单据静默停在 pending）。
+func (m *Model) SetReceiptMovementTx(ctx context.Context, tx *gorm.DB, receiptID, batchID, status, projectID string) (err error) {
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return serr
+	}
+	return tx.WithContext(ctx).Model(&ReceiptEntity{}).Where("id = ?", receiptID).
+		Updates(map[string]any{"movement_batch_id": batchID, "status": status}).Error
 }
 
 // UpdateReceiptItemCost 记下某入库行的成本价回写结果（提交后的独立步骤）。
@@ -481,14 +469,6 @@ func (m *Model) UpdateReceiptItemCost(ctx context.Context, itemID string, update
 		return tx.WithContext(ctx).Model(&ReceiptItemEntity{}).Where("id = ?", itemID).
 			Updates(map[string]any{"cost_updated": updated, "cost_error": errText}).Error
 	})
-}
-
-// DeleteReceiptTx 在给定事务内删除入库单头（行由外键 ON DELETE CASCADE 一并删除）。
-func (m *Model) DeleteReceiptTx(ctx context.Context, tx *gorm.DB, receiptID, projectID string) (err error) {
-	if serr := rls.ScopeTx(tx, projectID); serr != nil {
-		return serr
-	}
-	return tx.WithContext(ctx).Model(&ReceiptEntity{}).Where("id = ?", receiptID).Delete(&ReceiptEntity{}).Error
 }
 
 // GetReceipt 按 ID 查入库单头。

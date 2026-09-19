@@ -149,6 +149,8 @@ func (s *Service) publishOneLang(ctx context.Context, inst *presentationmodel.In
 	if rerr := s.registerRoute(ctx, inst, b.accessPath, b.artifactID); rerr != nil {
 		logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
 			Error(rerr, "多语言路由登记失败（访问面已激活，回执待恢复）")
+		// 回执留在 pending：推一次进程内快通道让收敛立刻重放（主链失败收口，非阻塞）。
+		s.NotifyPendingReceipt()
 		return fmt.Errorf("登记 %s 的路由占用失败（访问面已激活，回执 %s 待恢复）: %w",
 			b.accessPath, receiptID, rerr)
 	}
@@ -159,6 +161,8 @@ func (s *Service) publishOneLang(ctx context.Context, inst *presentationmodel.In
 	}); merr != nil {
 		logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
 			Error(merr, "多语言语言账本写入失败（访问面与路由已生效，回执待恢复）")
+		// 同上：回执留在 pending，快通道让收敛按访问面证据补齐（幂等）。
+		s.NotifyPendingReceipt()
 		return fmt.Errorf("写入 %s 的发布账本失败（访问面已激活，回执 %s 待恢复）: %w",
 			b.accessPath, receiptID, merr)
 	}
@@ -167,6 +171,8 @@ func (s *Service) publishOneLang(ctx context.Context, inst *presentationmodel.In
 	if cerr := s.completePublishReceipt(ctx, receiptID); cerr != nil {
 		logger.Scene("build").With("instanceId", inst.ID).With("url", b.accessPath).
 			Warn("多语言发布回执结案失败（访问面、路由与语言账本已生效，留待恢复补齐）: " + cerr.Error())
+		// 状态已一致、回执没收口：推快通道让收敛立刻幂等收尾。
+		s.NotifyPendingReceipt()
 	}
 	return nil
 }

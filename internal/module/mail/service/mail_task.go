@@ -142,15 +142,23 @@ func handleMailSend(db *gorm.DB, cipherSecret string) queue.Handler {
 		})
 		now := time.Now()
 		if sendErr == nil {
-			_ = svc.m.UpdateLogResult(ctx, p.LogID, map[string]any{
-				"status":   mailmodel.LogStatusSent,
-				"sent_at":  now,
-				"provider": sender.Name(),
+			// 日志状态与活动计数**同事务**：各自提交时计数会与日志明细对不上，
+			// 而报表的送达率正是拿这两者算的（AGENTS.md「写操作的事务与回滚」）。
+			// 外部副作用（sender.Send）已在事务之外，这里只包回写。
+			_ = svc.m.Transaction(ctx, func(tx *gorm.DB) error {
+				if uerr := svc.m.UpdateLogResultTx(ctx, tx, p.LogID, map[string]any{
+					"status":   mailmodel.LogStatusSent,
+					"sent_at":  now,
+					"provider": sender.Name(),
+				}); uerr != nil {
+					return uerr
+				}
+				// 群发活动：成功计数在此**原子递增**（并发投递下读-改-写必然丢计数）。
+				if logRow.CampaignID != nil {
+					return svc.m.IncrCampaignCountsTx(ctx, tx, *logRow.CampaignID, 1, 0)
+				}
+				return nil
 			})
-			// 群发活动：成功计数在此**原子递增**（并发投递下读-改-写必然丢计数）。
-			if logRow.CampaignID != nil {
-				_ = svc.m.IncrCampaignCounts(ctx, *logRow.CampaignID, 1, 0)
-			}
 			return nil
 		}
 
@@ -162,26 +170,42 @@ func handleMailSend(db *gorm.DB, cipherSecret string) queue.Handler {
 		switch e.Kind {
 		case mailer.KindTemporary:
 			// 保持 pending，让队列按自己的退避策略重试；只累加计数与原因。
-			_ = svc.m.IncrLogRetry(ctx, p.LogID)
-			_ = svc.m.UpdateLogResult(ctx, p.LogID, map[string]any{
-				"error_kind":    kind,
-				"error_message": msg,
+			// 计数与原因同事务：各自提交时「重试 +1 但原因没写」会留下没有原因的重试记录。
+			_ = svc.m.Transaction(ctx, func(tx *gorm.DB) error {
+				if rerr := svc.m.IncrLogRetryTx(ctx, tx, p.LogID); rerr != nil {
+					return rerr
+				}
+				return svc.m.UpdateLogResultTx(ctx, tx, p.LogID, map[string]any{
+					"error_kind":    kind,
+					"error_message": msg,
+				})
 			})
 			return sendErr
 		case mailer.KindPermanent:
-			// 硬退信：标失败，并把地址加入抑制名单 —— 再发只会继续伤域名声誉。
-			_ = svc.m.UpdateLogResult(ctx, p.LogID, map[string]any{
-				"status":        mailmodel.LogStatusFailed,
-				"error_kind":    kind,
-				"error_message": msg,
+			// 硬退信：标失败 + 活动失败计数 + **加入抑制名单** + 联系人标 bounced。
+			// 四处写**同事务**：分开提交时的半截状态最贵 —— 「日志失败了、地址没进名单」
+			// 下一次活动还会发，而「地址进了名单、日志还是 pending」会让队列重发同一封信。
+			// 发信（sender.Send）在事务之外，这里只包回写。
+			_ = svc.m.Transaction(ctx, func(tx *gorm.DB) error {
+				if uerr := svc.m.UpdateLogResultTx(ctx, tx, p.LogID, map[string]any{
+					"status":        mailmodel.LogStatusFailed,
+					"error_kind":    kind,
+					"error_message": msg,
+				}); uerr != nil {
+					return uerr
+				}
+				if logRow.CampaignID != nil {
+					if cerr := svc.m.IncrCampaignCountsTx(ctx, tx, *logRow.CampaignID, 0, 1); cerr != nil {
+						return cerr
+					}
+				}
+				if aerr := svc.m.AddSuppressionTx(ctx, tx, &mailmodel.MailSuppressionEntity{
+					Email: p.To, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("smtp"),
+				}); aerr != nil {
+					return aerr
+				}
+				return svc.m.UpdateContactStatusByEmailTx(ctx, tx, p.To, mailmodel.ContactStatusBounced, now)
 			})
-			if logRow.CampaignID != nil {
-				_ = svc.m.IncrCampaignCounts(ctx, *logRow.CampaignID, 0, 1)
-			}
-			_ = svc.m.AddSuppression(ctx, &mailmodel.MailSuppressionEntity{
-				Email: p.To, Reason: mailmodel.SuppressionReasonHardBounce, Source: strPtr("smtp"),
-			})
-			_ = svc.m.UpdateContactStatusByEmail(ctx, p.To, mailmodel.ContactStatusBounced, now)
 			return nil
 		default:
 			_ = svc.m.UpdateLogResult(ctx, p.LogID, map[string]any{

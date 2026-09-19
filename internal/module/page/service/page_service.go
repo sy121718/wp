@@ -3,6 +3,7 @@ package pageservice
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -67,14 +68,30 @@ type Service struct {
 	// 自动发布实例的产物与本模块共用一个 artifacts 根：不注入就只能把它们误报成孤儿。
 	// 用 setter 注入而不是构造参数 —— page 不能反向依赖 presentation（那是依赖成环）。
 	externalArtifactOwners func(ctx context.Context) ([]string, error)
-	// publishWindowFault 是发布链「访问面已切换、数据库尚未写入」窗口的故障注入点
+	// publishWindowFault 是发布链「访问面已切换、数据库尚未落定」窗口的故障注入点
 	// （审计 AR2-002 的故障注入测试）。生产恒为 nil。
 	//
 	// 为什么需要它：这个窗口恰好是崩溃恢复协议唯一无法用静态断言覆盖的分支 ——
 	// 真实崩溃会连进程一起终止，子进程方案又无法保证终止点落在两次调用之间。
 	// 注入后主链按「状态不可判定」收敛：保留 pending 回执、把错误上抛，由启动恢复
-	// 按符号链接的实际指向补齐或回滚。测试见 public/test/page/unit/page_publish_ledger_test.go。
+	// 按符号链接的实际指向补齐或回滚。
+	//
+	// 三个入口共用这一个字段（发布 / 改 URL / 回滚），命中点都在各自的 DB 事务**内部**
+	// 且位于第一条写之后 —— 要证明的是「半截写随事务一起回滚」，而不是「还没开始写」。
+	// 测试见 public/test/page/unit/page_publish_ledger_test.go 与
+	// page_url_rollback_ledger_test.go（改 URL / 回滚的收敛与幂等）。
 	publishWindowFault func() error
+
+	// convergeWake 发布回执收敛的进程内快通道（容量 1）。
+	//
+	// 写路径在**事务提交之后**非阻塞地推一下，正常路径毫秒级收敛；
+	// 通道满时丢弃信号，由定时器兜底（详见 page_publish_converge.go）。
+	convergeWake chan struct{}
+	// lastConvergeAt 最近一次收敛运行时刻（Unix 秒；0 = 本进程还没跑过）。
+	//
+	// 进程内观测值，供 PendingReceiptStatus 与健康检查判断「本实例的收敛还在跑」；
+	// 多实例部署下每个实例各记各的，不做全局真源（这是进程健康信号，不是业务状态）。
+	lastConvergeAt atomic.Int64
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
@@ -100,6 +117,8 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 		media:       media,
 		store:       store,
 		publication: publication,
+		// 容量 1：同一时刻只留一个待处理信号，多次写入合并成一次收敛。
+		convergeWake: make(chan struct{}, 1),
 	}
 	// 依赖提供者：把文案词条资源版本号写进 Manifest.dependencies
 	// （DependencyKind=i18n，改文案触发重建，docs/06-D §10.4）。

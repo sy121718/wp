@@ -43,9 +43,16 @@ func TestSanitizeRichHTMLImg(t *testing.T) {
 			want: `<img src="https://e.com/a.jpg" height="200px">`,
 		},
 		{
-			name: "figure/figcaption 包裹保留",
+			// 图注回填：img 没有 alt 时用同级 figcaption 的纯文本补上（SEO 图片检查要的 alt）。
+			// 回填只写 alt，figcaption 本身一个字都不改。
+			name: "figure/figcaption 包裹保留且回填 alt",
 			src:  `<figure><img src="https://e.com/a.jpg"><figcaption>图片说明</figcaption></figure>`,
-			want: `<figure><img src="https://e.com/a.jpg"><figcaption>图片说明</figcaption></figure>`,
+			want: `<figure><img src="https://e.com/a.jpg" alt="图片说明"><figcaption>图片说明</figcaption></figure>`,
+		},
+		{
+			name: "已有 alt 的图不被图注覆盖",
+			src:  `<figure><img src="https://e.com/a.jpg" alt="作者写的"><figcaption>图片说明</figcaption></figure>`,
+			want: `<figure><img src="https://e.com/a.jpg" alt="作者写的"><figcaption>图片说明</figcaption></figure>`,
 		},
 		{
 			name: "异常闭合 </img> 被忽略",
@@ -164,21 +171,22 @@ func TestSanitizeRichHTMLRichTextPreserved(t *testing.T) {
 	}
 }
 
-// TestSanitizeRichHTMLHeadingDowngrade h1 降级为 h2：
-// Trix 默认工具条的「标题」按钮输出 h1，而文章正文不得出现 H1
-// （SEO 要求一页一个 H1，由页面标题承担），故白名单输出侧统一降级。
-func TestSanitizeRichHTMLHeadingDowngrade(t *testing.T) {
+// TestSanitizeRichHTMLHeadingLevels h1~h5 原样保留。
+//
+// 历史：这里原本断言 h1 统一降级为 h2（一页一个 H1 由页面标题承担）。
+// 本轮产品要求编辑器提供 h1~h5 五个级别、白名单放行 h1，降级随之取消 ——
+// 否则会出现「编辑器里点 H1、保存后变 H2」的所见非所存。
+func TestSanitizeRichHTMLHeadingLevels(t *testing.T) {
 	cases := []struct {
 		name string
 		src  string
 		want string
 	}{
-		{"h1 降级为 h2", `<h1>大标题</h1>`, `<h2>大标题</h2>`},
-		{"h1 属性一并剥离", `<h1 class="x" id="y">标题</h1>`, `<h2>标题</h2>`},
-		{"混合文档中 h1 降级", `<p>前</p><h1>中</h1><p>后</p>`, `<p>前</p><h2>中</h2><p>后</p>`},
-		{"h2/h3/h4 不受影响", `<h2>二</h2><h3>三</h3><h4>四</h4>`, `<h2>二</h2><h3>三</h3><h4>四</h4>`},
-		{"自闭合 h1 降级为 h2", `<h1/>`, `<h2>`},
-		{"降级幂等（h2 再清洗仍为 h2）", `<h2>已降级</h2>`, `<h2>已降级</h2>`},
+		{"h1 原样保留", `<h1>大标题</h1>`, `<h1>大标题</h1>`},
+		{"h1 属性一并剥离", `<h1 class="x" id="y">标题</h1>`, `<h1>标题</h1>`},
+		{"五级标题全保留", `<h1>一</h1><h2>二</h2><h3>三</h3><h4>四</h4><h5>五</h5>`, `<h1>一</h1><h2>二</h2><h3>三</h3><h4>四</h4><h5>五</h5>`},
+		{"自闭合 h1 归一为开标签", `<h1/>`, `<h1>`},
+		{"再清洗幂等", `<h1>标题</h1>`, `<h1>标题</h1>`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -186,9 +194,9 @@ func TestSanitizeRichHTMLHeadingDowngrade(t *testing.T) {
 			if got != c.want {
 				t.Errorf("sanitizeRichHTML(%q) = %q, 期望 %q", c.src, got, c.want)
 			}
-			// 幂等：降级后的输出再次清洗必须稳定（fuzz 不变式）。
+			// 幂等：标题级别保留后输出再次清洗必须稳定（fuzz 不变式）。
 			if again := sanitizeRichHTML(got); again != got {
-				t.Errorf("h1 降级非幂等: %q -> %q", got, again)
+				t.Errorf("标题清洗非幂等: %q -> %q", got, again)
 			}
 		})
 	}
@@ -204,7 +212,7 @@ func TestSanitizeRichHTMLPreCodeBlock(t *testing.T) {
 		{"pre 代码块保留", `<pre>x := 1</pre>`, `<pre>x := 1</pre>`},
 		{"pre 属性剥离", `<pre class="code" data-x="1">code</pre>`, `<pre>code</pre>`},
 		{"pre 内实体往返等价", `<pre>a &lt; b</pre>`, `<pre>a &lt; b</pre>`},
-		{"Trix 默认工具条产物（h1 + pre）", `<h1>标题</h1><pre>code</pre>`, `<h2>标题</h2><pre>code</pre>`},
+		{"标题与代码块组合保留", `<h1>标题</h1><pre>code</pre>`, `<h1>标题</h1><pre>code</pre>`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -216,5 +224,67 @@ func TestSanitizeRichHTMLPreCodeBlock(t *testing.T) {
 				t.Errorf("pre 清洗非幂等: %q -> %q", got, again)
 			}
 		})
+	}
+}
+
+// TestSanitizeRichHTMLBlockElements 富文本扩展的块级标签（表格 / 折叠块 / 水平线）：
+// 合法结构保留、危险标签剥壳、事件属性全剥离 —— 与 core 包的
+// TestRichTextHTMLBlockExtensions 是同一组契约，这里再从组件层（text 包的转发入口）钉一遍。
+func TestSanitizeRichHTMLBlockElements(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"表格保留", `<table><thead><tr><th>列</th></tr></thead><tbody><tr><td>值</td></tr></tbody></table>`, `<table><thead><tr><th>列</th></tr></thead><tbody><tr><td>值</td></tr></tbody></table>`},
+		{"表格属性剥离", `<table class="x"><tr><td colspan="2">a</td></tr></table>`, `<table><tr><td>a</td></tr></table>`},
+		{"折叠块保留", `<details><summary>题</summary><p>答</p></details>`, `<details><summary>题</summary><p>答</p></details>`},
+		{"折叠块 open 剥离", `<details open><summary>题</summary><p>答</p></details>`, `<details><summary>题</summary><p>答</p></details>`},
+		{"水平线保留", `<p>上</p><hr><p>下</p>`, `<p>上</p><hr><p>下</p>`},
+		{"iframe 剥壳", `<p>a</p><iframe src="https://evil.example/x"></iframe>`, `<p>a</p>`},
+		{"事件属性剥离", `<details onclick="alert(1)"><summary onmouseover="x()">t</summary><p>c</p></details>`, `<details><summary>t</summary><p>c</p></details>`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sanitizeRichHTML(c.src)
+			if got != c.want {
+				t.Errorf("sanitizeRichHTML(%q) = %q, 期望 %q", c.src, got, c.want)
+			}
+			for _, dangerous := range []string{"<script", "<style", "<iframe", "onerror=", "onclick=", "onmouseover="} {
+				if strings.Contains(got, dangerous) {
+					t.Errorf("输出残留危险内容 %q: %q", dangerous, got)
+				}
+			}
+			if again := sanitizeRichHTML(got); again != got {
+				t.Errorf("非幂等: %q -> %q", got, again)
+			}
+		})
+	}
+}
+
+// TestBuildViewKeepsDetailsFold 折叠块（details/summary）走组件渲染链路（core.text 富文本模式）：
+// 清洗后的视图里折叠结构完整，脚本与事件属性被剔除。BuildView 的输出由 text.jet 用 unsafe
+// 直接写进产物，所以这里是「清洗」与「渲染」之间唯一的关口 —— 只测 core 包的清洗函数
+// 覆盖不到「视图字段给错/走错分支」，那样页面会安静地少掉折叠块。
+func TestBuildViewKeepsDetailsFold(t *testing.T) {
+	src := `<details onclick="alert(1)"><summary onmouseover="x()">折叠标题</summary><p>折叠正文<script>alert(1)</script></p></details>`
+	view, err := BuildView(&Props{Mode: ModeRichText, Text: src}, nil)
+	if err != nil {
+		t.Fatalf("BuildView 失败：%v", err)
+	}
+	if view.IsPlain {
+		t.Fatal("富文本模式不该走纯文本分支")
+	}
+	want := `<details><summary>折叠标题</summary><p>折叠正文alert(1)</p></details>`
+	if view.SanitizedContent != want {
+		t.Errorf("SanitizedContent = %q, 期望 %q", view.SanitizedContent, want)
+	}
+	for _, bad := range []string{"<script", "<style", "<iframe", "onclick=", "onmouseover="} {
+		if strings.Contains(view.SanitizedContent, bad) {
+			t.Errorf("视图残留危险内容 %q：%q", bad, view.SanitizedContent)
+		}
+	}
+	if again := sanitizeRichHTML(view.SanitizedContent); again != view.SanitizedContent {
+		t.Errorf("非幂等: %q -> %q", view.SanitizedContent, again)
 	}
 }

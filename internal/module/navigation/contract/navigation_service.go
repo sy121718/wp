@@ -8,6 +8,21 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 )
 
+// MenuStaleDispatcher 导航变更后的依赖失效派发端口（装配层注入）。
+//
+// 方向：navigation → 注入方（pipeline.Fanout 的适配器实现）。navigation 模块不认识
+// page / presentation，也不 import pipeline —— 它只说「这个工程的这个导航位置变了」，
+// 谁会因此失效由依赖扇出按依赖表反查决定（键构造见 pipeline.MenuKey，
+// page 与 presentation 两侧用同一个构造函数产出）。
+//
+// 未注入时导航写操作照常成功，但**不派发任何失效**：已发布页面永远停在旧导航上，
+// 而导航在页眉/页脚、全站可见，且没有任何报错。因此它在 wiring 清单里是必需端口，
+// 装配期未注入即启动失败。
+type MenuStaleDispatcher interface {
+	// InvalidateMenu 该工程的该菜单位置（header / footer）发生变更（增 / 删 / 改 / 排序）。
+	InvalidateMenu(ctx context.Context, projectID, kind string) error
+}
+
 // SourceResolver 来源实体解析能力：菜单项来源非 custom 时，按来源实体取标题与 URL。
 //
 // 说明：这是 navigation 模块对「外部能力」的依赖声明，由顶层装配注入实现

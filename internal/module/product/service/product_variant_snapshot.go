@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	productcontract "go_wp/internal/module/product/contract"
+	inventorydto "go_wp/internal/module/product/inventory/dto"
 )
 
 // 编译期断言：本 service 满足订单域需要的快照端口。
@@ -50,6 +51,16 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, pro
 		nameOf[p.ID] = p.Name
 		projectOf[p.ID] = p.ProjectID
 	}
+	// 成本来自 **(仓库, SKU)**：该变体在归属仓（未指定仓库时按库存域既有的归属仓解析
+	// 规则 —— 默认仓）的当前成本。成本搬到仓库之后，变体级 product_variants.cost_price
+	// 不再是订单成本快照的来源（docs/14 §9.3 的 ⚠️：沿用变体级会让订单利润与仓库侧
+	// 对不上，且改价后历史利润会漂移）。
+	refs := make([]inventorydto.VariantWarehouseCostRef, 0, len(variants))
+	for _, v := range variants {
+		refs = append(refs, inventorydto.VariantWarehouseCostRef{VariantID: v.ID})
+	}
+	costs := s.variantWarehouseCosts(ctx, projectID, refs)
+
 	list = make([]*productcontract.VariantSnapshot, 0, len(variants))
 	for _, v := range variants {
 		// 商品行在本工程作用域内不可见 ⇒ 该变体不属于本工程，**丢掉它**。
@@ -74,7 +85,7 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, pro
 			VariantLabel: variantOptionLabel(v.OptionValues),
 			SKU:          v.SKUCode,
 			Price:        yuanToCents(v.Price),
-			CostPrice:    yuanToCentsPtr(v.CostPrice),
+			CostPrice:    costOf(costs, v.ID),
 			Enabled:      v.Enabled,
 		})
 	}
@@ -106,12 +117,53 @@ func yuanToCents(yuan float64) int64 {
 	return int64(math.Round(yuan * 100))
 }
 
-// yuanToCentsPtr 可空价格 → 分（nil 记 0：没有成本价的商品成本就是未知，不是负数）。
-func yuanToCentsPtr(yuan *float64) int64 {
-	if yuan == nil {
-		return 0
+// costOf 取某个变体的成本快照（分）；没有仓库侧成本时返回 nil（= 尚未核算）。
+//
+// 返回指针而不是哨兵值：0 是合法的显式成本（赠品 / 内部划拨），拿 0 冒充「未知」
+// 会让订单利润凭空多出一笔；用负值当哨兵则把「契约能否表达未知」藏进实现侧注释里。
+func costOf(costs map[string]int64, variantID string) *int64 {
+	cents, ok := costs[variantID]
+	if !ok {
+		return nil
 	}
-	return yuanToCents(*yuan)
+	value := cents
+	return &value
+}
+
+// variantWarehouseCosts 取这些变体在**各自归属仓**的当前成本（分）。
+//
+// 返回的 map 只含确实有成本的变体：未核算（cost_price IS NULL）与「该仓没有这条
+// 库存行」都不进 map，由 costOf 统一落成 nil。
+//
+// 解析失败为什么不升级成错误：价与启用态才是快照的主事实（下单 / 加购 / 实时价片段
+// 三个消费方都靠它），成本是附加的记账事实；而它的失败形态（工程没有默认仓、库存行
+// 还没生成）恰恰就是「尚未核算」的常见样子。把它变成错误会让「没有默认仓的工程连
+// 加购都点不动」—— 那不是本次口径收口要换来的行为。成本真缺了会在订单行上表现为
+// NULL，而不是被 0 掩盖。
+//
+// 注意**读的是当前成本**：这不是「历史成本」，历史成本由出库流水的 unit_cost 留痕
+// （迁移 256）；本函数只负责下单那一刻的取值。
+func (s *Service) variantWarehouseCosts(ctx context.Context, projectID string, refs []inventorydto.VariantWarehouseCostRef) map[string]int64 {
+	out := make(map[string]int64, len(refs))
+	if len(refs) == 0 {
+		return out
+	}
+	if s.invSvc == nil {
+		// 未注入库存用例（纯商品单测路径）：没有库存域就没有仓库侧成本可言 ⇒ 全部未知。
+		// 生产装配下 SetInventoryService 是 required-port（wiring 自检漏接即 panic）。
+		return out
+	}
+	costs, err := s.invSvc.ResolveVariantWarehouseCosts(ctx, projectID, refs)
+	if err != nil {
+		return out
+	}
+	for _, c := range costs {
+		if c.CostPrice == nil {
+			continue
+		}
+		out[c.VariantID] = yuanToCents(*c.CostPrice)
+	}
+	return out
 }
 
 // dedupeNonEmpty 去空去重，保持首次出现顺序。

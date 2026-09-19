@@ -71,13 +71,28 @@ type OrderItemResp struct {
 	LineDiscount int64  `json:"lineDiscount"`
 	LineTax      int64  `json:"lineTax"`
 	LineTotal    int64  `json:"lineTotal"`
-	CostPrice    int64  `json:"costPrice"`
+	// CostPrice 行成本快照（分，来自该行归属仓的当前成本，迁移 256）。
+	//
+	// 对外可空：**null = 下单时该 (仓库, SKU) 尚未核算**，与 0（合法的显式成本：
+	// 赠品 / 内部划拨）严格区分。毛利 = lineTotal - costPrice * quantity；
+	// 汇总一律按 variantId 聚合（多口味共用成本值时各行同值）。
+	CostPrice *int64 `json:"costPrice"`
 }
 
-// CancelOrderResp 取消订单结果（订单已取消时仍可能带库存归还警告）。
-type CancelOrderResp struct {
-	Warnings []string `json:"warnings,omitempty"`
-}
+// CancelOrderResp 取消订单结果。
+//
+// **空的响应体**：取消订单的全部事实都落在订单自身（状态 + cancel_reason + 状态流转流水）、
+// 库存归还流水与券核销明细里，没有「结果之外还要额外上报的东西」。
+//
+// 曾经有一个 Warnings []string —— 那是「带警告成功」出口：先提交取消、再动库存，
+// 归还失败就把警告回给前端。2026-09-19 事务收口后状态 / 流转 / 库存 / 券在同一事务里，
+// 任一步失败整体回滚并返回 error，那条半截路径连同恒为空的字段一起删掉了
+// （两个 handler 读它渲染提示的分支同步删除）。
+//
+// 本批只收敛「恒为空的那一半」：字段删掉，返回形状不动 —— 把空结构体也删掉会变成一次
+// 接口签名变更（contract / service / 两个 handler 与全部调用方一起动），
+// 而收益只是少一个类型。
+type CancelOrderResp struct{}
 
 // StatusLogResp 状态流转记录。
 type StatusLogResp struct {

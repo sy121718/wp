@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,6 +60,11 @@ type changeItem struct {
 	productID string
 	skuCode   string
 	reason    *inventorymodel.ReasonEntity
+	// cost 非 nil 表示本次变动要顺带写入 (仓库, SKU) 的**当前成本价**（覆盖式）。
+	//
+	// 出库 / 盘点 / 报损一律不传（它们不动成本）；采购收货与生产入库把单价传进来，
+	// 于是成本与数量落在同一个事务里。nil = 本次不碰成本，不是「把成本清空」。
+	cost *float64
 	// parentVariantID 非空表示这条变动来自某个父 SKU 的物料清单展开。
 	parentVariantID string
 	warehouse       *inventorymodel.WarehouseEntity
@@ -89,79 +95,141 @@ type changeMeta struct {
 }
 
 // ChangeStock 按 SKU 增减库存（验收 1/2/3/4）：单行与多行走同一条加锁路径。
+//
+// 成本：(仓库, SKU) 的当前成本价只在行**显式传了 CostPrice** 时才写（迁移 244，
+// 覆盖式）。出库 / 盘点 / 报损的调用方一律不传 —— 调成本不是这些动作的事；
+// 采购收货与生产入库把单价传进来，让成本与数量落在同一个事务里。
+//
+// 本方法**自己开事务**（自足调用方）。要把库存变动并进调用方自己那个事务的用 ChangeStockTx。
 func (s *Service) ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error) {
-	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
-	}
-	direction, err := normalizeDirection(req.Direction)
-	if err != nil {
-		return nil, err
-	}
-	if len(req.Lines) == 0 {
-		return nil, errors.New(inventoryenums.ErrStockLinesRequired)
-	}
-	if len(req.Lines) > maxBatchLines {
-		return nil, errors.New(inventoryenums.ErrStockLinesTooMany)
-	}
-	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	// 变动原因必须是字典里的条目，且方向与本次变动一致（不接受自由文本）。
-	reason, err := s.resolveReason(ctx, projectID, req.ReasonCode, direction)
-	if err != nil {
-		return nil, err
-	}
-	meta := changeMeta{reason: reason, sourceType: req.SourceType, sourceRef: req.SourceRef,
-		remark: req.Remark, operatorID: req.OperatorID}
-	items, err := s.buildChangeItems(ctx, projectID, direction, req.WarehouseID, req.Lines, meta, "")
-	if err != nil {
-		return nil, err
-	}
-	out, err := s.applyStockChanges(ctx, projectID, items)
+	return s.changeStockTracking(ctx, req, nil)
+}
+
+// ChangeStockTx 与 ChangeStock 逐字同一条路径，但在**调用方的事务**里执行（tx 非 nil）。
+//
+// 事务透传版：**不自己开事务、错误原样返回** —— 专供同库跨模块的调用方（订单建单扣减 /
+// 取消归还库存 / 退货入库）把库存变动纳入自己那个事务：任一步失败整体回滚，不需要
+// 「先提交再补偿」（补偿只留给跨库 / 外部系统，见 AGENTS.md「写操作的事务与回滚」）。
+func (s *Service) ChangeStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq) (err error) {
+	_, _, _, err = s.changeStockTrackingTx(ctx, tx, req, nil)
+	return err
+}
+
+// changeStockTracking 与 ChangeStock 是**同一条**路径，额外允许把若干行的
+// **跟踪开关**在同一事务里一并写回（trackOverride：key = (变体, 仓库)，值 = 本次变动后
+// 该行的目标开关）。
+//
+// 为什么需要它：库存页行内编辑「切成无限」= 数量清零 + 关开关，是两处持久化写入。
+// 分成两次调用就会留下「数量已清零、开关还开着」或「开关关了、数量没清」的中间态
+// （后者还会直接撞 CHECK (track_quantity OR quantity = 0) 报 23514）。所以关开关这件事
+// 必须与数量写回、流水写入在同一个事务里完成 —— 也正因如此这里不再另开一条写路径：
+// 它复用同一套加锁顺序与同一份流水构造，只是多带一个目标开关。
+//
+// trackOverride 为 nil 时行为与 ChangeStock 逐字一致。
+func (s *Service) changeStockTracking(ctx context.Context, req *inventorydto.ChangeStockReq,
+	trackOverride map[stockKey]bool) (res *inventorydto.StockChangeResp, err error) {
+	out, projectID, direction, err := s.changeStockTrackingTx(ctx, nil, req, trackOverride)
 	if err != nil {
 		return nil, err
 	}
 	return s.finishChange(ctx, projectID, direction, out), nil
 }
 
-// DeductStock 按 SKU 扣减库存（验收 1/5）：不足即整体拒绝，可按物料清单展开多个子项 SKU。
-func (s *Service) DeductStock(ctx context.Context, req *inventorydto.DeductStockReq) (res *inventorydto.StockChangeResp, err error) {
+// changeStockTrackingTx 变动契约的**事务实现**：tx 为 nil 时自己开一个事务，
+// 非 nil 时全部写入落在调用方的事务里（提交 / 回滚由调用方负责）。
+//
+// 校验与入参归一（resolveProjectID / resolveReason / resolveWarehouse）是只读动作，
+// 放在事务外与事务内没有区别 —— 写入只有 applyStockChangesTx 一处。
+func (s *Service) changeStockTrackingTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq,
+	trackOverride map[stockKey]bool) (out *changeOutcome, projectID, direction string, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, "", "", errors.New(inventoryenums.ErrInvalidParam)
+	}
+	if direction, err = normalizeDirection(req.Direction); err != nil {
+		return nil, "", "", err
 	}
 	if len(req.Lines) == 0 {
-		return nil, errors.New(inventoryenums.ErrStockLinesRequired)
+		return nil, "", "", errors.New(inventoryenums.ErrStockLinesRequired)
 	}
 	if len(req.Lines) > maxBatchLines {
-		return nil, errors.New(inventoryenums.ErrStockLinesTooMany)
+		return nil, "", "", errors.New(inventoryenums.ErrStockLinesTooMany)
 	}
-	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if projectID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
+		return nil, "", "", err
+	}
+	// 变动原因必须是字典里的条目，且方向与本次变动一致（不接受自由文本）。
+	reason, err := s.resolveReason(ctx, projectID, req.ReasonCode, direction)
+	if err != nil {
+		return nil, "", "", err
+	}
+	meta := changeMeta{reason: reason, sourceType: req.SourceType, sourceRef: req.SourceRef,
+		remark: req.Remark, operatorID: req.OperatorID}
+	items, err := s.buildChangeItems(ctx, projectID, direction, req.WarehouseID, req.Lines, meta, "")
+	if err != nil {
+		return nil, "", "", err
+	}
+	if out, err = s.applyStockChangesOn(ctx, tx, projectID, items, trackOverride); err != nil {
+		return nil, "", "", err
+	}
+	return out, projectID, direction, nil
+}
+
+// DeductStock 按 SKU 扣减库存（验收 1/5）：不足即整体拒绝，可按物料清单展开多个子项 SKU。
+//
+// 本方法**自己开事务**。要把扣减并进调用方自己那个事务的用 DeductStockTx
+// （订单建单就是这条路：订单 + 明细 + 流水 + 券核销 + 扣库存必须同事务）。
+func (s *Service) DeductStock(ctx context.Context, req *inventorydto.DeductStockReq) (res *inventorydto.StockChangeResp, err error) {
+	out, projectID, err := s.deductStockTx(ctx, nil, req)
 	if err != nil {
 		return nil, err
+	}
+	return s.finishChange(ctx, projectID, inventoryenums.DirectionOut, out), nil
+}
+
+// DeductStockTx 与 DeductStock 逐字同一条路径，但在**调用方的事务**里执行（tx 非 nil）。
+//
+// 事务透传版：**不自己开事务、错误原样返回**（库存不足也原样返回，由调用方决定怎么呈现）。
+func (s *Service) DeductStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.DeductStockReq) (err error) {
+	_, _, err = s.deductStockTx(ctx, tx, req)
+	return err
+}
+
+// deductStockTx 扣减的事务实现（tx 为 nil 时自己开事务）。
+func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.DeductStockReq) (
+	out *changeOutcome, projectID string, err error) {
+	if req == nil {
+		return nil, "", errors.New(inventoryenums.ErrInvalidParam)
+	}
+	if len(req.Lines) == 0 {
+		return nil, "", errors.New(inventoryenums.ErrStockLinesRequired)
+	}
+	if len(req.Lines) > maxBatchLines {
+		return nil, "", errors.New(inventoryenums.ErrStockLinesTooMany)
+	}
+	if projectID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
+		return nil, "", err
 	}
 	reason, err := s.resolveReason(ctx, projectID, req.ReasonCode, inventoryenums.DirectionOut)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	meta := changeMeta{reason: reason, sourceType: req.SourceType, sourceRef: req.SourceRef,
 		remark: req.Remark, operatorID: req.OperatorID}
 	items, err := s.buildChangeItems(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, req.Lines, meta, "")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	// 按物料清单展开：父 SKU → 子项 SKU × 用量 × 请求量（多级清单逐层展开）。
 	// 展开要读 inventory_bom_items（迁移 215 名单），作用域用本请求已解析出的 projectID。
 	if req.ExpandBOM {
 		if items, err = s.expandBOM(ctx, projectID, items); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
-	out, err := s.applyStockChanges(ctx, projectID, items)
-	if err != nil {
-		return nil, err
+	if out, err = s.applyStockChangesOn(ctx, tx, projectID, items, nil); err != nil {
+		return nil, "", err
 	}
-	return s.finishChange(ctx, projectID, inventoryenums.DirectionOut, out), nil
+	return out, projectID, nil
 }
 
 // ListMovements 库存流水列表（验收 3：方向 / 数量 / 原因 / 来源引用都可查可过滤）。
@@ -181,6 +249,17 @@ func (s *Service) ListMovements(ctx context.Context, req *inventorydto.ListMovem
 	}
 	if filter.Direction, err = normalizeDirectionOrEmpty(req.Direction); err != nil {
 		return nil, err
+	}
+	// 时间区间：页面表单给的是**本地时间**（日期或日期时间），这里按本地时区解析；
+	// 只给日期时上界按当日 23:59:59 收口 —— 「截止今天」不该把今天整天漏掉。
+	if filter.TimeFrom, err = parseMovementTime(req.TimeFrom, false); err != nil {
+		return nil, err
+	}
+	if filter.TimeTo, err = parseMovementTime(req.TimeTo, true); err != nil {
+		return nil, err
+	}
+	if filter.TimeFrom != nil && filter.TimeTo != nil && filter.TimeTo.Before(*filter.TimeFrom) {
+		return nil, errors.New(inventoryenums.ErrMovementTimeRangeInvalid)
 	}
 	if filter.ProjectID, err = s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID)); err != nil {
 		return nil, err
@@ -227,10 +306,17 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 		if werr != nil {
 			return nil, werr
 		}
+		// 显式成本：空 = 本次不碰成本（出库 / 盘点 / 报损的默认行为），
+		// 给了值就校验 —— 成本可以「尚未核算」（NULL），但不能是负数 / NaN / Inf。
+		cost, cerr := normalizeExplicitCost(line.CostPrice)
+		if cerr != nil {
+			return nil, cerr
+		}
 		items = append(items, changeItem{
 			key:             stockKey{variantID: variantID, warehouseID: wh.ID},
 			direction:       direction,
 			quantity:        quantity,
+			cost:            cost,
 			projectID:       wh.ProjectID,
 			productID:       strings.TrimSpace(line.ProductID),
 			skuCode:         strings.TrimSpace(line.SKUCode),
@@ -246,7 +332,28 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 	return items, nil
 }
 
-// applyStockChanges 在**一个事务**内完成全部行的加锁与增减（不留半截状态）。
+// applyStockChangesOn 完成全部行的加锁与增减（不留半截状态）：tx 为 nil 时自己开一个
+// 事务，非 nil 时**落在调用方的事务里**（不提交、不回滚 —— 那是调用方的事）。
+//
+// 两种形态共用同一份实现（applyStockChangesTx），因此「自足调用」与「事务透传调用」
+// 的加锁顺序、流水构造、成本写入逐字一致 —— 不存在两条会各自漂移的写路径。
+func (s *Service) applyStockChangesOn(ctx context.Context, tx *gorm.DB, projectID string, items []changeItem,
+	trackOverride map[stockKey]bool) (out *changeOutcome, err error) {
+	if tx != nil {
+		return s.applyStockChangesTx(ctx, tx, projectID, items, trackOverride)
+	}
+	err = s.m.Transaction(ctx, func(t *gorm.DB) error {
+		var e error
+		out, e = s.applyStockChangesTx(ctx, t, projectID, items, trackOverride)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// applyStockChangesTx 变动写入的事务内实现（tx 由调用方负责提交 / 回滚）。
 //
 // 事务内的三段式是本票并发安全的全部依据：
 //
@@ -256,7 +363,8 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 //
 // ①②必须分成两趟而不能边建边锁：边建边锁会让两个批次在「各自已持有的行」上互等，
 // 那才会真正成环（见 inventory_change_test.go 的对向扣减并发用例）。
-func (s *Service) applyStockChanges(ctx context.Context, projectID string, items []changeItem) (out *changeOutcome, err error) {
+func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectID string, items []changeItem,
+	trackOverride map[stockKey]bool) (out *changeOutcome, err error) {
 	if len(items) == 0 {
 		return nil, errors.New(inventoryenums.ErrStockLinesRequired)
 	}
@@ -277,8 +385,11 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 	}
 	keys := uniqueSortedKeys(items)
 	variantIDs := distinctVariantIDs(keys)
+	// 显式成本按 (变体, 仓库) 汇总：同一 key 出现多条时**最后一条显式成本**生效
+	//（按锁序处理，结果确定；调用方不该给同一个 key 两个成本）。
+	costs := explicitCosts(items)
 
-	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+	err = func() error {
 		// 变动前的元数据解析（**不加锁**）：目标行已存在时沿用它的商品 / SKU 快照。
 		// projectID 必传：inventory_stocks 带 FORCE 策略，这条事务内的首读没有作用域时
 		// 恒 0 行 —— 展开出来的子项于是解析不到商品快照（见该方法的注释）。
@@ -317,7 +428,11 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 			pending = append(pending, &inventorymodel.StockEntity{
 				ID: uuid.NewString(), ProjectID: orString(item.projectID, projectID),
 				WarehouseID: k.warehouseID, ProductID: productID, VariantID: k.variantID,
-				SKUCode: skuCode, Quantity: 0,
+				SKUCode: skuCode,
+				// 变动路径上首次出现的行同样默认**不跟踪（无限）**：与商品侧建变体、
+				// 与 EnsureStock 的新建口径一致（迁移 261：新建行默认无限，存量行才 true）。
+				// 入库 / 调整会在 ③ 里把这一行切成跟踪并把数量写回。
+				TrackQuantity: false, Quantity: 0,
 				Metadata: json.RawMessage("{}"), CreatedAt: now, UpdatedAt: now,
 			})
 		}
@@ -336,9 +451,21 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 		}
 
 		// ③ 在锁内按序应用（同一 key 的多条项依次累加，各自写一条流水）。
+		//
+		// 两条与「无限库存」相关的语义（迁移 261，2026-09-19 拍板）：
+		//
+		//	· 不跟踪（track_quantity = false = 无限）的行**出库不校验可用量、不扣减**
+		//	  ——「无限」的定义就是数量不构成约束，订单照卖，因此这里直接跳过，
+		//	  连流水都不写（没有数量变动就没有变动，与同一行 adjust 到当前值同款）；
+		//	· 入库 / 调整**显式给了数量**就把行切成跟踪：给具体数量这件事本身
+		//	  就意味着要跟踪，否则 CHECK (track_quantity OR quantity = 0) 会在写非 0
+		//	  数量时拒绝。切换与数量写回在同一事务、同一批已加锁的行上完成。
 		changed := make(map[stockKey]bool, len(keys))
 		for _, it := range sortItems(items) {
 			e := locked[it.key]
+			if !e.TrackQuantity && it.direction == inventoryenums.DirectionOut {
+				continue
+			}
 			before := e.Quantity
 			var delta int
 			switch it.direction {
@@ -352,10 +479,20 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 			after := before + delta
 			if after < 0 {
 				// 可用量不足：整体拒绝（事务回滚，不留半截扣减）。
+				// 只监跟踪行：不跟踪的行在上面已经跳过（它们没有「不足」这一说）。
 				return errors.New(inventoryenums.ErrStockInsufficient)
 			}
+			switched := false
+			if !e.TrackQuantity {
+				e.TrackQuantity = true
+				switched = true
+			}
 			if delta == 0 {
-				// 调整到当前值：没有发生变动，不写流水。
+				// 没有数量变动，不写流水；但「切成跟踪」仍要写回 —— 给 0 也是一个
+				// 显式数量（「卖光了」），与「没填 = 无限」是两回事。
+				if switched {
+					changed[it.key] = true
+				}
 				continue
 			}
 			e.Quantity = after
@@ -364,15 +501,41 @@ func (s *Service) applyStockChanges(ctx context.Context, projectID string, items
 			out.movements = append(out.movements, movementOf(it, e, before, after, delta, out.batchID, now))
 		}
 		for _, k := range keys {
+			e := locked[k]
+			// 调用方要求的**目标跟踪开关**（nil 映射 = 不改）：写在同一事务、同一次 UPDATE 里。
+			// 「切成无限」就是这条路径（数量清零 + 关开关原子完成）。
+			if target, ok := trackOverride[k]; ok && target != e.TrackQuantity {
+				e.TrackQuantity = target
+				changed[k] = true
+			}
 			if !changed[k] {
 				continue
 			}
-			if err := s.m.UpdateStockQuantityTx(ctx, tx, locked[k].ID, locked[k].Quantity, now); err != nil {
+			// CHECK (track_quantity OR quantity = 0) 的口径在这里提前兜住：不跟踪的行
+			// 不允许带数字。直接撞约束只会拿到一个没有上下文的 23514。
+			if !e.TrackQuantity && e.Quantity != 0 {
+				return errors.New(inventoryenums.ErrStockUntrackedQuantity)
+			}
+			if err := s.m.UpdateStockQuantityAndTrackingTx(ctx, tx, e.ID,
+				e.Quantity, e.TrackQuantity, now); err != nil {
+				return err
+			}
+		}
+
+		// ④ 成本写入（同一事务、同一批已加锁的行）：只有**显式传了成本**的行才写，
+		//    覆盖式 —— 数量有没有变化都照写（盘点到同一数量但成本要改，是合法诉求）。
+		//    放在数量写回之后不影响锁序：目标行在 ② 里已全部锁住，这里只做 UPDATE。
+		for _, k := range keys {
+			cost, ok := costs[k]
+			if !ok {
+				continue
+			}
+			if err := s.m.UpdateStockCostTx(ctx, tx, locked[k].ID, cost, now); err != nil {
 				return err
 			}
 		}
 		return s.m.CreateMovementsTx(ctx, tx, out.movements)
-	})
+	}()
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +587,26 @@ func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, del
 	if it.parentVariantID != "" {
 		parent := it.parentVariantID
 		m.ParentVariantID = &parent
+	}
+	// 成本留痕（迁移 256）：流水记下**这次变动时刻**的成本，之后改库存行成本不再
+	// 改写历史 —— 「实际发出那批货的成本」由此固定下来。逐方向的取法：
+	//
+	//   本次带了显式成本（采购单价 / 生产入库单价；盘点改成本也走这条）→ 记它：
+	//     「这批货进来按多少算 / 本次盘点把成本定成多少」就是这次变动的事实；
+	//   没带显式成本（出库恒如此，入库 / 调整也可以）→ 复制该库存行**当时的**当前成本：
+	//     出库由此固定「实际发出那批货的成本」；不影响成本的变动则留下这条货当时的口径。
+	//
+	// e 是**本次变动写回之前**的库存行（成本写回在 applyStockChanges 的 ④、晚于本函数）：
+	// 传了显式成本时 e.CostPrice 还是旧值，所以那条路径必须用 it.cost。
+	// it.cost == nil 与成本列 NULL 是两回事：前者「本次没带成本」，后者「尚未核算」——
+	// 未核算一律留 NULL，绝不用 0 冒充（0 是合法的显式成本）。
+	switch {
+	case it.cost != nil:
+		value := *it.cost
+		m.UnitCost = &value
+	case e.CostPrice != nil:
+		value := *e.CostPrice
+		m.UnitCost = &value
 	}
 	return m
 }
@@ -487,6 +670,32 @@ func firstItemOf(items []changeItem, k stockKey) changeItem {
 	return changeItem{}
 }
 
+// normalizeExplicitCost 归一**显式传入**的成本价（nil = 本次变动不碰成本）。
+//
+// 空是合法状态（成本列 NULL = 尚未核算；本模块不用 0 冒充未知），但只要给了值，
+// 就必须是 >= 0 的有限数：负数、NaN、Inf 都会让「当前成本」变成一个不可解释的量。
+func normalizeExplicitCost(raw *float64) (out *float64, err error) {
+	if raw == nil {
+		return nil, nil
+	}
+	value := *raw
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return nil, errors.New(inventoryenums.ErrStockCostInvalid)
+	}
+	return &value, nil
+}
+
+// explicitCosts 汇总本次变动里显式给出的成本（按 (变体, 仓库) 去重，后者覆盖前者）。
+func explicitCosts(items []changeItem) map[stockKey]float64 {
+	out := make(map[stockKey]float64)
+	for _, it := range items {
+		if it.cost != nil {
+			out[it.key] = *it.cost
+		}
+	}
+	return out
+}
+
 // normalizeDirection 归一变动方向（空 / 未知一律拒绝，不接受自由文本）。
 func normalizeDirection(direction string) (out string, err error) {
 	switch strings.ToLower(strings.TrimSpace(direction)) {
@@ -527,6 +736,30 @@ func movementPageArgs(req *inventorydto.ListMovementReq) (page, size int) {
 	return page, size
 }
 
+// parseMovementTime 解析流水时间筛选项。
+//
+// 接受纯日期（2006-01-02）与到秒 / 到分的时间（2006-01-02 15:04[:05]）。
+// endOfDay 为真且只给日期时，上界补到当日 23:59:59 —— 否则「截止某天」的查询
+// 会停在当天 00:00:00，把那一整天的流水漏掉（这类漏在半截时间上的查询最难发现：
+// 结果看起来「有数据、只是少一些」）。
+func parseMovementTime(raw string, endOfDay bool) (out *time.Time, err error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{utils.LayoutDay, utils.LayoutSecond, "2006-01-02T15:04", "2006-01-02T15:04:05"} {
+		t, terr := time.ParseInLocation(layout, value, time.Local)
+		if terr != nil {
+			continue
+		}
+		if endOfDay && layout == utils.LayoutDay {
+			t = t.Add(24*time.Hour - time.Second)
+		}
+		return &t, nil
+	}
+	return nil, errors.New(inventoryenums.ErrMovementTimeRangeInvalid)
+}
+
 // abs 整数绝对值。
 func abs(v int) int {
 	if v < 0 {
@@ -554,6 +787,8 @@ func toMovementResp(r *inventorymodel.MovementRow) *inventorydto.MovementResp {
 		ReasonCode: r.ReasonCode, ReasonName: r.ReasonName,
 		SourceType: r.SourceType, SourceRef: r.SourceRef,
 		Remark: r.Remark, OperatorID: r.OperatorID, BatchID: r.BatchID,
+		// 成本留痕同源（投影带上 mv.unit_cost）：列表与变动回执给出同一个值。
+		UnitCost:  r.UnitCost,
 		CreatedAt: r.CreatedAt.Format(time.RFC3339),
 	}
 	if r.ReasonID != nil {
@@ -574,6 +809,7 @@ func toMovementRespFromEntity(m *inventorymodel.MovementEntity) *inventorydto.Mo
 		QuantityBefore: m.QuantityBefore, QuantityAfter: m.QuantityAfter,
 		ReasonCode: m.ReasonCode, SourceType: m.SourceType, SourceRef: m.SourceRef,
 		Remark: m.Remark, OperatorID: m.OperatorID, BatchID: m.BatchID,
+		UnitCost:  m.UnitCost,
 		CreatedAt: m.CreatedAt.Format(time.RFC3339),
 	}
 	if m.ReasonID != nil {

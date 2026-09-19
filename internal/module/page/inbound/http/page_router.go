@@ -1,9 +1,6 @@
 package pagehttp
 
 import (
-	"context"
-	"time"
-
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/permission"
 
@@ -115,13 +112,13 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 保留期任务（IDX-004 / IDX-005）：历史快照收敛 + 产物 GC 定时化。
 	// 此前产物 GC 只能人工调接口、修订快照完全不清理 —— 没有定时任务等于没有保留期。
 	pageservice.StartPageRetentionScheduler(svc)
-	// 发布回执恢复（TX-009）：上次进程若崩在「已切换访问面、未写数据库」之间，
-	// 这里按符号链接的实际指向补齐数据库状态（或结案为未生效）。
-	// 异步执行：恢复要读文件系统，不该拖住路由装配。
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		_, _, _ = svc.RecoverPendingPublications(ctx)
-	}()
+	// 发布回执调度（TX-009）：上次进程若崩在「已切换访问面、未写数据库」之间，
+	// 收敛例程按符号链接的实际指向补齐数据库状态（或结案为未生效）。
+	//
+	// 调度器先跑一次**全量恢复**（等价于原先这里的裸启动恢复，只是换了个驱动源），
+	// 之后按间隔兜底，并在写路径提交后由快通道即时触发 —— 不再「只有重启才收敛」，
+	// 因此这里不能保留第二个「启动时跑一次」的入口（同一段实现被两个 goroutine
+	// 并发重放虽幂等，仍会白白多跑一遍）。详见 service/page_publish_converge.go。
+	pageservice.StartPendingReceiptConvergenceScheduler(svc)
 	return svc
 }
