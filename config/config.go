@@ -70,6 +70,10 @@ var envBindableKeys = []string{
 	"auth.session_secret",
 	"app.secret",
 	"analytics.pepper",
+	// 按用途分离的签名密钥（P1）：各自独立、互相不可推导，轮换时互不影响。
+	// 留空则回退到 auth.session_secret（行为与分离前一致），装配期记一条告警。
+	"cart.cookie_secret",
+	"cart.payment_callback_secret",
 }
 
 // applyEnvOverrides 把已设置的环境变量并入所属顶层段，再整段写回 Viper。

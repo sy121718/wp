@@ -137,3 +137,20 @@ analytics:
   # 建议生产环境显式配置：openssl rand -hex 32
   # 也可用 GOWP_ANALYTICS_PEPPER 环境变量注入。
   pepper: ""
+
+# 购物车与支付签名的独立密钥（P1 密钥分离）
+cart:
+  # 购物车 cookie 的 HMAC 签名密钥。
+  # 留空：回退到 auth.session_secret（行为与分离前完全一致），装配期记一条告警。
+  # 分离的意义是**轮换不连带**：轮换会话密钥会让所有人重新登录（可接受），
+  # 但不该顺带清空所有访客的购物车（那是业务损失）。
+  # 建议生产环境显式配置：openssl rand -hex 32
+  # 也可用 GOWP_CART_COOKIE_SECRET 环境变量注入。
+  cookie_secret: ""
+  # 支付通道回调的验签共享密钥（当前为模拟通道：HMAC-SHA256(secret, 原始报文)）。
+  # 留空：回退到 auth.session_secret。
+  # 这一项比 cookie_secret 更该配：轮换会话密钥时，**在途的支付回调会验签失败** ——
+  # 那不只是清空购物车，而是可能丢支付结果。
+  # 建议生产环境显式配置：openssl rand -hex 32
+  # 也可用 GOWP_CART_PAYMENT_CALLBACK_SECRET 环境变量注入。
+  payment_callback_secret: ""

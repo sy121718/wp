@@ -51,14 +51,17 @@ var (
 	sessionSecure bool
 )
 
-// CookieSession 认证 cookie 中保存的最小会话信息。
+// CookieSession 认证 cookie 中保存的全部内容：**一个不透明会话句柄**。
 //
-// 只放认证所需的最小字段，用户资料（头像/邮箱/部门等）仍走 Redis（session.go）。
+// 为什么不放身份（P1 句柄化）：cookie 是客户端可读的，而 user_id / username 属于**身份**
+// —— 放进去就是把身份下发出去（签名只防篡改、不防读取），更要紧的是它让服务端养成
+// 「先信任客户端声明、再回头核对」的形状：核对一旦在某条路径上被漏掉，伪造就成立了。
+// 句柄是无语义的随机串，服务端拿它反查身份（session.go 的 SessionIndex），
+// 客户端无从声明自己是谁，核对也就不再依赖某个 if 有没有写。
+//
+// 用户资料（头像/邮箱/部门等）本来就只在 Redis（session.go）。
 type CookieSession struct {
-	UserID    uint64 `json:"user_id"`
-	Username  string `json:"username"`
 	SessionID string `json:"session_id"`
-	IssuedAt  int64  `json:"issued_at"` // 会话建立时间戳（秒），用于封禁判断
 }
 
 // weakSessionSecrets 生产环境（server.mode=release）禁止使用的弱密钥集合，

@@ -652,6 +652,28 @@ func (a *assembly) wireProductInventoryPorts() {
 
 // wireRuntimeAccessFace 访问面运行时能力：购物车与结算、支付回调、访问统计打点，
 // 以及商品实体类型与集合源注册。
+// resolvePurposeSecret 读取某个用途的独立签名密钥；未配置时回退到会话密钥并告警。
+//
+// 为什么是「独立配置」而不是「从会话密钥 HKDF 派生」：单体内派生出的子密钥与主密钥
+// 存在于同一个进程内存里 —— 任何能读到子密钥的攻击者同样读得到主密钥，所以派生
+// 不提供**隔离**，只避免「同一个字节串被多处直接复用」。真正的收益（轮换某个域时
+// 不连带影响别的域）只能来自各自独立、互相不可推导的配置密钥。
+//
+// 回退而不是 fail-fast：不配也要能跑起来（行为与分离前一致），但降级必须在装配期
+// 留下痕迹 —— 运行起来之后「为什么轮换密钥把购物车清空了」不会自己暴露成错误。
+// 与 resolveAnonSalt（analytics.pepper，SEC-013）同一套路。
+func resolvePurposeSecret(configKey, purpose, sessionSecret string) string {
+	configured := ""
+	if v, err := config.GetViper(); err == nil && v != nil {
+		configured = strings.TrimSpace(v.GetString(configKey))
+	}
+	if configured != "" {
+		return configured
+	}
+	logger.Scene("init").Warn("未配置 " + configKey + "：" + purpose + "回退到会话密钥，轮换 auth.session_secret 会同时影响它；建议配置独立密钥（openssl rand -hex 32）")
+	return sessionSecret
+}
+
 func (a *assembly) wireRuntimeAccessFace() {
 	marks := a.marks
 	db := a.db
@@ -669,15 +691,21 @@ func (a *assembly) wireRuntimeAccessFace() {
 	//   · 支付通道现在是**模拟 PayPal**（orders.payment_method = paypal，
 	//     流水号由订单号派生，因此天然幂等）。接真通道时只换这一行的实现，
 	//     购物车、订单与片段层的代码都不动 —— 通道的接口定义在 cart 模块的契约里。
-	secret := auth.SessionSecret()
-	if strings.TrimSpace(secret) == "" {
+	sessionSecret := auth.SessionSecret()
+	if strings.TrimSpace(sessionSecret) == "" {
 		// 没有签名密钥的购物车 cookie 等于没有签名：任何人都能伪造一辆车。
 		// 这是装配缺陷（auth 组件必须在本函数之前 Init），fail-fast 而不是降级。
 		panic("会话密钥未初始化（auth 组件未 Init），购物车 cookie 无法签名")
 	}
-	// 支付通道用会话密钥做回调验签的共享密钥：模拟通道的签名是
+	// 密钥按用途分离（P1）。此前这三处共用同一个 auth.SessionSecret()，
+	// 代价全在**轮换的爆炸半径**上：轮换会话密钥不只让所有人重新登录，
+	// 还会清空所有访客的购物车，并让在途的支付回调验签失败 ——
+	// 后者可能丢支付结果，比丢购物车严重得多。
+	cartCookieSecret := resolvePurposeSecret("cart.cookie_secret", "购物车 cookie 签名", sessionSecret)
+	// 支付通道用回调密钥做验签的共享密钥：模拟通道的签名是
 	// HMAC-SHA256(secret, 原始报文)，换成真通道时只改这一行。
-	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(secret), secret)
+	paymentCallbackSecret := resolvePurposeSecret("cart.payment_callback_secret", "支付回调验签", sessionSecret)
+	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(paymentCallbackSecret), cartCookieSecret)
 	runtimefragment.SetCartProvider(cartSvc)
 	marks.mark(portRuntimeFragCart)
 	// 支付回调（BIZ-1）：公开路由，靠签名验签 —— 通道不可能持有后台会话与 CSRF token，
@@ -690,7 +718,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 后台只读聚合（/api/analytics/summary）走 authorizedAPI 三层链，权限点 analytics:view。
 	// pepper 用会话密钥：IP 与访客标识只以带盐哈希落库 —— 裸哈希在 IPv4 空间（2^32）里
 	// 等于把明文换个写法存下来。
-	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, secret, a.adminPages, a.projectService)
+	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, sessionSecret, a.adminPages, a.projectService)
 	a.analyticsSvc = analyticsSvc
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。

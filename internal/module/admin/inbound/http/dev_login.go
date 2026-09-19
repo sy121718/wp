@@ -55,10 +55,7 @@ func (h *Handle) DevLogin(c *gin.Context) {
 
 	// 锁 4：与正常登录同一条会话路径（cookie + Redis + CSRF 轮换）。
 	if err := auth.SaveCookieSession(c, &auth.CookieSession{
-		UserID:    res.UserID,
-		Username:  res.Username,
 		SessionID: res.SessionID,
-		IssuedAt:  res.IssuedAt,
 	}, false); err != nil {
 		logger.Scene("admin").Error(err, "开发登录写会话失败")
 		c.String(http.StatusInternalServerError, "写会话失败，详情见服务端日志")

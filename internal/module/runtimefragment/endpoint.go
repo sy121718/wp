@@ -69,11 +69,26 @@ func FragmentEndpoint(c *gin.Context) {
 	userID := ""
 	if spec.Auth == AuthSession {
 		cs, err := auth.GetCookieSession(c)
-		if err != nil || cs == nil {
+		if err != nil || cs == nil || cs.SessionID == "" {
 			c.String(http.StatusUnauthorized, "需要登录")
 			return
 		}
-		userID = strconv.FormatUint(cs.UserID, 10)
+		// 句柄 → 身份（P1 句柄化）：cookie 里只有句柄，userID 由服务端索引给出。
+		idx, err := auth.GetSessionIndex(c.Request.Context(), cs.SessionID)
+		if err != nil || idx == nil || idx.UserID == 0 {
+			c.String(http.StatusUnauthorized, "需要登录")
+			return
+		}
+		// 这里与 SessionAuthMiddleware 保持**同一套校验**，刻意不只查索引：
+		// 索引在「强制下线」路径上会残留（那条路径只拿得到 userID、拿不到句柄），
+		// 而 user:session:{userID} 的句柄比对才是「这个句柄此刻是否仍然有效」的真源。
+		// 此前这里只读 cookie 里的 UserID、不校验会话是否已被删，比中间件弱一档。
+		sess, err := auth.GetUserSession(c.Request.Context(), idx.UserID)
+		if err != nil || sess == nil || sess.SessionID != cs.SessionID {
+			c.String(http.StatusUnauthorized, "需要登录")
+			return
+		}
+		userID = strconv.FormatUint(idx.UserID, 10)
 	}
 	// 访客域的 CSRF token：由同一个中间件挂到 context。未登录也会有 ——
 	// 登录 / 注册表单本身就要它（这是片段渲染表单与静态产物最本质的区别）。

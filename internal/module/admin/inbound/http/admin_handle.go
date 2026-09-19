@@ -8,6 +8,7 @@ import (
 	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/logger"
 	r "go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -79,12 +80,12 @@ func (h *Handle) AdminLogin(c *gin.Context) {
 		return
 	}
 
-	// 写 cookie session（认证载体；HTMX 请求自动携带 Cookie，无需前端手动带 Authorization 头）
+	// 写 cookie session：**只写会话句柄**（P1 句柄化）。
+	// 身份与 issued_at 都在 Redis（SaveUserSession 已连同索引一并写入），
+	// cookie 里只有那个随机串 —— 客户端读不出也声明不了自己是谁。
+	// HTMX 请求自动携带 Cookie，无需前端手动带 Authorization 头。
 	if err := auth.SaveCookieSession(c, &auth.CookieSession{
-		UserID:    res.UserID,
-		Username:  res.Username,
 		SessionID: res.SessionID,
-		IssuedAt:  res.IssuedAt,
 	}, res.RememberMe); err != nil {
 		adminFail(c, err)
 		return
@@ -120,6 +121,15 @@ func (h *Handle) AdminLogout(c *gin.Context) {
 	if err := h.admin.AdminLogout(c.Request.Context(), uint64(uid)); err != nil {
 		adminFail(c, err)
 		return
+	}
+
+	// 顺手清掉句柄索引（P1 句柄化）：service 层按 userID 删了会话明细，而索引是按
+	// 句柄建的、那条路径拿不到句柄。不清只是脏数据（明细没了照样拒绝认证），
+	// 但这里正好有 cookie，清掉可以让索引表不随登出次数膨胀。
+	if cs, err := auth.GetCookieSession(c); err == nil && cs != nil {
+		if err := auth.DeleteSessionIndex(c.Request.Context(), cs.SessionID); err != nil {
+			logger.Scene("admin").With("err", err).Warn("清理会话句柄索引失败（不影响登出）")
+		}
 	}
 
 	// 清空 cookie session（Redis 会话已在 service 层删除）

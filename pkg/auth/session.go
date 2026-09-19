@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"go_wp/pkg/cache"
+	"go_wp/pkg/logger"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -23,6 +25,11 @@ const (
 	userSessionPrefix = "user:session:"
 	userBlockedPrefix = "user:blocked:"
 	onlinePrefix      = "online:"
+
+	// sessionIndexPrefix 会话句柄索引的前缀（P1 句柄化）：
+	// session:sid:{sessionID} → SessionIndex{user_id, issued_at}。
+	// cookie 里只有句柄，身份必须能从句柄反查回来，这就是那张映射表。
+	sessionIndexPrefix = "session:sid:"
 
 	defaultSessionTTL = 24 * time.Hour
 	// defaultRememberMeTTL 勾选「记住我」时 Redis 会话的存活时长。
@@ -68,16 +75,84 @@ func onlineKey(userID uint64) string {
 	return fmt.Sprintf("%s%d", onlinePrefix, userID)
 }
 
-// SaveUserSession 将用户会话信息写入 Redis。
+// SessionIndex 会话句柄 → 身份的映射（P1 句柄化）。
+//
+// IssuedAt 也放在这里（而不是 cookie 里）有两个理由：它是封禁判断的基准
+// （IsBlocked 的 blockedAt > sessionIssuedAt），放服务端才可信；
+// 而且 cookie 因此可以只留一个句柄，不含任何语义字段。
+type SessionIndex struct {
+	UserID   uint64 `json:"user_id"`
+	IssuedAt int64  `json:"issued_at"`
+}
+
+func sessionIndexKey(sessionID string) string {
+	return sessionIndexPrefix + sessionID
+}
+
+// SaveUserSession 将用户会话信息写入 Redis，**同时写入句柄索引**。
 // ttl 传 0 时使用默认 24h。
+//
+// 明细与索引必须同批写：cookie 里只有句柄，缺了索引的会话就是一个解析不出来的句柄 ——
+// 表现为「刚登录就未登录」，而且不报错。放在同一个函数里正是为了让每个登录调用点
+// 不必各写一遍（漏掉一处的表现就是那条登录路径静默失效）。
 func SaveUserSession(ctx context.Context, session *UserSession, ttl time.Duration) error {
 	if ttl <= 0 {
 		ttl = defaultSessionTTL
 	}
-	return cache.SetJSON(ctx, sessionKey(session.ID), session, ttl)
+	if err := cache.SetJSON(ctx, sessionKey(session.ID), session, ttl); err != nil {
+		return err
+	}
+	if strings.TrimSpace(session.SessionID) == "" {
+		// 没有句柄就没有索引可写，cookie 侧也无法认证 —— 这是调用方的缺陷，
+		// 留痕而不是静默（静默的表现是「登录成功但立刻失效」，极难定位）。
+		logger.Scene("auth").With("user_id", session.ID).Warn("保存用户会话时缺少 SessionID：句柄索引未写入，该会话无法通过 cookie 认证")
+		return nil
+	}
+	return cache.SetJSON(ctx, sessionIndexKey(session.SessionID), &SessionIndex{
+		UserID:   session.ID,
+		IssuedAt: time.Now().Unix(),
+	}, ttl)
+}
+
+// GetSessionIndex 按会话句柄取身份索引。不存在时返回 (nil, nil)。
+//
+// fail-safe：句柄无效 / 已过期 / 已登出都返回 nil，由调用方按未登录处理。
+func GetSessionIndex(ctx context.Context, sessionID string) (*SessionIndex, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, nil
+	}
+	idx, err := cache.GetJSON[SessionIndex](ctx, sessionIndexKey(sessionID))
+	if errors.Is(err, redis.Nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &idx, nil
+}
+
+// DeleteSessionIndex 删除会话句柄索引（登出路径）。
+//
+// 强制下线（RevokeUserSession）只拿到 userID、拿不到句柄，因此它会留下一个**残留索引**：
+// 那条索引仍指向该 userID，但对应的 user:session:{userID} 已被删除，所以校验时
+// GetUserSession 返回 nil → 依旧被拒（fail-safe）。残留只是脏数据，随 TTL 自然消失；
+// 而同账号重新登录会覆盖 user:session:{userID}，旧句柄因 SessionID 不匹配继续被拒。
+func DeleteSessionIndex(ctx context.Context, sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	client, err := cache.GetRedis()
+	if err != nil {
+		return err
+	}
+	return client.Del(ctx, sessionIndexKey(sessionID)).Err()
 }
 
 // RefreshUserSession 覆盖会话内容但**保持剩余 TTL 不变**。
+//
+// 刻意**不写会话索引**：索引里的 issued_at 是封禁判断的基准
+// （IsBlocked 的 blockedAt > sessionIssuedAt），回填资料时把它刷成当前时间会让
+// 已生效的封禁失效 —— 表现为「强制下线之后点一下个人资料又回来了」。
 //
 // 登录之外的路径（读取个人信息时顺带回填 Redis）不能用 SaveUserSession(…, 0)：
 // 那会把「记住我」的 7 天有效期悄悄缩回默认 24h，用户在第 25 小时被踢回登录页。

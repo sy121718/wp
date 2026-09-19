@@ -37,7 +37,6 @@ func TestSessionBecomesInvalidAfterLogout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("生成测试会话 ID 失败：%v", err)
 	}
-	issuedAt := time.Now().Unix()
 	ctx := context.Background()
 	if err = auth.SaveUserSession(ctx, &auth.UserSession{
 		ID:        7,
@@ -51,10 +50,7 @@ func TestSessionBecomesInvalidAfterLogout(t *testing.T) {
 	engine := gin.New()
 	engine.GET("/login", func(c *gin.Context) {
 		_ = auth.SaveCookieSession(c, &auth.CookieSession{
-			UserID:    7,
-			Username:  "tester",
 			SessionID: sessionID,
-			IssuedAt:  issuedAt,
 		}, false)
 		c.Status(http.StatusOK)
 	})
