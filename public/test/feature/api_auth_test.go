@@ -94,16 +94,23 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 				t.Fatalf("重载 Casbin 策略失败: %v", err)
 			}
 			// 6) 非超管测试账号（is_admin=0，无任何策略）。
-			//    显式 id=2 而非依赖 BIGSERIAL sequence：SeedTestAdmin 显式插入 id=1
-			//    不推进 sequence，无 id 的 INSERT 会重取 id=1 触发 pkey 冲突；
-			//    ON CONFLICT (id) 保证重复运行（同 schema 残留）幂等。
+			//
+			// **不要再用固定 id=2**（2026-09-19 修）：SeedTestAdmin 会把 sys_admin 的 id 序列
+			// setval 到 MAX(id)=1，紧接着 RunSeeds 里 030a 的默认超管 seed（不带 id、走 nextval）
+			// 恰好拿到 2 —— 固定 id=2 与它撞上，而 ON CONFLICT (id) DO NOTHING 是**静默**跳过。
+			// 后果：账号根本没建出来 → 登录返回 400 ErrInvalidPassword → 本用例走
+			// t.Skipf("跳过：非超管登录链路不可用")，而它与「环境不可用」长得一模一样，
+			// 于是「越权请求必须 403」这条断言**从未真正执行过**（`go test` 只显示 SKIP，全绿）。
+			// 改为「按 username 先删后插、id 交给序列」：与 seed 互不干扰，且可重复运行。
 			hash, err := bcrypt.GenerateFromPassword([]byte(support.TestAdminPassword), bcrypt.MinCost)
 			if err != nil {
 				t.Fatalf("生成密码哈希失败: %v", err)
 			}
-			if err := db.Exec(`INSERT INTO sys_admin (id, username, password, status, is_admin)
-				VALUES (2, ?, ?, 1, 0) ON CONFLICT (id) DO NOTHING`,
-				plainAdminUsername, string(hash)).Error; err != nil {
+			if err := db.Exec(`DELETE FROM sys_admin WHERE username = ?`, plainAdminUsername).Error; err != nil {
+				t.Fatalf("清理非超管测试账号失败: %v", err)
+			}
+			if err := db.Exec(`INSERT INTO sys_admin (username, password, status, is_admin)
+				VALUES (?, ?, 1, 0)`, plainAdminUsername, string(hash)).Error; err != nil {
 				t.Fatalf("写入非超管测试账号失败: %v", err)
 			}
 
