@@ -1,7 +1,7 @@
 # AGENTS.md
 
 本文件描述 go_wp 仓库的实际开发约定，是 DSH 会话的最高项目级规则。
-兼容说明：旧 `CLAUDE.md` 内容已并入本文；子目录规则见 `internal/module/CLAUDE.md`、`pkg/CLAUDE.md`、`public/CLAUDE.md`、`docs/agents/`。
+兼容说明：根目录不再保留 `CLAUDE.md`（内容已并入本文）；子目录规则见 `internal/module/CLAUDE.md`、`pkg/CLAUDE.md`、`public/CLAUDE.md`、`docs/agents/`。
 强制内容：本系统开发阶段，不需要兼容任何老的代码，有问题直接重构
 
 ## 语言要求（最高优先级）
