@@ -71,6 +71,39 @@ var weakSessionSecrets = map[string]struct{}{
 
 const minSessionSecretLen = 32
 
+// maxSessionCookieAge 返回两种会话有效期中的较大者。
+//
+// securecookie 的 MaxAge 是**每个 codec 一个值**，而 cookie 有 24h（普通）与 7d（记住我）
+// 两种有效期，所以只能取较大者：取 24h 会让勾了「记住我」的用户在第 25 小时被**签名层**
+// 判过期 —— 浏览器还带着 cookie、Redis 会话也还在，但解码直接失败，表现为
+// 「勾了记住我照样被踢下线」。
+func maxSessionCookieAge() int {
+	if rememberMeSessionMaxAge > defaultSessionMaxAge {
+		return rememberMeSessionMaxAge
+	}
+	return defaultSessionMaxAge
+}
+
+// applyCodecMaxAge 把会话有效期显式转发给 securecookie 编解码器。
+//
+// 为什么需要这一步：gin-contrib 的 store.Options() 实现是
+//
+//	c.CookieStore.Options = options.ToGorillaOptions()
+//
+// —— 只赋 Options 字段，**不经过 CookieStore.MaxAge()**。而 securecookie 的时间戳
+// 校验窗口正是在 MaxAge() 里逐个 codec 设置的，因此它一直停在 gorilla 的默认值
+// （NewCookieStore 里的 86400*30，30 天），与配置的 24h / 7d 无关。
+//
+// 后果：浏览器会按时删掉 cookie，但任何被留存下来的 cookie 值（日志、代理、备份、
+// 手工复制）在签发后 30 天内仍能通过验签。当前各身份域都有服务端校验兜住
+// （admin / 访客查 Redis、购物车自校验时间戳），所以这不是可利用漏洞，
+// 而是一条「只在服务端不查时才会显形的过期窗口」—— 显式转发即可消除。
+func applyCodecMaxAge(store sessions.Store) {
+	if gs, ok := store.(interface{ MaxAge(int) }); ok {
+		gs.MaxAge(maxSessionCookieAge())
+	}
+}
+
 // weakSessionSecret 判断会话密钥是否为空、过短或命中弱密钥集合。
 func weakSessionSecret(secret string, release bool) bool {
 	if secret == "" {
@@ -143,6 +176,7 @@ func Init(v *viper.Viper) error {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	applyCodecMaxAge(store)
 
 	cookieStore = store
 	sessionSecret = secret
@@ -204,6 +238,7 @@ func NamedCookieStore(name string) (sessions.Store, error) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	applyCodecMaxAge(store)
 	return store, nil
 }
 

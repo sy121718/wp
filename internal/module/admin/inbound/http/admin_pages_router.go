@@ -17,8 +17,14 @@ import (
 // SetupAdminPages 注册 admin 六领域管理页 + 文案词条页 + 语言切换。
 //
 // adminPages 是装配层创建的 /admin 路由组（Session 认证 + CSRF + 权限上下文）。
-// 页面 GET 走组认证（无 Casbin）；写动作（create/update/delete）挂对应业务 API
-// 权限点做 Casbin 鉴权，权限点路径与原 dashboard 版本逐字一致。
+// **页面 GET 与写动作都挂 Casbin**，一律复用对应业务 API 的读/写权限点：
+// 页面路径在权限点表里不存在，直接以页面路径 enforce 会让所有人（含超管）403，
+// 所以必须用 CasbinMiddlewareForPath 指定 API 路径，权限点路径与原 dashboard 版本逐字一致。
+//
+// 为什么只读页也要鉴权：菜单按权限渲染，但**菜单隐藏不是访问控制** —— 直接输入 URL
+// 就能绕过。此前 /admin/administrators 等只读页没有权限门，任何登录的后台账号
+// 都能拿到全部管理员的用户名 / 姓名 / 邮箱 / 手机号（handler 直接渲染 AdminList 结果）。
+// 权限点全部复用 050_admin_domains_permissions.sql 已有的 GET 权限点，不新增。
 // 六个契约由装配层以同一合并 Service 传入（admin 合并模块同包直调）。
 // 只用 GET/POST，无 RESTful 路径参数。
 func SetupAdminPages(adminPages *gin.RouterGroup,
@@ -31,7 +37,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	}
 	handle := NewAdminPagesHandle(admins, roles, perms, menus, depts, rules)
 
-	adminPages.GET("/administrators", handle.AdministratorsPage)
+	adminPages.GET("/administrators", builtin.CasbinMiddlewareForPath("/api/admin/list"), handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
 	adminPages.POST("/administrators/delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsDelete)
@@ -39,32 +45,32 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 权限点复用单条删除的业务 API，不新增权限点。
 	adminPages.POST("/administrators/bulk-delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsBulkDelete)
 
-	adminPages.GET("/roles", handle.RolesPage)
+	adminPages.GET("/roles", builtin.CasbinMiddlewareForPath("/api/role/list"), handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
 	adminPages.POST("/roles/bulk-delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesBulkDelete)
 
-	adminPages.GET("/menus", handle.MenusPage)
+	adminPages.GET("/menus", builtin.CasbinMiddlewareForPath("/api/menu/tree"), handle.MenusPage)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
 	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
-	adminPages.GET("/permissions", handle.PermissionsPage)
+	adminPages.GET("/permissions", builtin.CasbinMiddlewareForPath("/api/permission/list"), handle.PermissionsPage)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
 	adminPages.POST("/permissions/update", builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
 	adminPages.POST("/permissions/bulk-delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsBulkDelete)
 
-	adminPages.GET("/departments", handle.DepartmentsPage)
+	adminPages.GET("/departments", builtin.CasbinMiddlewareForPath("/api/dept/tree"), handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
 	adminPages.POST("/departments/update", builtin.CasbinMiddlewareForPath("/api/dept/update"), handle.DepartmentsUpdate)
 	adminPages.POST("/departments/delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsDelete)
 	adminPages.POST("/departments/bulk-delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsBulkDelete)
 
-	adminPages.GET("/datarules", handle.DatarulesPage)
-	adminPages.GET("/datarules/edit", handle.DatarulesEditPage)
+	adminPages.GET("/datarules", builtin.CasbinMiddlewareForPath("/api/datarule/list"), handle.DatarulesPage)
+	adminPages.GET("/datarules/edit", builtin.CasbinMiddlewareForPath("/api/datarule/detail"), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
@@ -72,7 +78,11 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 配置编辑器片段：纯渲染、不落库，因此不挂 Casbin（写入仍走 /datarules/update）。
 	adminPages.POST("/datarules/config-editor", handle.DataruleConfigEditor)
 
-	// 文案词条页（审计 I18N-003）：读页面不挂 Casbin（与其它只读页一致），
+	// 文案词条页（审计 I18N-003）：**读页面暂不挂 Casbin**，因为 178 只为它建了写权限点
+	// （i18n:manage → POST /api/i18n/save），没有对应的 GET 权限点。若照抄 /api/i18n/save
+	// 挂到 GET 上，enforce 的 act 是 GET 而策略里只有 POST，**连超管都会被 403**。
+	// 要收紧需先新增一个 i18n 查看权限点（GET），属于独立一批 seed。
+	// 词条文案不属于个人数据，优先级低于六领域，故此处留白并记录原因，不静默漏掉。
 	// 写操作挂 i18n:manage（/api/i18n/save）——漏挂等于任何登录管理员都能改全站文案。
 	i18nPages := NewAdminI18nEntryHandle()
 	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
