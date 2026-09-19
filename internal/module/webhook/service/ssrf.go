@@ -43,8 +43,41 @@ var (
 // 私有段（10/8、172.16/12、192.168/16、IPv6 fc00::/7）、环回（127/8、::1）、
 // 链路本地（169.254/16、fe80::/10）、组播与未指定地址。
 func isForbiddenIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+	return !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+}
+
+// dialWebhookContext 把校验绑定到真正建立连接的 IP，避免校验与拨号各解析一次域名。
+// URL 中的 hostname 保持原样，HTTP Host 与 TLS 证书校验仍针对原始主机。
+func dialWebhookContext(ctx context.Context, network, address string) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, DialTimeout)
+	defer cancel()
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := lookupIP(net.DefaultResolver, ctx, host)
+	if err != nil || len(ips) == 0 {
+		return nil, ErrWebhookURLNoIP
+	}
+	// 先检查全部结果，再尝试连接；混合公私地址不得因记录顺序不同而放行。
+	for _, addr := range ips {
+		if isForbiddenIP(addr.IP) || addr.Zone != "" {
+			return nil, ErrWebhookURLDenied
+		}
+	}
+	dialer := net.Dialer{Timeout: DialTimeout}
+	for _, addr := range ips {
+		var conn net.Conn
+		conn, err = dialer.DialContext(ctx, network, net.JoinHostPort(addr.IP.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	return nil, err
 }
 
 // validateWebhookURL 校验出站目标 URL：协议白名单 + DNS 解析后逐 IP 检查。
@@ -67,7 +100,9 @@ func validateWebhookURL(raw string) (err error) {
 		return ErrWebhookURLHost
 	}
 
-	ips, lerr := lookupIP(net.DefaultResolver, context.Background(), host)
+	ctx, cancel := context.WithTimeout(context.Background(), DialTimeout)
+	defer cancel()
+	ips, lerr := lookupIP(net.DefaultResolver, ctx, host)
 	if lerr != nil || len(ips) == 0 {
 		return ErrWebhookURLNoIP
 	}

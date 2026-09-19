@@ -41,11 +41,14 @@ var gzipPool = sync.Pool{
 // StaticGzipMiddleware 见文件头注释。
 func StaticGzipMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Method != http.MethodGet || !acceptsGzip(c.Request.Header.Get("Accept-Encoding")) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 			c.Next()
 			return
 		}
-		w := &gzipResponseWriter{ResponseWriter: c.Writer}
+		w := &gzipResponseWriter{
+			ResponseWriter: c.Writer,
+			accepts:        c.Request.Method == http.MethodGet && acceptsGzip(c.Request.Header.Get("Accept-Encoding")),
+		}
 		c.Writer = w
 		defer w.close()
 		c.Next()
@@ -61,6 +64,7 @@ type gzipResponseWriter struct {
 	status     int
 	started    bool
 	compressed bool
+	accepts    bool
 }
 
 // WriteHeader 记录状态码，延迟转发（Header 在首次 Write 时真正发送）。
@@ -84,14 +88,15 @@ func (w *gzipResponseWriter) start() {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	if w.status == http.StatusOK && shouldCompressGzip(w.Header()) {
+	// identity、HEAD、304 同样参与编码协商；只在 gzip 分支加 Vary 会污染共享缓存。
+	addVaryAcceptEncoding(w.Header())
+	if w.accepts && w.status == http.StatusOK && shouldCompressGzip(w.Header()) {
 		w.compressed = true
 		zw := gzipPool.Get().(*gzip.Writer)
 		zw.Reset(w.ResponseWriter)
 		w.zw = zw
 		h := w.Header()
 		h.Set("Content-Encoding", "gzip")
-		h.Add("Vary", "Accept-Encoding")
 		// 压缩后长度未知：移除 Content-Length，走 chunked。
 		h.Del("Content-Length")
 	}
@@ -142,13 +147,35 @@ func (w *gzipResponseWriter) close() {
 
 // acceptsGzip 客户端是否接受 gzip 编码。
 func acceptsGzip(header string) bool {
+	wildcard := false
 	for _, part := range strings.Split(header, ",") {
 		enc := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		if !strings.EqualFold(enc, "gzip") && enc != "*" {
+			continue
+		}
+		_, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+		quality := 1.0
+		if q, ok := params["q"]; ok {
+			quality, err = strconv.ParseFloat(q, 64)
+		}
+		accepted := err == nil && quality > 0 && quality <= 1
 		if strings.EqualFold(enc, "gzip") {
-			return true
+			return accepted // 显式 gzip（包括 q=0）优先于通配符。
+		}
+		wildcard = accepted
+	}
+	return wildcard
+}
+
+func addVaryAcceptEncoding(h http.Header) {
+	for _, value := range h.Values("Vary") {
+		for _, field := range strings.Split(value, ",") {
+			if field = strings.TrimSpace(field); field == "*" || strings.EqualFold(field, "Accept-Encoding") {
+				return
+			}
 		}
 	}
-	return false
+	h.Add("Vary", "Accept-Encoding")
 }
 
 // shouldCompressGzip 响应头满足压缩条件：未设置过编码、文本类 Content-Type、

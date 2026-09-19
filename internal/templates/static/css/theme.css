@@ -896,7 +896,10 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     background: var(--sky-c-bg-soft, #f4f5f6); color: var(--sky-c-text, #1a1d21);
 }
 .help-pop strong { color: var(--sky-c-text, #1a1d21); font-weight: 600; }
-.help:hover .help-pop, .help:focus-within .help-pop, .help[data-open] .help-pop { display: block; }
+.help:focus-within .help-pop, .help[data-open] .help-pop { display: block; }
+@media (hover: hover) {
+    .help:hover .help-pop { display: block; }
+}
 /* 靠右边缘的说明往左展开，避免越出视口（页面在 .help 上标 data-align="end"）。 */
 .help[data-align="end"] .help-pop { left: auto; right: 0; }
 @media (hover: hover) {
@@ -1033,7 +1036,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     color: var(--sky-c-text-mute, #6b7280);
 }
 .filter-field .form-select, .filter-field .form-input, .filter-field .form-textarea, .filter-field .wbs {
-    width: min(100%, 200px); min-width: 120px;
+    width: min(100%, 200px); min-width: min(100%, 120px);
 }
 .filter-field .form-input.filter-search { width: min(100%, 260px); }
 /* 区间条件（时间区间、金额区间）的分隔符：不属于任何控件，只做视觉连接。 */
@@ -1049,8 +1052,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     display: block; width: 16px; height: 16px; margin: 0;
     cursor: pointer; accent-color: var(--sky-c-primary, #3d444f);
 }
-.data-table tbody tr.is-selected,
-.data-table tbody tr.is-selected:hover { background: var(--sky-c-bg-active, #eceff2); }
+.data-table tbody tr.is-selected { background: var(--sky-c-bg-active, #eceff2); }
 .bulk-bar {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
     padding: var(--ui-sp-sm) var(--ui-sp-lg);
@@ -1194,7 +1196,9 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     display: flex; align-items: center; gap: 4px;
     padding: 3px 12px 3px 0; border-radius: 6px;
 }
-.perm-node:hover { background: var(--sky-c-bg-hover, #ececec); }
+@media (hover: hover) {
+    .perm-node:hover { background: var(--sky-c-bg-hover, #ececec); }
+}
 .perm-node[hidden] { display: none; }
 .perm-node.is-disabled .perm-title { opacity: .55; }
 .perm-toggle {
@@ -1203,8 +1207,10 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     border: 0; background: transparent; border-radius: 5px;
     color: var(--sky-c-text-mute, #6b7280); cursor: pointer;
 }
-.perm-toggle:hover { background: var(--sky-c-bg-active, #e4e4e4); color: var(--sky-c-text, #1a1d21); }
-.perm-toggle.is-leaf, .perm-toggle.is-leaf:hover { background: transparent; cursor: default; }
+@media (hover: hover) {
+    .perm-toggle:hover { background: var(--sky-c-bg-active, #e4e4e4); color: var(--sky-c-text, #1a1d21); }
+}
+.perm-toggle.is-leaf { background: transparent; cursor: default; }
 .perm-toggle .caret {
     width: 6px; height: 6px;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;

@@ -22,10 +22,20 @@
     WBUI.controls = WBUI.controls || [];
 
     var drawer = null, mask = null, body = null, titleEl = null;
+    var returnFocus = null, inertSiblings = [];
+
+    function focusableElements() {
+        return Array.prototype.filter.call(drawer.querySelectorAll(
+            'a[href], button, input:not([type=hidden]), select, textarea, [tabindex], [contenteditable=true]'
+        ), function (el) {
+            return !el.disabled && el.tabIndex >= 0 && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0;
+        });
+    }
 
     function openDrawer(tplSel, titleText) {
         var tpl = document.querySelector(tplSel);
         if (!tpl || !drawer) { return; }
+        if (drawer.hidden) { returnFocus = document.activeElement; }
         body.innerHTML = '';
         body.appendChild(tpl.content.cloneNode(true));
         // htmx 只扫描「首次加载的文档」与「它自己换进来的片段」——<template> 里的内容
@@ -38,6 +48,14 @@
         }
         if (titleEl) { titleEl.textContent = titleText || ''; }
         drawer.hidden = false;
+        drawer.setAttribute('aria-hidden', 'false');
+        // 背景不可交互；只恢复本控件设置的 inert，不覆盖调用方原有状态。
+        Array.prototype.forEach.call(drawer.parentElement.children, function (el) {
+            if (el !== drawer && el !== mask && !el.inert && !el.matches('script, style, link, template')) {
+                el.inert = true;
+                inertSiblings.push(el);
+            }
+        });
         mask.hidden = false;
         // 同步加 class：rAF 在后台标签页会无限期挂起，导致抽屉停在屏幕外
         //（hidden 已移除但过渡起始帧不执行）。同步切换牺牲后台页的滑入动画，换 100% 可靠。
@@ -46,13 +64,19 @@
         // 若先聚焦原生 select，焦点会落在一个视觉隐藏的元素上。
         if (WBUI.scan) { WBUI.scan(body); }
         document.dispatchEvent(new CustomEvent('wbui:drawer-open', { detail: { body: body, template: tplSel } }));
-        var first = body.querySelector('input:not([type=hidden]), select, textarea, button');
-        if (first) { first.focus(); }
+        var fields = focusableElements();
+        var first = fields.find(function (el) { return body.contains(el); });
+        (first || drawer).focus();
     }
 
     function closeDrawer() {
         if (!drawer || drawer.hidden) { return; }
+        inertSiblings.forEach(function (el) { el.inert = false; });
+        inertSiblings = [];
+        if (returnFocus && returnFocus.isConnected) { returnFocus.focus(); }
+        returnFocus = null;
         drawer.hidden = true;
+        drawer.setAttribute('aria-hidden', 'true');
         mask.hidden = true;
         document.body.classList.remove('drawer-open');
         body.innerHTML = '';
@@ -70,6 +94,13 @@
         body = drawer.querySelector('[data-drawer-body]');
         titleEl = drawer.querySelector('[data-drawer-title]');
         if (!body) { return; }
+        drawer.setAttribute('role', 'dialog');
+        drawer.setAttribute('aria-modal', 'true');
+        drawer.setAttribute('tabindex', '-1');
+        if (titleEl) {
+            if (!titleEl.id) { titleEl.id = 'wbui-drawer-title'; }
+            drawer.setAttribute('aria-labelledby', titleEl.id);
+        }
 
         document.addEventListener('click', function (e) {
             var opener = e.target.closest('[data-drawer-open]');
@@ -84,7 +115,17 @@
             }
         });
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') { closeDrawer(); }
+            if (drawer.hidden || e.defaultPrevented) { return; }
+            if (e.key === 'Escape') { e.preventDefault(); closeDrawer(); return; }
+            if (e.key !== 'Tab') { return; }
+            var fields = focusableElements();
+            var first = fields[0], last = fields[fields.length - 1];
+            if (!first) { e.preventDefault(); drawer.focus(); return; }
+            if (e.shiftKey && (document.activeElement === first || !fields.includes(document.activeElement))) {
+                e.preventDefault(); last.focus();
+            } else if (!e.shiftKey && (document.activeElement === last || !fields.includes(document.activeElement))) {
+                e.preventDefault(); first.focus();
+            }
         });
     });
 

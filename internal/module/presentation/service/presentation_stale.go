@@ -40,9 +40,8 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 		return nil, err
 	}
 	at := time.Now().UTC()
-	// 模板换代的分流（商品页双轨，迁移 282）：document 模式的实例有自己的文档，
-	// 模板更新与它无关 —— 标记它只会让一张不受影响的页面挂上 stale 徽标、
-	// 并在消费时白重建一次。其余依赖源（导航 / 全局块 / 译文）对两种模式**都**有效，
+	// 模板换代的分流：document 模式只脱离绑定的正文模板，
+	// 页眉/页脚结构模板仍参与构建，不能一并豁免。其余依赖源（导航 / 全局块 / 译文）对两种模式都有效，
 	// 绝不能分流：漏掉 document 模式会表现为「改了导航但商品页不更新」且无任何报错。
 	templateKind := kind == pipeline.DepKindContentTemplate
 	seen := make(map[string]bool)

@@ -238,9 +238,8 @@ type UsageRecorder interface {
 	UseNavigation(navigationID string)
 	// UseBlock 记录一次「构建期展开的全局块」消费。
 	//
-	// 文档内的 globalref 节点由**静态扫描**登记块依赖（页面文档里看得见）；
-	// 但菜单项的悬浮面板（超级菜单）引用的块**不在文档里**（在 navigations 行上），
-	// 静态扫描看不到 —— 只能由渲染期在这里记录，否则改面板块不会让引用页面重建。
+	// 记录普通 globalref、嵌套块以及菜单悬浮面板的实际展开，
+	// 两类发布来源共用；仅扫描外层文档会漏掉嵌套引用和文档之外的菜单绑定。
 	UseBlock(blockID string)
 }
 

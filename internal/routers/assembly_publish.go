@@ -166,7 +166,7 @@ func (a *assembly) buildPublishingModules() {
 	if setter, ok := blockSvc.(interface {
 		SetStalePropagator(func(ctx context.Context, blockID string) error)
 	}); ok {
-		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService))
+		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService, presentationSvc))
 	}
 	if checker, ok := blockSvc.(interface {
 		SetReferenceChecker(func(ctx context.Context, blockID string) (bool, error))

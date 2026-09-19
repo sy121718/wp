@@ -300,7 +300,7 @@ func (m *Model) MarkStaleByDependencyTx(ctx context.Context, tx *gorm.DB, projec
 			"\t  AND d.dependency_key = ?\n"+
 			"\t  AND p.project_id = ?\n"+
 			"\t  AND p.deleted_at IS NULL\n"+
-			"\t  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)\n"+
+			"\t  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM page_publications WHERE page_id = p.id UNION SELECT artifact_id FROM page_stagings WHERE page_id = p.id))\n"+
 			")\n"+
 			"UPDATE pages SET stale = true, update_time = ?\n"+
 			"WHERE project_id = ? AND deleted_at IS NULL AND id IN (SELECT page_id FROM affected)\n"+

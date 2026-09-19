@@ -64,7 +64,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	// 后台页要把命中商品直接铺在展开区里。标签数量是个位数，逐条取可以接受。
 	rows := make([]gin.H, 0, len(tags))
 	for _, t := range tags {
-		detail, derr := h.products.GetTag(ctx, &productdto.GetTagReq{ID: t.ID})
+		detail, derr := h.products.GetTag(ctx, &productdto.GetTagReq{ProjectID: selected, ID: t.ID})
 		if derr != nil {
 			// 单个标签读失败不该让整页打不开：退回列表态（数量在、命中列表为空）。
 			rows = append(rows, tagPageRow(t))
@@ -108,7 +108,8 @@ func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	form := readTagForm(c)
 	req := &productdto.UpdateTagReq{
-		ID: c.PostForm("id"), Name: &form.name, Slug: &form.slug,
+		ProjectID: projectID,
+		ID:        c.PostForm("id"), Name: &form.name, Slug: &form.slug,
 		Kind: &form.kind, Sort: &form.sort,
 	}
 	// 只有自动标签才带规则定义：手工标签提交时规则字段一律不传，
@@ -127,7 +128,7 @@ func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
 // ProductTagsDelete 删除标签（服务端会把商品上的引用一起解绑）。
 func (h *productPageHandle) ProductTagsDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
-	if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ID: c.PostForm("id")}); err != nil {
+	if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ProjectID: projectID, ID: c.PostForm("id")}); err != nil {
 		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
@@ -151,7 +152,7 @@ func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
 	}
 	deleted, skipped := 0, 0
 	for _, id := range ids {
-		if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ID: id}); err != nil {
+		if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ProjectID: projectID, ID: id}); err != nil {
 			skipped++
 			continue
 		}
@@ -192,7 +193,7 @@ func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
 	if tagIDs == nil {
 		tagIDs = []string{}
 	}
-	req := &productdto.UpdateReq{ID: formProductID(c), TagIDs: tagIDs}
+	req := &productdto.UpdateReq{ProjectID: projectID, ID: formProductID(c), TagIDs: tagIDs}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
 		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, productErrText(c, err)))
 		return

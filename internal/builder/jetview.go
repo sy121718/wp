@@ -1271,6 +1271,8 @@ func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
+	// 根文档静态扫描看不到块内部的嵌套引用；两条发布路径都以实际消费记录补齐依赖。
+	ctx.UseBlock(blockID)
 	return blockRefViewOf(node, topLevel, ctx, globalrefPkg.Type, "globalref", blockID)
 }
 

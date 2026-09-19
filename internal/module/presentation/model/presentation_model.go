@@ -642,7 +642,7 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 			WHERE d.dependency_kind = ?
 			  AND d.dependency_key = ?
 			  AND p.deleted_at IS NULL
-			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
+			  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM presentation_publications WHERE presentation_id = p.id))
 		)
 		UPDATE presentation_instances SET stale = true, update_time = ?
 		WHERE deleted_at IS NULL AND project_id = ? AND id IN (SELECT presentation_id FROM affected)

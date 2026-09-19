@@ -124,13 +124,25 @@ func TestAdminUIBrowserFixture(t *testing.T) {
 	if router == nil {
 		return
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:19127")
+	addr := os.Getenv("GOWP_ADMIN_UI_BROWSER_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:19127"
+	}
+	duration := 20 * time.Minute
+	if value := os.Getenv("GOWP_ADMIN_UI_BROWSER_DURATION"); value != "" {
+		var err error
+		duration, err = time.ParseDuration(value)
+		if err != nil || duration <= 0 {
+			t.Fatal("浏览器夹具持续时间必须为正时长")
+		}
+	}
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: router, ReadHeaderTimeout: 3 * time.Second}
 	defer server.Close()
 	go server.Serve(listener)
-	t.Log("后台浏览器夹具：http://127.0.0.1:19127/admin/product-brands")
-	<-time.After(20 * time.Minute)
+	t.Logf("后台浏览器夹具：http://%s/admin/product-brands", listener.Addr())
+	<-time.After(duration)
 }

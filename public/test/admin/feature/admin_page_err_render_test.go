@@ -31,6 +31,7 @@ func newAdminRolesPageEngine(t *testing.T) *gin.Engine {
 	t.Helper()
 	handle := adminhttp.NewAdminPagesHandle(nil, &fakeRoleService{}, nil, nil, nil, nil)
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
+		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
 		InitComponents: true, // 让 shell.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
@@ -39,7 +40,7 @@ func newAdminRolesPageEngine(t *testing.T) *gin.Engine {
 		},
 	})
 	if err != nil {
-		t.Skipf("跳过（本地 PG/Redis 不可用）: %v", err)
+		t.Fatalf("隔离依赖已就绪，组件初始化失败: %v", err)
 	}
 	t.Cleanup(func() { _ = cleanup() })
 	return engine

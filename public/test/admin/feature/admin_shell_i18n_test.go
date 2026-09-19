@@ -27,6 +27,7 @@ func newAdminShellEngine(t *testing.T) *gin.Engine {
 
 	home := &workbenchhttp.Handle{}
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
+		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
 		InitComponents: true, // 初始化 database/redis/i18n，让模板层读到真实 sys_i18n 词条
 		RouteRegistrar: func(e *gin.Engine) {
@@ -36,7 +37,7 @@ func newAdminShellEngine(t *testing.T) *gin.Engine {
 		},
 	})
 	if err != nil {
-		t.Skipf("跳过（本地 PG/Redis 不可用）: %v", err)
+		t.Fatalf("隔离依赖已就绪，组件初始化失败: %v", err)
 	}
 	t.Cleanup(func() { _ = cleanup() })
 	return engine

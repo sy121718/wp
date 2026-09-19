@@ -11,6 +11,7 @@ import (
 
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/pipeline"
 	"go_wp/pkg/logger"
 )
 
@@ -19,8 +20,9 @@ import (
 //  2. core.globalref 引用（页面文档树内 "blockId" 节点）→ MarkStaleForBlock；
 //  3. 页面级 settings.structure 页眉/页脚自选覆盖 → MarkStaleForBlock。
 //
+// 自动发布实例按真实构建依赖反查（含嵌套全局块）。
 // 路径 2/3 由 page 契约按 blockID 反查；重叠命中同一页面时 stale=true 幂等，无妨。
-func BlockStalePropagator(pages pagecontract.PageService, projects projectcontract.ProjectService) func(context.Context, string) error {
+func BlockStalePropagator(pages pagecontract.PageService, projects projectcontract.ProjectService, presentations pipeline.DependencyTarget) func(context.Context, string) error {
 	return func(ctx context.Context, blockID string) error {
 		themes, err := projects.ListThemesByBlockID(ctx, blockID)
 		if err != nil {
@@ -35,6 +37,11 @@ func BlockStalePropagator(pages pagecontract.PageService, projects projectcontra
 		}
 		if err := pages.MarkStaleForBlock(ctx, blockID); err != nil {
 			logger.Scene("block").With("block_id", blockID).Error(err, "反查引用块页面标待重建失败")
+			return err
+		}
+		dep := pipeline.BlockKey(blockID)
+		if _, err := presentations.MarkStaleByDependency(ctx, dep.Kind, dep.Key); err != nil {
+			logger.Scene("block").With("block_id", blockID).Error(err, "标记引用块的自动发布实例待重建失败")
 			return err
 		}
 		return nil

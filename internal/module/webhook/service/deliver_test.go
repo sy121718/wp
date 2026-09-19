@@ -4,6 +4,7 @@ package webhookservice
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -19,6 +20,15 @@ func withLooseValidate(t *testing.T) {
 	orig := validateURL
 	t.Cleanup(func() { validateURL = orig })
 	validateURL = func(string) error { return nil }
+}
+
+// 仅协议测试放行本地 httptest 连接；生产客户端仍使用受限拨号器。
+func localWebhookClient(t *testing.T) *http.Client {
+	t.Helper()
+	client := newWebhookClient()
+	client.Transport.(*http.Transport).DialContext = (&net.Dialer{Timeout: DialTimeout}).DialContext
+	t.Cleanup(client.CloseIdleConnections)
+	return client
 }
 
 // TestPostWebhook_Timeout 远端慢响应时受 ClientTimeout 约束并返回错误。
@@ -75,7 +85,7 @@ func TestPostWebhook_SignatureAndFixedHeaders(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	secret := "sec"
-	if _, err := postWebhook(context.Background(), newWebhookClient(), srv.URL, secret, "order.paid", 7, []byte("{}")); err != nil {
+	if _, err := postWebhook(context.Background(), localWebhookClient(t), srv.URL, secret, "order.paid", 7, []byte("{}")); err != nil {
 		t.Fatalf("投递失败: %v", err)
 	}
 
@@ -122,13 +132,9 @@ func TestPostWebhook_RedirectNotAllowed(t *testing.T) {
 	}))
 	t.Cleanup(redirector.Close)
 
-	status, err := postWebhook(context.Background(), newWebhookClient(), redirector.URL, "s", "e", 1, []byte("{}"))
-	if err != nil {
-		// 客户端若直接报重定向错误也算守住防线
-		return
-	}
-	if status == http.StatusOK {
-		t.Fatal("302 被跟随到了内网目标，SSRF 防线失守")
+	status, err := postWebhook(context.Background(), localWebhookClient(t), redirector.URL, "s", "e", 1, []byte("{}"))
+	if err != nil || status != http.StatusFound {
+		t.Fatalf("必须到达首个服务并停在 302，status=%d err=%v", status, err)
 	}
 }
 

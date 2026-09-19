@@ -6,6 +6,7 @@
 package templates
 
 import (
+	"bytes"
 	"net/http"
 
 	"go_wp/pkg/logger"
@@ -74,9 +75,22 @@ type jetInstance struct {
 func (i *jetInstance) Render(w http.ResponseWriter) error {
 	t, err := i.set.GetTemplate(i.name)
 	if err != nil {
-		return err
+		return i.renderError(w, err)
 	}
-	return t.Execute(w, nil, i.data)
+	// 模板可能在输出部分内容后失败。先完整渲染，成功后才提交响应头与正文。
+	var buf bytes.Buffer
+	if err = t.Execute(&buf, nil, i.data); err != nil {
+		return i.renderError(w, err)
+	}
+	i.WriteContentType(w)
+	_, err = buf.WriteTo(w)
+	return err
+}
+
+func (i *jetInstance) renderError(w http.ResponseWriter, err error) error {
+	logger.Scene("template").With("template", i.name).Error(err, "页面模板渲染失败")
+	http.Error(w, "页面暂时无法显示，请稍后重试", http.StatusInternalServerError)
+	return err
 }
 
 // WriteContentType 设置响应头 Content-Type。

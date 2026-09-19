@@ -101,15 +101,9 @@ func (m *Model) ClearInstanceModeTx(tx *gorm.DB, projectID, id string, at time.T
 		}).Error
 }
 
-// MarkStaleTemplateModeByDependency 只标记 **template 模式** 的受影响实例待重建。
-//
-// 用于「绑定模板出新版本」这类模板驱动的失效：document 模式的实例有自己的文档，
-// 模板换代与它无关（重建反而多余，且会把 stale 徽标打在一张不受影响的页面上）。
-// 其余依赖源（导航 / 全局块 / 译文）仍走 MarkStaleByDependency —— 那些改动对两种
-// 模式**都**有效，漏掉 document 模式会让「改了导航但商品页不更新」且无任何报错。
-//
-// 命中口径与 MarkStaleByDependency 逐条一致（活跃或暂存产物声明的依赖），
-// 只多一个模式条件；COALESCE 兜住不经过迁移建表的测试数据（空值按 template 语义）。
+// MarkStaleTemplateModeByDependency 标记仍消费指定模板的实例。
+// document 模式只脱离自身的正文模板；页眉/页脚等结构模板仍参与每次构建。
+// 依赖命中必须覆盖全部语言的已发布产物及当前暂存产物。
 func (m *Model) MarkStaleTemplateModeByDependency(ctx context.Context, projectID, kind, key string,
 	at time.Time) (ids []string, err error) {
 	if kind == "" || key == "" {
@@ -124,8 +118,8 @@ func (m *Model) MarkStaleTemplateModeByDependency(ctx context.Context, projectID
 			WHERE d.dependency_kind = ?
 			  AND d.dependency_key = ?
 			  AND p.deleted_at IS NULL
-			  AND COALESCE(p.render_mode, 'template') = 'template'
-			  AND d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)
+			  AND (COALESCE(p.render_mode, 'template') = 'template' OR d.dependency_key <> 'content_template:' || p.template_id::text)
+			  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM presentation_publications WHERE presentation_id = p.id))
 		)
 		UPDATE presentation_instances SET stale = true, update_time = ?
 		WHERE deleted_at IS NULL AND project_id = ? AND id IN (SELECT presentation_id FROM affected)

@@ -67,7 +67,7 @@ func (m *Model) ListPagesByDependency(ctx context.Context, projectID, kind, key 
 			Select("pages.id AS id, "+staleTitleExpr+" AS title").
 			Joins("JOIN "+tableNamePageDependencies+" d ON d.page_id = pages.id").
 			Where("d.dependency_kind = ? AND d.dependency_key = ?", kind, key).
-			Where("d.artifact_id IN (pages.active_artifact_id, pages.staged_artifact_id)").
+			Where("(d.artifact_id IN (pages.active_artifact_id, pages.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM page_publications WHERE page_id = pages.id UNION SELECT artifact_id FROM page_stagings WHERE page_id = pages.id))").
 			Where("pages.project_id = ? AND pages.deleted_at IS NULL", projectID).
 			Scan(&list).Error
 	})

@@ -28,7 +28,29 @@ func SetupTestBootstrap(options BootstrapOptions) (*gin.Engine, func() error, er
 
 	configPath := strings.TrimSpace(options.ConfigPath)
 	if configPath == "" {
-		configPath = "config.yaml"
+		// 默认配置必须来自版本库，避免测试依赖本机配置或误连开发业务库。
+		// 初始化外部组件的测试仍须显式传隔离配置。
+		if options.InitComponents {
+			return nil, nil, fmt.Errorf("初始化外部组件的测试必须显式提供隔离配置")
+		}
+		example, err := os.ReadFile(resolveConfigPath("config.yaml.example"))
+		if err != nil {
+			return nil, nil, err
+		}
+		// Viper 根据扩展名识别格式；.example 不能直接作为 YAML 配置加载。
+		tmp, err := os.CreateTemp("", "gowp-test-config-*.yaml")
+		if err != nil {
+			return nil, nil, err
+		}
+		defer os.Remove(tmp.Name())
+		if _, err = tmp.Write(example); err != nil {
+			_ = tmp.Close()
+			return nil, nil, err
+		}
+		if err = tmp.Close(); err != nil {
+			return nil, nil, err
+		}
+		configPath = tmp.Name()
 	}
 	configPath = resolveConfigPath(configPath)
 

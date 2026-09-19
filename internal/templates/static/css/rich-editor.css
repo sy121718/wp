@@ -106,8 +106,10 @@ trix-toolbar .sre-toolbar-btn {
     cursor: pointer;
 }
 
-trix-toolbar .sre-toolbar-btn:hover {
-    background: var(--sky-c-bg-soft, #f4f6f9);
+@media (hover: hover) {
+    trix-toolbar .sre-toolbar-btn:hover {
+        background: var(--sky-c-bg-soft, #f4f6f9);
+    }
 }
 
 /* 键盘焦点必须可见：工具条的键盘可达性靠它才成立。 */

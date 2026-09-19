@@ -95,7 +95,8 @@ func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 	seoDescription := c.PostForm("seoDescription")
 	sortValue := parseIntOr(c.PostForm("sort"), 0)
 	req := &productdto.UpdateCategoryReq{
-		ID: c.PostForm("id"), ParentID: &parentID, Name: &name, Slug: &slug,
+		ProjectID: projectID,
+		ID:        c.PostForm("id"), ParentID: &parentID, Name: &name, Slug: &slug,
 		Description: &description, Image: &image,
 		SEOTitle: &seoTitle, SEODescription: &seoDescription, Sort: &sortValue,
 	}
@@ -109,7 +110,7 @@ func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 // ProductCategoriesDelete 删除分类（有子级或被商品引用时服务端拒绝）。
 func (h *productPageHandle) ProductCategoriesDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
-	if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ID: c.PostForm("id")}); err != nil {
+	if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ProjectID: projectID, ID: c.PostForm("id")}); err != nil {
 		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
@@ -132,7 +133,7 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 	}
 	deleted, skipped := 0, 0
 	for _, id := range ids {
-		if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ID: id}); err != nil {
+		if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ProjectID: projectID, ID: id}); err != nil {
 			skipped++
 			continue
 		}
@@ -208,7 +209,8 @@ func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
 	seoDescription := c.PostForm("seoDescription")
 	sortValue := parseIntOr(c.PostForm("sort"), 0)
 	req := &productdto.UpdateBrandReq{
-		ID: c.PostForm("id"), Name: &name, Slug: &slug, Logo: &logo,
+		ProjectID: projectID,
+		ID:        c.PostForm("id"), Name: &name, Slug: &slug, Logo: &logo,
 		Description: &description, SEOTitle: &seoTitle,
 		SEODescription: &seoDescription, Sort: &sortValue,
 	}
@@ -222,7 +224,7 @@ func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
 // ProductBrandsDelete 删除品牌（被商品引用时服务端拒绝）。
 func (h *productPageHandle) ProductBrandsDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
-	if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ID: c.PostForm("id")}); err != nil {
+	if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ProjectID: projectID, ID: c.PostForm("id")}); err != nil {
 		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
 		return
 	}
@@ -245,7 +247,7 @@ func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
 	}
 	deleted, skipped := 0, 0
 	for _, id := range ids {
-		if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ID: id}); err != nil {
+		if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ProjectID: projectID, ID: id}); err != nil {
 			skipped++
 			continue
 		}
@@ -276,6 +278,7 @@ func (h *productPageHandle) ProductsTaxonomySet(c *gin.Context) {
 	primary := strings.TrimSpace(c.PostForm("primaryCategoryId"))
 	brand := strings.TrimSpace(c.PostForm("brandId"))
 	req := &productdto.UpdateReq{
+		ProjectID:         projectID,
 		ID:                formProductID(c),
 		CategoryIDs:       categoryIDs,
 		PrimaryCategoryID: &primary,

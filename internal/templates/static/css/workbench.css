@@ -109,7 +109,7 @@
 
 /* ===== 底栏 ===== */
 .wb-bottombar {
-    display: flex; align-items: center; gap: 8px; padding: 6px 16px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 16px;
     border-top: 1px solid var(--sky-c-border, #e5e7eb); background: var(--sky-c-surface, #fff);
 }
 .wb-flex-spacer { flex: 1; }

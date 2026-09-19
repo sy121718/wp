@@ -15,7 +15,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"time"
 )
@@ -38,7 +37,7 @@ func newWebhookClient() *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			DialContext:         (&net.Dialer{Timeout: DialTimeout}).DialContext,
+			DialContext:         dialWebhookContext,
 			TLSHandshakeTimeout: TLSHandTimeout,
 			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 		},
