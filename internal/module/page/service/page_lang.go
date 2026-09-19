@@ -265,6 +265,21 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	return marked, nil
 }
 
+// I18nStalePeer 文案词条 / 内容译文变更时的**其它发布来源**失效端口（消费者侧最窄接口）。
+//
+// 由 page 的 MarkStaleForI18n 统一扇出：i18n 的保存路径（商品翻译 / 页面翻译 /
+// 站点设置 / 导航翻译）历来只调 page.MarkStaleForI18n，新增发布来源时若要求每处
+// 都记得补一次调用，漏接面就是 N 处；集中到 1 处后漏接只可能是「装配没接」。
+// 未注入 = 只标页面（既有行为不变）。
+type I18nStalePeer interface {
+	MarkStaleForI18n(ctx context.Context) error
+}
+
+// SetI18nStalePeer 注入其它发布来源的译文失效端口（装配期调用；可空 = 只标页面）。
+func (s *Service) SetI18nStalePeer(peer I18nStalePeer) {
+	s.i18nPeer = peer
+}
+
 // MarkStaleForI18n 把全部页面标记为待重建（文案词条变更后调用）。
 //
 // 与 Manifest 的 i18n 依赖条目（DependencyKind=i18n）配套：
@@ -285,6 +300,16 @@ func (s *Service) MarkStaleForI18n(ctx context.Context) error {
 		}
 		if err := s.model.MarkStaleForI18n(ctx, projectID); err != nil {
 			return err
+		}
+	}
+	// 其余发布来源（自动发布实例等）集中在**这一个入口**扇出：它们同样在构建期取词
+	// 注入字节，词条/译文一变同样过期。为什么不让四条保存路径各自记得调一次
+	//（商品翻译 / 页面翻译 / 站点设置 / 导航翻译）—— 漏一处的表现是「改了译文，
+	// 那一类页面仍是旧字节」且日志里什么都没有（本项目反复吃过的静默失效）。
+	// peer 的失败原样返回：这是标记与重建，不是内容写入的可忽略后置副作用。
+	if s.i18nPeer != nil {
+		if perr := s.i18nPeer.MarkStaleForI18n(ctx); perr != nil {
+			return perr
 		}
 	}
 	return nil
