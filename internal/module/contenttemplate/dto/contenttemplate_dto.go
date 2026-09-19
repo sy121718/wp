@@ -27,6 +27,14 @@ type DeleteReq struct {
 	ID string `json:"id" binding:"required"`
 }
 
+// ActivateReq 切换生效模板（多套存着、单套生效）。
+//
+// 同一（工程, 类型）下至多一套生效：部分唯一索引
+// idx_content_templates_default_per_project_type 兜底并发。
+type ActivateReq struct {
+	ID string `json:"id" binding:"required"`
+}
+
 // GetReq 按 ID 查询。
 type GetReq struct {
 	ID string `form:"id" binding:"required"`
@@ -39,9 +47,13 @@ type ListReq struct {
 
 // TemplateResp 模板响应。
 type TemplateResp struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	EntityType    string          `json:"entityType"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	EntityType string `json:"entityType"`
+	// TemplateRole 模板角色（detail / archive）：前端区分详情类与归档类。
+	TemplateRole string `json:"templateRole,omitempty"`
+	// IsDefault 是否为该（工程, 类型）当前生效的那套（EDT-014）。
+	IsDefault     bool            `json:"isDefault"`
 	DraftVersion  int64           `json:"draftVersion"`
 	DraftDocument json.RawMessage `json:"draftDocument"`
 	UpdatedAt     string          `json:"updatedAt"`

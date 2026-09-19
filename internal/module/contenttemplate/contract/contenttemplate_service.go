@@ -44,6 +44,11 @@ type ContentTemplateService interface {
 	GetScoped(ctx context.Context, projectID, id string) (res *contenttemplatedto.TemplateResp, err error)
 	// List 按类型列表。
 	List(ctx context.Context, req *contenttemplatedto.ListReq) (list []*contenttemplatedto.TemplateResp, err error)
+	// Activate 切换该（工程, 类型）的生效模板：旧的置 false、目标置 true（同事务）。
+	//
+	// 多套存着、单套生效的切换动作；生效的那套换了意味着引用它的页面/实例产物过期，
+	// 由依赖失效扇出重建（端口注入见装配）。
+	Activate(ctx context.Context, req *contenttemplatedto.ActivateReq) (res *contenttemplatedto.TemplateResp, err error)
 	// ResolveTemplate 取 entityType 的当前激活模板版本（presentation 派生
 	// DocumentSnapshot 的唯一入口；同类型无模板时返回错误）。
 	ResolveTemplate(ctx context.Context, entityType string) (res *ResolvedTemplate, err error)

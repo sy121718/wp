@@ -30,10 +30,35 @@ const (
 	SlotFooter = layoutslot.SlotFooter
 )
 
-// StructureSlot 一个结构槽位绑定（槽位名 → 全局块 ID）。
+// StructureSlot 一个结构槽位绑定。
+//
+// BlockID 既可以是全局块 ID，也可以是**构建期虚拟引用**（页眉/页脚绑定了结构模板时，
+// 调用方把模板文档解析成节点并注册到块解析器上，用本文件的 StructureTemplateRef 生成引用）。
+// 虚拟引用只在本次编译的 BlockID 字段里存在：不落库、不进文档，依赖登记也按 settings 里的
+// 模板 ID 计算（不解析这个字符串）—— 所以它不是「一个字段两种语义」的隐患。
 type StructureSlot struct {
 	Slot    string
 	BlockID string
+}
+
+// structureTemplateRefPrefix 结构模板虚拟引用的前缀。
+//
+// 为什么用虚拟引用而不是给布局槽再加一条模板解析通道：布局槽节点（core.layoutSlot）
+// 已经有一套完整的安全约束（防环、深度上限、ID 前缀重写、main 地标跳过），另开一条
+// 通道意味着这些约束要再实现一遍 —— 而「某条入口漏了防环」正是最难查的一类问题。
+const structureTemplateRefPrefix = "__structure_template__"
+
+// StructureTemplateRef 生成结构模板的构建期虚拟引用 ID。
+//
+// 调用方（page / presentation 的槽位装配）在解析出模板文档 root 节点后，
+// 用本函数生成引用 + 把这些节点注册进自己的块解析器，即可让布局槽走原有通道展开。
+func StructureTemplateRef(templateID string) string {
+	return structureTemplateRefPrefix + templateID
+}
+
+// IsStructureTemplateRef 判断引用是否来自结构模板（用于诊断与测试断言）。
+func IsStructureTemplateRef(ref string) bool {
+	return strings.HasPrefix(ref, structureTemplateRefPrefix)
 }
 
 // WithStructureSlots 注入结构槽位绑定：编译期展开成 root 首尾的 core.layoutSlot 节点。

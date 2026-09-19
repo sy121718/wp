@@ -396,6 +396,21 @@ func registerCoreSchemaAndAccess() {
 		SQL:          mustSQL("286_presentation_mode_errors_i18n.sql"),
 	})
 
+	// 288：contenttemplate 切换生效接口的权限点（POST /api/contenttemplate/activate）。
+	//
+	// **为什么不复用 contenttemplate:update**：Casbin 中间件按**实际请求路径** enforce，
+	// 库里那条策略是 (/api/contenttemplate/update, POST) —— 请求 /activate 时没有任何策略
+	// 匹配，含超管在内全员 403（072/077/078/079/151 五次同因）。
+	// **为什么不能"一个权限点挂两条路径"**：sys_permission 上有
+	// uk_sys_permission_code UNIQUE (permission_code)，一个 code 只能有一条 api_path。
+	// 判据按本批自己的 permission_code 计数（不用总数，见 226/269 的口径）。
+	registerSeed(Seed{
+		Version:      "288-contenttemplate-activate-permission",
+		TableName:    "sys_permission",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code = 'contenttemplate:activate'",
+		SQL:          mustSQL("288_contenttemplate_activate_permission.sql"),
+	})
+
 	// 277：批量 id 超限的受控提示词条（shell.err.bulkIdsTooMany，中英各一行）。
 	//
 	// 与 shell.ErrBulkIDsTooMany / *shell.BulkIDsError 同批落地：受控性由**类型**表达之后，

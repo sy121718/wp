@@ -55,11 +55,44 @@ type PageSettings struct {
 // 调用方，漏一处就是静默失效（文本不翻译、依赖不登记、构建不展开）。
 type StructureBindings struct {
 	// HeaderBlockID 页眉全局块 ID（空 = 无页眉）。
+	// 旧通道：保留兼容（存量站点与回退路径都靠它，见 TemplateBindings 的优先级说明）。
 	HeaderBlockID string `json:"headerBlockId,omitempty"`
 	// FooterBlockID 页脚全局块 ID（空 = 无页脚）。
 	FooterBlockID string `json:"footerBlockId,omitempty"`
 	// Slots 其余结构槽位的绑定（槽位名 → 全局块 ID）。
 	Slots map[string]string `json:"slots,omitempty"`
+	// HeaderTemplateID / FooterTemplateID 页眉 / 页脚绑定的**结构模板**（多套存着、单套生效）。
+	//
+	// 与块绑定的关系：同一槽位同时存在两种绑定时**以模板为准**（模板是"结构"这一层，
+	// 块是旧通道）；模板未绑定或构建期解析失败时回退到块绑定 —— 否则现存站的
+	// 页眉页脚会整片消失。
+	HeaderTemplateID string `json:"headerTemplateId,omitempty"`
+	FooterTemplateID string `json:"footerTemplateId,omitempty"`
+	// SlotTemplates 其余槽位的模板绑定（槽位名 → 结构模板 ID）。
+	SlotTemplates map[string]string `json:"slotTemplates,omitempty"`
+}
+
+// TemplateBindings 合并两个通道，返回「槽位名 → 结构模板 ID」的完整绑定。
+//
+// 与 SlotBindings（块）并列：调用方先看模板、再回退块，两者的优先级在调用点用
+// "模板优先"一句话表达，不在这里互相覆盖（各留各的，回退才有依据）。
+func (s StructureBindings) TemplateBindings() map[string]string {
+	out := make(map[string]string, len(s.SlotTemplates)+2)
+	for slot, templateID := range s.SlotTemplates {
+		if id := strings.TrimSpace(templateID); id != "" {
+			out[slot] = id
+		}
+	}
+	if id := strings.TrimSpace(s.HeaderTemplateID); id != "" && out[SlotHeader] == "" {
+		out[SlotHeader] = id
+	}
+	if id := strings.TrimSpace(s.FooterTemplateID); id != "" && out[SlotFooter] == "" {
+		out[SlotFooter] = id
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // SlotBindings 合并两个通道，返回「槽位名 → 块 ID」的完整绑定。
@@ -84,9 +117,9 @@ func (s StructureBindings) SlotBindings() map[string]string {
 	return out
 }
 
-// IsEmpty 是否没有任何槽位绑定。
+// IsEmpty 是否没有任何槽位绑定（块或结构模板都算绑定）。
 func (s StructureBindings) IsEmpty() bool {
-	return len(s.SlotBindings()) == 0
+	return len(s.SlotBindings()) == 0 && len(s.TemplateBindings()) == 0
 }
 
 // PageLayout 页面版心控制。

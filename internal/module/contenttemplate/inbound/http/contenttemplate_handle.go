@@ -38,6 +38,21 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 // Update 更新模板。
+// Activate 切换生效模板（POST /api/contenttemplate/activate）。
+func (h *Handle) Activate(c *gin.Context) {
+	req := &contenttemplatedto.ActivateReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.Activate(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "contenttemplate", err)
+		return
+	}
+	response.Success(c, res)
+}
+
 func (h *Handle) Update(c *gin.Context) {
 	req := &contenttemplatedto.UpdateReq{}
 	if err := c.ShouldBindJSON(req); err != nil {

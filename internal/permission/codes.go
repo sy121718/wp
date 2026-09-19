@@ -101,6 +101,11 @@ const (
 	ContenttemplateList Perm = "contenttemplate:list"
 	// 模板更新（POST /api/contenttemplate/update）
 	ContenttemplateUpdate Perm = "contenttemplate:update"
+	// 模板切换生效（POST /api/contenttemplate/activate）；迁移 288 的 seed 与这条一一对应。
+	//
+	// 为什么单独一条：Casbin 中间件按**实际请求路径** enforce，复用 update 会让这个接口
+	// 没有任何策略匹配 → 含超管在内全员 403（AGENTS.md 记过 072/077/078/079/151 五次）。
+	ContenttemplateActivate Perm = "contenttemplate:activate"
 
 	// —— datarule（9）——
 	// 规则分配查看（GET /api/datarule/assignment/list）
@@ -664,11 +669,12 @@ var specs = map[Perm]spec{
 	ContentUpdate:      {module: "content", name: "内容更新"},
 
 	// —— contenttemplate ——
-	ContenttemplateCreate: {module: "contenttemplate", name: "模板创建"},
-	ContenttemplateDelete: {module: "contenttemplate", name: "模板删除"},
-	ContenttemplateGet:    {module: "contenttemplate", name: "模板详情"},
-	ContenttemplateList:   {module: "contenttemplate", name: "模板列表"},
-	ContenttemplateUpdate: {module: "contenttemplate", name: "模板更新"},
+	ContenttemplateCreate:   {module: "contenttemplate", name: "模板创建"},
+	ContenttemplateDelete:   {module: "contenttemplate", name: "模板删除"},
+	ContenttemplateGet:      {module: "contenttemplate", name: "模板详情"},
+	ContenttemplateList:     {module: "contenttemplate", name: "模板列表"},
+	ContenttemplateUpdate:   {module: "contenttemplate", name: "模板更新"},
+	ContenttemplateActivate: {module: "contenttemplate", name: "模板切换生效"},
 
 	// —— datarule ——
 	DataruleAssignmentList: {module: "datarule", name: "规则分配查看"},

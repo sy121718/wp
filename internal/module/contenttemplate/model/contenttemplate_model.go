@@ -46,6 +46,42 @@ func IsValidTemplateRole(role string) bool {
 	return role == TemplateRoleDetail || role == TemplateRoleArchive
 }
 
+// 结构模板类型（页眉 / 脚页）：标志值。
+const (
+	// EntityTypeHeader 页眉结构模板类型。
+	EntityTypeHeader = "header"
+	// EntityTypeFooter 页脚结构模板类型。
+	EntityTypeFooter = "footer"
+)
+
+// IsStructureTemplateType 是否为结构模板类型（页眉 / 页脚）。
+//
+// 为什么是独立白名单而不是走实体来源注册表：header / footer 不是内容实体，
+// 没有字段来源。往注册表里塞一个假来源，换来的是“这个类型可以配字段绑定”的假许可
+// （构建期解析不到数据 → 页眉里一片空白），比拒绝更坏。
+func IsStructureTemplateType(entityType string) bool {
+	return entityType == EntityTypeHeader || entityType == EntityTypeFooter
+}
+
+// SetDefaultTx 事务内切换某（工程, 类型）的生效模板：旧的置 false、目标置 true。
+//
+// 顺序不可颠倒：部分唯一索引 idx_content_templates_default_per_project_type
+// （project_id, entity_type）WHERE is_default 在“两条同时为 true”的中间态直接报冲突。
+// 同事务还保证不会出现“旧的清了、新的没置上”= 该类型没有生效模板的窗口。
+func (m *Model) SetDefaultTx(tx *gorm.DB, projectID, entityType, templateID string, at time.Time) error {
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	if err := tx.Model(&TemplateEntity{}).
+		Where("project_id = ? AND entity_type = ? AND is_default = true AND id <> ?", projectID, entityType, templateID).
+		Updates(map[string]any{"is_default": false, "update_time": at}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&TemplateEntity{}).
+		Where("id = ? AND project_id = ?", templateID, projectID).
+		Updates(map[string]any{"is_default": true, "update_time": at}).Error
+}
+
 // TemplateEntity content_templates 表实体（模板草稿，可继续编辑）。
 type TemplateEntity struct {
 	ID         string `gorm:"column:id;primaryKey"`

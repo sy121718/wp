@@ -32,6 +32,10 @@ type stubTemplateService struct {
 	resolved   *contenttemplatecontract.ResolvedTemplate
 	resolveErr error
 	byIDErr    error
+	// activateErr 切换生效模板的可配错误；activateCalls 记录调用次数
+	//（呈现侧不消费该能力，但契约加了方法就得有形状一致的实现）。
+	activateErr   error
+	activateCalls int
 }
 
 func (s *stubTemplateService) Create(context.Context, *contenttemplatedto.CreateReq) (*contenttemplatedto.TemplateResp, error) {
@@ -40,6 +44,13 @@ func (s *stubTemplateService) Create(context.Context, *contenttemplatedto.Create
 
 func (s *stubTemplateService) Update(context.Context, *contenttemplatedto.UpdateReq) (*contenttemplatedto.TemplateResp, error) {
 	return nil, nil
+}
+
+// Activate 切换生效模板（多套存着、单套生效）：呈现侧只做解析，不消费这个能力 ——
+// 桩件返回可配错误，供需要模拟"切换失败"的用例使用。
+func (s *stubTemplateService) Activate(context.Context, *contenttemplatedto.ActivateReq) (*contenttemplatedto.TemplateResp, error) {
+	s.activateCalls++
+	return s.meta, s.activateErr
 }
 
 func (s *stubTemplateService) Get(context.Context, *contenttemplatedto.GetReq) (*contenttemplatedto.TemplateResp, error) {

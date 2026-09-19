@@ -36,6 +36,11 @@ type Service struct {
 	m        *contenttemplatemodel.Model
 	project  projectcontract.ProjectService
 	registry core.EntitySourceRegistry
+	// invalidator 依赖失效扇出端口（编排层注入，可空）。
+	//
+	// 沿用 content 模块的同道范式：失效是写入的**后置副作用**，失败只记日志，
+	// 不能反向让已经成功的模板保存报错。
+	invalidator DependencyInvalidator
 }
 
 // NewService 构造（model + project 契约 + 实体类型注册表注入，不持有 *gorm.DB）。
@@ -46,8 +51,34 @@ func NewService(m *contenttemplatemodel.Model, project projectcontract.ProjectSe
 	return &Service{m: m, project: project, registry: registry}
 }
 
+// DependencyInvalidator 依赖失效端口（消费者侧最窄接口，与 content 模块同一范式）。
+type DependencyInvalidator interface {
+	Invalidate(ctx context.Context, kind, key string)
+}
+
+// SetInvalidator 注入依赖失效端口（装配期调用；未注入时模板改动只落库、不触发重建）。
+func (s *Service) SetInvalidator(inv DependencyInvalidator) { s.invalidator = inv }
+
+// notifyTemplateChanged 模板产生新版本 / 切换生效后的失效扇出。
+//
+// 缺这条的现象：改了模板（页眉 / 详情结构），引用它的页面与实例**永远停在旧字节**，
+// 日志里什么都没有 —— 这正是本批要修的那类静默失效。
+func (s *Service) notifyTemplateChanged(ctx context.Context, templateID string) {
+	if s == nil || s.invalidator == nil || strings.TrimSpace(templateID) == "" {
+		return
+	}
+	k := pipeline.ContentTemplateKey(templateID)
+	s.invalidator.Invalidate(ctx, k.Kind, k.Key)
+}
+
 // validEntityType 实体类型是否合法（注册表为 nil 时视为不合法，避免静默放行）。
+//
+// 结构模板类型（页眉 / 页脚）走独立白名单：它们不是内容实体、没有字段来源，
+// 往注册表里塞假来源会给出"可以配字段绑定"的假许可。
 func (s *Service) validEntityType(entityType string) bool {
+	if contenttemplatemodel.IsStructureTemplateType(entityType) {
+		return true
+	}
 	return s.registry != nil && s.registry.IsValidType(entityType)
 }
 
@@ -195,6 +226,36 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	}, e); err != nil {
 		return nil, err
 	}
+	// 模板产生新版本 = 引用它的产物过期（页面 / 自动发布实例）。
+	s.notifyTemplateChanged(ctx, e.ID)
+	return toResp(e), nil
+}
+
+// Activate 切换该（工程, 类型）的生效模板（多套存着、单套生效）。
+//
+// 生效的那套换了，引用它的产物同样过期，故与 Update 一样走一次失效扇出：
+// 旧的那套的依赖键与新的一致（键是"这个类型的生效模板"这条绑定关系所在的页面登记了
+// 两份键），所以标记覆盖得到。
+func (s *Service) Activate(ctx context.Context, req *contenttemplatedto.ActivateReq) (res *contenttemplatedto.TemplateResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+	}
+	e, err := s.locateTemplate(ctx, req.ID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(contenttemplateenums.ErrNotFound)
+		}
+		return nil, err
+	}
+	now := time.Now().UTC()
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.m.SetDefaultTx(tx, e.ProjectID, e.EntityType, e.ID, now)
+	}); err != nil {
+		return nil, err
+	}
+	e.IsDefault = true
+	e.UpdatedAt = now
+	s.notifyTemplateChanged(ctx, e.ID)
 	return toResp(e), nil
 }
 
@@ -509,7 +570,19 @@ func (s *Service) validateDocumentMode(entityType string, raw json.RawMessage, t
 	} else if err = builder.ValidatePage(page); err != nil {
 		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
 	}
-	if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
+	if contenttemplatemodel.IsStructureTemplateType(entityType) {
+		// 结构模板（页眉 / 页脚）不是内容实体：字段绑定在构建期会按**引用它的那个页面**
+		// 的实体上下文解析 —— 同一份页眉在商品页显示商品名、在文章页显示标题，
+		// 那不是"全局结构"应有的行为。故这里**明确拒绝**，而不是跳过校验
+		//（跳过要等线上才看得出页眉串了数据）。
+		refs, rerr := builder.CollectFieldRefs(page)
+		if rerr != nil {
+			return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		}
+		if len(refs) > 0 {
+			return nil, errors.New(contenttemplateenums.ErrFieldBindingInvalid)
+		}
+	} else if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
 		return nil, fmt.Errorf("%s: %w", contenttemplateenums.ErrFieldBindingInvalid, err)
 	}
 	doc, err := json.Marshal(page)
@@ -525,6 +598,8 @@ func toResp(e *contenttemplatemodel.TemplateEntity) *contenttemplatedto.Template
 		ID:            e.ID,
 		Name:          e.Name,
 		EntityType:    e.EntityType,
+		TemplateRole:  e.TemplateRole,
+		IsDefault:     e.IsDefault,
 		DraftVersion:  e.DraftVersion,
 		DraftDocument: e.DraftDocument,
 		UpdatedAt:     e.UpdatedAt.Format("2006-01-02 15:04"),

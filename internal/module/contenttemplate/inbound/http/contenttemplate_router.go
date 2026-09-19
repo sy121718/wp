@@ -24,6 +24,9 @@ func SetupContentTemplateRoutes(rg *permission.RouteGroup, db *gorm.DB, project 
 	g := rg.Group("/contenttemplate")
 	g.POST("/create", permission.ContenttemplateCreate, handle.Create)
 	g.POST("/update", permission.ContenttemplateUpdate, handle.Update)
+	// 切换生效模板（多套存着、单套生效）。权限点必须独立：中间件按实际路径 enforce，
+	// 复用 update 时这条路径没有策略匹配 → 全员 403（含超管）。seed 见迁移 288。
+	g.POST("/activate", permission.ContenttemplateActivate, handle.Activate)
 	g.GET("/get", permission.ContenttemplateGet, handle.Get)
 	g.GET("/list", permission.ContenttemplateList, handle.List)
 	return svc
