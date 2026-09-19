@@ -304,8 +304,15 @@ func productListSemanticQuery(r *Request, options []string) string {
 //
 // 白名单直接复用筛选参数表 + 分页 + onSale + option 前缀，而不另立一份：
 // 两份清单分叉的后果是“某个筛选维度能筛但一翻页就丢”，而那正是难查的一类。
+//
+// lang 也在这份白名单里（I18N-011）：它不是筛选维度，而是**视图维度** ——
+// 组件的翻页/换筛选链接由 pushQuery 拼装，串里没有 lang 就只会带上实例配置，
+// 于是「英文站点翻到第 2 页」的请求不再带语言，片段回落工程默认语言，
+// 页面看起来是「翻页之后列表自己变回了中文」。与 orders 的
+// orderListFragmentURL / orderDetailURL 同一形状（它们早就带上了 lang）。
+// 只在请求**确实带了** lang 时才进串：语言由 URL 显式表达，不从请求头猜。
 func productListSemanticParam(param string) bool {
-	if param == productListParamPage || param == productcontract.CollectionFilterOnSale {
+	if param == productListParamPage || param == productcontract.CollectionFilterOnSale || param == fragmentLangParam {
 		return true
 	}
 	_, ok := productListFilterParams[param]

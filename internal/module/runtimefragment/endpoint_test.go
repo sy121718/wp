@@ -97,15 +97,40 @@ func TestFragmentRenderEscapes(t *testing.T) {
 	}
 }
 
-// TestFragmentEndpointVaryLang 响应声明按语言变化；非法 lang 回落默认（I18N-011）。
-func TestFragmentEndpointVaryLang(t *testing.T) {
+// TestFragmentEndpointLangHeader 语言解析结果写进响应头；非法 lang 回落默认（I18N-011）。
+//
+// 这条用例同时钉住两件事：
+//
+//  1. Content-Language 必须是**真正生效**的那个语言（清单里没有的值要回落，
+//     而不是原样回声 —— 回声会让「语言没生效」看起来像生效了）；
+//  2. 响应**不得**带 `Vary: Accept-Language`。片段语言只由 URL 的 ?lang 决定
+//     （见 resolveRequestLang），声明一个不参与内容选择的请求头会让 CDN 为同一份
+//     字节建多个缓存桶（写错 Vary 比不写更糟）。
+func TestFragmentEndpointLangHeader(t *testing.T) {
+	SetFragmentProject(&stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"})
+	defer SetFragmentProject(nil)
 	r := newRouter()
-	w := doGet(t, r, "/_fragments/loginPanel?lang=not-a-real-lang")
-	if w.Code != http.StatusOK {
-		t.Fatalf("应 200: %d", w.Code)
+
+	cases := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{"启用的语言", "?projectId=p1&lang=en-US", "en-US"},
+		{"未启用的 lang 回落工程默认", "?projectId=p1&lang=not-a-real-lang", "zh-CN"},
+		{"不带 lang 取工程默认", "?projectId=p1", "zh-CN"},
 	}
-	if got := w.Header().Get("Vary"); got != "Accept-Language" {
-		t.Fatalf("应设 Vary: Accept-Language，实际 %q", got)
+	for _, tc := range cases {
+		w := doGet(t, r, "/_fragments/loginPanel"+tc.query)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: 应 200，实际 %d", tc.name, w.Code)
+		}
+		if got := w.Header().Get("Content-Language"); got != tc.want {
+			t.Errorf("%s: Content-Language 期望 %q 实际 %q", tc.name, tc.want, got)
+		}
+		if got := w.Header().Get("Vary"); strings.Contains(got, "Accept-Language") {
+			t.Errorf("%s: 语言不由 Accept-Language 决定，不该在 Vary 里声明（实际 %q）", tc.name, got)
+		}
 	}
 }
 

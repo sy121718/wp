@@ -25,11 +25,17 @@ func init() {
 }
 
 // renderLoginPanel 登录面板：提示文案（Jet 模板渲染，用户数据默认转义）。
+//
+// 文案走 r.tr（请求语言取词，词条 site.fragment.login_panel.*，迁移 293）——
+// 这里曾是本包**唯一**恒为默认语言的片段文案：多语言站点上端点已按 ?lang 解析出语言，
+// 而这两句写死在 Go 里，于是英文站点的登录面板一直显示中文。
+// fallback 是中文原文（与 fragment_i18n*.go 同口径）：词条缺失时回退原文，
+// 绝不输出裸 key、也不输出空串。
 func renderLoginPanel(_ context.Context, r *Request) (string, error) {
 	// 语义上下文：visitorSession 时显示会话态文案（MVP：统一提示）。
-	label := "登录 / 注册"
+	label := r.tr("site.fragment.login_panel.login_register", "登录 / 注册")
 	if r.Context == "visitorSession" {
-		label = "继续购物"
+		label = r.tr("site.fragment.login_panel.continue_shopping", "继续购物")
 	}
 	return templates.RenderFragment("login_panel", struct{ Label string }{Label: label})
 }

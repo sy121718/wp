@@ -16,6 +16,7 @@ package runtimefragment
 import (
 	"context"
 	"fmt"
+	neturl "net/url"
 	"strconv"
 	"strings"
 
@@ -440,8 +441,12 @@ func orderListFragmentURL(r *Request, projectID, status string, offset, pageSize
 	if pageSize > 0 {
 		url += "&limit=" + strconv.Itoa(pageSize)
 	}
-	if lang := strings.TrimSpace(paramOf(r, "lang")); lang != "" {
-		url += "&lang=" + lang
+	// lang 来自访客可改的 query，必须转义后再拼：手拼时一个 `&` 就能把它后面的参数
+	// 顶掉（projectId 被换掉即等于让访客自选工程）—— 本身不是越权（片段只出公开数据），
+	// 但会让「链接里的语言」变成一个能把 URL 改坏的注入点。
+	// 用别名 neturl 是因为本函数的局部变量就叫 url（包名被遮蔽）。
+	if lang := strings.TrimSpace(paramOf(r, fragmentLangParam)); lang != "" {
+		url += "&lang=" + neturl.QueryEscape(lang)
 	}
 	return url
 }
@@ -467,8 +472,8 @@ func orderListPageURL(baseURL, status string, offset int) string {
 // orderDetailURL 详情片段的地址（HTMX 展开用）。
 func orderDetailURL(r *Request, projectID string, orderID uint64) string {
 	url := "/_fragments/orderDetail?projectId=" + projectID + "&orderId=" + strconv.FormatUint(orderID, 10)
-	if lang := strings.TrimSpace(paramOf(r, "lang")); lang != "" {
-		url += "&lang=" + lang
+	if lang := strings.TrimSpace(paramOf(r, fragmentLangParam)); lang != "" {
+		url += "&lang=" + neturl.QueryEscape(lang)
 	}
 	return url
 }

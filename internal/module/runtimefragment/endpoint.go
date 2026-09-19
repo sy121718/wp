@@ -113,7 +113,7 @@ func FragmentEndpoint(c *gin.Context) {
 	}
 	// 槽位解析按 (projectID, lang) 缓存：同请求内购物车/结算可能各问一次。
 	slotCache := map[slotCacheKey]map[string]string{}
-	lang := resolveRequestLang(c.Request.Context(), params["projectId"], params["lang"])
+	lang := resolveRequestLang(c.Request.Context(), params["projectId"], params[fragmentLangParam])
 	req := &Request{
 		Type:         typeName,
 		Context:      params["context"],
@@ -157,7 +157,21 @@ func FragmentEndpoint(c *gin.Context) {
 	// 渲染**成功之后**才写 cookie：失败响应配上一个已经更新的 cookie，
 	// 会让「页面显示什么」与「服务端记住了什么」各说各话。
 	writeFragmentCookies(c, req)
-	c.Header("Vary", "Accept-Language")
+	// 语言响应头只有一个正确来源：**URL 里的 ?lang**（缺失时回落工程默认语言）。
+	// 因此这里刻意**不写 Vary: Accept-Language**（I18N-011 / docs/06-D §11）：
+	//
+	//   · 语言不由 Accept-Language、也不由任何 cookie 决定（见 resolveRequestLang），
+	//     而 Vary 只该声明「会改变本次响应字节的请求头」。声明一个不参与选择的头
+	//     等于告诉 CDN「同一 URL 因它而有多个版本」—— 为同一份字节多建缓存桶、
+	//     白掉命中率；真正的变化维度（?lang）本来就属于 URL，天然在缓存键里。
+	//   · 写错 Vary 比不写更糟：它让缓存配置「看起来已经对了」，掩盖真正的漏项。
+	//
+	// Content-Language 把「本次响应用了哪种语言」显式化：片段 HTML 被 innerHTML
+	// 换进页面后继承的是**页面**的 lang 属性，当产物没带 ?lang 而工程默认语言与
+	// 页面语言不同时，只有响应头能看出这个不一致（也是排查语言问题的第一现场）。
+	if lang != "" {
+		c.Header("Content-Language", lang)
+	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(strings.TrimSpace(htmlFragment)))
 }
 

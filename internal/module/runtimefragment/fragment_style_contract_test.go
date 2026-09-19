@@ -41,6 +41,7 @@ var builtinFragmentCapabilities = []string{
 // 单独列出来是为了让「产品能力」与「测试脚手架」在清单上分得开。
 var nonProductFragmentCapabilities = map[string]string{
 	"sessionprobetestonly": "端到端测试在运行期注册的探测能力（endpoint_test.go 的认证策略用例），不参与产物注入，也不是产品能力",
+	"langprobetestonly":    "端到端测试在运行期注册的探测能力（fragment_lang_test.go 的片段语言取词用例），不参与产物注入，也不是产品能力",
 }
 
 // TestFragmentStyleTablesCoverRegistry 三张表互相闭合。

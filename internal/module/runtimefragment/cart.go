@@ -366,7 +366,7 @@ func cartSitePages(r *Request, projectID string) map[string]string {
 	}
 	lang := r.Lang
 	if lang == "" {
-		lang = strings.TrimSpace(paramOf(r, "lang"))
+		lang = strings.TrimSpace(paramOf(r, fragmentLangParam))
 	}
 	return r.SitePagesOf(projectID, lang)
 }

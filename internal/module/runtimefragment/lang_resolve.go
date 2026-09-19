@@ -10,6 +10,14 @@ import (
 	"go_wp/pkg/i18n"
 )
 
+// fragmentLangParam 语言参数名（GET 走 query、POST 走表单，同名）。
+//
+// **片段语言只能从它来**：端点不读 Accept-Language、不读任何语言 cookie
+// （后台那套「Cookie lang → query lang → Accept-Language」是管理面链路，
+// 见 pkg/response；访问面片段刻意不复用，理由见 docs/06-D §11 结论）。
+// 这条约束同时是缓存正确性的前提 —— 语言进 URL 就进了缓存键。
+const fragmentLangParam = "lang"
+
 // fragmentProject 工程契约（用于校验 lang 与回落默认语言）。
 //
 // 装配自检（审计 CQ-019）：判为 **optional-degraded** —— 未注入时语言一律回落
