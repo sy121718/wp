@@ -9,6 +9,10 @@ import (
 // entityRefInspectorOptions 把集合源可选筛选项转成检查器下拉（EDT-005）。
 func entityRefInspectorOptions(ctx context.Context, h *Handle, projectID, refKind, selected string) []inspectorOption {
 	out := []inspectorOption{{Value: "", Label: "（不限）", Selected: selected == ""}}
+	// 导航菜单项不是集合筛选项（不在商品数据源里），单独走导航模块的列表端口。
+	if refKind == "navigation" {
+		return navigationInspectorOptions(ctx, h, projectID, selected)
+	}
 	if h == nil || h.products == nil || projectID == "" {
 		return out
 	}

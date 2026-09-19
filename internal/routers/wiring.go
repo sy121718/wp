@@ -77,6 +77,7 @@ const (
 	portPipelinePageRebuilder          = "pipeline.Fanout.SetRebuilder(page)"
 	portPipelinePresentationRebuilder  = "pipeline.Fanout.SetRebuilder(presentation)"
 	portContentDependencyInvalidator   = "content.SetDependencyInvalidator"
+	portContentTemplateInvalidator     = "contenttemplate.SetInvalidator"
 	portNavigationSourceResolver       = "navigation.SetSourceResolver"
 	portNavigationMenuDispatcher       = "navigation.SetMenuStaleDispatcher"
 	portDashboardBlueprints            = "dashboard.SetBlueprints"
@@ -196,6 +197,8 @@ var wiringManifest = []wiringEntry{
 		"自动发布的详情页不在失效扇出里：内容更新只重建手工页，详情页继续给旧字节（审计 AR2-001）"},
 	{portContentDependencyInvalidator, "pipeline.Fanout", "content", wiringOptionalDegraded,
 		"内容变更不触发精确失效（行为与本端口接入前逐字一致）"},
+	{portContentTemplateInvalidator, "pipeline.Fanout", "contenttemplate", wiringOptionalDegraded,
+		"模板产生新版本 / 切换生效后不触发精确失效：引用它的页面与实例停留在旧字节"},
 	{portNavigationSourceResolver, "navsource", "navigation", wiringOptionalDegraded,
 		"来源菜单项退化为记录自身的 title/path（不解析目标实体）"},
 	{portNavigationMenuDispatcher, "pipeline.Fanout", "navigation", wiringRequiredPort,

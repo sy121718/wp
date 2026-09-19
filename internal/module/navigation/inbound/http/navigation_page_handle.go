@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
+	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -42,6 +43,8 @@ const (
 type navigationPageHandle struct {
 	navigations navigationcontract.NavigationService
 	projects    projectcontract.ProjectService
+	// blocks 面板所需的块能力（超级菜单，迁移 285）：未注入时面板入口降级为不可用。
+	blocks BlockPanelPort
 }
 
 // NewNavigationPageHandle 创建导航菜单管理页处理器。
@@ -64,9 +67,20 @@ type navMenuRow struct {
 	SourceType string
 	First      bool
 	Last       bool
+	// PanelBlockID / PanelBlockName / PanelWidth 悬浮面板（超级菜单，迁移 285）：
+	// 内容存块、展示存菜单项。
+	PanelBlockID   string
+	PanelBlockName string
+	PanelWidth     string
 }
 
 // navigationsPageData 导航菜单管理页数据。
+// panelBlockOption 面板块下拉选项（超菜单面板选择）。
+type panelBlockOption struct {
+	ID   string
+	Name string
+}
+
 type navigationsPageData struct {
 	Title           string
 	Menu            string
@@ -78,6 +92,10 @@ type navigationsPageData struct {
 	ParentOptions []navMenuRow
 	// SourceGroups 可加入菜单的来源候选（页面/文章/产品/分类，按来源分组）。
 	SourceGroups []navigationcontract.SourceGroup
+	// PanelBlocks 可挂作悬浮面板的全局块（超级菜单）；块能力未装配时为空。
+	PanelBlocks []panelBlockOption
+	// PanelAvail 面板能力是否可用（块契约已注入）。
+	PanelAvail bool
 	// Err / Done 是列表页回带的操作结论（?err= / ?done=）：批量删除按
 	// 「已删除 N 个 / 跳过 M 个」写进 Done（有跳过时写 Err，警告条更显眼）。
 	Err  string
@@ -95,6 +113,8 @@ func (d *navigationsPageData) templateMap() gin.H {
 		"Rows":            d.Rows,
 		"ParentOptions":   d.ParentOptions,
 		"SourceGroups":    d.SourceGroups,
+		"PanelBlocks":     d.PanelBlocks,
+		"PanelAvail":      d.PanelAvail,
 		"Err":             d.Err,
 		"Done":            d.Done,
 	}
@@ -136,6 +156,29 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 			logger.Scene("page").With("project", selected).Warn("导航来源候选加载失败，管理页仅显示自定义链接")
 		}
 	}
+	// 悬浮面板（超级菜单）：列出可挂的块并回填行上的块名。块能力未装配时整体降级
+	// （PanelAvail=false，模板隐藏面板区）——降级可见，不留一个点了没反应的下拉。
+	panelBlocks := make([]panelBlockOption, 0, 8)
+	blockNames := map[string]string{}
+	panelAvail := h.blocks != nil
+	if panelAvail && selected != "" {
+		list, berr := h.blocks.List(ctx, &blockcontract.ListReq{ProjectID: selected})
+		if berr != nil {
+			logger.Scene("page").With("project", selected).Error(berr, "列出面板块候选失败")
+			panelAvail = false
+		} else {
+			for _, b := range list {
+				panelBlocks = append(panelBlocks, panelBlockOption{ID: b.ID, Name: b.Name})
+				blockNames[b.ID] = b.Name
+			}
+		}
+	}
+	for i := range rows {
+		if rows[i].PanelBlockID != "" {
+			rows[i].PanelBlockName = blockNames[rows[i].PanelBlockID]
+		}
+	}
+
 	parents := make([]navMenuRow, 0, len(rows))
 	for _, r := range rows {
 		if r.Depth == 0 {
@@ -146,6 +189,7 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		Title: navigationsPageTitle, Menu: "navigations",
 		Projects: projects, SelectedProject: selected, Kind: kind,
 		Rows: rows, ParentOptions: parents, SourceGroups: groups,
+		PanelBlocks: panelBlocks, PanelAvail: panelAvail,
 		// 操作结论走 query 回带（PRG）：批量删除的结果条。
 		// 读侧一律经 navigation_err.go 的白名单出口（查询参数不是可信边界）。
 		Err:  navigationPageErr(c),
@@ -166,9 +210,18 @@ func flattenNavRows(nodes []*navigationdto.NavigationNode, depth int, out *[]nav
 			Indent:     fmt.Sprintf("%dpx", depth*24),
 			SourceType: n.SourceType,
 			First:      i == 0, Last: i == len(nodes)-1,
+			PanelBlockID: panelBlockIDOf(n), PanelWidth: n.PanelWidth,
 		})
 		flattenNavRows(n.Children, depth+1, out)
 	}
+}
+
+// panelBlockIDOf 读取菜单项的面板块 id（nil 安全）。
+func panelBlockIDOf(n *navigationdto.NavigationNode) string {
+	if n == nil || n.PanelBlockID == nil {
+		return ""
+	}
+	return strings.TrimSpace(*n.PanelBlockID)
 }
 
 // normalizeNavKind 位置参数规范化（非法值回落 header）。
@@ -452,12 +505,18 @@ func navSiblings(nodes []*navigationdto.NavigationNode, parentID *string) []*nav
 // adminPages 为 nil 时整体跳过。
 func SetupNavigationPages(adminPages *gin.RouterGroup,
 	navigations navigationcontract.NavigationService,
-	projects projectcontract.ProjectService, pageSvc pagecontract.PageService) {
+	projects projectcontract.ProjectService, pageSvc pagecontract.PageService,
+	blocks blockcontract.BlockService) {
 	if adminPages == nil {
 		return
 	}
 	h := NewNavigationPageHandle(navigations, projects)
+	// 面板块能力（超级菜单）：装配期注入；未注入时面板入口降级可见（PanelAvail=false）。
+	h.SetBlockPanelPort(blocks)
 	adminPages.GET("/navigations", h.NavigationsPage)
+	// 面板设置复用 navigation:update；新建面板块是**块的创建**，故挂 block:create。
+	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.PanelSet)
+	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.PanelCreate)
 	adminPages.POST("/navigations/create", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.NavigationCreate)
 	adminPages.POST("/navigations/add-source", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.NavigationAddSource)
 	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationUpdate)

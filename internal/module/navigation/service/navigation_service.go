@@ -467,7 +467,7 @@ func buildNode(n *navigationmodel.NavigationEntity, children map[string][]*navig
 	node := &navigationdto.NavigationNode{
 		ID: n.ID, Title: n.Title, Path: n.Path,
 		SourceType: n.SourceType, SourceID: n.SourceID, Target: n.Target,
-		SortOrder: n.SortOrder,
+		SortOrder:    n.SortOrder,
 		PanelBlockID: n.PanelBlockID, PanelWidth: n.PanelWidth,
 	}
 	for _, k := range children[n.ID] {

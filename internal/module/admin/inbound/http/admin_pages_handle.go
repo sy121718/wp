@@ -11,6 +11,7 @@ package adminhttp
 // 页面文案标题沿用原有 i18n 词条 key（与 dashboard 副本逐字一致，保证渲染不变）。
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -881,11 +883,44 @@ func (h *AdminPagesHandle) DatarulesBulkDelete(c *gin.Context) {
 // adminI18nEntryPageSize 每页条数。
 const adminI18nEntryPageSize = 50
 
-// adminI18nEntryHandle 词条页处理器（无依赖：读写都走 pkg/i18n 的端口）。
-type adminI18nEntryHandle struct{}
+// adminI18nEntryHandle 词条页处理器（读写走 pkg/i18n 的端口，失效走装配注入的页面标记）。
+type adminI18nEntryHandle struct {
+	// pages 词条变更后标记站点待重建（装配期注入）。
+	//
+	// 为什么必须接：sys_i18n 的词条在**构建期**取词并烘进 HTML 字节（组件固定文案），
+	// 改了词条而没人标 stale，站点就永远输出旧文案 —— 而且没有任何报错。
+	// 页面 / 商品 / 导航翻译工作台与站点设置这四条路径历来都调 page.MarkStaleForI18n，
+	// 词条页此前漏了这一环（词条是全局的：sys_i18n 没有工程维度，所以没有"精确到某页"
+	// 的选项，一律按 i18n:site 依赖做全站标记）。
+	pages adminI18nPageMarker
+}
+
+// adminI18nPageMarker 页面侧的最小失效端口（消费者侧定义，跨模块只依赖这一条）。
+type adminI18nPageMarker interface {
+	MarkStaleForI18n(ctx context.Context) error
+}
+
+// SetPageMarker 注入页面失效端口（装配期）。
+func (h *adminI18nEntryHandle) SetPageMarker(m adminI18nPageMarker) { h.pages = m }
 
 // NewAdminI18nEntryHandle 构造。
 func NewAdminI18nEntryHandle() *adminI18nEntryHandle { return &adminI18nEntryHandle{} }
+
+// markI18nStale 词条变更后标记站点待重建。
+//
+// 失败只记日志、**不改变响应**：词条此刻已经写进库了，回报"保存失败"会让运营以为没保存
+// 而反复重试；而站点停在旧文案是**可见**的降级（下次编辑 / 发布会自然覆盖）。
+// 未注入端口时直接返回 —— 装配漏接的表现是"改了词条站点不更新"，由 wiring 端口清单兜底。
+func (h *adminI18nEntryHandle) markI18nStale(c *gin.Context) {
+	if h == nil || h.pages == nil {
+		return
+	}
+	if err := h.pages.MarkStaleForI18n(c.Request.Context()); err != nil {
+		logger.Scene(adminErrScene).
+			With("user_id", shell.CurrentUserID(c)).
+			Error(err, "词条变更后标记站点待重建失败")
+	}
+}
 
 // adminI18nEntryFilterOf 读取筛选参数（GET，全部可选）。
 func adminI18nEntryFilterOf(c *gin.Context) i18n.EntryFilter {
@@ -1003,6 +1038,8 @@ func (h *adminI18nEntryHandle) I18nEntrySave(c *gin.Context) {
 		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", adminErrParam(c, err)))
 		return
 	}
+	// 词条烘在产物字节里，改完必须标记站点待重建（否则站点停在旧文案且无报错）。
+	h.markI18nStale(c)
 	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", adminI18nEntryIdentity(key, lang)))
 }
 
@@ -1023,6 +1060,8 @@ func (h *adminI18nEntryHandle) I18nEntryDelete(c *gin.Context) {
 		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", adminErrParam(c, err)))
 		return
 	}
+	// 删词条会让构建期回退到组件包内的中文兜底 —— 产物字节同样变了，必须标记待重建。
+	h.markI18nStale(c)
 	c.Redirect(http.StatusFound, adminI18nBackURL(c, "saved", adminI18nDeletedIdentity(key, lang)))
 }
 
@@ -1060,6 +1099,11 @@ func (h *adminI18nEntryHandle) I18nEntriesBulkDelete(c *gin.Context) {
 			continue
 		}
 		deleted++
+	}
+	// 单条删除的失效在这里按批只发一次：逐条调会把"全站标记"重复 N 遍，
+	// 而它标记的对象是同一批页面（结果等价，代价随批量线性放大）。
+	if deleted > 0 {
+		h.markI18nStale(c)
 	}
 	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
 	msg := adminI18nBulkDeleteResult(c, deleted, skipped)

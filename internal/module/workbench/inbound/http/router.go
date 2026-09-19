@@ -49,6 +49,8 @@ type Handle struct {
 	templatePreview TemplatePreviewPort
 	// instances 实例编辑模式端口（docs/04-C：?instance= 画布改覆盖文档）。
 	instances presentationcontract.PresentationService
+	// navigations 导航菜单项下拉数据源（检查器 entityref,navigation；docs/04-C 批 1）。
+	navigations NavigationPickerPort
 	// blueprints 蓝图候选端口（可空降级；当前编辑器本体未消费，装配位保留）。
 	blueprints blueprintcontract.BlueprintService
 	// products 商品构建期数据源（检查器 entityref 下拉，可空降级）。

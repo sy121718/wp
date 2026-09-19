@@ -88,9 +88,9 @@ type NavigationResp struct {
 
 // NavigationNode 导航项树节点（按 parent_id 组装，构建期编译与菜单管理页共用）。
 type NavigationNode struct {
-	ID         string            `json:"id"`
-	Title      string            `json:"title"`
-	Path       string            `json:"path"`
+	ID         string  `json:"id"`
+	Title      string  `json:"title"`
+	Path       string  `json:"path"`
 	SourceType string  `json:"sourceType"`
 	SourceID   *string `json:"sourceId"`
 	Target     string  `json:"target"`
@@ -98,5 +98,5 @@ type NavigationNode struct {
 	// PanelBlockID / PanelWidth 悬浮面板（超级菜单）：面板内容存块，展示形态存菜单项。
 	PanelBlockID *string           `json:"panelBlockId"`
 	PanelWidth   string            `json:"panelWidth"`
-	Children   []*NavigationNode `json:"children,omitempty"`
+	Children     []*NavigationNode `json:"children,omitempty"`
 }

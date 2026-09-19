@@ -9,6 +9,7 @@ package adminhttp
 import (
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
+	pagecontract "go_wp/internal/module/page/contract"
 
 	"github.com/gin-gonic/gin"
 )
@@ -23,7 +24,8 @@ import (
 func SetupAdminPages(adminPages *gin.RouterGroup,
 	admins admincontract.AdminService, roles admincontract.RoleService,
 	perms admincontract.PermService, menus admincontract.MenuService,
-	depts admincontract.DeptService, rules admincontract.RuleService) {
+	depts admincontract.DeptService, rules admincontract.RuleService,
+	pages pagecontract.PageService) {
 	if adminPages == nil {
 		return
 	}
@@ -73,6 +75,9 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 文案词条页（审计 I18N-003）：读页面不挂 Casbin（与其它只读页一致），
 	// 写操作挂 i18n:manage（/api/i18n/save）——漏挂等于任何登录管理员都能改全站文案。
 	i18nPages := NewAdminI18nEntryHandle()
+	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
+	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
+	i18nPages.SetPageMarker(pages)
 	adminPages.GET("/i18n", i18nPages.I18nEntriesPage)
 	adminPages.POST("/i18n/save", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntrySave)
 	adminPages.POST("/i18n/delete", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryDelete)

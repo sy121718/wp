@@ -11,6 +11,8 @@ package navigationhttp
 // 设计面板），保存后回列表在面板下拉里选它。两步各自都是单写，不需要跨模块事务。
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -20,12 +22,17 @@ import (
 	navigationdto "go_wp/internal/module/navigation/dto"
 
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 )
+
+// errPanelUnavailable 块能力未装配（装配缺陷；对外只出通用文案）。
+var errPanelUnavailable = errors.New("面板块能力未装配")
 
 // BlockPanelPort 面板所需的块能力（消费者侧最窄接口：只列与建）。
 type BlockPanelPort interface {
-	List(ctx ctxType, req *blockcontract.ListReq) ([]blockcontract.BlockResp, error)
-	Create(ctx ctxType, req *blockcontract.CreateReq) (*blockcontract.BlockResp, error)
+	List(ctx context.Context, req *blockcontract.ListReq) ([]blockcontract.BlockResp, error)
+	Create(ctx context.Context, req *blockcontract.CreateReq) (*blockcontract.BlockResp, error)
 }
 
 // SetBlockPanelPort 注入块能力（装配期调用；未注入时面板入口整体降级为不可用）。

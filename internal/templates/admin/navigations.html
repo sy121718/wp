@@ -49,8 +49,10 @@
                 {{end}}
                 <label class="sr-only" for="nav-kind">{{ .["t"]("admin.navigations.col.position", "导航位置") }}</label>
                 <select class="form-select" id="nav-kind" name="kind" onchange="this.form.submit()">
-                    <option value="header" {{if kind == "header"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.header", "页眉导航") }}</option>
-                    <option value="footer" {{if kind == "footer"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.footer", "页脚导航") }}</option>
+                    <option value="header" {{if kind == "header"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.header", "页眉导航（桌面）") }}</option>
+                    <option value="header_mobile" {{if kind == "header_mobile"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.headerMobile", "页眉导航（移动端）") }}</option>
+                    <option value="footer" {{if kind == "footer"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.footer", "页脚导航（桌面）") }}</option>
+                    <option value="footer_mobile" {{if kind == "footer_mobile"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.footerMobile", "页脚导航（移动端）") }}</option>
                 </select>
             </form>
         </div>
@@ -210,6 +212,40 @@
                 <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
             </div>
         </form>
+        {{if isset(.PanelAvail)}}{{if .PanelAvail}}
+        {* 可选键一律链索引 + isset：直接写 .PanelBlocks 在缺键的渲染路径（单测/其它页面数据）会报
+           "no field or method in map"，状态码仍 200、之后整块 HTML 消失。 *}
+        {{panelBlocks := .["PanelBlocks"]}}
+        {* 悬浮面板（超级菜单，迁移 285）：内容存全局块，展示存菜单项 ——
+           与上面的「编辑菜单项」是两次独立写，故各自一个表单（都不做跨模块双写）。 *}
+        <form method="post" action="/admin/navigations/panel" class="form-stack mt-lg">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <label class="form-label" for="nav-panel-{{r.ID}}">{{tr("admin.navigations.panel.label", "悬浮面板（超级菜单）")}}</label>
+            <select class="form-select" id="nav-panel-{{r.ID}}" name="panelBlockId">
+                <option value="">{{tr("admin.navigations.panel.none", "（无面板）")}}</option>
+                {{range _, b := panelBlocks}}
+                <option value="{{b.ID}}" {{if b.ID == r.PanelBlockID}}selected{{end}}>{{b.Name}}</option>
+                {{end}}
+            </select>
+            <select class="form-select" name="panelWidth" aria-label="{{tr("admin.navigations.panel.width", "面板宽度")}}">
+                <option value="auto" {{if r.PanelWidth != "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthAuto", "宽度：跟随内容")}}</option>
+                <option value="full" {{if r.PanelWidth == "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthFull", "宽度：通栏")}}</option>
+            </select>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button>
+            </div>
+        </form>
+        <form method="post" action="/admin/navigations/panel/create">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            <input type="hidden" name="title" value="{{r.Title}}">
+            <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.create", "新建面板块并编辑")}}</button>
+        </form>
+        {{end}}{{end}}
     </template>
     {{end}}
     {{end}}

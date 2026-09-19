@@ -18,6 +18,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
+	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
@@ -443,6 +444,18 @@ func (a *assembly) startRuntimeTasks() {
 	marks.mark(portPipelinePresentationRebuilder)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
+	// 内容模板 → 依赖失效接线（触发链）：模板产生新版本 / 切换生效后，按 content_template:{id}
+	// 反查引用它的页面与自动发布实例并标记 stale。
+	//
+	// 不接线 = 前面登记的依赖行永远不会被反查：改了页眉模板，站点仍是旧字节且没有任何报错
+	//（本批的核心价值点，接线漏掉在测试里也不会报错）。
+	// 契约接口不暴露 setter，故用类型断言取（同文件其它可选端口的写法）。
+	if setter, ok := a.contentTemplateSvc.(interface {
+		SetInvalidator(contenttemplateservice.DependencyInvalidator)
+	}); ok {
+		setter.SetInvalidator(fanout)
+		marks.mark(portContentTemplateInvalidator)
+	}
 	// 导航变更 → 依赖失效（审计遗留缺口：DepKindMenu 有常量、无发射点）：
 	// navigation 侧只表达「哪个工程哪个位置变了」，键构造（pipeline.MenuKey）与扇出
 	// 都在发布内核，这里用适配器把两端接起来。键带工程 ID —— 导航是工程级资源，
@@ -487,7 +500,9 @@ func (a *assembly) mountAdminPages() {
 	//     独立入口，契约齐备后在这里调用。
 	// 中间件链（Session + CSRF + 权限上下文）由两个页面组承担：adminPages（/admin 前缀）
 	// 与 workbenchPages（根级前缀，编辑器与仪表盘首页），均由 assembly.go 创建。
-	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD)
+	// pageService 一并传入：文案词条页改完词条要标记站点待重建（词条在构建期烘进产物字节，
+	// 漏接 = 改了文案站点不更新且无报错，与页面 / 商品 / 导航翻译、站点设置同一动作）。
+	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService)
 	adminhttp.SetupAdminShellPages(a.router)
 
 	// pageService 作为可选第 4 参传入：块的「待重建影响面」要经 page 的只读反查（引用数 +
@@ -496,7 +511,7 @@ func (a *assembly) mountAdminPages() {
 	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService, a.pageService)
 	mediahttp.SetupMediaPages(a.adminPages)
 	pluginhttp.SetupPluginPages(a.adminPages, a.pluginSvc)
-	navigationhttp.SetupNavigationPages(a.adminPages, a.navigationSvc, a.projectService, a.pageService)
+	navigationhttp.SetupNavigationPages(a.adminPages, a.navigationSvc, a.projectService, a.pageService, a.blockSvc)
 
 	contenthttp.SetupContentPages(a.adminPages, a.contentSvc, a.projectService,
 		a.contentTemplateSvc, a.pageService, a.presentationSvc)
@@ -514,6 +529,8 @@ func (a *assembly) mountAdminPages() {
 		a.blueprintSvc, a.productSvc, nil)
 	// 实例编辑模式（docs/04-C）：?instance= 画布改覆盖文档，保存走 SaveOverrideDocument。
 	workbenchHandle.SetInstanceOverrideDeps(a.presentationSvc)
+	// 检查器的「具体菜单项」下拉（nav 组件 Props.Navigation，ct=entityref,navigation）。
+	workbenchHandle.SetNavigationPicker(a.navigationSvc)
 	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
 	marks.mark(portDashboardBlueprints)
 }
