@@ -15,7 +15,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
-	workbenchenums "go_wp/internal/module/workbench/enums"
 
 	"go_wp/pkg/logger"
 
@@ -323,7 +322,7 @@ func templatePreviewQuery(templateID, entityType, entityID, projectID string) st
 }
 
 // templateByID 按模板 id 取预览目标：优先用画布自己带过来的工程作用域
-//（content_templates 带 FORCE 策略，作用域缺省时只能靠「工程唯一」解析）。
+// （content_templates 带 FORCE 策略，作用域缺省时只能靠「工程唯一」解析）。
 func (h *Handle) templateByID(c *gin.Context, templateID, projectID string) (*contenttemplatedto.TemplateResp, error) {
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		return h.contenttemplates.GetScoped(c.Request.Context(), pid, templateID)
@@ -348,7 +347,7 @@ func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID str
 // TemplatePreview 基于已保存模板 + 样例实体编译预览（画布 iframe GET）。
 //
 // 结构模板（页眉 / 页脚）没有样例实体：entityId 缺省/为空时按无实体模式渲染
-//（判据是**模板自己的 entity_type**，见 workbenchTemplate 的同名说明）。
+// （判据是**模板自己的 entity_type**，见 workbenchTemplate 的同名说明）。
 func (h *Handle) TemplatePreview(c *gin.Context) {
 	templateID := strings.TrimSpace(c.Query("template"))
 	if templateID == "" {
@@ -438,7 +437,7 @@ func (h *Handle) renderStructureTemplatePreview(c *gin.Context, document json.Ra
 		c.String(http.StatusBadRequest, "模板文档为空")
 		return
 	}
-	h.renderPreview(c, document, projectID, "", withEditorBridge)
+	h.renderPreview(c, document, projectID, "", withEditorBridge, previewDocStructureTemplate)
 }
 
 func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, entityID, projectID string,
@@ -448,12 +447,18 @@ func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, e
 		ProjectID: projectID, DraftDocument: draftDocument,
 	})
 	if err != nil {
-		// 422 保留（编译失败对作者是业务信息），但错误原文只进日志：
+		// 422 保留（编译失败对作者是业务信息），错误原文只进日志：
 		// 编译器的错误里带节点路径与模板片段，直接铺在页面上等于把内部结构公开。
-		if err != nil {
-			logger.Scene("content_template").With("path", c.Request.URL.Path).Error(err, "模板编译失败")
+		logger.Scene("content_template").With("path", c.Request.URL.Path).Error(err, "模板编译失败")
+		// 可归因的几类（模板类型串用 / 字段绑定越界 / 工程作用域没定下来）给能照着做的文案，
+		// 其余归口：分类判据见 workbench_err.go 的 templatePreviewFacingKey。
+		if key, ok := templatePreviewFacingKey(err.Error()); ok {
+			if text := workbenchFacingText(c, key); text != "" {
+				c.String(http.StatusUnprocessableEntity, text)
+				return
+			}
 		}
-		c.String(http.StatusUnprocessableEntity, workbenchenums.MsgCompileFailed)
+		c.String(http.StatusUnprocessableEntity, workbenchCompileFallbackText(c))
 		return
 	}
 	html := res.HTML

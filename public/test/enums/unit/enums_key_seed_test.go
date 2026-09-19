@@ -34,11 +34,19 @@ var enumsFiles = map[string]string{
 	"order": "internal/module/order/enums/order_enums.go",
 	"user":  "internal/module/user/enums/user_enums.go",
 	"mail":  "internal/module/mail/enums/mail_enums.go",
+	// workbench 是 2026-09 补进来的：它的 8 个 workbench.err.*（迁移 292，预览 / 编译 422
+	// 的可归因文案）此前不在任何清单里 —— 门禁一直是绿的，但绿的只是「没检查」。
+	// 补进来的同时按老规矩核过：既有 key 全部有词条，无需回填 seed。
+	"workbench": "internal/module/workbench/enums/workbench_enums.go",
 }
 
 func TestEnumsKeysHaveSeedEntries(t *testing.T) {
 	root := moduleTestRoot(t)
-	enumsRe := regexp.MustCompile(`(?m)^\s*\w+\s*=\s*"([a-z][a-z0-9]*\.(?:msg|err|test)\.[A-Za-z0-9_.]+)"`)
+	// 两种声明形态都要认：
+	//   · const 块内的裸标识符行（绝大多数模块的写法）；
+	//   · 逐行 `const X = "..."`（workbench/enums 的写法）。
+	// 旧判据只认第一种 —— workbench 因此一直「无 key 可查」，门禁是绿的，但绿的是「没检查」。
+	enumsRe := regexp.MustCompile(`(?m)^\s*(?:const\s+)?\w+\s*=\s*"([a-z][a-z0-9]*\.(?:msg|err|test)\.[A-Za-z0-9_.]+)"`)
 	seedRe := regexp.MustCompile(`(?m)^\s*\(\s*'([^']+)'`)
 
 	// 全库 seed 的 key 集合：一次扫完 public/migrations 下全部 .sql。

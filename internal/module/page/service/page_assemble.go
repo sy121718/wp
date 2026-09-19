@@ -15,6 +15,7 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
+	pagecontract "go_wp/internal/module/page/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -24,6 +25,28 @@ import (
 // 调用方经 errors.Is 区分「编译失败」与「组件模板加载/文档渲染失败」——
 // 预览需要据此分类 422（编译失败）与 500（其余内部错误），构建路径仅关心 err != nil。
 var errCompileFailed = errors.New("页面编译失败")
+
+// previewValidationProblem 复算容错校验，判断这次编译失败是不是「作者可操作的组件配置问题」。
+//
+// 为什么在失败之后复算，而不是让 builder.Compile 直接返回带标记的错误：builder 是共享构建
+// 内核，它的错误形状被构建期与其它模块一起依赖，改它要动别人的调用面；这里只需要在**失败
+// 路径**上补一个类型标记，代价是失败时多一次纯内存校验（ValidatePageTolerant 不查库、不渲染）。
+//
+// 判据为什么可信：Compile 的第一件事就是同一个 ValidatePageTolerant（builder.go 的
+// Compile 开头），校验不过它会**原样返回**该错误 —— 所以「复算报错」与「编译因此失败」
+// 是同一件事，且两边文本逐字相同（不会出现「标记的原因不是真正的原因」）。
+//
+// 副作用：文档里存在「配置不完整」节点时，ValidatePageTolerant 会再记一条 Warn
+// （Compile 里那次已经记过）。它只在编译已经失败时发生，可接受。
+func previewValidationProblem(page *builder.Page) error {
+	if page == nil {
+		return nil
+	}
+	if _, err := builder.ValidatePageTolerant(page); err != nil {
+		return err
+	}
+	return nil
+}
 
 // assembleCompile 装配感知编译：页眉块 + 页面主体 + 页脚块。
 // 内容引用面只存 URL 快照，构建期零解析（不查媒体库）。
@@ -174,6 +197,19 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	}
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
+		// 组件校验问题（配置不完整 / 非法，如「手风琴至少需要一个折叠项」）是**作者可操作**
+		// 的提示：带上 PreviewProblem 标记交给消费侧（工作台画布）判别并透出，
+		// 否则作者只能看到一句泛化的「预览编译失败」。
+		//
+		// 包装方式保留「页面编译失败: 」前缀（%w 的文本与原来的 %w: %v 逐字相同），
+		// 构建日志不漂移；errCompileFailed 在链上出现两次（外层 + PreviewProblem.cause），
+		// 是为了让 errors.Is(err, errCompileFailed) 与 errors.Is(err, problem.cause) 同时成立。
+		//
+		// 其余错误（装配缺失 / 渲染期失败）保持原样、**不带**标记：原文只进日志。
+		if verr := previewValidationProblem(page); verr != nil {
+			return nil, fmt.Errorf("%w: %w", errCompileFailed,
+				pagecontract.NewPreviewProblem(verr.Error(), errCompileFailed))
+		}
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
 	}
 	// L3 构建期缺失告警（决策 F14 第三层）：统计本页未命中译文数并记日志，

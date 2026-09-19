@@ -39,7 +39,11 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID,
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "预览编译失败")
-			return nil, fmt.Errorf("%w: %v", pagecontract.ErrPreviewCompileFailed, err)
+			// 用 %w 而不是 %v 保留错误链：把内层类型转成字符串会丢掉
+			// pagecontract.PreviewProblem（作者可操作的组件校验提示），
+			// 消费侧（workbench）就只能靠嗅探文本或压成一句泛化文案。
+			// 文本形态与原来的 "%w: %v" 逐字相同（两个 %w 也按同样格式拼接）。
+			return nil, fmt.Errorf("%w: %w", pagecontract.ErrPreviewCompileFailed, err)
 		}
 		logger.Scene("build").Error(err, "预览文档渲染失败")
 		return nil, err

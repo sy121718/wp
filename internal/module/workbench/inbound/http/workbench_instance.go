@@ -41,7 +41,9 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	// 由调用方（商品编辑页）先经 CreateInstance/Rebuild 产生快照再进来。
 	document := inst.Document
 	if len(document) == 0 {
-		c.String(http.StatusUnprocessableEntity, "实例缺少可编辑文档（未发布且无覆盖）")
+		// 422 保留（这是「这个实例还不能编辑」的业务状态，不是服务端故障），
+		// 文案走 key：硬编码中文在英文站点上不会翻译，且说不清下一步怎么做。
+		c.String(http.StatusUnprocessableEntity, workbenchFacingText(c, workbenchenums.ErrInstanceNoDocument))
 		return
 	}
 	documentJSON, _ := json.Marshal(document)
@@ -114,9 +116,17 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 			})
 			return
 		}
-		// 其余失败一律归口文案：编译/校验原文带节点路径与模板片段，只进日志。
+		// 其余失败：编译/校验原文带节点路径与模板片段，只进日志。
+		// 能归因的（编译失败 / 工程作用域没定下来）给一条说清「没写入」与「怎么修」的文案，
+		// 归不了因的给归口文案 —— 判据见 workbench_err.go 的 instanceSaveFacingKey。
 		logger.Scene("workbench").With("path", c.Request.URL.Path).Error(err, "实例文档保存失败")
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": 422, "message": workbenchenums.MsgCompileFailed})
+		message := workbenchCompileFallbackText(c)
+		if key, ok := instanceSaveFacingKey(err.Error()); ok {
+			if text := workbenchFacingText(c, key); text != "" {
+				message = text
+			}
+		}
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"code": 422, "message": message})
 		return
 	}
 	mode := presentationdto.RenderModeTemplate

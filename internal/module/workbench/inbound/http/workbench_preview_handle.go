@@ -3,7 +3,6 @@ package workbenchhttp
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,7 +30,7 @@ func (h *Handle) Preview(c *gin.Context) {
 		c.String(http.StatusNotFound, "页面不存在")
 		return
 	}
-	h.renderPreview(c, page.DraftDocument, page.ProjectID, page.DraftPath, c.Query("editor") == "1")
+	h.renderPreview(c, page.DraftDocument, page.ProjectID, page.DraftPath, c.Query("editor") == "1", previewDocPage)
 }
 
 // BlockPreview 全局块画布预览（工作台块编辑模式 iframe 内嵌）。
@@ -46,7 +45,7 @@ func (h *Handle) BlockPreview(c *gin.Context) {
 		c.String(http.StatusNotFound, "全局块不存在")
 		return
 	}
-	h.renderPreview(c, block.Document, block.ProjectID, "", c.Query("editor") == "1")
+	h.renderPreview(c, block.Document, block.ProjectID, "", c.Query("editor") == "1", previewDocBlock)
 }
 
 // PreviewDraft 基于未保存 AST 返回临时预览，不持久化、不写 Artifact、不影响发布指针。
@@ -67,7 +66,7 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 		c.String(http.StatusConflict, "草稿版本已更新，请刷新后重试")
 		return
 	}
-	h.renderPreview(c, document, page.ProjectID, page.DraftPath, true)
+	h.renderPreview(c, document, page.ProjectID, page.DraftPath, true, previewDocPage)
 }
 
 // renderPreview 只完成 AST 校验与编译，响应生命周期结束即丢弃结果。
@@ -76,7 +75,17 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 // editorBridge（画布联动 JS）为后处理拼接，与编译无关，仅预览启用。
 // projectID 为文档所属站点工程（页面/块的记录字段），驱动导航等站点级资源解析；
 // currentPath 为页面访问路径（导航当前项高亮，块预览传空）。
-func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, projectID, currentPath string, withEditorBridge bool) {
+// kind 标识预览文档的来源（页面 / 全局块 / 结构模板）：422 的可归因文案按它分流，
+// 因为同一句「编译失败」在三种画布上的下一步动作并不相同（见 workbench_err.go）。
+//
+// 编译失败一律走 writePreviewCompileRejected：状态码仍是 422（对作者是业务信息，
+// 不是服务端故障），但**错误原文不再进响应** —— 它带节点路径与模板片段，
+// 只进结构化日志；对外是三条可归因文案 + 一条归口文案。
+// 代价要写在这里：原先透出的「轮播至少需要一个 slide」这类逐组件提示不再出现在
+// 画布上（原文仍在日志里），换成了分类文案里说清的「怎么办」。这是按「原文只进
+// 日志」的纪律收的，若将来要恢复逐组件提示，正确做法是让验证器返回**结构化**的
+// 问题列表（组件 + 槽位 + 处置），而不是把 err.Error() 拼回响应。
+func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, projectID, currentPath string, withEditorBridge bool, kind previewDocKind) {
 	// 预览语言：?lang= 显式指定（工作台多语言预览切换），空 = 站点默认语言。
 	html, err := h.pages.CompilePreview(c.Request.Context(), document, projectID, currentPath, c.Query("lang"))
 	if err != nil {
@@ -84,15 +93,7 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 		case errors.Is(err, pagecontract.ErrPreviewInvalidDocument):
 			c.String(http.StatusBadRequest, "草稿文档解析失败")
 		case errors.Is(err, pagecontract.ErrPreviewCompileFailed):
-			// 编译校验错误是「用户可操作的配置提示」（如「轮播至少需要一个 slide」），
-			// 透出具体原因并带节点定位，便于在工作台直接定位坏组件；
-			// 仅剥掉内部包装前缀，系统级错误仍走统一提示（不泄露内部细节）。
-			reason := err.Error()
-			// 依次剥掉包装前缀（ErrPreviewCompileFailed 与 pipeline 的「页面编译失败」），
-			// 只留用户可读的节点定位信息。
-			reason = strings.TrimPrefix(reason, fmt.Sprint(pagecontract.ErrPreviewCompileFailed)+": ")
-			reason = strings.TrimPrefix(reason, "页面编译失败: ")
-			c.String(http.StatusUnprocessableEntity, workbenchenums.MsgCompileFailed+"："+reason)
+			writePreviewCompileRejected(c, document, kind, err)
 		default:
 			c.String(http.StatusInternalServerError, workbenchenums.MsgInternalError)
 		}
