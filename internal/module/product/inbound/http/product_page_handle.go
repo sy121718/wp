@@ -165,6 +165,9 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		// 可选键：未接库存契约 / 该工程的仓库里还没有货时是空数组，模板据 isset + len
 		// 整块跳过（直接渲染模板的单测不带这个键，缺键会让整页在此中断）。
 		"WarehouseSKUOptions": warehouseSKUGroups,
+		// 建表单片段（partials/product_create_form.html）在列表页是抽屉形态：
+		// 渲染「取消」按钮关闭抽屉；新建整页不设该键。
+		"InDrawer": true,
 		"Rules":               pricingRules,
 		"Roundings":           pricingRoundings,
 		"Form":                defaultPricingForm(pricingRules, pricingRoundings),

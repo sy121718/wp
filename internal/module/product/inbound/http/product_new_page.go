@@ -28,6 +28,23 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
+	// 建表单片段需要的数据（与列表页同一 helper 同款口径）：属性组勾选列表 +
+	// 「从仓库选」候选。两处取数分叉会让某条入口静默少字段 —— 本会话实测过。
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	if werr != nil {
+		shell.PageError(c, "products_new", werr)
+		return
+	}
+	attributeOptions, aerr := h.attributeOptions(ctx, selected)
+	if aerr != nil {
+		shell.PageError(c, "products_new", aerr)
+		return
+	}
+	warehouseSKUGroups, wserr := h.warehouseSKUOptions(ctx, selected, warehouseOptions)
+	if wserr != nil {
+		shell.PageError(c, "products_new", wserr)
+		return
+	}
 	// 模板清单与默认模板：卡片展示用；未装配模板能力时右侧给降级提示。
 	var tplRows []*contenttemplatedto.TemplateResp
 	defaultID := ""
@@ -44,6 +61,8 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/products_new.html", shell.Prepare(c, gin.H{
 		"title": "新建商品", "menu": "products",
 		"Projects": projects, "SelectedProject": selected,
+		"WarehouseOptions": warehouseOptions, "AttributeOptions": attributeOptions,
+		"WarehouseSKUOptions": warehouseSKUGroups,
 		"Templates": tplRows, "DefaultTemplateID": defaultID, "TemplatesAvail": tplAvail,
 		"Err": productPageErr(c),
 	}))
