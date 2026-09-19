@@ -353,6 +353,20 @@ func registerCoreSchemaAndAccess() {
 		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'render_mode'",
 		SQL:       mustSQL("282_presentation_render_mode.sql"),
 	})
+	// 285：移动端菜单位置 + 菜单项悬浮面板（超级菜单）。
+	//
+	// 两件事同批：kind 放宽为 header/header_mobile/footer/footer_mobile（桌面与移动端菜单
+	// 数据各自独立，WP 式两个位置各绑一条）；navigations 加 panel_block_id（引用 blocks）
+	// 与 panel_width（auto/full）。
+	//
+	// navigations 已由 046 创建，默认的表存在检查会误跳过，故仿 047/049 按列是否存在判断
+	//（限定 current_schema()：并发或残留 schema 的同名表会让判定串味）。
+	register(Migration{
+		Version:   "285-navigation-mobile-panel",
+		TableName: "navigations",
+		CheckSQL:  "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'panel_block_id'",
+		SQL:       mustSQL("285_navigation_mobile_panel.sql"),
+	})
 
 	// 269：navigation 内部错误归口文案（审计 CQ-009）。
 	// enums 的值就是 i18n key（navigationenums.ErrInternal）—— 不 seed，响应层 translate
@@ -363,6 +377,23 @@ func registerCoreSchemaAndAccess() {
 		TableName:    "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'navigation.err.internal'",
 		SQL:          mustSQL("269_navigation_err_internal_i18n.sql"),
+	})
+
+	// 286：商品页双轨（迁移 282）的 4 条业务错误文案（中英各一行）。
+	//
+	// 这四条是双轨写动作的**可行动差异**（会放弃模板同步需确认 / 回滚目标不在位 /
+	// 回滚失败线上未变 / 这个版本不属于该商品）。presentation/enums 的常量值就是 i18n key，
+	// 商品侧 productErrText 按 tr(key, fallback) 取词 —— 不 seed 时页面上会原样显示裸 key。
+	// 值带模块前缀是刻意的：page/enums 已有同名 ErrRollbackTargetMiss 哨兵，
+	// 而 sys_i18n 主键是 (item_key, lang)，裸 key 会让两条不同来源的错误互相顶掉词条。
+	//
+	// 判据按本批自己的 key 计数（4 个 distinct item_key），不用总量 —— 用总量会被同期
+	// 其它批次的行满足而静默跳过（060 / 221 / 268 / 269 都记过这个坑）。
+	registerSeed(Seed{
+		Version:      "286-presentation-mode-errors-i18n",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(DISTINCT item_key) >= 4 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key IN ('presentation.err.detachConfirmRequired','presentation.err.rollbackTargetMiss','presentation.err.rollbackFailed','presentation.err.snapshotMismatch')",
+		SQL:          mustSQL("286_presentation_mode_errors_i18n.sql"),
 	})
 
 	// 277：批量 id 超限的受控提示词条（shell.err.bulkIdsTooMany，中英各一行）。
