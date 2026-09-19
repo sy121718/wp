@@ -38,9 +38,10 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
 	// req.TemplateID 非空 = 切换绑定并重新发布（验收 4：切换模板重新发布后产物随之变化）。
-	// 换底稿 = 放弃自定义（docs/04-C）：切换路径不应用实例覆盖文档，产物按新模板编译，
-	// 覆盖列在 persistBuild 的事务里一并清除；非切换路径则优先用实例自己的文档
-	//（binding 照常解析，实体数据更新不丢自定义）。
+	// 换底稿 = 放弃自定义（docs/04-C）：切换路径不应用实例文档，产物按新模板编译，
+	// 模式与文档列在同一次发布的事务里一并清除（presentation_i18n.go 的
+	// ClearInstanceModeTx，与快照/产物/指针对齐）；非切换路径则按渲染模式取底稿
+	//（document 用商品自己的文档；binding 照常解析，实体数据更新不丢自定义）。
 	switching := strings.TrimSpace(req.TemplateID) != ""
 	tpl, err := s.resolveBoundTemplate(ctx, inst, req.TemplateID)
 	if err != nil {
@@ -85,79 +86,6 @@ type builtArtifact struct {
 	Hash     string
 	Loc      pipeline.Locator
 	Manifest pipeline.Manifest
-}
-
-// persistBuild 把一次构建结果落库：快照行 → 产物行 → 实例指针 → 依赖记录。
-//
-// 顺序不可颠倒：presentation_artifacts 以复合外键引用 (snapshot_id, instance_id)，
-// 快照必须先存在；实例的 active/staged 指针又引用产物行。
-//
-// urlPath 非空且与实例当前路径不同 = 本次是改 URL：url_path 与产物行/指针
-// 同事务改写（理由见 model.UpdateInstanceURLTx）。返回值是本次生效的产物行
-// ID，调用方用它登记 page_routes（路由的 artifact_id 是 uuid 列，必须写产物
-// 行主键而非内容 hash）。
-func (s *Service) persistBuild(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	tpl *contenttemplatecontract.ResolvedTemplate, built builtArtifact, now time.Time,
-	urlPath string) (artifactID string, err error) {
-	snapID := uuid.NewString()
-	snap := &presentationmodel.SnapshotEntity{
-		ID: snapID, PresentationInstanceID: inst.ID,
-		SourceTemplateVersionID: tpl.VersionID, SourceEntityRevisionID: inst.EntityID,
-		Document: tpl.Document, CreatedAt: now,
-	}
-	// 四步跨四张表，必须同一事务：任一中间失败都会留下自相矛盾的实例状态
-	//（产物行已写而 active 指针仍指旧产物、依赖记录指向不存在的产物等）。
-	err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if cerr := s.m.CreateSnapshotTx(tx, snap); cerr != nil {
-			return cerr
-		}
-		// 模板切换（issue #14）与快照/产物/指针同事务：产物来自哪套模板，
-		// 实例就必须记着哪套，否则下次重建会退回旧模板。
-		if inst.TemplateID != tpl.TemplateID {
-			if uerr := s.m.UpdateInstanceTemplateTx(tx, inst.ProjectID, inst.ID, tpl.TemplateID, now); uerr != nil {
-				return uerr
-			}
-			inst.TemplateID = tpl.TemplateID
-			// 换底稿 = 放弃自定义（docs/04-C）：产物已按新模板编译，覆盖列若不清除，
-			// 下次重建又会拿旧自定义文档覆盖新模板 —— 与本次「切换」的语义自相矛盾。
-			if len(inst.OverrideDocument) > 0 {
-				if cerr := s.m.ClearInstanceOverrideTx(tx, inst.ProjectID, inst.ID, "", now); cerr != nil {
-					return cerr
-				}
-				inst.OverrideDocument = nil
-			}
-		}
-		// 改 URL 与快照/产物/指针同事务：产物烘的是新路径的 canonical，实例
-		// 必须同步指向新路径，否则下次重建会拿旧路径重编，线上内容与路由脱节。
-		if urlPath != "" && inst.URLPath != urlPath {
-			if uerr := s.m.UpdateInstanceURLTx(tx, inst.ProjectID, inst.ID, urlPath, now); uerr != nil {
-				return uerr
-			}
-			inst.URLPath = urlPath
-		}
-		version, verr := s.m.NextArtifactVersionTx(tx, inst.ID)
-		if verr != nil {
-			return verr
-		}
-		defaultLang := pipeline.DefaultLocale(ctx, s.project, inst.ProjectID)
-		aid, aerr := s.recordArtifactTx(ctx, tx, inst, snapID, built, defaultLang, version, now)
-		if aerr != nil {
-			return aerr
-		}
-		artifactID = aid
-		inst.CurrentSnapshotID = &snapID
-		inst.StagedSnapshotID = &snapID
-		inst.StagedArtifactID = &aid
-		inst.ActiveArtifactID = &aid
-		inst.Stale = false
-		inst.PublishedAt = &now
-		inst.UpdatedAt = now
-		if uerr := s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst); uerr != nil {
-			return uerr
-		}
-		return s.persistDependenciesTx(tx, inst.ID, aid, built.Manifest.Dependencies, now)
-	})
-	return artifactID, err
 }
 
 // recordArtifactTx 事务内写产物行（同 hash 幂等复用，避免重建时产物行膨胀）。

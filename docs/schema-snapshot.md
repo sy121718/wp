@@ -44,6 +44,17 @@
 
 系统页面槽位十个键：`page/enums`、迁移 `138` CHECK、`builder/core` 各一份（builder 不 import page 模块）。新增槽位须改多处；DB-011 类测试应对齐。
 
+### 2.5 商品页双轨两列（迁移 281 / 282）
+
+`presentation_instances` 上有两个容易漏看的列，语义由迁移头部注释承担：
+
+| 列 | 迁移 | 语义 |
+|---|---|---|
+| `override_document` | 281 | jsonb，**NULL = 跟随模板**；非空 = 该实例自己的文档。发布/重建按它取底稿，binding 仍照常解析实体数据（补数据不丢自定义） |
+| `render_mode` | 282 | text，DDL CHECK 闭集 `template` / `document`，默认 `template`。**它是模式的唯一判定依据** —— 不要用 `override_document` 空/非空推断（「改了又改回去」「重新套用预设」两种状态会漂移）；模板换代的 stale 传播只标 `template` 模式的实例 |
+
+两列的写路径都收在同一次发布的事务里（模式/文档 + 快照 + 产物行 + 指针），换模板 = 放弃自定义（同事务清 `render_mode` 与文档）。
+
 ## 3. 历史表与注释漂移
 
 部分早期迁移注释描述的能力已被后续迁移删除（例如迁移 `121` 去掉商品侧 `stock_total` 与 `inventory_stock_cache_syncs`）。**已执行的迁移 SQL 语句不改**；注释会在文档/迁移头中标注「已被 NNN 取代」，避免按注释维护已删除的缓存体系。

@@ -53,7 +53,7 @@ func IsDocumentMode(mode string) bool {
 
 // UpdateInstanceModeTx 事务内切换渲染模式并落独立文档。
 //
-// 与本次重建的快照/产物/指针同一事务（调用方在 persistBuild 的链内传进来）：
+// 与本次重建的快照/产物/指针同一事务（调用方在多语言发布链内传进来：presentation_i18n.go 的 persistMultiLangArtifacts）：
 // 若只更新文档而不在同一事务里改模式，会出现「文档已是商品自己的、模式还写着跟随模板」
 // 的中间态，下一次模板更新就会按 template 模式把它重建回模板文档 —— 自定义凭空消失。
 //

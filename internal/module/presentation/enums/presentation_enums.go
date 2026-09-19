@@ -35,16 +35,21 @@ const (
 	// 与 page 侧 ErrPathOccupied 同一文案口径（改 URL 抢路径的失败原因对用户是同一件事）。
 	ErrPathOccupied = "ErrPathOccupied"
 
+	// 以下四条是双轨写动作的业务错误（迁移 282）。**值即 i18n key**（本轮 285 接词），
+	// 刻意带模块前缀：sys_i18n 主键是 (item_key, lang)，裸名 "ErrRollbackTargetMiss"
+	// 在 page 模块已被占用（page/enums 里有一个同名哨兵）—— 裸 key 会互相顶掉词条，
+	// 页面上两条不同来源的错误显示同一句话（与 navigation.err.internal 同一理由）。
+	//
 	// ErrDetachConfirmRequired 转入独立文档需要用户确认（会放弃模板同步）。
 	// 服务层在未确认时返回它，前端据它弹确认并带 confirmDetach 重试 ——
 	// 不用「先弹窗再请求」是因为判据（文档结构是否真的变了）只有服务端算得准。
-	ErrDetachConfirmRequired = "ErrDetachConfirmRequired"
+	ErrDetachConfirmRequired = "presentation.err.detachConfirmRequired"
 	// ErrRollbackTargetMiss 回滚目标不存在（hash / 快照找不到或产物文件已缺失）。
-	ErrRollbackTargetMiss = "ErrRollbackTargetMiss"
+	ErrRollbackTargetMiss = "presentation.err.rollbackTargetMiss"
 	// ErrRollbackFailed 回滚激活失败（线上版本保持不变）。
-	ErrRollbackFailed = "ErrRollbackFailed"
+	ErrRollbackFailed = "presentation.err.rollbackFailed"
 	// ErrSnapshotMismatch 目标快照不属于该实例（防止拿别人的快照回滚自己）。
-	ErrSnapshotMismatch = "ErrSnapshotMismatch"
+	ErrSnapshotMismatch = "presentation.err.snapshotMismatch"
 )
 
 // 实例发布状态（由指针列推导，非表列）。
