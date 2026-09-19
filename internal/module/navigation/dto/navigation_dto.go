@@ -89,7 +89,18 @@ type NavigationResp struct {
 	PanelBlockID *string `json:"panelBlockId"`
 	// PanelWidth 面板展示宽度 auto / full。
 	PanelWidth string `json:"panelWidth"`
-	UpdatedAt  string `json:"updatedAt"`
+	// UpdatedAt 该项 update_time 的精确取值（RFC3339Nano，带时区偏移）——乐观锁 token。
+	//
+	// 它是 UpdateReq.ExpectedUpdatedAt 应当**原样回带**的值，与 NavigationNode.UpdatedAt 同义：
+	// JSON API 与菜单树两条入口给的是同一个值、同一个口径。
+	//
+	// 此前这里发的是给人看的分钟串（本地「2006-01-02 15:04」），走 JSON API
+	//（List/Get/Create/Update）的消费者拿不到可比对的值，只能自己拼秒级串 —— 而 update_time
+	// 是微秒精度，秒级串只在恰好落在整秒时命中：乐观锁要么静默失效（该拦的没拦），要么每次
+	// 都误报冲突（该过的过不去）。
+	//
+	// 本字段**只有一种含义**：任何调用方都不该把它当展示文案（要展示请自行按需格式化）。
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // NavigationNode 导航项树节点（按 parent_id 组装，构建期编译与菜单管理页共用）。
@@ -105,7 +116,7 @@ type NavigationNode struct {
 	PanelBlockID *string `json:"panelBlockId"`
 	PanelWidth   string  `json:"panelWidth"`
 	// UpdatedAt 该项 update_time 的精确取值（乐观锁 token，管理页编辑表单原样回带）。
-	// 与 NavigationResp.UpdatedAt 的展示串不同：那个是给人看的分钟串，这个是给比较用的。
+	// 与 NavigationResp.UpdatedAt 同义：两处都是库内真值，模板与 JSON API 两条入口给的值一致。
 	UpdatedAt string            `json:"updatedAt"`
 	Children  []*NavigationNode `json:"children,omitempty"`
 }

@@ -184,7 +184,22 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 	//（页眉只放某一支）只登记了 navigation:{itemID}，故两条键都要派发。
 	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
 	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
-	return toResp(e), nil
+	// 回读一次再返回（与 Update 同形）：库列是 timestamptz（微秒精度），而这里内存里的
+	// time.Now() 带纳秒 —— 直接 toResp(e) 会把纳秒精度的 update_time 当乐观锁 token 发出去，
+	// 调用方原样回带时与库内值不等（SaveWithExpected 是 WHERE update_time = ?），
+	// 表现为「刚建好就报版本冲突」。
+	//
+	// 为什么不用「把内存值截断到微秒」这条捷径：PG 对 timestamptz(6) 的纳秒是**四舍五入**
+	// 而不是截断，截断会差 1 微秒、token 照样比不中。回读是唯一可靠的做法。
+	//
+	// 取舍（有意保留，与 Update 同形）：写已提交，回读失败仍返回 error —— 调用方若据此重试
+	// 会新建第二条。这里选「宁可报一次错，也不发一个可能比不中的 token」：发错 token 的后果
+	// 是该条目此后每次保存都误报版本冲突，比一次可见的失败更难排查。
+	created, gerr := s.m.Get(ctx, e.ProjectID, e.ID)
+	if gerr != nil {
+		return nil, gerr
+	}
+	return toResp(created), nil
 }
 
 // Update 更新导航项：仅更新传入的非空字段，变更 path/kind 时重校验唯一性。
@@ -789,12 +804,18 @@ func (s *Service) staleTitle(ctx context.Context, e *navigationmodel.NavigationE
 }
 
 // toResp 实体 → 响应。
+//
+// UpdatedAt 是乐观锁 token（RFC3339Nano，UpdateReq.ExpectedUpdatedAt 原样回带），与树节点
+// NavigationNode.UpdatedAt 同义 —— 同一个值、同一个口径（这里原先发的是分钟展示串，
+// 与树节点同名两义，正是「拿展示串当 token」那个陷阱的温床）。
+//
+// 要求 e 是库内真值：Create 因此回读后再转换（纳秒精度的内存值比不中微秒列）。
 func toResp(e *navigationmodel.NavigationEntity) *navigationdto.NavigationResp {
 	return &navigationdto.NavigationResp{
 		ID: e.ID, ProjectID: e.ProjectID, Title: e.Title, Path: e.Path,
 		Kind: e.Kind, ParentID: e.ParentID, SortOrder: e.SortOrder,
 		SourceType: e.SourceType, SourceID: e.SourceID, Target: e.Target,
 		PanelBlockID: e.PanelBlockID, PanelWidth: e.PanelWidth,
-		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
+		UpdatedAt: e.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }
