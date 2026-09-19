@@ -18,8 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 	productmodel "go_wp/internal/module/product/model"
@@ -109,13 +109,13 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 
 	body := env.getPage(t)
 	for _, want := range []string{
-		"当前生效",         // 生效徽标
-		"设为生效",         // 非生效那套的切换按钮
-		"页眉（结构）",       // 结构模板与内容实体模板在类型列上分得开
+		"当前生效",   // 生效徽标
+		"设为生效",   // 非生效那套的切换按钮
+		"页眉（结构）", // 结构模板与内容实体模板在类型列上分得开
 		"页脚（结构）",
 		"/admin/content-templates/activate", // 切换按钮真的指向页面入口
-		"引用未知",         // 端口未装配 → 不是「无引用」
-		"结构模板暂无可视化编辑入口", // 结构模板没有样例实体，说清缺什么
+		"引用未知",                              // 端口未装配 → 不是「无引用」
+		"/workbench?entityType=header",      // 结构模板的可视化编辑入口（无样例实体模式）
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页缺少 %q", want)
@@ -123,6 +123,14 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 	}
 	if strings.Contains(body, "无引用") {
 		t.Error("引用能力未装配时不得显示「无引用」（那是「查不出来」而不是「没有引用」）")
+	}
+	// 结构模板不是内容实体，工作台以无实体模式打开：入口不得带 entityId，
+	// 也不该再显示「无可视化编辑入口」（那正是本批要打通的卡点）。
+	if strings.Contains(body, "无可视化编辑入口") {
+		t.Error("结构模板应已打通可视化编辑入口")
+	}
+	if strings.Contains(body, "entityId=") {
+		t.Error("结构模板的编辑入口不该带样例实体参数（无实体模式）")
 	}
 
 	// 切换：把第一套设为生效 → 302 回列表（带 done 回执）。

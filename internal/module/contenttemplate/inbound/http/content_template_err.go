@@ -148,9 +148,6 @@ const (
 	// 引用反查未装配时的提示。刻意**不写成「系统内部错误」**：正确读法是「查不出来」，
 	// 而不是一次失败；而且它与「没有引用」必须长得不同 —— 后者会让人以为可以放心删。
 	contentTemplateImpactUnavailableText = "引用反查能力未装配：本页无法列出引用这套模板的页面与实例，删除前请人工确认。"
-	// 结构模板没有可视化编辑入口的原因说明（不是错误，是能力现状）。
-	// 说清「缺什么」而不是只说「不支持」：看的人据此能判断该等谁改哪一段。
-	contentTemplateHintStructureNoPreview = "结构模板暂无可视化编辑入口：工作台的内容模板模式需要一条样例实体来解析字段绑定，而页眉 / 页脚不是内容实体。"
 )
 
 // contentTemplateImpactUnparsableTemplate 影响面可能不完整的提示（%d = 无法解析的文档数）。
@@ -171,7 +168,6 @@ var contentTemplateLocalNotices = []string{
 	contentTemplateHintEntityTypeMiss,
 	contentTemplateActivateDoneText,
 	contentTemplateImpactUnavailableText,
-	contentTemplateHintStructureNoPreview,
 }
 
 // contentTemplatesBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。

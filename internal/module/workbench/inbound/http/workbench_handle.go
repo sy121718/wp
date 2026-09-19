@@ -3,12 +3,14 @@ package workbenchhttp
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -209,9 +211,16 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 }
 
 // workbenchTemplate 内容模板编辑模式（EDT-001）：复用工作台画布与检查器，
-// 保存走 /api/contenttemplate/update；预览经 presentation 用样例实体解析字段绑定。
+// 保存走 /api/contenttemplate/update。
+//
+// 两种预览模式（判据是**模板自己的 entity_type**，不是请求参数）：
+//   - 结构模板（页眉 / 页脚）→ **无样例实体模式**：它们不是内容实体、也不接受字段
+//     绑定（服务端 validateDocumentMode 对结构类型直接拒绝绑定），所以预览不需要
+//     样例实体，entityId 传了也一律忽略；
+//   - 内容实体模板（product / article / …）→ 仍**必须**有样例实体：字段绑定要按一条
+//     真实记录解析，缺它只能看到空白组件（这正是这条校验存在的理由）。
 func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
-	if h.contenttemplates == nil || h.templatePreview == nil {
+	if h.contenttemplates == nil {
 		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
 		return
 	}
@@ -220,16 +229,32 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		c.String(http.StatusNotFound, "模板不存在")
 		return
 	}
+	// 无实体模式按**模板行**判定：查询参数是请求方给的，拿它判等于让
+	// 「product 模板 + entityType=header」把无实体模式开给普通模板（样例实体校验被绕过）。
+	noEntity := contenttemplatecontract.IsStructureTemplateType(tpl.EntityType)
 	entityID := strings.TrimSpace(c.Query("entityId"))
 	entityType := strings.TrimSpace(c.Query("entityType"))
-	if entityType == "" {
+	if entityType == "" || noEntity {
+		// 结构模板的类型以模板行为准：伪造的 entityType 不能把预览引到实体解析那条路。
 		entityType = tpl.EntityType
 	}
-	projectID := strings.TrimSpace(c.Query("projectId"))
-	if entityID == "" {
+	if noEntity {
+		// 结构模板没有实体来源：请求带来的 entityId 一律丢弃（无实体模式不解析字段绑定）。
+		entityID = ""
+	} else if entityID == "" {
 		c.String(http.StatusBadRequest, "缺少预览样例实体 entityId（字段绑定预览需要一条真实 "+entityType+" 记录）")
 		return
 	}
+	// 装配校验按模式分流：无实体模式走 page 编译管线，用不到模板预览端口。
+	if !noEntity && h.templatePreview == nil {
+		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
+		return
+	}
+	if noEntity && h.pages == nil {
+		c.String(http.StatusServiceUnavailable, "无实体模板预览能力未装配")
+		return
+	}
+	projectID := strings.TrimSpace(c.Query("projectId"))
 	documentJSON, err := json.Marshal(tpl.DraftDocument)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "模板文档序列化失败")
@@ -243,6 +268,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		"templateName": tpl.Name,
 		"entityType":   entityType,
 		"entityId":     entityID,
+		"noEntity":     noEntity,
 		"projectId":    projectID,
 		"draftPath":    "",
 		"version":      tpl.DraftVersion,
@@ -267,55 +293,152 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		"pageId":     tpl.ID,
 		"isBlock":    false,
 		"isTemplate": true,
-		"document":   shell.JsonSafe(string(documentJSON)),
-		"meta":       shell.JsonSafe(string(metaJSON)),
-		"schemas":    shell.JsonSafe(string(schemasJSON)),
-		"previewQS":  previewQS,
-		"jsVer":      workbenchJsVer(),
+		// 画布顶栏的模式提示：结构模板的预览不解析字段绑定，这件事要在编辑器里看得见
+		//（否则作者会以为「页眉里该出现的商品名没出现」是渲染坏了）。
+		"isStructureTemplate": noEntity,
+		"document":            shell.JsonSafe(string(documentJSON)),
+		"meta":                shell.JsonSafe(string(metaJSON)),
+		"schemas":             shell.JsonSafe(string(schemasJSON)),
+		"previewQS":           previewQS,
+		"jsVer":               workbenchJsVer(),
 	}))
 }
 
 // templatePreviewQuery 模板画布 iframe 与「新标签预览」共用的查询串。
+//
+// entityId 为空（结构模板的无实体模式）时不带该参数：空串参数与服务端「缺参数」在
+// 日志与排查里长得一样，少一个无意义的空参数省一次误判。
 func templatePreviewQuery(templateID, entityType, entityID, projectID string) string {
-	q := "template=" + templateID + "&entityType=" + entityType + "&entityId=" + entityID + "&editor=1"
-	if projectID != "" {
-		q += "&projectId=" + projectID
+	q := url.Values{}
+	q.Set("template", templateID)
+	q.Set("entityType", entityType)
+	if entityID != "" {
+		q.Set("entityId", entityID)
 	}
-	return q
+	q.Set("editor", "1")
+	if projectID != "" {
+		q.Set("projectId", projectID)
+	}
+	return q.Encode()
+}
+
+// templateByID 按模板 id 取预览目标：优先用画布自己带过来的工程作用域
+//（content_templates 带 FORCE 策略，作用域缺省时只能靠「工程唯一」解析）。
+func (h *Handle) templateByID(c *gin.Context, templateID, projectID string) (*contenttemplatedto.TemplateResp, error) {
+	if pid := strings.TrimSpace(projectID); pid != "" {
+		return h.contenttemplates.GetScoped(c.Request.Context(), pid, templateID)
+	}
+	return h.contenttemplates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
+}
+
+// previewTemplateTarget 取预览目标模板；模板不存在时已写响应并返回 ok=false。
+func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID string) (tpl *contenttemplatedto.TemplateResp, ok bool) {
+	if h.contenttemplates == nil {
+		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
+		return nil, false
+	}
+	tpl, err := h.templateByID(c, templateID, projectID)
+	if err != nil {
+		c.String(http.StatusNotFound, "模板不存在")
+		return nil, false
+	}
+	return tpl, true
 }
 
 // TemplatePreview 基于已保存模板 + 样例实体编译预览（画布 iframe GET）。
+//
+// 结构模板（页眉 / 页脚）没有样例实体：entityId 缺省/为空时按无实体模式渲染
+//（判据是**模板自己的 entity_type**，见 workbenchTemplate 的同名说明）。
 func (h *Handle) TemplatePreview(c *gin.Context) {
-	if h.contenttemplates == nil || h.templatePreview == nil {
+	templateID := strings.TrimSpace(c.Query("template"))
+	if templateID == "" {
+		c.String(http.StatusBadRequest, "缺少 template")
+		return
+	}
+	projectID := c.Query("projectId")
+	tpl, ok := h.previewTemplateTarget(c, templateID, projectID)
+	if !ok {
+		return
+	}
+	if contenttemplatecontract.IsStructureTemplateType(tpl.EntityType) {
+		// 无实体模式：结构模板的 entityId 一律忽略（它不是内容实体，没有字段来源）。
+		h.renderStructureTemplatePreview(c, tpl.DraftDocument, projectID, c.Query("editor") == "1")
+		return
+	}
+	if h.templatePreview == nil {
 		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
 		return
 	}
-	templateID := strings.TrimSpace(c.Query("template"))
 	entityType := strings.TrimSpace(c.Query("entityType"))
 	entityID := strings.TrimSpace(c.Query("entityId"))
-	if templateID == "" || entityType == "" || entityID == "" {
+	if entityType == "" || entityID == "" {
 		c.String(http.StatusBadRequest, "缺少 template / entityType / entityId")
 		return
 	}
-	h.renderTemplatePreview(c, templateID, entityType, entityID, c.Query("projectId"), nil,
+	h.renderTemplatePreview(c, templateID, entityType, entityID, projectID, nil,
 		c.Query("editor") == "1")
 }
 
 // TemplatePreviewDraft 基于未保存 AST + 样例实体返回临时预览（POST，画布刷新）。
+// 结构模板同 TemplatePreview：走无实体模式，草稿文档直接编译。
 func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
-	if h.contenttemplates == nil || h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
-		return
-	}
 	templateID := strings.TrimSpace(c.PostForm("id"))
-	entityType := strings.TrimSpace(c.PostForm("entityType"))
-	entityID := strings.TrimSpace(c.PostForm("entityId"))
 	document := json.RawMessage(c.PostForm("draftDocument"))
-	if templateID == "" || entityType == "" || entityID == "" || len(document) == 0 {
+	if templateID == "" || len(document) == 0 {
 		c.String(http.StatusBadRequest, "预览参数不完整")
 		return
 	}
-	h.renderTemplatePreview(c, templateID, entityType, entityID, c.PostForm("projectId"), document, true)
+	projectID := c.PostForm("projectId")
+	tpl, ok := h.previewTemplateTarget(c, templateID, projectID)
+	if !ok {
+		return
+	}
+	if contenttemplatecontract.IsStructureTemplateType(tpl.EntityType) {
+		h.renderStructureTemplatePreview(c, document, projectID, true)
+		return
+	}
+	if h.templatePreview == nil {
+		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
+		return
+	}
+	entityType := strings.TrimSpace(c.PostForm("entityType"))
+	entityID := strings.TrimSpace(c.PostForm("entityId"))
+	if entityType == "" || entityID == "" {
+		c.String(http.StatusBadRequest, "预览参数不完整")
+		return
+	}
+	h.renderTemplatePreview(c, templateID, entityType, entityID, projectID, document, true)
+}
+
+// renderStructureTemplatePreview 无样例实体模式下的模板预览（结构模板：页眉 / 页脚）。
+//
+// 为什么走 page 编译管线（CompilePreview，与页面 / 全局块画布同一入口）而不是
+// presentation.PreviewInstance —— 这个选择决定将来别人给结构模板加能力时的走向：
+//
+//  1. PreviewInstance 整条链是**以实体为前提**的：ValidateFieldRefs 按 entityType 校验、
+//     registry.ResolverFor(entityType, entityID) 取实体解析器、applyEntitySEO 读实体字段。
+//     在那条链上开一个「跳过」分支，等于让后续任何一处新增的实体依赖在无实体模式下静默
+//     落空（页眉渲染成空），而结构模板**根本不是实体实例**，不该被塞进实体实例的路径。
+//  2. 页面编译管线本身就**没有实体解析器**（Page Document 从不含字段绑定），它的 Compile
+//     选项正是结构模板在正式构建里所用的那一份：同一 builder.Compile、同一组件集 / 插件
+//     装配 / 主题 / 站点级选项 / 结构槽位展开 / 内容翻译 / ClientAsset。正式构建里结构模板
+//     也是以 root 节点进入同一个 builder.Compile 的（pipeline.BuildStructureSlots）。
+//  3. 字段绑定**跳过而不是伪造**：这里不注入、也不伪造实体解析器。真出现绑定（旧数据 /
+//     绕过保存期校验的写入），编译器会按「解析器未注入」直接报错 —— 可见的失败，而不是
+//     渲染成一片空白的假通过。结构模板不许有绑定这条不变量因此没有被削弱。
+//
+// currentPath 传空：结构模板文档没有自己的访问路径（它只作为槽位出现在引用页里）。
+func (h *Handle) renderStructureTemplatePreview(c *gin.Context, document json.RawMessage,
+	projectID string, withEditorBridge bool) {
+	if h.pages == nil {
+		c.String(http.StatusServiceUnavailable, "无实体模板预览能力未装配")
+		return
+	}
+	if len(document) == 0 {
+		c.String(http.StatusBadRequest, "模板文档为空")
+		return
+	}
+	h.renderPreview(c, document, projectID, "", withEditorBridge)
 }
 
 func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, entityID, projectID string,

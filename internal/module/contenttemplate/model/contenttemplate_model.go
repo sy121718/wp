@@ -46,12 +46,16 @@ func IsValidTemplateRole(role string) bool {
 	return role == TemplateRoleDetail || role == TemplateRoleArchive
 }
 
-// 结构模板类型（页眉 / 脚页）：标志值。
+// 结构模板类型（页眉 / 页脚）：真源在 contract（与 TemplateRole* 同一处理）。
+//
+// 判定跨模块使用（工作台决定要不要样例实体、装配层决定哪些模板能进主题下拉），
+// 定义在 model 会迫使 workbench / routers 去 import 本模块的数据访问包。
+// 这里只转发一份，保证模块内部的既有调用点（service / inbound）零改动。
 const (
 	// EntityTypeHeader 页眉结构模板类型。
-	EntityTypeHeader = "header"
+	EntityTypeHeader = contenttemplatecontract.EntityTypeHeader
 	// EntityTypeFooter 页脚结构模板类型。
-	EntityTypeFooter = "footer"
+	EntityTypeFooter = contenttemplatecontract.EntityTypeFooter
 )
 
 // IsStructureTemplateType 是否为结构模板类型（页眉 / 页脚）。
@@ -60,7 +64,7 @@ const (
 // 没有字段来源。往注册表里塞一个假来源，换来的是“这个类型可以配字段绑定”的假许可
 // （构建期解析不到数据 → 页眉里一片空白），比拒绝更坏。
 func IsStructureTemplateType(entityType string) bool {
-	return entityType == EntityTypeHeader || entityType == EntityTypeFooter
+	return contenttemplatecontract.IsStructureTemplateType(entityType)
 }
 
 // SetDefaultTx 事务内切换某（工程, 类型）的生效模板：旧的置 false、目标置 true。

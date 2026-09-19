@@ -243,7 +243,7 @@ func (p *structureTemplateOptionsPort) ListStructureTemplateOptions(ctx context.
 		return nil, lerr
 	}
 	for _, t := range list {
-		if t == nil || !isStructureTemplateEntityType(t.EntityType) {
+		if t == nil || !contenttemplatecontract.IsStructureTemplateType(t.EntityType) {
 			continue
 		}
 		opts = append(opts, projectcontract.StructureTemplateOption{
@@ -253,15 +253,6 @@ func (p *structureTemplateOptionsPort) ListStructureTemplateOptions(ctx context.
 	return opts, nil
 }
 
-// isStructureTemplateEntityType 是否结构模板类型（页眉 / 页脚）。
-//
-// 判据与 contenttemplate 模块的白名单同源（entity_type = header / footer）：
-// 字符串字面量只出现在这一处，改动时与 contenttemplatemodel.IsStructureTemplateType 同批改。
-func isStructureTemplateEntityType(entityType string) bool {
-	switch strings.TrimSpace(entityType) {
-	case "header", "footer":
-		return true
-	default:
-		return false
-	}
-}
+// 结构类型判定统一走 contenttemplatecontract.IsStructureTemplateType（白名单的唯一真源）：
+// 本文件曾自己抄一份 switch，两份字面量一旦漂移，新增结构类型只会在这里静默漏掉
+//（表现是「主题里的页眉下拉少了新类型」而不是编译错误）。

@@ -97,10 +97,19 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	refsByTemplate := contentTemplateRefsByTemplate(impact)
 	rows := make([]gin.H, 0, len(list))
 	for _, t := range list {
-		sampleID, sampleHint, sampleErr := h.sampleEntityID(ctx, selected, t.EntityType)
-		editURL := ""
-		if sampleErr == nil && strings.TrimSpace(sampleHint) == "" && sampleID != "" {
-			editURL = workbenchTemplateURL(t.ID, t.EntityType, sampleID, selected)
+		// 结构模板（页眉 / 页脚）不是内容实体：工作台以**无样例实体**模式打开它 ——
+		// 不去挑样例实体（挑也挑不到：header / footer 没有实体来源，sampleEntityID
+		// 会返回「不支持该类型」），也不该拿一个别的类型的实体去顶替。
+		isStructure := contenttemplatemodel.IsStructureTemplateType(t.EntityType)
+		editURL, sampleNote := "", ""
+		if isStructure {
+			editURL = workbenchTemplateURL(t.ID, t.EntityType, "", selected)
+		} else {
+			sampleID, sampleHint, sampleErr := h.sampleEntityID(ctx, selected, t.EntityType)
+			if sampleErr == nil && strings.TrimSpace(sampleHint) == "" && sampleID != "" {
+				editURL = workbenchTemplateURL(t.ID, t.EntityType, sampleID, selected)
+			}
+			sampleNote = sampleErrText(c, sampleHint, sampleErr)
 		}
 		refs := refsByTemplate[t.ID]
 		if refs == nil {
@@ -108,19 +117,12 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			// 而那一行的报错表现是「HTTP 200 + 之后整块 HTML 消失」。
 			refs = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
 		}
-		// 结构模板不是内容实体：工作台的内容模板模式要一条样例实体来解析字段绑定，
-		// 所以它没有可用的可视化编辑入口 —— 这里给一句**说清原因**的提示，
-		// 而不是让用户点进去撞一个 302 回跳。
-		sampleNote := sampleErrText(c, sampleHint, sampleErr)
-		if contenttemplatemodel.IsStructureTemplateType(t.EntityType) {
-			sampleNote = contentTemplateHintStructureNoPreview
-		}
 		rows = append(rows, gin.H{
 			"ID": t.ID, "Name": t.Name, "EntityType": t.EntityType,
 			"DraftVersion": t.DraftVersion, "UpdatedAt": t.UpdatedAt,
 			// 结构模板（页眉 / 页脚）与内容实体模板在这张表里是两类东西：前者没有实体来源、
 			// 也不接受字段绑定，两者的可编辑性与删除后果都不同，页面上必须一眼分得开。
-			"IsStructure": contenttemplatemodel.IsStructureTemplateType(t.EntityType),
+			"IsStructure": isStructure,
 			"TypeLabel":   contentTemplateTypeLabel(t.EntityType),
 			"RoleLabel":   contentTemplateRoleLabel(t.TemplateRole),
 			"IsDefault":   t.IsDefault,
@@ -250,6 +252,10 @@ func contentTemplatesBulkDeleteResult(deleted, skipped int) string {
 }
 
 // ContentTemplateEditPage GET /admin/content-templates/edit：302 到工作台（保留 query）。
+//
+// 结构的判定取**模板行自己的 entity_type**：结构模板（页眉 / 页脚）不需要样例实体，
+// 直接进工作台的无实体模式；内容实体模板缺样例实体时仍按老路自动挑一条（挑不到就
+// 回列表页说明原因），不静默放行 —— 没有样例实体的内容模板画布只能看到空白组件。
 func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	templateID := strings.TrimSpace(c.Query("id"))
 	if templateID == "" {
@@ -259,25 +265,31 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	entityID := strings.TrimSpace(c.Query("entityId"))
 	entityType := strings.TrimSpace(c.Query("entityType"))
 	projectID := strings.TrimSpace(c.Query("projectId"))
-	if entityID == "" && h.templates != nil {
+	if projectID == "" {
+		projectID = strings.TrimSpace(c.Query("project"))
+	}
+	if h.templates != nil {
 		tpl, err := h.templates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
 		if err != nil {
 			c.Redirect(http.StatusFound, contentTemplatesListPath+"?err="+url.QueryEscape(contentTemplateNotFoundText))
 			return
 		}
+		if contenttemplatemodel.IsStructureTemplateType(tpl.EntityType) {
+			c.Redirect(http.StatusFound, workbenchTemplateURL(templateID, tpl.EntityType, "", projectID))
+			return
+		}
 		if entityType == "" {
 			entityType = tpl.EntityType
 		}
-		if projectID == "" {
-			projectID = strings.TrimSpace(c.Query("project"))
+		if entityID == "" {
+			sampleID, hint, serr := h.sampleEntityID(c.Request.Context(), projectID, entityType)
+			if serr != nil || strings.TrimSpace(hint) != "" {
+				c.Redirect(http.StatusFound, contentTemplatesListPath+"?project="+url.QueryEscape(projectID)+
+					"&err="+url.QueryEscape(sampleErrText(c, hint, serr)))
+				return
+			}
+			entityID = sampleID
 		}
-		sampleID, hint, serr := h.sampleEntityID(c.Request.Context(), projectID, entityType)
-		if serr != nil || strings.TrimSpace(hint) != "" {
-			c.Redirect(http.StatusFound, contentTemplatesListPath+"?project="+url.QueryEscape(projectID)+
-				"&err="+url.QueryEscape(sampleErrText(c, hint, serr)))
-			return
-		}
-		entityID = sampleID
 	}
 	if entityID == "" || entityType == "" {
 		c.Redirect(http.StatusFound, contentTemplatesListPath+"?err="+url.QueryEscape(contentTemplateSampleMissingText))
@@ -286,11 +298,19 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	c.Redirect(http.StatusFound, workbenchTemplateURL(templateID, entityType, entityID, projectID))
 }
 
+// workbenchTemplateURL 工作台模板编辑入口。
+//
+// entityId 为空 = 无实体模式（结构模板：页眉 / 页脚）；该参数缺省而不是留空串，
+// 免得「带了空 entityId」与「没带」在日志与排查里长得一样。
 func workbenchTemplateURL(templateID, entityType, entityID, projectID string) string {
 	q := url.Values{}
 	q.Set("template", templateID)
-	q.Set("entityType", entityType)
-	q.Set("entityId", entityID)
+	if entityType != "" {
+		q.Set("entityType", entityType)
+	}
+	if entityID != "" {
+		q.Set("entityId", entityID)
+	}
 	if projectID != "" {
 		q.Set("projectId", projectID)
 	}

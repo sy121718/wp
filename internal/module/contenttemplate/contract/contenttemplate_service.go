@@ -4,6 +4,7 @@ package contenttemplatecontract
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"go_wp/internal/module/contenttemplate/dto"
 )
@@ -19,6 +20,33 @@ const (
 	// TemplateRoleArchive 归档列表页模板（如「分类页」：列该分类下的内容）。
 	TemplateRoleArchive = "archive"
 )
+
+// 结构模板类型（页眉 / 页脚）。
+//
+// 定义在契约而不是 model（与上面的角色常量同一理由）：它出现在**跨模块的判定**上 ——
+// 工作台要用它决定「这套模板需不需要样例实体」，装配层要用它决定「哪些模板能进主题的
+// 页眉 / 页脚下拉」。判定散给各调用方各写一份 switch 时，新增一种结构类型只会在漏改的
+// 那一处静默失效（表现是「新结构类型进不了可视化编辑」而不是编译错误）。
+const (
+	// EntityTypeHeader 页眉结构模板类型。
+	EntityTypeHeader = "header"
+	// EntityTypeFooter 页脚结构模板类型。
+	EntityTypeFooter = "footer"
+)
+
+// IsStructureTemplateType 是否为结构模板类型（页眉 / 页脚）。
+//
+// 为什么是独立白名单而不是走实体来源注册表：header / footer 不是内容实体，
+// 没有字段来源。往注册表里塞一个假来源，换来的是「这个类型可以配字段绑定」的假许可
+// （构建期解析不到数据 → 页眉里一片空白），比拒绝更坏。
+func IsStructureTemplateType(entityType string) bool {
+	switch strings.TrimSpace(entityType) {
+	case EntityTypeHeader, EntityTypeFooter:
+		return true
+	default:
+		return false
+	}
+}
 
 // ContentTemplateService 内容结构模板管理契约（docs/02-domain.md §2）。
 // 与 Page Blueprint 的关键区别：模板参与每次构建（presentation 派生

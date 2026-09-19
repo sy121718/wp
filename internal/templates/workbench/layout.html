@@ -51,6 +51,12 @@
             {{end}}
             <span class="wb-status" id="wb-status">就绪</span>
             {{if .isTemplate}}
+            {* 结构模板（页眉 / 页脚）没有实体来源：预览不解析字段绑定。这条提示要在编辑器里
+               看得见，否则作者会以为「该出现的实体字段没出现」是渲染坏了。多端：纯文本状态条，
+               宽度自适应（不写死），触屏与键盘下都只是可读文本，无交互依赖。 *}
+            {{if isset(.isStructureTemplate)}}{{if .isStructureTemplate}}
+            <span class="wb-status" id="wb-template-mode" title="结构模板（页眉 / 页脚）不是内容实体：画布按模板文档本身渲染，不解析字段绑定。">结构模板</span>
+            {{end}}{{end}}
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/template/preview?{{.previewQS}}" target="_blank">预览</a>
             {{else if not .isBlock}}
             <a class="wb-btn wb-btn-ghost" id="wb-preview-link" href="/workbench/preview?id={{.pageId}}" target="_blank">预览</a>
