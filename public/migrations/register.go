@@ -64,4 +64,8 @@ func init() {
 	registerNavigationMenuI18n()
 	// 291：结构模板后台改造的词条（内容模板列表页的生效 / 引用列 · 主题设置的结构模板下拉）。
 	registerContentTemplateStructureI18n()
+	// 292：工作台「预览 / 编译 422」的可归因文案（workbench.err.*，见 register_workbench_facing_i18n.go）。
+	registerWorkbenchFacingI18n()
+	// 293：运行时片段「登录面板」的访客文案（site.fragment.login_panel.*，见 register_fragment_login_panel_i18n.go）。
+	registerFragmentLoginPanelI18n()
 }
