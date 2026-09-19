@@ -127,6 +127,15 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		return built, err
 	}
 	sourceHash := pipeline.SHA256(tpl.Document)
+	// 多语言依赖（page 侧同一口径，见 page_lang.go §buildDependencies）：
+	//   · i18n:site    组件固定文案（sys_i18n）—— 构建期取词注入 HTML 字节，恒登记；
+	//   · i18n:content 内容译文（sys_translation）—— 仅当本次确有可翻译候选时登记。
+	// 少登记的表现是「改了译文/词条，商品页永远是旧字节」且日志里什么都没有。
+	deps := presentationDependencies(entityType, entityID, tpl.TemplateID, projectID, usage)
+	deps = append(deps, pipeline.I18NDependency(i18n.Revision()))
+	if usage != nil && usage.ContentTranslation {
+		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
+	}
 	artifact, err := pipeline.NewArtifact(html, &pipeline.Manifest{
 		ManifestSchemaVersion:     1,
 		PageDocumentSchemaVersion: 1,
@@ -136,7 +145,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		SourceHash:                sourceHash,
 		BuildInputHash:            sourceHash,
 		Lang:                      strings.TrimSpace(lang),
-		Dependencies:              presentationDependencies(entityType, entityID, tpl.TemplateID, projectID, usage),
+		Dependencies:              deps,
 	})
 	if err != nil {
 		return built, err
@@ -266,6 +275,11 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	}
 	if contentTranslator != nil {
 		pipeline.LogContentTranslationMisses(lang, contentCandidates, contentTranslator.Misses())
+	}
+	// 本次构建有可翻译候选 = 产物字节受 sys_translation 影响（补齐/修改译文都会变），
+	// 供 buildArtifact 登记 i18n:content 依赖。预览 usage 为 nil，不登记。
+	if usage != nil && contentCandidates > 0 {
+		usage.UseContentTranslation()
 	}
 	doc, err := builder.RenderDocument(compiled)
 	if err != nil {

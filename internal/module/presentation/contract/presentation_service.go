@@ -38,6 +38,10 @@ type PresentationService interface {
 	SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error)
 	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
 	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)
+	// MarkStaleForI18n 把各工程内的全部自动发布实例标记为待重建：文案词条（sys_i18n）
+	// 与内容译文（sys_translation）都由构建期取词注入 HTML 字节，一变就过期；
+	// 触发源是后台翻译页/运维脚本（它们没有工程上下文，故由 service 逐工程扇出）。
+	MarkStaleForI18n(ctx context.Context) error
 	// Get 按 ID 查询。
 	Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error)
 	// List 按类型列表。

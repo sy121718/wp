@@ -112,6 +112,25 @@ type BuildInput struct {
 type CompileUsage struct {
 	// SiteSlots 本次编译消费过的系统页面槽位集合。
 	SiteSlots map[string]bool
+	// Menus 本次编译消费过的导航位置集合（header / footer）。
+	//
+	// 与 SiteSlots 同一来源：core.nav 绑定菜单位置时经 RenderContext.UseMenu 记录。
+	// 位置而不是菜单项 id —— 产物依赖的是「这个位置的菜单内容」，菜单项增删改都属于它。
+	Menus map[string]bool
+	// ContentTranslation 本次编译确实走了内容翻译（存在可翻译候选）。
+	//
+	// 为什么必须记：缺译文时构建期**回退原文**，补齐/修改译文都要改变产物字节；
+	// 若依赖表里没有 i18n:content 这条，revision 未变 → 不触发重建 →
+	// 页面长期停在回退内容（docs/06-D §9 关键约束，page 侧同口径）。
+	ContentTranslation bool
+}
+
+// UseContentTranslation 记录一次内容翻译消费（编译期确有可翻译候选时由发布路径调用）。
+func (u *CompileUsage) UseContentTranslation() {
+	if u == nil {
+		return
+	}
+	u.ContentTranslation = true
 }
 
 // UseSiteSlot 记录一次槽位消费（由 builder 的 RenderContext 在取值时调用）。
@@ -123,6 +142,30 @@ func (u *CompileUsage) UseSiteSlot(slot string) {
 		u.SiteSlots = map[string]bool{}
 	}
 	u.SiteSlots[slot] = true
+}
+
+// UseMenu 记录一次导航位置消费（由 builder 的 RenderContext 在取值时调用）。
+func (u *CompileUsage) UseMenu(kind string) {
+	if u == nil || kind == "" {
+		return
+	}
+	if u.Menus == nil {
+		u.Menus = map[string]bool{}
+	}
+	u.Menus[kind] = true
+}
+
+// MenuList 已消费导航位置的确定性排序列表。
+func (u *CompileUsage) MenuList() []string {
+	if u == nil || len(u.Menus) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(u.Menus))
+	for kind := range u.Menus {
+		out = append(out, kind)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // SiteSlotList 已消费槽位的确定性排序列表。

@@ -270,6 +270,26 @@ func (m *Model) MarkStale(ctx context.Context, projectID string, ids []string, a
 	return n, err
 }
 
+// MarkStaleForI18n 把**本工程内**全部实例标记为待重建（文案词条 / 内容译文变更后调用）。
+//
+// 与 page 侧同名方法同义（page_model.go §MarkStaleForI18n）：组件固定文案与作者文案
+// 都在构建期取词注入 HTML 字节，sys_i18n / sys_translation 变化后实例产物都可能过期。
+// projectID 必填（DB-009）：presentation_instances 带 FORCE 策略，无作用域的全表
+// UPDATE 在换非超级角色后匹配 0 行且不报错 —— 译文改了、商品页却一直是旧字节。
+func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string, at time.Time) (n int64, err error) {
+	if projectID == "" {
+		return 0, errors.New("project id is required")
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		res := tx.Model(&InstanceEntity{}).
+			Where("project_id = ? AND deleted_at IS NULL", projectID).
+			Updates(map[string]any{"stale": true, "update_time": at})
+		n = res.RowsAffected
+		return res.Error
+	})
+	return n, err
+}
+
 // DeleteInstance 删除实例及其聚合内从属行（解引用 → 依赖 → 产物 → 快照 → 实例）。
 //
 // 必须级联：presentation_artifacts / document_snapshots / presentation_dependencies
