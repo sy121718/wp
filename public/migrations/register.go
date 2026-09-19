@@ -62,4 +62,6 @@ func init() {
 	registerAdminRemainingTemplatesI18n()
 	// 290：导航菜单页 + 工作台检查器的补漏词条（见 register_navigation_menu_i18n.go）。
 	registerNavigationMenuI18n()
+	// 291：结构模板后台改造的词条（内容模板列表页的生效 / 引用列 · 主题设置的结构模板下拉）。
+	registerContentTemplateStructureI18n()
 }

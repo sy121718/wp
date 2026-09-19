@@ -74,6 +74,38 @@ type ContentTemplateService interface {
 	ResolveTemplateByRoleScoped(ctx context.Context, projectID, entityType, role string) (res *ResolvedTemplate, err error)
 	// ResolveTemplateByIDScoped 在显式工程作用域内按模板 ID 解析当前版本。
 	ResolveTemplateByIDScoped(ctx context.Context, projectID, templateID string) (res *ResolvedTemplate, err error)
+
+	// Impact 列出工程内引用了各模板的页面与实例（影响面提示与删除保护共用一次扫描）。
+	//
+	// 为什么返回**全部模板**的引用而不是按模板查询：后台列表页一次要渲染 N 套模板的
+	// 「引用 N 处」，逐个模板各扫一遍页面与实例文档就是 N 次全表扫描；一次扫描后在
+	// 调用方聚合，代价与模板数量无关。
+	//
+	// Available=false 表示引用反查端口未装配（不是「没有引用」，调用方必须区分显示）。
+	Impact(ctx context.Context, req *contenttemplatedto.ImpactReq) (res *contenttemplatedto.ImpactResp, err error)
+}
+
+
+// TemplateImpactPort 模板引用反查端口（消费者侧最窄接口）。
+//
+// 只表达「这个工程里谁引用了模板」这一件事：调用方（contenttemplate）不需要知道
+// 页面文档与实例存在哪张表、怎么扫。实现由装配层提供（page 契约 + presentation 契约
+// 两条只读面），端口定义在本模块 —— 依赖方向是 contenttemplate ← 装配，
+// 而不是 contenttemplate → page/presentation 的数据访问包。
+//
+// 为什么端口不放在 contract 的具体实现里而留成接口：单测可以给一个内存实现，
+// 不必起数据库；装配层也可以在不改本模块的前提下换数据来源。
+type TemplateImpactPort interface {
+	// ListTemplateReferences 列出工程内全部模板引用（页面 + 实例）。
+	//
+	// templateIDs 是本工程已知的模板 id 集合：扫描要把文档里的绑定 id 认出来，
+	// 而「文档解析不了」时只能退回字符串粗判（模板 id 是 uuid，误命中概率极低）——
+	// 粗判需要这份集合，故由调用方传入而不是在端口里反向查询模板表。
+	//
+	// unparsable 是「文档无法解析、引用关系只能粗判」的条数：调用方据此提示
+	// 「影响面可能不完整」，而不是把它当成 0。
+	ListTemplateReferences(ctx context.Context, projectID string, templateIDs []string) (
+		refs []contenttemplatedto.TemplateReference, unparsable int, err error)
 }
 
 // ResolvedTemplate 已解析的模板版本（presentation 派生快照的输入）。

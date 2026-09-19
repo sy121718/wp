@@ -36,6 +36,12 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
 	pages.GET("/content-templates", contentTemplatePages.ContentTemplatesPage)
 	pages.GET("/content-templates/edit", contentTemplatePages.ContentTemplateEditPage)
+	// 切换生效：权限点 contenttemplate:activate（迁移 288 seed）。必须用独立权限点映射 ——
+	// Casbin 中间件按**实际请求路径** enforce，复用 update 时这条路径没有策略匹配 → 全员 403
+	//（含超管）。这里把页面入口映射到 JSON 接口的授权路径，两个入口共用同一条策略。
+	pages.POST("/content-templates/activate",
+		builtin.CasbinMiddlewareForPath("/api/contenttemplate/activate"),
+		contentTemplatePages.ContentTemplatesActivate)
 	// 批量删除：权限点 contenttemplate:delete（迁移 234 seed）。本模块此前没有任何删除能力，
 	// 这条权限点与 contract 的 Delete、路由的 enforce 路径同批补上。
 	pages.POST("/content-templates/bulk-delete",

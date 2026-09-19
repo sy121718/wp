@@ -65,6 +65,19 @@ type themeSettingsData struct {
 	FooterTemplateID string
 	// SlotTemplates 其余槽位的模板绑定（槽位名 → 模板 ID），同样原样回传。
 	SlotTemplates map[string]string
+	// HeaderTemplateOptions / FooterTemplateOptions 结构模板候选（页眉 / 页脚各一组）。
+	//
+	// 「不绑定」那一项由模板固定渲染（value 为空串），服务端只给真实候选 ——
+	// 候选为空时下拉仍有一项可选，不会退化成「没有这个字段」（那才是清空绑定）。
+	HeaderTemplateOptions []structureTemplateOptionView
+	FooterTemplateOptions []structureTemplateOptionView
+}
+
+// structureTemplateOptionView 结构模板下拉项（selected 由服务端算好，前端不认识这组数据）。
+type structureTemplateOptionView struct {
+	ID       string
+	Label    string
+	Selected bool
 }
 
 // blockOption 页眉/页脚绑定候选下拉项。
@@ -96,9 +109,11 @@ func (d *themeSettingsData) templateMap() gin.H {
 		"FooterBlocks":       d.FooterBlocks,
 		"AnnouncementBlocks": d.AnnouncementBlocks,
 		"AnnouncementBlock":  d.AnnouncementBlockID,
-		"HeaderTemplate":     d.HeaderTemplateID,
-		"FooterTemplate":     d.FooterTemplateID,
-		"SlotTemplates":      d.SlotTemplates,
+		"HeaderTemplate":         d.HeaderTemplateID,
+		"FooterTemplate":         d.FooterTemplateID,
+		"SlotTemplates":          d.SlotTemplates,
+		"HeaderTemplateOptions": d.HeaderTemplateOptions,
+		"FooterTemplateOptions": d.FooterTemplateOptions,
 	}
 }
 
@@ -182,6 +197,29 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 	data.HeaderTemplateID = s.HeaderTemplateID
 	data.FooterTemplateID = s.FooterTemplateID
 	data.SlotTemplates = s.SlotTemplates
+	// 结构模板候选（页眉 / 页脚）：主题设置页的「选结构模板」下拉。取不到候选不是致命错误 ——
+	// 下拉退化成只有「不绑定」一项，页面其余字段照常可保存（缺候选在启动日志里有 Warn）。
+	if opts, oerr := h.projects.StructureTemplateOptions(ctx, theme.ProjectID); oerr != nil {
+		logger.Scene("theme").With("theme_id", themeID).Error(oerr, "读取结构模板候选失败（下拉候选为空，页面其余部分照常）")
+	} else {
+		for _, o := range opts {
+			// 标签里带「当前生效」：多套模板并存时，下拉必须能看出哪一套是每次构建真正生效的那套，
+			// 否则「选了另一套没生效」会被当成 bug（生效与否由模板列表的「设为生效」决定）。
+			label := o.Name
+			if o.IsDefault {
+				label += "（当前生效）"
+			}
+			if o.EntityType == "footer" {
+				data.FooterTemplateOptions = append(data.FooterTemplateOptions, structureTemplateOptionView{
+					ID: o.ID, Label: label, Selected: o.ID == data.FooterTemplateID,
+				})
+				continue
+			}
+			data.HeaderTemplateOptions = append(data.HeaderTemplateOptions, structureTemplateOptionView{
+				ID: o.ID, Label: label, Selected: o.ID == data.HeaderTemplateID,
+			})
+		}
+	}
 	// 其余槽位（目前是公告条）从 slots 映射里取：加新槽位时这里与模板各加一行。
 	data.AnnouncementBlockID = s.Slots["announcement"]
 	// 字段分组：以原始 JSON 为准（保真，不经过结构体丢掉历史/未来的键）。
@@ -318,10 +356,10 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		HeaderBlockID: strings.TrimSpace(c.PostForm("headerBlockId")),
 		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
 		Slots:         themeSlotFormValues(c),
-		// 结构模板绑定：本页只回传（隐藏域），读不到时保持原值而不是清空 ——
-		// 「没提交」与「提交了空值」在这里无法区分，二选一必然选**不丢数据**的那种。
-		HeaderTemplateID: firstNonEmpty(strings.TrimSpace(c.PostForm("headerTemplateId")), data.HeaderTemplateID),
-		FooterTemplateID: firstNonEmpty(strings.TrimSpace(c.PostForm("footerTemplateId")), data.FooterTemplateID),
+		// 结构模板绑定：见 structureTemplateFormValue —— 带哨兵域时按提交值写回（空值 = 主动解绑），
+		// 不带时保持已存值（旧表单/缺字段不能让保存一次颜色就把页眉模板清空）。
+		HeaderTemplateID: structureTemplateFormValue(c, "headerTemplateId", data.HeaderTemplateID),
+		FooterTemplateID: structureTemplateFormValue(c, "footerTemplateId", data.FooterTemplateID),
 		SlotTemplates:    themeSlotTemplateFormValues(c, data.SlotTemplates),
 	})
 	if err != nil {
@@ -347,6 +385,22 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/themes/settings?id="+themeID)
+}
+
+// structureTemplateFormValue 结构模板绑定的表单取值。
+//
+// 「没提交这个字段」与「提交了空值」必须分开：前者是旧表单 / 缺字段（保持原值 ——
+// 不能让「保存一次颜色」把配好的页眉模板清空），后者是用户在下拉里选了「不绑定」
+// （必须真的解绑）。判据是表单里的哨兵域 structureTemplateFields：新版表单渲染了
+// 结构模板区块就带它。
+//
+// 为什么不用「表单里有 headerTemplateId 键」当判据：多套模板并存时下拉本身就带空值项，
+// select 永远会提交这个键；而旧版表单根本没有这个键 —— 两件事用一个哨兵说清楚比猜更可靠。
+func structureTemplateFormValue(c *gin.Context, key, current string) string {
+	if strings.TrimSpace(c.PostForm("structureTemplateFields")) != "1" {
+		return firstNonEmpty(strings.TrimSpace(c.PostForm(key)), current)
+	}
+	return strings.TrimSpace(c.PostForm(key))
 }
 
 // firstNonEmpty 取第一个非空串（表单没提交时回落到已存值，避免保存即清空）。

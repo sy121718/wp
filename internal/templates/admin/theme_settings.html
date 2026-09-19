@@ -91,13 +91,34 @@
                 </label>
             </div>
 
-            {* 结构模板绑定（页眉 / 页脚的「多套存着、单套生效」之选）在本页**只做原样回传**：
-               保存路径按这些键写回，不提交就等于保持原值。下拉选择与「生效」徽标属模板列表侧
-               的后台改造，届时把这些隐藏域换成 select 即可（键名与落库口径不变）。 *}
-            {* 可选键一律用 chain 取值 / isset 判断：这些键只在主题设置页由 handle 提供，
-               直接 .HeaderTemplate 在缺键时是运行时报错中断整页（状态码仍是 200）。 *}
-            <input type="hidden" name="headerTemplateId" value="{{ .["HeaderTemplate"] }}">
-            <input type="hidden" name="footerTemplateId" value="{{ .["FooterTemplate"] }}">
+            <h3>{{ .["t"]("admin.theme_settings.structure_templates", "结构模板（页眉 / 页脚）") }}</h3>
+            <div class="theme-color-grid">
+                {* 结构模板与块是同一槽位的两条通道：构建期**模板优先**，模板未绑定或解析失败才回退块。
+                   两者都留着不是冗余 —— 选「不绑定」就能回到块绑定，不必重建一套块。
+                   候选里带「当前生效」标注：多套并存时最要紧的就是看出哪套真的在生效。 *}
+                <label>{{ .["t"]("admin.theme_settings.header_template", "页眉模板") }}
+                    <select name="headerTemplateId" class="form-select">
+                        <option value="">{{ .["t"]("admin.theme_settings.structure_none", "（不绑定，用上面的页眉块）") }}</option>
+                        {{if isset(.HeaderTemplateOptions)}}{{range _, o := .HeaderTemplateOptions}}
+                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}{{end}}
+                    </select>
+                </label>
+                <label>{{ .["t"]("admin.theme_settings.footer_template", "页脚模板") }}
+                    <select name="footerTemplateId" class="form-select">
+                        <option value="">{{ .["t"]("admin.theme_settings.structure_none_footer", "（不绑定，用上面的页脚块）") }}</option>
+                        {{if isset(.FooterTemplateOptions)}}{{range _, o := .FooterTemplateOptions}}
+                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}{{end}}
+                    </select>
+                </label>
+            </div>
+            <p class="text-mute text-sm">{{ .["t"]("admin.theme_settings.structure_hint", "结构模板在构建时优先于上面的块；模板未绑定或解析失败时回退到块，页眉不会因此消失。同一类型只允许一套生效，「设为生效」在内容模板列表页。") }}</p>
+            {* 哨兵域：告诉服务端「这次提交带了结构模板区块」——带了就按提交值写回
+               （空值 = 主动解绑），不带（旧表单 / 缺字段）保持已存值。 *}
+            <input type="hidden" name="structureTemplateFields" value="1">
+            {* 其余槽位的模板绑定（当前是公告条等）仍只做原样回传：这些槽位在本页没有下拉，
+               清空它们等于丢掉别处配好的绑定。 *}
             {{if isset(.SlotTemplates)}}{{range slot, id := .SlotTemplates}}
             <input type="hidden" name="slotTemplates.{{slot}}" value="{{id}}">
             {{end}}{{end}}

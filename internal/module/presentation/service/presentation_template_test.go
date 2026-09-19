@@ -67,6 +67,13 @@ func (s *stubTemplateService) Delete(context.Context, *contenttemplatedto.Delete
 	return nil
 }
 
+// Impact 引用反查（影响面提示与删除保护）：呈现侧的解析链路不消费它，
+// 桩件返回「未装配」形态 —— 与端口没注入时的真实行为一致，
+// 避免测试里凭空出现引用数据（那会让删除保护看起来生效、实际没有任何引用来源）。
+func (s *stubTemplateService) Impact(context.Context, *contenttemplatedto.ImpactReq) (*contenttemplatedto.ImpactResp, error) {
+	return &contenttemplatedto.ImpactResp{Available: false, References: []contenttemplatedto.TemplateReference{}}, nil
+}
+
 func (s *stubTemplateService) ResolveTemplate(context.Context, string) (*contenttemplatecontract.ResolvedTemplate, error) {
 	return s.resolved, s.resolveErr
 }

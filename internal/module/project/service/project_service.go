@@ -19,6 +19,16 @@ type Service struct {
 	// 装配方 routes.go 在断言失败时直接 panic，故生产路径恒非 nil；
 	// 本字段的 nil 分支只服务「不经装配、直接构造 Service」的纯单测。
 	retire projectcontract.LocaleRetirePort
+	// structureTemplateOpts 结构模板候选端口（主题设置页的「选结构模板」下拉，装配期注入）。
+	//
+	// 可空（非 required-port）：未注入时下拉只有「不绑定」一项、并留一行 Warn，
+	// 而不是把「保存主题设置」整件事挡住 —— 这是配置面变窄，不是数据风险。
+	structureTemplateOpts projectcontract.StructureTemplateOptionsPort
+}
+
+// SetStructureTemplateOptionsPort 注入结构模板候选端口（装配期调用）。
+func (s *Service) SetStructureTemplateOptionsPort(p projectcontract.StructureTemplateOptionsPort) {
+	s.structureTemplateOpts = p
 }
 
 // SetLocaleRetirePort 注入语言下线端口（装配期调用；**必须注入**，理由见字段注释）。

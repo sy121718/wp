@@ -128,6 +128,42 @@ type Model struct {
 // NewModel 构造。
 func NewModel(db *gorm.DB) *Model { return &Model{db: db} }
 
+// StructureRefRow 把某结构模板绑成槽位的**其它**内容模板（删除保护的定位数据）。
+type StructureRefRow struct {
+	ID            string          `gorm:"column:id"`
+	Name          string          `gorm:"column:name"`
+	DraftDocument json.RawMessage `gorm:"column:draft_document"`
+}
+
+// ListStructureBindingRows 粗筛出草稿文档里绑定了 templateID 的其它模板（只读）。
+//
+// 只做 SQL 侧的粗筛（三个绑定位置任一命中即返回行），**槽位归属的精确判定在 service**
+// （用 builder.StructureBindings 解析文档）—— model 不认识「绑定成页眉还是公告条」这层语义。
+//
+// 为什么不用外键兜：结构模板的引用在 JSONB 文档里（settings.structure），数据库管不到；
+// 而删除时静默丢弃绑定，表现是「页眉在某天构建后消失」，只在构建日志里留一行 Warn。
+func (m *Model) ListStructureBindingRows(ctx context.Context, projectID, templateID string) (rows []StructureRefRow, err error) {
+	if projectID == "" || templateID == "" {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Table(tableNameContentTemplates).
+			Select("id, name, draft_document").
+			Where(`project_id = ? AND id <> ?
+				AND (draft_document->'settings'->'structure'->>'headerTemplateId' = ?
+				 OR draft_document->'settings'->'structure'->>'footerTemplateId' = ?
+				 OR (jsonb_typeof(draft_document->'settings'->'structure'->'slotTemplates') = 'object'
+				     AND EXISTS (SELECT 1 FROM jsonb_each_text(draft_document->'settings'->'structure'->'slotTemplates') AS kv(slot, tid)
+				                 WHERE kv.tid = ?)))`,
+				projectID, templateID, templateID, templateID, templateID).
+			Scan(&rows).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // DB 绑定模板表的查询入口。
 func (m *Model) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&TemplateEntity{})

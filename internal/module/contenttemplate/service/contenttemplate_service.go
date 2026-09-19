@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,11 @@ type Service struct {
 	// 沿用 content 模块的同道范式：失效是写入的**后置副作用**，失败只记日志，
 	// 不能反向让已经成功的模板保存报错。
 	invalidator DependencyInvalidator
+	// impact 引用反查端口（装配层注入，见 contenttemplate_impact.go；可空）。
+	//
+	// 影响面提示与删除保护共用它 —— 页面文档的 settings.structure 绑定写在 JSONB 里，
+	// 本模块的表看不见，靠它把「谁在引用」拿回来。
+	impact contenttemplatecontract.TemplateImpactPort
 }
 
 // NewService 构造（model + project 契约 + 实体类型注册表注入，不持有 *gorm.DB）。
@@ -278,6 +284,40 @@ func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq)
 		}
 		return err
 	}
+	// 结构模板（页眉 / 页脚）的引用在 **JSONB 文档**里（settings.structure），数据库管不到：
+	// 删掉之后绑定静默丢失，站点的页眉在某次重建后直接没了，而删除操作本身一路成功。
+	// 因此这里显式拦截，并把引用者（模板名 + 槽位）写进错误 —— 打回给人，不静默删。
+	if contenttemplatemodel.IsStructureTemplateType(e.EntityType) {
+		refs, rerr := s.structureTemplateRefs(ctx, e.ProjectID, e.ID)
+		if rerr != nil {
+			// fail-closed：查不出引用就不删（宁可不删，也不静默丢绑定）。
+			logger.Scene("contenttemplate").With("templateId", e.ID).Error(rerr, "结构模板引用检查失败，已拒绝删除")
+			return rerr
+		}
+		if len(refs) > 0 {
+			logger.Scene("contenttemplate").With("templateId", e.ID).With("refs", strings.Join(refs, "；")).
+				Warn("结构模板删除被拒绝：仍被其它模板绑定为结构槽位")
+			// 冒号前是可翻译 key（handler 的三件套按 key 取文案），冒号后是可定位数据。
+			return fmt.Errorf("%s: %s", contenttemplateenums.ErrStructureTemplateInUse, strings.Join(refs, "；"))
+		}
+	}
+	// 页面与自动发布实例的引用：页面文档的 settings.structure 绑定写在 JSONB 里，
+	// 数据库外键管不到；实例那条虽有外键兜底，但外键只说得清「被引用」，说不出
+	// 「是哪个实体、线上路径在哪」—— 一次问全，删除被拒时才能给出可定位的数据。
+	//
+	// 与上面的结构模板分支并列而不是合并：两者的**处置方式不同**
+	//（去那个模板里解绑 vs 去那张页面 / 那个实例上解绑），错误 key 也不同。
+	bindingRefs, berr := s.referencesOfTemplate(ctx, e.ProjectID, e.ID)
+	if berr != nil {
+		// fail-closed：查不出引用就不删（让运营看见「查不出来」，好过静默丢绑定）。
+		logger.Scene("contenttemplate").With("templateId", e.ID).Error(berr, "模板引用检查失败，已拒绝删除")
+		return berr
+	}
+	if len(bindingRefs) > 0 {
+		logger.Scene("contenttemplate").With("templateId", e.ID).With("refs", strings.Join(bindingRefs, "；")).
+			Warn("模板删除被拒绝：仍被页面或实例引用")
+		return fmt.Errorf("%s: %s", contenttemplateenums.ErrTemplateInUse, strings.Join(bindingRefs, "；"))
+	}
 	if err = s.m.DeleteWithHistory(ctx, e.ProjectID, e.ID); err != nil {
 		if isForeignKeyViolation(err) {
 			return errors.New(contenttemplateenums.ErrTemplateInUse)
@@ -286,6 +326,57 @@ func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq)
 		return err
 	}
 	return nil
+}
+
+// structureTemplateRefs 返回把 templateID 绑成结构槽位的**其它内容模板**（可定位描述）。
+//
+// 形状是给人看的（模板名 + 槽位），用于删除拦截的错误文案与日志：
+// 「这套页眉被《商品详情模板》用作用页眉」比「ErrStructureTemplateInUse」可行动得多。
+func (s *Service) structureTemplateRefs(ctx context.Context, projectID, templateID string) ([]string, error) {
+	rows, err := s.m.ListStructureBindingRows(ctx, projectID, templateID)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, row := range rows {
+		var doc struct {
+			Settings struct {
+				Structure builder.StructureBindings `json:"structure"`
+			} `json:"settings"`
+		}
+		if err := json.Unmarshal(row.DraftDocument, &doc); err != nil {
+			// 解析不了就说「引用了」而不是跳过：跳过等于放行一次可能丢失绑定的删除。
+			out = append(out, fmt.Sprintf("模板《%s》（文档无法解析，无法判定槽位）", row.Name))
+			continue
+		}
+		var slots []string
+		for slot, id := range doc.Settings.Structure.TemplateBindings() {
+			if id == templateID {
+				slots = append(slots, structureSlotLabel(slot))
+			}
+		}
+		if len(slots) == 0 {
+			// SQL 粗筛命中但解析不出槽位（例如绑定写在历史版本里）：仍然拦下来，
+			// 因为「命中却说没引用」正是那种会静默丢绑定的判断。
+			slots = append(slots, "结构绑定")
+		}
+		sort.Strings(slots)
+		out = append(out, fmt.Sprintf("模板《%s》的%s", row.Name, strings.Join(slots, " / ")))
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// structureSlotLabel 槽位名 → 面向运营的说法。
+func structureSlotLabel(slot string) string {
+	switch slot {
+	case builder.SlotHeader:
+		return "页眉"
+	case builder.SlotFooter:
+		return "页脚"
+	default:
+		return "结构槽位 " + slot
+	}
 }
 
 // isForeignKeyViolation 错误链里是否含 PostgreSQL 外键冲突（SQLSTATE 23503）。
@@ -349,7 +440,8 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 	if req.EntityType != "" && !s.validEntityType(req.EntityType) {
 		return nil, errors.New(contenttemplateenums.ErrInvalidType)
 	}
-	projectID, err := s.resolveProjectID(ctx, "")
+	// 工程作用域优先用请求里显式给的那一个（后台页面手里就有），缺省才回落「唯一工程」。
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}

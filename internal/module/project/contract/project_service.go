@@ -73,6 +73,37 @@ type ProjectService interface {
 	DefaultLocale(ctx context.Context, projectID string) (lang string, err error)
 	// SaveLocales 全量保存站点语言清单（至少一种语言、至多一个默认且默认必须启用）。
 	SaveLocales(ctx context.Context, req *projectdto.LocalesSaveReq) (res []projectdto.LocaleResp, err error)
+
+	// ---- 结构模板候选（主题设置页的「选结构模板」下拉）----
+
+	// StructureTemplateOptions 列出本工程可绑定的结构模板（页眉 / 页脚）。
+	//
+	// 端口未注入时返回空列表、不报错：下拉少几个候选是配置面变窄，
+	// 不该让「保存主题设置」这一整件事失败（该能力缺失会在启动日志里留一行 Warn）。
+	StructureTemplateOptions(ctx context.Context, projectID string) (opts []StructureTemplateOption, err error)
+}
+
+// StructureTemplateOption 结构模板候选下拉项（主题设置页的「选结构模板」）。
+//
+// 只带下拉需要的字段：id / 名字 / 类型（header / footer）/ 是否当前生效。
+// 文档与版本不进这里 —— 下拉不预览排版，选了之后由构建期解析。
+type StructureTemplateOption struct {
+	ID         string
+	Name       string
+	// EntityType header / footer（只要这两种会出现在下拉里）。
+	EntityType string
+	// IsDefault 是否是该类型的当前生效模板（页面在选项后标注「当前生效」）。
+	IsDefault bool
+}
+
+// StructureTemplateOptionsPort 结构模板候选的只读端口（消费者侧最窄接口）。
+//
+// 为什么由 project 声明、由装配层实现：project 不认识 content_templates 表，
+// 也不 import contenttemplate 的 service/model —— 端口留在消费者侧是本项目的既有形状
+//（与 LocaleRetirePort 同一手法）。
+type StructureTemplateOptionsPort interface {
+	// ListStructureTemplateOptions 列出工程内全部结构模板（页眉 / 页脚）。
+	ListStructureTemplateOptions(ctx context.Context, projectID string) (opts []StructureTemplateOption, err error)
 }
 
 // LocaleRetirePort 禁用语言后的路由下线端口（审计 I18N-017）。

@@ -42,14 +42,17 @@ const contentTemplateErrInternalFallback = "系统内部错误，请稍后重试
 // 漏登记只会让页面少一句可读提示（一眼可见），而漏判的方向恰好相反 ——
 // 内部字符串只要长得像 key 就会被透出。
 var contentTemplateFacingMessages = map[string]string{
-	contenttemplateenums.ErrInvalidParam:        "参数不完整，请检查工程、模板名与实体类型。",
-	contenttemplateenums.ErrNotFound:            "这套模板不存在，可能已被删除。",
-	contenttemplateenums.ErrTemplateInUse:       "这套模板仍被自动发布实例引用，不能删除。",
-	contenttemplateenums.ErrInvalidType:         "不支持的内容类型。",
-	contenttemplateenums.ErrDataInvalid:         "模板文档格式非法：请回到工作台重新保存后再试。",
-	contenttemplateenums.ErrFieldBindingInvalid: "模板里的字段绑定越界：请回到工作台改用本模板数据源内的字段。",
-	contenttemplateenums.ErrProjectRequired:     "站点里有多个工程，请显式选择这套模板所属的工程。",
-	contenttemplateenums.ErrProjectNotFound:     "选择的站点工程不存在，请刷新后重试。",
+	contenttemplateenums.ErrInvalidParam:           "参数不完整，请检查工程、模板名与实体类型。",
+	contenttemplateenums.ErrNotFound:               "这套模板不存在，可能已被删除。",
+	// 页面文档里的 settings.structure 绑定与实例的 template_id 共用这条 key：
+	// 两者的处置都是「先去那个引用方解绑」，而明细（页面名 / 实例实体）在服务日志里。
+	contenttemplateenums.ErrTemplateInUse:          "这套模板仍被页面或自动发布实例引用，不能删除（引用方见列表的「引用」列）。",
+	contenttemplateenums.ErrStructureTemplateInUse: "这套结构模板仍被其它模板绑定为页眉 / 页脚，不能删除（受影响的模板已记入服务日志）。",
+	contenttemplateenums.ErrInvalidType:            "不支持的内容类型。",
+	contenttemplateenums.ErrDataInvalid:            "模板文档格式非法：请回到工作台重新保存后再试。",
+	contenttemplateenums.ErrFieldBindingInvalid:    "模板里的字段绑定越界：请回到工作台改用本模板数据源内的字段。",
+	contenttemplateenums.ErrProjectRequired:        "站点里有多个工程，请显式选择这套模板所属的工程。",
+	contenttemplateenums.ErrProjectNotFound:        "选择的站点工程不存在，请刷新后重试。",
 }
 
 // contentTemplateControlledPrefixes 受控提示的前缀白名单。
@@ -139,7 +142,21 @@ const (
 	contentTemplateHintNoProduct      = "工程内还没有商品，无法预览商品详情模板"
 	contentTemplateHintNoArticle      = "工程内还没有文章，无法预览文章详情模板"
 	contentTemplateHintEntityTypeMiss = "暂不支持该实体类型的预览样例自动选取（本页只支持商品与文章）"
+	// 切换生效的成功回执（进 ?done=）。生效的那套换了意味着引用它的产物过期，
+	// 回执把这件事说出来，免得有人以为「只是改了个标记」。
+	contentTemplateActivateDoneText = "已切换生效模板，引用它的页面与实例会重新构建。"
+	// 引用反查未装配时的提示。刻意**不写成「系统内部错误」**：正确读法是「查不出来」，
+	// 而不是一次失败；而且它与「没有引用」必须长得不同 —— 后者会让人以为可以放心删。
+	contentTemplateImpactUnavailableText = "引用反查能力未装配：本页无法列出引用这套模板的页面与实例，删除前请人工确认。"
+	// 结构模板没有可视化编辑入口的原因说明（不是错误，是能力现状）。
+	// 说清「缺什么」而不是只说「不支持」：看的人据此能判断该等谁改哪一段。
+	contentTemplateHintStructureNoPreview = "结构模板暂无可视化编辑入口：工作台的内容模板模式需要一条样例实体来解析字段绑定，而页眉 / 页脚不是内容实体。"
 )
+
+// contentTemplateImpactUnparsableTemplate 影响面可能不完整的提示（%d = 无法解析的文档数）。
+//
+// 带占位符的受控文案（与批量结论同一形态），读侧经 shell.NoticeTemplate 归一后参与回显判定。
+const contentTemplateImpactUnparsableTemplate = "有 %d 份文档无法解析，影响面可能不完整（这些文档仍可能引用本模板）。"
 
 // contentTemplateLocalNotices 本页自造、可原样展示的回执文案。
 var contentTemplateLocalNotices = []string{
@@ -152,6 +169,9 @@ var contentTemplateLocalNotices = []string{
 	contentTemplateHintNoProduct,
 	contentTemplateHintNoArticle,
 	contentTemplateHintEntityTypeMiss,
+	contentTemplateActivateDoneText,
+	contentTemplateImpactUnavailableText,
+	contentTemplateHintStructureNoPreview,
 }
 
 // contentTemplatesBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
@@ -161,8 +181,8 @@ var contentTemplateLocalNotices = []string{
 var contentTemplatesBulkResultTemplates = []string{
 	"没有选中任何模板，列表未改动。",
 	"已删除 %d 个模板。",
-	"%d 个模板都未能删除，列表未改动（被自动发布实例引用的模板不能删除）。",
-	"已删除 %d 个，%d 个未能删除（被自动发布实例引用的模板不能删除）。",
+	"%d 个模板都未能删除，列表未改动（仍被页面、实例或其它模板引用的模板不能删除）。",
+	"已删除 %d 个，%d 个未能删除（仍被页面、实例或其它模板引用的模板不能删除）。",
 }
 
 // contentTemplateNoticeTexts 本页可以原样展示的回执文案（当前语言）。
@@ -184,6 +204,7 @@ func contentTemplateNoticeTexts(c *gin.Context) []string {
 	for _, tpl := range contentTemplatesBulkResultTemplates {
 		out = append(out, shell.NoticeTemplate(tpl))
 	}
+	out = append(out, shell.NoticeTemplate(contentTemplateImpactUnparsableTemplate))
 	return out
 }
 

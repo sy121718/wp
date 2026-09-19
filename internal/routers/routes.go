@@ -60,6 +60,8 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 	a.wireRuntimeAccessFace()
 	a.buildPublishingModules()
 	a.wirePublishingPorts()
+	// 模板引用反查（影响面提示与删除保护的数据源）：page / presentation 契约齐备后接线。
+	a.wireContentTemplateImpact()
 
 	// 启动期后台任务与运行时接线
 	a.startRuntimeTasks()

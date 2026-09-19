@@ -17,6 +17,7 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -81,11 +82,19 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/content_templates.html", shell.Prepare(c, data))
 		return
 	}
-	list, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: entityType})
+	// 引用反查先于列表：影响面（哪些模板被页面 / 实例引用）是这一页的删前决策依据。
+	// 取不到时降级成 Available=false（「查不出来」），绝不显示成「没有引用」——
+	// 后者会让人以为可以放心删。
+	impact, impactErr := h.templates.Impact(ctx, &contenttemplatedto.ImpactReq{ProjectID: selected})
+	if impactErr != nil || impact == nil {
+		impact = &contenttemplatedto.ImpactResp{Available: false}
+	}
+	list, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: entityType, ProjectID: selected})
 	if err != nil {
 		shell.PageError(c, "content_template", err)
 		return
 	}
+	refsByTemplate := contentTemplateRefsByTemplate(impact)
 	rows := make([]gin.H, 0, len(list))
 	for _, t := range list {
 		sampleID, sampleHint, sampleErr := h.sampleEntityID(ctx, selected, t.EntityType)
@@ -93,20 +102,87 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		if sampleErr == nil && strings.TrimSpace(sampleHint) == "" && sampleID != "" {
 			editURL = workbenchTemplateURL(t.ID, t.EntityType, sampleID, selected)
 		}
+		refs := refsByTemplate[t.ID]
+		if refs == nil {
+			// 没有引用时也要给**非 nil 的空切片**：Jet 的 len() 对 nil 会报错，
+			// 而那一行的报错表现是「HTTP 200 + 之后整块 HTML 消失」。
+			refs = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
+		}
+		// 结构模板不是内容实体：工作台的内容模板模式要一条样例实体来解析字段绑定，
+		// 所以它没有可用的可视化编辑入口 —— 这里给一句**说清原因**的提示，
+		// 而不是让用户点进去撞一个 302 回跳。
+		sampleNote := sampleErrText(c, sampleHint, sampleErr)
+		if contenttemplatemodel.IsStructureTemplateType(t.EntityType) {
+			sampleNote = contentTemplateHintStructureNoPreview
+		}
 		rows = append(rows, gin.H{
 			"ID": t.ID, "Name": t.Name, "EntityType": t.EntityType,
 			"DraftVersion": t.DraftVersion, "UpdatedAt": t.UpdatedAt,
+			// 结构模板（页眉 / 页脚）与内容实体模板在这张表里是两类东西：前者没有实体来源、
+			// 也不接受字段绑定，两者的可编辑性与删除后果都不同，页面上必须一眼分得开。
+			"IsStructure": contenttemplatemodel.IsStructureTemplateType(t.EntityType),
+			"TypeLabel":   contentTemplateTypeLabel(t.EntityType),
+			"RoleLabel":   contentTemplateRoleLabel(t.TemplateRole),
+			"IsDefault":   t.IsDefault,
 			// SampleErr 是**模板数据**（形态③）：依赖错误只能出归口文案，原文进日志。
-			"EditURL": editURL, "SampleErr": sampleErrText(c, sampleHint, sampleErr),
+			"EditURL": editURL, "SampleErr": sampleNote,
+			// 引用明细（页面 / 实例）：删除与切换生效前必须看得见的东西，所以给
+			// 「是哪几张页面、哪个实例」而不是一个计数（计数只够做提示，不够做决策）。
+			"RefPages": refs.Pages, "RefInstances": refs.Instances, "RefCount": refs.Count,
+			"RefPageCount": len(refs.Pages), "RefInstanceCount": len(refs.Instances),
 		})
 	}
 	data["Templates"] = rows
 	data["TemplateCount"] = len(rows)
 	data["Ready"] = true
+	// 影响面能力的三种状态各说各话：可用 / 未装配 / 有文档解析不了（影响面可能不完整）。
+	// 未装配与「没有引用」必须长得不一样，否则运营会拿一个空白引用列表当证据去删模板。
+	data["ImpactAvailable"] = impact.Available
+	data["ImpactNote"] = contentTemplateImpactNote(c, impact, impactErr)
 	// 可选键一律由 handler 注入（模板用 isset 包裹）：本页此前只有 ?err=，
 	// 批量删除的「成功 N 个 / 跳过 M 个」需要一条正向回执通道。
 	data["Done"] = contentTemplatePageDone(c)
 	c.HTML(http.StatusOK, "admin/content_templates.html", shell.Prepare(c, data))
+}
+
+// ContentTemplatesActivate 切换生效模板（POST /admin/content-templates/activate）。
+//
+// 与 JSON 接口 POST /api/contenttemplate/activate 是同一个动作、同一条权限点
+//（contenttemplate:activate）：同一（工程, 类型）下**多套存着、单套生效**，
+// 切换后旧的那套不再生效。页面上的「设为生效」按钮走这里，不重复实现业务规则 ——
+// service 内部负责事务（旧的置 false、目标置 true）与依赖扇出。
+//
+// 回执：成功进 ?done=（沿用批量删除那条正向通道），失败走 ?err=（受控白名单文案），
+// 都保留工程与实体类型筛选（否则用户切完一次就丢了当前视图）。
+func (h *contentTemplatePageHandle) ContentTemplatesActivate(c *gin.Context) {
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	entityType := strings.TrimSpace(c.PostForm("entityType"))
+	q := url.Values{}
+	if projectID != "" {
+		q.Set("project", projectID)
+	}
+	if entityType != "" {
+		q.Set("entityType", entityType)
+	}
+	if h.templates == nil {
+		q.Set("err", contentTemplatesNotReadyText)
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
+		return
+	}
+	id := strings.TrimSpace(c.PostForm("id"))
+	if id == "" {
+		q.Set("err", contentTemplateMissingIDText)
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
+		return
+	}
+	if _, err := h.templates.Activate(c.Request.Context(), &contenttemplatedto.ActivateReq{ID: id}); err != nil {
+		// 错误原文只进日志：这一页的 ?err= 会被原样渲染（归口见 content_template_err.go）。
+		q.Set("err", contentTemplateErrText(c, err))
+		c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
+		return
+	}
+	q.Set("done", contentTemplateActivateDoneText)
+	c.Redirect(http.StatusFound, contentTemplatesListPath+"?"+q.Encode())
 }
 
 // ContentTemplatesBulkDelete 批量删除内容模板（POST /admin/content-templates/bulk-delete）。

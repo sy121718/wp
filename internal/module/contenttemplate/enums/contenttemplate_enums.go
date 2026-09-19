@@ -12,8 +12,14 @@ const (
 	ErrNotFound     = "ErrNotFound"     // 模板不存在
 	// ErrTemplateInUse 模板仍被自动发布实例引用，不能删除（外键拒绝）。
 	ErrTemplateInUse = "ErrTemplateInUse"
-	ErrInvalidType   = "ErrInvalidType" // 不支持的内容类型
-	ErrDataInvalid   = "ErrDataInvalid" // 模板文档格式非法
+	// ErrStructureTemplateInUse 结构模板（页眉 / 页脚）仍被其它模板绑定为结构槽位，不能删除。
+	//
+	// 与外键拒绝的 ErrTemplateInUse 区分开：那条说的是「实例在用这套模板」，
+	// 这条说的是「别的模板把这张页眉套在了自己头上」—— 处置方式不同
+	//（前者先处理实例，后者先到那个模板里解绑）。
+	ErrStructureTemplateInUse = "ErrStructureTemplateInUse"
+	ErrInvalidType            = "ErrInvalidType" // 不支持的内容类型
+	ErrDataInvalid            = "ErrDataInvalid" // 模板文档格式非法
 	// ErrFieldBindingInvalid 文档内声明的字段绑定越界（不在数据源字段白名单内，
 	// 或绑定了非本模板数据源的字段，issue #6）。白名单唯一来源 = 实体类型注册表。
 	ErrFieldBindingInvalid = "ErrFieldBindingInvalid"
