@@ -54,6 +54,12 @@ type Service struct {
 	navigation navigationcontract.NavigationService
 	// media 媒体契约：构建期探测图片变体，输出响应式 srcset（访客零查询）。
 	media mediacontract.MediaService
+	// structureTemplates 结构模板解析端口（页眉 / 页脚绑定结构模板时构建期取文档）。
+	//
+	// 消费者侧最窄端口（pipeline.StructureTemplatePort）：本模块不需要 contenttemplate
+	// 的 DTO / 版本表 / 类型校验，只要「一份文档」。未注入时模板槽位一律回退块绑定 ——
+	// 存量站点行为与改造前逐字节一致（见 page_assemble.go 的装配注释）。
+	structureTemplates pipeline.StructureTemplatePort
 	// contentStore 内容译文读取端口（多语言 P5b）：为 nil 时用 pkg/i18n 默认存储
 	// （sys_translation 表 + 默认数据库）。测试经 SetContentTranslationStore 注入
 	// 隔离 schema 的存储，用于验证「块内文本进候选集合 + 每页每语言一次查库」。
@@ -129,6 +135,14 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 	s.publisher = pipeline.NewPublisher(store, publication, pipeline.WithDependencies(s.buildDependencies))
 	s.publisher.SetCompile(s.assembleCompile)
 	return s
+}
+
+// SetStructureTemplatePort 注入结构模板解析端口（装配期调用，与其它可选依赖同模式）。
+//
+// 未注入（或某套模板解析失败）时结构槽位回退块绑定：漏接的表现是「主题里配了
+// 页眉结构模板，站点上却还是旧块」—— 不会报错，故装配层按必需端口断言（见 assembly_publish.go）。
+func (s *Service) SetStructureTemplatePort(port pipeline.StructureTemplatePort) {
+	s.structureTemplates = port
 }
 
 // SetContentTranslationStore 注入内容译文读取端口（测试用；生产走 pkg/i18n 默认存储）。

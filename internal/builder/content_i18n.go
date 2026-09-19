@@ -100,6 +100,17 @@ func CollectContentCandidatesForDocument(p *Page, resolve BlockRootFunc) []Conte
 	for _, slot := range SortedSlots(bindings) {
 		extra = append(extra, bindings[slot])
 	}
+	// 结构模板槽位（页眉 / 页脚绑定了结构模板）：模板文档同样不在块表里，但调用方
+	// 注入的 resolve 是**叠加了模板虚拟引用**的解析器（pipeline.BuildStructureSlots
+	// 的返回值），按 StructureTemplateRef 取得到节点。漏这一步的表现与页眉块漏登记
+	// 逐字相同：模板里的文案永远不翻译，而构建照常成功、也不报任何错。
+	//
+	// 回退到块绑定的槽位不在此列：调用方已经把回退后的块登记进 SlotBindings 的语义里
+	//（resolve 对虚拟引用返回错误即静默跳过，与「块不可用」同一降级口径）。
+	templateBindings := p.Settings.Structure.TemplateBindings()
+	for _, slot := range SortedSlots(templateBindings) {
+		extra = append(extra, StructureTemplateRef(templateBindings[slot]))
+	}
 	return AppendSEOCandidates(p, CollectContentCandidatesDeep(p, extra, resolve))
 }
 

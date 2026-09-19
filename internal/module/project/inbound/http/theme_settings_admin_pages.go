@@ -57,6 +57,14 @@ type themeSettingsData struct {
 	// AnnouncementBlocks 公告条候选块；AnnouncementBlockID 当前绑定（审计 VIS-012）。
 	AnnouncementBlocks  []blockOption
 	AnnouncementBlockID string
+	// HeaderTemplateID / FooterTemplateID 页眉 / 页脚绑定的结构模板（可空 = 用块绑定）。
+	//
+	// 本页暂只做**原样回传**（渲染成隐藏域，保存时写回）：结构模板下拉与「生效」徽标
+	// 属模板列表侧的后台改造，届时把隐藏域换成 select 即可，落库口径不用变。
+	HeaderTemplateID string
+	FooterTemplateID string
+	// SlotTemplates 其余槽位的模板绑定（槽位名 → 模板 ID），同样原样回传。
+	SlotTemplates map[string]string
 }
 
 // blockOption 页眉/页脚绑定候选下拉项。
@@ -88,6 +96,9 @@ func (d *themeSettingsData) templateMap() gin.H {
 		"FooterBlocks":       d.FooterBlocks,
 		"AnnouncementBlocks": d.AnnouncementBlocks,
 		"AnnouncementBlock":  d.AnnouncementBlockID,
+		"HeaderTemplate":     d.HeaderTemplateID,
+		"FooterTemplate":     d.FooterTemplateID,
+		"SlotTemplates":      d.SlotTemplates,
 	}
 }
 
@@ -105,6 +116,14 @@ type themeSettingsJSON struct {
 	FooterBlockID string `json:"footerBlockId,omitempty"`
 	// Slots 其余结构槽位的绑定（公告条 / 侧边栏等）：主题设置保存时与两个历史字段一起落库。
 	Slots map[string]string `json:"slots,omitempty"`
+	// HeaderTemplateID/FooterTemplateID/SlotTemplates 结构模板绑定（页眉 / 页脚的
+	// 「多套存着、单套生效」之选），与块绑定同层、同一份快照里落库。
+	//
+	// **保存路径必须原样写回**：漏掉就是「在别处配好的结构模板，来这个页面保存一次
+	// 主题设置就被清空」—— 站点上页眉悄悄回到旧块绑定，而页面上看不出任何异常。
+	HeaderTemplateID string            `json:"headerTemplateId,omitempty"`
+	FooterTemplateID string            `json:"footerTemplateId,omitempty"`
+	SlotTemplates    map[string]string `json:"slotTemplates,omitempty"`
 }
 
 // ThemeSettings 单主题设置页。
@@ -159,6 +178,10 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 	}
 	data.HeaderBlockID = s.HeaderBlockID
 	data.FooterBlockID = s.FooterBlockID
+	// 结构模板绑定：本页只做原样回传（隐藏域），不清空、不改写。
+	data.HeaderTemplateID = s.HeaderTemplateID
+	data.FooterTemplateID = s.FooterTemplateID
+	data.SlotTemplates = s.SlotTemplates
 	// 其余槽位（目前是公告条）从 slots 映射里取：加新槽位时这里与模板各加一行。
 	data.AnnouncementBlockID = s.Slots["announcement"]
 	// 字段分组：以原始 JSON 为准（保真，不经过结构体丢掉历史/未来的键）。
@@ -295,6 +318,11 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		HeaderBlockID: strings.TrimSpace(c.PostForm("headerBlockId")),
 		FooterBlockID: strings.TrimSpace(c.PostForm("footerBlockId")),
 		Slots:         themeSlotFormValues(c),
+		// 结构模板绑定：本页只回传（隐藏域），读不到时保持原值而不是清空 ——
+		// 「没提交」与「提交了空值」在这里无法区分，二选一必然选**不丢数据**的那种。
+		HeaderTemplateID: firstNonEmpty(strings.TrimSpace(c.PostForm("headerTemplateId")), data.HeaderTemplateID),
+		FooterTemplateID: firstNonEmpty(strings.TrimSpace(c.PostForm("footerTemplateId")), data.FooterTemplateID),
+		SlotTemplates:    themeSlotTemplateFormValues(c, data.SlotTemplates),
 	})
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, themePageMsgInternal)
@@ -319,6 +347,39 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/themes/settings?id="+themeID)
+}
+
+// firstNonEmpty 取第一个非空串（表单没提交时回落到已存值，避免保存即清空）。
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// themeSlotTemplateFormValues 收集表单里的槽位模板绑定（点分键 slotTemplates.<槽位名>）。
+//
+// 与 themeSlotFormValues 同构：前缀扫描，将来加槽位不必改这里。表单没有提交任何
+// slotTemplates 键时**原样返回已存值**（同上：不丢数据优先）。
+func themeSlotTemplateFormValues(c *gin.Context, current map[string]string) map[string]string {
+	const prefix = "slotTemplates."
+	_ = c.Request.ParseForm()
+	out := map[string]string{}
+	for key, values := range c.Request.PostForm {
+		if !strings.HasPrefix(key, prefix) || len(values) == 0 {
+			continue
+		}
+		slot := strings.TrimSpace(strings.TrimPrefix(key, prefix))
+		if id := strings.TrimSpace(values[0]); slot != "" && id != "" {
+			out[slot] = id
+		}
+	}
+	if len(out) == 0 {
+		return current
+	}
+	return out
 }
 
 // themeSlotFormValues 收集表单里的结构槽位绑定（点分键 slots.<槽位名>）。

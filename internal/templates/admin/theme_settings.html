@@ -91,6 +91,17 @@
                 </label>
             </div>
 
+            {* 结构模板绑定（页眉 / 页脚的「多套存着、单套生效」之选）在本页**只做原样回传**：
+               保存路径按这些键写回，不提交就等于保持原值。下拉选择与「生效」徽标属模板列表侧
+               的后台改造，届时把这些隐藏域换成 select 即可（键名与落库口径不变）。 *}
+            {* 可选键一律用 chain 取值 / isset 判断：这些键只在主题设置页由 handle 提供，
+               直接 .HeaderTemplate 在缺键时是运行时报错中断整页（状态码仍是 200）。 *}
+            <input type="hidden" name="headerTemplateId" value="{{ .["HeaderTemplate"] }}">
+            <input type="hidden" name="footerTemplateId" value="{{ .["FooterTemplate"] }}">
+            {{if isset(.SlotTemplates)}}{{range slot, id := .SlotTemplates}}
+            <input type="hidden" name="slotTemplates.{{slot}}" value="{{id}}">
+            {{end}}{{end}}
+
             <div class="form-inline theme-actions">
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>
             </div>

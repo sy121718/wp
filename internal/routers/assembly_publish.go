@@ -148,6 +148,19 @@ func (a *assembly) buildPublishingModules() {
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc, a.adminPages, a.workbenchPages)
 
+	// 结构模板（页眉 / 页脚）→ page 构建路径的模板解析端口。
+	//
+	// 断言 + fail-fast（与相邻端口同一判据）：漏接的表现是「主题里绑定了结构模板，
+	// 站点上仍是旧块（或干脆没有页眉页脚）」—— 构建期按回退路径静默完成，日志里什么都没有。
+	pageTemplateSetter, ok := pageService.(interface {
+		SetStructureTemplatePort(pipeline.StructureTemplatePort)
+	})
+	if !ok {
+		panic("page 模块未提供结构模板端口注入点（SetStructureTemplatePort）")
+	}
+	pageTemplateSetter.SetStructureTemplatePort(structureTemplatePortAdapter{svc: contentTemplateSvc})
+	marks.mark(portPageStructureTemplates)
+
 	// block ↔ page 的装配期接线（原在 dashboard 的 NewHandle 内，页面回迁后移到装配层）：
 	// 块内容变更/删除后的 stale 传播，与删除前的引用检查。两个闭包只依赖 page/project 契约。
 	if setter, ok := blockSvc.(interface {
@@ -450,10 +463,12 @@ func (a *assembly) startRuntimeTasks() {
 	// 不接线 = 前面登记的依赖行永远不会被反查：改了页眉模板，站点仍是旧字节且没有任何报错
 	//（本批的核心价值点，接线漏掉在测试里也不会报错）。
 	// 契约接口不暴露 setter，故用类型断言取（同文件其它可选端口的写法）。
+	// 扇出外面包一层影响面回执适配器：Fanout.Invalidate 丢弃受影响集合，直接接它
+	// 就看不到「这次模板换代波及哪些页面 / 实例」—— 而那正是运营改全站页眉时最需要的回执。
 	if setter, ok := a.contentTemplateSvc.(interface {
 		SetInvalidator(contenttemplateservice.DependencyInvalidator)
 	}); ok {
-		setter.SetInvalidator(fanout)
+		setter.SetInvalidator(contentTemplateInvalidator{fanout: fanout})
 		marks.mark(portContentTemplateInvalidator)
 	}
 	// 导航变更 → 依赖失效（审计遗留缺口：DepKindMenu 有常量、无发射点）：

@@ -71,6 +71,7 @@ const (
 	portPageBuildQueue                 = "page.SetBuildQueue"
 	portPageProductDataSource          = "page.SetProductDataSource"
 	portPageI18nStalePeer              = "page.SetI18nStalePeer"
+	portPageStructureTemplates         = "page.SetStructureTemplatePort"
 	portPresentationBuildQueue         = "presentation.SetBuildQueue"
 	portPresentationProductDataSource  = "presentation.SetProductDataSource"
 	portPresentationSiteAssembly       = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
@@ -181,6 +182,8 @@ var wiringManifest = []wiringEntry{
 		"反向产物对账把自动发布实例的产物误报成孤儿（一份看不出真假的对账结果）"},
 	{portPageBlueprints, "blueprint", "page", wiringRequiredPort,
 		"「从蓝图建页」静默建出空白页（要等编辑者打开画布才发现）"},
+	{portPageStructureTemplates, "contenttemplate", "page", wiringRequiredPort,
+		"页眉 / 页脚绑定的结构模板静默失效：构建期回退到旧块绑定，站点上仍是旧页眉（或没有页眉），且没有任何报错"},
 	{portPresentationBuildQueue, "build", "presentation", wiringRequiredPort,
 		"自动发布实例的失效重建仍在触发进程里持进程内锁同步执行，多实例部署下拦不住重复重建"},
 	{portPageBuildQueue, "build", "page", wiringRequiredPort,

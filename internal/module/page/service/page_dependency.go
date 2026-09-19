@@ -300,12 +300,18 @@ func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEn
 			for _, id := range builder.ReferencedBlockIDs(parsed.Root) {
 				add(pipeline.BlockKey(id))
 			}
-			// 槽位绑定（页眉 / 页脚 / 公告条…）：所有被绑定的块都要登记为依赖，
+			// 槽位绑定（页眉 / 页脚 / 公告条…）：所有被**实际消费**的绑定都要登记为依赖，
 			// 否则「改了公告条引用的块」不会让引用页失效 —— 站点上一直显示旧内容。
-			if bindings := parsed.Settings.Structure.SlotBindings(); len(bindings) > 0 {
-				for _, slot := range builder.SortedSlots(bindings) {
-					add(pipeline.BlockKey(bindings[slot]))
-				}
+			//
+			// 走 pipeline.StructureSlotDependencies 而不是在这里自己判优先级：绑定了结构模板
+			// 的槽位消费的是**模板**（登记 content_template:{id} + 模板内引用的 block:{id}），
+			// 块只是回退路径。自己再判一次的结果是两条路径迟早分叉 —— 一边登记了没消费的键
+			//（改了那套模板以为会重建，其实页面根本没用它），一边漏登记真正消费的键
+			//（改了模板，页面永远停在旧字节）。
+			//
+			// 端口未注入时模板槽位解析失败 → 与构建期同一回退口径：只登记块绑定。
+			for _, dep := range pipeline.StructureSlotDependencies(ctx, s.structureTemplates, page.ProjectID, parsed.Settings.Structure) {
+				add(pipeline.DepKey{Kind: dep.Kind, Key: dep.Key})
 			}
 			for _, src := range s.collectionSourcesOf(ctx, parsed.Root) {
 				add(pipeline.DepKey{Kind: pipeline.DepKindContentCollection, Key: "collection:" + src})

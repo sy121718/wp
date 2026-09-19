@@ -264,17 +264,6 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 	})
 }
 
-// structureSlotOptions 把 settings.structure 快照转成编译期的结构槽位绑定（审计 VIS-001）。
-//
-// 空绑定不产生任何 opt：没有页眉页脚时产物与改造前逐字节一致（无绑定即零影响）。
-func structureSlotOptions(s builder.StructureBindings) []builder.CompileOption {
-	bindings := s.SlotBindings()
-	if len(bindings) == 0 {
-		return nil
-	}
-	slots := make([]builder.StructureSlot, 0, len(bindings))
-	for _, slot := range builder.SortedSlots(bindings) {
-		slots = append(slots, builder.StructureSlot{Slot: slot, BlockID: bindings[slot]})
-	}
-	return []builder.CompileOption{builder.WithStructureSlots(slots...)}
-}
+// 结构槽位的编译期绑定已收口到 pipeline.BuildStructureSlots（结构模板优先、块绑定回退，
+// 两条构建路径共用一份实现）：本文件原先的 structureSlotOptions 只认块绑定，绑了结构模板
+// 的槽位会被它整个忽略 —— 留着就是第二个真相，故删除。

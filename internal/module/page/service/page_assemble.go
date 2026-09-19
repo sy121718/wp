@@ -137,6 +137,21 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if page.Settings.Theme != nil {
 		opts = append(opts, builder.WithThemeSettings(page.Settings.Theme))
 	}
+	// 结构槽位（审计 VIS-001）：页眉 / 页脚的绑定展开成 root 首尾的槽位节点，
+	// 与页面主体走**同一次编译** —— 不再由装配层把块单独编译后拼字符串。
+	//
+	// 拼字符串的问题不在字节，而在「块不在 AST 里」：翻译候选、失效依赖、
+	// workbench 画布、main 地标判定各要一份特判，漏一处就是「页眉改了但页面没重建」。
+	// 展开之后，槽位节点的语义与作者手动插入的 core.globalref 完全一致。
+	//
+	// 结构模板优先、块绑定回退（pipeline.BuildStructureSlots，与自动发布实例路径同一份实现）：
+	// 模板未绑定 / 不存在 / 文档非法时，该槽位回退到主题里配的块 —— 存量站的页眉页脚
+	// 不会因为一次模板绑定改造而整片消失。端口未注入（structureTemplates == nil）同理。
+	//
+	// 顺序：必须在取词器构造**之前**算出槽位 —— 结构模板的文档不在块表里，它的可翻译
+	// 文本要经叠加了解析器的 slotResolver 才能进候选集合（否则模板里的文案永远不翻译，
+	// 且不报任何错）。
+	slotList, slotResolver, _ := pipeline.BuildStructureSlots(ctx, s.structureTemplates, projectID, page.Settings.Structure, resolver)
 	// 内容翻译（多语言 P5b，docs/06-D §7.7）：作者在编辑器里填写的文本（按钮文字/
 	// 标题/alt/图注/富文本）按组件 Translatable 白名单替换。每页每语言**构造一次**
 	// 取词器——先收集候选（本页 AST + 页眉/页脚块 + core.globalref 内联块，见
@@ -145,15 +160,14 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	var contentTranslator *i18n.ContentTranslator
 	var contentCandidates int
 	opts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(
-		opts, ctx, s.project, projectID, lang, page, resolver.ResolveBlockRoot, s.newContentTranslator)
+		opts, ctx, s.project, projectID, lang, page, slotResolver.ResolveBlockRoot, s.newContentTranslator)
 	opts = append(opts, pipeline.AnalyticsCompileOptions(ctx, s.project, projectID)...)
-	// 结构槽位（审计 VIS-001）：页眉 / 页脚的绑定展开成 root 首尾的槽位节点，
-	// 与页面主体走**同一次编译** —— 不再由装配层把块单独编译后拼字符串。
-	//
-	// 拼字符串的问题不在字节，而在「块不在 AST 里」：翻译候选、失效依赖、
-	// workbench 画布、main 地标判定各要一份特判，漏一处就是「页眉改了但页面没重建」。
-	// 展开之后，槽位节点的语义与作者手动插入的 core.globalref 完全一致。
-	opts = append(opts, structureSlotOptions(page.Settings.Structure)...)
+	if len(slotList) > 0 {
+		// 出现模板槽位时必须换成叠加了虚拟引用的解析器：模板文档不在块表里，
+		// 原解析器按引用 ID 去查库会直接报「块不存在」。
+		opts = append(opts, builder.WithBlockResolver(slotResolver))
+		opts = append(opts, builder.WithStructureSlots(slotList...))
+	}
 	// 依赖线索：只记录**真实消费**的槽位（预览路径传 nil，不记录）。
 	if usage != nil {
 		opts = append(opts, builder.WithUsageRecorder(usage))
