@@ -58,4 +58,6 @@ func init() {
 	registerAnalyticsSeoAndPermissions()
 	registerAdminI18nSeedsAndLatest()
 	registerPluginPatrolI18n()
+	registerBulkNoticeI18n()
+	registerAdminRemainingTemplatesI18n()
 }
