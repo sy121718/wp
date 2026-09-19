@@ -8,4 +8,4 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 export GOWP_REQUIRE_NODE=1
 go run ./cmd/workbench-contracts -check
-go test -count=1 ./internal/templates ./internal/builder/... ./internal/module/dashboard/inbound/http ./public/test/dashboard/feature
+go test -count=1 ./internal/templates ./internal/builder/... ./internal/module/workbench/inbound/http ./public/test/workbench/feature
