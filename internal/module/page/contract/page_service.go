@@ -124,7 +124,9 @@ type PageDependencyLookup interface {
 //
 // 未注入时保持既有行为：超出单次上限的页面保持 stale 并记一条告警（不静默丢弃）。
 type BuildQueueEnqueuer interface {
-	EnqueuePageBuild(ctx context.Context, pageID string, draftVersion int64, buildInputHash string) error
+	// projectID 是任务的工程作用域，由本模块显式带过来（审计 DB-01）：
+	// 队列不反查来源表，而工程 id 在调用点本来就在手上（locatePageInProjects 已取到页面）。
+	EnqueuePageBuild(ctx context.Context, pageID, projectID string, draftVersion int64, buildInputHash string) error
 }
 
 // PageService 手工 Page 草稿、修订与发布管理能力。

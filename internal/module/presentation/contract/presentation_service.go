@@ -88,5 +88,9 @@ type ArchiveInstanceEnsurer interface {
 type BuildQueueEnqueuer interface {
 	// EnqueuePresentationBuild 入队一条实例重建任务；同一实例同时只有一条待办
 	// （队列侧部分唯一索引去重，重复入队是幂等的）。
-	EnqueuePresentationBuild(ctx context.Context, presentationID string) error
+	//
+	// projectID 是任务的工程作用域，由本模块显式带过来（审计 DB-01）：
+	// 逐工程扇出那条路径先按实例定位工程再传（列可空，定位不到就传空串），
+	// 队列侧不反查来源表。
+	EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error
 }

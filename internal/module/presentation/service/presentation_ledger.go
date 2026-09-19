@@ -114,7 +114,7 @@ func (s *Service) convergeInstanceBatch(ctx context.Context, projectID, instance
 	}
 	s.markBatchUnconverged(ctx, inst, errors.New("多语言发布批次未收敛（启动恢复重跑一次）"))
 	if s.buildQueue != nil {
-		if qerr := s.buildQueue.EnqueuePresentationBuild(ctx, instanceID); qerr != nil {
+		if qerr := s.buildQueue.EnqueuePresentationBuild(ctx, instanceID, projectID); qerr != nil {
 			logger.Scene("publication").With("instanceId", instanceID).
 				Error(qerr, "启动恢复入队重建失败（实例保持 stale）")
 		}

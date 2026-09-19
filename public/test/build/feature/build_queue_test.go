@@ -127,8 +127,12 @@ func TestReclaimStaleJob(t *testing.T) {
 	}
 	ctx := context.Background()
 	id := enqueue(t, svc, "page")
-	// 模拟「worker 拿到任务后进程被杀」：行停在 running，started_at 是很久以前。
-	if err := db.Exec("UPDATE build_jobs SET status = 'running', started_at = now() - interval '2 hours' WHERE id = ?", id).Error; err != nil {
+	// 模拟「worker 拿到任务后进程被杀」：行停在 running，且迁移 295 的租约早已到期。
+	// 租约令牌同样要补上 —— 完成归属按令牌守卫，「僵尸行」也得是一条真的被认领过的行。
+	if err := db.Exec(`UPDATE build_jobs
+		SET status = 'running', started_at = now() - interval '2 hours',
+		    lease_token = gen_random_uuid(), lease_expires_time = now() - interval '2 hours'
+		WHERE id = ?`, id).Error; err != nil {
 		t.Fatalf("构造僵尸任务失败: %v", err)
 	}
 	// 僵尸行不会被正常取任务拿到（它不是 pending）——先确认这一点，否则回收测不出来。

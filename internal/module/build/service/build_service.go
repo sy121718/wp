@@ -1,4 +1,4 @@
-// Package buildservice 构建任务队列：入队、消费、回收与可见性（审计 DB-007）。
+// Package buildservice 构建任务队列：入队、消费、回收与可见性（审计 DB-007 / DB-01）。
 package buildservice
 
 import (
@@ -13,6 +13,7 @@ import (
 	builddto "go_wp/internal/module/build/dto"
 	buildenums "go_wp/internal/module/build/enums"
 	buildmodel "go_wp/internal/module/build/model"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
 
@@ -25,10 +26,13 @@ const (
 	// 用 LISTEN/NOTIFY 唤醒能把延迟压到毫秒，但要多一条长连接与一套重连逻辑 ——
 	// 对「内容改完等几秒站点更新」这个场景不值。
 	defaultWorkerIdle = time.Second
-	// defaultStaleAfter running 任务多久没结束算僵尸。
-	// 取 15 分钟：单页构建是秒级，全站级任务也远低于这个量级；
-	// 阈值太短会把正常的长任务反复重排（同一份工作被做两遍）。
-	defaultStaleAfter = 15 * time.Minute
+	// defaultLeaseTTL running 任务的租约时长：到期即视为「worker 已经做不完 / 已经不在了」。
+	// 取 15 分钟：单页构建是秒级，全站级任务也远低于这个量级；阈值太短会让正常的长任务
+	// 被回收重做（同一份工作做两遍），太长则僵尸任务会占着来源不放。
+	//
+	// 它与 jobTimeout（10 分钟）是同一条时间轴上的两个刻度：先由执行侧的 context 超时
+	// 把任务判失败，租约到期只是「连失败都没来得及写」时的兜底。
+	defaultLeaseTTL = 15 * time.Minute
 	// defaultJobTimeout 单条任务的执行上限（避免一条任务永久占着 worker）。
 	defaultJobTimeout = 10 * time.Minute
 )
@@ -41,7 +45,7 @@ type Service struct {
 	executors map[string]buildcontract.Executor
 
 	workerIdle time.Duration
-	staleAfter time.Duration
+	leaseTTL   time.Duration
 	jobTimeout time.Duration
 	now        func() time.Time
 }
@@ -52,7 +56,7 @@ func NewService(m *buildmodel.Model) *Service {
 		m:          m,
 		executors:  map[string]buildcontract.Executor{},
 		workerIdle: defaultWorkerIdle,
-		staleAfter: defaultStaleAfter,
+		leaseTTL:   defaultLeaseTTL,
 		jobTimeout: defaultJobTimeout,
 		now:        func() time.Time { return time.Now().UTC() },
 	}
@@ -61,8 +65,11 @@ func NewService(m *buildmodel.Model) *Service {
 // Model 暴露底层 model 供测试检查队列行。
 func (s *Service) Model() *buildmodel.Model { return s.m }
 
-// SetStaleAfter 覆盖僵尸判定阈值（测试用）。
-func (s *Service) SetStaleAfter(d time.Duration) { s.staleAfter = d }
+// SetLeaseTTL 覆盖租约时长（测试用；正常部署用 defaultLeaseTTL）。
+//
+// 它同时决定 claim 发出的 lease_expires_time 与回收的判定线，两者必须是同一个值 ——
+// 分开设置会出现「刚认领就被判过期」这种自己咬自己的配置。
+func (s *Service) SetLeaseTTL(d time.Duration) { s.leaseTTL = d }
 
 // RegisterExecutor 注册某来源类型的执行器。
 //
@@ -85,9 +92,28 @@ func (s *Service) executorFor(sourceType string) (buildcontract.Executor, bool) 
 	return fn, ok
 }
 
+// normalizeIntent 归一化构建意图（空 = 依赖重建；白名单外的值直接拒绝）。
+//
+// 白名单与迁移 295 的 CHECK 一致，但先在这里拦：数据库拒绝的报错是约束名，
+// 这里能给出「意图不支持」这个可读结论，也不会留下半条任务。
+func normalizeIntent(raw string) (string, bool) {
+	switch strings.TrimSpace(raw) {
+	case "":
+		return buildmodel.IntentDependency, true
+	case buildmodel.IntentManual:
+		return buildmodel.IntentManual, true
+	case buildmodel.IntentDependency:
+		return buildmodel.IntentDependency, true
+	default:
+		return "", false
+	}
+}
+
 // Enqueue 入队一条构建任务。
 //
 // created=false 表示同一目标、同一构建输入的工作已在队列里（迁移 171 的部分唯一索引兜底）。
+// 注意它**不覆盖正在跑的那份工作**：内容在构建期间又变了就该再排一份，
+// 队列里那份待办会在这条 running 结束后被认领。
 func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *builddto.Job, created bool, err error) {
 	if s == nil || s.m == nil || req == nil {
 		return nil, false, errors.New(buildenums.ErrInvalidParam)
@@ -104,10 +130,20 @@ func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *b
 	if sourceID == "" {
 		return nil, false, errors.New(buildenums.ErrInvalidParam)
 	}
+	intent, ok := normalizeIntent(req.Intent)
+	if !ok {
+		return nil, false, errors.New(buildenums.ErrInvalidParam)
+	}
 	e := &buildmodel.Entity{
 		SourceType: sourceType, SourceID: sourceID,
-		DraftVersion: req.DraftVersion, BuildInputHash: strings.TrimSpace(req.BuildInputHash),
-		Status: buildmodel.StatusPending, CreateTime: s.now(),
+		// 工程 / 语言 / 意图显式入库（DB-01）：消费侧要按工程设作用域、
+		// 后台要能区分人工构建与依赖重建，都不能靠反查来源行或猜。
+		ProjectID:      nullableString(req.ProjectID),
+		Lang:           strings.TrimSpace(req.Lang),
+		Intent:         intent,
+		DraftVersion:   req.DraftVersion,
+		BuildInputHash: strings.TrimSpace(req.BuildInputHash),
+		Status:         buildmodel.StatusPending, CreateTime: s.now(),
 	}
 	created, err = s.m.Enqueue(ctx, e)
 	if err != nil {
@@ -121,10 +157,11 @@ func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *b
 }
 
 // EnqueuePageBuild 供 page 模块把超出单次上限的自动重建交给队列。
-func (s *Service) EnqueuePageBuild(ctx context.Context, pageID string, draftVersion int64, buildInputHash string) error {
+func (s *Service) EnqueuePageBuild(ctx context.Context, pageID, projectID string, draftVersion int64, buildInputHash string) error {
 	_, _, err := s.Enqueue(ctx, &builddto.EnqueueReq{
-		SourceType: "page", SourceID: pageID,
+		SourceType: buildmodel.SourceTypePage, SourceID: pageID, ProjectID: projectID,
 		DraftVersion: draftVersion, BuildInputHash: buildInputHash,
+		Intent: buildmodel.IntentDependency,
 	})
 	return err
 }
@@ -133,10 +170,11 @@ func (s *Service) EnqueuePageBuild(ctx context.Context, pageID string, draftVers
 //
 // build_input_hash 传空串是刻意的：队列的部分唯一索引按 (来源, 目标, hash) 去重，
 // 空串让「同一实例同时只有一条待办」成立 —— 依赖失效扇出反复标记同一实例时不会堆出多份任务。
-func (s *Service) EnqueuePresentationBuild(ctx context.Context, presentationID string) error {
+func (s *Service) EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error {
 	_, _, err := s.Enqueue(ctx, &builddto.EnqueueReq{
-		SourceType: "presentation", SourceID: presentationID,
+		SourceType: buildmodel.SourceTypePresentation, SourceID: presentationID, ProjectID: projectID,
 		BuildInputHash: "",
+		Intent:         buildmodel.IntentDependency,
 	})
 	return err
 }
@@ -178,12 +216,31 @@ func (s *Service) Retry(ctx context.Context, id string) error {
 	return nil
 }
 
-// ReclaimStale 回收僵尸任务。
+// ReclaimStale 回收租约到期的任务，返回退回 pending 的行数。
+//
+// 同键已有待办的陈旧任务会被合并为 superseded（不计入返回值，但记日志）：
+// 旧实现把这类行也改回 pending，撞上唯一索引 23505，一条坏任务就能让
+// 整条回收语句失败、其它僵尸任务继续卡在 running 上（审计 DB-01）。
 func (s *Service) ReclaimStale(ctx context.Context) (reclaimed int64, err error) {
+	res, err := s.reclaimStale(ctx)
+	return res.Reclaimed, err
+}
+
+// reclaimStale 回收的内部入口：service 的两个调用点（worker 定时回收、后台队列页顺手回收）
+// 走同一段逻辑，合并计数也只在日志里出现一次。
+func (s *Service) reclaimStale(ctx context.Context) (buildmodel.ReclaimResult, error) {
 	if s == nil || s.m == nil {
-		return 0, nil
+		return buildmodel.ReclaimResult{}, nil
 	}
-	return s.m.ReclaimStale(ctx, s.now().Add(-s.staleAfter))
+	res, err := s.m.ReclaimStale(ctx, s.now())
+	if err != nil {
+		return res, err
+	}
+	if res.Merged > 0 {
+		logger.Scene("build").With("merged", res.Merged).
+			Warn("陈旧构建任务与队列里的待办重复，已合并为 superseded")
+	}
+	return res, nil
 }
 
 // Stats 队列深度 + 最近失败任务（后台可见性）。
@@ -194,8 +251,9 @@ func (s *Service) Stats(ctx context.Context) (res *builddto.QueueStatsResp, err 
 	}
 	// 顺手回收僵尸：后台打开队列页时就该看到「真实可消费的任务数」，
 	// 而不是把卡死的 running 也算成在跑。
-	if n, rerr := s.ReclaimStale(ctx); rerr == nil {
-		res.StaleReclaimed = int(n)
+	if r, rerr := s.reclaimStale(ctx); rerr == nil {
+		res.StaleReclaimed = int(r.Reclaimed)
+		res.StaleMerged = int(r.Merged)
 	}
 	rows, err := s.m.CountByStatus(ctx)
 	if err != nil {
@@ -236,10 +294,24 @@ func toDto(e *buildmodel.Entity) *builddto.Job {
 	if e.ErrorMessage != nil {
 		msg = *e.ErrorMessage
 	}
+	projectID := ""
+	if e.ProjectID != nil {
+		projectID = *e.ProjectID
+	}
 	return &builddto.Job{
 		ID: strconv.FormatInt(e.ID, 10), SourceType: e.SourceType, SourceID: e.SourceID,
+		ProjectID: projectID, Lang: e.Lang, Intent: e.Intent,
 		DraftVersion: e.DraftVersion, BuildInputHash: e.BuildInputHash, Status: e.Status,
-		ArtifactID: e.ArtifactID, ErrorMessage: msg,
+		ArtifactID: e.ArtifactID, ErrorMessage: msg, Attempt: e.Attempt,
 		CreatedAt: utils.NewJSONTime(e.CreateTime), StartedAt: utils.NewJSONTimePtr(e.StartedAt), CompletedAt: utils.NewJSONTimePtr(e.CompletedAt),
 	}
+}
+
+// nullableString 空串 → NULL（列可空语义：没拿到就留空，而不是塞一个空串进 uuid 列）。
+func nullableString(v string) *string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return &v
 }

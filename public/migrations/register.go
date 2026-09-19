@@ -70,6 +70,8 @@ func init() {
 	registerFragmentLoginPanelI18n()
 	// 294：文案词条页的只读权限点 i18n:view（补 178 的读侧缺口，见 register_i18n_view_permission.go）。
 	registerI18nViewPermission()
+	// 295：build_jobs 的任务租约、来源互斥与完成归属（审计 DB-01，见 register_build_lease.go）。
+	registerBuildJobLease()
 	// 297：块删除保护的引用类别词条（MsgBlockUsage*，见 register_block_usage_i18n.go）。
 	registerBlockUsageI18n()
 	// 298：商品标签页「命中商品」展开区的词条（审计 PERF-02，见 register_product_tag_hits_i18n.go）。

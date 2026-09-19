@@ -168,7 +168,7 @@ func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
 		}
 		// build_input_hash 传空串是刻意的：队列的部分唯一索引按 (来源, 目标, hash) 去重，
 		// 空串让「同一页面同时只有一条待办」成立 —— 一批扇出反复标记同一页时不会堆出多份任务。
-		if qerr := s.buildQueue.EnqueuePageBuild(ctx, id, page.DraftVersion, ""); qerr != nil {
+		if qerr := s.buildQueue.EnqueuePageBuild(ctx, id, page.ProjectID, page.DraftVersion, ""); qerr != nil {
 			logger.Scene("dependency").With("page_id", id).Error(qerr, "超限重建任务入队失败")
 			continue
 		}

@@ -35,13 +35,20 @@ type BuildService interface {
 	// Enqueue 入队（同一目标同一构建输入的待办任务幂等，不会重复排队）。
 	Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *builddto.Job, created bool, err error)
 	// EnqueuePageBuild 供 page 模块把超出单次上限的自动重建交给队列。
-	EnqueuePageBuild(ctx context.Context, pageID string, draftVersion int64, buildInputHash string) error
+	//
+	// projectID 由调用方显式传入（审计 DB-01）：它是任务的工程作用域，队列不跨模块
+	// 反查来源表，来源模块手里有就顺手带过来；确实拿不到时传空串（列可空）。
+	EnqueuePageBuild(ctx context.Context, pageID, projectID string, draftVersion int64, buildInputHash string) error
 	// EnqueuePresentationBuild 供 presentation 模块把自动重建交给队列（PERF-020）。
 	// 同一实例的待办任务幂等（部分唯一索引去重），重复入队不会堆出多份。
-	EnqueuePresentationBuild(ctx context.Context, presentationID string) error
+	EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error
 	// RunOnce 取一条待办任务并执行；返回 false 表示队列为空。
+	//
+	// 认领是原子的：同一条任务只会被一个 worker 拿到，且同一来源同时最多一条在跑；
+	// 认领时产生租约令牌，完成写入必须带回同一个令牌（旧 worker 的迟到结果会被丢弃）。
 	RunOnce(ctx context.Context) (processed bool, err error)
-	// ReclaimStale 回收超时未结束的 running 任务（退回队列）。
+	// ReclaimStale 回收租约到期未结束的 running 任务：
+	// 与队列里的待办同键的合并为 superseded，其余退回 pending。返回退回队列的行数。
 	ReclaimStale(ctx context.Context) (reclaimed int64, err error)
 	// Stats 队列深度与最近失败任务（后台可见性）。
 	Stats(ctx context.Context) (res *builddto.QueueStatsResp, err error)

@@ -133,7 +133,7 @@ func (s *Service) enqueueStaleRebuilds(ctx context.Context, ids []string) error 
 		if ctx.Err() != nil {
 			break
 		}
-		if err := s.buildQueue.EnqueuePresentationBuild(ctx, id); err != nil {
+		if err := s.buildQueue.EnqueuePresentationBuild(ctx, id, s.projectOfInstance(ctx, id)); err != nil {
 			logger.Scene("dependency").With("presentation_id", id).
 				Error(err, "自动重建任务入队失败（实例保持 stale）")
 			continue
@@ -163,6 +163,21 @@ func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error 
 	tpl = instanceDocumentFor(inst, tpl)
 	_, err = s.rebuildInstance(ctx, inst, tpl)
 	return err
+}
+
+// projectOfInstance 解析实例所属工程，供自动重建入队时填显式的工程作用域（审计 DB-01）。
+//
+// 为什么要在这里多查一次：工程 id 只存在于来源模块，队列不反查来源表（跨模块表访问），
+// 而 RebuildStale 的入参是跨工程去重后的 id 列表，调用点没有工程上下文。
+// 复用消费侧同一个「逐工程定位」实现 —— 非超级连接角色下，未设 app.project_id 的按 id 直查
+// 会被 RLS 静默挡成 0 行，那是本模块唯一可靠的读法。
+// 解析不到（实例已删除 / 工程契约未注入）不阻断入队：工程列可空，执行侧仍会自己定位。
+func (s *Service) projectOfInstance(ctx context.Context, instanceID string) string {
+	inst, err := s.findOneInstanceAnyProject(ctx, instanceID)
+	if err != nil {
+		return ""
+	}
+	return inst.ProjectID
 }
 
 // findOneInstanceAnyProject 在各工程作用域内逐个按实例 id 定位（DB-009 第二批）。

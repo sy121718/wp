@@ -23,7 +23,7 @@ func newFakeBuildQueue() *fakeBuildQueue {
 	return &fakeBuildQueue{seen: map[string]bool{}}
 }
 
-func (f *fakeBuildQueue) EnqueuePresentationBuild(_ context.Context, presentationID string) error {
+func (f *fakeBuildQueue) EnqueuePresentationBuild(_ context.Context, presentationID, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// 部分唯一索引语义：同一实例同时只有一条待办，重复入队是幂等的。
