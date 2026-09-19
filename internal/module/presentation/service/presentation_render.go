@@ -126,6 +126,14 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	if err != nil {
 		return built, err
 	}
+	// 结构槽位依赖：页眉 / 页脚绑定的结构模板（content_template:{id}）与模板文档内
+	// 引用的块（block:{id}）。缺它 = 改了模板/块，引用页永远停在旧字节。
+	// 判据与构建期解析同一函数（pipeline.BuildStructureSlots / StructureSlotDependencies），
+	// 两处不可能分叉；回退到块绑定的槽位不会被登记成 content_template 依赖。
+	var slotDeps []pipeline.Dependency
+	if pageDoc, perr := builder.ParsePage(tpl.Document); perr == nil {
+		slotDeps = pipeline.StructureSlotDependencies(ctx, s, projectID, pageDoc.Settings.Structure)
+	}
 	sourceHash := pipeline.SHA256(tpl.Document)
 	// 多语言依赖（page 侧同一口径，见 page_lang.go §buildDependencies）：
 	//   · i18n:site    组件固定文案（sys_i18n）—— 构建期取词注入 HTML 字节，恒登记；
@@ -136,6 +144,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	if usage != nil && usage.ContentTranslation {
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
 	}
+	deps = append(deps, slotDeps...)
 	artifact, err := pipeline.NewArtifact(html, &pipeline.Manifest{
 		ManifestSchemaVersion:     1,
 		PageDocumentSchemaVersion: 1,
@@ -253,10 +262,17 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if usage != nil {
 		compileOpts = append(compileOpts, builder.WithUsageRecorder(usage))
 	}
+	// 结构槽位（审计 VIS-001）：页眉 / 页脚与模板主体走同一次编译，不再拼字符串。
+	// 结构模板优先、块绑定回退（pipeline.BuildStructureSlots，与手工页面路径**同一份实现**）：
+	// 模板不可用时返回的解析器就是原块解析器、槽位也回退成块绑定 —— 存量站点产物与改造前一致。
+	//
+	// 必须在取词器构造**之前**算出槽位：结构模板文档不在块表里，它的可翻译文本要经
+	// 叠加了解析器的 slotResolver 才能进候选集合（否则模板里的文案永远不翻译且无人报错）。
+	slotList, slotResolver, _ := pipeline.BuildStructureSlots(ctx, s, projectID, page.Settings.Structure, blockAdapter)
 	var contentTranslator *i18n.ContentTranslator
 	var contentCandidates int
 	compileOpts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(
-		compileOpts, ctx, s.project, projectID, lang, page, blockAdapter.ResolveBlockRoot, s.newContentTranslator)
+		compileOpts, ctx, s.project, projectID, lang, page, slotResolver.ResolveBlockRoot, s.newContentTranslator)
 	// 集合源注入（issue #9）：模板里的集合类组件按白名单展开商品等集合数据。
 	if s.collection != nil {
 		compileOpts = append(compileOpts, builder.WithCollectionResolver(s.collection))
@@ -266,9 +282,10 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		compileOpts = append(compileOpts, builder.WithProductDataSource(s.productDS))
 	}
 	compileOpts = append(compileOpts, pipeline.AnalyticsCompileOptions(ctx, s.project, projectID)...)
-	// 结构槽位（审计 VIS-001）：页眉 / 页脚与模板主体走同一次编译，不再拼字符串。
-	// 与手工页面路径同一口径 —— 两条路径各写一份装配逻辑，正是本条目要消除的重复。
-	compileOpts = append(compileOpts, structureSlotOptions(page.Settings.Structure)...)
+	if len(slotList) > 0 {
+		compileOpts = append(compileOpts, builder.WithBlockResolver(slotResolver))
+		compileOpts = append(compileOpts, builder.WithStructureSlots(slotList...))
+	}
 	compiled, err := builder.Compile(page, compileOpts...)
 	if err != nil {
 		return nil, err
@@ -320,6 +337,16 @@ func presentationDependencies(entityType, entityID, templateID, projectID string
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		for _, kind := range usage.MenuList() {
 			k := pipeline.MenuKey(pid, kind)
+			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+		}
+		// 按**具体菜单项**引用：键 navigation:{itemID}（与 page 侧同一构造函数）。
+		for _, navID := range usage.NavigationList() {
+			k := pipeline.NavigationKey(navID)
+			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+		}
+		// 渲染期展开的块（菜单悬浮面板）：块 id 不在文档里，只有 UseBlock 记录的这一份。
+		for _, blockID := range usage.BlockList() {
+			k := pipeline.BlockKey(blockID)
 			out = append(out, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
 		}
 	}

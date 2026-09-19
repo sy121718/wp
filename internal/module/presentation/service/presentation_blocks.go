@@ -19,6 +19,7 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
+	"go_wp/internal/pipeline"
 )
 
 // blockResolverAdapter 把 block 契约适配为 builder 的 core.BlockResolver。
@@ -82,17 +83,26 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 // 编译期断言：适配器实现 core.BlockResolver。
 var _ core.BlockResolver = (*blockResolverAdapter)(nil)
 
-// structureSlotOptions 把 settings.structure 快照转成编译期的结构槽位绑定（审计 VIS-001）。
+// ResolveStructureDocument 实现 pipeline.StructureTemplatePort：结构槽位（页眉 / 页脚）
+// 绑定的结构模板文档来源。
 //
-// 与 page 模块同名函数同义：空绑定不产生 opt，产物与改造前逐字节一致。
-func structureSlotOptions(s builder.StructureBindings) []builder.CompileOption {
-	bindings := s.SlotBindings()
-	if len(bindings) == 0 {
-		return nil
+// 薄适配：版本解析与文档严格校验都在 contenttemplate 契约里
+//（ResolveTemplateByIDScoped 按模板类型校验，并拒绝结构模板里的字段绑定），
+// 这里只把「契约未装配 / 模板不存在 / 文档为空」统一成错误 —— 三者对构建期的含义
+// 是同一个：这套模板不可用，回退到该槽位的块绑定（见 pipeline.BuildStructureSlots）。
+func (s *Service) ResolveStructureDocument(ctx context.Context, projectID, templateID string) ([]byte, error) {
+	if s == nil || s.templates == nil {
+		return nil, fmt.Errorf("结构模板 %s 不可用（contenttemplate 契约未装配）", templateID)
 	}
-	slots := make([]builder.StructureSlot, 0, len(bindings))
-	for _, slot := range builder.SortedSlots(bindings) {
-		slots = append(slots, builder.StructureSlot{Slot: slot, BlockID: bindings[slot]})
+	tpl, err := s.templates.ResolveTemplateByIDScoped(ctx, projectID, templateID)
+	if err != nil {
+		return nil, err
 	}
-	return []builder.CompileOption{builder.WithStructureSlots(slots...)}
+	if tpl == nil || len(tpl.Document) == 0 {
+		return nil, fmt.Errorf("结构模板 %s 无可用文档", templateID)
+	}
+	return tpl.Document, nil
 }
+
+// 编译期断言：本服务是结构模板解析端口（结构槽位的模板来源）。
+var _ pipeline.StructureTemplatePort = (*Service)(nil)
