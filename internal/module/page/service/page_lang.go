@@ -411,6 +411,19 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 			k := pipeline.MenuKey(pid, kind)
 			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
 		}
+		// 按**具体菜单项**引用（core.nav 的 Props.Navigation）：键 navigation:{itemID}。
+		// 菜单项 UUID 全局唯一，故不像位置键那样需要工程分量。
+		for _, navID := range in.Usage.NavigationList() {
+			k := pipeline.NavigationKey(navID)
+			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+		}
+		// 渲染期展开的块（菜单项的悬浮面板，超级菜单）：块 id 在 navigations 行上，
+		// **不在页面文档里** —— 静态扫描看不到，只有渲染期的 UseBlock 能提供。
+		// 漏登记的表现是「改了面板块，带该面板的页面不重建」，面板通常挂在页眉，全站可见。
+		for _, blockID := range in.Usage.BlockList() {
+			k := pipeline.BlockKey(blockID)
+			deps = append(deps, pipeline.Dependency{Kind: k.Kind, Key: k.Key})
+		}
 	}
 	// 页面依赖源（PIPE-3）：用开头那次定位的结果；读不到页面时降级为不登记这些依赖
 	// （依赖失效时该页不再自动重建），但不阻断构建。

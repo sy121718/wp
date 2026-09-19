@@ -261,3 +261,95 @@
   outline: 2px solid var(--sky-c-primary, #2563eb);
   outline-offset: 2px;
 }
+
+/* ===== 超级菜单：悬浮面板（迁移 285）=====
+   面板内容来自全局块（构建期内联成静态 HTML），这里只负责"什么时候显示"。
+   输入方式分三条，缺任一条都会让某类用户打不开面板：
+     · 桌面鼠标：:hover 展开，进 @hover 桶（触屏不输出，避免点一下粘住）；
+     · 键盘：:focus-within 展开（同上，与触屏的 checkbox 路径互斥）；
+     · 触屏 / 窄视口：sr-only checkbox + label 点击展开（下面 @hovernone 块）。
+   宽度：auto 跟随内容（min 到设计宽度并随容器收口）；full 通栏；窄视口一律转全宽内联，
+   绝对定位在手机上会溢出视口（多端硬规则）。 */
+& .sky-nav-item.has-panel {
+  position: relative;
+}
+
+& .sky-nav-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  display: none;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  background: {{submenuBg}};
+  min-width: min(100%, {{submenuWidth}});
+}
+
+& .sky-nav-panel-full {
+  width: 100vw;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 0;
+}
+
+/* 触屏 / 键盘：checkbox 驱动（sr-only 但可聚焦，空格可切换）。 */
+& .sky-nav-panel-toggle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+@hovernone & .sky-nav-panel-toggle:checked ~ .sky-nav-panel {
+  display: block;
+}
+
+@hovernone & .sky-nav-panel-toggle:checked ~ .sky-nav-panel-chevron {
+  transform: rotate(180deg);
+}
+
+@hovernone & .sky-nav-panel-toggle:focus-visible ~ .sky-nav-panel-chevron {
+  outline: 2px solid var(--sky-c-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+& .sky-nav-panel-chevron {
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+@hover & .sky-nav-item.has-panel:hover > .sky-nav-panel {
+  display: block;
+}
+
+@hover & .sky-nav-item.has-panel:focus-within > .sky-nav-panel {
+  display: block;
+}
+
+@media (max-width: 767px) {
+  /* 窄视口：绝对定位会溢出视口；面板转为全宽内联块，显隐仍由 checkbox 控制。 */
+  & .sky-nav-panel {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    left: auto;
+    transform: none;
+    border-radius: 0;
+  }
+
+  & .sky-nav-panel-full {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    left: auto;
+    transform: none;
+    border-radius: 0;
+  }
+}

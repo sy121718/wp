@@ -9,6 +9,7 @@ import (
 	_ "embed" // nav.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -98,6 +99,12 @@ type Item struct {
 	URL      string `json:"url,omitempty"`
 	Target   string `json:"target,omitempty"` // self / blank
 	Children []Item `json:"children,omitempty"`
+	// PanelBlockID 悬浮面板引用的全局块（超级菜单；来自导航项，不在文档里）。
+	PanelBlockID string `json:"panelBlockId,omitempty"`
+	// PanelWidth 面板宽度 auto / full。
+	PanelWidth string `json:"panelWidth,omitempty"`
+	// PanelHTML 面板内容（渲染期由 builder 展开块得到，不入文档）。
+	PanelHTML template.HTML `json:"-"`
 	// Current 是否当前页（构建期按页面路径标记，输出 is-current 类，不入文档）。
 	Current bool `json:"-"`
 }
@@ -107,7 +114,14 @@ type Props struct {
 	// Menu 绑定导航位置：非空（header/footer）时构建期用该位置的导航菜单
 	// 覆盖 Items（navigation 模块数据，构建期解析，产物仍为静态）。
 	// 为空表示用下方 Items 手写菜单项。
-	Menu string `json:"menu,omitempty" ct:"select,=自定义菜单,header=页眉导航,footer=页脚导航,sec=content,label=导航位置"`
+	Menu string `json:"menu,omitempty" ct:"select,=自定义菜单,header=页眉导航（桌面）,header_mobile=页眉导航（移动端）,footer=页脚导航（桌面）,footer_mobile=页脚导航（移动端）,sec=content,label=导航位置"`
+
+	// Navigation 按**具体菜单项 id** 取菜单（该菜单项及其子树作为菜单根）。
+	//
+	// 优先级高于 Menu：两者都填时以本字段为准。用途是「一个位置下只放某一支」——
+	// 例如页眉只要「产品」这一支，不必为它单独建一个位置。
+	// 检查器的 entityref,navigation 下拉由导航模块的菜单项列表填充。
+	Navigation string `json:"navigation,omitempty" ct:"entityref,navigation,label=具体菜单项"`
 
 	// Items 菜单项列表（一级；每项可带 Children 形成二级菜单）。
 	Items []Item `json:"items,omitempty"`

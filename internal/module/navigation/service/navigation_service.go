@@ -21,10 +21,15 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
-// 导航类型白名单（与迁移 046 的 CHECK 约束对齐）。
+// 导航类型白名单（与迁移 285 的 CHECK 约束对齐）。
+//
+// 桌面与移动端是**两个位置、两份数据**（WP 式：两个位置各绑一条菜单）：
+// 两端要的菜单项、层级与交互本就不同，合并成"一套数据两种呈现"解决不了。
 const (
-	kindHeader = "header"
-	kindFooter = "footer"
+	kindHeader       = "header"
+	kindHeaderMobile = "header_mobile"
+	kindFooter       = "footer"
+	kindFooterMobile = "footer_mobile"
 )
 
 // 菜单项来源白名单（与迁移 054 的 CHECK 约束对齐）。
@@ -104,6 +109,10 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 	if err != nil {
 		return nil, err
 	}
+	panelBlockID, panelWidth, perr := normalizePanel(req.PanelBlockID, req.PanelWidth)
+	if perr != nil {
+		return nil, perr
+	}
 
 	exists, err := s.m.ExistsPath(ctx, projectID, kind, path, "")
 	if err != nil {
@@ -129,13 +138,16 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		ID: uuid.NewString(), ProjectID: projectID, Title: title, Path: path,
 		Kind: kind, ParentID: parentID, SortOrder: sortOrder,
 		SourceType: sourceType, SourceID: sourceID, Target: target,
+		PanelBlockID: panelBlockID, PanelWidth: panelWidth,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err = s.m.Create(ctx, e); err != nil {
 		return nil, err
 	}
-	// 失效派发（写已提交之后）：新菜单项会改变该位置产出的 HTML。
+	// 失效派发（写已提交之后）：新菜单项会改变该位置产出的 HTML；按项引用的页面
+	//（页眉只放某一支）只登记了 navigation:{itemID}，故两条键都要派发。
 	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
 	return toResp(e), nil
 }
 
@@ -206,6 +218,17 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 		}
 		updates["source_type"], updates["source_id"], updates["target"] = st, sid, tg
 	}
+	// 悬浮面板（超级菜单）：nil = 不改动；PanelBlockID 指向空串 = 清除面板。
+	if req.PanelBlockID != nil {
+		updates["panel_block_id"] = normalizePanelBlockID(req.PanelBlockID)
+	}
+	if req.PanelWidth != nil {
+		w, werr := normalizePanelWidth(*req.PanelWidth)
+		if werr != nil {
+			return nil, werr
+		}
+		updates["panel_width"] = w
+	}
 
 	// path/kind 任一变化时重校验同工程同 kind 同 path 唯一（排除自身）。
 	if req.Path != nil || req.Kind != nil {
@@ -228,6 +251,8 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 	if e.Kind != kind {
 		s.invalidateMenu(ctx, e.ProjectID, e.Kind)
 	}
+	// 按项引用：改标题/来源/链接/子项都会改变「以该项为根」的产物字节。
+	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
 	updated, err := s.m.Get(ctx, e.ProjectID, e.ID)
 	if err != nil {
 		return nil, err
@@ -272,6 +297,43 @@ func (s *Service) List(ctx context.Context, req *navigationdto.ListReq) (list []
 	return out, nil
 }
 
+// TreeByID 按具体菜单项 id 返回该菜单项及其子树（core.nav 按项引用时用）。
+//
+// 取数策略：先按 id 定位该项（带工程归属校验），再一次性取**同位置**的全部行拼子树 ——
+// 菜单规模很小（几十行），一次 List 比按 parent_id 逐层查询少 N 次 SQL，而这条路径
+// 在构建期会被每个引用该菜单的页面各走一次。
+func (s *Service) TreeByID(ctx context.Context, projectID, navigationID string) (nodes []*navigationdto.NavigationNode, err error) {
+	projectID = strings.TrimSpace(projectID)
+	id := strings.TrimSpace(navigationID)
+	if projectID == "" || id == "" {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	item, err := s.m.Get(ctx, projectID, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New(navigationenums.ErrNotFound)
+		}
+		return nil, err
+	}
+	rows, err := s.m.List(ctx, projectID, item.Kind)
+	if err != nil {
+		return nil, err
+	}
+	children := make(map[string][]*navigationmodel.NavigationEntity)
+	for _, r := range rows {
+		if r.ParentID != nil && *r.ParentID != "" {
+			children[*r.ParentID] = append(children[*r.ParentID], r)
+		}
+	}
+	node := buildNode(item, children)
+	if node == nil {
+		return nil, errors.New(navigationenums.ErrNotFound)
+	}
+	nodes = []*navigationdto.NavigationNode{node}
+	s.resolveSourceTitles(ctx, projectID, nodes)
+	return nodes, nil
+}
+
 // Delete 删除导航项及其全部子项（导航树是一个聚合：留下孤儿节点会被渲染成顶级项）。
 func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
@@ -294,8 +356,10 @@ func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err
 	if derr := s.m.DeleteMany(ctx, e.ProjectID, navDescendantIDs(rows, id)); derr != nil {
 		return derr
 	}
-	// 失效派发（删除已提交之后）：被删的整棵子树会从该位置的产物里消失。
+	// 失效派发（删除已提交之后）：被删的整棵子树会从该位置的产物里消失；按项引用
+	// 该项的页面同样要重建（它现在渲染不出根了）。
 	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
 	return nil
 }
 
@@ -404,11 +468,46 @@ func buildNode(n *navigationmodel.NavigationEntity, children map[string][]*navig
 		ID: n.ID, Title: n.Title, Path: n.Path,
 		SourceType: n.SourceType, SourceID: n.SourceID, Target: n.Target,
 		SortOrder: n.SortOrder,
+		PanelBlockID: n.PanelBlockID, PanelWidth: n.PanelWidth,
 	}
 	for _, k := range children[n.ID] {
 		node.Children = append(node.Children, buildNode(k, children))
 	}
 	return node
+}
+
+// normalizePanel 归一化悬浮面板字段（超级菜单，迁移 285）。
+//
+// 空白块 id 一律归一成 nil（"没选块" 与 "选了空" 是同一个状态，留空串会让
+// 渲染期误以为有面板、去解析一个不存在的块 id）。宽度白名单与 DDL CHECK 对齐，
+// 越界在这里显式拒绝，而不是让库层约束报错（那会变成 500 而不是可读的参数错误）。
+func normalizePanel(blockID *string, width string) (outID *string, outWidth string, err error) {
+	outWidth, err = normalizePanelWidth(width)
+	if err != nil {
+		return nil, "", err
+	}
+	return normalizePanelBlockID(blockID), outWidth, nil
+}
+
+func normalizePanelBlockID(blockID *string) *string {
+	if blockID == nil {
+		return nil
+	}
+	id := strings.TrimSpace(*blockID)
+	if id == "" {
+		return nil
+	}
+	return &id
+}
+
+func normalizePanelWidth(width string) (string, error) {
+	switch strings.TrimSpace(width) {
+	case "", "auto":
+		return "auto", nil
+	case "full":
+		return "full", nil
+	}
+	return "", errors.New(navigationenums.ErrInvalidParam)
 }
 
 // navNodeView 导航节点视图（Jet 模板渲染数据，树形）。
@@ -441,9 +540,10 @@ func validateField(title, path, kind string) error {
 	return nil
 }
 
-// isValidKind 判断导航类型是否为 header/footer。
+// isValidKind 判断导航类型是否为受支持的位置（桌面 / 移动端各自的页眉与页脚）。
 func isValidKind(kind string) bool {
-	return kind == kindHeader || kind == kindFooter
+	return kind == kindHeader || kind == kindHeaderMobile ||
+		kind == kindFooter || kind == kindFooterMobile
 }
 
 // maxParentDepth 父链上溯深度上限：兜底历史脏数据形成的环（正常菜单不超过 3~4 层）。
@@ -571,6 +671,7 @@ func toResp(e *navigationmodel.NavigationEntity) *navigationdto.NavigationResp {
 		ID: e.ID, ProjectID: e.ProjectID, Title: e.Title, Path: e.Path,
 		Kind: e.Kind, ParentID: e.ParentID, SortOrder: e.SortOrder,
 		SourceType: e.SourceType, SourceID: e.SourceID, Target: e.Target,
+		PanelBlockID: e.PanelBlockID, PanelWidth: e.PanelWidth,
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
 	}
 }

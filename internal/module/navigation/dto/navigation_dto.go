@@ -18,6 +18,10 @@ type CreateReq struct {
 	SourceID *string `json:"sourceId"`
 	// Target 打开方式：self / blank。
 	Target string `json:"target"`
+	// PanelBlockID 悬浮面板引用的全局块（可选；空 = 无面板，超级菜单）。
+	PanelBlockID *string `json:"panelBlockId"`
+	// PanelWidth 面板展示宽度：auto（跟随内容）/ full（通栏）。
+	PanelWidth string `json:"panelWidth"`
 }
 
 // UpdateReq 更新公开站点导航项（仅更新传入的非空字段）。
@@ -32,6 +36,10 @@ type UpdateReq struct {
 	SourceType *string `json:"sourceType"`
 	SourceID   *string `json:"sourceId"`
 	Target     *string `json:"target"`
+	// PanelBlockID 面板块：nil = 不改动；指向空串 = 清除面板（已有面板要能撤销）。
+	PanelBlockID *string `json:"panelBlockId"`
+	// PanelWidth 面板宽度 auto / full（nil = 不改动）。
+	PanelWidth *string `json:"panelWidth"`
 }
 
 // GetReq 按 ID 查询导航项。
@@ -70,8 +78,12 @@ type NavigationResp struct {
 	// SourceID 来源实体 ID（custom 时为空）。
 	SourceID *string `json:"sourceId"`
 	// Target 打开方式：self / blank。
-	Target    string `json:"target"`
-	UpdatedAt string `json:"updatedAt"`
+	Target string `json:"target"`
+	// PanelBlockID 悬浮面板引用的全局块（超级菜单；空 = 无面板）。
+	PanelBlockID *string `json:"panelBlockId"`
+	// PanelWidth 面板展示宽度 auto / full。
+	PanelWidth string `json:"panelWidth"`
+	UpdatedAt  string `json:"updatedAt"`
 }
 
 // NavigationNode 导航项树节点（按 parent_id 组装，构建期编译与菜单管理页共用）。
@@ -79,9 +91,12 @@ type NavigationNode struct {
 	ID         string            `json:"id"`
 	Title      string            `json:"title"`
 	Path       string            `json:"path"`
-	SourceType string            `json:"sourceType"`
-	SourceID   *string           `json:"sourceId"`
-	Target     string            `json:"target"`
-	SortOrder  int               `json:"sortOrder"`
+	SourceType string  `json:"sourceType"`
+	SourceID   *string `json:"sourceId"`
+	Target     string  `json:"target"`
+	SortOrder  int     `json:"sortOrder"`
+	// PanelBlockID / PanelWidth 悬浮面板（超级菜单）：面板内容存块，展示形态存菜单项。
+	PanelBlockID *string           `json:"panelBlockId"`
+	PanelWidth   string            `json:"panelWidth"`
 	Children   []*NavigationNode `json:"children,omitempty"`
 }

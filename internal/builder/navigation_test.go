@@ -45,6 +45,12 @@ func (f *fakeNavResolver) ResolveMenu(projectID, kind string) ([]core.Navigation
 	return f.items, f.err
 }
 
+// ResolveNavigation 按项解析：本文件只覆盖「按位置取菜单」，按项路径由
+// public/test/navigation/feature 的 navigation_byid_panel_test.go 覆盖。
+func (f *fakeNavResolver) ResolveNavigation(projectID, navigationID string) ([]core.NavigationItem, error) {
+	return nil, nil
+}
+
 // compileNavDoc 编译导航文档（注入组件模板 Set）。
 func compileNavDoc(t *testing.T, doc string, opts ...CompileOption) (*CompiledPage, error) {
 	t.Helper()

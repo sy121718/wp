@@ -20,6 +20,9 @@ import (
 // 编译 CSS 与驱动递归。
 type RenderContext struct {
 	CSS *CSSBuckets
+	// renderPanel 菜单悬浮面板的块渲染闭包（见 SetPanelRenderer / RenderPanel）。
+	// 私有：注入方（builder）与消费方（navViewOf）都在同一编译流程内，不对外暴露。
+	renderPanel func(blockID string) (string, error)
 	// Context 发起构建的请求上下文（构建期查库解析集合/内容时传播）。
 	// 未注入（nil）时解析器按后台任务语义处理。
 	Context context.Context
@@ -194,6 +197,10 @@ type NavigationItem struct {
 	Target string
 	// Children 子菜单项（层级上限由组件校验决定）。
 	Children []NavigationItem
+	// PanelBlockID 悬浮面板引用的全局块（超级菜单；空 = 无面板）。
+	PanelBlockID string
+	// PanelWidth 面板展示宽度 auto / full。
+	PanelWidth string
 }
 
 // NavigationResolver 公开站点导航解析契约：工程 ID + 菜单位置 → 菜单项树。
@@ -205,6 +212,11 @@ type NavigationItem struct {
 type NavigationResolver interface {
 	// ResolveMenu 返回该工程该位置的导航项树（根节点顺序即渲染顺序）。
 	ResolveMenu(projectID, kind string) ([]NavigationItem, error)
+	// ResolveNavigation 按**具体菜单项 id** 返回该菜单项及其子树（作为菜单根渲染）。
+	//
+	// 与 ResolveMenu 并列：按位置取的是"这个位置的全部菜单"，按项取的是"这一支"。
+	// 后者让页眉只放一支菜单（例如只有「产品」），而不必为它单独建一个位置。
+	ResolveNavigation(projectID, navigationID string) ([]NavigationItem, error)
 }
 
 // 系统页面槽位键（BIZ-1）。
@@ -219,6 +231,40 @@ type UsageRecorder interface {
 	// 与 UseSiteSlot 同一理由：页面文档里「绑定了导航位置」这件事要经渲染才算数，
 	// 记录下来的才是事实（静态扫节点类型要维护一张「组件 → 依赖」映射表，迟早漂移）。
 	UseMenu(kind string)
+	// UseNavigation 记录一次「按具体菜单项」的导航消费（规则同 UseMenu）。
+	//
+	// 两种模式各记各的：按位置记 menu:{project}:{kind}，按项记 navigation:{itemID}。
+	// 只记一种会让另一种引用的页面在导航变化后不被标记（产物停在旧菜单）。
+	UseNavigation(navigationID string)
+	// UseBlock 记录一次「构建期展开的全局块」消费。
+	//
+	// 文档内的 globalref 节点由**静态扫描**登记块依赖（页面文档里看得见）；
+	// 但菜单项的悬浮面板（超级菜单）引用的块**不在文档里**（在 navigations 行上），
+	// 静态扫描看不到 —— 只能由渲染期在这里记录，否则改面板块不会让引用页面重建。
+	UseBlock(blockID string)
+}
+
+// PanelRenderer 渲染「文档外的块内容」（菜单项的悬浮面板，超级菜单）。
+//
+// 面板内容存在全局块里，而块 id 挂在 navigations 行上 —— **不在页面文档里**，
+// 静态扫描看不到它。由 builder 在编译期注入本函数（它持有组件模板集与块解析器），
+// navViewOf 展开菜单项时调用：CSS 收集与依赖记录都在同一次 ctx 内完成，
+// 面板因此与页面其余部分共用同一套样式与产物。未注入（编辑器画布 / 单测直连）时不展开。
+//
+// 返回的是**已渲染的受信 HTML**：由本仓的组件模板产出，调用方原样输出（不再二次转义）。
+func (c *RenderContext) SetPanelRenderer(fn func(blockID string) (string, error)) {
+	if c == nil {
+		return
+	}
+	c.renderPanel = fn
+}
+
+// RenderPanel 渲染菜单悬浮面板引用的块；未注入渲染器时返回空串（不展开）。
+func (c *RenderContext) RenderPanel(blockID string) (string, error) {
+	if c == nil || c.renderPanel == nil {
+		return "", nil
+	}
+	return c.renderPanel(blockID)
 }
 
 // SetArchiveEntity 注入当前归档实例的实体（构建期由装配层传入）。
@@ -333,6 +379,26 @@ func (c *RenderContext) UseMenu(kind string) {
 	}
 	if k := strings.TrimSpace(kind); k != "" {
 		c.usage.UseMenu(k)
+	}
+}
+
+// UseNavigation 记录一次「按具体菜单项」的导航消费（规则同 UseMenu：取值即记录）。
+func (c *RenderContext) UseNavigation(navigationID string) {
+	if c == nil || c.usage == nil {
+		return
+	}
+	if id := strings.TrimSpace(navigationID); id != "" {
+		c.usage.UseNavigation(id)
+	}
+}
+
+// UseBlock 记录一次构建期展开的全局块（规则同 UseMenu：取值即记录）。
+func (c *RenderContext) UseBlock(blockID string) {
+	if c == nil || c.usage == nil {
+		return
+	}
+	if id := strings.TrimSpace(blockID); id != "" {
+		c.usage.UseBlock(id)
 	}
 }
 

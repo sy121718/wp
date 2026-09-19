@@ -4,6 +4,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 
 	"go_wp/internal/builder/core"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -35,6 +36,30 @@ func (a *NavigationAdapter) ResolveMenu(projectID, kind string) (items []core.Na
 		}
 	}
 	nodes, err := a.Svc.Tree(a.Ctx, projectID, kind)
+	if err != nil {
+		return nil, err
+	}
+	items = a.itemsOf(nodes, projectID)
+	a.translateLabels(items, projectID)
+	if a.cache == nil {
+		a.cache = map[string][]core.NavigationItem{}
+	}
+	a.cache[key] = items
+	return items, nil
+}
+
+// ResolveNavigation 按具体菜单项 id 返回该菜单项及其子树（core.nav 按项引用模式）。
+//
+// 缓存键带 "nav|" 前缀：与 ResolveMenu 的 projectID+"|"+kind 不会碰撞 —— 前缀缺失时
+// 一个工程里名为 "header" 的菜单项 id 与位置名同形会造成串读（构建期静默拿错菜单）。
+func (a *NavigationAdapter) ResolveNavigation(projectID, navigationID string) (items []core.NavigationItem, err error) {
+	key := "nav|" + projectID + "|" + navigationID
+	if a.cache != nil {
+		if cached, ok := a.cache[key]; ok {
+			return cached, nil
+		}
+	}
+	nodes, err := a.Svc.TreeByID(a.Ctx, projectID, navigationID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +121,17 @@ func (a *NavigationAdapter) translateLabels(items []core.NavigationItem, project
 func (a *NavigationAdapter) itemsOf(nodes []*navigationdto.NavigationNode, projectID string) []core.NavigationItem {
 	out := make([]core.NavigationItem, 0, len(nodes))
 	for _, n := range nodes {
+		panelBlockID := ""
+		if n.PanelBlockID != nil {
+			panelBlockID = strings.TrimSpace(*n.PanelBlockID)
+		}
 		out = append(out, core.NavigationItem{
-			Label:    n.Title,
-			URL:      LocalizeMenuURL(a.Ctx, a.Project, projectID, a.Lang, n.Path),
-			Target:   n.Target,
-			Children: a.itemsOf(n.Children, projectID),
+			Label:        n.Title,
+			URL:          LocalizeMenuURL(a.Ctx, a.Project, projectID, a.Lang, n.Path),
+			Target:       n.Target,
+			Children:     a.itemsOf(n.Children, projectID),
+			PanelBlockID: panelBlockID,
+			PanelWidth:   n.PanelWidth,
 		})
 	}
 	return out

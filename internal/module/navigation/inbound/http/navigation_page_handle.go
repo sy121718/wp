@@ -32,8 +32,10 @@ const (
 
 // 导航位置（与 navigation 模块 kind 白名单对齐）。
 const (
-	navKindHeader = "header"
-	navKindFooter = "footer"
+	navKindHeader       = "header"
+	navKindHeaderMobile = "header_mobile"
+	navKindFooter       = "footer"
+	navKindFooterMobile = "footer_mobile"
 )
 
 // navigationPageHandle 导航菜单管理页处理器。
@@ -171,8 +173,9 @@ func flattenNavRows(nodes []*navigationdto.NavigationNode, depth int, out *[]nav
 
 // normalizeNavKind 位置参数规范化（非法值回落 header）。
 func normalizeNavKind(kind string) string {
-	if strings.TrimSpace(kind) == navKindFooter {
-		return navKindFooter
+	switch strings.TrimSpace(kind) {
+	case navKindHeader, navKindHeaderMobile, navKindFooter, navKindFooterMobile:
+		return strings.TrimSpace(kind)
 	}
 	return navKindHeader
 }

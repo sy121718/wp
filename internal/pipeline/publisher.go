@@ -117,6 +117,17 @@ type CompileUsage struct {
 	// 与 SiteSlots 同一来源：core.nav 绑定菜单位置时经 RenderContext.UseMenu 记录。
 	// 位置而不是菜单项 id —— 产物依赖的是「这个位置的菜单内容」，菜单项增删改都属于它。
 	Menus map[string]bool
+	// Navigations 本次编译消费过的**具体菜单项**集合（core.nav 绑定 navigation id 时）。
+	//
+	// 与 Menus 并列：按位置引用记位置，按项引用记菜单项 id，两者依赖键不同
+	//（menu:{project}:{kind} vs navigation:{itemID}）；漏记一种会让那种引用方式
+	// 在导航变化后不被标记（产物停在旧菜单，且没有任何报错）。
+	Navigations map[string]bool
+	// Blocks 本次编译**渲染期展开**过的全局块集合（菜单项的悬浮面板引用的块）。
+	//
+	// 文档内 globalref 由静态扫描登记，这里只收「文档外」的引用（面板块在 navigations 行上）。
+	// 漏记的表现是「改了面板块，带该面板的页面不重建」——菜单面板通常挂在页眉，全站可见。
+	Blocks map[string]bool
 	// ContentTranslation 本次编译确实走了内容翻译（存在可翻译候选）。
 	//
 	// 为什么必须记：缺译文时构建期**回退原文**，补齐/修改译文都要改变产物字节；
@@ -153,6 +164,54 @@ func (u *CompileUsage) UseMenu(kind string) {
 		u.Menus = map[string]bool{}
 	}
 	u.Menus[kind] = true
+}
+
+// UseNavigation 记录一次「按具体菜单项」的导航消费。
+func (u *CompileUsage) UseNavigation(navigationID string) {
+	if u == nil || navigationID == "" {
+		return
+	}
+	if u.Navigations == nil {
+		u.Navigations = map[string]bool{}
+	}
+	u.Navigations[navigationID] = true
+}
+
+// UseBlock 记录一次渲染期展开的全局块（菜单悬浮面板）。
+func (u *CompileUsage) UseBlock(blockID string) {
+	if u == nil || blockID == "" {
+		return
+	}
+	if u.Blocks == nil {
+		u.Blocks = map[string]bool{}
+	}
+	u.Blocks[blockID] = true
+}
+
+// BlockList 渲染期展开过的块 id 的确定性排序列表。
+func (u *CompileUsage) BlockList() []string {
+	if u == nil || len(u.Blocks) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(u.Blocks))
+	for id := range u.Blocks {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// NavigationList 已消费菜单项的确定性排序列表（依赖登记用）。
+func (u *CompileUsage) NavigationList() []string {
+	if u == nil || len(u.Navigations) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(u.Navigations))
+	for id := range u.Navigations {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // MenuList 已消费导航位置的确定性排序列表。

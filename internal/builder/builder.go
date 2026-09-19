@@ -603,6 +603,9 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	ctx.SetUsageRecorder(cfg.usage)
 	ctx.SetArchiveEntity(cfg.archiveEntityType, cfg.archiveEntityID)
 	ctx.SetSiteLinkResolver(cfg.siteLinkResolver)
+	// 菜单悬浮面板（超级菜单）：把「块 → HTML」的渲染能力挂到 ctx 上（见 core.RenderContext）。
+	// 未注入块解析器时闭包为 nil，navViewOf 侧退化为「不展开面板」（编辑器画布 / 单测）。
+	ctx.SetPanelRenderer(panelRenderer(ctx, cfg.block, cfg.set))
 	// 顶层节点先建 view 树（含 CSS 编译），再统一渲染：main 地标要先知道每个顶层节点的
 	// 语义标签，才能决定包裹区间（渲染顺序与逐节点渲染完全一致）。
 	type rootView struct {

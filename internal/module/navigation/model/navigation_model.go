@@ -25,11 +25,18 @@ type NavigationEntity struct {
 	SourceType string  `gorm:"column:source_type;not null;default:custom"`
 	SourceID   *string `gorm:"column:source_id"`
 	// Target 打开方式：self / blank。
-	Target    string    `gorm:"column:target;not null;default:self"`
-	ParentID  *string   `gorm:"column:parent_id"`
-	SortOrder int       `gorm:"column:sort_order;not null"`
-	CreatedAt time.Time `gorm:"column:create_time;not null"`
-	UpdatedAt time.Time `gorm:"column:update_time;not null"`
+	Target string `gorm:"column:target;not null;default:self"`
+	// PanelBlockID 悬浮面板引用的全局块（超级菜单；NULL = 无面板，迁移 285）。
+	//
+	// 与 SourceType='block' 是两件事：那个是"点这一项跳到哪"（链接来源），
+	// 这个是"悬停展开显示什么"（面板内容）。
+	PanelBlockID *string `gorm:"column:panel_block_id"`
+	// PanelWidth 面板展示宽度 auto / full（通栏）；移动端由样式强制全宽。
+	PanelWidth string    `gorm:"column:panel_width;not null;default:auto"`
+	ParentID   *string   `gorm:"column:parent_id"`
+	SortOrder  int       `gorm:"column:sort_order;not null"`
+	CreatedAt  time.Time `gorm:"column:create_time;not null"`
+	UpdatedAt  time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 表名。

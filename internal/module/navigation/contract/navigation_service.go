@@ -21,6 +21,13 @@ import (
 type MenuStaleDispatcher interface {
 	// InvalidateMenu 该工程的该菜单位置（header / footer）发生变更（增 / 删 / 改 / 排序）。
 	InvalidateMenu(ctx context.Context, projectID, kind string) error
+	// InvalidateNavigation 该**具体菜单项**发生变化（改标题/来源/链接、增删子项、排序）。
+	//
+	// 与 InvalidateMenu 并列而不是合并：core.nav 有两种引用方式（按位置 / 按菜单项），
+	// 两者的依赖键不同（menu:{project}:{kind} / navigation:{itemID}）。按位置引用时
+	// 位置键已覆盖该项变化；只按项引用（页眉只放某一支）时位置键根本不会命中 ——
+	// 合并成一条会让「只引用了某一支」的页面在菜单改动后永远停在旧链接。
+	InvalidateNavigation(ctx context.Context, projectID, navigationID string) error
 }
 
 // SourceResolver 来源实体解析能力：菜单项来源非 custom 时，按来源实体取标题与 URL。
@@ -77,6 +84,11 @@ type NavigationService interface {
 	// 构建期编译导航组件与管理页结构面板共用；树为空表示该位置暂无菜单项。
 	// 来源非 custom 的项会经 SourceResolver 解析为来源实体的标题与 URL。
 	Tree(ctx context.Context, projectID, kind string) (nodes []*navigationdto.NavigationNode, err error)
+	// TreeByID 按**具体菜单项 id** 返回该菜单项及其子树（core.nav 按项引用时用）。
+	//
+	// 与 Tree 并列：Tree 是「整个位置的菜单」，本方法是「这一支」。找不到项时返回
+	// ErrNotFound（构建期显式失败优先于静默产出空菜单）。
+	TreeByID(ctx context.Context, projectID, navigationID string) (nodes []*navigationdto.NavigationNode, err error)
 	// SetSourceResolver 注入来源实体解析器（顶层装配在依赖模块就绪后调用一次）。
 	// 未注入时来源项退化为记录自身的 title/path（不报错，保持向后可用）。
 	SetSourceResolver(r SourceResolver)

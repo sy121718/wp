@@ -2,6 +2,7 @@
 package nav
 
 import (
+	"html/template"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -21,6 +22,12 @@ type ItemView struct {
 	// Current 当前页高亮（构建期按 RenderContext.CurrentPath 标记）。
 	Current  bool
 	Children []ItemView
+	// HasPanel 该项有悬浮面板（超级菜单：面板内容来自全局块，构建期展开）。
+	HasPanel bool
+	// PanelHTML 面板内容（已渲染的 HTML；模板直接输出，不再二次转义）。
+	PanelHTML template.HTML
+	// PanelFull 面板通栏（宽度 full）。
+	PanelFull bool
 }
 
 // View 导航渲染视图。
@@ -116,10 +123,12 @@ func ItemsOf(items []core.NavigationItem) []Item {
 	out := make([]Item, 0, len(items))
 	for _, it := range items {
 		out = append(out, Item{
-			Label:    it.Label,
-			URL:      it.URL,
-			Target:   it.Target,
-			Children: ItemsOf(it.Children),
+			Label:        it.Label,
+			URL:          it.URL,
+			Target:       it.Target,
+			Children:     ItemsOf(it.Children),
+			PanelBlockID: it.PanelBlockID,
+			PanelWidth:   it.PanelWidth,
 		})
 	}
 	return out
@@ -136,6 +145,9 @@ func itemViews(items []Item) []ItemView {
 			HasChildren: len(it.Children) > 0,
 			Current:     it.Current,
 			Children:    itemViews(it.Children),
+			HasPanel:    it.PanelHTML != "",
+			PanelHTML:   it.PanelHTML,
+			PanelFull:   it.PanelWidth == "full",
 		})
 	}
 	return out

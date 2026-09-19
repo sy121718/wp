@@ -28,6 +28,11 @@ const (
 	DepKindContentCollection = "content_collection"
 	// DepKindContentTemplate ContentTemplate 版本变化。
 	DepKindContentTemplate = "content_template"
+	// DepKindNavigation 按**具体菜单项**引用的导航变化（core.nav 绑定 navigation id 时）。
+	//
+	// 与 DepKindMenu（按位置）并列：位置键带工程 ID（位置名只有四个、跨工程必然重名），
+	// 本键用菜单项 UUID（全局唯一，与 block:{id} 同一情形），故不带工程 ID。
+	DepKindNavigation = "navigation"
 	// DepKindMenu 公开站点导航变化（navigations 表：菜单项增删改、排序、位置调整）。
 	//
 	// 键的构造见 MenuKey：**带工程 ID**。导航与块不同 —— block 的 key 是全局唯一
@@ -71,6 +76,15 @@ func ContentCollectionKey(entityType string) DepKey {
 	return DepKey{Kind: DepKindContentCollection, Key: "collection:content:" + entityType}
 }
 
+// ContentTemplateKey 内容模板依赖键，如 content_template:{templateID}。
+//
+// 语义：模板产生新版本（结构改动）会让所有引用它的产物失效 —— 自动发布实例
+// （presentation_instances.template_id）与把该模板绑成站点结构（页眉 / 页脚）的页面。
+// 键构造集中在这里，别在各模块里拼字符串（拼错只会表现为"改了模板站点不更新"）。
+func ContentTemplateKey(templateID string) DepKey {
+	return DepKey{Kind: DepKindContentTemplate, Key: "content_template:" + templateID}
+}
+
 // BlockKey 全局块依赖键，如 block:{blockID}。
 // SiteSlotKey 系统页面槽位的依赖键（槽位名，如 cart / checkout）。
 func SiteSlotKey(slot string) DepKey {
@@ -90,6 +104,18 @@ func BlockKey(blockID string) DepKey {
 // key 由 page 与 presentation 两条构建路径用同一个构造函数产出，两侧必须一致。
 func MenuKey(projectID, kind string) DepKey {
 	return DepKey{Kind: DepKindMenu, Key: "menu:" + projectID + ":" + kind}
+}
+
+// NavigationKey 按具体菜单项引用的依赖键，如 navigation:{itemID}。
+//
+// 语义：core.nav 绑定了某条菜单项作为菜单根（Props.Navigation）时，该菜单项及其子树的
+// 任何变化（改标题/换来源/换链、增删子项、排序）都会改变产物字节，必须让引用它的
+// 页面与实例失效。键用菜单项 UUID：它全局唯一，跨工程不会误命中（与位置键的情形相反）。
+//
+// 为什么不能只靠 MenuKey：按位置引用登记的是 menu:{project}:{kind}，而按项引用时
+// 位置可能压根没被消费（例如页面只引用了「产品」这一支），位置键既不会命中、也覆盖不到。
+func NavigationKey(navigationID string) DepKey {
+	return DepKey{Kind: DepKindNavigation, Key: "navigation:" + navigationID}
 }
 
 // DependencyTarget 依赖失效目标：一个可被依赖源变更标记的发布来源

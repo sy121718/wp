@@ -368,6 +368,26 @@ func registerCoreSchemaAndAccess() {
 		SQL:       mustSQL("285_navigation_mobile_panel.sql"),
 	})
 
+	// 289：依赖 kind 扩展 —— 按**具体菜单项**引用（navigation）。
+	//
+	// core.nav 的两种引用方式各有一条依赖键：按位置是 menu:{project}:{kind}（071 已放行
+	// 'menu'），按菜单项是 navigation:{itemID}（本批新增）。与 071 / 174 同形：两张依赖表
+	// 一起扩展（自动发布实例侧同样会引用菜单项）。
+	//
+	// 不放行的表现**不是静默失效，而是构建期直接失败**（依赖行插入被 CHECK 拒绝）——
+	// 也就是「按项引用」这个能力完全不可用，所以必须与 Go 侧同批落地。
+	// 判定限定 current_schema()：并发或残留 schema 的同名约束会让判定串味（167 / p7 各踩过一次）。
+	register(Migration{
+		Version:   "289-dependency-kind-navigation",
+		TableName: "page_dependencies",
+		CheckSQL: "SELECT COUNT(*) FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid" +
+			" JOIN pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = current_schema()" +
+			" AND t.relname = ?" +
+			" AND c.conname = 'page_dependencies_dependency_kind_check'" +
+			" AND pg_get_constraintdef(c.oid) LIKE '%navigation%'",
+		SQL: mustSQL("289_dependency_kind_navigation.sql"),
+	})
+
 	// 269：navigation 内部错误归口文案（审计 CQ-009）。
 	// enums 的值就是 i18n key（navigationenums.ErrInternal）—— 不 seed，响应层 translate
 	// 未命中会把 key 原样返回给前端。判据按本批自己的 key 计数：用总量会被同期其它批次

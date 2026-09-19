@@ -13,9 +13,12 @@
 package builder
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/CloudyKit/jet/v6"
@@ -1078,6 +1081,11 @@ func navViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeVi
 	}
 	// 当前项高亮：按本次编译的页面路径标记（块预览等无路径时不标记）。
 	navPkg.MarkCurrent(p.Items, ctx.CurrentPath)
+	// 超级菜单：把带面板的菜单项的面板块展开成 HTML（必须在 BuildView 之前 ——
+	// ItemView 是在那一步按 Item 快照生成，之后再写 PanelHTML 不会生效）。
+	if err := renderNavPanels(p.Items, ctx); err != nil {
+		return nil, err
+	}
 	// Advanced 通用层：与 atomViewOf 同源。本类组件此前完全跳过 Advanced，
 	// 结果是编辑器里能配、能存，构建产物里却被静默丢弃。
 	classes, customID := advancedClasses(node, &p, ctx)
@@ -1100,12 +1108,25 @@ func navViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeVi
 // 覆盖手写菜单项：产物仍是静态 HTML，导航数据在构建期一次性读库。
 // 未注入解析器/工程 ID 时显式报错（构建期失败优先于静默产出空菜单）。
 func resolveNavMenu(node *core.Node, p *navPkg.Props, ctx *core.RenderContext) error {
+	navID := strings.TrimSpace(p.Navigation)
 	kind := strings.TrimSpace(p.Menu)
-	if kind == "" {
+	if navID == "" && kind == "" {
 		return nil
 	}
 	if ctx.Navigation == nil || strings.TrimSpace(ctx.ProjectID) == "" {
-		return fmt.Errorf("节点 %s: 已绑定导航位置 %q，但构建期缺少导航解析器或工程 ID（装配未注入）", node.ID, kind)
+		return fmt.Errorf("节点 %s: 已绑定导航（位置 %q / 菜单项 %q），但构建期缺少导航解析器或工程 ID（装配未注入）",
+			node.ID, kind, navID)
+	}
+	// 按项优先：检查器里选了具体菜单项就以它为准（一个位置下想只放某一支时用）。
+	if navID != "" {
+		items, err := ctx.Navigation.ResolveNavigation(ctx.ProjectID, navID)
+		if err != nil {
+			return fmt.Errorf("节点 %s: 菜单项 %q 解析失败: %w", node.ID, navID, err)
+		}
+		// 取值即记录：依赖键 navigation:{itemID}，否则改这条菜单后引用页面不重建。
+		ctx.UseNavigation(navID)
+		p.Items = navPkg.ItemsOf(items)
+		return navPkg.ValidateItems(p.Items, node.ID)
 	}
 	items, err := ctx.Navigation.ResolveMenu(ctx.ProjectID, kind)
 	if err != nil {
@@ -1297,6 +1318,82 @@ func blockRefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext, ref
 		Classes: core.NodeClass(node.ID), TopLevel: topLevel,
 		Children: children, V: view,
 	}, nil
+}
+
+// renderNavPanels 为带悬浮面板的菜单项展开面板块内容（超级菜单，迁移 285）。
+//
+// 为什么在构建期展开而不是运行时取：面板内容存的是**全局块**，构建期内联进产物后
+// 访客侧零请求、零 JS 依赖；改块 → 依赖表反查（block:{id}）→ 引用页面重建。
+// 记录 ctx.UseBlock 是这套闭环的另一半：块 id 挂在 navigations 行上、不在页面文档里，
+// 静态扫描看不到它，只有这里能登记。
+func renderNavPanels(items []navPkg.Item, ctx *core.RenderContext) error {
+	for i := range items {
+		if err := renderNavPanels(items[i].Children, ctx); err != nil {
+			return err
+		}
+		blockID := strings.TrimSpace(items[i].PanelBlockID)
+		if blockID == "" {
+			continue
+		}
+		// 取值即记录：漏这一步的表现是「改了面板块，带该面板的页面不重建」，
+		// 而菜单面板通常挂在页眉 —— 全站可见却停在旧内容，且没有任何报错。
+		ctx.UseBlock(blockID)
+		html, err := ctx.RenderPanel(blockID)
+		if err != nil {
+			return fmt.Errorf("菜单项 %q 的悬浮面板渲染失败: %w", items[i].Label, err)
+		}
+		items[i].PanelHTML = template.HTML(html) //nolint:gosec // 本仓组件模板产出，属受信内容
+	}
+	return nil
+}
+
+// panelRenderer 构造「块 root → HTML」渲染闭包（菜单悬浮面板）。
+//
+// 与 blockRefViewOf 同一套安全约束（防环 / 深度上限），只是输出形态不同：
+// 那里产出 nodeView 交给模板嵌套，这里直接渲染成字符串塞进菜单项（面板在菜单项内部，
+// 不是它的子节点，没有可用的模板嵌套点）。
+func panelRenderer(ctx *core.RenderContext, resolve core.BlockResolver, set *jet.Set) func(string) (string, error) {
+	if resolve == nil || set == nil {
+		return nil
+	}
+	return func(blockID string) (string, error) {
+		id := strings.TrimSpace(blockID)
+		if id == "" {
+			return "", nil
+		}
+		for _, stacked := range ctx.BlockStack {
+			if stacked == id {
+				return "", fmt.Errorf("菜单悬浮面板引用的块存在循环引用（%s）", id)
+			}
+		}
+		if len(ctx.BlockStack) >= maxBlockExpandDepth {
+			return "", fmt.Errorf("菜单悬浮面板的块嵌套超过 %d 层上限", maxBlockExpandDepth)
+		}
+		node := &core.Node{
+			ID:    "navpanel-" + id,
+			Props: json.RawMessage(`{"blockId":` + strconv.Quote(id) + `}`),
+		}
+		view, roots, err := globalrefPkg.BuildView(node, resolve)
+		if err != nil {
+			return "", err
+		}
+		if view.IsPlaceholder {
+			return "", nil // 块解析器未接或块不存在：不展开（与 globalref 的占位行为一致）
+		}
+		ctx.BlockStack = append(ctx.BlockStack, id)
+		defer func() { ctx.BlockStack = ctx.BlockStack[:len(ctx.BlockStack)-1] }()
+		var buf bytes.Buffer
+		for _, r := range roots {
+			rv, verr := nodeViewOf(r, false, ctx)
+			if verr != nil {
+				return "", verr
+			}
+			if verr := renderView(set, rv, &buf); verr != nil {
+				return "", verr
+			}
+		}
+		return buf.String(), nil
+	}
 }
 
 func renderView(set *jet.Set, root *nodeView, w io.Writer) error {

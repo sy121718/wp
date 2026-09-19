@@ -65,6 +65,29 @@ func (s *Service) invalidateMenu(ctx context.Context, projectID, kind string) {
 	}
 }
 
+// invalidateNavigation 把一次「具体菜单项」写操作的结果派发给依赖扇出。
+//
+// 与 invalidateMenu 并列：按项引用的依赖键是 navigation:{itemID}（pipeline.NavigationKey），
+// 只有本方法能命中。失败同样只记日志 —— 与导航位置派发同一口径（内容已写入，
+// 标记失败只影响「下次构建会不会主动带上」）。
+func (s *Service) invalidateNavigation(ctx context.Context, projectID, navigationID string) {
+	projectID = strings.TrimSpace(projectID)
+	navigationID = strings.TrimSpace(navigationID)
+	if projectID == "" || navigationID == "" {
+		return
+	}
+	if s.staleMenu == nil {
+		logger.Scene("navigation").With("project_id", projectID).With("navigation_id", navigationID).
+			Error(errors.New("导航失效派发端口未注入"),
+				"菜单项变更未派发 stale，按项引用它的页面/实例会停在旧菜单上；请检查装配（wiring: navigation.SetMenuStaleDispatcher）")
+		return
+	}
+	if err := s.staleMenu.InvalidateNavigation(ctx, projectID, navigationID); err != nil {
+		logger.Scene("navigation").With("project_id", projectID).With("navigation_id", navigationID).
+			Error(err, "菜单项变更后的失效派发失败（产物保持原状，需手动重建）")
+	}
+}
+
 // InvalidateMenuLabels 按位置逐个派发失效（导航译文工作台写 sys_translation 后用）。
 //
 // 为什么走这条而不是自己拿实例契约去标：菜单标签的译文与菜单项本身属于**同一个**
