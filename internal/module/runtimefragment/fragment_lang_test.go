@@ -227,3 +227,41 @@ func TestOrderFragmentURLEscapesLang(t *testing.T) {
 		t.Fatalf("orderDetail 的 lang 应被转义，实际 %s", detail)
 	}
 }
+
+// TestRenderProductListSetsLangInRenderContext 片段期渲染上下文带上本次请求解析出的语言。
+//
+// 组件的**实例配置**（容器那条 hx-get）在构建期由 RenderContext.Lang 拼出 lang；
+// 片段期走同一个 fragmentQuery —— 这里若不把 r.Lang 传进 RenderContext，
+// 重渲染出来的容器就不带 lang，于是「构建期产物带 lang、片段刷新后的容器不带」，
+// 同一个语言维度走了两条路径：容器再触发一次 load 就回落工程默认语言。
+// 断言只看容器那条 URL（不看整段 HTML），免得被翻页链接里的 lang 蒙混过去。
+func TestRenderProductListSetsLangInRenderContext(t *testing.T) {
+	defer SetCollectionResolver(nil)
+	SetCollectionResolver(&stubPager{total: 50})
+
+	out, err := renderProductList(context.Background(), &Request{
+		Type: "productList",
+		Lang: "en-US",
+		Params: map[string]string{
+			"nodeId": "list-1", "projectId": "proj-1",
+			"titleField": "item.name", "linkField": "item.slug", "linkPrefix": "/products/",
+			"pageSize": "4", "page": "2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("渲染失败: %v", err)
+	}
+	const marker = `hx-get="/_fragments/productList?`
+	i := strings.Index(out, marker)
+	if i < 0 {
+		t.Fatalf("未找到容器的片段地址\n%s", out)
+	}
+	rest := out[i+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("容器片段地址未闭合\n%s", out)
+	}
+	if q := rest[:end]; !strings.Contains(q, "lang=en-US") {
+		t.Fatalf("容器实例配置应带请求语言（RenderContext.Lang 没传），实际 %q", q)
+	}
+}

@@ -157,7 +157,17 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 		return "", serr
 	}
 	rctx := &core.RenderContext{
-		Context:    core.WithBuildProjectID(ctx, projectID),
+		Context: core.WithBuildProjectID(ctx, projectID),
+		// Lang 本次渲染的目标语言（I18N-011）。
+		//
+		// 片段期必须显式设它：组件用它把 lang 拼进**实例配置**（productlist/links.go 的
+		// fragmentQuery），也就是重渲染出来的容器那条 hx-get。不设的后果是「构建期产物
+		// 带 lang、片段刷新后的容器不带」—— 同一个语言维度走两条路径，容器再触发一次
+		// load 就回落工程默认语言。
+		//
+		// 值与下方槽位解析取的是同一个 r.Lang（请求解析结果：?lang → 工程默认语言），
+		// 不是这里凭空补一个语言 —— 语言仍由 URL 显式表达，只是如实传给渲染层。
+		Lang:       r.Lang,
 		Collection: collectionResolver,
 		Product:    productDataSource,
 	}
