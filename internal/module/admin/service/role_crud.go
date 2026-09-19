@@ -103,6 +103,9 @@ func (s *Service) RoleCreate(ctx context.Context, req *admindto.RoleCreateReq) e
 			return fmt.Errorf("角色已创建，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
 		}
 	}
+	// 角色已落库：同步重载数据权限快照（快照内含「启用角色 code → id」映射，
+	// 否则新建的角色分配给它的规则要等下一次兜底刷新才生效）。
+	s.reloadDataRuleSnapshotAfterWrite("角色新建")
 	return nil
 }
 
@@ -163,6 +166,8 @@ func (s *Service) RoleUpdate(ctx context.Context, req *admindto.RoleUpdateReq) e
 			return fmt.Errorf("角色已保存，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
 		}
 	}
+	// 角色已更新（含启停）：同步重载数据权限快照，启用状态变化立刻反映到角色映射上。
+	s.reloadDataRuleSnapshotAfterWrite("角色更新")
 	return nil
 }
 
@@ -211,6 +216,8 @@ func (s *Service) RoleDelete(ctx context.Context, req *admindto.RoleDeleteReq) e
 			return fmt.Errorf("角色已删除，但权限策略重载失败（内存副本仍是旧策略，请重试或重启服务）: %w", err)
 		}
 	}
+	// 角色已删除：同步重载数据权限快照，避免已删角色继续参与规则命中匹配。
+	s.reloadDataRuleSnapshotAfterWrite("角色删除")
 	return nil
 }
 
@@ -239,11 +246,6 @@ func (s *Service) GetRoleCodesByUserID(ctx context.Context, userID uint64) ([]st
 		}
 	}
 	return activeCodes, nil
-}
-
-// GetEnabledRoleIDsByCodes 对外契约：将角色编码解析为已启用角色 ID。
-func (s *Service) GetEnabledRoleIDsByCodes(ctx context.Context, codes []string) (ids []uint64, err error) {
-	return s.rm.GetEnabledIDsByCodes(ctx, codes)
 }
 
 // roleEntityToItem RoleEntity 转列表项 RoleItem。

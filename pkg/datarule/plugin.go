@@ -249,14 +249,39 @@ func buildCondition(c Condition, uc *UserContext, dialect string) (FilterConditi
 
 // deptScopeCondition 构建「本部门及全部子部门」过滤条件（H5）。
 //
-// sys_dept.ancestors 以逗号分隔存储祖先链（如 "0,1,14"）。旧实现
-// `ancestors LIKE '%{DeptID}%'` 做的是子串匹配：部门 1 会误命中祖先链
+// **方向语义写死在这里**：本函数服务的是「本部门及其子部门」——**向下**展开的可看范围，
+// 所以它消费 UserContext.DeptSubtreeIDs（子树），而不是祖先链。祖先链是**向上**的，
+// 它的用途是「匹配分配给上级部门的规则」（那段匹配在 admin 的规则快照里用 dept_ancestors
+// 完成，不进本结构）。拿祖先列表去填这个 IN 会把可见范围放大到上级部门（越权）。
+//
+// 两条路径：
+//  1. UserContext.DeptSubtreeIDs 非空 → 直接展开 field IN (?,?,...)。这是优化路径：
+//     走目标表 dept_id 上的索引，且**完全没有子查询**（旧路径每一次查询都要把 sys_dept
+//     整表扫一遍：左边 (',' || ancestors || ',') 是表达式、匹配又在中间，B-tree 用不上）。
+//  2. 为空 → 回退下面的子查询，保证既有调用方与既有测试的行为逐字不变。
+//
+// 回退路径的语义（H5 的原实现）：sys_dept.ancestors 以逗号分隔存储祖先链（如 "0,1,14"）。
+// 旧实现 `ancestors LIKE '%{DeptID}%'` 做的是子串匹配：部门 1 会误命中祖先链
 // "0,14,41"（"1" 是 "14"/"41" 的子串）。这里对 ancestors 首尾补逗号后整段精确匹配：
 //   - PostgreSQL（|| 拼接）：(',' || ancestors || ',') LIKE ('%,' || ? || ',%')
 //   - MySQL（CONCAT 拼接）：CONCAT(',', ancestors, ',') LIKE CONCAT('%,', ?, ',%')
 //
-// OR id = ? 保留本部门自身命中。
+// 回退路径的 OR id = ? 保留本部门自身命中。
 func deptScopeCondition(dialect, field string, uc *UserContext) (FilterCondition, bool) {
+	// 优化路径：调用方（中间件 + admin 的部门快照）已把子树算好，这里只做参数绑定。
+	if len(uc.DeptSubtreeIDs) > 0 {
+		placeholders := make([]string, len(uc.DeptSubtreeIDs))
+		args := make([]any, len(uc.DeptSubtreeIDs))
+		for i, id := range uc.DeptSubtreeIDs {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		return FilterCondition{
+			Query: field + " IN (" + strings.Join(placeholders, ",") + ")",
+			Args:  args,
+		}, true
+	}
+
 	deptID := fmt.Sprintf("%d", uc.DeptID)
 	if dialect == "mysql" {
 		return FilterCondition{

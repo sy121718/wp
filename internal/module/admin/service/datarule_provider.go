@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	admindto "go_wp/internal/module/admin/dto"
@@ -17,95 +16,67 @@ import (
 )
 
 // GetRules 实现 datarule.RuleProvider 接口。
-// 查询角色、用户和部门关联的所有已启用限制规则，并按规则 ID 去重。
+//
+// **读路径零查询**：只读一份进程内快照（datarule_snapshot.go），在内存里按
+// 「用户本人 / 用户角色 / 用户部门 / 上级部门 + SELF_AND_CHILDREN」过滤规则分配，
+// 命中的规则按 id 去重后解析配置。快照由装配期加载一次、写路径同步重载、定时兜底刷新共同维护。
+//
+// 快照是**懒加载**的：快照为空（从未加载）时在这里加锁重建一次，之后一直复用，
+// 直到写路径主动重载或 5 分钟兜底刷新把它换掉。
+//
+// fail-closed：加载失败时返回 error（让本次查询失败），绝不返回空规则集合 —— 空集合在引擎里
+// 意味着「没有任何限制」，那是把数据权限静默关掉，比查询失败危险得多（改造前 provider
+// 出错走 db.AddError(err)，同样是 fail-closed，这里保持同一语义）。
 func (s *Service) GetRules(ctx context.Context, user *datarule.UserContext, domain string) ([]datarule.RuleConfig, error) {
 	if user == nil || user.UserID == 0 {
 		return nil, nil
 	}
 
-	var rules []struct {
-		ID     uint64 `gorm:"column:id"`
-		Config string `gorm:"column:config"`
+	snap := s.currentDataRuleSnapshot()
+	if snap == nil {
+		loaded, err := s.ensureDataRuleSnapshot(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("加载数据权限规则快照失败: %w", err)
+		}
+		snap = loaded
 	}
-	if err := s.drm.DB(ctx).
-		Select("id, config").
-		Where("domain = ? AND status = ?", domain, adminmodel.RuleStatusEnabled).
-		Find(&rules).Error; err != nil {
-		return nil, err
+
+	domainRules, ok := snap.domains[domain]
+	if !ok || domainRules == nil {
+		return nil, nil // 该域没有启用规则：与快照语义一致，不是错误
 	}
-	if len(rules) == 0 {
+
+	// 用户角色 code → 启用角色 id（快照里只保留 status=启用 的角色）。
+	roleIDs := make([]uint64, 0, len(user.Roles))
+	for _, code := range user.Roles {
+		if id, ok := snap.roleIDs[code]; ok {
+			roleIDs = append(roleIDs, id)
+		}
+	}
+	// 用户部门的祖先链（快照解析，替代改造前的 AncestorIDs 查库）。
+	ancestorDeptIDs := snap.deptAncestors[user.DeptID]
+
+	matchedRuleIDs := matchAssignmentRuleIDs(
+		domainRules.assignments, user.UserID, user.DeptID, roleIDs, ancestorDeptIDs,
+	)
+	if len(matchedRuleIDs) == 0 {
 		return nil, nil
 	}
 
-	ruleIDs := make([]uint64, 0, len(rules))
-	ruleMap := make(map[uint64]string, len(rules))
-	for _, rule := range rules {
-		ruleIDs = append(ruleIDs, rule.ID)
-		ruleMap[rule.ID] = rule.Config
+	configByID := make(map[uint64]string, len(domainRules.rules))
+	for _, rule := range domainRules.rules {
+		configByID[rule.id] = rule.config
 	}
 
-	// 同包直调：角色编码 → 启用角色 ID
-	roleIDs, err := s.GetEnabledRoleIDsByCodes(ctx, user.Roles)
-	if err != nil {
-		return nil, err
-	}
-
-	var ancestorDeptIDs []uint64
-	if user.DeptID != 0 {
-		ancestorDeptIDs, err = s.AncestorIDs(ctx, user.DeptID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	predicates := []string{"target_type = ? AND target_id = ?"}
-	args := []any{adminmodel.AssignmentTargetTypeUser, user.UserID}
-	if len(roleIDs) > 0 {
-		predicates = append(predicates, "target_type = ? AND target_id IN ?")
-		args = append(args, adminmodel.AssignmentTargetTypeRole, roleIDs)
-	}
-	if user.DeptID != 0 {
-		predicates = append(predicates, "target_type = ? AND target_id = ?")
-		args = append(args, adminmodel.AssignmentTargetTypeDept, user.DeptID)
-	}
-	if len(ancestorDeptIDs) > 0 {
-		predicates = append(predicates, "target_type = ? AND target_id IN ? AND target_scope = ?")
-		args = append(
-			args,
-			adminmodel.AssignmentTargetTypeDept,
-			ancestorDeptIDs,
-			adminmodel.AssignmentTargetScopeSelfAndChildren,
-		)
-	}
-
-	type assignmentRow struct {
-		RuleID uint64 `gorm:"column:rule_id"`
-	}
-	var assignments []assignmentRow
-	if err := s.dram.DB(ctx).
-		Select("rule_id").
-		Where("rule_id IN ?", ruleIDs).
-		Where("("+strings.Join(predicates, ") OR (")+")", args...).
-		Find(&assignments).Error; err != nil {
-		return nil, err
-	}
-
-	seen := make(map[uint64]struct{}, len(assignments))
-	result := make([]datarule.RuleConfig, 0, len(assignments))
-	for _, assignment := range assignments {
-		if _, ok := seen[assignment.RuleID]; ok {
-			continue
-		}
-		seen[assignment.RuleID] = struct{}{}
-
-		configStr, ok := ruleMap[assignment.RuleID]
+	result := make([]datarule.RuleConfig, 0, len(matchedRuleIDs))
+	for _, ruleID := range matchedRuleIDs {
+		configStr, ok := configByID[ruleID]
 		if !ok {
 			continue
 		}
-
 		var config datarule.RuleConfig
 		if err := json.Unmarshal([]byte(configStr), &config); err != nil {
-			return nil, fmt.Errorf("解析数据规则 %d 配置失败: %w", assignment.RuleID, err)
+			return nil, fmt.Errorf("解析数据规则 %d 配置失败: %w", ruleID, err)
 		}
 		result = append(result, config)
 	}
@@ -185,5 +156,10 @@ func (s *Service) RuleAssignmentSave(ctx context.Context, req *admindto.RuleAssi
 		})
 	}
 
-	return s.dram.ReplaceByRuleID(ctx, req.RuleID, entities)
+	if err := s.dram.ReplaceByRuleID(ctx, req.RuleID, entities); err != nil {
+		return err
+	}
+	// 分配已提交：同步重载快照，让新分配对下一次查询立即生效（不等 5 分钟兜底刷新）。
+	s.reloadDataRuleSnapshotAfterWrite("规则分配保存")
+	return nil
 }

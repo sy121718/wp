@@ -83,7 +83,12 @@ func (s *Service) RuleCreate(ctx context.Context, req *admindto.RuleCreateReq) e
 		entity.Remark = &req.Remark
 	}
 
-	return s.drm.Create(ctx, entity)
+	if err := s.drm.Create(ctx, entity); err != nil {
+		return err
+	}
+	// 规则已落库：同步重载快照，新规则对下一次查询立即生效（不等 5 分钟兜底刷新）。
+	s.reloadDataRuleSnapshotAfterWrite("规则新建")
+	return nil
 }
 
 // RuleUpdate 更新数据规则。
@@ -118,7 +123,12 @@ func (s *Service) RuleUpdate(ctx context.Context, req *admindto.RuleUpdateReq) e
 		entity.Remark = nil
 	}
 
-	return s.drm.Update(ctx, entity)
+	if err := s.drm.Update(ctx, entity); err != nil {
+		return err
+	}
+	// 规则已更新：同步重载快照（改配置 / 启停都立即生效）。
+	s.reloadDataRuleSnapshotAfterWrite("规则更新")
+	return nil
 }
 
 // RuleDelete 批量删除数据规则。
@@ -136,7 +146,7 @@ func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) e
 	if len(ids) == 0 {
 		return nil
 	}
-	return s.drm.Transaction(ctx, func(tx *gorm.DB) error {
+	if err := s.drm.Transaction(ctx, func(tx *gorm.DB) error {
 		locked, err := s.drm.LockByIDsTx(ctx, tx, ids)
 		if err != nil {
 			return err
@@ -154,7 +164,12 @@ func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) e
 			return err
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	// 删除事务已提交：同步重载快照，被删规则立刻不再命中。
+	s.reloadDataRuleSnapshotAfterWrite("规则删除")
+	return nil
 }
 
 // uniqueRuleIDs 剔除 0 并去重（与 uniqueAdminIDs 同形）。

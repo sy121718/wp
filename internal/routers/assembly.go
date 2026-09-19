@@ -192,6 +192,22 @@ type assembly struct {
 	availabilityLookup productcontract.VariantAvailabilityLookupPort
 }
 
+// dataRuleSnapshotPort 装配期消费的数据权限快照端口（admin 实现，只取装配需要的四条）。
+//
+// 用窄接口而不是 admincontract.AuthzContextService 的扩展：快照的加载与解析是**装配期**
+// 与**中间件**的关切，不该进对外权限契约；admin 只要实现了这四条就能被装配，改动被限制在
+// 「谁提供快照」这一层。
+type dataRuleSnapshotPort interface {
+	// LoadDataRuleSnapshot 重建快照（admin 的写路径同步重载与懒加载共用同一个入口；
+	// 装配期**不**调用它做预加载，见 buildAPIAndCoreCRUD 里的注释）。
+	LoadDataRuleSnapshot(ctx context.Context) error
+	// StartDataRuleSnapshotAutoRefresh 启动定时兜底刷新（测试进程不启动）。
+	StartDataRuleSnapshotAutoRefresh(ctx context.Context)
+	// DeptSubtreeIDsFromSnapshot 部门子树 id 列表（含自身与全部子孙），供中间件填充
+	// UserContext 并让引擎把 dept.scope:SELF_AND_CHILDREN 展开成 IN (...)（向下方向）。
+	DeptSubtreeIDsFromSnapshot(deptID uint64) []uint64
+}
+
 // buildFoundation 组件级与进程级基础设施：模板渲染器、静态资源、媒体与站点静态面、
 // 健康检查，以及业务装配所需的通用依赖（db）与权限 seed。
 //
@@ -319,6 +335,23 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 带声明能力的包装组而非 authorizedAPI：路径前缀仍是 /api，权限点声明照常生效。
 	adminAuthzSvc := adminhttp.SetupAdminRoutes(permission.NewRouteGroup(api), db)
 	a.adminAuthzSvc = adminAuthzSvc
+
+	// 数据权限快照（性能整改）：快照本身是**懒加载**的（第一次命中查询时由 admin 侧加载），
+	// 装配期**不做预加载、不 fail-fast** —— 数据库抖动不该变成启动失败，代价只是首次命中
+	// 请求多付一次 3 条小查询的加载。这里只接两件事：
+	//
+	//   1. 定时兜底刷新的启动（快照从未加载时它会自己跳过，理由见 admin 侧注释）；
+	//   2. 把**同一份**部门快照的**子树**（向下：本部门及全部子孙）注入 datarule 中间件，
+	//      让中间件不必再查库解析 —— 这是引擎侧 dept.scope:SELF_AND_CHILDREN 走 IN (...)
+	//      而不是子查询的前提。快照还没加载时解析器返回 nil，引擎自动回退既有子查询，
+	//      行为与改造前一致。
+	snapPort, ok := adminAuthzSvc.(dataRuleSnapshotPort)
+	if !ok {
+		panic("admin 模块未实现数据权限快照端口（装配缺陷：部门快照无法注入中间件）")
+	}
+	snapPort.StartDataRuleSnapshotAutoRefresh(context.Background())
+	builtin.SetDataRuleDeptResolver(snapPort.DeptSubtreeIDsFromSnapshot)
+
 	// 后台页面组在这里就绪：各模块在自己的 Setup 里既注册 /api/* 也注册 /admin/*，
 	// 中间件链（Session + CSRF + 权限上下文 / 侧栏菜单树）只由这一处定义 ——
 	// 模块不必各写一遍，也就不会漏挂某一环。

@@ -156,6 +156,12 @@ func dbReceiver(expr ast.Expr, dbVars map[string]bool) bool {
 
 // knownDeviations 已知偏差表（CQ-025，只增不减）。生成方式：scanServiceDBCalls 实测输出。
 // 每行格式：文件:行号 函数名.gorm方法。
+//
+// 2026-09 数据权限快照整改的账实变更：
+//   - datarule_provider.go 的 4 处直查（GetRules 每次查库）随快照改造消失，从表中移除；
+//   - 新增 datarule_snapshot.go 的 6 处 —— 那是**快照重建**路径（3 条加载查询），
+//     由 lazy 首次命中 / 写路径同步重载 / 5 分钟兜底刷新触发，不在查询热路径上；
+//   - datarule_crud.go 的行号随 RuleCreate/RuleUpdate/RuleDelete 里新增的重载调用下移。
 var knownDeviations = []string{
 	"admin_crud.go:134 AdminCreate.Create",
 	"admin_crud.go:149 AdminDetail.Scan",
@@ -183,15 +189,16 @@ var knownDeviations = []string{
 	"admin_login.go:46 AdminLogin.Where",
 	"admin_login.go:87 AdminLogin.Updates",
 	"admin_login.go:87 AdminLogin.Where",
-	"datarule_crud.go:271 RuleList.Where",
-	"datarule_crud.go:274 RuleList.Where",
-	"datarule_crud.go:279 RuleList.Count",
-	"datarule_crud.go:286 RuleList.Scan",
-	"datarule_provider.go:30 GetRules.Find",
-	"datarule_provider.go:30 GetRules.Where",
-	"datarule_provider.go:85 GetRules.Find",
-	"datarule_provider.go:85 GetRules.Where",
-	"datarule_provider.go:85 GetRules.Where",
+	"datarule_crud.go:286 RuleList.Where",
+	"datarule_crud.go:289 RuleList.Where",
+	"datarule_crud.go:294 RuleList.Count",
+	"datarule_crud.go:301 RuleList.Scan",
+	"datarule_snapshot.go:368 loadDataRuleSnapshotFromDB.Joins",
+	"datarule_snapshot.go:368 loadDataRuleSnapshotFromDB.Scan",
+	"datarule_snapshot.go:368 loadDataRuleSnapshotFromDB.Where",
+	"datarule_snapshot.go:406 loadDataRuleSnapshotFromDB.Scan",
+	"datarule_snapshot.go:406 loadDataRuleSnapshotFromDB.Where",
+	"datarule_snapshot.go:421 loadDataRuleSnapshotFromDB.Scan",
 	"perm_crud.go:22 PermList.Where",
 	"perm_crud.go:25 PermList.Where",
 	"perm_crud.go:28 PermList.Where",

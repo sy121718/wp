@@ -137,17 +137,6 @@ func (m *RoleModel) ListByCodes(ctx context.Context, codes []string) ([]RoleEnti
 	return list, err
 }
 
-// GetEnabledIDsByCodes 按角色编码查询已启用角色 ID。
-func (m *RoleModel) GetEnabledIDsByCodes(ctx context.Context, codes []string) (ids []uint64, err error) {
-	if len(codes) == 0 {
-		return nil, nil
-	}
-	err = m.DB(ctx).
-		Where("role_code IN ? AND status = ?", codes, RoleStatusEnabled).
-		Pluck("id", &ids).Error
-	return ids, err
-}
-
 // Transaction 透传事务：一次写操作里「角色行 + Casbin g2 启用标记」两处持久化写
 // 必须同事务，边界由 service 决定。
 func (m *RoleModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {

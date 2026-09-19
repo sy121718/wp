@@ -96,7 +96,13 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 		entity.Remark = &req.Remark
 	}
 
-	return s.dm.Create(ctx, entity)
+	if err := s.dm.Create(ctx, entity); err != nil {
+		return err
+	}
+	// 部门已落库：同步重载数据权限快照（快照内含部门祖先链与子树，供规则分配匹配与
+	// dept.scope:SELF_AND_CHILDREN 展开使用）。
+	s.reloadDataRuleSnapshotAfterWrite("部门新建")
+	return nil
 }
 
 // DeptUpdate 更新部门（含移动节点 ancestors 维护）。
@@ -112,7 +118,7 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 // 读-改-写加行锁（LockByIDTx）：先读旧 ancestors 才能算子孙前缀，不加锁并发移动同一子树会按
 // 各自的旧快照改写，把祖先链写错。
 func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) error {
-	return s.dm.Transaction(ctx, func(tx *gorm.DB) error {
+	updateErr := s.dm.Transaction(ctx, func(tx *gorm.DB) error {
 		current, err := s.dm.LockByIDTx(ctx, tx, req.ID)
 		if err != nil {
 			return err
@@ -188,6 +194,12 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 		}
 		return nil
 	})
+	if err := updateErr; err != nil {
+		return err
+	}
+	// 部门已更新（可能移动了子树）：同步重载数据权限快照，祖先链变化立刻生效。
+	s.reloadDataRuleSnapshotAfterWrite("部门更新")
+	return nil
 }
 
 // DeptDelete 删除部门。
@@ -219,7 +231,12 @@ func (s *Service) DeptDelete(ctx context.Context, req *admindto.DeptDeleteReq) e
 		return errors.New(adminenums.ErrDeptHasUsers)
 	}
 
-	return s.dm.Delete(ctx, req.ID)
+	if err := s.dm.Delete(ctx, req.ID); err != nil {
+		return err
+	}
+	// 部门已删除：同步重载数据权限快照，避免已删部门继续出现在祖先链 / 子树里。
+	s.reloadDataRuleSnapshotAfterWrite("部门删除")
+	return nil
 }
 
 // DeptUserList 查询部门下用户列表。

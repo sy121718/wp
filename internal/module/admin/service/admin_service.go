@@ -42,17 +42,25 @@ type Service struct {
 	dm   *adminmodel.DeptModel
 	drm  *adminmodel.SysRuleModel
 	dram *adminmodel.SysRuleAssignmentModel
+
+	// ruleSnapshot 数据权限规则的进程内快照：读路径（GetRules）只读它，零查询。
+	// 形状与加载时机见 datarule_snapshot.go（对照 pkg/casbin 的 urlCodeMap、pkg/i18n 的 LoadCache）。
+	ruleSnapshot *dataruleSnapshotStore
+	// ruleSnapshotLoader 重建快照的加载器覆盖点：仅测试注入（构造加载失败 / 无库并发重建），
+	// 生产恒为 nil，走 loadDataRuleSnapshotFromDB。
+	ruleSnapshotLoader dataRuleSnapshotLoader
 }
 
 // NewService 创建合并后的 admin Service，内部自建全部 model。
 func NewService(db *gorm.DB) *Service {
 	return &Service{
-		am:   adminmodel.NewAdminModel(db),
-		rm:   adminmodel.NewRoleModel(db),
-		pm:   adminmodel.NewPermissionModel(db),
-		mm:   adminmodel.NewMenuModel(db),
-		dm:   adminmodel.NewDeptModel(db),
-		drm:  adminmodel.NewSysRuleModel(db),
-		dram: adminmodel.NewSysRuleAssignmentModel(db),
+		am:           adminmodel.NewAdminModel(db),
+		rm:           adminmodel.NewRoleModel(db),
+		pm:           adminmodel.NewPermissionModel(db),
+		mm:           adminmodel.NewMenuModel(db),
+		dm:           adminmodel.NewDeptModel(db),
+		drm:          adminmodel.NewSysRuleModel(db),
+		dram:         adminmodel.NewSysRuleAssignmentModel(db),
+		ruleSnapshot: &dataruleSnapshotStore{},
 	}
 }
