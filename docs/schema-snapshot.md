@@ -55,6 +55,41 @@
 
 两列的写路径都收在同一次发布的事务里（模式/文档 + 快照 + 产物行 + 指针），换模板 = 放弃自定义（同事务清 `render_mode` 与文档）。
 
+### 2.6 导航位置与悬浮面板（迁移 285）
+
+`navigations.kind` 的 DDL CHECK 由 `(header, footer)` 放宽为 **`(header, header_mobile, footer, footer_mobile)`**：桌面与移动端是**两份独立数据**（WP 式两个位置各绑一条菜单），不是一套数据两种呈现。走"位置扩展"而非给记录加 `device` 维度的理由：`kind` 本就是位置维度，解析（`Tree` / `ResolveMenu`）、依赖键（`menu:{projectID}:{kind}`）、适配器缓存都按它天然区分，扩展只需放宽一处 CHECK + Go 校验；加 `device` 列要动契约签名与全部调用点，还要处理「同一位置两条 device 冲突」。存量 `header`/`footer` 记录与绑定零回归（语义等同桌面端）。
+
+同批新增两列：
+
+| 列 | 类型 | 语义 |
+|---|---|---|
+| `panel_block_id` | uuid NULL → `blocks(id) ON DELETE SET NULL` | 菜单项悬浮面板引用的全局块（超级菜单）：构建期渲染进产物，并登记 `block:{id}` 依赖 |
+| `panel_width` | text NOT NULL DEFAULT 'auto'，CHECK `auto|full` | 面板展示宽度 —— 内容在块里、展示属性在菜单项上，避免同一块被多个菜单项复用时互相打架 |
+
+**为什么不复用 `source_type='block'`**：那是"点这一项跳到哪"的**链接来源**语义，面板是"悬停展开显示什么" —— 一个字段两种含义会在渲染与依赖登记上互相干扰。
+
+### 2.7 依赖 kind 放宽：按菜单项引用（迁移 289）
+
+`page_dependencies` 与 `presentation_dependencies` 两张表的 `dependency_kind` CHECK 放行 **`navigation`**。语义：`core.nav` 支持两种引用方式，各登记一条依赖 ——
+
+| 引用方式 | 依赖键 |
+|---|---|
+| 按位置（`Props.Menu`） | `menu:{projectID}:{kind}`（`menu` 已由迁移 071 放行） |
+| 按具体菜单项（`Props.Navigation`） | `navigation:{itemID}`（本次新增） |
+
+不放行的表现是**构建期直接失败**（依赖行插入被 CHECK 拒绝），不是静默失效 —— 但也意味着「按项引用」这个能力完全不可用，故必须与 Go 侧同批落地；约束按名先删后建（`IF EXISTS` + 新定义），重复执行安全。
+
+### 2.8 本会话的 seed 批次（无结构变更）
+
+| 迁移 | 内容 | 进本文档？ |
+|---|---|---|
+| 286 | 商品页双轨 4 条业务错误文案词条（`presentation.err.*`） | 已随 §2.5 记语义，不另列 |
+| 287 | 系统预置「展示页」Blueprint ×6（首页 / 商店 / 关于我们 / 联系我们 / 政策条款 / FAQ） | 否（纯数据） |
+| 288 | `contenttemplate:activate` 权限点（多套存着、单套生效的切换入口） | 否（权限数据） |
+| 290（待落地） | 导航乐观锁的冲突文案词条 | 否（纯词条） |
+
+判断口径：**本文档只记结构与枚举约束**（新增列 / DDL CHECK / 约束放宽）；纯词条与权限 seed 由迁移头部注释 + `public/test/pkg/i18n/i18n_seed_functional_test.go` 的行数基线记账。
+
 ## 3. 历史表与注释漂移
 
 部分早期迁移注释描述的能力已被后续迁移删除（例如迁移 `121` 去掉商品侧 `stock_total` 与 `inventory_stock_cache_syncs`）。**已执行的迁移 SQL 语句不改**；注释会在文档/迁移头中标注「已被 NNN 取代」，避免按注释维护已删除的缓存体系。

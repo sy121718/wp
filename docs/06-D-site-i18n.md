@@ -998,7 +998,7 @@ true：全语言带前缀（/zh-CN/about、语言根 /zh-CN/index），决策 D1
 | 3 | 语言清单（§14 D10） | 没有「站点有哪几种语言」的真源，无法为每语言登记 `page_routes` 行（当前 reserved 行只登记默认语言） | Project 级 `project_locales` 表（顺序 + 默认标记 + 启用状态） |
 | 4 | hreflang / sitemap 语言分组 | `BuildSEOHead` 与 `internal/seo/sitemap.go` 未输出 `hreflang` / `xhtml:link` | §5 的构建期输出方案，激活后刷新阶段统一生成 |
 | 5 | 站内链接本地化只覆盖导航 | 按钮/图片/文本里的站内链接仍是逻辑路径 | 组件链接属性统一过 `LangPath`（与导航同一函数） |
-| 6 | `MarkStaleForI18n` 调用方不完整 | 后台 i18n CRUD（§14 D7）尚未实现，改文案不会自动触发重建（依赖条目已就位）；**语言清单保存路径已接**（§15.10）、**译文保存路径已接**（§15.12） | 后台 CRUD 保存成功后调用；或加 CLI |
+| 6 | ~~`MarkStaleForI18n` 调用方不完整~~ | **已修复**。当时的状态是：后台 i18n CRUD 已经有了（`/admin/i18n/save` · `/delete` · `/bulk-delete`），但**它是四条 i18n 保存路径里唯一没接失效的一条** —— 改/删词条后没有人调 `page.MarkStaleForI18n`，而词条是在构建期取词烘进 HTML 字节的，于是站点永远输出旧文案、**且没有任何报错**。现在 `adminI18nEntryHandle` 经装配注入的 `adminI18nPageMarker` 端口在三种写动作成功后标记站点待重建（批量删除**按批只发一次**，不逐条重复全站标记）；标记失败只记结构化日志、不改响应 —— 词条此刻已落库，回报失败会让运营以为没保存而反复重试，而站点停在旧文案是可见的降级。`admin_i18n_stale_test.go` 三条用例钉住（被调用 / 失败不改响应 / 未注入不 panic）。**语言清单保存路径已接**（§15.10）、**译文保存路径已接**（§15.12） | — |
 | 7 | Runtime Fragment 语言（P5） | `/_fragments` 请求仍无 `lang`、无 `Vary` | §11 方案，独立阶段 |
 
 ### 15.6 验证命令
