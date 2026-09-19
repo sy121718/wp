@@ -35,10 +35,10 @@ var createFormHooks = []string{
 	"data-sku-placeholder-bundle", // 捆绑态占位符
 	"data-sku-hint",               // 系统建议文案钩子
 	"data-sku-manual",             // 请手填提示行
-	"name=\"attributeIds\"",        // 属性组勾选
-	"name=\"warehouseIds\"",        // 多仓归属
-	"name=\"skuSource\"",           // SKU 来源（自己创建 / 从仓库选）
-	"value=\"bundle\"",             // 捆绑类型选项
+	"name=\"attributeIds\"",       // 属性组勾选
+	"name=\"warehouseIds\"",       // 多仓归属
+	"name=\"skuSource\"",          // SKU 来源（自己创建 / 从仓库选）
+	"value=\"bundle\"",            // 捆绑类型选项
 }
 
 func TestProductNewPageSharesCreateFormWithDrawer(t *testing.T) {

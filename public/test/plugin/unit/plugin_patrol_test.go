@@ -111,7 +111,9 @@ func TestPatrolArtifactsAgainstRealStores(t *testing.T) {
 		"nodir", "缺目录插件", "1.0.0", 1, true, filepath.Join(root, "does-not-exist")).Error; err != nil {
 		t.Fatalf("插注册行失败: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Exec("DELETE FROM plugin_registry WHERE plugin_id IN (?,?,?)", "ghost", "pure", "nodir").Error })
+	t.Cleanup(func() {
+		_ = db.Exec("DELETE FROM plugin_registry WHERE plugin_id IN (?,?,?)", "ghost", "pure", "nodir").Error
+	})
 
 	patrol, err = svc.PatrolArtifacts(ctx)
 	if err != nil {

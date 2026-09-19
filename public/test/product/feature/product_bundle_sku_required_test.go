@@ -254,13 +254,13 @@ func TestProductsDrawerCarriesBundleSKUEnhancement(t *testing.T) {
 	}
 	page := getProductsPage(engine, f.projectID)
 	for _, want := range []string{
-		"data-product-create-form",    // 脚本按它定位抽屉表单（按 action 匹配会被后续改动悄悄改掉）
-		"data-sku-input",              // 主体 SKU 输入框
-		"data-sku-regenerate",         // 「重新生成」按钮
-		"data-sku-placeholder-bundle", // 捆绑态占位符（变体态回落到原来的 placeholder 文案）
-		"data-sku-hint",               // 「系统建议的唯一身份编码，可直接修改」
-		"data-sku-manual",             // 「请手填」提示行
-		"这是系统建议的唯一身份编码",               // 兜底文案真的渲染出来了（t() 未接 i18n 时也要有）
+		"data-product-create-form",          // 脚本按它定位抽屉表单（按 action 匹配会被后续改动悄悄改掉）
+		"data-sku-input",                    // 主体 SKU 输入框
+		"data-sku-regenerate",               // 「重新生成」按钮
+		"data-sku-placeholder-bundle",       // 捆绑态占位符（变体态回落到原来的 placeholder 文案）
+		"data-sku-hint",                     // 「系统建议的唯一身份编码，可直接修改」
+		"data-sku-manual",                   // 「请手填」提示行
+		"这是系统建议的唯一身份编码",                     // 兜底文案真的渲染出来了（t() 未接 i18n 时也要有）
 		"/static/js/product-create-form.js", // 增强已提升为共享脚本（抽屉与新建整页共用同一份，内联副本会分叉）
 	} {
 		if !strings.Contains(page, want) {

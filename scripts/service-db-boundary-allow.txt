@@ -7,10 +7,25 @@
 #   · 每条必须写明**具体理由** —— 这张表是给下一个读代码的人看的，不是给自己用的；
 #   · 条目不再命中（已改成 model 具名方法 / 函数改名 / 被删）脚本会失败，必须删掉：
 #     只增不减的清单等于没有门禁；
-#   · 判据 ①b 是启发式，只认「句柄 .Model(」这一个入口：tx.Where(...) / tx.Create(...) /
-#     tx.Updates(...) 同样绕过 model 具名方法却不在扫描范围内。**清单为空不代表边界干净**。
+#   · **只有「确认不是违规」才进这张表**（句柄指向的不是本模块表 / 本来就是跨模块 …Tx 调用 /
+#     语句不是表访问）。能改成 model 具名方法的一律改，不要拿豁免为「先把门禁刷绿」记账。
+#   · 判据 ①b 覆盖事务句柄上的裸查询**全族**（.Model( / .Where( / .Create( / .Exec( …），
+#     但仍是启发式：经 model 裸句柄的直查（如 publication 的 RouteDB(ctx)）、先取句柄存到
+#     局部再用、.Session(...) 这类链式包装都扫不到 —— **清单为空不代表边界干净**。
 #
 # 历史：publication 批曾有 3 条豁免（markReceipt / renameReservedIn / redirectIn 在事务
 # 句柄上直接拼 SQL），已把 SQL 原样搬进 internal/module/publication/model 的具名方法
 # （MarkReceiptStateTx / RenameReservedTx / RedirectInTx，含 23505 → pubmodel.ErrRouteOccupied
 # 归一），service 只透传句柄 —— 条目随之删除，修复记录留在这里给下一个读代码的人。
+#
+# 2026-09 全族收口：判据 ①b 的入口从「只认 .Model(」扩到全族后命中 4 个文件 / 11 个函数，
+# **全部真修**（本条清单仍为空，没有新增豁免）：
+#   · artifact/service/artifact_record.go：Record 事务里的 tx.Create(产物行)、
+#     tx.Create(闭包行)、tx.Clauses(...).Create(内容对象) → model 的 CreateArtifactTx /
+#     CreateArtifactObjectTx / EnsureContentObjectTx；
+#   · plugin/service/plugin_migrate.go：migrateSchema 事务里的 3 处 tx.Exec（DROP SCHEMA /
+#     SET LOCAL search_path / 迁移语句）→ model 的 ExecTx（与既有非事务 Exec 配对）；
+#   · publication/service/publication_route.go 与 publication_route_tx.go：activateRouteIn /
+#     reservePathIn / deleteRoutesByPageIn / deactivateIn 四个自由函数 + 4 处 tx.Create(回执)
+#     → model 的 ActivateRouteTx / ReservePathTx / DeleteRoutesByPage(Tx) /
+#     DeactivateRoute(Tx) / CreateReceiptTx（SQL 文本、WHERE、错误归一逐字搬运）。

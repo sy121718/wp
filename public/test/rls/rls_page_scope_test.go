@@ -229,13 +229,13 @@ func TestRLS_PageFanout_ModelRejectsMissingScope(t *testing.T) {
 	m := pagemodel.NewPageModel(db)
 	ctx := context.Background()
 
-	if err := m.MarkStaleForI18n(ctx, ""); !errors.Is(err, pagemodel.ErrProjectRequired) {
+	if _, err := m.MarkStaleForI18n(ctx, ""); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("MarkStaleForI18n 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
-	if err := m.MarkStaleForTheme(ctx, "  ", "t-any"); !errors.Is(err, pagemodel.ErrProjectRequired) {
+	if _, err := m.MarkStaleForTheme(ctx, "  ", "t-any"); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("MarkStaleForTheme 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
-	if err := m.MarkStaleForBlock(ctx, "", "blk"); !errors.Is(err, pagemodel.ErrProjectRequired) {
+	if _, err := m.MarkStaleForBlock(ctx, "", "blk"); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("MarkStaleForBlock 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
 	if _, err := m.CountBlockReference(ctx, "", "blk"); !errors.Is(err, pagemodel.ErrProjectRequired) {

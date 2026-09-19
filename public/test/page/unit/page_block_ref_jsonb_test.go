@@ -190,7 +190,7 @@ func TestPageMarkStaleForBlockJSONBEquivalence(t *testing.T) {
 			if err := db.Exec("UPDATE pages SET stale = false").Error; err != nil {
 				t.Fatalf("重置 stale 失败: %v", err)
 			}
-			if err := m.MarkStaleForBlock(ctx, blockRefProjectID, blockID); err != nil {
+			if _, err := m.MarkStaleForBlock(ctx, blockRefProjectID, blockID); err != nil {
 				t.Fatalf("MarkStaleForBlock 失败: %v", err)
 			}
 			var got []string

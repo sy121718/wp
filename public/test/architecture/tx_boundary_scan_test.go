@@ -17,6 +17,12 @@ package architecture
 // 自己的事务里，扫描器看到标记就放行，而真正的缺陷是**跨模块 DB 补偿**（AGENTS.md 明确禁止）。
 // 所以扫描器之后若要加严，方向是「判断同一批写入是否在**同一个**事务标记内」，而不是继续堆方法名。
 //
+// **2026-09-19 第六批：Delete* / Update* 已升为前缀**（实测误报 0，理由与实测数据见 writePrefixes）。
+// 它换来 7 条此前完全看不见的写路径（保留期清理、语言下线、归档实例、执行引擎……），逐条结论见
+// txBoundaryAllow 的第六批段落：3 条互斥分支误报、2 条跨存储 / 幂等可接受、2 条真缺事务（已登记待修）。
+// 反向的盲区仍在：识别表按**方法名**匹配，跨模块契约方法能被看见，但名字不在这张表里的写点
+//（deactivatePaths 这类文件系统动作）永远看不见 —— 所以「某函数只被数出 2 处写」不代表它只有 2 处写。
+//
 // 允许清单的键是「仓库相对路径#函数名」而不是行号：行号会随改动漂移，用行号做键的清单很快就会腐化。
 // 清单里若有条目已经不是候选（方法被包进事务了 / 被删了），测试会失败要求删掉它 —— 清单只增不减就是另一种腐化。
 
@@ -59,8 +65,10 @@ var writeCalls = map[string]bool{
 	"DeleteByRuleID": true,
 	// 2026-09-19 第三批补漏（事务 burn-down 第一批的实测发现，见 T 批报告第五节）：
 	// **门禁此前对 mail 模块整体失明**。原因有两条，都不是 mail 的代码有问题，而是识别表的漏洞：
-	//   · Update* / Delete* **不是前缀**（表里只有精确的 Update / Delete / Updates），
+	//   · Update* / Delete* **当时不是前缀**（表里只有精确的 Update / Delete / Updates），
 	//     所以 UpdateLogResult / UpdateContactFields / DeleteAutomation 这些写方法一个都认不出来；
+	//     —— 2026-09-19 第六批已把这两个前缀补上（实测误报 0，见 writePrefixes 的第六批说明）；
+	//     此段保留为当时的实测记录，不要再据此认为「Delete / Update 变体仍漏扫」。
 	//   · Incr*/Add*/Stop* 同理（Incr 只在精确表里，Add/Stop 完全没有）。
 	// 后果是：把两处写改回「各自提交」的旧形态，门禁一声不响 —— 修复前它是绿的，修完依然绿。
 	// 「门禁绿」因此不能当作事务正确的证明，这只是把盲区补上（漏网名单仍只能靠人看，见文件头）。
@@ -81,16 +89,14 @@ var writeCalls = map[string]bool{
 	"recordChanges": true,
 	// 2026-09-19 第五批补漏：五个保留期清理的真写方法（mail 的 DeleteEventsBefore /
 	// DeleteLogsBefore / DeleteNodeLogsBefore、analytics 的 DeleteViewsBefore、
-	// page 的 DeleteStaleRevisions），此前不在识别表里，所在函数各只有 1 处可识别写，
-	// 暂不构成候选 —— 但函数里一旦再加一处写，扫描器就会静默漏掉。
+	// page 的 DeleteStaleRevisions），当时不在识别表里，所在函数各只有 1 处可识别写，
+	// 不构成候选 —— 函数里一旦再加一处写，扫描器就会静默漏掉。
 	//
-	// **刻意不加 Delete* / Update* 前缀**（与上面 Add* 的实测同因）：前缀会把
-	// time.AddDate 一类的同名非持久化方法一起带进来（Add* 实测 17 处噪音）。
-	// 代价同样是真实的：其它 Delete 变体（DeleteAutomation 之外的未登记写入口，
-	// 如 DeleteXxx 的新命名）仍然漏扫 —— 每次发现都要像这一批一样按**精确名字**
-	// 逐个补进来，加完立刻跑一遍看新命中（见 writePrefixes 注释的「反面教训」）。
-	"DeleteEventsBefore": true, "DeleteLogsBefore": true, "DeleteNodeLogsBefore": true,
-	"DeleteViewsBefore": true, "DeleteStaleRevisions": true,
+	// **第六批起这五条从精确表删掉**：Delete 已成为前缀（见 writePrefixes 第六批），
+	// 这五个名字由前缀覆盖，识别结果逐字不变（实测 PurgeRetention 仍被命中、清单条目不过期）。
+	// 删掉是为了不给后来人留「新增写入口要逐个手工登记才看得见」的错觉 —— 那正是本批终结的做法。
+	// 同理，Update* / Delete* 的新命名（DeletePublicationsByLang / UpdateRunFields 之类）
+	// 现在一次都不用登记就会被扫到。
 }
 
 // writePrefixes 前缀命中即视为写入（Ensure* / Create* / Upsert* / Replace* / Mark* / Apply* / Attach*）。
@@ -123,20 +129,38 @@ var writeCalls = map[string]bool{
 //	  调用点在 inbound/http（不在扫描范围）。加它是为「service 内互调导入类方法」防漏，
 //	  属预防性覆盖，不是已发现的缺陷。
 //
-// **已知盲区（本轮明确不加，写在这里免得后来人以为覆盖全了）**：
+// 2026-09-19 第六批：**Delete* / Update* 升为前缀**（上一批的结论是「不如不加」，本批用实测推翻了它）。
 //
-//	· Delete* / Update* 仍**不是**前缀（与 Add* 同理：Add 一次就冒出 17 处 time.AddDate 噪音）。
-//	  代价是真实的写变体仍在漏 —— 实测 service 目录里有 DeleteEventsBefore / DeleteLogsBefore /
-//	  DeleteNodeLogsBefore（mail 保留期）、DeleteViewsBefore（analytics）、DeleteStaleRevisions（page）
-//	  这类**真写**方法，一个都不在识别表里。它们所在函数目前多数只有这一处写，所以不产生候选；
-//	  一旦有人在这些函数里再加一处写，扫描器同样看不见。
+// 上一批不加的理由是「与 Add* 同因」—— 但那是**类比**，不是实测：Add 撞的是 time.Time.AddDate，
+// 而 Update / Delete 在标准库与工具包里没有高频同名方法。本批先测后改，量出来的误报面是 0：
+//
+//	· 全仓（除 _test.go）Update* / Delete* 的调用名共 103 个，逐个看过：全部是持久化写或模块内
+//	  service 写方法（gorm 的 Updates / UpdateColumns、批删的 DeleteMany、保留期 DeleteXxxBefore、
+//	  各模块的 DeleteXxxTx / UpdateXxxTx……），**没有一个**是 AddDate 那类同名非持久化方法。
+//	  标准库里最接近的撞名是 slices.Delete —— libraryReceivers 已经挡住它（且当前代码里并无调用点）。
+//	· 加完立刻跑全量命中（本批实测输出，非估计）：**新候选 7 条**，外加 1 条与本批无关的既有红
+//	  7 条逐条核实的结果见 txBoundaryAllow 的第六批段落：3 条互斥分支误报、2 条跨存储 / 幂等可接受、
+//	  2 条真缺事务（待修）。**没有一条是「前缀太吵」造成的假红** —— 这正是与 Add* 的关键差别。
+//
+// 为什么**不加**「Delete / Update 后必须紧跟大写」这类收窄约束：实测噪音为 0，约束换不来任何
+// 噪音削减，却会在将来引入新盲区（Updateall / Deleteby 这类命名会被漏掉），而且它与其它前缀的
+// 语义不一致（Ensure / Create / Mark 都是纯 HasPrefix）。真正需要收窄时的正确动作是把撞名的
+// **接收方**加进 libraryReceivers（先例：strings.ReplaceAll），不是给某一个前缀单独加形状约束。
+//
+// **已知盲区（写在这里免得后来人以为覆盖全了）**：
+//
+//	· **识别表按方法名匹配，写点可以不在这张表里**：RetireLocale 里真正的写点还有
+//	  s.routes.Deactivate（跨模块删 page_routes 行，×N）与 s.deactivatePaths（删访问面符号链接），
+//	  两者名字都不在识别表里 —— 所以测试输出里它只被数出「2 处写」，实际有 4 类写。
+//	  **计数偏小 ≠ 写点少**，评审时不要只盯测试给出的那一行 detail。
 //	· 同样**不加 Claim* / Release***：webhook 的 DeliverDelivery 是「认领 → 出站 HTTP → 落定」的
 //	  跨系统边界流程（ClaimDelivery / ReleaseDeliveryClaim / MarkDeliveryResult 三处写**刻意不共事务**：
 //	  包进事务会让「投递中」的租约行锁横跨一次网络往返，正是 AGENTS.md 允许补偿/非事务的跨系统场景）。
 //	  它现在只被识别出 MarkDeliveryResult 一处写，所以不构成候选；一旦有人给 Claim* / Release* 加前缀，
 //	  它就会变成一条**假红** —— 那时的正确动作是往允许清单里写明理由，而不是去「修」它。
-//	· 同名前缀的放大效应没变：前台任何一次加前缀，都必须像这一批一样「加完立刻看命中」。
-var writePrefixes = []string{"Ensure", "Create", "Upsert", "Replace", "Mark", "Apply", "Attach", "Bulk", "Batch", "Incr", "Stop", "Persist", "Import", "Dispatch", "Purge", "Save"}
+//	· 同名前缀的放大效应还在（Add* 实测 17 处噪音即前车之鉴）：以后任何一次加前缀，都必须像这一批
+//	  一样「加完立刻跑全量、逐条核实命中」—— **加之前先量噪音，而不是先类比**。
+var writePrefixes = []string{"Ensure", "Create", "Upsert", "Replace", "Mark", "Apply", "Attach", "Bulk", "Batch", "Incr", "Stop", "Persist", "Import", "Dispatch", "Purge", "Save", "Delete", "Update"}
 
 // libraryReceivers 是「同名方法挂在标准库/工具包上」的接收方 —— 它们不是持久化写入。
 //
@@ -179,7 +203,7 @@ var txBoundaryAllow = map[string]string{
 	"internal/module/plugin/service/plugin_install.go#Install": "待修（中）：L1 迁移（已提交）+ 落盘 + registry 写入；失败会留孤儿 schema，需巡检或补偿。归插件批",
 	// —— 已知可接受（写明「为什么天然独立」，不是待办）——
 	"internal/module/build/service/build_worker.go#execute":                         "误报：MarkFailed / MarkSucceeded 是 if/else 互斥分支，同一执行路径只会触发一支，不存在半截状态",
-	"internal/module/page/service/page_artifact_rebuild.go#GarbageCollectArtifacts": "可接受：产物文件删除 + MarkPayloadState 逐条记录失败原因，且能按 source_document 重建 —— 幂等可重跑",
+	"internal/module/page/service/page_artifact_rebuild.go#GarbageCollectArtifacts": "可接受：产物文件删除（DeleteArtifact，第六批新识别；另有 defer 里的孤儿内容对象回收）+ MarkPayloadState 逐条记录失败原因，且能按 source_document 重建 —— 幂等可重跑",
 
 	"internal/module/presentation/service/presentation_stale.go#MarkStaleByDependency": "误报：两处写是互斥分支（模板换代只标 template 模式，其余依赖源两种模式都标），单次调用只执行一支；跨工程循环内每工程各一条带 RLS 作用域的 UPDATE，无需合并事务。",
 	// —— 2026-09-19 第三批（识别表补漏后新命中的三条，逐条核实结论）——
@@ -195,6 +219,22 @@ var txBoundaryAllow = map[string]string{
 
 	// —— 2026-09-19 第五批（识别表补进 5 个保留期 Delete 后唯一的新命中，逐条核实结论）——
 	"internal/module/mail/service/mail_retention.go#PurgeRetention": "可接受：保留期清理任务 —— 先固化（EnsureCampaignTotals，SetCampaignEventTotalsIfUnset 幂等 IfUnset、单条失败跳过留痕），再按 retention.Task 逐表成批删「早于 cutoff 的历史行」（DeleteEventsBefore / DeleteLogsBefore / DeleteNodeLogsBefore，各表独立任务、按时间阈值成批删、幂等可重跑，部分失败仅告警）。四处写之间没有跨行不变量：固化失败时明确「跳过该活动的固化但继续清理」是设计选择（明细可按保留期内数据重算）；包进一个大事务反而让行锁横跨三张表的成批 DELETE。analytics / page 的同类保留期函数（DeleteViewsBefore / DeleteStaleRevisions 所在函数）各只有 1 处写，本轮不构成候选",
+
+	// —— 2026-09-19 第六批（Delete* / Update* 成为前缀后识别表第一次看见的候选）——
+	// 取舍变了：不再像第五批那样「发现一个写变体就按精确名补一条」，改用前缀（实测误报 0，见 writePrefixes）。
+	// 一次冒出来的候选逐条核实如下 —— 其中 2 条是真缺事务，登记待修。
+	// **service 层不在本批的改动范围**（同批另有子代理在改），这里只记账 + 写清建议的事务边界。
+
+	// 待修 a —— 半截状态会被人看见（后台「已发布」与访问面 404 不一致），但重跑可收敛。
+
+	// 待修 b —— **本批之前就红**（i18n 扇出那次提交引入），与 Delete/Update 前缀无关，一并登记。
+
+	// 下列五条是**误报 / 可接受**，不是待办。
+	"internal/module/admin/service/admin_crud.go#AdminEdit":                              "可接受：两处是**不同存储边界** —— sys_admin 行更新（Updates，DB）与会话失效（auth.DeleteUserSession，Redis）。Redis 不在数据库事务的覆盖范围内，本函数已按该边界写成「先提交 DB 主操作、再撤会话、撤失败只记结构化日志」，重登 / 再次编辑自然收敛",
+	"internal/module/mail/service/mail_account.go#TestSend":                              "误报：两处 UpdateAccountFields 是 sendErr 的 if/else **互斥分支**（成功写 last_check_error=nil、失败写错误原因），同一路径只执行一支；写的是同一行上的「最近检查结果」诊断字段，无跨行不变量",
+	"internal/module/mail/service/mail_automation.go#SaveAutomation":                     "误报：CreateAutomation 与 UpdateAutomationFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支 —— 与 mail_campaign.go#SaveCampaign 同形",
+	"internal/module/mail/service/mail_automation_run.go#RunAutomation":                  "误报：两处 UpdateRunFields 落在不同节点类型的分支里（delay 节点写完 waiting 即挂起返回 / email 节点发信失败写 error 后重试），同一次调用只落一支。发信与入队是跨系统边界（不可回滚），本函数按「一步一提交 + node_logs 幂等判重（NodeLogExists）+ 游标先推进」设计，包成一个大事务反而让行锁横跨 SMTP 往返",
+	"internal/module/presentation/service/presentation_archive.go#EnsureArchiveInstance": "可接受：**幂等可重跑** —— CreateInstance 对「同实体同角色」自身幂等（presentation_instance.go:51 已有实例即返回），第二处 UpdateURL 只在 slug 变化时把归档页迁到新路径；失败后重跑会走幂等分支再修正。且 CreateInstance 内部含编译 + 发布 + 文件系统激活（跨系统），包进一个 DB 事务不现实",
 }
 
 func TestServiceWritePathsHaveTransactionBoundary(t *testing.T) {
