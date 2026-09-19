@@ -29,6 +29,9 @@ var groupFTemplates = []string{
 	"admin/login.html",
 	"admin/administrators.html",
 	"admin/roles.html",
+	// 角色权限分配页（本轮新增，角色分权的落点）。纳入本批门禁：它的取词同样必须
+	// 中英成对 —— 新增页面最容易漏的就是这一条（页面上的英文界面会整块回落中文）。
+	"admin/role_permissions.html",
 	"admin/permissions.html",
 	"admin/departments.html",
 	"admin/i18n.html",

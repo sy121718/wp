@@ -28,9 +28,22 @@ type RoleDetailResp struct {
 	Remark    string `json:"remark"`
 }
 
-// RoleMenuListResp 角色拥有的菜单 ID 列表。
+// RoleMenuListResp 角色拥有的菜单 ID 列表（已向上补齐祖先，见 withAncestorMenuIDs）。
 type RoleMenuListResp struct {
 	MenuIDs []uint64 `json:"menu_ids"`
+}
+
+// RolePermissionTreeResp 角色权限分配视图：授权树 + 该角色当前勾选。
+//
+// Tree 是**可用于勾选**的完整菜单树（目录 / 菜单 / 按钮，含已被禁用的已勾选项），
+// MenuIDs 是当前勾选集合（同样已向上补齐祖先）。两者由同一个 service 方法一次算出：
+// 分成两个接口的话，两次调用之间菜单表被改动就会出现「树里没有、勾选里有」的错位。
+type RolePermissionTreeResp struct {
+	RoleID   uint64         `json:"role_id"`
+	RoleCode string         `json:"role_code"`
+	RoleName string         `json:"role_name"`
+	MenuIDs  []uint64       `json:"menu_ids"`
+	Tree     []MenuTreeNode `json:"tree"`
 }
 
 // RoleMenuSaveResp 保存角色菜单响应。

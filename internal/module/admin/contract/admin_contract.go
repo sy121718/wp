@@ -41,6 +41,8 @@ type RoleService interface {
 	RoleUpdate(ctx context.Context, req *admindto.RoleUpdateReq) error
 	RoleDelete(ctx context.Context, req *admindto.RoleDeleteReq) error
 	RoleMenuList(ctx context.Context, req *admindto.RoleMenuListReq) (*admindto.RoleMenuListResp, error)
+	// RolePermissionTree 返回角色权限分配树与该角色当前勾选（页面与 JSON 接口共用）。
+	RolePermissionTree(ctx context.Context, roleID uint64) (*admindto.RolePermissionTreeResp, error)
 	RoleMenuSave(ctx context.Context, req *admindto.RoleMenuSaveReq) (*admindto.RoleMenuSaveResp, error)
 	RoleUserList(ctx context.Context, req *admindto.RoleUserListReq) (*admindto.RoleUserListResp, error)
 	RoleUserSave(ctx context.Context, req *admindto.RoleUserSaveReq) (*admindto.RoleUserSaveResp, error)

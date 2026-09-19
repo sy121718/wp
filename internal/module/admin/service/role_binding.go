@@ -41,6 +41,14 @@ func (s *Service) RoleMenuList(ctx context.Context, req *admindto.RoleMenuListRe
 		return nil, err
 	}
 
+	// 向上补齐祖先（目录 + 父菜单）。目录没有权限码，反查永远查不出它们，
+	// 不补的话分配页每次打开都会显示「目录未勾选」（详见 withAncestorMenuIDs）。
+	all, err := s.mm.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	menuIDs = withAncestorMenuIDs(all, menuIDs)
+
 	return &admindto.RoleMenuListResp{MenuIDs: menuIDs}, nil
 }
 
@@ -59,8 +67,20 @@ func (s *Service) RoleMenuSave(ctx context.Context, req *admindto.RoleMenuSaveRe
 		return nil, errors.New(adminenums.ErrRoleNotFound)
 	}
 
-	// menu_ids → permission_codes
-	codes, err := s.GetPermissionCodesByIDs(ctx, req.MenuIDs)
+	// menu_ids → permission_codes。
+	//
+	// 先过一遍 withAncestorMenuIDs 有两个作用：
+	//   ① 与读取侧（RoleMenuList / RolePermissionTree）保持同一不变式 —— 即使前端漏补祖先，
+	//      落库的权限集仍然自洽，不会出现「有按钮权限点、没有父菜单权限点」的分裂授权；
+	//   ② 充当白名单：不在 sys_menus 里的 id 在这里就被丢掉，不会进入下面的 IN 查询。
+	//      请求体不受信任，100 万个 id 的提交只做哈希查表，不进 SQL。
+	all, err := s.mm.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	menuIDs := withAncestorMenuIDs(all, req.MenuIDs)
+
+	codes, err := s.GetPermissionCodesByIDs(ctx, menuIDs)
 	if err != nil {
 		return nil, err
 	}

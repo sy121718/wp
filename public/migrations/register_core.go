@@ -290,6 +290,21 @@ func registerCoreSchemaAndAccess() {
 		SQL: mustSQL("227_i18n_seed_common_actions.sql"),
 	})
 
+	// 228：角色权限分配页（角色分权）的词条。页面是本轮新增的：在此之前角色与菜单的
+	// 授权接口只有服务端实现、没有任何界面调用方。判定同样限定在自己的 key 上（理由见 226）。
+	registerSeed(Seed{
+		Version:   "228-i18n-seed-role-permissions",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 15 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang = 'zh-CN' AND item_key IN ('MsgRolePermissionsTitle', " +
+			"'admin.roles.action.permissions', 'admin.roles.perm.title', 'admin.roles.perm.intro', " +
+			"'admin.roles.perm.back', 'admin.roles.perm.ph.search', 'admin.roles.perm.action.all', " +
+			"'admin.roles.perm.action.none', 'admin.roles.perm.action.expand', " +
+			"'admin.roles.perm.action.collapse', 'admin.roles.perm.hint.search', 'admin.roles.perm.empty', " +
+			"'admin.roles.perm.toggle', 'admin.roles.perm.badge.disabled', 'admin.roles.perm.action.save')",
+		SQL: mustSQL("228_i18n_seed_role_permissions.sql"),
+	})
+
 	// 超管全量策略补全（每次启动检查，缺哪条补哪条）。
 	//
 	// ConditionSQL 语义是「返回 > 0 则跳过整个 seed」，因此这里必须表达

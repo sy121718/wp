@@ -1180,3 +1180,66 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     background: var(--sky-c-bg-soft, #f4f5f6);
 }
 .nav-panel-preview-frame { flex: 1 1 auto; width: 100%; min-height: 240px; border: 0; background: #fff; }
+
+/* ==========================================================================
+   角色权限分配（/admin/roles/permissions）
+   授权树是 DFS 展平的「一行一个节点」：缩进由行内 style 的 padding-left 给出
+   （Go 侧算好，模板只渲染），折叠与搜索靠 data-depth 的连续区间隐藏 ——
+   所以这里既不需要嵌套结构，也不需要层级连线定位。
+   ========================================================================== */
+.perm-intro { margin: 6px 0 0; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, #6b7280); }
+.perm-hint { margin: 8px 0 0; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.perm-tree { padding: 4px 0 10px; }
+.perm-node {
+    display: flex; align-items: center; gap: 4px;
+    padding: 3px 12px 3px 0; border-radius: 6px;
+}
+.perm-node:hover { background: var(--sky-c-bg-hover, #ececec); }
+.perm-node[hidden] { display: none; }
+.perm-node.is-disabled .perm-title { opacity: .55; }
+.perm-toggle {
+    flex: 0 0 auto; width: 22px; height: 22px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 0; background: transparent; border-radius: 5px;
+    color: var(--sky-c-text-mute, #6b7280); cursor: pointer;
+}
+.perm-toggle:hover { background: var(--sky-c-bg-active, #e4e4e4); color: var(--sky-c-text, #1a1d21); }
+.perm-toggle.is-leaf, .perm-toggle.is-leaf:hover { background: transparent; cursor: default; }
+.perm-toggle .caret {
+    width: 6px; height: 6px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translate(-1px, -1px);
+}
+.perm-node.is-collapsed > .perm-toggle .caret { transform: rotate(-45deg) translate(-1px, 1px); }
+.perm-label {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center; gap: 8px;
+    padding: 2px 0; cursor: pointer;
+}
+.perm-box { flex: 0 0 auto; margin: 0; cursor: pointer; }
+.perm-title {
+    font-size: 13px; color: var(--sky-c-text, #1a1d21);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.perm-node[data-depth="1"] .perm-title { font-weight: 600; }
+/* 部分选中：父项确实在授权集合里（check 为真），只是还有子项没勾。
+   刻意不用 checkbox 的 indeterminate —— 那会让已授权的父项看起来没勾。 */
+.perm-node[data-partial] .perm-title::after {
+    content: ""; display: inline-block; vertical-align: middle;
+    width: 5px; height: 5px; margin-left: 6px; border-radius: 50%;
+    background: var(--sky-c-warning, #8a6d3b);
+}
+.perm-type {
+    flex: 0 0 auto; padding: 0 5px; font-size: 11px; border-radius: 4px;
+    color: var(--sky-c-text-mute, #6b7280); border: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.perm-code {
+    flex: 0 0 auto; padding: 1px 5px; font-size: 11px; border-radius: 4px;
+    color: var(--sky-c-text-mute, #6b7280); background: var(--sky-c-bg-soft, #f4f5f6);
+}
+/* 窄屏：权限码与类型徽标不是决策依据，让位给标题；勾选框与标题必须留在一屏内。 */
+@media (max-width: 640px) {
+    .perm-code, .perm-type { display: none; }
+    .perm-title { white-space: normal; }
+}
+

@@ -35,15 +35,16 @@ import (
 
 // 页面标题与统一提示（沿用原 i18n 词条 key，词条缺失时前端回退中文注释值）。
 const (
-	pagesMsgAdministratorsTitle = "MsgAdministratorsTitle" // 管理员
-	pagesMsgRolesTitle          = "MsgRolesTitle"          // 角色管理
-	pagesMsgMenusTitle          = "MsgMenusTitle"          // 菜单管理
-	pagesMsgPermissionsTitle    = "MsgPermissionsTitle"    // 权限资源
-	pagesMsgDepartmentsTitle    = "MsgDepartmentsTitle"    // 部门管理
-	pagesMsgDatarulesTitle      = "MsgDatarulesTitle"      // 数据权限
-	pagesMsgFieldRequired       = "MsgFieldRequired"       // 必填字段不能为空
-	pagesMsgRuleConfigInvalid   = "ErrRuleConfigInvalid"   // 数据规则配置 JSON 不合法
-	pagesMsgAdminGenericFailed  = "MsgAdminGenericFailed"  // 操作失败，请检查输入或联系管理员
+	pagesMsgAdministratorsTitle  = "MsgAdministratorsTitle"  // 管理员
+	pagesMsgRolesTitle           = "MsgRolesTitle"           // 角色管理
+	pagesMsgRolePermissionsTitle = "MsgRolePermissionsTitle" // 角色权限分配
+	pagesMsgMenusTitle           = "MsgMenusTitle"           // 菜单管理
+	pagesMsgPermissionsTitle     = "MsgPermissionsTitle"     // 权限资源
+	pagesMsgDepartmentsTitle     = "MsgDepartmentsTitle"     // 部门管理
+	pagesMsgDatarulesTitle       = "MsgDatarulesTitle"       // 数据权限
+	pagesMsgFieldRequired        = "MsgFieldRequired"        // 必填字段不能为空
+	pagesMsgRuleConfigInvalid    = "ErrRuleConfigInvalid"    // 数据规则配置 JSON 不合法
+	pagesMsgAdminGenericFailed   = "MsgAdminGenericFailed"   // 操作失败，请检查输入或联系管理员
 )
 
 // AdminPagesHandle 六领域管理页处理器。
@@ -222,6 +223,128 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 		"Err":   adminPageErrText(c, c.Query("err")),
 		"Done":  adminPageDone(c, c.Query("done")),
 	}))
+}
+
+// --- 角色权限分配（角色分权）---
+//
+// 落点说明：菜单管理（/admin/menus）管菜单**本身**的增删改，角色管理（/admin/roles）管角色的
+// 元信息，两者都不负责「这个角色能用哪些菜单与按钮」。此前 /api/role/menu/list 与
+// /api/role/menu/save 只有服务端实现（含权限点 seed 与超管保护），**没有任何界面调用方** ——
+// 角色分权这件事实际上只能靠直接改库完成。这一页就是它的落点。
+
+// permTreeRow 权限分配树的展平行。
+//
+// 用「深度优先展平 + 层级数字」而不是 Jet 递归渲染：递归要求写成 block + 独立文件 + import，
+// 而每个节点还要挂勾选框、父 id、类型徽标与权限码 —— 平铺的行更好写，JS 联动只需读
+// data-parent（不依赖 DOM 嵌套），折叠与搜索过滤也退化成「按 depth 连续区间隐藏」。
+type permTreeRow struct {
+	ID        uint64
+	Title     string
+	Type      int
+	TypeLabel string
+	Depth     int
+	// PadLeft 缩进像素值，在 Go 侧算好再交给模板。
+	// Jet 的表达式求值在算术上不报错但语义容易踩（整数除法、优先级），
+	// 而这种「一行一个数」的计算放 Go 侧是零成本的，也让模板保持纯渲染。
+	PadLeft        int
+	ParentID       uint64
+	PermissionCode string
+	Status         int
+	Checked        bool
+	HasChildren    bool
+}
+
+// permRowIndentStep 每层缩进像素。
+const permRowIndentStep = 20
+
+// flattenPermissionTree 深度优先展平授权树，勾选态由已补齐祖先的 checked 集合决定。
+//
+// 展平保持 DFS 顺序：页面的折叠与搜索都靠「同一父级的子树在数组里连续」这一性质
+// 实现（隐藏 depth 更大的连续区间），一旦顺序被打乱，折叠就会藏错行。
+func flattenPermissionTree(nodes []admindto.MenuTreeNode, depth int, checked map[uint64]struct{}, out *[]permTreeRow) {
+	for _, n := range nodes {
+		_, ok := checked[n.ID]
+		*out = append(*out, permTreeRow{
+			ID: n.ID, Title: n.Title, Type: n.Type, TypeLabel: adminMenuTypeLabel(n.Type),
+			Depth: depth, PadLeft: (depth-1)*permRowIndentStep + 10,
+			ParentID: n.ParentID, PermissionCode: n.PermissionCode,
+			Status: n.Status, Checked: ok, HasChildren: len(n.Children) > 0,
+		})
+		if len(n.Children) > 0 {
+			flattenPermissionTree(n.Children, depth+1, checked, out)
+		}
+	}
+}
+
+// RolePermissionsPage 角色权限分配页（GET /admin/roles/permissions?role_id=N）。
+//
+// 为什么是独立页面而不是角色列表行里的抽屉：要勾的是「7 目录 + 45 菜单 + 65 按钮」这个量级
+// （还会随功能增长），抽屉放不下层级 + 搜索 + 折叠，窄屏更是没法用。
+func (h *AdminPagesHandle) RolePermissionsPage(c *gin.Context) {
+	roleID := shell.ParseUint(c.Query("role_id"))
+	if roleID == 0 {
+		c.Redirect(http.StatusSeeOther, "/admin/roles")
+		return
+	}
+	tree, err := h.roles.RolePermissionTree(c.Request.Context(), roleID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
+		return
+	}
+	checked := make(map[uint64]struct{}, len(tree.MenuIDs))
+	for _, id := range tree.MenuIDs {
+		checked[id] = struct{}{}
+	}
+	rows := make([]permTreeRow, 0, len(checked)+64)
+	flattenPermissionTree(tree.Tree, 1, checked, &rows)
+
+	c.HTML(http.StatusOK, "admin/role_permissions", shell.Prepare(c, gin.H{
+		"title": pagesMsgRolePermissionsTitle,
+		"menu":  "roles",
+		"Role":  tree,
+		"Rows":  rows,
+		"Err":   adminPageErrText(c, c.Query("err")),
+	}))
+}
+
+// RolePermissionsSave 保存角色权限（POST /admin/roles/permissions/save）。
+//
+// 全量替换语义：提交上来的 menu_ids 就是该角色的完整授权集合，未勾选的一律撤销。
+// **一个都没勾是合法提交**（清空该角色的全部权限），绝不能当成「没选，忽略本次提交」。
+//
+// 角色 id 与操作者都不信前端：role_id 走参数校验，操作者从会话注入（超管保护的判定依据，
+// 见 RoleMenuSave）。menu_ids 由 service 侧过白名单（不在 sys_menus 里的 id 直接丢弃），
+// 所以这里不做数量上限——请求方塞再多 id 也只经哈希查表，不进 SQL。
+//
+// 不带 ?done= 回执：/admin/* 的 done 通道是受控文案白名单（adminDoneTexts），
+// 里面只有批量结论与模块业务文案，成功文案被刻意排除（见 AdminFacingMessages 的注释）。
+// 不为这一页去扩张那份白名单 —— 返回分配页后按库中真实策略重新渲染出的勾选状态，
+// 比一句「已保存」更硬的确认。
+func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
+	roleID := shell.ParseUint(c.PostForm("role_id"))
+	if roleID == 0 {
+		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		return
+	}
+
+	raw := c.PostFormArray("menu_ids")
+	menuIDs := make([]uint64, 0, len(raw))
+	for _, v := range raw {
+		if id := shell.ParseUint(v); id != 0 {
+			menuIDs = append(menuIDs, id)
+		}
+	}
+
+	if _, err := h.roles.RoleMenuSave(c.Request.Context(), &admindto.RoleMenuSaveReq{
+		RoleID:     roleID,
+		MenuIDs:    menuIDs,
+		OperatorID: shell.CurrentUserID(c),
+	}); err != nil {
+		adminWriteFailed(c, err)
+		return
+	}
+
+	c.Redirect(http.StatusSeeOther, fmt.Sprintf("/admin/roles/permissions?role_id=%d", roleID))
 }
 
 // RolesCreate 新建角色（POST /admin/roles/create）。

@@ -93,7 +93,18 @@ func withTempLogDir(t *testing.T) func() string {
 }
 
 // fakeRoleService 只用于把错误注入 handler 的角色域契约实现（其余方法返回零值）。
-type fakeRoleService struct{ err error }
+//
+// 另外两个字段服务于权限分配页的用例（admin_role_permissions_page_test.go）：
+// 角色域一共 10 个方法，为了一页再写第二份假实现会让「给契约加方法」变成改两处 ——
+// 那正是本包最容易漏的地方。
+type fakeRoleService struct {
+	err error
+	// permTree 是 RolePermissionTree 的返回值；为 nil 时返回空视图（页面走到空状态），
+	// 避免只关心错误注入的用例在这里空指针。
+	permTree *admindto.RolePermissionTreeResp
+	// lastMenuSave 记录最近一次 RoleMenuSave 的入参，供表单解析用例断言。
+	lastMenuSave *admindto.RoleMenuSaveReq
+}
 
 // RoleList 无注入错误时返回一个空结果：页面渲染用例（admin_page_err_render_test.go）
 // 要让 RolesPage 一路走到模板，而它直接读 res.List —— 返回 nil 会在那里空指针。
@@ -112,7 +123,22 @@ func (f *fakeRoleService) RoleDelete(context.Context, *admindto.RoleDeleteReq) e
 func (f *fakeRoleService) RoleMenuList(context.Context, *admindto.RoleMenuListReq) (*admindto.RoleMenuListResp, error) {
 	return nil, f.err
 }
-func (f *fakeRoleService) RoleMenuSave(context.Context, *admindto.RoleMenuSaveReq) (*admindto.RoleMenuSaveResp, error) {
+
+// RolePermissionTree 返回预置的分配树（未预置时给空视图）。
+func (f *fakeRoleService) RolePermissionTree(context.Context, uint64) (*admindto.RolePermissionTreeResp, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.permTree == nil {
+		return &admindto.RolePermissionTreeResp{}, nil
+	}
+	return f.permTree, nil
+}
+
+// RoleMenuSave 记录入参后按注入的错误返回（返回语义与改动前一致：成功路径给 nil resp，
+// 现有的错误注入用例断言的就是错误文案，不看 data）。
+func (f *fakeRoleService) RoleMenuSave(_ context.Context, req *admindto.RoleMenuSaveReq) (*admindto.RoleMenuSaveResp, error) {
+	f.lastMenuSave = req
 	return nil, f.err
 }
 func (f *fakeRoleService) RoleUserList(context.Context, *admindto.RoleUserListReq) (*admindto.RoleUserListResp, error) {
