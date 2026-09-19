@@ -263,5 +263,15 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	if e.CurrentSnapshotID != nil {
 		resp.SnapshotID = *e.CurrentSnapshotID
 	}
+	// 可编辑底稿（docs/04-C-instance-override.md）：workbench 实例模式与后台面板
+	// 需要拿到当前生效文档 —— 覆盖优先，否则取当前快照。读失败按无文档处理
+	//（编辑入口对空文档有显式降级提示）。
+	if len(e.OverrideDocument) > 0 {
+		resp.Document = e.OverrideDocument
+	} else if e.CurrentSnapshotID != nil {
+		if snap, serr := s.m.GetSnapshot(ctx, *e.CurrentSnapshotID); serr == nil {
+			resp.Document = snap.Document
+		}
+	}
 	return resp, nil
 }

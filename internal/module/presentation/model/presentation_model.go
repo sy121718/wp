@@ -308,6 +308,16 @@ func (m *Model) CreateSnapshot(ctx context.Context, e *SnapshotEntity) error {
 }
 
 // NextArtifactVersion 取该实例下一个产物版本号（version 在实例内唯一）。
+
+// GetSnapshot 按 ID 读取快照（可编辑底稿来源，docs/04-C-instance-override.md）。
+// document_snapshots 无 project_id 列（属主是实例），不走工程作用域。
+func (m *Model) GetSnapshot(ctx context.Context, id string) (e *SnapshotEntity, err error) {
+	var row SnapshotEntity
+	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
 func (m *Model) NextArtifactVersion(ctx context.Context, instanceID string) (v int64, err error) {
 	var maxVersion *int64
 	if err = m.db.WithContext(ctx).Model(&ArtifactEntity{}).

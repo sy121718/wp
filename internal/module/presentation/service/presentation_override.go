@@ -79,10 +79,9 @@ func (s *Service) ClearOverride(ctx context.Context, req *presentationdto.ClearO
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
-	lock := s.lockInstance(inst.EntityType, inst.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
-
+	// 锁语义：这里**不**预先取实例锁 —— 清除本身是单条事务写，随后的
+	// rebuildInstance 自带实例级互斥；先取锁再进 rebuildInstance 会自死锁
+	//（sync.Mutex 不可重入，本会话实测触发过测试挂死）。
 	// TemplateID 非空 = 换底稿：两件事一体成型（清覆盖 + 切模板）同事务落库，
 	// 随后 rebuildInstance 以新模板编译（inst 内存态同步改，避免重查）。
 	switchTo := strings.TrimSpace(req.TemplateID)
