@@ -450,7 +450,7 @@
 | 调度器在测试进程跑生产任务（本批新发现） | **`utils.IsTestProcess()` 守卫** | `pkg/utils/process.go` + 10 个 `StartXxxScheduler` 入口守卫（`WithInterval` 是给测试的强启变体） | `pkg/utils` 金丝雀测试 |
 | admin `?err=` 仅形状清洗 | **白名单整体匹配** | `adminErrTexts()`（候选全部来自写侧真实生产点）+ `adminPageErrText` = 清洗 + `shell.FacingNotice`，未命中落空串 | `admin_err_texts_test.go` 6 条对账 + `admin_page_err_text_test.go` 加强（伪造串 → 空串） |
 | `shell.LangRedirect` 判据两份 | **收敛为一份** | `shell.LangRedirectPath(raw)` 唯一实现；admin 重抄的 `adminLangRedirectAllowed` 删除 | 对照用例保留 |
-| 精确影响面 | **写侧影响面回执** | page service `StaleImpactOfIDs` / `logStaleImpact` 接线到三个精确扇出点：pipeline 依赖失效 / 组件版本变化 / 站点槽位换绑 | `internal/module/page/service` 全绿 |
+| 精确影响面 | **写侧影响面回执** | page service `StaleImpactOfIDs` / `logStaleImpact` 接线到三个精确扇出点：pipeline 依赖失效 / 组件版本变化 / 站点槽位换绑；**第五批**补齐整站标记的逐页样本（`MarkStaleFor*` 改 `RETURNING id` + `theme:` / `block:` / `i18n` 三入口 + `IN` 分块 500 与 top-K 归并、去重收成 `staleIDCollector` 一份） | `internal/module/page/service` 全绿；`public/test/rls`（整站标记真库用例）全绿 |
 | 事务门禁盲区 | **识别表与判据收紧** | tx 扫描补 `Persist/Import/Dispatch/Purge/Save/recordChanges`；service-db-boundary 新增判据 ①b + 外置豁免清单（过期即失败） | `public/test/architecture` + `check-service-db-boundary.sh` |
 | mail 裸查询 | service 改走 model 具名方法 | `mail_account.go` → `MarkAccountDefaultTx` | `public/test/mail` 全绿 |
 | publication 裸查询（判据 ①b 找到的真违规） | 3 处 `tx.Model(...)` 搬进 model 具名方法，豁免清单同步清零 | `publication_receipt.go#markReceipt`、`publication_route.go#renameReservedIn / redirectIn` | `public/test/publication` + 门禁 EXIT=0 且条目已删 |
@@ -471,4 +471,39 @@
 - 整站标记类（主题 / 块 / 词条）的 stale 影响面没有逐页样本 —— 反查面就是 `/admin/pages` 的待重建区块；逐页样本需要 `MarkStaleFor*` 改 `RETURNING id`，本批刻意没做。
 - 批量结果文案（admin / order / content / product）仍是硬编码中文，没有 i18n key（不在上一轮清单内，本批未做）。
 - 门禁绿 ≠ 没问题：两道门禁都是启发式，边界写在各文件注释里。
+
+## 8. 2026-09-19 第五批（门禁扩族 · 事务缺口 · 逐页影响面 · 批量文案 i18n）
+
+本批由主代理 + 8 路子代理完成（其中 2 路中途失败，主代理接手收尾），**未提交**。逐项收口第四批的「剩余」清单：
+
+### 已落地
+
+| 第四批剩余项 | 本批处理 | 验证 |
+|---|---|---|
+| 判据①b 只认 `.Model(` | 入口扩到裸查询**全族**；判据① 扩到任意 `.<Name>DB(ctx)`；①b 加「同函数内动态收集局部句柄名」→ 命中 14 行 + model 裸句柄 3 处**全部真修**，豁免清单仍 **0 条** | `check-service-db-boundary.sh` exit 0；反向验证含句柄探针 |
+| 识别表 `Delete*`/`Update*` 取舍 | 先测后改：103 个调用名**误报 0** → 前缀加上；5 个精确名删除；新增 8 条命中逐条判定 | `public/test/architecture` 绿；两次反向验证（键名改动 / 移前缀 → 报「违规 + 条目过期」） |
+| 整站标记无逐页样本 | model 三方法 `RETURNING id` + `staleIDCollector` 一份去重 + `theme:/block:/i18n` 三入口；`IN` 查询 500 一块分块 + top-K 归并 | `public/test/rls`（整站标记真库用例）绿 |
+| 批量文案 i18n | 六个模块（含 page 与 inventory 货源页）批量结论文案 key 化：**迁移 283 = 60 key × 中英**；写读共用同一取词函数；顺手修掉「按第一个空格切导致英文回执静默消失」的真缺陷 | `public/test/{admin,order,content,product,page,inventory}` 9 包绿；台账实测 **3701 / 3585** |
+| （本批新发现）模板 19 行未 key 化 | 第四批**提交时漏 key 化**的 19 行（product_detail 16 / products_new 3 / mail_marketing 2）清掉：**迁移 284 = 21 key × 中英**；`i18n-coverage-baseline.txt` 由 2 **下调为 0** | `check-i18n-coverage.sh` exit 0（0/0） |
+| （本批新发现）两条真缺事务 | `RetireLocale`（符号链接先行 + 单事务）与 `presentation Delete`（两处 DB 写同事务，publication 补 `DeleteRoutesByPresentationTx`）；允许清单条目随删 | architecture 绿；publication / presentation feature 绿 |
+| （本批新发现）peer 接线静默跳过 | 就地 panic + `wiring.go` 新增 `portPageI18nStalePeer`（required-port）+ `marks.mark` | `go test ./internal/routers/...` 绿 |
+| （本批新发现）`MarkStaleByIDs` 返回值说谎 | 改 `RETURNING id` + 单条 `ANY(string_to_array(?,',')::uuid[])` | 新增永久回归（含反向验证：模拟旧实现必红） |
+
+### 本批新认定的真缺陷（都已修 + 都有回归）
+
+1. **`MarkStaleByIDs` 原样返回入参**：传不存在的 uuid 也算「已标记」→ 影响面日志永远查不出偏差。
+2. **`productVariantNoticeMatches` 按第一个空格切分**：中文模板无空格所以长期掩盖，英文回执会被判成伪造而静默消失。
+3. **i18n peer 接线静默跳过**（两层 `if ok`）：漏接的表现是「改了译文、实例不重建且无报错」。
+4. **两条真缺事务**（`RetireLocale` / `presentation Delete`）：跨模块 DB 写各自提交，留下半截状态且不会自动收敛。
+5. **第四批提交把 19 行未 key 化模板一起提交**（我的失误）：门禁从提交那天红着 —— 教训是「提交前必须把门禁脚本再跑一遍」，而不是只在修完失败后跑一次。
+
+### 剩余（诚实列出）
+
+- 判据①b 仍是启发式：跨函数传递句柄、句柄存结构体字段、`ReceiptDB(c.Request.Context())` 这类非 `(ctx)` 实参扫不到（边界逐条写在脚本头注释）。
+- tx 识别表仍按方法名匹配：`Deactivate` / `deactivatePaths` 这类写点不在表里，测试给出的「N 处写」可能**小于**真实写点数。
+- `RetireLocale` 没有端到端用例（只验证组成部分：`DeactivateTx` 是既有路径、两个 `…Tx` 变体已实测）；`MarkStaleByIDs` 的 `at` 参数仍未落到 `update_time`（保持原行为）。
+- product 变体跳过原因仍用全角「；」分隔（写读同源不会失配，但英文界面会看到中文标点）；`order.bulk.allSkipped` 里的「0 个」是模板组成部分，未做参数。
+- 跨语言一致性只在模块级单测覆盖（`i18n.InjectForTest`，确定性）；页面级 feature 的 i18n 来自开发库，加 en-US 断言会随词条是否落库而抖。
+- `I18nStalePeer` 的接线自检依赖 `mustAllPortsWired`（装配末尾报缺）；若某条轻量装配路径绕过 `assembly_publish.go`，仍看不到这条端口。
+
 
