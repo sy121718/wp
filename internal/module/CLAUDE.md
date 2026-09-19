@@ -116,6 +116,12 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 - 业务用例拆到 `xxx_<action>.go`
 - 返回 `error`，业务错误消息统一取 `enums`
 - 使用命名返回值：`func (s *Service) Xxx(ctx, req) (res *XxxResp, err error)`
+- **写操作必须有事务边界**：一个 service 方法里出现**两处及以上持久化写入**（主实体 + 关联行 + 流水/变更记录 +
+  计数 + 权限策略/菜单 + Redis）就必须包进**同一个事务**，任一步失败整体回滚，不留半截状态。
+  跨模块只把 `*gorm.DB` 句柄传给对方的 `…Tx` 方法（先例：`masterdata.RecordChangesTx(ctx, tx, …)`）——
+  不共享表、不跨库；对端没有 `…Tx` 方法就加一个，不要用「先写 A 再补偿 B」蒙混（补偿只用于跨库/外部系统）。
+  读-改-写必须有行锁或原子 SQL；数据冲突一律打回给人、不自动加后缀或静默合并。
+  完整判据与门禁见 AGENTS.md「写操作的事务与回滚」与 `public/test/architecture/tx_boundary_scan_test.go`
 
 ## 编码风格
 

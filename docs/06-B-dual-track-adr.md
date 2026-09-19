@@ -64,11 +64,11 @@
 
 | 决策 5 的条款 | 状态 |
 |---|---|
-| 块级标签 ↔ 组件一一映射 | ✅ `HTMLToNodes` / `NodesToHTML`：h1~h6→heading、p→text、ul/ol→list、blockquote→quote、pre→text、img/figure→image、hr→divider、table→table |
+| 块级标签 ↔ 组件一一映射 | ✅ `HTMLToNodes` / `NodesToHTML`：h1~h6→heading、p→text、ul/ol→list、blockquote→quote、pre→text、img/figure→image、hr→divider、table→table；`details` 整块留在 core.text 的富文本字段（折叠结构留在富文本里比拆散更保真），反向由 `core.accordion` → `<details><summary>摘要</summary>正文…</details>` 序列补齐（items ↔ children **一一对应**时才导出；数量不等按占位 + `Lossless=false`，缺摘要/组件状态如实记损） |
 | 行级格式（strong/em/a）留在 core.text 内 | ✅ 随所在段落一起进 `core.text` 的富文本字段，不单独成组件 |
-| 双向唯一、round-trip fuzz 背书 | ✅ `FuzzRichTextRoundTrip`（90s / 729,288 次执行通过）；fuzz 抓到的两个真实缺陷已修并留作回归语料 |
+| 双向唯一、round-trip fuzz 背书 | ✅ `FuzzRichTextRoundTrip`（90s / 72.9 万次执行通过）；fuzz 抓到的真实缺陷已修并留作回归语料（`testdata/fuzz/`）：切分文本补包裹、折叠块导入、**清洗掉节点后留下的首尾空白让 sanitizeText 不幂等**（节点树差一个空格）、**`&#13;` 文本清洗不幂等**（CR → LF）。⚠️ **仍存一类**：畸形嵌套（如 `<a>` 里嵌 `<table>`）的序列化不是自身解析的不动点，往返在节点树上仍可能漂移 —— 修它要动 `inlineTextNode` 的切分口径（清洗后重新分组），单独一轮做 |
 | 白名单外标签降级不静默 | ✅ `Warning` 区分 unwrap（剥壳保内容）/ drop（内容真丢了）/ trim / placeholder —— 前者与后者混记，运营就分不清"少了一层壳"和"东西没了" |
-| 复杂组件在富文本视图显示只读占位块 | ✅ 导出方向输出占位文字并标 `Lossless=false`（占位**不可还原**：Trix 会洗掉任何 data-* 还原标记，所以不假装无损） |
+| 复杂组件在富文本视图显示只读占位块 | ✅ 导出方向输出占位文字并标 `Lossless=false`（占位**不可还原**：Trix 会洗掉任何 data-* 还原标记，所以不假装无损）。`core.accordion` 已在结构可对应时脱离占位（见上）；cardstack / tabs / productList 等仍在占位分支 |
 | **底层唯一真源 = 组件树** | ❌ **未做**：文章正文仍是 `contents.data.body` 里的 HTML 字符串，富文本目前是**并列的另一条轨**，不是"组件树的一个视图" |
 
 第 4 步（把文章 body 改成组件树、让 Trix 退居为编辑视图之一）要动 `contents` 数据形态、内容模板绑定与 presentation 渲染路径，**单独一轮做**；

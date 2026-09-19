@@ -14,7 +14,7 @@
 
 ### 文本模式切换 (Content Mode)
 
-- **富文本模式 (richtext，默认)**：长篇介绍、产品说明、多段落/列表/链接长文；编辑器为 **Trix 2.x**（本地 vendor，零 CDN），工具条与构建期白名单对齐：加粗/斜体/删除线/代码（含 `pre` 代码块）/有序·无序列表/引用块/行内超链接（`target="_blank"` + `rel="nofollow"`）/标题（Trix 输出 `h1`，构建期统一降级 `h2`）/附件（图片，粘贴、拖入、工具条插图）；编译产物为语义 HTML 片段（内部 `<p>`/`<ul>`/`<blockquote>` 等）。
+- **富文本模式 (richtext，默认)**：长篇介绍、产品说明、多段落/列表/链接长文；编辑器为 **Trix 2.x**（本地 vendor，零 CDN），工具条与构建期白名单对齐：加粗/斜体/删除线/代码（含 `pre` 代码块，语言经 `language` 属性归一到 `class="language-xxx"`）/有序·无序列表/引用块/行内超链接（`target="_blank"` + `rel="nofollow"`）/标题（h1~h5 原样保留，**不做层级降级**）/附件（图片，粘贴、拖入、工具条插图）；编译产物为语义 HTML 片段（内部 `<p>`/`<ul>`/`<blockquote>` 等）。
 - **工具条与白名单的差异**：Trix 2.x 默认工具条产出 `p`/`br`/`strong`/`em`/`s`/`a`/`ul`/`ol`/`li`/`blockquote`/`pre`/`h1`/`figure`（含 `img`+`figcaption`）；`b`/`i`/`u`/`del`/`h2`~`h4` 来自粘贴内容或历史数据，同样在白名单内一并保留。
 - **纯文本模式 (plaintext)**：卡片副标题、简短提示、按钮下方小字、单行说明；纯文本输入框无格式工具条；标签可选 `<p>`/`<span>`；编译产物单层直出，零多余嵌套。
 
@@ -62,13 +62,14 @@
 
 | 类别 | 规则 |
 |---|---|
-| 标签白名单 | `p br strong b em i u s del code pre ul ol li blockquote a h1 h2 h3 h4 img figure figcaption div` |
-| 归一与降级 | `h1` 输出侧统一降级 `h2`（正文不得出现 H1，一页一个 H1 由页面标题承担）；`div`（Trix 2.x 的段落容器）归一为 `p`，并带**嵌套保护**——已处于段落内时只剥壳，不产出 `<p><p>` |
+| 标签白名单 | `p br strong b em i u s del code pre ul ol li blockquote a h1 h2 h3 h4 h5 hr img figure figcaption div table thead tbody tfoot tr th td caption details summary` |
+| 归一与降级 | **标题级别原样保留**：h1~h5 是正文结构的一部分（曾经的「h1 统一降级 h2」已取消）；`div`（Trix 2.x 的段落容器）归一为 `p`，并带**嵌套保护**——已处于段落内时只剥壳，不产出 `<p><p>` |
 | 非白名单标签 | 剥壳保留内部文本（`<script>` 等标签剥离） |
-| 长度上限 | `core.MaxRichLen = 20000`：富文本与存量纯文本同口径，超长直接判空（防畸形/滥用输入膨胀产物） |
+| 长度上限 | `core.MaxRichLen = 30000`：富文本与存量纯文本同口径，超长直接判空（防畸形/滥用输入膨胀产物） |
 | 存量纯文本兼容 | `core.RichTextHTML`：无标签输入 → 整段 `html.EscapeString` 后按空行分段包 `<p>`，段内换行转 `<br>`（顺序不可颠倒，否则 `<br>` 自身会被转义成可见文本） |
-| a 属性 | 仅 `href`（http/https/mailto/站内相对路径/`#` 锚点）、`target="_blank"`、`rel`（nofollow/noreferrer/noopener 白名单拆分校验） |
-| img 属性 | 仅 `src`（过协议白名单，拒 `javascript:`/`data:`）、`alt`、`width`/`height`（纯数字或常见 CSS 单位）、`loading`（lazy/eager） |
+| a 属性 | 仅 `href`、`target="_blank"`、`rel`（nofollow/noreferrer/noopener 白名单拆分校验）。href 协议与 Trix 的 URI 白名单取齐：http/https/ftp/ftps/mailto/tel/callto/sms/cid/xmpp/matrix + 站内相对路径/`#` 锚点；**`javascript:`/`data:`/`vbscript:` 永不放行**，判定前先剥掉空白与控制字符（` javascript:`、`java\tscript:`、`JaVaScRiPt:` 全部拒绝） |
+| img 属性 | 仅 `src`（过协议白名单，拒 `javascript:`/`data:`）、`alt`、`width`/`height`（纯数字或常见 CSS 单位）、`loading`（lazy/eager）。**alt 回填**：figure 内没有 alt 的 img，用同级 figcaption 的纯文本（去标签、去首尾空白、上限 200 字符）补上 —— 已有 alt（含显式 `alt=""`）不动，figcaption 本身不改 |
+| pre 属性 | 仅代码语言，且**归一**为 `class="language-<值>"`：Trix 的 `language` 属性（`htmlAttributes: ["language"]`）与既有的 `class="language-xxx"` 收敛成同一个 class；值限 `[A-Za-z0-9+#-]{1,32}`，非法（带引号/空格/尖括号/超长）时整个属性丢弃 |
 | 其余属性 | 一律剥离（`onerror=` 等事件属性、class/style 注入全部清除） |
 | 注释/声明 | 剥离 |
 | 文本输出 | 文本节点统一 `html.EscapeString`（防 `&lt;script&gt;` 实体经 tokenizer 解码后复活为真标签，见 `core/richtext.go` 的 C2 存储型 XSS 修复）；属性值 `&amp;/&quot;` 转义 |
@@ -91,4 +92,4 @@
 | 检查器控件 | `core/controls.go` 的 `ControlRichText`（`ct:"richtext"`）+ `dashboard/.../inspector_handle.go` 输出 `slot=richtext` + 客户端 `methods/controls/text.js`（`richTextField`）/ `misc.js` 分派 |
 | 摘要模式 | `core.StripRichTags` + `truncateRunes`（strip 标签截前 N 字符） |
 | 段落间距 / 截断 | `compileCSS`（内部块级规则 + `-webkit-box` 四件套） |
-| 单元测试 | `internal/builder/core/richtext_test.go`（纯文本段落化 / 清洗 / h1 降级 / 长度上限 / 幂等）+ `components/text/sanitize_test.go`、`sanitize_fuzz_test.go`（薄转发后仍覆盖白名单与注入拦截） |
+| 单元测试 | `internal/builder/core/richtext_test.go`（纯文本段落化 / 清洗 / 标题级别保留 / 长度上限 / 幂等）+ `richtext_attrs_test.go`（链接协议 / 代码语言 / 图片 alt 回填）+ `components/text/sanitize_test.go`、`sanitize_fuzz_test.go`（薄转发后仍覆盖白名单与注入拦截） |

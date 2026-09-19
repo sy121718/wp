@@ -27,7 +27,7 @@ go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
 | 认证 | Session + Cookie（gin-contrib/sessions + Cookie 存储） | 替代旧 JWT 方案，HTMX 请求自动携带 Cookie |
 | 鉴权 | Casbin（自研 persist.Adapter） | Enforce(user_id, path, method)；业务 API 已挂载 |
 | 公开动态片段 | HTMX + Go Handler | 按 Registry capability 返回受控 HTML Fragment（`runtimefragment`，挂载 `/_fragments/{type}`）；**产物按需内联 htmx** —— 页面 HTML 里出现任一 `hx-*` 属性时由 builder 注入（`ui_script.go` 的前缀命中），一个都没有就一个字节都不注入（htmx 是行为库，不需要控件基座与 `ui.css`） |
-| 富文本编辑器 | Trix 2.x（本地 vendor：/static/vendor/trix/） | 文章内容编辑；白名单清洗 + h1 降级 h2 |
+| 富文本编辑器 | Trix 2.x（本地 vendor：/static/vendor/trix/）+ 自研扩展（internal/templates/static/js/rich-editor/） | 文章正文 / 分类描述 / 品牌描述编辑；服务端白名单清洗（internal/builder/core/richtext.go）。**块级元素 h1~h5 与段落原样保留**（原「h1 降级 h2」已取消：标题层级是 SEO 与正文结构的一部分，降级会把作者写的一级标题改掉）；表格、折叠块（details/summary）、水平线在白名单内。表格与折叠块是 Trix 的 attachment 扩展（2.1.19 没有 config.elements，自定义 element 那条路不可用），提交时展开为真 HTML |
 | 数据库 | PostgreSQL（主库） | CMS 内容、Page 草稿、Artifact 元数据和依赖索引；MySQL 为历史兼容；SQLite/SQL Server 驱动已移除 |
 | 会话存储 | Redis（pkg/cache） | 用户会话、封禁标记、在线心跳（**Critical 组件，配置必须启用**） |
 | Artifact 存储 | 本地文件系统 / 对象存储 | 不可变构建文件与内容寻址资源 |
@@ -235,6 +235,9 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 未登录页面请求 302 到 `/admin/login`；API 请求返回 401 JSON
 - 业务模块统一通过模块 `enums` 提供响应消息；`pkg` 和系统包直接用中文提示或原始 `err`
 - 后台页面 handler 禁止 `c.String(500, err.Error())` 直出内部错误，必须走 `shell.PageError` / `pkg/response` + enums
+- **「不许直出内部错误」按三种形态一起管到底**（2026-09 收口，实测每一层都是漏过的）：① **响应写入**（`c.String` / `*.ErrorWithMessage`）；② **重定向 query**（`?err="+url.QueryEscape(err.Error())` —— 页面把它渲染出来，等同直出）；③ **模板数据**（`data.Errors = []string{"…："+err.Error()}`）。门禁 `scripts/check-no-internal-error-leak.sh` 覆盖全部三种形态，配**带理由的豁免清单**（条目不再命中即失败，禁止只增不减）。
+- **每个模块要有「错误文案三件套」**：① 可透出业务文案的**白名单**（`XxxFacingMessages`，与 enums 常量一一对应，用 AST 对账测试钉住）；② **归口文案**（未命中时返回的可翻译 key，如 `adminenums.ErrInternal` / `navigation.err.internal`，值带模块前缀 —— `sys_i18n` 主键是 `(item_key, lang)`）；③ **结构化日志**（原文只进日志，带场景与 user_id）。样板：`internal/module/admin/inbound/http/admin_err.go`、`navigation_err.go`、库存页的 `inventoryErrText`、order 的 `orderFacingText`、product 的 `productErrText`。
+- 判据是**形状**不是字面量：新增 handler 时先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名（`r.ErrorWithMessage` 这种别名就漏过一整轮）。
 
 ### 数据库
 
@@ -264,6 +267,11 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - **model 一律不声明列型**（2026-09 收口，架构测试 `internal/architecture/model_gorm_tag_test.go` 守门）：列的类型由迁移决定，model 标签不重复声明。重复声明就等于**两份真相** —— 抄错时没有任何东西会报错（`sys_admin.status` 真实是 `smallint`、标签写着 `tinyint(4)`；时间列真实是 `timestamptz(6)`、标签写着 `timestamp(3)` 无时区 + 毫秒），而任何 AutoMigrate 路径会照标签把错的列型建出来。本轮清掉 598 处 —— 其中 57 处 `type:timestamp(3)` 与 17 处 `type:datetime(3)` 是**上一轮清过又长回来的**（当时没有测试兜底），所以这次连红线一起立。**唯一例外**：gorm 无法自行推断列型的字段（`json.RawMessage` / `JSONMap` / `StringArray` 等）必须保留 `type:`（或改用 `serializer:`）指明映射 —— 那说的是「Go 值怎么变成 SQL 值」，不是列型真相，删掉会直接报 unsupported data type
 - 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
 - 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）
+- **Migrations 台账先跑、Seeds 台账后跑 —— 在 `register` 里做的删除，永远赢不过在 `registerSeed` 里重建它的 seed**（2026-09 实测的真实故障）。`migrator.go` 的 `runAll(All())` 与 `RunSeeds(AllSeeds())` 是两个独立循环，各自按版本排序；所以「先删、后被插回」不取决于版本号大小，只取决于它在哪个台账里。
+  · 实例：迁移 122（`register`）负责删除库存缓存下线后遗留的 `inventory:cache_sync` / `cache_reconcile` 权限点，而 104（`registerSeed`）的 seed 与幂等条件里**还留着这两个码**，条件是「本票 10 个权限点齐了才跳过」。于是每轮启动：122 删 2 个 → 104 条件不满足 → 重新插回 → 库里**一直存在**指向不存在路由的死授权（后台勾选毫无作用，误导配置者）。现象极具欺骗性：122 的日志写着「迁移完成」，104 的日志写着「种子数据已存在，跳过」，两边的日志都正常。
+  · 判据：**删能力时要连 seed 的 SQL 与幂等条件一起收口**（条件计数与 key 列表同批改），不能只删词条/权限点。停在 `register` 里的「删除」只是看起来删了。
+  · 回归：`public/migrations/register_retired_permission_test.go` —— 任一迁移 SQL 里删除的权限点代码，都不得再出现在任何 seed 的 SQL 里（含判据自身的命中/误报自检）。它是启发式（只认 `permission_code IN (…)` 这一种写法），漏掉不代表没问题。
+  · 同类：`order.msg.cancelledStockWarning` 的死常量之所以只能「废弃但保留」，就是因为它的 seed 判定按「本批 key 计数且包含本 key」；180 的两行与 `register_admin_i18n.go` 的判定 key 列表、门槛（`>=62` → `>=61`）同批改掉之后，常量才连同词条一起删净。
 - **主键选型按「这个 id 会不会出现在系统边界之外」判**（DB-020 复核结论）：对外实体（`projects` / `pages` / `products` / `blocks` / `themes` / `content_templates` 等有对外接口，或 id 进了 Page Document / 产物元数据 / 导出物的）用 **uuid**；纯内部流水与字典（`page_views`、`build_jobs`、`publication_receipts`、`page_site_slots`、`inventory_change_reasons`、`sys_*` 全系）用 **bigint identity**。**两套并存是设计，不是待消除的不一致** —— 缺判据才是问题；新表按此选型，别为了「统一」把对外实体改成自增（id 一旦可枚举就少一层纵深，与 DB-009 想要的隔离方向相反）。判据只约束**新表**，**存量按现状为准**：`master_data_changes` / `inventory_stock_movements` 是 uuid 存量（后者 id 已进对外列表投影 `MovementRow`），说明「流水必然内部」这个直觉不成立 —— 别拿判据去反推存量
 - **主键类型的代价是实测过的，别凭感觉排优劣**（本地 PG 18.6，100 万行同结构同 payload）：插入 `bigint identity` 1.90s / `uuid` v7 2.81s / `uuid` v4 5.42s，主键索引 21MB / 30MB / 38MB，**点查三者无差别**（都在测量噪声内 —— 别拿它当任何一方的论据）。所以 uuid 不是「更好的主键」，而是为「id 不可枚举」付的写放大（v4 随机插入导致 B-tree 页分裂，写放大 2.85 倍）：付它的唯一依据就是上面那一行判据，量级越大的内部表越该用 bigint；对外实体真要用 uuid 就用 v7，实测能追回六成以上代价
 - **只增的分区流水表用 UUIDv7**（`inventory_stock_movements` / `master_data_changes`，统一经 `utils.NewTimeOrderedID()`）：写入点集中在索引右端，实测把 v4 的写放大砍掉一半（插入 5.42s → 2.81s、主键索引 38MB → 30MB）。与上一条判据不冲突 —— 判据决定「bigint 还是 uuid」，v7 决定「内部表用哪种形状的 uuid」。两个反作用要记住：**v7 的时间前缀会透露创建时间**，所以对外实体（`projects` / `pages` / `products` / `blocks`）继续用 v4 的 `uuid.NewString()`，别顺手替换；从 v4 切到 v7 后「按 id 排序」会从无序变成等价于创建先后，原先靠 id 排序读创建顺序的写法要显式改用 `create_time`
@@ -283,6 +291,29 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - `contract/` 只放模块对外接口；`service` 依赖其他模块能力时直接引用对方 `contract`
 
 **admin 豁免条款**：`admin` 为管理面 CRUD 大模块（六领域合并、同包直调），service 层经 `DB(ctx)` 直查**明文豁免**。豁免边界：仅限 admin 模块、仅限本模块表、跨表事务仍须 `Transaction()` 编排、简单 CRUD 之外的业务查询仍走 model 方法。新增模块一律禁止直查。
+
+### 写操作的事务与回滚（2026-09 收口，评审必查）
+
+**判据**：一次用户可感知的写操作（保存 / 删除 / 状态推进 / 批量 / 导入安装发布），只要涉及**两处及以上持久化写入**，
+就必须落在**同一个数据库事务**里；任一步失败整体回滚，不允许留半截状态 ——「有主实体没关联行」「有单据没库存」
+「有实体没流水」「有商品没库存记录」都算。持久化写入 = 主实体 + 关联行 + 流水/变更记录 + 计数 + 权限策略/菜单 + Redis。
+
+- **事务边界由 service 决定，句柄从 model 往下传**：`model.Transaction(ctx, fn)` 起事务；跨模块只把 `*gorm.DB`
+  传给对方的 `…Tx` 方法（先例：`masterdata.RecordChangesTx(ctx, tx, …)`）—— **不共享表、不跨库**。
+  对端没有 `…Tx` 方法就**加一个**，不要用「先写 A 再补偿 B」蒙混过去。
+- **`rls.InProjectScope` 自带事务**：一个方法里若既有 `InProjectScope` 又有**它外面**的写，外面那一处就是缺事务的
+  （事务内再嵌套是允许的，gorm 用 SAVEPOINT；嵌套里任何错误都必须原样返回外层）。
+- **读-改-写必须有行锁或原子 SQL**：`SELECT … FOR UPDATE`（按标识升序加锁避免死锁），或把守卫写进 WHERE 的
+  原子更新（`SET x = x + ? WHERE x + ? <= limit`，受影响行数 0 即拒绝）。禁止「先读出来算完再写回去」。
+- **补偿只用于跨库/外部系统**（文件、Redis、第三方接口这类事务边界之外的动作）：必须**幂等 + 留痕 + 可重放**，
+  并在注释里写明「为什么不能用事务」。跨模块的数据库写入**不在**这一条里 —— 那属于上面的事务透传。
+- **冲突与数据不一致一律打回给人**：唯一键撞车、存量纠正这类情况，错误里要列出**可定位的数据**（哪张表 / 哪个仓 /
+  哪个码 / 哪几行 id / 涉及的商品与变体），让操作者决定；**不允许**自动加后缀、静默合并、丢弃其中一行。
+- **门禁**：`public/test/architecture/tx_boundary_scan_test.go` 静态扫「一个 service 函数里 ≥2 处写调用却看不到
+  事务标记」的候选 —— 命中要么把它包进事务，要么在允许清单里写明「这几处写天然独立（幂等 / 可重放）」的理由；
+  清单里过期的条目会让测试失败（只增不减的豁免清单等于没有门禁）。
+  · 它是**启发式**：命名不在识别表里（`Persist` / `MarkX` / `attachX` / `saveX` …）会漏，事务标记也可能来自被调用方。
+    所以「门禁绿」不等于「事务没问题」—— 评审仍要按上面的判据人看一遍。
 
 ## 测试
 

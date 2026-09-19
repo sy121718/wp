@@ -411,7 +411,8 @@ URL 修改不是普通 props 更新：
 >   （2026-09-17 更正：此前写「单次上限 20 页、超限保持 stale」，那是队列落地前在请求内同步执行的口径。）
 > - **既有全站标记保留不退化**：`MarkStaleForTheme` / `MarkStaleForBlock` / `MarkStaleForI18n` 语义不变（来源自身无法精确表达影响面时的保守标记）。
 > - **presentation 侧接入同一 fan-out**（2026-09-17 更正 —— 这里此前写「同一 `pipeline.Fanout` 注册两个来源」，**实测并非如此**）：装配处当时只 `Register(SourceTypePage, …)`，presentation 虽然实现了 `MarkStaleByDependency` / `RebuildStale`，却不在扇出里，于是「改了文章/商品，自动发布的详情页不重建」且全程零报错（第二轮架构复审 AR2-001）。现已真正注册，并补了装配期自检（`Fanout.RegisteredSourceTypes()` + wiring 端口表登记 `pipeline.Fanout.SetRebuilder(presentation)`），再漏一个来源会在启动时直接失败。`presentation_dependencies` 随构建落库（`direct_content` + `content_template` 两条键），`presentation.MarkStaleByDependency` / `RebuildStale` 与 page 侧同形；实例表按生产 DDL 持久化（`stale` + `staged/active_artifact_id` 指针，无 `status`/`artifact_hash` 列），`project_id`/`template_id` 由 project 契约与 `ResolvedTemplate.TemplateID` 提供。
-> - **未完成**：menu/media/site_setting 三类依赖尚未在构建期登记（`content_template` 目前仅 presentation 侧登记，page 侧待补）。§8.3 队列消费端已落地（见上）。
+> - **menu 依赖已接入（2026-09 补，审计遗留缺口）**：此前 `pipeline.DepKindMenu` 有常量却既无发射点、构建期也不登记 —— 改公开站点导航后，把菜单位置烘进产物的页面/实例永远停在旧字节（导航在页眉/页脚，全站可见）。现在两半闭环：构建期由 `RenderContext.UseMenu` 记录真实消费并写入依赖表（page 与 presentation 同形，键 `menu:{projectID}:{kind}`，见 §8.1 键构造表）；导航写路径在提交后经 `pipeline.MenuStaleAdapter` → `Fanout` 反向标记。装配端口 `navigation.SetMenuStaleDispatcher` 是 required-port（漏接即启动失败）。
+> - **未完成**：media/site_setting 两类依赖尚未在构建期登记（`content_template` 目前仅 presentation 侧登记，page 侧待补）。§8.3 队列消费端已落地（见上）。
 
 ### 8.1 Revision 机制
 
@@ -423,7 +424,7 @@ Revision 是依赖源的变化追踪标识。每当一个依赖源的语义内�
 |---|---|---|---|
 | `direct_content` | CMS 实体的 revision 字段（单调递增整数） | 整数字符串，如 `"3"` | `product:100` |
 | `content_collection` | 集合的 contentSet revision（成员增删或排序变化时递增） | 整数字符串，如 `"7"` | `collection:recentArticles` |
-| `menu` | 菜单修订号（增删改菜单项时递增） | 整数字符串，如 `"2"` | `menu:footer` |
+| `menu` | 当前实现无 revision：`navigations` 表没有 revision 列，导航写操作直接触发失效标记，不比对 revision | null | `menu:{projectId}:header` |
 | `media` | 媒体文件的内容 hash | SHA256 hex，如 `"a1b2c3..."` | `media:{assetId}` |
 | `content_template` | `content_template_versions.version` | 整数字符串，如 `"5"` | `content_template:{templateId}` |
 | `global_component` | `global_component_versions.version` | 整数字符串，如 `"8"` | `global_component:{componentId}` |
@@ -436,6 +437,20 @@ Revision 是依赖源的变化追踪标识。每当一个依赖源的语义内�
 - contentSet revision 由 CMS Core 在集合成员变更时计算并维护，不是某个表的单一字段。实现方式可以是独立计数器或 `max(member.revision)`，但必须是稳定的、可重现的。
 - 所有 revision 值统一序列化为字符串存入 `BuildDependency.revision` 和数据库 `revision` 列。比较规则是字符串相等性，不做数值大小比较。
 - revision 只用于变化检测，不用于排序或版本回溯。历史版本通过 Artifact Manifest 中的 revision 记录追溯。
+
+**构建期登记的键构造（实现口径）**：`page_dependencies` / `presentation_dependencies` 的 `dependency_key`
+由 `internal/pipeline/dependency.go` 的构造函数单点产出，两条发布来源（page / presentation）共用同一份：
+
+| Kind | 构造函数 | key 形状 | 登记时机 |
+|---|---|---|---|
+| `block` | `BlockKey` | `block:{blockID}` | 文档静态推导（`core.globalref` 引用 + 页眉/页脚槽位绑定） |
+| `site_slot` | `SiteSlotKey` | `{slot}` | 渲染期真实取值（`RenderContext.SitePage`，审计 VIS-006） |
+| `menu` | `MenuKey` | `menu:{projectID}:{kind}` | 渲染期真实取值（`RenderContext.UseMenu`，`core.nav` 绑定 `menu=header/footer`） |
+
+`menu` 的 key **带工程 ID**：导航是工程级资源（`navigations.project_id`），而位置名只有 header/footer 两个；
+反查是逐工程各一次 `(kind,key)` 匹配，键里不带工程 ID 时「A 工程改页眉导航」会把 B 工程里绑了 header 的页面一并标 stale。
+导航写路径（Create / Update / Delete，含 sort_order 移动）在写提交之后经 `pipeline.MenuStaleAdapter` → `Fanout` 反向标记
+受影响产物 —— 事务内派发会在回滚后留下无内容变更对应的 stale 标记。
 
 ### 8.2 依赖记录
 

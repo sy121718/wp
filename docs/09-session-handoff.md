@@ -54,13 +54,13 @@
 
 - **编辑器换 Trix 2.x**：TinyMCE 全部移除，改为本地 vendor `internal/templates/static/vendor/trix/`（`trix.css` + `trix.umd.js`，`workbench/layout.html` 引入，零 CDN）；`public/test/page/feature/workbench_page_test.go` 已断言外壳不含 tinymce
 - **富文本能力上移 core**：新增 `internal/builder/core/richtext.go`（**白名单唯一来源**）——`allowedRichTags` / `SanitizeRichHTML` / `RichTextHTML` / `HasRichMarkup` / `StripRichTags` / `MaxRichLen`（当时为 20000，**现已统一为 30000**，与 `ct:"richtext,maxlen=30000"` 一致，见 `internal/builder/core/richtext.go:26`）；`internal/builder/components/text/sanitize.go` 退化为薄转发（保留包内私有名 `sanitizeRichHTML` / `stripRichTags`，既有调用点与测试名不变）
-- **白名单变化**：新增 `pre`（代码块）与 `div`（Trix 段落容器，输出侧归一为 `p`，带嵌套保护不产出 `<p><p>`）；`h1` 仅入白名单用于输出侧统一降级 `h2`
+- **白名单变化**：新增 `pre`（代码块）与 `div`（Trix 段落容器，输出侧归一为 `p`，带嵌套保护不产出 `<p><p>`）；`h1` 入白名单后**原样保留**（当时曾配一条"输出侧统一降级 `h2`"的改写，该约定后续已取消 —— 标题层级是正文结构的一部分，见 `docs/02-C2-text.md` §4）
 - **新增控件 kind `ct:"richtext"`**（与 `rtext` 三端文本区分）：`core/controls.go` 的 `ControlRichText` + `inspector_handle.go` 输出 `slot=richtext` + 客户端 `methods/controls/misc.js`（`schemaField` / `fillInspectorSlots`）分派到 `richTextField`（`methods/controls/text.js`，Trix）
 - **四字段富文本化**：`core.card.text`、`core.quote.text`、`core.infobox.text`、`core.faq.FaqItem.answer` 改 `ct:"richtext,..."`，`BuildView` 走 `core.RichTextHTML` + 模板 `unsafe` 输出；`core.faq` 另加 `faqPanel` 编辑面板（答案单独成块，Trix 需要横向空间，不塞进 repeater 行）
 - **存量纯文本兼容**：无标签输入 → `html.EscapeString` 后按空行包 `<p>`、段内换行转 `<br>`（`core.RichTextHTML`；富文本与纯文本共用 `MaxRichLen` 上限，超长判空）
 - **富文本图片上传**：Trix 粘贴/拖入 → `POST /api/media/upload`（复用 media 模块，非超管需 `media:upload` 权限点）；失败移除 pending 附件，避免空 `<figure>` 进正文
 - **顺带修复**：`faq.jet` 与 `table.jet` 的 Jet 语法 bug——`{{ range $x := ... }}` 不支持，已改 `{{ range _, x := ... }}`（faq 答案同时改为 `unsafe(item.Answer)` 走富文本）
-- **验证**：`internal/builder/core/richtext_test.go`（纯文本段落化 / 清洗 / h1 降级 / 长度上限 / 幂等）+ `components/text/sanitize_test.go`、`sanitize_fuzz_test.go`（薄转发后仍覆盖）
+- **验证**：`internal/builder/core/richtext_test.go`（纯文本段落化 / 清洗 / 标题级别保留 / 长度上限 / 幂等）+ `components/text/sanitize_test.go`、`sanitize_fuzz_test.go`（薄转发后仍覆盖）
 - **已完成**：idiomorph 已引入（vendor 0.8.0，`internal/templates/workbench/layout.html:181` 引入 + `static/js/workbench/core.js:45` `morphHTML`；结构树刻意保留整块 innerHTML，见 `methods/tree.js:23`；见 `docs/06-C-htmx-extensions.md` §四/§五）
 
 > 规范同步：`docs/02-C2-text.md`（§2 富文本字段清单 / §4 清洗规则 / §6 实现映射）、`docs/02-C3-controls.md`（`richtext` kind）、`docs/02-C4-groups.md`（新增控件类型）、`docs/06-C-htmx-extensions.md`（Trix 附件上传）。
@@ -404,3 +404,71 @@
 | 容器 flex 布局面板 | §4「未做」 | 已实现（核查后无需改动） | `internal/templates/static/js/workbench/methods/controls/misc.js:128` `containerLayout` |
 
 > 说明：§1.3 的「17 张」与 §3 的「10 张」为不同口径（前者是页面引用点数、后者是去重后下载的图片数），原文保留不改，仅标注状态。
+
+## 6. 2026-09-19 第三批（事务 burn-down · 可观测性 · 读侧回执 · 门禁补漏）
+
+本批由主代理 + 4 个并行子代理完成，**未提交**。逐项结论：
+
+### 已落地
+
+| 主题 | 关键产物 | 验证 |
+|---|---|---|
+| 事务 burn-down（product / mail） | `mail/**` 10 个文件（`txOr` + `…Tx` 变体、状态+抑制名单同事务、`applyTags` 加行锁）；`product/**` 5 个文件（标签留痕、捆绑配置、成本写回同事务） | `go test ./public/test/{mail,product}/feature` 全绿 |
+| 事务 burn-down（media / webhook） | `media_reconcile.go`（只读对账 + 可重放补偿）、`media_crud.go` 两阶段 + 补偿、`webhook_replay.go`、`DispatchEvent` 日志同事务 + 入队后置 | `public/test/{media,webhook}` 全绿 |
+| 事务 burn-down（product/inventory 货源） | `inventory_source.go` 增/改/删全部收进「事务 + 行锁 + 同事务留痕」（`LockSourceTx` / `CreateSourceTx` / `UpdateSourceTx` / `DeleteSourceTx` / `recordChangesTx`） | `public/test/inventory/feature` 全绿 |
+| 可观测性 | `/readyz` 只读 `pendingReceipts`（**不参与就绪判定**）；页面列表页收敛状态条；block / article 页「待重建影响面」；`/admin/plugins` 三处产物对账巡检 | 各模块单测 + page/presentation feature |
+| 读侧回执收口 | `internal/web/shell/notice.go` 形状原语（数字归一 / 模板归一 / 整体匹配 / `LangRedirect`）；block / contenttemplate / mail / masterdata / navigation / page / product / inventory 全部页面接上 | `check-no-internal-error-leak.sh` exit 0 且 EXEMPT 仍为空 |
+| 门禁补漏 | tx 扫描识别表补 `Update*` / `Delete*` / `Incr*` / `Add` / `Stop*`（此前**对 mail 整体失明**）；`ParamError` 纳入泄漏门禁形态 ① | `public/test/architecture` 全绿 |
+
+### 本批认定的真缺陷（都已修 + 都有回归）
+
+1. **`inventory:cache_sync` / `cache_reconcile` 每轮启动被复活** —— 迁移 122（`register`）删除、104（`registerSeed`）重新插入；根因是 **Migrations 台账先跑、Seeds 台账后跑**。104 的 SQL 与幂等条件同批收到 8 个后，dev 库实测已消失。规则写进 AGENTS.md「数据库」；回归 `public/migrations/register_retired_permission_test.go`（含判据自检）+ 三条 inventory 断言（其中一条从「必须存在」反转为「必须不存在」）。
+2. **`site_slot` 白名单键值反转** —— 写侧放译文、读侧按键查 → 该页所有业务错误永远显示归口文案。改为键/值双形态、整体相等。回归 `internal/module/page/inbound/http/site_slot_facing_test.go`。
+3. **`response.ParamError(c, err.Error())` 直出绑定原文** —— block / media / project 共 14 处，全部改为 `paramBindFail`（原文进日志）。
+4. **mail 启动失败的补偿被 `_ =` 吞掉** —— 活动会停在「发送中」而无人投递且无日志；改为结构化日志留痕。
+
+### 剩余（诚实列出）
+
+- **plugin 卸载的三处产物**：巡检能看见四类不一致，但**没有清理入口**（只报告不自动清）。孤儿 schema / 目录需人工按报告处理。
+- **media 对账 / webhook 重放也没有入口**：服务方法已就绪（`ReconcileStorage` / `ReplayVariantBackfill` / `ReplayPendingDeliveries`），缺后台页或定时任务；若走 `authorizedAPI` 必须同批 seed 权限点 + 超管策略。报告类型暂放各 service 包，落地时挪到 `dto/`。
+- **精确影响面**（本次改动到底影响哪几个页面）只有 page / presentation 的写路径能做，契约没有对应只读面；当前给的是「当前全部 stale 页面」汇总。
+- ~~**webhook 窄窗口**：同一 pending 行可能被两个 worker 同时投递（守卫是落定时的条件更新，非抢占式）~~ **已修（2026-09-19 第四批）**：加 `delivering` 抢占态 + 租约（`ClaimDelivery` / `ReleaseDeliveryClaim` / 落定守卫改 `status='delivering'` / 重放同时收口租约过期的 `delivering`）。租约只能把窗口收紧到「真的卡死过 5 分钟」，所以抢占在报告与日志里**单独计数并单独告警** —— 被抢回来的那一条，外部系统可能已经收到过一次。
+- **`presentation` 无后台页面**，其回执积压只在 `/readyz` 暴露。
+- **事务门禁仍是启发式**：识别表补了 mail 的写法，但 `Persist` / `MarkX` / `attachX` / `saveX` 之类命名仍会漏；「门禁绿」不等于「事务没问题」。三条「天然独立」的判定（`ImportContacts` / `DispatchCampaign` / `PurgeRetention`）尚未能登记（识别表只允许登记会被命中的条目）。
+- **未跑 `make test` 全量**（本批结束时未执行；单包与 feature 均已单独验证）。
+
+## 7. 2026-09-19 第四批（剩余项 burn-down：投递抢占态 · 调度接线 · 回执白名单 · 门禁收紧）
+
+本批由主代理 + 5 个并行子代理完成，**未提交**。对应第三批「剩余」清单逐项收口：
+
+### 已落地
+
+| 第三批剩余项 | 本批处理 | 关键产物 | 验证 |
+|---|---|---|---|
+| webhook 窄窗口 | **`delivering` 抢占态 + 租约** | model：`ClaimDelivery` / `ReleaseDeliveryClaim` / `ListStaleDeliveries`；`DeliverDelivery` 改「先认领、再投递、最后落定」；重放同时收口租约过期的 `delivering` 并**单独计数抢占**（`DeliveringTotal` / `Reclaimed`） | `public/test/webhook/feature/webhook_delivery_claim_test.go`（真实 PG：认领互斥 / 终态只写一次 / 未认领不可落定 / 租约与抢占 / 退认领 / 重放名单双覆盖 / delivering 不可重投） |
+| media / webhook / plugin 无入口 | **进程内调度器**（与既有 `Start*Scheduler` 同形：首跑一次再等 ticker、可注入间隔、recover 单轮 panic） | `media_reconcile_scheduler.go`（24h，含幂等变体补偿）、`webhook_replay_scheduler.go`（1h，与 `replayMinAge` 的耦合用测试钉住）、`plugin_patrol_scheduler.go`（24h，只读巡检） | 三模块单测 + `-race` |
+| 调度器在测试进程跑生产任务（本批新发现） | **`utils.IsTestProcess()` 守卫** | `pkg/utils/process.go` + 10 个 `StartXxxScheduler` 入口守卫（`WithInterval` 是给测试的强启变体） | `pkg/utils` 金丝雀测试 |
+| admin `?err=` 仅形状清洗 | **白名单整体匹配** | `adminErrTexts()`（候选全部来自写侧真实生产点）+ `adminPageErrText` = 清洗 + `shell.FacingNotice`，未命中落空串 | `admin_err_texts_test.go` 6 条对账 + `admin_page_err_text_test.go` 加强（伪造串 → 空串） |
+| `shell.LangRedirect` 判据两份 | **收敛为一份** | `shell.LangRedirectPath(raw)` 唯一实现；admin 重抄的 `adminLangRedirectAllowed` 删除 | 对照用例保留 |
+| 精确影响面 | **写侧影响面回执** | page service `StaleImpactOfIDs` / `logStaleImpact` 接线到三个精确扇出点：pipeline 依赖失效 / 组件版本变化 / 站点槽位换绑 | `internal/module/page/service` 全绿 |
+| 事务门禁盲区 | **识别表与判据收紧** | tx 扫描补 `Persist/Import/Dispatch/Purge/Save/recordChanges`；service-db-boundary 新增判据 ①b + 外置豁免清单（过期即失败） | `public/test/architecture` + `check-service-db-boundary.sh` |
+| mail 裸查询 | service 改走 model 具名方法 | `mail_account.go` → `MarkAccountDefaultTx` | `public/test/mail` 全绿 |
+| publication 裸查询（判据 ①b 找到的真违规） | 3 处 `tx.Model(...)` 搬进 model 具名方法，豁免清单同步清零 | `publication_receipt.go#markReceipt`、`publication_route.go#renameReservedIn / redirectIn` | `public/test/publication` + 门禁 EXIT=0 且条目已删 |
+
+### 本批新认定的真缺陷（都已修 + 都有回归）
+
+1. **webhook 重复投递窗口**：旧守卫只有落定时的 `WHERE status='pending'`，保证「终态只写一次」但拦不住两次出站请求。机制详见 docs/13 第四批节。
+2. **admin 伪造回执**：手拼 `?err=任意文案` 会以「系统提示」样式渲染（第三批只做了形状清洗）。现在未命中白名单落空串。
+3. **测试进程跑生产调度器**：`make test` 并行时每个测试包都会首跑一轮调度 —— 保留期清理会**删真实开发库的历史数据**、媒体对账遍历真实存储。10 个入口统一加 `utils.IsTestProcess()` 守卫。
+4. **publication 绕过 model 的裸查询**：3 处 `tx.Model(...)` 直接写在 service（判据 ①b 的首个真实命中），已搬进 model 具名方法。
+5. **并发子代理留下的坏正则**：`admin_err_texts_test.go` 的 `(?:?err=` 未转义 `?` → 包级 init panic（整包测试全红）；主代理接手修复。
+
+### 剩余（诚实列出）
+
+- webhook 抢占只能把重复投递窗口收紧到「真的卡死过 5 分钟」：被抢占的 worker 可能已把请求发出 —— 这正是抢占在报告与日志里单独计数的原因。
+- 判据 ①b 只认 `.Model(` 入口：`tx.Where / tx.Create / tx.Exec` 仍绕得过（建议单独一批收口）。
+- tx 识别表仍靠命名：`Delete* / Update*` 变体会漏（加前缀会带出 `time.AddDate` 类噪音，本批只收了 5 个精确名：`DeleteEventsBefore` / `DeleteLogsBefore` / `DeleteNodeLogsBefore` / `DeleteViewsBefore` / `DeleteStaleRevisions`）。
+- 整站标记类（主题 / 块 / 词条）的 stale 影响面没有逐页样本 —— 反查面就是 `/admin/pages` 的待重建区块；逐页样本需要 `MarkStaleFor*` 改 `RETURNING id`，本批刻意没做。
+- 批量结果文案（admin / order / content / product）仍是硬编码中文，没有 i18n key（不在上一轮清单内，本批未做）。
+- 门禁绿 ≠ 没问题：两道门禁都是启发式，边界写在各文件注释里。
+
