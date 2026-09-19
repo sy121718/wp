@@ -108,12 +108,9 @@ func BuildSitemap(entries []SitemapEntry) (string, error) {
 		node := urlNode{
 			Loc: e.Loc, LastMod: e.LastMod, ChangeFreq: e.ChangeFreq, Priority: e.Priority,
 		}
-		// 语言互指：按语言码升序输出、x-default 固定最后（确定性输出）。
-		alts := sortAlternates(e.Alternates)
-		for _, a := range alts {
-			if strings.TrimSpace(a.Href) == "" || strings.TrimSpace(a.Lang) == "" {
-				continue
-			}
+		// 语言互指：规范形态见 normalizeAlternates（至少两种语言才输出、同语言去重、
+		// 语言码升序、x-default 只取第一条且固定最后）—— 与构建期 head 同规则。
+		for _, a := range normalizeAlternates(e.Alternates) {
 			node.Links = append(node.Links, linkNode{Rel: "alternate", Hreflang: a.Lang, Href: a.Href})
 		}
 		if len(node.Links) > 0 {
@@ -320,24 +317,50 @@ func EntriesFromPaths(baseURL string, paths []string) []SitemapEntry {
 	return out
 }
 
-// sortAlternates 语言互指排序：语言码升序，x-default 固定最后（确定性输出）。
-func sortAlternates(in []SitemapAlternate) []SitemapAlternate {
-	out := make([]SitemapAlternate, 0, len(in))
+// normalizeAlternates 语言互指的规范形态（确定性输出）。
+//
+// 规则与构建期 head 的 alternateLinks（internal/builder/seo_head.go）逐条对齐 ——
+// 两处产物在同一个站点上描述同一批互指，规则分叉就是自相矛盾的站点声明：
+//
+//  1. 语言码或 href 为空 → 丢弃（不能输出非法标注），值一并去空白；
+//  2. 同一 hreflang 只保留第一条（同一语言输出两次属无效标注）—— 这一条是本层
+//     自己兜住的：head 侧的语言集合由 LocaleView 保证唯一，sitemap 的输入却来自
+//     「已激活路径」这批原始数据，同一语言出现两次时不能照抄成两条标注；
+//  3. **至少两种语言**才输出：单条自指只是噪声，带 x-default 也一样 ——
+//     x-default 是「不知道该选哪个语言时」的兜底，它本身不是一种语言；
+//  4. 语言码升序，x-default 固定最后（同输入同字节，与输入顺序无关）；
+//  5. x-default 只取第一条（seo_head 的 Alternate.Default 同样只认第一条），其余丢弃。
+//
+// 返回 nil 表示该条目不输出任何互指 —— 调用方据此决定是否声明 xhtml 命名空间，
+// 单语言站点的 sitemap 字节因此与「没有这个功能」时完全一致。
+func normalizeAlternates(in []SitemapAlternate) []SitemapAlternate {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(in))
+	main := make([]SitemapAlternate, 0, len(in))
+	xdefault := ""
 	for _, a := range in {
-		if a.Lang == "x-default" {
+		lang := strings.TrimSpace(a.Lang)
+		href := strings.TrimSpace(a.Href)
+		if lang == "" || href == "" || seen[lang] {
 			continue
 		}
-		out = append(out, a)
-	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j].Lang < out[j-1].Lang; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
+		seen[lang] = true
+		if lang == "x-default" {
+			if xdefault == "" {
+				xdefault = href
+			}
+			continue
 		}
+		main = append(main, SitemapAlternate{Lang: lang, Href: href})
 	}
-	for _, a := range in {
-		if a.Lang == "x-default" {
-			out = append(out, a)
-		}
+	if len(main) < 2 {
+		return nil
 	}
-	return out
+	sort.SliceStable(main, func(i, j int) bool { return main[i].Lang < main[j].Lang })
+	if xdefault == "" {
+		return main
+	}
+	return append(main, SitemapAlternate{Lang: "x-default", Href: xdefault})
 }
