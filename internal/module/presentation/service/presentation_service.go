@@ -82,9 +82,12 @@ type Service struct {
 	// 「占用预检 + 旧路径 301」的落点。可空（单元测试 / 降级装配）：为 nil 时
 	// 只做实例表内的占用预检。
 	routes pubcontract.PublicationService
-	// instanceLocks 实例分片互斥锁：并发构建同一实例时串行化
-	// 「构建 → 落库 → 激活」整段序列，避免产物版本号 MAX+1 竞态与
-	// active_artifact_id 指针交错覆盖（线上内容与 DB 指针分裂）。
+	// instanceLocks 实例分片互斥锁：串行化同一实例上「会改动实例状态」的那几段 ——
+	// 发布会话的冻结段与提交段（版本分配 MAX+1 / 快照与产物行落库 / 访问面激活 /
+	// 指针推进）、创建时的幂等检查与建行、改 URL 的占用预检、产物指针回滚整段。
+	//
+	// ⚠️ **不再覆盖各语言的编译与产物落盘**（PERF-01）：那一段现在在锁外跑，
+	// 完整语义与所保护的不变量见 presentation_publish_plan.go 的文件头。
 	instanceLocks [instanceLockStripes]sync.Mutex
 	// buildQueue 自动重建任务的入队端口（PERF-020）：非空时 RebuildStale 只入队
 	// 不同步重建 —— 进程内分片锁在多实例部署下拦不住两个实例同时重建同一实例，
@@ -114,13 +117,19 @@ type Service struct {
 	converging atomic.Int32
 }
 
-// lockInstance 取某实体的实例级锁（按 entity 维度：创建与重建互斥同一把）。
+// lockInstance 取某实体的实例级锁（按 entity 维度：创建 / 重建 / 改 URL / 回滚互斥同一把）。
+//
+// 谁在等它、它保护哪些不变量：presentation_publish_plan.go 的文件头（PERF-01 收窄后的
+// 覆盖范围 —— 编译与产物落盘已在锁外，锁只覆盖冻结与提交两段）。
 //
 // ⚠️ **前提：单实例部署**（2026-09-19 用户确认）。这把锁是**进程内**的（分片 sync.Mutex），
-// 它挡得住同一进程里的并发创建/重建，挡不住**两个实例**同时处理同一个实体 —— 多实例部署下
-// 「构建 → 落库 → 激活」会交错，产物指针与路由可能互相覆盖。
+// 它挡得住同一进程里的并发写路径，挡不住**两个进程**同时处理同一个实体 —— 多实例部署下
+// 提交段仍会交错，产物指针与路由可能互相覆盖。
 // 唯一的跨实例互斥落点是数据库：构建任务队列消费侧的 SKIP LOCKED claim（见本文件 buildQueue
 // 的注释与 RebuildStale 的入队分支），它只覆盖**自动重建**，创建/改 URL 这两条同步路径不在队列里。
+// 提交段另有一道**数据库侧**兜底（PERF-01）：提交前用冻结指纹比对实例行，别的进程刚提交过
+// 也会被检出并触发重新冻结（见 presentation_publish_plan.go 的 commitPublish），它把
+// 「交错提交」的窗口压到「指纹校验 → 落库」之间，但不构成严格互斥。
 // 将来要支持多实例，必须把这两条路径也换成 DB 锁（行锁或 advisory lock）+ 幂等重放，
 // 而不是把这里的 mutex 换成别的进程内原语。
 func (s *Service) lockInstance(entityType, entityID string) *sync.Mutex {

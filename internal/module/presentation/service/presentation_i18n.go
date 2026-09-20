@@ -85,67 +85,41 @@ func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]strin
 }
 
 // publishAllLangs 按站点启用语言构建、逐语言结案，整批成功后才推进实例指针。
+//
+// 三段式（PERF-01；实例锁到底保护什么见 presentation_publish_plan.go 的文件头）：
+//
+//	① 锁内冻结本次发布的不可变输入（实例行 + 语言清单 + 编译底稿）
+//	② 锁外逐语言编译与产物落盘 —— 最慢的一段，不再占着实例锁
+//	③ 锁内校验实例状态未变 → 发布计划落库 → 逐语言结案 → 推进实例指针
+//
+// ② 期间别的发布会话可以先进锁提交（锁已让出）。此时 ③ 的指纹校验会判定本次编译
+// 基于过期的实例状态，丢弃结果并重新冻结重试 —— 而不是把旧输入写回去（L4）。
 func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	tpl *contenttemplatecontract.ResolvedTemplate, logicalPath string,
-	mode *instanceModePending) (primaryArtifactID string, err error) {
-	logicalPath = pipeline.LogicalPathOf(ctx, s.project, inst.ProjectID, logicalPath)
-	if logicalPath == "" {
-		logicalPath = s.instanceLogicalPath(ctx, inst)
-	}
-	// 语言集按**发布口径**取（审计 I18N-02）：下面这个循环就是「本次发布要上线哪些
-	// 语言」的全部内容，紧接着整批结案并推进实例指针。按可见回退取列表时，清单读不到
-	// 会退化成「只发布默认语言 + 指针前进 + 批次标记收敛」—— 其余语言的线上产物静默
-	// 停在旧字节，且再没有任何东西会去发现它。所以这里读不到就整批失败（实例标回
-	// 未收敛，下次触发/启动恢复重来）。
-	langs, lerr := s.publishLangsOf(ctx, inst.ProjectID)
-	if lerr != nil {
-		return "", fmt.Errorf("站点语言清单不可读，多语言整批发布中止: %w", lerr)
-	}
-	rule := pipeline.LangURLRuleForProject(ctx, s.project, inst.ProjectID)
-	defaultLang := pipeline.DefaultLocale(ctx, s.project, inst.ProjectID)
-
-	results := make([]langBuildResult, 0, len(langs))
-	for _, lang := range langs {
-		accessPath, perr := pipeline.SitePath(rule, lang, logicalPath)
-		if perr != nil {
-			return "", perr
+	intent publishIntent) (primaryArtifactID string, err error) {
+	var moved error
+	for attempt := 1; attempt <= publishAttempts; attempt++ {
+		frozen, ferr := s.freezePublish(ctx, inst, intent)
+		if ferr != nil {
+			return "", ferr
 		}
-		// langs 原样透传（SEO-026）：就是本循环随后逐个结案的那一份，中间不再推导第二次。
-		// 产物里的 hreflang 互指因此只依赖「本批次要上线哪些语言」这个构建期事实。
-		built, berr := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, accessPath, inst.ProjectID, lang, langs, tpl)
-		if berr != nil {
-			return "", berr
+		results, cerr := s.compileLangs(ctx, inst, frozen)
+		if cerr != nil {
+			return "", cerr
 		}
-		results = append(results, langBuildResult{lang: lang, accessPath: accessPath, built: built})
-	}
-
-	// 本次发布前各语言的活跃产物（回执里的 from）：恢复与审计据此比对「从哪个产物切到
-	// 哪一个」。必须在登记账本产物之前读取 —— 之后读到的是本次新写的行。
-	previousArtifacts := s.publishedArtifactsByLang(ctx, inst.ID)
-
-	now := time.Now().UTC()
-	primaryArtifactID, snapID, err := s.persistMultiLangArtifacts(ctx, inst, tpl, results, now, logicalPath, defaultLang, mode)
-	if err != nil {
-		return "", err
-	}
-
-	pinged := make([]string, 0, len(results))
-	for i := range results {
-		b := &results[i]
-		if perr := s.publishOneLang(ctx, inst, b, previousArtifacts[b.lang], now); perr != nil {
-			s.markBatchUnconverged(ctx, inst, perr)
-			return "", perr
+		primaryArtifactID, moved = s.commitPublish(ctx, inst, frozen, results)
+		if moved == nil {
+			return primaryArtifactID, nil
 		}
-		pinged = append(pinged, b.accessPath)
+		if !errors.Is(moved, errPublishStateMoved) {
+			return "", moved
+		}
+		// 冲突：编译结果整体作废（校验在任何写入之前，因此这里是零副作用失败），
+		// 重新冻结实例状态再来一次。产物是内容寻址的，重试若产出同样的字节，
+		// 落库阶段按 hash 复用同一行（recordArtifactTx），不会堆出版本。
+		logger.Scene("build").With("instanceId", inst.ID).With("attempt", attempt).
+			Warn("发布会话的实例状态已被并发批次推进，丢弃本次编译结果并重新冻结")
 	}
-
-	// 收尾：指针只在全部语言都结案后前进（失败分支不会走到这里）。
-	if ferr := s.finalizeMultiLangBatch(ctx, inst, snapID, primaryArtifactID, now); ferr != nil {
-		s.markBatchUnconverged(ctx, inst, ferr)
-		return "", ferr
-	}
-	s.notifyIndexNow(ctx, inst, pinged...)
-	return primaryArtifactID, nil
+	return "", fmt.Errorf("发布会话连续 %d 次被并发的发布批次推进实例状态，本次中止: %w", publishAttempts, moved)
 }
 
 // publishOneLang 单语言结案：登记回执 → 激活访问面 → 登记路由 → 写语言账本 → 结案。

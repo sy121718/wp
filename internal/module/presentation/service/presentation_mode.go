@@ -88,6 +88,8 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
+	// 产物指针回滚不重新编译，整段（查产物 → 校验文件在位 → 激活 → 切指针）都留在
+	// 实例锁内：它是纯粹的指针切换，与发布会话的两个锁内段共用同一把锁即可（PERF-01）。
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -142,10 +144,8 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
-	lock := s.lockInstance(inst.EntityType, inst.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
-
+	// 快照读取与归属校验是只读的，不需要实例锁（PERF-01）：需要互斥的是随后的发布，
+	// 它按自己的分段锁完成版本分配、落库与指针推进。
 	snap, serr := s.m.GetSnapshot(ctx, req.SnapshotID)
 	if serr != nil {
 		return nil, errors.New(presentationenums.ErrRollbackTargetMiss)
@@ -155,21 +155,24 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 	if snap.PresentationInstanceID != inst.ID {
 		return nil, errors.New(presentationenums.ErrSnapshotMismatch)
 	}
-	tpl, err := s.resolveBoundTemplate(ctx, inst, "")
-	if err != nil {
-		return nil, err
-	}
-	pending := *inst
-	pending.OverrideDocument = snap.Document
-	pending.RenderMode = presentationmodel.RenderModeDocument
-	doc := instanceDocumentFor(&pending, tpl)
-
 	mode := &instanceModePending{
 		renderMode: presentationmodel.RenderModeDocument,
 		document:   snap.Document,
 	}
-	if _, err = s.publishAllLangs(ctx, inst, doc, inst.URLPath, mode); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			bound, rerr := s.resolveBoundTemplate(ctx, fresh, "")
+			if rerr != nil {
+				return nil, rerr
+			}
+			pending := *fresh
+			pending.OverrideDocument = snap.Document
+			pending.RenderMode = presentationmodel.RenderModeDocument
+			return instanceDocumentFor(&pending, bound), nil
+		},
+		mode: mode,
+	}); err != nil {
+		return nil, publishFailedErr(err)
 	}
 	return s.toResp(ctx, inst)
 }

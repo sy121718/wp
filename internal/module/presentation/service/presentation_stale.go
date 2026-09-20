@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
@@ -234,14 +235,18 @@ func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error 
 	if err != nil {
 		return fmt.Errorf("%s: %w", presentationenums.ErrNotFound, err)
 	}
-	tpl, err := s.resolveBoundTemplate(ctx, inst, "")
-	if err != nil {
-		return err
-	}
-	// 依赖失效是内容变更触发的自动重建：实例带覆盖文档时沿用（docs/04-C），
-	// 否则一次实体数据更新就会把可视化自定义静默冲回模板文档。
-	tpl = instanceDocumentFor(inst, tpl)
-	_, err = s.rebuildInstance(ctx, inst, tpl)
+	// 模板解析放在发布会话的锁内冻结阶段（PERF-01）：绑定与实例行必须同源。
+	_, err = s.rebuildInstance(ctx, inst, publishIntent{
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			tpl, rerr := s.resolveBoundTemplate(ctx, fresh, "")
+			if rerr != nil {
+				return nil, rerr
+			}
+			// 依赖失效是内容变更触发的自动重建：实例带覆盖文档时沿用（docs/04-C），
+			// 否则一次实体数据更新就会把可视化自定义静默冲回模板文档。
+			return instanceDocumentFor(fresh, tpl), nil
+		},
+	})
 	return err
 }
 

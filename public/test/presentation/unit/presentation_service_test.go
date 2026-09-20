@@ -56,13 +56,32 @@ type presFixture struct {
 // newPresFixture 装配 fixture；PG 不可用时 t.Skip（返回 nil）。
 func newPresFixture(t *testing.T) *presFixture {
 	t.Helper()
-	return newPresFixtureWithRoutes(t, nil)
+	return newPresFixtureWith(t, nil, nil)
 }
 
 // newPresFixtureWithRoutes 同 newPresFixture，但允许在装配时包装路由契约（故障注入用：
 // 验证「路由登记失败时发布必须失败且可恢复」，审计 AR2-004）。
 func newPresFixtureWithRoutes(t *testing.T,
 	wrap func(pubcontract.PublicationService) pubcontract.PublicationService) *presFixture {
+	t.Helper()
+	return newPresFixtureWith(t, wrap, nil)
+}
+
+// newPresFixtureWithRegistry 同 newPresFixture，但允许在装配时包装实体类型注册表
+// （PERF-01 用：在**编译阶段**插一个会合闸门，证明发布会话的编译段不再整段持实例锁）。
+//
+// 只包装注入给 presentation service 的那一个注册表：模板服务继续用原注册表，
+// 于是闸门只在发布/预览的编译路径上生效。
+func newPresFixtureWithRegistry(t *testing.T,
+	wrap func(core.EntitySourceRegistry) core.EntitySourceRegistry) *presFixture {
+	t.Helper()
+	return newPresFixtureWith(t, nil, wrap)
+}
+
+// newPresFixtureWith 装配 fixture 的公共实现；PG 不可用时 t.Skip（返回 nil）。
+func newPresFixtureWith(t *testing.T,
+	wrap func(pubcontract.PublicationService) pubcontract.PublicationService,
+	wrapRegistry func(core.EntitySourceRegistry) core.EntitySourceRegistry) *presFixture {
 	t.Helper()
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
 	db, err := support.NewPGTestDB(t)
@@ -92,7 +111,11 @@ func newPresFixtureWithRoutes(t *testing.T,
 	if wrap != nil {
 		routes = wrap(routes)
 	}
-	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, registry, projects, nil, routes)
+	presRegistry := core.EntitySourceRegistry(registry)
+	if wrapRegistry != nil {
+		presRegistry = wrapRegistry(presRegistry)
+	}
+	presSvc := presentationservice.NewService(presentationmodel.NewModel(db), tplSvc, presRegistry, projects, nil, routes)
 	return &presFixture{
 		db: db, content: contentSvc, templates: tplSvc, pres: presSvc,
 		routes: routes, projectID: project.ID,

@@ -25,6 +25,7 @@ import (
 
 	"gorm.io/gorm"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
@@ -51,36 +52,46 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, err)
 	}
-	// 实例级互斥：与创建/重建共用同一把锁，「构建 → 落库 → 激活」整段串行。
-	// 否则改 URL 与同时到达的内容变更重建会各自推进产物版本号、交错覆盖指针。
+	// 实例级互斥只覆盖「锁内重读 → 同路径判定 → 占用预检」这一段（PERF-01）：
+	// 它保护的是「同一条新路径不会被两个并发改 URL 同时抢到」。编译与产物落盘交给
+	// publishAllLangs 的分段锁 —— 内联函数一返回就放锁，否则会和它自取的同一把锁自锁。
+	var (
+		oldPubs    []presentationmodel.PublicationEntity
+		oldLogical string
+	)
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
+	if err = func() error {
+		lock.Lock()
+		defer lock.Unlock()
 
-	// 锁内重读：等锁期间实例可能已被重建、改过 URL 或删除。
-	inst, err = s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
-	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
-	}
-	oldLogical := s.instanceLogicalPath(ctx, inst)
-	if newLogical == oldLogical {
-		return nil, errors.New(presentationenums.ErrSamePath)
-	}
-	oldPubs, _ := s.m.ListPublications(ctx, inst.ID)
-	// 预检：新逻辑路径下全部语言访问路径均空闲。
-	if err = s.ensureLogicalPathFree(ctx, inst.ProjectID, newLogical, inst.ID); err != nil {
+		// 锁内重读：等锁期间实例可能已被重建、改过 URL 或删除。
+		fresh, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
+		if gerr != nil {
+			return errors.New(presentationenums.ErrNotFound)
+		}
+		inst = fresh
+		oldLogical = s.instanceLogicalPath(ctx, inst)
+		if newLogical == oldLogical {
+			return errors.New(presentationenums.ErrSamePath)
+		}
+		oldPubs, _ = s.m.ListPublications(ctx, inst.ID)
+		// 预检：新逻辑路径下全部语言访问路径均空闲。
+		return s.ensureLogicalPathFree(ctx, inst.ProjectID, newLogical, inst.ID)
+	}(); err != nil {
 		return nil, err
 	}
-	// 模板沿用实例当前绑定（改 URL 不是换模板）：resolveBoundTemplate 传空
-	// 显式 id，绑定优先且不回落「同类型最新」。
-	tpl, err := s.resolveBoundTemplate(ctx, inst, "")
-	if err != nil {
-		return nil, err
-	}
+
 	// mode=nil：改 URL 不是改渲染模式。
-	primaryArtifactID, err := s.publishAllLangs(ctx, inst, tpl, newLogical, nil)
+	primaryArtifactID, err := s.publishAllLangs(ctx, inst, publishIntent{
+		// 模板沿用实例当前绑定（改 URL 不是换模板）：空显式 id = 绑定优先且不回落
+		//「同类型最新」，由发布会话按锁内重读的行解析。
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			return s.resolveBoundTemplate(ctx, fresh, "")
+		},
+		logicalPath: newLogical,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+		return nil, publishFailedErr(err)
 	}
 	// 旧路径处置：逐语言取消激活或 301。
 	for _, pub := range oldPubs {

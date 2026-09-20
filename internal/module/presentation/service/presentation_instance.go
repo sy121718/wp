@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
@@ -26,12 +27,6 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if req == nil || req.EntityType == "" || req.EntityID == "" || req.URLPath == "" {
 		return nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	// 实例级互斥：同一实体的「构建 → 落库 → 激活」整体串行，
-	// 并发请求不会各自推进产物版本号，也不会交错覆盖 active 指针。
-	lock := s.lockInstance(req.EntityType, req.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
-
 	// 角色（审计 EDT-004）：空 = detail，既有调用方逐字不变。
 	role := strings.TrimSpace(req.InstanceRole)
 	if role == "" {
@@ -46,44 +41,76 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 	if err != nil {
 		return nil, err
 	}
-	// 同实体**同角色**已存在实例 → 视为幂等（返回已有）。
-	// 必须带角色：同一个分类既有详情页也可能有归档页，只按实体查会把先建的当成
-	// 「已存在」返回 —— 于是「给分类建归档页」静默变成「拿到详情页实例」。
-	if existing, gerr := s.m.GetInstanceByEntityRole(ctx, projectID, req.EntityType, req.EntityID, role); gerr == nil {
+
+	// 实例级互斥只覆盖「幂等检查 → 占用预检 → 建行」这一段（PERF-01）：它保护的是
+	//「同一实体不会被并发建出两行、同一条路径不会被并发占两次」。编译与产物落盘
+	// 由 publishAllLangs 的分段锁负责，不再占着这把锁（一份语言慢不该拖住创建路径）。
+	//
+	// 用内联函数而不是 defer：进发布前必须放锁 —— sync.Mutex 不可重入，而
+	// publishAllLangs 的冻结段会自己再取同一把锁。
+	var (
+		inst        *presentationmodel.InstanceEntity
+		existing    *presentationmodel.InstanceEntity
+		logicalPath string
+	)
+	lock := s.lockInstance(req.EntityType, req.EntityID)
+	if err = func() error {
+		lock.Lock()
+		defer lock.Unlock()
+
+		// 同实体**同角色**已存在实例 → 视为幂等（返回已有）。
+		// 必须带角色：同一个分类既有详情页也可能有归档页，只按实体查会把先建的当成
+		// 「已存在」返回 —— 于是「给分类建归档页」静默变成「拿到详情页实例」。
+		if row, gerr := s.m.GetInstanceByEntityRole(ctx, projectID, req.EntityType, req.EntityID, role); gerr == nil {
+			existing = row
+			return nil
+		} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return gerr
+		}
+		// 解析模板版本 + 实体解析器。req.TemplateID 非空 = 发布时显式指定用哪套命名模板
+		// （issue #14 验收 2）；为空 = 按实体类型取默认模板（既有行为逐字不变）。
+		tpl, rerr := s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
+		if rerr != nil {
+			return rerr
+		}
+		// 路径先归一化：产物 canonical、访问面符号链接与 page_routes 登记必须落在
+		// 同一个字符串上（FS 侧本来就归一化），否则 /shop/x/ 与 /shop/x 会被当成
+		// 两个路径，路由行指向的位置与实际内容不符。
+		path, perr := s.normalizeLogicalPath(ctx, projectID, req.URLPath)
+		if perr != nil {
+			return fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, perr)
+		}
+		logicalPath = path
+		// 占用预检：逻辑路径下全部语言访问路径 + 逻辑路径本身。
+		if ferr := s.ensureLogicalPathFree(ctx, projectID, logicalPath, ""); ferr != nil {
+			return ferr
+		}
+		// 记实例（url_path 存逻辑路径；各语言访问路径在 publication 表）。
+		now := time.Now().UTC()
+		inst = &presentationmodel.InstanceEntity{
+			ID: uuid.NewString(), ProjectID: projectID, EntityType: req.EntityType,
+			EntityID: req.EntityID, InstanceRole: role, URLPath: logicalPath, TemplateID: tpl.TemplateID,
+			Stale: true, CreatedAt: now, UpdatedAt: now,
+		}
+		return s.m.CreateInstance(ctx, inst)
+	}(); err != nil {
+		return nil, err
+	}
+	if existing != nil {
 		return s.toResp(ctx, existing)
-	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
-		return nil, gerr
 	}
-	// 解析模板版本 + 实体解析器。req.TemplateID 非空 = 发布时显式指定用哪套命名模板
-	// （issue #14 验收 2）；为空 = 按实体类型取默认模板（既有行为逐字不变）。
-	tpl, err := s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
-	if err != nil {
-		return nil, err
-	}
-	// 路径先归一化：产物 canonical、访问面符号链接与 page_routes 登记必须落在
-	// 同一个字符串上（FS 侧本来就归一化），否则 /shop/x/ 与 /shop/x 会被当成
-	// 两个路径，路由行指向的位置与实际内容不符。
-	logicalPath, err := s.normalizeLogicalPath(ctx, projectID, req.URLPath)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, err)
-	}
-	// 占用预检：逻辑路径下全部语言访问路径 + 逻辑路径本身。
-	if err = s.ensureLogicalPathFree(ctx, projectID, logicalPath, ""); err != nil {
-		return nil, err
-	}
-	// 记实例（url_path 存逻辑路径；各语言访问路径在 publication 表）。
-	now := time.Now().UTC()
-	inst := &presentationmodel.InstanceEntity{
-		ID: uuid.NewString(), ProjectID: projectID, EntityType: req.EntityType,
-		EntityID: req.EntityID, InstanceRole: role, URLPath: logicalPath, TemplateID: tpl.TemplateID,
-		Stale: true, CreatedAt: now, UpdatedAt: now,
-	}
-	if err = s.m.CreateInstance(ctx, inst); err != nil {
-		return nil, err
-	}
+
 	// mode=nil：创建实例不改渲染模式（默认 template，首次编辑才可能转独立）。
-	if _, err = s.publishAllLangs(ctx, inst, tpl, logicalPath, nil); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	//
+	// 模板按刚写进 template_id 的**绑定**解析（而不是重新按实体类型取默认模板）：
+	// 创建与发布之间冒出一个新的类型默认模板时，实例不该被悄悄换到别的模板上。
+	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			return s.resolveBoundTemplate(ctx, fresh, req.TemplateID)
+		},
+		logicalPath: logicalPath,
+	}); err != nil {
+		return nil, publishFailedErr(err)
 	}
 	return s.toResp(ctx, inst)
 }

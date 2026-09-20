@@ -15,9 +15,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
@@ -42,10 +42,10 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
-	lock := s.lockInstance(inst.EntityType, inst.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
-
+	// 两个前置判定（幂等保存 / 转入独立的确认）是**只读**的，不再占实例锁（PERF-01）：
+	// 真正需要互斥的是随后的发布（它按自己的分段锁做版本分配与指针推进）。
+	// 判定用的是调用方这一次读到的实例行；并发期间模式被别的写路径改掉时，
+	// 以本次请求的显式意图（写入这份独立文档）为准。
 	tpl, err := s.resolveBoundTemplate(ctx, inst, "")
 	if err != nil {
 		return nil, err
@@ -64,18 +64,26 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 		return nil, errors.New(presentationenums.ErrDetachConfirmRequired)
 	}
 
-	// 编译底稿 = 本次提交的文档；binding 照常解析，实体数据取最新（数据不丢）。
-	pending := *inst
-	pending.OverrideDocument = json.RawMessage(req.Document)
-	pending.RenderMode = presentationmodel.RenderModeDocument
-	doc := instanceDocumentFor(&pending, tpl)
-
 	mode := &instanceModePending{
 		renderMode: presentationmodel.RenderModeDocument,
 		document:   json.RawMessage(req.Document),
 	}
-	if _, err = s.publishAllLangs(ctx, inst, doc, inst.URLPath, mode); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	// 编译底稿 = 本次提交的文档；binding 照常解析，实体数据取最新（数据不丢）。
+	// 按**锁内重读**的实例行重新套用：冲突重试时它可能已经被别的批次改过。
+	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			bound, rerr := s.resolveBoundTemplate(ctx, fresh, "")
+			if rerr != nil {
+				return nil, rerr
+			}
+			pending := *fresh
+			pending.OverrideDocument = json.RawMessage(req.Document)
+			pending.RenderMode = presentationmodel.RenderModeDocument
+			return instanceDocumentFor(&pending, bound), nil
+		},
+		mode: mode,
+	}); err != nil {
+		return nil, publishFailedErr(err)
 	}
 	return s.toResp(ctx, inst)
 }
@@ -96,20 +104,19 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 	if err != nil {
 		return nil, errors.New(presentationenums.ErrNotFound)
 	}
-	lock := s.lockInstance(inst.EntityType, inst.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
-
 	// switchTo 非空 = 同时换一套模板（换底稿）；模板身份切换由发布事务内的
-	// UpdateInstanceTemplateTx 落库，这里只负责取到正确的文档。
+	// UpdateInstanceTemplateTx 落库，这里只负责给出意图。
+	//
+	// 实例锁由发布会话分段持有（PERF-01）：解析绑定与编译在锁外，版本分配与指针推进在锁内。
 	switchTo := strings.TrimSpace(req.TemplateID)
-	tpl, err := s.resolveBoundTemplate(ctx, inst, switchTo)
-	if err != nil {
-		return nil, err
-	}
 	mode := &instanceModePending{renderMode: presentationmodel.RenderModeTemplate}
-	if _, err = s.publishAllLangs(ctx, inst, tpl, inst.URLPath, mode); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			return s.resolveBoundTemplate(ctx, fresh, switchTo)
+		},
+		mode: mode,
+	}); err != nil {
+		return nil, publishFailedErr(err)
 	}
 	return s.toResp(ctx, inst)
 }

@@ -373,8 +373,9 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 	}
 	assertLedgerMatchesAccessSurface(t, f, inst.ID)
 
-	// 并发重建：实例锁把两次发布串行化，结束后不得出现「一部分语言指向旧批次、
-	// 另一部分指向新批次」的混合版本。
+	// 并发重建：编译段可以并行（PERF-01 起实例锁只覆盖冻结与提交），提交仍然互斥；
+	// 结束后不得出现「一部分语言指向旧批次、另一部分指向新批次」的混合版本 ——
+	// 提交时发现实例已被别的批次推进的那一次要重新冻结重试，而不是把请求判失败。
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	for i := 0; i < 2; i++ {

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -42,16 +41,24 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	// 模式与文档列在同一次发布的事务里一并清除（presentation_i18n.go 的
 	// ClearInstanceModeTx，与快照/产物/指针对齐）；非切换路径则按渲染模式取底稿
 	//（document 用商品自己的文档；binding 照常解析，实体数据更新不丢自定义）。
+	//
+	// 模板解析**不在这里做**（PERF-01）：它跟实例行是同一份输入，必须一起在发布会话的
+	// 锁内冻结阶段解析 —— 提前解析出来的绑定会在编译期间被换掉，而本次发布随后把
+	// 旧绑定写回去（含 template_id 列）。
 	switching := strings.TrimSpace(req.TemplateID) != ""
-	tpl, err := s.resolveBoundTemplate(ctx, inst, req.TemplateID)
-	if err != nil {
-		return nil, err
-	}
-	// 非切换：按渲染模式取底稿（document 模式用该商品文档，模板照常解析数据）。
-	if !switching {
-		tpl = instanceDocumentFor(inst, tpl)
-	}
-	return s.rebuildInstance(ctx, inst, tpl)
+	return s.rebuildInstance(ctx, inst, publishIntent{
+		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
+			tpl, rerr := s.resolveBoundTemplate(ctx, fresh, req.TemplateID)
+			if rerr != nil {
+				return nil, rerr
+			}
+			// 非切换：按渲染模式取底稿（document 模式用该商品文档，模板照常解析数据）。
+			if !switching {
+				tpl = instanceDocumentFor(fresh, tpl)
+			}
+			return tpl, nil
+		},
+	})
 }
 
 // PreviewInstance 发布前预览（issue #14 验收 3）：按指定（或默认）模板渲染实体。
@@ -68,15 +75,13 @@ func (s *Service) ListArtifactHashes(ctx context.Context) (hashes []string, err 
 }
 
 // rebuildInstance 实例重建主链：编译发布 → 新快照 → 新产物行 → 指针切换 → 依赖落库。
+//
+// 实例级互斥由 publishAllLangs 的分段锁提供（PERF-01）：编译与产物落盘在锁外，
+// 只有冻结与「版本分配 / 落库 / 激活 / 指针推进」两段在锁内。
 func (s *Service) rebuildInstance(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	tpl *contenttemplatecontract.ResolvedTemplate) (res *presentationdto.InstanceResp, err error) {
-	// 实例级互斥：并发重建同一实例时串行化，避免版本号竞态与指针交错。
-	lock := s.lockInstance(inst.EntityType, inst.EntityID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	if _, err = s.publishAllLangs(ctx, inst, tpl, inst.URLPath, nil); err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	intent publishIntent) (res *presentationdto.InstanceResp, err error) {
+	if _, err = s.publishAllLangs(ctx, inst, intent); err != nil {
+		return nil, publishFailedErr(err)
 	}
 	return s.toResp(ctx, inst)
 }
