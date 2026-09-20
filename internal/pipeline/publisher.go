@@ -102,6 +102,12 @@ type BuildInput struct {
 	// 指针而不是值：编译与「问依赖」是两个阶段（compileArtifact 先编译、再调 deps），
 	// 值传递多次之后只有指针能让后一阶段看到前一阶段的记录。
 	Usage *CompileUsage
+	// Diagnostics 编译期降级归因收集器（可选，审计 ARCH-05）。
+	//
+	// 与 Usage 完全同一条路子（指针 + 编译期填充 + 后一阶段读取）：编译器把
+	// 「被容忍的降级」记进来，compileArtifact 读取后写进 Manifest.diagnostics。
+	// 发布期的失败路径不需要它 —— 构建失败时没有产物，也就没有 Manifest。
+	Diagnostics *builder.DegradeCollector
 }
 
 // CompileUsage 收集编译期**真实消费**的产物依赖线索（审计 VIS-006）。
@@ -414,7 +420,10 @@ func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion in
 	}
 	rec.Status = StateBuilding
 	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
-	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: rec.Path, DocJSON: docSnapshot, Usage: &CompileUsage{}}
+	in := BuildInput{
+		PageID: pageID, Lang: rec.Lang, Path: rec.Path, DocJSON: docSnapshot,
+		Usage: &CompileUsage{}, Diagnostics: builder.NewDegradeCollector(),
+	}
 	p.mu.Unlock()
 
 	// 锁外：确定性编译 + 产物落盘。
@@ -563,7 +572,11 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 		return oldPath, err
 	}
 	version := rec.Version
-	in := BuildInput{PageID: pageID, Lang: rec.Lang, Path: nPath, DocJSON: append([]byte(nil), rec.DocumentJSON...), Usage: &CompileUsage{}}
+	in := BuildInput{
+		PageID: pageID, Lang: rec.Lang, Path: nPath,
+		DocJSON: append([]byte(nil), rec.DocumentJSON...),
+		Usage:   &CompileUsage{}, Diagnostics: builder.NewDegradeCollector(),
+	}
 	p.mu.Unlock()
 
 	// 2. 锁外：基于新 URL 构建（慢操作不阻塞其他页面）。
@@ -641,6 +654,10 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 	if p.deps != nil {
 		m.Dependencies = p.deps(ctx, in)
 	}
+	// 被容忍的降级归因进 Manifest（审计 ARCH-05）。空集时字段被 omitempty 省略，
+	// 产物字节与改造前逐字节一致；有归因时 hash 随之改变 —— 这正是「这份产物少了东西」
+	// 这件事值得被记录的理由。
+	m.Diagnostics = in.Diagnostics.Items()
 	a, err = NewArtifact(html, m)
 	if err != nil {
 		return nil, err

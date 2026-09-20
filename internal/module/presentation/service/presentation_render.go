@@ -122,7 +122,12 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	// 渲染期经 RenderContext.UseMenu 记录本次真正消费了哪个位置，构建后写进依赖表。
 	// 不收集的表现是「改了导航，自动发布详情页永远停在旧字节」且没有任何报错。
 	usage := &pipeline.CompileUsage{}
-	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, targetLangs, tpl, usage)
+	// 降级归因收集器（审计 ARCH-05，与手工页面路径同一口径）：编译期记录「被容忍的
+	// 降级」，构建成功后写进产物 Manifest.Diagnostics；失败路径根本产不出 Manifest。
+	diags := builder.NewDegradeCollector()
+	// 发布模式：显式绑定但拿不到的结构模板让本次构建失败（手工 Page 侧同一条判据）。
+	html, err := s.renderHTML(ctx, entityType, entityID, urlPath, projectID, lang, targetLangs, tpl, usage,
+		builder.CompileModePublish, diags)
 	if err != nil {
 		return built, err
 	}
@@ -155,6 +160,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		BuildInputHash:            sourceHash,
 		Lang:                      strings.TrimSpace(lang),
 		Dependencies:              deps,
+		Diagnostics:               diags.Items(),
 	})
 	if err != nil {
 		return built, err
@@ -178,8 +184,13 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 // targetLangs 是本次批次准备上线的语言集合（SEO-026，预览传 nil）：hreflang 互指
 // 按它生成，而不是回头读「某个语言是否已结案」—— 批次是「先构建全部语言、再逐语言
 // 结案」，账本行在构建时还不存在，读它会让首发布产出的互指全部落空。
+//
+// mode 为本次编译的用途（审计 ARCH-05）：发布传 CompileModePublish（显式绑定但拿不到
+// 的结构模板直接失败），预览传 CompileModePreview（降级为带归因的占位）。
+// diags 为降级归因收集器（预览传 nil）：发布期收集的容忍降级写进产物 Manifest。
 func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath, projectID, lang string,
-	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate, usage *pipeline.CompileUsage) (html []byte, err error) {
+	targetLangs []string, tpl *contenttemplatecontract.ResolvedTemplate, usage *pipeline.CompileUsage,
+	mode builder.CompileMode, diags *builder.DegradeCollector) (html []byte, err error) {
 	page, err := builder.ParsePage(tpl.Document)
 	if err != nil {
 		return nil, err
@@ -229,6 +240,11 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		builder.WithComponentSet(set),
 		builder.WithContentResolver(resolver),
 		builder.WithBlockResolver(blockAdapter),
+		// 引用失败策略（审计 ARCH-05）：发布期显式绑定但拿不到的块 / 模板直接失败。
+		builder.WithCompileMode(mode),
+	}
+	if diags != nil {
+		compileOpts = append(compileOpts, builder.WithDegradeCollector(diags))
 	}
 	compileOpts = append(compileOpts, pluginOpts...)
 	compileOpts = append(compileOpts, pipeline.LocaleCompileOptions(lang)...)
@@ -263,12 +279,23 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		compileOpts = append(compileOpts, builder.WithUsageRecorder(usage))
 	}
 	// 结构槽位（审计 VIS-001）：页眉 / 页脚与模板主体走同一次编译，不再拼字符串。
-	// 结构模板优先、块绑定回退（pipeline.BuildStructureSlots，与手工页面路径**同一份实现**）：
-	// 模板不可用时返回的解析器就是原块解析器、槽位也回退成块绑定 —— 存量站点产物与改造前一致。
+	// 结构模板优先、块绑定回退（pipeline.BuildStructureSlots，与手工页面路径**同一份实现**）。
+	// **回退只在预览成立**（审计 ARCH-05）：发布路径下显式绑定了模板却拿不到（不存在 /
+	// 跨工程 / 文档非法）直接返回错误，由调用方让本次构建整体失败 —— 自动发布实例同样
+	// 不该把缺了页眉的详情页推上线。没绑定时按显式设计处理。
 	//
 	// 必须在取词器构造**之前**算出槽位：结构模板文档不在块表里，它的可翻译文本要经
 	// 叠加了解析器的 slotResolver 才能进候选集合（否则模板里的文案永远不翻译且无人报错）。
-	slotList, slotResolver, _ := pipeline.BuildStructureSlots(ctx, s, projectID, page.Settings.Structure, blockAdapter)
+	slotRes, slotErr := pipeline.BuildStructureSlots(ctx, pipeline.StructureSlotInput{
+		Port: s, ProjectID: projectID, Structure: page.Settings.Structure,
+		Inner: blockAdapter, Mode: mode, Diagnostics: diags,
+	})
+	if slotErr != nil {
+		// 结构绑定拿不到 = 产物必然缺一截：整体失败（不落盘、不落库、不激活），
+		// 线上保持原样。预览路径不会走到这里（预览模式按降级处理）。
+		return nil, slotErr
+	}
+	slotList, slotResolver := slotRes.Slots, slotRes.Resolver
 	var contentTranslator *i18n.ContentTranslator
 	var contentCandidates int
 	compileOpts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(

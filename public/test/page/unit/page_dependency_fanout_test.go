@@ -9,8 +9,12 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	blockdto "go_wp/internal/module/block/dto"
+	blockmodel "go_wp/internal/module/block/model"
+	blockservice "go_wp/internal/module/block/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	"go_wp/internal/pipeline"
@@ -18,6 +22,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// headerBlockDocument 页眉块文档：本用例关心的是「块依赖键」，
+// 但它必须先是一个**真实存在**的块（见 TestPageDependencyBlockAndI18nKeys 的说明）。
+const headerBlockDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"id":"hdr-1","type":"core.text","props":{"mode":"plaintext","text":"页眉"}}]}`
 
 // contentBoundPage 创建绑定内容实体的页面（kind=article 才能带 content_target）。
 func contentBoundPage(t *testing.T, svc pagecontract.PageService, projectID, path, entityID string) string {
@@ -92,10 +100,20 @@ func TestPageDependencyPreciseFanout(t *testing.T) {
 
 // TestPageDependencyBlockAndI18nKeys 文档派生的块依赖与 i18n 依赖落库并可精确反查。
 func TestPageDependencyBlockAndI18nKeys(t *testing.T) {
-	db, svc, _, projectID := newPageService(t)
+	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
 
-	blockID := uuid.NewString()
+	// 块必须是**真实存在**的那一个（审计 ARCH-05）：绑定一个不存在的块，发布期会直接
+	// 失败（「绑定了但拿不到」= 失败），本用例的构建也就无从谈起。这里补真实父行，
+	// 而不是让被测行为退回「静默降级」——后者正是本条整改要消灭的东西。
+	header, err := blockservice.NewService(blockmodel.NewBlockModel(db), projects).Create(ctx, &blockdto.CreateReq{
+		ProjectID: projectID, Name: "页眉块", Kind: "header",
+		Document: json.RawMessage(headerBlockDocument),
+	})
+	if err != nil {
+		t.Fatalf("创建页眉块失败: %v", err)
+	}
+	blockID := header.ID
 	doc := `{"settings":{"layout":{"mode":"full"},"structure":{"headerBlockId":"` + blockID + `"}},"root":[]}`
 	page := createPage(t, svc, projectID, "/with-header", doc).ID
 	other := createPage(t, svc, projectID, "/plain", pageDocument).ID

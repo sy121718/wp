@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"go_wp/internal/builder/source"
@@ -23,6 +24,10 @@ type RenderContext struct {
 	// renderPanel 菜单悬浮面板的块渲染闭包（见 SetPanelRenderer / RenderPanel）。
 	// 私有：注入方（builder）与消费方（navViewOf）都在同一编译流程内，不对外暴露。
 	renderPanel func(blockID string) (string, error)
+	// refFailure 引用块未能展开时的策略钩子（见 SetRefFailureHandler / RefFailed）。
+	// 私有：注入方（builder.Compile）与消费方（jetview 的展开层）都在同一流程内；
+	// nil 表示「一律降级为占位」。
+	refFailure func(RefFailure) error
 	// Context 发起构建的请求上下文（构建期查库解析集合/内容时传播）。
 	// 未注入（nil）时解析器按后台任务语义处理。
 	Context context.Context
@@ -186,6 +191,82 @@ type BlockResolver interface {
 	ResolveBlockRoot(blockID string) ([]*Node, error)
 }
 
+// 引用降级归因码（稳定枚举，进产物占位属性与 Manifest 诊断）。
+//
+// 为什么是「码」而不是错误原文：错误文本随实现与存储状态变动（驱动措辞、DB 报错），
+// 写进产物字节会破坏「同一输入 → 同一字节」的确定性不变量，而诊断要的本来就是**分类**
+// （哪一类不可用），原文只进日志。
+const (
+	// RefReasonResolverMissing 未注入块解析器：这次编译根本没有解析能力。
+	RefReasonResolverMissing = "ref_resolver_missing"
+	// RefReasonUnavailable 解析器报错：块不存在 / 跨工程 / 文档非法等。
+	RefReasonUnavailable = "ref_unavailable"
+	// RefReasonEmpty 解析成功但没有任何 root 节点（块存在但是空的）。
+	//
+	// 与上面两类分开：它**不是**配置错误，而是作者的正常中间态（块建好了还没写内容），
+	// 发布期不因为它失败，只记一条诊断。
+	RefReasonEmpty = "ref_empty"
+	// RefReasonTemplateUnavailable 结构槽位绑定的结构模板拿不到（不存在 / 跨工程 / 非法）。
+	RefReasonTemplateUnavailable = "ref_template_unavailable"
+	// RefReasonTemplateEmpty 结构模板存在但没有任何 root 节点（空模板，回退块绑定）。
+	RefReasonTemplateEmpty = "ref_template_empty"
+)
+
+// RefDegradeError 带稳定归因码的引用解析失败。
+//
+// 解析器只返回 error，而占位与诊断需要的是**稳定的原因码**。解析器用本类型声明
+// 「这是哪一类不可用」，渲染层据此归类；未包装的错误统一归为 RefReasonUnavailable。
+type RefDegradeError struct {
+	// Reason 归因码（RefReason* 常量）。
+	Reason string
+	// Err 原始错误（只进日志，不进产物）。
+	Err error
+}
+
+// Error 实现 error；Reason 与 Err 都为空时返回空串（不 panic）。
+func (e *RefDegradeError) Error() string {
+	switch {
+	case e == nil:
+		return ""
+	case e.Err != nil:
+		return e.Err.Error()
+	default:
+		return e.Reason
+	}
+}
+
+// Unwrap 保留错误链：归因包装不应吞掉底层原因（errors.Is/As 仍可下探）。
+func (e *RefDegradeError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// RefDegradeReason 从错误链里取稳定归因码；没有包装时返回 fallback。
+func RefDegradeReason(err error, fallback string) string {
+	var de *RefDegradeError
+	if errors.As(err, &de) && de.Reason != "" {
+		return de.Reason
+	}
+	return fallback
+}
+
+// RefFailure 一次「引用块未能展开」的上下文：节点、来源与归因码。
+//
+// 它同时服务两件事：把归因挂到占位视图上（预览可定位），
+// 以及按调用方策略决定「这次降级是否必须让编译失败」（发布期显式绑定不可用）。
+type RefFailure struct {
+	// NodeID / NodeType 引用节点本身（core.globalref / core.layoutSlot）。
+	NodeID, NodeType string
+	// BlockID 被引用的来源 ID：全局块 ID，或结构模板槽位的构建期虚拟引用 ID。
+	BlockID string
+	// Slot 结构槽位名（仅结构槽位节点非空）：诊断里据此区分「槽位绑定」与「文档内引用」。
+	Slot string
+	// Reason 稳定归因码（RefReason* 常量）。
+	Reason string
+}
+
 // NavigationItem 导航菜单项（构建期解析结果，core.nav 消费）。
 // 与组件包的 Item 分离：core 不依赖组件包，装配层负责两者转换。
 type NavigationItem struct {
@@ -264,6 +345,26 @@ func (c *RenderContext) RenderPanel(blockID string) (string, error) {
 		return "", nil
 	}
 	return c.renderPanel(blockID)
+}
+
+// SetRefFailureHandler 注入「引用块未能展开」的策略钩子。
+//
+// 语义：fn 返回非 nil error 表示这次降级必须让编译失败（发布期「显式绑定但拿不到」），
+// 返回 nil 表示降级为占位。未注入（nil）等价于「一律降级」—— 预览、片段渲染、
+// 单测直连组件不必显式关掉它，行为与改造前一致。
+func (c *RenderContext) SetRefFailureHandler(fn func(RefFailure) error) {
+	if c == nil {
+		return
+	}
+	c.refFailure = fn
+}
+
+// RefFailed 上报一次引用失败；未注入钩子时返回 nil（按降级处理）。
+func (c *RenderContext) RefFailed(f RefFailure) error {
+	if c == nil || c.refFailure == nil {
+		return nil
+	}
+	return c.refFailure(f)
 }
 
 // SetArchiveEntity 注入当前归档实例的实体（构建期由装配层传入）。

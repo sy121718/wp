@@ -15,6 +15,7 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 
+	"go_wp/internal/builder"
 	"go_wp/internal/pipeline"
 
 	"gorm.io/gorm"
@@ -238,7 +239,11 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	// targetLangs 传 nil：预览没有批次概念，语言切换器按线上访问面现状输出；而且
 	// urlPath 为空时 logicalPath 也是空，alternates 分支本来就不会走（SEO-026）。
 	// usage 传 nil：预览不落依赖表，收集编译期消费线索没有写入点。
-	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl, nil)
+	// 模式为预览（审计 ARCH-05）：绑定的结构模板 / 块拿不到时**不失败**（编辑期配置
+	// 不完整是常态），降级为带归因的占位；发布路径传 CompileModePublish，那里是硬失败。
+	// diags 传 nil 同上：预览不产出 Manifest，归因在占位上。
+	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl, nil,
+		builder.CompileModePreview, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
 	}

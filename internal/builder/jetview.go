@@ -1273,7 +1273,8 @@ func globalrefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	}
 	// 根文档静态扫描看不到块内部的嵌套引用；两条发布路径都以实际消费记录补齐依赖。
 	ctx.UseBlock(blockID)
-	return blockRefViewOf(node, topLevel, ctx, globalrefPkg.Type, "globalref", blockID)
+	// slot 传空：文档内的 globalref 不是结构槽位绑定，诊断里要能区分这两类。
+	return blockRefViewOf(node, topLevel, ctx, globalrefPkg.Type, "globalref", blockID, "")
 }
 
 // layoutSlotViewOf 转换 core.layoutSlot 节点：结构槽位的展开规则与 globalref 完全一致，
@@ -1284,13 +1285,18 @@ func layoutSlotViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
-	return blockRefViewOf(node, topLevel, ctx, layoutslotPkg.Type, "layoutslot", blockID)
+	// 槽位名进诊断/失败消息：作者看到的是「页眉的块没了」，而不是一个陌生节点 ID。
+	// 同一次 decode 已在 BlockIDOf 里通过，这里不可能失败（失败留空即可）。
+	slot, _ := layoutslotPkg.SlotOf(node)
+	return blockRefViewOf(node, topLevel, ctx, layoutslotPkg.Type, "layoutslot", blockID, slot)
 }
 
 // blockRefViewOf 转换「引用全局块的节点」：占位渲染或展开块内容。
 //
 // 含循环引用与深度防护：同一块 ID 不允许嵌套展开（a→b→a），栈深超限报错。
-func blockRefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext, refType, template, blockID string) (*nodeView, error) {
+// slot 非空表示这是结构槽位节点（core.layoutSlot）：引用没能展开时要把归因上报给
+// 注入的引用失败策略 —— 发布期显式绑定不可用必须失败，预览期降级为带归因的占位。
+func blockRefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext, refType, template, blockID, slot string) (*nodeView, error) {
 	for _, id := range ctx.BlockStack {
 		if id == blockID {
 			return nil, fmt.Errorf("节点 %s: 全局块循环引用（%s → %s）", node.ID, strings.Join(ctx.BlockStack, " → "), blockID)
@@ -1306,6 +1312,17 @@ func blockRefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext, ref
 	}
 
 	if view.IsPlaceholder {
+		// 槽位名挂到占位上（文档内 globalref 的 slot 为空）：预览里作者看到的是
+		// 「页眉没展开」，而不是一个没有语义的空 div。归因属性由组件模板输出。
+		view.Slot = slot
+		// 归因 + 策略：这里同时是「可定位占位」与「发布期失败」的唯一判定点。
+		// 一处集中而不是让每个调用方各自判断，是因为「哪条路径忘了拦」正是本问题的成因。
+		fail := core.RefFailure{
+			NodeID: node.ID, NodeType: refType, BlockID: blockID, Slot: slot, Reason: view.Reason,
+		}
+		if ferr := ctx.RefFailed(fail); ferr != nil {
+			return nil, fmt.Errorf("节点 %s: %w", node.ID, ferr)
+		}
 		return &nodeView{
 			Type: refType, Template: template, NodeID: node.ID,
 			Classes: core.NodeClass(node.ID), TopLevel: topLevel, V: view,

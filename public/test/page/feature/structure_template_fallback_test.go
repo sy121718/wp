@@ -1,23 +1,23 @@
 package feature
 
-// structure_template_fallback_test.go — 结构模板的**回退防线**（本批最关键的存量保护）。
+// structure_template_fallback_test.go — 结构模板的**发布 / 预览分界**（审计 ARCH-05）。
 //
-// 判据：settings.structure 同时有结构模板绑定与块绑定时——
-//   - 模板可用 → 产物是模板内容，依赖登记 content_template:{id}；
-//   - 模板不存在 / 文档非法 → **回退到块绑定**，产物里必须是块的内容；
-//   - 回退时**不得**登记 content_template:{id}。
+// 判据（本次整改唯一的分界）：
+//   - 显式绑定了结构模板却拿不到（不存在 / 跨工程 / 文档非法）→ **发布失败**，
+//     且失败整体失败：不产生暂存产物、不推进指针（线上保持原样）；
+//   - 同一份文档的**预览不失败**：有块绑定则回退到块（存量保护），没有块绑定则留下
+//     带归因的槽位占位（哪个槽位 / 哪套模板 / 为什么没展开）；
+//   - 回退时**不得**登记 content_template:{id}（依赖表是「实际消费了什么」的投影）。
 //
-// 第三条同样重要：回退却登记依赖，会让依赖表里留下一条永命中不了的记录 ——
-// 读者按它以为「改了那套模板本页会重建」，而本页根本没在用那套模板。
-//
-// 缺失这组断言的风险：存量站的页眉页脚在一次模板绑定改造后整片消失，
-// 而构建照常成功、只在日志里留一行 Warn。
+// 为什么第一条必须单独钉住：旧行为在两条路径上都静默回退，于是「删除已绑定模板」
+// 会被发布成一份缺页眉的页面，而构建接口返回成功 —— 这正是 ARCH-05 的问题本身。
 
 import (
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -49,7 +49,7 @@ const structureTemplateDocument = `{"settings":{"layout":{"mode":"full"}},"root"
 //
 // 生产侧是 internal/routers/structure_template_port.go 的同形适配（未导出，测试包拿不到）；
 // presentation 侧是它自己的服务方法。三处都只做同一件事：收窄成「一份文档」，
-// 失败一律让调用方回退。
+// 失败一律交给调用方按编译模式处置。
 type structureTemplatePortForTest struct {
 	svc *contenttemplateservice.Service
 }
@@ -142,6 +142,16 @@ func readBuiltHTML(t *testing.T, stagedHash string) string {
 	return string(html)
 }
 
+// readBuiltManifest 读取暂存产物的 manifest.json。
+func readBuiltManifest(t *testing.T, stagedHash string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("GO_WP_ARTIFACT_ROOT"), "artifacts", stagedHash, "manifest.json"))
+	if err != nil {
+		t.Fatalf("读取 manifest 失败: %v", err)
+	}
+	return string(raw)
+}
+
 // countStagedDepRows 统计「当前暂存/活跃产物」声明的某条依赖。
 func countStagedDepRows(t *testing.T, db *gorm.DB, pageID, kind, key string) int64 {
 	t.Helper()
@@ -155,8 +165,36 @@ func countStagedDepRows(t *testing.T, db *gorm.DB, pageID, kind, key string) int
 	return n
 }
 
-// TestPageStructureTemplateMissingFallsBackToBlock 模板 ID 不存在时的回退防线。
-func TestPageStructureTemplateMissingFallsBackToBlock(t *testing.T) {
+// stagedArtifactIDOf 读页面当前暂存的产物 ID（空串 = 没有暂存）。
+func stagedArtifactIDOf(t *testing.T, svc pagecontract.PageService, projectID, pageID string) string {
+	t.Helper()
+	detail, err := svc.Detail(context.Background(), &pagedto.DetailReq{ProjectID: projectID, ID: pageID})
+	if err != nil {
+		t.Fatalf("查询页面失败: %v", err)
+	}
+	if detail.StagedArtifactID == nil {
+		return ""
+	}
+	return *detail.StagedArtifactID
+}
+
+// previewOf 用页面当前草稿文档跑一次预览编译。
+func previewOf(t *testing.T, svc pagecontract.PageService, projectID, pageID, currentPath string) string {
+	t.Helper()
+	ctx := context.Background()
+	detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: pageID})
+	if err != nil {
+		t.Fatalf("查询页面失败: %v", err)
+	}
+	html, err := svc.CompilePreview(ctx, detail.DraftDocument, projectID, currentPath, "")
+	if err != nil {
+		t.Fatalf("预览不该失败（编辑期容忍配置缺失）: %v", err)
+	}
+	return string(html)
+}
+
+// TestPageStructureTemplateMissingFailsPublish 模板 ID 不存在：发布必须失败，不产生产物。
+func TestPageStructureTemplateMissingFailsPublish(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 	injectStructureTemplatePort(t, db, svc)
@@ -167,36 +205,75 @@ func TestPageStructureTemplateMissingFallsBackToBlock(t *testing.T) {
 		"headerBlockId":    headerID,
 		"headerTemplateId": missing,
 	})
-
 	pageID, blockID, templateID := createPageAndReadStructure(t, svc, projectID, "/structure-missing")
-	// 前提断言：快照必须**同时**带上两个通道，否则本用例测的不是回退。
+	// 前提断言：快照必须**同时**带上两个通道 —— 「绑定了模板但拿不到」正是在这种
+	// 「模板优先 + 有块可回退」的存量配置下被静默降级的。
 	if templateID != missing || blockID != headerID {
 		t.Fatalf("settings.structure 快照应同时保留模板与块绑定: block=%s template=%s", blockID, templateID)
 	}
 
-	built, err := svc.Build(ctx, &pagedto.BuildReq{ID: pageID})
-	if err != nil {
-		t.Fatalf("构建失败: %v", err)
+	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: pageID})
+	if err == nil {
+		t.Fatal("绑定的结构模板不存在时发布必须失败（旧行为：静默回退到块绑定并发布成功）")
 	}
-	html := readBuiltHTML(t, built.StagedHash)
-	if !containsBytes([]byte(html), []byte("FALLBACK-HEADER-BLOCK")) {
-		t.Fatalf("模板不存在时必须回退到块绑定，产物里应出现块内容: %s", html[:min(len(html), 400)])
+	if !strings.Contains(err.Error(), "结构槽位 header") || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("失败原因必须能定位到槽位与那份模板，实际: %v", err)
 	}
-	if containsBytes([]byte(html), []byte("STRUCTURE-TEMPLATE-HEADER")) {
-		t.Fatalf("模板不存在时不该渲染出模板内容: %s", html[:min(len(html), 400)])
+	// 失败即整体失败：不产生暂存产物、不写依赖行 —— 线上保持原样。
+	if got := stagedArtifactIDOf(t, svc, projectID, pageID); got != "" {
+		t.Fatalf("发布失败不该产生暂存产物，实际 %q", got)
 	}
-	// 依赖侧：回退后登记的是块，且**不得**留下命中不了的 content_template 行。
-	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindBlock, "block:"+headerID); n != 1 {
-		t.Fatalf("回退后应登记块依赖 block:%s，实际 %d 条", headerID, n)
+	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindBlock, "block:"+headerID); n != 0 {
+		t.Fatalf("发布失败不该登记任何依赖，实际块依赖 %d 条", n)
 	}
 	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindContentTemplate, "content_template:"+missing); n != 0 {
-		t.Fatalf("未使用的模板不该被登记为依赖，实际 %d 条", n)
+		t.Fatalf("发布失败不该登记任何依赖，实际模板依赖 %d 条", n)
+	}
+
+	// 预览：不失败，且按「有块可回退」的存量保护回退到块绑定。
+	preview := previewOf(t, svc, projectID, pageID, "/structure-missing")
+	if !containsBytes([]byte(preview), []byte("FALLBACK-HEADER-BLOCK")) {
+		t.Fatalf("预览应回退到块绑定，产物里必须出现块内容: %s", preview[:min(len(preview), 400)])
+	}
+	if containsBytes([]byte(preview), []byte("STRUCTURE-TEMPLATE-HEADER")) {
+		t.Fatalf("模板拿不到时不该渲染出模板内容: %s", preview[:min(len(preview), 400)])
 	}
 }
 
-// TestPageStructureTemplateInvalidDocumentFallsBackToBlock 模板存在但文档非法时的回退防线
-// （含「模板可用时优先于块」的正向断言）。
-func TestPageStructureTemplateInvalidDocumentFallsBackToBlock(t *testing.T) {
+// TestPageStructureTemplateMissingPreviewDegradesWithAttribution 无块可回退时，
+// 预览留下**可归因**的槽位占位（槽位 / 节点 / 模板 / 原因），发布仍然失败。
+func TestPageStructureTemplateMissingPreviewDegradesWithAttribution(t *testing.T) {
+	db, svc, projectID := newPageService(t)
+	ctx := context.Background()
+	injectStructureTemplatePort(t, db, svc)
+
+	missing := uuid.NewString()
+	bindThemeStructure(t, db, projectID, map[string]any{"headerTemplateId": missing})
+	pageID, blockID, templateID := createPageAndReadStructure(t, svc, projectID, "/structure-missing-attr")
+	if templateID != missing || blockID != "" {
+		t.Fatalf("本用例要求只绑定模板、不绑定块: block=%q template=%q", blockID, templateID)
+	}
+
+	if _, err := svc.Build(ctx, &pagedto.BuildReq{ID: pageID}); err == nil {
+		t.Fatal("绑定的结构模板不存在时发布必须失败")
+	}
+
+	preview := previewOf(t, svc, projectID, pageID, "/structure-missing-attr")
+	for _, want := range []string{
+		`data-sky-id="__layout_header"`,
+		`data-sky-slot="header"`,
+		`data-sky-ref="__structure_template__` + missing + `"`,
+		`data-sky-degrade="ref_template_unavailable"`,
+	} {
+		if !containsBytes([]byte(preview), []byte(want)) {
+			t.Fatalf("预览占位必须可归因：缺 %s\n%s", want, preview[:min(len(preview), 800)])
+		}
+	}
+}
+
+// TestPageStructureTemplateInvalidDocumentFailsPublish 模板存在但文档非法：
+// 发布失败且**已暂存的旧产物保持**；预览按存量保护回退到块绑定。
+func TestPageStructureTemplateInvalidDocumentFailsPublish(t *testing.T) {
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 	tplSvc := injectStructureTemplatePort(t, db, svc)
@@ -233,6 +310,7 @@ func TestPageStructureTemplateInvalidDocumentFallsBackToBlock(t *testing.T) {
 	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindContentTemplate, "content_template:"+tpl.ID); n != 1 {
 		t.Fatalf("模板被消费时应登记 content_template:%s，实际 %d 条", tpl.ID, n)
 	}
+	stagedBefore := stagedArtifactIDOf(t, svc, projectID, pageID)
 
 	// 2) 把模板的当前版本文档改成非法（绕过服务校验，模拟历史脏数据 / 手工改库）。
 	if err := db.Exec(`UPDATE content_template_versions SET document = ?::jsonb WHERE template_id = ?`,
@@ -240,21 +318,24 @@ func TestPageStructureTemplateInvalidDocumentFallsBackToBlock(t *testing.T) {
 		t.Fatalf("构造非法模板文档失败: %v", err)
 	}
 
-	built, err = svc.Build(ctx, &pagedto.BuildReq{ID: pageID})
-	if err != nil {
-		t.Fatalf("模板非法时构建不应失败（回退路径）: %v", err)
+	_, err = svc.Build(ctx, &pagedto.BuildReq{ID: pageID})
+	if err == nil {
+		t.Fatal("模板文档非法时发布必须失败（旧行为：静默回退到块绑定并发布成功）")
 	}
-	html = readBuiltHTML(t, built.StagedHash)
-	if !containsBytes([]byte(html), []byte("FALLBACK-HEADER-BLOCK")) {
-		t.Fatalf("模板文档非法时必须回退到块绑定: %s", html[:min(len(html), 400)])
+	if !strings.Contains(err.Error(), "结构槽位 header") || !strings.Contains(err.Error(), tpl.ID) {
+		t.Fatalf("失败原因必须能定位到槽位与那套模板，实际: %v", err)
 	}
-	if containsBytes([]byte(html), []byte("STRUCTURE-TEMPLATE-HEADER")) {
-		t.Fatalf("模板文档非法时不该渲染出模板内容: %s", html[:min(len(html), 400)])
+	// 关键验收：失败不破坏已有产物 —— 暂存指针仍指向那次成功构建的产物，字节不变。
+	if got := stagedArtifactIDOf(t, svc, projectID, pageID); got != stagedBefore || got == "" {
+		t.Fatalf("发布失败不得改动暂存指针：失败前 %q，失败后 %q", stagedBefore, got)
 	}
-	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindContentTemplate, "content_template:"+tpl.ID); n != 0 {
-		t.Fatalf("回退后不该登记 content_template:%s，实际 %d 条", tpl.ID, n)
+	if again := readBuiltHTML(t, built.StagedHash); again != html {
+		t.Fatal("发布失败不得改动已有产物字节")
 	}
-	if n := countStagedDepRows(t, db, pageID, pipeline.DepKindBlock, "block:"+headerID); n != 1 {
-		t.Fatalf("回退后应登记块依赖 block:%s，实际 %d 条", headerID, n)
+
+	// 3) 预览：不失败，按存量保护回退到块绑定。
+	preview := previewOf(t, svc, projectID, pageID, "/structure-invalid")
+	if !containsBytes([]byte(preview), []byte("FALLBACK-HEADER-BLOCK")) {
+		t.Fatalf("预览应回退到块绑定: %s", preview[:min(len(preview), 400)])
 	}
 }

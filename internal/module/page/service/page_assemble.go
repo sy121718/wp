@@ -63,7 +63,10 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 	// 语言来自构建输入（内核按 PageRecord.Lang 注入，见 pipeline.BuildInput）；
 	// 访问路径仍取页面记录的逻辑路径，前缀在 compileDocument 内单点计算。
 	// 依赖线索记录器（审计 VIS-006）：构建路径传入，编译期记录消费过的系统页面槽位。
-	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang, in.Usage, true)
+	// 发布模式（CompileModePublish）：显式绑定但拿不到的结构依赖让本次构建失败。
+	// 归因收集器来自内核的 BuildInput（与 Usage 同一条路子），编译期填充、由内核写进 Manifest。
+	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang, in.Usage, true,
+		builder.CompileModePublish, in.Diagnostics)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "页面编译失败")
@@ -107,7 +110,11 @@ func (s *Service) syncMediaRefs(ctx context.Context, pageID, pagePath string, ht
 // **预览传 false** —— 预览是编辑期行为，作者在看「这份文档会长什么样」，
 // 与「哪些语言已经发布过」无关。按发布面过滤会让刚加的语言在预览里凭空消失，
 // 作者只会以为切换器坏了。
-func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool) ([]byte, error) {
+// mode 为本次编译的用途（审计 ARCH-05）：发布路径传 CompileModePublish —— 显式绑定但
+// 拿不到的结构模板会让这里直接失败；预览路径传 CompileModePreview —— 降级为带归因的占位。
+// diags 为降级归因收集器（预览传 nil）：发布路径由内核经 BuildInput 注入，
+// 编译期收集的「被容忍的降级」最终写进产物 Manifest。
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector) ([]byte, error) {
 	// 组件模板 Set + 插件装配（EDT-003 共用 pipeline.ComponentSetWithPlugins）。
 	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
 	set, pluginOpts, err := pipeline.ComponentSetWithPlugins(asm)
@@ -120,6 +127,10 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
 	opts := []builder.CompileOption{
 		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
+		builder.WithCompileMode(mode),
+	}
+	if diags != nil {
+		opts = append(opts, builder.WithDegradeCollector(diags))
 	}
 	opts = append(opts, pluginOpts...)
 	opts = append(opts, pipeline.LocaleCompileOptions(lang)...)
@@ -167,14 +178,26 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// workbench 画布、main 地标判定各要一份特判，漏一处就是「页眉改了但页面没重建」。
 	// 展开之后，槽位节点的语义与作者手动插入的 core.globalref 完全一致。
 	//
-	// 结构模板优先、块绑定回退（pipeline.BuildStructureSlots，与自动发布实例路径同一份实现）：
-	// 模板未绑定 / 不存在 / 文档非法时，该槽位回退到主题里配的块 —— 存量站的页眉页脚
-	// 不会因为一次模板绑定改造而整片消失。端口未注入（structureTemplates == nil）同理。
+	// 结构模板优先、块绑定回退（pipeline.BuildStructureSlots，与自动发布实例路径同一份实现）。
+	// **回退只在预览成立**（审计 ARCH-05）：发布路径下，显式绑定了模板却拿不到
+	// （不存在 / 跨工程 / 文档非法）直接失败 —— 旧行为会静默回退到块绑定（甚至什么都不渲染），
+	// 一次配错的模板绑定就这样被发布成一份缺页眉的页面，而构建接口返回成功。
+	// 没绑定（该槽位本来就不产出内容）依旧按显式设计处理。
 	//
 	// 顺序：必须在取词器构造**之前**算出槽位 —— 结构模板的文档不在块表里，它的可翻译
 	// 文本要经叠加了解析器的 slotResolver 才能进候选集合（否则模板里的文案永远不翻译，
 	// 且不报任何错）。
-	slotList, slotResolver, _ := pipeline.BuildStructureSlots(ctx, s.structureTemplates, projectID, page.Settings.Structure, resolver)
+	slotRes, slotErr := pipeline.BuildStructureSlots(ctx, pipeline.StructureSlotInput{
+		Port: s.structureTemplates, ProjectID: projectID, Structure: page.Settings.Structure,
+		Inner: resolver, Mode: mode, Diagnostics: diags,
+	})
+	if slotErr != nil {
+		// 结构绑定拿不到 = 本次产物必然缺一截：发布路径必须整体失败（产物不落行、
+		// 暂存指针不推进、线上保持不变），而不是继续编译出一份不完整的页面。
+		// 预览路径不会走到这里（预览模式按降级处理），所以这个错误只可能是发布失败。
+		return nil, fmt.Errorf("%w: %v", errCompileFailed, slotErr)
+	}
+	slotList, slotResolver := slotRes.Slots, slotRes.Resolver
 	// 内容翻译（多语言 P5b，docs/06-D §7.7）：作者在编辑器里填写的文本（按钮文字/
 	// 标题/alt/图注/富文本）按组件 Translatable 白名单替换。每页每语言**构造一次**
 	// 取词器——先收集候选（本页 AST + 页眉/页脚块 + core.globalref 内联块，见

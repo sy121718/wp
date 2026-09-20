@@ -157,6 +157,15 @@ var layoutslotTemplate string
 
 // BuildView 展开槽位引用的块（委托 globalref：两边的 props 都有 blockId，
 // 展开规则（深拷贝 + ID 前缀重写）完全一致，各写一份迟早会漂移）。
+//
+// 展开失败时补上槽位名：占位是给作者看的「这里本该有一份结构」，
+// 只说节点 ID 等于什么都没说（节点 ID 是编译期派生的 __layout_header）。
 func BuildView(node *core.Node, block core.BlockResolver) (globalref.View, []*core.Node, error) {
-	return globalref.BuildView(node, block)
+	view, roots, err := globalref.BuildView(node, block)
+	if view.IsPlaceholder {
+		if slot, serr := SlotOf(node); serr == nil {
+			view.Slot = slot
+		}
+	}
+	return view, roots, err
 }

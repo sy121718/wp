@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+
+	"go_wp/internal/builder"
 )
 
 // 常量：manifest 版本号与支持来源类型（docs/03-pipeline.md §4.2）。
@@ -50,6 +52,15 @@ type Manifest struct {
 	Lang         string            `json:"lang,omitempty"`
 	Dependencies []Dependency      `json:"dependencies"`
 	Files        map[string]string `json:"files"`
+	// Diagnostics 本次构建**被容忍**的降级归因（审计 ARCH-05）。
+	//
+	// 记什么：绑定了、拿得到、但内容为空（ref_empty）这类不构成配置错误的降级，
+	// 以及结构模板为空时的块回退。**不记什么**：显式绑定却拿不到 ——
+	// 那一类在发布模式直接让构建失败，而失败路径根本没有 Manifest 可写。
+	//
+	// omitempty 是确定性与历史兼容的关键：没有诊断时该字段完全不出现在 JSON 里，
+	// 产物字节与加字段前逐字节一致（hash 不变，无需全量重建）。
+	Diagnostics []builder.Degrade `json:"diagnostics,omitempty"`
 }
 
 // 依赖类型常量（docs/03-pipeline.md §8.2 / docs/06-D §10.4）。

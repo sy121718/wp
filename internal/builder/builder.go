@@ -178,6 +178,27 @@ type compileConfig struct {
 	// 但它会让**每一页**的字节都变一次 —— 这是组件更新的正常代价，
 	// 装配层会在启动时把既有产物标记为待重建（见 builder.RegistryVersion 说明）。
 	trackSource string
+	// mode 本次编译的用途（审计 ARCH-05）：零值按预览处理（容忍配置缺失），
+	// 只有发布链路显式声明 CompileModePublish。
+	mode CompileMode
+	// degrade 引用降级归因收集器（可选）：发布链路由装配层注入，
+	// 编译期把「按设计降级」的情形记进它，最终写进 Manifest.Diagnostics。
+	degrade *DegradeCollector
+}
+
+// WithCompileMode 声明本次编译的用途（见 CompileMode）。
+//
+// 默认（不注入）是预览语义：既有调用方 —— 工作台画布、片段渲染、单测直连组件 ——
+// 一行都不用改，行为与改造前逐字一致。
+func WithCompileMode(mode CompileMode) CompileOption {
+	return func(c *compileConfig) { c.mode = mode }
+}
+
+// WithDegradeCollector 注入引用降级归因收集器（可选）。
+//
+// 未注入时归因只体现在预览占位上（发布期失败路径不需要它）。
+func WithDegradeCollector(collector *DegradeCollector) CompileOption {
+	return func(c *compileConfig) { c.degrade = collector }
 }
 
 // WithContentResolver 注入 CMS 内容解析器（构建期动态绑定静态填入，规范 docs/02-C1）。
@@ -601,6 +622,9 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
 	ctx.SetSitePages(cfg.sitePages)
 	ctx.SetUsageRecorder(cfg.usage)
+	// 引用失败策略（审计 ARCH-05）：发布期「显式绑定但拿不到」直接失败，
+	// 预览期降级为带归因的占位；两种情况都经收集器留痕（若注入了收集器）。
+	ctx.SetRefFailureHandler(refFailureHandler(cfg))
 	ctx.SetArchiveEntity(cfg.archiveEntityType, cfg.archiveEntityID)
 	ctx.SetSiteLinkResolver(cfg.siteLinkResolver)
 	// 菜单悬浮面板（超级菜单）：把「块 → HTML」的渲染能力挂到 ctx 上（见 core.RenderContext）。

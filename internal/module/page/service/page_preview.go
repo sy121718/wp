@@ -35,7 +35,12 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID,
 		return nil, fmt.Errorf("%w: %v", pagecontract.ErrPreviewInvalidDocument, err)
 	}
 	// 预览不产出 Manifest，因此不记录依赖线索（usage 传 nil）。
-	html, err = s.compileDocument(ctx, page, projectID, currentPath, buildLang(lang), nil, false)
+	// 也不注入归因收集器：预览的归因体现在**占位上**（哪个槽位 / 哪个节点 / 哪份来源 /
+	// 为什么没展开，见 data-sky-* 属性），没有 Manifest 可写。
+	// 模式为预览：显式绑定但拿不到的结构依赖在这里不失败（编辑期配置不完整是常态），
+	// 与发布路径共用同一份装配管线，这就是两者的唯一差异。
+	html, err = s.compileDocument(ctx, page, projectID, currentPath, buildLang(lang), nil, false,
+		builder.CompileModePreview, nil)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "预览编译失败")
