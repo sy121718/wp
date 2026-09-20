@@ -96,17 +96,32 @@ func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]strin
 // 基于过期的实例状态，丢弃结果并重新冻结重试 —— 而不是把旧输入写回去（L4）。
 func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	intent publishIntent) (primaryArtifactID string, err error) {
+	// 分阶段耗时（PERF-01 验收）：成功与失败都发一条 Info（失败时带原因），
+	// 于是「锁等待还剩多少 / 编译占多少 / 有没有被冲突重试拖长」在生产上可见。
+	metrics := publishSessionMetrics{startedAt: time.Now()}
+	defer func() { s.logPublishSession(inst, metrics, err) }()
+
 	var moved error
 	for attempt := 1; attempt <= publishAttempts; attempt++ {
-		frozen, ferr := s.freezePublish(ctx, inst, intent)
+		metrics.attempts = attempt
+		frozen, freezeTiming, ferr := s.freezePublish(ctx, inst, intent)
+		metrics.lockWaitFreeze += freezeTiming.lockWait
+		metrics.freeze += freezeTiming.work
 		if ferr != nil {
 			return "", ferr
 		}
-		results, cerr := s.compileLangs(ctx, inst, frozen)
+		metrics.langs = len(frozen.langs)
+
+		results, compileWork, cerr := s.compileLangs(ctx, inst, frozen)
+		metrics.compile += compileWork
 		if cerr != nil {
 			return "", cerr
 		}
-		primaryArtifactID, moved = s.commitPublish(ctx, inst, frozen, results)
+
+		var commitTiming phaseTiming
+		primaryArtifactID, commitTiming, moved = s.commitPublish(ctx, inst, frozen, results)
+		metrics.lockWaitCommit += commitTiming.lockWait
+		metrics.commit += commitTiming.work
 		if moved == nil {
 			return primaryArtifactID, nil
 		}

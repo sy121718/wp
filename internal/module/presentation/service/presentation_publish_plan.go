@@ -54,6 +54,7 @@ import (
 	presentationmodel "go_wp/internal/module/presentation/model"
 
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -137,20 +138,26 @@ type publishFreeze struct {
 // （persistMultiLangArtifacts 里的模板 / 路径 / 模式判定）与调用方的响应组装
 // （toResp）看的都应该是库里那一行。
 func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	intent publishIntent) (frozen *publishFreeze, err error) {
+	intent publishIntent) (frozen *publishFreeze, timing phaseTiming, err error) {
 	if inst == nil || strings.TrimSpace(inst.ID) == "" {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, timing, errors.New(presentationenums.ErrNotFound)
 	}
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
+	waitStart := time.Now()
 	lock.Lock()
+	timing.lockWait = time.Since(waitStart)
+	workStart := time.Now()
+	// defer 顺序（LIFO）：先结算本段工作耗时，再放锁 —— 否则「等锁」会把放锁后的
+	// 调度延迟也算进这一段。
 	defer lock.Unlock()
+	defer func() { timing.work = time.Since(workStart) }()
 
 	fresh, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return nil, errors.New(presentationenums.ErrNotFound)
+			return nil, timing, errors.New(presentationenums.ErrNotFound)
 		}
-		return nil, gerr
+		return nil, timing, gerr
 	}
 	*inst = *fresh
 
@@ -160,12 +167,12 @@ func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.Ins
 	// 且再没有任何东西会去发现它。所以这里读不到就整批失败（实例标回未收敛，下次触发重来）。
 	langs, lerr := s.publishLangsOf(ctx, inst.ProjectID)
 	if lerr != nil {
-		return nil, fmt.Errorf("站点语言清单不可读，多语言整批发布中止: %w", lerr)
+		return nil, timing, fmt.Errorf("站点语言清单不可读，多语言整批发布中止: %w", lerr)
 	}
 	tpl, terr := intent.resolveDoc(ctx, inst)
 	if terr != nil {
 		// 输入解析失败单独标记：调用方据此原样透出（口径见 publishInputError）。
-		return nil, &publishInputError{err: terr}
+		return nil, timing, &publishInputError{err: terr}
 	}
 	logicalPath := pipeline.LogicalPathOf(ctx, s.project, inst.ProjectID, intent.logicalPath)
 	if logicalPath == "" {
@@ -179,7 +186,7 @@ func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.Ins
 		tpl:         tpl,
 		mode:        intent.mode,
 		fingerprint: fingerprintOfInstance(fresh),
-	}, nil
+	}, timing, nil
 }
 
 // compileLangs 锁外：逐语言编译 + 产物落盘（Jet 渲染 + 内容寻址写盘，全链最慢的一段）。
@@ -188,22 +195,24 @@ func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.Ins
 // 审计 PERF-01 明确要求「为构建并发设置按预计内存的预算，不盲目提高固定 worker 数」。
 // 这里让「不同发布会话之间」并行（锁已让出），同一批语言仍然串行，峰值与改前一致。
 func (s *Service) compileLangs(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	frozen *publishFreeze) (results []langBuildResult, err error) {
+	frozen *publishFreeze) (results []langBuildResult, work time.Duration, err error) {
+	start := time.Now()
+	defer func() { work = time.Since(start) }()
 	results = make([]langBuildResult, 0, len(frozen.langs))
 	for _, lang := range frozen.langs {
 		accessPath, perr := pipeline.SitePath(frozen.rule, lang, frozen.logicalPath)
 		if perr != nil {
-			return nil, perr
+			return nil, work, perr
 		}
 		// langs 原样透传（SEO-026）：就是本冻结随后逐语言结案的那一份。
 		built, berr := s.buildArtifact(ctx, inst.EntityType, inst.EntityID, accessPath,
 			inst.ProjectID, lang, frozen.langs, frozen.tpl)
 		if berr != nil {
-			return nil, berr
+			return nil, work, berr
 		}
 		results = append(results, langBuildResult{lang: lang, accessPath: accessPath, built: built})
 	}
-	return results, nil
+	return results, work, nil
 }
 
 // commitPublish 锁内：指纹校验 → 发布计划落库 → 逐语言结案 → 推进指针。
@@ -212,22 +221,27 @@ func (s *Service) compileLangs(ctx context.Context, inst *presentationmodel.Inst
 // （标记待重建 + 保留 pending 回执），语义没有任何放宽。返回 errPublishStateMoved
 // 表示校验没过、**没有写入任何东西**，调用方应重新冻结重试。
 func (s *Service) commitPublish(ctx context.Context, inst *presentationmodel.InstanceEntity,
-	frozen *publishFreeze, results []langBuildResult) (primaryArtifactID string, err error) {
+	frozen *publishFreeze, results []langBuildResult) (primaryArtifactID string, timing phaseTiming, err error) {
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
+	waitStart := time.Now()
 	lock.Lock()
+	timing.lockWait = time.Since(waitStart)
+	workStart := time.Now()
+	// defer 顺序（LIFO）：先结算本段工作耗时，再放锁（同 freezePublish）。
 	defer lock.Unlock()
+	defer func() { timing.work = time.Since(workStart) }()
 
 	// L4：先确认实例状态还是我们冻结时的样子。放在任何写入之前 —— 校验失败必须
 	// 是「零副作用」的，否则重试会建立在一半已落库的状态上。
 	current, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return "", errors.New(presentationenums.ErrNotFound)
+			return "", timing, errors.New(presentationenums.ErrNotFound)
 		}
-		return "", gerr
+		return "", timing, gerr
 	}
 	if !frozen.fingerprint.equal(fingerprintOfInstance(current)) {
-		return "", errPublishStateMoved
+		return "", timing, errPublishStateMoved
 	}
 
 	// 本次发布前各语言的活跃产物（回执里的 from）：恢复与审计据此比对「从哪个产物切到
@@ -238,7 +252,7 @@ func (s *Service) commitPublish(ctx context.Context, inst *presentationmodel.Ins
 	primaryArtifactID, snapID, perr := s.persistMultiLangArtifacts(ctx, inst, frozen.tpl, results,
 		now, frozen.logicalPath, frozen.defaultLang, frozen.mode)
 	if perr != nil {
-		return "", perr
+		return "", timing, perr
 	}
 
 	pinged := make([]string, 0, len(results))
@@ -246,7 +260,7 @@ func (s *Service) commitPublish(ctx context.Context, inst *presentationmodel.Ins
 		b := &results[i]
 		if pubErr := s.publishOneLang(ctx, inst, b, previousArtifacts[b.lang], now); pubErr != nil {
 			s.markBatchUnconverged(ctx, inst, pubErr)
-			return "", pubErr
+			return "", timing, pubErr
 		}
 		pinged = append(pinged, b.accessPath)
 	}
@@ -254,10 +268,10 @@ func (s *Service) commitPublish(ctx context.Context, inst *presentationmodel.Ins
 	// 收尾：指针只在全部语言都结案后前进（失败分支不会走到这里）。
 	if ferr := s.finalizeMultiLangBatch(ctx, inst, snapID, primaryArtifactID, now); ferr != nil {
 		s.markBatchUnconverged(ctx, inst, ferr)
-		return "", ferr
+		return "", timing, ferr
 	}
 	s.notifyIndexNow(ctx, inst, pinged...)
-	return primaryArtifactID, nil
+	return primaryArtifactID, timing, nil
 }
 
 // instanceStateFingerprint 实例行上「一次发布提交会覆盖」的那几列的取值快照。
@@ -318,6 +332,108 @@ func (f instanceStateFingerprint) equal(o instanceStateFingerprint) bool {
 		f.activeArtifactID == o.activeArtifactID &&
 		f.stale == o.stale &&
 		f.publishedAt.Equal(o.publishedAt)
+}
+
+// ---- 分阶段耗时观测（PERF-01 验收的另一半）----
+//
+// 审计 PERF-01 的验收写的是「记录等待锁、编译、落盘、激活的独立耗时及 peak heap」：
+// 锁收窄之后，没有这层观测就**没人能回答「锁等待到底还占多少、编译占多少」**，
+// 下次再要收窄覆盖范围只能凭猜。所以每次发布会话（成功或失败都算）发一条结构化 Info：
+// 取锁等待 / 冻结 / 编译（含产物落盘）/ 提交（含激活与指针推进）各段毫秒 + 冲突重试次数。
+//
+// 为什么按「会话」而不是按语言：把语言维度摊开会让日志行数随站点语言数翻倍，而排障要看的是
+//「这一次发布的时间花在哪一段」；语言数作为字段带上，需要时据此判断规模。
+//
+// peak heap 刻意不在这里测：每次发布读一次 runtime.ReadMemStats 会 stop-the-world 采样、
+// 引入 GC 噪声，而且单次发布的峰值基本反映不出「并发预算」这件事（它由同时进行的会话数决定）。
+// 需要内存画像请走报告里给出的可复现方法（-memprofile / gctrace），本包不做埋点。
+
+// phaseTiming 一段的耗时：lockWait 是取实例锁的等待，work 是拿到锁之后实际干活的耗时。
+//
+// 两者分开记：这正是这次要回答的问题 —— 收窄之后锁等待还剩多少。
+type phaseTiming struct {
+	lockWait time.Duration
+	work     time.Duration
+}
+
+// publishSessionMetrics 一次发布会话的分阶段耗时。
+//
+// 冲突重试会把各段**累加**（attempts 记录试了几次），因此各段之和与 total 对得上，
+// 不会因为只记最后一次而漏掉被丢弃的那次编译（那正是「一份语言慢」的代价所在）。
+type publishSessionMetrics struct {
+	startedAt      time.Time
+	attempts       int
+	langs          int
+	lockWaitFreeze time.Duration
+	freeze         time.Duration
+	compile        time.Duration
+	lockWaitCommit time.Duration
+	commit         time.Duration
+}
+
+// retried 是否发生过冲突重试（attempts > 1 即有一次以上的编译结果被丢弃）。
+func (m publishSessionMetrics) retried() bool { return m.attempts > 1 }
+
+// total 会话总时长（含所有重试尝试）。
+func (m publishSessionMetrics) total() time.Duration { return time.Since(m.startedAt) }
+
+// 发布会话日志的 outcome 取值。
+const (
+	publishOutcomeOK     = "ok"
+	publishOutcomeFailed = "failed"
+)
+
+// publishOutcomeOf 一次发布会话的结局：失败路径同样要把已耗时发出来（带 outcome=failed）。
+func publishOutcomeOf(cause error) string {
+	if cause != nil {
+		return publishOutcomeFailed
+	}
+	return publishOutcomeOK
+}
+
+// publishSessionFields 分阶段耗时日志的字段集合（写入端与用例读同一份）。
+//
+// 抽成纯函数是为了让「观测契约」可断言：用例据此钉住字段确实会被写出去（少了哪个字段即红），
+// 而又不必去断言具体的毫秒数 —— 那是负载相关的量，断言它只会做出一个随机红的用例。
+func publishSessionFields(instanceID string, m publishSessionMetrics, outcome string) []any {
+	return []any{
+		"instanceId", instanceID,
+		"langs", m.langs,
+		"attempts", m.attempts,
+		"retried", m.retried(),
+		"lockWaitFreezeMs", m.lockWaitFreeze.Milliseconds(),
+		"freezeMs", m.freeze.Milliseconds(),
+		"compileMs", m.compile.Milliseconds(),
+		"lockWaitCommitMs", m.lockWaitCommit.Milliseconds(),
+		"commitMs", m.commit.Milliseconds(),
+		"totalMs", m.total().Milliseconds(),
+		"outcome", outcome,
+	}
+}
+
+// logPublishSession 发一条发布会话的分阶段耗时日志。
+//
+// 级别固定 Info：这是常态运维信号（每次发布一条），不是告警 —— 失败时也走 Info 并把原因
+// 放进 error 字段，失败告警由调用方各自的错误日志负责，同一件事不记两遍。
+// 调用点在 publishAllLangs 的 defer 里，因此**失败路径也会带着已耗时发出来**。
+func (s *Service) logPublishSession(inst *presentationmodel.InstanceEntity, m publishSessionMetrics, cause error) {
+	if s == nil {
+		return
+	}
+	instanceID := ""
+	if inst != nil {
+		instanceID = inst.ID
+	}
+	fields := publishSessionFields(instanceID, m, publishOutcomeOf(cause))
+	entry := logger.Scene("publication")
+	for i := 0; i+1 < len(fields); i += 2 {
+		key, _ := fields[i].(string)
+		entry = entry.With(key, fields[i+1])
+	}
+	if cause != nil {
+		entry = entry.With("error", cause.Error())
+	}
+	entry.Info("发布会话分阶段耗时")
 }
 
 // derefString 可空字符串列取值（NULL 与空串在指纹里等价：两列都不接受空串业务值）。

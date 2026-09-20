@@ -1,12 +1,14 @@
 package presentationservice
 
-// presentation_publish_plan_test.go — 发布会话的两条纯逻辑契约（PERF-01）。
+// presentation_publish_plan_test.go — 发布会话的三条纯逻辑契约（PERF-01）。
 //
 // 覆盖面刻意窄：只钉住「锁收窄之后新增/改变的那些判定」——
 //   1) 输入解析失败（模板 / 覆盖文档）的对外错误形态：必须原样透出，否则各调用方的
 //      白名单映射会退化成一句笼统的「构建失败」，运营据此不知道该去建模板还是换模板；
 //   2) 实例状态指纹的判定依据：哪些列进指纹（并发提交必须被检出）、哪些列不进
-//      （update_time 不进 —— 依赖扇出重复标 stale 不该把提交判成冲突）。
+//      （update_time 不进 —— 依赖扇出重复标 stale 不该把提交判成冲突）；
+//   3) 分阶段耗时日志的字段集合：锁等待 / 冻结 / 编译 / 提交各一段 + 重试次数 + 结局，
+//      一个都不能少（缺了就没法回答「锁等待还剩多少、编译占多少」）。
 //
 // 端到端的并发语义在 public/test/presentation/unit（真实 PG + 真实装配）。
 
@@ -19,6 +21,90 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	presentationmodel "go_wp/internal/module/presentation/model"
 )
+
+// TestPublishSessionFieldsCoverAllPhases 分阶段耗时日志必须写全「锁等待 / 编译 / 提交 + 重试」。
+//
+// 断言的是字段集合与取值来源（纯函数，输入是构造出来的耗时），**不**断言真实毫秒数 ——
+// 那是负载相关的量，断言它只会做出一个随机红的用例。
+func TestPublishSessionFieldsCoverAllPhases(t *testing.T) {
+	m := publishSessionMetrics{
+		startedAt: time.Now(), attempts: 2, langs: 3,
+		lockWaitFreeze: 11 * time.Millisecond, freeze: 22 * time.Millisecond,
+		compile:        333 * time.Millisecond,
+		lockWaitCommit: 44 * time.Millisecond, commit: 55 * time.Millisecond,
+	}
+	fields := publishSessionFields("inst-1", m, publishOutcomeFailed)
+	if len(fields)%2 != 0 {
+		t.Fatalf("字段必须成对（key/value）：%v", fields)
+	}
+	pairs := map[string]any{}
+	for i := 0; i+1 < len(fields); i += 2 {
+		key, ok := fields[i].(string)
+		if !ok {
+			t.Fatalf("字段名必须是字符串：%v", fields[i])
+		}
+		if _, dup := pairs[key]; dup {
+			t.Fatalf("字段 %s 被重复写出", key)
+		}
+		pairs[key] = fields[i+1]
+	}
+	want := map[string]any{
+		"instanceId":       "inst-1",
+		"langs":            3,
+		"attempts":         2,
+		"retried":          true, // 冲突重试发生过 —— 这正是「被丢弃的那次编译」的代价
+		"lockWaitFreezeMs": int64(11),
+		"freezeMs":         int64(22),
+		"compileMs":        int64(333),
+		"lockWaitCommitMs": int64(44),
+		"commitMs":         int64(55),
+		"outcome":          publishOutcomeFailed, // 失败路径也要把已耗时发出来
+	}
+	for key, wantValue := range want {
+		got, ok := pairs[key]
+		if !ok {
+			t.Fatalf("分阶段耗时日志缺少字段 %s（实际写出：%v）", key, pairs)
+		}
+		if got != wantValue {
+			t.Fatalf("字段 %s = %v，期望 %v", key, got, wantValue)
+		}
+	}
+	// totalMs 只断言存在：它是 time.Since(startedAt) 的结果，取值随负载变化。
+	if _, ok := pairs["totalMs"]; !ok {
+		t.Fatal("缺少 totalMs：无法回答「这次发布总共花了多久」")
+	}
+	if len(pairs) != len(want)+1 {
+		t.Fatalf("字段集合与预期不符（多了未登记字段？）：%v", pairs)
+	}
+	// 没有重试时 retried 必须为 false（否则这个字段永远为真，等于没写）。
+	once := publishSessionFields("inst-1", publishSessionMetrics{startedAt: time.Now(), attempts: 1}, publishOutcomeOK)
+	if got := fieldValue(once, "retried"); got != false {
+		t.Fatalf("单次尝试的会话 retried 应为 false，实际 %v", got)
+	}
+	if got := fieldValue(once, "outcome"); got != publishOutcomeOK {
+		t.Fatalf("成功会话的 outcome 应为 %s，实际 %v", publishOutcomeOK, got)
+	}
+}
+
+// TestPublishOutcomeOf 结局只有两个取值，失败路径不会被吞成成功。
+func TestPublishOutcomeOf(t *testing.T) {
+	if got := publishOutcomeOf(nil); got != publishOutcomeOK {
+		t.Fatalf("无错误应为 %s，实际 %s", publishOutcomeOK, got)
+	}
+	if got := publishOutcomeOf(errors.New("构建失败")); got != publishOutcomeFailed {
+		t.Fatalf("有错误应为 %s，实际 %s", publishOutcomeFailed, got)
+	}
+}
+
+// fieldValue 取字段集合里的某个值（用例内部用）。
+func fieldValue(fields []any, key string) any {
+	for i := 0; i+1 < len(fields); i += 2 {
+		if k, _ := fields[i].(string); k == key {
+			return fields[i+1]
+		}
+	}
+	return nil
+}
 
 // TestPublishFailedErrKeepsInputErrorRaw 输入解析失败原样透出，其余构建失败带 ErrBuildFailed。
 func TestPublishFailedErrKeepsInputErrorRaw(t *testing.T) {
