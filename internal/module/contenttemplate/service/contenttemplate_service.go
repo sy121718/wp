@@ -630,6 +630,7 @@ func (s *Service) resolvedTemplateFromVersion(tpl *contenttemplatemodel.Template
 		VersionID:    ver.ID,
 		Version:      ver.Version,
 		EntityType:   tpl.EntityType,
+		TemplateRole: tpl.TemplateRole,
 		Document:     doc,
 	}, nil
 }

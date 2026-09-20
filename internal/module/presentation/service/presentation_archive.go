@@ -22,9 +22,16 @@ import (
 
 // ArchivePathFor 归档页的访问路径。
 //
-// 规则：/{entityType}/{slug}，如 /category/electronics。
+// 规则：/{entityType}/{slug}，如 /product_category/electronics（实体类型用注册表口径）。
 // 用实体类型做前缀而不是可配置前缀：两个类型配成同一个前缀时，它们在访问面上
 // 无法区分，而冲突要到实际请求 404 或串页才会被发现。
+//
+// 为什么商品分类的归档前缀是 /product_category/ 而不是更顺眼的 /category/：
+// 后者是 siteurl.DefaultPatterns[product_category] 里**分类详情页**的路径模式 ——
+// 归档页若共用同一前缀，同一个分类的详情实例与归档实例会争抢同一个 URL，
+// 先建的那个占用、后建的被 ensureLogicalPathFree 拒绝（"归档页建不起来"再次出现，
+// 而且这次是路径冲突，不是类型错误）。开发库实测 presentation_instances 为空、
+// page_routes 无 /category/ 行，没有存量归档 URL 需要迁移，故直接采用注册表口径。
 func ArchivePathFor(entityType, slug string) string {
 	return "/" + strings.Trim(strings.TrimSpace(entityType), "/") + "/" +
 		strings.Trim(strings.TrimSpace(slug), "/")

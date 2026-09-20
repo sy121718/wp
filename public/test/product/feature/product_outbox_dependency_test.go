@@ -212,15 +212,12 @@ func (f *outboxFixture) publishListPageWithDoc(t *testing.T, path, doc string) s
 	return page.ID
 }
 
-// publishCollectionInstance 用一套「商品详情 + 商品集合」模板建实例（presentation 侧的列表产物）。
+// publishCollectionInstance 用一套「商品集合」模板建实例（presentation 侧的列表产物）。
 //
-// 为什么不用**分类归档页**来验 presentation 侧的集合键：product_category 类型的模板
-// 不允许出现商品集合组件 —— contenttemplate 的 Create 走 builder.ValidateFieldRefs，
-// 其中「ref.EntityType != entityType 即拒绝」（internal/builder/field_binding.go:90），
-// 而 core.productList / core.cardstack 的字段绑定实体类型恒为 product。
-// 实测报错：ErrFieldBindingInvalid: 字段绑定 product.images 不属于 product_category 数据源
-// （跨数据源绑定被拒绝）。分类归档页因此**今天在架构上列不出商品**，这是本审计的独立发现，
-// 立案后需在 builder.ValidateFieldRefs / 组件的 FieldRefs 上决定集合组件如何跨源。
+// 它验的是「实例级集合键登记」这件事本身（与实体类型无关）；分类归档页那条更完整
+// 的链路（归档模板 + filterFromArchive + 集合键扇出）见 TestCategoryArchivePageListsCategoryProducts。
+// 历史上这里写的是「分类归档页做不到」的原因（builder.ValidateFieldRefs 拿模板实体类型
+// 判集合组件绑定），EDT-004 收口后该限制已解除，说明随之更新。
 func (f *outboxFixture) publishCollectionInstance(t *testing.T, productID, urlPath string) *presentationdto.InstanceResp {
 	t.Helper()
 	ctx := context.Background()
@@ -517,29 +514,167 @@ func instanceActiveHTML(t *testing.T, db *gorm.DB, instanceID, lang string) stri
 	return activeHTMLAt(path)
 }
 
-// TestCategoryArchiveTemplateCannotBindProductFields 记录一条**今天在架构上做不到**的验收：
-// 验收要求「presentation 侧的分类归档页随商品集合变化更新」，但分类归档页的模板
-// （entity_type = product_category）不允许出现商品集合组件 —— contenttemplate 的 Create
-// 走 builder.ValidateFieldRefs，跨数据源绑定被硬拒（internal/builder/field_binding.go:90），
-// 而 core.productList / core.cardstack 的字段绑定实体类型恒为 product。
+// categoryArchiveDoc 分类归档模板文档：商品列表 + **按归档上下文筛选**。
 //
-// 本用例把这条限制**钉住**（而不是假装它不存在）：它红了说明有人放开了跨源绑定 ——
-// 那时应当把 TestPresentationCollectionInstanceRegistersCollectionDependency 扩到
-// 分类归档页，并删掉本用例。
-func TestCategoryArchiveTemplateCannotBindProductFields(t *testing.T) {
+// filterFromArchive 是关键的一行：归档模板是通用的（一份模板服务全部分类），
+// 「列哪个分类的商品」只能来自实例本身 —— 没有它，归档页会安静地列全站商品。
+const categoryArchiveDoc = `{"settings":{"layout":{"mode":"boxed","maxWidth":"1200px"}},"root":[` +
+	`{"id":"pl1","type":"core.productList","props":{"collectionSource":"content:product",` +
+	`"filterFromArchive":"on","collectionLimit":12,"layout":"grid","columns":"auto",` +
+	`"filterStatus":"published","imageField":"item.images","titleField":"item.name",` +
+	`"priceField":"item.priceRange","comparePriceField":"item.comparePrice","tagsField":"item.tags",` +
+	`"linkField":"item.url","currency":"¥","titleTag":"h3","emptyText":"暂无商品"}}]}`
+
+// categoryArchiveCardDoc 分类归档模板里放一个**非集合组件**（商品卡）绑商品字段：
+// 这是新旧行为的分界线 —— 只有集合组件才按集合源校验，别的组件绑跨源字段照样拒绝。
+const categoryArchiveCardDoc = `{"settings":{"layout":{"mode":"full"}},"root":[` +
+	`{"id":"pc1","type":"core.productCard","props":{"titleField":"product.images"}}]}`
+
+// archiveInstanceOfCategory 取工程内 product_category 的归档实例（没有即硬失败）。
+//
+// 「归档页同步失败」在生产上只留一行日志（不阻断分类保存），测试里必须把它变成失败 ——
+// 否则本票真正要修的那条链（分类 → 归档实例）断了也看不出来。
+func (f *outboxFixture) archiveInstanceOfCategory(t *testing.T) *presentationdto.InstanceResp {
+	t.Helper()
+	list, err := f.pres.List(context.Background(), &presentationdto.ListReq{
+		ProjectID: f.projectID, EntityType: productcontract.EntityTypeCategory,
+	})
+	if err != nil {
+		t.Fatalf("列出分类归档实例失败: %v", err)
+	}
+	for _, it := range list {
+		if it.InstanceRole == presentationmodel.InstanceRoleArchive {
+			return it
+		}
+	}
+	t.Fatalf("新建分类后归档实例没建起来（归档同步失败只记日志，这里把它暴露成硬失败）")
+	return nil
+}
+
+// TestCategoryArchivePageListsCategoryProducts 分类归档页的端到端验收（审计 EDT-004 收口）。
+//
+// 本用例取代了原先「记录一条今天做不到的验收」的 TestCategoryArchiveTemplateCannotBindProductFields：
+// 那条限制的根因是 builder.ValidateFieldRefs 拿**模板实体类型**去判集合组件的字段绑定
+// （集合源是商品，模板实体是 product_category），现已改为「集合组件按集合源实体类型校验」。
+//
+// 五段证据，缺一段都只是「校验放行了」而不是「归档页真的成了」：
+//  1. 含 core.productList 的归档模板能保存（绑定校验按集合源通过）；
+//  2. 新建分类 → 归档实例按需建出来，路径按注册表口径（/product_category/{slug}）；
+//  3. 归档产物登记集合键 collection:content:product（商品增删改靠它命中，direct_content 只认那个分类）；
+//  4. 上架商品并挂到该分类 → 消费 outbox → 归档页两种语言的线上字节都含该商品，
+//     且**不含**别的分类的商品（filterFromArchive 真的把筛选值落到了实例实体上）；
+//  5. 改商品名 → 同一条集合键链路把归档页更新到新字节（「改了商品归档页不动」的反面）。
+func TestCategoryArchivePageListsCategoryProducts(t *testing.T) {
+	f := newOutboxFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	// 归档页按需创建端口（与线上装配同形，见 internal/routers/assembly_publish.go）。
+	f.products.SetArchiveInstanceEnsurer(f.pres)
+
+	// 1) 归档模板必须先存在：没配归档模板时 EnsureArchiveInstance 按「跳过」处理（正常状态）。
+	if _, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
+		ProjectID: f.projectID, EntityType: productcontract.EntityTypeCategory,
+		Name: "分类归档页", TemplateRole: "archive", DraftDocument: json.RawMessage(categoryArchiveDoc),
+	}); err != nil {
+		t.Fatalf("分类归档模板（core.productList 绑 product.*）应能保存: %v", err)
+	}
+
+	// 2) 新建分类 → 归档实例。
+	catA := f.createCategory(t, "电子设备", "electronics")
+	inst := f.archiveInstanceOfCategory(t)
+	if inst.URLPath != "/product_category/electronics" {
+		t.Fatalf("归档路径应按实体类型派生（注册表口径），实际 %q", inst.URLPath)
+	}
+
+	// 3) 依赖登记：归档页的 direct_content 只认自己那个分类，商品集合变化必须靠集合键命中。
+	keys := presentationDependencyKeys(t, f.db, inst.ID)
+	wantKey := pipeline.DepKindContentCollection + "|" + productCollectionKey
+	if !keys[wantKey] {
+		t.Fatalf("分类归档产物未登记商品集合依赖 %q（商品增删改不会让它更新）——实际依赖：%v", wantKey, keys)
+	}
+
+	// 4) 分类 A 下一个商品、分类 B 下一个商品（B 用来证明筛选真的生效而不是「列出了全站商品」）。
+	itemA := f.createProduct(t, "归档商品甲", "archive-item-a")
+	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
+		ID: itemA, ProjectID: f.projectID, CategoryIDs: []string{catA},
+	}); err != nil {
+		t.Fatalf("把商品挂到分类失败: %v", err)
+	}
+	catB := f.createCategory(t, "服饰", "apparel")
+	itemB := f.createProduct(t, "归档商品乙", "archive-item-b")
+	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
+		ID: itemB, ProjectID: f.projectID, CategoryIDs: []string{catB},
+	}); err != nil {
+		t.Fatalf("把商品乙挂到分类失败: %v", err)
+	}
+	// 消费 outbox：集合键扇出 → 归档实例待重建 → 同步重建（fixture 的 fanout 是同步的）。
+	if n := f.dispatch(t); n == 0 {
+		t.Fatalf("商品变更后 outbox 应有待消费事件，实际 0 条（归档页不会更新）")
+	}
+
+	for _, lang := range []string{"zh-CN", "en-US"} {
+		html := instanceActiveHTML(t, f.db, inst.ID, lang)
+		if !strings.Contains(html, "归档商品甲") {
+			t.Fatalf("归档页 %s 不含该分类下的商品：%s", lang, firstLine(html))
+		}
+		if strings.Contains(html, "归档商品乙") {
+			t.Fatalf("归档页 %s 含**别的分类**的商品（filterFromArchive 没生效，列的是全站商品）：%s",
+				lang, firstLine(html))
+		}
+	}
+
+	// 访问面：归档页必须真的登记了路由（只建实例不登记路由的话 URL 打不开）。
+	var routes int64
+	if err := f.db.Raw("SELECT COUNT(*) FROM page_routes WHERE presentation_id = ? AND route_kind = 'active'",
+		inst.ID).Scan(&routes).Error; err != nil {
+		t.Fatalf("统计归档页路由失败: %v", err)
+	}
+	if routes == 0 {
+		t.Fatalf("归档页没有登记访问面路由（URL 打不开）")
+	}
+
+	// 5) 改商品名 → 走同一条集合键链路更新（归档页的 direct_content 只认那个分类，
+	// 商品自己的变更必须靠集合键命中，这条正是本票收口前「改了商品归档页不动」的那条链）。
+	renamed := "归档商品甲改名"
+	if _, err := f.products.Update(ctx, &productdto.UpdateReq{
+		ID: itemA, ProjectID: f.projectID, Name: &renamed,
+	}); err != nil {
+		t.Fatalf("改商品名失败: %v", err)
+	}
+	if n := f.dispatch(t); n == 0 {
+		t.Fatalf("改商品名后 outbox 应有待消费事件，实际 0 条（归档页不会更新）")
+	}
+	for _, lang := range []string{"zh-CN", "en-US"} {
+		html := instanceActiveHTML(t, f.db, inst.ID, lang)
+		if !strings.Contains(html, renamed) {
+			t.Fatalf("归档页 %s 未跟上商品改名（集合键没命中）：%s", lang, firstLine(html))
+		}
+	}
+}
+
+// TestCategoryArchiveTemplateRejectsNonCollectionCrossSourceBinding 负向分界（本票的核心防线）：
+// 归档模板里用**非集合组件**绑商品字段，仍然必须被拒绝。
+//
+// 这一条存在的原因是后来人最容易走的捷径：为了「让归档模板能保存」把
+// "属于哪个数据源" 这条判定整个删掉。删掉之后本用例红 —— 那时该做的是把
+// 组件声明成集合组件（CollectionProp），而不是放行。
+func TestCategoryArchiveTemplateRejectsNonCollectionCrossSourceBinding(t *testing.T) {
 	f := newOutboxFixture(t)
 	if f == nil {
 		return
 	}
 	_, err := f.templates.Create(context.Background(), &contenttemplatedto.CreateReq{
-		EntityType: productcontract.EntityTypeCategory, Name: "分类归档页", ProjectID: f.projectID,
-		TemplateRole: "archive", DraftDocument: json.RawMessage(productListDoc),
+		ProjectID: f.projectID, EntityType: productcontract.EntityTypeCategory,
+		Name: "分类归档页（非集合组件）", TemplateRole: "archive",
+		DraftDocument: json.RawMessage(categoryArchiveCardDoc),
 	})
 	if err == nil {
-		t.Fatalf("分类归档模板今天不应能绑定商品集合组件的字段；若这里通过，说明跨源绑定已放开，请把归档页纳入集合失效用例")
+		t.Fatalf("非集合组件绑跨源字段必须被拒绝，实际保存成功")
 	}
 	if !strings.Contains(err.Error(), "product_category") {
-		t.Fatalf("拒绝原因应是跨数据源绑定（涉及 product_category），实际：%v", err)
+		t.Fatalf("拒绝原因应说明不属于 product_category 数据源，实际：%v", err)
 	}
 }
 

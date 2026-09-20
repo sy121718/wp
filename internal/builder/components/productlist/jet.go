@@ -164,6 +164,11 @@ func IsCollection(_ *Props) bool { return true }
 //
 // 不在归档上下文、未开启开关、或归档实体类型在这个组件里没有对应维度时返回 nil，
 // 调用方保持原 Props。**不静默换维度**：拿不准就不筛，而不是拿别的字段凑一个条件。
+//
+// 实体类型两种写法都认（审计 EDT-004 收口）：归档实例与内容模板登记的是**注册表口径**
+// （product_category / product_brand / product_tag），历史调用方与既有用例用的是短名
+// （category / brand / tag）。两者指向同一件事，只在这里归一 —— 换个地方各写一份 switch，
+// 新增一种归档实体时就会在漏改的那一处静默不筛（页面照常打得出，只是列了全站商品）。
 func (p *Props) withArchiveFilter(ctx *core.RenderContext) *Props {
 	if p == nil || ctx == nil || strings.TrimSpace(p.FilterFromArchive) != "on" {
 		return nil
@@ -174,11 +179,11 @@ func (p *Props) withArchiveFilter(ctx *core.RenderContext) *Props {
 	}
 	clone := *p
 	switch entityType {
-	case "category":
+	case "category", "product_category":
 		clone.FilterCategoryID = entityID
-	case "brand":
+	case "brand", "product_brand":
 		clone.FilterBrandID = entityID
-	case "tag":
+	case "tag", "product_tag":
 		clone.FilterTagIDs = entityID
 	default:
 		return nil

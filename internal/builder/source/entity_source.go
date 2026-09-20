@@ -36,6 +36,17 @@ type FieldRef struct {
 	EntityType string
 	// Field 字段名（不含类型前缀，如 name）。
 	Field string
+	// CollectionSource 声明该绑定的集合组件所在的集合源（如 content:product）。
+	//
+	// 空串 = 非集合来源（普通组件、或集合组件尚未选源），此时按**模板实体类型**校验。
+	// 非空 = 该绑定由集合组件按集合项渲染（见 core.CollectionProvider / ItemScope），
+	// 校验口径是「集合源实体类型」而不是模板实体类型 —— 否则「商品分类归档模板里的
+	// 商品列表」会被判成跨数据源绑定：模板实体是 product_category，而列表绑的是
+	// product.*，两者本来就不是一个数据源。
+	//
+	// 填的是**集合源标识**而不是实体类型：标识 → 实体类型的推导只该有一处
+	// （core.CollectionEntityType），由收集方决定何时生效、校验方决定怎么用。
+	CollectionSource string
 }
 
 // EntitySourceRegistry 实体类型注册表（进程级；装配期注册，运行期只读）。

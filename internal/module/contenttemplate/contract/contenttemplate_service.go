@@ -160,6 +160,13 @@ type ResolvedTemplate struct {
 	TemplateName string
 	// EntityType 内容类型（product/article/category）。
 	EntityType string
+	// TemplateRole 模板角色（detail / archive，见上面的 TemplateRole* 常量）。
+	//
+	// 为什么消费方需要它：编译期要按角色决定「这一页讲哪个实体」——归档模板渲染的是
+	// 实例实体**下面的内容列表**（分类页 → 该分类下的商品），列表组件据此把筛选值
+	// 落到实例实体上（builder.WithArchiveEntity）。少了它，消费方只能回头再查一次
+	// 模板行，或者按调用方传参猜 —— 两处都会与模板真源分叉。
+	TemplateRole string
 	// Document 模板 AST（json.RawMessage，含 binding 节点；presentation
 	// 编译时经 ContentResolver 解析为字面量）。
 	Document json.RawMessage

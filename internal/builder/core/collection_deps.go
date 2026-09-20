@@ -28,6 +28,38 @@ type CollectionProvider interface {
 	CollectionProp() string
 }
 
+// contentSourcePrefix 内容类集合源的标识前缀。
+//
+// 各领域模块的集合源一律写成 content:{实体类型}（convention 见 content 模块的
+// CollectionSchemas 与 product 的 CollectionSourceProduct）—— 集合源的**标识**是
+// 组件侧的契约面，不随实现模块迁移改名；但"标识长什么样"这件事需要一处权威，
+// 否则「标识 → 实体类型」的推导会在每个消费方各写一份（写歪了不报错，只是校验口径分叉）。
+const contentSourcePrefix = "content:"
+
+// CollectionEntityType 集合源标识 → 实体类型（content:product → product）。
+//
+// 必须严格按前缀判定，不猜：非内容集合源（插件 manifest 声明的 plugin:{id}.{table} 等）
+// 返回空串，表示「从集合源推不出实体类型」—— 调用方据此回落到别的口径，
+// 而不是拿后半段（插件表名）去当实体类型查注册表。
+func CollectionEntityType(source string) string {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(source), contentSourcePrefix)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(rest)
+}
+
+// CollectionSourceOf 读取节点当前的集合源标识（非集合组件 / 未选源返回空串）。
+//
+// 与 CollectionSourcesOf 读同一份 Props（同一个 collectionSourcePropValue），
+// 不是第二套读法：谁消费集合源谁就用这个函数，读歪了不会报错，只会静默不生效。
+func CollectionSourceOf(n *Node, p CollectionProvider) string {
+	if n == nil || p == nil {
+		return ""
+	}
+	return collectionSourcePropValue(n.Props, p.CollectionProp())
+}
+
 // CollectionSourcesOf 收集文档树里内置组件**声明消费**的集合源（去重、升序）。
 //
 // 与 builder.ReferencedBlockIDs 同形：只回答「这份文档声明了哪些集合源」，
@@ -45,7 +77,7 @@ func CollectionSourcesOf(roots []*Node) []string {
 		}
 		if c, ok := registry[n.Type]; ok {
 			if p, ok := c.(CollectionProvider); ok {
-				if src := collectionSourcePropValue(n.Props, p.CollectionProp()); src != "" && !seen[src] {
+				if src := CollectionSourceOf(n, p); src != "" && !seen[src] {
 					seen[src] = true
 					out = append(out, src)
 				}

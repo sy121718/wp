@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	presentationdto "go_wp/internal/module/presentation/dto"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 )
 
@@ -54,8 +55,10 @@ func TestCategoryCreateEnsuresArchivePage(t *testing.T) {
 		t.Fatalf("新建分类应触发一次归档页同步，实际 %d 次", len(stub.calls))
 	}
 	call := stub.calls[0]
-	if call.EntityType != "category" || call.EntityID != cat.ID || call.Slug != "electronics" {
-		t.Fatalf("同步入参应带上分类身份与 slug，实际 %+v", call)
+	// 实体类型用**注册表口径** product_category（审计 EDT-004 收口）：presentation 按实体类型
+	// 取归档模板，短名 "category" 不在注册表里，归档实例必然建不出来。
+	if call.EntityType != productcontract.EntityTypeCategory || call.EntityID != cat.ID || call.Slug != "electronics" {
+		t.Fatalf("同步入参应带上分类身份（注册表口径的实体类型）与 slug，实际 %+v", call)
 	}
 
 	// 改名：slug 变化同样要同步（presentation 内部比对路径后决定是否重建）。

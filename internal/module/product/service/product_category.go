@@ -94,19 +94,34 @@ func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCate
 // 而且分类已经写进库里了，此时返回错误反而让调用方以为没保存成功。
 //
 // 未配置归档模板时 presentation 返回 Skipped —— 这里是正常路径，不打错误日志。
+//
+// 实体类型必须是**注册表口径** product_category（审计 EDT-004 收口）：presentation 按
+// 实体类型取归档模板（contenttemplate 的注册表校验 + 迁移 160 已把存量行改名），
+// 写成短名 "category" 时 ResolveTemplateByRoleScoped 直接判类型非法 ——
+// 归档实例必然建不出来，而这一条只会在下面那行日志里露头。
 func (s *Service) syncCategoryArchive(ctx context.Context, projectID, categoryID, slug string) {
 	if s.archiveEnsurer == nil {
 		return
 	}
 	resp, err := s.archiveEnsurer.EnsureArchiveInstance(ctx, &presentationdto.EnsureArchiveReq{
-		ProjectID: projectID, EntityType: "category", EntityID: categoryID, Slug: slug,
+		ProjectID: projectID, EntityType: productcontract.EntityTypeCategory, EntityID: categoryID, Slug: slug,
 	})
 	if err != nil {
-		logger.Scene("product").With("categoryId", categoryID).Error(err, "归档页同步失败（分类已保存，可稍后重试）")
+		// 派生视图失败不阻断保存，但**必须能被人发现**：带上工程 / 分类 / slug 与原因，
+		// 否则现场只剩一句没有定位信息的日志，谁也答不出「哪个分类的归档页没建起来、为什么」。
+		logger.Scene("product").
+			With("projectId", projectID).
+			With("categoryId", categoryID).
+			With("slug", slug).
+			With("reason", err.Error()).
+			Warn("分类归档页同步失败（分类已保存，归档页稍后可重试）")
 		return
 	}
 	if resp != nil && resp.Skipped != "" {
-		logger.Scene("product").With("categoryId", categoryID).With("reason", resp.Skipped).
+		logger.Scene("product").
+			With("projectId", projectID).
+			With("categoryId", categoryID).
+			With("reason", resp.Skipped).
 			Debug("归档页跳过")
 	}
 }
