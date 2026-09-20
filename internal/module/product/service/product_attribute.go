@@ -134,13 +134,8 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		// 改名类写入口（审计 ARCH-01 收口票）：属性组名进 products.options（规格维度），
-		// 逐引用商品发 direct_content（理由同分类 / 品牌）。
-		refIDs, rerr := s.m.ProductIDsByAttributeTx(ctx, tx, e.ProjectID, e.ID, maxRenameFanoutProducts+1)
-		if rerr != nil {
-			return rerr
-		}
-		return s.enqueueEntityRenameFanout(ctx, tx, e.ProjectID, productcontract.EntityTypeAttribute, e.ID, refIDs)
+		// 定义变更（组名）：属性组名进 products.options（规格维度），逐引用商品发 direct_content。
+		return s.enqueueAttributeDefinitionChange(ctx, tx, e.ProjectID, e.ID)
 	}); err != nil {
 		return nil, err
 	}
@@ -170,7 +165,9 @@ func (s *Service) SetAttributeValues(ctx context.Context, req *productdto.SetAtt
 		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		return s.enqueueAttributeInvalidation(ctx, tx, e.ProjectID, e.ID)
+		// 定义变更（属性值）：值标签同样进 products.options，逐引用商品发 direct_content ——
+		// 与改组名同一条路径（两者都是「引用该属性组的商品页字节变了」）。
+		return s.enqueueAttributeDefinitionChange(ctx, tx, e.ProjectID, e.ID)
 	}); err != nil {
 		return nil, err
 	}
@@ -262,17 +259,38 @@ func (s *Service) DeleteAttribute(ctx context.Context, req *productdto.DeleteAtt
 	})
 }
 
-// enqueueAttributeInvalidation 属性组变更的失效入队（审计 ARCH-01 尾巴）。
+// attributeInvalidationEntityKey 属性组实体键的失效目标（两条路径共用）。
+func attributeInvalidationEntityKey(attributeID string) invalidationTarget {
+	return invalidationTarget{EntityType: productcontract.EntityTypeAttribute, EntityID: attributeID}
+}
+
+// enqueueAttributeInvalidation **只有实体键**的失效入队（审计 ARCH-01 尾巴）。
+//
+// 用在「建 / 删属性组」上 —— 这两个动作没有「引用它的商品」这一面需要逐个发：
+// 新建时还没有商品引用；删除被引用检查挡住（跨工程检查见 crossProjectRefs）。
+// 改定义（组名 / 值）走 enqueueAttributeDefinitionChange，那里才需要逐引用商品发键。
 //
 // 与分类 / 品牌同形：实体键 + 商品集合键（enqueueInvalidationTx 内部按批补集合键）。
-// 已知边界：只绑定「该属性组」的产物由实体键命中；**引用该属性组的商品详情页**
-// 靠的是商品集合键覆盖不到的那一侧（集合键只命中声明了集合依赖的产物）——
-// 商品详情页登记的是 direct_content:product:{id}，因此「改属性组让某个商品详情页
-// 自动更新」这条今天仍缺一环（需要按 products.attribute_ids 反查逐商品发键）。
-// 这一条与 page/presentation 侧登记口径的既有盲区同源，单独列在报告里，不在本票扩。
 func (s *Service) enqueueAttributeInvalidation(ctx context.Context, tx *gorm.DB, projectID, attributeID string) error {
-	return s.enqueueInvalidationTx(ctx, tx, projectID,
-		invalidationTarget{EntityType: productcontract.EntityTypeAttribute, EntityID: attributeID})
+	return s.enqueueInvalidationTx(ctx, tx, projectID, attributeInvalidationEntityKey(attributeID))
+}
+
+// enqueueAttributeDefinitionChange 属性**定义**变更（组名 / 值）的失效入队。
+//
+// 两条路径为什么必须分开（审计 ARCH-01 最后一批）：
+//   - 实体键只命中「绑定该属性组本身」的产物；
+//   - 而组名与值都进 products.options（规格维度），**引用该属性组的商品详情页**字节
+//     同样会变 —— 详情页登记的是 direct_content:product:{id}，只发实体键命中不到它，
+//     站点上表现为「改了规格名 / 规格值，商品页还是旧的」且没有任何日志。
+//
+// 引用商品的全量 id 由 ProductIDsByAttributeTx（只投影 id，不是删除守卫那份采样）在
+// **同一事务内**取出；上限与截断日志在 enqueueEntityRenameFanout 里（宁可多、不可漏）。
+func (s *Service) enqueueAttributeDefinitionChange(ctx context.Context, tx *gorm.DB, projectID, attributeID string) error {
+	refIDs, err := s.m.ProductIDsByAttributeTx(ctx, tx, projectID, attributeID, maxRenameFanoutProducts+1)
+	if err != nil {
+		return err
+	}
+	return s.enqueueEntityRenameFanout(ctx, tx, projectID, productcontract.EntityTypeAttribute, attributeID, refIDs)
 }
 
 // attributePageArgs 归一化属性组分页参数。
