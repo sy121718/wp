@@ -148,7 +148,8 @@ Artifact          ≠ 可编辑源码
 | `analytics` | 站点访问统计 | 页面渲染与业务逻辑；实时行为分析；保留期归档 |
 | `webhook` | 外部集成通道：端点白名单（事件类型 × 目标 URL）+ 投递日志 + 异步签名投递 | 业务事件的产生与内容；重试上限之外的人工补偿 |
 
-> `build` 无独立模块目录：编译内核在 `internal/builder`，发布内核在 `internal/pipeline`。
+> `build` 有独立模块目录（`internal/module/build`），承载**构建任务队列**（调度与可见性）；
+> 编译内核在 `internal/builder`，发布内核在 `internal/pipeline` —— **编译逻辑不在 build 模块**。
 > `permission/role/menu/dept/datarule` 已并入 `admin` 大模块，不再独立。
 > 模块落地后必须同步更新 `docs/13-module-inventory.md`；新增模块代码与规则文件在同一批提交中更新，禁止只加代码不更新清单。
 
@@ -245,10 +246,17 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 当前 schema 权威说明见 `docs/schema-snapshot.md`（`init_builder_schema.sql` 仅为历史快照）
 - 查询一律参数化；context 必须传播（`WithContext`）
 - 迁移：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL（030 权限点 / 031 超管策略）
-- **新增挂在 `authorizedAPI` 下的接口，必须同批 seed 权限点 + 超管策略**：该组统一挂
-  `CasbinMiddleware()`，按**实际请求路径** enforce，权限点缺失时没有任何策略能匹配，
-  **含超管在内全员 403**（072/077/078/079 各踩过一次，151 又补了 page:delete 与 block:clone）。
-  改完跑 `bash scripts/check-permission-gaps.sh` 审计「有路由、无权限点」的接口
+- **新增挂在 `authorizedAPI` 下的接口：加一条权限点常量 + 在路由注册处声明，不写 seed 迁移**：
+  常量加在 `internal/permission/codes.go`，并在该路由的注册处把 `permission.Perm` 作为
+  `RouteGroup.GET/POST` 的第二个参数给出（漏写是编译错误，拼错在装配期 panic）；装配末尾
+  `permission.SyncToDB` 把声明**幂等 upsert** 进 `sys_permission` 与超管（`is_admin=1`）策略
+  （审计 SEC-011）。030/031 是存量权限点台账，新权限点不再往 seed 里加。
+  **为什么权限点必须齐**：该组统一挂 `CasbinMiddleware()`，按**实际请求路径** enforce，
+  权限点缺失时没有任何策略能匹配，**含超管在内全员 403**（072/077/078/079 各踩过一次，
+  151 又补了 page:delete 与 block:clone）。**为什么还要跑 `bash scripts/check-permission-gaps.sh`**：
+  声明式注册只覆盖「编译期写了常量 + 装配期声明过」这一侧，脚本拿**运行时路由表**跟库里的
+  `sys_permission` 比对，专门抓注册期看不见的缺口（人工在库里删了某条权限点、有人绕过
+  `RouteGroup` 直接往授权组挂路由、代码删了权限点但库里还在漂移）
 - datarule 插件字段引用按方言（PG 双引号 / MySQL 反引号）；部门范围整段精确匹配
 - **数据域（datarule）白名单由拥有该表的实体声明**：实体字段上写 `datarule:"label=用户名;ops=EQ,NEQ,LIKE"`，
   经 `pkg/datarule.DomainFromEntity` 派生（表名取实体 `TableName()`，列名取 gorm `column` 标签），
