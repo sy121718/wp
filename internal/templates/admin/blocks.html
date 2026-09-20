@@ -11,7 +11,7 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{{selectedProject := .SelectedProjectID}}
+{{selectedProject := .["SelectedProject"]}}
 {{canCreate := isset(.PermSet["block:create"])}}
 {{canDelete := isset(.PermSet["block:delete"])}}
 <div class="stack">
