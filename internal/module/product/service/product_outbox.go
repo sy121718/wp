@@ -24,6 +24,7 @@ package productservice
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -68,6 +69,35 @@ type invalidationTarget struct {
 // productInvalidationTarget 商品实体的失效目标（最常用的一条）。
 func productInvalidationTarget(productID string) invalidationTarget {
 	return invalidationTarget{EntityType: productcontract.EntityTypeProduct, EntityID: productID}
+}
+
+// membershipDiff 两个成员集合的**对称差**（升序）——「归属变了」的那些实体。
+//
+// 用在自动标签归属重算上：只重建归属真的变过的商品，而不是整集合都重建一遍。
+func membershipDiff(before, after []string) []string {
+	inBefore := make(map[string]bool, len(before))
+	for _, id := range before {
+		if id = strings.TrimSpace(id); id != "" {
+			inBefore[id] = true
+		}
+	}
+	inAfter := make(map[string]bool, len(after))
+	changed := make([]string, 0, len(after))
+	for _, id := range after {
+		if id = strings.TrimSpace(id); id != "" {
+			inAfter[id] = true
+			if !inBefore[id] {
+				changed = append(changed, id)
+			}
+		}
+	}
+	for _, id := range before {
+		if id = strings.TrimSpace(id); id != "" && !inAfter[id] {
+			changed = append(changed, id)
+		}
+	}
+	sort.Strings(changed)
+	return changed
 }
 
 // enqueueInvalidationTx 在**调用方的事务内**写 outbox 行。

@@ -50,6 +50,7 @@ import (
 	presentationservice "go_wp/internal/module/presentation/service"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
@@ -183,13 +184,19 @@ func (f *outboxFixture) createCategory(t *testing.T, name, slug string) string {
 	return res.ID
 }
 
-// publishListPage 建一个用内置 core.productList 的列表页并逐语言构建 + 发布。
+// publishListPage 建一个用内置 core.productList 的列表页（默认文档）并逐语言构建 + 发布。
 func (f *outboxFixture) publishListPage(t *testing.T, path string) string {
+	t.Helper()
+	return f.publishListPageWithDoc(t, path, productListDoc)
+}
+
+// publishListPageWithDoc 同上，但用调用方给的页面文档。
+func (f *outboxFixture) publishListPageWithDoc(t *testing.T, path, doc string) string {
 	t.Helper()
 	ctx := context.Background()
 	page, err := f.pages.Create(ctx, &pagedto.CreateReq{
 		ProjectID: f.projectID, Kind: "home", ContentTargetType: "none",
-		DraftPath: path, DraftDocument: []byte(productListDoc),
+		DraftPath: path, DraftDocument: []byte(doc),
 	})
 	if err != nil {
 		t.Fatalf("创建列表页失败: %v", err)
@@ -640,5 +647,157 @@ func TestProductOutboxDispatchIsIdempotent(t *testing.T) {
 	}
 	if pending != 0 {
 		t.Fatalf("重放后不应残留未处理事件，实际 %d", pending)
+	}
+}
+
+// —— 审计 ARCH-01 尾巴：后补的两个写入口 ——
+//
+// 1) 商品属性（product_attributes）的增改删；
+// 2) 自动标签归属重算里的**逐商品** direct_content。
+// 两条都用「摘掉该处入队 → 目标产物不更新（红）」的方式验过（见报告）。
+
+// attributeValuesDoc 只渲染属性组值文本的模板：core.heading 的字段绑定**不限定前缀**
+// （heading.go 的 ct:"bindingfield"），因此可以绑定 product_attribute.values。
+// 该实例只登记 direct_content:product_attribute:{id}（没有集合组件），
+// 于是「属性实体键是否发出」不会被商品集合键掩盖。
+const attributeValuesDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}}," +
+	"\"root\":[{\"id\":\"h1\",\"type\":\"core.heading\",\"props\":{" +
+	"\"binding\":{\"field\":\"product_attribute.values\"},\"tag\":\"h2\"}}]}"
+
+// TestAttributeChangeRebuildsBoundAttributePage 属性组变更 → 绑定该属性组的产物必须重建。
+// 失败能力的落点：SetAttributeValues 里的 enqueueAttributeInvalidation 摘掉即红。
+//
+// 已知边界（不在本票扩，见报告）：**引用该属性组的商品详情页**不在本用例覆盖内 ——
+// 商品详情页登记的是 direct_content:product:{id}，只发属性实体键命中不到它；
+// 要覆盖得按 products.attribute_ids 反查逐商品发键（与标签重算同一手法）。
+func TestAttributeChangeRebuildsBoundAttributePage(t *testing.T) {
+	f := newOutboxFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	attr, err := f.products.CreateAttribute(ctx, &productdto.CreateAttributeReq{
+		ProjectID: f.projectID, Name: "颜色", Key: "color",
+		Values: []productdto.AttributeValueReq{{Key: "red", Label: "旧红"}},
+	})
+	if err != nil {
+		t.Fatalf("创建属性组失败: %v", err)
+	}
+	tpl, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
+		EntityType: productcontract.EntityTypeAttribute, Name: "属性展示页", ProjectID: f.projectID,
+		DraftDocument: json.RawMessage(attributeValuesDoc),
+	})
+	if err != nil {
+		t.Fatalf("创建属性模板失败: %v", err)
+	}
+	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
+		ProjectID: f.projectID, EntityType: productcontract.EntityTypeAttribute, EntityID: attr.ID,
+		URLPath: "/attributes/color", TemplateID: tpl.ID,
+	})
+	if err != nil {
+		t.Fatalf("创建属性实例失败: %v", err)
+	}
+	f.dispatch(t)
+
+	// 基线：产物里是旧属性值标签（且装配期事件已消费干净）。
+	if html := instanceActiveHTML(t, f.db, inst.ID, "zh-CN"); !strings.Contains(html, "旧红") {
+		t.Fatalf("基线属性页应含属性值旧标签「旧红」：%s", firstLine(html))
+	}
+
+	if _, err = f.products.SetAttributeValues(ctx, &productdto.SetAttributeValuesReq{
+		ID: attr.ID, ProjectID: f.projectID,
+		Values: []productdto.AttributeValueReq{{Key: "red", Label: "新红"}},
+	}); err != nil {
+		t.Fatalf("保存属性值失败: %v", err)
+	}
+	if n := f.dispatch(t); n == 0 {
+		t.Fatalf("属性变更后 outbox 应有待消费事件（否则属性页停在旧值）")
+	}
+	for _, lang := range []string{"zh-CN", "en-US"} {
+		html := instanceActiveHTML(t, f.db, inst.ID, lang)
+		if strings.Contains(html, "旧红") || !strings.Contains(html, "新红") {
+			t.Fatalf("属性页 %s 的线上产物仍是旧值（不含「新红」）：%s", lang, firstLine(html))
+		}
+	}
+}
+
+// productTagsDoc 只渲染「商品名 + 商品标签」的详情模板：**不含集合组件**，
+// 因此该实例只登记 direct_content:product:{id}，不登记商品集合键 ——
+// 这样「逐商品键是否发出」与「集合键是否发出」不会互相掩盖。
+const productTagsDoc = "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}}," +
+	"\"root\":[{\"id\":\"p1\",\"type\":\"core.product\",\"props\":{" +
+	"\"source\":\"product\",\"titleField\":\"product.name\",\"subtitleField\":\"product.tags\",\"titleTag\":\"h2\"}}]}"
+
+// TestTagRecalcRebuildsBoundProductDetailPage 自动标签归属重算 → 归属**变化过的商品**的
+// 详情页必须重建（详情页登记的是 direct_content:product:{id}，只有逐商品键能命中它）。
+// 失败能力的落点：recalcTagTx 里 membershipDiff 那段逐商品入队摘掉即红。
+func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
+	f := newOutboxFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	xID := f.createProduct(t, "标签商品", "tag-item") // 售价 88
+	tpl, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
+		EntityType: productcontract.EntityTypeProduct, Name: "标签详情页", ProjectID: f.projectID,
+		DraftDocument: json.RawMessage(productTagsDoc),
+	})
+	if err != nil {
+		t.Fatalf("创建标签详情模板失败: %v", err)
+	}
+	inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
+		ProjectID: f.projectID, EntityType: productcontract.EntityTypeProduct, EntityID: xID,
+		URLPath: "/products/tag-item", TemplateID: tpl.ID,
+	})
+	if err != nil {
+		t.Fatalf("创建详情实例失败: %v", err)
+	}
+	// 规则标签：先设成「1000~2000」——售价 88 的商品不命中。
+	tagName := "高价精选"
+	tag, err := f.products.CreateTag(ctx, &productdto.CreateTagReq{
+		ProjectID: f.projectID, Name: tagName, Slug: "premium",
+		Kind: productenums.TagKindRule, RuleType: productenums.TagRulePriceRange,
+		RuleParams: json.RawMessage(`{"minPrice":1000,"maxPrice":2000}`),
+	})
+	if err != nil {
+		t.Fatalf("创建规则标签失败: %v", err)
+	}
+	// 消费掉装配期事件，再取基线。
+	f.dispatch(t)
+	if html := instanceActiveHTML(t, f.db, inst.ID, "zh-CN"); strings.Contains(html, tagName) {
+		t.Fatalf("基线详情页不该含未命中的标签名：%s", firstLine(html))
+	}
+
+	// 改规则让它命中该商品（88 落在 50~150）→ 归属变化 → 详情页必须重建。
+	ruleType := productenums.TagRulePriceRange
+	if _, err = f.products.UpdateTag(ctx, &productdto.UpdateTagReq{
+		ID: tag.ID, ProjectID: f.projectID, RuleType: &ruleType,
+		RuleParams: json.RawMessage(`{"minPrice":50,"maxPrice":150}`),
+	}); err != nil {
+		t.Fatalf("修改规则失败: %v", err)
+	}
+	if n := f.dispatch(t); n == 0 {
+		t.Fatalf("规则变更后 outbox 应有待消费事件")
+	}
+	// 机制证据：事件表里必须有一条指向**该商品**的 direct_content 键。
+	rows, err := productmodel.NewModel(f.db).ListOutboxEvents(ctx, productcontract.EntityTypeProduct, xID)
+	if err != nil {
+		t.Fatalf("读取 outbox 失败: %v", err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.DependencyKind == pipeline.DepKindDirectContent && row.DependencyKey == "product:"+xID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("归属重算应为命中变化过的商品写 direct_content:product:%s（否则详情页不更新）", xID)
+	}
+	// 字节证据：详情页的线上产物出现标签名。
+	for _, lang := range []string{"zh-CN", "en-US"} {
+		html := instanceActiveHTML(t, f.db, inst.ID, lang)
+		if !strings.Contains(html, tagName) {
+			t.Fatalf("详情页 %s 未随归属重算更新（不含 %q）：%s", lang, tagName, firstLine(html))
+		}
 	}
 }

@@ -574,13 +574,29 @@ func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmode
 	if serr := rls.ScopeTx(tx, tag.ProjectID); serr != nil {
 		return serr
 	}
+	// 替换前先取旧成员：只有「归属真的变了」的商品才需要重建（见下面的差异扇出）。
+	oldIDs, oerr := s.m.ListProductIDsByTagTx(tx, tag.ID, tag.ProjectID)
+	if oerr != nil {
+		return oerr
+	}
 	if rerr := s.m.ReplaceTagProductsTx(tx, tag.ID, tag.ProjectID, ids, now); rerr != nil {
 		return rerr
 	}
-	// 静态产物失效（审计 ARCH-01）：自动标签的归属重算改了商品的 tag_ids，
-	// 列表页的项目标签与详情页的标签区随之变化 → 发该标签的实体键 + 商品集合键。
-	if xerr := s.enqueueInvalidationTx(ctx, tx, tag.ProjectID,
-		invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: tag.ID}); xerr != nil {
+	// 静态产物失效（审计 ARCH-01 / 尾巴）：自动标签的归属重算改了商品的 tag_ids，
+	// 列表页的项目标签与**商品详情页的标签区**随之变化。三类失效目标：
+	//   · 标签实体键 —— 绑定该标签实体的产物；
+	//   · 商品集合键 —— 列表页（enqueueInvalidationTx 内部按批补）；
+	//   · 归属**变化过的每个商品**的 direct_content:product:{id} —— 详情页只认自己那条
+	//     商品键，不发它就只能等下一次商品写操作才更新（站点上标签凭空少一个/多一个）。
+	// 只发变化的商品（对称差）：没变的商品详情页字节并没有变，整集合发事件会让一个
+	// 万件商品的规则标签每次重算都轰出上万条事件。
+	changed := membershipDiff(oldIDs, ids)
+	targets := make([]invalidationTarget, 0, len(changed)+1)
+	targets = append(targets, invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: tag.ID})
+	for _, pid := range changed {
+		targets = append(targets, productInvalidationTarget(pid))
+	}
+	if xerr := s.enqueueInvalidationTx(ctx, tx, tag.ProjectID, targets...); xerr != nil {
 		return xerr
 	}
 	// 记录重算时间（后台可见，用来核对「重算时机」是否真的发生过）。

@@ -163,6 +163,24 @@ func (m *Model) DeleteAttribute(ctx context.Context, id string) (err error) {
 	return m.AttributeDB(ctx).Where("id = ?", id).Delete(&ProductAttributeEntity{}).Error
 }
 
+// CreateAttributeTx / UpdateAttributeTx / DeleteAttributeTx — 复用**调用方已开启的事务**。
+//
+// 为什么需要它们（审计 ARCH-01 尾巴）：属性组变更要在同一事务里追加一条静态产物失效
+// 事件（product_outbox_events）。属性行与事件行分属两次写入，不在一个事务里就会留下
+// 「属性改了、事件没写」（站点停在旧规格维度）或反过来的半截状态 —— 两者都是静默的。
+// tx 必须已由调用方设好工程作用域（rls.ScopeTx），model 不再另开事务。
+func (m *Model) CreateAttributeTx(ctx context.Context, tx *gorm.DB, e *ProductAttributeEntity) error {
+	return tx.WithContext(ctx).Model(&ProductAttributeEntity{}).Create(e).Error
+}
+
+func (m *Model) UpdateAttributeTx(ctx context.Context, tx *gorm.DB, e *ProductAttributeEntity) error {
+	return tx.WithContext(ctx).Model(&ProductAttributeEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+func (m *Model) DeleteAttributeTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Model(&ProductAttributeEntity{}).Where("id = ?", id).Delete(&ProductAttributeEntity{}).Error
+}
+
 // ListProductAttributeIDs 某商品引用的属性组 id 数组（products.attribute_ids）。
 //
 // 用于「删除属性组前的引用检查」与「商品详情回显」：只读一列，不整行加载。

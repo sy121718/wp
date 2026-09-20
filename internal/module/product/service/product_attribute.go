@@ -21,9 +21,13 @@ import (
 
 	"github.com/google/uuid"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/rls"
+
+	"gorm.io/gorm"
 )
 
 // CreateAttribute 新建属性组（可选同时带初始属性值）。
@@ -65,7 +69,17 @@ func (s *Service) CreateAttribute(ctx context.Context, req *productdto.CreateAtt
 		Metadata:  []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.CreateAttribute(ctx, e); err != nil {
+	// 属性行与静态产物失效事件同事务（审计 ARCH-01 尾巴）：属性组是商品详情页
+	// 规格维度（product.options）与列表页筛选维度（集合元数据）的来源，两处字节都会变。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if cerr := s.m.CreateAttributeTx(ctx, tx, e); cerr != nil {
+			return cerr
+		}
+		return s.enqueueAttributeInvalidation(ctx, tx, projectID, e.ID)
+	}); err != nil {
 		return nil, err
 	}
 	return toAttributeResp(e), nil
@@ -113,7 +127,15 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 		e.Sort = *req.Sort
 	}
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateAttribute(ctx, e); err != nil {
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		return s.enqueueAttributeInvalidation(ctx, tx, e.ProjectID, e.ID)
+	}); err != nil {
 		return nil, err
 	}
 	return s.toAttributeDetail(ctx, e)
@@ -135,7 +157,15 @@ func (s *Service) SetAttributeValues(ctx context.Context, req *productdto.SetAtt
 	values := sanitizeAttributeValues(req.Values)
 	e.Values = encodeAttributeValues(values)
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateAttribute(ctx, e); err != nil {
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		return s.enqueueAttributeInvalidation(ctx, tx, e.ProjectID, e.ID)
+	}); err != nil {
 		return nil, err
 	}
 	return s.toAttributeDetail(ctx, e)
@@ -215,7 +245,28 @@ func (s *Service) DeleteAttribute(ctx context.Context, req *productdto.DeleteAtt
 	if ref.Referenced() {
 		return crossProjectRefBlocked(productenums.ErrAttrInUse, ref)
 	}
-	return s.m.DeleteAttribute(ctx, req.ID)
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if derr := s.m.DeleteAttributeTx(ctx, tx, req.ID); derr != nil {
+			return derr
+		}
+		return s.enqueueAttributeInvalidation(ctx, tx, projectID, req.ID)
+	})
+}
+
+// enqueueAttributeInvalidation 属性组变更的失效入队（审计 ARCH-01 尾巴）。
+//
+// 与分类 / 品牌同形：实体键 + 商品集合键（enqueueInvalidationTx 内部按批补集合键）。
+// 已知边界：只绑定「该属性组」的产物由实体键命中；**引用该属性组的商品详情页**
+// 靠的是商品集合键覆盖不到的那一侧（集合键只命中声明了集合依赖的产物）——
+// 商品详情页登记的是 direct_content:product:{id}，因此「改属性组让某个商品详情页
+// 自动更新」这条今天仍缺一环（需要按 products.attribute_ids 反查逐商品发键）。
+// 这一条与 page/presentation 侧登记口径的既有盲区同源，单独列在报告里，不在本票扩。
+func (s *Service) enqueueAttributeInvalidation(ctx context.Context, tx *gorm.DB, projectID, attributeID string) error {
+	return s.enqueueInvalidationTx(ctx, tx, projectID,
+		invalidationTarget{EntityType: productcontract.EntityTypeAttribute, EntityID: attributeID})
 }
 
 // attributePageArgs 归一化属性组分页参数。

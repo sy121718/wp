@@ -304,6 +304,23 @@ func (m *Model) ReplaceTagProductsTx(tx *gorm.DB, tagID, projectID string, produ
 		string(probe), now, projectID, string(ids)).Error
 }
 
+// ListProductIDsByTagTx 列出本工程下**带该标签**的商品 id（升序）。
+//
+// 用途（审计 ARCH-01 尾巴）：自动标签归属重算要在替换前取一次旧成员集合，才能算出
+// 「本次归属到底变了哪些商品」—— 变化的那些商品详情页要失效，没变的不该被重建。
+// 不取旧集合就只能整集合发事件：一个万件商品的规则标签每次重算都会轰出上万条事件。
+// tx 必须已设工程作用域（products 带 FORCE 策略，缺作用域会静默 0 行）。
+func (m *Model) ListProductIDsByTagTx(tx *gorm.DB, tagID, projectID string) (ids []string, err error) {
+	probe, merr := json.Marshal([]string{tagID})
+	if merr != nil {
+		return nil, merr
+	}
+	err = tx.Raw(
+		"SELECT id::text FROM products WHERE project_id = ? AND tag_ids @> ?::jsonb ORDER BY id",
+		projectID, string(probe)).Scan(&ids).Error
+	return ids, err
+}
+
 // RemoveTagFromProductsTx 在给定事务里摘掉本工程所有商品上的某标签（删除标签前调用）。
 func (m *Model) RemoveTagFromProductsTx(tx *gorm.DB, tagID, projectID string, now time.Time) (err error) {
 	probe, merr := json.Marshal([]string{tagID})
