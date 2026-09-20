@@ -145,57 +145,6 @@ type renameReservedInput struct {
 	Langs []string
 }
 
-// renameReservedAllLangs 按给定语言集合逐语言迁移路径占用（建页/改草稿/改 URL）。
-//
-// targetLang / Langs 的判据见 renameReservedInput。任一语言失败即把已迁移的迁回
-// （尽力而为）并返回该错误：路由表与草稿路径必须同源。
-func (s *Service) renameReservedAllLangs(ctx context.Context, in renameReservedInput) error {
-	if s.routes == nil {
-		return nil
-	}
-	oldEntries, err := s.siteRouteEntriesForLangs(ctx, in.ProjectID, in.OldLogical, in.Langs)
-	if err != nil {
-		return ErrInvalidPath
-	}
-	newEntries, err := s.siteRouteEntriesForLangs(ctx, in.ProjectID, in.NewLogical, in.Langs)
-	if err != nil {
-		return ErrInvalidPath
-	}
-	if len(oldEntries) != len(newEntries) {
-		// 语言清单在迁移中途变化（极罕见）：不做半途改名，交由调用方重试。
-		return ErrInvalidPath
-	}
-	done := 0
-	for i := range oldEntries {
-		oldPath, newPath := oldEntries[i].Path, newEntries[i].Path
-		if oldPath == newPath {
-			done = i + 1
-			continue
-		}
-		onlyReserved := in.TargetLang != "" && oldEntries[i].Lang != in.TargetLang
-		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-			ProjectID: in.ProjectID, PageID: in.PageID, OldPath: oldPath, NewPath: newPath,
-			OnlyReserved: onlyReserved,
-		}); rerr != nil {
-			for j := 0; j < done; j++ {
-				if oldEntries[j].Path == newEntries[j].Path {
-					continue
-				}
-				if rberr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-					ProjectID: in.ProjectID, PageID: in.PageID,
-					OldPath: newEntries[j].Path, NewPath: oldEntries[j].Path,
-					OnlyReserved: in.TargetLang != "" && oldEntries[j].Lang != in.TargetLang,
-				}); rberr != nil {
-					logger.Scene("page").With("pageId", in.PageID).Error(rberr, "保留路由回迁失败")
-				}
-			}
-			return rerr
-		}
-		done = i + 1
-	}
-	return nil
-}
-
 // renameReservedAllLangsTx 在**调用方的事务**内按给定语言集合逐语言迁移路径占用。
 //
 // **语言集合必须由调用方传进来**（审计 I18N-02 收尾）：改 URL 的调用点落在「内核已把
@@ -204,10 +153,10 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, in renameReservedI
 // 在**切访问面之前**用发布口径解析语言集合（读不到就让整次操作失败、访问面不动），
 // 再把同一份集合作参数传下来。
 //
-// 与 renameReservedAllLangs 的差别只有事务边界：这里不做「失败逐个迁回」的补偿 ——
+// 这里不做「失败逐个迁回」的补偿 ——
 // 外层事务回滚会把已迁移的行一并撤销，补偿反而会在回滚后写出撤销不掉的残留
 // （且补偿本身失败时只能记日志，留下一半旧路径一半新路径的路由表）。
-// 判据与语义（targetLang 的作用、OnlyReserved 的取舍、Langs 的来源）与非 Tx 版本逐字一致。
+// 判据与语义（targetLang 的作用、OnlyReserved 的取舍、Langs 的来源）见 renameReservedInput。
 func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, in renameReservedInput) error {
 	if s.routes == nil {
 		return nil
