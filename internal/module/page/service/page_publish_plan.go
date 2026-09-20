@@ -80,6 +80,9 @@ func (s *Service) frozenPublicationPlan(ctx context.Context, page *pagemodel.Pag
 // 此后每次重建都忠实地复现它，且没有任何报错。
 func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEntity, lang string) (pipeline.PublicationPlan, bool, error) {
 	if frozen, ok := s.frozenPublicationPlan(ctx, page, lang); ok {
+		// 沿用冻结值 —— 同时把「站点语言清单已经与这份冻结输入不一致」记成可见日志
+		// （审计 I18N-01 续第 3 条）：不改变本次行为，只是不让人靠猜。
+		s.warnPlanDrift(ctx, page, lang, *frozen)
 		return *frozen, false, nil
 	}
 	inputs, err := pipeline.ResolveSiteLangInputs(ctx, s.project, page.ProjectID, pipeline.LangFallbackForbidden)
@@ -90,5 +93,84 @@ func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEn
 	if plan.Empty() {
 		return pipeline.PublicationPlan{}, false, pipeline.ErrLangTableUnavailable
 	}
+	// 重新冻结前先说清楚「为什么要按当前配置重算」：这是唯一会让既有产物的语言输入
+	// 发生变化的入口（作者改了草稿 = 新的发布决策），日志里必须能看出这一点。
+	logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+		With("planHash", plan.Hash()).Info("按当前站点语言配置冻结发布计划")
 	return plan, true, nil
+}
+
+// planHasLang 语言是否在计划的参与集合里（互指刷新据此把范围收在本页的发布范围内）。
+func planHasLang(plan pipeline.PublicationPlan, lang string) bool {
+	for _, l := range plan.SiteLangs {
+		if l == lang {
+			return true
+		}
+	}
+	return false
+}
+
+// warnPlanDrift 冻结计划的语言集合与当前站点语言集合不一致时，记一条可见日志。
+//
+// 判据与「是否重冻」无关（重冻只由草稿变更触发，见 PagePublicationPlanEntity.DraftVersion）：
+// 这里只是把「这份产物的互指不会包含新语言」这件事**变得可见** —— 否则运营加了语言、
+// 页面却一直只有旧语言互指，全靠人猜（审计 I18N-01 续第 3 条）。
+//
+// 分等级：站点语言是**增加**时记 Info（正常演进，既有产物本就不该被改写）；
+// 出现**移除/禁用**时记 Warn（那些语言的既有产物已经被 I18N-017 的退役流程下线，
+// 而冻结计划仍留着它们，属于需要人工确认的漂移）。读取失败什么都不记 ——
+// 诊断日志不该因为一次读库抖动就产出一条假的「配置不一致」。
+func (s *Service) warnPlanDrift(ctx context.Context, page *pagemodel.PageEntity, lang string, plan pipeline.PublicationPlan) {
+	if s == nil || s.project == nil || page == nil || plan.Empty() {
+		return
+	}
+	current, err := s.project.EnabledLangs(ctx, page.ProjectID)
+	if err != nil || len(current) == 0 {
+		return
+	}
+	added, removed := langSetDiff(plan.SiteLangs, current)
+	if added == nil && removed == nil {
+		return
+	}
+	sc := logger.Scene("publication")
+	ev := sc.With("pageId", page.ID).With("lang", lang).
+		With("frozen", strings.Join(plan.SiteLangs, ",")).
+		With("current", strings.Join(current, ","))
+	// 只记「加进来的」（此时也在说明「为什么既有产物没有它们」）；移除的另记一条警告。
+	if len(added) > 0 {
+		ev.With("added", strings.Join(added, ",")).
+			Info("站点语言清单新增了语言，但本页的冻结发布计划不含它：既有产物按冻结值发布，新语言需在草稿改动后的重新发布中生效")
+	}
+	if len(removed) > 0 {
+		ev.With("removed", strings.Join(removed, ",")).
+			Warn("站点语言清单已移除本页冻结计划里的语言：既有产物仍按冻结值声明互指，请确认该语言的路由已下线或安排重新发布")
+	}
+}
+
+// langSetDiff 以**集合**语义比较两份语言表（顺序无关：默认语言在前是实现细节，
+// is_default 换人不应被误报成「语言集合变了」）。
+// 返回 (仅出现在 current 的、仅出现在 frozen 的)；两者都为空时返回 (nil, nil)。
+func langSetDiff(frozen, current []string) (added, removed []string) {
+	frozenSet := make(map[string]bool, len(frozen))
+	for _, l := range frozen {
+		frozenSet[strings.TrimSpace(l)] = true
+	}
+	currentSet := make(map[string]bool, len(current))
+	for _, l := range current {
+		currentSet[strings.TrimSpace(l)] = true
+	}
+	for _, l := range current {
+		if l = strings.TrimSpace(l); l != "" && !frozenSet[l] {
+			added = append(added, l)
+		}
+	}
+	for _, l := range frozen {
+		if l = strings.TrimSpace(l); l != "" && !currentSet[l] {
+			removed = append(removed, l)
+		}
+	}
+	if len(added) == 0 && len(removed) == 0 {
+		return nil, nil
+	}
+	return added, removed
 }

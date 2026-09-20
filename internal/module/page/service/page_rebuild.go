@@ -153,7 +153,10 @@ func (s *Service) rebuildPage(ctx context.Context, plan *pageRebuildPlan) (rebui
 		if manual || !plan.publishes(lang) {
 			continue
 		}
-		if _, perr := s.Publish(ctx, &pagedto.PublishReq{ID: plan.Page.ID, Lang: lang}); perr != nil {
+		// 走 publish(..., false)：**不做互指刷新**（审计 I18N-01 续）。本循环自己会逐个
+		// 重建并重新发布全部相关语言，每一轮都能看到完整发布面；在这里再触发一次刷新，
+		// 等于让「自动重建」多出一层不受调用方控制的发布动作。
+		if _, perr := s.publish(ctx, &pagedto.PublishReq{ID: plan.Page.ID, Lang: lang}, false); perr != nil {
 			errs = append(errs, fmt.Errorf("语言 %s 重新发布失败: %w", lang, perr))
 			continue
 		}

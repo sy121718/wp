@@ -8,6 +8,7 @@ import (
 
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	pagemodel "go_wp/internal/module/page/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 
@@ -117,7 +118,17 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 
 // Publish 激活暂存产物：二次构建校验一致性后原子切换活跃指针。
 // nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无页面才返回 ErrPageNotFound。
+//
+// 这是**对外发布入口**（后台 / 运维显式发布）：激活成功后还会刷新同页其余已发布语言的
+// 互指（见 refreshPeerLocaleLinks，审计 I18N-01 续）。自动重建链路（RebuildStale 与队列
+// worker 消费的 rebuildPage）走 publish(..., false)：那条链路自己会逐语言重建并重新发布，
+// 各语言都会在同一轮里看到完整发布面，不需要、也不该再引入额外的发布动作。
 func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pagedto.PublishResp, err error) {
+	return s.publish(ctx, req, true)
+}
+
+// publish 发布主链。refreshPeers 控制激活成功后是否刷新同页其余已发布语言的互指。
+func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshPeers bool) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, ErrInvalidParam
 	}
@@ -318,10 +329,144 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		logger.Scene("publication").With("pageId", page.ID).Error(rerr, "sitemap/robots 刷新失败")
 	}
 	s.notifyIndexNow(ctx, page.ProjectID, path)
+	// 互指刷新（审计 I18N-01 续）：本语言激活成功后，同页其余**已发布**语言的语言切换器
+	// 与 hreflang 可能因此变成单向的（它们是在本语言上线之前构建的，那时看不到本语言）。
+	// 放在最后一步：上面的站点文件刷新与 IndexNow 都已完成，刷新失败也不影响本次发布。
+	if refreshPeers {
+		s.refreshPeerLocaleLinks(ctx, page, plan, lang)
+	}
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: pipeline.StatePublished, ActiveHash: hash,
 		DraftPath: page.DraftPath, PublishedAt: now.Format(time.RFC3339),
 	}, nil
+}
+
+// refreshPeerLocaleLinks 刷新同页其余已发布语言的互指（审计 I18N-01 续）。
+//
+// 缺陷现象（逐语言发布的常规流程）：
+//
+//	构建 zh / en → 发布 zh（en 还没上线，zh 产物不含指向 en 的互指）
+//	             → 发布 en（zh 已上线，en 产物含指向 zh 的互指）
+//	             → zh 那一份**没有任何人回头重建**，线上最终是单向互指。
+//
+// 这正是「发布顺序不改变同一计划的字节」与 page_seo_patrol 点名的「互指单向」。
+//
+// 三条边界，都是为了「刷新」不变成「一次隐式发布浪潮」：
+//
+//  1. **只在本页已发布语言的范围内**（≤ 站点语言数，且必须落在同一份冻结计划的语言集合里；
+//     另设 maxCrossLinkRefreshLangs 上限，防病态配置把一次发布放大成 N 次重编译）
+//     —— 冻结计划之外的语言不参与互指判定（它们不在本页的发布范围内）；
+//  2. **hash 未变则一个字节都不写**：先用同一份冻结计划重编译一次，与当前激活 hash 相同
+//     就直接返回（编译是纯 CPU，产物按内容寻址落盘要么命中已有文件、要么本就是本次要用的
+//     那一份）；只有 hash 变了才走既有发布链（它会自己复算并激活，不再递归刷新）；
+//  3. **失败只记日志**：刷新是本次发布的**后置副作用**，任何一步失败都不得把已经成功的
+//     发布打回 —— 线上仍是「刚发布的那份」+「尚未收敛的其余语言」，两者都是可用状态。
+//
+// 为什么用「重编译比 hash」而不是「读产物 HTML 看互指」：判据必须与发布的确定性校验
+// 同源（都是同一个编译输入产出同一份字节），读 HTML 解析互指是另一套实现，迟早漂移。
+func (s *Service) refreshPeerLocaleLinks(ctx context.Context, page *pagemodel.PageEntity, plan pipeline.PublicationPlan, lang string) {
+	if s == nil || page == nil || ctx.Err() != nil {
+		return
+	}
+	// 单语言站点没有互指可言；冻结计划里的语言集合就是本页参与互指的全集。
+	if len(plan.SiteLangs) <= 1 || len(plan.SiteLangs) > maxCrossLinkRefreshLangs {
+		return
+	}
+	pubs, err := s.model.ListPublications(ctx, page.ID)
+	if err != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+			Error(err, "互指刷新跳过：读取本页发布状态失败")
+		return
+	}
+	// 同一时刻只有一份发布事实：把本页已发布语言收成一个集合，刷新只在这个集合里做。
+	published := make(map[string]string, len(pubs))
+	for i := range pubs {
+		if pubs[i].ActivePath != "" && planHasLang(plan, pubs[i].Lang) {
+			published[pubs[i].Lang] = pubs[i].ArtifactHash
+		}
+	}
+	if len(published) <= 1 {
+		return
+	}
+	refreshed := make([]string, 0, len(published)-1)
+	for _, peer := range plan.SiteLangs {
+		if ctx.Err() != nil {
+			break
+		}
+		if peer == lang {
+			continue
+		}
+		activeHash, ok := published[peer]
+		if !ok {
+			// 该语言尚未上线：它自己的首次发布会看到完整发布面，不需要预先刷新
+			//（而给未上线的语言刷互指，等于把用户送到一个还不存在的地址）。
+			continue
+		}
+		// 逐个语言独立判定：每种语言的产物各自可能少了指向本次新上线语言的互指，
+		// 而「谁需要刷新」由它自己的字节决定（hash 比较），不依赖其它语言的刷新结果。
+		if s.refreshPeerLocaleLink(ctx, page, peer, activeHash) {
+			refreshed = append(refreshed, peer)
+		}
+	}
+	if len(refreshed) > 0 {
+		// 影响面回执（只读）：这次发布把哪几份既有产物重建成「互相声明」只有这一刻知道。
+		logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+			With("refreshed", strings.Join(refreshed, ",")).
+			Info("互指刷新完成：其余已发布语言已重建为与新发布面互指")
+	}
+}
+
+// maxCrossLinkRefreshLangs 互指刷新的语言数上限（防病态配置把一次发布放大成 N 次重编译）。
+const maxCrossLinkRefreshLangs = 32
+
+// refreshPeerLocaleLink 刷新单个已发布语言的互指；返回是否重新激活过。
+//
+// 只在「按同一份冻结计划重编译得到的 hash 与当前激活产物不同」时才重新激活 ——
+// 相等说明它的互指与切换器已经与新发布面一致，一个字节都不需要写（幂等）。
+func (s *Service) refreshPeerLocaleLink(ctx context.Context, page *pagemodel.PageEntity, peerLang, activeHash string) bool {
+	// 只读地取该语言**已冻结**的计划：缺失 / 草稿已变（新的发布决策）都跳过 ——
+	// 那种情形下该语言的既有产物本来就该由下一次正常发布来更新，
+	// 在这里替它做决定会把「发布计划随草稿重冻」的语义搅乱。
+	peerPlan, ok := s.frozenPublicationPlan(ctx, page, peerLang)
+	if !ok {
+		return false
+	}
+	// 暂存行的草稿版本必须与当前草稿一致：不一致说明这一语言的产物落后于草稿，
+	// 属于「需要重新构建 + 发布」，走正常发布入口（ErrRebuildRequired 由它报出）。
+	staging, serr := s.model.GetStaging(ctx, page.ID, peerLang)
+	if serr != nil || staging == nil || staging.DraftVersion != page.DraftVersion {
+		return false
+	}
+	path, perr := s.sitePathOfWithPlan(ctx, peerLang, page, peerPlan)
+	if perr != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("lang", peerLang).
+			Error(perr, "互指刷新跳过：语言访问路径解析失败")
+		return false
+	}
+	if kerr := s.syncKernel(path, peerLang, page.DraftDocument, page.ID, peerPlan); kerr != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("lang", peerLang).
+			Error(kerr, "互指刷新跳过：内核记录同步失败")
+		return false
+	}
+	candidate, berr := s.publisher.Build(ctx, page.ID, s.kernelVersion(page.ID))
+	if berr != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("lang", peerLang).
+			Error(berr, "互指刷新跳过：按冻结计划重编译失败")
+		return false
+	}
+	if candidate == activeHash {
+		// 互指与切换器已经与新发布面一致：既有的激活产物就是这份字节，什么都不做。
+		return false
+	}
+	logger.Scene("publication").With("pageId", page.ID).With("lang", peerLang).
+		With("from", activeHash).With("to", candidate).
+		Info("互指刷新：其余语言已上线的这一份重新构建并激活")
+	if _, perr = s.publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: peerLang}, false); perr != nil {
+		logger.Scene("publication").With("pageId", page.ID).With("lang", peerLang).
+			Error(perr, "互指刷新失败（保持原状，等待下一次发布或重建收敛）")
+		return false
+	}
+	return true
 }
 
 // notFoundHTMLOf 站点自定义 404 页内容（projects.settings.notFoundHtml，空 = 未配置）。
