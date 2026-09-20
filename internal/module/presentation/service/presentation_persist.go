@@ -96,6 +96,14 @@ func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *prese
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 		return "", gerr
 	}
+	// manifestJSON 是 pipeline.Manifest —— **输出清单**（canonicalPath / files /
+	// dependencies / diagnostics），就是 NewArtifact 写进产物目录 manifest.json 并参与
+	// 产物 hash 的那一份字节。
+	//
+	// 只写 manifest 一列（审计 DB-02，迁移 305）：这里此前把同一个 manifestJSON 同时写进
+	// BuildInputManifest 与 Manifest，两列同字节、且前者全仓零读取者。「输入清单」这种东西
+	// 在代码里并不存在（pipeline.BuildInput 是内存结构，从不序列化落库；输入侧事实由
+	// 快照文档 + source_hash / build_input_hash 承载），所以两列同义 → 合并为 manifest。
 	manifestJSON, err := json.Marshal(built.Manifest)
 	if err != nil {
 		return "", err
@@ -103,7 +111,7 @@ func (s *Service) recordArtifactTx(ctx context.Context, tx *gorm.DB, inst *prese
 	e := &presentationmodel.ArtifactEntity{
 		ID: uuid.NewString(), PresentationInstanceID: inst.ID, SnapshotID: snapID,
 		Version: version, Lang: strings.TrimSpace(lang), SourceHash: built.Manifest.SourceHash,
-		BuildInputManifest: manifestJSON, BuildInputHash: built.Manifest.BuildInputHash,
+		BuildInputHash:   built.Manifest.BuildInputHash,
 		ArtifactProvider: "local", ArtifactKey: built.Loc.Key, ArtifactHash: built.Hash,
 		CompilerVersion: built.Manifest.CompilerVersion,
 		// 真实注册表版本（组件模板 + Props 结构 + 二进制 revision 的指纹）。

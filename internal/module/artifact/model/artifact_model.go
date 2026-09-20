@@ -26,6 +26,15 @@ const (
 //
 // Lang 是唯一键第三维：空值会让唯一键退化为 (page_id, version) 互相覆盖，
 // 因此 service 落库前必须归一化为站点默认语言。
+//
+// 关于 DDL 里那个不在本结构体上的 build_input_manifest 列（审计 DB-02，迁移 305）：
+// 它历史上被写入与 manifest 同字节的输出清单（Record / EnsureRecord 两列同取
+// req.Manifest），且全仓零读取者。305 把它放开为可空、写入侧不再写它（新行 NULL），
+// 存量行的字节原样保留 —— 页侧删除该列要同步 5 个 raw INSERT 的列清单，其中 3 个
+// 不在本票文件域，故「保留列 + 停止写入」在本票内收口，删列留待后续迁移。
+// 本结构体**故意不映射**该列：没有读取者，映射它只会让每个产物查询多拽一个大字段。
+// 注意 manifest 是**输出清单**（参与产物 hash），不是「输入清单」；输入侧的事实由
+// source_document 与 source_hash / build_input_hash 承载。
 type PageArtifactEntity struct {
 	ID                        string          `gorm:"column:id;primaryKey"`
 	PageID                    string          `gorm:"column:page_id;not null;uniqueIndex:uk_page_artifacts_page_version_lang"`
@@ -34,7 +43,6 @@ type PageArtifactEntity struct {
 	SourceDocument            json.RawMessage `gorm:"column:source_document;type:jsonb;not null"`
 	PageDocumentSchemaVersion int             `gorm:"column:page_document_schema_version;not null"`
 	SourceHash                string          `gorm:"column:source_hash;not null"`
-	BuildInputManifest        json.RawMessage `gorm:"column:build_input_manifest;type:jsonb;not null"`
 	BuildInputHash            string          `gorm:"column:build_input_hash;not null"`
 	ArtifactProvider          string          `gorm:"column:artifact_provider;not null"`
 	ArtifactKey               string          `gorm:"column:artifact_key;not null"`
@@ -70,6 +78,54 @@ type PageArtifactObjectEntity struct {
 }
 
 func (PageArtifactObjectEntity) TableName() string { return tableNamePageArtifactObjects }
+
+// ---- 列表投影（审计 DB-02）：列表 / 管理视图只带白名单列，绝不带大字段 ----
+//
+// 为什么要有专门的投影类型而不是继续 Find(&[]PageArtifactEntity)：列表查询按行数放大，
+// 而 page_artifacts 里最大的三列（source_document 源码快照、manifest 输出清单、
+// build_input_manifest 遗留重复列）对列表语义（哪一版 / 哪个语言 / hash / 状态）毫无用处。
+// 用完整实体读列表 = 每行多拽几百 KB 到几 MB 的 JSONB（还要为它触发 TOAST 解压），
+// 且「列表别带大字段」只能靠每个调用点自律。列白名单写死在 model 里，调用方拿不到多余的列。
+
+// pageArtifactSummaryColumns 列表投影的列白名单（顺序即 SELECT 顺序，测试逐列对账）。
+// 刻意不含 source_document / manifest / build_input_manifest。
+const pageArtifactSummaryColumns = "id, page_id, version, lang, source_hash, build_input_hash, " +
+	"artifact_provider, artifact_key, artifact_hash, compiler_version, registry_version, payload_state, create_time"
+
+// PageArtifactSummary page_artifacts 的列表投影（对应 pageArtifactSummaryColumns）。
+//
+// 需要源码或清单的路径走详情口径：GetByID / GetByHash / GetByPageVersion —— 它们返回
+// 完整实体（含 source_document 与 manifest），服务的是回滚、依赖反序列化与缺文件重建。
+type PageArtifactSummary struct {
+	ID               string    `gorm:"column:id"`
+	PageID           string    `gorm:"column:page_id"`
+	Version          int64     `gorm:"column:version"`
+	Lang             string    `gorm:"column:lang"`
+	SourceHash       string    `gorm:"column:source_hash"`
+	BuildInputHash   string    `gorm:"column:build_input_hash"`
+	ArtifactProvider string    `gorm:"column:artifact_provider"`
+	ArtifactKey      string    `gorm:"column:artifact_key"`
+	ArtifactHash     string    `gorm:"column:artifact_hash"`
+	CompilerVersion  string    `gorm:"column:compiler_version"`
+	RegistryVersion  string    `gorm:"column:registry_version"`
+	PayloadState     string    `gorm:"column:payload_state"`
+	CreatedAt        time.Time `gorm:"column:create_time"`
+}
+
+// gcCandidateColumns GC 候选投影的列白名单。
+// 候选只用于「判断能不能删 + 打印清单」，删的依据是 id / hash，从不需要源码与清单。
+const gcCandidateColumns = "id, page_id, version, lang, artifact_hash, artifact_key, create_time"
+
+// GCCandidate 可回收候选的列表投影（对应 gcCandidateColumns）。
+type GCCandidate struct {
+	ID           string    `gorm:"column:id"`
+	PageID       string    `gorm:"column:page_id"`
+	Version      int64     `gorm:"column:version"`
+	Lang         string    `gorm:"column:lang"`
+	ArtifactHash string    `gorm:"column:artifact_hash"`
+	ArtifactKey  string    `gorm:"column:artifact_key"`
+	CreatedAt    time.Time `gorm:"column:create_time"`
+}
 
 // Model 封装 artifact 表数据访问。
 type Model struct {
@@ -123,7 +179,6 @@ func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *P
 			"source_document":              entity.SourceDocument,
 			"page_document_schema_version": entity.PageDocumentSchemaVersion,
 			"source_hash":                  entity.SourceHash,
-			"build_input_manifest":         entity.BuildInputManifest,
 			"build_input_hash":             entity.BuildInputHash,
 			"artifact_provider":            entity.ArtifactProvider,
 			"artifact_key":                 entity.ArtifactKey,
@@ -266,11 +321,19 @@ func (m *Model) ListStalePageIDs(ctx context.Context, current string, artifactID
 	return ids, err
 }
 
-// ListByPage 按版本倒序读取页面的全部产物记录（跨语言，含每个语言的各版本行）。
+// ListByPage 按版本倒序读取页面的产物记录列表（跨语言，含每个语言的各版本行）。
 // 有意不按语言过滤：这是「本页产物全景」视图，语言维度由每行 Lang 自带；
 // 需要单语言切片时按 GetByPageVersion 或调用方自行过滤。
-func (m *Model) ListByPage(ctx context.Context, pageID string) (list []PageArtifactEntity, err error) {
-	err = m.DB(ctx).Where("page_id = ?", pageID).Order("version DESC, lang ASC").Find(&list).Error
+//
+// 返回**列表投影**（PageArtifactSummary，列白名单 = pageArtifactSummaryColumns）：
+// 列表语义不需要 source_document 与 manifest，携带它们只会让每行多付一个可能上 MB 的
+// JSONB（审计 DB-02）。需要源码 / 清单时走详情口径的 GetByID / GetByHash / GetByPageVersion。
+//
+// 当前树内暂无调用方（产物历史视图尚未接线）；保留它作为唯一的列表入口，并在签名上
+// 就堵死「顺手 Find 完整实体」这条回头路 —— 谁要列表就用这里返回的投影类型。
+func (m *Model) ListByPage(ctx context.Context, pageID string) (list []PageArtifactSummary, err error) {
+	err = m.DB(ctx).Select(pageArtifactSummaryColumns).
+		Where("page_id = ?", pageID).Order("version DESC, lang ASC").Find(&list).Error
 	return list, err
 }
 
@@ -280,11 +343,16 @@ func (m *Model) ListByPage(ctx context.Context, pageID string) (list []PageArtif
 //   - 不在 excludeIDs 内（调用方传入的保护集合：页面指针 / 每语言激活暂存 / 路由指向）
 //
 // excludeIDs 为空表示调用方无法确定保护集合 —— 此时返回空列表（宁可不回收也不误删）。
-func (m *Model) ListGCCandidates(ctx context.Context, before time.Time, excludeIDs []string) (list []PageArtifactEntity, err error) {
+//
+// 返回**列表投影**（GCCandidate，列白名单 = gcCandidateColumns）：GC 每轮按批扫描候选，
+// 用完整实体读会把每行的 source_document 与 manifest 一起拽出来，而它们对「这行能不能删」
+// 没有任何用（审计 DB-02）。
+func (m *Model) ListGCCandidates(ctx context.Context, before time.Time, excludeIDs []string) (list []GCCandidate, err error) {
 	if len(excludeIDs) == 0 {
 		return nil, nil
 	}
-	q := m.DB(ctx).Where("payload_state = ? AND create_time < ?", PayloadStateAvailable, before)
+	q := m.DB(ctx).Select(gcCandidateColumns).
+		Where("payload_state = ? AND create_time < ?", PayloadStateAvailable, before)
 	q = q.Where("id NOT IN ?", excludeIDs)
 	err = q.Order("create_time ASC").Find(&list).Error
 	return list, err

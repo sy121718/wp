@@ -78,10 +78,10 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 	// 历史产物：上一轮组件产出、未被账本指向、仍 available（未 GC）。
 	if err := f.db.Exec(`INSERT INTO presentation_artifacts (
 		id, presentation_instance_id, snapshot_id, version, lang, source_hash,
-		build_input_manifest, build_input_hash, artifact_provider, artifact_key, artifact_hash,
+		build_input_hash, artifact_provider, artifact_key, artifact_hash,
 		compiler_version, registry_version, manifest, payload_state, payload_deleted_at, note, created_by, create_time)
 	SELECT gen_random_uuid(), presentation_instance_id, snapshot_id, version + 100, lang, source_hash,
-		build_input_manifest, build_input_hash, artifact_provider, artifact_key || '-history', artifact_hash || '-history',
+		build_input_hash, artifact_provider, artifact_key || '-history', artifact_hash || '-history',
 		compiler_version, 'old-registry-history', manifest, payload_state, payload_deleted_at, note, created_by, create_time
 	FROM presentation_artifacts WHERE id = ?`, zhArtifact).Error; err != nil {
 		t.Fatalf("插入历史产物失败: %v", err)
@@ -121,10 +121,10 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 	var enRebuilt string
 	if err := f.db.Raw(`INSERT INTO presentation_artifacts (
 		id, presentation_instance_id, snapshot_id, version, lang, source_hash,
-		build_input_manifest, build_input_hash, artifact_provider, artifact_key, artifact_hash,
+		build_input_hash, artifact_provider, artifact_key, artifact_hash,
 		compiler_version, registry_version, manifest, payload_state, payload_deleted_at, note, created_by, create_time)
 	SELECT gen_random_uuid(), presentation_instance_id, snapshot_id, version + 200, lang, source_hash,
-		build_input_manifest, build_input_hash, artifact_provider, artifact_key || '-rebuilt', artifact_hash || '-rebuilt',
+		build_input_hash, artifact_provider, artifact_key || '-rebuilt', artifact_hash || '-rebuilt',
 		compiler_version, ?, manifest, payload_state, payload_deleted_at, note, created_by, create_time
 	FROM presentation_artifacts WHERE id = ?
 	RETURNING id`, current, enArtifact).Scan(&enRebuilt).Error; err != nil {

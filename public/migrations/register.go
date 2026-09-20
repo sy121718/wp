@@ -78,4 +78,6 @@ func init() {
 	registerProductTagHitsI18n()
 	// 304：商品「相关商品」引用校验的词条（审计 DB-03 / PROD-01，见 register_product_related_i18n.go）。
 	registerProductRelatedIDsI18n()
+	// 305：产物表重复 manifest 列的收敛（审计 DB-02，见 register_manifest_dedup.go）。
+	registerManifestDedup()
 }

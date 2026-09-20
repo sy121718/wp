@@ -100,27 +100,40 @@ type SnapshotEntity struct {
 func (SnapshotEntity) TableName() string { return tableNameDocumentSnapshots }
 
 // ArtifactEntity presentation_artifacts 表实体（自动发布实例的产物元数据）。
+//
+// 清单只有一个真源（审计 DB-02，迁移 305）：本表曾有 build_input_manifest 与
+// manifest 两列，recordArtifactTx 把同一个 manifestJSON 平铺写进两列 —— 同字节、
+// 零读取者（全仓只有 manifest 被读：artifact.toResp 取 canonicalPath、
+// page.persistDependenciesFromManifest 反序列化依赖）。判定为同义后合并为 manifest
+// 一列，305 已把重复列删掉。
+//
+// 为什么不保留「输入清单」列：代码里不存在这样的产物 —— pipeline.BuildInput 是
+// 内存结构（PageID/Lang/Path/DocJSON/Usage/Diagnostics），从不序列化落库；输入侧的
+// 事实由 document_snapshots.document（快照）与 source_hash / build_input_hash
+// 各自承载。也就是说 BuildInputManifest 从来没装过「输入」。
+//
+// 注意：这份 Manifest 是**输出清单**，参与产物 hash（sha256(manifestJSON + indexHTML)），
+// 删列只动存储侧的重复副本，不改它的 JSON 内容。
 type ArtifactEntity struct {
 	ID                     string `gorm:"column:id;primaryKey"`
 	PresentationInstanceID string `gorm:"column:presentation_instance_id;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:1"`
 	SnapshotID             string `gorm:"column:snapshot_id;not null"`
 	Version                int64  `gorm:"column:version;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:2"`
 	// Lang 构建语言（I18N-013）：同版本多语言各占一行。
-	Lang               string          `gorm:"column:lang;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:3"`
-	SourceHash         string          `gorm:"column:source_hash;not null"`
-	BuildInputManifest json.RawMessage `gorm:"column:build_input_manifest;type:jsonb;not null"`
-	BuildInputHash     string          `gorm:"column:build_input_hash;not null"`
-	ArtifactProvider   string          `gorm:"column:artifact_provider;not null"`
-	ArtifactKey        string          `gorm:"column:artifact_key;not null"`
-	ArtifactHash       string          `gorm:"column:artifact_hash;not null"`
-	CompilerVersion    string          `gorm:"column:compiler_version;not null"`
-	RegistryVersion    string          `gorm:"column:registry_version;not null"`
-	Manifest           json.RawMessage `gorm:"column:manifest;type:jsonb;not null"`
-	PayloadState       string          `gorm:"column:payload_state;not null"`
-	PayloadDeletedAt   *time.Time      `gorm:"column:payload_deleted_at"`
-	Note               string          `gorm:"column:note;not null"`
-	CreatedBy          string          `gorm:"column:created_by;not null"`
-	CreatedAt          time.Time       `gorm:"column:create_time;not null"`
+	Lang             string          `gorm:"column:lang;not null;uniqueIndex:uk_presentation_artifacts_instance_version_lang,priority:3"`
+	SourceHash       string          `gorm:"column:source_hash;not null"`
+	BuildInputHash   string          `gorm:"column:build_input_hash;not null"`
+	ArtifactProvider string          `gorm:"column:artifact_provider;not null"`
+	ArtifactKey      string          `gorm:"column:artifact_key;not null"`
+	ArtifactHash     string          `gorm:"column:artifact_hash;not null"`
+	CompilerVersion  string          `gorm:"column:compiler_version;not null"`
+	RegistryVersion  string          `gorm:"column:registry_version;not null"`
+	Manifest         json.RawMessage `gorm:"column:manifest;type:jsonb;not null"`
+	PayloadState     string          `gorm:"column:payload_state;not null"`
+	PayloadDeletedAt *time.Time      `gorm:"column:payload_deleted_at"`
+	Note             string          `gorm:"column:note;not null"`
+	CreatedBy        string          `gorm:"column:created_by;not null"`
+	CreatedAt        time.Time       `gorm:"column:create_time;not null"`
 }
 
 // TableName 表名。
@@ -484,13 +497,38 @@ func (m *Model) GetArtifactByHash(ctx context.Context, instanceID, hash string) 
 	return &row, nil
 }
 
-// GetArtifact 按产物 ID 查询。
+// GetArtifact 按产物 ID 查询（详情口径：带 manifest 全量）。
 func (m *Model) GetArtifact(ctx context.Context, id string) (e *ArtifactEntity, err error) {
 	var row ArtifactEntity
 	if err = m.db.WithContext(ctx).Where("id = ?", id).First(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
+}
+
+// GetArtifactHash 只取某产物行的 artifact_hash（轻量 projection）。
+//
+// 为什么单开一个方法而不是让调用方接着用 GetArtifact：实例列表 / 回执核对这类路径
+// 只要一个哈希，GetArtifact 会把整行（含 manifest 这个 JSONB）拽出来 —— 列表按行数
+// 放大，而 manifest 是产物里最大的那一列。列白名单写死在这里，调用方拿不到多余的列，
+// 「列表别带大字段」就不依赖每个调用点自律。
+//
+// 未找到返回 gorm.ErrRecordNotFound（与 GetArtifact 同语义），由调用方决定是当
+// 「没有产物」还是当错误。
+func (m *Model) GetArtifactHash(ctx context.Context, id string) (hash string, err error) {
+	if strings.TrimSpace(id) == "" {
+		return "", gorm.ErrRecordNotFound
+	}
+	err = m.db.WithContext(ctx).Model(&ArtifactEntity{}).
+		Where("id = ?", id).Select("artifact_hash").Scan(&hash).Error
+	if err != nil {
+		return "", err
+	}
+	if hash == "" {
+		// Scan 到零值：id 不存在（或该行 artifact_hash 为空串，生产 DDL 为 NOT NULL）。
+		return "", gorm.ErrRecordNotFound
+	}
+	return hash, nil
 }
 
 // ReplaceDependencies 全量替换某产物的依赖记录（同一事务内 delete + insert）。

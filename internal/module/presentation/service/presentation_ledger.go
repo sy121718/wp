@@ -235,16 +235,19 @@ func (s *Service) recoverOneReceipt(ctx context.Context, item pubcontract.Pendin
 }
 
 // artifactHashByID 按产物行 id 取内容哈希（空 id 视为无记录）。
+//
+// 走 GetArtifactHash 的列白名单而不是 GetArtifact：回执核对是逐条循环里的读，
+// 只要一个哈希，没有理由把 manifest 那个 JSONB 也读出来。
 func (s *Service) artifactHashByID(ctx context.Context, artifactID string) (string, error) {
 	id := strings.TrimSpace(artifactID)
 	if id == "" {
 		return "", nil
 	}
-	art, err := s.m.GetArtifact(ctx, id)
+	hash, err := s.m.GetArtifactHash(ctx, id)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(art.ArtifactHash), nil
+	return strings.TrimSpace(hash), nil
 }
 
 // activeArtifactHash 访问面上该路径当前指向的产物哈希（未激活 / 重定向 / 读取失败一律空串）。

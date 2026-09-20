@@ -280,8 +280,10 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	if e.ActiveArtifactID != nil {
 		resp.Status = presentationenums.StatusActive
 		resp.ArtifactID = *e.ActiveArtifactID
-		if art, aerr := s.m.GetArtifact(ctx, *e.ActiveArtifactID); aerr == nil {
-			resp.ArtifactHash = art.ArtifactHash
+		// 只要一个哈希：列表路径按实例行数放大，绝不能为它把产物整行（含 manifest
+		// 这个 JSONB）拽出来 —— 见 model.GetArtifactHash 的列白名单。
+		if h, herr := s.m.GetArtifactHash(ctx, *e.ActiveArtifactID); herr == nil {
+			resp.ArtifactHash = h
 		}
 	} else {
 		resp.Status = presentationenums.StatusDraft

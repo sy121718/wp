@@ -75,6 +75,12 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 	}
 
 	now := time.Now().UTC()
+	// req.Manifest 是 pipeline.Manifest —— **输出清单**（canonicalPath / files /
+	// dependencies / diagnostics），与产物目录里的 manifest.json 同一份字节，参与产物 hash。
+	// 只写 manifest 一列（审计 DB-02，迁移 305）：这里此前把同一个 req.Manifest 也写进
+	// build_input_manifest，两列同字节、而后者全仓零读取者；且「输入清单」这种产物并不存在
+	// （pipeline.BuildInput 是内存结构，从不序列化落库；输入侧事实由 source_document 与
+	// source_hash / build_input_hash 承载），所以两列同义 → 合并为 manifest 一个真源。
 	entity := &artifactmodel.PageArtifactEntity{
 		ID:                        req.ArtifactID,
 		PageID:                    req.PageID,
@@ -83,7 +89,6 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		SourceDocument:            req.SourceDocument,
 		PageDocumentSchemaVersion: req.SchemaVersion,
 		SourceHash:                req.SourceHash,
-		BuildInputManifest:        req.Manifest,
 		BuildInputHash:            req.BuildInputHash,
 		ArtifactProvider:          req.ArtifactProvider,
 		ArtifactKey:               req.ArtifactKey,
@@ -236,6 +241,7 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 			return nil, errors.New(artifactenums.ErrInvalidArtifact)
 		}
 		now := time.Now().UTC()
+		// 同 Record：只写 manifest 一个真源（理由见 Record 里的注释与迁移 305）。
 		newEntity := &artifactmodel.PageArtifactEntity{
 			ID:                        e.ID,
 			PageID:                    req.PageID,
@@ -244,7 +250,6 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 			SourceDocument:            req.SourceDocument,
 			PageDocumentSchemaVersion: req.SchemaVersion,
 			SourceHash:                req.SourceHash,
-			BuildInputManifest:        req.Manifest,
 			BuildInputHash:            req.BuildInputHash,
 			ArtifactProvider:          req.ArtifactProvider,
 			ArtifactKey:               req.ArtifactKey,
