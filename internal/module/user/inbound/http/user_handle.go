@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/builder"
 	"go_wp/internal/middleware/builtin"
 	userenums "go_wp/internal/module/user/enums"
 	userservice "go_wp/internal/module/user/service"
@@ -60,6 +61,13 @@ func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
 	}
 	if _, ok := data["lang"]; !ok {
 		data["lang"] = "zh-CN"
+	}
+	// 书写方向（审计 I18N-02）：访客页面与静态产物用同一条规则
+	// （builder.DirAttr：RTL 才落字节，LTR 是 HTML 缺省）。判据各写一份就会出现
+	// 「静态页是 rtl、账号页不是」这类只在部分页面显现的方向错误。
+	if _, ok := data["dir"]; !ok {
+		lang, _ := data["lang"].(string)
+		data["dir"] = builder.DirAttr(lang)
 	}
 	if _, ok := data["site"]; !ok {
 		data["site"] = "go_wp"

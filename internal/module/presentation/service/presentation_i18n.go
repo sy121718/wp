@@ -73,6 +73,17 @@ func (s *Service) ensureLogicalPathFree(ctx context.Context, projectID, logicalP
 	return nil
 }
 
+// publishLangsOf 发布口径的站点启用语言：语言清单读不到即返回错误（审计 I18N-02）。
+//
+// 与 page 模块同名方法同义：本模块「会改动访问面 / 会写发布事实」的两处
+// （publishAllLangs 的整批发布循环、batchConverged 的收敛判定）都走它 ——
+// 前者降级会只发布默认语言并推进指针，后者降级会把「每种语言都有账本行」的检查
+// 缩成只查默认语言那一行（假收敛）。两处的失败处置不同（一个中止整批、一个本轮
+// 不处置），但**取数口径必须是同一条**，否则判定依据会随调用点漂移。
+func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]string, error) {
+	return pipeline.ResolveSiteLangs(ctx, s.project, projectID, pipeline.LangFallbackForbidden)
+}
+
 // publishAllLangs 按站点启用语言构建、逐语言结案，整批成功后才推进实例指针。
 func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	tpl *contenttemplatecontract.ResolvedTemplate, logicalPath string,
@@ -81,7 +92,15 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 	if logicalPath == "" {
 		logicalPath = s.instanceLogicalPath(ctx, inst)
 	}
-	langs := pipeline.EnabledLangs(ctx, s.project, inst.ProjectID)
+	// 语言集按**发布口径**取（审计 I18N-02）：下面这个循环就是「本次发布要上线哪些
+	// 语言」的全部内容，紧接着整批结案并推进实例指针。按可见回退取列表时，清单读不到
+	// 会退化成「只发布默认语言 + 指针前进 + 批次标记收敛」—— 其余语言的线上产物静默
+	// 停在旧字节，且再没有任何东西会去发现它。所以这里读不到就整批失败（实例标回
+	// 未收敛，下次触发/启动恢复重来）。
+	langs, lerr := s.publishLangsOf(ctx, inst.ProjectID)
+	if lerr != nil {
+		return "", fmt.Errorf("站点语言清单不可读，多语言整批发布中止: %w", lerr)
+	}
 	rule := pipeline.LangURLRuleForProject(ctx, s.project, inst.ProjectID)
 	defaultLang := pipeline.DefaultLocale(ctx, s.project, inst.ProjectID)
 

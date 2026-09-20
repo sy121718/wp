@@ -4,6 +4,8 @@ package pipeline
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -31,19 +33,75 @@ func LangURLRuleForProject(ctx context.Context, project projectcontract.ProjectS
 	)
 }
 
-// EnabledLangs 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
-func EnabledLangs(ctx context.Context, project projectcontract.ProjectService, projectID string) []string {
+// LangFallback 语言清单读取失败时的等级策略（审计 I18N-02）。
+//
+// 两种等级对应「错了会怎样」，而不是「谁调用」：
+//
+//   - 预览 / 后台：作者正在看这份草稿，清单读不到时降级为默认语言一种，页面照常
+//     渲染并留下可见告警 —— 报错会让作者以为是自己文档的问题；
+//   - 发布：语言表是发布的**输入契约**，读不到就无从判断「这次该上线哪几种语言」。
+//     此时降级为「只发默认语言」的后果是其余语言的线上产物停在旧字节（或线上被
+//     单语言产物覆盖），而发布回执写的是成功 —— 站点静默降级且无人察觉。
+//
+// 所以判据是「这次编译的成败是否对线上可感知」，发布口径一律 Forbidden。
+type LangFallback int
+
+const (
+	// LangFallbackVisible 允许回退：读取失败降级为默认语言一种并记告警。
+	// 零值 —— 未表态的调用方行为逐字不变（预览 / 后台 / 草稿路径）。
+	LangFallbackVisible LangFallback = iota
+	// LangFallbackForbidden 禁止回退：读取失败返回错误，由调用方失败。
+	LangFallbackForbidden
+)
+
+// ErrLangTableUnavailable 站点语言清单不可读（发布口径下不降级，审计 I18N-02）。
+//
+// 单独定义成哨兵错误：调用方（发布编排、重试/回执）要能区分「语言表读不到，重试
+// 有意义」与「文档本身编译不过，重试无意义」，而不是去嗅探错误文本。
+var ErrLangTableUnavailable = errors.New("站点语言清单不可读")
+
+// ResolveSiteLangs 按等级策略解析站点启用语言（默认语言在前）。
+//
+// 这是「站点有哪几种语言」的唯一读取口：EnabledLangs 是它的 LangFallbackVisible
+// 特例，发布路径应显式使用 LangFallbackForbidden。
+func ResolveSiteLangs(ctx context.Context, project projectcontract.ProjectService, projectID string, policy LangFallback) ([]string, error) {
 	if project != nil && strings.TrimSpace(projectID) != "" {
 		langs, err := project.EnabledLangs(ctx, projectID)
 		if err == nil && len(langs) > 0 {
-			return langs
+			return langs, nil
 		}
 		if err != nil {
+			if policy == LangFallbackForbidden {
+				return nil, fmt.Errorf("%w: 工程 %s: %v", ErrLangTableUnavailable, projectID, err)
+			}
 			logger.Scene("build").With("projectId", projectID).
 				Error(err, "启用语言清单读取失败，已降级为默认语言单语言构建")
+			return []string{i18n.GetDefaultLang()}, nil
 		}
+		// 无错误但清单为空：项目服务在「无清单」时已经回退站点默认语言，走到这里
+		// 说明清单确实是空的。发布口径下这同样是「不知道该上线哪几种语言」，
+		// 与读取失败等价处理 —— 空清单会让发布退化成单语言并覆盖线上其它语言。
+		if policy == LangFallbackForbidden {
+			return nil, fmt.Errorf("%w: 工程 %s 的语言清单为空", ErrLangTableUnavailable, projectID)
+		}
+		return []string{i18n.GetDefaultLang()}, nil
 	}
-	return []string{i18n.GetDefaultLang()}
+	// 无工程上下文（未注入工程服务 / 未指定工程）：发布口径没有语言表可用。
+	if policy == LangFallbackForbidden {
+		return nil, fmt.Errorf("%w: 缺少工程上下文（projectId=%q）", ErrLangTableUnavailable, projectID)
+	}
+	return []string{i18n.GetDefaultLang()}, nil
+}
+
+// EnabledLangs 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
+//
+// 这是**预览 / 后台口径**的便捷入口（等价 ResolveSiteLangs(..., LangFallbackVisible)）：
+// 降级是刻意的，用于草稿、诊断、翻译编辑页这类「读不到清单也不该挡住作者」的场景。
+// 发布路径必须用 ResolveSiteLangs(..., LangFallbackForbidden) —— 静默降级到这里
+// 正是审计 I18N-02 的成因。
+func EnabledLangs(ctx context.Context, project projectcontract.ProjectService, projectID string) []string {
+	langs, _ := ResolveSiteLangs(ctx, project, projectID, LangFallbackVisible)
+	return langs
 }
 
 // DefaultLocale 站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
@@ -132,6 +190,17 @@ type LocaleViewInput struct {
 
 	// Published 报告某个访问路径是否真的已发布（审计 I18N-021）。只在 TargetLangs 为空时使用。
 	Published func(accessPath string) bool
+
+	// SiteLangs 调用方**已冻结**的站点启用语言（默认语言在前，审计 I18N-02）。
+	//
+	// 非空时它就是唯一来源，本级不再回调工程服务读一次 —— 发布口径要求「本次发布
+	// 依据哪份语言表」只有一个答案，读两次就可能拿到两份（两次读之间清单被改）。
+	// 为空表示调用方没有冻结（预览 / 旧调用方），此时按 LangFallback 自行解析。
+	SiteLangs []string
+
+	// LangFallback 自行解析语言清单时的等级策略（SiteLangs 为空才用）。
+	// 零值 = 允许可见告警回退；发布口径的调用方要么传 SiteLangs、要么传 Forbidden。
+	LangFallback LangFallback
 }
 
 // LocaleView 计算 hreflang 互指与语言切换器链接（与 page.localeViewOf 同源）。
@@ -155,10 +224,21 @@ func LocaleView(in LocaleViewInput) (alts []builder.Alternate, links []core.Loca
 	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(in.ProjectID) == "" || strings.TrimSpace(in.LogicalPath) == "" {
 		return nil, nil
 	}
-	// 语言集合的唯一来源：有批次就按批次，没批次才回落到站点启用语言清单。
+	// 语言集合的唯一来源：有批次就按批次；否则用调用方冻结的那份；再否则自行解析
+	// （按等级策略：预览回退默认语言、发布失败）。
 	langs := in.TargetLangs
 	if len(langs) == 0 {
-		langs = EnabledLangs(in.Ctx, in.Project, in.ProjectID)
+		langs = in.SiteLangs
+	}
+	if len(langs) == 0 {
+		resolved, err := ResolveSiteLangs(in.Ctx, in.Project, in.ProjectID, in.LangFallback)
+		if err != nil {
+			// 发布口径下语言表不可读：**不产出互指**，而不是产出「只指默认语言」的
+			// 互指。后者是错的产物且看起来正常（审计 I18N-02 要消灭的正是这种）。
+			// 真正的失败已由调用方（SiteCompileOptions）在上游报出。
+			return nil, nil
+		}
+		langs = resolved
 	}
 	rule := LangURLRuleForProject(in.Ctx, in.Project, in.ProjectID)
 	entries, err := siteRouteEntriesForLangs(rule, langs, in.LogicalPath)

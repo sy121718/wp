@@ -828,6 +828,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 	}
 	v := documentView{
 		Lang:              lang,
+		Dir:               DirAttr(lang),
 		Title:             c.Title,
 		MetaDescription:   c.MetaDescription,
 		SEOHead:           c.SEOHead,
@@ -853,9 +854,24 @@ func RenderDocument(c *CompiledPage) (string, error) {
 	return sb.String(), nil
 }
 
+// DirAttr <html dir> 的属性值：RTL 返回 "rtl"，其余返回空串（模板据此整段省略）。
+//
+// 为什么 LTR 不落字节：LTR 是 HTML 的缺省方向，写出来是冗余字节；而它一旦进产物，
+// 全部存量站点的产物 hash 都会变（产物 hash 含 HTML），触发一次无意义的全量重建。
+//
+// 导出给访客页面外壳（user/layout.html 的渲染数据）与 Manifest 共用：这三处的
+// 「要不要写 dir」必须是同一条规则，各判一次就会出现「Manifest 有、HTML 没有」。
+func DirAttr(lang string) string {
+	if LocaleDirection(lang) == "rtl" {
+		return "rtl"
+	}
+	return ""
+}
+
 // documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。
 type documentView struct {
 	Lang              string // <html lang>（目标语言，空回退默认语言）
+	Dir               string // <html dir>（仅 RTL 非空，缺省 = LTR）
 	Title             string
 	MetaDescription   string
 	SEOHead           string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）

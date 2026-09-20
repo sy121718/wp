@@ -134,6 +134,11 @@ type CompileUsage struct {
 	// 文档内 globalref 由静态扫描登记，这里只收「文档外」的引用（面板块在 navigations 行上）。
 	// 漏记的表现是「改了面板块，带该面板的页面不重建」——菜单面板通常挂在页眉，全站可见。
 	Blocks map[string]bool
+	// siteLangs 本次发布冻结的站点语言表（审计 I18N-02，见 SetSiteLangs）。
+	siteLangs []string
+	// contentCandidates / contentTranslator 内容译文缺失统计（审计 I18N-02）。
+	contentCandidates int
+	contentTranslator ContentMissCounter
 	// ContentTranslation 本次编译确实走了内容翻译（存在可翻译候选）。
 	//
 	// 为什么必须记：缺译文时构建期**回退原文**，补齐/修改译文都要改变产物字节；
@@ -244,6 +249,86 @@ func (u *CompileUsage) SiteSlotList() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ContentMissCounter 只声明「缺失计数」这一项能力：取词器的缺失数是渲染结束后
+// 才确定的，所以 Usage 存引用、编译结束后读一次。
+//
+// 用接口而不是 *i18n.ContentTranslator：pipeline 不该为了记两个数字把取词器的
+// 具体实现类型写进这里（取词器有存储、快照等一堆与依赖登记无关的能力）。
+type ContentMissCounter interface {
+	Misses() int64
+}
+
+// SetSiteLangs 记录本次发布冻结的站点语言表（审计 I18N-02）。
+func (u *CompileUsage) SetSiteLangs(langs []string) {
+	if u == nil || len(langs) == 0 {
+		return
+	}
+	u.siteLangs = append([]string(nil), langs...)
+}
+
+// SiteLangs 本次发布冻结的站点语言表（未冻结时为空）。
+func (u *CompileUsage) SiteLangs() []string {
+	if u == nil || len(u.siteLangs) == 0 {
+		return nil
+	}
+	return append([]string(nil), u.siteLangs...)
+}
+
+// RecordContentTranslation 记录本次编译消费的内容翻译（候选数 + 取词器引用）。
+//
+// 缺失数不在这里取：这时候还没渲染，取到的必然是 0。存引用是刻意的 ——
+// 见 ContentTranslationMisses。
+func (u *CompileUsage) RecordContentTranslation(candidates int, counter ContentMissCounter) {
+	if u == nil {
+		return
+	}
+	if candidates > u.contentCandidates {
+		u.contentCandidates = candidates
+	}
+	if counter != nil {
+		u.contentTranslator = counter
+	}
+}
+
+// ContentTranslationMisses 内容译文缺失统计：候选数与缺失数（未接入内容翻译时为 0）。
+func (u *CompileUsage) ContentTranslationMisses() (candidates int, misses int64) {
+	if u == nil {
+		return 0, 0
+	}
+	if u.contentTranslator != nil {
+		misses = u.contentTranslator.Misses()
+	}
+	return u.contentCandidates, misses
+}
+
+// compileUsageKey 把 CompileUsage 挂进 ctx 的键（私有类型，外部无法伪造或误取）。
+type compileUsageKey struct{}
+
+// WithCompileUsage 把依赖线索收集器放进 ctx。
+//
+// 为什么走 ctx 而不是加参数：内核算 Manifest 时要拿到「编译期才知道的统计」（冻结
+// 语言表、缺译候选/缺失数），而这三个值的产生点在**下游装配层**（pipeline 的
+// SiteCompileOptions / AppendContentTranslation），它们拿不到 BuildInput。ctx 是
+// 这条链上唯一已经贯通、且不需要改任何调用点签名的通道。
+func WithCompileUsage(ctx context.Context, u *CompileUsage) context.Context {
+	if ctx == nil || u == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, compileUsageKey{}, u)
+}
+
+// CompileUsageFromContext 取回 ctx 里的依赖线索收集器（未注入返回 nil）。
+//
+// 装配层只在**构建**口径下会被注入（预览不落依赖表，传的是 nil Usage）；
+// 因此「记录到了」本身就是「这次是构建」的证据，不需要另一套开关。
+func CompileUsageFromContext(ctx context.Context) *CompileUsage {
+	if ctx == nil {
+		return nil
+	}
+	u, _ := ctx.Value(compileUsageKey{}).(*CompileUsage)
+	return u
 }
 
 // CompileFn 冻结编译函数：构建输入 → 完整 HTML 文档字节。
@@ -636,6 +721,10 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 // in 为锁内取出的冻结快照（页面 ID / 语言 / 路径 / 文档字节），编译期间不访问
 // rec 可变字段，因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
 func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Artifact, err error) {
+	// 依赖线索收集器随 ctx 下沉（审计 I18N-02）：装配层拿不到 BuildInput，而它才知道
+	// 「发布冻结了哪份语言表」「这次有多少字段缺译文」，只有 ctx 是这条链上已经贯通的
+	// 通道（见 WithCompileUsage）。预览路径的 Usage 是 nil，ctx 里就没有收集器。
+	ctx = WithCompileUsage(ctx, in.Usage)
 	html, err := p.compile(ctx, in)
 	if err != nil {
 		return nil, fmt.Errorf("编译失败: %w", err)
@@ -648,8 +737,19 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 		SourceType:                SourceTypePage,
 		CanonicalPath:             in.Path,
 		Lang:                      in.Lang,
+		Dir:                       manifestDir(in.Lang),
 		SourceHash:                SHA256(in.DocJSON),
 		BuildInputHash:            SHA256(in.DocJSON),
+	}
+	// 发布事实（审计 I18N-02）：冻结语言表与缺译统计都只在**构建后**才能确定
+	// （缺失数要等渲染结束），所以在这里一次性取走写进 Manifest。
+	if in.Usage != nil {
+		m.SiteLangs = in.Usage.SiteLangs()
+		if candidates, misses := in.Usage.ContentTranslationMisses(); candidates > 0 || misses > 0 {
+			m.TranslationMisses = &ManifestTranslationMisses{
+				Policy: TranslationPolicyFallback, Candidates: candidates, Misses: misses,
+			}
+		}
 	}
 	if p.deps != nil {
 		m.Dependencies = p.deps(ctx, in)

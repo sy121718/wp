@@ -8,7 +8,7 @@
    注意 Jet 定界符：本文件里的 CSS 必须写成多行格式，避免出现连续的两个右花括号
    （Jet 在块语法之后会把它当作结束符，历史上已经踩过一次）。 *}
 <!DOCTYPE html>
-<html lang="{{ .["lang"] }}">
+<html lang="{{ .["lang"] }}"{{ if .["dir"] }} dir="{{ .["dir"] }}"{{ end }}>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -232,7 +232,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
 .g-device-meta{color:var(--g-muted);font-size:.8125rem;overflow-wrap:anywhere}
 .g-tag{
   display:inline-block;
-  margin-left:.375rem;
+  margin-inline-start:.375rem;
   padding:.0625rem .4375rem;
   border-radius:999px;
   background:var(--g-accent-soft);

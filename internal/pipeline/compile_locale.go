@@ -47,6 +47,13 @@ func AppendContentTranslation(
 	}
 	candidates = len(cands)
 	translator = makeTranslator(ctx, projectID, lang, builder.ContentHashes(cands))
+	// 缺译统计进 Manifest（审计 I18N-02）：候选数与取词器引用交回内核，内核在
+	// 编译结束后读一次缺失数并写进 Manifest。日志（LogContentTranslationMisses）
+	// 只作人工排查用 —— 它滚走了、也没法在发布验收里被机器判定。
+	//
+	// 缺失数此刻必须**不能**取：这时候还没渲染，取到的恒为 0，写进 Manifest
+	// 就是一份「零缺失」的假事实 —— 比不记更坏。
+	CompileUsageFromContext(ctx).RecordContentTranslation(candidates, translator)
 	return append(out, builder.WithContentTranslator(translator)), translator, candidates
 }
 

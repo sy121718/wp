@@ -20,7 +20,7 @@
     font-size: 13px; font-family: inherit; line-height: 1.4;
     border: 1px solid var(--sky-c-border-input, #c6ccd4); border-radius: var(--ui-r-sm);
     background: var(--sky-c-surface, #fff); color: inherit;
-    cursor: pointer; text-align: left;
+    cursor: pointer; text-align: start;
     transition: border-color var(--ui-motion-fast), box-shadow var(--ui-motion-fast), background-color var(--ui-motion-fast);
 }
 .wbs-trigger:disabled { opacity: .6; cursor: not-allowed; }
@@ -33,13 +33,13 @@
 .wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wbs-caret {
-    flex: 0 0 auto; width: 7px; height: 7px; margin-right: 3px;
+    flex: 0 0 auto; width: 7px; height: 7px; margin-inline-end: 3px;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
     transform: translateY(-2px) rotate(45deg); opacity: .55; transition: transform var(--ui-motion-fast);
 }
 .wbs.is-open .wbs-caret { transform: translateY(1px) rotate(-135deg); }
 .wbs-menu {
-    position: absolute; z-index: 60; left: 0; right: 0; margin: 4px 0 0; padding: 4px;
+    position: absolute; z-index: 60; inset-inline: 0; margin: 4px 0 0; padding: 4px;
     list-style: none; max-height: 260px; overflow: auto;
     background: var(--sky-c-surface, #fff);
     border: 1px solid var(--sky-c-border, #e5e7eb);
@@ -161,14 +161,21 @@
     opacity: 0; transition: opacity var(--ui-motion-base);
 }
 .drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; z-index: 90;
+    position: fixed; top: 0; inset-inline-end: 0; bottom: 0; z-index: 90;
     width: min(560px, 92vw); box-sizing: border-box;
     display: flex; flex-direction: column;
     background: var(--sky-c-surface, #fff);
-    border-left: 1px solid var(--sky-c-border, #e5e7eb);
+    border-inline-start: 1px solid var(--sky-c-border, #e5e7eb);
     box-shadow: -16px 0 40px rgba(16, 20, 26, .14);
     transform: translateX(100%);
     transition: transform var(--ui-motion-base);
+}
+/* RTL 抽屉基座（审计 I18N-02）：定位端点/边框/对齐已改成逻辑属性，自动跟随方向；
+   只有**位移量**与**投影方向**没有逻辑等价写法 —— 不显式翻转的话，右起抽屉在
+   RTL 站点上会从屏幕外右侧滑入再停到左侧，动画与落位对不上。 */
+[dir="rtl"] .drawer {
+    box-shadow: 16px 0 40px rgba(16, 20, 26, .14);
+    transform: translateX(-100%);
 }
 body.drawer-open .drawer { transform: translateX(0); }
 body.drawer-open .drawer-mask { opacity: 1; }
@@ -198,12 +205,21 @@ body.drawer-open { overflow: hidden; }
    用户扫一眼就知道自己填的值是不是想要的那个颜色。
    用 background-image 而不是 border-left —— 色带两侧要各画一条极淡的分界线，
    否则 #ffffff / #f4f5f6 这类浅色在白底输入框里等于不存在（实测过）。
-   padding-left 相应让到色带右侧，文字不压在色带上。 */
+   padding-inline-start 相应让到色带内侧，文字不压在色带上。 */
 .wbc > input {
     flex: 1 1 auto; min-width: 0; width: auto;
-    padding-left: 14px;
+    padding-inline-start: 14px;
     background-repeat: no-repeat;
     background-image: linear-gradient(to right,
+        rgba(16, 20, 26, .3) 0 1px,
+        var(--wbc-color, transparent) 1px 7px,
+        rgba(16, 20, 26, .3) 7px 8px,
+        transparent 8px);
+}
+/* RTL 色带（审计 I18N-02）：渐变没有「内侧/外侧」的逻辑写法，只能显式翻向 ——
+   不翻的话色带在 RTL 下留在右边，而文字已经让到右边 14px，两者叠在同一处。 */
+[dir="rtl"] .wbc > input {
+    background-image: linear-gradient(to left,
         rgba(16, 20, 26, .3) 0 1px,
         var(--wbc-color, transparent) 1px 7px,
         rgba(16, 20, 26, .3) 7px 8px,
@@ -240,7 +256,7 @@ body.drawer-open { overflow: hidden; }
 .is-busy { opacity: .75; cursor: progress; position: relative; }
 .is-busy::after {
     content: ''; display: inline-block; vertical-align: -2px;
-    width: 12px; height: 12px; margin-left: var(--ui-sp-xs);
+    width: 12px; height: 12px; margin-inline-start: var(--ui-sp-xs);
     border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
     animation: wb-busy-spin .6s linear infinite;
 }
@@ -672,7 +688,7 @@ button.row-title-link {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    margin-right: var(--ui-sp-xs);
+    margin-inline-end: var(--ui-sp-xs);
 }
 .dot-success { background: var(--sky-c-success, #7fb28d); }
 .dot-warning { background: var(--sky-c-warning, #c2a06a); }

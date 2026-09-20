@@ -273,10 +273,18 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	// 站点级 SEO 产物与自定义 404 页：发布激活后刷新
 	// sitemap.xml / robots.txt / feed.xml / 404.html。
 	// 尽力而为——生成失败只记日志，不回滚已完成的发布（产物可由下次发布或手动接口重建）。
-	if err = s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot(),
-		s.enabledLangsOf(ctx, page.ProjectID), s.defaultLocaleOf(ctx, page.ProjectID),
-		s.notFoundHTMLOf(ctx, page.ProjectID)); err != nil {
-		logger.Scene("publication").With("pageId", page.ID).Error(err, "sitemap/robots 刷新失败")
+	// 语言集按**发布口径**取（审计 I18N-02）：sitemap 的 hreflang 分组按站点语言清单
+	// 展开，按可见回退取列表会写出「只有默认语言一组」的 sitemap —— 线上站点文件被
+	// 静默降级，而这次发布回执写的是成功。读不到就**跳过本次刷新**（保留上一版站点
+	// 文件，它们至少是完整的），并留下一条 Error；发布本身已激活完成，不回滚。
+	siteLangs, lerr := s.publishLangsOf(ctx, page.ProjectID)
+	if lerr != nil {
+		logger.Scene("publication").With("pageId", page.ID).
+			Error(lerr, "站点语言清单不可读，跳过 sitemap/robots 刷新（保留上一版站点文件）")
+	} else if rerr := s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot(),
+		siteLangs, s.defaultLocaleOf(ctx, page.ProjectID),
+		s.notFoundHTMLOf(ctx, page.ProjectID)); rerr != nil {
+		logger.Scene("publication").With("pageId", page.ID).Error(rerr, "sitemap/robots 刷新失败")
 	}
 	s.notifyIndexNow(ctx, page.ProjectID, path)
 	return &pagedto.PublishResp{

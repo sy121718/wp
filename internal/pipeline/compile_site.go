@@ -9,6 +9,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 
 	"go_wp/internal/builder"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -44,6 +45,27 @@ type SiteCompileParams struct {
 	TargetLangs []string
 }
 
+// publishLangScope 判定本次编译是否为**发布口径**（语言表必须冻结，审计 I18N-02）。
+//
+// 判据：调用方注入了「访问路径是否已发布」查询（RoutePublished）**并且**这次编译
+// 有逻辑路径与工程上下文 —— 也就是「要产出互指/切换器、并且关心访问面现状」的
+// 那一次编译。四个真实调用点在此判据下的取值：
+//
+//	手工 Page 构建/发布      注入 + 有路径 + 有工程 → 发布口径
+//	手工 Page 预览           不注入（预览不看发布面） → 预览口径
+//	自动发布实例构建/发布     注入 + 有路径 + 有工程 → 发布口径
+//	自动发布实例预览         注入，但预览的是实体草稿、没有逻辑路径 → 预览口径
+//
+// 为什么不用一个显式开关参数：SiteCompilePorts/Params 由 page 与 presentation 两个
+// 模块共 4 处调用，加参数就得同时改这四处。而这条判据判错的代价是**不对称**的：
+// 误判成「发布」只会在语言表真的读不到时让预览报错（响亮的失败，可立即定位），
+// 误判成「预览」则会让发布静默降级 —— 本次要消灭的正是后者。
+func publishLangScope(ports SiteCompilePorts, p SiteCompileParams) bool {
+	return ports.RoutePublished != nil &&
+		strings.TrimSpace(p.LogicalPath) != "" &&
+		strings.TrimSpace(p.ProjectID) != ""
+}
+
 // SiteCompileOptions 构造 page 与 presentation 共用的站点级 CompileOption。
 func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []builder.CompileOption, err error) {
 	opts = append(opts, builder.WithProjectID(p.ProjectID))
@@ -64,6 +86,26 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 		}
 	}
 	if lp := p.LogicalPath; lp != "" {
+		// 发布冻结语言表（审计 I18N-02）：本次是发布口径时，语言表必须在构建开始前
+		// 读到并冻进本次编译 —— 读不到就失败，绝不「降级为默认语言一种」继续往下做。
+		//
+		// 降级的后果在发布口径下是不可接受的：产物照常产出、回执照常写成功，而线上
+		// 其余语言停在旧字节（或整站被单语言产物覆盖）。它没有任何症状 ——
+		// 唯一的痕迹是一行日志，而「日志里的告警」正是本次审计点名不能当质量检查的东西。
+		policy := LangFallbackVisible
+		if publishLangScope(ports, p) {
+			policy = LangFallbackForbidden
+		}
+		siteLangs, lerr := ResolveSiteLangs(p.Ctx, ports.Project, p.ProjectID, policy)
+		if lerr != nil {
+			return nil, lerr
+		}
+		// 冻结结果随 ctx 回到内核并写进 Manifest。只在**发布口径**登记：预览口径下的
+		// 语言集合是从清单推导出来的，记进 Manifest 会被读成「这次发布冻结了它」。
+		// （预览路径本来也没有收集器，这里再加一道判据是为了语义准确，而不是兜底。）
+		if policy == LangFallbackForbidden {
+			CompileUsageFromContext(p.Ctx).SetSiteLangs(siteLangs)
+		}
 		// 判定依据二选一（SEO-026）：
 		//
 		//   批次口径：调用方传了 TargetLangs —— 本批次要上线哪些语言是**构建输入**，
@@ -96,6 +138,9 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 			Ctx: p.Ctx, Project: ports.Project, ProjectID: p.ProjectID,
 			LogicalPath: lp, Lang: p.Lang,
 			TargetLangs: p.TargetLangs, Published: published,
+			// 冻结结果直接传下去：本次编译只认这一份语言表，不再回读工程服务
+			// （两次读之间清单被改，产物与 Manifest 就会各说各话）。
+			SiteLangs: siteLangs, LangFallback: policy,
 		})
 		if len(alts) > 1 {
 			opts = append(opts, builder.WithAlternates(alts))

@@ -105,7 +105,17 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			logger.Scene("dependency").With("page_id", id).Warn("自动重建跳过：页面不存在或已删除")
 			continue
 		}
-		for _, lang := range s.enabledLangsOf(ctx, page.ProjectID) {
+		// 语言集按**发布口径**取（审计 I18N-02）：这条循环会构建并回写线上已发布的
+		// 语言。按可见回退取列表时，清单读不到会退化成「只重建默认语言」—— 其余语言
+		// 停在旧字节，而本方法照常返回成功、日志里只有一行「读取失败」。宁可整页跳过
+		// （保持 stale，影响面回执里看得见），也不打默认语言的折扣。
+		langs, lerr := s.publishLangsOf(ctx, page.ProjectID)
+		if lerr != nil {
+			logger.Scene("dependency").With("page_id", id).
+				Error(lerr, "自动重建跳过：站点语言清单不可读，不用默认语言一种代替整站语言集（页面保持 stale）")
+			continue
+		}
+		for _, lang := range langs {
 			if ctx.Err() != nil {
 				return nil
 			}

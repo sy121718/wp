@@ -11,6 +11,14 @@ import (
 	"go_wp/internal/builder"
 )
 
+// manifestDir Manifest.dir 的取值：与 HTML 同一条规则（RTL 落字节、LTR 省略）。
+//
+// 同源是硬要求：判据分成两份，就会出现「Manifest 说 rtl、产物没有 dir」这类
+// 两边都不报错的漂移，而它恰恰是审计要防的那类不一致。
+func manifestDir(lang string) string {
+	return builder.DirAttr(lang)
+}
+
 // 常量：manifest 版本号与支持来源类型（docs/03-pipeline.md §4.2）。
 const (
 	// ManifestSchemaVersion manifest schema 版本。
@@ -49,9 +57,27 @@ type Manifest struct {
 	// 影响面：产物 hash = SHA256(manifestJSON + "\n" + indexHTML) 含 Manifest
 	// （artifact.go artifactPayloadHash），因此新增 lang 字段会改变全部
 	// 「带语言构建」的产物 hash，需要一次性全量重建（历史产物仍可按旧 hash 回滚）。
-	Lang         string            `json:"lang,omitempty"`
-	Dependencies []Dependency      `json:"dependencies"`
-	Files        map[string]string `json:"files"`
+	Lang string `json:"lang,omitempty"`
+	// Dir 本次构建的书写方向（审计 I18N-02）：只在 RTL 时落字节。
+	//
+	// 与 HTML 同一条规则（builder.documentDir）：LTR 是缺省方向，写出来是冗余字节，
+	// 而它一进 Manifest 就会改变全部存量产物的 hash。判据同源于
+	// builder.LocaleDirection —— Manifest 与 HTML 不可能一个说 rtl 一个没有。
+	Dir string `json:"dir,omitempty"`
+	// SiteLangs 本次发布冻结的站点语言表（默认语言在前，审计 I18N-02）。
+	//
+	// 只在发布口径登记（构建输入里确实有一份冻结的语言表时）。它的作用是让
+	// 「这次发布依据哪几种语言」成为产物自身的事实：事后审计不再需要去猜
+	// 「当时 project_locales 里有什么」——那已经变了。
+	SiteLangs []string `json:"siteLangs,omitempty"`
+	// TranslationMisses 构建期内容译文缺失统计（审计 I18N-02）。
+	//
+	// 为什么进 Manifest 而不是只记日志：日志是给人看的、会滚动消失、也无法在发布
+	// 验收里被机器判定。这里记的是「这次产物里有多少字段用了回退原文」，是发布质量
+	// 检查该读的事实。
+	TranslationMisses *ManifestTranslationMisses `json:"translationMisses,omitempty"`
+	Dependencies      []Dependency               `json:"dependencies"`
+	Files             map[string]string          `json:"files"`
 	// Diagnostics 本次构建**被容忍**的降级归因（审计 ARCH-05）。
 	//
 	// 记什么：绑定了、拿得到、但内容为空（ref_empty）这类不构成配置错误的降级，
@@ -61,6 +87,24 @@ type Manifest struct {
 	// omitempty 是确定性与历史兼容的关键：没有诊断时该字段完全不出现在 JSON 里，
 	// 产物字节与加字段前逐字节一致（hash 不变，无需全量重建）。
 	Diagnostics []builder.Degrade `json:"diagnostics,omitempty"`
+}
+
+// TranslationPolicyFallback 内容译文缺失时的字段策略：回退原文并计数（当前唯一实现）。
+//
+// 策略是显式字段而不是隐含行为：验收规则是「缺译的产物能不能上线」由策略决定，
+// 现在只有 fallback（缺译照常上线，但统计进 Manifest）；将来若引入 required，
+// 消费方按同一个字段判定，不需要新认一个标记。
+const TranslationPolicyFallback = "fallback"
+
+// ManifestTranslationMisses 内容译文缺失统计（按字段计数）。
+//
+// Candidates 是本次编译收集到的可翻译候选字段数，Misses 是其中未命中译文的字段数。
+// 两者一起才可判读：misses=3 在 candidates=3（整页没翻译）与 candidates=300
+// （只有 3 个字段漏翻）是完全不同的质量问题。
+type ManifestTranslationMisses struct {
+	Policy     string `json:"policy"`
+	Candidates int    `json:"candidates"`
+	Misses     int64  `json:"misses"`
 }
 
 // 依赖类型常量（docs/03-pipeline.md §8.2 / docs/06-D §10.4）。

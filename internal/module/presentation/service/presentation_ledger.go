@@ -131,10 +131,30 @@ func (s *Service) convergeInstanceBatch(ctx context.Context, projectID, instance
 
 // batchConverged 该实例是否已收敛到「全部启用语言都有账本行，且指针指着默认语言产物」。
 //
-// 判据刻意从严：查不到语言清单或账本时按「已收敛」处理 —— 恢复流程不该因为读不到状态
-// 就触发重建（那会在启动时对每个实例白跑一次构建）。
+// 判据刻意从严：查不到语言清单或账本时**本轮不处置**（返回 true）—— 恢复流程不该因为
+// 读不到状态就触发重建（那会在启动时对每个实例白跑一次构建）。但语言集必须**严格读取**：
+// 用可见回退的集合会把「每种启用语言都得有账本行」缩成「只查默认语言那一行」，见下方注释。
 func (s *Service) batchConverged(ctx context.Context, inst *presentationmodel.InstanceEntity) bool {
-	langs := pipeline.EnabledLangs(ctx, s.project, inst.ProjectID)
+	// 语言清单这里用**严格读取**（审计 I18N-02），但仍然不改变「读不到就本轮不处置」
+	// 的既有口径 —— 两者是不同的事，别混成一句「按可见回退」：
+	//
+	//   · 不能用回退集合：可见回退给的是「只有默认语言一种」，而下面这个循环的语义是
+	//     「每种启用语言都必须有账本行」。用回退集合就把检查缩成了只查默认语言那一行，
+	//     于是**基于错误的事实宣称收敛**（恒为真的假收敛）—— 这正是本次要消灭的形态：
+	//     判定用了降级后的语言集，而判定结果被当成事实。
+	//   · 读取失败也不能返回 false：本函数在启动恢复里跑，一次读库抖动会替每个实例
+	//     排一次注定失败的构建。返回 true 在这里的实际含义是「本轮不处置」，与下面
+	//     ListPublications 失败的分支同口径（同样是记 Error + return true）。
+	//
+	// 也就是说：读不到 = 本轮什么都不做（不宣称收敛、也不据此重建）。真正会产出错误
+	// 产物的发布路径另有兜底：publishAllLangs 与编译期 SiteCompileOptions 都按发布
+	// 口径硬失败。
+	langs, lerr := s.publishLangsOf(ctx, inst.ProjectID)
+	if lerr != nil {
+		logger.Scene("publication").With("instanceId", inst.ID).
+			Error(lerr, "读取站点语言清单失败，跳过本轮批次收敛判定（不宣称收敛，下轮重来）")
+		return true
+	}
 	if len(langs) == 0 {
 		return true
 	}

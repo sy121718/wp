@@ -184,7 +184,30 @@ func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, pro
 	return nil
 }
 
+// publishLangsOf 发布 / 重建口径的站点启用语言：语言清单读不到即返回错误（审计 I18N-02）。
+//
+// 用在「这次动作会改动访问面」的路径上（RebuildStale 的语言遍历、RefreshSiteFiles 的
+// sitemap 分组）。判据不是「谁调用」，而是「降级的后果可不可见」：这些路径降级成默认
+// 语言一种之后，站点少更新几种语言、sitemap 少几组 URL，而调用方拿到的都是成功。
+func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]string, error) {
+	return pipeline.ResolveSiteLangs(ctx, s.project, projectID, pipeline.LangFallbackForbidden)
+}
+
 // enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
+//
+// **唯一调用方是 siteRoutePaths**（建页 / 保存草稿时按启用语言占位 page_routes，见
+// page_draft.go 的创建与改路径两处），据此定口径为「允许回退」，理由有三条：
+//
+//  1. 它是**作者可操作的后台写入口**：一次读库抖动不该让作者存不了草稿 —— 那是把
+//     基础设施的瞬时故障直接暴露成「你的编辑保存失败」；
+//  2. 降级在这里的后果是**可修复且可见的**：只占位了默认语言的访问路径。下一次保存
+//     或发布时 siteRoutePaths / renameReservedAllLangsTx 会按当时的完整清单重算并补齐；
+//     就算窗口期内别的页面抢注了未占位的语言路径，发布时路由冲突会当场报错，不会
+//     静默产出错 URL；
+//  3. 它**不产出任何面向访客的字节**：草稿路由占位与产物、sitemap、发布回执都无关。
+//
+// 与发布口径的分界就写在这里：会改访问面 / 会写发布事实的路径一律用 publishLangsOf。
+// 发布路径另有编译期冻结（pipeline.SiteCompileOptions 发布口径读不到语言表即失败）。
 func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string {
 	return pipeline.EnabledLangs(ctx, s.project, projectID)
 }
