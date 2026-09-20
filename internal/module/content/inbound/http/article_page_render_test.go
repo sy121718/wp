@@ -68,7 +68,8 @@ func TestArticlesListTemplateRenders(t *testing.T) {
 	for _, want := range []string{
 		"第一篇", "hello-world", "第二篇", "second-post",
 		"已发布", "未发布", "/site/blog/hello-world", "/admin/articles/edit?id=a1",
-		"/admin/articles/create", "删除",
+		// 新建入口（弃抽屉）改为整页链接，抽屉模板不再渲染。
+		"/admin/articles/new", "删除",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页渲染结果缺少 %q", want)
@@ -97,7 +98,8 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 		"/admin/articles/score", "/admin/articles/update",
 		"SEO 评测", "重新评分", "保存",
 		// 导入到画布区块（06-B 决策 5 的入口）：能力未装配时给提示而不是按钮。
-		"导入到画布",
+		// 可视化编辑（原「导入到画布」的直白措辞，行为不变：复制而非绑定）+ 实时预览容器。
+		"可视化编辑", "article-live-preview",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("编辑页渲染结果缺少 %q", want)

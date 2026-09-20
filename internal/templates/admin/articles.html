@@ -26,7 +26,7 @@
         </div>
         <div class="page-actions">
             {{if canCreate}}
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-article-create" data-drawer-title="{{ .["t"]("admin.article.list.createHeading", "新建文章") }}">＋ {{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</button>
+            <a class="btn btn-primary" href="/admin/articles/new">＋ {{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</a>
             {{end}}
         </div>
     </header>
@@ -76,7 +76,7 @@
             <p class="empty-desc">{{ .["t"]("admin.article.list.emptyDesc", "用右上角「新建文章」建第一篇；正文、摘要、封面与 SEO 字段都在编辑页里填。") }}</p>
             {{if canCreate}}
             <div class="empty-actions">
-                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-article-create" data-drawer-title="{{ .["t"]("admin.article.list.createHeading", "新建文章") }}">＋ {{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</button>
+                <a class="btn btn-primary" href="/admin/articles/new">＋ {{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</a>
             </div>
             {{end}}
         </div>
@@ -152,24 +152,5 @@
     {{end}}
     {{end}}
 
-    {{if canCreate}}
-    <template id="tpl-article-create">
-        <form method="post" action="/admin/articles/create">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <div class="form-row">
-                <div class="form-group">
-                    <input type="text" name="title" class="form-input" placeholder="{{ .["t"]("admin.article.list.titlePlaceholder", "文章标题") }}" required>
-                </div>
-                <div class="form-group">
-                    <input type="text" name="slug" class="form-input" placeholder="{{ .["t"]("admin.article.list.slugPlaceholder", "路径片段，如 hello-world") }}" required>
-                </div>
-            </div>
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
-            </div>
-        </form>
-    </template>
-    {{end}}
 </div>
 {{end}}

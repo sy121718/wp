@@ -34,8 +34,8 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 		"待重建影响面",
 		"/blog/hello-world",
 		"第一篇",
-		"data-drawer-open",
-		"tpl-article-create",
+		// 新建入口（弃抽屉）是整页链接。
+		"/admin/articles/new",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("待重建影响面存在时，列表页应完整渲染并包含 %q", want)

@@ -8,6 +8,7 @@ GET /admin/administrators
 GET /admin/analytics
 GET /admin/articles
 GET /admin/articles/edit
+GET /admin/articles/new
 GET /admin/articles/translations
 GET /admin/blocks
 GET /admin/content-templates

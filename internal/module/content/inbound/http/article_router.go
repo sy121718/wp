@@ -46,6 +46,10 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 		articlePages.SetArticleLinkLocator(loc)
 	}
 	pages.GET("/articles", articlePages.ArticlesPage)
+	// 文章新建整页（弃抽屉，对齐商品的 /admin/products/new）：左正文右实时预览。
+	// 页面 GET 本走 /admin 组（Session+CSRF，无 Casbin），但打开它就等于拿到建文章的
+	// 表单 —— 与 POST /articles/create 同挂 content:create 权限点，能建才能进。
+	pages.GET("/articles/new", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleNewPage)
 	pages.GET("/articles/edit", articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
