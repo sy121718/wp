@@ -123,7 +123,7 @@ func TestRTLFixtureBuildsInThreeLocales(t *testing.T) {
 			// 可能不带 href），因此按「三条语言链接里至少命中两条」判定。
 			hits := 0
 			for _, href := range []string{"/index", "/en/index", "/ar/index"} {
-				if strings.Contains(doc, "\"" + href + "\"") {
+				if strings.Contains(doc, "\""+href+"\"") {
 					hits++
 				}
 			}

@@ -135,7 +135,7 @@ func (m *Model) DeleteBrand(ctx context.Context, id string) (err error) {
 }
 
 // CreateBrandTx / UpdateBrandTx / DeleteBrandTx — 复用**调用方已开启的事务**
-//（审计 ARCH-01：品牌行与静态产物失效事件必须原子，理由同分类侧）。
+// （审计 ARCH-01：品牌行与静态产物失效事件必须原子，理由同分类侧）。
 func (m *Model) CreateBrandTx(ctx context.Context, tx *gorm.DB, e *ProductBrandEntity) error {
 	return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Create(e).Error
 }

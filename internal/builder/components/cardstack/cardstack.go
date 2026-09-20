@@ -280,7 +280,7 @@ type Props struct {
 type Component struct{}
 
 // CollectionProp 实现 core.CollectionProvider：集合源取自 Props.CollectionSource
-//（审计 ARCH-01）。手写组件（非 core.Atom 基座）必须显式声明，否则依赖登记看不见它 ——
+// （审计 ARCH-01）。手写组件（非 core.Atom 基座）必须显式声明，否则依赖登记看不见它 ——
 // 表现是「用了 cardstack 集合模式的页面，新增内容后永不重建」。
 func (c *Component) CollectionProp() string { return "collectionSource" }
 
