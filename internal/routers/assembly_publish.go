@@ -7,6 +7,7 @@ package routers
 
 import (
 	"context"
+	"go_wp/config"
 	"time"
 
 	"go_wp/internal/builder"
@@ -326,7 +327,13 @@ func (a *assembly) wirePublishingPorts() {
 	// 分区维护（审计 DB-004）：三张只增表（page_views / inventory_stock_movements /
 	// master_data_changes）按月分区，启动时补齐未来分区、之后每日一次。
 	// 不启动它不会立刻出错（数据落 DEFAULT 分区），但分区裁剪与整块归档的收益就没了。
-	partition.StartScheduler(context.Background(), a.db)
+	//
+	// 建分区是 DDL（需要 public schema 的 CREATE），业务角色（go_wp_app）会被拒 ——
+	// 所以它与结构迁移同一条线：database.run_migrations=false（业务角色启动）时一并
+	// 跳过，改由运维侧用管理连接定期跑 go run cmd/main.go -migrate-only（已含分区补齐）。
+	if config.RunMigrationsEnabled() {
+		partition.StartScheduler(context.Background(), a.db)
+	}
 	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
 	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
 	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
