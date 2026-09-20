@@ -70,6 +70,16 @@ type Manifest struct {
 	// 「这次发布依据哪几种语言」成为产物自身的事实：事后审计不再需要去猜
 	// 「当时 project_locales 里有什么」——那已经变了。
 	SiteLangs []string `json:"siteLangs,omitempty"`
+	// SiteDefaultLang 本次发布冻结的站点默认语言（审计 I18N-01）。
+	//
+	// 与 SiteLangs 成对：语言表回答「有哪几种」，默认语言回答「哪一条是 x-default、
+	// 哪一条在 default_plain 方案下不带前缀」。只冻结前者的话，project_locales 里
+	// is_default 一改，既有产物重建后 x-default 就换了目标 —— 而语言集合可能一个
+	// 都没变，看上去完全不像「配置改过」。
+	//
+	// omitempty 是确定性与历史兼容的关键：没有冻结语言输入的产物（预览编译、
+	// 未接入发布计划的来源）不带这个键，字节与加字段前逐字节一致（hash 不变）。
+	SiteDefaultLang string `json:"siteDefaultLang,omitempty"`
 	// TranslationMisses 构建期内容译文缺失统计（审计 I18N-02）。
 	//
 	// 为什么进 Manifest 而不是只记日志：日志是给人看的、会滚动消失、也无法在发布

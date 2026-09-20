@@ -22,8 +22,24 @@ import (
 )
 
 // sitePathOf 计算页面实际访问路径（语言 URL 方案单点映射），失败归一为 ErrInvalidPath。
+//
+// 默认语言现场解析。构建 / 发布口径请走 sitePathOfWithPlan —— 默认语言一旦在
+// project_locales 里被改（is_default 换人），现场解析会把默认语言算到另一个语言上，
+// 于是同一条草稿路径映射到另一个访问路径（默认语言无前缀、非默认语言带前缀）。
 func (s *Service) sitePathOf(ctx context.Context, lang string, page *pagemodel.PageEntity) (string, error) {
-	path, err := sitePath(s.langURLRuleOf(ctx, page.ProjectID), lang, page.DraftPath)
+	return s.sitePathOfWithPlan(ctx, lang, page, nil)
+}
+
+// sitePathOfWithPlan 用**冻结计划**里的默认语言计算访问路径（审计 I18N-01）。
+//
+// plan 为 nil 时等价 sitePathOf（现场解析）—— 两条路径都只经 sitePath 单点映射，
+// 禁止在任何一侧手拼 "/" + lang + path。
+func (s *Service) sitePathOfWithPlan(ctx context.Context, lang string, page *pagemodel.PageEntity, plan *pipeline.PublicationPlan) (string, error) {
+	rule := s.langURLRuleOf(ctx, page.ProjectID)
+	if plan != nil && strings.TrimSpace(plan.DefaultLang) != "" {
+		rule = pipeline.LangURLRuleForProjectWithDefault(ctx, s.project, page.ProjectID, plan.DefaultLang)
+	}
+	path, err := sitePath(rule, lang, page.DraftPath)
 	if err != nil {
 		return "", ErrInvalidPath
 	}
@@ -100,8 +116,14 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		publishedPath = oldRoutePath
 	}
 
+	// 发布计划（审计 I18N-01）：改 URL 会在新路径上**重新编译**一份产物，
+	// 它必须与既有产物声明同一套互指；计划已冻结且草稿未变时原样沿用。
+	plan, persistPlan, err := s.publicationPlanFor(ctx, page, lang)
+	if err != nil {
+		return nil, err
+	}
 	// 内核以旧发布路径为基线执行 UpdateURL（内部完成构建+激活+旧路径处置）。
-	if err = s.restoreKernelForUpdate(ctx, page, publishedPath); err != nil {
+	if err = s.restoreKernelForUpdate(ctx, page, publishedPath, &plan); err != nil {
 		return nil, err
 	}
 	stBefore, _ := s.publisher.Status(page.ID)
@@ -184,11 +206,16 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	// draft_path 迁移、该语言激活路径迁移、各语言 reserved 路由改名、新路径路由激活、
 	// 旧路径处置（301 或取消激活）、依赖记录同步。任一步失败整体回滚 + 回执保持
 	// pending，由启动恢复按链接的实际指向补齐。
+	activationPlan := (*pipeline.PublicationPlan)(nil)
+	if persistPlan {
+		activationPlan = &plan
+	}
 	if err = s.applyUpdateURL(ctx, updateURLApplyInput{
 		Page: page, ArtifactRowID: artifactRowID, Lang: lang,
 		KernelNewPath: kernelNewPath, NewLogicalPath: newPath,
 		OldLogicalPath: oldPath, OldKernelPath: publishedPath,
 		WithRedirect: req.WithRedirect, Deps: deps, RouteLangs: routeLangs,
+		Plan: activationPlan,
 	}); err != nil {
 		s.keepPublishReceiptPending(receiptID, "DB 状态写入失败")
 		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).

@@ -17,8 +17,11 @@ import (
 // syncKernel 把页面当前草稿同步进内核记录（幂等；版本号以内核为准续增）。
 // path 为实际访问路径（多语言下带 /{lang}/ 前缀），lang 为构建语言：
 // 两者一起进入内核记录，决定 Manifest.lang 与激活路径。
-func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID string) error {
-	draft := pipeline.Draft{Path: path, Lang: lang, DocJSON: doc}
+// plan 为本次构建依据的**冻结发布计划**（审计 I18N-01，可空 = 未冻结）：
+// 它同样属于「这次构建的站点环境」，必须随草稿一起进内核 —— 内核只认记录里的那一份，
+// 编译期不会再回读工程服务。
+func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID string, plan *pipeline.PublicationPlan) error {
+	draft := pipeline.Draft{Path: path, Lang: lang, DocJSON: doc, Plan: plan}
 	st, err := s.publisher.Status(pageID)
 	if errors.Is(err, pipeline.ErrPageNotFound) {
 		_, err = s.publisher.SaveDraftInput(pageID, 0, draft)
@@ -38,11 +41,16 @@ func (s *Service) syncKernel(path, lang string, doc json.RawMessage, pageID stri
 }
 
 // restoreKernelForHistory 以目标产物为基线重建内核记录（回滚前置）。
+//
+// 计划的取法与恢复方向的语义一致：要回到的那份产物自带它的站点语言输入
+// （Manifest.siteLangs / siteDefaultLang，审计 I18N-01）。取得到就带着走 ——
+// 回滚本身不重编译，但内核记录会被后续的 UpdateURL / 重新构建复用，
+// 那时若计划为空就会退回现场解析，等于把这条审计的失效重新引进回滚路径。
 func (s *Service) restoreKernelForHistory(page *pagemodel.PageEntity, target *artifactcontract.ArtifactResp) error {
 	doc := page.DraftDocumentFor(target.SourceDocument)
 	rec := &pipeline.PageRecord{
 		ID: page.ID, Path: target.CanonicalPath, Version: 1, Status: pipeline.StatePublished,
-		DocumentJSON: doc,
+		DocumentJSON: doc, Plan: publicationPlanFromManifest(target.Manifest),
 		Histories: []*pipeline.HistoryEntry{{
 			Hash: target.ArtifactHash, Path: target.CanonicalPath,
 			Status: pipeline.StateSuperseded, Order: 1,
@@ -53,7 +61,11 @@ func (s *Service) restoreKernelForHistory(page *pagemodel.PageEntity, target *ar
 }
 
 // restoreKernelForUpdate 以当前发布路径重建内核记录并预激活现有产物（URL 变更前置）。
-func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.PageEntity, publishedPath string) error {
+//
+// plan 为本次改 URL 依据的冻结发布计划（审计 I18N-01，可空）：改 URL 会在新路径上
+// **重新编译**一份产物，它的 hreflang / 语言切换器必须与既有产物同源，
+// 否则同一页面在 /about 与 /new-about 上会声明两套互指。
+func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.PageEntity, publishedPath string, plan *pipeline.PublicationPlan) error {
 	doc := page.DraftDocument
 	activeHash := ""
 	histories := []*pipeline.HistoryEntry{}
@@ -75,9 +87,34 @@ func (s *Service) restoreKernelForUpdate(ctx context.Context, page *pagemodel.Pa
 	rec := &pipeline.PageRecord{
 		ID: page.ID, Path: publishedPath, Version: 1, Status: pipeline.StatePublished,
 		DocumentJSON: doc, ActiveHash: activeHash, Histories: histories,
+		Plan: plan,
 	}
 	s.publisher.LoadRecord(rec)
 	return nil
+}
+
+// publicationPlanFromManifest 从产物 Manifest 还原冻结的发布计划（审计 I18N-01）。
+//
+// 为什么从 Manifest 而不是 DB 计划表：这里是**按某一份具体产物**重建的场景
+// （回滚、灾难恢复），要复现的是那份产物当时依据的输入，而不是「现在这个页面
+// 依据哪份输入」。两者在「发布之后又改过配置、但还没重新冻结」的窗口里会分叉。
+//
+// 语言表为空（未接入语言的产物，或该字段引入之前的存量产物）时返回 nil：
+// 不能拿一份空计划去覆盖现场解析。
+func publicationPlanFromManifest(raw []byte) *pipeline.PublicationPlan {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m pipeline.Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	plan := pipeline.PublicationPlan{SiteLangs: m.SiteLangs, DefaultLang: m.SiteDefaultLang}
+	if plan.Empty() {
+		return nil
+	}
+	n := plan.Normalize()
+	return &n
 }
 
 // kernelVersion 读取内核记录当前版本（不存在视为 1）。

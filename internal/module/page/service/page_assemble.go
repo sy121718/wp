@@ -16,6 +16,7 @@ import (
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -59,14 +60,19 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 		logger.Scene("build").With("err", err).Warn("页面文档解析失败，回退默认编译")
 		return pipeline.DefaultCompile(ctx, in)
 	}
-	projectID, currentPath := s.pageContextOf(ctx, in.PageID, in.Lang)
+	// 默认语言取自**冻结计划**（审计 I18N-01）：逻辑路径是「剥掉语言前缀」得来的，
+	// 而「哪个语言不带前缀」由默认语言决定 —— 现场解析会让改过 is_default 的重建
+	// 把 /en/about 原样当成逻辑路径，再加一次前缀变成 /en/en/about。
+	projectID, currentPath := s.pageContextOfWithDefault(ctx, in.PageID, in.Lang, planDefaultLang(in.Plan))
 	// 语言来自构建输入（内核按 PageRecord.Lang 注入，见 pipeline.BuildInput）；
 	// 访问路径仍取页面记录的逻辑路径，前缀在 compileDocument 内单点计算。
 	// 依赖线索记录器（审计 VIS-006）：构建路径传入，编译期记录消费过的系统页面槽位。
 	// 发布模式（CompileModePublish）：显式绑定但拿不到的结构依赖让本次构建失败。
 	// 归因收集器来自内核的 BuildInput（与 Usage 同一条路子），编译期填充、由内核写进 Manifest。
+	// 发布计划同样来自构建输入（审计 I18N-01）：它是这次构建的站点环境的一部分，
+	// 装配层只原样使用，不再回读语言配置。
 	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang, in.Usage, true,
-		builder.CompileModePublish, in.Diagnostics)
+		builder.CompileModePublish, in.Diagnostics, in.Plan)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "页面编译失败")
@@ -114,7 +120,9 @@ func (s *Service) syncMediaRefs(ctx context.Context, pageID, pagePath string, ht
 // 拿不到的结构模板会让这里直接失败；预览路径传 CompileModePreview —— 降级为带归因的占位。
 // diags 为降级归因收集器（预览传 nil）：发布路径由内核经 BuildInput 注入，
 // 编译期收集的「被容忍的降级」最终写进产物 Manifest。
-func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector) ([]byte, error) {
+// plan 为本次构建**已冻结**的发布计划（审计 I18N-01，预览 / 首次构建传 nil）：
+// 非空时站点语言表与默认语言都取自它，编译期不再回读 project_locales。
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector, plan *pipeline.PublicationPlan) ([]byte, error) {
 	// 组件模板 Set + 插件装配（EDT-003 共用 pipeline.ComponentSetWithPlugins）。
 	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
 	set, pluginOpts, err := pipeline.ComponentSetWithPlugins(asm)
@@ -161,7 +169,8 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		}),
 	}, pipeline.SiteCompileParams{
 		Ctx: ctx, ProjectID: projectID, Lang: lang, LogicalPath: currentPath,
-		CurrentPath: pipeline.HighlightPath(ctx, s.project, projectID, lang, currentPath),
+		CurrentPath: pipeline.HighlightPathWithDefault(ctx, s.project, projectID, compileDefaultLang(ctx, s.project, projectID, plan), lang, currentPath),
+		Plan:        plan,
 	})
 	if serr != nil {
 		return nil, fmt.Errorf("%w: %v", errCompileFailed, serr)
@@ -205,8 +214,9 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 译文，组件渲染期零查库（§7.7「零查库」）。默认语言与单语言站点跳过（产物即原文）。
 	var contentTranslator *i18n.ContentTranslator
 	var contentCandidates int
-	opts, contentTranslator, contentCandidates = pipeline.AppendContentTranslation(
-		opts, ctx, s.project, projectID, lang, page, slotResolver.ResolveBlockRoot, s.newContentTranslator)
+	opts, contentTranslator, contentCandidates = pipeline.AppendContentTranslationFor(
+		opts, ctx, projectID, compileDefaultLang(ctx, s.project, projectID, plan), lang,
+		page, slotResolver.ResolveBlockRoot, s.newContentTranslator)
 	opts = append(opts, pipeline.AnalyticsCompileOptions(ctx, s.project, projectID)...)
 	if len(slotList) > 0 {
 		// 出现模板槽位时必须换成叠加了虚拟引用的解析器：模板文档不在块表里，
@@ -318,6 +328,27 @@ func (a *blockResolverAdapter) blockPage(blockID string) (*builder.Page, error) 
 		a.cache[blockID] = page
 	}
 	return page, nil
+}
+
+// planDefaultLang 从冻结计划取默认语言（空 = 未冻结，调用方回退现场解析）。
+func planDefaultLang(plan *pipeline.PublicationPlan) string {
+	if plan == nil {
+		return ""
+	}
+	return strings.TrimSpace(plan.DefaultLang)
+}
+
+// compileDefaultLang 本次编译的默认语言：冻结计划优先，否则现场解析（审计 I18N-01）。
+//
+// 单独抽一层是为了让「冻结的默认语言」只有一个入口。它同时是四件事的判据：
+// 导航当前项高亮路径、hreflang 的 x-default、default_plain 方案下哪个语言不带前缀、
+// 以及哪种语言需要走内容翻译。四处各读一次现场配置，就会出现
+// 「x-default 指向 /about，而导航当前项高亮挂在 /en/about」这类自相矛盾的产物。
+func compileDefaultLang(ctx context.Context, project projectcontract.ProjectService, projectID string, plan *pipeline.PublicationPlan) string {
+	if plan != nil && strings.TrimSpace(plan.DefaultLang) != "" {
+		return strings.TrimSpace(plan.DefaultLang)
+	}
+	return pipeline.DefaultLocale(ctx, project, projectID)
 }
 
 // publishScope 按开关返回发布状态查询：false 时返回 nil，

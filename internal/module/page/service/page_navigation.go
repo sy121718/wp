@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	pagecontract "go_wp/internal/module/page/contract"
+	"go_wp/internal/pipeline"
 )
 
 // pageContextOf 按页面 ID 取所属站点工程 ID 与该语言的「逻辑访问路径」。
@@ -17,7 +18,18 @@ import (
 // 加一次前缀会得到 /en/en/about，导航高亮永远匹配不上；现在按语言取
 // page_publications 的行并用同一 LangURLRule 剥掉语言前缀，未发布回退草稿路径
 // （草稿路径本就是逻辑路径）。
+//
+// 默认语言现场解析。构建 / 重建口径请走 pageContextOfWithDefault ——「哪个语言不带前缀」
+// 由默认语言决定，现场解析会让改过 is_default 之后的重建把 /en/about 当成「默认语言路径」
+// 原样留下，再加一次前缀就变成 /en/en/about（产物互指指向不存在的地址，且没有任何报错）。
 func (s *Service) pageContextOf(ctx context.Context, pageID, lang string) (projectID, logicalPath string) {
+	return s.pageContextOfWithDefault(ctx, pageID, lang, "")
+}
+
+// pageContextOfWithDefault 用**给定**默认语言剥语言前缀（审计 I18N-01 冻结口径）。
+//
+// defaultLang 为空 = 现场解析（预览 / 后台口径，与改造前逐字一致）。
+func (s *Service) pageContextOfWithDefault(ctx context.Context, pageID, lang, defaultLang string) (projectID, logicalPath string) {
 	if strings.TrimSpace(pageID) == "" {
 		return "", ""
 	}
@@ -29,7 +41,11 @@ func (s *Service) pageContextOf(ctx context.Context, pageID, lang string) (proje
 	}
 	logicalPath = page.DraftPath
 	if pub, perr := s.model.GetPublication(ctx, pageID, buildLang(lang)); perr == nil && pub != nil && pub.ActivePath != "" {
-		logicalPath = s.langURLRuleOf(ctx, page.ProjectID).Strip(buildLang(lang), pub.ActivePath)
+		rule := s.langURLRuleOf(ctx, page.ProjectID)
+		if dl := strings.TrimSpace(defaultLang); dl != "" {
+			rule = pipeline.LangURLRuleForProjectWithDefault(ctx, s.project, page.ProjectID, dl)
+		}
+		logicalPath = rule.Strip(buildLang(lang), pub.ActivePath)
 	}
 	return page.ProjectID, logicalPath
 }

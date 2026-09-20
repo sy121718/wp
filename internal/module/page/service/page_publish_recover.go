@@ -37,6 +37,11 @@ type publishActivationInput struct {
 	ArtifactHash string
 	// OldPath 该语言发布前的线上路径（发布改路径后要取消它的激活）。
 	OldPath string
+	// Plan 本次要**冻结落库**的发布计划（审计 I18N-01，可空 = 本次无需写计划）。
+	//
+	// 可空是必须的：启动恢复走的是同一段实现，而恢复时计划早已随构建落库 ——
+	// 带着计划重放会让「崩溃恢复」看起来像一次新的发布决策。
+	Plan *pipeline.PublicationPlan
 }
 
 // applyPublishActivation 在一个事务里落定发布的数据库状态（主链与恢复共用）。
@@ -51,6 +56,13 @@ func (s *Service) applyPublishActivation(ctx context.Context, in publishActivati
 			ArtifactID: in.ArtifactID, ArtifactHash: in.ArtifactHash, PublishedAt: now,
 		}); merr != nil {
 			return merr
+		}
+		// 发布计划与激活状态同事务（审计 I18N-01）：两者共同构成「这次发布的事实」，
+		// 分开提交会留下「指针已切、计划还是旧的」，而后续重建据此复现不出线上那份产物。
+		if in.Plan != nil {
+			if perr := s.model.UpdatePublicationPlanRecordTx(ctx, tx, in.Page.ID, in.Lang, *in.Plan, in.Page.DraftVersion, now); perr != nil {
+				return perr
+			}
 		}
 		// 故障注入点（测试用；生产恒为 nil）：命中「访问面已切换、数据库尚未落定」窗口。
 		// 放在第一条写之后，要证明的是「半截写随事务一起回滚」，而不是「还没开始写」。
@@ -93,6 +105,10 @@ type updateURLApplyInput struct {
 	// Deps 本次产物声明的构建期依赖（Manifest.dependencies）。URL 变更不改变依赖集合，
 	// 但产物行可能是本次新建的，依赖投影必须同步 —— 否则该产物的精确失效查询会漏掉它。
 	Deps []pipeline.Dependency
+	// Plan 本次要**冻结落库**的发布计划（审计 I18N-01，可空 = 本次无需写计划）。
+	// 可空的理由与 publishActivationInput.Plan 相同：恢复路径重放同一段实现，
+	// 而计划早已随构建落库，不该被恢复重写成「一次新的发布决策」。
+	Plan *pipeline.PublicationPlan
 }
 
 // applyUpdateURL 在一个事务里落定改 URL 的全部数据库状态（主链与恢复共用）。
@@ -120,6 +136,13 @@ func (s *Service) applyUpdateURL(ctx context.Context, in updateURLApplyInput) er
 		if len(in.Deps) > 0 {
 			if derr := s.persistDependenciesTx(ctx, tx, in.Page.ProjectID, in.Page.ID, in.ArtifactRowID, in.Deps); derr != nil {
 				return derr
+			}
+		}
+		// 发布计划与路径迁移同事务（审计 I18N-01）：新路径上的产物是按这份计划编译的，
+		// 两者分开提交会留下「路径已迁、计划还是旧的」——后续重建复现不出线上那份字节。
+		if in.Plan != nil {
+			if perr := s.model.UpdatePublicationPlanRecordTx(ctx, tx, in.Page.ID, in.Lang, *in.Plan, in.Page.DraftVersion, now); perr != nil {
+				return perr
 			}
 		}
 		if s.routes == nil {

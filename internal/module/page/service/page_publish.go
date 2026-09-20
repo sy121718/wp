@@ -45,12 +45,20 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	// 构建语言（多语言 P2）：请求显式指定优先，否则站点默认语言；
 	// 实际访问路径由 sitePath 单点映射（开启前缀时 /{lang}/path）。
 	lang := buildLang(req.Lang)
-	path, err := s.sitePathOf(ctx, lang, page)
+	// 发布计划（审计 I18N-01）：已冻结且草稿未变 → 原样沿用；否则按当前站点语言配置
+	// 重新冻结，并在写暂存指针的同一事务里落库。路径映射用计划里的默认语言 ——
+	// 与产物里的 x-default 同源。
+	plan, persistPlan, err := s.publicationPlanFor(ctx, page, lang)
 	if err != nil {
 		return nil, err
 	}
-	logger.Scene("build").With("pageId", page.ID).With("lang", lang).With("path", path).Info("开始构建")
-	if err = s.syncKernel(path, lang, page.DraftDocument, page.ID); err != nil {
+	path, err := s.sitePathOfWithPlan(ctx, lang, page, &plan)
+	if err != nil {
+		return nil, err
+	}
+	logger.Scene("build").With("pageId", page.ID).With("lang", lang).With("path", path).
+		With("planHash", plan.Hash()).Info("开始构建")
+	if err = s.syncKernel(path, lang, page.DraftDocument, page.ID, &plan); err != nil {
 		return nil, err
 	}
 	hash, err := s.publisher.Build(ctx, page.ID, s.kernelVersion(page.ID))
@@ -77,6 +85,14 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if err = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
 		if derr := s.persistDependenciesTx(ctx, tx, page.ProjectID, page.ID, artifactID, deps); derr != nil {
 			return derr
+		}
+		// 发布计划与暂存指针同事务（审计 I18N-01）：产物与它依据的语言输入必须同生共死。
+		// 只写一半会留下「暂存指针指向按 A 份语言输入构建的产物、计划记的是 B 份」，
+		// 后续重建按 B 复现不出那份产物，且没有任何报错。
+		if persistPlan {
+			if perr := s.model.UpdatePublicationPlanRecordTx(ctx, tx, page.ID, lang, plan, page.DraftVersion, now); perr != nil {
+				return perr
+			}
 		}
 		// 暂存指针按语言记录（多语言 P3）：Build(en-US) 不再覆盖 Build(zh-CN) 的暂存指针，
 		// 「先构建两种语言、再逐个发布」由此可用；pages 的单值列仍是最近构建语言的镜像。
@@ -110,11 +126,19 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		return nil, err
 	}
 	lang := buildLang(req.Lang)
-	path, err := s.sitePathOf(ctx, lang, page)
+	// 发布计划（审计 I18N-01）：发布是**发布决策的落点**，这里的计划必须与暂存产物的
+	// 构建输入一致。已冻结且草稿未变时原样沿用，于是随后的确定性复构建看到的语言输入
+	// 与构建时逐字相同 —— 「第二次一致性构建看到的在线语言集合变了」这个成因被消除。
+	plan, persistPlan, err := s.publicationPlanFor(ctx, page, lang)
 	if err != nil {
 		return nil, err
 	}
-	logger.Scene("publication").With("pageId", page.ID).With("lang", lang).With("path", path).Info("开始发布")
+	path, err := s.sitePathOfWithPlan(ctx, lang, page, &plan)
+	if err != nil {
+		return nil, err
+	}
+	logger.Scene("publication").With("pageId", page.ID).With("lang", lang).With("path", path).
+		With("planHash", plan.Hash()).Info("开始发布")
 	// 暂存产物按语言取（page_stagings 为真源）：Publish(en-US) 只看 en-US 的暂存，
 	// 不会因为中途构建过其他语言而误报「无暂存产物」或发布错语言的产物。
 	stagedArt, err := s.stagedArtifactOf(ctx, page, lang)
@@ -137,7 +161,7 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	// 确定性构建保证与暂存一致；用「当前草稿」（路径+文档）重建内核——
 	// 若草稿在构建后又被 SaveDraft 修改（含改路径），重建 hash 必与暂存不同，
 	// 走 ErrRebuildRequired 拒绝发布，避免发布旧内容后界面误报「已发布最新」。
-	if err = s.syncKernel(path, lang, page.DraftDocument, page.ID); err != nil {
+	if err = s.syncKernel(path, lang, page.DraftDocument, page.ID, &plan); err != nil {
 		return nil, err
 	}
 	version := s.kernelVersionOrOne(page.ID)
@@ -236,9 +260,16 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	// 此前它们各自成事务，中途失败会留下「指针已是新产物、旧路由还 active」这类
 	// 半截状态，只能靠启动恢复逐步对齐。
 	now := time.Now().UTC()
+	// 计划只在本次确实要重冻时才带（persistPlan）：正常路径下它已随 Build 落库，
+	// 这里再写一次只会把 update_time 抖动一遍。
+	activationPlan := (*pipeline.PublicationPlan)(nil)
+	if persistPlan {
+		activationPlan = &plan
+	}
 	if aerr := s.applyPublishActivation(ctx, publishActivationInput{
 		Page: page, Lang: lang, Path: path,
 		ArtifactID: stagedArt.ID, ArtifactHash: hash, OldPath: oldPath,
+		Plan: activationPlan,
 	}); aerr != nil {
 		// FS 已原子激活（线上已生效），此处 DB 事务整体回滚属于部分成功：
 		// 错误必须明确暴露，且重试可收敛（复构建 hash 与暂存一致 → 幂等再激活）。

@@ -82,4 +82,6 @@ func init() {
 	registerManifestDedup()
 	// 307：build_jobs 待办去重键按「构建输入 + 语言 + 意图」分开（审计 ARCH-04，见 register_build_intent.go）。
 	registerBuildJobIntent()
+	// 308：页面发布计划冻结表（审计 I18N-01，见 register_publication_plan.go）。
+	registerPagePublicationPlans()
 }

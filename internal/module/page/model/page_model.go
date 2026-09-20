@@ -773,8 +773,15 @@ func (m *Model) softDeleteTx(ctx context.Context, tx *gorm.DB, projectID, pageID
 			Delete(&PublicationEntity{}).Error; derr != nil {
 			return derr
 		}
-		return tx.Model(&StagingEntity{}).Where("page_id = ?", pageID).
-			Delete(&StagingEntity{}).Error
+		if derr := tx.Model(&StagingEntity{}).Where("page_id = ?", pageID).
+			Delete(&StagingEntity{}).Error; derr != nil {
+			return derr
+		}
+		// 发布计划随页面一起清（审计 I18N-01）：它是「这次发布依据哪份语言输入」的事实，
+		// 离开页面就没有意义 —— 页面已软删，没有任何重建入口会再读到它，
+		// 留下的只会是一条谁也认领不了的冻结记录。
+		return tx.Model(&PublicationPlanEntity{}).Where("page_id = ?", pageID).
+			Delete(&PublicationPlanEntity{}).Error
 	}
 	if tx == nil {
 		// 无工程作用域的历史形态：不设 scope 时换非超级角色会自动 fail closed

@@ -495,7 +495,14 @@ func (s *Service) pageUsesContentTranslation(ctx context.Context, in pipeline.Bu
 		return false
 	}
 	projectID, _ := s.pageContextOf(ctx, in.PageID, lang)
-	if lang == s.defaultLocaleOf(ctx, projectID) {
+	// 默认语言取**冻结计划**里的那一份（审计 I18N-01）：判据必须与 compileDocument 的
+	// 接入条件同源，否则会出现「没登记 i18n:content 依赖，而产物确实按译文渲染」——
+	// 补齐译文后不触发重建，站点长期停在回退内容（§9 那条约束的另一半）。
+	defaultLang := s.defaultLocaleOf(ctx, projectID)
+	if in.Plan != nil && strings.TrimSpace(in.Plan.DefaultLang) != "" {
+		defaultLang = strings.TrimSpace(in.Plan.DefaultLang)
+	}
+	if lang == defaultLang {
 		return false
 	}
 	page, err := builder.ParsePage(in.DocJSON)

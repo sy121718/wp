@@ -108,6 +108,12 @@ func (s *Service) RetireLocale(ctx context.Context, projectID, lang string) (ret
 			if serr := s.model.DeleteStagingsByLangTx(ctx, tx, projectID, r.PageID, lang); serr != nil {
 				return serr
 			}
+			// 发布计划同样只删该语言（审计 I18N-01）：语言都退役了，它的冻结输入
+			// 没有任何重建入口会再读到；留着只会在语言被重新启用时被误当成「仍然有效」，
+			// 于是一批按旧配置冻结的输入重新生效。
+			if plerr := s.model.DeletePublicationPlansByLangTx(ctx, tx, projectID, r.PageID, lang); plerr != nil {
+				return plerr
+			}
 		}
 		return nil
 	}); terr != nil {

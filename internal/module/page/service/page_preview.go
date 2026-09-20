@@ -39,8 +39,10 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID,
 	// 为什么没展开，见 data-sky-* 属性），没有 Manifest 可写。
 	// 模式为预览：显式绑定但拿不到的结构依赖在这里不失败（编辑期配置不完整是常态），
 	// 与发布路径共用同一份装配管线，这就是两者的唯一差异。
+	// plan 传 nil：预览不读发布计划 —— 作者看的是「这份草稿用当前配置能长什么样」，
+	// 而冻结计划描述的是**已发布产物**依据的输入（审计 I18N-01）。
 	html, err = s.compileDocument(ctx, page, projectID, currentPath, buildLang(lang), nil, false,
-		builder.CompileModePreview, nil)
+		builder.CompileModePreview, nil, nil)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "预览编译失败")

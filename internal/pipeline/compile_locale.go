@@ -37,8 +37,26 @@ func AppendContentTranslation(
 	resolve builder.BlockRootFunc,
 	makeTranslator ContentTranslatorFactory,
 ) (out []builder.CompileOption, translator *i18n.ContentTranslator, candidates int) {
+	return AppendContentTranslationFor(opts, ctx, projectID,
+		DefaultLocale(ctx, project, projectID), lang, page, resolve, makeTranslator)
+}
+
+// AppendContentTranslationFor 用**给定**默认语言接入内容翻译（审计 I18N-01 冻结口径）。
+//
+// 与 AppendContentTranslation 的差别只有默认语言的来源：发布 / 重建路径的默认语言
+// 来自发布计划（冻结值），现场解析会让「改了 is_default」把既有语言的产物语义整个
+// 翻转 —— 原来的默认语言产物（原文直出）突然开始查译文表，字节随之改变，
+// 而线上路径、语言集合一个都没动。
+func AppendContentTranslationFor(
+	opts []builder.CompileOption,
+	ctx context.Context,
+	projectID, defaultLang, lang string,
+	page *builder.Page,
+	resolve builder.BlockRootFunc,
+	makeTranslator ContentTranslatorFactory,
+) (out []builder.CompileOption, translator *i18n.ContentTranslator, candidates int) {
 	out = opts
-	if !ContentTranslationEnabled(ctx, project, projectID, lang) || page == nil || makeTranslator == nil {
+	if !ContentTranslationEnabledFor(defaultLang, lang) || page == nil || makeTranslator == nil {
 		return out, nil, 0
 	}
 	cands := builder.CollectContentCandidatesForDocument(page, resolve)
@@ -57,12 +75,20 @@ func AppendContentTranslation(
 	return append(out, builder.WithContentTranslator(translator)), translator, candidates
 }
 
-// HighlightPath 导航「当前项」高亮路径：逻辑路径 → 本语言访问路径。
+// HighlightPath 导航「当前项」高亮路径：逻辑路径 → 本语言访问路径（默认语言现场解析）。
 func HighlightPath(ctx context.Context, project projectcontract.ProjectService, projectID, lang, logical string) string {
+	return HighlightPathWithDefault(ctx, project, projectID, DefaultLocale(ctx, project, projectID), lang, logical)
+}
+
+// HighlightPathWithDefault 用**给定**默认语言计算高亮路径（审计 I18N-01 冻结口径）。
+//
+// 高亮路径进产物字节（导航当前项），而它经 LangURLRule 映射 —— 规则里的默认语言
+// 决定哪个语言不带前缀。冻结输入时若这里回读 is_default，重建就会换掉「当前项」标记。
+func HighlightPathWithDefault(ctx context.Context, project projectcontract.ProjectService, projectID, defaultLang, lang, logical string) string {
 	if strings.TrimSpace(logical) == "" {
 		return ""
 	}
-	p, err := SitePath(LangURLRuleForProject(ctx, project, projectID), lang, logical)
+	p, err := SitePath(LangURLRuleForProjectWithDefault(ctx, project, projectID, defaultLang), lang, logical)
 	if err != nil {
 		return ""
 	}

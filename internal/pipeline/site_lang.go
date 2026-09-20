@@ -24,11 +24,24 @@ type SiteRouteEntry struct {
 }
 
 // LangURLRuleForProject 构造站点语言 URL 规则（与 page.langURLRuleOf 同源）。
+//
+// 默认语言现场解析（project_locales.is_default）。发布/重建口径请走
+// LangURLRuleForProjectWithDefault —— 默认语言已在发布计划里冻结，不能再读一次。
 func LangURLRuleForProject(ctx context.Context, project projectcontract.ProjectService, projectID string) LangURLRule {
+	return LangURLRuleForProjectWithDefault(ctx, project, projectID, DefaultLocale(ctx, project, projectID))
+}
+
+// LangURLRuleForProjectWithDefault 用**给定**默认语言构造站点语言 URL 规则（冻结口径）。
+//
+// 抽出来的唯一理由是「默认语言有两个来源」：现场解析（预览 / 后台 / 改 URL）
+// 与发布计划里的冻结值（审计 I18N-01）。规则只认传进来的那一个 ——
+// 规则若自己去读一次，冻结就只剩半截（语言表冻结了、默认语言没有），
+// 而 is_default 一改，既有产物的 x-default 与「无前缀」指向都会跟着换。
+func LangURLRuleForProjectWithDefault(ctx context.Context, project projectcontract.ProjectService, projectID, defaultLang string) LangURLRule {
 	return NewLangURLRule(
 		i18n.SiteLangURLsSeparated(),
 		i18n.SiteLangURLPrefixDefault(),
-		DefaultLocale(ctx, project, projectID),
+		defaultLang,
 		i18n.URLCodeOverrides(),
 	)
 }
@@ -114,20 +127,82 @@ func DefaultLocale(ctx context.Context, project projectcontract.ProjectService, 
 	return i18n.GetDefaultLang()
 }
 
+// SiteLangInputs 一次编译的**站点语言输入**：语言表 + 默认语言。
+//
+// 成对存在而不是各传各的：语言表决定「站点有哪几种语言」，默认语言决定
+// 「哪一条互指是 x-default、哪一条在 default_plain 方案下不带前缀」。
+// 两者必须来自同一份来源（同一个冻结计划，或同一次现场解析）——
+// 一半冻结一半现场会出现「冻结的语言表 + 现场的默认语言」，
+// 而默认语言恰好是那条不在冻结语言表里的链接（x-default 指向 404）。
+type SiteLangInputs struct {
+	// SiteLangs 站点启用语言（默认语言在前）。
+	SiteLangs []string
+	// DefaultLang 站点默认语言（完整语言码）。
+	DefaultLang string
+}
+
+// SiteLangInputsOfPlan 从**冻结计划**取站点语言输入（审计 I18N-01）。
+//
+// 计划为空（未冻结 / 语言表为空）时 ok=false，调用方回退现场解析 ——
+// 这与「计划里存了一份空语言表」是两件事：后者必须当成有冻结但不完整，
+// 直接用会让产物失去全部互指，所以这里也按未冻结处理，由上游补冻结。
+func SiteLangInputsOfPlan(plan *PublicationPlan) (SiteLangInputs, bool) {
+	if plan == nil {
+		return SiteLangInputs{}, false
+	}
+	n := plan.Normalize()
+	if len(n.SiteLangs) == 0 {
+		return SiteLangInputs{}, false
+	}
+	if n.DefaultLang == "" {
+		// 默认语言缺失（极早期写入的计划行）：按「默认语言在前」的既定顺序取首项，
+		// 确定性且绝不产生空默认语言（空串会让所有互指都不是 x-default）。
+		n.DefaultLang = n.SiteLangs[0]
+	}
+	return SiteLangInputs{SiteLangs: n.SiteLangs, DefaultLang: n.DefaultLang}, true
+}
+
+// PlanOfSiteLangInputs 把站点语言输入固化成发布计划（写入侧唯一构造点）。
+func PlanOfSiteLangInputs(in SiteLangInputs) PublicationPlan {
+	return PublicationPlan{SiteLangs: in.SiteLangs, DefaultLang: in.DefaultLang}.Normalize()
+}
+
+// ResolveSiteLangInputs 按等级策略**现场解析**站点语言输入（未冻结时的路径）。
+//
+// 与 ResolveSiteLangs 的差别只有「多带回一个默认语言」：这两个值在同一个判定里
+// 一起用（发布冻结、LocaleView），分两次解析就可能落到两份不同的配置上。
+func ResolveSiteLangInputs(ctx context.Context, project projectcontract.ProjectService, projectID string, policy LangFallback) (SiteLangInputs, error) {
+	langs, err := ResolveSiteLangs(ctx, project, projectID, policy)
+	if err != nil {
+		return SiteLangInputs{}, err
+	}
+	return SiteLangInputs{SiteLangs: langs, DefaultLang: DefaultLocale(ctx, project, projectID)}, nil
+}
+
 // SitePath 逻辑访问路径 → 实际访问路径。
 func SitePath(rule LangURLRule, lang, logical string) (string, error) {
 	return rule.Path(lang, logical)
 }
 
 // LocalizeMenuURL 导航项 URL 本地化（与 page.localizeMenuURL 同源）。
+//
+// 规则与语言表现场解析。发布 / 重建口径请走 LocalizeMenuURLWith ——
+// 导航项 URL 同样进产物字节，按当时配置重算会让既有产物在重建后换掉菜单链接。
 func LocalizeMenuURL(ctx context.Context, project projectcontract.ProjectService, projectID, lang, raw string) string {
+	return LocalizeMenuURLWith(LangURLRuleForProject(ctx, project, projectID), EnabledLangs(ctx, project, projectID), lang, raw)
+}
+
+// LocalizeMenuURLWith 用**给定**规则与语言集合本地化导航项 URL（冻结口径，审计 I18N-01）。
+//
+// 为什么需要「给定」这两个：本函数要先用语言集合把「可能已带语言前缀的路径」反查成
+// 逻辑路径（否则 /en/about 会被再前缀一次成 /en/en/about），再用规则加本语言前缀。
+// 两步都依赖站点语言配置 —— 配置一动，同一份菜单在重建后就指向另一个地址。
+func LocalizeMenuURLWith(rule LangURLRule, langs []string, lang, raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" || !strings.HasPrefix(u, "/") || strings.HasPrefix(u, "//") {
 		return raw
 	}
 	u = seo.CanonicalPublicPath(u)
-	rule := LangURLRuleForProject(ctx, project, projectID)
-	langs := EnabledLangs(ctx, project, projectID)
 	if _, logical, ok := rule.Locate(u, langs); ok {
 		u = logical
 	}
@@ -198,6 +273,19 @@ type LocaleViewInput struct {
 	// 为空表示调用方没有冻结（预览 / 旧调用方），此时按 LangFallback 自行解析。
 	SiteLangs []string
 
+	// DefaultLang 调用方**已冻结**的站点默认语言（审计 I18N-01）。
+	//
+	// 为空表示没有冻结，此时按 project_locales.is_default 现场解析。
+	// 它的作用只有一个但很关键：决定哪一条互指是 x-default、哪一条在
+	// 「默认语言无前缀」方案下不带前缀 —— is_default 一改，既有产物的
+	// x-default 就换了目标，而站点语言集合可能一个都没变。
+	DefaultLang string
+
+	// Rule 调用方**已冻结**的语言 URL 规则（审计 I18N-01）。nil = 现场构造。
+	//
+	// 与 DefaultLang 成对：规则里含默认语言，只冻结语言表不冻结默认语言等于没冻结。
+	Rule *LangURLRule
+
 	// LangFallback 自行解析语言清单时的等级策略（SiteLangs 为空才用）。
 	// 零值 = 允许可见告警回退；发布口径的调用方要么传 SiteLangs、要么传 Forbidden。
 	LangFallback LangFallback
@@ -240,7 +328,15 @@ func LocaleView(in LocaleViewInput) (alts []builder.Alternate, links []core.Loca
 		}
 		langs = resolved
 	}
-	rule := LangURLRuleForProject(in.Ctx, in.Project, in.ProjectID)
+	// 默认语言同为冻结输入：调用方给了就用它的，没给才现场解析。
+	defaultLang := strings.TrimSpace(in.DefaultLang)
+	if defaultLang == "" {
+		defaultLang = DefaultLocale(in.Ctx, in.Project, in.ProjectID)
+	}
+	rule := LangURLRuleForProjectWithDefault(in.Ctx, in.Project, in.ProjectID, defaultLang)
+	if in.Rule != nil {
+		rule = *in.Rule
+	}
 	entries, err := siteRouteEntriesForLangs(rule, langs, in.LogicalPath)
 	if err != nil || len(entries) < 2 {
 		return nil, nil
@@ -251,7 +347,6 @@ func LocaleView(in LocaleViewInput) (alts []builder.Alternate, links []core.Loca
 			return nil, nil
 		}
 	}
-	defaultLang := DefaultLocale(in.Ctx, in.Project, in.ProjectID)
 	base := strings.TrimSpace(os.Getenv("WP_SITE_BASE_URL"))
 	alts = make([]builder.Alternate, 0, len(entries))
 	links = make([]core.LocaleLink, 0, len(entries))
@@ -302,11 +397,20 @@ func LogicalPathOf(ctx context.Context, project projectcontract.ProjectService, 
 	return u
 }
 
-// ContentTranslationEnabled 非默认语言且语言非空时接入内容翻译。
+// ContentTranslationEnabled 非默认语言且语言非空时接入内容翻译（默认语言现场解析）。
 func ContentTranslationEnabled(ctx context.Context, project projectcontract.ProjectService, projectID, lang string) bool {
+	return ContentTranslationEnabledFor(DefaultLocale(ctx, project, projectID), lang)
+}
+
+// ContentTranslationEnabledFor 用**给定**默认语言判定是否接入内容翻译（审计 I18N-01）。
+//
+// 「哪种语言需要内容翻译」完全由「它是不是默认语言」决定（默认语言产物即原文）。
+// 默认语言是发布计划里被冻结的一项：现场解析会让 is_default 一改，既有语言的产物
+// 在重建时换一条渲染路径（原文直出 ↔ 查译文表），而互指、路径看起来毫无变化。
+func ContentTranslationEnabledFor(defaultLang, lang string) bool {
 	l := strings.TrimSpace(lang)
 	if l == "" {
 		return false
 	}
-	return l != DefaultLocale(ctx, project, projectID)
+	return l != strings.TrimSpace(defaultLang)
 }

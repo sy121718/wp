@@ -53,11 +53,16 @@ func (s *Service) RebuildArtifact(ctx context.Context, req *pagedto.RebuildArtif
 		return res, nil
 	}
 
+	// 站点语言输入取**产物自己记录的那一份**（Manifest.siteLangs / siteDefaultLang，
+	// 审计 I18N-01）：这里要原样复现这一份产物，凡是按当前配置重算的输入都会让它
+	// 复现不出原字节 —— 而 hreflang 正是其中最隐蔽的一项（路径没变、链接变了）。
+	// 取不到（该字段引入之前的存量产物）时为 nil，退回现场解析的既有行为。
 	rebuilt, rerr := s.publisher.RestoreArtifact(ctx, pipeline.BuildInput{
 		PageID:  art.PageID,
 		Lang:    art.Lang,
 		Path:    art.CanonicalPath,
 		DocJSON: art.SourceDocument,
+		Plan:    publicationPlanFromManifest(art.Manifest),
 	})
 	if rerr != nil {
 		res.Reason = "重新编译失败: " + rerr.Error()

@@ -67,6 +67,12 @@ type PageRecord struct {
 	// 独立状态机」属后续阶段（docs/06-D §4.1 第 5 项标注为高风险改动）。
 	// 为空表示未接入语言：Manifest 不写 lang，路径不带前缀（行为与改造前一致）。
 	Lang string
+	// Plan 本记录的冻结发布计划（审计 I18N-01，可空 = 未冻结）。
+	//
+	// 随草稿一起进内核记录而不是每次都从数据库读：同一份计划的「读取时刻」会被
+	// 复制成多份答案（Build 与 Publish 各读一次，中间恰好改了语言配置就分叉），
+	// 而产物与 Manifest 必须依据同一份。
+	Plan *PublicationPlan
 	// Version 草稿版本号（乐观锁，每次保存 +1）。
 	Version int
 	// Status 页面当前状态：draft / building / ready / failed / published。
@@ -108,6 +114,12 @@ type BuildInput struct {
 	// 「被容忍的降级」记进来，compileArtifact 读取后写进 Manifest.diagnostics。
 	// 发布期的失败路径不需要它 —— 构建失败时没有产物，也就没有 Manifest。
 	Diagnostics *builder.DegradeCollector
+	// Plan 本次编译依据的**冻结发布计划**（审计 I18N-01，可空 = 未冻结）。
+	//
+	// 与 Lang / Path 同层：三者都是「这次构建的站点环境」，且都必须随构建输入
+	// 一起冻结。为空时装配层按现场配置解析语言输入（预览、首次构建），
+	// 行为与改造前逐字一致。
+	Plan *PublicationPlan
 }
 
 // CompileUsage 收集编译期**真实消费**的产物依赖线索（审计 VIS-006）。
@@ -136,6 +148,12 @@ type CompileUsage struct {
 	Blocks map[string]bool
 	// siteLangs 本次发布冻结的站点语言表（审计 I18N-02，见 SetSiteLangs）。
 	siteLangs []string
+	// plan 本次发布冻结的发布计划（审计 I18N-01，见 SetPublicationPlan）。
+	//
+	// 与 siteLangs 并存而不是取而代之：siteLangs 是既有 Manifest 字段的写入通道
+	//（I18N-02 的既有调用点与测试都在用），plan 多带一个冻结的默认语言，
+	// 且在重建路径上会被原样传回编译器（见 SiteCompileParams.Plan）。
+	plan *PublicationPlan
 	// contentCandidates / contentTranslator 内容译文缺失统计（审计 I18N-02）。
 	contentCandidates int
 	contentTranslator ContentMissCounter
@@ -276,6 +294,38 @@ func (u *CompileUsage) SiteLangs() []string {
 	return append([]string(nil), u.siteLangs...)
 }
 
+// SetPublicationPlan 记录本次发布冻结的发布计划（审计 I18N-01）。
+//
+// 同时把计划里的语言表写进 siteLangs：Manifest.SiteLangs 是既有字段，两个入口
+// （SetSiteLangs / SetPublicationPlan）必须落到同一个存储位，否则同一次发布会写出
+// 「siteLangs 有、plan 没有」或反过来的半截事实。
+func (u *CompileUsage) SetPublicationPlan(plan PublicationPlan) {
+	if u == nil {
+		return
+	}
+	n := plan.Normalize()
+	if n.Empty() {
+		return
+	}
+	cp := n
+	u.plan = &cp
+	if len(n.SiteLangs) > 0 {
+		u.siteLangs = append([]string(nil), n.SiteLangs...)
+	}
+}
+
+// PublicationPlan 本次发布冻结的发布计划（未冻结时返回 nil）。
+//
+// 返回副本：调用方（重建入口）会把它原样传回编译器，共享底层切片会让某一次编译
+// 的规范化结果影响另一个调用方手里的计划。
+func (u *CompileUsage) PublicationPlan() *PublicationPlan {
+	if u == nil || u.plan == nil {
+		return nil
+	}
+	cp := u.plan.Normalize()
+	return &cp
+}
+
 // RecordContentTranslation 记录本次编译消费的内容翻译（候选数 + 取词器引用）。
 //
 // 缺失数不在这里取：这时候还没渲染，取到的必然是 0。存引用是刻意的 ——
@@ -369,6 +419,8 @@ type Draft struct {
 	Lang string
 	// DocJSON 草稿文档字节。
 	DocJSON []byte
+	// Plan 本次构建依据的冻结发布计划（审计 I18N-01，可空 = 未冻结）。
+	Plan *PublicationPlan
 }
 
 // Option Publisher 构造选项。
@@ -473,6 +525,9 @@ func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, d Draft)
 		rec.Path = nPath
 		rec.Lang = lang
 	}
+	// 计划逐次覆盖（含置空）：与 Lang / Path 同层，调用方每次构建都显式给出
+	// —— 沿用上次的计划会让「本次没冻结」被静默读成「上次那份仍然有效」。
+	rec.Plan = draftPlan(d.Plan)
 
 	// 冻结快照：拷贝字节，构建期使用，防止后续写入影响产物。
 	snap := make([]byte, len(docJSON))
@@ -507,6 +562,7 @@ func (p *Publisher) Build(ctx context.Context, pageID string, expectedVersion in
 	docSnapshot := append([]byte(nil), rec.DocumentJSON...)
 	in := BuildInput{
 		PageID: pageID, Lang: rec.Lang, Path: rec.Path, DocJSON: docSnapshot,
+		Plan:  draftPlan(rec.Plan),
 		Usage: &CompileUsage{}, Diagnostics: builder.NewDegradeCollector(),
 	}
 	p.mu.Unlock()
@@ -641,7 +697,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	// 301 / 取消激活处理。DB 侧迁移（draft_path 与 reserved 路由）由调用方
 	// 负责（page service MoveDraftPath / RenameReserved）。
 	if !rec.hasPublishedHistory() {
-		if _, err = p.saveDraftLocked(pageID, rec.Version, Draft{Path: nPath, Lang: rec.Lang, DocJSON: rec.DocumentJSON}); err != nil {
+		if _, err = p.saveDraftLocked(pageID, rec.Version, Draft{Path: nPath, Lang: rec.Lang, DocJSON: rec.DocumentJSON, Plan: rec.Plan}); err != nil {
 			p.mu.Unlock()
 			return oldPath, err
 		}
@@ -652,7 +708,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	}
 
 	// 1. 锁内：新 URL 写入草稿路径（Version +1）。
-	if _, err = p.saveDraftLocked(pageID, rec.Version, Draft{Path: nPath, Lang: rec.Lang, DocJSON: rec.DocumentJSON}); err != nil {
+	if _, err = p.saveDraftLocked(pageID, rec.Version, Draft{Path: nPath, Lang: rec.Lang, DocJSON: rec.DocumentJSON, Plan: rec.Plan}); err != nil {
 		p.mu.Unlock()
 		return oldPath, err
 	}
@@ -660,6 +716,7 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	in := BuildInput{
 		PageID: pageID, Lang: rec.Lang, Path: nPath,
 		DocJSON: append([]byte(nil), rec.DocumentJSON...),
+		Plan:    draftPlan(rec.Plan),
 		Usage:   &CompileUsage{}, Diagnostics: builder.NewDegradeCollector(),
 	}
 	p.mu.Unlock()
@@ -717,6 +774,18 @@ func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string
 	return oldPath, nil
 }
 
+// draftPlan 复制一份发布计划（nil 原样返回）。
+//
+// 内核记录被多次 Build 复用，共享计划指针会让某次编译的规范化结果反向影响
+// 后续构建的输入 —— 而「构建输入冻结」的全部意义就是「编译期不再被改」。
+func draftPlan(p *PublicationPlan) *PublicationPlan {
+	if p == nil {
+		return nil
+	}
+	cp := p.Normalize()
+	return &cp
+}
+
 // compileArtifact 锁外编译并落盘（纯函数，不碰 Publisher 锁）。
 // in 为锁内取出的冻结快照（页面 ID / 语言 / 路径 / 文档字节），编译期间不访问
 // rec 可变字段，因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
@@ -745,6 +814,12 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 	// （缺失数要等渲染结束），所以在这里一次性取走写进 Manifest。
 	if in.Usage != nil {
 		m.SiteLangs = in.Usage.SiteLangs()
+		// 冻结的默认语言（审计 I18N-01）：与 SiteLangs 成对写进 Manifest，
+		// 重建入口据此复现「哪一条互指是 x-default」——只冻结语言表不冻结默认语言，
+		// is_default 一改，既有产物的 x-default 仍会换目标。
+		if plan := in.Usage.PublicationPlan(); plan != nil {
+			m.SiteDefaultLang = plan.DefaultLang
+		}
 		if candidates, misses := in.Usage.ContentTranslationMisses(); candidates > 0 || misses > 0 {
 			m.TranslationMisses = &ManifestTranslationMisses{
 				Policy: TranslationPolicyFallback, Candidates: candidates, Misses: misses,

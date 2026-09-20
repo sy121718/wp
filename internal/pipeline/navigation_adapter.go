@@ -20,6 +20,13 @@ type NavigationAdapter struct {
 	Ctx       context.Context
 	ProjectID string
 	Lang      string
+	// Rule / SiteLangs 本次编译**冻结**的语言规则与语言表（审计 I18N-01，可空）。
+	//
+	// 菜单项 URL 进产物字节，而它要「先反查逻辑路径、再加本语言前缀」——
+	// 两步都依赖站点语言配置。为空时按现场配置解析（直接构造适配器的用例），
+	// 与改造前逐字一致。
+	Rule      *LangURLRule
+	SiteLangs []string
 	// ContentStore 内容译文存储（可空：空则用 pkg/i18n 的默认存储）。
 	// 留成字段而不是直接调默认存储，是为了让「标签确实经译文回填」这件事可单测 ——
 	// 否则这条链只能靠起库的集成测试覆盖。
@@ -118,6 +125,15 @@ func (a *NavigationAdapter) translateLabels(items []core.NavigationItem, project
 	apply(items)
 }
 
+// localizeURL 菜单项 URL 本地化：有冻结输入（本次编译装配时注入）就用它，
+// 否则按现场配置解析 —— 两条路径的输出在配置未变时逐字相同。
+func (a *NavigationAdapter) localizeURL(projectID, raw string) string {
+	if a.Rule != nil {
+		return LocalizeMenuURLWith(*a.Rule, a.SiteLangs, a.Lang, raw)
+	}
+	return LocalizeMenuURL(a.Ctx, a.Project, projectID, a.Lang, raw)
+}
+
 func (a *NavigationAdapter) itemsOf(nodes []*navigationdto.NavigationNode, projectID string) []core.NavigationItem {
 	out := make([]core.NavigationItem, 0, len(nodes))
 	for _, n := range nodes {
@@ -127,7 +143,7 @@ func (a *NavigationAdapter) itemsOf(nodes []*navigationdto.NavigationNode, proje
 		}
 		out = append(out, core.NavigationItem{
 			Label:        n.Title,
-			URL:          LocalizeMenuURL(a.Ctx, a.Project, projectID, a.Lang, n.Path),
+			URL:          a.localizeURL(projectID, n.Path),
 			Target:       n.Target,
 			Children:     a.itemsOf(n.Children, projectID),
 			PanelBlockID: panelBlockID,
