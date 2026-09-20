@@ -326,8 +326,9 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	//     + builtin.CasbinMiddleware()
 	//   - CSRF 校验：POST/PUT/PATCH/DELETE 必须携带 X-CSRF-Token 头或 csrf_token 表单字段，
 	//     token 在登录成功时生成并随响应下发（登录页写入 sessionStorage），GET 等安全方法直接放行
-	//   - Casbin 鉴权：权限点定义与默认超管策略见 public/migrations/030/031 业务权限 seed；
-	//     超管（is_admin=1）由 seed 全量授权，非超管需经角色/用户授权接口分配
+	//   - Casbin 鉴权：权限点由「codes.go 常量 + 路由注册处声明」定义，装配末尾经
+	//     permission.SyncToDB 幂等 upsert 进 sys_permission 与超管（is_admin=1）策略；
+	//     030/031 是存量权限点台账，非超管需经角色/用户授权接口分配
 	api := router.Group("/api")
 	captcharouter.SetupCaptchaRoutes(api)
 	// admin 对外权限上下文查询契约（供外部模块/插件消费，见 AuthzContextService）。

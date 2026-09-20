@@ -30,7 +30,7 @@ go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
 | 富文本编辑器 | Trix 2.x（本地 vendor：/static/vendor/trix/）+ 自研扩展（internal/templates/static/js/rich-editor/） | 文章正文 / 分类描述 / 品牌描述编辑；服务端白名单清洗（internal/builder/core/richtext.go）。**块级元素 h1~h5 与段落原样保留**（原「h1 降级 h2」已取消：标题层级是 SEO 与正文结构的一部分，降级会把作者写的一级标题改掉）；表格、折叠块（details/summary）、水平线在白名单内。表格与折叠块是 Trix 的 attachment 扩展（2.1.19 没有 config.elements，自定义 element 那条路不可用），提交时展开为真 HTML |
 | 数据库 | PostgreSQL（主库） | CMS 内容、Page 草稿、Artifact 元数据和依赖索引；MySQL 为历史兼容；SQLite/SQL Server 驱动已移除 |
 | 会话存储 | Redis（pkg/cache） | 用户会话、封禁标记、在线心跳（**Critical 组件，配置必须启用**） |
-| Artifact 存储 | 本地文件系统 / 对象存储 | 不可变构建文件与内容寻址资源 |
+| Artifact 存储 | 本地文件系统（`Provider: "local"`） | 不可变构建文件与内容寻址资源；对象存储是**预留扩展点**（`pipeline.Store` 接口 + `Locator.Provider`），**当前只有 local 实现** |
 | 访问（公开站点） | Static Server / CDN | 直接提供激活后的 Artifact |
 
 > ~~Vue 3 / vue-pure-admin~~ 已废弃并移除。所有后台界面由 Go 渲染 Jet 模板 + HTMX 片段实现。
@@ -118,8 +118,9 @@ Artifact          ≠ 可编辑源码
 
 ## 模块现状
 
-> 各模块的完整职责、不变量与落地细节见 [docs/13-module-inventory.md](./docs/13-module-inventory.md)。
-> 本文件只保留一句话边界；模块落地后更新那份清单，不要在这里展开实现细节。
+> **模块清单的权威在 [docs/13-module-inventory.md](./docs/13-module-inventory.md)**：各模块的完整职责、
+> 不变量与落地细节都在那里。本表只保留**一句话边界**，新增 / 更名模块先改那份清单、再来这里补一行，
+> 不要在本文件展开实现细节 —— 同一份清单留两份真源必然会漂移。
 
 | 模块 | 一句话职责 | 不负责 |
 |---|---|---|
@@ -131,6 +132,7 @@ Artifact          ≠ 可编辑源码
 | `page` | 手工 Page 与 Page Document | 槽位指向页面的外观排版 |
 | `block` | 复用资产（全局块） | — |
 | `artifact` | Artifact 元数据与内容对象闭包 | — |
+| `publication` | URL 占用、激活（两段式回执）、回滚 | 编译内核与模板渲染 |
 | `build` | 构建任务队列 | 队列只做调度，编译内核在 `internal/builder` |
 | `content` | 固定 CMS 内容（`article`） | — |
 | `contenttemplate` | DocumentSnapshot 的版本化结构模板 | — |
@@ -147,6 +149,7 @@ Artifact          ≠ 可编辑源码
 | `cart` | 购物车与访客结算 | 订单持久化与状态机；商品与库存真源 |
 | `analytics` | 站点访问统计 | 页面渲染与业务逻辑；实时行为分析；保留期归档 |
 | `webhook` | 外部集成通道：端点白名单（事件类型 × 目标 URL）+ 投递日志 + 异步签名投递 | 业务事件的产生与内容；重试上限之外的人工补偿 |
+| `runtimefragment` | 白名单动态片段（访问面 `/_fragments/{type}`，按 capability 注册） | 页面渲染与编译（片段只产受控 HTML） |
 
 > `build` 有独立模块目录（`internal/module/build`），承载**构建任务队列**（调度与可见性）；
 > 编译内核在 `internal/builder`，发布内核在 `internal/pipeline` —— **编译逻辑不在 build 模块**。
@@ -181,7 +184,7 @@ Artifact          ≠ 可编辑源码
 - Jet 模板内 CSRF token 只有**一条取值链**：渲染数据键 `csrf_token`，经 chain 索引 `{{ .["csrf_token"] }}` 取出。
   两种写法**等价且都合法**，按复用程度选：
   · 直接用 `{{ .["csrf_token"] }}`（也用于存在性判断，如 `{{if .["DevLogin"]}}`）—— map 末级缺 key 安全；
-  · 或文件顶部 `{{csrf := .["csrf_token"]}}` 声明一次、本文件内复用 `{{csrf}}` —— 41 个模板 / 157 处的**事实主流**写法。
+  · 或文件顶部 `{{csrf := .["csrf_token"]}}` 声明一次、本文件内复用 `{{csrf}}` —— 这是**事实主流**写法（模板数与会随迭代增减，不写死数字）。
   `{{csrf}}` 是 Jet 的**模板内 let 变量，不是全局函数**（`internal/templates/funcs.go` 的 `injectGlobals` 未注册任何 csrf 符号）：
   未声明就裸用会报 `identifier "csrf" not available …`，且声明必须在使用之前。
 - **禁止 `{{.csrf_token}}`（点号无索引）**：data 是 map 时缺 key 会运行时报错中断渲染（状态码仍是 200，之后的 HTML 整块消失）。
@@ -191,24 +194,30 @@ Artifact          ≠ 可编辑源码
 
 ### 交互方式（HTMX）
 
-所有前台交互通过 HTMX 属性驱动，不写自定义 JS（后台工作台 workbench.js 例外，属构建器前端）。
+所有前台交互**优先**用 HTMX 属性驱动；JS 只做 HTMX 覆盖不到的控件层，收敛在 `internal/templates/static/js/ui/`（抽屉 / 弹层 / 选择器 / 通知等）与 `rich-editor/`（Trix 扩展），媒体库选择器是 `media-lib.js`，构建器前端在 `workbench/`；**不新增上述几处之外的散落业务 JS**（存量还有 `admin.js` / `enhance.js` / `track.js` / `automation/`，属待收敛）。
 CSRF：HTMX 请求经 `<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>` 继承；原生表单必须显式加 `csrf_token` 隐藏域；fetch 请求必须带 `X-CSRF-Token` 头（workbench.js/media-lib.js 已封装）。
 
 ### 认证与鉴权（三层链）
 
 - `Session + Cookie` → 认证（gin-contrib/sessions + Cookie 存储）：cookie 只存最小认证信息（user_id/username/session_id/issued_at），用户资料走 Redis
 - `CSRF` → 所有 POST 写操作强制 token 校验（登录成功返回 token；`X-CSRF-Token` 头或 `csrf_token` 表单域）
-- `Casbin` → 鉴权（Enforce(user_id, path, method)；业务权限点见迁移 030/031 seed，超管 is_admin=1 全量策略）
+- `Casbin` → 鉴权（Enforce(user_id, path, method)；权限点由「常量 + 路由注册处声明」定义、启动期幂等 upsert，030/031 只是存量台账 —— 见「数据库」一节；超管 is_admin=1 全量策略）
 
 挂载矩阵：
 
 | 路由组 | SessionAuth | CSRF | Casbin |
 |---|---|---|---|
-| `/api/captcha`、`/api/admin/login` | 豁免 | 豁免 | 豁免 |
-| `/api/admin/*` 六领域 | ✅ | ✅ | ✅ |
-| `/api/{media,project,block,page,artifact,publication}/*` | ✅ | ✅ | ✅ |
-| `/api/{content,contenttemplate,presentation,blueprint,navigation,plugin,inventory}/*` | ✅ | ✅ | ✅ |
+| `/api/captcha` | 豁免（直挂，无中间件） | 豁免 | 豁免 |
+| `/api/admin/login` | 豁免（匿名可达，另挂 IP 限流） | 豁免 | 豁免 |
+| `/api/admin/{logout,profile,routes}` | ✅ | ✅ | 豁免（声明 `permission.Exempt`，见 `admin_router.go`） |
+| `/api/*` 其余业务接口（`authorizedAPI` 组，前缀见下） | ✅ | ✅ | ✅ |
 | `/admin/*` 页面、`/`、`/workbench*` | ✅ | ✅ | —（页面路由） |
+| `/_fragments/{type}`、`/analytics/collect`、`/payment/callback` | 公开面（各自判定，见对应模块） | 公开面 | 不走 Casbin |
+
+> 上表是**示意**；`authorizedAPI` 的实际前缀以装配代码与运行时路由表 `internal/routers/testdata/routes.snapshot` 为准。
+> 当前为 `/api/` 下的：`admin`、`role`、`permission`、`menu`、`dept`、`datarule`（管理面六领域**各自独立前缀，不在 `/api/admin` 之下**）、
+> `media`、`project`、`theme`、`block`、`page`、`artifact`、`publication`、`build`、`content`、`contenttemplate`、`presentation`、`blueprint`、
+> `navigation`、`plugin`、`product`、`inventory`、`masterdata`、`mail`、`customer`、`order`、`analytics`、`webhook`。
 
 Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`。
 
@@ -245,7 +254,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 开发/审计查库统一走 dbx MCP：连接名与库名以本机 DBX 配置为准（勿在文档里写死连接名）；应用运行时库名见 `config.yaml` 的 `database.dbname`（示例 `config.yaml.example` 默认为 `wp`）。主库 PostgreSQL，最低版本以 CI（`.github/workflows/go-test.yml` 的 postgres 服务）为准；调用 dbx 时显式传 `connection_name`
 - 当前 schema 权威说明见 `docs/schema-snapshot.md`（`init_builder_schema.sql` 仅为历史快照）
 - 查询一律参数化；context 必须传播（`WithContext`）
-- 迁移：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL（030 权限点 / 031 超管策略）
+- 迁移：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL（030/031 等**存量台账**，新增权限点不再走 seed —— 见下一条）
 - **新增挂在 `authorizedAPI` 下的接口：加一条权限点常量 + 在路由注册处声明，不写 seed 迁移**：
   常量加在 `internal/permission/codes.go`，并在该路由的注册处把 `permission.Perm` 作为
   `RouteGroup.GET/POST` 的第二个参数给出（漏写是编译错误，拼错在装配期 panic）；装配末尾
@@ -270,7 +279,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - **工程隔离的 RLS 策略已铺，但在换连接角色之前不生效（DB-009）**：迁移 215 给 53 个带 `project_id` 的对象（40 张基表 + 分区子表）装了 `ROW LEVEL SECURITY` + `FORCE`，策略谓词读会话变量 `app.project_id`（未设置即行不可见，fail closed；`inventory_change_reasons` / `sys_translation` 额外放行 `project_id IS NULL` 的全局行）。**但 PostgreSQL 的超级用户总是绕过 RLS** —— `FORCE` 只约束到表属主，约束不了 superuser / `BYPASSRLS` 角色，而应用连接用的是超级用户 `root`，所以策略目前一行都挡不住。实测（`themes` 表 1 行数据）：root 未设变量读出 1 行，普通角色未设变量读出 0 行
   · **要让 RLS 真正生效，顺序不能反**：先给各模块的读写路径包上 `pkg/rls.InProjectScope`，**再**把 `config.yaml` 的 `database.user` 换成非超级角色（`bash scripts/rls-role-setup.sh <角色> <密码>` 建角色并授权，含 `ALTER DEFAULT PRIVILEGES` 让将来新建的表也自动授权）。反过来的话，没包 scope 的路径会**静默返回 0 行**（fail closed 不报错），表现为「功能突然查不到数据」而没有任何错误日志
   · 分区子表必须单独设：**PG 的 `ENABLE` / `FORCE` 不递归到分区**（实测父表 `relrowsecurity=t`、子表全为 `f`），新分区的策略由 `internal/partition.EnsureAhead` 建表后补
-  · 样板：`internal/module/project/model/locale_model.go`（`project_locales` 是 199 的试点，也是当前**唯一**接了 scope 的表）
+  · 覆盖面：`pkg/rls.InProjectScope` 已接到 11 个模块的 model / service —— analytics / block / contenttemplate / masterdata / navigation / order / page / presentation / product（含 inventory）/ project / publication；样板见 `internal/module/project/model/locale_model.go`（`project_locales` 是 199 的试点）
 - **对外时间默认只到秒（`utils.JSONTime`）**：库里的时间是微秒精度（`timestamptz(6)`，全库 199 列口径一致），但对外 JSON **不该把存储精度透出去** —— Go 的 `time.Time` 默认按 RFC3339Nano 序列化（`2026-09-16T13:57:50.123456+08:00`）：同一秒内的两次写入看起来不同、前端做秒级比较 / 分组要自己截断、每条记录多 7~10 字节（列表接口乘起来很可观），而且协议会跟着存储走。dto 的时间字段一律用 `utils.JSONTime`（可空用 `*JSONTime`）：序列化 RFC3339 **到秒**、零值与 nil 给 `null`（不是 `0001-01-01T00:00:00Z`）、解析比标准库宽松（RFC3339 / `2006-01-02 15:04:05` / `2006-01-02` —— 后两种是后台原生表单与既有客户端在用的）、写库仍走 `time.Time` 保留微秒。service 在 model 与 dto 之间转换：去程 `utils.NewJSONTime` / `utils.NewJSONTimePtr`，回程 `.Time()` / `.TimePtr()`。布局常量收在 `utils.LayoutSecond` / `LayoutDay` / `LayoutJSON`（此前十余处硬编码 `"2006-01-02 15:04:05"`）
 - **model 一律不声明列型**（2026-09 收口，架构测试 `internal/architecture/model_gorm_tag_test.go` 守门）：列的类型由迁移决定，model 标签不重复声明。重复声明就等于**两份真相** —— 抄错时没有任何东西会报错（`sys_admin.status` 真实是 `smallint`、标签写着 `tinyint(4)`；时间列真实是 `timestamptz(6)`、标签写着 `timestamp(3)` 无时区 + 毫秒），而任何 AutoMigrate 路径会照标签把错的列型建出来。本轮清掉 598 处 —— 其中 57 处 `type:timestamp(3)` 与 17 处 `type:datetime(3)` 是**上一轮清过又长回来的**（当时没有测试兜底），所以这次连红线一起立。**唯一例外**：gorm 无法自行推断列型的字段（`json.RawMessage` / `JSONMap` / `StringArray` 等）必须保留 `type:`（或改用 `serializer:`）指明映射 —— 那说的是「Go 值怎么变成 SQL 值」，不是列型真相，删掉会直接报 unsupported data type
 - 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
@@ -335,7 +344,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
     侥幸通过，一并行就互相踩（后来者 `CREATE EXTENSION IF NOT EXISTS` 静默跳过，随后整条迁移
     报 operator class does not exist）。现在它固定装在有专用 schema **`ext_shared`**（迁移 210
     负责既有库搬迁），迁移器 `Run` 统一把该 schema 补进 search_path —— 任何调用方都不会再踩。
-  · **测试不再为每个用例重跑全部迁移**（现 216 条，见下面「模板库」那条），并发时的锁表压力随之消失。
+  · **测试不再为每个用例重跑全部迁移**（全部迁移，见下面「模板库」那条），并发时的锁表压力随之消失。
     这正是当初 `-p 8` 会随机几个包 `out of shared memory` 的原因（失败包每次都不同，别误读成
     「某个包坏了」）。要再往上提并发，先确认 `max_locks_per_transaction`（默认 64）够用。
 - **按对象名查 catalog 的 SQL 必须限定 `current_schema()`**：`pg_class` / `pg_indexes` 是**全库**的，

@@ -91,8 +91,9 @@ if [ -s "$tmp_gap" ]; then
     echo "✗ 以下接口挂了 Casbin 但没有权限点 —— 任何账号（含超管）调用都会被拒 403："
     sed "s/^/    /" "$tmp_gap"
     echo
-    echo "  修法：新增一支 seed 迁移，插入 sys_permission 条目 + 对应超管策略"
-    echo "  （样板见 public/migrations/079_content_collections_permission.sql 与 151）。"
+    echo "  修法：加一条权限点常量（internal/permission/codes.go）+ 在路由注册处声明（RouteGroup 的第二参），"
+    echo "  装配末尾 permission.SyncToDB 会幂等 upsert 进 sys_permission 与超管策略（审计 SEC-011）—— 不再需要 seed 迁移。"
+    echo "  （历史样板见 public/migrations/079_content_collections_permission.sql 与 151。）"
     exit 1
 fi
 

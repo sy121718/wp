@@ -27,6 +27,7 @@
 - `cart/` — 购物车与访客结算（状态只在客户端签名 cookie；六个运行时片段能力）
 - `analytics/` — 站点访问统计（唯一由访客浏览器写库的路径；后台只读聚合）
 - `webhook/` — 外部集成通道（OSS-006）：端点白名单（事件类型 × 目标 URL，管理员预注册）+ 投递日志 + 异步签名投递 worker。对外两个出口：管理面 `contract.EndpointService`（三层链）/ 派发口 `contract.Dispatcher`（一条 `DispatchEvent`，业务模块注入后 best-effort 通知）
+- `runtimefragment/` — 白名单动态片段（无 contract，直挂访问面路由 `/_fragments/{type}`）：能力按文件分组注册，跨模块依赖经收窄只读端口在装配期注入
 
 > 编译内核在 `internal/builder`，发布内核在 `internal/pipeline`；`build/` 模块只承载**构建任务队列**（调度与可见性），不含任何编译逻辑。
 > 模块落地后必须同步更新本列表与 `docs/13-module-inventory.md`（模块实现清单），同一批提交完成，禁止「目录已存在、规则仍写未落地」的漂移。
