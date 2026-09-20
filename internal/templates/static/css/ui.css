@@ -537,6 +537,10 @@ button.row-title-link {
 .form-label .req { color: var(--sky-c-danger, #cf8080); }
 
 /* ===== 后台裸控件的兜底外观（审计 UIK-009）=====
+   【消费端归属 · 后台专属段（owner=backend）】产物注入时整段跳过（审计 UI-01）：
+   .admin-layout 只出现在 admin/layout.html，站点产物侧没有任何消费者；此前它随 forms 段
+   进产物 —— 每个用到表单控件的产物白带约 6KB 的后台兜底。
+   后台是 <link href="/static/css/ui.css"> 直引整份，本段在后台照常生效（语义未变）。
    后台仍有页面把输入框裸写：既没有 form-input 系列类，也不在任何桥接容器里，
    于是走浏览器默认外观 —— 同一个后台里同样是输入框却有三种长相（基座 / 桥接 / 默认）。
    这里补一层兜底，作用域与优先级都收得很紧：
@@ -788,7 +792,12 @@ button.row-title-link {
 
 /* ==========================================================================
    语言切换（后台外壳，多语言 P1 第二步）：GET /admin/lang 表单，零 JS 依赖
-   ========================================================================== */
+   ==========================================================================
+   【消费端归属 · 后台专属段（owner=backend）】产物注入时整段跳过（审计 UI-01）：
+   本段的使用点只有 admin/layout.html 与 admin/login.html。
+   注意本段含通用无障碍类 .sr-only：它当前在产物侧没有消费者（各组件的视觉隐藏
+   各自在自己的作用域里实现）；将来站点组件要用它，应把 .sr-only 拆到 shared 段，
+   而不是解除本段的 backend 归属（门禁：ui_css_split.go 的 BackendExclusiveSectionClasses）。 */
 .lang-switch { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .lang-select {
     height: 36px;

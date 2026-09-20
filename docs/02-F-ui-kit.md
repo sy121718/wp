@@ -372,11 +372,11 @@ getComputedStyle(document.querySelector('.form-input')) // padding / borderRadiu
 |---|---|---|
 | **源** | `static/css/ui.css` + `static/js/ui/*` | **同一份**（`//go:embed static/css/ui.css`） |
 | **投递** | `admin/layout.html` 用 `<link>` / `<script>` **常驻加载** | 构建期**按需内联**进产物 |
-| **触发条件** | 无 —— 打开后台就都有 | 产物 HTML 命中 `data-ui-*` 特征 |
-| **命中后的效果** | 任何控件类都可用 | **整份** ui.css 注入 → 所有控件类都可用 |
-| **没命中** | 不适用（总是命中） | **一个都没有** —— 写了 `.form-input` 也没样式 |
+| **触发条件** | 无 —— 打开后台就都有 | 产物 HTML 命中 `data-ui-*` 特征，**或**写出基座外观类（`uiBaseClasses`：`.btn` / `.form-input` / `.card` …） |
+| **命中后的效果** | 任何控件类都可用 | 按**用到的段**注入 `ui.css`：命中的控件段 + 公共段（文件头 / 基座说明 / 尺寸令牌 / 工具类）；后台专属段（`owner=backend`）整段跳过 |
+| **没命中** | 不适用（总是命中） | **一个都没有** —— 只写工具类（`.flex` / `.mt-*`）不触发注入 |
 
-### 12.2 触发条件是 `data-ui-*` 特征，不是 class 名
+### 12.2 触发条件：`data-ui-*` 特征**或**基座外观类
 
 这是最容易踩错的地方。`internal/builder/ui_script.go` 的机制是「**特征命中才注入**」：
 
@@ -388,14 +388,20 @@ var uiBlocks = []uiBlock{
 ```
 
 - **JS**：按 `data-ui-*` 特征逐个控件注入（源文件来自 `js/ui/`）；
-- **CSS**：`uiAssetsFor()` 只判断「**有没有任何控件命中**」，命中就注入**整份** ui.css ——
-  **它不看 class 名**。
+- **CSS**：`uiAssetsForScan()`（`ui_script.go:262`）判断「有没有用到控件」，两条判据**任一**成立即可 ——
+  ① `data-ui-*` 属性特征命中；② 写出**基座外观类**（`uiBaseClasses`，`ui_script.go:38-57`：
+  `.btn` / `.form-input` / `.card` / `.data-table` / `.badge` …）。
+  命中后**按段**注入（`ui_css_split.go` 的 `uiCSSFor`）：命中的控件段 + 公共段（文件头、
+  基座说明、尺寸令牌、工具类），不是整份 —— UIK-013 的段切分让「只用按钮的页面」不再白带表格与分页。
+  · 工具类（`.flex` / `.mt-*` / `.text-sm` …）**不单独触发** —— 它们几乎每页都有，触发等于每页整份；
+  · 后台专属段（`owner=backend`）**永不进产物**：后台裸控件兜底（宿主类 `.admin-layout`）与
+    后台外壳的语言切换（`.lang-switch` / `.lang-select`）。它们只服务后台宿主，进产物是纯字节浪费。
 
 官方注释解释了为什么必须同进同出：
 
 > 控件脚本进了产物却没样式，访客看到的就是没有外观的空壳 —— 所以两者必须同进同出。
 
-反面也有兜底：纯内容页（一个特征都没命中）**不注入任何东西**，不为空增强付流量。
+反面也有兜底：纯内容页（一个特征、一个基座类都没命中）**不注入任何东西**，不为空增强付流量。
 
 ### 12.3 所以：怎么用
 
@@ -422,15 +428,27 @@ var uiBlocks = []uiBlock{
 
 1. **组件自己的外观** → 用组件级类名（`sky-*`，如 `sky-form-field` / `sky-form-submit`）
    走 `core.CSSBuckets` 编译。这些**总是**在产物里，不用操心注入；
-2. **想用基座控件**（下拉替身 / 弹窗 / 以及它们的样式）→ 在模板上写 `data-ui-select` / `data-modal`。
-   命中后 ui.css **整份**注入，于是 `.form-input` / `.btn` 这些类**也能用**。
+2. **想用基座控件**（下拉替身 / 弹窗 / 以及它们的样式）→ 在模板上写 `data-ui-select` / `data-modal`；
+   或者直接写基座外观类（`.btn` / `.form-input` / `.card` …）—— 两条判据都会触发注入，
+   命中后按用到的段注入，这些类就有样式了。
 
-**不要**只写 `.form-input` 而指望有样式 —— class 名不触发注入，没触发就是「类在、样式不在」。
+写 class 时要分清三类：
+
+| 类别 | 例子 | 产物里的行为 |
+|---|---|---|
+| 基座外观类 | `btn` / `form-input` / `card` / `data-table` / `badge` | **触发**对应段的注入（`uiBaseClasses`） |
+| 工具类 | `flex` / `mt-*` / `text-sm` / `w-full` | **不触发**；页面里只要有别的段命中，公共段会一并带上 |
+| 后台专属类 | `admin-layout` / `lang-switch` / `lang-select` | **永不进产物**（`owner=backend`）—— 站点侧写它没有样式 |
+
+第三类由 `ui_css_ownership_test.go` 的 `TestBackendExclusiveClassesStayInControlPlane` 守着：
+它断言后台专属类不出现在 `admin/` 与 `workbench/` 之外的模板里 —— 哪天有人把 `.lang-switch`
+用到站点组件上，测试会红，逼他把它提升为 shared 段，而不是让它静默无样式。
 
 ### 12.4 一句话判据
 
 > **源是同一份**；差别只在投递。
-> 后台：常驻加载，随便用。产物：命中 `data-ui-*` 才注入 ui.css，所以**先有标记、再有样式**。
+> 后台：常驻加载，随便用。产物：命中 `data-ui-*` 特征**或**基座外观类才注入**对应的段**，
+> 所以**先有标记或基座类、再有样式**；工具类不触发，后台专属段不进产物。
 
 多端硬规则对两者同样适用（见 §10.3 第 5 条）：宽度 `min(100%, …)`、触屏用 `AddActive` 给按压反馈、
 `AddHover` 的规则在触屏上不输出必须补等价形态。

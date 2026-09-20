@@ -12,6 +12,14 @@ package builder
 // 完全不受影响），而且段与段之间是**连续切片**——全部命中时拼回去与原文件逐字节相同
 // （TestUICSSSplitReassemblesSource 直接断言这一点）。
 //
+// 消费端归属（审计 UI-01）：段表回答「这段样式在哪一段」，owner 回答「这段投递给谁」。
+// ui.css 是**一份源两种投递**（后台 <link> 整份、产物按段内联），而后台宿主类
+// （.admin-layout）与后台外壳控件（.lang-switch / .lang-select）与控件基座住在同一个文件里 ——
+// 它们的触发类一旦被作者写进产物页面，就会把后台专用规则带进静态产物。
+// owner=ownerBackend 的段在产物注入时**整段跳过**（既不算命中、也不输出）。
+// 后台与工作台那条投递路径不受影响：它们是 <link href="/static/css/ui.css"> 直引整份文件
+// （admin/layout.html:23-25、workbench/layout.html:12-16），根本不经过这里的段切分。
+//
 // 段怎么定位：按段表登记的**标题行**（去空白后整行相等）顺序查找，顺序必须单调。
 // 标题被改掉时应当「构建失败」，而不是「每页悄悄少一段样式」—— 所以段标记不完整
 // 一律报错。源里一个标题都没有（测试桩、插件自带样式）时视为「未切分源」，原样返回。
@@ -30,6 +38,7 @@ package builder
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -37,6 +46,18 @@ import (
 const (
 	sectionTriggerClasses = iota + 1 // 段内类名直接触发
 	sectionTriggerPublic             // 公共段：随其它段一起带
+)
+
+// 消费端归属（审计 UI-01）。零值即 ownerShared —— 段表不写 owner 就是两端都投递。
+type uiCSSOwner int
+
+const (
+	// ownerShared 后台与产物都消费（控件基座、公共令牌、工具类）。
+	ownerShared uiCSSOwner = iota
+	// ownerBackend 只服务后台 / 工作台（它们直引整份 ui.css），产物注入时整段跳过。
+	ownerBackend
+	// ownerProduct 只服务站点产物（当前没有这样的段，留位以表达归属维度）。
+	ownerProduct
 )
 
 // uiCSSSection 一个可独立注入的样式段。
@@ -47,6 +68,8 @@ type uiCSSSection struct {
 	anchor string
 	// trigger 触发策略。
 	trigger int
+	// owner 消费端归属（见文件头）：ownerBackend 的段不进产物。
+	owner uiCSSOwner
 	// files 命中这些控件资源（uiBlocks 的 file）时带上本段。
 	files []string
 }
@@ -68,11 +91,21 @@ func uiCSSSections() []uiCSSSection {
 		{id: "cards", anchor: "卡片", trigger: sectionTriggerClasses},
 		{id: "tables", anchor: "表格", trigger: sectionTriggerClasses},
 		{id: "forms", anchor: "表单", trigger: sectionTriggerClasses},
+		// 后台裸控件的兜底外观（UIK-009）：宿主类 .admin-layout 只出现在 admin/layout.html，
+		// 站点产物侧没有任何消费者 —— 标 backend 后它不再随 forms 段进产物（UI-01）。
+		{id: "bareform", anchor: "/* ===== 后台裸控件的兜底外观（审计 UIK-009）=====", trigger: sectionTriggerClasses, owner: ownerBackend},
 		{id: "badges", anchor: "徽章 / 标签 / 状态", trigger: sectionTriggerClasses},
 		{id: "pagination", anchor: "分页", trigger: sectionTriggerClasses},
 		{id: "utilities", anchor: "工具类", trigger: sectionTriggerPublic},
 		{id: "themetoggle", anchor: "主题切换按钮", trigger: sectionTriggerClasses, files: []string{"themetoggle.js"}},
-		{id: "langswitch", anchor: "语言切换（后台外壳，多语言 P1 第二步）：GET /admin/lang 表单，零 JS 依赖", trigger: sectionTriggerClasses},
+		// 语言切换是后台外壳（admin/layout.html 与 admin/login.html）。段里含通用无障碍类 .sr-only ——
+		// 它在产物侧当前没有消费者；将来站点组件要用它，应当把它拆到 shared 段，
+		// 而不是解除本段的 backend 归属（门禁见 internal/templates/ui_css_ownership_test.go）。
+		{id: "langswitch", anchor: "语言切换（后台外壳，多语言 P1 第二步）：GET /admin/lang 表单，零 JS 依赖", trigger: sectionTriggerClasses, owner: ownerBackend},
+		// 页签基座（UIK-011）与语言切换住在同一个文件尾部，但它是**通用内容区基座**：
+		// 当前只有后台在用（双向守卫见 ui_css_ownership_test.go），产物侧将来要用就该能注入 ——
+		// 所以它必须是独立段、owner=shared，不能跟着 langswitch 一起被判进 backend。
+		{id: "tabs", anchor: "页签（tabs）基座 —— UIK-011", trigger: sectionTriggerClasses},
 	}
 }
 
@@ -197,6 +230,9 @@ func uiCSSFor(css string, scan htmlScan) (string, error) {
 	matched := false
 	for _, c := range chunks {
 		sec := uiCSSSectionByID(c.id)
+		if sec.owner == ownerBackend {
+			continue // 后台专属段既不算命中、也不输出（见文件头的 owner 说明）
+		}
 		if sec.trigger == sectionTriggerPublic {
 			continue // 公共段不参与「有没有命中」判定，见下面的拼接
 		}
@@ -211,6 +247,9 @@ func uiCSSFor(css string, scan htmlScan) (string, error) {
 	var sb strings.Builder
 	for _, c := range chunks {
 		sec := uiCSSSectionByID(c.id)
+		if sec.owner == ownerBackend {
+			continue // 后台专属段不进产物
+		}
 		if sec.trigger == sectionTriggerPublic || hit[c.id] {
 			sb.WriteString(c.text)
 		}
@@ -226,6 +265,45 @@ func uiCSSSectionByID(id string) uiCSSSection {
 		}
 	}
 	panic("ui_css_split: 未知的段 id " + id)
+}
+
+// BackendExclusiveSectionClasses 返回**只在后台专属段里定义**的类名（审计 UI-01）。
+//
+// 用途：产物注入会跳过 owner=backend 的段，所以这些类在站点侧没有样式来源。
+// 门禁（internal/templates/ui_css_ownership_test.go）用它断言这些类不出现在
+// 后台 / 工作台之外的模板里 —— 哪天有人把 .lang-switch 用到站点组件上，那条测试必须红，
+// 逼他把该类提升为 shared 段，而不是让它静默无样式。
+//
+// 同时出现在别的段里的类不算「后台专属」（例如 .wbs-native 既在 select 段定义、
+// 又出现在兜底段的选择器里）。未切分源（测试桩 / 插件样式）返回空集。
+func BackendExclusiveSectionClasses(css string) ([]string, error) {
+	if strings.TrimSpace(css) == "" {
+		return nil, nil
+	}
+	chunks, ok, err := splitUICSS(css)
+	if err != nil || !ok {
+		return nil, err
+	}
+	backend, other := map[string]bool{}, map[string]bool{}
+	for _, c := range chunks {
+		isBackend := uiCSSSectionByID(c.id).owner == ownerBackend
+		for cls := range sectionClasses(c.text) {
+			if isBackend {
+				backend[cls] = true
+			} else {
+				other[cls] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(backend))
+	for cls := range backend {
+		if other[cls] {
+			continue
+		}
+		out = append(out, cls)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // secHits 该段是否被页面命中：段内类名出现在页面上，或对应控件资源被用到。

@@ -19,6 +19,10 @@ package templates
 //   workbench.css：.wb-tabs / .wb-lib-tabs / .wb-subtabs，命名与密度都是工作台专属）。
 //   给 ui.css 加一个没有使用点的 tabs 块等于新增死样式，所以不加，改成把「后台出现页签」
 //   变成一条会失败的契约，提醒收敛到基座（见最后一个测试）。
+//
+// UI-01 的处置：后台专属段（owner=backend）不进产物（见 builder 的 uiCSSOwner）。
+//   两条门禁：① 产物注入的 CSS 不含后台专属规则；② 后台专属类不得出现在 admin/ 与
+//   workbench/ 之外的模板里（这两处都是 <link> 直引整份 ui.css 的控制面，只有站点产物走段切分）。
 
 import (
 	"os"
@@ -27,6 +31,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"go_wp/internal/builder"
 )
 
 var uiCssCommentRe = regexp.MustCompile(`(?s)/[*].*?[*]/`)
@@ -228,6 +234,103 @@ func TestAdminTabsBaseAndUsageStayInSync(t *testing.T) {
 			"缺基座时页签会退化成浏览器默认的描边方块按钮（role / aria 都对，只是看上去不是一个页签）", found)
 	case len(found) == 0 && hasBase:
 		t.Error("ui.css 预置了页签基座，但后台没有任何使用点：这是新增死样式（审计 UIK-011）")
+	}
+}
+
+// TestProductUICSSSkipsBackendOnlySections 产物不再带上后台专属段的规则（审计 UI-01）。
+//
+// 走真实产物组装路径（builder.RenderDocument）而不是直接调 builder 的内部切分函数：
+// 断言的是「渲染出来的文档里没有后台专属规则」，这才是消费端实际拿到的东西。
+func TestProductUICSSSkipsBackendOnlySections(t *testing.T) {
+	cases := []struct {
+		name      string
+		html      string
+		keep      string
+		forbidden string
+	}{
+		{
+			name:      "表单控件：forms 段照常注入，后台兜底不跟随",
+			html:      `<div class="form-group"><input class="form-input" type="text"></div>`,
+			keep:      ".form-input",
+			forbidden: ".admin-layout",
+		},
+		{
+			name:      "后台语言切换：langswitch 段整段跳过",
+			html:      `<div class="lang-switch"><select class="lang-select"></select></div>`,
+			forbidden: ".lang-select",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := builder.RenderDocument(&builder.CompiledPage{
+				Lang:    "zh-CN",
+				HTML:    tc.html,
+				UIStyle: UICSS(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.keep != "" && !strings.Contains(out, tc.keep) {
+				t.Errorf("产物缺少 %q：跳过后台专属段不能把用到的控件段一起清掉", tc.keep)
+			}
+			if strings.Contains(out, tc.forbidden) {
+				t.Errorf("产物里出现后台专属规则 %q（owner=backend 的段应当在注入时整段跳过）：\n"+
+					"这类规则只服务后台宿主，进产物是纯字节与语义浪费（审计 UI-01）", tc.forbidden)
+			}
+		})
+	}
+}
+
+// TestBackendExclusiveClassesStayInControlPlane 后台专属类不得出现在控制面之外（审计 UI-01）。
+//
+// 为什么这条是本次改动真正的价值：owner=backend 的段不进产物，所以这些类在站点侧
+// **没有样式来源**。一旦有人把 .lang-switch 用到站点组件上，页面不会有任何报错，
+// 只是悄悄没有外观 —— 这条测试把它变成红色，逼作者把该类提升为 shared 段。
+//
+// 允许的宿主是 internal/templates/admin/ 与 internal/templates/workbench/ —— 两者都是
+// <link href="/static/css/ui.css"> 直引整份的控制面，不走段切分。
+// 局限：只扫模板文件；Go 代码里拼出的 HTML 与 JS 动态添加的类名覆盖不到。
+func TestBackendExclusiveClassesStayInControlPlane(t *testing.T) {
+	classes, err := builder.BackendExclusiveSectionClasses(UICSS())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classes) == 0 {
+		t.Fatal("没有解析到后台专属类：owner=backend 的段可能没登记，本约束会在空转中通过")
+	}
+	// 控制面之外的模板。fragments/*.html 不在列表里：它们是后台 / 工作台页面片段
+	// （workbench 的 inspector_panel / outline_tree、project 的 global_panel / settings_panel、
+	// product 的 seo_score、content 的 article_import），由后台页面渲染、同样直引整份 ui.css；
+	// 站点运行时片段是 fragments/*.jet（cart_view / order_list / user_login …）。
+	patterns := []string{
+		"components/*/*.jet", "components/*/*.html",
+		"fragments/*.jet",
+		"user/*.html", "partials/*.html", "*.html",
+	}
+	var files []string
+	for _, pat := range patterns {
+		m, err := filepath.Glob(pat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, m...)
+	}
+	// 解析口径自检：一个模板都没枚举到说明路径口径失效，本约束会在空转中通过。
+	if len(files) < 20 {
+		t.Fatalf("只枚举到 %d 个控制面之外的模板（预期 ≥20）：路径口径可能已失效", len(files))
+	}
+	owned := map[string]bool{}
+	for _, c := range classes {
+		owned[c] = true
+	}
+	for _, f := range files {
+		for _, cls := range classTokens(readUIOwnershipFile(t, f)) {
+			if owned[cls] {
+				t.Errorf("%s 使用了后台专属类 %q（后台专属段：%v）：owner=backend 的段在产物注入时被跳过，"+
+					"站点侧没有样式来源；请改用基座公共类，或把该类拆到 shared 段（审计 UI-01）",
+					f, cls, classes)
+			}
+		}
 	}
 }
 
