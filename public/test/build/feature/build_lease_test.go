@@ -433,38 +433,73 @@ func TestEnqueueStoresExplicitScope(t *testing.T) {
 		t.Fatalf("intent 应显式入库，实际 %q", row.Intent)
 	}
 
-	// 端口一：page 的溢出重建带工程；意图是依赖重建，语言留空（ARCH-04 之前没有语言上下文）。
+	// 端口一：page 的溢出重建带工程、**冻结的语言**与依赖重建意图（审计 ARCH-04：
+	// 语言不再是空串 —— 空串曾让消费侧只能按默认语言构建，其余语言停在旧字节）。
 	pageID := uuid.NewString()
-	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, 3, "h"); err != nil {
+	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, "zh-CN", buildmodel.IntentDependency, 3, "h"); err != nil {
 		t.Fatalf("EnqueuePageBuild 失败: %v", err)
 	}
-	// 端口二：presentation 的自动重建同样带工程与依赖重建意图。
+	// 同一页面、同一输入、同一语言，但意图是 manual：必须**各自成行**（待办去重键含
+	// intent，迁移 307）—— 否则人工点的那次构建会被同键的依赖重建吞掉。
+	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, "zh-CN", buildmodel.IntentManual, 3, "h"); err != nil {
+		t.Fatalf("EnqueuePageBuild(manual) 失败: %v", err)
+	}
+	// 同一页面、同一输入、另一语言：同样必须各自成行（去重键含 lang）——
+	// 否则多语言站点只会构建其中一种语言，另一种永远停在旧字节。
+	if err := svc.EnqueuePageBuild(ctx, pageID, projectID, "en-US", buildmodel.IntentDependency, 3, "h"); err != nil {
+		t.Fatalf("EnqueuePageBuild(en-US) 失败: %v", err)
+	}
+	// 端口二：presentation 的自动重建带工程与依赖重建意图（实例没有语言维度，lang 保持空串）。
 	presentationID := uuid.NewString()
 	if err := svc.EnqueuePresentationBuild(ctx, presentationID, projectID); err != nil {
 		t.Fatalf("EnqueuePresentationBuild 失败: %v", err)
 	}
-	for _, sourceID := range []string{pageID, presentationID} {
-		var got struct {
-			SourceID  string  `gorm:"column:source_id"`
-			ProjectID *string `gorm:"column:project_id"`
-			Intent    string  `gorm:"column:intent"`
-			Lang      string  `gorm:"column:lang"`
-		}
-		if err := db.Raw("SELECT source_id::text AS source_id, project_id, intent, lang FROM build_jobs WHERE source_id = ?", sourceID).Scan(&got).Error; err != nil {
-			t.Fatalf("读取端口入队的任务失败: %v", err)
-		}
-		if got.SourceID != sourceID {
+	// page 侧三条任务：工程 / 语言 / 意图都必须显式入库（断言直接读库，不看返回值）。
+	var pageJobs []struct {
+		SourceID  string  `gorm:"column:source_id"`
+		ProjectID *string `gorm:"column:project_id"`
+		Intent    string  `gorm:"column:intent"`
+		Lang      string  `gorm:"column:lang"`
+	}
+	if err := db.Raw("SELECT source_id::text AS source_id, project_id, intent, lang FROM build_jobs WHERE source_id = ? ORDER BY id", pageID).Scan(&pageJobs).Error; err != nil {
+		t.Fatalf("读取 page 端口入队的任务失败: %v", err)
+	}
+	wantPageJobs := map[string]string{"zh-CN|" + buildmodel.IntentDependency: "", "zh-CN|" + buildmodel.IntentManual: "", "en-US|" + buildmodel.IntentDependency: ""}
+	if len(pageJobs) != len(wantPageJobs) {
+		t.Fatalf("page 端口应入队 %d 条（两语言 + 手工/依赖两种意图），实际 %d 条: %+v", len(wantPageJobs), len(pageJobs), pageJobs)
+	}
+	for _, got := range pageJobs {
+		if got.SourceID != pageID {
 			t.Fatalf("读取到的任务不是期望的来源: %q", got.SourceID)
 		}
 		if got.ProjectID == nil || *got.ProjectID != projectID {
 			t.Fatalf("端口入队应带工程作用域: %v", got.ProjectID)
 		}
-		if got.Intent != buildmodel.IntentDependency {
-			t.Fatalf("端口入队的意图应为依赖重建，实际 %q", got.Intent)
+		if _, ok := wantPageJobs[got.Lang+"|"+got.Intent]; !ok {
+			t.Fatalf("page 端口入队的语言/意图不在期望集合内: lang=%q intent=%q", got.Lang, got.Intent)
 		}
-		if got.Lang != "" {
-			t.Fatalf("当前没有语言上下文，lang 应为空串，实际 %q", got.Lang)
-		}
+		delete(wantPageJobs, got.Lang+"|"+got.Intent)
+	}
+	if len(wantPageJobs) != 0 {
+		t.Fatalf("page 端口缺少这些语言/意图的任务: %v", wantPageJobs)
+	}
+	// presentation 端口：没有语言维度，lang 保持空串（与 page 侧形成对照）。
+	var presJob struct {
+		ProjectID *string `gorm:"column:project_id"`
+		Intent    string  `gorm:"column:intent"`
+		Lang      string  `gorm:"column:lang"`
+	}
+	if err := db.Raw("SELECT project_id, intent, lang FROM build_jobs WHERE source_id = ?", presentationID).Scan(&presJob).Error; err != nil {
+		t.Fatalf("读取 presentation 端口入队的任务失败: %v", err)
+	}
+	if presJob.ProjectID == nil || *presJob.ProjectID != projectID {
+		t.Fatalf("presentation 端口入队应带工程作用域: %v", presJob.ProjectID)
+	}
+	if presJob.Intent != buildmodel.IntentDependency {
+		t.Fatalf("presentation 端口入队的意图应为依赖重建，实际 %q", presJob.Intent)
+	}
+	if presJob.Lang != "" {
+		t.Fatalf("presentation 没有语言维度，lang 应为空串，实际 %q", presJob.Lang)
 	}
 
 	// 白名单外的意图在入队前就被拒绝（数据库拒绝的报错是约束名，且会留下半条任务）。
@@ -477,9 +512,10 @@ func TestEnqueueStoresExplicitScope(t *testing.T) {
 	if err := db.Table("build_jobs").Count(&n).Error; err != nil {
 		t.Fatalf("统计任务失败: %v", err)
 	}
-	// 上面成功入队 3 条：manual + pageID + presentationID。
-	if n != 3 {
-		t.Fatalf("非法意图不应留下任务行，期望 3 行，实际 %d", n)
+	// 上面成功入队 5 条：manual(1) + pageID 的三条（zh-CN/dependency、zh-CN/manual、en-US/dependency）
+	// + presentationID(1)。
+	if n != 5 {
+		t.Fatalf("非法意图不应留下任务行，期望 5 行，实际 %d", n)
 	}
 }
 

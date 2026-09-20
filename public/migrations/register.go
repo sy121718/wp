@@ -80,4 +80,6 @@ func init() {
 	registerProductRelatedIDsI18n()
 	// 305：产物表重复 manifest 列的收敛（审计 DB-02，见 register_manifest_dedup.go）。
 	registerManifestDedup()
+	// 307：build_jobs 待办去重键按「构建输入 + 语言 + 意图」分开（审计 ARCH-04，见 register_build_intent.go）。
+	registerBuildJobIntent()
 }

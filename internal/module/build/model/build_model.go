@@ -95,10 +95,14 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 
 // Enqueue 入队（幂等）。
 //
-// ON CONFLICT DO NOTHING 对着迁移 171 的部分唯一索引
-// (source_type, source_id, build_input_hash) WHERE status='pending'：
+// ON CONFLICT DO NOTHING 对着迁移 307 的部分唯一索引
+// (source_type, source_id, build_input_hash, lang, intent) WHERE status='pending'：
 // 依赖失效扇出会在一批里反复标记同一个页面，没有这层幂等，队列会被同一份工作填满。
 // 返回 false 表示「同一份工作已经在队列里」。
+//
+// 去重键含 lang / intent（ARCH-04）：同一页面的多语言任务是**不同**的工作
+// （每种语言各自构建、各自决定要不要回写线上），人工构建与依赖重建更是两回事 ——
+// 键里少这两维，多语言任务会被互相去重、手工构建会被依赖重建吞掉。
 //
 // 注意它**不覆盖 running**：正在跑的那份工作与队列里的新待办是两回事
 // （内容在构建期间又变了就该再排一份），互斥由 claim 侧的同来源条件负责。
@@ -272,6 +276,11 @@ func (m *Model) MarkSuperseded(ctx context.Context, id int64, leaseToken, reason
 //
 // 仍有极小窗口：并发入队在本语句快照之后提交同键 pending 行，会让 UPDATE 撞 23505。
 // 调用方对 23505 做有界重试，重试的那一次必然看得见那行 pending，改走 superseded 分支。
+// has_pending 的判据必须与 uq_build_jobs_pending（迁移 307）**同形**：同来源、同输入、
+// 同语言、同意图才算「本行的工作已经排在队列里」。
+// 少比 lang / intent 的后果不是报错，而是把两份**不同**的工作合并掉：一条租约到期的
+// 人工构建会看到同键的依赖重建待办，于是自己被标 superseded、人工那一次构建静默消失
+// （队列深度看着正常，页面就是不更新）—— 键改到哪几列，这里就比到哪几列。
 const reclaimStaleSQL = `WITH stale AS (
 	    SELECT b.id,
 	           EXISTS (
@@ -280,6 +289,8 @@ const reclaimStaleSQL = `WITH stale AS (
 	                  AND p.source_type = b.source_type
 	                  AND p.source_id = b.source_id
 	                  AND p.build_input_hash = b.build_input_hash
+	                  AND p.lang = b.lang
+	                  AND p.intent = b.intent
 	           ) AS has_pending
 	      FROM build_jobs b
 	     WHERE b.status = 'running'

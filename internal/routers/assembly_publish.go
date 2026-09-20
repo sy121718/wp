@@ -289,9 +289,15 @@ func (a *assembly) wirePublishingPorts() {
 		panic("页面模块未提供构建队列注入点（SetBuildQueue）")
 	}
 	marks.mark(portPageBuildQueue)
+	// 执行器按**任务上下文**执行（审计 ARCH-04）：此前只传 SourceID，溢出重建于是退化成
+	// 「裸调 Build(ID)」—— 语言集合与旧发布范围全部丢失，第 21 个之后的页面停在默认语言的
+	// 暂存态，且与同步路径（RebuildStale）结果不一致。现在把任务冻结的 lang / intent /
+	// 输入版本交给页面模块的单页重建编排（与同步路径同一份实现）。
 	buildSvc.RegisterExecutor("page", func(ctx context.Context, job *buildcontract.Job) error {
-		_, err := pageService.Build(ctx, &pagedto.BuildReq{ID: job.SourceID})
-		return err
+		return pageService.RunPageBuildJob(ctx, &pagedto.PageBuildJobReq{
+			ID: job.SourceID, Lang: job.Lang, Intent: job.Intent,
+			DraftVersion: job.DraftVersion, BuildInputHash: job.BuildInputHash,
+		})
 	})
 	// presentation 的自动重建接线（PERF-020）：失效扇出不再在触发进程里持实例锁
 	// 同步重建（进程内锁在多实例部署下拦不住两个实例同时重建同一实例），改为入队，

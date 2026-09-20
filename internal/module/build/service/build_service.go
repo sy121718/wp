@@ -156,20 +156,29 @@ func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *b
 	return job, true, nil
 }
 
-// EnqueuePageBuild 供 page 模块把超出单次上限的自动重建交给队列。
-func (s *Service) EnqueuePageBuild(ctx context.Context, pageID, projectID string, draftVersion int64, buildInputHash string) error {
+// EnqueuePageBuild 供 page 模块把依赖重建 / 人工构建任务交给队列（审计 ARCH-04）。
+//
+// 参数按「任务上下文」排布：lang（构建语言）与 intent（构建意图）紧邻，
+// draftVersion / buildInputHash 是**入队时冻结的输入版本**。
+// 三个一起进待办去重键（迁移 307）：同一页面不同语言是不同工作、人工构建与依赖重建
+// 更是两回事，任何一维缺失都会被误去重（多语言站点少构建一种语言 / 手工构建被吞掉）。
+//
+// intent 传空 = 依赖重建（normalizeIntent 的默认值，见 builddto.EnqueueReq 注释）。
+func (s *Service) EnqueuePageBuild(ctx context.Context, pageID, projectID, lang, intent string, draftVersion int64, buildInputHash string) error {
 	_, _, err := s.Enqueue(ctx, &builddto.EnqueueReq{
 		SourceType: buildmodel.SourceTypePage, SourceID: pageID, ProjectID: projectID,
+		Lang: strings.TrimSpace(lang), Intent: intent,
 		DraftVersion: draftVersion, BuildInputHash: buildInputHash,
-		Intent: buildmodel.IntentDependency,
 	})
 	return err
 }
 
 // EnqueuePresentationBuild 供 presentation 模块把自动重建交给队列（PERF-020）。
 //
-// build_input_hash 传空串是刻意的：队列的部分唯一索引按 (来源, 目标, hash) 去重，
-// 空串让「同一实例同时只有一条待办」成立 —— 依赖失效扇出反复标记同一实例时不会堆出多份任务。
+// build_input_hash 传空串是刻意的：自动发布实例没有「页面草稿」这种输入版本，
+// 空串 + 固定的 lang（空）与 intent（依赖重建）让「同一实例同时只有一条待办」成立 ——
+// 依赖失效扇出反复标记同一实例时不会堆出多份任务。它是**幂等键的一个分量**，
+// 不是「这里是什么意图」的操作码：意图由 intent 列显式表达（迁移 295 / ARCH-04）。
 func (s *Service) EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error {
 	_, _, err := s.Enqueue(ctx, &builddto.EnqueueReq{
 		SourceType: buildmodel.SourceTypePresentation, SourceID: presentationID, ProjectID: projectID,

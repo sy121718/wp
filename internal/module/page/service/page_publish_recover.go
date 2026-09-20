@@ -86,6 +86,10 @@ type updateURLApplyInput struct {
 	// OldKernelPath 改 URL 前的**线上**路径（301 或取消激活按它处置）。
 	OldKernelPath string
 	WithRedirect  bool
+	// RouteLangs 站点语言集合（发布口径，默认语言在前），由调用方在**事务之前**解析：
+	// 保留路由要逐语言迁移，而把它留到事务内再读一次语言表，读失败就会只迁移默认语言
+	// （审计 I18N-02 收尾）。主链在切访问面之前解析，恢复路径在补写之前解析。
+	RouteLangs []string
 	// Deps 本次产物声明的构建期依赖（Manifest.dependencies）。URL 变更不改变依赖集合，
 	// 但产物行可能是本次新建的，依赖投影必须同步 —— 否则该产物的精确失效查询会漏掉它。
 	Deps []pipeline.Dependency
@@ -121,7 +125,11 @@ func (s *Service) applyUpdateURL(ctx context.Context, in updateURLApplyInput) er
 		if s.routes == nil {
 			return nil
 		}
-		if rerr := s.renameReservedAllLangsTx(ctx, tx, in.Page.ProjectID, in.Page.ID, in.OldLogicalPath, in.NewLogicalPath, in.Lang); rerr != nil {
+		if rerr := s.renameReservedAllLangsTx(ctx, tx, renameReservedInput{
+			ProjectID: in.Page.ProjectID, PageID: in.Page.ID,
+			OldLogical: in.OldLogicalPath, NewLogical: in.NewLogicalPath,
+			TargetLang: in.Lang, Langs: in.RouteLangs,
+		}); rerr != nil {
 			return rerr
 		}
 		if _, aerr := s.routes.ActivateTx(ctx, tx, &pubcontract.ActivateReq{
@@ -355,6 +363,14 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 		return false, aerr
 	}
 	rule := s.langURLRuleOf(ctx, page.ProjectID)
+	// 语言集合在补写事务**之前**解析（审计 I18N-02 收尾）：与主链同一判据 —— 读不到就
+	// 不做「只迁默认语言」的打折迁移，直接返回错误让回执保持 pending，等下一次收敛重放。
+	// 此时访问面早已切换（崩溃点就在切换之后），所以宁可原地不动也不能迁一半：
+	// 迁一半留下的是「新路径已激活、其余语言的保留路由还在旧路径」，没有任何入口能发现。
+	routeLangs, lerr := s.publishLangsOf(ctx, page.ProjectID)
+	if lerr != nil {
+		return false, lerr
+	}
 	if err := s.applyUpdateURL(ctx, updateURLApplyInput{
 		Page: page, ArtifactRowID: rowID, Lang: lang,
 		KernelNewPath:  item.Path,
@@ -365,6 +381,7 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 		OldKernelPath:  item.OldPath,
 		WithRedirect:   item.Redirect,
 		Deps:           deps,
+		RouteLangs:     routeLangs,
 	}); err != nil {
 		return false, err
 	}

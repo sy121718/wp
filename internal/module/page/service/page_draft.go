@@ -241,13 +241,22 @@ func (s *Service) SaveDraft(ctx context.Context, req *pagedto.SaveDraftReq) (res
 		DraftPath: path, DraftDocument: doc, SourceHash: hash(doc), CreatedAt: now,
 	}
 	changedPath := page.DraftPath != path
+	// 保留路由迁移要按站点启用语言逐语言做，而语言集合**在事务之外**解析（审计 I18N-02 收尾）：
+	// 事务内再读一次语言表，读失败就只会迁移默认语言的保留路由，其余语言的 reserved 行
+	// 停在旧路径而草稿照常提交。这里是作者可操作的写入口，口径沿用软回退（enabledLangsOf，
+	// 理由见 page_lang.go）：一次读库抖动不该让作者存不了草稿，降级后果可由下一次保存 /
+	// 发布按完整清单补齐；改 URL / 发布那些「会写发布事实」的路径才用发布硬口径。
+	routeLangs := s.enabledLangsOf(ctx, page.ProjectID)
 	// 路径占用迁移与草稿提交落在**同一个事务**里：改到他人占用路径在此失败
 	//（RenameReserved 撞 newPath 唯一约束），草稿保持原路径与版本不变；版本冲突
 	//（乐观锁）时路径迁移随事务一并撤销。旧实现是「先迁路由、失败再回迁」，
 	// 回迁失败只有一行日志 —— 路由表会停在「路径已改名、草稿没提交」的错位状态。
 	if err = s.model.TransactionScoped(ctx, page.ProjectID, func(tx *gorm.DB) error {
 		if changedPath {
-			if rerr := s.renameReservedAllLangsTx(ctx, tx, page.ProjectID, page.ID, page.DraftPath, path, ""); rerr != nil {
+			if rerr := s.renameReservedAllLangsTx(ctx, tx, renameReservedInput{
+				ProjectID: page.ProjectID, PageID: page.ID,
+				OldLogical: page.DraftPath, NewLogical: path, Langs: routeLangs,
+			}); rerr != nil {
 				return rerr
 			}
 		}

@@ -38,7 +38,9 @@ type BuildService interface {
 	//
 	// projectID 由调用方显式传入（审计 DB-01）：它是任务的工程作用域，队列不跨模块
 	// 反查来源表，来源模块手里有就顺手带过来；确实拿不到时传空串（列可空）。
-	EnqueuePageBuild(ctx context.Context, pageID, projectID string, draftVersion int64, buildInputHash string) error
+	// lang / intent 是任务上下文的另外两维（审计 ARCH-04），一起进待办去重键（迁移 307）：
+	// lang 为完整语言码，intent 取 manual / dependency（空 = dependency）。
+	EnqueuePageBuild(ctx context.Context, pageID, projectID, lang, intent string, draftVersion int64, buildInputHash string) error
 	// EnqueuePresentationBuild 供 presentation 模块把自动重建交给队列（PERF-020）。
 	// 同一实例的待办任务幂等（部分唯一索引去重），重复入队不会堆出多份。
 	EnqueuePresentationBuild(ctx context.Context, presentationID, projectID string) error

@@ -56,6 +56,22 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 	if err != nil {
 		return nil, err
 	}
+	// 站点语言集合在**任何内核调用之前**解析（审计 I18N-02 收尾）。
+	//
+	// 为什么必须在切访问面之前：改 URL 要按启用语言逐语言迁移保留路由，而路径解析
+	// 只需一次读语言表。把这次读留到「内核已把 FS 切到新路径之后、事务之内」，
+	// 读失败时只剩两种坏选择：带着「只有默认语言」的清单迁移（其余语言的 reserved
+	// 行停在旧路径，事务照常提交 —— 三方分裂），或者让已经生效的切换回退（FS 上没有
+	// 回退这条路）。放在前面之后，读不到就在**访问面还没动**时失败，什么都不用拆。
+	//
+	// 口径用发布硬口径（publishLangsOf）：这是会写站点访问路径的动作，
+	// 「不知道站点有哪几种语言」不能降级成「只动默认语言」。
+	routeLangs, lerr := s.publishLangsOf(ctx, page.ProjectID)
+	if lerr != nil {
+		logger.Scene("page").With("pageId", page.ID).
+			Error(lerr, "改 URL 中止：站点语言清单不可读，不带着不完整的语言集合去切访问面")
+		return nil, lerr
+	}
 	lang := buildLang(req.Lang)
 	rule := s.langURLRuleOf(ctx, page.ProjectID)
 	kernelNewPath, err := sitePath(rule, lang, newPath)
@@ -104,7 +120,10 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 			if merr := s.model.MoveDraftPathTx(ctx, tx, page.ProjectID, page.ID, newPath, now); merr != nil {
 				return merr
 			}
-			return s.renameReservedAllLangsTx(ctx, tx, page.ProjectID, page.ID, oldPath, newPath, lang)
+			return s.renameReservedAllLangsTx(ctx, tx, renameReservedInput{
+				ProjectID: page.ProjectID, PageID: page.ID,
+				OldLogical: oldPath, NewLogical: newPath, TargetLang: lang, Langs: routeLangs,
+			})
 		}); err != nil {
 			logger.Scene("page").With("pageId", page.ID).Error(err, "纯草稿路径迁移失败")
 			return nil, err
@@ -169,7 +188,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 		Page: page, ArtifactRowID: artifactRowID, Lang: lang,
 		KernelNewPath: kernelNewPath, NewLogicalPath: newPath,
 		OldLogicalPath: oldPath, OldKernelPath: publishedPath,
-		WithRedirect: req.WithRedirect, Deps: deps,
+		WithRedirect: req.WithRedirect, Deps: deps, RouteLangs: routeLangs,
 	}); err != nil {
 		s.keepPublishReceiptPending(receiptID, "DB 状态写入失败")
 		logger.Scene("page").With("pageId", page.ID).With("newPath", kernelNewPath).

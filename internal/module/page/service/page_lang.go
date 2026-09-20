@@ -79,35 +79,85 @@ type siteRouteEntry struct {
 
 // siteRouteEntries 按启用语言（project_locales）计算逻辑路径的各语言站点路径，
 // 默认语言在前；关闭前缀时多语言映射到同一路径，按路径去重。
+//
+// 这是**软口径**（enabledLangsOf：清单不可读回退默认语言一种），唯一调用方是
+// siteRoutePaths（建页 / 保存草稿时占位 page_routes），口径理由见 enabledLangsOf。
+// 会写发布事实 / 会改访问面的路径显式解析语言集合后走 siteRouteEntriesForLangs。
 func (s *Service) siteRouteEntries(ctx context.Context, projectID, logical string) ([]siteRouteEntry, error) {
-	entries, err := pipeline.SiteRouteEntries(ctx, s.project, projectID, logical)
-	if err != nil {
-		return nil, err
+	return s.siteRouteEntriesForLangs(ctx, projectID, logical, s.enabledLangsOf(ctx, projectID))
+}
+
+// siteRouteEntriesForLangs 按**给定**语言集合推导逻辑路径的各语言站点路径（默认语言在前）。
+//
+// 语言集合为什么由调用方给出：调用点既有「事务外」（建页占位）也有「事务内」
+// （renameReservedAllLangsTx 迁移保留路由）。事务内的那一次必须用**进入事务之前**
+// 解析好的集合 —— 在事务内再读一次语言表（审计 I18N-02 的成因）读失败时，只会迁移
+// 默认语言的保留路由，其余语言的 reserved 行停在旧路径，而事务照常提交、调用方拿到成功。
+//
+// 判据与内核的 pipeline.siteRouteEntriesForLangs 同源（两边都以同一个 LangURLRule 为
+// 唯一映射点，不构成第二份语义）：rule.Validate（多语言短码互斥）→ 逐语言 rule.Path
+// → 按 Path 去重（关闭语言前缀时多语言映射到同一路径，而 page_routes 主键是
+// (project_id, path)，重复插入必然撞唯一键）。
+func (s *Service) siteRouteEntriesForLangs(ctx context.Context, projectID, logical string, langs []string) ([]siteRouteEntry, error) {
+	// 空集合不是「没什么要迁移」，而是「调用方没解析出语言集合」：静默返回空会让保留
+	// 路由一条都不迁移，而调用方以为迁移已完成 —— 半迁移比失败更难发现。
+	if len(langs) == 0 {
+		return nil, ErrInvalidPath
 	}
-	out := make([]siteRouteEntry, len(entries))
-	for i, e := range entries {
-		out[i] = siteRouteEntry{Lang: e.Lang, Path: e.Path}
+	rule := s.langURLRuleOf(ctx, projectID)
+	if verr := rule.Validate(langs); verr != nil {
+		return nil, ErrInvalidPath
+	}
+	seen := map[string]bool{}
+	out := make([]siteRouteEntry, 0, len(langs))
+	for _, lang := range langs {
+		p, perr := sitePath(rule, lang, logical)
+		if perr != nil {
+			return nil, ErrInvalidPath
+		}
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, siteRouteEntry{Lang: lang, Path: p})
 	}
 	return out, nil
 }
 
-// renameReservedAllLangs 按启用语言逐语言迁移路径占用（建页/改草稿/改 URL）。
+// renameReservedInput 保留路由逐语言迁移的入参。
 //
-// targetLang 非空（改某语言 URL）时：该语言允许迁移本页 active 行（发布时
-// reserved 被原地升级为 active，改 URL 的 DB 同步依赖这一迁移），其他语言
-// **只迁移 reserved 行**——否则会把别的语言的激活行改到新路径，线上路由丢失。
-// targetLang 为空（改草稿路径）时所有语言同等对待。
+// 聚成结构体而不是继续加位置参数：这里有四个相邻的字符串（pageID / oldLogical /
+// newLogical / targetLang）加一个语言切片，位置参数写错顺序编译器不会报错，
+// 而错的是「哪个语言允许迁移 active 行」与「按哪份语言集合迁移」两件后果很重的事。
+type renameReservedInput struct {
+	ProjectID string
+	PageID    string
+	// OldLogical / NewLogical 改路径前后的**逻辑**路径（不带语言前缀）。
+	OldLogical string
+	NewLogical string
+	// TargetLang 非空（改某语言 URL）时：只允许该语言迁移本页 active 行
+	//（发布时 reserved 被原地升级为 active，改 URL 的 DB 同步依赖这一迁移），
+	// 其他语言**只迁移 reserved 行**——否则会把别的语言的激活行改到新路径，线上路由丢失。
+	// 为空（改草稿路径）时所有语言同等对待。
+	TargetLang string
+	// Langs 调用方在**事务之前 / 访问面切换之前**解析好的站点语言集合（默认语言在前）。
+	// 必填：事务内不再读一次语言表（审计 I18N-02，读失败会只迁移默认语言）。
+	Langs []string
+}
+
+// renameReservedAllLangs 按给定语言集合逐语言迁移路径占用（建页/改草稿/改 URL）。
 //
-// 任一语言失败即把已迁移的迁回（尽力而为）并返回该错误：路由表与草稿路径必须同源。
-func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID, oldLogical, newLogical, targetLang string) error {
+// targetLang / Langs 的判据见 renameReservedInput。任一语言失败即把已迁移的迁回
+// （尽力而为）并返回该错误：路由表与草稿路径必须同源。
+func (s *Service) renameReservedAllLangs(ctx context.Context, in renameReservedInput) error {
 	if s.routes == nil {
 		return nil
 	}
-	oldEntries, err := s.siteRouteEntries(ctx, projectID, oldLogical)
+	oldEntries, err := s.siteRouteEntriesForLangs(ctx, in.ProjectID, in.OldLogical, in.Langs)
 	if err != nil {
 		return ErrInvalidPath
 	}
-	newEntries, err := s.siteRouteEntries(ctx, projectID, newLogical)
+	newEntries, err := s.siteRouteEntriesForLangs(ctx, in.ProjectID, in.NewLogical, in.Langs)
 	if err != nil {
 		return ErrInvalidPath
 	}
@@ -122,9 +172,9 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID,
 			done = i + 1
 			continue
 		}
-		onlyReserved := targetLang != "" && oldEntries[i].Lang != targetLang
+		onlyReserved := in.TargetLang != "" && oldEntries[i].Lang != in.TargetLang
 		if rerr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-			ProjectID: projectID, PageID: pageID, OldPath: oldPath, NewPath: newPath,
+			ProjectID: in.ProjectID, PageID: in.PageID, OldPath: oldPath, NewPath: newPath,
 			OnlyReserved: onlyReserved,
 		}); rerr != nil {
 			for j := 0; j < done; j++ {
@@ -132,11 +182,11 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID,
 					continue
 				}
 				if rberr := s.routes.RenameReserved(ctx, &pubcontract.RenameReservedReq{
-					ProjectID: projectID, PageID: pageID,
+					ProjectID: in.ProjectID, PageID: in.PageID,
 					OldPath: newEntries[j].Path, NewPath: oldEntries[j].Path,
-					OnlyReserved: targetLang != "" && oldEntries[j].Lang != targetLang,
+					OnlyReserved: in.TargetLang != "" && oldEntries[j].Lang != in.TargetLang,
 				}); rberr != nil {
-					logger.Scene("page").With("pageId", pageID).Error(rberr, "保留路由回迁失败")
+					logger.Scene("page").With("pageId", in.PageID).Error(rberr, "保留路由回迁失败")
 				}
 			}
 			return rerr
@@ -146,21 +196,27 @@ func (s *Service) renameReservedAllLangs(ctx context.Context, projectID, pageID,
 	return nil
 }
 
-// renameReservedAllLangsTx 在**调用方的事务**内按启用语言逐语言迁移路径占用。
+// renameReservedAllLangsTx 在**调用方的事务**内按给定语言集合逐语言迁移路径占用。
+//
+// **语言集合必须由调用方传进来**（审计 I18N-02 收尾）：改 URL 的调用点落在「内核已把
+// 访问面切到新路径」之后，此时若在事务内再读一次语言表，读失败就会只迁移默认语言的
+// 保留路由 —— 其余语言的 reserved 行停在旧路径，而事务照常提交。调用方的做法是：
+// 在**切访问面之前**用发布口径解析语言集合（读不到就让整次操作失败、访问面不动），
+// 再把同一份集合作参数传下来。
 //
 // 与 renameReservedAllLangs 的差别只有事务边界：这里不做「失败逐个迁回」的补偿 ——
 // 外层事务回滚会把已迁移的行一并撤销，补偿反而会在回滚后写出撤销不掉的残留
 // （且补偿本身失败时只能记日志，留下一半旧路径一半新路径的路由表）。
-// 判据与语义（targetLang 的作用、OnlyReserved 的取舍）与非 Tx 版本逐字一致。
-func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, projectID, pageID, oldLogical, newLogical, targetLang string) error {
+// 判据与语义（targetLang 的作用、OnlyReserved 的取舍、Langs 的来源）与非 Tx 版本逐字一致。
+func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, in renameReservedInput) error {
 	if s.routes == nil {
 		return nil
 	}
-	oldEntries, err := s.siteRouteEntries(ctx, projectID, oldLogical)
+	oldEntries, err := s.siteRouteEntriesForLangs(ctx, in.ProjectID, in.OldLogical, in.Langs)
 	if err != nil {
 		return ErrInvalidPath
 	}
-	newEntries, err := s.siteRouteEntries(ctx, projectID, newLogical)
+	newEntries, err := s.siteRouteEntriesForLangs(ctx, in.ProjectID, in.NewLogical, in.Langs)
 	if err != nil {
 		return ErrInvalidPath
 	}
@@ -173,9 +229,9 @@ func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, pro
 		if oldPath == newPath {
 			continue
 		}
-		onlyReserved := targetLang != "" && oldEntries[i].Lang != targetLang
+		onlyReserved := in.TargetLang != "" && oldEntries[i].Lang != in.TargetLang
 		if rerr := s.routes.RenameReservedTx(ctx, tx, &pubcontract.RenameReservedReq{
-			ProjectID: projectID, PageID: pageID, OldPath: oldPath, NewPath: newPath,
+			ProjectID: in.ProjectID, PageID: in.PageID, OldPath: oldPath, NewPath: newPath,
 			OnlyReserved: onlyReserved,
 		}); rerr != nil {
 			return rerr
@@ -186,22 +242,25 @@ func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, pro
 
 // publishLangsOf 发布 / 重建口径的站点启用语言：语言清单读不到即返回错误（审计 I18N-02）。
 //
-// 用在「这次动作会改动访问面」的路径上（RebuildStale 的语言遍历、RefreshSiteFiles 的
-// sitemap 分组）。判据不是「谁调用」，而是「降级的后果可不可见」：这些路径降级成默认
-// 语言一种之后，站点少更新几种语言、sitemap 少几组 URL，而调用方拿到的都是成功。
+// 用在「这次动作会改动访问面」的路径上：RebuildStale 的语言遍历、RefreshSiteFiles 的
+// sitemap 分组，以及改 URL 的保留路由迁移（UpdateURL / 恢复路径 —— 在那里它还必须
+// 早于内核切访问面，见 page_publish_url.go 与 page_publish_recover.go）。判据不是「谁调用」，
+// 而是「降级的后果可不可见」：这些路径降级成默认语言一种之后，站点少更新几种语言、
+// 只迁移一种语言的保留路由、sitemap 少几组 URL，而调用方拿到的都是成功。
 func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]string, error) {
 	return pipeline.ResolveSiteLangs(ctx, s.project, projectID, pipeline.LangFallbackForbidden)
 }
 
 // enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
 //
-// **唯一调用方是 siteRoutePaths**（建页 / 保存草稿时按启用语言占位 page_routes，见
-// page_draft.go 的创建与改路径两处），据此定口径为「允许回退」，理由有三条：
+// **调用点只有两个，都是作者可操作的写入口**：siteRoutePaths（建页 / 保存草稿时按启用
+// 语言占位 page_routes）与 SaveDraft 的保留路由迁移（page_draft.go，语言集合在事务之外
+// 解析一次）。据此定口径为「允许回退」，理由有三条：
 //
 //  1. 它是**作者可操作的后台写入口**：一次读库抖动不该让作者存不了草稿 —— 那是把
 //     基础设施的瞬时故障直接暴露成「你的编辑保存失败」；
-//  2. 降级在这里的后果是**可修复且可见的**：只占位了默认语言的访问路径。下一次保存
-//     或发布时 siteRoutePaths / renameReservedAllLangsTx 会按当时的完整清单重算并补齐；
+//  2. 降级在这里的后果是**可修复且可见的**：只占位 / 只迁移了默认语言的访问路径。
+//     下一次保存或发布时 siteRoutePaths / 保留路由迁移会按当时的完整清单重算并补齐；
 //     就算窗口期内别的页面抢注了未占位的语言路径，发布时路由冲突会当场报错，不会
 //     静默产出错 URL；
 //  3. 它**不产出任何面向访客的字节**：草稿路由占位与产物、sitemap、发布回执都无关。

@@ -23,9 +23,11 @@ type (
 	PageDraftResp = pagedto.PageDraftResp
 	BuildReq      = pagedto.BuildReq
 	PublishReq    = pagedto.PublishReq
-	RollbackReq   = pagedto.RollbackReq
-	UpdateURLReq  = pagedto.UpdateURLReq
-	PublishResp   = pagedto.PublishResp
+	// PageBuildJobReq 构建队列任务的执行上下文（page 来源，审计 ARCH-04）。
+	PageBuildJobReq = pagedto.PageBuildJobReq
+	RollbackReq     = pagedto.RollbackReq
+	UpdateURLReq    = pagedto.UpdateURLReq
+	PublishResp     = pagedto.PublishResp
 
 	// 系统页面槽位（BIZ-1）。
 	SiteSlotListReq   = pagedto.SiteSlotListReq
@@ -133,8 +135,27 @@ type PageDependencyLookup interface {
 type BuildQueueEnqueuer interface {
 	// projectID 是任务的工程作用域，由本模块显式带过来（审计 DB-01）：
 	// 队列不反查来源表，而工程 id 在调用点本来就在手上（locatePageInProjects 已取到页面）。
-	EnqueuePageBuild(ctx context.Context, pageID, projectID string, draftVersion int64, buildInputHash string) error
+	//
+	// lang / intent 是任务上下文的另外两维（审计 ARCH-04），调用方必须一起给出：
+	//   - lang：完整语言码（每种语言一条任务，队列的待办键含它 —— 见迁移 307）；
+	//   - intent：BuildIntentManual（人工构建，只构建）或 BuildIntentDependency
+	//     （依赖重建，构建 + 按旧发布范围回写线上）。
+	// 参数顺序：两个字符串维度紧邻（lang, intent），随后是两个数值/哈希型输入版本。
+	EnqueuePageBuild(ctx context.Context, pageID, projectID, lang, intent string, draftVersion int64, buildInputHash string) error
 }
+
+// 构建意图（与迁移 295 的 build_jobs_intent_check / buildmodel.Intent* 逐字对应）。
+//
+// page 侧自己留一份白名单常量，不在 page 里 import build 模块：依赖方向是
+// build → page（队列的执行器由装配层接线），反向 import 会把这条依赖掰弯。
+// 两处字面量由 public/test/page/unit 的对账用例钉住（不一致即红）。
+const (
+	// BuildIntentManual 人工发起：只构建（暂存），不回写线上。
+	BuildIntentManual = "manual"
+	// BuildIntentDependency 依赖失效自动重建：构建 + 按旧发布范围回写线上
+	//（此前已发布的语言才重新发布，未发布过的语言留在暂存态）。
+	BuildIntentDependency = "dependency"
+)
 
 // PageService 手工 Page 草稿、修订与发布管理能力。
 type PageService interface {
@@ -169,6 +190,14 @@ type PageService interface {
 	CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath, lang string) (html []byte, err error)
 	// Build 基于当前草稿构建并暂存产物（不激活线上）。
 	Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedto.PublishResp, err error)
+	// RunPageBuildJob 执行一条构建队列（source_type=page）任务，是队列执行器的执行体
+	// （审计 ARCH-04：executor 不再裸调 Build(ID)）。
+	//
+	// 语义按任务意图分流，两条都走同一个单页重建编排（与同步路径同一份实现）：
+	//   - manual：只构建任务携带的语言；
+	//   - dependency：构建任务携带的语言，且该语言此前已发布时构建成功后重新发布。
+	// 失败原样返回 —— 队列据此把任务标 failed（失败必须准确反映到任务上，不静默吞掉）。
+	RunPageBuildJob(ctx context.Context, req *pagedto.PageBuildJobReq) (err error)
 	// Publish 激活暂存产物。
 	Publish(ctx context.Context, req *pagedto.PublishReq) (res *pagedto.PublishResp, err error)
 	// Rollback 秒级回滚到历史产物。

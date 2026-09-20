@@ -18,11 +18,9 @@ import (
 	"strings"
 	"time"
 
-	pagecontract "go_wp/internal/module/page/contract"
-
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	pagedto "go_wp/internal/module/page/dto"
+	pagecontract "go_wp/internal/module/page/contract"
 	pagemodel "go_wp/internal/module/page/model"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	"go_wp/internal/pipeline"
@@ -30,13 +28,6 @@ import (
 
 	"gorm.io/gorm"
 )
-
-// maxAutoRebuildPages 单次依赖失效触发的自动重建上限。
-//
-// 为什么需要上限：自动重建发生在内容写入的请求内（PIPE-2 构建队列尚未落地），
-// 无界重建会让一次内容保存耗时随站点规模线性增长。超限的页面保持 stale，
-// 由后台「构建待重建页面」或下次内容变更继续收敛。
-const maxAutoRebuildPages = 20
 
 // SourceType 实现 pipeline.DependencyTarget：本服务是手工 Page 来源。
 func (s *Service) SourceType() string { return pipeline.SourceTypePage }
@@ -82,6 +73,10 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 // 若该语言**此前已发布**，构建成功后自动发布，保证线上与内容一致——
 // 这是「CMS 变更自动发布」的落地口径：从未发布过的页面不会被自动上线。
 //
+// 编排本身在 page_rebuild.go（RebuildPage），本方法只负责「逐页取计划 + 调用编排」：
+// 超限部分入队（enqueueOverflowBuildJobs），队列 worker 消费时**走同一条编排**
+// （RunPageBuildJob）—— 报告 ARCH-04 的根因就是这两条路径各有一份实现。
+//
 // 单个页面失败不阻断其余页面（记日志后继续），返回值为 nil：
 // 调用方是内容写入的后置副作用，失败已由 stale 标记兜底。
 func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
@@ -97,6 +92,9 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 	}
 	rebuilt, published := 0, 0
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			return nil
+		}
 		// 逐工程定位（DB-009 第三批）：ids 来自依赖扇出（可能跨工程），而 pages 带 FORCE
 		// 策略 —— 不设作用域的 GetByID 在换非超级角色后一律 ErrRecordNotFound，
 		// 整条「内容变更 → 自动重建」会全部落进下面的「跳过」分支且没有任何报错。
@@ -105,37 +103,22 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			logger.Scene("dependency").With("page_id", id).Warn("自动重建跳过：页面不存在或已删除")
 			continue
 		}
-		// 语言集按**发布口径**取（审计 I18N-02）：这条循环会构建并回写线上已发布的
-		// 语言。按可见回退取列表时，清单读不到会退化成「只重建默认语言」—— 其余语言
-		// 停在旧字节，而本方法照常返回成功、日志里只有一行「读取失败」。宁可整页跳过
-		// （保持 stale，影响面回执里看得见），也不打默认语言的折扣。
-		langs, lerr := s.publishLangsOf(ctx, page.ProjectID)
-		if lerr != nil {
+		// 计划里的语言集与旧发布范围都按**发布口径**取（审计 I18N-02）：这条路径会构建
+		// 并回写线上已发布的语言。按可见回退取列表时，清单读不到会退化成「只重建默认语言」
+		// —— 其余语言停在旧字节，而本方法照常返回成功、日志里只有一行「读取失败」。
+		// 宁可整页跳过（保持 stale，影响面回执里看得见），也不打默认语言的折扣。
+		plan, perr := s.planPageRebuild(ctx, page, nil, pagecontract.BuildIntentDependency)
+		if perr != nil {
 			logger.Scene("dependency").With("page_id", id).
-				Error(lerr, "自动重建跳过：站点语言清单不可读，不用默认语言一种代替整站语言集（页面保持 stale）")
+				Error(perr, "自动重建跳过：站点语言清单或旧发布范围不可读（页面保持 stale）")
 			continue
 		}
-		for _, lang := range langs {
-			if ctx.Err() != nil {
-				return nil
-			}
-			if _, berr := s.Build(ctx, &pagedto.BuildReq{ID: id, Lang: lang}); berr != nil {
-				logger.Scene("dependency").With("page_id", id).With("lang", lang).
-					Error(berr, "依赖失效后的自动重建失败（页面保持 stale）")
-				continue
-			}
-			rebuilt++
-			// 仅「此前已发布」的语言自动回写线上（未发布页面不自动上线）。
-			path, perr := s.publishedPathOf(ctx, page, lang)
-			if perr != nil || path == "" {
-				continue
-			}
-			if _, perr = s.Publish(ctx, &pagedto.PublishReq{ID: id, Lang: lang}); perr != nil {
-				logger.Scene("dependency").With("page_id", id).With("lang", lang).
-					Error(perr, "自动重建后的自动发布失败（产物已暂存，保持 stale）")
-				continue
-			}
-			published++
+		r, p, rerr := s.rebuildPage(ctx, plan)
+		rebuilt += r
+		published += p
+		if rerr != nil {
+			logger.Scene("dependency").With("page_id", id).
+				Error(rerr, "依赖失效后的自动重建失败（页面保持 stale）")
 		}
 	}
 	if rebuilt > 0 {
@@ -143,49 +126,6 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 			Info("依赖失效后的自动重建完成")
 	}
 	return nil
-}
-
-// SetBuildQueue 注入构建队列端口（装配期调用）。
-//
-// 未注入时 enqueueOverflowBuildJobs 会退回「记告警、保持 stale」的既有行为 ——
-// 不静默丢弃，也不假装已经排上了。
-func (s *Service) SetBuildQueue(q pagecontract.BuildQueueEnqueuer) {
-	if s == nil {
-		return
-	}
-	s.buildQueue = q
-}
-
-// enqueueOverflowBuildJobs 把超出单次同步重建上限的页面交给构建队列。
-//
-// 单个页面入队失败只记日志：这是一条尽力而为的旁路（同步那部分已经重建完了），
-// 抛错会让调用方误以为整批失败。
-func (s *Service) enqueueOverflowBuildJobs(ctx context.Context, ids []string) {
-	if len(ids) == 0 {
-		return
-	}
-	if s.buildQueue == nil {
-		logger.Scene("dependency").With("affected", len(ids)).
-			Warn("自动重建超出单次上限且构建队列未接入，剩余页面保持 stale 等待后续触发")
-		return
-	}
-	queued := 0
-	for _, id := range ids {
-		// 同 RebuildStale：入队前也要按工程作用域读一次页面（漏作用域时整批任务静默不再入队）。
-		page, err := s.locatePageInProjects(ctx, id)
-		if err != nil {
-			continue
-		}
-		// build_input_hash 传空串是刻意的：队列的部分唯一索引按 (来源, 目标, hash) 去重，
-		// 空串让「同一页面同时只有一条待办」成立 —— 一批扇出反复标记同一页时不会堆出多份任务。
-		if qerr := s.buildQueue.EnqueuePageBuild(ctx, id, page.ProjectID, page.DraftVersion, ""); qerr != nil {
-			logger.Scene("dependency").With("page_id", id).Error(qerr, "超限重建任务入队失败")
-			continue
-		}
-		queued++
-	}
-	logger.Scene("dependency").With("queued", queued).With("affected", len(ids)).
-		Info("超限的自动重建已交给构建队列")
 }
 
 // persistDependencies 把本次产物的依赖集合写入 page_dependencies（自足入口：自带事务）。

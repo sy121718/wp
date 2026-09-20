@@ -9,6 +9,23 @@ type BuildReq struct {
 	Lang string `json:"lang"`
 }
 
+// PageBuildJobReq 构建队列（source_type=page）任务的执行上下文（审计 ARCH-04）。
+//
+// 它是「任务上下文」在 page 侧的投影，三样一起决定这次重建做什么：
+//   - Lang：任务冻结的构建语言（完整语言码）。逐语言一行任务（迁移 307 的待办键含 lang），
+//     因此每条任务只负责一种语言；空串只可能来自 ARCH-04 之前入队的存量行，
+//     RunPageBuildJob 对它按站点启用语言集合处理（与同步路径一致），而不是当成默认语言。
+//   - Intent：构建意图 manual / dependency（见 pagecontract 的 BuildIntent* 常量）。
+//   - DraftVersion / BuildInputHash：入队时冻结的输入版本，用于去重与审计。
+type PageBuildJobReq struct {
+	ID   string `json:"id" binding:"required"`
+	Lang string `json:"lang"`
+	// Intent 空串按 dependency 处理（与 build_jobs.intent 的默认值同口径）。
+	Intent         string `json:"intent"`
+	DraftVersion   int64  `json:"draftVersion"`
+	BuildInputHash string `json:"buildInputHash"`
+}
+
 // PublishReq 激活暂存产物。
 type PublishReq struct {
 	ID string `json:"id" binding:"required"`
