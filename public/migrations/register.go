@@ -86,4 +86,7 @@ func init() {
 	registerPagePublicationPlans()
 	// 309：商品写路径的静态产物失效 outbox（审计 ARCH-01，见 register_product_outbox.go）。
 	registerProductOutbox()
+	// 312：商品标签跨工程引用拒绝（ErrTagCrossProject）的词条（审计 DB-03 / PROD-02，
+	// 见 register_product_tag_cross_project_i18n.go）。
+	registerProductTagCrossProjectI18n()
 }
