@@ -59,44 +59,50 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 		return nil, errors.New(productenums.ErrInvalidType)
 	}
 	lang := core.BuildLang(ctx)
-	// 工程作用域例外（审计 DB-009，product 域第三批）：本方法在 builder.Compile **之前**
-	// 被 presentation 的 renderHTML 调用，那时 ctx 里**还没有**工程 id ——
-	// core.WithBuildProjectID 是 Compile 内部才补上的（见 internal/builder/builder.go 的
-	// buildCtx 构造），而 ResolverFor 早于它。所以这条路径走显式无作用域读，
-	// 而不是把空串塞进 rls（那会被拒掉，发布直接报错）。
+	// 工程作用域（审计 DB-009 第四批收口）：**必须**从构建上下文取，取不到就显式报错。
 	//
-	// 换非超级角色后的影响：这四处会 fail closed（0 行）⇒ 商品 / 分类等实体的
-	// 字段源解析失败 ⇒ 发布产物里对应区块缺失。要修的是 presentation 侧在
-	// renderHTML 的 buildCtx 上补 core.WithBuildProjectID(ctx, projectID) ——
-	// presentation 不在本批的改动域内，见交付清单。
+	// 这条链曾经是「显式例外」：本方法在 builder.Compile **之前**被 presentation 的
+	// renderHTML 调用，而 core.WithBuildProjectID 原先只在 Compile 内部补，于是那时 ctx 里
+	// 没有工程 id，只能走无作用域读。presentation 侧现在已在调用本方法之前补上
+	// （presentation/service/presentation_render.go 的 buildCtx），例外条件不再成立 ——
+	// 换非超级角色后继续裸读会 fail closed（0 行）⇒ 实体字段源解析失败 ⇒ 产物里对应区块
+	// 静默缺失，所以这里改成带作用域读。
+	//
+	// 缺工程时**报错而不是退回裸读**：退回等于把「调用链漏了注入」伪装成「实体不存在」
+	// （mapNotFound 会把它翻成 ErrNotFound），排查成本高得多。
+	projectID := strings.TrimSpace(core.BuildProjectID(ctx))
+	if projectID == "" {
+		return nil, fmt.Errorf("%s: 构建上下文缺少工程 id（core.WithBuildProjectID），无法按工程隔离读取实体字段源",
+			productenums.ErrMissingProjectContext)
+	}
 	switch entityType {
 	case productcontract.EntityTypeCategory:
 		var row *productmodel.ProductCategoryEntity
-		if row, err = s.m.GetCategoryWithoutScope(ctx, entityID); err != nil {
+		if row, err = s.m.GetCategory(ctx, entityID, projectID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.categoryValues(ctx, lang, row)}, nil
 	case productcontract.EntityTypeBrand:
 		var row *productmodel.ProductBrandEntity
-		if row, err = s.m.GetBrandWithoutScope(ctx, entityID); err != nil {
+		if row, err = s.m.GetBrand(ctx, entityID, projectID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.brandValues(ctx, lang, row)}, nil
 	case productcontract.EntityTypeTag:
 		var row *productmodel.ProductTagEntity
-		if row, err = s.m.GetTagWithoutScope(ctx, entityID); err != nil {
+		if row, err = s.m.GetTag(ctx, entityID, projectID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.tagValues(ctx, lang, row)}, nil
 	case productcontract.EntityTypeAttribute:
 		var row *productmodel.ProductAttributeEntity
-		if row, err = s.m.GetAttributeWithoutScope(ctx, entityID); err != nil {
+		if row, err = s.m.GetAttribute(ctx, entityID, projectID); err != nil {
 			return nil, mapNotFound(err)
 		}
 		return &entityResolver{entityType: entityType, values: s.attributeValues(ctx, lang, row)}, nil
 	}
 
-	e, gerr := s.m.GetWithoutScope(ctx, entityID)
+	e, gerr := s.m.Get(ctx, entityID, projectID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
@@ -104,9 +110,8 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	if verr != nil {
 		return nil, verr
 	}
-	// 作用域取行自己的工程：本方法整体是 DB-009 的显式无作用域例外（ResolverFor 早于
-	// Compile，ctx 里还没有工程 id），但**这一处**读的是 e 自己引用的属性组，工程是已知的 ——
-	// 用 e.ProjectID 而不是继续裸读，换非超级角色后这里不再额外多一处静默 0 行。
+	// 读的是 e 自己引用的属性组：作用域用行自己的工程（与入参一致，这里显式用 e.ProjectID
+	// 表达「读的是这一行的引用面」）。
 	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs), e.ProjectID)
 	if aerr != nil {
 		return nil, aerr

@@ -53,15 +53,17 @@ func (m *Model) GetAttribute(ctx context.Context, id, projectID string) (e *Prod
 
 // GetAttributeWithoutScope 按 ID 读行，**不设工程作用域**（审计 DB-009 的显式例外）。
 //
-// 唯一调用方是 ResolverFor —— 它在 builder.Compile **之前**被 presentation 的 renderHTML
-// 调用，那时 ctx 里还没有工程 id（core.WithBuildProjectID 是 Compile 内部才补上的），
-// 所以这条路径**拿不到工程上下文**。按 DB-009 的口径显式保留现状：不加空串兜底
-// （那会被 rls 拒掉，把「静默 0 行」换成一个更难懂的错误），也不假装它已被隔离。
+// 原唯一调用方 ResolverFor 已改成读 core.BuildProjectID(ctx) 的带作用域入口 ——
+// presentation 侧在调用它之前就用 core.WithBuildProjectID 把工程放进了 ctx。
+//// 不设工程作用域，**当前没有任何生产调用方**（DB-009 第四批已把调用方改到带作用域的入口）。
 //
-// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时需要
-// presentation 侧在 buildCtx 上补 WithBuildProjectID（本批禁改的域）。
+// 它记录的是「拿不到工程上下文时的那一类入口」的形状：不加空串兜底（那会被 rls 拒掉，
+// 把「静默 0 行」换成一个更难懂的错误），也不假装已被隔离。在非超级角色下它 fail closed
+// （策略谓词为 NULL ⇒ 0 行 ⇒ ErrRecordNotFound）—— public/test/rls 的
+// TestRLS_ProductTaxonomyScope_ExplicitExceptionsUnaffected 把这一形状钉住。
 //
 // 不要给本方法加新的调用方：需要按 id 读的一律用带 projectID 的那个。
+
 func (m *Model) GetAttributeWithoutScope(ctx context.Context, id string) (e *ProductAttributeEntity, err error) {
 	e = &ProductAttributeEntity{}
 	err = m.AttributeDB(ctx).Where("id = ?", id).First(e).Error
@@ -91,18 +93,21 @@ func (m *Model) AttributeKeyExists(ctx context.Context, projectID, key, excludeI
 }
 
 // ListAttributes 属性组列表（分页 + 可选过滤；variation 为 nil 表示不过滤）。
+//
+// 作用域必填（DB-009 切角色收口）：product_attributes 带 FORCE 策略，裸查在非超级角色下
+// 静默 0 行 —— 属性组列表为空、变体生成没有维度可选。与 CountAttributes 同一把作用域，
+// 「列表有 N 条、总数是 0」这类自相矛盾的组合不会再出现。
 func (m *Model) ListAttributes(ctx context.Context, projectID, keyword string, variation *bool, limit, offset int) (list []*ProductAttributeEntity, err error) {
-	q := m.AttributeDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ? OR key ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
-	}
-	if variation != nil {
-		q = q.Where("is_variation = ?", *variation)
-	}
-	err = q.Order("sort ASC, create_time ASC").Limit(limit).Offset(offset).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductAttributeEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ? OR key ILIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		}
+		if variation != nil {
+			q = q.Where("is_variation = ?", *variation)
+		}
+		return q.Order("sort ASC, create_time ASC").Limit(limit).Offset(offset).Find(&list).Error
+	})
 	return list, err
 }
 
@@ -138,9 +143,14 @@ func (m *Model) ListAttributesByIDs(ctx context.Context, ids []string, projectID
 }
 
 // ListAttributesByProject 某工程全部属性组（按排序）。
+//
+// 作用域必填（DB-009 切角色收口）：同 ListAttributes —— 裸查在非超级角色下静默 0 行，
+// 构建期集合筛选栏会少了整个「属性」维度（页面照常渲染，只是筛选条少一截）。
 func (m *Model) ListAttributesByProject(ctx context.Context, projectID string) (list []*ProductAttributeEntity, err error) {
-	err = m.AttributeDB(ctx).Where("project_id = ?", projectID).
-		Order("sort ASC, create_time ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductAttributeEntity{}).
+			Order("sort ASC, create_time ASC").Find(&list).Error
+	})
 	return list, err
 }
 

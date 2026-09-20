@@ -90,11 +90,17 @@ func (m *Model) DeleteSiteSlot(ctx context.Context, projectID, slot string) (n i
 }
 
 // ListSiteSlotsByPage 查某个页面被哪些槽位引用（删除页面时的引用提示）。
-func (m *Model) ListSiteSlotsByPage(ctx context.Context, pageID string) (list []SiteSlotEntity, err error) {
+//
+// 作用域必填（DB-009 切角色收口）：page_site_slots 带 FORCE 策略，裸查在非超级角色下
+// 静默返回空集 —— 引用检查一律答「没有槽位引用这个页面」，删除放行，留下指向已删页面
+// 的槽位绑定。projectID 由调用方给出（发起操作的那个工程）。
+func (m *Model) ListSiteSlotsByPage(ctx context.Context, projectID, pageID string) (list []SiteSlotEntity, err error) {
 	if pageID == "" {
 		return nil, nil
 	}
-	err = m.SiteSlotDB(ctx).Where("page_id = ?", pageID).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&SiteSlotEntity{}).Where("page_id = ?", pageID).Find(&list).Error
+	})
 	return list, err
 }
 

@@ -204,9 +204,13 @@ func (h *productTranslationHandle) build(ctx context.Context, projectID, product
 	}
 
 	// 商品域候选：指定商品时只列该商品的（含引用实体），否则列整个工程。
+	//
+	// 单商品入口也要带工程 id（DB-009 收口）：products 的 RLS 策略使非超级角色下
+	// 不带作用域的读静默 0 行，表现为「点开某个商品的翻译说商品不存在」。
+	// 工程 id 用 data.ProjectID，与下面整工程入口、以及本页其它取数（语言 / 译文）同源。
 	var cands []productcontract.TranslationCandidate
 	if productID != "" {
-		if cands, err = h.products.ProductTranslationCandidates(ctx, productID); err != nil {
+		if cands, err = h.products.ProductTranslationCandidates(ctx, data.ProjectID, productID); err != nil {
 			return nil, err
 		}
 	} else if data.ProjectID != "" {

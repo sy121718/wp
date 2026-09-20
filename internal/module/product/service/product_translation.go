@@ -27,11 +27,12 @@ import (
 //
 // 返回顺序：商品自身 → 分类（商品引用顺序）→ 品牌 → 标签 → 属性组。
 // 实体不存在 / 引用已失效 → 跳过该实体，不报错（与详情页读取口径一致）。
-func (s *Service) ProductTranslationCandidates(ctx context.Context, productID string) (list []productcontract.TranslationCandidate, err error) {
-	// 契约签名（contract.ProductService）不含 projectID，调用方是 dashboard（跨模块）
-	// —— 这条是 DB-009 里「确实拿不到工程上下文」的显式例外，走 GetWithoutScope
-	// 保留现状（详见该方法的注释与迁移 215 的说明）。
-	e, gerr := s.m.GetWithoutScope(ctx, productID)
+//
+// 工程作用域由调用方给出（DB-009 收口）：翻译工作台在页面上已经按当前工程取数
+// （ProjectOptions / data.ProjectID 就在同一个函数里），没有任何理由再让本模块
+// 走无作用域读 —— 那在非超级角色下会静默 0 行，表现为「商品不存在」。
+func (s *Service) ProductTranslationCandidates(ctx context.Context, projectID, productID string) (list []productcontract.TranslationCandidate, err error) {
+	e, gerr := s.m.Get(ctx, productID, projectID)
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"go_wp/config"
 	"go_wp/internal/middleware"
+	"go_wp/internal/partition"
 	"go_wp/internal/routers"
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
@@ -46,6 +47,15 @@ func main() {
 	migrateOnly := flag.Bool("migrate-only", false, "只执行数据库结构迁移与业务 seed，然后退出（不启动 HTTP 服务）")
 	flag.Parse()
 
+	// -migrate-only 是**显式的迁移命令**，不受 database.run_migrations 约束。
+	//
+	// 切角色之后配置文件里会写 run_migrations=false（业务角色没有 DDL 权限），而推荐流程
+	// 恰恰是「同一份配置 + 管理连接」跑 -migrate-only —— 若让该开关把显式命令也关掉，
+	// 迁移会一声不吭地什么都不做，退出码还是 0。必须在 config.InitComponents() 之前置位。
+	if *migrateOnly {
+		config.ForceMigrations()
+	}
+
 	if err := run(*migrateOnly); err != nil {
 		logger.Scene("init").Error(err, "服务启动失败")
 		log.Fatal("服务启动失败")
@@ -67,9 +77,18 @@ func run(migrateOnly bool) error {
 	//      空库首次启动必然失败（relation "sys_i18n" does not exist）。
 
 	// 1.6) -migrate-only：迁移之后补上业务 seed 就返回，不装配路由、不监听端口。
+	//
+	// 这一处 RunSeeds 也受 database.run_migrations 约束（与 internal/routers/assembly.go
+	// 的启动 seed 同一判据）。实践中它恒为 true：上面的 ForceMigrations 已把显式迁移命令
+	// 强制打开 —— 保留判断是为了让「跳过 seed」只有一处语义来源，而不是靠「没人会这么配」。
 	if migrateOnly {
-		if err := runSeeds(); err != nil {
-			return err
+		if config.RunMigrationsEnabled() {
+			if err := runSeeds(); err != nil {
+				return err
+			}
+			if err := runPartitionMaintenance(); err != nil {
+				return err
+			}
 		}
 		logger.Scene("init").Info("数据库迁移与 seed 完成（-migrate-only），未启动 HTTP 服务")
 		if closeErr := config.CloseComponents(); closeErr != nil {
@@ -134,6 +153,30 @@ func run(migrateOnly bool) error {
 	}
 
 	logger.Scene("init").Info("服务已退出")
+	return nil
+}
+
+// runPartitionMaintenance 在管理连接上补齐时间序列表的未来分区（-migrate-only）。
+//
+// 为什么并进显式迁移命令：分区维护与结构迁移同属 **DDL**（CREATE TABLE / CREATE POLICY），
+// 而换到非超级业务角色后，应用连接在 public schema 上没有 CREATE 权限 —— 实测启动日志里
+// 每次都会刷出一批「创建月分区失败 … permission denied for schema public」（page_views /
+// master_data_changes / inventory_stock_movements × 未来若干个月，共 15 条）。
+// 它是 **fail soft**：服务照常启动、数据落到 DEFAULT 分区不会丢，但「按月分桶」这个收益
+// 悄悄没了（桶永远建不出来）。放到管理连接跑 -migrate-only 是最省事的闭环 —— 不需要给
+// 业务角色补 CREATE 权限（那会把 DDL 门禁一起拆掉）。幂等：建分区走 CREATE TABLE IF NOT EXISTS。
+func runPartitionMaintenance() error {
+	db, err := database.GetDB()
+	if err != nil {
+		return fmt.Errorf("分区维护前置检查失败: %w", err)
+	}
+	created, err := partition.EnsureAhead(context.Background(), db, partition.AheadMonths)
+	if err != nil {
+		return fmt.Errorf("分区维护失败: %w", err)
+	}
+	if len(created) > 0 {
+		logger.Scene("init").With("count", len(created)).Info("已补齐未来分区（-migrate-only）")
+	}
 	return nil
 }
 

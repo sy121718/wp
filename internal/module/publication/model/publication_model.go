@@ -114,9 +114,17 @@ func (m *Model) ListActiveRoutes(ctx context.Context, projectID string) (routes 
 }
 
 // GetRoute 按 (projectID, path) 查询路由占用。
+//
+// 作用域必填（DB-009 切角色收口）：page_routes 带 FORCE 策略，裸查在非超级角色下静默
+// 查不到 —— 调用方把「查不到」读成「这个路径没被占用」，于是重复占用被放行（写侧冲突），
+// 改名 / 发布路径预检全部失真，且没有任何错误日志。
 func (m *Model) GetRoute(ctx context.Context, projectID, path string) (e *RouteEntity, err error) {
 	e = &RouteEntity{}
-	if err = m.RouteDB(ctx).Where("project_id = ? AND path = ?", projectID, path).First(e).Error; err != nil {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&RouteEntity{}).
+			Where("project_id = ? AND path = ?", projectID, path).First(e).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -129,10 +137,16 @@ func (m *Model) GetRoute(ctx context.Context, projectID, path string) (e *RouteE
 // 空结果返回空的非 nil 切片（调用方按 [] 序列化，不是 null）。
 func (m *Model) ListRoutePathsByPage(ctx context.Context, projectID, pageID string) (paths []string, err error) {
 	paths = []string{}
-	if err = m.RouteDB(ctx).
-		Where("project_id = ? AND page_id = ? AND route_kind IN ?",
-			projectID, pageID, []string{RouteActive, RouteRedirect}).
-		Pluck("path", &paths).Error; err != nil {
+	// 作用域必填（DB-009 切角色收口）：裸查在非超级角色下恒为空集，调用方会以为
+	// 「这个页面没有任何已激活路径」，于是 active 目录里的符号链接不会被解除 ——
+	// 页面删了，线上还在服务（DB 路由行删掉不会让内容下线）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&RouteEntity{}).
+			Where("project_id = ? AND page_id = ? AND route_kind IN ?",
+				projectID, pageID, []string{RouteActive, RouteRedirect}).
+			Pluck("path", &paths).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return paths, nil
@@ -145,10 +159,15 @@ func (m *Model) ListRoutePathsByPage(ctx context.Context, projectID, pageID stri
 // active 目录里继续 301，指向一个已经不存在的页面。
 func (m *Model) ListRoutePathsByPresentation(ctx context.Context, projectID, presentationID string) (paths []string, err error) {
 	paths = []string{}
-	if err = m.RouteDB(ctx).
-		Where("project_id = ? AND presentation_id = ? AND route_kind IN ?",
-			projectID, presentationID, []string{RouteActive, RouteRedirect}).
-		Pluck("path", &paths).Error; err != nil {
+	// 作用域必填（DB-009 切角色收口）：同 ListRoutePathsByPage —— 空集会让旧路径的
+	// 符号链接留在 active 目录里继续 301，指向一个已经删除的实例。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&RouteEntity{}).
+			Where("project_id = ? AND presentation_id = ? AND route_kind IN ?",
+				projectID, presentationID, []string{RouteActive, RouteRedirect}).
+			Pluck("path", &paths).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	return paths, nil
@@ -159,9 +178,13 @@ func (m *Model) ListRoutePathsByPresentation(ctx context.Context, projectID, pre
 //
 // 与 DeleteRoutesByPresentationTx 共用同一份删除条件（见
 // publication_route_tx_model.go 的 deleteRoutesByPresentationScope）。
+// 作用域必填（DB-009 切角色收口）：非事务路径不自己设作用域时 DELETE 匹配 0 行且不报错，
+// 实例删了、路径占用还在。*Tx 变体由调用方的事务负责设作用域。
 func (m *Model) DeleteRoutesByPresentation(ctx context.Context, projectID, presentationID string) error {
-	return m.deleteRoutesByPresentationScope(m.db.WithContext(ctx), projectID, presentationID).
-		Delete(&RouteEntity{}).Error
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return m.deleteRoutesByPresentationScope(tx.WithContext(ctx), projectID, presentationID).
+			Delete(&RouteEntity{}).Error
+	})
 }
 
 // IsPathOccupied 查询路径是否被其他实体占用（page_id 为空即展示实例占用，
@@ -174,14 +197,20 @@ func (m *Model) DeleteRoutesByPresentation(ctx context.Context, projectID, prese
 //     排除不掉自己，会把「自己占着旧路径」误判成冲突而无法改名。
 func (m *Model) IsPathOccupied(ctx context.Context, projectID, path, excludePageID, excludePresentationID string) (occupied bool, err error) {
 	var foreign int64
-	q := m.RouteDB(ctx).Where("project_id = ? AND path = ?", projectID, path)
-	if exclude := strings.TrimSpace(excludePageID); exclude != "" {
-		q = q.Where("(page_id IS NULL OR page_id <> ?)", exclude)
-	}
-	if exclude := strings.TrimSpace(excludePresentationID); exclude != "" {
-		q = q.Where("(presentation_id IS NULL OR presentation_id <> ?)", exclude)
-	}
-	if err = q.Count(&foreign).Error; err != nil {
+	// 作用域必填（DB-009 切角色收口）：这个判定是**写侧的前置守卫**，裸查恒答「没被占用」——
+	// 两个实体争用同一路径都能通过预检，冲突被推迟到唯一索引上（错误信息从「路径已被占用」
+	// 变成 23505）。
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&RouteEntity{}).Where("project_id = ? AND path = ?", projectID, path)
+		if exclude := strings.TrimSpace(excludePageID); exclude != "" {
+			q = q.Where("(page_id IS NULL OR page_id <> ?)", exclude)
+		}
+		if exclude := strings.TrimSpace(excludePresentationID); exclude != "" {
+			q = q.Where("(presentation_id IS NULL OR presentation_id <> ?)", exclude)
+		}
+		return q.Count(&foreign).Error
+	})
+	if err != nil {
 		return false, err
 	}
 	return foreign > 0, nil

@@ -57,8 +57,21 @@ var runtimeComponents = []runtimeComponent{
 		// 放在这里而不是 cmd/main.go，是为了让「空库首次启动」真的能走通：此前迁移在
 		// 组件初始化**之后**执行，在增量演化的开发库上看不出问题（表早就存在），
 		// 全新库必然失败 —— relation "sys_i18n" does not exist。
+		//
+		// Enabled 读 database.run_migrations（缺省 true = 既有行为）：切到非超级业务角色
+		// 之后必须置 false —— 那个角色在 public schema 上没有 CREATE 权限，连
+		// CREATE TABLE IF NOT EXISTS 都会被拒（permission denied for schema public），
+		// 启动会直接挂掉。迁移改由管理连接执行 cmd/main.go -migrate-only；
+		// 跳过时 RunMigrationsEnabled 会打一条 INFO（见 migrations_switch.go）。
 		Name:     "migrations",
 		Critical: true,
+		Enabled: func(cfg *viper.Viper) bool {
+			if runMigrationsEnabled(cfg) {
+				return true
+			}
+			logMigrationsSkipped()
+			return false
+		},
 		Init: func(_ *viper.Viper) error {
 			db, err := database.GetDB()
 			if err != nil {

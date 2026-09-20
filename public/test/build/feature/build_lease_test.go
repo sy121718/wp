@@ -545,7 +545,7 @@ func TestRetryFailedIsAtomicUnderRace(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := svc.Retry(ctx, id)
+			err := svc.Retry(ctx, "", id)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {

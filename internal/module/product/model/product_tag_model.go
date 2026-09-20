@@ -69,15 +69,17 @@ func (m *Model) GetTag(ctx context.Context, id, projectID string) (e *ProductTag
 
 // GetTagWithoutScope 按 ID 读行，**不设工程作用域**（审计 DB-009 的显式例外）。
 //
-// 唯一调用方是 ResolverFor —— 它在 builder.Compile **之前**被 presentation 的 renderHTML
-// 调用，那时 ctx 里还没有工程 id（core.WithBuildProjectID 是 Compile 内部才补上的），
-// 所以这条路径**拿不到工程上下文**。按 DB-009 的口径显式保留现状：不加空串兜底
-// （那会被 rls 拒掉，把「静默 0 行」换成一个更难懂的错误），也不假装它已被隔离。
+// 原唯一调用方 ResolverFor 已改成读 core.BuildProjectID(ctx) 的带作用域入口 ——
+// presentation 侧在调用它之前就用 core.WithBuildProjectID 把工程放进了 ctx。
+//// 不设工程作用域，**当前没有任何生产调用方**（DB-009 第四批已把调用方改到带作用域的入口）。
 //
-// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时需要
-// presentation 侧在 buildCtx 上补 WithBuildProjectID（本批禁改的域）。
+// 它记录的是「拿不到工程上下文时的那一类入口」的形状：不加空串兜底（那会被 rls 拒掉，
+// 把「静默 0 行」换成一个更难懂的错误），也不假装已被隔离。在非超级角色下它 fail closed
+// （策略谓词为 NULL ⇒ 0 行 ⇒ ErrRecordNotFound）—— public/test/rls 的
+// TestRLS_ProductTaxonomyScope_ExplicitExceptionsUnaffected 把这一形状钉住。
 //
 // 不要给本方法加新的调用方：需要按 id 读的一律用带 projectID 的那个。
+
 func (m *Model) GetTagWithoutScope(ctx context.Context, id string) (e *ProductTagEntity, err error) {
 	e = &ProductTagEntity{}
 	err = m.TagDB(ctx).Where("id = ?", id).First(e).Error
@@ -105,18 +107,20 @@ func (m *Model) TagSlugExists(ctx context.Context, projectID, slug, excludeID st
 
 // ListTags 工程内标签列表（条件以参数传入；按排序号 + 创建时间稳定排序）。
 // kind 为空表示不过滤（后台列表要同时展示手工与自动标签）。
+//
+// 作用域必填（DB-009 切角色收口）：product_tags 带 FORCE 策略，裸查在非超级角色下静默 0 行 ——
+// 标签列表为空、新品/促销规则的取数来源为空（规则不报错，只是永远筛不出命中）。
 func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string) (list []*ProductTagEntity, err error) {
-	q := m.TagDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if kind != "" {
-		q = q.Where("kind = ?", kind)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ?", "%"+keyword+"%")
-	}
-	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductTagEntity{})
+		if kind != "" {
+			q = q.Where("kind = ?", kind)
+		}
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+	})
 	return list, err
 }
 

@@ -51,15 +51,17 @@ func (m *Model) GetBrand(ctx context.Context, id, projectID string) (e *ProductB
 
 // GetBrandWithoutScope 按 ID 读行，**不设工程作用域**（审计 DB-009 的显式例外）。
 //
-// 唯一调用方是 ResolverFor —— 它在 builder.Compile **之前**被 presentation 的 renderHTML
-// 调用，那时 ctx 里还没有工程 id（core.WithBuildProjectID 是 Compile 内部才补上的），
-// 所以这条路径**拿不到工程上下文**。按 DB-009 的口径显式保留现状：不加空串兜底
-// （那会被 rls 拒掉，把「静默 0 行」换成一个更难懂的错误），也不假装它已被隔离。
+// 原唯一调用方 ResolverFor 已改成读 core.BuildProjectID(ctx) 的带作用域入口 ——
+// presentation 侧在调用它之前就用 core.WithBuildProjectID 把工程放进了 ctx。
+//// 不设工程作用域，**当前没有任何生产调用方**（DB-009 第四批已把调用方改到带作用域的入口）。
 //
-// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时需要
-// presentation 侧在 buildCtx 上补 WithBuildProjectID（本批禁改的域）。
+// 它记录的是「拿不到工程上下文时的那一类入口」的形状：不加空串兜底（那会被 rls 拒掉，
+// 把「静默 0 行」换成一个更难懂的错误），也不假装已被隔离。在非超级角色下它 fail closed
+// （策略谓词为 NULL ⇒ 0 行 ⇒ ErrRecordNotFound）—— public/test/rls 的
+// TestRLS_ProductTaxonomyScope_ExplicitExceptionsUnaffected 把这一形状钉住。
 //
 // 不要给本方法加新的调用方：需要按 id 读的一律用带 projectID 的那个。
+
 func (m *Model) GetBrandWithoutScope(ctx context.Context, id string) (e *ProductBrandEntity, err error) {
 	e = &ProductBrandEntity{}
 	err = m.BrandDB(ctx).Where("id = ?", id).First(e).Error
@@ -86,15 +88,17 @@ func (m *Model) BrandSlugExists(ctx context.Context, projectID, slug, excludeID 
 }
 
 // ListBrands 工程内品牌列表（条件以参数传入，按排序号 + 创建时间稳定排序）。
+//
+// 作用域必填（DB-009 切角色收口）：product_brands 带 FORCE 策略，WHERE project_id 只是普通过滤，
+// 裸查时非超级角色静默 0 行（后台品牌列表整页空白、构建期筛选栏没有品牌选项），不报任何错。
 func (m *Model) ListBrands(ctx context.Context, projectID, keyword string) (list []*ProductBrandEntity, err error) {
-	q := m.BrandDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ?", "%"+keyword+"%")
-	}
-	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductBrandEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -130,8 +134,14 @@ func (m *Model) UpdateBrand(ctx context.Context, e *ProductBrandEntity) (err err
 
 // DeleteBrand 删除品牌。products.brand_id 有外键 ON DELETE SET NULL，
 // 但「被商品引用即拒绝删除」是业务规则，判定在 service。
-func (m *Model) DeleteBrand(ctx context.Context, id string) (err error) {
-	return m.BrandDB(ctx).Where("id = ?", id).Delete(&ProductBrandEntity{}).Error
+//
+// 作用域必填（DB-009 切角色收口）：DELETE 在裸查下不报错、也不删（匹配 0 行）——
+// 运营会看到「点了删除、提示成功、品牌还在」，而日志里什么都没有。
+// projectID 由调用方给出（发起删除的那个工程）。
+func (m *Model) DeleteBrand(ctx context.Context, id, projectID string) (err error) {
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Where("id = ?", id).Delete(&ProductBrandEntity{}).Error
+	})
 }
 
 // CreateBrandTx / UpdateBrandTx / DeleteBrandTx — 复用**调用方已开启的事务**

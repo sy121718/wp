@@ -45,6 +45,23 @@ database:
   # ~/.config/go_wp/rls-role.env（权限 600），脚本不会把口令打进 ps 的 argv。
   password: ""  # 生产环境推荐用环境变量 GOWP_DATABASE_PASSWORD 注入，勿落盘明文
   dbname: wp
+  # run_migrations 是否在**服务启动时**执行结构迁移与业务 seed（默认 true = 既有行为，
+  # 配置文件里不写这个键就完全不改变行为）。
+  #   · true ：启动链上的 migrations 组件（Critical，排在 database 之后、casbin/i18n 之前）
+  #            执行 public/migrations 的结构迁移；路由装配处的 seed 与 -migrate-only 的
+  #            seed 也照跑。适合「业务连接就是管理连接」的开发库。
+  #   · false：跳过 migrations 组件与两处 migrations.RunSeeds，启动前打一条 INFO 说明。
+  #            **适用场景正是换业务角色之后**：非超级应用角色在 public schema 上没有
+  #            CREATE 权限，连 CREATE TABLE IF NOT EXISTS 都会被拒
+  #            （permission denied for schema public），不关掉这一项应用会在启动阶段挂掉。
+  # 跳过时的推荐流程（两步，见 docs/rls-role-cutover.md §4）：
+  #   ① 用管理连接迁移（同一份配置 + 环境变量覆盖；-migrate-only 是显式迁移命令，
+  #      **不受本开关约束**，所以不会因为它写成 false 而什么都不做）：
+  #        GOWP_DATABASE_USER=root GOWP_DATABASE_PASSWORD=root go run cmd/main.go -migrate-only
+  #   ② 再用业务角色起服务：database.user=go_wp_app、GOWP_DATABASE_PASSWORD=口令、
+  #      run_migrations=false、require_rls_role=true。
+  # 不跳过的范围：permission.SyncToDB（权限点幂等 upsert）**不是 seed**，每次启动照跑。
+  run_migrations: true
   max_idle_conns: 10
   max_open_conns: 100
   conn_max_lifetime: 1h

@@ -327,7 +327,7 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		t.Fatalf("创建商品失败: %v", err)
 	}
 
-	cands, err := f.products.ProductTranslationCandidates(ctx, created.ID)
+	cands, err := f.products.ProductTranslationCandidates(ctx, f.projectID, created.ID)
 	if err != nil {
 		t.Fatalf("收集翻译候选失败: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建数字副标题商品失败: %v", err)
 	}
-	numCands, err := f.products.ProductTranslationCandidates(ctx, numeric.ID)
+	numCands, err := f.products.ProductTranslationCandidates(ctx, f.projectID, numeric.ID)
 	if err != nil {
 		t.Fatalf("收集数字商品候选失败: %v", err)
 	}

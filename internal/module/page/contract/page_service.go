@@ -212,7 +212,10 @@ type PageService interface {
 	// UnbindSiteSlot 解绑槽位（幂等），并标记该工程页面待重建。
 	UnbindSiteSlot(ctx context.Context, req *pagedto.SiteSlotUnbindReq) (err error)
 	// SiteSlotRefsOfPage 列出引用了某页面的槽位键（页面删除前的引用检查）。
-	SiteSlotRefsOfPage(ctx context.Context, pageID string) (slots []string, err error)
+	//
+	// projectID 必填（DB-009 切角色收口）：page_site_slots 带 FORCE 策略，
+	// 不带作用域时非超级角色读出来恒为空集（fail closed 不报错）。
+	SiteSlotRefsOfPage(ctx context.Context, projectID, pageID string) (slots []string, err error)
 	// RebuildArtifact 按产物元数据里冻结的 source_document 重建丢失的产物文件
 	// （灾难恢复：只重建文件，不激活、不改 DB 指针）。重建后调用方须比对
 	// HashMatched：只有构建输入（源文档 + 组件注册表 + 编译期依赖）全部未变，

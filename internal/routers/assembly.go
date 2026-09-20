@@ -300,9 +300,24 @@ func (a *assembly) buildFoundation(ready func() error) {
 	// 业务权限 seed：权限点（sys_permission）、菜单（sys_menus）与默认超管策略（sys_casbin_rule）。
 	// 表结构迁移由装配链上的 migrations 组件负责；此处幂等执行 seed（ConditionSQL 已存在则跳过），
 	// seed 直写 sys_casbin_rule 后重载 Casbin 内存策略与 urlCodeMap，保证启动时策略即生效。
+	//
+	// database.run_migrations=false 时跳过 seed（切到非超级业务角色后，seed 里的写入会被
+	// 策略 / 权限挡住，且本来就应该由管理连接的 -migrate-only 完成，见 docs/rls-role-cutover.md）。
+	// **注意范围**：这里跳过的只有 seed。装配末尾的 permission.SyncToDB 是权限点幂等 upsert，
+	// 不属于 seed，每次启动照跑。
+	if !config.RunMigrationsEnabled() {
+		// seed 已由管理连接完成，但策略仍要从库里进内存：进程重启后 Casbin 是空的。
+		if err := casbin.ReloadPolicy(); err != nil {
+			logger.Scene("init").With("err", err).Warn("业务权限策略重载失败（Casbin 未初始化时忽略）")
+		}
+		return
+	}
 	if err := migrations.RunSeeds(db); err != nil {
 		logger.Scene("init").Error(err, "业务权限 seed 失败")
-	} else if err := casbin.ReloadPolicy(); err != nil {
+		// seed 失败时不重载：库里可能是半截台账，按已有策略继续跑更可预期（与改造前一致）。
+		return
+	}
+	if err := casbin.ReloadPolicy(); err != nil {
 		logger.Scene("init").With("err", err).Warn("业务权限策略重载失败（Casbin 未初始化时忽略）")
 	}
 }

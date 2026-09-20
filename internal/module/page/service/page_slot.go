@@ -216,8 +216,12 @@ func (s *Service) ResolveSitePages(ctx context.Context, projectID, lang string) 
 }
 
 // SiteSlotRefsOfPage 列出引用了某页面的槽位键（页面删除前的引用检查）。
-func (s *Service) SiteSlotRefsOfPage(ctx context.Context, pageID string) (slots []string, err error) {
-	list, err := s.model.ListSiteSlotsByPage(ctx, pageID)
+//
+// projectID 必填（DB-009 切角色收口）：page_site_slots 带 FORCE 策略，缺作用域时
+// 非超级角色静默 0 行 —— 引用检查会一律答「没有槽位引用这个页面」，删除因此放行，
+// 留下指向已删页面的槽位绑定（页面打开时槽位解析不出路径）。
+func (s *Service) SiteSlotRefsOfPage(ctx context.Context, projectID, pageID string) (slots []string, err error) {
+	list, err := s.model.ListSiteSlotsByPage(ctx, projectID, pageID)
 	if err != nil {
 		return nil, err
 	}

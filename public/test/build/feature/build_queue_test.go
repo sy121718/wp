@@ -194,7 +194,7 @@ func TestQueueStatsVisible(t *testing.T) {
 		}
 	}
 
-	res, err := svc.Stats(ctx)
+	res, err := svc.Stats(ctx, "")
 	if err != nil {
 		t.Fatalf("查询队列状态失败: %v", err)
 	}
@@ -247,6 +247,95 @@ func TestEnqueueIsIdempotent(t *testing.T) {
 	}
 }
 
+// enqueueInProject 入队一条**带工程**的任务（工程过滤断言要求行上真有 project_id）。
+func enqueueInProject(t *testing.T, svc *buildservice.Service, sourceType, projectID string) string {
+	t.Helper()
+	job, created, err := svc.Enqueue(context.Background(), &builddto.EnqueueReq{
+		SourceType: sourceType, SourceID: uuid.NewString(), ProjectID: projectID,
+		DraftVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("入队失败: %v", err)
+	}
+	if !created {
+		t.Fatal("首次入队应创建任务")
+	}
+	return job.ID
+}
+
+// TestQueueProjectFilter build_jobs 没有 RLS 策略，工程过滤只能显式写在 SQL 里。
+//
+// 这是本表与其它 53 张带 project_id 的表**相反**的一处：换到非超级业务角色后，策略
+// 既不会把这里的查询挡成 0 行，也不会把它限制在本工程 —— 不带过滤的查询照样把别的工程
+// 的任务列出来（fail open 而不是 fail closed）。所以 Stats / List / Retry 都加了可选
+// projectID，这条断言钉住三件事：
+//   - 不带 = 全队列（运维排查视角，行为与改造前逐字一致）；
+//   - 带上 = 只有该工程（既不是 3、也不是 0）；
+//   - 重试带错工程必须被拒（否则任何工程的失败任务都能被别的工程改回 pending）。
+func TestQueueProjectFilter(t *testing.T) {
+	db, svc := newBuildFixture(t)
+	if svc == nil {
+		return
+	}
+	ctx := context.Background()
+	pA, pB := uuid.NewString(), uuid.NewString()
+	enqueueInProject(t, svc, "page", pA)
+	enqueueInProject(t, svc, "page", pA)
+	bID := enqueueInProject(t, svc, "page", pB)
+
+	all, err := svc.Stats(ctx, "")
+	if err != nil {
+		t.Fatalf("查询全队列状态失败: %v", err)
+	}
+	if all.Total != 3 {
+		t.Fatalf("全队列总数应为 3，实际 %d", all.Total)
+	}
+
+	scopedA, err := svc.Stats(ctx, pA)
+	if err != nil {
+		t.Fatalf("按工程查询队列状态失败: %v", err)
+	}
+	if scopedA.Total != 2 {
+		t.Fatalf("工程 A 的队列总数应为 2（不是 3、也不是 0），实际 %d", scopedA.Total)
+	}
+
+	rowsA, err := svc.List(ctx, &builddto.ListReq{ProjectID: pA, Limit: 50})
+	if err != nil {
+		t.Fatalf("按工程列任务失败: %v", err)
+	}
+	if len(rowsA) != 2 {
+		t.Fatalf("工程 A 应列出 2 条任务，实际 %d", len(rowsA))
+	}
+	for _, r := range rowsA {
+		if r.ProjectID != pA {
+			t.Fatalf("按工程列任务串到了别的工程: %s", r.ProjectID)
+		}
+	}
+	rowsB, err := svc.List(ctx, &builddto.ListReq{ProjectID: pB, Limit: 50})
+	if err != nil {
+		t.Fatalf("按工程列任务失败: %v", err)
+	}
+	if len(rowsB) != 1 || rowsB[0].ID != bID {
+		t.Fatalf("工程 B 应只列出自己那条，实际 %d 条", len(rowsB))
+	}
+
+	if err := db.Exec(`UPDATE build_jobs SET status = 'failed', error_message = 'x' WHERE id = ?`, bID).Error; err != nil {
+		t.Fatalf("构造失败任务失败: %v", err)
+	}
+	if err := svc.Retry(ctx, pA, bID); err == nil || err.Error() != buildenums.ErrJobNotFound {
+		t.Fatalf("用工程 A 重试工程 B 的失败任务应被拒为 ErrJobNotFound，实际 %v", err)
+	}
+	if status, _ := jobStatus(t, db, bID); status != buildmodel.StatusFailed {
+		t.Fatalf("跨工程重试不应改动任务状态，实际 %q", status)
+	}
+	if err := svc.Retry(ctx, pB, bID); err != nil {
+		t.Fatalf("本工程重试应成功: %v", err)
+	}
+	if status, _ := jobStatus(t, db, bID); status != buildmodel.StatusPending {
+		t.Fatalf("本工程重试后应回到 pending，实际 %q", status)
+	}
+}
+
 // TestRetryFailedJob 失败任务可退回队列重试，且只有失败态能被重试。
 func TestRetryFailedJob(t *testing.T) {
 	db, svc := newBuildFixture(t)
@@ -264,7 +353,7 @@ func TestRetryFailedJob(t *testing.T) {
 	if status, msg := jobStatus(t, db, id); status != buildmodel.StatusFailed || msg == "" {
 		t.Fatalf("应为 failed 且带原因: %q %q", status, msg)
 	}
-	if err := svc.Retry(ctx, id); err != nil {
+	if err := svc.Retry(ctx, "", id); err != nil {
 		t.Fatalf("重试失败: %v", err)
 	}
 	if status, msg := jobStatus(t, db, id); status != buildmodel.StatusPending || msg != "" {
@@ -275,7 +364,7 @@ func TestRetryFailedJob(t *testing.T) {
 	if _, err := svc.RunOnce(ctx); err != nil {
 		t.Fatalf("消费失败: %v", err)
 	}
-	if err := svc.Retry(ctx, id); err == nil || err.Error() != buildenums.ErrJobNotFound {
+	if err := svc.Retry(ctx, "", id); err == nil || err.Error() != buildenums.ErrJobNotFound {
 		t.Fatalf("成功态不应可重试: %v", err)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	pubenums "go_wp/internal/module/publication/enums"
+	"go_wp/pkg/rls"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -245,8 +246,14 @@ func (m *Model) DeleteRoutesByPageTx(ctx context.Context, tx *gorm.DB, projectID
 }
 
 // DeleteRoutesByPage 非事务路径的同名操作（同一份条件，见 deleteRoutesByPageScope）。
+//
+// 作用域必填（DB-009 切角色收口）：page_routes 带 FORCE 策略，非事务路径不自己设作用域时
+// DELETE 匹配 0 行且**不报错** —— 页面删了，路径占用还在（重复占用被放行）。
+// *Tx 变体由调用方的事务负责设作用域，这里不动。
 func (m *Model) DeleteRoutesByPage(ctx context.Context, projectID, pageID string) error {
-	return m.deleteRoutesByPageScope(m.db.WithContext(ctx), projectID, pageID).Delete(&RouteEntity{}).Error
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return m.deleteRoutesByPageScope(tx.WithContext(ctx), projectID, pageID).Delete(&RouteEntity{}).Error
+	})
 }
 
 // deleteRoutesByPresentationScope 展示实例全部路径占用的删除范围（事务 / 非事务两条入口共用一份条件）。
@@ -297,7 +304,12 @@ func (m *Model) DeactivateRouteTx(ctx context.Context, tx *gorm.DB, projectID, p
 }
 
 // DeactivateRoute 非事务路径的同名操作（同一份条件，见 deactivateRouteScope）。
+//
+// 作用域必填（DB-009 切角色收口）：同 DeleteRoutesByPage —— 裸删匹配 0 行不报错，
+// 于是「取消激活」是个空操作，active 目录里的符号链接继续服务旧内容。
 func (m *Model) DeactivateRoute(ctx context.Context, projectID, path, pageID, presentationID string) error {
-	return m.deactivateRouteScope(m.db.WithContext(ctx), projectID, path, pageID, presentationID).
-		Delete(&RouteEntity{}).Error
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return m.deactivateRouteScope(tx.WithContext(ctx), projectID, path, pageID, presentationID).
+			Delete(&RouteEntity{}).Error
+	})
 }

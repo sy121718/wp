@@ -143,33 +143,47 @@ func applySourceFilter(q *gorm.DB, f SourceFilter) *gorm.DB {
 // ListSources 货源列表（按条件过滤 + 分页；limit <= 0 表示不限条数）。
 //
 // 排序固定「排序号 → 编码」：报表与后台列表每次都以同样顺序返回（对比与核对依赖确定性）。
+//
+// 作用域必填（DB-009 切角色收口）：inventory_sources 带 FORCE 策略，WHERE project_id 只是
+// 普通过滤 —— 裸查在非超级角色下静默 0 行（货源列表整页空白、采购单里的货源下拉是空的）。
+// f.ProjectID 由 service 经 resolveProjectID 解析后必填。
 func (m *Model) ListSources(ctx context.Context, f SourceFilter, limit, offset int) (list []*SourceEntity, err error) {
-	q := applySourceFilter(m.SourceDB(ctx), f).Order("sort ASC, code ASC")
-	if limit > 0 {
-		q = q.Limit(limit).Offset(offset)
-	}
-	err = q.Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := applySourceFilter(tx.WithContext(ctx).Model(&SourceEntity{}), f).Order("sort ASC, code ASC")
+		if limit > 0 {
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Find(&list).Error
+	})
 	return list, err
 }
 
 // CountSources 货源计数（同条件，供分页与报表前置校验用）。
+//
+// 作用域必填（DB-009 切角色收口）：与 ListSources 同一把作用域，避免出现
+// 「列表有 N 条、总数是 0」这种自相矛盾的组合。
 func (m *Model) CountSources(ctx context.Context, f SourceFilter) (n int64, err error) {
-	err = applySourceFilter(m.SourceDB(ctx), f).Count(&n).Error
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return applySourceFilter(tx.WithContext(ctx).Model(&SourceEntity{}), f).Count(&n).Error
+	})
 	return n, err
 }
 
 // SummarySources 按「类型 × 关联方标志」分组计数（关联方报表区分的数据来源）。
 //
 // 分组是数据库的聚合能力，不是业务规则：怎么解释这两列的组合留在 service。
+//
+// 作用域必填（DB-009 切角色收口）：裸查在非超级角色下两组计数恒为 0，报表看上去是
+// 「本工程没有任何货源」，而不是报错。
 func (m *Model) SummarySources(ctx context.Context, projectID string) (rows []*SourceSummaryRow, err error) {
-	q := m.SourceDB(ctx).
-		Select("type, related_party, COUNT(*) AS count").
-		Group("type, related_party").
-		Order("type ASC, related_party DESC")
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	err = q.Scan(&rows).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&SourceEntity{}).
+			Select("type, related_party, COUNT(*) AS count").
+			Where("project_id = ?", projectID).
+			Group("type, related_party").
+			Order("type ASC, related_party DESC").
+			Scan(&rows).Error
+	})
 	return rows, err
 }
 

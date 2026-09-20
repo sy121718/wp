@@ -54,15 +54,17 @@ func (m *Model) GetCategory(ctx context.Context, id, projectID string) (e *Produ
 
 // GetCategoryWithoutScope 按 ID 读行，**不设工程作用域**（审计 DB-009 的显式例外）。
 //
-// 唯一调用方是 ResolverFor —— 它在 builder.Compile **之前**被 presentation 的 renderHTML
-// 调用，那时 ctx 里还没有工程 id（core.WithBuildProjectID 是 Compile 内部才补上的），
-// 所以这条路径**拿不到工程上下文**。按 DB-009 的口径显式保留现状：不加空串兜底
-// （那会被 rls 拒掉，把「静默 0 行」换成一个更难懂的错误），也不假装它已被隔离。
+// 原唯一调用方 ResolverFor 已改成读 core.BuildProjectID(ctx) 的带作用域入口 ——
+// presentation 侧在调用它之前就用 core.WithBuildProjectID 把工程放进了 ctx。
+//// 不设工程作用域，**当前没有任何生产调用方**（DB-009 第四批已把调用方改到带作用域的入口）。
 //
-// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时需要
-// presentation 侧在 buildCtx 上补 WithBuildProjectID（本批禁改的域）。
+// 它记录的是「拿不到工程上下文时的那一类入口」的形状：不加空串兜底（那会被 rls 拒掉，
+// 把「静默 0 行」换成一个更难懂的错误），也不假装已被隔离。在非超级角色下它 fail closed
+// （策略谓词为 NULL ⇒ 0 行 ⇒ ErrRecordNotFound）—— public/test/rls 的
+// TestRLS_ProductTaxonomyScope_ExplicitExceptionsUnaffected 把这一形状钉住。
 //
 // 不要给本方法加新的调用方：需要按 id 读的一律用带 projectID 的那个。
+
 func (m *Model) GetCategoryWithoutScope(ctx context.Context, id string) (e *ProductCategoryEntity, err error) {
 	e = &ProductCategoryEntity{}
 	err = m.CategoryDB(ctx).Where("id = ?", id).First(e).Error
@@ -91,15 +93,20 @@ func (m *Model) CategorySlugExists(ctx context.Context, projectID, slug, exclude
 // ListCategories 工程内分类列表（条件以参数传入；同级按排序号 + 创建时间稳定排序）。
 //
 // 返回的是**扁平**列表：树的组装（父子挂接与环数据兜底）在 service，model 只负责读。
+//
+// 作用域必填（DB-009 切角色收口）：product_categories 带 FORCE 策略，**WHERE project_id 只是
+// 普通过滤**，不设 app.project_id 时策略谓词为 NULL ⇒ 静默 0 行。这条曾经就是裸查 ——
+// 换 go_wp_app 实测「GET /api/product/category/list?projectId=有数据的工程」返回空数组，
+// 而库里那一行确实存在（后台分类列表整页空白、且没有任何错误日志）。
+// 空串 / 非 uuid 由 rls 在入口拒掉，不退化成一个更难排查的形态。
 func (m *Model) ListCategories(ctx context.Context, projectID, keyword string) (list []*ProductCategoryEntity, err error) {
-	q := m.CategoryDB(ctx)
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	if keyword != "" {
-		q = q.Where("name ILIKE ?", "%"+keyword+"%")
-	}
-	err = q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+	})
 	return list, err
 }
 
@@ -166,8 +173,14 @@ func (m *Model) DeleteCategoryTx(ctx context.Context, tx *gorm.DB, id string) er
 }
 
 // CountCategoryChildren 直接子级数量（删除前置校验）。
-func (m *Model) CountCategoryChildren(ctx context.Context, parentID string) (n int64, err error) {
-	err = m.CategoryDB(ctx).Where("parent_id = ?", parentID).Count(&n).Error
+//
+// 作用域必填（DB-009 切角色收口）：裸查时非超级角色恒返回 0，于是「仍有子级即拒绝删除」
+// 这条守卫静默放行 —— 分类树上会出现一批被外键 SET NULL 提升成顶级的孤儿（层级信息丢失，
+// 且没有任何错误）。调用方（DeleteCategory）手里就有工程 id，顺手传进来即可。
+func (m *Model) CountCategoryChildren(ctx context.Context, parentID, projectID string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Where("parent_id = ?", parentID).Count(&n).Error
+	})
 	return n, err
 }
 

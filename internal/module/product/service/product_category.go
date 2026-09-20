@@ -256,7 +256,7 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 	if _, gerr := s.m.GetCategory(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
-	if n, cerr := s.m.CountCategoryChildren(ctx, req.ID); cerr != nil {
+	if n, cerr := s.m.CountCategoryChildren(ctx, req.ID, projectID); cerr != nil {
 		return cerr
 	} else if n > 0 {
 		return errors.New(productenums.ErrCategoryHasChildren)

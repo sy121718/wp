@@ -196,15 +196,16 @@ func (m *Model) Get(ctx context.Context, id, projectID string) (e *ProductEntity
 
 // GetWithoutScope 按 ID 读商品行，**不设工程作用域**（审计 DB-009 的显式例外）。
 //
-// 唯一调用方是 ProductTranslationCandidates —— 它的契约签名里没有 projectID，
-// 而调用它的是 dashboard（跨模块，本模块无法替它决定该用哪个工程）。这是
-// 「确实拿不到工程上下文」的那一类，按 DB-009 的口径**显式保留现状**而不是
-// 加空串兜底（空串会被 rls 拒掉，等于把静默 0 行换成一个更难懂的错误）。
+// 原唯一调用方 ProductTranslationCandidates 已改成带作用域读（契约补了 projectID 形参，
+// 翻译工作台把手里的当前工程传下来）。// 不设工程作用域，**当前没有任何生产调用方**（DB-009 第四批已把调用方改到带作用域的入口）。
 //
-// 换非超级角色后本方法会 fail closed（策略谓词为 NULL ⇒ 0 行）：届时必须给
-// contract.ProductService 的那个方法补 projectID 参数并让 dashboard 传下来。
+// 它记录的是「拿不到工程上下文时的那一类入口」的形状：不加空串兜底（那会被 rls 拒掉，
+// 把「静默 0 行」换成一个更难懂的错误），也不假装已被隔离。在非超级角色下它 fail closed
+// （策略谓词为 NULL ⇒ 0 行 ⇒ ErrRecordNotFound）—— public/test/rls 的
+// TestRLS_ProductTaxonomyScope_ExplicitExceptionsUnaffected 把这一形状钉住。
 //
-// 不要给本方法加新的调用方：需要按 id 读商品的一律用 Get(ctx, id, projectID)。
+// 不要给本方法加新的调用方：需要按 id 读的一律用带 projectID 的那个。
+
 func (m *Model) GetWithoutScope(ctx context.Context, id string) (e *ProductEntity, err error) {
 	e = &ProductEntity{}
 	err = m.DB(ctx).Where("id = ?", id).First(e).Error

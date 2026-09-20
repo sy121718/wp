@@ -125,7 +125,11 @@ type ProductService interface {
 
 	// ProductTranslationCandidates 单个商品及其引用实体的全部可翻译文本（issue #12）。
 	// 翻译工作台在 dashboard 模块，跨模块只能经契约取值，故这两个方法留在契约上。
-	ProductTranslationCandidates(ctx context.Context, productID string) (list []TranslationCandidate, err error)
+	//
+	// projectID 必填（DB-009 切角色收口）：products 在迁移 215 的 RLS 名单里，
+	// 非超级角色下不带作用域的读会**静默返回 0 行**，表现为「翻到一半说商品不存在」。
+	// 调用方（翻译工作台）手里本来就有当前工程 id，不再让本模块去猜。
+	ProductTranslationCandidates(ctx context.Context, projectID, productID string) (list []TranslationCandidate, err error)
 	// ProjectTranslationCandidates 工程内全部商品域可翻译文本（按 (hash, context) 去重）。
 	ProjectTranslationCandidates(ctx context.Context, projectID string) (list []TranslationCandidate, err error)
 	// —— 捆绑品（issue #20）——

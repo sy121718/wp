@@ -19,7 +19,18 @@ const (
 	ErrSkuTaken        = "ErrSkuTaken"        // 同商品下 SKU 编码已占用
 	ErrVariantHasStock = "ErrVariantHasStock" // 变体仍有库存，不能删除（请改为停用）
 	ErrNameRequired    = "ErrNameRequired"    // 商品名称必填
+)
 
+// 构建期上下文缺失（DB-009 第四批）。单独一块，避免把上面那批常量名的对齐列宽一起改掉。
+const (
+	// ErrMissingProjectContext 构建期实体字段源拿不到工程上下文（core.WithBuildProjectID 未注入）。
+	//
+	// 它是「调用链漏了注入」的显式信号，不能退化成裸读：裸读在非超级角色下静默 0 行，
+	// 表现为「实体不存在 / 产物区块缺失」，而真实原因是上游少传了一个工程 id。
+	ErrMissingProjectContext = "ErrMissingProjectContext"
+)
+
+const (
 	// —— 相关商品（products.related_ids，审计 DB-03 / PROD-01）——
 	// 相关商品是**同表自引用**：分类 / 标签 / 属性三条引用面都有「存在 + 同工程」校验，
 	// 只有它此前原样落库 —— 任意 uuid（别的工程、已被删除、甚至自己）都能写进去。

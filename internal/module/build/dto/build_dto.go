@@ -46,8 +46,11 @@ type EnqueueReq struct {
 
 // ListReq 任务列表请求。
 type ListReq struct {
-	Status string `form:"status" json:"status"`
-	Limit  int    `form:"limit" json:"limit"`
+	// ProjectID 只列该工程的任务（空 = 全队列）。build_jobs **没有** RLS 策略，
+	// 工程过滤只能靠这个条件，见 build/model 包注释。
+	ProjectID string `form:"project" json:"projectId"`
+	Status    string `form:"status" json:"status"`
+	Limit     int    `form:"limit" json:"limit"`
 }
 
 // QueueStatsResp 队列状态（后台可见性）。

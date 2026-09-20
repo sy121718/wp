@@ -52,12 +52,12 @@ type BuildService interface {
 	// ReclaimStale 回收租约到期未结束的 running 任务：
 	// 与队列里的待办同键的合并为 superseded，其余退回 pending。返回退回队列的行数。
 	ReclaimStale(ctx context.Context) (reclaimed int64, err error)
-	// Stats 队列深度与最近失败任务（后台可见性）。
-	Stats(ctx context.Context) (res *builddto.QueueStatsResp, err error)
-	// List 按状态列出最近任务。
+	// Stats 队列深度与最近失败任务（后台可见性）；projectID 非空时只统计该工程。
+	Stats(ctx context.Context, projectID string) (res *builddto.QueueStatsResp, err error)
+	// List 按状态列出最近任务（req.ProjectID 非空时只列该工程）。
 	List(ctx context.Context, req *builddto.ListReq) (list []*builddto.Job, err error)
-	// Retry 把失败任务退回队列。
-	Retry(ctx context.Context, id string) error
+	// Retry 把失败任务退回队列；projectID 非空时只允许退回该工程的任务。
+	Retry(ctx context.Context, projectID, id string) error
 	// RegisterExecutor 注册某来源类型的执行器（装配期调用）。
 	RegisterExecutor(sourceType string, fn Executor)
 	// StartWorkers 启动 n 个消费协程（含僵尸回收）。

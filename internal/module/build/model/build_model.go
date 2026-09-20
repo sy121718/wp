@@ -358,15 +358,37 @@ type StatusCount struct {
 	Count  int64  `gorm:"column:count"`
 }
 
-// CountByStatus 按状态统计队列深度。
-func (m *Model) CountByStatus(ctx context.Context) (rows []StatusCount, err error) {
-	err = m.DB(ctx).Select("status, COUNT(*) AS count").Group("status").Scan(&rows).Error
+// 本表无 RLS 策略（DB-009 切角色必读，见包注释）：build_jobs 是全库**唯一**「有 project_id
+// 却没有 ROW LEVEL SECURITY」的表 —— project_id 由迁移 295 新增，215 的策略名单早于它。
+//
+// 这条差异的后果与别的表**相反**：换到非超级业务角色后，本表的查询既不会被拦下，
+// 也不会被限制在本工程 —— 不是 fail closed（静默 0 行），而是**没有隔离**（跨工程可见）。
+// 因此：
+//   - **工程过滤必须显式写在 SQL 里**（用下面这些方法的 projectID 参数），不能指望策略兜底；
+//   - 面向用户的按工程读取（「某页面的构建任务列表」这类）一律要带 projectID；
+//   - Claim / ReclaimStale 按状态**跨工程**捞取是**有意**的队列语义（worker 服务全站队列），
+//     不受本条约束 —— 它们不面向用户、也不把结果返回给用户。
+
+// CountByStatus 按状态统计队列深度；projectID 非空时只统计该工程。
+//
+// 本表无策略，工程过滤只能靠这里的 WHERE（见上面的说明）。
+func (m *Model) CountByStatus(ctx context.Context, projectID string) (rows []StatusCount, err error) {
+	q := m.DB(ctx).Select("status, COUNT(*) AS count")
+	if pid := strings.TrimSpace(projectID); pid != "" {
+		q = q.Where("project_id = ?", pid)
+	}
+	err = q.Group("status").Scan(&rows).Error
 	return rows, err
 }
 
-// ListRecent 按状态列出最近的任务（空状态 = 全部）。
-func (m *Model) ListRecent(ctx context.Context, status string, limit int) (list []*Entity, err error) {
+// ListRecent 按状态列出最近的任务（空状态 = 全部）；projectID 非空时只列该工程。
+//
+// 本表无策略，工程过滤只能靠这里的 WHERE（见上面的说明）。
+func (m *Model) ListRecent(ctx context.Context, projectID, status string, limit int) (list []*Entity, err error) {
 	q := m.DB(ctx).Order("create_time DESC")
+	if pid := strings.TrimSpace(projectID); pid != "" {
+		q = q.Where("project_id = ?", pid)
+	}
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -378,6 +400,10 @@ func (m *Model) ListRecent(ctx context.Context, status string, limit int) (list 
 }
 
 // Get 按 id 查询任务。
+//
+// 注意：本表无策略，这里的查询不带工程过滤 —— 拿到别的工程的任务 id 就能读到它。
+// 这是队列自身的内部入口，**不要**直接接到面向用户的接口上：用户可见的按 id 读取
+// 必须同时给出 project_id 条件（本表没有策略替你挡）。
 func (m *Model) Get(ctx context.Context, id string) (e *Entity, err error) {
 	var row Entity
 	if err = m.DB(ctx).Where("id = ?", id).First(&row).Error; err != nil {
@@ -394,8 +420,15 @@ func (m *Model) Get(ctx context.Context, id string) (e *Entity, err error) {
 //
 // 守卫写在 WHERE 里（status='failed'）而不是先读后写：并发两次重试只有一次生效，
 // 第二次 RowsAffected=0，由 service 翻成「任务不存在或不是失败态」。
-func (m *Model) RetryFailed(ctx context.Context, id int64) (ok bool, err error) {
-	res := m.DB(ctx).Where("id = ? AND status = ?", id, StatusFailed).Updates(map[string]any{
+//
+// projectID 非空时加进同一个 WHERE：本表无策略（见上面的说明），不带工程过滤的退回
+// 会把别的工程的失败任务一起改回 pending。
+func (m *Model) RetryFailed(ctx context.Context, id int64, projectID string) (ok bool, err error) {
+	q := m.DB(ctx).Where("id = ? AND status = ?", id, StatusFailed)
+	if pid := strings.TrimSpace(projectID); pid != "" {
+		q = q.Where("project_id = ?", pid)
+	}
+	res := q.Updates(map[string]any{
 		"status": StatusPending, "started_at": nil, "completed_at": nil, "error_message": nil,
 		"lease_token": nil, "lease_expires_time": nil,
 	})

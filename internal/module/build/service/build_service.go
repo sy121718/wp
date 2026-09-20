@@ -188,13 +188,16 @@ func (s *Service) EnqueuePresentationBuild(ctx context.Context, presentationID, 
 	return err
 }
 
-// List 按状态列出最近任务。
+// List 按状态列出最近任务；req.ProjectID 非空时只列该工程。
+//
+// 工程过滤走 SQL（build_jobs **没有** RLS 策略，见 buildmodel 的说明）：
+// 换非超级角色后不带过滤的查询不会 fail closed，而是把别的工程的任务一起列出来。
 func (s *Service) List(ctx context.Context, req *builddto.ListReq) (list []*builddto.Job, err error) {
-	status, limit := "", 0
+	projectID, status, limit := "", "", 0
 	if req != nil {
-		status, limit = strings.TrimSpace(req.Status), req.Limit
+		projectID, status, limit = strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.Status), req.Limit
 	}
-	rows, err := s.m.ListRecent(ctx, status, limit)
+	rows, err := s.m.ListRecent(ctx, projectID, status, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +208,11 @@ func (s *Service) List(ctx context.Context, req *builddto.ListReq) (list []*buil
 	return out, nil
 }
 
-// Retry 把失败任务退回队列。
-func (s *Service) Retry(ctx context.Context, id string) error {
+// Retry 把失败任务退回队列；projectID 非空时只允许退回该工程的任务。
+//
+// 同样因为 build_jobs 没有 RLS 策略：不带工程过滤的重试会把**别的工程**的失败任务
+// 一起退回去（跨工程写）。projectID 为空保持既有语义（全局运维视角）。
+func (s *Service) Retry(ctx context.Context, projectID, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return errors.New(buildenums.ErrInvalidParam)
@@ -215,7 +221,7 @@ func (s *Service) Retry(ctx context.Context, id string) error {
 	if perr != nil {
 		return errors.New(buildenums.ErrJobNotFound)
 	}
-	ok, err := s.m.RetryFailed(ctx, jid)
+	ok, err := s.m.RetryFailed(ctx, jid, strings.TrimSpace(projectID))
 	if err != nil {
 		return err
 	}
@@ -252,19 +258,24 @@ func (s *Service) reclaimStale(ctx context.Context) (buildmodel.ReclaimResult, e
 	return res, nil
 }
 
-// Stats 队列深度 + 最近失败任务（后台可见性）。
-func (s *Service) Stats(ctx context.Context) (res *builddto.QueueStatsResp, err error) {
+// Stats 队列深度 + 最近失败任务（后台可见性）；projectID 非空时只统计该工程。
+//
+// 工程过滤走 SQL（build_jobs 没有 RLS 策略，见 buildmodel 的说明）。
+// 顺手做的僵尸回收（reclaimStale）**始终是全局的**：它是队列自身的维护动作，
+// 与「看哪个工程的队列」无关 —— 只回收某个工程的僵尸任务会让其它工程的僵尸一直卡着。
+func (s *Service) Stats(ctx context.Context, projectID string) (res *builddto.QueueStatsResp, err error) {
 	res = &builddto.QueueStatsResp{RecentFailed: []builddto.Job{}}
 	if s == nil || s.m == nil {
 		return res, nil
 	}
+	projectID = strings.TrimSpace(projectID)
 	// 顺手回收僵尸：后台打开队列页时就该看到「真实可消费的任务数」，
 	// 而不是把卡死的 running 也算成在跑。
 	if r, rerr := s.reclaimStale(ctx); rerr == nil {
 		res.StaleReclaimed = int(r.Reclaimed)
 		res.StaleMerged = int(r.Merged)
 	}
-	rows, err := s.m.CountByStatus(ctx)
+	rows, err := s.m.CountByStatus(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +295,7 @@ func (s *Service) Stats(ctx context.Context) (res *builddto.QueueStatsResp, err 
 		}
 	}
 	if res.Failed > 0 {
-		failed, ferr := s.m.ListRecent(ctx, buildmodel.StatusFailed, 10)
+		failed, ferr := s.m.ListRecent(ctx, projectID, buildmodel.StatusFailed, 10)
 		if ferr == nil {
 			for _, r := range failed {
 				res.RecentFailed = append(res.RecentFailed, *toDto(r))
