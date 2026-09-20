@@ -176,8 +176,13 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 		if uerr := s.m.UpdateCategoryTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		return s.enqueueInvalidationTx(ctx, tx, e.ProjectID,
-			invalidationTarget{EntityType: productcontract.EntityTypeCategory, EntityID: e.ID})
+		// 改名类写入口（审计 ARCH-01 收口票）：除实体键外**逐引用商品**发 direct_content ——
+		// 商品详情页登记的是 product:{id}，只发分类键命中不到它（改分类名后页面仍是旧名）。
+		refIDs, rerr := s.m.ProductIDsByCategoryTx(ctx, tx, e.ProjectID, e.ID, maxRenameFanoutProducts+1)
+		if rerr != nil {
+			return rerr
+		}
+		return s.enqueueEntityRenameFanout(ctx, tx, e.ProjectID, productcontract.EntityTypeCategory, e.ID, refIDs)
 	}); err != nil {
 		return nil, err
 	}

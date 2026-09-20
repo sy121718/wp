@@ -801,3 +801,194 @@ func TestTagRecalcRebuildsBoundProductDetailPage(t *testing.T) {
 		}
 	}
 }
+
+// —— 审计 ARCH-01 收口票：实体改名 → 引用它的商品详情页 ——
+//
+// 四个改名入口（分类 / 品牌 / 标签 / 属性组的 Update）在提交事务内，除实体键外
+// **逐引用商品**发 direct_content:product:{id}。没有这一步时：商品详情页登记的是
+// product:{id}，改名只发实体键命中不到它 —— 站点上表现为「改了分类名，商品页还是旧名」，
+// 且日志里什么都没有。
+//
+// 用例的目标产物只登记 direct_content:product:{id}（模板里没有集合组件），
+// 因此这件事不会被商品集合键掩盖。
+
+// renameFieldDoc 只渲染「商品名 + 指定商品字段」的模板（无集合组件）。
+func renameFieldDoc(field string) string {
+	return "{\"settings\":{\"layout\":{\"mode\":\"boxed\",\"maxWidth\":\"1200px\"}},\"root\":" +
+		"[{\"id\":\"p1\",\"type\":\"core.product\",\"props\":{\"source\":\"product\"," +
+		"\"titleField\":\"product.name\",\"subtitleField\":\"" + field + "\",\"titleTag\":\"h2\"}}]}"
+}
+
+// TestEntityRenameRebuildsReferencingProductPages 四个实体的改名入口各一条：
+// 改名后引用它的商品详情页在 zh-CN / en-US 两种语言上都必须更新。
+func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
+	type renameCase struct {
+		name       string
+		entityType string
+		// field 模板里绑定的商品字段：分类 / 品牌走 related（含名称），
+		// 标签走 tags（展示名数组），属性组走 options（规格维度含组名）。
+		field string
+		// create 建实体并返回 id + 「把该实体挂到商品上」的装配函数。
+		create func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq))
+		// rename 改名（只改名字，不动引用关系）。
+		rename func(t *testing.T, f *outboxFixture, entityID, newName string)
+	}
+	cases := []renameCase{
+		{
+			name: "分类", entityType: productcontract.EntityTypeCategory, field: "product.related",
+			create: func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq)) {
+				cat, err := f.products.CreateCategory(context.Background(), &productdto.CreateCategoryReq{
+					ProjectID: f.projectID, Name: "旧分类名", Slug: slug,
+				})
+				if err != nil {
+					t.Fatalf("创建分类失败: %v", err)
+				}
+				return cat.ID, func(req *productdto.CreateReq) { req.CategoryIDs = []string{cat.ID} }
+			},
+			rename: func(t *testing.T, f *outboxFixture, entityID, newName string) {
+				if _, err := f.products.UpdateCategory(context.Background(), &productdto.UpdateCategoryReq{
+					ID: entityID, ProjectID: f.projectID, Name: &newName,
+				}); err != nil {
+					t.Fatalf("改分类名失败: %v", err)
+				}
+			},
+		},
+		{
+			name: "品牌", entityType: productcontract.EntityTypeBrand, field: "product.related",
+			create: func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq)) {
+				brand, err := f.products.CreateBrand(context.Background(), &productdto.CreateBrandReq{
+					ProjectID: f.projectID, Name: "旧品牌名", Slug: slug,
+				})
+				if err != nil {
+					t.Fatalf("创建品牌失败: %v", err)
+				}
+				return brand.ID, func(req *productdto.CreateReq) { req.BrandID = brand.ID }
+			},
+			rename: func(t *testing.T, f *outboxFixture, entityID, newName string) {
+				if _, err := f.products.UpdateBrand(context.Background(), &productdto.UpdateBrandReq{
+					ID: entityID, ProjectID: f.projectID, Name: &newName,
+				}); err != nil {
+					t.Fatalf("改品牌名失败: %v", err)
+				}
+			},
+		},
+		{
+			name: "标签", entityType: productcontract.EntityTypeTag, field: "product.tags",
+			create: func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq)) {
+				tag, err := f.products.CreateTag(context.Background(), &productdto.CreateTagReq{
+					ProjectID: f.projectID, Name: "旧标签名", Slug: slug, Kind: productenums.TagKindManual,
+				})
+				if err != nil {
+					t.Fatalf("创建标签失败: %v", err)
+				}
+				return tag.ID, func(req *productdto.CreateReq) { req.TagIDs = []string{tag.ID} }
+			},
+			rename: func(t *testing.T, f *outboxFixture, entityID, newName string) {
+				if _, err := f.products.UpdateTag(context.Background(), &productdto.UpdateTagReq{
+					ID: entityID, ProjectID: f.projectID, Name: &newName,
+				}); err != nil {
+					t.Fatalf("改标签名失败: %v", err)
+				}
+			},
+		},
+		{
+			name: "属性组", entityType: productcontract.EntityTypeAttribute, field: "product.options",
+			create: func(t *testing.T, f *outboxFixture, slug string) (string, func(*productdto.CreateReq)) {
+				attr, err := f.products.CreateAttribute(context.Background(), &productdto.CreateAttributeReq{
+					ProjectID: f.projectID, Name: "旧属性组名", Key: slug,
+					Values: []productdto.AttributeValueReq{{Key: "v1", Label: "规格一"}},
+				})
+				if err != nil {
+					t.Fatalf("创建属性组失败: %v", err)
+				}
+				return attr.ID, func(req *productdto.CreateReq) { req.AttributeIDs = []string{attr.ID} }
+			},
+			rename: func(t *testing.T, f *outboxFixture, entityID, newName string) {
+				if _, err := f.products.UpdateAttribute(context.Background(), &productdto.UpdateAttributeReq{
+					ID: entityID, ProjectID: f.projectID, Name: &newName,
+				}); err != nil {
+					t.Fatalf("改属性组名失败: %v", err)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOutboxFixture(t)
+			if f == nil {
+				return
+			}
+			ctx := context.Background()
+			entityID, attach := tc.create(t, f, "rename-"+tc.name)
+			price := 42.0
+			req := &productdto.CreateReq{
+				ProjectID: f.projectID, Name: "改名目标商品", Slug: "rename-item",
+				DefaultPrice: &price,
+			}
+			attach(req)
+			product, err := f.products.Create(ctx, req)
+			if err != nil {
+				t.Fatalf("创建商品失败: %v", err)
+			}
+			tpl, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
+				EntityType: productcontract.EntityTypeProduct, Name: "改名详情页", ProjectID: f.projectID,
+				DraftDocument: json.RawMessage(renameFieldDoc(tc.field)),
+			})
+			if err != nil {
+				t.Fatalf("创建详情模板失败: %v", err)
+			}
+			inst, err := f.pres.CreateInstance(ctx, &presentationdto.CreateInstanceReq{
+				ProjectID: f.projectID, EntityType: productcontract.EntityTypeProduct, EntityID: product.ID,
+				URLPath: "/products/rename-item", TemplateID: tpl.ID,
+			})
+			if err != nil {
+				t.Fatalf("创建详情实例失败: %v", err)
+			}
+			f.dispatch(t)
+
+			// 基线：产物里是旧名字。
+			if html := instanceActiveHTML(t, f.db, inst.ID, "zh-CN"); !strings.Contains(html, "旧"+tc.name+"名") {
+				t.Fatalf("%s：基线详情页应含旧名「旧%s名」：%s", tc.name, tc.name, firstLine(html))
+			}
+			// 机制证据的基线：建商品本身也会写一条 product:{id}，这里数的是**改名新增**的那条。
+			key := "product:" + product.ID
+			rowsBefore, lerr := productmodel.NewModel(f.db).ListOutboxEvents(ctx, productcontract.EntityTypeProduct, product.ID)
+			if lerr != nil {
+				t.Fatalf("读取 outbox 失败: %v", lerr)
+			}
+			beforeHits := 0
+			for _, row := range rowsBefore {
+				if row.DependencyKey == key {
+					beforeHits++
+				}
+			}
+			newName := "新" + tc.name + "名"
+			tc.rename(t, f, entityID, newName)
+			if n := f.dispatch(t); n == 0 {
+				t.Fatalf("%s 改名后 outbox 应有待消费事件", tc.name)
+			}
+			// 机制证据：改名必须为引用它的商品**新增**一条 direct_content。
+			rows, lerr := productmodel.NewModel(f.db).ListOutboxEvents(ctx, productcontract.EntityTypeProduct, product.ID)
+			if lerr != nil {
+				t.Fatalf("读取 outbox 失败: %v", lerr)
+			}
+			afterHits := 0
+			for _, row := range rows {
+				if row.DependencyKey == key {
+					afterHits++
+				}
+			}
+			if afterHits <= beforeHits {
+				t.Fatalf("%s 改名应为引用它的商品新增 direct_content:%s（改名前 %d 条，改名后 %d 条）",
+					tc.name, key, beforeHits, afterHits)
+			}
+			// 字节证据：详情页两种语言都换成新名字。
+			for _, lang := range []string{"zh-CN", "en-US"} {
+				html := instanceActiveHTML(t, f.db, inst.ID, lang)
+				if !strings.Contains(html, newName) {
+					t.Fatalf("%s 改名后详情页 %s 未更新（不含 %q）：%s", tc.name, lang, newName, firstLine(html))
+				}
+			}
+		})
+	}
+}

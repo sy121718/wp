@@ -173,9 +173,13 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 		if uerr := s.m.UpdateTagTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		// 静态产物失效（审计 ARCH-01）。
-		if xerr := s.enqueueInvalidationTx(ctx, tx, e.ProjectID,
-			invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: e.ID}); xerr != nil {
+		// 改名类写入口（审计 ARCH-01 收口票）：标签名进列表项的 tags 与商品详情页的标签区，
+		// 除实体键外**逐引用商品**发 direct_content（详情页只认商品键）。
+		refIDs, rerr := s.m.ProductIDsByTagTx(ctx, tx, e.ProjectID, e.ID, maxRenameFanoutProducts+1)
+		if rerr != nil {
+			return rerr
+		}
+		if xerr := s.enqueueEntityRenameFanout(ctx, tx, e.ProjectID, productcontract.EntityTypeTag, e.ID, refIDs); xerr != nil {
 			return xerr
 		}
 		// 重算时机之一：规则定义变更后立刻按新规则重算（手工标签不动任何归属）。

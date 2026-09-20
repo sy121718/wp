@@ -243,3 +243,41 @@ func (s *Service) dispatchOutboxBatch(ctx context.Context) {
 		logger.Scene("product").With("count", n).Info("商品依赖事件已扇出")
 	}
 }
+
+// maxRenameFanoutProducts 实体改名时「逐引用商品」扇出的单次上限。
+//
+// 为什么需要护栏：一个分类被几万个商品引用时，一次改名的逐商品事件会把 outbox 与随后的
+// 重建量推到不可控（每个商品一条 direct_content + 一次详情页重建）。上限之内**逐条发**，
+// 超限时**按上限逐个发**并记结构化日志 —— 宁可多、不可漏：
+//
+//	· 「多」的代价是几条多余的重建（产物字节没变时构建是幂等的，不新增产物行）；
+//	· 「漏」的代价是商品详情页永远显示旧名字，且站点上没有任何信号。
+//
+// 上限本身也写进日志，截断这件事因此可见、可排查，不会被当成「全站都重建过了」。
+const maxRenameFanoutProducts = 5000
+
+// enqueueEntityRenameFanout 实体改名（分类 / 品牌 / 标签 / 属性组）的失效扇出。
+//
+// 键由两部分组成：
+//  1. 实体键 direct_content:{type}:{id} —— 绑定该实体本身的产物；
+//  2. 逐**引用该实体**的商品的 direct_content:product:{id} —— 商品详情页登记的是
+//     商品键，只发实体键命中不到它，于是「改了分类名，商品页仍是旧名」且无报错。
+//     （列表页由 enqueueInvalidationTx 内部按批补的商品集合键覆盖。）
+//
+// referencedProductIDs 由调用方在**同一事务内**经 ProductIDsByX 取全量 id（不是采样，
+// 见 product_ref_scan.go 的注释）；本函数只做上限截断与入队。
+func (s *Service) enqueueEntityRenameFanout(ctx context.Context, tx *gorm.DB, projectID, entityType, entityID string,
+	referencedProductIDs []string) error {
+	if len(referencedProductIDs) > maxRenameFanoutProducts {
+		logger.Scene("product").With("entity_type", entityType).With("entity_id", entityID).
+			With("referencing", len(referencedProductIDs)).With("limit", maxRenameFanoutProducts).
+			Warn("实体改名牵涉的商品数超过单次扇出上限：按上限逐个发失效事件（超出部分不在本次失效范围内）")
+		referencedProductIDs = referencedProductIDs[:maxRenameFanoutProducts]
+	}
+	targets := make([]invalidationTarget, 0, len(referencedProductIDs)+1)
+	targets = append(targets, invalidationTarget{EntityType: entityType, EntityID: entityID})
+	for _, pid := range referencedProductIDs {
+		targets = append(targets, productInvalidationTarget(pid))
+	}
+	return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
+}

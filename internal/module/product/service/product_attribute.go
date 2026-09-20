@@ -134,7 +134,13 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		return s.enqueueAttributeInvalidation(ctx, tx, e.ProjectID, e.ID)
+		// 改名类写入口（审计 ARCH-01 收口票）：属性组名进 products.options（规格维度），
+		// 逐引用商品发 direct_content（理由同分类 / 品牌）。
+		refIDs, rerr := s.m.ProductIDsByAttributeTx(ctx, tx, e.ProjectID, e.ID, maxRenameFanoutProducts+1)
+		if rerr != nil {
+			return rerr
+		}
+		return s.enqueueEntityRenameFanout(ctx, tx, e.ProjectID, productcontract.EntityTypeAttribute, e.ID, refIDs)
 	}); err != nil {
 		return nil, err
 	}

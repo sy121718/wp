@@ -317,3 +317,77 @@ func (m *Model) ProductRefsByBundleVariant(ctx context.Context, variantID string
 				variantID)
 		})
 }
+
+// —— 失效扇出用的**全量 id 反查**（审计 ARCH-01 收口票）——
+//
+// 与上面的 ProductRefsByX 的分工必须说清楚，因为两者长得像但回答的是两个问题：
+//   · ProductRefsByX（删除守卫）：回答「全库还有谁引用它」，**采样**（每工程最多
+//     maxRefSamplePerProject 个）—— 它要的是一句能给人看的话，不是全集；
+//   · ProductIDsByX（失效扇出）：回答「本工程哪些商品的产物会因它改名而变化」，
+//     需要**全部 id**。把采样当全集用，就是「只重建了前几个商品」这类静默漏更新
+//     —— 站点上表现为一部分商品页永远显示旧分类 / 旧品牌名。
+//
+// 为什么不跨工程：改名只改本工程的实体行，别的工程里即便有存量跨工程引用，
+// 那些商品的构建期解析器按**本工程**作用域取数据（跨工程引用解析不出来），
+// 因此跨工程商品页的字节不会因这次改名而变化；同时跨工程写也会被策略的
+// WITH CHECK 拒绝。删除守卫必须跨工程（那要拦住删除），失效扇出不必。
+
+// ProductIDsByCategoryTx 本工程内引用该分类的全部商品 id（升序，最多 limit 条）。
+//
+// 两个引用面都查：附属分类（category_ids 包含谓词，走 GIN 索引）与主分类（真列）。
+// tx 必须已由调用方设好工程作用域（products 带 FORCE 策略，缺作用域会静默 0 行）。
+func (m *Model) ProductIDsByCategoryTx(ctx context.Context, tx *gorm.DB, projectID, categoryID string, limit int) (ids []string, err error) {
+	probe, merr := json.Marshal([]string{categoryID})
+	if merr != nil {
+		return nil, merr
+	}
+	return m.scanProductIDsTx(ctx, tx, projectID, limit, func(db *gorm.DB) *gorm.DB {
+		return db.Where("category_ids @> ?::jsonb OR primary_category_id = ?", string(probe), categoryID)
+	})
+}
+
+// ProductIDsByBrandTx 本工程内引用该品牌的全部商品 id（升序，最多 limit 条）。
+func (m *Model) ProductIDsByBrandTx(ctx context.Context, tx *gorm.DB, projectID, brandID string, limit int) (ids []string, err error) {
+	return m.scanProductIDsTx(ctx, tx, projectID, limit, func(db *gorm.DB) *gorm.DB {
+		return db.Where("brand_id = ?", brandID)
+	})
+}
+
+// ProductIDsByAttributeTx 本工程内引用该属性组的全部商品 id（升序，最多 limit 条）。
+func (m *Model) ProductIDsByAttributeTx(ctx context.Context, tx *gorm.DB, projectID, attributeID string, limit int) (ids []string, err error) {
+	probe, merr := json.Marshal([]string{attributeID})
+	if merr != nil {
+		return nil, merr
+	}
+	return m.scanProductIDsTx(ctx, tx, projectID, limit, func(db *gorm.DB) *gorm.DB {
+		return db.Where("attribute_ids @> ?::jsonb", string(probe))
+	})
+}
+
+// ProductIDsByTagTx 本工程内挂了该标签的全部商品 id（升序，最多 limit 条）。
+func (m *Model) ProductIDsByTagTx(ctx context.Context, tx *gorm.DB, projectID, tagID string, limit int) (ids []string, err error) {
+	probe, merr := json.Marshal([]string{tagID})
+	if merr != nil {
+		return nil, merr
+	}
+	return m.scanProductIDsTx(ctx, tx, projectID, limit, func(db *gorm.DB) *gorm.DB {
+		return db.Where("tag_ids @> ?::jsonb", string(probe))
+	})
+}
+
+// scanProductIDsTx 投影 id 的单工程全量查询（四个 ProductIDsByX 共用的唯一实现）。
+//
+// limit 由调用方给（通常 = 扇出上限 + 1，多取一条用来判断「是否被截断」）：
+// 上限留在 service（那是策略），这里只执行。
+func (m *Model) scanProductIDsTx(ctx context.Context, tx *gorm.DB, projectID string, limit int,
+	filter refScanFilter) (ids []string, err error) {
+	if tx == nil || strings.TrimSpace(projectID) == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	q := filter(tx.WithContext(ctx).Model(&ProductEntity{}).Where("project_id = ?", projectID))
+	err = q.Select("id::text").Order("id ASC").Limit(limit).Find(&ids).Error
+	return ids, err
+}

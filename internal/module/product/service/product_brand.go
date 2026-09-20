@@ -123,8 +123,12 @@ func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandRe
 		if uerr := s.m.UpdateBrandTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
-		return s.enqueueInvalidationTx(ctx, tx, e.ProjectID,
-			invalidationTarget{EntityType: productcontract.EntityTypeBrand, EntityID: e.ID})
+		// 改名类写入口（审计 ARCH-01 收口票）：逐引用商品发 direct_content（理由同分类）。
+		refIDs, rerr := s.m.ProductIDsByBrandTx(ctx, tx, e.ProjectID, e.ID, maxRenameFanoutProducts+1)
+		if rerr != nil {
+			return rerr
+		}
+		return s.enqueueEntityRenameFanout(ctx, tx, e.ProjectID, productcontract.EntityTypeBrand, e.ID, refIDs)
 	}); err != nil {
 		return nil, err
 	}
