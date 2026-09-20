@@ -2,6 +2,7 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -31,22 +32,29 @@ const (
 
 // Config 数据库配置。
 type Config struct {
-	Driver                 string         `mapstructure:"driver"`
-	Host                   string         `mapstructure:"host"`
-	Port                   int            `mapstructure:"port"`
-	User                   string         `mapstructure:"user"`
-	Password               string         `mapstructure:"password"`
-	DBName                 string         `mapstructure:"dbname"`
-	MaxIdleConns           int            `mapstructure:"max_idle_conns"`
-	MaxOpenConns           int            `mapstructure:"max_open_conns"`
-	ConnMaxLifetime        string         `mapstructure:"conn_max_lifetime"`
-	ConnMaxIdleTime        string         `mapstructure:"conn_max_idle_time"`
-	StatementTimeout       string         `mapstructure:"statement_timeout"`
-	LogLevel               string         `mapstructure:"log_level"`
-	PrepareStmt            bool           `mapstructure:"prepare_stmt"`
-	SkipDefaultTransaction bool           `mapstructure:"skip_default_transaction"`
-	SlowThreshold          string         `mapstructure:"slow_threshold"`
-	Resolver               ResolverConfig `mapstructure:"resolver"`
+	Driver                 string `mapstructure:"driver"`
+	Host                   string `mapstructure:"host"`
+	Port                   int    `mapstructure:"port"`
+	User                   string `mapstructure:"user"`
+	Password               string `mapstructure:"password"`
+	DBName                 string `mapstructure:"dbname"`
+	MaxIdleConns           int    `mapstructure:"max_idle_conns"`
+	MaxOpenConns           int    `mapstructure:"max_open_conns"`
+	ConnMaxLifetime        string `mapstructure:"conn_max_lifetime"`
+	ConnMaxIdleTime        string `mapstructure:"conn_max_idle_time"`
+	StatementTimeout       string `mapstructure:"statement_timeout"`
+	LogLevel               string `mapstructure:"log_level"`
+	PrepareStmt            bool   `mapstructure:"prepare_stmt"`
+	SkipDefaultTransaction bool   `mapstructure:"skip_default_transaction"`
+	SlowThreshold          string `mapstructure:"slow_threshold"`
+	// RequireRLSRole 要求连接角色不能绕过 RLS（默认 false）。
+	//
+	// true 时启动期探针发现连接角色是超级用户或带 BYPASSRLS 会直接返回 error，
+	// 让启动失败；false 时只打 WARN 说明工程隔离当前不生效。
+	// 默认 false 是因为迁移与运维脚本复用同一个 database 组件、走管理连接（超级用户）：
+	// 默认 fail fast 会把正常运维挡在门外。切到应用角色之后再置 true（DB-009 第二步）。
+	RequireRLSRole bool           `mapstructure:"require_rls_role"`
+	Resolver       ResolverConfig `mapstructure:"resolver"`
 }
 
 // ResolverConfig 预留数据库读写分离配置结构。
@@ -102,6 +110,18 @@ func Init(v *viper.Viper) error {
 		return fmt.Errorf("数据库初始化失败: %w", err)
 	}
 
+	// 连接身份探针（DB-04）：始终以 INFO 打印 session_user / current_user /
+	// rolsuper / rolbypassrls / 策略覆盖数；require_rls_role=true 且角色会绕过 RLS 时
+	// 返回 error 让启动失败。非 PG 驱动在探针内部整体跳过。
+	requireRLSRole := v != nil && v.GetBool("database.require_rls_role")
+	if err := CheckRLSIdentity(context.Background(), instance, requireRLSRole); err != nil {
+		// 探针失败时不留下半初始化的全局句柄：关掉刚建立的连接池再往上报。
+		if sqlDB, dbErr := instance.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return err
+	}
+
 	db = instance
 	inited = true
 	return nil
@@ -145,6 +165,7 @@ func getDefaultConfig() Config {
 		PrepareStmt:            false,
 		SkipDefaultTransaction: false,
 		SlowThreshold:          "",
+		RequireRLSRole:         false,
 		Resolver: ResolverConfig{
 			Enabled:  false,
 			Policy:   "",

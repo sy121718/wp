@@ -91,10 +91,13 @@ func ScopeTx(tx *gorm.DB, projectID string) error {
 // RLS 此刻一行都挡不住，即使所有路径都已包 scope。放在 pkg 而不是运维脚本里，
 // 是因为它同时是测试断言「这轮隔离验证是不是真的在非超级角色下跑的」的判据。
 func BypassedRole(ctx context.Context, db *gorm.DB) (bool, error) {
-	var bypass bool
-	err := db.WithContext(ctx).Raw(
-		"SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user").Scan(&bypass).Error
-	return bypass, err
+	// 走 ProbeIdentity 而不是自己再来一条 SQL：这条判据出现在测试夹具、启动探针与运维
+	// 脚本三处，各写一条迟早会漂移（例如有人只改了其中一条的 current_user 语义）。
+	identity, err := ProbeIdentity(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	return identity.BypassesRLS(), nil
 }
 
 // InProjectScope 在事务内设置工程作用域后执行 fn。
