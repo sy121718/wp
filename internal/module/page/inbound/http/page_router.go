@@ -107,6 +107,10 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 灾难恢复：按产物元数据重建丢失的产物文件 + 激活面巡检。
 	g.POST("/artifact/rebuild", permission.PageArtifactRebuild, handle.RebuildArtifact)
 	g.GET("/publication/audit", permission.PagePublicationAudit, handle.AuditPublication)
+	// 构建期 SEO 合规巡检（审计 SEO-01 前半段）：只读报告，URL / 规则 / 证据 / ArtifactHash。
+	// 与 /publication/audit（访问面悬空链接）是两件事：那条问「线上链得到文件吗」，
+	// 这条问「产物字节自己说的话前后一致吗」。
+	g.GET("/seo/patrol", permission.PageSEOPatrol, handle.SEOPatrol)
 	// 产物回收：默认 dryRun（只列候选），需显式传 dryRun=false 才实际删除。
 	g.POST("/artifact/gc", permission.PageArtifactGc, handle.GarbageCollectArtifacts)
 	// 保留期任务（IDX-004 / IDX-005）：历史快照收敛 + 产物 GC 定时化。

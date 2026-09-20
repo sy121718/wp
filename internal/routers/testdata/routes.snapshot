@@ -146,6 +146,7 @@ GET /api/page/list
 GET /api/page/publication/audit
 GET /api/page/redirect
 GET /api/page/revision/list
+GET /api/page/seo/patrol
 GET /api/page/site-slot/list
 GET /api/permission/detail
 GET /api/permission/list

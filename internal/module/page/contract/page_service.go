@@ -40,6 +40,13 @@ type (
 	StalePageResp      = pagedto.StalePageResp
 	StaleImpactSummary = pagedto.StaleImpactSummary
 
+	// SEO 合规巡检（审计 SEO-01 前半段）。
+	SEOPatrolReq      = pagedto.SEOPatrolReq
+	SEOPatrolResp     = pagedto.SEOPatrolResp
+	SEOArtifactItem   = pagedto.SEOArtifactItem
+	SEOFindingItem    = pagedto.SEOFindingItem
+	SEOUncheckedRoute = pagedto.SEOUncheckedRoute
+
 	// 重定向管理（审计 SEO-025）。
 	RedirectListReq       = pagedto.RedirectListReq
 	RedirectListResp      = pagedto.RedirectListResp
@@ -190,6 +197,13 @@ type PageService interface {
 	// 返回删除的历史快照行数（产物回收量在 GC 的响应里）。定时任务与后台手动触发共用
 	// 这一个入口 —— 保留期只在一处定义、在一处执行（IDX-004 / IDX-005 / IDX-019）。
 	PurgeRetention(ctx context.Context) (deletedRevisions int64, err error)
+	// SEOPatrol 站点 SEO 合规巡检（审计 SEO-01 前半段）：按激活清单逐份校验产物字节，
+	// 输出 URL / 规则 / 证据 / ArtifactHash 齐备的报告。
+	//
+	// 确定性：结论只依赖本地产物字节 + 站点语言表 + 路由表，不联网、不查第三方；
+	// 只读：不改产物、不改发布状态。它证明的是「产物内部自相矛盾吗」，
+	// 不是线上收录与排名 —— 后者要由站长平台数据回答。
+	SEOPatrol(ctx context.Context, req *pagedto.SEOPatrolReq) (res *pagedto.SEOPatrolResp, err error)
 	// AuditPublication 巡检激活面：返回全部悬空/异常链接。
 	// /site 直接服务文件系统，产物被误删时 DB 侧毫无察觉，本方法是唯一发现手段。
 	AuditPublication(ctx context.Context) (res *pagedto.PublicationAuditResp, err error)

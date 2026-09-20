@@ -402,6 +402,8 @@ const (
 	PageRevisionList Perm = "page:revision_list"
 	// 回滚页面（POST /api/page/rollback）
 	PageRollback Perm = "page:rollback"
+	// SEO 合规巡检（GET /api/page/seo/patrol）
+	PageSEOPatrol Perm = "page:seo_patrol"
 	// 绑定系统页面（POST /api/page/site-slot/bind）
 	PageSiteSlotBind Perm = "page:site_slot_bind"
 	// 系统页面槽位列表（GET /api/page/site-slot/list）
@@ -833,6 +835,7 @@ var specs = map[Perm]spec{
 	PageRedirectView:     {module: "page", name: "重定向列表"},
 	PageRevisionList:     {module: "page", name: "修订记录"},
 	PageRollback:         {module: "page", name: "回滚页面"},
+	PageSEOPatrol:        {module: "page", name: "SEO 合规巡检"},
 	PageSiteSlotBind:     {module: "page", name: "绑定系统页面"},
 	PageSiteSlotList:     {module: "page", name: "系统页面槽位列表"},
 	PageSiteSlotUnbind:   {module: "page", name: "解绑系统页面"},

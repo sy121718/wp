@@ -85,6 +85,13 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 		logger.Scene("build").With("pageId", page.ID).With("artifactID", artifactID).Error(err, "依赖记录/暂存指针写入失败")
 		return nil, err
 	}
+	// 构建期 SEO 合规校验（审计 SEO-01）：对**刚产出的字节**做确定性事实校验，
+	// 命中就记日志（URL / 规则 / 证据 / ArtifactHash），不改产物、不改发布结果 ——
+	// 边界与理由见 page_seo_patrol.go 的文件头。
+	//
+	// sitemap 收录按**当前激活状态**如实回答：构建 ≠ 上线，拿不到「已激活」这个事实时
+	// 不能替它假设（例如 noindex 页面只是被构建过、还没发布，就不该报「与 sitemap 冲突」）。
+	s.inspectBuiltArtifact(ctx, page.ProjectID, hash, path, lang, s.pathListedInSitemap(path))
 	logger.Scene("build").With("pageId", page.ID).With("hash", hash).Info("构建完成")
 	return &pagedto.PublishResp{
 		PageID: page.ID, Status: pipeline.StateReady,
@@ -179,6 +186,11 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 		stagedArt.ID = artifactID
 		stagedArt.ArtifactHash = refreshed
 		built = refreshed
+		// 这一份产物是发布路径上现构建的（没走 s.Build），因此单独校验一次。
+		// 与 Build 路径同一实现：同一份字节必得同一结论（确定性校验不变量）。
+		// 这里传 true 不是猜：紧接着的 publisher.Publish 就会把这个路径激活成线上路径，
+		// 而 sitemap 由激活路径生成 —— 「即将进 sitemap」在发布路径上是确定事实。
+		s.inspectBuiltArtifact(ctx, page.ProjectID, refreshed, path, lang, true)
 	}
 	// 发布前快照：本语言当前激活的产物（page_publications 为真源）。回执要如实记录
 	// 「从哪个产物切到哪个产物」，所以必须在切换之前读。

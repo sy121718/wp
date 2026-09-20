@@ -145,6 +145,22 @@ func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// SEOPatrol 站点 SEO 合规巡检（审计 SEO-01）：只读，按激活清单逐份校验产物字节，
+// 返回 URL / 规则 / 证据 / ArtifactHash 齐备的报告。
+func (h *Handle) SEOPatrol(c *gin.Context) {
+	var req pagedto.SEOPatrolReq
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.ParamError(c, pageenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.SEOPatrol(c.Request.Context(), &req)
+	if err != nil {
+		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+		return
+	}
+	response.Success(c, res)
+}
+
 // AuditPublication 巡检激活面：返回所有悬空/异常的激活链接。
 func (h *Handle) AuditPublication(c *gin.Context) {
 	res, err := h.svc.AuditPublication(c.Request.Context())
