@@ -103,12 +103,27 @@ func (m *Model) ListCategories(ctx context.Context, projectID, keyword string) (
 	return list, err
 }
 
-// ListCategoriesByIDs 批量取分类（商品引用校验与反查用，避免 N+1）。
-func (m *Model) ListCategoriesByIDs(ctx context.Context, ids []string) (list []*ProductCategoryEntity, err error) {
+// ListCategoriesByIDs 批量取分类（商品引用校验与反查用，避免 N+1），**必带工程作用域**。
+//
+// projectID 是**必填**的工程作用域（不是可选过滤条件）：product_categories 在迁移 215
+// 名单里，策略谓词读会话变量 app.project_id，而 WHERE id IN (...) 只是普通过滤 ——
+// 换连接角色后**没有作用域的查询会静默返回 0 行**（fail closed 不报错），
+// 调用方会把它读成「这些分类都不存在」。空串或非 uuid 会被 rls 直接拒掉
+// （rls.ErrInvalidProjectID），不退化成一个更难排查的形态。
+//
+// **绝不能退回 m.CategoryDB(ctx)**：那会另取一条连接、脱离事务，策略谓词读到的仍是
+// NULL，查询静默返回 0 行（与 ListByIDs / ListForCollection 同一条禁令）。
+//
+// 语义后果（审计 db-03 §2.5 要求补 scope 时已记录）：跨工程的 id 在这里「读不到」，
+// 校验路径上会从「工程不匹配」退化成「不存在」—— 可见性由策略决定，不由调用方的
+// row.ProjectID != projectID 判断决定，那一条现在是第二道防线而不是唯一防线。
+func (m *Model) ListCategoriesByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductCategoryEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.CategoryDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 

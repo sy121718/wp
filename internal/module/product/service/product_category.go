@@ -350,7 +350,7 @@ func (s *Service) validateCategoryIDs(ctx context.Context, projectID string, in 
 	if len(dedup) == 0 {
 		return out, nil
 	}
-	rows, lerr := s.m.ListCategoriesByIDs(ctx, dedup)
+	rows, lerr := s.m.ListCategoriesByIDs(ctx, dedup, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}

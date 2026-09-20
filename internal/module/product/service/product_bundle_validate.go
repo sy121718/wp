@@ -150,7 +150,7 @@ func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, var
 	if len(variantIDs) == 0 {
 		return out, nil
 	}
-	variants, verr := s.m.ListVariantsByIDs(ctx, variantIDs)
+	variants, verr := s.m.ListVariantsByIDs(ctx, variantIDs, projectID)
 	if verr != nil {
 		return nil, verr
 	}

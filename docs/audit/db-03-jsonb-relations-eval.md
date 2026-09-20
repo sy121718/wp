@@ -119,12 +119,33 @@
 - **但应用连接用的是超级用户**（实测 `current_user=root, rolsuper=t`）—— PostgreSQL 的超级用户
   一律绕过 RLS，策略当前挡不住任何一行（与 AGENTS.md 的 DB-009 记录一致）；
 - 直接后果：`ListCategoriesByIDs` / `ListTagsByIDs` / `ListBrandsByIDs` /
-  `ListAttributesByIDs` / `ListVariantsByIDs` **都没有包 `rls.InProjectScope`**
-  （`product_category_model.go:111`、`product_tag_model.go:124`、`product_brand_model.go:106`、
-  `product_attribute_model.go:129`、`product_model.go:566`）。
-  当前是「跨工程也读得到，靠 service 里的 `row.ProjectID != projectID` 判跨工程」；
+  `ListAttributesByIDs` / `ListVariantsByIDs` 当时**都没有包 `rls.InProjectScope`**
+  （评估时的行号：`product_category_model.go:111`、`product_tag_model.go:124`、
+  `product_brand_model.go:106`、`product_attribute_model.go:129`、`product_model.go:566`）。
+  当时是「跨工程也读得到，靠 service 里的 `row.ProjectID != projectID` 判跨工程」；
   一旦按 DB-009 换成非超级角色而这些方法仍未包 scope，它们会**静默返回 0 行**，
   「跨工程」错误会退化成「不存在」（`ErrCategoryNotFound` 之类）。**换角色的顺序必须先补 scope。**
+- **【DB-05 收口】上述五个方法已补 `rls.InProjectScope`**（`projectID` 为**必填形参**，
+  与 `ListByIDs` / `ListForCollection` 同形；24 处调用点只做「多传一个已有工程变量」的
+  机械透传，判定逻辑一行未改）。两条实测结论与原评估不同，按实测口径更正：
+  1. **`ListVariantsByIDs` 那条推演不成立**：`product_variants` 自身没有 `project_id` 列、
+     也不在迁移 215 的策略名单里（实测 `relrowsecurity=f`、`policies=0`），所以
+     「换角色后会静默 0 行」是错的 —— 真实的风险方向**相反**：跨工程的变体在这里**读得到**。
+     变体的跨工程拦截一直落在「按归属商品解析」那一步（`ListProductsByIDs(ctx, ids, projectID)`
+     读 `products`，那是有策略的表；bundle 的三条路径都这么做）。该方法仍然包了作用域，
+     理由是「将来给 `product_variants` 加策略时不至于突然退化成静默 0 行」，
+     现状由测试钉住（见下）。
+  2. **跨工程错误确实退化成「不存在」**：作用域下他工程的行不可见，校验路径上的
+     `ErrCategoryProjectMismatch` 一类不再触发（`row.ProjectID != projectID` 成了第二道防线），
+     行为是**仍拒绝、但提示从「工程不匹配」变成「不存在」**，可定位性下降。
+     这是换角色的既定代价（本文件 §5.2 一行就是为此写的），**不接受为了保住原文案而绕开作用域**。
+- **实测护栏**：`public/test/rls/nonsuperuser/`（真实 `NOSUPERUSER NOBYPASSRLS` 登录角色的
+  第二条连接，不是 `SET ROLE`）。`nonsuperuser_test.go` 断言 fail closed / 只见本工程 /
+  WITH CHECK 拒跨工程写 / `EnsureAhead` 新分区子表覆盖 / **每张带 `project_id` 的表
+  ENABLE+FORCE+策略谓词读 `app.project_id` 的 catalog 全扫**（唯一豁免 `build_jobs`，
+  理由写在测试里）；`product_byids_scope_test.go` 断言上面五个方法的
+  「同一批 id 一起传、作用域 A 只拿得到 A」以及`ListVariantsByIDs` 的现状（含空串被
+  `rls.ErrInvalidProjectID` 显式拒）。
 
 ---
 
@@ -350,7 +371,7 @@ artifact / snapshot 父子关系上（`init_builder_schema.sql:227,261-262,286-2
 | 处置口径 | 「保留并标记」「人工确认后解绑」「加约束但豁免历史行」是三种不同的产品决策，代码不能替人决定 |
 | 若要做方案 C：历史行的处理 | 复合 FK 建约束时会**校验全表**，存在跨工程行则迁移失败。必须先把这些行处理掉（解绑并留痕）或明确放弃约束 |
 | 若要做方案 D：回滚与双写窗口 | 数据搬迁不可逆，需要明确「双写多久、怎么判定可以停」 |
-| RLS 换连接角色的顺序 | 先补 `ListXxxByIDs` 的 scope，再换角色；顺序反了会让校验静默退化成「不存在」（见 §2.5） |
+| RLS 换连接角色的顺序 | 先补 `ListXxxByIDs` 的 scope，再换角色；顺序反了会让校验静默退化成「不存在」（见 §2.5）。**商品域这五个方法已由 DB-05 补上**，全库仍有其它路径未接（换角色前仍需按 DB-009 逐模块确认） |
 
 ### 5.3 明确不做
 
@@ -378,8 +399,12 @@ artifact / snapshot 父子关系上（`init_builder_schema.sql:227,261-262,286-2
    不能证明历史上没有过不带校验的写入窗口（`related_ids` 至今仍可写任意 UUID）。
 5. **复合 FK 对删除路径的实际开销未测量**：只验证了正确性与语法（§3.4），
    没有测「批量删除被引用实体」时的额外索引查找成本。
-6. **RLS 换角色后的行为推演未经实测**：§2.5 关于「未包 scope 的 `ListXxxByIDs` 会返回 0 行」
-   是从策略谓词（fail closed）与连接角色（当前为超级用户）推导的，未在非超级角色下验证。
+6. ~~**RLS 换角色后的行为推演未经实测**~~ **（DB-05 已实测，结论不完全成立）**：
+   §2.5 关于「未包 scope 的 `ListXxxByIDs` 会返回 0 行」的推演，在**有策略的表**上成立
+   （实测把 `ListCategoriesByIDs` 退回裸句柄形态 ⇒ 非超级角色下 0 行 ⇒ 新护栏转红），
+   但在 `ListVariantsByIDs` 上**不成立** —— `product_variants` 没有策略，
+   换角色后它仍然读得到跨工程的变体（风险方向与推演相反）。两处都由
+   `public/test/rls/nonsuperuser/` 的断言固定下来。
 7. **本评估没有覆盖库存域 / 内容域的同类问题**：§2.3 已看到 `inventory_stocks.product_id`、
    `inventory_purchase_order_lines.product_id/variant_id`、
    `inventory_bom_items.parent_variant_id/component_variant_id` 同属「child 与 parent 都有

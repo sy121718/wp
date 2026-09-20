@@ -282,7 +282,7 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 		for _, o := range out.Options {
 			ids = append(ids, o.VariantID)
 		}
-		variants, lerr := s.m.ListVariantsByIDs(ctx, ids)
+		variants, lerr := s.m.ListVariantsByIDs(ctx, ids, product.ProjectID)
 		if lerr != nil {
 			return out, lerr
 		}
@@ -384,7 +384,7 @@ func (s *Service) bundleConfigResp(ctx context.Context, e *productmodel.ProductE
 	for _, o := range cfg.Options {
 		ids = append(ids, o.VariantID)
 	}
-	variants, verr := s.m.ListVariantsByIDs(ctx, ids)
+	variants, verr := s.m.ListVariantsByIDs(ctx, ids, e.ProjectID)
 	if verr != nil {
 		return nil, verr
 	}
@@ -622,7 +622,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 		if serr != nil {
 			return nil, serr
 		}
-		attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(src.AttributeIDs))
+		attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(src.AttributeIDs), projectID)
 		if aerr != nil {
 			return nil, aerr
 		}

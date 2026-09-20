@@ -559,11 +559,26 @@ func (m *Model) ListVariantsByProducts(ctx context.Context, productIDs []string)
 //
 // 返回值只有命中的行：调用方按「请求了哪些 id」与「拿到了哪些」做差集，
 // 缺的那些就是「SKU 已被删除」——那是业务判断，留在 service。
-func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string) (list []*VariantEntity, err error) {
+//
+// projectID 是**必填**的工程作用域，但要如实说明它对当下的作用边界：
+// product_variants 自身没有 project_id 列，**也不在迁移 215 的策略名单里**（实测
+// relrowsecurity=f、policies=0），所以这条作用域**当前不对本表构成过滤** ——
+// 变体的跨工程可见性是由调用方解析归属商品兜底的（ListProductsByIDs(ctx, ids, projectID)
+// 读的是 products，那是有策略的表；bundle 的三条路径就是这么做的）。
+// 仍然包作用域的两个理由：① 与同批读方法保持同一形状，避免换连接角色后出现
+// 「有的方法静默 0 行、有的不会」这种难以推理的差异；② 将来给 product_variants
+// 加策略时，这里不会突然退化成静默 0 行（那正是审计 db-03 §2.5 描述的失效形态）。
+// 空串或非 uuid 由 rls 直接拒（rls.ErrInvalidProjectID）。
+//
+// public/test/rls/nonsuperuser 里有一条断言钉住这个现状：作用域 A 下拿两个工程的
+// 变体 id 会**都读得到**，真正的隔离发生在归属商品那一步。
+func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string, projectID string) (list []*VariantEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.VariantDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&VariantEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 

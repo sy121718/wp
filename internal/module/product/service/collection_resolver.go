@@ -93,12 +93,12 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 	for _, v := range variants {
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
 	}
-	attrs, err := s.m.ListAttributesByIDs(ctx, attrIDs)
+	attrs, err := s.m.ListAttributesByIDs(ctx, attrIDs, f.ProjectID)
 	if err != nil {
 		return nil, 0, err
 	}
 	// 分类 / 品牌 / 标签一次取好（issue #12：展示名要取译文，逐个商品查会变成 N 次）。
-	categoryIndex, brandIndex, tagIndex, ierr := s.taxonomyIndex(ctx, rows)
+	categoryIndex, brandIndex, tagIndex, ierr := s.taxonomyIndex(ctx, f.ProjectID, rows)
 	if ierr != nil {
 		return nil, 0, ierr
 	}
@@ -161,7 +161,12 @@ func (s *Service) ResolveCollectionPage(ctx context.Context, source string, q co
 }
 
 // taxonomyIndex 一次取回该批商品引用的分类 / 品牌 / 标签（列表页专用，零 N+1）。
-func (s *Service) taxonomyIndex(ctx context.Context, rows []*productmodel.ProductEntity) (categories map[string]*productmodel.ProductCategoryEntity, brands map[string]*productmodel.ProductBrandEntity, tags map[string]*productmodel.ProductTagEntity, err error) {
+//
+// projectID 由调用方给出（集合源的过滤条件）：三张表都在迁移 215 名单里，
+// 缺作用域时换非超级角色后分类 / 品牌 / 标签整批读空 —— 列表卡的展示名会全部消失
+// （审计 db-03 §2.5）。这里不自己从 rows 推断工程：作用域必须是**取数时用的那个**，
+// rows 是它的结果，从结果反推会让「读错了工程」这件事看起来仍然成立。
+func (s *Service) taxonomyIndex(ctx context.Context, projectID string, rows []*productmodel.ProductEntity) (categories map[string]*productmodel.ProductCategoryEntity, brands map[string]*productmodel.ProductBrandEntity, tags map[string]*productmodel.ProductTagEntity, err error) {
 	categoryIDs, brandIDs, tagIDs := []string{}, []string{}, []string{}
 	seenCategory, seenBrand, seenTag := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, r := range rows {
@@ -184,7 +189,7 @@ func (s *Service) taxonomyIndex(ctx context.Context, rows []*productmodel.Produc
 	}
 	categories, brands, tags = map[string]*productmodel.ProductCategoryEntity{}, map[string]*productmodel.ProductBrandEntity{}, map[string]*productmodel.ProductTagEntity{}
 	if len(categoryIDs) > 0 {
-		categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, categoryIDs)
+		categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, categoryIDs, projectID)
 		if cerr != nil {
 			return nil, nil, nil, cerr
 		}
@@ -193,7 +198,7 @@ func (s *Service) taxonomyIndex(ctx context.Context, rows []*productmodel.Produc
 		}
 	}
 	if len(brandIDs) > 0 {
-		brandRows, berr := s.m.ListBrandsByIDs(ctx, brandIDs)
+		brandRows, berr := s.m.ListBrandsByIDs(ctx, brandIDs, projectID)
 		if berr != nil {
 			return nil, nil, nil, berr
 		}
@@ -202,7 +207,7 @@ func (s *Service) taxonomyIndex(ctx context.Context, rows []*productmodel.Produc
 		}
 	}
 	if len(tagIDs) > 0 {
-		tagRows, terr := s.m.ListTagsByIDs(ctx, tagIDs)
+		tagRows, terr := s.m.ListTagsByIDs(ctx, tagIDs, projectID)
 		if terr != nil {
 			return nil, nil, nil, terr
 		}

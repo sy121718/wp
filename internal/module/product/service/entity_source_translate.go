@@ -235,7 +235,7 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 	}
 
 	if ids := decodeStrings(e.CategoryIDs); len(ids) > 0 {
-		rows, cerr := s.m.ListCategoriesByIDs(ctx, ids)
+		rows, cerr := s.m.ListCategoriesByIDs(ctx, ids, e.ProjectID)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -249,7 +249,7 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 		}
 	}
 	if ids := decodeStrings(e.TagIDs); len(ids) > 0 {
-		rows, terr := s.m.ListTagsByIDs(ctx, ids)
+		rows, terr := s.m.ListTagsByIDs(ctx, ids, e.ProjectID)
 		if terr != nil {
 			return nil, terr
 		}
@@ -257,7 +257,7 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 			loc.tags[row.ID] = row
 		}
 	}
-	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs))
+	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs), e.ProjectID)
 	if aerr != nil {
 		return nil, aerr
 	}

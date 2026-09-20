@@ -23,7 +23,7 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, pro
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	variants, err := s.m.ListVariantsByIDs(ctx, ids)
+	variants, err := s.m.ListVariantsByIDs(ctx, ids, projectID)
 	if err != nil {
 		return nil, err
 	}

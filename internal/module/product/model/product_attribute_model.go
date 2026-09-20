@@ -121,12 +121,19 @@ func (m *Model) CountAttributes(ctx context.Context, projectID, keyword string, 
 	return n, err
 }
 
-// ListAttributesByIDs 批量取属性组（商品引用校验与构建期批量解析用，避免 N+1）。
-func (m *Model) ListAttributesByIDs(ctx context.Context, ids []string) (list []*ProductAttributeEntity, err error) {
+// ListAttributesByIDs 批量取属性组（商品引用校验与构建期批量解析用，避免 N+1），
+// **必带工程作用域**。
+//
+// product_attributes 在迁移 215 名单里：缺作用域时换连接角色后属性组整批读空，
+// 变体生成的维度归一与商品详情的内联属性都会静默退化成「没有属性」
+// （审计 db-03 §2.5）。projectID 必填，空串由 rls 直接拒。
+func (m *Model) ListAttributesByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductAttributeEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.AttributeDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductAttributeEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 

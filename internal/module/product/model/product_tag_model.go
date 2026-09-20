@@ -120,12 +120,18 @@ func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string) (
 	return list, err
 }
 
-// ListTagsByIDs 批量取标签（商品引用校验用，避免 N+1）。
-func (m *Model) ListTagsByIDs(ctx context.Context, ids []string) (list []*ProductTagEntity, err error) {
+// ListTagsByIDs 批量取标签（商品引用校验用，避免 N+1），**必带工程作用域**。
+//
+// 与 ListCategoriesByIDs 同形：product_tags 在迁移 215 名单里，缺作用域时换连接角色后
+// 静默 0 行，标签引用会被误判成「标签不存在」（审计 db-03 §2.5）。
+// projectID 必填，空串由 rls 直接拒（ErrInvalidProjectID）。
+func (m *Model) ListTagsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductTagEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.TagDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductTagEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 

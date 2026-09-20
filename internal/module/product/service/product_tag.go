@@ -489,7 +489,7 @@ func (s *Service) resolveTagIDs(ctx context.Context, projectID string, in []stri
 	if len(dedup) == 0 {
 		return out, nil
 	}
-	rows, lerr := s.m.ListTagsByIDs(ctx, dedup)
+	rows, lerr := s.m.ListTagsByIDs(ctx, dedup, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}

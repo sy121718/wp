@@ -18,7 +18,9 @@ import (
 // products.attribute_ids 只存 id：多个商品可引用同一个属性组，定义只存一份。
 // 这里按 id 去重后一次性取回，再按商品拆分；引用已失效（组被删）时跳过，
 // 不让列表因为一条悬空引用整体失败。
-func (s *Service) attributeRespByProduct(ctx context.Context, products []*productmodel.ProductEntity) (out map[string][]*productdto.AttributeResp, err error) {
+// projectID 由调用方给出：products 是某一个工程下取回来的行（读路径 / 列表装配），
+// 属性组同样走工程作用域（product_attributes 在迁移 215 名单里）。
+func (s *Service) attributeRespByProduct(ctx context.Context, projectID string, products []*productmodel.ProductEntity) (out map[string][]*productdto.AttributeResp, err error) {
 	out = map[string][]*productdto.AttributeResp{}
 	idSet := map[string]bool{}
 	for _, p := range products {
@@ -33,7 +35,7 @@ func (s *Service) attributeRespByProduct(ctx context.Context, products []*produc
 	for id := range idSet {
 		ids = append(ids, id)
 	}
-	rows, lerr := s.m.ListAttributesByIDs(ctx, ids)
+	rows, lerr := s.m.ListAttributesByIDs(ctx, ids, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -103,7 +105,7 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	// 后台列表页逐商品取详情时就不必再单独打一次库存接口。
 	s.fillProductStock(ctx, resp.ProjectID, []*productdto.ProductResp{resp})
 	// 引用到的属性组（组 + 值），供后台与详情页直接渲染规格选择器。
-	if groups, aerr := s.attributeRespByProduct(ctx, []*productmodel.ProductEntity{e}); aerr != nil {
+	if groups, aerr := s.attributeRespByProduct(ctx, e.ProjectID, []*productmodel.ProductEntity{e}); aerr != nil {
 		return nil, aerr
 	} else {
 		resp.Attributes = groups[e.ID]
@@ -228,7 +230,7 @@ func warehouseStockRows(rows []inventorydto.ProductWarehouseStock) []*productdto
 func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp, e *productmodel.ProductEntity) (err error) {
 	ids := decodeStrings(e.CategoryIDs)
 	if len(ids) > 0 {
-		rows, cerr := s.m.ListCategoriesByIDs(ctx, ids)
+		rows, cerr := s.m.ListCategoriesByIDs(ctx, ids, e.ProjectID)
 		if cerr != nil {
 			return cerr
 		}
@@ -249,7 +251,7 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 	}
 	tagIDs := decodeStrings(e.TagIDs)
 	if len(tagIDs) > 0 {
-		rows, terr := s.m.ListTagsByIDs(ctx, tagIDs)
+		rows, terr := s.m.ListTagsByIDs(ctx, tagIDs, e.ProjectID)
 		if terr != nil {
 			return terr
 		}

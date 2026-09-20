@@ -72,7 +72,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 	}
 	list = append(list, productTextCandidates(e)...)
 
-	categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, decodeStrings(e.CategoryIDs))
+	categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, decodeStrings(e.CategoryIDs), e.ProjectID)
 	if cerr != nil {
 		return nil, cerr
 	}
@@ -86,7 +86,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 				map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 		}
 	}
-	tagRows, terr := s.m.ListTagsByIDs(ctx, decodeStrings(e.TagIDs))
+	tagRows, terr := s.m.ListTagsByIDs(ctx, decodeStrings(e.TagIDs), e.ProjectID)
 	if terr != nil {
 		return nil, terr
 	}
@@ -94,7 +94,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 		list = append(list, entityTextCandidates(productcontract.EntityTypeTag, row.ID, row.Name,
 			map[string]string{"name": row.Name})...)
 	}
-	attrRows, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs))
+	attrRows, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs), e.ProjectID)
 	if aerr != nil {
 		return nil, aerr
 	}

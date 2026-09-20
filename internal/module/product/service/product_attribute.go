@@ -278,7 +278,7 @@ func (s *Service) resolveAttributeIDs(ctx context.Context, projectID string, ids
 		seen[id] = true
 		dedup = append(dedup, id)
 	}
-	rows, lerr := s.m.ListAttributesByIDs(ctx, dedup)
+	rows, lerr := s.m.ListAttributesByIDs(ctx, dedup, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}

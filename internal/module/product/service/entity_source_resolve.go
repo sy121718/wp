@@ -104,7 +104,10 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	if verr != nil {
 		return nil, verr
 	}
-	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs))
+	// 作用域取行自己的工程：本方法整体是 DB-009 的显式无作用域例外（ResolverFor 早于
+	// Compile，ctx 里还没有工程 id），但**这一处**读的是 e 自己引用的属性组，工程是已知的 ——
+	// 用 e.ProjectID 而不是继续裸读，换非超级角色后这里不再额外多一处静默 0 行。
+	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs), e.ProjectID)
 	if aerr != nil {
 		return nil, aerr
 	}

@@ -70,7 +70,7 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
-	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs))
+	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs), projectID)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -582,7 +582,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
-	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs))
+	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs), projectID)
 	if aerr != nil {
 		return nil, aerr
 	}
@@ -665,7 +665,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 	if gerr != nil {
 		return nil, mapNotFound(gerr)
 	}
-	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs))
+	attrs, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(p.AttributeIDs), projectID)
 	if aerr != nil {
 		return nil, aerr
 	}

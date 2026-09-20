@@ -98,12 +98,19 @@ func (m *Model) ListBrands(ctx context.Context, projectID, keyword string) (list
 	return list, err
 }
 
-// ListBrandsByIDs 按 id 批量取品牌（集合源/构建期一次取好，零 N+1；顺序由调用方定）。
-func (m *Model) ListBrandsByIDs(ctx context.Context, ids []string) (list []*ProductBrandEntity, err error) {
+// ListBrandsByIDs 按 id 批量取品牌（集合源/构建期一次取好，零 N+1；顺序由调用方定），
+// **必带工程作用域**。
+//
+// 唯一调用方是集合源的 taxonomyIndex，工程取自过滤条件（f.ProjectID）；
+// product_brands 在迁移 215 名单里，缺作用域时换非超级角色后品牌名整列为空
+// （静默 0 行，审计 db-03 §2.5）。projectID 必填，空串由 rls 直接拒。
+func (m *Model) ListBrandsByIDs(ctx context.Context, ids []string, projectID string) (list []*ProductBrandEntity, err error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	err = m.BrandDB(ctx).Where("id IN ?", ids).Find(&list).Error
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Where("id IN ?", ids).Find(&list).Error
+	})
 	return list, err
 }
 

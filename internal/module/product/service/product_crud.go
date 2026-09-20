@@ -523,7 +523,7 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
 	}
 	// 属性组按 id 全局去重后批量取一次：多个商品引用同一组时只查一次（复用语义）。
-	attrs, err := s.attributeRespByProduct(ctx, rows)
+	attrs, err := s.attributeRespByProduct(ctx, req.ProjectID, rows)
 	if err != nil {
 		return nil, err
 	}
