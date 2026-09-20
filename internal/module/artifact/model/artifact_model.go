@@ -5,6 +5,7 @@ package artifactmodel
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -235,15 +236,32 @@ const (
 	PayloadStateDeleted = "deleted"
 )
 
-// ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
-// 可用产物」的页面 ID（去重、字典序，确定性输出）。
+// ListStalePageIDs 在**调用方给定的当前产物集合**内挑出 registry_version 与 current
+// 不同的产物，返回它们所属的页面 ID（去重、字典序，确定性输出）。
 //
 // 用途：部署新组件后的全站待重建识别 —— 组件是编译进二进制的，没有运行时事件
 // 能提示「已有产物由旧组件产出」，只能靠产物元数据里的版本号比对。
-// 只统计 payload_state='available' 的行：已标记回收的产物不构成重建理由。
-func (m *Model) ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
+//
+// 为什么由调用方给集合，而不是在这里自己扫：判据是「各语言 active/staged 指向的产物」，
+// 而那些指针在 page 模块的语言账本（page_publications / page_stagings）里。artifact 只知道
+// 「某一行产物是哪个版本产出的」，回答不了「哪一行算当前产物」。旧实现直接扫全部
+// payload_state='available' 行，等于把未 GC 的历史回滚产物也当成当前产物：页面重建之后，
+// 只要旧产物还在磁盘上，每次重启都会把已经重建过的页面重新标成 stale（报告 ARCH-03）。
+//
+// 仍保留 payload_state='available' 条件（与旧实现同口径）：已标记回收的行不构成重建理由。
+// 入参 id 一律来自账本指针，正常情况下不会命中回收态，这一个条件是幂等兜底。
+//
+// id = ANY(string_to_array(?, ',')::uuid[]) 而不是 gorm 的 id IN ?：组件升级时入参可能上万
+// （全站各语言的 active/staged 产物），IN ? 会展开成同数量的绑定参数、逼近 PostgreSQL 的
+// 65535 上限（超限直接报错，结果是「组件更新后一个页面都标不上」）；ANY(数组) 只占一个参数，
+// 且仍是单条语句（原子性与 IN ? 相同）。改法与理由与 page_model.go 的 MarkStaleByIDs 一致。
+func (m *Model) ListStalePageIDs(ctx context.Context, current string, artifactIDs []string) (ids []string, err error) {
+	if len(artifactIDs) == 0 {
+		return nil, nil
+	}
 	err = m.DB(ctx).
-		Where("payload_state = ? AND registry_version <> ?", PayloadStateAvailable, current).
+		Where("payload_state = ? AND registry_version <> ? AND id = ANY(string_to_array(?, ',')::uuid[])",
+			PayloadStateAvailable, current, strings.Join(artifactIDs, ",")).
 		Distinct().Order("page_id").Pluck("page_id", &ids).Error
 	return ids, err
 }

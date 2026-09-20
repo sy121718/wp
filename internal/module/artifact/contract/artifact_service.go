@@ -41,11 +41,16 @@ type ArtifactService interface {
 	Detail(ctx context.Context, req *artifactdto.DetailReq) (res *artifactdto.ArtifactResp, err error)
 	// DetailByID 按产物行 ID 查询产物元数据。
 	DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq) (res *artifactdto.ArtifactResp, err error)
-	// ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
-	// 可用产物」的页面 ID（去重、字典序）。
+	// ListStalePageIDs 在**调用方给定的当前产物集合**内挑出 registry_version 与
+	// current 不同的产物，返回它们所属的页面 ID（去重、字典序）。
 	// 用途：部署新组件后的全站待重建识别 —— 组件编译进二进制，没有运行时事件能
 	// 提示「已有产物由旧组件产出」，只能靠产物元数据里的版本号比对。
-	ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error)
+	//
+	// 为什么集合由调用方给：「当前产物」是来源模块的语言账本事实
+	// （page_publications / page_stagings 里 active/staged 指向的行），artifact
+	// 只知道每行的版本指纹。旧签名（本方法此前不接受集合）扫全部 available 行，
+	// 会把未 GC 的历史回滚产物也算成当前产物，导致重建后每次重启反复误标。
+	ListStalePageIDs(ctx context.Context, current string, artifactIDs []string) (ids []string, err error)
 	// ListGCCandidates 列出可回收候选：payload_state=available、早于 before、
 	// 且不在 excludeIDs（保护集合）内。
 	// excludeIDs 为空表示调用方无法确定保护集合 —— 此时返回空列表（宁可不回收也不误删）。

@@ -182,16 +182,21 @@ func (s *Service) DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq
 	return toResp(entity), nil
 }
 
-// ListPageIDsByOtherRegistryVersion 返回「存在 registry_version 与 current 不同的
-// 可用产物」的页面 ID。
+// ListStalePageIDs 在调用方给定的「当前产物」集合内挑出 registry_version 与 current
+// 不同的产物，返回它们所属的页面 ID。
+//
+// 集合由调用方（page 模块）从自己的语言账本（page_publications / page_stagings）里选出 ——
+// 「哪一行算当前产物」是 page 的领域事实，artifact 只回答「这一行是哪个版本产出的」。
+// 详见 model 侧同名方法的注释（旧实现扫全部 available 行会把未 GC 的历史产物算进来）。
 //
 // current 为空表示调用方无法确定当前版本（例如二进制无 VCS 信息）：此时返回空列表，
 // 宁可不标记也不误标记全站（避免每次启动都触发全量重建）。
-func (s *Service) ListPageIDsByOtherRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
-	if strings.TrimSpace(current) == "" {
+// artifactIDs 为空（该站没有任何 active/staged 产物）同样返回空列表。
+func (s *Service) ListStalePageIDs(ctx context.Context, current string, artifactIDs []string) (ids []string, err error) {
+	if strings.TrimSpace(current) == "" || len(artifactIDs) == 0 {
 		return nil, nil
 	}
-	return s.model.ListPageIDsByOtherRegistryVersion(ctx, current)
+	return s.model.ListStalePageIDs(ctx, current, artifactIDs)
 }
 
 func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artifactmodel.PageArtifactEntity, exists bool, err error) {

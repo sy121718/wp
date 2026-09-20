@@ -71,6 +71,85 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 	return ids, nil
 }
 
+// MarkStaleByRegistryVersion 把「**当前产物**由旧组件产出」的自动发布实例标记为待重建。
+//
+// 这是手工 Page 侧 MarkStaleByRegistryVersion 的对等入口（报告 ARCH-03）：实例的产物行
+// 同样保存 registry_version（presentation_persist.go 写的是 builder.RegistryVersion()），
+// 但此前没有任何启动期收敛 —— 组件升级后详情页一直是旧组件渲染的字节，
+// 后台看不到 stale、日志里也没有任何提示（因为保存版本号本身不会触发任何比对）。
+//
+// 判据与 page 侧逐字一致：先由本模块从**语言账本**（presentation_publications 里
+// active 指向的行，见 model.ListCurrentArtifactIDs）选出各语言当前产物，再按版本比对；
+// 历史产物行不参与判定。
+//
+// 只标记、不重建（与 page 侧同一取舍）：启动时全量重建会拖住启动链。重建由运维经
+// RebuildStale 触发，或由后续的 Rebuild/依赖失效自然覆盖 —— 那两条路径都按 stale 收敛。
+//
+// current 为空（二进制无 VCS 信息等）时不做任何标记；没有任何账本行时同样直接返回。
+// 逐工程扇出（DB-009 第二批）：presentation_instances 带 FORCE 策略，无作用域的 UPDATE
+// 在换非超级角色后静默 0 行 —— 「标了」与「没标」在日志上会一模一样。
+func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error) {
+	if strings.TrimSpace(current) == "" {
+		return nil, nil
+	}
+	if s.project == nil {
+		return nil, errors.New(presentationenums.ErrProjectRequired)
+	}
+	currentArtifactIDs, err := s.m.ListCurrentArtifactIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stale, err := s.m.ListStaleInstanceIDsByRegistryVersion(ctx, current, currentArtifactIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(stale) == 0 {
+		return nil, nil
+	}
+	projects, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	at := time.Now().UTC()
+	seen := make(map[string]bool, len(stale))
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		// 每个工程只提交本工程的 id：实例 id 全局唯一，但本工程之外的 id 会被
+		// project_id 条件与策略双重拦下（与 page 侧同一扇出手法）。
+		hit, merr := s.m.MarkStaleByIDs(ctx, p.ID, stale, at)
+		if merr != nil {
+			return nil, merr
+		}
+		for _, id := range hit {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	logger.Scene("presentation").With("count", len(ids)).With("registryVersion", current).
+		With("sample", sampleInstanceIDs(ids)).
+		Info("组件注册表版本变化：相关自动发布实例已标记待重建")
+	return ids, nil
+}
+
+// registryImpactSampleLimit 影响面日志里最多列出的实例 id 数。
+//
+// 与 page 侧影响面样本同一取舍：组件一换往往是一批实例一起过期，只报条数时运维无法
+// 判断「是不是我关心的那个商品详情页」，全列出来又会把日志撑爆 —— 取前 K 个可定位的 id。
+const registryImpactSampleLimit = 10
+
+// sampleInstanceIDs 取影响面样本（不超过 registryImpactSampleLimit 个）。
+func sampleInstanceIDs(ids []string) []string {
+	if len(ids) <= registryImpactSampleLimit {
+		return ids
+	}
+	return ids[:registryImpactSampleLimit]
+}
+
 // SetBuildQueue 注入自动重建入队端口（装配期调用；PERF-020）。
 //
 // 注入后 RebuildStale 改为全量入队：重建由构建队列的消费 worker 执行

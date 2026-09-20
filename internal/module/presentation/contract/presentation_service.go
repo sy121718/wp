@@ -39,6 +39,15 @@ type PresentationService interface {
 	SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error)
 	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
 	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)
+	// MarkStaleByRegistryVersion 把「当前产物由旧组件产出」的自动发布实例标记为待重建，
+	// 返回本次真正命中的实例 id（RETURNING 回读，不是入参回显）。
+	//
+	// 与手工 Page 契约里的同名方法同义（对等入口）：组件是编译进二进制的，
+	// 部署后没有运行时事件能提示「已有产物过期」，只能由启动期拿产物元数据里的
+	// registry_version 指纹与当前 builder.RegistryVersion 比对。
+	// 判据是**语言账本**（presentation_publications）当前指向的产物，历史产物行不参与；
+	// current 为空（无 VCS 信息）时不标记，宁可不标也不全站误标。
+	MarkStaleByRegistryVersion(ctx context.Context, current string) (ids []string, err error)
 	// MarkStaleForI18n 把各工程内的全部自动发布实例标记为待重建：文案词条（sys_i18n）
 	// 与内容译文（sys_translation）都由构建期取词注入 HTML 字节，一变就过期；
 	// 触发源是后台翻译页/运维脚本（它们没有工程上下文，故由 service 逐工程扇出）。

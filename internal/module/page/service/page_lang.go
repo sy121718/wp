@@ -206,11 +206,17 @@ func (s *Service) localizeMenuURL(ctx context.Context, projectID, lang, raw stri
 	return pipeline.LocalizeMenuURL(ctx, s.project, projectID, lang, raw)
 }
 
-// MarkStaleByRegistryVersion 把「产物由旧组件产出」的页面标记为待重建。
+// MarkStaleByRegistryVersion 把「**当前产物**由旧组件产出」的页面标记为待重建。
 //
 // 触发时机：服务启动时。组件是编译进二进制的（Go 实现 + embed 模板），部署新组件后
 // 没有任何运行时事件能通知内核「已有产物过期」—— 只能靠产物元数据里的
 // registry_version 指纹（builder.RegistryVersion）与本进程当前值比对。
+//
+// 判据（报告 ARCH-03 的整改核心）：先由本模块从**语言账本**（page_publications /
+// page_stagings 里 active/staged 指向的行，即 ListCurrentArtifactIDs）选出各语言当前产物，
+// 再经 artifact 契约按版本比对。历史回滚产物不参与判定 —— 旧实现直接把「全部
+// payload_state='available' 的行」交给 artifact 比对，未 GC 的旧产物因此每次重启都会
+// 把已经重建过的页面重新标成 stale（失败包不同、却永远收敛不了）。
 //
 // 只标记、不重建：重建交给运维经 RebuildStale 触发，或由后续的编辑/发布自然覆盖。
 // 启动时全量构建会拖住启动链，且对「只想先看一眼」的部署是意外副作用。
@@ -226,7 +232,11 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 	if strings.TrimSpace(current) == "" || s.artifacts == nil {
 		return nil, nil
 	}
-	ids, err = s.artifacts.ListPageIDsByOtherRegistryVersion(ctx, current)
+	currentArtifactIDs, err := s.model.ListCurrentArtifactIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids, err = s.artifacts.ListStalePageIDs(ctx, current, currentArtifactIDs)
 	if err != nil {
 		return nil, err
 	}

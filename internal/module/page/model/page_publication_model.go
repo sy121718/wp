@@ -207,6 +207,36 @@ func (m *Model) DeleteStagings(ctx context.Context, pageID string) (err error) {
 		Delete(&StagingEntity{}).Error
 }
 
+// ListCurrentArtifactIDs 返回本模块语言账本里「当前」指向的产物行 ID（去重、输出稳定）。
+//
+// 「当前产物」= 各语言 active/staged 指针指向的行：
+//   - page_publications.artifact_id（每语言激活真源）
+//   - page_stagings.artifact_id（每语言暂存指针）
+//
+// 供组件升级后的待重建识别使用（见 Service.MarkStaleByRegistryVersion）：判据必须是
+// 「现在真正在服务的产物」，而不是 page_artifacts 里所有 payload_state='available' 的行 ——
+// 后者含未 GC 的历史回滚产物，拿它比对版本会让「已重建的页面」在每次重启时被重新标成
+// stale（报告 ARCH-03）。
+//
+// 刻意**不**并入 pages.active_artifact_id / staged_artifact_id：那两列是「最近发布/构建语言」
+// 的单值镜像（见 MarkPublishedLang / MarkStagedLang 的注释），并入只会把镜像滞后或残留的
+// 旧指针重新变成误标来源 —— 与本次收口的目的一致，语言账本才是真源。
+//
+// 存量覆盖：迁移 062 已把 pages.active_artifact_id 回填成 page_publications 行，激活侧无缺口；
+// 063 未回填 page_stagings，但暂存指针由每次 Build 重写，且「只有暂存、从未发布」的页面本来
+// 就不在线上服务 —— 这一小段存量不参与判定是安全的。
+//
+// UNION 自带去重；两张表都没有 project_id（不在迁移 215 的清单里），无需工程作用域。
+func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err error) {
+	ids = []string{}
+	err = m.db.WithContext(ctx).Raw(`
+		SELECT artifact_id::text FROM page_publications WHERE artifact_id IS NOT NULL
+		UNION
+		SELECT artifact_id::text FROM page_stagings
+	`).Scan(&ids).Error
+	return ids, err
+}
+
 // ListProtectedArtifactIDs 返回「当前仍被引用、绝不可回收」的产物行 ID 集合。
 //
 // 集合来源（任一命中即保护）：

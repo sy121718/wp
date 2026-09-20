@@ -417,6 +417,17 @@ func (a *assembly) startRuntimeTasks() {
 		logger.Scene("init").With("count", len(marked)).With("registryVersion", builder.RegistryVersion()).
 			Info("检测到组件已更新：相关页面已标记待重建（可经 RebuildStale 重建）")
 	}
+	// 自动发布实例的同一条启动收敛（报告 ARCH-03）：它同样保存 registry_version，
+	// 但此前没有任何入口据此比对 —— 组件升级后商品详情页一直是旧字节，后台看不到 stale、
+	// 日志里也没有提示（保存版本号本身不触发任何判定）。判据与上面逐字一致：
+	// 只看语言账本（presentation_publications）当前指向的产物，历史产物行不参与。
+	// 失败同样不阻断启动。
+	if marked, verr := presentationSvc.MarkStaleByRegistryVersion(context.Background(), builder.RegistryVersion()); verr != nil {
+		logger.Scene("init").Error(verr, "自动发布实例组件版本比对失败（不阻断启动）")
+	} else if len(marked) > 0 {
+		logger.Scene("init").With("count", len(marked)).With("registryVersion", builder.RegistryVersion()).
+			Info("检测到组件已更新：相关自动发布实例已标记待重建（可经 RebuildStale 重建）")
+	}
 	// 依赖 fan-out（PIPE-3，docs/03-pipeline.md §8.2）：内容实体变更 → 按依赖表
 	// 反查受影响产物 → 精确标记 stale（不再是全站标记）→ 自动重建。
 	//

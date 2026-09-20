@@ -118,6 +118,26 @@ func (m *Model) FindInstanceByActivePath(ctx context.Context, projectID, path, e
 	return &row, nil
 }
 
+// ListCurrentArtifactIDs 返回本模块语言账本里「当前」指向的产物行 ID（去重、输出稳定）。
+//
+// 真源是 presentation_publications.artifact_id —— 每个语言的激活产物指针，由
+// publishOneLang 在「访问面已切换、路由已登记」之后写入（见 presentation_i18n.go）。
+// 供组件升级后的待重建识别使用（presentation 侧 MarkStaleByRegistryVersion）：判据必须是
+// 「现在这份账本指向的产物」，而不是 presentation_artifacts 里所有 available 行 ——
+// 后者含未 GC 的历史产物（回滚 / 反复重建留下的行），拿它比对会让已经重建过的实例
+// 在每次重启时被重新标成 stale（与手工 Page 侧同一失效，报告 ARCH-03）。
+//
+// 刻意**不**并入 presentation_instances.active_artifact_id / staged_artifact_id：那两列是
+// 「本批次默认语言产物」的镜像（finalizeMultiLangBatch 整批成功后才推进），并入只会把
+// 批次未收敛时滞后的旧指针重新变成误标来源。
+func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err error) {
+	ids = []string{}
+	err = m.db.WithContext(ctx).Raw(
+		"SELECT artifact_id::text FROM presentation_publications WHERE artifact_id IS NOT NULL",
+	).Scan(&ids).Error
+	return ids, err
+}
+
 // ListActivePathsForInstance 返回实例全部已登记语言的激活路径。
 func (m *Model) ListActivePathsForInstance(ctx context.Context, presentationID string) (paths []string, err error) {
 	var rows []PublicationEntity

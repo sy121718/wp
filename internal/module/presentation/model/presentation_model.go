@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -257,6 +258,60 @@ func (m *Model) UpdateInstancePointers(ctx context.Context, e *InstanceEntity) e
 			"update_time":         e.UpdatedAt,
 		}).Error
 	})
+}
+
+// payloadStateAvailable 产物负载可用（与 page_artifacts / presentation_artifacts 的
+// CHECK 取值同口径）。只用于「当前产物」判定：已标记回收的行不构成重建理由。
+const payloadStateAvailable = "available"
+
+// ListStaleInstanceIDsByRegistryVersion 在**调用方给定的当前产物集合**内挑出
+// registry_version 与 current 不同的产物，返回它们所属的实例 ID（去重、字典序）。
+//
+// 与 page 侧经 artifact 契约的同名比对同义（见 artifactmodel.ListStalePageIDs 的注释）：
+// 集合由调用方从本模块语言账本（presentation_publications，见 ListCurrentArtifactIDs）
+// 里选出，本方法只回答「这些行里哪些是旧组件产出的」。
+//
+// id = ANY(string_to_array(?, ',')::uuid[]) 而不是 id IN ?：组件升级时入参可能上万，
+// IN ? 会把数组展开成同数量的绑定参数、逼近 PostgreSQL 的 65535 上限（超限即整批报错，
+// 结果是「组件更新后一个实例都标不上」）。实例 id 是 uuid（不含逗号），分隔安全。
+func (m *Model) ListStaleInstanceIDsByRegistryVersion(ctx context.Context, current string, artifactIDs []string) (ids []string, err error) {
+	if len(artifactIDs) == 0 {
+		return nil, nil
+	}
+	err = m.db.WithContext(ctx).Model(&ArtifactEntity{}).
+		Where("payload_state = ? AND registry_version <> ? AND id = ANY(string_to_array(?, ',')::uuid[])",
+			payloadStateAvailable, current, strings.Join(artifactIDs, ",")).
+		Distinct().Order("presentation_instance_id").Pluck("presentation_instance_id", &ids).Error
+	return ids, err
+}
+
+// MarkStaleByIDs 在**指定工程作用域内**按实例 ID 列表标记待重建，返回本次真正命中的实例 ID。
+//
+// 与 MarkStale 的差别是返回值：本方法用 RETURNING id 回读真实命中的行，而不是回带入参 ——
+// 组件升级时入参来自产物元数据，可能横跨多个工程、可能混着已删实例，回显会让
+// 「日志说标了 N 个、实际只有 M 个」永远查不出来（与 page 侧 MarkStaleByIDs 同形）。
+//
+// projectID 必填（DB-009）：presentation_instances 带 FORCE 策略，缺作用域时这条 UPDATE
+// 在非超级角色下静默匹配 0 行 —— 表现是「组件换了，详情页却从没被标过」且没有任何报错。
+func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []string, at time.Time) (marked []string, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, errors.New("project id is required")
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(
+			"UPDATE presentation_instances SET stale = true, update_time = ? "+
+				"WHERE project_id = ? AND deleted_at IS NULL "+
+				"AND id = ANY(string_to_array(?, ',')::uuid[]) RETURNING id",
+			at, projectID, strings.Join(ids, ","),
+		).Scan(&marked).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return marked, nil
 }
 
 // MarkStale 批量标记实例待重建（依赖失效后的落库动作）。
