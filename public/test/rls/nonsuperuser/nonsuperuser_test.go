@@ -410,6 +410,12 @@ var exemptTables = map[string]string{
 	// 装了策略后缺 app.project_id 的捞取语句会静默 0 行 —— 队列直接停摆。
 	// 它不在迁移 215 的对象名单里，属**刻意排除**，不是漏装。
 	"build_jobs": "构建任务队列按状态跨工程捞取，纳入 RLS 需先改造队列调度（本票不做）",
+	// product_outbox_events 是商品失效事件队列（迁移 309，审计 ARCH-01）：
+	// ClaimPendingOutbox 按「未处理 + 租约过期」跨工程捞取（见 product_outbox_model.go 的
+	// SQL），查询里没有任何 project_id 谓词 —— 装上 FORCE 后缺 app.project_id 的领取会
+	// 静默 0 行，商品变更的失效事件从此再不被消费（页面停在旧字节且无报错）。
+	// 与 build_jobs 同一情形：队列语义，属**刻意排除**。
+	"product_outbox_events": "商品失效事件队列按状态跨工程捞取，纳入 RLS 需先改造消费侧（本票不做）",
 }
 
 // TestNonSuperuser_EveryProjectTableIsCovered 每张带 project_id 的表都必须有生效的策略。
