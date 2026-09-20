@@ -53,7 +53,7 @@
             {{if .StaleImpact.Total}}
             <p class="stat-note tone-warn">{{ .["t"]("admin.article.list.staleLead", "当前有 ") }}{{ .StaleImpact.Total }}{{ .["t"]("admin.article.list.staleTail", " 个页面处于「有更新未发布」：内容、块、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。") }}</p>
             <ul>
-                {{range page := .StaleImpact.Pages}}
+                {{range _, page := .StaleImpact.Pages}}
                 <li><code>{{page.Path}}</code> <span class="stat-note">{{page.ProjectName}}</span></li>
                 {{end}}
             </ul>

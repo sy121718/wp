@@ -11,7 +11,7 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{{selectedProject := .SelectedProject}}
+{{selectedProject := .SelectedProjectID}}
 {{canCreate := isset(.PermSet["block:create"])}}
 {{canDelete := isset(.PermSet["block:delete"])}}
 <div class="stack">
@@ -69,7 +69,7 @@
             {{if .StaleImpact.Total}}
             <p class="stat-note tone-warn">{{ .["t"]("admin.blocks.impact.lead", "当前有 ") }}{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.tail", " 个页面处于「有更新未发布」：块、内容、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。") }}</p>
             <ul>
-                {{range p := .StaleImpact.Pages}}
+                {{range _, p := .StaleImpact.Pages}}
                 <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span></li>
                 {{end}}
             </ul>
