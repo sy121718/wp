@@ -5,6 +5,7 @@ package productservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -108,6 +109,14 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
+	// 相关商品引用（审计 DB-03 §1.2 / PROD-01）：related_ids 是同表自引用，此前是**唯一**
+	// 没有校验的一条引用面（分类 / 标签 / 属性都有「存在 + 同工程」），任意 uuid 都能写进去。
+	// 商品 id 先落定：自引用判定要用它（不能指向自己）。
+	productID := uuid.NewString()
+	relatedIDs, err := s.resolveRelatedIDs(ctx, projectID, productID, req.RelatedIDs)
+	if err != nil {
+		return nil, err
+	}
 	// 捆绑配置形状规范化（issue #20）：空 / [] → 空配置对象；形状不对即拒绝。
 	// 语义校验（必选 / 上下限 / 整单件数）走 SetBundleConfig 专用入口，这里只保证形状合法。
 	bundleItems, berr := normalizeBundleItems(req.BundleItems)
@@ -143,7 +152,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	customSKU := strings.TrimSpace(req.SKUCode)
 	metadata := orJSON(req.Metadata, "{}")
 	e := &productmodel.ProductEntity{
-		ID: uuid.NewString(), ProjectID: projectID,
+		ID: productID, ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Subtitle: req.Subtitle,
 		Type:        productType,
 		Description: orJSON(req.Description, "{}"), Slug: slug,
@@ -155,7 +164,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		CategoryIDs:       orJSONList(categoryIDs),
 		PrimaryCategoryID: primaryCategoryID,
 		BrandID:           brandID,
-		TagIDs:            orIDList(tagIDs), RelatedIDs: orIDList(req.RelatedIDs),
+		TagIDs:            orIDList(tagIDs), RelatedIDs: orIDList(relatedIDs),
 		BundleItems: bundleItems,
 
 		DefaultImage: req.DefaultImage,
@@ -390,7 +399,13 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.TagIDs = orIDList(ids)
 	}
 	if req.RelatedIDs != nil {
-		e.RelatedIDs = orIDList(req.RelatedIDs)
+		// 相关商品引用（审计 DB-03 §1.2 / PROD-01）：整体替换语义与分类 / 标签 / 属性一致 ——
+		// 先校验（存在 + 同工程 + 不指向自己）再落库，非法引用一次列全（见 resolveRelatedIDs）。
+		ids, rerr := s.resolveRelatedIDs(ctx, e.ProjectID, e.ID, req.RelatedIDs)
+		if rerr != nil {
+			return nil, rerr
+		}
+		e.RelatedIDs = orIDList(ids)
 	}
 	if req.BundleItems != nil {
 		// 形状规范化（issue #20）：整体替换语义不变，但写进去的必须是合法对象。
@@ -740,4 +755,91 @@ func mapContainerSKUConflict(err error) error {
 		return errors.New(productenums.ErrContainerSKUTaken)
 	}
 	return err
+}
+
+// resolveRelatedIDs 校验并归一商品引用的相关商品 id（products.related_ids）。
+//
+// 为什么补这一条（审计 DB-03 §1.2 / PROD-01）：category_ids / tag_ids / attribute_ids
+// 与 brand_id 都有「存在 + 同工程」的服务层校验，related_ids 此前是**唯一**原样落库的
+// 引用面 —— 可以写入任意 uuid（别的工程、已被删除、甚至自己）。它落在 JSONB 数组里，
+// 没有任何数据库级外键兜底，写脏了只能靠人工对账（DB-03 附录 A 的 Q6 / Q7）发现。
+//
+// 四条规则（与同表其它引用列同口径，外加一条自引用）：
+//  1. 去空白 + 去重（保留首次出现的顺序）——「同一次提交写出同一份数组」；
+//  2. 引用必须真实存在；
+//  3. 引用必须与商品同工程（跨工程引用等于把别人的商品挂到自己的「相关商品」里）；
+//  4. 不能指向自己（related_ids 是商品表的自引用，指向自己会让「相关商品」成环）。
+//
+// 三类问题**一次列全**（同一条错误的 tail 里分段给出 id 与数量）：逐个返回只会让运营
+// 「改一条、提交一次」，而这批引用本就来自同一次提交。跨工程的条目额外带上**对方工程 id**，
+// 让操作者知道该去找谁解除（PROD-01 的验收点）。
+//
+// 拒绝即整体拒绝：不静默丢弃非法 id、不自动过滤、不自动修正 —— 那些都会让运营以为
+// 「保存成功了」，而实际的相关商品集合与他提交的不是同一份。
+//
+// selfID 是本次写入的商品自身 id（新建路径先用生成的 id，编辑路径用行上的 id）。
+func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID string, ids []string) (out []string, err error) {
+	out = []string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	seen := make(map[string]bool, len(ids))
+	dedup := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		dedup = append(dedup, id)
+	}
+	if len(dedup) == 0 {
+		return out, nil
+	}
+	// 一次批量取回（复用 ListProductsByIDs，避免逐个 id 一次往返）：该方法自带工程作用域，
+	// 这里不改它的实现（作用域补全由 DB-05 在另一条线上统一处理）。
+	rows, lerr := s.m.ListProductsByIDs(ctx, dedup, projectID)
+	if lerr != nil {
+		return nil, lerr
+	}
+	byID := make(map[string]*productmodel.ProductEntity, len(rows))
+	for _, r := range rows {
+		if r == nil {
+			continue
+		}
+		byID[r.ID] = r
+	}
+	var selfRefs, missing, crossProject []string
+	for _, id := range dedup {
+		if selfID != "" && id == selfID {
+			selfRefs = append(selfRefs, id)
+			continue
+		}
+		row, ok := byID[id]
+		if !ok {
+			missing = append(missing, id)
+			continue
+		}
+		if projectID != "" && row.ProjectID != projectID {
+			// 带上对方工程 id：跨工程引用只能靠「两个工程的运营对账」解决，
+			// 光有商品 id 找不到人（PROD-01 要求拒绝信息可定位）。
+			crossProject = append(crossProject, fmt.Sprintf("%s（属于工程 %s）", id, row.ProjectID))
+			continue
+		}
+		out = append(out, id)
+	}
+	if len(selfRefs)+len(missing)+len(crossProject) == 0 {
+		return out, nil
+	}
+	parts := make([]string, 0, 3)
+	if len(selfRefs) > 0 {
+		parts = append(parts, fmt.Sprintf("不能指向自己（%d 个：%s）", len(selfRefs), strings.Join(selfRefs, ", ")))
+	}
+	if len(missing) > 0 {
+		parts = append(parts, fmt.Sprintf("不存在（%d 个：%s）", len(missing), strings.Join(missing, ", ")))
+	}
+	if len(crossProject) > 0 {
+		parts = append(parts, fmt.Sprintf("不属于本工程（%d 个：%s）", len(crossProject), strings.Join(crossProject, "；")))
+	}
+	return nil, fmt.Errorf("%s：%s", productenums.ErrRelatedInvalid, strings.Join(parts, "；"))
 }

@@ -1000,6 +1000,9 @@ var productErrSentinels = []string{
 	productenums.ErrTagNotFound,
 	productenums.ErrTagNotManual,
 	productenums.ErrTagProjectMismatch,
+	// 相关商品引用（审计 DB-03 / PROD-01）：非法引用（不存在 / 跨工程 / 指向自己）在
+	// tail 里带上 id 与数量，漏登记就会让这条**可行动**的提示退化成「系统内部错误」。
+	productenums.ErrRelatedInvalid,
 	productenums.ErrTagRuleNotAllowed,
 	productenums.ErrTagRuleParamsInvalid,
 	productenums.ErrTagRuleTypeInvalid,
@@ -1114,6 +1117,7 @@ var productErrFallbacks = map[string]string{
 	productenums.ErrCollectionSourceInvalid:      "集合源标识不合法（不是本模块实现的源）",
 	productenums.ErrInvalidField:                 "提交了不支持的字段（不在商品字段白名单内）",
 	productenums.ErrInvalidType:                  "实体类型不合法",
+	productenums.ErrRelatedInvalid:               "相关商品引用不合法：引用的商品必须存在、属于本工程，且不能指向自己",
 	productenums.ErrTagKindInvalid:               "标签类型不是 manual / rule",
 	productenums.ErrTagNameRequired:              "标签名称必填",
 	productenums.ErrTagNotFound:                  "标签不存在",

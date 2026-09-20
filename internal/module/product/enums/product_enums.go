@@ -20,6 +20,13 @@ const (
 	ErrVariantHasStock = "ErrVariantHasStock" // 变体仍有库存，不能删除（请改为停用）
 	ErrNameRequired    = "ErrNameRequired"    // 商品名称必填
 
+	// —— 相关商品（products.related_ids，审计 DB-03 / PROD-01）——
+	// 相关商品是**同表自引用**：分类 / 标签 / 属性三条引用面都有「存在 + 同工程」校验，
+	// 只有它此前原样落库 —— 任意 uuid（别的工程、已被删除、甚至自己）都能写进去。
+	// 只用一个 key：三类问题（不存在 / 跨工程 / 指向自己）在同一个 tail 里**一次列全**
+	// （逐条报会逼运营「改一条、提交一次」，而它们本就是同一次提交里的同一批引用）。
+	ErrRelatedInvalid = "ErrRelatedInvalid" // 相关商品引用不合法（不存在 / 跨工程 / 指向自己）
+
 	// —— 属性组（issue #7）——
 	ErrAttrNameRequired      = "ErrAttrNameRequired"      // 属性组名称必填
 	ErrAttrKeyRequired       = "ErrAttrKeyRequired"       // 属性组标识不能改为空

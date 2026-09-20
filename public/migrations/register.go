@@ -76,4 +76,6 @@ func init() {
 	registerBlockUsageI18n()
 	// 298：商品标签页「命中商品」展开区的词条（审计 PERF-02，见 register_product_tag_hits_i18n.go）。
 	registerProductTagHitsI18n()
+	// 304：商品「相关商品」引用校验的词条（审计 DB-03 / PROD-01，见 register_product_related_i18n.go）。
+	registerProductRelatedIDsI18n()
 }
