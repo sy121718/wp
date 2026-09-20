@@ -136,15 +136,21 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	// 判据与构建期解析同一函数（pipeline.BuildStructureSlots / StructureSlotDependencies），
 	// 两处不可能分叉；回退到块绑定的槽位不会被登记成 content_template 依赖。
 	var slotDeps []pipeline.Dependency
+	// 集合源（审计 ARCH-01）：模板文档里声明的集合组件消费了哪个集合源。
+	// 与手工页面路径**共用同一份判定**（core.CollectionSourcesOf，组件自己声明字段名），
+	// 不在这里另做一次静态扫描 —— 两套口径迟早分叉，而分叉的表现正是「改了集合内容，
+	// 某一类产物不重建」这种静默失效。
+	var collectionSources []string
 	if pageDoc, perr := builder.ParsePage(tpl.Document); perr == nil {
 		slotDeps = pipeline.StructureSlotDependencies(ctx, s, projectID, pageDoc.Settings.Structure)
+		collectionSources = core.CollectionSourcesOf(pageDoc.Root)
 	}
 	sourceHash := pipeline.SHA256(tpl.Document)
 	// 多语言依赖（page 侧同一口径，见 page_lang.go §buildDependencies）：
 	//   · i18n:site    组件固定文案（sys_i18n）—— 构建期取词注入 HTML 字节，恒登记；
 	//   · i18n:content 内容译文（sys_translation）—— 仅当本次确有可翻译候选时登记。
 	// 少登记的表现是「改了译文/词条，商品页永远是旧字节」且日志里什么都没有。
-	deps := presentationDependencies(entityType, entityID, tpl.TemplateID, projectID, usage)
+	deps := presentationDependencies(entityType, entityID, tpl.TemplateID, projectID, collectionSources, usage)
 	deps = append(deps, pipeline.I18NDependency(i18n.Revision()))
 	if usage != nil && usage.ContentTranslation {
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
@@ -352,9 +358,24 @@ func (s *Service) activate(urlPath string, built builtArtifact) error {
 //
 // projectID 为空（极罕见：调用方未解析出工程）时不登记导航依赖：菜单键必须带工程，
 // 猜一个工程 ID 会把失效范围指到别的站点上。
-func presentationDependencies(entityType, entityID, templateID, projectID string, usage *pipeline.CompileUsage) []pipeline.Dependency {
+func presentationDependencies(entityType, entityID, templateID, projectID string,
+	collectionSources []string, usage *pipeline.CompileUsage) []pipeline.Dependency {
 	dep := pipeline.DirectContentKey(entityType, entityID)
 	out := []pipeline.Dependency{{Kind: dep.Kind, Key: dep.Key}}
+	// 集合依赖（审计 ARCH-01）：模板文档里声明的集合源（content:product 等）的**成员与
+	// 成员可见字段**变化会让本实例的字节变化 —— 分类归档页（EDT-004）就是这一类：
+	// 它的 direct_content 键只认自己那个分类（product_category:{id}），商品增删改
+	// 全都不命中，于是「新建一个商品，归档页不更新」且没有任何报错。
+	// 键的构造与 page 侧、与 content 模块的发射端用同一个构造函数，逐字一致。
+	for _, src := range collectionSources {
+		if src = strings.TrimSpace(src); src == "" {
+			continue
+		}
+		out = append(out, pipeline.Dependency{
+			Kind: pipeline.DepKindContentCollection,
+			Key:  "collection:" + src,
+		})
+	}
 	if strings.TrimSpace(templateID) != "" {
 		out = append(out, pipeline.Dependency{
 			Kind: pipeline.DepKindContentTemplate,

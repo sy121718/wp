@@ -7,6 +7,7 @@ package routers
 
 import (
 	"context"
+	"time"
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
@@ -398,6 +399,7 @@ func (a *assembly) startRuntimeTasks() {
 	contentSvc := a.contentSvc
 	navigationSvc := a.navigationSvc
 	pageService := a.pageService
+	productSvc := a.productSvc
 	presentationSvc := a.presentationSvc
 	projectService := a.projectService
 
@@ -480,6 +482,27 @@ func (a *assembly) startRuntimeTasks() {
 	marks.mark(portPipelinePresentationRebuilder)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
+	// 商品写路径的静态产物失效（审计 ARCH-01）：与 content 侧同一手法 —— 商品模块只声明
+	// 窄端口（productcontract.DependencyInvalidator），扇出实现在发布内核。
+	// 断言而非「命中即跳过」：漏接的表现是「改了商品，站点静态产物永不更新」，
+	// 而它不会让任何测试变红、日志里也只有事件堆积（事件表有自己的诊断查询）。
+	if setter, ok := productSvc.(interface {
+		SetDependencyInvalidator(productcontract.DependencyInvalidator)
+	}); ok {
+		setter.SetDependencyInvalidator(fanout)
+	} else {
+		panic("商品模块未提供依赖失效端口注入点（SetDependencyInvalidator）")
+	}
+	marks.mark(portProductDependencyInvalidator)
+	// outbox 消费者：商品写事务里落的事件在这里被领取 → 扇出 → 精确标记 + 自动重建。
+	// 首跑一次再按间隔轮询（进程重启后积压的事件立刻被消化）。
+	if starter, ok := productSvc.(interface {
+		StartOutboxWorker(ctx context.Context, interval time.Duration)
+	}); ok {
+		starter.StartOutboxWorker(context.Background(), 0)
+	} else {
+		panic("商品模块未提供依赖事件消费入口（StartOutboxWorker）")
+	}
 	// 内容模板 → 依赖失效接线（触发链）：模板产生新版本 / 切换生效后，按 content_template:{id}
 	// 反查引用它的页面与自动发布实例并标记 stale。
 	//

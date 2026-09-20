@@ -29,6 +29,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -96,6 +97,11 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 		}
 		if cerr := s.m.CreateTagTx(ctx, tx, e); cerr != nil {
 			return cerr
+		}
+		// 静态产物失效（审计 ARCH-01）：标签定义与归属变化会改列表页 / 详情页的字节。
+		if xerr := s.enqueueInvalidationTx(ctx, tx, projectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: e.ID}); xerr != nil {
+			return xerr
 		}
 		if e.Kind != productenums.TagKindRule {
 			return nil
@@ -166,6 +172,11 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 		}
 		if uerr := s.m.UpdateTagTx(ctx, tx, e); uerr != nil {
 			return uerr
+		}
+		// 静态产物失效（审计 ARCH-01）。
+		if xerr := s.enqueueInvalidationTx(ctx, tx, e.ProjectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: e.ID}); xerr != nil {
+			return xerr
 		}
 		// 重算时机之一：规则定义变更后立刻按新规则重算（手工标签不动任何归属）。
 		if e.Kind != productenums.TagKindRule {
@@ -420,6 +431,10 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 		if rerr := s.m.RemoveTagFromProductsTx(tx, tag.ID, tag.ProjectID, now); rerr != nil {
 			return rerr
 		}
+		if xerr := s.enqueueInvalidationTx(ctx, tx, tag.ProjectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: tag.ID}); xerr != nil {
+			return xerr
+		}
 		return s.m.DeleteTagTx(tx, tag.ID)
 	})
 }
@@ -561,6 +576,12 @@ func (s *Service) recalcTagTx(ctx context.Context, tx *gorm.DB, tag *productmode
 	}
 	if rerr := s.m.ReplaceTagProductsTx(tx, tag.ID, tag.ProjectID, ids, now); rerr != nil {
 		return rerr
+	}
+	// 静态产物失效（审计 ARCH-01）：自动标签的归属重算改了商品的 tag_ids，
+	// 列表页的项目标签与详情页的标签区随之变化 → 发该标签的实体键 + 商品集合键。
+	if xerr := s.enqueueInvalidationTx(ctx, tx, tag.ProjectID,
+		invalidationTarget{EntityType: productcontract.EntityTypeTag, EntityID: tag.ID}); xerr != nil {
+		return xerr
 	}
 	// 记录重算时间（后台可见，用来核对「重算时机」是否真的发生过）。
 	tag.RecalcAt = &now

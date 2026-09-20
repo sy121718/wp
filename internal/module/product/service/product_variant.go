@@ -115,6 +115,11 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 		if serr := s.ensureVariantStockTx(ctx, tx, ref, p.ID, v.ID, v.SKUCode, req.Quantity); serr != nil {
 			return serr
 		}
+		// 静态产物失效（审计 ARCH-01）：变体是商品聚合的一部分，它的可见字段
+		//（价格 / 规格 / 启用状态）直接进详情页与列表页的字节 → 失效目标是**商品**。
+		if xerr := s.enqueueProductInvalidationTx(ctx, tx, p.ProjectID, p.ID); xerr != nil {
+			return xerr
+		}
 		// issue #19：新增变体 → 变更记录。带上归属仓（默认发货仓）与 SKU 编码 ——
 		// 这两件事只在此刻确定，之后编辑路径不再改动它们。
 		return s.recordChangesTx(ctx, tx, variantChangeInput(p.ProjectID, v, masterdataenums.ActionCreate,
@@ -200,6 +205,10 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 		if uerr := s.m.UpdateVariantTx(ctx, tx, v); uerr != nil {
 			return uerr
 		}
+		// 静态产物失效（审计 ARCH-01）：改价 / 改启用状态都会改详情页与列表页的字节。
+		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, v.ProductID); xerr != nil {
+			return xerr
+		}
 		// issue #19：字段级变更留痕 —— SKU 编码 / 条码 / 售价 / 划线价 / 成本价 /
 		// 启用状态 / 规格组合，只写真正变化的字段。
 		return s.recordChangesTx(ctx, tx, variantChangeInput(projectID, v, masterdataenums.ActionUpdate,
@@ -275,6 +284,10 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 		}
 		if derr := s.m.DeleteVariantTx(ctx, tx, req.ID); derr != nil {
 			return derr
+		}
+		// 静态产物失效（审计 ARCH-01）：删变体会改商品的价格区间与规格展示。
+		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, v.ProductID); xerr != nil {
+			return xerr
 		}
 		return s.recordChangesTx(ctx, tx, variantChangeInput(projectID, v, masterdataenums.ActionDelete,
 			masterdataenums.OriginVariant, req.OperatorID, before, nil))

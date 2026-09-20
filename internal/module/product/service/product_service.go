@@ -67,6 +67,12 @@ type Service struct {
 	archiveEnsurer presentationcontract.ArchiveInstanceEnsurer
 	// fragmentCacheBumper 商品写操作后使运行时片段 HTML 缓存失效（PERF-002）。
 	fragmentCacheBumper func(context.Context, string)
+	// invalidator 静态产物失效端口（审计 ARCH-01，装配期注入，可空）。
+	//
+	// 与 fragmentCacheBumper 是**两条不同的链**：那个刷的是运行时片段 HTML 的
+	// Redis 版本号，这个把事件交给发布内核去标记静态产物 stale 并重建。
+	// 只接前者正是 ARCH-01 的口径差（片段刷新了 ≠ 详情页与列表页的静态产物更新了）。
+	invalidator productcontract.DependencyInvalidator
 }
 
 // SetInventory 注入库存 model（issue #32，装配期调用；**必须注入**）。

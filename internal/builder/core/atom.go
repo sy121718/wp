@@ -15,6 +15,13 @@ type AtomSpec[P any] struct {
 	TypeName string
 	// ValidateExtra 关系性校验（可选）：互斥/依赖等字段级（ct tag）之外的规则。
 	ValidateExtra func(p *P, nodeID string) error
+	// CollectionProp 集合源 prop 名（如 "collectionSource"）：声明后本组件即
+	// 「消费某个集合源」，编译期与依赖登记共用 core.CollectionSourcesOf 这一份判定
+	// （审计 ARCH-01）。空串 = 不消费集合源。
+	//
+	// 为什么声明「字段名」而不是「集合源值」：集合源取值就在节点 Props 里，组件自己
+	// 再解一遍只会多一份可能与渲染分叉的读法 —— 这里是唯一的读法来源。
+	CollectionProp string
 	// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
 	// 只有列出的 JSON 字段名参与内容翻译（sys_translation），未声明字段永不翻译。
 	// 只放「作者填写的文本」字段（text/title/alt/caption 等），
@@ -58,6 +65,11 @@ func (a Atom[P]) Type() string { return a.Spec.TypeName }
 // PropsSpec 实现 SpecProvider：返回 Props 零值实例供声明式 Controls
 // 生成 Inspector 面板 schema（docs/02-C3）。组件作者零配置。
 func (a Atom[P]) PropsSpec() any { var p P; return &p }
+
+// CollectionProp 实现 CollectionProvider：返回 Props 中承载集合源的字段名。
+//
+// 所有 Atom 基座组件自动具备本方法（未声明返回空串 = 不消费集合源）。
+func (a Atom[P]) CollectionProp() string { return a.Spec.CollectionProp }
 
 // Translatable 实现 TranslatableProvider：返回 Props 声明的可翻译字段白名单。
 //

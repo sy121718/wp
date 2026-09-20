@@ -147,6 +147,24 @@ func (m *Model) DeleteCategory(ctx context.Context, id string) (err error) {
 	return m.CategoryDB(ctx).Where("id = ?", id).Delete(&ProductCategoryEntity{}).Error
 }
 
+// CreateCategoryTx / UpdateCategoryTx / DeleteCategoryTx — 复用**调用方已开启的事务**。
+//
+// 为什么需要它们（审计 ARCH-01）：分类变更现在要在同一个事务里追加一条静态产物失效
+// 事件（product_outbox_events）。分类行与事件行分属两次写入，不在一个事务里就会留下
+// 「分类改了、事件没写」或反过来的半截状态 —— 而这两种半截状态都是静默的。
+// tx 必须已由调用方设好工程作用域（rls.ScopeTx），model 不再另开事务。
+func (m *Model) CreateCategoryTx(ctx context.Context, tx *gorm.DB, e *ProductCategoryEntity) error {
+	return tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Create(e).Error
+}
+
+func (m *Model) UpdateCategoryTx(ctx context.Context, tx *gorm.DB, e *ProductCategoryEntity) error {
+	return tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+func (m *Model) DeleteCategoryTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Where("id = ?", id).Delete(&ProductCategoryEntity{}).Error
+}
+
 // CountCategoryChildren 直接子级数量（删除前置校验）。
 func (m *Model) CountCategoryChildren(ctx context.Context, parentID string) (n int64, err error) {
 	err = m.CategoryDB(ctx).Where("parent_id = ?", parentID).Count(&n).Error

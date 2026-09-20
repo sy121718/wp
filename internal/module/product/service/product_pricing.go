@@ -187,6 +187,15 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		if cerr := s.m.CreateAdjustmentWithItemsTx(tx, adj, items); cerr != nil {
 			return cerr
 		}
+		// 静态产物失效（审计 ARCH-01）：批量改价一次可能覆盖多个商品，逐商品各发一条
+		//（失效目标是商品详情页与商品集合列表页；enqueueInvalidationTx 内部按实体去重）。
+		targets := make([]invalidationTarget, 0, len(updated))
+		for _, uv := range updated {
+			targets = append(targets, productInvalidationTarget(uv.ProductID))
+		}
+		if xerr := s.enqueueInvalidationTx(ctx, tx, pr.projectID, targets...); xerr != nil {
+			return xerr
+		}
 		// issue #19：售价留痕与改价同事务，避免「价已改、审计没记」的半截状态（CQ-026）。
 		return s.recordChangesTx(ctx, tx, changeInputs...)
 	}); err != nil {

@@ -134,7 +134,21 @@ func (m *Model) DeleteBrand(ctx context.Context, id string) (err error) {
 	return m.BrandDB(ctx).Where("id = ?", id).Delete(&ProductBrandEntity{}).Error
 }
 
-// ProductUsingBrand **本工程内**反查挂了某品牌的商品（只取一行）。
+// CreateBrandTx / UpdateBrandTx / DeleteBrandTx — 复用**调用方已开启的事务**
+//（审计 ARCH-01：品牌行与静态产物失效事件必须原子，理由同分类侧）。
+func (m *Model) CreateBrandTx(ctx context.Context, tx *gorm.DB, e *ProductBrandEntity) error {
+	return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Create(e).Error
+}
+
+func (m *Model) UpdateBrandTx(ctx context.Context, tx *gorm.DB, e *ProductBrandEntity) error {
+	return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+func (m *Model) DeleteBrandTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Model(&ProductBrandEntity{}).Where("id = ?", id).Delete(&ProductBrandEntity{}).Error
+}
+
+// ProductUsingBrand **本工程内**反查挂了某品牌的商品（删除前引用检查，只取一行用于拦截提示）。
 //
 // ⚠ 品牌删除守卫**已不再用它**（审计 DB-03 §5.1 第 2 条 / PROD-02）：作用域是发起删除的
 // 那个工程，别的工程仍引用这个品牌时命中 0 行 ⇒ 删除放行 ⇒ products.brand_id 的外键

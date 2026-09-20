@@ -15,9 +15,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/rls"
 )
 
 // CreateBrand 新建品牌。
@@ -50,7 +52,17 @@ func (s *Service) CreateBrand(ctx context.Context, req *productdto.CreateBrandRe
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.CreateBrand(ctx, e); err != nil {
+	// 品牌行与静态产物失效事件同事务（审计 ARCH-01，理由同分类侧）。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if cerr := s.m.CreateBrandTx(ctx, tx, e); cerr != nil {
+			return cerr
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeBrand, EntityID: e.ID})
+	}); err != nil {
 		return nil, err
 	}
 	return toBrandResp(e), nil
@@ -104,7 +116,16 @@ func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandRe
 		e.Sort = *req.Sort
 	}
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateBrand(ctx, e); err != nil {
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if uerr := s.m.UpdateBrandTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		return s.enqueueInvalidationTx(ctx, tx, e.ProjectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeBrand, EntityID: e.ID})
+	}); err != nil {
 		return nil, err
 	}
 	return toBrandResp(e), nil
@@ -168,7 +189,16 @@ func (s *Service) DeleteBrand(ctx context.Context, req *productdto.DeleteBrandRe
 	if ref.Referenced() {
 		return crossProjectRefBlocked(productenums.ErrBrandInUse, ref)
 	}
-	return s.m.DeleteBrand(ctx, req.ID)
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if derr := s.m.DeleteBrandTx(ctx, tx, req.ID); derr != nil {
+			return derr
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeBrand, EntityID: req.ID})
+	})
 }
 
 // resolveBrandID 校验商品指定的品牌并归一为指针（空串 = 不指定品牌 = nil）。

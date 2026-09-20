@@ -307,8 +307,12 @@ type Component struct {
 // Widget 组件实例。
 var Widget = &Component{Atom: core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
-		TypeName:        Type,
-		ValidateExtra:   validateExtra,
+		TypeName:      Type,
+		ValidateExtra: validateExtra,
+		// 集合源声明（审计 ARCH-01）：本组件渲染的集合是「商品」——
+		// 依赖登记（page / presentation）据此把 collection:content:product 记进依赖表，
+		// 缺它时「新增 / 删除商品」不会让任何列表页失效。
+		CollectionProp:  "collectionSource",
 		PaletteCategory: core.PaletteCategoryBasic,
 		DisplayName:     "商品列表",
 		Hint:            "网格 / 列表铺开一批商品",

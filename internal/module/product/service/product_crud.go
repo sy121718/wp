@@ -197,6 +197,11 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 			if xerr := s.m.CreateWithVariantsTx(ctx, tx, e, nil); xerr != nil {
 				return mapContainerSKUConflict(xerr)
 			}
+			// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）：回滚即无事件，
+			// 提交后由消费者扇出 direct_content + content_collection 两类键。
+			if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, e.ID); xerr != nil {
+				return xerr
+			}
 			return s.recordChangesTx(ctx, tx, productChangeInput(e, masterdataenums.ActionCreate,
 				masterdataenums.OriginProduct, req.OperatorID, nil, productChangeSnapshot(e)))
 		}); err != nil {
@@ -270,6 +275,10 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 			// 创建即入库：勾选的每个仓各一行（裸码；该仓已有同裸码的行则复用不新建）。
 			// external_sku 写在**认领仓**那一次（外码是「这条货在该仓的名字」，其余仓不猜）。
 			if xerr := s.createStockRowsTx(ctx, tx, refs, e.ID, v.ID, v.SKUCode, externalSKU, req.Quantity); xerr != nil {
+				return xerr
+			}
+			// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
+			if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, e.ID); xerr != nil {
 				return xerr
 			}
 			// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
@@ -472,6 +481,10 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		if xerr := s.m.UpdateTx(ctx, tx, e); xerr != nil {
 			return mapContainerSKUConflict(xerr)
 		}
+		// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
+		if xerr := s.enqueueProductInvalidationTx(ctx, tx, e.ProjectID, e.ID); xerr != nil {
+			return xerr
+		}
 		// issue #19：字段级变更留痕 —— 上下架状态 / 名称 / URL 段 / 商品级默认售价 / 品牌。
 		// 只写真正变化的字段：改一次备注不会在审计里留一串空记录。
 		return s.recordChangesTx(ctx, tx, productChangeInput(e, masterdataenums.ActionUpdate,
@@ -574,6 +587,11 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 			return serr
 		}
 		if derr := s.m.DeleteTx(ctx, tx, req.ID); derr != nil {
+			return derr
+		}
+		// 删除 = 集合成员变化，必须发集合键：新产物里已经没有这个实体，
+		// 只有集合键能让「列表页少一张卡」这件事被推导出来（审计 ARCH-01）。
+		if derr := s.enqueueProductInvalidationTx(ctx, tx, e.ProjectID, req.ID); derr != nil {
 			return derr
 		}
 		return s.recordChangesTx(ctx, tx, inputs...)

@@ -84,4 +84,6 @@ func init() {
 	registerBuildJobIntent()
 	// 308：页面发布计划冻结表（审计 I18N-01，见 register_publication_plan.go）。
 	registerPagePublicationPlans()
+	// 309：商品写路径的静态产物失效 outbox（审计 ARCH-01，见 register_product_outbox.go）。
+	registerProductOutbox()
 }

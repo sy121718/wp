@@ -277,33 +277,49 @@ func (s *Service) pageDependencyKeys(ctx context.Context, page *pagemodel.PageEn
 
 // collectionSourcesOf 收集文档中集合组件实际使用的集合源（如 content:product）。
 //
-// 集合源声明在插件组件规格里（spec.Collection.Source），文档节点只带组件类型，
-// 因此必须经插件装配素材反查；未启用插件时返回空（内置组件无集合绑定）。
+// **两条来源取并集**（审计 ARCH-01）—— 此前只有第 2 条，于是全站只有插件组件能被
+// 精确失效，内置集合组件一条都不登记：
+//
+//  1. 内置组件：组件自己在注册表里声明集合源字段（core.CollectionProvider），
+//     统一经 core.CollectionSourcesOf 读取。core.productList / core.cardstack 这类
+//     「商品列表 / 文章列表」组件走的正是这一条 —— 缺它时「新增一个商品」不会让
+//     任何列表页失效，产物停在旧字节且日志里什么都没有（本模块此前的注释
+//     「内置组件无集合绑定」是错的：它们把集合源写在节点 Props 的 collectionSource 里）。
+//  2. 插件组件：集合源声明在插件 manifest 里（spec.Collection.Source），
+//     文档节点只带组件类型，只能经插件装配素材反查。插件组件不在 core 注册表里，
+//     两路互不覆盖，任何一路都不能删。
 func (s *Service) collectionSourcesOf(ctx context.Context, roots []*core.Node) []string {
-	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
-	if asm == nil || len(asm.Specs) == 0 {
-		return nil
-	}
-	resolver := plugincontract.AssemblyResolver(asm)
 	seen := map[string]bool{}
 	var out []string
-	var walk func(n *core.Node)
-	walk = func(n *core.Node) {
-		if n == nil {
-			return
-		}
-		if spec, ok := resolver.LookupPluginComponent(n.Type); ok && spec != nil && spec.Collection != nil {
-			if src := strings.TrimSpace(spec.Collection.Source); src != "" && !seen[src] {
-				seen[src] = true
-				out = append(out, src)
-			}
-		}
-		for _, c := range n.Children {
-			walk(c)
+	add := func(src string) {
+		if src = strings.TrimSpace(src); src != "" && !seen[src] {
+			seen[src] = true
+			out = append(out, src)
 		}
 	}
-	for _, r := range roots {
-		walk(r)
+	// 1) 内置组件（唯一来源：组件自己的声明，不在这里维护「类型 → 集合源」映射表）。
+	for _, src := range core.CollectionSourcesOf(roots) {
+		add(src)
+	}
+	// 2) 插件组件。
+	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
+	if asm != nil && len(asm.Specs) > 0 {
+		resolver := plugincontract.AssemblyResolver(asm)
+		var walk func(n *core.Node)
+		walk = func(n *core.Node) {
+			if n == nil {
+				return
+			}
+			if spec, ok := resolver.LookupPluginComponent(n.Type); ok && spec != nil && spec.Collection != nil {
+				add(spec.Collection.Source)
+			}
+			for _, c := range n.Children {
+				walk(c)
+			}
+		}
+		for _, r := range roots {
+			walk(r)
+		}
 	}
 	return out
 }

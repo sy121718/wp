@@ -22,10 +22,12 @@ import (
 	"gorm.io/gorm"
 
 	presentationdto "go_wp/internal/module/presentation/dto"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 )
 
 // maxCategoryDepth 分类层级兜底上限：正常数据不会到这个深度，
@@ -66,7 +68,18 @@ func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCate
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if err = s.m.CreateCategory(ctx, e); err != nil {
+	// 分类行与静态产物失效事件同事务（审计 ARCH-01）：分类改名 / 增删会改归档页与
+	// 商品列表页的字节（列表项内嵌分类展示名），事件必须与这次写一起生效或一起回滚。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if cerr := s.m.CreateCategoryTx(ctx, tx, e); cerr != nil {
+			return cerr
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeCategory, EntityID: e.ID})
+	}); err != nil {
 		return nil, err
 	}
 	// 归档页同步（审计 EDT-004）：新建分类 → 补建它的归档页。
@@ -156,7 +169,16 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 		e.Sort = *req.Sort
 	}
 	e.UpdatedAt = time.Now().UTC()
-	if err = s.m.UpdateCategory(ctx, e); err != nil {
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
+			return serr
+		}
+		if uerr := s.m.UpdateCategoryTx(ctx, tx, e); uerr != nil {
+			return uerr
+		}
+		return s.enqueueInvalidationTx(ctx, tx, e.ProjectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeCategory, EntityID: e.ID})
+	}); err != nil {
 		return nil, err
 	}
 	// 改名 / 换 slug 后归档页路径要跟着走（审计 EDT-004）：同步入口内部会比对路径，
@@ -232,7 +254,16 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 		// 命中即拒绝，明细里给出引用面 / 工程 / 商品，由人决定处置（不自动清理）。
 		return crossProjectRefBlocked(productenums.ErrCategoryInUse, ref)
 	}
-	return s.m.DeleteCategory(ctx, req.ID)
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if derr := s.m.DeleteCategoryTx(ctx, tx, req.ID); derr != nil {
+			return derr
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID,
+			invalidationTarget{EntityType: productcontract.EntityTypeCategory, EntityID: req.ID})
+	})
 }
 
 // resolveCategoryParent 校验父分类并归一为指针（空串 = 顶级 = nil）。
