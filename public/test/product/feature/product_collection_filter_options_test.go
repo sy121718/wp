@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"go_wp/internal/builder/core"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 )
 
@@ -54,7 +55,7 @@ func TestCollectionFilterOptions(t *testing.T) {
 		t.Fatalf("建非变体属性组失败: %v", aerr)
 	}
 
-	options, oerr := f.products.CollectionFilterOptions(ctx, f.projectID)
+	options, oerr := f.products.CollectionFilterOptions(ctx, productcontract.CollectionSourceProduct, f.projectID)
 	if oerr != nil {
 		t.Fatalf("取筛选选项失败: %v", oerr)
 	}
@@ -98,7 +99,7 @@ func TestCollectionFilterOptions(t *testing.T) {
 	}
 
 	// 缺工程 ID 明确报错（不返回空清单让人以为「这个工程没有可筛的值」）。
-	if _, err := f.products.CollectionFilterOptions(ctx, ""); err == nil {
+	if _, err := f.products.CollectionFilterOptions(ctx, productcontract.CollectionSourceProduct, ""); err == nil {
 		t.Fatalf("缺工程 ID 应报错")
 	}
 

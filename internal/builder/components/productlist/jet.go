@@ -294,8 +294,13 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	}
 	// 筛选选项按能力探测取：集合源没实现该能力 → 筛选栏不渲染（列表本身照常可用，
 	// 契约缺失不阻断构建，与 CollectionSchemaProvider 的处理一致）；取选项失败同理。
+	//
+	// 探到的通常是集合源**注册表**（装配点注入 ctx.Collection 的就是它）：把本节点
+	// 声明的集合源一并交给它，由它按注册时的「源 → 提供方」对应关系转发 ——
+	// 组件不认识具体领域模块，也不猜哪个提供方能答这个源（ARCH-01：那条断言
+	// 打在注册表自己身上，恒不成立，筛选栏于是四维全空且不报错）。
 	if provider, ok := collectionFilterOptionsProvider(ctx); ok && len(splitList(p.Filters)) > 0 {
-		if options, oerr := provider.CollectionFilterOptions(ctx.Context, ctx.ProjectID); oerr == nil {
+		if options, oerr := provider.CollectionFilterOptions(ctx.Context, source, ctx.ProjectID); oerr == nil {
 			view.FilterOptions = options
 		}
 	}

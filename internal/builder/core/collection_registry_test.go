@@ -85,6 +85,63 @@ func TestCollectionRegistryUnknownSource(t *testing.T) {
 	}
 }
 
+// stubOptionsCollection 在上述桩之上**额外**实现筛选选项能力（可选能力的提供方）。
+type stubOptionsCollection struct {
+	stubCollection
+	options CollectionFilterOptions
+	seen    []string
+}
+
+func (s *stubOptionsCollection) CollectionFilterOptions(_ context.Context, source, projectID string) (CollectionFilterOptions, error) {
+	s.seen = append(s.seen, source+"|"+projectID)
+	return s.options, nil
+}
+
+// TestCollectionRegistryFilterOptionsBySource 筛选选项按**注册时的集合源**转发（ARCH-01）。
+//
+// 这是这次修复的核心契约：能力断言打在注册表自己身上必然失败（注册表不拥有业务能力），
+// 于是筛选栏四维全空且不报错；正确路径是「按源找到注册时的提供方 → 再问它有没有这项能力」。
+func TestCollectionRegistryFilterOptionsBySource(t *testing.T) {
+	reg := NewCollectionRegistry()
+	plain := stubCollection{sources: []CollectionSchema{{Source: "content:article"}}}
+	withOptions := &stubOptionsCollection{
+		stubCollection: stubCollection{sources: []CollectionSchema{{Source: "content:product"}}},
+		options:        CollectionFilterOptions{Brands: []CollectionFilterChoice{{ID: "b1", Name: "Alibarbar"}}},
+	}
+	if err := reg.Register(plain); err != nil {
+		t.Fatalf("注册内容集合源失败: %v", err)
+	}
+	if err := reg.Register(withOptions); err != nil {
+		t.Fatalf("注册商品集合源失败: %v", err)
+	}
+
+	// 有能力的源：拿到选项，且转发时带上的是**查询的源**与工程 ID。
+	ctx := context.Background()
+	opts, err := reg.CollectionFilterOptions(ctx, "content:product", "proj-1")
+	if err != nil {
+		t.Fatalf("取商品筛选选项失败: %v", err)
+	}
+	if len(opts.Brands) != 1 || opts.Brands[0].ID != "b1" {
+		t.Fatalf("筛选选项应来自为该源注册的提供方: %+v", opts)
+	}
+	if len(withOptions.seen) != 1 || withOptions.seen[0] != "content:product|proj-1" {
+		t.Fatalf("转发应带上查询的源与工程 ID: %v", withOptions.seen)
+	}
+
+	// 没有该能力的源（content:article）：空选项 + 不报错（筛选栏是可选装饰）。
+	if opts, err := reg.CollectionFilterOptions(ctx, "content:article", "proj-1"); err != nil || len(opts.Brands)+len(opts.Tags)+len(opts.Categories)+len(opts.Attributes) != 0 {
+		t.Fatalf("无能力的源应返回空选项且不报错: %+v / %v", opts, err)
+	}
+	// 未注册的源同理（构造错误不该让整页构建失败）。
+	if opts, err := reg.CollectionFilterOptions(ctx, "content:order", "proj-1"); err != nil || len(opts.Brands) != 0 {
+		t.Fatalf("未注册的源应返回空选项且不报错: %+v / %v", opts, err)
+	}
+	// 空源同理。
+	if _, err := reg.CollectionFilterOptions(ctx, "   ", "proj-1"); err != nil {
+		t.Fatalf("空源应返回空选项且不报错: %v", err)
+	}
+}
+
 // TestCollectionRegistrySchemasDeterministic 元数据按源标识字典序聚合，与注册顺序无关。
 func TestCollectionRegistrySchemasDeterministic(t *testing.T) {
 	first := NewCollectionRegistry()

@@ -40,6 +40,14 @@ type CollectionRegistry interface {
 	// 注册的解析器支持分页就转发，不支持就退化成「取一批再截断」并返回 Total = -1。
 	// 因此调用方不需要对注册表本身做能力探测 —— 可选性在 provider 那一层。
 	ResolveCollectionPage(ctx context.Context, source string, q CollectionQuery) (CollectionPage, error)
+	// CollectionFilterOptionsProvider 集合源的**可选**筛选能力（issue #27 的筛选栏）。
+	// 注册表实现它：按注册时各提供方自报的集合源，把「本工程有哪些可筛值」的请求
+	// 转发给对应提供方；未注册的源 / 该源没有这项能力的，返回空选项而不是报错。
+	//
+	// 为什么能力要落在注册表上：组件只拿得到 ctx.Collection（装配点注入的就是注册表），
+	// 而「哪个源由谁提供」只有注册表知道 —— 在组件侧对 ctx.Collection 做能力断言
+	// 等于要求注册表**自己**长出业务能力，断言必然失败、筛选栏静默全空（ARCH-01）。
+	CollectionFilterOptionsProvider
 	// Register 注册一个集合源提供方；nil / 无集合源 / 源标识重复返回错误。
 	Register(p CollectionSourceProvider) error
 	// Sources 已注册的集合源标识（字典序，确定性）。
@@ -130,6 +138,34 @@ func (r *collectionRegistry) ResolveCollectionPage(ctx context.Context, source s
 	return CollectionPage{Items: items, Total: -1}, nil
 }
 
+// CollectionFilterOptions 实现 core.CollectionFilterOptionsProvider：按**注册时的集合源**
+// 找到提供方，再问它能不能给筛选选项。
+//
+// 两步是刻意的，也是 ARCH-01 的根因所在：
+//   - 「哪个源由谁提供」只认 Register 时提供方自报的集合源（bySource 表，装配期建立、
+//     构建期只读），不是对某个对象做能力断言碰运气；
+//   - 「这个源有没有筛选能力」才做能力探测，与 ResolveCollectionPage 对分页能力的
+//     处理同一口径：可选性在提供方那一层，注册表无条件实现入口。
+//
+// 未注册的源、以及源没有筛选能力的（如 content:article）一律返回**空选项 + nil**：
+// 筛选栏是可选装饰，缺能力只该让它不渲染，不该让整页构建失败（与集合元数据 /
+// 分页退化的取舍一致）。提供方自身报错（如工程 ID 缺失）原样上抛，由调用方决定降级。
+func (r *collectionRegistry) CollectionFilterOptions(ctx context.Context, source, projectID string) (CollectionFilterOptions, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return CollectionFilterOptions{}, nil
+	}
+	p, ok := r.lookup(source)
+	if !ok {
+		return CollectionFilterOptions{}, nil
+	}
+	provider, ok := p.(CollectionFilterOptionsProvider)
+	if !ok {
+		return CollectionFilterOptions{}, nil
+	}
+	return provider.CollectionFilterOptions(ctx, source, projectID)
+}
+
 // CollectionSchemas 实现 core.CollectionSchemaProvider：聚合全部集合源元数据。
 //
 // 顺序按源标识字典序（与注册顺序无关）：工作台下拉与构建期报错文案都依赖它，
@@ -188,11 +224,12 @@ func (r *collectionRegistry) lookup(source string) (CollectionSourceProvider, bo
 	return p, ok
 }
 
-// 编译期断言：注册表同时提供解析与元数据两个契约。
+// 编译期断言：注册表同时提供解析、元数据与筛选选项（派发）三个契约。
 var (
-	_ CollectionResolver       = (*collectionRegistry)(nil)
-	_ CollectionSchemaProvider = (*collectionRegistry)(nil)
-	_ CollectionRegistry       = (*collectionRegistry)(nil)
+	_ CollectionResolver              = (*collectionRegistry)(nil)
+	_ CollectionSchemaProvider        = (*collectionRegistry)(nil)
+	_ CollectionFilterOptionsProvider = (*collectionRegistry)(nil)
+	_ CollectionRegistry              = (*collectionRegistry)(nil)
 )
 
 // buildProjectKey 站点工程 ID 在构建上下文里的键（私有类型，避免与其它包冲突）。

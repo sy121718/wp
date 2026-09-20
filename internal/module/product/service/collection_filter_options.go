@@ -11,13 +11,21 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 // 编译期断言：集合源筛选选项能力（issue #27）。
 var _ core.CollectionFilterOptionsProvider = (*Service)(nil)
 
 // CollectionFilterOptions 实现 core.CollectionFilterOptionsProvider。
-func (s *Service) CollectionFilterOptions(ctx context.Context, projectID string) (out core.CollectionFilterOptions, err error) {
+//
+// source 由集合源注册表按「注册时各提供方自报的集合源」派发进来：本模块只拥有
+// 商品集合源一个，其它源（哪怕也落在本模块的元数据聚合里）不是本实现在答 ——
+// 不猜、不报错，返回空选项（与注册表「无该能力/无该源 → 空选项」的规则一致）。
+func (s *Service) CollectionFilterOptions(ctx context.Context, source, projectID string) (out core.CollectionFilterOptions, err error) {
+	if strings.TrimSpace(source) != productcontract.CollectionSourceProduct {
+		return out, nil
+	}
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return out, fmt.Errorf("缺少工程 ID，无法给出筛选选项")

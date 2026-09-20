@@ -22,8 +22,9 @@ type fakeOptionsCollection struct {
 	options core.CollectionFilterOptions
 }
 
-func (f *fakeOptionsCollection) CollectionFilterOptions(_ context.Context, projectID string) (core.CollectionFilterOptions, error) {
-	_ = projectID
+func (f *fakeOptionsCollection) CollectionFilterOptions(_ context.Context, source, projectID string) (core.CollectionFilterOptions, error) {
+	// 直接持有提供方的桩：源标识与工程 ID 都不是它关心的（注册表已按源派发过）。
+	_, _ = source, projectID
 	return f.options, nil
 }
 

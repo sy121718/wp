@@ -41,8 +41,12 @@ type CollectionFilterOptions struct {
 
 // CollectionFilterOptionsProvider 可选能力：集合源能给出「这个工程有哪些可筛的值」。
 //
+// source 是**集合源标识**（如 content:product / content:article），projectID 是站点工程：
+// 同一个实现可能被注册到多个集合源上，问题必须问在「哪个源」上 —— 聚合方
+// （core.CollectionRegistry）按注册时各 provider 自报的集合源派发，接口本身不猜。
+//
 // 未实现该能力的集合源：列表组件不渲染筛选栏（降级为纯粹的列表，不报错）——
 // 契约缺失不该阻断构建，这条与 CollectionSchemaProvider 的处理一致。
 type CollectionFilterOptionsProvider interface {
-	CollectionFilterOptions(ctx context.Context, projectID string) (CollectionFilterOptions, error)
+	CollectionFilterOptions(ctx context.Context, source, projectID string) (CollectionFilterOptions, error)
 }

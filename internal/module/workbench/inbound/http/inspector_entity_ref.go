@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go_wp/internal/builder/core"
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 // entityRefInspectorOptions 把集合源可选筛选项转成检查器下拉（EDT-005）。
@@ -20,7 +21,8 @@ func entityRefInspectorOptions(ctx context.Context, h *Handle, projectID, refKin
 	if !ok {
 		return out
 	}
-	opts, err := provider.CollectionFilterOptions(ctx, projectID)
+	// 检查器持有的就是商品数据源：源标识用 contract 常量，不写第二份字面量。
+	opts, err := provider.CollectionFilterOptions(ctx, productcontract.CollectionSourceProduct, projectID)
 	if err != nil {
 		return out
 	}
