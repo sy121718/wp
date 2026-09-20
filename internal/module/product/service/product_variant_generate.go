@@ -711,7 +711,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			}
 			key := optionKey(decodeOptionPairs(v.OptionValues))
 			if seenKeys[key] {
-				res.Skipped = append(res.Skipped, variantSkipOf(v, productenums.VariantSkipDuplicated))
+				res.Skipped = append(res.Skipped, variantSkipOf(v, productenums.VariantSkipDuplicated, ""))
 				continue
 			}
 			seenKeys[key] = true
@@ -790,12 +790,12 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		if kept[v.ID] {
 			continue
 		}
-		reason, rerr := s.variantDeleteBlockReason(ctx, p.ProjectID, v)
+		reason, detail, rerr := s.variantDeleteBlockReason(ctx, p.ProjectID, v)
 		if rerr != nil {
 			return nil, rerr
 		}
 		if reason != "" {
-			res.Skipped = append(res.Skipped, variantSkipOf(v, reason))
+			res.Skipped = append(res.Skipped, variantSkipOf(v, reason, detail))
 			continue
 		}
 		deletions = append(deletions, pendingDelete{v: v, before: variantChangeSnapshot(v, nil)})
@@ -845,69 +845,81 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 }
 
 // variantSkipOf 组装「跳过一行」的回带信息（原因取 enums 常量 = i18n key）。
-func variantSkipOf(v *productmodel.VariantEntity, reason string) productdto.VariantSaveSkip {
+//
+// detail 是**可定位明细**（引用面 / 工程 / 商品 id），与 Reason 分开两个字段：
+// Reason 会经 ?done= 回带到页面，读侧 productVariantNoticeMatches 要求每个原因都逐字
+// 等于受控文案（带自由文本的形态会被判成伪造而整条回执消失），所以明细只能走
+// 响应体里的 Detail，不能拼进 Reason。反之单条删除路径（DeleteVariant）返回的是错误，
+// 那里按 key：detail 的既有形态拼接，明细照常可见。
+func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) productdto.VariantSaveSkip {
 	if v == nil {
-		return productdto.VariantSaveSkip{Reason: reason}
+		return productdto.VariantSaveSkip{Reason: reason, Detail: detail}
 	}
 	return productdto.VariantSaveSkip{
 		VariantID: v.ID, SKUCode: v.SKUCode,
-		OptionValues: orJSON(v.OptionValues, "{}"), Reason: reason,
+		OptionValues: orJSON(v.OptionValues, "{}"), Reason: reason, Detail: detail,
 	}
 }
 
-// variantDeleteBlockReason 变体删除的守卫：命中**四个引用面**之一时返回原因（enums 常量 = i18n key）。
+// variantDeleteBlockReason 变体删除的守卫：命中**四个引用面**之一时返回原因
+// （enums 常量 = i18n key）+ 可定位明细（detail 为空表示该原因没有额外定位信息）。
 //
 //	① 库存非零（inventory_stocks；已有）—— 该 SKU 还有货，先处理库存或改为停用；
 //	② BOM 引用（inventory_bom_items 的 component；已有）—— 先解除引用；
-//	③ 捆绑成员引用（products.bundle_items.options[].variantId，本批新增）——
-//	   删掉它会让那些捆绑套餐的成员指向一个不存在的变体；
-//	④ 有过任何库存流水（inventory_stock_movements，本批新增）—— 订单一旦建单就必然产生
+//	③ 捆绑成员引用（products.bundle_items.options[].variantId）——
+//	   删掉它会让那些捆绑套餐的成员指向一个不存在的变体；**必须跨工程可发现**：
+//	   别的工程把本工程的变体列为捆绑成员时，只在本工程里查会命中 0 行 ⇒ 删除放行 ⇒
+//	   那些捆绑的成员清单永久悬空（审计 DB-03 §1.2 的守卫盲区）；
+//	④ 有过任何库存流水（inventory_stock_movements）—— 订单一旦建单就必然产生
 //	   扣减流水，所以「有流水」等价于「被订单用过」；历史单据按 variant_id 追溯，不允许硬删。
 //
 // ①②在 inventory 侧（同模块直调 model 具名方法，未注入时不拦 —— 纯商品单测路径）；
-// ③在 product 侧（本 module 的表，恒可查）；④经库存用例（契约方法，未注入时不拦）。
+// ③在 product 侧（本 module 的表，恒可查，且跨工程可见性由逐工程作用域枚举取得，
+// 见 model/product_ref_scan.go）；④经库存用例（契约方法，未注入时不拦）。
 //
-// 四个守卫都必须带工程作用域：这些表都在迁移 215 名单里，缺作用域时查询静默返回
-// 「没被引用」—— 守卫看似生效、其实全放行，是最糟的形态。
-func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string, v *productmodel.VariantEntity) (reason string, err error) {
+// ①②④仍按**单个工程作用域**查（这些表都在迁移 215 名单里，缺作用域会静默返回
+// 「没被引用」）。它们的跨工程面属库存域，不在本票范围（DB-03 §6 第 7 条已记录）。
+func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string, v *productmodel.VariantEntity) (reason, detail string, err error) {
 	if v == nil {
-		return "", nil
+		return "", "", nil
 	}
 	if s.inv != nil {
 		n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, v.ID, projectID)
 		if cerr != nil {
-			return "", cerr
+			return "", "", cerr
 		}
 		if n > 0 {
-			return productenums.VariantSkipHasStock, nil
+			return productenums.VariantSkipHasStock, "", nil
 		}
 		parents, berr := s.inv.ListBOMParents(ctx, v.ID, projectID)
 		if berr != nil {
-			return "", berr
+			return "", "", berr
 		}
 		if len(parents) > 0 {
-			return productenums.VariantSkipReferenced, nil
+			return productenums.VariantSkipReferenced, "", nil
 		}
 	}
-	// ③ 捆绑成员引用：走 product model 的具名查询（jsonb 包含判断下推，见该方法注释）。
-	referenced, rerr := s.m.VariantReferencedByBundleItems(ctx, projectID, v.ID)
+	// ③ 捆绑成员引用：跨工程扫描（jsonb 包含判断下推，见 model.ProductRefsByBundleVariant 的注释）。
+	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
+		return s.m.ProductRefsByBundleVariant(ctx, v.ID, ids)
+	})
 	if rerr != nil {
-		return "", rerr
+		return "", "", rerr
 	}
-	if referenced {
-		return productenums.VariantSkipBundleReferenced, nil
+	if ref.Referenced() {
+		return productenums.VariantSkipBundleReferenced, refGuardDetail(ref), nil
 	}
 	// ④ 库存流水（被订单用过）：订单域与库存域的口径都在这一条上。
 	if s.invSvc != nil {
 		moved, merr := s.invSvc.VariantHasStockMovement(ctx, projectID, v.ID)
 		if merr != nil {
-			return "", merr
+			return "", "", merr
 		}
 		if moved {
-			return productenums.VariantSkipHasMovement, nil
+			return productenums.VariantSkipHasMovement, "", nil
 		}
 	}
-	return "", nil
+	return "", "", nil
 }
 
 // resolveContainerSKU 容器主体 SKU（规则 A 的主体段）的**唯一**解析入口。

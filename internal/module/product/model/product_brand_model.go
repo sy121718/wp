@@ -134,11 +134,13 @@ func (m *Model) DeleteBrand(ctx context.Context, id string) (err error) {
 	return m.BrandDB(ctx).Where("id = ?", id).Delete(&ProductBrandEntity{}).Error
 }
 
-// ProductUsingBrand 反查挂了某品牌的商品（删除前引用检查，只取一行用于拦截提示）。
+// ProductUsingBrand **本工程内**反查挂了某品牌的商品（只取一行）。
 //
-// projectID 由**调用方**给出：反查的是 products（迁移 215 名单），工程上下文只有调用方有
-// （它的语义是「本次删除会撞到哪些商品」，作用域就是发起删除的那个工程）。
-// 缺作用域时这里命中 0 行 ⇒ 占用检查静默放行 ⇒ 删除留下悬空引用（DB-009）。
+// ⚠ 品牌删除守卫**已不再用它**（审计 DB-03 §5.1 第 2 条 / PROD-02）：作用域是发起删除的
+// 那个工程，别的工程仍引用这个品牌时命中 0 行 ⇒ 删除放行 ⇒ products.brand_id 的外键
+// ON DELETE SET NULL 静默解绑。守卫走 ProductRefsByBrand（跨工程，见 product_ref_scan.go）。
+// 保留本方法供 public/test/rls/rls_product_taxonomy_scope_test.go 钉住工程作用域护栏，
+// **不要再把它接回删除路径。**
 func (m *Model) ProductUsingBrand(ctx context.Context, brandID, projectID string) (e *ProductEntity, err error) {
 	e = &ProductEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

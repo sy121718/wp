@@ -156,10 +156,17 @@ func (s *Service) DeleteBrand(ctx context.Context, req *productdto.DeleteBrandRe
 	if _, gerr := s.m.GetBrand(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
-	if _, uerr := s.m.ProductUsingBrand(ctx, req.ID, projectID); uerr == nil {
-		return errors.New(productenums.ErrBrandInUse)
-	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
-		return uerr
+	// 引用检查必须**跨工程**（审计 DB-03 §1.2 / §5.1 第 2 条）：跨工程引用此前不可见，
+	// 删除放行后 products.brand_id 的外键 ON DELETE SET NULL 会**静默解绑**别的工程那个商品的
+	// 品牌 —— 没有任何信号（这正是品牌守卫与另外三个不同的后果）。
+	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
+		return s.m.ProductRefsByBrand(ctx, req.ID, ids)
+	})
+	if rerr != nil {
+		return rerr
+	}
+	if ref.Referenced() {
+		return crossProjectRefBlocked(productenums.ErrBrandInUse, ref)
 	}
 	return s.m.DeleteBrand(ctx, req.ID)
 }

@@ -386,8 +386,14 @@ func pagesOf(total, size int) int {
 
 // DeleteTag 删除标签：先把引用从商品上解绑，再删标签行（同一事务）。
 //
-// 不拒绝「已被商品引用」的删除：标签是标记不是外键，解绑即可；反过来说，
+// 不拒绝「**本工程**已被商品引用」的删除：标签是标记不是外键，解绑即可；反过来说，
 // 留下悬空引用才是坏数据，所以两步必须原子。
+//
+// 但**别的工程**的引用一律打回给人（审计 DB-03 §2.4 记的正是这个缺口）：
+// RemoveTagFromProductsTx 的作用域是 tag.ProjectID，只解绑标签自己工程下的商品 ——
+// 别的工程仍引用着它时，删除会成功并在那些商品上留下永久悬空 tag id。
+// 这里不跨工程解绑：跨工程写既会被策略的 WITH CHECK 拒绝（换非超级角色后），
+// 也不该由本工程的删除动作替别的工程改数据（AGENTS.md「一律打回给人」）。
 func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error) {
 	if req == nil || req.ID == "" {
 		return errors.New(productenums.ErrInvalidParam)
@@ -399,6 +405,15 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 	tag, gerr := s.m.GetTag(ctx, req.ID, projectID)
 	if gerr != nil {
 		return mapTagNotFound(gerr)
+	}
+	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
+		return s.m.ProductRefsByTag(ctx, req.ID, ids)
+	})
+	if rerr != nil {
+		return rerr
+	}
+	if others := ref.Outside(tag.ProjectID); others.Referenced() {
+		return crossProjectRefBlocked(productenums.ErrTagCrossProject, others)
 	}
 	now := time.Now().UTC()
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {

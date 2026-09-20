@@ -178,10 +178,10 @@ func TestCategoryDeleteGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	if err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: child.ID}); err == nil ||
-		err.Error() != productenums.ErrCategoryInUse {
-		t.Fatalf("被商品引用应返回 ErrCategoryInUse，实际 %v", err)
-	}
+	// 本批起守卫的拒绝带**可定位明细**（审计 DB-03 §5.1 第 2 条 / PROD-02）：业务 key 逐字不变，
+	// 后面接「引用面 / 工程 / 商品 id」。断言因此是「key 相等 + 明细在」，比原来只认整串更强。
+	err = f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: child.ID})
+	assertRefGuardError(t, err, productenums.ErrCategoryInUse, "products.category_ids")
 
 	// 解绑后即可删除。
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, CategoryIDs: []string{}}); err != nil {
@@ -235,10 +235,9 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 	if p.BrandID != brand.ID {
 		t.Fatalf("商品应挂上品牌，实际 %q", p.BrandID)
 	}
-	if err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ProjectID: f.projectID, ID: brand.ID}); err == nil ||
-		err.Error() != productenums.ErrBrandInUse {
-		t.Fatalf("被商品引用应返回 ErrBrandInUse，实际 %v", err)
-	}
+	// 同上：品牌守卫的拒绝也带可定位明细（跨工程引用此前不可见 ⇒ 外键静默解绑）。
+	err = f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ProjectID: f.projectID, ID: brand.ID})
+	assertRefGuardError(t, err, productenums.ErrBrandInUse, "products.brand_id")
 
 	empty := ""
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ProjectID: f.projectID, ID: p.ID, BrandID: &empty}); err != nil {

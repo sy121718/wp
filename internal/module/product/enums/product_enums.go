@@ -58,6 +58,7 @@ const (
 	ErrTagNotFound          = "ErrTagNotFound"          // 标签不存在
 	ErrTagSlugTaken         = "ErrTagSlugTaken"         // 同工程下标签 slug 已占用
 	ErrTagProjectMismatch   = "ErrTagProjectMismatch"   // 标签不属于该商品所在工程
+	ErrTagCrossProject      = "ErrTagCrossProject"      // 标签仍被其它工程的商品引用，不能删除
 	ErrTagKindInvalid       = "ErrTagKindInvalid"       // 标签类型不是 manual / rule
 	ErrTagRuleNotAllowed    = "ErrTagRuleNotAllowed"    // 手工标签不能带自动规则
 	ErrTagRuleTypeInvalid   = "ErrTagRuleTypeInvalid"   // 规则类型不是内置类型（不接受自由表达式）

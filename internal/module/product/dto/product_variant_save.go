@@ -87,11 +87,18 @@ type SaveVariantListReq struct {
 //
 // Reason 是 enums 常量（= i18n key），由 inbound 取词后展示；
 // OptionValues 原样带回，供页面把跳过的那一行拼成可读规格文本。
+//
+// Detail 是**可定位明细**（引用面 / 涉及的工程与商品 id，审计 DB-03 §5.1 第 2 条）：
+// 它与 Reason 分两个字段是刻意的 —— Reason 会经 ?done= 回带到页面，读侧的
+// productVariantNoticeMatches 要求每个原因**逐字**等于受控文案，把自由文本拼进 Reason
+// 会让整条回执被判成伪造而消失。需要看明细的调用方读 Detail（JSON 响应）。
 type VariantSaveSkip struct {
 	VariantID    string          `json:"variantId"`
 	SKUCode      string          `json:"skuCode"`
 	OptionValues json.RawMessage `json:"optionValues"`
 	Reason       string          `json:"reason"`
+	// Detail 可定位明细（无额外信息时为空串，序列化仍带上该键，便于调用方稳定取值）。
+	Detail string `json:"detail"`
 }
 
 // SaveVariantListResp 保存结果（计数 + 逐条跳过原因 + 保存后的全部变体）。

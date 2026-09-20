@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -205,10 +204,16 @@ func (s *Service) DeleteAttribute(ctx context.Context, req *productdto.DeleteAtt
 	if _, gerr := s.m.GetAttribute(ctx, req.ID, projectID); gerr != nil {
 		return mapNotFound(gerr)
 	}
-	if _, uerr := s.m.ProductUsingAttribute(ctx, req.ID, projectID); uerr == nil {
-		return errors.New(productenums.ErrAttrInUse)
-	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
-		return uerr
+	// 引用检查必须**跨工程**（审计 DB-03 §1.2 / §5.1 第 2 条）：attribute_ids 是 JSON 数组、
+	// 没有任何数据库级外键，守卫看不见别的工程的引用时删除会留下永久悬空 id。
+	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
+		return s.m.ProductRefsByAttribute(ctx, req.ID, ids)
+	})
+	if rerr != nil {
+		return rerr
+	}
+	if ref.Referenced() {
+		return crossProjectRefBlocked(productenums.ErrAttrInUse, ref)
 	}
 	return s.m.DeleteAttribute(ctx, req.ID)
 }

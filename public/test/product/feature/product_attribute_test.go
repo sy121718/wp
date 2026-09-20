@@ -292,11 +292,10 @@ func TestAttributeDeleteGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
 	}
-	if delErr := f.svc.DeleteAttribute(ctx, &productdto.DeleteAttributeReq{ID: group.ID}); delErr == nil {
-		t.Fatalf("被商品引用的属性组必须拒绝删除")
-	} else if delErr.Error() != productenums.ErrAttrInUse {
-		t.Fatalf("拒绝删除应返回 ErrAttrInUse，实际 %v", delErr)
-	}
+	// 本批起守卫的拒绝带**可定位明细**（审计 DB-03 §5.1 第 2 条 / PROD-02）：
+	// 业务 key 逐字不变，后面接「引用面 / 工程 / 商品 id」。
+	delErr := f.svc.DeleteAttribute(ctx, &productdto.DeleteAttributeReq{ID: group.ID})
+	assertRefGuardError(t, delErr, productenums.ErrAttrInUse, "products.attribute_ids")
 
 	// 解绑后可删。
 	if _, err = f.svc.Update(ctx, &productdto.UpdateReq{ID: p.ID, AttributeIDs: []string{}}); err != nil {

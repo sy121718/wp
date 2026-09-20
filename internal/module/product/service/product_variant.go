@@ -250,13 +250,20 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	if guardScope == "" {
 		guardScope = scopeID
 	}
-	if reason, rerr := s.variantDeleteBlockReason(ctx, guardScope, v); rerr != nil {
+	if reason, detail, rerr := s.variantDeleteBlockReason(ctx, guardScope, v); rerr != nil {
 		return rerr
 	} else if reason != "" {
 		// 单条删除路径的既有文案（ErrVariantHasStock）保留：调用方与页面提示都以它为准，
 		// 其余三个引用面用守卫自己的原因 key（词条见迁移 259）。
+		//
+		// detail 是本批新增的**可定位明细**（引用面 / 工程 / 商品 id）：单条删除返回的是
+		// 错误而不是页面回执，按既有的「key：明细」形态拼接即可（productErrKey 前缀识别），
+		// 运营因此能看到「被哪个工程的哪个商品引用」，而不是只有一句「被捆绑成员引用」。
 		if reason == productenums.VariantSkipHasStock {
 			return errors.New(productenums.ErrVariantHasStock)
+		}
+		if detail != "" {
+			return fmt.Errorf("%s：%s", reason, detail)
 		}
 		return errors.New(reason)
 	}

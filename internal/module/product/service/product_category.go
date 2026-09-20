@@ -219,10 +219,18 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 	} else if n > 0 {
 		return errors.New(productenums.ErrCategoryHasChildren)
 	}
-	if _, uerr := s.m.ProductUsingCategory(ctx, req.ID, projectID); uerr == nil {
-		return errors.New(productenums.ErrCategoryInUse)
-	} else if !errors.Is(uerr, gorm.ErrRecordNotFound) {
-		return uerr
+	// 引用检查必须**跨工程**（审计 DB-03 §1.2 / §5.1 第 2 条）：此前的 ProductUsingCategory 把
+	// 作用域收在本工程，别的工程仍引用这条分类时命中 0 行 ⇒ 删除放行 ⇒ products.category_ids
+	// 里留下永久悬空 id。扫描按工程逐个设置作用域取并集，与连接角色无关（见 model 的文件头）。
+	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
+		return s.m.ProductRefsByCategory(ctx, req.ID, ids)
+	})
+	if rerr != nil {
+		return rerr
+	}
+	if ref.Referenced() {
+		// 命中即拒绝，明细里给出引用面 / 工程 / 商品，由人决定处置（不自动清理）。
+		return crossProjectRefBlocked(productenums.ErrCategoryInUse, ref)
 	}
 	return s.m.DeleteCategory(ctx, req.ID)
 }

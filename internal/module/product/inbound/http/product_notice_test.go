@@ -205,3 +205,35 @@ func TestProductBulkTemplatesAreAllRecognised(t *testing.T) {
 		}
 	}
 }
+
+// TestProductPageErrAcceptsDeleteGuardDetail 删除守卫的「key：可定位明细」形态必须被读侧放行。
+//
+// 跨工程引用守卫（审计 DB-03 §5.1 第 2 条 / PROD-02）的拒绝里带明细：
+//
+//	引用面 <表.列>；命中 N 个商品、涉及 M 个工程（…）；商品 <id>（工程 <id>）。…
+//
+// 写侧 productErrText 出的是「译文：明细」，读侧 shell.FacingNotice 按「候选文案 + ：」前缀
+// 放行 —— 两条链任何一头错位，运营看到的就是归口文案（「系统内部错误」）而不是
+// 「是哪个工程、哪个商品在引用」，明细白做。这里同时钉住**长度**：超过 shell.NoticeMaxBytes
+// 的回执一律判为伪造，明细写太长同样会让它整条消失。
+func TestProductPageErrAcceptsDeleteGuardDetail(t *testing.T) {
+	keys := []string{
+		productenums.ErrCategoryInUse,
+		productenums.ErrBrandInUse,
+		productenums.ErrAttrInUse,
+		productenums.ErrTagCrossProject,
+	}
+	for _, key := range keys {
+		fallback := productErrFallbacks[key]
+		if fallback == "" {
+			t.Fatalf("测试素材缺失：%s 没有中文兜底（读侧候选就缺了这一条）", key)
+		}
+		msg := fallback + "：引用面 products.category_ids；命中 2 个商品、涉及 1 个工程（11111111-1111-4111-8111-111111111111）；商品 22222222-2222-4222-8222-222222222222（工程 11111111-1111-4111-8111-111111111111）。守卫不自动清理，请先在对应工程解绑后重试"
+		if len(msg) > shell.NoticeMaxBytes {
+			t.Fatalf("测试素材本身超过 %d 字节，无法验证长明细：%d", shell.NoticeMaxBytes, len(msg))
+		}
+		if got := productPageErr(productErrCtx(t, msg)); got != msg {
+			t.Errorf("%s 的带明细形态应被读侧放行，实际 %q", key, got)
+		}
+	}
+}

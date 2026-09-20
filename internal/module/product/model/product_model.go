@@ -582,38 +582,10 @@ func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string, projectID s
 	return list, err
 }
 
-// VariantReferencedByBundleItems 该变体是否被某个捆绑商品的成员清单引用
-// （products.bundle_items.options[].variantId，docs/14 §8 的删除守卫补引用面）。
-//
-// 为什么是 jsonb 查询而不是全表扫 + 内存过滤：成员清单是 JSONB 列，把整个工程的行拉进
-// 内存逐个比对在「商品多、每个捆绑都有十几个成员」时是纯粹的浪费，而且会随数据增长变成
-// 拖慢删除的隐藏成本。这里用包含语义下推：
-//
-//	bundle_items @> jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text)))
-//
-// 语义与「bundle_items -> 'options' @> […]」等价（PG 的 jsonb 包含是「右边数组的每个元素
-// 都被左边某个元素包含」），但**只有整列包含这种写法能用上 GIN 索引** —— 迁移 260 的注释里
-// 记了三条 EXPLAIN 实测：GIN 的可索引操作符作用在**被索引的表达式**上，所以「整列索引 +
-// 嵌套表达式（bundle_items -> 'options' @> …）」永远走不进索引，写成整列包含才有 Index Cond。
-// 索引：idx_products_bundle_items_gin（jsonb_path_ops，占位 260）。
-//
-// projectID 必填（products 在迁移 215 名单里）：缺作用域时策略谓词为 NULL，
-// 查询静默返回「没被引用」——那正是最糟的形态（守卫看似生效、其实全放行）。
-func (m *Model) VariantReferencedByBundleItems(ctx context.Context, projectID, variantID string) (referenced bool, err error) {
-	if strings.TrimSpace(projectID) == "" || strings.TrimSpace(variantID) == "" {
-		return false, nil
-	}
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		var n int64
-		cerr := tx.WithContext(ctx).Model(&ProductEntity{}).
-			Where("bundle_items @> jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text)))",
-				variantID).
-			Limit(1).Count(&n).Error
-		referenced = n > 0
-		return cerr
-	})
-	return referenced, err
-}
+// 捆绑成员引用的反查已迁到 product_ref_scan.go 的 ProductRefsByBundleVariant：
+// 那条守卫必须**跨工程**可发现（别的工程把本工程的变体列为捆绑成员时，只在本工程里查
+// 会命中 0 行 ⇒ 删除放行 ⇒ 那些捆绑的成员清单永久悬空），原来的单工程布尔反查
+// （VariantReferencedByBundleItems）已随之删除 —— 留着它只会让下一个调用方再踩一次。
 
 // GetVariant 按 ID 查变体。
 func (m *Model) GetVariant(ctx context.Context, id string) (e *VariantEntity, err error) {

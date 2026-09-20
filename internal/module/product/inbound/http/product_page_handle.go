@@ -995,6 +995,9 @@ var productErrSentinels = []string{
 	productenums.ErrCollectionSourceInvalid,
 	productenums.ErrInvalidField,
 	productenums.ErrInvalidType,
+	// 标签的跨工程引用（审计 DB-03 §5.1 第 2 条 / PROD-02）：错误 tail 里带引用面、
+	// 涉及的工程与商品 id，漏登记就会让这条**可行动**的提示退化成「系统内部错误」。
+	productenums.ErrTagCrossProject,
 	productenums.ErrTagKindInvalid,
 	productenums.ErrTagNameRequired,
 	productenums.ErrTagNotFound,
@@ -1118,6 +1121,7 @@ var productErrFallbacks = map[string]string{
 	productenums.ErrInvalidField:                 "提交了不支持的字段（不在商品字段白名单内）",
 	productenums.ErrInvalidType:                  "实体类型不合法",
 	productenums.ErrRelatedInvalid:               "相关商品引用不合法：引用的商品必须存在、属于本工程，且不能指向自己",
+	productenums.ErrTagCrossProject:              "标签仍被其它工程的商品引用，不能删除",
 	productenums.ErrTagKindInvalid:               "标签类型不是 manual / rule",
 	productenums.ErrTagNameRequired:              "标签名称必填",
 	productenums.ErrTagNotFound:                  "标签不存在",

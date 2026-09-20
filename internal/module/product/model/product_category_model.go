@@ -153,14 +153,16 @@ func (m *Model) CountCategoryChildren(ctx context.Context, parentID string) (n i
 	return n, err
 }
 
-// ProductUsingCategory 反查挂了某分类的商品（删除前引用检查）。
+// ProductUsingCategory **本工程内**反查挂了某分类的商品（只取一行）。
 //
 // 两个引用面都查：附属分类走 category_ids 的 jsonb 包含谓词，主分类走真列。
-// 只取一行用于拦截提示，故 Limit(1)；命中多条时取排序最靠前的一条。
 //
-// projectID 由**调用方**给出：反查的是 products（迁移 215 名单），工程上下文只有调用方有
-// （它的语义是「本次删除会撞到哪些商品」，作用域就是发起删除的那个工程）。
-// 缺作用域时这里命中 0 行 ⇒ 占用检查静默放行 ⇒ 删除留下悬空引用（DB-009）。
+// ⚠ 分类删除守卫**已不再用它**（审计 DB-03 §5.1 第 2 条 / PROD-02）：它的作用域是
+// 发起删除的那个工程，别的工程仍引用这条分类时命中 0 行 ⇒ 删除放行 ⇒ 跨工程悬空 id。
+// 守卫走 ProductRefsByCategory（跨工程，见 product_ref_scan.go）。
+// 保留本方法是因为 public/test/rls/rls_product_taxonomy_scope_test.go 用它钉住
+// 「ListXxxByIDs / ProductUsingXxx 这一族的工程作用域」这条 DB-009/DB-05 护栏，
+// 不是留给删除守卫用的。**不要再把它接回删除路径。**
 func (m *Model) ProductUsingCategory(ctx context.Context, categoryID, projectID string) (e *ProductEntity, err error) {
 	probe, merr := json.Marshal([]string{categoryID})
 	if merr != nil {
