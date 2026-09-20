@@ -49,13 +49,16 @@ GET /admin/product-brands
 GET /admin/product-categories
 GET /admin/product-pricing
 GET /admin/product-tags
+GET /admin/product-tags/hits
 GET /admin/products
 GET /admin/products/bundle
 GET /admin/products/detail
+GET /admin/products/new
 GET /admin/products/template
 GET /admin/products/translations
 GET /admin/returns
 GET /admin/roles
+GET /admin/roles/permissions
 GET /admin/seo
 GET /admin/settings
 GET /admin/site-slots
@@ -224,6 +227,7 @@ POST /admin/blocks/bulk-delete
 POST /admin/blocks/create
 POST /admin/blocks/delete
 POST /admin/blocks/save-content
+POST /admin/content-templates/activate
 POST /admin/content-templates/bulk-delete
 POST /admin/coupons/bulk-delete
 POST /admin/coupons/bulk-toggle
@@ -257,6 +261,7 @@ POST /admin/inventory/sources/create
 POST /admin/inventory/sources/delete
 POST /admin/inventory/sources/update
 POST /admin/inventory/stock/change
+POST /admin/inventory/stock/tracking
 POST /admin/inventory/warehouse/create
 POST /admin/inventory/warehouse/default
 POST /admin/inventory/warehouse/delete
@@ -290,6 +295,8 @@ POST /admin/navigations/bulk-delete
 POST /admin/navigations/create
 POST /admin/navigations/delete
 POST /admin/navigations/move
+POST /admin/navigations/panel
+POST /admin/navigations/panel/create
 POST /admin/navigations/translations/save
 POST /admin/navigations/update
 POST /admin/orders/bulk-cancel
@@ -336,11 +343,15 @@ POST /admin/product-tags/update
 POST /admin/products/attributes
 POST /admin/products/bulk-delete
 POST /admin/products/bulk-pricing
+POST /admin/products/bundle/members/resolve
 POST /admin/products/bundle/save
 POST /admin/products/create
 POST /admin/products/delete
 POST /admin/products/rating/add
 POST /admin/products/rating/delete
+POST /admin/products/reapply-preset
+POST /admin/products/rollback-artifact
+POST /admin/products/rollback-document
 POST /admin/products/seo-score
 POST /admin/products/tags
 POST /admin/products/taxonomy
@@ -364,6 +375,7 @@ POST /admin/returns/reject
 POST /admin/roles/bulk-delete
 POST /admin/roles/create
 POST /admin/roles/delete
+POST /admin/roles/permissions/save
 POST /admin/roles/update
 POST /admin/settings/locales/rows
 POST /admin/settings/locales/save
@@ -394,6 +406,7 @@ POST /api/build/retry
 POST /api/content/create
 POST /api/content/delete
 POST /api/content/update
+POST /api/contenttemplate/activate
 POST /api/contenttemplate/create
 POST /api/contenttemplate/update
 POST /api/customer/status
@@ -546,6 +559,8 @@ POST /workbench/global
 POST /workbench/history
 POST /workbench/history/restore
 POST /workbench/inspector
+POST /workbench/instance/save
+POST /workbench/navigation/create
 POST /workbench/outline
 POST /workbench/preview
 POST /workbench/seo-score
