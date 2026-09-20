@@ -125,9 +125,10 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 
 	// 4) 干净迁移库的精确总量。228 角色权限页新增 15 对词条，原账本漏记了这批；
 	// 297 块删除保护的引用类别词条新增 7 对（MsgBlockUsage*，中英各 7 行）；
-	// 298（商品标签页命中商品展开区）又新增 2 对 —— 两份账本同批并入。
+	// 298（商品标签页命中商品展开区）又新增 2 对 —— 两份账本同批并入；
+	// 304（商品「相关商品」引用校验）新增 1 对（ErrRelatedInvalid，中英各一行）—— 同批并入。
 	// 业务词条仍在下文按 key 和语言逐项校验，总量不能替代语义检查。
-	for lang, want := range map[string]int64{"zh-CN": 3778, "en-US": 3663} {
+	for lang, want := range map[string]int64{"zh-CN": 3779, "en-US": 3664} {
 		got := countRows(t, db, "sys_i18n", "lang = ?", lang)
 		if got != want {
 			t.Fatalf("sys_i18n %s 词条数量：want=%d got=%d（新增 seed 时同步核对各语言）", lang, want, got)
@@ -350,6 +351,65 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	}
 	if !foundSeed {
 		t.Fatal("注册台账里找不到 298-i18n-seed-product-tag-hits（新增 seed 必须注册）")
+	}
+
+	// 4-G) 商品「相关商品」引用校验词条（304 / 审计 DB-03 / PROD-01）：1 个 key 中英成对、
+	// 非空、取值不同。
+	//
+	// 这批词的坑与 222/226/298 同形：ErrRelatedInvalid 的中文兜底就写在 productErrFallbacks 里，
+	// 漏了 en-US 既不报错、也不至于裸 key，只是英文界面上显示中文。所以按本批 key 逐条对账，
+	// 而不是只信总数 ledger。
+	relatedKeys := []string{"ErrRelatedInvalid"}
+	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", relatedKeys, "zh-CN"); got != 1 {
+		t.Fatalf("304 的 1 个 key 应有 zh-CN 各一行，实际 %d", got)
+	}
+	if got := countRows(t, db, "sys_i18n", "item_key IN (?) AND lang = ?", relatedKeys, "en-US"); got != 1 {
+		t.Fatalf("304 的 1 个 key 应有 en-US 各一行（不许只写中文），实际 %d", got)
+	}
+	var relatedPairs []struct {
+		ItemKey string
+		ZH      string
+		EN      string
+	}
+	if err := db.Table("sys_i18n AS z").
+		Select("z.item_key AS item_key, z.item_value AS zh, e.item_value AS en").
+		Joins("JOIN sys_i18n e ON e.item_key = z.item_key AND e.lang = 'en-US'").
+		Where("z.lang = 'zh-CN' AND z.item_key IN (?)", relatedKeys).
+		Scan(&relatedPairs).Error; err != nil {
+		t.Fatalf("查询 304 词条中英对失败: %v", err)
+	}
+	if len(relatedPairs) != 1 {
+		t.Fatalf("304 词条中英匹配应为 1 对，实际 %d 对", len(relatedPairs))
+	}
+	for _, p := range relatedPairs {
+		// 英文不算「空」但只有空白同样不可用（与 298 判据一致）。
+		if strings.TrimSpace(p.ZH) == "" || strings.TrimSpace(p.EN) == "" {
+			t.Fatalf("%s 中英文案不得为空（zh=%q en=%q）", p.ItemKey, p.ZH, p.EN)
+		}
+		if strings.TrimSpace(p.ZH) == strings.TrimSpace(p.EN) {
+			t.Fatalf("%s 中英文案相同（%q），疑似未翻译", p.ItemKey, p.ZH)
+		}
+		// -v 时打出实际取值：复核本批词条不必再手动查库。
+		t.Logf("304 %s：zh=%q en=%q", p.ItemKey, p.ZH, p.EN)
+	}
+	// 幂等判定同 4-F2：取注册台账里那一条 ConditionSQL 求值（不是另写一句近似查询）——
+	// key 写成 ? 占位符时判定恒为 0，seed 不报错、行数也对，只是每次启动重跑。
+	foundRelatedSeed := false
+	for _, s := range migrations.AllSeeds() {
+		if s.Version != "304-i18n-seed-product-related-ids" {
+			continue
+		}
+		foundRelatedSeed = true
+		var done int64
+		if err := db.Raw(s.ConditionSQL).Scan(&done).Error; err != nil {
+			t.Fatalf("求值 304 的幂等判定失败: %v（ConditionSQL=%s）", err, s.ConditionSQL)
+		}
+		if done <= 0 {
+			t.Fatalf("304 的幂等判定在词条落库后仍为 %d —— ConditionSQL 由迁移器直接 db.Raw 执行、没有任何参数替换，key 必须写进 SQL 字面量；否则判定恒为 0、每次启动重跑", done)
+		}
+	}
+	if !foundRelatedSeed {
+		t.Fatal("注册台账里找不到 304-i18n-seed-product-related-ids（新增 seed 必须注册）")
 	}
 
 	// 4-B) 访客面组件词条（060）：13 个 key，zh-CN/en-US 各一行；中英必须都有（不许缺翻译）。
