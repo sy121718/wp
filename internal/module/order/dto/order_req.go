@@ -54,6 +54,20 @@ type CreateOrderReq struct {
 	AdminNote string `json:"adminNote"`
 	// Locale 访客语言：决定自动开号的初始密码邮件用哪套模板（空 = 通用模板）。
 	Locale string `json:"locale"`
+	// ProvisionGuestAccount 是否给这个邮箱开号并把初始密码寄过去（**显式请求字段**）。
+	//
+	// 三态，且是**唯一**的开号依据 —— 绝不看 CreatedVia：那是客户端可传字段，
+	// 拿它当安全语义等于把这个选择交给调用方（见 docs/02-W-admin-order-create.md §4）。
+	//
+	//	nil   —— 调用方未表态。只有既有的前台 checkout 链路会这样：它走购物车结算，
+	//	         没有「是否开户」这个决定，因此保持既有行为（下单即开户），前台行为逐字不变；
+	//	false —— 明确不开号。后台代客建单页的**默认档**（复选框不勾选就提交 false）：
+	//	         订单照常落库，user_id 留空，不发任何邮件；
+	//	true  —— 明确开号：邮箱没有账号就建号并发初始密码（邮箱已有账号时只关联、绝不改密码）。
+	//
+	// 为什么用 *bool 而不是 bool：bool 的零值 false 无法区分「明确不开号」与「老调用方没传」，
+	// 一旦把零值当「不开号」，前台的「下单即开户」会在一夜之间静默消失（既有两条开号用例即判据）。
+	ProvisionGuestAccount *bool `json:"provisionGuestAccount"`
 	// Attribution 归因与轨迹（流量来源 / 广告参数 / 会话 / 下单前浏览轨迹）。
 	// 由 inbound 从访客追踪上下文组装，允许为 nil（后台代客下单没有访客上下文）。
 	Attribution *Attribution `json:"attribution"`

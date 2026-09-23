@@ -26,7 +26,12 @@ import (
 // 两者都是收窄过的接口，不是各自模块的完整 Service。
 func SetupOrderRoutes(rg *permission.RouteGroup,
 	db *gorm.DB,
-	product productcontract.VariantSnapshotPort,
+	// product 商品目录契约。下单快照用它的 VariantSnapshotPort 那一半（只读），
+	// 后台代客建单页的候选 SKU 用它的 ListBundleSKUs（跨商品列启用变体）。
+	// 参数取全量契约而不再是单独的 VariantSnapshotPort：ProductService **天然嵌入**
+	// 那个端口，所以装配点（routers/assembly.go）传的实参一个字都不用改 ——
+	// 为一条只读能力新增一个装配参数，等于让所有调用方跟着改一遍。
+	product productcontract.ProductService,
 	stock ordercontract.StockOperator,
 	guest usercontract.GuestAccountProvisioner,
 	// webhooks 外部集成派发口（OSS-006）：支付落账后向登记的端点派发 order.paid。
@@ -110,6 +115,15 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
 		orderPages := NewOrderPageHandle(svc, projects)
 		pages.GET("/orders", orderPages.OrdersPage)
+		// 后台代客建单页（docs/02-W-admin-order-create.md）：独立整页，页头与空态两个入口
+		// 都指向它（同一个 URL）。写动作复用 order:create —— 与上面几条同手法，
+		// **不新增权限点、不写 seed 迁移**；权限点路径一个字符都不能改。
+		//
+		// 这一页是整页表单（字段 20+、明细可多行），失败一律**就地重渲 200 + 回填**，
+		// 不走 303 + ?err= 回跳：303 之后是 GET，没有 PostForm，几十个字段必然全丢。
+		orderCreate := NewOrderCreatePageHandle(svc, projects, product)
+		pages.GET("/orders/new", orderCreate.OrderCreatePage)
+		pages.POST("/orders/create", builtin.CasbinMiddlewareForPath("/api/order/create"), orderCreate.OrderCreateSubmit)
 		pages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)
 		pages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
 		pages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)

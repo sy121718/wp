@@ -152,6 +152,9 @@ var navPathAlias = map[string]string{
 	"/admin/themes/settings":        "/admin/themes",
 	"/admin/datarules/edit":         "/admin/datarules",
 	"/admin/content-templates/edit": "/admin/content-templates",
+	// 代客建单页挂在「订单管理」列表下（入口在页头与空态，不单独占菜单项）：
+	// 不映射的话打开这一页时侧栏整组失去高亮（高亮是「菜单路径 == 当前路径」精确匹配）。
+	"/admin/orders/new": "/admin/orders",
 	// 导航菜单翻译工作台属「导航菜单」列表的子页面。
 	"/admin/navigations/translations": "/admin/navigations",
 }

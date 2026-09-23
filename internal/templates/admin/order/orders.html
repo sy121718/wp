@@ -14,6 +14,10 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
+{* 代客建单入口的可见性判据：与页面路由的写动作共用同一个权限点（order:create，
+   由 order_router.go 的 CasbinMiddlewareForPath("/api/order/create") 逐字复用）。
+   无权限时两个入口都不渲染 —— 手敲 URL 仍会被 Casbin 拒。 *}
+{{canCreate := isset(.PermSet["order:create"])}}
 {{selectedProject := .SelectedProject}}
 {{rows := .Rows}}
 {{detail := .Detail}}
@@ -40,6 +44,12 @@
                     {{end}}
                 </select>
             </form>
+            {{end}}
+            {* 页级主行动：代客建单（独立整页 /admin/orders/new）。与空态里的那个入口是
+               同一个 URL —— 双入口是 coupons.html 的既有形态，运营不会怀疑两者不等价。
+               「＋ 代客建单」是**动作式**措辞（能做什么），不是对能力的承诺式描述。 *}
+            {{if canCreate}}
+            <a class="btn btn-primary" href="/admin/orders/new?project={{selectedProject}}">＋ {{ .["t"]("admin.orders.action.create", "代客建单") }}</a>
             {{end}}
         </div>
     </header>
@@ -147,13 +157,29 @@
                 <div class="empty-state">
                     <p class="empty-title">{{if selectedProject}}{{ .["t"]("admin.orders.list.empty_project", "这个工程还没有订单") }}{{else}}{{ .["t"]("admin.orders.list.empty_no_project", "还没有站点工程") }}{{end}}</p>
                     {* 文案与路由表一致：/admin/orders 只有 GET + cancel/status/refund/note/bulk-*，
-                       没有任何建单端点 —— 原先那句「（或后台代客建单）」承诺了一个页面上不存在的入口。 *}
-                    <p class="empty-desc">{{ .["t"]("admin.orders.list.empty_tail", "台前下单后就会出现在这里。若已经下过单，检查上面的筛选条件是不是过窄了。") }}</p>
-                    {* 主行动按条件给：只有真的带着筛选时「清掉筛选」才有意义。
-                       无筛选时它指向本页自己（href == 当前 URL），点了页面逐字不变 ——
-                       那是死按钮，比不给按钮更让人怀疑页面坏了。 *}
-                    {{if .FilterActive}}
-                    <div class="empty-actions"><a class="btn" href="/admin/orders?project={{selectedProject}}">{{ .["t"]("admin.orders.filter.reset", "重置") }}</a></div>
+                       建单入口是**另一个页面** /admin/orders/new（下面两个入口都指向它）。
+                       空态描述只讲「订单从哪来」，不重复承诺入口 —— 入口就在下方。 *}
+                    <p class="empty-desc">{{ .["t"]("admin.orders.list.empty_tail", "台前下单后就会出现在这里。若已经下过单，检查上面的筛选条件是不是过窄了。") }}
+                    {* 带着（可能已失效的）状态筛选时必须说出来：徽章全不亮 + 空列表看起来就像
+                       「这个列表坏了」或者「我没有权限」，用户会去改筛选栏或怀疑版本（02-O orders T4）。
+                       这条提示与退货页**逐字相同**，因此直接复用它的词条（中英成对，见 190 的 seed）：
+                       两处是同一条提示的两个出口，改文案要同时改两页，不要各写一份。
+                       显示的是 handler 给的 FilterLabel（中文标签），不是 FilterStatus 生值 —— 后者
+                       会把已知状态显示成 pending。 *}
+                    {{if .FilterStatus != ""}}{{ .["t"]("admin.returns.list.status_filter_lead", "当前还带着状态筛选「") }}{{.FilterLabel}}{{ .["t"]("admin.returns.list.status_filter_tail", "」—— 点上面的「全部」可以清掉。") }}{{end}}</p>
+                    {* 空态主行动：**建单入口常驻**（有权限时），「清掉筛选」只在真的带着筛选时给。
+                       判据：无筛选时「重置」指向本页自己（href == 当前 URL），点了页面逐字不变，
+                       那是死按钮；/admin/orders/new 是**另一个 URL** 的活按钮，不违反该判据。
+                       顺序固定「建单 → 重置」，与页头主行动同一份 URL。 *}
+                    {{if canCreate || .FilterActive}}
+                    <div class="empty-actions">
+                        {{if canCreate}}
+                        <a class="btn btn-primary" href="/admin/orders/new?project={{selectedProject}}">＋ {{ .["t"]("admin.orders.action.create", "代客建单") }}</a>
+                        {{end}}
+                        {{if .FilterActive}}
+                        <a class="btn" href="/admin/orders?project={{selectedProject}}">{{ .["t"]("admin.orders.filter.reset", "重置") }}</a>
+                        {{end}}
+                    </div>
                     {{end}}
                 </div>
                 {{end}}

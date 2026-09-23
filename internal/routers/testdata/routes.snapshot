@@ -1,4 +1,3 @@
-GET /
 GET /_fragments/:type
 GET /_t/c/:token
 GET /_t/o/:token
@@ -41,6 +40,7 @@ GET /admin/menus
 GET /admin/navigations
 GET /admin/navigations/translations
 GET /admin/orders
+GET /admin/orders/new
 GET /admin/page/translations
 GET /admin/pages
 GET /admin/permissions
@@ -304,6 +304,7 @@ POST /admin/navigations/update
 POST /admin/orders/bulk-cancel
 POST /admin/orders/bulk-status
 POST /admin/orders/cancel
+POST /admin/orders/create
 POST /admin/orders/note
 POST /admin/orders/refund
 POST /admin/orders/status

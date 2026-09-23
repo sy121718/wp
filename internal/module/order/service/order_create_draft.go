@@ -73,7 +73,9 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	}
 	total := subtotal - discount + shipping
 
-	// 访客开号：邮箱还没有账号就建一个（随机初始密码，邮件发给客户）。
+	// 访客开号：走**显式开关**（req.ProvisionGuestAccount）—— 后台代客建单页默认 false
+	// （不开号、不发初始密码邮件），前台 checkout 不传该字段、保持既有行为。
+	// 判定细节与三态语义见 ensureGuestAccount 与 dto.CreateOrderReq 的注释。
 	userID, accountMailed := s.ensureGuestAccount(ctx, req)
 
 	// 每人限次在 redeemCouponTx 内与核销同事务判定（行锁 + 计数），
@@ -243,11 +245,23 @@ func (s *Service) resolveCoupon(ctx context.Context, projectID, couponCode strin
 // （客户仍可用这个邮箱走「忘记密码」自己开号）。
 // 邮箱已有账号时只关联、**绝不改密码** —— 那条安全边界在 user 模块里守着。
 //
+// **开号与否只看显式请求字段 req.ProvisionGuestAccount，不看 CreatedVia**（docs/02-W §4）：
+// CreatedVia 是客户端可传字段（json:"createdVia"），把它当安全语义等于让调用方自己挑默认值。
+// 三态语义见 dto.CreateOrderReq.ProvisionGuestAccount 的注释，其中：
+//
+//	· false → 明确不开号（后台代客建单页的默认档）；
+//	· nil   → 调用方未表态，保持既有前台 checkout 行为（下单即开户）。
+//
 // 返回值二：只有「这次确实新建了账号、且初始密码寄出去了」才为 true。
 // 邮箱已有账号时我们只关联、绝不改密码，此时告诉客户「密码已发到你邮箱」
 // 会让他在邮箱里白找一场。
 func (s *Service) ensureGuestAccount(ctx context.Context, req *orderdto.CreateOrderReq) (*uint64, bool) {
 	if req.UserID != nil || s.guest == nil {
+		return req.UserID, false
+	}
+	// 显式开关优先：明确说了不开号就到此为止（后台代客建单的默认档走这一支）。
+	// nil 落到下面那一段 —— 那是既有 checkout 链路，行为与本次改动之前逐字一致。
+	if req.ProvisionGuestAccount != nil && !*req.ProvisionGuestAccount {
 		return req.UserID, false
 	}
 	gres, gerr := s.guest.EnsureGuestAccount(ctx, &usercontract.GuestAccountInput{
