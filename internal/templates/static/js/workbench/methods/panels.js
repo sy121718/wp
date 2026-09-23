@@ -280,10 +280,23 @@ export const panelsMethods = {
                     form.append('headerBlockId', t.headerBlockId || '');
                     form.append('footerBlockId', t.footerBlockId || '');
                     var done = wbBusy(saveBtn, { label: '保存中…' });
-                    fetch('/admin/themes/settings/save', { method: 'POST', headers: csrfHeaders({}), body: form })
+                    // redirect: 'manual' 是这条判断的关键 —— 服务端**成功走 303**（PRG 跳回设置页）、
+                    // **失败走 200 + 就地重渲整页**（52 字段的长表单不能跳页，否则用户填的全丢）。
+                    // 让 fetch 自动跟随重定向的话，两种结果在 r.ok 眼里都是 true：失败会被报成
+                    // 「已保存」，而用户以为改好了、实际一个值都没落库。不跟随之后：
+                    //   成功 → opaqueredirect（status 0、body 不可读）；
+                    //   失败 → 200 + 一整页 HTML（里面的 .badge-warning 就是原因）。
+                    fetch('/admin/themes/settings/save', {
+                        method: 'POST',
+                        headers: csrfHeaders({}),
+                        body: form,
+                        redirect: 'manual'
+                    })
                         .then(function (r) {
                             done();
-                            if (!r.ok) { alert('保存失败，请重试'); return; }
+                            if (r.type !== 'opaqueredirect' && r.status !== 303) {
+                                return self.explainSaveFailure(r);
+                            }
                             // 本地缓存按提交键名回写（与后端 SaveThemeSettings 的约定一致）。
                             Array.prototype.forEach.call(body.querySelectorAll('[name]'), function (el) {
                                 self.setThemePath(t, el.name, (el.value || '').trim());
@@ -297,6 +310,24 @@ export const panelsMethods = {
                         });
                 });
                 body.appendChild(saveBtn);
+            },
+            // explainSaveFailure 保存失败时把服务端的归口提示读出来再弹。
+            //
+            // 失败响应是**一整页 HTML**（服务端就地重渲），原因就写在那句 `.badge-warning` 里
+            //（值不合法 / 校验不过 / 整站刷新失败）—— 把原文透出来比一句「请重试」有用得多，
+            // 否则用户只会反复点同一个按钮。取不到就往「主题管理 → 设置」指路。
+            explainSaveFailure(resp) {
+                return resp.text().then(function (html) {
+                    var text = '';
+                    try {
+                        var doc = new DOMParser().parseFromString(html, 'text/html');
+                        var el = doc.querySelector('.badge-warning');
+                        text = (el && el.textContent) ? el.textContent.trim() : '';
+                    } catch (e) {
+                        text = '';
+                    }
+                    alert('保存失败：' + (text || '服务端拒绝了这次保存，请到「主题管理 → 设置」查看详细提示。'));
+                });
             },
             setThemePath(obj, path, value) {
                 var parts = path.split('.');
