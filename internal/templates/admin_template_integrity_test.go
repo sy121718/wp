@@ -180,12 +180,39 @@ func templateProblems(src string) []string {
 	return problems
 }
 
+// adminTemplateFiles 递归列出 admin/ 下的全部模板（含各级子目录与 partials/）。
+//
+// **不要退回 `filepath.Glob("admin/*.html")`**：模板已按后端模块分进子目录（product/ order/
+// system/ …），那个模式只会匹配到根下 3 个壳页面 —— 门禁会静默缩水成「只检查 3 个文件」，
+// 它仍然绿，但不再守任何东西（比变红危险得多）。
+func adminTemplateFiles(t *testing.T) []string {
+	t.Helper()
+	var files []string
+	var walk func(dir string)
+	walk = func(dir string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("遍历 %s 失败: %v", dir, err)
+		}
+		for _, e := range entries {
+			p := filepath.Join(dir, e.Name())
+			if e.IsDir() {
+				walk(p)
+				continue
+			}
+			if strings.HasSuffix(p, ".html") {
+				files = append(files, p)
+			}
+		}
+	}
+	walk("admin")
+	return files
+}
+
 // TestTemplatesAreStructurallyIntact 全量模板的结构配平与取词方式检查。
 func TestTemplatesAreStructurallyIntact(t *testing.T) {
-	var files []string
+	files := adminTemplateFiles(t)
 	for _, pattern := range []string{
-		filepath.Join("admin", "*.html"),
-		filepath.Join("admin", "partials", "*.html"),
 		filepath.Join("fragments", "*.html"),
 		filepath.Join("fragments", "*.jet"),
 		filepath.Join("site", "*.html"),
