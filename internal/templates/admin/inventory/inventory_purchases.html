@@ -106,9 +106,9 @@
             </form>
         </div>
 
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头（采购单号 / 货源 / 收货仓 / 单据状态 /
-           收货进度 / 下单时间 / 操作）是「这里能看什么」的说明，空数据不该连它一起藏掉。
-           三个分支都落在 tbody 的整行里（colspan = 7 个实际列，本表没有勾选列）。
+        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头（采购单号 / 货源 / 类型 / 收货仓 /
+           单据状态 / 收货进度 / 下单时间 / 操作）是「这里能看什么」的说明。
+           三个分支都落在 tbody 的整行里（colspan = 8 个实际列，本表没有勾选列）。
            两个空态分别给出口（审计 D10）：没有货源 → 去货源管理；没有采购单 → 新建采购单抽屉。 *}
         <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide purchase-page-table">
@@ -116,6 +116,7 @@
             <tr>
                 <th>{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}</th>
                 <th>{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}</th>
+                <th>{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}</th>
                 <th>{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}</th>
                 <th>{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}</th>
                 <th>{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}</th>
@@ -125,7 +126,7 @@
             </thead>
             <tbody>
             {{if len(.Sources) == 0}}
-            <tr><td colspan="7" class="cell-wrap">
+            <tr><td colspan="8" class="cell-wrap">
                 <div class="empty-state">
                     {* 装载失败（判据由 handler 算好的 LoadFailed 给出）优先于两个空态：这一次连工程
                        列表都没读出来，再说「这个工程还没有启用中的货源 —— 先去货源管理建一个」
@@ -141,7 +142,7 @@
                 </div>
             </td></tr>
             {{else if len(orders) == 0}}
-            <tr><td colspan="7" class="cell-wrap">
+            <tr><td colspan="8" class="cell-wrap">
                 <div class="empty-state">
                     <p class="empty-title">{{ .["t"]("admin.inventory_purchases.list.emptyHeading", "没有符合条件的采购单") }}</p>
                     <p class="empty-desc">{{ .["t"]("admin.inventory_purchases.list.empty", "没有符合条件的采购单。用右上角「新建采购单」建一张，收货仓缺省用默认仓。") }}</p>
@@ -156,7 +157,8 @@
             {{range _, o := .Orders}}
             <tr>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}"><code>{{o.Code}}</code></td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}">{{o.SourceName}} <span class="hint">{{o.SourceTypeLabel}}</span></td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.source", "货源") }}">{{o.SourceName}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}">{{o.SourceTypeLabel}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}">{{o.WarehouseName}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}">
                     {{if o.Status == "received"}}<span class="badge badge-success">{{o.StatusLabel}}</span>
