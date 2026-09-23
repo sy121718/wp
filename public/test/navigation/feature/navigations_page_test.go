@@ -17,10 +17,31 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	"go_wp/internal/permission"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 
 	"github.com/gin-gonic/gin"
 )
+
+func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string, perms map[string]bool) string {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+	router.GET("/admin/navigations", func(c *gin.Context) {
+		c.Set(shell.PermSetKey, perms)
+		page(c)
+	})
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/navigations?project="+projectID+"&kind=header", nil)
+	router.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("页面渲染失败，状态码 %d", recorder.Code)
+	}
+	return recorder.Body.String()
+}
 
 // TestNavigationsPageRenders 管理页渲染出菜单结构（含子项与操作入口）。
 func TestNavigationsPageRenders(t *testing.T) {
@@ -30,18 +51,7 @@ func TestNavigationsPageRenders(t *testing.T) {
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/navigations", handle.NavigationsPage)
-
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/navigations?project="+projectID+"&kind=header", nil)
-	router.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("页面渲染失败，状态码 %d", recorder.Code)
-	}
-	body := recorder.Body.String()
+	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(permission.NavigationUpdate): true})
 	for _, want := range []string{"导航菜单", "首页", "新品", "/admin/navigations/create", "/admin/navigations/move"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)
@@ -64,21 +74,23 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/navigations", handle.NavigationsPage)
-
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/navigations?project="+projectID+"&kind=header", nil)
-	router.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("页面渲染失败，状态码 %d", recorder.Code)
-	}
-	body := recorder.Body.String()
+	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(permission.NavigationUpdate): true})
 	for _, want := range []string{"从已有内容添加", "/admin/navigations/add-source", "/about", "页面（1）"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)
+		}
+	}
+
+	withoutUpdate := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{})
+	if !strings.Contains(withoutUpdate, "导航菜单") {
+		t.Error("无更新权限时页面主体未渲染")
+	}
+	for _, forbidden := range []string{
+		`data-drawer-open="#tpl-nav-create"`, `id="tpl-nav-create"`, "/admin/navigations/create",
+		`data-drawer-open="#tpl-nav-add-source"`, `id="tpl-nav-add-source"`, "/admin/navigations/add-source",
+	} {
+		if strings.Contains(withoutUpdate, forbidden) {
+			t.Errorf("无更新权限时页面仍出现操作 %q", forbidden)
 		}
 	}
 }
