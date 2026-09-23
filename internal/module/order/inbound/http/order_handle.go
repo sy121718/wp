@@ -63,12 +63,9 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 	req.UserAgent = c.Request.UserAgent()
 	if id, name := operatorFromContext(c); id != 0 || name != "" {
 		req.CreateBy = id
-		// 后台代客下单：入口标记与操作人一起落
-		if req.CreatedVia == "" {
-			req.CreatedVia = "admin"
-		}
 	}
-	res, err := h.svc.CreateOrder(c.Request.Context(), req)
+	// 来源由 API 专属入口确定，请求体里的 createdVia 不进入 DTO。
+	res, err := h.svc.CreateAPIOrder(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return

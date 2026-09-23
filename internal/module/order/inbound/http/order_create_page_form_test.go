@@ -72,6 +72,22 @@ func TestOrderCreateItemRowsRejectsOverlongList(t *testing.T) {
 	}
 }
 
+// TestOrderCreateReqFromFormHasNoSourceField 表单即使带伪造来源也仅生成业务请求。
+func TestOrderCreateReqFromFormHasNoSourceField(t *testing.T) {
+	c := postFormContext(t, url.Values{"createdVia": {"api"}})
+	req, errs := orderCreateReqFromForm(c, orderCreateForm{
+		ProjectID: "project-1",
+		Email:     "buyer@example.com",
+		Items:     []orderCreateItemRow{{VariantID: "v-1", Quantity: "1"}},
+	})
+	if len(errs) != 0 {
+		t.Fatalf("表单应可建单，错误=%v", errs)
+	}
+	if req.ProvisionGuestAccount == nil || *req.ProvisionGuestAccount {
+		t.Fatal("后台代客建单仍须明确关闭默认开户")
+	}
+}
+
 // TestOrderCreateItemRowsEmptyListKeepsOneRow 一行都没提交：给一行空行，页面仍可填。
 func TestOrderCreateItemRowsEmptyListKeepsOneRow(t *testing.T) {
 	rows, tooMany := orderCreateItemRowsFromPost(postFormContext(t, url.Values{}))

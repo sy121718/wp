@@ -15,6 +15,7 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"gorm.io/gorm"
@@ -212,6 +213,9 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读订单详情失败: %v", err)
 	}
+	if detail.Head.CreatedVia != ordermodel.CreatedViaCheckout {
+		t.Fatalf("结算建单来源应为 checkout，实际 %q", detail.Head.CreatedVia)
+	}
 	if len(detail.Items) != 1 {
 		t.Fatalf("应有 1 个订单项，实际 %d", len(detail.Items))
 	}
@@ -224,6 +228,30 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	// 用 0 冒充「未知成本」会让毛利凭空多出一笔（0 是合法的显式成本：赠品 / 内部划拨）。
 	if it.CostPrice != nil {
 		t.Fatalf("库存行未核算时订单行成本应为 null，实际 %d", *it.CostPrice)
+	}
+}
+
+// TestOrderAPIEntryPersistsSource 客户端 JSON 中的来源字段无法覆盖 API 审计来源。
+func TestOrderAPIEntryPersistsSource(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	_, vid := f.addProduct(t, "API 来源测试", 10, 5)
+	req := f.createBaseReq(vid, 1)
+	if err := json.Unmarshal([]byte(`{"createdVia":"admin"}`), req); err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.orders.CreateAPIOrder(context.Background(), req)
+	if err != nil {
+		t.Fatalf("API 建单失败: %v", err)
+	}
+	detail, err := f.orders.GetOrder(context.Background(), &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
+	if err != nil {
+		t.Fatalf("读取 API 订单失败: %v", err)
+	}
+	if detail.Head.CreatedVia != ordermodel.CreatedViaAPI {
+		t.Fatalf("API 建单来源应为 api，实际 %q", detail.Head.CreatedVia)
 	}
 }
 
@@ -459,7 +487,6 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 
 	req := f.createBaseReq(vid, 1)
 	req.AdminNote = "代发：由 XX 供应商发货"
-	req.CreatedVia = ordermodel.CreatedViaAdmin
 	req.Attribution = &orderdto.Attribution{
 		SourceType: "utm",
 		Referrer:   "https://ad.example.com/landing",
@@ -486,7 +513,7 @@ func TestOrderPersistsAttributionAndAdminNote(t *testing.T) {
 			{URL: "/cart", Title: "购物车", At: "2026-09-12T10:05:03Z", Seconds: 8},
 		},
 	}
-	res, err := f.orders.CreateOrder(ctx, req)
+	res, err := f.orders.CreateAdminOrder(ctx, req)
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}

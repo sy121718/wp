@@ -48,16 +48,14 @@ type CreateOrderReq struct {
 	Remark     string `json:"remark"`
 	// RequestID 幂等键：同一键重复提交只落一单。
 	RequestID string `json:"requestId"`
-	// CreatedVia 下单入口（checkout / admin / api），空则按 checkout。
-	CreatedVia string `json:"createdVia"`
-	// AdminNote 后台备注：自建订单（createdVia=admin）与代发订单的填写位置。
+	// AdminNote 后台备注：后台代客订单与代发订单的填写位置。
 	AdminNote string `json:"adminNote"`
 	// Locale 访客语言：决定自动开号的初始密码邮件用哪套模板（空 = 通用模板）。
 	Locale string `json:"locale"`
 	// ProvisionGuestAccount 是否给这个邮箱开号并把初始密码寄过去（**显式请求字段**）。
 	//
-	// 三态，且是**唯一**的开号依据 —— 绝不看 CreatedVia：那是客户端可传字段，
-	// 拿它当安全语义等于把这个选择交给调用方（见 docs/02-W-admin-order-create.md §4）。
+	// 三态，且是**唯一**的开号依据；订单来源由建单入口决定，不参与开户判定
+	// （见 docs/02-W-admin-order-create.md §4）。
 	//
 	//	nil   —— 调用方未表态。只有既有的前台 checkout 链路会这样：它走购物车结算，
 	//	         没有「是否开户」这个决定，因此保持既有行为（下单即开户），前台行为逐字不变；

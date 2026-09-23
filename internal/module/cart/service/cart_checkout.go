@@ -85,9 +85,7 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 		PaymentMethodTitle: s.pay.Title(),
 		Remark:             strings.TrimSpace(req.Remark),
 		RequestID:          strings.TrimSpace(req.RequestID),
-		// CreatedVia 留空：订单域会兜底成 checkout。这里刻意不写死常量 ——
-		// 那需要 import 订单模块的 model 包，而跨模块只能依赖 contract 与不可变 dto。
-		Locale: req.Locale,
+		Locale:             req.Locale,
 		// 归因在下单这一刻从 cookie 定格（cookie 之后会过期、来源会被覆盖）。
 		Attribution: buildAttribution(req.Tracking, req.UserAgent, now),
 		UserID:      req.UserID,

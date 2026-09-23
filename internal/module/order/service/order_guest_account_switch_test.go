@@ -9,11 +9,11 @@ package orderservice
 //   - 显式 false → 不开号（后台建单页不勾选时提交的就是它）；
 //   - 显式 true  → 开号 + 发信；
 //   - 未表态(nil) → 既有的 checkout 行为（下单即开户）；
-//   - **CreatedVia 无论取什么值都不影响结果** —— 它是客户端可传字段，
-//     拿它当安全语义等于把「是否给客户开户」的默认值交给调用方选。
+//   - 客户端伪造的 createdVia 文本不影响结果：来源不属于请求 DTO。
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	orderdto "go_wp/internal/module/order/dto"
@@ -75,36 +75,30 @@ func TestEnsureGuestAccountFollowsExplicitSwitch(t *testing.T) {
 	}
 }
 
-// TestEnsureGuestAccountIgnoresCreatedVia CreatedVia **不是**开关。
-//
-// 反面判据：显式 false 时，把 CreatedVia 写成任意值（含 checkout）都不该开号 ——
-// 一旦有人把判定改成「看 CreatedVia」，这条立刻变红。
-func TestEnsureGuestAccountIgnoresCreatedVia(t *testing.T) {
-	for _, via := range []string{"", "checkout", "admin", "api", "mystery"} {
-		guest := &fakeGuestAccountProvisioner{}
-		s := &Service{guest: guest}
-		id, _ := s.ensureGuestAccount(context.Background(), &orderdto.CreateOrderReq{
-			CustomerEmail:         "customer@example.com",
-			CreatedVia:            via,
-			ProvisionGuestAccount: boolPtr(false),
+// TestEnsureGuestAccountIgnoresJSONCreatedVia 来源伪造不改变显式开户开关。
+func TestEnsureGuestAccountIgnoresJSONCreatedVia(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		provision bool
+		wantCalls int
+	}{
+		{name: "明确不开", provision: false, wantCalls: 0},
+		{name: "明确开", provision: true, wantCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var req orderdto.CreateOrderReq
+			payload := `{"customerEmail":"customer@example.com","createdVia":"admin","provisionGuestAccount":` +
+				map[bool]string{true: "true", false: "false"}[tc.provision] + `}`
+			if err := json.Unmarshal([]byte(payload), &req); err != nil {
+				t.Fatal(err)
+			}
+			guest := &fakeGuestAccountProvisioner{}
+			s := &Service{guest: guest}
+			id, _ := s.ensureGuestAccount(context.Background(), &req)
+			if guest.calls != tc.wantCalls || (id != nil) != tc.provision {
+				t.Fatalf("伪造来源时开户次数=%d id=%v，期望次数=%d", guest.calls, id, tc.wantCalls)
+			}
 		})
-		if guest.calls != 0 || id != nil {
-			t.Errorf("CreatedVia=%q 时不该开号（它只是入口标记，不是开关）：calls=%d id=%v", via, guest.calls, id)
-		}
-	}
-
-	// 另一侧：显式 true 时同样不看 CreatedVia（走的还是开号）。
-	for _, via := range []string{"", "checkout", "admin"} {
-		guest := &fakeGuestAccountProvisioner{}
-		s := &Service{guest: guest}
-		id, _ := s.ensureGuestAccount(context.Background(), &orderdto.CreateOrderReq{
-			CustomerEmail:         "customer@example.com",
-			CreatedVia:            via,
-			ProvisionGuestAccount: boolPtr(true),
-		})
-		if guest.calls != 1 || id == nil {
-			t.Errorf("CreatedVia=%q 且显式勾选时应开号：calls=%d id=%v", via, guest.calls, id)
-		}
 	}
 }
 

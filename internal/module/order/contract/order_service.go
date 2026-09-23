@@ -58,8 +58,12 @@ type OrderService interface {
 	// CustomerOrderSummaryReader 后台客户管理页的订单摘要（只读，一条方法）。
 	CustomerOrderSummaryReader
 
-	// CreateOrder 建单：读商品事实落快照 → 扣库存 → 写订单（落在同一事务里）。
+	// CreateOrder 访客结算建单，来源固定 checkout。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
+	// CreateAPIOrder 站点 API 建单，来源固定 api。
+	CreateAPIOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
+	// CreateAdminOrder 后台代客建单，来源固定 admin。
+	CreateAdminOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
 	// GetOrder 订单详情（头 + 订单项 + 状态流转链）。
 	GetOrder(ctx context.Context, req *orderdto.GetOrderReq) (res *orderdto.OrderDetailResp, err error)
 	// ListOrders 订单列表 + 各状态计数。

@@ -46,7 +46,7 @@ func (d *orderDraft) response() *orderdto.CreateOrderResp {
 //
 // 步骤顺序与拆分前逐字一致（快照 → 金额 → 券 → 开号 → 订单号 → 订单头）：
 // 券要等小计算出来才能试算，访客开号要在订单号之前（开号结果进订单头）。
-func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrderReq, projectID string) (*orderDraft, error) {
+func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrderReq, projectID, createdVia string) (*orderDraft, error) {
 	now := time.Now()
 	email := strings.TrimSpace(req.CustomerEmail)
 
@@ -116,7 +116,7 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		BillZip:            strings.TrimSpace(req.Billing.Zip),
 		PaymentMethod:      strings.TrimSpace(req.PaymentMethod),
 		PaymentMethodTitle: strings.TrimSpace(req.PaymentMethodTitle),
-		CreatedVia:         defaultString(req.CreatedVia, ordermodel.CreatedViaCheckout),
+		CreatedVia:         createdVia,
 		IPAddress:          strings.TrimSpace(req.IPAddress),
 		UserAgent:          strings.TrimSpace(req.UserAgent),
 		RequestID:          strings.TrimSpace(req.RequestID),
@@ -245,8 +245,8 @@ func (s *Service) resolveCoupon(ctx context.Context, projectID, couponCode strin
 // （客户仍可用这个邮箱走「忘记密码」自己开号）。
 // 邮箱已有账号时只关联、**绝不改密码** —— 那条安全边界在 user 模块里守着。
 //
-// **开号与否只看显式请求字段 req.ProvisionGuestAccount，不看 CreatedVia**（docs/02-W §4）：
-// CreatedVia 是客户端可传字段（json:"createdVia"），把它当安全语义等于让调用方自己挑默认值。
+// **开号与否只看显式请求字段 req.ProvisionGuestAccount**（docs/02-W §4）：
+// CreatedVia 由建单入口确定，只供订单审计使用，不决定客户是否开户。
 // 三态语义见 dto.CreateOrderReq.ProvisionGuestAccount 的注释，其中：
 //
 //	· false → 明确不开号（后台代客建单页的默认档）；

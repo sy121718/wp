@@ -44,8 +44,23 @@ const (
 	maxItemQuantity = 100000
 )
 
-// CreateOrder 建单：校验 → 幂等 → 备料 → 落库 → 扣库存（失败补偿）。
+// CreateOrder 访客结算建单，来源固定为 checkout。
 func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error) {
+	return s.createOrder(ctx, req, ordermodel.CreatedViaCheckout)
+}
+
+// CreateAPIOrder 站点 API 建单，来源固定为 api。
+func (s *Service) CreateAPIOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error) {
+	return s.createOrder(ctx, req, ordermodel.CreatedViaAPI)
+}
+
+// CreateAdminOrder 后台代客建单，来源固定为 admin。
+func (s *Service) CreateAdminOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error) {
+	return s.createOrder(ctx, req, ordermodel.CreatedViaAdmin)
+}
+
+// createOrder 共用建单流水：校验 → 幂等 → 备料 → 落库 → 扣库存。
+func (s *Service) createOrder(ctx context.Context, req *orderdto.CreateOrderReq, createdVia string) (res *orderdto.CreateOrderResp, err error) {
 	if err = validateCreateOrderReq(req); err != nil {
 		return nil, err
 	}
@@ -61,7 +76,7 @@ func (s *Service) CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq)
 	}
 
 	// 备料：商品事实、金额、优惠码、归因、访客账号 —— 全部在事务之外算好。
-	draft, err := s.buildOrderDraft(ctx, req, projectID)
+	draft, err := s.buildOrderDraft(ctx, req, projectID, createdVia)
 	if err != nil {
 		return nil, err
 	}

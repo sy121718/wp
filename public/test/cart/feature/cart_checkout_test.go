@@ -60,6 +60,9 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 	if detail.Head.Status != ordermodel.OrderStatusPaid {
 		t.Fatalf("订单状态应为 paid，实际 %s", detail.Head.Status)
 	}
+	if detail.Head.CreatedVia != ordermodel.CreatedViaCheckout {
+		t.Fatalf("购物车结算来源应为 checkout，实际 %q", detail.Head.CreatedVia)
+	}
 	if detail.Head.PaidAt == nil {
 		t.Fatal("已付款订单必须有 paid_at（对账与时效统计都靠它）")
 	}

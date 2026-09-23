@@ -10,7 +10,7 @@ package orderhttp
 //	   可用量走只读端口 VariantAvailabilityLookupPort。
 //	   **不用 /_fragments/**：那是公开面（访客可达、无鉴权），后台功能依赖它会形成旁路。
 //	3. 开号 —— **默认不开号**：开关落在显式请求字段 dto.CreateOrderReq.ProvisionGuestAccount
-//	   （本页复选框不勾选即提交 false），**绝不看 CreatedVia** —— 那是客户端可传字段。
+//	   （本页复选框不勾选即提交 false），不以订单来源推断开户意图。
 //	4. 权限 —— 复用 order:create（见 order_router.go 的 CasbinMiddlewareForPath）。
 //
 // 写失败**就地重渲 200 + 回填 + 出错字段标红**，不走 303 + ?err= 回跳：303 之后是一次 GET，
@@ -35,7 +35,6 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -190,7 +189,7 @@ func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 	req.UserAgent = c.Request.UserAgent()
 	req.CreateBy = shell.CurrentUserID(c)
 
-	res, err := h.orders.CreateOrder(c.Request.Context(), req)
+	res, err := h.orders.CreateAdminOrder(c.Request.Context(), req)
 	if err != nil {
 		// 业务错误（如「商品规格不存在」「库存不足」）走模块白名单 + 归口文案，
 		// 基础设施错误的原文只进日志（orderFacingError 负责这条分档）。
@@ -516,6 +515,5 @@ func orderCreateReqFromForm(c *gin.Context, form orderCreateForm) (*orderdto.Cre
 		AdminNote:             form.AdminNote,
 		RequestID:             form.RequestID,
 		ProvisionGuestAccount: &provision,
-		CreatedVia:            ordermodel.CreatedViaAdmin,
 	}, fieldErrs
 }
