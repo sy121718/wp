@@ -83,11 +83,16 @@
                 <input type="hidden" name="status" value="{{if fStatus >= 0}}{{fStatus}}{{end}}">
                 <input type="hidden" name="emailVerified" value="{{if fVerified > 0}}{{fVerified}}{{end}}">
                 <input type="hidden" name="locked" value="{{if .FilterLocked}}1{{end}}">
+                {* 注册时间是一个**区间**：容器加 data-wb-daterange 后由 ui/daterange.js 接管
+                   （审计 02-O G5 / 02-K §3）。两个原生 date 仍留在 DOM 里参与表单提交
+                   （name/value/label[for] 全部照旧），区间控件只做渐进增强。 *}
                 <div class="filter-field">
-                    <label for="registeredFrom">{{ .["t"]("admin.customers.field.registered_at", "注册时间（起）") }}</label>
-                    <input type="date" class="form-input" id="registeredFrom" name="registeredFrom" value="{{fFrom}}">
-                    <label for="registeredTo">{{ .["t"]("admin.customers.field.registered_to", "注册时间（止）") }}</label>
-                    <input type="date" class="form-input" id="registeredTo" name="registeredTo" value="{{fTo}}">
+                    <div class="wbd" data-wb-daterange data-wb-clear="{{ .["t"]("admin.common.media.clear", "清除") }}">
+                        <label for="registeredFrom">{{ .["t"]("admin.customers.field.registered_at", "注册时间（起）") }}</label>
+                        <input type="date" class="form-input" id="registeredFrom" name="registeredFrom" value="{{fFrom}}">
+                        <label for="registeredTo">{{ .["t"]("admin.customers.field.registered_to", "注册时间（止）") }}</label>
+                        <input type="date" class="form-input" id="registeredTo" name="registeredTo" value="{{fTo}}">
+                    </div>
                 </div>
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-sm">{{ .["t"]("admin.customers.filter.submit", "筛选") }}</button>

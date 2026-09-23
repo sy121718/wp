@@ -1055,6 +1055,12 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .filter-field .form-select, .filter-field .form-input, .filter-field .form-textarea, .filter-field .wbs {
     width: 200px; min-width: 0; max-width: 100%;
 }
+/* 日期范围控件（ui/daterange.js）比单个 date 宽一档：区间文本（两个日期 + 分隔符）比
+   一个日期长。与上面同款用**绝对宽度**，理由同上 —— .filter-field 是内容决定宽度的
+   flex 项，百分比宽度在这里会形成「父等控件、控件又等父」的循环。 */
+.filter-field .wbd {
+    width: 300px; min-width: 0; max-width: 100%;
+}
 /* 关键词是筛选行的主输入（订单号 / 邮箱要能看全），比下拉宽一档。 */
 .filter-field .form-input.filter-search { width: 240px; }
 /* 区间条件（时间区间、金额区间）的分隔符：不属于任何控件，只做视觉连接。 */
@@ -1124,9 +1130,14 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .field-counter.is-over { color: var(--sky-c-warning, #8a6d3b); }
 
 /* ── 13. 列表卡的标题行 ────────────────────────────────────────────────
-   .fold-title 只在 .section-fold > summary 里有效，被列表卡标题借用时是零样式
-   （能跑，但没有字体权重，看上去像普通正文）。这里给列表卡自己的标题定样式。 */
-.list-card .filter-bar .card-title,
+   列表卡的标题行落点是 `.card-header > .card-title`；本节只为「工具行里放标题」的
+   `.list-toolbar` 补一条样式（product_edit 的评分小节用这个形态）。
+   `.fold-title` 只在 `.section-fold > summary` 里有效，被列表卡标题借用时是零样式
+   （能跑，但没有字体权重，看上去像普通正文）—— inventory 三页曾这样借用，已改。
+   这里原先还替 `.list-card .filter-bar .card-title` 兜底，那是「列表标题混进筛选栏」的
+   历史形态（审计 02-O §38 / §40 要求标题移出 .filter-bar 进 .card-header）；最后一处
+   已于本轮迁走，该分支随之删除。**再往 .filter-bar 里放 .card-title 会是没有样式的** ——
+   这是有意的信号，不要为了让它「看起来对」而把这条兜底加回来。 */
 .list-card .list-toolbar .card-title {
     margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4;
     color: var(--sky-c-text, #1a1d21);
@@ -1148,6 +1159,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (max-width: 560px) {
     .filter-field { flex: 1 1 100%; }
     .filter-field .form-select, .filter-field .form-input, .filter-field .wbs,
+    .filter-field .wbd,
     .filter-field .form-input.filter-search { width: 100%; }
 }
 

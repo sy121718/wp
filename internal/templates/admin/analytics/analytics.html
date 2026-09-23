@@ -124,7 +124,8 @@
            查询同样带 view，改完日期仍停在原来那一维。 *}
         {* 版式（审计 02-O §11 任务 3，G3）：筛选栏用全站统一的 .filter-bar 承载
            （.filter-fields 装条件、.filter-actions 装查询与快捷动作），不再把它包在
-           一张只有筛选语义的 .card-body 里；两个 date 仍是原生控件，不引入范围控件组件。 *}
+           一张只有筛选语义的 .card-body 里；时间范围是一个**区间**，两个 date 保留在 DOM 里
+           参与提交，视觉上由 ui/daterange.js 接管（审计 02-O G5 / 02-K §3）。 *}
         <div class="card-header">
             <span class="card-title">{{ .["t"]("admin.analytics.range.title", "时间范围") }}</span>
         </div>
@@ -133,12 +134,12 @@
             <input type="hidden" name="view" value="{{viewMode}}">
             <div class="filter-fields">
                 <div class="filter-field">
-                    <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
-                    <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
-                </div>
-                <div class="filter-field">
-                    <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
-                    <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
+                    <div class="wbd" data-wb-daterange data-wb-clear="{{ .["t"]("admin.common.media.clear", "清除") }}">
+                        <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
+                        <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
+                        <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
+                        <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
+                    </div>
                 </div>
             </div>
             <div class="filter-actions">

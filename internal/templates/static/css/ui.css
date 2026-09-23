@@ -53,6 +53,125 @@
 .wbs-option.is-selected { font-weight: 600; }
 .wbs-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 
+/* ===== 日期范围（js/ui/daterange.js）=====
+   两个独立 <input type="date"> 合并成一个区间控件（审计 02-K §3：日期范围应是一个控件）。
+   原生两个 input 仍在 DOM 里（视觉隐藏），name/value/表单提交/label[for] 全部照旧；
+   容器内第一个 label 留作可见标签，其余视觉隐藏但继续参与可访问名计算（aria-labelledby）。 */
+.wbd {
+    position: relative; display: flex; align-items: center; gap: var(--ui-sp-sm);
+    width: min(100%, 300px); min-width: 0;
+}
+/* 视觉隐藏而不是 display:none：可聚焦性与 label[for] 的点击转焦都还在
+   （focus 由 JS 转给可见触发器，与 .wbs-native 同一套手法）。 */
+.wbd > input.wbd-native {
+    position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+    opacity: 0; pointer-events: none; border: 0;
+}
+.wbd > label:first-of-type {
+    flex: none; font-size: 13px; white-space: nowrap; color: var(--sky-c-text-mute, #6b7280);
+}
+.wbd > label:not(:first-of-type) {
+    position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.wbd-trigger {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    box-sizing: border-box; padding: 8px 10px;
+    font-size: 13px; font-family: inherit; line-height: 1.4;
+    border: 1px solid var(--sky-c-border-input, #c6ccd4); border-radius: var(--ui-r-sm);
+    background: var(--sky-c-surface, #fff); color: inherit;
+    cursor: pointer; text-align: start;
+    transition: border-color var(--ui-motion-fast), box-shadow var(--ui-motion-fast), background-color var(--ui-motion-fast);
+}
+.wbd-trigger:disabled { opacity: .6; cursor: not-allowed; }
+@media (hover: hover) {
+.wbd-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+}
+.wbd-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wbd.is-open .wbd-trigger { border-color: var(--sky-c-primary, #3d444f); }
+.wbd-value {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.wbd:not(.has-value) .wbd-value { color: var(--sky-c-text-mute, #6b7280); }
+.wbd-caret {
+    flex: 0 0 auto; width: 7px; height: 7px; margin-inline-end: 3px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg); opacity: .55; transition: transform var(--ui-motion-fast);
+}
+.wbd.is-open .wbd-caret { transform: translateY(1px) rotate(-135deg); }
+.wbd-pop {
+    position: absolute; z-index: 60; top: calc(100% + 4px); left: 0;
+    /* 宽度上限由 JS 按「元素自身到视口两侧的实际距离」设；这里只是拿到值之前的一帧兜底。 */
+    max-width: calc(100vw - 24px);
+    box-sizing: border-box; padding: 8px;
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 20, 26, .12);
+}
+.wbd-pop[hidden] { display: none; }
+.wbd-pop.is-flipped { left: auto; right: 0; }
+.wbd-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px; margin-bottom: 6px; }
+.wbd-titles { display: grid; grid-template-columns: 1fr; gap: 12px; text-align: center; font-size: 13px; font-weight: 600; }
+.wbd-pop.is-double .wbd-titles { grid-template-columns: 1fr 1fr; }
+.wbd-nav {
+    width: 28px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit;
+    font: inherit; font-size: 14px; line-height: 1; cursor: pointer;
+    transition: background-color var(--ui-motion-fast);
+}
+@media (hover: hover) {
+.wbd-nav:hover { background: var(--sky-c-bg-hover, #ececec); }
+}
+.wbd-nav:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wbd-months { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.wbd-pop.is-double .wbd-months { grid-template-columns: 1fr 1fr; }
+.wbd-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.wbd-weekday { padding: 4px 0; text-align: center; font-size: 11px; color: var(--sky-c-text-mute, #6b7280); }
+.wbd-day {
+    position: relative; box-sizing: border-box; min-height: 24px; padding: 4px 0;
+    border: 1px solid transparent; border-radius: 6px; background: transparent;
+    color: inherit; font: inherit; font-size: 12px; font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background-color var(--ui-motion-fast), border-color var(--ui-motion-fast);
+}
+@media (hover: hover) {
+.wbd-day:hover { background: var(--sky-c-primary-bg, #eceef1); }
+}
+.wbd-day:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: -2px; }
+.wbd-day.is-today { border-color: var(--sky-c-border-strong, #d1d5db); }
+.wbd-day.is-between { background: var(--sky-c-primary-bg, #eceef1); border-radius: 0; }
+.wbd-day.is-start, .wbd-day.is-end {
+    background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f);
+    font-weight: 600; box-shadow: inset 0 0 0 1px var(--sky-c-primary, #3d444f);
+}
+.wbd-foot {
+    display: flex; justify-content: flex-end; margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.wbd-clear {
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 6px; background: transparent;
+    color: var(--sky-c-text-mute, #6b7280); font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+    transition: background-color var(--ui-motion-fast);
+}
+.wbd-clear[hidden] { display: none; }
+@media (hover: hover) {
+.wbd-clear:hover { background: var(--sky-c-bg-hover, #ececec); color: var(--sky-c-text, #1a1d21); }
+}
+.wbd-clear:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+/* 触屏是独立环境：:hover 那几条不输出，触摸目标单独放大（≥ 40px）。 */
+@media (pointer: coarse) {
+    .wbd-day { min-height: 40px; }
+    .wbd-nav, .wbd-clear { width: 40px; height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .wbd-trigger, .wbd-caret, .wbd-day, .wbd-nav, .wbd-clear { transition: none; }
+}
+
 /* ===== 确认框（js/ui/confirm.js）=====
    替代原生 confirm 与内联 onclick/onsubmit：模板里只留 data-confirm 一个属性。
    用 <dialog> 承载 —— showModal() 自带焦点陷阱与 Esc 关闭，背景自动 inert。 */
