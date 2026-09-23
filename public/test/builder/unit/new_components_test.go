@@ -9,6 +9,8 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
+
+	xhtml "golang.org/x/net/html"
 )
 
 func compileDoc(t *testing.T, doc string) (html string, css string) {
@@ -210,16 +212,56 @@ func TestAccordionRendersDetails(t *testing.T) {
 		{"type":"core.text","id":"ap1","props":{"mode":"plaintext","text":"答案一"}},
 		{"type":"core.text","id":"ap2","props":{"mode":"plaintext","text":"答案二"}}
 	]}]}`
-	html, _ := compileDoc(t, doc)
-
-	if !strings.Contains(html, "<details") || !strings.Contains(html, "问题一</summary>") {
-		t.Fatalf("details/summary 缺失: %s", html[:400])
+	markup, _ := compileDoc(t, doc)
+	root, err := xhtml.Parse(strings.NewReader(markup))
+	if err != nil {
+		t.Fatalf("解析编译产物失败: %v", err)
 	}
-	if !strings.Contains(html, " open") {
-		t.Fatalf("默认展开项应带 open: %s", html[:400])
+	var details []*xhtml.Node
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if n.Type == xhtml.ElementNode && n.Data == "details" {
+			details = append(details, n)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
 	}
-	if !strings.Contains(html, "答案一") || !strings.Contains(html, "答案二") {
-		t.Fatalf("折叠内容缺失: %s", html[:400])
+	walk(root)
+	if len(details) != 2 {
+		t.Fatalf("应有两个原生 details 折叠项，实际 %d: %s", len(details), markup)
+	}
+	for i, want := range []struct {
+		title, answer string
+		open          bool
+	}{
+		{title: "问题一", answer: "答案一", open: true},
+		{title: "问题二", answer: "答案二"},
+	} {
+		item := details[i]
+		if hasAttr(item, "open") != want.open {
+			t.Errorf("第 %d 项默认展开状态错误: open=%v，期望 %v", i+1, hasAttr(item, "open"), want.open)
+		}
+		var summary *xhtml.Node
+		for c := item.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == xhtml.ElementNode {
+				summary = c
+				break
+			}
+		}
+		if summary == nil || summary.Data != "summary" {
+			t.Fatalf("第 %d 项首个元素必须是原生 summary: %s", i+1, markup)
+		}
+		// 原生 summary 自带 Enter/Space 键盘切换；禁用或移出焦点序列会破坏它。
+		if hasAttr(summary, "hidden") || hasAttr(summary, "disabled") || attr(summary, "tabindex") == "-1" || attr(summary, "aria-hidden") == "true" {
+			t.Errorf("第 %d 项 summary 应保持键盘可达: %s", i+1, markup)
+		}
+		if !strings.Contains(textOf(summary), want.title) {
+			t.Errorf("第 %d 项 summary 标题缺失: %s", i+1, markup)
+		}
+		if !strings.Contains(textOf(item), want.answer) {
+			t.Errorf("第 %d 项折叠内容缺失: %s", i+1, markup)
+		}
 	}
 }
 

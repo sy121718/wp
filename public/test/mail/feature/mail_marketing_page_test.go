@@ -72,12 +72,42 @@ func TestMailMarketingPageRendersEmpty(t *testing.T) {
 	if router == nil {
 		return
 	}
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/mail/marketing", nil))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("空状态页面状态码 %d", recorder.Code)
-	}
-	if !strings.Contains(recorder.Body.String(), "没有匹配的联系人") {
-		t.Fatal("空状态提示缺失")
+	for _, tc := range []struct {
+		name, query, title, description string
+		clearFilters                    bool
+	}{
+		{"无筛选", "", "还没有联系人", "在下方导入联系人，开始建立发送名单。", false},
+		{"关键词筛选", "?keyword=missing%40example.com", "没有匹配的联系人", "可调整筛选条件，或在下方折叠区批量导入联系人。", true},
+		{"状态筛选", "?status=subscribed", "没有匹配的联系人", "可调整筛选条件，或在下方折叠区批量导入联系人。", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/mail/marketing"+tc.query, nil))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("空状态页面状态码 %d：%s", recorder.Code, firstN(recorder.Body.String(), 600))
+			}
+			body := recorder.Body.String()
+			for _, want := range []string{
+				"<thead><tr>", "<th>邮箱</th>", `<td colspan="8" class="cell-wrap">`,
+				`<p class="empty-title">` + tc.title + `</p>`,
+				`<p class="empty-desc">` + tc.description + `</p>`,
+				`action="/admin/mail/contact/import"`, "</table>", "</html>",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("空状态页面缺少 %q；前 600 字：\n%s", want, firstN(body, 600))
+				}
+			}
+			otherTitle := "还没有联系人"
+			if !tc.clearFilters {
+				otherTitle = "没有匹配的联系人"
+			}
+			if strings.Contains(body, `<p class="empty-title">`+otherTitle+`</p>`) {
+				t.Fatalf("空状态页面误入另一分档 %q", otherTitle)
+			}
+			clearAction := `<a class="btn" href="/admin/mail/marketing">清空筛选看全部</a>`
+			if strings.Contains(body, clearAction) != tc.clearFilters {
+				t.Fatalf("清空筛选出口：实际存在 %t，期望 %t", strings.Contains(body, clearAction), tc.clearFilters)
+			}
+		})
 	}
 }

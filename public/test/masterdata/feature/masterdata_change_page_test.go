@@ -180,7 +180,7 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("表格应包在可聚焦的滚动容器里（table-wrap + tabindex=0）")
 	}
 	// 这一页自己的模板不含任何 <script>：交互全由原生表单（GET 筛选）完成。
-	tplRaw, terr := os.ReadFile(templateRoot() + "/admin/masterdata_changes.html")
+	tplRaw, terr := os.ReadFile(templateRoot() + "/admin/masterdata/masterdata_changes.html")
 	if terr != nil {
 		t.Fatalf("读变更记录页模板失败: %v", terr)
 	}
