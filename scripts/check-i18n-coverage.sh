@@ -50,7 +50,10 @@ lang_self_name = re.compile('简体中文|繁體中文|日本語|한국어|Engli
 # 而虚高的数字会让人低估覆盖率，进而怀疑整套机制没生效。
 t_call = re.compile(r'(?:\.\["t"\]|\btr)\(')
 rows = []
-for path in sorted(glob.glob(os.path.join(tpl_dir, '*.html'))):
+# **必须递归**：admin/ 已按后端模块分子目录（admin/<模块>/x.html，根下只剩 layout / login /
+# dashboard 三个壳页面）。写成 `admin/*.html` 会静默缩水成「只查 3 个文件」—— 门禁照样绿，
+# 但它已经不再守任何东西（2026-09-23 实测：分目录后基线仍是 0，而真实水位不是）。
+for path in sorted(glob.glob(os.path.join(tpl_dir, '**', '*.html'), recursive=True)):
     src = open(path, encoding='utf-8').read()
     src = jet_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     src = html_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
