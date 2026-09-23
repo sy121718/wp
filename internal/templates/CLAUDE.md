@@ -264,3 +264,12 @@ content 包 4 条渲染测试当场红；⑧ **验证范围不足** —— 只�
 - **真源是数据库的 `sys_i18n`**（主键 `(item_key, lang)`），不是迁移文件 —— 判定要看库里有没有；
   迁移只负责把它写进去。而迁移是 seed（可重复执行），删词条时**必须同批改 `ConditionSQL` 的
   计数门槛**，否则下次启动会被重新插回去（见 AGENTS.md 的 122/104 教训）。
+- **struct 作渲染 data 的模板不能写 `{{ .["t"](…) }}`**：Jet 的 chain 索引在 struct 上会运行时报错
+  `can't use t as field name in struct type` —— 与上文「CSRF token」节的 `fragments/*.jet` 特例
+  **同源**，但适用范围更大：**任何**以 struct 为渲染 data 的模板都如此，不只是 fragments
+  （实测 `admin/product/product_attribute_rows.html` 收到的是 `attrRowsCtx{GroupID, Rows}`）。
+  做法：给 struct 加一个取词函数字段（`Tr func(key, fallback string) string`，与同包
+  `attrGroupFormOpts.Tr` / `attrValuesFormOpts.Tr` 同名同形），模板里 `{{tr := .Tr}}` 声明一次后复用。
+  **所有构造点都要填**：先 `rg 'attrRowsCtx\{'` 找全（实测 5 处，4 处散在 `product_attribute_page_util.go`），
+  漏一个就是模板里 nil 函数调用 → 整页 500 —— 而它的表现是通用错误页，不像「页面截断」那么容易被发现；
+  测试里的模拟数据同样要加这个字段（形状注释写着「与 handle 的 xxxCtx 一致」的那些）。
