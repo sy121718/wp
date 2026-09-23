@@ -54,6 +54,7 @@ func TestRedirectCreateFailureEcho(t *testing.T) {
 	}
 	withoutProject := renderAdminEmptyProbe(t, "admin/page/page_redirects", redirectProbeData(map[string]any{
 		"Projects": []any{}, "SelectedProject": "", "CreateFailed": true,
+		"ErrKey": "admin.redirect.err.invalid",
 	}))
 	if strings.Contains(withoutProject, `<template id="tpl-redirect-create">`) || strings.Contains(withoutProject, `action="/api/page/redirect/create"`) {
 		t.Error("没有工程时不应渲染可提交的创建表单")
