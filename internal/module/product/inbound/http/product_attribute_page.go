@@ -158,6 +158,7 @@ func (h *productPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/product/product_attribute_rows.html", attrRowsCtx{
 		GroupID: groupID,
 		Rows:    rowsToResp(rows),
+		Tr:      shell.TranslateFor(c),
 	})
 }
 
@@ -203,6 +204,14 @@ func splitIDs(raw string) []string {
 type attrRowsCtx struct {
 	GroupID string
 	Rows    []productdto.AttributeValueResp
+	// Tr 是本片段的取词函数。片段的两条渲染路径都**直接传本结构体**（HTMX 片段端点用
+	// 字面量、抽屉表单 include 传 .RowsCtx），而 Jet 在 struct 上不支持 `.["t"]`
+	//（渲染时报 can't use t as field name in struct type），取词函数只能随数据类一起传
+	// —— 与 attrGroupFormOpts.Tr 同一形态。
+	//
+	// 用 shell.TranslateFor(c) 填（按请求语言）。**每个构造点都要给**：零值时片段里的
+	// tr(...) 是 nil 调用，会 panic。
+	Tr func(key, fallback string) string
 }
 
 // attrRowsFromForm 从表单的 values[n].* 字段重建有序行数据。

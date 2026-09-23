@@ -176,7 +176,7 @@ func attrCreateDrawerForm(csrf, projectID string, tr func(key, fallback string) 
 		// 用户点「+ 添加值」后由 ProductAttributesValueRows 兜底保证至少一行。两者口径**不同**，
 		// 别按「同口径」推 —— 这里若补一行空输入，抽屉一打开就是一行空行配着引导文案，更费解。
 		Mode: attrGroupModeCreate, GroupID: "new", Variation: true,
-		Rows: attrRowsCtx{GroupID: "new", Rows: nil},
+		Rows: attrRowsCtx{GroupID: "new", Rows: nil, Tr: tr},
 	})
 }
 
@@ -195,7 +195,7 @@ func attrRowDrawerForms(csrf, projectID string, tr func(key, fallback string) st
 	})
 	values := attrValuesFormData(attrValuesFormOpts{
 		Csrf: csrf, ProjectID: projectID, Tr: tr, GroupID: a.ID,
-		Rows: attrRowsCtx{GroupID: a.ID, Rows: a.Values},
+		Rows: attrRowsCtx{GroupID: a.ID, Rows: a.Values, Tr: tr},
 	})
 	return group, values
 }
@@ -213,12 +213,13 @@ func (h *productPageHandle) attrGroupFormFail(c *gin.Context, mode, projectID, g
 		c.Redirect(http.StatusFound, productAttributeListURL(projectID, msg))
 		return
 	}
+	tr := shell.TranslateFor(c)
 	data := attrGroupFormData(attrGroupFormOpts{
-		Csrf: attrFormCSRF(c), ProjectID: projectID, Tr: shell.TranslateFor(c),
+		Csrf: attrFormCSRF(c), ProjectID: projectID, Tr: tr,
 		Mode: mode, GroupID: groupID,
 		// 属性值行同样按**这次提交**重建（新建抽屉里有行编辑器，编辑抽屉没有、重建出空行）：
 		// 这是「用户刚编的行」唯一的来源，行序与去重口径与保存路径完全一致。
-		Rows: attrRowsCtx{GroupID: groupID, Rows: rowsToResp(attrRowsFromForm(c))},
+		Rows: attrRowsCtx{GroupID: groupID, Rows: rowsToResp(attrRowsFromForm(c)), Tr: tr},
 	})
 	data["SubmitErr"] = msg
 	for k, v := range formEchoData(c, attrGroupFormFields...) {
@@ -239,10 +240,11 @@ func (h *productPageHandle) attrValuesFormFail(c *gin.Context, projectID, groupI
 		c.Redirect(http.StatusFound, productAttributeListURL(projectID, msg))
 		return
 	}
+	tr := shell.TranslateFor(c)
 	data := attrValuesFormData(attrValuesFormOpts{
-		Csrf: attrFormCSRF(c), ProjectID: projectID, Tr: shell.TranslateFor(c),
+		Csrf: attrFormCSRF(c), ProjectID: projectID, Tr: tr,
 		GroupID: groupID,
-		Rows:    attrRowsCtx{GroupID: groupID, Rows: rowsToResp(attrRowsFromForm(c))},
+		Rows:    attrRowsCtx{GroupID: groupID, Rows: rowsToResp(attrRowsFromForm(c)), Tr: tr},
 	})
 	data["SubmitErr"] = msg
 	for k, v := range formEchoData(c, attrValuesFormFields...) {

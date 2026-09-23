@@ -337,6 +337,9 @@ func TestGroupDAttributesPageRenders(t *testing.T) {
 		return map[string]any{
 			"GroupID": id,
 			"Rows":    []map[string]any{{"ID": "av1", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true}},
+			// Tr：行编辑器的 data 是结构体（Jet 在 struct 上不支持 .["t"]），
+			// 取词函数随数据类传入 —— 形状与 handle 的 attrRowsCtx.Tr 一致。
+			"Tr": tr,
 		}
 	}
 	data := groupDData(map[string]any{
@@ -359,7 +362,7 @@ func TestGroupDAttributesPageRenders(t *testing.T) {
 			"Csrf": "tok", "Project": "pr1", "t": tr,
 			"Mode": "create", "Action": "/admin/product-attributes/create", "IsCreate": true,
 			"GroupID": "new", "Name": "", "Key": "", "Sort": 0, "VariationChecked": true,
-			"RowsCtx": map[string]any{"GroupID": "new", "Rows": []map[string]any{}}, "InDrawer": true,
+			"RowsCtx": map[string]any{"GroupID": "new", "Rows": []map[string]any{}, "Tr": tr}, "InDrawer": true,
 		},
 	})
 	// 行内按钮不再重复实体名（admin-ui-logic §3）：列表已是表格，行已指明是谁。

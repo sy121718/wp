@@ -21,8 +21,15 @@ import (
 )
 
 // attrRowsCtxData 属性值行编辑器的数据类（形状与 handle 的 attrRowsCtx 一致）。
+//
+// Tr 是取词函数：该片段的 data 是**结构体**（Jet 在 struct 上不支持 `.["t"]`，
+// 只有 func 字段可调），取词函数因此随数据类一起传 —— 形状与 handle 的 attrRowsCtx.Tr 一致。
 func attrRowsCtxData(groupID string, rows []map[string]any) map[string]any {
-	return map[string]any{"GroupID": groupID, "Rows": rows}
+	return map[string]any{
+		"GroupID": groupID,
+		"Rows":    rows,
+		"Tr":      TranslateFunc("zh-CN"),
+	}
 }
 
 // attrGroupFragmentData 属性组片段的渲染数据（键与 handle 的 attrGroupFormData 逐键一致）。

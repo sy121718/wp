@@ -67,7 +67,7 @@
             <details class="section-fold" open>
                 <summary>
                     <span class="fold-title">{{g.Title}}</span>
-                    <span class="fold-note">{{len(g.Fields)}} 项</span>
+                    <span class="fold-note">{{len(g.Fields)}} {{ .["t"]("admin.theme_settings.group_items", "项") }}</span>
                 </summary>
                 <div class="fold-body">
                 <div class="theme-color-grid">
@@ -108,7 +108,7 @@
             <details class="section-fold" open>
                 <summary>
                     <span class="fold-title">{{ .["t"]("admin.theme_settings.global_blocks", "全局页眉 / 页脚块") }}</span>
-                    <span class="fold-note">3 项 —— 构建期内联进产物</span>
+                    <span class="fold-note">{{ .["t"]("admin.theme_settings.global_blocks_note", "3 项 —— 构建期内联进产物") }}</span>
                 </summary>
                 <div class="fold-body">
                 <div class="theme-color-grid">
@@ -150,7 +150,7 @@
             <details class="section-fold">
                 <summary>
                     <span class="fold-title">{{ .["t"]("admin.theme_settings.structure_templates", "结构模板（页眉 / 页脚）") }}</span>
-                    <span class="fold-note">2 项 —— 构建期优先于块</span>
+                    <span class="fold-note">{{ .["t"]("admin.theme_settings.structure_templates_note", "2 项 —— 构建期优先于块") }}</span>
                 </summary>
                 <div class="fold-body">
                 <div class="theme-color-grid">
