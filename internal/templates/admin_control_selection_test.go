@@ -76,13 +76,26 @@ func controlIDs(html string, controlRe *regexp.Regexp) []string {
 // couponDateTimeLocalRe 匹配一个 datetime-local 输入及其 id。
 var couponDateTimeLocalRe = regexp.MustCompile(`<input[^>]*type="datetime-local"[^>]*id="([^"]+)"`)
 
+// couponFormSources coupons.html 与两个抽屉表单片段的拼接源码。
+//
+// 2026-09「写失败不丢输入」批把新建/编辑抽屉的表单本体迁进了独立片段
+//（coupon_create_form.html / coupon_edit_form.html，片段同时是失败重渲染载体），
+// 时间窗控件跟着表单走 —— 控件选型与 label 关联的判据对象跟着扩成三个文件，
+// 数量判据（4 个时间窗控件）不变，只是分布从单文件变成「页面 0 + 片段 2+2」。
+func couponFormSources(t *testing.T) string {
+	t.Helper()
+	return adminTemplateSource(t, "coupons.html") + "\n" +
+		adminTemplateSource(t, "coupon_create_form.html") + "\n" +
+		adminTemplateSource(t, "coupon_edit_form.html")
+}
+
 // TestCouponWindowInputsUseDateTimeLocal 时间窗必须用原生日期时间控件。
 //
 // 缺陷形态（审计 02-O §3 任务 1）：四个时间窗输入是 `<input type="text">`，占位符写
 // 「…如 2026-01-01 或 2026-01-01 09:00」—— 用户必须记住格式，打错被服务端拒绝且只回页顶一句
 // 错误；而同域的 customers.html / analytics.html 早已用原生日期控件，同一域内两种做法并存。
 func TestCouponWindowInputsUseDateTimeLocal(t *testing.T) {
-	src := adminTemplateSource(t, "coupons.html")
+	src := couponFormSources(t)
 
 	const want = 4 // 编辑抽屉 2（开始 / 结束）+ 新建抽屉 2
 	if got := strings.Count(src, `type="datetime-local"`); got != want {
@@ -117,7 +130,7 @@ func TestCouponWindowInputsUseDateTimeLocal(t *testing.T) {
 // 而新建抽屉的字段说明一贯靠 placeholder —— 不给可见 label，那一行就只剩两个看不出
 // 「开始 / 结束」的框；同时 for 必须真的指到控件（裸 label 与控件是兄弟节点，隐式关联不成立）。
 func TestCouponWindowInputsAreLabelled(t *testing.T) {
-	src := adminTemplateSource(t, "coupons.html")
+	src := couponFormSources(t)
 	ids := controlIDs(src, couponDateTimeLocalRe)
 	if len(ids) != 4 {
 		t.Fatalf("应能解析出 4 个 datetime-local 的 id，实际 %d", len(ids))
@@ -135,10 +148,9 @@ func TestCouponWindowInputsAreLabelled(t *testing.T) {
 // （0 = 不限）」/「每人限次（0 = 不限）」），而同抽屉其它字段都有 label —— 两个都是数字、单位
 // 都是次，填完值回看时 placeholder 已经消失，分不清哪个是哪个。remark 同病。
 // 本用例同时挡住「补了 label 但没接 for」这种半成品：抽屉里所有可见控件一律要有 id 且被指到。
+// 判据对象原是 coupons.html 的 template 块，表单本体迁进片段后改为片段全文（结构与契约不变）。
 func TestCouponEditDrawerEveryFieldIsLabelled(t *testing.T) {
-	src := adminTemplateSource(t, "coupons.html")
-	drawer := templateBlock(t, src, `<template id="tpl-coupon-edit-`,
-		"</template>", "编辑抽屉模板")
+	drawer := adminTemplateSource(t, "coupon_edit_form.html")
 
 	// 可见控件（hidden 不在此列：它们由其它表单提交，不需要字段名提示）。
 	controlRe := regexp.MustCompile(`<(?:input|select)[^>]*\bname="([a-zA-Z]+)"[^>]*>`)
@@ -154,7 +166,7 @@ func TestCouponEditDrawerEveryFieldIsLabelled(t *testing.T) {
 			missing = append(missing, "name="+m[1]+"（没有 id）")
 			continue
 		}
-		if !strings.Contains(drawer, `for="`+idMatch[1]+`"`) {
+		if !strings.Contains(drawer, `for="`+idMatch[1]+"\"") {
 			missing = append(missing, "name="+m[1]+"（id="+idMatch[1]+" 没有 label 指到它）")
 		}
 	}
@@ -163,15 +175,16 @@ func TestCouponEditDrawerEveryFieldIsLabelled(t *testing.T) {
 	}
 
 	// 只读的券码字段也在这条契约里（它同样需要一个字段名）。
-	if !strings.Contains(drawer, `for="coupon-{{r.Form.ID}}-code"`) {
+	// id 里的 {{ceId}} 是片段的局部变量（首屏=行 id、失败档=提交的 id，两条路径同一个 id 池）。
+	if !strings.Contains(drawer, `for="coupon-{{ceId}}-code"`) {
 		t.Error("只读的券码字段缺少 label 关联")
 	}
 }
 
 // TestCouponCreateDrawerWindowFieldsAreLabelled 新建抽屉的时间窗字段有可见 label。
+// 判据对象原是 coupons.html 的 template 块，表单本体迁进片段后改为片段全文。
 func TestCouponCreateDrawerWindowFieldsAreLabelled(t *testing.T) {
-	src := adminTemplateSource(t, "coupons.html")
-	drawer := templateBlock(t, src, `<template id="tpl-coupon-create">`, "</template>", "新建抽屉模板")
+	drawer := adminTemplateSource(t, "coupon_create_form.html")
 
 	for _, id := range []string{"coupon-create-starts-at", "coupon-create-ends-at"} {
 		if !strings.Contains(drawer, `id="`+id+`"`) {

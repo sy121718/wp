@@ -327,18 +327,22 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 }
 
 // CouponCreate 新建优惠码（POST /admin/coupons/create）。
+//
+// 写失败不丢输入（分档契约见 coupon_form_echo.go）：htmx 提交失败时 200 + 表单片段
+//（错误槽 + 回填），成功时 HX-Redirect；抽屉表单没有无 JS 提交通道，
+// 原生 302 只是兜底，两条路的终点 URL 由同一份 couponEchoQuery 构造。
 func (h *couponPageHandle) CouponCreate(c *gin.Context) {
 	req := couponSaveReqFromForm(c)
 	if req.ProjectID == "" {
-		couponRedirect(c, "", orderenums.ErrProjectRequired)
+		h.couponCreateFail(c, orderenums.ErrProjectRequired)
 		return
 	}
 	if _, err := h.orders.CreateCoupon(c.Request.Context(), req); err != nil {
-		couponRedirect(c, "", couponFacingError(c, err))
+		h.couponCreateFail(c, couponFacingError(c, err))
 		return
 	}
 	// 不回跳展开新券：新建表单里没有 couponId，运营接下来多半是接着建下一张。
-	couponRedirect(c, orderenums.MsgCouponCreated, "")
+	couponRedirectWhere(c, couponRedirectTarget(c, orderenums.MsgCouponCreated))
 }
 
 // CouponUpdate 修改 / 停用 / 启用（POST /admin/coupons/update）。
@@ -346,21 +350,24 @@ func (h *couponPageHandle) CouponCreate(c *gin.Context) {
 // 停用与启用复用本方法（表单里带 status）：它们与「改门槛」「改时间窗」是同一份
 // 「券的整体配置」，单独开一个状态接口只会多出一条「改状态时忘了回送门槛」的路径 ——
 // UpdateCoupon 是整体更新，漏送的字段会被写成零值。
+//
+// 失败出口 couponEditFail 按 HX-Request 分档；停用/启用的 hidden 表单没有 hx-post，
+// 走到的一律是原生档（302，行为与改造前一致）。
 func (h *couponPageHandle) CouponUpdate(c *gin.Context) {
 	req := couponSaveReqFromForm(c)
 	if req.ID == 0 {
-		couponRedirect(c, "", couponIDInvalidText)
+		h.couponEditFail(c, couponIDInvalidText)
 		return
 	}
 	if req.ProjectID == "" {
-		couponRedirect(c, "", orderenums.ErrProjectRequired)
+		h.couponEditFail(c, orderenums.ErrProjectRequired)
 		return
 	}
 	if _, err := h.orders.UpdateCoupon(c.Request.Context(), req); err != nil {
-		couponRedirect(c, "", couponFacingError(c, err))
+		h.couponEditFail(c, couponFacingError(c, err))
 		return
 	}
-	couponRedirect(c, orderenums.MsgCouponUpdated, "")
+	couponRedirectWhere(c, couponRedirectTarget(c, orderenums.MsgCouponUpdated))
 }
 
 // CouponDelete 删除优惠码（POST /admin/coupons/delete）。
@@ -530,30 +537,12 @@ func couponRedirect(c *gin.Context, okText, errText string) {
 
 // couponRedirectSkip 同上，但先丢掉一个回跳参数（删除成功后必须丢掉 couponId）。
 //
-// 回跳上下文由一个隐藏域 returnQuery 整体承载，而不是 project / status / keyword 逐个铺开：
-// 券的启停字段就叫 status，与筛选参数同名 —— 逐个铺开的话，
-// 表单里那个 status 到底是「回跳筛选」还是「这张券的启停」只能靠猜。
+// 查询串的构造收敛在 couponEchoQuery（与成功分档出口共用同一份 URL 语义），
+// 这里只保留「原生 302」这一种写出方式。
 func couponRedirectSkip(c *gin.Context, okText, errText, skipKey string) {
-	q := url.Values{}
-	if parsed, err := url.ParseQuery(strings.TrimSpace(c.PostForm("returnQuery"))); err == nil {
-		// 只透传白名单键：returnQuery 同样来自客户端，不能让它往回跳 URL 里塞任意参数。
-		for key, vals := range parsed {
-			if _, ok := couponBackKeys[key]; ok && len(vals) > 0 {
-				q.Set(key, vals[0])
-			}
-		}
-	}
-	// ok / err 一律以本次操作的结论为准，不采信客户端塞进来的提示。
-	q.Del("ok")
-	q.Del("err")
+	q := couponEchoQuery(c, okText, errText)
 	if skipKey != "" {
 		q.Del(skipKey)
-	}
-	if okText != "" {
-		q.Set("ok", okText)
-	}
-	if errText != "" {
-		q.Set("err", errText)
 	}
 	c.Redirect(http.StatusFound, "/admin/coupons?"+q.Encode())
 }

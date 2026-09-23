@@ -1,0 +1,113 @@
+{* admin/order/coupon_create_form.html — 新建优惠码表单片段。
+   两个身份：① 抽屉 tpl-coupon-create 的唯一内容（coupons.html include 本文件）；
+   ② 「写失败不丢输入」的失败重渲染载体 —— 服务端按 HX-Request 分档（见
+   internal/module/order/inbound/http/coupon_form_echo.go 与 docs/02-T-write-fail-echo-batch1.md）：
+
+     · htmx 请求失败：200 + **本片段自身**（错误槽 + 回填后的表单）—— 换掉
+       data-coupon-create-host；抽屉打开时 drawer.js 已对克隆内容 htmx.process，
+       替换发生在抽屉 body 内部，容器不动 → 回填后抽屉仍保持打开，afterSwap 重扫接手控件增强。
+     · 其余请求失败：302 + ?err= 回列表页（兜底；抽屉表单没有无 JS 提交通道）。
+     · 成功：HX-Redirect（htmx 读头整页跳转；XHR 自己跟随 302 会把整页 HTML 塞进片段位置）。
+
+   本片段顶层容器 `<div data-coupon-create-host>` 就是替换单元：片段自带 host，
+   错误槽在 form 之外、host 之内（放进 form 里会被下一次提交整块换掉）。
+
+   回填值来自页面数据键 FormEcho / FormEchoChecked / FormEchoMulti（couponFormEchoData）：
+   **只在提交失败重渲染时存在**（首屏 include 时不注入 → ccFill 为假 → 空表单）。
+   键名带前缀是因为片段与页面共用同一份渲染 data，通用键名会撞上页面已有键。
+   字段清单与 couponCreateFormFields 双向钉住（coupon_form_echo_test.go）：
+   模板读了清单外的字段 = 渲染中断（500）→ htmx 不 swap → 用户点了保存毫无反应。
+
+   局部变量前缀 cc（create form）：片段必须在任何渲染路径下独立成立 ——
+   页面数据键一律 chain/isset 读取（context 缺键会中断渲染）；首屏需要、而失败档
+   不注入的键（CreateBack / SelectedProject）只在 ccFill 为假的分支里求值。
+
+   表单字段名与 /admin/coupons/create 的绑定逐字一致，改这里等于改协议。 *}
+{{ccCsrf := .["csrf_token"]}}
+{{ccTypes := .["TypeOptions"]}}
+{{ccEnable := .["StatusOptions"]}}
+{{ccFill := isset(.FormEcho)}}
+{{ccProject := ""}}{{if ccFill}}{{ccProject = .FormEcho.projectId}}{{else}}{{ccProject = .["SelectedProject"]}}{{end}}
+{{ccBack := ""}}{{if ccFill}}{{ccBack = .FormEcho.returnQuery}}{{else}}{{ccBack = .["CreateBack"]}}{{end}}
+{{ccCode := ""}}{{if ccFill}}{{ccCode = .FormEcho.code}}{{end}}
+{{ccName := ""}}{{if ccFill}}{{ccName = .FormEcho.name}}{{end}}
+{{ccType := ""}}{{if ccFill}}{{ccType = .FormEcho.discountType}}{{end}}
+{{ccValue := ""}}{{if ccFill}}{{ccValue = .FormEcho.discountValue}}{{end}}
+{{ccMin := "0"}}{{if ccFill}}{{ccMin = .FormEcho.minSubtotal}}{{end}}
+{{ccMax := "0"}}{{if ccFill}}{{ccMax = .FormEcho.maxUses}}{{end}}
+{{ccPer := "0"}}{{if ccFill}}{{ccPer = .FormEcho.perUserLimit}}{{end}}
+{{ccStatus := "1"}}{{if ccFill}}{{ccStatus = .FormEcho.status}}{{end}}
+{{ccStarts := ""}}{{if ccFill}}{{ccStarts = .FormEcho.startsAt}}{{end}}
+{{ccEnds := ""}}{{if ccFill}}{{ccEnds = .FormEcho.endsAt}}{{end}}
+{{ccRemark := ""}}{{if ccFill}}{{ccRemark = .FormEcho.remark}}{{end}}
+        <div data-coupon-create-host>
+            {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
+            <p class="badge badge-warning" role="alert" data-coupon-create-err>{{.SubmitErr}}</p>
+            {{end}}{{end}}
+            <form method="post" action="/admin/coupons/create" class="form-stack" data-coupon-create-form
+                  hx-post="/admin/coupons/create" hx-target="closest [data-coupon-create-host]" hx-swap="outerHTML">
+                <input type="hidden" name="csrf_token" value="{{ccCsrf}}">
+                <input type="hidden" name="returnQuery" value="{{ccBack}}">
+                <input type="hidden" name="projectId" value="{{ccProject}}">
+                <div class="form-inline">
+                    <input type="text" class="form-input" name="code" value="{{ccCode}}" placeholder="{{ .["t"]("admin.coupons.create.ph.code", "券码（工程内唯一，如 SAVE20）") }}"
+                           required autocomplete="off" maxlength="64">
+                    <input type="text" class="form-input" name="name" value="{{ccName}}" placeholder="{{ .["t"]("admin.coupons.create.ph.name", "名称（如 双十一全场券）") }}"
+                           autocomplete="off" maxlength="120">
+                </div>
+                <div class="form-inline">
+                    <select class="form-select" name="discountType" required>
+                        {{range _, t := ccTypes}}
+                        <option value="{{t.Value}}" {{if ccType}}{{if t.Value == ccType}}selected{{end}}{{end}}>{{t.Label}}</option>
+                        {{end}}
+                    </select>
+                    <span class="filter-field">
+                        <span class="help">
+                            <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                            <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.create.unit_hint.lead", "折扣值的") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong", "单位随折扣类型而变") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid", "，两种口径的语义完全不同：") }}<strong>{{ .["t"]("admin.coupons.unit.percent", "按比例") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid2", "填 1..100，表示") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong_strength", "折扣力度") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid3", " —— 20 表示「减 20%」（注意不是打 2 折）；") }}<strong>{{ .["t"]("admin.coupons.unit.fixed", "固定金额") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid4", "填") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid5", " —— 2000 表示「减 20.00 元」。门槛同样是") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.tail", "：9900 表示「满 99.00 元可用」。") }}</span>
+                        </span>
+                        <input type="number" class="form-input" name="discountValue" value="{{ccValue}}" placeholder="{{ .["t"]("admin.coupons.create.ph.discount_value", "折扣值（必填）") }}"
+                               inputmode="numeric" step="1" min="1" required>
+                    </span>
+                    <input type="number" class="form-input" name="minSubtotal" value="{{ccMin}}" placeholder="{{ .["t"]("admin.coupons.create.ph.min_subtotal", "使用门槛（分，0 = 无门槛）") }}"
+                           inputmode="numeric" step="1" min="0">
+                </div>
+                <div class="form-inline">
+                    <input type="number" class="form-input" name="maxUses" value="{{ccMax}}" placeholder="{{ .["t"]("admin.coupons.ph.max_uses", "总次数上限（0 = 不限）") }}"
+                           inputmode="numeric" step="1" min="0">
+                    <input type="number" class="form-input" name="perUserLimit" value="{{ccPer}}" placeholder="{{ .["t"]("admin.coupons.ph.per_user_limit", "每人限次（0 = 不限）") }}"
+                           inputmode="numeric" step="1" min="0">
+                    <select class="form-select" name="status">
+                        {{range _, s := ccEnable}}
+                        <option value="{{s.Value}}" {{if s.Value == ccStatus}}selected{{end}}>{{s.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {* 时间窗行用 form-row / form-group / form-label 结构（理由见 coupons.html 抽屉原注释，
+                   已随表单一起搬进本片段）：原生 datetime-local 不渲染 placeholder，字段名必须由
+                   可见 label 承担；label 必须 for 到控件 id（admin_control_selection_test 的两条
+                   coupons 时间窗用例钉着）。 *}
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="form-inline">
+                            <label class="form-label" for="coupon-create-starts-at">{{ .["t"]("admin.coupons.ph.starts_at", "开始时间（留空 = 不限）") }}</label>
+                            <span class="help">
+                                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                                <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.create.time_hint.lead", "时间窗用") }}<strong>{{ .["t"]("admin.coupons.create.time_hint.strong", "日期时间选择器") }}</strong>{{ .["t"]("admin.coupons.create.time_hint.mid", "挑选起止时刻（按站点本地时间理解）：") }}{{ .["t"]("admin.coupons.create.time_hint.mid2", "留空 = 该侧不限。") }}{{ .["t"]("admin.coupons.create.time_hint.tail", "结束时间必须晚于开始时间，否则这张券永远不会生效 —— 服务端会直接拒绝。") }}</span>
+                            </span>
+                        </div>
+                        <input type="datetime-local" step="1" class="form-input" id="coupon-create-starts-at" name="startsAt" value="{{ccStarts}}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="coupon-create-ends-at">{{ .["t"]("admin.coupons.ph.ends_at", "结束时间（留空 = 不限）") }}</label>
+                        <input type="datetime-local" step="1" class="form-input" id="coupon-create-ends-at" name="endsAt" value="{{ccEnds}}">
+                    </div>
+                </div>
+                <input type="text" class="form-input" name="remark" value="{{ccRemark}}" placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}"
+                       autocomplete="off" maxlength="255">
+                <div class="action-row">
+                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
+                </div>
+            </form>
+        </div>
