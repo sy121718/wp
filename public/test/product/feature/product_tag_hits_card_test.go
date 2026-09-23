@@ -11,6 +11,7 @@
 package feature
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -19,6 +20,8 @@ import (
 
 // tagHitsPanelRe 抓页面上锚点容器的整段开标签（属性判据都从这里读）。
 var tagHitsPanelRe = regexp.MustCompile(`<div id="tag-hits-panel"[^>]*>`)
+
+var tagHitsProductRe = regexp.MustCompile(`<strong>(命中商品 [0-9]{4})</strong>`)
 
 // TestTagPageHitsCardIsContentDriven 首屏与片段在同一条真实链路上的形态。
 func TestTagPageHitsCardIsContentDriven(t *testing.T) {
@@ -68,8 +71,8 @@ func TestTagPageHitsCardIsContentDriven(t *testing.T) {
 	}
 	frag := rec.Body.String()
 	for _, want := range []string{
-		`class="card card-body"`, "命中的商品",
-		`<table class="data-table`, "命中商品 0000",
+		`class="card card-body"`, "命中的商品", "命中 60 个商品",
+		`<table class="data-table`,
 		`hx-target="#tag-hits-panel"`, // 翻页换回的仍是页面上的锚点
 	} {
 		if !strings.Contains(frag, want) {
@@ -82,5 +85,38 @@ func TestTagPageHitsCardIsContentDriven(t *testing.T) {
 	}
 	if strings.Contains(frag, "aria-live") {
 		t.Fatalf("aria-live 必须留在页面容器上，不能随片段一起被替换：\n%s", frag)
+	}
+
+	// 同批插入商品按随机 UUID 兜底排序，编号 0000 不保证在第一页。
+	seen := make(map[string]bool, 60)
+	for page := 1; page <= 2; page++ {
+		body := frag
+		if page == 2 {
+			rec = httptestGet(f.engine, "/admin/product-tags/hits?project="+projectID+"&id="+tagID+"&page=2")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("第 2 页命中商品片段应 200，实际 %d：%s", rec.Code, rec.Body.String())
+			}
+			body = rec.Body.String()
+		}
+		names := tagHitsProductRe.FindAllStringSubmatch(body, -1)
+		wantCount := 50
+		if page == 2 {
+			wantCount = 10
+		}
+		if len(names) != wantCount {
+			t.Fatalf("第 %d 页应有 %d 个命中商品，实际 %d 个：\n%s", page, wantCount, len(names), body)
+		}
+		for _, name := range names {
+			if seen[name[1]] {
+				t.Fatalf("商品 %q 跨页重复出现", name[1])
+			}
+			seen[name[1]] = true
+		}
+	}
+	for i := 0; i < 60; i++ {
+		name := fmt.Sprintf("命中商品 %04d", i)
+		if !seen[name] {
+			t.Fatalf("两页片段缺少 %q", name)
+		}
 	}
 }
