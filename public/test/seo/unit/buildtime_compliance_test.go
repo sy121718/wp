@@ -74,9 +74,23 @@ func TestBuiltArtifactHomePagePassesCompliance(t *testing.T) {
 	}, nil)
 	rep := inspectBuilt(t, compliance.Artifact{
 		URL: "/", Lang: "zh-CN", ArtifactHash: "h-home", HTML: html,
+		SiteBaseURL: "https://shop.test",
 	})
 	if len(rep.Findings) != 0 {
 		t.Fatalf("首页产物不应命中任何规则，实际 %d 条", len(rep.Findings))
+	}
+}
+
+func TestBuiltArtifactCrossSiteCanonicalReported(t *testing.T) {
+	t.Setenv("WP_SITE_BASE_URL", "https://shop.test")
+	html := renderArtifact(t, "zh-CN", builder.SEO{
+		Title: "关于我们", Canonical: "https://other.test/about",
+	}, nil)
+	rep := inspectBuilt(t, compliance.Artifact{
+		URL: "/about", Lang: "zh-CN", HTML: html, SiteBaseURL: "https://shop.test",
+	})
+	if len(rep.Findings) != 1 || rep.Findings[0].Rule != compliance.RuleCanonicalExternal {
+		t.Fatalf("真实构建产物跨域 canonical 应只报告跨域，实际 %+v", rep.Findings)
 	}
 }
 

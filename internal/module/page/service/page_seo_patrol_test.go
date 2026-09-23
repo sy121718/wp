@@ -81,12 +81,13 @@ func TestLangRulesOfInvalidLangSkipped(t *testing.T) {
 // 时，结论会变成「零 findings」—— 报告全绿，而它其实什么都没看。用真实的本地产物存储
 // （临时目录）跑一次，缺陷产物必须命中。
 func TestInspectArtifactSEOReadsArtifactFromStore(t *testing.T) {
+	t.Setenv("WP_SITE_BASE_URL", "https://shop.test/store")
 	store := &pipeline.LocalStore{Root: t.TempDir()}
 	// 这里用解释型字符串而不是反引号原文串：HTML 里没有需要转义的换行，
 	// 而反引号原文串在同一行里更容易被格式化工具改坏（测试只需要一份确定的字节）。
 	html := []byte("<!DOCTYPE html><html lang=\"zh-CN\"><head><title>关于我们</title>" +
-		"<link rel=\"canonical\" href=\"/old-about\">" +
-		"<script type=\"application/ld+json\">{\"@type\":\"WebPage\",\"name\":\"关于我们\",\"url\":\"/old-about\"}</script>" +
+		"<link rel=\"canonical\" href=\"https://shop.test/store/old-about\">" +
+		"<script type=\"application/ld+json\">{\"@type\":\"WebPage\",\"name\":\"关于我们\",\"url\":\"https://shop.test/store/old-about\"}</script>" +
 		"</head><body></body></html>")
 	art, err := pipeline.NewArtifact(html, &pipeline.Manifest{
 		ManifestSchemaVersion: pipeline.ManifestSchemaVersion,

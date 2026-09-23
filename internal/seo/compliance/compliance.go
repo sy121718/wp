@@ -132,7 +132,7 @@ type LangRule struct {
 // Artifact 被校验的一份构建事实。
 //
 // 字段全部来自产物本身或构建期已知的站点配置，不含任何运行时状态 ——
-// 「同一输入同一结论」的前提就在这里：同样字节的产物 + 同样的语言表，
+// 「同一输入同一结论」的前提就在这里：同样字节的产物 + 同样的站点基址与语言表，
 // 今天跑和半年后跑必须得出同一份结论。
 type Artifact struct {
 	// URL 产物的访问路径（来自 Artifact.CanonicalPath 或激活路由行）。
@@ -147,6 +147,9 @@ type Artifact struct {
 	// Langs 站点启用语言与各自路径前缀。少于两种语言时跳过「语种 / 路径一致」两项校验
 	// —— 单语言站点没有语言前缀这个概念，硬判只会产生噪声。
 	Langs []LangRule
+	// SiteBaseURL 构建产物时使用的可信站点基址，可带部署路径前缀。
+	// 空值时无法证明绝对地址属于本站，仍按跨域待确认；不得从请求 Host 推导。
+	SiteBaseURL string
 	// SitemapListed 本 URL 是否在站点 sitemap 的收录清单里。
 	//
 	// sitemap 由「已激活路径」生成（publication.RefreshSiteFiles），因此巡检激活面时
@@ -294,16 +297,16 @@ func checkCanonical(rep *Report, a Artifact, doc headDoc) string {
 	// 跨域 canonical 单独成一条结论并终止后续的语言/路径比对：
 	// 它的权威版本在别的站点，本站的路径与语言前缀约定都管不到它 —— 继续比对只会
 	// 产生「路径不符」「语言不符」这类无意义的噪声，真正要人看的是「你把权重让给了谁」。
-	if isExternal(canonical) {
+	if isExternal(canonical, a.SiteBaseURL) {
 		rep.add(a, RuleCanonicalExternal, LevelWarn,
-			fmt.Sprintf("canonical=%s（跨域），产物访问路径=%s", canonical, a.URL),
-			"跨域 canonical 会把本页的收录权重让给该地址，必须是有意为之")
+			fmt.Sprintf("canonical=%s（跨域或站点基址未知），产物访问路径=%s", canonical, a.URL),
+			"未证实属于可信站点基址的 canonical 需人工确认；跨域地址会将本页的收录权重让给目标")
 		return canonical
 	}
 	// 路径一致：canonical 与产物实际访问路径必须指向同一条 URL（/index 与 / 视为同一
 	// 条，口径取自 seo.CanonicalPublicPath，与构建期写 canonical 时同一份实现）。
 	want := seo.CanonicalPublicPath(a.URL)
-	got := seo.CanonicalPublicPath(pathOf(canonical))
+	got := seo.CanonicalPublicPath(canonicalPathOf(canonical, a.SiteBaseURL))
 	if got != want {
 		rep.add(a, RuleCanonicalPathMismatch, LevelWarn,
 			fmt.Sprintf("canonical=%s，产物访问路径=%s", canonical, a.URL),
@@ -336,19 +339,19 @@ func checkLangPath(rep *Report, a Artifact) {
 // checkCanonicalLang canonical 的语言前缀必须与本产物语言一致。
 //
 // 跨域 canonical 跳过：它的权威版本在别的站点，本站的语言前缀约定管不到它
-// （跨域这件事本身已在 canonical.path-mismatch 的 warn 里被提出）。
+// （跨域这件事本身已在 canonical.external 的 warn 里被提出）。
 func checkCanonicalLang(rep *Report, a Artifact, canonical string) {
 	if len(a.Langs) < 2 || canonical == "" {
 		return
 	}
-	if isExternal(canonical) {
+	if isExternal(canonical, a.SiteBaseURL) {
 		return
 	}
 	expected, ok := ruleForLang(a.Langs, a.Lang)
 	if !ok {
 		return
 	}
-	got, matched := ruleForPath(a.Langs, seo.CanonicalPublicPath(pathOf(canonical)))
+	got, matched := ruleForPath(a.Langs, seo.CanonicalPublicPath(canonicalPathOf(canonical, a.SiteBaseURL)))
 	if !matched || !strings.EqualFold(got.Code, expected.Code) {
 		rep.add(a, RuleCanonicalLangMismatch, LevelError,
 			fmt.Sprintf("构建语言=%s，canonical=%s", a.Lang, canonical),

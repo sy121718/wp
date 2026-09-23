@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"html"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -155,10 +156,61 @@ func pathOf(raw string) string {
 	return u.Path
 }
 
-// isExternal 是否跨域绝对地址（含 scheme://host）。
-func isExternal(raw string) bool {
+// isExternal 判断 canonical 是否超出可信站点基址；缺少基址时绝对地址保持待确认。
+// 只接受配置中的 HTTP(S) origin，绝不从 HTML 或请求 Host 反推本站身份。
+func isExternal(raw, base string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && u.Opaque == "" && u.Scheme != "" && u.Host != ""
+	if err != nil {
+		return false
+	}
+	if u.Opaque != "" {
+		return true
+	}
+	if u.Host == "" {
+		return u.Scheme != "" // 非 HTTP 的绝对地址也不是本站路径。
+	}
+	if u.Scheme == "" {
+		return true // 协议相对地址缺少可信协议，不能证实属于本站。
+	}
+	b, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || (b.Scheme != "http" && b.Scheme != "https") || b.Host == "" || b.User != nil || b.RawQuery != "" || b.Fragment != "" {
+		return true
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.User != nil ||
+		!strings.EqualFold(u.Scheme, b.Scheme) || !strings.EqualFold(u.Hostname(), b.Hostname()) || u.Port() != b.Port() {
+		return true
+	}
+	prefix := strings.TrimRight(b.Path, "/")
+	if prefix == "" {
+		return false
+	}
+	// 路径边界以 URL 的转义形式判断，避免 %2F 冒充层级分隔符。
+	if strings.Contains(strings.ToLower(u.EscapedPath()), "%2f") {
+		return true
+	}
+	clean := path.Clean(u.Path)
+	return clean != prefix && !strings.HasPrefix(clean, prefix+"/")
+}
+
+// canonicalPathOf 剥离可信站点部署前缀后返回产物的逻辑路径。
+func canonicalPathOf(raw, base string) string {
+	path := pathOf(raw)
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || isExternal(raw, base) {
+		return path
+	}
+	b, err := url.Parse(strings.TrimSpace(base))
+	if err != nil {
+		return path
+	}
+	prefix := strings.TrimRight(b.Path, "/")
+	if prefix != "" {
+		path = strings.TrimPrefix(path, prefix)
+		if path == "" {
+			return "/"
+		}
+	}
+	return path
 }
 
 // ruleForLang 取某语言在站点语言表里的条目（大小写不敏感）。

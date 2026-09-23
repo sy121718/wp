@@ -65,6 +65,76 @@ func TestInspectBaselineClean(t *testing.T) {
 	}
 }
 
+func TestInspectCanonicalSiteBoundary(t *testing.T) {
+	cases := []struct {
+		name, base, canonical, path string
+		want                        []string
+	}{
+		{"本站绝对地址", "https://shop.test", "https://shop.test/about", "/about", nil},
+		{"本站大小写域名", "https://SHOP.test", "https://shop.test/about", "/about", nil},
+		{"本站子路径", "https://shop.test/store", "https://shop.test/store/about", "/about", nil},
+		{"本站子路径根", "https://shop.test/store", "https://shop.test/store/", "/", nil},
+		{"本站子路径无尾斜杠", "https://shop.test/store", "https://shop.test/store", "/", nil},
+		{"本站绝对地址路径不符", "https://shop.test/store", "https://shop.test/store/other", "/about", []string{RuleCanonicalPathMismatch}},
+		{"不同域名", "https://shop.test", "https://other.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"相似域名", "https://shop.test", "https://shop.test.evil/about", "/about", []string{RuleCanonicalExternal}},
+		{"不同协议", "https://shop.test", "http://shop.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"不同端口", "https://shop.test:8443", "https://shop.test:9443/about", "/about", []string{RuleCanonicalExternal}},
+		{"用户名注入", "https://shop.test", "https://shop.test@evil.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"伪造基址身份", "https://shop.test@evil.test", "https://evil.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"非法基址", "not-a-site", "https://shop.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"子路径外", "https://shop.test/store", "https://shop.test/storefront/about", "/about", []string{RuleCanonicalExternal}},
+		{"子路径逃逸", "https://shop.test/store", "https://shop.test/store/../other", "/about", []string{RuleCanonicalExternal}},
+		{"编码斜杠伪装前缀", "https://shop.test/store", "https://shop.test/store%2Fabout", "/about", []string{RuleCanonicalExternal}},
+		{"其他子站", "https://shop.test/store", "https://shop.test/other/about", "/about", []string{RuleCanonicalExternal}},
+		{"协议相对跨域", "https://shop.test", "//other.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"无基址的绝对地址", "", "https://shop.test/about", "/about", []string{RuleCanonicalExternal}},
+		{"无基址的相对地址", "", "/about", "/about", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := Inspect(Artifact{URL: tc.path, SiteBaseURL: tc.base,
+				HTML: htmlDoc("zh-CN", baseHead("关于我们", tc.canonical))})
+			got := rulesOf(rep)
+			if len(got) != len(tc.want) {
+				t.Fatalf("canonical=%q base=%q: 结论=%v，期望=%v", tc.canonical, tc.base, got, tc.want)
+			}
+			for _, rule := range tc.want {
+				if got[rule] != 1 {
+					t.Errorf("规则 %s 命中 %d 次，结论=%v", rule, got[rule], got)
+				}
+			}
+		})
+	}
+}
+
+func TestInspectCanonicalLanguageWithSiteBase(t *testing.T) {
+	base := "https://shop.test/store"
+	langs := twoLangs()
+	for _, tc := range []struct {
+		name, canonical string
+		want            []string
+	}{
+		{"本站当前语言", base + "/en/about", nil},
+		{"本站另一语言", base + "/about", []string{RuleCanonicalPathMismatch, RuleCanonicalLangMismatch}},
+		{"跨域另一语言不追加语言误报", "https://other.test/about", []string{RuleCanonicalExternal}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := Inspect(Artifact{URL: "/en/about", Lang: "en-US", Langs: langs, SiteBaseURL: base,
+				HTML: htmlDoc("en-US", baseHead("About", tc.canonical))})
+			got := rulesOf(rep)
+			if len(got) != len(tc.want) {
+				t.Fatalf("规则=%v，期望=%v", got, tc.want)
+			}
+			for _, rule := range tc.want {
+				if got[rule] != 1 {
+					t.Errorf("规则 %s 命中 %d 次，实际 %v", rule, got[rule], got)
+				}
+			}
+		})
+	}
+}
+
 // TestInspectRules 逐条规则：给定产物形状 → 必须命中指定的规则 id。
 func TestInspectRules(t *testing.T) {
 	cases := []struct {

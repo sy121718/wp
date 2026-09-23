@@ -104,6 +104,7 @@ func (s *Service) inspectArtifactSEO(hash, url, lang string, sitemapListed bool,
 	return compliance.Inspect(compliance.Artifact{
 		URL: url, Lang: lang, ArtifactHash: hash,
 		HTML: art.Entries["index.html"], Langs: langs, SitemapListed: sitemapListed,
+		SiteBaseURL: seo.SiteBaseURL(),
 	}), nil
 }
 
@@ -212,6 +213,7 @@ func (s *Service) SEOPatrol(ctx context.Context, req *pagedto.SEOPatrolReq) (res
 		arts = append(arts, compliance.Artifact{
 			URL: url, Lang: art.Lang, ArtifactHash: art.ArtifactHash,
 			HTML: loaded.Entries["index.html"], Langs: langs,
+			SiteBaseURL:   seo.SiteBaseURL(),
 			SitemapListed: true, // 激活清单即 sitemap 的条目来源
 		})
 	}
