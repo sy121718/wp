@@ -48,7 +48,14 @@ lang_self_name = re.compile('简体中文|繁體中文|日本語|한국어|Engli
 #     （Jet 不支持在 range 内直接写 := 赋值，所以模板会先取变量再调）
 # 只认第一种会让已经 key 化的行继续被计成硬编码 —— 门禁数字虚高，
 # 而虚高的数字会让人低估覆盖率，进而怀疑整套机制没生效。
-t_call = re.compile(r'(?:\.\["t"\]|\btr)\(')
+# 取词调用的判据按**形状**给，不按变量名列举：
+#   `("点分 key", "兜底文案"` —— 点分 key 后面紧跟逗号与第二个字符串参数，是取词调用的特征。
+# 为什么不用变量名白名单：局部变量名是任意的 —— `product_attribute_group_form.html` 用的是
+# `{{gfTr := .["t"]}}` 之后 `gfTr("admin.x", "中文")`，白名单认不出 gfTr，那 4 行就被误算成
+# 「硬编码」（实测踩过）；而每加一个新变量名都要回来改正则，迟早再漏一次。
+t_call = re.compile(r'\(\s*"[a-z][a-zA-Z0-9_.]*\.[a-zA-Z0-9_.]+"\s*,\s*"')
+# 兜底形态：不带兜底文案的取词调用（t("key") / .["t"]("key")）。
+t_call_bare = re.compile(r'(?:\.\["t"\]|\btr)\(')
 rows = []
 # **必须递归**：admin/ 已按后端模块分子目录（admin/<模块>/x.html，根下只剩 layout / login /
 # dashboard 三个壳页面）。写成 `admin/*.html` 会静默缩水成「只查 3 个文件」—— 门禁照样绿，
@@ -61,7 +68,7 @@ for path in sorted(glob.glob(os.path.join(tpl_dir, '**', '*.html'), recursive=Tr
     for i, line in enumerate(src.split('\n'), 1):
         if not cjk.search(line):
             continue
-        if t_call.search(line):
+        if t_call.search(line) or t_call_bare.search(line):
             continue
         if lang_self_name.search(line):
             continue
