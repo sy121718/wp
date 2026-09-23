@@ -58,6 +58,64 @@ func TestInventoryListTitleOmitsZeroCount(t *testing.T) {
 	}
 }
 
+func TestInventoryMovementTitleOmitsZeroCount(t *testing.T) {
+	for _, tc := range []struct {
+		name, lang, zeroTitle, populatedTitle string
+		translations                          map[string]string
+	}{
+		{"中文词条", "zh-CN", "库存流水", "库存流水（最近 1 条）", map[string]string{
+			"admin.inventory.moves.title": "库存流水",
+			"admin.inventory.moves.titleLead": "库存流水（最近 ",
+			"admin.inventory.moves.titleTail": " 条）",
+		}},
+		{"英文词条", "en-US", "Stock ledger", "Stock ledger (latest 1)", map[string]string{
+			"admin.inventory.moves.title": "Stock ledger",
+			"admin.inventory.moves.titleLead": "Stock ledger (latest ",
+			"admin.inventory.moves.titleTail": ")",
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := map[string]any{
+				"Err": "", "Ok": "", "SelectedProject": "pr1", "SelectedVariant": "", "SelectedSKU": "",
+				"Projects": groupDProjects(), "Warehouses": []map[string]any{},
+				"Reasons": []map[string]any{}, "Directions": []map[string]any{},
+				"VariantOptions": []map[string]any{}, "StockRows": []map[string]any{},
+			}
+			for _, count := range []int{0, 1} {
+				movements := []map[string]any{}
+				if count > 0 {
+					movements = append(movements, map[string]any{
+						"CreatedAt": "2026-01-01", "SKUCode": "SKU1", "WarehouseName": "仓一", "WarehouseCode": "W1",
+						"Direction": "in", "DirectionLabel": "入库", "Quantity": 1, "QuantityBefore": 0,
+						"QuantityAfter": 1, "ReasonName": "采购入库", "ReasonCode": "purchase_in",
+						"SourceRef": "PO-1", "SourceType": "purchase", "OperatorID": "u1",
+					})
+				}
+				data["Movements"] = movements
+				data["t"] = func(key, fallback string) string {
+					if value, ok := tc.translations[key]; ok {
+						return value
+					}
+					return fallback
+				}
+				data["lang"] = tc.lang
+				root := inventoryListDOM(t, "inventory", data)
+				titles := peAll(root, func(n *html.Node) bool { return peClass(n, "card-title") })
+				if len(titles) != 1 {
+					t.Fatalf("%d 行时卡片标题数 = %d", count, len(titles))
+				}
+				want := tc.zeroTitle
+				if count > 0 {
+					want = tc.populatedTitle
+				}
+				if got := strings.TrimSpace(peText(titles[0])); got != want {
+					t.Errorf("%d 行时标题 = %q，期望 %q", count, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestPurchaseListColumnsAlign(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
