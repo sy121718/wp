@@ -49,18 +49,33 @@ func (h *Handle) RedirectPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/page/page_redirects.html", redirectPageData(c, res, redirectErrKeyFromCode(c.Query("err"))))
 }
 
-// RedirectCreate 新增重定向。
+// RedirectCreate 新增重定向。失败时留在本页并回填输入，成功后仍走 PRG。
 func (h *Handle) RedirectCreate(c *gin.Context) {
 	var req pagedto.RedirectCreateReq
 	if err := c.ShouldBind(&req); err != nil {
-		redirectPageBack(c, "", "", pageenums.ErrInvalidParam)
+		h.redirectCreateFailure(c, &req, "admin.redirect.err.invalid")
 		return
 	}
 	if _, err := h.svc.CreateRedirect(c.Request.Context(), &req); err != nil {
-		redirectPageBack(c, req.ProjectID, "", redirectErrKey(err))
+		h.redirectCreateFailure(c, &req, redirectErrKey(err))
 		return
 	}
 	redirectPageBack(c, req.ProjectID, "created", "")
+}
+
+func (h *Handle) redirectCreateFailure(c *gin.Context, req *pagedto.RedirectCreateReq, errKey string) {
+	res, err := h.svc.ListRedirects(c.Request.Context(), &pagedto.RedirectListReq{ProjectID: req.ProjectID})
+	if err != nil {
+		logger.Scene("page").Error(err, "重定向创建失败后列表读取失败")
+	}
+	data := redirectPageData(c, res, errKey)
+	if res == nil && req.ProjectID != "" {
+		data["SelectedProject"] = req.ProjectID
+	}
+	data["CreateSource"] = req.SourcePath
+	data["CreateTarget"] = req.TargetPath
+	data["CreateFailed"] = true
+	c.HTML(http.StatusOK, "admin/page/page_redirects.html", data)
 }
 
 // RedirectDelete 删除一条重定向。
@@ -223,9 +238,8 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 			doneText = redirectBulkDeleteText(c, deleted, skipped)
 		}
 	}
-	// 全部键都预置默认值：Jet 模板读到**缺失**的键会在那一行中断渲染，
-	// 而 HTTP 状态码仍是 200 —— 中断点之前的内容照常输出、之后的整块消失，
-	// 排查成本极高（internal/templates/CLAUDE.md）。列表页尤其致命：看不到任何报错。
+	// 全部键都预置默认值：Jet 缺键会导致渲染器返回 500 通用错误页，
+	// 列表与失败回填所需的键必须由同一装配入口提供。
 	data := gin.H{
 		"lang":            lang,
 		"t":               t,
@@ -236,6 +250,9 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 		"ErrKey":          errKey,
 		"Done":            doneText,
 		"ErrText":         errText,
+		"CreateSource":    "",
+		"CreateTarget":    "",
+		"CreateFailed":    false,
 		"Projects":        []pagedto.RedirectProjectOption{},
 		"Items":           []pagedto.RedirectItem{},
 		"SelectedProject": "",

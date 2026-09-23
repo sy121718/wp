@@ -160,6 +160,7 @@ func redirectProbeData(over map[string]any) map[string]any {
 	return withKeys(map[string]any{
 		"Title": "重定向管理", "PagePath": "/api/page/redirect",
 		"OkKey": "", "ErrKey": "", "Done": "", "ErrText": "",
+		"CreateSource": "", "CreateTarget": "", "CreateFailed": false,
 		"Projects": []any{map[string]any{"ID": "pr1", "Name": "官网"}}, "SelectedProject": "pr1",
 		"Items": []any{}, "Total": 0, "EffectiveCount": 0, "MultiHopCount": 0, "LoopCount": 0,
 	}, over)

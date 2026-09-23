@@ -9,7 +9,8 @@
 {* 写法约束：注释一律用 Jet 注释（花括号加星号，见本文件其余注释的写法）—— HTML 与 JS
    注释里的中文会被 i18n 门禁算成「未 key 文案」，注释里也不要再写 Jet 注释的字面形式，
    否则门禁脚本的非贪婪匹配会在那里提前收尾，把后半句当正文统计。 *}
-{* range 内不读外层 map（Jet 只在块顶部存变量才可靠），故先把用到的键全部存成变量。 *}
+{* range 内不读外层 map（Jet 只在块顶部存变量才可靠），故先把用到的键全部存成变量。
+   新建走页头/空态抽屉；删除的确认只由 ui/confirm.js 接管。 *}
 {* 页面不继承 layout.html：本页挂在 /api 路由组下（见 page_redirect_handle.go 的说明）， *}
 {* 拿不到侧栏导航所需的 NavGroups，故自带最小外壳与返回后台的链接。 *}
 {{import "../partials/bulk_bar.html"}}
@@ -21,6 +22,9 @@
 {{errKey := .ErrKey}}
 {{done := .Done}}
 {{errText := .ErrText}}
+{{createSource := .["CreateSource"]}}
+{{createTarget := .["CreateTarget"]}}
+{{createFailed := .["CreateFailed"]}}
 {{projects := .Projects}}
 {{items := .Items}}
 {{lang := .["lang"]}}
@@ -58,6 +62,9 @@
                         </select>
                     </form>
                     {{end}}
+                    {{if selectedProject != ""}}
+                    <button type="button" class="btn btn-primary" data-drawer-open="#tpl-redirect-create" data-drawer-title="{{tr("admin.redirect.create.submit", "新增重定向")}}">＋ {{tr("admin.redirect.create.submit", "新增重定向")}}</button>
+                    {{end}}
                     <a class="btn btn-ghost" href="/admin/pages">{{tr("admin.redirect.back", "返回后台")}}</a>
                 </div>
             </header>
@@ -65,7 +72,7 @@
             {{if okKey != ""}}
             <p class="badge badge-success" role="status">{{ .["t"](okKey, "操作完成")}}</p>
             {{end}}
-            {{if errKey != ""}}
+            {{if errKey != "" && (!createFailed || selectedProject == "")}}
             <p class="badge badge-danger" role="alert">{{ .["t"](errKey, "操作未完成")}}</p>
             {{end}}
             {* 批量删除的结果：全成功走 Done，有跳过走 ErrText —— 两句都由服务端按 dn / sk
@@ -98,18 +105,6 @@
                 <p class="badge badge-danger">{{tr("admin.redirect.loop.notice", "有重定向处在环里（互相指向），访客会撞上「重定向次数过多」：请删除或修正其中一条。")}}</p>
                 {{end}}
 
-                <form method="post" action="{{pagePath}}/create" class="filter-bar">
-                    <input type="hidden" name="csrf_token" value="{{csrfToken}}">
-                    <input type="hidden" name="project" value="{{selectedProject}}">
-                    <label class="sr-only" for="source-path">{{tr("admin.redirect.create.source", "源路径")}}</label>
-                    <input class="form-input" id="source-path" name="sourcePath" placeholder="/promo/spring" required>
-                    <span class="text-mute text-sm">{{tr("admin.redirect.create.arrow", "跳转到")}}</span>
-                    <label class="sr-only" for="target-path">{{tr("admin.redirect.create.target", "目标路径")}}</label>
-                    <input class="form-input" id="target-path" name="targetPath" placeholder="/products" required>
-                    <span class="filter-spacer"></span>
-                    <button type="submit" class="btn btn-primary">{{tr("admin.redirect.create.submit", "新增重定向")}}</button>
-                </form>
-
                 <form method="post" action="/admin/page-redirects/bulk-delete"
                       data-confirm="{{tr("admin.redirect.bulk_delete_confirm", "删除选中的重定向？它们指向的旧路径会直接返回 404（页面与产物不受影响，可以再手动加回来）。")}}" data-confirm-danger>
                     <input type="hidden" name="csrf_token" value="{{csrfToken}}">
@@ -117,7 +112,7 @@
                     {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
                     {{if len(items) > 0}}
                     {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.redirect.bulk_delete_confirm", "删除选中的重定向？它们指向的旧路径会直接返回 404（页面与产物不受影响，可以再手动加回来）。"), danger=true)}}
+                        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), danger=true)}}
                     {{yield bulkBarClose()}}
                     {{end}}
                 <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.redirect.list.aria", "重定向列表")}}">
@@ -140,10 +135,8 @@
                         <tr><td colspan="7" class="cell-wrap">
                 <div class="empty-state">
                     <p class="empty-title">{{tr("admin.redirect.empty.title", "还没有重定向")}}</p>
-                    <p class="empty-desc">{{tr("admin.redirect.empty", "当前站点还没有重定向 —— 上面新增一条，或在页面里改 URL 时勾选「保留旧链接」。")}}</p>
-                    {* 空态动作：本页的「新增」表单就在上方一行（.filter-bar），同屏可见，不必重复给。
-                       真正缺的入口是另一条来源 —— 改页面 URL 时勾「保留旧链接」。 *}
                     <div class="empty-actions">
+                        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-redirect-create" data-drawer-title="{{tr("admin.redirect.create.submit", "新增重定向")}}">＋ {{tr("admin.redirect.create.submit", "新增重定向")}}</button>
                         <a class="btn" href="/admin/pages">{{tr("admin.redirect.empty.action", "去页面管理改 URL")}}</a>
                     </div>
                 </div>
@@ -231,30 +224,50 @@
                 </div>
             </section>
             {{end}}
+            {{if selectedProject != ""}}
+            <template id="tpl-redirect-create">
+                <div data-redirect-create-form>
+                    {{if createFailed}}
+                    <p class="badge badge-danger" role="alert">{{tr(errKey, "操作未完成")}}</p>
+                    {{end}}
+                    <form method="post" action="{{pagePath}}/create">
+                        <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                        <input type="hidden" name="project" value="{{selectedProject}}">
+                        <div class="form-row"><div class="form-group">
+                            <label class="form-label req" for="redirect-source">{{tr("admin.redirect.create.source", "源路径")}}</label>
+                            <input class="form-input" id="redirect-source" name="sourcePath" placeholder="/promo/spring" value="{{createSource}}" required>
+                        </div></div>
+                        <div class="form-row"><div class="form-group">
+                            <label class="form-label req" for="redirect-target">{{tr("admin.redirect.create.target", "目标路径")}}</label>
+                            <input class="form-input" id="redirect-target" name="targetPath" placeholder="/products" value="{{createTarget}}" required>
+                        </div></div>
+                        <div class="action-row">
+                            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                            <button type="submit" class="btn btn-primary">{{tr("admin.redirect.create.submit", "新增重定向")}}</button>
+                        </div>
+                    </form>
+                </div>
+            </template>
+            {{end}}
         </div>
     </main>
-{* 只引 admin.js（列表勾选 / 全选联动 / 选中计数 / 批量条显隐），**不引控件基座
-   partials/ui_scripts.html**：基座里的 ui/confirm.js 也会接管 [data-confirm] 的提交，
-   而本页已有一段自己的确认脚本 —— 两个处理器同时挂上会让一次提交弹两次确认框
-   （confirm.js 在捕获阶段 preventDefault 并弹 <dialog>，事件仍会传播到冒泡阶段的
-   这段脚本，preventDefault 不停止传播）。admin.js 本身不含 confirm 处理，只做勾选。 *}
+{* 本页独立外壳，抽屉容器与基座在这里各引一次；删除确认由基座统一处理。 *}
+<div class="drawer-mask" data-drawer-mask hidden></div>
+<aside class="drawer" data-drawer hidden aria-hidden="true">
+    <header class="drawer-head"><span class="drawer-title" data-drawer-title></span>
+        <button type="button" class="drawer-close" data-drawer-close title="{{tr("shell.action.close", "关闭")}}">✕</button>
+    </header>
+    <div class="drawer-body" data-drawer-body></div>
+</aside>
+{{include "../../partials/ui_scripts.html"}}
 <script src="/static/js/admin.js"></script>
+{{if createFailed}}
 <script>
-/* 本页的确认框：唯一入口（见上面的注释）。
-   批量删除的确认落在 form 的 data-confirm 属性上（按钮上的 data-confirm 是给控件基座用的，
-   本页不引基座；两处都写是刻意为之 —— 若将来本页接上基座，点按钮时基座会先弹一次并用
-   wbConfirmBypass 放行再提交，这段脚本仍只会在放行后的提交上看到 form 属性，不会重复弹）。 */
-(function () {
-    var root = document.querySelector('[data-redirect-page]');
-    if (!root) { return; }
-    root.addEventListener('submit', function (ev) {
-        var form = ev.target;
-        if (!form || !form.matches || !form.matches('form[data-confirm]')) { return; }
-        if (form.dataset && form.dataset.wbConfirmBypass === '1') { return; }
-        var msg = form.getAttribute('data-confirm') || '';
-        if (msg && !window.confirm(msg)) { ev.preventDefault(); }
-    });
-})();
+document.addEventListener('DOMContentLoaded', function () {
+    var opener = document.querySelector('[data-drawer-open="#tpl-redirect-create"]');
+    if (opener) { opener.click(); }
+});
 </script>
+{{end}}
 </body>
 </html>
