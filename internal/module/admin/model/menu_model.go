@@ -5,6 +5,8 @@ import (
 	"context"
 	"time"
 
+	"go_wp/pkg/database"
+
 	"gorm.io/gorm"
 )
 
@@ -105,6 +107,42 @@ func (m *MenuModel) ListAll(ctx context.Context) ([]MenuEntity, error) {
 	var list []MenuEntity
 	err := m.DB(ctx).Where("deleted_at IS NULL").Order("sort_order ASC, id ASC").Find(&list).Error
 	return list, err
+}
+
+// MenuParentOption is the small, unpaged projection needed by the parent selector.
+type MenuParentOption struct {
+	ID        uint64
+	ParentID  uint64
+	Title     string
+	Type      int
+	SortOrder int
+}
+
+// ListPage counts and fetches matching live menus without materializing the entire tree.
+func (m *MenuModel) ListPage(ctx context.Context, page, limit int, keyword string) (int64, []MenuEntity, error) {
+	query := m.DB(ctx).Where("deleted_at IS NULL")
+	if keyword != "" {
+		pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+		query = query.Where("title LIKE ? ESCAPE '\\' OR path LIKE ? ESCAPE '\\' OR remark LIKE ? ESCAPE '\\'", pattern, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+	var rows []MenuEntity
+	if total > 0 && int64(page-1) > (total-1)/int64(limit) {
+		page = int((total-1)/int64(limit)) + 1
+	}
+	err := query.Order("sort_order ASC, id ASC").Offset((page - 1) * limit).Limit(limit).Find(&rows).Error
+	return total, rows, err
+}
+
+// ListParentOptions reads only the columns required to keep the selector complete.
+func (m *MenuModel) ListParentOptions(ctx context.Context) ([]MenuParentOption, error) {
+	var options []MenuParentOption
+	err := m.DB(ctx).Select("id, parent_id, title, type, sort_order").
+		Where("deleted_at IS NULL").Order("sort_order ASC, id ASC").Find(&options).Error
+	return options, err
 }
 
 // ListEnabled 查询启用且未删除的菜单，按 sort_order、id 排序。

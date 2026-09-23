@@ -7,6 +7,35 @@ type MenuTreeReq struct {
 	Search string `form:"search" json:"search" binding:"omitempty,max=50" validate:"omitempty,max=50"`
 }
 
+// MenuPageRow is a flat page row; ParentTitle explains relationships across pages.
+type MenuPageRow struct {
+	ID          uint64
+	Title       string
+	Path        string
+	Type        int
+	ParentID    uint64
+	ParentTitle string
+	Status      int
+	SortOrder   int
+	Remark      string
+	Icon        string
+}
+
+// MenuParentChoice is an unpaged selector option.
+type MenuParentChoice struct {
+	ID     uint64
+	Title  string
+	Indent string
+	Type   int
+}
+
+// MenuPageResp separates page rows from the complete parent selector.
+type MenuPageResp struct {
+	Total   int64
+	Rows    []MenuPageRow
+	Parents []MenuParentChoice
+}
+
 // MenuDetailReq 查询单个菜单详情。
 type MenuDetailReq struct {
 	ID uint64 `form:"id" json:"id" binding:"required" validate:"required"`

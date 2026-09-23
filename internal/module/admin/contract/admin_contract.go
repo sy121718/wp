@@ -60,6 +60,7 @@ type PermService interface {
 
 // MenuService 菜单领域业务能力。
 type MenuService interface {
+	MenuPage(ctx context.Context, page, limit int, keyword string) (*admindto.MenuPageResp, error)
 	MenuTree(ctx context.Context, req *admindto.MenuTreeReq) ([]admindto.MenuTreeNode, error)
 	MenuDetail(ctx context.Context, req *admindto.MenuDetailReq) (*admindto.MenuDetailResp, error)
 	MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) error
@@ -69,6 +70,7 @@ type MenuService interface {
 
 // DeptService 部门领域业务能力。
 type DeptService interface {
+	DeptPage(ctx context.Context, page, limit int, keyword string) (*admindto.DeptPageResp, error)
 	DeptTree(ctx context.Context) ([]admindto.DeptTreeNode, error)
 	DeptDetail(ctx context.Context, req *admindto.DeptDetailReq) (*admindto.DeptTreeNode, error)
 	DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) error

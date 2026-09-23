@@ -14,6 +14,52 @@ import (
 	"gorm.io/gorm"
 )
 
+// DeptPage fetches bounded list rows and a complete, narrow parent selector.
+func (s *Service) DeptPage(ctx context.Context, page, limit int, keyword string) (*admindto.DeptPageResp, error) {
+	parents, err := s.dm.ListParentOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	total, list, err := s.dm.ListPage(ctx, page, limit, keyword)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uint64]adminmodel.DeptParentOption, len(parents))
+	for _, p := range parents {
+		byID[p.ID] = p
+	}
+	resp := &admindto.DeptPageResp{Total: total, Rows: make([]admindto.DeptPageRow, 0, len(list)), Parents: make([]admindto.DeptParentChoice, 0, len(parents))}
+	for _, p := range parents {
+		depth := 0
+		seen := map[uint64]bool{p.ID: true}
+		for id := p.ParentID; id != 0 && depth < 8; {
+			parent, ok := byID[id]
+			if !ok || seen[id] {
+				break
+			}
+			seen[id] = true
+			depth++
+			id = parent.ParentID
+		}
+		resp.Parents = append(resp.Parents, admindto.DeptParentChoice{ID: p.ID, DeptName: p.DeptName, Indent: strings.Repeat("　", depth)})
+	}
+	for _, item := range list {
+		parentTitle := ""
+		if parent, ok := byID[item.ParentID]; ok {
+			parentTitle = parent.DeptName
+		}
+		remark := ""
+		if item.Remark != nil {
+			remark = *item.Remark
+		}
+		resp.Rows = append(resp.Rows, admindto.DeptPageRow{
+			ID: item.ID, DeptName: item.DeptName, DeptCode: item.DeptCode,
+			ParentID: item.ParentID, ParentTitle: parentTitle, Status: item.Status, SortOrder: item.SortOrder, Remark: remark,
+		})
+	}
+	return resp, nil
+}
+
 // DeptTree 查询完整部门树。
 func (s *Service) DeptTree(ctx context.Context) ([]admindto.DeptTreeNode, error) {
 	all, err := s.dm.ListAll(ctx)

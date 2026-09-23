@@ -1,5 +1,31 @@
 package admindto
 
+// DeptPageRow is a flat page row with a parent label for cross-page context.
+type DeptPageRow struct {
+	ID          uint64
+	DeptName    string
+	DeptCode    string
+	ParentID    uint64
+	ParentTitle string
+	Status      int
+	SortOrder   int
+	Remark      string
+}
+
+// DeptParentChoice is an unpaged selector option.
+type DeptParentChoice struct {
+	ID       uint64
+	DeptName string
+	Indent   string
+}
+
+// DeptPageResp separates page rows from the complete parent selector.
+type DeptPageResp struct {
+	Total   int64
+	Rows    []DeptPageRow
+	Parents []DeptParentChoice
+}
+
 // DeptDetailReq 查询部门详情。
 type DeptDetailReq struct {
 	ID uint64 `form:"id" json:"id" binding:"required" validate:"required"`

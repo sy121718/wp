@@ -703,23 +703,23 @@ func adminMenuTypeLabel(t int) string {
 
 // MenusPage 菜单管理页（GET /admin/menus）。
 func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
-	nodes, err := h.menus.MenuTree(c.Request.Context(), &admindto.MenuTreeReq{})
+	page, limit := shell.PageParams(c)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	res, err := h.menus.MenuPage(c.Request.Context(), page, limit, keyword)
 	if err != nil {
-		// 降级渲染：树换空切片、页面照常渲染（详见 adminErrOrLoad）。树装载失败时
-		// 「新增」抽屉的父级下拉会是空的（顶层菜单仍可建），比整页消失可用得多。
-		nodes = nil
+		res = &admindto.MenuPageResp{}
 	}
-	rows := make([]adminMenuRow, 0, 64)
-	flattenAdminMenuTree(nodes, 1, &rows)
-	// 供新建下拉的父级选项（树扁平行，含全部分级）。
-	c.HTML(http.StatusOK, "admin/system/menus", shell.Prepare(c, gin.H{
-		"title":   pagesMsgMenusTitle,
-		"menu":    "menus",
-		"Rows":    rows,
-		"Parents": rows,
-		"Err":     adminErrOrLoad(c, err),
-		"Done":    adminPageDone(c, c.Query("done")),
-	}))
+	data := shell.Prepare(c, gin.H{
+		"title": pagesMsgMenusTitle, "menu": "menus",
+		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
+		"FilterKeyword": keyword,
+		"Err":           adminErrOrLoad(c, err), "Done": adminPageDone(c, c.Query("done")),
+	})
+	base := shell.FilterBaseURL("/admin/menus", map[string]string{"keyword": keyword})
+	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/system/menus", data)
 }
 
 // MenusCreate 新建菜单（POST /admin/menus/create）。
@@ -862,20 +862,23 @@ func flattenAdminDeptNodePtrs(nodes []*admindto.DeptTreeNode, depth int, out *[]
 
 // DepartmentsPage 部门管理页（GET /admin/departments）。
 func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
-	nodes, err := h.depts.DeptTree(c.Request.Context())
+	page, limit := shell.PageParams(c)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	res, err := h.depts.DeptPage(c.Request.Context(), page, limit, keyword)
 	if err != nil {
-		nodes = nil
+		res = &admindto.DeptPageResp{}
 	}
-	rows := make([]adminDeptRow, 0, 64)
-	flattenAdminDeptTree(nodes, 1, &rows)
-	c.HTML(http.StatusOK, "admin/system/departments", shell.Prepare(c, gin.H{
-		"title":   pagesMsgDepartmentsTitle,
-		"menu":    "depts",
-		"Rows":    rows,
-		"Parents": rows,
-		"Err":     adminErrOrLoad(c, err),
-		"Done":    adminPageDone(c, c.Query("done")),
-	}))
+	data := shell.Prepare(c, gin.H{
+		"title": pagesMsgDepartmentsTitle, "menu": "depts",
+		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
+		"FilterKeyword": keyword,
+		"Err":           adminErrOrLoad(c, err), "Done": adminPageDone(c, c.Query("done")),
+	})
+	base := shell.FilterBaseURL("/admin/departments", map[string]string{"keyword": keyword})
+	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/system/departments", data)
 }
 
 // DepartmentsCreate 新建部门（POST /admin/departments/create）。

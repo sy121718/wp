@@ -71,28 +71,28 @@ func assertEmptyKeepsTableHead(t *testing.T, label, out, colspan string, wants [
 
 // TestAdminEmptyStateKeepsTableHead 空数据时表头必须仍在（含 canDelete 两种形态的 colspan）。
 func TestAdminEmptyStateKeepsTableHead(t *testing.T) {
-	t.Run("departments/无删除权限→colspan6", func(t *testing.T) {
+	t.Run("departments/无删除权限→colspan7", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/departments", map[string]any{"Rows": []any{}, "Parents": []any{}})
-		assertEmptyKeepsTableHead(t, "departments", out, "6", []string{"还没有部门"})
+		assertEmptyKeepsTableHead(t, "departments", out, "7", []string{"还没有部门"})
 	})
 
-	t.Run("departments/有删除权限→colspan7", func(t *testing.T) {
+	t.Run("departments/有删除权限→colspan8", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/departments", map[string]any{
 			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"dept:delete": true},
 		})
-		assertEmptyKeepsTableHead(t, "departments+delete", out, "7", []string{"还没有部门", "data-check-all"})
+		assertEmptyKeepsTableHead(t, "departments+delete", out, "8", []string{"还没有部门", "data-check-all"})
 	})
 
-	t.Run("menus/无删除权限→colspan8", func(t *testing.T) {
+	t.Run("menus/无删除权限→colspan9", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{"Rows": []any{}, "Parents": []any{}})
-		assertEmptyKeepsTableHead(t, "menus", out, "8", []string{"还没有菜单"})
+		assertEmptyKeepsTableHead(t, "menus", out, "9", []string{"还没有菜单"})
 	})
 
-	t.Run("menus/有删除权限→colspan9", func(t *testing.T) {
+	t.Run("menus/有删除权限→colspan10", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{
 			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"menu:delete": true},
 		})
-		assertEmptyKeepsTableHead(t, "menus+delete", out, "9", []string{"还没有菜单", "data-check-all"})
+		assertEmptyKeepsTableHead(t, "menus+delete", out, "10", []string{"还没有菜单", "data-check-all"})
 	})
 
 	t.Run("i18n→colspan7", func(t *testing.T) {

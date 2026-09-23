@@ -7,6 +7,8 @@ import (
 	"errors"
 	"time"
 
+	"go_wp/pkg/database"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -113,6 +115,41 @@ func (m *DeptModel) ListAll(ctx context.Context) ([]DeptEntity, error) {
 	var list []DeptEntity
 	err := m.DB(ctx).Order("sort_order ASC, id ASC").Find(&list).Error
 	return list, err
+}
+
+// DeptParentOption is the unpaged, narrow projection used by the parent selector.
+type DeptParentOption struct {
+	ID        uint64
+	ParentID  uint64
+	DeptName  string
+	SortOrder int
+}
+
+// ListPage counts and fetches matching departments in a stable flat order.
+func (m *DeptModel) ListPage(ctx context.Context, page, limit int, keyword string) (int64, []DeptEntity, error) {
+	query := m.DB(ctx)
+	if keyword != "" {
+		pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+		query = query.Where("dept_name LIKE ? ESCAPE '\\' OR dept_code LIKE ? ESCAPE '\\' OR remark LIKE ? ESCAPE '\\'", pattern, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+	var rows []DeptEntity
+	if total > 0 && int64(page-1) > (total-1)/int64(limit) {
+		page = int((total-1)/int64(limit)) + 1
+	}
+	err := query.Order("sort_order ASC, id ASC").Offset((page - 1) * limit).Limit(limit).Find(&rows).Error
+	return total, rows, err
+}
+
+// ListParentOptions keeps all parent choices available without loading entire rows.
+func (m *DeptModel) ListParentOptions(ctx context.Context) ([]DeptParentOption, error) {
+	var options []DeptParentOption
+	err := m.DB(ctx).Select("id, parent_id, dept_name, sort_order").
+		Order("sort_order ASC, id ASC").Find(&options).Error
+	return options, err
 }
 
 // ListByAncestors 查询 ancestors 字段以指定前缀开头的所有子孙部门。

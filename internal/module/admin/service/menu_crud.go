@@ -11,6 +11,52 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 )
 
+// MenuPage keeps the management page bounded while retaining the complete parent selector.
+func (s *Service) MenuPage(ctx context.Context, page, limit int, keyword string) (*admindto.MenuPageResp, error) {
+	parents, err := s.mm.ListParentOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	total, list, err := s.mm.ListPage(ctx, page, limit, keyword)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uint64]adminmodel.MenuParentOption, len(parents))
+	for _, p := range parents {
+		byID[p.ID] = p
+	}
+	resp := &admindto.MenuPageResp{Total: total, Rows: make([]admindto.MenuPageRow, 0, len(list)), Parents: make([]admindto.MenuParentChoice, 0, len(parents))}
+	for _, p := range parents {
+		depth := 0
+		seen := map[uint64]bool{p.ID: true}
+		for id := p.ParentID; id != 0 && depth < 8; {
+			parent, ok := byID[id]
+			if !ok || seen[id] {
+				break
+			}
+			seen[id] = true
+			depth++
+			id = parent.ParentID
+		}
+		resp.Parents = append(resp.Parents, admindto.MenuParentChoice{ID: p.ID, Title: p.Title, Type: p.Type, Indent: strings.Repeat("　", depth)})
+	}
+	for _, item := range list {
+		parentTitle := ""
+		if parent, ok := byID[item.ParentID]; ok {
+			parentTitle = parent.Title
+		}
+		remark := ""
+		if item.Remark != nil {
+			remark = *item.Remark
+		}
+		resp.Rows = append(resp.Rows, admindto.MenuPageRow{
+			ID: item.ID, Title: item.Title, Path: item.Path, Type: item.Type, ParentID: item.ParentID,
+			ParentTitle: parentTitle, Status: item.Status, SortOrder: item.SortOrder, Remark: remark, Icon: item.Icon,
+		})
+	}
+	return resp, nil
+}
+
 // MenuDetail 查询单个菜单详情。
 func (s *Service) MenuDetail(ctx context.Context, req *admindto.MenuDetailReq) (res *admindto.MenuDetailResp, err error) {
 	entity, err := s.mm.GetByID(ctx, req.ID)
