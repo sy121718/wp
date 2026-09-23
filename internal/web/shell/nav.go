@@ -143,6 +143,9 @@ func containsActive(nodes []NavNode) bool {
 var navPathAlias = map[string]string{
 	"/admin/page/translations":     "/admin/pages",
 	"/admin/products/translations": "/admin/products",
+	// 新建商品的表单页同样是「商品管理」的子页面（列表页的「＋ 新建」指向它）；
+	// 不映射的话打开这一页时侧栏整组失去高亮（高亮是「菜单路径 == 当前路径」精确匹配）。
+	"/admin/products/new": "/admin/products",
 	// 文章编辑页挂在「文章」列表下（入口在列表行内，不单独占菜单）。
 	"/admin/articles/edit":         "/admin/articles",
 	"/admin/articles/translations": "/admin/articles",

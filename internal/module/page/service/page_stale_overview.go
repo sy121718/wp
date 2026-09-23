@@ -29,11 +29,6 @@ import (
 )
 
 const (
-	// staleOverviewLimit 列表页只读区块一次列出的页面数。
-	//
-	// 只读区块的作用是「让人看见影响面」，不是完整清单：给多了会把列表页淹掉，
-	// 给少了又不说明被截断。被截断的条数由 Total 给出并在页面上显式说明。
-	staleOverviewLimit = 8
 	// staleImpactSampleLimit 写侧日志 / 回执里最多列出的页面数（前 K 个）。
 	staleImpactSampleLimit = 5
 	// staleImpactIDChunkSize 影响面反查时单条 IN 查询最多带多少个 id。

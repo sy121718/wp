@@ -85,7 +85,7 @@ func (f *filterPageList) ListStalePages(_ context.Context, req *pagedto.StalePag
 	return &pagedto.StalePageListResp{Pages: []pagedto.StalePageResp{}, Limit: staleOverviewTestLimit}, nil
 }
 
-// staleOverviewTestLimit 替身默认返回的 Limit（与 service 的 staleOverviewLimit = 8 对齐）。
+// staleOverviewTestLimit 替身默认返回的 Limit（与 handler 的 staleOverviewLimit = 8 对齐）。
 const staleOverviewTestLimit = 8
 
 // twoProjects 两个工程：筛选栏只在 >1 时渲染（单工程的下拉是噪声）。

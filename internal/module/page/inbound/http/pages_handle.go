@@ -351,13 +351,14 @@ func formatReceiptAge(d time.Duration) string {
 
 // staleOverviewLimit 「全站待重建」区块一次列出的页面数。
 //
-// 必须**显式给出**：ListStalePages 的 limit 由调用方决定（service 不写死业务口径），
-// 不填时落到 model 的 DefaultStaleListLimit = 50 —— 一份 50 行的折叠清单会把页面列表
-// 顶出首屏，而那正是审计 02-L P1-10 记录的原缺陷（只读影响面卡占了列表主位）。
+// 这是**消费者口径**，所以定义在调用方：ListStalePages 的 limit 由调用方给
+//（service 不写死业务条件），不填时才落到 model 的 DefaultStaleListLimit = 50 ——
+// 一份 50 行的折叠清单会把页面列表顶出首屏，而那正是审计 02-L P1-10 记录的原缺陷
+//（只读影响面卡占了列表主位）。
 //
 // 数为什么是 8：只读区块的作用是「让人看见影响面」，不是完整清单；被截断的条数由 Total
-// 给出并在页面上显式说明。service 里另有一份同名同值的常量（page_stale_overview.go 的
-// staleOverviewLimit），它未导出、也未被任何调用方使用 —— 两处若要一起调整，需同批改。
+// 给出并在页面上显式说明。service 里那份同名同值的未导出常量已随之删除（它没有任何调用方，
+// 留着会让「这个数由谁定」出现两个答案）。
 const staleOverviewLimit = 8
 
 // staleOverviewItem 「全站待重建」清单的一行。
