@@ -690,7 +690,7 @@ node lcs-trade/extra.js               # 滚动需求 / option 计数 / 写失败
 |---|---|---|
 | **B3** | **已完成** | ① G4（库值覆盖模板兜底）由 `417_fix_trade_pages_i18n.sql` 落地：实测库值 `admin.customers.list.empty_desc` = 「客户是访客在站点上自己注册出来的，后台不能直接新建 —— 完成注册后会出现在这里。」（即模板兜底那句）、`empty_heading` = 「还没有客户」；② 孤儿词条 `admin.customers.empty`：418 删库行，并已从 `register_admin_i18n.go` 的 190 批 key 列表移除（门槛 765 → 762）；190 seed SQL 里对应的两行 INSERT 亦已删除。**对账实测**：190 SQL 的 key 集合与条件列表双向 diff 均为空（762 = 762），符合 419 立下的「条件列表里的 key 全部仍由 seed SQL 写入」 |
 | **C1** | **已完成** | `dashboard.html` 的列表卡标题行已是 `.card-header` + `.card-title`；文件内仅存的 `filter-bar` 字样出现在**注释**里（解释为什么不再借用它）。此前按 `grep -c filter-bar` 判为「未做」是判据选错 |
-| **D1** | 本轮落地 | 基座控件 `internal/templates/static/js/ui/daterange.js`（渐进增强，原生两个 `input[type=date]` 保留在 DOM）+ `customers.html` / `analytics.html` 接入。**coupons 不在接入范围**：它的时间窗是 `type="datetime-local"`（需要时分），按 `02-K` §3「需要时分时用原生 `datetime-local`，无需新组件」保持不动 |
+| **D1** | 本轮落地 | 基座控件 `internal/templates/static/js/ui/daterange.js`（渐进增强，原生两个 `input[type=date]` 保留在 DOM）+ `customers.html` / `analytics.html` 接入。**coupons 不在接入范围**：它的时间窗是 `type="datetime-local"`（需要时分），按 `02-K` §3「需要时分时用原生 `datetime-local`，无需新组件」保持不动。§501 风险①的正式决策：**时间范围留在自己的卡里**（`.card-header` 承载「时间范围」标题 + 独立 `.filter-bar`），不并入下方列表卡的筛选栏 —— 理由见该条原文：并入会回到「filter-bar 承载标题」的坑 |
 | **E1** | 已完成 | ① `data-confirm-danger`：`site_slots.html` 已补（实测该解绑表单同时有 `data-confirm` 与 `data-confirm-danger`）；② `.filter-bar` 语义：本轮修 4 处 + 记 1 处遗留（见下节）；③ 统计进标题：coupons 的列表标题与其「共 N 张」统计已移入 `.card-header`，且 `{{if .Total > 0}}` 保证空时不显示统计；④ coupons 两处「＋ 新建优惠码」：经复核属**刻意并存**（页头那处由 `admin-ui-logic` §2.2 要求、空态那处由 §7 要求），已在模板写明取舍与判据出处 |
 
 **本轮未逐条复核的批次（不声称已完成）**：A1 / A2 / B1 / B2 / B4 / B5 / B6 / B7 / C2。
