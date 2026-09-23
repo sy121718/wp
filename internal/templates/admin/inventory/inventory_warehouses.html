@@ -50,10 +50,10 @@
     {{end}}{{end}}
 
     <section class="card list-card">
-        <div class="filter-bar">
-            <div class="filter-row">
-                <span class="card-title">{{ .["t"]("admin.inventory.list.titleLead", "仓库列表（") }}{{len(.Warehouses)}}{{ .["t"]("admin.inventory.list.titleTail", "）") }}</span>
-            </div>
+        {* 列表标题行用 .card-header，不借 .filter-bar（审计 02-O §38 的 02-I #29：.filter-bar 承诺的是
+           「筛选栏」，标题混进去之后按 .filter-bar 批量调布局 / 间距会误伤这一行；判据见 §40）。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.inventory.list.titleLead", "仓库列表（") }}{{len(.Warehouses)}}{{ .["t"]("admin.inventory.list.titleTail", "）") }}</span>
         </div>
         {* 空数据也渲染 <table>/<thead>（审计 D1）：表头（仓库名称 / 类型 / 短码 / 状态 /
            排序 / 操作）是「这里能看什么」的说明，空数据不该连它一起藏掉。

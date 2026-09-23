@@ -54,6 +54,13 @@
             {{end}}
             {{if selectedProject}}
             {{if canCreate}}
+            {* 本按钮与空态里那个同名按钮（.empty-actions）是**刻意同屏并存**的，不是重复渲染。
+               取舍依据（审计 02-O §642 第 8 项）：页头这一个由 admin-ui-logic §2.2 要求 ——
+               页头是页级动作的唯一归属地，列表非空时空态不渲染，它是「新建」唯一的入口；
+               空态那一个由 §7「空状态 = 一句话 + 主行动」要求 —— 列表为空时用户视线本就在列表区，
+               让主行动往上跳回页头是多余的。两者打开的是同一个抽屉，不存在第二份实现。
+               判据 §2「同一维度只给一种筛选控件」针对的是**筛选控件**，本条不适用；
+               §2.2「只承载一个按钮的卡片」违规形态也不成立。故：不合并、都保留。 *}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-coupon-create" data-drawer-title="{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}">＋ {{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
             {{end}}
             {{end}}
@@ -169,6 +176,8 @@
                 <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.coupons.no_project.link", "页面管理") }}</a>
                 {{else}}
                 {{if canCreate}}
+                {* 与页头那个「＋ 新建优惠码」刻意并存（不是重复渲染）；取舍理由与判据出处写在页头那一处，
+                   改这里之前先回读那段注释。 *}
                 <button type="button" class="btn btn-primary" data-drawer-open="#tpl-coupon-create" data-drawer-title="{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}">＋ {{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
                 {{end}}
                 {{if filterKeyword != "" || filterStatus != ""}}

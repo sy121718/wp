@@ -61,14 +61,17 @@
     {{end}}
 
     <section class="card list-card">
+        {* 列表标题行用 .card-header，不借 .filter-bar（审计 02-O §38 / §40）。
+           原先的 .fold-title 只在 .section-fold > summary 里有效，放在列表卡里是零样式
+           （theme.css §13 的注释），「库存流水（最近 N 条）」看上去和普通正文一样。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.inventory.moves.titleLead", "库存流水（最近 ") }}{{len(.Movements)}}{{ .["t"]("admin.inventory.moves.titleTail", " 条）") }}</span>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.inventory.moves.hint", "每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。按「物料清单展开扣减」产生的子项流水会标出它由哪个父 SKU 引出。") }} {{ .["t"]("admin.inventory.filter.timeHint", "时间筛选按流水创建时间过滤；只填日期时，截止日按当天 23:59:59 收口。") }} {{ .["t"]("admin.inventory.sku.empty", "选一个 SKU 后，这里列出它在各仓的库存记录（库存以「SKU × 仓库」为维度）。") }}</span>
+            </span>
+        </div>
         <div class="filter-bar">
-            <div class="filter-row">
-                <span class="fold-title">{{ .["t"]("admin.inventory.moves.titleLead", "库存流水（最近 ") }}{{len(.Movements)}}{{ .["t"]("admin.inventory.moves.titleTail", " 条）") }}</span>
-                <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.inventory.moves.hint", "每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。按「物料清单展开扣减」产生的子项流水会标出它由哪个父 SKU 引出。") }} {{ .["t"]("admin.inventory.filter.timeHint", "时间筛选按流水创建时间过滤；只填日期时，截止日按当天 23:59:59 收口。") }} {{ .["t"]("admin.inventory.sku.empty", "选一个 SKU 后，这里列出它在各仓的库存记录（库存以「SKU × 仓库」为维度）。") }}</span>
-                </span>
-            </div>
             <form method="get" action="/admin/inventory" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
@@ -119,11 +122,11 @@
 
         {* 某 SKU 的各仓库存：与流水是同一查询对象的两个视角，跟在筛选结果后面，不再单独成区。 *}
         {{if len(.StockRows) > 0}}
-        <div class="filter-bar">
-            <div class="filter-row">
-                <span class="fold-title">{{ .["t"]("admin.inventory.sku.title", "该 SKU 的各仓库存") }}</span>
-                <code>{{selectedSKU}}</code>
-            </div>
+        {* 卡内小节标题（同一个列表卡里「流水」之后的第二块，不是新开一张卡）：
+           同样不借 .filter-bar —— 它只承诺筛选栏语义（审计 02-O §38 / §40）。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.inventory.sku.title", "该 SKU 的各仓库存") }}</span>
+            <code>{{selectedSKU}}</code>
         </div>
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide">

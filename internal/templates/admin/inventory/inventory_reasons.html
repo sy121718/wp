@@ -41,10 +41,11 @@
     {{end}}
 
     <section class="card list-card">
-        <div class="filter-bar">
-            <div class="filter-row">
-                <span class="fold-title">{{ .["t"]("admin.inventory.reasons.titleLead", "变动原因（") }}{{len(.Reasons)}}{{ .["t"]("admin.inventory.reasons.titleTail", "）") }}</span>
-            </div>
+        {* 列表标题行用 .card-header + .card-title，不借 .filter-bar（审计 02-O §38 / §40）。
+           原先写的是 .fold-title —— 那个类只在 .section-fold > summary 里有效，放在列表卡里是
+           零样式（theme.css §13 的注释），「变动原因（N）」看上去和普通正文一样。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.inventory.reasons.titleLead", "变动原因（") }}{{len(.Reasons)}}{{ .["t"]("admin.inventory.reasons.titleTail", "）") }}</span>
         </div>
         {* 空数据也渲染 <table>/<thead>（审计 D1）：表头（方向 / 名称 / code / 来源 / 状态 / 操作）
            是「这里能看什么」的说明，空数据不该连它一起藏掉。
