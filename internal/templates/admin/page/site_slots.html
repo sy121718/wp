@@ -1,12 +1,13 @@
-{* admin/site_slots.html — 系统页面槽位：把「结算页是哪一页」这类事实固定下来（BIZ-1） *}
+{* admin/page/site_slots.html — 系统页面槽位：把「结算页是哪一页」这类事实固定下来（BIZ-1） *}
 {* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§3/§7）：
      · 三段领域说明与两条口径提示整段进页头 .help 悬浮，正文零说明文字；
      · 工程选择器与概览统计同一行置于 .page-head；
      · 槽位是 .data-table，末列 .col-actions 放绑定 / 解绑；
-     · 行内表单放表格外，绑定用的下拉与按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
+     · 绑定面板放在表格外（HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格）。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；map 取值用 ["key"]；range 内访问外层值先在 block 顶部存变量。 *}
-{* 无 JS 也能用：工程切换是原生 form GET，绑定 / 换绑 / 解绑都是原生表单 POST + csrf_token 隐藏域， *}
-{* 提交后服务端 302 回本页，结论经 ?ok= / ?err= 回显（两者都过服务端白名单）。 *}
+{* 无 JS 也能用：工程切换是原生 form GET，绑定面板是原生 form GET 进入、原生 form POST 提交
+   （带 csrf_token 隐藏域），解绑同样是原生表单 POST；提交后服务端 302 回本页，
+   结论经 ?ok= / ?err= 回显（两者都过服务端白名单）。 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "../layout.html"}}
 {{block body()}}
@@ -14,6 +15,9 @@
 {{selectedProject := .SelectedProject}}
 {{rows := .Rows}}
 {{tr := .["t"]}}
+{* 0 工程是独立的一档状态：页头 badge 与列表区的占位说明都按它分档。
+   可选键直接参与判断会在缺键时中断整页渲染，所以先 isset 再存成模板内变量。 *}
+{{noProjectEmpty := isset(.NoProjectEmpty) && .NoProjectEmpty}}
 <div class="stack site-slots-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -52,10 +56,12 @@
     {{if isset(.Ok) && .Ok != ""}}
     <p class="badge badge-success" role="status">{{.Ok}}</p>
     {{end}}
-    {* 「还没有站点工程」空态由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有出错）。
+    {* 「还没有站点工程」提示由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有出错）。
        装载失败时工程列表同样是空的，但那时该说的是「这一页没读出来」而不是「去建一个工程」——
-       用户明明有工程。 *}
-    {{if isset(.NoProjectEmpty) && .NoProjectEmpty}}
+       用户明明有工程。页头这条 badge 是「一个工程都没有」的**主提示**（带建工程的入口），
+       列表区不再重复一条指向页头选择器的空态（选择器只在 len(.Projects) > 1 时渲染），
+       但仍会在 tbody 里给一行占位说明，见下表上方注释。 *}
+    {{if noProjectEmpty}}
     <p class="badge badge-warning">{{ .["t"]("admin.site_slots.no_project.lead", "还没有站点工程 —— 先去") }}<a href="/admin/pages">{{ .["t"]("admin.site_slots.pages_link", "页面管理") }}</a>{{ .["t"]("admin.site_slots.no_project.tail", "建一个工程，槽位是挂在工程下的。") }}</p>
     {{end}}
 
@@ -63,26 +69,41 @@
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.site_slots.slots.title", "槽位") }}（{{.Total}}{{ .["t"]("admin.site_slots.slots.count_suffix", " 个") }}）</strong>
         </div>
-        {* 判据与上面那条同源：NoProjectEmpty 为真才是「真的没有工程」，
-           否则（装载失败）落到下面的「没有取到槽位清单」分支 —— 那里说的是实话，
-           而「先在上面选一个站点工程」会让用户去找一个本来就有的工程。 *}
-        {{if isset(.NoProjectEmpty) && .NoProjectEmpty}}
-        <div class="empty-state">
-            <p class="empty-desc">{{ .["t"]("admin.site_slots.pick_project", "先在上面选一个站点工程。") }}</p>
-        </div>
-        {{else if len(rows) == 0}}
-        {* 已经选了工程却取不到槽位清单：用户正在看这个列表，表头必须在（colspan = 4 列）。 *}
+        {* 取不到槽位清单有两种成因，表头两种情况下都必须常驻（colspan = 4 列，用户正在看这个列表），
+           但空态行分两档渲染：
+           · 0 工程（noProjectEmpty）：这不是装载失败，给一行中性说明即可 —— 主行动（建工程）
+             已在同一屏上方的页头 badge 里给了正确链接，这里再放一个同指向按钮只是噪声；
+           · 真·装载失败（工程读出来了、槽位清单没取到）：给「这一页的数据没能读出来」+ 重试入口。
+           原先这里还有一条「先在上面选一个站点工程。」，已删：它指向的页头工程选择器只在
+           len(.Projects) > 1 时渲染，而「一个工程都没有」正是它唯一会触发的场景 —— 文案指向一个
+           必然不存在的控件（永久性问题，不是偶发）。
+           loadFailed 那两条 key 是全站通用的装载失败文案（orders / coupons / returns / inventory 同源），
+           desc 也不再指引运营去看后端日志（术语与用户语言不一致）。 *}
+        {{if len(rows) == 0}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.site_slots.slots.title", "槽位") }}">
             <table class="data-table data-table-wide site-slots-table">
                 <thead>
                 <tr><th>{{ .["t"]("admin.site_slots.col.slot", "槽位") }}</th><th>{{ .["t"]("admin.site_slots.col.usage", "用途") }}</th><th>{{ .["t"]("admin.site_slots.col.bound", "当前绑定") }}</th><th class="col-actions">{{ .["t"]("admin.site_slots.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
+                {{if noProjectEmpty}}
+                {* 0 工程：工程列表为空 ⇒ 没有槽位清单可读。这不是装载失败，「重新加载」点了也不会有工程出现，
+                   所以这一档不给空态卡与重试按钮，只留一行解释「这里为什么没有数据」。 *}
+                <tr><td colspan="4" class="cell-wrap">
+                    <span class="text-mute text-sm">{{tr("admin.site_slots.no_project_list", "槽位是挂在站点工程下的：这个后台还没有工程，所以这里没有可列出的槽位。")}}</span>
+                </td></tr>
+                {{else}}
+                {* 真·装载失败：这一页的槽位清单没取到，给文案 + 重试入口。 *}
                 <tr><td colspan="4" class="cell-wrap">
                     <div class="empty-state">
-                        <p class="empty-desc">{{ .["t"]("admin.site_slots.no_rows", "没有取到槽位清单 —— 刷新重试；若一直为空，检查后端日志。") }}</p>
+                        <p class="empty-title">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
+                        <p class="empty-desc">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
+                        <div class="empty-actions">
+                            <a class="btn" href="/admin/site-slots?project={{selectedProject}}">{{tr("admin.site_slots.load_failed.reload", "重新加载")}}</a>
+                        </div>
                     </div>
                 </td></tr>
+                {{end}}
                 </tbody>
             </table>
         </div>
@@ -126,19 +147,20 @@
                         {{end}}
                     </td>
                     <td class="col-actions">
-                        {{if r.Bound}}
-                        <button type="submit" form="slot-unbind-{{r.Slot}}" class="btn btn-sm">{{tr("admin.site_slots.action.unbind", "解绑")}}</button>
-                        {{end}}
                         {{if len(r.PageOptions) == 0}}
                         <span class="text-mute text-sm">{{tr("admin.site_slots.no_pages_inline", "这个工程还没有页面，先去页面管理建一个，再回来把它指给这个槽位。")}}</span>
                         {{else}}
-                        <select class="form-select" form="slot-bind-{{r.Slot}}" name="pageId" required aria-label="{{tr("admin.site_slots.select_page", "（选择页面：显示的是页面草稿路径）")}}">
-                            <option value="">{{tr("admin.site_slots.select_page", "（选择页面：显示的是页面草稿路径）")}}</option>
-                            {{range _, o := r.PageOptions}}
-                            <option value="{{o.ID}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>
-                            {{end}}
-                        </select>
-                        <button type="submit" form="slot-bind-{{r.Slot}}" class="btn btn-sm btn-primary">{{r.BindLabel}}</button>
+                        {* 绑定 / 换绑是「先点这一行、再在下面的面板里选页面」的两步。
+                           行内不再内嵌下拉：每行一个 13 项候选会让页面为 N 行付出 N×候选数 个 option 节点
+                           （10 行 = 130+ 个），操作列宽度也被下拉撑开。候选现在只渲染一次（面板里那一份）。
+                           用 <a> 而不是按钮：这是导航（GET 回本页的绑定面板），无 JS 时照样成立，
+                           键盘可聚焦、触屏可点、鼠标可点；面板本身是原生 form + 原生 select，四种输入都不需要额外脚本。 *}
+                        <a class="btn btn-sm{{if r.Unbound}} btn-primary{{end}}"
+                           href="/admin/site-slots?project={{selectedProject}}&amp;slot={{r.Slot}}#slot-bind-panel"
+                           {{if isset(r.Active) && r.Active}}aria-current="true"{{end}}>{{r.BindLabel}}</a>
+                        {{end}}
+                        {{if r.Bound}}
+                        <button type="submit" form="slot-unbind-{{r.Slot}}" class="btn btn-sm">{{tr("admin.site_slots.action.unbind", "解绑")}}</button>
                         {{end}}
                     </td>
                 </tr>
@@ -149,20 +171,51 @@
         {{end}}
     </section>
 
-    {* 行内表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
-       绑定用的下拉留在单元格里，但用 form="<id>" 指回这里的表单（HTML5 允许控件跨树关联）。 *}
+    {* 绑定面板：候选（页面下拉）只在这里渲染一份。
+       进入方式是行内那条链接（GET /admin/site-slots?project=…&slot=…#slot-bind-panel），
+       slot 参数由 handler 对照槽位清单校验 —— 不在清单里的 slot 不渲染这一块（fail closed），
+       所以「条件未满足时不给空下拉」这条判断在这里同样成立（没有页面候选时 handler 不设这些键）。 *}
+    {{if isset(.BindSlot) && .BindSlot != ""}}
+    <section class="card" id="slot-bind-panel">
+        <div class="list-toolbar">
+            <strong>{{.BindLabel}}：{{.BindSlotName}}</strong>
+            <span class="text-mute text-sm"><code>{{.BindSlot}}</code></span>
+        </div>
+        <div class="card-body">
+            <form method="post" action="/admin/site-slots/bind">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="slot" value="{{.BindSlot}}">
+                <div class="form-group">
+                    <label class="form-label req" for="slot-bind-page">{{tr("admin.site_slots.bind_panel.page", "要绑定的页面")}}</label>
+                    <select class="form-select" id="slot-bind-page" name="pageId" required>
+                        {* 占位项只说「要做什么」（纯动作提示）；「显示的是页面草稿路径」是口径说明，
+                           它已经在页头 .help 的最后一段里，不在这里重复第二遍。 *}
+                        <option value="">{{tr("admin.site_slots.select_page_placeholder", "选择页面…")}}</option>
+                        {{range _, o := .BindPageOptions}}
+                        <option value="{{o.ID}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{if isset(.BindDeleted) && .BindDeleted}}
+                <p class="badge badge-danger">{{tr("admin.site_slots.page_deleted", "绑定的页面已被删除，请重新绑定或解绑")}}</p>
+                {{end}}
+                <div class="action-row">
+                    <a class="btn btn-ghost" href="/admin/site-slots?project={{selectedProject}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
+                    <button type="submit" class="btn btn-primary">{{.BindLabel}}</button>
+                </div>
+            </form>
+        </div>
+    </section>
+    {{end}}
+
+    {* 解绑表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+       绑定不再需要外置表单 —— 它的表单在面板里（同样在表格外）。 *}
     {{if selectedProject != ""}}
     {{range _, r := rows}}
     {{if r.Bound}}
     <form id="slot-unbind-{{r.Slot}}" class="hidden-form" method="post" action="/admin/site-slots/unbind"
-          data-confirm="{{tr("admin.site_slots.confirm.unbind", "解绑这个槽位？指向它的链接将不再生成（页面本身不受影响）。")}}">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="slot" value="{{r.Slot}}">
-    </form>
-    {{end}}
-    {{if len(r.PageOptions) != 0}}
-    <form id="slot-bind-{{r.Slot}}" class="hidden-form" method="post" action="/admin/site-slots/bind">
+          data-confirm="{{tr("admin.site_slots.confirm.unbind", "解绑这个槽位？指向它的链接将不再生成（页面本身不受影响）。")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="slot" value="{{r.Slot}}">

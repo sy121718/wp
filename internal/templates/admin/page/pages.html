@@ -66,6 +66,41 @@
     {{end}}
     {{end}}
 
+    {* 全站待重建（只读观测）：取数走 page.Service.ListStalePages，ProjectID 传空 = **全部站点工程**。
+       口径与下方列表不同 —— 列表是单工程聚焦（handler 的 focusProjectID 读 ?project=），这里是全站；
+       与 /admin/blocks、/admin/articles 上的徽章也不重复：那两处是「刚改完这个块 / 文章，影响了哪些页」
+       的动作后反馈，这里是全站归口（三处取数口径一致，见 page_stale_overview.go）。
+       Available=false 是**读不到**，不是「0 个待重建」—— 渲染成空态会把一次读取失败伪装成
+       「一切正常」，运维再也不会去看。缺键（直接渲染本模板的单测不带它）时整块不渲染：
+       isset 包裹，且 Jet 的 isset 对「键不存在」与「值为 nil」都判假。 *}
+    {{if isset(.StaleOverview)}}
+    {{if .StaleOverview.Available}}
+    {{if .StaleOverview.Total}}
+    <details class="section-fold card">
+        <summary>
+            <span class="fold-title">{{tr("admin.pages.impact.heading", "全站待重建")}}</span>
+            <span class="fold-note">{{ .StaleOverview.Total }}{{tr("admin.pages.impact.count_tail", " 个页面有更新未发布")}}</span>
+        </summary>
+        <div class="fold-body">
+            <p class="stat-note">{{tr("admin.pages.impact.scope_note", "口径：全部站点工程。下方页面列表只显示当前聚焦的工程，两处的数不是同一个。")}}</p>
+            <ul>
+                {{range _, p := .StaleOverview.Pages}}
+                <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span>{{if !p.Published}} <span class="badge badge-mute">{{tr("admin.pages.impact.never_published", "未上线")}}</span>{{end}} <a href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a></li>
+                {{end}}
+            </ul>
+            {{if .StaleOverview.Truncated}}
+            <p class="stat-note">{{tr("admin.pages.impact.more_lead", "（清单只列了前 ")}}{{ .StaleOverview.Limit }}{{tr("admin.pages.impact.more_tail", " 条，其余只有计数；重新构建这些页面后新内容才会出现在访问面。）")}}</p>
+            {{end}}
+        </div>
+    </details>
+    {{else}}
+    <p class="stat-note">{{tr("admin.pages.impact.none", "当前没有待重建的页面：全部站点工程的页面产物都与最新内容一致。")}}</p>
+    {{end}}
+    {{else}}
+    <p class="badge badge-warning" role="status">{{tr("admin.pages.impact.unavailable", "本次读不到全站待重建清单（已记日志），可刷新重试；下方页面列表不受影响。")}}</p>
+    {{end}}
+    {{end}}
+
     <section class="card list-card">
         {* 筛选栏（服务端筛选）：工程下拉 → GET ?project=<id>，handler 读 query 后进
            page Service.ListReq.ProjectID —— 页面本来就按工程作用域取数，此前缺的只是

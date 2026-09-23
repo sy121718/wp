@@ -219,10 +219,12 @@
             <section class="card list-card">
                 {* 未选到工程 —— 只有一种成因：这个后台还没有站点工程（有工程时 handler 会自动选中第一个）。
                    原先是「只有 desc、没有 title」的两段式残形，且下一步动作要用户自己在别处找；
-                   这里补 title 与动作（去页面管理建工程），与上方那条 badge 提示指向同一件事。 *}
+                   title 与动作（去页面管理建工程）与上方那条 badge 提示指向同一件事。
+                   那条 desc「先在上面选一个站点工程。」已删：本页工程选择器只在 len(projects) > 1
+                   时渲染，「一个工程都没有」正是它唯一会触发的场景 —— 文案指向一个必然不存在的控件，
+                   说的也与 title / badge 同一件事。 *}
                 <div class="empty-state">
                     <p class="empty-title">{{tr("admin.redirect.pick_project.title", "还没有可管理的站点工程")}}</p>
-                    <p class="empty-desc">{{tr("admin.redirect.pick_project", "先在上面选一个站点工程。")}}</p>
                     <div class="empty-actions">
                         <a class="btn btn-primary" href="/admin/pages">{{tr("admin.redirect.pick_project.action", "去页面管理建工程")}}</a>
                     </div>

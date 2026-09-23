@@ -58,12 +58,35 @@ type filterPageList struct {
 	pagecontract.PageService
 	got  *pagedto.ListReq
 	rows []pagedto.PageResp
+	// staleRes / staleErr 「全站待重建」区块的取数结果（nil + nil = 读到但为空，默认）。
+	staleRes *pagedto.StalePageListResp
+	staleErr error
+	// staleGot 区块取数收到的请求：全站口径必须 ProjectID 传空（与列表的单工程作用域不同）。
+	staleGot *pagedto.StalePageListReq
 }
 
 func (f *filterPageList) List(_ context.Context, req *pagedto.ListReq) ([]pagedto.PageResp, error) {
 	f.got = req
 	return f.rows, nil
 }
+
+// ListStalePages 顶部区块的取数。
+//
+// 必须**显式实现**：内嵌的 nil 接口不会兜住它 —— 方法集包含（提升）不等于有实现，
+// 调用即 panic，症状是整组筛选用例以「nil pointer dereference」失败。
+func (f *filterPageList) ListStalePages(_ context.Context, req *pagedto.StalePageListReq) (*pagedto.StalePageListResp, error) {
+	f.staleGot = req
+	if f.staleErr != nil {
+		return nil, f.staleErr
+	}
+	if f.staleRes != nil {
+		return f.staleRes, nil
+	}
+	return &pagedto.StalePageListResp{Pages: []pagedto.StalePageResp{}, Limit: staleOverviewTestLimit}, nil
+}
+
+// staleOverviewTestLimit 替身默认返回的 Limit（与 service 的 staleOverviewLimit = 8 对齐）。
+const staleOverviewTestLimit = 8
 
 // twoProjects 两个工程：筛选栏只在 >1 时渲染（单工程的下拉是噪声）。
 func twoProjects() []projectcontract.ProjectResp {

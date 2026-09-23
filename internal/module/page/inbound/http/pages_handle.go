@@ -7,6 +7,7 @@ package pagehttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 	blueprintdto "go_wp/internal/module/blueprint/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	pageenums "go_wp/internal/module/page/enums"
+	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
@@ -118,6 +120,20 @@ type pagesPageData struct {
 	// 否则是「还没有页面」（下一步是建第一个页面）。判据留在 Go 侧：模板是磁盘热读文件，
 	// 判据写在模板里会随两边不同步而漂移（与 ReceiptKnown 同一理由）。
 	FilteredProject bool
+
+	// StaleOverview 全站待重建区块的渲染数据（只读观测，取数见 staleOverview）。
+	//
+	// 三种状态由**键 + Available** 一起表达，模板只读它们、不做取数：
+	//   · nil（键不存在）→ 本次请求没装配这份数据（整页装载失败走降级渲染）：整块不渲染，
+	//     顶部已有归口提示（Err），不在这里重复第二遍；
+	//   · Available=false → 读不到（ListStalePages 失败）：显示「本次读不到」，
+	//     绝不显示成「0 个待重建」（那会把一次读取失败渲染成「一切正常」）；
+	//   · Available=true → 由 Total 分流「折叠清单」与「当前没有待重建的页面」。
+	//
+	// 为什么与 ReceiptKnown 的形态不同（那里总是给键、用布尔分流）：那份观测只有「读到 / 没读到」
+	// 两种状态；这份还有「读到了但是空」这一种，而 nil 切片与空切片在模板里长得一样 ——
+	// 必须由比较列表多一个 Available 才能分开。两者共用的判据是**降级渲染时不得给出乐观结论**。
+	StaleOverview gin.H
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。
@@ -145,6 +161,10 @@ func (d *pagesPageData) templateMap() gin.H {
 
 		"SelectedProject": d.SelectedProject,
 		"FilteredProject": d.FilteredProject,
+
+		// 全站待重建区块（可选键）：字段为 nil 时这里输出 nil，模板的 isset 判为假
+		//（Jet 的 isset 同时覆盖「键不存在」与「值为 nil」两种情形）→ 整块不渲染。
+		"StaleOverview": d.StaleOverview,
 	}
 }
 
@@ -222,6 +242,10 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	// 待收敛回执观测（只读）：读取失败只记日志，页面照常渲染 ——
 	// 一个观测字段不该让整张列表页 500。
 	receiptPending, receiptOldest, receiptLast := h.receiptBacklog(ctx)
+	// 全站待重建区块（只读）：取数作用域是**全部站点工程**，与上面按工程聚焦的页面列表
+	// 不是一个数（块 / 文章 / 主题 / 词条改动影响的是全站）。读不到时它自己给失败态，
+	// 同样不让整张列表页失败。
+	stale := h.staleOverview(ctx)
 	return &pagesPageData{
 		Title: pageenums.MsgPagesTitle, Menu: "pages",
 		Projects: projects, Pages: rows,
@@ -245,6 +269,9 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 		// 走到这里说明本页数据装配完成（回执观测读不到只记日志、不给零值以外的信号，
 		// 见 receiptBacklog），所以这条观测条可以展示。
 		ReceiptKnown: true,
+
+		// 全站待重建区块：非 nil 即「本次装配到了这份数据」，读到与否由 Available 表达。
+		StaleOverview: stale,
 	}, nil
 }
 
@@ -255,7 +282,7 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 // 默认语义，回退而不是报错是因为：一条过期的 URL 不该把整页变成错误页，用户要的是列表。
 //
 // 第二个返回值表示「用户的指定真的被采纳了」：模板据此把空态分成两档
-//（指定了工程却没页面，与全站还没有页面，下一步动作不同）。判据放这里而不是模板里，
+// （指定了工程却没页面，与全站还没有页面，下一步动作不同）。判据放这里而不是模板里，
 // 是因为模板里的「有没有筛过」只能靠 query 猜，而这里同时知道 query 与工程列表。
 func focusProjectID(projects []projectcontract.ProjectResp, want string) (id string, filtered bool) {
 	want = strings.TrimSpace(want)
@@ -319,6 +346,96 @@ func formatReceiptAge(d time.Duration) string {
 		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
 	default:
 		return fmt.Sprintf("%dd%dh", int(d.Hours())/24, int(d.Hours())%24)
+	}
+}
+
+// staleOverviewLimit 「全站待重建」区块一次列出的页面数。
+//
+// 必须**显式给出**：ListStalePages 的 limit 由调用方决定（service 不写死业务口径），
+// 不填时落到 model 的 DefaultStaleListLimit = 50 —— 一份 50 行的折叠清单会把页面列表
+// 顶出首屏，而那正是审计 02-L P1-10 记录的原缺陷（只读影响面卡占了列表主位）。
+//
+// 数为什么是 8：只读区块的作用是「让人看见影响面」，不是完整清单；被截断的条数由 Total
+// 给出并在页面上显式说明。service 里另有一份同名同值的常量（page_stale_overview.go 的
+// staleOverviewLimit），它未导出、也未被任何调用方使用 —— 两处若要一起调整，需同批改。
+const staleOverviewLimit = 8
+
+// staleOverviewItem 「全站待重建」清单的一行。
+//
+// 跨工程清单必须带工程名：每个工程都可能有一个一模一样的 /about，只给路径分不清是哪一个
+// （页面列表页本身有「所属工程」上下文，这一块没有）。
+type staleOverviewItem struct {
+	ID          string
+	Path        string
+	ProjectName string
+	// Published 是否已上线（有活跃产物路径）：用来区分「已发布但有更新未发布」与「从未上线」——
+	// 后者的处置方式不同（重建也还不会出现在访问面，要先发布）。
+	Published bool
+}
+
+// staleOverview 取「全站待重建」区块的数据（只读观测）。
+//
+// 作用域：ProjectID 传空 = **全部站点工程**。这与本页下方列表的口径不同 —— 列表是单工程聚焦
+// （focusProjectID 从 ?project= 解析），而块 / 文章 / 主题 / 词条改动影响的是全站。
+// 两个数不是同一个，模板侧把「全站」写进标题与说明。
+//
+// 失败不降级成空清单：ListStalePages 的语义是「读不到即失败」，这里把它翻成 Available=false
+// （模板显示「本次读不到」），**绝不渲染成「0 个待重建」**—— 「影响面 0」与「读不到影响面」
+// 混在一起，会让一次读取失败在页面上看起来像一切正常，运维再也不会去看
+// （判据与发布回执观测的 ReceiptKnown 一致）。原文只进日志。
+//
+// 唯一的例外是「一个站点工程都没有」：ListStalePages 按语义返回 ErrProjectRequired
+// （没有可作用域的工程），而那时全站确实没有任何页面 —— 那是确定的事实，不是读取失败，
+// 按空态处理（此时下方列表也正落在「还没有页面」那一档）。
+func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
+	empty := gin.H{
+		"Available": true, "Total": 0, "Pages": []staleOverviewItem{},
+		// Limit 给真实口径（模板在空态下不读它，但零值会让「清单上限是多少」在两个分支里
+		// 出现两种答案 —— 将来若空态也要说一句「最多列 8 条」，零值就是错的）。
+		"Limit": staleOverviewLimit, "Truncated": false,
+	}
+	unavailable := gin.H{
+		"Available": false, "Total": 0, "Pages": []staleOverviewItem{},
+		"Limit": 0, "Truncated": false,
+	}
+	if h == nil || h.pages == nil {
+		// 契约未注入（降级装配、或只覆盖写路径的测试句柄）：与「读不到」同形，
+		// 但没有错误可记，静默给失败态即可。
+		return unavailable
+	}
+	res, err := h.pages.ListStalePages(ctx, &pagecontract.StalePageListReq{
+		// 条数由本页给（不填会落到 model 的 50 条默认），排序按标记时间倒序：
+		// 「最近这次改动影响的」排在最前（service 文件头对这个消费者的描述就是这个次序）。
+		Limit:      staleOverviewLimit,
+		Descending: true,
+	})
+	if err != nil {
+		if errors.Is(err, pageservice.ErrProjectRequired) {
+			return empty
+		}
+		logger.Scene("page").With("err", err).Warn("读取全站待重建清单失败（页面列表页的该区块显示为不可用）")
+		return unavailable
+	}
+	if res == nil {
+		// 契约返回 (nil, nil) 是异常形态：按「读不到」处理，不给「0 个待重建」的假结论。
+		logger.Scene("page").Warn("全站待重建清单返回空结果（契约实现异常）")
+		return unavailable
+	}
+	items := make([]staleOverviewItem, 0, len(res.Pages))
+	for i := range res.Pages {
+		items = append(items, staleOverviewItem{
+			ID:          res.Pages[i].ID,
+			Path:        strings.TrimSpace(res.Pages[i].Path),
+			ProjectName: strings.TrimSpace(res.Pages[i].ProjectName),
+			Published:   res.Pages[i].Published,
+		})
+	}
+	return gin.H{
+		"Available": true,
+		"Total":     res.Total,
+		"Pages":     items,
+		"Limit":     res.Limit,
+		"Truncated": res.Truncated,
 	}
 }
 

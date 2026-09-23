@@ -25,6 +25,12 @@
 //     否则运营会以为配好了；PageDeleted 是绑定指向了已删页面，属于「需要立刻修」的状态
 //     （红色提示 + 解绑入口）。**未绑定不是错误** —— 这个站没有博客、没有结算页是正常状态，
 //     用中性徽章而不是红色。
+//
+//  5. 绑定 / 换绑是「先点这一行、再在表格下方的面板里选页面」的两步（行内不再内嵌下拉）：
+//     每行内嵌一份候选意味着 N 行付 N×候选数 个 option 节点（10 行 × 14 = 140 个），
+//     操作列宽度也被下拉撑开。候选现在只在面板里渲染一次，进入方式是行内那条
+//     「绑定 / 换绑」链接（GET 回本页带 slot 参数）。面板是原生 form + 原生 select，
+//     无 JS 也成立，鼠标 / 滚轮与触摸板 / 触屏 / 键盘都走原生路径。
 package pagehttp
 
 import (
@@ -57,6 +63,10 @@ const (
 	// 参数级错误（本页自造；同样登记白名单 —— 自造文案不登记就会在回显时被自己吞掉）。
 	siteSlotNoProjectText = "没有可用的站点工程：先去页面管理里建一个工程，槽位是挂在工程下的。"
 	siteSlotNoPageText    = "请先在下拉里选一个页面再提交。"
+	// 绑定 / 换绑的话术：动作与服务端完全一致（bind 是 upsert），
+	// 差别只在「这会改掉现有绑定」要不要说出来。两处取词同源（行内操作列与绑定面板）。
+	siteSlotBindAction   = "绑定"
+	siteSlotRebindAction = "换绑"
 )
 
 // siteSlotFacingMessages 本页可以原样展示给运营的文案（白名单）。
@@ -116,6 +126,10 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 	pageErr := siteSlotQueryText(c, c.Query("err"), siteSlotInternalText(c))
 	pageOk := siteSlotQueryText(c, c.Query("ok"), "")
 
+	// 绑定面板的槽位参数：行内那条「绑定 / 换绑」链接带过来的（GET 回本页 + #slot-bind-panel 锚点）。
+	// 这里只取值，渲染与否由 siteSlotApplyBindPanel 对照槽位清单判定 —— 手拼的 slot 一律不渲染。
+	bindSlot := strings.TrimSpace(c.Query("slot"))
+
 	candidates := []pagecontract.PageResp{}
 	var slots *pagecontract.SiteSlotListResp
 
@@ -139,8 +153,9 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/page/site_slots.html",
-		shell.Prepare(c, siteSlotPageData(projects, selected, candidates, slots, pageErr, pageOk)))
+	data := siteSlotPageData(projects, selected, candidates, slots, pageErr, pageOk)
+	siteSlotApplyBindPanel(data, candidates, slots, bindSlot)
+	c.HTML(http.StatusOK, "admin/page/site_slots.html", shell.Prepare(c, data))
 }
 
 // siteSlotPageData 组装渲染数据（纯函数：不取数、不依赖 gin.Context）。
@@ -194,6 +209,53 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 		//（HTTP 200 + 后面整块 HTML 消失），所以模板侧一律 isset 包裹。
 		"NoProjectEmpty": len(projects) == 0 && pageErr == "",
 	}
+}
+
+// siteSlotApplyBindPanel 把「绑定面板」需要的键补进渲染数据（就地改 data）。
+//
+// 行内不再内嵌页面下拉（每行一份 13 项候选 → N 行 N×13 个 option 节点，操作列还被下拉撑宽），
+// 改成「点这一行 → GET 回本页带 slot 参数 → 表格下方的面板里选页面」：候选只渲染一份，
+// 面板本身是原生 form + 原生 select，无 JS 也成立，鼠标 / 滚轮与触摸板 / 触屏 / 键盘都走原生路径。
+//
+// 为什么不并进 siteSlotPageData：那个函数被同包的渲染测试直接调用（page_page_err_test.go），
+// 改签名会波及清单外的文件 —— 所以面板单独一步装配，既有调用点一个都不动。
+//
+// 三种情况一律不渲染面板（fail closed，不给一个点了必然失败的下拉）：
+//   - 没带 slot 参数（常态浏览列表）；
+//   - slot 不在这个工程的槽位清单里（手拼 URL 猜槽位键）；
+//   - 这个工程一个页面都没有（没有候选可绑 —— 与列表页「不给空下拉」同一判据）。
+func siteSlotApplyBindPanel(data gin.H, candidates []pagecontract.PageResp,
+	slots *pagecontract.SiteSlotListResp, bindSlot string) {
+	if bindSlot == "" || slots == nil || len(candidates) == 0 {
+		return
+	}
+	for _, it := range slots.Items {
+		if it.Slot != bindSlot {
+			continue
+		}
+		data["BindSlot"] = it.Slot
+		data["BindSlotName"] = it.SlotName
+		data["BindLabel"] = siteSlotBindLabel(it.Bound)
+		data["BindDeleted"] = it.PageDeleted
+		data["BindPageOptions"] = siteSlotPageOptions(candidates, it.PageID)
+		// 行内那条链接据此标 aria-current：读屏用户能听出「面板正开着的是这一行」。
+		if rows, ok := data["Rows"].([]gin.H); ok {
+			for _, row := range rows {
+				if slot, _ := row["Slot"].(string); slot == it.Slot {
+					row["Active"] = true
+				}
+			}
+		}
+		return
+	}
+}
+
+// siteSlotBindLabel 绑定 / 换绑的话术（已绑定时说的是「这会改掉现有绑定」）。
+func siteSlotBindLabel(bound bool) string {
+	if bound {
+		return siteSlotRebindAction
+	}
+	return siteSlotBindAction
 }
 
 // SiteSlotBind 绑定 / 换绑（POST /admin/site-slots/bind）。
@@ -260,7 +322,7 @@ func siteSlotRow(it pagecontract.SiteSlotItem, candidates []pagecontract.PageRes
 		"Published":   it.Published,
 		// Unpublished 单独给一个布尔：它就是「运营以为配好了、实际链接生成方会跳过」的那一类。
 		"Unpublished": it.Bound && !it.PageDeleted && !it.Published,
-		"BindLabel":   "绑定",
+		"BindLabel":   siteSlotBindLabel(it.Bound),
 		"PageOptions": siteSlotPageOptions(candidates, it.PageID),
 	}
 	switch {
@@ -272,11 +334,6 @@ func siteSlotRow(it pagecontract.SiteSlotItem, candidates []pagecontract.PageRes
 		row["Badge"], row["StateLabel"] = "badge-success", "已发布"
 	default:
 		row["Badge"], row["StateLabel"] = "badge-warning", "已绑定但未发布"
-	}
-	if it.Bound {
-		// 已绑定（含悬空绑定）时按钮话术是「换绑」：动作与服务端完全一致，
-		// 只是运营看到的话术应当说明「这会改掉现有绑定」。
-		row["BindLabel"] = "换绑"
 	}
 	return row
 }
