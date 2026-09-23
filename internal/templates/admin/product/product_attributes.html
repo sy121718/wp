@@ -150,7 +150,7 @@
                         <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.notVariation", "不参与变体") }}</span>
                         {{end}}
                     </td>
-                    <td>{{a.ValueCount}}{{ .["t"]("admin.product_attributes.list.valueCountTail", " 个属性值") }}</td>
+                    <td>{{a.ValueCount}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>

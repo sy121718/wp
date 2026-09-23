@@ -2,7 +2,7 @@
 {* 版式（评审见 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§7）：
      · 页头一行：标题 + ? 悬浮说明；右侧返回入口、工程选择与主行动（新建命名模板）同行；
      · 正文零说明文字：intro / 当前模板口径 / 改 URL 口径整段进 .help；
-     · 命名模板列表是标准 data-table + 末列操作（可视化编辑）—— 模板 id 单独成列，不再挤在操作列里；
+     · 命名模板列表是标准 data-table + 末列操作（可视化编辑）—— 操作用 ID 留在表单值和 URL，不展示原始 ID；
      · 未就绪与空列表用 .empty-state。 *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "../layout.html"}}
@@ -70,10 +70,11 @@
             {{end}}
         </p>
         {{boundID := .BoundTemplateID}}
+        {{defaultID := .DefaultTemplateID}}
         {* 当前绑定与默认模板是**数据**：用徽章呈现，口径（怎么取默认）在页头 .help 里。 *}
         <p>
             <span class="badge badge-mute">{{ .["t"]("admin.product_detail_template.currentTemplateLead", "当前模板：") }}{{if .InstanceExists}}{{ .["t"]("admin.product_detail_template.boundToInstance", "随实例绑定") }}{{else}}{{ .["t"]("admin.product_detail_template.typeDefault", "未指定时按类型取默认") }}{{end}}</span>
-            <span class="badge badge-mute">{{ .["t"]("admin.product_detail_template.defaultIdLead", "（默认模板 id ") }}<code>{{.DefaultTemplateID}}</code>{{ .["t"]("admin.product_detail_template.afterDefaultId", "）") }}</span>
+            {{range _, t := .Templates}}{{if t.ID == defaultID}}<span class="badge badge-mute">{{ .["t"]("admin.product_detail_template.named.typeDefaultLabel", "类型默认") }}：{{t.Name}}</span>{{end}}{{end}}
         </p>
 
         <form method="post" action="/admin/products/template/preview" target="_blank" class="form-inline">
@@ -135,15 +136,14 @@
 
     <section class="card card-body">
         <h2 class="card-title mb-lg">{{ .["t"]("admin.product_detail_template.named.titleLead", "命名模板（") }}{{.TemplateCount}}{{ .["t"]("admin.product_detail_template.named.titleTail", " 套）") }}</h2>
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：命名模板表的列（模板名 / 当前版本 /
-           更新时间 / 状态 / 模板 id / 操作）本身就是「这里有哪些信息」的说明，
-           空数据不该连它一起藏掉。空态落在 tbody 的整行里（colspan = 6 个实际列，本表无勾选列）。 *}
+        {* 空数据也保留表头：模板名 / 当前版本 / 更新时间 / 状态 / 操作。
+           操作用 ID 只保留在表单值与链接中；空态 colspan 与五列对齐。 *}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_detail_template.named.tableAria", "商品详情模板列表") }}">
             <table class="data-table data-table-wide">
-                <thead><tr><th>{{ .["t"]("admin.product_detail_template.named.col.name", "模板名") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.version", "当前版本") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.updatedAt", "更新时间") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.state", "状态") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.templateId", "模板 id") }}</th><th class="col-actions">{{ .["t"]("admin.product_detail_template.named.col.actions", "操作") }}</th></tr></thead>
+                <thead><tr><th>{{ .["t"]("admin.product_detail_template.named.col.name", "模板名") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.version", "当前版本") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.updatedAt", "更新时间") }}</th><th>{{ .["t"]("admin.product_detail_template.named.col.state", "状态") }}</th><th class="col-actions">{{ .["t"]("admin.product_detail_template.named.col.actions", "操作") }}</th></tr></thead>
                 <tbody>
                 {{if len(.Templates) == 0}}
-                <tr><td colspan="6" class="cell-wrap">
+                <tr><td colspan="5" class="cell-wrap">
                     <div class="empty-state">
                         <p class="empty-title">{{ .["t"]("admin.product_detail_template.named.emptyTitle", "还没有模板") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.product_detail_template.named.empty", "这个商品类型还没有任何模板。") }}</p>
@@ -164,7 +164,6 @@
                         {{if t.IsBound}}<span class="badge">{{ .["t"]("admin.product_detail_template.named.bound", "当前使用") }}</span>{{end}}
                         {{if t.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.product_detail_template.named.typeDefaultLabel", "类型默认") }}</span>{{end}}
                     </td>
-                    <td><code>{{t.ID}}</code></td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?template={{t.ID}}&amp;entityType=product&amp;entityId={{.Product.ID}}&amp;projectId={{selectedProject}}">{{ .["t"]("admin.product_detail_template.named.visualEdit", "可视化编辑") }}</a>
                     </td>

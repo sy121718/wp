@@ -20,6 +20,7 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{warehouseOptions := .WarehouseOptions}}
+{{statusOptions := .Statuses}}
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 {{fPage := .Page}}
@@ -135,15 +136,16 @@
                     <th>{{ .["t"]("admin.products.col.brand", "品牌") }}</th>
                     <th>{{ .["t"]("admin.products.tags.title", "标签") }}</th>
                     <th>{{ .["t"]("admin.products.rating.label", "评分") }}</th>
+                    <th>{{ .["t"]("admin.products.rating.countHeader", "评分数") }}</th>
                     <th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th>
                 </tr>
                 </thead>
                 <tbody>
                 {{if len(.Products) == 0}}
-                {* 空态整行：colspan = 11 个实际渲染的列（勾选列 + 9 个业务列 + 操作列）。
+                {* 空态整行：colspan = 12 个实际渲染的列（勾选列 + 10 个业务列 + 操作列）。
                    勾选列在空态下**不渲染**行内控件 —— 没有行可勾，放一个 name="ids" 的
                    控件只会让人以为还能选（表头的全选框由列本身承担，与已修好的权限页一致）。 *}
-                <tr><td colspan="11" class="cell-wrap">
+                <tr><td colspan="12" class="cell-wrap">
                     <div class="empty-state">
                         {{if fKeyword != "" || fStatus != ""}}
                         {* 有筛选条件却零结果：说清「是筛出来的空」，并给一条回到全部的路 ——
@@ -173,7 +175,7 @@
                     {* 名称列只回答「叫什么」：属性引用是商品结构（属于详情），不放这一列。
                        名称本身就是进详情的入口 —— 操作列不再重复一个「详情」按钮。 *}
                     <td><a class="row-title-link" href="/admin/products/detail?project={{selectedProject}}&amp;product={{p.ID}}"><strong>{{p.Name}}</strong></a></td>
-                    <td><span class="badge">{{p.Status}}</span></td>
+                    <td>{{status := p.Status}}{{statusLabel := status}}{{range _, o := statusOptions}}{{if o.Value == status}}{{statusLabel = o.Label}}{{end}}{{end}}<span class="badge">{{statusLabel}}</span></td>
                     <td>{{p.VariantCount}}</td>
                     <td>{{p.PriceMin}} ~ {{p.PriceMax}}</td>
                     {* 库存列（docs/14 §1.4）：三态 + 分仓明细。
@@ -219,8 +221,9 @@
                     {* 标签列回答「这个商品挂了哪些标签」：列的是标签名（多于 3 个退化成数量），
                        不写「手工 N · 自动 N」—— 读这一列的人不关心来源分解，那是标签页的问题。 *}
                     <td>{{if isset(p.TagLabel)}}{{if p.TagLabel != ""}}{{p.TagLabel}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    {* 列表只给汇总值（平均分 · 条数）；明细与补录在详情里。空值是 —，不写「暂无」。 *}
-                    <td>{{if p.HasRating}}{{p.RatingAvg}}{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.RatingCount}}{{ .["t"]("admin.products.rating.countTail", " 条") }}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    {* 平均分与评分条数分列；无评分不同于 0 分，平均分显示空值，条数保留 0。 *}
+                    <td>{{if p.HasRating}}{{p.RatingAvg}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{p.RatingCount}}</td>
                     {* 操作列只留在这一行才做的事：
                        · 编辑 —— 商品基本字段与多语言的入口（详情页是子资源维护页，不做基本字段编辑）；
                        · 预览 —— 按当前详情页模板渲染前台效果；

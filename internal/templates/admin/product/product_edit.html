@@ -111,10 +111,12 @@
         {* SEO 是纯文本字段（技能 §8 硬规则）：meta 里出现富文本标签等于把标签喂给搜索引擎，
            所以用 textarea 而不是富文本；长度只是展示建议，超长不拦截保存。 *}
         <label class="form-label" for="product-edit-seo-title">{{ .["t"]("admin.products.label.seoTitle", "SEO 标题") }}</label>
-        <input type="text" class="form-input input-wide" id="product-edit-seo-title" name="seoTitle" value="{{p.SEOTitle}}" autocomplete="off">
+        <input type="text" class="form-input input-wide" id="product-edit-seo-title" name="seoTitle" value="{{p.SEOTitle}}" data-counter="60" autocomplete="off">
+        <span class="field-counter" data-counter-out="product-edit-seo-title" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
 
         <label class="form-label" for="product-edit-seo-desc">{{ .["t"]("admin.products.label.seoDescription", "SEO 描述") }}</label>
-        <textarea class="form-input input-wide" id="product-edit-seo-desc" name="seoDescription" rows="3">{{p.SEODescription}}</textarea>
+        <textarea class="form-input input-wide" id="product-edit-seo-desc" name="seoDescription" rows="3" data-counter="155">{{p.SEODescription}}</textarea>
+        <span class="field-counter" data-counter-out="product-edit-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
 
         {* 图集：一行一个地址（textarea 是「格式自由 + 长度自由」的字段的正确控件形态）。 *}
         <label class="form-label" for="product-edit-images">{{ .["t"]("admin.products.label.images", "图集") }}</label>
