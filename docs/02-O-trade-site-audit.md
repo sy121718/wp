@@ -678,3 +678,36 @@ node lcs-trade/dump.js <pages.json>   # 结构 dump（控件/表单/确认/空�
 node lcs-trade/extra.js               # 滚动需求 / option 计数 / 写失败出口实测
 ```
 产出：`/tmp/verify/lcs-trade/{out1,dump1,dump2,dump_ts,c-*,pf-*}.txt`
+
+---
+
+# 批次执行台账（后续轮次补齐，2026-09）
+
+记录 §586 批次表里**已逐条回读核实过**的批次。判据只采信「打开文件 / 查库 / 实测」的现场结论，
+不采信迭代过程中的口述与计数 —— 本轮就抓到三次「按 grep 计数下的判断」与实际语义相反（见 C1）。
+
+| 批 | 状态 | 现场证据 |
+|---|---|---|
+| **B3** | **已完成** | ① G4（库值覆盖模板兜底）由 `417_fix_trade_pages_i18n.sql` 落地：实测库值 `admin.customers.list.empty_desc` = 「客户是访客在站点上自己注册出来的，后台不能直接新建 —— 完成注册后会出现在这里。」（即模板兜底那句）、`empty_heading` = 「还没有客户」；② 孤儿词条 `admin.customers.empty`：418 删库行，并已从 `register_admin_i18n.go` 的 190 批 key 列表移除（门槛 765 → 762）；190 seed SQL 里对应的两行 INSERT 亦已删除。**对账实测**：190 SQL 的 key 集合与条件列表双向 diff 均为空（762 = 762），符合 419 立下的「条件列表里的 key 全部仍由 seed SQL 写入」 |
+| **C1** | **已完成** | `dashboard.html` 的列表卡标题行已是 `.card-header` + `.card-title`；文件内仅存的 `filter-bar` 字样出现在**注释**里（解释为什么不再借用它）。此前按 `grep -c filter-bar` 判为「未做」是判据选错 |
+| **D1** | 本轮落地 | 基座控件 `internal/templates/static/js/ui/daterange.js`（渐进增强，原生两个 `input[type=date]` 保留在 DOM）+ `customers.html` / `analytics.html` 接入。**coupons 不在接入范围**：它的时间窗是 `type="datetime-local"`（需要时分），按 `02-K` §3「需要时分时用原生 `datetime-local`，无需新组件」保持不动 |
+| **E1** | 已完成 | ① `data-confirm-danger`：`site_slots.html` 已补（实测该解绑表单同时有 `data-confirm` 与 `data-confirm-danger`）；② `.filter-bar` 语义：本轮修 4 处 + 记 1 处遗留（见下节）；③ 统计进标题：coupons 的列表标题与其「共 N 张」统计已移入 `.card-header`，且 `{{if .Total > 0}}` 保证空时不显示统计；④ coupons 两处「＋ 新建优惠码」：经复核属**刻意并存**（页头那处由 `admin-ui-logic` §2.2 要求、空态那处由 §7 要求），已在模板写明取舍与判据出处 |
+
+**本轮未逐条复核的批次（不声称已完成）**：A1 / A2 / B1 / B2 / B4 / B5 / B6 / B7 / C2。
+抽查过其中若干点（customers 空态库值、coupons 时间窗选型、analytics 的 tabs 与 `.filter-bar`、
+site_slots 的 `data-confirm-danger`、dashboard 的 `.card-header`）均已落地，但没有走完这些批的清单条目。
+
+## 补记：`.filter-bar` 承载列表标题的实际处数（`02-I` #29 同族）
+
+§38 记了 5 处（inventory 三页 + coupons + dashboard）。逐条回读后 **inventory 实为 4 处** ——
+`inventory.html` 有两处（:64 的列表标题行「库存流水（最近 N 条）」、:122 的卡内小节标题「该 SKU 的各仓库存」），
+审计当时把这两处与另外两页记成了「三页各一处」。
+
+修法：标题移出 `.filter-bar`，进 `.card-header` + `.card-title`（`.filter-bar` 只留筛选表单）。
+其中**三处原先借的是 `.fold-title`** —— 按 `theme.css` §13 的注释，那个类「只在 `.section-fold > summary`
+里有效，被列表卡标题借用时是**零样式**」，即「库存流水（最近 N 条）」这类标题当时是以正文样式渲染的。
+
+**遗留（未修，P2）**：`inventory_sources.html` 的 `.filter-bar > .filter-row > .fold-title`（值为「筛选」）
+是**筛选栏自己的标签行**，不是列表标题，不属 #29 同族；但它同样借了零样式的 `.fold-title`，
+「筛选」二字实际以正文样式呈现。修它需要先定「筛选栏要不要标签」并按 AGENTS.md 清理可能的孤儿词条
+（`admin.inventory_sources.filter.title`），属内容设计决策，本轮未动。
