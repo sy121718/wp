@@ -92,6 +92,8 @@ func requireLoginFailure(t *testing.T, step string, std *support.StandardRespons
 // 连续 5 次失败后只写 locked_until_time（约 30 分钟），status 保持启用；
 // 锁定到期后 IsLocked 自动为 false、IsActive 为 true，账号可重新登录。
 func TestAdminLoginFiveFailuresLocksTemporarilyNotBan(t *testing.T) {
+	// 响应走真实 i18n 词条，避免独立运行时把裸错误 key 误判为成功。
+	_ = newAdminShellEngine(t)
 	// 表结构走生产迁移（sys_admin 是真实 DDL），不再手抄建表。
 	db := support.NewMigratedPGTestDB(t)
 	if err := auth.Init(viper.New()); err != nil {
@@ -137,8 +139,8 @@ func TestAdminLoginFiveFailuresLocksTemporarilyNotBan(t *testing.T) {
 	captchaID, code := captcha.Get().Generate()
 	std, err := postLogin(engine, username, password, captchaID, code)
 	requireLoginFailure(t, "锁定窗口内登录", std, err)
-	if !strings.Contains(std.Message, "ErrAccountLocked") {
-		t.Fatalf("锁定窗口内应返回锁定错误，got message: %q", std.Message)
+	if std.Code != http.StatusBadRequest || std.Message != "账号已被锁定，请 30m0s 后重试" {
+		t.Fatalf("锁定窗口内应返回可读锁定文案和 30 分钟倒计时，got code=%d message=%q", std.Code, std.Message)
 	}
 
 	// 过期语义：locked_until_time 落在过去 → 自动解锁，且 status 仍启用
