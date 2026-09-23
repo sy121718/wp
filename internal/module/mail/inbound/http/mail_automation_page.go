@@ -73,7 +73,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		data["Err"] = mailErrPageText(c, err)
 		data["Automations"] = []any{}
 		data["AutoTotal"] = 0
-		c.HTML(http.StatusOK, "admin/mail_automation.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/mail/mail_automation.html", shell.Prepare(c, data))
 		return
 	}
 	// 列表行按模板需要投影：触发方式给中文标签（枚举不直接进界面），其余字段原样透出。
@@ -105,7 +105,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		data["CountFailed"] = runs.Counts["failed"]
 		data["CountStopped"] = runs.Counts["stopped"]
 	}
-	c.HTML(http.StatusOK, "admin/mail_automation.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/mail/mail_automation.html", shell.Prepare(c, data))
 }
 
 // MailAutomationEdit 流程编辑页（?id=N 编辑，缺省为新建）。
@@ -149,7 +149,7 @@ func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 	// 发信节点要选模板：把模板列表给页面（省得用户手敲 key）。
 	templates, _ := h.mail.ListTemplates(ctx, "")
 	data["Templates"] = templates
-	c.HTML(http.StatusOK, "admin/mail_automation_edit.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", shell.Prepare(c, data))
 }
 
 // automationTriggerLabels 触发方式的枚举与中文标签。
@@ -309,13 +309,21 @@ func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 }
 
 // MailAutomationRunDetail 实例排障详情页（「这个人卡在哪一步、为什么」）。
+//
+// 缺 id 前置判定见 MailCampaignPage 的说明（审计 P0）：改前「没带 id」与「id 查不到」
+// 共用 service 的「参数不合法」，用户看不出该去实例列表选一条。
 func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
-	detail, err := h.mail.AutomationRunDetail(c.Request.Context(), shell.ParseUint(c.Query("id")))
+	id, hasID := mailQueryID(c)
+	if !hasID {
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailRunIDRequiredText))
+		return
+	}
+	detail, err := h.mail.AutomationRunDetail(c.Request.Context(), id)
 	if err != nil {
 		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.HTML(http.StatusOK, "admin/mail_automation_run.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_run.html", shell.Prepare(c, gin.H{
 		"title": "实例排障",
 		"D":     detail,
 		"Err":   mailPageErr(c),

@@ -22,12 +22,15 @@ import (
 //
 // 修法不是往这里加名字，而是给该模块补一条「业务错误 400 / 内部错误 500」的断言 ——
 // 参考 public/test/masterdata/feature 与 public/test/media/feature 的写法。
+//
+// mail 已按这条路补上并从基线删除：public/test/mail/feature/mail_error_auto_status_test.go
+// 用假 service 喂两档输入（enums key → 400 + 可展示文案；SQLSTATE 原文 → 500 + 通用文案且不泄漏），
+// 断言的正是这里要守的 ErrorAuto 出口。
 var stateAssertionGapBaseline = map[string]bool{
 	"blueprint":       true,
 	"build":           true,
 	"content":         true,
 	"contenttemplate": true,
-	"mail":            true,
 	"plugin":          true,
 	"presentation":    true,
 	"user":            true,

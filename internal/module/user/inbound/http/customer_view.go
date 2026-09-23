@@ -97,6 +97,9 @@ func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcont
 		data["Actionable"] = row["Actionable"]
 		data["PendingHint"] = row["PendingHint"]
 		data["NextStatus"] = row["NextStatus"]
+		// 动词走词条（key + 中文兜底），详情页的按钮由 {{动词}}{{这个账号}} 拼成 ——
+		// 两段都取值当前语言，中英界面各成句，不会混排。
+		data["StatusActionKey"] = row["StatusActionKey"]
 		data["StatusActionLabel"] = row["StatusActionLabel"]
 		// 锁定提示分开给：锁定的账号「登不上去」但状态是正常的，
 		// 这两件事在页面上必须能分辨（否则运营会去点停用）。
@@ -146,16 +149,21 @@ func customerRow(item *userdto.CustomerResp) gin.H {
 		// 待激活的账号刻意不给按钮：它登不上去（status != active 一律拒绝登录），
 		// 停用它只会让客户点验证链接时得到「链接失效」—— 那既没解决问题，
 		// 又让客户来问「为什么我的链接坏了」。
+		//
+		// 动词本身走词条（StatusActionKey + 中文兜底）：这里原先是硬编码中文「停用 / 启用」，
+		// 英文界面上与 i18n 的后缀拼起来就是「Disable这个账号」式中英混排。
 		"Actionable": false,
 	}
 	switch item.Status {
 	case customerStatusActive:
 		row["Actionable"] = true
 		row["NextStatus"] = customerStatusDisabled
+		row["StatusActionKey"] = customerActionDisable
 		row["StatusActionLabel"] = "停用"
 	case customerStatusDisabled:
 		row["Actionable"] = true
 		row["NextStatus"] = customerStatusActive
+		row["StatusActionKey"] = customerActionEnable
 		row["StatusActionLabel"] = "启用"
 	case customerStatusPending:
 		row["PendingHint"] = "待激活：客户还没完成邮箱验证。这类账号本来就登不上去，" +

@@ -211,10 +211,12 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 		products: products, contentStore: contentStore,
 	}
 	g := workbenchPages
-	// 仪表盘首页同时挂 / 与 /admin：菜单树里「仪表盘」的 path 是 /admin（与其它菜单同构），
-	// 而历史入口是 /。两处指到同一个 handler —— 路由与菜单不一致时，
-	// 点侧栏第一项会 404（登录后第一眼就报错），dev-login 的默认跳转也落在那里。
-	g.GET("/", h.Dashboard)
+	// 仪表盘只挂 /admin。
+	//
+	// 曾经同时挂 /（历史入口）与 /admin（菜单树里「仪表盘」的 path）。
+	// 现在 **/ 归前台首页**（站点独占域名根，与生产部署一致）——
+	// 再在根上挂控制台页面会把前台首页整个顶掉，而且从后台点「仪表盘」
+	// 会跳到店铺首页，看起来像登录失效。菜单 path 本来就是 /admin，无需改动。
 	g.GET("/admin", h.Dashboard)
 	// 编辑器外壳（?id= 页面 / ?block= 全局块 / ?template= 内容模板）。
 	g.GET("/workbench", h.Workbench)

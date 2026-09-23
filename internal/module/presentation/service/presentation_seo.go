@@ -31,6 +31,7 @@
 package presentationservice
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -42,6 +43,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	seoutil "go_wp/internal/seo"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/upload"
 )
 
 func seoCanonicalPath(path string) string {
@@ -98,6 +100,50 @@ func schemaTypeOf(entityType string) string {
 	return ""
 }
 
+// entityImageCandidates 各实体类型的头图字段候选（顺序即回落顺序）。
+//
+// 只列**确实存在且语义就是头图**的字段：
+//   - 文章：featuredImage（内容字段白名单里的封面）；
+//   - 商品：defaultImage 是主图，images 是图集（取首张）。
+// 候选外的字段一律不看 —— 猜一个字段名只会得到一张错的分享图。
+var entityImageCandidates = map[string][]string{
+	entityTypeArticle: {"featuredImage"},
+	entityTypeProduct: {"defaultImage", "images"},
+}
+
+// pickEntityImage 取实体头图（取不到返回空串，不报错）。
+//
+// 图集字段（images）在实体里是 JSON 数组字符串，这里取首张 —— 与前台商品卡同口径
+// （都取图集第一张当主图），避免「卡片与分享图不是同一张」。
+func pickEntityImage(entityType string, writable []string, resolver core.ContentResolver) string {
+	if resolver == nil {
+		return ""
+	}
+	for _, field := range entityImageCandidates[entityType] {
+		if !fieldWritable(writable, field) {
+			continue
+		}
+		v, err := resolver.ResolveString(entityType + "." + field)
+		if err != nil {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if strings.HasPrefix(v, "[") {
+			var list []string
+			if jerr := json.Unmarshal([]byte(v), &list); jerr == nil && len(list) > 0 {
+				v = strings.TrimSpace(list[0])
+			}
+		}
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // applyEntitySEO 把实体字段与实例线上路径写进页面 SEO 设置（Compile 之前调用）。
 //
 // writable 是该实体类型的字段白名单（取自实体类型注册表 —— 白名单的唯一来源，
@@ -127,6 +173,18 @@ func applyEntitySEO(page *builder.Page, entityType, urlPath string,
 		if offer := productOfferLD(entityType, writable, resolver); offer != nil {
 			page.Settings.SEO.ProductOffer = offer
 		}
+	}
+	// 头图 → og:image（社交分享卡片与 JSON-LD 的 image）。
+	//
+	// 此前只填了 title / description / schemaType，**没填图** —— 详情页的产物里
+	// 一条 og:image 都没有，分享到任何平台都是无图卡片（twitter:card 也退回 summary）。
+	// 取不到就不写：宁可没有图，也不要一张猜出来的图。
+	if img := pickEntityImage(entityType, writable, resolver); img != "" {
+		// 先归一到媒体自己的对外地址（upload.StorageURL），再交给 BuildSEOHead。
+		// 顺序要紧：实体里存的可能是相对路径 /storage/x.jpg，直接交给 BuildSEOHead 的
+		// absoluteURL 会**套上站点基址的前缀** —— 基址是 /site 时拼成
+		// /site/storage/x.jpg，而媒体其实在站点根的 /storage 下（实测踩过）。
+		page.Settings.SEO.OGImage = upload.StorageURL(img)
 	}
 	// 线上路径覆盖模板 canonical（取舍 2）；预览（urlPath 空）不动模板原值。
 	if path := strings.TrimSpace(urlPath); path != "" {

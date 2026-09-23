@@ -15,6 +15,7 @@ import (
 
 	"go_wp/internal/builder"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -89,7 +90,11 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 // 只改本实例（override_document + 重编译发布），不影响共享模板（docs/04-C）。
 func (h *Handle) InstanceSave(c *gin.Context) {
 	if h.instances == nil {
-		c.String(http.StatusServiceUnavailable, "实例编辑能力未装配")
+		// 形态与同文件其余分支一致（c.JSON + code/message）：本端点由前端 fetch 消费，
+		// api.js 的 send() 直接 r.json()，正文是 text/plain 时解析抛异常 → then 链断掉 →
+		// 到不了那句 alert，用户看不到任何提示。文案走归口译文：能力未装配属装配缺陷，
+		// 给用户看的只能是受控提示，装配细节不进响应。
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "message": shell.PageInternalText(c)})
 		return
 	}
 	var body struct {

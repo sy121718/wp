@@ -106,7 +106,7 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 		engine := gin.New()
 		engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 		engine.GET("/admin/analytics", func(c *gin.Context) {
-			c.HTML(http.StatusOK, "admin/analytics.html", data)
+			c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 		})
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/analytics", nil))

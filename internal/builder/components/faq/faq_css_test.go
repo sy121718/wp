@@ -21,7 +21,7 @@ func TestFAQCSSRules(t *testing.T) {
 		"list-style: none",
 		"justify-content: space-between",
 		".sky-c-t summary::-webkit-details-marker {",
-		".sky-c-t summary::after {",
+		".sky-c-t .sky-faq-chevron {",
 		"transition: transform .2s",
 	} {
 		if !strings.Contains(out, want) {
@@ -29,12 +29,9 @@ func TestFAQCSSRules(t *testing.T) {
 		}
 	}
 	// 展开态由 [open] 属性选择器驱动（零 JS）——这条断掉的话展开时没有视觉反馈。
-	if !strings.Contains(out, ".sky-c-t details[open] summary::after {\n  transform: rotate(45deg);") {
-		t.Errorf("缺少展开态旋转:\n%s", out)
-	}
-	// 加减号由 content 提供（含全角加号），迁移到 CSS 文件后要保持原样。
-	if !strings.Contains(out, "content: '＋'") {
-		t.Errorf("缺少加减号 content:\n%s", out)
+	// 箭头本体是基座图标库的 SVG（Go 侧 icon.IconSVG 生成），CSS 只管样式钩子与翻向。
+	if !strings.Contains(out, ".sky-c-t details[open] .sky-faq-chevron {\n  transform: rotate(180deg);") {
+		t.Errorf("缺少展开态翻向:\n%s", out)
 	}
 	if strings.Contains(out, "{{") || strings.Contains(out, "&") {
 		t.Errorf("产物里有未展开的占位或未替换的作用域前缀:\n%s", out)

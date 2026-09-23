@@ -187,7 +187,7 @@ Artifact          ≠ 可编辑源码
   · 或文件顶部 `{{csrf := .["csrf_token"]}}` 声明一次、本文件内复用 `{{csrf}}` —— 这是**事实主流**写法（模板数与会随迭代增减，不写死数字）。
   `{{csrf}}` 是 Jet 的**模板内 let 变量，不是全局函数**（`internal/templates/funcs.go` 的 `injectGlobals` 未注册任何 csrf 符号）：
   未声明就裸用会报 `identifier "csrf" not available …`，且声明必须在使用之前。
-- **禁止 `{{.csrf_token}}`（点号无索引）**：data 是 map 时缺 key 会运行时报错中断渲染（状态码仍是 200，之后的 HTML 整块消失）。
+- **禁止 `{{.csrf_token}}`（点号无索引）**：data 是 map 时缺 key 会运行时报错、整个响应失败（渲染器先渲到 buffer，失败走 `http.Error(500, …)` 并丢弃半截内容；htmx 片段因 5xx 不 swap 而毫无反应 —— **不是**「200 + 后面的 HTML 整块消失」，那是渲染器加缓冲区之前的旧行为，2026-09 实测推翻）。
 - 注入点：后台页面 `shell.Prepare`（`internal/web/shell/shell.go`）、访客页面 `user.Handle.render`；
   **fragment 模板例外** —— `fragments/*.jet` 的 data 是 struct（字段 `CSRFToken`），chain 索引会报
   `can't use csrf_token as field name in struct type`，只能写 `{{ .CSRFToken }}`。详见 `internal/templates/CLAUDE.md`。
@@ -418,6 +418,47 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
     再读结果；或把手动创建的同参数实例与页面实例对比，能直接区分「环境问题」与「实现问题」。
   · **对策（实现用）**：增强逻辑优先用**同步几何计算 + `setTimeout` 节流**，而不是
     `rAF` / `IO` —— 前者在任何环境都可断言，后者只在真实浏览器里可靠。
+- **计数与命名不是判据，结论必须回读语义**：`rg -c` / `grep -c` 只能当**筛查起点** ——
+  任何写进结论、文档、任务书或提交信息的判断，都要回到上下文确认「它到底是不是你要找的那个东西」。
+  实测踩过四种误判，全都是「计数 / 命名对上了，语义没对上」：
+  · **常量名 ≠ 值**：`orderenums.ErrInternal` 名字像 i18n key，值是中文文案「操作失败，请稍后重试」；
+    而同域的 `ErrOrderNotFound` 的值**就是** key（`order.err.orderNotFound`）。
+    判「这是不是裸 key」只能读值 —— 同一个 enums 包里两种形态并存是常态
+    （未接 i18n 的模块直接等于中文常量，见本文件「数据库」一节的口径）。
+  · **类名 / 关键词计数 ≠ 目标数量**：`class` 含 `alert|notice|empty-state` 的行数被当成
+    「提示槽数量」（26 处），真正的判据是 `role="alert"`（**1 处**）。
+  · **计数判据本身选错**：`grep -c 'class="pagination"'` 被当成「有没有分页」的判据 ——
+    已接分页的页面（products / orders / customers / returns / coupons）在同一判据下**同样是 0**，
+    因为分页条在 `partials/pagination.html` 内部。正确判据是 `{{include "partials/pagination.html"}}`
+    或 handler 是否调 `shell.BuildPagination`。
+  · **按域 / 文件一刀切 ≠ 逐条定性**：workbench 51 处 `c.String` 被整体归为「接口出口（P2）」，
+    逐条看调用方后其中 **23 处服务的是页面导航**（`<a href="/workbench?id=…">`），是 P0。
+  反过来说：**读数异常时先怀疑自己的判据，而不是直接下结论** —— 门禁脚本曾因注释里的字面
+  `{{range}}` 产生幻影栈帧（12 处假阳性）；「门禁绿」同样不等于「没问题」
+  （`check-no-internal-error-leak.sh` 的候选集只含带 `.Error()` 的行，硬编码文案与裸 key
+  从来不在它的视野里，修前修后都是绿的）。
+- **任务清单的行号会整体失效**：`docs/02-{L,M,O}` 三份清单里记的文件行号，
+  在后续几批改动后**全部漂移**（核对时逐条重新定位过）。引用它们时按**语义**定位
+  （函数名、类名、结构特征、关键文案、i18n key），不要按行号跳转；
+  清单条目本身（问题描述与判据）仍然可信，读数与行号要重新采信。
+- **委派 / 并行任务：独占文件清单要算上「同包私有函数的签名」**：给并行代理（或自己分批）划
+  「独占文件」边界时，**只列文件是不够的** —— 同包私有函数的**签名**也是边界。改一个签名会波及
+  本包其它文件里的调用点，而那些文件可能正握在另一个并行任务手里，且编译错误会一次炸出一大片。
+  实证：一个代理改了 `flatCategories` / `listBrands` / `listTags` 三个同包私有函数签名，
+  **立刻炸出 9 处清单外调用点**，只能整批回退、改成新增函数（原签名保留给既有调用方）。
+  稳妥顺序是：**先 `rg` 出全部调用点**，再决定「改签名 + 把这些文件一起纳入清单」还是
+  「新增函数 / 在调用点内联」。同理，一旦要动 `contract/` 或 `service/`，那也已经越出
+  「只改这个 handler」的边界了 —— 停下来报告，不要就地扩权。
+- **跨批次写同名 i18n key 是允许的，但要知道谁会赢**：并行批次各自写迁移时，
+  `INSERT ... ON CONFLICT (item_key, lang) DO NOTHING` 保证了**不报错、不重复**，
+  但**按版本号小的先执行、先写者胜出**。实测：407 的 7 行只插进去 2 行，其余 5 行与
+  405/406 重叠被跳过（`MsgInternalError` 的 en-US 取自 405、`loadFailed*` 取自 406）。
+  合批时要**实测最终落库值**（`SELECT item_value`）而不是读迁移文件，并记住「后写的那些行是死代码」。
+- **分页判据要分清「单页」与「多页」**：`shell.BuildPagination(total, page, limit, baseURL, t)` 在
+  **`total <= limit`（单页）或 `total == 0` 时返回 nil**，`TemplateKeys()` 给空 map —— 于是单页场景页面上
+  **根本没有「共 N 条，第 X-Y 条」那一行**。写分页测试时若在「筛选后只剩单页」的分支里断言该文案，
+  会得到一次**假失败**（实测踩过：品牌页关键词筛出 10 条时断言「共 10 条」失败，实际是按设计不渲染）。
+  单页只能断言「无分页条 + 行数」；要断言信息行，先确认 `total > limit`。
 
 ## Git 与工具约定
 

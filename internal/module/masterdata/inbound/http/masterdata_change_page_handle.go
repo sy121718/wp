@@ -104,9 +104,18 @@ func (f masterDataFilter) entityValues(projectID, entityType, entityID string) m
 func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
-	if err != nil {
-		c.String(http.StatusInternalServerError, shell.MsgInternalError)
-		return
+	// 工程列表装载失败：**降级渲染**，不拿走整个页面（与主题管理页、admin 六页同一判据）。
+	//
+	// 原先这里是 `c.String(500, shell.MsgInternalError)`：浏览器里没有页面，只有一块纯文本 ——
+	// 侧栏、页头、筛选栏全部消失，而那块文本还是**未翻译的裸 key**（`c.String` 不经过任何
+	// translate，页面上直接显示 `MsgInternalError` 这串英文）。运营既判断不出是「这一页没读出来」
+	// 还是「后台坏了」，也没有任何可点的东西（换筛选、去别的菜单都做不到）。
+	// 装载失败优先于任何旧提示：它是**这次请求**真实发生的事；原文只进日志
+	//（masterDataErrText 的未命中分支：场景 + user_id + 原始错误）。
+	loadFailed := err != nil
+	pageErr := ""
+	if loadFailed {
+		pageErr = masterDataErrText(c, err)
 	}
 	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
@@ -118,71 +127,77 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	// 本页**没有** ?err= 回执通道：它是只读页，没有任何写入口会往这里回带文案
 	//（grep 过：全仓没有 redirect 到 /admin/masterdata/changes?...err=）。
 	// 此前从 query 里读 err 并原样渲染，是一条纯伪造面 —— 手拼一个 URL 就能往
-	// 「部分数据未取到：」后面塞任意文案。页面提示只由取数失败产生（见 masterDataInternalText）。
-	pageErr := ""
+	// 「部分数据未取到：」后面塞任意文案。页面提示只由取数失败产生（见 masterDataErrText）。
 	rows := []gin.H{}
 	var total int64
 	var current *gin.H
-
-	listReq := &masterdatadto.ListChangeReq{
-		ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
-		Field: filter.Field, Action: filter.Action, Keyword: filter.Keyword,
-		OperatorID: filter.OperatorID, Since: filter.Since, Until: filter.Until,
-		Page: page, Size: limit,
-	}
-	if filter.specific() {
-		// 锁定单个实体：一次拿到「是谁 + 共几条 + 这一页时间线」。
-		timeline, terr := h.changes.EntityTimeline(ctx, &masterdatadto.EntityTimelineReq{
-			ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
-			Page: page, Size: limit,
-		})
-		if terr != nil {
-			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, terr))
-		} else {
-			total = timeline.Total
-			current = &gin.H{
-				"EntityType": timeline.EntityType, "EntityTypeLabel": timeline.EntityTypeLabel,
-				"EntityID": timeline.EntityID, "EntityLabel": timeline.EntityLabel, "Total": timeline.Total,
-			}
-			for _, row := range timeline.Changes {
-				rows = append(rows, changeRow(row))
-			}
-		}
-	} else {
-		list, lerr := h.changes.ListChanges(ctx, listReq)
-		if lerr != nil {
-			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, lerr))
-		} else {
-			for _, row := range list {
-				rows = append(rows, changeRow(row))
-			}
-		}
-		if count, cerr := h.changes.CountChanges(ctx, listReq); cerr == nil {
-			total = count
-		} else {
-			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, cerr))
-		}
-	}
-
-	// 实体清单（验收 4 的入口）：同一组筛选条件下被改过的实体与各自次数。
 	entityRows := []gin.H{}
 	var entityTotal int64
-	entityReq := &masterdatadto.ListEntityReq{
-		ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
-		Field: filter.Field, Action: filter.Action, Keyword: filter.Keyword,
-		OperatorID: filter.OperatorID, Since: filter.Since, Until: filter.Until,
-		Page: 1, Size: masterDataEntityPageSize,
-	}
-	entities, eerr := h.changes.ListEntities(ctx, entityReq)
-	if eerr != nil {
-		pageErr = firstNonEmpty(pageErr, masterDataErrText(c, eerr))
-	} else {
-		for _, item := range entities {
-			entityRows = append(entityRows, entityRow(item, filter, selected))
+
+	// 装载失败时**一次取数都不做**：下面每一项都要工程作用域（selected 此时为空），
+	// 真跑下去只会再报一次「未指定工程」，把「这一页没读出来」盖成「你没选工程」——
+	// 两条提示打架时运营会去改筛选条件，而真正的问题是工程列表根本没读到。
+	// 列表留空，由模板按 LoadFailed 区分「空数据」与「装载失败」（空态标题不能是
+	// 「没有记录」，那是在把人往错的方向带）。
+	if !loadFailed {
+		listReq := &masterdatadto.ListChangeReq{
+			ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
+			Field: filter.Field, Action: filter.Action, Keyword: filter.Keyword,
+			OperatorID: filter.OperatorID, Since: filter.Since, Until: filter.Until,
+			Page: page, Size: limit,
 		}
-	}
-	if count, cerr := h.changes.CountEntities(ctx, entityReq); cerr == nil {
-		entityTotal = count
+		if filter.specific() {
+			// 锁定单个实体：一次拿到「是谁 + 共几条 + 这一页时间线」。
+			timeline, terr := h.changes.EntityTimeline(ctx, &masterdatadto.EntityTimelineReq{
+				ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
+				Page: page, Size: limit,
+			})
+			if terr != nil {
+				pageErr = firstNonEmpty(pageErr, masterDataErrText(c, terr))
+			} else {
+				total = timeline.Total
+				current = &gin.H{
+					"EntityType": timeline.EntityType, "EntityTypeLabel": timeline.EntityTypeLabel,
+					"EntityID": timeline.EntityID, "EntityLabel": timeline.EntityLabel, "Total": timeline.Total,
+				}
+				for _, row := range timeline.Changes {
+					rows = append(rows, changeRow(row))
+				}
+			}
+		} else {
+			list, lerr := h.changes.ListChanges(ctx, listReq)
+			if lerr != nil {
+				pageErr = firstNonEmpty(pageErr, masterDataErrText(c, lerr))
+			} else {
+				for _, row := range list {
+					rows = append(rows, changeRow(row))
+				}
+			}
+			if count, cerr := h.changes.CountChanges(ctx, listReq); cerr == nil {
+				total = count
+			} else {
+				pageErr = firstNonEmpty(pageErr, masterDataErrText(c, cerr))
+			}
+		}
+
+		// 实体清单（验收 4 的入口）：同一组筛选条件下被改过的实体与各自次数。
+		entityReq := &masterdatadto.ListEntityReq{
+			ProjectID: selected, EntityType: filter.EntityType, EntityID: filter.EntityID,
+			Field: filter.Field, Action: filter.Action, Keyword: filter.Keyword,
+			OperatorID: filter.OperatorID, Since: filter.Since, Until: filter.Until,
+			Page: 1, Size: masterDataEntityPageSize,
+		}
+		entities, eerr := h.changes.ListEntities(ctx, entityReq)
+		if eerr != nil {
+			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, eerr))
+		} else {
+			for _, item := range entities {
+				entityRows = append(entityRows, entityRow(item, filter, selected))
+			}
+		}
+		if count, cerr := h.changes.CountEntities(ctx, entityReq); cerr == nil {
+			entityTotal = count
+		}
 	}
 
 	// 视图：同一批筛选条件下的两种看法 —— 记录（逐条流水）/ 实体（按实体聚合）。
@@ -222,6 +237,10 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		// 实体清单被截断时给一句提示（比较运算留在 handler，模板只做判断）。
 		"EntityTruncated": entityTotal > int64(len(entityRows)),
 		"Err":             pageErr,
+		// LoadFailed：本次请求的工程列表没读到（不是「没有数据」）。
+		// 模板据此把两个面板的空态换成「没读出来」—— 空态标题若是「没有记录」，
+		// 用户会以为历史真的没了，而实际上只是这一次没读出来。
+		"LoadFailed":      loadFailed,
 		"ViewMode":        viewMode,
 		"RecordsViewURL":  base,
 		"EntitiesViewURL": base + "&view=" + masterDataViewEntities,
@@ -229,7 +248,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/masterdata_changes.html", data)
+	c.HTML(http.StatusOK, "admin/masterdata/masterdata_changes.html", data)
 }
 
 // masterDataErrScene 结构化日志的场景名（与模块其它 logger.Scene 调用点一致）。

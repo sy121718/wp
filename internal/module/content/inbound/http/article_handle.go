@@ -31,11 +31,16 @@ import (
 const (
 	// articleEntityType contents 表当前唯一合法类型（迁移 080 的 CHECK 约束）。
 	articleEntityType = "article"
-	// articleListLimit 列表一次取多少条。
+	// articleListPageSize 列表每页条数的兜底值。
 	//
-	// 后台文章列表不分页：列表页还要逐条查发布状态，条数直接决定查询次数；
-	// 文章量级远小于商品，50 条足够覆盖日常，超过这个量级再谈分页。
-	articleListLimit = 50
+	// 正常路径上每页条数由 shell.PageParams 决定（默认 20、上限 100，可被 ?limit= 覆盖），
+	// 这个常量只在 limit 异常（0 / 负数）时兜底。它同时是一页的**跨模块查询预算**：
+	// 列表里每篇文章都要逐条查一次 presentation 实例（articlesPublished），
+	// 条数直接决定查询次数 —— 所以它不是「随便取大点」的数字。
+	//
+	// 分页之前这里写的是 articleListLimit = 50 且一次性取满：超过 50 篇的文章
+	// 在页面上根本不存在（审计 02-L P1-14）。现在按页取，总量不再有上限。
+	articleListPageSize = 20
 	// 页面标题：字面量就是 i18n key（迁移 163 的词条表键），字面量走 withI18n 的 fallback
 	// 链路 t(标题, 标题) 回落原文，与系统页面槽位页、商品详情模板页同口径。
 	// 值与 dashboard enums 的 MsgArticlesTitle / MsgArticlesEditTitle 完全相同 ——
@@ -123,16 +128,54 @@ func NewArticlePageHandle(contents contentcontract.ContentService, projects proj
 }
 
 // ArticlesPage 文章列表（GET /admin/articles）。
+//
+// 分页（审计 02-L P1-14）：页码与每页条数走 shell.PageParams，总数由内容契约的 Count 给出
+//（与 List 同一份过滤条件：实体类型），列表按 offset 取当页 —— 不再「一次取 50 条、
+// 超过 50 篇的文章在页面上根本不存在」。
+//
+// 取数顺序是**先计数 → 收敛页码 → 再取当页**（上一轮的实测教训，货源页与采购页各踩过一次）：
+// 反过来（先取第 N 页再数总数）时，越界页码会让 service 返回空页，而分页条按收敛后的页码
+// 渲染 ——「表格为空、分页条却显示第 2 页」正是这样产生的。
+//
+// 不走「全量拉取 + handler 切片」：articlesPublished 对每篇逐条查 presentation 实例，
+// 全量取数意味着 N 次跨模块查询，文章量级一涨就成倍放大（这正是上一轮否决该方案的理由）。
 func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	pageErr := articleQueryText(c, c.Query("err"), shell.PageInternalText(c))
 	pageOk := articleQueryText(c, c.Query("ok"), "")
 
-	list, err := h.contents.List(ctx, &contentdto.ListReq{EntityType: articleEntityType, Limit: articleListLimit})
+	page, limit := shell.PageParams(c)
+	// 先计数。总数只用于「总页数」与页码收敛；计数失败不阻塞列表取数（列表照常按原页码取），
+	// 但会把错误显示出来 —— 静默地「没有分页条」会让人以为文章本来就不多。
+	total, cerr := h.contents.Count(ctx, &contentdto.ListReq{EntityType: articleEntityType})
+	if cerr != nil {
+		pageErr = firstNonEmpty(pageErr, articleFacingError(c, cerr))
+	} else {
+		page = articleClampPage(page, limit, total)
+	}
+	list, err := h.contents.List(ctx, &contentdto.ListReq{
+		EntityType: articleEntityType, Limit: limit, Offset: (page - 1) * limit,
+	})
 	if err != nil {
 		pageErr = firstNonEmpty(pageErr, articleFacingError(c, err))
 	}
 	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk)
+	// Total 覆盖为**真源总数**：articleListPageData 给的是当页行数，分页之后它不再等于
+	// 文章总数 —— 不覆盖的话列表工具栏会写着「全部文章（20）」，而库里有两百篇。
+	if cerr == nil {
+		data["Total"] = total
+	}
+	// 分页条（shell 组件，服务端渲染）：单页或空数据时 BuildPagination 返回 nil，
+	// TemplateKeys 给空 map，模板的 {{if .["PaginationLinks"]}} 自然跳过。
+	//
+	// 基地址不带查询参数：本页的关键词筛选是**客户端**过滤（见模板的 filter-bar 与
+	// admin.js 的 [data-filter-input]），服务端没有筛选维度；而 ?err= / ?ok= / ?done= 是
+	// 一次性回执，拼进基地址会让翻页后重复弹出同一条提示。走 FilterBaseURL 是为了让
+	// 「以后加了服务端筛选条件只需在这里补一个键」这条路存在（与商品各子列表同一手法）。
+	for k, v := range shell.BuildPagination(total, page, limit,
+		shell.FilterBaseURL("/admin/articles", nil), shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
 	// 本批只做可见性，不做自动重建（见 article_stale_impact.go）。
 	data["StaleImpact"] = articleStaleImpact(ctx, h)
@@ -141,7 +184,31 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	// articlePageDone 的受控出口 —— 值由服务端拼装，但**页面不是可信边界**：
 	// ?done=任意文案 谁都能手写，原样渲染出来就是一条顶着「成功」样式的伪造消息。
 	data["Done"] = articlePageDone(c, c.Query("done"))
-	c.HTML(http.StatusOK, "admin/articles.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/content/articles.html", shell.Prepare(c, data))
+}
+
+// articleClampPage 把页码收敛到实际总页数以内（total=0 时收敛到第 1 页）。
+//
+// 与 shell.BuildPagination 内部的收敛同一条规则（总页数由 total 与 limit 算出），
+// 差别只在于这里发生在**取数之前**：越界页码（手输 URL、书签失效、上一次翻页留下的页码）
+// 直接传给取数层时 service 会老实返回空页，而分页条按收敛后的页码渲染 ——
+// 「表格为空、分页条却显示第 2 页」这种自相矛盾的组合就是这样产生的。
+// 同形实现在 product 域（clampPageToTotal），两处都是「取数前收敛」这一条判据的落地。
+func articleClampPage(page, limit int, total int64) int {
+	if limit < 1 {
+		limit = articleListPageSize
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := int((total + int64(limit) - 1) / int64(limit))
+	if pages < 1 {
+		return 1
+	}
+	if page > pages {
+		return pages
+	}
+	return page
 }
 
 // ArticleEditPage 文章编辑页（GET /admin/articles/edit?id=）；不带 id 即新建。
@@ -160,7 +227,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 			item = got
 		}
 	}
-	c.HTML(http.StatusOK, "admin/article_edit.html",
+	c.HTML(http.StatusOK, "admin/content/article_edit.html",
 		shell.Prepare(c, articleEditPageData(ctx, h, item, id, pageErr, pageOk, requestScoreLang(c))))
 }
 

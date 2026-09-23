@@ -56,10 +56,10 @@ func (h *productPageHandle) modeWriteTarget(c *gin.Context) (
 // modeRedirect 统一的落点：成功回详情页，失败带白名单文案。
 func modeRedirect(c *gin.Context, projectID, productID string, err error) {
 	if err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, productID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, productID, ""))
 }
 
 // ProductsReapplyPreset 重新套用预设：放弃该商品独立文档，回到跟随模板。

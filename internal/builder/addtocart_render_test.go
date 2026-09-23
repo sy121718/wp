@@ -74,7 +74,6 @@ func TestAddToCartCompilesToWorkingForm(t *testing.T) {
 		`name="quantity"`,                 // 数量输入（showQuantity=true）
 		`type="submit"`,
 		`>马上买<`, // 作者自定义的按钮文字
-		`99.00`, // 与规格选择器同源的价格
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("产物缺少 %q；实际产物：%s", want, doc)
@@ -83,6 +82,13 @@ func TestAddToCartCompilesToWorkingForm(t *testing.T) {
 	// 已停用的变体不能出现在可加购列表里（停用的规格不能买）。
 	if strings.Contains(doc, "v-off") {
 		t.Errorf("已停用变体不该进产物；实际产物：%s", doc)
+	}
+	// 单变体模式**不**在行内重复价格：价格已由商品详情区在标题下展示过，
+	// 再显示一次是同一屏里的重复信息（多规格模式才需要行内价格来区分各行）。
+	// 判据匹配**元素**而不是类名：类名在内联样式表里本来就有
+	//（`.sky-cart-add-price { ... }`），拿类名当判据永远为真。
+	if strings.Contains(doc, `<span class="sky-cart-add-price">`) {
+		t.Errorf("单变体模式不该在加购行内重复价格；实际产物：%s", doc)
 	}
 }
 

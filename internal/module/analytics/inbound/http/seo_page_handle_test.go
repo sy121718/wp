@@ -57,7 +57,7 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/seo", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/seo.html", data)
+		c.HTML(http.StatusOK, "admin/analytics/seo.html", data)
 	})
 
 	rec := httptest.NewRecorder()
@@ -87,7 +87,7 @@ func TestSEOPageTemplateRequiresAuditPermissionForAction(t *testing.T) {
 		"Projects": []projectcontract.ProjectResp{}, "SelectedProject": "",
 		"Paths": []analyticscontract.PathCount{}, "HasPaths": false, "AnalyticsError": false, "PermSet": map[string]bool{},
 	}
-	body := renderAdminTemplate(t, "admin/seo.html", base)
+	body := renderAdminTemplate(t, "admin/analytics/seo.html", base)
 	if strings.Contains(body, "<form method=\"post\" action=\"/api/publication/seo-audit\" data-seo-audit-action>") {
 		t.Fatal("缺少 seo:audit 权限时不应渲染体检动作")
 	}

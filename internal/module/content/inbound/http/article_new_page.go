@@ -21,7 +21,7 @@ import (
 // 从 Trix 编辑器同步，服务端零往返。Form 键集与编辑页 articleEditPageData 的 form
 // 对齐（模板点号取值，缺键会让 Jet 报错并截断整页）。
 func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin/article_new.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/content/article_new.html", shell.Prepare(c, gin.H{
 		"title": articleNewTitle,
 		"menu":  "articles",
 		"Form": gin.H{

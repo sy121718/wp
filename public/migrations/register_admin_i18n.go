@@ -217,11 +217,20 @@ func registerAdminI18nSeedsAndLatest() {
 	})
 
 	// 190：营销订单类后台模板文案（审计 I18N-001 组C）
-	// 判据按本批自己的 key 枚举计数（765 个全列）—— 用总量会被其它批次满足而静默跳过。
+	// 判据按本批自己的 key 枚举计数（**762** 个全列）—— 用总量会被其它批次满足而静默跳过。
+	//
+	// 2026-09：「admin.customers.empty」已由 418 删除（孤儿词条，模板无引用），故从列表移除并把
+	// 门槛 765→764 —— 否则本条件恒为假、每轮启动重跑约 1500 行 INSERT（幂等但无谓，见 AGENTS.md
+	// 「删能力要连 seed 与幂等条件一起收口」）。
+	//
+	// 2026-09（本批）：「admin.mail.campaign.page_prefix / .page_suffix」已由 419 删除
+	// （邮件活动页换成真分页条后失去引用），同批从列表移除这两个 key、门槛 764→762，并删掉
+	// 190_i18n_seed_marketing.sql 里对应的 4 行 —— 条件列表里的 key 因此全部仍由 seed SQL 写入
+	// （本机库实测：本列表在 zh-CN 侧命中 762 行，条件成立）。
 	registerSeed(Seed{
 		Version:   "190-i18n-seed-marketing",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 765 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 762 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
 			"'admin.coupons.action.collapse', 'admin.coupons.action.delete', 'admin.coupons.action.edit', 'admin.coupons.col.actions', " +
 			"'admin.coupons.col.code', 'admin.coupons.col.discount', 'admin.coupons.col.min_subtotal', 'admin.coupons.col.name', " +
 			"'admin.coupons.col.per_user', 'admin.coupons.col.remark', 'admin.coupons.col.status', 'admin.coupons.col.usage', " +
@@ -269,7 +278,7 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.customers.action.unlock', 'admin.customers.badge.active', 'admin.customers.badge.all', 'admin.customers.badge.disabled', " +
 			"'admin.customers.badge.locked', 'admin.customers.badge.pending', 'admin.customers.badge.unverified', 'admin.customers.badge.verified', " +
 			"'admin.customers.capability_missing', 'admin.customers.col.actions', 'admin.customers.col.customer', 'admin.customers.col.email', " +
-			"'admin.customers.col.last_login', 'admin.customers.col.registered_at', 'admin.customers.col.status', 'admin.customers.empty', " +
+			"'admin.customers.col.last_login', 'admin.customers.col.registered_at', 'admin.customers.col.status', " +
 			"'admin.customers.err_prefix', 'admin.customers.field.registered_at', 'admin.customers.field.registered_to', 'admin.customers.field.username', " +
 			"'admin.customers.filter.heading', 'admin.customers.filter.hint.inclusive.lead', 'admin.customers.filter.hint.inclusive.strong', 'admin.customers.filter.hint.inclusive.tail', " +
 			"'admin.customers.filter.hint.lead', 'admin.customers.filter.hint.strong', 'admin.customers.filter.hint.tail', 'admin.customers.filter.reset', " +
@@ -332,7 +341,7 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.mail.campaign.metric.complained_note', 'admin.mail.campaign.metric.failed', 'admin.mail.campaign.metric.failed_note', 'admin.mail.campaign.metric.open_events', " +
 			"'admin.mail.campaign.metric.open_events_note', 'admin.mail.campaign.metric.opened', 'admin.mail.campaign.metric.opened_note', 'admin.mail.campaign.metric.opened_note_tail', " +
 			"'admin.mail.campaign.metric.sent', 'admin.mail.campaign.metric.sent_note', 'admin.mail.campaign.metric.target', 'admin.mail.campaign.metric.target_note', " +
-			"'admin.mail.campaign.metric.unsubscribed', 'admin.mail.campaign.metric.unsubscribed_note', 'admin.mail.campaign.page_prefix', 'admin.mail.campaign.page_suffix', " +
+			"'admin.mail.campaign.metric.unsubscribed', 'admin.mail.campaign.metric.unsubscribed_note', " +
 			"'admin.mail.campaign.recipients_empty', 'admin.mail.campaign.recipients_heading', 'admin.mail.campaign.recipients_total_lead', 'admin.mail.campaign.recipients_total_tail', " +
 			"'admin.mail.campaign.status_label', 'admin.mail.campaign.subject_label', 'admin.mail.err_prefix', 'admin.mail.heading', " +
 			"'admin.mail.hint.purpose.lead', 'admin.mail.hint.purpose.strong', 'admin.mail.hint.purpose.tail', 'admin.mail.hint.secret.lead', " +

@@ -25,22 +25,23 @@
   font-size: {{titleSize}};
 }
 
-/* 展开箭头（summary 伪元素）：加减号由 content 提供，无 JS。 */
+/* 展开箭头：基座图标库的 chevron-down（SVG），summary 默认 marker 关掉。 */
 & .sky-accordion-head::-webkit-details-marker {
   display: none;
 }
 
-& .sky-accordion-head::after {
-  content: '＋';
-  font-size: 14px;
+& .sky-accordion-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
   color: rgba(0,0,0,.4);
   transition: transform .2s;
-  margin-left: 12px;
 }
 
-/* 展开态由 [open] 属性驱动：＋ 旋转 45° 成 ×。 */
-& details[open] & .sky-accordion-head::after {
-  transform: rotate(45deg);
+/* 展开态由 [open] 属性驱动：箭头翻向。 */
+& details[open] .sky-accordion-chevron {
+  transform: rotate(180deg);
 }
 
 & .sky-accordion-head {

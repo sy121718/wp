@@ -164,16 +164,27 @@ func couponWindowSide(at *time.Time) string {
 	return orderTimeLabel(*at)
 }
 
-// couponFormTime 时间 → 表单回填文本（空串 = 不限）。
+// couponFormTime 时间 → 表单回填值（空串 = 不限）。
 //
-// 用「2006-01-02 15:04」这一种写法而不是 <input type="datetime-local">：
-// 后者提交的是带 T 的 ISO 文本，而服务端只接受 2006-01-02 / 2006-01-02 15:04(:05)，
-// 带 T 的写法会被判成「生效时间不合法」—— 也就是表单自己生成的格式自己都不收。
+// 输出带 T 的形态（`2006-01-02T15:04`，秒非 0 时到秒）—— 这是 HTML 规范给
+// <input type="datetime-local"> 规定的 value 写法（空格形态不在规范里：Chrome 实测会顺手
+// 规范化，但那是实现宽容，不能依赖；纯日期形态则会被直接清成空串，所以回填必须含时刻）。
+//
+// 秒与亚秒的取舍：秒非 0 时输出到秒（模板对应输入框带 step="1"，否则控件会以
+// stepMismatch 判非法、**表单根本提交不了**）；亚秒一律丢弃 —— datetime-local 无法安全表达
+// 微秒，而券的生效窗口精确到秒已经过头了。
+//
+// 提交回来的是同一种写法，由 couponFormTimeValue（coupon_page_query.go）归一化成服务端的
+// 解析布局 —— 「控件格式 ↔ 服务端口径」之间的转换只有那一处，且只有一份。
 func couponFormTime(at *time.Time) string {
 	if at == nil {
 		return ""
 	}
-	return at.Local().Format("2006-01-02 15:04")
+	local := at.Local()
+	if local.Second() != 0 {
+		return local.Format("2006-01-02T15:04:05")
+	}
+	return local.Format("2006-01-02T15:04")
 }
 
 // couponToggleStatus 停用 / 启用目标值：生效的券给出停用（0），其余给出启用（1）。

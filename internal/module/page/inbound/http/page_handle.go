@@ -100,11 +100,22 @@ func (h *Handle) Build(c *gin.Context) {
 	response.SuccessWithMessage(c, pageenums.MsgBuildReady, res)
 }
 
-// Publish 激活暂存产物。
+// Publish 激活暂存产物；allLangs=true 时一键发布全部启用语言（按语言逐条聚合结果）。
 func (h *Handle) Publish(c *gin.Context) {
 	var req pagedto.PublishReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ParamError(c, pageenums.ErrInvalidParam)
+		return
+	}
+	if req.AllLangs {
+		// 一键发布全部启用语言：进了编排就返回 200，失败明细按语言逐条在
+		// results 里（单语言失败不阻断其余语言，与 rebuildPage 同一口径）。
+		res, err := h.svc.PublishAllLanguages(c.Request.Context(), &req)
+		if err != nil {
+			response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
+			return
+		}
+		response.SuccessWithMessage(c, pageenums.MsgPublished, res)
 		return
 	}
 	res, err := h.svc.Publish(c.Request.Context(), &req)

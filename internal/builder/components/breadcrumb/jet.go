@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/seo"
 )
 
 // CompileCSS 导出面包屑样式编译（复用 render 内部的 compileCSS）。
@@ -194,6 +195,12 @@ func itemViews(items []Item, sep string, siteLink func(string) string) []ItemVie
 		raw := strings.TrimSpace(it.URL)
 		if raw != "" && siteLink != nil {
 			raw = siteLink(raw)
+		} else if raw != "" {
+			// 派生模式（按当前路径自动生成层级）拿到的是**已本地化的站内路径**，
+			// 不走 siteLink 是对的（再本地化一次会把 /en/blog 变成 /en/en/blog），
+			// 但仍然要补站点基址 —— 漏掉这一支的表现是「面包屑的首页与中间层级仍是
+			// 根相对路径」，而同一页的导航已经绝对了，属于最难发现的那类不一致。
+			raw = seo.AbsoluteSiteURL(raw)
 		}
 		iv := ItemView{
 			Label:   strings.TrimSpace(it.Label),

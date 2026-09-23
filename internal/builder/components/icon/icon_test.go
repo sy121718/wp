@@ -43,13 +43,23 @@ func TestBuildViewIcon(t *testing.T) {
 		}
 	}
 	// 空图标名兜底 star。
-	if v := BuildView(&Props{}); v.IconSVG != builtinIcons[defaultIconName] {
+	if v := BuildView(&Props{}); v.IconSVG != mustIconPath(t, defaultIconName) {
 		t.Errorf("空图标名应兜底 star, got %q", v.IconSVG)
 	}
 	// 未知图标名兜底 star。
-	if v := BuildView(&Props{IconName: "nope"}); v.IconSVG != builtinIcons[defaultIconName] {
+	if v := BuildView(&Props{IconName: "nope"}); v.IconSVG != mustIconPath(t, defaultIconName) {
 		t.Errorf("未知图标名应兜底 star, got %q", v.IconSVG)
 	}
+}
+
+// mustIconPath 取白名单图标的内部元素（测试辅助）。
+func mustIconPath(t *testing.T, name string) string {
+	t.Helper()
+	p, ok := iconPath(name)
+	if !ok {
+		t.Fatalf("图标 %q 不在白名单", name)
+	}
+	return p
 }
 
 // TestCompileCSS 图标样式编译：默认尺寸/颜色与覆盖。

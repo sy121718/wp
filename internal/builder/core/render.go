@@ -137,6 +137,17 @@ type RenderContext struct {
 	// nil = 不收集（片段渲染 RenderNodeHTML、单测直连组件）：此时 UseAttr / UseClass
 	// 是空操作，组件不必自己判断 —— 见 core.FeatureReporter 的说明。
 	Features *FeatureSet
+	// CanvasSlotFrames 是否为结构槽位节点输出「画布标记层」（编辑器画布专用）。
+	//
+	// 为什么要这个开关：槽位展开成功时模板**不产出 wrapper** —— 这是 VIS-001 立的规矩，
+	// 槽位展开的产物字节必须与「把块内容直接写在页面里」逐字节一致。但编辑器画布需要
+	// 认得出「这一段来自站点结构的页眉 / 页脚」：展开后的节点 ID 带 __layout_<slot>-b-
+	// 前缀，AST 里根本不存在对应节点，画布 findNode 永远查不到它 —— 于是页眉在画布里
+	// 是一团既选不中、也没有归口的 DOM，只能靠人脑记「这大概是页眉」。
+	//
+	// 只由工作台编辑器预览（?editor=1）打开。发布路径与普通预览恒为 false：
+	// 它不是渲染元信息而是给编辑器看的，混进产物就破坏了上面那条逐字节约定。
+	CanvasSlotFrames bool
 }
 
 // LocaleLink 语言切换器条目（构建期数据，core.languages 消费）。

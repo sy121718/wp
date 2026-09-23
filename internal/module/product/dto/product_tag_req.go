@@ -44,10 +44,18 @@ type GetTagReq struct {
 }
 
 // ListTagReq 标签列表（按工程过滤；kind 为空表示手工与自动都要）。
+//
+// Page / Size 是**新增的可选分页字段**：两个都是零值时语义与加字段前一致 —— 取全部
+//（重算回执的标签清单、商品页的标签勾选项都要全量）。后台标签页显式给出两者，
+// 分页下推到 model 的 LIMIT/OFFSET（见 service 的 optionalPaging）。
 type ListTagReq struct {
 	ProjectID string `form:"projectId"`
 	Kind      string `form:"kind"`
 	Keyword   string `form:"keyword"`
+	// Page 从 1 开始（<=0 且 Size 也为 0 时不传分页）。
+	Page int `form:"page"`
+	// Size 每页条数（<=0 时用服务端默认；超过上限按上限截断，不由调用方决定）。
+	Size int `form:"size"`
 }
 
 // ListTagProductsReq 查某标签命中的商品（验收 4：后台可查看某标签命中哪些商品）。

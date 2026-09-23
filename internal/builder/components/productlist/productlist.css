@@ -38,6 +38,13 @@
   }
 }
 
+/* 分类树窄屏：缩进降半，字号不降（可读性优先）。 */
+@media (max-width: 767px) {
+  & .sky-product-list-node-children {
+    padding-left: .7em;
+  }
+}
+
 & .sky-product-list-filters {
   flex: 0 0 min(100%, 16rem);
   display: flex;
@@ -90,12 +97,29 @@
   cursor: not-allowed;
 }
 
+/* 工具栏：源站是**一行**（视图图标 · 只看在售 · 排序▾ · 每页▾），
+   排序与每页靠右。
+
+   原先模板把排序 / 每页 / 视图 / 在售各渲染成一个独立的 .sky-product-list-toolbar，
+   每个都带 margin-bottom —— 于是四条横排叠成四行（实测截图里就是那样）。
+   一个 toolbar 包住四个 tool，再把排序推右。 */
 & .sky-product-list-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 14px;
+  gap: 14px 18px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+
+/* 排序工具推右（源站「Sort by」在右侧）；同一行的其余工具留在左边。 */
+& .sky-product-list-tool + .sky-product-list-tool {
+  margin-left: 0;
+}
+
+& .sky-product-list-toolbar > .sky-product-list-tool:first-child {
+  margin-right: auto;
 }
 
 & .sky-product-list-tool {
@@ -185,9 +209,44 @@
   overflow: hidden;
   height: 100%;
   min-width: 0;
+  /* 源站的卡片是**无边框、浅灰图区**的形态：图片坐在浅灰底上，
+     卡片本身不加边框与描边 —— 一屏几十张卡时，描边会把版面割碎。 */
   background: var(--sky-c-surface, #fff);
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1));
-  border-radius: 12px;
+}
+
+/* 图区：浅灰底 + 折扣角标定位基准。 */
+& .sky-product-list-thumb {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--sky-c-bg-soft, #f4f5f6);
+}
+
+& .sky-product-list-thumb img {
+  display: block;
+  width: min(100%, 100%);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+/* 折扣角标：源站是蓝色胶囊压在图左上角（#0084ff / 白字 / 12px / 圆角 5px）。 */
+& .sky-product-list-discount {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 5px;
+  /* 底色比品牌主色深一档：白字对比 5.4:1（#0084ff 只有 3.66:1，12px 小字不达标）。 */
+  background: var(--sky-c-primary-deep, #0068cc);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 /* 列表布局独有: 卡片横排 + 图片固定列. 两条规则整块随 isList 存废. */
@@ -316,4 +375,142 @@
 
 @active & .sky-product-list-item {
   box-shadow: none;
+}
+
+@active & .sky-product-list-node-label {
+  opacity: .72;
+}
+
+/* ===== 分类树（filter tree）=====
+   设计基线（对齐源站 loobek 侧栏 + --sky-c-* token）：
+   · chevron 用 CSS border 画（矢量、随字号缩放），summary 默认 marker 全关；
+   · 子级带引导竖线，层级一眼可读；勾选框列垂直对齐；
+   · 行高 ≈ 30px，点击热区整行（≥24px 触达下限）；
+   · 三态框：all = 主色对勾 / partial = 主色横线 / none = 空框。 */
+
+& .sky-product-list-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+& .sky-product-list-node {
+  list-style: none;
+  min-width: 0;
+}
+
+/* summary 一行：chevron + 勾选框 + 文字；默认 marker 全关。 */
+& .sky-product-list-node-caret-row {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  cursor: pointer;
+  min-width: 0;
+  padding: .18em .25em;
+  border-radius: 6px;
+}
+
+& .sky-product-list-node-caret-row::-webkit-details-marker {
+  display: none;
+}
+
+& .sky-product-list-node-caret-row::marker {
+  content: '';
+}
+
+/* 无子级的顶层叶子：补 chevron 占位，勾选框与父级对齐。 */
+& .sky-product-list-tree > .sky-product-list-node > .sky-product-list-node-label {
+  margin-left: 1.62em;
+}
+
+/* 折叠图标：基座图标库 SVG（feather 风格，stroke=currentColor），展开旋转 90°。 */
+& .sky-product-list-node-caret {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  transition: transform .16s ease;
+}
+
+& .sky-product-list-node-group[open] .sky-product-list-node-caret {
+  transform: rotate(90deg);
+}
+
+/* 行内链接。 */
+& .sky-product-list-node-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: .5em;
+  padding: .32em .45em;
+  border-radius: 6px;
+  color: inherit;
+  font-size: .95em;
+  line-height: 1.5;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* 勾选框：原生控件 + accent-color（品牌蓝随 token 走）。
+   pointer-events:none —— 点击穿透给整行链接，勾选态由服务端按级联结果算好。 */
+& .sky-product-list-node-box {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--sky-c-primary, #0084ff);
+  pointer-events: none;
+}
+
+/* 半选：子树里选了一部分 —— 原生 indeterminate 需要 JS，这里用行文字主色
+   + 框内横线（画在包层的 ::before 上）表达。 */
+& .sky-product-list-node-label[aria-checked="partial"] .sky-product-list-node-box {
+  border-color: var(--sky-c-primary, #0084ff);
+}
+
+/* 单选（data-multi=off）：不渲染勾选框，选中项用浅底 + 主色文字表达。 */
+& [data-multi="off"] .sky-product-list-node-label[aria-checked="all"] {
+  background: rgba(0, 132, 255, .08);
+}
+
+/* 子级：引导竖线 + 缩进；勾选框列与父级垂直对齐。 */
+& .sky-product-list-node-children {
+  list-style: none;
+  margin: 0 0 0 .62em;
+  padding: 0 0 0 .95em;
+  border-left: 1px solid var(--sky-c-border, #e5e5e5);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 键盘焦点环（不依赖 hover，触屏/键盘同样成立）。 */
+& .sky-product-list-node-label:focus-visible {
+  outline: 2px solid var(--sky-c-primary, #0084ff);
+  outline-offset: 1px;
+}
+
+& .sky-product-list-node-caret-row:focus-visible {
+  outline: 2px solid var(--sky-c-primary, #0084ff);
+  outline-offset: -1px;
+}
+
+/* 按压反馈（不包媒体查询，触屏按下同样触发）。 */
+@active & .sky-product-list-node-label {
+  opacity: .72;
+}
+
+/* 窄屏：缩进降半。 */
+@media (max-width: 767px) {
+  & .sky-product-list-node-children {
+    margin-left: .4em;
+    padding-left: .7em;
+  }
+  & .sky-product-list-tree > .sky-product-list-node > .sky-product-list-node-label {
+    margin-left: 1.5em;
+  }
 }

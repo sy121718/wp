@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"go_wp/internal/builder"
-	workbenchenums "go_wp/internal/module/workbench/enums"
 	"go_wp/internal/templates"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -152,13 +152,18 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	}
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchenums.MsgInternalError)
+		// 文案来源受控：c.String 不经过 pkg/response 的翻译层，旧写法直接把
+		// workbenchenums.MsgInternalError（裸 key）当响应体写出去，前端拿到的是那串英文
+		// 而不是提示语。出口形态保持 text/plain 不变 —— 前端是 fetch → r.text() → morphHTML，
+		// 不检查 r.ok，换成 JSON 反而会把一段 JSON 铺进面板。
+		c.String(http.StatusInternalServerError, shell.PageInternalText(c))
 		return
 	}
 	var items []inspectorSchemaItem
 	if raw, ok := schemas[node.Type]; ok {
 		if err = json.Unmarshal(raw, &items); err != nil {
-			c.String(http.StatusInternalServerError, workbenchenums.MsgInternalError)
+			// 同上：归口译文，形态不变。
+			c.String(http.StatusInternalServerError, shell.PageInternalText(c))
 			return
 		}
 	}

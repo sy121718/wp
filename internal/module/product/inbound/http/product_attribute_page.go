@@ -27,7 +27,7 @@ import (
 // attrRowPrefix 属性值行的表单字段前缀（values[0].id → "values[0]."）。
 const attrRowPrefix = "values["
 
-// ProductAttributesPage 属性管理页：工程切换 + 属性组列表 + 值编辑器 + 内联新建表单。
+// ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
@@ -39,37 +39,97 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	rows := make([]gin.H, 0, 50)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	// Variation 取值 ""（全部）/ "1"（参与变体）/ "0"（不参与），与 service 的
+	// ListAttributeReq.Variation 同一套值，也与表格里「变体」列的口径一致。
+	variation := strings.TrimSpace(c.Query("variation"))
+	if variation != "1" && variation != "0" {
+		variation = ""
+	}
+	page := productPageNumber(c.Query("page"))
+	// 属性组列表：分页**下推到 service**（ListAttributeReq 自带 Page/Size），总数由契约的
+	// CountAttributes 给出 —— handler 不再「逐页拉满拿全量再切片」，也不再为了凑出 total
+	// 而多发若干次查询（上一轮的 listAllAttributes）。
+	//
+	// 顺序是**先计数再取页**：反过来（先取第 N 页再数总数）时，越界页码会让 service 返回空页，
+	// 而分页条按收敛后的页码渲染 —— 「表格为空、分页条却显示第 2 页」正是
+	// product_list_paging_test.go 要挡的那种自相矛盾组合。两次查询的条数一样，不额外付代价。
+	total := int64(0)
+	rows := []gin.H{}
+	// 抽屉表单片段需要的数据：csrf 与取词函数 t —— 片段是**带参数 include** 的
+	//（数据是每个抽屉自己的数据类，不是页面 data），取不到 shell.Prepare 注入的页面键，
+	// 所以两者必须由这里显式给（与失败重渲染走同一对入口，见 attrFormCSRF / TranslateFor）。
+	csrf := attrFormCSRF(c)
+	tr := shell.TranslateFor(c)
 	if selected != "" {
-		list, lerr := h.products.ListAttributes(ctx, &productdto.ListAttributeReq{ProjectID: selected, Size: 200})
+		// 过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size，
+		// 两处口径分叉（关键词 / variation 只归一在一侧）在这里是不可能的。
+		filterReq := &productdto.ListAttributeReq{ProjectID: selected, Keyword: keyword, Variation: variation}
+		n, cerr := h.products.CountAttributes(ctx, filterReq)
+		if cerr != nil {
+			shell.PageError(c, "product_attribute", cerr)
+			return
+		}
+		total = n
+		page = clampPageToTotal(page, productSubListPageSize, total)
+		listReq := *filterReq
+		listReq.Page, listReq.Size = page, productSubListPageSize
+		list, lerr := h.products.ListAttributes(ctx, &listReq)
 		if lerr != nil {
 			shell.PageError(c, "product_attribute", lerr)
 			return
 		}
+		rows = make([]gin.H, 0, len(list))
 		for _, a := range list {
+			// 两个抽屉表单（编辑属性组 / 保存属性值）的实例数据：与失败重渲染**同形**
+			//（同一个 attrRowDrawerForms），本页只负责把它们挂到行上供 <template> 里的
+			// include 取用 —— 两处各拼一份必然分叉，而分叉只会在失败路径上缺键、静默截断整页。
+			editForm, valuesForm := attrRowDrawerForms(csrf, selected, tr, a)
 			rows = append(rows, gin.H{
 				"ID": a.ID, "Key": a.Key, "Name": a.Name,
 				"IsVariation": a.IsVariation, "Sort": a.Sort,
 				"ValueCount": a.ValueCount,
-				// RowsCtx 是值编辑器片段（include）的数据类：
-				// 容器 id 按约定 attr-values-<GroupID>，片段据此定位 hx-target。
-				"RowsCtx": attrRowsCtx{GroupID: a.ID, Rows: a.Values},
+				"EditForm":   editForm, "ValuesForm": valuesForm,
 			})
 		}
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
-	c.HTML(http.StatusOK, "admin/product_attributes.html", shell.Prepare(c, gin.H{
+	data := gin.H{
 		"title":           "商品属性",
 		"menu":            "product-attributes",
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Attributes":      rows,
-		"NewRowsCtx":      attrRowsCtx{GroupID: "new", Rows: nil},
+		// 页头与空态两个「新建属性组」入口共用同一个抽屉（tpl-attr-create），
+		// 抽屉内容来自共享片段，本键是它这一实例的数据（见 attrCreateDrawerForm）。
+		"AttrCreateForm": attrCreateDrawerForm(csrf, selected, tr),
+		// 筛选回显（GET 表单的 value / selected）+ 空态分档依据：
+		// 「筛出来是空的」与「这个工程本来就没有属性组」必须给不同文案。
+		"FilterKeyword":   keyword,
+		"FilterVariation": variation,
+		"Filtered":        keyword != "" || variation != "",
 		// 读侧一律过白名单（product_err.go）：查询参数不是可信边界。
 		"Err": productPageErr(c),
 		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductAttributesBulkDelete）。
 		"Done": productPageDone(c),
-	}))
+	}
+	// 分页条（shell 组件，服务端渲染）：基地址带上关键词与变体筛选，翻页不丢条件；
+	// 单页或空数据时 BuildPagination 返回 nil，TemplateKeys 给空 map，模板自然不渲染。
+	for k, v := range shell.BuildPagination(total, page, productSubListPageSize,
+		productListBaseURL("/admin/product-attributes", attributeListFilterQuery(selected, keyword, variation)),
+		shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/product/product_attributes.html", shell.Prepare(c, data))
+}
+
+// attributeListFilterQuery 属性页的筛选条件（project + keyword + variation）。
+func attributeListFilterQuery(projectID, keyword, variation string) url.Values {
+	q := listFilterQuery(projectID, keyword)
+	if variation != "" {
+		q.Set("variation", variation)
+	}
+	return q
 }
 
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。
@@ -95,7 +155,7 @@ func (h *productPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	if groupID == "" {
 		groupID = "new"
 	}
-	c.HTML(http.StatusOK, "admin/partials/product_attribute_rows.html", attrRowsCtx{
+	c.HTML(http.StatusOK, "admin/product/product_attribute_rows.html", attrRowsCtx{
 		GroupID: groupID,
 		Rows:    rowsToResp(rows),
 	})
@@ -194,16 +254,24 @@ func attrRowsFromForm(c *gin.Context) []productdto.AttributeValueReq {
 		if label == "" && id == "" && key == "" {
 			continue
 		}
-		enabled := reqs.Get(base+"enabled") != ""
+		// enabled 也是「同名隐藏域打底 + 复选框」（hidden "0" 恒在，勾选时再追加 "1"）：
+		// 判据必须是**值里存在 "1"**，按「字段是否存在」判会恒真、禁用永远不生效；
+		// 字段完全没出现时保持 nil，交由 service 兜底为启用（见 attrFormOptionalChecked）。
 		rows = append(rows, productdto.AttributeValueReq{
 			ID: id, Key: key, Label: label,
-			Sort: parseIntOr(reqs.Get(base+"sort"), 0), Enabled: &enabled,
+			Sort:    parseIntOr(reqs.Get(base+"sort"), 0),
+			Enabled: attrFormOptionalChecked(reqs, base+"enabled"),
 		})
 	}
 	return rows
 }
 
 // ProductAttributesCreate 新建属性组，完成后回到列表。
+//
+// 分档（路径 A 渐进增强，口径见 product_attribute_page_util.go）：
+//   - 失败：htmx 档 200 + 回填片段（错误槽 + 用户刚填的字段与值行），原生档 302 + ?err=；
+//   - 成功：redirectWhere —— htmx 的 XHR 会自己跟随 302，最终响应里读不到 Location，
+//     整页 HTML 会被塞进抽屉里，只有 HX-Redirect 能让它整页跳转。
 func (h *productPageHandle) ProductAttributesCreate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	req := &productdto.CreateAttributeReq{
@@ -213,47 +281,55 @@ func (h *productPageHandle) ProductAttributesCreate(c *gin.Context) {
 		Sort:      parseIntOr(c.PostForm("sort"), 0),
 		Values:    attrRowsFromForm(c),
 	}
-	// 复选框未勾选时浏览器不发字段，不能与「没给」区分 —— 表单里用同名隐藏域打底，
-	// 这里按字符串判别：隐藏域为 "0"，勾选后同名字段变 "1"。
-	isVariation := c.PostForm("isVariation") == "1"
+	// 「参与变体」是**同名隐藏域打底 + 复选框**：浏览器把 hidden(0) 与 checkbox(1) 都提交，
+	// 按第一个值判（c.PostForm）会恒取到 "0" —— 用户的勾选被静默丢弃（页面照样 200）。
+	// 判据见 formValueHas（按值命中）。
+	isVariation := attrFormChecked(c, "isVariation")
 	req.IsVariation = &isVariation
 	if _, err := h.products.CreateAttribute(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.attrGroupFormFail(c, attrGroupModeCreate, projectID, "new", productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
+	redirectWhere(c, productAttributeListURL(projectID, ""))
 }
 
 // ProductAttributesUpdate 修改属性组本身（名称 / 标识 / 参与变体 / 排序）。
+//
+// 失败与成功的分档口径同 ProductAttributesCreate（编辑抽屉同样会丢用户刚改的字）。
 func (h *productPageHandle) ProductAttributesUpdate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	id := c.PostForm("id")
 	name := strings.TrimSpace(c.PostForm("name"))
 	key := strings.TrimSpace(c.PostForm("key"))
-	isVariation := c.PostForm("isVariation") == "1"
+	// 勾选判据同上（隐藏域打底，按值命中）。
+	isVariation := attrFormChecked(c, "isVariation")
 	sortV := parseIntOr(c.PostForm("sort"), 0)
 	req := &productdto.UpdateAttributeReq{
 		ID: id, Name: &name, Key: &key, IsVariation: &isVariation, Sort: &sortV,
 	}
 	if _, err := h.products.UpdateAttribute(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.attrGroupFormFail(c, attrGroupModeEdit, projectID, id, productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
+	redirectWhere(c, productAttributeListURL(projectID, ""))
 }
 
 // ProductAttributesSetValues 整体保存属性值（表单上已有的行就是全部值）。
+//
+// 失败时回填的是**用户刚编辑的那几行**（attrRowsFromForm 保序重建，与保存路径同一归一），
+// 而不是库里的旧值 —— 整表替换语义下，「库里旧值」正是用户想改掉的东西。
 func (h *productPageHandle) ProductAttributesSetValues(c *gin.Context) {
 	projectID := c.PostForm("projectId")
+	groupID := c.PostForm("id")
 	req := &productdto.SetAttributeValuesReq{
-		ID:     c.PostForm("id"),
+		ID:     groupID,
 		Values: attrRowsFromForm(c),
 	}
 	if _, err := h.products.SetAttributeValues(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.attrValuesFormFail(c, projectID, groupID, productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-attributes?project="+projectID)
+	redirectWhere(c, productAttributeListURL(projectID, ""))
 }
 
 // ProductAttributesDelete 删除属性组（被商品引用时服务端拒绝）。

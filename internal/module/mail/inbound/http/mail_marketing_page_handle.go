@@ -22,46 +22,112 @@ import (
 // mailMarketingPageSize 联系人 / 活动每页条数。
 const mailMarketingPageSize = 50
 
+// mailMarketingClampPage 把页码收敛到两张表都有效的范围（取两者中更小的最大页号）。
+//
+// 为什么需要它：本页两张表共用 ?page=（分页组件的链接参数名写死 page/limit，同一页里
+// 无法给两张表各带一个页码），而 mail 服务端分页**不收敛** —— 页码越界时返回的是
+// 「空列表 + 真实 total」（见 service/mail_contact.go 与 mail_campaign.go 的 offset 计算）。
+// 不收敛就会把「有 3 个活动、只是页码落到第 5 页」渲染成「还没有活动」的空态，
+// 而那句话是错的。收敛后两张表的页码、数据与分页条三者自洽。
+//
+// 两张表都没有数据时收敛到第 1 页：此时页码没有任何含义（分页条也不会渲染），
+// 留着 ?page=7 只是把一个无效状态写进 URL。
+func mailMarketingClampPage(page int, totals ...int64) int {
+	if page < 1 {
+		page = 1
+	}
+	maxPage := 0
+	for _, total := range totals {
+		if total <= 0 {
+			continue
+		}
+		pages := int((total + mailMarketingPageSize - 1) / mailMarketingPageSize)
+		if pages < 1 {
+			pages = 1
+		}
+		if maxPage == 0 || pages < maxPage {
+			maxPage = pages
+		}
+	}
+	if maxPage == 0 {
+		return 1
+	}
+	if page > maxPage {
+		return maxPage
+	}
+	return page
+}
+
 // MailMarketingPage 联系人与群发活动页。
 func (h *mailPageHandle) MailMarketingPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	page := int(shell.ParseUint(c.Query("page")))
-	if page <= 0 {
-		page = 1
-	}
+	page := mailPageNumber(c.Query("page"))
+	keyword, status := c.Query("keyword"), c.Query("status")
+
 	contacts, err := h.mail.ListContacts(ctx, &maildto.ContactFilterReq{
-		Keyword:  c.Query("keyword"),
-		Status:   c.Query("status"),
+		Keyword:  keyword,
+		Status:   status,
 		Page:     page,
 		PageSize: mailMarketingPageSize,
 	})
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
+		c.HTML(http.StatusOK, "admin/mail/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
 		return
 	}
-	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: 1, PageSize: mailMarketingPageSize})
+	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailMarketingPageSize})
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
+		c.HTML(http.StatusOK, "admin/mail/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
 		return
+	}
+	// 页号收敛（见 mailMarketingClampPage）：越界时用收敛后的页码重取一次。
+	// 只在越界这一种情况下多两次查询，正常翻页仍然是原来的两次。
+	if fixed := mailMarketingClampPage(page, contacts.Total, campaigns.Total); fixed != page {
+		page = fixed
+		if contacts, err = h.mail.ListContacts(ctx, &maildto.ContactFilterReq{
+			Keyword: keyword, Status: status, Page: page, PageSize: mailMarketingPageSize,
+		}); err != nil {
+			c.HTML(http.StatusOK, "admin/mail/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
+			return
+		}
+		if campaigns, err = h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{
+			Page: page, PageSize: mailMarketingPageSize,
+		}); err != nil {
+			c.HTML(http.StatusOK, "admin/mail/mail_marketing.html", shell.Prepare(c, mailMarketingErrData(c, err)))
+			return
+		}
 	}
 	accounts, _ := h.mail.ListAccounts(ctx, "")
 	templates, _ := h.mail.ListTemplates(ctx, "")
-	c.HTML(http.StatusOK, "admin/mail_marketing.html", shell.Prepare(c, gin.H{
-		"title":        "邮件营销",
-		"Contacts":     contacts.Items,
-		"ContactTotal": contacts.Total,
-		"Campaigns":    campaigns.Items,
-		"Accounts":     accounts,
-		"Templates":    templates,
-		"Page":         page,
-		"Keyword":      c.Query("keyword"),
-		"Status":       c.Query("status"),
+
+	data := shell.Prepare(c, gin.H{
+		"title":         "邮件营销",
+		"Contacts":      contacts.Items,
+		"ContactTotal":  contacts.Total,
+		"Campaigns":     campaigns.Items,
+		"CampaignTotal": campaigns.Total,
+		"Accounts":      accounts,
+		"Templates":     templates,
+		"Page":          page,
+		"Keyword":       keyword,
+		"Status":        status,
 		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
 		"Err": mailPageErr(c),
 		"Ok":  mailPageOk(c),
 		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。模板用 isset 认这个可选键。
 		"Done": mailPageDone(c),
-	}))
+	})
+	// 两张表的分页数据分开命名（Contacts* / Campaigns*）：模板两次 include 分页片段时
+	// 各传一份 context。基地址带上筛选，翻页才能保留筛选条件（否则翻到第 2 页就回到全量）。
+	base := shell.FilterBaseURL("/admin/mail/marketing", map[string]string{"keyword": keyword, "status": status})
+	for k, v := range shell.BuildPagination(contacts.Total, page, mailMarketingPageSize,
+		base, shell.TranslateFor(c)).TemplateKeys() {
+		data["Contacts"+k] = v
+	}
+	for k, v := range shell.BuildPagination(campaigns.Total, page, mailMarketingPageSize,
+		base, shell.TranslateFor(c)).TemplateKeys() {
+		data["Campaigns"+k] = v
+	}
+	c.HTML(http.StatusOK, "admin/mail/mail_marketing.html", data)
 }
 
 // mailMarketingErrData 取数失败时的页面数据：归口文案 + 让模板能整页渲染完的空值。
@@ -169,24 +235,55 @@ func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
 //
 // 页面上把「打开率是估算」写清楚：多数客户端默认不加载图片（漏报），Apple Mail 还会代理预取
 // （虚高）。点击 / 退信 / 退订这三个数是准的，运营决策该靠它们。
+//
+// **缺 id 前置判定（审计 P0）**：本页同时是 sys_menus 里的正式菜单项
+// （id=137「邮件活动」→ /admin/mail/campaign，path 不带参数），所以「没带 id」不是异常输入，
+// 而是**点菜单的常规路径**。改前它直接调 service，靠查询失败兜底 —— 运营点菜单必看到
+// 「参数不合法」，而本页没有任何参数可改（用户无出路）。
+//
+// 缺 id 的处理：回营销页（活动列表就在那里）并带一句**指名去哪选**的引导文案，
+// 而不是静默 302（静默弹回才会让菜单看起来是坏的）。
+// 为什么不就地渲染一张引导页：本页模板 mail_campaign.html 以完整报表数据为前提
+// （`{{r := .R}}` → `{{c := r.Campaign}}`），无数据即整页中断（HTTP 仍是 200、正文整块消失）——
+// 在缺少数据时渲染它等于给运营一张白页。
 func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	id := shell.ParseUint(c.Query("id"))
-	page := int(shell.ParseUint(c.Query("page")))
-	if page <= 0 {
-		page = 1
+	id, hasID := mailQueryID(c)
+	if !hasID {
+		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailCampaignIDRequiredText))
+		return
 	}
+	page := mailPageNumber(c.Query("page"))
 	report, err := h.mail.CampaignReport(ctx, id, page, mailMarketingPageSize)
 	if err != nil {
 		c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.HTML(http.StatusOK, "admin/mail_campaign.html", shell.Prepare(c, gin.H{
+	// 页号收敛：报表服务端不收敛（页码越界时收件人明细为空、Total 仍是真值），
+	// 不处理会把「这条活动有 300 个收件人、只是页码落到第 9 页」渲染成
+	// 「还没有投递记录」的空态，同时分页条还显示第 9 页 —— 两者自相矛盾。
+	if report.Total > 0 {
+		if maxPage := int((report.Total + mailMarketingPageSize - 1) / mailMarketingPageSize); page > maxPage {
+			page = maxPage
+			if report, err = h.mail.CampaignReport(ctx, id, page, mailMarketingPageSize); err != nil {
+				c.Redirect(http.StatusFound, "/admin/mail/marketing?err="+urlQueryEscape(mailErrPageText(c, err)))
+				return
+			}
+		}
+	}
+	data := shell.Prepare(c, gin.H{
 		"title": "活动报表",
 		"R":     report,
 		"Page":  page,
 		"Err":   mailPageErr(c),
-	}))
+	})
+	// 收件人明细的分页条：baseURL 带上 id，翻页时不会丢掉「在看哪条活动」。
+	// 键名与 partials/pagination.html 读的键一致（该片段在这里用无参 include 渲染）。
+	for k, v := range shell.BuildPagination(report.Total, page, mailMarketingPageSize,
+		fmt.Sprintf("/admin/mail/campaign?id=%d", id), shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/mail/mail_campaign.html", data)
 }
 
 // MailCampaignReportJSON 报表数据接口（图表 / 外部核对用同一份口径）。

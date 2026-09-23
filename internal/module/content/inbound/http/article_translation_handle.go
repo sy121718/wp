@@ -88,7 +88,7 @@ func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
 			data.SavedNote = "没有需要写入的变化。"
 		}
 	}
-	c.HTML(http.StatusOK, "admin/article_translations.html", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 }
 
 // SaveArticleTranslations POST /admin/articles/translations/save（整表提交）。
@@ -103,12 +103,12 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
 		data.Errors = []string{"提交的行数不一致，请刷新后重试"}
-		c.HTML(http.StatusOK, "admin/article_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if h.writer == nil {
 		data.Errors = []string{"译文存储不可用"}
-		c.HTML(http.StatusOK, "admin/article_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 
@@ -145,7 +145,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	}
 	if len(rowErrors) > 0 {
 		data.Errors = rowErrors
-		c.HTML(http.StatusOK, "admin/article_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if len(items) == 0 {
@@ -184,7 +184,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 				Error(uerr, "写入文章译文失败")
 			// 这一处已记过带 lang 的日志：文案出口用不记日志的版本，避免同一错误记两条。
 			data.Errors = []string{"保存失败：" + articleFacingOrInternal(c, uerr)}
-			c.HTML(http.StatusOK, "admin/article_translations.html", shell.Prepare(c, data.templateMap()))
+			c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 			return
 		}
 	}

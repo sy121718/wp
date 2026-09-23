@@ -15,6 +15,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
+	blockenums "go_wp/internal/module/block/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
@@ -191,7 +192,7 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 	// 影响面在两种分支（有工程 / 无工程）下都要给：模板是同一份，
 	// 缺这个键会让取值链中断（HTTP 仍 200、后半页整块消失）。
 	data.StaleImpact = h.blockStaleImpact(c.Request.Context())
-	c.HTML(http.StatusOK, "admin/blocks", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/block/blocks", shell.Prepare(c, data.templateMap()))
 }
 
 // CreateBlock 新建全局块（POST /admin/blocks/create），成功后进工作台编辑内容。
@@ -363,13 +364,28 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		ReturnURL string `json:"returnUrl"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.String(http.StatusBadRequest, "参数不合法")
+		// JSON 端点：出口必须是 JSON。调用方是工作台的 saveDraft，它对响应做 r.json()、
+		// 再按 code >= 400 取 message 弹提示；原先的 c.String(400, "参数不合法") 是纯文本，
+		// r.json() 直接 reject 落入 catch —— 用户只看到保存状态变红，一句话提示都没有。
+		// 归口走本包既有的 paramBindFail（400 + 受控文案 + 绑定原文只进 warn 日志）。
+		paramBindFail(c, err)
 		return
 	}
 	// 名称取现值（工作台只改文档）。
 	current, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: req.ID})
-	if err != nil || current == nil {
-		c.String(http.StatusNotFound, "全局块不存在")
+	if err != nil {
+		// 状态码与文案都归口到 REST 出口用的同一份判定（block_http.go）：
+		// 业务错误（块不存在 / 缺工程作用域）→ 各自的状态码 + 模块词条 key（由 response
+		// 按请求语言翻译）；基础设施故障 → 500 + 归口文案，原文只进日志。
+		//
+		// 原先这里是 `if err != nil || current == nil` 一把吞成 404 纯文本：既把
+		// 「读不到库」伪装成「块不存在」，又让整条 JSON 契约断在这里。
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
+		return
+	}
+	if current == nil {
+		// 契约上「Detail 无错」即命中，这是防御分支：静默继续会把一次写操作建在空块上。
+		response.ErrorWithMessage(c, http.StatusNotFound, blockenums.ErrBlockNotFound)
 		return
 	}
 	name := current.Name

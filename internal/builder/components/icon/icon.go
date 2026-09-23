@@ -18,17 +18,31 @@ const Type = "core.icon"
 // 默认图标名（IconName 空时兜底）。
 const defaultIconName = "star"
 
-// builtinIcons 内置白名单图标（24 viewBox，stroke=currentColor，装饰性）。
-// 键与 Props.IconName 的 select 选项一一对应。
-var builtinIcons = map[string]string{
-	"star":        `<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke-linejoin="round"/>`,
-	"heart":       `<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke-linejoin="round"/>`,
-	"check":       `<path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>`,
-	"arrow-right": `<path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>`,
-	"arrow-left":  `<path d="M19 12H5M11 6l-6 6 6 6" stroke-linecap="round" stroke-linejoin="round"/>`,
-	"info":        `<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>`,
-	"close":       `<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>`,
-	"search":      `<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>`,
+// iconNames 组件白名单：编辑器里可选的名字 → 基座图标库（core，lucide 1868 枚）里的名字。
+//
+// 以前这里手写了一份 8 个图标的 path 表 —— 那是**第二份图标库**：同一个箭头
+// 在本组件与基座库里的描边、圆角都不一致，改一处另一处不会跟着变。
+// 现在白名单只声明「哪些图标可选」，路径一律从 core 取。
+//
+// 映射说明：close 在 lucide 里叫 x（同名不同字，映射在这里显式写出）。
+var iconNames = map[string]string{
+	"star":        "star",
+	"heart":       "heart",
+	"check":       "check",
+	"arrow-right": "arrow-right",
+	"arrow-left":  "arrow-left",
+	"info":        "info",
+	"close":       "x",
+	"search":      "search",
+}
+
+// iconPath 取白名单图标的内部元素（来自基座图标库）。
+func iconPath(name string) (string, bool) {
+	lib, ok := iconNames[name]
+	if !ok {
+		return "", false
+	}
+	return core.IconInner(lib)
 }
 
 // Props icon 属性。
@@ -61,7 +75,7 @@ var Widget = core.Atom[Props]{
 // validateExtra 关系性校验：图标名必须在白名单内。
 func validateExtra(p *Props, nodeID string) (err error) {
 	if p.IconName != "" {
-		if _, ok := builtinIcons[p.IconName]; !ok {
+		if _, ok := iconNames[p.IconName]; !ok {
 			return fmt.Errorf("无效的内置图标: %q（仅 star/heart/check/arrow-right/arrow-left/info/close/search）", p.IconName)
 		}
 	}

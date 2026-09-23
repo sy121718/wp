@@ -195,22 +195,8 @@ func (s *Service) GetAttribute(ctx context.Context, req *productdto.GetAttribute
 // 已带出每个组的属性值：后台一张表要同时显示「组 + 值」，分两次查会让
 // 每个组再多一次往返（N+1）。值本身就在本表 JSONB 列里，读出来零成本。
 func (s *Service) ListAttributes(ctx context.Context, req *productdto.ListAttributeReq) (list []*productdto.AttributeResp, err error) {
+	projectID, keyword, variation := attributeFilter(req)
 	page, size := attributePageArgs(req)
-	var variation *bool
-	if req != nil {
-		switch strings.TrimSpace(req.Variation) {
-		case "1":
-			v := true
-			variation = &v
-		case "0":
-			v := false
-			variation = &v
-		}
-	}
-	var projectID, keyword string
-	if req != nil {
-		projectID, keyword = req.ProjectID, strings.TrimSpace(req.Keyword)
-	}
 	rows, err := s.m.ListAttributes(ctx, projectID, keyword, variation, size, (page-1)*size)
 	if err != nil {
 		return nil, err
@@ -220,6 +206,33 @@ func (s *Service) ListAttributes(ctx context.Context, req *productdto.ListAttrib
 		list = append(list, toAttributeResp(r))
 	}
 	return list, nil
+}
+
+// CountAttributes 属性组总数（后台属性页的「共 N 条」与总页数）。
+//
+// **与 ListAttributes 共用同一个 attributeFilter**：Variation 的三态取值（"" / "1" / "0"）
+// 与关键词归一各抄一遍时，抄错的那一侧不报错 —— 只表现为总数与列表条数静默对不上，
+// 而且只在用了那个筛选维度时才看得出来。
+func (s *Service) CountAttributes(ctx context.Context, req *productdto.ListAttributeReq) (n int64, err error) {
+	projectID, keyword, variation := attributeFilter(req)
+	return s.m.CountAttributes(ctx, projectID, keyword, variation)
+}
+
+// attributeFilter 归一属性组列表的过滤条件（ListAttributes / CountAttributes 共用）。
+func attributeFilter(req *productdto.ListAttributeReq) (projectID, keyword string, variation *bool) {
+	if req == nil {
+		return "", "", nil
+	}
+	// 三态字符串 → *bool：只有明确的 "1" / "0" 才过滤，其余（含 ""）不过滤。
+	switch strings.TrimSpace(req.Variation) {
+	case "1":
+		v := true
+		variation = &v
+	case "0":
+		v := false
+		variation = &v
+	}
+	return req.ProjectID, strings.TrimSpace(req.Keyword), variation
 }
 
 // DeleteAttribute 删除属性组。

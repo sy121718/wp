@@ -1,0 +1,176 @@
+{* admin/theme_settings.html — 单主题设置：Woodmart 级全量设计令牌面板
+   版式遵循 theme.css「后台页面骨架」段：标题与主行动进页头，正文零说明文字（说明进 .help）。 *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{* 提交键名严格对齐 backend SaveThemeSettings 的点分约定：
+    colors.* / typography.{heading,body,link}.* / button.* / surface.* / motion.*
+    + 顶层 headerBlockId / footerBlockId。全部值经 IsSafeCSSValue 白名单校验。 *}
+{* 文案走 t(key, 中文兜底)：字段标签与分组标题来自服务端字段表（数据驱动），模板只抽固定文案。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.theme_settings.heading", "主题设置：") }}{{.ThemeName}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.theme_settings.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.theme_settings.notes", "所有设计令牌保存后合入该主题下全部页面的文档（settings.theme），构建产物注入 :root CSS 变量（--sky-c-* 色板、--sky-heading-* / --sky-body-* / --sky-link-* 排版、--sky-btn-* 按钮、--sky-radius / --sky-border-* / --sky-shadow 表面、--sky-tr-duration / --sky-easing 动效）——组件中 var(--sky-*) 全局生效；已发布页面需重新构建才会带新主题。页眉/页脚块在构建页面时编译期内联进产物（访问面保持纯静态），保存后该主题下页面将标记为待重建。没有候选块？先到「全局块」新建页眉/页脚块。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <a class="btn" href="/admin/themes?project={{.ProjectID}}">{{ .["t"]("admin.theme_settings.back", "返回列表") }}</a>
+        </div>
+    </header>
+
+    {* 保存失败提示：校验不通过 / service 拒绝 / 整站刷新失败（部分成功）都 303 回本页并带 ?err=。
+       读侧已过白名单，手拼的 ?err= 落空串 —— 所以这里不会出现「顶着系统样式的伪造消息」。
+       isset 包裹是硬要求：本模板会被不带该键的渲染路径复用（如模板结构测试）。 *}
+    {{if isset(.Err) && .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}
+
+    <section class="card card-body">
+        {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
+           用了 unsafe 输出真实 JSON 到 application/json 脚本块；服务端已由 ParseThemeSettings 校验过值安全。 *}
+        <script type="application/json" id="theme-settings-json">{{ .ThemeSettings | unsafe }}</script>
+        <form method="post" action="/admin/themes/settings/save" class="theme-form form-stack" id="theme-settings-form">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="hidden" name="id" value="{{.ThemeID}}">
+
+            {* 字段由服务端字段表驱动（与工作台全局设置面板同源）：颜色走文本框可留空，固定档位走下拉，
+               字体走可填可选的 datalist —— 用户不用猜格式。
+               颜色**不把 input type=color 当表单字段**：它没有「未设置」状态，空值会被补成 #000000，
+               保存一次就把「跟随内置默认」写成黑色；文本框留空才真的等于跟随默认。
+               取色入口由基座控件补上（js/ui/colorfield.js，data-color-field）：文本框旁一个色块，
+               点开系统取色器、结果写回文本框；留空时色块显示「未设置」。 *}
+            {{range _, g := .Groups}}
+            <h3>{{g.Title}}</h3>
+            <div class="theme-color-grid">
+                {{range _, f := g.Fields}}
+                {{if f.Kind == "select"}}
+                <label>{{f.Label}}
+                    <select name="{{f.Name}}" class="form-select">
+                        {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+                    </select>
+                </label>
+                {{else if f.Kind == "datalist"}}
+                <label>{{f.Label}}
+                    <input type="text" name="{{f.Name}}" class="form-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false">
+                    <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}</datalist>
+                </label>
+                {{else if f.Kind == "color"}}
+                <label>{{f.Label}}
+                    <input type="text" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="{{ .["t"]("admin.theme_settings.color_placeholder", "如 #3d444f；留空 = 内置默认") }}" spellcheck="false">
+                </label>
+                {{else}}
+                <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="form-input" value="{{f.Value}}"></label>
+                {{end}}
+                {{end}}
+            </div>
+            {{end}}
+
+            <h3>{{ .["t"]("admin.theme_settings.global_blocks", "全局页眉 / 页脚块") }}</h3>
+            <div class="theme-color-grid">
+                <label>{{ .["t"]("admin.theme_settings.header_block", "页眉块") }}
+                    <select name="headerBlockId" class="form-select">
+                        {{range _, b := .HeaderBlocks}}
+                        <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{b.Name}}</option>
+                        {{end}}
+                    </select>
+                </label>
+                <label>{{ .["t"]("admin.theme_settings.footer_block", "页脚块") }}
+                    <select name="footerBlockId" class="form-select">
+                        {{range _, b := .FooterBlocks}}
+                        <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{b.Name}}</option>
+                        {{end}}
+                    </select>
+                </label>
+                {* 公告条（审计 VIS-012）：与页眉页脚同一条链路 —— 主题配一次，全站页面生效；
+                   提交键走点分约定 slots.<槽位名>，后端按前缀扫描收，将来加槽位只需在这里多一个 select。
+                   回显由服务端 selected 完成（前端回填脚本只处理 input 与页眉页脚两个 select，不碰它）。 *}
+                <label>{{ .["t"]("admin.theme_settings.announcement_block", "公告条块") }}
+                    <select name="slots.announcement" class="form-select">
+                        {{range _, b := .AnnouncementBlocks}}
+                        <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlock}}selected{{end}}>{{b.Name}}</option>
+                        {{end}}
+                    </select>
+                </label>
+            </div>
+
+            <h3>{{ .["t"]("admin.theme_settings.structure_templates", "结构模板（页眉 / 页脚）") }}</h3>
+            <div class="theme-color-grid">
+                {* 结构模板与块是同一槽位的两条通道：构建期**模板优先**，模板未绑定或解析失败才回退块。
+                   两者都留着不是冗余 —— 选「不绑定」就能回到块绑定，不必重建一套块。
+                   候选里带「当前生效」标注：多套并存时最要紧的就是看出哪套真的在生效。 *}
+                <label>{{ .["t"]("admin.theme_settings.header_template", "页眉模板") }}
+                    <select name="headerTemplateId" class="form-select">
+                        <option value="">{{ .["t"]("admin.theme_settings.structure_none", "（不绑定，用上面的页眉块）") }}</option>
+                        {{if isset(.HeaderTemplateOptions)}}{{range _, o := .HeaderTemplateOptions}}
+                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}{{end}}
+                    </select>
+                </label>
+                <label>{{ .["t"]("admin.theme_settings.footer_template", "页脚模板") }}
+                    <select name="footerTemplateId" class="form-select">
+                        <option value="">{{ .["t"]("admin.theme_settings.structure_none_footer", "（不绑定，用上面的页脚块）") }}</option>
+                        {{if isset(.FooterTemplateOptions)}}{{range _, o := .FooterTemplateOptions}}
+                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}{{end}}
+                    </select>
+                </label>
+            </div>
+            <p class="text-mute text-sm">{{ .["t"]("admin.theme_settings.structure_hint", "结构模板在构建时优先于上面的块；模板未绑定或解析失败时回退到块，页眉不会因此消失。同一类型只允许一套生效，「设为生效」在内容模板列表页。") }}</p>
+            {* 哨兵域：告诉服务端「这次提交带了结构模板区块」——带了就按提交值写回
+               （空值 = 主动解绑），不带（旧表单 / 缺字段）保持已存值。 *}
+            <input type="hidden" name="structureTemplateFields" value="1">
+            {* 其余槽位的模板绑定（当前是公告条等）仍只做原样回传：这些槽位在本页没有下拉，
+               清空它们等于丢掉别处配好的绑定。 *}
+            {{if isset(.SlotTemplates)}}{{range slot, id := .SlotTemplates}}
+            <input type="hidden" name="slotTemplates.{{slot}}" value="{{id}}">
+            {{end}}{{end}}
+
+            <div class="form-inline theme-actions">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>
+            </div>
+        </form>
+    </section>
+</div>
+<script>
+    {* 回显：从内嵌 ThemeSettings JSON 按提交点分键名填充各表单字段 value。
+        无自定义框架，仅原生 DOM。CMS 值安全（服务端已走 IsSafeCSSValue 白名单校验）。 *}
+    (function () {
+        var raw = document.getElementById('theme-settings-json');
+        if (!raw) return;
+        var ts = {};
+        try { ts = JSON.parse(raw.textContent || '{}') || {}; } catch (e) { ts = {}; }
+        // 沿点分路径取内嵌 JSON 值：colors.primary → ts.colors.primary
+        function lookup(obj, path) {
+            var cur = obj;
+            var parts = path.split('.');
+            for (var i = 0; i < parts.length; i++) {
+                if (cur == null) return '';
+                cur = cur[parts[i]];
+            }
+            return (cur == null) ? '' : String(cur);
+        }
+        var form = document.getElementById('theme-settings-form');
+        if (!form) return;
+        var fields = form.querySelectorAll('input[name*="."], select[name="headerBlockId"], select[name="footerBlockId"]');
+        for (var i = 0; i < fields.length; i++) {
+            var el = fields[i];
+            var key = el.getAttribute('name');
+            if (!key) continue;
+            var v = lookup(ts, key);
+            if (v !== '') {
+                if (el.tagName === 'SELECT') {
+                    var opt = el.querySelector('option[value="' + v + '"]');
+                    if (opt) el.value = v;
+                } else {
+                    el.value = v;
+                }
+            }
+        }
+    })();
+</script>
+{{end}}

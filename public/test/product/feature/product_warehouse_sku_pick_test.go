@@ -412,9 +412,10 @@ func TestProductsPageRendersWarehouseSKUPicker(t *testing.T) {
 	engine.GET("/admin/products/new", handle.ProductNewPage)
 
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))
+	// 落点是新建整页：建表单的抽屉已退役（见 getProductsNewPage 的注释）。
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/new?project="+f.projectID, nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("商品列表页应 200，实际 %d", rec.Code)
+		t.Fatalf("商品新建页应 200，实际 %d", rec.Code)
 	}
 	page := rec.Body.String()
 	for _, want := range []string{

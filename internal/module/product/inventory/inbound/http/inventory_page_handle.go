@@ -49,6 +49,12 @@ const (
 	inventoryWarehousesPath   = "/admin/inventory/warehouses"
 	inventoryReasonsPath      = "/admin/inventory/reasons"
 	inventoryMovementPageSize = 50
+	// inventoryMovementMaxPageSize 流水页每页条数的上限（?limit= 的封顶值）。
+	//
+	// 与 service 的 movementMaxPageSize 同口径：超过它的 size 会被 service 自己截到 200，
+	// 页面若允许更大的值，URL 上写着 500 而实际只回 200 —— 表现为「翻页少一截」，
+	// 这类缺陷最难查（页面不报错，只是数据对不上）。所以在入口就按同一个数字封顶。
+	inventoryMovementMaxPageSize = 200
 )
 
 // inventoryPageHandle 库存后台页处理器。
@@ -176,14 +182,16 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	filterReason := strings.TrimSpace(c.Query("reasonCode"))
 	filterTimeFrom := strings.TrimSpace(c.Query("timeFrom"))
 	filterTimeTo := strings.TrimSpace(c.Query("timeTo"))
-	movements, err := h.listMovements(c, selected, sku, filterWarehouse, filterDirection,
-		filterReason, filterTimeFrom, filterTimeTo)
+	// 分页：?page=&limit=，缺省每页 50 条（inventoryMovementPageSize）。
+	page, limit := inventoryPageParams(c, inventoryMovementPageSize, inventoryMovementMaxPageSize)
+	movements, total, page, err := h.listMovements(c, selected, sku, filterWarehouse, filterDirection,
+		filterReason, filterTimeFrom, filterTimeTo, page, limit)
 	if err != nil {
 		shell.PageError(c, "inventory", err)
 		return
 	}
 
-	c.HTML(http.StatusOK, "admin/inventory.html", shell.Prepare(c, gin.H{
+	pageData := gin.H{
 		"title":            "库存管理",
 		"menu":             "inventory",
 		"Projects":         projects,
@@ -208,7 +216,27 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		// 结论回显（PRG）：本页既有写入口用 ?ok=1，行内编辑外部编码用 ?done=1
 		//（其它后台页的写法）—— 两种都认，避免「同一页两种结论参数只有一种会显示」。
 		"Ok": inventoryConclusion(c),
-	}))
+	}
+	// 分页条（shell 组件，服务端渲染）：基址带当前全部筛选维度（工程 / SKU / 变体 / 仓 /
+	// 方向 / 原因 / 时间区间），翻页时不丢条件 —— 丢了条件会让人以为「记录变多了」，
+	// 实际是筛选被清掉。
+	// total 来自契约的 CountMovements（与 ListMovements 同一份过滤条件），因此分页条给的是
+	// 真页码窗口与「共 N 条」，而不是「上一页 / 下一页 + 后面还有记录」这种探测式降级形态。
+	// 单页或空数据时 BuildPagination 返回 nil，TemplateKeys 给空 map，模板自然不渲染。
+	for k, v := range shell.BuildPagination(total, page, limit, shell.FilterBaseURL(inventoryPagePath,
+		map[string]string{
+			"project":     selected,
+			"sku":         sku,
+			"variantId":   variantID,
+			"warehouseId": filterWarehouse,
+			"direction":   filterDirection,
+			"reasonCode":  filterReason,
+			"timeFrom":    filterTimeFrom,
+			"timeTo":      filterTimeTo,
+		}), shell.TranslateFor(c)).TemplateKeys() {
+		pageData[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/inventory/inventory.html", shell.Prepare(c, pageData))
 }
 
 // InventoryWarehousesPage 仓库管理页（从库存主页拆出）。
@@ -233,7 +261,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		shell.PageError(c, "inventory", err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/inventory_warehouses.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouses.html", shell.Prepare(c, gin.H{
 		"title":           "仓库管理",
 		"menu":            "inventory-warehouses",
 		"Projects":        projects,
@@ -269,7 +297,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		shell.PageError(c, "inventory", err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/inventory_reasons.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/inventory/inventory_reasons.html", shell.Prepare(c, gin.H{
 		"title":           "变动原因字典",
 		"menu":            "inventory-reasons",
 		"Projects":        projects,
@@ -677,21 +705,36 @@ func adjustReasonOptions(reasons []gin.H) (out []gin.H) {
 	return out
 }
 
-// listMovements 库存流水列表（按 SKU / 仓库 / 方向 / 原因 / 时间过滤）。
+// listMovements 库存流水列表（按 SKU / 仓库 / 方向 / 原因 / 时间过滤 + 分页）。
+//
+// total 是该过滤条件下的**真实总条数**（契约的 CountMovements，与 ListMovements 同一份
+// 过滤条件）；curPage 是**收敛后**的页码（page 越界时回落到末页）。out 只装本页数据。
 func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, warehouseID,
-	direction, reasonCode, timeFrom, timeTo string) (out []gin.H, err error) {
+	direction, reasonCode, timeFrom, timeTo string, page, limit int) (out []gin.H, total int64, curPage int, err error) {
 	ctx := c.Request.Context()
 	out = []gin.H{}
 	if projectID == "" {
-		return out, nil
+		return out, 0, 1, nil
 	}
-	rows, err := h.inventory.ListMovements(ctx, &inventorydto.ListMovementReq{
+	// 过滤条件只构造一次（profile），列表与计数各自复制、只加各自的 Page/Size：
+	// 两处各写一份过滤条件时，日后新增一个筛选维度只改到列表那一侧，就会出现
+	// 「共 N 条」与实际能翻出来的条数互相矛盾 —— 而这恰恰只在那一维筛选时才暴露。
+	filterReq := &inventorydto.ListMovementReq{
 		ProjectID: projectID, SKUCode: sku, WarehouseID: warehouseID,
 		Direction: direction, ReasonCode: reasonCode,
-		TimeFrom: timeFrom, TimeTo: timeTo, Size: inventoryMovementPageSize,
-	})
+		TimeFrom: timeFrom, TimeTo: timeTo,
+	}
+	// 先计数、收敛页码，再取当页数据（顺序不能反，见 clampInventoryPage）。
+	total, err = h.inventory.CountMovements(ctx, filterReq)
 	if err != nil {
-		return nil, err
+		return nil, 0, page, err
+	}
+	curPage = clampInventoryPage(page, limit, total)
+	listReq := *filterReq
+	listReq.Page, listReq.Size = curPage, limit
+	rows, err := h.inventory.ListMovements(ctx, &listReq)
+	if err != nil {
+		return nil, 0, curPage, err
 	}
 	tr := shell.TranslateFor(c)
 	for _, m := range rows {
@@ -705,7 +748,64 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 			"OperatorID": m.OperatorID, "BatchID": m.BatchID, "CreatedAt": m.CreatedAt,
 		})
 	}
-	return out, nil
+	return out, total, curPage, nil
+}
+
+// —— 列表分页（库存流水 / 货源 / 采购入库三页共用）——
+//
+// 三页原先都是「handler 里写死上限 + 模板里没有分页条」：流水 50 条、货源 200 条、
+// 采购单 100 条，第 N+1 条起**静默消失**（流水按时间倒序，第 51 条之后的老记录永远看不到）。
+//
+// 这里接的是项目既有的分页设施（`partials/pagination.html` + shell.BuildPagination），
+// 与其它列表页共用同一套模板与样式：链接是普通 GET 参数（?page=&limit=），点页码整页刷新，
+// 不引入任何前端状态、不与抽屉脚本耦合。
+//
+// 三个页面各自调一次契约的 CountXxx 取真实总数，因此给的是页码窗口与「共 N 条」。
+// 此前的降级形态（实探第 page+1 页判断「还有没有下一页」+ 只给上一页 / 下一页 + 信息行写
+// 「后面还有记录」）已删除：实探每页多发一次查询，而且拿不到总数就永远给不出页码。
+
+// inventoryPageParams 解析列表页分页参数（?page= / ?limit=）。
+//
+// limit 缺省用各页自己的一页条数，超过 maxSize 按 maxSize 封顶（与 service 的上限同口径）；
+// 非数字 / 非正值一律回落 —— 后台页不因地址栏里一个脏参数而 500。
+func inventoryPageParams(c *gin.Context, defaultSize, maxSize int) (page, limit int) {
+	page = parseIntOr(c.Query("page"), 1)
+	if page < 1 {
+		page = 1
+	}
+	limit = parseIntOr(c.Query("limit"), defaultSize)
+	if limit < 1 {
+		limit = defaultSize
+	}
+	if limit > maxSize {
+		limit = maxSize
+	}
+	return page, limit
+}
+
+// clampInventoryPage 把页码收敛到实际总页数以内（total = 0 时收敛到第 1 页）。
+//
+// 必须在**取数之前**收敛：越界页码（手输 URL、过期书签、上一次筛选残留的 page）直接传给
+// 列表接口时，服务端会老老实实返回一个空页，而分页条按收敛后的页码渲染 ——
+// 「表格为空、分页条却显示第 2 页」这种自相矛盾的组合就是这样来的
+// （shell.BuildPagination 只收敛它自己显示的那一页，不会回头改取数用的页码）。
+//
+// 总数因此必须在取数之前拿到 —— 这三个页面的契约都提供了 CountXxx，本批起不再靠实探。
+func clampInventoryPage(page, limit int, total int64) int {
+	if limit < 1 {
+		limit = inventoryMovementPageSize
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := int((total + int64(limit) - 1) / int64(limit))
+	if pages < 1 {
+		return 1
+	}
+	if page > pages {
+		return pages
+	}
+	return page
 }
 
 // variantOptions 某工程全部商品的变体下拉项（SKU 查询的入口；上限 100 个商品，与商品页一致）。

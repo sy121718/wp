@@ -11,6 +11,7 @@
 package productlist
 
 import (
+	"fmt"
 	"net/url"
 	"sort"
 	"strconv"
@@ -18,6 +19,115 @@ import (
 
 	"go_wp/internal/builder/core"
 )
+
+// buildFilterSections 构造筛选栏（只包含作者勾选、且集合源确实给了值的块）。
+//
+// 每块的 Render 由**数据形状**决定：分类有 ParentID → 树；品牌 / 标签平铺 → 胶囊；
+// 属性组是「组 → 值」→ 每组一个平铺块。检查器可覆盖（改 Render 字段即可）。
+func buildFilterSections(p *Props, ctx *core.RenderContext, lc linkContext, view *View) []FilterSection {
+	if p == nil {
+		return nil
+	}
+	wanted := map[string]bool{}
+	for _, name := range splitList(p.Filters) {
+		wanted[name] = true
+	}
+	if len(wanted) == 0 {
+		return nil
+	}
+	options := view.FilterOptions
+	sections := make([]FilterSection, 0, 4)
+
+	if wanted["categories"] && len(options.Categories) > 0 {
+		view.ShowCategories = true
+		// 分类**默认渲染成树**：它的数据自带 ParentID（工作台里作者真的建了层级），
+		// 渲染成平铺就是在把树压平 —— 父子长得一模一样，用户分不出谁属于谁。
+		selected := selectedIDs(p.FilterCategoryIDs, p.FilterCategoryID)
+		childrenOf := childrenIndex(options.Categories)
+		// 多选 / 单选：单选不渲染勾选框（纯链接树，对齐源站），点击即替换。
+		multi := strings.TrimSpace(p.CategoryMulti) != "off"
+		section := FilterSection{Title: "分类", Kind: "categories", Render: renderTree, CaretIcon: p.CaretIcon, Multi: multi}
+		for _, item := range options.Categories {
+			override := url.Values{}
+			// 两套语义共用一条铁律：点父级筛的是**整棵子树**（选了 Alibarbar 却只筛到
+			// 直接挂在它名下的商品，等于没表达「整个品牌」）。
+			//
+			//  · 多选（默认）：在已有选中集合上**切换**该子树（级联加入 / 级联移除）；
+			//  · 单选（off）：**替换** —— 点未选中的换成它，点已选中的清空（取消）。
+			//    单选下再点第二个分类应当是「换一个」而不是「并集」，否则它就不是单选了。
+			if multi {
+				override.Set(filterKeyCategoryIDs, strings.Join(cascadeSelection(item.ID, selected, childrenOf), ","))
+			} else if selected[item.ID] {
+				override.Set(filterKeyCategoryIDs, "")
+			} else {
+				override.Set(filterKeyCategoryIDs, strings.Join(cascadeSelection(item.ID, map[string]bool{}, childrenOf), ","))
+			}
+			// 单值键必须跟着清掉：集合源按「多值优先」会忽略它，但地址栏会一直挂着
+			// 一个不生效的参数（用户看到「取消勾选后链接里还有个分类」）。
+			override.Set(filterKeyCategoryID, "")
+			override.Set("page", "") // 换筛选回到第 1 页，否则会落在越界页
+			section.Options = append(section.Options, controlOption(lc, item.Name, selected[item.ID], override))
+		}
+		byID := make(map[string]ControlOption, len(section.Options))
+		for i, item := range options.Categories {
+			byID[item.ID] = section.Options[i]
+		}
+		section.Tree = buildFilterTree(options.Categories, selected, childrenOf, byID, p.CaretIcon, multi)
+		sections = append(sections, section)
+	}
+
+	if wanted["brands"] && len(options.Brands) > 0 {
+		view.ShowBrands = true
+		selected := selectedIDs(p.FilterBrandIDs, p.FilterBrandID)
+		section := FilterSection{Title: "品牌", Kind: "brands", Render: renderButtons}
+		for _, item := range options.Brands {
+			override := url.Values{}
+			override.Set(filterKeyBrandIDs, strings.Join(toggleID(selected, item.ID), ","))
+			override.Set(filterKeyBrandID, "")
+			override.Set("page", "")
+			section.Options = append(section.Options, controlOption(lc, item.Name, selected[item.ID], override))
+		}
+		sections = append(sections, section)
+	}
+
+	if wanted["tags"] && len(options.Tags) > 0 {
+		view.ShowTags = true
+		selected := selectedIDs(p.FilterTagIDs, p.FilterTagID)
+		section := FilterSection{Title: "标签", Kind: "tags", Render: renderButtons}
+		for _, item := range options.Tags {
+			override := url.Values{}
+			override.Set(filterKeyTagIDs, strings.Join(toggleID(selected, item.ID), ","))
+			override.Set(filterKeyTagID, "")
+			override.Set("page", "")
+			section.Options = append(section.Options, controlOption(lc, item.Name, selected[item.ID], override))
+		}
+		sections = append(sections, section)
+	}
+
+	if wanted["attributes"] {
+		// 属性多选：组内点一次加入、再点移除（组内 OR），组与组之间 AND。
+		current := parseOptionPairs(p.FilterOptions)
+		for _, group := range options.Attributes {
+			if len(group.Values) == 0 {
+				continue
+			}
+			view.ShowAttributes = true
+			selected := map[string]bool{}
+			for _, key := range current[group.Key] {
+				selected[key] = true
+			}
+			section := FilterSection{Title: group.Name, Kind: "attributes", Render: renderButtons}
+			for _, value := range group.Values {
+				override := url.Values{}
+				override.Set("option."+group.Key, strings.Join(toggleKey(selected, value.Key), ","))
+				override.Set("page", "")
+				section.Options = append(section.Options, controlOption(lc, value.Name, selected[value.Key], override))
+			}
+			sections = append(sections, section)
+		}
+	}
+	return sections
+}
 
 // ControlOption 一个可点的交互项。
 type ControlOption struct {
@@ -37,115 +147,334 @@ type ControlOption struct {
 }
 
 // FilterSection 筛选栏的一块（分类 / 品牌 / 标签 / 某个属性组）。
+//
+// **每块带自己的数据形状与渲染形态**：分类是树（有 ParentID），品牌 / 标签是平铺集合，
+// 属性组是「组 → 值」的两层。早先这里只有一个平铺的 Options，构造时把 ParentID 丢掉，
+// 于是树被压平成一个列表 —— 渲染出来父子完全一样，谁是谁分不出来。
+//
+// 形态与数据分开而不是「形态决定数据结构」：同一份数据（比如分类树）可以用折叠树渲染，
+// 也可以用下拉渲染；调用方（模板 / 检查器）只换 Render，不必重建数据。
 type FilterSection struct {
 	// Title 块标题（分类 / 品牌 / 标签 / 属性组名）。
 	Title string
 	// Kind 块的种类（categories / brands / tags / attributes）—— 模板据此加类名。
 	Kind string
-	// Options 可选值。
+	// Render 渲染形态（tree / buttons / checkbox / select / multi-select）。由每块的
+	// **数据形状**决定默认值（见 buildFilterSections），检查器可覆盖。
+	Render string
+	// Options 平铺选项（Render 为 buttons / checkbox / select / multi-select 时使用）。
 	Options []ControlOption
+	// Tree 树形视图（Render 为 tree 时使用；深度优先展开成扁平条目）。
+	//
+	// Options 与 Tree 是同一批数据的两种**视图**：分类同时给出两者，
+	// 于是「树」与「平铺」之间的切换只是换一个字段读，不需要重新查数据。
+	Tree []TreeItem
+	// CaretIcon 折叠图标变体（空 = 默认箭头；dot = 圆点；none = 无）。
+	CaretIcon string
+	// Multi 该块是否多选（分类树：false 时单选、不渲染勾选框）。
+	Multi bool
 }
 
-// buildFilterSections 构造筛选栏（只包含作者勾选、且集合源确实给了值的块）。
-func buildFilterSections(p *Props, ctx *core.RenderContext, lc linkContext, view *View) []FilterSection {
-	if p == nil {
+// TreeItem 树条目：结构标签由 Go 侧拼好（OpenTags / MidTags / CloseTags），
+// 模板只画中间的 <a>。
+//
+// 关键是**闭合的延迟**：父项的 <ul> 必须包住子项、在最后一个后代之后才闭合 ——
+// 而扁平输出里父项只有一个输出点。解法是把闭合数量按「相邻两项的深度差」
+// 摊到后一个项的 CloseTags 里（depth 下降 1 层 = 关 1 组 </ul></details></li>），
+// 末项关 depth+1 组。于是任意深度的合法树都能配平，模板不需要递归。
+type TreeItem struct {
+	// Option 该节点的可点项（链接已按级联算好）。
+	Option ControlOption
+	// ID 实体 id。
+	ID string
+	// Depth 层级深度（0 = 根）。
+	Depth int
+	// State 三态：stateAll / statePartial / stateNone。
+	State string
+	// OpenTags 锚之前的开标签：<li（有子级时再加 <details><summary/>）。
+	OpenTags string
+	// MidTags 锚之后的标签：有子级时是 <ul>（子项由后续条目输出）。
+	MidTags string
+	// CloseTags 关标签：自身 </li> + 按「与下一项的深度差」补足的父层闭合组。
+	CloseTags string
+}
+
+// 三态取值（TreeItem.State）。
+const (
+	// stateAll 该节点及其全部后代都选中。
+	stateAll = "all"
+	// statePartial 子树里有一部分选中（含「自己选中但子树没全选」）。
+	statePartial = "partial"
+	// stateNone 子树里一个都没选。
+	stateNone = "none"
+)
+
+func buildFilterTree(options []core.CollectionFilterChoice, selected map[string]bool, childrenOf map[string][]string, opts map[string]ControlOption, caretIcon string, multi bool) []TreeItem {
+	if len(options) == 0 {
 		return nil
 	}
-	wanted := map[string]bool{}
-	for _, name := range splitList(p.Filters) {
-		wanted[name] = true
+	byID := make(map[string]core.CollectionFilterChoice, len(options))
+	for _, opt := range options {
+		if opt.ID != "" {
+			byID[opt.ID] = opt
+		}
 	}
-	if len(wanted) == 0 {
-		return nil
+	children := map[string][]core.CollectionFilterChoice{}
+	roots := make([]core.CollectionFilterChoice, 0, len(options))
+	for _, opt := range options {
+		// 孤儿（父不在结果里）当根：挂在任何地方都不对，留在原地至少看得见。
+		_, parentKnown := byID[opt.ParentID]
+		if opt.ParentID == "" || opt.ID == opt.ParentID || !parentKnown {
+			roots = append(roots, opt)
+			continue
+		}
+		children[opt.ParentID] = append(children[opt.ParentID], opt)
 	}
-	options := view.FilterOptions
-	sections := make([]FilterSection, 0, 4)
-
-	if wanted["categories"] && len(options.Categories) > 0 {
-		view.ShowCategories = true
-		selected := strings.TrimSpace(p.FilterCategoryID)
-		section := FilterSection{Title: "分类", Kind: "categories"}
-		for _, item := range options.Categories {
-			override := url.Values{}
-			if item.ID == selected {
-				override.Set("categoryId", "") // 再点一次 = 取消该筛选
-			} else {
-				override.Set("categoryId", item.ID)
+	out := make([]TreeItem, 0, len(options))
+	// walk **前序**：先追加自己，再递归子级。曾经写成后序，输出变成「子在前父在后」。
+	//
+	// 收尾配平：父项的 </ul></details></li> 必须等最后一个后代输出完才出现，
+	// 而扁平输出里父项只有一个输出点 —— 解法是把闭合组摊到「后一项」头上：
+	// 相邻两项深度下降 1 层 = 1 组；末项关 depth+1 组。
+	var walk func(opt core.CollectionFilterChoice, depth int, seen map[string]bool) (allSel, anySel bool)
+	walk = func(opt core.CollectionFilterChoice, depth int, seen map[string]bool) (allSel, anySel bool) {
+		idx := len(out)
+		out = append(out, TreeItem{Option: opts[opt.ID], ID: opt.ID, Depth: depth})
+		kids, hasKids := children[opt.ID]
+		// 深度上限：到顶的子树按叶子渲染（不展开 details），闭合才不会缺组。
+		if depth >= maxFilterTreeDepth {
+			hasKids = false
+		}
+		childAll, childAny := true, false
+		if hasKids {
+			next := make(map[string]bool, len(seen)+1)
+			for k := range seen {
+				next[k] = true
 			}
-			override.Set("page", "") // 换筛选回到第 1 页，否则会落在越界页
-			section.Options = append(section.Options, controlOption(lc, item.Name, item.ID == selected, override))
-		}
-		sections = append(sections, section)
-	}
-
-	if wanted["brands"] && len(options.Brands) > 0 {
-		view.ShowBrands = true
-		selected := strings.TrimSpace(p.FilterBrandID)
-		section := FilterSection{Title: "品牌", Kind: "brands"}
-		for _, item := range options.Brands {
-			override := url.Values{}
-			if item.ID == selected {
-				override.Set("brandId", "")
-			} else {
-				override.Set("brandId", item.ID)
-			}
-			override.Set("page", "")
-			section.Options = append(section.Options, controlOption(lc, item.Name, item.ID == selected, override))
-		}
-		sections = append(sections, section)
-	}
-
-	if wanted["tags"] && len(options.Tags) > 0 {
-		view.ShowTags = true
-		selected := map[string]bool{}
-		for _, id := range splitList(p.FilterTagIDs) {
-			selected[id] = true
-		}
-		section := FilterSection{Title: "标签", Kind: "tags"}
-		for _, item := range options.Tags {
-			// 多标签：点一次加入、再点移除（当前选中集合只在本次渲染里算，不改动 props）。
-			next := make([]string, 0, len(selected)+1)
-			for id := range selected {
-				if id != item.ID {
-					next = append(next, id)
+			next[opt.ID] = true
+			for _, child := range kids {
+				if next[child.ID] {
+					continue // 环：已经在祖先链上出现过，不再下去
+				}
+				a, y := walk(child, depth+1, next)
+				if !a {
+					childAll = false
+				}
+				if y {
+					childAny = true
 				}
 			}
-			if !selected[item.ID] {
-				next = append(next, item.ID)
-			}
-			sort.Strings(next)
-			override := url.Values{}
-			override.Set("tagIds", strings.Join(next, ","))
-			override.Set("page", "")
-			section.Options = append(section.Options, controlOption(lc, item.Name, selected[item.ID], override))
 		}
-		sections = append(sections, section)
+		// 三态：全选 = 自己选中且（无子树或整棵子树都选中）；
+		// 半选 = 没有全选、但自己或子树里有选中的。
+		state := stateNone
+		if !multi {
+			// 单选：只有「选中 / 未选中」两态。子树推导与半选都属于多选语义 ——
+			// 单选下父级显示半选没有意义（用户只能选一个），而且会让样式多一套分支。
+			if selected[opt.ID] {
+				state = stateAll
+			}
+		} else if selected[opt.ID] && childAll {
+			state = stateAll
+			allSel, anySel = true, true
+		} else if selected[opt.ID] || childAny {
+			state = statePartial
+			anySel = true
+		}
+		item := &out[idx]
+		item.State = state
+		if hasKids {
+			openAttr := ""
+			if state != stateNone {
+				openAttr = " open"
+			}
+			item.OpenTags = fmt.Sprintf(
+				"<li class=\"sky-product-list-node\" data-depth=\"%d\" data-state=\"%s\">"+
+					"<details class=\"sky-product-list-node-group\"%s>"+
+					"<summary class=\"sky-product-list-node-caret-row\">",
+				depth, state, openAttr)
+			// 锚由模板输出在 summary 内（始终可见），随后闭合 summary、打开子级 <ul>。
+			item.MidTags = "</summary><ul class=\"sky-product-list-node-children\">"
+			// 自身 </li> 由最后一个后代的 CloseTags 补（见下），父项这里不关。
+			item.CloseTags = ""
+			// 折叠图标：**走基座图标库**（core.IconSVGClass，lucide 1868 枚），
+			// 不再 CSS 手绘。空选 = 默认 chevron-right；dot / square / none 可选。
+			iconName := "chevron-right"
+			if caretIcon != "" {
+				iconName = caretIcon
+			}
+			if iconName != "none" {
+				if svg, ok := core.IconSVGClass(iconName, "sky-product-list-node-caret"); ok {
+					item.OpenTags += svg
+				}
+			}
+		} else {
+			item.OpenTags = fmt.Sprintf("<li class=\"sky-product-list-node\" data-depth=\"%d\" data-state=\"%s\">", depth, state)
+			item.CloseTags = "</li>"
+		}
+		return allSel, anySel
 	}
+	for _, root := range roots {
+		walk(root, 0, map[string]bool{})
+	}
+	// 收尾配平：close 组数 = 相邻深度差（depth 下降几层就关几组），末项关 depth+1 组。
+	for i := range out {
+		var drop int
+		if i+1 < len(out) {
+			if drop = out[i].Depth - out[i+1].Depth; drop < 0 {
+				drop = 0
+			}
+		} else {
+			drop = out[i].Depth + 1
+		}
+		if drop > 0 {
+			out[i].CloseTags += strings.Repeat("</ul></details></li>", drop)
+		}
+	}
+	return out
+}
 
-	if wanted["attributes"] {
-		// 属性选择是**每组单选**：点同组另一个值 = 换值，点已选值 = 取消该组。
-		current := parseOptionPairs(p.FilterOptions)
-		for _, group := range options.Attributes {
-			if len(group.Values) == 0 {
+// 渲染形态取值（FilterSection.Render）。
+const (
+	// renderTree 折叠树：父子嵌套 + 缩进 + 可折叠。分类的默认形态。
+	renderTree = "tree"
+	// renderButtons 平铺胶囊：值不多、想一眼看全时用（品牌 / 标签 / 属性值）。
+	renderButtons = "buttons"
+	// renderCheckbox / renderSelect / renderMultiSelect 数据侧已支持，模板逐步接入。
+	renderCheckbox    = "checkbox"
+	renderSelect      = "select"
+	renderMultiSelect = "multi-select"
+)
+
+// maxFilterTreeDepth 筛选树的最大深度（坏数据兜底，正常分类树 2~3 层）。
+const maxFilterTreeDepth = 5
+
+// cascadeSelection 把「用户点了一个节点」展开成最终的选中集合（树形级联）。
+//
+// 1. 勾父级 ⇒ 子级全勾（递归）；2. 取消父级 ⇒ 子级全不勾；
+// 3. 勾子级 ⇒ 只勾子级，父级态由子级推导（渲染期算三态），不在这里写。
+func cascadeSelection(clicked string, selected map[string]bool, childrenOf map[string][]string) []string {
+	next := make(map[string]bool, len(selected)+4)
+	for id := range selected {
+		next[id] = true
+	}
+	if next[clicked] {
+		delete(next, clicked)
+		for _, id := range collectSubtree(clicked, childrenOf) {
+			delete(next, id)
+		}
+	} else {
+		next[clicked] = true
+		for _, id := range collectSubtree(clicked, childrenOf) {
+			next[id] = true
+		}
+	}
+	out := make([]string, 0, len(next))
+	for id := range next {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// collectSubtree 深度优先收集某节点的全部后代 id（不含自身；环安全）。
+func collectSubtree(root string, childrenOf map[string][]string) []string {
+	out := make([]string, 0, 4)
+	seen := map[string]bool{root: true}
+	var walk func(id string)
+	walk = func(id string) {
+		for _, child := range childrenOf[id] {
+			if seen[child] {
 				continue
 			}
-			view.ShowAttributes = true
-			section := FilterSection{Title: group.Name, Kind: "attributes"}
-			for _, value := range group.Values {
-				override := url.Values{}
-				selected := current[group.Key] == value.Key
-				// 先清掉该组当前值，再按需写回（换值 / 取消都走这条路）。
-				override.Set("option."+group.Key, "")
-				if !selected {
-					override.Set("option."+group.Key, value.Key)
-				}
-				override.Set("page", "")
-				section.Options = append(section.Options, controlOption(lc, value.Name, selected, override))
-			}
-			sections = append(sections, section)
+			seen[child] = true
+			out = append(out, child)
+			walk(child)
 		}
 	}
-	return sections
+	walk(root)
+	return out
+}
+
+// childrenIndex 由平铺选项建「父 id → 子 id 列表」索引（级联与树共用一份）。
+func childrenIndex(options []core.CollectionFilterChoice) map[string][]string {
+	known := make(map[string]bool, len(options))
+	for _, opt := range options {
+		known[opt.ID] = true
+	}
+	out := make(map[string][]string, len(options))
+	for _, opt := range options {
+		// 孤儿与自引用不进索引（与 buildFilterTree 同一套判据，两处不能分叉）。
+		if opt.ParentID == "" || opt.ID == opt.ParentID || !known[opt.ParentID] {
+			continue
+		}
+		out[opt.ParentID] = append(out[opt.ParentID], opt.ID)
+	}
+	return out
+}
+
+// subtreeFullySelected 该节点的整棵子树是否全部选中（父级三态用）。
+func subtreeFullySelected(id string, selected map[string]bool, childrenOf map[string][]string) bool {
+	sub := collectSubtree(id, childrenOf)
+	if len(sub) == 0 {
+		return selected[id]
+	}
+	for _, child := range sub {
+		if !selected[child] {
+			return false
+		}
+	}
+	return true
+}
+
+// subtreeAnySelected 该节点的子树里是否有任意一个选中（父级半选判定用）。
+func subtreeAnySelected(id string, selected map[string]bool, childrenOf map[string][]string) bool {
+	for _, child := range collectSubtree(id, childrenOf) {
+		if selected[child] {
+			return true
+		}
+	}
+	return false
+}
+
+// selectedIDs 当前选中的 id 集合：多值优先，多值为空时退回单值。
+//
+// 这条规则与集合源解析期（parseCollectionFilter 的「多值优先于单值」）**必须一致**：
+// 不一致的表现是高亮态与实际结果对不上（显示勾了 A、返回的却是 B 的商品）。
+func selectedIDs(multi, single string) map[string]bool {
+	out := map[string]bool{}
+	for _, id := range splitList(multi) {
+		out[id] = true
+	}
+	if len(out) == 0 {
+		if id := strings.TrimSpace(single); id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// toggleID 在选中集合里切换一个 id，返回排序后的新列表（URL 稳定 ⇒ 缓存友好）。
+func toggleID(selected map[string]bool, id string) []string {
+	next := make([]string, 0, len(selected)+1)
+	for cur := range selected {
+		if cur != id {
+			next = append(next, cur)
+		}
+	}
+	if !selected[id] {
+		next = append(next, id)
+	}
+	sort.Strings(next)
+	return next
+}
+
+// toggleKey 同 toggleID，但作用于属性值 key（键类型是 string，语义完全相同）。
+//
+// 不把 toggleID 泛型化：项目里对 Go 泛型的用法有既定口径（必要才引入），
+// 这里两个函数的实体只有三行，比给一个只在两处用的私有 helper 加类型参数更直白。
+func toggleKey(selected map[string]bool, key string) []string {
+	return toggleID(selected, key)
 }
 
 // buildSortOptions 排序下拉的选项（价格排序在 #28；热度是禁用占位）。
@@ -374,9 +703,13 @@ func buildRatingSection(p *Props, lc linkContext, view *View) {
 // controlOption 拼一个控件的三个 URL。
 func controlOption(lc linkContext, label string, active bool, override url.Values) ControlOption {
 	return ControlOption{
-		Label:       label,
-		Active:      active,
-		Href:        lc.pushURL(override),
+		Label:  label,
+		Active: active,
+		// Href 是**降级链接**（无 JS 时整页跳转）→ 绝对地址；
+		// PushURL 是地址栏要变成的查询串（htmx 按当前路径推入历史）→ 保持相对。
+		// 两者此前同值，于是降级链接只能是 "?page=2"（查询相对引用），
+		// 不满足「站内地址一律绝对」的约定。
+		Href:        lc.fallbackHref(override),
 		FragmentGet: lc.fragmentGet(override),
 		PushURL:     lc.pushURL(override),
 	}
@@ -389,17 +722,73 @@ func pageOverride(page int) url.Values {
 	return v
 }
 
-// parseOptionPairs `key:value,key:value` → map（重复键后者胜，与下推口径一致）。
-func parseOptionPairs(raw string) map[string]string {
-	out := map[string]string{}
+// pageItems 生成窗口化页码：当前页两侧各 pageWindowSpan 个，首末两页恒在，
+// 中间断开处给省略号。
+//
+// 为什么窗口化：一个 200 页的分类铺 200 个按钮既撑破版心、也没人这么用；
+// 而「首末恒在」是为了让「跳到最后一页」永远只要一次点击 —— 那是长列表里
+// 唯一真正常用的跳转。
+//
+// 返回两个等长切片：items 是页码按钮，gaps[i] 表示 items[i] 之前该渲染省略号。
+func pageItems(lc linkContext, page, totalPages int) ([]ControlOption, []bool) {
+	if totalPages <= 1 {
+		return nil, nil
+	}
+	// 页码集合：1、末页，加上当前页 ± span。
+	set := map[int]bool{1: true, totalPages: true}
+	for p := page - pageWindowSpan; p <= page+pageWindowSpan; p++ {
+		if p >= 1 && p <= totalPages {
+			set[p] = true
+		}
+	}
+	pages := make([]int, 0, len(set))
+	for p := range set {
+		pages = append(pages, p)
+	}
+	sort.Ints(pages)
+	items := make([]ControlOption, 0, len(pages))
+	gaps := make([]bool, 0, len(pages))
+	prev := 0
+	for _, p := range pages {
+		// 相邻页码跳号 → 中间省略。只差一页时不省略：
+		// 一个省略号省掉一个数字，反而更难读。
+		gaps = append(gaps, prev != 0 && p-prev > 1)
+		items = append(items, controlOption(lc, strconv.Itoa(p), p == page, pageOverride(p)))
+		prev = p
+	}
+	return items, gaps
+}
+
+// pageWindowSpan 页码窗口半径（当前页两侧各显示几个）。
+const pageWindowSpan = 2
+
+// parseOptionPairs `key:v1,v2` → 每个属性组当前选中的值列表。
+//
+// 形状与集合源的 `option.<key>=v1,v2` 一致（冒号前是属性组、冒号后是逗号多值），
+// 一个 key 出现在多个 pair 里就**并集**（而不是后者覆盖前者）：重复键在
+// 手工拼的 URL 里是合法的，覆盖会让先写的那些值静默消失。
+func parseOptionPairs(raw string) map[string][]string {
+	out := map[string][]string{}
+	seen := map[string]map[string]bool{}
 	for _, pair := range strings.Split(raw, ",") {
-		key, value, ok := strings.Cut(strings.TrimSpace(pair), ":")
+		key, values, ok := strings.Cut(strings.TrimSpace(pair), ":")
 		if !ok {
 			continue
 		}
-		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
-		if key != "" && value != "" {
-			out[key] = value
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if seen[key] == nil {
+			seen[key] = map[string]bool{}
+		}
+		for _, value := range strings.Split(values, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" || seen[key][value] {
+				continue
+			}
+			seen[key][value] = true
+			out[key] = append(out[key], value)
 		}
 	}
 	return out

@@ -63,7 +63,7 @@ func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCate
 	e := &productmodel.ProductCategoryEntity{
 		ID: uuid.NewString(), ProjectID: projectID, ParentID: parentID,
 		Name: strings.TrimSpace(req.Name), Slug: slug,
-		Description: req.Description, Image: req.Image,
+		Description: req.Description, Image: mediaURL(req.Image),
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
@@ -172,7 +172,7 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 		e.Description = *req.Description
 	}
 	if req.Image != nil {
-		e.Image = *req.Image
+		e.Image = mediaURL(*req.Image)
 	}
 	if req.SEOTitle != nil {
 		e.SEOTitle = *req.SEOTitle
@@ -229,15 +229,31 @@ func (s *Service) GetCategory(ctx context.Context, req *productdto.GetCategoryRe
 // 因此同一份数据每次输出同样的顺序（构建期确定性同一条理由）。
 // 父级不在结果集里（被删/跨工程/环数据）的节点按顶级处理，保证节点不丢。
 func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCategoryReq) (list []*productdto.CategoryResp, err error) {
-	var projectID, keyword string
-	if req != nil {
-		projectID, keyword = req.ProjectID, strings.TrimSpace(req.Keyword)
-	}
+	projectID, keyword := categoryFilter(req)
 	rows, err := s.m.ListCategories(ctx, projectID, keyword)
 	if err != nil {
 		return nil, err
 	}
 	return buildCategoryTree(rows), nil
+}
+
+// CountCategories 分类总数（后台分类页的「共 N 条」与总页数）。
+//
+// 数是**行**：后台把树按 DFS 前序摊平成表格行再分页，「共 N 条」说的就是这些行。
+//
+// **与 ListCategories 共用同一个 categoryFilter**（工程 + 关键词归一）——两处口径分叉时，
+// 分页条给的页数会与实际能翻出来的行数对不上。
+func (s *Service) CountCategories(ctx context.Context, req *productdto.ListCategoryReq) (n int64, err error) {
+	projectID, keyword := categoryFilter(req)
+	return s.m.CountCategories(ctx, projectID, keyword)
+}
+
+// categoryFilter 归一分类列表的过滤条件（ListCategories / CountCategories 共用）。
+func categoryFilter(req *productdto.ListCategoryReq) (projectID, keyword string) {
+	if req == nil {
+		return "", ""
+	}
+	return req.ProjectID, strings.TrimSpace(req.Keyword)
 }
 
 // DeleteCategory 删除分类。

@@ -37,11 +37,14 @@ const (
 	PosRight  = "right"
 )
 
-// builtinInsetIcons 内置白名单微图标（24 viewBox，stroke=currentColor，装饰性）。
-var builtinInsetIcons = map[string]string{
-	"star":    `<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke-linejoin="round"/>`,
-	"diamond": `<path d="M12 3l9 9-9 9-9-9 9-9z" stroke-linejoin="round"/>`,
-	"dot":     `<circle cx="12" cy="12" r="3"/>`,
+// insetIconNames 嵌入图标白名单：可选名 → 基座图标库（core，lucide）名。
+//
+// 以前这里手写了一份 path 表 —— 第二份图标库；现在只声明可选名字，
+// 路径一律 core.IconInner 取，与其它组件的箭头/图标同一套描边。
+var insetIconNames = map[string]string{
+	"star":    "star",
+	"diamond": "diamond",
+	"dot":     "circle",
 }
 
 // Width 三端总宽度。
@@ -122,7 +125,7 @@ func validateExtra(p *Props, nodeID string) (err error) {
 		return fmt.Errorf("文本嵌入必须提供文案")
 	}
 	if p.Inset.Kind == InsetIcon {
-		if _, ok := builtinInsetIcons[p.Inset.IconName]; !ok {
+		if _, ok := insetIconNames[p.Inset.IconName]; !ok {
 			return fmt.Errorf("无效的内置图标: %q（仅 star/diamond/dot）", p.Inset.IconName)
 		}
 	}

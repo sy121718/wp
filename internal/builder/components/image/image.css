@@ -79,6 +79,13 @@
   max-height: 90vh;
 }
 
+/* 关闭图标：基座图标库 close（SVG），与按钮同作用域（灯箱是 @global 浮层）。 */
+@global .sky-lightbox-close-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 @global .sky-lightbox-close {
   position: absolute;
   top: 16px;

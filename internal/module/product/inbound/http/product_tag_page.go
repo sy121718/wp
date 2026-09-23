@@ -44,7 +44,7 @@ type tagForm struct {
 	sort     int
 }
 
-// ProductTagsPage 标签管理页：工程切换 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
+// ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
 func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
@@ -56,35 +56,72 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	tags, terr := h.listTags(ctx, selected)
-	if terr != nil {
-		shell.PageError(c, "product_tag", terr)
-		return
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	// 标签列表**分页下推到 service**（审计 D13 收口）：请求类型自带 Page/Size，总数由契约的
+	// CountTags 给出（与 ListTags 同一份过滤条件），handler 不再「全量取回再切片」。
+	// 命中数仍是 service 的一次批量聚合（审计 PERF-02）——分页后只聚合当页标签，
+	// 页面 SQL 条数与标签总数无关这一条不变。
+	//
+	// 顺序是**先计数再取页**（理由同属性页 / 品牌页）：越界页码先收敛，否则会出现
+	// 「表格为空、分页条却显示第 2 页」。
+	page := productPageNumber(c.Query("page"))
+	total := int64(0)
+	rows := []gin.H{}
+	if selected != "" {
+		// 过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size。
+		filterReq := &productdto.ListTagReq{ProjectID: selected, Keyword: keyword}
+		n, cerr := h.products.CountTags(ctx, filterReq)
+		if cerr != nil {
+			shell.PageError(c, "product_tag", cerr)
+			return
+		}
+		total = n
+		page = clampPageToTotal(page, productSubListPageSize, total)
+		listReq := *filterReq
+		listReq.Page, listReq.Size = page, productSubListPageSize
+		list, lerr := h.products.ListTags(ctx, &listReq)
+		if lerr != nil {
+			shell.PageError(c, "product_tag", lerr)
+			return
+		}
+		rows = make([]gin.H, 0, len(list))
+		for _, t := range list {
+			rows = append(rows, tagPageRow(t))
+		}
 	}
 	// 命中商品**不在这里取**（审计 PERF-02）：此前对每个标签再调一次 GetTag 拿命中商品，
 	// 页面 SQL 条数随标签数线性增长；而「标签是个位数」只是当时的假设，协议没有使它成立。
-	// 现在首屏只发「工程列表 + 标签列表 + 一次批量计数」，命中商品由展开区按页拉片段
-	// （见 ProductTagHitsFragment）—— 1 / 100 / 1000 个标签的首屏 SQL 条数一样。
+	// 现在首屏只发「工程列表 + 标签总数 + 标签列表（当页）+ 一次批量计数」，命中商品由
+	// 展开区按页拉片段（见 ProductTagHitsFragment）—— 1 / 100 / 1000 个标签的首屏 SQL 条数一样。
 	// 注意不要用「开 goroutine 并发 N 次查询」来掩盖它：那是把 N 条 SQL 并行发出去，
 	// 连接池压力与总条数都没变。
-	rows := make([]gin.H, 0, len(tags))
-	for _, t := range tags {
-		rows = append(rows, tagPageRow(t))
-	}
+	//
+	// 总数已由契约的 CountTags 给出（与 ListTags 同一份过滤条件：工程 + kind + 关键词）。
+	// 注意它与「命中商品数」那一列是两回事：那一列是每个标签归属的商品数
+	//（service 里一次批量聚合），本页面的分页只按标签条数算总页数。
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
 	// 与其它后台页面同一渲染入口。
-	c.HTML(http.StatusOK, "admin/product_tags.html", shell.Prepare(c, gin.H{
+	data := gin.H{
 		"title":           "商品标签",
 		"menu":            "product-tags",
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Tags":            rows,
 		"RuleTypes":       h.products.ListTagRuleTypes(ctx),
+		// 筛选回显（GET 表单的 value）+ 空态分档依据：见 product_taxonomy_page.go 的同一手法。
+		"FilterKeyword": keyword,
+		"Filtered":      keyword != "",
 		// 读侧一律过白名单（product_err.go）：查询参数不是可信边界。
 		"Err": productPageErr(c),
 		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductTagsBulkDelete）。
 		"Done": productPageDone(c),
-	}))
+	}
+	for k, v := range shell.BuildPagination(total, page, productSubListPageSize,
+		productListBaseURL("/admin/product-tags", listFilterQuery(selected, keyword)),
+		shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/product/product_tags.html", shell.Prepare(c, data))
 }
 
 // ProductTagHitsFragment 标签「命中商品」片段（审计 PERF-02 的展开区）。
@@ -114,7 +151,7 @@ func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
 	if err != nil {
 		data["Err"] = productErrText(c, err)
-		c.HTML(http.StatusOK, "admin/partials/product_tag_hits.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/product/product_tag_hits.html", shell.Prepare(c, data))
 		return
 	}
 	data["TagName"] = res.TagName
@@ -133,7 +170,7 @@ func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	if res.Page < res.TotalPage {
 		data["NextURL"] = tagHitsURL(req.ProjectID, res.TagID, res.Page+1)
 	}
-	c.HTML(http.StatusOK, "admin/partials/product_tag_hits.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/product/product_tag_hits.html", shell.Prepare(c, data))
 }
 
 // tagHitsPageInfo 命中商品片段的分页文案（「共 N 条，第 X-Y 条」）。
@@ -267,10 +304,10 @@ func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
 	}
 	req := &productdto.UpdateReq{ProjectID: projectID, ID: formProductID(c), TagIDs: tagIDs}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, req.ID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, req.ID, ""))
 }
 
 // listTags 取某工程的标签列表（工程为空时返回空列表）。

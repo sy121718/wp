@@ -75,6 +75,16 @@ const (
 	// BulkPageMissingID 单条删除时缺少页面 id（?err= 上的参数级提示）。
 	BulkPageMissingID = "page.bulk.pageMissingID"
 
+	// 页面表单的必填校验回执（handler 自造、进 ?err=，同样**不是** service 错误）。
+	//
+	// 中文原文留在 inbound/http/page_err.go 的候选结构体里（写侧取词与读侧候选共用那一份，
+	// 两处各抄一份的下场是词条一改措辞候选就静默失配）。
+	//
+	// PageFormProjectNameRequired 新建站点工程时名称为空。
+	PageFormProjectNameRequired = "page.form.projectNameRequired"
+	// PageFormPathRequired 新建页面时路径为空。
+	PageFormPathRequired = "page.form.pathRequired"
+
 	// 重定向批量删除的四个结论分支。它走的是 ?ok=bulk&dn=N&sk=M 计数回带
 	//（文案由服务端按计数重拼），伪造面比列表页的 ?done= 少一层，但同样要 key 化 ——
 	// 否则英文界面上这四个分支永远显示中文。

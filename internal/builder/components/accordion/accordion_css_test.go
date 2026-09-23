@@ -60,13 +60,17 @@ func TestAccordionCSSBorderless(t *testing.T) {
 	}
 }
 
-// TestAccordionCSSZeroJS 零 JS 展开：箭头靠伪元素，展开态靠 [open]。
+// TestAccordionCSSZeroJS 零 JS 展开：箭头是基座图标库的 SVG，展开态靠 [open]。
+//
+// 箭头以前是 CSS 的 content 字符加号（展开时 rotate 45° 变叉）—— 字符图标
+// 在不同字体的字宽/基线上都不一致，也和图标库的描边风格对不上；
+// 现在由 Go 侧用 icon.IconSVG("chevron-down") 生成，这里只钉样式钩子与展开态。
 func TestAccordionCSSZeroJS(t *testing.T) {
 	out := accordionCSSFor(&Props{})
 	for _, want := range []string{
-		"content: '＋';",
+		".sky-c-t .sky-accordion-chevron {",
 		".sky-c-t .sky-accordion-head::-webkit-details-marker {",
-		".sky-c-t details[open] .sky-c-t .sky-accordion-head::after {\n  transform: rotate(45deg);",
+		".sky-c-t details[open] .sky-accordion-chevron {\n  transform: rotate(180deg);",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("产物缺少 %q\n%s", want, out)

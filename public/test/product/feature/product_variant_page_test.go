@@ -58,6 +58,9 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 变体是商品的子资源，表格与生成入口都在商品详情页（列表页只回答「有哪些商品」）。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	// 商品自身字段（名称 / URL 段 / SKU / 状态 / 价格 / SEO / 图集）与多语言入口在编辑页。
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
+	engine.POST("/admin/products/update", handle.ProductsUpdate)
 	engine.POST("/admin/products/variant/generate", handle.ProductsVariantGenerate)
 	return engine, f
 }
@@ -70,14 +73,42 @@ func getProductsPage(engine *gin.Engine, projectID string) string {
 	return rec.Body.String()
 }
 
-// detailLocation 商品详情页的规范地址：详情页里的写表单提交后应回到这里（而不是列表页）。
+// editLocation 商品编辑页入口在**页面 HTML 里**的形态（Jet 把 & 转义成 &amp;）。
 //
-// 参数值都是 uuid / 工程 id，不含需要转义的字符，故与 handler 的 url.QueryEscape 结果逐字一致。
-func detailLocation(projectID, productID string) string {
-	return "/admin/products/detail?project=" + projectID + "&product=" + productID
+// 与 assertEditRedirect 的区别：那个比较的是 302 的 Location 头（未转义、参数按
+// url.Values.Encode 的字母序），这个比较的是渲染出来的 href —— 两者形态不同，不能互相套用。
+func editLocation(projectID, productID string) string {
+	return "/admin/products/edit?project=" + projectID + "&amp;product=" + productID
 }
 
-// getProductDetailPage 渲染商品详情页 —— 变体/评分的表格与入口都搬到了这里。
+// getProductEditPage 渲染商品编辑页 —— 商品自身字段、变体、评分、模板动作与多语言入口都在这里。
+func getProductEditPage(engine *gin.Engine, projectID, productID string) string {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/products/edit?project="+projectID+"&product="+productID, nil)
+	engine.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+// assertEditRedirect 断言一次商品级写操作回到了该商品的**编辑页**（PRG）。
+//
+// 为什么解析后比较、而不是比字符串前缀：handler 用 url.Values.Encode() 生成查询串
+// （key 按字母序：product 在 project 之前），手拼的 "?project=..&product=.." 与它对不上，
+// 前缀断言会以「回跳地址不对」的形式报出来，而真实行为是正确的。
+func assertEditRedirect(t *testing.T, loc, projectID, productID string) {
+	t.Helper()
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("Location 无法解析：%v（%s）", err, loc)
+	}
+	if u.Path != "/admin/products/edit" {
+		t.Fatalf("商品级写操作应回编辑页，实际 Location=%q", loc)
+	}
+	if u.Query().Get("project") != projectID || u.Query().Get("product") != productID {
+		t.Fatalf("回跳应带该工程与该商品，实际 Location=%q", loc)
+	}
+}
+
+// getProductDetailPage 渲染商品详情页 —— 只读页：变体 / 评分 / 捆绑构成都在这里，但没有写入口。
 func getProductDetailPage(engine *gin.Engine, projectID, productID string) string {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/products/detail?project="+projectID+"&product="+productID, nil)
@@ -95,7 +126,8 @@ func TestProductsPageRendersVariantGeneratePanel(t *testing.T) {
 	color := mkVariationAttr(t, f, "颜色", "color", []string{"red", "blue"})
 	product := mkVariationProduct(t, f, "面板商品", "panel-product", []string{color.ID}, nil)
 
-	body := getProductDetailPage(engine, f.projectID, product.ID)
+	// 组合生成的两个抽屉在**编辑页**（详情页只读）。
+	body := getProductEditPage(engine, f.projectID, product.ID)
 	for _, want := range []string{
 		// 入口按钮文案是「生成组合」（行内不重复实体名），抽屉里是「生成勾选组合 / 生成全部组合」。
 		"生成组合", "生成勾选组合", "生成全部组合",
@@ -125,13 +157,11 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 		"projectId": {f.projectID}, "productId": {product.ID},
 	})
 	if rec.Code != http.StatusFound {
-		t.Fatalf("应 302 回详情页，实际 %d", rec.Code)
+		t.Fatalf("应 302 回编辑页，实际 %d", rec.Code)
 	}
-	// 被拒也留在详情页（用户就在这一页操作），错误经 ?err= 回显（中文按 URL 编码）。
+	// 被拒也留在编辑页（用户就在这一页操作），错误经 ?err= 回显（中文按 URL 编码）。
 	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, detailLocation(f.projectID, product.ID)) {
-		t.Fatalf("被拒应回该商品的详情页，实际 Location=%q", loc)
-	}
+	assertEditRedirect(t, loc, f.projectID, product.ID)
 	// 提示必须**可读**：这里原先断言 Location 里带 enums 裸 key（ErrVariationSelectionEmpty），
 	// 而那正是「把 enums 常量铺到页面上」的形态（第三波 CQ-009 形态②）。
 	// 现在 handler 统一经 productErrText 取词，断言的是中文文案 + 不再出现裸 key。
@@ -151,11 +181,9 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 		"attr:" + attr.ID: {attr.Values[0].ID, attr.Values[1].ID},
 	})
 	if rec.Code != http.StatusFound {
-		t.Fatalf("勾选生成应 302 回详情页，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("勾选生成应 302 回编辑页，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if loc := rec.Header().Get("Location"); loc != detailLocation(f.projectID, product.ID) {
-		t.Fatalf("生成后应留在该商品的详情页，实际 Location=%q", loc)
-	}
+	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, product.ID)
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -184,11 +212,9 @@ func TestProductsVariantGenerateAllMode(t *testing.T) {
 		"projectId": {f.projectID}, "productId": {product.ID}, "mode": {"all"},
 	})
 	if rec.Code != http.StatusFound {
-		t.Fatalf("全部生成应 302 回详情页，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("全部生成应 302 回编辑页，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if loc := rec.Header().Get("Location"); loc != detailLocation(f.projectID, product.ID) {
-		t.Fatalf("mode=all 生成后应留在该商品的详情页，实际 Location=%q", loc)
-	}
+	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, product.ID)
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

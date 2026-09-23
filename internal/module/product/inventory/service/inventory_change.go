@@ -234,34 +234,8 @@ func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 
 // ListMovements 库存流水列表（验收 3：方向 / 数量 / 原因 / 来源引用都可查可过滤）。
 func (s *Service) ListMovements(ctx context.Context, req *inventorydto.ListMovementReq) (list []*inventorydto.MovementResp, err error) {
-	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
-	}
-	filter := inventorymodel.MovementFilter{
-		WarehouseID: strings.TrimSpace(req.WarehouseID),
-		ProductID:   strings.TrimSpace(req.ProductID),
-		VariantID:   strings.TrimSpace(req.VariantID),
-		SKUCode:     strings.TrimSpace(req.SKUCode),
-		ReasonCode:  strings.TrimSpace(req.ReasonCode),
-		SourceType:  strings.TrimSpace(req.SourceType),
-		SourceRef:   strings.TrimSpace(req.SourceRef),
-		BatchID:     strings.TrimSpace(req.BatchID),
-	}
-	if filter.Direction, err = normalizeDirectionOrEmpty(req.Direction); err != nil {
-		return nil, err
-	}
-	// 时间区间：页面表单给的是**本地时间**（日期或日期时间），这里按本地时区解析；
-	// 只给日期时上界按当日 23:59:59 收口 —— 「截止今天」不该把今天整天漏掉。
-	if filter.TimeFrom, err = parseMovementTime(req.TimeFrom, false); err != nil {
-		return nil, err
-	}
-	if filter.TimeTo, err = parseMovementTime(req.TimeTo, true); err != nil {
-		return nil, err
-	}
-	if filter.TimeFrom != nil && filter.TimeTo != nil && filter.TimeTo.Before(*filter.TimeFrom) {
-		return nil, errors.New(inventoryenums.ErrMovementTimeRangeInvalid)
-	}
-	if filter.ProjectID, err = s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID)); err != nil {
+	filter, err := s.movementFilter(ctx, req)
+	if err != nil {
 		return nil, err
 	}
 	page, size := movementPageArgs(req)
@@ -274,6 +248,57 @@ func (s *Service) ListMovements(ctx context.Context, req *inventorydto.ListMovem
 		list = append(list, toMovementResp(r))
 	}
 	return list, nil
+}
+
+// CountMovements 流水总条数（分页页面的「共 N 条」与总页数）。
+//
+// **与 ListMovements 共用同一个 movementFilter**：过滤条件的归一（方向白名单、
+// 时间解析、工程作用域解析）与非法参数拒绝只有一份实现，两处口径不存在分叉的余地 ——
+// 「总数 0 而列表有数据」这类矛盾只在筛选维度上用错时才暴露，查起来极费时间。
+func (s *Service) CountMovements(ctx context.Context, req *inventorydto.ListMovementReq) (n int64, err error) {
+	filter, err := s.movementFilter(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	return s.m.CountMovements(ctx, filter)
+}
+
+// movementFilter 把流水列表请求归一成 model 过滤条件（ListMovements / CountMovements 共用）。
+//
+// 归一的三件事：方向必须落在白名单（非法值直接拒绝，不退化成「不过滤」）、时间区间
+// 按本地时区解析且上界补齐当日末刻、工程作用域必填（缺作用域在非超级角色下是静默空集）。
+func (s *Service) movementFilter(ctx context.Context, req *inventorydto.ListMovementReq) (filter inventorymodel.MovementFilter, err error) {
+	if req == nil {
+		return filter, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	filter = inventorymodel.MovementFilter{
+		WarehouseID: strings.TrimSpace(req.WarehouseID),
+		ProductID:   strings.TrimSpace(req.ProductID),
+		VariantID:   strings.TrimSpace(req.VariantID),
+		SKUCode:     strings.TrimSpace(req.SKUCode),
+		ReasonCode:  strings.TrimSpace(req.ReasonCode),
+		SourceType:  strings.TrimSpace(req.SourceType),
+		SourceRef:   strings.TrimSpace(req.SourceRef),
+		BatchID:     strings.TrimSpace(req.BatchID),
+	}
+	if filter.Direction, err = normalizeDirectionOrEmpty(req.Direction); err != nil {
+		return filter, err
+	}
+	// 时间区间：页面表单给的是**本地时间**（日期或日期时间），这里按本地时区解析；
+	// 只给日期时上界按当日 23:59:59 收口 —— 「截止今天」不该把今天整天漏掉。
+	if filter.TimeFrom, err = parseMovementTime(req.TimeFrom, false); err != nil {
+		return filter, err
+	}
+	if filter.TimeTo, err = parseMovementTime(req.TimeTo, true); err != nil {
+		return filter, err
+	}
+	if filter.TimeFrom != nil && filter.TimeTo != nil && filter.TimeTo.Before(*filter.TimeFrom) {
+		return filter, errors.New(inventoryenums.ErrMovementTimeRangeInvalid)
+	}
+	if filter.ProjectID, err = s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID)); err != nil {
+		return filter, err
+	}
+	return filter, nil
 }
 
 // buildChangeItems 归一入参并解析每行的仓库 / 数量（方向语义在这里落地）。

@@ -1,0 +1,199 @@
+{* admin/product/product_create_form.html — 商品建表单片段（新建整页的唯一载体）。
+   字段名（13 个）、捆绑价的必填语义、仓库 SKU 候选与属性组勾选都只在这一份 markup 里。
+   列表页曾经也 include 它作抽屉，那条入口已随本批删除（那个 template 没有任何
+   data-drawer-open 指向它，属「渲染了却永远打不开」的死块）。
+
+   —— 提交失败的「原地留住输入」分档（路径 A 渐进增强）——
+   表单保留原生 method/action（无 JS 时也能提交），另加 hx-post：htmx 优先拦住 submit，
+   服务端按 HX-Request 分档（见 product_new_page.go 的 productCreateFail）：
+
+     · htmx 请求：200 + **本片段自身**（错误槽 + 回填后的表单）—— 换掉 data-product-create-host；
+     · 原生请求：302 + ?err= 回**本页**（错误显示在表单上方，不跳到别处）。
+
+   本片段的顶层容器 `<div data-product-create-host>` 就是这个替换单元：片段自带 host，
+   调用点（整页的 section）无需再包一层 —— 包两层会让「谁是被替换的那个」在两条路径上不一致。
+
+   回填值来自页面数据键 **FormEcho / FormEchoChecked / FormEchoMulti**（见 formEchoData）：
+   带 FormEcho 前缀是因为页面自己的键空间里已经有 `Form`（列表页的批量改价结构体），
+   撞名时片段里的 `{{.Form.name}}` 会命中结构体。首屏渲染**不注入**这三个键（cfFill 为假
+   → 空表单），所以页面 handler 不需要为它加键。
+
+   局部变量前缀 cf（create form）：片段必须在**任何**渲染路径下都能独立成立 ——
+   原先约定「调用点先声明 csrf / selectedProject / warehouseOptions」是脆的：
+   提交失败时由 handler 直接渲染本片段，那时没有调用点可依赖。现在由片段自己取页面数据键。
+
+   ⚠ 读到缺失的键（或命中结构体上不存在的字段名）**不会**「HTTP 200 + 后面整块消失」——
+   那是渲染器加缓冲区**之前**的行为，本会话实测推翻过。现在的 internal/templates/jet_render.go
+   先渲到 buffer、失败走 renderError → `http.Error(500, "页面暂时无法显示，请稍后重试")`，
+   buffer 里的半截内容被丢弃。对 htmx 档更糟：htmx 2.0.4 的默认 responseHandling 把 5xx
+   判成 `swap:false` —— **片段根本不换，用户在浏览器里看不到任何反应**。
+   所以「模板读了哪些回填字段」必须与 handler 的字段清单严格对齐，并用测试**双向**钉住
+   （见 product_create_form_fail_test.go 的正反两个断言）。
+
+   页面数据键：
+     · WarehouseSKUOptions / AttributeOptions —— 可选键，未接库存契约或工程无货时整块跳过；
+     · SubmitErr —— 仅失败重渲染时存在（错误槽文案，已在 handler 侧过白名单 + 取词）。
+
+   表单字段名与 /admin/products/create 的绑定逐字一致，改这里等于改协议。 *}
+{{cfCsrf := .["csrf_token"]}}
+{{cfProject := .["SelectedProject"]}}
+{{cfWarehouses := .["WarehouseOptions"]}}
+{{cfFill := isset(.FormEcho)}}
+        <div data-product-create-host>
+            {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
+            <p class="badge badge-warning" role="alert" data-create-err>{{.SubmitErr}}</p>
+            {{end}}{{end}}
+        <form method="post" action="/admin/products/create" class="form-stack" data-product-create-form
+              hx-post="/admin/products/create" hx-target="closest [data-product-create-host]" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{cfCsrf}}">
+            <input type="hidden" name="projectId" value="{{if cfFill}}{{.FormEcho.projectId}}{{else}}{{cfProject}}{{end}}">
+            <input type="text" class="form-input" name="name" value="{{if cfFill}}{{.FormEcho.name}}{{end}}" placeholder="{{ .["t"]("admin.products.ph.name", "商品名称") }}" required>
+            {* 商品类型（迁移 238）：bundle 不生成首个变体，价格只有容器价（defaultPrice）。
+               选「捆绑商品」时上面的默认价格是**必填**的容器价（服务端 ErrBundlePriceRequired 兜底）。 *}
+            <select class="form-select" name="type" aria-label="{{ .["t"]("admin.products.label.type", "商品类型") }}">
+                <option value="variant"{{if cfFill}}{{if .FormEcho.type == "variant"}} selected{{end}}{{end}}>{{ .["t"]("admin.products.type.variant", "变体商品（本商品自己的 SKU）") }}</option>
+                <option value="bundle"{{if cfFill}}{{if .FormEcho.type == "bundle"}} selected{{end}}{{end}}>{{ .["t"]("admin.products.type.bundle", "捆绑商品（组合多个变体，只有套餐价）") }}</option>
+            </select>
+            <input type="text" class="form-input" name="slug" value="{{if cfFill}}{{.FormEcho.slug}}{{end}}" placeholder="{{ .["t"]("admin.products.ph.slug", "URL 段（留空自动生成）") }}">
+            {* 主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）：这是商品的**身份编码**。
+               变体商品：可留空（服务端按 URL 段派生；填了并选了归属仓时自动加仓库码前缀，已带前缀不重复加）。
+               捆绑商品：**必填**（服务端 ErrBundleSKURequired）—— 抽屉打开 / 类型切到 bundle 时
+               预填建议值 <商品段>_B，运营可改、可一键重新生成；编码必须被看见并确认，不再静默派生。
+               增强脚本在页尾（算法与 Go 侧的 productCodeSegment 同口径，只作用于本页、不改共享 JS）。 *}
+            {* SKU 来源（docs/14 §1.1 的两条入口）：① 自己创建 —— 填下面的「SKU 编码」
+               （选了仓库自动加仓库码前缀）；② 从仓库选 —— 选该仓的一条货，主体 SKU 由
+               服务端拼成 <仓短码>_<仓库 SKU>。捆绑商品不存在于仓库：切到 bundle 时这个
+               入口被禁用（服务端 ErrWarehouseSKUBundleNotAllowed 同款硬拒兜底）。
+               可选键：未接库存契约 / 该工程没有任何仓库 SKU 时整块不渲染。 *}
+            {{if isset(.WarehouseSKUOptions)}}
+            {{cfSkuGroups := .WarehouseSKUOptions}}
+            {{if len(cfSkuGroups) > 0}}
+            <label class="form-label" for="create-sku-source">{{ .["t"]("admin.products.skuSource.label", "SKU 来源") }}</label>
+            <select class="form-select" id="create-sku-source" name="skuSource" data-sku-source>
+                <option value="custom"{{if cfFill}}{{if .FormEcho.skuSource == "custom"}} selected{{end}}{{end}}>{{ .["t"]("admin.products.skuSource.custom", "自己创建（自己填编码，选了仓库自动加仓库码前缀）") }}</option>
+                <option value="warehouse"{{if cfFill}}{{if .FormEcho.skuSource == "warehouse"}} selected{{end}}{{end}}>{{ .["t"]("admin.products.skuSource.warehouse", "从仓库选（取仓库里那条货的编码）") }}</option>
+            </select>
+            {{end}}
+            {{end}}
+            <label class="form-label" for="create-sku">{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</label>
+            <div class="form-inline">
+                <input type="text" class="form-input" id="create-sku" name="sku" data-sku-input
+                       value="{{if cfFill}}{{.FormEcho.sku}}{{end}}"
+                       list="create-sku-candidates"
+                       placeholder="{{ .["t"]("admin.products.ph.sku", "留空自动生成；填了并选择了仓库时自动加仓库码前缀") }}"
+                       data-sku-placeholder-bundle="{{ .["t"]("admin.products.ph.skuBundle", "系统建议值，可直接修改（捆绑商品必填，编码恒以 _B 结尾）") }}"
+                       aria-describedby="create-sku-hint" autocomplete="off">
+                <button type="button" class="btn btn-sm" data-sku-regenerate style="display:none" hidden>{{ .["t"]("admin.products.sku.regenerate", "重新生成") }}</button>
+            </div>
+            {* SKU 编码的候选（**可搜索下拉 + 可自由输入**，2026-09-19 口径，docs/14 §1.1）：
+               一个控件承担两种意图 ——
+                 · 下拉里选到某仓已有的**裸码** → 那一行本来就在，直接**认领 / 复用**（不新建行）；
+                 · 自己打一个新码 → 在勾选的每个仓各建一行（仓库侧写裸码）。
+               候选只由服务端渲一次（这个 datalist），前端按**勾选的仓库**过滤；
+               没有 JS 时它退化成普通的可自由输入文本框，功能不会卡死。 *}
+            <datalist id="create-sku-candidates" data-sku-candidates>
+                {{if isset(.WarehouseSKUOptions)}}
+                {{skuGroups := .WarehouseSKUOptions}}
+                {{range _, g := skuGroups}}
+                {{range _, it := g.Items}}
+                <option value="{{it.SKUCode}}" data-warehouse="{{g.WarehouseID}}" label="{{g.Label}} · {{it.SKUCode}}"></option>
+                {{end}}
+                {{end}}
+                {{end}}
+            </datalist>
+            {* 两条提示行互斥：bundle 给建议值说明；建议值为空（名称与 URL 段都不含 ASCII）时改说「请手填」。
+               初始都隐藏 —— 抽屉打开时类型默认是变体商品，此时 SKU 仍可留空。 *}
+            <p class="hint" id="create-sku-hint" data-sku-hint style="display:none" hidden>{{ .["t"]("admin.products.sku.bundleHint", "这是系统建议的唯一身份编码，可直接修改；捆绑商品的编码恒以 _B 结尾。") }}</p>
+            <p class="hint" data-sku-manual style="display:none" hidden>{{ .["t"]("admin.products.sku.bundleManual", "商品名称与 URL 段都不含 ASCII 字符，派生不出建议值，请手动填写 SKU 编码。") }}</p>
+            {* 预览：这个编码会变成什么（<认领仓短码>_<编码>），或「已存在 → 复用那一行」。
+               只是把服务端的规则**显示**出来；真源与复核都在服务端（前端不参与命名决策）。 *}
+            <p class="hint" data-sku-preview style="display:none" hidden
+               data-preview-label="{{ .["t"]("admin.products.skuSource.previewLabel", "将要生成的主体 SKU：") }}"
+               data-reuse-label="{{ .["t"]("admin.products.sku.reuseLabel", "该仓已有这条编码，将复用那一行（不新建）：") }}"
+               data-new-label="{{ .["t"]("admin.products.sku.newLabel", "新编码，将在勾选的每个仓各建一行：") }}"></p>
+            {* 候选的机器可读来源（不直接展示）：服务端只渲一次候选，combobox 的候选与
+               「从仓库选」的服务端复核都从这里取 —— 两处各渲一份，字段名与取值迟早分叉。
+               这两个 select 保持隐藏但**参与提交**：skuSource 默认 custom（= 自己创建）、
+               warehouseSku 留空即不指定仓库货 —— 两条意图现在由「编码在该仓是否已存在」在服务端判定。 *}
+            {{if isset(.WarehouseSKUOptions)}}
+            {{skuGroups := .WarehouseSKUOptions}}
+            {{if len(skuGroups) > 0}}
+            <div hidden data-legacy-picker>
+                <select class="form-select" id="create-sku-source" name="skuSource" data-sku-source hidden>
+                    <option value="custom"{{if cfFill}}{{if .FormEcho.skuSource == "custom"}} selected{{end}}{{else}} selected{{end}}>{{ .["t"]("admin.products.skuSource.custom", "自己创建（自己填编码，选了仓库自动加仓库码前缀）") }}</option>
+                    <option value="warehouse"{{if cfFill}}{{if .FormEcho.skuSource == "warehouse"}} selected{{end}}{{end}}>{{ .["t"]("admin.products.skuSource.warehouse", "从仓库选（取仓库里那条货的编码）") }}</option>
+                </select>
+                <select class="form-select" id="create-warehouse-sku" name="warehouseSku" data-warehouse-sku hidden>
+                    <option value="">{{ .["t"]("admin.products.ph.warehouseSku", "选择所选仓库里的一条货") }}</option>
+                    {{range _, g := skuGroups}}
+                    <optgroup label="{{g.Label}}" data-warehouse="{{g.WarehouseID}}" data-code="{{g.WarehouseCode}}" data-default="{{if g.IsDefault}}1{{end}}">
+                        {{range _, it := g.Items}}
+                        <option value="{{it.SKUCode}}" data-external="{{it.ExternalSKU}}"{{if cfFill}}{{if it.SKUCode == .FormEcho.warehouseSku}} selected{{end}}{{end}}>{{it.Label}}</option>
+                        {{end}}
+                    </optgroup>
+                    {{end}}
+                </select>
+            </div>
+            {{end}}
+            {{end}}
+            <label class="form-label" for="create-external-sku">{{ .["t"]("admin.products.label.externalSku", "外部编码（可选）") }}</label>
+            <input type="text" class="form-input" id="create-external-sku" name="externalSku" data-external-sku-input
+                   value="{{if cfFill}}{{.FormEcho.externalSku}}{{end}}"
+                   placeholder="{{ .["t"]("admin.products.ph.externalSku", "该仓的第三方编码，留空即用我们自己的 SKU") }}" autocomplete="off">
+            <p class="hint">{{ .["t"]("admin.products.skuSource.warehouseHint", "新建时主体 SKU = 认领仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
+            <input type="text" class="form-input" name="defaultPrice" value="{{if cfFill}}{{.FormEcho.defaultPrice}}{{end}}" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（变体商品：首个变体继承；捆绑商品：套餐价，必填）") }}">
+            {* 引用的属性组（本批改版）：原来是「逗号分隔的 UUID」输入框 —— 用户手上没有 UUID，
+               只能去属性页复制粘贴，打错一个字符要到提交才知道（ErrAttrNotFound）。
+               现在勾选列表，可选值由服务端给出（AttributeOptions）；勾选即按名重复提交，
+               handler 用 c.PostFormArray 收（见 attributeIDsFromForm），仍兼容老的逗号分隔形态。 *}
+            {{if isset(.AttributeOptions)}}
+            {{if len(.AttributeOptions) > 0}}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
+                {{range _, a := .AttributeOptions}}
+                {* 勾选回填：对每个选项，遍历这次提交里的同名多值（FormMulti），命中即勾上。
+                   不用「该字段是否提交过」（FormEchoChecked）判 —— 那只说明整组提交过，
+                   在多选里会把**所有**选项都勾上（用户只选了一个却涨成一片）。 *}
+                <label class="var-value">
+                    <input type="checkbox" name="attributeIds" value="{{a.ID}}"{{if cfFill}}{{range _, cid := .FormEchoMulti.attributeIds}}{{if cid == a.ID}} checked{{end}}{{end}}{{end}}> {{a.Label}}{{if a.IsVariation}} <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>{{end}}
+                </label>
+                {{end}}
+            </fieldset>
+            {{else}}
+            <p class="text-mute text-sm">{{ .["t"]("admin.products.create.noAttributesLead", "这个工程还没有属性组，先到") }}<a href="/admin/product-attributes?project={{cfProject}}">{{ .["t"]("admin.products.hint.attrLink", "商品属性") }}</a>{{ .["t"]("admin.products.create.noAttributesTail", "页建一个（可留空，之后在商品详情页也能挂）。") }}</p>
+            {{end}}
+            {{end}}
+            {{if isset(.WarehouseOptions)}}{{if len(cfWarehouses) > 0}}
+            {* 多仓勾选（2026-09-19 口径）：**勾了哪些仓就在哪些仓各建一行**（仓库侧写裸码）。
+               第一个勾中的仓（按本表顺序）是**认领仓**，只有它决定主体 SKU 的仓码前缀；
+               一个都不勾即默认仓。提交顺序 = 表内顺序（浏览器行为），服务端据此取认领仓。
+               同一张表里勾两次同一个仓会被服务端按仓 id 去重，不会建出两行。 *}
+            <fieldset class="var-group">
+                <legend>{{ .["t"]("admin.products.warehouses.label", "建在哪些仓（可多选，不勾即默认仓）") }}</legend>
+                {{range _, w := cfWarehouses}}
+                <label class="var-value">
+                    <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{w.Label}}" {{if w.IsDefault}}data-default="1"{{end}}{{if cfFill}}{{range _, wid := .FormEchoMulti.warehouseIds}}{{if wid == w.ID}} checked{{end}}{{end}}{{end}}> {{w.Label}}
+                </label>
+                {{end}}
+                <p class="hint">{{ .["t"]("admin.products.warehouses.hint", "按本表顺序第一个勾中的仓是认领仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>
+            </fieldset>
+            {* 数量（迁移 261）：**不填 = 不跟踪 = 无限**。开关没勾时数量框禁用且留空 ——
+               **绝不预填 0**：0 是「明确没货」这个具体事实，与「无限」是两种状态。 *}
+            <label class="var-value">
+                <input type="checkbox" name="trackQuantity" value="1" data-track-quantity{{if cfFill}}{{if .FormEchoChecked.trackQuantity}} checked{{end}}{{end}}> {{ .["t"]("admin.products.quantity.track", "跟踪数量（不勾 = 无限）") }}
+            </label>
+            <div class="form-inline">
+                <input type="number" class="form-input" name="quantity" data-quantity-input min="0" step="1"
+                       value="{{if cfFill}}{{.FormEcho.quantity}}{{end}}"
+                       {{if cfFill}}{{if !.FormEchoChecked.trackQuantity}}disabled{{end}}{{else}}disabled{{end}}
+                       placeholder="{{ .["t"]("admin.products.ph.quantity", "不跟踪时留空（无限）；跟踪时填数量，0 = 没货") }}">
+            </div>
+            <p class="hint">{{ .["t"]("admin.products.quantity.hint", "不填数量 = 不跟踪 = 无限；显式填数字 = 跟踪并写入该数量（0 是合法的明确值）。") }}</p>
+            {{end}}{{end}}
+            <div class="action-row">
+                {* 整页形态只有一个出口（提交）；「取消」由页头的「返回商品列表」承担 ——
+                   抽屉形态已随列表页那个死 template 一起删除，见文件头注释。 *}
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.create.submit", "新建商品") }}</button>
+            </div>
+        </form>
+        </div>

@@ -15,10 +15,10 @@ func TestGroupCPagesParse(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	files := []string{
-		"admin/coupons", "admin/returns", "admin/orders", "admin/customers",
-		"admin/customer_detail", "admin/mail", "admin/mail_marketing", "admin/mail_campaign",
-		"admin/mail_automation", "admin/mail_automation_edit", "admin/mail_automation_run",
-		"admin/mail_automation_canvas",
+		"admin/order/coupons", "admin/order/returns", "admin/order/orders", "admin/user/customers",
+		"admin/user/customer_detail", "admin/mail/mail", "admin/mail/mail_marketing", "admin/mail/mail_campaign",
+		"admin/mail/mail_automation", "admin/mail/mail_automation_edit", "admin/mail/mail_automation_run",
+		"admin/mail/mail_automation_canvas",
 	}
 	for _, f := range files {
 		if _, err := set.GetTemplate(f); err != nil {

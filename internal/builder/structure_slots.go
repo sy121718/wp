@@ -61,6 +61,34 @@ func IsStructureTemplateRef(ref string) bool {
 	return strings.HasPrefix(ref, structureTemplateRefPrefix)
 }
 
+// SlotFrame 结构槽位在**编辑器画布**上的标记层数据（见 core.RenderContext.CanvasSlotFrames）。
+//
+// 它不是渲染内容，而是「这段 DOM 是谁」的元信息：槽位展开后的节点 ID 带
+// __layout_<slot>-b- 前缀，页面 AST 里没有对应节点，画布光看产物分不出
+// 「这是站点结构的页眉」还是「作者写在页面里的一段容器」。
+type SlotFrame struct {
+	// Slot 槽位名（header / footer / announcement…）。
+	Slot string
+	// Ref 生效绑定：全局块 ID，或结构模板的构建期虚拟引用 ID。
+	//
+	// 生效值而不是配置值 —— 模板优先、块回退的判定已在装配层完成
+	//（pipeline.BuildStructureSlots），画布要跳去编辑的是**真正被展开的那份**。
+	Ref string
+	// RefKind 引用种类：block / template。画布据此决定「编辑」跳去全局块
+	// 还是内容模板，两者的工作台入口不同（?block= / ?template=）。
+	RefKind string
+	// NodeID 槽位节点 ID（__layout_header）：画布做选中键，与 AST 无关但全局唯一。
+	NodeID string
+}
+
+// SlotRefKind 按引用 ID 判定种类（结构模板虚拟引用 → template，其余 → block）。
+func SlotRefKind(ref string) string {
+	if IsStructureTemplateRef(ref) {
+		return "template"
+	}
+	return "block"
+}
+
 // WithStructureSlots 注入结构槽位绑定：编译期展开成 root 首尾的 core.layoutSlot 节点。
 //
 // 为什么放在编译期而不是让调用方自己往文档里塞节点：页面、自动发布实例、预览

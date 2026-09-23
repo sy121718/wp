@@ -671,7 +671,7 @@ func (s *Service) recalcPricingAutoTags(ctx context.Context, projectID string) (
 	if projectID == "" {
 		return 0, nil
 	}
-	tags, err := s.m.ListTags(ctx, projectID, productenums.TagKindRule, "")
+	tags, err := s.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
 	if err != nil {
 		return 0, err
 	}

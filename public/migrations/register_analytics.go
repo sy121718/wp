@@ -132,6 +132,21 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("160_presentation_entity_types.sql"),
 	})
 
+	// 313：修正 159 种下的文章详情模板里的非法控件值（plain/rich → plaintext/richtext、
+	// ratio → aspectRatio）。159 是种子且「已有模板即跳过」，存量库不会重跑，故这里补一次。
+	// 不修的直接后果：文章详情页一页都建不出来（模板文档过不了校验）。
+	register(Migration{
+		Version:   "313-article-detail-template-props",
+		TableName: "content_templates",
+		// 判据：表还不存在（159 尚未跑）→ 跳过；仍有非法文档 → 跑 DO 块；已修好 → 跳过。
+		// 模式串写 '%"mode": "plain"%'（jsonb 文本输出带空格）而不是 '%plain%'——
+		// 后者会匹配到修好之后的 "plaintext"，让这条迁移每次启动都空跑一遍。
+		CheckSQL: "SELECT CASE WHEN to_regclass(?) IS NULL THEN 1 " +
+			"WHEN EXISTS (SELECT 1 FROM content_templates WHERE entity_type = 'article' " +
+			"AND draft_document::text LIKE '%\"mode\": \"plain\"%') THEN 0 ELSE 1 END",
+		SQL:       mustSQL("313_article_detail_template_props.sql"),
+	})
+
 	register(Migration{
 		Version:   "161-data-retention",
 		TableName: "page_views_daily",

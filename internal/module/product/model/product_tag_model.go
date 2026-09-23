@@ -108,9 +108,12 @@ func (m *Model) TagSlugExists(ctx context.Context, projectID, slug, excludeID st
 // ListTags 工程内标签列表（条件以参数传入；按排序号 + 创建时间稳定排序）。
 // kind 为空表示不过滤（后台列表要同时展示手工与自动标签）。
 //
+// limit <= 0 表示**不分页**（取全部）：规则重算的取数来源、商品页的标签勾选项都走这条形态，
+// 它们要的是全量；默认分页会让「重算回执里少了一批标签」这种静默截断出现。
+//
 // 作用域必填（DB-009 切角色收口）：product_tags 带 FORCE 策略，裸查在非超级角色下静默 0 行 ——
 // 标签列表为空、新品/促销规则的取数来源为空（规则不报错，只是永远筛不出命中）。
-func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string) (list []*ProductTagEntity, err error) {
+func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string, limit, offset int) (list []*ProductTagEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductTagEntity{})
 		if kind != "" {
@@ -119,9 +122,32 @@ func (m *Model) ListTags(ctx context.Context, projectID, kind, keyword string) (
 		if keyword != "" {
 			q = q.Where("name ILIKE ?", "%"+keyword+"%")
 		}
-		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+		q = q.Order("sort ASC, create_time ASC, id ASC")
+		if limit > 0 {
+			// offset 只在分页时拼接（PG 对 OFFSET 0 与省略等价）。
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Find(&list).Error
 	})
 	return list, err
+}
+
+// CountTags 工程内标签总数（**与 ListTags 同过滤条件**：工程 + 类型 + 关键词）。
+//
+// kind 这一维不能漏：后台标签页虽然只列两种，但接口形态按 kind 过滤，
+// 漏掉它会让「只看自动标签」的调用方拿到一个把手工标签也算进去的总数。
+func (m *Model) CountTags(ctx context.Context, projectID, kind, keyword string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductTagEntity{})
+		if kind != "" {
+			q = q.Where("kind = ?", kind)
+		}
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		return q.Count(&n).Error
+	})
+	return n, err
 }
 
 // ListTagsByIDs 批量取标签（商品引用校验用，避免 N+1），**必带工程作用域**。

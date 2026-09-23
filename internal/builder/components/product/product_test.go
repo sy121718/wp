@@ -20,7 +20,7 @@ const testProjectID = "proj-1"
 // buildViewFor 补上构建期工程 id 的 BuildView 包装（用例只关心组件本身时用它）；
 // 专门断言片段地址的用例直接调 BuildView 并显式给出工程 id。
 func buildViewFor(p *Props, content core.ContentResolver) (View, error) {
-	return BuildView(p, content, testProjectID, "")
+	return BuildView(p, content, testProjectID, "", nil)
 }
 
 // propsOf 把 props 键值编码为节点 props JSON（避免测试里手写 JSON 字符串）。
@@ -401,7 +401,7 @@ func TestBuildViewFragmentURLsCarryRenderProject(t *testing.T) {
 	p := optionProps(t)
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
 		"product.options": options, "product.variants": twoCombos,
-	}}, projectID, "")
+	}}, projectID, "", nil)
 	if err != nil {
 		t.Fatalf("BuildView 失败: %v", err)
 	}
@@ -448,7 +448,7 @@ func TestBuildViewWithoutProjectOmitsFragmentURLs(t *testing.T) {
 		"product.options": `[{"key":"color","name":"颜色","values":[{"key":"red","label":"红"},{"key":"blue","label":"蓝"}]}]`,
 		"product.variants": `[{"id":"var-1","sku":"a-1","price":"99","enabled":true,"options":{"color":"red"}},
 			{"id":"var-2","sku":"a-2","price":"129","enabled":true,"options":{"color":"blue"}}]`,
-	}}, "", "")
+	}}, "", "", nil)
 	if err != nil {
 		t.Fatalf("BuildView 失败: %v", err)
 	}

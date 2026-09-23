@@ -39,16 +39,20 @@ const collectionSourceProduct = "content:product"
 
 // 集合过滤维度的键（与集合源契约的维度白名单一致，issue #21）。
 const (
-	filterKeyStatus     = "status"
-	filterKeyCategoryID = "categoryId"
-	filterKeyBrandID    = "brandId"
-	filterKeyTagID      = "tagId"
-	filterKeyTagIDs     = "tagIds"
-	filterKeyTagMode    = "tagMode"
-	filterKeyOnSale     = "onSale"
-	filterKeyMinRating  = "minRating"
-	filterKeyMinPrice   = "minPrice"
-	filterKeyMaxPrice   = "maxPrice"
+	filterKeyStatus       = "status"
+	filterKeyCategoryID   = "categoryId"
+	filterKeyCategoryIDs  = "categoryIds"
+	filterKeyCategoryMode = "categoryMode"
+	filterKeyBrandID      = "brandId"
+	filterKeyBrandIDs     = "brandIds"
+	filterKeyBrandMode    = "brandMode"
+	filterKeyTagID        = "tagId"
+	filterKeyTagIDs       = "tagIds"
+	filterKeyTagMode      = "tagMode"
+	filterKeyOnSale       = "onSale"
+	filterKeyMinRating    = "minRating"
+	filterKeyMinPrice     = "minPrice"
+	filterKeyMaxPrice     = "maxPrice"
 
 	// optionFilterPrefix 属性值维度的前缀（与集合源契约的 `option.<属性key>` 一致，issue #25）。
 	optionFilterPrefix = "option."
@@ -188,7 +192,14 @@ type Props struct {
 	CollectionLimit int `json:"collectionLimit,omitempty" ct:"slider,min=1,max=100,step=1,sec=collection,label=取几条"`
 
 	// —— 筛选（构建期下推到集合源，issue #21 的四个维度）——
-	FilterStatus string `json:"filterStatus,omitempty" ct:"select,=全部,draft=草稿,published=已发布,archived=已归档,default=,sec=collection,label=状态"`
+	// FilterStatus 集合的状态过滤。
+	//
+	// **默认已发布**：控件的空选项仍是「全部」（作者显式要就能要），但插入默认值
+	// 与实际渲染兜底都取已发布 —— 前台列表默认不该出现草稿。
+	// 这条与片段层同源（runtimefragment 渲染列表时**强制** status=published）：
+	// 两处不一致的表现是「首次渲染有草稿商品、刷新一次就没了」，
+	// 而且没有报错，只有对着屏幕比对才看得出来。
+	FilterStatus string `json:"filterStatus,omitempty" ct:"select,=全部,draft=草稿,published=已发布,archived=已归档,default=published,sec=collection,label=状态"`
 	// FilterFromArchive 筛选来源（审计 EDT-004）：开启后列表用**当前归档实例的实体**
 	// 作为筛选值（分类页 → 该分类、标签页 → 该标签、品牌页 → 该品牌），上面几个
 	// 静态筛选字段被忽略。空 = 关闭（手工页面与详情页的既有行为一个字节不变）。
@@ -197,8 +208,15 @@ type Props struct {
 	// 新增分类必然漏配 —— 而漏配的表现是「页面打得开、列的是全站商品」。
 	FilterFromArchive string `json:"filterFromArchive,omitempty" ct:"select,=关闭,on=按归档上下文,default=,sec=collection,label=筛选来源"`
 	FilterCategoryID  string `json:"filterCategoryId,omitempty" ct:"entityref,category,label=分类"`
-	FilterBrandID     string `json:"filterBrandId,omitempty" ct:"entityref,brand,label=品牌"`
-	FilterTagID       string `json:"filterTagId,omitempty" ct:"entityref,tag,label=标签"`
+	// FilterCategoryIDs 多分类筛选：逗号分隔的分类 id 列表（勾多个分类取并集）。
+	// 与单值 FilterCategoryID 并存，两者都填时**多值优先**（单值是「只勾了一个」的退化写法）。
+	FilterCategoryIDs  string `json:"filterCategoryIds,omitempty" ct:"multientityref,category,maxlen=500,sec=collection,label=分类 id 列表"`
+	FilterCategoryMode string `json:"filterCategoryMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多分类语义"`
+	FilterBrandID      string `json:"filterBrandId,omitempty" ct:"entityref,brand,label=品牌"`
+	// FilterBrandIDs 多品牌筛选：形状与语义同多分类。
+	FilterBrandIDs  string `json:"filterBrandIds,omitempty" ct:"multientityref,brand,maxlen=500,sec=collection,label=品牌 id 列表"`
+	FilterBrandMode string `json:"filterBrandMode,omitempty" ct:"select,=具备任一,any=具备任一,all=同时具备全部,default=,sec=collection,label=多品牌语义"`
+	FilterTagID     string `json:"filterTagId,omitempty" ct:"entityref,tag,label=标签"`
 	// FilterTagIDs 多标签筛选（issue #27）：逗号分隔的标签 id 列表（「热卖」「新品」这类用标签表达）。
 	FilterTagIDs string `json:"filterTagIds,omitempty" ct:"multientityref,tag,maxlen=500,sec=collection,label=标签 id 列表"`
 	// FilterTagMode 多标签语义：any（默认，具备任一）/ all（同时具备全部）。
@@ -224,6 +242,13 @@ type Props struct {
 	// 空 = 不渲染筛选栏（纯列表）。真正渲染得出来还要集合源实现了筛选选项能力，
 	// 否则该块自动不显示（契约缺失不阻断构建）。
 	Filters string `json:"filters,omitempty" ct:"text,maxlen=120,sec=collection,label=筛选栏维度"`
+	// CategoryMulti 分类树是否开启多选（空 = 多选；off = 单选）。
+	// 单选下不渲染勾选框（基础样式更干净，对齐源站的纯链接树），点击即替换。
+	CategoryMulti string `json:"categoryMulti,omitempty" ct:"select,=多选,off=单选,default=,sec=collection,label=分类多选"`
+
+	// CaretIcon 分类树折叠图标（基座图标库白名单，默认 chevron-right）。
+	CaretIcon string `json:"caretIcon,omitempty" ct:"select,chevron-right=默认箭头,dot=圆点,square=方块,none=无图标,default=chevron-right,sec=collection,label=折叠图标"`
+
 	// PriceRanges 预设价格档位（issue #28）：`0-199,200-399,799+` 逗号分隔。
 	// 空 = 不渲染价格块。每档渲染成一条筛选链接（与其它筛选同构：无 JS 可点、URL 干净）。
 	PriceRanges string `json:"priceRanges,omitempty" ct:"rangelist,maxlen=200,sec=collection,label=预设价格档位"`
@@ -409,10 +434,17 @@ func validateExtra(p *Props, _ string) (err error) {
 	if p.CollectionLimit < 0 || p.CollectionLimit > maxLimit {
 		return fmt.Errorf("取几条必须在 0~%d 之间（0 = 用默认值 %d）", maxLimit, defaultLimit)
 	}
-	switch p.FilterTagMode {
-	case "", "any", "all":
-	default:
-		return fmt.Errorf("无效的多标签语义 %q（any = 具备任一 / all = 同时具备全部）", p.FilterTagMode)
+	// 三个多值维度共用一套语义取值（键不同、含义一致），逐个校验。
+	for _, mode := range [][2]string{
+		{p.FilterCategoryMode, "多分类"},
+		{p.FilterBrandMode, "多品牌"},
+		{p.FilterTagMode, "多标签"},
+	} {
+		switch mode[0] {
+		case "", "any", "all":
+		default:
+			return fmt.Errorf("无效的%s语义 %q（any = 具备任一 / all = 同时具备全部）", mode[1], mode[0])
+		}
 	}
 	switch p.OnlyOnSale {
 	case "", "on":
@@ -466,18 +498,56 @@ func validateExtra(p *Props, _ string) (err error) {
 	if keySet && (!optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionKey)) || !optionKeyRe.MatchString(strings.TrimSpace(p.FilterOptionValue))) {
 		return fmt.Errorf("属性筛选的 key / 值形状非法（只允许字母数字下划线与连字符）")
 	}
-	// 多属性：每对必须是 `key:value` 且两半形状合法（缺冒号 / 空半都是配置错误）。
+	// 多属性：每对必须是 `key:v1[,v2...]`，键与每个值都要形状合法
+	//（缺冒号 / 空键 / 空值都是配置错误 —— 空值会让整个属性组被静默丢掉）。
 	for _, pair := range strings.Split(p.FilterOptions, ",") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue
 		}
-		key, value, ok := strings.Cut(pair, ":")
-		if !ok || !optionKeyRe.MatchString(strings.TrimSpace(key)) || !optionKeyRe.MatchString(strings.TrimSpace(value)) {
-			return fmt.Errorf("多属性筛选项 %q 形状非法（期望 属性key:属性值key）", pair)
+		key, values, ok := strings.Cut(pair, ":")
+		key = strings.TrimSpace(key)
+		if !ok || !optionKeyRe.MatchString(key) {
+			return fmt.Errorf("多属性筛选项 %q 形状非法（期望 属性key:属性值key[,属性值key…]）", pair)
+		}
+		for _, value := range strings.Split(values, ",") {
+			if value = strings.TrimSpace(value); !optionKeyRe.MatchString(value) {
+				return fmt.Errorf("多属性筛选项 %q 形状非法（期望 属性key:属性值key[,属性值key…]）", pair)
+			}
 		}
 	}
 	return nil
+}
+
+// singleToMultiKey 单值维度 → 它对应的多值维度键（只有分类 / 品牌 / 标签三对）。
+//
+// 用于「多值优先」：多值维度一旦下推，同名维度的单值就必须让位，
+// 否则两个键会一起进 SQL 并 AND 起来，多值那一半被单值卡死。
+var singleToMultiKey = map[string]string{
+	filterKeyCategoryID: filterKeyCategoryIDs,
+	filterKeyBrandID:    filterKeyBrandIDs,
+	filterKeyTagID:      filterKeyTagIDs,
+}
+
+// mergeOptionValues 合并同一属性组的两个逗号值串（保持首次出现顺序、去重）。
+//
+// 空串表示「该组还没有值」：直接返回另一个，不产生前导逗号 ——
+// 前导逗号会被集合源的 splitCSV 去空吃掉（结果没错），但写进 URL 之后很难看，
+// 而且「空值必须移除键」这条规则正是靠这里保证的。
+func mergeOptionValues(existing, extra string) string {
+	out := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, raw := range []string{existing, extra} {
+		for _, value := range strings.Split(raw, ",") {
+			value = strings.TrimSpace(value)
+			if value == "" || seen[value] {
+				continue
+			}
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	return strings.Join(out, ",")
 }
 
 // FieldBindings 实现 core.FieldBindingProvider：卡片槽位声明的商品字段绑定。
@@ -516,6 +586,23 @@ func (c *Component) FieldBindings(node *core.Node) (refs []core.FieldRef, err er
 //
 // 默认值语义留给控件（`default=content:product`，工作台表单的初始选中项）；
 // 组件把空源当「没有数据源」处理 —— 刚拖出来还没挑源时渲染空态、不查库。
+// effectiveFilterStatus 集合的状态过滤（缺省已发布）。
+//
+// 空值取已发布而不是「全部」：前台商品列表默认不该出现草稿与归档，
+// 而图省事把空值当「全部」是**静默**漏出 —— 页面上看不出哪件是草稿，
+// 只有商品数量对不上时才会被注意到。作者想要全部仍可显式选「全部」。
+func effectiveFilterStatus(p *Props) string {
+	if p != nil {
+		if v := strings.TrimSpace(p.FilterStatus); v != "" {
+			return v
+		}
+	}
+	// 用字面量而不是 productenums.StatusPublished：builder 是底层包，
+	// 商品域依赖它、它不依赖商品域（依赖方向，见包注释）。
+	// 「published」与 statusSearch / 维度键同一处口径，契约改值时同步。
+	return "published"
+}
+
 func effectiveSource(p *Props) string {
 	if p == nil {
 		return ""
@@ -635,11 +722,19 @@ func collectionFilter(p *Props) map[string]string {
 		if pair == "" {
 			continue
 		}
-		key, value, ok := strings.Cut(pair, ":")
+		key, values, ok := strings.Cut(pair, ":")
 		if !ok {
 			continue // 形状由 validateExtra 拦（这里静默跳过，不制造半个维度）
 		}
-		f[optionFilterPrefix+strings.TrimSpace(key)] = strings.TrimSpace(value)
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		// 组内多值原样下推（集合源那一侧按逗号解析成「组内并集」）；
+		// 同一个 key 出现在多个 pair 里就并集去重 —— 后者覆盖前者会让先写的值静默消失。
+		if merged := mergeOptionValues(f[optionFilterPrefix+key], strings.TrimSpace(values)); merged != "" {
+			f[optionFilterPrefix+key] = merged
+		}
 	}
 	if key, value := strings.TrimSpace(p.FilterOptionKey), strings.TrimSpace(p.FilterOptionValue); key != "" && value != "" {
 		f[optionFilterPrefix+key] = value
@@ -658,25 +753,55 @@ func collectionFilter(p *Props) map[string]string {
 	if v := strings.TrimSpace(p.FilterMaxPrice); v != "" {
 		f[filterKeyMaxPrice] = v
 	}
-	// 多标签（issue #27）：值与语义分两个键下推（语义只在有多标签时有意义）。
-	if ids := strings.TrimSpace(p.FilterTagIDs); ids != "" {
-		f[filterKeyTagIDs] = ids
-		if mode := strings.TrimSpace(p.FilterTagMode); mode == "all" {
-			f[filterKeyTagMode] = mode
+	// 多值维度（分类 / 品牌 / 标签，同一套样板）：值与语义分两个键下推
+	//（语义只在有多值时才有意义）。
+	//
+	// 多值一旦存在就把对应的**单值键从 map 里删掉**：集合源那侧也是「多值优先」，
+	// 但组件这里留一个单值键会让产物里的查询串同时带 categoryId 与 categoryIds ——
+	// 片段重渲染（pushQuery 回灌）时那个单值键会一直挂在 URL 上，用户「取消勾选」
+	// 之后单值还在，列表看起来没变。（两边都做，因为这是两条独立的数据通路：
+	// 构建期直接读 props，片段期读 URL。）
+	// 语义键必须**显式写出**，不能从多值键名推导（"brandIds" 去掉尾字母得 "brandId"，
+	// 拼出来是 "brandIdMode"，而契约里的键是 "brandMode"）。这个错不会在编译期或校验期
+	// 暴露：契约的白名单只认 "brandMode"，于是那个拼错的键被当作未知维度**静默丢弃**，
+	// 表现为「all 语义点了没反应，出来还是并集」——所以它必须是常量对常量。
+	for _, multi := range [][4]string{
+		{p.FilterCategoryIDs, filterKeyCategoryIDs, filterKeyCategoryMode, p.FilterCategoryMode},
+		{p.FilterBrandIDs, filterKeyBrandIDs, filterKeyBrandMode, p.FilterBrandMode},
+		{p.FilterTagIDs, filterKeyTagIDs, filterKeyTagMode, p.FilterTagMode},
+	} {
+		ids := strings.TrimSpace(multi[0])
+		if ids == "" {
+			continue
+		}
+		f[multi[1]] = ids
+		if mode := strings.TrimSpace(multi[3]); mode == "all" {
+			f[multi[2]] = mode
 		}
 	}
 	if strings.TrimSpace(p.OnlyOnSale) == "on" {
 		f[filterKeyOnSale] = "true"
 	}
 	for _, kv := range [][2]string{
-		{filterKeyStatus, p.FilterStatus},
+		{filterKeyStatus, effectiveFilterStatus(p)},
 		{filterKeyCategoryID, p.FilterCategoryID},
 		{filterKeyBrandID, p.FilterBrandID},
 		{filterKeyTagID, p.FilterTagID},
 	} {
-		if v := strings.TrimSpace(kv[1]); v != "" {
-			f[kv[0]] = v
+		v := strings.TrimSpace(kv[1])
+		if v == "" {
+			continue
 		}
+		// 对应的多值维度已经下推时**跳过单值**（多值优先）。
+		//
+		// 这条判断必须写在这里，而不是像早先那样先 `delete(f, 单值键)` 再赋值：
+		// 单值键是在下面这个循环里**重新写进去**的，删在前等于白删 ——
+		// 实测表现为「品牌多选只出第一个品牌的商品」（单值 brandId 与多值 brandIds
+		// 一起进了 SQL，两者 AND，多值那一半被单值卡死）。
+		if multiKey, ok := singleToMultiKey[kv[0]]; ok && f[multiKey] != "" {
+			continue
+		}
+		f[kv[0]] = v
 	}
 	if len(f) == 0 {
 		return nil

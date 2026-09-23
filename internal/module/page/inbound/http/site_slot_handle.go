@@ -93,11 +93,17 @@ func NewSiteSlotPageHandle(pages pagecontract.PageService, projects projectcontr
 }
 
 // SiteSlotsPage 系统页面槽位页（GET /admin/site-slots）。
+//
+// 工程列表装载失败**降级渲染**（空列表 + 归口提示，HTTP 200，与 project 域主题页、
+// admin 六页同一判据）：侧栏、页头、概览、菜单全部保留，运营看得出「是这一页没读出来」，
+// 还能换菜单、刷新重试。原先这里是 `c.String(500, …)` —— 浏览器里只剩一块纯文本，
+// 用户既改不了也退不回（AGENTS.md 形态 ①）。原文只进日志（siteSlotFacingError）。
 func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, siteSlotInternalText(c))
+		c.HTML(http.StatusOK, "admin/page/site_slots.html",
+			shell.Prepare(c, siteSlotPageData(nil, "", nil, nil, siteSlotFacingError(c, err), "")))
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -133,7 +139,7 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/site_slots.html",
+	c.HTML(http.StatusOK, "admin/page/site_slots.html",
 		shell.Prepare(c, siteSlotPageData(projects, selected, candidates, slots, pageErr, pageOk)))
 }
 
@@ -176,6 +182,17 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 		"DeletedCount":     deleted,
 		"Err":              pageErr,
 		"Ok":               pageOk,
+		// NoProjectEmpty 「还没有站点工程」空态：工程列表为空 **且** 本次没有出错。
+		//
+		// 不能只判 len(Projects) == 0：装载失败时工程列表同样是空的，但那时该显示的是
+		// 错误条，而不是「先去页面管理建一个工程」—— 用户明明有工程，是这一页没读出来，
+		// 引导他去建一个已存在的工程是比没有提示更坏的结果（同一判据见 project 域主题页的
+		// themeManageData.NoProjectEmpty）。
+		//
+		// 判据在 handler 算好、模板只读一个布尔：模板是磁盘热读文件，而 Go 侧改动要等
+		// air 重编译，两边短暂不同步 —— 缺键直接参与判断会让**整页中断**
+		//（HTTP 200 + 后面整块 HTML 消失），所以模板侧一律 isset 包裹。
+		"NoProjectEmpty": len(projects) == 0 && pageErr == "",
 	}
 }
 

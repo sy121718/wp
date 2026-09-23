@@ -77,7 +77,7 @@ func (h *Handle) renderAccount(c *gin.Context, status int, actionError string) {
 	}
 	account, err := h.svc.GetAccount(c.Request.Context(), sess.UserID)
 	if err != nil {
-		h.renderMessage(c, http.StatusInternalServerError, false, "打不开账号中心", userMessage(err))
+		h.renderMessage(c, http.StatusInternalServerError, false, "打不开账号中心", userPageMessage(c, err))
 		return
 	}
 	sessions, serr := h.svc.ListSessions(c.Request.Context(), sess.UserID, currentToken(c))
@@ -119,7 +119,7 @@ func (h *Handle) DoUpdateProfile(c *gin.Context) {
 		Company:   formValue(c, "company"),
 	})
 	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
 	}
 	if redirectAfterSave(c) {
@@ -147,7 +147,7 @@ func (h *Handle) DoUpdatePreference(c *gin.Context) {
 		ShowOnline:        formBool(c, "showOnline"),
 	})
 	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
 	}
 	if redirectAfterSave(c) {
@@ -173,7 +173,7 @@ func (h *Handle) DoChangePassword(c *gin.Context) {
 		NewPassword: c.PostForm("newPassword"),
 	})
 	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
 	}
 	_ = clearUserSession(c)
@@ -191,11 +191,11 @@ func (h *Handle) DoRevokeSession(c *gin.Context) {
 	// 设备标识是会话令牌的 sha256（Redis 索引成员），不是数据库行 id —— 会话不落库。
 	sessionHash := strings.TrimSpace(formValue(c, "id"))
 	if sessionHash == "" {
-		h.renderAccount(c, http.StatusBadRequest, userenums.ErrSessionNotFound)
+		h.renderAccount(c, http.StatusBadRequest, userKeyText(c, userenums.ErrSessionNotFound))
 		return
 	}
 	if err := h.svc.RevokeSession(c.Request.Context(), sess.UserID, sessionHash); err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
 	}
 	if redirectAfterSave(c) {
@@ -212,7 +212,7 @@ func (h *Handle) DoRevokeOtherSessions(c *gin.Context) {
 		return
 	}
 	if _, err := h.svc.RevokeOtherSessions(c.Request.Context(), sess.UserID, currentToken(c)); err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userMessage(err))
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
 	}
 	if redirectAfterSave(c) {

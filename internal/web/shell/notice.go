@@ -183,7 +183,7 @@ func LocalReturnPath(raw string) string { return LangRedirectPath(raw) }
 // 日志要的是真实 URI；渲染进 HTML 的隐藏域才是无界外泄面，两者不能共用一份取值。
 func LangRedirect(c *gin.Context) string {
 	if c == nil {
-		return "/"
+		return adminHomePath
 	}
 	if p := LangRedirectPath(requestURI(c)); p != "" {
 		return p
@@ -223,5 +223,5 @@ func requestPathOrRoot(c *gin.Context) string {
 			return p
 		}
 	}
-	return "/"
+	return adminHomePath
 }

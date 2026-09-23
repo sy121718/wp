@@ -51,15 +51,18 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 		sel  string
 		want []string
 	}{
-		{"桌面两栏", ".sky-c-t {", []string{"display: grid", "grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr)", "gap: 24px", "align-items: start"}},
+		// 版式按源站（vapecentralau.com）实测对齐：图集略宽于摘要、间距 40px。
+		{"桌面两栏", ".sky-c-t {", []string{"display: grid", "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr)", "gap: 40px", "align-items: start"}},
 		{"主图", ".sky-c-t .sky-product-media img {", []string{"width: min(100%, 100%)", "height: auto", "border-radius: 12px"}},
 		{"图集", ".sky-c-t .sky-product-gallery {", []string{"minmax(min(100%, 96px), 1fr)", "gap: 8px"}},
 		{"图集图", ".sky-c-t .sky-product-gallery img {", []string{"aspect-ratio: 1 / 1", "object-fit: cover", "border-radius: 8px"}},
 		{"信息栏", ".sky-c-t .sky-product-info {", []string{"flex-direction: column", "gap: 10px", "min-width: 0"}},
-		{"标题", ".sky-c-t .sky-product-title {", []string{"font-size: 1.5rem", "line-height: 1.35"}},
+		// 标题 30px / 600：源站实测 h1 为 30px + font-weight 600 + 行高 1.4。
+		{"标题", ".sky-c-t .sky-product-title {", []string{"font-size: 30px", "font-weight: 600", "line-height: 1.4"}},
 		{"副标题", ".sky-c-t .sky-product-subtitle {", []string{"color: var(--sky-c-muted, rgba(0,0,0,0.6))", "line-height: 1.6"}},
 		{"价格行", ".sky-c-t .sky-product-price-row {", []string{"align-items: baseline", "flex-wrap: wrap"}},
-		{"价格", ".sky-c-t .sky-product-price {", []string{"font-weight: 700", "color: var(--sky-c-primary, #2563eb)"}},
+		// 价格用**黑色粗体**而不是品牌色：源站现价是黑色 17.5px/700，品牌色只留给折扣胶囊与链接。
+		{"价格", ".sky-c-t .sky-product-price {", []string{"font-weight: 700", "font-size: 17.5px", "color: var(--sky-c-heading, #000)"}},
 		{"划线价", ".sky-c-t .sky-product-compare {", []string{"text-decoration: line-through"}},
 		{"描述", ".sky-c-t .sky-product-description {", []string{"line-height: 1.7", "word-break: break-word"}},
 		{"可用量", ".sky-c-t .sky-product-variant-stock {", []string{"font-size: .85rem", "flex: 1 0 100%"}},

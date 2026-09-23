@@ -14,6 +14,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# 站点公开根地址（含路径前缀）。影响 sitemap/robots、canonical、结构化数据、hreflang
+# 与语言切换链接 —— 不设的话这些地方输出站内相对路径，本地看着正常、上线却是错的。
+# 开发环境的访问面挂在 /site 前缀下，所以默认值带 /site；部署时按自己的域名覆盖。
+# 站点基址 = 站点对外可访问的**根**地址。
+#
+# 不带 /site 前缀：访问面已挂在根上（站点独占域名根），canonical / og:url /
+# sitemap / hreflang / 全部站内链接都从这个值派生 —— 带上前缀会让它们全部指向
+# /site/...，而那是控制台内部的兼容入口，不是对外地址。
+export WP_SITE_BASE_URL="${WP_SITE_BASE_URL:-http://127.0.0.1:8080}"
+
 AIR_BIN="${AIR_BIN:-}"
 if [ -z "$AIR_BIN" ]; then
     AIR_BIN="$(command -v air || true)"

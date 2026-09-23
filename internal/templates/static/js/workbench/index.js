@@ -47,6 +47,12 @@ export function workbench() {
 
         // 选择与剪贴板
         selectedId: '',
+        // 结构槽位选中态（页眉 / 页脚）：它不是本页的 AST 节点，单独记录选中，
+        // 由槽位面板负责渲染（panels.js 的 renderSlotPanel）。与 selectedId 互斥。
+        selectedSlot: null,
+        // 一次性提示（状态栏文案）：像「槽位块已被拦下」这种**操作没发生**的反馈
+        // 必须有出口，否则用户看到的是「点了没反应」。
+        notice: '',
         clipboard: null,      // { mode: 'copy'|'cut', node }
         styleClipboard: null, // 仅样式
 
@@ -59,10 +65,21 @@ export function workbench() {
         get canRedo() { return this.redoStack.length > 0; },
         statusText() {
             if (this.busy) return '处理中…';
+            if (this.notice) return this.notice;
             if (this.saveState === 'saved') return '已保存';
             if (this.saveState === 'dirty') return '有未保存修改';
             if (this.saveState === 'error') return '操作失败';
             return '就绪';
+        },
+        // setNotice 显示一次性提示（默认 6 秒后自动回到常规状态文案）。
+        setNotice(text) {
+            var self = this;
+            this.notice = text || '';
+            this.renderUI();
+            clearTimeout(this._noticeTimer);
+            if (this.notice) {
+                this._noticeTimer = setTimeout(function () { self.notice = ''; self.renderUI(); }, 6000);
+            }
         },
     },
         stateMethods, canvasMethods, historyMethods, nodesMethods,

@@ -30,6 +30,11 @@ type View struct {
 	OneOpen bool
 	// Borderless 无边框样式。
 	Borderless bool
+	// ChevronIcon 展开箭头（基座图标库的 chevron-down，完整 <svg> 标签）。
+	//
+	// 以前是 CSS 的 content: '＋' 字符 —— 字符图标在不同字体的字宽/基线都不同，
+	// 而且无法与图标库的其它图标保持同一套描边风格。
+	ChevronIcon string
 }
 
 // BuildView 生成手风琴渲染视图：折叠项标题/展开态预计算（与 Render 输出结构一致）。
@@ -49,5 +54,9 @@ func BuildView(p *Props) View {
 		}
 		items = append(items, ItemView{Title: it.Title, Open: open})
 	}
-	return View{Items: items, OneOpen: p.OneOpen, Borderless: p.Borderless}
+	view := View{Items: items, OneOpen: p.OneOpen, Borderless: p.Borderless}
+	if svg, ok := core.IconSVGClass("chevron-down", "sky-accordion-chevron"); ok {
+		view.ChevronIcon = svg
+	}
+	return view
 }

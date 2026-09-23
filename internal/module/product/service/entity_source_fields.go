@@ -37,8 +37,8 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 		"slug":           p.Slug,
 		"unit":           p.Unit,
 		"images":         imagesJSON(p),
-		"defaultImage":   p.DefaultImage,
-		"options":        optionsJSON(p, attrs, loc),
+		"defaultImage":   mediaURL(p.DefaultImage),
+		"options":        optionsJSON(p, variants, attrs, loc),
 		"variants":       variantsJSON(variants),
 		"related":        relatedJSON(p, loc),
 		"tags":           tagsJSON(p, loc),
@@ -250,15 +250,54 @@ func imageAltsJSON(p *productmodel.ProductEntity, loc *relatedTexts) string {
 // 每次构建输出同样的字节（不变量 5）。非参与变体 / 无启用值的组不进规格维度。
 // 维度名取 product_attribute.name 的译文，值展示文本取 product_attribute.values
 // 的译文；值 key 原样保留（验收 5：筛选参数与 URL 段保持不变）。
-func optionsJSON(p *productmodel.ProductEntity, attrs []*productmodel.ProductAttributeEntity, loc *relatedTexts) string {
+// variantOptionKeys 变体实际用到的规格维度 key 集合。
+//
+// 变体的 option_values 是 {"<属性 key>": "<值 key>"} 形状（空对象表示无规格）。
+// 解析失败按「没用到」处理：宁可少出一个选择器，也不要因为一条脏数据让整页报错。
+func variantOptionKeys(variants []*productmodel.VariantEntity) map[string]bool {
+	out := map[string]bool{}
+	for _, v := range variants {
+		if v == nil || len(v.OptionValues) == 0 {
+			continue
+		}
+		var values map[string]string
+		if err := json.Unmarshal(v.OptionValues, &values); err != nil {
+			continue
+		}
+		for key := range values {
+			if key != "" {
+				out[key] = true
+			}
+		}
+	}
+	return out
+}
+
+// optionsJSON 商品规格维度（选择器用）。
+//
+// 一个属性要成为**规格维度**，必须同时满足两条：
+//  1. 属性自身标记为变化属性（is_variation）；
+//  2. **至少一个变体真的用了它**（option_values 里有这个 key）。
+//
+// 第 2 条是后补的，它挡住的是一类真实故障：单 SKU 商品也带属性引用
+// （那些属性是拿来做**筛选**的，不是拿来选规格的），只看 is_variation 会把它们
+// 全当成规格维度 → 组件认为「这件商品有规格，但没有任何可买的组合」→
+// 加购按钮渲染成「暂无可购买的规格」。而本系统没有「简单商品」这个概念，
+// 单 SKU 就是只有一个变体、没有规格维度的可变商品，它的加购必须照常可用。
+func optionsJSON(p *productmodel.ProductEntity, variants []*productmodel.VariantEntity, attrs []*productmodel.ProductAttributeEntity, loc *relatedTexts) string {
 	byID := make(map[string]*productmodel.ProductAttributeEntity, len(attrs))
 	for _, a := range attrs {
 		byID[a.ID] = a
 	}
+	used := variantOptionKeys(variants)
 	groups := []optionGroupJSON{}
 	for _, id := range decodeStrings(p.AttributeIDs) {
 		a, ok := byID[id]
 		if !ok || !a.IsVariation {
+			continue
+		}
+		// 没有任何变体用到 → 它不是这个商品的规格维度（见函数注释第 2 条）。
+		if !used[a.Key] {
 			continue
 		}
 		values := []optionValueJSON{}
@@ -293,7 +332,7 @@ func variantsJSON(variants []*productmodel.VariantEntity) string {
 	for _, v := range variants {
 		row := variantJSON{
 			ID:  v.ID,
-			SKU: v.SKUCode, Price: formatPrice(v.Price), Image: v.Image,
+			SKU: v.SKUCode, Price: formatPrice(v.Price), Image: mediaURL(v.Image),
 			Enabled: v.Enabled, Options: map[string]string{},
 		}
 		if v.ComparePrice != nil {
@@ -356,6 +395,10 @@ func imagesJSON(p *productmodel.ProductEntity) string {
 }
 
 // imageURLs 图集 URL：未配图集但有主图时退化为单元素数组（与 core.product 同口径）。
+//
+// 出口归一成完整链接：产物里的图片地址直接给访客用，相对路径在「站点与 CMS 不同域」
+// 的部署下会指回 CMS 自己（cdn / 独立域名场景）。存量行入库时是相对路径，所以这一层
+// 必须归一，不能只靠写入口。
 func imageURLs(p *productmodel.ProductEntity) []string {
 	urls := []string{}
 	if len(p.Images) > 0 {
@@ -364,7 +407,7 @@ func imageURLs(p *productmodel.ProductEntity) []string {
 	if len(urls) == 0 && p.DefaultImage != "" {
 		urls = []string{p.DefaultImage}
 	}
-	return urls
+	return mediaURLs(urls)
 }
 
 // descriptionHTML 商品描述（jsonb）→ HTML 片段。

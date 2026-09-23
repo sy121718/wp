@@ -34,8 +34,8 @@ func BuildView(p *Props) View {
 		if p.Inset.Kind == InsetText {
 			v.IsText = true
 			v.InsetText = p.Inset.Text
-		} else if path, ok := builtinInsetIcons[p.Inset.IconName]; ok {
-			v.InsetIconContent = path
+		} else if inner, ok := core.IconInner(insetIconNames[p.Inset.IconName]); ok {
+			v.InsetIconContent = inner
 		}
 	}
 	return v

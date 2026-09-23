@@ -811,8 +811,9 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	}
 }
 
-// TestProductsPageShowsTranslationEntry 验收 2：
-// 翻译入口在商品管理页（商品行内「多语言」按钮 → 商品域翻译工作台，按商品过滤）。
+// TestProductsPageShowsTranslationEntry 验收 2（本批改版）：
+// 翻译入口随「编辑」进入 —— 列表操作列只留一个编辑入口（多语言不再单占一格），
+// 编辑页里给出指向商品域翻译工作台（按商品过滤）的多语言链接。
 func TestProductsPageShowsTranslationEntry(t *testing.T) {
 	engine, f := newVariantPageEngine(t)
 	if engine == nil {
@@ -826,11 +827,17 @@ func TestProductsPageShowsTranslationEntry(t *testing.T) {
 		t.Fatalf("创建商品失败: %v", err)
 	}
 	body := getProductsPage(engine, f.projectID)
-	if !strings.Contains(body, ">多语言</a>") {
-		t.Fatalf("商品行内缺少「多语言」入口 %s", body)
+	wantEdit := editLocation(f.projectID, created.ID)
+	if !strings.Contains(body, wantEdit) {
+		t.Fatalf("商品行内缺少「编辑」入口（缺 %s） %s", wantEdit, body)
 	}
 	want := "/admin/products/translations?project=" + f.projectID + "&amp;product=" + created.ID
-	if !strings.Contains(body, want) {
-		t.Fatalf("「多语言」入口应指向商品域翻译工作台并按商品过滤（缺 %s） %s", want, body)
+	if strings.Contains(body, want) {
+		t.Fatalf("多语言不该再占列表操作列一格（已移入编辑页）：%s", body)
+	}
+	// 入口移走不等于丢掉：编辑页里必须有它，且仍按商品过滤。
+	editBody := getProductEditPage(engine, f.projectID, created.ID)
+	if !strings.Contains(editBody, want) {
+		t.Fatalf("编辑页缺少「多语言」入口（缺 %s） %s", want, editBody)
 	}
 }

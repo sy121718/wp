@@ -123,6 +123,13 @@ type InventoryService interface {
 	DeductStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.DeductStockReq) (err error)
 	// ListMovements 库存流水列表（方向 / 数量 / 原因 / 来源引用都可过滤）。
 	ListMovements(ctx context.Context, req *inventorydto.ListMovementReq) (list []*inventorydto.MovementResp, err error)
+	// CountMovements 流水总条数：与 ListMovements **逐字同一份过滤条件**
+	//（同一个 model 过滤函数，见 inventorymodel.applyMovementFilter），
+	// 供后台列表页的服务端分页算总页数。
+	//
+	// req 里的 Page / Size 对计数无意义（被忽略）：总数与「当前在第几页」无关，
+	// 与 CountProducts 同一形状 —— 复用同一个请求类型，两处口径才不会分叉。
+	CountMovements(ctx context.Context, req *inventorydto.ListMovementReq) (n int64, err error)
 
 	// —— 变动原因字典（验收 4）——
 	ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error)
@@ -145,6 +152,9 @@ type InventoryService interface {
 	GetSource(ctx context.Context, req *inventorydto.GetSourceReq) (res *inventorydto.SourceResp, err error)
 	// ListSources 货源列表（验收 4）：类型 / 关联方 / 状态 / 关键词都是可组合的筛选维度。
 	ListSources(ctx context.Context, req *inventorydto.ListSourceReq) (list []*inventorydto.SourceResp, err error)
+	// CountSources 货源总条数：与 ListSources 同一份过滤条件（含「默认只列启用中」这条
+	// 由 IncludeDisabled 决定的默认档），供后台分页算总页数。
+	CountSources(ctx context.Context, req *inventorydto.ListSourceReq) (n int64, err error)
 	DeleteSource(ctx context.Context, req *inventorydto.DeleteSourceReq) (err error)
 	// SourceSummary 按「类型 × 关联方」分组统计（验收 4「关联方标志可用于报表区分」的数据出口）。
 	SourceSummary(ctx context.Context, req *inventorydto.SourceSummaryReq) (res *inventorydto.SourceSummaryResp, err error)
@@ -159,6 +169,9 @@ type InventoryService interface {
 	GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
 	// ListPurchaseOrders 采购单列表（状态 / 货源 / 关键词可组合筛选）。
 	ListPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (list []*inventorydto.PurchaseOrderResp, err error)
+	// CountPurchaseOrders 采购单总张数：与 ListPurchaseOrders 同一份过滤条件，
+	// 供后台分页算总页数。
+	CountPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (n int64, err error)
 
 	// RegisterReceipt 登记采购收货（验收 1/2/3/4）：按行累加已入库数量（原子递增、超收拒绝、
 	// 幂等键防重放），随后经 ChangeStockTx 增加库存并写流水（原因 = 采购入库、来源 = 采购单），

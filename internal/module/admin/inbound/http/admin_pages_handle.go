@@ -42,9 +42,6 @@ const (
 	pagesMsgPermissionsTitle     = "MsgPermissionsTitle"     // 权限资源
 	pagesMsgDepartmentsTitle     = "MsgDepartmentsTitle"     // 部门管理
 	pagesMsgDatarulesTitle       = "MsgDatarulesTitle"       // 数据权限
-	pagesMsgFieldRequired        = "MsgFieldRequired"        // 必填字段不能为空
-	pagesMsgRuleConfigInvalid    = "ErrRuleConfigInvalid"    // 数据规则配置 JSON 不合法
-	pagesMsgAdminGenericFailed   = "MsgAdminGenericFailed"   // 操作失败，请检查输入或联系管理员
 )
 
 // AdminPagesHandle 六领域管理页处理器。
@@ -92,29 +89,114 @@ func adminBulkResultURL(c *gin.Context, path string, noun adminBulkText, deleted
 		tpl := adminBulkTextOf(c, adminBulkDoneText)
 		return path + "?done=" + url.QueryEscape(fmt.Sprintf(tpl, strconv.Itoa(deleted), nounText))
 	}
-	return path
+	// 既没删也没跳过 = 请求里没有一个可用的 id（没勾选 / 勾的全是空值）。
+	// 此前这里返回**裸路径**：用户回到列表页，页面上什么都没发生，与「删了但列表没刷新」
+	// 无法区分，只能反复点。走 ?err= 明确说明「这次提交没带任何可操作项」。
+	return path + "?err=" + url.QueryEscape(response.TranslateMessage(c, adminenums.MsgBadRequest))
+}
+
+// --- 页面写操作的失败出口 ---
+//
+// 每一个写 handler 的失败都必须回到**页面**：303（StatusSeeOther）回列表页 / 来源页，
+// 原因经 ?err= 回带，由读侧 adminPageErrText（形状清洗 + 受控文案白名单）决定是否渲染。
+//
+// 修之前这里是两个脱离页面的出口，用户提交失败后只能按浏览器后退：
+//   · 参数级失败 —— c.String(400, pagesMsgFieldRequired)：响应体是 i18n 的 key 本身
+//     （页面根本没机会出现这句话），浏览器停在 POST 路径上；
+//   · service 失败 —— adminWriteFailed：它写的是 JSON（{"code":400,"message":"角色不存在"}），
+//     而这里的请求来自表单提交，JSON 对用户没有任何意义。
+//
+// 为什么是 303 而不是 302：POST 之后必须换成 GET 才回页面（否则刷新会重发表单），
+// 与同文件其余成功路径（c.Redirect(http.StatusSeeOther, …)）同一取舍。
+//
+// 文案只有两条来源，且都必须在读侧候选里（不能自己造第二份）：
+//   · 参数级 → MsgBadRequest 的当前语言译文（在 AdminFacingMessages 白名单里）；
+//   · service 错误 / 业务判定 → adminErrParam（同一份白名单 + 同一处结构化日志：业务文案
+//     原样透出，未命中落 ErrInternal 归口文案）。
+
+// adminPageParamFail 参数级校验失败的页面出口（缺 id / 缺必填字段）。
+func adminPageParamFail(c *gin.Context, back string) {
+	c.Redirect(http.StatusSeeOther, adminPageErrURL(back, response.TranslateMessage(c, adminenums.MsgBadRequest)))
+}
+
+// adminPageWriteFail service 写失败（含「查不到」这类业务判定）的页面出口。
+func adminPageWriteFail(c *gin.Context, back string, err error) {
+	c.Redirect(http.StatusSeeOther, adminPageErrURL(back, adminErrParam(c, err)))
+}
+
+// adminPageErrURL 回跳地址的构造点：在目标路径上追加 err=<受控文案>。
+//
+// 目标可能已经带查询串（权限点页保留 code/module 筛选、数据规则编辑页带 id），
+// 所以分隔符按目标自身决定 —— 拼成 `…?a=b?err=…` 会让读侧取不到 err，
+// 表现是「提交失败但页面上没有任何提示」，比不改更糟。
+func adminPageErrURL(back, errText string) string {
+	sep := "?"
+	if strings.Contains(back, "?") {
+		sep = "&"
+	}
+	return back + sep + "err=" + url.QueryEscape(errText)
+}
+
+// adminPermissionsBackURL 权限点页的回跳目标：保留列表页的 code/module 筛选。
+//
+// 筛选是服务端条件（进 SQL），丢了它用户会从「筛到的那几条」跳到全量列表，
+// 看不出这次失败对应的是哪一条。取 query 而非表单：筛选是列表页 URL 上的参数。
+func adminPermissionsBackURL(c *gin.Context) string {
+	return shell.FilterBaseURL("/admin/permissions", map[string]string{
+		"code":   strings.TrimSpace(c.Query("code")),
+		"module": strings.TrimSpace(c.Query("module")),
+	})
+}
+
+// adminMenuTreeHas 菜单树里是否存在该 id（单条删除的存在性预检，见 MenusDelete）。
+func adminMenuTreeHas(nodes []admindto.MenuTreeNode, id uint64) bool {
+	for _, n := range nodes {
+		if n.ID == id {
+			return true
+		}
+		if adminMenuTreeHas(n.Children, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- 管理员 administrators ---
 
 // AdministratorsPage 管理员列表页（GET /admin/administrators）。
 // 分页列表 + 行内编辑/删除；新建走顶部表单。
+//
+// 服务端筛选（与分页同源，翻页保留筛选）：name / email 交给 service 的 SQL 条件，
+// handler 不做内存过滤 —— 内存过滤只能筛当前页，会让「共 N」与实际结果互相矛盾。
+// 回显键名对齐模板：administrators.html 的 value="{{.["FilterName"]}}" / "{{.["FilterEmail"]}}"。
 func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
+	page, limit := shell.PageParams(c)
+	name := strings.TrimSpace(c.Query("name"))
+	email := strings.TrimSpace(c.Query("email"))
 	res, err := h.admins.AdminList(c.Request.Context(), &admindto.AdminListReq{
-		AdminPageReq: admindto.AdminPageReq{Page: 1, Limit: 100},
+		AdminPageReq: admindto.AdminPageReq{Page: page, Limit: limit},
+		Name:         name,
+		Email:        email,
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
-		return
+		// 降级渲染：res 换零值、页面照常渲染（详见 adminErrOrLoad 的说明）。
+		res = &admindto.AdminListResp{}
 	}
-	c.HTML(http.StatusOK, "admin/administrators", shell.Prepare(c, gin.H{
-		"title": pagesMsgAdministratorsTitle,
-		"menu":  "admins",
-		"Rows":  res.List,
-		"Total": res.Total,
-		"Err":   adminPageErrText(c, c.Query("err")),
-		"Done":  adminPageDone(c, c.Query("done")),
-	}))
+	data := shell.Prepare(c, gin.H{
+		"title":       pagesMsgAdministratorsTitle,
+		"menu":        "admins",
+		"Rows":        res.List,
+		"Total":       res.Total,
+		"FilterName":  name,
+		"FilterEmail": email,
+		"Err":         adminErrOrLoad(c, err),
+		"Done":        adminPageDone(c, c.Query("done")),
+	})
+	base := shell.FilterBaseURL("/admin/administrators", map[string]string{"name": name, "email": email})
+	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/system/administrators", data)
 }
 
 // AdministratorsCreate 新建管理员（POST /admin/administrators/create）。
@@ -124,14 +206,14 @@ func (h *AdminPagesHandle) AdministratorsCreate(c *gin.Context) {
 	email := shell.FieldValue(c, "email")
 	password := shell.FieldValue(c, "password")
 	if username == "" || email == "" || password == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/administrators")
 		return
 	}
 	if _, err := h.admins.AdminCreate(c.Request.Context(), &admindto.AdminCreateReq{
 		Username: username, Email: email, Password: password,
 		Phone: shell.FieldValue(c, "phone"), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/administrators", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
@@ -142,14 +224,14 @@ func (h *AdminPagesHandle) AdministratorsCreate(c *gin.Context) {
 func (h *AdminPagesHandle) AdministratorsUpdate(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/administrators")
 		return
 	}
 	if _, err := h.admins.AdminEdit(c.Request.Context(), &admindto.AdminEditReq{
 		Id: id, Username: shell.FieldValue(c, "username"), Phone: shell.FieldValue(c, "phone"),
 		Email: shell.FieldValue(c, "email"), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/administrators", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
@@ -163,13 +245,13 @@ func (h *AdminPagesHandle) AdministratorsUpdate(c *gin.Context) {
 func (h *AdminPagesHandle) AdministratorsDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/administrators")
 		return
 	}
 	if _, err := h.admins.AdminDelete(c.Request.Context(), &admindto.AdminDeleteReq{
 		Id: []uint64{id}, OperatorID: shell.CurrentUserID(c),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/administrators", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/administrators")
@@ -209,20 +291,33 @@ func (h *AdminPagesHandle) AdministratorsBulkDelete(c *gin.Context) {
 // --- 角色 roles ---
 
 // RolesPage 角色列表页（GET /admin/roles）。
+//
+// 服务端筛选：keyword 进 SQL（role_code / role_name 的 LIKE，见 model.ListAll），
+// 与分页同源；回显键名对齐模板 roles.html 的 value="{{.["FilterKeyword"]}}"。
 func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
-	res, err := h.roles.RoleList(c.Request.Context(), &admindto.RoleListReq{RolePageReq: admindto.RolePageReq{Page: 1, Limit: 100}})
+	page, limit := shell.PageParams(c)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	res, err := h.roles.RoleList(c.Request.Context(), &admindto.RoleListReq{
+		RolePageReq: admindto.RolePageReq{Page: page, Limit: limit},
+		Keyword:     keyword,
+	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
-		return
+		res = &admindto.RoleListResp{}
 	}
-	c.HTML(http.StatusOK, "admin/roles", shell.Prepare(c, gin.H{
-		"title": pagesMsgRolesTitle,
-		"menu":  "roles",
-		"Rows":  res.List,
-		"Total": res.Total,
-		"Err":   adminPageErrText(c, c.Query("err")),
-		"Done":  adminPageDone(c, c.Query("done")),
-	}))
+	data := shell.Prepare(c, gin.H{
+		"title":         pagesMsgRolesTitle,
+		"menu":          "roles",
+		"Rows":          res.List,
+		"Total":         res.Total,
+		"FilterKeyword": keyword,
+		"Err":           adminErrOrLoad(c, err),
+		"Done":          adminPageDone(c, c.Query("done")),
+	})
+	base := shell.FilterBaseURL("/admin/roles", map[string]string{"keyword": keyword})
+	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/system/roles", data)
 }
 
 // --- 角色权限分配（角色分权）---
@@ -283,12 +378,16 @@ func flattenPermissionTree(nodes []admindto.MenuTreeNode, depth int, checked map
 func (h *AdminPagesHandle) RolePermissionsPage(c *gin.Context) {
 	roleID := shell.ParseUint(c.Query("role_id"))
 	if roleID == 0 {
-		c.Redirect(http.StatusSeeOther, "/admin/roles")
+		// 没有 role_id 就没有目标页（权限树只属于某一个角色），回角色列表并说明原因。
+		adminPageParamFail(c, "/admin/roles")
 		return
 	}
 	tree, err := h.roles.RolePermissionTree(c.Request.Context(), roleID)
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
+		// 角色不存在（或树查询失败）时不能停在这一页：原先写 500 + 裸 key，用户看到的是一张
+		// 没有页壳的纯文本页 —— 而这个 URL 恰恰是「保存失败」的回跳目标（见 RolePermissionsSave），
+		// 于是「角色不存在」会表现成一屏错误页而不是一句提示。回角色列表，原因经 ?err= 回带。
+		adminPageWriteFail(c, "/admin/roles", err)
 		return
 	}
 	checked := make(map[uint64]struct{}, len(tree.MenuIDs))
@@ -298,7 +397,7 @@ func (h *AdminPagesHandle) RolePermissionsPage(c *gin.Context) {
 	rows := make([]permTreeRow, 0, len(checked)+64)
 	flattenPermissionTree(tree.Tree, 1, checked, &rows)
 
-	c.HTML(http.StatusOK, "admin/role_permissions", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/system/role_permissions", shell.Prepare(c, gin.H{
 		"title": pagesMsgRolePermissionsTitle,
 		"menu":  "roles",
 		"Role":  tree,
@@ -323,7 +422,8 @@ func (h *AdminPagesHandle) RolePermissionsPage(c *gin.Context) {
 func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 	roleID := shell.ParseUint(c.PostForm("role_id"))
 	if roleID == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		// 缺 role_id：没有可回的分配页（它由 role_id 决定），回角色列表并说明原因。
+		adminPageParamFail(c, "/admin/roles")
 		return
 	}
 
@@ -340,7 +440,9 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 		MenuIDs:    menuIDs,
 		OperatorID: shell.CurrentUserID(c),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		// 有 role_id 就回**分配页**（那才是用户刚才在的地方：勾选状态与提示都在那里），
+		// 不是回列表页 —— 回列表会丢掉他刚勾的那一屏上下文。
+		adminPageWriteFail(c, fmt.Sprintf("/admin/roles/permissions?role_id=%d", roleID), err)
 		return
 	}
 
@@ -352,7 +454,7 @@ func (h *AdminPagesHandle) RolesCreate(c *gin.Context) {
 	roleCode := shell.FieldValue(c, "role_code")
 	roleName := shell.FieldValue(c, "role_name")
 	if roleCode == "" || roleName == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/roles")
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
@@ -360,7 +462,7 @@ func (h *AdminPagesHandle) RolesCreate(c *gin.Context) {
 		RoleCode: roleCode, RoleName: roleName, Status: shell.ParseStatusPtr(c.PostForm("status")),
 		SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/roles", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
@@ -371,7 +473,7 @@ func (h *AdminPagesHandle) RolesUpdate(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	roleName := shell.FieldValue(c, "role_name")
 	if id == 0 || roleName == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/roles")
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
@@ -379,7 +481,7 @@ func (h *AdminPagesHandle) RolesUpdate(c *gin.Context) {
 		ID: id, RoleName: roleName, Status: shell.ParseStatus(c.PostForm("status")),
 		SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/roles", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
@@ -389,11 +491,11 @@ func (h *AdminPagesHandle) RolesUpdate(c *gin.Context) {
 func (h *AdminPagesHandle) RolesDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/roles")
 		return
 	}
 	if err := h.roles.RoleDelete(c.Request.Context(), &admindto.RoleDeleteReq{ID: id}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/roles", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/roles")
@@ -439,8 +541,7 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		Module:      module,
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
-		return
+		res = &admindto.PermListResp{}
 	}
 	data := shell.Prepare(c, gin.H{
 		"title":        pagesMsgPermissionsTitle,
@@ -449,14 +550,14 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		"Total":        res.Total,
 		"FilterCode":   code,
 		"FilterModule": module,
-		"Err":          adminPageErrText(c, c.Query("err")),
+		"Err":          adminErrOrLoad(c, err),
 		"Done":         adminPageDone(c, c.Query("done")),
 	})
 	base := shell.FilterBaseURL("/admin/permissions", map[string]string{"code": code, "module": module})
 	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/permissions", data)
+	c.HTML(http.StatusOK, "admin/system/permissions", data)
 }
 
 // PermissionsCreate 新建权限点（POST /admin/permissions/create）。
@@ -468,7 +569,7 @@ func (h *AdminPagesHandle) PermissionsCreate(c *gin.Context) {
 	apiPath := shell.FieldValue(c, "api_path")
 	apiMethod := strings.ToUpper(shell.FieldValue(c, "api_method"))
 	if code == "" || name == "" || module == "" || apiPath == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, adminPermissionsBackURL(c))
 		return
 	}
 	if apiMethod != "GET" && apiMethod != "POST" {
@@ -479,7 +580,7 @@ func (h *AdminPagesHandle) PermissionsCreate(c *gin.Context) {
 		APIPath: apiPath, APIMethod: apiMethod, Status: shell.ParseStatus(c.PostForm("status")),
 		Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, adminPermissionsBackURL(c), err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
@@ -493,7 +594,7 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 	apiPath := shell.FieldValue(c, "api_path")
 	apiMethod := strings.ToUpper(shell.FieldValue(c, "api_method"))
 	if id == 0 || name == "" || module == "" || apiPath == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, adminPermissionsBackURL(c))
 		return
 	}
 	if apiMethod != "GET" && apiMethod != "POST" {
@@ -504,7 +605,7 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 		PermissionName: name, Module: module, APIPath: apiPath, APIMethod: apiMethod,
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, adminPermissionsBackURL(c), err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
@@ -514,11 +615,11 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 func (h *AdminPagesHandle) PermissionsDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, adminPermissionsBackURL(c))
 		return
 	}
 	if _, err := h.perms.PermDelete(c.Request.Context(), &admindto.PermDeleteReq{IDs: []uint64{id}}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, adminPermissionsBackURL(c), err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/permissions")
@@ -604,18 +705,19 @@ func adminMenuTypeLabel(t int) string {
 func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 	nodes, err := h.menus.MenuTree(c.Request.Context(), &admindto.MenuTreeReq{})
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
-		return
+		// 降级渲染：树换空切片、页面照常渲染（详见 adminErrOrLoad）。树装载失败时
+		// 「新增」抽屉的父级下拉会是空的（顶层菜单仍可建），比整页消失可用得多。
+		nodes = nil
 	}
 	rows := make([]adminMenuRow, 0, 64)
 	flattenAdminMenuTree(nodes, 1, &rows)
 	// 供新建下拉的父级选项（树扁平行，含全部分级）。
-	c.HTML(http.StatusOK, "admin/menus", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/system/menus", shell.Prepare(c, gin.H{
 		"title":   pagesMsgMenusTitle,
 		"menu":    "menus",
 		"Rows":    rows,
 		"Parents": rows,
-		"Err":     adminPageErrText(c, c.Query("err")),
+		"Err":     adminErrOrLoad(c, err),
 		"Done":    adminPageDone(c, c.Query("done")),
 	}))
 }
@@ -624,7 +726,7 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 func (h *AdminPagesHandle) MenusCreate(c *gin.Context) {
 	title := shell.FieldValue(c, "title")
 	if title == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/menus")
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
@@ -633,7 +735,7 @@ func (h *AdminPagesHandle) MenusCreate(c *gin.Context) {
 		Type: shell.ParseStatus(c.PostForm("type")), Path: shell.FieldValue(c, "path"),
 		Status: shell.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/menus", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
@@ -644,7 +746,7 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	title := shell.FieldValue(c, "title")
 	if id == 0 || title == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/menus")
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
@@ -653,21 +755,35 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 		Type: shell.ParseStatus(c.PostForm("type")), Path: shell.FieldValue(c, "path"),
 		Status: shell.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/menus", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
 }
 
 // MenusDelete 删除菜单（POST /admin/menus/delete）。
+//
+// 单条删除先在树里确认目标存在：MenuDelete 是**按 id 列表**删除（逐条 GetByID，查不到就
+// continue），所以「删一个已经被别人删掉的菜单」既不报错也不删任何东西 —— 表现为 303 回列表、
+// 页面上什么都没发生，用户只能反复点。用同一棵树（页面本来就要读它）做一次存在性预检，
+// 把这一支变成一条可见的提示。检查系统菜单 / 子菜单仍由 service 判定，这里只判「在不在」。
 func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/menus")
+		return
+	}
+	nodes, err := h.menus.MenuTree(c.Request.Context(), &admindto.MenuTreeReq{})
+	if err != nil {
+		adminPageWriteFail(c, "/admin/menus", err)
+		return
+	}
+	if !adminMenuTreeHas(nodes, id) {
+		adminPageWriteFail(c, "/admin/menus", errors.New(adminenums.ErrMenuNotFound))
 		return
 	}
 	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: []uint64{id}}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/menus", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/menus")
@@ -748,17 +864,16 @@ func flattenAdminDeptNodePtrs(nodes []*admindto.DeptTreeNode, depth int, out *[]
 func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 	nodes, err := h.depts.DeptTree(c.Request.Context())
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
-		return
+		nodes = nil
 	}
 	rows := make([]adminDeptRow, 0, 64)
 	flattenAdminDeptTree(nodes, 1, &rows)
-	c.HTML(http.StatusOK, "admin/departments", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/system/departments", shell.Prepare(c, gin.H{
 		"title":   pagesMsgDepartmentsTitle,
 		"menu":    "depts",
 		"Rows":    rows,
 		"Parents": rows,
-		"Err":     adminPageErrText(c, c.Query("err")),
+		"Err":     adminErrOrLoad(c, err),
 		"Done":    adminPageDone(c, c.Query("done")),
 	}))
 }
@@ -768,7 +883,7 @@ func (h *AdminPagesHandle) DepartmentsCreate(c *gin.Context) {
 	deptName := shell.FieldValue(c, "dept_name")
 	deptCode := shell.FieldValue(c, "dept_code")
 	if deptName == "" || deptCode == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/departments")
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
@@ -776,7 +891,7 @@ func (h *AdminPagesHandle) DepartmentsCreate(c *gin.Context) {
 		ParentID: shell.ParseUint(c.PostForm("parent_id")), DeptName: deptName, DeptCode: deptCode,
 		SortOrder: sortOrder, Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/departments", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
@@ -788,7 +903,7 @@ func (h *AdminPagesHandle) DepartmentsUpdate(c *gin.Context) {
 	deptName := shell.FieldValue(c, "dept_name")
 	deptCode := shell.FieldValue(c, "dept_code")
 	if id == 0 || deptName == "" || deptCode == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/departments")
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
@@ -796,7 +911,7 @@ func (h *AdminPagesHandle) DepartmentsUpdate(c *gin.Context) {
 		ID: id, ParentID: shell.ParseUint(c.PostForm("parent_id")), DeptName: deptName, DeptCode: deptCode,
 		SortOrder: sortOrder, Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/departments", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
@@ -806,11 +921,11 @@ func (h *AdminPagesHandle) DepartmentsUpdate(c *gin.Context) {
 func (h *AdminPagesHandle) DepartmentsDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/departments")
 		return
 	}
 	if err := h.depts.DeptDelete(c.Request.Context(), &admindto.DeptDeleteReq{ID: id}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/departments", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/departments")
@@ -846,25 +961,39 @@ func (h *AdminPagesHandle) DepartmentsBulkDelete(c *gin.Context) {
 
 // DatarulesPage 数据权限列表页（GET /admin/datarules）。
 // 列表 + 新建（domain 下拉来自已注册数据域）+ 删除；编辑走独立 /edit?id= 页（detail 回显，配置复杂）。
+//
+// 服务端筛选：domain 进 SQL（与分页同源）；回显键名对齐模板 datarules.html 的
+// value="{{.["FilterDomain"]}}"。注意这是**精确匹配**（service 侧 `domain = ?`）：
+// 输入的真实域值必须与 sys_data_rule.domain 完全一致（如 ADMIN），
+// 部分串不会命中 —— 改动匹配语义在 service，不在本页。
 func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
-	res, err := h.rules.RuleList(c.Request.Context(), &admindto.RuleListReq{Page: 1, Limit: 100})
+	page, limit := shell.PageParams(c)
+	domain := strings.TrimSpace(c.Query("domain"))
+	res, err := h.rules.RuleList(c.Request.Context(), &admindto.RuleListReq{
+		Page: page, Limit: limit, Domain: domain,
+	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, pagesMsgAdminGenericFailed)
-		return
+		res = &admindto.RuleListResp{}
 	}
 	domains, _ := h.rules.RuleSchemaList(c.Request.Context())
 	if domains == nil {
 		domains = []admindto.RuleDomainItem{}
 	}
-	c.HTML(http.StatusOK, "admin/datarules", shell.Prepare(c, gin.H{
-		"title":   pagesMsgDatarulesTitle,
-		"menu":    "datarules",
-		"Rows":    res.List,
-		"Total":   res.Total,
-		"Domains": domains,
-		"Err":     adminPageErrText(c, c.Query("err")),
-		"Done":    adminPageDone(c, c.Query("done")),
-	}))
+	data := shell.Prepare(c, gin.H{
+		"title":        pagesMsgDatarulesTitle,
+		"menu":         "datarules",
+		"Rows":         res.List,
+		"Total":        res.Total,
+		"Domains":      domains,
+		"FilterDomain": domain,
+		"Err":          adminErrOrLoad(c, err),
+		"Done":         adminPageDone(c, c.Query("done")),
+	})
+	base := shell.FilterBaseURL("/admin/datarules", map[string]string{"domain": domain})
+	for k, v := range shell.BuildPagination(res.Total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/system/datarules", data)
 }
 
 // DatarulesCreate 新建数据规则（POST /admin/datarules/create）。
@@ -875,14 +1004,14 @@ func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
 	ruleName := shell.FieldValue(c, "rule_name")
 	domain := shell.FieldValue(c, "domain")
 	if ruleName == "" || domain == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/datarules")
 		return
 	}
 	if err := h.rules.RuleCreate(c.Request.Context(), &admindto.RuleCreateReq{
 		RuleName: ruleName, Domain: domain, Config: admindto.RuleConfigDTO{},
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/datarules", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
@@ -893,12 +1022,20 @@ func (h *AdminPagesHandle) DatarulesCreate(c *gin.Context) {
 func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 	id := shell.ParseUint(c.Query("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		// 页面请求的失败出口是**页面**：303 回列表页并把原因经 ?err= 回带（读侧
+		// adminPageErrText 白名单放行）。原先是 c.String(400, pagesMsgFieldRequired) ——
+		// 响应体是 i18n 的 key 本身（用户看到内部标识符），而且脱离页壳。
+		// 走与其它写 handler 同一个参数级出口（文案取 MsgBadRequest 的译文，在白名单里）。
+		adminPageParamFail(c, "/admin/datarules")
 		return
 	}
 	detail, err := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
 	if err != nil || detail == nil {
-		c.String(http.StatusNotFound, "数据规则不存在")
+		// id 存在但查不到（已被别人删掉 / 不在本工程作用域）：与上面「缺 id」同一形状的失败 ——
+		// 也不能直出裸文本。原先是 c.String(404, "数据规则不存在")：响应体是那句中文、
+		// **没有页壳**，用户在编辑页上点了半天链接后落到一个纯文本页面。
+		// 文案取 adminenums.ErrRuleNotFound（在 AdminFacingMessages 白名单里，读侧候选天然覆盖）。
+		adminPageWriteFail(c, "/admin/datarules", errors.New(adminenums.ErrRuleNotFound))
 		return
 	}
 	domains, _ := h.rules.RuleSchemaList(c.Request.Context())
@@ -907,13 +1044,33 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 	}
 	// 条件编辑器按该数据域的白名单渲染（字段 / 操作符下拉都来自域声明）。
 	editor := h.dataruleEditorContext(c, detail.Domain, detail.Config)
-	c.HTML(http.StatusOK, "admin/datarule_edit", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/system/datarule_edit", shell.Prepare(c, gin.H{
 		"title":   pagesMsgDatarulesTitle,
 		"menu":    "datarules",
 		"Detail":  detail,
 		"Domains": domains,
 		"Editor":  editor,
+		// 错误槽位：保存失败会 303 回本页并带 ?err=（见 DatarulesUpdate 的分流），
+		// 这一页必须能把它渲染出来 —— 否则用户看到的是「点了保存、页面刷新了一下、
+		// 什么都没发生」，比回到列表页更难判断。
+		"Err": adminPageErrText(c, c.Query("err")),
 	}))
+}
+
+// adminDataruleBackURL /admin/datarules/update 的失败回跳目标：按提交**来源**分流。
+//
+// 这是本域唯一「一个端点两个入口」的写操作 —— 列表页的抽屉表单（datarule.html，只改
+// rule_name/domain/status/remark）与编辑页的完整表单（datarule_edit.html，还带条件配置）
+// 都 POST 到 /admin/datarules/update。分流依据**本来就有**：编辑页提交时带
+// dataruleEditorMarker（config_editor 隐藏域，见 datarule_config_form.go 的表单约定），
+// 抽屉不带 —— 用它判来源，不新增协议、不猜别的字段。
+//
+// 缺 id（0）时没有可回的编辑页（它由 id 决定），一律回列表页。
+func adminDataruleBackURL(c *gin.Context, id uint64) string {
+	if id == 0 || c.PostForm(dataruleEditorMarker) == "" {
+		return "/admin/datarules"
+	}
+	return fmt.Sprintf("/admin/datarules/edit?id=%d", id)
 }
 
 // DatarulesUpdate 保存数据规则（POST /admin/datarules/update）。
@@ -925,8 +1082,11 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	ruleName := shell.FieldValue(c, "rule_name")
 	domain := shell.FieldValue(c, "domain")
+	// 失败出口回**来源页**（判定依据见 adminDataruleBackURL）：编辑页提交就回编辑页，
+	// 抽屉提交就回列表页 —— 编辑页那份表单填一次成本很高，甩回列表页等于让他重填。
+	back := adminDataruleBackURL(c, id)
 	if id == 0 || ruleName == "" || domain == "" {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, back)
 		return
 	}
 	config := admindto.RuleConfigDTO{}
@@ -935,14 +1095,14 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 	} else {
 		detail, detailErr := h.rules.RuleDetail(c.Request.Context(), &admindto.RuleDetailReq{ID: id})
 		if detailErr != nil {
-			adminWriteFailed(c, detailErr)
+			adminPageWriteFail(c, back, detailErr)
 			return
 		}
 		if detail == nil {
 			// 「查不到但也没报错」必须给一条可行动的业务文案（规则不存在 / 不在本工程作用域内），
 			// 不能像修复前那样拿 nil 去调错误出口（旧出口对 nil 直接 return → 200 空体，
 			// 前端看到「点了没反应」而日志里什么都没有）。
-			adminWriteFailed(c, errors.New(adminenums.ErrRuleNotFound))
+			adminPageWriteFail(c, back, errors.New(adminenums.ErrRuleNotFound))
 			return
 		}
 		config = detail.Config
@@ -951,7 +1111,7 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 		ID: id, RuleName: ruleName, Domain: domain, Config: config,
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, back, err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
@@ -961,11 +1121,11 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 func (h *AdminPagesHandle) DatarulesDelete(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	if id == 0 {
-		c.String(http.StatusBadRequest, pagesMsgFieldRequired)
+		adminPageParamFail(c, "/admin/datarules")
 		return
 	}
 	if err := h.rules.RuleDelete(c.Request.Context(), &admindto.RuleDeleteReq{IDs: []uint64{id}}); err != nil {
-		adminWriteFailed(c, err)
+		adminPageWriteFail(c, "/admin/datarules", err)
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/datarules")
@@ -1099,7 +1259,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	for k, v := range shell.BuildPagination(total, page, adminI18nEntryPageSize, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/i18n", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/system/i18n", shell.Prepare(c, data))
 }
 
 // adminI18nSaveMissingMsg 保存词条时的缺项判定：返回**具体**缺哪一项的 enums 文案
@@ -1296,12 +1456,16 @@ func AdminLangSwitch(c *gin.Context) {
 // 请求方可以直接改（admin/lang?redirect=//evil.example.com）。消费侧拿到的还是**已解码**
 // 的值 —— 反斜杠、换行、NUL 都能出现，比渲染侧的 RequestURI 面更宽，而 LangRedirectPath
 // 的判据本身就覆盖了这些（不含反斜杠 / 无控制字符），两边不需要各写一套。
+// adminHomePath 控制面首页（仪表盘）—— 与 shell.adminHomePath 同值。
+// / 已归前台首页（站点独占域名根），后台回落不能再指 "/"。
+const adminHomePath = "/admin"
+
 func adminSafeLangRedirect(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if p := shell.LangRedirectPath(raw); p != "" {
 		return p
 	}
-	return "/"
+	return adminHomePath
 }
 
 // AdminLoginPage 后台登录页（独立布局，供未登录的页面请求 302 跳转，也支持直接访问）。

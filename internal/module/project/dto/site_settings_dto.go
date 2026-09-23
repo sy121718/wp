@@ -47,6 +47,16 @@ type SiteSettings struct {
 	// 配置是**覆盖**，不是前置条件。派生值只是后台表单的预填：发布时显式传入的路径永远优先，
 	// 且路径一旦发布就独立于内容（改标题 / 正文 / slug 都不动它）。
 	URLPatterns map[string]string `json:"urlPatterns,omitempty"`
+	// LangURLMode 多语言访问路径方案（多语言开关）：
+	//
+	//	off = 各语言共用逻辑路径（单语言兼容）；default_plain = 默认语言无前缀、
+	//	非默认语言短码前缀；all_prefix = 所有语言一律加短码前缀。
+	//
+	//	空 = 未在设置页配置，跟随进程启动配置（config.yaml i18n.site_lang_url_mode）。
+	//	设置页保存非空值时同步热更新进程值（i18n.SetSiteLangURLMode），启动时由装配层
+	//	从本字段恢复。它只是进程配置的「站点级覆盖」，不是第二份存储：运行时唯一
+	//	读取口仍是 pkg/i18n 的 siteLangURLMode。
+	LangURLMode string `json:"langURLMode,omitempty"`
 }
 
 // ParseSiteSettings 解析站点设置：非对象、空值、字段缺失一律按零值处理，

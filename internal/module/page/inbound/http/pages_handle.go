@@ -22,7 +22,6 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -103,6 +102,22 @@ type pagesPageData struct {
 	ReceiptOldest       string
 	ReceiptLastConverge string
 	ReceiptAlert        bool
+	// ReceiptKnown 这份回执观测**这次请求真的读到了**（false = 本页装载失败、走降级渲染）。
+	//
+	// 为什么需要它：降级渲染时 ReceiptPending 等是零值，而模板会把「零积压」
+	// 渲染成「发布回执收敛正常」—— 那是**错误的乐观断言**（这一页根本没读到回执状态）。
+	// 判据在 handler 算好，模板只读一个布尔（与 project 域主题页的 NoProjectEmpty 同形：
+	// 模板是磁盘热读文件，Go 侧改动要等重编译，判据写在模板里会随两边不同步而漂移）。
+	ReceiptKnown bool
+
+	// SelectedProject 当前聚焦的站点工程 id（筛选栏下拉的回显值；无工程时为空串）。
+	SelectedProject string
+	// FilteredProject 用户是否**指定**了工程（?project= 命中工程列表）。
+	//
+	// 空态据此分档：指定了工程却没页面 → 「这个站点工程还没有页面」（下一步是换工程或就地建页），
+	// 否则是「还没有页面」（下一步是建第一个页面）。判据留在 Go 侧：模板是磁盘热读文件，
+	// 判据写在模板里会随两边不同步而漂移（与 ReceiptKnown 同一理由）。
+	FilteredProject bool
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。
@@ -126,6 +141,10 @@ func (d *pagesPageData) templateMap() gin.H {
 		"ReceiptOldest":       d.ReceiptOldest,
 		"ReceiptLastConverge": d.ReceiptLastConverge,
 		"ReceiptAlert":        d.ReceiptAlert,
+		"ReceiptKnown":        d.ReceiptKnown,
+
+		"SelectedProject": d.SelectedProject,
+		"FilteredProject": d.FilteredProject,
 	}
 }
 
@@ -143,37 +162,50 @@ type pageRow struct {
 }
 
 // PagesList 页面列表页。
+//
+// 装载失败**降级渲染**（空列表 + 归口提示，HTTP 200）：页面结构必须保留 ——
+// 换菜单、去别的页面、刷新重试都还得能用。原先这里是 500 + `response.ErrorWithMessage`
+// （一块 JSON），浏览器停在 JSON 上，用户既看不到列表也无从判断「是这一页没读出来、
+// 还是整个后台坏了」。原文只进日志（pageErrPageText）。
 func (h *pagesAdminHandle) PagesList(c *gin.Context) {
 	data, err := h.buildPagesData(c)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, pageenums.MsgInternalError)
-		return
+		data = &pagesPageData{
+			Title: pageenums.MsgPagesTitle, Menu: "pages",
+			// 装载失败优先于 ?err=：它是**这次请求**真实发生的事，
+			// URL 里那条是上一次写失败留下的旧提示。
+			Err: pageErrPageText(c, err),
+			// ReceiptKnown 留 false：这次没读到回执状态，模板不该报「收敛正常」。
+		}
 	}
-	c.HTML(http.StatusOK, "admin/pages", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/page/pages", shell.Prepare(c, data.templateMap()))
 }
 
 // buildPagesData 组装列表页数据。
 //
-// 页面按主题浏览（020_themes.sql：主题下面才是页面）：取第一个工程的
+// 页面按主题浏览（020_themes.sql：主题下面才是页面）：取当前聚焦工程的
 // 激活主题过滤页面；无工程或无主题时 themeID 为空列全部页面。
+//
+// 「当前聚焦工程」由筛选栏的 ?project=<id> 决定（审计 02-L §2 P1-12）：这一页此前只能看
+// 第一个工程的页面，工程一多就无从切换。维度取自 service —— page Service.ListReq.ProjectID
+// 本来就支持它，缺的只是「有人从 query 读它」。未指定 / 指定的工程不在列表里（陈旧链接、
+// 手改的 URL、刚被删）时回退到第一个工程：一条过期的 URL 不该把整页变成错误页。
 func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// 第一步：取当前聚焦工程的激活主题。
+	// 第一步：定位当前聚焦工程（筛选栏的输入）。
+	projectID, filteredProject := focusProjectID(projects, c.Query("project"))
+	// 第二步：取该工程的激活主题。
 	themeID := ""
-	if len(projects) > 0 {
-		if theme, err := h.projects.GetActiveTheme(ctx, projects[0].ID); err == nil && theme != nil {
+	if projectID != "" {
+		if theme, err := h.projects.GetActiveTheme(ctx, projectID); err == nil && theme != nil {
 			themeID = theme.ID
 		}
 	}
-	// 第二步：按当前工程与激活主题过滤页面。
-	projectID := ""
-	if len(projects) > 0 {
-		projectID = projects[0].ID
-	}
+	// 第三步：按聚焦工程与激活主题取页面。
 	pages, err := h.pages.List(ctx, &pagecontract.ListReq{ProjectID: projectID, ThemeID: themeID})
 	if err != nil {
 		return nil, err
@@ -193,6 +225,10 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	return &pagesPageData{
 		Title: pageenums.MsgPagesTitle, Menu: "pages",
 		Projects: projects, Pages: rows,
+		// 筛选栏的两个键：SelectedProject 供下拉回显，FilteredProject 供空态分档
+		//（「这个工程还没有页面」≠「全站还没有页面」，两者的下一步动作不同）。
+		SelectedProject: projectID,
+		FilteredProject: filteredProject,
 		// 蓝图候选（审计 VIS-010）：把「从蓝图开始」放进新建页面流程，
 		// 而不是要求编辑者先去另一个页面建好蓝图再回来。
 		Blueprints: h.blueprintOptions(ctx),
@@ -206,7 +242,34 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 		ReceiptOldest:       receiptOldest,
 		ReceiptLastConverge: receiptLast,
 		ReceiptAlert:        receiptPending > 0,
+		// 走到这里说明本页数据装配完成（回执观测读不到只记日志、不给零值以外的信号，
+		// 见 receiptBacklog），所以这条观测条可以展示。
+		ReceiptKnown: true,
 	}, nil
+}
+
+// focusProjectID 从工程列表里挑出当前聚焦的工程 id。
+//
+// want 来自筛选栏的 ?project=（`<select name="project">` 提交的 get 参数）。
+// 命中即采纳；未命中（空串 / 伪造 id / 刚被删的工程）回退到第一个工程 —— 那是本页既有的
+// 默认语义，回退而不是报错是因为：一条过期的 URL 不该把整页变成错误页，用户要的是列表。
+//
+// 第二个返回值表示「用户的指定真的被采纳了」：模板据此把空态分成两档
+//（指定了工程却没页面，与全站还没有页面，下一步动作不同）。判据放这里而不是模板里，
+// 是因为模板里的「有没有筛过」只能靠 query 猜，而这里同时知道 query 与工程列表。
+func focusProjectID(projects []projectcontract.ProjectResp, want string) (id string, filtered bool) {
+	want = strings.TrimSpace(want)
+	if want != "" {
+		for i := range projects {
+			if projects[i].ID == want {
+				return projects[i].ID, true
+			}
+		}
+	}
+	if len(projects) == 0 {
+		return "", false
+	}
+	return projects[0].ID, false
 }
 
 // receiptBacklogObserver 收敛积压的只读观测（page service 实现）。
@@ -259,29 +322,49 @@ func formatReceiptAge(d time.Duration) string {
 	}
 }
 
-// CreateProject 新建站点工程（HTMX 表单提交，成功后整页刷新列表）。
+// CreateProject 新建站点工程。
+//
+// 出口形态由**表单怎么提交**决定，不由 handler 的注释决定：表单是原生
+// `<form method="post" action="/admin/projects/create">`（admin/pages.html 的
+// #tpl-project-create 抽屉，不是 hx-post），成功与失败都走 PRG ——
+// 成功的 303 回列表页刷出新工程，失败的 303 回同一个列表页 + ?err=<当前语言文案>
+// （读侧 pagePageErr 白名单，页面顶部渲染成提示条）。
+//
+// 为什么不是 `c.String(400, …)`：那会把用户导航到一块只有一行字的页面上，
+// 抽屉、页壳、他刚填的名称一并丢失；也不是 400 + 片段（那是给 htmx 请求准备的形态，
+// 原生表单收到片段会把 JSON / HTML 片段当成新页面渲染）。
 func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	if name == "" {
-		c.String(http.StatusBadRequest, "项目名称不能为空")
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageBulkTextOf(c, pagesLocalNoticeProjectNameRequired), ""))
 		return
 	}
 	if _, err := h.projects.Create(c.Request.Context(), &projectcontract.CreateReq{
 		Name: name, Settings: json.RawMessage("{}"),
 	}); err != nil {
 		logger.Scene("page").With("name", name).Error(err, "创建站点工程失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, pageenums.MsgInternalError)
+		// 页面路径的文案出口：业务 sentinel 翻成中文，其余落归口文案
+		//（原文只进日志 —— 上面那条日志已带 name，这里用不记日志的变体，免得同一错误记两遍）。
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageFacingOrInternal(c, err), ""))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/pages")
 }
 
 // CreatePage 新建页面（默认空白草稿，创建后可进工作台编辑）。
+//
+// 出口形态同 CreateProject：原生表单 + PRG，失败 303 回列表页 + ?err=。
 func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	path := strings.TrimSpace(c.PostForm("draftPath"))
-	if projectID == "" || path == "" {
-		c.String(http.StatusBadRequest, "项目与页面路径不能为空")
+	// 两条必填分开报，不合成一句「项目与页面路径不能为空」：合成句把「没选工程」
+	// 与「没填路径」说成同一件事，而两者的修法完全不同（选择器 vs 输入框）。
+	if projectID == "" {
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageFacingKey(c, pageenums.ErrProjectRequired), ""))
+		return
+	}
+	if path == "" {
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageBulkTextOf(c, pagesLocalNoticePathRequired), ""))
 		return
 	}
 	if !strings.HasPrefix(path, "/") {
@@ -299,7 +382,7 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 		BlueprintID:       strings.TrimSpace(c.PostForm("blueprintId")),
 	}); err != nil {
 		logger.Scene("page").With("projectId", projectID).With("path", path).Error(err, "创建页面失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, pageenums.MsgInternalError)
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageFacingOrInternal(c, err), ""))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/pages")

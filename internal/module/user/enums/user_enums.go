@@ -92,7 +92,7 @@ const (
 // 新增面向访客的错误文案时必须同步加到这里，否则页面只会显示「操作失败，请稍后重试」。
 var UserFacingMessages = []string{
 	// 注册 / 验证
-	MsgRegisterSuccess, MsgActivateSuccess,
+	MsgRegisterSuccess, MsgActivateSuccess, MsgResetMailSent,
 	ErrInvalidParam, ErrUsernameRequired, ErrUsernameTooShort, ErrUsernameTooLong,
 	ErrUsernameTaken, ErrEmailRequired, ErrEmailInvalid, ErrEmailTaken,
 	ErrPasswordTooShort, ErrUserNotFound, ErrActivationInvalid, ErrMailUnavailable,

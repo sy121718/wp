@@ -300,6 +300,6 @@ func (h *AdminPagesHandle) DataruleConfigEditor(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/partials/datarule_config_editor.html",
+	c.HTML(http.StatusOK, "admin/system/datarule_config_editor.html",
 		shell.Prepare(c, gin.H{"Editor": h.dataruleEditorContext(c, domain, cfg)}))
 }

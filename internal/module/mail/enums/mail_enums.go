@@ -36,6 +36,21 @@ const (
 	ErrAutomationGraphInvalid   = "mail.err.automationGraphInvalid"
 	ErrAutomationRunExists      = "mail.err.automationRunExists"
 	ErrAutomationRunNotFound    = "mail.err.automationRunNotFound"
+	// —— 访客面：邮件里的公开链接（跟踪 / 退订，见 inbound/http/mail_tracking.go）——
+	//
+	// 这五条服务的**不是**后台运营，而是收件人：他们在邮件客户端里点开链接，浏览器直接打开
+	// /_t/c/{token}（点击追踪）或 /_t/u/{token}（一键退订）—— 无登录态、无后台页面壳。
+	// 所以文案此前是 Go 里的硬编码中文，英文收件人（Accept-Language: en）打开只能看到中文。
+	// 现在按请求语言取词条（response.RequestLanguage 的协商链，不需要登录态）。
+	//
+	// 形态与出参不变：失败仍是**一句受控短句**（纯文本 400），成功仍是**自带样式的整页 HTML**——
+	// 访客没有可回归的列表页，也没有解析 JSON 的客户端，303 + ?err= 在这里是错的方向。
+	ErrTrackLinkInvalid       = "mail.err.trackLinkInvalid"       // 点击追踪链接无效或已过期
+	ErrUnsubscribeLinkInvalid = "mail.err.unsubscribeLinkInvalid" // 退订链接无效或已过期
+	MsgUnsubscribeDoneTitle   = "mail.msg.unsubscribeDoneTitle"   // 退订成功页标题
+	MsgUnsubscribeDoneBody    = "mail.msg.unsubscribeDoneBody"    // 退订成功页正文（%s = 收件人邮箱，占位符在 Go 侧替换）
+	MsgUnsubscribeDoneNote    = "mail.msg.unsubscribeDoneNote"    // 退订成功页补充说明（事务类邮件不受影响）
+
 	// ErrInternal 未归类的系统错误对外统一文案（页面路径的归口出口）。
 	//
 	// 存在的理由：基础设施错误（数据库 / SMTP 客户端）的原文可能带表名、列名甚至 SQL 片段，
@@ -68,6 +83,14 @@ var MailFacingMessages = []string{
 	ErrCipherUnavailable, ErrTemplateSyntax, ErrCampaignSending,
 	ErrAutomationNotFound, ErrAutomationTriggerInvalid, ErrAutomationGraphInvalid,
 	ErrAutomationRunExists, ErrAutomationRunNotFound,
+	// 访客面（邮件里的公开链接）文案。
+	//
+	// 它们与上面那些的差别只在**来源**：这一组由 handler 自己产出（不是 service 上抛的错误），
+	// 但它们同样是「可以对外展示的邮箱文案」，所以留在同一份白名单里 ——
+	// 判据是「这句话能不能给外部看」，不是「它从哪一层冒出来」。
+	// 不登记的话 mail_enums_test.go 会直接变红（本包每个 Err* / Msg* 常量都得在这里有位置）。
+	ErrTrackLinkInvalid, ErrUnsubscribeLinkInvalid,
+	MsgUnsubscribeDoneTitle, MsgUnsubscribeDoneBody, MsgUnsubscribeDoneNote,
 }
 
 // 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。

@@ -49,6 +49,24 @@ func (s *Service) compensateDelete(ctx context.Context, id uint64) {
 	}
 }
 
+// detectContentMIME 取「内容嗅探优先、声明值兜底」的 MIME，并把读取位置复位。
+//
+// 声明值不可信（见 Upload 内调用处注释）：判据应当是文件本身。嗅探不出具体类型
+// （application/octet-stream）时才回落到声明值，那条路径不比原来更宽。
+// 复位失败时直接回落声明值 —— 头部字节已被读走，后续 provider 写入会缺一段，
+// 但那是上传本身的失败，不该在这里被掩成「MIME 判错」。
+func detectContentMIME(src multipart.File, declared string) string {
+	head := make([]byte, 512)
+	n, _ := src.Read(head)
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return declared
+	}
+	if detected := upload.DetectMIME(head[:n]); detected != "" {
+		return detected
+	}
+	return declared
+}
+
 // Upload 上传文件并记录附件元数据（02-B 媒体中心：稳定引用 + 上传去重）。
 //
 // 流程（迁移 067 之后的语义）：
@@ -90,8 +108,18 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		return &list[0], nil
 	}
 
+	src, err := file.Open()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
+	}
+	defer src.Close()
+
+	// 落库的 MIME 以**内容**为准，与 pkg/upload 的校验同源：客户端声明的
+	// Content-Type 不可信 —— curl 上传 .webp 给的是 application/octet-stream，
+	// 照抄声明值会让媒体库、变体记录与下游都看到一个错的类型。
+	mimeType := detectContentMIME(src, file.Header.Get("Content-Type"))
+
 	// 两阶段登记：先入库拿 ID（草稿态 status=0，对外查询不可见），再用 ID 命名落盘。
-	mimeType := file.Header.Get("Content-Type")
 	entity := &mediamodel.AttachmentEntity{
 		CategoryID:  categoryID,
 		FileName:    file.Filename,
@@ -111,13 +139,6 @@ func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, catego
 		s.compensateDelete(ctx, entity.ID)
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, errors.New("附件主键未回填"))
 	}
-
-	src, err := file.Open()
-	if err != nil {
-		s.compensateDelete(ctx, entity.ID)
-		return nil, fmt.Errorf("%s: %w", mediaenums.ErrUploadFailed, err)
-	}
-	defer src.Close()
 
 	// 稳定命名：<id>.<ext>（无扩展名时为 <id>）。ID 全局唯一，不会与存量随机名冲突。
 	objectKey := fmt.Sprintf("%d%s", entity.ID, ext)
@@ -326,8 +347,18 @@ func (s *Service) CategoryTree(ctx context.Context) ([]mediato.CategoryTreeNode,
 // --- 辅助函数 ---
 
 func entityToResp(e *mediamodel.AttachmentEntity) *mediato.AttachmentResp {
-	url := ""
-	if e.URL != nil {
+	// URL 在**读取时**按当前 upload.base_url 派生，不直接用库里那一列。
+	//
+	// 库里存的是上传当时的字符串：配了 base_url 才是绝对地址，没配就是
+	// "/storage/<id>.<ext>"；换域名后存量行还指着旧主机。派生之后
+	// 「配置一改、全站媒体链接同时跟上」，与变体走同一条路（见 variantEntityToResp）。
+	// file_path 才是内容真源，url 列只作历史兜底（它的前缀形态已被 StorageURL 归一）。
+	key := strings.TrimSpace(e.FilePath)
+	if key == "" && e.URL != nil {
+		key = *e.URL
+	}
+	url := upload.StorageURL(key)
+	if url == "" && e.URL != nil {
 		url = *e.URL
 	}
 	mime := ""

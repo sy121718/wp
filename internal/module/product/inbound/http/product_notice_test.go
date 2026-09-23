@@ -86,6 +86,7 @@ func TestProductPageErrAcceptsPageOwnTexts(t *testing.T) {
 		errTemplateDepsMissing,
 		productDetailTemplateNameRequired,
 		productDetailTemplatePathRequired,
+		productDetailTemplateNoProductPrompt,
 		productBundleNoProductText,
 	}
 	for _, msg := range detailTemplateFacingMessages {

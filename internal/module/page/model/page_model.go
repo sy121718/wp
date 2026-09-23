@@ -126,6 +126,46 @@ func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []
 	return list, err
 }
 
+// PageTitleRow 页面标题投影行：id + 路径 + 文档 SEO 标题（**不含** draft_document）。
+type PageTitleRow struct {
+	ID         string  `gorm:"column:id"`
+	DraftPath  string  `gorm:"column:draft_path"`
+	ActivePath *string `gorm:"column:active_path"`
+	SEOTitle   string  `gorm:"column:seo_title"`
+}
+
+// ListPageTitles 列出**本工程内**未删除页面的标题投影：id、草稿/激活路径与文档 SEO 标题。
+//
+// 与 ListAll 的关系是「同一个列表的另一种投影」：那条 omit 掉 draft_document（大字段不进
+// 列表，刻意的），于是调用方读不出标题；本条不 omit 而改在 **SQL 侧**把标题取出来
+// （draft_document->'settings'->'seo'->>'title'），只把一行短文本带回来 —— 整份 JSONB
+// 不进 Go 侧内存，也不进网络往返。反过来，需要整份文档的消费方仍走 GetByID / Detail。
+//
+// 与 ListDraftDocuments 的区别同样是代价与形状：那条带完整 draft_document（翻译候选要在
+// Go 侧按组件白名单扫，SQL 侧做不了），本条只带三列。
+//
+// COALESCE 是必需的，不是防御性冗余：settings / seo 段缺失（或 title 是 JSON null）时
+// ->> 返回 SQL NULL，扫描进 string 字段会直接报错；这里统一成空串，语义是
+// 「作者没填标题」——由调用方决定回退（导航候选回退路径，见 resolver）。
+//
+// projectID 必填：pages 带 FORCE 策略，与 ListAll / ListDraftDocuments 同一口径 ——
+// 缺作用域在换非超级角色后是静默空集，表现为「页面标题全都读不到」而没有任何报错。
+// 排序与 ListAll 保持一致（update_time DESC, id DESC），使同一批页面的两种投影顺序相同。
+func (m *Model) ListPageTitles(ctx context.Context, projectID string) (rows []PageTitleRow, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageEntity{}).
+			Select("id", "draft_path", "active_path",
+				"COALESCE(draft_document->'settings'->'seo'->>'title', '') AS seo_title").
+			Where("project_id = ? AND deleted_at IS NULL", projectID).
+			Order("update_time DESC, id DESC").
+			Find(&rows).Error
+	})
+	return rows, err
+}
+
 // ListDraftDocuments 列出**本工程**未删除页面的草稿文档（多语言 P5c 翻译工作台的全站扫描用）。
 //
 // 与 ListAll 的区别：带 draft_document 大字段（工作台要按组件白名单收集候选，

@@ -1,0 +1,83 @@
+{* admin/navigation_translations.html — 导航标签译文工作台（审计 I18N-007）。 *}
+{* 菜单文字不在页面文档里：页面翻译工作台看不到它。构建期按 navigation.label 语境回填。 *}
+{* 每个字段块必须同时输出 rowContext / rowHash / rowTarget 且顺序一致（保存端按位置对齐）。 *}
+{* 版式遵循后台页壳标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
+     · 两段领域说明进页头 .help 悬浮，正文零说明文字；
+     · 语言切换与「保存译文」同一行置于 .page-head（保存按钮用 form="<id>" 关联整表表单）。 *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{groups := .Groups}}
+{{langs := .Langs}}
+{{lang := .Lang}}
+{{projectID := .ProjectID}}
+{{errors := .Errors}}
+{{tr := .["t"]}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.navigation_translations.heading", "导航译文") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.navigation_translations.intro", "菜单文字不写在页面里，而在导航项上 —— 所以它不出现在页面翻译工作台，改这里的译文才生效。译文按「原文 + 语境」寻址：改菜单文字后旧译文自动失效，构建期回退原文。") }}<br><br>{{ .["t"]("admin.navigation_translations.dedupe_hint", "同一个位置里出现多次的相同文字只列一行（译文按原文寻址，列出多行会让人不知道改哪一行才算数）。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <span class="badge badge-mute">{{ .["t"]("admin.navigation_translations.summary_lead", "共 ") }}{{.RowCount}}{{ .["t"]("admin.navigation_translations.summary_mid", " 条菜单文字，已翻译 ") }}{{.Done}}{{ .["t"]("admin.navigation_translations.summary_tail", " 条。") }}</span>
+            <form class="page-context" method="get" action="/admin/navigations/translations">
+                <label class="sr-only" for="nav-tr-lang">{{ .["t"]("admin.navigation_translations.lang_label", "语言") }}</label>
+                <input type="hidden" name="project" value="{{projectID}}">
+                <select class="form-select" id="nav-tr-lang" name="lang" onchange="this.form.submit()">
+                    {{range _, l := langs}}
+                    <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
+                    {{end}}
+                </select>
+                <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.navigation_translations.switch_lang", "切换语言") }}</button></noscript>
+            </form>
+            {{if len(groups) > 0}}
+            <button type="submit" form="nav-translations-form" class="btn btn-primary">{{ .["t"]("admin.navigation_translations.save", "保存译文") }}</button>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .Saved}}<p class="badge badge-success" role="status">{{.SavedNote}}</p>{{end}}
+    {{if len(errors) > 0}}
+    <div class="tr-alert" role="alert">
+        <ul class="list-reset">{{range _, e := errors}}<li>{{e}}</li>{{end}}</ul>
+    </div>
+    {{end}}
+
+    {{if len(groups) == 0}}
+    <section class="card list-card">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.navigation_translations.empty.title", "没有可翻译的菜单文字") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.navigation_translations.empty.desc", "先在「导航菜单」页给这个位置添加菜单项，再回来填译文。") }}</p>
+        </div>
+    </section>
+    {{else}}
+    <form id="nav-translations-form" method="post" action="/admin/navigations/translations/save">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="lang" value="{{lang}}">
+        <input type="hidden" name="project" value="{{projectID}}">
+        {{range _, g := groups}}
+        <section class="card card-body">
+            <h2>{{g.Title}}</h2>
+            {{if len(g.Rows) == 0}}<p class="text-mute text-sm">{{ .["t"]("admin.navigation_translations.empty_group", "该位置还没有菜单项。") }}</p>{{end}}
+            {{range _, r := g.Rows}}
+            <div class="field">
+                <label>{{r.Source}}{{if r.Translated}} · {{tr("admin.navigation_translations.has_target", "已有译文")}}{{end}}</label>
+                <span class="text-mute text-sm">{{r.Path}}</span>
+                <input type="text" class="form-input" name="rowTarget" value="{{r.Target}}" placeholder="{{tr("admin.navigation_translations.target_placeholder", "译文")}}">
+                <input type="hidden" name="rowContext" value="{{r.Context}}">
+                <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
+            </div>
+            {{end}}
+        </section>
+        {{end}}
+    </form>
+    {{end}}
+</div>
+{{end}}

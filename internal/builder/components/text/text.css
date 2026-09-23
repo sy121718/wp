@@ -3,6 +3,10 @@
  * 语法见 internal/builder/core/component_css.go。
  * 排版组三端的声明由 Go 侧 core.Typography 算出（一组声明），经值变量整组传入 ——
  * 变量值允许含分号，展开后会拆成多条声明，顺序保持。
+ *
+ * 富文本正文的排版基线**不在这里**，在 text_richtext.css：那份只在实例真的会渲染
+ * 富文本时才应用（Go 侧 isRichText 判断）。@if 只支持声明块内的条件段，包不住
+ * 一整组顶层规则，所以拆成两个文件而不是塞在一个 @if 里。
  */
 
 /* 正文基底：排版组（桌面）+ 文字颜色。 */
@@ -30,8 +34,9 @@
   }
 }
 
-/* 段间距：富文本模式下的内部块级元素。 */
-& p, & ul, & blockquote {
+/* 段间距：富文本模式下的内部块级元素。配了具体值就用它；
+   没配时由 Go 侧在「真的渲染富文本」的实例上兜底 1em，其余实例整条省略。 */
+& p, & ul, & ol, & blockquote {
   margin-top: {{para_spacing}};
   margin-bottom: {{para_spacing}};
 }

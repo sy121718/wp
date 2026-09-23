@@ -65,12 +65,12 @@ func TestAdminTemplatesHaveNoLegacyPagesClasses(t *testing.T) {
 // 确实用上了迁移后的公共类。
 func TestMailAdminTemplatesUseSharedClasses(t *testing.T) {
 	pages := []string{
-		"admin/mail.html",
-		"admin/mail_marketing.html",
-		"admin/mail_campaign.html",
-		"admin/mail_automation.html",
-		"admin/mail_automation_edit.html",
-		"admin/mail_automation_run.html",
+		"admin/mail/mail.html",
+		"admin/mail/mail_marketing.html",
+		"admin/mail/mail_campaign.html",
+		"admin/mail/mail_automation.html",
+		"admin/mail/mail_automation_edit.html",
+		"admin/mail/mail_automation_run.html",
 	}
 	for _, page := range pages {
 		data, err := os.ReadFile(page)

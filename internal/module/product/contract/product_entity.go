@@ -288,11 +288,19 @@ const (
 	// CollectionFilterOptionPrefix 前缀维度键的完整前缀（拼维度键用）。
 	CollectionFilterOptionPrefix = CollectionFilterOption + "."
 
-	// CollectionFilterTagIDs 多标签维度（issue #27）：值是逗号分隔的标签 id 列表。
-	// 与单值 CollectionFilterTagID 并存（后者保留兼容既有配置）。
-	CollectionFilterTagIDs = "tagIds"
-	// CollectionFilterTagMode 多标签匹配语义：any（默认，具备任一）/ all（同时具备全部）。
-	CollectionFilterTagMode = "tagMode"
+	// 多值维度（逗号分隔的 id 列表）：一个维度勾多项，取并集。
+	//
+	// CollectionFilterCategoryIDs / BrandIDs / TagIDs 是**同一套样板**（三条各自的
+	// any/all 语义走 CollectionFilterCategoryMode / BrandMode / TagMode）：
+	// 与各自单值维度并存，两者同时非空时**多值优先** —— 单值只是「只勾了一个」的
+	// 退化写法，让它们叠加成 AND 会让「我把单选改成了多选」看起来毫无效果。
+	CollectionFilterCategoryIDs = "categoryIds"
+	CollectionFilterBrandIDs    = "brandIds"
+	CollectionFilterTagIDs      = "tagIds"
+	// 匹配语义：any（默认，具备任一）/ all（同时具备全部）。
+	CollectionFilterCategoryMode = "categoryMode"
+	CollectionFilterBrandMode    = "brandMode"
+	CollectionFilterTagMode      = "tagMode"
 	// CollectionFilterMinPrice / MaxPrice 价格区间（issue #28）：筛「存在**启用**变体价格落在区间内」。
 	//
 	// 价格在变体上（products 不存价格），所以与属性值一样是 EXISTS 下推而不是列比较；
@@ -310,7 +318,8 @@ const (
 	// 判定与 #11 的 on_sale 自动标签规则同源 —— 同一件事只该有一份口径。
 	CollectionFilterOnSale = "onSale"
 
-	// CollectionTagModeAny / CollectionTagModeAll 多标签匹配语义取值（issue #27）。
+	// CollectionTagModeAny / CollectionTagModeAll 多值维度匹配语义取值（issue #27）。
+	// 三个多值维度共用这两个取值（键不同、语义完全一致）。
 	CollectionTagModeAny = "any"
 	CollectionTagModeAll = "all"
 )
@@ -325,10 +334,14 @@ const (
 var collectionFilters = []source.CollectionFilter{
 	{Key: CollectionFilterStatus, Enum: []string{productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}},
 	{Key: CollectionFilterCategoryID},
+	{Key: CollectionFilterCategoryIDs},
+	{Key: CollectionFilterCategoryMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
 	{Key: CollectionFilterBrandID},
+	{Key: CollectionFilterBrandIDs},
+	{Key: CollectionFilterBrandMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
 	{Key: CollectionFilterTagID},
 	{Key: CollectionFilterTagIDs},
-	// 匹配语义只在多标签场景有意义，取值固定两个（工作台渲染成下拉）。
+	// 匹配语义只在多值场景有意义，取值固定两个（工作台渲染成下拉）。
 	{Key: CollectionFilterTagMode, Enum: []string{CollectionTagModeAny, CollectionTagModeAll}},
 	{Key: CollectionFilterOnSale},
 	// 价格区间（issue #28）：两维都是任意数值，形状与取值范围在解析期校验。

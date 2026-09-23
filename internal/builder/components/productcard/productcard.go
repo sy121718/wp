@@ -28,7 +28,9 @@ import (
 	_ "embed" // productcard.css 经 //go:embed 打进二进制
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -196,6 +198,47 @@ func (c *Component) FieldBindings(node *core.Node) (refs []core.FieldRef, err er
 }
 
 // effectiveCurrency 有效货币符号（空取默认符号）。
+// FormatPrice 商品价格展示文本（源站形态：货币符号与金额之间**有一个空格**，
+// 金额补足两位小数 —— `$ 65.00`）。
+//
+// 为什么与原始值不同：CMS 里的价格是 "65" / "65.5" 这类裸数字，直接冠符号会得到
+// "$65" / "$65.5"，与源站（以及大多数主流电商）的 "$ 65.00" 不一致；
+// 列表页一屏几十个价格，这点差异肉眼很明显。
+//
+// 解析失败时**原样返回**（不硬凑两位小数）：宁可显示作者给的形态，
+// 也不要因为一条脏数据把价格渲染成 "$ 0.00"。
+func FormatPrice(currency, raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	amount, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(amount) || math.IsInf(amount, 0) {
+		return currency + value
+	}
+	if currency == "" {
+		return strconv.FormatFloat(amount, 'f', 2, 64)
+	}
+	return currency + " " + strconv.FormatFloat(amount, 'f', 2, 64)
+}
+
+// DiscountPercent 折扣百分比（向下取整；算不出真实折扣时返回 0）。
+//
+// 与 core.product 的详情角标同一口径：只在两个价格都是正数、且划线价严格大于现价时才成立。
+// 向下取整是电商标价惯例 —— 不虚增折扣力度（12.5% 写 12% 而不是 13%）。
+func DiscountPercent(priceRaw, compareRaw string) int {
+	price, perr := strconv.ParseFloat(strings.TrimSpace(priceRaw), 64)
+	compare, cerr := strconv.ParseFloat(strings.TrimSpace(compareRaw), 64)
+	if perr != nil || cerr != nil || price <= 0 || compare <= price {
+		return 0
+	}
+	percent := int(math.Floor((compare - price) / compare * 100))
+	if percent <= 0 {
+		return 0
+	}
+	return percent
+}
+
 func effectiveCurrency(p *Props) string {
 	if p == nil || strings.TrimSpace(p.Currency) == "" {
 		return defaultCurrency

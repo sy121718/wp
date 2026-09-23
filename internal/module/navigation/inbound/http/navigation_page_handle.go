@@ -25,10 +25,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 页面文案（i18n key，与原 dashboard 枚举同值）。
+// 页面标题（i18n key，与原 dashboard 枚举同值）。
+//
+// 参数级提示不再用 MsgFieldRequired 这个通用 key 直出（原先 c.String(400, key) 把 key
+// 本身当响应体）：统一走 navigation_err.go 的 navInvalidParamText / navNoticeNoSourcePicked。
 const (
 	navigationsPageTitle = "MsgNavigationsTitle"
-	navFieldRequiredMsg  = "MsgFieldRequired"
 )
 
 // 导航位置（与 navigation 模块 kind 白名单对齐）。
@@ -77,6 +79,24 @@ type navMenuRow struct {
 	UpdatedAt string
 }
 
+// navSourceGroup 来源候选分组（页面渲染用）：在 contract 的 SourceGroup 上补一个
+// 「本组是否至少有一项可加入」。
+//
+// 为什么在页面侧派生而不是加进 contract：它是**展示判据**（按钮禁用态），跨模块契约
+// 不该为了一个后台按钮多一个字段。判据只有一份 —— 候选 URL 非空才可加入，与 service
+// 「无公开路径的候选不提供添加」同源（见 navigation_page_handle.go 的 NavigationAddSource）。
+//
+// 为什么要有它：逐项 disabled 只挡住单个复选框，整组都不可用时按钮仍可点，用户提交后
+// 才拿到「请至少勾选一项要加入菜单的内容」—— 而 33 个项目里一个都勾不动，那句提示
+// 只会让人更困惑。按钮在源头置灰，配合每项的「（暂无公开路径，先发布后再添加）」说明。
+type navSourceGroup struct {
+	Type  string
+	Title string
+	Items []navigationcontract.SourceCandidate
+	// Usable 本组至少有一项可加入（URL 非空）。
+	Usable bool
+}
+
 // navigationsPageData 导航菜单管理页数据。
 // panelBlockOption 面板块下拉选项（超菜单面板选择）。
 type panelBlockOption struct {
@@ -94,7 +114,7 @@ type navigationsPageData struct {
 	// ParentOptions 可作为父级的项（两级上限：仅顶级项可选）。
 	ParentOptions []navMenuRow
 	// SourceGroups 可加入菜单的来源候选（页面/文章/产品/分类，按来源分组）。
-	SourceGroups []navigationcontract.SourceGroup
+	SourceGroups []navSourceGroup
 	// PanelBlocks 可挂作悬浮面板的全局块（超级菜单）；块能力未装配时为空。
 	PanelBlocks []panelBlockOption
 	// PanelAvail 面板能力是否可用（块契约已注入）。
@@ -138,7 +158,7 @@ func (h *navigationPageHandle) NavigationsPage(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/navigations", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/navigation/navigations", shell.Prepare(c, data.templateMap()))
 }
 
 // buildNavigationsData 组装页面数据（工程/位置筛选 + 菜单树展平）。
@@ -165,6 +185,20 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		if groups, terr = h.navigations.SourceGroups(ctx, selected); terr != nil {
 			logger.Scene("page").With("project", selected).Warn("导航来源候选加载失败，管理页仅显示自定义链接")
 		}
+	}
+	// 视图模型：把「本组是否有可加入项」一次算清，模板只做渲染（模板不做查询、不做统计）。
+	sourceGroups := make([]navSourceGroup, 0, len(groups))
+	for _, g := range groups {
+		usable := false
+		for _, it := range g.Items {
+			if strings.TrimSpace(it.URL) != "" {
+				usable = true
+				break
+			}
+		}
+		sourceGroups = append(sourceGroups, navSourceGroup{
+			Type: g.Type, Title: g.Title, Items: g.Items, Usable: usable,
+		})
 	}
 	// 悬浮面板（超级菜单）：列出可挂的块并回填行上的块名。块能力未装配时整体降级
 	// （PanelAvail=false，模板隐藏面板区）——降级可见，不留一个点了没反应的下拉。
@@ -198,7 +232,7 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 	return &navigationsPageData{
 		Title: navigationsPageTitle, Menu: "navigations",
 		Projects: projects, SelectedProject: selected, Kind: kind,
-		Rows: rows, ParentOptions: parents, SourceGroups: groups,
+		Rows: rows, ParentOptions: parents, SourceGroups: sourceGroups,
 		PanelBlocks: panelBlocks, PanelAvail: panelAvail,
 		// 操作结论走 query 回带（PRG）：批量删除的结果条。
 		// 读侧一律经 navigation_err.go 的白名单出口（查询参数不是可信边界）。
@@ -306,7 +340,7 @@ func (h *navigationPageHandle) NavigationCreate(c *gin.Context) {
 	target := strings.TrimSpace(c.PostForm("target"))
 	parentID := strings.TrimSpace(c.PostForm("parentId"))
 	if projectID == "" || title == "" || path == "" {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navInvalidParamText(c), ""))
 		return
 	}
 	req := &navigationdto.CreateReq{ProjectID: projectID, Title: title, Path: path, Kind: kind, Target: target}
@@ -330,8 +364,15 @@ func (h *navigationPageHandle) NavigationAddSource(c *gin.Context) {
 	kind := normalizeNavKind(c.PostForm("kind"))
 	sourceType := strings.TrimSpace(c.PostForm("sourceType"))
 	ids := c.PostFormArray("sourceIds")
-	if projectID == "" || sourceType == "" || len(ids) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
+	if projectID == "" || sourceType == "" {
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navInvalidParamText(c), ""))
+		return
+	}
+	if len(ids) == 0 {
+		// 最常见的一条：抽屉里 33 个复选框默认全不勾，用户直接点「加入菜单」。
+		// 模板侧已把「本组没有可加入项」的提交按钮置灰，这里是服务端兜底 —— 两条
+		// 都要有：只靠前端，手工构造的请求仍会拿到一条看不懂的响应。
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navNoticeNoSourcePicked, ""))
 		return
 	}
 	groups, err := h.navigations.SourceGroups(ctx, projectID)
@@ -381,10 +422,11 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
 	// menu 是「冲突/失败后仍要展开的那一项」：带着它回跳，用户刷新后抽屉还开着，
-	// 能立刻看到库里的当前值并决定怎么改。
+	// 能立刻看到库里的当前值并决定怎么改。解析放在 id 判定之前 —— 参数级失败同样要
+	// 带着它回列表页，否则用户回来还得在几十行里重新找那一项。
 	menuID := strings.TrimSpace(c.PostForm("menu"))
 	if id == "" {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navInvalidParamText(c), ""))
 		return
 	}
 	req := &navigationdto.UpdateReq{ID: id}
@@ -417,7 +459,7 @@ func (h *navigationPageHandle) NavigationDelete(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
 	if id == "" {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navInvalidParamText(c), ""))
 		return
 	}
 	if err := h.navigations.Delete(c.Request.Context(), &navigationdto.DeleteReq{ID: id}); err != nil {
@@ -490,7 +532,7 @@ func (h *navigationPageHandle) NavigationMove(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
 	if id == "" || (dir != "up" && dir != "down") {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navInvalidParamText(c), ""))
 		return
 	}
 	item, err := h.navigations.Get(ctx, &navigationdto.GetReq{ID: id})

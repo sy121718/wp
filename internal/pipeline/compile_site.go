@@ -15,6 +15,7 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/seo"
 )
 
 // SiteCompilePorts 站点装配可选依赖（nil 表示跳过该项注入）。
@@ -123,6 +124,11 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 		if sitePages, serr := ports.SitePages.ResolveSitePages(p.Ctx, p.ProjectID, p.Lang); serr != nil {
 			return nil, serr
 		} else if len(sitePages) > 0 {
+			// 槽位值在**注入前**就补成绝对地址：组件拿到 ctx.SitePage("shop") 时
+			// 直接就是可用地址，不需要（也不应该）各自再拼一次基址。
+			for slot, href := range sitePages {
+				sitePages[slot] = AbsoluteSiteURL(href)
+			}
 			opts = append(opts, builder.WithSitePages(sitePages))
 		}
 	}
@@ -198,7 +204,18 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 			if serr != nil {
 				return logical // 规则解析失败原样输出：缺前缀是可见降级，抛错会让整页构建失败
 			}
-			return localized
+			// 归一到**公开规范路径**：SitePath 对「默认语言的语言根」返回 /index
+			// （与带前缀语言的 /en/index 同形，见 LangURLRule.Path），而 /index 只是
+			// 激活目录里的条目名，公开 URL 是 "/"。少了这一步，作者填 "/" 的链接前缀
+			// 会拼成 /index/<slug> —— 一个不存在的地址（实测：集合卡的文章链接全变成
+			// /index/is-vaping-legal-...，而文章其实在 /is-vaping-legal-...）。
+			//
+			// 与 LocalizeMenuURLWith 口径一致（导航 URL 本地化本来就带这一步），
+			// 两处必须同源，否则「菜单链接对、卡片链接错」这种半对状态最难查。
+			// 再补站点基址：站内链接一律**绝对地址**（判据见 AbsoluteSiteURL）。
+			// 两步顺序固定：先归一到公开规范路径、再拼基址 —— 反过来的话
+			// 基址会被 CanonicalPublicPath 当成站内路径再处理一次。
+			return AbsoluteSiteURL(seo.CanonicalPublicPath(localized))
 		}))
 	}
 	if ports.MediaProbe != nil {

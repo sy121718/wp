@@ -27,20 +27,20 @@ const groupFSeedFile = "../../public/migrations/193_i18n_seed_admin_system.sql"
 var groupFTemplates = []string{
 	"admin/dashboard.html",
 	"admin/login.html",
-	"admin/administrators.html",
-	"admin/roles.html",
+	"admin/system/administrators.html",
+	"admin/system/roles.html",
 	// 角色权限分配页（本轮新增，角色分权的落点）。纳入本批门禁：它的取词同样必须
 	// 中英成对 —— 新增页面最容易漏的就是这一条（页面上的英文界面会整块回落中文）。
-	"admin/role_permissions.html",
-	"admin/permissions.html",
-	"admin/departments.html",
-	"admin/i18n.html",
-	"admin/masterdata_changes.html",
-	"admin/datarules.html",
-	"admin/datarule_edit.html",
+	"admin/system/role_permissions.html",
+	"admin/system/permissions.html",
+	"admin/system/departments.html",
+	"admin/system/i18n.html",
+	"admin/masterdata/masterdata_changes.html",
+	"admin/system/datarules.html",
+	"admin/system/datarule_edit.html",
 	// 数据规则配置编辑器片段：随编辑页下线裸 JSON textarea 后新增，纳入本批门禁。
-	"admin/partials/datarule_config_editor.html",
-	"admin/analytics.html",
+	"admin/system/datarule_config_editor.html",
+	"admin/analytics/analytics.html",
 }
 
 // groupFRetiredKeys 随版式改版退役的词条。
@@ -343,7 +343,7 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		{ID: 1, Username: "admin", Name: "甲", Email: "a@example.com", Phone: "138", Status: 1},
 		{ID: 2, Username: "editor01", Status: 3},
 	}
-	out, err := render(t, set, "admin/administrators", admins)
+	out, err := render(t, set, "admin/system/administrators", admins)
 	if err != nil {
 		t.Fatalf("管理员列表渲染失败: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
 		Category: "ui", UpdateTime: "2026-09-14 10:00",
 	}}
-	out, err = render(t, set, "admin/i18n", i18nData)
+	out, err = render(t, set, "admin/system/i18n", i18nData)
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}

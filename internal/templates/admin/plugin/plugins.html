@@ -1,0 +1,181 @@
+{* admin/plugins.html — 插件管理：列表/上传安装/启停/卸载（docs/06-plugin-system.md）
+   列表页标准骨架（评审规则 admin-ui-logic §7）：
+     · 页头一行：标题 + ? 悬浮说明；正文零说明文字；
+     · 已安装插件占主区（列表卡），「安装插件」降为页尾区块（低频动作不占首屏）；
+     · 列表是标准表格 + 右侧操作列，行内表单放表格外（form 不能嵌套）。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.plugins.list.title", "已安装插件") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.plugins.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.plugins.install.hint", "上传 zip 插件包（manifest.json + 组件模板 + 样式声明 + 资产）。安装后启用即出现在可视化工作台组件库。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {{if isset(.Error)}}{{if .Error}}
+    <p class="badge badge-warning" role="alert">{{.Error}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.plugins.list.title", "已安装插件") }}">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>{{ .["t"]("admin.plugins.col.name", "名称") }}</th>
+                        <th>ID</th>
+                        <th>{{ .["t"]("admin.plugins.col.version", "版本") }}</th>
+                        <th>{{ .["t"]("admin.plugins.col.component_count", "组件数") }}</th>
+                        <th>{{ .["t"]("admin.plugins.col.status", "状态") }}</th>
+                        <th>{{ .["t"]("admin.plugins.col.installed_at", "安装时间") }}</th>
+                        <th class="col-actions">{{ .["t"]("admin.plugins.col.actions", "操作") }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 7：
+                       名称 / ID / 版本 / 组件数 / 状态 / 安装时间 / 操作）。 *}
+                    {{if len(.Plugins) == 0}}
+                    <tr><td colspan="7" class="cell-wrap">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.plugins.list.empty", "还没有安装插件。上传 zip 包安装你的第一个插件。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="#plugin-install">{{ .["t"]("admin.plugins.install.title", "安装插件") }}</a>
+            </div>
+        </div>
+                    </td></tr>
+                    {{else}}
+                    {{range _, p := .Plugins}}
+                    <tr>
+                        <td><strong>{{p.Name}}</strong></td>
+                        <td><code>{{p.ID}}</code></td>
+                        <td>{{p.Version}}</td>
+                        <td>{{p.ComponentCount}}</td>
+                        <td>{{if p.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.plugins.status.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.plugins.status.disabled", "停用") }}</span>{{end}}</td>
+                        <td class="text-mute text-sm">{{p.InstalledAt}}</td>
+                        <td class="col-actions">
+                            <button type="submit" form="plugin-toggle-{{p.ID}}" class="btn btn-sm">{{if p.Enabled}}{{ .["t"]("admin.plugins.status.disabled", "停用") }}{{else}}{{ .["t"]("admin.plugins.status.enabled", "启用") }}{{end}}</button>
+                            <button type="submit" form="plugin-uninstall-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.plugins.action.uninstall", "卸载") }}</button>
+                        </td>
+                    </tr>
+                    {{end}}
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {* ===== 产物对账巡检（只读，默认折叠）=====
+       一次卸载要清三处互相独立的存储：L1 schema（PG）、注册行（PG）、存储目录（文件系统）。
+       后者的清理不参与事务（跨库），所以每一步都可能单独失败，而残片没有任何入口能发现。
+       四类不一致分开显示，因为处置方式完全不同：孤儿 schema / 孤儿目录要人工确认里面
+       有没有要留的数据或资产再决定删；缺 schema / 缺目录的注册行重装插件即可恢复。
+       巡检只报告、不自动清理 —— DROP SCHEMA ... CASCADE 与 rm -rf 都会连内容一起删。
+
+       为什么整个块收进**一张**折叠卡（审计 02-L P1-17）：四类各自条件渲染、正常情况下
+       一个都不出现；一旦出现就是四段连续内容占满多屏，把页尾的「安装插件」推到第 5 屏。
+       但它们不能无脑默认折叠 —— 孤儿 schema 里可能有真实数据，那是安全信号，折起来等于
+       把它藏了。折中办法是 summary 常显并带**不一致类数**与告警色：版面省下来，信号还在，
+       展开即见明细（折叠写法样板：product_tags.html / inventory_sources.html）。
+       底下四小节是这张卡的**内容分组**，不是子卡：只留 card-body（无边框、无背景），
+       避免出现卡中卡。 *}
+    {{if isset(.ArtifactPatrol)}}
+    {* 不一致**类数**（0~4），不是条目总数：summary 上要回答的是「有几类需要去看」。
+       四类各自的明细仍由各自的条件控制，模板不做任何自动清理。 *}
+    {{kinds := (len(.ArtifactPatrol.OrphanSchemas) > 0 ? 1 : 0) + (len(.ArtifactPatrol.MissingSchemas) > 0 ? 1 : 0) + (len(.ArtifactPatrol.OrphanStorage) > 0 ? 1 : 0) + (len(.ArtifactPatrol.MissingStorage) > 0 ? 1 : 0)}}
+    {{if kinds > 0}}
+    <details class="section-fold card">
+        <summary>
+            <span class="fold-title">{{ .["t"]("admin.plugins.patrol.title", "产物对账巡检") }}</span>
+            {* 数字与词条之间那个空格留在模板里：词条值本身不带前后空白，
+               运营在词条后台把空格删了也不会让 badge 粘成「4类不一致」。 *}
+            <span class="badge badge-warning">{{kinds}} {{ .["t"]("admin.plugins.patrol.badge_kinds", "类不一致") }}</span>
+        </summary>
+        <div class="fold-body">
+            {{if len(.ArtifactPatrol.OrphanSchemas) > 0}}
+            <section class="card-body">
+                <h2>{{ .["t"]("admin.plugins.patrol.orphans_title", "产物对账巡检：孤儿 schema") }}</h2>
+                <p class="page-sub">{{ .["t"]("admin.plugins.patrol.orphans_desc", "这些 schema 在数据库里还在，但注册表里已经没有对应插件（卸载未清干净，或 schema 是手工建的）。巡检不自动清理：DROP SCHEMA ... CASCADE 会连里面的数据一起删除，请先确认表里有没有需要保留的数据。") }}</p>
+                {* 窄屏可横向滚动：这仍是折叠区内的表，table-scroll 不能因为合并而脱落。 *}
+                <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.plugins.patrol.orphans_title", "产物对账巡检：孤儿 schema") }}">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>schema</th>
+                                <th>{{ .["t"]("admin.plugins.patrol.col_tables", "表数量") }}</th>
+                                <th>{{ .["t"]("admin.plugins.patrol.col_hint", "处理建议") }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range _, o := .ArtifactPatrol.OrphanSchemas}}
+                            <tr>
+                                <td><code>{{o.Name}}</code></td>
+                                <td>{{o.TableCount}}</td>
+                                <td class="text-sm">{{if o.TableCount == 0}}{{ .["t"]("admin.plugins.patrol.hint_empty", "空 schema，确认后可交由 DBA 手工 DROP") }}{{else}}{{ .["t"]("admin.plugins.patrol.hint_filled", "里面有表，先确认数据是否还需要，再决定是否 DROP") }}{{end}}</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            {{end}}
+            {{if len(.ArtifactPatrol.MissingSchemas) > 0}}
+            <section class="card-body">
+                <h2>{{ .["t"]("admin.plugins.patrol.missing_title", "产物对账巡检：注册行缺少 schema") }}</h2>
+                <p class="page-sub">{{ .["t"]("admin.plugins.patrol.missing_desc", "这些插件声明了数据结构版本，但数据库里的 schema 不存在 —— 构建装配会在建表时失败。重装该插件即可重建（安装会先清旧 schema 再跑迁移）。") }}</p>
+                <ul class="text-sm">
+                    {{range _, id := .ArtifactPatrol.MissingSchemas}}<li><code>{{id}}</code></li>{{end}}
+                </ul>
+            </section>
+            {{end}}
+            {{if len(.ArtifactPatrol.OrphanStorage) > 0}}
+            <section class="card-body">
+                <h2>{{ .["t"]("admin.plugins.patrol.orphan_storage_title", "产物对账巡检：孤儿存储目录") }}</h2>
+                <p class="page-sub">{{ .["t"]("admin.plugins.patrol.orphan_storage_desc", "这些目录还留在磁盘上，但注册表里已经没有对应插件（卸载时删除目录失败）。巡检不自动删：目录里可能有还没迁走的资产，请先确认内容再手工删除。") }}</p>
+                <ul class="text-sm">
+                    {{range _, id := .ArtifactPatrol.OrphanStorage}}<li><code>{{.ArtifactPatrol.StorageRoot}}/{{id}}</code></li>{{end}}
+                </ul>
+            </section>
+            {{end}}
+            {{if len(.ArtifactPatrol.MissingStorage) > 0}}
+            <section class="card-body">
+                <h2>{{ .["t"]("admin.plugins.patrol.missing_storage_title", "产物对账巡检：注册行缺少存储目录") }}</h2>
+                <p class="page-sub">{{ .["t"]("admin.plugins.patrol.missing_storage_desc", "这些插件在注册表里，但磁盘上的目录不见了 —— 构建装配会静默跳过它们（组件库里少一组组件而没有任何提示）。重装该插件即可恢复。") }}</p>
+                <ul class="text-sm">
+                    {{range _, id := .ArtifactPatrol.MissingStorage}}<li><code>{{id}}</code></li>{{end}}
+                </ul>
+            </section>
+            {{end}}
+        </div>
+    </details>
+    {{end}}
+    {{end}}
+    {* 行内表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套在 <td> 里）。 *}
+    {{range _, p := .Plugins}}
+    <form id="plugin-toggle-{{p.ID}}" method="post" action="/admin/plugins/toggle" class="hidden-form">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+        <input type="hidden" name="enabled" value="{{if p.Enabled}}false{{else}}true{{end}}">
+    </form>
+    <form id="plugin-uninstall-{{p.ID}}" method="post" action="/admin/plugins/uninstall" class="hidden-form"
+          data-confirm="{{ .["t"]("admin.plugins.confirm.uninstall", "卸载将删除插件文件，确认？") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+    </form>
+    {{end}}
+
+    {* 安装：低频动作（装一次就不再动），放列表之后，不占首屏。 *}
+    <section class="card card-body" id="plugin-install">
+        <h2>{{ .["t"]("admin.plugins.install.title", "安装插件") }}</h2>
+        <form method="post" action="/admin/plugins/install" enctype="multipart/form-data" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+            <input type="file" name="file" accept=".zip" required>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.plugins.install.submit", "上传并安装") }}</button>
+        </form>
+    </section>
+</div>
+{{end}}

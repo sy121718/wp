@@ -128,8 +128,41 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	// 298（商品标签页命中商品展开区）又新增 2 对 —— 两份账本同批并入；
 	// 304（商品「相关商品」引用校验）新增 1 对（ErrRelatedInvalid，中英各一行）—— 同批并入；
 	// 312（商品标签跨工程引用拒绝）新增 1 对（ErrTagCrossProject，中英各一行）—— 同批并入。
-	// 业务词条仍在下文按 key 和语言逐项校验，总量不能替代语义检查。
-	for lang, want := range map[string]int64{"zh-CN": 3780, "en-US": 3665} {
+	//
+	// 2026-09「失败出口收口」多批次并行落地后统一重算（此前停在 3780/3665）：
+	//   313~317 / 399~402（往批：文章详情模板 props、商品编辑与只读文案、商品预览覆盖、
+	//     库存流水空态、列表空态与客户端筛选空态）
+	//   403 项目域页面出口（8 对）/ 404 页面域（2 对）/ 405 block 补 en-US（0 对，仅 1 行 en）
+	//   406 order（2 对）/ 407 商品详情模板依赖缺失（1 对；其 loadFailed* 与 MsgInternalError
+	//     的 en-US 与 405/406 重叠，被 ON CONFLICT 跳过，**不计入本迁移的贡献**）
+	//   408 三域页面出口（8 对）/ 409 运行时片段出口（5 对）/ 410 邮件访客面（5 对）
+	//
+	// 2026-09「孤儿词条退役」（419）：
+	//   删掉 7 对（14 行）—— admin.product_{categories,brands}.seo.unset（改用硬编码「—」）、
+	//   admin.inventory.pagination.{info,more,end}（换成真源分页条，走 shell.pagination.*）、
+	//   admin.mail.campaign.page_{prefix,suffix}（换成真分页条）；
+	//   同批把 190 / 230 / 412 三处 seed 的 SQL 与幂等条件一起收口（见 419 头部与 register 注释）。
+	//   **本批实测**（干净 schema 跑全量迁移 + 两轮 seed，见交付报告）：这 7 个 key 各为 0 行；
+	//   190 / 230 / 412 / 419 四条幂等条件全部命中（=1，即「已满足 → 跳过」，不会每轮重跑）；
+	//   而各语言总量**仍是 3914 / 3802** —— 419 的 -7/语言被同期并行在途批次的等量新增抵消。
+	//   故账本数字保持 3914 / 3802 不变：**账本只认实测，不认推算**（本批曾按「3914-7」推算成
+	//   3907/3795，实测立刻打回 —— 这也是「计数不是判据」的一个实例）。
+	// 429「facing key 缺词条」：4 个 key（ErrInvalidRange / ErrInvalidParent / ErrInvalidSlot /
+	//   ErrSlotPageMiss）—— 它们早已在各域白名单里、却从未登记词条，命中时取词只能按 fallback
+	//   回落成裸 key。补 zh-CN + en-US 各 4 行。
+	// 430「enums 常量缺词条」：判据是**读值不读名**——同一包内 key 形态
+	//   （ErrOrderNotFound="order.err.orderNotFound"）与中文常量形态（ErrInternal="操作失败…"）
+	//   并存，只能按值筛。用 AST 扫 internal/module/*/enums/*.go 的 728 个常量后，剔掉 webhook 的
+	//   4 个事件类型标识（order.paid / order.refunded / product.updated / content.published 是
+	//   EventType 常量、点分二段、不进 err|msg 命名空间、不进取词链，白写只会多 8 行死词条），
+	//   再与库对账：两类都有 361 / 只有 zh-CN 99 / 完全没有 119。
+	//   补「完全没有」的 119 个 key（zh-CN + en-US 各 119 行，category 取模块名）与
+	//   「只有 zh-CN」的 99 个 key 的 en-US 99 行（category / http_code 沿用该 key 既有 zh-CN 行
+	//   —— 同一 key 两行必须一致，loader 装载时 http_code 取首个非零值），共 337 行。
+	//   **本批实测**：zh-CN 3918→4037（+119）、en-US 3806→4024（+218），增量与预期一致但不按推算入账。
+	// 总量只在「新增 seed 时同步核对」这一层起作用；业务词条仍在下文按 key 和语言逐项校验，
+	// 总量不能替代语义检查。
+	for lang, want := range map[string]int64{"zh-CN": 4037, "en-US": 4024} {
 		got := countRows(t, db, "sys_i18n", "lang = ?", lang)
 		if got != want {
 			t.Fatalf("sys_i18n %s 词条数量：want=%d got=%d（新增 seed 时同步核对各语言）", lang, want, got)
@@ -582,9 +615,19 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("ErrAdminNotFound zh-CN = %q，want 管理员不存在", value)
 	}
 
-	// 6) 新增 key（a2 无）：只有 zh-CN，不得伪造 en-US
-	if got := countRows(t, db, "sys_i18n", "item_key = ?", "ErrMenuDepthExceeded"); got != 1 {
-		t.Fatalf("ErrMenuDepthExceeded 应只有 zh-CN 一行（en-US 待翻译），实际 %d", got)
+	// 6) 新增 key（a2 无）：058 当时只写 zh-CN、不伪造 en-US（那时确实没有英文译文）。
+	//    2026-09 迁移 430 按「值即 key、库里只有 zh-CN」的口径复核时补齐了它的 en-US ——
+	//    该断言随之演进：原意（**不得拿中文顶替英文**）原样保留，判断力反而更强
+	//    （同时钉住「中英都有」与「英文不是中文的复制」）。
+	if got := countRows(t, db, "sys_i18n", "item_key = ?", "ErrMenuDepthExceeded"); got != 2 {
+		t.Fatalf("ErrMenuDepthExceeded 应有 zh-CN/en-US 两行（430 已补英文），实际 %d", got)
+	}
+	if err := db.Table("sys_i18n").Select("item_value").
+		Where("item_key = ? AND lang = ?", "ErrMenuDepthExceeded", "en-US").Scan(&value).Error; err != nil {
+		t.Fatalf("查询 ErrMenuDepthExceeded en-US 失败: %v", err)
+	}
+	if strings.TrimSpace(value) == "" || value == "菜单层级超过上限（3 级）" {
+		t.Fatalf("ErrMenuDepthExceeded en-US = %q，英文译文缺失或是中文的复制", value)
 	}
 	// 7) 新 key 化的原中文直值常量：值 = 常量名（key），文案进 zh-CN
 	if err := db.Table("sys_i18n").Select("item_value").

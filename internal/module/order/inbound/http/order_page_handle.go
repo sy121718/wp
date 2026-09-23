@@ -148,14 +148,38 @@ type orderFilter struct {
 // OrdersPage 订单管理页（GET /admin/orders）。
 func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		c.String(http.StatusInternalServerError, orderenums.ErrInternal)
-		return
+
+	// 回显文案：?err= / ?ok= 都过订单模块的白名单，查不到的一律收口
+	// （查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
+	// 命中白名单的那一支要**取当前语言的译文**（orderPageFacingText）：页面上的
+	// {{.Err}} / {{.Ok}} 是直接渲染的文本，不经过 pkg/response 的 translate ——
+	// 只放行 key 的话，运营看到的就是 order.err.orderNotFound 这一串裸 key。
+	// 先于装载计算：装载失败要**压过**它（见下）。
+	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), orderPageFacingText(c))
+	pageOk := shell.FacingQueryText(c.Query("ok"), "", orderPageFacingText(c))
+
+	projects, loadErr := h.projects.List(ctx)
+	// 工程列表读不出来**不拿走整个页面**（判据与 project 域主题页一致，见 theme_admin_pages.go 的 ThemeManage）：
+	// 空列表 + 归口提示 + HTTP 200，页头 / 筛选器 / 批量条 / 分页壳与侧栏全部保留 ——
+	// 运营看得出「是这一页没读出来」，而不是对着一块纯文本以为整个后台坏了。
+	// 原先这里是 `c.String(500, orderenums.ErrInternal)`：没有页壳（侧栏、页头、筛选全消失），
+	// 且那句归口文案是硬编码中文常量，英文界面上照旧显示中文。
+	//
+	// 装载失败**压过 ?err=**：它是这次请求真实发生的事，URL 里那条是上一次写失败的旧提示。
+	loadFailed := loadErr != nil
+	if loadFailed {
+		projects = nil
+		pageErr = orderFacingError(c, loadErr)
 	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
+
+	// 装载失败时不再去读列表与详情：工程上下文都没定下来（selected 只能来自 URL），
+	// 拿一个可能属于别的工程的 project 参数去查订单，查出来的是哪个工程的单都说不清。
+	selected := ""
+	if !loadFailed {
+		selected = strings.TrimSpace(c.Query("project"))
+		if selected == "" && len(projects) > 0 {
+			selected = projects[0].ID
+		}
 	}
 	page, limit := orderListWindow(c)
 	filter := orderFilter{
@@ -164,11 +188,6 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		PaymentMethod: strings.TrimSpace(c.Query("paymentMethod")),
 		OrderID:       orderQueryID(c.Query("orderId")),
 	}
-
-	// 回显文案：?err= / ?ok= 都过订单模块的白名单，查不到的一律收口
-	// （查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
-	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), orderFacingText)
-	pageOk := shell.FacingQueryText(c.Query("ok"), "", orderFacingText)
 
 	rows := []gin.H{}
 	counters := orderStatusCounters(nil, filter, selected)
@@ -218,15 +237,22 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"FilterStatus":  filter.Status,
 		"FilterKeyword": filter.Keyword,
 		"FilterPayment": filter.PaymentMethod,
-		"Rows":          rows,
-		"Total":         total,
-		"Detail":        detail,
+		// 显式布尔：空态要不要给「重置」这个主行动，取决于**当前是不是真的带着筛选**
+		// （无筛选时那个链接指向本页自己，点了页面逐字不变 —— 死按钮比没有按钮更糟）。
+		// 判据与 customers 页同名同义（customer_view.go 的 customerFilterActive）。
+		"FilterActive": filter.Status != "" || filter.Keyword != "" || filter.PaymentMethod != "",
+		"Rows":         rows,
+		"Total":        total,
+		"Detail":       detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这个键决定要不要渲染详情块。
 		"HasDetail": len(detail) > 0,
-		"Page":      page,
-		"Limit":     limit,
-		"Err":       pageErr,
-		"Ok":        pageOk,
+		// 同上：装载失败时空态必须与「这个工程还没有订单」区分开，判据由 handler 算好 ——
+		// 模板里没有可靠的办法分辨「工程列表为空」是「真的没有工程」还是「这一次没读出来」。
+		"LoadFailed": loadFailed,
+		"Page":       page,
+		"Limit":      limit,
+		"Err":        pageErr,
+		"Ok":         pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
 		"Done": orderPageDone(c, c.Query("done")),
 	})
@@ -234,7 +260,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/orders.html", data)
+	c.HTML(http.StatusOK, "admin/order/orders.html", data)
 }
 
 // OrderStatusChange 状态流转（POST /admin/orders/status）。

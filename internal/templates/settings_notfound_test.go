@@ -22,7 +22,7 @@ import (
 func TestAdminSettingsTemplateParses(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
-	if _, err := set.GetTemplate("admin/settings"); err != nil {
+	if _, err := set.GetTemplate("admin/project/settings"); err != nil {
 		t.Fatalf("站点设置页模板解析失败: %v", err)
 	}
 }
@@ -32,7 +32,7 @@ func TestAdminSettingsTemplateParses(t *testing.T) {
 // 键名写错是这一页最容易犯又最难发现的错：表单照样渲染、保存照样 200，
 // 只是那个字段永远存不进去（本页的保存是「按字段逐个读表单」）。
 func TestAdminSettingsHasNotFoundHTMLEditor(t *testing.T) {
-	src, err := os.ReadFile("admin/settings.html")
+	src, err := os.ReadFile("admin/project/settings.html")
 	if err != nil {
 		t.Fatalf("读取模板失败: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestAdminSettingsRendersNotFoundHTML(t *testing.T) {
 		"LocaleSaved":       false,
 		"LangURLOffWarning": false,
 	}
-	html, err := render(t, set, "admin/settings", data)
+	html, err := render(t, set, "admin/project/settings", data)
 	if err != nil {
 		t.Fatalf("站点设置页渲染失败: %v", err)
 	}

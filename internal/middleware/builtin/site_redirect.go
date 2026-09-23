@@ -25,18 +25,36 @@ import (
 	"go_wp/internal/seo"
 )
 
-// siteFacePrefix 访问面挂载前缀（与 setupStaticFace 的 Group("/site") 保持一致）。
-const siteFacePrefix = "/site"
+// siteFaceRel 把请求路径归一到「访问面内相对路径」。
+//
+// 前缀为空（站点独占域名根）时全部路径都在访问面内；非空时要求
+// 「等于前缀」或「前缀 + / 开头」—— 避免把 /siteadmin 这类路径误当访问面。
+func SiteFaceRel(prefix, fullPath string) (rel string, ok bool) {
+	if prefix == "" {
+		return strings.TrimPrefix(fullPath, "/"), true
+	}
+	if fullPath == prefix {
+		return "", true
+	}
+	if !strings.HasPrefix(fullPath, prefix+"/") {
+		return "", false
+	}
+	return strings.TrimPrefix(fullPath, prefix), true
+}
 
 // SiteRedirectMiddleware 见文件头注释。
-func SiteRedirectMiddleware() gin.HandlerFunc {
+//
+// prefix 是访问面挂载前缀：站点独占域名根时为空串，控制台内的兼容入口为 "/site"。
+// 传参而不是读包级常量 —— 同一份中间件要挂两个挂载点，写死前缀会让根挂载点上的
+// 重定向产物与 /index 别名**全部失效**（表现为改过 URL 的旧路径 404）。
+func SiteRedirectMiddleware(prefix string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if target, ok := indexAliasRedirectOf(c.Request.URL.Path); ok {
+		if target, ok := indexAliasRedirectOf(prefix, c.Request.URL.Path); ok {
 			c.Redirect(http.StatusMovedPermanently, target)
 			c.Abort()
 			return
 		}
-		target, code, ok := redirectTargetOf(c.Request.URL.Path)
+		target, code, ok := redirectTargetOf(prefix, c.Request.URL.Path)
 		if !ok {
 			c.Next()
 			return
@@ -47,11 +65,11 @@ func SiteRedirectMiddleware() gin.HandlerFunc {
 }
 
 // indexAliasRedirectOf /index 语言根别名 301 到规范路径（I18N-022）。
-func indexAliasRedirectOf(fullPath string) (target string, ok bool) {
-	if !strings.HasPrefix(fullPath, siteFacePrefix+"/") {
+func indexAliasRedirectOf(prefix, fullPath string) (target string, ok bool) {
+	rel, ok := SiteFaceRel(prefix, fullPath)
+	if !ok {
 		return "", false
 	}
-	rel := strings.TrimPrefix(fullPath, siteFacePrefix)
 	rel = strings.TrimSuffix(rel, "/")
 	if rel == "" {
 		return "", false
@@ -70,8 +88,9 @@ func indexAliasRedirectOf(fullPath string) (target string, ok bool) {
 //
 // 三条否定条件都返回 ok=false 交给静态面处理，中间件不改变任何其他请求的行为：
 // 不在访问面前缀内、路径越界、链接目标不是重定向产物。
-func redirectTargetOf(fullPath string) (target string, code int, ok bool) {
-	if !strings.HasPrefix(fullPath, siteFacePrefix+"/") {
+func redirectTargetOf(prefix, fullPath string) (target string, code int, ok bool) {
+	rel, inFace := SiteFaceRel(prefix, fullPath)
+	if !inFace {
 		return "", 0, false
 	}
 	// 先连前缀斜杠一起去掉再 Clean：filepath.Clean("/old-path") 仍是绝对路径
@@ -81,7 +100,7 @@ func redirectTargetOf(fullPath string) (target string, code int, ok bool) {
 	// clean 而不是原样拼接：rel 可能带 ".."（/site/../../etc/passwd），
 	// 直接 Join 会逃出激活目录。静态面（http.Dir）自己有同类防护，但本中间件
 	// 要自己读盘，必须自己挡。绝对路径、"." 与 ".." 前缀一并拒绝。
-	rel := filepath.Clean(strings.TrimPrefix(fullPath, siteFacePrefix+"/"))
+	rel = filepath.Clean(strings.TrimPrefix(rel, "/"))
 	if rel == "." || rel == "" || filepath.IsAbs(rel) ||
 		rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", 0, false

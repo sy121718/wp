@@ -122,7 +122,7 @@ func (s *Service) syncMediaRefs(ctx context.Context, pageID, pagePath string, ht
 // 编译期收集的「被容忍的降级」最终写进产物 Manifest。
 // plan 为本次构建**已冻结**的发布计划（审计 I18N-01，预览 / 首次构建传 nil）：
 // 非空时站点语言表与默认语言都取自它，编译期不再回读 project_locales。
-func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector, plan *pipeline.PublicationPlan) ([]byte, error) {
+func (s *Service) compileDocument(ctx context.Context, page *builder.Page, projectID, currentPath, lang string, usage core.UsageRecorder, withPublishScope bool, mode builder.CompileMode, diags *builder.DegradeCollector, plan *pipeline.PublicationPlan, extra ...builder.CompileOption) ([]byte, error) {
 	// 组件模板 Set + 插件装配（EDT-003 共用 pipeline.ComponentSetWithPlugins）。
 	asm := pipeline.LoadPluginAssembly(ctx, s.plugins)
 	set, pluginOpts, err := pipeline.ComponentSetWithPlugins(asm)
@@ -228,6 +228,9 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if usage != nil {
 		opts = append(opts, builder.WithUsageRecorder(usage))
 	}
+	// 调用方追加的编译选项：**最后追加**，语义上只允许「加东西」（如编辑器画布的
+	// 槽位标记层），不允许覆盖上面按装配顺序定好的选项（发布模式、降级收集器…）。
+	opts = append(opts, extra...)
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		// 组件校验问题（配置不完整 / 非法，如「手风琴至少需要一个折叠项」）是**作者可操作**

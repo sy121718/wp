@@ -279,20 +279,24 @@ func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *p
 // 页面 SQL 条数随标签数线性增长 —— 「标签是个位数」只是当时的假设，协议没有使它成立。
 // 现在无论 1 个还是 1000 个标签，这里都只多一条 SQL。
 func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error) {
-	var projectID, kind, keyword string
-	rawProjectID := ""
-	if req != nil {
-		rawProjectID, kind, keyword = req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
-	}
+	rawProjectID, kind, keyword := tagListFilter(req)
 	// 工程作用域必填（DB-009）：下面的批量计数反查的是 products，
 	// 没有作用域时每个标签的命中数会静默变成 0（fail closed 不报错）。
 	// 这与 Products.List 同一口径：不显式指定工程时取唯一工程，多于一个工程即报错，
 	// 不再有「projectID 为空 = 不限工程」这条在策略下必然退化成空结果的旧语义。
-	projectID, err = s.resolveProjectID(ctx, rawProjectID)
+	projectID, err := s.resolveProjectID(ctx, rawProjectID)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.m.ListTags(ctx, projectID, kind, keyword)
+	// 分页下推到 model 的 LIMIT/OFFSET（审计 D13 收口）：Page/Size 只在**显式给出**时生效，
+	// 零值形态仍是全量（见 optionalPaging）—— 重算回执的标签清单、商品页的标签勾选项
+	// 都走那条形态，它们要的是全部标签。
+	inPage, inSize := 0, 0
+	if req != nil {
+		inPage, inSize = req.Page, req.Size
+	}
+	limit, offset := optionalPaging(inPage, inSize)
+	rows, err := s.m.ListTags(ctx, projectID, kind, keyword, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -312,6 +316,33 @@ func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (lis
 		list = append(list, resp)
 	}
 	return list, nil
+}
+
+// CountTags 标签总数（后台标签页的「共 N 条」与总页数）。
+//
+// **与 ListTags 共用同一个 tagListFilter 与同一个 resolveProjectID**：工程作用域的解析
+// （为空时取唯一工程、多工程报错）尤其不能各写一遍 —— 一侧退化成「不限工程」时，
+// 计数会把别的工程的标签也算进来，分页条凭空多出几页。
+//
+// 与命中计数无关：这一列是每个标签归属的商品数（CountProductsByTagIDs 批量聚合），
+// 不在本方法的职责里。
+func (s *Service) CountTags(ctx context.Context, req *productdto.ListTagReq) (n int64, err error) {
+	rawProjectID, kind, keyword := tagListFilter(req)
+	projectID, err := s.resolveProjectID(ctx, rawProjectID)
+	if err != nil {
+		return 0, err
+	}
+	return s.m.CountTags(ctx, projectID, kind, keyword)
+}
+
+// tagListFilter 归一标签列表的过滤条件（ListTags / CountTags 共用）。
+//
+// 第一项是**未解析**的工程 id（空串表示「取唯一工程」，由 service 的 resolveProjectID 判定）。
+func tagListFilter(req *productdto.ListTagReq) (rawProjectID, kind, keyword string) {
+	if req == nil {
+		return "", "", ""
+	}
+	return req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
 }
 
 // ListTagProducts 某标签命中的商品（验收 4：后台可查看某标签命中哪些商品）。
@@ -477,7 +508,7 @@ func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq)
 		if projectID == "" {
 			return nil, errors.New(productenums.ErrInvalidParam)
 		}
-		tags, err = s.m.ListTags(ctx, projectID, productenums.TagKindRule, "")
+		tags, err = s.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -614,7 +645,7 @@ func (s *Service) recalcAutoTags(ctx context.Context, projectID string) (err err
 	if projectID == "" {
 		return nil
 	}
-	tags, err := s.m.ListTags(ctx, projectID, productenums.TagKindRule, "")
+	tags, err := s.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
 	if err != nil {
 		return err
 	}

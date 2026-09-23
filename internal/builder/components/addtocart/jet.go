@@ -45,6 +45,12 @@ type View struct {
 	ShowQuantity bool
 	// Rows 加购行。
 	Rows []Row
+	// ShowRowPrice 是否在行内显示价格。
+	//
+	// 只在**多行**时为真：行内价格的作用是区分「这一行是哪件、多少钱」，
+	// 多规格商品里每行价格不同、非显示不可；单 SKU 只有一行，
+	// 而价格已经由商品详情区在标题下展示过了 —— 再显示一次是同一屏里的重复信息。
+	ShowRowPrice bool
 	// Notice 无法加购时的提示（商品没有启用变体）。空表示正常渲染。
 	//
 	// 用提示而不是构建失败：商品暂时没上架变体是**数据状态**，不是配置错误 ——
@@ -126,7 +132,8 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 	groups := product.ParseOptionGroups(rawOptions)
 	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p), view.ProjectID, view.Lang)
 	if len(options) == 0 {
-		// 没有启用变体（未上架 / 全部停用）：留一句提示，不做成一个点了没反应的按钮。
+		// 有规格维度、但没有可买的组合（未上架 / 全部停用）：留一句提示，
+		// 不做成一个点了没反应的按钮。
 		view.Notice = "暂无可购买的规格"
 		return view, nil
 	}
@@ -142,6 +149,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 			})
 		}
 		view.Rows = rows
+		view.ShowRowPrice = len(rows) > 1
 		return view, nil
 	}
 
@@ -150,6 +158,8 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 	// 多变体商品想在卡片上一键加购，请用逐变体模式（或接受「加的是第一档」）。
 	first := options[0]
 	view.Rows = []Row{{VariantID: first.ID, Price: first.Price, ComparePrice: first.ComparePrice}}
+	// 单行：价格已在商品详情区展示过，行内不再重复（见 ShowRowPrice 注释）。
+	view.ShowRowPrice = false
 	return view, nil
 }
 

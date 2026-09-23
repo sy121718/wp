@@ -26,7 +26,7 @@ func SetupMediaPages(adminPages *gin.RouterGroup) {
 // MediaPage 媒体库页面（左树右库：无限级分类筛选 + WP 式媒体网格/列表）。
 // 页面骨架由模板渲染，数据与交互由 media-admin.js 驱动（复用 /api/media/*）。
 func MediaPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin/media", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/media/media", shell.Prepare(c, gin.H{
 		"title": "媒体库",
 		"menu":  "media",
 		"jsVer": mediaLibJsVer(),

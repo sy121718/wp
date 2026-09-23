@@ -45,7 +45,7 @@ func (h *seoPageHandle) SEOPage(c *gin.Context) {
 	if err != nil {
 		logger.Error(err, "SEO 控制台读取站点列表失败")
 		data["ProjectError"] = true
-		c.HTML(http.StatusOK, "admin/seo.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/analytics/seo.html", shell.Prepare(c, data))
 		return
 	}
 	data["Projects"] = projects
@@ -71,5 +71,5 @@ func (h *seoPageHandle) SEOPage(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/seo.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/analytics/seo.html", shell.Prepare(c, data))
 }

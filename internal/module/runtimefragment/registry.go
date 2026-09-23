@@ -8,7 +8,7 @@ package runtimefragment
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -67,6 +67,13 @@ type Request struct {
 	// 同一次请求里同时存在是可能的（管理员在前台逛自己的站），
 	// 而后台身份是更强的那个声明。
 	UserID string
+	// CurrentPath 发起片段请求时浏览器所在的**站内路径**（如 /shop），
+	// 取自 htmx 的 HX-Current-URL 请求头；取不到时为空。
+	//
+	// 用途：片段渲染出的链接要拼绝对地址（约定：站内地址一律绝对），
+	// 而「当前页」只在浏览器侧知道。取不到时组件退回相对形式 —— 那种情况下
+	// 凭空拼一个是错的。
+	CurrentPath string
 	// VisitorToken 访客会话令牌（原值）。
 	//
 	// 为什么片段层需要它：登录设备台账（user_sessions）存的是令牌的 **sha256**，
@@ -148,6 +155,14 @@ type Spec struct {
 	Render func(ctx context.Context, r *Request) (string, error)
 }
 
+// ErrNoChange 片段处理器用它表示「本次请求无需替换目标节点」。
+//
+// endpoint 映射为 **204 No Content** —— htmx 的 responseHandling 把 204 标成
+// swap:false，收到它不做任何交换。这正是「地址栏没有语义参数时保持服务端渲染结果」
+// 所要的语义：产物里的列表**已经**是正确内容，再换一次只会把构建期带的
+// 筛选栏 / 排序栏换成片段版（片段请求的实例配置里没有那些开关）。
+var ErrNoChange = errors.New("片段无需替换")
+
 // 认证策略常量。
 const (
 	AuthAnonymous = "anonymous"
@@ -188,10 +203,15 @@ func Types() []string {
 }
 
 // validateContext 语义上下文白名单（协议：context 只能是枚举值）。
+//
+// 拒绝时返回**哨兵**而不是带值的 fmt.Errorf：原来的 `fmt.Errorf("非法的片段上下文: %q", ctx)`
+// 被 endpoint 直接写进响应体，等于把请求方可控的串回显给请求方（响应不是可信边界）。
+// 非法值只进日志 —— 出口把它作为日志字段带出（见 endpoint.go 的调用点），
+// 响应侧走 fragment_err.go 的受控文案。
 func validateContext(ctx string) error {
 	switch ctx {
 	case "", "currentProduct", "visitorSession", "searchQuery":
 		return nil
 	}
-	return fmt.Errorf("非法的片段上下文: %q", ctx)
+	return errFragmentContext
 }

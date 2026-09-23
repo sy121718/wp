@@ -159,7 +159,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		Status: productenums.StatusDraft,
 		Unit:   req.Unit, Weight: req.Weight,
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
-		Images: orJSONList(req.Images), ImageAlts: orJSONList(req.ImageAlts),
+		Images: orJSONList(mediaURLs(req.Images)), ImageAlts: orJSONList(req.ImageAlts),
 		AttributeIDs:      orJSONList(attributeIDs),
 		CategoryIDs:       orJSONList(categoryIDs),
 		PrimaryCategoryID: primaryCategoryID,
@@ -167,7 +167,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		TagIDs:            orIDList(tagIDs), RelatedIDs: orIDList(relatedIDs),
 		BundleItems: bundleItems,
 
-		DefaultImage: req.DefaultImage,
+		DefaultImage: mediaURL(req.DefaultImage),
 		DefaultPrice: req.DefaultPrice,
 		Metadata:     metadata,
 		CreatedAt:    now, UpdatedAt: now,
@@ -376,7 +376,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.SEODescription = *req.SEODescription
 	}
 	if req.Images != nil {
-		e.Images = orJSONList(req.Images)
+		e.Images = orJSONList(mediaURLs(req.Images))
 	}
 	if req.ImageAlts != nil {
 		e.ImageAlts = orJSONList(req.ImageAlts)
@@ -436,7 +436,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.DefaultPrice = req.DefaultPrice
 	}
 	if req.DefaultImage != nil {
-		e.DefaultImage = *req.DefaultImage
+		e.DefaultImage = mediaURL(*req.DefaultImage)
 	}
 	if req.Metadata != nil {
 		e.Metadata = orJSON(req.Metadata, "{}")
@@ -552,6 +552,18 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 	// 按三态归并（∞ / 求和 / 未入库）。放在循环外，避免逐商品一次往返。
 	s.fillProductStock(ctx, req.ProjectID, list)
 	return list, nil
+}
+
+// CountProducts 商品列表总数（后台列表页分页用）。
+//
+// 过滤条件与 List **逐字一致**（工程作用域 + 关键词 + 状态）：两处口径分叉会让
+// 「共 N 条」与列表实际能翻出来的条数对不上，而这种偏差只在跨页时才看得出来。
+// 关键词与状态在此归一（TrimSpace）—— handler 传来的原始查询串不是可信边界。
+func (s *Service) CountProducts(ctx context.Context, req *productdto.ListReq) (n int64, err error) {
+	if req == nil {
+		return 0, errors.New(productenums.ErrInvalidParam)
+	}
+	return s.m.Count(ctx, req.ProjectID, strings.TrimSpace(req.Keyword), req.Status)
 }
 
 // Delete 删除商品（变体连带删除）。

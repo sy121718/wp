@@ -46,7 +46,8 @@ func (s *Service) CollectionFilterOptions(ctx context.Context, source, projectID
 		})
 	}
 
-	brands, berr := s.m.ListBrands(ctx, projectID, "")
+	// 全量取（0, 0）：筛选选项要列出工程里所有品牌 / 标签，不是第一页。
+	brands, berr := s.m.ListBrands(ctx, projectID, "", 0, 0)
 	if berr != nil {
 		return out, berr
 	}
@@ -56,7 +57,7 @@ func (s *Service) CollectionFilterOptions(ctx context.Context, source, projectID
 		})
 	}
 
-	tags, terr := s.m.ListTags(ctx, projectID, "", "")
+	tags, terr := s.m.ListTags(ctx, projectID, "", "", 0, 0)
 	if terr != nil {
 		return out, terr
 	}

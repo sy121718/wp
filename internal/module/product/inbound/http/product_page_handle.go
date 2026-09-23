@@ -17,9 +17,7 @@ import (
 
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	pagecontract "go_wp/internal/module/page/contract"
-	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -96,7 +94,14 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	rows := make([]gin.H, 0, 50)
+	// 筛选与分页（服务端渲染，零 JS）：关键词 / 状态 / 页码全部走查询串，
+	// 分页条与筛选表单是普通 GET —— 无 JS 也能用，且刷新后条件不丢。
+	// 查询串不是可信边界：关键词与状态在这里归一，页码非法值一律退回第 1 页。
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	status := strings.TrimSpace(c.Query("status"))
+	page := productPageNumber(c.Query("page"))
+	limit := productListPageSize
+	rows := make([]gin.H, 0, limit)
 	// 分类树与品牌列表一次取好：每个商品行都要渲染「挂哪些分类 / 主分类 / 品牌」，
 	// 放在循环里取会变成 2×N 次查询。
 	flat, ferr := h.flatCategories(ctx, selected)
@@ -123,14 +128,26 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		shell.PageError(c, "product", werr)
 		return
 	}
+	// 分页总数与列表**同一份过滤条件**（service 的 CountProducts 与 List 共用 model 的
+	// 关键词 / 状态条件）：两处口径分叉时「共 N 条」与实际能翻出来的条数对不上。
+	total := int64(0)
 	if selected != "" {
-		list, lerr := h.products.List(ctx, &productdto.ListReq{ProjectID: selected, Size: 100})
+		list, lerr := h.products.List(ctx, &productdto.ListReq{
+			ProjectID: selected, Keyword: keyword, Status: status, Page: page, Size: limit,
+		})
+		if lerr != nil {
+			shell.PageError(c, "product", lerr)
+			return
+		}
+		total, lerr = h.products.CountProducts(ctx, &productdto.ListReq{
+			ProjectID: selected, Keyword: keyword, Status: status,
+		})
 		if lerr != nil {
 			shell.PageError(c, "product", lerr)
 			return
 		}
 		for _, p := range list {
-			// 列表项不含变体明细，逐个取详情（上限 100，后台页可接受）。
+			// 列表项不含变体明细，逐个取详情（一页 20 条，后台页可接受）。
 			detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: p.ID})
 			if derr != nil {
 				continue
@@ -160,7 +177,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	pricingRoundings := h.products.ListPricingRoundingOptions(ctx)
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
 	// 与其它后台页面同一渲染入口（缺 token 时表单提交会被 CSRF 中间件挡下）。
-	c.HTML(http.StatusOK, "admin/products.html", shell.Prepare(c, gin.H{
+	pageData := gin.H{
 		"title":            MsgProductsTitle,
 		"menu":             "products",
 		"Projects":         projects,
@@ -170,19 +187,31 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		// 可选键：未接库存契约 / 该工程的仓库里还没有货时是空数组，模板据 isset + len
 		// 整块跳过（直接渲染模板的单测不带这个键，缺键会让整页在此中断）。
 		"WarehouseSKUOptions": warehouseSKUGroups,
-		// 建表单片段（partials/product_create_form.html）在列表页是抽屉形态：
-		// 渲染「取消」按钮关闭抽屉；新建整页不设该键。
-		"InDrawer":  true,
-		"Rules":     pricingRules,
-		"Roundings": pricingRoundings,
-		"Form":      defaultPricingForm(pricingRules, pricingRoundings),
-		"Products":  rows,
+		"Rules":               pricingRules,
+		"Roundings":           pricingRoundings,
+		"Form":                defaultPricingForm(pricingRules, pricingRoundings),
+		"Products":            rows,
+		// 筛选回显（GET 表单的 value / selected）：提交后条件留在控件上，
+		// 否则用户看不出「现在到底筛了什么」。
+		"FilterKeyword": keyword,
+		"FilterStatus":  status,
+		"Statuses":      productStatusOptions(c, status),
+		"Page":          page,
+		"Limit":         limit,
+		"Total":         total,
 		// 上一步的错误（上限拒绝 / 参数错误）经查询串回显 —— 读侧一律过白名单
 		//（product_err.go）：查询参数不是可信边界。
 		"Err": productPageErr(c),
 		// 批量删除的结果回带（?done=）：部分失败仍走 err（见 ProductsBulkDelete）。
 		"Done": productPageDone(c),
-	}))
+	}
+	// 分页条（shell 组件，服务端渲染）：基地址带当前筛选条件，翻页不丢条件。
+	// 单页或空数据时 BuildPagination 返回 nil，TemplateKeys 给空 map，模板自然不渲染。
+	for k, v := range shell.BuildPagination(total, page, limit,
+		productListFilterURL(selected, keyword, status), shell.TranslateFor(c)).TemplateKeys() {
+		pageData[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/product/products.html", shell.Prepare(c, pageData))
 }
 
 // productRow 组装单个商品的页面视图数据（列表页与详情页共用）。
@@ -319,15 +348,17 @@ func maxInt(a, b int) int {
 	return b
 }
 
-// ProductDetailPage GET /admin/products/detail：单个商品的详情页。
+// ProductDetailPage GET /admin/products/detail：单个商品的详情页（**只读**）。
 //
 // 为什么是独立页，而不是列表页里的第二、三张表（admin-ui-logic §1）：列表页只该回答
 // 「有哪些商品」；变体与评分是**某个商品的子资源**，属于该商品的详情。原来三张表平铺在
 // 列表页上，等于让列表页承载实体详情 —— 商品一多，变体表与评分表就是两份与商品表错位的
 // 长表，改一个商品要跨三处找入口。
 //
-// 本页承接：原编辑抽屉的四个商品级表单（属性引用 / 分类与品牌 / 标签 / SEO 检查）
-// + 原变体表与它的两个抽屉 + 原评分表与它的抽屉。
+// 本页只**看**：基本信息 / 属性引用 / 分类与品牌 / 标签 / 捆绑构成 / 变体清单 / 评分 /
+// 详情页模板的绑定状态。全部写动作（含变体与评分）在 ProductEditPage ——
+// 读与写混在同一页时用户分不清「我在看还是在改」，而且每个写表单都要带 CSRF、
+// 错误回显与回跳地址，那是编辑页的职责。
 //
 // 商品不存在（含没给 product 参数）渲染 .empty-state + 返回列表链接，不 500：
 // 手输 URL、书签失效、商品刚被删都会走到这里，500 什么也说明不了。
@@ -342,7 +373,8 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	// 归属仓下拉（issue #15）：「新建变体 / 生成组合」两个抽屉都要它。
+	// 仓库清单：只读页不用下拉，但行数据组装（productRow 的库存列）要按工程仓库清单
+	// 补齐未入库的仓 —— 与编辑页 / 列表页共用同一份组装，取数口径不能分叉。
 	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
 	if werr != nil {
 		shell.PageError(c, "product", werr)
@@ -386,65 +418,15 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 		"WarehouseOptions": warehouseOptions,
 		// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
 		"BackURL": "/admin/products?project=" + selected,
+		// 只读页没有写操作，故没有 ?done= 回执位；?err= 保留一个渲染位（例如手输 URL
+		// 带了一个非法的错误参数时，页面上给一句可读的归口文案，而不是静默忽略）。
 		// 读侧一律过白名单（product_err.go 的 productFacingNotice）。
 		"Err": productPageErr(c),
-		// 变体清单保存的结论（?done=）：新增 / 改 SKU / 删除的计数与逐条跳过原因。
-		// 与 ?err= 分开是必须的 —— 保存**成功但有跳过**时两条都要能看见。
-		"Done": productPageDone(c),
 	}
-	// 详情页模板面板（docs/04-C-instance-override.md §5）：当前绑定与可视化自定义入口。
-	// 三态：未绑定（引导首次发布）/ 已绑定（预览 + 进入自定义）/ 能力未装配（降级提示）。
-	tplPanel := gin.H{"Avail": false}
-	if hasProduct && h.templates != nil && h.instances != nil {
-		tplPanel["Avail"] = true
-		if inst, ierr := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
-			EntityType: productEntityType, EntityID: productID, ProjectID: selected,
-		}); ierr == nil && inst != nil {
-			tplPanel["InstanceID"] = inst.ID
-			tplPanel["TemplateID"] = inst.TemplateID
-			tplPanel["Published"] = inst.Status == "published" || inst.Status == "active"
-			tplPanel["URLPath"] = inst.URLPath
-			tplPanel["PreviewQS"] = "template=" + inst.TemplateID + "&entityType=product&entityId=" +
-				productID + "&projectId=" + selected
-			// 双轨（迁移 282）：模式徽标 + 两个模式的入口分流。
-			// document：可进入自定义、可重新套用预设、可按历史快照回滚；
-			// template：布局的正确修改位置是模板 —— 按钮写成「编辑模板（影响 N 个商品）」，
-			// 影响面用真实计数（含该模板下 template 模式的实例数），不写就让用户凭猜。
-			isDoc := inst.RenderMode == presentationdto.RenderModeDocument
-			tplPanel["RenderMode"] = presentationdto.RenderModeTemplate
-			if isDoc {
-				tplPanel["RenderMode"] = presentationdto.RenderModeDocument
-			}
-			tplPanel["IsDocumentMode"] = isDoc
-			// 「预设有新版本」：document 模式不会自动跟随模板，只能靠快照记录的
-			// 模板版本与模板最新版比对来提示（判定依据由 toResp 给出）。
-			if isDoc {
-				if tpl, rerr := h.templates.ResolveTemplate(ctx, productEntityType); rerr == nil && tpl != nil &&
-					inst.SourceTemplateVersionID != "" && tpl.VersionID != inst.SourceTemplateVersionID {
-					tplPanel["PresetUpdated"] = true
-				}
-				if h.modePort != nil {
-					if snaps, serr := h.modePort.ListSnapshots(ctx, &presentationdto.ListSnapshotsReq{
-						InstanceID: inst.ID, ProjectID: selected, Limit: 8,
-					}); serr == nil {
-						tplPanel["Snapshots"] = snaps
-					}
-				}
-			}
-			if h.modePort != nil {
-				if counts, cerr := h.modePort.CountByTemplate(ctx, &presentationdto.CountByTemplateReq{
-					TemplateID: inst.TemplateID, ProjectID: selected,
-				}); cerr == nil && counts != nil {
-					tplPanel["AffectedCount"] = counts.TemplateMode
-				}
-			}
-		}
-		if rows, terr := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType}); terr == nil {
-			tplPanel["Templates"] = rows
-		}
-	}
-	data["TplPanel"] = tplPanel
-	c.HTML(http.StatusOK, "admin/product_detail.html", shell.Prepare(c, data))
+	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作（进入自定义 / 编辑模板 /
+	// 重新套用预设 / 回滚）在编辑页 —— 两页共用 detailTemplatePanel 这一份组装。
+	data["TplPanel"] = h.detailTemplatePanel(ctx, selected, productID)
+	c.HTML(http.StatusOK, "admin/product/product_detail.html", shell.Prepare(c, data))
 }
 
 // variantSelectionFromForm 收「生成组合」表单里按前缀提交的勾选（attr:<属性组 id> → 值 id）。
@@ -490,17 +472,17 @@ func (h *productPageHandle) ProductsVariantGenerate(c *gin.Context) {
 		req.Selections = variantSelectionFromForm(c)
 		if len(req.Selections) == 0 {
 			// 裸 enums key 铺到页面上只会显示 ErrVariationSelectionEmpty —— 走取词助手拿中文。
-			c.Redirect(http.StatusFound, productDetailLocation(projectID, productID,
+			c.Redirect(http.StatusFound, productEditLocation(projectID, productID,
 				productErrText(c, errors.New(productenums.ErrVariationSelectionEmpty))))
 			return
 		}
 	}
 	if _, err := h.products.GenerateVariants(c.Request.Context(), req); err != nil {
 		// 非业务错误的原文（PG / 构建器）只进日志，对外给归口文案。
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, productID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, productID, ""))
 }
 
 // variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
@@ -585,7 +567,7 @@ func (h *productPageHandle) ProductsVariantSave(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("rows")); raw != "" {
 		if uerr := json.Unmarshal([]byte(raw), &req.Rows); uerr != nil {
 			// 前端拼错了 JSON：这属于调用方参数错误，给可读提示而不是 PG / JSON 原始报错。
-			redirectWhere(c, productDetailLocation(projectID, productID,
+			redirectWhere(c, productEditLocation(projectID, productID,
 				productErrText(c, errors.New(productenums.ErrInvalidParam))))
 			return
 		}
@@ -594,10 +576,10 @@ func (h *productPageHandle) ProductsVariantSave(c *gin.Context) {
 	// 逐行 SKU 由详情页本身呈现（见 variantSaveNotice 的说明），因此少一次 DB 往返。
 	res, err := h.products.SaveVariantList(ctx, req)
 	if err != nil {
-		redirectWhere(c, productDetailLocation(projectID, productID, productErrText(c, err)))
+		redirectWhere(c, productEditLocation(projectID, productID, productErrText(c, err)))
 		return
 	}
-	redirectWhere(c, productDetailLocationWith(projectID, productID, "", variantSaveNotice(c, res)))
+	redirectWhere(c, productEditLocationWith(projectID, productID, "", variantSaveNotice(c, res)))
 }
 
 // variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
@@ -694,7 +676,9 @@ func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 		if raw := strings.TrimSpace(c.PostForm("quantity")); raw != "" {
 			v, qerr := strconv.Atoi(raw)
 			if qerr != nil || v < 0 {
-				c.Redirect(http.StatusFound, productListURL(req.ProjectID, listErrMark, productQuantityInvalidText))
+				// 数量非法也是**表单失败**：htmx 档留在原页（错误槽 + 回填），不能悄悄跳走 ——
+				// 用户为这一张表填了十几行内容，为一个数字问题全丢是最贵的一种失败。
+				h.productCreateFail(c, req.ProjectID, productQuantityInvalidText)
 				return
 			}
 			qty = v
@@ -705,15 +689,18 @@ func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 	if err != nil {
 		// 业务错误的 Error() 是 enums 常量（= i18n key），直接铺到页面上就是
 		// 「列表页显示 ErrBundlePriceRequired」的来源：统一经 productErrText 取词。
-		c.Redirect(http.StatusFound, productListURL(req.ProjectID, listErrMark, productErrText(c, err)))
+		// 出口走分档：htmx 档 200 + 回填片段，原生档维持 302 + ?err=。
+		h.productCreateFail(c, req.ProjectID, productErrText(c, err))
 		return
 	}
 	if created != nil && created.ID != "" {
-		c.Redirect(http.StatusFound, productDetailLocation(req.ProjectID, created.ID, ""))
+		// 成功也必须分档：htmx 的 XHR 会自己跟随 302，最终响应里读不到 Location，
+		// 整页 HTML 会被塞进表单/抽屉的位置里 —— 只有 HX-Redirect 能让它整页跳转。
+		redirectWhere(c, productEditLocation(req.ProjectID, created.ID, ""))
 		return
 	}
 	// 兜底：拿到商品 id 才谈得上「进详情继续编辑」，否则回列表而不是构造一个空详情页。
-	c.Redirect(http.StatusFound, productListURL(req.ProjectID, listDoneMark, ""))
+	redirectWhere(c, productListURL(req.ProjectID, listDoneMark, ""))
 }
 
 // ProductsVariantCreate 为商品新增变体（未填字段继承商品级默认值）。
@@ -731,10 +718,10 @@ func (h *productPageHandle) ProductsVariantCreate(c *gin.Context) {
 	}
 	projectID := c.PostForm("projectId")
 	if _, err := h.products.CreateVariant(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ProductID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, req.ProductID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ProductID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, req.ProductID, ""))
 }
 
 // ProductsVariantDelete 删除变体。
@@ -744,10 +731,10 @@ func (h *productPageHandle) ProductsVariantDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	productID := c.PostForm("productId")
 	if err := h.products.DeleteVariant(c.Request.Context(), &productdto.DeleteVariantReq{ID: c.PostForm("id")}); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, productID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, productID, ""))
 }
 
 // ProductsRatingAdd 补录一条商品评分（issue #33）。
@@ -759,7 +746,7 @@ func (h *productPageHandle) ProductsRatingAdd(c *gin.Context) {
 	productID := c.PostForm("productId")
 	score, perr := strconv.ParseFloat(strings.TrimSpace(c.PostForm("score")), 64)
 	if perr != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, "评分必须是 0~5 的数字"))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, productID, "评分必须是 0~5 的数字"))
 		return
 	}
 	if _, err := h.products.AddRating(c.Request.Context(), &productdto.AddRatingReq{
@@ -767,10 +754,10 @@ func (h *productPageHandle) ProductsRatingAdd(c *gin.Context) {
 		Score:      score,
 		OperatorID: builtin.GetUsername(c),
 	}); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, productID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, productID, ""))
 }
 
 // ProductsRatingDelete 删掉一条评分（issue #33）：录错了能撤掉。
@@ -784,10 +771,10 @@ func (h *productPageHandle) ProductsRatingDelete(c *gin.Context) {
 		// 工程显式回传（DB-009）：product_ratings 有 FORCE 策略，删一条评分要在工程作用域里。
 		ProjectID: projectID,
 	}); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, productID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, productID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, productID, ""))
 }
 
 // ProductsAttributesSet 整体替换某商品引用的属性组（issue #7）。
@@ -802,10 +789,10 @@ func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
 		AttributeIDs: splitIDs(c.PostForm("attributeIds")),
 	}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, req.ID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, req.ID, ""))
 }
 
 // ProductsDelete 删除商品（连带变体）。
@@ -814,12 +801,15 @@ func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
 // 「商品不存在」的空态，用户还得再点一次返回列表。
 func (h *productPageHandle) ProductsDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
+	// 删除按钮既在列表页（带着筛选与页码）也在详情页（没有这些字段，读出来就是空值）：
+	// 归一后带上，从列表页删完回列表仍是原来那一屏。
+	keyword, status, page := productListReturnFilter(c)
 	if err := h.products.Delete(c.Request.Context(), &productdto.DeleteReq{ID: c.PostForm("id")}); err != nil {
-		// 离开详情页的特殊端点也不手拼 URL：统一走 productListURL（工程与文案都做 URL 编码）。
-		c.Redirect(http.StatusFound, productListURL(projectID, listErrMark, productErrText(c, err)))
+		// 离开详情页的特殊端点也不手拼 URL：统一走 productListURLFiltered（工程、筛选与文案都做 URL 编码）。
+		c.Redirect(http.StatusFound, productListURLFiltered(projectID, keyword, status, page, listErrMark, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productListURL(projectID, "", ""))
+	c.Redirect(http.StatusFound, productListURLFiltered(projectID, keyword, status, page, "", ""))
 }
 
 // —— 商品列表页的批量「按规则改价」与错误文案 ——
@@ -842,9 +832,35 @@ var bulkPricingNothingSelected = productBulkText{productenums.BulkPricingNoneSel
 // 铺到页面上」的通道 —— 直出 err.Error() 的结果是页面上出现 ErrBundlePriceRequired
 // 这类裸 key（enums 常量即 i18n key）。与 block 模块的 blockListURL 同一形状。
 func productListURL(projectID, mark, text string) string {
+	return productListURLFiltered(projectID, "", "", 0, mark, text)
+}
+
+// productListReturnFilter 批量动作回跳时要保留的列表条件。
+//
+// 列表页的批量表单把这几个值作为隐藏域一起提交（筛选与页码属于「用户当时在看什么」，
+// 不是业务参数）：读侧只做归一，非法页码退回第 1 页。
+func productListReturnFilter(c *gin.Context) (keyword, status string, page int) {
+	return strings.TrimSpace(c.PostForm("keyword")), strings.TrimSpace(c.PostForm("status")), productPageNumber(c.PostForm("page"))
+}
+
+// productListURLFiltered 同上，但保留列表页**当前生效的筛选与页码**。
+//
+// 列表页的批量动作（删除 / 改价）是从筛过的列表里发出的：回跳时若把关键词、状态、
+// 页码丢掉，用户看到的是「筛选没了、又回到第一页」，还得重新筛一遍才知道刚才改了什么。
+// page 只在 >1 时才写进 URL —— page=1 是默认值，带上只会让地址栏变脏。
+func productListURLFiltered(projectID, keyword, status string, page int, mark, text string) string {
 	q := url.Values{}
 	if p := strings.TrimSpace(projectID); p != "" {
 		q.Set("project", p)
+	}
+	if k := strings.TrimSpace(keyword); k != "" {
+		q.Set("keyword", k)
+	}
+	if s := strings.TrimSpace(status); s != "" {
+		q.Set("status", s)
+	}
+	if page > 1 {
+		q.Set("page", strconv.Itoa(page))
 	}
 	if e := strings.TrimSpace(text); e != "" && strings.TrimSpace(mark) != "" {
 		q.Set(mark, e)
@@ -855,20 +871,9 @@ func productListURL(projectID, mark, text string) string {
 	return "/admin/products"
 }
 
-// redirectWhere 页面写动作的 PRG 出口。
-//
-// 原生表单（列表页的批量删除、新建抽屉）走 302；HTMX 请求（批量改价抽屉里的 hx-post）
-// 走 **HX-Redirect**：htmx 的 XHR 会自己跟随 302，最终响应里已经读不到 Location，
-// 只有响应头上的 HX-Redirect 能让它整页跳转（否则会把整页 HTML 塞进抽屉里）。
-// 两条路的终点是同一个 URL，页面壳与提示位完全一致。
-func redirectWhere(c *gin.Context, target string) {
-	if strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true") {
-		c.Header("HX-Redirect", target)
-		c.Status(http.StatusOK)
-		return
-	}
-	c.Redirect(http.StatusFound, target)
-}
+// redirectWhere 已提升到 product_page_util.go（同包共享，本文件仍可直接调用）。
+// 提升理由：它是「HTMX 写表单分档」的出口之一，写表单的失败片段再走同一个口径，
+// 两处各写一份头判断迟早会分叉。
 
 // productErrInternalFallback 非业务错误的兜底文案（兼作取词兜底）。
 const productErrInternalFallback = "系统内部错误，请稍后重试"
@@ -1299,14 +1304,17 @@ func (h *productPageHandle) attributeOptions(ctx context.Context, projectID stri
 func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
 	ctx := c.Request.Context()
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	// 批量动作从**筛过的列表**发出：回跳时保留关键词 / 状态 / 页码，
+	// 否则改完价回来看到的是「筛选没了、又回到第一页」。
+	keyword, status, page := productListReturnFilter(c)
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
 		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
-		redirectWhere(c, productListURL(projectID, listErrMark, productErrText(c, berr)))
+		redirectWhere(c, productListURLFiltered(projectID, keyword, status, page, listErrMark, productErrText(c, berr)))
 		return
 	}
 	if len(ids) == 0 {
-		redirectWhere(c, productListURL(projectID, listErrMark, productBulkTextOf(c, bulkPricingNothingSelected)))
+		redirectWhere(c, productListURLFiltered(projectID, keyword, status, page, listErrMark, productBulkTextOf(c, bulkPricingNothingSelected)))
 		return
 	}
 	note := strings.TrimSpace(c.PostForm("note"))
@@ -1339,7 +1347,7 @@ func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
 		// 有跳过或一个变体都没改：走警告条（更显眼），用户下次会去看剩下的那些。
 		mark = listErrMark
 	}
-	redirectWhere(c, productListURL(projectID, mark,
+	redirectWhere(c, productListURLFiltered(projectID, keyword, status, page, mark,
 		bulkPricingResultMsg(c, changedVariants, unchangedProducts, skipped, skipReason)))
 }
 
@@ -1375,10 +1383,11 @@ func bulkPricingResultMsg(c *gin.Context, changedVariants, unchangedProducts, sk
 // 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
 func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
+	keyword, status, page := productListReturnFilter(c)
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, productListURL(projectID, listErrMark, productErrText(c, berr)))
+		c.Redirect(http.StatusFound, productListURLFiltered(projectID, keyword, status, page, listErrMark, productErrText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -1389,13 +1398,16 @@ func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	target := "/admin/products?project=" + url.QueryEscape(projectID)
+	// 回跳地址统一走 productListURLFiltered（不再手拼查询串）：手拼那版丢了筛选条件，
+	// 而工程 id 与文案都要 URL 编码，两处各拼一次迟早分叉。
+	mark, text := "", ""
 	switch {
 	case skipped > 0:
-		target += "&err=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productBulkPartial),
-			strconv.Itoa(deleted), strconv.Itoa(skipped)))
+		mark = listErrMark
+		text = fmt.Sprintf(productBulkTextOf(c, productBulkPartial), strconv.Itoa(deleted), strconv.Itoa(skipped))
 	case deleted > 0:
-		target += "&done=" + url.QueryEscape(fmt.Sprintf(productBulkTextOf(c, productBulkDone), strconv.Itoa(deleted)))
+		mark = listDoneMark
+		text = fmt.Sprintf(productBulkTextOf(c, productBulkDone), strconv.Itoa(deleted))
 	}
-	c.Redirect(http.StatusFound, target)
+	c.Redirect(http.StatusFound, productListURLFiltered(projectID, keyword, status, page, mark, text))
 }

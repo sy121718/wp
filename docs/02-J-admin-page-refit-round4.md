@@ -24,6 +24,15 @@
 | 邮件域 | mail / mail_marketing / mail_campaign / mail_automation / mail_automation_edit / mail_automation_run / mail_automation_canvas |
 | 库存域 | inventory / inventory_warehouses / inventory_sources / inventory_purchases / inventory_reasons / masterdata_changes |
 
+> **覆盖口径核实（主会话实测，不靠记忆）**：`internal/templates/admin/` 下实测 **61 个模板**，
+> 上表分片清单只列了 **51 个页面名** —— 差额 10 个**不是漏审**，全部在本轮之后的逐域深审里覆盖：
+> `dashboard`（`02-O` §6）、`role_permissions`（`02-L` §0.3 的 M-4/M-6 与 P0-2/P1-16，含实测）、
+> `products_new`（`02-M` D4/D7）、`product_edit`（`02-M`、`02-L` P2-10）、`product_detail`（`02-M` D6）、
+> `product_brands` / `product_categories`（`02-M` D12、`02-L` P1-22）、`article_new`（`02-L` §0.9）、
+> `layout` / `login`（非业务页，无操作逻辑可审）。
+> **核对手法**：`comm -23 <(目录清单) <(分片清单)` 逐个对账，**不要按分片表反推「哪些页没审」** ——
+> 那张表是首过的分片派工表，不是覆盖清单。以后新增审核报告请同时更新本核实段。
+
 ## 3. 每个页面统一的改造动作
 
 1. **说明文字清零** —— 正文里的 `intro` / `.hint` 长句 / 口径说明全部进 `.help` 悬浮（默认 0 高度）；

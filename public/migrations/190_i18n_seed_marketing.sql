@@ -10,6 +10,10 @@
 -- 由 HTML 标签拼接回原句；含插值的句子同样按插值点拆分。
 --
 -- 幂等：ON CONFLICT (item_key, lang) DO NOTHING —— seed 是默认值来源，后台是真相来源。
+--
+-- 2026-09（本批）：admin.mail.campaign.page_prefix / .page_suffix 的 4 行已删除 ——
+-- 邮件活动页换成真分页条后失去引用，词条由 419 退役。同批把这两个 key 移出
+-- register_admin_i18n.go 里本批的条件列表并把门槛 764→762（见那里的注释）。
 
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 VALUES
@@ -897,10 +901,6 @@ VALUES
     ('admin.mail.campaign.metric.unsubscribed', 'en-US', 'Unsubscribes', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
     ('admin.mail.campaign.metric.unsubscribed_note', 'zh-CN', '已进抑制名单，不会再收到营销邮件', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
     ('admin.mail.campaign.metric.unsubscribed_note', 'en-US', 'Added to the suppression list; marketing mail will not reach them again', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
-    ('admin.mail.campaign.page_prefix', 'zh-CN', '第 ', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
-    ('admin.mail.campaign.page_prefix', 'en-US', 'Page ', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
-    ('admin.mail.campaign.page_suffix', 'zh-CN', ' 页', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
-    ('admin.mail.campaign.page_suffix', 'en-US', ' ', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
     ('admin.mail.campaign.recipients_empty', 'zh-CN', '还没有投递记录。', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
     ('admin.mail.campaign.recipients_empty', 'en-US', 'No delivery records yet.', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),
     ('admin.mail.campaign.recipients_heading', 'zh-CN', '收件人明细', 200, 'admin', 'admin/mail_campaign.html', 1, now(), now()),

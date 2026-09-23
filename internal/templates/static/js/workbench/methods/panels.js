@@ -40,10 +40,60 @@ export const panelsMethods = {
                 if (search) search.focus();
             },
             showEditPanel() {
+                if (this.selectedSlot) { this.renderSlotPanel(); return; }
                 var node = this.findNode(this.selectedId);
                 var title = document.getElementById('wb-edit-title');
                 if (title) title.textContent = node ? (controlLabel(String(node.type).replace('core.', '')) + ' · ' + (node.name || node.id)) : '组件';
+                // 从槽位态回到普通节点：恢复被槽位面板隐藏的三个节点操作按钮。
+                ['wb-edit-hide', 'wb-edit-lock', 'wb-edit-delete'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.hidden = false;
+                });
                 this.syncInspector();
+            },
+
+            // renderSlotPanel 结构槽位面板（页眉 / 页脚）。
+            //
+            // 槽位在页面文档里没有节点，能做的只有「去编辑它引用的那份全局块 / 结构模板」
+            // —— 与 WP 的 header / footer 模板同一范式：页面编辑器默认就渲染页眉页脚，
+            // 点进去改的是**全局那一份**，不是本页副本。本页副本这条路已经堵掉：
+            // 画布里槽位不可拖、不可就地改文本，块面板里该块是禁用态。
+            renderSlotPanel() {
+                var slot = this.selectedSlot;
+                var panel = document.getElementById('inspector-panel');
+                var title = document.getElementById('wb-edit-title');
+                var labels = { header: '页眉', footer: '页脚', announcement: '公告条' };
+                var label = labels[slot.slot] || slot.slot;
+                if (title) title.textContent = label + ' · 站点结构';
+                // 隐藏 / 锁定 / 删除对槽位没有意义：它不是本页文档里的节点。
+                ['wb-edit-hide', 'wb-edit-lock', 'wb-edit-delete'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.hidden = true;
+                });
+                if (!panel) return;
+                var refName = '';
+                (meta.blocks || []).forEach(function (b) { if (b.id === slot.ref) refName = b.name; });
+                var isTemplate = slot.refKind === 'template';
+                var editURL = (isTemplate ? '/workbench?template=' : '/workbench?block=') +
+                    encodeURIComponent(slot.ref) +
+                    '&returnUrl=' + encodeURIComponent(location.pathname + location.search);
+                var html = '<div class="wb-slot-card">' +
+                    '<p class="wb-slot-note">' + label + '来自<strong>站点结构</strong>，本页只是引用它：' +
+                    '这一份不在页面文档里，删除 / 拖动 / 改文字都改不到它。</p>';
+                if (slot.ref) {
+                    html += '<p class="wb-slot-ref">当前内容：<strong></strong></p>';
+                    html += slot.degradable
+                        ? '<p class="wb-slot-warn">这份内容当前没能展开（引用可能已失效），页面上这个' + label + '是空的。</p>'
+                        : '<a class="wb-btn wb-btn-primary" href="' + editURL + '">编辑' + (isTemplate ? '结构模板' : '全局块') + '</a>';
+                } else {
+                    html += '<p class="wb-slot-warn">本页还没有绑定' + label + '，到「全局设置 → 站点结构」里选一个块即可。</p>';
+                }
+                html += '</div>';
+                panel.innerHTML = html;
+                // 块名用 textContent 写入（块名是作者输入，不能拼进 HTML）。
+                var refEl = panel.querySelector('.wb-slot-ref strong');
+                if (refEl) refEl.textContent = refName || slot.ref;
+                panel.scrollTop = 0;
             },
             showLibrary() { this.showPanel('library'); },
             showEdit() { this.showPanel('edit'); },

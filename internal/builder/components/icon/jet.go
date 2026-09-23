@@ -26,9 +26,9 @@ func BuildView(p *Props) View {
 	if name == "" {
 		name = defaultIconName
 	}
-	path, ok := builtinIcons[name]
+	path, ok := iconPath(name)
 	if !ok {
-		path = builtinIcons[defaultIconName]
+		path, _ = iconPath(defaultIconName)
 	}
 	return View{IconSVG: path}
 }

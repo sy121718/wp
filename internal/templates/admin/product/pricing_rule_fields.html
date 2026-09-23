@@ -1,0 +1,39 @@
+{* admin/product/pricing_rule_fields.html — 「按规则改价」的规则与尾数两行（两个入口共用）。
+   调用点：admin/product_pricing.html（独立定价工具页）与 admin/products.html（商品列表的
+   批量改价抽屉）。共用的是**字段名与取词**：两处提交给的是同一个 service 入参
+   （PricingRuleReq），字段名一旦分叉，抽屉填的 amount 就会被当成没填、由 service 判成
+   参数错误 —— 而定价页本身毫无异常，最难查的一类不一致。
+
+   数据契约（调用点必须先备好，否则 include 会渲染成空下拉）：
+     · Rules / Roundings —— service 给的内置清单（唯一来源，不要在模板里写死选项）
+     · Form              —— 表单初值：RuleType / Multiplier / Amount / Margin / Rounding
+   include 共享调用点作用域，故这里直接用 .["t"] 取词；变量名带 pf 前缀，
+   避免与调用点自己的 form / rules 同名（Jet 同作用域重复声明会报错）。
+
+   行标签用 label.form-label + for/id，与两个调用点的其它行标签同一形态：
+   原先把 .hint 当标签 —— .hint 是「说明文字」类，做标签时读屏只能靠包裹关系猜、
+   脚本也定位不到，同一张表单里因此并存两种行标签样式。
+   id 带 pricing- 前缀且全仓唯一（片段在两个页面各渲染一次，页面上不会重复）；
+   aria-label 保留，与调用点 scope / 筛选集两行的写法一致。 *}
+{{pfRules := .Rules}}
+{{pfRoundings := .Roundings}}
+{{pfForm := .Form}}
+<div class="form-inline">
+    <label class="form-label" for="pricing-rule-type">{{ .["t"]("admin.product_pricing.apply.labelRule", "规则") }}</label>
+    <select class="form-select" id="pricing-rule-type" name="ruleType" aria-label="{{ .["t"]("admin.product_pricing.apply.ruleTypeAria", "定价规则类型") }}">
+        {{range _, r := pfRules}}
+        <option value="{{r.Type}}" {{if r.Type == pfForm.RuleType}}selected{{end}}>{{r.Name}}</option>
+        {{end}}
+    </select>
+    <input type="text" class="form-input" name="multiplier" value="{{pfForm.Multiplier}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMultiplier", "multiplier（成本乘倍数）") }}" inputmode="decimal" autocomplete="off">
+    <input type="text" class="form-input" name="amount" value="{{pfForm.Amount}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phAmount", "amount（成本加价 / 统一售价）") }}" inputmode="decimal" autocomplete="off">
+    <input type="text" class="form-input" name="margin" value="{{pfForm.Margin}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMargin", "margin（目标毛利率，0.3 = 30%）") }}" inputmode="decimal" autocomplete="off">
+</div>
+<div class="form-inline">
+    <label class="form-label" for="pricing-rounding">{{ .["t"]("admin.product_pricing.apply.labelRounding", "尾数") }}</label>
+    <select class="form-select" id="pricing-rounding" name="rounding" aria-label="{{ .["t"]("admin.product_pricing.apply.roundingAria", "尾数处理") }}">
+        {{range _, r := pfRoundings}}
+        <option value="{{r.Value}}" {{if r.Value == pfForm.Rounding}}selected{{end}}>{{r.Name}}</option>
+        {{end}}
+    </select>
+</div>

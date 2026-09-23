@@ -34,7 +34,7 @@ func detailProjects() []projectcontract.ProjectResp {
 func TestCustomerDetailTemplateRenders(t *testing.T) {
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", detailSummary(),
 		false, false, "", "", nil)
-	body := renderCustomerAdminTemplate(t, "admin/customer_detail.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	for _, want := range []string{
 		"客户详情", "艾丽丝", "alice@example.com", "203.0.113.7", "203.0.113.9",
@@ -55,7 +55,7 @@ func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 	summary := &orderdto.CustomerOrderSummaryResp{UserID: 42, ProjectID: "p1"}
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", summary,
 		false, false, "", "", nil)
-	body := renderCustomerAdminTemplate(t, "admin/customer_detail.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "还没有下过单") {
 		t.Errorf("零订单时应显示「还没有下过单」")
@@ -68,7 +68,7 @@ func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 // TestCustomerDetailTemplateNoProjects 没有站点工程时给说明，而不是渲染一个没用的工程下拉。
 func TestCustomerDetailTemplateNoProjects(t *testing.T) {
 	data := customerDetailPageData(customerSample(), nil, "", nil, false, false, "", "", nil)
-	body := renderCustomerAdminTemplate(t, "admin/customer_detail.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "还没有站点工程，因此没有订单可统计") {
 		t.Errorf("无工程时应给出说明")
@@ -82,7 +82,7 @@ func TestCustomerDetailTemplateNoProjects(t *testing.T) {
 func TestCustomerDetailTemplateSummaryFailed(t *testing.T) {
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", nil,
 		false, true, "", "", nil)
-	body := renderCustomerAdminTemplate(t, "admin/customer_detail.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "订单摘要暂时读不出来") {
 		t.Errorf("摘要失败时应给出说明")
@@ -98,7 +98,7 @@ func TestCustomerDetailTemplatePendingHasNoStatusAction(t *testing.T) {
 	item.Status = 2
 	item.StatusLabel = "待激活"
 	data := customerDetailPageData(item, nil, "", nil, false, false, "", "", nil)
-	body := renderCustomerAdminTemplate(t, "admin/customer_detail.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if strings.Contains(body, "/admin/customers/status") {
 		t.Errorf("待激活客户不应渲染停用按钮")

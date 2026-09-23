@@ -94,13 +94,21 @@ func TestAdminShellI18nSwitchesWithCookie(t *testing.T) {
 		t.Fatal("切换语言后页面字节完全相同，说明文案未随语言变化")
 	}
 
-	// 标题：MsgDashboardTitle 只有 zh-CN 词条 → en-US 请求回退 zh-CN 译文，且绝不显示裸 key。
-	for _, body := range []string{zh, en} {
+	// 标题：MsgDashboardTitle 在迁移 430 之前**只有 zh-CN 词条**，本条断言当时拿「缺 en-US」
+	// 当 fallback 的夹具。430 按「值即 key、库里只有 zh-CN」的口径补齐了它的 en-US ——
+	// 夹具改为**未知语言**（ja-JP）：它没有任何词条、协商回退默认语言（zh-CN），
+	// 覆盖的是同一条链路（回退到 zh-CN 译文 + 不显示裸 key），且不再依赖
+	// 「某个 key 恰好缺 en-US」这个会随补词条批次失效的前提。
+	ja := fetchAdmin(t, engine, "ja-JP")
+	if !strings.Contains(zh, "仪表盘") || !strings.Contains(ja, "仪表盘") {
+		t.Fatal("zh / 未知语言(ja-JP) 的标题应回退到 zh-CN 译文「仪表盘」")
+	}
+	if !strings.Contains(en, "Dashboard") {
+		t.Fatal("en 页面标题应命中 en-US 词条 Dashboard")
+	}
+	for _, body := range []string{zh, en, ja} {
 		if strings.Contains(body, "MsgDashboardTitle") {
 			t.Fatal("标题不应显示裸 key（应命中 i18n 词条）")
-		}
-		if !strings.Contains(body, "仪表盘") {
-			t.Fatal("标题应回退到 zh-CN 译文「仪表盘」")
 		}
 	}
 }

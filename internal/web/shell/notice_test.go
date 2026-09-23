@@ -123,7 +123,7 @@ func TestLangRedirectPathIsTheOnlyCriterion(t *testing.T) {
 		{"超过 512 字节拒绝", over, ""},
 		{"超长路径拒绝", "/admin/" + strings.Repeat("y", 600), ""},
 		{"空串拒绝", "", ""},
-		{"不以 / 开头拒绝", "admin/roles", ""},
+		{"不以 / 开头拒绝", "admin/system/roles", ""},
 		{"协议相对跳转拒绝", "//evil.example.com/x", ""},
 		{"绝对 URL 拒绝", "https://evil.example.com/x", ""},
 		{"反斜杠拒绝", "/admin/roles\\x", ""},
@@ -152,17 +152,19 @@ func TestLangRedirectConverges(t *testing.T) {
 			t.Fatalf("超长 URI 应回落到当前路径，got %q", got)
 		}
 	})
-	t.Run("超长路径回落首页", func(t *testing.T) {
+	// 回退落点是**控制面首页** /admin，不是 "/"：站点独占域名根之后 "/" 是前台首页，
+	// 后台一次输入不合法把用户甩到前台站点上，比原地不动更糟（也丢掉了登录态语境）。
+	t.Run("超长路径回落控制面首页", func(t *testing.T) {
 		c := noticeCtx(t, "/admin/"+strings.Repeat("y", 600))
-		if got := LangRedirect(c); got != "/" {
-			t.Fatalf("超长路径应回首页，got %q", got)
+		if got := LangRedirect(c); got != "/admin" {
+			t.Fatalf("超长路径应回控制面首页，got %q", got)
 		}
 	})
 	t.Run("协议相对路径被拒", func(t *testing.T) {
 		c := noticeCtx(t, "/admin/products")
 		c.Request.URL.Path = "//evil.example.com/x"
-		if got := LangRedirect(c); got != "/" {
-			t.Fatalf("非站内路径应回首页，got %q", got)
+		if got := LangRedirect(c); got != "/admin" {
+			t.Fatalf("非站内路径应回控制面首页，got %q", got)
 		}
 	})
 }

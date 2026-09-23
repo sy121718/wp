@@ -11,7 +11,10 @@
 package routers
 
 import (
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
@@ -86,11 +89,196 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 // （审计 Low：/site 目录列表开启）。
 // 访问面文本产物（HTML/CSS/JS）经 StaticGzipMiddleware 传输压缩提速。
 func setupStaticFace(router *gin.Engine) {
-	// SiteRedirectMiddleware 在前：改 URL 后的旧路径是「指向 redirect.json 的激活链接」，
-	// http.FileServer 只读文件、不认识它 —— 少了这一层，勾了「保留旧链接」的旧路径
-	// 表现是 404（承诺未兑现）。重定向判定不查库，访问面零查库不变量不变。
-	router.Group(siteFacePath, builtin.SiteRedirectMiddleware(), builtin.SiteCacheMiddleware(), builtin.StaticGzipMiddleware()).
-		StaticFS("/", gin.Dir(pipeline.ActiveRoot(), false))
+	root := pipeline.ActiveRoot()
+
+	// 兼容入口：/site（控制台里的「打开站点」与既有书签仍可用）。
+	router.Group(siteFacePath, siteFaceChain(siteFacePath)...).StaticFS("/", gin.Dir(root, false))
+
+	// 根入口：**站点独占域名根**（生产语义，也是开发环境与线上一致的前提）。
+	//
+	// 为什么走 NoRoute 而不是再挂一个 StaticFS("/")：
+	// StaticFS 会注册 /*filepath 通配路由，与控制面已有的 /admin/*、/api/* 等通配
+	// 在 gin 的路由树上冲突（启动即 panic）。NoRoute 不注册任何路由，天然无冲突 ——
+	// 控制面的显式路由优先匹配，剩下的路径全部按激活产物解析。
+	//
+	// 这条路径顺带解决了「站点与接口不同域」的问题：站内绝对链接（href="/shop"）、
+	// 媒体（/storage）与动态片段（/_fragments）现在天然同域生效，
+	// 不再需要独立端口的预览服务器去代理。
+	chain := append(siteFaceChain(siteFaceRootPath), siteFileServeMiddleware(root), notFoundHandler())
+	router.NoRoute(chain...)
+}
+
+// siteFaceChain 访问面中间件链（挂载点无关）。
+//
+// 排位有讲究：SiteRedirect 在前（301 响应没有 body，压缩无从谈起），
+// siteDirIndexServe 在后（它在 StaticGzip 之后落桶，首页与其它产物一样有传输压缩）。
+func siteFaceChain(prefix string) []gin.HandlerFunc {
+	return []gin.HandlerFunc{
+		builtin.SiteRedirectMiddleware(prefix),
+		builtin.SiteCacheMiddleware(),
+		builtin.StaticGzipMiddleware(),
+		siteDirIndexServeMiddleware(prefix),
+	}
+}
+
+// activeEntryFile URL 路径（站点内相对路径）→ 激活目录里的产物文件（相对路径）。
+//
+// 产物布局：<active>/<条目>/index.html，**条目名就是 URL 路径**
+// （pipeline.relActivePath），且 "/" 的条目名是字面量 "index"。
+//
+// 为什么单独抽出来：这个映射有两处易错，两处都真的踩过 ——
+//   1. 拼成 <rel>/index/index.html：只在 rel 为空时碰巧对
+//      （<root>/index/index.html 正是首页文件），rel 非空时**全部 404**；
+//   2. rel 为空时直接拼 <root>/index.html：文件其实在 index 目录里。
+// 两处合起来的表现极具迷惑性：**只有首页能打开，其余页面与文章整片 404**。
+func activeEntryFile(root, rel string) (string, bool) {
+	entry := rel
+	if entry == "" {
+		entry = "index"
+	}
+	file := filepath.ToSlash(filepath.Join(entry, "index.html"))
+	st, err := os.Stat(filepath.Join(root, filepath.FromSlash(file)))
+	if err != nil || st.IsDir() {
+		return "", false
+	}
+	return file, true
+}
+
+// siteFileServeMiddleware 命中激活产物时直出文件；未命中则交给链尾的 404 处理。
+//
+// 判据只看文件系统（访问面「零查库零模板」同一口径）。
+// 安全：路径先 Clean 并拒绝绝对路径与 ".." 前缀 —— 这条通道不能成为目录穿越入口。
+func siteFileServeMiddleware(root string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Next()
+			return
+		}
+		rel, ok := cleanSiteRel(c.Request.URL.Path)
+		if !ok {
+			c.Next()
+			return
+		}
+		// ① URL 路径 → 页面产物（<条目>/index.html）。
+		if file, hit := activeEntryFile(root, rel); hit {
+			serveArtifactFile(c, filepath.Join(root, filepath.FromSlash(file)))
+			return
+		}
+		// ② 产物内的普通文件（sitemap.xml、robots.txt、favicon 等）。
+		target := filepath.Join(root, filepath.FromSlash(rel))
+		if st, err := os.Stat(target); err == nil && !st.IsDir() {
+			serveArtifactFile(c, target)
+			return
+		}
+		c.Next() // 没有对应产物：交给链尾的 404
+	}
+}
+
+// cleanSiteRel 站内路径归一；越界（绝对路径 / ".."）返回 ok=false。
+func cleanSiteRel(reqPath string) (string, bool) {
+	rel := strings.Trim(reqPath, "/")
+	if rel == "" {
+		return "", true
+	}
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+		return "", false
+	}
+	return clean, true
+}
+
+// serveArtifactFile 直出产物文件。
+//
+// 为什么不用 http.FileServer：它对以 **/index.html 结尾**的路径有自己的一套
+// 301 语义（localRedirect "./"）—— 我们把目录请求改写成 <条目>/index.html 交给它，
+// 换来的是一条 301 到站点根，表现是「除首页外全站 301 回首页」。
+// http.ServeContent 只做「按文件出内容」，没有目录语义，同时保住
+// Last-Modified / ETag / Range 协商缓存（与 FileServer 的缓存能力等价）。
+func serveArtifactFile(c *gin.Context, path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		c.Next()
+		return
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil || st.IsDir() {
+		c.Next()
+		return
+	}
+	ctype := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	if strings.HasSuffix(strings.ToLower(path), ".html") {
+		ctype = "text/html; charset=utf-8"
+	}
+	if ctype == "" {
+		ctype = "application/octet-stream"
+	}
+	c.Header("Content-Type", ctype)
+	http.ServeContent(c.Writer, c.Request, filepath.Base(path), st.ModTime(), f)
+	c.Abort()
+}
+
+// siteDirIndexServeMiddleware 直出「目录根请求」对应的 index 条目。
+//
+// 为什么是直出而不是改路径交给 http.FileServer：FileServer 对以 /index.html 结尾的
+// 路径有**自己的**301 语义（localRedirect "./"），改写过去只会换来一条 301 死循环
+// （实测 /site/ → 301 "./"、/site/index/index.html → 301 "/index"）。所以这里读字节
+// 直接写响应，并 c.Abort() 挡住后面的静态处理。
+//
+// 排位：**在 StaticGzipMiddleware 之后**，这样 c.Data 走的是已被 gzip 包裹的
+// c.Writer，首页与其它产物一样有传输压缩与 Cache-Control。
+//
+//
+// 存在的理由（原本是审计里明确挂着的一条未修项）：激活目录里每个页面的条目名就是它的
+// URL 路径 —— 无扩展名的**目录符号链接**（pipeline.relActivePath："/" → "index"、
+// "/about" → "about"），index.html 在那个目录里面。而 http.FileServer 处理
+// "/site/"、"/site/en/" 这类目录根请求时找的是 <active>/<rel>/index.html，
+// 找不到 → 默认 404。表现是**首页与多语言语言根整片打不开**，其余页面正常。
+//
+// 只修 "/site/" 是半修：语言根（/site/en/）是同一套映射语义，必须一起覆盖，
+// 所以这里按「目录根 + index 子条目」这条统一规则判定，而不是给首页开特例。
+//
+// 判据只看文件系统（与访问面「零查库零模板」同一口径）：命中才直出，
+// 不命中一律原样交给 FileServer 走它自己的 index.html / 目录逻辑。
+// 路径先 Clean 并拒绝 ".."，这条通道不能成为目录穿越的新入口。
+func siteDirIndexServeMiddleware(prefix string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Next()
+			return
+		}
+		reqPath := c.Request.URL.Path
+		if !strings.HasSuffix(reqPath, "/") {
+			c.Next()
+			return
+		}
+		rel, inFace := builtin.SiteFaceRel(prefix, reqPath)
+		if !inFace {
+			c.Next()
+			return
+		}
+		rel = strings.Trim(rel, "/")
+		if rel != "" {
+			clean := filepath.ToSlash(filepath.Clean(rel))
+			if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+				c.Next()
+				return
+			}
+			rel = clean
+		}
+		file, ok := activeEntryFile(pipeline.ActiveRoot(), rel)
+		if !ok {
+			c.Next()
+			return
+		}
+		body, err := os.ReadFile(filepath.Join(pipeline.ActiveRoot(), filepath.FromSlash(file)))
+		if err != nil {
+			c.Next()
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", body)
+		c.Abort()
+	}
 }
 
 // siteFacePath 静态访问面挂载前缀（与内置中间件的 siteFacePrefix 同值，
@@ -99,6 +287,10 @@ func setupStaticFace(router *gin.Engine) {
 // 它同时是「这个请求属不属于访问面」的判据 —— 404 响应要按前缀分流：
 // 访问面给访客，控制面（/api、/admin）保持既有的统一 JSON 错误。
 const siteFacePath = "/site"
+
+// siteFaceRootPath 站点根挂载前缀（空串 = 独占域名根）。
+// 与 siteFacePath 一起构成两个挂载点，中间件链按各自前缀参数化。
+const siteFaceRootPath = ""
 
 // notFoundHandler 未匹配路由的响应：访问面（/site）优先返回站点自定义 404 页。
 //
@@ -112,11 +304,38 @@ const siteFacePath = "/site"
 // 未配置自定义页时行为与既有一致（response.NotFound）。
 func notFoundHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if serveSiteNotFoundPage(c) {
+		// 访问面在根上：任何落到这里的 GET/HEAD 都已经是「站点里没有这个路径」，
+		// 所以优先用站点自定义 404 页。控制面路径（/api、/admin…）保持既有 JSON ——
+		// 前端脚本按 JSON 形状解析错误，换成 HTML 会让它们全部失效。
+		if isControlPlanePath(c.Request.URL.Path) {
+			response.NotFound(c, "请求的资源不存在")
+			return
+		}
+		if serveSiteNotFoundPage(c, siteFaceRootPath) {
 			return
 		}
 		response.NotFound(c, "请求的资源不存在")
 	}
+}
+
+// controlPlanePrefixes 控制面路径前缀（与显式注册的路由一致）。
+//
+// 用途只有一个：兜底 404 时区分「访客走错了站点路径」与「前端调错了接口」——
+// 前者给站点 404 页、后者给 JSON，两者混用会让其中一边彻底失效。
+var controlPlanePrefixes = []string{
+	"/api/", "/api", "/admin/", "/admin", "/workbench/", "/workbench",
+	"/_fragments/", "/_fragments", "/storage/", "/storage", "/static/", "/static",
+	"/livez", "/readyz", "/analytics/", "/payment/",
+}
+
+// isControlPlanePath 判断路径是否属于控制面。
+func isControlPlanePath(p string) bool {
+	for _, prefix := range controlPlanePrefixes {
+		if p == prefix || strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // serveSiteNotFoundPage 访问面未知路径命中站点自定义 404 页时写出响应并返回 true。
@@ -124,9 +343,8 @@ func notFoundHandler() gin.HandlerFunc {
 // 判定只看请求前缀与激活目录根的那一个文件，不查库、不读路由表 ——
 // 访问面「零查库零模板」不变量不变（与 SiteRedirectMiddleware 同一口径）。
 // 前缀按「等于 /site 或以 /site/ 开头」判，避免把 /siteadmin 这类路径误当访问面。
-func serveSiteNotFoundPage(c *gin.Context) bool {
-	p := c.Request.URL.Path
-	if p != siteFacePath && !strings.HasPrefix(p, siteFacePath+"/") {
+func serveSiteNotFoundPage(c *gin.Context, prefix string) bool {
+	if _, inFace := builtin.SiteFaceRel(prefix, c.Request.URL.Path); !inFace {
 		return false
 	}
 	body, ok := pipeline.ReadNotFoundPage(pipeline.ActiveRoot())

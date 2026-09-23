@@ -103,11 +103,11 @@ func buildIconFragment(p *Props) (string, error) {
 		return "", nil
 	}
 	if p.Icon.Source == "builtin" {
-		path, ok := builtinIcons[p.Icon.Name]
+		inner, ok := core.IconInner(p.Icon.Name)
 		if !ok {
 			return "", fmt.Errorf("无效的内置图标: %q", p.Icon.Name)
 		}
-		return path, nil
+		return inner, nil
 	}
 	// 媒体库/外链图标：URL 直引 img（构建期零解析，不内联 SVG 源码）。
 	return html.EscapeString(p.Icon.URL), nil

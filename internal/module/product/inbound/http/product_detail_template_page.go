@@ -44,6 +44,18 @@ const productEntityType = "product"
 // productDetailTemplatePath 详情页模板页路径（列表行内入口）。
 const productDetailTemplatePath = "/admin/products/template"
 
+// productDetailTemplateNoProductPrompt 缺少 product 参数时的引导文案（经 ?err= 回带）。
+//
+// 侧栏菜单「内容 › 商品详情模板」的 path 是不带 product 的 productDetailTemplatePath，
+// 点进来必然命中缺参分支：原先只做裸 302 回列表，用户看到页面闪回且**毫无提示**，
+// 只会以为菜单坏了。引导必须指名**去哪选**（商品列表），否则「回到列表」与「操作失败」
+// 在用户眼里是同一件事。
+//
+// 这条文案与其余进 ?err= 的提示一样，必须在 product_err.go 的 productOwnPageTexts
+// 里登记：读侧 productPageErr 是候选白名单，漏登记的后果不是「文案不准」，而是整条提示
+// 被归口文案顶掉（实测页面上显示「系统内部错误，请稍后重试」）。
+const productDetailTemplateNoProductPrompt = "请先从商品列表选择一件商品，再配置它的详情页模板。"
+
 // ProductPagePorts 后台商品相关页面消费的自动发布能力：翻译工作台要「按依赖标记待重建」，
 // 详情页模板页要「读绑定 / 预览 / 发布 / 切换模板」。两个窄接口的并集作为装配参数类型，
 // 页面各自只持有自己需要的那一个（字段类型仍是对应窄接口）。
@@ -113,12 +125,15 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		"Err": productPageErr(c),
 	}
 	if h.templates == nil || h.instances == nil {
-		c.HTML(http.StatusOK, "admin/product_detail_template.html",
+		c.HTML(http.StatusOK, "admin/product/product_detail_template.html",
 			shell.Prepare(c, withDetailTemplateMissing(data)))
 		return
 	}
 	if productID == "" {
-		c.Redirect(http.StatusFound, "/admin/products?project="+selected)
+		// 菜单入口（不带 product）走这里：带一句指名去哪选的引导再回列表，
+		// 不静默跳转 —— 文案与其它失败分支同一形态（?err= + QueryEscape）。
+		c.Redirect(http.StatusFound, "/admin/products?project="+url.QueryEscape(selected)+
+			"&err="+url.QueryEscape(productDetailTemplateNoProductPrompt))
 		return
 	}
 	product, err := h.products.Get(ctx, &productdto.GetReq{ID: productID})
@@ -173,7 +188,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	data["InstanceStatus"] = instanceStatus
 	data["InstanceURL"] = instanceURL
 	data["Ready"] = true
-	c.HTML(http.StatusOK, "admin/product_detail_template.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/product/product_detail_template.html", shell.Prepare(c, data))
 }
 
 // withDetailTemplateMissing 未注入模板契约时的页面数据（装配缺陷的可见提示）。
@@ -190,7 +205,7 @@ func withDetailTemplateMissing(data gin.H) gin.H {
 // 「同一个商品类型下有多套命名模板可选、各自版本化」的落地与选择。
 func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
 	if h.templates == nil {
-		c.Redirect(http.StatusFound, productDetailTemplatePath+"?err="+errTemplateDepsMissing)
+		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
 	projectID := c.PostForm("projectId")
@@ -236,7 +251,7 @@ func (h *productPageHandle) templateDocument(ctx context.Context, projectID, tem
 // 首次为该商品建立发布实例并发布（可指定模板），激活静态产物。
 func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 	if h.instances == nil {
-		c.Redirect(http.StatusFound, productDetailTemplatePath+"?err="+errTemplateDepsMissing)
+		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
 	projectID := c.PostForm("projectId")
@@ -271,7 +286,7 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 // 的一部分：改它的代价是重建产物 + 处置旧链接，不是重新编辑商品。
 func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 	if h.instances == nil {
-		c.Redirect(http.StatusFound, productDetailTemplatePath+"?err="+errTemplateDepsMissing)
+		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
 	projectID := c.PostForm("projectId")
@@ -297,7 +312,7 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 // 把商品切换（或确认）到选中的模板并重新发布 —— 产物随模板变化（验收 4）。
 func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 	if h.instances == nil {
-		c.Redirect(http.StatusFound, productDetailTemplatePath+"?err="+errTemplateDepsMissing)
+		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
 	projectID := c.PostForm("projectId")
@@ -316,7 +331,9 @@ func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 // 响应头带上实际使用的模板与版本，便于核对「预览的是哪一套」。
 func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	if h.instances == nil {
-		c.String(http.StatusBadRequest, "%s", errTemplateDepsMissing)
+		// 装配缺陷也走「回来源页 + ?err=提示」这一条出口（原先是一行 http.StatusBadRequest
+		// 的纯文本：脱壳、不翻译、也没有回去的地方）。
+		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
@@ -422,7 +439,40 @@ func (h *productPageHandle) detailTemplateBackURL(projectID, productID, errMsg s
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。
+//
+// 中文原文**兼作取词兜底**（与 product_err.go 的 key + 兜底形态一致）：词条缺失时页面显示
+// 这句话，而不是裸 key（页面上出现 `admin.product_detail_template.depsMissing` 这种串，
+// 运营只会以为后台坏了）。
 const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模板或自动发布契约）"
+
+// detailTemplateDepsMissingKey 上面那条提示的 i18n key（迁移 407 登记中英词条）。
+const detailTemplateDepsMissingKey = "admin.product_detail_template.depsMissing"
+
+// detailTemplateDepsMissingText 取当前语言的「依赖未装配」提示。
+//
+// 五个入口共用这一个取法，且必须与读侧候选同源（product_err.go 的 productOwnPageTexts
+// 登记了 key / 中文原文 / 译文三种形态）：写侧的产物只要有一种不在候选里，
+// 表现就是「写侧发了提示、页面上什么都不显示」—— 不报错、不记日志。
+func detailTemplateDepsMissingText(c *gin.Context) string {
+	return shell.TranslateFor(c)(detailTemplateDepsMissingKey, errTemplateDepsMissing)
+}
+
+// detailTemplateDepsMissingRedirect 依赖未装配时的统一出口。
+//
+// 为什么不是 `c.String(400, errTemplateDepsMissing)`（本处原先的写法）：浏览器里没有页面，
+// 只有一行纯文本，且**没走 i18n**（英文站点上照样是中文）。预览又是 `target="_blank"` 打开的
+// 新标签页 —— 用户看到一块白底黑字，既不知道缺什么、也没有回去的地方。
+//
+// 为什么是 303 + 回详情页：这是 POST 表单提交失败，把人送回来源页改一处再试（PRG 同时避免
+// 刷新重复提交），与 project 域 projectErrRedirect 同一判据。
+//
+// 回跳目标带 project / product，而不是裸 productDetailTemplatePath：后者落到页面 handler 的
+// 缺参分支，会**再**重定向到商品列表并提示「请先从商品列表选择一件商品」—— 把装配缺陷说成
+// 用户没选商品，用户按提示选一次商品回来还是同一句。
+func (h *productPageHandle) detailTemplateDepsMissingRedirect(c *gin.Context) {
+	c.Redirect(http.StatusSeeOther, h.detailTemplateBackURL(
+		c.PostForm("projectId"), c.PostForm("productId"), detailTemplateDepsMissingText(c)))
+}
 
 // 本页的两个参数级提示（同样进 ?err=，因此在 product_err.go 的读侧候选里登记）。
 const (

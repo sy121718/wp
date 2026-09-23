@@ -76,6 +76,16 @@ const (
 	customerStatusPending  = 2
 )
 
+// 状态按钮的动词词条（列表页按钮与详情页「<动词>这个账号」共用同一份）。
+//
+// 动词也必须走词条：详情页的按钮是「{{动词}}{{.account_suffix}}」拼出来的，
+// 而 account_suffix 早已中英成对（zh「这个账号」/ en「 this account」）——
+// 动词留在 Go 里当硬编码中文时，英文界面就变成「Disable这个账号」式中英混排。
+const (
+	customerActionDisable = "admin.customers.action.disable"
+	customerActionEnable  = "admin.customers.action.enable"
+)
+
 // customerLocalMessages 本页自造的文案（回显白名单的第二部分）。
 //
 // userenums.UserFacingMessages 只登记「用户模块产出的」文案，而下面这几条是
@@ -152,8 +162,10 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		RegisteredTo:   strings.TrimSpace(c.Query("registeredTo")),
 	}
 
-	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), customerFacingText)
-	pageOk := shell.FacingQueryText(c.Query("ok"), "", customerFacingText)
+	// 回显走 customerPageFacingText（判定 + 取译文）：白名单里是 item_key，
+	// 模板 {{.Err}} / {{.Ok}} 直接渲染，只放行 key 就会把裸 key 显示给运营。
+	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), customerPageFacingText(c))
+	pageOk := shell.FacingQueryText(c.Query("ok"), "", customerPageFacingText(c))
 
 	var list *userdto.CustomerListResp
 	switch {
@@ -187,7 +199,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	for k, v := range shell.BuildPagination(customerTotal(list), page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/customers.html", data)
+	c.HTML(http.StatusOK, "admin/user/customers.html", data)
 }
 
 // CustomerDetailPage 客户详情（GET /admin/customers/detail?id=）。
@@ -200,11 +212,11 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		customerRedirect(c, "", customerInvalidIDText)
 		return
 	}
-	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), customerFacingText)
-	pageOk := shell.FacingQueryText(c.Query("ok"), "", customerFacingText)
+	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), customerPageFacingText(c))
+	pageOk := shell.FacingQueryText(c.Query("ok"), "", customerPageFacingText(c))
 
 	if h.users == nil {
-		c.HTML(http.StatusOK, "admin/customer_detail.html", shell.Prepare(c, customerDetailPageData(
+		c.HTML(http.StatusOK, "admin/user/customer_detail.html", shell.Prepare(c, customerDetailPageData(
 			nil, nil, "", nil, false, false, customerFirstNonEmpty(pageErr, customerUnavailableText), pageOk, c)))
 		return
 	}
@@ -259,7 +271,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/customer_detail.html", shell.Prepare(c, customerDetailPageData(
+	c.HTML(http.StatusOK, "admin/user/customer_detail.html", shell.Prepare(c, customerDetailPageData(
 		detail, projects, selected, summary, projectsErr != "", summaryErr != "",
 		customerFirstNonEmpty(pageErr, projectsErr, summaryErr), pageOk, c)))
 }

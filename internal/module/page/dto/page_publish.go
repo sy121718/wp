@@ -31,6 +31,32 @@ type PublishReq struct {
 	ID string `json:"id" binding:"required"`
 	// Lang 发布语言：必须与构建语言一致，否则暂存产物与激活路径不匹配。
 	Lang string `json:"lang"`
+	// AllLangs 一键发布全部启用语言（多语言开关开启时的发布口径）：
+	//
+	//	按站点启用语言清单逐语言「构建 + 激活」，一次请求把设置页配置的每种语言
+	//	各编译一份并上线。置真时 Lang 被忽略（语言集合以发布时刻的清单为准，
+	//	默认语言在前）。单语言失败不阻断其余语言，错误按语言逐条回传。
+	AllLangs bool `json:"allLangs"`
+}
+
+// LangPublishResult 一键发布里单个语言的结果。
+type LangPublishResult struct {
+	// Lang 本条结果对应的语言（完整语言码）。
+	Lang string `json:"lang"`
+	// Status ok / failed（单语言失败不阻断其余语言，失败原因在 Error）。
+	Status string `json:"status"`
+	// ActiveHash 激活产物哈希（成功时回传；失败为空）。
+	ActiveHash string `json:"activeHash,omitempty"`
+	// Error 失败原因（成功为空；原文只进本字段，供后台展示与运维定位）。
+	Error string `json:"error,omitempty"`
+}
+
+// PublishAllResp 一键发布全部启用语言的聚合结果。
+type PublishAllResp struct {
+	PageID   string              `json:"pageId"`
+	Results  []LangPublishResult `json:"results"`
+	// Published 成功激活的语言数（与 Results 中 status=ok 的条数一致，便于前端速览）。
+	Published int               `json:"published"`
 }
 
 // RollbackReq 回滚到指定历史产物。

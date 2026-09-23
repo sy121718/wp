@@ -5,9 +5,24 @@
 
 & {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 24px;
+  /* 源站版式：图集略宽于摘要（约 1.1 : 1），间距 40px。 */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 40px;
   align-items: start;
+}
+
+/* 单侧实例收敛成单列（详情页把图集与摘要拆成两个组件实例时用）。
+   不收敛的话，缺的一侧会留下一个空白栏，把内容挤到半边。 */
+/* 注意：样式引擎**逐行**解析，选择器列表不能跨行 ——
+   写成一条 `A,\nB {` 会在第一行报「看不懂这一行」。两个修饰类各写一条。 */
+&.sky-product-root--media-only {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+&.sky-product-root--info-only {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
 }
 
 /* 窄视口 (手机): 两栏改纵向堆叠. */
@@ -25,6 +40,38 @@
   width: min(100%, 100%);
   height: auto;
   border-radius: 12px;
+}
+
+/* 主图框：源站图集是**浅灰底、方形、图上压折扣角标**。 */
+& .sky-product-frame {
+  position: relative;
+  display: block;
+  margin: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--sky-c-bg-soft, #f4f5f6);
+}
+
+& .sky-product-frame img {
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+/* 折扣角标：源站是蓝色胶囊压在图左上角（#0084ff / 白字 / 12px / 圆角 5px）。 */
+& .sky-product-discount {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: var(--sky-c-primary, #0084ff);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
 }
 
 /* 图集: 自适应列数, 单列最小宽度用 min(100%, ...) 封顶, 窄屏不横向溢出. */
@@ -54,8 +101,65 @@
 
 & .sky-product-title {
   margin: 0;
-  font-size: 1.5rem;
-  line-height: 1.35;
+  /* 源站：30px / 600 / 行高 1.4（实测 h1 高 84px 两行）。 */
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--sky-c-heading, #000);
+}
+
+/* 分类链接行（源站放在标题上方，蓝色小字，用逗号分隔）。 */
+& .sky-product-categories {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 4px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+& .sky-product-category {
+  color: var(--sky-c-primary, #0084ff);
+  text-decoration: none;
+}
+
+& .sky-product-categories-sep {
+  color: var(--sky-c-text-mute, rgba(0,0,0,0.45));
+}
+
+/* 评价行（源站「0 Reviews  Write a review」）。 */
+& .sky-product-rating {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--sky-c-text-mute, rgba(0,0,0,0.45));
+}
+
+& .sky-product-rating-value {
+  font-weight: 600;
+  color: var(--sky-c-heading, #000);
+}
+
+/* 品牌行（源站摘要底部「Brand: Alibarbar」）。
+   用 margin-top: auto 把它压到信息栏底部，与源站位置一致。 */
+& .sky-product-brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+& .sky-product-brand-label {
+  color: var(--sky-c-heading, #000);
+}
+
+& .sky-product-brand-link {
+  color: var(--sky-c-primary, #0084ff);
+  text-decoration: none;
 }
 
 & .sky-product-subtitle {
@@ -71,15 +175,33 @@
   flex-wrap: wrap;
 }
 
+/* 价格行：源站是**大号黑色粗体现价 + 灰色划线原价**，不是品牌色。
+   品牌色留给折扣胶囊与链接，价格用黑是为了在彩色角标旁依然压得住。 */
 & .sky-product-price {
-  font-size: 1.5rem;
+  font-size: 17.5px;
   font-weight: 700;
-  color: var(--sky-c-primary, #2563eb);
+  color: var(--sky-c-heading, #000);
 }
 
 & .sky-product-compare {
+  font-size: 17.5px;
   text-decoration: line-through;
-  color: var(--sky-c-muted, rgba(0,0,0,0.45));
+  color: var(--sky-c-text-mute, rgba(0,0,0,0.45));
+}
+
+/* 窄视口：标题与价格按比例收，避免 30px 标题在 375px 屏上占满整屏。 */
+@media (max-width: 767px) {
+  & .sky-product-title {
+    font-size: 22px;
+  }
+
+  & .sky-product-price {
+    font-size: 16px;
+  }
+
+  & .sky-product-compare {
+    font-size: 16px;
+  }
 }
 
 & .sky-product-description {

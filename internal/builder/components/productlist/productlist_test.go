@@ -188,7 +188,12 @@ func TestBuildViewPushesFilterAndMapsCards(t *testing.T) {
 	if !card.HasTitle || card.Title != "夏季衬衫" || card.TitleTag != defaultTitleTag {
 		t.Fatalf("标题映射不符: %+v", card)
 	}
-	if card.Price != "¥99 ~ 199" || card.ComparePrice != "¥259" || !card.HasComparePrice {
+	// 价格按源站形态格式化（符号与金额之间一个空格、金额两位小数）。
+	//
+	// **区间价不格式化**（`¥99 ~ 199` 原样保留）：它是「99 ~ 199」整串，
+	// 不是单个数字，解析失败时 FormatPrice 原样返回 —— 硬凑成 "¥ 99.00 ~ 199.00"
+	// 需要先拆区间再分别格式化，那属于另一个需求，不该顺手改掉作者的表达。
+	if card.Price != "¥99 ~ 199" || card.ComparePrice != "¥ 259.00" || !card.HasComparePrice {
 		t.Fatalf("价格映射不符: %+v", card)
 	}
 	if len(card.Tags) != 1 || card.Tags[0] != "新品" {

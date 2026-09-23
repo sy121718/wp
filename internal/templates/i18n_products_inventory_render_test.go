@@ -47,6 +47,16 @@ func groupDData(extra map[string]any) map[string]any {
 			"inventory:purchase_create": true, "inventory:reason_create": true,
 			"order:coupon_create": true,
 		},
+		// 商品列表页的筛选与分页键（handler 总会注入；测试外壳给一份中性值）。
+		// 直接渲染模板时缺键会让 Jet 在那一行**中断**（HTTP 仍 200，后半截整块消失）——
+		// 本文件存在的理由就是盯住这件事，故这些键必须显式给全。
+		"FilterKeyword": "", "FilterStatus": "", "Page": 1, "Limit": 20, "Total": 0,
+		"Statuses": []map[string]any{
+			{"Value": "", "Label": "全部状态", "Selected": true},
+			{"Value": "draft", "Label": "草稿", "Selected": false},
+			{"Value": "published", "Label": "已上架", "Selected": false},
+			{"Value": "archived", "Label": "已下架", "Selected": false},
+		},
 	}
 	for k, v := range extra {
 		d[k] = v
@@ -117,7 +127,14 @@ func TestGroupDProductsPageRenders(t *testing.T) {
 	// 完整性锚点用**稳定存在**的文案：详情入口已由名称列承担、详情页模板移出操作列，
 	// 不再拿它们当判据（按钮一改就红，而那不是渲染中断）。
 	out := assertGroupDPage(t, "products", data,
-		"商品列表", "价格区间", "分类", "品牌", "标签", "预览详情页", "多语言")
+		"商品列表", "价格区间", "分类", "品牌", "标签", "编辑", "预览", "删除")
+	// 筛选栏（关键词 + 状态 + 查询 / 重置）与分页条都在列表卡内：纯服务端渲染的 GET 表单，
+	// 无 JS 也能用。控件 id 是写死的（不是自动生成的），故可以按 id 断言。
+	for _, want := range []string{"products-filter-keyword", "products-filter-status", "重置"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("列表页缺少筛选控件 %q", want)
+		}
+	}
 	// 标签列放的是标签名本身（数据里的名字），不是「手工 N · 自动 N」这种来源分解。
 	if !strings.Contains(out, "新品、热销") {
 		t.Fatalf("标签列应显示标签名，实际输出未见 %q", "新品、热销")
@@ -131,11 +148,24 @@ func TestGroupDProductsPageRenders(t *testing.T) {
 	if !strings.Contains(out, `href="/admin/products/detail?project=pr1&amp;product=p1"`) {
 		t.Fatalf("列表页缺少「详情」链接")
 	}
+	// 「编辑」是商品基本字段与多语言的入口（多语言不再单独占操作列一格）。
+	if !strings.Contains(out, `href="/admin/products/edit?project=pr1&amp;product=p1"`) {
+		t.Fatalf("列表页缺少「编辑」链接")
+	}
 	// range 体内取词（{{ .["t"] }} 在 range 内仍指向根数据）确实生效：
-	// 「多语言」「详情」都来自 range 体内，缺一则说明该写法在真实模板里失效。
-	for _, want := range []string{"多语言", "详情"} {
+	// 「编辑」「预览」「删除」都来自 range 体内，缺一则说明该写法在真实模板里失效。
+	for _, want := range []string{"编辑", "预览", "删除"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("range 体内取词失效，缺少 %q", want)
+		}
+	}
+	// URL 段不再作为列表列（要看它去详情页）：表头与取值都不该出现在列表页。
+	// 注意「URL 段」四个字本身仍会出现 —— 新建抽屉的 slug 输入框占位符就是它，
+	// 所以判据钉在**表头与单元格**上，而不是整个页面的文本。
+	// 多语言同理：「多语言」出现在页头悬浮说明里是正常的，判据是**操作列不再有它的入口**。
+	for _, forbidden := range []string{"<th>URL 段</th>", "/p-one", "/admin/products/translations?project=pr1&amp;product=p1"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("列表页不该再出现 %q（URL 段列已删除、多语言入口已移入编辑页）", forbidden)
 		}
 	}
 	// 这些属于商品详情（变体 / 评分是某个商品的子资源），不该出现在列表页。
@@ -146,10 +176,80 @@ func TestGroupDProductsPageRenders(t *testing.T) {
 	}
 }
 
-// TestGroupDProductDetailPageRenders 商品详情页：四个商品级表单 + 变体表 + 评分表。
+// TestGroupDProductEditPageRenders 商品编辑页：**商品域唯一的编辑界面**。
 //
-// 拆页的落点就是这一页——三块内容原来平铺在列表页上，现在必须全部在这里渲染出来，
-// 且尾部标记（抽屉里的字段）存在即说明整页没有被中途截断（Jet 缺键只中断、HTTP 仍 200）。
+// 详情页只读之后，写动作全部收在这一页：基本字段（名称 / URL 段 / SKU / 状态 / 价格 /
+// 单位 / 重量 / SEO / 图集）、属性引用、分类与品牌、手工标签、变体清单、评分、SEO 检查、
+// 详情页模板的双轨动作。表单字段名与 UpdateReq 的 json 标签对齐；
+// 尾部标记取页面末尾的区块与按钮：存在即说明整页没有被中途截断（Jet 缺键只中断、HTTP 仍 200）。
+func TestGroupDProductEditPageRenders(t *testing.T) {
+	row := groupDProductRow()
+	row["Subtitle"] = "副标题"
+	row["Unit"] = "件"
+	row["SEOTitle"] = "SEO 标题"
+	row["SEODescription"] = "SEO 描述"
+	data := groupDData(map[string]any{
+		"SelectedProject": "pr1", "Err": "",
+		"Projects": groupDProjects(),
+		// 变体的两个抽屉要仓库下拉（handler 总会注入）。
+		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
+		"ProductID":        "p1", "HasProduct": true, "Product": row,
+		"BackURL": "/admin/products?project=pr1",
+		// 属性组勾选态（服务端算好；模板只渲染）。
+		"AttributeChecks": []map[string]any{{"ID": "a1", "Label": "颜色（color）", "IsVariation": true, "Checked": true}},
+		"ImagesText":      "https://cdn.example.com/1.jpg",
+		"ImageAltsText":   "图一",
+		"WeightText":      "0.5", "DefaultPriceText": "10.00",
+	})
+	out := assertGroupDPage(t, "product_edit", data,
+		"基本信息", "属性引用", "分类与品牌", "标签", "保存",
+		// 从详情页搬来的三块：变体 / 评分 / SEO 检查（详情页只读，编辑能力必须在这里）。
+		"变体", "保存变体清单", "生成组合", "添加评分", "SEO 评分")
+	// 表单协议：action 与字段名与 UpdateReq 的 json 标签逐字对齐（改字段名等于改协议）。
+	for _, want := range []string{
+		`action="/admin/products/update"`,
+		`name="name"`, `name="subtitle"`, `name="slug"`, `name="sku"`, `name="status"`,
+		`name="defaultPrice"`, `name="unit"`, `name="weight"`,
+		`name="seoTitle"`, `name="seoDescription"`,
+		`name="images"`, `name="imageAlts"`,
+		`name="attributeIds"`, `name="categoryIds"`, `name="primaryCategoryId"`,
+		`name="brandId"`, `name="tagIds"`,
+		// 多语言入口在本页（列表操作列不再单占一格）。
+		"/admin/products/translations?project=pr1&amp;product=p1",
+		// 详情入口也在：改完去看只读的构成（变体 / 评分 / 捆绑）。
+		"/admin/products/detail?project=pr1&amp;product=p1",
+		// 变体 / 评分的写协议与搬页前逐字相同（改版式不改协议）。
+		`action="/admin/products/variant/save"`,
+		`data-preview-url="/admin/products/variant/preview"`,
+		`action="/admin/products/variant/create"`,
+		`action="/admin/products/rating/add"`,
+		`action="/admin/products/rating/delete"`,
+		`action="/admin/products/seo-score"`, `id="product-seo-score-p1"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("商品编辑页缺少 %q", want)
+		}
+	}
+	// 空态分支（商品不存在 / 链接里的商品在另一个工程）也要整页渲染完，不中断。
+	// WarehouseOptions 是 handler 无条件注入的键（页面顶部先取仓库清单，取不到走 PageError），
+	// 测试外壳按同一形状给全 —— 缺它会在模板第一行就中断，看到的却是「空态没渲染出来」。
+	empty := groupDData(map[string]any{
+		"SelectedProject": "pr1", "Err": "",
+		"Projects": groupDProjects(), "ProductID": "p1", "HasProduct": false,
+		"WarehouseOptions": []map[string]any{},
+		"BackURL":          "/admin/products?project=pr1",
+	})
+	emptyOut := assertGroupDPage(t, "product_edit", empty, "商品不存在", "返回列表")
+	if strings.Contains(emptyOut, `action="/admin/products/update"`) {
+		t.Fatalf("商品不存在时不该渲染保存表单")
+	}
+}
+
+// TestGroupDProductDetailPageRenders 商品详情页：**只读**。
+//
+// 判据分两半：① 三块构成（变体 / 评分 / 捆绑构成）与只读事实（基本信息 / 标签）都在；
+// ② **任何写表单都不在** —— 它们全在编辑页。第二半是这次改造的核心：
+// 只读页里残留一个「保存手工标签」，用户就会以为改得动。
 func TestGroupDProductDetailPageRenders(t *testing.T) {
 	data := groupDData(map[string]any{
 		"SelectedProject": "pr1", "Err": "",
@@ -159,25 +259,30 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		"BackURL": "/admin/products?project=pr1",
 	})
 	out := assertGroupDPage(t, "product_detail", data,
-		"基本信息", "保存属性引用", "保存分类与品牌", "保存手工标签", "SEO 评分",
-		"新建变体", "生成组合", "各仓库存", "添加评分", "评分 0~5",
+		"基本信息", "属性引用", "标签", "变体", "评分", "各仓库存",
 		"自动标签（按规则重算维护，不能手工改动）")
-	// 表单协议一字未改：action 与字段名必须与拆页前逐字相同（改版式不改协议）。
-	for _, want := range []string{
-		`action="/admin/products/attributes"`, `name="attributeIds"`,
-		`action="/admin/products/taxonomy"`, `name="primaryCategoryId"`,
-		`action="/admin/products/tags"`, `name="tagIds"`,
-		`action="/admin/products/seo-score"`, `id="product-seo-score-p1"`,
-		`action="/admin/products/variant/create"`,
-		// 变体组合生成自本批起走「预览—保存」模型（docs/14 §8）：抽屉不再是表单（没有 action），
-		// 生成走 JS + 预览端点（不落库），落库统一在 /variant/save —— 协议确实变了，断言随之更新。
-		`data-preview-url="/admin/products/variant/preview"`,
+	// 唯一的 POST 是「预览」：渲染前台效果、不写库。
+	if !strings.Contains(out, `action="/admin/products/template/preview"`) {
+		t.Fatalf("详情页缺少「预览」表单（只读渲染的唯一 POST）")
+	}
+	// 写表单一个都不该出现：它们全在编辑页（admin/product_edit.html）。
+	for _, forbidden := range []string{
+		`action="/admin/products/attributes"`,
+		`action="/admin/products/taxonomy"`,
+		`action="/admin/products/tags"`,
+		`action="/admin/products/seo-score"`,
 		`action="/admin/products/variant/save"`,
+		`action="/admin/products/variant/create"`,
 		`action="/admin/products/rating/add"`,
+		`action="/admin/products/rating/delete"`,
+		`action="/admin/products/reapply-preset"`,
+		`action="/admin/products/rollback-document"`,
 		`action="/admin/products/delete"`,
+		"保存属性引用", "保存分类与品牌", "保存手工标签", "保存变体清单",
+		"新建变体", "生成组合", "添加评分", "SEO 评分",
 	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("详情页缺少 %q", want)
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("详情页是只读页，不该出现写入口 %q", forbidden)
 		}
 	}
 	// 空态分支（商品不存在）走的另一条路：渲染 .empty-state + 返回列表，不整页中断。
@@ -224,16 +329,38 @@ func TestGroupDPricingPageRenders(t *testing.T) {
 }
 
 func TestGroupDAttributesPageRenders(t *testing.T) {
+	// 三个抽屉的表单实例数据：片段是**带参数 include** 的（数据由调用点给，取不到页面 data，
+	// 连取词函数 t 与 csrf 都要显式传），形状与 handle 的 attrRowDrawerForms /
+	// attrCreateDrawerForm 逐键一致 —— 缺键不再是「少渲一块」，而是整块渲染失败。
+	tr := TranslateFunc("zh-CN")
+	attrRows := func(id string) map[string]any {
+		return map[string]any{
+			"GroupID": id,
+			"Rows":    []map[string]any{{"ID": "av1", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true}},
+		}
+	}
 	data := groupDData(map[string]any{
 		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
 		"Attributes": []map[string]any{{
 			"ID": "a1", "Name": "颜色", "Key": "color", "IsVariation": true, "ValueCount": 2, "Sort": 0,
-			"RowsCtx": map[string]any{
-				"GroupID": "a1",
-				"Rows":    []map[string]any{{"ID": "av1", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true}},
+			"EditForm": map[string]any{
+				"Csrf": "tok", "Project": "pr1", "t": tr,
+				"Mode": "edit", "Action": "/admin/product-attributes/update", "IsCreate": false,
+				"GroupID": "a1", "Name": "颜色", "Key": "color", "Sort": 0, "VariationChecked": true,
+				"RowsCtx": attrRows("a1"), "InDrawer": true,
+			},
+			"ValuesForm": map[string]any{
+				"Csrf": "tok", "Project": "pr1", "t": tr,
+				"Action": "/admin/product-attributes/set-values", "GroupID": "a1",
+				"RowsCtx": attrRows("a1"), "InDrawer": true,
 			},
 		}},
-		"NewRowsCtx": map[string]any{"GroupID": "new", "Rows": []map[string]any{}},
+		"AttrCreateForm": map[string]any{
+			"Csrf": "tok", "Project": "pr1", "t": tr,
+			"Mode": "create", "Action": "/admin/product-attributes/create", "IsCreate": true,
+			"GroupID": "new", "Name": "", "Key": "", "Sort": 0, "VariationChecked": true,
+			"RowsCtx": map[string]any{"GroupID": "new", "Rows": []map[string]any{}}, "InDrawer": true,
+		},
 	})
 	// 行内按钮不再重复实体名（admin-ui-logic §3）：列表已是表格，行已指明是谁。
 	assertGroupDPage(t, "product_attributes", data,
@@ -504,12 +631,13 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"Products":         []map[string]any{groupDProductRow()},
 	})
 	products["t"] = enT
-	out, err := render(t, groupDSet(t), "admin/products", products)
+	out, err := render(t, groupDSet(t), "admin/product/products", products)
 	if err != nil {
 		t.Fatalf("products 英文渲染失败: %v", err)
 	}
 	for _, want := range []string{
-		"EN[admin.products.title]", "EN[admin.products.row.translations]",
+		"EN[admin.products.title]", "EN[admin.products.row.edit]",
+		"EN[admin.products.row.preview]",
 		"EN[admin.products.col.categories]",
 		"EN[admin.products.col.brand]", "EN[admin.products.col.priceRange]",
 		"EN[admin.products.hint.attrLead]", "EN[admin.products.rating.label]",
@@ -534,21 +662,22 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"BackURL": "/admin/products?project=pr1",
 	})
 	detail["t"] = enT
-	out, err = render(t, groupDSet(t), "admin/product_detail", detail)
+	out, err = render(t, groupDSet(t), "admin/product/product_detail", detail)
 	if err != nil {
 		t.Fatalf("product_detail 英文渲染失败: %v", err)
 	}
 	for _, want := range []string{
 		"EN[admin.product_detail.basic.title]", "EN[admin.product_detail.help.label]",
 		"EN[admin.product_detail.back]", "EN[admin.products.variant.stockLink]",
-		"EN[admin.products.tags.save]", "EN[admin.products.combo.generate]",
-		"EN[admin.products.rating.add]",
+		// 详情页只读：留在页面上的取词是只读区块的标题（写入口的 key 已随表单搬到编辑页）。
+		"EN[admin.products.tags.title]", "EN[admin.products.variants.title]",
+		"EN[admin.products.rating.label]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("product_detail 英文渲染缺少 %q", want)
 		}
 	}
-	for _, forbidden := range []string{"保存手工标签", "各仓库存", "添加评分", "返回列表", "上一操作"} {
+	for _, forbidden := range []string{"保存手工标签", "各仓库存", "添加评分", "返回列表", "上一操作", "保存变体清单"} {
 		if strings.Contains(out, forbidden) {
 			t.Fatalf("product_detail 英文渲染残留中文文案 %q（该处未走 t()）", forbidden)
 		}
@@ -563,7 +692,7 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"VariantOptions": []map[string]any{}, "Orders": []map[string]any{}, "History": []map[string]any{},
 	})
 	purchases["t"] = enT
-	out, err = render(t, groupDSet(t), "admin/inventory_purchases", purchases)
+	out, err = render(t, groupDSet(t), "admin/inventory/inventory_purchases", purchases)
 	if err != nil {
 		t.Fatalf("inventory_purchases 空数据渲染失败: %v", err)
 	}

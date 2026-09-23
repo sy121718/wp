@@ -48,7 +48,7 @@ func (h *Handle) DoRegister(c *gin.Context) {
 	if err != nil {
 		// 失败时**回填已填内容**（不含密码）：让人重新把所有字段打一遍是最容易劝退的一步。
 		h.render(c, http.StatusBadRequest, "user/register", gin.H{
-			"error": userMessage(err),
+			"error": userPageMessage(c, err),
 			"form":  form,
 		})
 		return
@@ -66,7 +66,7 @@ func (h *Handle) DoRegister(c *gin.Context) {
 func (h *Handle) Activate(c *gin.Context) {
 	key := formValue(c, "key")
 	if key == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, "验证链接无效", userenums.ErrActivationInvalid)
+		h.renderMessage(c, http.StatusBadRequest, false, "验证链接无效", userKeyText(c, userenums.ErrActivationInvalid))
 		return
 	}
 	res, err := h.svc.ActivateEmail(c.Request.Context(), &userdto.ActivateEmailReq{
@@ -74,7 +74,7 @@ func (h *Handle) Activate(c *gin.Context) {
 		Locale: locale(c),
 	})
 	if err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, "验证未通过", userMessage(err))
+		h.renderMessage(c, http.StatusBadRequest, false, "验证未通过", userPageMessage(c, err))
 		return
 	}
 	h.renderMessage(c, http.StatusOK, true, "邮箱验证成功",
@@ -85,7 +85,7 @@ func (h *Handle) Activate(c *gin.Context) {
 func (h *Handle) DoResendActivation(c *gin.Context) {
 	email := formValue(c, "email")
 	if email == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, "重发失败", userenums.ErrEmailRequired)
+		h.renderMessage(c, http.StatusBadRequest, false, "重发失败", userKeyText(c, userenums.ErrEmailRequired))
 		return
 	}
 	if err := h.svc.ResendActivation(c.Request.Context(), &userdto.ResendActivationReq{
@@ -95,7 +95,7 @@ func (h *Handle) DoResendActivation(c *gin.Context) {
 		// 与密码重置不同，这里**如实报错**：重发接口要求填的邮箱本身就能通过注册接口
 		// 探测出是否被占用，在这里沉默不会多保护任何信息，只会让「邮箱打错了」的人
 		// 盯着「已发送」干等。
-		h.renderMessage(c, http.StatusBadRequest, false, "重发失败", userMessage(err))
+		h.renderMessage(c, http.StatusBadRequest, false, "重发失败", userPageMessage(c, err))
 		return
 	}
 	h.renderMessage(c, http.StatusOK, true, "验证邮件已重发",
@@ -129,7 +129,7 @@ func (h *Handle) DoLogin(c *gin.Context) {
 	})
 	if err != nil {
 		h.render(c, http.StatusUnauthorized, "user/login", gin.H{
-			"error":   userMessage(err),
+			"error":   userPageMessage(c, err),
 			"account": account,
 			"next":    next,
 		})
@@ -161,13 +161,13 @@ func (h *Handle) DoLogin(c *gin.Context) {
 // Logout 登出（POST：GET 登出会被浏览器预取或图片标签意外触发）。
 func (h *Handle) Logout(c *gin.Context) {
 	if err := h.svc.Logout(c.Request.Context(), currentToken(c)); err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, "登出失败", userMessage(err))
+		h.renderMessage(c, http.StatusBadRequest, false, "登出失败", userPageMessage(c, err))
 		return
 	}
 	// 先撤销服务端会话再清 cookie：反过来的话，若撤销失败，用户看到的是
 	// 「已经登出」（cookie 没了），但服务端会话仍然有效。
 	if err := clearUserSession(c); err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, "登出失败", userenums.ErrInternal)
+		h.renderMessage(c, http.StatusBadRequest, false, "登出失败", userKeyText(c, userenums.ErrInternal))
 		return
 	}
 	c.Redirect(http.StatusFound, "/user/login")
@@ -198,12 +198,12 @@ func (h *Handle) DoForgot(c *gin.Context) {
 		Locale: locale(c),
 	}); err != nil {
 		h.render(c, http.StatusBadRequest, "user/forgot", gin.H{
-			"error": userMessage(err),
+			"error": userPageMessage(c, err),
 			"email": email,
 		})
 		return
 	}
-	h.renderMessage(c, http.StatusOK, true, "重置邮件已提交", userenums.MsgResetMailSent)
+	h.renderMessage(c, http.StatusOK, true, "重置邮件已提交", userKeyText(c, userenums.MsgResetMailSent))
 }
 
 // ShowReset 重置密码页（链接来自邮件，带 email + key）。
@@ -211,7 +211,7 @@ func (h *Handle) ShowReset(c *gin.Context) {
 	email := formValue(c, "email")
 	key := formValue(c, "key")
 	if email == "" || key == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, "链接无效", userenums.ErrActivationInvalid)
+		h.renderMessage(c, http.StatusBadRequest, false, "链接无效", userKeyText(c, userenums.ErrActivationInvalid))
 		return
 	}
 	h.render(c, http.StatusOK, "user/reset", gin.H{
@@ -233,7 +233,7 @@ func (h *Handle) DoReset(c *gin.Context) {
 	})
 	if err != nil {
 		h.render(c, http.StatusBadRequest, "user/reset", gin.H{
-			"error": userMessage(err),
+			"error": userPageMessage(c, err),
 			"email": email,
 			"key":   key,
 		})

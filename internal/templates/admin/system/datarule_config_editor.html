@@ -1,0 +1,80 @@
+{* admin/system/datarule_config_editor.html — 数据规则配置编辑器（白名单驱动的表单） *}
+{* 数据：Editor（dataruleEditorCtx）。容器 id 固定 datarule-config-editor：
+   所有按钮 hx-include 该容器、hx-target 该容器、hx-swap innerHTML，
+   服务端按提交上来的表单值重渲染整块 —— 因此没有一行自定义 JS。 *}
+{{ed := .Editor}}
+{* hx-include 用 closest form 而不是容器本身：白名单由表单里的 domain 决定，
+   只带容器会把 domain 漏在请求之外 —— 那样服务端拿不到域、字段下拉全空。 *}
+{{target := "#datarule-config-editor"}}
+<div class="datarule-editor" id="datarule-config-editor">
+    <div class="form-group">
+        <label class="form-label">{{ .["t"]("admin.datarules.field.omit_fields", "屏蔽字段（查询结果中不返回这些列）") }}</label>
+        {{if ed.FieldCount == 0}}
+        <p class="hint">{{ .["t"]("admin.datarules.editor.no_domain", "该数据域没有已声明的可配置字段｜请先在实体上声明 datarule 标签") }}</p>
+        {{else}}
+        <div class="checkbox-grid">
+            {{range _, f := ed.Fields}}
+            <label class="checkbox-item">
+                <input type="checkbox" name="omit_fields" value="{{f.Field}}"{{if f.Omitted}} checked{{end}}>
+                <span>{{f.Label}}{{ .["t"]("admin.datarules.paren_open", "（") }}{{f.Field}}{{ .["t"]("admin.datarules.paren_close", "）") }}</span>
+            </label>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">{{ .["t"]("admin.datarules.field.conditions", "过滤条件（条件组之间为 AND，组内按所选逻辑组合）") }}</label>
+        {{if ed.FieldCount == 0}}
+        <p class="hint">{{ .["t"]("admin.datarules.editor.no_domain_hint", "选定数据域并为其声明字段后才能配置条件") }}</p>
+        {{end}}
+        {{range _, g := ed.Groups}}
+        <fieldset class="datarule-group">
+            <div class="datarule-group-head">
+                <span class="datarule-group-title">{{ .["t"]("admin.datarules.editor.group", "条件组") }} {{g.Index}}</span>
+                <select name="groups[{{g.Index}}].logic" class="form-select datarule-logic"
+                        hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                        hx-vals='{"action":"refresh"}' hx-target="{{target}}" hx-swap="innerHTML">
+                    <option value="AND"{{if g.Logic == "AND"}} selected{{end}}>{{ .["t"]("admin.datarules.editor.logic_and", "组内全部满足（AND）") }}</option>
+                    <option value="OR"{{if g.Logic == "OR"}} selected{{end}}>{{ .["t"]("admin.datarules.editor.logic_or", "组内任一满足（OR）") }}</option>
+                </select>
+                <button type="button" class="btn btn-sm"
+                        hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                        hx-vals='{"action":"del_group","group":"{{g.Index}}"}' hx-target="{{target}}" hx-swap="innerHTML">{{ .["t"]("admin.datarules.editor.del_group", "删除本组") }}</button>
+            </div>
+            {{range i, r := g.Rows}}
+            <div class="datarule-row">
+                <select name="groups[{{g.Index}}].conditions[{{i}}].field" class="form-select"
+                        hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                        hx-vals='{"action":"refresh"}' hx-target="{{target}}" hx-swap="innerHTML">
+                    {{range _, opt := r.FieldOptions}}
+                    <option value="{{opt.Value}}"{{if opt.Selected}} selected{{end}}>{{opt.Label}}</option>
+                    {{end}}
+                </select>
+                <select name="groups[{{g.Index}}].conditions[{{i}}].op" class="form-select">
+                    {{range _, opt := r.OpOptions}}
+                    <option value="{{opt.Value}}"{{if opt.Selected}} selected{{end}}>{{opt.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" class="form-input" name="groups[{{g.Index}}].conditions[{{i}}].value" value="{{r.Value}}"
+                       placeholder="{{ .["t"]("admin.datarules.editor.value_placeholder", "条件值｜支持 dept.scope:SELF") }}" autocomplete="off">
+                <button type="button" class="btn btn-sm"
+                        hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                        hx-vals='{"action":"del_row","group":"{{g.Index}}","row":"{{i}}"}' hx-target="{{target}}" hx-swap="innerHTML">{{ .["t"]("admin.datarules.editor.del_row", "删除") }}</button>
+            </div>
+            {{end}}
+            {{if g.CanAddRow}}
+            <button type="button" class="btn btn-sm"
+                    hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                    hx-vals='{"action":"add_row","group":"{{g.Index}}"}' hx-target="{{target}}" hx-swap="innerHTML">{{ .["t"]("admin.datarules.editor.add_row", "+ 添加条件") }}</button>
+            {{end}}
+        </fieldset>
+        {{end}}
+        {{if ed.CanAddGroup}}
+        <button type="button" class="btn btn-sm"
+                hx-post="/admin/datarules/config-editor" hx-include="closest form"
+                hx-vals='{"action":"add_group"}' hx-target="{{target}}" hx-swap="innerHTML">{{ .["t"]("admin.datarules.editor.add_group", "+ 添加条件组") }}</button>
+        {{end}}
+    </div>
+    <p class="hint">{{ .["t"]("admin.datarules.editor.hint", "字段与操作符都来自该数据域的声明（实体上的 datarule 标签）｜没有值条件的行不会落库，空条件组会被忽略") }}</p>
+</div>

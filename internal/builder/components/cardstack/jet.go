@@ -68,6 +68,11 @@ type View struct {
 	DeckVertical bool
 	// DeckArrows 是否输出「上一页 / 下一页」按钮。
 	DeckArrows bool
+	// PrevIcon / NextIcon / CloseIcon 卡组箭头与关闭按钮图标（基座图标库）。
+	// 以前模板里是字符 '‹' '›' '✕'，与图标库的描边风格不一致。
+	PrevIcon  string
+	NextIcon  string
+	CloseIcon string
 	// DeckClickNext 点击卡片是否翻下一页（而不是展开放大）。
 	DeckClickNext bool
 	// ZoomGroup 放大用 radio 的组名（每实例独立）：多组件此前共用同一个 name，
@@ -99,6 +104,27 @@ func IsCollection(p *Props) bool { return collectionSource(p) != "" }
 // CollectionItems 解析集合项（含字段白名单校验与裁剪），供装配层按项展开子节点模板。
 func CollectionItems(node *core.Node, p *Props, ctx *core.RenderContext) ([]map[string]any, error) {
 	return resolveItems(node, p, ctx)
+}
+
+// PrevIconSVG / NextIconSVG / CloseIconSVG 卡组箭头与关闭按钮的图标 SVG。
+//
+// 用**方法**而不是字段：cardstack 有两个构造点（集合源 / 手工卡片），
+// 图标与 props 无关（恒定），做成方法就不必在每个 return 字面量里重复填一遍。
+func (v View) PrevIconSVG() string {
+	svg, _ := core.IconSVGClass("chevron-left", "sky-cardstack-arrow-icon")
+	return svg
+}
+
+// NextIconSVG 见 PrevIconSVG。
+func (v View) NextIconSVG() string {
+	svg, _ := core.IconSVGClass("chevron-right", "sky-cardstack-arrow-icon")
+	return svg
+}
+
+// CloseIconSVG 关闭按钮图标（基座图标库 close）。
+func (v View) CloseIconSVG() string {
+	svg, _ := core.IconSVGClass("close", "sky-cardstack-close-icon")
+	return svg
 }
 
 // BuildView 生成渲染视图；内容集合模式需要 ctx.Collection（装配层注入）。

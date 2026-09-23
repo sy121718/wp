@@ -1,0 +1,41 @@
+{* admin/product/product_attribute_values_form.html — 属性值表单（保存属性值抽屉）。
+
+   与 partials/product_attribute_group_form.html 同一契约（失败分档 / host 替换 / 抽屉申报），
+   差别只在：可见字段全是 values[n].* 的行，回填的**主体是 RowsCtx**（由 handler 用
+   attrRowsFromForm 按提交顺序重建）而不是单值 FormEcho —— 单值三键只承载 projectId / id /
+   groupId 这几个隐藏域。行编辑器自身是 partials/product_attribute_rows.html（增删行走 HTMX）。
+
+   服务端按 HX-Request 分档（见 product_attribute_page_util.go 的 attrValuesFormFail）：
+     · htmx 请求：200 + 本片段（错误槽 + 回填后的行）—— 换掉 data-attr-values-host；
+     · 原生请求：302 + ?err= 回列表页（既有行为一字不改）。
+
+   数据键：Csrf / Project / t / Action / GroupID / RowsCtx / InDrawer / SubmitErr
+   （失败时另有 FormEcho* 三键；首屏 vfFill 为假 → 读 .GroupID 初值）。
+
+   表单字段名与 /admin/product-attributes/set-values 的绑定逐字一致，改这里等于改协议；
+   改 `name=` 必须同步改 util 的 attrValuesFormFields。 *}
+{{vfFill := isset(.FormEcho)}}
+        <div data-attr-values-host>
+            {* 错误槽在**表单之外、host 之内**：放进表单里会被下一次提交一起换掉。 *}
+            {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
+            <p class="badge badge-warning" role="alert" data-attr-values-err>{{.SubmitErr}}</p>
+            {{end}}{{end}}
+        <form method="post" action="{{.Action}}" class="form-stack" data-attr-values-form
+              hx-post="{{.Action}}" hx-target="closest [data-attr-values-host]" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+            <input type="hidden" name="projectId" value="{{if vfFill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
+            {* 抽屉形态申报（见片段顶部注释）：失败重渲染后「取消」按钮仍在抽屉里。 *}
+            {{if isset(.InDrawer)}}<input type="hidden" name="inDrawer" value="1">{{end}}
+            <input type="hidden" name="id" value="{{if vfFill}}{{.FormEcho.id}}{{else}}{{.GroupID}}{{end}}">
+            <input type="hidden" name="groupId" value="{{if vfFill}}{{.FormEcho.groupId}}{{else}}{{.GroupID}}{{end}}">
+            {* 容器 id 与 GroupID 同源：行内「添加 / 删除」按钮的 hx-include / hx-target 都靠它。
+               include 路径相对**本文件所在目录**（Jet 不做模板根解析）：同目录片段直接写文件名。 *}
+            <div class="attr-values" id="attr-values-{{.GroupID}}">
+                {{include "product_attribute_rows.html" .RowsCtx}}
+            </div>
+            <div class="action-row">
+                {{if isset(.InDrawer)}}<button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>{{end}}
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_attributes.list.saveValues", "保存属性值") }}</button>
+            </div>
+        </form>
+        </div>

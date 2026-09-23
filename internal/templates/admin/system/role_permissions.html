@@ -1,0 +1,307 @@
+{* admin/role_permissions.html — 角色权限分配（角色分权）：授权树 + 勾选 + 父子联动。
+
+   为什么是独立页面而不是角色列表行里的抽屉：要勾的是「7 目录 + 45 菜单 + 65 按钮」这个量级
+   （还会随功能增长），抽屉放不下层级 + 搜索 + 折叠，窄屏更是没法用。
+
+   服务端渲染整棵勾选树：勾选态来自 sys_casbin_rule 的 p 策略（反查菜单 + 向上补齐祖先），
+   所以**禁用 JS 时页面依然显示正确的勾选状态**。JS 只负责父子联动的即时反馈 ——
+   真正的补齐在服务端（RoleMenuSave 里的 withAncestorMenuIDs），前端漏补不会写坏数据。
+
+   联动方向（安全相关，改之前先读这段）：**只向上补齐**。勾选子项会把所属菜单与目录一并勾上
+   （否则会出现「接口能调、侧栏没有入口」的分裂授权）；取消父项会把整棵子树取消。
+   反方向的「勾菜单自动勾全部按钮」是提权 —— 一次「页面管理」会顺手给出「删除页面 / 发布页面」，
+   本项目不做。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{* role-permissions-page 是本页的样式作用域锚点（theme.css 用 :has() 与后代选择器限定，
+   不波及其它后台页面）：它同时承载两条规则 —— 保存动作条 sticky、内容区取消 overflow 裁剪。 *}
+<div class="stack role-permissions-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.roles.perm.title", "权限分配：") }}{{.Role.RoleName}}</h1>
+                <span class="badge badge-mute">{{.Role.RoleCode}}</span>
+            </div>
+            <p class="perm-intro">{{ .["t"]("admin.roles.perm.intro", "勾选该角色可用的目录、菜单与按钮。勾选子项会自动补齐它所属的菜单与目录（不补齐会出现「接口能调、侧栏却没有入口」的分裂授权）；取消父项会同时取消其下全部子项。保存按整棵树的当前勾选做全量替换。") }}</p>
+        </div>
+        <div class="page-actions">
+            {* 勾选计数：保存是**整棵树的当前勾选做全量替换**，而勾选框散在 4 屏里，
+               用户需要一个不滚动就能看到的「当前勾了多少」。
+               文案复用 230 的通用词条 admin.common.bulk.selected（"已选 {n} 项" / "{n} selected"），
+               由脚本替换 {n}（与列表页批量条同一约定，见 partials/bulk_bar.html）——
+               本页不新增词条：新增未 seed 的 key 会让 admin_group_f_i18n_test.go 的中英成对判据变红。 *}
+            <span class="badge badge-mute" data-selected-count data-selected-template="{{ tr("admin.common.bulk.selected", "已选 {n} 项") }}" aria-live="polite"></span>
+            <a class="btn" href="/admin/roles">{{ .["t"]("admin.roles.perm.back", "返回角色列表") }}</a>
+            {* 页头主行动：节点全展开时页脚的保存按钮落在第 4 屏，页头这个提交按钮让「改完立刻保存」
+               不必先滚到底（取消父项、改几项权限这类小改动尤其明显）。
+               用 form="perm-form" 关联下方表单 —— HTML 不允许 form 嵌套，而页头在 <form> 之外，
+               靠 form 属性把按钮挂到那个表单上（点击即提交，带上其中的全部勾选与 csrf_token）。 *}
+            <button type="submit" class="btn btn-primary" form="perm-form">{{ .["t"]("admin.roles.perm.action.save", "保存权限") }}</button>
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带该键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+
+    <form method="post" action="/admin/roles/permissions/save" id="perm-form">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="role_id" value="{{.Role.RoleID}}">
+
+        <section class="card list-card">
+            <div class="filter-bar">
+                <div class="filter-row">
+                    <input type="search" id="perm-search" class="form-input filter-search" autocomplete="off"
+                           placeholder="{{ .["t"]("admin.roles.perm.ph.search", "搜索菜单名称或权限码") }}"
+                           aria-label="{{ .["t"]("admin.roles.perm.ph.search", "搜索菜单名称或权限码") }}">
+                    <button type="button" class="btn btn-ghost" data-perm-all>{{ .["t"]("admin.roles.perm.action.all", "全选") }}</button>
+                    <button type="button" class="btn btn-ghost" data-perm-none>{{ .["t"]("admin.roles.perm.action.none", "清空") }}</button>
+                    <button type="button" class="btn btn-ghost" data-perm-expand>{{ .["t"]("admin.roles.perm.action.expand", "展开全部") }}</button>
+                    <button type="button" class="btn btn-ghost" data-perm-collapse>{{ .["t"]("admin.roles.perm.action.collapse", "折叠全部") }}</button>
+                </div>
+                {* 搜索只影响显示，提交始终是全部勾选 —— 说清楚，否则「搜索后点保存」会被当成只保存了搜到的那些。 *}
+                <p class="perm-hint">{{ .["t"]("admin.roles.perm.hint.search", "搜索与折叠只影响显示，保存始终提交整棵树的勾选。") }}</p>
+            </div>
+
+            {{if len(.Rows) == 0}}
+            <div class="empty-state">
+                <p class="empty-title">{{ .["t"]("admin.roles.perm.empty", "没有可分配的菜单，先去「菜单管理」建目录与菜单。") }}</p>
+                {* 空态动作指向真正的下一步：权限树的内容来自菜单管理，这里什么都分不了。
+                   不给「保存」之类的按钮 —— 一棵空树保存下去等于清空该角色的全部权限。 *}
+                <div class="empty-actions">
+                    <a class="btn btn-primary" href="/admin/menus">{{ .["t"]("admin.roles.perm.empty.action", "去菜单管理") }}</a>
+                </div>
+            </div>
+            {{else}}
+            <div class="perm-tree" id="perm-tree">
+                {{range _, r := .Rows}}
+                <div class="perm-node{{if r.Status == 0}} is-disabled{{end}}" data-perm-row="{{r.ID}}" data-depth="{{r.Depth}}" data-parent="{{r.ParentID}}" style="padding-left:{{r.PadLeft}}px">
+                    {{if r.HasChildren}}
+                    <button type="button" class="perm-toggle" data-perm-toggle aria-expanded="true" aria-label="{{ .["t"]("admin.roles.perm.toggle", "展开 / 收起子项") }}"><span class="caret"></span></button>
+                    {{else}}
+                    <span class="perm-toggle is-leaf" aria-hidden="true"></span>
+                    {{end}}
+                    <label class="perm-label">
+                        <input type="checkbox" class="perm-box" name="menu_ids" value="{{r.ID}}"
+                               data-perm-node data-id="{{r.ID}}" data-parent="{{r.ParentID}}" data-depth="{{r.Depth}}"
+                               {{if r.Checked}}checked{{end}}>
+                        <span class="perm-title">{{r.Title}}</span>
+                        <span class="perm-type perm-type-{{r.Type}}">{{r.TypeLabel}}</span>
+                        {{if r.PermissionCode}}<code class="perm-code">{{r.PermissionCode}}</code>{{end}}
+                        {{if r.Status == 0}}<span class="badge badge-mute">{{ .["t"]("admin.roles.perm.badge.disabled", "已禁用") }}</span>{{end}}
+                    </label>
+                </div>
+                {{end}}
+            </div>
+            {{end}}
+        </section>
+
+        {* 保存动作条粘在视口底部（CSS 在 theme.css 的「角色权限分配」段）。
+           本页最常见的任务是「勾选权限 → 保存」，两者被 3 屏隔开时用户得来回滚
+           （实测改前：页高 4.15 屏、保存按钮顶边 4.08 屏、saveScrollNeeded 3.13）。
+           目录层默认折叠 + 页头提交按钮先解决首屏，sticky 是第二道保险：
+           点「展开全部」或搜索后页面又会变长，此时保存仍在视口内。
+           粘的是 .action-row 本身而不是包一层卡片：它的包含块是整张 <form>（权限树 + 动作条），
+           浮动范围够用；只粘一个按钮高的盒子则最多浮几十像素，等于没粘。 *}
+        <div class="action-row">
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.roles.perm.action.save", "保存权限") }}</button>
+            <a class="btn" href="/admin/roles">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
+        </div>
+    </form>
+</div>
+
+<script>
+/* 角色权限分配的父子联动。
+ *
+ * 不变式只有一条：**子勾 ⇒ 父勾**。服务端保存时同样补齐（withAncestorMenuIDs），
+ * 所以这里的联动是即时反馈而不是唯一防线 —— 脚本没跑（禁用 JS / 加载失败）时页面
+ * 仍然显示正确的勾选态，提交上去的数据也会被服务端补正。
+ *
+ * 两个方向的动作不对称，这是刻意的：
+ *   - 勾选子项 → 向上补齐祖先（补的是「入口」，不是新能力，安全）；
+ *   - 取消父项 → 整棵子树一起取消（不这么做就会造出「子勾着、父没勾」的非法状态，
+ *     提交后又被服务端补齐回来，表现为「取消父级点了没反应」）。
+ * 反方向的「勾父项自动勾全部子项」不实现：那等于一次「页面管理」顺手给出
+ * 「删除页面 / 发布页面」—— 权限系统最不该有的默认行为。
+ */
+(function () {
+    'use strict';
+    var tree = document.getElementById('perm-tree');
+    var form = document.getElementById('perm-form');
+    if (!tree || !form) { return; }
+
+    var rows = Array.prototype.slice.call(tree.querySelectorAll('[data-perm-row]'));
+    var boxes = Array.prototype.slice.call(tree.querySelectorAll('[data-perm-node]'));
+    if (!boxes.length) { return; }
+
+    var boxById = Object.create(null);
+    var rowById = Object.create(null);
+    var childBoxes = Object.create(null);
+    boxes.forEach(function (box) {
+        var id = box.getAttribute('data-id');
+        var parent = box.getAttribute('data-parent');
+        boxById[id] = box;
+        (childBoxes[parent] = childBoxes[parent] || []).push(box);
+    });
+    rows.forEach(function (row) { rowById[row.getAttribute('data-perm-row')] = row; });
+
+    function checkAncestors(box) {
+        var parent = box.getAttribute('data-parent');
+        while (parent && parent !== '0' && boxById[parent]) {
+            boxById[parent].checked = true;
+            parent = boxById[parent].getAttribute('data-parent');
+        }
+    }
+
+    function uncheckSubtree(box) {
+        box.checked = false;
+        (childBoxes[box.getAttribute('data-id')] || []).forEach(uncheckSubtree);
+    }
+
+    /* 部分选中标记：父项自己在授权集合里（check 为真），但还有子项没勾。
+       刻意不用 checkbox 的 indeterminate：那会让一个「确实已授权」的父项看起来没勾，
+       而它保存后不仅保留，还会把权限码写进策略。小圆点只表示「没选全」。 */
+    function refreshPartial() {
+        rows.forEach(function (row) { row.removeAttribute('data-partial'); });
+        rows.slice().sort(function (a, b) {
+            return Number(b.getAttribute('data-depth')) - Number(a.getAttribute('data-depth'));
+        }).forEach(function (row) {
+            var box = row.querySelector('[data-perm-node]');
+            if (!box || !box.checked) { return; }
+            var kids = childBoxes[box.getAttribute('data-id')] || [];
+            if (!kids.length) { return; }
+            for (var i = 0; i < kids.length; i++) {
+                if (!kids[i].checked) { row.setAttribute('data-partial', '1'); return; }
+            }
+        });
+        refreshCount();
+    }
+
+    var collapsed = Object.create(null);
+    var searchEl = document.getElementById('perm-search');
+    var countEl = document.querySelector('.page-actions [data-selected-count]');
+
+    /* 勾选计数：页头的「已选 N 项」与权限树同源，任何改变勾选的路径都必须过这里
+       （父子联动的 change、全选 / 清空、初始渲染）。{n} 由 data-selected-template 提供，
+       与列表页批量条（admin.js 的 refresh）同一约定。
+       模板里那个元素是 <span> 而不是按钮、只读文本：避免键盘用户 Tab 到一个按不动的目标；
+       aria-live="polite" 让勾选变化被读屏播报，用户不必回头去找计数。 */
+    function refreshCount() {
+        if (!countEl) { return; }
+        var n = 0;
+        boxes.forEach(function (box) { if (box.checked) { n++; } });
+        var tpl = countEl.getAttribute('data-selected-template') || '已选 {n} 项';
+        countEl.textContent = tpl.replace('{n}', String(n));
+    }
+
+    /* 折叠与搜索都靠「DFS 展平后同一父级的子树连续」这一性质：折叠 = 隐藏本行之后
+       连续出现、且 depth 更大的所有行。搜索优先于折叠，且会把命中行的祖先一并显示 ——
+       否则搜索结果会挂在看不见的层级下面。 */
+    function applyVisibility() {
+        rows.forEach(function (row) { row.hidden = false; });
+        var query = searchEl ? (searchEl.value || '').trim().toLowerCase() : '';
+        if (query) {
+            var keep = Object.create(null);
+            rows.forEach(function (row) {
+                if (row.textContent.toLowerCase().indexOf(query) < 0) { return; }
+                keep[row.getAttribute('data-perm-row')] = true;
+                var parent = row.getAttribute('data-parent');
+                while (parent && parent !== '0' && rowById[parent]) {
+                    keep[parent] = true;
+                    parent = rowById[parent].getAttribute('data-parent');
+                }
+            });
+            rows.forEach(function (row) { row.hidden = !keep[row.getAttribute('data-perm-row')]; });
+            return;
+        }
+        rows.forEach(function (row, i) {
+            if (!collapsed[row.getAttribute('data-perm-row')]) { return; }
+            var depth = Number(row.getAttribute('data-depth'));
+            for (var j = i + 1; j < rows.length; j++) {
+                if (Number(rows[j].getAttribute('data-depth')) <= depth) { break; }
+                rows[j].hidden = true;
+            }
+        });
+    }
+
+    boxes.forEach(function (box) {
+        box.addEventListener('change', function () {
+            if (box.checked) { checkAncestors(box); } else { uncheckSubtree(box); }
+            refreshPartial();
+        });
+    });
+
+    tree.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-perm-toggle]') : null;
+        if (!btn) { return; }
+        var row = btn.closest('[data-perm-row]');
+        if (!row) { return; }
+        var id = row.getAttribute('data-perm-row');
+        collapsed[id] = !collapsed[id];
+        row.classList.toggle('is-collapsed', !!collapsed[id]);
+        btn.setAttribute('aria-expanded', collapsed[id] ? 'false' : 'true');
+        applyVisibility();
+    });
+
+    function setAll(checked) {
+        boxes.forEach(function (box) { box.checked = checked; });
+        refreshPartial();
+    }
+
+    function collapseAll(on) {
+        collapsed = Object.create(null);
+        rows.forEach(function (row) {
+            var btn = row.querySelector('[data-perm-toggle]');
+            if (!btn) { return; }
+            var id = row.getAttribute('data-perm-row');
+            collapsed[id] = on;
+            row.classList.toggle('is-collapsed', on);
+            btn.setAttribute('aria-expanded', on ? 'false' : 'true');
+        });
+        applyVisibility();
+    }
+
+    var tools = document.querySelectorAll('[data-perm-all]');
+    Array.prototype.forEach.call(tools, function (el) { el.addEventListener('click', function () { setAll(true); }); });
+    tools = document.querySelectorAll('[data-perm-none]');
+    Array.prototype.forEach.call(tools, function (el) { el.addEventListener('click', function () { setAll(false); }); });
+    tools = document.querySelectorAll('[data-perm-expand]');
+    Array.prototype.forEach.call(tools, function (el) { el.addEventListener('click', function () { collapseAll(false); }); });
+    tools = document.querySelectorAll('[data-perm-collapse]');
+    Array.prototype.forEach.call(tools, function (el) { el.addEventListener('click', function () { collapseAll(true); }); });
+
+    if (searchEl) { searchEl.addEventListener('input', applyVisibility); }
+
+    /* 目录层默认折叠：116 个节点全展开时页高 4.15 屏，而决策路径是「先看有哪几类权限，
+       再展开其中一类去勾」—— 全展开反而让首屏只剩半棵树的噪声（实测改前 20 个可折叠行
+       全是 aria-expanded="true"、116 行无一隐藏）。
+       机制完全复用上面的 collapsed 字典 + applyVisibility()（不新造状态、不新造折叠实现），
+       只把最上层（树里 depth 最小的那一层，实测是目录 = depth 1）预置为收起：
+       首屏看到 8 个目录，展开某个目录只看它的子树。
+       为什么按「最小 depth」而不是写死 depth==0：层级编号由 Go 侧的 DFS 深度决定
+       （实测为 1/2/3），写死一个数字会在层级口径变化时静默失效（折叠看起来「没生效」）。
+       禁用 JS 时页面回到服务端渲染的全展开态，勾选状态仍完整（勾选态来自服务端，不依赖本脚本）。 */
+    var topDepth = null;
+    rows.forEach(function (row) {
+        var d = Number(row.getAttribute('data-depth'));
+        if (isNaN(d)) { return; }
+        if (topDepth === null || d < topDepth) { topDepth = d; }
+    });
+    rows.forEach(function (row) {
+        if (topDepth === null || Number(row.getAttribute('data-depth')) !== topDepth) { return; }
+        var btn = row.querySelector('[data-perm-toggle]');
+        if (!btn) { return; }
+        var id = row.getAttribute('data-perm-row');
+        collapsed[id] = true;
+        row.classList.add('is-collapsed');
+        btn.setAttribute('aria-expanded', 'false');
+    });
+    applyVisibility();
+
+    refreshPartial();
+})();
+</script>
+{{end}}

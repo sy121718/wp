@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	"go_wp/pkg/upload"
 )
 
 // CompileCSS 导出图片样式编译（复用 render 内部的 compileCSS）。
@@ -43,6 +44,9 @@ type View struct {
 	// --- 点击动作分支 ---
 	// IsLightbox 灯箱分支（零 JS :target 浮层）。
 	IsLightbox bool
+	// CloseIcon 灯箱关闭按钮图标（基座图标库 close）。
+	// 以前模板里是字符 '×'，与图标库的描边风格不一致。
+	CloseIcon string
 	// IsLink 链接分支（Link 非空或 ClickAction == link）。
 	IsLink bool
 	// Link 链接地址（模板输出时由 Jet 默认转义）。
@@ -66,7 +70,11 @@ type View struct {
 // class 为已合并的节点 class（nodeView 层计算），customID 为 Advanced 自定义 Element ID。
 func BuildView(node *core.Node, p *Props, class, customID string, content core.ContentResolver, defaults core.ImageDefaults, probe func(string) []int, siteLink func(string) string) (View, error) {
 	// 图片地址：CMS 绑定优先，否则手填 Src（媒体库/外链统一 URL）。
-	src := p.Src
+	//
+	// 出口归一成**完整链接**：产物里的地址直接给访客用，相对路径在「站点与 CMS
+	// 不同域」的部署下会指回 CMS 自己。存量 Page Document 里存的是入库当时的相对路径
+	// （未配 upload.base_url 时的形态），所以这一层必须归一 —— 只靠写入口覆盖不到历史数据。
+	src := upload.StorageURL(p.Src)
 	if p.Binding != nil && p.Binding.Field != "" {
 		if content == nil {
 			return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析绑定 %q", p.Binding.Field)
@@ -84,6 +92,12 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 	if src == "" {
 		return View{}, fmt.Errorf("图片地址为空")
 	}
+	// **绑定解析之后也要归一**（顺序不能挪到上面）：
+	// 早先只在入口对 p.Src 调了一次 StorageURL，绑定（article.featuredImage 这类）
+	// 解析出来的值直接赋给 src —— 于是同一条媒体，手填的产出绝对地址、绑定的产出
+	// /storage/... 相对地址。产物里的**所有**资源地址都必须是绝对路径：
+	// 站点与 CMS 不同域时相对地址会把图片请求打回 CMS（甚至直接 404）。
+	src = upload.StorageURL(src)
 	// 协议白名单校验：拒绝 javascript:/data:/vbscript: 等危险协议（降级为空 src，不阻断编译）。
 	if !core.IsSafeURL(src) {
 		src = ""
@@ -95,7 +109,7 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 
 	v := View{
 		Src:       src,
-		Alt:       p.Alt,
+		Alt:       resolveImageAlt(p, content),
 		Title:     p.Title,
 		Class:     class,
 		IsEager:   attrs.IsEager,
@@ -141,6 +155,11 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 		v.ImgID = customID
 	}
 
+	if v.IsLightbox {
+		if svg, ok := core.IconSVGClass("close", "sky-lightbox-close-icon"); ok {
+			v.CloseIcon = svg
+		}
+	}
 	return v, nil
 }
 
@@ -152,6 +171,31 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 //
 // 变体统一编码为 JPEG，故后缀固定 .jpg（源图后缀只用于截断 stem）。
 // 带查询串的 URL 不参与（变体按对象键生成，查询串会让路径失配）。
+// resolveImageAlt 图片替代文本：手填 Alt 优先，否则走 AltBinding 绑定字段。
+//
+// 两条都不命中时返回空串：**不替作者编一个描述** —— 编出来的 alt 比空 alt 更糟
+// （搜索引擎会把它当真实内容，读屏用户会被念一段没人写过的句子）。
+// 绑定解析失败同样回落空串：alt 是增强项，不该让整页编译失败。
+func resolveImageAlt(p *Props, content core.ContentResolver) string {
+	if p == nil {
+		return ""
+	}
+	if alt := strings.TrimSpace(p.Alt); alt != "" {
+		return alt
+	}
+	if p.AltBinding == nil || strings.TrimSpace(p.AltBinding.Field) == "" || content == nil {
+		return ""
+	}
+	v, err := content.ResolveString(p.AltBinding.Field)
+	if err != nil {
+		return ""
+	}
+	if s := strings.TrimSpace(v); s != "" {
+		return s
+	}
+	return strings.TrimSpace(p.AltBinding.Fallback)
+}
+
 func variantURL(src string, width int) string {
 	if src == "" || strings.Contains(src, "?") {
 		return ""

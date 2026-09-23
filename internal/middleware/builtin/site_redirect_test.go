@@ -56,7 +56,9 @@ func setupRedirectFixture(t *testing.T) {
 func redirectTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	g := r.Group(siteFacePrefix, SiteRedirectMiddleware())
+	// 用兼容入口前缀 /site 挂载：根挂载点（prefix=""）也走同一份中间件，
+	// 前缀不同只影响「哪些路径算访问面」，不影响重定向判定本身。
+	g := r.Group("/site", SiteRedirectMiddleware("/site"))
 	g.GET("/*rest", func(c *gin.Context) { c.String(http.StatusOK, "static-face") })
 	return r
 }

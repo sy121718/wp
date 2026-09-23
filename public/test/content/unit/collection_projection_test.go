@@ -1,6 +1,8 @@
 package unit
 
 import (
+	"go_wp/pkg/upload"
+
 	"context"
 	"testing"
 
@@ -83,9 +85,13 @@ func TestResolveCollectionOmitsBody(t *testing.T) {
 			t.Fatalf("集合项不应包含 %s: %+v", banned, item)
 		}
 	}
+	// featuredImage 期望的是**归一后的完整链接**：集合投影不经过 toResp，读出口的
+	// 媒体归一必须在这条路径上也发生一次，否则集合卡渲染出 /storage/... 相对地址，
+	// 而同一条数据的详情页是完整链接（同源数据两种形态）。
 	for k, want := range map[string]any{
 		"id": created.ID, "slug": "collection-projection",
-		"title": "投影测试", "excerpt": "摘要", "featuredImage": "/img/cover.jpg",
+		"title": "投影测试", "excerpt": "摘要",
+		"featuredImage": upload.StorageURL("/img/cover.jpg"),
 	} {
 		if got := item[k]; got != want {
 			t.Fatalf("集合项字段 %s 不一致: %v（期望 %v）", k, got, want)

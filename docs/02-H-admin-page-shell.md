@@ -155,13 +155,24 @@
 
 ## 6. 进度
 
-- 已完成：`settings`、`orders`、`inventory`、`inventory/purchases`
+- 已完成：`settings`、`orders`、`inventory`、`inventory/purchases`、`products`
 - 待改造（按「说明文字量 × 区块数」排序）：
   `i18n`(21 hints/4.9 屏)、`returns`(19)、`product-pricing`(17)、`customers`(17)、
   `analytics`(7 区块)、`inventory/sources`(5 区块)、`blocks`(5)、`masterdata/changes`(4)、
-  `coupons`、`products`、`pages`、`navigations`、`site-slots`、`seo`、`mail*` 各页
+  `coupons`、`pages`、`navigations`、`site-slots`、`seo`、`mail*` 各页
 - 结构本身健康、只需微调的：`menus`（工具行已紧凑，但 114 行内联表单建议改批量操作）、
   `permissions`、`media`、`plugins`
+
+> 商品列表（`products`）本批收口的四件事，对其它列表页同样适用：
+> ① **筛选与分页是列表页的基座**（关键词 + 状态 + 服务端分页），不靠「一页取 100 条」硬撑；
+> ② **操作列只放这一行才做的事**：编辑（进编辑页）、预览、删除 ——
+> 「详情」由名称列承担，不在操作列重复一个同义入口；URL 段这类「详情里看得更全」的列不进列表；
+> ③ **写与读分页**：`/admin/products/edit` 是商品域**唯一**的编辑界面（基本字段 + 属性引用 +
+> 分类与品牌 + 手工标签 + 变体清单 + 评分 + SEO 检查 + 详情页模板动作 + 多语言入口），
+> `/admin/products/detail`（点名称进入）**只读**展示「这个商品由什么组成」。
+> 读与写混在一页时，用户分不清「我在看还是在改」，而每个写表单都要带 CSRF、错误回显与回跳地址；
+> ④ **写操作的 PRG 回跳到编辑页**（`productEditLocation`）：详情页只读之后，回详情页等于把用户
+> 丢到一个没有表单的页面上；参数用 `url.Values.Encode()` 生成，测试断言一律解析后比较（不拼字符串前缀）。
 
 > 第二轮（功能归属与筛选形态）见 §7 —— 那一轮的判据对**其余所有页面**同样适用。
 ## 7. 第二轮评审：功能归属与筛选形态

@@ -24,6 +24,12 @@ body {
   max-height: 90vh;
 }
 
+.sky-lightbox-close-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 .sky-lightbox-close {
   position: absolute;
   top: 16px;

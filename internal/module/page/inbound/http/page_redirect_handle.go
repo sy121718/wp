@@ -43,10 +43,10 @@ func (h *Handle) RedirectPage(c *gin.Context) {
 	res, err := h.svc.ListRedirects(c.Request.Context(), &pagedto.RedirectListReq{ProjectID: c.Query("project")})
 	if err != nil {
 		logger.Scene("page").Error(err, "重定向列表读取失败")
-		c.HTML(http.StatusInternalServerError, "admin/page_redirects.html", redirectPageData(c, nil, redirectErrKey(err)))
+		c.HTML(http.StatusInternalServerError, "admin/page/page_redirects.html", redirectPageData(c, nil, redirectErrKey(err)))
 		return
 	}
-	c.HTML(http.StatusOK, "admin/page_redirects.html", redirectPageData(c, res, redirectErrKeyFromCode(c.Query("err"))))
+	c.HTML(http.StatusOK, "admin/page/page_redirects.html", redirectPageData(c, res, redirectErrKeyFromCode(c.Query("err"))))
 }
 
 // RedirectCreate 新增重定向。

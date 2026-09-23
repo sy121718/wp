@@ -80,6 +80,13 @@
   }
 }
 
+/* 箭头图标：基座图标库的 chevron-left / chevron-right。 */
+& .gallery-arrow-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 & .gallery-prev, & .gallery-next {
   position: absolute;
   top: 50%;

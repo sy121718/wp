@@ -25,6 +25,7 @@ import (
 
 	accordionPkg "go_wp/internal/builder/components/accordion"
 	addtocartPkg "go_wp/internal/builder/components/addtocart"
+	articlelistPkg "go_wp/internal/builder/components/articlelist"
 	badgePkg "go_wp/internal/builder/components/badge"
 	breadcrumbPkg "go_wp/internal/builder/components/breadcrumb"
 	buttonPkg "go_wp/internal/builder/components/button"
@@ -87,6 +88,13 @@ type nodeView struct {
 
 	// V 组件 BuildView 预计算的渲染视图数据（模板经 .V.XXX 访问）。
 	V any
+
+	// SlotFrame 结构槽位节点的画布标记层数据（仅编辑器画布，ctx.CanvasSlotFrames）。
+	//
+	// 非空时 layoutslot.jet 会多包一层 div（data-sky-slot / data-sky-slot-ref）：
+	// 画布据此把页眉 / 页脚认成「来自站点结构的只读边界」。发布路径恒为空，
+	// 所以产物字节与「块内容直接写在页面里」仍然逐字节一致（VIS-001）。
+	SlotFrame *SlotFrame
 
 	// --- button / container 拍平字段（Phase 0 样板，向后兼容） ---
 	Tag         string   // 语义标签（a/button/div/section/...）
@@ -179,6 +187,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return productViewOf(node, topLevel, ctx)
 	case productcardPkg.Type:
 		return productCardViewOf(node, topLevel, ctx)
+	case articlelistPkg.Type:
+		return articleListViewOf(node, topLevel, ctx)
 	case productlistPkg.Type:
 		return productListViewOf(node, topLevel, ctx)
 	case productselectorPkg.Type:
@@ -510,7 +520,7 @@ func productViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 		// 而 contentAtomViewOf 只接受 func(*Props, ContentResolver) (View, error)
 		// （与 cardViewOf 同路）。工程取自构建上下文，组件包不感知它从哪来。
 		func(p *productPkg.Props, content core.ContentResolver) (productPkg.View, error) {
-			return productPkg.BuildView(p, content, ctx.ProjectID, ctx.Lang)
+			return productPkg.BuildView(p, content, ctx.ProjectID, ctx.Lang, ctx.ResolveSiteLink)
 		})
 }
 
@@ -688,6 +698,8 @@ func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 
 	classes, customID := advancedClasses(node, &p, ctx)
 	cardstackPkg.CompileCSS(node, &p, len(base.Cards), ctx.CSS)
+	// applyI18n：视图实现了 core.I18nAware，固定文案（含带计数的成品文案）在渲染前回填。
+	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
 
 	return &nodeView{
@@ -755,6 +767,8 @@ func searchResultsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext
 	classes, customID := advancedClasses(node, &p, ctx)
 	searchresultsPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := searchresultsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	// applyI18n：视图实现了 core.I18nAware，固定文案（含带计数的成品文案）在渲染前回填。
+	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     searchresultsPkg.Type,
@@ -783,6 +797,8 @@ func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	orderlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := orderlistPkg.BuildView(&p, ctx.ProjectID, ctx.Lang,
 		ctx.SitePage(core.SiteSlotLogin), ctx.SitePage(core.SiteSlotOrders))
+	// applyI18n：视图实现了 core.I18nAware，固定文案（含带计数的成品文案）在渲染前回填。
+	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     orderlistPkg.Type,
@@ -810,6 +826,8 @@ func userFormsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	classes, customID := advancedClasses(node, &p, ctx)
 	userformsPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := userformsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	// applyI18n：视图实现了 core.I18nAware，固定文案（含带计数的成品文案）在渲染前回填。
+	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     userformsPkg.Type,
@@ -855,6 +873,33 @@ func addToCartViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	}, nil
 }
 
+// articleListViewOf 文章列表视图装配（与 productListViewOf 同形：
+// props 解码 → BuildView → Advanced class/CSS → features 声明）。
+func articleListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	var p articlelistPkg.Props
+	if len(node.Props) > 0 {
+		if err := json.Unmarshal(node.Props, &p); err != nil {
+			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
+		}
+	}
+	view, err := articlelistPkg.BuildView(node, &p, ctx)
+	if err != nil {
+		return nil, err
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	articlelistPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	return &nodeView{
+		Type:     articlelistPkg.Type,
+		Template: "article_list",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
 func productListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p productlistPkg.Props
 	if len(node.Props) > 0 {
@@ -868,6 +913,11 @@ func productListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) 
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	productlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	// applyI18n 必须在 BuildView 之后、渲染之前：分页的「第 N 页」文案（PageText）
+	// 与筛选栏全部固定文案都只在这里回填。漏掉它的表现极具欺骗性 ——
+	// 页面照常渲染、筛选栏照常显示（BuildView 里落了中文兜底 Labels），
+	// **只有页码文本是空的**，而且语言切换对它完全无效。
+	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
 	return &nodeView{
 		Type:     productlistPkg.Type,
@@ -1343,11 +1393,20 @@ func blockRefViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext, ref
 	}
 	ctx.BlockStack = ctx.BlockStack[:len(ctx.BlockStack)-1]
 
-	return &nodeView{
+	frame := &nodeView{
 		Type: refType, Template: template, NodeID: node.ID,
 		Classes: core.NodeClass(node.ID), TopLevel: topLevel,
 		Children: children, V: view,
-	}, nil
+	}
+	// 编辑器画布：给结构槽位挂上标记层数据（发布路径 ctx.CanvasSlotFrames 恒为 false，
+	// 所以这一段在产物里不产生任何字节）。只对槽位生效 —— 页面里手插的 core.globalref
+	// 是作者自己的节点，它在 AST 里可选可编辑，不需要也不该有这层边界。
+	if slot != "" && ctx.CanvasSlotFrames {
+		frame.SlotFrame = &SlotFrame{
+			Slot: slot, Ref: blockID, RefKind: SlotRefKind(blockID), NodeID: node.ID,
+		}
+	}
+	return frame, nil
 }
 
 // renderNavPanels 为带悬浮面板的菜单项展开面板块内容（超级菜单，迁移 285）。

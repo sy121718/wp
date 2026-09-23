@@ -8,6 +8,7 @@ package productlist
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,14 @@ type CardView struct {
 	Price           string
 	HasComparePrice bool
 	ComparePrice    string
+
+	// HasDiscount / DiscountPercent 折扣角标（如 "-13%"）。
+	//
+	// 源站的商品卡在图左上角压一个蓝色折扣胶囊，是列表页最显眼的视觉元素。
+	// 算法与 core.product 的详情角标同源（**同一套口径**：只在划线价严格大于现价时
+	// 才算、向下取整），两处各算一套迟早出现「卡片说 -13%、详情说 -12%」。
+	HasDiscount     bool
+	DiscountPercent string
 
 	Tags []string
 }
@@ -115,6 +124,16 @@ type View struct {
 	// PrevLink / NextLink 上下页控件（含降级链接 / 片段请求 / 推送 URL）。
 	PrevLink ControlOption
 	NextLink ControlOption
+	// TotalPages 总页数（分页源给不出总量时为 0 —— 那时只有上下页，没有页码可算）。
+	TotalPages int
+	// PageItems 页码按钮（含当前页高亮）；窗口化，首末恒在。
+	//
+	// 为什么要有它：此前分页只有「上一页 / 第 N 页 / 下一页」—— 第 N 页还是个纯文本的
+	// 当前位置提示，**一个可点的页码都没有**。97 个商品 9 页时，用户只能一页页点「下一页」，
+	// 去第 7 页要按 6 次。
+	PageItems []ControlOption
+	// Gaps 页码之间的省略号位置（与 PageItems 同长，true 表示该项之前有省略）。
+	Gaps []bool
 
 	// FragmentQuery 构建期拼好的实例配置（片段请求的固定部分，不进 URL）。
 	FragmentQuery string
@@ -131,13 +150,29 @@ type View struct {
 	ListPageLinkText string
 }
 
-// collectionFilterOptionsProvider 能力探测：上下文里的集合解析器能否给出可选筛选项。
+// collectionFilterOptionsProvider 能力探测：上下文里的数据源能否给出可选筛选项。
+//
+// 两个字段都要探测，且顺序与 BuildView 取数据同源（issue #35：专用组件优先用
+// **业务侧声明的受限数据源** ctx.Product，未注入时才退回通用集合注册表 ctx.Collection）。
+//
+// 只测 ctx.Collection 会漏掉片段渲染路径 —— 片段装配恰恰**只注入 Product**，
+// 于是能力探测为假、筛选栏整块不渲染。表现极具迷惑性：产物里首次渲染有筛选栏，
+// 点一下筛选之后就永久消失（片段换回来的列表没有它），用户看到「越操作越少」。
 func collectionFilterOptionsProvider(ctx *core.RenderContext) (core.CollectionFilterOptionsProvider, bool) {
-	if ctx == nil || ctx.Collection == nil {
+	if ctx == nil {
 		return nil, false
 	}
-	provider, ok := ctx.Collection.(core.CollectionFilterOptionsProvider)
-	return provider, ok
+	if ctx.Product != nil {
+		if provider, ok := ctx.Product.(core.CollectionFilterOptionsProvider); ok {
+			return provider, true
+		}
+	}
+	if ctx.Collection != nil {
+		if provider, ok := ctx.Collection.(core.CollectionFilterOptionsProvider); ok {
+			return provider, true
+		}
+	}
+	return nil, false
 }
 
 // toolbarWanted 工具条是否勾选了某项。
@@ -284,6 +319,14 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			view.NextPage = page + 1
 			view.NextLink = controlOption(lc, "下一页", false, pageOverride(view.NextPage))
 		}
+		// 页码：只有分页源给得出总量时才有意义。
+		//
+		// 退化路径（源不支持分页能力、总量为 0）**不输出页码** —— 猜一个总数会让
+		// 「第 9 页」点进去是空的，比没有页码更糟。那种情况保留上下页即可。
+		if total > 0 {
+			view.TotalPages = (total + pageSize - 1) / pageSize
+			view.PageItems, view.Gaps = pageItems(lc, page, view.TotalPages)
+		}
 	}
 	for _, item := range items {
 		view.Cards = append(view.Cards, cardViewOf(p, item, ctx.ResolveSiteLink))
@@ -333,6 +376,9 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 func cardViewOf(p *Props, item map[string]any, siteLink func(string) string) CardView {
 	view := CardView{TitleTag: effectiveTitleTag(p)}
 	var rawImageAlt, rawTitle string
+	// 折扣角标要的是**纯数值**，而 view.Price / view.ComparePrice 都带货币符号 ——
+	// 先收原始文本，循环结束后再算（两个槽位的先后顺序也不保证）。
+	var rawPrice, rawCompare string
 	for _, s := range p.slotFields() {
 		value := strings.TrimSpace(itemField(item, s.Field))
 		if value == "" {
@@ -349,9 +395,11 @@ func cardViewOf(p *Props, item map[string]any, siteLink func(string) string) Car
 			view.HasTitle, view.Title = true, value
 			rawTitle = value
 		case slotPrice:
-			view.HasPrice, view.Price = true, effectiveCurrency(p)+value
+			rawPrice = value
+			view.HasPrice, view.Price = true, productcard.FormatPrice(effectiveCurrency(p), value)
 		case slotComparePrice:
-			view.HasComparePrice, view.ComparePrice = true, effectiveCurrency(p)+value
+			rawCompare = value
+			view.HasComparePrice, view.ComparePrice = true, productcard.FormatPrice(effectiveCurrency(p), value)
 		case slotTags:
 			view.Tags = productcard.ParseTagNames(value)
 		case slotLink:
@@ -365,6 +413,11 @@ func cardViewOf(p *Props, item map[string]any, siteLink func(string) string) Car
 		if view.ImageAlt == "" {
 			view.ImageAlt = rawTitle
 		}
+	}
+	// 折扣角标：与详情页同源算法（productcard.DiscountPercent），
+	// 两处各写一套迟早出现「卡片说 -13%、详情说 -12%」。
+	if percent := productcard.DiscountPercent(rawPrice, rawCompare); percent > 0 {
+		view.HasDiscount, view.DiscountPercent = true, "-"+strconv.Itoa(percent)+"%"
 	}
 	return view
 }
@@ -509,5 +562,8 @@ func resolveProductsPage(ctx *core.RenderContext, source string, filter map[stri
 // 片段属性（product_list.jet 第一行）—— 包括空态：容器必须先渲染出来，HTMX 就位后才能按
 // URL 上的查询参数把结果 load 进来。这也是「列表页首屏零数据查询」得以成立的地方。
 func (v View) DeclareFeatures() (attrs, classes []string) {
-	return []string{"hx-get", "hx-vals", "hx-trigger", "hx-target", "hx-swap"}, nil
+	// 不再声明 hx-vals：产物的列表容器已经不用它了（那段 js: 表达式在 htmx 的
+	// 求值规则下是语法错误，见 product_list.jet）。声明了产物里没有的属性会被
+	// ui_feature_crosscheck 抓住 —— 上报条件与模板输出分叉，会误导性能与缓存分析。
+	return []string{"hx-get", "hx-trigger", "hx-target", "hx-swap"}, nil
 }

@@ -63,6 +63,9 @@ export const shortcutsMethods = {
                 window.addEventListener('message', function (ev) {
                     if (ev.origin !== window.location.origin || !ev.data) return;
                     if (ev.data.type === 'wb-select' && ev.data.id) { self.select(ev.data.id); return; }
+                    // 结构槽位（页眉 / 页脚）：桥接层把「点到了槽位区域」单独上报，
+                    // 它没有对应的 AST 节点，走 select() 只会得到一次查不到的静默失败。
+                    if (ev.data.type === 'wb-slot-select') { self.selectSlotFrame(ev.data); return; }
                     if (ev.data.type === 'wb-insert-here' && ev.data.id) {
                         // 画布「+ 插入组件」浮标：目标是容器则插入其内部，否则插到其后。
                         var node = self.findNode(ev.data.id);

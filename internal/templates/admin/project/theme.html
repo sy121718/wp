@@ -1,0 +1,145 @@
+{* admin/theme.html — 主题管理：站点前端主题（多套并存，单套激活，页面挂接主题）
+   列表页标准骨架（评审规则 admin-ui-logic §7）：
+     · 页头一行：标题 + ? 悬浮说明；右侧工程选择、系统页面槽位入口与主行动同行；
+     · 正文零说明文字（原「说明」卡整段进 .help）、零只承载一个按钮的卡片；
+     · 列表是标准表格 + 右侧操作列，行内表单放表格外（form 不能嵌套）。 *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录。
+   文案走 t(key, 中文兜底)：range 内取词先用块顶变量 tr，避免依赖 range 的上下文行为。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+<div class="stack">
+    {* 「还没有工程」空态由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有装载失败）。
+       为什么不在这里写 `len(.Projects) == 0 && .Err == ""`：模板是磁盘热读文件，而 Go 侧改动要等
+       air 重编译，两边会短暂不同步 —— 缺键直接参与判断会让**整页中断**（HTTP 200 + 后面整块 HTML 消失）。
+       可选键一律 isset 包裹，是 internal/templates/CLAUDE.md 的硬约定。 *}
+    {{if isset(.NoProjectEmpty) && .NoProjectEmpty}}
+    <section class="card card-body">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.theme.no_project", "请先在「页面」里创建一个站点工程，再管理主题。") }}</p>
+        </div>
+    </section>
+    {{else}}
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.theme.heading", "主题管理") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.theme.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.theme.notes", "主题 = 站点前端项目（全局颜色/字体/页眉页脚引用），一次一套激活；页面挂在主题下。切换激活主题即整站前端换皮，页面内容不动。「设置」里编辑颜色与字体，保存后合入该主题下全部页面，构建产物注入 :root CSS 变量——已发布页面需重新构建才会带新主题。") }}<br><br>{{ .["t"]("admin.theme.site_slots_hint", "系统页面槽位（结算页 / 购物车页等绑定哪个页面）已并入本页：") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/themes">
+                <label class="sr-only" for="themes-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="themes-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            <a class="btn" href="/admin/site-slots">{{ .["t"]("admin.theme.site_slots_link", "系统页面槽位") }}</a>
+            {* 新建走右侧抽屉：表单本体在页面底部的 <template>（layout 提供抽屉外壳、drawer.js 克隆内容）。
+               注意 hx-headers 只对 htmx 请求生效，原生表单必须自带 csrf_token 隐藏域。 *}
+            {{if isset(.PermSet["project:theme_create"])}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
+            {{end}}
+        </div>
+    </header>
+
+    {* 失败提示条：写操作（新建 / 激活 / 删除）失败后 303 回到本页并带 ?err=，
+       或本页装载失败时由 handler 直接给 —— 两种情况读侧都已过白名单（手拼的 ?err= 落空串）。
+       放在页头之后、列表之前：用户一眼看到「刚才那一下为什么没成」，列表本身照常可读。 *}
+    {{if isset(.Err) && .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}
+
+    <section class="card list-card">
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.theme.table_aria", "主题列表") }}">
+            <table class="data-table">
+                <thead>
+                <tr><th>{{ .["t"]("admin.theme.col.name", "名称") }}</th><th>{{ .["t"]("admin.theme.col.status", "状态") }}</th><th>{{ .["t"]("admin.theme.col.created_at", "创建时间") }}</th><th>{{ .["t"]("admin.theme.col.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.theme.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 5：
+                   名称 / 状态 / 创建时间 / 更新时间 / 操作）。 *}
+                {{if len(.Themes) == 0}}
+                <tr><td colspan="5" class="cell-wrap">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.theme.empty", "还没有主题，用上方表单创建第一个（首个主题自动激活）。") }}</p>
+            {{if isset(.PermSet["project:theme_create"])}}
+            <div class="empty-actions">
+                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
+            </div>
+            {{end}}
+        </div>
+                </td></tr>
+                {{else}}
+                {{range _, t := .Themes}}
+                <tr>
+                    <td><strong>{{t.Name}}</strong></td>
+                    <td>
+                        {{if t.IsActive}}
+                        <span class="badge badge-success">{{tr("admin.theme.status.active", "激活中") }}</span>
+                        {{else}}<span class="badge badge-mute">{{tr("admin.theme.status.inactive", "未激活") }}</span>{{end}}
+                    </td>
+                    <td class="text-mute text-sm">{{t.CreatedAt}}</td>
+                    <td class="text-mute text-sm">{{t.UpdatedAt}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/admin/themes/settings?id={{t.ID}}">{{tr("admin.theme.action.settings", "设置") }}</a>
+                        {{if !t.IsActive}}
+                        <button type="submit" form="theme-act-{{t.ID}}" class="btn btn-sm">{{tr("admin.theme.action.activate", "激活") }}</button>
+                        <button type="submit" form="theme-del-{{t.ID}}" class="btn btn-sm btn-danger">{{tr("admin.theme.action.delete", "删除") }}</button>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {* 行内表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套在 <td> 里）。 *}
+    {{range _, t := .Themes}}
+    {{if !t.IsActive}}
+    <form id="theme-act-{{t.ID}}" method="post" action="/admin/themes/activate" class="hidden-form">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{t.ID}}">
+        <input type="hidden" name="projectId" value="{{t.ProjectID}}">
+    </form>
+    <form id="theme-del-{{t.ID}}" method="post" action="/admin/themes/delete" class="hidden-form"
+          data-confirm="{{tr("admin.theme.confirm_delete_prefix", "确定删除主题「")}}{{t.Name|safeJs}}{{tr("admin.theme.confirm_delete_suffix", "」？") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{t.ID}}">
+        <input type="hidden" name="projectId" value="{{t.ProjectID}}">
+    </form>
+    {{end}}
+    {{end}}
+    {{end}}
+    {{if isset(.PermSet["project:theme_create"])}}
+    {* 抽屉表单：字段容器用通用的 .form-row（等宽自动列数 + 窄屏堆叠），不写页面级 CSS。 *}
+    <template id="tpl-theme-create">
+        <form method="post" action="/admin/themes/create">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label req">{{ .["t"]("admin.theme.name_label", "主题名称") }}</label>
+                    <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.theme.name_placeholder", "主题名称，如：春季促销版") }}" required>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+</div>
+{{end}}

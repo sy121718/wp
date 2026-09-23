@@ -1,0 +1,361 @@
+{* admin/returns.html — 退货入库（RMA）：状态计数 / 筛选 / 列表 / 详情 / 审核（BIZ-1 销售侧） *}
+{* 流程只有一条：客户申请 → 审核 → **先入库、后退款**（入库成功之后才会退款）。 *}
+{* 版式遵循 theme.css「后台页壳」段（admin 页面设计评审，见 docs/02-H-admin-page-shell.md）：
+     · 流程与状态两段说明收进页头 .help，「状态与筛选」不再独占一张卡而是并入列表卡的 .filter-bar；
+     · 详情里那几串「标签 · 值 · 值」改成 .kv 网格 —— 原来三段 <p class="hint"> 横向读到断行；
+     · 列表进 .table-scroll（表头吸顶 + 高度封顶），空数据改 .empty-state（含可点的主行动）；
+     · 详情卡排在列表之前：展开某一单时，用户要做的事（审核 / 收货 / 补退款）就在眼前，
+       不必先滚过整张列表。 *}
+{* Jet 方言：extends 相对本目录；range 用 range 关键字；map 用 ["key"] 索引；range 内访问外层值先存变量；条件里 or 不支持（用 ||）。 *}
+{* 无 JS 也能用：列表与详情都是普通 GET 链接（同一页面靠 returnId 参数展开）， *}
+{* 三个写操作都是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。
+   状态维度只有徽章一种入口（不再配同维度下拉）：徽章本身就是筛选链接，信息与操作合一。
+   列表首列勾选 + 批量条（批量同意 / 批量拒绝）是列表级动作，处理的是「一批申请」，
+   所以不进详情区；结论按「成功 N 个 / 跳过 M 个」经 ?done= 回带。
+   批量同意**不自动入库**：autoReceive 会一步做完「同意 → 入库 → 退款」，那不是批量动作该承担的确认强度。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
+{{selectedProject := .SelectedProject}}
+{{rows := .Rows}}
+{{detail := .Detail}}
+{{statuses := .Statuses}}
+{{warehouses := .Warehouses}}
+<div class="stack returns-page">
+    {* 页头：标题 + 流程说明；工程切换是上下文选择器，不是表单字段。 *}
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.returns.heading", "退货入库") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.returns.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.returns.hint.flow.lead", "流程只有一条：") }}<strong>{{ .["t"]("admin.returns.hint.flow.strong_path", "客户提交退货申请 → 管理员审核 → 先入库、后退款") }}</strong>{{ .["t"]("admin.returns.hint.flow.mid", "。「入库」是把货加回库存（原因字典里的退货入库），") }}<strong>{{ .["t"]("admin.returns.hint.flow.strong_refund_after", "入库成功之后系统才会退款") }}</strong>{{ .["t"]("admin.returns.hint.flow.mid2", "。顺序不能反 —— 反过来就是「钱退了、货没回来」，这是退货流程最容易被薅的地方，所以这个页面") }}<strong>{{ .["t"]("admin.returns.hint.flow.strong_no_refund_only", "没有「只退款」的按钮") }}</strong>{{ .["t"]("admin.returns.hint.flow.tail", "。") }}<br><br>{{ .["t"]("admin.returns.hint.status.lead", "状态：待审核 → 已同意待收货 → 已入库待退款 → 已完成；已拒绝 / 已撤销是终态。现实里货往往早就到了（客户先联系客服、客服再走系统），所以「同意」时可以勾选") }}<strong>{{ .["t"]("admin.returns.hint.status.strong_auto", "同意并立即完成入库 + 退款") }}</strong>{{ .["t"]("admin.returns.hint.status.tail", "（一步到底）。「已入库待退款」是退款那一步没做完（通道抖动 / 网络断了）留下的状态，补退款即可，不会重复入库。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/returns">
+                <label class="sr-only" for="returns-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="returns-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err) && .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.returns.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+    {{if .PendingHint != ""}}
+    <p class="badge badge-warning" role="status"><strong>{{.PendingHint}}</strong></p>
+    {{end}}
+
+    {* ===== 详情（returnId 展开时）：审核是这个页面的主职能，放在列表之前 ===== *}
+    {{if .HasDetail}}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.returns.detail.heading", "退货单详情") }} <code>{{detail.Head.ReturnNo}}</code> <span class="badge {{detail.Head.Badge}}">{{detail.Head.StatusLabel}}</span></h2>
+        <dl class="kv">
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.order", "订单") }}</dt><dd><a href="{{detail.Head.OrderURL}}"><code>{{detail.Head.OrderNo}}</code></a></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.customer", "客户") }}</dt><dd>{{detail.Head.CustomerName}} · {{detail.Head.CustomerEmail}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.created_at", "申请时间") }}</dt><dd>{{detail.Head.CreatedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.reason", "退货原因") }}</dt><dd>{{detail.Head.Reason}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.reviewer", "审核人") }}</dt><dd>{{detail.Head.ReviewerName}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.reviewed_at", "审核时间") }}</dt><dd>{{detail.Head.ReviewedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.received_at", "入库时间") }}</dt><dd>{{detail.Head.ReceivedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.refunded_at", "退款时间") }}</dt><dd>{{detail.Head.RefundedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.refund_total", "退款合计") }}</dt><dd><strong>{{detail.Head.RefundLabel}}</strong></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.txn", "退款流水号") }}</dt><dd>{{detail.Head.TransactionID}}</dd></div>
+            <div class="kv-item kv-item--wide"><dt>{{ .["t"]("admin.returns.detail.admin_note", "审核意见") }}</dt><dd>{{detail.Head.AdminNote}}</dd></div>
+        </dl>
+
+        <h3>{{ .["t"]("admin.returns.items.heading", "退货明细") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.returns.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.returns.items.returnable_hint.lead", "「可退数量」= 该订单项") }}<strong>{{ .["t"]("admin.returns.items.returnable_hint.strong", "还能退多少") }}</strong>{{ .["t"]("admin.returns.items.returnable_hint.tail", "（购买数量减去其它未撤销申请已占用的数量）—— 它回答的是「这一单还能不能再收一件退货」，不是本次申请的数量。") }}</span>
+            </span>
+        </h3>
+        {{if len(detail.Items) == 0}}
+        <p class="hint">{{ .["t"]("admin.returns.items.empty", "这张退货单没有明细行 —— 正常提交不会出现这种情况，请人工核查。") }}</p>
+        {{else}}
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead>
+            <tr><th>{{ .["t"]("admin.returns.col.product", "商品") }}</th><th>{{ .["t"]("admin.returns.col.variant", "规格") }}</th><th>SKU</th><th>{{ .["t"]("admin.returns.col.unit_price", "单价") }}</th><th>{{ .["t"]("admin.returns.col.quantity", "申请数量") }}</th><th>{{ .["t"]("admin.returns.col.received_quantity", "已入库数量") }}</th><th>{{ .["t"]("admin.returns.col.line_refund", "行退款额") }}</th><th>{{ .["t"]("admin.returns.col.returnable", "可退数量") }}</th></tr>
+            </thead>
+            <tbody>
+            {{range _, it := detail.Items}}
+            <tr>
+                <td data-label="{{tr("admin.returns.col.product", "商品")}}">{{it.ProductName}}</td>
+                <td data-label="{{tr("admin.returns.col.variant", "规格")}}">{{it.VariantLabel}}</td>
+                <td data-label="SKU"><code>{{it.SKU}}</code></td>
+                <td data-label="{{tr("admin.returns.col.unit_price", "单价")}}">{{it.UnitPriceLabel}}</td>
+                <td data-label="{{tr("admin.returns.col.quantity", "申请数量")}}">{{it.Quantity}}</td>
+                <td data-label="{{tr("admin.returns.col.received_quantity", "已入库数量")}}">{{it.ReceivedQuantity}}</td>
+                <td data-label="{{tr("admin.returns.col.line_refund", "行退款额")}}">{{it.RefundLabel}}</td>
+                <td data-label="{{tr("admin.returns.col.returnable", "可退数量")}}">{{it.Returnable}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{end}}
+
+        <h3>{{ .["t"]("admin.returns.order_summary.heading", "订单摘要") }}</h3>
+        {{if detail.HasOrder}}
+        <dl class="kv">
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.detail.order", "订单") }}</dt><dd><strong>{{detail.Order.OrderNo}}</strong> <span class="badge {{detail.Order.Badge}}">{{detail.Order.StatusLabel}}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.order_summary.total", "订单总额") }}</dt><dd>{{detail.Order.TotalLabel}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.order_summary.created_at", "下单时间") }}</dt><dd>{{detail.Order.CreatedAt}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.order_summary.customer", "客户") }}</dt><dd>{{detail.Order.CustomerName}} · {{detail.Order.CustomerEmail}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.returns.order_summary.ship_to", "收货人") }}</dt><dd>{{detail.Order.ShipName}} {{detail.Order.ShipPhone}}</dd></div>
+            {{if detail.Order.ShipAddress}}
+            <div class="kv-item kv-item--wide"><dt>{{ .["t"]("admin.returns.order_summary.ship_address", "收货地址") }}</dt><dd>{{detail.Order.ShipAddress}}</dd></div>
+            {{end}}
+        </dl>
+        {{else}}
+        <p class="hint">{{ .["t"]("admin.returns.order_summary.missing", "取不到订单摘要（订单可能已被删除）—— 审核前请人工核对，不要凭这一屏就放行。") }}</p>
+        {{end}}
+
+        <h3>{{ .["t"]("admin.returns.actions.heading", "操作") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.returns.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                {* 当前状态的说明（「这一单现在该做什么 / 为什么没有按钮」）收进悬浮：
+                   它是操作指引、不是数据，平铺在正文里对已经会用的人是每次访问都付的噪声，
+                   也把真正的操作表单往下推。文案源在 returnStatusNote（key + 中文兜底）。 *}
+                <span class="help-pop" role="tooltip">{{if isset(detail.NoteKey) && detail.NoteKey != ""}}{{ .["t"](detail.NoteKey, detail.Note) }}<br><br>{{end}}{{ .["t"]("admin.returns.auto_receive", "同意并立即完成入库 + 退款（autoReceive）—— 货已经在仓库里、不用再等物流时勾这个") }}<br><br>{{ .["t"]("admin.returns.retry_refund.hint.lead", "货已经入库了，缺的是退款那一步。这个按钮走的是") }}<strong>{{ .["t"]("admin.returns.retry_refund.hint.strong", "同一个入口") }}</strong>{{ .["t"]("admin.returns.retry_refund.hint.tail", "：服务端会识别出入库已完成，只补做退款（幂等，不会重复加库存）。") }}</span>
+            </span>
+        </h3>
+
+        {{if detail.CanApprove}}
+        <form method="post" action="/admin/returns/approve" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.returns.ph.review_remark", "审核意见（可选，客户可见）") }}" autocomplete="off">
+                <select class="form-select" name="warehouseId" aria-label="{{ .["t"]("admin.returns.warehouse.default", "入库仓库（默认仓）") }}">
+                    <option value="">{{ .["t"]("admin.returns.warehouse.default", "入库仓库（默认仓）") }}</option>
+                    {{range _, w := warehouses}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" class="form-input" name="transactionId" placeholder="{{ .["t"]("admin.returns.ph.txn_optional", "退款流水号（可选，留空则沿用原流水号）") }}" autocomplete="off">
+            </div>
+            <label class="hint">
+                <input type="checkbox" name="autoReceive" value="1">
+                {{ .["t"]("admin.returns.auto_receive.short", "同意并立即完成入库 + 退款") }}
+            </label>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.returns.action.approve", "同意退货") }}</button>
+            </div>
+        </form>
+        <form method="post" action="/admin/returns/reject" class="form-inline">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.returns.ph.reject_remark", "拒绝原因（必填，客户要知道为什么）") }}" required autocomplete="off">
+            <button type="submit" class="btn btn-sm">{{ .["t"]("admin.returns.action.reject", "拒绝申请") }}</button>
+        </form>
+        {{end}}
+
+        {{if detail.CanReceive}}
+        <form method="post" action="/admin/returns/receive" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <div class="form-inline">
+                <select class="form-select" name="warehouseId" aria-label="{{ .["t"]("admin.returns.warehouse.default", "入库仓库（默认仓）") }}">
+                    <option value="">{{ .["t"]("admin.returns.warehouse.default", "入库仓库（默认仓）") }}</option>
+                    {{range _, w := warehouses}}
+                    <option value="{{w.ID}}">{{w.Label}}</option>
+                    {{end}}
+                </select>
+                <input type="text" class="form-input" name="transactionId" placeholder="{{ .["t"]("admin.returns.ph.txn_optional", "退款流水号（可选，留空则沿用原流水号）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.returns.ph.remark_optional", "备注（可选，如「外箱破损已拍照」）") }}" autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.returns.action.receive", "确认收货并退货（先入库、后退款）") }}</button>
+            </div>
+        </form>
+        {{end}}
+
+        {{if detail.CanRetryRefund}}
+        <form method="post" action="/admin/returns/receive" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{detail.Form.Project}}">
+            <input type="hidden" name="returnId" value="{{detail.Form.ReturnID}}">
+            <input type="hidden" name="orderId" value="{{detail.Form.OrderID}}">
+            <input type="hidden" name="status" value="{{detail.Form.Status}}">
+            <input type="hidden" name="keyword" value="{{detail.Form.Keyword}}">
+            <input type="hidden" name="page" value="{{detail.Form.Page}}">
+            <input type="hidden" name="limit" value="{{detail.Form.Limit}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="transactionId" placeholder="{{ .["t"]("admin.returns.ph.txn_optional", "退款流水号（可选，留空则沿用原流水号）") }}" autocomplete="off">
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.returns.ph.remark_short", "备注（可选）") }}" autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.returns.action.retry_refund", "补退款") }}</button>
+            </div>
+        </form>
+        {{end}}
+    </section>
+    {{end}}
+
+    {* ===== 主区：状态计数 + 条件筛选（工具行）+ 列表，同一张卡 ===== *}
+    <section class="card list-card">
+        <div class="filter-bar">
+            {* 状态维度只有这一种入口：徽章本身就是筛选链接（信息与操作合一），同维度的下拉已删除。
+               选中项用 ✓ 前缀 + is-active 做形态区分（不只靠颜色深浅），并对读屏标注 aria-current；
+               计数为 0 的徽章照样可点（点进去看到空态是合理预期），不禁用。
+               链接由 handler 生成，保留关键词 / 订单筛选等其它条件。 *}
+            <div class="filter-row">
+                {{range _, s := statuses}}
+                <a class="badge {{s.Badge}}{{if s.Active}} is-active{{end}}" href="{{s.URL}}" {{if s.Active}}aria-current="page"{{end}}>{{if s.Active}}✓ {{end}}{{s.Label}} {{if s.Highlight}}<strong>{{s.Count}}</strong>{{else}}{{s.Count}}{{end}}</a>
+                {{end}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.returns.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.returns.filter.hint.lead", "点下面的状态即按该状态筛选（再点「全部」清掉）。计数回答的是「各状态各有多少单」，不受下面的筛选影响；") }}<strong>{{ .["t"]("admin.returns.filter.hint.strong", "加粗的数字") }}</strong>{{ .["t"]("admin.returns.filter.hint.tail", "（待审核 / 待退款）是有人在等着处理的。") }}</span>
+                </span>
+            </div>
+            <form method="get" action="/admin/returns" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                {{if .FilterOrderID != ""}}
+                <input type="hidden" name="orderId" value="{{.FilterOrderID}}">
+                {{end}}
+                {* 状态维度已由上面的徽章表达，这里只把它原样带回：条件筛选（关键词 / 订单）
+                   提交时若丢掉 status，点了「筛选」就会被弹回全部状态。 *}
+                <input type="hidden" name="status" value="{{.FilterStatus}}">
+                <div class="filter-field">
+                    <label for="returns-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="returns-filter-keyword" name="keyword" value="{{.FilterKeyword}}" placeholder="{{ .["t"]("admin.returns.ph.keyword_short", "退货单号 / 订单号 / 客户邮箱") }}" autocomplete="off">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.returns.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/returns?project={{selectedProject}}">{{ .["t"]("admin.returns.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+        </div>
+
+        {{if .FilterOrderID != ""}}
+        <p class="hint">
+            {{ .["t"]("admin.returns.order_filter.lead", "正在筛选订单") }} <strong>{{ .["t"]("admin.returns.order_filter.strong_id", "ID ") }}{{.FilterOrderID}}</strong>{{ .["t"]("admin.returns.order_filter.mid", " 的退货申请 —— 列表为空通常就是这个筛选在起作用（这个订单没有退货申请，或申请不在当前状态筛选里）。") }}
+            <a href="{{.ClearOrderURL}}">{{ .["t"]("admin.returns.order_filter.clear", "清除该筛选") }}</a>
+        </p>
+        {{end}}
+
+        {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
+           空态整行落在 tbody 里（colspan = 8：勾选 / 退货单号 / 订单号 / 客户 / 状态 /
+           退款金额 / 申请时间 / 操作）。 *}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
+           提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
+           批量拒绝用 formaction 打到另一个端点 —— 一个 form 只有一个 action，而两个动作
+           要分别走 /bulk-approve 与 /bulk-reject。备注框共用：同意时可留空，拒绝时是必填理由。 *}
+        <form method="post" action="/admin/returns/bulk-approve">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <input type="hidden" name="status" value="{{.FilterStatus}}">
+            <input type="hidden" name="keyword" value="{{.FilterKeyword}}">
+            {{if .FilterOrderID != ""}}
+            <input type="hidden" name="orderId" value="{{.FilterOrderID}}">
+            {{end}}
+            <input type="hidden" name="page" value="{{.Page}}">
+            <input type="hidden" name="limit" value="{{.Limit}}">
+            {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
+            {{if len(rows) > 0}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{ .["t"]("admin.returns.ph.bulk_remark", "备注（同意时可选；批量拒绝时作为拒绝理由，必填）") }}">
+                {{yield bulkBtn(label=tr("admin.returns.bulk.approve", "批量同意"), cls="btn btn-sm btn-primary")}}
+                {{yield bulkBtn(label=tr("admin.returns.bulk.reject", "批量拒绝"), confirm=tr("admin.returns.bulkRejectConfirm", "拒绝选中的退货申请？客户会看到拒绝结果，拒绝理由请先填在备注框里。"), danger=true, formaction="/admin/returns/bulk-reject")}}
+            {{yield bulkBarClose()}}
+            {{end}}
+            <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table data-table-wide">
+            <thead>
+            <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.returns.col.return_no", "退货单号") }}</th><th>{{ .["t"]("admin.returns.col.order_no", "订单号") }}</th><th>{{ .["t"]("admin.returns.col.customer", "客户") }}</th><th>{{ .["t"]("admin.returns.col.status", "状态") }}</th><th>{{ .["t"]("admin.returns.col.refund_amount", "退款金额") }}</th><th>{{ .["t"]("admin.returns.col.created_at", "申请时间") }}</th><th class="col-actions">{{ .["t"]("admin.returns.col.actions", "操作") }}</th></tr>
+            </thead>
+            <tbody>
+            {{if len(rows) == 0}}
+            <tr><td colspan="8" class="cell-wrap">
+        {{if isset(.LoadFailed) && .LoadFailed}}
+        {* 装载失败的空态与「还没有退货申请」严格分开（判据由 handler 算好的 LoadFailed 给出）：
+           这一次连工程列表都没读出来，再说「还没有站点工程」会把人引到「去建一个工程」，
+           而真正的原因在页顶那条提示里。 *}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+        </div>
+        {{else if len(.Projects) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.returns.list.empty_no_project", "还没有站点工程") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.returns.no_project.lead", "还没有站点工程 —— 退货申请是挂在工程下的，先去") }}{{ .["t"]("admin.returns.no_project.link", "页面管理") }}{{ .["t"]("admin.returns.no_project.tail", "建一个工程。") }}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.returns.no_project.link", "页面管理") }}</a></div>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <p class="empty-title">{{if selectedProject}}{{ .["t"]("admin.returns.list.empty_project", "这个工程还没有退货申请") }}{{else}}{{ .["t"]("admin.returns.list.empty_no_project", "还没有站点工程") }}{{end}}</p>
+            <p class="empty-desc">{{ .["t"]("admin.returns.list.empty_tail", "客户在订单里提交退货申请后就会出现在这里。") }}
+            {{if .FilterOrderID != ""}}{{ .["t"]("admin.returns.list.order_filter_lead", "当前还带着订单筛选（订单 ID") }} {{.FilterOrderID}}{{ .["t"]("admin.returns.list.order_filter_mid", "），") }}{{end}}
+            {{if .FilterStatus != ""}}{{ .["t"]("admin.returns.list.status_filter_lead", "当前还带着状态筛选「") }}{{.FilterLabel}}{{ .["t"]("admin.returns.list.status_filter_tail", "」—— 点上面的「全部」可以清掉。") }}{{end}}</p>
+            {{if .FilterOrderID != ""}}
+            <div class="empty-actions"><a class="btn" href="{{.ClearOrderURL}}">{{ .["t"]("admin.returns.list.order_filter_clear", "清掉它") }}</a></div>
+            {{end}}
+        </div>
+        {{end}}
+            </td></tr>
+            {{else}}
+            {{range _, r := rows}}
+            <tr>
+                <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
+                <td data-label="{{tr("admin.returns.col.return_no", "退货单号")}}"><a class="row-title-link" href="{{r.DetailURL}}"><code>{{r.ReturnNo}}</code></a></td>
+                <td data-label="{{tr("admin.returns.col.order_no", "订单号")}}"><code>{{r.OrderNo}}</code></td>
+                <td data-label="{{tr("admin.returns.col.customer", "客户")}}">{{r.CustomerName}} <span class="hint">{{r.CustomerEmail}}</span></td>
+                <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>
+                <td data-label="{{tr("admin.returns.col.refund_amount", "退款金额")}}"><strong>{{r.RefundLabel}}</strong></td>
+                <td data-label="{{tr("admin.returns.col.created_at", "申请时间")}}">{{r.CreatedAt}}</td>
+                <td data-label="{{tr("admin.returns.col.actions", "操作")}}" class="col-actions">
+                    {{if r.Expanded}}
+                    <a class="btn btn-sm" href="{{r.DetailURL}}">{{tr("admin.returns.action.collapse", "收起详情")}}</a>
+                    {{else}}
+                    <a class="btn btn-sm" href="{{r.DetailURL}}">{{tr("admin.returns.action.view", "查看 / 审核")}}</a>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        </form>
+        {{include "../partials/pagination.html"}}
+    </section>
+</div>
+{{end}}

@@ -29,6 +29,12 @@ body {
   flex: 0 0 50.000%;
 }
 
+.sky-c-ga2 .gallery-arrow-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 .sky-c-ga2 .gallery-prev, .sky-c-ga2 .gallery-next {
   position: absolute;
   top: 50%;

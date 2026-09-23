@@ -128,6 +128,10 @@ var brandOrder = []string{
 	"discord", "tumblr", "viber", "vk", "bluesky",
 }
 
+// 说明：这里的品牌 logo（Facebook / X / Instagram / YouTube / TikTok / Telegram /
+// WhatsApp / Pinterest 等）**不在基座图标库里** —— lucide 不含品牌标识，且品牌图形
+// 需要保持官方原形（描边风格化会失真）。这是全项目唯一保留手写 path 的地方，
+// 属明确例外；其它组件的箭头 / 勾叉 / 折叠等通用图标一律走 core 图标库。
 // platformIcons 平台图标内部元素（path 片段，不含 <svg> 包裹；fill=currentColor）。
 // 由 socialbuttons.jet 模板负责 <svg> 骨架（去 Go 拼字符串）。
 var platformIcons = map[string]string{

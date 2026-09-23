@@ -72,8 +72,10 @@ func TestBundleCreateWithoutSKUReportsChineseAndKeepsNothing(t *testing.T) {
 		return
 	}
 	loc := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"no-sku-bundle"}})
-	if !strings.HasPrefix(loc, "/admin/products?") {
-		t.Fatalf("新建失败应回列表页（抽屉所在页），实际 Location=%q", loc)
+	// 失败落点已从「回列表页」改为「回**新建页自身**」（批 1）：表单就在那一页、页头有 ?err=
+	// 渲染位；回列表页会让用户以为「提交成功才跳走的」，还要重新找一遍新建入口（docs/02-T §5）。
+	if !strings.HasPrefix(loc, "/admin/products/new?") {
+		t.Fatalf("新建失败应回新建页（表单所在页），实际 Location=%q", loc)
 	}
 	msg := locationQuery(t, loc, "err")
 	if msg == "" {
@@ -119,8 +121,8 @@ func TestBundleCreateWithSKUKeepsValueAndSuffix(t *testing.T) {
 				"slug": {"bundle-" + strings.ToLower(strings.ReplaceAll(c.input, "_", "-"))},
 				"sku":  {c.input},
 			})
-			if !strings.HasPrefix(loc, "/admin/products/detail?") {
-				t.Fatalf("带 sku 的捆绑应建成功并进详情页，实际 Location=%q", loc)
+			if !strings.HasPrefix(loc, "/admin/products/edit?") {
+				t.Fatalf("带 sku 的捆绑应建成功并进编辑页，实际 Location=%q", loc)
 			}
 			productID := locationQuery(t, loc, "product")
 			detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
@@ -147,7 +149,7 @@ func TestVariantCreateWithoutSKUStillDerives(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"留空主体"}, "slug": {"variant-empty"},
 		"type": {"variant"}, "defaultPrice": {"19.9"},
 	})
-	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/products/detail?") {
+	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/products/edit?") {
 		t.Fatalf("变体商品不带 sku 仍应建成功，实际 %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	productID := locationQuery(t, rec.Header().Get("Location"), "product")
@@ -252,7 +254,9 @@ func TestProductsDrawerCarriesBundleSKUEnhancement(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	page := getProductsPage(engine, f.projectID)
+	// 落点是**新建整页**：建表单的抽屉已退役（列表页那个 template 没有任何 data-drawer-open
+	// 指向它），片段与字段一个没少，只是渲染它的页面变成了 /admin/products/new。
+	page := getProductsNewPage(engine, f.projectID)
 	for _, want := range []string{
 		"data-product-create-form",          // 脚本按它定位抽屉表单（按 action 匹配会被后续改动悄悄改掉）
 		"data-sku-input",                    // 主体 SKU 输入框

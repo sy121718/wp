@@ -54,6 +54,7 @@ func newBundleDetailEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
 	return engine, f
 }
@@ -81,7 +82,6 @@ func TestProductDetailBundleComposition(t *testing.T) {
 	body := productDetailBody(t, engine, f.projectID, container.ID)
 	for _, want := range []string{
 		"捆绑构成",
-		"/admin/products/bundle?projectId=" + f.projectID + "&amp;productId=" + container.ID,
 		"容器价（套餐价）", "199",
 		v.SKUCode, "配件包", "必选",
 		"成员成本（后台口径）", "成员挂牌价（参考 · 不参与套餐价）",
@@ -97,6 +97,15 @@ func TestProductDetailBundleComposition(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("详情页缺少成员数量 / 可用量 %q\n%s", want, body)
 		}
+	}
+
+	// 构成表在详情页**只读**看，改动入口在编辑页：两处都必须存在，且不互相越界。
+	editBody := getProductEditPage(engine, f.projectID, container.ID)
+	if !strings.Contains(editBody, "/admin/products/bundle?projectId="+f.projectID+"&amp;productId="+container.ID) {
+		t.Fatalf("编辑页缺少捆绑构成入口\n%s", oneLine(editBody))
+	}
+	if strings.Contains(body, "/admin/products/bundle?") {
+		t.Fatalf("详情页是只读页，不该出现捆绑配置入口")
 	}
 
 	// 入口落到配置器页面时必须已选中同一个商品：否则点进去是一张空骨架，
@@ -127,13 +136,15 @@ func TestProductDetailBundlePanelEmpty(t *testing.T) {
 	}
 	container := f.mkBundleProduct(t, "空套餐", "empty-bundle", 88)
 	body := productDetailBody(t, engine, f.projectID, container.ID)
-	for _, want := range []string{
-		"捆绑构成", "还没有配置捆绑构成",
-		"/admin/products/bundle?projectId=" + f.projectID + "&amp;productId=" + container.ID,
-	} {
+	for _, want := range []string{"捆绑构成", "还没有配置捆绑构成"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("空配置的详情页缺少 %q\n%s", want, oneLine(body))
 		}
+	}
+	// 空态下也要能走到配置入口 —— 它在编辑页。
+	editBody := getProductEditPage(engine, f.projectID, container.ID)
+	if !strings.Contains(editBody, "/admin/products/bundle?projectId="+f.projectID+"&amp;productId="+container.ID) {
+		t.Fatalf("空配置时编辑页仍应给出捆绑构成入口\n%s", oneLine(editBody))
 	}
 }
 

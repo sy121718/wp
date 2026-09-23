@@ -581,7 +581,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 		"rows": {string(rowsJSON)},
 	})
 	if rec.Code != http.StatusFound {
-		t.Fatalf("保存应 302 回详情页，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("保存应 302 回编辑页，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	loc := rec.Header().Get("Location")
 	if !strings.Contains(loc, "done=") {
@@ -628,12 +628,13 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
-	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	rec := httptest.NewRecorder()
+	// 变体清单在**编辑页**（详情页只读）：清单的初始行 / 保存入口都在那里。
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
-		"/admin/products/detail?project="+f.projectID+"&product="+p.ID, nil))
+		"/admin/products/edit?project="+f.projectID+"&product="+p.ID, nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("详情页应 200，实际 %d", rec.Code)
+		t.Fatalf("编辑页应 200，实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
 	for _, v := range stored {

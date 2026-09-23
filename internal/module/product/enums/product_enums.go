@@ -403,4 +403,10 @@ const (
 	BulkVariantNoChange = "product.bulk.variantSaveNoChange"
 	BulkVariantSaved    = "product.bulk.variantSaveSaved"
 	BulkVariantSkipped  = "product.bulk.variantSaveSkipped"
+
+	// 商品编辑页保存成功的回执（无占位符）。
+	//
+	// 与批量结论文案同一套读侧白名单：?done= 是查询串，不是可信边界 ——
+	// 不登记就会在页面上退化成「没有这条提示」，用户保存后看不到任何反馈。
+	MsgProductSaved = "product.msg.saved"
 )

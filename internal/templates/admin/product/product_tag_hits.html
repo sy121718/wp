@@ -1,0 +1,59 @@
+{* admin/product/product_tag_hits.html — 标签命中商品片段（审计 PERF-02；卡壳迁入 02-L P1-7）。 *}
+{* 渲染数据（shell.Prepare 注入 t / csrf_token 等外壳键，故这里用 .["t"] 取词）：
+     · TagName / TagID / ProjectID；
+     · Total / Page / PageSize / TotalPage；
+     · PageInfo —— 「共 N 条，第 X-Y 条」，由 handler 用 shell.pagination.info 同一词条拼好
+       （分页条文案只有一份，别在这里再造一句）；
+     · Items = [{ID, Name, Slug, Status}] 本页商品行；
+     · PrevURL / NextURL —— 有相邻页时才注入（缺失时渲染成禁用态）；
+     · Err —— 取数失败时只带这一项，文案已过 productErrText 白名单。
+    这是**片段**不是整页：不 extends layout，由标签页的 hx-get 换进 #tag-hits-panel；
+    翻页按钮同样 hx-get 回本端点（整页跳转会把展开区之外的状态一起丢掉）。
+    **卡片外壳（.card + .card-title）在这里**（审计 02-L P1-7）：页面上 #tag-hits-panel
+    只是一个空的锚点容器 —— 内容到了才由这张卡出现，首屏不再有「只有标题 + 一行提示」
+    的空壳卡（admin-ui-logic §1：当前数据下没有内容的控件不出现）。三个分支（正常 /
+    取数失败 / 无数据）都自带卡壳，因为落到锚点里的任何东西都得有可见的容器。
+    role="region" / aria-live 留在页面上那个空容器上，这里不能再放一份：片段每次被替换，
+    播报区域若跟着重建，读屏就不会播报换入的内容（详见 product_tags.html 的同一段注释）。
+    取词尽量复用既有词条（hitTitle / hitLead / hitCountTail / hitEmpty / shell.pagination.*），
+    只有「提示语」与「取数失败前缀」是本批新增。 *}
+<section class="card card-body">
+    <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.hitTitle", "命中的商品") }}</h2>
+    {{if isset(.Items)}}
+    <div class="hits-head">
+        <strong>{{.TagName}}</strong>
+        <span class="hint">{{ .["t"]("admin.product_tags.list.hitLead", "命中 ") }}{{.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>
+    </div>
+    {{if len(.Items) == 0}}
+    <p class="hint">{{ .["t"]("admin.product_tags.list.hitEmpty", "当前没有商品命中这个标签。") }}</p>
+    {{else}}
+    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}">
+        <table class="data-table data-table-wide">
+            <thead><tr><th>{{ .["t"]("admin.product_tags.col.product", "商品") }}</th><th>{{ .["t"]("admin.product_tags.col.slug", "URL 段") }}</th><th>{{ .["t"]("admin.product_tags.col.state", "状态") }}</th></tr></thead>
+            <tbody>
+            {{range _, p := .Items}}
+            <tr>
+                <td><strong>{{p.Name}}</strong></td>
+                <td>{{if p.Slug}}<code>{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
+                <td><span class="badge">{{p.Status}}</span></td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    <nav class="pagination" aria-label="{{ .["t"]("shell.pagination.label", "分页") }}">
+        <div class="pagination-info">{{.PageInfo}}</div>
+        <div class="pagination-pages">
+            {{if isset(.PrevURL)}}<button type="button" class="pagination-btn" hx-get="{{.PrevURL}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.prev", "上一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.prev", "上一页") }}</span>{{end}}
+            {{if isset(.NextURL)}}<button type="button" class="pagination-btn" hx-get="{{.NextURL}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.next", "下一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.next", "下一页") }}</span>{{end}}
+        </div>
+    </nav>
+    {{end}}
+    {{else}}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_tags.hits.error", "命中商品没能取出来：") }}{{.Err}}</p>
+    {{end}}{{else}}
+    <p class="hint">{{ .["t"]("admin.product_tags.list.hitHint", "点标签列表里「命中」列的条数，在这里按页查看该标签命中的商品。") }}</p>
+    {{end}}
+    {{end}}
+</section>

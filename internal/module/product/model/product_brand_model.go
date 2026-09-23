@@ -89,17 +89,41 @@ func (m *Model) BrandSlugExists(ctx context.Context, projectID, slug, excludeID 
 
 // ListBrands 工程内品牌列表（条件以参数传入，按排序号 + 创建时间稳定排序）。
 //
+// limit <= 0 表示**不分页**（取全部）：这是给「集合源筛选选项 / 内容翻译批量取数」
+// 这类要全量的调用方留的形态 —— 它们不关心页，硬塞一个默认页大小会让品牌选项静默
+// 只剩前 N 个。分页由 service 显式给出，model 只看参数。
+//
 // 作用域必填（DB-009 切角色收口）：product_brands 带 FORCE 策略，WHERE project_id 只是普通过滤，
 // 裸查时非超级角色静默 0 行（后台品牌列表整页空白、构建期筛选栏没有品牌选项），不报任何错。
-func (m *Model) ListBrands(ctx context.Context, projectID, keyword string) (list []*ProductBrandEntity, err error) {
+func (m *Model) ListBrands(ctx context.Context, projectID, keyword string, limit, offset int) (list []*ProductBrandEntity, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductBrandEntity{})
 		if keyword != "" {
 			q = q.Where("name ILIKE ?", "%"+keyword+"%")
 		}
-		return q.Order("sort ASC, create_time ASC, id ASC").Find(&list).Error
+		q = q.Order("sort ASC, create_time ASC, id ASC")
+		if limit > 0 {
+			// offset 只在分页时拼接：PG 对 OFFSET 0 与省略等价，少一段拼接少一处出错。
+			q = q.Limit(limit).Offset(offset)
+		}
+		return q.Find(&list).Error
 	})
 	return list, err
+}
+
+// CountBrands 工程内品牌总数（**与 ListBrands 同过滤条件**：工程 + 关键词）。
+//
+// 作用域与 ListBrands 同一把：product_brands 带 FORCE 策略，缺作用域时非超级角色下
+// 计数与列表会同时静默归零（分页条不渲染、表格空），两边一致所以更难发现。
+func (m *Model) CountBrands(ctx context.Context, projectID, keyword string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductBrandEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		return q.Count(&n).Error
+	})
+	return n, err
 }
 
 // ListBrandsByIDs 按 id 批量取品牌（集合源/构建期一次取好，零 N+1；顺序由调用方定），

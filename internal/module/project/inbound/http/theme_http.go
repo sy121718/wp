@@ -3,7 +3,6 @@ package projecthttp
 // theme_http.go — 站点主题 REST:列表/新建/更新/激活/删除/取激活。
 
 import (
-	"errors"
 	"net/http"
 
 	"go_wp/internal/middleware/builtin"
@@ -39,24 +38,21 @@ func SetupThemeRoutes(rg *permission.RouteGroup, db *gorm.DB) {
 	g.GET("/active", permission.ProjectThemeActive, h.Active)
 }
 
-// themeError 将主题业务错误映射为响应状态码与文案：
-// 业务哨兵 → 对应 enums 文案；其余（基础设施故障）→ 兜底文案 + 日志留原文，
-// 不向客户端泄漏内部错误细节。
+// themeError 将主题业务错误映射为响应状态码与文案（JSON 出口）。
+//
+// 判定表已抽到 project_err.go 的 projectErrStatusText —— 它同时是**页面出口**
+// （projectErrParam）的判定依据，两边共用一份：JSON 出口给机器读（状态码），
+// 页面出口给人读（?err= 文本），分流口径必须一致，否则同一个错误在两个入口
+// 会给出不同说法（「激活主题不可删除」在接口是 400 业务文案、在页面上却变成系统故障）。
+//
+// 归口文案用 ErrThemeInternal：本入口只服务 /api/theme/*，把这类故障说成
+// 「工程服务内部错误」会让排障时找错日志场景。
 func themeError(c *gin.Context, err error) {
-	status, message := http.StatusInternalServerError, projectenums.ErrThemeInternal
-	switch {
-	case errors.Is(err, service.ErrThemeNotFound):
-		status, message = http.StatusNotFound, projectenums.ErrThemeNotFound
-	case errors.Is(err, service.ErrThemeIsActive),
-		errors.Is(err, service.ErrThemeNameRequired),
-		errors.Is(err, service.ErrThemeDuplicateName),
-		errors.Is(err, service.ErrThemeProjectIDEmpty),
-		errors.Is(err, service.ErrInvalidThemeSettings):
-		status, message = http.StatusBadRequest, err.Error()
-	default:
+	status, key := projectErrStatusText(err, projectenums.ErrThemeInternal)
+	if status == http.StatusInternalServerError {
 		logger.Scene("theme").Error(err, "主题操作失败")
 	}
-	response.ErrorWithMessage(c, status, message)
+	response.ErrorWithMessage(c, status, key)
 }
 
 // List 列出工程主题。

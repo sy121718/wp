@@ -1,0 +1,249 @@
+{
+  "settings": {
+    "layout": { "mode": "full" }
+  },
+  "root": [
+    {
+      "id": "ftr-wrap",
+      "type": "core.container",
+      "name": "页脚容器",
+      "props": {
+        "tag": "footer",
+        "layout": { "engine": "flex", "flex": { "direction": "column", "justify": "flex-start", "align": "stretch", "gap": "0" } },
+        "box": { "padding": { "desktop": "64px 24px 0", "tablet": "48px 16px 0", "mobile": "40px 16px 0" } },
+        "visual": { "bgColor": "#1c1f2e" }
+      },
+      "children": [
+        {
+          "id": "ftr-main",
+          "type": "core.container",
+          "name": "页脚主体（多栏）",
+          "props": {
+            "tag": "div",
+            "layout": { "engine": "grid", "grid": { "columns": { "desktop": 5, "tablet": 2, "mobile": 1 }, "columnGap": "32px", "rowGap": "40px" } },
+            "box": { "maxWidth": "1280px", "center": true }
+          },
+          "children": [
+            {
+              "id": "ftr-col-brand",
+              "type": "core.container",
+              "name": "品牌栏",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "align": "flex-start", "gap": "16px" } } },
+              "children": [
+                {
+                  "id": "ftr-brand-img",
+                  "type": "core.image",
+                  "name": "页脚 Logo",
+                  "props": {
+                    "src": "https://vapehubnow.com/wp-content/uploads/2026/07/logo.svg",
+                    "alt": "Vape Store OZ",
+                    "title": "Vape Store OZ",
+                    "width": "180px",
+                    "maxWidth": "180px",
+                    "objectFit": "contain",
+                    "align": { "desktop": "left", "tablet": "left", "mobile": "center" },
+                    "loading": "lazy"
+                  }
+                },
+                {
+                  "id": "ftr-brand-desc",
+                  "type": "core.text",
+                  "name": "品牌简介",
+                  "props": {
+                    "mode": "plaintext",
+                    "plainTag": "p",
+                    "text": "Australian's trusted disposable vapes store. IGET, Alibarbar & Amigo with fast nationwide delivery.",
+                    "color": "#a2a6b3",
+                    "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.7", "textAlign": "left" } }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "ftr-col-shop",
+              "type": "core.container",
+              "name": "SHOP 栏",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "gap": "12px" } } },
+              "children": [
+                {
+                  "id": "ftr-col-shop-title",
+                  "type": "core.heading",
+                  "name": "SHOP 标题",
+                  "props": {
+                    "text": "SHOP",
+                    "tag": "h3",
+                    "color": "#ffffff",
+                    "typography": { "desktop": { "fontSize": "16px", "lineHeight": "1.4", "textAlign": "left" } },
+                    "transform": "uppercase"
+                  }
+                },
+                { "id": "ftr-col-shop-1", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Shop", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-shop-2", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Alibarbar", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-shop-3", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Amigo", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-shop-4", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Iget", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } }
+              ]
+            },
+            {
+              "id": "ftr-col-about",
+              "type": "core.container",
+              "name": "ABOUT 栏",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "gap": "12px" } } },
+              "children": [
+                {
+                  "id": "ftr-col-about-title",
+                  "type": "core.heading",
+                  "name": "ABOUT 标题",
+                  "props": {
+                    "text": "COMPANY",
+                    "tag": "h3",
+                    "color": "#ffffff",
+                    "typography": { "desktop": { "fontSize": "16px", "lineHeight": "1.4", "textAlign": "left" } },
+                    "transform": "uppercase"
+                  }
+                },
+                { "id": "ftr-col-about-1", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "About Us", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-about-2", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Contact Us", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-about-3", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Blog", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-about-4", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "FAQ", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-about-5", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Privacy Policy", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } }
+              ]
+            },
+            {
+              "id": "ftr-col-orders",
+              "type": "core.container",
+              "name": "MY ACCOUNT 栏",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "gap": "12px" } } },
+              "children": [
+                {
+                  "id": "ftr-col-orders-title",
+                  "type": "core.heading",
+                  "name": "账户标题",
+                  "props": {
+                    "text": "MY ACCOUNT",
+                    "tag": "h3",
+                    "color": "#ffffff",
+                    "typography": { "desktop": { "fontSize": "16px", "lineHeight": "1.4", "textAlign": "left" } },
+                    "transform": "uppercase"
+                  }
+                },
+                { "id": "ftr-col-orders-1", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "My Orders", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                { "id": "ftr-col-orders-2", "type": "core.text", "name": "链接", "props": { "mode": "plaintext", "plainTag": "p", "text": "Wishlist", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } }
+              ]
+            },
+            {
+              "id": "ftr-col-contact",
+              "type": "core.container",
+              "name": "CONTACT 栏",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "gap": "12px" } } },
+              "children": [
+                {
+                  "id": "ftr-col-contact-title",
+                  "type": "core.heading",
+                  "name": "联系标题",
+                  "props": {
+                    "text": "CONTACT US",
+                    "tag": "h3",
+                    "color": "#ffffff",
+                    "typography": { "desktop": { "fontSize": "16px", "lineHeight": "1.4", "textAlign": "left" } },
+                    "transform": "uppercase"
+                  }
+                },
+                { "id": "ftr-col-contact-mail", "type": "core.text", "name": "邮箱", "props": { "mode": "plaintext", "plainTag": "p", "text": "cs@vapehubnow.com", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.8", "textAlign": "left" } } } },
+                {
+                  "id": "ftr-col-contact-social",
+                  "type": "core.text",
+                  "name": "社交入口",
+                  "props": {
+                    "mode": "plaintext",
+                    "plainTag": "p",
+                    "text": "Facebook | Instagram | TikTok | YouTube",
+                    "color": "#a2a6b3",
+                    "typography": { "desktop": { "fontSize": "13px", "lineHeight": "1.8", "textAlign": "left" } }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ftr-sep-1",
+          "type": "core.divider",
+          "name": "分隔线",
+          "props": { "style": "solid", "weight": "1px", "width": { "desktop": "calc(100% - 48px)", "tablet": "calc(100% - 32px)", "mobile": "calc(100% - 32px)" }, "align": "center", "color": "#2b2f45" }
+        },
+        {
+          "id": "ftr-trust",
+          "type": "core.container",
+          "name": "信任徽章栏",
+          "props": {
+            "tag": "div",
+            "layout": { "engine": "grid", "grid": { "columns": { "desktop": 2, "tablet": 2, "mobile": 1 }, "columnGap": "32px", "rowGap": "24px" } },
+            "box": { "maxWidth": "1280px", "center": true, "margin": { "desktop": "40px auto", "tablet": "32px auto", "mobile": "32px auto" } }
+          },
+          "children": [
+            {
+              "id": "ftr-trust-free",
+              "type": "core.container",
+              "name": "免运费",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "align": "flex-start", "gap": "4px" } } },
+              "children": [
+                {
+                  "id": "ftr-trust-free-title",
+                  "type": "core.heading",
+                  "name": "免运费标题",
+                  "props": { "text": "Free shipping for all orders over $150 AUD", "tag": "h4", "color": "#ffffff", "typography": { "desktop": { "fontSize": "15px", "lineHeight": "1.4", "textAlign": "left" } } }
+                },
+                { "id": "ftr-trust-free-desc", "type": "core.text", "name": "免运费说明", "props": { "mode": "plaintext", "plainTag": "p", "text": "Only in this week", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "13px", "lineHeight": "1.5", "textAlign": "left" } } } }
+              ]
+            },
+            {
+              "id": "ftr-trust-service",
+              "type": "core.container",
+              "name": "客服",
+              "props": { "tag": "div", "layout": { "engine": "flex", "flex": { "direction": "column", "align": "flex-start", "gap": "4px" } } },
+              "children": [
+                {
+                  "id": "ftr-trust-service-title",
+                  "type": "core.heading",
+                  "name": "客服标题",
+                  "props": { "text": "Expert Customer Service", "tag": "h4", "color": "#ffffff", "typography": { "desktop": { "fontSize": "15px", "lineHeight": "1.4", "textAlign": "left" } } }
+                },
+                { "id": "ftr-trust-service-desc", "type": "core.text", "name": "客服说明", "props": { "mode": "plaintext", "plainTag": "p", "text": "8:00 - 20:00, 7 days/week", "color": "#a2a6b3", "typography": { "desktop": { "fontSize": "13px", "lineHeight": "1.5", "textAlign": "left" } } } }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ftr-sep-2",
+          "type": "core.divider",
+          "name": "分隔线",
+          "props": { "style": "solid", "weight": "1px", "width": { "desktop": "calc(100% - 48px)", "tablet": "calc(100% - 32px)", "mobile": "calc(100% - 32px)" }, "align": "center", "color": "#2b2f45" }
+        },
+        {
+          "id": "ftr-copyright",
+          "type": "core.container",
+          "name": "版权条",
+          "props": {
+            "tag": "div",
+            "layout": { "engine": "flex", "flex": { "direction": "row", "justify": "center", "align": "center" } },
+            "box": { "padding": { "desktop": "24px 16px", "tablet": "20px 16px", "mobile": "20px 16px" } }
+          },
+          "children": [
+            {
+              "id": "ftr-copyright-text",
+              "type": "core.text",
+              "name": "版权文字",
+              "props": {
+                "mode": "plaintext",
+                "plainTag": "p",
+                "text": "© 2026 Vape Store OZ — Disposable Vapes Australia. All rights reserved.",
+                "color": "#7a7f92",
+                "typography": { "desktop": { "fontSize": "13px", "lineHeight": "1.5", "textAlign": "center" }, "tablet": { "textAlign": "center" }, "mobile": { "textAlign": "center" } }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

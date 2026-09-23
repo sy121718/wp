@@ -47,9 +47,11 @@ var adminFormControlBareBaseline = map[string]int{
 	"navigation_translations.html": 2,
 	"navigations.html":             9,
 	"pages.html":                   4,
-	"partials/locale_rows.html":    1,
-	"settings.html":                10,
-	"theme.html":                   2,
+	// key 用**文件名**（与 actual 的取法一致）：模板已按后端模块分进子目录，
+	// 用路径当 key 会让这张表每搬一次文件就整体失效。
+	"locale_rows.html": 1,
+	"settings.html":    10,
+	"theme.html":       2,
 }
 
 var adminFormBaseClasses = map[string]bool{
@@ -196,7 +198,9 @@ func TestAdminFormControlBaseCoverageBaseline(t *testing.T) {
 			bridge += s.bridge
 			bare += s.bare
 			if s.bare > 0 {
-				actual[strings.TrimPrefix(path, "admin"+string(filepath.Separator))] = s.bare
+				// key 用**文件名**而不是路径：模板已按后端模块分进子目录，用路径会让基线表
+				// 每搬一次文件就整体失效（表现是「基线里没有这个文件」刷一片，而那与裸控件无关）。
+				actual[entry.Name()] = s.bare
 			}
 			if s.total > 0 {
 				t.Logf("  %-34s total=%d base=%d bridge=%d bare=%d",

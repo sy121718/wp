@@ -1,0 +1,237 @@
+{* admin/i18n.html — 文案词条管理（审计 I18N-003）。 *}
+{* 读写都走 pkg/i18n 的端口；本页只管「选一条、改一句、存回去」。 *}
+{* 版式遵循 theme.css「后台页壳」段（admin 页面设计评审，见 docs/02-H-admin-page-shell.md）：
+     · 领域说明（与迁移 seed 的分工）收进页头 .help —— 原版两段 232 字直接铺在首屏；
+     · 筛选并入列表卡 .filter-bar，列表进 .table-scroll（表头吸顶 + 高度封顶）；
+     · 「新建」从页尾卡片提到页头 .page-actions，抽屉模板留在页面末尾；
+     · 补空状态与分页条 —— 原版只有一行「第 X / Y 页」文字，第 2 页没有入口（数据不可达）。 *}
+{* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件用 || 而不是 or。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{entries := .Entries}}
+{{cats := .Categories}}
+{* 权限与筛选状态提到块顶：range 内调 t 必须用块顶变量（.["t"] 里的 . 是当前行），
+   权限判断虽可写 .=形式在外层解析，但提到块顶只算一次、也让「谁能管理」在一处可读。 *}
+{{catFilter := .CatFilter}}
+{{langFilter := .LangFilter}}
+{{canManage := false}}
+{{if isset(.PermSet["i18n:manage"])}}{{canManage = true}}{{end}}
+{{hasFilter := false}}
+{{if .Keyword != ""}}{{hasFilter = true}}{{end}}
+{{if langFilter != ""}}{{hasFilter = true}}{{end}}
+{{if catFilter != ""}}{{hasFilter = true}}{{end}}
+<div class="stack">
+    {* 页头：标题 + 领域说明；新建入口在这里，不再自占一张卡。 *}
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.i18n.title", "文案词条") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.i18n.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.i18n.intro", "后台外壳、组件固定文案都从这张表取词。此前它们只能靠迁移 seed 修改 —— 改一句错别字要写迁移文件、重跑迁移、重新部署，所以实际能改文案的人只有写代码的人。") }}<br><br><strong>{{ .["t"]("admin.i18n.roles.strong1", "与迁移的分工") }}</strong>{{ .["t"]("admin.i18n.roles.after1", "：迁移 seed 是") }}<strong>{{ .["t"]("admin.i18n.roles.strong2", "默认值来源") }}</strong>{{ .["t"]("admin.i18n.roles.after2", "（写入用 DO NOTHING，不覆盖你在这里的修改）；本页是") }}<strong>{{ .["t"]("admin.i18n.roles.strong3", "真相来源") }}</strong>{{ .["t"]("admin.i18n.roles.tail", "。删除一条词条不会让页面变成空白，构建期会回退到组件包内的中文兜底 —— 但英文站点会因此退回中文，删之前请确认。") }}</span>
+                </span>
+            </div>
+        </div>
+        {{if canManage}}
+        <div class="page-actions">
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-i18n-create" data-drawer-title="{{ .["t"]("admin.common.action.create", "新建") }}">{{ .["t"]("admin.common.action.create", "新建") }}</button>
+        </div>
+        {{end}}
+    </header>
+
+    {{if .Saved != ""}}<p class="badge badge-success" role="status">{{ .["t"]("admin.i18n.saved", "已保存：") }}{{.Saved}}</p>{{end}}
+    {{if .Errored != ""}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.i18n.unsaved", "未保存：") }}{{.Errored}}</p>{{end}}
+    {* 批量删除的结果条（?done= / ?err=）。可选键一律 isset 包裹：直接渲染模板的单测
+       不带这两个键，缺失键会让整页在这一行中断（HTTP 仍 200，后半部分整块消失）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    {* 主区：筛选工具行 + 列表，同一张卡。 *}
+    <section class="card list-card">
+        <div class="filter-bar">
+            <form method="get" action="/admin/i18n" class="filter-row">
+                <input type="text" class="form-input filter-search" name="keyword" value="{{.Keyword}}" placeholder="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}" autocomplete="off" aria-label="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}">
+                <select name="lang" class="form-select" aria-label="{{ .["t"]("admin.i18n.label.lang", "语言") }}">
+                    <option value="">{{ .["t"]("admin.i18n.option.all_langs", "全部语言") }}</option>
+                    <option value="zh-CN"{{if langFilter == "zh-CN"}} selected{{end}}>zh-CN</option>
+                    <option value="en-US"{{if langFilter == "en-US"}} selected{{end}}>en-US</option>
+                </select>
+                <select name="category" class="form-select" aria-label="{{ .["t"]("admin.i18n.label.category", "分类") }}">
+                    <option value="">{{ .["t"]("admin.i18n.option.all_cats", "全部分类") }}</option>
+                    {{range _, cat := cats}}
+                    <option value="{{cat}}"{{if cat == catFilter}} selected{{end}}>{{cat}}</option>
+                    {{end}}
+                </select>
+                <button type="submit" class="btn">{{ .["t"]("admin.i18n.action.filter", "筛选") }}</button>
+                {{if hasFilter}}<a class="btn btn-ghost" href="/admin/i18n">{{ .["t"]("admin.common.action.reset", "重置") }}</a>{{end}}
+            </form>
+        </div>
+
+        {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知，也才能判断
+           「是不是筛选条件太窄」。空态落在 tbody 的整行里（本表勾选列无条件渲染，colspan 固定 7）。
+           批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的（HTML 不允许 form 嵌套，
+           所以行内删除表单放表格外、按钮用 form="<id>" 关联）。
+           勾选值带 (key, lang) 复合键：词条唯一标识是二元组，只带 key 会把其它语言的
+           同名词条一起删掉 —— 分隔符与解析见 handler 的 adminI18nEntryKeySeparator。 *}
+        <form method="post" action="/admin/i18n/bulk-delete">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="_keyword" value="{{.Keyword}}">
+            <input type="hidden" name="_lang" value="{{.LangFilter}}">
+            <input type="hidden" name="_category" value="{{.CatFilter}}">
+            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+            {{if canManage}}{{if len(entries) > 0}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("msg_delete_confirm", "确定要删除吗？"), danger=true)}}
+            {{yield bulkBarClose()}}
+            {{end}}{{end}}
+        <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table">
+                <thead>
+                    <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>key</th><th>{{ .["t"]("admin.i18n.label.lang", "语言") }}</th><th>{{ .["t"]("admin.i18n.label.value", "内容") }}</th><th>{{ .["t"]("admin.i18n.label.category", "分类") }}</th><th>{{ .["t"]("admin.i18n.label.updated_at", "更新时间") }}</th><th class="col-actions">{{ .["t"]("admin.i18n.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                    {{if len(entries) == 0}}
+                    {* 空态整行：colspan = 7 列（勾选 / key / 语言 / 内容 / 分类 / 更新时间 / 操作）。
+                       勾选列在本表无条件渲染，所以没有「±1」的第二种形态。 *}
+                    <tr><td colspan="7" class="cell-wrap">
+                        <div class="empty-state">
+                            <p class="empty-title">{{ .["t"]("admin.i18n.list.empty_title", "没有匹配的词条") }}</p>
+                            <p class="empty-desc">{{ .["t"]("admin.i18n.list.empty_desc", "换一个关键词或放宽语言 / 分类筛选；确实一条都没有的话，用右上角「新建」补第一条。") }}</p>
+                            {{if hasFilter}}
+                            <div class="empty-actions"><a class="btn" href="/admin/i18n">{{ .["t"]("admin.common.action.reset", "重置") }}</a></div>
+                            {{end}}
+                        </div>
+                    </td></tr>
+                    {{else}}
+                    {{range i, e := entries}}
+                    <tr>
+                        <td class="col-check">
+                            <input type="checkbox" name="ids" value="{{e.Key}}|{{e.Lang}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                        </td>
+                        <td>{{if canManage}}<button type="button" class="row-title-link" data-drawer-open="#tpl-i18n-edit-{{i}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}"><code>{{e.Key}}</code></button>{{else}}<code>{{e.Key}}</code>{{end}}</td>
+                        <td>{{e.Lang}}</td>
+                        <td>{{e.Value}}</td>
+                        <td>{{e.Category}}</td>
+                        <td>{{e.UpdateTime}}</td>
+                        <td class="col-actions">
+                            {* 编辑进右侧抽屉：每行一份 <template>（id 用行号），值由服务端回显 ——
+                               原来靠下面那段内联 JS 把 data-* 填进顶部表单，现在不需要了。 *}
+                            {{if canManage}}
+                            <button type="button" class="btn btn-ghost" data-drawer-open="#tpl-i18n-edit-{{i}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
+                            {{end}}
+                            {{if canManage}}
+                            <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger"
+                                    data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>{{tr("admin.i18n.action.delete", "删除")}}</button>
+                            {{end}}
+                        </td>
+                        <template id="tpl-i18n-edit-{{i}}">
+                            <form method="post" action="/admin/i18n/save">
+                                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                                <input type="hidden" name="_keyword" value="{{.Keyword}}">
+                                <input type="hidden" name="_lang" value="{{.LangFilter}}">
+                                <input type="hidden" name="_category" value="{{.CatFilter}}">
+                                <input type="hidden" name="key" value="{{e.Key}}">
+                                <input type="hidden" name="lang" value="{{e.Lang}}">
+                                <div class="form-grid">
+                                    <div class="form-field">
+                                        <label class="form-label">key</label>
+                                        <input type="text" class="form-input" value="{{e.Key}}" readonly>
+                                    </div>
+                                    <div class="form-field">
+                                        <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
+                                        <input type="text" class="form-input" value="{{e.Lang}}" readonly>
+                                    </div>
+                                    <div class="form-field form-field--wide">
+                                        <label class="form-label">{{ .["t"]("admin.i18n.label.value", "内容") }}</label>
+                                        <textarea name="value" class="form-textarea" rows="3" required>{{e.Value}}</textarea>
+                                    </div>
+                                    <div class="form-field">
+                                        <label class="form-label">{{ .["t"]("admin.i18n.label.category", "分类") }}</label>
+                                        <input type="text" class="form-input" name="category" value="{{e.Category}}">
+                                    </div>
+                                    <div class="form-field">
+                                        <label class="form-label">{{ .["t"]("admin.i18n.label.remark", "备注") }}</label>
+                                        <input type="text" class="form-input" name="remark" value="{{e.Remark}}">
+                                    </div>
+                                </div>
+                                <div class="action-row">
+                                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+                                </div>
+                            </form>
+                        </template>
+                    </tr>
+                    {{end}}
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
+        {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格；
+           行内按钮用 form="<id>" 指回这里的隐藏表单（表单字段与原来完全一致）。
+           只在有数据时渲染：空表没有可删除的行，分页条同理（没有数据就没有页可翻）。 *}
+        {{if len(entries) > 0}}
+        {{range i, e := entries}}
+        <form id="i18n-del-{{i}}" class="hidden-form" method="post" action="/admin/i18n/delete"
+              data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="key" value="{{e.Key}}">
+            <input type="hidden" name="lang" value="{{e.Lang}}">
+            <input type="hidden" name="_keyword" value="{{.Keyword}}">
+            <input type="hidden" name="_lang" value="{{.LangFilter}}">
+            <input type="hidden" name="_category" value="{{.CatFilter}}">
+        </form>
+        {{end}}
+        {{include "../partials/pagination.html"}}
+        {{end}}
+    </section>
+
+    {* 新建抽屉：按钮在页头，模板本体留在文档末尾（<template> 不参与渲染）。 *}
+    {{if canManage}}
+    <template id="tpl-i18n-create">
+        <form method="post" action="/admin/i18n/save">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="_keyword" value="{{.Keyword}}">
+            <input type="hidden" name="_lang" value="{{.LangFilter}}">
+            <input type="hidden" name="_category" value="{{.CatFilter}}">
+            <div class="form-grid">
+                <div class="form-field">
+                    <label class="form-label">key</label>
+                    <input type="text" class="form-input" name="key" required placeholder="site.component.gallery.prev">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
+                    <select name="lang" class="form-select">
+                        <option value="zh-CN">zh-CN</option>
+                        <option value="en-US">en-US</option>
+                    </select>
+                </div>
+                <div class="form-field form-field--wide">
+                    <label class="form-label">{{ .["t"]("admin.i18n.label.value", "内容") }}</label>
+                    <textarea name="value" class="form-textarea" rows="3" required></textarea>
+                </div>
+                <div class="form-field">
+                    <label class="form-label">{{ .["t"]("admin.i18n.label.category", "分类") }}</label>
+                    <input type="text" class="form-input" name="category" placeholder="ui / shell / enums …">
+                </div>
+                <div class="form-field">
+                    <label class="form-label">{{ .["t"]("admin.i18n.label.remark", "备注") }}</label>
+                    <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.i18n.ph.remark", "来源或修改原因") }}">
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+</div>
+{{end}}

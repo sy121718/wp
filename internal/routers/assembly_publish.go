@@ -619,6 +619,8 @@ func (a *assembly) mountPublicFace() {
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(a.router)
 
-	// 未匹配路由返回 404；访问面（/site）优先返回站点自定义 404 页，见 notFoundHandler。
-	a.router.NoRoute(notFoundHandler())
+	// 未匹配路由的兜底**不在这里设**：访问面挂在根上（站点独占域名根），
+	// NoRoute 由 setupStaticFace 一次性装成「站点中间件链 → 静态文件 → 站点 404」。
+	// 在这里再设一次会把它整个覆盖掉（gin 的 NoRoute 是单槽位），
+	// 表现为首页与全部站内页 404 —— 而控制面看着一切正常。
 }

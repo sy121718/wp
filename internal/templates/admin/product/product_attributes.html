@@ -1,0 +1,207 @@
+{* admin/product_attributes.html — 商品属性组与属性值（issue #7） *}
+{* 列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §7）：
+     · 页头一行：标题 + ? 悬浮说明；右侧工程选择与主行动同行（「新建属性组」不再单独占一张卡）；
+     · 正文零说明文字（原 intro 整段进 .help 悬浮）；列表是标准 data-table + 末列操作；
+     · 行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
+{* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。
+   include 的数据类是本方法构造的 struct（Jet 没有 dict() 全局函数）。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{* chain 索引取筛选回显：模板单测可能不带这两个键，缺键时 chain 给 nil（不中断渲染）；
+   直接 {{.FilterKeyword}} 在缺键时会报错中断整页（HTTP 仍 200，后面整块 HTML 消失）。 *}
+{{fKeyword := .["FilterKeyword"]}}
+{{fVariation := .["FilterVariation"]}}
+{{canCreate := isset(.PermSet["product:attribute_create"])}}
+{{canUpdate := isset(.PermSet["product:attribute_update"])}}
+{{canDelete := isset(.PermSet["product:attribute_delete"])}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.product_attributes.title", "商品属性") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_attributes.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_attributes.intro", "属性组（颜色 / 尺寸 / 口味）在工程内定义一次，可被多个商品引用；「参与变体」的组会参与变体规格组合的生成。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/product-attributes">
+                <label class="sr-only" for="attributes-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="attributes-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            {{if canCreate}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-attr-create" data-drawer-title="{{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}">＋ {{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}</button>
+            {{end}}
+        </div>
+    </header>
+
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_attributes.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card card-body">
+        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}</h2>
+        {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
+           分页链接由服务端带上同样的条件（productListBaseURL），翻页不会把筛选丢掉。
+           两个维度就是表格里的两列（属性组名 / 标识、参与变体）—— 同一维度不另给第二套控件。 *}
+        <div class="filter-bar">
+            <form method="get" action="/admin/product-attributes" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <div class="filter-field">
+                    <label for="attributes-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="attributes-filter-keyword" name="keyword" value="{{fKeyword}}"
+                           placeholder="{{ .["t"]("admin.product_attributes.filter.phKeyword", "名称 / 标识") }}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="attributes-filter-variation">{{ .["t"]("admin.product_attributes.col.variation", "变体") }}</label>
+                    <select class="form-select" id="attributes-filter-variation" name="variation">
+                        <option value="">{{ .["t"]("admin.common.filter.optionAll", "（全部）") }}</option>
+                        <option value="1" {{if isset(.FilterVariation) && .FilterVariation == "1"}}selected{{end}}>{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</option>
+                        <option value="0" {{if isset(.FilterVariation) && .FilterVariation == "0"}}selected{{end}}>{{ .["t"]("admin.product_attributes.notVariation", "不参与变体") }}</option>
+                    </select>
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+        </div>
+
+        {* 空数据也渲染 <table>/<thead>（审计 D1）：只有看见「这个列表有哪些列」，用户才谈得上
+           判断「是筛错了还是本来就没数据」。空态落在 tbody 的整行里（colspan = 实际列数）。
+           <form> 依旧包住 <table>：批量动作与勾选框必须同属一个 form（见 permissions.html）。 *}
+        {* 空态分两档（审计 D9 的同一手法）：筛选无结果 → 说清「是筛出来的空」并给重置；
+           工程里真的没有属性组 → 指到本页页头那个新建抽屉。 *}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
+           提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
+        <form method="post" action="/admin/product-attributes/bulk-delete">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+            {{if canDelete}}{{if len(.Attributes) > 0}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。"), danger=true)}}
+            {{yield bulkBarClose()}}
+            {{end}}{{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th class="col-check">
+                        <input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">
+                    </th>
+                    <th>{{ .["t"]("admin.product_attributes.col.name", "属性组") }}</th>
+                    <th>{{ .["t"]("admin.product_attributes.col.key", "标识") }}</th>
+                    <th>{{ .["t"]("admin.product_attributes.col.variation", "变体") }}</th>
+                    <th>{{ .["t"]("admin.product_attributes.col.values", "属性值") }}</th>
+                    <th class="col-actions">{{ .["t"]("admin.product_attributes.col.actions", "操作") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{if len(.Attributes) == 0}}
+                {* 空态整行：colspan = 6 个实际渲染的列（勾选列 + 属性组 / 标识 / 变体 / 属性值 + 操作）。
+                   勾选列在空态下不渲染行内控件 —— 没有行可勾。 *}
+                <tr><td colspan="6" class="cell-wrap">
+                    <div class="empty-state">
+                        {{if isset(.Filtered) && .Filtered}}
+                        <p class="empty-title">{{ .["t"]("admin.product_attributes.list.emptyFilteredTitle", "没有匹配的属性组") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
+                        <div class="empty-actions">
+                            <a class="btn btn-sm btn-ghost" href="/admin/product-attributes?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                        </div>
+                        {{else}}
+                        <p class="empty-title">{{ .["t"]("admin.product_attributes.list.emptyTitle", "还没有属性组") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.product_attributes.list.empty", "建一个属性组，之后任意商品都可以引用它。") }}</p>
+                        {{if canCreate}}
+                        <div class="empty-actions">
+                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-attr-create" data-drawer-title="{{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}">＋ {{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}</button>
+                        </div>
+                        {{end}}
+                        {{end}}
+                    </div>
+                </td></tr>
+                {{else}}
+                {{range _, a := .Attributes}}
+                <tr>
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}"><strong>{{a.Name}}</strong></button>{{else}}<strong>{{a.Name}}</strong>{{end}}</td>
+                    <td>{{if a.Key != ""}}<code>{{a.Key}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>
+                        {{if a.IsVariation}}
+                        <span class="badge badge-info">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>
+                        {{else}}
+                        <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.notVariation", "不参与变体") }}</span>
+                        {{end}}
+                    </td>
+                    <td>{{a.ValueCount}}{{ .["t"]("admin.product_attributes.list.valueCountTail", " 个属性值") }}</td>
+                    <td class="col-actions">
+                        {{if canUpdate}}
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-edit-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-attr-values-{{a.ID}}" data-drawer-title="{{ .["t"]("admin.product_attributes.list.saveValues", "保存属性值") }}">{{ .["t"]("admin.product_attributes.list.valuesAction", "属性值") }}</button>
+                        {{end}}
+                        {{if canDelete}}
+                        <button type="submit" form="attr-del-{{a.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
+        {* 分页条（审计 D3 的属性页那一半）：原先一次取 Size:200 —— 第 201 个属性组
+           静默消失且页面不给任何提示；现在按页渲染并给出「共 N 条」，
+           单页时服务端不注入 PaginationLinks，片段自然不渲染。 *}
+        {{include "../partials/pagination.html"}}
+    </section>
+
+    {* 行内删除表单与抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。 *}
+    {{range _, a := .Attributes}}
+    {{if canDelete}}
+    <form id="attr-del-{{a.ID}}" class="hidden-form" method="post" action="/admin/product-attributes/delete"
+          data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{a.ID}}">
+    </form>
+    {{end}}
+    {{if canUpdate}}
+    {* 编辑抽屉 / 属性值抽屉的内容都是**共享片段**（partials/），本页只留 <template> 外壳：
+       字段名与提交地址在两处各抄一份必然分叉，而分叉不会编译失败，只会在某条入口上静默丢字段。
+       片段自带 data-attr-*-host（htmx 的替换单元）与「提交失败原地回填」的 htmx 三分属性；
+       每个抽屉的实例数据由 handler 的 attrRowDrawerForms 组装（键与失败重渲染逐键一致）。 *}
+    <template id="tpl-attr-edit-{{a.ID}}">
+        {{include "product_attribute_group_form.html" a.EditForm}}
+    </template>
+
+    <template id="tpl-attr-values-{{a.ID}}">
+        {{include "product_attribute_values_form.html" a.ValuesForm}}
+    </template>
+    {{end}}
+    {{end}}
+
+    {{if canCreate}}
+    <template id="tpl-attr-create">
+        {{include "product_attribute_group_form.html" .AttrCreateForm}}
+    </template>
+    {{end}}
+</div>
+{{end}}

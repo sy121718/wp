@@ -47,7 +47,7 @@ func (s *Service) CreateBrand(ctx context.Context, req *productdto.CreateBrandRe
 	e := &productmodel.ProductBrandEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Slug: slug,
-		Logo: req.Logo, Description: req.Description,
+		Logo: mediaURL(req.Logo), Description: req.Description,
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
 		Sort: req.Sort, Metadata: []byte("{}"),
 		CreatedAt: now, UpdatedAt: now,
@@ -101,7 +101,7 @@ func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandRe
 		e.Slug = slug
 	}
 	if req.Logo != nil {
-		e.Logo = *req.Logo
+		e.Logo = mediaURL(*req.Logo)
 	}
 	if req.Description != nil {
 		e.Description = *req.Description
@@ -152,12 +152,18 @@ func (s *Service) GetBrand(ctx context.Context, req *productdto.GetBrandReq) (re
 }
 
 // ListBrands 品牌列表（按排序号 + 创建时间的稳定顺序）。
+//
+// 分页下推到 model 的 LIMIT/OFFSET（审计 D12 收口）：请求类型自带的 Page/Size 只在
+// **显式给出**时生效，零值形态仍是全量（见 optionalPaging）—— 集合源筛选选项与内容翻译
+// 候选都走那条形态，它们要的是全部品牌。
 func (s *Service) ListBrands(ctx context.Context, req *productdto.ListBrandReq) (list []*productdto.BrandResp, err error) {
-	var projectID, keyword string
+	projectID, keyword := brandFilter(req)
+	inPage, inSize := 0, 0
 	if req != nil {
-		projectID, keyword = req.ProjectID, strings.TrimSpace(req.Keyword)
+		inPage, inSize = req.Page, req.Size
 	}
-	rows, err := s.m.ListBrands(ctx, projectID, keyword)
+	limit, offset := optionalPaging(inPage, inSize)
+	rows, err := s.m.ListBrands(ctx, projectID, keyword, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +172,22 @@ func (s *Service) ListBrands(ctx context.Context, req *productdto.ListBrandReq) 
 		list = append(list, toBrandResp(r))
 	}
 	return list, nil
+}
+
+// CountBrands 品牌总数（后台品牌页的「共 N 条」与总页数）。
+//
+// **与 ListBrands 共用同一个 brandFilter**（工程 + 关键词归一），两处口径不存在分叉余地。
+func (s *Service) CountBrands(ctx context.Context, req *productdto.ListBrandReq) (n int64, err error) {
+	projectID, keyword := brandFilter(req)
+	return s.m.CountBrands(ctx, projectID, keyword)
+}
+
+// brandFilter 归一品牌列表的过滤条件（ListBrands / CountBrands 共用）。
+func brandFilter(req *productdto.ListBrandReq) (projectID, keyword string) {
+	if req == nil {
+		return "", ""
+	}
+	return req.ProjectID, strings.TrimSpace(req.Keyword)
 }
 
 // DeleteBrand 删除品牌。被商品引用时拒绝：静默解绑会让商品详情页的品牌区凭空消失，
@@ -230,7 +252,7 @@ func (s *Service) resolveBrandID(ctx context.Context, projectID, brandID string)
 func toBrandResp(e *productmodel.ProductBrandEntity) *productdto.BrandResp {
 	return &productdto.BrandResp{
 		ID: e.ID, ProjectID: e.ProjectID,
-		Name: e.Name, Slug: e.Slug, Logo: e.Logo, Description: e.Description,
+		Name: e.Name, Slug: e.Slug, Logo: mediaURL(e.Logo), Description: e.Description,
 		SEOTitle: e.SEOTitle, SEODescription: e.SEODescription, Sort: e.Sort,
 		CreatedAt: e.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),

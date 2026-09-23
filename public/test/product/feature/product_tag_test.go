@@ -485,6 +485,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.POST("/admin/products/tags", handle.ProductsTagsSet)
 	return engine, f
 }
@@ -543,10 +544,8 @@ func TestTagAdminPages(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("POST 商品挂标签应 302，实际 %d", rec.Code)
 	}
-	// 保存后留在该商品的详情页（表单隐藏域是 id，其值就是商品 id）。
-	if loc := rec.Header().Get("Location"); loc != detailLocation(f.projectID, p.ID) {
-		t.Fatalf("保存手工标签后应留在该商品的详情页，实际 Location=%q", loc)
-	}
+	// 保存后留在该商品的**编辑页**（表单隐藏域是 id，其值就是商品 id）。
+	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, p.ID)
 
 	// 标签页：标签名、类型、规则描述、重算时间都要渲染出来；命中商品**不在首屏**
 	// （审计 PERF-02）：首屏只给数量与展开入口，商品行由片段端点按需给。
@@ -582,17 +581,21 @@ func TestTagAdminPages(t *testing.T) {
 			t.Fatalf("命中商品片段缺少 %q：%s", want, hitsBody)
 		}
 	}
-	// 标签挂载：换目标页面到商品详情页 —— 改造后商品列表页只回答「有哪些商品」，
-	// 手工标签勾选框与「保存手工标签」随商品级表单整块移到 /admin/products/detail
-	// （引擎上方已同步注册该路由）。
-	rec = httptestGet(engine, "/admin/products/detail?project="+f.projectID+"&product="+p.ID)
+	// 标签挂载：手工标签勾选框与「保存手工标签」在**编辑页**（详情页只读展示标签）。
+	rec = httptestGet(engine, "/admin/products/edit?project="+f.projectID+"&product="+p.ID)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("商品详情页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("商品编辑页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	pageBody := rec.Body.String()
-	for _, want := range []string{"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`, "保存手工标签", "自动标签（按规则重算维护，不能手工改动）"} {
+	// 编辑页是**一个表单一次保存**：手工标签与基本字段 / 分类品牌一起提交，
+	// 所以按钮只有统一的「保存」，没有分节的「保存手工标签」。
+	for _, want := range []string{
+		"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`,
+		"自动标签（按规则重算维护，不能手工改动）",
+		`action="/admin/products/update"`,
+	} {
 		if !strings.Contains(pageBody, want) {
-			t.Fatalf("商品页缺少 %q", want)
+			t.Fatalf("商品编辑页缺少 %q", want)
 		}
 	}
 

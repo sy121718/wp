@@ -25,14 +25,13 @@ type ui014AdminRow struct {
 	Status   int
 }
 
-const toolbarCreateRef = "include \"partials/toolbar_create.html\""
+// 引用路径随「页面所在目录」不同：根下页面写 partials/x.html，子目录页面写 ../partials/x.html。
+// 判据只锚到 partials 段，避免每搬一次目录就要改一次这个常量。
+const toolbarCreateRef = "partials/toolbar_create.html"
 
 // 至少 2 个页面引用同一个 partial。
 func TestToolbarCreatePartialIsReused(t *testing.T) {
-	paths, err := filepath.Glob(filepath.FromSlash("admin/*.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	paths := adminTemplateFiles(t)
 	var users []string
 	for _, p := range paths {
 		src, err := os.ReadFile(p)
@@ -61,7 +60,7 @@ func TestToolbarCreatePartialKeepsBehaviour(t *testing.T) {
 	withPerm["Total"] = 1
 	withPerm["Rows"] = rows
 	withPerm["PermSet"] = map[string]bool{"admin:create": true}
-	out, err := render(t, newAdminTestSet(), "admin/administrators", withPerm)
+	out, err := render(t, newAdminTestSet(), "admin/system/administrators", withPerm)
 	if err != nil {
 		t.Fatalf("有权限时渲染失败: %v", err)
 	}
@@ -80,7 +79,7 @@ func TestToolbarCreatePartialKeepsBehaviour(t *testing.T) {
 	noPerm["Total"] = 1
 	noPerm["Rows"] = rows
 	noPerm["PermSet"] = map[string]bool{}
-	out, err = render(t, newAdminTestSet(), "admin/administrators", noPerm)
+	out, err = render(t, newAdminTestSet(), "admin/system/administrators", noPerm)
 	if err != nil {
 		t.Fatalf("无权限时渲染失败: %v", err)
 	}
@@ -103,12 +102,12 @@ func TestToolbarCreateMigrationTemplatesParse(t *testing.T) {
 	for _, name := range []string{
 		"admin/layout.html",
 		"admin/dashboard.html",
-		"admin/administrators.html",
-		"admin/roles.html",
-		"admin/permissions.html",
-		"admin/datarules.html",
-		"admin/departments.html",
-		"admin/menus.html",
+		"admin/system/administrators.html",
+		"admin/system/roles.html",
+		"admin/system/permissions.html",
+		"admin/system/datarules.html",
+		"admin/system/departments.html",
+		"admin/system/menus.html",
 		"admin/partials/toolbar_create.html",
 	} {
 		if _, err := set.GetTemplate(name); err != nil {

@@ -24,7 +24,7 @@ func TestBuildViewFragmentURLsCarryLang(t *testing.T) {
 	p := optionProps(t)
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
 		"product.options": langTestOptions, "product.variants": langTestVariants,
-	}}, "proj-1", "en-US")
+	}}, "proj-1", "en-US", nil)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestBuildViewFragmentURLsOmitEmptyLang(t *testing.T) {
 	p := optionProps(t)
 	view, err := BuildView(&p, stubResolver{values: map[string]string{
 		"product.options": langTestOptions, "product.variants": langTestVariants,
-	}}, "proj-1", "")
+	}}, "proj-1", "", nil)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
 	}

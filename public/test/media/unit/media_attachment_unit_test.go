@@ -40,6 +40,31 @@ func initUploadForTest(t *testing.T) {
 
 // newMultipartFileHeader 构造带指定 Content-Type 的 multipart 文件头；
 // declaredSize>0 时覆盖声明大小（用于超限快速拒绝路径）。
+// fileFixtureBytes 按文件名 / 声明类型给出可被 http.DetectContentType 认出的最小字节串。
+//
+// 只覆盖用例真正用到的几类；不认识的一律回落到一段文本（与旧夹具逐字节相同，
+// 存量用例的行为不变）。
+func fileFixtureBytes(filename, contentType string) []byte {
+	ext := strings.ToLower(filepath.Ext(filename))
+	ct := strings.ToLower(strings.TrimSpace(contentType))
+	switch {
+	case ext == ".png" || ct == "image/png":
+		// PNG 魔数 + IHDR 头（够 DetectContentType 判出 image/png）。
+		return []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+			0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89}
+	case ext == ".jpg" || ext == ".jpeg" || ct == "image/jpeg":
+		return []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01}
+	case ext == ".gif" || ct == "image/gif":
+		return []byte("GIF89a\x01\x00\x01\x00\x00\xff\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x00;")
+	case ext == ".pdf" || ct == "application/pdf":
+		return []byte("%PDF-1.4\n")
+	default:
+		return []byte("fake-content-bytes")
+	}
+}
+
 func newMultipartFileHeader(t *testing.T, filename, contentType string, declaredSize int64) *multipart.FileHeader {
 	t.Helper()
 	var buf bytes.Buffer
@@ -51,7 +76,10 @@ func newMultipartFileHeader(t *testing.T, filename, contentType string, declared
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := part.Write([]byte("fake-content-bytes")); err != nil {
+	// 写**真实**的文件头字节，而不是一句固定文本：上传校验改成内容嗅探优先之后，
+	// 声明的 Content-Type 已经不决定落库的 MIME（文本字节会被嗅成 text/plain，
+	// 断言 image/png 就再也不成立）。让夹具与真实上传一致，用例才在测实现而不是测夹具。
+	if _, err := part.Write(fileFixtureBytes(filename, contentType)); err != nil {
 		t.Fatal(err)
 	}
 	if err := mw.Close(); err != nil {
@@ -113,8 +141,10 @@ func TestMediaUploadSuccess(t *testing.T) {
 	if resp.URL == "" || !strings.HasPrefix(resp.URL, "/storage/") {
 		t.Fatalf("URL 应指向存储: %q", resp.URL)
 	}
-	if resp.FileSize != int64(len("fake-content-bytes")) {
-		t.Fatalf("文件大小不正确: got=%d", resp.FileSize)
+	// 大小跟着夹具走，不再钉死一句字面量：夹具字节改了（比如为了让 MIME 嗅探成立
+	// 而换成真 PNG 头），这条断言不该跟着碎。
+	if want := int64(len(fileFixtureBytes("photo.png", "image/png"))); resp.FileSize != want {
+		t.Fatalf("文件大小不正确: got=%d want=%d", resp.FileSize, want)
 	}
 	if resp.CreateTime == "" {
 		t.Fatalf("创建时间不应为空")

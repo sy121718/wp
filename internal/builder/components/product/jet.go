@@ -33,6 +33,12 @@ type Image struct {
 
 // View 商品详情渲染视图（供 product.jet 模板使用）。
 type View struct {
+	// HasInfo 是否绑定了任何**信息侧**槽位（标题 / 副标题 / 价格 / 规格 / 描述）。
+	//
+	// 用途：详情页要把「图集」与「摘要」拆成左右两栏（源站版式），
+	// 于是同一个组件会被绑两次、各只填一侧。根容器的两栏栅格对单侧实例没有意义
+	// —— 缺的一侧会留下一个空白栏，把内容挤到半边。模板据此加类名、CSS 收敛成单列。
+	HasInfo bool
 	// TitleTag 标题标签名（h1~h3）。
 	TitleTag string
 	// StockNote 无脚本 / 片段未接入时的库存兜底文案（审计 I18N-010）。
@@ -61,9 +67,32 @@ type View struct {
 	// HasComparePrice / ComparePrice 划线价（有折扣时显示）。
 	HasComparePrice bool
 	ComparePrice    string
+	// HasDiscount / DiscountPercent 折扣角标（如 "-13%"）。
+	//
+	// 只在「有划线价、且划线价 > 现价」时输出 —— 那是唯一能算出真实折扣的组合。
+	// 源站的商品卡与详情图集都在图上压一个蓝色折扣胶囊，这是列表页最显眼的视觉元素。
+	HasDiscount     bool
+	DiscountPercent string
 	// HasDescription / DescriptionHTML 描述（已富文本白名单清洗）。
 	HasDescription  bool
 	DescriptionHTML string
+	// RelatedLink 分类 / 品牌链接项（来自 product.related 的展示文本）。
+	// HasCategories / Categories 分类链接（源站放在标题上方）。
+	HasCategories bool
+	Categories    []RelatedLink
+	// HasBrand / Brand 品牌链接（源站放在摘要底部「Brand: xxx」）。
+	HasBrand bool
+	Brand    RelatedLink
+	// Labels 固定文案（多语言 P4）：分类区无障碍标签 / 评价数后缀 / 品牌行标签。
+	Labels Labels
+	// HasRatingLine 是否输出评价行（源站「0 Reviews  Write a review」）。
+	// 只有拿到评价数字段时才出 —— 没有数字的「评价」是空架子。
+	HasRatingLine bool
+	// RatingValue 平均分（0~5，可能为空：没人评过）。
+	RatingValue string
+	// RatingCount 评价数。
+	RatingCount string
+
 	// HasOptions 是否输出规格选择器：有规格维度、且可展示的规格组合 ≥2 才输出。
 	// 单变体商品（含只有无规格占位变体的商品）在前台不输出选择器（issue #8）。
 	HasOptions bool
@@ -71,6 +100,31 @@ type View struct {
 	OptionGroups []OptionGroup
 	// VariantOptions 规格组合行（每个组合一行：规格标签 + 价格）。
 	VariantOptions []VariantOption
+}
+
+// RelatedLink 一个分类 / 品牌链接项。
+//
+// Slug 用来拼归档页地址（走站点 URL 规则，与商品详情同一份真源），
+// Name 是展示文案（已按构建语言取过译文）。
+// 两者都可为空：数据缺失时组件**不渲染这一项**，而不是渲染一个点不动的链接。
+type RelatedLink struct {
+	Slug string
+	Name string
+	// Href 归档页地址（前缀 + slug，已经过站内链接本地化）。
+	// 前缀没配时为空 —— 那时只渲染展示名，不渲染点不动的链接。
+	Href string
+}
+
+// relatedPayload product.related 字段的 JSON 形状（与商品集合源的 relatedJSON 同源）。
+type relatedPayload struct {
+	Categories []struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	} `json:"categories"`
+	Brand *struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	} `json:"brand"`
 }
 
 // OptionValue 规格选择器里的一个可选值。
@@ -157,7 +211,11 @@ type variantJSON struct {
 // lang 为本次编译的目标语言（core.RenderContext.Lang）：同样只进那两个片段 URL。
 // 片段语言只从 lang 查询参数来，不带它请求就恒回落工程默认语言（英文站里价格核对位
 // 会拿中文词条拼文案）；空语言（单语言站点 / 独立编译）时不带该参数。
-func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (View, error) {
+// siteLink 站内链接本地化器（可空）：把作者填的逻辑路径转成当前语言的访问地址。
+//
+// 与 core.articleList / core.productCard 同一约定 —— 组件包里不 import 本地化实现，
+// 由 builder 的视图装配层注入（ctx.ResolveSiteLink）。
+func BuildView(p *Props, content core.ContentResolver, projectID, lang string, siteLink func(string) string) (View, error) {
 	source := effectiveSource(p)
 	slots := p.slotFields()
 	declared := 0
@@ -176,9 +234,17 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 	// StockNote 先落中文兜底：ApplyI18n 会在 BuildView 之后按语言覆盖；
 	// 未接入 i18n 时它就是最终值（产物与抽 key 前逐字一致）。
 	view := View{TitleTag: effectiveTitleTag(p), Currency: effectiveCurrency(p), StockNote: textFallbackStockNote}
+	// 分类 / 品牌归档地址的前缀：**一次**本地化，循环里只管拼 slug。
+	// 本地化器可能为空（单测 / 未装配的渲染路径）——那时前缀保持原样。
+	categoryPrefix := localizePrefix(p.CategoryLinkPrefix, defaultCategoryLinkPrefix, siteLink)
+	brandPrefix := localizePrefix(p.BrandLinkPrefix, defaultBrandLinkPrefix, siteLink)
 	// 规格数据与 alt 先收原值，槽位循环结束后再统一解析（图集 alt 要按「第 i 张」
 	// 对应，而 alt 槽位可能声明在图集槽位之前；组合行要按维度取标签）。
 	var rawOptions, rawVariants, rawMediaAlt, rawGalleryAlt string
+	// 折扣角标要的是**纯数值**，而 view.Price / view.ComparePrice 都拼了货币符号 ——
+	// 拿它们去 ParseFloat 会失败、角标永远不显示（实测）。所以先收原始文本，
+	// 槽位循环结束后再算（两个槽位的先后顺序也不保证）。
+	var rawPrice, rawComparePrice string
 	for _, s := range slots {
 		if s.Field == "" {
 			continue
@@ -206,10 +272,22 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 			view.HasTitle, view.Title = true, value
 		case slotSubtitle:
 			view.HasSubtitle, view.Subtitle = true, value
+		case slotCategories:
+			catOK, catItems := parseRelatedCategories(value)
+			view.HasCategories, view.Categories = linkRelated(catOK, catItems, categoryPrefix)
+		case slotBrand:
+			brandOK, brandItem := parseRelatedBrand(value)
+			view.HasBrand, view.Brand = linkRelatedOne(brandOK, brandItem, brandPrefix)
+		case slotRating:
+			view.RatingValue = strings.TrimSpace(value)
+		case slotRatingCount:
+			view.RatingCount = strings.TrimSpace(value)
 		case slotPrice:
-			view.HasPrice, view.Price = true, view.Currency+value
+			rawPrice = strings.TrimSpace(value)
+			view.HasPrice, view.Price = true, view.Currency+rawPrice
 		case slotComparePrice:
-			view.HasComparePrice, view.ComparePrice = true, view.Currency+value
+			rawComparePrice = strings.TrimSpace(value)
+			view.HasComparePrice, view.ComparePrice = true, view.Currency+rawComparePrice
 		case slotDescription:
 			view.HasDescription, view.DescriptionHTML = true, core.RichTextHTML(value)
 		case slotOptions:
@@ -218,6 +296,12 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 			rawVariants = value
 		}
 	}
+	view.HasDiscount, view.DiscountPercent = discountBadge(rawPrice, rawComparePrice)
+	// 评价行只认**评价数**：没有它就没有「几条评价」这个事实，
+	// 单独渲染一个 0 分或一排空星星都是编出来的内容。
+	view.HasRatingLine = view.RatingCount != ""
+	view.HasInfo = view.HasTitle || view.HasSubtitle || view.HasPrice ||
+		view.HasDescription || view.HasOptions || len(view.VariantOptions) > 0
 	// 图集 alt（issue #12）：按位填入作者填写的 alt（逐元素已按构建语言取译文）；
 	// 缺位 / 空串回退商品名（无商品名时留空 = 装饰性图片，模板仍输出 alt=""）。
 	galleryAlts := parseAltList(rawGalleryAlt)
@@ -290,9 +374,48 @@ func ParseOptionGroups(raw string) []OptionGroup {
 // （商品详情 / 独立选择器 / 加购）都必须给出自己那份构建上下文里的工程 id。
 //
 // lang 与 projectID 一样只透传给那两个片段 URL：片段语言只能从 lang 查询参数来（见 BuildView）。
+// FirstEnabledVariant 取第一个**启用**的变体（简单商品：没有规格维度，唯一可买的那件）。
+//
+// 与 ParseVariantOptions 的分工：那个要求变体带完整的规格组合（选择器要按维度取标签），
+// 简单商品没有 option_values，走那条路会被 `len(r.Options) == 0` 整条滤掉。
+// 于是货架上**绝大多数**商品（一个口味一件 SKU、没有颜色尺寸可选）的加购按钮
+// 渲染成「暂无可购买的规格」—— 页面上最该能点的按钮点不了，
+// 而且它看起来像「这件缺货」，不像「组件不支持这种商品形态」。
+//
+// 判据只要求「启用」：价格可以为空（那时按钮照出，价格由商品详情区展示）。
+func FirstEnabledVariant(raw, currency string) (VariantOption, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return VariantOption{}, false
+	}
+	var rows []variantJSON
+	if err := json.Unmarshal([]byte(raw), &rows); err != nil {
+		return VariantOption{}, false
+	}
+	for _, r := range rows {
+		if !r.Enabled || strings.TrimSpace(r.ID) == "" {
+			continue
+		}
+		out := VariantOption{ID: r.ID, SKUCode: r.SKU}
+		if price := strings.TrimSpace(r.Price); price != "" {
+			out.Price, out.PriceCents = currency+price, 0
+		}
+		if compare := strings.TrimSpace(r.ComparePrice); compare != "" {
+			out.ComparePrice = currency + compare
+		}
+		return out, true
+	}
+	return VariantOption{}, false
+}
+
 func ParseVariantOptions(raw string, groups []OptionGroup, currency, projectID, lang string) []VariantOption {
 	raw = strings.TrimSpace(raw)
-	if raw == "" || len(groups) == 0 {
+	// **不因「没有规格维度」而返回空**：本系统没有「简单商品」概念，
+	// 单 SKU 就是只有一个变体、没有规格维度的可变商品。早先这里写作
+	// `raw == "" || len(groups) == 0`，于是单 SKU 商品在加购处被整条滤掉、
+	// 渲染成「暂无可购买的规格」—— 页面上最该能点的按钮点不了。
+	// 没有维度时下面 parts 循环不执行、complete 保持 true，出来的是一条无维度变体行。
+	if raw == "" {
 		return nil
 	}
 	var rows []variantJSON
@@ -309,7 +432,15 @@ func ParseVariantOptions(raw string, groups []OptionGroup, currency, projectID, 
 	}
 	out := make([]VariantOption, 0, len(rows))
 	for _, r := range rows {
-		if !r.Enabled || len(r.Options) == 0 {
+		// 只按「启用」过滤，**不按有没有规格维度过滤**。
+		//
+		// 本系统没有「简单商品」这个概念：单 SKU 就是只有一个变体的可变商品。
+		// 早先这里还要求 `len(r.Options) > 0`，于是没有 option_values 的变体
+		// 被整条滤掉 —— 单 SKU 商品的加购按钮渲染成「暂无可购买的规格」
+		// （页面上最该能点的按钮点不了，且看起来像缺货而不是像组件不支持）。
+		// 规格维度为空时下面 parts 循环不执行、complete 保持 true，
+		// 出来的就是一条**无维度**的变体行（Labels 为空），这正是单 SKU 要的样子。
+		if !r.Enabled {
 			continue
 		}
 		parts := make([]string, 0, len(groups))
@@ -437,6 +568,125 @@ func stockAvailabilityFragmentURL(variantID, projectID, lang string) string {
 		q.Set("lang", l)
 	}
 	return StockAvailabilityFragmentPath + "?" + q.Encode()
+}
+
+// 归档页默认路径前缀（与内置的默认 URL 规则一致；作者可在组件属性里覆盖）。
+const (
+	defaultCategoryLinkPrefix = "/product_category"
+	defaultBrandLinkPrefix    = "/product_brand"
+)
+
+// localizePrefix 取生效的链接前缀并本地化（空则回落默认值）。
+func localizePrefix(configured, fallback string, siteLink func(string) string) string {
+	prefix := strings.TrimSpace(configured)
+	if prefix == "" {
+		prefix = fallback
+	}
+	if siteLink == nil {
+		return prefix
+	}
+	return siteLink(prefix)
+}
+
+// linkRelated 给分类项拼归档地址（前缀为空则整批不带链接）。
+func linkRelated(ok bool, items []RelatedLink, prefix string) (bool, []RelatedLink) {
+	if !ok {
+		return false, nil
+	}
+	for i := range items {
+		items[i].Href = joinArchiveHref(prefix, items[i].Slug)
+	}
+	return true, items
+}
+
+func linkRelatedOne(ok bool, item RelatedLink, prefix string) (bool, RelatedLink) {
+	if !ok {
+		return false, RelatedLink{}
+	}
+	item.Href = joinArchiveHref(prefix, item.Slug)
+	return true, item
+}
+
+// joinArchiveHref 前缀 + slug。前缀已本地化（可能是绝对地址），所以这里只处理斜杠，
+// 不重新拼域名 —— 再拼一次会把绝对地址变成 "http://host/http://host/..."。
+func joinArchiveHref(prefix, slug string) string {
+	p, s := strings.TrimSpace(prefix), strings.TrimSpace(slug)
+	if p == "" || s == "" {
+		return ""
+	}
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return p + s
+}
+
+// parseRelatedCategories 从 product.related 里取分类链接（无 / 解析失败返回空）。
+//
+// 解析失败**静默返回空**而不是报错：related 是派生展示数据，缺了它该少一行链接，
+// 不该让整个商品详情页构建失败（同一个商品在别的模板上仍然要能渲染）。
+func parseRelatedCategories(raw string) (bool, []RelatedLink) {
+	p, ok := parseRelated(raw)
+	if !ok {
+		return false, nil
+	}
+	out := make([]RelatedLink, 0, len(p.Categories))
+	for _, c := range p.Categories {
+		if strings.TrimSpace(c.Slug) == "" || strings.TrimSpace(c.Name) == "" {
+			continue
+		}
+		out = append(out, RelatedLink{Slug: c.Slug, Name: c.Name})
+	}
+	if len(out) == 0 {
+		return false, nil
+	}
+	return true, out
+}
+
+// parseRelatedBrand 从 product.related 里取品牌（无 / 解析失败返回空）。
+func parseRelatedBrand(raw string) (bool, RelatedLink) {
+	p, ok := parseRelated(raw)
+	if !ok || p.Brand == nil {
+		return false, RelatedLink{}
+	}
+	slug, name := strings.TrimSpace(p.Brand.Slug), strings.TrimSpace(p.Brand.Name)
+	if slug == "" || name == "" {
+		return false, RelatedLink{}
+	}
+	return true, RelatedLink{Slug: slug, Name: name}
+}
+
+func parseRelated(raw string) (relatedPayload, bool) {
+	var p relatedPayload
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "{}" {
+		return p, false
+	}
+	if err := json.Unmarshal([]byte(trimmed), &p); err != nil {
+		return p, false
+	}
+	return p, true
+}
+
+// discountBadge 折扣角标文案（如 "-13%"），算不出真实折扣时返回空串。
+//
+// 只在两个价格都是**正数**且划线价严格大于现价时才算：
+//
+//	· 相等 → 没有折扣，画一个 "-0%" 是噪声；
+//	· 现价更高 → 数据异常，此时显示正数百分号会误导（看起来像加价）；
+//	· 任一解析失败 → 不显示（宁可没有角标，也不要一个错的百分比）。
+//
+// 取整用向下（floor）：向上取整会把 12.5% 写成 13%，而电商标价惯例是**不虚增**折扣力度。
+func discountBadge(priceText, compareText string) (bool, string) {
+	price, perr := strconv.ParseFloat(strings.TrimSpace(priceText), 64)
+	compare, cerr := strconv.ParseFloat(strings.TrimSpace(compareText), 64)
+	if perr != nil || cerr != nil || price <= 0 || compare <= price {
+		return false, ""
+	}
+	percent := int(math.Floor((compare - price) / compare * 100))
+	if percent <= 0 {
+		return false, ""
+	}
+	return true, "-" + strconv.Itoa(percent) + "%"
 }
 
 // priceYuanCents 元文本（商品字段解析器 formatPrice 的输出形态，如 "99" / "99.5"）→ 分。

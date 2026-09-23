@@ -72,22 +72,27 @@ func (r *Resolver) Candidates(ctx context.Context, projectID string) (groups []n
 	return out, nil
 }
 
-// pageCandidates 页面候选（按工程过滤；label 用页面路径）。
+// pageCandidates 页面候选（按工程过滤；label 用页面路径、title 用文档 SEO 标题）。
+//
+// 取标题走 page 的**标题投影** ListPageTitles 而不是 List：List 为列表页服务，
+// 走 model.ListAll 并刻意 omit 掉 draft_document 大字段，这里再解析文档只会拿到空 JSON，
+// 标题静默回退成路径 —— 抽屉里 13 个候选全显示 /about、/blog，用户想挑「加哪个页面进菜单」
+// 却只能靠猜路径（2026-09 修复）。标题在 SQL 侧取出，整份 JSONB 不进 Go。
 func (r *Resolver) pageCandidates(ctx context.Context, projectID string) navigationcontract.SourceGroup {
 	group := navigationcontract.SourceGroup{Type: "page", Title: "页面"}
 	if r.pages == nil {
 		return group
 	}
-	pages, err := r.pages.List(ctx, &pagecontract.ListReq{ProjectID: projectID})
+	titles, err := r.pages.ListPageTitles(ctx, projectID)
 	if err != nil {
 		return group
 	}
-	for _, p := range pages {
+	for _, p := range titles {
 		url := p.DraftPath
 		if p.ActivePath != nil && *p.ActivePath != "" {
 			url = *p.ActivePath
 		}
-		title := pageDocTitle(p.DraftDocument)
+		title := strings.TrimSpace(p.SEOTitle)
 		if title == "" {
 			title = p.DraftPath
 		}

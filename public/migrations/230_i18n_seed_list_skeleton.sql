@@ -6,12 +6,18 @@
 --       ③ 商品分类 / 商品品牌的表格化列头与空状态。
 --       模板里 t() 的兜底能显示中文，但**英文界面会回落中文** —— 词条必须成对 seed
 --       （门禁：internal/templates/admin_group_f_i18n_test.go 的双向校验）。
--- 覆盖：77 个 key / zh-CN 77 行 / en-US 77 行（人工编写）。
+-- 覆盖：75 个 key / zh-CN 75 行 / en-US 75 行（人工编写；原 77 个 key，2026-09 本批退役 2 个）。
 -- 来源：internal/templates/admin/{dashboard,product_brands,product_categories}.html。
 -- 注意：模板里的 fallback 与这里的 item_value 必须逐字一致 —— 词条命中时页面显示的是本表的值。
 -- 语义：ON CONFLICT DO NOTHING —— seed 是默认值来源，不是真相来源；
 --       运营在后台改过的词条不会被下一次部署静默回滚。
 -- 幂等：注册见 register_i18n_layer.go，ConditionSQL 以本批 3 个代表 key 的 zh-CN 行数为门槛。
+--
+-- 2026-09（本批）：admin.product_categories.seo.unset / admin.product_brands.seo.unset 的 4 行
+-- 已删除 —— 两页的 SEO 空值占位上一轮改成硬编码「—」（与同表 Slug 列逐字一致），词条失去引用，
+-- 由 419 退役。覆盖数因此从 77 个 key 变为 75 个 key。本批的条件取的是 3 个**代表** key
+-- （admin.common.bulk.selectAll / admin.dashboard.stat.projects /
+-- admin.product_categories.empty.title），不含这两个 key，故门槛不变。
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 VALUES
 ('admin.common.action.delete', 'en-US', 'Delete', 200, 'admin', '通用动作：行内删除（行已指明实体，按钮不再重复实体名）', 1, now(), now()),
@@ -96,8 +102,6 @@ VALUES
 ('admin.product_brands.ph.sort', 'zh-CN', '排序', 200, 'admin', 'admin/product_brands.html: 排序占位', 1, now(), now()),
 ('admin.product_brands.seoScore', 'en-US', 'SEO score', 200, 'admin', 'admin/product_brands.html: 只读评分按钮', 1, now(), now()),
 ('admin.product_brands.seoScore', 'zh-CN', 'SEO 评分', 200, 'admin', 'admin/product_brands.html: 只读评分按钮', 1, now(), now()),
-('admin.product_brands.seo.unset', 'en-US', 'Not set', 200, 'admin', 'admin/product_brands.html: SEO 未填占位', 1, now(), now()),
-('admin.product_brands.seo.unset', 'zh-CN', '未填', 200, 'admin', 'admin/product_brands.html: SEO 未填占位', 1, now(), now()),
 ('admin.product_brands.title', 'en-US', 'Product brands', 200, 'admin', 'admin/product_brands.html: 页面标题', 1, now(), now()),
 ('admin.product_brands.title', 'zh-CN', '商品品牌', 200, 'admin', 'admin/product_brands.html: 页面标题', 1, now(), now()),
 ('admin.product_categories.bulkDeleteConfirm', 'en-US', 'Delete the selected categories? Ones with children or referenced by products are skipped; the rest are deleted.', 200, 'admin', 'admin/product_categories.html: 批量删除确认', 1, now(), now()),
@@ -164,8 +168,6 @@ VALUES
 ('admin.product_categories.ph.sort', 'zh-CN', '排序', 200, 'admin', 'admin/product_categories.html: 排序占位', 1, now(), now()),
 ('admin.product_categories.seoScore', 'en-US', 'SEO score', 200, 'admin', 'admin/product_categories.html: 只读评分按钮', 1, now(), now()),
 ('admin.product_categories.seoScore', 'zh-CN', 'SEO 评分', 200, 'admin', 'admin/product_categories.html: 只读评分按钮', 1, now(), now()),
-('admin.product_categories.seo.unset', 'en-US', 'Not set', 200, 'admin', 'admin/product_categories.html: SEO 未填占位', 1, now(), now()),
-('admin.product_categories.seo.unset', 'zh-CN', '未填', 200, 'admin', 'admin/product_categories.html: SEO 未填占位', 1, now(), now()),
 ('admin.product_categories.title', 'en-US', 'Product categories', 200, 'admin', 'admin/product_categories.html: 页面标题', 1, now(), now()),
 ('admin.product_categories.title', 'zh-CN', '商品分类', 200, 'admin', 'admin/product_categories.html: 页面标题', 1, now(), now())
 ON CONFLICT (item_key, lang) DO NOTHING;

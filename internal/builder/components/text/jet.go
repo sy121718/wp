@@ -61,7 +61,9 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		return View{IsPlain: true, PlainTag: plainTag, Text: c}, nil
 	}
 
-	rich := sanitizeRichHTML(c)
+	// 清洗后补绝对地址：正文是内容作者写的 HTML，站内链接只能在构建期归一
+	// （组件输出的链接各自在自己的数据入口就已是绝对，见 core.AbsolutizeInternalLinks）。
+	rich := core.AbsolutizeInternalLinks(sanitizeRichHTML(c))
 	if p.Excerpt > 0 {
 		rich = html.EscapeString(truncateRunes(stripRichTags(c), p.Excerpt))
 	}

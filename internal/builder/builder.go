@@ -165,6 +165,9 @@ type compileConfig struct {
 	// 与 ga4MeasurementID 同源、同一条链路（审计 SEO-009）。
 	searchConsoleVerification string
 	structureSlots            []StructureSlot
+	// canvasSlotFrames 是否为结构槽位输出画布标记层（编辑器画布专用，默认关）。
+	// 语义与不变量见 core.RenderContext.CanvasSlotFrames。
+	canvasSlotFrames bool
 	// enhanceSource 客户端增强脚本源码（构建期按产物特征裁剪后内联进产物）。
 	//
 	// 由调用方注入而不是 builder 自己 embed：前端资产统一放在 internal/templates/static/，
@@ -192,6 +195,17 @@ type compileConfig struct {
 // 一行都不用改，行为与改造前逐字一致。
 func WithCompileMode(mode CompileMode) CompileOption {
 	return func(c *compileConfig) { c.mode = mode }
+}
+
+// WithCanvasSlotFrames 开启结构槽位的「画布标记层」（**只给编辑器画布用**）。
+//
+// 开启后，展开成功的 core.layoutSlot 会多输出一层 data-sky-slot 的 div：画布据此
+// 认出页眉 / 页脚区域、把它当只读边界、并提供「点进去编辑全局块」的入口。
+// 它渲染的是给编辑器看的元信息，不是页面内容 —— 所以**发布路径必须保持关闭**：
+// 否则 structure_slots_test 立下的「槽位展开 ≡ 块内容直接写在页面里」逐字节约定
+// 就破了（那条约定是槽位从字符串拼接迁移过来时能逐字节比对的前提）。
+func WithCanvasSlotFrames() CompileOption {
+	return func(c *compileConfig) { c.canvasSlotFrames = true }
 }
 
 // WithDegradeCollector 注入引用降级归因收集器（可选）。
@@ -618,6 +632,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
 		AssetProbe:            cfg.assetProbe,
 		Features:              features,
+		CanvasSlotFrames:      cfg.canvasSlotFrames,
 	}
 	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
 	ctx.SetSitePages(cfg.sitePages)

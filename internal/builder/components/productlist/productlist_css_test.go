@@ -102,8 +102,23 @@ func TestProductListCSSListOnlyRules(t *testing.T) {
 	}
 	// 列表模式是「基础规则 + 追加两条」, 基础那条不能被吃掉。
 	base := listRuleText(t, grid, ".sky-c-t .sky-product-list-item {")
-	if !strings.Contains(base, "flex-direction: column") || !strings.Contains(base, "border-radius: 12px") {
+	// 卡片基础规则：竖排 + 浅灰底图区（源站形态）。
+	// 卡片本身**没有描边与圆角** —— 一屏几十张卡时描边会把版面割碎，
+	// 圆角与浅灰底改由 .sky-product-list-thumb 承担。
+	if !strings.Contains(base, "flex-direction: column") || !strings.Contains(base, "background: var(--sky-c-surface, #fff)") {
 		t.Errorf("基础卡片规则缺失:\n%s", base)
+	}
+	// 折扣角标：源站是蓝色胶囊压在图左上角（底色加深一档：白字 12px 需 4.5:1 对比）。
+	badge := listRuleText(t, grid, ".sky-c-t .sky-product-list-discount {")
+	for _, want := range []string{"position: absolute", "border-radius: 5px", "background: var(--sky-c-primary-deep, #0068cc)", "color: #fff", "font-weight: 600"} {
+		if !strings.Contains(badge, want) {
+			t.Errorf("折扣角标规则缺少 %q:\n%s", want, badge)
+		}
+	}
+	// 图区：定位基准 + 浅灰底（角标挂它上面）。
+	thumb := listRuleText(t, grid, ".sky-c-t .sky-product-list-thumb {")
+	if !strings.Contains(thumb, "position: relative") || !strings.Contains(thumb, "background: var(--sky-c-bg-soft, #f4f5f6)") {
+		t.Errorf("图区规则缺少定位基准或浅灰底:\n%s", thumb)
 	}
 	if listCount, gridCount := strings.Count(list, ".sky-c-t .sky-product-list-item {"), strings.Count(grid, ".sky-c-t .sky-product-list-item {"); listCount != gridCount+1 {
 		t.Errorf("列表模式应比网格模式多一条 item 规则 (list=%d grid=%d)", listCount, gridCount)

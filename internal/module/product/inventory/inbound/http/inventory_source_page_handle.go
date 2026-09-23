@@ -38,8 +38,19 @@ import (
 // sourceStatusFilterAll 状态筛选的「全部（含停用）」取值。
 const sourceStatusFilterAll = "all"
 
-// inventorySourcePageSize 货源页一次列出的条数（后台核对用；完整清单走接口分页）。
+// inventorySourcePageSize 货源页一次列出的条数（每页条数；完整清单靠分页翻）。
+//
+// 原先它同时充当「硬编码上限」—— 第 201 个货源静默消失且页面上没有任何提示。
+// 现在它是**每页条数**（可用 ?limit= 调小，上限见 inventorySourceMaxPageSize），
+// 页面下方给分页条，第 201 个之后靠翻页看到。
 const inventorySourcePageSize = 200
+
+// inventorySourceMaxPageSize 货源页每页条数的上限（?limit= 的封顶值）。
+//
+// 与 service 的 maxSourcePageSize 同口径：超过它 service 会自己截到 200，
+// 页面若允许更大的值，URL 上写着 500 而实际只回 200 —— 「翻页少一截」这类缺陷
+// 页面不报错，只是数据对不上，最难查。
+const inventorySourceMaxPageSize = 200
 
 // inventorySourcePageHandle 货源管理页处理器。
 type inventorySourcePageHandle struct {
@@ -53,17 +64,104 @@ func NewInventorySourcePageHandle(inventory inventorycontract.InventoryService,
 	return &inventorySourcePageHandle{inventory: inventory, projects: projects}
 }
 
+// inventorySourcesPageData 货源管理页的模板数据（正常渲染与「装载失败降级渲染」共用一份拼装）。
+//
+// 单独一个类型的理由与 project 域主题管理页同源：降级渲染若另抄一份 gin.H，两处的键集
+// 必然分叉 —— 而 Jet 的可选键缺 key 是**整页中断**（HTTP 200 + 后面整块 HTML 消失），
+// 症状比脱壳的纯文本更难看出来。
+type inventorySourcesPageData struct {
+	Projects        []projectcontract.ProjectResp
+	SelectedProject string
+	Sources         []gin.H
+	HasSummary      bool
+	Summary         gin.H
+	FilterType      string
+	FilterRelated   string
+	FilterStatus    string
+	FilterKeyword   string
+	Err             string
+	Ok              string
+	Done            string
+	// LoadFailed 本次请求的工程列表没读出来（降级渲染）。
+	//
+	// 与 order 域订单页 / 退货页同名的判据：模板里没有可靠的办法分辨「Sources 为空」
+	// 是「这个工程真的没有货源」还是「这一次没读出来」—— 前者要引导去建一个，
+	// 后者只能说明「稍后重试」，把人引向新建抽屉是错的。
+	LoadFailed bool
+	// Pagination 分页条数据（nil = 单页 / 装载失败，模板不渲染分页条）。
+	//
+	// 与其它键一样放在结构体里：正常渲染与降级渲染共用一份 templateMap，
+	// 降级分支才不会「忘记」给某个键（Jet 缺 key 是整页中断，见 internal/templates/CLAUDE.md）。
+	Pagination *shell.PaginationData
+}
+
+// templateMap 转 Jet 模板键（页面框架字段以小写 title / menu 取值）。
+func (d *inventorySourcesPageData) templateMap() gin.H {
+	m := gin.H{
+		"title":           inventoryenums.MsgInventorySourcesTitle,
+		"menu":            "inventory-sources",
+		"Projects":        d.Projects,
+		"SelectedProject": d.SelectedProject,
+		"Sources":         d.Sources,
+		"HasSummary":      d.HasSummary,
+		"Summary":         d.Summary,
+		"TypeOptions":     sourceTypeOptions(),
+		"StatusOptions":   sourceStatusOptions(),
+		"RelatedOptions":  sourceRelatedOptions(),
+		"FilterType":      d.FilterType,
+		"FilterRelated":   d.FilterRelated,
+		"FilterStatus":    d.FilterStatus,
+		"FilterStatusAll": sourceStatusFilterAll,
+		"FilterKeyword":   d.FilterKeyword,
+		"Err":             d.Err,
+		"Ok":              d.Ok,
+		"Done":            d.Done,
+		"LoadFailed":      d.LoadFailed,
+	}
+	// 分页条键（PaginationInfo / PaginationLinks）：nil 时给空 map，模板的
+	// {{if .["PaginationLinks"]}} 自然跳过 —— 单页与装载失败两条路都不渲染分页条。
+	for k, v := range d.Pagination.TemplateKeys() {
+		m[k] = v
+	}
+	return m
+}
+
+// renderSourcesPage 货源页的唯一渲染出口：正常与降级两条路都从这里出，
+// 键集只有一处定义（降级分支不必「记得」补齐模板要的每一个键）。
+func (h *inventorySourcePageHandle) renderSourcesPage(c *gin.Context, d *inventorySourcesPageData) {
+	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", shell.Prepare(c, d.templateMap()))
+}
+
 // InventorySourcesPage 货源管理页：工程切换 + 关联方统计 + 筛选 + 新建 + 列表（可编辑）。
 func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		c.String(http.StatusInternalServerError, shell.MsgInternalError)
-		return
+
+	// 回显文案先过读侧白名单（见 inventory_page_handle.go 的 inventoryPageErr）：查询参数不是可信边界。
+	pageErr := inventoryPageErr(c)
+
+	projects, loadErr := h.projects.List(ctx)
+	// 工程列表读不出来**不拿走整个页面**（判据与 order 域订单页 / project 域主题页一致）：
+	// 空列表 + 归口提示 + HTTP 200，页头 / 筛选栏 / 批量条与侧栏全部保留 ——
+	// 运营看得出「是这一页没读出来」，而不是对着一块纯文本以为整个后台坏了。
+	//
+	// 原先这里是 `c.String(500, shell.MsgInternalError)`：响应的是一块**裸归口 key** 的纯文本，
+	// 页面上显示的就是 `MsgInternalError` 这串英文（既没翻译、也没页壳）。
+	//
+	// 装载失败**压过 ?err=**：它是这次请求真实发生的事，URL 里那条是上一次写失败的旧提示。
+	loadFailed := loadErr != nil
+	if loadFailed {
+		projects = nil
+		pageErr = inventoryErrText(c, loadErr)
 	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
+
+	// 装载失败时不再去读列表与统计：工程上下文没定下来（selected 只能来自 URL），
+	// 拿一个可能属于别的工程的 project 参数去查货源，查出来的是哪个工程的货源都说不清。
+	selected := ""
+	if !loadFailed {
+		selected = strings.TrimSpace(c.Query("project"))
+		if selected == "" && len(projects) > 0 {
+			selected = projects[0].ID
+		}
 	}
 
 	filterType := strings.TrimSpace(c.Query("type"))
@@ -79,48 +177,87 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	}
 
 	sources := []gin.H{}
-	// 读侧一律经白名单出口（见 inventory_page_handle.go 的 inventoryPageErr）：查询参数不是可信边界。
-	pageErr := inventoryPageErr(c)
-	list, lerr := h.inventory.ListSources(ctx, &inventorydto.ListSourceReq{
-		ProjectID: selected, Type: filterType, RelatedParty: filterRelated,
-		Status: filterStatus, Keyword: filterKeyword,
-		IncludeDisabled: includeDisabled, Size: inventorySourcePageSize,
-	})
-	if lerr != nil {
-		// 筛选参数不合法等：把业务错误回显到页面，不把内部细节直出。
-		// 统一走库存域的「错误文案三件套」：命中白名单 → 原样业务文案；否则记结构化日志 + 归口文案
-		//（模板只渲染这一份成品文案，不再对 .Err 二次取词）。
-		if pageErr == "" {
-			pageErr = inventoryErrText(c, lerr)
+	// 与 sourceSummary 的失败分支同形：模板只在 HasSummary 为真时读 Summary，
+	// 但键本身必须在（组内键缺失同样会中断渲染）。
+	summary := gin.H{"Groups": []gin.H{}}
+	hasSummary := false
+	var total int64
+	// 分页（审计 D3）：?page= / ?limit=，缺省每页 200 条。原先这一页写死 200 且没有分页条，
+	// 第 201 个货源**静默消失**、页面上没有任何提示。
+	page, limit := inventoryPageParams(c, inventorySourcePageSize, inventorySourceMaxPageSize)
+	if !loadFailed {
+		// 过滤条件只构造一次：列表与计数各自复制、只加各自的 Page/Size。
+		// 两处各写一份时，最容易漏的是 IncludeDisabled 决定的那一档默认状态 ——
+		// 计数把停用的也算进去，分页条就会凭空多出一页空列表。
+		filterReq := &inventorydto.ListSourceReq{
+			ProjectID: selected, Type: filterType, RelatedParty: filterRelated,
+			Status: filterStatus, Keyword: filterKeyword,
+			IncludeDisabled: includeDisabled,
 		}
-	} else {
-		for _, s := range list {
-			sources = append(sources, sourceRow(s))
+		// 先计数、收敛页码，再取当页数据（顺序不能反，见 clampInventoryPage）。
+		if n, cerr := h.inventory.CountSources(ctx, filterReq); cerr != nil {
+			// 筛选参数不合法等：把业务错误回显到页面，不把内部细节直出。
+			// 统一走库存域的「错误文案三件套」：命中白名单 → 原样业务文案；否则记结构化日志 + 归口文案
+			//（模板只渲染这一份成品文案，不再对 .Err 二次取词）。
+			if pageErr == "" {
+				pageErr = inventoryErrText(c, cerr)
+			}
+		} else {
+			total = n
+			page = clampInventoryPage(page, limit, total)
+			listReq := *filterReq
+			listReq.Page, listReq.Size = page, limit
+			list, lerr := h.inventory.ListSources(ctx, &listReq)
+			if lerr != nil {
+				if pageErr == "" {
+					pageErr = inventoryErrText(c, lerr)
+				}
+			} else {
+				for _, s := range list {
+					sources = append(sources, sourceRow(s))
+				}
+			}
 		}
+		summary, hasSummary = h.sourceSummary(c, ctx, selected, &pageErr)
 	}
 
-	summary, hasSummary := h.sourceSummary(c, ctx, selected, &pageErr)
+	// 分页条（nil = 单页 / 空数据 / 装载失败，模板不渲染）：基址带当前全部筛选维度，
+	// 翻页不丢条件。
+	// status 用**原始取值**：includeDisabled 时 FilterStatus 已被归一成空串（模板的
+	// 「全部（含停用）」是另一个键 FilterStatusAll），拿归一后的值拼链接会让翻页时
+	// 「连停用的一起列」被悄悄丢掉 —— 表现为翻页后记录变少，看着像数据丢了。
+	var pagination *shell.PaginationData
+	if !loadFailed {
+		statusForLink := filterStatus
+		if includeDisabled {
+			statusForLink = sourceStatusFilterAll
+		}
+		pagination = shell.BuildPagination(total, page, limit, shell.FilterBaseURL(
+			"/admin/inventory/sources", map[string]string{
+				"project":      selected,
+				"type":         filterType,
+				"relatedParty": filterRelated,
+				"status":       statusForLink,
+				"keyword":      filterKeyword,
+			}), shell.TranslateFor(c))
+	}
 
-	c.HTML(http.StatusOK, "admin/inventory_sources.html", shell.Prepare(c, gin.H{
-		"title":           inventoryenums.MsgInventorySourcesTitle,
-		"menu":            "inventory-sources",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Sources":         sources,
-		"HasSummary":      hasSummary,
-		"Summary":         summary,
-		"TypeOptions":     sourceTypeOptions(),
-		"StatusOptions":   sourceStatusOptions(),
-		"RelatedOptions":  sourceRelatedOptions(),
-		"FilterType":      filterType,
-		"FilterRelated":   filterRelated,
-		"FilterStatus":    filterStatus,
-		"FilterStatusAll": sourceStatusFilterAll,
-		"FilterKeyword":   filterKeyword,
-		"Err":             pageErr,
-		"Ok":              inventoryPageOk(c),
-		"Done":            inventoryPageDone(c),
-	}))
+	h.renderSourcesPage(c, &inventorySourcesPageData{
+		Projects:        projects,
+		SelectedProject: selected,
+		Sources:         sources,
+		HasSummary:      hasSummary,
+		Summary:         summary,
+		FilterType:      filterType,
+		FilterRelated:   filterRelated,
+		FilterStatus:    filterStatus,
+		FilterKeyword:   filterKeyword,
+		Err:             pageErr,
+		Ok:              inventoryPageOk(c),
+		Done:            inventoryPageDone(c),
+		LoadFailed:      loadFailed,
+		Pagination:      pagination,
+	})
 }
 
 // InventorySourceCreate 新建货源（内部类型自动成为关联方）。

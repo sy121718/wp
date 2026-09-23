@@ -34,6 +34,12 @@ type View struct {
 	// PrevLabel / NextLabel 箭头 aria-label（构建期按当前语言填充，多语言 P4）。
 	PrevLabel string
 	NextLabel string
+	// PrevIcon / NextIcon 箭头图标（基座图标库 chevron-left / chevron-right，完整 <svg>）。
+	//
+	// 以前模板里直接写字符 '‹' / '›' —— 字符箭头在不同字体的字宽与基线上都不一致，
+	// 也无法与图标库统一描边（同一页面上图标风格会明显不同）。
+	PrevIcon string
+	NextIcon string
 	// SlideLabel 圆点 aria-label 模板（含单个 %s；兜底保留）。
 	SlideLabel string
 	// Dots 圆点导航（构建期生成 <a> 锚点：点击由浏览器原生滚动 + scroll-snap 对齐，
@@ -111,6 +117,14 @@ func BuildView(node *core.Node, p *Props) View {
 			v.Dots = append(v.Dots, DotItem{
 				Anchor: "sky-slide-" + node.ID + "-" + strconv.Itoa(i),
 			})
+		}
+	}
+	if p.ShowArrows {
+		if svg, ok := core.IconSVGClass("chevron-left", "sky-slider-arrow-icon"); ok {
+			v.PrevIcon = svg
+		}
+		if svg, ok := core.IconSVGClass("chevron-right", "sky-slider-arrow-icon"); ok {
+			v.NextIcon = svg
 		}
 	}
 	return v

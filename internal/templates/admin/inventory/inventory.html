@@ -1,0 +1,307 @@
+{* admin/inventory.html — 库存管理（issue #15 #16；2026-09 库存域收口）
+   页面定位：**只读视图 + 一个受权限约束的调整入口**。
+     · 库存变动不由本页直接录入：入库 / 出库要与单据对应 —— 采购入库与生产入库在
+       /admin/inventory/purchases，销售出库走发货，退货入库走退货单，调拨走调拨单。
+       原先内联的「入库 / 出库 / 调整」表单与「生产入库」按钮已撤掉（后端能力没动，
+       那些路径仍在用同一套变动契约写真源与流水）。
+     · 保留的写入口是「库存调整（盘点 / 报损）」：盘点（目标绝对量）与报损（本次减少量）
+       是**没有单据承载**的两类调整，必须能手工落账，且必须填原因与备注。
+     · 仓库管理 → /admin/inventory/warehouses（独立页）
+       变动原因字典 → /admin/inventory/reasons（独立页）
+       「某 SKU 各仓库存」→ 并入本页 SKU 筛选的结果（同一查询对象的另一个视角）。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{selectedVariant := .SelectedVariant}}
+{{selectedSKU := .SelectedSKU}}
+{{reasons := .Reasons}}
+{{filterWarehouse := ""}}{{if isset(.FilterWarehouse)}}{{filterWarehouse = .FilterWarehouse}}{{end}}
+{{filterDirection := ""}}{{if isset(.FilterDirection)}}{{filterDirection = .FilterDirection}}{{end}}
+{{filterReason := ""}}{{if isset(.FilterReason)}}{{filterReason = .FilterReason}}{{end}}
+{{filterTimeFrom := ""}}{{if isset(.FilterTimeFrom)}}{{filterTimeFrom = .FilterTimeFrom}}{{end}}
+{{filterTimeTo := ""}}{{if isset(.FilterTimeTo)}}{{filterTimeTo = .FilterTimeTo}}{{end}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.inventory.title", "库存管理") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.inventory.source.lead", "库存以「SKU × 仓库」为维度，这里显示的是") }}<strong>{{ .["t"]("admin.inventory.source.bold", "库存真源") }}</strong>{{ .["t"]("admin.inventory.source.tail", "；商品页里的「库存缓存」列只是列表展示用的冗余字段，不参与任何可用量判断。") }} {{ .["t"]("admin.inventory.change.lead", "变动一律在") }}<strong>{{ .["t"]("admin.inventory.change.boldSource", "真源") }}</strong>{{ .["t"]("admin.inventory.change.mid", "上带行锁执行，并逐条写流水（方向 / 数量 / 原因 / 来源引用）。原因只能从") }}<strong>{{ .["t"]("admin.inventory.change.boldDict", "变动原因字典") }}</strong>{{ .["t"]("admin.inventory.change.mid2", "里选 —— 不接受自由文本，否则「按原因统计出入库」永远做不干净。调整方向填的是") }}<strong>{{ .["t"]("admin.inventory.change.boldTarget", "目标绝对量") }}</strong>{{ .["t"]("admin.inventory.change.tail", "（盘点口径），报损填的是本次减少量。") }}</span>
+                </span>
+            </div>
+            {* 边界提示：入库 / 出库属于单据，不属于本页。写清楚比留一个能点的按钮更好 ——
+               用户找不到「怎么入库」时会先看这句话，而不是去点一个语义不符的入口。 *}
+            <p class="page-sub">{{ .["t"]("admin.inventory.boundary.lead", "入库 / 出库请走单据：采购入库与") }}<a href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.production", "生产入库") }}</a>{{ .["t"]("admin.inventory.boundary.tail", "在采购入库页，销售出库走发货，退货入库走退货单，调拨走调拨单。本页只保留盘点与报损的调整入口。") }}</p>
+        </div>
+        <div class="page-actions">
+            {* 唯一的写入口：盘点 / 报损（无单据承载的两类调整）。按钮文案直接说能做什么。 *}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-stock-adjust"
+                    data-drawer-title="{{ .["t"]("admin.inventory.adjust.title", "库存调整（盘点 / 报损）") }}"
+                    title="{{ .["t"]("admin.inventory.adjust.actionHint", "登记库存变动：盘点填目标绝对量，报损填本次减少量，都必须填原因与备注") }}">＋ {{ .["t"]("admin.inventory.adjust.actionLabel", "库存调整（盘点 / 报损）") }}</button>
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/inventory">
+                <label class="sr-only" for="inv-project">{{ .["t"]("admin.inventory.field.project", "站点工程") }}</label>
+                <select class="form-select" id="inv-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.inventory.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory.lastOk", "上一次操作已完成。") }}</p>
+    {{end}}
+
+    <section class="card list-card">
+        <div class="filter-bar">
+            <div class="filter-row">
+                <span class="fold-title">{{ .["t"]("admin.inventory.moves.titleLead", "库存流水（最近 ") }}{{len(.Movements)}}{{ .["t"]("admin.inventory.moves.titleTail", " 条）") }}</span>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.inventory.moves.hint", "每一次真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。按「物料清单展开扣减」产生的子项流水会标出它由哪个父 SKU 引出。") }} {{ .["t"]("admin.inventory.filter.timeHint", "时间筛选按流水创建时间过滤；只填日期时，截止日按当天 23:59:59 收口。") }} {{ .["t"]("admin.inventory.sku.empty", "选一个 SKU 后，这里列出它在各仓的库存记录（库存以「SKU × 仓库」为维度）。") }}</span>
+                </span>
+            </div>
+            <form method="get" action="/admin/inventory" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <div class="filter-field">
+                    <label for="mv-sku">{{ .["t"]("admin.inventory.change.labelSku", "SKU") }}</label>
+                    <input type="text" class="form-input" id="mv-sku" name="sku" value="{{selectedSKU}}" placeholder="{{ .["t"]("admin.inventory.ph.sku", "SKU 编码") }}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="mv-warehouse">{{ .["t"]("admin.inventory.change.labelWarehouse", "仓库") }}</label>
+                    <select class="form-select" id="mv-warehouse" name="warehouseId">
+                        <option value="">{{ .["t"]("admin.inventory.filter.allWarehouses", "（全部）") }}</option>
+                        {{range _, w := .Warehouses}}
+                        <option value="{{w.ID}}" {{if w.ID == filterWarehouse}}selected{{end}}>{{w.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="mv-direction">{{ .["t"]("admin.inventory.moves.col.direction", "方向") }}</label>
+                    <select class="form-select" id="mv-direction" name="direction">
+                        <option value="">{{ .["t"]("admin.inventory.filter.allDirections", "（全部）") }}</option>
+                        {{range _, d := .Directions}}
+                        <option value="{{d.Value}}" {{if d.Value == filterDirection}}selected{{end}}>{{d.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="mv-reason">{{ .["t"]("admin.inventory.change.labelReason", "变动原因") }}</label>
+                    <select class="form-select" id="mv-reason" name="reasonCode">
+                        <option value="">{{ .["t"]("admin.inventory.filter.allReasons", "（全部）") }}</option>
+                        {{range _, r := reasons}}
+                        <option value="{{r.Code}}" {{if r.Code == filterReason}}selected{{end}}>{{r.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="mv-time-from">{{ .["t"]("admin.inventory.filter.timeFrom", "起始时间") }}</label>
+                    <input type="date" class="form-input" id="mv-time-from" name="timeFrom" value="{{filterTimeFrom}}">
+                </div>
+                <div class="filter-field">
+                    <label for="mv-time-to">{{ .["t"]("admin.inventory.filter.timeTo", "截止时间") }}</label>
+                    <input type="date" class="form-input" id="mv-time-to" name="timeTo" value="{{filterTimeTo}}">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/inventory?project={{selectedProject}}">{{ .["t"]("admin.inventory.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+        </div>
+
+        {* 某 SKU 的各仓库存：与流水是同一查询对象的两个视角，跟在筛选结果后面，不再单独成区。 *}
+        {{if len(.StockRows) > 0}}
+        <div class="filter-bar">
+            <div class="filter-row">
+                <span class="fold-title">{{ .["t"]("admin.inventory.sku.title", "该 SKU 的各仓库存") }}</span>
+                <code>{{selectedSKU}}</code>
+            </div>
+        </div>
+        <div class="table-wrap" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead><tr><th>{{ .["t"]("admin.inventory.sku.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.sku.col.code", "短码") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}</th><th>{{ .["t"]("admin.inventory.sku.col.qty", "数量") }}</th><th>{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}</th><th>{{ .["t"]("admin.inventory.sku.col.updatedAt", "更新时间") }}</th></tr></thead>
+            <tbody>
+            {{range _, r := .StockRows}}
+            <tr>
+                <td>{{r.WarehouseName}}</td>
+                <td><code>{{r.WarehouseCode}}</code></td>
+                <td><code>{{r.SKUCode}}</code></td>
+                {* 外部编码：可编辑（迁移 251 带来的字段，原先只有只读列 —— 老商品事后没地方登记外码）。
+                   空串是**合法状态**（该仓用我们自己的 SKU），所以输入框不留 required：
+                   清空后保存就是撤销映射，不是「保存失败」。
+                   表单走原生 POST + PRG（与本模块采购页的「登记入库」同形），不写自定义 JS；
+                   能否提交由服务端中间件按 inventory:stock_change 判定，页面不自行判断权限。
+                   isset 包裹：直接渲染模板的单测数据可能没有这些键，缺键会让整页在此中断。 *}
+                <td>
+                    <form method="post" action="/admin/inventory/external-sku" class="form-inline">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="projectId" value="{{selectedProject}}">
+                        <input type="hidden" name="skuCode" value="{{selectedSKU}}">
+                        <input type="hidden" name="variantId" value="{{r.VariantID}}">
+                        {{if isset(r.WarehouseID)}}<input type="hidden" name="warehouseId" value="{{r.WarehouseID}}">{{end}}
+                        <input type="text" class="form-input" name="externalSku" maxlength="128" autocomplete="off"
+                               value="{{if isset(r.ExternalSKU)}}{{r.ExternalSKU}}{{end}}"
+                               placeholder="{{ .["t"]("admin.inventory.sku.externalSku.ph", "留空 = 该仓用我们的 SKU") }}"
+                               aria-label="{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}">
+                        <button type="submit" class="btn btn-sm"
+                                title="{{ .["t"]("admin.inventory.sku.externalSku.actionHint", "登记这条货在该仓的外部编码；留空保存即撤销映射（改用我们自己的 SKU）") }}">{{ .["t"]("admin.inventory.sku.externalSku.save", "保存") }}</button>
+                    </form>
+                </td>
+                {* 数量列的三态（迁移 261）：∞ 无限（不跟踪；数量恒为 0，显示 0 会让无限
+                   看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。 *}
+                <td>{{if isset(r.QuantityLabel)}}{{r.QuantityLabel}}{{else}}—{{end}}</td>
+                <td>
+                    {* 行内编辑「跟踪开关 + 数量」：数量走变动契约（手工调整）并写流水。
+                       无限（不跟踪）时数量框**留空且禁用** —— 绝不预填 0：0 是「卖光」这个具体事实，
+                       要写就得用户自己打出来。联动用一行内联事件（与页面上「选工程即提交」同一手法，
+                       不引入自定义 JS 文件）。未入库的行没有可编辑对象，这里给提示而不是表单。 *}
+                    {{if isset(r.Present)}}{{if r.Present}}
+                    <form method="post" action="/admin/inventory/stock/tracking" class="form-inline">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="projectId" value="{{selectedProject}}">
+                        <input type="hidden" name="skuCode" value="{{selectedSKU}}">
+                        <input type="hidden" name="variantId" value="{{r.VariantID}}">
+                        {{if isset(r.WarehouseID)}}<input type="hidden" name="warehouseId" value="{{r.WarehouseID}}">{{end}}
+                        <label class="check-inline" title="{{ .["t"]("admin.inventory.stock.actionHint", "切换这条 SKU 在本仓的跟踪开关并写入数量；改成跟踪会按「手工调整」记一条流水") }}">
+                            <input type="checkbox" name="trackQuantity" value="1"
+                                   {{if isset(r.TrackQuantity)}}{{if r.TrackQuantity}}checked{{end}}{{end}}
+                                   onchange="var f=this.form,q=f.quantity;q.disabled=!this.checked;if(!this.checked){q.value='';}">
+                            {{ .["t"]("admin.inventory.stock.track", "跟踪库存") }}
+                        </label>
+                        <input type="number" class="form-input stock-qty" name="quantity" inputmode="numeric" step="1" min="0"
+                               placeholder="{{ .["t"]("admin.inventory.stock.qtyPh", "数量（无限时留空）") }}"
+                               aria-label="{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}"
+                               value="{{if isset(r.TrackQuantity)}}{{if r.TrackQuantity}}{{r.Quantity}}{{end}}{{end}}"
+                               {{if isset(r.TrackQuantity)}}{{if r.TrackQuantity}}{{else}}disabled{{end}}{{end}}>
+                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.stock.save", "保存") }}</button>
+                    </form>
+                    {{else}}
+                    <span class="move-meta" title="{{ .["t"]("admin.inventory.stock.notStockedHint", "这个仓还没有这条 SKU 的库存行（未入库），先入库或调整才会出现") }}">{{ .["t"]("admin.inventory.stock.notStocked", "未入库") }}</span>
+                    {{end}}{{end}}
+                </td>
+                <td>{{r.UpdatedAt}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{end}}
+
+        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头（时间 / SKU / 仓库 / 方向 / 变动 /
+           数量变化 / 原因 / 来源引用 / 操作人）是「这里能看什么」的说明，空数据不该连它一起藏掉。
+           空态落在 tbody 的整行里（colspan = 9 个实际列，本表没有勾选列）。
+           文案修正（审计 D8）：入库入口给出可点的链接（原先「采购入库页」是纯文本），
+           「库存调整」按钮就在这个空态里，不再写「右上角」这个不成立的方位。 *}
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead><tr><th>{{ .["t"]("admin.inventory.moves.col.time", "时间") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.moves.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.moves.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.moves.col.delta", "变动") }}</th><th>{{ .["t"]("admin.inventory.moves.col.qtyChange", "数量变化") }}</th><th>{{ .["t"]("admin.inventory.moves.col.reason", "原因") }}</th><th>{{ .["t"]("admin.inventory.moves.col.sourceRef", "来源引用") }}</th><th>{{ .["t"]("admin.inventory.moves.col.operator", "操作人") }}</th></tr></thead>
+            <tbody>
+            {{if len(.Movements) == 0}}
+            <tr><td colspan="9" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.inventory.moves.emptyHeading", "没有符合条件的库存流水") }}</p>
+                    <p class="empty-desc">{{ .["t"]("admin.inventory.moves.emptyLead", "还没有库存流水 —— 入库请从") }}<a href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory.moves.emptyPurchaseLink", "采购入库页") }}</a>{{ .["t"]("admin.inventory.moves.emptyTail", "收货；盘点 / 报损请点下面的「库存调整」。") }}</p>
+                    <div class="empty-actions">
+                        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-stock-adjust" data-drawer-title="{{ .["t"]("admin.inventory.adjust.title", "库存调整（盘点 / 报损）") }}">{{ .["t"]("admin.inventory.adjust.actionLabel", "库存调整（盘点 / 报损）") }}</button>
+                    </div>
+                </div>
+            </td></tr>
+            {{else}}
+            {{range _, m := .Movements}}
+            <tr>
+                <td>{{m.CreatedAt}}</td>
+                <td><code>{{m.SKUCode}}</code></td>
+                <td>{{m.WarehouseName}} <span class="move-meta">{{m.WarehouseCode}}</span></td>
+                <td>{{m.DirectionLabel}}</td>
+                <td>
+                    {{if m.Direction == "in"}}<span class="move-delta-in">+{{m.Quantity}}</span>{{end}}
+                    {{if m.Direction == "out"}}<span class="move-delta-out">-{{m.Quantity}}</span>{{end}}
+                    {{if m.Direction == "adjust"}}<span class="move-delta-none">±{{m.Quantity}}</span>{{end}}
+                </td>
+                <td>{{m.QuantityBefore}} → {{m.QuantityAfter}}</td>
+                <td>{{m.ReasonName}} <span class="move-meta">{{m.ReasonCode}}</span></td>
+                <td>{{if m.SourceRef != ""}}{{m.SourceRef}}{{else}}—{{end}} <span class="move-meta">{{m.SourceType}}</span></td>
+                <td>{{if m.OperatorID != ""}}{{m.OperatorID}}{{else}}—{{end}}</td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {* 分页条（审计 D3）：这一页原先写死「最近 50 条」且没有分页条 —— 流水按时间倒序，
+           第 51 条之后的老记录永远看不到。片段读 handler 注入的 PaginationInfo / PaginationLinks
+           （基址带当前 SKU / 仓库 / 方向 / 原因 / 时间筛选，翻页不丢条件）；
+           单页时不注入这两个键，片段自然不渲染。 *}
+        {{include "../partials/pagination.html"}}
+    </section>
+
+    {* ===== 抽屉：库存调整（盘点 / 报损）===== *}
+    {* 抽屉常驻渲染（入口按钮按权限显隐）：提交路径由服务端 Casbin 中间件按
+       inventory:stock_change 授权，未授权用户即便看到表单也会被拒绝。 *}
+    <template id="tpl-stock-adjust">
+        <form method="post" action="/admin/inventory/stock/change" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory.change.labelSku", "SKU") }}</label>
+                <select class="form-select" name="variantId" required>
+                    <option value="">{{ .["t"]("admin.inventory.change.optionPick", "（选择要变动的 SKU）") }}</option>
+                    {{range _, o := .VariantOptions}}
+                    <option value="{{o.VariantID}}" {{if o.VariantID == selectedVariant}}selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.change.labelWarehouse", "仓库") }}</label>
+                <select class="form-select" name="warehouseId">
+                    <option value="">{{ .["t"]("admin.inventory.change.optionWarehouse", "（默认仓）") }}</option>
+                    {{range _, w := .Warehouses}}
+                    <option value="{{w.ID}}">{{w.Name}}{{ .["t"]("admin.inventory.change.warehouseSuffixLead", "（") }}{{w.Code}}{{ .["t"]("admin.inventory.change.warehouseSuffixTail", "）") }}{{if w.IsDefault}}{{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory.moves.col.direction", "方向") }}</label>
+                <select class="form-select" name="direction" required>
+                    {{if isset(.AdjustDirections)}}{{range _, d := .AdjustDirections}}
+                    <option value="{{d.Value}}">{{d.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory.change.labelQuantity", "数量") }}</label>
+                <input type="number" class="form-input" name="quantity" placeholder="{{ .["t"]("admin.inventory.change.phQty", "调整填目标量") }}" inputmode="numeric" step="1" min="0" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory.change.labelReason", "变动原因") }}</label>
+                <select class="form-select" name="reasonCode" required>
+                    <option value="">{{ .["t"]("admin.inventory.change.optionReason", "（选择原因）") }}</option>
+                    {{if isset(.AdjustReasons)}}{{range _, r := .AdjustReasons}}
+                    <option value="{{r.Code}}">[{{r.DirectionLabel}}] {{r.Name}}（{{r.Code}}）</option>
+                    {{end}}{{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.change.labelSourceRef", "来源引用") }}</label>
+                <input type="text" class="form-input" name="sourceRef" placeholder="{{ .["t"]("admin.inventory.change.phSourceRef", "单据号等") }}" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{ .["t"]("admin.inventory.change.labelRemark", "备注") }}</label>
+                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory.adjust.phRemark", "必填：说明这次调整的依据") }}" required autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.change.submit", "提交变动") }}</button>
+            </div>
+        </form>
+    </template>
+</div>
+{{end}}

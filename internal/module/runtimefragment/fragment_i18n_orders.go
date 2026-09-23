@@ -158,16 +158,29 @@ func formatCentsLabel(r *Request, cents int64) string {
 	return fmt.Sprintf("%s%d.%02d %s", neg, cents/100, cents%100, yuanLabel(r))
 }
 
-// fragmentUserMessage 将 cart/order 模块中文常量映射为 i18n key（I18N-002 过渡层）。
+// fragmentUserMessage 把白名单命中的模块文案取成**当前语言**的一句（访客直接看到）。
+//
+// 取值两条路，按 msg 的**形态**分流：
+//
+//  1. 中文常量 —— 走下面的 fragmentMessageKeys 过渡映射表（「enums 还是中文常量」时代的
+//     产物），命中后换成 site.fragment.msg.* 词条；
+//  2. **item_key** —— cart / order 两个模块的 enums 已接 i18n，值就是 key 本身
+//     （order.err.stockInsufficient / cart.err.outOfStock …）。它们进不了上面那张中文表，
+//     而片段模板是**直接渲染**文本、不经过 pkg/response 的 translate —— 原先这一支原样
+//     返回 msg，结果是访客在片段里看到 `order.err.stockInsufficient` 这样的裸 key。
+//     按 key 直接取词即可（词条在 179/180 两批迁移里），缺词条时 fallback 给 key 本身
+//     （一眼可见，不静默吞掉整句）。
+//
+// 判定保持「白名单已由调用方完成」：本函数只负责取词，答案的来源仍是
+// cartenums/orderenums 的 UserFacingMessages（cartUserMessage / orderUserMessage）。
 func fragmentUserMessage(r *Request, msg string) string {
 	if r == nil || msg == "" {
 		return msg
 	}
-	key, ok := fragmentMessageKeys[msg]
-	if !ok {
-		return msg
+	if key, ok := fragmentMessageKeys[msg]; ok {
+		return r.tr(key, msg)
 	}
-	return r.tr(key, msg)
+	return r.tr(msg, msg)
 }
 
 // fragmentMessageKeys 白名单：模块 enums 中文 → site.fragment.msg.*。

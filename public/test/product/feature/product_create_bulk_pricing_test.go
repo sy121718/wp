@@ -87,12 +87,12 @@ func TestProductCreateBundleTypeAndGoToDetail(t *testing.T) {
 		t.Fatalf("新建应 302，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	loc := rec.Header().Get("Location")
-	// 新建抽屉只有几个字段，全量录入在详情页 —— 创建成功必须直接落到那一页。
-	if !strings.HasPrefix(loc, "/admin/products/detail?") {
-		t.Fatalf("新建成功后应进该商品的详情页继续编辑，实际 Location=%q", loc)
+	// 新建表单只有几个字段，全量录入在编辑页 —— 创建成功必须直接落到那一页。
+	if !strings.HasPrefix(loc, "/admin/products/edit?") {
+		t.Fatalf("新建成功后应进该商品的编辑页继续录入，实际 Location=%q", loc)
 	}
 	if locProject := locationQuery(t, loc, "project"); locProject != f.projectID {
-		t.Fatalf("详情页回跳丢了工程上下文：%q", loc)
+		t.Fatalf("编辑页回跳丢了工程上下文：%q", loc)
 	}
 	productID := locationQuery(t, loc, "product")
 	if productID == "" {
@@ -136,8 +136,9 @@ func TestProductCreateBundleWithoutPriceReportsChinese(t *testing.T) {
 		t.Fatalf("被拒也应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/admin/products?") {
-		t.Fatalf("新建失败应回列表页（抽屉所在页），实际 Location=%q", loc)
+	// 失败落点已从「回列表页」改为「回**新建页自身**」（批 1，见 docs/02-T §5）。
+	if !strings.HasPrefix(loc, "/admin/products/new?") {
+		t.Fatalf("新建失败应回新建页（表单所在页），实际 Location=%q", loc)
 	}
 	msg := locationQuery(t, loc, "err")
 	if !strings.Contains(msg, "捆绑商品必须自定价") {
@@ -165,11 +166,12 @@ func TestProductCreateAttributeSelection(t *testing.T) {
 	color := mkVariationAttr(t, f, "颜色", "color", []string{"red", "blue"})
 	size := mkVariationAttr(t, f, "尺寸", "size", []string{"s", "m"})
 
-	// 列表页必须渲染出勾选列表（值就是属性组 id），否则用户无从下手。
-	page := getProductsPage(engine, f.projectID)
+	// 新建整页必须渲染出勾选列表（值就是属性组 id），否则用户无从下手。
+	// 落点从列表页抽屉改为整页：那个 template 已退役（见 getProductsNewPage 的注释）。
+	page := getProductsNewPage(engine, f.projectID)
 	for _, want := range []string{"name=\"attributeIds\"", "颜色（color）", "尺寸（size）"} {
 		if !strings.Contains(page, want) {
-			t.Fatalf("新建抽屉的属性组勾选列表缺少 %q", want)
+			t.Fatalf("新建整页的属性组勾选列表缺少 %q", want)
 		}
 	}
 
@@ -348,8 +350,10 @@ func TestProductCreateSKUInputAndEcho(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"未填编码套餐"}, "slug": {"summer-set"},
 		"type": {"bundle"}, "defaultPrice": {"99"},
 	})
-	if bundleRec.Code != http.StatusFound || !strings.HasPrefix(bundleRec.Header().Get("Location"), "/admin/products?") {
-		t.Fatalf("没填编码的捆绑应被拒并回列表页，实际 %d %q", bundleRec.Code, bundleRec.Header().Get("Location"))
+	// 失败落点已从「回列表页」改为「回**新建页自身**」：表单就在那一页、页头有 ?err= 渲染位；
+	// 回列表页会让用户以为「提交成功才跳走的」，还要重新找一遍新建入口（批 1，见 docs/02-T §5）。
+	if bundleRec.Code != http.StatusFound || !strings.HasPrefix(bundleRec.Header().Get("Location"), "/admin/products/new?") {
+		t.Fatalf("没填编码的捆绑应被拒并回新建页，实际 %d %q", bundleRec.Code, bundleRec.Header().Get("Location"))
 	}
 	bundleMsg := locationQuery(t, bundleRec.Header().Get("Location"), "err")
 	if !strings.Contains(bundleMsg, "必须填写主体 SKU") {
@@ -364,7 +368,7 @@ func TestProductCreateSKUInputAndEcho(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"中文套餐"}, "slug": {"中文套餐"},
 		"type": {"bundle"}, "defaultPrice": {"99"}, "sku": {"CN-BUNDLE"},
 	})
-	if cn.Code != http.StatusFound || !strings.HasPrefix(cn.Header().Get("Location"), "/admin/products/detail?") {
+	if cn.Code != http.StatusFound || !strings.HasPrefix(cn.Header().Get("Location"), "/admin/products/edit?") {
 		t.Fatalf("填了编码的捆绑应建成功，实际 %d %q", cn.Code, cn.Header().Get("Location"))
 	}
 	cnID := locationQuery(t, cn.Header().Get("Location"), "product")

@@ -11,6 +11,7 @@ import (
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 // order_page_query.go - 订单管理页的查询参数解析与对外文案出口。
@@ -37,18 +38,54 @@ func orderQueryID(raw string) uint64 {
 	return id
 }
 
-// orderFacingError 把订单模块的错误转成可展示文案。
+// orderPageFacingText 页面路径的提示取词出口（白名单判定 + **取当前语言的译文**）。
+//
+// 为什么要多这一层：orderenums 里的值分两种形态 —— 多数是 sys_i18n 的 item_key
+// （order.err.orderNotFound），少数是中文常量（ErrInternal = "操作失败，请稍后重试"）。
+// orderFacingText 只做白名单判定、原样返回命中的那个值，因为 **API 出口需要 key**：
+// order_handle.go 把 key 交给 pkg/response 去翻译。
+//
+// 但页面路径是**直接渲染**的文本（模板里就是 {{.Err}} / {{.Ok}}，不经过 response 的
+// translate）。实测（2026-09）：/admin/orders?err=order.err.orderNotFound 的提示条上
+// 显示的就是那一串裸 key —— 同一份白名单在 API 出口是 key、在页面出口也是 key，
+// 于是「订单不存在」这句现成的译文永远到不了运营眼前。
+//
+// 判定仍只有一份（orderFacingText），本函数只负责把命中的值按当前语言取词：
+// 命中的是 item_key 就出译文（词条缺失时回落 key 本身，与之前的行为一致）；
+// 命中的是中文常量时按 key 查不到词条，取词函数据 fallback 原样返回 —— 两种形态都对。
+func orderPageFacingText(c *gin.Context) func(string) string {
+	return func(raw string) string {
+		hit := orderFacingText(raw)
+		if hit == "" {
+			return ""
+		}
+		return shell.TranslateFor(c)(hit, hit)
+	}
+}
+
+// orderFacingError 把订单模块的错误转成可展示文案（本模块页面路径的**错误文案三件套**出口）。
 //
 // 订单模块的业务错误本来就是给运营看的中文（「库存不足，无法下单」），但它同时也
 // 可能是数据库错误的原文（带表名甚至 SQL 片段）。因此只放行模块自己声明的
 // orderenums.UserFacingMessages 白名单，其余一律落到统一提示。
+//
+// 三件套在这里的落法：
+//
+//	① 白名单 —— orderFacingText（enums.UserFacingMessages，与 API 出口共用同一份）；
+//	② 归口文案 —— shell.PageInternalText(c)：**当前语言的译文**，不是裸 key
+//	   （列表页装载失败时它进的是模板 {{.Err}}，那是直接渲染的文本，不经过 response 的 translate；
+//	   原先那条路径是 `c.String(500, orderenums.ErrInternal)` —— 硬编码中文，英文界面照旧显示中文）；
+//	   命中白名单的那一支同样取译文（orderPageFacingText），否则页面显示的是裸 key；
+//	③ 结构化日志 —— **只有落到归口文案那一支才记**：命中白名单的是业务错误（预期内的用户输入问题），
+//	   记 ERROR 只会淹没真正的故障；未命中的原文（表名 / SQL 片段 / 驱动前缀）只进日志、绝不进响应。
 func orderFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := orderFacingText(err.Error()); msg != "" {
+	if msg := orderPageFacingText(c)(err.Error()); msg != "" {
 		return msg
 	}
+	logger.Scene("order-page").With("path", c.Request.URL.Path).Error(err, "订单后台页处理失败")
 	return shell.PageInternalText(c)
 }
 

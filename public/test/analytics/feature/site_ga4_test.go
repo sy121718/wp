@@ -60,7 +60,7 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 	}
 
 	setGA4("G-ABC1234567")
-	html, err := pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN")
+	html, err := pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 
 	// 清空测量 ID：产物里不再有统计代码（零字节注入不变量）。
 	setGA4("")
-	html, err = pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN")
+	html, err = pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
 	if err != nil {
 		t.Fatalf("清空后预览编译失败: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 
 	// 非法形状：不注入，也不把原始输入拼进 head（脚本注入防线）。
 	setGA4(`G-ABC"><script>alert(1)</script>`)
-	html, err = pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN")
+	html, err = pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
 	if err != nil {
 		t.Fatalf("非法 ID 时预览编译失败: %v", err)
 	}

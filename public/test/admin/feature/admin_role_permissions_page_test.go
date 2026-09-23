@@ -134,7 +134,10 @@ func TestAdminRolePermissionsPageRendersCheckedNodes(t *testing.T) {
 	}
 }
 
-// TestAdminRolePermissionsPageRedirectsWithoutRoleID 缺少 role_id 时回列表，不渲染半张空页。
+// TestAdminRolePermissionsPageRedirectsWithoutRoleID 缺少 role_id 时回列表并说明原因，不渲染半张空页。
+//
+// 出口形态收口后（见 admin_page_write_failed_test.go 文件头）：回跳地址带 `?err=`，
+// 用户从书签/历史/截断参数进来时能看到「为什么被弹回去」，而不是静默落到角色列表。
 func TestAdminRolePermissionsPageRedirectsWithoutRoleID(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{})
 
@@ -145,8 +148,17 @@ func TestAdminRolePermissionsPageRedirectsWithoutRoleID(t *testing.T) {
 	if recorder.Code != http.StatusSeeOther {
 		t.Fatalf("缺少 role_id 应 303 回列表，实际 %d", recorder.Code)
 	}
-	if loc := recorder.Header().Get("Location"); loc != "/admin/roles" {
-		t.Fatalf("跳转目标不符: %q", loc)
+	loc := recorder.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("回跳地址无法解析: %q", loc)
+	}
+	if u.Path != "/admin/roles" {
+		t.Fatalf("跳转目标不符: %q（期望路径 /admin/roles）", loc)
+	}
+	// 静默重定向是本条要防的回归：文案缺失时运营完全不知道发生了什么。
+	if errText := u.Query().Get("err"); errText == "" {
+		t.Fatalf("缺少 role_id 的回跳必须带 ?err= 说明原因（否则是静默失败）：Location=%q", loc)
 	}
 }
 
@@ -222,7 +234,11 @@ func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 	}
 }
 
-// TestAdminRolePermissionsSaveRejectsMissingRoleID 缺 role_id 时 400，不落库。
+// TestAdminRolePermissionsSaveRejectsMissingRoleID 缺 role_id 时 303 回列表 + ?err=，不落库。
+//
+// 出口形态收口后（见 admin_page_write_failed_test.go 文件头）：页面写失败从 400 + JSON
+// 改为 303 + `?err=`。**核心意图不变**：参数不合法时绝不调用服务层（不落库）。
+// 回跳目标按有无 role_id 分流 —— 无 role_id 即没有可返回的分配页，只能回角色列表。
 func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
@@ -232,8 +248,19 @@ func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("缺 role_id 应 400，实际 %d", recorder.Code)
+	if recorder.Code != http.StatusSeeOther {
+		t.Fatalf("缺 role_id 应 303 回列表页，实际 %d（body=%s）", recorder.Code, recorder.Body.String())
+	}
+	loc := recorder.Header().Get("Location")
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("回跳地址无法解析: %q", loc)
+	}
+	if u.Path != "/admin/roles" {
+		t.Fatalf("缺 role_id 应回角色列表（没有可返回的分配页），实际 %q", loc)
+	}
+	if errText := u.Query().Get("err"); errText == "" {
+		t.Fatalf("回跳必须带 ?err= 说明原因（否则是静默失败）：Location=%q", loc)
 	}
 	if svc.lastMenuSave != nil {
 		t.Fatal("缺 role_id 不应调用服务层")

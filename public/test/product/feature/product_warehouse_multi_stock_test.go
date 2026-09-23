@@ -563,12 +563,16 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
+	// 建表单的落点已是独立整页（列表页抽屉退役，见 getProductsNewPage 的注释）——
+	// 断言表单控件存在与否的用例要把这条路由注册上，否则请求 404、页面为空、断言全红。
+	engine.GET("/admin/products/new", handle.ProductNewPage)
 	engine.POST("/admin/products/create", handle.ProductsCreate)
 
-	// 抽屉里的三组新控件必须真的渲染出来（字段名分叉在这里就会暴露）：
+	// 新建整页里的三组新控件必须真的渲染出来（字段名分叉在这里就会暴露）：
 	// 多仓勾选（同名多值）、数量开关与数量框、可搜索下拉的候选 datalist。
+	// 落点从列表页抽屉改为整页：那个 template 已退役（见 getProductsNewPage 的注释）。
 	pageRec := httptest.NewRecorder()
-	engine.ServeHTTP(pageRec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))
+	engine.ServeHTTP(pageRec, httptest.NewRequest(http.MethodGet, "/admin/products/new?project="+f.projectID, nil))
 	page := pageRec.Body.String()
 	for _, want := range []string{
 		`name="warehouseIds"`, `data-warehouse-check`, `name="trackQuantity"`,
@@ -591,11 +595,11 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	engine.ServeHTTP(rec, req)
 	if rec.Code != http.StatusFound {
-		t.Fatalf("创建应 302（成功去详情页），实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("创建应 302（成功去编辑页），实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	location := rec.Header().Get("Location")
-	if !strings.Contains(location, "/admin/products/detail") {
-		t.Fatalf("成功应去商品详情页，实际 %s", location)
+	if !strings.Contains(location, "/admin/products/edit") {
+		t.Fatalf("成功应去商品编辑页，实际 %s", location)
 	}
 	var productID string
 	if derr := f.db.Raw("SELECT id FROM products WHERE slug = ?", "form-multi-wh").Scan(&productID).Error; derr != nil {
@@ -642,7 +646,7 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "/admin/products/detail") {
+		if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "/admin/products/edit") {
 			t.Fatalf("创建 %s 失败：%d %s", name, rec.Code, rec.Header().Get("Location"))
 		}
 	}

@@ -37,8 +37,9 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
-	// 评分是商品的子资源：明细表与「添加评分」入口在商品详情页。
+	// 评分是商品的子资源：明细表在**只读**的详情页，「添加评分 / 删除」在编辑页。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.POST("/admin/products/rating/add", handle.ProductsRatingAdd)
 	engine.POST("/admin/products/rating/delete", handle.ProductsRatingDelete)
 	return engine, f
@@ -100,10 +101,20 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 	// 有评分：徽章里的 4.50 · 2 条是**投影算出来的**，不是任何列上存着的值。
 	// 详情页一次只渲染一个商品的子资源，所以有评分 / 无评分要分别请求。
 	body := productDetailBody(t, engine, f.projectID, rated)
-	for _, want := range []string{"4.50", "2 条", "添加评分", "products/rating/add", "products/rating/delete"} {
+	for _, want := range []string{"4.50", "2 条"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("有评分的商品详情页应包含 %q", want)
 		}
+	}
+	// 增删入口在编辑页（详情页只读）：入口搬走不等于丢掉。
+	editBody := getProductEditPage(engine, f.projectID, rated)
+	for _, want := range []string{"4.50", "2 条", "添加评分", "products/rating/add", "products/rating/delete"} {
+		if !strings.Contains(editBody, want) {
+			t.Fatalf("有评分的商品编辑页应包含 %q", want)
+		}
+	}
+	if strings.Contains(body, "添加评分") || strings.Contains(body, "products/rating/add") {
+		t.Fatalf("详情页是只读页，不该出现评分增删入口")
 	}
 	// 两条明细各自的分值都在（4.00 与 5.00）。
 	if !strings.Contains(body, "4.00") || !strings.Contains(body, "5.00") {
@@ -130,9 +141,7 @@ func TestProductRatingPageAddAndDelete(t *testing.T) {
 	loc := postRatingForm(t, engine, "/admin/products/rating/add", url.Values{
 		"projectId": {f.projectID}, "productId": {product}, "score": {"4.5"},
 	})
-	if loc != detailLocation(f.projectID, product) {
-		t.Fatalf("加评分后应留在该商品的详情页，实际 Location=%q", loc)
-	}
+	assertEditRedirect(t, loc, f.projectID, product)
 	body := productDetailBody(t, engine, f.projectID, product)
 	if !strings.Contains(body, "4.50") || !strings.Contains(body, "1 条") {
 		t.Fatalf("添加后详情页应显示 4.50 · 1 条")
@@ -147,9 +156,7 @@ func TestProductRatingPageAddAndDelete(t *testing.T) {
 	loc = postRatingForm(t, engine, "/admin/products/rating/delete", url.Values{
 		"projectId": {f.projectID}, "productId": {product}, "id": {res.Items[0].ID},
 	})
-	if loc != detailLocation(f.projectID, product) {
-		t.Fatalf("删评分后应留在该商品的详情页，实际 Location=%q", loc)
-	}
+	assertEditRedirect(t, loc, f.projectID, product)
 	body = productDetailBody(t, engine, f.projectID, product)
 	if !strings.Contains(body, "这个商品还没有评分。") {
 		t.Fatalf("删除后该商品应回到「还没有评分」空态")
@@ -169,10 +176,8 @@ func TestProductRatingPageRejectsInvalidScore(t *testing.T) {
 		loc := postRatingForm(t, engine, "/admin/products/rating/add", url.Values{
 			"projectId": {f.projectID}, "productId": {product}, "score": {bad},
 		})
-		// 失败也留在详情页（用户就在这一页操作），只把错误经 ?err= 带回。
-		if !strings.HasPrefix(loc, detailLocation(f.projectID, product)) {
-			t.Fatalf("非法分值 %q 应回该商品的详情页，实际 %s", bad, loc)
-		}
+		// 失败也留在编辑页（用户就在这一页操作），只把错误经 ?err= 带回。
+		assertEditRedirect(t, loc, f.projectID, product)
 		if !strings.Contains(loc, "err=") {
 			t.Fatalf("非法分值 %q 应带错误回显，实际 %s", bad, loc)
 		}

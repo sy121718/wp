@@ -2,6 +2,8 @@ package templates
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,8 +31,42 @@ func memSet(t *testing.T, files map[string]string) *jet.Set {
 }
 
 // render 渲染模板并返回输出。
+// resolveAdminTemplateName 把 `admin/<短名>` 解析成模板分目录后的真实名字
+//（`admin/product/product_brands.html`）。已经是 `admin/<模块>/<名字>`，或非 admin/ 前缀的
+//（fragments/ site/）一律原样返回。
+//
+// 为什么放在 render 里而不是改一片调用点：调用点只该关心「哪个页面」，不该知道文件被搬去了
+// 哪个子目录 —— 否则每搬一次目录就是一片 `template not found` 的红，而那些红与断言无关，
+// 最容易被当成环境问题糊过去。
+func resolveAdminTemplateName(t *testing.T, name string) string {
+	t.Helper()
+	const p = "admin/"
+	if !strings.HasPrefix(name, p) {
+		return name
+	}
+	rel := strings.TrimPrefix(name, p)
+	base := filepath.Base(rel)
+	if !strings.HasSuffix(base, ".html") {
+		base += ".html"
+	}
+	// 已经是 <模块>/<名字> 且那个文件真的在 → 原样返回；否则（含已经搬走的
+	// admin/partials/<名字>，片段随模块目录调整过）按 basename 递归找。
+	if strings.Contains(rel, "/") {
+		if _, err := os.Stat(filepath.Join("admin", filepath.FromSlash(rel))); err == nil {
+			return name
+		}
+	}
+	for _, f := range adminTemplateFiles(t) {
+		if filepath.Base(f) == base {
+			return p + filepath.ToSlash(f[len("admin/"):])
+		}
+	}
+	return name // 找不到就原样返回：让 set.GetTemplate 报它自己的错，不在这里吞掉
+}
+
 func render(t *testing.T, set *jet.Set, name string, data any) (string, error) {
 	t.Helper()
+	name = resolveAdminTemplateName(t, name)
 	tmpl, err := set.GetTemplate(name)
 	if err != nil {
 		return "", err
@@ -416,7 +452,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		}},
 		"Categories": []string{"ui", "shell"},
 	}
-	out, err := render(t, set, "admin/i18n", base)
+	out, err := render(t, set, "admin/system/i18n", base)
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
@@ -444,7 +480,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	empty["Entries"] = []i18n.Entry{}
 	empty["Categories"] = []string{}
 	empty["Saved"] = ""
-	out, err = render(t, set, "admin/i18n", empty)
+	out, err = render(t, set, "admin/system/i18n", empty)
 	if err != nil {
 		t.Fatalf("空列表渲染失败: %v", err)
 	}
@@ -461,7 +497,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		readonly[k] = v
 	}
 	readonly["PermSet"] = map[string]bool{}
-	out, err = render(t, set, "admin/i18n", readonly)
+	out, err = render(t, set, "admin/system/i18n", readonly)
 	if err != nil {
 		t.Fatalf("无管理权限渲染失败: %v", err)
 	}
@@ -511,7 +547,7 @@ func TestArticleTranslationsPageRenders(t *testing.T) {
 			},
 		}},
 	}
-	out, err := render(t, set, "admin/article_translations", data)
+	out, err := render(t, set, "admin/content/article_translations", data)
 	if err != nil {
 		t.Fatalf("文章翻译页渲染失败: %v", err)
 	}
@@ -547,7 +583,7 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 			{Kind: "footer", Title: "页脚导航", Rows: []navigationTranslationRow{}},
 		},
 	}
-	out, err := render(t, set, "admin/navigation_translations", data)
+	out, err := render(t, set, "admin/navigation/navigation_translations", data)
 	if err != nil {
 		t.Fatalf("导航译文页渲染失败: %v", err)
 	}

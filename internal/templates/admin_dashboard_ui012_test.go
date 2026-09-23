@@ -56,6 +56,28 @@ func TestDashboardHasNoInlineStylesAndClassesAreDefined(t *testing.T) {
 	}
 }
 
+// 仪表盘列表卡的标题行不得借用 .filter-bar。
+//
+// .filter-bar 承诺的是「筛选控件区」（theme.css 里它给的是 .filter-fields / .filter-actions
+// 的横向布局），而这一行只有一个标题 + 一个「查看全部」链接（实测 filterFields=0）。
+// 借它会让后续按 .filter-bar 做的统一布局 / 间距调整误伤本页 —— 判据是**类名语义与内容一致**，
+// 与 analytics 的列表卡标题（.card-header + .card-title）同形（audit 02-O dashboard 任务 1，
+// 02-I #29「.filter-bar 承载非筛选语义」同族第 6 处）。
+func TestDashboardListCardTitleIsNotAFilterBar(t *testing.T) {
+	src, err := os.ReadFile(filepath.FromSlash("admin/dashboard.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(src)
+
+	if strings.Contains(html, `class="filter-bar"`) {
+		t.Error("dashboard 的列表卡标题行仍借 .filter-bar（那类名承诺的是筛选栏，本页没有筛选控件）")
+	}
+	if !strings.Contains(html, `class="card-header"`) {
+		t.Error("列表卡标题行应改用 .card-header（与 admin/analytics.html 的列表卡标题同形）")
+	}
+}
+
 // 渲染结果只反映注入的数据：统计卡出现注入值，且旧演示页的硬编码示例值不再出现。
 func TestDashboardRendersInjectedDataOnly(t *testing.T) {
 	data := adminShellData()

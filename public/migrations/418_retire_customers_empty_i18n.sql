@@ -1,0 +1,32 @@
+-- 418 · 退役孤儿词条 admin.customers.empty
+--
+-- 缺陷（docs/02-O-trade-site-audit.md 的 customers 任务 3）：这个 key 的值是
+-- 「没有符合条件的客户。站点还没有访客注册，或者上面的筛选条件太窄了 —— 先点「重置」看一眼全部账号。」，
+-- 而模板早已改用它之后的两个 key（admin.customers.list.empty_heading / .empty_desc，
+-- 见 internal/templates/admin/customers.html 的空态分支）—— 它没有任何引用者。
+--
+-- 孤儿词条会让「哪些词条还在用」无法从库里判断：改文案时容易改错那一条
+-- （customers 本轮那条「库值覆盖模板兜底」的缺陷，正是 190 的旧句被后继批次继承下来的同一个来源）。
+--
+-- 核实无引用的命令（本批执行时为空）：
+--   grep -rn "admin.customers.empty'" internal/ public/test/ scripts/
+--
+-- 为什么删除动作必须放在 **seed 台账**（而不是 register 的结构迁移台账）：
+--   migrator 的两个循环是独立的，Migrations 全部先跑、Seeds 后跑 —— 「在 register 里做的删除，
+--   永远赢不过在 registerSeed 里重建它的 seed」（AGENTS.md「数据库」一节的实测故障）。
+--   190_i18n_seed_marketing.sql 里就有本 key 的两行，且它的幂等条件
+--   （register_admin_i18n.go 的 190 批：COUNT(*) >= 765 AND item_key IN (…含本 key…)）
+--   会因为这一行被删而不成立，于是下次启动 190 重跑、把本 key 插回来。
+--   本迁移用 seed 台账的版本号（418 > 190）排到 190 之后：每一轮启动的净结果都是
+--   「190 插回 → 本条删除」，库里最终没有这个 key。
+--
+-- 遗留的一半（诚实记录，未做）：AGENTS.md 的判据要求「条件计数与 key 列表同批改」——
+--   把 190 的门槛 765 降到 764、并从它的 key 列表里移除本 key，190 才会重新变成「一次写入、
+--   之后跳过」，也才不会因为这条删除而每轮重跑。那处改动在
+--   public/migrations/register_admin_i18n.go（既有 register 文件），本批的任务边界不允许改它，
+--   故只做了「排在 190 之后删除」。重跑 190 的代价是每轮启动多一次
+--   INSERT ... ON CONFLICT (item_key, lang) DO NOTHING（约 1500 行、幂等无副作用）。
+--
+-- 幂等：DELETE 本身幂等（重复执行影响 0 行）。
+
+DELETE FROM sys_i18n WHERE item_key = 'admin.customers.empty';

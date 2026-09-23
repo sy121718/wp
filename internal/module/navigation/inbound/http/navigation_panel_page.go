@@ -24,7 +24,6 @@ import (
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
 )
 
 // errPanelUnavailable 块能力未装配（装配缺陷；对外只出通用文案）。
@@ -49,13 +48,14 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	kind := normalizeNavKind(c.PostForm("kind"))
 	id := strings.TrimSpace(c.PostForm("id"))
-	if id == "" {
-		response.ErrorWithMessage(c, http.StatusBadRequest, navFieldRequiredMsg)
-		return
-	}
 	// menu 是「回跳后仍要展开的那一项」：面板设置与菜单项编辑共用一个抽屉，
 	// 保存后抽屉重新打开，用户不用在几十行里重新找它。
+	// 解析放在 id 判定之前 —— 参数级失败同样要带着它回列表页。
 	menuID := strings.TrimSpace(c.PostForm("menu"))
+	if id == "" {
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navInvalidParamText(c), ""))
+		return
+	}
 	// 空串 = 清除面板（服务层把空块 id 归一成 NULL；nil 才是「不改动」）。
 	blockID := strings.TrimSpace(c.PostForm("panelBlockId"))
 	req := &navigationdto.UpdateReq{ID: id, PanelBlockID: &blockID}

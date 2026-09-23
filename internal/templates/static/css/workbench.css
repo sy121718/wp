@@ -1133,3 +1133,22 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 .wb-nav-new-body { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .wb-nav-new-body input, .wb-nav-new-body select { width: 100%; }
 .wb-nav-new-body .wb-hint { min-height: 1em; margin: 0; }
+
+/* ---- 结构槽位（页眉 / 页脚）：画布上的只读边界 + 槽位面板 ----
+   页眉页脚由站点结构在编译期注入，不是本页文档里的节点：画布把它们标成紫色虚线边界
+   （iframe 内由 editor_bridge 注入），点选后打开的是「去编辑那份全局块」的面板，
+   而不是组件检查器 —— 这里没有可改的本页属性。 */
+.wb-slot-card { display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.6; }
+.wb-slot-note { margin: 0; color: var(--sky-c-text-dim, #8a93a3); }
+.wb-slot-note strong { color: var(--sky-c-text, #1a1d21); }
+.wb-slot-ref { margin: 0; overflow-wrap: anywhere; }
+.wb-slot-warn { margin: 0; color: #b45309; }
+.wb-slot-card .wb-btn { align-self: flex-start; }
+
+/* 块面板里「已被站点结构占用」的页眉 / 页脚块：置灰并禁用拖拽。
+   触屏没有 hover，禁用态必须靠底色与文字表达，不能只写 :hover。 */
+.wb-palette-item.is-slot-locked,
+.wb-palette-item.is-slot-locked:hover { opacity: .6; cursor: not-allowed; }
+@media (hover: none) {
+    .wb-palette-item.is-slot-locked { background: var(--sky-c-bg-soft, #f3f4f6); }
+}

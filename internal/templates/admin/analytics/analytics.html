@@ -1,0 +1,295 @@
+{* admin/analytics.html — 访问统计（BIZ-8）：5 个维度的聚合 + 时间范围筛选 + 路径表分页。 *}
+{* 只读页：没有任何写操作，全部是 GET（工程切换 / 时间范围 / 分页）。 *}
+{* 版式遵循列表页标准骨架（评审规则 admin-ui-logic §7）：页头一行（标题 + ? 悬浮说明 + 工程选择），
+   口径说明（打点来源 / PV-UV 定义 / UTC 日界 / 各维度口径）一律进 .help 悬浮，正文零说明文字。 *}
+{* 5 张同构的维度表（列头都是「维度名 + 浏览数 + 独立访客」、只读、页面上没有主行动）以 .tabs 呈现：
+   并列渲染等于把 5 屏塞进一页，而用户每次只关心其中一个维度。5 个面板**全部由服务端渲染**，
+   标签点击是纯前端切换（admin.js 的 activate 只改 aria-selected / tabindex / hidden，不改 URL）。
+   因此 URL 的 ?view= 只决定**初始选中**；「会重载页面的入口」（工程选择 / 时间范围表单 /
+   分页链接）必须自己带上 view —— 分页那处固定带 view=paths，理由见 analytics_page_handle.go。 *}
+{* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件里 or 不支持（用 ||）。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
+{{tr := .["t"]}}
+{{selectedProject := .SelectedProject}}
+{{daily := .Daily}}
+{{paths := .Paths}}
+{{referrers := .Referrers}}
+{{uaClasses := .UAClasses}}
+{{langs := .Langs}}
+{{rankLimit := .RankLimit}}
+{* 初始选中的视图（tabs）。缺键时**必须**回落默认值：别的渲染路径漏传 ViewMode 时，
+   直接拿它跟字符串比较虽不报错，但先收敛成 string 更不容易在别处踩到「nil 参与比较」。 *}
+{{viewMode := "daily"}}
+{{if isset(.ViewMode)}}{{viewMode = .ViewMode}}{{end}}
+{{isDaily := viewMode == "daily"}}
+{{isPaths := viewMode == "paths"}}
+{{isReferrers := viewMode == "referrers"}}
+{{isUAClasses := viewMode == "ua"}}
+{{isLangs := viewMode == "langs"}}
+<div class="stack analytics-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.analytics.title", "访问统计") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.analytics.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    {* 5 张维度表收进 tabs 之后，各维度的口径说明统一收在页头的这一个 ? 里 ——
+                       标签栏里放不下说明（ARIA 的 tablist 只允许 tab 元素），面板里放常驻文字
+                       又违反「正文零说明文字」。 *}
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.analytics.intro.lead", "数据由访客浏览器打点（") }}<code>POST /analytics/collect</code>{{ .["t"]("admin.analytics.intro.after", "）：访问面是静态产物直出，服务端不在访客请求路径上，所以计数只能从客户端来。打点失败静默丢弃 —— 统计永远不会影响访客看到的页面。") }}<br><br>{{ .["t"]("admin.analytics.metrics.lead", "「浏览数」是页面打开次数（PV）；「独立访客」按匿名标识去重（UV）—— 匿名标识由客户端派生、服务端再加盐哈希后落库，库里既没有 IP 明文，也没有原始 cookie 值。日期按 ") }}<strong>{{ .["t"]("admin.analytics.metrics.strong", "UTC 日界") }}</strong>{{ .["t"]("admin.analytics.metrics.tail", "切分：产物由全球访客访问，用 UTC 才不会有跨时区的口径歧义。") }}<br><br>{{ .["t"]("admin.analytics.range.actual_post", "（含当天）。两个日期留空即最近 30 天；结束日期不会超过今天。") }}<br><br>{{ .["t"]("admin.analytics.referrers.hint", "打点只上报域名（服务端再去掉协议与路径），所以同一站点的不同页面算同一个来源。空值是没有来源的访问：从地址栏输入、书签打开，或客户端没有发送 referrer。") }}<br><br>{{ .["t"]("admin.analytics.ua.hint", "分类由服务端按请求头判定（desktop / tablet / mobile / bot），不采信上报里的字段 —— 客户端可以自称任何设备。空值是请求没有带 UA。") }}<br><br>{{ .["t"]("admin.analytics.langs.hint", "语言由产物在构建期烘进打点配置，所以它反映的是页面自己声明的语言，不是访客的浏览器语言。空值是这一页没有上报语言。") }}<br><br>{{ .["t"]("admin.analytics.rank.hint_lead", "下面三个维度榜各取前") }}<strong>{{rankLimit}}</strong>{{ .["t"]("admin.analytics.rank.hint_tail", "条，按浏览数降序、并列时按取值升序（顺序是确定的，刷新不会换名次）；它们恒定读访问明细，与上方的「取数来源」无关。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            {* 工程选择会重载页面，所以要把当前视图一起带上，否则切工程会被弹回第一个标签
+               （标签点击是纯前端行为，不改 URL，页面自己不知道用户在看哪一维）。 *}
+            <form class="page-context" method="get" action="/admin/analytics">
+                <input type="hidden" name="view" value="{{viewMode}}">
+                <label class="sr-only" for="analytics-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="analytics-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.analytics.error", "统计读取失败：") }}{{.Err}}</p>
+    {{end}}
+
+    {{if len(.Projects) == 0}}
+    <section class="card card-body">
+        <div class="empty-state">
+            {{if isset(.LoadFailed) && .LoadFailed}}
+            {* 装载失败：工程列表确实是空的，但**不是「还没有工程」** —— 那句话会把人支去建工程，
+               而真正的问题是这一次没读出来（handler 的 loadFailed）。两者处置完全不同。 *}
+            <p class="empty-title">{{ .["t"]("admin.analytics.no_project.loadFailed", "工程列表没读出来 —— 不是「还没有工程」，先看上方的提示，刷新后重试。") }}</p>
+            {* 这一档的下一步就是「重试」本身（href="" 重载当前请求，含已有的筛选参数）。 *}
+            <div class="empty-actions">
+                <a class="btn" href="">{{ .["t"]("admin.analytics.no_project.refresh", "刷新重试") }}</a>
+            </div>
+            {{else}}
+            <p class="empty-title">{{ .["t"]("admin.analytics.no_project.lead", "还没有站点工程 —— 统计按工程归集，先去") }}<a href="/admin/pages">{{ .["t"]("admin.analytics.no_project.link", "页面管理") }}</a>{{ .["t"]("admin.analytics.no_project.tail", "建一个工程并发布页面。") }}</p>
+            {* 这一档不给 .empty-actions：句子里的「页面管理」已经是可点的下一步动作，
+               再补一个指向同一处（或多个按钮）只会让空态变成按钮堆。 *}
+            {{end}}
+        </div>
+    </section>
+    {{end}}
+
+    {{if selectedProject != ""}}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.analytics.range.title", "时间范围") }}</h2>
+        {* 时间范围是**筛选**、不是视图：它对 5 个维度都生效，所以留在 tabs 之外（原位）。
+           查询同样带 view，改完日期仍停在原来那一维。 *}
+        <form method="get" action="/admin/analytics" class="form-inline">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <input type="hidden" name="view" value="{{viewMode}}">
+            <div class="filter-field">
+                <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
+                <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
+            </div>
+            <div class="filter-field">
+                <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
+                <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
+            </div>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.analytics.range.submit", "查询") }}</button>
+            <a class="btn btn-sm" href="/admin/analytics?project={{selectedProject}}&view={{viewMode}}">{{ .["t"]("admin.analytics.range.last30", "最近 30 天") }}</a>
+        </form>
+        <div class="action-row">
+            {{if .RangeFrom != ""}}
+            <span class="badge">{{ .["t"]("admin.analytics.range.actual_pre", "实际统计窗口：") }}<strong>{{.RangeFrom}}</strong>{{ .["t"]("admin.analytics.range.actual_mid", " 至 ") }}<strong>{{.RangeTo}}</strong></span>
+            {{end}}
+            <span class="badge">{{ .["t"]("admin.analytics.badge.views", "总浏览数") }} {{.Total}}</span>
+            <span class="badge">{{ .["t"]("admin.analytics.badge.visitors", "独立访客") }} {{.Visitors}}</span>
+            <span class="badge">{{ .["t"]("admin.analytics.badge.paths", "不同路径") }} {{.PathTotal}}</span>
+        </div>
+    </section>
+
+    {* 5 张维度表：同一批筛选条件下的 5 种看法，一次只展示一种，其余面板 hidden（不是不渲染）。 *}
+    <section class="card list-card">
+        <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist" aria-label="{{ .["t"]("admin.analytics.view.label", "统计维度") }}">
+                <button type="button" class="tab" role="tab" id="an-tab-daily" aria-controls="an-panel-daily"
+                        aria-selected="{{if isDaily}}true{{else}}false{{end}}" tabindex="{{if isDaily}}0{{else}}-1{{end}}">{{ .["t"]("admin.analytics.daily.title", "按天") }}</button>
+                <button type="button" class="tab" role="tab" id="an-tab-paths" aria-controls="an-panel-paths"
+                        aria-selected="{{if isPaths}}true{{else}}false{{end}}" tabindex="{{if isPaths}}0{{else}}-1{{end}}">{{ .["t"]("admin.analytics.paths.title", "按路径") }}</button>
+                <button type="button" class="tab" role="tab" id="an-tab-referrers" aria-controls="an-panel-referrers"
+                        aria-selected="{{if isReferrers}}true{{else}}false{{end}}" tabindex="{{if isReferrers}}0{{else}}-1{{end}}">{{ .["t"]("admin.analytics.referrers.title", "来源域") }}</button>
+                <button type="button" class="tab" role="tab" id="an-tab-ua" aria-controls="an-panel-ua"
+                        aria-selected="{{if isUAClasses}}true{{else}}false{{end}}" tabindex="{{if isUAClasses}}0{{else}}-1{{end}}">{{ .["t"]("admin.analytics.ua.title", "设备分类") }}</button>
+                <button type="button" class="tab" role="tab" id="an-tab-langs" aria-controls="an-panel-langs"
+                        aria-selected="{{if isLangs}}true{{else}}false{{end}}" tabindex="{{if isLangs}}0{{else}}-1{{end}}">{{ .["t"]("admin.analytics.langs.title", "语言") }}</button>
+            </div>
+
+            {* ===== 面板一：按天 ===== *}
+            <div class="tab-panel" role="tabpanel" id="an-panel-daily" aria-labelledby="an-tab-daily" {{if !isDaily}}hidden{{end}}>
+                <div class="table-wrap table-scroll" tabindex="0">
+                    <table class="data-table">
+                        <thead><tr><th>{{ .["t"]("admin.analytics.col.day", "日期（UTC）") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                        <tbody>
+                            {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：
+                               日期（UTC） / 浏览数 / 独立访客）。 *}
+                            {{if len(daily) == 0}}
+                            <tr><td colspan="3" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。") }}<strong>{{ .["t"]("admin.analytics.daily.empty.strong", "发布页面之后") }}</strong>{{ .["t"]("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。") }}</p>
+                    {* 空态动作：这一档（按天汇总，不受明细保留期影响）没有数据的唯一来源是「还没发布页面」，
+                       所以下一步指向页面管理而不是「刷新」或「换时间范围」。 *}
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
+                    </div>
+                </div>
+                            </td></tr>
+                            {{else}}
+                            {{range _, d := daily}}
+                            <tr><td>{{d.Day}}</td><td>{{d.Views}}</td><td>{{d.Visitors}}</td></tr>
+                            {{end}}
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {* ===== 面板二：按路径（5 个面板里唯一带分页的） ===== *}
+            <div class="tab-panel" role="tabpanel" id="an-panel-paths" aria-labelledby="an-tab-paths" {{if !isPaths}}hidden{{end}}>
+                <div class="table-wrap table-scroll" tabindex="0">
+                    <table class="data-table">
+                        <thead><tr><th>{{ .["t"]("admin.analytics.col.path", "路径") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                        <tbody>
+                            {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：路径 / 浏览数 / 独立访客）。 *}
+                            {{if len(paths) == 0}}
+                            <tr><td colspan="3" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.analytics.paths.empty", "没有路径数据。") }}</p>
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
+                    </div>
+                </div>
+                            </td></tr>
+                            {{else}}
+                            {{range _, p := paths}}
+                            <tr><td><code>{{p.Path}}</code></td><td>{{p.Views}}</td><td>{{p.Visitors}}</td></tr>
+                            {{end}}
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {* 分页链接由 handler 的 FilterBaseURL 生成，且**固定带 view=paths**：
+                   翻页会重载页面，不带 view 就会被弹回第一个标签，而路径表在 hidden 面板里 ——
+                   表现是「点了下一页什么也没发生」。 *}
+                {{include "../partials/pagination.html"}}
+            </div>
+
+            {* ===== 面板三：来源域 ===== *}
+            <div class="tab-panel" role="tabpanel" id="an-panel-referrers" aria-labelledby="an-tab-referrers" {{if !isReferrers}}hidden{{end}}>
+                {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+                <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
+                {{end}}
+                <div class="table-wrap table-scroll" tabindex="0">
+                    <table class="data-table">
+                        <thead><tr><th>{{ .["t"]("admin.analytics.col.referrer", "来源域") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                        <tbody>
+                            {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：来源域 / 浏览数 / 独立访客）。 *}
+                            {{if len(referrers) == 0}}
+                            <tr><td colspan="3" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.analytics.referrers.empty", "没有来源数据。") }}</p>
+                    {* 维度榜空有两档，动作不同：
+                       · 明细被保留期清理（BreakdownUnavailable）—— 数据原本有、汇总仍在，用户无事可做，
+                         上方已有一条解释，这里不再给按钮（给了也点不动任何东西）；
+                       · 真的没有流量 —— 下一步是产生流量的地方，也就是把页面发出去。 *}
+                    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+                    {{else}}
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
+                    </div>
+                    {{end}}
+                </div>
+                            </td></tr>
+                            {{else}}
+                            {{range _, v := referrers}}
+                            <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.referrers.unknown", "（无来源）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                            {{end}}
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {* ===== 面板四：设备分类 ===== *}
+            <div class="tab-panel" role="tabpanel" id="an-panel-ua" aria-labelledby="an-tab-ua" {{if !isUAClasses}}hidden{{end}}>
+                {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+                <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
+                {{end}}
+                <div class="table-wrap table-scroll" tabindex="0">
+                    <table class="data-table">
+                        <thead><tr><th>{{ .["t"]("admin.analytics.col.ua_class", "设备分类") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                        <tbody>
+                            {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：设备分类 / 浏览数 / 独立访客）。 *}
+                            {{if len(uaClasses) == 0}}
+                            <tr><td colspan="3" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.analytics.ua.empty", "没有设备数据。") }}</p>
+                    {* 与来源域榜同档（见上）：保留期清理时不给按钮，真无流量时指向发布页。 *}
+                    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+                    {{else}}
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
+                    </div>
+                    {{end}}
+                </div>
+                            </td></tr>
+                            {{else}}
+                            {{range _, v := uaClasses}}
+                            <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.ua.unknown", "（未识别）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                            {{end}}
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {* ===== 面板五：语言 ===== *}
+            <div class="tab-panel" role="tabpanel" id="an-panel-langs" aria-labelledby="an-tab-langs" {{if !isLangs}}hidden{{end}}>
+                {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+                <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
+                {{end}}
+                <div class="table-wrap table-scroll" tabindex="0">
+                    <table class="data-table">
+                        <thead><tr><th>{{ .["t"]("admin.analytics.col.lang", "语言") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
+                        <tbody>
+                            {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：语言 / 浏览数 / 独立访客）。 *}
+                            {{if len(langs) == 0}}
+                            <tr><td colspan="3" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.analytics.langs.empty", "没有语言数据。") }}</p>
+                    {* 与来源域榜同档（见上）：保留期清理时不给按钮，真无流量时指向发布页。 *}
+                    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+                    {{else}}
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
+                    </div>
+                    {{end}}
+                </div>
+                            </td></tr>
+                            {{else}}
+                            {{range _, v := langs}}
+                            <tr><td>{{if v.Value == ""}}{{tr("admin.analytics.langs.unknown", "（未上报）")}}{{else}}<code>{{v.Value}}</code>{{end}}</td><td>{{v.Views}}</td><td>{{v.Visitors}}</td></tr>
+                            {{end}}
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+    {{end}}
+</div>
+{{end}}

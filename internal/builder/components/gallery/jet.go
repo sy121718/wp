@@ -52,6 +52,10 @@ type View struct {
 	// PrevLabel / NextLabel 轮播箭头 aria-label（构建期按当前语言填充，多语言 P4）。
 	PrevLabel string
 	NextLabel string
+	// PrevIcon / NextIcon 轮播箭头（基座图标库 chevron-left / chevron-right）。
+	// 以前模板里直接写字符 '‹' / '›'，与图标库的描边风格不一致。
+	PrevIcon string
+	NextIcon string
 }
 
 // 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
@@ -164,6 +168,14 @@ func BuildView(nodeID string, p *Props, content core.ContentResolver, siteLink f
 			slideNum(c.SlidesPerView.Desktop, 1), slideNum(c.SlidesPerView.Tablet, 1), slideNum(c.SlidesPerView.Mobile, 1))
 		v.Arrows = c.Arrows
 		v.Dots = c.Dots
+	}
+	if v.Arrows {
+		if svg, ok := core.IconSVGClass("chevron-left", "gallery-arrow-icon"); ok {
+			v.PrevIcon = svg
+		}
+		if svg, ok := core.IconSVGClass("chevron-right", "gallery-arrow-icon"); ok {
+			v.NextIcon = svg
+		}
 	}
 	return v, nil
 }

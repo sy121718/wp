@@ -471,4 +471,26 @@ func registerCoreSchemaAndAccess() {
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.actionDone'",
 		SQL:          mustSQL("280_inventory_action_done_i18n.sql"),
 	})
+
+	// 401：侧栏「邮件活动」菜单项下线（死链收口）。
+	//
+	// 它是**单条活动的报表页**（/admin/mail/campaign?id=N）却登记成了菜单项，不带参数点不进去；
+	// 权限码与「邮件营销」完全相同，隐藏它不会少掉任何可授权项。完整理由见 401 文件头注释。
+	//
+	// 走 register（结构/数据修正台账）而不是 registerSeed：这是一次性的行状态修正，
+	// 不是词条灌装；且隐藏行仍留在表里，224 第 4 段的 NOT EXISTS 守卫（按 path 判定）
+	// 因此不会在后续启动中把它重新插回来。
+	//
+	// CheckSQL 表达「已完成」：目标行全部 is_hidden = 1（计数为 0）才跳过。
+	// CAST(? AS text) IS NOT NULL 是「接收迁移器传入的表名」的形状（与 225 同一写法）——
+	// migrator_test.go 的 TestCustomMigrationChecksAcceptTableParameter 会把不带 ? 的检查拦下。
+	register(Migration{
+		Version:   "401-hide-mail-campaign-menu",
+		TableName: "sys_menus",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END FROM (" +
+			"SELECT id FROM sys_menus WHERE (CAST(? AS text) IS NOT NULL) " +
+			"AND type = 2 AND path = '/admin/mail/campaign' AND is_hidden = 0 AND deleted_at IS NULL" +
+			") AS leftover",
+		SQL: mustSQL("401_hide_mail_campaign_menu.sql"),
+	})
 }

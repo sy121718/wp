@@ -14,6 +14,7 @@ import (
 	"go_wp/internal/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	projectenums "go_wp/internal/module/project/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -22,9 +23,11 @@ import (
 )
 
 // 主题设置页文案（i18n key，与 dashboard enums 迁移前同值）。
+//
+// 校验失败的文案已收进 projectenums.MsgThemeSettingsInvalid —— 它会进 ?err= 通道，
+// 而读侧白名单要够得着它（本地常量让白名单只能靠抄字面量，抄错就静默失配）。
 const (
-	themeSettingsMsgTitle   = "MsgThemeSettingsTitle"
-	themeSettingsMsgInvalid = "MsgThemeSettingsInvalid"
+	themeSettingsMsgTitle = "MsgThemeSettingsTitle"
 )
 
 // themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚块绑定）。
@@ -71,6 +74,11 @@ type themeSettingsData struct {
 	// 候选为空时下拉仍有一项可选，不会退化成「没有这个字段」（那才是清空绑定）。
 	HeaderTemplateOptions []structureTemplateOptionView
 	FooterTemplateOptions []structureTemplateOptionView
+	// Err 上一次保存失败的提示（?err= 经读侧白名单，空 = 无提示）。
+	//
+	// 保存失败（校验不通过 / service 拒绝 / 整站刷新失败）后 303 回到本页并带 ?err=；
+	// 本页原先对此**没有任何出口** —— 失败是一块纯文本错误页，表单与页头全没了。
+	Err string
 }
 
 // structureTemplateOptionView 结构模板下拉项（selected 由服务端算好，前端不认识这组数据）。
@@ -114,6 +122,7 @@ func (d *themeSettingsData) templateMap() gin.H {
 		"SlotTemplates":         d.SlotTemplates,
 		"HeaderTemplateOptions": d.HeaderTemplateOptions,
 		"FooterTemplateOptions": d.FooterTemplateOptions,
+		"Err":                   d.Err,
 	}
 }
 
@@ -142,18 +151,22 @@ type themeSettingsJSON struct {
 }
 
 // ThemeSettings 单主题设置页。
+//
+// 缺 id / 主题不存在时 303 回主题列表并带提示：本页**不知道自己该显示什么**（没有主题），
+// 停在原地只能给一块错误页，而用户要的是回到能重新选主题的地方（列表页）。
 func (h *themeAdminHandle) ThemeSettings(c *gin.Context) {
 	themeID := strings.TrimSpace(c.Query("id"))
 	if themeID == "" {
-		c.String(http.StatusBadRequest, "缺少主题 id")
+		projectErrRedirect(c, "/admin/themes", response.TranslateMessage(c, projectenums.ErrThemeIDRequired))
 		return
 	}
 	data := h.loadThemeSettings(c, themeID)
 	if data == nil {
-		c.String(http.StatusNotFound, "主题不存在")
+		projectErrRedirect(c, "/admin/themes", response.TranslateMessage(c, projectenums.ErrThemeNotFound))
 		return
 	}
-	c.HTML(http.StatusOK, "admin/theme_settings", shell.Prepare(c, data.templateMap()))
+	data.Err = projectPageErrText(c, c.Query("err"))
+	c.HTML(http.StatusOK, "admin/project/theme_settings", shell.Prepare(c, data.templateMap()))
 }
 
 // loadThemeSettings 组装单主题设置页数据；主题不存在返回 nil。
@@ -275,14 +288,17 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	themeID := strings.TrimSpace(c.PostForm("id"))
 	if themeID == "" {
-		c.String(http.StatusBadRequest, "缺少主题 id")
+		projectErrRedirect(c, "/admin/themes", response.TranslateMessage(c, projectenums.ErrThemeIDRequired))
 		return
 	}
 	data := h.loadThemeSettings(c, themeID)
 	if data == nil {
-		c.String(http.StatusNotFound, "主题不存在")
+		projectErrRedirect(c, "/admin/themes", response.TranslateMessage(c, projectenums.ErrThemeNotFound))
 		return
 	}
+	// 失败后一律回到本页（PRG）：用户刚在这一屏调完颜色 / 字体 / 结构绑定，
+	// 停在原地才能接着改 —— 这与「表单内容丢失」是两个问题（后者要回填表单值，见 02-O 的任务单）。
+	backURL := "/admin/themes/settings?id=" + themeID
 	// 从 PostForm（点分键名）组装完整 ThemeSettings；空值直接透传为字段零值，
 	// 序列化时经 omitempty 省略（未设置字段不输出 CSS 变量，组件回退自身默认）。
 	ts := &builder.ThemeSettings{
@@ -363,25 +379,29 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		SlotTemplates:    themeSlotTemplateFormValues(c, data.SlotTemplates),
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, themePageMsgInternal)
+		projectErrRedirect(c, backURL, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err))
 		return
 	}
-	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法返回 400。
+	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法回本页并给提示。
 	if _, err := builder.ParseThemeSettings(settingsJSON); err != nil {
+		// CSS 值白名单不通过：原文（哪个字段、期望什么形状）只进日志，对外一句归口文案。
+		// 逐字段就近提示属 02-O 的 theme_settings 任务单（本域 P0 集中页），不在本批范围。
 		logger.Scene("theme").With("theme_id", themeID).Error(err, "主题设置校验失败")
-		c.String(http.StatusBadRequest, themeSettingsMsgInvalid)
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.MsgThemeSettingsInvalid))
 		return
 	}
 	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectcontract.ThemeUpdateReq{
 		ID: themeID, Name: data.ThemeName, Settings: settingsJSON,
 	}); err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, themePageMsgInternal)
+		projectErrRedirect(c, backURL, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err))
 		return
 	}
 	// 颜色/字体快照合入 settings.theme + 页眉/页脚绑定合入 settings.structure，
 	// 再标记待重建（新颜色/结构与块内容需重新构建生效）。
 	if code := h.refreshThemePages(c, themeID, settingsJSON); code != 0 {
-		c.String(code, "主题设置保存成功，但页面刷新失败")
+		// 部分成功：设置**已经落库**，失败的只是「合入页面文档 + 标记待重建」这一步。
+		// 提示必须说清这层区别（原先是 500 + 一行纯文本），否则用户以为白填了一遍又填一次。
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.MsgThemeSettingsRefreshFailed))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, "/admin/themes/settings?id="+themeID)

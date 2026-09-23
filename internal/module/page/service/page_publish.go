@@ -127,6 +127,71 @@ func (s *Service) Publish(ctx context.Context, req *pagedto.PublishReq) (res *pa
 	return s.publish(ctx, req, true)
 }
 
+// PublishAllLanguages 一键发布全部启用语言（多语言开关开启时的发布口径）：
+// 按站点启用语言清单逐语言「构建 + 激活」，一次请求把设置页配置的每种语言
+// 各编译一份并上线 —— 「发布时设置了多少语言，就一次性编译多少」。
+//
+// 编排与 rebuildPage 同源（逐语言 Build → publish）而不是另起一条链：
+// 单语言链路里的发布计划冻结、按语言取暂存、确定性校验在两条路径上必须只有一份实现。
+// 互指不做循环内刷新（publish 传 false）：本循环自己会逐个重建并重新发布全部启用语言，
+// 每一轮都能看到完整发布面 —— 与 rebuildPage 的既有注释同一理由。
+//
+// 失败口径与 rebuildPage 一致：单语言失败不阻断其余语言（继续下一个），
+// 错误按语言逐条回传；语言清单不可读是整体失败（发布口径 Forbidden，审计 I18N-02）。
+func (s *Service) PublishAllLanguages(ctx context.Context, req *pagedto.PublishReq) (res *pagedto.PublishAllResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, ErrInvalidParam
+	}
+	page, err := s.getExistingPage(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	// 语言清单是发布输入契约：读不到整体失败（不静默降级成单语言，
+	// 那会让其余语言的线上产物停在旧字节而发布回执写着成功）。
+	langs, err := s.publishLangsOf(ctx, page.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	res = &pagedto.PublishAllResp{
+		PageID:  page.ID,
+		Results: make([]pagedto.LangPublishResult, 0, len(langs)),
+	}
+	logger.Scene("publication").With("pageId", page.ID).
+		With("langs", strings.Join(langs, ",")).Info("一键发布全部启用语言")
+	for _, lang := range langs {
+		if cerr := ctx.Err(); cerr != nil {
+			res.Results = append(res.Results, pagedto.LangPublishResult{
+				Lang: lang, Status: "failed", Error: cerr.Error(),
+			})
+			break
+		}
+		if _, berr := s.Build(ctx, &pagedto.BuildReq{ID: req.ID, Lang: lang}); berr != nil {
+			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+				Error(berr, "一键发布：语言构建失败")
+			res.Results = append(res.Results, pagedto.LangPublishResult{
+				Lang: lang, Status: "failed", Error: berr.Error(),
+			})
+			continue
+		}
+		pr, perr := s.publish(ctx, &pagedto.PublishReq{ID: req.ID, Lang: lang}, false)
+		if perr != nil {
+			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+				Error(perr, "一键发布：语言发布失败")
+			res.Results = append(res.Results, pagedto.LangPublishResult{
+				Lang: lang, Status: "failed", Error: perr.Error(),
+			})
+			continue
+		}
+		item := pagedto.LangPublishResult{Lang: lang, Status: "ok"}
+		if pr != nil {
+			item.ActiveHash = pr.ActiveHash
+		}
+		res.Results = append(res.Results, item)
+		res.Published++
+	}
+	return res, nil
+}
+
 // publish 发布主链。refreshPeers 控制激活成功后是否刷新同页其余已发布语言的互指。
 func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshPeers bool) (res *pagedto.PublishResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {

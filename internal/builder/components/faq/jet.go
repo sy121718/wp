@@ -29,6 +29,11 @@ type FaqItemView struct {
 type View struct {
 	// Items 常见问题条目（顺序一致）。
 	Items []FaqItemView
+	// ChevronIcon 展开箭头（基座图标库 chevron-down，完整 <svg> 标签）。
+	//
+	// 与 accordion 同源：以前是 CSS 的 content 字符加号，字符图标与图标库
+	// 的描边风格、字宽基线都不一致，统一换成图标库的 SVG。
+	ChevronIcon string
 	// FAQJSONLD FAQPage 结构化数据片段（审计 SEO-006），含 <script> 外壳；
 	// 模板侧 unsafe 原样输出（内容由 encoding/json 序列化，不是用户拼的 HTML）。
 	FAQJSONLD string
@@ -40,5 +45,9 @@ func BuildView(p *Props) View {
 	for _, it := range p.Items {
 		items = append(items, FaqItemView{Question: it.Question, Answer: core.RichTextHTML(it.Answer), Open: it.Open})
 	}
-	return View{Items: items, FAQJSONLD: FAQPageJSONLD(p)}
+	view := View{Items: items, FAQJSONLD: FAQPageJSONLD(p)}
+	if svg, ok := core.IconSVGClass("chevron-down", "sky-faq-chevron"); ok {
+		view.ChevronIcon = svg
+	}
+	return view
 }

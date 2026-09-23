@@ -79,12 +79,16 @@ const (
 //
 // 键与集合源契约的维度名一致（工作台与 URL 都按这一套写）。
 var productListFilterParams = map[string]string{
-	productcontract.CollectionFilterStatus:     "filterStatus",
-	productcontract.CollectionFilterCategoryID: "filterCategoryId",
-	productcontract.CollectionFilterBrandID:    "filterBrandId",
-	productcontract.CollectionFilterTagID:      "filterTagId",
-	productcontract.CollectionFilterTagIDs:     "filterTagIds",
-	productcontract.CollectionFilterTagMode:    "filterTagMode",
+	productcontract.CollectionFilterStatus:       "filterStatus",
+	productcontract.CollectionFilterCategoryID:   "filterCategoryId",
+	productcontract.CollectionFilterCategoryIDs:  "filterCategoryIds",
+	productcontract.CollectionFilterCategoryMode: "filterCategoryMode",
+	productcontract.CollectionFilterBrandID:      "filterBrandId",
+	productcontract.CollectionFilterBrandIDs:     "filterBrandIds",
+	productcontract.CollectionFilterBrandMode:    "filterBrandMode",
+	productcontract.CollectionFilterTagID:        "filterTagId",
+	productcontract.CollectionFilterTagIDs:       "filterTagIds",
+	productcontract.CollectionFilterTagMode:      "filterTagMode",
 	// 最低评分（issue #29）：0~5 的数值，形状由集合源解析期校验。
 	productcontract.CollectionFilterMinRating: "filterMinRating",
 	// 价格区间（issue #28）：数值形状由集合源解析期校验，片段只做透传。
@@ -115,6 +119,19 @@ var productListDisplayParams = map[string]string{
 	"comparePriceField": "comparePriceField",
 	"tagsField":         "tagsField",
 	"linkField":         "linkField",
+	// 筛选栏 / 工具栏的形态开关与数据。
+	//
+	// 缺了它们，片段重渲染出来的列表**没有筛选栏**：产物里的初始列表有、
+	// 点一下筛选之后就没有了，且此后再也回不来（用户看到「越操作越少」）。
+	// 它们与 layout / columns 同性质 —— 是「这个实例怎么渲染」，不是「访客要哪批数据」。
+	"filters":       "filters",
+	"caretIcon":     "caretIcon",
+	"categoryMulti": "categoryMulti",
+	"toolbar":       "toolbar",
+	"priceRanges":   "priceRanges",
+	"priceSlider":   "priceSlider",
+	"priceBounds":   "priceBounds",
+	"ratingOptions": "ratingOptions",
 }
 
 // productListFieldParams 字段槽位参数（值必须过商品字段白名单）。
@@ -139,10 +156,23 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 	if projectID == "" {
 		return "", fmt.Errorf("缺少参数 %s", productListParamProjectID)
 	}
-
 	props, perr := productListProps(r)
 	if perr != nil {
 		return "", perr
+	}
+	// 没有任何**语义参数**（筛选 / 排序 / 翻页）时无需替换目标节点。
+	//
+	// 这条对应产物里的 hx-trigger="load"：列表容器每次进页面都会请求一次片段。
+	// 地址栏带 ?categoryId=x 这类分享链接参数时，这一趟是必要的（静态产物不可能
+	// 知道访客的查询）；什么都没有时**不能换** —— 片段请求的实例配置里只有布局类
+	// 字段，没有筛选栏 / 排序栏的开关，换上去等于把服务端渲染好的筛选栏删掉
+	// （实测：load 之后筛选栏整块消失，用户看到的是一份「越刷新越少」的列表）。
+	//
+	// **排在 productListProps 之后**：参数白名单校验是安全边界，非法字段必须拿到
+	// 400 而不是静默的 204 —— 否则「请求被拒绝」与「请求无事可做」在响应上不可区分，
+	// 攻击者可以拿 204 当成白名单探测的成功信号。
+	if !productListHasSemanticParam(r) {
+		return "", ErrNoChange
 	}
 	props["collectionSource"] = productcontract.CollectionSourceProduct
 	// 强制只出已发布：无论 URL 传什么 status，片段都不越权读取未发布内容。
@@ -158,6 +188,15 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 	}
 	rctx := &core.RenderContext{
 		Context: core.WithBuildProjectID(ctx, projectID),
+		// ProjectID 字段：组件把它拼进**实例配置**（productlist/links.go 的
+		// fragmentQuery），也就是重渲染出来的容器那条 hx-get。此前只塞进了 Go context
+		// （上方 WithBuildProjectID），字段是空的 —— 于是片段刷新后的容器 hx-get 里
+		// **没有 projectId**，下一次翻页/筛选请求直接 500「缺少参数 projectId」。
+		// 表现极具迷惑性：首屏能看、点一下就废，且只在刷新过一次之后出现。
+		ProjectID: projectID,
+		// CurrentPath：降级链接（href）要拼绝对地址，而片段期没有「当前页」上下文。
+		// 取自请求头 HX-Current-URL（端点解析后放进 Request.CurrentPath）。
+		CurrentPath: r.CurrentPath,
 		// Lang 本次渲染的目标语言（I18N-011）。
 		//
 		// 片段期必须显式设它：组件用它把 lang 拼进**实例配置**（productlist/links.go 的
@@ -226,6 +265,14 @@ func productListProps(r *Request) (map[string]any, error) {
 			props["pageSize"] = n
 		}
 	}
+	// 排序：URL 的 orderBy 是**访客选择**，覆盖作者在 Props 里配的默认排序。
+	//
+	// 不映射它的表现是「排序栏永远高亮『默认排序』」—— 列表内容确实按新顺序换了，
+	// 但控件不反映当前状态，用户无法确认自己点没点上（也无法再点一次取消）。
+	// 它属于语义参数，不进实例配置（见 productListInstanceParams）。
+	if raw := strings.TrimSpace(r.Params["orderBy"]); raw != "" {
+		props["orderBy"] = raw
+	}
 	if raw := strings.TrimSpace(r.Params[productListParamPage]); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n >= 1 && n <= productlist.MaxPage {
 			props["page"] = n
@@ -242,8 +289,14 @@ func productListProps(r *Request) (map[string]any, error) {
 	if v := strings.TrimSpace(r.Params[productcontract.CollectionFilterOnSale]); v == "true" || v == "1" {
 		props["onlyOnSale"] = "on"
 	}
-	options := make([]string, 0, 4)
+	// 属性维度：一个属性组可以带多个值（逗号分隔，组内并集）。
+	//
+	// 上面那层的 URL 参数本身就是逗号多值，这里**原样带过**：props 里的 filterOptions
+	// 采用 `key:v1,v2` 的形状（值在冒号之后、逗号分隔），与集合源维度
+	// `option.<key>=v1,v2` 一一对应 —— 组件解析一次就能同时拿到键与全部值。
+	//
 	// 参数顺序不稳定（map），先收键再排序，保证同参数同 props（一致性用例据此逐字节比对）。
+	options := make([]string, 0, 4)
 	optionKeys := make([]string, 0, 4)
 	for param := range r.Params {
 		if strings.HasPrefix(param, productcontract.CollectionFilterOptionPrefix) {
@@ -253,11 +306,11 @@ func productListProps(r *Request) (map[string]any, error) {
 	sort.Strings(optionKeys)
 	for _, param := range optionKeys {
 		attrKey := strings.TrimPrefix(param, productcontract.CollectionFilterOptionPrefix)
-		value := strings.TrimSpace(r.Params[param])
-		if attrKey == "" || value == "" {
+		values := productListOptionValues(r.Params[param])
+		if attrKey == "" || len(values) == 0 {
 			continue
 		}
-		options = append(options, attrKey+":"+value)
+		options = append(options, attrKey+":"+strings.Join(values, ","))
 	}
 	if len(options) > 0 {
 		props["filterOptions"] = strings.Join(options, ",")
@@ -269,6 +322,49 @@ func productListProps(r *Request) (map[string]any, error) {
 		props["pushQuery"] = q
 	}
 	return props, nil
+}
+
+// productListHasSemanticParam 请求是否带**语义参数**（非实例配置）。
+//
+// 实例配置 = 组件拼进 hx-get 的那一组固定键（节点 / 工程 / 语言 / 布局 / 字段槽位…），
+// 它们表达的是「这是哪个实例、怎么渲染」，不是「访客想要哪一批数据」。
+// 判据写成**排除法**而不是白名单：新增语义参数（某个新的筛选维度）时
+// 自动被认作语义参数 —— 白名单反过来的话，新维度会被静默当成实例配置、
+// 表现为「这个筛选点了没反应」，且只在真实点击时才暴露。
+func productListHasSemanticParam(r *Request) bool {
+	for key := range r.Params {
+		if !productListInstanceParam(key) {
+			return true
+		}
+	}
+	return false
+}
+
+// productListInstanceParam 该参数是否属于实例配置（不表达「要哪批数据」）。
+func productListInstanceParam(key string) bool {
+	if key == "" {
+		return true
+	}
+	if _, ok := productListInstanceParams[key]; ok {
+		return true
+	}
+	// option.<attr> 是**语义**参数（属性维度筛选），不能当实例配置。
+	return false
+}
+
+// productListInstanceParams 实例配置键集合（与 links.go 的 fragmentQuery 同源）。
+//
+// 新增实例配置键时这里要同步加，否则它会被当成语义参数、导致「每次进页面都白换一次」。
+var productListInstanceParams = map[string]bool{
+	"nodeId": true, "projectId": true, "lang": true,
+	"layout": true, "columns": true, "currency": true, "titleTag": true,
+	"emptyText": true, "linkPrefix": true, "limit": true, "pageSize": true,
+	"optionKeys": true, "context": true,
+	"imageField": true, "imageAltField": true, "titleField": true,
+	"priceField": true, "comparePriceField": true, "tagsField": true, "linkField": true,
+	// 决定筛选栏 / 工具栏长什么样的开关与数据（见 links.go 的 fragmentQuery）。
+	"filters": true, "toolbar": true, "priceRanges": true, "caretIcon": true, "categoryMulti": true,
+	"priceSlider": true, "priceBounds": true, "ratingOptions": true,
 }
 
 // productListSemanticQuery 合成当前语义查询串（翻页 / 换筛选时由组件的链接拼装消费）。
@@ -295,19 +391,37 @@ func productListSemanticQuery(r *Request, options []string) string {
 		}
 	}
 	for _, pair := range options {
-		key, value, ok := strings.Cut(pair, ":")
+		key, values, ok := strings.Cut(pair, ":")
 		if !ok {
 			continue
 		}
-		if key = strings.TrimSpace(key); key == "" {
+		key = strings.TrimSpace(key)
+		values = strings.Join(productListOptionValues(values), ",")
+		if key == "" || values == "" {
 			continue
 		}
-		if value = strings.TrimSpace(value); value == "" {
-			continue
-		}
-		q.Set(productcontract.CollectionFilterOptionPrefix+key, value)
+		q.Set(productcontract.CollectionFilterOptionPrefix+key, values)
 	}
 	return q.Encode()
+}
+
+// productListOptionValues 属性维度参数值 → 去空去重的值列表（保持首次出现顺序）。
+//
+// 形状与集合源那一侧完全一致（同样走逗号多值），所以这里不做第二种解读：
+// 两处对同一个 URL 参数给出不同语义，会出现「筛得出来但翻页就丢」这类只在
+// 组合操作下暴露的缺陷。
+func productListOptionValues(raw string) []string {
+	out := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		value := strings.TrimSpace(part)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 // productListSemanticParam 该 URL 参数是否属于语义参数（可进 pushQuery）。

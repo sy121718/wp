@@ -85,6 +85,14 @@
   max-height: {{maxHeight}};
   overflow: {{overflow}};
 
+  /* 版心约束（横向）。max-width 本身不会超过可用宽度，窄屏无需另配断点。 */
+  max-width: {{maxWidth}};
+
+  /* 居中：只在配了 max-width 且显式打开时输出（全宽背景 + 内层版心的写法不该被居中）。 */
+  @if center
+  margin-inline: auto;
+  @endif
+
   /* 视觉装饰：渐变 > 背景图 > 图案（互斥，同写 background-image）。 */
   background-color: {{bgColor}};
   @if hasGradient

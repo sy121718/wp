@@ -389,6 +389,7 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 商品级表单（分类 / 品牌 / 标签）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.POST("/admin/products/taxonomy", handle.ProductsTaxonomySet)
 	return engine, f
 }
@@ -473,10 +474,8 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("POST 商品分类品牌应 302，实际 %d", rec.Code)
 	}
-	// 保存后留在该商品的详情页（表单隐藏域是 id，其值就是商品 id）。
-	if loc := rec.Header().Get("Location"); loc != detailLocation(f.projectID, p.ID) {
-		t.Fatalf("保存分类与品牌后应留在该商品的详情页，实际 Location=%q", loc)
-	}
+	// 保存后留在该商品的**编辑页**（表单隐藏域是 id，其值就是商品 id）。
+	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, p.ID)
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -488,17 +487,17 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("主分类应被自动纳入挂载列表（父级 + 子级），实际 %v", got.CategoryIDs)
 	}
 
-	// 商品 HTML 里能看到分类名与品牌名（验证后台可读回）：换目标页面到商品详情页 ——
-	// 改造后列表页只回答「有哪些商品」，「分类与品牌」表单整块移到 /admin/products/detail
-	// （引擎上方已同步注册该路由）。
-	rec = httptestGet(engine, "/admin/products/detail?project="+f.projectID+"&product="+p.ID)
+	// 商品 HTML 里能看到分类名与品牌名（验证后台可读回）：表单在**编辑页**，
+	// 详情页只读展示（分类名 / 品牌名两处都能看到）。
+	rec = httptestGet(engine, "/admin/products/edit?project="+f.projectID+"&product="+p.ID)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("商品详情页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("商品编辑页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	pageBody := rec.Body.String()
-	for _, want := range []string{"分类与品牌", "山野", "衬衫", "保存分类与品牌"} {
+	// 编辑页是一个表单一次保存：分类与品牌随「保存」一起提交（没有分节按钮）。
+	for _, want := range []string{"分类与品牌", "山野", "衬衫", `name="primaryCategoryId"`, `name="brandId"`} {
 		if !strings.Contains(pageBody, want) {
-			t.Fatalf("商品页缺少 %q", want)
+			t.Fatalf("商品编辑页缺少 %q", want)
 		}
 	}
 }

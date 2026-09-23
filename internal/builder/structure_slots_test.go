@@ -160,3 +160,96 @@ func TestStructureSlotsRenderAroundBodyAndOutsideMain(t *testing.T) {
 		t.Fatalf("页脚应在 main 之后")
 	}
 }
+
+// stripSlotFrame 删掉一个槽位标记层的起止标签、保留其内部内容。
+//
+// 用途是把「加了标记层」的产物还原成「没加标记层」的形态，用来断言
+// **标记层是两者唯一的差异** —— 只断言「含/不含某个属性」挡不住
+// 「顺手多输出了一层 wrapper 里的别的字节」这类漂移。
+func stripSlotFrame(html, slot string) string {
+	marker := `<div class="sky-slot-frame" data-sky-slot="` + slot + `"`
+	i := strings.Index(html, marker)
+	if i < 0 {
+		return html
+	}
+	startEnd := i + strings.Index(html[i:], ">") + 1
+	depth, pos := 1, startEnd
+	for depth > 0 {
+		nd := strings.Index(html[pos:], "<div")
+		nc := strings.Index(html[pos:], "</div>")
+		if nc < 0 {
+			return html
+		}
+		if nd >= 0 && nd < nc {
+			depth++
+			pos += nd + len("<div")
+			continue
+		}
+		depth--
+		if depth == 0 {
+			return html[:i] + html[startEnd:pos+nc] + html[pos+nc+len("</div>"):]
+		}
+		pos += nc + len("</div>")
+	}
+	return html
+}
+
+// TestStructureSlotsCanvasFramesOnlyForEditor 画布标记层只在编辑器画布出现，
+// 且它是「开/关」两版产物之间**唯一**的差异。
+//
+// 两条都不能省：少了前者，「发布路径零标记」这条不变量会被悄悄破坏（产物里多一层
+// 无样式 div，谁也不会注意到）；少了后者，标记层就可能顺手改了别的东西，
+// 而「槽位展开 ≡ 块内容直接写在页面里」正是靠字节相等来判定的（VIS-001）。
+func TestStructureSlotsCanvasFramesOnlyForEditor(t *testing.T) {
+	set, serr := templates.NewComponentSet("../templates/components")
+	if serr != nil {
+		t.Fatalf("NewComponentSet: %v", serr)
+	}
+	blocks := stubBlocks{
+		"h1":                          "{\"settings\":{},\"root\":[{\"id\":\"hdr\",\"type\":\"core.text\",\"props\":{\"text\":\"HEADER-MARK\"}}]}",
+		"__structure_template__tp-1": "{\"settings\":{},\"root\":[{\"id\":\"hdr\",\"type\":\"core.text\",\"props\":{\"text\":\"HEADER-MARK\"}}]}",
+	}
+	build := func(blockID string, editor bool) string {
+		opts := []CompileOption{
+			WithContext(context.Background()), WithComponentSet(set), WithBlockResolver(blocks),
+			WithStructureSlots(StructureSlot{Slot: SlotHeader, BlockID: blockID}),
+		}
+		if editor {
+			opts = append(opts, WithCanvasSlotFrames())
+		}
+		page := &Page{
+			Settings: PageSettings{Layout: PageLayout{Mode: LayoutFull}},
+			Root:     []*core.Node{node("body1", "BODY-MARK")},
+		}
+		res, err := Compile(page, opts...)
+		if err != nil {
+			t.Fatalf("编译失败: %v", err)
+		}
+		return res.HTML
+	}
+
+	plain, editor := build("h1", false), build("h1", true)
+	if strings.Contains(plain, "sky-slot-frame") {
+		t.Fatalf("非编辑器编译不该输出画布标记层")
+	}
+	for _, want := range []string{
+		`data-sky-slot="header"`, `data-sky-slot-ref="h1"`,
+		`data-sky-slot-ref-kind="block"`, `data-sky-id="__layout_header"`,
+	} {
+		if !strings.Contains(editor, want) {
+			t.Fatalf("编辑器产物应含 %s，实际:\n%s", want, editor)
+		}
+	}
+	if got := stripSlotFrame(editor, "header"); got != plain {
+		t.Fatalf("标记层应是开/关两版产物的唯一差异\n--- 去标记后 ---\n%s\n--- 关闭标记 ---\n%s", got, plain)
+	}
+
+	// 结构模板绑定：跳转目标是内容模板而不是块，画布要靠 refKind 分流。
+	tmpl := build(StructureTemplateRef("tp-1"), true)
+	if !strings.Contains(tmpl, `data-sky-slot-ref-kind="template"`) {
+		t.Fatalf("结构模板绑定的 refKind 应为 template，实际:\n%s", tmpl)
+	}
+	if !strings.Contains(tmpl, `data-sky-slot-ref="`+structureTemplateRefPrefix+`tp-1"`) {
+		t.Fatalf("结构模板绑定的 ref 应为虚拟引用 ID，实际:\n%s", tmpl)
+	}
+}

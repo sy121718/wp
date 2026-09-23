@@ -102,24 +102,32 @@ func TestSeoScoreFragmentRendersEntityEmptyState(t *testing.T) {
 // TestProductScorePanelsAreWiredIntoAdminTemplates 三个后台页面的评分入口与结果容器。
 func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 	// SEO 检查跟着商品走：它已从列表页的折叠区搬进**商品详情页**
-	// （评分/变体/SEO 都是某个商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）。
-	products := renderAdminTemplate(t, "admin/product_detail.html", productPageLayoutData(gin.H{
-		"title": "商品详情", "menu": "products",
+	// （评分/变体/SEO 都是某个商品的属性：SEO 面板在**编辑页**，详情页只读，见 admin-ui-logic §1）。
+	product := productRowForRender()
+	product["Subtitle"] = ""
+	product["Unit"] = ""
+	product["SEOTitle"] = ""
+	product["SEODescription"] = ""
+	products := renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
+		"title": "编辑商品", "menu": "products",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
 		"WarehouseOptions": []gin.H{}, "Err": "",
 		"HasProduct": true, "ProductID": "p1", "BackURL": "/admin/products",
-		"Product": productRowForRender(),
+		"Product":         product,
+		"Statuses":        []gin.H{{"Value": "draft", "Label": "草稿", "Selected": true}},
+		"AttributeChecks": []gin.H{},
+		"ImagesText":      "", "ImageAltsText": "", "WeightText": "", "DefaultPriceText": "",
 	}))
 	for _, want := range []string{
 		"hx-post=\"/admin/products/seo-score\"", "id=\"product-seo-score-p1\"",
 		"name=\"productId\" value=\"p1\"",
 	} {
 		if !strings.Contains(products, want) {
-			t.Fatalf("商品详情页应包含 %q，实际输出：%s", want, products)
+			t.Fatalf("商品编辑页应包含 %q，实际输出：%s", want, products)
 		}
 	}
 
-	categories := renderAdminTemplate(t, "admin/product_categories.html", productPageLayoutData(gin.H{
+	categories := renderAdminTemplate(t, "admin/product/product_categories.html", productPageLayoutData(gin.H{
 		"title": "商品分类", "menu": "product-categories",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1", "Options": []gin.H{},
 		"Categories": []gin.H{{"ID": "c1", "Name": "男装", "Slug": "men", "Label": "男装", "Sort": 0,
@@ -134,7 +142,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		}
 	}
 
-	brands := renderAdminTemplate(t, "admin/product_brands.html", productPageLayoutData(gin.H{
+	brands := renderAdminTemplate(t, "admin/product/product_brands.html", productPageLayoutData(gin.H{
 		"title": "商品品牌", "menu": "product-brands",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
 		"Brands": []gin.H{{"ID": "b1", "Name": "示例品牌", "Slug": "demo", "Sort": 0,

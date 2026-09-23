@@ -139,7 +139,14 @@ func TestTemplateRendersInteractiveAttributes(t *testing.T) {
 		"data-sky-product-list",
 		"/_fragments/productList?",
 		"hx-push-url=",
-		`hx-trigger="load[location.search.length > 1]"`,
+		// 触发器是**无条件 load**，不带 `[...]` 事件过滤器。
+		//
+		// 原先写作 `load[location.search.length > 1]` 想让「地址栏没有查询时别请求」——
+		// 那个表达式要经 htmx 的 Function() 求值，而更早一版的 hx-vals 里那段
+		// `js:Object.fromEntries(...)` 在 htmx 的包裹规则下是**语法错误**，每次请求都抛，
+		// 交互全废。现在改为：无条件 load，由片段端点判断「有没有语义参数」，
+		// 没有就回 204（htmx 对 204 不交换）—— 判据回到服务端，客户端不再需要任何求值。
+		`hx-trigger="load"`,
 		`hx-target="closest [data-sky-product-list]"`,
 		"sky-product-list-filter-option",
 		"sky-product-list-tool-option",
@@ -223,5 +230,62 @@ func TestPagerLinksCarrySemanticParams(t *testing.T) {
 	// 换筛选必须清 page：否则筛选后条目变少会落在越界页，看到空列表。
 	if strings.Contains(view.SortOptions[1].PushURL, "page=") {
 		t.Fatalf("换排序时不应保留 page: %s", view.SortOptions[1].PushURL)
+	}
+}
+
+// TestCategorySingleSelectSemantics 分类树的单选 / 多选开关。
+//
+// 单选（categoryMulti=off）：不渲染勾选框，点未选中的**替换**成它（含其子树），
+// 点已选中的**清空**；多选（默认）：在已有集合上切换（级联加入 / 级联移除）。
+// 两套语义必须分开 —— 单选下用切换语义会让「点第二个分类」变成并集，那就不是单选了。
+func TestCategorySingleSelectSemantics(t *testing.T) {
+	coll := itemsColl(itemOf("tee", "T 恤", "2026-01-01T00:00:00Z"))
+
+	// 多选（默认）：section.Multi 为真。
+	multiView := buildViewOf(t, coll, map[string]any{"filters": "categories"}, "")
+	if len(multiView.FilterSections) != 1 {
+		t.Fatalf("应渲染分类块: %+v", multiView.FilterSections)
+	}
+	multi := multiView.FilterSections[0]
+	if !multi.Multi {
+		t.Fatalf("默认应为多选")
+	}
+
+	// 单选：点未选中项 = 替换（URL 只含该项子树）。
+	singleView := buildViewOf(t, coll, map[string]any{"filters": "categories", "categoryMulti": "off"}, "")
+	if len(singleView.FilterSections) != 1 {
+		t.Fatalf("应渲染分类块: %+v", singleView.FilterSections)
+	}
+	single := singleView.FilterSections[0]
+	if single.Multi {
+		t.Fatalf("categoryMulti=off 时应为单选")
+	}
+	for _, opt := range single.Options {
+		if !strings.Contains(opt.PushURL, "categoryIds=") {
+			t.Fatalf("单选下未选中项应给出替换链接: %+v", opt)
+		}
+	}
+
+	// 单选：已选中项再点 = 清空（取消）。
+	// 已选中态来自 **props**（片段期由 URL 还原成 props；第四参是 pushQuery，不是 props）。
+	cancelView := buildViewOf(t, coll, map[string]any{
+		"filters": "categories", "categoryMulti": "off", "filterCategoryIds": "cat-1",
+	}, "")
+	cancel := cancelView.FilterSections[0]
+	var found bool
+	for _, opt := range cancel.Options {
+		if opt.Label != "一次性" {
+			continue
+		}
+		found = true
+		if !opt.Active {
+			t.Fatalf("已选中的分类应处于选中态: %+v", opt)
+		}
+		if strings.Contains(opt.PushURL, "categoryIds=") {
+			t.Fatalf("单选下点已选中项应清空筛选，实际 %s", opt.PushURL)
+		}
+	}
+	if !found {
+		t.Fatalf("未找到「一次性」分类选项: %+v", cancel.Options)
 	}
 }

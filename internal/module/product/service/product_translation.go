@@ -115,7 +115,8 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeCategory, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
-	brands, berr := s.m.ListBrands(ctx, projectID, "")
+	// 全量取（0, 0）：译文候选要覆盖工程里所有品牌 / 标签，漏掉的会变成永远没有译文入口。
+	brands, berr := s.m.ListBrands(ctx, projectID, "", 0, 0)
 	if berr != nil {
 		return nil, berr
 	}
@@ -123,7 +124,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeBrand, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
-	tags, terr := s.m.ListTags(ctx, projectID, "", "")
+	tags, terr := s.m.ListTags(ctx, projectID, "", "", 0, 0)
 	if terr != nil {
 		return nil, terr
 	}

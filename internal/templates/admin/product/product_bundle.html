@@ -1,0 +1,386 @@
+{* admin/product_bundle.html — 捆绑配置：选商品 → 配选项规则 → 前台配置器预览（issue #20）。 *}
+{* 版式（评审见 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
+     · 正文零说明文字：领域口径（跨商品 SKU / 必选与数量 / 库存真源）整段进页头 .help；
+     · 工程与商品选择器是页级上下文，与 SKU 计数同行放在 .page-head .page-actions；
+     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）。 *}
+{* 表单是原生并行数组（同名多值），零自定义 JS；表格外层 .table-wrap 在窄屏可横向滚动。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{selectedProduct := .SelectedProduct}}
+{{maxOptions := .MaxOptions}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_bundle.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_bundle.intro.lead", "捆绑套餐 = 主体自定价 + 若干") }}<b>{{ .["t"]("admin.product_bundle.intro.skuBold", "跨商品挑选的已存在 SKU") }}</b>{{ .["t"]("admin.product_bundle.intro.mid", "。每个选项可设必选 / 可选与默认 / 最小 / 最大数量（最大填 0 = 不设上限，只受库存约束）；主体可设选项数量上限与整单最小 / 最大总件数（整单下限按") }}<b>{{ .["t"]("admin.product_bundle.intro.totalBold", "总件数") }}</b>{{ .["t"]("admin.product_bundle.intro.tail", "判定，不是单项）。数量上限同时受库存可用量约束，可用量读") }}<b>{{ .["t"]("admin.product_bundle.intro.sourceBold", "仓库真源") }}</b>{{ .["t"]("admin.product_bundle.intro.end", "，与商品列表里的展示缓存无关。") }}<br>{{ .["t"]("admin.product_bundle.intro.sources", "成员有三种来源：从商品导入 / 从仓库选 / 自选属性值组合 —— 解析只把候选行追加到成员清单，点「保存配置」才落库。成员引用的永远是变体，来源只作溯源与展示。") }}<br>{{ .["t"]("admin.product_bundle.preview.hint", "预览区渲染的就是访客看到并操作的片段（与前台同一条渲染路径）。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/products/bundle">
+                <label class="sr-only" for="bundle-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="bundle-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            <form class="page-context" method="get" action="/admin/products/bundle">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <label class="sr-only" for="bundle-product">{{ .["t"]("admin.product_bundle.selectProductPlaceholder", "选择捆绑商品") }}</label>
+                <select class="form-select" id="bundle-product" name="product" onchange="this.form.submit()">
+                    <option value="">{{ .["t"]("admin.product_bundle.selectProductPlaceholder", "— 选择捆绑商品 —") }}</option>
+                    {{range _, p := .Products}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProduct}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            <span class="badge badge-mute">{{ .["t"]("admin.product_bundle.skuCountLead", "可选 SKU 共 ") }}{{.SkuCount}}{{ .["t"]("admin.product_bundle.skuCountTail", " 个（跨商品，只列启用中的变体）") }}</span>
+        </div>
+    </header>
+
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_bundle.saveError", "保存未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+
+    {{if selectedProduct != ""}}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
+        {{if .Detail}}
+        {* 套餐价是**数据**，用徽章；口径（子项价格不进前台展示）在页头 .help 里。 *}
+        <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
+        <form method="post" action="/admin/products/bundle/save">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="productId" value="{{selectedProduct}}">
+            <div class="form-inline">
+                <label>{{ .["t"]("admin.product_bundle.cfg.maxOptions", "选项数量上限") }}
+                    <input type="number" class="form-input" name="maxOptions" min="1" max="{{maxOptions}}" value="{{.Detail.Config.MaxOptions}}">
+                </label>
+                <label>{{ .["t"]("admin.product_bundle.cfg.minTotalQty", "整单最小总件数") }}
+                    <input type="number" class="form-input" name="minTotalQty" min="0" value="{{.Detail.Config.MinTotalQty}}">
+                </label>
+                <label>{{ .["t"]("admin.product_bundle.cfg.maxTotalQty", "整单最大总件数（0 = 不设上限）") }}
+                    <input type="number" class="form-input" name="maxTotalQty" min="0" value="{{.Detail.Config.MaxTotalQty}}">
+                </label>
+            </div>
+            {* 成员表（docs/14 §1.2 的三种来源最终都落在这里）。
+               每一行都提交同一组字段（variantId / required / defaultQty / minQty / maxQty /
+               sourceKind / memberWarehouseId / memberWarehouseSku / memberExternalSku）：
+               并行数组靠 DOM 顺序对齐，JS 追加的行必须与这里的行结构逐字一致
+               （模板见表格外的 <template data-bundle-member-tpl>）。 *}
+            <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_bundle.cfg.tableAria", "捆绑选项") }}">
+                <table class="data-table data-table-wide">
+                    <thead>
+                        <tr>
+                            <th>SKU</th><th>{{ .["t"]("admin.product_bundle.source.col.source", "来源") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.available", "当前可用") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th>
+                        </tr>
+                    </thead>
+                    <tbody data-bundle-member-list>
+                        {{range _, row := .Rows}}
+                        <tr data-bundle-member-row>
+                            <td>
+                                <select class="form-select" name="variantId" aria-label="SKU">
+                                    {{range _, o := row.Options}}
+                                    <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                                    {{end}}
+                                </select>
+                                {* 来源快照的四个隐藏域：**每一行都提交**（并行数组靠 DOM 顺序对齐）。
+                                   可选键一律 isset 包裹（渲染数据由 handler 组装，逐键到位；
+                                   直接参与求值会在缺键那一行中断整页渲染，状态码仍是 200）。 *}
+                                <input type="hidden" name="sourceKind" value="{{if isset(row.SourceKind)}}{{row.SourceKind}}{{end}}">
+                                <input type="hidden" name="memberWarehouseId" value="{{if isset(row.WarehouseID)}}{{row.WarehouseID}}{{end}}">
+                                <input type="hidden" name="memberWarehouseSku" value="{{if isset(row.WarehouseSKU)}}{{row.WarehouseSKU}}{{end}}">
+                                <input type="hidden" name="memberExternalSku" value="{{if isset(row.ExternalSKU)}}{{row.ExternalSKU}}{{end}}">
+                            </td>
+                            <td>{{if isset(row.SourceLabel)}}{{if row.SourceLabel != ""}}<span data-member-source>{{row.SourceLabel}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else}}<span class="text-mute" data-member-source>—</span>{{end}}</td>
+                            <td>
+                                <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
+                                    <option value="1" {{if row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>
+                                    <option value="0" {{if !row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</option>
+                                </select>
+                            </td>
+                            <td><input type="number" class="form-input" name="defaultQty" min="0" value="{{row.DefaultQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}"></td>
+                            <td><input type="number" class="form-input" name="minQty" min="0" value="{{row.MinQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}"></td>
+                            <td><input type="number" class="form-input" name="maxQty" min="0" value="{{row.MaxQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}"></td>
+                            <td>{{if row.VariantID != ""}}{{row.Available}}{{else}}—{{end}}</td>
+                            <td class="col-actions">
+                                <button type="button" class="btn btn-sm btn-danger" data-bundle-member-remove>{{ .["t"]("admin.product_bundle.source.remove", "移除") }}</button>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {* 行结构只写一份：JS 追加候选成员时克隆它（列数、字段名、data 属性与既有行逐字一致）。 *}
+            <template data-bundle-member-tpl>
+                <tr data-bundle-member-row>
+                    <td>
+                        <input type="hidden" name="variantId" value="">
+                        <code data-member-sku></code>
+                    </td>
+                    <td>
+                        <span data-member-source></span>
+                        <input type="hidden" name="sourceKind" value="">
+                        <input type="hidden" name="memberWarehouseId" value="">
+                        <input type="hidden" name="memberWarehouseSku" value="">
+                        <input type="hidden" name="memberExternalSku" value="">
+                    </td>
+                    <td>
+                        <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
+                            <option value="1" selected>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>
+                            <option value="0">{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</option>
+                        </select>
+                    </td>
+                    <td><input type="number" class="form-input" name="defaultQty" min="0" value="1" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}"></td>
+                    <td><input type="number" class="form-input" name="minQty" min="0" value="1" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}"></td>
+                    <td><input type="number" class="form-input" name="maxQty" min="0" value="0" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}"></td>
+                    <td>—</td>
+                    <td class="col-actions">
+                        <button type="button" class="btn btn-sm btn-danger" data-bundle-member-remove>{{ .["t"]("admin.product_bundle.source.remove", "移除") }}</button>
+                    </td>
+                </tr>
+            </template>
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_bundle.cfg.save", "保存配置") }}</button>
+            </div>
+        </form>
+        {{else}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_bundle.detailFailedTitle", "配置读取失败") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。") }}</p>
+        </div>
+        {{end}}
+    </section>
+
+    {* ==== 成员来源（docs/14 §1.2 的三种来源）====
+       来源 / 来源商品 / 来源仓是**页级上下文**：用 GET 重新渲染（onchange submit），
+       候选清单（属性值 / 仓库 SKU）因此都由服务端给出，前端不复刻任何口径。
+       「解析并追加成员」是**不落库**的取数：它把服务端算好的行追加进上面的成员清单，
+       DOM 里的清单才是待保存的内容；点「保存配置」才写 products.bundle_items。 *}
+    {{if .Detail}}
+    <section class="card card-body" id="bundle-source-panel" data-bundle-source-panel>
+        <h2>{{ .["t"]("admin.product_bundle.source.title", "成员来源") }}</h2>
+        <p class="text-mute text-sm">{{ .["t"]("admin.product_bundle.source.hint", "解析只把候选行追加到成员清单，不写库；点「保存配置」才落库。三条来源共用同一套去重与逐条原因：同一 SKU 只出现一次，某一条解析不出来只跳过它并说明原因。") }}</p>
+        <form class="form-inline" method="get" action="/admin/products/bundle">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <input type="hidden" name="product" value="{{selectedProduct}}">
+            <label>{{ .["t"]("admin.product_bundle.source.kind", "来源") }}
+                <select class="form-select" name="source" data-bundle-source-select onchange="this.form.submit()">
+                    {{if isset(.Sources)}}{{range _, s := .Sources}}
+                    <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+            </label>
+            {{if isset(.Source)}}{{if .Source == "BundleSourceWarehouse"}}
+            <label>{{ .["t"]("admin.product_bundle.source.warehouseLabel", "来源仓库") }}
+                <select class="form-select" name="sourceWarehouse" onchange="this.form.submit()">
+                    <option value="">{{ .["t"]("admin.product_bundle.source.warehousePlaceholder", "— 选择仓库 —") }}</option>
+                    {{if isset(.SourceWarehouses)}}{{range _, w := .SourceWarehouses}}
+                    <option value="{{w.WarehouseID}}" {{if w.Selected}}selected{{end}}>{{w.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+            </label>
+            {{else}}
+            <label>{{ .["t"]("admin.product_bundle.source.productLabel", "来源商品") }}
+                <select class="form-select" name="sourceProduct" onchange="this.form.submit()">
+                    {{if isset(.SourceProducts)}}{{range _, p := .SourceProducts}}
+                    <option value="{{p.ID}}" {{if p.Selected}}selected{{end}}>{{p.Label}}</option>
+                    {{end}}{{end}}
+                </select>
+            </label>
+            {{end}}{{end}}
+            <button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_bundle.source.refresh", "刷新候选") }}</button>
+        </form>
+
+        {{if isset(.Source)}}{{if .Source == "BundleSourceWarehouse"}}
+        {* 仓库来源：仓库 SKU 候选只列**选中那个仓**的一屏（选仓后重渲染）——
+           每个仓的候选由服务端逐仓取（见 product_warehouse_sku_view.go），不把整张库存表拉进页面。 *}
+        {{if isset(.SourceWarehouseID)}}{{if .SourceWarehouseID != ""}}
+        {{if isset(.SourceWarehouses)}}{{range _, w := .SourceWarehouses}}{{if w.Selected}}
+        {{if len(w.Items) == 0}}
+        <p class="text-mute text-sm">{{ .["t"]("admin.product_bundle.source.warehouseNoSku", "这个仓还没有任何库存记录：先到库存页为该仓建货，再回来选。") }}</p>
+        {{else}}
+        <fieldset class="var-group">
+            <legend>{{ .["t"]("admin.product_bundle.source.warehouseSkuLegend", "仓库 SKU（可多选；选中即定位到该仓那条货的变体）") }}</legend>
+            {{range _, it := w.Items}}
+            <label class="var-value">
+                <input type="checkbox" name="warehouseSku" value="{{it.SKUCode}}"> {{it.Label}}
+            </label>
+            {{end}}
+        </fieldset>
+        {{end}}
+        {{end}}{{end}}{{end}}
+        {{else}}
+        <p class="text-mute text-sm">{{ .["t"]("admin.product_bundle.source.warehouseEmpty", "先选一个来源仓库：这里会列出该仓的仓库 SKU，勾选即代表「这条货在这个仓」。") }}</p>
+        {{end}}{{else}}
+        <p class="text-mute text-sm">{{ .["t"]("admin.product_bundle.source.warehouseEmpty", "先选一个来源仓库：这里会列出该仓的仓库 SKU，勾选即代表「这条货在这个仓」。") }}</p>
+        {{end}}
+        {{else}}
+        {* 商品来源：不必勾选任何东西（整商品导入）；属性来源：勾选属性值后由服务端重算组合。 *}
+        {{if .Source != "BundleSourceProduct"}}
+        {{if isset(.SourceAttributes)}}{{if len(.SourceAttributes) == 0}}
+        <p class="text-mute text-sm">{{ .["t"]("admin.product_bundle.source.attrEmpty", "先选一个来源商品（且该商品已配好「参与变体」的属性组）：这里会列出它的属性值，勾选后由服务端按属性组固定顺序重算组合。") }}</p>
+        {{else}}
+        {{range _, a := .SourceAttributes}}
+        <fieldset class="var-group">
+            <legend>{{a.Name}}</legend>
+            {{range _, v := a.Values}}
+            {{if v.Enabled}}
+            <label class="var-value">
+                <input type="checkbox" name="attr:{{a.ID}}" value="{{v.ID}}"> {{v.Label}}
+            </label>
+            {{end}}
+            {{end}}
+        </fieldset>
+        {{end}}
+        {{else}}
+        <p class="text-mute text-sm">{{ .["t"]("admin.product_bundle.source.attrEmpty", "先选一个来源商品：这里会列出它参与变体的属性值，勾选后由服务端按属性组固定顺序重算组合。") }}</p>
+        {{end}}
+        {{end}}
+        {{end}}{{end}}{{end}}
+
+        <div class="action-row">
+            <button type="button" class="btn btn-primary" data-bundle-resolve
+                    data-panel="#bundle-source-panel"
+                    data-url="{{if isset(.ResolveURL)}}{{.ResolveURL}}{{end}}"
+                    data-project="{{selectedProject}}"
+                    data-product="{{selectedProduct}}"
+                    data-csrf="{{csrf}}"
+                    data-msg-added="{{ .["t"]("admin.product_bundle.source.status.added", "已追加 %d 行到成员清单（还没保存）") }}"
+                    data-msg-none="{{ .["t"]("admin.product_bundle.source.status.none", "没有解析出任何候选成员") }}"
+                    data-msg-skipped="{{ .["t"]("admin.product_bundle.source.status.skipped", "跳过 %d 条：") }}"
+                    data-msg-failed="{{ .["t"]("admin.product_bundle.source.status.failed", "解析失败：") }}">{{ .["t"]("admin.product_bundle.source.resolve", "解析并追加成员") }}</button>
+            <span class="text-mute text-sm" data-bundle-source-status role="status"></span>
+        </div>
+    </section>
+    {{end}}
+
+    {{if .Detail}}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.product_bundle.preview.title", "前台配置器预览") }}</h2>
+        <div hx-get="/_fragments/bundleConfigurator?productId={{selectedProduct}}" hx-trigger="load" hx-swap="innerHTML"></div>
+    </section>
+    {{end}}
+    {{end}}
+    {* 成员来源解析的交互（docs/14 §1.2）。三条决定这段脚本形态的规则：
+       1. 事件用 document 级委托 —— 行由 JS 追加，按钮与行可能在任何来源面板里；
+       2. 「解析」是一次**不落库**的取数：POST 到 /admin/products/bundle/members/resolve，
+          把返回的行按 <template data-bundle-member-tpl> 的同一种结构追加进成员清单
+          （与变体清单的「生成」同一形态）；
+       3. 文案一律从 data-msg-* 取（服务端按当前语言渲染），脚本里不写死中文。 *}
+    <script>
+    (function () {
+        'use strict';
+
+        function setStatus(text) {
+            document.querySelectorAll('[data-bundle-source-status]').forEach(function (el) {
+                el.textContent = text || '';
+            });
+        }
+
+        // 成员清单里已有的变体 id（既有行是 select，追加行是隐藏域）——交给服务端去重。
+        function existingVariantIds() {
+            var out = [];
+            document.querySelectorAll('[data-bundle-member-row]').forEach(function (tr) {
+                var sel = tr.querySelector('select[name=variantId]');
+                var hid = tr.querySelector('input[name=variantId]');
+                var v = sel ? sel.value : (hid ? hid.value : '');
+                if (v) { out.push(v); }
+            });
+            return out;
+        }
+
+        function appendMembers(members) {
+            var body = document.querySelector('[data-bundle-member-list]');
+            var tpl = document.querySelector('[data-bundle-member-tpl]');
+            if (!body || !tpl) { return; }
+            members.forEach(function (m) {
+                var frag = tpl.content.cloneNode(true);
+                var tr = frag.querySelector('tr');
+                if (!tr) { return; }
+                var bind = function (sel, value) {
+                    var el = tr.querySelector(sel);
+                    if (el) { el.value = value || ''; }
+                };
+                bind('input[name=variantId]', m.variantId);
+                bind('input[name=sourceKind]', m.sourceKind);
+                bind('input[name=memberWarehouseId]', m.warehouseId);
+                bind('input[name=memberWarehouseSku]', m.warehouseSku);
+                bind('input[name=memberExternalSku]', m.externalSku);
+                var sku = tr.querySelector('[data-member-sku]');
+                if (sku) { sku.textContent = m.skuCode || m.variantId || ''; }
+                var src = tr.querySelector('[data-member-source]');
+                if (src) { src.textContent = m.sourceLabel || ''; }
+                body.appendChild(frag);
+            });
+        }
+
+        document.addEventListener('click', function (e) {
+            var remove = e.target.closest('[data-bundle-member-remove]');
+            if (remove) {
+                var row = remove.closest('[data-bundle-member-row]');
+                if (row) { row.remove(); }
+                return;
+            }
+            var trigger = e.target.closest('[data-bundle-resolve]');
+            if (!trigger) { return; }
+            var panel = document.querySelector(trigger.getAttribute('data-panel') || '');
+            if (!panel) { return; }
+            var fd = new FormData();
+            fd.append('projectId', trigger.getAttribute('data-project') || '');
+            fd.append('productId', trigger.getAttribute('data-product') || '');
+            var sourceSel = panel.querySelector('[data-bundle-source-select]');
+            fd.append('source', sourceSel ? sourceSel.value : '');
+            var productSel = panel.querySelector('select[name=sourceProduct]');
+            fd.append('sourceProductId', productSel ? productSel.value : '');
+            var whSel = panel.querySelector('select[name=sourceWarehouse]');
+            fd.append('sourceWarehouse', whSel ? whSel.value : '');
+            panel.querySelectorAll('input[name=warehouseSku]:checked').forEach(function (cb) {
+                fd.append('warehouseSku', cb.value);
+            });
+            panel.querySelectorAll('input[type=checkbox][name^="attr:"]:checked').forEach(function (cb) {
+                fd.append(cb.name, cb.value);
+            });
+            existingVariantIds().forEach(function (id) { fd.append('existingVariantId', id); });
+            setStatus('');
+            fetch(trigger.getAttribute('data-url') || '', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': trigger.getAttribute('data-csrf') || '' },
+                body: fd
+            }).then(function (res) {
+                return res.json().catch(function () { return null; });
+            }).then(function (data) {
+                if (!data || !data.ok) {
+                    var reason = data && data.message ? data.message : '';
+                    setStatus((trigger.getAttribute('data-msg-failed') || '') + reason);
+                    return;
+                }
+                var members = data.members || [];
+                appendMembers(members);
+                var text = members.length
+                    ? (trigger.getAttribute('data-msg-added') || '').replace('%d', String(members.length))
+                    : (trigger.getAttribute('data-msg-none') || '');
+                var skips = data.skips || [];
+                if (skips.length) {
+                    var lines = skips.map(function (s) {
+                        return (s.label ? s.label + '：' : '') + (s.text || '');
+                    });
+                    text += ' ' + (trigger.getAttribute('data-msg-skipped') || '')
+                        .replace('%d', String(skips.length)) + lines.join('；');
+                }
+                setStatus(text);
+            }).catch(function () {
+                setStatus(trigger.getAttribute('data-msg-failed') || '');
+            });
+        });
+    })();
+    </script>
+</div>
+{{end}}

@@ -3,6 +3,10 @@ package pluginhttp
 // plugin_page_handle.go — 后台插件管理页（/admin/plugins，Jet + HTMX，docs/06）。
 // 自 dashboard 迁回本模块：页面路由（Session + CSRF，无 Casbin——页面路由约定）；
 // 数据经 /api/plugin/* 业务 API（三层链）或本模块直调契约（页面渲染需要）。
+//
+// 失败出口统一走 plugin_err.go：303 回本页 + ?err=<受控文案>，**不再** c.String 直出
+// `pluginenums.ErrXxx`（那会让浏览器停在 POST 路径上，只剩一行英文标识符，连导航都没有）。
+// 本模块 enums 的值保持 i18n key 形态（JSON 出口的形态判据要用），页面侧由出口翻译成中文。
 
 import (
 	"io"
@@ -10,7 +14,6 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
-	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 
@@ -22,7 +25,9 @@ type pluginsPageData struct {
 	Title   string
 	Menu    string
 	Plugins []*plugincontract.PluginResp
-	Error   string
+	// Error 页面提示条（模板 admin/plugins.html:21-23 的 {{if .Error}}）：
+	// 来源只有两处 —— 写失败回带的 ?err=（经 pluginPageErr 白名单收敛）与列表取数失败的固定文案。
+	Error string
 	// ArtifactPatrol 插件三处产物的对账巡检结果（只读）。见 service/plugin_patrol.go：
 	// 报告孤儿 schema / 缺 schema 的注册行 / 孤儿存储目录 / 目录缺失的注册行四类不一致。
 	// 恒定非 nil：模板按「有没有不一致」分流，nil 会让它多一个判空分支。
@@ -51,10 +56,13 @@ func emptyPatrol() *plugincontract.PatrolResp {
 // PluginsPage 插件管理列表页。
 func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 	data := &pluginsPageData{Title: "插件管理", Menu: "plugins", ArtifactPatrol: emptyPatrol()}
+	// 写操作失败会 303 回本页并带 ?err=（见 plugin_err.go）；读侧只认受控文案，未命中落统一提示。
+	// 先当默认值放进去，下面若本页取数也失败则覆盖它 —— 用户当下看到的是列表没加载出来。
+	data.Error = pluginPageErr(c)
 	if h.plugins != nil {
 		list, err := h.plugins.List(c.Request.Context())
 		if err != nil {
-			data.Error = "插件列表加载失败"
+			data.Error = pluginNoticeListFailed
 		} else {
 			data.Plugins = list
 		}
@@ -65,7 +73,7 @@ func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 			data.ArtifactPatrol = patrol
 		}
 	}
-	c.HTML(http.StatusOK, "admin/plugins", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/plugin/plugins", shell.Prepare(c, gin.H{
 		"title": data.Title, "menu": data.Menu,
 		"Plugins": data.Plugins, "Error": data.Error,
 		"ArtifactPatrol": data.ArtifactPatrol,
@@ -76,58 +84,65 @@ func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 const pluginsUploadMax = 52 << 20
 
 // PluginsInstall 上传安装插件（multipart 表单，HTMX 提交）。
+//
+// 失败一律 303 回列表页 + ?err=（见 plugin_err.go）：直出 c.String 时浏览器停在 POST 路径上，
+// 用户看到的是 `ErrInstallParse` 这样一行英文标识符，而**已选的文件也白选了** ——
+// 所以安装路径的每条文案都经 pluginInstallFailText 补一句「请重新选择文件」。
 func (h *pluginPageHandle) PluginsInstall(c *gin.Context) {
 	if h.plugins == nil {
-		c.String(http.StatusServiceUnavailable, "插件模块未装配")
+		pluginPageFail(c, pluginNoticeModuleUnwired)
 		return
 	}
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		c.String(http.StatusBadRequest, pluginenums.ErrInstallParse)
+		pluginPageFail(c, pluginInstallFailText(pluginNoticeNoFile))
 		return
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, pluginsUploadMax+1))
 	if err != nil || len(data) == 0 || len(data) > pluginsUploadMax {
-		c.String(http.StatusBadRequest, pluginenums.ErrInstallParse)
+		pluginPageFail(c, pluginInstallFailText(pluginNoticeUnreadable))
 		return
 	}
 	if _, err := h.plugins.Install(c.Request.Context(), data); err != nil {
 		logger.Scene("plugin").Error(err, "插件安装失败")
-		c.String(http.StatusBadRequest, pluginenums.MsgInstallFailed)
+		pluginPageFail(c, pluginInstallFailText(pluginErrParam(c, err)))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/plugins")
+	c.Redirect(http.StatusSeeOther, pluginPagePath)
 }
 
 // PluginsToggle 启停插件（表单 POST）。
+//
+// 表单提交失败必须回到**页面**：c.String 的响应体在浏览器里就是一行英文标识符，
+// 没有导航也没有返回，用户只能按后退键（而 POST 之后的后退会重发表单）。
 func (h *pluginPageHandle) PluginsToggle(c *gin.Context) {
 	if h.plugins == nil {
-		c.String(http.StatusServiceUnavailable, "插件模块未装配")
+		pluginPageFail(c, pluginNoticeModuleUnwired)
 		return
 	}
 	req := &plugincontract.ToggleReq{ID: c.PostForm("id"), Enabled: c.PostForm("enabled") == "true" || c.PostForm("enabled") == "on"}
 	if err := h.plugins.Toggle(c.Request.Context(), req); err != nil {
 		logger.Scene("plugin").With("plugin_id", req.ID).Error(err, "插件状态更新失败")
-		c.String(http.StatusBadRequest, pluginenums.ErrToggleFailed)
+		pluginPageFail(c, pluginErrParam(c, err))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/plugins")
+	c.Redirect(http.StatusSeeOther, pluginPagePath)
 }
 
 // PluginsUninstall 卸载插件（表单 POST，二次确认由前端 confirm 承担）。
 func (h *pluginPageHandle) PluginsUninstall(c *gin.Context) {
 	if h.plugins == nil {
-		c.String(http.StatusServiceUnavailable, "插件模块未装配")
+		pluginPageFail(c, pluginNoticeModuleUnwired)
 		return
 	}
 	req := &plugincontract.UninstallReq{ID: c.PostForm("id")}
 	if err := h.plugins.Uninstall(c.Request.Context(), req); err != nil {
 		logger.Scene("plugin").With("plugin_id", req.ID).Error(err, "插件卸载失败")
-		c.String(http.StatusBadRequest, pluginenums.ErrUninstallFailed)
+		pluginPageFail(c, pluginErrParam(c, err))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/plugins")
+	c.Redirect(http.StatusSeeOther, pluginPagePath)
 }
 
 // SetupPluginPages 注册插件管理页（/admin 组，中间件链由装配层统一挂好）。

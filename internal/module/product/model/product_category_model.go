@@ -110,6 +110,24 @@ func (m *Model) ListCategories(ctx context.Context, projectID, keyword string) (
 	return list, err
 }
 
+// CountCategories 工程内分类总数（**与 ListCategories 同过滤条件**：工程 + 关键词）。
+//
+// 计数按**行**数（不是顶级节点数）：后台分类页把树按 DFS 前序摊平成表格行再分页，
+// 分页条的「共 N 条」说的就是这些行。两处若一个数行、一个数顶级节点，用户会看到
+// 「共 3 条」却是 12 行的表格 —— 这种矛盾比不显示总数更糟。
+//
+// 作用域与 ListCategories 同一把（同一个 projectID 参数、同一个 rls.InProjectScope）。
+func (m *Model) CountCategories(ctx context.Context, projectID, keyword string) (n int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{})
+		if keyword != "" {
+			q = q.Where("name ILIKE ?", "%"+keyword+"%")
+		}
+		return q.Count(&n).Error
+	})
+	return n, err
+}
+
 // ListCategoriesByIDs 批量取分类（商品引用校验与反查用，避免 N+1），**必带工程作用域**。
 //
 // projectID 是**必填**的工程作用域（不是可选过滤条件）：product_categories 在迁移 215

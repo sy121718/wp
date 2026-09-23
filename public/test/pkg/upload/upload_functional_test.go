@@ -1,6 +1,7 @@
 package upload_test
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -88,14 +89,16 @@ func TestUploadRejectsDisallowedMimeType(t *testing.T) {
 
 	_, err := upload.Upload(context.Background(), upload.File{
 		Filename:    "demo.txt",
-		Reader:      strings.NewReader("abc"),
-		Size:        3,
-		ContentType: "application/octet-stream",
+		Reader:      bytes.NewReader(pngMagic),
+		Size:        int64(len(pngMagic)),
+		ContentType: "text/plain",
 	}, upload.Request{})
 	if err == nil {
-		t.Fatalf("非法 MIME 类型应返回错误")
+		t.Fatalf("内容嗅探出的 MIME 不在白名单内时应返回错误")
 	}
 }
+
+var pngMagic = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0}
 
 func TestUploaderFacadeUsesFixedRequestAndProvider(t *testing.T) {
 	cfg := viper.New()

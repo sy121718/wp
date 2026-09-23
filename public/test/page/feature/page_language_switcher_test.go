@@ -182,7 +182,7 @@ func TestPagePreviewLocaleLinksDefaultPlain(t *testing.T) {
 		{"", `href="/en/about"`},   // 默认语言预览：自身无前缀，其他语言短码
 		{"en-US", `href="/about"`}, // 非默认语言预览：指向默认语言无前缀路径
 	} {
-		html, err := svc.CompilePreview(ctx, []byte(switcherDoc), projectID, "/about", c.lang)
+		html, err := svc.CompilePreview(ctx, []byte(switcherDoc), projectID, "/about", c.lang, false)
 		if err != nil {
 			t.Fatalf("预览编译失败(lang=%q): %v", c.lang, err)
 		}

@@ -196,11 +196,34 @@ export const nodesMethods = {
             select(id) {
                 var node = this.findNode(id);
                 if (!node || node.locked) return;
+                this.selectedSlot = null; // 选中普通节点即退出槽位态（两者互斥）
                 this.selectedId = id;
                 this.highlightInCanvas(id);
                 this.syncInspector();
                 this.markTreeSelection();
                 // WP 范式：点选组件即进入该组件的编辑面板。
+                this.showEdit();
+            },
+
+            // selectSlotFrame 选中结构槽位（页眉 / 页脚）。
+            //
+            // 槽位是编译期注入的只读边界，页面文档里没有它的节点：所以这里不设 selectedId，
+            // 只记录 selectedSlot —— 面板据此渲染「这是站点结构的一部分 + 去编辑那个全局块」，
+            // 而不是把页眉当成一个可删除、可拖动的本页元素（那正是「文档里也留一份页眉、
+            // 于是出现两个页眉」的入口）。
+            selectSlotFrame(frame) {
+                if (!frame || !frame.slot) return;
+                this.selectedId = '';
+                this.selectedSlot = {
+                    slot: String(frame.slot),
+                    ref: frame.ref || '',
+                    refKind: frame.refKind || 'block',
+                    nodeId: frame.id || '',
+                    // 降级占位（块拿不到 / 空块）没有可编辑的目标，面板只做说明。
+                    degradable: !!frame.degrade,
+                };
+                this.highlightInCanvas(this.selectedSlot.nodeId);
+                this.markTreeSelection(); // 结构树里没有槽位节点，此举只为清掉旧高亮
                 this.showEdit();
             },
 };

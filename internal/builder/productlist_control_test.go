@@ -77,3 +77,51 @@ func TestMultiEntityRefRequiresEntityKind(t *testing.T) {
 		t.Fatalf("错误信息应指出 multientityref，实际: %v", err)
 	}
 }
+
+// TestProductListMultiValueFilterControls 三个多值筛选维度都是多选实体控件。
+//
+// 分类 / 品牌 / 标签三块此前只有**单值**控件（entityref 单选 + 一行标签 id 字符串），
+// 于是「勾两个品牌」这件事在编辑器里根本表达不出来 —— 而这恰恰是筛选栏最常见的用法。
+// 三者现在共用 multientityref 这一套（同一形状、同一存储格式：逗号分隔 id 串），
+// 本用例同时钉住「实体类型声明正确」与「字段仍是 string」。
+func TestProductListMultiValueFilterControls(t *testing.T) {
+	props := (&productlist.Component{}).PropsSpec()
+	controls, err := core.ParseControls(props)
+	if err != nil {
+		t.Fatalf("解析控件 schema 失败: %v", err)
+	}
+	byKey := map[string]core.Control{}
+	for _, c := range controls {
+		byKey[c.Key] = c
+	}
+	for field, entity := range map[string]string{
+		"filterCategoryIds": "category",
+		"filterBrandIds":    "brand",
+		"filterTagIds":      "tag",
+	} {
+		ctrl, ok := byKey[field]
+		if !ok {
+			t.Fatalf("未找到 %s 控件", field)
+		}
+		if ctrl.Kind != core.ControlMultiEntityRef {
+			t.Fatalf("%s 应为多选实体控件，实际 %s", field, ctrl.Kind)
+		}
+		if len(ctrl.Options) == 0 || ctrl.Options[0].Value != entity {
+			t.Fatalf("%s 应声明实体类型 %s，实际 %v", field, entity, ctrl.Options)
+		}
+	}
+	// 值型不变：控件是编辑方式，不是存储格式（改了就要迁移既有页面文档）。
+	typ := reflect.TypeOf(props)
+	for typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	for _, field := range []string{"FilterCategoryIDs", "FilterBrandIDs", "FilterTagIDs"} {
+		f, found := typ.FieldByName(field)
+		if !found {
+			t.Fatalf("未找到字段 %s", field)
+		}
+		if f.Type.Kind() != reflect.String {
+			t.Fatalf("字段 %s 应仍是 string（读写兼容），实际 %s", field, f.Type.Kind())
+		}
+	}
+}

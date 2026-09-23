@@ -108,6 +108,10 @@ func returnDetailView(d *orderdto.ReturnDetailResp, filter returnFilter, project
 	approved := ret.Status == returnStatusApproved
 	received := ret.Status == returnStatusReceived
 
+	// 状态说明（key + 中文兜底）：模板把当前状态那一句渲染进「操作」标题的 .help 悬浮，
+	// 不再平铺在正文里 —— 它是操作指引，不是数据；每行/每屏重复一遍只会盖住真正的表单。
+	noteKey, noteText := returnStatusNote(ret.Status)
+
 	return gin.H{
 		"Head": gin.H{
 			"ID":            ret.ID,
@@ -133,7 +137,8 @@ func returnDetailView(d *orderdto.ReturnDetailResp, filter returnFilter, project
 		"Items":          items,
 		"Order":          order,
 		"HasOrder":       len(order) > 0,
-		"Note":           returnStatusNote(ret.Status),
+		"NoteKey":        noteKey,
+		"Note":           noteText,
 		"CanApprove":     requested,
 		"CanReject":      requested,
 		"CanReceive":     approved,

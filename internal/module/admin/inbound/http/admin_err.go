@@ -212,6 +212,27 @@ func adminPageErrText(c *gin.Context, raw string) string {
 	return shell.FacingNotice(cleaned, adminErrTexts(c))
 }
 
+// adminErrOrLoad 列表页 .Err 槽的取值：**本次装载失败**优先，其次才是 ?err= 回带（写操作失败）。
+//
+// 六个管理页（管理员 / 角色 / 权限点 / 菜单 / 部门 / 数据规则）原先在装载失败时
+// `c.String(500, pagesMsgAdminGenericFailed)`：浏览器里没有页面，只有一块写着 i18n key 的裸文本 ——
+// 侧边栏、筛选框、分页全部消失，运营看到的是 key 而不是一句人话，也无从判断
+// 「是我筛错了还是系统坏了」。列表查询失败是服务端问题，不该把**页面本身**一起拿走。
+//
+// 现在改为降级渲染：空列表 + 一条归口提示，页面结构完好（还能改筛选、点别的菜单）。
+// 装载失败与 ?err= 可能同时存在（上一次写失败回带 ?err=、这一次列表又查不出来），
+// 装载失败是当前这次请求真实发生的事，必须盖住 URL 里那条旧提示。
+//
+// 文案与 adminErrParam 同源（同一份 adminenums.AdminFacingMessages 白名单、同一处带 user_id 的
+// 结构化日志），所以「归口」这件事在装载失败路径上没有被绕过 —— 原始错误（表名 / 约束名 /
+// SQLSTATE / 驱动原文）只进日志，页面上拿到的要么是白名单业务文案，要么是 ErrInternal 归口文案。
+func adminErrOrLoad(c *gin.Context, loadErr error) string {
+	if loadErr != nil {
+		return adminErrParam(c, loadErr)
+	}
+	return adminPageErrText(c, c.Query("err"))
+}
+
 // adminPageErrParamClean 页面提示参数的第一道形状清洗（不含任何文案白名单）。
 //
 // 清洗只有三步，都是形状判定：

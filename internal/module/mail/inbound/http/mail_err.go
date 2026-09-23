@@ -130,6 +130,64 @@ func mailBulkIDsText(c *gin.Context, err error) string {
 	return shell.BulkIDsFacingText(c, err)
 }
 
+// —— 访客面出口：邮件里的公开链接（点击追踪 / 一键退订）——
+//
+// 这一段的消费者与上面**完全不同**，判据也不同：
+//
+//	· 上面（mailErrPageText 等）面向登录后的运营：有后台壳、有 ?err=、有归口文案；
+//	· 这里面向**收件人**：邮件客户端里点开链接，浏览器直接打开 /_t/c/{token} 或
+//	  /_t/u/{token} —— 无登录态、无后台页面壳、也没有任何表单可改。
+//
+// 所以「失败时给一句受控短句 / 成功时给一张自带样式的整页 HTML」是**对的形态**，
+// 改成 303 + ?err= 或 JSON 反而错（访客没有可回归的列表页，也没有解析 JSON 的客户端）。
+// 要收口的只是**文案来源**：这几句此前是 Go 里的硬编码中文，而收件人可能是英文用户。
+//
+// 语言从哪来：response.RequestLanguage 的协商链（Cookie lang → query lang →
+// Accept-Language → 默认语言）**不需要登录态**，裸引擎路由（SetupTrackingRoutes）直接用得上。
+// 这也是为什么这里不经过 shell.PageError* —— 那是给后台页面（带壳）准备的。
+
+// mailVisitorText 访客面文案：按请求语言取词条，**缺词条回落中文原文**。
+//
+// 与 mailErrPageText 的兜底方向恰好相反（那一份兜底给 key）：后台页面上出现裸 key 时
+// 运营会来报「页面显示 mail.err.accountNotFound」，而访客面只有收件人一个人看见 ——
+// 没人会来报，所以宁可给中文原文也不能给 key。pkg/i18n.Translate 的兜底链是
+// 「命中 → 默认语言 → fallback → key」，传了 fallback 就轮不到 key 出场。
+func mailVisitorText(c *gin.Context, key, fallback string) string {
+	return shell.TranslateFor(c)(key, fallback)
+}
+
+// mailVisitorLog 访客端点失败留痕（外部输入类：签名不符 / 链接过期 / 载荷不完整）。
+//
+// 记 Warn 而不是 Error：点击端点是最热的访客路径，而它的失败**几乎全是**
+// 「访客拿着被客户端截断或已过期的链接」—— 记 Error 会把它变成日志噪声，
+// 真正的故障反而被淹掉。
+//
+// **不记 token**：token 是能直接伪造「退订别人」的凭据（验签密钥就握在本服务手里），
+// 落进日志等于把它复制到了另一个系统里。日志只需要「哪个端点、什么原因」。
+func mailVisitorLog(c *gin.Context, err error, msg string) {
+	if err == nil {
+		return
+	}
+	logger.Scene(mailErrScene).
+		With("path", c.Request.URL.Path).
+		With("detail", err.Error()).
+		Warn(msg)
+}
+
+// mailVisitorLogError 访客端点失败留痕（涉及持久化写入的一类：退订的状态 + 抑制名单事务）。
+//
+// 与上面分开的理由是**判据不同**：退订失败可能来自那次事务写（连接池 / 约束 / 驱动原文），
+// 那是真正的系统故障，必须落在错误日志里；而「token 无效」这类纯验签失败不该。
+// 原文（可能带表名 / SQLSTATE）只到这里，响应里永远只有 mailVisitorText 给的那句短句。
+func mailVisitorLogError(c *gin.Context, err error, msg string) {
+	if err == nil {
+		return
+	}
+	logger.Scene(mailErrScene).
+		With("path", c.Request.URL.Path).
+		Error(err, msg)
+}
+
 // —— 读侧回执的收口（?err= / ?ok= / ?done=）——
 //
 // 写侧早已把错误收敛过（mailErrPageText / mailBulkIDsText / mailBulkOutcome），但页面
@@ -220,6 +278,59 @@ func mailTestSendFailedText(c *gin.Context, kind, detail string) string {
 	return "测试邮件发送失败（未分类），详情见服务端日志。"
 }
 
+// —— 缺 id 的引导文案与前置判据（审计 P0：三处「无 id 前置判定」）——
+//
+// 背景：活动报表页（?id）/ 实例排障页（?id）/ 流程画布页（?id）三个入口都必须带 id，
+// 而它们此前都是「直接调 service，靠查询失败兜底」—— 于是「没给 id」与「id 给错」
+// 被压成同一句含糊文案（service 的 mail.err.invalidParam → 「参数不合法」）。
+// 最刺眼的一处是活动报表页：sys_menus 里「邮件活动」是**正式菜单项**且 path 不带参数
+// （id=137 → /admin/mail/campaign），运营点菜单进来必然看到「参数不合法」，
+// 而那个页面上**没有任何参数可改** —— 用户没有任何出路。
+//
+// 分档判据（两档的差别不是措辞，而是「用户下一步该干什么」）：
+//   · 没给 id → 这是**引导**：说清去哪找（本页列出的三句话都点名了列表页）；
+//   · 给了 id 但查不到 → 保留 service 的业务文案（活动不存在 / 自动化实例不存在 /
+//     自动化流程不存在）—— 那句话是对的，缺的是前面那一档。
+//
+// 为什么这三句是中文硬编码而不是 mailenums 的 i18n key：与上面的
+// mailTemplateListFailedText / mailContactStatusBadText 同一取舍 —— 它们是**本页自造**
+// 的受控文案（不是 service 上抛、也不来自 shell），受控性来自「整句由本模块写出 +
+// 逐条登记进 mailNoticeTexts」。**漏登记的后果是读侧把它丢弃**（shell.FacingNotice
+// 未命中 → shell.PageInternalText），运营看到的是「系统内部错误」——
+// 新增回执文案时务必同步登记，这是上一批踩过的点。
+const (
+	mailCampaignIDRequiredText   = "请先从活动列表选择一条活动，再查看它的报表。"
+	mailRunIDRequiredText        = "请先从实例列表选择一条实例，再查看它的排障详情。"
+	mailAutomationIDRequiredText = "请先从流程列表选择一个流程，再查看它的画布。"
+)
+
+// mailIDRequiredTexts 上面三句的集合（mailNoticeTexts 登记用；新增一句必须加进来）。
+var mailIDRequiredTexts = []string{
+	mailCampaignIDRequiredText,
+	mailRunIDRequiredText,
+	mailAutomationIDRequiredText,
+}
+
+// mailQueryID 读取 ?id= 并区分「没给」与「给了」——第二返回值 false 表示**缺参**。
+//
+// 为什么不能写 `id := shell.ParseUint(c.Query("id")); if id == 0 { 缺参 }`：
+// ParseUint 对 ""、"abc"、"0" 一律返回 0，那样「没给 id」与「给了个查不到的 id」
+// 又被压回同一档 —— 正是本轮要拆开的那对情况。判据必须是**原始 query 是否为空**：
+// 非空值（含非法值）交给 service，由它按自己的口径给业务文案 ——
+// `?id=99999999`（合法但不存在的 id）落「活动不存在 / 自动化实例不存在 / 自动化流程不存在」，
+// `?id=abc`（非法值，解析成 0）落 service 的 mail.err.invalidParam（「参数不合法」）。
+// 两句都比改前多了一层信息：**没给 id 才走引导**，给了 id 的话文案说的是那个 id 怎么了。
+//
+// 为什么放在 mail_err.go 而不是某个 handler：三个 handler（活动报表 / 实例排障 /
+// 流程画布）共用同一份判据与同一套文案档位，它们的改动必须是一个整体，散开必然漂移。
+func mailQueryID(c *gin.Context) (uint64, bool) {
+	raw := strings.TrimSpace(c.Query("id"))
+	if raw == "" {
+		return 0, false
+	}
+	return shell.ParseUint(raw), true
+}
+
 // mailNoticeTexts 本页可以原样展示的回执文案（当前语言）。
 func mailNoticeTexts(c *gin.Context) []string {
 	translate := shell.TranslateFor(c)
@@ -241,6 +352,9 @@ func mailNoticeTexts(c *gin.Context) []string {
 		mailTestSendFailedText(c, string(mailer.KindPermanent), ""),
 		mailTestSendFailedText(c, string(mailer.KindConfiguration), ""),
 	)
+	// 缺 id 的引导文案（见 mailIDRequiredTexts）：不登记的话读侧会把它丢掉，
+	// 运营看到的会从「请先从活动列表选择一条活动」退化成「系统内部错误」。
+	out = append(out, mailIDRequiredTexts...)
 	for _, tpl := range mailFormNoticeTemplates {
 		out = append(out, shell.NoticeTemplate(tpl))
 	}

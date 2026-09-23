@@ -1,0 +1,316 @@
+{* admin/blocks.html — 全局块管理：页眉/页脚/区块（编辑进工作台） *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§7）：
+     · 原「说明」卡整段进页头 .help 悬浮，正文零说明文字；
+     · 工程选择器与「新建并编辑」同一行置于 .page-head .page-actions，不再自占一张卡；
+     · **一张列表卡 + 一张表**（02-L P1-4）：页眉 / 页脚 / 区块不再分三段渲染，
+       「是哪种块」由「类型」列承担。合并前三段各有一套列头（5 / 5 / 7 列）与一个
+       [data-check-all]，全选框的唯一性靠三层嵌套 {{if}} 维持 —— 任何一段的判断写错就会
+       多渲染一个全选框，而 admin.js 的 refresh 只认 scope 里第一个（后两个看起来像失灵）；
+       · 「待重建影响面」从常驻只读卡降级为页头一行徽章 + 折叠清单（02-L P1-10）；
+     · 操作列统一 .col-actions。 *}
+{* Jet 方言：range 用 range 关键字；方法调用圆括号；extends 相对本目录 *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .["SelectedProject"]}}
+{{canCreate := isset(.PermSet["block:create"])}}
+{{canDelete := isset(.PermSet["block:delete"])}}
+<div class="stack">
+    {{if len(.Projects) == 0}}
+    <section class="card list-card">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.blocks.no_project.title", "还没有站点工程") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.blocks.no_project", "请先在「页面」里创建一个站点工程，再管理全局块。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.common.action.pages", "页面管理") }}</a>
+            </div>
+        </div>
+    </section>
+    {{else}}
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.blocks.heading", "全局块") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.blocks.notes", "全局块 = 跨页面复用的结构片段（对应 WP 的 HTML 块 / template part）。页眉/页脚块在「主题管理 → 设置」里绑定到主题，构建页面时编译期内联进产物——访问面保持纯静态；块内容变更后，绑定了它的主题下页面自动标为待重建。") }}<br><br>{{ .["t"]("admin.blocks.notes_reuse_lead", "复用方式（docs/02-D）：") }}<b>{{ .["t"]("admin.blocks.notes_reuse_global", "全局引用") }}</b>{{ .["t"]("admin.blocks.notes_reuse_global_tail", "＝页面存引用，改一处所有引用页一起更新（页眉/公告栏/信任徽章）；") }}<b>{{ .["t"]("admin.blocks.notes_reuse_template", "一次性复制") }}</b>{{ .["t"]("admin.blocks.notes_reuse_template_tail", "＝插入时复制完整结构，此后与源块互不影响（商品卡/表单/弹窗）。被引用的全局块删除前须先解除引用。") }}</span>
+                </span>
+            </div>
+            {* 待重建影响面（02-L P1-10）：有 stale 时只在页头给一行徽章 + 悬浮解释，
+               清单本身收进下面的折叠区。原先它是列表卡之上的常驻只读卡 —— 13 条清单能把
+               3 行真实数据顶出首屏，而这张卡本身没有任何操作入口。
+               缺键安全：StaleImpact 是可选键（直接渲染模板的单测不带它），三档判定全部
+               先过 isset —— 缺键直接参与 {{if}} 会让整页在那一行中断（HTTP 仍 200）。 *}
+            {{if isset(.StaleImpact)}}{{if .StaleImpact.Available}}{{if .StaleImpact.Total}}
+            <p class="page-sub">
+                <span class="badge badge-warning">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</span>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.blocks.impact.help", "块、内容、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。") }}</span>
+                </span>
+            </p>
+            {{end}}{{end}}{{end}}
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/blocks">
+                <label class="sr-only" for="blocks-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="blocks-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            {{if canCreate}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-block-create" data-drawer-title="{{ .["t"]("admin.blocks.create", "新建并编辑") }}">＋ {{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+            {{end}}
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：缺失键会让整页在此中断（HTTP 仍 200，列表整块消失）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.blocks.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+
+    {* 待重建影响面（02-L P1-10）的清单侧，三档语义一个都不能少：
+         · Available=false（页面契约未装配 / 读工程失败）→ Hint 原文 —— 这一档**绝不能**
+           与「没有待重建」合并：读失败显示成「一切正常」会把故障静默掉，运维再也不会去看；
+         · Available=true 且 Total=0 → 明确说「当前没有待重建的页面」；
+         · 有数据 → 折叠清单（默认收起），页头那行徽章给计数与入口提示。
+       只读可见性：这里没有任何「立即重建」按钮，不改任何构建行为。 *}
+    {{if isset(.StaleImpact)}}
+    {{if .StaleImpact.Available}}
+    {{if .StaleImpact.Total}}
+    <details class="section-fold card">
+        <summary>
+            <span class="fold-title">{{ .["t"]("admin.blocks.impact.heading", "待重建影响面") }}</span>
+            <span class="fold-note">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</span>
+        </summary>
+        <div class="fold-body">
+            <ul>
+                {{range _, p := .StaleImpact.Pages}}
+                <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span></li>
+                {{end}}
+            </ul>
+            {{if .StaleImpact.Truncated}}
+            <p class="stat-note">{{ .["t"]("admin.blocks.impact.moreLead", "（清单只列了前 ") }}{{ .StaleImpact.Limit }}{{ .["t"]("admin.blocks.impact.moreTail", " 条，其余只有计数；完整清单请到页面列表逐个查看。）") }}</p>
+            {{end}}
+        </div>
+    </details>
+    {{else}}
+    <p class="stat-note">{{ .["t"]("admin.blocks.impact.none", "当前没有待重建的页面：所有页面的产物都与最新内容一致。") }}</p>
+    {{end}}
+    {{else}}
+    <p class="stat-note">{{ .StaleImpact.Hint }}</p>
+    {{end}}
+    {{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <template id="tpl-block-create">
+        <form method="post" action="/admin/blocks/create">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.blocks.name_placeholder", "块名称，如：站点页眉") }}" required>
+                </div>
+            </div>
+            <div class="form-row">
+            <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.blocks.col_kind", "类型") }}</label>
+            <select name="kind" class="form-select">
+                <option value="block">{{ .["t"]("admin.blocks.kind.block", "区块") }}</option>
+                <option value="header">{{ .["t"]("admin.blocks.kind.header", "页眉") }}</option>
+                <option value="footer">{{ .["t"]("admin.blocks.kind.footer", "页脚") }}</option>
+                <option value="announcement">{{ .["t"]("admin.blocks.kind.announcement", "公告栏") }}</option>
+                <option value="sidebar">{{ .["t"]("admin.blocks.kind.sidebar", "侧边栏") }}</option>
+                <option value="breadcrumb">{{ .["t"]("admin.blocks.kind.breadcrumb", "面包屑") }}</option>
+                <option value="drawer">{{ .["t"]("admin.blocks.kind.drawer", "抽屉导航") }}</option>
+                <option value="search">{{ .["t"]("admin.blocks.kind.search", "搜索框") }}</option>
+                <option value="cta">{{ .["t"]("admin.blocks.kind.cta", "CTA 段") }}</option>
+                <option value="trust">{{ .["t"]("admin.blocks.kind.trust", "信任徽章") }}</option>
+                <option value="brands">{{ .["t"]("admin.blocks.kind.brands", "品牌墙") }}</option>
+                <option value="contact">{{ .["t"]("admin.blocks.kind.contact", "联系方式") }}</option>
+                <option value="about">{{ .["t"]("admin.blocks.kind.about", "关于我们") }}</option>
+                <option value="banner">{{ .["t"]("admin.blocks.kind.banner", "横幅") }}</option>
+                <option value="grid">{{ .["t"]("admin.blocks.kind.grid", "多栏布局") }}</option>
+                <option value="snippet">{{ .["t"]("admin.blocks.kind.snippet", "片段模板") }}</option>
+            </select>
+            </div>
+            <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.blocks.col_reuse", "复用方式") }}</label>
+            <select name="reuseMode" class="form-select">
+                <option value="global">{{ .["t"]("admin.blocks.reuse.global", "全局引用（改一处，引用页一起更新）") }}</option>
+                <option value="template">{{ .["t"]("admin.blocks.reuse.template", "一次性复制（插入即独立，互不影响）") }}</option>
+            </select>
+            </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+            </div>
+        </form>
+    </template>
+
+    {* 批量删除：勾选框与批量动作必须同属一个 form —— 本页只有**一张表**，全部行的勾选框
+       都在同一个 form 里，全选联动、已选计数与批量提交都按最近的 form 作用域工作
+       （admin.js 的 scopeOf = closest('form')）。form 包在 .list-card 外层而不是内层：
+       admin.js 与 theme.css 都用「.list-card 的直接子元素」定位卡片结构，插一层 form
+       会让卡内的 .filter-bar 与表格失去边框衔接。 *}
+    <form method="post" action="/admin/blocks/bulk-delete">
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <input type="hidden" name="projectId" value="{{selectedProject}}">
+    <section class="card list-card">
+        {* 筛选栏（客户端过滤：输入即过滤行，不发请求、不刷新页面）。
+           为什么是客户端而不是服务端：service 侧确实有 kind / category / reuseMode 三个维度
+           （blockdto.ListReq），但它们与本页的**列表取数**是正交的 —— 而这里的真实痛点是
+           「块多了，找一个名字 / 一种类型」—— 按文本跨类型过滤正好对上，且不改变服务端的
+           分组取数（样板 menus.html）。匹配字段见每行的 data-filter-text。
+           没有 .filter-actions：即时过滤没有「提交」这一步。 *}
+        <div class="filter-bar">
+            <div class="filter-fields">
+                <div class="filter-field">
+                    <label for="block-filter-keyword">{{ .["t"]("admin.blocks.filter_keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="block-filter-keyword" data-filter-input
+                           placeholder="{{ .["t"]("admin.blocks.filter_placeholder", "名称 / 类型 / 复用方式") }}" autocomplete="off">
+                </div>
+            </div>
+        </div>
+        {{if canDelete}}
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.blocks.bulk_delete_confirm", "删除选中的块？被页面引用的全局块需先解除引用，其余照常删除。"), danger=true)}}
+        {{yield bulkBarClose()}}
+        {{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.heading", "全局块") }}">
+            {* 一张表承载全部三类块：勾选 | 名称 | 类型 | 复用方式 | 更新时间 | 影响面 | 操作。
+               合并前三段各有自己的 <table> 与表头（5 / 5 / 7 列），全选框的唯一性由
+               「走在前面的那几段都为空」这种跨段条件保证 —— 加一类块、调一次顺序都要重新
+               推一遍。现在全页只有一个 [data-check-all]，唯一性由「页面只有一张表」这个
+               结构事实保证，没有任何跨段条件。
+               三段数据结构仍是三个切片（Headers / Footers / Blocks，handler 侧按类别投影），
+               所以行模板出现三次、必须保持**同形**：改列就三处一起改（这也是本页唯一的
+               重复点，换成单一 range 需要 handler 先合并切片，而部分渲染路径不带那个键）。 *}
+            <table class="data-table">
+                <thead><tr>
+                    {* 全选框只在有行时出现（空表勾选没有意义）；判定是三段之和，与下面的
+                       空态判定必须一致 —— 两者写反就会出现「有行的表没有全选框」。 *}
+                    <th class="col-check">{{if len(.Headers) > 0 || len(.Footers) > 0 || len(.Blocks) > 0}}<input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}">{{end}}</th>
+                    <th>{{ .["t"]("admin.blocks.col.name", "名称") }}</th>
+                    <th>{{ .["t"]("admin.blocks.col_kind", "类型") }}</th>
+                    <th>{{ .["t"]("admin.blocks.col_reuse", "复用方式") }}</th>
+                    <th>{{ .["t"]("admin.blocks.col.updated_at", "更新时间") }}</th>
+                    <th>{{ .["t"]("admin.blocks.col.impact", "影响面") }}</th>
+                    <th class="col-actions">{{ .["t"]("admin.blocks.col.actions", "操作") }}</th>
+                </tr></thead>
+                <tbody>
+                {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 7：
+                   勾选 / 名称 / 类型 / 复用方式 / 更新时间 / 影响面 / 操作）。
+                   空态只有一档（三类全空）：合并后「哪一段为空」在界面上不再是一个分区概念，
+                   它由「类型」列与筛选承担 —— 用户看一张表，看的是「有没有块」，不是「哪段空了」。 *}
+                {{if len(.Headers) == 0 && len(.Footers) == 0 && len(.Blocks) == 0}}
+                <tr><td colspan="7" class="cell-wrap">
+        <div class="empty-state">
+            <p class="empty-desc">{{ .["t"]("admin.blocks.list_empty", "还没有全局块。页眉 / 页脚块在「主题管理 → 设置」里绑定到主题，构建页面时编译期内联；区块用于跨页面复用的结构片段，工作台「全局块」页签可一键引用。") }}</p>
+        </div>
+                </td></tr>
+                {{else}}
+                {* data-filter-text = 这行的可筛文本（客户端筛选按它匹配，全表生效）。
+                   类型与复用方式必须一起进匹配文本 —— 筛选框的 placeholder 承诺了「名称 / 类型 / 复用方式」
+                   三个维度，而合并后类型只在单元格里显示，不写进来就筛不到「页眉」/「页脚」。 *}
+                {{range _, b := .Headers}}
+                <tr data-filter-text="{{b.Name}} {{b.KindLabel}} {{b.ReuseModeLabel}} {{b.RefCountText}}">
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{b.Name}}</td>
+                    <td><span class="badge badge-mute">{{b.KindLabel}}</span></td>
+                    <td>{{b.ReuseModeLabel}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                {{range _, b := .Footers}}
+                <tr data-filter-text="{{b.Name}} {{b.KindLabel}} {{b.ReuseModeLabel}} {{b.RefCountText}}">
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{b.Name}}</td>
+                    <td><span class="badge badge-mute">{{b.KindLabel}}</span></td>
+                    <td>{{b.ReuseModeLabel}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                {{range _, b := .Blocks}}
+                <tr data-filter-text="{{b.Name}} {{b.KindLabel}} {{b.ReuseModeLabel}} {{b.RefCountText}}">
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td>{{b.Name}}</td>
+                    <td><span class="badge badge-mute">{{b.KindLabel}}</span></td>
+                    <td>{{b.ReuseModeLabel}}</td>
+                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {* 客户端筛选无结果提示：admin.js 的 applyFilter 按 [data-filter-empty] 控制显隐
+           （契约是「有关键词且 0 行可见」才显形），把「被筛掉了」与「本来就没有块」分开。
+           放在表格之后而不是 .table-scroll 里：滚动容器内会被滚走，提示也就看不见了。 *}
+        <p class="empty-desc" data-filter-empty hidden>{{ .["t"]("admin.blocks.filter_empty", "没有匹配的块。换一个关键词，或清空关键词看全部。") }}</p>
+    </section>
+    </form>
+
+    {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+       三段数据结构（Headers / Footers / Blocks）各生成一组，id 取自块 id；
+       三类块同属 blocks 表、id 全局唯一，不会撞 id。
+       删除确认文案按类型分两种：绑定了主题的页眉/页脚删除后主题下页面会重建，
+       其余块只影响引用它的页面 —— 说清楚才好让人决定点不点。 *}
+    {{range _, b := .Headers}}
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+    </form>
+    {{end}}
+    {{range _, b := .Footers}}
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+    </form>
+    {{end}}
+    {{range _, b := .Blocks}}
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+          data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{b.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+    </form>
+    {{end}}
+    {{end}}
+</div>
+{{end}}

@@ -62,7 +62,33 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.String(http.StatusInternalServerError, shell.MsgInternalError)
+		// 工程列表装载失败：**降级渲染**，不拿走整个页面（与主题管理页、admin 六页同一判据）。
+		//
+		// 原先这里是 `c.String(500, shell.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
+		// 而且那块文本是**未翻译的裸 key**（页面上直接显示 `MsgInternalError` 这串英文）——
+		// 侧栏、页头、筛选栏、列表全部消失，用户既不能改筛选也不能去别的菜单。
+		//
+		// 三个键的取值都是**刻意的**：
+		//   · Ready=true —— 它是「本页能力可用吗」，而工程列表读不到并不代表内容模板能力没装配
+		//     （那是 h.templates == nil 的情形，另有一条提示）。取 false 会让模板只渲染
+		//     「能力未装配，本页暂不可用」，把那句话挂在一次取数失败上就是误报；
+		//   · ImpactAvailable=false + ImpactNote —— 引用面同样没读到，「无引用」会让人
+		//     以为可以放心删，必须与「查不出来」长得不一样；
+		//   · LoadFailed=true —— 列表空是因为**没读出来**，不是「还没有模板」，
+		//     由模板据此换掉空态标题（空态误导比什么都不显示更糟）。
+		// 装载失败优先于 ?err=：它是这次请求真实发生的事；原文只进日志（contentTemplateInternalText）。
+		data := gin.H{
+			"title": "MsgContentTemplatesTitle", "menu": "content-templates",
+			"Projects": []projectcontract.ProjectResp{}, "SelectedProject": "",
+			"EntityType": strings.TrimSpace(c.Query("entityType")),
+			"Err":        contentTemplateInternalText(c, err),
+			"Ready":      true,
+			"LoadFailed": true,
+			"Templates":  []gin.H{}, "TemplateCount": 0,
+			"ImpactAvailable": false,
+			"ImpactNote":      contentTemplateImpactLoadFailedText(c),
+		}
+		c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", shell.Prepare(c, data))
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -79,7 +105,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	if h.templates == nil {
 		data["Ready"] = false
-		c.HTML(http.StatusOK, "admin/content_templates.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", shell.Prepare(c, data))
 		return
 	}
 	// 引用反查先于列表：影响面（哪些模板被页面 / 实例引用）是这一页的删前决策依据。
@@ -144,7 +170,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	// 可选键一律由 handler 注入（模板用 isset 包裹）：本页此前只有 ?err=，
 	// 批量删除的「成功 N 个 / 跳过 M 个」需要一条正向回执通道。
 	data["Done"] = contentTemplatePageDone(c)
-	c.HTML(http.StatusOK, "admin/content_templates.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", shell.Prepare(c, data))
 }
 
 // ContentTemplatesActivate 切换生效模板（POST /admin/content-templates/activate）。

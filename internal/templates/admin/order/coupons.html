@@ -1,0 +1,421 @@
+{* admin/coupons.html — 优惠码管理：页头主行动 / 筛选 / 列表 / 行内修改 / 停用启用 / 删除 / 核销记录（BIZ-1 销售侧） *}
+{* 版式遵循列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §2.1 / §2.2 / §7）：
+     · 正文零说明文字 —— 券的构成、核销口径、券码不可改三段说明进页头 .help 悬浮；
+     · 原「只有一张新建按钮」的卡片已删除，主行动并入页头 .page-actions；
+     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）；
+     · 筛选是「label + 控件」的紧凑单元（.filter-fields / .filter-field）；
+     · 行内写操作按钮用 form="<id>" 关联表格外的 .hidden-form（HTML 不允许 form 嵌套）。 *}
+{* Jet 方言：extends 相对本目录；range 用 range 关键字；map 用 ["key"] 索引；range 内访问外层值先存变量。 *}
+{* 无 JS 也能用：列表与展开区都是普通 GET 链接（同一页面靠 couponId 参数展开）， *}
+{* 四个写操作都是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。 *}
+{* 列表首列勾选 + 批量条（批量停用 / 启用、批量删除）是列表级动作：结论按「成功 N 个 / 跳过 M 个」经 ?done= 回带。 *}
+{* 状态筛选下拉在这里**保留**：本页没有状态计数徽章，这张下拉是该维度的唯一入口（同一维度不给两套控件）。 *}
+{* 页面不做任何金额换算：展示用的折扣 / 门槛 / 状态文案都由服务端算好（CouponResp 的 *Label 字段）。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
+{{selectedProject := .SelectedProject}}
+{{rows := .Rows}}
+{{detail := .Detail}}
+{{redemptions := .Redemptions}}
+{{filterOptions := .FilterOptions}}
+{{typeOptions := .TypeOptions}}
+{{enableOptions := .StatusOptions}}
+{{filterStatus := .FilterStatus}}
+{{filterKeyword := .FilterKeyword}}
+{{canCreate := isset(.PermSet["order:coupon_create"])}}
+{{canUpdate := isset(.PermSet["order:coupon_update"])}}
+<div class="stack coupons-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.coupons.heading", "优惠码管理") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.hint.anatomy.lead", "一张券有") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_discount", "折扣口径") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid", "（按比例 / 固定金额）、") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_min", "使用门槛") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid2", "、") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_max_uses", "总次数上限") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid3", "与") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_per_user", "每人限次") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid4", "、") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_window", "生效时间窗") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid5", "与启停状态。金额一律以") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.mid6", "存储，折扣力度按") }}<strong>{{ .["t"]("admin.coupons.hint.anatomy.strong_percent", "百分比 1..100") }}</strong>{{ .["t"]("admin.coupons.hint.anatomy.tail", "存，页面上看到的金额与状态文本都是服务端算好的，页面不做换算。") }}<br><br><strong>{{ .["t"]("admin.coupons.hint.redeem.strong_in_txn", "核销发生在建单事务内部") }}</strong>{{ .["t"]("admin.coupons.hint.redeem.mid", "：用券与写单同生共死，所以后台") }}<strong>{{ .["t"]("admin.coupons.hint.redeem.strong_no_button", "没有、也不应该有「核销」按钮") }}</strong>{{ .["t"]("admin.coupons.hint.redeem.tail", " —— 一个「先核销、后建单」的入口一定会被用出「券没了但没下单」。这里只有核销结果，没有手工核销的入口。") }}<br><br>{{ .["t"]("admin.coupons.create.hint.lead", "券码提交后统一转成") }}<strong>{{ .["t"]("admin.coupons.create.hint.strong_upper", "大写") }}</strong>{{ .["t"]("admin.coupons.create.hint.mid", "并") }}<strong>{{ .["t"]("admin.coupons.create.hint.strong_immutable", "不可再改") }}</strong>{{ .["t"]("admin.coupons.create.hint.mid2", "（改码等于换一张券，历史核销记录里的码会指向一个查不到的值）—— 需要新码就新建一张，把旧的") }}<strong>{{ .["t"]("admin.coupons.status.disabled", "停用") }}</strong>{{ .["t"]("admin.coupons.create.hint.tail", "。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/coupons">
+                <label class="sr-only" for="coupons-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="coupons-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+            {{if selectedProject}}
+            {{if canCreate}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-coupon-create" data-drawer-title="{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}">＋ {{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
+            {{end}}
+            {{end}}
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err) && .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.coupons.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}
+    {{if .Ok != ""}}
+    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        <div class="filter-bar">
+            <div class="filter-row">
+                <span class="card-title">{{ .["t"]("admin.coupons.list.heading", "优惠码") }}{{ .["t"]("admin.coupons.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.coupons.list.total_tail", " 张）") }}</span>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.list.footer.lead", "「已用 / 上限」里的") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_unlimited", "不限") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid", "表示这张券没有总次数限制（上限填 0）；删除只允许在没有核销记录时进行 —— ") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_disable", "有核销记录的券请改用停用") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid2", "，删了记录就指向一张查不到的券，对账时分不清是数据坏了还是券被删了。点某一行的「修改」会在下方展开这张券的编辑表单与") }}<strong>{{ .["t"]("admin.coupons.redemptions.heading", "核销记录") }}</strong>{{ .["t"]("admin.coupons.list.footer.tail", "（同一页靠 couponId 参数展开，不跳走）。") }}</span>
+                </span>
+            </div>
+            {{if selectedProject}}
+            <form method="get" action="/admin/coupons" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <div class="filter-field">
+                    <label for="coupons-filter-status">{{ .["t"]("admin.coupons.col.status", "状态") }}</label>
+                    <select class="form-select" id="coupons-filter-status" name="status">
+                        <option value="">{{ .["t"]("admin.coupons.status.all_option", "（状态：全部）") }}</option>
+                        {{range _, o := filterOptions}}
+                        <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="coupons-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="coupons-filter-keyword" name="keyword" value="{{filterKeyword}}"
+                           placeholder="{{ .["t"]("admin.coupons.ph.keyword_short", "券码 / 名称") }}" autocomplete="off">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.coupons.filter.submit", "筛选") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/coupons?project={{selectedProject}}">{{ .["t"]("admin.coupons.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+            {{end}}
+        </div>
+
+        {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
+           空态整行落在 tbody 里（colspan = 11：勾选 / 券码 / 名称 / 折扣 / 门槛 / 已用上限 /
+           每人限次 / 时间窗 / 状态 / 备注 / 操作）。 *}
+        {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
+           提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
+           批量删除用 formaction 打到另一个端点 —— 一个 form 只有一个 action，而两个动作
+           要分别走 /bulk-toggle 与 /bulk-delete。启停是**整体更新**，服务端逐条取券后
+           原样回送全部可改字段（见 CouponBulkToggle），所以表单里只带目标状态。 *}
+        <form method="post" action="/admin/coupons/bulk-toggle">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            {* 回跳串不带 couponId：批量是列表级动作，把某一张券的展开态带回来只会让人以为批量改的是那一张。 *}
+            <input type="hidden" name="returnQuery" value="{{.CreateBack}}">
+            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+            {{if len(rows) > 0}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                <select class="form-select" name="status" aria-label="{{ .["t"]("admin.coupons.bulk.target", "目标状态") }}">
+                    {{range _, o := enableOptions}}
+                    <option value="{{o.Value}}">{{o.Label}}</option>
+                    {{end}}
+                </select>
+                {{yield bulkBtn(label=tr("admin.coupons.bulk.toggle", "批量启停"), cls="btn btn-sm btn-primary")}}
+                {{yield bulkBtn(label=tr("admin.coupons.bulk.delete", "批量删除"), confirm=tr("admin.coupons.bulkDeleteConfirm", "删除选中的优惠码？有核销记录的会被拒绝（请改用停用），其余照常删除。"), danger=true, formaction="/admin/coupons/bulk-delete")}}
+            {{yield bulkBarClose()}}
+            {{end}}
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.coupons.list.heading", "优惠码") }}">
+            <table class="data-table data-table-wide coupons-page-table">
+            <thead>
+            <tr>
+                <th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>
+                <th>{{ .["t"]("admin.coupons.col.code", "券码") }}</th><th>{{ .["t"]("admin.coupons.col.name", "名称") }}</th><th>{{ .["t"]("admin.coupons.col.discount", "折扣") }}</th><th>{{ .["t"]("admin.coupons.col.min_subtotal", "门槛") }}</th><th>{{ .["t"]("admin.coupons.col.usage", "已用 / 上限") }}</th>
+                <th>{{ .["t"]("admin.coupons.col.per_user", "每人限次") }}</th><th>{{ .["t"]("admin.coupons.col.window", "时间窗") }}</th><th>{{ .["t"]("admin.coupons.col.status", "状态") }}</th><th>{{ .["t"]("admin.coupons.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.coupons.col.actions", "操作") }}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{if len(rows) == 0}}
+            <tr><td colspan="11" class="cell-wrap">
+        {{if isset(.LoadFailed) && .LoadFailed}}
+        {* 装载失败的空态与「还没有优惠码」严格分开（判据由 handler 算好的 LoadFailed 给出）：
+           这一次连工程列表都没读出来，再说「这个工程还没有优惠码」会让人去建券 / 改筛选，
+           而真正的原因在页顶那条提示里。 *}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+        </div>
+        {{else}}
+        <div class="empty-state">
+            <p class="empty-title">{{if !selectedProject}}{{ .["t"]("admin.coupons.list.empty_no_project", "还没有站点工程") }}{{else if filterKeyword}}{{ .["t"]("admin.coupons.list.empty_no_match_lead", "没有匹配「") }}{{filterKeyword}}{{ .["t"]("admin.coupons.list.empty_no_match_tail", "」的优惠码") }}{{else if filterStatus}}{{ .["t"]("admin.coupons.list.empty_by_status", "这个状态下没有优惠码") }}{{else}}{{ .["t"]("admin.coupons.list.empty_project", "这个工程还没有优惠码") }}{{end}}</p>
+            <p class="empty-desc">{{if !selectedProject}}{{ .["t"]("admin.coupons.no_project.lead", "优惠码是挂在工程下的，先去") }}{{ .["t"]("admin.coupons.no_project.link", "页面管理") }}{{ .["t"]("admin.coupons.no_project.tail", "建一个工程。") }}{{else}}{{ .["t"]("admin.coupons.list.empty_desc", "建一张券后它会出现在这里；已经建过券时，检查一下筛选条件是不是过窄了。") }}{{end}}</p>
+            <div class="empty-actions">
+                {{if !selectedProject}}
+                <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.coupons.no_project.link", "页面管理") }}</a>
+                {{else}}
+                {{if canCreate}}
+                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-coupon-create" data-drawer-title="{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}">＋ {{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
+                {{end}}
+                {{if filterKeyword != "" || filterStatus != ""}}
+                <a class="btn btn-ghost" href="/admin/coupons?project={{selectedProject}}">{{ .["t"]("admin.coupons.filter.clear", "清掉筛选") }}</a>
+                {{end}}
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+            </td></tr>
+            {{else}}
+            {{range _, r := rows}}
+            <tr>
+                <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{r.Form.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
+                <td data-label="{{tr("admin.coupons.col.code", "券码")}}"><code>{{r.Code}}</code></td>
+                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-coupon-edit-{{r.Form.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{r.Name}}</button>{{else}}{{r.Name}}{{end}}</td>
+                <td data-label="{{tr("admin.coupons.col.discount", "折扣")}}">{{r.DiscountLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.min_subtotal", "门槛")}}">{{r.MinSubtotalLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.usage", "已用 / 上限")}}">{{r.UsageLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.per_user", "每人限次")}}">{{r.PerUserLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.window", "时间窗")}}">{{r.WindowLabel}}</td>
+                <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>
+                <td data-label="{{tr("admin.coupons.col.remark", "备注")}}">{{r.Remark}}</td>
+                <td class="col-actions" data-label="{{tr("admin.coupons.col.actions", "操作")}}">
+                    {* 编辑进右侧抽屉：每行一份 <template>（id 带行 ID），放在表格外。 *}
+                    {{if canUpdate}}
+                    <button type="button" class="btn btn-sm" data-drawer-open="#tpl-coupon-edit-{{r.Form.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{tr("admin.coupons.action.edit", "修改")}}</button>
+                    {{end}}
+                    {{if r.Expanded}}
+                    <a class="btn btn-sm" href="{{r.CollapseURL}}">{{tr("admin.coupons.action.collapse", "收起")}}</a>
+                    {{else}}
+                    <a class="btn btn-sm btn-ghost" href="{{r.EditURL}}">{{tr("admin.coupons.action.redemptions", "核销记录")}}</a>
+                    {{end}}
+                    {* 停用 / 启用走同一个更新接口：表单把券的全部可改字段回送一遍 ——
+                       服务端是整体更新，漏送的字段会被写成零值（把门槛悄悄清零）。
+                       表单在表格外用 form="<id>" 关联，避免行内嵌套 form。 *}
+                    <button type="submit" form="coupon-toggle-{{r.Form.ID}}" class="btn btn-sm">{{r.ToggleLabel}}</button>
+                    <button type="submit" form="coupon-del-{{r.Form.ID}}" class="btn btn-sm btn-danger">{{tr("admin.coupons.action.delete", "删除")}}</button>
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        </form>
+        {{include "../partials/pagination.html"}}
+    </section>
+
+    {{if .HasDetail}}
+    {* 编辑已进右侧抽屉（每行一份 template），这里只剩核销记录这类只读信息。 *}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.coupons.redemptions.heading", "核销记录") }} <code>{{detail.Code}}</code>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip"><strong>{{ .["t"]("admin.coupons.redemptions.strong_in_txn", "核销发生在建单事务内") }}</strong>{{ .["t"]("admin.coupons.redemptions.mid", "：用券与写单同生共死，所以这里只有结果、") }}<strong>{{ .["t"]("admin.coupons.redemptions.strong_no_manual", "没有手工核销入口") }}</strong>{{ .["t"]("admin.coupons.redemptions.tail", "。记录是券的凭据 —— 有核销记录的券不允许删除。") }}</span>
+            </span>
+        </h2>
+        {{if len(redemptions) == 0}}
+        <p class="hint">{{ .["t"]("admin.coupons.redemptions.empty", "这张券还没有被核销过。") }}</p>
+        {{else}}
+        <p class="hint">{{ .["t"]("admin.coupons.redemptions.total_lead", "共 ") }}{{.RedemptionTotal}}{{ .["t"]("admin.coupons.redemptions.total_mid", " 条，下面列出最近 ") }}{{.RedemptionLimit}}{{ .["t"]("admin.coupons.redemptions.total_tail", " 条。") }}</p>
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide coupons-page-table">
+            <thead>
+            <tr><th>{{ .["t"]("admin.coupons.redemptions.col.time", "核销时间") }}</th><th>{{ .["t"]("admin.coupons.redemptions.col.order_no", "订单号") }}</th><th>{{ .["t"]("admin.coupons.redemptions.col.user", "核销人 userId") }}</th><th>{{ .["t"]("admin.coupons.redemptions.col.discount", "抵扣金额") }}</th></tr>
+            </thead>
+            <tbody>
+            {{range _, rd := redemptions}}
+            <tr>
+                <td data-label="{{tr("admin.coupons.redemptions.col.time", "核销时间")}}">{{rd.Time}}</td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.order_no", "订单号")}}"><code>{{rd.OrderNo}}</code></td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.user", "核销人 userId")}}">{{rd.UserID}}</td>
+                <td data-label="{{tr("admin.coupons.redemptions.col.discount", "抵扣金额")}}">{{rd.DiscountLabel}}</td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{end}}
+    </section>
+    {{end}}
+
+    {* 行内写操作表单与编辑抽屉模板必须放在表格外：HTML 不允许 form 嵌套，
+       按钮用 form="<id>" 关联到这里的隐藏表单（.hidden-form 见 theme.css）。 *}
+    {{range _, r := rows}}
+    <form id="coupon-toggle-{{r.Form.ID}}" class="hidden-form" method="post" action="/admin/coupons/update">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="returnQuery" value="{{r.Back}}">
+        <input type="hidden" name="id" value="{{r.Form.ID}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="name" value="{{r.Form.Name}}">
+        <input type="hidden" name="discountType" value="{{r.Form.DiscountType}}">
+        <input type="hidden" name="discountValue" value="{{r.Form.DiscountValue}}">
+        <input type="hidden" name="minSubtotal" value="{{r.Form.MinSubtotal}}">
+        <input type="hidden" name="maxUses" value="{{r.Form.MaxUses}}">
+        <input type="hidden" name="perUserLimit" value="{{r.Form.PerUserLimit}}">
+        <input type="hidden" name="startsAt" value="{{r.Form.StartsAt}}">
+        <input type="hidden" name="endsAt" value="{{r.Form.EndsAt}}">
+        <input type="hidden" name="remark" value="{{r.Form.Remark}}">
+        <input type="hidden" name="status" value="{{r.ToggleStatus}}">
+    </form>
+    <form id="coupon-del-{{r.Form.ID}}" class="hidden-form" method="post" action="/admin/coupons/delete"
+          data-confirm="{{ .["t"]("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。") }}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="returnQuery" value="{{r.Back}}">
+        <input type="hidden" name="id" value="{{r.Form.ID}}">
+    </form>
+    {{if canUpdate}}
+    <template id="tpl-coupon-edit-{{r.Form.ID}}">
+        <form method="post" action="/admin/coupons/update">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="returnQuery" value="{{r.Back}}">
+            <input type="hidden" name="id" value="{{r.Form.ID}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            {* 抽屉是**多实例**模板（每行一份），所以 id 必须带 {{r.Form.ID}}：同页 N 份克隆里
+               只有打开的那一份进 DOM，但 id 里带上行标识才不依赖「只有一份在 DOM 里」这个巧合。
+               每个可见字段都配 label + for（原先 8 处 label 是裸的 —— 它们与控件是兄弟节点，
+               隐式关联不成立，读屏与脚本都拿不到字段名）。 *}
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-code">{{ .["t"]("admin.coupons.detail.code_aria", "券码（不可修改）") }}</label>
+                    <input type="text" class="form-input" id="coupon-{{r.Form.ID}}-code" value="{{r.Code}}" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-name">{{ .["t"]("admin.coupons.detail.ph.name", "名称") }}</label>
+                    <input type="text" class="form-input" id="coupon-{{r.Form.ID}}-name" name="name" value="{{r.Form.Name}}" maxlength="120" autocomplete="off">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-discount-type">{{ .["t"]("admin.coupons.col.discount", "折扣") }}</label>
+                    <select class="form-select" id="coupon-{{r.Form.ID}}-discount-type" name="discountType" required>
+                        {{range _, t := typeOptions}}
+                        <option value="{{t.Value}}" {{if t.Value == r.Form.DiscountType}}selected{{end}}>{{t.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-status">{{ .["t"]("admin.coupons.col.status", "状态") }}</label>
+                    <select class="form-select" id="coupon-{{r.Form.ID}}-status" name="status">
+                        {{range _, s := enableOptions}}
+                        <option value="{{s.Value}}" {{if s.Value == r.Form.StatusValue}}selected{{end}}>{{s.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-min-subtotal">{{ .["t"]("admin.coupons.detail.ph.min_subtotal", "使用门槛（分）") }}</label>
+                    <input type="number" class="form-input" id="coupon-{{r.Form.ID}}-min-subtotal" name="minSubtotal" value="{{r.Form.MinSubtotal}}" inputmode="numeric" step="1" min="0">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-discount-value">{{ .["t"]("admin.coupons.detail.ph.discount_value", "折扣值") }}</label>
+                    <input type="number" class="form-input" id="coupon-{{r.Form.ID}}-discount-value" name="discountValue" value="{{r.Form.DiscountValue}}" inputmode="numeric" step="1" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-max-uses">{{ .["t"]("admin.coupons.detail.ph.max_uses", "总次数上限（0 = 不限）") }}</label>
+                    <input type="number" class="form-input" id="coupon-{{r.Form.ID}}-max-uses" name="maxUses" value="{{r.Form.MaxUses}}" inputmode="numeric" step="1" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-per-user-limit">{{ .["t"]("admin.coupons.detail.ph.per_user_limit", "每人限次（0 = 不限）") }}</label>
+                    <input type="number" class="form-input" id="coupon-{{r.Form.ID}}-per-user-limit" name="perUserLimit" value="{{r.Form.PerUserLimit}}" inputmode="numeric" step="1" min="0">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-starts-at">{{ .["t"]("admin.coupons.detail.ph.starts_at", "开始时间（留空 = 不限）") }}</label>
+                    <input type="datetime-local" step="1" class="form-input" id="coupon-{{r.Form.ID}}-starts-at" name="startsAt" value="{{r.Form.StartsAt}}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-{{r.Form.ID}}-ends-at">{{ .["t"]("admin.coupons.detail.ph.ends_at", "结束时间（留空 = 不限）") }}</label>
+                    <input type="datetime-local" step="1" class="form-input" id="coupon-{{r.Form.ID}}-ends-at" name="endsAt" value="{{r.Form.EndsAt}}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="coupon-{{r.Form.ID}}-remark">{{ .["t"]("admin.coupons.detail.ph.remark", "备注") }}</label>
+                <input type="text" class="form-input" id="coupon-{{r.Form.ID}}-remark" name="remark" value="{{r.Form.Remark}}" maxlength="255" autocomplete="off" placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.detail.submit", "保存修改") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+    {{end}}
+
+    {{if canCreate}}
+    <template id="tpl-coupon-create">
+        <form method="post" action="/admin/coupons/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="returnQuery" value="{{.CreateBack}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-inline">
+                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.coupons.create.ph.code", "券码（工程内唯一，如 SAVE20）") }}"
+                       required autocomplete="off" maxlength="64">
+                <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.coupons.create.ph.name", "名称（如 双十一全场券）") }}"
+                       autocomplete="off" maxlength="120">
+            </div>
+            <div class="form-inline">
+                <select class="form-select" name="discountType" required>
+                    {{range _, t := typeOptions}}
+                    <option value="{{t.Value}}">{{t.Label}}</option>
+                    {{end}}
+                </select>
+                <span class="filter-field">
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.create.unit_hint.lead", "折扣值的") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong", "单位随折扣类型而变") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid", "，两种口径的语义完全不同：") }}<strong>{{ .["t"]("admin.coupons.unit.percent", "按比例") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid2", "填 1..100，表示") }}<strong>{{ .["t"]("admin.coupons.create.unit_hint.strong_strength", "折扣力度") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid3", " —— 20 表示「减 20%」（注意不是打 2 折）；") }}<strong>{{ .["t"]("admin.coupons.unit.fixed", "固定金额") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid4", "填") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.mid5", " —— 2000 表示「减 20.00 元」。门槛同样是") }}<strong>{{ .["t"]("admin.coupons.unit.cent", "分") }}</strong>{{ .["t"]("admin.coupons.create.unit_hint.tail", "：9900 表示「满 99.00 元可用」。") }}</span>
+                    </span>
+                    <input type="number" class="form-input" name="discountValue" placeholder="{{ .["t"]("admin.coupons.create.ph.discount_value", "折扣值（必填）") }}"
+                           inputmode="numeric" step="1" min="1" required>
+                </span>
+                <input type="number" class="form-input" name="minSubtotal" placeholder="{{ .["t"]("admin.coupons.create.ph.min_subtotal", "使用门槛（分，0 = 无门槛）") }}"
+                       inputmode="numeric" step="1" min="0" value="0">
+            </div>
+            <div class="form-inline">
+                <input type="number" class="form-input" name="maxUses" placeholder="{{ .["t"]("admin.coupons.ph.max_uses", "总次数上限（0 = 不限）") }}"
+                       inputmode="numeric" step="1" min="0" value="0">
+                <input type="number" class="form-input" name="perUserLimit" placeholder="{{ .["t"]("admin.coupons.ph.per_user_limit", "每人限次（0 = 不限）") }}"
+                       inputmode="numeric" step="1" min="0" value="0">
+                <select class="form-select" name="status">
+                    {{range _, s := enableOptions}}
+                    <option value="{{s.Value}}" {{if s.Value == "1"}}selected{{end}}>{{s.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+            {* 时间窗行用与编辑抽屉相同的 form-row / form-group / form-label 结构（不是 .filter-field）：
+               ① 原生 datetime-local **不渲染 placeholder**，字段名必须由可见 label 承担，
+                  而本抽屉其它字段的说明一贯靠 placeholder —— 日期这两个字段是例外；
+               ② .filter-field 是给筛选栏那类短标签（「状态」「关键词」）用的单行单元，
+                  实测 375 视口下它里面的控件会被压到 173px，datetime-local 的内容会被裁掉；
+                  form-group 里 label 与控件成组堆叠，窄屏下仍是完整宽度。
+               ③ label 必须 for 到控件 id（裸 label 与控件是兄弟节点，隐式关联不成立）。 *}
+            <div class="form-row">
+                <div class="form-group">
+                    <div class="form-inline">
+                        <label class="form-label" for="coupon-create-starts-at">{{ .["t"]("admin.coupons.ph.starts_at", "开始时间（留空 = 不限）") }}</label>
+                        <span class="help">
+                            <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                            <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.create.time_hint.lead", "时间窗用") }}<strong>{{ .["t"]("admin.coupons.create.time_hint.strong", "日期时间选择器") }}</strong>{{ .["t"]("admin.coupons.create.time_hint.mid", "挑选起止时刻（按站点本地时间理解）：") }}{{ .["t"]("admin.coupons.create.time_hint.mid2", "留空 = 该侧不限。") }}{{ .["t"]("admin.coupons.create.time_hint.tail", "结束时间必须晚于开始时间，否则这张券永远不会生效 —— 服务端会直接拒绝。") }}</span>
+                        </span>
+                    </div>
+                    <input type="datetime-local" step="1" class="form-input" id="coupon-create-starts-at" name="startsAt">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="coupon-create-ends-at">{{ .["t"]("admin.coupons.ph.ends_at", "结束时间（留空 = 不限）") }}</label>
+                    <input type="datetime-local" step="1" class="form-input" id="coupon-create-ends-at" name="endsAt">
+                </div>
+            </div>
+            <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）") }}"
+                   autocomplete="off" maxlength="255">
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.coupons.create.submit", "新建优惠码") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+</div>
+{{end}}

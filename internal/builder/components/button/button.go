@@ -57,16 +57,20 @@ var sizePresets = map[string][2]string{
 	SizeXL: {"16px 34px", "1.25rem"},
 }
 
-// Arrows/等内置图标（24 viewBox，stroke currentColor，白名单）。
-var builtinIcons = map[string]string{
-	"arrow-right":   `<path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round"/>`,
-	"arrow-left":    `<path d="M10 5l-7 7m0 0l7 7m-7-7h21" stroke-linecap="round"/>`,
-	"arrow-up":      `<path d="M19 14l-7-7m0 0l-7 7m7-7v21" stroke-linecap="round"/>`,
-	"arrow-down":    `<path d="M19 10l-7 7m0 0l-7-7m7 7V3" stroke-linecap="round"/>`,
-	"check":         `<path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>`,
-	"chevron-right": `<path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/>`,
-	"phone":         `<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.08 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>`,
-	"mail":          `<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke-linecap="round"/><path d="M22 6l-10 7L2 6" stroke-linecap="round"/>`,
+// iconNames 按钮图标白名单：编辑器可选名 → 基座图标库（core，lucide）名。
+//
+// 以前这里手写了一份 8 个图标的 path 表 —— 第二份图标库：同一个箭头在本组件
+// 与基座库里的描边、圆角都不同，改一处另一处不会跟着变。
+// 现在只声明可选名字，路径一律 core.IconInner 取。
+var iconNames = map[string]string{
+	"arrow-right":   "arrow-right",
+	"arrow-left":    "arrow-left",
+	"arrow-up":      "arrow-up",
+	"arrow-down":    "arrow-down",
+	"check":         "check",
+	"chevron-right": "chevron-right",
+	"phone":         "phone",
+	"mail":          "mail",
 }
 
 // Icon 图标配置。
@@ -282,7 +286,7 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	}
 	if p.Icon != nil {
 		if p.Icon.Source == "builtin" {
-			if _, ok := builtinIcons[p.Icon.Name]; !ok {
+			if _, ok := iconNames[p.Icon.Name]; !ok {
 				return fmt.Errorf("无效的内置图标: %q（白名单见规范）", p.Icon.Name)
 			}
 		} else if p.Icon.Source == "media" {

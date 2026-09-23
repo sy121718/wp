@@ -356,7 +356,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ===== 商品属性管理（admin/product_attributes.html，issue #7） =====
    多端适配（硬规则）：
      · 宽度一律 min(100%, <设计宽度>)，不写死；
-     · 行用 flex + wrap，窄屏自动折行；表头行在窄屏隐藏（.attr-value-head）；
+     · 行与表头共用**同一份** grid-template-columns（:368 与 :372 逐字相同）—— 改列宽必须两处同改，
+       否则表头与数据行会静默错列（两处都不报错，只是列对不上）；≤720px 换两列并隐藏表头
+       （.attr-value-head），此时行靠 grid-column: 1 / -1 把序号与操作跨到整行；
      · 触屏是独立环境：没有 :hover 依赖，按钮的按压反馈用 :active（不带媒体查询）；
      · 键盘：原生 input/button/checkbox，Tab 序即视觉序，无需自定义键位。 */
 .attr-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
@@ -979,7 +981,10 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 /* ── 5. 空状态：一句话 + 一个主行动，不是又一坨说明 ───────────────────── */
 .empty-state {
     display: flex; flex-direction: column; align-items: center; gap: var(--ui-sp-sm);
-    padding: var(--ui-sp-xxl) var(--ui-sp-lg); text-align: center;
+    /* 兜底必须写：--ui-sp-xxl 曾长期未定义，无兜底的 var() 会让整条 padding 声明失效
+       （实测 computed padding 退回 0px）。ui.css 的 :root 现已补上定义，这里再兜一层，
+       避免该段被覆盖时又静默丢掉内边距。 */
+    padding: var(--ui-sp-xxl, 32px) var(--ui-sp-lg, 16px); text-align: center;
 }
 .empty-state .empty-title { margin: 0; font-size: 14px; font-weight: 500; color: var(--sky-c-text-secondary, #4b5563); }
 .empty-state .empty-desc { margin: 0; max-width: 46ch; font-size: 13px; line-height: 1.6; color: var(--sky-c-text-mute, #6b7280); }
@@ -991,7 +996,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    否则「联系邮箱」输入框下面直接贴上「搜索引擎与统计集成」，两个区块黏在一起。 */
 .card > h2, .card-body > h2 { margin: var(--ui-sp-xl) 0 var(--ui-sp-md); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .card-body > .action-row { margin-top: var(--ui-sp-xl); }
-.card-body > .form-grid + h2, .card-body > form + h2 { margin-top: var(--ui-sp-xxl); }
+.card-body > .form-grid + h2, .card-body > form + h2 { margin-top: var(--ui-sp-xxl, 32px); }
 
 /* ── 9. 筛选行分组：一行放快捷筛选（状态徽章），一行放条件表单 ───────── */
 .filter-bar > .filter-row {
@@ -1183,6 +1188,55 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 }
 .nav-panel-preview-frame { flex: 1 1 auto; width: 100%; min-height: 240px; border: 0; background: #fff; }
 
+/* ── 16. 「从已有内容添加」抽屉里的来源分组 ──────────────────────────────
+   这套标记此前没有样式，靠外层 .card 的默认排版撑着。搬进抽屉后外层不再有 .card，
+   必须自带外观，否则 20 个复选框会挤成一片。
+   summary 用专用类而**不是 .btn**：折叠开关做成按钮样子会让用户以为点了会执行动作
+   （原来的写法就是 <summary class="btn">），这是控件形态欺骗。
+   触屏：summary 是可聚焦元素，点击即展开，不依赖 hover；行高 ≥40px 保证可点。 */
+.nav-source-group {
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: var(--ui-r-md, 8px);
+    margin-bottom: var(--ui-sp-md, 12px);
+    background: var(--sky-c-surface, #fff);
+    overflow: hidden;
+}
+.nav-source-group:last-child { margin-bottom: 0; }
+.nav-source-summary {
+    display: flex; align-items: center; gap: var(--ui-sp-sm, 8px);
+    min-height: 40px; padding: var(--ui-sp-sm, 8px) var(--ui-sp-md, 12px);
+    font-size: 13px; font-weight: 600; color: var(--sky-c-text, #1a1d21);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+    cursor: pointer; list-style: none;
+}
+/* 去掉原生三角，用自绘 caret 保证跨浏览器一致 */
+.nav-source-summary::-webkit-details-marker { display: none; }
+.nav-source-summary::before {
+    content: ''; flex: 0 0 auto;
+    width: 6px; height: 6px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg); transition: transform var(--ui-motion-fast, 120ms);
+    opacity: .6;
+}
+.nav-source-group[open] > .nav-source-summary::before { transform: rotate(45deg); }
+@media (hover: hover) {
+    .nav-source-summary:hover { background: var(--sky-c-bg-hover, #f4f5f7); }
+}
+.nav-source-summary:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: -2px; }
+.nav-source-group > form { padding: var(--ui-sp-sm, 8px) var(--ui-sp-md, 12px) var(--ui-sp-md, 12px); }
+.nav-source-item {
+    display: flex; align-items: center; gap: var(--ui-sp-sm, 8px);
+    min-height: 36px; padding: var(--ui-sp-xs, 4px) 0;
+    font-size: 13px; line-height: 1.5; cursor: pointer;
+}
+.nav-source-item input[type="checkbox"] { flex: 0 0 auto; }
+.nav-source-item code {
+    font-size: 12px; color: var(--sky-c-text-mute, #6b7280);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-source-item em { font-style: normal; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.nav-source-item:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+
 /* ==========================================================================
    角色权限分配（/admin/roles/permissions）
    授权树是 DFS 展平的「一行一个节点」：缩进由行内 style 的 padding-left 给出
@@ -1247,5 +1301,76 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (max-width: 640px) {
     .perm-code, .perm-type { display: none; }
     .perm-title { white-space: normal; }
+}
+
+/* ── 保存动作条贴底（本页最常见的任务是「勾选权限 → 保存」）──────────────────
+   改前实测（/admin/roles/permissions?role_id=1，1440×900）：页高 4.15 屏、116 个节点
+   全展开、保存按钮顶边 4.08 屏、saveScrollNeeded 3.13 —— 勾完要滚 3 屏才够得到，
+   中途想改还得滚回去。三条修复（折叠 + 页头提交按钮 + 本条 sticky）叠起来才够用：
+   折叠把首屏还给「有哪几类权限」，页头按钮覆盖小改动，sticky 覆盖展开/搜索后的长页面。
+
+   为什么能粘住：sticky 元素被限制在**包含块**内。.action-row 的包含块是整张 <form>
+   （权限树 + 动作条），浮动范围覆盖整页；若把包含块收成一个按钮高的盒子，它最多浮
+   几十像素，等于没粘（文章编辑页 .article-save-card 的注释记录了同一结论）。 */
+.role-permissions-page .action-row {
+    position: sticky;
+    bottom: 0;
+    /* 浮层背景必须不透明：动作条下方是仍在滚动的权限树，透明度会让两层文字叠在一起。
+       用页面底色令牌，暗色主题自动跟随；z-index 压过树，但不越过抽屉 / 弹层（那些层更高）。 */
+    z-index: 5;
+    background: var(--sky-c-bg, #fff);
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
+    padding: var(--ui-sp-md) 0;
+}
+
+/* 已知取舍（前一批修复的实测结论）：sticky 底栏浮起时会遮挡视口底部约 96~112px。
+   给权限树补等量下边距，让「滚到最底前」最后几行也完整可见，而不是压在浮层下面。 */
+.role-permissions-page .perm-tree { padding-bottom: 112px; }
+
+/* 页头计数徽标由脚本填充（data-selected-template 里的 {n}）。脚本没跑时它是个**空**徽标 ——
+   .badge 自带内边距，空内容会留一个小胶囊，看起来像坏掉的控件。:empty 把它收起来：
+   无 JS 时页面回到「全展开 + 无计数」的可用形态，而不是多一个看不懂的空框。
+   （:empty 只匹配完全没有子节点的元素，模板里该 span 写成紧贴的一对标签。） */
+.role-permissions-page .page-actions [data-selected-count]:empty { display: none; }
+
+/* 第二个前提：内容区自己不能是参考滚动容器。
+   基座给 .admin-content 写了 overflow-y: auto，而它的高度随内容（clientH === scrollH，
+   实际从不滚动）—— 对 sticky 来说它却是「最近的滚动祖先」：动作条被粘在一个不滚动的盒子里，
+   观感上完全没粘住。本页把溢出改为可见，让参考滚动容器回到文档。
+   :has() 把范围严格限定在「直接子元素带 .role-permissions-page 的 .admin-content」——
+   其余后台页面照旧（它们确实靠内容区裁剪浮层）。用后代选择器做不到这一点：.admin-content
+   是本页 .role-permissions-page 的**父**节点，只有 :has() 能向上选中它。 */
+.admin-content:has(> .role-permissions-page) {
+    overflow-y: visible;
+}
+
+/* ==========================================================================
+   文章编辑页（/admin/articles/edit）—— 保存动作条贴底
+   ========================================================================== */
+
+/* 保存卡粘在视口底部：正文卡里的富文本编辑器已有高度上限（见 static/css/rich-editor.css），
+   但页面再长一截，用户仍可能在写完后滚几屏才够得到「保存」—— 这一条让保存全程可见，
+   滚到表单末尾自然回落原位。
+   为什么粘「保存卡」而不是粘它里面的 .action-row：sticky 元素被限制在**包含块**内，
+   .action-row 的包含块就是那张只有一个按钮高的卡片，它最多浮动几十像素，等于没粘；
+   卡片的包含块是整张表单（正文 + SEO + 保存三段），粘住才真的起作用。
+   前提：该卡片是 .card.card-body，基座给了 overflow: visible（ui.css）—— 改成 hidden 会让
+   sticky 立刻失效（滚动容器之外的裁剪会把它按住）。 */
+.article-edit-page .article-save-card {
+    position: sticky;
+    bottom: 0;
+    /* 浮层背景来自卡片自身（--sky-c-surface，不透明），不会透出下层正文；
+       z-index 让它在滚动中压过上方字段，但不越过抽屉 / 弹层（那些是更高的层）。 */
+    z-index: 5;
+}
+
+/* 第二个前提：内容区自己不能是滚动容器。
+   基座给 .admin-content 写了 overflow-y: auto，而它的高度随内容（clientH === scrollH，
+   实际从不滚动）—— 对 sticky 来说它却是「最近的滚动祖先」：保存条被粘在一个不滚动的盒子里，
+   观感上完全没粘住（实测滚到文档中部，按钮仍在视口下方约 300px；把这条 overflow 关掉后
+   立刻贴住视口底）。本页把溢出改为可见，让参考滚动容器回到文档；
+   :has 把范围限定在文章编辑页，其余后台页面照旧（它们确实靠内容区裁剪浮层）。 */
+.admin-content:has(> .article-edit-page) {
+    overflow-y: visible;
 }
 

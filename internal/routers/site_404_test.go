@@ -103,8 +103,13 @@ func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 
 // TestSiteFaceCustomNotFoundScopedToSiteFace 自定义 404 只作用于访问面。
 //
-// 控制面（/api、/admin）的未匹配路径必须保持统一 JSON —— 后台/接口拿到一段 HTML
-// 会让前端解析出错，而且把站点页面文案泄漏给非站点请求。
+// 控制面（/api、/admin、/_fragments…）的未匹配路径必须保持统一 JSON —— 后台/接口
+// 拿到一段 HTML 会让前端解析出错。
+//
+// 边界判据随挂载点变化：站点**独占域名根**之后，「访问面」不再是「/site 前缀」
+// 而是「控制面前缀之外的一切」。所以 /siteadmin/ghost 现在是**站点路径**
+// （一个名叫 siteadmin 的页面），应当拿到站点 404 页 —— 早先这条用例把它当控制面，
+// 那是 /site 子路径挂载时代的判据。
 func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
@@ -117,13 +122,24 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 	}
 
 	router := newSiteFaceRouter()
-	for _, path := range []string{"/api/ghost", "/admin/ghost", "/siteadmin/ghost"} {
+	// 控制面路径：必须保持 JSON。
+	for _, path := range []string{"/api/ghost", "/admin/ghost", "/_fragments/ghost", "/storage/ghost"} {
 		rec := doGet(router, path)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s 状态码期望 404，实际 %d", path, rec.Code)
 		}
 		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
 			t.Errorf("%s 不应命中站点 404 页，实际 Content-Type %q body %q", path, ct, rec.Body.String())
+		}
+	}
+	// 站点路径（含形如 /siteadmin 的前缀相似路径）：走站点 404 页。
+	for _, path := range []string{"/siteadmin/ghost", "/ghost", "/a/b/c"} {
+		rec := doGet(router, path)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s 状态码期望 404，实际 %d", path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+			t.Errorf("%s 应命中站点 404 页，实际 Content-Type %q body %q", path, ct, rec.Body.String())
 		}
 	}
 }

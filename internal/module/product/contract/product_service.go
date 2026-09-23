@@ -28,6 +28,10 @@ type ProductService interface {
 	Update(ctx context.Context, req *productdto.UpdateReq) (res *productdto.ProductResp, err error)
 	Get(ctx context.Context, req *productdto.GetReq) (res *productdto.ProductResp, err error)
 	List(ctx context.Context, req *productdto.ListReq) (list []*productdto.ProductResp, err error)
+	// CountProducts 列表总数：与 List **同一份过滤条件**（工程 + 关键词 + 状态），
+	// 供后台列表页的服务端分页算总页数。不把总数并进 List 的返回：那会改动
+	// 所有既有调用方的返回形状，而只有后台列表页需要它。
+	CountProducts(ctx context.Context, req *productdto.ListReq) (n int64, err error)
 	Delete(ctx context.Context, req *productdto.DeleteReq) (err error)
 
 	// 商品评分（issue #30 / #33）：评分是**独立明细表**（product_ratings），不是商品上的列，
@@ -60,6 +64,11 @@ type ProductService interface {
 	SetAttributeValues(ctx context.Context, req *productdto.SetAttributeValuesReq) (res *productdto.AttributeResp, err error)
 	GetAttribute(ctx context.Context, req *productdto.GetAttributeReq) (res *productdto.AttributeResp, err error)
 	ListAttributes(ctx context.Context, req *productdto.ListAttributeReq) (list []*productdto.AttributeResp, err error)
+	// CountAttributes 属性组总数：与 ListAttributes **同一份过滤条件**（工程 + 关键词 +
+	// 参与变体），供后台属性页的服务端分页算总页数。
+	// req 里的 Page / Size 对计数无意义（被忽略）—— 总数与「当前在第几页」无关，
+	// 与 CountProducts 同一形状。
+	CountAttributes(ctx context.Context, req *productdto.ListAttributeReq) (n int64, err error)
 	DeleteAttribute(ctx context.Context, req *productdto.DeleteAttributeReq) (err error)
 
 	// 分类与品牌（issue #10）：分类是树形自引用实体（父子层级 + 排序 + slug + SEO），
@@ -70,12 +79,17 @@ type ProductService interface {
 	GetCategory(ctx context.Context, req *productdto.GetCategoryReq) (res *productdto.CategoryResp, err error)
 	// ListCategories 返回分类树（顶级在数组里，子级挂在 Children，Depth 已填好）。
 	ListCategories(ctx context.Context, req *productdto.ListCategoryReq) (list []*productdto.CategoryResp, err error)
+	// CountCategories 分类总数：与 ListCategories 同一份过滤条件（工程 + 关键词），
+	// 数的是**行**（后台把树摊平成表格行后分页，总数说的就是这些行），供分页算总页数。
+	CountCategories(ctx context.Context, req *productdto.ListCategoryReq) (n int64, err error)
 	DeleteCategory(ctx context.Context, req *productdto.DeleteCategoryReq) (err error)
 
 	CreateBrand(ctx context.Context, req *productdto.CreateBrandReq) (res *productdto.BrandResp, err error)
 	UpdateBrand(ctx context.Context, req *productdto.UpdateBrandReq) (res *productdto.BrandResp, err error)
 	GetBrand(ctx context.Context, req *productdto.GetBrandReq) (res *productdto.BrandResp, err error)
 	ListBrands(ctx context.Context, req *productdto.ListBrandReq) (list []*productdto.BrandResp, err error)
+	// CountBrands 品牌总数：与 ListBrands 同一份过滤条件（工程 + 关键词），供分页算总页数。
+	CountBrands(ctx context.Context, req *productdto.ListBrandReq) (n int64, err error)
 	DeleteBrand(ctx context.Context, req *productdto.DeleteBrandReq) (err error)
 
 	// 标签（issue #11）：手工标签与自动标签同表（kind 区分）。
@@ -89,6 +103,9 @@ type ProductService interface {
 	UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (res *productdto.TagResp, err error)
 	GetTag(ctx context.Context, req *productdto.GetTagReq) (res *productdto.TagResp, err error)
 	ListTags(ctx context.Context, req *productdto.ListTagReq) (list []*productdto.TagResp, err error)
+	// CountTags 标签总数：与 ListTags 同一份过滤条件（工程 + kind + 关键词），
+	// 供后台标签页的分页算总页数（命中计数那一列不受它影响）。
+	CountTags(ctx context.Context, req *productdto.ListTagReq) (n int64, err error)
 	// ListTagProducts 某标签命中的商品（limit <= 0 用服务端默认上限）。
 	ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (list []*productdto.TagProductResp, err error)
 	// ListTagProductsPage 某标签命中商品的一页（后台展开区按需取；审计 PERF-02）。

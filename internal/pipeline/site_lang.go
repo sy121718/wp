@@ -192,6 +192,26 @@ func LocalizeMenuURL(ctx context.Context, project projectcontract.ProjectService
 	return LocalizeMenuURLWith(LangURLRuleForProject(ctx, project, projectID), EnabledLangs(ctx, project, projectID), lang, raw)
 }
 
+// LocalizeMenuURLWithRaw 本地化导航项 URL 但**不补站点基址**（返回站内规范化路径）。
+//
+// 只在需要「站内路径」语义的场合用（如与路由表比对、生成 hreflang 的 path 部分）；
+// 渲染进 HTML 的地址一律走 LocalizeMenuURLWith（绝对）。
+func LocalizeMenuURLWithRaw(rule LangURLRule, langs []string, lang, raw string) string {
+	u := strings.TrimSpace(raw)
+	if u == "" || !strings.HasPrefix(u, "/") || strings.HasPrefix(u, "//") {
+		return raw
+	}
+	u = seo.CanonicalPublicPath(u)
+	if _, logical, ok := rule.Locate(u, langs); ok {
+		u = logical
+	}
+	p, err := SitePath(rule, lang, u)
+	if err != nil {
+		return raw
+	}
+	return seo.CanonicalPublicPath(p)
+}
+
 // LocalizeMenuURLWith 用**给定**规则与语言集合本地化导航项 URL（冻结口径，审计 I18N-01）。
 //
 // 为什么需要「给定」这两个：本函数要先用语言集合把「可能已带语言前缀的路径」反查成
@@ -210,7 +230,21 @@ func LocalizeMenuURLWith(rule LangURLRule, langs []string, lang, raw string) str
 	if err != nil {
 		return raw
 	}
-	return seo.CanonicalPublicPath(p)
+	return AbsoluteSiteURL(seo.CanonicalPublicPath(p))
+}
+
+// AbsoluteSiteURL 站内路径 → 对外**绝对地址**（站点基址 + 规范化路径）。
+//
+// 为什么站内链接一律给绝对地址：产物是站点自己的对外表达 —— 站点与构建期 CMS
+// 不同域、被镜像/被抓取到别处渲染、或进邮件模板时，根相对路径会指回**承载页面**
+// 的域而不是站点域。相对地址在「站点独占域名根」的部署下看不出区别，
+// 所以这类不一致只会在换环境时炸 —— 统一给绝对，把判据收敛到这一处。
+//
+// 已是绝对地址（http:// / https://）、协议相对（//host/x）与非站内路径一律原样返回；
+// 未配置站点基址（WP_SITE_BASE_URL 空）时也原样返回 —— 宁可留相对路径，
+// 也不能猜一个域名（猜错会把全部站内链接指向别人的站点）。
+func AbsoluteSiteURL(pathOrURL string) string {
+	return seo.AbsoluteSiteURL(pathOrURL)
 }
 
 // SiteRouteEntries 按启用语言计算逻辑路径的各语言站点路径（默认语言在前）。

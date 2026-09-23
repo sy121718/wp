@@ -1,0 +1,144 @@
+{
+  "settings": {
+    "layout": { "mode": "full" }
+  },
+  "root": [
+    {
+      "id": "hdr-wrap",
+      "type": "core.container",
+      "name": "页眉容器",
+      "props": {
+        "tag": "header",
+        "layout": {
+          "engine": "flex",
+          "flex": { "direction": "row", "justify": "space-between", "align": "center", "wrap": false, "gap": "32px" }
+        },
+        "box": {
+          "padding": { "desktop": "0 24px", "tablet": "0 16px", "mobile": "0 12px" }
+        },
+        "visual": { "bgColor": "#ffffff", "borderWidth": "1px", "borderStyle": "solid", "borderColor": "#e8e8e8" },
+        "interaction": { "sticky": true, "stickyTop": "0" }
+      },
+      "children": [
+        {
+          "id": "hdr-logo",
+          "type": "core.container",
+          "name": "Logo 区",
+          "props": {
+            "tag": "div",
+            "layout": { "engine": "flex", "flex": { "direction": "row", "justify": "flex-start", "align": "center" } }
+          },
+          "children": [
+            {
+              "id": "hdr-logo-img",
+              "type": "core.image",
+              "name": "店铺 Logo",
+              "props": {
+                "src": "https://vapehubnow.com/wp-content/uploads/2026/07/logo.svg",
+                "alt": "Vape Store OZ",
+                "title": "Vape Store OZ",
+                "width": "200px",
+                "maxWidth": "200px",
+                "objectFit": "contain",
+                "align": { "desktop": "left", "tablet": "left", "mobile": "center" },
+                "loading": "off",
+                "fetchPriority": "high",
+                "clickAction": "link",
+                "link": "/",
+                "linkTarget": "self"
+              }
+            }
+          ]
+        },
+        {
+          "id": "hdr-nav",
+          "type": "core.nav",
+          "name": "主导航",
+          "props": {
+            "orientation": "horizontal",
+            "gap": "24px",
+            "align": "center",
+            "color": "#3B3C40",
+            "hoverColor": "#d93425",
+            "activeColor": "#d93425",
+            "fontSize": "15px",
+            "fontWeight": "500",
+            "itemPadding": "8px 4px",
+            "submenuBg": "#ffffff",
+            "submenuWidth": "220px",
+            "mobileCollapse": true,
+            "toggleLabel": "Menu",
+            "items": [
+              { "label": "Shop", "url": "/shop" },
+              {
+                "label": "Amigo",
+                "url": "/product-category/amigo",
+                "children": [ { "label": "Go 35000", "url": "/product-category/amigo/go-35000" } ]
+              },
+              {
+                "label": "Alibarbar",
+                "url": "/product-category/alibarbar",
+                "children": [ { "label": "Ingot 9000", "url": "/product-category/alibarbar/ingot-9000" } ]
+              },
+              {
+                "label": "Iget",
+                "url": "/product-category/iget",
+                "children": [
+                  { "label": "Iget Bar Pro 10000", "url": "/product-category/iget/iget-bar-pro-10000" },
+                  { "label": "Iget One 12000", "url": "/product-category/iget/iget-one-12000" }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "hdr-actions",
+          "type": "core.container",
+          "name": "操作区",
+          "props": {
+            "tag": "div",
+            "layout": { "engine": "flex", "flex": { "direction": "row", "justify": "flex-end", "align": "center", "gap": "16px" } }
+          },
+          "children": [
+            {
+              "id": "hdr-account",
+              "type": "core.text",
+              "name": "账户入口",
+              "props": {
+                "mode": "plaintext",
+                "plainTag": "span",
+                "text": "Sign in/Sign up",
+                "color": "#3B3C40",
+                "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.5", "textAlign": "left" } }
+              }
+            },
+            {
+              "id": "hdr-wishlist",
+              "type": "core.text",
+              "name": "心愿单",
+              "props": {
+                "mode": "plaintext",
+                "plainTag": "span",
+                "text": "Wishlist",
+                "color": "#3B3C40",
+                "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.5", "textAlign": "left" } }
+              }
+            },
+            {
+              "id": "hdr-cart",
+              "type": "core.text",
+              "name": "购物车",
+              "props": {
+                "mode": "plaintext",
+                "plainTag": "span",
+                "text": "Cart (0)",
+                "color": "#3B3C40",
+                "typography": { "desktop": { "fontSize": "14px", "lineHeight": "1.5", "textAlign": "left" } }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -27,9 +27,16 @@ import (
 )
 
 // MailAutomationCanvas 流程画布页（?id=N）。
+//
+// 缺 id 前置判定见 MailCampaignPage 的说明（审计 P0）：改前 canvas 的「缺参」与「不存在」
+// **合成同一句**「自动化流程不存在」—— 没带 id 的调用方会以为流程被删了，而不是自己漏了参数。
 func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	ctx := c.Request.Context()
-	id := shell.ParseUint(c.Query("id"))
+	id, hasID := mailQueryID(c)
+	if !hasID {
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailAutomationIDRequiredText))
+		return
+	}
 	item, err := h.mail.GetAutomation(ctx, id)
 	if err != nil {
 		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
@@ -53,7 +60,7 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	metaJSON, _ := json.Marshal(meta)
 	// 发信节点的模板下拉（与表单页同一份数据）。
 	templates, _ := h.mail.ListTemplates(ctx, "")
-	c.HTML(http.StatusOK, "admin/mail_automation_canvas.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", shell.Prepare(c, gin.H{
 		"title":     "流程画布",
 		"A":         item,
 		"NodesJSON": shell.JsonSafe(string(nodesJSON)),

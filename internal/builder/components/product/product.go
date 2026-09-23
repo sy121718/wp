@@ -74,6 +74,21 @@ type Props struct {
 	// VariantsField 变体组合字段（JSON 数组，如 product.variants）：由商品的变体派生，
 	// 规格组合不足两个时不输出选择器（单变体商品不显示规格选择器）。
 	VariantsField string `json:"variantsField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=变体组合字段"`
+	// CategoriesField 分类字段（product.related）—— 详情页标题上方的分类链接。
+	CategoriesField string `json:"categoriesField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=分类字段"`
+	// BrandField 品牌字段（product.related）—— 详情页底部的「Brand: xxx」。
+	BrandField string `json:"brandField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=品牌字段"`
+	// RatingField 评分字段（product.rating，0~5）—— 与 RatingCountField 一起出评价行。
+	RatingField string `json:"ratingField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=评分字段"`
+	// RatingCountField 评价数字段（product.ratingCount）。
+	RatingCountField string `json:"ratingCountField,omitempty" ct:"bindingfield,prefixes=product,maxlen=60,sec=content,label=评价数字段"`
+	// CategoryLinkPrefix 分类归档页的站内路径前缀（与 slug 拼接）。
+	//
+	// 可配而不是写死在 Go 里：归档路径属于**站点配置**（站点设置里的 urlPatterns），
+	// 写死会让换了路径规则的站点上分类链接全部 404，而组件毫无察觉。
+	CategoryLinkPrefix string `json:"categoryLinkPrefix,omitempty" ct:"text,maxlen=80,sec=content,label=分类链接前缀"`
+	// BrandLinkPrefix 品牌归档页的站内路径前缀。
+	BrandLinkPrefix string `json:"brandLinkPrefix,omitempty" ct:"text,maxlen=80,sec=content,label=品牌链接前缀"`
 	// Currency 货币符号（价格槽位前缀；留空用默认符号）。
 	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
 	// TitleTag 标题标签层级（h1~h3，默认 h2；h1 由页面标题承担时选 h2）。
@@ -192,6 +207,10 @@ func (p *Props) slotFields() []slotField {
 		{Slot: slotDescription, Field: strings.TrimSpace(p.DescriptionField)},
 		{Slot: slotOptions, Field: strings.TrimSpace(p.OptionsField)},
 		{Slot: slotVariants, Field: strings.TrimSpace(p.VariantsField)},
+		{Slot: slotCategories, Field: strings.TrimSpace(p.CategoriesField)},
+		{Slot: slotBrand, Field: strings.TrimSpace(p.BrandField)},
+		{Slot: slotRating, Field: strings.TrimSpace(p.RatingField)},
+		{Slot: slotRatingCount, Field: strings.TrimSpace(p.RatingCountField)},
 	}
 }
 
@@ -208,6 +227,13 @@ const (
 	slotDescription  = "description"
 	slotOptions      = "options"
 	slotVariants     = "variants"
+	// 分类 / 品牌 / 评分：源站详情页的「标题上方分类链接」「底部 Brand: xxx」
+	// 「评价行」三处。数据都在既有字段里（related 与 rating/ratingCount），
+	// 缺的只是把它们接到模板上的槽位。
+	slotCategories  = "categories"
+	slotBrand       = "brand"
+	slotRating      = "rating"
+	slotRatingCount = "ratingCount"
 )
 
 // effectiveSource 有效数据源类型（空取默认 product）。

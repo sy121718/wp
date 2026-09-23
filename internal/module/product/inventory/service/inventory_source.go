@@ -283,26 +283,55 @@ func (s *Service) DeleteSource(ctx context.Context, req *inventorydto.DeleteSour
 //
 // 缺省只列启用中的货源（停用是「不再选用」的标记）；IncludeDisabled 显式打开才列停用的。
 func (s *Service) ListSources(ctx context.Context, req *inventorydto.ListSourceReq) (list []*inventorydto.SourceResp, err error) {
-	filter := inventorymodel.SourceFilter{}
-	page, size := 1, defaultSourcePageSize
+	filter, page, size, err := s.sourceFilter(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.m.ListSources(ctx, filter, size, (page-1)*size)
+	if err != nil {
+		return nil, err
+	}
+	list = make([]*inventorydto.SourceResp, 0, len(rows))
+	for _, e := range rows {
+		list = append(list, toSourceResp(e))
+	}
+	return list, nil
+}
+
+// CountSources 货源总条数（分页页面的「共 N 条」与总页数）。
+//
+// **与 ListSources 共用同一个 sourceFilter**：类型 / 关联方 / 状态（含「缺省只列启用中」
+// 这一档）/ 关键词 / 工程作用域的归一只有一份实现。两处各抄一遍时，最容易漏的正是
+// 「缺省只列启用中」—— 计数把停用的也算进去，分页条就凭空多出一页空列表。
+func (s *Service) CountSources(ctx context.Context, req *inventorydto.ListSourceReq) (n int64, err error) {
+	filter, _, _, err := s.sourceFilter(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	return s.m.CountSources(ctx, filter)
+}
+
+// sourceFilter 把货源列表请求归一成 model 过滤条件 + 分页参数（List / Count 共用）。
+func (s *Service) sourceFilter(ctx context.Context, req *inventorydto.ListSourceReq) (filter inventorymodel.SourceFilter, page, size int, err error) {
+	page, size = 1, defaultSourcePageSize
 	if req != nil {
 		filter.Keyword = strings.TrimSpace(req.Keyword)
 		if strings.TrimSpace(req.Type) != "" {
 			sourceType, terr := normalizeSourceType(req.Type)
 			if terr != nil {
-				return nil, terr
+				return filter, page, size, terr
 			}
 			filter.Type = sourceType
 		}
 		related, rerr := parseRelatedPartyFilter(req.RelatedParty)
 		if rerr != nil {
-			return nil, rerr
+			return filter, page, size, rerr
 		}
 		filter.RelatedParty = related
 		if strings.TrimSpace(req.Status) != "" {
 			status, serr := normalizeSourceStatus(req.Status)
 			if serr != nil {
-				return nil, serr
+				return filter, page, size, serr
 			}
 			filter.Status = status
 		} else if !req.IncludeDisabled {
@@ -320,20 +349,12 @@ func (s *Service) ListSources(ctx context.Context, req *inventorydto.ListSourceR
 	} else {
 		filter.Status = inventoryenums.SourceStatusActive
 	}
-	projectID, err := s.resolveProjectID(ctx, projectIDOf(req))
-	if err != nil {
-		return nil, err
+	projectID, perr := s.resolveProjectID(ctx, projectIDOf(req))
+	if perr != nil {
+		return filter, page, size, perr
 	}
 	filter.ProjectID = projectID
-	rows, err := s.m.ListSources(ctx, filter, size, (page-1)*size)
-	if err != nil {
-		return nil, err
-	}
-	list = make([]*inventorydto.SourceResp, 0, len(rows))
-	for _, e := range rows {
-		list = append(list, toSourceResp(e))
-	}
-	return list, nil
+	return filter, page, size, nil
 }
 
 // SourceSummary 货源关联方统计（验收 4「关联方标志可用于报表区分」的数据出口）。

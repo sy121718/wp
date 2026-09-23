@@ -1,0 +1,179 @@
+{* admin/administrators.html — 管理员列表：列表页标准骨架（评审规则 admin-ui-logic §7）。
+    · 页头一行：标题 + 右侧主行动（不再单独占一张卡）；说明文字全部清零；
+    · 列表卡 = 筛选栏（.filter-bar）+ 标准表格（.data-table）+ 吸顶滚动区；
+    · 行内表单放表格外，按钮用 form="<id>" 关联（HTML 不允许 form 嵌套）。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{* 首列勾选与批量删除：权限点复用单条删除的 /api/admin/delete（页面侧不新增权限点）。 *}
+{{canDelete := isset(.PermSet["admin:delete"])}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.admins.list.heading", "管理员列表（共") }} {{.Total}}{{ .["t"]("admin.admins.list.headingClose", "）") }}</h1>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{include "../partials/toolbar_create.html" map("allowed", isset(.PermSet["admin:create"]), "tpl", "#tpl-admin-create", "title", tr("admin.admins.action.create", "新建管理员"), "label", tr("admin.admins.action.create", "新建管理员"))}}
+        </div>
+    </header>
+
+    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
+       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
+        <div class="filter-bar">
+            <form class="filter-row" method="get" action="/admin/administrators">
+                <input type="text" name="name" value="{{.["FilterName"]}}" placeholder="{{ .["t"]("admin.admins.ph.name", "姓名") }}" aria-label="{{ .["t"]("admin.admins.ph.name", "姓名") }}" class="form-input">
+                <input type="text" name="email" value="{{.["FilterEmail"]}}" placeholder="{{ .["t"]("admin.admins.ph.email", "邮箱") }}" aria-label="{{ .["t"]("admin.admins.ph.email", "邮箱") }}" class="form-input">
+                <button type="submit" class="btn">{{ .["t"]("admin.admins.action.filter", "筛选") }}</button>
+                <a class="btn btn-ghost" href="/admin/administrators">{{ .["t"]("admin.admins.action.reset", "重置") }}</a>
+            </form>
+        </div>
+
+        {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知，
+           也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1），
+           <form> 依旧包住 <table>（批量动作与勾选框必须同属一个 form：提交时浏览器直接带上
+           所有勾中的 ids，不需要在提交前注入隐藏域；admin.js 与 theme.css 也依赖这个结构）。 *}
+        <form method="post" action="/admin/administrators/bulk-delete">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+        {{if canDelete}}{{if len(.Rows) > 0}}
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.admins.confirm.delete", "确认删除？"), danger=true)}}
+        {{yield bulkBarClose()}}
+        {{end}}{{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region">
+            <table class="data-table">
+                <thead>
+                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th>ID</th><th>{{ .["t"]("admin.admins.col.username", "用户名") }}</th><th>{{ .["t"]("admin.admins.col.name", "姓名") }}</th><th>{{ .["t"]("admin.admins.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.admins.col.phone", "手机号") }}</th><th>{{ .["t"]("admin.admins.col.status", "状态") }}</th><th class="col-actions">{{ .["t"]("admin.admins.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                {{if len(.Rows) == 0}}
+                {* 空态整行：colspan = 7 个业务列（ID / 用户名 / 姓名 / 邮箱 / 手机号 / 状态 / 操作）
+                   + 有删除权限时多出来的勾选框列。 *}
+                <tr><td colspan="{{if canDelete}}8{{else}}7{{end}}" class="cell-wrap">
+                    <div class="empty-state">
+                        <p class="empty-title">{{ .["t"]("admin.admins.empty.title", "还没有管理员") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.admins.empty", "创建后可在「角色」里分配权限；停用或封禁某个账号，直接在列表里操作。") }}</p>
+                        {{if isset(.PermSet["admin:create"])}}
+                        <div class="empty-actions">
+                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-admin-create" data-drawer-title="{{ .["t"]("admin.admins.action.create", "新建管理员") }}">＋ {{ .["t"]("admin.admins.action.create", "新建管理员") }}</button>
+                        </div>
+                        {{end}}
+                    </div>
+                </td></tr>
+                {{else}}
+                {{range _, a := .Rows}}
+                <tr data-filter-text="{{a.ID}} {{a.Username}} {{if a.Name}}{{a.Name}}{{end}} {{if a.Email}}{{a.Email}}{{end}} {{if a.Phone}}{{a.Phone}}{{end}}">
+                {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
+                <td class="text-mute">{{a.ID}}</td>
+                <td>{{if isset(.PermSet["admin:edit"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{a.Username}}</button>{{else}}{{a.Username}}{{end}}</td>
+                <td>{{if a.Name}}{{a.Name}}{{end}}</td>
+                <td>{{if a.Email}}{{a.Email}}{{end}}</td>
+                <td>{{if a.Phone}}{{a.Phone}}{{end}}</td>
+                <td>
+                    {{if a.Status == 1}}<span class="badge badge-success">{{tr("admin.admins.status.enabled", "启用")}}</span>
+                    {{else if a.Status == 2}}<span class="badge badge-danger">{{tr("admin.admins.status.disabled", "禁用")}}</span>
+                    {{else if a.Status == 3}}<span class="badge badge-danger">{{tr("admin.admins.status.banned", "封禁")}}</span>
+                    {{else}}<span class="badge badge-mute">{{tr("admin.admins.status.unknown", "未知")}}</span>{{end}}
+                </td>
+                <td class="col-actions">
+                    {{if isset(.PermSet["admin:edit"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{tr("admin.admins.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.PermSet["admin:delete"])}}<button type="submit" form="admin-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.admins.action.delete", "删除")}}</button>{{end}}
+                </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
+        {{include "../partials/pagination.html"}}
+    </section>
+
+    {* 行内删除表单必须放在表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器
+       提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
+    {{range _, a := .Rows}}
+    {{if isset(.PermSet["admin:delete"])}}
+    <form id="admin-del-{{a.ID}}" method="post" action="/admin/administrators/delete" class="hidden-form"
+          data-confirm="{{tr("admin.admins.confirm.delete", "确认删除？")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{a.ID}}">
+    </form>
+    {{end}}
+    {{end}}
+</div>
+
+{* ===== 新建管理员（抽屉表单模板） ===== *}
+<template id="tpl-admin-create">
+    <form method="post" action="/admin/administrators/create">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.admins.field.username", "用户名") }}</label>
+            <input type="text" name="username" class="form-input" required maxlength="50">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.admins.field.email", "邮箱") }}</label>
+            <input type="email" name="email" class="form-input" required maxlength="100">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.admins.field.password", "密码（≥6位）") }}</label>
+            <input type="password" name="password" class="form-input" required minlength="6" maxlength="100">
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.admins.field.phone", "手机号") }}</label>
+            <input type="text" name="phone" class="form-input" maxlength="20">
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.admins.field.remark", "备注") }}</label>
+            <input type="text" name="remark" class="form-input" maxlength="200">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.admins.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.admins.action.create_submit", "创建管理员") }}</button>
+        </div>
+    </form>
+</template>
+
+{* ===== 编辑管理员（每行一份抽屉表单模板，服务端回显） ===== *}
+{{range _, a := .Rows}}
+<template id="tpl-admin-edit-{{a.ID}}">
+    <form method="post" action="/admin/administrators/update">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{a.ID}}">
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.admins.field.username", "用户名") }}</label>
+            <input type="text" name="username" class="form-input" required maxlength="50" value="{{a.Username}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.admins.field.email", "邮箱") }}</label>
+            <input type="email" name="email" class="form-input" maxlength="100" value="{{if a.Email}}{{a.Email}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.admins.field.phone", "手机号") }}</label>
+            <input type="text" name="phone" class="form-input" maxlength="20" value="{{if a.Phone}}{{a.Phone}}{{end}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.admins.field.remark", "备注") }}</label>
+            <input type="text" name="remark" class="form-input" maxlength="200">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.admins.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.admins.action.save", "保存修改") }}</button>
+        </div>
+    </form>
+</template>
+{{end}}
+{{end}}

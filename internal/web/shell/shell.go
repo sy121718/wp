@@ -163,14 +163,21 @@ func TranslateFor(c *gin.Context) func(key, fallback string) string {
 	return templates.TranslateFunc(response.RequestLanguage(c))
 }
 
-// requestURI 返回当前请求的站内 URI（含 query）；异常时回首页 "/"。
+// adminHomePath 控制面首页（仪表盘）。
+//
+// 曾经回落 "/"，但 **/ 现在归前台首页**（站点独占域名根）—— 后台的
+// 「回到首页」类回落若还指向 "/"，操作者会被丢到店铺首页，
+// 看起来像登录态丢了。菜单树里「仪表盘」的 path 本来就是 /admin，两边一致。
+const adminHomePath = "/admin"
+
+// requestURI 返回当前请求的站内 URI（含 query）；异常时回控制面首页。
 func requestURI(c *gin.Context) string {
 	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return "/"
+		return adminHomePath
 	}
 	uri := c.Request.URL.RequestURI()
 	if uri == "" {
-		return "/"
+		return adminHomePath
 	}
 	return uri
 }

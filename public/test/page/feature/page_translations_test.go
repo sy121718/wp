@@ -16,9 +16,12 @@ package feature
 // PG 不可用时 t.Skip（与其他功能测试一致）。
 
 import (
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -175,7 +178,10 @@ func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"<h2>core.heading", "<h2>core.text", "<h2>core.button",
+		// 组件分段：多段组表合并成**一张**表之后，组件名不再各自一个 <h2>，
+		// 而是表内合并整行的分组行（td[colspan=6]，样式见 theme.css §14）。
+		// 判据等价且更严：colspan 必须正好等于表头列数（6），组件名跟在分组行里。
+		`<td colspan="6">core.heading `, `<td colspan="6">core.text `, `<td colspan="6">core.button `,
 		"name=\"rowContext\" value=\"core.heading.text\"",
 		"name=\"rowContext\" value=\"core.text.text\"",
 		"name=\"rowContext\" value=\"core.button.text\"",
@@ -192,6 +198,24 @@ func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("工作台缺少 %q\n%s", want, body)
+		}
+	}
+	// 多组件共用一张表：合并前是「一组一张表」（这份文档有 3 个组件 → 3 张表 3 个 thead）。
+	if n := strings.Count(body, `class="data-table data-table-wide tr-table"`); n != 1 {
+		t.Fatalf("多组件应共用一张编辑表，实际 %d 张", n)
+	}
+	if n := strings.Count(body, "<thead>"); n != 1 {
+		t.Fatalf("多组件应共用一个表头，实际 %d 个", n)
+	}
+	// 分组行带**本组**条数 —— 合并不丢「这一行属于哪个组件」的信息（原先是每组一个 <h2>）。
+	// span 属性用 [^>]* 通配，判据只认「组件名 + 该组条数」这个语义，不跟样式耦合。
+	for _, want := range []struct {
+		comp string
+		rows int
+	}{{"core.heading", 2}, {"core.text", 1}, {"core.button", 1}} {
+		pat := `<td colspan="6">` + want.comp + ` <span[^>]*>（` + strconv.Itoa(want.rows) + ` 条）</span>`
+		if !regexp.MustCompile(pat).MatchString(body) {
+			t.Fatalf("分组行缺少组件 %s 的本组条数（期望 %d 条）", want.comp, want.rows)
 		}
 	}
 	for _, bad := range []string{"core.button.link", "core.text.advanced", "core.heading.level"} {
@@ -263,6 +287,106 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("保存后工作台缺少 %q\n%s", want, body)
 		}
+	}
+}
+
+// renderedTranslationRow 从渲染出来的工作台表单里解析出的一行（字段名与模板一致）。
+type renderedTranslationRow struct {
+	Context string
+	Source  string
+	Hash    string
+}
+
+var (
+	renderedContextRe = regexp.MustCompile(`name="rowContext" value="([^"]*)"`)
+	renderedSourceRe  = regexp.MustCompile(`name="rowSource" value="([^"]*)"`)
+	renderedHashRe    = regexp.MustCompile(`name="rowHash" value="([^"]*)"`)
+)
+
+// parseRenderedTranslationRows 按文档顺序解析渲染 HTML 里的数据行。
+//
+// 只认「同一个 <tr> 之内」的字段（分组行 / 复用行不含 rowTarget，自然跳过）—— 这正是保存端
+// 按下标配对的前提，也是这个 helper 存在的理由：它把模板渲染出来的东西当成真源，
+// 而不是让用例自己假定四个数组渲染对了。
+func parseRenderedTranslationRows(t *testing.T, body string) []renderedTranslationRow {
+	t.Helper()
+	var out []renderedTranslationRow
+	for i, chunk := range strings.Split(body, "<tr>")[1:] {
+		if !strings.Contains(chunk, `name="rowTarget"`) {
+			continue
+		}
+		row := chunk
+		if j := strings.Index(row, "</tr>"); j >= 0 {
+			row = row[:j]
+		}
+		pick := func(re *regexp.Regexp, what string) string {
+			m := re.FindStringSubmatch(row)
+			if m == nil {
+				t.Fatalf("第 %d 个数据行缺少 %s（四个字段必须同处一个 tr）", i, what)
+			}
+			return html.UnescapeString(m[1])
+		}
+		out = append(out, renderedTranslationRow{
+			Context: pick(renderedContextRe, "rowContext"),
+			Source:  pick(renderedSourceRe, "rowSource"),
+			Hash:    pick(renderedHashRe, "rowHash"),
+		})
+	}
+	return out
+}
+
+// TestSavePageTranslationsFromRenderedForm 把**渲染出来的表单**当真源：解析每一行的字段 →
+// 按文档顺序原样提交 → 断言「非空输入数 == 回执 saved 计数 == 落库行数」。
+//
+// 为什么单独立一条（其余保存用例都手写 url.Values）：手写表单等于假定模板把四类字段渲染成了
+// 逐行对齐的数组。保存端按**下标**配对（page_translations_handle.go：contexts/sources/hashes/targets
+// 四个数组长度必须全等，且 hashes[i] 必须等于 ContentHash(sources[i])），所以模板层面任何错位
+// （某行的 textarea 与它自己的 3 个 hidden 被拆开、少渲染一个 hidden、分组行把数据行包起来）
+// 都只会得到「提交数据不完整」或把译文写到另一行的语境外。这条用例把那个契约钉在渲染输出上。
+func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
+	router, _, db, _, pageID := newTranslationEnv(t)
+	body := getTranslationPage(t, router, pageID, "en-US")
+
+	rows := parseRenderedTranslationRows(t, body)
+	if len(rows) == 0 {
+		t.Fatal("渲染出来的表单里没有可提交的行")
+	}
+	// 四类字段一一对应（渲染 HTML 层面的计数断言）。rowTarget 的行数由解析结果给出，
+	// 所以这里比的是另外三类与它的数量关系。
+	for _, name := range []string{"rowContext", "rowSource", "rowHash"} {
+		if got := strings.Count(body, `name="`+name+`"`); got != len(rows) {
+			t.Fatalf("rowTarget 解析出 %d 行，而 %s 有 %d 个 —— 四个数组不等长会被整体拒绝",
+				len(rows), name, got)
+		}
+	}
+
+	form := url.Values{"pageId": {pageID}, "lang": {"en-US"}}
+	nonEmpty := 0
+	for _, r := range rows {
+		target := ""
+		// 只填两个纯文本行：富文本行的形态校验与本用例无关，跳过以免噪声。
+		if r.Context == "core.heading.text" || r.Context == "core.button.text" {
+			target = "Target-" + r.Context
+			nonEmpty++
+		}
+		form.Add("rowTarget", target)
+		form.Add("rowContext", r.Context)
+		form.Add("rowSource", r.Source)
+		form.Add("rowHash", r.Hash)
+	}
+	if nonEmpty == 0 {
+		t.Fatal("没有非空输入，用例失去意义")
+	}
+
+	saved := postForm(t, router, "/admin/page/translations/save", form)
+	if saved.Code != http.StatusSeeOther {
+		t.Fatalf("保存应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	}
+	if loc := saved.Header().Get("Location"); !strings.Contains(loc, "n="+strconv.Itoa(nonEmpty)) {
+		t.Fatalf("非空输入 %d 条与回执 saved 计数不符：%q", nonEmpty, loc)
+	}
+	if n := translationRowCount(t, db, "en-US"); n != int64(nonEmpty) {
+		t.Fatalf("落库 %d 条 != 非空输入数 %d", n, nonEmpty)
 	}
 }
 

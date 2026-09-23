@@ -44,6 +44,13 @@ type View struct {
 	// @hovernone 块）；那个 checkbox 是视觉隐藏的 sr-only 控件，读屏与键盘用户只能
 	// 靠可访问名识别它，所以文案不能为空。模板里与菜单项文字拼成「父项名 子菜单」。
 	SubmenuToggleLabel string
+	// ToggleIcon 移动端汉堡按钮图标（基座图标库 menu，完整 <svg>；aria-hidden）。
+	ToggleIcon string
+	// ChevronIcon 子菜单 / 面板的展开箭头（基座图标库 chevron-down，完整 <svg>）。
+	//
+	// 以前模板里直接写字符 '▾' —— 字符图标在不同字体下字宽与基线不一致，
+	// 也无法与图标库的描边风格保持一致（同一页面上两种箭头会明显不同）。
+	ChevronIcon string
 }
 
 // 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
@@ -70,11 +77,14 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 
 // BuildView 生成导航视图（递归展开菜单项）。
 func BuildView(node *core.Node, p *Props) View {
+	// ToggleLabel 只作**无障碍名**（模板里进 sr-only）：可见的汉堡图标由图标库
+	// 的 SVG 承担 —— 以前它是字符 '☰'，既当可见文本又当无障碍名，
+	// 结果按钮在不同字体下粗细不一，也无法与其它图标统一描边。
 	label := p.ToggleLabel
 	if label == "" {
-		label = "☰"
+		label = "菜单"
 	}
-	return View{
+	view := View{
 		Items:          itemViews(p.Items),
 		ToggleID:       "sky-nav-toggle-" + node.ID,
 		MobileCollapse: p.MobileCollapse,
@@ -83,6 +93,13 @@ func BuildView(node *core.Node, p *Props) View {
 		// 缺译文时退回中文原文即可（与 ToggleLabel 的兜底同一套思路）。
 		SubmenuToggleLabel: "子菜单",
 	}
+	if svg, ok := core.IconSVGClass("menu", "sky-nav-burger-icon"); ok {
+		view.ToggleIcon = svg
+	}
+	if svg, ok := core.IconSVGClass("chevron-down", "sky-nav-chevron-icon"); ok {
+		view.ChevronIcon = svg
+	}
+	return view
 }
 
 // ValidateItems 导出菜单项校验：构建期按导航位置解析出菜单后二次校验

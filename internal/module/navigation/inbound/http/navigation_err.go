@@ -115,6 +115,35 @@ func navigationErrPageText(c *gin.Context, err error) string {
 	return shell.TranslateFor(c)(navigationenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）")
 }
 
+// —— 参数级提示（缺必填字段 / 未勾选等）——
+//
+// 页面写操作的参数校验失败此前走 `response.ErrorWithMessage(c, 400, navFieldRequiredMsg)`：
+// 浏览器收到的是一段 JSON（`{"code":400,"message":"必填字段不能为空"}`），**页面完全脱离
+// 页壳** —— DOM 里只有那个 JSON 节点，没有标题栏与左侧菜单，地址栏停在 POST 路径，
+// 用户只能手改地址栏回列表页。参数级失败与业务失败一样是「页面请求」，出口就该是页面。
+//
+// 同域已做对的页面（page 的 pagesBackURL / content 的 articleRedirectList /
+// block 的 siteSlotRedirect）在同样场景下一律 303 回列表页 + ?err= 回带原因，本模块照此收口；
+// 回跳地址仍由 navListURLMenu（本页唯一的列表 URL 构造点）给出。
+
+// navInvalidParamText 参数级校验失败的可展示文案（当前语言）。
+//
+// 参数级失败没有 error 对象（判定就在 handle 里），因此走不了 navigationErrPageText；
+// 但文案必须落在 navigationNoticeTexts 的候选里 —— 读侧 navigationPageErr 按形状**整体**
+// 匹配，未命中的 query 参数会被当伪造文案丢掉（页面上什么都不显示，也没有任何日志）。
+// ErrInvalidParam 本来就在 enums 白名单里，key 形态与译文形态都是候选，这一层天然成立。
+func navInvalidParamText(c *gin.Context) string {
+	return shell.TranslateFor(c)(navigationenums.ErrInvalidParam, "参数错误")
+}
+
+// navNoticeNoSourcePicked 「从已有内容添加」一项都没勾时的提示。
+//
+// 这是该抽屉最常见的一条路径（候选复选框默认全不勾，用户直接点「加入菜单」）。
+// 文案与 navigationsBulkResultTemplates 同形：中文常量、**写侧与读侧共用这一份字面量**，
+// 读侧经 shell.NoticeTemplate 归一后整体比对（另抄一份中文的失配是静默的 —— 提示发出来了，
+// 页面上却不显示）。模板侧另有「本组没有可加入项时按钮置灰」，这里是服务端兜底。
+const navNoticeNoSourcePicked = "请至少勾选一项要加入菜单的内容。"
+
 // —— 读侧回执的收口（?err= / ?done=）——
 //
 // 写侧早就是受控的（NavigationCreate/Update/Delete 走 response 出口；批量删除走
@@ -149,6 +178,9 @@ func navigationNoticeTexts(c *gin.Context) []string {
 		tr(navigationenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）"),
 		shell.BulkIDsNoticeTemplate(c),
 	)
+	// 参数级提示：navInvalidParamText 的产物（ErrInvalidParam 的译文）已在上面 enums
+	// 白名单里；「未勾选」是本地常量，与批量结论模板同一读法（归一后整体比对）。
+	out = append(out, shell.NoticeTemplate(navNoticeNoSourcePicked))
 	for _, tpl := range navigationsBulkResultTemplates {
 		out = append(out, shell.NoticeTemplate(tpl))
 	}

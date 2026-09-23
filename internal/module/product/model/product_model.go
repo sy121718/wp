@@ -319,6 +319,16 @@ type CollectionFilter struct {
 	CategoryID string
 	BrandID    string
 	TagID      string
+	// CategoryIDs / BrandIDs 多值维度（与 TagIDs 同一形状、同一套语义）：
+	// 逗号分隔的一组 id，CategoryAll / BrandAll 决定匹配语义。
+	//
+	// 与单值维度并存是刻意的：单值是既有配置的兼容面，多值是新配置的主路径。
+	// 两者同时非空时**多值优先**（见 parseCollectionFilter）—— 单值只是「只勾了一个」
+	// 的退化写法，让它们叠加成 AND 会让「我改成了多选」看起来毫无效果。
+	CategoryIDs []string
+	CategoryAll bool
+	BrandIDs    []string
+	BrandAll    bool
 	// TagIDs 多标签维度（issue #27）：与单值 TagID 并存，TagAll 决定语义。
 	TagIDs []string
 	// TagAll 多标签匹配语义：true = 同时具备全部（AND）；false = 具备任一（OR，默认）。
@@ -332,15 +342,19 @@ type CollectionFilter struct {
 	MinPrice *float64
 	MaxPrice *float64
 
-	// Options 属性值维度（issue #25）：属性组 key → 属性值 key，逐项 AND。
+	// Options 属性值维度（issue #25）：属性组 key → 属性值 key 列表，逐项 AND。
 	//
 	// 值不在商品行上（attribute_ids 只存组引用），而在变体的 option_values JSONB 里，
 	// 所以每项下推一条 EXISTS：「存在启用变体在该属性上取该值」。
-	Options map[string]string
+	//
+	// 一个属性组可以带多个值（多选筛选取并集）：组内 OR（存在变体取其中任一值）、
+	// 组间 AND（每个属性组都要命中）—— 与多值标签的 `any` 语义同源，
+	// 因为二者回答的是同一个问题：「这个商品的规格落在你勾的这堆值里吗」。
+	Options map[string][]string
 }
 
 // sortedOptionKeys 属性维度键排序（谓词顺序确定，便于比对与排查）。
-func sortedOptionKeys(options map[string]string) []string {
+func sortedOptionKeys(options map[string][]string) []string {
 	if len(options) == 0 {
 		return nil
 	}
@@ -350,6 +364,31 @@ func sortedOptionKeys(options map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// whereJsonbAnyOrAll 给查询加上 JSON 数组列的「任一命中 / 全部命中」条件（多值筛选的统一形状）。
+//
+// OR 展开成一串 `col @> jsonb_build_array(?::text)` 用 OR 连接，而不是 `?|` ——
+// jsonb_path_ops 的 GIN 索引只支持 @>，换成 ?| 会退化成顺序扫描（081 建的索引白建）。
+// 值来自解析期已校验的 uuid 列表，仍然逐个参数化，不拼进 SQL 字符串。
+//
+// **直接返回加好条件的 *gorm.DB，而不是 (sql, args) 二元组**：调用方写
+// `q.Where(sql, args)` 时 args 是 []any，gorm 的变参会把整个切片当成**一个**标量实参
+// 塞进第一个占位符，SQL 里于是留下 `?::text` 只被替换掉一个、其余原样（实测报
+// `syntax error at or near "::"（SQLSTATE 42601）`）。让 helper 自己消费自己的参数，
+// 这个坑从形状上就不存在了。
+func whereJsonbAnyOrAll(q *gorm.DB, column string, ids []string, all bool) *gorm.DB {
+	join := " OR "
+	if all {
+		join = " AND "
+	}
+	conds := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		conds = append(conds, column+" @> jsonb_build_array(?::text)")
+		args = append(args, id)
+	}
+	return q.Where("("+strings.Join(conds, join)+")", args...)
 }
 
 // collectionQuery 集合源的查询构建：投影 + 全部过滤条件，List 与 Count 共用。
@@ -386,34 +425,42 @@ func (m *Model) collectionQuery(tx *gorm.DB, ctx context.Context, f CollectionFi
 	if f.Status != "" {
 		q = q.Where("status = ?", f.Status)
 	}
-	if f.BrandID != "" {
+	// 品牌：单值等值**列**（一个商品只属于一个品牌），多值走 IN。
+	// 多值优先：两者同时非空时只看多值 —— 见 CollectionFilter 的注释。
+	//
+	// all 语义在这一维上几乎恒为空，但必须**显式**表达出来而不是退化成 IN：
+	// 一个商品只有一个 brand_id，要求它同时等于两个不同的品牌是自相矛盾的 ——
+	// 那是「交集为空」这个**结论**，不是「没有这个维度」。退化成 IN 的话，
+	// 用户把语义切到 all 之后看到的却是并集（勾两个品牌反而出来更多商品），
+	// 与分类 / 标签的 all 行为正好相反，是最容易被当成「筛选坏了」的一种。
+	//
+	// 写成 brand_id = A AND brand_id = B 让 SQL 自己去得到空集，而不是在这里
+	// 提前 return：后者会在链式调用中间短路，把后面还没加的维度（价格 / 属性…）
+	// 一起跳过 —— 那种「看情况跳过滤条件」比空结果难查得多。
+	if len(f.BrandIDs) > 1 && f.BrandAll {
+		for _, id := range f.BrandIDs {
+			q = q.Where("brand_id = ?", id)
+		}
+	} else if len(f.BrandIDs) > 0 {
+		q = q.Where("brand_id IN ?", f.BrandIDs)
+	} else if f.BrandID != "" {
 		q = q.Where("brand_id = ?", f.BrandID)
 	}
 	// 分类 / 标签是 JSON 数组列：用 @> 包含判断（走已有 GIN 索引 idx_products_*_ids），
 	// 值经 jsonb_build_array 构造，完全参数化（不拼 SQL 字符串）。
-	if f.CategoryID != "" {
+	//
+	// 多值（issue #27 起的统一样板）：OR 用「多个 @> 以 OR 连接」（每一项都能走 081 的
+	// GIN 索引，planner 会用 BitmapOr 合并）；AND 就是逐条 @> 叠加。
+	// 不以 ?| 实现 OR —— 那个操作符不吃 jsonb_path_ops 索引。
+	if len(f.CategoryIDs) > 0 {
+		q = whereJsonbAnyOrAll(q, "category_ids", f.CategoryIDs, f.CategoryAll)
+	} else if f.CategoryID != "" {
 		q = q.Where("category_ids @> jsonb_build_array(?::text)", f.CategoryID)
 	}
-	if f.TagID != "" {
-		q = q.Where("tag_ids @> jsonb_build_array(?::text)", f.TagID)
-	}
-	// 多标签（issue #27）：OR 用「多个 @> 以 OR 连接」（每一项都能走 081 的 GIN 索引，
-	// planner 会用 BitmapOr 合并）；AND 就是逐条 @> 叠加。不以 ?| 实现 OR ——
-	// 那个操作符不吃 jsonb_path_ops 索引。
 	if len(f.TagIDs) > 0 {
-		if f.TagAll {
-			for _, id := range f.TagIDs {
-				q = q.Where("tag_ids @> jsonb_build_array(?::text)", id)
-			}
-		} else {
-			conds := make([]string, 0, len(f.TagIDs))
-			args := make([]any, 0, len(f.TagIDs))
-			for _, id := range f.TagIDs {
-				conds = append(conds, "tag_ids @> jsonb_build_array(?::text)")
-				args = append(args, id)
-			}
-			q = q.Where("("+strings.Join(conds, " OR ")+")", args...)
-		}
+		q = whereJsonbAnyOrAll(q, "tag_ids", f.TagIDs, f.TagAll)
+	} else if f.TagID != "" {
+		q = q.Where("tag_ids @> jsonb_build_array(?::text)", f.TagID)
 	}
 	// 价格区间（issue #28）：价格在变体上，与属性值同一条路 —— EXISTS 下推而不是列比较。
 	// 只认**启用**变体：下架规格的价格不该把商品筛出来（与属性维度同一口径）。
@@ -457,11 +504,19 @@ func (m *Model) collectionQuery(tx *gorm.DB, ctx context.Context, f CollectionFi
 	// 键按字典序遍历，谓词顺序确定（同输入同 SQL，产物可比对）。
 	//
 	// 只认**启用**变体：下架的规格组合不该把商品筛出来。
+	// 一个属性组的多个值 = 组内 OR（存在变体取其中任一值），组间仍是 AND：
+	// 多选筛选问的是「你的规格落在我勾的这堆值里吗」，不是「同时等于两个值」。
 	for _, key := range sortedOptionKeys(f.Options) {
-		q = q.Where(
-			"EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id"+
-				" AND v.enabled AND v.option_values @> jsonb_build_object(?::text, ?::text))",
-			key, f.Options[key])
+		values := f.Options[key]
+		conds := make([]string, 0, len(values))
+		args := make([]any, 0, len(values)*2)
+		for _, value := range values {
+			conds = append(conds,
+				"EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = products.id"+
+					" AND v.enabled AND v.option_values @> jsonb_build_object(?::text, ?::text))")
+			args = append(args, key, value)
+		}
+		q = q.Where("("+strings.Join(conds, " OR ")+")", args...)
 	}
 	return q
 }

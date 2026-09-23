@@ -214,6 +214,21 @@ type BoxProps struct {
 	MinHeight string `json:"minHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=最小高度"`
 	// MaxHeight 最大高度。
 	MaxHeight string `json:"maxHeight,omitempty" ct:"dimension,maxlen=20,sec=layout,label=最大高度"`
+	// MaxWidth 最大宽度（**版心约束**）。
+	//
+	// 为什么必须有它：容器此前只有「内距 / 外距 / 最小高度 / 最大高度」，
+	// **没有任何横向约束** —— 正文、卡片、图文区块一律铺满视口宽度。
+	// 在 1600px 的视口下，一篇文章每行 100+ 字符，读起来就是一整块灰墙；
+	// 作者没有任何办法把内容收进一个适合阅读的版心。
+	//
+	// 传 CSS 长度即可（常用 "820px" 这类定值）。窄屏不要另配：CSS 的
+	// max-width 本来就不会超过可用宽度，写 min(100%, 820px) 也可以。
+	MaxWidth string `json:"maxWidth,omitempty" ct:"dimension,maxlen=30,sec=layout,label=最大宽度"`
+	// Center 水平居中（配了 MaxWidth 才有效）。
+	//
+	// 单列出来而不是「设了 MaxWidth 就自动居中」：容器常常是**全宽背景 + 内层版心**
+	// 的写法，那时外层不该居中；把居中做成显式开关，两种用法都表达得出来。
+	Center bool `json:"center,omitempty" ct:"bool,sec=layout,label=水平居中"`
 	// Overflow 内容溢出处理：visible / hidden / scroll / auto。
 	Overflow string `json:"overflow,omitempty" ct:"select,visible=可见,hidden=隐藏,scroll=滚动,auto=自动,sec=layout,label=溢出处理"`
 }
@@ -428,6 +443,8 @@ func cssVarsHead(p *Props) map[string]string {
 		"marginMobile":  p.Box.Margin.Mobile,
 		"minHeight":     p.Box.MinHeight,
 		"maxHeight":     p.Box.MaxHeight,
+		"maxWidth":      p.Box.MaxWidth,
+		"center":        core.BoolVar(p.Box.Center && p.Box.MaxWidth != ""),
 		"overflow":      p.Box.Overflow,
 		// 视觉装饰。
 		"bgColor":          p.Visual.BgColor,

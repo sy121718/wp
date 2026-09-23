@@ -11,16 +11,34 @@ import "strings"
 const editorBridgeScript = `<script>
 (function(){
   // 编译器把节点 ID 编入 sky-c-* CSS 类；编辑器桥接层将其还原为选择标记。
+  //
+  // 前缀长度一律取 WB_SKY_PREFIX.length，不写死数字：这里曾是 slice(5)，
+  // 而 'sky-c-' 是 6 个字符 —— 每个节点的 data-sky-id 都多出一个前导 "-"，
+  // 于是画布发回父窗口的每一条消息（选中 / 直改文本 / 右键操作 / 拖放重排 /
+  // 就地插入）带的都是 findNode 查不到的 id：双击能进入编辑态，失焦后
+  // 回写被静默丢弃（文字弹回），点选也毫无反应。
+  var WB_SKY_PREFIX = 'sky-c-';
   document.querySelectorAll('[class]').forEach(function(el){
     el.classList.forEach(function(cls){
-      if (cls.indexOf('sky-c-') !== 0) return;
-      el.setAttribute('data-sky-id', cls.slice(5));
+      if (cls.indexOf(WB_SKY_PREFIX) !== 0) return;
+      el.setAttribute('data-sky-id', cls.slice(WB_SKY_PREFIX.length));
     });
   });
   document.querySelectorAll('[id]').forEach(function(el){
     if (!el.getAttribute('data-sky-id')) el.setAttribute('data-sky-id', el.id);
   });
   document.querySelectorAll('[data-sky-id]').forEach(function(el){ el.setAttribute('draggable', 'true'); });
+
+  // 结构槽位（页眉 / 页脚）在画布里是**只读边界**，不是可编辑节点。
+  //
+  // 它的 data-sky-id（__layout_header）在页面 AST 里并不存在 —— 槽位是编译期注入的，
+  // 画布按 AST 查不到它，于是拖动 / 双击改文本 / 右键菜单对它全是「消息发出去没人认」
+  // 的静默失败。这里把它单独标出来：不可拖，点击上报 wb-slot-select，
+  // 由父窗口打开槽位面板（点进去编辑的是**全局块**，与 WP 的 header 模板同一范式）。
+  document.querySelectorAll('[data-sky-slot], [data-sky-slot-frame]').forEach(function(el){
+    el.setAttribute('draggable', 'false');
+    el.classList.add('wb-slot');
+  });
 
   // 画布内元素可直接拖动重排：与大纲树/组件库共用同一数据键。
   // 拖放落点在本桥接内计算（iframe 每次刷新必然重新注入，
@@ -32,6 +50,8 @@ const editorBridgeScript = `<script>
     });
   }
   document.addEventListener('dragstart', function(ev){
+    // 槽位子树（页眉 / 页脚）不属于本页 AST：拖它只会得到一次无人响应 moveNode。
+    if (ev.target.closest && ev.target.closest('[data-sky-slot]')) return;
     var target = ev.target.closest ? ev.target.closest('[data-sky-id]') : null;
     if(!target) return;
     ev.dataTransfer.effectAllowed = 'move';
@@ -40,6 +60,8 @@ const editorBridgeScript = `<script>
     setTimeout(function(){ target.style.opacity = ''; }, 0);
   }, true);
   document.addEventListener('dragover', function(ev){
+    // 槽位子树不接收落点：往里插组件等于往「站点结构里那份块」插，而这里改的是本页文档。
+    if (ev.target.closest && ev.target.closest('[data-sky-slot]')) { clearDropMarks(); dropCtx = null; return; }
     var target = ev.target.closest ? ev.target.closest('[data-sky-id]') : null;
     clearDropMarks();
     if(!target) return;
@@ -90,11 +112,29 @@ const editorBridgeScript = `<script>
     '.wb-bridge-insert:hover{background:#1d4ed8;}',
     '[data-sky-id].wb-drop-before{box-shadow:0 -3px 0 0 #2563eb;}',
     '[data-sky-id].wb-drop-after{box-shadow:0 3px 0 0 #2563eb;}',
-    '[data-sky-id].wb-drop-inside{outline:2px dashed #2563eb;outline-offset:-2px;}'
+    '[data-sky-id].wb-drop-inside{outline:2px dashed #2563eb;outline-offset:-2px;}',
+    // 结构槽位：紫色虚线边界，与普通组件的蓝色区分开 —— 它不是本页的节点。
+    '[data-sky-slot].wb-slot{outline:1px dashed rgba(124,58,237,.5);outline-offset:-1px;}',
+    '[data-sky-slot].wb-slot:hover{outline:2px dashed #7c3aed;}',
+    '[data-sky-slot].wb-selected{outline:2px solid #7c3aed;outline-offset:-2px;}'
   ].join('');
   document.head.appendChild(style);
 
   document.addEventListener('click', function(ev){
+    // 槽位优先：点页眉 / 页脚（含它们内部的内容）走的不是「选中本页节点」，
+    // 而是「这段 DOM 属于站点结构」——父窗口据此打开槽位面板。
+    var slotEl = ev.target.closest ? ev.target.closest('[data-sky-slot]') : null;
+    if (slotEl) {
+      ev.preventDefault(); ev.stopPropagation();
+      parent.postMessage({
+        type: 'wb-slot-select',
+        slot: slotEl.getAttribute('data-sky-slot') || '',
+        ref: slotEl.getAttribute('data-sky-slot-ref') || slotEl.getAttribute('data-sky-ref') || '',
+        refKind: slotEl.getAttribute('data-sky-slot-ref-kind') || '',
+        id: slotEl.getAttribute('data-sky-id') || ''
+      }, location.origin);
+      return;
+    }
     var target = ev.target.closest('[data-sky-id]');
     if(!target) return;
     ev.preventDefault(); ev.stopPropagation();
@@ -125,9 +165,14 @@ const editorBridgeScript = `<script>
       if (el) {
         el.classList.add('wb-selected');
         var rect = el.getBoundingClientRect();
-        insertBtn.style.display = 'block';
-        insertBtn.setAttribute('data-target-id', ev.data.id);
-        insertBtn.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        // 槽位不挂「+ 插入组件」：它内部的内容属于全局块，不归本页文档。
+        if (el.hasAttribute('data-sky-slot')) {
+          insertBtn.style.display = 'none';
+        } else {
+          insertBtn.style.display = 'block';
+          insertBtn.setAttribute('data-target-id', ev.data.id);
+          insertBtn.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        }
       } else {
         insertBtn.style.display = 'none';
       }
@@ -139,6 +184,9 @@ const editorBridgeScript = `<script>
   // 1) 双击就地编辑：文本类组件（heading/text/button/card 等）双击 →
   //    contenteditable 就地编辑 → 失焦/回车回写 AST（wb-edit-text 消息）。
   document.addEventListener('dblclick', function(ev){
+    // 槽位（页眉 / 页脚）里的文本不能就地改：改的必须是**全局块**，
+    // 否则页内副本会与站点结构那份分叉（就是「两个页眉」那条老路）。
+    if (ev.target.closest && ev.target.closest('[data-sky-slot]')) return;
     var target = ev.target.closest('[data-sky-id]');
     if(!target) return;
     ev.preventDefault(); ev.stopPropagation();
@@ -180,8 +228,21 @@ const editorBridgeScript = `<script>
   var ctxMenu = null;
   function closeCtxMenu(){ if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
   document.addEventListener('contextmenu', function(ev){
-    var target = ev.target.closest('[data-sky-id]');
+    var slotHit = ev.target.closest ? ev.target.closest('[data-sky-slot]') : null;
     closeCtxMenu();
+    if (slotHit) {
+      // 槽位没有「复制 / 删除 / 上下移」这类本页操作：它只有「去改那个块」。
+      ev.preventDefault(); ev.stopPropagation();
+      parent.postMessage({
+        type: 'wb-slot-select',
+        slot: slotHit.getAttribute('data-sky-slot') || '',
+        ref: slotHit.getAttribute('data-sky-slot-ref') || slotHit.getAttribute('data-sky-ref') || '',
+        refKind: slotHit.getAttribute('data-sky-slot-ref-kind') || '',
+        id: slotHit.getAttribute('data-sky-id') || ''
+      }, location.origin);
+      return;
+    }
+    var target = ev.target.closest('[data-sky-id]');
     if(!target) return; // 画布空白处不拦截（浏览器原生菜单）。
     ev.preventDefault(); ev.stopPropagation();
     var id = target.getAttribute('data-sky-id');
@@ -242,7 +303,8 @@ const editorBridgeScript = `<script>
     if (ev.origin !== location.origin || !ev.data) return;
     if (ev.data.type === 'wb-mark-selected') {
       var el = ev.data.id ? document.querySelector('[data-sky-id="' + ev.data.id + '"]') : null;
-      if (el) positionQuickBar(el); else quickBar.style.display = 'none';
+      // 槽位的快捷条没有意义（没有「复制本页副本 / 删除」这类操作），不显示。
+      if (el && !el.hasAttribute('data-sky-slot')) positionQuickBar(el); else quickBar.style.display = 'none';
     }
   });
   [['✏️','编辑',function(){ var el=document.querySelector('[data-sky-id="'+quickBar.getAttribute('data-target-id')+'"]'); if(el) el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); }],

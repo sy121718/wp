@@ -23,6 +23,7 @@ func SetupProjectRoutes(rg *permission.RouteGroup, db *gorm.DB) projectcontract.
 	model := projectmodel.NewProjectModel(db)
 	svc := projectservice.NewService(model)
 	handle := NewHandle(svc)
+	restoreLangURLMode(svc)
 
 	SetupThemeRoutes(rg, db)
 	g := rg.Group("/project", builtin.SessionAuthMiddleware())

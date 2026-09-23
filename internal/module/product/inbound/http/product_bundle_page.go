@@ -84,7 +84,7 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 		shell.PageError(c, "product_bundle", gerr)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/product_bundle.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/product/product_bundle.html", shell.Prepare(c, gin.H{
 		"title":           "捆绑配置",
 		"menu":            "products",
 		"Projects":        projects,

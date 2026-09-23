@@ -20,6 +20,14 @@ trix-editor.rich-editor {
     box-sizing: border-box;
     width: 100%;
     min-height: 160px;
+    /* 高度上限：正文越长编辑器越高，会把下方所有内容线性推走 —— 实测一篇长文把「保存」
+       推到文档 12 屏处（编辑器本体 9779px），用户根本够不到。封顶后长文在编辑器**内部**
+       滚动（WordPress / TinyMCE 的通行做法）。上限按视口封顶（min()）：560px 是桌面档，
+       矮视口（笔记本 768 高、横屏手机）按 60vh 收，不会让编辑器独占整屏。
+       上限只加在编辑器本体上 —— 工具条（trix-toolbar）是它的兄弟节点，不随内容滚走；
+       若改成给 .rich-editor-field 加 overflow，工具条会被一起卷进滚动区。 */
+    max-height: min(60vh, 560px);
+    overflow-y: auto;
     padding: 10px 12px;
     border: 1px solid var(--sky-c-border, #d5d9e0);
     border-radius: var(--ui-radius, 8px);

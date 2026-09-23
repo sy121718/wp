@@ -60,6 +60,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 商品详情页：变体与评分是某个商品的子资源，连同四个商品级表单一起从列表页拆出来。
 	// 页面 GET 同样走页面组（Session+CSRF，无 Casbin）；页内写动作复用各自既有权限点。
 	pages.GET("/products/detail", productPages.ProductDetailPage)
+	// 商品基本字段编辑页（名称 / URL 段 / SKU / 状态 / 价格 / 单位 / 重量 / SEO / 图集）
+	// 与商品域翻译工作台（多语言）的入口：详情页是子资源维护页，基本字段此前只有创建时能填。
+	// 页面 GET 走页面组（Session + CSRF，无 Casbin）；写动作复用商品更新权限点
+	//（与 /products/attributes、/products/taxonomy 同一改动面：改的都是这个商品本身）。
+	pages.GET("/products/edit", productPages.ProductEditPage)
+	pages.POST("/products/update", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsUpdate)
 	pages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	pages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
 	pages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)

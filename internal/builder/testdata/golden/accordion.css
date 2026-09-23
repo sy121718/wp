@@ -31,16 +31,17 @@ body {
   display: none;
 }
 
-.sky-c-ac1 .sky-accordion-head::after {
-  content: '＋';
-  font-size: 14px;
+.sky-c-ac1 .sky-accordion-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
   color: rgba(0,0,0,.4);
   transition: transform .2s;
-  margin-left: 12px;
 }
 
-.sky-c-ac1 details[open] .sky-c-ac1 .sky-accordion-head::after {
-  transform: rotate(45deg);
+.sky-c-ac1 details[open] .sky-accordion-chevron {
+  transform: rotate(180deg);
 }
 
 .sky-c-ac1 .sky-accordion-head {
@@ -80,16 +81,17 @@ body {
   display: none;
 }
 
-.sky-c-ac2 .sky-accordion-head::after {
-  content: '＋';
-  font-size: 14px;
+.sky-c-ac2 .sky-accordion-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
   color: rgba(0,0,0,.4);
   transition: transform .2s;
-  margin-left: 12px;
 }
 
-.sky-c-ac2 details[open] .sky-c-ac2 .sky-accordion-head::after {
-  transform: rotate(45deg);
+.sky-c-ac2 details[open] .sky-accordion-chevron {
+  transform: rotate(180deg);
 }
 
 .sky-c-ac2 .sky-accordion-head {

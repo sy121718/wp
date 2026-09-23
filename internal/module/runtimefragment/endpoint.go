@@ -121,16 +121,34 @@ func FragmentEndpoint(c *gin.Context) {
 		}
 	}
 	// 参数白名单限制（长度/数量/上下文枚举）。
+	//
+	// 失败出口走归口：受控文案进响应，原文只进日志（fragment_err.go）。
+	// 注意这里语言还没解析（它需要 projectId，而参数本身就不可信），所以取词用
+	// fragmentErrorT —— 只认请求明确声明的 ?lang，不做工程语言清单校验。
 	params, values, perr := collectFragmentParams(c)
 	if perr != nil {
-		c.String(http.StatusBadRequest, perr.Error())
+		fragmentFail(c, perr, fragmentErrorT(c), nil)
 		return
 	}
+	// 合并**浏览器地址栏**的语义参数。
+	//
+	// 为什么在服务端做：产物里的列表容器原先用
+	// hx-vals="js:Object.fromEntries(new URLSearchParams(location.search))" 把地址栏查询
+	// 塞进片段请求 —— 那段表达式在 htmx 的求值规则下是**语法错误**（bn() 对不以 { 开头的值
+	// 自动裹一层大括号，于是变成 {Object.fromEntries(...)}），而且即便写对也要求 Function()，
+	// 与站点 CSP（script-src 无 unsafe-eval）直接冲突。两重原因下它在每次请求都抛异常，
+	// 而 hx-vals 会被**祖先继承** —— 容器上这一段坏属性毒死了它内部**所有**交互
+	// （筛选、排序、分页点了没反应，且既不请求也不跳转）。
+	//
+	// htmx 本来就在请求头里带 HX-Current-URL（当前页面地址），从那里取查询才是它的
+	// 原生约定，也不需要任何客户端求值。
+	mergeCurrentURLQuery(c, params)
 	// 槽位解析按 (projectID, lang) 缓存：同请求内购物车/结算可能各问一次。
 	slotCache := map[slotCacheKey]map[string]string{}
 	lang := resolveRequestLang(c.Request.Context(), params["projectId"], params[fragmentLangParam])
 	req := &Request{
 		Type:         typeName,
+		CurrentPath:  currentURLPath(c),
 		Context:      params["context"],
 		Params:       params,
 		Values:       values,
@@ -156,13 +174,25 @@ func FragmentEndpoint(c *gin.Context) {
 		slotCache[k] = v
 		return v
 	}
+	// 语义上下文必须在枚举内（协议白名单）。
+	//
+	// 失败出口走归口：受控文案进响应，原文与**非法的那个值**都只进日志 ——
+	// 原实现是 fmt.Errorf("非法的片段上下文: %q", ctx)，把请求方可控的串回显进了响应。
+	// 此时语言已经解析完毕（req.Lang / req.T），所以直接用 req.T：与成功路径同一份取词结果。
 	if err := validateContext(req.Context); err != nil {
-		c.String(http.StatusBadRequest, err.Error())
+		fragmentFail(c, err, req.T, map[string]any{"context": req.Context})
 		return
 	}
 	// 处理器：返回 HTML 片段（handler 内部对用户数据 escape）。
 	htmlFragment, cacheHit, err := renderWithOptionalCache(c.Request.Context(), typeName, spec, req)
 	if err != nil {
+		// ErrNoChange：本次请求无需替换目标 → 204（htmx 对 204 不交换）。
+		// 不能当错误处理：它不是失败，把「无需替换」打成 500 会让前端
+		// 触发 responseError、页面停在旧内容上并弹一个假的错误提示。
+		if errors.Is(err, ErrNoChange) {
+			c.Status(http.StatusNoContent)
+			return
+		}
 		c.String(http.StatusInternalServerError, "片段渲染失败")
 		return
 	}
@@ -250,22 +280,67 @@ func writeFragmentCookies(c *gin.Context, r *Request) {
 // 同时给出「首值」与「全部值」两份视图：前者服务单值参数（productId / context），
 // 后者服务并行数组（variantId / qty）—— 只取首值会把多选项静默截成一选项，
 // 那正好是最难发现的错误（前台看起来「只算了一件」）。
+// currentURLPath 浏览器当前地址的**站内路径**（无则空串）。
+//
+// 只取 pathname：query 与 fragment 不参与（前者由 mergeCurrentURLQuery 并入参数，
+// 后者的语义由浏览器自己管）。
+func currentURLPath(c *gin.Context) string {
+	raw := strings.TrimSpace(c.GetHeader("HX-Current-URL"))
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Path
+}
+
+// mergeCurrentURLQuery 把浏览器地址栏（HX-Current-URL）的查询并入片段参数。
+//
+// 只补**请求里没有的**键：请求自身的参数（组件拼进 hx-get 的实例配置与语义参数）
+// 优先，地址栏查询只用来补「访客直接打开 /shop?categoryId=x 这类分享链接」的场景。
+// 键与值都过与请求参数同一套长度上限，不因为来源是请求头就放宽。
+func mergeCurrentURLQuery(c *gin.Context, params map[string]string) {
+	raw := strings.TrimSpace(c.GetHeader("HX-Current-URL"))
+	if raw == "" {
+		return
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.RawQuery == "" {
+		return
+	}
+	for key, vs := range u.Query() {
+		if _, exists := params[key]; exists {
+			continue
+		}
+		if len(vs) == 0 || len(key) > 64 {
+			continue
+		}
+		value := strings.TrimSpace(vs[0])
+		if value == "" || len(value) > maxParamLen {
+			continue
+		}
+		params[key] = value
+	}
+}
+
 func collectFragmentParams(c *gin.Context) (params map[string]string, values map[string][]string, err error) {
 	params = map[string]string{}
 	values = map[string][]string{}
 	var source url.Values
 	if c.Request.Method == http.MethodPost {
 		if perr := c.Request.ParseForm(); perr != nil {
-			return nil, nil, errors.New("表单解析失败")
+			return nil, nil, errFragmentFormParse
 		}
 		source = c.Request.PostForm
 		if len(source) > maxFormParamCount {
-			return nil, nil, errors.New("参数过多")
+			return nil, nil, errFragmentParamCount
 		}
 	} else {
 		source = c.Request.URL.Query()
 		if len(source) > maxParamCount {
-			return nil, nil, errors.New("参数过多")
+			return nil, nil, errFragmentParamCount
 		}
 	}
 	for k, vs := range source {
@@ -273,11 +348,11 @@ func collectFragmentParams(c *gin.Context) (params map[string]string, values map
 			continue
 		}
 		if len(k) > 64 {
-			return nil, nil, errors.New("参数非法")
+			return nil, nil, errFragmentParamIllegal
 		}
 		for _, v := range vs {
 			if len(v) > maxParamLen {
-				return nil, nil, errors.New("参数非法")
+				return nil, nil, errFragmentParamIllegal
 			}
 		}
 		values[k] = vs

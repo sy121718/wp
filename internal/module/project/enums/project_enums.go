@@ -39,3 +39,32 @@ const (
 	MsgProjectCreated = "MsgProjectCreated" // 站点工程创建成功
 	MsgProjectUpdated = "MsgProjectUpdated" // 站点工程更新成功
 )
+
+// 后台页面（主题管理 / 主题设置 / 站点设置）的**表单校验与结果**文案。
+//
+// 为什么不复用上面的 service 哨兵文案：这些判断发生在 service **之前**（表单缺参）
+// 或 service **之后**（保存成功但整站刷新失败），两侧都没有一个 error 可以拿来判定，
+// 所以按显式 key 走 —— 判据与出口见 inbound/http/project_err.go。
+//
+// 值一律等于常量名：文案真源在 sys_i18n（迁移 058 的既有口径），此处只做键。
+const (
+	ErrThemeIDRequired = "ErrThemeIDRequired" // 缺少主题 id
+
+	// MsgThemeSettingsInvalid 主题设置未通过校验（IsSafeCSSValue 白名单）。
+	//
+	// 原先散在 theme_settings_admin_pages.go 的本地常量里，本轮随页面出口改造收进 enums：
+	// 它是**响应文案**（会进 ?err= 与模板错误槽），而本地常量让读侧白名单够不着它。
+	MsgThemeSettingsInvalid = "MsgThemeSettingsInvalid" // 主题设置不合法
+
+	// MsgThemeSettingsRefreshFailed 「保存已成功、整站刷新失败」的部分成功提示。
+	//
+	// 归 Msg 而不是 Err：落库已经提交，用户要做的是「稍后重建」而不是「重填表单」——
+	// 文案里必须把这个区别说出来，否则用户会以为刚才那一屏白填了，然后再填一遍。
+	MsgThemeSettingsRefreshFailed = "MsgThemeSettingsRefreshFailed" // 主题设置已保存，但整站页面刷新失败
+
+	ErrSiteSettingsNameRequired = "ErrSiteSettingsNameRequired" // 工程与站点名称不能为空
+	ErrGA4IDInvalid             = "ErrGA4IDInvalid"             // GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）
+	ErrGSCVerificationInvalid   = "ErrGSCVerificationInvalid"   // Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）
+	ErrNotFoundHTMLTooLong      = "ErrNotFoundHTMLTooLong"      // 自定义 404 页内容过长（上限 32 KiB）
+	ErrLangURLModeInvalid       = "ErrLangURLModeInvalid"       // 语言 URL 方案取值非法（可选 off / default_plain / all_prefix）
+)

@@ -66,6 +66,19 @@ type Binding struct {
 	Fallback string `json:"fallback,omitempty"`
 }
 
+// AltBinding alt 的**字段绑定**（可空）。
+//
+// 为什么需要它：Binding 只能绑 src，于是「用文章标题当封面图的 alt」这件事在模板里
+// 根本表达不出来 —— 详情页头图必然 alt=""。实测一篇长文的头图 alt 为空：
+// 既浪费 Google Images 的权重，也让无障碍读屏用户听不到这张图是什么。
+//
+// 判据是「src 与 alt 是两件事」：src 指图片文件，alt 是该图在**这一页**的意思
+// （同一张通用配图在不同文章里 alt 本就不同），所以两者各自绑定、互不牵连。
+type AltBinding struct {
+	Field    string `json:"field,omitempty" ct:"bindingfield,maxlen=60,sec=content,label="alt 字段"`
+	Fallback string `json:"fallback,omitempty"`
+}
+
 // Props 图片组件属性：媒体源（媒体库/外链统一 URL）+ 尺寸排版 + 视觉（滤镜/悬浮）+ 交互 + 绑定 + Advanced。
 type Props struct {
 	// Src 图片地址：媒体库选择回填 URL 或外部绝对 URL（媒体库/外链统一，构建期直出）。
@@ -108,6 +121,9 @@ type Props struct {
 
 	// --- CMS 绑定 ---
 	Binding *Binding `json:"binding,omitempty" sec:"content"`
+	// AltBinding alt 文本的字段绑定（可空）：Alt 为空时用它解析，
+	// 两者都空则 alt 为空串（不替作者编一个描述）。
+	AltBinding *AltBinding `json:"altBinding,omitempty" sec:"content"`
 
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`

@@ -10,6 +10,8 @@ package contenthttp
 // 写动作复用既有 content:* / page:create / presentation:* 权限点（迁移 033）。
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
@@ -49,7 +51,12 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	// 文章新建整页（弃抽屉，对齐商品的 /admin/products/new）：左正文右实时预览。
 	// 页面 GET 本走 /admin 组（Session+CSRF，无 Casbin），但打开它就等于拿到建文章的
 	// 表单 —— 与 POST /articles/create 同挂 content:create 权限点，能建才能进。
-	pages.GET("/articles/new", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleNewPage)
+	//
+	// 必须用 CasbinMiddlewareForPathAs 而不是 CasbinMiddlewareForPath：后者取真实请求
+	// 方法（这里是 GET）去 enforce，而 `/api/content/create` 的策略声明是 **POST**，
+	// 两者不匹配 → 含超管在内全员 403（实测缺陷，页面完全不可达）。这里显式声明
+	// 「本页面入口按 POST 语义鉴权」，让动词不匹配这件事在代码里可见。
+	pages.GET("/articles/new", builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost), articlePages.ArticleNewPage)
 	pages.GET("/articles/edit", articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)

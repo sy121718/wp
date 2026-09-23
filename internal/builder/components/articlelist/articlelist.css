@@ -1,0 +1,89 @@
+/* articlelist.css — 文章列表组件样式。
+ *
+ * 语法见 internal/builder/core/component_css.go：
+ *   &                  该组件实例的作用域选择器（同页多实例互不污染）
+ *   @if name / @endif  条件段
+ *   {{name}}           值变量（空值省略整条声明；**提供的变量必须全部被用到**）
+ *
+ * 多端硬规则：窄视口一律单列，列数只在宽视口生效；宽度一律 min(100%, …)，
+ * 不写死像素 —— 大卡片 + 窄屏的极端组合下不能横向溢出。
+ */
+
+& { display: block; }
+
+/* 列模板由模板内联的 --sky-al-cols 给出（Go 侧算好，CSS 不重复判断列数）。
+   桌面优先：基础规则就是多列，窄视口在下面的 max-width 查询里压成单列 ——
+   样式引擎只支持 max-width 断点（见 component_css.go 的解析器）。 */
+& .sky-article-list-items {
+  display: grid;
+  grid-template-columns: var(--sky-al-cols, repeat(3, minmax(0, 1fr)));
+  gap: 1.5rem;
+}
+
+@media (max-width: 767px) {
+  & .sky-article-list-items { grid-template-columns: 1fr; }
+}
+
+& .sky-article-list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  background: var(--sky-c-surface, #fff);
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+& .sky-article-list-media { display: block; background: var(--sky-c-bg-soft, #f4f5f6); }
+& .sky-article-list-media img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+
+& .sky-article-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  padding: 1rem 1.125rem 1.25rem;
+  min-width: 0;
+}
+
+& .sky-article-list-title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  font-weight: 700;
+  color: var(--sky-c-text, #111827);
+}
+& .sky-article-list-title a { color: inherit; text-decoration: none; }
+
+& .sky-article-list-excerpt {
+  margin: 0;
+  font-size: .92rem;
+  line-height: 1.7;
+  color: var(--sky-c-text-mute, #4b5563);
+}
+
+& .sky-article-list-link {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--sky-c-primary, #2563eb);
+  text-decoration: none;
+}
+
+& .sky-article-list-empty { margin: 0; font-size: .95rem; color: var(--sky-c-text-mute, #6b7280); }
+
+/* 列表布局：左图右文，图片定宽但用 min(100%, …) 封顶。 */
+@if isList
+& .sky-article-list-card { flex-direction: row; align-items: stretch; }
+& .sky-article-list-media { flex: 0 0 min(100%, 220px); }
+& .sky-article-list-media img { aspect-ratio: 4 / 3; height: 100%; }
+@endif
+
+/* 摘要行数截断（0 = 不截断，整段声明不输出）。 */
+@if lines
+& .sky-article-list-excerpt {
+  display: -webkit-box;
+  -webkit-line-clamp: {{lines}};
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@endif

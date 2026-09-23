@@ -1,11 +1,15 @@
 /* product-create-form.js — 商品建表单的「主体 SKU」增强（原内联在 products.html 页尾）。
-   触发点两处，缺任一处都会让某条入口静默失去增强：
+   触发点三处，缺任一处都会让某条入口静默失去增强：
      · wbui:drawer-open —— 列表页抽屉形态（内容从 <template> 克隆进 document，只能在打开后取节点）；
-     · DOMContentLoaded —— 新建整页 /admin/products/new（表单直接在文档里，没有抽屉事件）。
+     · DOMContentLoaded —— 新建整页 /admin/products/new（表单直接在文档里，没有抽屉事件）；
+     · htmx:afterSwap —— 表单片段被 htmx 换进来（写失败返「错误槽 + 回填后的表单」，见下）。
+   第三个触发点为什么必须单独挂：htmx swap 后**两个旧事件都不会发生**（它只派发
+   htmx:afterSwap），而 WBUI.scan 只跑 WBUI.controls 里登记过的控件 —— 本脚本不是基座控件，
+   于是换进来的表单里「SKU 建议值预填 / 预览行 / 多仓候选过滤」会静默失效，且没有任何测试会红。
    背景：捆绑商品的主体 SKU 是**必填**的（服务端 ErrBundleSKURequired），但运营不该从零手打 ——
    打开抽屉 / 类型切到 bundle 时按商品段预填建议值 <商品段>_B，可改、可一键重新生成；
    变体商品保持原状：不 required、不预填，留空仍由服务端按 URL 段派生。
-   幂等：同一个表单只增强一次（dataset 标记），重复触发不会叠加监听。 */
+   幂等：同一段内容只增强一次（dataset 标记，见 enhance），重复触发不会叠加监听。 */
 (function () {
     'use strict';
 
@@ -40,10 +44,17 @@
     }
 
     function enhance(form) {
-        if (!form || form.dataset.skuEnhanced === '1') { return; }
+        if (!form) { return; }
         var input = form.querySelector('[data-sku-input]');
         var typeSelect = form.querySelector('select[name="type"]');
         if (!input || !typeSelect) { return; }
+        // 幂等标记落在**内容节点**（input / type 下拉）上，不只落在 form 上：
+        // htmx 若把片段 swap 在 form **自身**（hx-swap=innerHTML 打在 form 上），form 节点被复用、
+        // 内容已整体换新 —— 只看 form.dataset 会把新 input 当成「已增强」直接返回，
+        // 于是预填 / 预览 / 候选过滤全部静默失效。内容节点是新的就说明这段内容没被增强过。
+        // form.dataset 仍然写上：它是本脚本对外的既有标记（模板与测试按它断言），照旧保持。
+        if (input.dataset.skuEnhanced === '1') { return; }
+        input.dataset.skuEnhanced = '1';
         form.dataset.skuEnhanced = '1';
 
         var slugInput = form.querySelector('input[name="slug"]');
@@ -55,7 +66,14 @@
         var placeholderBundle = input.getAttribute('data-sku-placeholder-bundle') || placeholderVariant;
         // 运营是否在这个字段上打过字。系统预填只在「没被打过字」时写入 ——
         // 覆盖用户手写的值比少一次预填糟糕得多；想回到建议值有「重新生成」按钮。
-        var dirty = false;
+        //
+        // 初值按「输入框里现在有没有值」判，**不能写死 false**：dirty 是 enhance 的闭包局部变量，
+        // 每跑一次增强就重建一份。提交失败后服务端把用户提交的编码回填进 value 再 swap 进来，
+        // 此时 dirty=false + apply(true) 会**立刻把回填值覆盖成派生建议值** ——
+        // 用户改了 bundle 的主体 SKU、只忘填套餐价，补个价格再提交，落库的是建议值，
+        // 页面上不留任何痕迹（实测复现：`MYCODE_B` → `HALF_B`）。
+        // 首屏输入框为空，两条分支的结果一致，预填行为一个字不变。
+        var dirty = trim(input.value) !== '';
 
         function suggestion() {
             // 与 Go 侧一致：URL 段填了就用它（派生不出商品段时也不回落名称），没填才用商品名；
@@ -263,5 +281,18 @@
     // 新建整页形态：表单直接在文档里（没有抽屉打开事件），DOM 就绪后增强一次。
     document.addEventListener('DOMContentLoaded', function () {
         enhance(document.querySelector('form[data-product-create-form]'));
+    });
+    // htmx 局部替换后重新增强（第三个触发点，见文件头）。
+    // 挂法与 ui/index.js 完全一致：document 上听 htmx:afterSwap、以 e.target 为范围 ——
+    // 不新造一套（那里跑的是 WBUI.scan，只认基座控件；本脚本不是基座控件，所以自己听一次）。
+    document.addEventListener('htmx:afterSwap', function (event) {
+        var scope = (event && event.target) || document;
+        // 换进来的表单可能**就是** swap 目标本身（hx-target 打在 form 上 / hx-swap=outerHTML），
+        // 所以先看目标自己与它的祖先，再退到目标内部找；都没有时兜底查一次文档
+        //（htmx 对 outerHTML 替换派发 afterSwap 时，目标可能已经脱离文档）。
+        var form = scope.nodeType === 1 ? scope.closest('form[data-product-create-form]') : null;
+        if (!form && scope.querySelector) { form = scope.querySelector('form[data-product-create-form]'); }
+        if (!form) { form = document.querySelector('form[data-product-create-form]'); }
+        enhance(form);
     });
 })();

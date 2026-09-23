@@ -122,7 +122,7 @@ func (h *navigationTranslationHandle) NavigationTranslations(c *gin.Context) {
 			data.SavedNote = "没有需要写入的变化。"
 		}
 	}
-	c.HTML(http.StatusOK, "admin/navigation_translations.html", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 }
 
 // SaveNavigationTranslations POST /admin/navigations/translations/save（整表提交）。
@@ -137,12 +137,12 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
 		data.Errors = []string{"提交的行数不一致，请刷新后重试"}
-		c.HTML(http.StatusOK, "admin/navigation_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if h.writer == nil {
 		data.Errors = []string{"译文存储不可用"}
-		c.HTML(http.StatusOK, "admin/navigation_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	var rowErrors []string
@@ -186,7 +186,7 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 	}
 	if len(rowErrors) > 0 {
 		data.Errors = rowErrors
-		c.HTML(http.StatusOK, "admin/navigation_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if len(items) == 0 {
@@ -230,7 +230,7 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 			// 归口文案：命中 enums 白名单的业务文案原样透出，其余（数据库原文：
 			// 表名 / 约束名 / SQLSTATE）只进上面那条日志，页面拿归口提示。
 			data.Errors = []string{"保存失败：" + navigationErrPageText(c, uerr)}
-			c.HTML(http.StatusOK, "admin/navigation_translations.html", shell.Prepare(c, data.templateMap()))
+			c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 			return
 		}
 		// 译文已落库 → 标记待重建。失败只记日志：译文本身已经写好了，

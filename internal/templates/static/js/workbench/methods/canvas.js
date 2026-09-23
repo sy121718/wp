@@ -195,10 +195,24 @@ export const canvasMethods = {
                     var tpl = isTemplate(b);
                     button.draggable = !tpl;
                     button.dataset.type = 'core.globalref';
+                    // 已被站点结构占用为页眉 / 页脚的块：在页面里再插一份就是「两个页眉」
+                    //（编译期去重只认 core.layoutSlot 节点，手插的是 core.globalref，两者互不识别）。
+                    // 这里直接禁用而不是插入后提示 —— 页眉页脚的唯一入口是站点结构，
+                    // 要改内容请点画布上的页眉区域（选中槽位 → 编辑全局块）。
+                    var slotRole = self.slotRoleOf(b.id);
+                    if (slotRole) {
+                        button.disabled = true;
+                        button.draggable = false;
+                        button.classList.add('is-slot-locked');
+                        button.title = '该块已是本站' + (slotRole === 'header' ? '页眉' : '页脚') +
+                            '：在画布上点页眉 / 页脚区域即可进入它的编辑。';
+                    }
                     button.innerHTML = '<strong></strong><span></span>';
                     button.querySelector('strong').textContent = b.name;
-                    button.querySelector('span').textContent = (kindLabels[b.kind] || '区块') +
-                        ' · ' + (tpl ? '复制（点击插入独立副本）' : '引用（点击/拖拽；Shift+点击改为复制）');
+                    button.querySelector('span').textContent = slotRole
+                        ? '已是本站' + (slotRole === 'header' ? '页眉' : '页脚') + ' · 点画布上的页眉 / 页脚进入编辑'
+                        : (kindLabels[b.kind] || '区块') +
+                          ' · ' + (tpl ? '复制（点击插入独立副本）' : '引用（点击/拖拽；Shift+点击改为复制）');
                     button.addEventListener('click', function (ev) {
                         if (tpl) { self.insertBlockClone(b); return; }
                         // Shift+点击＝强制复制插入（global 块也可一次性复制，docs/02-D §5.3 显式选择）。
@@ -243,6 +257,20 @@ export const canvasMethods = {
                 });
                 if (!any) root.innerHTML = '<p class="wb-empty">还没有全局块。到后台「全局块」创建页眉/页脚/区块后，这里可一键引用。</p>';
             },
+            // slotRoleOf 该块是否已被站点结构占用为页眉 / 页脚（'header' | 'footer' | ''）。
+            //
+            // 判据取**本页文档的 settings.structure**：编译期展开页眉页脚用的就是这一份绑定
+            //（主题绑定在保存时合入本字段）。不按块的 kind 判 ——「kind=header 的块」完全可以
+            // 没挂在站点结构上，那时把它插进页面是合法的。
+            slotRoleOf(blockID) {
+                if (!blockID) return '';
+                var st = (this.doc && this.doc.settings && this.doc.settings.structure) || {};
+                var slots = st.slots || {};
+                if (st.headerBlockId === blockID || slots.header === blockID) return 'header';
+                if (st.footerBlockId === blockID || slots.footer === blockID) return 'footer';
+                return '';
+            },
+
             // globalRefItem 全局块的插入描述（引用节点只带 blockId）。
             globalRefItem(b) {
                 return { type: 'core.globalref', label: b.name, hint: '全局块', props: { blockId: b.id } };
@@ -299,6 +327,14 @@ export const canvasMethods = {
             // 于是「从组件库拖入或点击插入」的节点天然满足 Go 侧最小校验。
             insertComponent(item, targetID, placement) {
                 if (!item) return;
+                // 槽位块禁止插进文档：块面板已置灰，但拖拽、粘贴等路径都要拦住 ——
+                // 拦漏一处就会得到「文档里一份 + 站点结构一份」的两个页眉。
+                var slotRole = this.slotRoleOf(item.props && item.props.blockId);
+                if (slotRole) {
+                    this.setNotice('「' + item.label + '」已是本站' + (slotRole === 'header' ? '页眉' : '页脚') +
+                        '：点画布上的页眉 / 页脚区域即可进入编辑，不要再往页面里插一份。');
+                    return;
+                }
                 var node = buildInsertNode(item, this.makeIdAllocator());
                 if (!node) return;
                 var targetLocation = this.findLocation(targetID || this.selectedId);
@@ -511,6 +547,12 @@ export const canvasMethods = {
                 }
                 doc.addEventListener('dragover', function (event) {
                     event.preventDefault();
+                    // 槽位子树不接收落点：往页眉里插组件等于往「站点结构那份块」插，
+                    // 而这里改的是本页文档 —— 落点必须落在本页节点上。
+                    if (event.target.closest && event.target.closest('[data-sky-slot]')) {
+                        clearDropMarks();
+                        return;
+                    }
                     var target = event.target.closest && event.target.closest('[data-sky-id]');
                     clearDropMarks();
                     if (!target) return;
@@ -526,7 +568,10 @@ export const canvasMethods = {
                 doc.addEventListener('drop', function (event) {
                     event.preventDefault();
                     clearDropMarks();
-                    var target = event.target.closest && event.target.closest('[data-sky-id]');
+                    // 槽位子树不作为落点：目标置空 → 组件插到文档末尾（顶级平铺），
+                    // 而不是插进页眉 / 页脚内部。
+                    var inSlot = event.target.closest && event.target.closest('[data-sky-slot]');
+                    var target = inSlot ? null : (event.target.closest && event.target.closest('[data-sky-id]'));
                     var targetID = target && target.getAttribute('data-sky-id');
                     // 预设拖入：按 id 找回预设并整段插入（与点击一致的顶级平铺）。
                     var presetID = event.dataTransfer.getData('application/x-wb-preset');

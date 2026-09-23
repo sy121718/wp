@@ -4,10 +4,13 @@
 // 当边界，但协议没有使这个假设成立，命中数据也会一起撑大页面。整改后首屏只发
 // 「工程列表 + 标签列表 + 一次批量计数」，命中商品改成展开时按页取（片段端点）。
 //
-// 本文件钉住三件事（都是可断言的行为，不是「看起来快了」）：
+// 本文件钉住四件事（都是可断言的行为，不是「看起来快了」）：
 //  1. 1 / 100 / 1000 个标签时首屏 SQL 条数**完全相等**；
 //  2. 首屏恰好一条命中计数语句，且它是 GROUP BY 批量聚合（不是逐标签 Count）；
-//  3. 命中商品按页取，且工程边界不退化 —— 别的工程的商品即使挂着本工程的标签也不出现。
+//  3. 命中商品按页取，且工程边界不退化 —— 别的工程的商品即使挂着本工程的标签也不出现；
+//  4. 标签列表本身改成按页渲染之后（审计 D13），分页**不增加 SQL**、也**不丢数据** ——
+//     每一页仍只有一条命中计数语句，而翻遍所有页取并集恰好是库里那一批
+//     （见 assertTagPagesCoverAll）。
 //
 // 计数方式：给 gorm 会话挂一个只观察不改语义的 logger（先例见
 // public/test/order/feature/order_customer_summary_window_test.go）。夹具数据用批量 SQL
@@ -211,8 +214,23 @@ func TestTagPageFirstPaintQueryCountIsConstant(t *testing.T) {
 		}
 		body := rec.Body.String()
 		// 先证明这一批标签确实渲染了（否则「SQL 不增长」可能只是因为页面是空的）。
-		if !strings.Contains(body, fmt.Sprintf("标签 %04d", n-1)) {
-			t.Fatalf("标签数=%d 时页面缺最后一个标签名，说明没有真正渲染这一批标签", n)
+		//
+		// 判据随列表分页更新（审计 D13）：原判据是「最后一个标签名在页面上」，那等价于要求
+		// **全量渲染** —— 标签列表改成按页渲染后第 1 页只有 productSubListPageSize 行，
+		// 最后一个名字必然不在，判据失效。现在的证据是分页形态本身：第 1 页恰好渲染
+		// min(n, 每页条数) 行，分页条只在超过一页时出现。至于「这一批数据一个都没丢」，
+		// 由下面的 assertTagPagesCoverAll 翻遍所有页取并集来证明 —— 强度比原判据更高
+		// （原判据只管最后一个名字，新判据覆盖每一个）。
+		const perPage = 20 // = handler 的 productSubListPageSize（未导出，此处对齐并留注）
+		wantRows := n
+		if wantRows > perPage {
+			wantRows = perPage
+		}
+		if got := strings.Count(body, `name="ids"`); got != wantRows {
+			t.Fatalf("标签数=%d 时第 1 页应渲染 %d 行，实际 %d 行", n, wantRows, got)
+		}
+		if hasPager := strings.Contains(body, `class="pagination"`); hasPager != (n > perPage) {
+			t.Fatalf("标签数=%d 时分页条%s出现", n, map[bool]string{true: "应", false: "不应"}[n > perPage])
 		}
 		if n < 1000 && strings.Contains(body, "标签 0999") {
 			t.Fatalf("标签数=%d 时不应还渲染着被裁掉的标签", n)
@@ -236,8 +254,14 @@ func TestTagPageFirstPaintQueryCountIsConstant(t *testing.T) {
 			t.Fatalf("标签数=%d 时首屏命中计数语句应恰好 1 条，实际 %d 条：\n  %s", n, hits, f.counter.dump())
 		}
 		measured[n] = f.counter.count()
+		// 语句清单先快照：n=100 那一档紧接着要翻页（会继续发 SQL），
+		// 不快照的话这条日志打出来的是翻页之后的清单，与 measured 对不上。
+		dump := f.counter.dump()
 		// -v 时把实测条数与语句清单打出来：复核者不必只信断言，可以直接看首屏发了什么。
-		t.Logf("标签数=%d：首屏 SQL %d 条\n  %s", n, measured[n], f.counter.dump())
+		t.Logf("标签数=%d：首屏 SQL %d 条\n  %s", n, measured[n], dump)
+		if n == 100 {
+			assertTagPagesCoverAll(t, f, projectID, n)
+		}
 	}
 
 	base := measured[1000]
@@ -248,6 +272,99 @@ func TestTagPageFirstPaintQueryCountIsConstant(t *testing.T) {
 	// 常数级还要「足够小」：这条防的是「每个标签不再查，但每页凭空多了十几条别的查询」。
 	if base <= 0 || base > 12 {
 		t.Fatalf("首屏 SQL 条数应在小常数内，实测 %d 条：\n  %s", base, f.counter.dump())
+	}
+}
+
+// tagNameRe 页面上的标签名（模板把每个标签名渲染在行内与编辑抽屉的 input value 里）。
+var tagNameRe = regexp.MustCompile(`标签 [0-9]{4}`)
+
+// tagNamesOnPage 取本页渲染出来的标签名（同名去重）。
+func tagNamesOnPage(body string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 20)
+	for _, m := range tagNameRe.FindAllString(body, -1) {
+		if !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// assertTagPagesCoverAll 翻遍该工程的标签列表页，断言四件事：
+//
+//	① 每页渲染的行数 == 每页条数（最后一页为余数），即分页真的在往后取；
+//	② **每一页**仍恰好 1 条含 tag_ids 的批量聚合 —— 分页不增加命中计数语句
+//	  （形状判据「必须是 GROUP BY」在首屏那一段里钉着，这里只数条数）；
+//	③ 所有页的标签名并集 == 库里的 want 个，且逐个都在某页出现过 ——
+//	  「分页」只改变一次看多少，不能变成「数据丢了」；
+//	④ 越界页码收敛到最后一页（不是渲染一张空表）—— 与 shell.BuildPagination 的
+//	  同一条收敛规则一致，否则会出现「表格空、分页条却显示第 N 页」。
+//
+// 它替换了原先「最后一个标签名在页面上」的渲染证据：那个判据把「全量渲染」当成了
+// 「这一批确实渲染了」的证明（审计 D13 已把标签列表改成按页渲染），而新判据更强 ——
+// 覆盖每一个标签，不只最后一个。
+//
+// 注意不能靠「某页不满」判断结束：越界页码会收敛到最后一页（④），所以永远取不到空页 ——
+// 终止条件只能按库里的条数算出总页数（实测踩过：原先用「不满即结束」会一直翻到守卫报错）。
+func assertTagPagesCoverAll(t *testing.T, f *tagPageFixture, projectID string, want int) {
+	t.Helper()
+	const perPage = 20 // = handler 的 productSubListPageSize（未导出，此处对齐并留注）
+	pages := (want + perPage - 1) / perPage
+	seen := map[string]bool{}
+	last := map[string]bool{}
+	for page := 1; page <= pages; page++ {
+		f.counter.reset()
+		rec := httptestGet(f.engine, fmt.Sprintf("/admin/product-tags?project=%s&page=%d", projectID, page))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("第 %d 页应 200，实际 %d：%s", page, rec.Code, rec.Body.String())
+		}
+		names := tagNamesOnPage(rec.Body.String())
+		wantRows := perPage
+		if page == pages {
+			wantRows = want - (pages-1)*perPage
+		}
+		if len(names) != wantRows {
+			t.Fatalf("第 %d/%d 页应渲染 %d 行，实际 %d 行", page, pages, wantRows, len(names))
+		}
+		hits := 0
+		for _, s := range f.counter.all() {
+			if strings.Contains(strings.ToLower(s), "tag_ids") {
+				hits++
+			}
+		}
+		if hits != 1 {
+			t.Fatalf("第 %d 页的命中计数语句应恰好 1 条，实际 %d 条（分页不应当增加它）：\n  %s",
+				page, hits, f.counter.dump())
+		}
+		for _, name := range names {
+			seen[name] = true
+		}
+		if page == pages {
+			for _, name := range names {
+				last[name] = true
+			}
+		}
+	}
+	if len(seen) != want {
+		t.Fatalf("翻遍所有页只见 %d 个标签，库里是 %d 个 —— 分页把数据弄丢了", len(seen), want)
+	}
+	for i := 0; i < want; i++ {
+		if name := fmt.Sprintf("标签 %04d", i); !seen[name] {
+			t.Fatalf("%s 在任何一页都没出现 —— 分页把数据弄丢了", name)
+		}
+	}
+
+	// ④ 越界页码收敛到最后一页。
+	overflow := tagNamesOnPage(httptestGet(f.engine,
+		fmt.Sprintf("/admin/product-tags?project=%s&page=%d", projectID, pages+1)).Body.String())
+	if len(overflow) != len(last) {
+		t.Fatalf("越界页码应收敛到最后一页（%d 行），实际 %d 行", len(last), len(overflow))
+	}
+	for _, name := range overflow {
+		if !last[name] {
+			t.Fatalf("越界页码返回了最后一页之外的标签 %s", name)
+		}
 	}
 }
 

@@ -48,6 +48,24 @@ type PageDraftResp struct {
 	UpdatedAt     utils.JSONTime  `json:"updatedAt"`
 }
 
+// PageTitleResp 页面标题投影（id / 路径 / SEO 标题），**不含 draft_document 大字段**。
+//
+// 为什么要有它：列表投影 PageResp 走 model.ListAll，那条路径刻意 Omit("draft_document")
+// （大字段不进列表，见 AGENTS.md 未列但 model 注释写明的原因），于是调用方拿到的是空文档、
+// 读不出标题。而「页面叫什么」与「页面在哪」是两件事，只要标题和路径的消费方
+// （如导航来源候选）不该为了一行标题把整份 JSONB 拉到 Go 侧再解析。
+//
+// SEOTitle 在 **SQL 侧**取自 draft_document->'settings'->'seo'->>'title'（见
+// model.ListPageTitles），语义与 resolver 解析单个页面来源时的标题口径一致：
+// 空串表示作者没在文档 SEO 段填标题，**读侧不替它编一个名字**，由调用方决定回退（通常是路径）。
+type PageTitleResp struct {
+	ID        string `json:"id"`
+	DraftPath string `json:"draftPath"`
+	// ActivePath 最近发布语言的线上路径；未发布为 nil（调用方回退草稿路径）。
+	ActivePath *string `json:"activePath,omitempty"`
+	SEOTitle   string  `json:"seoTitle"`
+}
+
 // RevisionResp Page 草稿修订快照，用于历史记录/Undo/Redo/版本对比。
 type RevisionResp struct {
 	ID            string          `json:"id"`

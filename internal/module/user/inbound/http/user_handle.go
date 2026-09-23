@@ -16,6 +16,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	userenums "go_wp/internal/module/user/enums"
 	userservice "go_wp/internal/module/user/service"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 )
 
@@ -78,16 +79,13 @@ func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
 	c.HTML(status, name, data)
 }
 
-// userMessage 把 service 返回的错误转成可以展示给访客的文案。
+// userFacingText 白名单判定：命中返回原文（**item_key**），未命中返回空串。
 //
-// 白名单而非黑名单：service 的业务错误全部来自 userenums（面向用户的中文），
-// 而数据库 / Redis 的错误原文可能带表名与 SQL 片段。默认落到通用文案，
-// 顺带记一条日志 —— 否则「页面上什么都没说」会变成最难查的一类问题。
-func userMessage(err error) string {
-	if err == nil {
-		return ""
-	}
-	msg := err.Error()
+// 只做判定、不取词。白名单而非黑名单：service 的业务错误全部来自 userenums，
+// 而数据库 / Redis 的错误原文可能带表名与 SQL 片段。判定只有这一份，
+// 页面出口（userPageMessage / userKeyText）与接口面共用同一张 UserFacingMessages。
+func userFacingText(raw string) string {
+	msg := raw
 	for _, m := range userenums.UserFacingMessages {
 		if prefix, _, found := strings.Cut(m, "%s"); found {
 			// 带参数的文案（如锁定剩余时间）只比较 %s 之前的部分。
@@ -100,8 +98,43 @@ func userMessage(err error) string {
 			return msg
 		}
 	}
-	logger.Scene("user").Error(err, "用户模块出现未归类错误")
-	return userenums.ErrInternal
+	return ""
+}
+
+// userPageMessage 页面出口的错误文案归口（白名单判定 + **取当前语言的译文**）。
+//
+// 为什么页面路径必须多这一层取词：userenums 的值是 i18n **item_key**
+// （user.err.usernameTaken / user.msg.customerDisabled …），而访客页面
+// （user/register、user/account、user/message）里的 {{.error}} / {{.message}} 是
+// **直接渲染**的文本，不经过 pkg/response 的 translate —— 只放行 key 的话，
+// 访客注册失败看到的是「user.err.usernameTaken」，而不是「用户名已被占用」。
+//
+// 命中 → 取词；未命中 → 记结构化日志 + 归口文案（原文只进日志）。
+// 取词函数据 fallback 原样返回 key：词条缺失时页面显示 key（一眼可见），不静默吞掉整句。
+func userPageMessage(c *gin.Context, err error) string {
+	if err == nil {
+		return ""
+	}
+	if hit := userFacingText(err.Error()); hit != "" {
+		return shell.TranslateFor(c)(hit, hit)
+	}
+	logger.Scene("user").
+		With("path", c.Request.URL.Path).
+		Error(err, "用户模块出现未归类错误")
+	return shell.TranslateFor(c)(userenums.ErrInternal, "操作失败，请稍后重试")
+}
+
+// userKeyText 参数级提示的取词出口：没有 error 对象、文案就是 enums 里的某个常量
+// （缺 device 标识、登出失败归口等场景直接传常量给模板）。
+//
+// 与 userPageMessage 同源（同一份 userFacingText 判定）：白名单内的 key 直接渲染时
+// 同样不能裸出。ErrInternal 不在白名单里，会落归口文案 —— 这正是它该有的语义
+// （归口文案是「未命中时的返回值」，不是业务文案）。
+func userKeyText(c *gin.Context, key string) string {
+	if hit := userFacingText(key); hit != "" {
+		return shell.TranslateFor(c)(hit, hit)
+	}
+	return shell.TranslateFor(c)(userenums.ErrInternal, "操作失败，请稍后重试")
 }
 
 // formValue 取表单字段并去空白（访客页面的表单字段全部是文本）。

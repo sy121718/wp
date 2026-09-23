@@ -203,7 +203,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 		data.Saved = true
 		data.SavedCount, _ = strconv.Atoi(strings.TrimSpace(c.Query("n")))
 	}
-	c.HTML(http.StatusOK, "admin/page_translations", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/page/page_translations", shell.Prepare(c, data.templateMap()))
 }
 
 // SavePageTranslations POST /admin/page/translations/save：保存本页译文。
@@ -211,7 +211,10 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
 	pageID := strings.TrimSpace(c.PostForm("pageId"))
 	if pageID == "" {
-		c.String(http.StatusBadRequest, pageenums.MsgFieldRequired)
+		// 页面请求的失败出口是**页面**：303 回列表页并把原因经 ?err= 回带（读侧 pagePageErr
+		// 白名单放行）。原先是 c.String(400, pageenums.MsgFieldRequired) —— 响应体是 i18n
+		// 的 key 本身，用户看到内部标识符，且页面脱离页壳（与同文件其它失败分支不一致）。
+		c.Redirect(http.StatusSeeOther, pagesBackURL(pageBulkTextOf(c, pagesLocalNoticeMissingPageID), ""))
 		return
 	}
 	if h.pages == nil {
@@ -347,5 +350,5 @@ func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang s
 	}
 	data.Errors = translationMsgs(c, errs)
 	data.SiteNote = translationMsg(c, data.SiteNote)
-	c.HTML(http.StatusOK, "admin/page_translations", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/page/page_translations", shell.Prepare(c, data.templateMap()))
 }

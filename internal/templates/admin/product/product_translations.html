@@ -1,0 +1,174 @@
+{* admin/product_translations.html — 商品域翻译工作台（issue #12）。
+   入口：商品列表行内「多语言」按钮（不做独立菜单）；本页不做独立 JS，交互全部为
+   服务端渲染 + 原生表单（语言切换 onchange 提交、保存整表 POST + PRG 回跳）。
+   可翻译行由 product 模块的 ProductTranslationCandidates 生成（与构建期同源，
+   同一份 contract 白名单与语境界定），写入 pkg/i18n.ContentWriter（sys_translation）。 *}
+{* 版式（评审见 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
+     · 页头一行：标题 + ? 悬浮说明；右侧工程 / 语言选择、完成度与返回工程入口同行；
+     · 正文零说明文字：可翻译范围、写入口径与富文本约束整段进 .help（表头 .help 就近承载字段级约束）；
+     · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）；
+     · 语言下拉只列**目标语言**（源语言 = 站点默认语言，由 handler 从启用语言里剔掉）：
+       只剩源语言一种时整页走可行动空态，把「去哪儿加语言」指向站点设置的语言清单。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.product_translations.title", "商品多语言") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_translations.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_translations.scopeLead", "商品域可翻译文本：商品名 / 副标题 / 描述 / 图片 alt、分类名与描述、品牌名与描述、标签名、属性组名与属性值展示文本。slug / SKU / 条码 / 价格 / 属性值 key") }}{{ .["t"]("admin.product_translations.scopeTail", "不参与翻译（它们进 URL、筛选参数与规格组合）。无译文时产物逐字节回退原文。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <form class="page-context" method="get" action="/admin/products/translations">
+                {{if len(.ProjectOptions) > 1}}
+                <label class="sr-only" for="tr-project">{{ .["t"]("admin.product_translations.label.project", "工程") }}</label>
+                <select class="form-select" id="tr-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .ProjectOptions}}
+                    <option value="{{p.ID}}"{{if p.Selected}} selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+                {{end}}
+                {{if .ProductID}}<input type="hidden" name="product" value="{{.ProductID}}">{{end}}
+                {{if len(.Langs) > 0}}
+                <label class="sr-only" for="tr-lang">{{ .["t"]("admin.product_translations.label.lang", "语言") }}</label>
+                <select class="form-select" id="tr-lang" name="lang" onchange="this.form.submit()">
+                    {{range _, l := .Langs}}
+                    <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
+                    {{end}}
+                </select>
+                <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.product_translations.noscriptSwitch", "切换") }}</button></noscript>
+                <span class="badge badge-mute">{{ .["t"]("admin.product_translations.doneLead", "完成度 ") }}{{.Done}} / {{.Total}}{{ .["t"]("admin.product_translations.doneTail", " 条") }}</span>
+                {{end}}
+                {{if .ProductID}}<a class="btn btn-sm btn-secondary" href="/admin/products/translations?project={{.ProjectID}}">{{ .["t"]("admin.product_translations.viewProject", "查看整个工程") }}</a>{{end}}
+            </form>
+        </div>
+    </header>
+
+    {{if .Errors}}
+    <div class="tr-alert" role="alert">
+        <strong>{{ .["t"]("admin.product_translations.errorsTitle", "未保存：请先修正以下问题") }}</strong>
+        <ul class="list-reset">
+            {{range _, e := .Errors}}
+            <li>{{e}}</li>
+            {{end}}
+        </ul>
+    </div>
+    {{end}}
+
+    {{if .Saved}}
+    <p class="badge badge-info" role="status">{{.SavedNote}}</p>
+    {{end}}
+
+    {{if isset(.NoTargetLang) && .NoTargetLang}}
+    {* 可行动空态：站点只有源语言一种启用语言，翻译无从下手 —— 说明原因并直接给出
+       语言清单入口（站点设置）。这一步必须发生在「没有可翻译文本」之前：否则用户看到的是
+       「没有可翻译文本」，真正的原因（没有目标语言）与出口都不在页面上。 *}
+    <section class="card card-body">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_translations.noTargetLang.title", "没有可翻译的目标语言") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_translations.noTargetLang.desc", "站点语言清单里只有默认语言") }}{{if isset(.SourceLang)}}{{if .SourceLang}}「{{ .["SourceLang"] }}」{{end}}{{end}}{{ .["t"]("admin.product_translations.noTargetLang.descTail", "（它就是翻译的源语言），没有第二种语言可以作为翻译目标。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/settings{{if .ProjectID}}?project={{.ProjectID}}{{end}}">{{ .["t"]("admin.product_translations.noTargetLang.action", "去站点设置启用更多语言") }}</a>
+            </div>
+        </div>
+    </section>
+    {{else if len(.Groups) == 0}}
+    {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知。
+       本页的表是「按分组、一组一张表」，表头在分组的 range 里提不出来 ——
+       所以空态自己带一张同列的表头，空态整行落在 tbody 里（colspan = 5 列）。
+       （注释里不要写字面的双花括号 token：门禁脚本按 token 名做栈配对，会被它带偏。） *}
+    <section class="card card-body">
+        <div class="table-wrap tr-table-wrap">
+            <table class="data-table data-table-wide tr-table">
+                <thead>
+                <tr>
+                    <th>{{ .["t"]("admin.product_translations.col.field", "字段") }}</th>
+                    <th>{{ .["t"]("admin.product_translations.col.source", "原文") }}</th>
+                    <th>{{ .["t"]("admin.product_translations.col.target", "译文") }}</th>
+                    <th>{{ .["t"]("admin.product_translations.col.state", "状态") }}</th>
+                    <th>{{ .["t"]("admin.product_translations.col.origin", "来源") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr><td colspan="5" class="cell-wrap">
+                    <div class="empty-state">
+                        <p class="empty-title">{{ .["t"]("admin.product_translations.emptyTitle", "没有可翻译文本") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.product_translations.empty", "只有白名单字段参与翻译；纯数字 / 纯符号与链接、色值等字段不翻译。") }}</p>
+                    </div>
+                </td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {{else}}
+    <form method="post" action="/admin/products/translations/save" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="project" value="{{.ProjectID}}">
+        <input type="hidden" name="product" value="{{.ProductID}}">
+        <input type="hidden" name="lang" value="{{.Lang}}">
+
+        {{range _, g := .Groups}}
+        <section class="card card-body">
+            <h2 class="card-title mb-lg">{{g.Title}} <span class="badge badge-mute">{{ .["t"]("admin.product_translations.groupMetaLead", "（") }}{{len(g.Rows)}}{{ .["t"]("admin.product_translations.groupMetaMid", " 条 · ") }}{{g.Subtitle}}{{ .["t"]("admin.product_translations.groupMetaTail", "）") }}</span></h2>
+            <div class="table-wrap tr-table-wrap">
+                <table class="data-table data-table-wide tr-table">
+                    <thead>
+                    <tr>
+                        <th>{{ .["t"]("admin.product_translations.col.field", "字段") }}</th>
+                        <th>{{ .["t"]("admin.product_translations.col.source", "原文") }}</th>
+                        <th>{{ .["t"]("admin.product_translations.col.target", "译文") }}
+                            <span class="help">
+                                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_translations.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                                <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_translations.richHint", "原文含 HTML 标签时译文也必须含标签（形态一致）") }}<br>{{ .["t"]("admin.product_translations.saveHint", "写入 sys_translation（来源 manual）并按同一语境的 hash 寻址；改原文后旧译文自动失效。清空输入框表示「本行不写入」，不会删除已有译文。") }}</span>
+                            </span>
+                        </th>
+                        <th>{{ .["t"]("admin.product_translations.col.state", "状态") }}</th>
+                        <th>{{ .["t"]("admin.product_translations.col.origin", "来源") }}</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{range _, r := g.Rows}}
+                    <tr>
+                        <td class="tr-field">{{r.FieldLabel}}<br><span class="text-mute text-sm">{{r.Context}}</span></td>
+                        <td class="tr-source">{{r.Source}}</td>
+                        <td class="tr-target">
+                            <textarea class="form-textarea" name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" aria-label="{{ .["t"]("admin.product_translations.col.target", "译文") }}" placeholder="{{ .["t"]("admin.product_translations.ph.target", "填写译文（留空则不写入）") }}">{{r.Target}}</textarea>
+                            <input type="hidden" name="rowContext" value="{{r.Context}}">
+                            <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
+                        </td>
+                        <td>
+                            {{if r.Translated}}
+                            <span class="badge badge-success">{{ .["t"]("admin.product_translations.state.translated", "已翻译") }}</span>
+                            {{else}}
+                            <span class="badge badge-warning">{{ .["t"]("admin.product_translations.state.missing", "缺失") }}</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            {{if r.Engine}}
+                            <span class="badge{{if r.Engine == "ai"}} badge-info{{else}} badge-mute{{end}}">{{r.Engine}}</span>
+                            {{else}}
+                            <span class="text-mute">—</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {{end}}
+
+        <section class="card card-body">
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_translations.saveAll", "保存全部") }}</button>
+            </div>
+        </section>
+    </form>
+    {{end}}
+</div>
+{{end}}

@@ -203,7 +203,7 @@ func TestAdminLangRedirectMatchesShellCriterion(t *testing.T) {
 		{"/admin/" + strings.Repeat("y", 600), false},
 		{"//evil.example.com/x", false},
 		{"https://evil.example.com/x", false},
-		{"admin/roles", false},
+		{"admin/system/roles", false},
 	}
 	for _, tc := range cases {
 		c := adminLangRedirectCtx(t, tc.uri)
@@ -215,8 +215,11 @@ func TestAdminLangRedirectMatchesShellCriterion(t *testing.T) {
 		if got := shell.LangRedirectPath(tc.uri) != ""; got != tc.want {
 			t.Errorf("导出判据与渲染侧不一致：%q LangRedirectPath=%v shell=%v", tc.uri, got, shellAccepts)
 		}
-		// 消费侧语义：合法原样回跳、不合法回首页 —— 两条都要在。
-		want := "/"
+		// 消费侧语义：合法原样回跳、不合法回**控制面首页** —— 两条都要在。
+		//
+		// 回退落点是 /admin 而不是 "/"：站点独占域名根之后 "/" 是前台首页，
+		// 后台的一次输入不合法把用户甩到前台站点上，是比原地不动更糟的结果。
+		want := "/admin"
 		if tc.want {
 			want = tc.uri
 		}
@@ -242,8 +245,8 @@ func TestAdminLangRedirectRejectsDecodedJunk(t *testing.T) {
 		if shell.LangRedirectPath(raw) != "" {
 			t.Errorf("解码后才出现的字符同样要拒：%q", raw)
 		}
-		if got := adminSafeLangRedirect(raw); got != "/" {
-			t.Errorf("拒绝时应回首页，实际 %q（raw=%q）", got, raw)
+		if got := adminSafeLangRedirect(raw); got != "/admin" {
+			t.Errorf("拒绝时应回控制面首页，实际 %q（raw=%q）", got, raw)
 		}
 	}
 	if got := adminSafeLangRedirect("  /admin/roles?page=2  "); got != "/admin/roles?page=2" {

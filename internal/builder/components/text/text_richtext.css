@@ -1,0 +1,58 @@
+/* text_richtext.css — 富文本正文的排版基线（只在实例真的渲染富文本时应用）。
+ *
+ * 为什么必须有这一层：正文组件原先只输出排版组（字号/行高）、链接色、段间距与截断，
+ * 从 CMS 灌进来的富文本正文（标题、列表、表格、引用、图片）是**裸 HTML 直出** ——
+ * 段与段贴在一起、列表没有缩进、图片按原图宽度把版心撑破。实测一篇 39 段 +
+ * 21 个标题 + 1 张表的文章，读起来是一整块灰墙。
+ *
+ * 判据是「缺省也要能读」：这里给的是**下界**（能读），不是设计上限 ——
+ * 作者仍可用排版组覆盖字号行高、用段间距覆盖段落留白。
+ *
+ * 应用条件见 text.go 的 isRichText：模式不是纯文本、且真的有静态内容或字段绑定。
+ * 全空实例不输出这些规则（不产出死 CSS，text_css_test.go 钉住这条）。
+ */
+
+/* 首尾元素贴边：正文块的上下留白不该由第一个/最后一个子元素带出来。 */
+& > :first-child { margin-top: 0; }
+& > :last-child { margin-bottom: 0; }
+
+/* 标题层级：字号递减 + 上间距大于下间距（视觉上与上文断开、与下文相连）。 */
+& h1, & h2, & h3, & h4, & h5, & h6 {
+  margin-block: 1.6em .6em;
+  line-height: 1.3;
+  font-weight: 700;
+}
+& h1 { font-size: 1.75em; }
+& h2 { font-size: 1.45em; }
+& h3 { font-size: 1.22em; }
+& h4 { font-size: 1.1em; }
+& h5, & h6 { font-size: 1em; }
+
+/* 列表：浏览器默认缩进在富文本里偏小，且 ul/ol 混用时对不齐。 */
+& ul, & ol { padding-inline-start: 1.5em; }
+& li { margin-block: .35em; }
+& li > p { margin-block: .35em; }
+
+/* 引用 / 分隔线 / 代码。 */
+& blockquote {
+  padding-inline-start: 1em;
+  border-inline-start: 3px solid var(--sky-c-border, #e5e7eb);
+  color: var(--sky-c-text-mute, #4b5563);
+}
+& hr { margin-block: 2em; border: 0; border-top: 1px solid var(--sky-c-border, #e5e7eb); }
+& code, & pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+& pre { overflow-x: auto; padding: .9em 1em; border-radius: 8px; background: var(--sky-c-bg-soft, #f4f5f6); }
+
+/* 表格：铺满可用宽度。单元格边框让长表格可辨读。 */
+& table { width: 100%; border-collapse: collapse; margin-block: 1.4em; }
+& th, & td { padding: .6em .75em; border: 1px solid var(--sky-c-border, #e5e7eb); text-align: start; }
+& th { background: var(--sky-c-bg-soft, #f4f5f6); font-weight: 600; }
+
+/* 正文图片：**这条是多端硬规则的关键** —— 不写它，正文里一张 2000px 宽的图
+   会把整个页面的滚动宽度撑开（窄屏直接横向溢出）。height auto 保住原图比例。 */
+& img {
+  max-width: 100%;
+  height: auto;
+}
+/* 正文视频 / 内嵌框架同理（iframe 只可能在受控白名单里出现）。 */
+& video, & iframe { max-width: 100%; }

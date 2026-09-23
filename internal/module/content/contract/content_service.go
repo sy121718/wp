@@ -157,6 +157,15 @@ type ContentService interface {
 	Get(ctx context.Context, req *contentdto.GetReq) (res *contentdto.ContentResp, err error)
 	// List 按类型分页列表。
 	List(ctx context.Context, req *contentdto.ListReq) (list []*contentdto.ContentResp, err error)
+	// Count 列表总数：与 List **同一份过滤条件**（entityType），供分页算总页数。
+	//
+	// 形状与 product 域的 CountProducts 一致：收同一个 ListReq（只认它的过滤维度，
+	// Limit / Offset 在这里无意义），返回 (int64, error)。
+	//
+	// 与 CountForCollection **不是一回事**：那个是集合渲染路径的计数（带 data 字段的
+	// 等值过滤，供组件集合翻页），数的是「满足筛选的集合项」；本方法数的是
+	// 「这个实体类型下有多少条」，服务的是后台列表页的分页条。
+	Count(ctx context.Context, req *contentdto.ListReq) (n int64, err error)
 	// Delete 删除实体。
 	Delete(ctx context.Context, req *contentdto.DeleteReq) (err error)
 	// ResolverFor 返回绑定单个实体的内容解析器（构建期注入：presentation

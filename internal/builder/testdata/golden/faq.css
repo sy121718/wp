@@ -32,15 +32,17 @@ body {
   display: none;
 }
 
-.sky-c-fq1 summary::after {
-  content: '＋';
-  font-size: 14px;
+.sky-c-fq1 .sky-faq-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
   color: rgba(0,0,0,0.4);
   transition: transform .2s;
 }
 
-.sky-c-fq1 details[open] summary::after {
-  transform: rotate(45deg);
+.sky-c-fq1 details[open] .sky-faq-chevron {
+  transform: rotate(180deg);
 }
 
 .sky-c-fq1 .sky-faq-answer {

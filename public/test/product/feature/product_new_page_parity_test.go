@@ -1,14 +1,16 @@
 package feature
 
-// product_new_page_parity_test.go — 新建整页与列表页抽屉的能力对等。
+// product_new_page_parity_test.go — 建表单片段的**唯一载体**（新建整页）必须钩子齐全。
 //
-// 两者共用同一份建表单片段（internal/templates/admin/partials/product_create_form.html）：
-// 整页少一块能力不会编译失败，只会在那一条入口上静默丢字段。本会话实测过这条线 ——
-// 整页缺属性组与多仓字段时，product feature 的 4 个断言直接红（抽屉 markup 不是壳，
-// 它承载真实能力；退役流程必须先对齐能力，再谈删除）。
+// 建表单片段（internal/templates/admin/partials/product_create_form.html）现在只有一个调用点：
+// 新建整页 `/admin/products/new`。列表页那份抽屉（`<template id="tpl-product-create">`）
+// 没有任何 `data-drawer-open` 指向它，已随「写失败不丢输入」批 1 删除
+// （见 docs/02-T-write-fail-echo-batch1.md §5 P1-2）。
 //
-// 判据取「列表页为基准、整页不得少于它」+ 显式钉住核心钩子：前者让该断言在
-// 未来新增字段时自动生效（新增字段忘了搬过去就会红），后者不依赖 fixture 数据。
+// 本用例两个方向：
+//   · 整页必须渲染片段里**全部**协议钩子 —— 少一个不会编译失败，只会让某个能力在某条入口上
+//     静默失效（本会话实测过：整页缺属性组与多仓字段时，4 个断言直接红）；
+//   · 列表页**不得**再出现建表单 —— 防死块复活（它每次渲染都白付一份完整表单的开销）。
 
 import (
 	"net/http"
@@ -41,48 +43,63 @@ var createFormHooks = []string{
 	"value=\"bundle\"",            // 捆绑类型选项
 }
 
-func TestProductNewPageSharesCreateFormWithDrawer(t *testing.T) {
+func TestProductNewPageCarriesFullCreateForm(t *testing.T) {
 	engine, f := newCreateFlowEngine(t)
 	if engine == nil {
 		return
 	}
-	// 造属性组：让「属性组勾选」这条原抽屉能力在两处都被真实渲染（fixture 默认没有属性）。
+	// 造属性组：让「属性组勾选」这条能力被真实渲染（fixture 默认没有属性）。
 	mkVariationAttr(t, f, "颜色", "color", []string{"red", "blue"})
 
-	list := getProductsPage(engine, f.projectID)
 	page := getProductsNewPage(engine, f.projectID)
 	if len(page) == 0 {
 		t.Fatalf("新建整页渲染为空")
 	}
-	// 1) 核心钩子必须出现在整页。
-	for _, want := range []string{
-		"data-product-create-form", "data-sku-input", "data-sku-regenerate",
-		"data-sku-placeholder-bundle", "data-sku-hint", "data-sku-manual",
+	// 1) 建表单的**全部**协议钩子必须在场。
+	//    这里原先还有一个「抽屉里出现的钩子整页必须一个不少」的基准循环 —— 那个抽屉已退役
+	//    （列表页的 template 没有任何 data-drawer-open 指向它），基准随之消失，循环变成
+	//    **空转通过**（`Contains(列表页, hook)` 恒 false）。「测试还在、判据已死」比没有测试
+	//    更危险，所以删掉基准、直接钉整页。
+	//
+	//    其中三项（多仓勾选 `name="warehouseIds"`、「从仓库选」`name="skuSource"` 与其候选
+	//    `data-sku-candidates`）依赖「工程里有仓库 / 仓库里有货」才会渲染，而本用例的 fixture
+	//    （newCreateFlowEngine → attrFixture）连库存契约都没接 —— 它们由
+	//    product_warehouse_multi_stock_test.go 与 product_warehouse_sku_pick_test.go 覆盖
+	//    （那两条的 fixture 会真造仓库），在这个 fixture 上强求只会得到一条假失败。
+	needsWarehouse := map[string]bool{
+		`name="warehouseIds"`: true, `name="skuSource"`: true, `data-sku-candidates`: true,
+	}
+	checkFormHooks := []string{"data-product-create-form",
 		"name=\"attributeIds\"", "颜色（color）",
-		"/static/js/product-create-form.js", // 共享增强脚本（单一真源）
-	} {
+		"/static/js/product-create-form.js"} // 共享增强脚本（单一真源）
+	for _, want := range append(append([]string{}, createFormHooks...), checkFormHooks...) {
+		if needsWarehouse[want] {
+			continue
+		}
 		if !strings.Contains(page, want) {
-			t.Fatalf("新建整页缺少 %q（与抽屉共用同一片段，缺项即能力不对等）", want)
+			t.Fatalf("新建整页缺少 %q —— 建表单片段是它唯一的载体，缺项即能力丢失", want)
 		}
 	}
-	// 2) 基准判据：抽屉里出现的建表单钩子，整页必须一个不少。
-	for _, hook := range createFormHooks {
-		if strings.Contains(list, hook) && !strings.Contains(page, hook) {
-			t.Fatalf("抽屉有 %q 而新建整页没有 —— 字段只在一处存在就是静默丢能力", hook)
+
+	// 2) 列表页**不得**再渲染建表单。死块已删，这一条防它复活：那个 template 每次列表页渲染
+	//    都要白付一份完整表单（含仓库 SKU 候选 datalist）的开销，而页面上没有任何入口能打开它。
+	list := getProductsPage(engine, f.projectID)
+	for _, forbidden := range []string{
+		"data-product-create-form", "data-sku-candidates", `name="attributeIds"`,
+	} {
+		if strings.Contains(list, forbidden) {
+			t.Fatalf("列表页不应再渲染建表单（%q 命中）—— 抽屉已退役，死块复活会白付渲染开销", forbidden)
 		}
 	}
-	// 3) 形态差异：片段内的「取消」按钮属于抽屉（整页没有可关闭的抽屉）。
-	// 判据必须带 class：布局里本来就有一个 drawer-close 关闭按钮（layout.html），
-	// 只按 data-drawer-close 判会把它误当成本片段的取消按钮。
-	const cancelBtn = `class="btn btn-ghost" data-drawer-close`
-	if !strings.Contains(list, cancelBtn) {
-		t.Fatalf("列表页抽屉应渲染取消按钮")
-	}
-	if strings.Contains(page, cancelBtn) {
-		t.Fatalf("新建整页不应渲染抽屉取消按钮（InDrawer 判断失效）")
-	}
-	// 4) 单一真源：内联副本必须已消失，否则两处会各自漂移。
 	if strings.Contains(list, "function codeSegment") {
 		t.Fatalf("列表页仍有内联增强脚本副本，应只用共享文件")
+	}
+
+	// 3) 整页不渲染抽屉的「取消」按钮（没有可关闭的抽屉）。
+	//    判据必须带 class：布局里本来就有一个 drawer-close 关闭按钮（layout.html），
+	//    只按 data-drawer-close 判会把它误当成本片段的取消按钮。
+	const cancelBtn = `class="btn btn-ghost" data-drawer-close`
+	if strings.Contains(page, cancelBtn) {
+		t.Fatalf("新建整页不应渲染抽屉取消按钮（InDrawer 判断失效）")
 	}
 }

@@ -77,6 +77,11 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 		}
 		// 注入系统字段（id/slug/revision 供模板展示）。
 		out["id"], out["slug"], out["revision"] = r.ID, r.Slug, r.Revision
+		// 媒体字段归一到完整链接：这条路径**不经过 toResp**（集合投影走的是 SQL 侧
+		// jsonb_build_object，比整行取数省一大截），所以读出口的归一必须在这里也做一次 ——
+		// 否则集合卡（cardstack 的文章 / 商品卡）会渲染出 /storage/... 相对地址，
+		// 而同一条数据的详情页却是完整链接。
+		normalizeMediaFields(entityType, out)
 		items = append(items, out)
 	}
 	// 取数不满一页说明已经到底：总量就是 offset 加上本页条数，不必再 COUNT 一次。

@@ -80,6 +80,20 @@ func (m *Model) List(ctx context.Context, entityType string, limit, offset int) 
 	return list, err
 }
 
+// Count 按类型统计条数（**与 List 同一份过滤条件**：entityType）。
+//
+// 分页要算总页数就得在 SQL 侧数 —— 把「已取回的一页」当成全部，正是「翻不过第 N 页
+// 还以为到底了」的成因。过滤条件与 List 保持一致：一侧漏掉类型过滤时，总数会把别的
+// 内容类型也算进来、分页条凭空多出几页，而两条 SQL 各自看都对。
+func (m *Model) Count(ctx context.Context, entityType string) (n int64, err error) {
+	q := m.db.WithContext(ctx).Model(&Entity{})
+	if entityType != "" {
+		q = q.Where("entity_type = ?", entityType)
+	}
+	err = q.Count(&n).Error
+	return n, err
+}
+
 // Save 覆盖更新（revision 由 service 层递增后传入）。
 // 用 DB(ctx)（已绑定 Model）+ 显式 Where + Updates（避免 GORM Save
 // 在已绑定 Model 下报 WHERE conditions required）。

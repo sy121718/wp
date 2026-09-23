@@ -333,12 +333,14 @@ func (m *Model) ListMovementRows(ctx context.Context, f MovementFilter, limit, o
 	return list, err
 }
 
-// scanMovementRows 在给定句柄上施加过滤 / 排序 / 分页并落库结果。
+// applyMovementFilter 施加流水的全部过滤条件（**列表与计数唯一的一份**）。
 //
-// 过滤条件与句柄分开传，是为了让 List 这类「先包作用域再施加条件」的路径
-// 不必把十个 if 塞进闭包里。
-func (m *Model) scanMovementRows(ctx context.Context, q *gorm.DB, f MovementFilter,
-	limit, offset int, list *[]*MovementRow) error {
+// 为什么必须共用：过滤维度有十个（工程 / 仓 / 商品 / 变体 / SKU / 方向 / 原因 /
+// 来源类型 / 来源引用 / 批次 + 时间区间），列表与计数各写一遍时**少写一维不会报错** ——
+// 表现是「共 N 条」与实际能翻出来的条数对不上，且只在用了那一维筛选时才看得出来。
+// 实测踩过：CountMovements 早先只抄了六个维度，漏掉商品 / 来源类型 / 来源引用 / 时间区间 ——
+// 后台按时间筛流水时，分页条给的总数与列表条目直接互相矛盾。
+func applyMovementFilter(q *gorm.DB, f MovementFilter) *gorm.DB {
 	if f.ProjectID != "" {
 		q = q.Where("mv.project_id = ?", f.ProjectID)
 	}
@@ -377,46 +379,35 @@ func (m *Model) scanMovementRows(ctx context.Context, q *gorm.DB, f MovementFilt
 	if f.TimeTo != nil {
 		q = q.Where("mv.create_time <= ?", *f.TimeTo)
 	}
-	q = q.Order("mv.create_time DESC, mv.id DESC")
+	return q
+}
+
+// scanMovementRows 在给定句柄上施加过滤 / 排序 / 分页并落库结果。
+//
+// 过滤条件与句柄分开传，是为了让 List 这类「先包作用域再施加条件」的路径
+// 不必把十个 if 塞进闭包里。
+func (m *Model) scanMovementRows(ctx context.Context, q *gorm.DB, f MovementFilter,
+	limit, offset int, list *[]*MovementRow) error {
+	q = applyMovementFilter(q, f).Order("mv.create_time DESC, mv.id DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
 	return q.Scan(list).Error
 }
 
-// CountMovements 流水条数（与 List 同过滤条件）。
+// CountMovements 流水条数（**与 ListMovementRows 同一份过滤条件**）。
+//
+// 走的是同一个投影查询与同一个 applyMovementFilter —— 计数与列表分叉在这里是不可能的：
+// INNER JOIN 仓库（FK 保证每行都有仓）与 LEFT JOIN 原因都不会改变行数，所以 Count
+// 与逐行取回的行集大小一致。RLS 作用域也取自同一个 f.ProjectID。
 //
 // RLS（迁移 215）：inventory_stock_movements 在名单里。缺作用域时计数**恒为 0**
 // 且不报错 —— 分页总量与列表因此会同时退化成「暂无数据」，两边一致所以更难发现。
 //
-// 当前仓库内没有调用方（列表接口只取 ListMovementRows）：保留它是因为
-// 「与 List 同条件的计数」是分页契约的一部分，且它此前正是漏包作用域的那类路径。
-// 一旦接回分页总量，作用域判据必须与 List 完全一致，故在这里一并收口。
+// 调用方是分页页面的「共 N 条」与总页数（inventory 契约的 CountMovements）。
 func (m *Model) CountMovements(ctx context.Context, f MovementFilter) (n int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
-		q := tx.WithContext(ctx).Table("inventory_stock_movements")
-		if f.ProjectID != "" {
-			q = q.Where("project_id = ?", f.ProjectID)
-		}
-		if f.WarehouseID != "" {
-			q = q.Where("warehouse_id = ?", f.WarehouseID)
-		}
-		if f.VariantID != "" {
-			q = q.Where("variant_id = ?", f.VariantID)
-		}
-		if f.SKUCode != "" {
-			q = q.Where("sku_code = ?", f.SKUCode)
-		}
-		if f.Direction != "" {
-			q = q.Where("direction = ?", f.Direction)
-		}
-		if f.ReasonCode != "" {
-			q = q.Where("reason_code = ?", f.ReasonCode)
-		}
-		if f.BatchID != "" {
-			q = q.Where("batch_id = ?", f.BatchID)
-		}
-		return q.Count(&n).Error
+		return applyMovementFilter(movementRowsQuery(ctx, tx), f).Count(&n).Error
 	})
 	return n, err
 }

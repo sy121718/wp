@@ -87,7 +87,9 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 // 问题列表（组件 + 槽位 + 处置），而不是把 err.Error() 拼回响应。
 func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, projectID, currentPath string, withEditorBridge bool, kind previewDocKind) {
 	// 预览语言：?lang= 显式指定（工作台多语言预览切换），空 = 站点默认语言。
-	html, err := h.pages.CompilePreview(c.Request.Context(), document, projectID, currentPath, c.Query("lang"))
+	// 画布标记层与画布联动脚本同开关：两者都只对编辑器有意义，普通预览（编辑器外链预览）
+	// 不该多出那一层 div —— 它会让「预览 HTML」与产物 HTML 不再是同一份结构。
+	html, err := h.pages.CompilePreview(c.Request.Context(), document, projectID, currentPath, c.Query("lang"), withEditorBridge)
 	if err != nil {
 		switch {
 		case errors.Is(err, pagecontract.ErrPreviewInvalidDocument):

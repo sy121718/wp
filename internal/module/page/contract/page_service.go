@@ -21,6 +21,8 @@ type (
 	DeleteReq     = pagedto.DeleteReq
 	PageResp      = pagedto.PageResp
 	PageDraftResp = pagedto.PageDraftResp
+	// PageTitleResp 页面标题投影（不含 draft_document），见 PageService.ListPageTitles。
+	PageTitleResp = pagedto.PageTitleResp
 	BuildReq      = pagedto.BuildReq
 	PublishReq    = pagedto.PublishReq
 	// PageBuildJobReq 构建队列任务的执行上下文（page 来源，审计 ARCH-04）。
@@ -167,6 +169,16 @@ type PageService interface {
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
 	List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error)
+	// ListPageTitles 列出工程内页面的**标题投影**（id / 草稿路径 / 激活路径 / SEO 标题），
+	// 必须带 projectID。
+	//
+	// 与 List 的分工：List 为列表页服务，刻意 omit 掉 draft_document 大字段，因此它的
+	// PageResp.DraftDocument 恒为空、调用方**读不出标题**；只要标题和路径的消费方
+	// （导航来源候选）用本方法 —— 标题在 SQL 侧取出，不把整份 JSONB 拉进 Go。
+	// 需要完整文档时走 Detail（单页，只读一篇）。
+	//
+	// SEOTitle 为空表示作者没在文档 SEO 段填标题（读侧不替它编名字），调用方自行回退。
+	ListPageTitles(ctx context.Context, projectID string) (res []pagedto.PageTitleResp, err error)
 	Detail(ctx context.Context, req *pagedto.DetailReq) (res *pagedto.PageResp, err error)
 	// ProjectOfPage 按页面 id 返回所属工程 id。
 	//
@@ -186,8 +198,10 @@ type PageService interface {
 	// ErrPreviewInvalidDocument（解析失败）/ ErrPreviewCompileFailed（编译失败）/ 其余为内部错误。
 	// projectID 为页面所属站点工程（驱动导航等站点级资源解析，与正式构建一致）；
 	// currentPath 为页面逻辑访问路径（导航当前项高亮，块预览传空）；
-	// lang 为预览目标语言（空 = 站点默认语言，多语言 P2）。
-	CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath, lang string) (html []byte, err error)
+	// lang 为预览目标语言（空 = 站点默认语言，多语言 P2）；
+	// canvasFrames 打开结构槽位的画布标记层（编辑器画布专用，见 core.RenderContext.CanvasSlotFrames）——
+	// 它是给编辑器看的元信息，关掉时产物字节与「块内容直接写在页面里」逐字节一致。
+	CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath, lang string, canvasFrames bool) (html []byte, err error)
 	// Build 基于当前草稿构建并暂存产物（不激活线上）。
 	Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedto.PublishResp, err error)
 	// RunPageBuildJob 执行一条构建队列（source_type=page）任务，是队列执行器的执行体
@@ -200,6 +214,9 @@ type PageService interface {
 	RunPageBuildJob(ctx context.Context, req *pagedto.PageBuildJobReq) (err error)
 	// Publish 激活暂存产物。
 	Publish(ctx context.Context, req *pagedto.PublishReq) (res *pagedto.PublishResp, err error)
+	// PublishAllLanguages 一键发布全部启用语言（多语言开关开启时的发布口径）：
+	// 按站点启用语言清单逐语言构建并激活，单语言失败不阻断其余语言。
+	PublishAllLanguages(ctx context.Context, req *pagedto.PublishReq) (res *pagedto.PublishAllResp, err error)
 	// Rollback 秒级回滚到历史产物。
 	Rollback(ctx context.Context, req *pagedto.RollbackReq) (res *pagedto.PublishResp, err error)
 	// UpdateURL 修改访问路径，旧路径按策略 301 或取消激活。

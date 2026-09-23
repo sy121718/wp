@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"net/http"
 	"strconv"
 
 	"go_wp/pkg/casbin"
@@ -27,7 +28,7 @@ import (
 //
 // 适用位置：需要细粒度权限控制的路由组或单路由。
 func CasbinMiddleware() gin.HandlerFunc {
-	return casbinMiddleware("")
+	return casbinMiddleware("", "")
 }
 
 // CasbinMiddlewareForPath 显式指定鉴权对象路径（obj）的 Casbin 中间件。
@@ -37,10 +38,43 @@ func CasbinMiddleware() gin.HandlerFunc {
 // 做鉴权，而非直接以页面路径 enforce（权限点表里不存在页面路径，会导致
 // 所有用户被拒）。obj 为空时回退到实际请求路径（等价 CasbinMiddleware）。
 func CasbinMiddlewareForPath(obj string) gin.HandlerFunc {
-	return casbinMiddleware(obj)
+	return casbinMiddleware(obj, "")
 }
 
-func casbinMiddleware(forcedObj string) gin.HandlerFunc {
+// CasbinMiddlewareForPathAs 显式指定鉴权对象路径（obj）**与动作（act）**的 Casbin 中间件。
+//
+// 为什么需要它：CasbinMiddlewareForPath 的动作取自真实请求方法（`c.Request.Method`），
+// 这隐含假设「页面侧与 API 侧用同一个动词」。该假设对「页面写操作」（POST 页面复用
+// POST 权限点）成立，对**页面读入口复用写权限点**则不成立 —— 典型场景是
+// `/admin/articles/new`：它是 GET 页面，业务上要求「能创建文章的人才能打开新建页」，
+// 于是复用了 `/api/content/create`；但库里那条策略声明的是 POST，
+// Enforce(sub, obj, "GET") 必然不匹配 → **含超管在内全员 403**（实测确认）。
+//
+// act 留空时行为与 CasbinMiddlewareForPath 完全一致（取真实请求方法），
+// 既有调用点一个字符都不用改。
+//
+// 参数校验：act 必须是合法 HTTP 方法，否则 panic —— 拼错的动词会让该路由永久 403，
+// 属于装配缺陷，应当在启动期暴露而不是等用户点进去才发现。
+func CasbinMiddlewareForPathAs(obj, act string) gin.HandlerFunc {
+	if act != "" && !validHTTPMethod(act) {
+		panic("CasbinMiddlewareForPathAs 收到非法 HTTP 方法：" + act + "（期望 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS）")
+	}
+	return casbinMiddleware(obj, act)
+}
+
+// validHTTPMethod 判断是否为受支持的 HTTP 方法（大小写敏感，与库里的策略一致）。
+func validHTTPMethod(m string) bool {
+	switch m {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete,
+		http.MethodPatch, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
+}
+
+// casbinMiddleware forcedAct 非空时覆盖真实请求方法，用于「页面入口复用 API 权限点」
+// 但动词不一致的场景（见 CasbinMiddlewareForPathAs）。
+func casbinMiddleware(forcedObj, forcedAct string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("user_id")
 		if !exists {
@@ -53,7 +87,10 @@ func casbinMiddleware(forcedObj string) gin.HandlerFunc {
 		if obj == "" {
 			obj = c.Request.URL.Path
 		}
-		act := c.Request.Method
+		act := forcedAct
+		if act == "" {
+			act = c.Request.Method
+		}
 		sub := strconv.FormatInt(userID.(int64), 10)
 
 		enforcer := casbin.GetEnforcer()

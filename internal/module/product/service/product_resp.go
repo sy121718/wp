@@ -91,7 +91,7 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	// 运营据此核对「新建时填过的编码」有没有落库。
 	resp.SKUCode = e.SKUCode
 	resp.DefaultPrice = e.DefaultPrice
-	resp.DefaultImage = e.DefaultImage
+	resp.DefaultImage = mediaURL(e.DefaultImage)
 	resp.Metadata = orJSON(e.Metadata, "{}")
 	if e.BrandID != nil {
 		resp.BrandID = *e.BrandID
@@ -272,7 +272,7 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductResp {
 	resp := &productdto.ProductResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
-		Status: e.Status, Sort: e.Sort, Images: decodeStrings(e.Images),
+		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
 		ImageAlts: decodeStrings(e.ImageAlts),
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}

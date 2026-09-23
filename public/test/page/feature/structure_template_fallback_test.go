@@ -186,7 +186,7 @@ func previewOf(t *testing.T, svc pagecontract.PageService, projectID, pageID, cu
 	if err != nil {
 		t.Fatalf("查询页面失败: %v", err)
 	}
-	html, err := svc.CompilePreview(ctx, detail.DraftDocument, projectID, currentPath, "")
+	html, err := svc.CompilePreview(ctx, detail.DraftDocument, projectID, currentPath, "", false)
 	if err != nil {
 		t.Fatalf("预览不该失败（编辑期容忍配置缺失）: %v", err)
 	}

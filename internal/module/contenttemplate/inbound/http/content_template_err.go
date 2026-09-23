@@ -150,6 +150,22 @@ const (
 	contentTemplateImpactUnavailableText = "引用反查能力未装配：本页无法列出引用这套模板的页面与实例，删除前请人工确认。"
 )
 
+// contentTemplateImpactLoadFailedKey / Fallback 工程列表装载失败时的引用面提示（i18n key + 中文兜底）。
+//
+// 与上面那条**分开**，因为归因不同、处置也不同：那条是「本页永远查不了（能力没装）」，
+// 这条是「这一次没读出来（工程列表没读到），刷新可能就好了」。把后者说成「能力未装配」
+// 是本类缺陷的同一个形状 —— 用一句不准确的话把人支向错的方向（去查部署，而实际只需刷新）。
+// 走 i18n 是因为它不经查询参数、只作为模板数据渲染，没有第二份字面量要比对。
+const (
+	contentTemplateImpactLoadFailedKey      = "admin.content.templates.impact.loadFailed"
+	contentTemplateImpactLoadFailedFallback = "本次没取到引用面（工程列表未读到），删除前请人工确认。"
+)
+
+// contentTemplateImpactLoadFailedText 装载失败时的引用面提示（当前语言）。
+func contentTemplateImpactLoadFailedText(c *gin.Context) string {
+	return shell.TranslateFor(c)(contentTemplateImpactLoadFailedKey, contentTemplateImpactLoadFailedFallback)
+}
+
 // contentTemplateImpactUnparsableTemplate 影响面可能不完整的提示（%d = 无法解析的文档数）。
 //
 // 带占位符的受控文案（与批量结论同一形态），读侧经 shell.NoticeTemplate 归一后参与回显判定。

@@ -57,6 +57,20 @@ export const paletteSpec = {
                 "variantsField": "product.variants"
             }
         },
+        "core.articleList": {
+            "type": "core.articleList",
+            "displayName": "文章列表",
+            "hint": "按集合源自动出文章卡片",
+            "category": "basic",
+            "defaultProps": {
+                "collectionLimit": 6,
+                "columns": "3",
+                "layout": "grid",
+                "showExcerpt": "on",
+                "showImage": "on",
+                "titleTag": "h3"
+            }
+        },
         "core.badge": {
             "type": "core.badge",
             "displayName": "徽章",

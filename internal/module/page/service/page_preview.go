@@ -25,7 +25,11 @@ import (
 // currentPath 为页面逻辑访问路径（导航当前项高亮；块预览传空），
 // lang 为预览目标语言（空 = 站点默认语言；工作台按 ?lang= 切换预览语言），
 // 与正式构建一致地驱动导航等站点级资源解析——画布所见即产物。
-func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath, lang string) (html []byte, err error) {
+//
+// canvasFrames 打开结构槽位的「画布标记层」（core.RenderContext.CanvasSlotFrames）：
+// 只有工作台编辑器画布（?editor=1）才该打开。它是给编辑器看的元信息，不是页面内容 ——
+// 关掉时产物字节与「把块内容直接写在页面里」逐字节一致（VIS-001 的不变量）。
+func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID, currentPath, lang string, canvasFrames bool) (html []byte, err error) {
 	var page *builder.Page
 	if err = json.Unmarshal(docJSON, &page); err != nil || page == nil {
 		if err == nil {
@@ -41,8 +45,13 @@ func (s *Service) CompilePreview(ctx context.Context, docJSON []byte, projectID,
 	// 与发布路径共用同一份装配管线，这就是两者的唯一差异。
 	// plan 传 nil：预览不读发布计划 —— 作者看的是「这份草稿用当前配置能长什么样」，
 	// 而冻结计划描述的是**已发布产物**依据的输入（审计 I18N-01）。
+	// 编辑器画布的槽位标记层：按调用方开关追加（见方法注释）。
+	var extra []builder.CompileOption
+	if canvasFrames {
+		extra = append(extra, builder.WithCanvasSlotFrames())
+	}
 	html, err = s.compileDocument(ctx, page, projectID, currentPath, buildLang(lang), nil, false,
-		builder.CompileModePreview, nil, nil)
+		builder.CompileModePreview, nil, nil, extra...)
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "预览编译失败")

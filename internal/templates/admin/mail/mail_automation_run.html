@@ -1,0 +1,100 @@
+{* admin/mail_automation_run.html — 实例排障详情（issue #38 P3，目标 ⑥） *}
+{* 版式遵循后台页面骨架规范（docs/02-H-admin-page-shell.md §2）与评审规则（admin-ui-logic §2.1/§7）：
+     · 正文零说明文字 —— 时间线口径进 .help 悬浮；Explain 是数据（这一页存在的理由），留在页头副标题；
+     · 页头一行：标题 + 一句话解释 + 返回入口；
+     · 空数据用 .empty-state；状态用徽章并保留文字。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{d := .D}}
+<div class="stack">
+  <header class="page-head">
+    <div class="page-head-main">
+      <div class="page-title-row">
+        <h1>{{ .["t"]("admin.mail.automation_run.heading", "实例排障") }}</h1>
+        <span class="help">
+          <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.mail.automation_run.help.label", "查看说明") }}" aria-expanded="false">?</button>
+          <span class="help-pop" role="tooltip">
+            {{ .["t"]("admin.mail.automation_run.timeline.lead", "时间线按执行顺序。") }}<strong>{{ .["t"]("admin.mail.automation_run.timeline.strong", "等待") }}</strong>{{ .["t"]("admin.mail.automation_run.timeline.tail", "节点写的是「等待 N 分钟后继续」—— 它的「下一步」在挂起时就已经推进，所以唤醒后不会重等一次。") }}
+          </span>
+        </span>
+      </div>
+      {{if d.Explain != ""}}<p class="page-sub"><strong>{{d.Explain}}</strong></p>{{end}}
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-sm btn-ghost" href="/admin/mail/automation">← {{ .["t"]("admin.mail.automation_run.back", "返回列表") }}</a>
+    </div>
+  </header>
+
+  {{if .Err != ""}}
+  <p class="badge badge-warning" role="alert">{{.Err}}</p>
+  {{end}}
+
+  {* 基本信息是键值汇总（行数固定、不分页），不是滚动列表 → 用 .card-body 的整块内边距，
+     撑满视口的滚动区留给下面的时间线。 *}
+  <section class="card card-body">
+    <h2>{{ .["t"]("admin.mail.automation_run.basic_heading", "基本信息") }}</h2>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation_run.basic_heading", "基本信息") }}">
+      <table class="data-table">
+      <tbody>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.contact", "联系人") }}</th><td>{{d.Email}}{{if d.Name != ""}}（{{d.Name}}）{{end}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.automation", "流程") }}</th><td>{{d.AutomationName}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.status", "状态") }}</th><td>
+          {{if d.Run.Status == "failed"}}<span class="badge badge-warning">{{d.Run.Status}}</span>
+          {{else if d.Run.Status == "completed"}}<span class="badge badge-success">{{d.Run.Status}}</span>
+          {{else}}<span class="badge badge-mute">{{d.Run.Status}}</span>{{end}}
+        </td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.node", "当前 / 下一节点") }}</th><td>{{if d.Run.CurrentNode == ""}}<span class="text-mute">—</span>{{else}}{{d.Run.CurrentNode}}{{end}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.next_run", "下次继续") }}</th><td>{{if d.Run.NextRunAt == ""}}<span class="text-mute">—</span>{{else}}{{d.Run.NextRunAt}}{{end}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.trigger", "由什么触发") }}</th><td>{{if d.Run.TriggerEvent == ""}}<span class="text-mute">—</span>{{else}}{{d.Run.TriggerEvent}}{{end}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.span", "开始 / 结束") }}</th><td>{{if d.Run.StartedAt == ""}}<span class="text-mute">—</span>{{else}}{{d.Run.StartedAt}}{{end}} → {{if d.Run.FinishedAt == ""}}<span class="text-mute">—</span>{{else}}{{d.Run.FinishedAt}}{{end}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.error", "错误") }}</th><td>{{if d.Run.ErrorMessage == ""}}<span class="text-mute">—</span>{{else}}{{d.Run.ErrorMessage}}{{end}}</td></tr>
+        <tr><th>{{ .["t"]("admin.mail.automation_run.row.progress", "进度") }}</th><td>{{ .["t"]("admin.mail.automation_run.progress.done", "已执行") }} {{d.DoneNodes}}{{ .["t"]("admin.mail.automation_run.progress.mid", " / 流程共") }} {{d.TotalNodes}}{{ .["t"]("admin.mail.automation_run.progress.tail", " 个节点") }}</td></tr>
+      </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card list-card">
+    <div class="card-header">
+      <span class="card-title">{{ .["t"]("admin.mail.automation_run.timeline.heading", "节点时间线") }}</span>
+    </div>
+    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation_run.timeline.heading", "节点时间线") }}">
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.automation_run.col.time", "时间") }}</th><th>{{ .["t"]("admin.mail.automation_run.col.node", "节点") }}</th><th>{{ .["t"]("admin.mail.automation_run.col.type", "类型") }}</th><th>{{ .["t"]("admin.mail.automation_run.col.result", "结果") }}</th><th>{{ .["t"]("admin.mail.automation_run.col.detail", "详情") }}</th></tr></thead>
+      <tbody>
+      {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 5：
+         时间 / 节点 / 类型 / 结果 / 详情）。 *}
+      {{if len(.D.Timeline) == 0}}
+      <tr><td colspan="5" class="cell-wrap">
+    <div class="empty-state">
+      <p class="empty-title">{{ .["t"]("admin.mail.automation_run.timeline.empty.title", "还没有执行记录") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.automation_run.timeline.empty", "还没有执行记录（实例可能刚建、任务还没跑到）。") }}</p>
+      {* 空态动作：这个空态只有一种成因（任务还没跑到 / 挂起中），用户能做的就是等一下再看，
+         所以给「刷新」而不是「返回列表」——返回是页头已有的动作，重复它等于没给下一步。
+         href="" 由浏览器解析为当前文档 URL（含 ?id=），即原地重载，不需要任何 JS。 *}
+      <div class="empty-actions">
+        <a class="btn" href="">{{ .["t"]("admin.mail.automation_run.timeline.empty.action", "刷新") }}</a>
+      </div>
+    </div>
+      </td></tr>
+      {{else}}
+      {{range _, l := .D.Timeline}}
+      <tr>
+        <td class="text-mute text-sm">{{l.CreateTime}}</td>
+        <td>{{l.NodeKey}}</td>
+        <td class="text-sm">{{l.NodeType}}</td>
+        <td>
+          {{if l.Status == "failed"}}<span class="badge badge-warning">{{l.Status}}</span>
+          {{else if l.Status == "ok"}}<span class="badge badge-success">{{l.Status}}</span>
+          {{else}}<span class="badge badge-mute">{{l.Status}}</span>{{end}}
+        </td>
+        <td class="text-sm">{{if l.Detail == ""}}<span class="text-mute">—</span>{{else}}{{l.Detail}}{{end}}</td>
+      </tr>
+      {{end}}
+      {{end}}
+      </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{{end}}

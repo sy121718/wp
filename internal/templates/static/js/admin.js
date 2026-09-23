@@ -523,18 +523,32 @@
         return (el.closest && el.closest('form')) || document;
     }
 
+    /* 行是否被客户端筛选藏起来了（applyFilter 把 hidden 设在 <tr> 上）。
+       批量选择的作用域是**用户此刻看得见的那批行** —— 隐藏行必须排除在「全选」与
+       「全选态判定」之外。hidden 只影响显示，浏览器照样提交隐藏表格行里的 checkbox，
+       所以不过滤的后果是：筛出 17 行 → 点全选 → 勾中 117 行、批量表单带上 117 个 id，
+       用户以为在删 17 行。静默越界，不报错。 */
+    function isFilteredOut(el) {
+        var tr = el && el.closest ? el.closest('tr') : null;
+        return !!(tr && tr.hidden);
+    }
+
     function refresh(scope) {
         var items = scope.querySelectorAll('[data-check-item]');
+        var visible = 0;   // 可见（未被筛选隐藏）的行数 —— 全选态的分母
         var checked = 0;
         Array.prototype.forEach.call(items, function (it) {
             var tr = it.closest ? it.closest('tr') : null;
             if (tr) tr.classList.toggle('is-selected', !!it.checked);
+            if (isFilteredOut(it)) return;
+            visible++;
             if (it.checked) checked++;
         });
         var box = scope.querySelector('[data-check-all]');
         if (box) {
-            box.checked = checked > 0 && checked === items.length;
-            box.indeterminate = checked > 0 && checked < items.length;
+            // 分母只算可见行：用 items.length 的话，过滤状态下 17/117 会显示成「已全选」。
+            box.checked = checked > 0 && checked === visible;
+            box.indeterminate = checked > 0 && checked < visible;
         }
         var bar = scope.querySelector('[data-bulk-bar]');
         if (bar) bar.hidden = checked === 0;
@@ -549,6 +563,10 @@
         box.addEventListener('change', function () {
             var scope = scopeOf(box);
             Array.prototype.forEach.call(scope.querySelectorAll('[data-check-item]'), function (it) {
+                // 只勾选**当前可见**的行：被筛选隐藏的行不参与本次全选（见 isFilteredOut）。
+                // 不过滤等于「用户选了 17 行、提交 117 个 id」—— 删除/改状态类批量动作会
+                // 静默改到用户从未看到的记录。没有过滤时不存在 hidden 行，行为完全不变。
+                if (isFilteredOut(it)) return;
                 it.checked = box.checked;
             });
             refresh(scope);
@@ -561,6 +579,17 @@
         var t = e.target;
         if (!t || !t.hasAttribute || !t.hasAttribute('data-check-item')) return;
         refresh(scopeOf(t));
+    });
+
+    // 筛选一变，可见行数（全选态的分母）就变了，必须重算 —— 否则残留这条错乱：
+    // 筛出 17 行 → 点全选（17/17，全选框显示已勾）→ 清空筛选框 → 全选框仍然显示已勾，
+    // 而实际只有 17/117 被勾中。此时用户点它想「补全到 117」，浏览器翻转成"取消"，
+    // 结果一个都不剩 —— 按钮做了与标签相反的事。监听器注册在筛选模块之后，
+    // 执行时行上的 hidden 已经更新完毕。
+    document.addEventListener('input', function (e) {
+        var t = e.target;
+        if (!t || !t.hasAttribute || !t.hasAttribute('data-filter-input')) return;
+        Array.prototype.forEach.call(boxes, function (b) { refresh(scopeOf(b)); });
     });
 })();
 

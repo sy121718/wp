@@ -21,6 +21,9 @@ import (
 // （provider 包未导出该常量，这里同步维护，LocalDir 未初始化兜底用）。
 const localProviderDefaultDir = "public/storage"
 
+// defaultMediaBaseURL 媒体资源对外前缀的缺省值（未配置 upload.base_url 时）。
+const defaultMediaBaseURL = "/storage"
+
 var (
 	stateMu         sync.RWMutex
 	runtimeMu       sync.RWMutex
@@ -33,6 +36,14 @@ var (
 		allowedExtensions: map[string]struct{}{},
 		allowedMIMETypes:  map[string]struct{}{},
 	}
+	// mediaBaseURL 媒体资源的对外前缀（upload.base_url 配置，形如
+	// "http://host:8080/storage"；未配置时 "/storage"）。
+	//
+	// 存在的理由：**URL 是派生值，不该在入库那一刻把域名冻进 sys_attachment.url**。
+	// 冻结版有三处各拼各的（provider 上传结果、附件读回、变体读回），配了 base_url
+	// 也只有第一处生效；换域名时更要靠迁移回填，且回填不到已经复制进产物与 Page
+	// Document 的那些副本。改成读取时派生后，配置一改、全站同时生效。
+	mediaBaseURL = defaultMediaBaseURL
 )
 
 type providerEntry struct {
@@ -85,6 +96,7 @@ func Init(v *viper.Viper) error {
 	stateMu.Lock()
 	configSource = v
 	defaultProvider = selected
+	mediaBaseURL = mediaBaseURLFromConfig(v)
 	rules, err := parseValidationRules(v)
 	if err != nil {
 		stateMu.Unlock()
@@ -167,6 +179,93 @@ func LocalDir() string {
 		}
 	}
 	return filepath.Clean(localProviderDefaultDir)
+}
+
+// mediaBaseURLFromConfig 解析 upload.base_url 得到媒体对外前缀。
+//
+// 配置值是**站点根**（如 "http://host:8080"），本函数补上 "/storage" 路径段 ——
+// 与 provider 侧 local.go 的拼接口径逐字一致（那边也是 siteURL + "/storage"）。
+// 配了 "/" 或带尾斜杠都归一；配成已含 "/storage" 的值不再重复追加。
+func mediaBaseURLFromConfig(v *viper.Viper) string {
+	if v == nil {
+		return defaultMediaBaseURL
+	}
+	raw := strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(v.GetString("upload.base_url")), "\\", "/"), "/")
+	if raw == "" {
+		return defaultMediaBaseURL
+	}
+	if strings.HasSuffix(raw, "/storage") {
+		return raw
+	}
+	return raw + "/storage"
+}
+
+// BaseURL 媒体资源的对外前缀（不含末尾斜杠）。
+//
+// 未配置 upload.base_url 时是 "/storage"（相对路径），配置站点根后是完整地址
+// （"http://host:8080/storage"）。需要给用户「完整链接」的地方一律经它拼接，
+// 不要自己写 "/storage/..." —— 写死的那一处不会跟着配置走。
+func BaseURL() string {
+	stateMu.RLock()
+	base := mediaBaseURL
+	stateMu.RUnlock()
+	if strings.TrimSpace(base) == "" {
+		return defaultMediaBaseURL
+	}
+	return strings.TrimRight(base, "/")
+}
+
+// StorageKey 从「存储键 / 相对 URL / 绝对 URL」中取出存储键（相对 storage 根的那一段）。
+//
+// 三种历史写法都要认，否则存量行会漂：
+//
+//	"482.jpg"                        → "482.jpg"
+//	"/storage/482.jpg"               → "482.jpg"（入库缺省形态）
+//	"http://old-host/storage/482.jpg" → "482.jpg"（配过 base_url 的旧数据）
+//
+// 取不到键（外链 CDN / data: URI / 空串）返回空串 —— 调用方据此区分
+// 「这是我们自己存的媒体」与「这是作者贴的外部地址」，不要替前者静默改写。
+func StorageKey(raw string) string {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return ""
+	}
+	if idx := strings.Index(u, "/storage/"); idx >= 0 {
+		return strings.TrimLeft(u[idx+len("/storage/"):], "/")
+	}
+	lower := strings.ToLower(u)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "blob:") ||
+		strings.HasPrefix(u, "//") {
+		return ""
+	}
+	key := strings.TrimLeft(u, "/")
+	// "storage/482.jpg" 这种缺前导斜杠的写法同样要剥段 —— 不剥会拼成
+	// "/storage/storage/482.jpg"（实测踩过）。
+	if rest, ok := strings.CutPrefix(key, "storage/"); ok {
+		return rest
+	}
+	return key
+}
+
+// StorageURL 把存储标识拼成对外可用的媒体 URL。
+//
+// 能取出存储键的一律**按当前配置重新拼**（不保留原串里的主机名）：
+// 换域名后存量附件要跟着新配置走，而不是永远指着旧主机。
+// 取不到键但本身是绝对地址（CDN 外链 / data: URI）时原样返回 ——
+// 补前缀会拼出 "http://host/storage/https://cdn/x.jpg" 这种废串。
+//
+// 传空串返回空串（调用方据此判「没配图」，不是返回 "/storage/" 这种半截地址）。
+func StorageURL(raw string) string {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return ""
+	}
+	if key := StorageKey(u); key != "" {
+		return BaseURL() + "/" + key
+	}
+	// 取不到键：data: / blob: / //host 这类，原样返回。
+	return u
 }
 
 func Ready() error {
@@ -267,22 +366,27 @@ func uploadWithProvider(ctx context.Context, providerName string, runtime Runtim
 	if name != "local" && !hasOnlineRuntimeConfig(runtime) {
 		return Result{}, fmt.Errorf("上传配置缺失")
 	}
-	if err := validateFile(file); err != nil {
-		return Result{}, err
-	}
-
 	// 魔数嗅探：读取前 512 字节检测真实内容类型，拒绝伪装成图片/pdf/txt 的
 	// HTML/SVG/脚本文件——扩展名与 Content-Type 均由客户端控制，可伪造绕过
-	// validateFile；此类文件上传到 /storage 直出后会被浏览器 MIME 嗅探执行
-	// （存储型 XSS）。嗅探到的字节拼回 Reader，供 provider 完整写入。
+	// 校验；此类文件上传到 /storage 直出后会被浏览器 MIME 嗅探执行（存储型 XSS）。
+	// 嗅探到的字节拼回 Reader，供 provider 完整写入。
+	//
+	// 顺序是**先嗅探、后校验**：MIME 白名单的判据应当是文件内容本身，而不是调用方
+	// 声明的那句话。只信声明值会把合法文件整批拒掉 —— curl 上传 .webp 时给的是
+	// application/octet-stream，实测 449 张图里 178 张 webp 全部失败。扩展名与大小
+	// 校验本身不需要文件头，一起挪到嗅探之后能保证两处判定用的是同一份字节。
 	sniffed := make([]byte, 512)
 	n, _ := io.ReadFull(file.Reader, sniffed)
+	var head []byte
 	if n > 0 {
-		head := sniffed[:n]
+		head = sniffed[:n]
 		if reason := detectDangerousContent(head); reason != "" {
 			return Result{}, fmt.Errorf("上传内容被拒绝（疑似 %s 脚本文件）", reason)
 		}
 		file.Reader = io.MultiReader(bytes.NewReader(head), file.Reader)
+	}
+	if err := validateFile(file, head); err != nil {
+		return Result{}, err
 	}
 
 	// 大小校验的流式兜底：file.Size <= 0（调用方未声明大小或谎报 0）时
@@ -427,7 +531,11 @@ func parseValidationRules(v *viper.Viper) (validationRules, error) {
 	return rules, nil
 }
 
-func validateFile(file File) error {
+// validateFile 校验大小 / 扩展名 / MIME 白名单。
+//
+// head 是调用方嗅探到的文件头（可为空），用于把 MIME 判定锚到**文件内容**上，
+// 见 effectiveMIME。
+func validateFile(file File, head []byte) error {
 	// file.Size > 0：头部声明的大小直接比对（快速拒绝路径）。
 	// file.Size <= 0：此处不拒绝，由 uploadWithProvider 的流式 LimitReader 兜底，
 	// 按实际读取字节判定是否超限——保证「谎报 Size=0」也绕不过大小校验。
@@ -443,13 +551,54 @@ func validateFile(file File) error {
 	}
 
 	if len(uploadRules.allowedMIMETypes) > 0 {
-		contentType := strings.ToLower(strings.TrimSpace(file.ContentType))
-		if _, ok := uploadRules.allowedMIMETypes[contentType]; !ok {
-			return fmt.Errorf("上传 MIME 类型不允许: %s", file.ContentType)
+		if mime := effectiveMIME(file, head); mime == "" {
+			return fmt.Errorf("上传 MIME 类型无法判定: %s", file.ContentType)
+		} else if _, ok := uploadRules.allowedMIMETypes[mime]; !ok {
+			return fmt.Errorf("上传 MIME 类型不允许: 声明=%s 实际=%s", file.ContentType, mime)
 		}
 	}
 
 	return nil
+}
+
+// DetectMIME 按文件头字节判定 MIME（去参数、小写）；判不出具体类型时返回空串。
+//
+// 给「需要在 pkg/upload 之外落库或展示 MIME」的调用方用（如 media 模块把附件的
+// mime_type 写进 sys_attachment）：客户端声明的 Content-Type 不可信，而 pkg/upload
+// 内部的校验已经以内容为准，两处判据必须同源。
+func DetectMIME(head []byte) string {
+	if len(head) == 0 {
+		return ""
+	}
+	detected := normalizeMIME(http.DetectContentType(head))
+	if detected == "application/octet-stream" {
+		return ""
+	}
+	return detected
+}
+
+// normalizeMIME 归一化 MIME：小写并去掉 charset 等参数。
+func normalizeMIME(raw string) string {
+	t := strings.ToLower(strings.TrimSpace(raw))
+	if i := strings.Index(t, ";"); i >= 0 {
+		t = strings.TrimSpace(t[:i])
+	}
+	return t
+}
+
+// effectiveMIME 决定用于白名单比对的 MIME。
+//
+// **内容嗅探优先于客户端声明**：扩展名与 Content-Type 都是调用方给的，嗅探结果
+// 来自文件本身。只有嗅探不出具体类型（application/octet-stream，例如零字节文件）
+// 时才回落到声明值 —— 那条路径不比原来更宽。
+func effectiveMIME(file File, head []byte) string {
+	if len(head) > 0 {
+		detected := normalizeMIME(http.DetectContentType(head))
+		if detected != "" && detected != "application/octet-stream" {
+			return detected
+		}
+	}
+	return normalizeMIME(file.ContentType)
 }
 
 // detectDangerousContent 检测文件头是否属于危险内容（HTML/SVG/XML/脚本）。

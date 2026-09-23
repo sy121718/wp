@@ -57,6 +57,28 @@ func customerDetailURL(id uint64) string {
 	return customerDetailPath + "?id=" + strconv.FormatUint(id, 10)
 }
 
+// customerPageFacingText 页面路径的提示取词出口（白名单判定 + **取当前语言的译文**）。
+//
+// 与订单页同因（见 internal/module/order/inbound/http/order_page_query.go 的
+// orderPageFacingText）：userenums.UserFacingMessages 里存的是 item_key
+// （user.msg.customerDisabled / user.err.userNotFound …），而页面模板 customers.html /
+// customer_detail.html 里的 {{.Err}} / {{.Ok}} 是**直接渲染**的文本、不经过
+// pkg/response 的 translate —— 只放行 key 的话，运营停用一个账号后看到的就是
+// 「上一次操作未完成：user.msg.customerDisabled」。
+//
+// 白名单判定仍只有一份（customerFacingText），本函数只把命中的值按当前语言取词：
+// 命中的是 item_key 就出译文；命中的是本页自造的中文常量（customerLocalMessageSet）
+// 时按 key 查不到词条，取词函数据 fallback 原样返回。
+func customerPageFacingText(c *gin.Context) func(string) string {
+	return func(raw string) string {
+		hit := customerFacingText(raw)
+		if hit == "" {
+			return ""
+		}
+		return shell.TranslateFor(c)(hit, hit)
+	}
+}
+
 // customerFacingError 把 user 模块的错误转成可展示文案（后台客户页的错误文案归口出口）。
 //
 // 三件套（对齐 AGENTS.md「响应与错误处理」，样板见 admin_err.go / navigation_err.go）：
@@ -68,11 +90,13 @@ func customerDetailURL(id uint64) string {
 // 未命中的通常是数据库 / Redis 错误的 Error()，带表名甚至 SQL 片段，那是给运维看的；
 // 页面上给一句通用提示，日志里留全文 —— 否则「页面上什么都没说」会变成最难查的一类问题
 // （这一条此前缺失：函数直接返回了归口文案而没有记日志）。
+//
+// 命中那一支经 customerPageFacingText 取译文（白名单里是 item_key）。
 func customerFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := customerFacingText(err.Error()); msg != "" {
+	if msg := customerPageFacingText(c)(err.Error()); msg != "" {
 		return msg
 	}
 	logger.Scene(userErrScene).
@@ -98,6 +122,9 @@ func customerBulkIDsText(c *gin.Context, err error) string {
 }
 
 // customerFacingText 白名单校验：命中返回原文，未命中返回空串。
+//
+// 只做判定、不取词：白名单里存的是 item_key，页面出口用 customerPageFacingText 取译文。
+// 判定只有这一份。
 func customerFacingText(raw string) string {
 	msg := strings.TrimSpace(raw)
 	if msg == "" {

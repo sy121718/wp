@@ -387,7 +387,7 @@ func variantEntityToResp(e *mediamodel.MediaVariantEntity) mediato.VariantResp {
 		VariantType: e.VariantType,
 		Status:      e.Status,
 		FilePath:    e.FilePath,
-		URL:         "/storage/" + strings.TrimPrefix(filepath.ToSlash(e.FilePath), "/"),
+		URL:         upload.StorageURL(filepath.ToSlash(e.FilePath)),
 		FileSize:    e.FileSize,
 		Width:       width,
 		Height:      height,

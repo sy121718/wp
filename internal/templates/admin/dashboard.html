@@ -55,19 +55,15 @@
     </div>
 
     <section class="card list-card">
-        <div class="filter-bar">
-            <h2 class="card-title">{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}</h2>
+        {* 这一行是列表卡的**标题行**，不是筛选栏：里面只有一个标题和一个链接，没有任何筛选控件。
+           原先借 .filter-bar（那类名承诺的是「筛选栏」）会让后续按 .filter-bar 做统一布局 /
+           间距调整时误伤这一页 —— 与 analytics.html 的列表卡标题同形（.card-header + .card-title）。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}</span>
             <a class="btn btn-sm" href="/admin/pages">{{ .["t"]("admin.dashboard.recent.all", "查看全部") }}</a>
         </div>
-        {{if len(.RecentPages) == 0}}
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.dashboard.recent.emptyTitle", "还没有页面") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.dashboard.recent.emptyDesc", "先建一个站点工程，再建页面；页面在画布编辑后发布，线上才可访问。") }}</p>
-            <div class="empty-actions">
-                <a class="btn btn-primary" href="/admin/pages">＋ {{ .["t"]("admin.dashboard.recent.create", "去建页面") }}</a>
-            </div>
-        </div>
-        {{else}}
+        {* 空数据也渲染 <table>/<thead>：用户得先看见「最近更新的页面」有哪些列才谈得上认知。
+           空态落在 tbody 的整行里（本表无勾选列，colspan 固定 7）。 *}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}">
             <table class="data-table">
                 <thead>
@@ -82,6 +78,18 @@
                 </tr>
                 </thead>
                 <tbody>
+                {{if len(.RecentPages) == 0}}
+                {* 空态整行：colspan = 7 列（页面路径 / 所属工程 / 类型 / 状态 / 草稿版本 / 更新时间 / 操作）。 *}
+                <tr><td colspan="7" class="cell-wrap">
+                    <div class="empty-state">
+                        <p class="empty-title">{{ .["t"]("admin.dashboard.recent.emptyTitle", "还没有页面") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.dashboard.recent.emptyDesc", "先建一个站点工程，再建页面；页面在画布编辑后发布，线上才可访问。") }}</p>
+                        <div class="empty-actions">
+                            <a class="btn btn-primary" href="/admin/pages">＋ {{ .["t"]("admin.dashboard.recent.create", "去建页面") }}</a>
+                        </div>
+                    </div>
+                </td></tr>
+                {{else}}
                 {{range _, p := .RecentPages}}
                 <tr>
                     <td class="text-mono">{{p.Path}}</td>
@@ -100,10 +108,10 @@
                     </td>
                 </tr>
                 {{end}}
+                {{end}}
                 </tbody>
             </table>
         </div>
-        {{end}}
     </section>
     {{end}}
 </div>

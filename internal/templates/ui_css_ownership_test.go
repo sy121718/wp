@@ -117,9 +117,11 @@ func TestAdminFormFallbackScopeIsNarrow(t *testing.T) {
 		}
 	}
 	// 作用域隔离：.admin-layout 只应出现在后台外壳模板里，否则兜底会跟着产物投递出去。
-	pages, err := filepath.Glob("admin/*.html")
-	if err != nil || len(pages) == 0 {
-		t.Fatalf("枚举 admin 模板失败: %v", err)
+	// 递归枚举（模板已按后端模块分进子目录）：退回 `admin/*.html` 只会扫到根下 3 个壳页面，
+	// 「.admin-layout 只该有一个宿主」这条判据就形同虚设了。
+	pages := adminTemplateFiles(t)
+	if len(pages) == 0 {
+		t.Fatalf("枚举 admin 模板失败：一个都没找到")
 	}
 	for _, p := range pages {
 		if p == filepath.Join("admin", "layout.html") {
@@ -143,7 +145,7 @@ func TestLegacyBridgeSelectorsRemovedFromBase(t *testing.T) {
 		t.Error("ui.css 缺少 .locale-add input：settings.html 的语言新增行仍依赖它（本轮唯一还在用的桥接）")
 	}
 	// 反向：桥接的宿主仍在模板里，否则上面那条断言会因为「容器也没了」而失去意义。
-	if !strings.Contains(readUIOwnershipFile(t, filepath.Join("admin", "settings.html")), "locale-add") {
+	if !strings.Contains(adminTemplateSource(t, "settings.html"), "locale-add") {
 		t.Error("settings.html 不再使用 locale-add：ui.css 的 .locale-add input 已成死选择器，请一并删除")
 	}
 }
@@ -209,12 +211,9 @@ func TestAdminTabsBaseAndUsageStayInSync(t *testing.T) {
 		"tab-list": true,
 	}
 	var found []string
-	files, err := filepath.Glob("admin/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	partials, _ := filepath.Glob(filepath.Join("admin", "partials", "*.html"))
-	files = append(files, partials...)
+	// 递归列出（模板已按后端模块分进子目录）：退回 `admin/*.html` + `admin/partials/*.html`
+	// 会只扫到根下 3 个壳页面与 8 个共享片段，模块目录里的页面与片段一个都不查。
+	files := adminTemplateFiles(t)
 	for _, p := range files {
 		for _, token := range classTokens(readUIOwnershipFile(t, p)) {
 			if tabTokens[token] {

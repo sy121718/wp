@@ -187,7 +187,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 	data := customerListPageData(customerListSample(), customerFilter{
 		Keyword: "alice", Status: customerStatusAll,
 	}, 1, 20, "", "", false)
-	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
 	for _, want := range []string{
 		"客户管理", "艾丽丝", "alice", "alice@example.com", "正常", "已验证",
@@ -226,7 +226,7 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 	list := &userdto.CustomerListResp{List: []*userdto.CustomerResp{item}, Total: 1,
 		Counters: userdto.CustomerCounters{Total: 1, Pending: 1, Unverified: 1}}
 
-	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
 
 	if strings.Contains(body, "/admin/customers/status") {
@@ -252,7 +252,7 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 	list := &userdto.CustomerListResp{List: []*userdto.CustomerResp{item}, Total: 1,
 		Counters: userdto.CustomerCounters{Total: 1, Active: 1, Locked: 1}}
 
-	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
 
 	for _, want := range []string{"/admin/customers/unlock", "已锁定", "2026-09-20 09:00", "连续登录失败"} {
@@ -268,13 +268,13 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 // 「该筛选条件下暂时没有账号」，而站点一个客户都没有时是「还没有客户」——
 // 用同一句话兜住，运营会以为站点里没人注册过（admin-ui-logic §7）。
 func TestCustomersListTemplateEmptyState(t *testing.T) {
-	plain := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+	plain := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(nil, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
 	if !strings.Contains(plain, "还没有客户") {
 		t.Errorf("无筛选的空列表应当说明「还没有客户」")
 	}
 
-	filtered := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+	filtered := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", "", false)))
 	if !strings.Contains(filtered, "该筛选条件下暂时没有账号") {
 		t.Errorf("带筛选的空列表应当说明「该筛选条件下暂时没有账号」")
@@ -283,7 +283,7 @@ func TestCustomersListTemplateEmptyState(t *testing.T) {
 
 // TestCustomersListTemplateCapabilityMissing 能力未装配时给说明，不渲染必然失败的按钮。
 func TestCustomersListTemplateCapabilityMissing(t *testing.T) {
-	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(
+	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(nil, customerFilter{Status: customerStatusAll}, 1, 20,
 			customerUnavailableText, "", true)))
 	for _, want := range []string{customerUnavailableText, "装配问题"} {
@@ -554,7 +554,7 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
 	data := customerListPageData(customerListSample(),
 		customerFilter{Status: customerStatusActive}, 1, 20, "", "", false)
-	body := renderCustomerAdminTemplate(t, "admin/customers.html", customerTestLayoutData(data))
+	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
 	for _, want := range []string{"aria-current=\"true\"", "✓"} {
 		if !strings.Contains(body, want) {

@@ -18,6 +18,7 @@ import (
 	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/rls"
 
 	"gorm.io/gorm"
 )
@@ -40,6 +41,9 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 	}
 	now := time.Now().UTC()
 	if err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, req.ProjectID); serr != nil {
+			return serr
+		}
 		return s.model.RenameReservedTx(ctx, tx, req.ProjectID, req.PageID, oldPath, newPath, req.OnlyReserved, now)
 	}); err != nil {
 		if errors.Is(err, errRouteOccupied) {
@@ -103,7 +107,15 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 	//                              （RowsAffected=0）→ ErrRouteOccupied。
 	// 消除原实现 SELECT→CREATE 的 TOCTOU 窗口：并发抢占时败者不再产生失败的
 	// CREATE 撞 23505 与补偿回执，唯一约束冲突在语句内被原子消化。
+	//
+	// 事务内**必须先设工程作用域**：page_routes 带 FORCE RLS，策略谓词读会话变量
+	// app.project_id。切到非超级角色（require_rls_role）之后，不设作用域的 INSERT
+	// 不是「查到 0 行」而是直接 42501 —— 展示实例的归档/详情发布正是走的这条
+	// 非事务入口，缺这一句时表现为「产物已激活、路由登记失败」的半截状态。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, req.ProjectID); serr != nil {
+			return serr
+		}
 		if aerr := s.model.ActivateRouteTx(ctx, tx, req.ProjectID, path, owner.pageIDPtr(), owner.presentationIDPtr(), req.ArtifactID, now); aerr != nil {
 			return aerr
 		}
@@ -315,8 +327,11 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 		return nil, cerr
 	}
 
-	// 第二段：路由事务（占用切换 + 置 committed）。
+	// 第二段：路由事务（占用切换 + 置 committed）。作用域同 Activate：不设即 42501。
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, req.ProjectID); serr != nil {
+			return serr
+		}
 		if rerr := s.model.RedirectInTx(ctx, tx, req.ProjectID, oldPath, owner.pageID, owner.presentationID, toArtifact, now); rerr != nil {
 			return rerr
 		}

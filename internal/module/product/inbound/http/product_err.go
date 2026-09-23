@@ -99,6 +99,12 @@ var (
 	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
 )
 
+// productSaved 商品编辑页保存成功的回执（无占位符，编辑页 ?done=）。
+//
+// 保存后页面刷新，字段值与保存前看起来一模一样 —— 没有这条提示，用户无法区分
+// 「保存成功了」与「按钮点了没反应」。
+var productSaved = productBulkText{productenums.MsgProductSaved, "商品已保存"}
+
 // productReasonTexts 可原样展示的**业务错误文案**（当前语言）。
 //
 // 三类形态都被接受：enums 的 key（未接 i18n 时的取值）、productErrFallbacks 的中文兜底
@@ -125,12 +131,21 @@ func productReasonTexts(c *gin.Context) []string {
 // 后者有参数级提示。它们都进 ?err=，因此必须与 productErrText 的产物一起登记 ——
 // 漏登记的后果不是「提示不准」，而是这条业务提示被归口文案整体顶掉
 // （运营看到「系统内部错误」，而实际原因只是「模板名不能为空」）。
-func productOwnPageTexts() []string {
-	out := make([]string, 0, len(detailTemplateFacingMessages)+len(detailTemplateTemplateMessages)+4)
+//
+// c 是给「依赖未装配」那条 i18n 文案用的：它经 detailTemplateDepsMissingText 取词，
+// 于是同一句话有三种形态要收（key / 中文兜底 / 当前语言译文）—— 只登记中文原文的话，
+// 英文站点（写侧取到英文）与 i18n 尚未初始化的环境会各自漏掉一边。
+func productOwnPageTexts(c *gin.Context) []string {
+	tr := shell.TranslateFor(c)
+	out := make([]string, 0, len(detailTemplateFacingMessages)+len(detailTemplateTemplateMessages)+8)
 	out = append(out,
+		detailTemplateDepsMissingKey,
 		errTemplateDepsMissing,
+		tr(detailTemplateDepsMissingKey, errTemplateDepsMissing),
 		productDetailTemplateNameRequired,
 		productDetailTemplatePathRequired,
+		// 菜单入口缺 product 时的引导（详情页模板页的缺参分支，同样进 ?err=）。
+		productDetailTemplateNoProductPrompt,
 		productBundleNoProductText,
 	)
 	for _, msg := range detailTemplateFacingMessages {
@@ -146,7 +161,7 @@ func productOwnPageTexts() []string {
 func productNoticeTexts(c *gin.Context) []string {
 	tr := shell.TranslateFor(c)
 	reasons := productReasonTexts(c)
-	own := productOwnPageTexts()
+	own := productOwnPageTexts(c)
 	out := make([]string, 0, len(reasons)*5+len(productBulkResultTemplates)+len(own)+8)
 	out = append(out, reasons...)
 	out = append(out,
@@ -155,6 +170,8 @@ func productNoticeTexts(c *gin.Context) []string {
 		productQuantityInvalidText,
 		productBulkTextOf(c, bulkPricingNothingSelected),
 		productBulkTextOf(c, productVariantSaveNoChange),
+		// 商品编辑页保存成功（无占位符，直接取词即可）。
+		productBulkTextOf(c, productSaved),
 	)
 	out = append(out, own...)
 	// 纯计数模板直接过 NoticeTemplate（它把 %s 换成占位并归一数字）。

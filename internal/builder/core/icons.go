@@ -48,6 +48,45 @@ func IconSVG(name string) (string, bool) {
 	return svg, ok
 }
 
+// IconSVGClass 返回完整图标 SVG，并**注入调用方的 class 与 aria-hidden**。
+//
+// 组件需要用自己的类名挂钩尺寸（.gallery-arrow-icon { width: 18px } 这类），
+// 而 lucide 源文件不带 class —— 这里统一注入，避免每个组件各自拼一遍
+// <svg viewBox=... stroke-width=...>（抄漏一个属性，同一个箭头就会与别处不同形）。
+func IconSVGClass(name, class string) (string, bool) {
+	svg, ok := builtinIconSet[name]
+	if !ok {
+		return "", false
+	}
+	if class == "" {
+		return svg, true
+	}
+	// 把开头的 <svg 换成带 class 与 aria-hidden 的版本，其余属性原样保留。
+	return `<svg class="` + class + `" aria-hidden="true"` + strings.TrimPrefix(svg, "<svg"), true
+}
+
+// IconInner 返回图标**内部元素**（path/circle/line，不含外层 <svg> 包裹）。
+//
+// 供需要自己控制 svg 属性（class / width / aria）的组件使用：它们不能用
+// IconSVG 的整段标签，但路径必须来自**同一份**图标库 —— 各组件事先手写一份
+// path 表的做法（button / icon 组件都曾如此）会让同一个箭头在不同组件里
+// 描边粗细与圆角都不一样。
+//
+// 剥壳按 lucide svg 的固定形状做（单层 <svg>，内部不再嵌套 svg）：
+// 取第一个 '>' 之后、最后一个 '</svg>' 之前的内容。
+func IconInner(name string) (string, bool) {
+	svg, ok := builtinIconSet[name]
+	if !ok {
+		return "", false
+	}
+	start := strings.Index(svg, ">")
+	end := strings.LastIndex(svg, "</svg>")
+	if start < 0 || end <= start {
+		return "", false
+	}
+	return strings.TrimSpace(svg[start+1 : end]), true
+}
+
 // IconNames 返回全部内置图标名（字典序）。
 func IconNames() []string {
 	names := make([]string, 0, len(builtinIconSet))

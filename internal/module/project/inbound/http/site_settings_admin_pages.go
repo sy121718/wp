@@ -11,7 +11,9 @@ package projecthttp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -19,6 +21,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
+	projectenums "go_wp/internal/module/project/enums"
 	"go_wp/internal/siteurl"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
@@ -30,8 +33,9 @@ import (
 
 // 站点设置页文案（i18n key，与 dashboard enums 迁移前同值）。
 const (
-	siteSettingsMsgTitle     = "MsgSiteSettingsTitle"
-	siteSettingsMsgInternal  = "MsgInternalError"
+	siteSettingsMsgTitle = "MsgSiteSettingsTitle"
+	// siteSettingsLocalesInval 语言清单校验失败的就地提示（回渲染 + 回显用户输入，
+	// 不经 ?err=，所以不在 projectPageErrKeys 里）。
 	siteSettingsLocalesInval = "MsgSiteLocalesInvalid"
 )
 
@@ -87,6 +91,16 @@ type siteSettingsData struct {
 	IndexNowKey string
 	// LangURLOffWarning 启用多语言但 url_mode=off 时的提示（I18N-016）。
 	LangURLOffWarning bool
+	// LangURLMode 语言 URL 方案（多语言开关）当前生效值：工程 settings 覆盖值优先，
+	// 未配置时回显进程启动值 —— 面板展示的必须「就是现在跑着的那个」，
+	// 否则作者看着 off 以为关了、实际进程在跑 default_plain。
+	LangURLMode string
+	// Err 上一次保存失败的提示（?err= 经读侧白名单，空 = 无提示）。
+	//
+	// 与 LocaleError 的分工：LocaleError 是**语言清单**校验失败的就地提示（回渲染 + 回显用户输入，
+	// 见 SaveSiteLocales）；Err 是本页其余保存路径（站点信息 / GA4 / GSC / 404 页 / 语言 URL 方案）
+	// 经 303 回带的一句提示。两者可以同时为空 —— 那时页面上没有任何提示条。
+	Err string
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
@@ -111,7 +125,20 @@ func (d *siteSettingsData) templateMap() gin.H {
 		"LocaleSaved":               d.LocaleSaved,
 		"IndexNowKey":               d.IndexNowKey,
 		"LangURLOffWarning":         d.LangURLOffWarning,
+		"LangURLMode":               d.LangURLMode,
+		"Err":                       d.Err,
 	}
+}
+
+// siteSettingsBackURL 站点设置页的回跳 URL（保留当前工程，见 projectErrRedirect）。
+//
+// projectID 来自表单，必须转义后再拼：它直接进 Location 头，
+// 未转义时含 & / # 的值能把后面的 err= 参数截断（最坏是提示静默消失，看不出原因）。
+func siteSettingsBackURL(projectID string) string {
+	if strings.TrimSpace(projectID) == "" {
+		return "/admin/settings"
+	}
+	return "/admin/settings?project=" + url.QueryEscape(strings.TrimSpace(projectID))
 }
 
 // siteSettingsAdminHandle 站点设置页处理器。
@@ -129,7 +156,12 @@ func NewSiteSettingsAdminHandle(projects projectcontract.ProjectService, pages p
 func (h *siteSettingsAdminHandle) SiteSettings(c *gin.Context) {
 	data := h.buildSiteSettingsData(c, strings.TrimSpace(c.Query("project")))
 	data.LocaleSaved = strings.TrimSpace(c.Query("locales_saved")) == "1"
-	c.HTML(http.StatusOK, "admin/settings", shell.Prepare(c, data.templateMap()))
+	// 上一次保存失败的提示（读侧白名单：手拼的 ?err= 一律落空串）。
+	// **装载失败优先**：它是这次请求真实发生的事，URL 里那条是上一次写失败的旧提示。
+	if data.Err == "" {
+		data.Err = projectPageErrText(c, c.Query("err"))
+	}
+	c.HTML(http.StatusOK, "admin/project/settings", shell.Prepare(c, data.templateMap()))
 }
 
 // buildSiteSettingsData 组装站点设置页数据（工程列表 + 选中工程的基础信息与语言清单）。
@@ -138,7 +170,12 @@ func (h *siteSettingsAdminHandle) buildSiteSettingsData(c *gin.Context, selected
 	data := &siteSettingsData{Title: siteSettingsMsgTitle, Menu: "settings"}
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, siteSettingsMsgInternal)
+		// 装载失败降级（与 theme 页同一判据）：空列表 + 归口提示，页面结构保留。
+		//
+		// 原先这里是「写 500 JSON 响应 → 再 c.HTML 渲染同一请求」：响应头已经发出，
+		// 浏览器停在 JSON 上，后面那次渲染白做（Gin 会打 headers already written）。
+		// 页面没被拿走才是重点 —— 运营还能换工程、走别的菜单，而不是对着一坨 JSON。
+		data.Err = projectErrParam(c, "settings", projectenums.ErrProjectInternal, err)
 		return data
 	}
 	data.Projects = projects
@@ -173,6 +210,12 @@ func (h *siteSettingsAdminHandle) fillProjectSettings(c *gin.Context, data *site
 	data.URLPatterns = buildURLPatternRows(fields.URLPatterns)
 	// 语言清单（project_locales）：站点「有哪几种语言」的唯一真源，与构建/路由同源。
 	data.Locales = h.localeRowsOf(c, data.Selected)
+	// 语言 URL 方案（多语言开关）：工程覆盖值优先；未配置时回显进程当前值 ——
+	// 面板必须展示「现在真的在跑的那个」，否则开关的语义就是假的。
+	data.LangURLMode = strings.TrimSpace(fields.LangURLMode)
+	if data.LangURLMode == "" {
+		data.LangURLMode = string(i18n.SiteLangURLModeValue())
+	}
 	data.LangURLOffWarning = langURLOffWarning(data.Locales)
 }
 
@@ -200,14 +243,25 @@ func langURLOffWarning(rows []localeRow) bool {
 func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	name := strings.TrimSpace(c.PostForm("name"))
-	if projectID == "" || name == "" {
-		c.String(http.StatusBadRequest, "工程与站点名称不能为空")
+	// 缺参拆两条见 CreateTheme 的同类注释：工程缺失时连「回哪一页」都定不下来，
+	// 只能回设置页入口；名称缺失时工程是知道的，回该工程的设置页。
+	if projectID == "" {
+		projectErrRedirect(c, siteSettingsBackURL(""), response.TranslateMessage(c, projectenums.ErrProjectRequired))
+		return
+	}
+	backURL := siteSettingsBackURL(projectID)
+	if name == "" {
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrSiteSettingsNameRequired))
 		return
 	}
 	// 读取当前 settings，合并本页字段。
 	project, err := h.projects.Detail(c.Request.Context(), &projectcontract.DetailReq{ID: projectID})
 	if err != nil || project == nil {
-		c.String(http.StatusNotFound, "站点工程不存在")
+		// 工程不存在：原文只进日志（可能是别的实例刚删了它），对外一句受控文案。
+		if err != nil {
+			logger.Scene("settings").With("project", projectID).Error(err, "读取站点工程失败")
+		}
+		projectErrRedirect(c, siteSettingsBackURL(""), response.TranslateMessage(c, projectenums.ErrProjectNotFound))
 		return
 	}
 	// URL 规则：逐实体类型读表单。留空 = 不配置该项（回落 siteurl 的默认模式）；
@@ -228,7 +282,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("ga4MeasurementId")); raw != "" {
 		id, ok := builder.NormalizeGA4MeasurementID(raw)
 		if !ok {
-			c.String(http.StatusBadRequest, "GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）")
+			projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrGA4IDInvalid))
 			return
 		}
 		ga4ID = id
@@ -239,7 +293,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("searchConsoleVerification")); raw != "" {
 		token, ok := builder.NormalizeSearchConsoleVerification(raw)
 		if !ok {
-			c.String(http.StatusBadRequest, "Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位，不区分大小写地贴进来是不行的）")
+			projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrGSCVerificationInvalid))
 			return
 		}
 		searchConsoleToken = token
@@ -249,7 +303,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	// 被每次读设置解析，所以在入口拒绝，而不是存进去等发布时才发现。
 	notFoundHTML := strings.TrimSpace(c.PostForm("notFoundHtml"))
 	if len(notFoundHTML) > maxNotFoundHTMLLen {
-		c.String(http.StatusBadRequest, "自定义 404 页内容过长（上限 32 KiB）")
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrNotFoundHTMLTooLong))
 		return
 	}
 	settingsJSON, err := mergeSiteSettings(project.Settings, projectcontract.SiteSettings{
@@ -264,16 +318,16 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		URLPatterns:               patterns,
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, siteSettingsMsgInternal)
+		projectErrRedirect(c, backURL, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err))
 		return
 	}
 	if _, err := h.projects.Update(c.Request.Context(), &projectcontract.UpdateReq{
 		ID: projectID, Name: name, Settings: settingsJSON,
 	}); err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, siteSettingsMsgInternal)
+		projectErrRedirect(c, backURL, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/settings?project="+projectID)
+	c.Redirect(http.StatusSeeOther, backURL)
 }
 
 // maxNotFoundHTMLLen 自定义 404 页内容上限（32 KiB）。
@@ -461,9 +515,10 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	if projectID == "" {
-		c.String(http.StatusBadRequest, "工程不能为空")
+		projectErrRedirect(c, siteSettingsBackURL(""), response.TranslateMessage(c, projectenums.ErrProjectRequired))
 		return
 	}
+	localesBackURL := siteSettingsBackURL(projectID)
 	// 变更前清单（project 契约的规范输出）：仅用于「是否变化」判定。
 	// 读失败不阻断保存：before 为空切片，与保存结果比较必然判定为变化，保守触发重建。
 	before, err := h.projects.ListLocales(c.Request.Context(), projectID)
@@ -478,17 +533,121 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 			Lang: r.Lang, IsDefault: r.IsDefault, Enabled: &enabled,
 		})
 	}
+	// 语言 URL 方案（多语言开关）与清单同表单保存：枚举在保存时就校验（与清单同一判据），
+	// 非法值直接拒绝 —— 存进去等构建期才发现，代价是「访问路径莫名其妙」。
+	modeRaw := strings.TrimSpace(c.PostForm("langURLMode"))
+	modeChanged := false
+	if modeRaw != "" {
+		mode, merr := i18n.ParseSiteLangURLMode(modeRaw)
+		if merr != nil {
+			// 注释原先承诺「校验失败时回渲染设置页并给出提示」，代码却是一行纯文本 ——
+			// 本批把出口补齐（303 回设置页 + ?err=，合法取值就写在文案里）。
+			projectErrRedirect(c, localesBackURL, response.TranslateMessage(c, projectenums.ErrLangURLModeInvalid))
+			return
+		}
+		if mode != i18n.SiteLangURLModeValue() {
+			modeChanged = true
+		}
+		if err := h.saveLangURLMode(c.Request.Context(), projectID, mode); err != nil {
+			projectErrRedirect(c, localesBackURL, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err))
+			return
+		}
+	}
 	after, err := h.projects.SaveLocales(c.Request.Context(), req)
 	if err != nil {
 		logger.Scene("settings").With("project", projectID).Error(err, "保存语言清单失败")
 		data := h.buildSiteSettingsData(c, projectID)
 		data.Locales = rows // 回显用户输入，便于就地修正
 		data.LocaleError = siteSettingsLocalesInval
-		c.HTML(http.StatusOK, "admin/settings", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/project/settings", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	h.markPagesStaleForLocaleChange(c.Request.Context(), projectID, before, after)
+	if modeChanged {
+		// 方案切换改变全部站内链接的形态（加不加语言前缀）：全站产物都必须重建，
+		// 与清单变更同一张 stale 网 —— 失败只记日志（同 markPagesStaleForLocaleChange）。
+		if h.pages != nil {
+			if serr := h.pages.MarkStaleForI18n(c.Request.Context()); serr != nil {
+				logger.Scene("settings").With("project", projectID).Error(serr, "语言 URL 方案变更后标记全站待重建失败")
+			}
+		}
+	}
 	c.Redirect(http.StatusSeeOther, "/admin/settings?project="+projectID+"&locales_saved=1")
+}
+
+// saveLangURLMode 把语言 URL 方案持久化到工程 settings 并热更新进程值。
+//
+// 两步缺一不可：只热更新不落库，重启后被 config.yaml 打回；只落库不热更新，
+// 作者保存后看到的站点行为不变（产物要等重建才发现）。i18n 的 setter 自带锁，
+// 并发请求下后写者胜 —— 与「设置页最后一次保存生效」的直觉一致。
+func (h *siteSettingsAdminHandle) saveLangURLMode(ctx context.Context, projectID string, mode i18n.SiteLangURLMode) error {
+	project, err := h.projects.Detail(ctx, &projectcontract.DetailReq{ID: projectID})
+	if err != nil || project == nil {
+		if err == nil {
+			err = fmt.Errorf("站点工程不存在: %s", projectID)
+		}
+		return err
+	}
+	// 定点合并而不是复用 mergeSiteSettings：后者面向整页表单，对零值字段的语义是
+	// 「删除键」—— 单字段复用会把站点名 / 邮箱等既有配置整批误删。
+	obj := map[string]json.RawMessage{}
+	if len(project.Settings) > 0 {
+		if err := json.Unmarshal(project.Settings, &obj); err != nil {
+			return err
+		}
+	}
+	encoded, err := json.Marshal(string(mode))
+	if err != nil {
+		return err
+	}
+	obj["langURLMode"] = encoded
+	settingsJSON, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	if _, err := h.projects.Update(ctx, &projectcontract.UpdateReq{ID: projectID, Name: project.Name, Settings: settingsJSON}); err != nil {
+		return err
+	}
+	i18n.SetSiteLangURLMode(mode)
+	return nil
+}
+
+// restoreLangURLMode 启动恢复：把设置页持久化的语言 URL 方案（projects.settings.langURLMode）
+// 恢复成进程当前值。
+//
+// 为什么必须在启动时做：langURLMode 是对进程配置（config.yaml i18n.site_lang_url_mode）的
+// **站点级覆盖**，运行时唯一读取口是 pkg/i18n 的包级变量 —— 设置页保存时只热更新了内存，
+// 不在启动时读回，重启后就被 config.yaml 打回旧值，设置页的开关就只剩半个生命周期。
+//
+// 取值口径与设置页一致：取**第一个**配置了该键的工程（工程选择器默认选中第一个工程，
+// 两处同源）；恢复失败只记日志不阻断启动 —— 进程配置仍是兜底真源，失败的表现是
+// 「开关退回 config.yaml 的值」，而不是站点起不来。
+func restoreLangURLMode(svc projectcontract.ProjectService) {
+	if svc == nil {
+		return
+	}
+	projects, err := svc.List(context.Background())
+	if err != nil {
+		logger.Scene("settings").Error(err, "恢复语言 URL 方案失败：读取工程列表失败")
+		return
+	}
+	for _, p := range projects {
+		fields := projectcontract.ParseSiteSettings(p.Settings)
+		raw := strings.TrimSpace(fields.LangURLMode)
+		if raw == "" {
+			continue
+		}
+		mode, perr := i18n.ParseSiteLangURLMode(raw)
+		if perr != nil {
+			logger.Scene("settings").With("project", p.ID).With("raw", raw).
+				Error(perr, "恢复语言 URL 方案失败：取值非法，保留进程配置")
+			continue
+		}
+		i18n.SetSiteLangURLMode(mode)
+		logger.Scene("settings").With("project", p.ID).With("mode", string(mode)).
+			Info("已从站点设置恢复语言 URL 方案")
+		return
+	}
 }
 
 // markPagesStaleForLocaleChange 语言清单内容确实变化后，把全站页面标记为待重建。

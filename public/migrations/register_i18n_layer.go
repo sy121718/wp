@@ -258,14 +258,15 @@ func registerI18nDataLayer() {
 		SQL:          mustSQL("229_i18n_seed_admin_page_shell.sql"),
 	})
 
-	// 230：列表页标准骨架配套词条（77 key × 2 语言，zh-CN 77 行 / en-US 77 行）。
+	// 230：列表页标准骨架配套词条（75 key × 2 语言，zh-CN 75 行 / en-US 75 行；
+	// 原 77 个 key，2026-09 本批退役 admin.product_{categories,brands}.seo.unset 各 2 行，见 419）。
 	//
 	// 本轮引入的固定文案位：① 骨架通用件 —— 首列勾选框与批量条（全选 / 选中计数 /
 	// 批量删除 / 行勾选无障碍标签）；② 仪表盘改为真实概览后的统计卡与最近页面列表；
 	// ③ 商品分类 / 商品品牌表格化的列头、空状态与批量删除确认。
 	// 与 228 / 229 同理：模板兜底只在缺词条时显示中文，英文界面会回落中文。
 	// ConditionSQL 取本批 3 个代表 key 的 zh-CN 行数作门槛（不用全库计数，
-	// 否则存量库永远满足、补词条永远不会执行）。
+	// 否则存量库永远满足、补词条永远不会执行）—— 本批退役的两个 key 不在其中，故门槛不变。
 	registerSeed(Seed{
 		Version:      "230-i18n-seed-list-skeleton",
 		TableName:    "sys_i18n",

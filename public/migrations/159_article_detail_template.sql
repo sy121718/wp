@@ -10,7 +10,13 @@ DECLARE
     v_project uuid;
     v_tpl     uuid := gen_random_uuid();
     v_ver     uuid := gen_random_uuid();
-    v_doc     jsonb := '{"settings":{"layout":{"mode":"full"}},"root":[{"id":"art-section","type":"core.container","props":{"tag":"article","layout":{"engine":"flex","flex":{"direction":"column","gap":"1rem"}}},"children":[{"id":"art-title","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h1"}},{"id":"art-featured","type":"core.image","props":{"binding":{"field":"article.featuredImage"},"ratio":"16:9"}},{"id":"art-excerpt","type":"core.text","props":{"mode":"plain","binding":{"field":"article.excerpt"},"plainTag":"p"}},{"id":"art-body","type":"core.text","props":{"mode":"rich","binding":{"field":"article.body"}}}]}]}'::jsonb;
+    -- 字段值必须落在组件控件白名单内，否则模板文档过不了 ValidatePageTolerant，
+    -- 任何一次「给文章建详情页实例」都会以「Blueprint 文档格式非法」失败 ——
+    -- 表现是文章详情页**一页都建不出来**（实测踩过）：
+    --   · core.text 的内容模式只有 richtext / plaintext 两个值（旧值 plain / rich 已经不在白名单）；
+    --   · 图片的宽高比字段是 aspectRatio（旧值 ratio 不存在）。
+    -- 已建库的存量由 313_article_detail_template_props.sql 按相等匹配修一次。
+    v_doc     jsonb := '{"settings":{"layout":{"mode":"full"}},"root":[{"id":"art-section","type":"core.container","props":{"tag":"article","layout":{"engine":"flex","flex":{"direction":"column","gap":"1rem"}}},"children":[{"id":"art-title","type":"core.heading","props":{"binding":{"field":"article.title"},"tag":"h1"}},{"id":"art-featured","type":"core.image","props":{"binding":{"field":"article.featuredImage"},"aspectRatio":"16:9"}},{"id":"art-excerpt","type":"core.text","props":{"mode":"plaintext","binding":{"field":"article.excerpt"},"plainTag":"p"}},{"id":"art-body","type":"core.text","props":{"mode":"richtext","binding":{"field":"article.body"}}}]}]}'::jsonb;
 BEGIN
     IF EXISTS (SELECT 1 FROM content_templates WHERE entity_type = 'article') THEN
         RETURN;

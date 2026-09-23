@@ -53,6 +53,12 @@ func parseSiteLangURLMode(raw string) (SiteLangURLMode, error) {
 	}
 }
 
+// ParseSiteLangURLMode 解析并校验语言 URL 方案取值（站点设置页保存与启动恢复共用同一判据）：
+// 空串按默认 default_plain，其余只接受 off / default_plain / all_prefix。
+func ParseSiteLangURLMode(raw string) (SiteLangURLMode, error) {
+	return parseSiteLangURLMode(raw)
+}
+
 // SiteLangURLModeValue 返回当前站点语言 URL 方案。
 func SiteLangURLModeValue() SiteLangURLMode {
 	initMu.Lock()

@@ -185,7 +185,7 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 		v.CostPrice = req.CostPrice
 	}
 	if req.Image != nil {
-		v.Image = *req.Image
+		v.Image = mediaURL(*req.Image)
 	}
 	if req.OptionValues != nil {
 		v.OptionValues = req.OptionValues
@@ -341,7 +341,7 @@ func (s *Service) newVariantFromDefaults(ctx context.Context, p *productmodel.Pr
 			v.CostPrice = req.CostPrice
 		}
 		if req.Image != "" {
-			v.Image = req.Image
+			v.Image = mediaURL(req.Image)
 		}
 		if len(req.OptionValues) > 0 {
 			v.OptionValues = req.OptionValues

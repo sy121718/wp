@@ -60,15 +60,21 @@ var returnStatusViews = []struct {
 // returnFacingExtras 本页允许原样显示的**模块外**文案。
 //
 // orderenums.UserFacingMessages 是结算链路的白名单（那些文案会显示给访客），
-// 后台审核侧的文案不在其中：同意 / 拒绝 / 入库成功的提示，以及三条只在后台出现的
+// 后台审核侧的文案不在其中：同意 / 拒绝 / 入库成功的提示，以及几条只在后台出现的
 // 状态错误 —— 不补这一层，运营点下去只会看到「系统内部错误」，
 // 而真正的原因（「该申请不在待审核状态」）就丢了。
+//
+// ErrReturnNotFound 是「?returnId= 指向的单不存在」这一档的唯一文案：
+// 它不在 UserFacingMessages 里（那条白名单服务访客侧结算），于是本页此前把它收口成
+// 「系统内部错误，请稍后重试」—— 有反馈，但说的不是真实原因（单不存在 ≠ 系统故障）。
+// 出口按当前语言取词（returnFacingPageText），页面因此显示「退货申请不存在」。
 //
 // 最后一条是本页自造文案：?err= 是用户可编辑的查询参数，回显时同样要过白名单，
 // 自造文案不登记在这里就等着被自己吞掉。
 var returnFacingExtras = []string{
 	orderenums.MsgReturnApproved, orderenums.MsgReturnRejected, orderenums.MsgReturnReceived,
 	orderenums.ErrReturnRejectReasonRequired, orderenums.ErrReturnNotReviewable, orderenums.ErrReturnNotReceivable,
+	orderenums.ErrReturnNotFound,
 	returnIDInvalidText,
 }
 
@@ -102,14 +108,33 @@ type returnFilter struct {
 // ReturnsPage 退货入库管理页（GET /admin/returns）。
 func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		c.String(http.StatusInternalServerError, orderenums.ErrInternal)
-		return
+
+	// 回显文案：?err= / ?ok= 都过白名单，查不到的一律收口
+	// （查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
+	// 命中白名单的那一支要取当前语言的译文（returnFacingPageText）：页面上的
+	// {{.Err}} / {{.Ok}} 是直接渲染的文本，不经过 pkg/response 的 translate。
+	// 先于装载计算：装载失败要**压过**它（见下）。
+	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), returnFacingPageText(c))
+	pageOk := returnFacingQueryText(c, c.Query("ok"))
+
+	projects, loadErr := h.projects.List(ctx)
+	// 工程列表读不出来**不拿走整个页面**（判据见 order_page_handle.go 的 OrdersPage）：
+	// 空列表 + 归口提示 + HTTP 200，页头 / 筛选器 / 批量条 / 分页壳与侧栏全部保留。
+	// 装载失败**压过 ?err=**：它是这次请求真实发生的事。
+	loadFailed := loadErr != nil
+	if loadFailed {
+		projects = nil
+		pageErr = orderFacingError(c, loadErr)
 	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
+
+	// 装载失败时不再去读列表 / 详情：工程上下文都没定下来（selected 只能来自 URL），
+	// 拿一个可能属于别的工程的 project 参数去查退货单，查出来的是哪个工程的单都说不清。
+	selected := ""
+	if !loadFailed {
+		selected = strings.TrimSpace(c.Query("project"))
+		if selected == "" && len(projects) > 0 {
+			selected = projects[0].ID
+		}
 	}
 	page, limit := orderListWindow(c)
 	filter := returnFilter{
@@ -118,11 +143,6 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		OrderID:  orderQueryID(c.Query("orderId")),
 		ReturnID: orderQueryID(c.Query("returnId")),
 	}
-
-	// 回显文案：?err= / ?ok= 都过白名单，查不到的一律收口
-	// （查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
-	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), orderFacingText)
-	pageOk := returnFacingQueryText(c, c.Query("ok"))
 
 	rows := []gin.H{}
 	counters := returnStatusCounters(nil, filter, selected)
@@ -178,10 +198,12 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		"Detail":        detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这个键决定要不要渲染详情块。
 		"HasDetail": len(detail) > 0,
-		"Page":      page,
-		"Limit":     limit,
-		"Err":       pageErr,
-		"Ok":        pageOk,
+		// 同上：装载失败时空态必须与「这个工程还没有退货申请」区分开，判据由 handler 算好。
+		"LoadFailed": loadFailed,
+		"Page":       page,
+		"Limit":      limit,
+		"Err":        pageErr,
+		"Ok":         pageOk,
 		// 批量动作的结论：数量是动态的，过不了 ?ok= / ?err= 的文案白名单，单独走 ?done=。
 		"Done": orderPageDone(c, c.Query("done")),
 	})
@@ -189,7 +211,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/returns.html", data)
+	c.HTML(http.StatusOK, "admin/order/returns.html", data)
 }
 
 // ReturnApprove 同意退货申请（POST /admin/returns/approve）。

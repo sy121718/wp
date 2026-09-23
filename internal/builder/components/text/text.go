@@ -142,20 +142,72 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"typo_mobile":  typoDecls(p, core.BreakpointMobile),
 		"color":        p.Color,
 		"link_color":   p.LinkColor,
-		"para_spacing": p.ParagraphSpacing,
+		"para_spacing": effectiveParagraphSpacing(p),
 		"clamp":        clamp,
 	}
 	if err := core.ApplyComponentCSSTmpl(b, sel, textCSS, vars); err != nil {
 		// 样式源解析失败属于构建期缺陷，必须在测试/构建时暴露；静默跳过的后果是产物悄悄少了样式。
 		panic(fmt.Sprintf("text 组件样式解析失败: %v", err))
 	}
+	// 富文本排版基线单独一份样式源、按需应用。
+	//
+	// 为什么不写成 text.css 里的一段 @if：样式引擎的 @if 只支持**声明块内**的条件段
+	// （见 badge.css），包不住「一整组顶层规则」，硬写会在构建期以
+	// 「看不懂这一行 "*"」炸掉。拆成两个文件后条件判断回到 Go，两份样式各自线性可读。
+	if isRichText(p) {
+		if err := core.ApplyComponentCSSTmpl(b, sel, textRichCSS, nil); err != nil {
+			panic(fmt.Sprintf("text 富文本样式解析失败: %v", err))
+		}
+	}
 }
+
+// effectiveParagraphSpacing 段间距：作者配了就用，没配兜底 1em。
+//
+// 为什么必须有兜底：富文本正文是从 CMS 灌进来的，作者多半不会为「一篇文章」
+// 单独调段间距；空值会让样式引擎把整条 margin 声明省略 —— 于是段与段贴在一起，
+// 读起来是一块灰墙（实测踩过）。给的是下界而不是设计上限：作者仍可覆盖。
+func effectiveParagraphSpacing(p *Props) string {
+	if p != nil {
+		if v := strings.TrimSpace(p.ParagraphSpacing); v != "" {
+			return v
+		}
+	}
+	// 兜底只给「真的会渲染富文本」的实例：什么都没配的正文组件产出空 <div>，
+	// 不该为此输出一条段间距规则（不产出死 CSS，text_css_test.go 钉住这条）。
+	if !isRichText(p) {
+		return ""
+	}
+	return defaultParagraphSpacing
+}
+
+// isRichText 该实例是否真的会渲染富文本内容。
+//
+// 判据 = 「模式不是纯文本」且「有静态内容或字段绑定」。它门控的是**富文本排版基线**
+// （h1~h6 边距、列表缩进、表格、img 的 max-width 等）：这些规则只在真有一段富文本
+// 要排的时候才有意义，全空实例不该输出它们。
+func isRichText(p *Props) bool {
+	if p == nil {
+		return false
+	}
+	if p.Mode == ModePlainText {
+		return false
+	}
+	return strings.TrimSpace(p.Text) != "" || p.Binding != nil
+}
+
+// defaultParagraphSpacing 段间距兜底值。
+const defaultParagraphSpacing = "1em"
 
 // init 注册正文组件。
 func init() {
 	core.Register(Widget)
 	core.RegisterTemplate("text", textTemplate)
 }
+
+// textRichCSS 富文本排版基线（只在实例真的渲染富文本时应用）。
+//
+//go:embed text_richtext.css
+var textRichCSS string
 
 // textTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
 // （注册后由 loader 优先采用，见 core.RegisterTemplate）。

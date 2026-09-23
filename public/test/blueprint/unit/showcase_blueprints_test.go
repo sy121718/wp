@@ -286,7 +286,7 @@ func TestShowcaseBlueprintsCloneAndPreview(t *testing.T) {
 			if err := builder.ValidatePage(page); err != nil {
 				t.Fatalf("复制后的文档未通过页面校验: %v", err)
 			}
-			html, err := pageSvc.CompilePreview(ctx, cloned, projectID, "/", "")
+			html, err := pageSvc.CompilePreview(ctx, cloned, projectID, "/", "", false)
 			if err != nil {
 				t.Fatalf("预览编译失败: %v", err)
 			}

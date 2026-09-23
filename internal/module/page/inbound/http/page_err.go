@@ -186,9 +186,58 @@ var pagesBulkResultTemplates = []pageBulkText{
 }
 
 // pagesLocalNotices 页面管理页自造、可原样展示的回执文案。
-var pagesLocalNoticeMissingID = pageBulkText{pageenums.BulkPageMissingID, "缺少页面 id，未执行删除。"}
+var (
+	pagesLocalNoticeMissingID = pageBulkText{pageenums.BulkPageMissingID, "缺少页面 id，未执行删除。"}
+	// pagesLocalNoticeMissingPageID 翻译工作台保存时缺页面 id
+	// （POST /admin/page/translations/save 的 pageId 为空）。
+	//
+	// 该分支原先 `c.String(400, pageenums.MsgFieldRequired)`：响应体只有 i18n 的 **key 本身**
+	// （16 字节的 "MsgFieldRequired"）—— 用户看到的是内部标识符，而不是给运营看的文案，
+	// 而且脱离页壳。key 复用通用必填词条（词条值就是「必填字段不能为空」），回跳沿用同文件
+	// 其它失败分支的 303 → /admin/pages，原因经 ?err= 回带（读侧 pagePageErr 白名单放行）。
+	pagesLocalNoticeMissingPageID = pageBulkText{pageenums.MsgFieldRequired, "必填字段不能为空，未保存。"}
 
-var pagesLocalNotices = []pageBulkText{pagesLocalNoticeMissingID}
+	// pagesLocalNoticeProjectNameRequired 新建站点工程时名称为空
+	// （POST /admin/projects/create 的 name 为空）。
+	//
+	// 原先这里是 `c.String(400, "项目名称不能为空")`：浏览器里只剩一行纯文本，
+	// 侧栏 / 页头 / 抽屉 / 用户刚填的内容全没了（AGENTS.md 形态 ①）。改成 303 回列表页
+	// + ?err=<当前语言文案>，读侧走 pagePageErr 白名单。
+	//
+	// 为什么不复用通用词条 MsgFieldRequired：这条回执要说清「哪一条没填」。
+	// 通用句「必填字段不能为空」在页面上等于什么都没说 —— 用户要自己把抽屉再开一遍才知道。
+	pagesLocalNoticeProjectNameRequired = pageBulkText{pageenums.PageFormProjectNameRequired, "站点工程名称不能为空，未创建。"}
+	// pagesLocalNoticePathRequired 新建页面时路径为空（POST /admin/pages/create 的 draftPath 为空）。
+	//
+	// 缺工程 id **不走**这一条：那里复用 pageenums.ErrProjectRequired（403 已登记中英词条，
+	// 语义就是「没有工程作用域」）。两条分开报的判据与 project 域主题页一致 ——
+	// 合成句「项目与页面路径不能为空」把两件事说成同一件事，而修法完全不同：
+	// 缺工程是选择器 / 工程列表的问题，缺路径是输入框的问题。
+	pagesLocalNoticePathRequired = pageBulkText{pageenums.PageFormPathRequired, "页面路径不能为空，未创建。"}
+)
+
+// pagesLocalNotices 页面管理页自造、可原样展示的回执文案（**读侧候选的来源**）。
+//
+// 写侧每新增一条自造回执，必须同时加进这里 —— 漏登记的症状是「写侧发了提示、
+// 页面上静默无提示」（?err= 整体匹配不上候选、被判成伪造），既不报错也不记日志。
+// page_page_err_test.go 的写侧标识符对账用例钉住这一点。
+var pagesLocalNotices = []pageBulkText{
+	pagesLocalNoticeMissingID,
+	pagesLocalNoticeMissingPageID,
+	pagesLocalNoticeProjectNameRequired,
+	pagesLocalNoticePathRequired,
+}
+
+// pageFacingKey 取一条**本域 enums 文案 key** 的当前语言文本（handler 侧已知它可展示时用）。
+//
+// 与 pageFacingText 的分工：那里的入参是 error（来源要在运行期判定、未命中要记日志），
+// 这里入参是本域 enums 常量（来源在编译期已确定），所以只取词、不判定、不记日志。
+//
+// fallback 给 key 本身：缺词条的页面会显示裸 key（一眼可见），而给空串会让
+// 「操作失败」在页面上**完全不可见** —— 用户以为操作成功了。
+func pageFacingKey(c *gin.Context, key string) string {
+	return shell.TranslateFor(c)(key, key)
+}
 
 // pageFacingKeys 可以原样展示给运营的 page 业务错误 key。
 //

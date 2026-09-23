@@ -36,15 +36,18 @@
 }
 
 /* 自绘加减号：收起是「＋」，展开时旋转 45° 变「×」。 */
-& summary::after {
-  content: '＋';
-  font-size: 14px;
+/* 展开箭头：基座图标库的 chevron-down（SVG），展开时翻向。 */
+& .sky-faq-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 12px;
   color: rgba(0,0,0,0.4);
   transition: transform .2s;
 }
 
-& details[open] summary::after {
-  transform: rotate(45deg);
+& details[open] .sky-faq-chevron {
+  transform: rotate(180deg);
 }
 
 /* 答案正文。 */

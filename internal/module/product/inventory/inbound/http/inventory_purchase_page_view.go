@@ -19,22 +19,40 @@ import (
 //
 // 取数失败回显走 inventoryErrText（业务 key → 当前语言文案，其余 → 归口文案 + 结构化日志），
 // 与写路径同一口径：列表页的失败提示不允许比写路径多泄漏一个字符。
+//
+// total 是该过滤条件下的**真实总张数**（契约的 CountPurchaseOrders，与 ListPurchaseOrders
+// 同一份过滤条件）；curPage 是**收敛后**的页码（page 越界时回落到末页）。out 只装本页数据。
 func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectID, status, sourceID, keyword string,
-	pageErr *string) (out []gin.H) {
+	page, limit int, pageErr *string) (out []gin.H, total int64, curPage int) {
 	ctx := c.Request.Context()
 	out = []gin.H{}
 	if projectID == "" {
-		return out
+		return out, 0, 1
 	}
-	orders, err := h.inventory.ListPurchaseOrders(ctx, &inventorydto.ListPurchaseOrderReq{
+	// 过滤条件只构造一次：列表与计数各自复制、只加各自的 Page/Size ——
+	// 两处各写一份时，日后新增一个筛选维度只改到列表那一侧，「共 N 条」就会与实际条数矛盾。
+	filterReq := &inventorydto.ListPurchaseOrderReq{
 		ProjectID: projectID, Status: status, SourceID: sourceID, Keyword: keyword,
-		Size: inventoryPurchasePageSize,
-	})
+	}
+	// 先计数、收敛页码，再取当页数据（顺序不能反，见 clampInventoryPage）：
+	// 反过来时 page 越界会让列表返回空页，而分页条按收敛后的页码渲染。
+	n, cerr := h.inventory.CountPurchaseOrders(ctx, filterReq)
+	if cerr != nil {
+		if *pageErr == "" {
+			*pageErr = inventoryErrText(c, cerr)
+		}
+		return out, 0, page
+	}
+	total = n
+	curPage = clampInventoryPage(page, limit, total)
+	listReq := *filterReq
+	listReq.Page, listReq.Size = curPage, limit
+	orders, err := h.inventory.ListPurchaseOrders(ctx, &listReq)
 	if err != nil {
 		if *pageErr == "" {
 			*pageErr = inventoryErrText(c, err)
 		}
-		return out
+		return out, total, curPage
 	}
 	for _, o := range orders {
 		lines := make([]gin.H, 0, len(o.Lines))
@@ -63,7 +81,7 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectI
 			"RequestID": uuid.NewString(),
 		})
 	}
-	return out
+	return out, total, curPage
 }
 
 // purchaseHistoryRows 按 SKU（可空 = 全部）取进货历史。

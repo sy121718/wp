@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"go_wp/internal/seo"
 )
 
 // seo_head.go — 构建期 SEO 头输出（canonical / OG / Twitter / JSON-LD）。
@@ -75,17 +77,24 @@ func BuildSEOHead(seo SEO, pageURL, title, description, breadcrumbHome string, a
 	var sb strings.Builder
 	esc := html.EscapeString
 
-	canonical := canonicalPublicPath(strings.TrimSpace(seo.Canonical))
+	// canonical / og:url / og:image 一律补成**绝对地址**。
+	//
+	// 为什么不能是站内路径：Canonical 的官方规范要求绝对 URL —— 跨协议、镜像站、
+	// 分域分发抓取时，相对路径会让权重归集失效（搜索引擎各按各的域拼）；
+	// og:image 相对地址则被多数社交抓取器直接忽略，分享卡片没有图。
+	// 站点基址真源与 sitemap / hreflang 同一个环境变量（WP_SITE_BASE_URL，可带路径前缀）。
+	canonical := absoluteURL(canonicalPublicPath(strings.TrimSpace(seo.Canonical)))
 	if canonical == "" {
-		canonical = canonicalPublicPath(strings.TrimSpace(pageURL))
+		canonical = absoluteURL(canonicalPublicPath(strings.TrimSpace(pageURL)))
 	}
 	if canonical != "" {
 		fmt.Fprintf(&sb, "<link rel=\"canonical\" href=\"%s\">\n", esc(canonical))
 	}
-	pubURL := canonicalPublicPath(strings.TrimSpace(pageURL))
+	pubURL := absoluteURL(canonicalPublicPath(strings.TrimSpace(pageURL)))
 	if pubURL == "" {
 		pubURL = canonical
 	}
+	ogImage := absoluteURL(strings.TrimSpace(seo.OGImage))
 	if rb := robotsContent(seo.RobotsIndex, seo.RobotsFollow); rb != "" {
 		fmt.Fprintf(&sb, "<meta name=\"robots\" content=\"%s\">\n", esc(rb))
 	}
@@ -101,19 +110,57 @@ func BuildSEOHead(seo SEO, pageURL, title, description, breadcrumbHome string, a
 		fmt.Fprintf(&sb, "<meta property=\"og:url\" content=\"%s\">\n", esc(pubURL))
 	}
 	fmt.Fprintf(&sb, "<meta property=\"og:type\" content=\"%s\">\n", ogType(seo.SchemaType))
-	if seo.OGImage != "" {
-		fmt.Fprintf(&sb, "<meta property=\"og:image\" content=\"%s\">\n", esc(seo.OGImage))
-		fmt.Fprintf(&sb, "<meta name=\"twitter:image\" content=\"%s\">\n", esc(seo.OGImage))
+	if ogImage != "" {
+		fmt.Fprintf(&sb, "<meta property=\"og:image\" content=\"%s\">\n", esc(ogImage))
+		fmt.Fprintf(&sb, "<meta name=\"twitter:image\" content=\"%s\">\n", esc(ogImage))
 		fmt.Fprint(&sb, "<meta name=\"twitter:card\" content=\"summary_large_image\">\n")
 	} else {
 		fmt.Fprint(&sb, "<meta name=\"twitter:card\" content=\"summary\">\n")
 	}
-	if ld := buildJSONLD(canonical, title, description, seo.OGImage, seo.SchemaType, seo.ProductOffer, breadcrumbHome); ld != "" {
+	if ld := buildJSONLD(canonical, title, description, ogImage, seo.SchemaType, seo.ProductOffer, breadcrumbHome); ld != "" {
 		sb.WriteString(ld)
 		sb.WriteString("\n")
 	}
 	sb.WriteString(alternateLinks(normalizeAlternates(alternates)))
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+// siteBasePath 站点基址里的路径前缀（无前缀返回空串，形如 "/site"）。
+//
+// 单独抽出来是因为「基址带前缀」这件事在四处都要用：绝对地址拼接、首页判定、
+// 面包屑前缀剥离、面包屑首页项。各写一次 parse 迟早漏一处 —— 漏掉的表现是
+// 某处悄悄指向域名根，而页面上完全看不出来。
+func siteBasePath() string {
+	base := strings.TrimSpace(os.Getenv(siteBaseURLEnv))
+	if base == "" {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(u.Path, "/")
+}
+
+// absoluteURL 把站内路径补成对外绝对地址；已是绝对地址或未配置基址时原样返回。
+//
+// 基址来自 WP_SITE_BASE_URL（与 sitemap / robots / hreflang / 结构化数据同源），
+// **允许带路径前缀**（开发环境就是 http://127.0.0.1:8080/site），因此用 JoinURL
+// 而不是自己拼 host —— 前缀丢了会让所有 canonical 指向站点根。
+func absoluteURL(raw string) string {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return ""
+	}
+	lower := strings.ToLower(u)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || strings.HasPrefix(u, "//") {
+		return u
+	}
+	base := strings.TrimSpace(os.Getenv(siteBaseURLEnv))
+	if base == "" {
+		return u // 未配置基址：保持站内路径（既有行为，不猜域名）
+	}
+	return seo.JoinURL(base, u)
 }
 
 func canonicalPublicPath(path string) string {
@@ -231,6 +278,11 @@ func siteRoot(canonical string) string {
 }
 
 // isHomeCanonical 判断 canonical 是否站点首页（路径为空或 "/"）。
+//
+// 判据要先剥掉**站点基址的路径前缀**：站点部署在子路径时（开发环境就是 /site），
+// 首页的绝对 URL 形如 https://host/site/ —— 直接看 url.Path 是 "/site/"，会被误判成
+// 非首页，首页的 Organization / WebSite 结构化数据整块不输出（实测：加绝对地址那轮
+// 把这条打掉了，TestSiteLevelJSONLDOnHomePage 变红）。
 func isHomeCanonical(canonical string) bool {
 	c := strings.TrimSpace(canonical)
 	if c == "" {
@@ -242,6 +294,17 @@ func isHomeCanonical(canonical string) bool {
 	u, err := url.Parse(c)
 	if err != nil || u.Opaque != "" {
 		return false
+	}
+	if base := strings.TrimSpace(os.Getenv(siteBaseURLEnv)); base != "" {
+		if bu, berr := url.Parse(base); berr == nil {
+			prefix := strings.TrimRight(bu.Path, "/")
+			if prefix != "" {
+				p := strings.TrimRight(u.Path, "/")
+				if strings.HasPrefix(p, prefix) {
+					u.Path = strings.TrimPrefix(p, prefix)
+				}
+			}
+		}
 	}
 	return u.Path == "" || u.Path == "/"
 }
@@ -411,9 +474,26 @@ func breadcrumbList(rawURL, homeName string) []map[string]any {
 			base = u.Scheme + ":" + base
 		}
 	}
-	parts := strings.Split(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
-	out := []map[string]any{{"@type": "ListItem", "position": 1, "name": homeName, "item": base + "/"}}
-	cur := base
+	// 剥掉**站点基址的路径前缀**：站点部署在子路径时（开发环境就是 /site），
+	// 前缀本身不是面包屑的一级 —— 不剥它，JSON-LD 里会多出一条名为 "site" 的假层级
+	// （实测 AbsoluteURL 那轮把这条引入了：面包屑变成 首页 > site > 文章）。
+	escapedPath := u.EscapedPath()
+	if base := strings.TrimSpace(os.Getenv(siteBaseURLEnv)); base != "" {
+		if bu, berr := url.Parse(base); berr == nil {
+			prefix := strings.TrimRight(bu.EscapedPath(), "/")
+			if prefix != "" && strings.HasPrefix(escapedPath, prefix) {
+				escapedPath = strings.TrimPrefix(escapedPath, prefix)
+			}
+		}
+	}
+	parts := strings.Split(strings.TrimPrefix(escapedPath, "/"), "/")
+	// 首页项要带上**站点基址的路径前缀**：站点部署在子路径时站点首页是 <prefix>/，
+	// 写成 scheme://host/ 会指到域名根（那里可能是控制面或另一个站点）。
+	out := []map[string]any{{"@type": "ListItem", "position": 1, "name": homeName, "item": base + siteBasePath() + "/"}}
+	// 层级 URL 从**站点基址**起算（不是域名根）：少了前缀，每一级的 item 都会指向
+	// 域名根下的同名路径 —— 那是另一个位置（控制面 / 别的站点），页面看不出来但结构化
+	// 数据是错的。
+	cur := base + siteBasePath()
 	for _, p := range parts {
 		cur += "/" + p
 		if p == "" {

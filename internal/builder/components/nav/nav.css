@@ -121,9 +121,28 @@
 & .sky-nav-burger {
   display: none;
   cursor: pointer;
-  font-size: 22px;
   line-height: 1;
   padding: 8px 12px;
+}
+
+/* 汉堡图标：基座图标库的 menu（SVG），尺寸由这里定而不是字号。 */
+& .sky-nav-burger-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+/* 视觉隐藏但读屏可读（汉堡的无障碍名）。 */
+& .sky-nav-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 @media (max-width: 767px) {
@@ -230,7 +249,6 @@
   z-index: 2;
   width: 44px;
   place-items: center;
-  font-size: 12px;
   line-height: 1;
   cursor: pointer;
   user-select: none;
@@ -318,6 +336,13 @@
 @hovernone & .sky-nav-panel-toggle:focus-visible ~ .sky-nav-panel-chevron {
   outline: 2px solid var(--sky-c-primary, #2563eb);
   outline-offset: 2px;
+}
+
+/* 子菜单 / 面板箭头：基座图标库的 chevron-down，尺寸统一在这里定。 */
+& .sky-nav-chevron-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
 }
 
 & .sky-nav-panel-chevron {

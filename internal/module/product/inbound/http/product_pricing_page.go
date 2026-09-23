@@ -106,7 +106,7 @@ func (h *productPageHandle) renderPricingPageWith(c *gin.Context, form *pricingF
 	if view.ProjectID == "" {
 		view.ProjectID = selected
 	}
-	c.HTML(http.StatusOK, "admin/product_pricing.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/product/product_pricing.html", shell.Prepare(c, gin.H{
 		"title":           "定价工具",
 		"menu":            "product-pricing",
 		"Projects":        projects,

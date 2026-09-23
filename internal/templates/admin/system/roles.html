@@ -1,0 +1,184 @@
+{* admin/roles.html — 角色管理：列表页标准骨架（评审规则 admin-ui-logic §7）。
+    · 页头一行：标题 + 右侧主行动；筛选与列表同卡；行内表单放表格外。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{* 首列勾选与批量删除：权限点复用单条删除的 /api/role/delete（页面侧不新增权限点）。 *}
+{{canDelete := isset(.PermSet["role:delete"])}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.roles.list.heading", "角色管理（共") }} {{.Total}}{{ .["t"]("admin.roles.list.headingClose", "）") }}</h1>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{include "../partials/toolbar_create.html" map("allowed", isset(.PermSet["role:create"]), "tpl", "#tpl-role-create", "title", tr("admin.roles.action.create", "新建角色"), "label", tr("admin.roles.action.create", "新建角色"))}}
+        </div>
+    </header>
+
+    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
+       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <section class="card list-card">
+        {* 服务端筛选：GET 提交，条件进 SQL（与分页同源）。 *}
+        <div class="filter-bar">
+            <form class="filter-row" method="get" action="/admin/roles">
+                <input type="text" name="keyword" value="{{.["FilterKeyword"]}}" placeholder="{{ .["t"]("admin.roles.ph.keyword", "关键词：编码 / 名称 / 备注") }}" aria-label="{{ .["t"]("admin.roles.ph.keyword", "关键词：编码 / 名称 / 备注") }}" class="form-input filter-search">
+                <button type="submit" class="btn">{{ .["t"]("admin.roles.action.filter", "筛选") }}</button>
+                <a class="btn btn-ghost" href="/admin/roles">{{ .["t"]("admin.roles.action.reset", "重置") }}</a>
+            </form>
+        </div>
+
+        {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知，
+           也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1），
+           <form> 依旧包住 <table>（批量动作与勾选框必须同属一个 form：提交时浏览器直接带上
+           所有勾中的 ids，不需要在提交前注入隐藏域；admin.js 与 theme.css 也依赖这个结构）。 *}
+        <form method="post" action="/admin/roles/bulk-delete">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+        {{if canDelete}}{{if len(.Rows) > 0}}
+        {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.roles.confirm.delete", "确认删除？"), danger=true)}}
+        {{yield bulkBarClose()}}
+        {{end}}{{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region">
+            <table class="data-table">
+                <thead>
+                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th>{{ .["t"]("admin.roles.col.code", "编码") }}</th><th>{{ .["t"]("admin.roles.col.name", "名称") }}</th><th>{{ .["t"]("admin.roles.col.status", "状态") }}</th><th>{{ .["t"]("admin.roles.col.sort", "排序") }}</th><th>{{ .["t"]("admin.roles.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.roles.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                {{if len(.Rows) == 0}}
+                {* 空态整行：colspan = 6 个业务列（编码 / 名称 / 状态 / 排序 / 备注 / 操作）
+                   + 有删除权限时多出来的勾选框列。 *}
+                <tr><td colspan="{{if canDelete}}7{{else}}6{{end}}" class="cell-wrap">
+                    <div class="empty-state">
+                        <p class="empty-title">{{ .["t"]("admin.roles.empty.title", "还没有角色") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.roles.empty", "角色决定管理员能看到哪些菜单、能调用哪些接口。") }}</p>
+                        {{if isset(.PermSet["role:create"])}}
+                        <div class="empty-actions">
+                            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-role-create" data-drawer-title="{{ .["t"]("admin.roles.action.create", "新建角色") }}">＋ {{ .["t"]("admin.roles.action.create", "新建角色") }}</button>
+                        </div>
+                        {{end}}
+                    </div>
+                </td></tr>
+                {{else}}
+                {{range _, r := .Rows}}
+                <tr data-filter-text="{{r.RoleCode}} {{r.RoleName}} {{r.Remark}}">
+                {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
+                <td class="text-mute">{{r.RoleCode}}{{if r.IsSystem == 1}} <span class="badge badge-mute">{{tr("admin.roles.badge.system", "系统")}}</span>{{end}}</td>
+                <td>{{if isset(.PermSet["role:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{r.RoleName}}</button>{{else}}{{r.RoleName}}{{end}}</td>
+                <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.roles.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.roles.status.disabled", "禁用")}}</span>{{end}}</td>
+                <td>{{r.SortOrder}}</td>
+                <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
+                <td class="col-actions">
+                    {{if isset(.PermSet["role:menu_list"])}}<a class="btn btn-sm btn-ghost" href="/admin/roles/permissions?role_id={{r.ID}}">{{tr("admin.roles.action.permissions", "权限分配")}}</a>{{end}}
+                    {{if isset(.PermSet["role:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{tr("admin.roles.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.PermSet["role:delete"])}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.roles.action.delete", "删除")}}</button>{{end}}
+                </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
+        {{include "../partials/pagination.html"}}
+    </section>
+
+    {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
+    {{range _, r := .Rows}}
+    {{if isset(.PermSet["role:delete"])}}
+    <form id="role-del-{{r.ID}}" method="post" action="/admin/roles/delete" class="hidden-form"
+          data-confirm="{{tr("admin.roles.confirm.delete", "确认删除？")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+    </form>
+    {{end}}
+    {{end}}
+</div>
+
+{* ===== 新建角色（抽屉表单模板） ===== *}
+<template id="tpl-role-create">
+    <form method="post" action="/admin/roles/create">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.roles.field.code", "角色编码") }}</label>
+            <input type="text" name="role_code" class="form-input" required maxlength="50" placeholder="{{ .["t"]("admin.roles.ph.code", "如：editor") }}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.roles.field.name", "角色名称") }}</label>
+            <input type="text" name="role_name" class="form-input" required maxlength="100">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.roles.field.sort", "排序") }}</label>
+                <input type="number" name="sort_order" class="form-input" value="0">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.roles.field.status", "状态") }}</label>
+                <select name="status" class="form-select">
+                    <option value="1">{{ .["t"]("admin.roles.status.enabled", "启用") }}</option>
+                    <option value="0">{{ .["t"]("admin.roles.status.disabled", "禁用") }}</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.roles.field.remark", "备注") }}</label>
+            <input type="text" name="remark" class="form-input" maxlength="200">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.roles.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.roles.action.create_submit", "创建角色") }}</button>
+        </div>
+    </form>
+</template>
+
+{* ===== 编辑角色（每行一份抽屉表单模板，服务端回显） ===== *}
+{{range _, r := .Rows}}
+<template id="tpl-role-edit-{{r.ID}}">
+    <form method="post" action="/admin/roles/update">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.roles.field.code", "角色编码") }}</label>
+            <input type="text" class="form-input" value="{{r.RoleCode}}" disabled>
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.roles.field.name", "角色名称") }}</label>
+            <input type="text" name="role_name" class="form-input" required maxlength="100" value="{{r.RoleName}}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.roles.field.sort", "排序") }}</label>
+                <input type="number" name="sort_order" class="form-input" value="{{r.SortOrder}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.roles.field.status", "状态") }}</label>
+                <select name="status" class="form-select">
+                    <option value="1"{{if r.Status == 1}} selected{{end}}>{{ .["t"]("admin.roles.status.enabled", "启用") }}</option>
+                    <option value="0"{{if r.Status == 0}} selected{{end}}>{{ .["t"]("admin.roles.status.disabled", "禁用") }}</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.roles.field.remark", "备注") }}</label>
+            <input type="text" name="remark" class="form-input" maxlength="200" value="{{if r.Remark}}{{r.Remark}}{{end}}">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.roles.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.roles.action.save", "保存修改") }}</button>
+        </div>
+    </form>
+</template>
+{{end}}
+{{end}}

@@ -29,7 +29,7 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 		"Pages":     []gin.H{{"ID": "pg1", "Path": "/blog/hello-world", "ProjectID": "prj", "ProjectName": "站点"}},
 		"Total":     1, "Truncated": false, "Limit": 30, "Hint": "",
 	}
-	body := renderAdminTemplate(t, "admin/articles.html", articleLayoutData(data))
+	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 	for _, want := range []string{
 		"待重建影响面",
 		"/blog/hello-world",

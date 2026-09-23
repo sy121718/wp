@@ -20,7 +20,7 @@ func TestPagesListTemplate(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/pages", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/pages", map[string]any{
+		c.HTML(http.StatusOK, "admin/page/pages", map[string]any{
 			// 键名与生产 templateMap() 对齐：title/menu 小写(layout 取值)，
 			// Pages/Projects 大写(模板 range 取值)。
 			// t：模板已全面改走 t(key, 中文兜底) 取词（审计 I18N-001），生产入口由

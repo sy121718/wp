@@ -167,14 +167,33 @@ type couponFilter struct {
 // CouponsPage 优惠码管理页（GET /admin/coupons）。
 func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		c.String(http.StatusInternalServerError, orderenums.ErrInternal)
-		return
+
+	// 回显文案：?err= / ?ok= 都过白名单，查不到的一律收口
+	//（查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
+	// 取词出口是 couponPageFacingText：白名单里存的是 item_key，页面模板直接渲染
+	// {{.Err}} / {{.Ok}}，不取词的话提示条上就是那串裸 key。
+	// 先于装载计算：装载失败要**压过**它（见下）。
+	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), couponPageFacingText(c))
+	pageOk := shell.FacingQueryText(c.Query("ok"), "", couponPageFacingText(c))
+
+	projects, loadErr := h.projects.List(ctx)
+	// 工程列表读不出来**不拿走整个页面**（判据见 order_page_handle.go 的 OrdersPage）：
+	// 空列表 + 归口提示 + HTTP 200，页头 / 筛选器 / 批量条 / 分页壳与侧栏全部保留。
+	// 装载失败**压过 ?err=**：它是这次请求真实发生的事。
+	loadFailed := loadErr != nil
+	if loadFailed {
+		projects = nil
+		pageErr = orderFacingError(c, loadErr)
 	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
+
+	// 装载失败时不再去读列表 / 展开区：工程上下文都没定下来（selected 只能来自 URL），
+	// 拿一个可能属于别的工程的 project 参数去查券，查出来的是哪个工程的券都说不清。
+	selected := ""
+	if !loadFailed {
+		selected = strings.TrimSpace(c.Query("project"))
+		if selected == "" && len(projects) > 0 {
+			selected = projects[0].ID
+		}
 	}
 	page, limit := orderListWindow(c)
 	filter := couponFilter{
@@ -182,11 +201,6 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		Keyword:  strings.TrimSpace(c.Query("keyword")),
 		CouponID: orderQueryID(c.Query("couponId")),
 	}
-
-	// 回显文案：?err= / ?ok= 都过白名单，查不到的一律收口
-	//（查询参数是用户可编辑的，不能拿它当「业务提示」直接显示）。
-	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), couponFacingText)
-	pageOk := shell.FacingQueryText(c.Query("ok"), "", couponFacingText)
 
 	rows := []gin.H{}
 	redemptions := []gin.H{}
@@ -259,7 +273,9 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		"Total":           total,
 		"Detail":          detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这两个键决定渲不渲染展开区。
-		"HasDetail":         len(detail) > 0,
+		"HasDetail": len(detail) > 0,
+		// 同上：装载失败时空态必须与「这个工程还没有优惠码」区分开，判据由 handler 算好。
+		"LoadFailed":        loadFailed,
 		"DetailCollapseURL": shell.FilterBaseURL("/admin/coupons", collapse),
 		// 新建完成后回到**同一个工程**（不带 couponId：还没有展开任何券）。
 		"CreateBack":      couponBackQuery(selected, filter, page, limit, 0),
@@ -277,7 +293,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
-	c.HTML(http.StatusOK, "admin/coupons.html", data)
+	c.HTML(http.StatusOK, "admin/order/coupons.html", data)
 }
 
 // CouponCreate 新建优惠码（POST /admin/coupons/create）。

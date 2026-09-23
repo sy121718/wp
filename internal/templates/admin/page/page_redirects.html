@@ -1,0 +1,258 @@
+{* admin/page_redirects.html — 重定向管理（审计 SEO-025）。 *}
+{* 为什么单独成页：改 URL 可以勾「保留旧链接」，系统会落一份 redirect.json 并由 *}
+{* SiteRedirectMiddleware 生效，但此前没有任何地方能看见这些 301，也无法手动增删。 *}
+{* 本页把「当前有哪些重定向、指向哪、是否成链成环」摊开，并给出增删与一键合并。 *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§3/§7）：
+     · 三段领域说明与两条告警口径整段进页头 .help 悬浮，正文零说明文字；
+     · 工程选择与概览统计同一行置于 .page-head 行内；
+     · 列表用 .data-table，末列 .col-actions；行内表单放表格外，按钮用 form="<id>" 关联。 *}
+{* 写法约束：注释一律用 Jet 注释（花括号加星号，见本文件其余注释的写法）—— HTML 与 JS
+   注释里的中文会被 i18n 门禁算成「未 key 文案」，注释里也不要再写 Jet 注释的字面形式，
+   否则门禁脚本的非贪婪匹配会在那里提前收尾，把后半句当正文统计。 *}
+{* range 内不读外层 map（Jet 只在块顶部存变量才可靠），故先把用到的键全部存成变量。 *}
+{* 页面不继承 layout.html：本页挂在 /api 路由组下（见 page_redirect_handle.go 的说明）， *}
+{* 拿不到侧栏导航所需的 NavGroups，故自带最小外壳与返回后台的链接。 *}
+{{import "../partials/bulk_bar.html"}}
+{{tr := .["t"]}}
+{{pagePath := .PagePath}}
+{{csrfToken := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{okKey := .OkKey}}
+{{errKey := .ErrKey}}
+{{done := .Done}}
+{{errText := .ErrText}}
+{{projects := .Projects}}
+{{items := .Items}}
+{{lang := .["lang"]}}
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{csrfToken}}">
+    <title>{{ .Title }} — go_wp {{tr("shell.brand", "管理后台")}}</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
+</head>
+<body class="sidebar-collapsed" data-redirect-page>
+<main class="admin-content">
+        <div class="stack site-slots-page">
+            <header class="page-head">
+                <div class="page-head-main">
+                    <div class="page-title-row">
+                        <h1>{{tr("admin.redirect.title", "重定向管理")}}</h1>
+                        <span class="help">
+                            <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                            <span class="help-pop" role="tooltip">{{tr("admin.redirect.intro.lead", "这一页回答三个问题：")}}<strong>{{tr("admin.redirect.intro.q1", "线上现在有哪些 301")}}</strong>{{tr("admin.redirect.intro.conn1", "、")}}<strong>{{tr("admin.redirect.intro.q2", "它们指向哪里")}}</strong>{{tr("admin.redirect.intro.conn2", "、")}}<strong>{{tr("admin.redirect.intro.q3", "有没有该清理的")}}</strong>{{tr("admin.redirect.intro.tail", "。")}}<br><br>{{tr("admin.redirect.intro2.lead", "条目有两个来源：改页面 URL 时勾了「保留旧链接」留下的重定向，以及下面手动新增的。")}}<strong>{{tr("admin.redirect.intro2.strong", "删除一条重定向不会删除任何页面或产物")}}</strong>{{tr("admin.redirect.intro2.tail", "，只让那个旧路径不再跳转（访客会看到 404）。")}}<br><br>{{tr("admin.redirect.create.hint.lead", "源路径是访客访问的地址（营销短链或旧路径），目标路径必须是")}}<strong>{{tr("admin.redirect.create.hint.strong", "站内已发布")}}</strong>{{tr("admin.redirect.create.hint.tail", "的路径。源路径已被占用、目标不存在、或会与现有重定向成环时，系统会拒绝并说明原因。")}}</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="page-actions">
+                    {{if len(projects) > 1}}
+                    <form class="page-context" method="get" action="{{pagePath}}">
+                        <label class="sr-only" for="project-select">{{tr("admin.redirect.label.project", "站点")}}</label>
+                        <select class="form-select" id="project-select" name="project" onchange="this.form.submit()">
+                            {{range _, p := projects}}
+                            <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                            {{end}}
+                        </select>
+                    </form>
+                    {{end}}
+                    <a class="btn btn-ghost" href="/admin/pages">{{tr("admin.redirect.back", "返回后台")}}</a>
+                </div>
+            </header>
+
+            {{if okKey != ""}}
+            <p class="badge badge-success" role="status">{{ .["t"](okKey, "操作完成")}}</p>
+            {{end}}
+            {{if errKey != ""}}
+            <p class="badge badge-danger" role="alert">{{ .["t"](errKey, "操作未完成")}}</p>
+            {{end}}
+            {* 批量删除的结果：全成功走 Done，有跳过走 ErrText —— 两句都由服务端按 dn / sk
+               计数拼装（受控文本 + ParseInt 过的数字），不是从 query 直接回显的自由文本。 *}
+            {{if done != ""}}
+            <p class="badge badge-info" role="status">{{done}}</p>
+            {{end}}
+            {{if errText != ""}}
+            <p class="badge badge-warning" role="alert">{{errText}}</p>
+            {{end}}
+            {{if len(projects) == 0}}
+            <p class="badge badge-warning">{{tr("admin.redirect.no_project", "还没有站点工程 —— 先去页面管理建一个工程，重定向是挂在工程下的。")}}</p>
+            {{end}}
+
+            {{if selectedProject != ""}}
+            <section class="card list-card">
+                <div class="list-toolbar">
+                    <strong>{{tr("admin.redirect.list.title", "当前重定向")}}</strong>
+                    <span class="toolbar-spacer"></span>
+                    <span class="sr-only">{{tr("admin.redirect.overview.title", "概览")}}</span>
+                    <span class="badge badge-mute">{{tr("admin.redirect.stat.total", "重定向")}} {{.Total}}</span>
+                    <span class="badge badge-mute">{{tr("admin.redirect.stat.effective", "已生效")}} {{.EffectiveCount}}</span>
+                    <span class="badge {{if .MultiHopCount > 0}}badge-warning{{else}}badge-mute{{end}}">{{tr("admin.redirect.stat.multihop", "多跳")}} {{.MultiHopCount}}</span>
+                    <span class="badge {{if .LoopCount > 0}}badge-danger{{else}}badge-mute{{end}}">{{tr("admin.redirect.stat.loop", "成环")}} {{.LoopCount}}</span>
+                </div>
+                {{if .MultiHopCount > 0}}
+                <p class="badge badge-warning">{{tr("admin.redirect.chain.notice", "检测到多跳链：A 到 B、B 再到 C 会让访客多跳一次，点该行的「合并」让它直达终点。")}}</p>
+                {{end}}
+                {{if .LoopCount > 0}}
+                <p class="badge badge-danger">{{tr("admin.redirect.loop.notice", "有重定向处在环里（互相指向），访客会撞上「重定向次数过多」：请删除或修正其中一条。")}}</p>
+                {{end}}
+
+                <form method="post" action="{{pagePath}}/create" class="filter-bar">
+                    <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                    <input type="hidden" name="project" value="{{selectedProject}}">
+                    <label class="sr-only" for="source-path">{{tr("admin.redirect.create.source", "源路径")}}</label>
+                    <input class="form-input" id="source-path" name="sourcePath" placeholder="/promo/spring" required>
+                    <span class="text-mute text-sm">{{tr("admin.redirect.create.arrow", "跳转到")}}</span>
+                    <label class="sr-only" for="target-path">{{tr("admin.redirect.create.target", "目标路径")}}</label>
+                    <input class="form-input" id="target-path" name="targetPath" placeholder="/products" required>
+                    <span class="filter-spacer"></span>
+                    <button type="submit" class="btn btn-primary">{{tr("admin.redirect.create.submit", "新增重定向")}}</button>
+                </form>
+
+                <form method="post" action="/admin/page-redirects/bulk-delete"
+                      data-confirm="{{tr("admin.redirect.bulk_delete_confirm", "删除选中的重定向？它们指向的旧路径会直接返回 404（页面与产物不受影响，可以再手动加回来）。")}}" data-confirm-danger>
+                    <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                    <input type="hidden" name="project" value="{{selectedProject}}">
+                    {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+                    {{if len(items) > 0}}
+                    {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.redirect.bulk_delete_confirm", "删除选中的重定向？它们指向的旧路径会直接返回 404（页面与产物不受影响，可以再手动加回来）。"), danger=true)}}
+                    {{yield bulkBarClose()}}
+                    {{end}}
+                <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.redirect.list.aria", "重定向列表")}}">
+                    <table class="data-table">
+                        <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" data-check-all aria-label="{{tr("admin.common.bulk.selectAll", "全选")}}"></th>
+                            <th>{{tr("admin.redirect.col.source", "源路径")}}</th>
+                            <th>{{tr("admin.redirect.col.target", "目标路径")}}</th>
+                            <th>{{tr("admin.redirect.col.status", "状态")}}</th>
+                            <th>{{tr("admin.redirect.col.owner", "归属")}}</th>
+                            <th>{{tr("admin.redirect.col.updated", "更新时间")}}</th>
+                            <th class="col-actions">{{tr("admin.redirect.col.actions", "操作")}}</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 7：
+                           勾选 / 源路径 / 目标路径 / 状态 / 归属 / 更新时间 / 操作）。 *}
+                        {{if len(items) == 0}}
+                        <tr><td colspan="7" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{tr("admin.redirect.empty.title", "还没有重定向")}}</p>
+                    <p class="empty-desc">{{tr("admin.redirect.empty", "当前站点还没有重定向 —— 上面新增一条，或在页面里改 URL 时勾选「保留旧链接」。")}}</p>
+                    {* 空态动作：本页的「新增」表单就在上方一行（.filter-bar），同屏可见，不必重复给。
+                       真正缺的入口是另一条来源 —— 改页面 URL 时勾「保留旧链接」。 *}
+                    <div class="empty-actions">
+                        <a class="btn" href="/admin/pages">{{tr("admin.redirect.empty.action", "去页面管理改 URL")}}</a>
+                    </div>
+                </div>
+                        </td></tr>
+                        {{else}}
+                        {{range i, it := items}}
+                        <tr>
+                            <td class="col-check">
+                                <input type="checkbox" name="paths" value="{{it.SourcePath}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行")}}">
+                            </td>
+                            <td><code>{{it.SourcePath}}</code></td>
+                            <td>
+                                {{if it.Effective}}
+                                <a href="/site{{it.TargetPath}}" target="_blank" rel="noopener"><code>{{it.TargetPath}}</code></a>
+                                {{if it.MultiHop}}
+                                <span class="badge badge-warning">{{tr("admin.redirect.badge.multihop", "多跳")}} → <code>{{it.FinalPath}}</code></span>
+                                {{end}}
+                                {{else}}
+                                <span class="text-mute text-sm">{{tr("admin.redirect.target.none", "访问面上没有重定向产物")}}</span>
+                                {{end}}
+                            </td>
+                            <td>
+                                {{if it.Loop}}
+                                <span class="badge badge-danger">{{tr("admin.redirect.badge.loop", "成环")}}</span>
+                                {{else if it.Effective}}
+                                <span class="badge badge-success">{{tr("admin.redirect.badge.effective", "生效")}} {{it.StatusCode}}</span>
+                                {{else}}
+                                <span class="badge badge-warning">{{tr("admin.redirect.badge.inactive", "未生效")}}</span>
+                                {{end}}
+                            </td>
+                            <td>
+                                {{if it.OwnerKind == "page"}}
+                                {{tr("admin.redirect.owner.page", "页面")}} <code>{{it.OwnerTitle}}</code>
+                                {{else if it.OwnerKind == "presentation"}}
+                                {{tr("admin.redirect.owner.presentation", "自动发布实例")}}
+                                {{else}}
+                                {{tr("admin.redirect.owner.unknown", "未知归属")}}
+                                {{end}}
+                            </td>
+                            <td class="text-mute text-sm">{{it.UpdatedAt}}</td>
+                            <td class="col-actions">
+                                {{if it.MultiHop}}
+                                <button type="submit" form="redirect-merge-{{i}}" class="btn btn-sm btn-ghost">{{tr("admin.redirect.action.merge", "合并")}}</button>
+                                {{end}}
+                                <button type="submit" form="redirect-del-{{i}}" class="btn btn-sm btn-danger">{{tr("admin.redirect.action.delete", "删除")}}</button>
+                            </td>
+                        </tr>
+                        {{end}}
+                        {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                </form>
+            </section>
+
+            {* 行内表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
+            {{range i, it := items}}
+            <form id="redirect-del-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/delete"
+                  data-confirm="{{tr("admin.redirect.msg.delete_confirm", "删除这条重定向？旧路径将直接返回 404（可以再手动加回来）。")}}" data-confirm-danger>
+                <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <input type="hidden" name="path" value="{{it.SourcePath}}">
+            </form>
+            {{if it.MultiHop}}
+            <form id="redirect-merge-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/merge">
+                <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <input type="hidden" name="path" value="{{it.SourcePath}}">
+            </form>
+            {{end}}
+            {{end}}
+            {{else}}
+            <section class="card list-card">
+                {* 未选到工程 —— 只有一种成因：这个后台还没有站点工程（有工程时 handler 会自动选中第一个）。
+                   原先是「只有 desc、没有 title」的两段式残形，且下一步动作要用户自己在别处找；
+                   这里补 title 与动作（去页面管理建工程），与上方那条 badge 提示指向同一件事。 *}
+                <div class="empty-state">
+                    <p class="empty-title">{{tr("admin.redirect.pick_project.title", "还没有可管理的站点工程")}}</p>
+                    <p class="empty-desc">{{tr("admin.redirect.pick_project", "先在上面选一个站点工程。")}}</p>
+                    <div class="empty-actions">
+                        <a class="btn btn-primary" href="/admin/pages">{{tr("admin.redirect.pick_project.action", "去页面管理建工程")}}</a>
+                    </div>
+                </div>
+            </section>
+            {{end}}
+        </div>
+    </main>
+{* 只引 admin.js（列表勾选 / 全选联动 / 选中计数 / 批量条显隐），**不引控件基座
+   partials/ui_scripts.html**：基座里的 ui/confirm.js 也会接管 [data-confirm] 的提交，
+   而本页已有一段自己的确认脚本 —— 两个处理器同时挂上会让一次提交弹两次确认框
+   （confirm.js 在捕获阶段 preventDefault 并弹 <dialog>，事件仍会传播到冒泡阶段的
+   这段脚本，preventDefault 不停止传播）。admin.js 本身不含 confirm 处理，只做勾选。 *}
+<script src="/static/js/admin.js"></script>
+<script>
+/* 本页的确认框：唯一入口（见上面的注释）。
+   批量删除的确认落在 form 的 data-confirm 属性上（按钮上的 data-confirm 是给控件基座用的，
+   本页不引基座；两处都写是刻意为之 —— 若将来本页接上基座，点按钮时基座会先弹一次并用
+   wbConfirmBypass 放行再提交，这段脚本仍只会在放行后的提交上看到 form 属性，不会重复弹）。 */
+(function () {
+    var root = document.querySelector('[data-redirect-page]');
+    if (!root) { return; }
+    root.addEventListener('submit', function (ev) {
+        var form = ev.target;
+        if (!form || !form.matches || !form.matches('form[data-confirm]')) { return; }
+        if (form.dataset && form.dataset.wbConfirmBypass === '1') { return; }
+        var msg = form.getAttribute('data-confirm') || '';
+        if (msg && !window.confirm(msg)) { ev.preventDefault(); }
+    });
+})();
+</script>
+</body>
+</html>

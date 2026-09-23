@@ -50,7 +50,7 @@ func TestCompileCSS(t *testing.T) {
 	css := b.String()
 	for _, want := range []string{
 		"display: flex", "flex-direction: column",
-		" details", " summary", "details[open] summary::after", ".sky-faq-answer",
+		" details", " summary", "details[open] .sky-faq-chevron", ".sky-faq-answer",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, css)

@@ -93,7 +93,7 @@ func orderBulkPageData() map[string]any {
 }
 
 func TestOrdersPageBulkStructure(t *testing.T) {
-	out := renderAdminTemplate(t, "admin/orders.html", orderBulkPageData())
+	out := renderAdminTemplate(t, "admin/order/orders.html", orderBulkPageData())
 	assertContains(t, out, "</html>",
 		"action=\"/admin/orders/bulk-status\"", "formaction=\"/admin/orders/bulk-cancel\"",
 		"data-check-all", "data-check-item", "name=\"ids\" value=\"7\"",
@@ -143,7 +143,7 @@ func TestOrdersPageDetailRenders(t *testing.T) {
 			"Page": "1", "Limit": "20",
 		},
 	}
-	out := renderAdminTemplate(t, "admin/orders.html", d)
+	out := renderAdminTemplate(t, "admin/order/orders.html", d)
 	assertContains(t, out, "</html>",
 		"class=\"kv\"", "订单项", "状态流转链", "保存备注", "name=\"toStatus\"",
 		"action=\"/admin/orders/cancel\"", "action=\"/admin/orders/refund\"",
@@ -155,7 +155,7 @@ func TestOrdersPageRendersWithoutBulkKeys(t *testing.T) {
 	d := orderBulkPageData()
 	delete(d, "Done")
 	delete(d, "BulkTargets")
-	out := renderAdminTemplate(t, "admin/orders.html", d)
+	out := renderAdminTemplate(t, "admin/order/orders.html", d)
 	assertContains(t, out, "</html>", "action=\"/admin/orders/bulk-status\"")
 }
 
@@ -191,7 +191,7 @@ func returnBulkPageData() map[string]any {
 }
 
 func TestReturnsPageBulkStructure(t *testing.T) {
-	out := renderAdminTemplate(t, "admin/returns.html", returnBulkPageData())
+	out := renderAdminTemplate(t, "admin/order/returns.html", returnBulkPageData())
 	assertContains(t, out, "</html>",
 		"action=\"/admin/returns/bulk-approve\"", "formaction=\"/admin/returns/bulk-reject\"",
 		"data-check-all", "data-check-item", "name=\"ids\" value=\"9\"",
@@ -240,7 +240,7 @@ func couponBulkPageData() map[string]any {
 }
 
 func TestCouponsPageBulkStructure(t *testing.T) {
-	out := renderAdminTemplate(t, "admin/coupons.html", couponBulkPageData())
+	out := renderAdminTemplate(t, "admin/order/coupons.html", couponBulkPageData())
 	assertContains(t, out, "</html>",
 		"action=\"/admin/coupons/bulk-toggle\"", "formaction=\"/admin/coupons/bulk-delete\"",
 		"data-check-all", "data-check-item", "name=\"ids\" value=\"3\"",

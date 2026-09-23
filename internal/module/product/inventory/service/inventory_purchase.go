@@ -208,22 +208,10 @@ func (s *Service) GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPur
 
 // ListPurchaseOrders 采购单列表（状态 / 货源 / 关键词都是可组合的筛选维度）。
 func (s *Service) ListPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (list []*inventorydto.PurchaseOrderResp, err error) {
-	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
-	}
-	status, err := normalizePurchaseStatusFilter(req.Status)
+	filter, page, size, err := s.purchaseOrderFilter(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	filter := inventorymodel.PurchaseOrderFilter{
-		ProjectID: projectID, Status: status,
-		SourceID: strings.TrimSpace(req.SourceID), Keyword: strings.TrimSpace(req.Keyword),
-	}
-	page, size := purchasePageArgs(req.Page, req.Size)
 	rows, err := s.m.ListPurchaseOrderRows(ctx, filter, size, (page-1)*size)
 	if err != nil {
 		return nil, err
@@ -233,7 +221,7 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *inventorydto.List
 		orderIDs = append(orderIDs, r.ID)
 	}
 	// 行一次性批量取回（列表页不产生 N+1）。
-	allLines, err := s.m.ListPurchaseLinesByOrders(ctx, orderIDs, projectID)
+	allLines, err := s.m.ListPurchaseLinesByOrders(ctx, orderIDs, filter.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +237,41 @@ func (s *Service) ListPurchaseOrders(ctx context.Context, req *inventorydto.List
 		list = append(list, resp)
 	}
 	return list, nil
+}
+
+// CountPurchaseOrders 采购单总张数（分页页面的「共 N 条」与总页数）。
+//
+// **与 ListPurchaseOrders 共用同一个 purchaseOrderFilter**：状态推导值 / 货源 / 关键词 /
+// 工程作用域的归一只有一份实现。状态这一维尤其不能各抄一遍 —— 页面筛的是**推导状态**
+// （未入库 / 部分入库 / 已入库），由 service 归一到 model 的过滤，抄错时计数与列表分叉，
+// 分页条会给出一个永远翻不到底的页数。
+func (s *Service) CountPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (n int64, err error) {
+	filter, _, _, err := s.purchaseOrderFilter(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	return s.m.CountPurchaseOrders(ctx, filter)
+}
+
+// purchaseOrderFilter 把采购单列表请求归一成 model 过滤条件 + 分页参数（List / Count 共用）。
+func (s *Service) purchaseOrderFilter(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (filter inventorymodel.PurchaseOrderFilter, page, size int, err error) {
+	if req == nil {
+		return filter, page, size, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	status, serr := normalizePurchaseStatusFilter(req.Status)
+	if serr != nil {
+		return filter, page, size, serr
+	}
+	projectID, perr := s.resolveProjectID(ctx, req.ProjectID)
+	if perr != nil {
+		return filter, page, size, perr
+	}
+	filter = inventorymodel.PurchaseOrderFilter{
+		ProjectID: projectID, Status: status,
+		SourceID: strings.TrimSpace(req.SourceID), Keyword: strings.TrimSpace(req.Keyword),
+	}
+	page, size = purchasePageArgs(req.Page, req.Size)
+	return filter, page, size, nil
 }
 
 // —— 内部工具 ——

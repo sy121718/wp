@@ -89,4 +89,20 @@ func init() {
 	// 312：商品标签跨工程引用拒绝（ErrTagCrossProject）的词条（审计 DB-03 / PROD-02，
 	// 见 register_product_tag_cross_project_i18n.go）。
 	registerProductTagCrossProjectI18n()
+	// 314：商品列表筛选分页 + 商品编辑页的词条（见 register_product_edit_i18n.go）。
+	registerProductEditI18n()
+	// 315：商品详情页改只读的词条（见 register_product_readonly_i18n.go）。
+	registerProductReadonlyI18n()
+	// 316：操作列「预览」文案的覆盖迁移（191 已 seed 过该 key，seed 改不动，
+	// 见 register_product_preview_override_i18n.go）。
+	registerProductPreviewOverrideI18n()
+	// 317：库存流水空态文案修正（旧文案指向不存在的入库表单，
+	// 191 已 seed 过该 key，见 register_inventory_moves_empty_i18n.go）。
+	registerInventoryMovesEmptyI18n()
+	// 400：客户端筛选「无匹配结果」提示的两条词条（menus / departments，
+	// 见 register_client_filter_empty_i18n.go）。
+	// 注：399（管理域四页空态词条）由其文件自带的 func init() 自行注册，
+	// 不在此处重复调用 —— 两处都调虽然被 sync.Once 兜住不重复执行，
+	// 但会让「谁负责注册」出现两个真源。
+	registerClientFilterEmptyI18n()
 }

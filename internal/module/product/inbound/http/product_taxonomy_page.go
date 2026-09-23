@@ -5,6 +5,13 @@
 //
 // 分类树在服务端已算好层级（CategoryResp.Depth），这里只按 DFS 前序摊平给模板 ——
 // 父子规则只有 service 一份，模板不做第二套。
+//
+// 列表页形态（审计 02-M 的 D12 / D13）：分类页与品牌页都带关键词筛选栏、按页渲染，
+// 并在空态区分「筛出来是空的」与「工程里本来就没有」。
+//
+// 分页：页码窗口与「共 N 条」来自契约的 CountCategories / CountBrands（真源总数，
+// 与 List 同一份过滤条件）。品牌页整条链下推到 service（先计数 → 收敛页码 → 取当页）；
+// 分类树仍整棵取回、摊平、再切页 —— 那是**永久例外**，理由见 listPageSlice。
 package producthttp
 
 import (
@@ -21,7 +28,7 @@ import (
 	"go_wp/internal/web/shell"
 )
 
-// ProductCategoriesPage 分类管理页：工程切换 + 分类树 + 内联新建表单。
+// ProductCategoriesPage 分类管理页：工程切换 + 筛选栏 + 分类树 + 内联新建表单。
 func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
@@ -33,13 +40,51 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	flat, err := h.flatCategories(ctx, selected)
-	if err != nil {
-		shell.PageError(c, "product_taxonomy", err)
-		return
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	// 分类树必须先整棵取回来再摊平：层级（Depth）与行首缩进都来自树结构，
+	// 分页只作用于摊平后的行 —— 翻到第 N 页时每行仍带着自己的层级。
+	// 这是**永久例外**（品牌 / 标签 / 属性三页都已把分页下推到 service）：把分页下推给
+	// service 就必须按行截断树，父不在本页而子在的场景下层级会丢。总数已由
+	// CountCategories 真源给出（数的是行），所以这里只保留「取树 + 摊平 + 切页」。
+	// 关键词过滤下推到查询（service 的 ListCategories 已支持）。
+	// 这里直接调契约而不是复用同包的 flatCategories：那个助手被商品列表 / 编辑页 /
+	// SEO 评分共用（本批不改那些文件），签名里没有关键词位。
+	flat := []*productdto.CategoryResp{}
+	if selected != "" {
+		tree, lerr := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected, Keyword: keyword})
+		if lerr != nil {
+			shell.PageError(c, "product_taxonomy", lerr)
+			return
+		}
+		flat = flattenCategoryTree(tree)
 	}
-	rows := make([]gin.H, 0, len(flat))
-	for _, node := range flat {
+	// 父级下拉要的是**完整**清单（不带关键词）：筛选只作用于表格行 —— 若把筛选后的树
+	// 喂给下拉，编辑一个筛出来的分类时它的父级会从选项里消失（改父级只能改到「顶级」）。
+	// 无筛选时两者是同一份，不重复查。
+	pickFlat := flat
+	if selected != "" && keyword != "" {
+		tree, lerr := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected})
+		if lerr != nil {
+			shell.PageError(c, "product_taxonomy", lerr)
+			return
+		}
+		pickFlat = flattenCategoryTree(tree)
+	}
+	pageRows, page := listPageSlice(flat, productPageNumber(c.Query("page")), productSubListPageSize)
+	// 总数由契约的 CountCategories 给出（与 ListCategories 同一份过滤条件：工程 + 关键词），
+	// 数的是**行** —— 与表格里摊平后的行数同一口径（见 model.CountCategories 的注释）。
+	// 空工程（selected 为空）不发查询：0 条，与表格一致。
+	total := int64(0)
+	if selected != "" {
+		n, cerr := h.products.CountCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected, Keyword: keyword})
+		if cerr != nil {
+			shell.PageError(c, "product_taxonomy", cerr)
+			return
+		}
+		total = n
+	}
+	rows := make([]gin.H, 0, len(pageRows))
+	for _, node := range pageRows {
 		rows = append(rows, gin.H{
 			"ID": node.ID, "Name": node.Name, "Slug": node.Slug, "Label": categoryLabel(node),
 			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
@@ -48,18 +93,31 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		})
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
-	c.HTML(http.StatusOK, "admin/product_categories.html", shell.Prepare(c, gin.H{
+	data := gin.H{
 		"title":           "商品分类",
 		"menu":            "product-categories",
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Categories":      rows,
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
-		"Options": categoryPickOptions(flat),
+		"Options": categoryPickOptions(pickFlat),
+		// 筛选回显（GET 表单的 value）：提交后条件留在控件上，
+		// 否则用户看不出「现在到底筛了什么」；Filtered 让空态能区分
+		// 「筛出来是空的」与「这个工程还没有分类」。
+		"FilterKeyword": keyword,
+		"Filtered":      keyword != "",
 		// 读侧一律过白名单（product_err.go）：查询参数不是可信边界。
 		"Err":  productPageErr(c),
 		"Done": productPageDone(c),
-	}))
+	}
+	// 分页条（shell 组件，服务端渲染）：基地址带当前筛选条件，翻页不丢条件。
+	// 单页或空数据时 BuildPagination 返回 nil，TemplateKeys 给空 map，模板自然不渲染。
+	for k, v := range shell.BuildPagination(total, page, productSubListPageSize,
+		productListBaseURL("/admin/product-categories", listFilterQuery(selected, keyword)),
+		shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/product/product_categories.html", shell.Prepare(c, data))
 }
 
 // ProductCategoriesCreate 新建分类。
@@ -150,7 +208,7 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 	c.Redirect(http.StatusFound, target)
 }
 
-// ProductBrandsPage 品牌管理页：工程切换 + 品牌列表 + 内联新建表单。
+// ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
 func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
@@ -162,20 +220,54 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	brands, err := h.listBrands(ctx, selected)
-	if err != nil {
-		shell.PageError(c, "product_taxonomy", err)
-		return
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	// 品牌列表**分页下推到 service**（审计 D12 收口）：请求类型自带 Page/Size，总数由契约的
+	// CountBrands 给出 —— handler 不再「全量取回再切片」，翻到第 N 页也只从库里取那一页。
+	// 关键词过滤仍在查询里（与计数同一份过滤条件）。
+	//
+	// 顺序是**先计数再取页**：反过来（先取第 N 页再数总数）时越界页码会让 service 返回空页，
+	// 而分页条按收敛后的页码渲染 —— 「表格为空、分页条却显示第 2 页」正是
+	// product_list_paging_test.go 要挡的那种自相矛盾组合。两次查询的条数一样，不额外付代价。
+	page := productPageNumber(c.Query("page"))
+	total := int64(0)
+	pageRows := []*productdto.BrandResp{}
+	if selected != "" {
+		// 过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size，
+		// 两处口径分叉（关键词只归一在一侧）在这里是不可能的 —— 与属性页同一手法。
+		filterReq := &productdto.ListBrandReq{ProjectID: selected, Keyword: keyword}
+		n, cerr := h.products.CountBrands(ctx, filterReq)
+		if cerr != nil {
+			shell.PageError(c, "product_taxonomy", cerr)
+			return
+		}
+		total = n
+		page = clampPageToTotal(page, productSubListPageSize, total)
+		listReq := *filterReq
+		listReq.Page, listReq.Size = page, productSubListPageSize
+		list, lerr := h.products.ListBrands(ctx, &listReq)
+		if lerr != nil {
+			shell.PageError(c, "product_taxonomy", lerr)
+			return
+		}
+		pageRows = list
 	}
-	c.HTML(http.StatusOK, "admin/product_brands.html", shell.Prepare(c, gin.H{
+	data := gin.H{
 		"title":           "商品品牌",
 		"menu":            "product-brands",
 		"Projects":        projects,
 		"SelectedProject": selected,
-		"Brands":          brands,
+		"Brands":          pageRows,
+		"FilterKeyword":   keyword,
+		"Filtered":        keyword != "",
 		"Err":             productPageErr(c),
 		"Done":            productPageDone(c),
-	}))
+	}
+	for k, v := range shell.BuildPagination(total, page, productSubListPageSize,
+		productListBaseURL("/admin/product-brands", listFilterQuery(selected, keyword)),
+		shell.TranslateFor(c)).TemplateKeys() {
+		data[k] = v
+	}
+	c.HTML(http.StatusOK, "admin/product/product_brands.html", shell.Prepare(c, data))
 }
 
 // ProductBrandsCreate 新建品牌。
@@ -285,10 +377,10 @@ func (h *productPageHandle) ProductsTaxonomySet(c *gin.Context) {
 		BrandID:           &brand,
 	}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, productErrText(c, err)))
+		c.Redirect(http.StatusFound, productEditLocation(projectID, req.ID, productErrText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, productDetailLocation(projectID, req.ID, ""))
+	c.Redirect(http.StatusFound, productEditLocation(projectID, req.ID, ""))
 }
 
 // flatCategories 取某工程的分类树并摊平成 DFS 前序列表（工程为空时返回空列表）。
@@ -401,4 +493,107 @@ func brandPickOptions(brands []*productdto.BrandResp, selected string) []gin.H {
 		out = append(out, gin.H{"ID": b.ID, "Label": b.Name, "Selected": b.ID == selected})
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// 商品域后台子列表（属性 / 分类 / 品牌 / 标签）共用的分页与取址助手。
+//
+// 为什么落在这个文件里：本批的独占文件清单只含三个 handler 与四个模板，共享助手所在的
+// product_page_util.go 不在其中（有并行任务在同包改别的页面，动它必然冲突）；同包内位置
+// 不影响可用性，四页都能直接调用。
+// ---------------------------------------------------------------------------
+
+// productSubListPageSize 商品域后台子列表的每页条数。
+//
+// 20 与商品列表（productListPageSize）同一量级：这四页的表格都带行内抽屉与批量勾选，
+// 一页塞太多等于把「翻页」换成「滚动回去找刚才那一行」。
+const productSubListPageSize = 20
+
+// clampPageToTotal 把页码收敛到实际总页数以内（total=0 时收敛到第 1 页）。
+//
+// 为什么在取数**之前**收敛：越界页码（手输 URL、书签失效、上一次筛选后的页码）传给
+// 取数层时，service 会老老实实返回一个空页，而分页条按收敛后的页码渲染 ——
+// 「表格为空、分页条却显示第 2 页」这种自相矛盾的组合就是这样产生的
+// （product_list_paging_test.go 的 TestListPageSlice 钉的是同一条判据）。
+//
+// 与 shell.BuildPagination 内部的收敛同一条规则（总页数由 total 与 size 算出），
+// 差别只在于这里发生在取数之前。
+func clampPageToTotal(page, size int, total int64) int {
+	if size < 1 {
+		size = productSubListPageSize
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := int((total + int64(size) - 1) / int64(size))
+	if pages < 1 {
+		return 1
+	}
+	if page > pages {
+		return pages
+	}
+	return page
+}
+
+// listFilterQuery 列表页筛选条件的查询串（筛选表单与分页基地址共用同一份口径）。
+func listFilterQuery(projectID, keyword string) url.Values {
+	q := url.Values{}
+	if v := strings.TrimSpace(projectID); v != "" {
+		q.Set("project", v)
+	}
+	if v := strings.TrimSpace(keyword); v != "" {
+		q.Set("keyword", v)
+	}
+	return q
+}
+
+// productListBaseURL 列表页的分页基地址（**不含** page/limit：分页组件自己拼）。
+//
+// 把筛选条件拼进基地址，翻页时关键词才不会丢；反过来说，基地址里塞了 page 就会出现两个
+// page 参数（浏览器取第一个），翻页看起来「点了没反应」—— 与 productListFilterURL
+// （商品列表专用，参数固定为 keyword + status）同一条理由。
+func productListBaseURL(path string, q url.Values) string {
+	if enc := q.Encode(); enc != "" {
+		return path + "?" + enc
+	}
+	return path
+}
+
+// listPageSlice 切出「第 page 页」，并返回**收敛后**的页码。
+//
+// **唯一调用方是分类页**，且这是永久例外（不是「还没做」）：分页作用在「树按 DFS 前序
+// 摊平之后」的行上，而 service 的 ListCategories 返回的是**树**（父子挂接在 service 完成）。
+// 让 service 按行分页就必须把树截断 —— 父不在本页而子在的场景下层级信息会丢，
+// 树是这份数据的形状，分页不该改变它。所以分类页是「全量取树 → 摊平 → 切一页」，
+// 总数由 CountCategories 给出（数的是行，与摊平后的行数同一口径）。
+//
+// 品牌页与标签页**已经不在这里**：它们的请求类型（ListBrandReq / ListTagReq）已带 Page/Size，
+// 分页整条链下推到 service（先计数 → 收敛页码 → 取当页），与属性页同一形状。
+//
+// 页码收敛与 BuildPagination 同一条规则：page=999 时若不先收敛，会出现「表格为空、
+// 分页条却显示第 999 页」这种自相矛盾的组合（BuildPagination 拿到的 total 与 page
+// 不同源时就会这样）。
+func listPageSlice[T any](all []T, page, size int) (rows []T, current int) {
+	if size < 1 {
+		size = productSubListPageSize
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := (len(all) + size - 1) / size
+	if pages < 1 {
+		pages = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	from := (page - 1) * size
+	if from > len(all) {
+		from = len(all)
+	}
+	to := from + size
+	if to > len(all) {
+		to = len(all)
+	}
+	return all[from:to], page
 }

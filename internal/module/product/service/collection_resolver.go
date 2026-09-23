@@ -24,6 +24,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"go_wp/internal/seo"
+
 	"go_wp/internal/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
@@ -122,7 +124,10 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 	for i, r := range rows {
 		item := collectionItem(r, valueBatches[i])
 		if p := publishedPaths[r.ID]; p != "" {
-			item["url"] = p
+			// 在**注入处**补成绝对地址：组件拿到 item.url 时就是可直接用的地址。
+			// 不在渲染侧再拼 —— 那份数据要出集合给任意组件（列表卡、选择器、搜索），
+			// 让每个消费方各自补一次必然漏（实测：商品列表卡的图链接与标题链接漏了）。
+			item["url"] = seo.AbsoluteSiteURL(p)
 		}
 		items = append(items, item)
 	}
@@ -256,13 +261,21 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 		// 这里只校验**形状**（键与值的字符集 / 长度）；某个属性值到底存不存在由 SQL 决定 ——
 		// 与 categoryId / tagId 的口径一致：形状错是配置错误该报错，值匹配不到只是空集合。
 		if attrKey, ok := strings.CutPrefix(k, productcontract.CollectionFilterOptionPrefix); ok {
-			if !optionKeyRe.MatchString(attrKey) || !optionKeyRe.MatchString(v) {
+			// 属性维度的值也是**逗号多值**（组内 OR）：一个属性组勾多个值取并集，
+			// 组与组之间仍是 AND —— 与分类 / 品牌 / 标签的多值同一套语义。
+			values := splitCSV(v)
+			for _, value := range values {
+				if !optionKeyRe.MatchString(value) {
+					return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+				}
+			}
+			if !optionKeyRe.MatchString(attrKey) || len(values) == 0 {
 				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
 			}
 			if f.Options == nil {
-				f.Options = map[string]string{}
+				f.Options = map[string][]string{}
 			}
-			f.Options[attrKey] = v
+			f.Options[attrKey] = values
 			continue
 		}
 		switch k {
@@ -283,27 +296,42 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
 			}
 			f.TagID = v
+		case productcontract.CollectionFilterCategoryIDs:
+			ids, err := parseIDList(k, v)
+			if err != nil {
+				return f, err
+			}
+			f.CategoryIDs = ids
+		case productcontract.CollectionFilterBrandIDs:
+			ids, err := parseIDList(k, v)
+			if err != nil {
+				return f, err
+			}
+			f.BrandIDs = ids
 		case productcontract.CollectionFilterTagIDs:
-			// 多标签（issue #27）：逗号分隔的 uuid 列表；任何一个形状不对就报错，
-			// 不静默丢弃（丢一个 id 会让筛选结果莫名变多，比报错难查得多）。
-			ids := splitCSV(v)
-			for _, id := range ids {
-				if !isUUID(id) {
-					return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
-				}
+			ids, err := parseIDList(k, v)
+			if err != nil {
+				return f, err
 			}
-			if len(ids) > 0 {
-				f.TagIDs = ids
+			f.TagIDs = ids
+		case productcontract.CollectionFilterCategoryMode:
+			all, merr := parseMultiMode(k, v)
+			if merr != nil {
+				return f, merr
 			}
+			f.CategoryAll = all
+		case productcontract.CollectionFilterBrandMode:
+			all, merr := parseMultiMode(k, v)
+			if merr != nil {
+				return f, merr
+			}
+			f.BrandAll = all
 		case productcontract.CollectionFilterTagMode:
-			switch v {
-			case productcontract.CollectionTagModeAll:
-				f.TagAll = true
-			case productcontract.CollectionTagModeAny:
-				f.TagAll = false
-			default:
-				return f, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, k)
+			all, merr := parseMultiMode(k, v)
+			if merr != nil {
+				return f, merr
 			}
+			f.TagAll = all
 		case productcontract.CollectionFilterMinRating:
 			// 最低评分（issue #29）：0~5 的数值，越界 / 非数字一律报错。
 			rating, rerr := strconv.ParseFloat(strings.TrimSpace(v), 64)
@@ -334,8 +362,51 @@ func parseCollectionFilter(filter map[string]string) (f productmodel.CollectionF
 			}
 		}
 	}
+	// 多值优先于单值（**在所有维度都解析完之后**统一裁决，而不是在 case 里就地清空：
+	// 参数的遍历顺序是排序后的字典序，就地清空会依赖「categoryId 排在 categoryIds 前」
+	// 这种与业务无关的巧合）。
+	//
+	// 单值维度是「只勾了一个」的退化写法：两者并存时按多值算。叠加成 AND 的话，
+	// 用户把单选的配置改成多选之后，旧的那个值会继续把结果卡住 —— 表现为
+	// 「我明明只勾了 B，出来的还是 A 的商品」。
+	if len(f.CategoryIDs) > 0 {
+		f.CategoryID = ""
+	}
+	if len(f.BrandIDs) > 0 {
+		f.BrandID = ""
+	}
+	if len(f.TagIDs) > 0 {
+		f.TagID = ""
+	}
 	// 区间上下限的相互关系在两维都解析完之后统一校验（它们可能以任意顺序出现）。
 	return f, validatePriceRange(f)
+}
+
+// parseIDList 解析逗号分隔的 uuid 列表维度。
+//
+// 任何一个形状不对就报错，不静默丢弃（丢一个 id 会让筛选结果莫名变多，比报错难查得多）。
+// 空串由调用方提前 continue 掉了，这里拿到的一定是非空值：全空值（`a,,b` 中间空）已在
+// splitCSV 里去空，于是「只有逗号」的输入得到空列表 = 该维度不参与过滤。
+func parseIDList(key, raw string) ([]string, error) {
+	ids := splitCSV(raw)
+	for _, id := range ids {
+		if !isUUID(id) {
+			return nil, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, key)
+		}
+	}
+	return ids, nil
+}
+
+// parseMultiMode 解析多值维度的匹配语义（any / all）。
+func parseMultiMode(key, raw string) (all bool, err error) {
+	switch strings.TrimSpace(raw) {
+	case productcontract.CollectionTagModeAll:
+		return true, nil
+	case productcontract.CollectionTagModeAny:
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s: %q", productenums.ErrCollectionFilterInvalid, key)
+	}
 }
 
 // validatePriceRange 下限不得大于上限（解析完成后统一校验：两维可能任意顺序出现）。

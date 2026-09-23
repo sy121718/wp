@@ -63,7 +63,7 @@ func TestArticlesListTemplateRenders(t *testing.T) {
 			Data: map[string]any{"title": "第二篇"}},
 	}
 	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "", "")
-	body := renderAdminTemplate(t, "admin/articles.html", articleLayoutData(data))
+	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 
 	for _, want := range []string{
 		"第一篇", "hello-world", "第二篇", "second-post",
@@ -85,7 +85,7 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 			"featuredImage": "/storage/image/cover.webp",
 		}}
 	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "", "zh-CN")
-	body := renderAdminTemplate(t, "admin/article_edit.html", articleLayoutData(data))
+	body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{
 		"第一篇", "hello-world", "摘要一", "SEO 标题", "SEO 描述", "关键词",
@@ -104,6 +104,36 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("编辑页渲染结果缺少 %q", want)
 		}
+	}
+	// 页级动作归位（清单 02-L P1-8）：保存按钮必须在 .page-head 的 .page-actions 里，
+	// 且全页只有这一处 —— 它是这一版唯一的保存入口（原 sticky 贴底保存卡已移除）。
+	head := articleSection(t, body, `class="page-actions"`, "</header>")
+	if n := strings.Count(head, `form="article-form"`); n != 1 {
+		t.Errorf(".page-actions 里 form=\"article-form\" 的按钮应为 1 个，实际 %d", n)
+	}
+	if n := strings.Count(body, `form="article-form"`); n != 1 {
+		t.Errorf("全页 form=\"article-form\" 的按钮应为 1 个，实际 %d", n)
+	}
+	// 「保存卡」整块移除：它原来粘在视口底部，删掉后本页不再有第二处保存入口。
+	if strings.Contains(body, "article-save-card") {
+		t.Error("保存卡应已移除（保存按钮进页头），实际仍渲染出 article-save-card")
+	}
+	// 右栏仍是非 tabs 的四张卡（实时预览 / SEO 评测 / 发布 / 可视化编辑）：
+	// 清单原文的「三张卡收进 tabs」已被否决 —— 实时预览的存在理由就是改正文时同步可见，
+	// tab 化等于废掉它；三张卡也不是「同一数据的多种切法」。
+	aside := articleSection(t, body, `<aside class="article-edit-side">`, "</aside>")
+	if n := strings.Count(aside, `<section class="card`); n != 4 {
+		t.Errorf("aside 卡片数应为 4（未 tabs 化），实际 %d", n)
+	}
+	// 「重新评分」从保存卡搬进右栏 SEO 卡：跨栏依赖必须原样保留 ——
+	// hx-include 指向左列表单、hx-target 指向本卡下方的分数容器，任一断掉按钮就静默失效。
+	if !strings.Contains(aside, `hx-post="/admin/articles/score"`) ||
+		!strings.Contains(aside, `hx-include="#article-form"`) ||
+		!strings.Contains(aside, `hx-target="#article-seo-score"`) {
+		t.Error("右栏 SEO 卡的「重新评分」缺少 hx-post / hx-include=\"#article-form\" / hx-target=\"#article-seo-score\"")
+	}
+	if !strings.Contains(body, `<div id="article-seo-score">`) {
+		t.Error("hx-target=\"#article-seo-score\" 的落点容器不见了")
 	}
 	// 评分侧栏必须真的渲染出分数（而不是空态）—— 正文与标题都在，评分应当可用。
 	if strings.Contains(body, "评分不可用") {
@@ -124,8 +154,11 @@ func TestArticleEditPublishStates(t *testing.T) {
 			name: "已发布",
 			view: gin.H{"PublishConfigured": true, "Published": true,
 				"URLPath": "/blog/hello-world", "PublicURL": "/site/blog/hello-world", "Stale": true},
-			want:    []string{"/site/blog/hello-world", "内容有更新，产物待重建", "/admin/articles/rebuild"},
-			notWant: []string{"/admin/articles/publish"},
+			want: []string{"/site/blog/hello-world", "内容有更新，产物待重建", "/admin/articles/rebuild",
+				// 页头页级动作：保存按钮 + 整块搬来的「重新发布」表单（只有 csrf 与 id）。
+				`form="article-form"`, `action="/admin/articles/rebuild"`},
+			// 已发布态不该出现任何「发布」入口：页头那个关联按钮与卡内表单在同一条分支里。
+			notWant: []string{"/admin/articles/publish", `form="article-publish-form"`},
 		},
 		{
 			name: "可发布（有模板）",
@@ -133,7 +166,10 @@ func TestArticleEditPublishStates(t *testing.T) {
 				"DefaultURLPath": "/blog/hello-world",
 				"Projects":       []gin.H{{"ID": "p1", "Name": "官网"}},
 				"Templates":      []gin.H{{"ID": "t1", "Name": "文章详情", "Version": 2}}},
-			want:    []string{"/admin/articles/publish", "官网", "文章详情", "/blog/hello-world"},
+			want: []string{"/admin/articles/publish", "官网", "文章详情", "/blog/hello-world",
+				// 未发布态：三个字段留在卡内，页头只放 form="article-publish-form" 关联按钮
+				//（这张表单带 projectId / urlPath / templateId，搬不动）。保存按钮同页头。
+				`form="article-publish-form"`, `form="article-form"`},
 			notWant: []string{"/admin/articles/rebuild"},
 		},
 		{
@@ -141,14 +177,15 @@ func TestArticleEditPublishStates(t *testing.T) {
 			view: gin.H{"PublishConfigured": true, "Published": false, "HasTemplates": false,
 				"NoTemplateHint": articleNoTemplateHint},
 			want: []string{"还没有「文章详情模板」"},
-			// 没有模板时**不能**渲染发布表单：那会是一次必然失败的点击。
-			notWant: []string{"/admin/articles/publish"},
+			// 没有模板时**不能**渲染发布表单，页头也不能留关联按钮：
+			// 那会是一次必然失败的点击（卡内给的是「为什么发不了」的说明）。
+			notWant: []string{"/admin/articles/publish", `form="article-publish-form"`},
 		},
 		{
 			name:    "能力未装配",
 			view:    gin.H{"PublishConfigured": false, "PublishHint": "发布能力未装配（装配缺陷），本页只显示文章内容。"},
 			want:    []string{"发布能力未装配"},
-			notWant: []string{"/admin/articles/publish", "/admin/articles/rebuild"},
+			notWant: []string{"/admin/articles/publish", "/admin/articles/rebuild", `form="article-publish-form"`},
 		},
 	}
 
@@ -159,7 +196,7 @@ func TestArticleEditPublishStates(t *testing.T) {
 			for k, v := range tc.view {
 				data[k] = v
 			}
-			body := renderAdminTemplate(t, "admin/article_edit.html", articleLayoutData(data))
+			body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 			for _, want := range tc.want {
 				if !strings.Contains(body, want) {
 					t.Errorf("缺少 %q", want)
@@ -184,6 +221,25 @@ func TestArticleScoreFragmentRenders(t *testing.T) {
 	if !strings.Contains(body, "SEO 评分（0-100）") {
 		t.Errorf("评分片段未渲染出总分块：%s", body[:min(len(body), 200)])
 	}
+}
+
+// articleSection 取 body 里 start 到其后第一个 end 之间的片段。
+//
+// 结构断言（「.page-actions 里有几个按钮」「aside 里有几张卡」）只有落在具体区块内才有意义 ——
+// 全页计数会把别处的同名属性一并算进来。锚点找不到直接 Fatal：让 -1 进切片会 panic，
+// 而 panic 会把真正的原因（模板被中断截断 / 区块被删）盖掉。
+func articleSection(t *testing.T, body, start, end string) string {
+	t.Helper()
+	i := strings.Index(body, start)
+	if i < 0 {
+		t.Fatalf("渲染结果里找不到锚点 %q", start)
+	}
+	rest := body[i:]
+	j := strings.Index(rest, end)
+	if j < 0 {
+		t.Fatalf("锚点 %q 之后找不到结束标记 %q（整页可能被模板中断截断）", start, end)
+	}
+	return rest[:j]
 }
 
 // firstArticleBody 描述评分数据的状态（失败信息用，避免整页刷屏）。

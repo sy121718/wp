@@ -294,6 +294,12 @@ body.drawer-open { overflow: hidden; }
     --ui-sp-md: var(--sp-md, 12px);
     --ui-sp-lg: var(--sp-lg, 16px);
     --ui-sp-xl: var(--sp-xl, 24px);
+    /* --ui-sp-xxl 曾被 theme.css:982/994 引用（.empty-state 的内边距、表单后 h2 的上间距）
+       但本段漏了定义，且那两处**未写兜底** —— 按 CSS 规范，无兜底的未定义 var() 会让整条
+       声明在 computed-value 阶段失效。实测：`.empty-state` 的 computed padding = 0px
+       （84 处空态、51 个文件全部没有内边距），探针设 padding:var(--ui-sp-xxl) 同样解析成 0px。
+       兜底向上一层（--sp-xxl，theme.css:95 已定义 32px）；theme.css 缺失时仍是 32px。 */
+    --ui-sp-xxl: var(--sp-xxl, 32px);
     --ui-r-sm: var(--r-sm, 6px);
     --ui-r-md: var(--r-md, 8px);
     --ui-r-lg: var(--r-lg, 10px);
@@ -889,3 +895,81 @@ button.row-title-link {
 .tab-list > [role="tab"]:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: -2px; }
 .tab-panel { min-width: 0; }
 .tab-panel[hidden] { display: none; }
+
+/* ===== 媒体字段（ui/mediafield.js）=====
+   字段结构：预览块 + 一行（输入框 / 媒体库 / 清除）。
+   预览是**有图才占位**的：没选图时只有一行虚线提示，不给它留一块空白高度 ——
+   后台表单里这类字段常常连续出现好几个（封面 / 图集 / 背景），
+   每个都留一块空预览会把表单拉得很长。 */
+.media-field { display: flex; flex-direction: column; gap: var(--ui-sp-sm); min-width: 0; }
+.media-field-preview {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 0; padding: var(--ui-sp-sm);
+    background: var(--sky-c-surface, #f4f5f6);
+    border: 1px dashed var(--sky-c-border, #e5e7eb);
+    border-radius: 8px;
+}
+.media-field.has-image .media-field-preview {
+    padding: 0; border-style: solid; background: none;
+}
+.media-field-preview img {
+    display: block; max-width: 100%; max-height: 220px;
+    width: auto; height: auto; border-radius: 8px;
+}
+.media-field-preview img[hidden] { display: none; }
+.media-field-tip { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
+.media-field-tip[hidden] { display: none; }
+.media-field-row { display: flex; align-items: center; gap: var(--ui-sp-xs); min-width: 0; }
+.media-field-row .form-input { flex: 1 1 auto; min-width: 0; }
+
+/* ===== 媒体库选图弹窗 ===== */
+.media-pick-mask {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    padding: var(--ui-sp-md);
+    background: rgba(15, 23, 42, .45);
+}
+.media-pick-mask[hidden] { display: none; }
+.media-pick-panel {
+    display: flex; flex-direction: column;
+    width: min(960px, 100%); max-height: min(80vh, 720px);
+    background: var(--sky-c-bg, #fff);
+    border-radius: 12px;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, .24);
+    overflow: hidden;
+}
+.media-pick-head {
+    display: flex; align-items: center; gap: var(--ui-sp-sm);
+    padding: var(--ui-sp-md);
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.media-pick-search { flex: 1 1 auto; min-width: 0; }
+.media-pick-grid {
+    flex: 1 1 auto; overflow-y: auto; min-height: 160px;
+    display: grid; gap: var(--ui-sp-sm);
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    padding: var(--ui-sp-md);
+}
+.media-pick-cell {
+    appearance: none; -webkit-appearance: none;
+    padding: 0; aspect-ratio: 1 / 1; overflow: hidden;
+    background: var(--sky-c-surface, #f4f5f6);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 8px; cursor: pointer;
+}
+.media-pick-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media (hover: hover) {
+    .media-pick-cell:hover { border-color: var(--sky-c-primary, #3d444f); }
+}
+.media-pick-cell:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
+.media-pick-empty {
+    grid-column: 1 / -1; margin: 0; padding: var(--ui-sp-lg) 0;
+    text-align: center; font-size: 13px; color: var(--sky-c-text-mute, #6b7280);
+}
+.media-pick-foot {
+    display: flex; align-items: center; gap: var(--ui-sp-xs);
+    padding: var(--ui-sp-sm) var(--ui-sp-md);
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
+    font-size: 13px; color: var(--sky-c-text-mute, #6b7280);
+}
+.media-pick-spacer { flex: 1 1 auto; }

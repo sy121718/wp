@@ -193,6 +193,19 @@
 
 /* 翻页按钮:卡片区两侧的半透明圆钮(钩子名沿用 deck,脚本共用一份). */
 @if deckArrows
+/* 图标：基座图标库（箭头 chevron-left/right、关闭 close）。 */
+& .sky-cardstack-arrow-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+& .sky-cardstack-close-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 & .sky-cardstack-arrow {
   position: absolute;
   top: 50%;

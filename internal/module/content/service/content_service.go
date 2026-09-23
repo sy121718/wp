@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	contentcontract "go_wp/internal/module/content/contract"
@@ -15,6 +16,7 @@ import (
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/upload"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -147,13 +149,14 @@ func (s *Service) List(ctx context.Context, req *contentdto.ListReq) (list []*co
 	if req == nil {
 		req = &contentdto.ListReq{}
 	}
-	if req.EntityType != "" && !contentcontract.IsValidType(req.EntityType) {
-		return nil, errors.New(contentenums.ErrInvalidType)
+	entityType, err := normalizeListFilter(req)
+	if err != nil {
+		return nil, err
 	}
 	if req.Limit <= 0 || req.Limit > 100 {
 		req.Limit = 20
 	}
-	rows, err := s.m.List(ctx, req.EntityType, req.Limit, req.Offset)
+	rows, err := s.m.List(ctx, entityType, req.Limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +171,36 @@ func (s *Service) List(ctx context.Context, req *contentdto.ListReq) (list []*co
 		out = append(out, toResp(r, data))
 	}
 	return out, nil
+}
+
+// Count 按类型统计总数（后台文章列表的分页总数与总页数）。
+//
+// **与 List 共用同一个 normalizeListFilter**：过滤条件（这里是实体类型）各写一遍时，
+// 抄漏的那一侧不报错 —— 只表现为总数与列表条数静默对不上，翻到最后一页才发现少了几条。
+// 形状与 product 域的 CountBrands / CountProducts 一致：收同一个 ListReq，返回 (int64, error)。
+//
+// 与 CountForCollection 不是一回事：那是集合渲染路径的计数（带 data 字段等值过滤，
+// 供组件集合翻页），本方法服务的是后台列表页的分页条。
+func (s *Service) Count(ctx context.Context, req *contentdto.ListReq) (n int64, err error) {
+	entityType, err := normalizeListFilter(req)
+	if err != nil {
+		return 0, err
+	}
+	return s.m.Count(ctx, entityType)
+}
+
+// normalizeListFilter 归一内容列表的过滤条件（List / Count 共用）。
+//
+// 空类型不校验（List 的历史语义是「不限类型」）；非空类型必须在白名单里 ——
+// 与 List 原来的两行校验逐字一致，只是搬到了共用助手，避免两处各写一遍后分叉。
+func normalizeListFilter(req *contentdto.ListReq) (entityType string, err error) {
+	if req == nil {
+		return "", nil
+	}
+	if req.EntityType != "" && !contentcontract.IsValidType(req.EntityType) {
+		return "", errors.New(contentenums.ErrInvalidType)
+	}
+	return req.EntityType, nil
 }
 
 // Delete 删除实体。
@@ -190,6 +223,38 @@ func (s *Service) Delete(ctx context.Context, req *contentdto.DeleteReq) (err er
 	return nil
 }
 
+// normalizableMediaFields 各内容类型里「取自媒体库」的字段（值为单个 URL）。
+//
+// 与字段白名单一样单处定义：写入口与读出口必须共用同一份清单，各写一份迟早分叉 ——
+// 分叉的表现是「保存后是完整链接、读回来又变回相对路径」。
+var normalizableMediaFields = map[string]map[string]bool{
+	"article": {"featuredImage": true},
+}
+
+// normalizeMediaFields 就地把媒体字段归一到**对外可用的完整链接**。
+//
+// 媒体库给出的是 upload.base_url 前缀下的地址（未配置时是 "/storage/<id>.<ext>"），
+// 而这里要的是「谁能直接拿去用」的那一份。写入口归一一次（新数据天然是完整链接），
+// 读出口再归一一次（存量相对值也能显示对）—— 两侧都过同一个 upload.StorageURL，
+// 换域名时全站跟着配置走，不需要回填历史数据。
+//
+// 非字符串与空值原样保留：空串表示「没配图」，改写成 "/storage/" 这种半截地址
+// 会让调用方的「有没有配图」判断失真。
+func normalizeMediaFields(entityType string, data map[string]any) map[string]any {
+	fields := normalizableMediaFields[entityType]
+	if len(fields) == 0 || data == nil {
+		return data
+	}
+	for key := range fields {
+		v, ok := data[key].(string)
+		if !ok || strings.TrimSpace(v) == "" {
+			continue
+		}
+		data[key] = upload.StorageURL(v)
+	}
+	return data
+}
+
 // validateData 字段白名单校验（不变量 4：拒绝白名单外字段，防夹带）。
 func validateData(entityType string, data map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(data))
@@ -199,14 +264,16 @@ func validateData(entityType string, data map[string]any) (map[string]any, error
 		}
 		out[key] = val
 	}
-	return out, nil
+	return normalizeMediaFields(entityType, out), nil
 }
 
 // toResp 实体 → 响应。
+//
+// 读出口同样过一遍归一：存量行（相对路径入库）与手工写进库的值都能显示成完整链接。
 func toResp(e *contentmodel.Entity, data map[string]any) *contentdto.ContentResp {
 	return &contentdto.ContentResp{
 		ID: e.ID, EntityType: e.EntityType, Slug: e.Slug,
-		Revision: e.Revision, Data: data,
+		Revision: e.Revision, Data: normalizeMediaFields(e.EntityType, data),
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
 	}
 }

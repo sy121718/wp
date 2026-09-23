@@ -1,0 +1,375 @@
+{* admin/navigations.html — 前台导航菜单：结构树 + 排序 + 打开方式（零 JS，原生表单提交） *}
+{* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§3/§7）：
+     · 领域说明两段进页头 .help 悬浮，正文零说明文字；
+     · 工程 / 导航位置两个上下文选择器与页头同行（单工程时不渲染工程下拉）；
+     · 菜单结构是 .data-table：末列 .col-actions 放编辑 / 删除，「排序」列放上移 / 下移；
+     · 行内表单（上移 / 下移 / 删除 / 编辑抽屉）全部放表格外，按钮用 form="<id>" 关联
+       （HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格）。 *}
+{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{kind := .Kind}}
+{{canUpdate := isset(.PermSet["navigation:update"])}}
+{{canDelete := isset(.PermSet["navigation:delete"])}}
+{* 面板块保存后回跳时要点开的那一项（?menu=<id>）：只参与行比对，从不进 HTML。
+   用链索引取值：直接渲染模板的单测不带该键，点号取值会让整页在那行中断。 *}
+{{menuFocus := .["MenuID"]}}
+<div class="stack">
+    {{if len(.Projects) == 0}}
+    <section class="card list-card">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.navigations.no_project.title", "还没有站点工程") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.navigations.no_project", "请先在「页面」里创建一个站点工程，再管理前台导航菜单。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.common.action.pages", "页面管理") }}</a>
+            </div>
+        </div>
+    </section>
+    {{else}}
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.navigations.heading", "导航菜单") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.navigations.intro", "在工作台拖入「导航菜单」组件，把它的「导航位置」设为页眉或页脚；构建时这里的菜单项会编译进静态产物（访客请求不查库）。") }}<br><br>{{ .["t"]("admin.navigations.source_hint", "勾选后加入菜单：标题与链接取自来源实体（页面用 SEO 标题与访问路径，文章/产品/分类用标题与已发布路径），来源变更后重新构建即同步。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {* 两个写入口都是页级主行动，进 .page-actions（§2.2 硬规则）。
+               此前它们是两张常驻卡：「添加菜单项」表单占 119px、「从已有内容添加」占 156px
+               却只显示「页面（13）」「文章（20）」两行折叠按钮 —— 用户不点开不知道它是什么，
+               点开又挤掉半屏，且把菜单结构表推到 0.55 屏（实测）。
+               现在统一为两个抽屉：与「编辑」抽屉同一套 data-drawer-* 机制，零新 JS。 *}
+            {{if canUpdate}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-nav-create"
+                    data-drawer-title="{{ .["t"]("admin.navigations.add_heading", "添加菜单项") }}">＋ {{ .["t"]("admin.navigations.add_heading", "添加菜单项") }}</button>
+            {{if isset(.SourceGroups)}}{{if len(.SourceGroups) > 0}}
+            <button type="button" class="btn" data-drawer-open="#tpl-nav-add-source"
+                    data-drawer-title="{{ .["t"]("admin.navigations.source_heading", "从已有内容添加") }}">{{ .["t"]("admin.navigations.source_heading", "从已有内容添加") }}</button>
+            {{end}}{{end}}
+            {{end}}
+            <form class="page-context" method="get" action="/admin/navigations">
+                {{if len(.Projects) > 1}}
+                <label class="sr-only" for="nav-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="nav-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+                {{end}}
+                <label class="sr-only" for="nav-kind">{{ .["t"]("admin.navigations.col.position", "导航位置") }}</label>
+                <select class="form-select" id="nav-kind" name="kind" onchange="this.form.submit()">
+                    <option value="header" {{if kind == "header"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.header", "页眉导航（桌面）") }}</option>
+                    <option value="header_mobile" {{if kind == "header_mobile"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.headerMobile", "页眉导航（移动端）") }}</option>
+                    <option value="footer" {{if kind == "footer"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.footer", "页脚导航（桌面）") }}</option>
+                    <option value="footer_mobile" {{if kind == "footer_mobile"}}selected{{end}}>{{ .["t"]("admin.navigations.kind.footerMobile", "页脚导航（移动端）") }}</option>
+                </select>
+            </form>
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err / Done，
+       缺失键会让整页在这一行中断（HTTP 仍 200，后半部分整块消失）。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.navigations.last_error", "上一次操作未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    {* ===== 添加菜单项（抽屉）=====
+       原为常驻卡（占 119px 正文高度），改抽屉后菜单结构表回到首屏 0.26 屏。
+       字段与 action 一个字符未改，只换承载形态。 *}
+    {{if canUpdate}}
+    <template id="tpl-nav-create">
+        <form method="post" action="/admin/navigations/create" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            <div class="form-field">
+                <label class="form-label req" for="nav-new-title">{{ .["t"]("admin.navigations.field.title", "菜单文字") }}</label>
+                <input type="text" id="nav-new-title" name="title" class="form-input" placeholder="{{ .["t"]("admin.navigations.title_placeholder", "菜单文字，如：关于我们") }}" required>
+            </div>
+            <div class="form-field">
+                <label class="form-label req" for="nav-new-path">{{ .["t"]("admin.navigations.field.path", "链接") }}</label>
+                <input type="text" id="nav-new-path" name="path" class="form-input" placeholder="{{ .["t"]("admin.navigations.path_placeholder", "链接，如 /about") }}" required>
+            </div>
+            <div class="form-row">
+                <div class="form-field">
+                    <label class="form-label" for="nav-new-target">{{ .["t"]("admin.navigations.field.target", "打开方式") }}</label>
+                    <select id="nav-new-target" name="target" class="form-select">
+                        <option value="self">{{ .["t"]("admin.navigations.target.self", "当前窗口") }}</option>
+                        <option value="blank">{{ .["t"]("admin.navigations.target.blank", "新标签页") }}</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="nav-new-parent">{{ .["t"]("admin.navigations.field.parent", "层级") }}</label>
+                    <select id="nav-new-parent" name="parentId" class="form-select">
+                        <option value="">{{ .["t"]("admin.navigations.parent.none", "作为顶级项") }}</option>
+                        {{range _, r := .ParentOptions}}
+                        <option value="{{r.ID}}">{{tr("admin.navigations.parent.prefix", "放到「")}}{{r.Title}}{{tr("admin.navigations.parent.suffix", "」下")}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.navigations.add", "添加") }}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+
+    {* ===== 从已有内容添加（抽屉）=====
+       原为常驻卡：折起来只显示「页面（13）」「文章（20）」两行按钮（用户看不出用途），
+       展开是 13~20 个复选框 + 提交按钮，把半屏挤掉。改抽屉后它成为与「添加菜单项」
+       并列的第二个入口，形态统一。
+
+       分组默认**全部展开**：用户点「从已有内容添加」时意图已经明确（就是要挑内容），
+       再要求他先点一次分组标题等于多一步；抽屉自带滚动，展开不会撑破布局。
+       实测此前默认收起时，进抽屉后 openDetails=0，用户看不到任何可勾选项。 *}
+    {{if canUpdate}}
+    {{if isset(.SourceGroups)}}
+    {{if len(.SourceGroups) > 0}}
+    <template id="tpl-nav-add-source">
+        {{range _, g := .SourceGroups}}
+        <details class="nav-source-group" open>
+            <summary class="nav-source-summary">{{g.Title}}（{{len(g.Items)}}）</summary>
+            <form method="post" action="/admin/navigations/add-source" class="form-stack">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="projectId" value="{{selectedProject}}">
+                <input type="hidden" name="kind" value="{{kind}}">
+                <input type="hidden" name="sourceType" value="{{g.Type}}">
+                {{range _, it := g.Items}}
+                {* 显示 Title（人类可读标题）为主、URL 为辅 —— 不是 Label。
+                   Label 对页面来说是 DraftPath、对内容是 slug，与 URL 高度重合
+                   （页面候选的 Label 与 URL 同为路径），一起渲染就会每条显示两遍。
+                   Title 才是「勾进菜单后会成为什么菜单项文字」的答案；
+                   URL 是它的落点。两者都空时才退回 Label 兜底。 *}
+                <label class="nav-source-item">
+                    <input type="checkbox" name="sourceIds" value="{{it.ID}}" {{if it.URL == ""}}disabled{{end}}>
+                    <span class="nav-source-title">{{it.Title}}</span>
+                    {{if it.URL == ""}}<em>{{tr("admin.navigations.no_public_path", "（暂无公开路径，先发布后再添加）")}}</em>{{else}}<code>{{it.URL}}</code>{{end}}
+                </label>
+                {{end}}
+                <div class="action-row">
+                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                    {* 本组一个可加入项都没有时置灰：逐项的 disabled 只挡住单个复选框，按钮仍可点，
+                       而 33 个候选一个也勾不动时提交，用户收到的是「请至少勾选一项要加入菜单的内容」
+                       —— 那句提示在这个场景里是误导（他一个都勾不了）。判据由页面数据给出
+                       （navSourceGroup.Usable = 本组至少一个候选有公开路径）。 *}
+                    <button type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
+                            title="{{tr("admin.navigations.add_to_menu_disabled", "本组没有可加入的内容：都还没有公开路径，先发布后再添加。")}}"{{end}}>{{tr("admin.navigations.add_to_menu", "加入菜单")}}</button>
+                </div>
+            </form>
+        </details>
+        {{end}}
+    </template>
+    {{end}}
+    {{end}}
+    {{end}}
+
+    <section class="card list-card">
+        {* 筛选栏（客户端过滤：输入即过滤行，不发请求、不刷新页面）。
+           「位置」维度已经由页头 .page-context 的 kind 下拉做了（那是服务端筛选：读 query、
+           回显 selected、进 navigation Service.ListReq.Kind），本栏补的是它没有的**关键词** ——
+           navigation 的 List 只有 projectID + kind 两个维度，没有关键词。
+           为什么走客户端：菜单项规模小、整表已在 DOM 里，输入即过滤比一次往返更快；
+           且不越界改 service（样板 menus.html）。匹配字段见每行的 data-filter-text。
+           没有 .filter-actions：即时过滤没有「提交」这一步。 *}
+        <div class="filter-bar">
+            <div class="filter-fields">
+                <div class="filter-field">
+                    <label for="nav-filter-keyword">{{ .["t"]("admin.navigations.filter_keyword", "关键词") }}</label>
+                    <input type="text" class="form-input filter-search" id="nav-filter-keyword" data-filter-input
+                           placeholder="{{ .["t"]("admin.navigations.filter_placeholder", "菜单项 / 链接 / 打开方式") }}" autocomplete="off">
+                </div>
+            </div>
+        </div>
+        <div class="list-toolbar">
+            <strong>{{ .["t"]("admin.navigations.structure_heading", "菜单结构") }}</strong>
+        </div>
+        {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知，也才能判断
+           「是不是筛选条件太窄」。空态落在 tbody 的整行里（本表勾选列无条件渲染，colspan 固定 6）。
+           批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的（HTML 不允许 form 嵌套，
+           所以上移/下移/删除的行内表单放表格外、按钮用 form="<id>" 关联）。
+           form 只包 .table-wrap 而不是整张 .list-card：.list-toolbar 必须保持
+           .list-card 的直接子元素（样式与脚本按此定位）。 *}
+        <form method="post" action="/admin/navigations/bulk-delete">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
+            {{if canDelete}}{{if len(.Rows) > 0}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.navigations.bulk_delete_confirm", "删除选中的菜单项？它们的子菜单项会一并删除，其余照常删除。"), danger=true)}}
+            {{yield bulkBarClose()}}
+            {{end}}{{end}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.navigations.structure_heading", "菜单结构") }}">
+            <table class="data-table data-table-wide">
+                <thead>
+                <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.navigations.col.item", "菜单项") }}</th><th>{{ .["t"]("admin.navigations.col.link", "链接") }}</th><th>{{ .["t"]("admin.navigations.col.target", "打开方式") }}</th><th>{{ .["t"]("admin.navigations.col.sort", "排序") }}</th><th class="col-actions">{{ .["t"]("admin.navigations.col.actions", "操作") }}</th></tr>
+                </thead>
+                <tbody>
+                {{if len(.Rows) == 0}}
+                {* 空态整行：colspan = 6 列（勾选 / 菜单项 / 链接 / 打开方式 / 排序 / 操作）。
+                   勾选列在本表无条件渲染，所以没有「±1」的第二种形态。 *}
+                <tr><td colspan="6" class="cell-wrap">
+                    <div class="empty-state">
+                        <p class="empty-desc">{{ .["t"]("admin.navigations.empty", "这个位置还没有菜单项：用上面的表单添加，或在页面里给导航组件绑定这个位置。") }}</p>
+                    </div>
+                </td></tr>
+                {{else}}
+                {{range _, r := .Rows}}
+                {* data-filter-text = 这行的可筛文本（客户端筛选按它匹配）。
+                   行标题在编辑抽屉里才能改，这里先把「菜单项 / 链接 / 打开方式」三列纳入匹配范围。 *}
+                <tr data-filter-text="{{r.Title}} {{r.Path}} {{r.TargetLabel}}">
+                    <td class="col-check">
+                        <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
+                    </td>
+                    <td style="padding-left:{{r.Indent}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-nav-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</td>
+                    <td><code>{{r.Path}}</code></td>
+                    <td>{{r.TargetLabel}}</td>
+                    <td>
+                        <button type="submit" form="nav-up-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.First}}disabled{{end}} title="{{tr("admin.navigations.title_up", "上移")}}" aria-label="{{tr("admin.navigations.title_up", "上移")}}">↑</button>
+                        <button type="submit" form="nav-down-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.Last}}disabled{{end}} title="{{tr("admin.navigations.title_down", "下移")}}" aria-label="{{tr("admin.navigations.title_down", "下移")}}">↓</button>
+                    </td>
+                    <td class="col-actions">
+                        {{if canUpdate}}
+                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-nav-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        {{end}}
+                        <button type="submit" form="nav-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.navigations.action.delete", "删除")}}</button>
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        </form>
+
+        {* 客户端筛选无结果提示：admin.js 的 applyFilter 按 [data-filter-empty] 控制显隐
+           （契约是「有关键词且 0 行可见」才显形），把「被筛掉了」与「这个位置本来就没有菜单项」
+           分开 —— 两档的下一步动作不一样（清空关键词 vs 去添加菜单项）。
+           放在表格之后而不是 .table-scroll 里：滚动容器内会被滚走，提示也就看不见了。 *}
+        <p class="empty-desc" data-filter-empty hidden>{{ .["t"]("admin.navigations.filter_empty", "没有匹配的菜单项。换一个关键词，或清空关键词看全部。") }}</p>
+    </section>
+
+    {* 行内表单与编辑抽屉放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
+    {{range _, r := .Rows}}
+    <form id="nav-up-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="kind" value="{{kind}}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+        <input type="hidden" name="dir" value="up">
+    </form>
+    <form id="nav-down-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="kind" value="{{kind}}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+        <input type="hidden" name="dir" value="down">
+    </form>
+    <form id="nav-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/delete"
+          data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}" data-confirm-danger>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="kind" value="{{kind}}">
+        <input type="hidden" name="id" value="{{r.ID}}">
+    </form>
+    {{if canUpdate}}
+    <template id="tpl-nav-edit-{{r.ID}}">
+        <form method="post" action="/admin/navigations/update">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            {* 乐观锁：把打开抽屉时读到的 update_time 原样回带。服务端比对不上就整条拒绝
+               （不自动合并、不加后缀），并回一句「已被其他窗口修改」的提示要求刷新重做。
+               保存失败后回跳时仍带着它，抽屉自动重开，用户能看到库里的当前值。 *}
+            <input type="hidden" name="expectedUpdatedAt" value="{{r.UpdatedAt}}">
+            <input type="hidden" name="menu" value="{{r.ID}}">
+            <input type="text" name="title" class="form-input" value="{{r.Title}}" placeholder="{{tr("admin.navigations.edit_title_placeholder", "菜单文字")}}" required>
+            <input type="text" name="path" class="form-input" value="{{r.Path}}" placeholder="{{tr("admin.navigations.edit_path_placeholder", "链接")}}" required>
+            <select name="target" class="form-select">
+                <option value="self" {{if r.Target == "self"}}selected{{end}}>{{tr("admin.navigations.target.self", "当前窗口")}}</option>
+                <option value="blank" {{if r.Target == "blank"}}selected{{end}}>{{tr("admin.navigations.target.blank", "新标签页")}}</option>
+            </select>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
+            </div>
+        </form>
+        {{if isset(.PanelAvail)}}{{if .PanelAvail}}
+        {* 可选键一律链索引 + isset：直接写 .PanelBlocks 在缺键的渲染路径（单测/其它页面数据）会报
+           "no field or method in map"，状态码仍 200、之后整块 HTML 消失。 *}
+        {{panelBlocks := .["PanelBlocks"]}}
+        {* 悬浮面板（超级菜单，迁移 285）：内容存全局块，展示存菜单项 ——
+           与上面的「编辑菜单项」是两次独立写，故各自一个表单（都不做跨模块双写）。 *}
+        <form method="post" action="/admin/navigations/panel" class="form-stack mt-lg">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            {* 面板保存同样是 navigation 的一次更新：乐观锁 token 一起带上。 *}
+            <input type="hidden" name="expectedUpdatedAt" value="{{r.UpdatedAt}}">
+            <input type="hidden" name="menu" value="{{r.ID}}">
+            <label class="form-label" for="nav-panel-{{r.ID}}">{{tr("admin.navigations.panel.label", "悬浮面板（超级菜单）")}}</label>
+            <select class="form-select" id="nav-panel-{{r.ID}}" name="panelBlockId">
+                <option value="">{{tr("admin.navigations.panel.none", "（无面板）")}}</option>
+                {{range _, b := panelBlocks}}
+                <option value="{{b.ID}}" {{if b.ID == r.PanelBlockID}}selected{{end}}>{{b.Name}}</option>
+                {{end}}
+            </select>
+            <select class="form-select" name="panelWidth" aria-label="{{tr("admin.navigations.panel.width", "面板宽度")}}">
+                <option value="auto" {{if r.PanelWidth != "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthAuto", "宽度：跟随内容")}}</option>
+                <option value="full" {{if r.PanelWidth == "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthFull", "宽度：通栏")}}</option>
+            </select>
+            <div class="action-row">
+                <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button>
+            </div>
+        </form>
+        <form method="post" action="/admin/navigations/panel/create">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="kind" value="{{kind}}">
+            <input type="hidden" name="title" value="{{r.Title}}">
+            {* 菜单项 id 决定块保存后回到菜单页时要点开哪一项。 *}
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.create", "新建面板块并编辑")}}</button>
+        </form>
+        {* 悬浮预览：iframe 指向块预览端点（构建期之外的就地预览，不落盘）。
+           鼠标悬停与点击都能打开（触屏只有 click，等价路径在按钮上），Esc 关闭；
+           iframe 的 src 由客户端在首次打开时才写入 —— 一个菜单项一个 iframe 的话，
+           整页渲染就等于同时发起几十次预览编译。 *}
+        {{if r.PanelBlockID != ""}}
+        <div class="nav-panel-preview" data-panel-preview>
+            <button type="button" class="btn btn-sm" data-panel-preview-toggle
+                    aria-expanded="false" aria-controls="nav-panel-preview-{{r.ID}}"
+                    data-preview-src="/workbench/block/preview?id={{r.PanelBlockID}}&amp;editor=1">
+                {{tr("admin.navigations.panel.preview", "预览面板")}}
+            </button>
+            <div class="nav-panel-preview-pop" id="nav-panel-preview-{{r.ID}}" hidden>
+                <div class="nav-panel-preview-head">
+                    <strong>{{tr("admin.navigations.panel.preview", "预览面板")}}</strong>
+                    <button type="button" class="btn btn-sm btn-icon" data-panel-preview-close aria-label="{{tr("admin.navigations.panel.previewClose", "关闭预览")}}">✕</button>
+                </div>
+                <iframe class="nav-panel-preview-frame" data-panel-preview-frame
+                        title="{{tr("admin.navigations.panel.preview", "预览面板")}}" loading="lazy"></iframe>
+            </div>
+        </div>
+        {{end}}
+        {{end}}{{end}}
+    </template>
+    {{end}}
+    {{end}}
+    {{end}}
+</div>
+{{end}}

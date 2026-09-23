@@ -109,7 +109,7 @@ func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
 			data.SavedNote = "没有需要写入的变化。"
 		}
 	}
-	c.HTML(http.StatusOK, "admin/product_translations.html", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
 }
 
 // SaveProductTranslations POST /admin/products/translations/save：保存译文（整表提交）。
@@ -127,7 +127,7 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	}
 	if !h.langAllowed(ctx, data.ProjectID, lang) {
 		data.Errors = translationMsgs(c, []string{MsgTranslationLangInvalid})
-		c.HTML(http.StatusOK, "admin/product_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 
@@ -136,7 +136,7 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
 		data.Errors = translationMsgs(c, []string{MsgTranslationInvalid})
-		c.HTML(http.StatusOK, "admin/product_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 
@@ -175,7 +175,7 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	}
 	if len(rowErrors) > 0 {
 		data.Errors = rowErrors
-		c.HTML(http.StatusOK, "admin/product_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if len(items) == 0 {
@@ -187,7 +187,7 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if perr != nil {
 		logger.Scene("product").With("project", projectID).Error(perr, "内容译文存储不可用")
 		data.Errors = translationMsgs(c, []string{MsgTranslationSaveFailed})
-		c.HTML(http.StatusOK, "admin/product_translations.html", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 
@@ -220,7 +220,7 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 		if uerr != nil {
 			logger.Scene("product").With("project", projectID).With("lang", lang).Error(uerr, "写入商品译文失败")
 			data.Errors = translationMsgs(c, []string{MsgTranslationSaveFailed})
-			c.HTML(http.StatusOK, "admin/product_translations.html", shell.Prepare(c, data.templateMap()))
+			c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
 			return
 		}
 	}
