@@ -715,7 +715,7 @@ node lcs-trade/extra.js               # 滚动需求 / option 计数 / 写失败
 其中**三处原先借的是 `.fold-title`** —— 按 `theme.css` §13 的注释，那个类「只在 `.section-fold > summary`
 里有效，被列表卡标题借用时是**零样式**」，即「库存流水（最近 N 条）」这类标题当时是以正文样式渲染的。
 
-**遗留（未修，P2）**：`inventory_sources.html` 的 `.filter-bar > .filter-row > .fold-title`（值为「筛选」）
-是**筛选栏自己的标签行**，不是列表标题，不属 #29 同族；但它同样借了零样式的 `.fold-title`，
-「筛选」二字实际以正文样式呈现。修它需要先定「筛选栏要不要标签」并按 AGENTS.md 清理可能的孤儿词条
-（`admin.inventory_sources.filter.title`），属内容设计决策，本轮未动。
+**后续批次已收口（P2）**：`inventory_sources.html` 的「筛选」属于冗余的筛选栏自报标签，
+且旧 `.filter-row > .fold-title` 在此为零样式；该标签已删除，状态筛选的 `.help` 则移到对应
+状态字段旁。词条 `admin.inventory_sources.filter.title` 已经 436 seed 删除存量，191 seed 的
+SQL 与 ConditionSQL 列表、门槛同步去除（582 → 581），避免启动时反复插回。
