@@ -93,7 +93,7 @@
                 </div>
                 <div class="filter-field">
                     <label for="src-keyword">{{ .["t"]("admin.inventory_sources.filter.labelKeyword", "关键词") }}</label>
-                    <input type="text" class="form-input" id="src-keyword" name="keyword" value="{{filterKeyword}}" placeholder="{{ .["t"]("admin.inventory_sources.filter.phKeyword", "名称 / 编码") }}" autocomplete="off">
+                    <input type="text" class="form-input filter-search" id="src-keyword" name="keyword" value="{{filterKeyword}}" placeholder="{{ .["t"]("admin.inventory_sources.filter.phKeyword", "名称 / 编码") }}" autocomplete="off">
                 </div>
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory_sources.filter.submit", "筛选") }}</button>

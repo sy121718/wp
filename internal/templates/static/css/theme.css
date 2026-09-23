@@ -1035,15 +1035,28 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     gap: var(--ui-sp-sm) var(--ui-sp-xl);
     min-width: 0;
 }
+/* 第四轮修正（2026-09-23 实测，前一轮的写法会溢出重叠）：
+   `.filter-field` 是 shrink-to-fit 的 flex item，而内部控件原先写的是 `width: min(100%, 200px)`
+   —— 百分比相对「由内容决定的父宽」构成循环依赖：intrinsic 阶段按当前选中的 option 算出父宽，
+   layout 阶段再按这个父宽解析 100%，第二次的解更大，控件于是**顶出自己的单元**。实测
+   `/admin/inventory/sources?status=active`（选中项文字最短）时状态下拉溢出 34px —— 正好等于
+   「label + gap」，把右边「关键词」的标签压成一团；默认档选项文字长、恰好不触发，所以只在
+   改过筛选值之后才暴露。
+   正解：给控件的宽度**绝对值**（下面两条），父宽就不再「等控件、控件又等父宽」，两个阶段同一解；
+   label 长短不同时单元宽度自然不同（类型 226 / 关联方 247），不再全行一个死宽度。 */
 .filter-field { display: flex; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
 .filter-field > label {
     flex: none; font-size: 13px; white-space: nowrap;
     color: var(--sky-c-text-mute, #6b7280);
 }
+/* max-width: 100% 只在单元被压窄时兜底（百分比作上限不参与固有尺寸计算，不会形成上面的循环）；
+   min-width 用 0 而不是 min(100%, 120px)：那个下限会在单元被压到「label + 120px」以下时
+   把控件顶出单元。 */
 .filter-field .form-select, .filter-field .form-input, .filter-field .form-textarea, .filter-field .wbs {
-    width: min(100%, 200px); min-width: min(100%, 120px);
+    width: 200px; min-width: 0; max-width: 100%;
 }
-.filter-field .form-input.filter-search { width: min(100%, 260px); }
+/* 关键词是筛选行的主输入（订单号 / 邮箱要能看全），比下拉宽一档。 */
+.filter-field .form-input.filter-search { width: 240px; }
 /* 区间条件（时间区间、金额区间）的分隔符：不属于任何控件，只做视觉连接。 */
 .filter-sep { flex: none; color: var(--sky-c-text-mute, #6b7280); font-size: 13px; }
 .filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); }
@@ -1129,10 +1142,13 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     color: var(--sky-c-text, #1a1d21);
 }
 
-/* 极窄屏：每个条件独占一行，控件拉到满宽（触摸目标不缩小）。 */
+/* 极窄屏：每个条件独占一行，控件拉到满宽（触摸目标不缩小）。
+   filter-search 那条要与其它控件同优先级列出，否则它上面那档更具体的规则（`.form-input.filter-search`）
+   会把 100% 顶掉，窄屏下关键词框只剩 240px 而不是满宽。 */
 @media (max-width: 560px) {
     .filter-field { flex: 1 1 100%; }
-    .filter-field .form-select, .filter-field .form-input, .filter-field .wbs { width: 100%; }
+    .filter-field .form-select, .filter-field .form-input, .filter-field .wbs,
+    .filter-field .form-input.filter-search { width: 100%; }
 }
 
 .card-body > h3 { margin: var(--ui-sp-lg) 0 var(--ui-sp-sm); font-size: 14px; font-weight: 600; }
@@ -1371,6 +1387,38 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    立刻贴住视口底）。本页把溢出改为可见，让参考滚动容器回到文档；
    :has 把范围限定在文章编辑页，其余后台页面照旧（它们确实靠内容区裁剪浮层）。 */
 .admin-content:has(> .article-edit-page) {
+    overflow-y: visible;
+}
+
+
+/* ==========================================================================
+   主题设置页（长表单 · 52 字段）：保存条吸底
+   --------------------------------------------------------------------------
+   与上面文章编辑页的 .article-save-card 同一套做法、同一批前提（那一段的实测结论这里直接复用）：
+   · 粘的是 **.theme-actions**（表单的最后一节），不是里面的按钮 —— sticky 元素被限制在包含块内，
+     按钮的包含块就是那一行自身，最多浮动几十像素，等于没粘；.theme-actions 的包含块是整张表单
+     （8 个字段组 + 块绑定 + 结构模板），粘住才真的全程可见。
+   · 前提一：祖先 `.card.card-body` 由基座给了 overflow: visible（ui.css）—— 改成 hidden 会立刻失效。
+   · 前提二：`.admin-content` 的 overflow-y: auto 会让它成为「不滚动的滚动祖先」，sticky 因此完全
+     不生效（文章编辑页实测：滚到文档中部按钮仍在视口下方约 300px）。所以下面那条 :has 把**本页**
+     内容区的溢出改为可见，让参考滚动容器回到文档；:has 限定在本页，其余后台页面照旧
+     （它们确实靠内容区裁剪浮层）。
+   · 背景取卡片色（不透明）：滚动时不透出下层字段；z-index 5 与文章编辑页一致 —— 压过字段，
+     但不越过抽屉 / 弹层（那些是更高的层）。
+   与页头 .page-head 的关系：页头本身不吸顶（随文档滚走），吸附固定在视口底部，两者不会重叠；
+   页头的主行动按钮仍是「不滚动就能保存」的那条路，这条负责「滚到中部也能保存」。
+   ========================================================================== */
+.theme-settings-page .theme-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    background: var(--sky-c-surface, #fff);
+    padding: var(--ui-sp-sm) 0;
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
+}
+
+/* 配对的前提修正：见上一条注释的第二点。限定在本页，不影响其它后台页面。 */
+.admin-content:has(> .theme-settings-page) {
     overflow-y: visible;
 }
 
