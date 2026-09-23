@@ -693,9 +693,17 @@ node lcs-trade/extra.js               # 滚动需求 / option 计数 / 写失败
 | **D1** | 本轮落地 | 基座控件 `internal/templates/static/js/ui/daterange.js`（渐进增强，原生两个 `input[type=date]` 保留在 DOM）+ `customers.html` / `analytics.html` 接入。**coupons 不在接入范围**：它的时间窗是 `type="datetime-local"`（需要时分），按 `02-K` §3「需要时分时用原生 `datetime-local`，无需新组件」保持不动。§501 风险①的正式决策：**时间范围留在自己的卡里**（`.card-header` 承载「时间范围」标题 + 独立 `.filter-bar`），不并入下方列表卡的筛选栏 —— 理由见该条原文：并入会回到「filter-bar 承载标题」的坑 |
 | **E1** | 已完成 | ① `data-confirm-danger`：`site_slots.html` 已补（实测该解绑表单同时有 `data-confirm` 与 `data-confirm-danger`）；② `.filter-bar` 语义：本轮修 4 处 + 记 1 处遗留（见下节）；③ 统计进标题：coupons 的列表标题与其「共 N 张」统计已移入 `.card-header`，且 `{{if .Total > 0}}` 保证空时不显示统计；④ coupons 两处「＋ 新建优惠码」：经复核属**刻意并存**（页头那处由 `admin-ui-logic` §2.2 要求、空态那处由 §7 要求），已在模板写明取舍与判据出处 |
 
-**本轮未逐条复核的批次（不声称已完成）**：A1 / A2 / B1 / B2 / B4 / B5 / B6 / B7 / C2。
-抽查过其中若干点（customers 空态库值、coupons 时间窗选型、analytics 的 tabs 与 `.filter-bar`、
-site_slots 的 `data-confirm-danger`、dashboard 的 `.card-header`）均已落地，但没有走完这些批的清单条目。
+**其余批次（A1 / A2 / B1 / B2 / B4 / B5 / B6 / B7 / C2）已逐条复核完毕**（只读走账，主会话抽验 7 条证据全部属实）：
+完成 28 条 / 未完成 0 条 / 判据过时 2 条，未发现「提交声称做了但实际没做」。
+- A1：`theme_settings_admin_pages.go` 全部出口收口（`projectErrRedirect` / `themeSettingsFailPage` 就地重渲 / 成功 303+`?ok=`），无 `c.String`/JSON 残留；
+- A2：错误槽位（`role="alert"`/`role="status"`）、页头保存按钮 `form="theme-settings-form"`、分组折叠（`details.section-fold`）均已落地。**判据过时 2 条**：「49 label i18n」改由 `theme_field_groups.go` 服务端字段表数据驱动（模板只对固定文案走 `t(key,兜底)`）；折叠的 `Collapsed` 字段由模板 `open` 属性等价实现 —— 语义结果均达成；
+- B1：orders/returns 空态三段齐、详情 id 不存在经 `orderFacingError` 进 `pageErr`、returns Note 已进 `.help-pop`；
+- B2：死主行动改为仅 `FilterActive` 时渲染「重置」（H13 判据写进注释）；
+- B4：时间窗 `datetime-local step=1`、`.card-header` 承载标题与 `Total > 0` 统计、非法 status 原样回显；
+- B5：行内 13 项 select 改 `#slot-bind-panel` 绑定面板、占位符/aria 去重、装载失败与无工程清单两档空态分流、`data-confirm-danger` 已加；
+- B6：tabs ×5、空态宏收敛、daterange 接入；
+- B7：删除确认说清后果（设置删除 + 页面改挂激活主题 + 激活中不可删）、空态三段齐（换 key 避开旧库值死指向）；
+- C2：seo 占位空态补 `empty-desc`（复用 `.help-pop` 同一 key，避免同一件事写两句）。
 
 ## 补记：`.filter-bar` 承载列表标题的实际处数（`02-I` #29 同族）
 
