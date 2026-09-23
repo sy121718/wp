@@ -135,8 +135,12 @@ func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 	if edit := bundleEditPage(t, productRowForRender()); !strings.Contains(edit, bundlePanelEditLink) {
 		t.Fatalf("空配置时编辑页仍应给出配置入口")
 	}
-	if strings.Contains(empty, "成员挂牌价（参考 · 不参与套餐价）") {
-		t.Fatalf("空配置不该渲染成员表")
+	// 空态**要**渲染表头（表头常驻、空态整行落在 tbody 里）：这是本项目的空态表头约定，
+	// 由 scripts/check-empty-state-table-head.sh 守门，且该门禁的允许清单里已明确记载
+	// 「本文件各表真正的空态（bundle 成员表 :118 等）已按样板修复」。
+	// 原先这里断言「空配置不该渲染成员表」，与那条约定正好相反 —— 是过时断言。
+	if !strings.Contains(empty, "成员挂牌价（参考 · 不参与套餐价）") {
+		t.Fatalf("空配置也应渲染表头（空态表头约定：表头常驻 + 空态整行进 tbody）")
 	}
 
 	// 读取失败（库存真源未接入 / 商品读不出来）：区块留在页面上并说明原因，
