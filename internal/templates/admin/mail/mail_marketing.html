@@ -126,16 +126,16 @@
       {{if len(.Contacts) == 0}}
       <tr><td colspan="8" class="cell-wrap">
     <div class="empty-state">
+      {{if .Keyword != "" || .Status != ""}}
       <p class="empty-title">{{ .["t"]("admin.mail.marketing.contacts.empty.title", "没有匹配的联系人") }}</p>
       <p class="empty-desc">{{ .["t"]("admin.mail.marketing.contacts.empty", "可调整筛选条件，或在下方折叠区批量导入联系人。") }}</p>
-      {* 空态动作分档：这句标题在**有筛选**时才是真的（否则是「一个联系人都没有」，
-         那与「没匹配上」是两回事，下一步也不同）。
-         有筛选 → 一键清空筛选看全部；无筛选 → 不给按钮：下一步是下方折叠区的批量导入，
-         它就在同一屏的下一段，重复给一个按钮只是噪声。 *}
-      {{if .Keyword != "" || .Status != ""}}
+      {* 筛选无结果时清空条件；无筛选时引导导入，不重复提供按钮。 *}
       <div class="empty-actions">
         <a class="btn" href="/admin/mail/marketing">{{ .["t"]("admin.mail.marketing.contacts.empty.clear", "清空筛选看全部") }}</a>
       </div>
+      {{else}}
+      <p class="empty-title">{{ .["t"]("admin.mail.marketing.contacts.empty.initial.title", "还没有联系人") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.contacts.empty.initial", "在下方导入联系人，开始建立发送名单。") }}</p>
       {{end}}
     </div>
       </td></tr>

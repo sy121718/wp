@@ -14,7 +14,7 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 	}{
 		{
 			name: "marketing", tpl: "admin/mail/mail_marketing",
-			data: marketingProbeData(nil),
+			data: marketingProbeData(map[string]any{"Keyword": "nobody"}),
 			pairs: [][2]string{
 				{"没有匹配的联系人", "可调整筛选条件，或在下方折叠区批量导入联系人。"},
 				{"还没有活动", "新建活动后点「启动群发」开始发送。"},

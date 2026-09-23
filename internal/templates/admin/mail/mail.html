@@ -160,7 +160,7 @@
       <tr><td colspan="7" class="cell-wrap">
     <div class="empty-state">
       <p class="empty-title">{{ .["t"]("admin.mail.templates.empty.title", "还没有邮件模板") }}</p>
-      <p class="empty-desc">{{ .["t"]("admin.mail.templates.empty", "还没有模板。") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.templates.empty", "新建邮件模板，填写主题与正文。") }}</p>
       {{if canSaveTemplate}}
       <div class="empty-actions">
         <button type="button" class="btn btn-primary" data-drawer-open="#tpl-mail-template" data-drawer-title="{{ .["t"]("admin.mail.template_form.heading", "新建 / 覆盖模板") }}">＋ {{ .["t"]("admin.mail.template_form.new", "新建 / 覆盖模板") }}</button>
