@@ -22,6 +22,7 @@ type GetReq struct {
 // ListReq 按类型分页列表。
 type ListReq struct {
 	EntityType string `form:"entityType"`
+	Keyword    string `form:"keyword"`
 	Limit      int    `form:"limit"`
 	Offset     int    `form:"offset"`
 }

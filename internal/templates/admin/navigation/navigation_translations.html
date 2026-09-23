@@ -13,6 +13,7 @@
 {{lang := .Lang}}
 {{projectID := .ProjectID}}
 {{errors := .Errors}}
+{{keyword := .["Keyword"]}}
 {{tr := .["t"]}}
 <div class="stack">
     <header class="page-head">
@@ -30,6 +31,7 @@
             <form class="page-context" method="get" action="/admin/navigations/translations">
                 <label class="sr-only" for="nav-tr-lang">{{ .["t"]("admin.navigation_translations.lang_label", "语言") }}</label>
                 <input type="hidden" name="project" value="{{projectID}}">
+                <input type="hidden" name="keyword" value="{{keyword}}">
                 <select class="form-select" id="nav-tr-lang" name="lang" onchange="this.form.submit()">
                     {{range _, l := langs}}
                     <option value="{{l.Code}}"{{if l.Active}} selected{{end}}>{{l.Label}}</option>
@@ -37,11 +39,28 @@
                 </select>
                 <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.navigation_translations.switch_lang", "切换语言") }}</button></noscript>
             </form>
-            {{if len(groups) > 0}}
+            {{if len(groups) > 0}}{{if !.["NoProject"]}}{{if !isset(.["VisibleCount"]) || .["VisibleCount"] > 0}}
             <button type="submit" form="nav-translations-form" class="btn btn-primary">{{ .["t"]("admin.navigation_translations.save", "保存译文") }}</button>
-            {{end}}
+            {{end}}{{end}}{{end}}
         </div>
     </header>
+
+    {{if !.["NoProject"]}}
+    <form class="filter-bar" method="get" action="/admin/navigations/translations">
+        <input type="hidden" name="project" value="{{projectID}}">
+        <input type="hidden" name="lang" value="{{lang}}">
+        <div class="filter-fields">
+            <div class="filter-field">
+                <label for="nav-tr-keyword">{{tr("admin.navigation_translations.filter_keyword", "关键词")}}</label>
+                <input id="nav-tr-keyword" class="form-input filter-search" type="search" name="keyword" value="{{keyword}}" placeholder="{{tr("admin.navigation_translations.filter_placeholder", "菜单文字 / 链接")}}">
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">{{tr("admin.common.filter.submit", "筛选")}}</button>
+            <a class="btn" href="/admin/navigations/translations?lang={{lang}}&amp;project={{projectID}}">{{tr("admin.common.action.reset", "重置")}}</a>
+        </div>
+    </form>
+    {{end}}
 
     {{if .Saved}}<p class="badge badge-success" role="status">{{.SavedNote}}</p>{{end}}
     {{if len(errors) > 0}}
@@ -50,11 +69,22 @@
     </div>
     {{end}}
 
-    {{if len(groups) == 0}}
+    {{if .["NoProject"] || len(groups) == 0 || (isset(.["HasData"]) && !.["HasData"]) || (keyword != "" && .["HasData"] && isset(.["VisibleCount"]) && .["VisibleCount"] == 0)}}
     <section class="card list-card">
         <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.navigation_translations.empty.title", "没有可翻译的菜单文字") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.navigation_translations.empty.desc", "先在「导航菜单」页给这个位置添加菜单项，再回来填译文。") }}</p>
+            {{if .["NoProject"]}}
+            <p class="empty-title">{{tr("admin.navigation_translations.no_project.title", "还没有站点工程")}}</p>
+            <p class="empty-desc">{{tr("admin.navigation_translations.no_project.desc", "先创建站点工程，再管理导航译文。")}}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/pages">{{tr("admin.navigation_translations.no_project.action", "去页面管理")}}</a></div>
+            {{else if keyword != "" && .["HasData"]}}
+            <p class="empty-title">{{tr("admin.navigation_translations.no_match.title", "没有匹配的菜单文字")}}</p>
+            <p class="empty-desc">{{tr("admin.navigation_translations.no_match.desc", "换一个关键词，或清除筛选查看全部菜单文字。")}}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/navigations/translations?lang={{lang}}&amp;project={{projectID}}">{{tr("admin.navigation_translations.no_match.action", "清除筛选")}}</a></div>
+            {{else}}
+            <p class="empty-title">{{tr("admin.navigation_translations.empty.title", "没有可翻译的菜单文字")}}</p>
+            <p class="empty-desc">{{tr("admin.navigation_translations.empty.desc", "先在「导航菜单」页添加菜单项，再回来填译文。")}}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/navigations?project={{projectID}}">{{tr("admin.navigation_translations.empty.action", "去导航菜单")}}</a></div>
+            {{end}}
         </div>
     </section>
     {{else}}
@@ -62,10 +92,11 @@
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="lang" value="{{lang}}">
         <input type="hidden" name="project" value="{{projectID}}">
+        <input type="hidden" name="keyword" value="{{keyword}}">
         {{range _, g := groups}}
         <section class="card card-body">
             <h2>{{g.Title}}</h2>
-            {{if len(g.Rows) == 0}}<p class="text-mute text-sm">{{ .["t"]("admin.navigation_translations.empty_group", "该位置还没有菜单项。") }}</p>{{end}}
+            {{if len(g.Rows) == 0}}{{if !isset(.["Keyword"]) || keyword == ""}}<p class="text-mute text-sm">{{tr("admin.navigation_translations.empty_group", "该位置还没有菜单项。")}}</p>{{end}}{{end}}
             {{range _, r := g.Rows}}
             <div class="field">
                 <label>{{r.Source}}{{if r.Translated}} · {{tr("admin.navigation_translations.has_target", "已有译文")}}{{end}}</label>

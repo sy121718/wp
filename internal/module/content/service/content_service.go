@@ -149,14 +149,14 @@ func (s *Service) List(ctx context.Context, req *contentdto.ListReq) (list []*co
 	if req == nil {
 		req = &contentdto.ListReq{}
 	}
-	entityType, err := normalizeListFilter(req)
+	entityType, keyword, err := normalizeListFilter(req)
 	if err != nil {
 		return nil, err
 	}
 	if req.Limit <= 0 || req.Limit > 100 {
 		req.Limit = 20
 	}
-	rows, err := s.m.List(ctx, entityType, req.Limit, req.Offset)
+	rows, err := s.m.List(ctx, entityType, keyword, req.Limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -182,25 +182,25 @@ func (s *Service) List(ctx context.Context, req *contentdto.ListReq) (list []*co
 // 与 CountForCollection 不是一回事：那是集合渲染路径的计数（带 data 字段等值过滤，
 // 供组件集合翻页），本方法服务的是后台列表页的分页条。
 func (s *Service) Count(ctx context.Context, req *contentdto.ListReq) (n int64, err error) {
-	entityType, err := normalizeListFilter(req)
+	entityType, keyword, err := normalizeListFilter(req)
 	if err != nil {
 		return 0, err
 	}
-	return s.m.Count(ctx, entityType)
+	return s.m.Count(ctx, entityType, keyword)
 }
 
 // normalizeListFilter 归一内容列表的过滤条件（List / Count 共用）。
 //
 // 空类型不校验（List 的历史语义是「不限类型」）；非空类型必须在白名单里 ——
 // 与 List 原来的两行校验逐字一致，只是搬到了共用助手，避免两处各写一遍后分叉。
-func normalizeListFilter(req *contentdto.ListReq) (entityType string, err error) {
+func normalizeListFilter(req *contentdto.ListReq) (entityType, keyword string, err error) {
 	if req == nil {
-		return "", nil
+		return "", "", nil
 	}
 	if req.EntityType != "" && !contentcontract.IsValidType(req.EntityType) {
-		return "", errors.New(contentenums.ErrInvalidType)
+		return "", "", errors.New(contentenums.ErrInvalidType)
 	}
-	return req.EntityType, nil
+	return req.EntityType, strings.TrimSpace(req.Keyword), nil
 }
 
 // Delete 删除实体。

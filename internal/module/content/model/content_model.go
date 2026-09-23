@@ -67,12 +67,22 @@ func (m *Model) GetBySlug(ctx context.Context, entityType, slug string) (e *Enti
 	return &row, nil
 }
 
-// List 按类型分页列表（更新时间倒序）。
-func (m *Model) List(ctx context.Context, entityType string, limit, offset int) (list []*Entity, err error) {
-	q := m.db.WithContext(ctx).Order("update_time DESC, id DESC")
+// contentListQuery 统一 List/Count 过滤：关键词在整个结果集上匹配后才分页。
+func (m *Model) contentListQuery(ctx context.Context, entityType, keyword string) *gorm.DB {
+	q := m.db.WithContext(ctx).Model(&Entity{})
 	if entityType != "" {
 		q = q.Where("entity_type = ?", entityType)
 	}
+	if keyword != "" {
+		pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+		q = q.Where("(title ILIKE ? ESCAPE '\\' OR slug ILIKE ? ESCAPE '\\')", pattern, pattern)
+	}
+	return q
+}
+
+// List 按类型和关键词分页列表（更新时间倒序）。
+func (m *Model) List(ctx context.Context, entityType, keyword string, limit, offset int) (list []*Entity, err error) {
+	q := m.contentListQuery(ctx, entityType, keyword).Order("update_time DESC, id DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -80,17 +90,13 @@ func (m *Model) List(ctx context.Context, entityType string, limit, offset int) 
 	return list, err
 }
 
-// Count 按类型统计条数（**与 List 同一份过滤条件**：entityType）。
+// Count 与 List 共用过滤条件，统计分页前总数。
 //
 // 分页要算总页数就得在 SQL 侧数 —— 把「已取回的一页」当成全部，正是「翻不过第 N 页
 // 还以为到底了」的成因。过滤条件与 List 保持一致：一侧漏掉类型过滤时，总数会把别的
 // 内容类型也算进来、分页条凭空多出几页，而两条 SQL 各自看都对。
-func (m *Model) Count(ctx context.Context, entityType string) (n int64, err error) {
-	q := m.db.WithContext(ctx).Model(&Entity{})
-	if entityType != "" {
-		q = q.Where("entity_type = ?", entityType)
-	}
-	err = q.Count(&n).Error
+func (m *Model) Count(ctx context.Context, entityType, keyword string) (n int64, err error) {
+	err = m.contentListQuery(ctx, entityType, keyword).Count(&n).Error
 	return n, err
 }
 

@@ -62,7 +62,7 @@ func newContentErrorLeakEnv(t *testing.T) (*gin.Engine, *gorm.DB) {
 	return engine, db
 }
 
-// TestArticleTranslationsHidesInternalError 读取文章列表失败：模板数据只出归口文案。
+// TestArticleTranslationsHidesInternalError 计数失败：模板数据只出归口文案。
 func TestArticleTranslationsHidesInternalError(t *testing.T) {
 	engine, db := newContentErrorLeakEnv(t)
 	if engine == nil {
@@ -92,8 +92,8 @@ func TestArticleTranslationsHidesInternalError(t *testing.T) {
 	if !strings.Contains(body, "系统内部错误") {
 		t.Fatalf("模板数据的错误文案应是归口文案，body=%s", body)
 	}
-	if !strings.Contains(body, "读取文章列表失败") {
-		t.Fatalf("归口文案应保留「读取文章列表失败」这个语境，body=%s", body)
+	if !strings.Contains(body, "读取文章总数失败") {
+		t.Fatalf("先计数、后取页：计数失败应保留「读取文章总数失败」语境，body=%s", body)
 	}
 	// 错误分支也要把整页渲染完（缺键会 200 + 半页 —— 见 internal/templates/CLAUDE.md）。
 	if !strings.Contains(body, "</html>") {

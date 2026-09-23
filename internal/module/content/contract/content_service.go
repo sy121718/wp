@@ -155,9 +155,9 @@ type ContentService interface {
 	Update(ctx context.Context, req *contentdto.UpdateReq) (res *contentdto.ContentResp, err error)
 	// Get 按 ID 查询。
 	Get(ctx context.Context, req *contentdto.GetReq) (res *contentdto.ContentResp, err error)
-	// List 按类型分页列表。
+	// List 按类型和标题/slug关键词分页列表；Count 使用同一过滤条件。
 	List(ctx context.Context, req *contentdto.ListReq) (list []*contentdto.ContentResp, err error)
-	// Count 列表总数：与 List **同一份过滤条件**（entityType），供分页算总页数。
+	// Count 列表总数：与 List **同一份过滤条件**（entityType + keyword），供分页算总页数。
 	//
 	// 形状与 product 域的 CountProducts 一致：收同一个 ListReq（只认它的过滤维度，
 	// Limit / Offset 在这里无意义），返回 (int64, error)。

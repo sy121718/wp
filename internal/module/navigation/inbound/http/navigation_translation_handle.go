@@ -16,6 +16,7 @@ package navigationhttp
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -113,6 +114,7 @@ func (h *navigationTranslationHandle) NavigationTranslations(c *gin.Context) {
 	projectID := strings.TrimSpace(c.Query("project"))
 	lang := strings.TrimSpace(c.Query("lang"))
 	data := h.build(c.Request.Context(), projectID, lang)
+	data.filter(strings.TrimSpace(c.Query("keyword")))
 	if strings.TrimSpace(c.Query("saved")) == "1" {
 		n, _ := strconv.Atoi(strings.TrimSpace(c.Query("n")))
 		data.Saved = true
@@ -130,7 +132,9 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 	ctx := c.Request.Context()
 	projectID := strings.TrimSpace(c.PostForm("project"))
 	lang := strings.TrimSpace(c.PostForm("lang"))
+	keyword := strings.TrimSpace(c.PostForm("keyword"))
 	data := h.build(ctx, projectID, lang)
+	data.filter(keyword)
 
 	contexts := c.PostFormArray("rowContext")
 	hashes := c.PostFormArray("rowHash")
@@ -190,7 +194,7 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 		return
 	}
 	if len(items) == 0 {
-		c.Redirect(http.StatusSeeOther, navigationTranslationLocation(projectID, lang, 0))
+		c.Redirect(http.StatusSeeOther, navigationTranslationFilteredLocation(data.ProjectID, lang, keyword, 0))
 		return
 	}
 	hashesAll := make([]string, 0, len(items))
@@ -246,28 +250,54 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 			h.menus.InvalidateMenuLabels(ctx, scopeProjectID(data, projectID), changedKinds)
 		}
 	}
-	c.Redirect(http.StatusSeeOther, navigationTranslationLocation(projectID, lang, written))
+	c.Redirect(http.StatusSeeOther, navigationTranslationFilteredLocation(data.ProjectID, lang, keyword, written))
 }
 
 // navigationTranslationsData 页面数据。
 type navigationTranslationsData struct {
-	Title     string
-	Menu      string
-	ProjectID string
-	Lang      string
-	Langs     []translationLangOption
-	Groups    []navigationTranslationGroup
-	RowCount  int
-	Done      int
-	Saved     bool
-	SavedNote string
-	Errors    []string
+	Title        string
+	Menu         string
+	ProjectID    string
+	Keyword      string
+	NoProject    bool
+	HasData      bool
+	VisibleCount int
+	Lang         string
+	Langs        []translationLangOption
+	Groups       []navigationTranslationGroup
+	RowCount     int
+	Done         int
+	Saved        bool
+	SavedNote    string
+	Errors       []string
 	// kindsByHash 本次渲染中「原文哈希 → 出现过该文字的全部菜单位置」。
 	//
 	// 与 Groups 的差别：Groups 按原文去重（同一段文字在页眉与页脚都出现时只列一行，
 	// 因为译文按 (原文, 语境) 寻址，列两行反而不知道改哪一行才算数），这份记录**不去重** ——
 	// 保存译文后要按它派发每个位置的失效，只看被提交那一行会漏掉另一个位置。
 	kindsByHash map[string][]string
+}
+
+// filter 在完整导航树去重后筛选展示行；kindsByHash 保留完整树以供保存后失效派发。
+func (d *navigationTranslationsData) filter(keyword string) {
+	d.Keyword = keyword
+	d.VisibleCount = d.RowCount
+	if keyword == "" {
+		return
+	}
+	needle := strings.ToLower(keyword)
+	for i := range d.Groups {
+		rows := d.Groups[i].Rows
+		selected := make([]navigationTranslationRow, 0, len(rows))
+		for _, row := range rows {
+			if strings.Contains(strings.ToLower(row.Source+" "+row.Path), needle) {
+				selected = append(selected, row)
+			}
+		}
+		d.Groups[i].Rows = selected
+		d.VisibleCount -= len(rows) - len(selected)
+	}
+	// RowCount/Done/HasData 均描述本次完整加载结果，空态据此识别筛选无匹配。
 }
 
 // noteHashKind 记下「某个原文出现在某个菜单位置」（不受列表去重影响）。
@@ -318,7 +348,8 @@ func (d *navigationTranslationsData) kindsForHashes(hashes map[string]bool, fall
 func (d *navigationTranslationsData) templateMap() gin.H {
 	return gin.H{
 		"title": d.Title, "menu": d.Menu,
-		"ProjectID": d.ProjectID, "Lang": d.Lang, "Langs": d.Langs,
+		"ProjectID": d.ProjectID, "Keyword": d.Keyword, "NoProject": d.NoProject, "HasData": d.HasData, "VisibleCount": d.VisibleCount,
+		"Lang": d.Lang, "Langs": d.Langs,
 		"Groups": d.Groups, "RowCount": d.RowCount, "Done": d.Done,
 		"Saved": d.Saved, "SavedNote": d.SavedNote, "Errors": d.Errors,
 	}
@@ -350,11 +381,18 @@ func scopeProjectID(data *navigationTranslationsData, formProjectID string) stri
 
 // navigationTranslationLocation 保存后的回跳地址（PRG）。
 func navigationTranslationLocation(projectID, lang string, written int) string {
-	q := "/admin/navigations/translations?lang=" + lang + "&saved=1&n=" + strconv.Itoa(written)
+	return navigationTranslationFilteredLocation(projectID, lang, "", written)
+}
+
+func navigationTranslationFilteredLocation(projectID, lang, keyword string, written int) string {
+	q := url.Values{"lang": {lang}, "saved": {"1"}, "n": {strconv.Itoa(written)}}
 	if projectID != "" {
-		q += "&project=" + projectID
+		q.Set("project", projectID)
 	}
-	return q
+	if keyword != "" {
+		q.Set("keyword", keyword)
+	}
+	return "/admin/navigations/translations?" + q.Encode()
 }
 
 // build 组装工作台数据：两个位置的全部菜单项 → 现有译文。
@@ -362,20 +400,27 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 	data := &navigationTranslationsData{
 		Title: "导航译文", Menu: "navigation-translations",
 		ProjectID: projectID, Lang: lang,
-		Groups: []navigationTranslationGroup{},
+		Groups:    []navigationTranslationGroup{},
+		NoProject: projectID == "" && h.projects == nil,
 	}
 	for _, code := range i18n.AvailableLangs() {
 		data.Langs = append(data.Langs, translationLangOption{Code: code, Label: code, Active: code == lang})
 	}
-	if lang == "" || h.navigations == nil {
-		return data
-	}
-	// 没指定工程时取第一个（与菜单管理页同一默认规则：单工程站点不必先选）。
-	if projectID == "" && h.projects != nil {
-		if projects, perr := h.projects.List(ctx); perr == nil && len(projects) > 0 {
+	if h.projects != nil {
+		projects, perr := h.projects.List(ctx)
+		if perr != nil {
+			logger.Scene("navigation").Error(perr, "读取导航译文工程列表失败")
+			data.Errors = []string{"读取工程列表失败，请稍后重试"}
+			return data
+		}
+		data.NoProject = len(projects) == 0
+		if projectID == "" && len(projects) > 0 {
 			projectID = projects[0].ID
 			data.ProjectID = projectID
 		}
+	}
+	if lang == "" || h.navigations == nil {
+		return data
 	}
 	if projectID == "" {
 		return data
@@ -426,6 +471,8 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 		data.RowCount += len(group.Rows)
 		data.Groups = append(data.Groups, group)
 	}
+	data.HasData = data.RowCount > 0
+	data.VisibleCount = data.RowCount
 	if h.writer != nil && len(hashes) > 0 {
 		targets, lerr := h.writer.LoadTargets(ctx, lang, hashes)
 		if lerr != nil {

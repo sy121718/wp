@@ -12,6 +12,9 @@
 {{langs := .Langs}}
 {{lang := .Lang}}
 {{errors := .Errors}}
+{{keyword := .["Keyword"]}}
+{{page := .["Page"]}}
+{{limit := .["Limit"]}}
 {* range 内 . 指向元素，取不到根数据的 t 函数，故先存成变量 tr，在 range 内用它取词。 *}
 {{tr := .["t"]}}
 <div class="stack">
@@ -28,6 +31,9 @@
         <div class="page-actions">
             <span class="badge badge-mute">{{ .["t"]("admin.article.translations.summaryLead", "共 ") }}{{.Total}}{{ .["t"]("admin.article.translations.summaryArticles", " 篇文章 / ") }}{{.RowCount}}{{ .["t"]("admin.article.translations.summaryFields", " 个可翻译字段，已翻译 ") }}{{.Done}}{{ .["t"]("admin.article.translations.summaryTail", " 个。") }}</span>
             <form class="page-context" method="get" action="/admin/articles/translations">
+                <input type="hidden" name="keyword" value="{{keyword}}">
+                <input type="hidden" name="project" value="{{ .["ProjectID"] }}">
+                <input type="hidden" name="limit" value="{{limit}}">
                 <label class="sr-only" for="article-tr-lang">{{ .["t"]("admin.article.translations.lang_label", "语言") }}</label>
                 <select class="form-select" id="article-tr-lang" name="lang" onchange="this.form.submit()">
                     {{range _, l := langs}}
@@ -42,6 +48,22 @@
         </div>
     </header>
 
+    <form class="filter-bar" method="get" action="/admin/articles/translations">
+        <input type="hidden" name="lang" value="{{lang}}">
+        <input type="hidden" name="project" value="{{ .["ProjectID"] }}">
+        <input type="hidden" name="limit" value="{{limit}}">
+        <div class="filter-fields">
+            <div class="filter-field">
+                <label for="article-tr-keyword">{{tr("admin.article.translations.filterKeyword", "关键词")}}</label>
+                <input id="article-tr-keyword" class="form-input filter-search" name="keyword" value="{{keyword}}" type="search" placeholder="{{tr("admin.article.translations.filterPlaceholder", "文章标题 / 路径")}}">
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">{{tr("admin.common.filter.submit", "筛选")}}</button>
+            <a class="btn" href="/admin/articles/translations?lang={{lang}}&amp;project={{ .["ProjectID"] }}">{{tr("admin.common.action.reset", "重置")}}</a>
+        </div>
+    </form>
+
     {{if .Saved}}<p class="badge badge-success" role="status">{{.SavedNote}}</p>{{end}}
     {{if len(errors) > 0}}
     <div class="tr-alert" role="alert">
@@ -52,14 +74,25 @@
     {{if len(groups) == 0}}
     <section class="card list-card">
         <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.article.translations.empty.title", "没有可翻译的文章内容") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.article.translations.empty.desc", "先在「文章」页写正文与标题，再回来填译文。") }}</p>
+            {{if keyword != "" && .["HasData"]}}
+            <p class="empty-title">{{tr("admin.article.translations.noMatch.title", "没有匹配的文章")}}</p>
+            <p class="empty-desc">{{tr("admin.article.translations.noMatch.desc", "换一个关键词，或清除筛选查看全部文章。")}}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/articles/translations?lang={{lang}}&amp;project={{ .["ProjectID"] }}">{{tr("admin.article.translations.noMatch.action", "清除筛选")}}</a></div>
+            {{else}}
+            <p class="empty-title">{{tr("admin.article.translations.empty.title", "没有可翻译的文章内容")}}</p>
+            <p class="empty-desc">{{tr("admin.article.translations.empty.desc", "先在「文章」页写正文与标题，再回来填译文。")}}</p>
+            <div class="empty-actions"><a class="btn btn-primary" href="/admin/articles">{{tr("admin.article.translations.empty.action", "去文章管理")}}</a></div>
+            {{end}}
         </div>
     </section>
     {{else}}
     <form id="article-translations-form" method="post" action="/admin/articles/translations/save">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="lang" value="{{lang}}">
+        <input type="hidden" name="project" value="{{ .["ProjectID"] }}">
+        <input type="hidden" name="keyword" value="{{keyword}}">
+        <input type="hidden" name="page" value="{{page}}">
+        <input type="hidden" name="limit" value="{{limit}}">
         {{range _, g := groups}}
         <section class="card card-body">
             <h2>{{g.Title}}</h2>
@@ -80,6 +113,7 @@
         </section>
         {{end}}
     </form>
+    {{if .["PaginationLinks"]}}{{include "../partials/pagination.html"}}{{end}}
     {{end}}
 </div>
 {{end}}

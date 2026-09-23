@@ -17,6 +17,7 @@ package contenthttp
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -78,7 +79,7 @@ var articleFieldLabel = map[string]string{
 
 // ArticleTranslations GET /admin/articles/translations。
 func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
-	data := h.build(c, strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("project")))
+	data := h.build(c, strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("keyword")))
 	if saved := strings.TrimSpace(c.Query("saved")); saved == "1" {
 		n, _ := strconv.Atoi(strings.TrimSpace(c.Query("n")))
 		data.Saved = true
@@ -96,7 +97,15 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
 	lang := strings.TrimSpace(c.PostForm("lang"))
 	projectID := strings.TrimSpace(c.PostForm("project"))
-	data := h.build(c, lang, projectID)
+	keyword := strings.TrimSpace(c.PostForm("keyword"))
+	page, _ := strconv.Atoi(c.PostForm("page"))
+	data := h.build(c, lang, projectID, keyword)
+	// 保存校验必须使用提交时的同一页，否则第二页的行会被误判为原文已变化。
+	if page != data.Page || c.PostForm("limit") != strconv.Itoa(data.Limit) {
+		data.Errors = []string{"列表页码已变化，请刷新后重试"}
+		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
+		return
+	}
 
 	contexts := c.PostFormArray("rowContext")
 	hashes := c.PostFormArray("rowHash")
@@ -149,7 +158,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 		return
 	}
 	if len(items) == 0 {
-		c.Redirect(http.StatusSeeOther, articleTranslationLocation(projectID, lang, 0))
+		c.Redirect(http.StatusSeeOther, articleTranslationLocation(projectID, lang, keyword, data.Page, data.Limit, 0))
 		return
 	}
 
@@ -188,32 +197,43 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 			return
 		}
 	}
-	c.Redirect(http.StatusSeeOther, articleTranslationLocation(projectID, lang, written))
+	c.Redirect(http.StatusSeeOther, articleTranslationLocation(projectID, lang, keyword, data.Page, data.Limit, written))
 }
 
 // articleTranslationsData 页面数据。
 type articleTranslationsData struct {
-	Title     string
-	Menu      string
-	Lang      string
-	Langs     []translationLangOption
-	Groups    []articleTranslationGroup
-	RowCount  int
-	Done      int
-	Total     int
-	Saved     bool
-	SavedNote string
-	Errors    []string
+	Title      string
+	Menu       string
+	Lang       string
+	Keyword    string
+	Page       int
+	Limit      int
+	ProjectID  string
+	HasData    bool
+	Pagination gin.H
+	Langs      []translationLangOption
+	Groups     []articleTranslationGroup
+	RowCount   int
+	Done       int
+	Total      int
+	Saved      bool
+	SavedNote  string
+	Errors     []string
 }
 
 // templateMap 转小写键 map（layout 以 {{.title}} / {{.menu}} 取值）。
 func (d *articleTranslationsData) templateMap() gin.H {
-	return gin.H{
+	out := gin.H{
 		"title": d.Title, "menu": d.Menu,
 		"Lang": d.Lang, "Langs": d.Langs, "Groups": d.Groups,
+		"Keyword": d.Keyword, "Page": d.Page, "Limit": d.Limit, "ProjectID": d.ProjectID, "HasData": d.HasData,
 		"RowCount": d.RowCount, "Done": d.Done, "Total": d.Total,
 		"Saved": d.Saved, "SavedNote": d.SavedNote, "Errors": d.Errors,
 	}
+	for k, v := range d.Pagination {
+		out[k] = v
+	}
+	return out
 }
 
 // sourceOf 按语境 + hash 反查本次提交对应的原文（防表单被裁剪 / 篡改）。
@@ -244,22 +264,43 @@ func validateArticleTarget(contextName string, source articleTranslationRow, tar
 }
 
 // articleTranslationLocation 保存后的回跳地址（PRG）。
-func articleTranslationLocation(projectID, lang string, written int) string {
-	q := "/admin/articles/translations?lang=" + lang + "&saved=1&n=" + strconv.Itoa(written)
+func articleTranslationLocation(projectID, lang, keyword string, page, limit, written int) string {
+	q := url.Values{"lang": {lang}, "saved": {"1"}, "n": {strconv.Itoa(written)}}
 	if projectID != "" {
-		q += "&project=" + projectID
+		q.Set("project", projectID)
 	}
-	return q
+	if keyword != "" {
+		q.Set("keyword", keyword)
+	}
+	if page > 1 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if limit != 20 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	return "/admin/articles/translations?" + q.Encode()
 }
 
 // build 组装工作台数据：文章列表 → 可翻译字段 → 现有译文。
 //
 // 译文**批量预载**（LoadTargets 一次查询）再回填：按行逐条查会随文章数放大成 N 次 SQL，
 // 而工作台一屏就要列出 50 篇的全部可翻译字段。
-func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID string) *articleTranslationsData {
+func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keyword string) *articleTranslationsData {
 	ctx := c.Request.Context()
+	page, limit := shell.PageParams(c)
+	if c.Request.Method == http.MethodPost {
+		page, _ = strconv.Atoi(c.PostForm("page"))
+		limit, _ = strconv.Atoi(c.PostForm("limit"))
+		if limit < 1 || limit > 100 {
+			limit = 20
+		}
+	}
+	if page < 1 {
+		page = 1
+	}
 	data := &articleTranslationsData{
 		Title: "文章翻译", Menu: "article-translations", Lang: lang,
+		Keyword: keyword, Page: page, Limit: limit, ProjectID: projectID,
 		Groups: []articleTranslationGroup{},
 	}
 	for _, code := range i18n.AvailableLangs() {
@@ -272,12 +313,35 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID string)
 		data.Errors = []string{"内容模块未装配"}
 		return data
 	}
-	list, err := h.contents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: 50})
+	filter := &contentdto.ListReq{EntityType: "article", Keyword: keyword}
+	total, err := h.contents.Count(ctx, filter)
+	if err != nil {
+		data.Errors = []string{"读取文章总数失败：" + articleFacingError(c, err)}
+		return data
+	}
+	data.HasData = total > 0
+	if keyword != "" && total == 0 {
+		// 空匹配与真空数据不同：额外计数只在筛选零结果时执行。
+		unfiltered, countErr := h.contents.Count(ctx, &contentdto.ListReq{EntityType: "article"})
+		if countErr != nil {
+			data.Errors = []string{"读取文章总数失败：" + articleFacingError(c, countErr)}
+			return data
+		}
+		data.HasData = unfiltered > 0
+	}
+	page = articleClampPage(page, limit, total)
+	data.Page = page
+	filter.Limit, filter.Offset = limit, (page-1)*limit
+	list, err := h.contents.List(ctx, filter)
 	if err != nil {
 		// 形态③（模板数据 Errors）：err.Error() 直接拼进来会把 PG 原文摆到页面上。
 		data.Errors = []string{"读取文章列表失败：" + articleFacingError(c, err)}
 		return data
 	}
+	data.Pagination = shell.BuildPagination(total, page, limit,
+		shell.FilterBaseURL("/admin/articles/translations", map[string]string{
+			"lang": lang, "project": projectID, "keyword": keyword, "limit": strconv.Itoa(limit),
+		}), shell.TranslateFor(c)).TemplateKeys()
 	fields := contentcontract.TranslatableFields("article")
 	// 记录每一行在工作台里的位置：回填译文时要按 (组下标, 行下标) 写回。
 	type rowRef struct {
