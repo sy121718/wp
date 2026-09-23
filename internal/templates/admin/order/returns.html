@@ -325,8 +325,11 @@
             <p class="empty-desc">{{ .["t"]("admin.returns.list.empty_tail", "客户在订单里提交退货申请后就会出现在这里。") }}
             {{if .FilterOrderID != ""}}{{ .["t"]("admin.returns.list.order_filter_lead", "当前还带着订单筛选（订单 ID") }} {{.FilterOrderID}}{{ .["t"]("admin.returns.list.order_filter_mid", "），") }}{{end}}
             {{if .FilterStatus != ""}}{{ .["t"]("admin.returns.list.status_filter_lead", "当前还带着状态筛选「") }}{{.FilterLabel}}{{ .["t"]("admin.returns.list.status_filter_tail", "」—— 点上面的「全部」可以清掉。") }}{{end}}</p>
-            {{if .FilterOrderID != ""}}
-            <div class="empty-actions"><a class="btn" href="{{.ClearOrderURL}}">{{ .["t"]("admin.returns.list.order_filter_clear", "清掉它") }}</a></div>
+            {{if .FilterOrderID != "" || .FilterStatus != ""}}
+            <div class="empty-actions">
+                {{if .FilterOrderID != ""}}<a class="btn" href="{{.ClearOrderURL}}">{{ .["t"]("admin.returns.detail.order", "订单") }} · {{ .["t"]("admin.returns.order_filter.clear", "清除该筛选") }}</a>{{end}}
+                {{if .FilterStatus != ""}}{{range _, s := statuses}}{{if s.Value == ""}}<a class="btn" href="{{s.URL}}">{{ .["t"]("admin.returns.col.status", "状态") }} · {{s.Label}}</a>{{end}}{{end}}{{end}}
+            </div>
             {{end}}
         </div>
         {{end}}
