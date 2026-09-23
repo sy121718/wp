@@ -426,11 +426,13 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("190_i18n_seed_marketing.sql"),
 	})
 	// 191：商品库存类后台模板文案（审计 I18N-001 组D）
-	// 判据按本批自己的 key 枚举计数（582 个全列）—— 用总量会被其它批次满足而静默跳过。
+	// 判据按本批自己的 key 枚举计数（581 个全列）—— 用总量会被其它批次满足而静默跳过。
+	// （原 582：admin.inventory_sources.filter.title 随 436 退役 —— 模板删掉了零样式的
+	//   .fold-title 标签，key 失去引用；本批列表与门槛同批 -1，见 436_retire_sources_filter_title_i18n.sql。）
 	registerSeed(Seed{
 		Version:   "191-i18n-seed-product-inventory",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 582 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 581 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
 			"'admin.inventory.change.boldDict', 'admin.inventory.change.boldSource', 'admin.inventory.change.boldTarget', 'admin.inventory.change.lead', " +
 			"'admin.inventory.change.mid', 'admin.inventory.change.mid2', 'admin.inventory.change.optionPick', 'admin.inventory.change.optionReason', " +
 			"'admin.inventory.change.optionWarehouse', 'admin.inventory.change.phQty', 'admin.inventory.change.phRemark', 'admin.inventory.change.phSourceRef', " +
@@ -476,7 +478,7 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.inventory_purchases.title', 'admin.inventory_sources.create.hint.bold', 'admin.inventory_sources.create.hint.lead', 'admin.inventory_sources.create.hint.tail', " +
 			"'admin.inventory_sources.create.submit', 'admin.inventory_sources.create.title', 'admin.inventory_sources.filter.allWithDisabled', 'admin.inventory_sources.filter.hint', " +
 			"'admin.inventory_sources.filter.onlyRelated', 'admin.inventory_sources.filter.onlyUnrelated', 'admin.inventory_sources.filter.optionRelatedAll', 'admin.inventory_sources.filter.optionStatusActive', " +
-			"'admin.inventory_sources.filter.optionTypeAll', 'admin.inventory_sources.filter.phKeyword', 'admin.inventory_sources.filter.submit', 'admin.inventory_sources.filter.title', " +
+			"'admin.inventory_sources.filter.optionTypeAll', 'admin.inventory_sources.filter.phKeyword', 'admin.inventory_sources.filter.submit', " +
 			"'admin.inventory_sources.intro.boldAll', 'admin.inventory_sources.intro.boldKind', 'admin.inventory_sources.intro.boldRelated', 'admin.inventory_sources.intro.lead', " +
 			"'admin.inventory_sources.intro.mid1', 'admin.inventory_sources.intro.mid2', 'admin.inventory_sources.intro.tail', 'admin.inventory_sources.intro2.bold', " +
 			"'admin.inventory_sources.intro2.lead', 'admin.inventory_sources.intro2.tail', 'admin.inventory_sources.label.code', 'admin.inventory_sources.label.name', " +

@@ -1139,8 +1139,6 @@ VALUES
     ('admin.inventory_sources.create.hint.bold', 'en-US', 'automatically becomes a related party', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
     ('admin.inventory_sources.create.hint.tail', 'zh-CN', '（内部交易必须能被关联方报表捕获）；内部货源才能填结算价 —— 外部供应商的成本口径是采购单价，不在这里填。', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
     ('admin.inventory_sources.create.hint.tail', 'en-US', ' (internal transactions must be captured by related-party reports); only an internal source can carry a settlement price — the cost basis of an external supplier is its purchase unit price, which is not entered here.', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
-    ('admin.inventory_sources.filter.title', 'zh-CN', '筛选（报表区分维度）', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
-    ('admin.inventory_sources.filter.title', 'en-US', 'Filter (report breakdown dimensions)', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
     ('admin.inventory_sources.filter.optionTypeAll', 'zh-CN', '（类型：全部）', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
     ('admin.inventory_sources.filter.optionTypeAll', 'en-US', '(type: all)', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),
     ('admin.inventory_sources.filter.optionRelatedAll', 'zh-CN', '（关联方：全部）', 200, 'admin', 'admin/inventory_sources.html', 1, now(), now()),

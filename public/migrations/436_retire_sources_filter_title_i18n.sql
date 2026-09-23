@@ -1,0 +1,26 @@
+-- 436 · 退役孤儿词条 admin.inventory_sources.filter.title
+--
+-- 缺陷：货源页（inventory_sources.html）筛选栏的 .filter-row 里放了一个
+-- <span class="fold-title">…</span>，而 .fold-title 只在 .section-fold > summary 里有效
+-- （theme.css §13 注释明说）—— 放在 .filter-row 里是零样式的裸文本。「筛选」二字对筛选栏
+-- 来说也是冗余标签（筛选栏不需要自报家门），本批决策：删除标签、保留同行的 .help 悬浮说明。
+-- 标签删除后，本 key（兜底文案「筛选」）没有任何引用者。
+--
+-- 核实无引用的命令（本批执行时，除本迁移 / seed SQL / register 列表外为空）：
+--   rg -n --hidden -g '!.git' -F 'admin.inventory_sources.filter.title' .
+--
+-- 与 seed 的关系（AGENTS.md「删能力时要连 seed 的 SQL 与幂等条件一起收口」，122 号迁移的坑）：
+--   本 key 的 seed 在 191_i18n_seed_product_inventory.sql（两行，zh-CN / en-US），
+--   幂等条件在 register_admin_i18n.go 的 191 批（COUNT(*) >= N AND item_key IN (…逐条枚举…)）。
+--   只删词条不动 seed 的话：删行会让条件恒假、每轮启动重跑约 1200 行 INSERT（190 的前车之鉴）；
+--   只删行不改条件列表，条件里的计数也会差 1。本批三处同批收口：
+--   · register_admin_i18n.go —— key 移出 191 批列表，门槛 582 → 581；
+--   · 191_i18n_seed_product_inventory.sql —— 删掉本 key 的两行 INSERT；
+--   · 本迁移（seed 台账，版本 436 > 191）—— 存量库的一次性清理。
+--   收口后 191 的幂等条件重新自洽：列表里的 key 全部仍由 seed SQL 写入，
+--   条件成立 → 跳过；条件不成立重跑时，也不会再把本 key 插回来。
+--   从零建库时 191 已不写本 key，本条的 DELETE 影响 0 行，无副作用。
+--
+-- 幂等：DELETE 本身幂等（重复执行影响 0 行）。
+
+DELETE FROM sys_i18n WHERE item_key = 'admin.inventory_sources.filter.title';

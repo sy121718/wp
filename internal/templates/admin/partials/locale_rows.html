@@ -3,7 +3,17 @@
    或由行片段端点按表单回显）。行身份用「提交顺序下标」，用户改语言码不会丢失勾选。
    hx-post 到 /admin/settings/locales/rows 的按钮会带上整表（hx-include="#locale-form"），
    服务端增/删一行后重渲染本片段——未落库，保存仍由整表提交触发。 *}
-{{if .Locales}}
+{{hasRows := false}}
+{* 存在性 + 长度双判归一成 hasRows，两种「无行」统一走空态：
+   · 直接对 .Locales 求真值会把「非 nil 空切片」当真 —— 语言行删光后片段端点
+     回渲染的是 len 0 非 nil 切片，旧写法渲染 0 行而不是空态（本批修复的缺陷）；
+   · isset 单独当外层守卫也不行：它对「键存在但值 nil」返回假，而 localeRowsOf
+     读失败 / parseLocaleRows 空表单返回的恰是 nil 切片，旧写法 nil 走空态，
+     不能在这里回归成什么都不渲染。
+   所以先在 isset 守卫内归一（len 只在键存在时求值，缺失键不会中断渲染），
+   再按 hasRows 分支。 *}
+{{if isset(.Locales)}}{{hasRows = len(.Locales) > 0}}{{end}}
+{{if hasRows}}
 {{range i, l := .Locales}}
 <div class="locale-row">
     <input class="locale-lang" type="text" name="langs" value="{{l.Lang}}" maxlength="35" list="sky-locale-options" placeholder="{{ .["t"]("admin.common.locale.ph.lang", "语言码，如 zh-CN") }}" required>

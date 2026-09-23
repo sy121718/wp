@@ -55,13 +55,6 @@
 
     <section class="card list-card">
         <div class="filter-bar">
-            <div class="filter-row">
-                <span class="fold-title">{{ .["t"]("admin.inventory_sources.filter.title", "筛选") }}</span>
-                <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory_sources.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.inventory_sources.filter.hint", "状态默认只列启用中的货源；只看已停用选「已停用」，要连停用的一起看选「全部（含停用）」（等价于接口的 includeDisabled）。") }}</span>
-                </span>
-            </div>
             <form method="get" action="/admin/inventory/sources" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
@@ -83,6 +76,12 @@
                 </div>
                 <div class="filter-field">
                     <label for="src-status">{{ .["t"]("admin.inventory_sources.filter.labelStatus", "状态") }}</label>
+                    {* 状态筛选的悬浮说明跟字段走（原文案就是对状态默认值的解释）；
+                       .help-pop 向下浮层（absolute + z-index 50），filter-bar 祖先链无 overflow，不会被裁切。 *}
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.inventory_sources.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.inventory_sources.filter.hint", "状态默认只列启用中的货源；只看已停用选「已停用」，要连停用的一起看选「全部（含停用）」（等价于接口的 includeDisabled）。") }}</span>
+                    </span>
                     <select class="form-select" id="src-status" name="status">
                         <option value="">{{ .["t"]("admin.inventory_sources.filter.optionStatusActive", "（启用中）") }}</option>
                         {{range _, s := .StatusOptions}}
