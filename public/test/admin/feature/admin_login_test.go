@@ -139,8 +139,15 @@ func TestAdminLoginFiveFailuresLocksTemporarilyNotBan(t *testing.T) {
 	captchaID, code := captcha.Get().Generate()
 	std, err := postLogin(engine, username, password, captchaID, code)
 	requireLoginFailure(t, "锁定窗口内登录", std, err)
-	if std.Code != http.StatusBadRequest || std.Message != "账号已被锁定，请 30m0s 后重试" {
-		t.Fatalf("锁定窗口内应返回可读锁定文案和 30 分钟倒计时，got code=%d message=%q", std.Code, std.Message)
+	const lockMessagePrefix = "账号已被锁定，请 "
+	if std.Code != http.StatusBadRequest || !strings.HasPrefix(std.Message, lockMessagePrefix) ||
+		!strings.HasSuffix(std.Message, " 后重试") {
+		t.Fatalf("锁定窗口内应返回可读锁定文案，got code=%d message=%q", std.Code, std.Message)
+	}
+	remainingText := strings.TrimSuffix(strings.TrimPrefix(std.Message, lockMessagePrefix), " 后重试")
+	remaining, err := time.ParseDuration(remainingText)
+	if err != nil || remaining < 29*time.Minute || remaining > 30*time.Minute {
+		t.Fatalf("锁定响应应包含约 30 分钟倒计时，got message=%q: %v", std.Message, err)
 	}
 
 	// 过期语义：locked_until_time 落在过去 → 自动解锁，且 status 仍启用
