@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -322,7 +323,7 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("表格单元应带 data-label（窄屏堆叠时回显列名）")
 	}
 	// 模板不含任何 <script>：交互全由原生表单提交完成（layout 里的全局壳不算本页引入）。
-	tplRaw, terr := os.ReadFile(templateRoot() + "/admin/inventory_purchases.html")
+	tplRaw, terr := os.ReadFile(inventoryAdminTemplatePath("inventory_purchases.html"))
 	if terr != nil {
 		t.Fatalf("读采购入库页模板失败: %v", terr)
 	}
@@ -376,6 +377,10 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 	if !strings.Contains(css, "width: min(100%, 120px)") && !strings.Contains(css, "width: min(100%, 220px)") {
 		t.Fatalf("输入宽度应按 min(100%%, <设计宽度>) 收口，不能写死像素")
 	}
+}
+
+func inventoryAdminTemplatePath(name string) string {
+	return filepath.Join(templateRoot(), "admin", "inventory", name)
 }
 
 // TestPurchasePermissionsAndMenuSeeded 迁移 108/109/110：

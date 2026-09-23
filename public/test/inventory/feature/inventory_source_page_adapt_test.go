@@ -43,7 +43,7 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 	}
 	// 这一页自己的模板不含任何 <script>：交互全由原生表单提交完成
 	//（layout.html 里的 HTMX / 后台脚本是全局壳，不由本页引入）。
-	tplRaw, terr := os.ReadFile(templateRoot() + "/admin/inventory_sources.html")
+	tplRaw, terr := os.ReadFile(inventoryAdminTemplatePath("inventory_sources.html"))
 	if terr != nil {
 		t.Fatalf("读货源页模板失败: %v", terr)
 	}

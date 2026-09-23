@@ -602,15 +602,15 @@ func TestInventoryAdminPage(t *testing.T) {
 }
 
 // TestProductPageWarehouseSelect 验收 2（后台表单路径）：
-// 商品页的「归属仓」下拉来自仓库模块，提交后**库存记录**落在所选仓；
-// SKU 编码沿用商品容器主体（不随所选仓改写，理由见 TestVariantCreateGeneratesStockRow 的注释）。
+// 商品新建页的多仓勾选项来自仓库模块；新增变体表单指定仓库后，
+// 库存记录落在所选仓，SKU 编码沿用商品容器主体。
 func TestProductPageWarehouseSelect(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	f.createWarehouse(t, "SZ", "苏州仓", true)
+	sz := f.createWarehouse(t, "SZ", "苏州仓", true)
 	sh := f.createWarehouse(t, "SH", "上海仓", false)
 	p, err := f.products.Create(ctx, &productdto.CreateReq{ProjectID: f.projectID, Name: "Tee", Slug: "tee"})
 	if err != nil {
@@ -620,35 +620,60 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	// 新建商品抽屉（首个变体的「归属仓」下拉在里面）按权限渲染：这条链路不挂鉴权中间件，
-	// 注入一份权限，让「商品页存在归属仓下拉」这条断言保持有效。
+	// 列表页的新建入口按权限渲染；多仓勾选表单在独立新建页。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{"product:create": true, "product:variant_create": true})
+		c.Set(shell.PermSetKey, map[string]bool{"product:create": true})
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
+	engine.GET("/admin/products/new", handle.ProductNewPage)
 	engine.POST("/admin/products/variant/create", handle.ProductsVariantCreate)
 
 	rec := httptestGet(engine, "/admin/products?project="+f.projectID)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("商品页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("商品列表页应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	listBody := rec.Body.String()
+	if !strings.Contains(listBody, `href="/admin/products/new"`) {
+		t.Fatalf("商品列表缺少独立新建页入口")
+	}
+	if strings.Contains(listBody, `name="warehouseIds"`) {
+		t.Fatalf("商品列表不应再承载新建商品的多仓表单")
+	}
+
+	rec = httptestGet(engine, "/admin/products/new?project="+f.projectID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("商品新建页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	// 归属仓控件现在在新建商品抽屉（tpl-product-create）里，形态已是**多仓勾选**
-	//（2026-09-19 口径：勾了哪些仓就在哪些仓各建一行，按表内顺序第一个勾中的仓是认领仓、
-	// 决定主体 SKU 的仓码前缀；一个都不勾即默认仓）。断言钉住新形态的字段名与选项文案，
-	// 不放宽成「包含仓库名即可」—— 控件换成下拉 / 单值就会红。
+	// 独立页 include product_create_form.html；断言仓库选项处于创建表单之内，
+	// 而非误命中页面上其他位置的仓库名。
+	formStart := strings.Index(body, `<form method="post" action="/admin/products/create"`)
+	if formStart < 0 {
+		t.Fatalf("商品新建页缺少创建表单")
+	}
+	formEnd := strings.Index(body[formStart:], `</form>`)
+	if formEnd < 0 {
+		t.Fatalf("商品新建表单缺少结束标签")
+	}
+	form := body[formStart : formStart+formEnd]
+	// 多仓勾选、不勾默认仓；选项 ID 与顺序决定真正的仓库和认领仓。
 	for _, want := range []string{
 		"建在哪些仓（可多选，不勾即默认仓）",
-		`name="warehouseIds"`,
+		`name="warehouseIds" value="` + sz.ID + `"`,
+		`name="warehouseIds" value="` + sh.ID + `"`,
 		"苏州仓（SZ） · 默认仓",
 		"上海仓（SH）",
 		"按本表顺序第一个勾中的仓是认领仓",
 	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("商品页缺少归属仓（多仓勾选）内容 %q", want)
+		if !strings.Contains(form, want) {
+			t.Fatalf("商品新建表单缺少归属仓（多仓勾选）内容 %q", want)
 		}
+	}
+	if strings.Index(form, `name="warehouseIds" value="`+sz.ID+`"`) >=
+		strings.Index(form, `name="warehouseIds" value="`+sh.ID+`"`) {
+		t.Fatalf("默认仓选项应在非默认仓之前")
 	}
 
 	// 表单提交时指定 SH → 变体落在 SH，SKU 前缀是归属仓短码（SH_TEE…）。

@@ -29,8 +29,8 @@
                 </span>
             </div>
         </div>
+        {{if isset(.Projects)}}{{if len(.Projects) > 1}}
         <div class="page-actions">
-            {{if len(.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/settings">
                 <label class="sr-only" for="settings-project">{{ .["t"]("admin.settings.field.project", "站点工程") }}</label>
                 <select class="form-select" id="settings-project" name="project" onchange="this.form.submit()">
@@ -39,8 +39,8 @@
                     {{end}}
                 </select>
             </form>
-            {{end}}
         </div>
+        {{end}}{{end}}
     </header>
 
     {* 页面级保存失败提示（站点信息 / GA4 / GSC / 404 页 / 语言 URL 方案）：失败后 303 回本页并带 ?err=。
