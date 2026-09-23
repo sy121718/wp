@@ -399,8 +399,6 @@ VALUES
     ('admin.customers.col.registered_at', 'en-US', 'Registered at', 200, 'admin', 'admin/customers.html', 1, now(), now()),
     ('admin.customers.col.status', 'zh-CN', '状态', 200, 'admin', 'admin/customers.html', 1, now(), now()),
     ('admin.customers.col.status', 'en-US', 'Status', 200, 'admin', 'admin/customers.html', 1, now(), now()),
-    ('admin.customers.empty', 'zh-CN', '没有符合条件的客户。站点还没有访客注册，或者上面的筛选条件太窄了 —— 先点「重置」看一眼全部账号。', 200, 'admin', 'admin/customers.html', 1, now(), now()),
-    ('admin.customers.empty', 'en-US', 'No customers match. Either no visitor has registered yet, or the filters above are too narrow — click Reset to see all accounts.', 200, 'admin', 'admin/customers.html', 1, now(), now()),
     ('admin.customers.err_prefix', 'zh-CN', '上一次操作未完成：', 200, 'admin', 'admin/customers.html', 1, now(), now()),
     ('admin.customers.err_prefix', 'en-US', 'The last action did not complete: ', 200, 'admin', 'admin/customers.html', 1, now(), now()),
     ('admin.customers.field.registered_at', 'zh-CN', '注册时间', 200, 'admin', 'admin/customers.html', 1, now(), now()),

@@ -29,8 +29,9 @@
 --     本批同批把 2 个 key 移出列表、门槛 764 → 762，并删掉 190_i18n_seed_marketing.sql 里那 4 行，
 --     于是条件列表里的 key 全部仍由 seed SQL 写入。
 --     实测（本机库）：移除后的列表在 zh-CN 侧命中 762 行，条件重新成立。
---     （注：190 SQL 里还留着 418 已退役的 admin.customers.empty 两行，那是 418 批「遗留的一半」，
---     不在本轮范围；它的条件列表本就已不含该 key，故不影响本条件的成立。）
+--     （注：190 SQL 里当时还留着 418 已退役的 admin.customers.empty 两行，那是 418 批「遗留的一半」。
+--     本迁移执行时它不在本轮范围，且它的条件列表本就已不含该 key，故不影响本条件的成立；
+--     那两行 INSERT 已随后续批次从 190 删除，最终状态见 418_retire_customers_empty_i18n.sql 的注释。）
 --   · 230 的幂等条件取的是 3 个**代表** key（admin.common.bulk.selectAll /
 --     admin.dashboard.stat.projects / admin.product_categories.empty.title），不含 seo.unset ——
 --     删除不影响它，故只删 230_i18n_seed_list_skeleton.sql 里的 4 行（覆盖数 77 → 75 key）。
