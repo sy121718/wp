@@ -4,7 +4,7 @@ package i18n_test
 //
 // 覆盖：
 //  1) 055/056/057 表结构迁移 + 058 enums 词条 seed 在真实 PostgreSQL 上执行且可重复执行（幂等）；
-//  2) 干净 schema 上的精确行数（zh-CN 195 / en-US 79）、分类推导与来源备注；
+//  2) 干净数据库上的双语数量下限与全量 key 对账、分类推导与来源备注；
 //  3) 接口级：种子词条经 pkg/i18n 缓存命中后，pkg/response 的 JSON 响应返回文案而不是裸 key
 //     （纯 key / key|param / key: detail 三种形态 + Accept-Language 语言切换）。
 //
@@ -93,7 +93,7 @@ func columnCount(t *testing.T, db *gorm.DB, table string, columns ...string) int
 }
 
 // TestI18nEnumsSeedSchemaAndIdempotency 在干净隔离 schema 上验证注册的迁移 + seed：
-// 结构落库、精确行数、分类推导、en-US 不伪造，且重复执行幂等。
+// 结构落库、双语键完整性、分类推导、en-US 不伪造，且重复执行幂等。
 func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
@@ -123,7 +123,8 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		t.Fatalf("sys_menus 应存在 title_key 列，实际 %d", got)
 	}
 
-	// 4) 干净迁移库的精确总量。228 角色权限页新增 15 对词条，原账本漏记了这批；
+	// 4) 历史种子增量记录（实际完整性由下方双语下限与差集断言守护）。
+	// 228 角色权限页新增 15 对词条，原账本漏记了这批；
 	// 297 块删除保护的引用类别词条新增 7 对（MsgBlockUsage*，中英各 7 行）；
 	// 298（商品标签页命中商品展开区）又新增 2 对 —— 两份账本同批并入；
 	// 304（商品「相关商品」引用校验）新增 1 对（ErrRelatedInvalid，中英各一行）—— 同批并入；
@@ -161,14 +162,85 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	//   —— 同一 key 两行必须一致，loader 装载时 http_code 取首个非零值），共 337 行。
 	//   **本批实测**：zh-CN 3918→4037（+119）、en-US 3806→4024（+218），增量与预期一致但不按推算入账。
 	// 总量只在「新增 seed 时同步核对」这一层起作用；业务词条仍在下文按 key 和语言逐项校验，
-	// 总量不能替代语义检查。
-	for lang, want := range map[string]int64{"zh-CN": 4037, "en-US": 4024} {
-		got := countRows(t, db, "sys_i18n", "lang = ?", lang)
-		if got != want {
-			t.Fatalf("sys_i18n %s 词条数量：want=%d got=%d（新增 seed 时同步核对各语言）", lang, want, got)
+	// 总量不能替代语义检查。下限拦截两种语言同时漏词条、集合对账却相等的空转；
+	// 上限不钉死，让后续成对新增词条不必反复维护全仓总数账本。
+	const minEnglishKeys = 4240 // 干净库执行至 442 后的实测下限。
+	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
+	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
+	t.Logf("sys_i18n 干净库词条：zh-CN=%d en-US=%d", zhCount, enCount)
+	if enCount < minEnglishKeys || zhCount < minEnglishKeys+13 {
+		t.Fatalf("sys_i18n 中英词条低于已验证基线：zh-CN=%d en-US=%d，基线至少 %d/%d", zhCount, enCount, minEnglishKeys+13, minEnglishKeys)
+	}
+
+	// 058 留下的 13 个 dashboard 词条只有中文。差集必须逐个精确匹配这些历史例外：
+	// 少了例外意味着 seed 漏写，两种语言同时漏掉同一例外也会被此检查捕获。
+	historicalZHOnly := map[string]bool{
+		"MsgAdminGenericFailed": true, "MsgAdministratorsTitle": true,
+		"MsgBlocksTitle": true, "MsgDatarulesTitle": true,
+		"MsgDepartmentsTitle": true, "MsgMenusTitle": true,
+		"MsgNavigationsTitle": true, "MsgPermissionsTitle": true,
+		"MsgRolesTitle": true, "MsgSiteSettingsSaved": true,
+		"MsgSiteSettingsTitle": true, "MsgThemeSettingsTitle": true,
+		"MsgThemesTitle": true,
+	}
+	var languageDiff []struct {
+		Side    string
+		ItemKey string
+	}
+	if err := db.Raw(`SELECT 'zh-only' AS side, item_key FROM
+		(SELECT item_key FROM sys_i18n WHERE lang = 'zh-CN' EXCEPT SELECT item_key FROM sys_i18n WHERE lang = 'en-US') z
+		UNION ALL SELECT 'en-only' AS side, item_key FROM
+		(SELECT item_key FROM sys_i18n WHERE lang = 'en-US' EXCEPT SELECT item_key FROM sys_i18n WHERE lang = 'zh-CN') e
+		ORDER BY side, item_key`).Scan(&languageDiff).Error; err != nil {
+		t.Fatalf("查询中英差异键失败: %v", err)
+	}
+	unexpected := make([]string, 0)
+	for _, diff := range languageDiff {
+		if diff.Side != "zh-only" || !historicalZHOnly[diff.ItemKey] {
+			unexpected = append(unexpected, diff.Side+":"+diff.ItemKey)
+			continue
 		}
-		// -v 时把实际行数打出来：新增 seed 后核对账本时不必只信断言。
-		t.Logf("sys_i18n %s = %d 行（账本 want=%d）", lang, got, want)
+		delete(historicalZHOnly, diff.ItemKey)
+	}
+	if len(unexpected) > 0 || len(historicalZHOnly) > 0 || zhCount-enCount != 13 {
+		t.Fatalf("sys_i18n 中英键未对齐：异常差异=%v，缺失历史中文专有键=%v，zh-CN=%d en-US=%d", unexpected, historicalZHOnly, zhCount, enCount)
+	}
+	// 钉住最近的新增双语 key，防止未来批次补量掩盖旧批次两语言同时漏写。
+	for _, key := range []string{
+		"admin.mail.marketing.contacts.empty.initial.title",
+		"admin.mail.marketing.contacts.empty.initial",
+		"admin.inventory.moves.title",
+	} {
+		if got := countRows(t, db, "sys_i18n", "item_key = ? AND lang IN ?", key, []string{"zh-CN", "en-US"}); got != 2 {
+			t.Fatalf("%s 应有完整中英词条，实际 %d 行", key, got)
+		}
+	}
+	// 检查最新三批确实进入 AllSeeds，且两轮执行后的真实幂等守卫成立。
+	latestSeeds := map[string]bool{
+		"440-i18n-product-list-help":       false,
+		"441-i18n-mail-empty-states":       false,
+		"442-i18n-inventory-moves-heading": false,
+	}
+	for _, seed := range migrations.AllSeeds() {
+		if _, expected := latestSeeds[seed.Version]; !expected {
+			continue
+		}
+		if latestSeeds[seed.Version] {
+			t.Fatalf("重复注册 seed %s", seed.Version)
+		}
+		latestSeeds[seed.Version] = true
+		var settled int64
+		if err := db.Raw(seed.ConditionSQL).Scan(&settled).Error; err != nil {
+			t.Fatalf("检查 seed %s 幂等判定失败: %v", seed.Version, err)
+		}
+		if settled <= 0 {
+			t.Fatalf("seed %s 执行两轮后仍未满足幂等判定", seed.Version)
+		}
+	}
+	for version, found := range latestSeeds {
+		if !found {
+			t.Fatalf("最新 seed %s 未注册到 AllSeeds", version)
+		}
 	}
 
 	// 4-C) 本批（222）的后台访问统计维度榜词条：18 个 key 中英成对，且取值不同。
