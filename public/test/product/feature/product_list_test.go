@@ -154,9 +154,9 @@ func TestProductListFilterOptionsFromCollectionSource(t *testing.T) {
 			t.Fatalf("筛选栏应含来自真实数据的选项 %q\n%s", want, compiled.HTML)
 		}
 	}
-	// 选项是**可点链接**（无 JS 降级路径），带真实实体 id 的语义参数。
-	if !strings.Contains(compiled.HTML, "categoryId="+cat.ID) {
-		t.Fatalf("分类选项应带降级链接参数 categoryId=%s\n%s", cat.ID, compiled.HTML)
+	// 选项是可点链接（无 JS 降级路径），按当前多选语义携带真实分类 id。
+	if !strings.Contains(compiled.HTML, "categoryIds="+cat.ID) {
+		t.Fatalf("分类选项应带降级链接参数 categoryIds=%s\n%s", cat.ID, compiled.HTML)
 	}
 }
 

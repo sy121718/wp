@@ -101,12 +101,16 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	if found.Label == "" {
 		t.Fatalf("集合源应有展示名（工作台下拉用）")
 	}
-	// 过滤维度（#21 + #25）：status（带枚举）+ 分类 / 品牌 / 标签三条 id 维度（任意值）
-	// + 属性值维度（**前缀维度**：键是命名空间，真实维度是 option.<属性key>）。
+	// 过滤维度：status（带枚举）+ 分类 / 品牌 / 标签的单值和多值 id 维度
+	// + 各自的 any/all 语义 + 属性值前缀维度（真实键是 option.<属性key>）。
 	wantFilters := []string{
 		productcontract.CollectionFilterStatus,
 		productcontract.CollectionFilterCategoryID,
+		productcontract.CollectionFilterCategoryIDs,
+		productcontract.CollectionFilterCategoryMode,
 		productcontract.CollectionFilterBrandID,
+		productcontract.CollectionFilterBrandIDs,
+		productcontract.CollectionFilterBrandMode,
 		productcontract.CollectionFilterTagID,
 		// issue #27：多标签（带匹配语义）与「只看在售」。
 		productcontract.CollectionFilterTagIDs,
@@ -141,16 +145,17 @@ func TestProductCollectionSourceMetadata(t *testing.T) {
 	if len(found.Filters[0].Enum) != 3 {
 		t.Fatalf("status 维度应带 draft/published/archived 枚举：%+v", found.Filters[0])
 	}
-	// 除 status 与 tagMode（取值固定）之外，其余维度都是任意值，不应带枚举。
-	for _, f := range found.Filters[1:] {
-		if f.Key == productcontract.CollectionFilterTagMode {
-			if strings.Join(f.Enum, ",") != "any,all" {
-				t.Fatalf("tagMode 应带 any/all 枚举：%+v", f)
+	// 三个多值语义维度各有固定枚举；id / 开关 / 数值维度不带枚举。
+	for _, filter := range found.Filters[1:] {
+		switch filter.Key {
+		case productcontract.CollectionFilterCategoryMode, productcontract.CollectionFilterBrandMode, productcontract.CollectionFilterTagMode:
+			if strings.Join(filter.Enum, ",") != "any,all" {
+				t.Fatalf("%s 应带 any/all 枚举：%+v", filter.Key, filter)
 			}
-			continue
-		}
-		if len(f.Enum) != 0 {
-			t.Fatalf("id / 开关类维度是任意值，不应带枚举：%+v", f)
+		default:
+			if len(filter.Enum) != 0 {
+				t.Fatalf("id / 开关 / 数值维度是任意值，不应带枚举：%+v", filter)
+			}
 		}
 	}
 	// 排序键：确定性默认序（sort → createdAt）。

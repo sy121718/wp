@@ -90,8 +90,8 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 		t.Fatalf("分类详情失败: %v", err)
 	}
 	if got.SEOTitle != "男装 SEO 标题" || got.SEODescription != "男装 SEO 描述" ||
-		got.Image != "/img/men.jpg" || got.Description != "男装分类描述" {
-		t.Fatalf("分类 SEO / 图 / 描述字段应原样回读: %+v", got)
+		got.Image != "/storage/img/men.jpg" || got.Description != "男装分类描述" {
+		t.Fatalf("分类 SEO / 图 / 描述字段应按媒体地址规范回读: %+v", got)
 	}
 
 	// slug 在工程内唯一。
@@ -208,9 +208,9 @@ func TestBrandCRUDAndGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建品牌失败: %v", err)
 	}
-	if brand.Logo != "/img/logo.svg" || brand.Description != "户外品牌" ||
+	if brand.Logo != "/storage/img/logo.svg" || brand.Description != "户外品牌" ||
 		brand.SEOTitle != "山野 SEO 标题" || brand.SEODescription != "山野 SEO 描述" || brand.Sort != 3 {
-		t.Fatalf("品牌字段应原样回读: %+v", brand)
+		t.Fatalf("品牌字段应按媒体地址规范回读: %+v", brand)
 	}
 	if _, err = f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{
 		ProjectID: f.projectID, Name: "山野副本", Slug: "shanye",
@@ -450,7 +450,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatalf("品牌页应 200，实际 %d", rec.Code)
 	}
 	brandBody := rec.Body.String()
-	for _, want := range []string{"商品品牌", "山野", "shanye", "/img/logo.svg", "新建品牌", ">删除</button>"} {
+	for _, want := range []string{"商品品牌", "山野", "shanye", "/storage/img/logo.svg", "新建品牌", ">删除</button>"} {
 		if !strings.Contains(brandBody, want) {
 			t.Fatalf("品牌页缺少 %q", want)
 		}

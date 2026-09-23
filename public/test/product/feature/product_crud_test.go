@@ -71,7 +71,7 @@ func TestCreateProductGeneratesFirstVariant(t *testing.T) {
 	if v.Price != 99 {
 		t.Fatalf("首个变体应继承商品级默认价 99，实际 %v", v.Price)
 	}
-	if v.Image != "/img/a.jpg" {
+	if v.Image != "/storage/img/a.jpg" {
 		t.Fatalf("首个变体应继承商品级默认图，实际 %q", v.Image)
 	}
 	if v.SKUCode == "" {

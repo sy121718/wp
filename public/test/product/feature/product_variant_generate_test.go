@@ -285,7 +285,7 @@ func TestGenerateVariantsInheritsDefaults(t *testing.T) {
 	if created.Price != 99 {
 		t.Fatalf("新建变体应继承商品默认价 99，实际 %v", created.Price)
 	}
-	if created.Image != "/img/default.jpg" {
+	if created.Image != "/storage/img/default.jpg" {
 		t.Fatalf("新建变体应继承默认图，实际 %q", created.Image)
 	}
 }

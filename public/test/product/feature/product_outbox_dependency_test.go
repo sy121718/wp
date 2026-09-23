@@ -1097,6 +1097,19 @@ func TestEntityRenameRebuildsReferencingProductPages(t *testing.T) {
 			if err != nil {
 				t.Fatalf("创建商品失败: %v", err)
 			}
+			if tc.entityType == productcontract.EntityTypeAttribute {
+				// 建商品只生成无规格占位变体；规格页须有真实组合才投影 options。
+				if len(product.Variants) != 1 || len(optionMap(t, product.Variants[0])) != 0 {
+					t.Fatalf("属性测试前置：首变体应为空规格占位，实际 %+v", product.Variants)
+				}
+				generated, gerr := f.products.GenerateVariants(ctx, &productdto.GenerateVariantsReq{ProductID: product.ID})
+				if gerr != nil {
+					t.Fatalf("生成属性组合失败: %v", gerr)
+				}
+				if len(generated.Variants) != 1 || len(optionMap(t, generated.Variants[0])) != 1 {
+					t.Fatalf("属性测试前置：变体应持有该组的真实选项值，实际 %+v", generated.Variants)
+				}
+			}
 			tpl, err := f.templates.Create(ctx, &contenttemplatedto.CreateReq{
 				EntityType: productcontract.EntityTypeProduct, Name: "改名详情页", ProjectID: f.projectID,
 				DraftDocument: json.RawMessage(renameFieldDoc(tc.field)),
