@@ -49,6 +49,13 @@ type themeFieldView struct {
 	Kind    string
 	Value   string
 	Options []panelOption
+	// Invalid / Error 保存失败后的**字段级**错误态：Invalid 让控件输出 aria-invalid="true"
+	// （基座 ui.css 用它画红框，读屏也会播报），Error 是控件下方的一行红字（.form-error）。
+	//
+	// 只有主题设置页会用它们：工作台的全局设置面板复用同一个字段视图，
+	// 那里的字段始终是零值（无错可报），模板不会渲染出多余节点。
+	Invalid bool
+	Error   string
 }
 
 // themeFieldGroupView 模板渲染用的分组视图。

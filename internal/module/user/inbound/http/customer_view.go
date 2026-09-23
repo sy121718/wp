@@ -123,6 +123,12 @@ func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcont
 }
 
 // customerRow 一行客户（列表与详情共用同一份事实；两种页面看到的数字因此不可能不一致）。
+//
+// PendingHint / LockHint 现在**只服务详情页**（admin/user/customer_detail.html 用它们做
+// 状态说明）：列表页那两行整行 colspan 说明已撤掉，状态解释改由状态列表头的 .help 承载
+// （词条 admin.customers.status.help.pending / .locked / .failures，模板兜底同义）——
+// 逐行插入时同一句话会随行数重复，把表格切成一段段正文（02-J §2.1）。
+// 列表模板因此不再读这两个字段；它们留着是因为详情页还在读，删掉会让详情页的状态说明消失。
 func customerRow(item *userdto.CustomerResp) gin.H {
 	row := gin.H{
 		"ID":                 item.ID,

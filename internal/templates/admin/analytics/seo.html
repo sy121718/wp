@@ -64,6 +64,10 @@
              data-msg-col-issue="{{ .["t"]("admin.seo.audit.col.issue", "问题") }}">
             <div class="empty-state">
                 <p class="empty-title">{{ .["t"]("admin.seo.audit.placeholder", "运行体检后，此处显示当前产物中的 SEO 问题。") }}</p>
+                {* desc 复用上方 .help-pop 的同一个 key（admin.seo.audit.intro）—— 这一档缺的不是
+                   入口（按钮就在同一张卡内），而是「体检到底看什么」；同一件事只写一句，
+                   改口径时两处一起变（02-O seo 任务 1）。 *}
+                <p class="empty-desc">{{ .["t"]("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。") }}</p>
             </div>
         </div>
         {{else}}

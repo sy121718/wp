@@ -237,6 +237,10 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"FilterStatus":  filter.Status,
 		"FilterKeyword": filter.Keyword,
 		"FilterPayment": filter.PaymentMethod,
+		// 状态的**中文标签**（空态要说「当前还带着状态筛选「待付款」」，直接摊 status 值
+		// 会给运营看一个 pending）。与退货页同名同义（那边注入 returnStatusLabel）。
+		// orderStatusLabel 对认不出的值原样返回 —— 手改 URL 带来的 zzbogus 照样说得清楚。
+		"FilterLabel": orderStatusLabel(filter.Status),
 		// 显式布尔：空态要不要给「重置」这个主行动，取决于**当前是不是真的带着筛选**
 		// （无筛选时那个链接指向本页自己，点了页面逐字不变 —— 死按钮比没有按钮更糟）。
 		// 判据与 customers 页同名同义（customer_view.go 的 customerFilterActive）。

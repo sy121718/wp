@@ -125,11 +125,16 @@
             {{yield bulkBarClose()}}
             {{end}}
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
+            {* 状态列的三种解释（待激活 / 已锁定 / 失败次数未清零）挂在**表头**的 .help 里，
+               不再逐行插一整行 colspan 说明行：那样同一句话会随行数重复，把表格切成一段段正文
+               （说明进 .help，见 02-J §2.1）。挂表头而不是行内角标的原因见 .help-pop 定位 ——
+               .table-scroll 是 overflow 容器，会裁掉 td 内绝对定位的悬浮，表头在容器顶部不会。
+               文案与 admin.customers.status.help.* 词条成对，词条缺失时回落这里的兜底。 *}
             <table class="data-table data-table-wide customers-page-table">
                 <thead>
                 <tr>
                     <th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>
-                    <th>{{ .["t"]("admin.customers.col.customer", "客户") }}</th><th>{{ .["t"]("admin.customers.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.customers.col.status", "状态") }}</th><th>{{ .["t"]("admin.customers.col.last_login", "最近登录") }}</th><th>{{ .["t"]("admin.customers.col.registered_at", "注册时间") }}</th><th class="col-actions">{{ .["t"]("admin.customers.col.actions", "操作") }}</th>
+                    <th>{{ .["t"]("admin.customers.col.customer", "客户") }}</th><th>{{ .["t"]("admin.customers.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.customers.col.status", "状态") }}<span class="help"><button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customers.help.label", "查看说明") }}" aria-expanded="false">?</button><span class="help-pop" role="tooltip">{{ .["t"]("admin.customers.status.help.pending", "待激活：客户还没完成邮箱验证，这类账号本来就登不上去 —— 验证完邮箱后状态会变成「正常」，那时再决定是否停用。") }}<br>{{ .["t"]("admin.customers.status.help.locked", "已锁定：因连续登录失败被临时锁定，到点会自动解除；确认是本人操作时点「解除锁定」，不必等。") }}<br>{{ .["t"]("admin.customers.status.help.failures", "失败次数未清零（状态仍是「正常」）：再失败几次就会进入锁定。") }}</span></span></th><th>{{ .["t"]("admin.customers.col.last_login", "最近登录") }}</th><th>{{ .["t"]("admin.customers.col.registered_at", "注册时间") }}</th><th class="col-actions">{{ .["t"]("admin.customers.col.actions", "操作") }}</th>
                 </tr>
                 </thead>
                 <tbody>
@@ -193,12 +198,6 @@
                     {{end}}
                 </td>
             </tr>
-            {{if r["PendingHint"]}}
-            <tr><td colspan="7" class="hint">{{ r["PendingHint"] }}</td></tr>
-            {{end}}
-            {{if r["LockHint"]}}
-            <tr><td colspan="7" class="hint">{{ r["LockHint"] }}</td></tr>
-            {{end}}
             {{end}}
             {{end}}
             </tbody>

@@ -11,17 +11,9 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 <div class="stack">
-    {* 「还没有工程」空态由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有装载失败）。
-       为什么不在这里写 `len(.Projects) == 0 && .Err == ""`：模板是磁盘热读文件，而 Go 侧改动要等
-       air 重编译，两边会短暂不同步 —— 缺键直接参与判断会让**整页中断**（HTTP 200 + 后面整块 HTML 消失）。
-       可选键一律 isset 包裹，是 internal/templates/CLAUDE.md 的硬约定。 *}
-    {{if isset(.NoProjectEmpty) && .NoProjectEmpty}}
-    <section class="card card-body">
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.theme.no_project", "请先在「页面」里创建一个站点工程，再管理主题。") }}</p>
-        </div>
-    </section>
-    {{else}}
+    {* 页头恒渲染（含「还没有工程」时）——「没有工程」是主区的一种状态，不是另一张页面：
+       整页必须有 h1 与导航锚点，否则用户不知道自己在哪一页（02-O theme 任务 2）。
+       页头依赖的 Projects / SelectedProject 由 handler 的 templateMap 恒定给齐。 *}
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
@@ -46,11 +38,30 @@
             <a class="btn" href="/admin/site-slots">{{ .["t"]("admin.theme.site_slots_link", "系统页面槽位") }}</a>
             {* 新建走右侧抽屉：表单本体在页面底部的 <template>（layout 提供抽屉外壳、drawer.js 克隆内容）。
                注意 hx-headers 只对 htmx 请求生效，原生表单必须自带 csrf_token 隐藏域。 *}
-            {{if isset(.PermSet["project:theme_create"])}}
+            {* 新建入口只在有工程时给：主题必须挂在工程下，抽屉表单的 projectId 取的是当前选中工程，
+                无工程时会提交一个空归属；那种情况下空态里的「去页面管理」才是正确的下一步。 *}
+            {{if len(.Projects) > 0}}{{if isset(.PermSet["project:theme_create"])}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
-            {{end}}
+            {{end}}{{end}}
         </div>
     </header>
+
+    {* 「还没有工程」空态由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有装载失败）。
+       为什么不在这里写 `len(.Projects) == 0 && .Err == ""`：模板是磁盘热读文件，而 Go 侧改动要等
+       air 重编译，两边会短暂不同步 —— 缺键直接参与判断会让**整页中断**（HTTP 200 + 后面整块 HTML 消失）。
+       可选键一律 isset 包裹，是 internal/templates/CLAUDE.md 的硬约定。
+       三段齐：title（说清缺什么）+ desc（主题为什么必须挂在工程下）+ actions（真正能点的下一步）。 *}
+    {{if isset(.NoProjectEmpty) && .NoProjectEmpty}}
+    <section class="card card-body">
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.theme.no_project", "请先在「页面」里创建一个站点工程，再管理主题。") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.theme.no_project_desc", "主题是站点工程的全局外观：颜色、字体与页眉页脚都挂在某个工程下，工程建好后再回来配置。") }}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/pages">{{ .["t"]("admin.theme.no_project_action", "去页面管理") }}</a>
+            </div>
+        </div>
+    </section>
+    {{else}}
 
     {* 失败提示条：写操作（新建 / 激活 / 删除）失败后 303 回到本页并带 ?err=，
        或本页装载失败时由 handler 直接给 —— 两种情况读侧都已过白名单（手拼的 ?err= 落空串）。
@@ -71,7 +82,13 @@
                 {{if len(.Themes) == 0}}
                 <tr><td colspan="5" class="cell-wrap">
         <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.theme.empty", "还没有主题，用上方表单创建第一个（首个主题自动激活）。") }}</p>
+            {* 空态三段（02-O theme 任务 3）：title 只说「缺什么」，desc 说「主题是什么、首个主题会怎样」，
+                入口由下面的 .empty-actions 给。
+                这里换掉旧 key（admin.theme.empty）而不是改它的兜底文案：词条命中时显示的是**库里的值**
+                （旧值是「还没有主题，用上方表单创建第一个」），改兜底不会生效，而「上方表单」指向的控件
+                并不存在 —— 新建入口是页头 .page-actions 的抽屉按钮（G2：文案指向的控件必须存在）。 *}
+            <p class="empty-title">{{ .["t"]("admin.theme.empty_title", "还没有主题") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.theme.empty_desc", "主题决定站点前端的全局颜色、字体与页眉页脚；创建的第一个主题会自动激活。") }}</p>
             {{if isset(.PermSet["project:theme_create"])}}
             <div class="empty-actions">
                 <button type="button" class="btn btn-primary" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
@@ -113,8 +130,14 @@
         <input type="hidden" name="id" value="{{t.ID}}">
         <input type="hidden" name="projectId" value="{{t.ProjectID}}">
     </form>
+    {* 确认文案说清后果（02-O theme 任务 1）—— 后果按服务端**真实行为**写，不写推断：
+       ① service.DeleteTheme 对激活态直接拒绝（ErrThemeIsActive）→ 替代动作是「先切换到其它主题」；
+       ② 删除的是 themes 那一行，它的颜色 / 字体 / 页眉页脚设置随之消失，没有回收站；
+       ③ pages.theme_id 的 FK 是 ON DELETE SET NULL，handler 随后把该工程内**未挂主题**的页面
+          转挂到当前激活主题（工程没有激活主题时保持未挂，由下次建主题回填）。
+       这一行的按钮只在 !IsActive 时渲染，但用户会以为是「正在用的这套」在删，故把 ① 一并写明。 *}
     <form id="theme-del-{{t.ID}}" method="post" action="/admin/themes/delete" class="hidden-form"
-          data-confirm="{{tr("admin.theme.confirm_delete_prefix", "确定删除主题「")}}{{t.Name|safeJs}}{{tr("admin.theme.confirm_delete_suffix", "」？") }}" data-confirm-danger>
+          data-confirm="{{tr("admin.theme.confirm_delete_prefix", "确定删除主题「")}}{{t.Name|safeJs}}{{tr("admin.theme.confirm_delete_suffix", "」？")}}{{tr("admin.theme.confirm_delete_note", "该主题的颜色 / 字体 / 页眉页脚设置会一并删除；挂在这套主题下的页面会自动改挂到当前激活主题。激活中的主题不能删除，请先切换到其它主题。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{t.ID}}">
         <input type="hidden" name="projectId" value="{{t.ProjectID}}">
@@ -122,8 +145,9 @@
     {{end}}
     {{end}}
     {{end}}
-    {{if isset(.PermSet["project:theme_create"])}}
-    {* 抽屉表单：字段容器用通用的 .form-row（等宽自动列数 + 窄屏堆叠），不写页面级 CSS。 *}
+    {{if len(.Projects) > 0}}{{if isset(.PermSet["project:theme_create"])}}
+    {* 抽屉表单：字段容器用通用的 .form-row（等宽自动列数 + 窄屏堆叠），不写页面级 CSS。
+        无工程时不渲染：表单的 projectId 会是空值，提交必然失败（入口条件同上）。 *}
     <template id="tpl-theme-create">
         <form method="post" action="/admin/themes/create">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -140,6 +164,6 @@
             </div>
         </form>
     </template>
-    {{end}}
+    {{end}}{{end}}
 </div>
 {{end}}

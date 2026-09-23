@@ -96,6 +96,30 @@ var couponStatusFilters = []struct {
 	{"exhausted", "已用完"},
 }
 
+// couponFilterStatusValue 状态筛选的**生效值**：把 URL 上的 status 归一到白名单的写法。
+//
+// 归一化不是洁癖，是两处实测行为逼出来的：
+//
+//	· service 的匹配是 strings.ToLower + TrimSpace（见 service/coupon_crud.go 的 ListCoupons），
+//	  所以 ?status=ENABLED 真的按「生效中」筛过。若把 URL 原值直接交给模板，
+//	  `o.Value == filterStatus` 比较失败 → 控件回显「（状态：全部）」，而列表已经是筛过的结果：
+//	  控件与生效筛选自相矛盾，用户从一个说「没筛」的控件上找不到问题在哪。
+//	· 不在白名单里的值不能悄悄换成空串：service 会以「参数不合法」拒绝这次筛选（页顶有提示），
+//	  URL 上的值仍是用户当前的上下文。返回 ok=false 让模板把它**原样回显**出来，
+//	  否则控件说「全部」、空态说「这个状态下没有优惠码」，用户既不知道筛了什么、也不知道该清什么。
+func couponFilterStatusValue(raw string) (value string, ok bool) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return "", false
+	}
+	for _, o := range couponStatusFilters {
+		if o.Value == s {
+			return s, true
+		}
+	}
+	return strings.TrimSpace(raw), false
+}
+
 // couponStatusBadges 状态**文案** → 徽章样式。
 //
 // 键是服务端算好的 StatusLabel 而不是状态列的取值（1/0）：一张启用的券是「生效中」
@@ -201,6 +225,11 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		Keyword:  strings.TrimSpace(c.Query("keyword")),
 		CouponID: orderQueryID(c.Query("couponId")),
 	}
+	// 状态筛选的**生效值**：白名单内归一成规范写法（service 也按小写匹配），白名单外原样留着
+	// 并把 valid 置 false —— 控件回显、空态分支与「清掉筛选」的判据都取自它。
+	// 送给 service 的仍是 filter.Status 原值：非法值该被 service 拒绝并在页顶给提示，
+	// 页面不在这一层替它决定「非法 = 不筛」（那会把用户手改的 URL 静默变成「看全部」）。
+	filterStatusValue, filterStatusValid := couponFilterStatusValue(filter.Status)
 
 	rows := []gin.H{}
 	redemptions := []gin.H{}
@@ -260,18 +289,19 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 	collapse["limit"] = strconv.Itoa(limit)
 
 	data := shell.Prepare(c, gin.H{
-		"title":           couponPageTitle,
-		"menu":            "coupons",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"FilterOptions":   couponStatusFilters,
-		"TypeOptions":     couponTypeOptions,
-		"StatusOptions":   couponEnableOptions,
-		"FilterStatus":    filter.Status,
-		"FilterKeyword":   filter.Keyword,
-		"Rows":            rows,
-		"Total":           total,
-		"Detail":          detail,
+		"title":             couponPageTitle,
+		"menu":              "coupons",
+		"Projects":          projects,
+		"SelectedProject":   selected,
+		"FilterOptions":     couponStatusFilters,
+		"TypeOptions":       couponTypeOptions,
+		"StatusOptions":     couponEnableOptions,
+		"FilterStatus":      filterStatusValue,
+		"FilterStatusValid": filterStatusValid,
+		"FilterKeyword":     filter.Keyword,
+		"Rows":              rows,
+		"Total":             total,
+		"Detail":            detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这两个键决定渲不渲染展开区。
 		"HasDetail": len(detail) > 0,
 		// 同上：装载失败时空态必须与「这个工程还没有优惠码」区分开，判据由 handler 算好。

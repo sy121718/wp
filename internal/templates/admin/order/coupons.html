@@ -24,6 +24,9 @@
 {{typeOptions := .TypeOptions}}
 {{enableOptions := .StatusOptions}}
 {{filterStatus := .FilterStatus}}
+{* 直接渲染本模板的单测不带 FilterStatusValid（可选键）：缺键会让整页渲染中断（HTTP 500
+   + 半截内容丢弃），所以先声明默认值再取。true = status 是白名单里的合法值。 *}
+{{filterStatusValid := false}}{{if isset(.FilterStatusValid)}}{{filterStatusValid = .FilterStatusValid}}{{end}}
 {{filterKeyword := .FilterKeyword}}
 {{canCreate := isset(.PermSet["order:coupon_create"])}}
 {{canUpdate := isset(.PermSet["order:coupon_update"])}}
@@ -70,21 +73,30 @@
     {{end}}{{end}}
 
     <section class="card list-card">
+        {* 列表标题行用 .card-header（与 dashboard.html / seo.html 同形），不再借用 .filter-bar：
+           那类名承诺的是「筛选栏」，标题行混进去之后，按 .filter-bar 做统一布局 / 间距调整
+           会误伤这一页。统计（共 N 张）在为空时不显示 —— 标题不该随数据改变长度。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.coupons.list.heading", "优惠码") }}{{if .Total > 0}}{{ .["t"]("admin.coupons.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.coupons.list.total_tail", " 张）") }}{{end}}</span>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.list.footer.lead", "「已用 / 上限」里的") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_unlimited", "不限") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid", "表示这张券没有总次数限制（上限填 0）；删除只允许在没有核销记录时进行 —— ") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_disable", "有核销记录的券请改用停用") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid2", "，删了记录就指向一张查不到的券，对账时分不清是数据坏了还是券被删了。点某一行的「修改」会在下方展开这张券的编辑表单与") }}<strong>{{ .["t"]("admin.coupons.redemptions.heading", "核销记录") }}</strong>{{ .["t"]("admin.coupons.list.footer.tail", "（同一页靠 couponId 参数展开，不跳走）。") }}</span>
+            </span>
+        </div>
+        {{if selectedProject}}
         <div class="filter-bar">
-            <div class="filter-row">
-                <span class="card-title">{{ .["t"]("admin.coupons.list.heading", "优惠码") }}{{ .["t"]("admin.coupons.list.total_lead", "（共 ") }}{{.Total}}{{ .["t"]("admin.coupons.list.total_tail", " 张）") }}</span>
-                <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.coupons.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.coupons.list.footer.lead", "「已用 / 上限」里的") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_unlimited", "不限") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid", "表示这张券没有总次数限制（上限填 0）；删除只允许在没有核销记录时进行 —— ") }}<strong>{{ .["t"]("admin.coupons.list.footer.strong_disable", "有核销记录的券请改用停用") }}</strong>{{ .["t"]("admin.coupons.list.footer.mid2", "，删了记录就指向一张查不到的券，对账时分不清是数据坏了还是券被删了。点某一行的「修改」会在下方展开这张券的编辑表单与") }}<strong>{{ .["t"]("admin.coupons.redemptions.heading", "核销记录") }}</strong>{{ .["t"]("admin.coupons.list.footer.tail", "（同一页靠 couponId 参数展开，不跳走）。") }}</span>
-                </span>
-            </div>
-            {{if selectedProject}}
             <form method="get" action="/admin/coupons" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <div class="filter-field">
                     <label for="coupons-filter-status">{{ .["t"]("admin.coupons.col.status", "状态") }}</label>
                     <select class="form-select" id="coupons-filter-status" name="status">
                         <option value="">{{ .["t"]("admin.coupons.status.all_option", "（状态：全部）") }}</option>
+                        {* 白名单外的 status 必须原样回显：service 会以「参数不合法」拒绝这次筛选（页顶有提示），
+                           若控件退回「（状态：全部）」而空态写着「这个状态下没有优惠码」，用户既不知道
+                           筛了什么、也不知道该清掉什么。合法值则由 handler 归一成白名单里的写法再回显。 *}
+                        {{if filterStatus != "" && !filterStatusValid}}
+                        <option value="{{filterStatus}}" selected>{{ .["t"]("admin.coupons.status.unknown_lead", "（未知状态：") }}{{filterStatus}}{{ .["t"]("admin.coupons.status.unknown_tail", "）") }}</option>
+                        {{end}}
                         {{range _, o := filterOptions}}
                         <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{o.Label}}</option>
                         {{end}}
@@ -100,8 +112,8 @@
                     <a class="btn btn-sm btn-ghost" href="/admin/coupons?project={{selectedProject}}">{{ .["t"]("admin.coupons.filter.reset", "重置") }}</a>
                 </div>
             </form>
-            {{end}}
         </div>
+        {{end}}
 
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（colspan = 11：勾选 / 券码 / 名称 / 折扣 / 门槛 / 已用上限 /

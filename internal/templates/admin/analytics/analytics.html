@@ -9,6 +9,37 @@
    分页链接）必须自己带上 view —— 分页那处固定带 view=paths，理由见 analytics_page_handle.go。 *}
 {* Jet 方言：map 用 ["key"] 索引；range 内访问外层值先在块顶存变量；条件里 or 不支持（用 ||）。 *}
 {{extends "../layout.html"}}
+{* ── 空态：一份定义，5 个维度面板共用 ──────────────────────────────────────
+   tabs 化之前是 5 张卡并列、6 处空态（无工程 1 + 5 张表）同屏并列；收进 tabs 之后
+   同一时刻只有一个面板可见，用户在页面上**看到**的空态恒为 1 处（当前面板）+ 最多 1 处
+   （页面级「还没有站点工程」）。这里再把**结构**也收敛成一份：面板级空态全部由本块渲染，
+   调用点只传成品文案与动作（命名参数，Jet 的块参数必须带名字）。
+
+   为什么块定义外面包一层 if false：Jet v6 里**直接用 block 定义会立刻渲染一次**
+   （先例与坑见 admin/partials/bulk_bar.html 的注释，那边的规避方式是 import 一个片段文件）。
+   本页不许新增片段文件，所以就地规避 —— Jet 在**解析期**就把块注册进模板，
+   执行期遇到这个分支直接跳过，块只被下面的 yield 调用时渲染。
+   若将来 Jet 改了这一点，定义处会多渲一份空态：`admin_empty_actions_test.go` 的
+   「五张维度表都空 → 恰好 5 处 .empty-actions」会立刻变红。
+
+   为什么文案没有一并统一成一句：4 个维度榜各自的词条（paths / referrers / ua / langs 的
+   .empty）已按中英成对 seed 落库（193 / 222 迁移），删掉取词点会让它们变成孤儿词条，
+   而清理 seed 与门禁清单不在本批改动范围内。所以收敛的是结构与动作，文案仍由各维度自述。
+
+   参数：title 标题正文 / strong 标题里的加粗片段（只有「按天」那档用，其余传空串）/
+   tail 标题收尾 / action 动作文案（空串 = 不给动作，见「明细被保留期清理」那一档）。 *}
+{{if false}}
+{{block analyticsEmpty(title, strong, tail, action)}}
+<div class="empty-state">
+    <p class="empty-title">{{title}}{{if strong != ""}}<strong>{{strong}}</strong>{{end}}{{tail}}</p>
+    {{if action != ""}}
+    <div class="empty-actions">
+        <a class="btn" href="/admin/pages">{{action}}</a>
+    </div>
+    {{end}}
+</div>
+{{end}}
+{{end}}
 {{block body()}}
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
@@ -84,25 +115,40 @@
     {{end}}
 
     {{if selectedProject != ""}}
-    <section class="card card-body">
-        <h2>{{ .["t"]("admin.analytics.range.title", "时间范围") }}</h2>
+    {* 三个维度榜空态的动作（明细被保留期清理时不给按钮：数据原本有、汇总仍在，用户无事可做，
+       上方已有一条解释，给了也点不动任何东西；真没流量时才指向产生流量的地方）。 *}
+    {{rankEmptyAction := tr("admin.analytics.empty.action", "去页面管理发布页面")}}
+    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}{{rankEmptyAction = ""}}{{end}}
+    <section class="card list-card">
         {* 时间范围是**筛选**、不是视图：它对 5 个维度都生效，所以留在 tabs 之外（原位）。
            查询同样带 view，改完日期仍停在原来那一维。 *}
-        <form method="get" action="/admin/analytics" class="form-inline">
+        {* 版式（审计 02-O §11 任务 3，G3）：筛选栏用全站统一的 .filter-bar 承载
+           （.filter-fields 装条件、.filter-actions 装查询与快捷动作），不再把它包在
+           一张只有筛选语义的 .card-body 里；两个 date 仍是原生控件，不引入范围控件组件。 *}
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.analytics.range.title", "时间范围") }}</span>
+        </div>
+        <form class="filter-bar" method="get" action="/admin/analytics">
             <input type="hidden" name="project" value="{{selectedProject}}">
             <input type="hidden" name="view" value="{{viewMode}}">
-            <div class="filter-field">
-                <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
-                <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
+            <div class="filter-fields">
+                <div class="filter-field">
+                    <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
+                    <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
+                </div>
+                <div class="filter-field">
+                    <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
+                    <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
+                </div>
             </div>
-            <div class="filter-field">
-                <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
-                <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.analytics.range.submit", "查询") }}</button>
+                <a class="btn btn-ghost" href="/admin/analytics?project={{selectedProject}}&view={{viewMode}}">{{ .["t"]("admin.analytics.range.last30", "最近 30 天") }}</a>
             </div>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.analytics.range.submit", "查询") }}</button>
-            <a class="btn btn-sm" href="/admin/analytics?project={{selectedProject}}&view={{viewMode}}">{{ .["t"]("admin.analytics.range.last30", "最近 30 天") }}</a>
         </form>
-        <div class="action-row">
+        {* 徽章是**结果摘要**（含「实际统计窗口」这个非法日期的兜底可见性），不是筛选控件，
+           所以留在筛选栏之外 —— 但它仍要跟着卡的内边距走，故保留 .card-body 的内边距元素。 *}
+        <div class="card-body action-row">
             {{if .RangeFrom != ""}}
             <span class="badge">{{ .["t"]("admin.analytics.range.actual_pre", "实际统计窗口：") }}<strong>{{.RangeFrom}}</strong>{{ .["t"]("admin.analytics.range.actual_mid", " 至 ") }}<strong>{{.RangeTo}}</strong></span>
             {{end}}
@@ -138,14 +184,9 @@
                                日期（UTC） / 浏览数 / 独立访客）。 *}
                             {{if len(daily) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。") }}<strong>{{ .["t"]("admin.analytics.daily.empty.strong", "发布页面之后") }}</strong>{{ .["t"]("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。") }}</p>
-                    {* 空态动作：这一档（按天汇总，不受明细保留期影响）没有数据的唯一来源是「还没发布页面」，
-                       所以下一步指向页面管理而不是「刷新」或「换时间范围」。 *}
-                    <div class="empty-actions">
-                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
-                    </div>
-                </div>
+                                {* 这一档（按天汇总，不受明细保留期影响）没有数据的唯一来源是「还没发布页面」，
+                                   所以下一步指向页面管理而不是「刷新」或「换时间范围」。 *}
+                                {{yield analyticsEmpty(title=tr("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。"), strong=tr("admin.analytics.daily.empty.strong", "发布页面之后"), tail=tr("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。"), action=tr("admin.analytics.empty.action", "去页面管理发布页面"))}}
                             </td></tr>
                             {{else}}
                             {{range _, d := daily}}
@@ -166,12 +207,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：路径 / 浏览数 / 独立访客）。 *}
                             {{if len(paths) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.analytics.paths.empty", "没有路径数据。") }}</p>
-                    <div class="empty-actions">
-                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
-                    </div>
-                </div>
+                                {{yield analyticsEmpty(title=tr("admin.analytics.paths.empty", "没有路径数据。"), strong="", tail="", action=tr("admin.analytics.empty.action", "去页面管理发布页面"))}}
                             </td></tr>
                             {{else}}
                             {{range _, p := paths}}
@@ -199,19 +235,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：来源域 / 浏览数 / 独立访客）。 *}
                             {{if len(referrers) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.analytics.referrers.empty", "没有来源数据。") }}</p>
-                    {* 维度榜空有两档，动作不同：
-                       · 明细被保留期清理（BreakdownUnavailable）—— 数据原本有、汇总仍在，用户无事可做，
-                         上方已有一条解释，这里不再给按钮（给了也点不动任何东西）；
-                       · 真的没有流量 —— 下一步是产生流量的地方，也就是把页面发出去。 *}
-                    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-                    {{else}}
-                    <div class="empty-actions">
-                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
-                    </div>
-                    {{end}}
-                </div>
+                                {{yield analyticsEmpty(title=tr("admin.analytics.referrers.empty", "没有来源数据。"), strong="", tail="", action=rankEmptyAction)}}
                             </td></tr>
                             {{else}}
                             {{range _, v := referrers}}
@@ -235,16 +259,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：设备分类 / 浏览数 / 独立访客）。 *}
                             {{if len(uaClasses) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.analytics.ua.empty", "没有设备数据。") }}</p>
-                    {* 与来源域榜同档（见上）：保留期清理时不给按钮，真无流量时指向发布页。 *}
-                    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-                    {{else}}
-                    <div class="empty-actions">
-                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
-                    </div>
-                    {{end}}
-                </div>
+                                {{yield analyticsEmpty(title=tr("admin.analytics.ua.empty", "没有设备数据。"), strong="", tail="", action=rankEmptyAction)}}
                             </td></tr>
                             {{else}}
                             {{range _, v := uaClasses}}
@@ -268,16 +283,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：语言 / 浏览数 / 独立访客）。 *}
                             {{if len(langs) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.analytics.langs.empty", "没有语言数据。") }}</p>
-                    {* 与来源域榜同档（见上）：保留期清理时不给按钮，真无流量时指向发布页。 *}
-                    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-                    {{else}}
-                    <div class="empty-actions">
-                        <a class="btn" href="/admin/pages">{{ .["t"]("admin.analytics.empty.action", "去页面管理发布页面") }}</a>
-                    </div>
-                    {{end}}
-                </div>
+                                {{yield analyticsEmpty(title=tr("admin.analytics.langs.empty", "没有语言数据。"), strong="", tail="", action=rankEmptyAction)}}
                             </td></tr>
                             {{else}}
                             {{range _, v := langs}}

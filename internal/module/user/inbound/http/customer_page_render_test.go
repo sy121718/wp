@@ -232,12 +232,16 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 	if strings.Contains(body, "/admin/customers/status") {
 		t.Errorf("待激活账号不应渲染停用按钮")
 	}
-	if !strings.Contains(body, "客户还没完成邮箱验证") {
-		t.Errorf("待激活账号应当有说明文案")
+	// 状态说明在**表头**的 .help 里（一次渲染、不随行重复），不再逐行插整行 colspan 说明行。
+	// 判据：表头段含这句说明；tbody 段里没有任何跨列行（有数据时 tbody 的每一行都是 7 个 td
+	// 的数据行）。原来这里断言 `colspan="7"` 存在 —— 那是「逐行说明行」的形态，已撤掉。
+	head := body[:strings.Index(body, "<tbody")]
+	if !strings.Contains(head, "客户还没完成邮箱验证") {
+		t.Errorf("状态列的解释应挂在表头 .help 里")
 	}
-	// 说明行跨满所有列：加了首列勾选后是 colspan=7，否则表格错列。
-	if !strings.Contains(body, `colspan="7"`) {
-		t.Errorf("说明行的 colspan 应与列数一致（7）")
+	tbody := body[strings.Index(body, "<tbody"):]
+	if strings.Contains(tbody, "colspan=") {
+		t.Errorf("有数据时 tbody 不应有跨列说明行（说明已移进状态列表头的 .help）")
 	}
 }
 

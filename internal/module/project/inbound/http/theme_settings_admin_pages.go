@@ -9,6 +9,8 @@ package projecthttp
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/builder"
@@ -29,6 +31,23 @@ import (
 const (
 	themeSettingsMsgTitle = "MsgThemeSettingsTitle"
 )
+
+// themeSettingsSavedText 保存成功回执（本页 ?ok= 通道的**唯一一份字面量**，写侧与读侧共用）。
+//
+// 为什么不套 t(key)：模板文案的 key 必须有中英成对词条（`admin_group_f_i18n_test.go` 的判据），
+// 而词条 seed 在 `public/migrations` —— 不在本批文件清单里；新增一个未登记词条的 key
+// 会让页面直接把裸 key 摆给运营看（`datarule_edit.html` 的在位取舍与此一致）。
+//
+// 读侧（themeSettingsPageOK）拿的是同一个值经当前语言取词的结果：手拼
+// `?ok=任意文案` 会被 `shell.FacingNotice` 的整体匹配拒掉 —— 机制与 `project_err.go`
+// 的 ?err= 白名单、`order_page_query.go` 的 ?done= 同源。
+const themeSettingsSavedText = "主题设置已保存，该主题下页面已标记待重建 —— 重新构建后新样式才会出现在访问面。"
+
+// themeSettingsFieldInvalidText 字段级错误的一行红字（就近提示，模板渲染在控件下方）。
+//
+// 措辞只说「允许什么」而不复述白名单实现：`core.IsSafeCSSValue` 放行的是颜色、长度、
+// 字号、关键字这类 CSS 值，用户要做的是「改成一个正常的值」，不是理解校验器。
+const themeSettingsFieldInvalidText = "这个值不合法：只能填颜色（#3d444f）、尺寸（16px）这类 CSS 值。"
 
 // themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚块绑定）。
 type themeSettingsData struct {
@@ -74,11 +93,19 @@ type themeSettingsData struct {
 	// 候选为空时下拉仍有一项可选，不会退化成「没有这个字段」（那才是清空绑定）。
 	HeaderTemplateOptions []structureTemplateOptionView
 	FooterTemplateOptions []structureTemplateOptionView
-	// Err 上一次保存失败的提示（?err= 经读侧白名单，空 = 无提示）。
+	// Err 保存失败的提示（空 = 无提示）。
 	//
-	// 保存失败（校验不通过 / service 拒绝 / 整站刷新失败）后 303 回到本页并带 ?err=；
-	// 本页原先对此**没有任何出口** —— 失败是一块纯文本错误页，表单与页头全没了。
+	// 注意失败路径**不跳页**：themeSettingsFailPage 就地重渲 200（提交值逐个回填 +
+	// 出错字段标红 + 顶部提示）—— 303 之后是一次 GET、请求里没有 PostForm，
+	// 52 个字段只能从库里旧值重建，用户填的东西必然全丢（admin-ui-logic §9 第 7 条）。
+	// ?err= 读侧（themeSettingsPageErr）保留：服务别处跳转到本页时仍可带一句归口提示，
+	// 本页自己不再产生它。本页原先对失败**没有任何出口** —— 失败是一块纯文本错误页。
 	Err string
+	// OK 上一次保存成功的回执（?ok= 经读侧白名单，空 = 无提示）。
+	//
+	// 与 Err 同一套读侧机制、同一个候选来源（同文件里的 themeSettingsSavedText）：
+	// 保存的后果是「该主题下全部页面标记待重建」，用户需要一个明确的确认。
+	OK string
 }
 
 // structureTemplateOptionView 结构模板下拉项（selected 由服务端算好，前端不认识这组数据）。
@@ -123,6 +150,7 @@ func (d *themeSettingsData) templateMap() gin.H {
 		"HeaderTemplateOptions": d.HeaderTemplateOptions,
 		"FooterTemplateOptions": d.FooterTemplateOptions,
 		"Err":                   d.Err,
+		"OK":                    d.OK,
 	}
 }
 
@@ -166,6 +194,8 @@ func (h *themeAdminHandle) ThemeSettings(c *gin.Context) {
 		return
 	}
 	data.Err = projectPageErrText(c, c.Query("err"))
+	// 成功回执与 ?err= 同一套读侧白名单：未命中（含手拼）落空串，页面不会显示伪造的「系统提示」。
+	data.OK = themeSettingsPageOK(c, c.Query("ok"))
 	c.HTML(http.StatusOK, "admin/project/theme_settings", shell.Prepare(c, data.templateMap()))
 }
 
@@ -296,8 +326,11 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		projectErrRedirect(c, "/admin/themes", response.TranslateMessage(c, projectenums.ErrThemeNotFound))
 		return
 	}
-	// 失败后一律回到本页（PRG）：用户刚在这一屏调完颜色 / 字体 / 结构绑定，
-	// 停在原地才能接着改 —— 这与「表单内容丢失」是两个问题（后者要回填表单值，见 02-O 的任务单）。
+	// 本页地址（带主题 id）：成功回执（?ok=）与「部分成功」回跳都以它为基。
+	//
+	// 校验 / 落库失败**不走它** —— 那两条走 themeSettingsFailPage 的就地重渲：
+	// 303 回到本页时提交值已经随请求结束消失（GET 请求里没有 PostForm），
+	// 52 个字段只能从库里重建，用户刚调完的一屏全没了。
 	backURL := "/admin/themes/settings?id=" + themeID
 	// 从 PostForm（点分键名）组装完整 ThemeSettings；空值直接透传为字段零值，
 	// 序列化时经 omitempty 省略（未设置字段不输出 CSS 变量，组件回退自身默认）。
@@ -379,21 +412,22 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		SlotTemplates:    themeSlotTemplateFormValues(c, data.SlotTemplates),
 	})
 	if err != nil {
-		projectErrRedirect(c, backURL, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err))
+		// 组装 JSON 失败（几乎不可达：字段全是字符串）—— 同样就地重渲，保住已经填好的 52 个值。
+		themeSettingsFailPage(c, data, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err), nil, nil)
 		return
 	}
-	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法回本页并给提示。
-	if _, err := builder.ParseThemeSettings(settingsJSON); err != nil {
-		// CSS 值白名单不通过：原文（哪个字段、期望什么形状）只进日志，对外一句归口文案。
-		// 逐字段就近提示属 02-O 的 theme_settings 任务单（本域 P0 集中页），不在本批范围。
-		logger.Scene("theme").With("theme_id", themeID).Error(err, "主题设置校验失败")
-		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.MsgThemeSettingsInvalid))
+	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法就地重渲并给提示。
+	if _, verr := builder.ParseThemeSettings(settingsJSON); verr != nil {
+		// CSS 值白名单不通过：原文（哪个字段、期望什么形状）只进日志，对外一句归口文案 +
+		// 出错字段的就近红字（`themeSettingsInvalidField` 按出错值定位字段）。
+		logger.Scene("theme").With("theme_id", themeID).Error(verr, "主题设置校验失败")
+		themeSettingsFailPage(c, data, response.TranslateMessage(c, projectenums.MsgThemeSettingsInvalid), verr, settingsJSON)
 		return
 	}
 	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectcontract.ThemeUpdateReq{
 		ID: themeID, Name: data.ThemeName, Settings: settingsJSON,
 	}); err != nil {
-		projectErrRedirect(c, backURL, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err))
+		themeSettingsFailPage(c, data, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err), nil, settingsJSON)
 		return
 	}
 	// 颜色/字体快照合入 settings.theme + 页眉/页脚绑定合入 settings.structure，
@@ -404,11 +438,199 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.MsgThemeSettingsRefreshFailed))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/themes/settings?id="+themeID)
+	// 成功：303 回本页 + ?ok=（读侧白名单在 themeSettingsPageOK）。
+	// 保存的后果是「该主题下全部页面标记待重建」，页面与保存前逐字相同，用户需要一个明确的确认。
+	c.Redirect(http.StatusSeeOther, themeSettingsOKRedirectURL(backURL, themeSettingsSavedText))
 }
 
-// structureTemplateFormValue 结构模板绑定的表单取值。
+// themeSettingsFailPage 保存失败的**统一出口**：就地重渲本页（200 + 回填 + 错误槽 + 出错字段标红）。
 //
+// 为什么不是 303 + ?err=（本模块其它写操作的形态，见 project_err.go）：
+// 那个形态**回不到「输入还在」**。303 之后的 GET 请求里没有 PostForm，模板里 52 个字段的
+// value 只能来自库里那份旧 JSON（内嵌 `theme-settings-json` + 前端回显脚本），于是用户
+// 刚调好的 11 个颜色、字体、结构绑定一次性回到旧值 —— 页面上「看起来什么都没发生」。
+// 就地重渲把提交值直接渲回表单，无 JS、无暂存、无新基建。
+//
+// 代价是「刷新会重放这次提交」，而本页的写操作是幂等的（同值写回 + 重新标 stale），
+// 重放无害；真正的失败态（校验不过）重放也只是再看到同样的提示。
+//
+// 另一条正路（htmx 档 200 + 片段自身）需要把表单抽成独立片段模板
+// （`internal/templates/admin/project/theme_settings_form.html`），越出本批文件清单。
+//
+// echoSettings 是本次提交的 JSON（可为空 = 组装 JSON 那一步就失败了，保持库里原值）：
+// 前端回显脚本按点分键从内嵌 JSON 取 value 覆盖各输入框，留着旧 JSON 会把刚回填好的
+// 字段再改回旧值 —— 那正是「输入全丢」的现场，所以这里必须换成提交值。
+// json.Marshal 默认转义 HTML（`<` → `\u003c`），`</script>` 逃逸不成立。
+func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, text string, fieldErr error, echoSettings json.RawMessage) {
+	data.Err = text
+	if len(echoSettings) > 0 {
+		data.ThemeSettingsJSON = string(echoSettings)
+	}
+	themeSettingsEchoForm(c, data)
+	if name, _, _ := themeSettingsInvalidField(data.Groups, fieldErr); name != "" {
+		themeSettingsMarkInvalid(data.Groups, name, themeSettingsFieldInvalidText)
+	}
+	c.HTML(http.StatusOK, "admin/project/theme_settings", shell.Prepare(c, data.templateMap()))
+}
+
+// themeSettingsEchoForm 失败回填：把本次提交的表单值覆盖到页面数据上（「输入不丢」的全部实现）。
+//
+// 覆盖三处，缺一处就是「保存一次颜色，把别处配好的东西丢了」：
+//   - Groups 各字段的回显值（含 select 的 selected 重算）；
+//   - 页眉 / 页脚 / 公告条块绑定（三个 select，服务端算 selected）；
+//   - 结构模板绑定与其余槽位（哨兵语义见 structureTemplateFormValue，
+//     沿用「带哨兵按提交值、不带保持原值」，回填与落库口径因此完全一致）。
+func themeSettingsEchoForm(c *gin.Context, data *themeSettingsData) {
+	_ = c.Request.ParseForm()
+	form := c.Request.PostForm
+	data.Groups = themeSettingsEchoGroups(form, data.Groups)
+	if v, ok := themeSettingsFormValue(form, "headerBlockId"); ok {
+		data.HeaderBlockID = v
+	}
+	if v, ok := themeSettingsFormValue(form, "footerBlockId"); ok {
+		data.FooterBlockID = v
+	}
+	if v, ok := themeSettingsFormValue(form, "slots.announcement"); ok {
+		data.AnnouncementBlockID = v
+	}
+	data.HeaderTemplateID = structureTemplateFormValue(c, "headerTemplateId", data.HeaderTemplateID)
+	data.FooterTemplateID = structureTemplateFormValue(c, "footerTemplateId", data.FooterTemplateID)
+	themeSettingsMarkTemplateSelected(data.HeaderTemplateOptions, data.HeaderTemplateID)
+	themeSettingsMarkTemplateSelected(data.FooterTemplateOptions, data.FooterTemplateID)
+	if slots := themeSlotTemplateFormValues(c, data.SlotTemplates); slots != nil {
+		data.SlotTemplates = slots
+	}
+}
+
+// themeSettingsEchoGroups 用提交值覆盖字段回显值；select 的选中项按值重算（与 buildThemeGroups 同口径）。
+//
+// 判据是「表单里有没有这个键」而不是「值是不是空串」：用户把颜色**清空**（跟随内置默认）
+// 也是一次真实输入，回落成库里的旧颜色等于替他改回去。
+func themeSettingsEchoGroups(form url.Values, groups []themeFieldGroupView) []themeFieldGroupView {
+	for gi := range groups {
+		for fi := range groups[gi].Fields {
+			f := &groups[gi].Fields[fi]
+			values, ok := form[f.Name]
+			if !ok || len(values) == 0 {
+				continue
+			}
+			f.Value = values[0]
+			for oi := range f.Options {
+				f.Options[oi].Selected = f.Options[oi].Value == f.Value
+			}
+		}
+	}
+	return groups
+}
+
+// themeSettingsFormValue 取表单里某个键的第一个值（缺键返回 false —— 与「提交了空串」区分）。
+func themeSettingsFormValue(form url.Values, key string) (string, bool) {
+	values, ok := form[key]
+	if !ok || len(values) == 0 {
+		return "", false
+	}
+	return values[0], true
+}
+
+// themeSettingsMarkTemplateSelected 按当前绑定值重算结构模板下拉的 selected。
+//
+// 模板用 `<option … {{if o.Selected}}selected{{end}}>` 渲染，Selected 是服务端在
+// loadThemeSettings 里按**库里**的绑定算好的；回填后绑定值变了，必须一起重算 ——
+// 否则用户在下拉里刚选的模板会被渲染回旧的那一项。
+func themeSettingsMarkTemplateSelected(options []structureTemplateOptionView, current string) {
+	for i := range options {
+		options[i].Selected = options[i].ID == current
+	}
+}
+
+// themeSettingsInvalidField 从校验错误里定位出错的字段（返回提交键名 / 字段标签 / 出错的值）。
+//
+// `builder.ValidateThemeSettings` 的错误形态是 `主题设置 主色 值非法: "not-a-css-value;evil"`：
+// 前半段是**中文标签**，但它与字段表的 Label 并不同名（「主色」对「主色」是巧合，
+// 「按钮悬停背景」对「悬停背景」、「背景色」对「页面背景」都对不上），而且校验是 map 遍历
+// （一次只报一个、顺序不保证）。所以按**值**定位：%q 出来的那段就是用户提交的原文，
+// 在字段表里找值等于它的字段。两个字段填了同一个非法值时取第一个 —— 就近提示指到其中之一，
+// 顶部归口提示（「主题设置不合法」）本来也不声称只有一个字段有问题。
+func themeSettingsInvalidField(groups []themeFieldGroupView, err error) (name, label, value string) {
+	if err == nil {
+		return "", "", ""
+	}
+	bad, ok := themeSettingsQuotedValue(err.Error())
+	if !ok {
+		return "", "", ""
+	}
+	for _, g := range groups {
+		for _, f := range g.Fields {
+			// 校验发生在 TrimSpace 之后（SaveThemeSettings 提交值一律 trim），
+			// 回填的却是用户原文（带空格也照原样显示），所以两边都比一次。
+			if f.Value == bad || strings.TrimSpace(f.Value) == bad {
+				return f.Name, f.Label, bad
+			}
+		}
+	}
+	return "", "", bad
+}
+
+// themeSettingsQuotedValue 取错误文本里最后一个 %q 引号串的内容。
+//
+// 失败一律返回 false（不定位，只留顶部提示）—— 这是一条**纯增强**路径，
+// 认不出形态时宁可少一条就近红字，也不要指错字段。
+func themeSettingsQuotedValue(msg string) (string, bool) {
+	i := strings.LastIndex(msg, `: "`)
+	if i < 0 || !strings.HasSuffix(msg, `"`) || len(msg)-i < 4 {
+		return "", false
+	}
+	v, err := strconv.Unquote(msg[i+2:])
+	if err != nil {
+		return "", false
+	}
+	return v, true
+}
+
+// themeSettingsMarkInvalid 给定位到的字段打上错误态（模板据此渲染 aria-invalid 与就近红字）。
+func themeSettingsMarkInvalid(groups []themeFieldGroupView, name, text string) {
+	if name == "" {
+		return
+	}
+	for gi := range groups {
+		for fi := range groups[gi].Fields {
+			if groups[gi].Fields[fi].Name == name {
+				groups[gi].Fields[fi].Invalid = true
+				groups[gi].Fields[fi].Error = text
+				return
+			}
+		}
+	}
+}
+
+// themeSettingsSavedTexts ?ok= 可以原样渲染的受控文案（当前语言；本页只有一条回执）。
+func themeSettingsSavedTexts(c *gin.Context) []string {
+	return []string{shell.TranslateFor(c)(themeSettingsSavedText, themeSettingsSavedText)}
+}
+
+// themeSettingsPageOK ?ok= 的受控出口：整体命中受控文案返回原文，未命中落空串。
+//
+// 与 projectPageErrText 同一套判定（shell.FacingNotice 的整体匹配，不是 strings.Contains）：
+// 未命中落空串而不是「归口文案」—— 成功提示没有「必须说点什么」的语义，
+// 而落一个默认成功文案等于给手拼 URL 凭空造出一条「系统说保存成功了」。
+func themeSettingsPageOK(c *gin.Context, raw string) string {
+	return shell.FacingQueryText(raw, "", func(msg string) string {
+		return shell.FacingNotice(msg, themeSettingsSavedTexts(c))
+	})
+}
+
+// themeSettingsOKRedirectURL 成功回执的回跳 URL：`<本页>?ok=<转义后的文案>`（自带 query 时用 & 连接）。
+//
+// 与 project_err.go 的 buildErrRedirectURL 同形、只差参数名：那个函数固定拼 `err=`，
+// 复用它只能靠字符串替换，比多这 8 行更脆；而 project_err.go 也不在本批文件清单里。
+func themeSettingsOKRedirectURL(backURL, text string) string {
+	sep := "?"
+	if strings.Contains(backURL, "?") {
+		sep = "&"
+	}
+	return backURL + sep + "ok=" + url.QueryEscape(text)
+}
+
 // 「没提交这个字段」与「提交了空值」必须分开：前者是旧表单 / 缺字段（保持原值 ——
 // 不能让「保存一次颜色」把配好的页眉模板清空），后者是用户在下拉里选了「不绑定」
 // （必须真的解绑）。判据是表单里的哨兵域 structureTemplateFields：新版表单渲染了

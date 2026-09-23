@@ -7,7 +7,7 @@
 {* 文案走 t(key, 中文兜底)：字段标签与分组标题来自服务端字段表（数据驱动），模板只抽固定文案。 *}
 {{extends "../layout.html"}}
 {{block body()}}
-<div class="stack">
+<div class="stack theme-settings-page">
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
@@ -20,15 +20,30 @@
         </div>
         <div class="page-actions">
             <a class="btn" href="/admin/themes?project={{.ProjectID}}">{{ .["t"]("admin.theme_settings.back", "返回列表") }}</a>
+            {* 页头主行动：本页 52 个字段、2.2 屏，保存按钮原先只落在表单底部
+               （实测 saveBtnTop=2.12 屏、滚 1.21 屏才够得着）—— 改一个颜色要先把页面拉到底。
+               用 form="theme-settings-form" 把页头这个按钮挂到下方表单上（HTML 不允许 form 嵌套，
+               而页头在 <form> 之外）：零 JS，点击即提交，csrf_token 与全部字段一并带上。
+               样板：system/role_permissions.html 的 form="perm-form"。 *}
+            <button type="submit" class="btn btn-primary" form="theme-settings-form">{{ .["t"]("admin.theme_settings.save", "保存并应用到该主题页面") }}</button>
         </div>
     </header>
 
-    {* 保存失败提示：校验不通过 / service 拒绝 / 整站刷新失败（部分成功）都 303 回本页并带 ?err=。
-       读侧已过白名单，手拼的 ?err= 落空串 —— 所以这里不会出现「顶着系统样式的伪造消息」。
+    {* 保存失败提示。两条路径都回到这里，但形态不同（见 handler 的 themeSettingsFailPage）：
+       · 校验不通过 / 落库失败 → **就地重渲**（200，同一响应里带回错误槽 + 全部已填值 + 出错字段标红）；
+       · 整站刷新失败（部分成功）→ 303 回本页并带 ?err=（设置已经落库，回表单没有意义）。
+       后者走 ?err= 读侧白名单，手拼的 ?err= 落空串 —— 不会出现「顶着系统样式的伪造消息」。
        isset 包裹是硬要求：本模板会被不带该键的渲染路径复用（如模板结构测试）。 *}
-    {{if isset(.Err) && .Err != ""}}
+    {{if isset(.Err)}}{{if .Err}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}
+    {{end}}{{end}}
+
+    {* 保存成功回执：成功时 303 回本页并带 ?ok=。保存的后果是「该主题下页面全部标记待重建」，
+       而页面与保存前逐字相同 —— 没有这条回执，用户无法确认刚才那一下到底成了没有。
+       读侧白名单在 themeSettingsPageOK（与写侧共用同一份字面量），手拼的 ?ok= 落空串。 *}
+    {{if isset(.OK)}}{{if .OK}}
+    <p class="badge badge-success" role="status">{{.OK}}</p>
+    {{end}}{{end}}
 
     <section class="card card-body">
         {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
@@ -45,84 +60,128 @@
                取色入口由基座控件补上（js/ui/colorfield.js，data-color-field）：文本框旁一个色块，
                点开系统取色器、结果写回文本框；留空时色块显示「未设置」。 *}
             {{range _, g := .Groups}}
-            <h3>{{g.Title}}</h3>
-            <div class="theme-color-grid">
+            {* 长表单分节：每个字段组一个 .section-fold，summary 给出组名与「N 项」（Jet 直接 len 计算）。
+               **默认展开（open）**：这一页的折叠判据比一般页面严 —— 折叠区内含可编辑字段时不该默认收起，
+               收起后用户看不到这些字段，而它们照常随表单提交（旧值写回），心智模型与落库结果不一致。
+               组里全是可编辑字段，所以默认全开；折叠是给「我不想看这一组」用的，不是省版面用的。 *}
+            <details class="section-fold" open>
+                <summary>
+                    <span class="fold-title">{{g.Title}}</span>
+                    <span class="fold-note">{{len(g.Fields)}} 项</span>
+                </summary>
+                <div class="fold-body">
+                <div class="theme-color-grid">
                 {{range _, f := g.Fields}}
-                {{if f.Kind == "select"}}
-                <label>{{f.Label}}
-                    <select name="{{f.Name}}" class="form-select">
+                {* 字段结构对齐全站主流：.form-field + `<label class="form-label" for>` + 控件，
+                   不再用「label 包裹控件」的写法。包裹式能跑（读屏靠包裹关系），但 49 个 label
+                   一个类都没有、也没有 for/id：样式与其它页漂移，脚本也没法定位到控件。
+                   f.Error 是保存失败后的**字段级**错误（handler 按出错值定位到字段）：
+                   控件上给 aria-invalid（基座 ui.css 用它画红框），下方给一行 .form-error 红字 ——
+                   用户不必在 52 个字段里猜哪里填错了。
+                   两个键都用 isset 包裹：直接渲染本模板的单测不带它们，缺键会让整页从这一行起断掉。 *}
+                <div class="form-field">
+                    {{if f.Kind == "select"}}
+                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
+                    <select id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-select"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
                         {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
                     </select>
-                </label>
-                {{else if f.Kind == "datalist"}}
-                <label>{{f.Label}}
-                    <input type="text" name="{{f.Name}}" class="form-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false">
+                    {{else if f.Kind == "datalist"}}
+                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
+                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
                     <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}</datalist>
-                </label>
-                {{else if f.Kind == "color"}}
-                <label>{{f.Label}}
-                    <input type="text" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="{{ .["t"]("admin.theme_settings.color_placeholder", "如 #3d444f；留空 = 内置默认") }}" spellcheck="false">
-                </label>
-                {{else}}
-                <label>{{f.Label}}<input type="text" name="{{f.Name}}" class="form-input" value="{{f.Value}}"></label>
+                    {{else if f.Kind == "color"}}
+                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
+                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="{{ .["t"]("admin.theme_settings.color_placeholder", "如 #3d444f；留空 = 内置默认") }}" spellcheck="false"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
+                    {{else}}
+                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
+                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" value="{{f.Value}}"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
+                    {{end}}
+                    {{if isset(f.Error)}}{{if f.Error}}<p class="form-error" role="alert">{{f.Error}}</p>{{end}}{{end}}
+                </div>
                 {{end}}
-                {{end}}
-            </div>
+                </div>
+                </div>
+            </details>
             {{end}}
 
-            <h3>{{ .["t"]("admin.theme_settings.global_blocks", "全局页眉 / 页脚块") }}</h3>
-            <div class="theme-color-grid">
-                <label>{{ .["t"]("admin.theme_settings.header_block", "页眉块") }}
-                    <select name="headerBlockId" class="form-select">
+            {* 全局块绑定：高频（改一次颜色往往连带调页眉页脚），默认展开；3 个 select 都是可编辑字段。 *}
+            <details class="section-fold" open>
+                <summary>
+                    <span class="fold-title">{{ .["t"]("admin.theme_settings.global_blocks", "全局页眉 / 页脚块") }}</span>
+                    <span class="fold-note">3 项 —— 构建期内联进产物</span>
+                </summary>
+                <div class="fold-body">
+                <div class="theme-color-grid">
+                <div class="form-field">
+                    <label class="form-label" for="tsf-headerBlockId">{{ .["t"]("admin.theme_settings.header_block", "页眉块") }}</label>
+                    <select id="tsf-headerBlockId" name="headerBlockId" class="form-select">
                         {{range _, b := .HeaderBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
-                </label>
-                <label>{{ .["t"]("admin.theme_settings.footer_block", "页脚块") }}
-                    <select name="footerBlockId" class="form-select">
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="tsf-footerBlockId">{{ .["t"]("admin.theme_settings.footer_block", "页脚块") }}</label>
+                    <select id="tsf-footerBlockId" name="footerBlockId" class="form-select">
                         {{range _, b := .FooterBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
-                </label>
+                </div>
                 {* 公告条（审计 VIS-012）：与页眉页脚同一条链路 —— 主题配一次，全站页面生效；
                    提交键走点分约定 slots.<槽位名>，后端按前缀扫描收，将来加槽位只需在这里多一个 select。
                    回显由服务端 selected 完成（前端回填脚本只处理 input 与页眉页脚两个 select，不碰它）。 *}
-                <label>{{ .["t"]("admin.theme_settings.announcement_block", "公告条块") }}
-                    <select name="slots.announcement" class="form-select">
+                <div class="form-field">
+                    <label class="form-label" for="tsf-slots-announcement">{{ .["t"]("admin.theme_settings.announcement_block", "公告条块") }}</label>
+                    <select id="tsf-slots-announcement" name="slots.announcement" class="form-select">
                         {{range _, b := .AnnouncementBlocks}}
                         <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlock}}selected{{end}}>{{b.Name}}</option>
                         {{end}}
                     </select>
-                </label>
-            </div>
+                </div>
+                </div>
+            </details>
 
-            <h3>{{ .["t"]("admin.theme_settings.structure_templates", "结构模板（页眉 / 页脚）") }}</h3>
-            <div class="theme-color-grid">
-                {* 结构模板与块是同一槽位的两条通道：构建期**模板优先**，模板未绑定或解析失败才回退块。
-                   两者都留着不是冗余 —— 选「不绑定」就能回到块绑定，不必重建一套块。
-                   候选里带「当前生效」标注：多套并存时最要紧的就是看出哪套真的在生效。 *}
-                <label>{{ .["t"]("admin.theme_settings.header_template", "页眉模板") }}
-                    <select name="headerTemplateId" class="form-select">
-                        <option value="">{{ .["t"]("admin.theme_settings.structure_none", "（不绑定，用上面的页眉块）") }}</option>
-                        {{if isset(.HeaderTemplateOptions)}}{{range _, o := .HeaderTemplateOptions}}
-                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
-                        {{end}}{{end}}
-                    </select>
-                </label>
-                <label>{{ .["t"]("admin.theme_settings.footer_template", "页脚模板") }}
-                    <select name="footerTemplateId" class="form-select">
-                        <option value="">{{ .["t"]("admin.theme_settings.structure_none_footer", "（不绑定，用上面的页脚块）") }}</option>
-                        {{if isset(.FooterTemplateOptions)}}{{range _, o := .FooterTemplateOptions}}
-                        <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
-                        {{end}}{{end}}
-                    </select>
-                </label>
-            </div>
-            <p class="text-mute text-sm">{{ .["t"]("admin.theme_settings.structure_hint", "结构模板在构建时优先于上面的块；模板未绑定或解析失败时回退到块，页眉不会因此消失。同一类型只允许一套生效，「设为生效」在内容模板列表页。") }}</p>
-            {* 哨兵域：告诉服务端「这次提交带了结构模板区块」——带了就按提交值写回
-               （空值 = 主动解绑），不带（旧表单 / 缺字段）保持已存值。 *}
+            {* 结构模板：本页**唯一**默认收起的区块。判据有两条 ——
+               ① 它「配一次就不再动」（构建期模板优先于块，改好之后长期不动），
+               ② 它不含「必须看见才知道要不要改」的信息：两个下拉与上面的页眉/页脚块是二选一的同一个槽位，
+                  收起后用户要改页眉仍然走上面那组（那组默认展开），不会因为收起而漏改什么。
+               与之相对，含可编辑字段的组一律默认展开（收起会让用户看不见却照常提交旧值）。 *}
+            <details class="section-fold">
+                <summary>
+                    <span class="fold-title">{{ .["t"]("admin.theme_settings.structure_templates", "结构模板（页眉 / 页脚）") }}</span>
+                    <span class="fold-note">2 项 —— 构建期优先于块</span>
+                </summary>
+                <div class="fold-body">
+                <div class="theme-color-grid">
+                    {* 结构模板与块是同一槽位的两条通道：构建期**模板优先**，模板未绑定或解析失败才回退块。
+                       两者都留着不是冗余 —— 选「不绑定」就能回到块绑定，不必重建一套块。
+                       候选里带「当前生效」标注：多套并存时最要紧的就是看出哪套真的在生效。 *}
+                    <div class="form-field">
+                        <label class="form-label" for="tsf-headerTemplateId">{{ .["t"]("admin.theme_settings.header_template", "页眉模板") }}</label>
+                        <select id="tsf-headerTemplateId" name="headerTemplateId" class="form-select">
+                            <option value="">{{ .["t"]("admin.theme_settings.structure_none", "（不绑定，用上面的页眉块）") }}</option>
+                            {{if isset(.HeaderTemplateOptions)}}{{range _, o := .HeaderTemplateOptions}}
+                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                            {{end}}{{end}}
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label class="form-label" for="tsf-footerTemplateId">{{ .["t"]("admin.theme_settings.footer_template", "页脚模板") }}</label>
+                        <select id="tsf-footerTemplateId" name="footerTemplateId" class="form-select">
+                            <option value="">{{ .["t"]("admin.theme_settings.structure_none_footer", "（不绑定，用上面的页脚块）") }}</option>
+                            {{if isset(.FooterTemplateOptions)}}{{range _, o := .FooterTemplateOptions}}
+                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                            {{end}}{{end}}
+                        </select>
+                    </div>
+                </div>
+                <p class="text-mute text-sm">{{ .["t"]("admin.theme_settings.structure_hint", "结构模板在构建时优先于上面的块；模板未绑定或解析失败时回退到块，页眉不会因此消失。同一类型只允许一套生效，「设为生效」在内容模板列表页。") }}</p>
+                </div>
+            </details>
+            {* 哨兵域与槽位回传域**留在 <details> 之外**：`<details>` 收起不影响表单提交（只有 disabled 才排除字段），
+               但这几个隐藏域表达的是「本次提交带了结构模板区块」这一协议事实，不该与「用户有没有展开」耦合 ——
+               放外面就没有任何「收起时是否失效」的疑问。 *}
             <input type="hidden" name="structureTemplateFields" value="1">
             {* 其余槽位的模板绑定（当前是公告条等）仍只做原样回传：这些槽位在本页没有下拉，
                清空它们等于丢掉别处配好的绑定。 *}
