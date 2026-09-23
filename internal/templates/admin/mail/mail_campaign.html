@@ -79,7 +79,7 @@
       <tr><td colspan="3" class="cell-wrap">
     <div class="empty-state">
       <p class="empty-title">{{ .["t"]("admin.mail.campaign.links_empty.title", "还没有点击数据") }}</p>
-      <p class="empty-desc">{{ .["t"]("admin.mail.campaign.links_empty", "还没有点击数据。") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.campaign.links_empty", "启动群发后，有收件人点击邮件链接才会显示排行。") }}</p>
       {* 空态动作：链接排行与投递明细一起为空，九成是活动还没启动（启动在营销页）。
          所以下一步是回营销页看活动状态 / 启动群发，不是一个本页的「刷新」。 *}
       <div class="empty-actions">
@@ -111,7 +111,7 @@
       <tr><td colspan="7" class="cell-wrap">
     <div class="empty-state">
       <p class="empty-title">{{ .["t"]("admin.mail.campaign.recipients_empty.title", "还没有投递记录") }}</p>
-      <p class="empty-desc">{{ .["t"]("admin.mail.campaign.recipients_empty", "还没有投递记录。") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.campaign.recipients_empty", "启动群发后，收件人会分批进入投递队列。") }}</p>
       {* 空态动作同上：收件人明细要等活动启动后才会分批展开。 *}
       <div class="empty-actions">
         <a class="btn" href="/admin/mail/marketing">{{ .["t"]("admin.mail.campaign.empty.action", "回营销页启动群发") }}</a>

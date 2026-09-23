@@ -127,7 +127,7 @@
       <tr><td colspan="8" class="cell-wrap">
     <div class="empty-state">
       <p class="empty-title">{{ .["t"]("admin.mail.marketing.contacts.empty.title", "没有匹配的联系人") }}</p>
-      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.contacts.empty", "没有匹配的联系人。换个筛选条件，或在下面折叠区里批量导入。") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.contacts.empty", "可调整筛选条件，或在下方折叠区批量导入联系人。") }}</p>
       {* 空态动作分档：这句标题在**有筛选**时才是真的（否则是「一个联系人都没有」，
          那与「没匹配上」是两回事，下一步也不同）。
          有筛选 → 一键清空筛选看全部；无筛选 → 不给按钮：下一步是下方折叠区的批量导入，
@@ -201,7 +201,7 @@
       <tr><td colspan="6" class="cell-wrap">
     <div class="empty-state">
       <p class="empty-title">{{ .["t"]("admin.mail.marketing.campaigns.empty.title", "还没有活动") }}</p>
-      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.campaigns.empty", "新建后点「启动群发」开始发送。") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.campaigns.empty", "新建活动后点「启动群发」开始发送。") }}</p>
       {{if canSaveCampaign}}
       <div class="empty-actions">
         <button type="button" class="btn btn-primary" data-drawer-open="#tpl-campaign-create" data-drawer-title="{{ .["t"]("admin.mail.marketing.new_campaign.heading", "新建活动") }}">＋ {{ .["t"]("admin.mail.marketing.new_campaign.heading", "新建活动") }}</button>
