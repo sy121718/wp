@@ -68,12 +68,18 @@ func TestSEOPageTemplateRendersAvailableAndMissingData(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"SEO 控制台", "演示站", "/guides/seo", "42", "17",
-		"/api/publication/seo-audit", "data-seo-audit-result", "data.issues", "issue.Message",
+		"/api/publication/seo-audit", "data-seo-audit-result", `hx-post="/api/publication/seo-audit"`,
+		`hx-target="[data-seo-audit-result]"`, `hx-swap="innerHTML"`,
 		"来源统计当前不可用",
 		"sitemap / feed 实时状态当前不可用", "外部搜索平台数据当前不可用",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("渲染结果缺少 %q，响应：%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{"window.fetch", "escapeHTML", "issue.Message", "data-msg-clean-lead"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("SEO 页面仍含客户端拼表代码 %q", forbidden)
 		}
 	}
 }
@@ -88,7 +94,7 @@ func TestSEOPageTemplateRequiresAuditPermissionForAction(t *testing.T) {
 		"Paths": []analyticscontract.PathCount{}, "HasPaths": false, "AnalyticsError": false, "PermSet": map[string]bool{},
 	}
 	body := renderAdminTemplate(t, "admin/analytics/seo.html", base)
-	if strings.Contains(body, "<form method=\"post\" action=\"/api/publication/seo-audit\" data-seo-audit-action>") {
+	if strings.Contains(body, `hx-post="/api/publication/seo-audit"`) {
 		t.Fatal("缺少 seo:audit 权限时不应渲染体检动作")
 	}
 	if !strings.Contains(body, "需要 SEO 体检权限") {

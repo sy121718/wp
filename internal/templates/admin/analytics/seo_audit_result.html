@@ -1,0 +1,17 @@
+{{if .AuditError}}
+<p class="badge badge-warning" role="alert">{{.AuditErrorText}}</p>
+{{else if len(.Issues) == 0}}
+<p class="badge badge-success" role="status">{{ .["t"]("admin.seo.audit.clean_lead", "已扫描 ") }}{{.Scanned}}{{ .["t"]("admin.seo.audit.clean_tail", " 个产物，未发现 SEO 问题。") }}</p>
+{{else}}
+<p role="status">{{ .["t"]("admin.seo.audit.issues_lead", "已扫描 ") }}{{.Scanned}}{{ .["t"]("admin.seo.audit.issues_mid", " 个产物，发现 ") }}{{.Count}}{{ .["t"]("admin.seo.audit.issues_tail", " 个问题。") }}</p>
+<div class="table-wrap table-scroll" tabindex="0">
+    <table class="data-table data-table-wide">
+        <thead><tr><th>{{ .["t"]("admin.seo.audit.col.level", "级别") }}</th><th>{{ .["t"]("admin.seo.audit.col.path", "路径") }}</th><th>{{ .["t"]("admin.seo.audit.col.issue", "问题") }}</th></tr></thead>
+        <tbody>
+        {{range _, issue := .Issues}}
+        <tr><td><span class="badge">{{issue.Level}}</span></td><td><code>{{issue.Path}}</code></td><td>{{issue.Message}}</td></tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

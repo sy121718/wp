@@ -2,16 +2,13 @@ package pubhttp
 
 import (
 	"net/http"
-	"strings"
 
 	pubcontract "go_wp/internal/module/publication/contract"
-	pubenums "go_wp/internal/module/publication/enums"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/permission"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -32,20 +29,8 @@ func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.
 	//
 	// 同步而不是异步任务：体检只读产物文件、不写库、不出网，一个中型站点几百份 HTML
 	// 的解析在毫秒级 —— 引入任务队列只会让「点了按钮没反应」成为新的排查对象。
-	// 权限点单独给（seo:audit），与「改 URL」「发布」分开：体检查出问题的人未必有权改。
-	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"), func(c *gin.Context) {
-		projectID := strings.TrimSpace(c.PostForm("project"))
-		if projectID == "" {
-			projectID = strings.TrimSpace(c.Query("project"))
-		}
-		issues, scanned, aerr := svc.RunSEOAudit(c.Request.Context(), projectID)
-		if aerr != nil {
-			// 原文（可能含产物路径 / SQL 片段）只进日志，对外给可翻译的归口文案（CQ-009）。
-			logger.Scene("publication").Error(aerr, "SEO 体检失败")
-			response.ErrorWithMessage(c, http.StatusBadRequest, pubenums.ErrAuditFailed)
-			return
-		}
-		response.Success(c, gin.H{"scanned": scanned, "issues": issues, "count": len(issues)})
-	})
+	// 真实路由需要 publication:seo_audit，额外校验迁移 183 的 seo:audit；
+	// 两条既有策略都必须命中，页面动作仍按 seo:audit 展示。
+	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"), seoAuditHandler(svc.RunSEOAudit))
 	return svc
 }

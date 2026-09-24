@@ -44,24 +44,15 @@
             </span>
         </h2>
         {{if isset(.PermSet["seo:audit"])}}
-        <form method="post" action="/api/publication/seo-audit" data-seo-audit-action>
+        <form method="post" action="/api/publication/seo-audit" data-seo-audit-action
+              hx-post="/api/publication/seo-audit" hx-target="[data-seo-audit-result]" hx-swap="innerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="project" value="{{selectedProject}}">
             <div class="action-row">
                 <button class="btn btn-primary" type="submit"{{if selectedProject == ""}} disabled{{end}}>{{ .["t"]("admin.seo.audit.run", "运行当前站点体检") }}</button>
             </div>
         </form>
-        <div class="stack" data-seo-audit-result aria-live="polite"
-             data-msg-loading="{{ .["t"]("admin.seo.audit.loading", "正在读取当前已激活产物…") }}"
-             data-msg-failed="{{ .["t"]("admin.seo.audit.request_failed", "体检请求失败") }}"
-             data-msg-clean-lead="{{ .["t"]("admin.seo.audit.clean_lead", "已扫描 ") }}"
-             data-msg-clean-tail="{{ .["t"]("admin.seo.audit.clean_tail", " 个产物，未发现 SEO 问题。") }}"
-             data-msg-issues-lead="{{ .["t"]("admin.seo.audit.issues_lead", "已扫描 ") }}"
-             data-msg-issues-mid="{{ .["t"]("admin.seo.audit.issues_mid", " 个产物，发现 ") }}"
-             data-msg-issues-tail="{{ .["t"]("admin.seo.audit.issues_tail", " 个问题。") }}"
-             data-msg-col-level="{{ .["t"]("admin.seo.audit.col.level", "级别") }}"
-             data-msg-col-path="{{ .["t"]("admin.seo.audit.col.path", "路径") }}"
-             data-msg-col-issue="{{ .["t"]("admin.seo.audit.col.issue", "问题") }}">
+        <div class="stack" data-seo-audit-result aria-live="polite">
             <div class="empty-state">
                 <p class="empty-title">{{ .["t"]("admin.seo.audit.placeholder", "运行体检后，此处显示当前产物中的 SEO 问题。") }}</p>
                 {* desc 复用上方 .help-pop 的同一个 key（admin.seo.audit.intro）—— 这一档缺的不是
@@ -115,48 +106,4 @@
         {{end}}
     </section>
 </div>
-<script>
-{* 文案由服务端按请求语言渲染进 data-msg-* 属性（与 login.html 同一手法）。 *}
-{* 这里用 Jet 注释而不是 JS 注释：门禁 check-i18n-coverage.sh 只剔 Jet 与 HTML 注释， *}
-{* JS 里的中文行（哪怕只是注释）会被计成未 key 化文案。 *}
-(function () {
-    var form = document.querySelector('[data-seo-audit-action]');
-    var result = document.querySelector('[data-seo-audit-result]');
-    if (!form || !result || !window.fetch) return;
-    var msg = function (name) {
-        var value = result.getAttribute('data-msg-' + name);
-        return value == null ? '' : value;
-    };
-    function escapeHTML(value) {
-        return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
-            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
-        });
-    }
-    form.addEventListener('submit', function (event) {
-        event.preventDefault();
-        var button = form.querySelector('button[type="submit"]');
-        button.disabled = true;
-        result.innerHTML = '<p class="badge badge-info">' + escapeHTML(msg('loading')) + '</p>';
-        fetch(form.action, {method: 'POST', body: new FormData(form), credentials: 'same-origin'})
-            .then(function (response) { return response.json().then(function (body) { return {ok: response.ok, body: body}; }); })
-            .then(function (response) {
-                if (!response.ok || !response.body || !response.body.data) throw new Error((response.body && response.body.message) || msg('failed'));
-                var data = response.body.data;
-                var issues = Array.isArray(data.issues) ? data.issues : [];
-                if (issues.length === 0) {
-                    result.innerHTML = '<p class="badge badge-success">' + escapeHTML(msg('clean-lead')) + escapeHTML(data.scanned) + escapeHTML(msg('clean-tail')) + '</p>';
-                    return;
-                }
-                var rows = issues.map(function (issue) {
-                    return '<tr><td><span class="badge">' + escapeHTML(issue.Level) + '</span></td><td><code>' + escapeHTML(issue.Path) + '</code></td><td>' + escapeHTML(issue.Message) + '</td></tr>';
-                }).join('');
-                result.innerHTML = '<p>' + escapeHTML(msg('issues-lead')) + escapeHTML(data.scanned) + escapeHTML(msg('issues-mid')) + escapeHTML(data.count) + escapeHTML(msg('issues-tail')) + '</p><div class="table-wrap"><table class="data-table data-table-wide"><thead><tr><th>' + escapeHTML(msg('col-level')) + '</th><th>' + escapeHTML(msg('col-path')) + '</th><th>' + escapeHTML(msg('col-issue')) + '</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
-            })
-            .catch(function (error) {
-                result.innerHTML = '<p class="badge badge-warning">' + escapeHTML(error && error.message ? error.message : msg('failed')) + '</p>';
-            })
-            .then(function () { button.disabled = false; });
-    });
-})();
-</script>
 {{end}}
