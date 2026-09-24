@@ -75,7 +75,7 @@ type Binding struct {
 // 判据是「src 与 alt 是两件事」：src 指图片文件，alt 是该图在**这一页**的意思
 // （同一张通用配图在不同文章里 alt 本就不同），所以两者各自绑定、互不牵连。
 type AltBinding struct {
-	Field    string `json:"field,omitempty" ct:"bindingfield,maxlen=60,sec=content,label="alt 字段"`
+	Field    string `json:"field,omitempty" ct:"bindingfield,maxlen=60,sec=content,label=alt 字段"`
 	Fallback string `json:"fallback,omitempty"`
 }
 
