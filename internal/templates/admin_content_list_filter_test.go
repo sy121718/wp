@@ -4,10 +4,9 @@ package templates
 //
 // 两类筛选机制、两组判据，缺一不可：
 //
-//   - 服务端（pages）：模板给 query key（?project=），handler 读过再回显。
-//     handler 侧的「条件真的进了 service.List」由 page/inbound/http/pages_filter_test.go 钉住；
-//     本文件钉模板这一侧：控件在、回显在、单工程时不渲染。
-//   - 客户端（articles / blocks / navigations）：admin.js 按 [data-filter-input] 过滤
+//   - 服务端（pages / articles）：模板提交 query，handler 先筛后分页并回显。
+//     handler 的过滤条件由各模块测试钉住；本文件钉模板控件与空态。
+//   - 客户端（blocks / navigations）：admin.js 按 [data-filter-input] 过滤
 //     [data-filter-text] 行、显隐 [data-filter-empty] 提示。三处契约**必须同时存在** ——
 //     只给输入框不给行的匹配文本，就是一个「能输入、无反应、也不报错」的死控件
 //     （项目在筛选栏上已经踩过一次，见 02-L §0.3 M-3）。
@@ -33,23 +32,9 @@ type contentFilterTemplate struct {
 	label string
 }
 
-// contentFilterClientPages 三个客户端筛选页的渲染数据（形状取自各页 handler 的真实注入键）。
+// contentFilterClientPages 客户端筛选页的渲染数据（形状取自各页 handler 的真实注入键）。
 func contentFilterClientPages() []contentFilterTemplate {
 	return []contentFilterTemplate{
-		{
-			name:  "admin/content/articles",
-			label: "articles",
-			rows:  1,
-			data: map[string]any{
-				"Rows": []any{map[string]any{
-					"ID": "a1", "Title": "标题甲", "Slug": "/hello", "Excerpt": "摘要甲",
-					"Revision": 3, "UpdatedAt": "2026-09-18 09:00", "Published": true,
-					"StateLabel": "已发布", "URLPath": "/hello", "PublicURL": "/site/hello",
-					"EditURL": "/admin/articles/edit?id=a1",
-				}},
-				"Total": 1, "Empty": false, "BlogBase": "/blog",
-			},
-		},
 		{
 			name:  "admin/block/blocks",
 			label: "blocks",
@@ -124,6 +109,22 @@ func TestContentListFilterBarIsWired(t *testing.T) {
 //
 // 空态两档的分工是 —— 筛选栏告诉用户「你可以筛」，「本来就没数据」的空态告诉他去创建；
 // 筛选栏跟着数据一起消失，用户就只剩一个「没有数据」的结论（还以为是筛选条件的问题）。
+func TestArticlesListFilterBarServerSide(t *testing.T) {
+	data := map[string]any{
+		"Rows": []any{}, "Total": 0, "Empty": true, "BlogBase": "/blog",
+		"Keyword": "摘要甲", "Limit": 20, "ClearFilterURL": "/admin/articles?limit=20",
+	}
+	out := renderAdminEmptyProbe(t, "admin/content/articles", data)
+	for _, want := range []string{`class="filter-bar"`, `method="get" action="/admin/articles"`, `name="keyword" value="摘要甲"`, `name="limit" value="20"`, `href="/admin/articles?limit=20"`, "没有匹配的文章"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("文章服务端筛选缺少 %q", want)
+		}
+	}
+	if strings.Contains(out, "data-filter-input") || strings.Contains(out, "data-filter-empty") {
+		t.Error("文章列表仍混用客户端当前页筛选")
+	}
+}
+
 func TestContentListFilterBarSurvivesEmptyData(t *testing.T) {
 	cases := []struct {
 		name string
@@ -147,8 +148,11 @@ func TestContentListFilterBarSurvivesEmptyData(t *testing.T) {
 			if !strings.Contains(out, `class="filter-bar"`) {
 				t.Error("空数据时筛选栏消失了：用户失去了「我是不是筛错了」的最后一条线索")
 			}
-			if !strings.Contains(out, "data-filter-input") {
-				t.Error("空数据时筛选输入框不在：清空关键词的路径断了")
+			if tc.name != "admin/content/articles" && !strings.Contains(out, "data-filter-input") {
+				t.Error("空数据时客户端筛选输入框不在：清空关键词的路径断了")
+			}
+			if tc.name == "admin/content/articles" && !strings.Contains(out, `name="keyword"`) {
+				t.Error("空数据时文章服务端关键词筛选框不在")
 			}
 		})
 	}

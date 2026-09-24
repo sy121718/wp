@@ -130,7 +130,7 @@ func NewArticlePageHandle(contents contentcontract.ContentService, projects proj
 // ArticlesPage 文章列表（GET /admin/articles）。
 //
 // 分页（审计 02-L P1-14）：页码与每页条数走 shell.PageParams，总数由内容契约的 Count 给出
-//（与 List 同一份过滤条件：实体类型），列表按 offset 取当页 —— 不再「一次取 50 条、
+// （与 List 同一份过滤条件：实体类型和关键词），列表按 offset 取当页 —— 不再「一次取 50 条、
 // 超过 50 篇的文章在页面上根本不存在」。
 //
 // 取数顺序是**先计数 → 收敛页码 → 再取当页**（上一轮的实测教训，货源页与采购页各踩过一次）：
@@ -145,21 +145,25 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	pageOk := articleQueryText(c, c.Query("ok"), "")
 
 	page, limit := shell.PageParams(c)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	filter := &contentdto.ListReq{EntityType: articleEntityType, Keyword: keyword}
 	// 先计数。总数只用于「总页数」与页码收敛；计数失败不阻塞列表取数（列表照常按原页码取），
 	// 但会把错误显示出来 —— 静默地「没有分页条」会让人以为文章本来就不多。
-	total, cerr := h.contents.Count(ctx, &contentdto.ListReq{EntityType: articleEntityType})
+	total, cerr := h.contents.Count(ctx, filter)
 	if cerr != nil {
 		pageErr = firstNonEmpty(pageErr, articleFacingError(c, cerr))
 	} else {
 		page = articleClampPage(page, limit, total)
 	}
-	list, err := h.contents.List(ctx, &contentdto.ListReq{
-		EntityType: articleEntityType, Limit: limit, Offset: (page - 1) * limit,
-	})
+	filter.Limit, filter.Offset = limit, (page-1)*limit
+	list, err := h.contents.List(ctx, filter)
 	if err != nil {
 		pageErr = firstNonEmpty(pageErr, articleFacingError(c, err))
 	}
 	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk)
+	data["Keyword"] = keyword
+	data["Limit"] = limit
+	data["ClearFilterURL"] = shell.FilterBaseURL("/admin/articles", map[string]string{"limit": strconv.Itoa(limit)})
 	// Total 覆盖为**真源总数**：articleListPageData 给的是当页行数，分页之后它不再等于
 	// 文章总数 —— 不覆盖的话列表工具栏会写着「全部文章（20）」，而库里有两百篇。
 	if cerr == nil {
@@ -168,12 +172,9 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	// 分页条（shell 组件，服务端渲染）：单页或空数据时 BuildPagination 返回 nil，
 	// TemplateKeys 给空 map，模板的 {{if .["PaginationLinks"]}} 自然跳过。
 	//
-	// 基地址不带查询参数：本页的关键词筛选是**客户端**过滤（见模板的 filter-bar 与
-	// admin.js 的 [data-filter-input]），服务端没有筛选维度；而 ?err= / ?ok= / ?done= 是
-	// 一次性回执，拼进基地址会让翻页后重复弹出同一条提示。走 FilterBaseURL 是为了让
-	// 「以后加了服务端筛选条件只需在这里补一个键」这条路存在（与商品各子列表同一手法）。
+	// 翻页保留关键词，回执 ?err= / ?ok= / ?done= 不进基地址，避免翻页后重复显示。
 	for k, v := range shell.BuildPagination(total, page, limit,
-		shell.FilterBaseURL("/admin/articles", nil), shell.TranslateFor(c)).TemplateKeys() {
+		shell.FilterBaseURL("/admin/articles", map[string]string{"keyword": keyword}), shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。

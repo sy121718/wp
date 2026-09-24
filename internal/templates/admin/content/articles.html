@@ -12,6 +12,9 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{rows := .Rows}}
+{{keyword := ""}}{{if isset(.Keyword)}}{{keyword = .Keyword}}{{end}}
+{{limit := 20}}{{if isset(.Limit)}}{{limit = .Limit}}{{end}}
+{{clearFilterURL := "/admin/articles"}}{{if isset(.ClearFilterURL)}}{{clearFilterURL = .ClearFilterURL}}{{end}}
 {{canCreate := isset(.PermSet["content:create"])}}
 <div class="stack articles-page">
     <header class="page-head">
@@ -72,21 +75,21 @@
     {{end}}
 
     <section class="card list-card">
-        {* 筛选栏（客户端过滤：输入即过滤行，不发请求、不刷新页面）。
-           为什么是客户端而不是服务端：content 模块的 List 只认 entityType + limit/offset，
-           没有任何关键词 / 状态维度（见 contentdto.ListReq）—— 本批不越界改 service，
-           于是走项目既有的客户端过滤机制（admin.js 的 [data-filter-input]，样板 menus.html）。
-           匹配字段见每行的 data-filter-text（标题 / 路径 / 摘要 / 状态）。
-           没有 .filter-actions：即时过滤没有「提交」这一步，渲染一个筛按钮只会让人以为要点。 *}
-        <div class="filter-bar">
+        {* 关键词由服务端先筛选再分页；清除只移除关键词，保留每页条数。 *}
+        <form class="filter-bar" method="get" action="/admin/articles">
+            <input type="hidden" name="limit" value="{{limit}}">
             <div class="filter-fields">
                 <div class="filter-field">
                     <label for="article-filter-keyword">{{ .["t"]("admin.article.list.filterLabel", "关键词") }}</label>
-                    <input type="text" class="form-input filter-search" id="article-filter-keyword" data-filter-input
-                           placeholder="{{ .["t"]("admin.article.list.filterPlaceholder", "标题 / 路径 / 摘要 / 状态") }}" autocomplete="off">
+                    <input type="search" class="form-input filter-search" id="article-filter-keyword" name="keyword" value="{{keyword}}"
+                           placeholder="{{ .["t"]("admin.article.list.filterPlaceholder", "文章标题 / 路径") }}" autocomplete="off">
                 </div>
             </div>
-        </div>
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-primary">{{tr("admin.common.filter.submit", "筛选")}}</button>
+                <a class="btn" href="{{clearFilterURL}}">{{tr("admin.common.action.reset", "重置")}}</a>
+            </div>
+        </form>
         {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知，
            也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan = 列数）。 *}
         {{if !.Empty}}
@@ -125,6 +128,10 @@
                 {* 空态整行：colspan = 8 列（勾选 / 标题 / 路径 / 摘要 / 状态 / 版本 / 更新时间 / 操作）。 *}
                 <tr><td colspan="8" class="cell-wrap">
                     <div class="empty-state">
+                        {{if keyword != ""}}
+                        <p class="empty-title">{{ .["t"]("admin.article.list.filterEmpty", "没有匹配的文章。换一个关键词，或清空关键词看全部。") }}</p>
+                        <div class="empty-actions"><a class="btn" href="{{clearFilterURL}}">{{tr("admin.common.action.reset", "重置")}}</a></div>
+                        {{else}}
                         <p class="empty-title">{{ .["t"]("admin.article.list.emptyTitle", "还没有文章") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.article.list.emptyDesc", "用右上角「新建文章」建第一篇；正文、摘要、封面与 SEO 字段都在编辑页里填。") }}</p>
                         {{if canCreate}}
@@ -132,13 +139,12 @@
                             <a class="btn btn-primary" href="/admin/articles/new">＋ {{ .["t"]("admin.article.list.createSubmit", "创建并开始编辑") }}</a>
                         </div>
                         {{end}}
+                        {{end}}
                     </div>
                 </td></tr>
                 {{else}}
                 {{range _, r := rows}}
-                {* data-filter-text = 这行的可筛文本（客户端筛选按它匹配，见上方筛选栏注释）。
-                   少给它就等于「筛不出这行」：加列时请同批补上这一行的可筛字段。 *}
-                <tr data-filter-text="{{r.Title}} {{r.Slug}} {{r.Excerpt}} {{r.StateLabel}}">
+                <tr>
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
@@ -176,11 +182,6 @@
            放进 .table-scroll 会跟着表格横向滚走，放进 <form> 会被批量勾选一起提交。 *}
         {{include "../partials/pagination.html"}}
 
-        {* 客户端筛选无结果提示：admin.js 的 applyFilter 按 [data-filter-empty] 控制显隐
-           （契约是「有关键词且 0 行可见」才显形），用来把「被筛掉了」与「本来就没有文章」
-           在界面上分开 —— 两档的下一步动作也不一样（清空关键词 vs 去创建第一篇）。
-           放在表格之后而不是 .table-scroll 里：滚动容器内会被滚走，提示也就看不见了。 *}
-        <p class="empty-desc" data-filter-empty hidden>{{ .["t"]("admin.article.list.filterEmpty", "没有匹配的文章。换一个关键词，或清空关键词看全部。") }}</p>
     </section>
 
     {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}

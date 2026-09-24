@@ -68,14 +68,17 @@ func articleListPageData(list []*contentdto.ContentResp, published map[string]st
 		rows = append(rows, articleListRow(it, published[it.ID]))
 	}
 	return gin.H{
-		"title":    articlePageTitle,
-		"menu":     "articles",
-		"Rows":     rows,
-		"Total":    len(rows),
-		"Empty":    len(rows) == 0,
-		"Err":      pageErr,
-		"Ok":       pageOk,
-		"BlogBase": articleBlogPathPrefix,
+		"title":          articlePageTitle,
+		"menu":           "articles",
+		"Rows":           rows,
+		"Total":          len(rows),
+		"Empty":          len(rows) == 0,
+		"Err":            pageErr,
+		"Ok":             pageOk,
+		"BlogBase":       articleBlogPathPrefix,
+		"Keyword":        "",
+		"ClearFilterURL": "/admin/articles",
+		"Limit":          articleListPageSize,
 	}
 }
 

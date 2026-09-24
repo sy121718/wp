@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	"go_wp/internal/templates"
 )
@@ -74,6 +75,81 @@ func TestArticlesListTemplateRenders(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页渲染结果缺少 %q", want)
 		}
+	}
+}
+
+type articleSearchContentStub struct {
+	contentcontract.ContentService
+	countReq contentdto.ListReq
+	listReq  contentdto.ListReq
+	total    int64
+}
+
+func (s *articleSearchContentStub) Count(_ context.Context, req *contentdto.ListReq) (int64, error) {
+	s.countReq = *req
+	return s.total, nil
+}
+
+func (s *articleSearchContentStub) List(_ context.Context, req *contentdto.ListReq) ([]*contentdto.ContentResp, error) {
+	s.listReq = *req
+	if s.total == 0 {
+		return nil, nil
+	}
+	return []*contentdto.ContentResp{{ID: "a2", Slug: "needle-two", Data: map[string]any{"title": "第二篇匹配"}}}, nil
+}
+
+func TestArticlesPageKeywordFiltersBeforePagination(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	contents := &articleSearchContentStub{total: 2}
+	h := &articlePageHandle{contents: contents}
+	engine.GET("/admin/articles", h.ArticlesPage)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles?keyword=+needle+&page=99&limit=1", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("搜索列表响应状态 %d: %s", rec.Code, rec.Body.String())
+	}
+	if contents.countReq.EntityType != "article" || contents.countReq.Keyword != "needle" {
+		t.Errorf("计数筛选条件错误: %+v", contents.countReq)
+	}
+	if contents.listReq.EntityType != "article" || contents.listReq.Keyword != "needle" ||
+		contents.listReq.Limit != 1 || contents.listReq.Offset != 1 {
+		t.Errorf("列表应按筛选后的总数收敛页码并取第二页: %+v", contents.listReq)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`name="keyword" value="needle"`, `name="limit" value="1"`, `href="/admin/articles?keyword=needle&amp;page=1&amp;limit=1"`, `href="/admin/articles?limit=1"`, "第二篇匹配"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("搜索列表缺少 %q", want)
+		}
+	}
+	if strings.Contains(body, `data-filter-input`) {
+		t.Error("旧的当前页 DOM 过滤入口仍然存在")
+	}
+}
+
+func TestArticlesPageKeywordNoMatches(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	contents := &articleSearchContentStub{total: 0}
+	engine.GET("/admin/articles", (&articlePageHandle{contents: contents}).ArticlesPage)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles?keyword=missing&page=8", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("无匹配搜索响应状态 %d: %s", rec.Code, rec.Body.String())
+	}
+	if contents.countReq.Keyword != "missing" || contents.listReq.Keyword != "missing" || contents.listReq.Offset != 0 {
+		t.Errorf("无匹配应从第一页取筛选结果: count=%+v list=%+v", contents.countReq, contents.listReq)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "没有匹配的文章") || !strings.Contains(body, `href="/admin/articles?limit=20"`) {
+		t.Error("无匹配空态应提供清除筛选入口")
+	}
+	if strings.Contains(body, "还没有文章") || strings.Contains(body, `class="pagination"`) {
+		t.Error("无匹配不应显示首次创建空态或分页条")
 	}
 }
 
