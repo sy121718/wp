@@ -160,7 +160,8 @@
     {* ===== 新建仓库（抽屉表单模板） ===== *}
     {{if isset(.PermSet["inventory:warehouse_create"])}}
     <template id="tpl-warehouse-create">
-        <form method="post" action="/admin/inventory/warehouse/create">
+        <div data-inventory-warehouse-host>
+        <form method="post" action="/admin/inventory/warehouse/create" hx-post="/admin/inventory/warehouse/create" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -220,13 +221,15 @@
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
             </div>
         </form>
+        </div>
     </template>
     {{end}}
 
     {* ===== 编辑仓库（每行一份模板，id 带行 ID） ===== *}
     {{range _, w := .Warehouses}}
     <template id="tpl-warehouse-edit-{{w.ID}}">
-        <form method="post" action="/admin/inventory/warehouse/update">
+        <div data-inventory-warehouse-host>
+        <form method="post" action="/admin/inventory/warehouse/update" hx-post="/admin/inventory/warehouse/update" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">
@@ -292,6 +295,7 @@
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.list.save", "保存仓库") }}</button>
             </div>
         </form>
+        </div>
     </template>
     {{end}}
 </div>

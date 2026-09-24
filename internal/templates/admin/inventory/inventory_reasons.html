@@ -103,7 +103,8 @@
 
     {{if isset(.PermSet["inventory:reason_create"])}}
     <template id="tpl-reason-create">
-        <form method="post" action="/admin/inventory/reason/create" class="form-stack">
+        <div data-inventory-reason-host>
+        <form method="post" action="/admin/inventory/reason/create" class="form-stack" hx-post="/admin/inventory/reason/create" hx-target="closest [data-inventory-reason-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -131,6 +132,7 @@
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory.reasons.create", "新建自定义原因") }}</button>
             </div>
         </form>
+        </div>
     </template>
     {{end}}
 </div>

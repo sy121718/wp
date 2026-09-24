@@ -1,0 +1,50 @@
+{{fill := isset(.FormEcho)}}
+{{edit := .IsEdit}}
+{{w := .Row}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{echo := map()}}
+{{if fill}}{{echo = .FormEcho}}{{end}}
+<div data-inventory-warehouse-host>
+    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    <form method="post" action="{{if edit}}/admin/inventory/warehouse/update{{else}}/admin/inventory/warehouse/create{{end}}"
+          hx-post="{{if edit}}/admin/inventory/warehouse/update{{else}}/admin/inventory/warehouse/create{{end}}"
+          hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{if fill}}{{echo.projectId}}{{else}}{{.SelectedProject}}{{end}}">
+        {{if edit}}<input type="hidden" name="id" value="{{if fill}}{{echo.id}}{{else}}{{w.ID}}{{end}}">{{end}}
+        <div class="form-group"><label class="form-label req">{{tr("admin.inventory.label.code", "仓库短码")}}</label>
+            <input type="text" class="form-input" name="code" value="{{if fill}}{{echo.code}}{{else if edit}}{{w.Code}}{{end}}" required autocomplete="off"></div>
+        <div class="form-group"><label class="form-label req">{{tr("admin.inventory.label.name", "仓库名称")}}</label>
+            <input type="text" class="form-input" name="name" value="{{if fill}}{{echo.name}}{{else if edit}}{{w.Name}}{{end}}" required></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.ph.sort", "排序")}}</label>
+            <input type="number" class="form-input" name="sort" value="{{if fill}}{{echo.sort}}{{else if edit}}{{w.Sort}}{{else}}0{{end}}" inputmode="numeric" step="1"></div>
+        {{if not edit}}<label class="var-value"><input type="checkbox" name="isDefault" value="1" {{if fill}}{{if echo.isDefault == "1"}}checked{{end}}{{end}}> {{tr("admin.inventory.setDefault", "设为默认仓")}}</label>{{end}}
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.col.type", "类型")}}</label>
+            <select class="form-select" name="type">
+                {{range _, t := .WarehouseTypes}}<option value="{{t.Value}}" {{if fill}}{{if t.Value == echo.type}}selected{{end}}{{else if edit}}{{if t.Value == w.Type}}selected{{end}}{{end}}>{{t.Label}}</option>{{end}}
+            </select></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.warehouse.provider", "对接方")}}</label>
+            <input type="text" class="form-input" name="provider" value="{{if fill}}{{echo.provider}}{{else if edit}}{{w.Provider}}{{end}}" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.warehouse.externalCode", "外部仓代码")}}</label>
+            <input type="text" class="form-input" name="externalCode" value="{{if fill}}{{echo.externalCode}}{{else if edit}}{{w.ExternalCode}}{{end}}" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.warehouse.address", "仓库地址")}}</label>
+            <input type="text" class="form-input" name="address" value="{{if fill}}{{echo.address}}{{else if edit}}{{w.Address}}{{end}}" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.warehouse.contact", "联系人")}}</label>
+            <input type="text" class="form-input" name="contact" value="{{if fill}}{{echo.contact}}{{else if edit}}{{w.Contact}}{{end}}" autocomplete="off"></div>
+        <label class="var-value"><input type="checkbox" name="allowsShipping" value="1" {{if fill}}{{if echo.allowsShipping == "1"}}checked{{end}}{{else if edit}}{{if w.AllowsShipping}}checked{{end}}{{end}}> {{tr("admin.inventory.warehouse.allowsShipping", "允许发货")}}</label>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.warehouse.credential", "API 凭据")}}</label>
+            <input type="password" class="form-input" name="apiCredential" value="{{if fill}}{{echo.apiCredential}}{{end}}" autocomplete="new-password" placeholder="{{tr("admin.inventory.warehouse.phCredential", "留空表示不修改；填写后加密存储，页面只回显掩码")}}"></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.warehouse.secretRef", "凭据引用名")}}</label>
+            <input type="text" class="form-input" name="secretRef" value="{{if fill}}{{echo.secretRef}}{{else if edit}}{{w.SecretRef}}{{end}}" autocomplete="off"></div>
+        {{if edit}}<div class="form-group"><label class="form-label">{{tr("admin.inventory.col.status", "状态")}}</label>
+            <select class="form-select" name="status">
+                <option value="active" {{if fill}}{{if echo.status == "active"}}selected{{end}}{{else if w.Status == "active"}}selected{{end}}>{{tr("admin.inventory.status.active", "启用中")}}</option>
+                <option value="disabled" {{if fill}}{{if echo.status == "disabled"}}selected{{end}}{{else if w.Status == "disabled"}}selected{{end}}>{{tr("admin.inventory.status.disabled", "已停用")}}</option>
+            </select></div>{{end}}
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{if edit}}{{tr("admin.inventory.list.save", "保存仓库")}}{{else}}{{tr("admin.inventory.create.submit", "新建仓库")}}{{end}}</button>
+        </div>
+    </form>
+</div>

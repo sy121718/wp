@@ -1,0 +1,71 @@
+{{pcFill := isset(.FormEcho)}}
+{{pcProject := .["SelectedProject"]}}
+{{if pcFill}}{{pcProject = .FormEcho.projectId}}{{end}}
+{{pcCode := ""}}{{pcSource := ""}}{{pcWarehouse := ""}}{{pcRemark := ""}}
+{{if pcFill}}
+{{pcCode = .FormEcho.code}}
+{{pcSource = .FormEcho.sourceId}}
+{{pcWarehouse = .FormEcho.warehouseId}}
+{{pcRemark = .FormEcho.remark}}
+{{end}}
+<div data-purchase-create-host>
+    {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
+    <p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>
+    {{end}}{{end}}
+    <form method="post" action="/admin/inventory/purchases/create" class="form-stack"
+          hx-post="/admin/inventory/purchases/create" hx-target="closest [data-purchase-create-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="projectId" value="{{pcProject}}">
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}</label>
+            <input type="text" class="form-input" name="code" value="{{pcCode}}" placeholder="{{ .["t"]("admin.inventory_purchases.ph.code", "如 PO-20260101-001") }}" required autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{ .["t"]("admin.inventory_purchases.create.optionSource", "来源") }}</label>
+            <select class="form-select" name="sourceId" required>
+                <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（选择货源）") }}</option>
+                {{range _, s := .Sources}}
+                <option value="{{s.ID}}" {{if s.ID == pcSource}}selected{{end}}>{{s.Label}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "收货仓") }}</label>
+            <select class="form-select" name="warehouseId">
+                <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（默认仓）") }}</option>
+                {{range _, w := .Warehouses}}
+                <option value="{{w.ID}}" {{if w.ID == pcWarehouse}}selected{{end}}>{{w.Label}}</option>
+                {{end}}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{ .["t"]("admin.inventory_purchases.ph.remark", "备注") }}</label>
+            <input type="text" class="form-input" name="remark" value="{{pcRemark}}" placeholder="{{ .["t"]("admin.inventory_purchases.ph.remark", "合同号 / 到货批次") }}" autocomplete="off">
+        </div>
+        <p class="hint">{{ .["t"]("admin.inventory_purchases.create.linesHint", "采购行（每行一个 SKU；空行会被忽略；同一张单里同一个 SKU 只能出现一次）：") }}</p>
+        {{range _, row := .DraftLines}}
+        {{pcSku := ""}}{{pcQty := ""}}{{pcPrice := ""}}
+        {{if isset(row.SKU)}}{{pcSku = row.SKU}}{{end}}
+        {{if isset(row.Quantity)}}{{pcQty = row.Quantity}}{{end}}
+        {{if isset(row.UnitPrice)}}{{pcPrice = row.UnitPrice}}{{end}}
+        <div class="form-inline">
+            <select class="form-select" name="lineSku" aria-label="{{ .["t"]("admin.inventory_purchases.create.optionSku", "选择 SKU") }}">
+                <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
+                {{range _, o := .VariantOptions}}
+                {{if isset(o.ProductID) && isset(o.BareSKU)}}
+                <option value="{{o.VariantID}}|{{o.ProductID}}|{{o.BareSKU}}" {{if o.VariantID + "|" + o.ProductID + "|" + o.BareSKU == pcSku}}selected{{end}}>{{o.Label}}</option>
+                {{else}}
+                <option disabled>{{o.Label}}</option>
+                {{end}}
+                {{end}}
+            </select>
+            <input type="number" class="form-input" name="lineQuantity" value="{{pcQty}}" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineQty", "采购数量") }}" inputmode="numeric" step="1" min="1">
+            <input type="number" class="form-input" name="lineUnitPrice" value="{{pcPrice}}" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineUnitPrice", "采购单价") }}" inputmode="decimal" step="0.01" min="0.01">
+        </div>
+        {{end}}
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
+        </div>
+    </form>
+</div>

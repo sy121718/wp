@@ -257,10 +257,10 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
 		Lines:       purchaseLinesForm(c),
 	}
 	if _, err := h.inventory.CreatePurchaseOrder(c.Request.Context(), req); err != nil {
-		redirectPurchaseErr(c, projectID, err)
+		h.purchaseCreateFail(c, projectID, err)
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/inventory/purchases?project="+urlQueryEscape(projectID)+"&ok=1")
+	purchaseCreateSuccess(c, projectID)
 }
 
 // InventoryPurchaseReceipt 登记某一行（或多行）采购收货。

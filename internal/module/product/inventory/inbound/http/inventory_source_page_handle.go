@@ -129,7 +129,9 @@ func (d *inventorySourcesPageData) templateMap() gin.H {
 // renderSourcesPage 货源页的唯一渲染出口：正常与降级两条路都从这里出，
 // 键集只有一处定义（降级分支不必「记得」补齐模板要的每一个键）。
 func (h *inventorySourcePageHandle) renderSourcesPage(c *gin.Context, d *inventorySourcesPageData) {
-	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", shell.Prepare(c, d.templateMap()))
+	data := d.templateMap()
+	data["SourceCreateForm"] = sourceFormData(c, false, nil)
+	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", shell.Prepare(c, data))
 }
 
 // InventorySourcesPage 货源管理页：工程切换 + 关联方统计 + 筛选 + 新建 + 列表（可编辑）。
@@ -275,15 +277,15 @@ func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
 	}
 	price, perr := sourceSettleForm(c.PostForm("settlePrice"))
 	if perr != nil {
-		redirectSourceErr(c, projectID, perr)
+		h.sourceFormFail(c, false, perr)
 		return
 	}
 	req.SettlePrice = price
 	if _, err := h.inventory.CreateSource(c.Request.Context(), req); err != nil {
-		redirectSourceErr(c, projectID, err)
+		h.sourceFormFail(c, false, err)
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&ok=1")
+	redirectWhere(c, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&ok=1")
 }
 
 // InventorySourceUpdate 修改货源（表单即最终状态：结算价留空 = 清空）。
@@ -307,7 +309,7 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 	// 表单是最终状态：留空即「这条货源没有结算价」，显式交给 service 清空。
 	price, perr := sourceSettleForm(c.PostForm("settlePrice"))
 	if perr != nil {
-		redirectSourceErr(c, projectID, perr)
+		h.sourceFormFail(c, true, perr)
 		return
 	}
 	if price == nil {
@@ -316,10 +318,10 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 		req.SettlePrice = price
 	}
 	if _, err := h.inventory.UpdateSource(c.Request.Context(), req); err != nil {
-		redirectSourceErr(c, projectID, err)
+		h.sourceFormFail(c, true, err)
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&ok=1")
+	redirectWhere(c, "/admin/inventory/sources?project="+urlQueryEscape(projectID)+"&ok=1")
 }
 
 // InventorySourceDelete 删除货源。
@@ -528,4 +530,31 @@ func prettyJSON(raw json.RawMessage) string {
 // 基础设施错误只给归口文案（原文进日志）。与库存页其余写入口是同一套助手。
 func redirectSourceErr(c *gin.Context, projectID string, err error) {
 	c.Redirect(http.StatusFound, inventoryErrURL(c, "/admin/inventory/sources", projectID, err))
+}
+
+var sourceCreateFields = []string{"projectId", "code", "name", "type", "relatedParty", "settlePrice", "sort", "config"}
+var sourceEditFields = []string{"projectId", "id", "code", "name", "type", "relatedParty", "status", "settlePrice", "sort", "config"}
+
+func sourceFormData(c *gin.Context, edit bool, row gin.H) gin.H {
+	return gin.H{
+		"IsEdit": edit, "Row": row, "SelectedProject": c.PostForm("projectId"),
+		"TypeOptions": sourceTypeOptions(), "RelatedOptions": sourceRelatedOptions(),
+		"StatusOptions": sourceStatusOptions(),
+	}
+}
+
+func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, edit bool, err error) {
+	projectID := c.PostForm("projectId")
+	if !isHXRequest(c) {
+		redirectSourceErr(c, projectID, err)
+		return
+	}
+	fields := sourceCreateFields
+	if edit {
+		fields = sourceEditFields
+	}
+	data := sourceFormData(c, edit, nil)
+	data["FormEcho"] = inventoryRawFormValues(c, fields)
+	data["SubmitErr"] = inventoryErrText(c, err)
+	c.HTML(http.StatusOK, "admin/inventory/inventory_source_form.html", shell.Prepare(c, data))
 }

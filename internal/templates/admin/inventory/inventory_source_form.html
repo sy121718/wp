@@ -1,0 +1,47 @@
+{{fill := isset(.FormEcho)}}
+{{edit := .IsEdit}}
+{{s := .Row}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{echo := map()}}
+{{if fill}}{{echo = .FormEcho}}{{end}}
+<div data-inventory-source-host>
+    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    <form method="post" action="{{if edit}}/admin/inventory/sources/update{{else}}/admin/inventory/sources/create{{end}}" class="form-stack"
+          hx-post="{{if edit}}/admin/inventory/sources/update{{else}}/admin/inventory/sources/create{{end}}"
+          hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{if fill}}{{echo.projectId}}{{else}}{{.SelectedProject}}{{end}}">
+        {{if edit}}<input type="hidden" name="id" value="{{if fill}}{{echo.id}}{{else}}{{s.ID}}{{end}}">{{end}}
+        <div class="form-group"><label class="form-label req">{{tr("admin.inventory_sources.label.code", "货源编码")}}</label>
+            <input type="text" class="form-input" name="code" value="{{if fill}}{{echo.code}}{{else if edit}}{{s.Code}}{{end}}" required autocomplete="off"></div>
+        <div class="form-group"><label class="form-label req">{{tr("admin.inventory_sources.label.name", "货源名称")}}</label>
+            <input type="text" class="form-input" name="name" value="{{if fill}}{{echo.name}}{{else if edit}}{{s.Name}}{{end}}" required></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory_sources.stats.col.type", "类型")}}</label>
+            <select class="form-select" name="type">
+                {{range _, t := .TypeOptions}}<option value="{{t.Value}}" {{if fill}}{{if t.Value == echo.type}}selected{{end}}{{else if edit}}{{if t.Value == s.Type}}selected{{end}}{{end}}>{{t.Label}}</option>{{end}}
+            </select></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory_sources.stats.col.related", "关联方")}}</label>
+            <select class="form-select" name="relatedParty">
+                {{if edit}}
+                <option value="" {{if fill}}{{if echo.relatedParty == ""}}selected{{end}}{{end}}>{{tr("admin.inventory_sources.update.optionKeep", "（不改 / 按类型默认）")}}</option>
+                <option value="true" {{if fill}}{{if echo.relatedParty == "true"}}selected{{end}}{{else if s.RelatedParty}}selected{{end}}>{{tr("admin.inventory_sources.stats.related", "关联方")}}</option>
+                <option value="false" {{if fill}}{{if echo.relatedParty == "false"}}selected{{end}}{{else if not s.RelatedParty}}selected{{end}}>{{tr("admin.inventory_sources.stats.unrelated", "非关联方")}}</option>
+                {{else}}{{range _, r := .RelatedOptions}}<option value="{{r.Value}}" {{if fill}}{{if r.Value == echo.relatedParty}}selected{{end}}{{end}}>{{r.Label}}</option>{{end}}{{end}}
+            </select></div>
+        {{if edit}}<div class="form-group"><label class="form-label">{{tr("admin.inventory_sources.col.status", "状态")}}</label>
+            <select class="form-select" name="status">
+                {{range _, st := .StatusOptions}}<option value="{{st.Value}}" {{if fill}}{{if st.Value == echo.status}}selected{{end}}{{else if st.Value == s.Status}}selected{{end}}>{{st.Label}}</option>{{end}}
+            </select></div>{{end}}
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory_sources.col.settlePrice", "结算价")}}</label>
+            <input type="number" class="form-input" name="settlePrice" value="{{if fill}}{{echo.settlePrice}}{{else if edit}}{{if s.HasSettlePrice}}{{s.SettlePrice}}{{end}}{{end}}" inputmode="decimal" step="0.01" min="0"></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory.ph.sort", "排序")}}</label>
+            <input type="number" class="form-input" name="sort" value="{{if fill}}{{echo.sort}}{{else if edit}}{{s.Sort}}{{else}}0{{end}}" inputmode="numeric" step="1"></div>
+        <div class="form-group"><label class="form-label">{{tr("admin.inventory_sources.ph.config", "对接配置（JSON 对象）")}}</label>
+            <textarea class="form-textarea" name="config" rows="3">{{if fill}}{{echo.config}}{{else if edit}}{{s.Config}}{{end}}</textarea></div>
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{if edit}}{{tr("admin.inventory_sources.list.save", "保存货源")}}{{else}}{{tr("admin.inventory_sources.create.submit", "新建货源")}}{{end}}</button>
+        </div>
+    </form>
+</div>

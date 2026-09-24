@@ -256,7 +256,8 @@
     {* ===== 新建货源（抽屉表单模板） ===== *}
     {{if isset(.PermSet["inventory:source_create"])}}
     <template id="tpl-source-create">
-        <form method="post" action="/admin/inventory/sources/create" class="form-stack">
+        <div data-inventory-source-host>
+        <form method="post" action="/admin/inventory/sources/create" class="form-stack" hx-post="/admin/inventory/sources/create" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -300,13 +301,15 @@
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.create.submit", "新建货源") }}</button>
             </div>
         </form>
+        </div>
     </template>
     {{end}}
 
     {* ===== 编辑货源（每行一份模板） ===== *}
     {{range _, s := .Sources}}
     <template id="tpl-source-edit-{{s.ID}}">
-        <form method="post" action="/admin/inventory/sources/update" class="form-stack">
+        <div data-inventory-source-host>
+        <form method="post" action="/admin/inventory/sources/update" class="form-stack" hx-post="/admin/inventory/sources/update" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">
@@ -359,6 +362,7 @@
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_sources.list.save", "保存货源") }}</button>
             </div>
         </form>
+        </div>
     </template>
     {{end}}
 </div>

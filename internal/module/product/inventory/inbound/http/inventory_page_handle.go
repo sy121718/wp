@@ -262,15 +262,16 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		return
 	}
 	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouses.html", shell.Prepare(c, gin.H{
-		"title":           "仓库管理",
-		"menu":            "inventory-warehouses",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Warehouses":      warehouses,
-		"WarehouseTypes":  warehouseTypeOptions(c),
-		"Err":             inventoryPageErr(c),
-		"Ok":              inventoryPageOk(c),
-		"Done":            inventoryPageDone(c),
+		"title":               "仓库管理",
+		"menu":                "inventory-warehouses",
+		"Projects":            projects,
+		"SelectedProject":     selected,
+		"Warehouses":          warehouses,
+		"WarehouseTypes":      warehouseTypeOptions(c),
+		"Err":                 inventoryPageErr(c),
+		"Ok":                  inventoryPageOk(c),
+		"Done":                inventoryPageDone(c),
+		"WarehouseCreateForm": warehouseFormData(c, false, nil),
 	}))
 }
 
@@ -298,14 +299,15 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		return
 	}
 	c.HTML(http.StatusOK, "admin/inventory/inventory_reasons.html", shell.Prepare(c, gin.H{
-		"title":           "变动原因字典",
-		"menu":            "inventory-reasons",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Reasons":         reasons,
-		"Directions":      directionOptions(),
-		"Err":             inventoryPageErr(c),
-		"Ok":              inventoryPageOk(c),
+		"title":            "变动原因字典",
+		"menu":             "inventory-reasons",
+		"Projects":         projects,
+		"SelectedProject":  selected,
+		"Reasons":          reasons,
+		"Directions":       directionOptions(),
+		"ReasonCreateForm": reasonFormData(c),
+		"Err":              inventoryPageErr(c),
+		"Ok":               inventoryPageOk(c),
 	}))
 }
 
@@ -325,10 +327,10 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 		ThirdParty: thirdPartyForm(c, typ),
 	}
 	if _, err := h.inventory.CreateWarehouse(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryWarehousesPath, projectID, err))
+		h.warehouseFormFail(c, false, err)
 		return
 	}
-	c.Redirect(http.StatusFound, inventoryURL(inventoryWarehousesPath, projectID, nil))
+	redirectWhere(c, inventoryURL(inventoryWarehousesPath, projectID, nil))
 }
 
 // InventoryWarehouseUpdate 修改仓库（名称 / 短码 / 类型 / 排序 / 状态 / 第三方对接配置）。
@@ -351,10 +353,10 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 		ThirdParty: thirdPartyForm(c, typ),
 	}
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryWarehousesPath, projectID, err))
+		h.warehouseFormFail(c, true, err)
 		return
 	}
-	c.Redirect(http.StatusFound, inventoryURL(inventoryWarehousesPath, projectID, nil))
+	redirectWhere(c, inventoryURL(inventoryWarehousesPath, projectID, nil))
 }
 
 // InventoryWarehouseDefault 切换默认仓（同工程唯一；「未指定仓库」的兜底）。
@@ -579,12 +581,12 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 		Sort:      parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.inventory.CreateReason(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryReasonsPath, projectID, err))
+		h.reasonFormFail(c, err)
 		return
 	}
 	extra := url.Values{}
 	extra.Set("ok", "1")
-	c.Redirect(http.StatusFound, inventoryURL(inventoryReasonsPath, projectID, extra))
+	redirectWhere(c, inventoryURL(inventoryReasonsPath, projectID, extra))
 }
 
 // InventoryReasonUpdate 后台表单修改自定义变动原因（改名 / 停用 / 排序）。
@@ -1345,4 +1347,60 @@ func inventoryErrKey(err error) (key, tail string) {
 		}
 	}
 	return "", ""
+}
+
+var warehouseCreateFields = []string{"projectId", "code", "name", "sort", "isDefault", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef"}
+var warehouseEditFields = []string{"projectId", "id", "code", "name", "sort", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef", "status"}
+
+func warehouseFormData(c *gin.Context, edit bool, row gin.H) gin.H {
+	return gin.H{
+		"IsEdit": edit, "Row": row, "SelectedProject": c.PostForm("projectId"),
+		"WarehouseTypes": warehouseTypeOptions(c),
+	}
+}
+
+func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, err error) {
+	projectID := c.PostForm("projectId")
+	if !isHXRequest(c) {
+		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryWarehousesPath, projectID, err))
+		return
+	}
+	data := warehouseFormData(c, edit, nil)
+	fields := warehouseCreateFields
+	if edit {
+		fields = warehouseEditFields
+	}
+	data["FormEcho"] = inventoryRawFormValues(c, fields)
+	data["SubmitErr"] = inventoryErrText(c, err)
+	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouse_form.html", shell.Prepare(c, data))
+}
+
+// 原值快照保留空串和首尾空白；业务请求归一化不影响重新编辑的输入。
+func inventoryRawFormValues(c *gin.Context, fields []string) gin.H {
+	values := make(gin.H, len(fields))
+	for _, field := range fields {
+		values[field] = c.PostForm(field)
+	}
+	return values
+}
+
+var reasonCreateFields = []string{"projectId", "code", "name", "direction", "sort"}
+
+func reasonFormData(c *gin.Context) gin.H {
+	return gin.H{
+		"SelectedProject": c.PostForm("projectId"),
+		"Directions":      directionOptions(),
+	}
+}
+
+func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
+	projectID := c.PostForm("projectId")
+	if !isHXRequest(c) {
+		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryReasonsPath, projectID, err))
+		return
+	}
+	data := reasonFormData(c)
+	data["FormEcho"] = inventoryRawFormValues(c, reasonCreateFields)
+	data["SubmitErr"] = inventoryErrText(c, err)
+	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", shell.Prepare(c, data))
 }

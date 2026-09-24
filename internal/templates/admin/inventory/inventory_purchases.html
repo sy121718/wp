@@ -227,61 +227,7 @@
     {* ===== 新建采购单（抽屉模板） ===== *}
     {{if isset(.PermSet["inventory:purchase_create"])}}
     <template id="tpl-purchase-create">
-        <form method="post" action="/admin/inventory/purchases/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-group">
-                <label class="form-label req">{{ .["t"]("admin.inventory_purchases.col.code", "采购单号") }}</label>
-                <input type="text" class="form-input" name="code" placeholder="{{ .["t"]("admin.inventory_purchases.ph.code", "如 PO-20260101-001") }}" required autocomplete="off">
-            </div>
-            <div class="form-group">
-                <label class="form-label req">{{ .["t"]("admin.inventory_purchases.create.optionSource", "来源") }}</label>
-                <select class="form-select" name="sourceId" required>
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSource", "（选择货源）") }}</option>
-                    {{range _, s := .Sources}}
-                    <option value="{{s.ID}}">{{s.Label}}</option>
-                    {{end}}
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "收货仓") }}</label>
-                <select class="form-select" name="warehouseId">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionWarehouse", "（默认仓）") }}</option>
-                    {{range _, w := .Warehouses}}
-                    <option value="{{w.ID}}">{{w.Label}}</option>
-                    {{end}}
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">{{ .["t"]("admin.inventory_purchases.ph.remark", "备注") }}</label>
-                <input type="text" class="form-input" name="remark" placeholder="{{ .["t"]("admin.inventory_purchases.ph.remark", "合同号 / 到货批次") }}" autocomplete="off">
-            </div>
-            <p class="hint">{{ .["t"]("admin.inventory_purchases.create.linesHint", "采购行（每行一个 SKU；空行会被忽略；同一张单里同一个 SKU 只能出现一次）：") }}</p>
-            {* 每行的 SKU 用一个原生下拉框提交，值是「变体ID|商品ID|仓库侧裸码」三段拼接：
-               （注释里刻意不写标签名：admin_form_base_test 的扫描器把 Jet 注释当文本，
-                 注释里出现控件标签会被算成一个「裸控件」。）
-               本页不引入自定义 JS（多端契约要求交互全走原生控件），一个控件只能携带一个值，
-               而一行采购行的三个快照列必须**同源**（都来自候选列表的同一行），拼在一起才不会
-               出现「选了 A 的变体、却写 B 的编码」。手法与 admin/i18n.html 的 Key|Lang 一致。
-               第三段是**仓库侧裸码**（inventory_stocks.sku_code，不带仓码前缀）——采购行的
-               sku_code 按仓库侧口径落库，服务端还会在入库入口再归一一次（幂等剥前缀 + 空串拒绝）。 *}
-            {{range _, row := .DraftLines}}
-            <div class="form-inline">
-                <select class="form-select" name="lineSku" aria-label="{{ .["t"]("admin.inventory_purchases.create.optionSku", "选择 SKU") }}">
-                    <option value="">{{ .["t"]("admin.inventory_purchases.create.optionSku", "（选择 SKU）") }}</option>
-                    {{range _, o := .VariantOptions}}
-                    <option value="{{o.VariantID}}|{{o.ProductID}}|{{o.BareSKU}}">{{o.Label}}</option>
-                    {{end}}
-                </select>
-                <input type="number" class="form-input" name="lineQuantity" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineQty", "采购数量") }}" inputmode="numeric" step="1" min="1">
-                <input type="number" class="form-input" name="lineUnitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.ph.lineUnitPrice", "采购单价") }}" inputmode="decimal" step="0.01" min="0.01">
-            </div>
-            {{end}}
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
-            </div>
-        </form>
+        {{include "inventory_purchase_create_form.html"}}
     </template>
     {{end}}
 

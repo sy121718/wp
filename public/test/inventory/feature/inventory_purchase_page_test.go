@@ -338,8 +338,14 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 	}
 	// 每个写表单（POST）都带 csrf_token 隐藏域（原生表单的 CSRF 契约）：
 	// 本页三个写入口 —— 建单 / 逐行收货 / 生产入库，各一处；GET 的筛选与工程切换表单不带。
-	if got := strings.Count(string(tplRaw), "name=\"csrf_token\""); got != 3 {
-		t.Fatalf("建单 / 收货 / 生产入库三个写表单各要带一处 csrf_token 隐藏域，模板里有 %d 处", got)
+	// 建单表单已抽出为 inventory_purchase_create_form.html（页面与失败回显片段共用同一真源），
+	// 所以计数覆盖页面模板 + 新建片段两个文件，契约本身不变。
+	fragRaw, ferr := os.ReadFile(inventoryAdminTemplatePath("inventory_purchase_create_form.html"))
+	if ferr != nil {
+		t.Fatalf("读采购新建片段模板失败: %v", ferr)
+	}
+	if got := strings.Count(string(tplRaw)+string(fragRaw), "name=\"csrf_token\""); got != 3 {
+		t.Fatalf("建单 / 收货 / 生产入库三个写表单各要带一处 csrf_token 隐藏域，页面+片段里共有 %d 处", got)
 	}
 	if got := strings.Count(string(tplRaw), "method=\"get\""); got != 2 {
 		t.Fatalf("工程切换 + 采购单筛选都用 GET，模板里有 %d 处", got)
