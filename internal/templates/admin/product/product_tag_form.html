@@ -1,0 +1,36 @@
+{{fill := isset(.FormEcho)}}
+{{tr := .["t"]}}
+{{create := .Mode == "create"}}
+<div data-tag-form-host>
+    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    <form method="post" action="/admin/product-tags/{{if create}}create{{else}}update{{end}}" class="form-stack"
+          hx-post="/admin/product-tags/{{if create}}create{{else}}update{{end}}" hx-target="closest [data-tag-form-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+        <input type="hidden" name="projectId" value="{{if fill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
+        {{if !create}}<input type="hidden" name="id" value="{{if fill}}{{.FormEcho.id}}{{else}}{{.ID}}{{end}}">{{end}}
+        <div class="form-inline">
+            <input aria-label="{{tr("admin.product_tags.label.name", "标签名称")}}" class="form-input" type="text" name="name" value="{{if fill}}{{.FormEcho.name}}{{else}}{{.Name}}{{end}}" placeholder="{{tr("admin.product_tags.label.name", "标签名称")}}" required>
+            <input aria-label="{{tr("admin.product_tags.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{if fill}}{{.FormEcho.slug}}{{else}}{{.Slug}}{{end}}" placeholder="{{tr("admin.product_tags.label.slug", "URL 段")}}" autocomplete="off">
+            {{kind := "manual"}}{{if fill}}{{kind = .FormEcho.kind}}{{else if .IsRule}}{{kind = "rule"}}{{end}}
+            <select class="form-select" name="kind" aria-label="{{tr("admin.product_tags.label.kind", "类型")}}">
+                <option value="manual" {{if kind == "manual"}}selected{{end}}>{{tr("admin.product_tags.kindManual", "手工标签")}}</option>
+                <option value="rule" {{if kind == "rule"}}selected{{end}}>{{tr("admin.product_tags.kindRule", "自动标签（按规则）")}}</option>
+            </select>
+            <input aria-label="{{tr("admin.product_tags.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{if fill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" placeholder="{{tr("admin.product_tags.ph.sort", "排序")}}" inputmode="numeric" step="1">
+        </div>
+        <div class="form-inline">
+            {{ruleType := .RuleType}}{{if fill}}{{ruleType = .FormEcho.ruleType}}{{end}}
+            <select class="form-select" name="ruleType" aria-label="{{tr("admin.product_tags.label.rule", "规则")}}">
+                <option value="" {{if ruleType == ""}}selected{{end}}>{{tr("admin.product_tags.ruleEmpty", "（手工标签留空）")}}</option>
+                {{range _, r := .RuleTypes}}<option value="{{r.Type}}" {{if r.Type == ruleType}}selected{{end}}>{{r.Name}}</option>{{end}}
+            </select>
+            <input aria-label="{{tr("admin.product_tags.ph.days", "days（上架 N 天内，1~365）")}}" class="form-input" type="number" name="days" value="{{if fill}}{{.FormEcho.days}}{{else}}{{.RuleDays}}{{end}}" placeholder="{{tr("admin.product_tags.ph.daysShort", "days（1~365）")}}" inputmode="numeric" min="1" max="365" step="1">
+            <input aria-label="minPrice" class="form-input" type="text" name="minPrice" value="{{if fill}}{{.FormEcho.minPrice}}{{else}}{{.RuleMinPrice}}{{end}}" placeholder="minPrice" inputmode="decimal" autocomplete="off">
+            <input aria-label="maxPrice" class="form-input" type="text" name="maxPrice" value="{{if fill}}{{.FormEcho.maxPrice}}{{else}}{{.RuleMaxPrice}}{{end}}" placeholder="maxPrice" inputmode="decimal" autocomplete="off">
+        </div>
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_tags.create.submit", "新建标签")}}{{else}}{{tr("admin.product_tags.list.save", "保存标签")}}{{end}}</button>
+        </div>
+    </form>
+</div>

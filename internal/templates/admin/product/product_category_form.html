@@ -1,0 +1,40 @@
+{{import "../partials/rich_editor.html"}}
+{{fill := isset(.FormEcho)}}
+{{tr := .["t"]}}
+{{create := .Mode == "create"}}
+<div data-category-form-host>
+    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    <form method="post" action="/admin/product-categories/{{if create}}create{{else}}update{{end}}" class="form-stack"
+          hx-post="/admin/product-categories/{{if create}}create{{else}}update{{end}}" hx-target="closest [data-category-form-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+        <input type="hidden" name="projectId" value="{{if fill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
+        {{if !create}}<input type="hidden" name="id" value="{{if fill}}{{.FormEcho.id}}{{else}}{{.ID}}{{end}}">{{end}}
+        <div class="form-inline">
+            <input aria-label="{{tr("admin.product_categories.label.name", "分类名称")}}" class="form-input" type="text" name="name" value="{{if fill}}{{.FormEcho.name}}{{else}}{{.Name}}{{end}}" placeholder="{{tr("admin.product_categories.label.name", "分类名称")}}" required>
+            <input aria-label="{{tr("admin.product_categories.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{if fill}}{{.FormEcho.slug}}{{else}}{{.Slug}}{{end}}" placeholder="{{tr("admin.product_categories.label.slug", "URL 段")}}" autocomplete="off">
+            {{parent := .ParentID}}{{if fill}}{{parent = .FormEcho.parentId}}{{end}}
+            {{id := .ID}}
+            <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId">
+                <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
+                {{range _, o := .Options}}{{if o.ID != id}}<option value="{{o.ID}}" {{if o.ID == parent}}selected{{end}}>{{o.Label}}</option>{{end}}{{end}}
+                {{if fill}}{{if parent != ""}}<option value="{{parent}}" hidden selected>{{parent}}</option>{{end}}{{end}}
+            </select>
+            <input aria-label="{{tr("admin.product_categories.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{if fill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" inputmode="numeric" step="1">
+            <input aria-label="{{tr("admin.product_categories.label.image", "分类图 URL")}}" class="form-input" type="text" name="image" value="{{if fill}}{{.FormEcho.image}}{{else}}{{.Image}}{{end}}" autocomplete="off">
+        </div>
+        <input aria-label="{{tr("admin.product_categories.label.seoTitle", "SEO 标题")}}" class="form-input" type="text" name="seoTitle" id="cat-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter="60" value="{{if fill}}{{.FormEcho.seoTitle}}{{else}}{{.SEOTitle}}{{end}}">
+        <span class="field-counter" data-counter-out="cat-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
+        <textarea aria-label="{{tr("admin.product_categories.label.seoDesc", "SEO 描述")}}" class="form-textarea" name="seoDescription" id="cat-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" rows="3" data-counter="155">{{if fill}}{{.FormEcho.seoDescription}}{{else}}{{.SEODescription}}{{end}}</textarea>
+        <span class="field-counter" data-counter-out="cat-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
+        <label class="form-label" for="rich-description-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_categories.label.description", "分类描述")}}</label>
+        {{desc := .Description}}{{if fill}}{{desc = .FormEcho.description}}{{end}}
+        {{key := .ID}}{{if create}}{{key = "new"}}{{end}}
+        {{yield richEditor(field="description", key=key, value=desc)}}
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            {{if !create}}<button type="button" class="btn" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{.ID}}" hx-swap="innerHTML">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
+            <button type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
+        </div>
+        {{if !create}}<div id="category-seo-score-{{.ID}}" class="wb-seo-panel"></div>{{end}}
+    </form>
+</div>

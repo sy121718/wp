@@ -90,6 +90,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
 			"Description": node.Description, "Image": node.Image,
 			"SEOTitle": node.SEOTitle, "SEODescription": node.SEODescription,
+			"EditForm": categoryDrawerData(c, "update", selected, node, categoryPickOptions(pickFlat)),
 		})
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
@@ -101,6 +102,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		"Categories":      rows,
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
 		"Options": categoryPickOptions(pickFlat),
+		"CategoryCreateForm": categoryDrawerData(c, "create", selected, nil, categoryPickOptions(pickFlat)),
 		// 筛选回显（GET 表单的 value）：提交后条件留在控件上，
 		// 否则用户看不出「现在到底筛了什么」；Filtered 让空态能区分
 		// 「筛出来是空的」与「这个工程还没有分类」。
@@ -135,10 +137,10 @@ func (h *productPageHandle) ProductCategoriesCreate(c *gin.Context) {
 		Sort:           parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.products.CreateCategory(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.categoryFormFail(c, "create", productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID)
+	categoryFormSuccess(c, projectID)
 }
 
 // ProductCategoriesUpdate 修改分类（改名 / 换父级 / 排序 / SEO 字段）。
@@ -159,10 +161,10 @@ func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 		SEOTitle: &seoTitle, SEODescription: &seoDescription, Sort: &sortValue,
 	}
 	if _, err := h.products.UpdateCategory(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.categoryFormFail(c, "update", productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-categories?project="+projectID)
+	categoryFormSuccess(c, projectID)
 }
 
 // ProductCategoriesDelete 删除分类（有子级或被商品引用时服务端拒绝）。
@@ -251,12 +253,22 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 		}
 		pageRows = list
 	}
+	brands := make([]gin.H, 0, len(pageRows))
+	for _, b := range pageRows {
+		brands = append(brands, gin.H{
+			"ID": b.ID, "Name": b.Name, "Slug": b.Slug, "Logo": b.Logo,
+			"Sort": b.Sort, "Description": b.Description, "SEOTitle": b.SEOTitle,
+			"SEODescription": b.SEODescription, "UpdatedAt": b.UpdatedAt,
+			"EditForm": brandDrawerData(c, "update", selected, b),
+		})
+	}
 	data := gin.H{
 		"title":           "商品品牌",
 		"menu":            "product-brands",
 		"Projects":        projects,
 		"SelectedProject": selected,
-		"Brands":          pageRows,
+		"Brands":          brands,
+		"BrandCreateForm": brandDrawerData(c, "create", selected, nil),
 		"FilterKeyword":   keyword,
 		"Filtered":        keyword != "",
 		"Err":             productPageErr(c),
@@ -284,10 +296,10 @@ func (h *productPageHandle) ProductBrandsCreate(c *gin.Context) {
 		Sort:           parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.products.CreateBrand(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.brandFormFail(c, "create", productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID)
+	brandFormSuccess(c, projectID)
 }
 
 // ProductBrandsUpdate 修改品牌。
@@ -307,10 +319,10 @@ func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
 		SEODescription: &seoDescription, Sort: &sortValue,
 	}
 	if _, err := h.products.UpdateBrand(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.brandFormFail(c, "update", productErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-brands?project="+projectID)
+	brandFormSuccess(c, projectID)
 }
 
 // ProductBrandsDelete 删除品牌（被商品引用时服务端拒绝）。
@@ -596,4 +608,74 @@ func listPageSlice[T any](all []T, page, size int) (rows []T, current int) {
 		to = len(all)
 	}
 	return all[from:to], page
+}
+
+func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []gin.H) gin.H {
+	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": shell.Prepare(c, gin.H{})["csrf_token"], "t": shell.TranslateFor(c)}
+	if row != nil {
+		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID
+		data["Sort"], data["Image"], data["Description"] = row.Sort, row.Image, row.Description
+		data["SEOTitle"], data["SEODescription"] = row.SEOTitle, row.SEODescription
+	} else {
+		data["ID"], data["Name"], data["Slug"], data["ParentID"] = "", "", "", ""
+		data["Sort"], data["Image"], data["Description"] = 0, "", ""
+		data["SEOTitle"], data["SEODescription"] = "", ""
+	}
+	return data
+}
+
+func (h *productPageHandle) categoryFormFail(c *gin.Context, mode, msg string) {
+	if !isHXRequest(c) { c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(c.PostForm("projectId"))+"&err="+url.QueryEscape(msg)); return }
+	data := categoryDrawerData(c, mode, c.PostForm("projectId"), nil, nil)
+	if mode == "create" && h.products != nil {
+		if options, err := h.flatCategories(c.Request.Context(), c.PostForm("projectId")); err == nil {
+			data["Options"] = categoryPickOptions(options)
+		}
+	}
+	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "parentId", "sort", "image", "description", "seoTitle", "seoDescription"})
+	data["SubmitErr"] = msg
+	c.HTML(http.StatusOK, "admin/product/product_category_form.html", data)
+}
+
+func categoryFormSuccess(c *gin.Context, projectID string) {
+	redirectWhere(c, "/admin/product-categories?project="+url.QueryEscape(projectID))
+}
+
+func brandDrawerData(c *gin.Context, mode, projectID string, row *productdto.BrandResp) gin.H {
+	data := gin.H{"Mode": mode, "Project": projectID, "Csrf": shell.Prepare(c, gin.H{})["csrf_token"], "t": shell.TranslateFor(c)}
+	if row != nil {
+		data["ID"], data["Name"], data["Slug"], data["Logo"] = row.ID, row.Name, row.Slug, row.Logo
+		data["Sort"], data["Description"], data["SEOTitle"], data["SEODescription"] = row.Sort, row.Description, row.SEOTitle, row.SEODescription
+	} else {
+		data["ID"], data["Name"], data["Slug"], data["Logo"] = "", "", "", ""
+		data["Sort"], data["Description"], data["SEOTitle"], data["SEODescription"] = 0, "", "", ""
+	}
+	return data
+}
+
+func (h *productPageHandle) brandFormFail(c *gin.Context, mode, msg string) {
+	if !isHXRequest(c) {
+		c.Redirect(http.StatusFound, "/admin/product-brands?project="+url.QueryEscape(c.PostForm("projectId"))+"&err="+url.QueryEscape(msg))
+		return
+	}
+	data := brandDrawerData(c, mode, c.PostForm("projectId"), nil)
+	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "sort", "logo", "description", "seoTitle", "seoDescription"})
+	data["SubmitErr"] = msg
+	c.HTML(http.StatusOK, "admin/product/product_brand_form.html", data)
+}
+
+func brandFormSuccess(c *gin.Context, projectID string) {
+	redirectWhere(c, "/admin/product-brands?project="+url.QueryEscape(projectID))
+}
+
+func rawDrawerEcho(c *gin.Context, fields []string) gin.H {
+	_ = c.Request.ParseMultipartForm(formEchoMemory)
+	out := gin.H{}
+	for _, key := range fields {
+		out[key] = ""
+		if values := c.Request.PostForm[key]; len(values) > 0 {
+			out[key] = values[0]
+		}
+	}
+	return out
 }

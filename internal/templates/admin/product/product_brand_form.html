@@ -1,0 +1,32 @@
+{{import "../partials/rich_editor.html"}}
+{{fill := isset(.FormEcho)}}{{tr := .["t"]}}{{create := .Mode == "create"}}
+<div data-brand-form-host>
+    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    <form method="post" action="/admin/product-brands/{{if create}}create{{else}}update{{end}}" class="form-stack" hx-post="/admin/product-brands/{{if create}}create{{else}}update{{end}}" hx-target="closest [data-brand-form-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{.Csrf}}">
+        <input type="hidden" name="projectId" value="{{if fill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
+        {{if !create}}<input type="hidden" name="id" value="{{if fill}}{{.FormEcho.id}}{{else}}{{.ID}}{{end}}">{{end}}
+        <div class="form-inline">
+            <input aria-label="{{tr("admin.product_brands.label.name", "品牌名称")}}" class="form-input" type="text" name="name" value="{{if fill}}{{.FormEcho.name}}{{else}}{{.Name}}{{end}}" required>
+            <input aria-label="{{tr("admin.product_brands.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{if fill}}{{.FormEcho.slug}}{{else}}{{.Slug}}{{end}}" autocomplete="off">
+            <input aria-label="{{tr("admin.product_brands.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{if fill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" step="1">
+            <input aria-label="{{tr("admin.product_brands.label.logo", "logo URL")}}" class="form-input" type="text" name="logo" value="{{if fill}}{{.FormEcho.logo}}{{else}}{{.Logo}}{{end}}" autocomplete="off">
+        </div>
+        <label class="form-label" for="brand-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_brands.label.seoTitle", "SEO 标题")}}</label>
+        <input class="form-input" type="text" id="brand-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" name="seoTitle" value="{{if fill}}{{.FormEcho.seoTitle}}{{else}}{{.SEOTitle}}{{end}}" data-counter="60">
+        <span class="field-counter" data-counter-out="brand-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
+        <label class="form-label" for="brand-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_brands.label.seoDesc", "SEO 描述")}}</label>
+        <textarea class="form-textarea" id="brand-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" name="seoDescription" rows="3" data-counter="155">{{if fill}}{{.FormEcho.seoDescription}}{{else}}{{.SEODescription}}{{end}}</textarea>
+        <span class="field-counter" data-counter-out="brand-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
+        <label class="form-label" for="rich-description-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_brands.label.description", "品牌描述")}}</label>
+        {{desc := .Description}}{{if fill}}{{desc = .FormEcho.description}}{{end}}
+        {{key := .ID}}{{if create}}{{key = "new"}}{{end}}
+        {{yield richEditor(field="description", key=key, value=desc)}}
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            {{if !create}}<button type="button" class="btn" hx-post="/admin/product-brands/seo-score" hx-include="closest form" hx-target="#brand-seo-score-{{.ID}}" hx-swap="innerHTML">{{tr("admin.product_brands.seoScore", "SEO 评分")}}</button>{{end}}
+            <button type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_brands.create.submit", "新建品牌")}}{{else}}{{tr("admin.product_brands.list.save", "保存品牌")}}{{end}}</button>
+        </div>
+        {{if !create}}<div id="brand-seo-score-{{.ID}}" class="wb-seo-panel"></div>{{end}}
+    </form>
+</div>

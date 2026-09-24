@@ -175,84 +175,23 @@
     {{end}}
     {{if canUpdate}}
     <template id="tpl-category-edit-{{row.ID}}">
+        {{if isset(row.EditForm)}}{{include "product_category_form.html" row.EditForm}}{{else}}
         <form method="post" action="/admin/product-categories/update">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{row.ID}}">
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_categories.label.name", "分类名称") }}" class="form-input" type="text" name="name" value="{{row.Name}}" placeholder="{{ .["t"]("admin.product_categories.label.name", "分类名称") }}" required>
-                <input aria-label="{{ .["t"]("admin.product_categories.label.slug", "URL 段") }}" class="form-input" type="text" name="slug" value="{{row.Slug}}" placeholder="{{ .["t"]("admin.product_categories.label.slug", "URL 段") }}" autocomplete="off">
-                <select aria-label="{{ .["t"]("admin.product_categories.label.parent", "父级分类") }}" class="form-select" name="parentId">
-                    <option value="" {{if row.ParentID == ""}}selected{{end}}>{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option>
-                    {{range _, o := options}}
-                    {{if o.ID != row.ID}}
-                    <option value="{{o.ID}}" {{if o.ID == row.ParentID}}selected{{end}}>{{o.Label}}</option>
-                    {{end}}
-                    {{end}}
-                </select>
-                <input aria-label="{{ .["t"]("admin.product_categories.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="{{row.Sort}}" placeholder="{{ .["t"]("admin.product_categories.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                <input aria-label="{{ .["t"]("admin.product_categories.label.image", "分类图 URL") }}" class="form-input" type="text" name="image" value="{{row.Image}}" placeholder="{{ .["t"]("admin.product_categories.label.image", "分类图 URL") }}" autocomplete="off">
-            </div>
-            {* SEO 标题 / 描述是 meta 字段：必须纯文本（搜索引擎读到的是纯文本，
-               富文本标签会原样进 meta），所以用输入框 + textarea + 实时字数，
-               超出建议长度只转警告色，不拦截输入。 *}
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_categories.label.seoTitle", "SEO 标题") }}" class="form-input" type="text" name="seoTitle" id="cat-seo-title-{{row.ID}}" data-counter="60"
-                       value="{{row.SEOTitle}}" placeholder="{{ .["t"]("admin.product_categories.label.seoTitle", "SEO 标题") }}">
-            </div>
-            <span class="field-counter" data-counter-out="cat-seo-title-{{row.ID}}" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <textarea aria-label="{{ .["t"]("admin.product_categories.label.seoDesc", "SEO 描述") }}" class="form-textarea" name="seoDescription" id="cat-seo-desc-{{row.ID}}" rows="3" data-counter="155"
-                      placeholder="{{ .["t"]("admin.product_categories.ph.seoDesc", "SEO 描述（可留空）") }}">{{row.SEODescription}}</textarea>
-            <span class="field-counter" data-counter-out="cat-seo-desc-{{row.ID}}" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <label class="form-label" for="rich-description-{{row.ID}}">{{ .["t"]("admin.product_categories.label.description", "分类描述") }}</label>
-            {{yield richEditor(field="description", key=row.ID, value=row.Description)}}
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                {* SEO 评分（审计 SEO-016）：分类页按落地页权重评分；title 唯一性检查（SEO-018）
-                   列出冲突页面。hx-include 取本表单字段。只读计算，不写库不改产物。 *}
-                <button type="button" class="btn"
-                        hx-post="/admin/product-categories/seo-score" hx-include="closest form"
-                        hx-target="#category-seo-score-{{row.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
-            </div>
-            <div id="category-seo-score-{{row.ID}}" class="wb-seo-panel"></div>
+            <button type="button" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{row.ID}}">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
+            <div id="category-seo-score-{{row.ID}}"></div>
+            <button type="submit">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
         </form>
+        {{end}}
     </template>
     {{end}}
     {{end}}
 
     {{if canCreate}}
     <template id="tpl-category-create">
-        <form method="post" action="/admin/product-categories/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_categories.ph.nameExample", "分类名称（如 男装）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_categories.ph.nameExample", "分类名称（如 男装）") }}" required>
-                <input aria-label="{{ .["t"]("admin.product_categories.ph.slug", "URL 段（留空自动生成）") }}" class="form-input" type="text" name="slug" placeholder="{{ .["t"]("admin.product_categories.ph.slug", "URL 段（留空自动生成）") }}" autocomplete="off">
-                <select aria-label="{{ .["t"]("admin.product_categories.label.parent", "父级分类") }}" class="form-select" name="parentId">
-                    <option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option>
-                    {{range _, o := options}}
-                    <option value="{{o.ID}}">{{o.Label}}</option>
-                    {{end}}
-                </select>
-                <input aria-label="{{ .["t"]("admin.product_categories.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="0" placeholder="{{ .["t"]("admin.product_categories.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                <input aria-label="{{ .["t"]("admin.product_categories.ph.image", "分类图 URL（可留空）") }}" class="form-input" type="text" name="image" placeholder="{{ .["t"]("admin.product_categories.ph.image", "分类图 URL（可留空）") }}" autocomplete="off">
-            </div>
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_categories.ph.seoTitle", "SEO 标题（可留空）") }}" class="form-input" type="text" name="seoTitle" id="cat-new-seo-title" data-counter="60"
-                       placeholder="{{ .["t"]("admin.product_categories.ph.seoTitle", "SEO 标题（可留空）") }}">
-            </div>
-            <span class="field-counter" data-counter-out="cat-new-seo-title" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <textarea aria-label="{{ .["t"]("admin.product_categories.ph.seoDesc", "SEO 描述（可留空）") }}" class="form-textarea" name="seoDescription" id="cat-new-seo-desc" rows="3" data-counter="155"
-                      placeholder="{{ .["t"]("admin.product_categories.ph.seoDesc", "SEO 描述（可留空）") }}"></textarea>
-            <span class="field-counter" data-counter-out="cat-new-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <label class="form-label" for="rich-description-new">{{ .["t"]("admin.product_categories.label.description", "分类描述") }}</label>
-            {{yield richEditor(field="description", key="new", value="")}}
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button>
-            </div>
-        </form>
+        {{if isset(.CategoryCreateForm)}}{{include "product_category_form.html" .CategoryCreateForm}}{{else}}
+        <form method="post" action="/admin/product-categories/create"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><button type="submit">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
+        {{end}}
     </template>
     {{end}}
 </div>

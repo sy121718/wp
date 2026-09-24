@@ -29,6 +29,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/web/shell"
@@ -67,6 +68,10 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	page := productPageNumber(c.Query("page"))
 	total := int64(0)
 	rows := []gin.H{}
+	var tagCreateForm gin.H
+	// RuleTypes 全页只查一次：行级编辑片段、页面级新建片段与页面下拉共享同一份清单，
+	// 逐行各查一遍是纯浪费（audit 同款：命中商品曾因每行一次 GetTag 被打回）。
+	ruleTypes := h.products.ListTagRuleTypes(ctx)
 	if selected != "" {
 		// 过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size。
 		filterReq := &productdto.ListTagReq{ProjectID: selected, Keyword: keyword}
@@ -86,8 +91,12 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		}
 		rows = make([]gin.H, 0, len(list))
 		for _, t := range list {
-			rows = append(rows, tagPageRow(t))
+			row := tagPageRow(t)
+			row["EditForm"] = h.tagDrawerData(c, "update", selected, row, ruleTypes)
+			rows = append(rows, row)
 		}
+		// 新建抽屉的片段数据与行级片段同源：同一份规则清单、同一份模板。
+		tagCreateForm = h.tagDrawerData(c, "create", selected, nil, ruleTypes)
 	}
 	// 命中商品**不在这里取**（审计 PERF-02）：此前对每个标签再调一次 GetTag 拿命中商品，
 	// 页面 SQL 条数随标签数线性增长；而「标签是个位数」只是当时的假设，协议没有使它成立。
@@ -107,7 +116,8 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Tags":            rows,
-		"RuleTypes":       h.products.ListTagRuleTypes(ctx),
+		"TagCreateForm":   tagCreateForm,
+		"RuleTypes":       ruleTypes,
 		// 筛选回显（GET 表单的 value）+ 空态分档依据：见 product_taxonomy_page.go 的同一手法。
 		"FilterKeyword": keyword,
 		"Filtered":      keyword != "",
@@ -197,6 +207,46 @@ func tagHitsURL(projectID, tagID string, page int) string {
 	return "/admin/product-tags/hits?" + q.Encode()
 }
 
+// tagDrawerData 装配标签编辑片段数据（create 时 row 为 nil）。
+// ruleTypes 由调用方传入：页面装配时取一次全行共享，失败分支自己取一次，
+// 不在片段装配里重复查契约。CSRF 直接取上下文令牌，不走整份 Prepare（避免逐行重复装配导航）。
+func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row gin.H, ruleTypes []*productdto.TagRuleTypeResp) gin.H {
+	csrf, _ := builtin.GetCSRFToken(c)
+	data := gin.H{
+		"Mode": mode, "Project": projectID, "Csrf": csrf, "t": shell.TranslateFor(c),
+		"RuleTypes": ruleTypes,
+		"ID": "", "Name": "", "Slug": "", "IsRule": false, "Sort": 0,
+		"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
+	}
+	if row != nil {
+		for _, key := range []string{"ID", "Name", "Slug", "IsRule", "Sort", "RuleType", "RuleDays", "RuleMinPrice", "RuleMaxPrice"} {
+			data[key] = row[key]
+		}
+	}
+	return data
+}
+
+// tagFormFail 写失败分档：htmx 请求 200 + 片段自身（错误槽 + 原值回填），
+// 原生提交维持 302 + ?err= 回本页 —— 用户输入比错误文案贵，两种档都不丢字段。
+func (h *productPageHandle) tagFormFail(c *gin.Context, mode string, err error) {
+	projectID := c.PostForm("projectId")
+	msg := productErrText(c, err)
+	if !isHXRequest(c) {
+		c.Redirect(http.StatusFound, "/admin/product-tags?project="+url.QueryEscape(projectID)+"&err="+url.QueryEscape(msg))
+		return
+	}
+	data := h.tagDrawerData(c, mode, projectID, nil, h.products.ListTagRuleTypes(c.Request.Context()))
+	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "kind", "sort", "ruleType", "days", "minPrice", "maxPrice"})
+	data["SubmitErr"] = msg
+	c.HTML(http.StatusOK, "admin/product/product_tag_form.html", data)
+}
+
+// tagFormSuccess 写成功分档：htmx 走 HX-Redirect（XHR 会跟随 302，读不到 Location），
+// 原生提交维持既有 302 回列表。
+func tagFormSuccess(c *gin.Context, projectID string) {
+	redirectWhere(c, "/admin/product-tags?project="+url.QueryEscape(projectID))
+}
+
 // ProductTagsCreate 新建标签（手工 / 自动；自动标签建好即按规则重算一次）。
 func (h *productPageHandle) ProductTagsCreate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
@@ -206,10 +256,10 @@ func (h *productPageHandle) ProductTagsCreate(c *gin.Context) {
 		Kind: form.kind, RuleType: form.ruleType, RuleParams: form.params, Sort: form.sort,
 	}
 	if _, err := h.products.CreateTag(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.tagFormFail(c, "create", err)
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
+	tagFormSuccess(c, projectID)
 }
 
 // ProductTagsUpdate 修改标签（改名 / 换 slug / 换类型 / 改规则参数 / 排序）。
@@ -228,10 +278,10 @@ func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
 		req.RuleParams = form.params
 	}
 	if _, err := h.products.UpdateTag(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID+"&err="+url.QueryEscape(productErrText(c, err)))
+		h.tagFormFail(c, "update", err)
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/product-tags?project="+projectID)
+	tagFormSuccess(c, projectID)
 }
 
 // ProductTagsDelete 删除标签（服务端会把商品上的引用一起解绑）。

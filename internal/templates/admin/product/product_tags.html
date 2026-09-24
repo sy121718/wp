@@ -243,69 +243,29 @@
     {{end}}
     {{if canUpdate}}
     <template id="tpl-tag-edit-{{t.ID}}">
+        {{if isset(t.EditForm)}}{{include "product_tag_form.html" t.EditForm}}{{else}}
         <form method="post" action="/admin/product-tags/update" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{t.ID}}">
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_tags.label.name", "标签名称") }}" class="form-input" type="text" name="name" value="{{t.Name}}" placeholder="{{ .["t"]("admin.product_tags.label.name", "标签名称") }}" required>
-                <input aria-label="{{ .["t"]("admin.product_tags.label.slug", "URL 段") }}" class="form-input" type="text" name="slug" value="{{t.Slug}}" placeholder="{{ .["t"]("admin.product_tags.label.slug", "URL 段") }}" autocomplete="off">
-                <select class="form-select" name="kind" aria-label="{{ .["t"]("admin.product_tags.label.kind", "类型") }}">
-                    <option value="manual" {{if !t.IsRule}}selected{{end}}>{{ .["t"]("admin.product_tags.kindManual", "手工标签") }}</option>
-                    <option value="rule" {{if t.IsRule}}selected{{end}}>{{ .["t"]("admin.product_tags.kindRule", "自动标签（按规则）") }}</option>
-                </select>
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="{{t.Sort}}" placeholder="{{ .["t"]("admin.product_tags.ph.sort", "排序") }}" inputmode="numeric" step="1">
-            </div>
-            <div class="form-inline">
-                <select class="form-select" name="ruleType" aria-label="{{ .["t"]("admin.product_tags.label.rule", "规则") }}">
-                    <option value="" {{if t.RuleType == ""}}selected{{end}}>{{ .["t"]("admin.product_tags.ruleEmpty", "（手工标签留空）") }}</option>
-                    {{range _, r := ruleTypes}}
-                    <option value="{{r.Type}}" {{if r.Type == t.RuleType}}selected{{end}}>{{r.Name}}</option>
-                    {{end}}
-                </select>
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.daysShort", "days（1~365）") }}" class="form-input" type="number" name="days" value="{{t.RuleDays}}" placeholder="{{ .["t"]("admin.product_tags.ph.daysShort", "days（1~365）") }}" inputmode="numeric" min="1" max="365" step="1">
-                <input aria-label="minPrice" class="form-input" type="text" name="minPrice" value="{{t.RuleMinPrice}}" placeholder="minPrice" inputmode="decimal" autocomplete="off">
-                <input aria-label="maxPrice" class="form-input" type="text" name="maxPrice" value="{{t.RuleMaxPrice}}" placeholder="maxPrice" inputmode="decimal" autocomplete="off">
-            </div>
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
-            </div>
+            <input class="form-input" name="name" value="{{t.Name}}" required>
+            <button type="submit">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
         </form>
+        {{end}}
     </template>
     {{end}}
     {{end}}
 
     {{if canCreate}}
     <template id="tpl-tag-create">
+        {{if isset(.TagCreateForm)}}{{include "product_tag_form.html" .TagCreateForm}}{{else}}
         <form method="post" action="/admin/product-tags/create" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <div class="form-inline">
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.nameExample", "标签名称（如 新品 / 促销）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_tags.ph.nameExample", "标签名称（如 新品 / 促销）") }}" required>
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.slug", "URL 段（留空自动生成）") }}" class="form-input" type="text" name="slug" placeholder="{{ .["t"]("admin.product_tags.ph.slug", "URL 段（留空自动生成）") }}" autocomplete="off">
-                <select class="form-select" name="kind" aria-label="{{ .["t"]("admin.product_tags.label.kind", "类型") }}">
-                    <option value="manual">{{ .["t"]("admin.product_tags.kindManual", "手工标签") }}</option>
-                    <option value="rule">{{ .["t"]("admin.product_tags.kindRule", "自动标签（按规则）") }}</option>
-                </select>
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="0" placeholder="{{ .["t"]("admin.product_tags.ph.sort", "排序") }}" inputmode="numeric" step="1">
-            </div>
-            <div class="form-inline">
-                <select class="form-select" name="ruleType" aria-label="{{ .["t"]("admin.product_tags.label.rule", "规则") }}">
-                    <option value="">{{ .["t"]("admin.product_tags.ruleEmpty", "（手工标签留空）") }}</option>
-                    {{range _, r := ruleTypes}}
-                    <option value="{{r.Type}}">{{r.Name}}</option>
-                    {{end}}
-                </select>
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.days", "days（上架 N 天内，1~365）") }}" class="form-input" type="number" name="days" placeholder="{{ .["t"]("admin.product_tags.ph.days", "days（上架 N 天内，1~365）") }}" inputmode="numeric" min="1" max="365" step="1">
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.minPrice", "minPrice（价格下限，可留空）") }}" class="form-input" type="text" name="minPrice" placeholder="{{ .["t"]("admin.product_tags.ph.minPrice", "minPrice（价格下限，可留空）") }}" inputmode="decimal" autocomplete="off">
-                <input aria-label="{{ .["t"]("admin.product_tags.ph.maxPrice", "maxPrice（价格上限，可留空）") }}" class="form-input" type="text" name="maxPrice" placeholder="{{ .["t"]("admin.product_tags.ph.maxPrice", "maxPrice（价格上限，可留空）") }}" inputmode="decimal" autocomplete="off">
-            </div>
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>
-            </div>
+            <input class="form-input" name="name" required>
+            <button type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>
         </form>
+        {{end}}
     </template>
     {{end}}
 </div>
