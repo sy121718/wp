@@ -18,7 +18,7 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
-	inventorycontract "go_wp/internal/module/product/inventory/contract"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"

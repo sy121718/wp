@@ -14,11 +14,16 @@
             <input aria-label="{{tr("admin.product_categories.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{if fill}}{{.FormEcho.slug}}{{else}}{{.Slug}}{{end}}" placeholder="{{tr("admin.product_categories.label.slug", "URL 段")}}" autocomplete="off">
             {{parent := .ParentID}}{{if fill}}{{parent = .FormEcho.parentId}}{{end}}
             {{id := .ID}}
-            <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId">
+            <div data-category-parent-picker data-category-project="{{.Project}}">
+            <label for="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_categories.parentSearch.label", "搜索父级分类")}}</label>
+            <input id="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}" type="search" class="form-input" autocomplete="off" placeholder="{{tr("admin.product_categories.parentSearch.placeholder", "按名称搜索父级")}}" data-category-parent-search>
+            <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
                 <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
                 {{range _, o := .Options}}{{if o.ID != id}}<option value="{{o.ID}}" {{if o.ID == parent}}selected{{end}}>{{o.Label}}</option>{{end}}{{end}}
-                {{if fill}}{{if parent != ""}}<option value="{{parent}}" hidden selected>{{parent}}</option>{{end}}{{end}}
+                {{if isset(.ParentMissing)}}{{if .ParentMissing}}<option value="{{parent}}" selected>{{if isset(.ParentLabel)}}{{.ParentLabel}}{{else}}{{parent}}{{end}}</option>{{end}}{{end}}
             </select>
+            <div data-category-parent-results role="status"></div>
+            </div>
             <input aria-label="{{tr("admin.product_categories.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{if fill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" inputmode="numeric" step="1">
             <input aria-label="{{tr("admin.product_categories.label.image", "分类图 URL")}}" class="form-input" type="text" name="image" value="{{if fill}}{{.FormEcho.image}}{{else}}{{.Image}}{{end}}" autocomplete="off">
         </div>

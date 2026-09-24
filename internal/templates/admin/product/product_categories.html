@@ -85,6 +85,7 @@
             </form>
         </div>
 
+        {{if isset(.SearchMode)}}{{if .SearchMode}}<p role="status">{{tr("admin.product_categories.search.matchCount", "匹配")}} {{.MatchTotal}} {{tr("admin.product_categories.search.matchSuffix", "条；上级路径仅供定位")}}</p>{{end}}{{end}}
         {* 空数据也渲染 <table>/<thead>（审计 D1）：表头是「这个列表有哪些列」的唯一说明，
            空数据就把它一起藏掉，用户只剩一句话、无从判断自己是不是筛错了列。
            空态落在 tbody 的整行里（colspan = 实际列数）；<form> 依旧包住 <table>。 *}
@@ -92,7 +93,7 @@
            工程里真的没有分类 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。 *}
-        <form method="post" action="/admin/product-categories/bulk-delete">
+        <form method="post" action="/admin/product-categories/bulk-delete" data-category-tree-form>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
@@ -140,11 +141,12 @@
                     </td></tr>
                     {{else}}
                     {{range _, row := .Categories}}
-                    <tr>
+                    <tr data-category-row data-category-id="{{row.ID}}" data-category-parent="{{row.ParentID}}" aria-level="{{if isset(row.Depth)}}{{row.Depth + 1}}{{else}}1{{end}}" {{if isset(.SearchMode)}}{{if .SearchMode}}{{if row.Matched}}data-category-match{{else}}data-category-ancestor{{end}}{{end}}{{end}}>
                         <td class="col-check">
                             <input type="checkbox" name="ids" value="{{row.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        <td>{{if row.HasChildren}}<a href="/admin/product-categories?project={{selectedProject}}&amp;parentId={{row.ID}}"><strong>{{row.Label}}</strong></a>{{else}}{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{row.Label}}</strong></button>{{else}}<strong>{{row.Label}}</strong>{{end}}{{end}}</td>
+                        <td style="padding-inline-start:calc({{if isset(row.Depth)}}{{row.Depth}}{{else}}0{{end}} * 1.25rem)">{{if row.HasChildren}}{{if !row.SearchMode}}<button type="button" class="row-title-link" data-category-toggle aria-expanded="false" aria-controls="category-children-{{row.ID}}" hx-get="/admin/product-categories/children?project={{selectedProject}}&amp;parentId={{row.ID}}" hx-target="#category-children-{{row.ID}}" hx-swap="innerHTML"><strong>{{row.Label}}</strong></button>{{else}}<strong>{{row.Label}}</strong>{{end}}{{else}}<strong>{{row.Label}}</strong>{{end}}
+                        {{if row.SearchMode}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>
                         {* 空值占位与同表 Slug 列逐字一致：全站空值一律用 .text-mute 包一个「—」，
@@ -159,6 +161,7 @@
                             {{end}}
                         </td>
                     </tr>
+                    {{if row.HasChildren}}{{if !row.SearchMode}}<tr data-category-child-row hidden><td colspan="6"><div id="category-children-{{row.ID}}" data-category-children></div></td></tr>{{end}}{{end}}
                     {{end}}
                     {{end}}
                     </tbody>

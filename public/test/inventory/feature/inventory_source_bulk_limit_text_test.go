@@ -19,7 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
+	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	"go_wp/internal/web/shell"
 )
 

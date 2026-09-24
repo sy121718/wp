@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 
+	"go_wp/pkg/logger"
+
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -121,16 +123,11 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	if parentID != "" && keyword == "" {
 		filterQuery.Set("parentId", parentID)
 	}
-	rows := make([]gin.H, 0, len(pageRows))
-	for _, node := range pageRows {
-		rows = append(rows, gin.H{
-			"ID": node.ID, "Name": node.Name, "Slug": node.Slug, "Label": categoryLabel(node),
-			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
-			"Description": node.Description, "Image": node.Image,
-			"SEOTitle": node.SEOTitle, "SEODescription": node.SEODescription,
-			"HasChildren": node.HasChildren, "Matched": node.Matched,
-			"EditForm": categoryDrawerData(c, "update", selected, node, options),
-		})
+	rows := categoryTreeRows(c, selected, pageRows, options, keyword != "")
+	if keyword != "" {
+		for _, row := range rows {
+			row["HasChildren"] = false
+		}
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
 	data := gin.H{
@@ -142,6 +139,8 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
 		"Options":            options,
 		"ParentID":           parentID,
+		"SearchMode":         keyword != "",
+		"MatchTotal":         total,
 		"Breadcrumbs":        breadcrumbs,
 		"CategoryCreateForm": createForm,
 		// 筛选回显（GET 表单的 value）：提交后条件留在控件上，
@@ -161,6 +160,92 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		data[k] = v
 	}
 	c.HTML(http.StatusOK, "admin/product/product_categories.html", shell.Prepare(c, data))
+}
+
+// ProductCategoryChildren renders one parent's directly paged children, never the entire tree.
+func (h *productPageHandle) ProductCategoryChildren(c *gin.Context) {
+	projectID, parentID := strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("parentId"))
+	if parentID == "" || !h.categoryProjectExists(c, projectID) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	page := productPageNumber(c.Query("page"))
+	req := &productdto.ListCategoryPageReq{ProjectID: projectID, ParentID: parentID, Page: page, Size: productSubListPageSize}
+	result, err := h.products.ListCategoryPage(c.Request.Context(), req)
+	if err != nil {
+		logger.Scene("product").With("projectId", projectID).With("parentId", parentID).With("reason", err.Error()).Warn("分类子级加载失败")
+		c.Status(http.StatusNotFound)
+		return
+	}
+	page = clampPageToTotal(page, productSubListPageSize, result.Total)
+	if page != req.Page {
+		req.Page = page
+		result, err = h.products.ListCategoryPage(c.Request.Context(), req)
+		if err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+	}
+	data := gin.H{"Categories": categoryTreeRows(c, projectID, result.Items, nil, false), "SelectedProject": projectID,
+		"ParentID": parentID, "ChildPage": page, "ChildTotal": result.Total, "ChildSize": productSubListPageSize,
+		"PermSet": shell.Prepare(c, gin.H{})["PermSet"], "t": shell.TranslateFor(c), "csrf_token": shell.Prepare(c, gin.H{})["csrf_token"]}
+	c.HTML(http.StatusOK, "admin/product/product_category_children.html", data)
+}
+
+// ProductCategoryParents is a bounded, project-scoped parent picker search.
+func (h *productPageHandle) ProductCategoryParents(c *gin.Context) {
+	projectID := strings.TrimSpace(c.Query("project"))
+	if !h.categoryProjectExists(c, projectID) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	options := []gin.H{}
+	if keyword != "" {
+		page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{
+			ProjectID: projectID, Keyword: keyword, Page: productPageNumber(c.Query("page")), Size: productSubListPageSize,
+		})
+		if err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		for _, item := range flattenCategoryTree(page.Items) {
+			if item.Matched {
+				options = append(options, gin.H{"ID": item.ID, "Label": categoryLabel(item)})
+			}
+		}
+	}
+	c.HTML(http.StatusOK, "admin/product/product_category_parent_options.html", gin.H{"Options": options, "t": shell.TranslateFor(c)})
+}
+
+func (h *productPageHandle) categoryProjectExists(c *gin.Context, projectID string) bool {
+	if projectID == "" {
+		return false
+	}
+	projects, err := h.projects.List(c.Request.Context())
+	if err != nil {
+		return false
+	}
+	for _, project := range projects {
+		if project.ID == projectID {
+			return true
+		}
+	}
+	return false
+}
+
+func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H, searching bool) []gin.H {
+	rows := make([]gin.H, 0, len(nodes))
+	for _, node := range nodes {
+		rows = append(rows, gin.H{
+			"ID": node.ID, "Name": node.Name, "Slug": node.Slug, "Label": node.Name,
+			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
+			"SEOTitle": node.SEOTitle, "HasChildren": node.HasChildren,
+			"Matched": node.Matched, "SearchMode": searching,
+			"EditForm": categoryDrawerData(c, "update", projectID, node, options),
+		})
+	}
+	return rows
 }
 
 // ProductCategoriesCreate 新建分类。
@@ -648,6 +733,15 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": shell.Prepare(c, gin.H{})["csrf_token"], "t": shell.TranslateFor(c)}
 	if row != nil {
 		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID
+		if row.ParentID != "" {
+			data["ParentMissing"] = true
+			for _, option := range options {
+				if option["ID"] == row.ParentID {
+					data["ParentMissing"] = false
+					break
+				}
+			}
+		}
 		data["Sort"], data["Image"], data["Description"] = row.Sort, row.Image, row.Description
 		data["SEOTitle"], data["SEODescription"] = row.SEOTitle, row.SEODescription
 	} else {

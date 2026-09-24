@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/pkg/crypto"
 )
 

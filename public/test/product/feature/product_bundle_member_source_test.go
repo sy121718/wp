@@ -23,9 +23,9 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventorymodel "go_wp/internal/module/product/inventory/model"
-	inventoryservice "go_wp/internal/module/product/inventory/service"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorymodel "go_wp/internal/module/inventory/model"
+	inventoryservice "go_wp/internal/module/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"

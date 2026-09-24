@@ -28,7 +28,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventorymodel "go_wp/internal/module/inventory/model"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/rls"
 )

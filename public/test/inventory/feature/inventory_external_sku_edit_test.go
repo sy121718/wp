@@ -28,8 +28,8 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/internal/web/shell"
 	pkgcasbin "go_wp/pkg/casbin"
@@ -412,7 +412,7 @@ func TestExternalSKUEditUnauthorizedBlocked(t *testing.T) {
 	}
 
 	// ④ 生产装配里这条路由挂的中间件与权限点，必须就是上面验证的那一个。
-	src, err := os.ReadFile("../../../../internal/module/product/inventory/inbound/http/inventory_router.go")
+	src, err := os.ReadFile("../../../../internal/module/inventory/inbound/http/inventory_router.go")
 	if err != nil {
 		t.Fatalf("读库存路由装配失败: %v", err)
 	}

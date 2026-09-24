@@ -1,0 +1,3 @@
+{{tr := .["t"]}}
+{{range _, option := .Options}}<button type="button" class="btn btn-sm" data-category-parent-choice="{{option.ID}}">{{option.Label}}</button>{{end}}
+{{if len(.Options) == 0}}<span class="text-mute">{{tr("admin.product_categories.parentSearch.empty", "没有匹配的分类")}}</span>{{end}}

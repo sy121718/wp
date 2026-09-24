@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 // TestSourcePageMultiDeviceContract 多端 / 多输入适配的结构契约。

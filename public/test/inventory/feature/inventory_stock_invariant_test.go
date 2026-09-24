@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	inventorymodel "go_wp/internal/module/product/inventory/model"
+	inventorymodel "go_wp/internal/module/inventory/model"
 )
 
 func TestEnsureStockCoercesUntrackedRowWithQuantity(t *testing.T) {

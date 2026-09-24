@@ -21,7 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 // productionFormAction 生产入库表单的提交地址（与页面里渲染出的 action 一致）。

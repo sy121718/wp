@@ -15,8 +15,8 @@ package feature
 import (
 	"testing"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 func TestReceiptRollsBackAccountingWhenStockChangeFails(t *testing.T) {

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 // internalTokens 内部实现细节的黑名单：驱动文案、SQLSTATE、表名与约束名前缀。

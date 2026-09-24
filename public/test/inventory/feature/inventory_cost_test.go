@@ -22,8 +22,8 @@ import (
 	"strings"
 	"testing"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/pkg/database"
 	"go_wp/public/migrations"
 )

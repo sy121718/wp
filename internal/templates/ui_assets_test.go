@@ -59,7 +59,7 @@ func TestUIAssetEntry(t *testing.T) {
 	}
 	// 名字里允许点与数字：htmx.min.js 这类**前置库**同样是入口的一部分
 	//（原先从 CDN 引它，CDN 不可达时后台的局部刷新会静默退化成整页刷新）。
-	matches := regexp.MustCompile(`/static/js/(ui/[a-z0-9_.\.]*\.js)`).FindAllStringSubmatch(string(entry), -1)
+	matches := regexp.MustCompile(`/static/js/(ui/[a-z0-9_.-]*\.js)`).FindAllStringSubmatch(string(entry), -1)
 	if len(matches) < 3 || matches[len(matches)-1][1] != "ui/index.js" {
 		t.Fatal("控件入口必须按助手、控件、扫描入口的顺序加载（扫描入口放最后）")
 	}
@@ -149,5 +149,45 @@ assert.equal(ui.transitionTime({}),0);
 `
 	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
 		t.Fatalf("基座异常可观测性/动效时间契约失败: %v\n%s", err, out)
+	}
+}
+
+func TestProductCategoryTreeKeyboardExpansion(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		if os.Getenv("GOWP_REQUIRE_NODE") == "1" {
+			t.Fatal("分类树键盘检查要求 Node")
+		}
+		t.Skip("缺少 Node")
+	}
+	script := `
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const handlers = {};
+const form = {querySelectorAll: () => [], querySelector: () => null};
+const childRow = {hidden: true, hasAttribute: name => name === 'data-category-child-row', querySelectorAll: () => [], querySelector: () => null};
+const row = {nextElementSibling: childRow};
+let expanded = 'false', clicks = 0;
+const button = {
+  closest: selector => selector === '[data-category-row]' ? row : (selector === '[data-category-tree-form]' ? form : null),
+  getAttribute: name => name === 'aria-expanded' ? expanded : null,
+  setAttribute: (name, value) => { if (name === 'aria-expanded') expanded = value; },
+  click: () => { clicks++; expanded = 'true'; childRow.hidden = false; }
+};
+const document = {addEventListener: (type, fn) => { handlers[type] = fn; }};
+vm.runInNewContext(fs.readFileSync('static/js/ui/product-category-tree.js', 'utf8'), {document, window: {}});
+assert.ok(handlers.keydown, '没有注册分类树键盘监听');
+let prevented = 0;
+const target = {closest: selector => selector === '[data-category-toggle]' ? button : null};
+handlers.keydown({target, key: 'ArrowRight', preventDefault: () => prevented++});
+assert.equal(clicks, 1, '右方向键没有展开分支');
+assert.equal(expanded, 'true');
+assert.equal(childRow.hidden, false);
+handlers.keydown({target, key: 'ArrowLeft', preventDefault: () => prevented++});
+assert.equal(expanded, 'false', '左方向键没有折叠分支');
+assert.equal(childRow.hidden, true);
+assert.equal(prevented, 2);
+`
+	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
+		t.Fatalf("分类树键盘展开契约失败: %v\n%s", err, out)
 	}
 }

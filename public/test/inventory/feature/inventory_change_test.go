@@ -29,9 +29,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
-	inventoryhttp "go_wp/internal/module/product/inventory/inbound/http"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 )
 
 // slugSeq 让同一次测试里建的商品 slug 不撞车（商品 slug 工程内唯一）。

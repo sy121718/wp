@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventorydto "go_wp/internal/module/inventory/dto"
 	productservice "go_wp/internal/module/product/service"
 )
 

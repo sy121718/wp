@@ -11,10 +11,10 @@ import (
 	"go_wp/internal/middleware/builtin"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
-	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
@@ -139,6 +139,8 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 商品分类与品牌管理页（issue #10）：分类是树（父子层级 / 排序 / slug / SEO 字段），
 	// 品牌是独立实体（logo / 描述 / slug / SEO 字段）。写动作复用商品 API 权限点做 Casbin 鉴权。
 	pages.GET("/product-categories", productPages.ProductCategoriesPage)
+	pages.GET("/product-categories/children", productPages.ProductCategoryChildren)
+	pages.GET("/product-categories/parents", productPages.ProductCategoryParents)
 	pages.POST("/product-categories/create", builtin.CasbinMiddlewareForPath("/api/product/category/create"), productPages.ProductCategoriesCreate)
 	pages.POST("/product-categories/update", builtin.CasbinMiddlewareForPath("/api/product/category/update"), productPages.ProductCategoriesUpdate)
 	pages.POST("/product-categories/delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesDelete)

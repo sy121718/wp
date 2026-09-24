@@ -12,7 +12,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventorydto "go_wp/internal/module/inventory/dto"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/money"

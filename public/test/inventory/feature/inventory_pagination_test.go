@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventorydto "go_wp/internal/module/inventory/dto"
 )
 
 // paginationBar 分页条在页面里的稳定标记（partials/pagination.html 的 <nav class="pagination">）。

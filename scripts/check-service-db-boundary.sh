@@ -225,7 +225,7 @@ hits = []
 pattern = re.compile(r'"go_wp/internal/module/([^"]+)/(model|service)"')
 
 def owner_of(path):
-    """internal/module/<owner>/.../service/x.go → <owner>（含两级模块如 product/inventory）。"""
+    """internal/module/<owner>/.../service/x.go → <owner>。"""
     parts = path.split(os.sep)
     try:
         i = parts.index("module")
@@ -245,7 +245,7 @@ for path in glob.glob(os.path.join(target, "**", "service", "*.go"), recursive=T
         continue
     for m in pattern.finditer(src):
         other = m.group(1)
-        # 本模块（含子模块）之间的引用不算跨模块：product 与 product/inventory 是一棵树。
+        # 仅相同模块内的 service/model 引用放行；inventory 是独立模块。
         if other == owner or other.startswith(owner + "/") or owner.startswith(other + "/"):
             continue
         hits.append("%s -> %s" % (os.path.relpath(path, os.path.dirname(target)), m.group(0)))
@@ -261,7 +261,6 @@ if [ -n "$CROSS" ]; then
   echo "" >&2
   echo "  跨模块只能用对方 contract 与不可变 dto（internal/module/CLAUDE.md「表隔离约定」）。" >&2
   echo "  对方的能力不够用就给对方 contract 加方法，不要伸进它的仓储层。" >&2
-  echo "  注意：只有模块间才算 —— product 与 product/inventory 属同一棵树，直接引用不算违规。" >&2
   failed=1
 fi
 

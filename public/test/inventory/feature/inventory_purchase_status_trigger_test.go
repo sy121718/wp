@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	inventorydto "go_wp/internal/module/product/inventory/dto"
+	inventorydto "go_wp/internal/module/inventory/dto"
 
 	"go_wp/public/migrations"
 )

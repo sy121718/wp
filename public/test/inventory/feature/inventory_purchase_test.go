@@ -24,8 +24,8 @@ import (
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
-	inventorydto "go_wp/internal/module/product/inventory/dto"
-	inventoryenums "go_wp/internal/module/product/inventory/enums"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 )
 
 // —— 小工具 ——

@@ -35,7 +35,7 @@ var forbiddenCrossModuleDTO = []struct {
 	},
 	{
 		from:  "order",
-		deny:  "go_wp/internal/module/product/inventory/dto",
+		deny:  "go_wp/internal/module/inventory/dto",
 		audit: "CQ-004：库存入参用 ordercontract 自有类型（适配器在库存侧）",
 	},
 	{
@@ -116,9 +116,8 @@ func TestNoCrossModuleDTOImport(t *testing.T) {
 // internal/module/CLAUDE.md「表隔离约定」）：任何模块都不得 import 其他模块的
 // service / model 包。
 //
-// product/inventory 视为 product 的**子模块**（issue #32：库存已并入商品域，业务层
-// 同模块直调），因此 product/service → product/inventory/model 属同模块内调用，
-// 不算越界 —— 这也正是审计 CQ-002 的核查结论。
+// inventory 已提升为独立模块：product 与 inventory 的生产 service 仅通过
+// inventory/contract 及不可变 dto 交互；跨模块 model / service 导入仍由此测试禁止。
 func TestNoCrossModuleServiceModelImport(t *testing.T) {
 	root := repoRoot(t)
 	base := filepath.Join(root, "internal", "module")
