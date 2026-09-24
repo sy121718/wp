@@ -1,0 +1,56 @@
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{p := .PermissionEdit}}
+{{name := p.PermissionName}}{{module := p.Module}}{{path := p.APIPath}}
+{{method := p.APIMethod}}{{status := p.Status}}{{remark := p.Remark}}
+{{if isset(.PermissionEditEcho)}}
+{{name = .PermissionEditEcho.permission_name}}{{module = .PermissionEditEcho.module}}
+{{path = .PermissionEditEcho.api_path}}{{method = .PermissionEditEcho.api_method}}
+{{status = .PermissionEditEcho.status}}{{remark = .PermissionEditEcho.remark}}
+{{end}}
+<div data-drawer-fragment>
+    {{if isset(.PermissionEditErr)}}{{if .PermissionEditErr != ""}}<p class="badge badge-warning" role="alert">{{.PermissionEditErr}}</p>{{end}}{{end}}
+    <form method="post" action="/admin/permissions/update" hx-post="/admin/permissions/update" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="id" value="{{p.ID}}">
+        <input type="hidden" name="permission_code" value="{{p.PermissionCode}}">
+        <div class="form-group">
+            <label class="form-label">{{tr("admin.permissions.field.code", "权限编码")}}</label>
+            <input type="text" class="form-input" value="{{p.PermissionCode}}" disabled>
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{tr("admin.permissions.field.name", "权限名称")}}</label>
+            <input type="text" name="permission_name" class="form-input" required maxlength="100" value="{{name}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{tr("admin.permissions.field.module", "所属模块")}}</label>
+            <input type="text" name="module" class="form-input" required maxlength="50" value="{{module}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{tr("admin.permissions.field.api_path", "API 路径")}}</label>
+            <input type="text" name="api_path" class="form-input" required maxlength="200" value="{{path}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label req">{{tr("admin.permissions.field.method", "方法")}}</label>
+            <select name="api_method" class="form-select">
+                <option value="GET"{{if method == "GET"}} selected{{end}}>GET</option>
+                <option value="POST"{{if method == "POST"}} selected{{end}}>POST</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{tr("admin.permissions.field.status", "状态")}}</label>
+            <select name="status" class="form-select">
+                <option value="1"{{if status == 1 || status == "1"}} selected{{end}}>{{tr("admin.permissions.status.enabled", "启用")}}</option>
+                <option value="0"{{if status == 0 || status == "0"}} selected{{end}}>{{tr("admin.permissions.status.disabled", "禁用")}}</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{tr("admin.permissions.field.remark", "备注")}}</label>
+            <input type="text" name="remark" class="form-input" maxlength="200" value="{{remark}}">
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.permissions.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{tr("admin.permissions.action.save", "保存修改")}}</button>
+        </div>
+    </form>
+</div>

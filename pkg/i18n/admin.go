@@ -118,6 +118,55 @@ func ListEntries(ctx context.Context, f EntryFilter) (items []Entry, total int64
 	return items, total, err
 }
 
+// GetEntry reads one exact (key, lang) pair without using a paginated list.
+func GetEntry(ctx context.Context, key, lang string) (entry *Entry, err error) {
+	key, lang = strings.TrimSpace(key), strings.TrimSpace(lang)
+	if key == "" {
+		return nil, ErrI18nKeyEmpty
+	}
+	if lang == "" {
+		return nil, ErrI18nLangEmpty
+	}
+	db, err := i18nAdminDB()
+	if err != nil {
+		return nil, err
+	}
+	var row Entry
+	result := db.WithContext(ctx).Table("sys_i18n").Where("item_key = ? AND lang = ?", key, lang).Take(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &row, nil
+}
+
+// UpdateEntry updates an existing exact pair; an absent entry never becomes a new row.
+func UpdateEntry(ctx context.Context, e Entry) (err error) {
+	key, lang := strings.TrimSpace(e.Key), strings.TrimSpace(e.Lang)
+	if key == "" {
+		return ErrI18nKeyEmpty
+	}
+	if lang == "" {
+		return ErrI18nLangEmpty
+	}
+	if strings.TrimSpace(e.Value) == "" {
+		return ErrI18nValueEmpty
+	}
+	db, err := i18nAdminDB()
+	if err != nil {
+		return err
+	}
+	result := db.WithContext(ctx).Table("sys_i18n").Where("item_key = ? AND lang = ?", key, lang).
+		Updates(map[string]any{"item_value": e.Value, "category": strings.TrimSpace(e.Category),
+			"remark": strings.TrimSpace(e.Remark), "update_time": time.Now()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return reloadCacheAfterWrite()
+}
+
 // Categories 列出已用到的分类（筛选下拉用，去重后有序）。
 func Categories(ctx context.Context) (out []string, err error) {
 	db, err := i18nAdminDB()

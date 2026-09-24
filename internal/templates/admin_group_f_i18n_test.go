@@ -33,6 +33,8 @@ var groupFTemplates = []string{
 	// 中英成对 —— 新增页面最容易漏的就是这一条（页面上的英文界面会整块回落中文）。
 	"admin/system/role_permissions.html",
 	"admin/system/permissions.html",
+	// 权限编辑表单已从列表逐行模板移到按需片段：本批 seed 的保存文案仍在片段中使用。
+	"admin/system/permission_edit_form.html",
 	"admin/system/departments.html",
 	"admin/system/i18n.html",
 	"admin/masterdata/masterdata_changes.html",
@@ -376,13 +378,14 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
 		Category: "ui", UpdateTime: "2026-09-14 10:00",
 	}}
+	i18nData["I18nEditURLs"] = []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"}
 	out, err = render(t, set, "admin/system/i18n", i18nData)
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
 	for _, want := range []string{
 		"文案词条", "site.component.gallery.prev", "编辑", "删除",
-		`data-drawer-open="#tpl-i18n-edit-0"`, "tpl-i18n-create", "来源或修改原因",
+		`data-drawer-url="/admin/i18n/edit?key=site.component.gallery.prev`, "tpl-i18n-create", "来源或修改原因",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("词条页缺少 %q（range 可能在 tr 取词处中断）", want)

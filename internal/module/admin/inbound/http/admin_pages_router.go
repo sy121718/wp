@@ -57,12 +57,14 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/roles/permissions/save", builtin.CasbinMiddlewareForPath("/api/role/menu/save"), handle.RolePermissionsSave)
 
 	adminPages.GET("/menus", builtin.CasbinMiddlewareForPath("/api/menu/tree"), handle.MenusPage)
+	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"), handle.MenusEditFragment)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
 	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
 	adminPages.GET("/permissions", builtin.CasbinMiddlewareForPath("/api/permission/list"), handle.PermissionsPage)
+	adminPages.GET("/permissions/edit", builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"), handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
 	adminPages.POST("/permissions/update", builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
@@ -94,6 +96,8 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
 	i18nPages.SetPageMarker(pages)
 	adminPages.GET("/i18n", builtin.CasbinMiddlewareForPath("/api/i18n/list"), i18nPages.I18nEntriesPage)
+	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"), i18nPages.I18nEntryEditFragment)
+	adminPages.POST("/i18n/update", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryUpdate)
 	adminPages.POST("/i18n/save", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntrySave)
 	adminPages.POST("/i18n/delete", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryDelete)
 	// 批量删除复用同一条删除路径与权限点（i18n:manage → /api/i18n/save）：

@@ -179,7 +179,8 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					"TargetLabel": "当前窗口", "Indent": "0px", "Depth": 0, "First": true, "Last": true,
 				}},
 			},
-			wants: []string{"导航菜单", "页眉导航", "添加菜单项", "当前窗口", "新标签页", "作为顶级项", "放到「", "从已有内容添加", "暂无公开路径", "加入菜单", "菜单结构", "菜单项", "打开方式", "编辑", "保存", "确定删除「"},
+			// 每行编辑表单按需 GET 加载，列表只保留编辑入口；保存按钮在独立片段中验证。
+			wants: []string{"导航菜单", "页眉导航", "添加菜单项", "当前窗口", "新标签页", "作为顶级项", "放到「", "从已有内容添加", "暂无公开路径", "加入菜单", "菜单结构", "菜单项", "打开方式", "编辑", "data-drawer-url", "确定删除「"},
 		},
 		{
 			name: "admin/navigation/navigation_translations",
@@ -208,7 +209,8 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"Parents": []map[string]any{{"ID": "m0", "Title": "根", "Type": 1, "Indent": ""}},
 				"PermSet": map[string]any{"menu:create": true, "menu:update": true, "menu:delete": true},
 			},
-			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "菜单标题", "上级菜单", "根菜单", "取消", "创建菜单", "保存修改", "确认删除？"},
+			// 编辑表单按需从 /admin/menus/edit 获取；列表只交付编辑入口和新建表单。
+			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "data-drawer-url"},
 		},
 	}
 

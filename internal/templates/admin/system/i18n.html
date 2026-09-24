@@ -12,6 +12,9 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{entries := .Entries}}
+{{editURLs := .["I18nEditURLs"]}}
+{{hasEditURLs := false}}
+{{if isset(.I18nEditURLs)}}{{hasEditURLs = true}}{{end}}
 {{cats := .Categories}}
 {* 权限与筛选状态提到块顶：range 内调 t 必须用块顶变量（.["t"] 里的 . 是当前行），
    权限判断虽可写 .=形式在外层解析，但提到块顶只算一次、也让「谁能管理」在一处可读。 *}
@@ -115,58 +118,21 @@
                         <td class="col-check">
                             <input type="checkbox" name="ids" value="{{e.Key}}|{{e.Lang}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        <td>{{if canManage}}<button type="button" class="row-title-link" data-drawer-open="#tpl-i18n-edit-{{i}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}"><code>{{e.Key}}</code></button>{{else}}<code>{{e.Key}}</code>{{end}}</td>
+                        <td>{{if canManage && hasEditURLs}}<button type="button" class="row-title-link" data-drawer-url="{{editURLs[i]}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}"><code>{{e.Key}}</code></button>{{else}}<code>{{e.Key}}</code>{{end}}</td>
                         <td>{{e.Lang}}</td>
                         <td>{{e.Value}}</td>
                         <td>{{e.Category}}</td>
                         <td>{{e.UpdateTime}}</td>
                         <td class="col-actions">
-                            {* 编辑进右侧抽屉：每行一份 <template>（id 用行号），值由服务端回显 ——
-                               原来靠下面那段内联 JS 把 data-* 填进顶部表单，现在不需要了。 *}
-                            {{if canManage}}
-                            <button type="button" class="btn btn-ghost" data-drawer-open="#tpl-i18n-edit-{{i}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
+                            {* 编辑按精确 key+lang 按需获取，避免列表为每行渲染表单。 *}
+                            {{if canManage && hasEditURLs}}
+                            <button type="button" class="btn btn-ghost" data-drawer-url="{{editURLs[i]}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
                             {{end}}
                             {{if canManage}}
                             <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger"
                                     data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>{{tr("admin.i18n.action.delete", "删除")}}</button>
                             {{end}}
                         </td>
-                        <template id="tpl-i18n-edit-{{i}}">
-                            <form method="post" action="/admin/i18n/save">
-                                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                                <input type="hidden" name="_keyword" value="{{.Keyword}}">
-                                <input type="hidden" name="_lang" value="{{.LangFilter}}">
-                                <input type="hidden" name="_category" value="{{.CatFilter}}">
-                                <input type="hidden" name="key" value="{{e.Key}}">
-                                <input type="hidden" name="lang" value="{{e.Lang}}">
-                                <div class="form-grid">
-                                    <div class="form-field">
-                                        <label class="form-label">key</label>
-                                        <input type="text" class="form-input" value="{{e.Key}}" readonly>
-                                    </div>
-                                    <div class="form-field">
-                                        <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
-                                        <input type="text" class="form-input" value="{{e.Lang}}" readonly>
-                                    </div>
-                                    <div class="form-field form-field--wide">
-                                        <label class="form-label">{{ .["t"]("admin.i18n.label.value", "内容") }}</label>
-                                        <textarea name="value" class="form-textarea" rows="3" required>{{e.Value}}</textarea>
-                                    </div>
-                                    <div class="form-field">
-                                        <label class="form-label">{{ .["t"]("admin.i18n.label.category", "分类") }}</label>
-                                        <input type="text" class="form-input" name="category" value="{{e.Category}}">
-                                    </div>
-                                    <div class="form-field">
-                                        <label class="form-label">{{ .["t"]("admin.i18n.label.remark", "备注") }}</label>
-                                        <input type="text" class="form-input" name="remark" value="{{e.Remark}}">
-                                    </div>
-                                </div>
-                                <div class="action-row">
-                                    <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                                    <button type="submit" class="btn btn-primary">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
-                                </div>
-                            </form>
-                        </template>
                     </tr>
                     {{end}}
                     {{end}}

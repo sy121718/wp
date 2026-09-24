@@ -27,6 +27,7 @@ import (
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
@@ -560,6 +561,46 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/system/permissions", data)
 }
 
+// PermissionsEditFragment fetches one existing permission by its exact id.
+func (h *AdminPagesHandle) PermissionsEditFragment(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id := shell.ParseUint(c.Query("id"))
+	if id == 0 {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	row, err := h.perms.PermDetail(c.Request.Context(), &admindto.PermDetailReq{ID: id})
+	if err != nil {
+		adminErrParam(c, err)
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if row == nil || row.ID != id {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", shell.Prepare(c, gin.H{"PermissionEdit": row}))
+}
+
+func (h *AdminPagesHandle) permissionEditFail(c *gin.Context, msg string) {
+	if !adminDrawerHX(c) {
+		c.Redirect(http.StatusSeeOther, adminPageErrURL(adminPermissionsBackURL(c), msg))
+		return
+	}
+	id := shell.ParseUint(c.PostForm("id"))
+	row, err := h.perms.PermDetail(c.Request.Context(), &admindto.PermDetailReq{ID: id})
+	if id == 0 || err != nil || row == nil || row.ID != id {
+		adminDrawerRedirect(c, adminPageErrURL(adminPermissionsBackURL(c), msg))
+		return
+	}
+	data := gin.H{"PermissionEdit": row, "PermissionEditErr": msg, "PermissionEditEcho": map[string]string{
+		"permission_name": c.PostForm("permission_name"), "module": c.PostForm("module"),
+		"api_path": c.PostForm("api_path"), "api_method": c.PostForm("api_method"),
+		"status": c.PostForm("status"), "remark": c.PostForm("remark"),
+	}}
+	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", shell.Prepare(c, data))
+}
+
 // PermissionsCreate 新建权限点（POST /admin/permissions/create）。
 // permission_code 创建后不可修改；api_method 限 GET/POST。
 func (h *AdminPagesHandle) PermissionsCreate(c *gin.Context) {
@@ -594,6 +635,10 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 	apiPath := shell.FieldValue(c, "api_path")
 	apiMethod := strings.ToUpper(shell.FieldValue(c, "api_method"))
 	if id == 0 || name == "" || module == "" || apiPath == "" {
+		if adminDrawerHX(c) {
+			h.permissionEditFail(c, response.TranslateMessage(c, adminenums.MsgBadRequest))
+			return
+		}
 		adminPageParamFail(c, adminPermissionsBackURL(c))
 		return
 	}
@@ -605,10 +650,14 @@ func (h *AdminPagesHandle) PermissionsUpdate(c *gin.Context) {
 		PermissionName: name, Module: module, APIPath: apiPath, APIMethod: apiMethod,
 		Status: shell.ParseStatus(c.PostForm("status")), Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
+		if adminDrawerHX(c) {
+			h.permissionEditFail(c, adminErrParam(c, err))
+			return
+		}
 		adminPageWriteFail(c, adminPermissionsBackURL(c), err)
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/permissions")
+	adminDrawerRedirect(c, "/admin/permissions")
 }
 
 // PermissionsDelete 删除权限点（POST /admin/permissions/delete）。
@@ -722,6 +771,60 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/system/menus", data)
 }
 
+// MenusEditFragment returns one existing menu's edit form.
+func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id := shell.ParseUint(c.Query("id"))
+	if id == 0 {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	row, err := h.menus.MenuDetail(c.Request.Context(), &admindto.MenuDetailReq{ID: id})
+	if err != nil {
+		adminErrParam(c, err)
+		c.Status(http.StatusNotFound)
+		return
+	}
+	if row == nil || row.ID != id {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", shell.Prepare(c, gin.H{"MenuEdit": row}))
+}
+
+func adminDrawerHX(c *gin.Context) bool {
+	return strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true")
+}
+
+func adminDrawerRedirect(c *gin.Context, target string) {
+	if adminDrawerHX(c) {
+		c.Header("HX-Redirect", target)
+		c.Status(http.StatusOK)
+		return
+	}
+	c.Redirect(http.StatusSeeOther, target)
+}
+
+func (h *AdminPagesHandle) menuEditFail(c *gin.Context, msg string) {
+	if !adminDrawerHX(c) {
+		c.Redirect(http.StatusSeeOther, adminPageErrURL("/admin/menus", msg))
+		return
+	}
+	id := shell.ParseUint(c.PostForm("id"))
+	row, err := h.menus.MenuDetail(c.Request.Context(), &admindto.MenuDetailReq{ID: id})
+	if id == 0 || err != nil || row == nil || row.ID != id {
+		adminDrawerRedirect(c, adminPageErrURL("/admin/menus", msg))
+		return
+	}
+	data := gin.H{"MenuEdit": row, "MenuEditErr": msg, "MenuEditEcho": map[string]string{
+		"title": c.PostForm("title"), "parent_id": c.PostForm("parent_id"),
+		"type": c.PostForm("type"), "status": c.PostForm("status"),
+		"path": c.PostForm("path"), "icon": c.PostForm("icon"),
+		"sort_order": c.PostForm("sort_order"), "remark": c.PostForm("remark"),
+	}}
+	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", shell.Prepare(c, data))
+}
+
 // MenusCreate 新建菜单（POST /admin/menus/create）。
 func (h *AdminPagesHandle) MenusCreate(c *gin.Context) {
 	title := shell.FieldValue(c, "title")
@@ -746,6 +849,10 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 	id := shell.ParseUint(c.PostForm("id"))
 	title := shell.FieldValue(c, "title")
 	if id == 0 || title == "" {
+		if adminDrawerHX(c) {
+			h.menuEditFail(c, response.TranslateMessage(c, adminenums.MsgBadRequest))
+			return
+		}
 		adminPageParamFail(c, "/admin/menus")
 		return
 	}
@@ -755,10 +862,14 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 		Type: shell.ParseStatus(c.PostForm("type")), Path: shell.FieldValue(c, "path"),
 		Status: shell.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 	}); err != nil {
+		if adminDrawerHX(c) {
+			h.menuEditFail(c, adminErrParam(c, err))
+			return
+		}
 		adminPageWriteFail(c, "/admin/menus", err)
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/menus")
+	adminDrawerRedirect(c, "/admin/menus")
 }
 
 // MenusDelete 删除菜单（POST /admin/menus/delete）。
@@ -1236,15 +1347,29 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	if page < 1 {
 		page = 1
 	}
+	editURLs := make([]string, len(items))
+	for idx, entry := range items {
+		query := url.Values{"key": {entry.Key}, "lang": {entry.Lang}}
+		for _, field := range []string{"keyword", "category", "page"} {
+			if value := strings.TrimSpace(c.Query(field)); value != "" {
+				query.Set(field, value)
+			}
+		}
+		if filterLang := strings.TrimSpace(c.Query("lang")); filterLang != "" {
+			query.Set("filter_lang", filterLang)
+		}
+		editURLs[idx] = "/admin/i18n/edit?" + query.Encode()
+	}
 	data := gin.H{
-		"title":      "文案词条",
-		"Entries":    items,
-		"Keyword":    filter.Keyword,
-		"LangFilter": filter.Lang,
-		"CatFilter":  filter.Category,
-		"Categories": categories,
-		"Saved":      adminPageSaved(c.Query("saved")),
-		"Errored":    adminPageErrText(c, c.Query("errored")),
+		"title":        "文案词条",
+		"Entries":      items,
+		"I18nEditURLs": editURLs,
+		"Keyword":      filter.Keyword,
+		"LangFilter":   filter.Lang,
+		"CatFilter":    filter.Category,
+		"Categories":   categories,
+		"Saved":        adminPageSaved(c.Query("saved")),
+		"Errored":      adminPageErrText(c, c.Query("errored")),
 		// 批量删除的结果条（?done= / ?err=）：与全站列表页同一对键，文案由服务端拼装
 		// （受控文本 + 计数）。读侧一律过受控出口 —— ?done= 走 adminPageDone（与写侧共用
 		// 模板字面量、整体匹配），?err= / ?errored= 走 adminPageErrText —— 因为**页面不是
@@ -1293,6 +1418,70 @@ func adminI18nDeleteMissingMsg(key, lang string) string {
 		return adminenums.ErrI18nLangEmpty
 	}
 	return ""
+}
+
+// I18nEntryEditFragment reads an exact (key, lang) pair for the edit drawer.
+func (h *adminI18nEntryHandle) I18nEntryEditFragment(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	key, lang := strings.TrimSpace(c.Query("key")), strings.TrimSpace(c.Query("lang"))
+	if key == "" || lang == "" {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	entry, err := i18n.GetEntry(c.Request.Context(), key, lang)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.Status(http.StatusNotFound)
+		} else {
+			adminErrParam(c, err)
+			c.Status(http.StatusInternalServerError)
+		}
+		return
+	}
+	c.HTML(http.StatusOK, "admin/system/i18n_edit_form.html", shell.Prepare(c, gin.H{
+		"I18nEdit": entry, "I18nEditBack": adminI18nEditBack(c),
+	}))
+}
+
+func (h *adminI18nEntryHandle) i18nEditFail(c *gin.Context, msg string) {
+	if !adminDrawerHX(c) {
+		c.Redirect(http.StatusFound, adminI18nBackURL(c, "errored", msg))
+		return
+	}
+	key, lang := strings.TrimSpace(c.PostForm("key")), strings.TrimSpace(c.PostForm("lang"))
+	entry, err := i18n.GetEntry(c.Request.Context(), key, lang)
+	if err != nil || entry == nil {
+		adminDrawerRedirect(c, adminI18nBackURL(c, "errored", msg))
+		return
+	}
+	c.HTML(http.StatusOK, "admin/system/i18n_edit_form.html", shell.Prepare(c, gin.H{
+		"I18nEdit": entry, "I18nEditBack": adminI18nEditBack(c), "I18nEditErr": msg, "I18nEditEcho": map[string]string{
+			"value": c.PostForm("value"), "category": c.PostForm("category"), "remark": c.PostForm("remark"),
+		},
+	}))
+}
+
+// I18nEntryUpdate only updates an existing pair, unlike SaveEntry's create/upsert path.
+func (h *adminI18nEntryHandle) I18nEntryUpdate(c *gin.Context) {
+	key, lang := strings.TrimSpace(c.PostForm("key")), strings.TrimSpace(c.PostForm("lang"))
+	value := c.PostForm("value")
+	if missing := adminI18nSaveMissingMsg(key, lang, value); missing != "" {
+		h.i18nEditFail(c, response.TranslateMessage(c, missing))
+		return
+	}
+	err := i18n.UpdateEntry(c.Request.Context(), i18n.Entry{
+		Key: key, Lang: lang, Value: value, Category: c.PostForm("category"), Remark: c.PostForm("remark"),
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			h.i18nEditFail(c, response.TranslateMessage(c, adminenums.MsgBadRequest))
+		} else {
+			h.i18nEditFail(c, adminErrParam(c, err))
+		}
+		return
+	}
+	h.markI18nStale(c)
+	adminDrawerRedirect(c, adminI18nBackURL(c, "saved", adminI18nEntryIdentity(key, lang)))
 }
 
 // I18nEntrySave POST /admin/i18n/save —— 新增或更新一条词条。
@@ -1413,6 +1602,21 @@ func adminI18nBulkDeleteResult(c *gin.Context, deleted, skipped int) string {
 	default:
 		return fmt.Sprintf(adminBulkTextOf(c, adminI18nBulkPartial), strconv.Itoa(deleted), strconv.Itoa(skipped))
 	}
+}
+
+// adminI18nEditBack carries the list filters from the edit GET into the update POST.
+func adminI18nEditBack(c *gin.Context) map[string]string {
+	back := map[string]string{
+		"_keyword": c.PostForm("_keyword"), "_lang": c.PostForm("_lang"),
+		"_category": c.PostForm("_category"), "_page": c.PostForm("_page"),
+	}
+	if c.Request.Method == http.MethodGet {
+		back["_keyword"] = c.Query("keyword")
+		back["_lang"] = c.Query("filter_lang")
+		back["_category"] = c.Query("category")
+		back["_page"] = c.Query("page")
+	}
+	return back
 }
 
 // adminI18nBackURL 回列表并带上筛选与提示（只回填站内相对路径，避免开放重定向）。

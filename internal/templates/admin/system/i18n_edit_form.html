@@ -1,0 +1,46 @@
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{entry := .I18nEdit}}
+{{back := .I18nEditBack}}
+{{value := entry.Value}}{{category := entry.Category}}{{remark := entry.Remark}}
+{{if isset(.I18nEditEcho)}}
+{{value = .I18nEditEcho.value}}{{category = .I18nEditEcho.category}}{{remark = .I18nEditEcho.remark}}
+{{end}}
+<div data-drawer-fragment>
+    {{if isset(.I18nEditErr)}}{{if .I18nEditErr != ""}}<p class="badge badge-warning" role="alert">{{.I18nEditErr}}</p>{{end}}{{end}}
+    <form method="post" action="/admin/i18n/update" hx-post="/admin/i18n/update" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="key" value="{{entry.Key}}">
+        <input type="hidden" name="lang" value="{{entry.Lang}}">
+        <input type="hidden" name="_keyword" value="{{back._keyword}}">
+        <input type="hidden" name="_lang" value="{{back._lang}}">
+        <input type="hidden" name="_category" value="{{back._category}}">
+        <input type="hidden" name="_page" value="{{back._page}}">
+        <div class="form-grid">
+            <div class="form-field">
+                <label class="form-label">key</label>
+                <input type="text" class="form-input" value="{{entry.Key}}" readonly>
+            </div>
+            <div class="form-field">
+                <label class="form-label">{{tr("admin.i18n.label.lang", "语言")}}</label>
+                <input type="text" class="form-input" value="{{entry.Lang}}" readonly>
+            </div>
+            <div class="form-field form-field--wide">
+                <label class="form-label">{{tr("admin.i18n.label.value", "内容")}}</label>
+                <textarea name="value" class="form-textarea" rows="3" required>{{value}}</textarea>
+            </div>
+            <div class="form-field">
+                <label class="form-label">{{tr("admin.i18n.label.category", "分类")}}</label>
+                <input type="text" class="form-input" name="category" value="{{category}}">
+            </div>
+            <div class="form-field">
+                <label class="form-label">{{tr("admin.i18n.label.remark", "备注")}}</label>
+                <input type="text" class="form-input" name="remark" value="{{remark}}">
+            </div>
+        </div>
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{tr("admin.i18n.action.save", "保存")}}</button>
+        </div>
+    </form>
+</div>

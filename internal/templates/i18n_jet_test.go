@@ -445,6 +445,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		"t": TranslateFunc("zh-CN"), "csrf_token": "tok",
 		"PermSet": map[string]bool{"i18n:manage": true},
 		"Keyword": "", "LangFilter": "", "CatFilter": "",
+		"I18nEditURLs": []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"},
 		"Saved": "site.component.gallery.prev · en-US", "Errored": "",
 		"Entries": []i18n.Entry{{
 			Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
@@ -457,14 +458,14 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
 	// 断言覆盖新版式的三处要点：领域说明进 .help（不再铺在首屏）、筛选并入列表卡、
-	// 行内编辑 / 删除与新建抽屉模板都在（原版这三块分散在三张卡里）。
+	// 行内编辑按需 GET、删除与新建抽屉模板都在（原版这三块分散在三张卡里）。
 	for _, want := range []string{
 		"文案词条", "page-head", "help-pop",
 		"filter-bar", "table-scroll", "data-table",
 		"site.component.gallery.prev", "Previous",
 		"/admin/i18n/save", "/admin/i18n/delete", "csrf_token",
 		`data-drawer-open="#tpl-i18n-create"`, "tpl-i18n-create",
-		`data-drawer-open="#tpl-i18n-edit-0"`, "tpl-i18n-edit-0",
+		`data-drawer-url="/admin/i18n/edit?key=site.component.gallery.prev`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("词条页缺少 %q（模板可能中途中断）", want)
