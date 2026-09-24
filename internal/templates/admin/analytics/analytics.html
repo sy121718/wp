@@ -27,11 +27,13 @@
    而清理 seed 与门禁清单不在本批改动范围内。所以收敛的是结构与动作，文案仍由各维度自述。
 
    参数：title 标题正文 / strong 标题里的加粗片段（只有「按天」那档用，其余传空串）/
-   tail 标题收尾 / action 动作文案（空串 = 不给动作，见「明细被保留期清理」那一档）。 *}
+   tail 标题收尾 / action 动作文案（空串 = 不给动作）/ desc 空态描述
+   （仅明细过保留期时使用既有词条，其余档不重复解释）。 *}
 {{if false}}
-{{block analyticsEmpty(title, strong, tail, action)}}
+{{block analyticsEmpty(title, strong, tail, action, desc)}}
 <div class="empty-state">
     <p class="empty-title">{{title}}{{if strong != ""}}<strong>{{strong}}</strong>{{end}}{{tail}}</p>
+    {{if desc != ""}}<p class="empty-desc">{{desc}}</p>{{end}}
     {{if action != ""}}
     <div class="empty-actions">
         <a class="btn" href="/admin/pages">{{action}}</a>
@@ -115,10 +117,14 @@
     {{end}}
 
     {{if selectedProject != ""}}
-    {* 三个维度榜空态的动作（明细被保留期清理时不给按钮：数据原本有、汇总仍在，用户无事可做，
-       上方已有一条解释，给了也点不动任何东西；真没流量时才指向产生流量的地方）。 *}
+    {* 三个维度榜空态的动作（明细被保留期清理时不给按钮：数据原本有、汇总仍在，
+       空态描述解释原因；真没流量时才指向页面管理）。 *}
     {{rankEmptyAction := tr("admin.analytics.empty.action", "去页面管理发布页面")}}
-    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}{{rankEmptyAction = ""}}{{end}}
+    {{rankEmptyDesc := ""}}
+    {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
+    {{rankEmptyAction = ""}}
+    {{rankEmptyDesc = tr("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。")}}
+    {{end}}
     <section class="card list-card">
         {* 时间范围是**筛选**、不是视图：它对 5 个维度都生效，所以留在 tabs 之外（原位）。
            查询同样带 view，改完日期仍停在原来那一维。 *}
@@ -187,7 +193,7 @@
                             <tr><td colspan="3" class="cell-wrap">
                                 {* 这一档（按天汇总，不受明细保留期影响）没有数据的唯一来源是「还没发布页面」，
                                    所以下一步指向页面管理而不是「刷新」或「换时间范围」。 *}
-                                {{yield analyticsEmpty(title=tr("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。"), strong=tr("admin.analytics.daily.empty.strong", "发布页面之后"), tail=tr("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。"), action=tr("admin.analytics.empty.action", "去页面管理发布页面"))}}
+                                {{yield analyticsEmpty(title=tr("admin.analytics.daily.empty.lead", "这个窗口里还没有浏览记录。"), strong=tr("admin.analytics.daily.empty.strong", "发布页面之后"), tail=tr("admin.analytics.daily.empty.tail", "才会有数据 —— 打点脚本是随产物一起发出去的（统计代码在构建期烘进 HTML），改配置不会回溯已有产物。"), action=tr("admin.analytics.empty.action", "去页面管理发布页面"), desc="")}}
                             </td></tr>
                             {{else}}
                             {{range _, d := daily}}
@@ -208,7 +214,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：路径 / 浏览数 / 独立访客）。 *}
                             {{if len(paths) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                                {{yield analyticsEmpty(title=tr("admin.analytics.paths.empty", "没有路径数据。"), strong="", tail="", action=tr("admin.analytics.empty.action", "去页面管理发布页面"))}}
+                                {{yield analyticsEmpty(title=tr("admin.analytics.paths.empty", "没有路径数据。"), strong="", tail="", action=tr("admin.analytics.empty.action", "去页面管理发布页面"), desc="")}}
                             </td></tr>
                             {{else}}
                             {{range _, p := paths}}
@@ -226,9 +232,6 @@
 
             {* ===== 面板三：来源域 ===== *}
             <div class="tab-panel" role="tabpanel" id="an-panel-referrers" aria-labelledby="an-tab-referrers" {{if !isReferrers}}hidden{{end}}>
-                {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-                <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
-                {{end}}
                 <div class="table-wrap table-scroll" tabindex="0">
                     <table class="data-table">
                         <thead><tr><th>{{ .["t"]("admin.analytics.col.referrer", "来源域") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
@@ -236,7 +239,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：来源域 / 浏览数 / 独立访客）。 *}
                             {{if len(referrers) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                                {{yield analyticsEmpty(title=tr("admin.analytics.referrers.empty", "没有来源数据。"), strong="", tail="", action=rankEmptyAction)}}
+                                {{yield analyticsEmpty(title=tr("admin.analytics.referrers.empty", "没有来源数据。"), strong="", tail="", action=rankEmptyAction, desc=rankEmptyDesc)}}
                             </td></tr>
                             {{else}}
                             {{range _, v := referrers}}
@@ -250,9 +253,6 @@
 
             {* ===== 面板四：设备分类 ===== *}
             <div class="tab-panel" role="tabpanel" id="an-panel-ua" aria-labelledby="an-tab-ua" {{if !isUAClasses}}hidden{{end}}>
-                {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-                <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
-                {{end}}
                 <div class="table-wrap table-scroll" tabindex="0">
                     <table class="data-table">
                         <thead><tr><th>{{ .["t"]("admin.analytics.col.ua_class", "设备分类") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
@@ -260,7 +260,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：设备分类 / 浏览数 / 独立访客）。 *}
                             {{if len(uaClasses) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                                {{yield analyticsEmpty(title=tr("admin.analytics.ua.empty", "没有设备数据。"), strong="", tail="", action=rankEmptyAction)}}
+                                {{yield analyticsEmpty(title=tr("admin.analytics.ua.empty", "没有设备数据。"), strong="", tail="", action=rankEmptyAction, desc=rankEmptyDesc)}}
                             </td></tr>
                             {{else}}
                             {{range _, v := uaClasses}}
@@ -274,9 +274,6 @@
 
             {* ===== 面板五：语言 ===== *}
             <div class="tab-panel" role="tabpanel" id="an-panel-langs" aria-labelledby="an-tab-langs" {{if !isLangs}}hidden{{end}}>
-                {{if isset(.BreakdownUnavailable) && .BreakdownUnavailable}}
-                <p class="badge badge-warning">{{ .["t"]("admin.analytics.breakdown.retention_hint", "该时间段的访问明细已过保留期并被清理，维度分布不可用；总数与路径榜来自按天汇总，仍然有效。") }}</p>
-                {{end}}
                 <div class="table-wrap table-scroll" tabindex="0">
                     <table class="data-table">
                         <thead><tr><th>{{ .["t"]("admin.analytics.col.lang", "语言") }}</th><th>{{ .["t"]("admin.analytics.col.views", "浏览数") }}</th><th>{{ .["t"]("admin.analytics.col.visitors", "独立访客") }}</th></tr></thead>
@@ -284,7 +281,7 @@
                             {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 3：语言 / 浏览数 / 独立访客）。 *}
                             {{if len(langs) == 0}}
                             <tr><td colspan="3" class="cell-wrap">
-                                {{yield analyticsEmpty(title=tr("admin.analytics.langs.empty", "没有语言数据。"), strong="", tail="", action=rankEmptyAction)}}
+                                {{yield analyticsEmpty(title=tr("admin.analytics.langs.empty", "没有语言数据。"), strong="", tail="", action=rankEmptyAction, desc=rankEmptyDesc)}}
                             </td></tr>
                             {{else}}
                             {{range _, v := langs}}

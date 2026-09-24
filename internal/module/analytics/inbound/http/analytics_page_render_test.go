@@ -56,8 +56,8 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 		"UAClasses": []analyticscontract.RankCount{{Value: "desktop", Views: 2, Visitors: 2}},
 		"Langs":     []analyticscontract.RankCount{{Value: "zh-CN", Views: 3, Visitors: 2}},
 		// 视图（tabs 初始选中）：handler 恒给；不给也能渲染（模板有兜底，见下面第二个用例）。
-		"ViewMode": "daily",
-		"RankLimit": 20,
+		"ViewMode":       "daily",
+		"RankLimit":      20,
 		"PaginationInfo": "共 2 条", "PaginationLinks": nil,
 		"Err": "",
 	}
@@ -100,6 +100,79 @@ func TestAnalyticsPageRendersWithoutViewMode(t *testing.T) {
 	if got := visiblePanels(body); got[0] != "an-panel-daily" {
 		t.Errorf("缺 ViewMode 时应回落默认视图，实际可见面板 %v", got)
 	}
+}
+
+// TestAnalyticsEmptyViewsDistinguishMissingTrafficFromPurgedDetail 钉住各视图的空态语义。
+func TestAnalyticsEmptyViewsDistinguishMissingTrafficFromPurgedDetail(t *testing.T) {
+	base := map[string]any{
+		"title": analyticsPageTitle, "menu": "analytics",
+		"SelectedProject": "p-1", "Projects": []projectcontract.ProjectResp{{ID: "p-1", Name: "演示站"}},
+		"FilterFrom": "", "FilterTo": "", "RangeFrom": "", "RangeTo": "",
+		"Total": 0, "Visitors": 0, "PathTotal": 0,
+		"Daily": []any{}, "Paths": []any{}, "Referrers": []any{}, "UAClasses": []any{}, "Langs": []any{},
+		"RankLimit": 20, "Err": "",
+	}
+	for _, tc := range []struct {
+		name, view, title string
+	}{
+		{"按天", "daily", "这个窗口里还没有浏览记录。"},
+		{"按路径", "paths", "没有路径数据。"},
+		{"来源", "referrers", "没有来源数据。"},
+		{"设备", "ua", "没有设备数据。"},
+		{"语言", "langs", "没有语言数据。"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base["ViewMode"] = tc.view
+			panel := analyticsPanel(renderAnalyticsPage(t, base), tc.view)
+			if !strings.Contains(panel, tc.title) || !strings.Contains(panel, `href="/admin/pages"`) {
+				t.Errorf("%s 空态缺对应标题或下一步动作", tc.view)
+			}
+		})
+	}
+	base["BreakdownUnavailable"] = true
+	base["Total"] = 12
+	for _, view := range []string{"referrers", "ua", "langs"} {
+		t.Run("明细清理/"+view, func(t *testing.T) {
+			base["ViewMode"] = view
+			panel := analyticsPanel(renderAnalyticsPage(t, base), view)
+			emptyStart := strings.Index(panel, `<div class="empty-state">`)
+			if emptyStart < 0 {
+				t.Fatal("保留期空态缺少 empty-state 容器")
+			}
+			emptyEnd := strings.Index(panel[emptyStart:], `</div>`)
+			if emptyEnd < 0 {
+				t.Fatal("保留期空态未闭合")
+			}
+			empty := panel[emptyStart : emptyStart+emptyEnd]
+			if got := strings.Count(empty, `<p class="empty-desc">该时间段的访问明细已过保留期并被清理`); got != 1 {
+				t.Errorf("明细清理说明应位于 .empty-desc 内一次，实际 %d", got)
+			}
+			if strings.Contains(panel, `href="/admin/pages"`) {
+				t.Error("已清理明细不能引导重新发布页面")
+			}
+		})
+	}
+}
+
+// analyticsPanel 按固定面板 id 的次序截取，避免内部节点影响边界。
+func analyticsPanel(body, view string) string {
+	views := []string{"daily", "paths", "referrers", "ua", "langs"}
+	for i, candidate := range views {
+		if candidate != view {
+			continue
+		}
+		start := strings.Index(body, `id="an-panel-`+view+`"`)
+		if start < 0 {
+			return ""
+		}
+		for _, next := range views[i+1:] {
+			if end := strings.Index(body[start:], `id="an-panel-`+next+`"`); end >= 0 {
+				return body[start : start+end]
+			}
+		}
+		return body[start:]
+	}
+	return ""
 }
 
 // TestAnalyticsViewParamSelectsPanel ?view= 只决定初始选中，且不认识的取值回默认视图。
