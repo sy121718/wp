@@ -210,6 +210,7 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		"admin.mail.marketing.contacts.empty.initial.title",
 		"admin.mail.marketing.contacts.empty.initial",
 		"admin.inventory.moves.title",
+		"admin.media.bulk.delete",
 	} {
 		if got := countRows(t, db, "sys_i18n", "item_key = ? AND lang IN ?", key, []string{"zh-CN", "en-US"}); got != 2 {
 			t.Fatalf("%s 应有完整中英词条，实际 %d 行", key, got)

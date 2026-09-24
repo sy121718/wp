@@ -2,6 +2,11 @@
 {* Jet 方言：range 用 range 关键字；extends 相对本目录 *}
 {{extends "../layout.html"}}
 {{block body()}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main"><div class="page-title-row"><h1>{{ .["t"]("admin.media.heading", "媒体库") }}</h1></div></div>
+        <div class="page-actions"><button type="button" class="btn btn-primary" id="ml-upload-btn">{{ .["t"]("admin.media.action.upload", "上传文件") }}</button></div>
+    </header>
 <div class="media-lib" id="media-lib" data-page="1" data-type="all" data-category="0">
     {* ===== 左侧：分类树 ===== *}
     <aside class="media-tree-panel">
@@ -19,24 +24,32 @@
     </aside>
 
     {* ===== 右侧：媒体库 ===== *}
-    <section class="media-main">
-        {* 顶栏：名称搜索 / 上传 / 视图切换（分类维度在左侧树） *}
-        <div class="media-toolbar">
-            <input type="search" class="media-search" id="ml-search" placeholder="{{ .["t"]("admin.media.search_placeholder", "搜索文件名…") }}">
-            <span class="media-flex-spacer"></span>
-            <button type="button" class="btn btn-secondary btn-sm" id="ml-batch-download" title="{{ .["t"]("admin.media.action.batch_download_title", "把勾选的图片各打成一个 zip 下载") }}">{{ .["t"]("admin.media.action.batch_download", "批量下载") }}</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="ml-upload-btn">{{ .["t"]("admin.media.action.upload", "上传文件") }}</button>
+    <section class="media-main card list-card">
+        <div class="filter-bar">
+            <div class="filter-fields"><div class="filter-field">
+                <label for="ml-search">{{ .["t"]("admin.media.filter.label", "文件名") }}</label>
+                <input type="search" class="form-input media-search" id="ml-search" placeholder="{{ .["t"]("admin.media.search_placeholder", "搜索文件名…") }}">
+            </div></div>
+        </div>
+        <div class="list-toolbar media-list-toolbar">
+            <strong>{{ .["t"]("admin.media.list.title", "文件列表") }}</strong>
             <div class="media-view-toggle">
-                <button type="button" class="is-active" id="ml-view-grid" title="{{ .["t"]("admin.media.view.grid", "网格视图") }}">▦</button>
-                <button type="button" id="ml-view-list" title="{{ .["t"]("admin.media.view.list", "列表视图") }}">☰</button>
+                <button type="button" class="is-active" id="ml-view-grid" title="{{ .["t"]("admin.media.view.grid", "网格视图") }}" aria-label="{{ .["t"]("admin.media.view.grid", "网格视图") }}" aria-pressed="true">▦</button>
+                <button type="button" id="ml-view-list" title="{{ .["t"]("admin.media.view.list", "列表视图") }}" aria-label="{{ .["t"]("admin.media.view.list", "列表视图") }}" aria-pressed="false">☰</button>
             </div>
+        </div>
+        <div class="bulk-bar" id="ml-bulk-bar" hidden>
+            <span class="bulk-count" id="ml-bulk-count" role="status">{{ .["t"]("admin.media.bulk.selected", "已选 0 项") }}</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="ml-batch-download" title="{{ .["t"]("admin.media.bulk.download_scope", "下载选中附件的资源包") }}">{{ .["t"]("admin.media.action.batch_download", "批量下载") }}</button>
+            <button type="button" class="btn btn-danger btn-sm" id="ml-batch-delete">{{ .["t"]("admin.media.bulk.delete", "批量删除") }}</button>
         </div>
 
         {* 网格 / 列表容器 *}
+        <div class="media-grid-select"><label><input type="checkbox" id="ml-check-all-grid" aria-label="{{ .["t"]("admin.media.bulk.select_all_aria", "全选当前页附件") }}"> {{ .["t"]("admin.media.bulk.select_all", "全选当前页") }}</label></div>
         <div class="media-grid" id="ml-grid"></div>
-        <div class="media-table-wrap" id="ml-table" hidden>
+        <div class="media-table-wrap table-wrap table-scroll" id="ml-table" hidden tabindex="0" role="region" aria-label="{{ .["t"]("admin.media.list.aria", "媒体列表") }}">
             <table class="data-table">
-                <thead><tr><th>{{ .["t"]("admin.media.col.file", "文件") }}</th><th>{{ .["t"]("admin.media.col.category", "分类") }}</th><th>{{ .["t"]("admin.media.col.type", "类型") }}</th><th>{{ .["t"]("admin.media.col.size", "大小") }}</th><th>{{ .["t"]("admin.media.col.uploaded_at", "上传时间") }}</th><th></th></tr></thead>
+                <thead><tr><th class="col-check"><input type="checkbox" id="ml-check-all-table" aria-label="{{ .["t"]("admin.media.bulk.select_all_aria", "全选当前页附件") }}"></th><th>{{ .["t"]("admin.media.col.file", "文件") }}</th><th>{{ .["t"]("admin.media.col.category", "分类") }}</th><th>{{ .["t"]("admin.media.col.type", "类型") }}</th><th>{{ .["t"]("admin.media.col.size", "大小") }}</th><th>{{ .["t"]("admin.media.col.uploaded_at", "上传时间") }}</th><th class="col-actions">{{ .["t"]("admin.media.col.actions", "操作") }}</th></tr></thead>
                 <tbody id="ml-table-body"></tbody>
             </table>
         </div>
@@ -67,6 +80,7 @@
     </aside>
 </div>
 
+</div>
 {* 上传弹窗：结构归基座（js/ui/modal.js）—— 焦点陷阱/Esc/遮罩/焦点归还都由它管，
    这里只声明「有哪些元素、各自什么角色」，业务逻辑留在 media-admin.js。
    drop 区加了 role/tabindex：此前它是个纯 div，键盘用户根本够不到「选择文件」。 *}

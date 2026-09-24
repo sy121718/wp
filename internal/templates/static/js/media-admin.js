@@ -18,7 +18,9 @@
         tree: [],
         collapsed: {},   // 分类折叠状态（id -> true）
         selected: null,   // 详情侧栏附件
-        checked: {},      // 批量下载勾选集合（id -> true）
+        checked: {},      // 仅当前列表页的勾选集合（id -> true）
+        items: [],
+        requestId: 0,
         counts: {}        // 分类 → 附件数（后续可按需扩展）
     };
 
@@ -105,12 +107,14 @@
         state.categoryId = id;
         state.categoryName = name || '全部';
         state.page = 1;
+        clearSelection();
         renderTree();
         loadList();
     }
 
     // ---------- 列表 ----------
     function loadList() {
+        var requestId = ++state.requestId;
         var grid = document.getElementById('ml-grid');
         var tableBody = document.getElementById('ml-table-body');
         var empty = document.getElementById('ml-empty');
@@ -119,17 +123,32 @@
             page: state.page, limit: state.limit,
             type: state.type, categoryId: state.categoryId, search: state.search
         }).then(function (res) {
+            if (requestId !== state.requestId) return;
             var list = res.list || [];
             var total = res.total || 0;
+            state.items = list;
+            var visibleIds = new Set(list.map(function (item) { return String(item.id); }));
+            Object.keys(state.checked).forEach(function (id) {
+                if (!visibleIds.has(id)) delete state.checked[id];
+            });
             renderGrid(list);
             renderTable(list);
+            refreshSelection();
             var has = list.length > 0;
             if (grid) grid.hidden = !has || state.view !== 'grid';
             if (tableBody) tableBody.closest('.media-table-wrap').hidden = !has || state.view !== 'list';
             if (empty) empty.hidden = has;
+            document.querySelector('.media-grid-select').hidden = !has || state.view !== 'grid';
             renderPager(total);
         }).catch(function (err) {
-            if (grid) grid.innerHTML = '<p class="media-empty">加载失败：' + err.message + '</p>';
+            if (requestId !== state.requestId) return;
+            state.items = [];
+            clearSelection();
+            if (grid) { grid.textContent = '加载失败：' + err.message; grid.hidden = state.view !== 'grid'; }
+            if (tableBody) tableBody.closest('.media-table-wrap').hidden = true;
+            if (empty) empty.hidden = true;
+            document.querySelector('.media-grid-select').hidden = true;
+            document.getElementById('ml-pager').hidden = true;
         });
     }
 
@@ -140,18 +159,12 @@
         list.forEach(function (item) {
             var card = document.createElement('div');
             card.className = 'media-card';
-            // 批量下载勾选框（左上角，阻止冒泡避免打开详情）。
             var check = document.createElement('input');
             check.type = 'checkbox';
             check.className = 'media-card-check';
-            check.title = '勾选后可批量下载';
+            check.dataset.mlCheckItem = String(item.id);
+            check.setAttribute('aria-label', '选择 ' + (item.file_name || '附件'));
             check.checked = !!state.checked[item.id];
-            check.addEventListener('click', function (e) { e.stopPropagation(); });
-            check.addEventListener('change', function () {
-                if (check.checked) state.checked[item.id] = true;
-                else delete state.checked[item.id];
-                updateBatchBtn();
-            });
             card.appendChild(check);
             var thumb = document.createElement('div');
             thumb.className = 'media-card-thumb';
@@ -167,7 +180,9 @@
             name.className = 'media-card-name';
             name.textContent = item.file_name || '';
             card.appendChild(thumb); card.appendChild(name);
-            card.addEventListener('click', function () { openDetail(item); });
+            card.addEventListener('click', function (e) {
+                if (e.target !== check) openDetail(item);
+            });
             grid.appendChild(card);
         });
     }
@@ -181,12 +196,9 @@
             var tdCheck = document.createElement('td');
             var check = document.createElement('input');
             check.type = 'checkbox';
+            check.dataset.mlCheckItem = String(item.id);
+            check.setAttribute('aria-label', '选择 ' + (item.file_name || '附件'));
             check.checked = !!state.checked[item.id];
-            check.addEventListener('change', function () {
-                if (check.checked) state.checked[item.id] = true;
-                else delete state.checked[item.id];
-                updateBatchBtn();
-            });
             tdCheck.appendChild(check);
             tr.appendChild(tdCheck);
             var tdFile = document.createElement('td');
@@ -199,7 +211,9 @@
             var tdOps = document.createElement('td');
             var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn btn-sm'; btn.textContent = '详情';
             btn.addEventListener('click', function () { openDetail(item); });
+            tdOps.className = 'col-actions';
             tdOps.appendChild(btn);
+            tr.classList.toggle('is-selected', !!state.checked[item.id]);
             tr.appendChild(tdFile); tr.appendChild(tdCat); tr.appendChild(tdType); tr.appendChild(tdSize); tr.appendChild(tdTime); tr.appendChild(tdOps);
             body.appendChild(tr);
         });
@@ -351,6 +365,7 @@
                 M.api('delete', { method: 'POST', body: { id: item.id } }).then(function () {
                     state.selected = null;
                     panel.hidden = true;
+                    delete state.checked[item.id];
                     loadList();
                 }).catch(function (err) { notifyError(err.message); });
             }, { title: '删除附件', ok: '删除', danger: true });
@@ -500,23 +515,45 @@
             searchTimer = setTimeout(function () {
                 state.search = searchInput.value.trim();
                 state.page = 1;
+                clearSelection();
                 loadList();
             }, 300);
         });
         // 树搜索（过滤节点，不请求）。
         document.getElementById('ml-tree-search').addEventListener('input', function () { renderTree(); });
         // 分页。
-        document.getElementById('ml-prev').addEventListener('click', function () { if (state.page > 1) { state.page--; loadList(); } });
-        document.getElementById('ml-next').addEventListener('click', function () { state.page++; loadList(); });
+        document.getElementById('ml-prev').addEventListener('click', function () { if (state.page > 1) { state.page--; clearSelection(); loadList(); } });
+        document.getElementById('ml-next').addEventListener('click', function () { state.page++; clearSelection(); loadList(); });
         // 视图切换。
         document.getElementById('ml-view-grid').addEventListener('click', function () { state.view = 'grid'; refreshView(); });
         document.getElementById('ml-view-list').addEventListener('click', function () { state.view = 'list'; refreshView(); });
-        // 批量下载（勾选 id 集合 → GET /api/media/download/batch?ids=1,2,3）。
+        var library = document.getElementById('media-lib');
+        library.addEventListener('change', function (e) {
+            var check = e.target;
+            if (check.dataset.mlCheckItem) {
+                if (check.checked) state.checked[check.dataset.mlCheckItem] = true;
+                else delete state.checked[check.dataset.mlCheckItem];
+            } else if (check.id === 'ml-check-all-grid' || check.id === 'ml-check-all-table') {
+                state.items.forEach(function (item) {
+                    if (check.checked) state.checked[item.id] = true;
+                    else delete state.checked[item.id];
+                });
+            } else return;
+            refreshSelection();
+        });
         document.getElementById('ml-batch-download').addEventListener('click', function () {
-            var ids = Object.keys(state.checked);
-            if (!ids.length) { notify('请先勾选要下载的图片', { type: 'error' }); return; }
+            var ids = selectedIds();
+            if (!ids.length) return;
+            var unsupported = state.items.filter(function (item) {
+                return state.checked[item.id] && item.storage_type !== 'local';
+            });
+            if (unsupported.length) {
+                notifyError('选中项包含非本地存储附件，资源包下载只支持本地存储');
+                return;
+            }
             window.open('/api/media/download/batch?ids=' + ids.join(','), '_blank');
         });
+        document.getElementById('ml-batch-delete').addEventListener('click', deleteSelected);
         // 上传。
         document.getElementById('ml-upload-btn').addEventListener('click', openUpload);
         // 关闭按钮 / 遮罩 / Esc 都归基座（data-modal-close + <dialog> 原生行为），这里不再逐个绑。
@@ -552,15 +589,78 @@
     function refreshView() {
         document.getElementById('ml-view-grid').classList.toggle('is-active', state.view === 'grid');
         document.getElementById('ml-view-list').classList.toggle('is-active', state.view === 'list');
+        document.getElementById('ml-view-grid').setAttribute('aria-pressed', String(state.view === 'grid'));
+        document.getElementById('ml-view-list').setAttribute('aria-pressed', String(state.view === 'list'));
+        document.querySelector('.media-grid-select').hidden = state.view !== 'grid' || !state.items.length;
         loadList();
     }
 
-    // updateBatchBtn 批量下载按钮随勾选数变化提示文案。
-    function updateBatchBtn() {
-        var btn = document.getElementById('ml-batch-download');
-        if (!btn) return;
-        var n = Object.keys(state.checked).length;
-        btn.textContent = n > 0 ? ('批量下载(' + n + ')') : '批量下载';
+    // 两种视图各有一份勾选框，但选择集合只保存当前 AJAX 页。
+    function refreshSelection() {
+        var ids = state.items.map(function (item) { return String(item.id); });
+        var count = ids.filter(function (id) { return !!state.checked[id]; }).length;
+        document.querySelectorAll('#media-lib [data-ml-check-item]').forEach(function (check) {
+            check.checked = !!state.checked[check.dataset.mlCheckItem];
+            var row = check.closest('tr, .media-card');
+            if (row) row.classList.toggle('is-selected', check.checked);
+        });
+        ['ml-check-all-grid', 'ml-check-all-table'].forEach(function (id) {
+            var box = document.getElementById(id);
+            box.checked = ids.length > 0 && count === ids.length;
+            box.indeterminate = count > 0 && count < ids.length;
+            box.disabled = ids.length === 0;
+        });
+        document.getElementById('ml-bulk-bar').hidden = count === 0;
+        document.getElementById('ml-bulk-count').textContent = '已选 ' + count + ' 项';
+    }
+
+    function clearSelection() {
+        state.checked = {};
+        refreshSelection();
+    }
+
+    function selectedIds() {
+        return state.items.map(function (item) { return String(item.id); })
+            .filter(function (id) { return !!state.checked[id]; });
+    }
+
+    function buttonBusy() {
+        return document.getElementById('ml-batch-delete').disabled;
+    }
+
+    function deleteSelected() {
+        var ids = selectedIds();
+        if (!ids.length || buttonBusy()) return;
+        var requestId = state.requestId;
+        ask('删除选中的 ' + ids.length + ' 个附件？被页面引用的附件会保留。', function () {
+            if (requestId !== state.requestId || ids.join(',') !== selectedIds().join(',') || buttonBusy()) {
+                notifyError('列表或选择已变化，请重新选择后再删除');
+                return;
+            }
+            var button = document.getElementById('ml-batch-delete');
+            var done = busy(button, { label: '删除中…' });
+            var success = 0;
+            var failed = [];
+            var failedIds = [];
+            // 沿用单条删除服务的引用保护与权限判断，失败项不阻断其余项。
+            ids.reduce(function (chain, id) {
+                return chain.then(function () {
+                    return M.api('delete', { method: 'POST', body: { id: Number(id) } })
+                        .then(function () { success++; })
+                        .catch(function (err) { failedIds.push(id); failed.push(id + '：' + err.message); });
+                });
+            }, Promise.resolve()).then(function () {
+                clearSelection();
+                if (state.selected && ids.indexOf(String(state.selected.id)) !== -1 &&
+                    failedIds.indexOf(String(state.selected.id)) === -1) {
+                    document.getElementById('ml-detail').hidden = true;
+                    state.selected = null;
+                }
+                loadList();
+                if (failed.length) notifyError('已删除 ' + success + ' 项，跳过 ' + failed.length + ' 项：' + failed.join('；'));
+                else notify('已删除 ' + success + ' 项');
+            }).finally(done);
+        }, { title: '批量删除附件', ok: '删除', danger: true });
     }
 
     // ---------- 启动 ----------
