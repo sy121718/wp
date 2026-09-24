@@ -43,7 +43,7 @@
                                 <code data-member-sku>{{row.SKULabel}}</code>
                                 {{else}}
                                 <select class="form-select" name="variantId" aria-label="SKU" data-bundle-candidate>
-                                    <option value="">— 不选 —</option>
+                                    <option value="">{{ .["t"]("admin.product_bundle.option.none", "— 不选 —") }}</option>
                                     {{range _, o := candidateSKUs}}
                                     <option value="{{o.ID}}">{{o.Label}}</option>
                                     {{end}}
@@ -78,7 +78,7 @@
                 <tr data-bundle-member-row>
                     <td>
                         <select class="form-select" name="variantId" aria-label="SKU" data-bundle-candidate>
-                            <option value="">— 不选 —</option>
+                            <option value="">{{ .["t"]("admin.product_bundle.option.none", "— 不选 —") }}</option>
                             {{range _, o := candidateSKUs}}<option value="{{o.ID}}">{{o.Label}}</option>{{end}}
                         </select>
                         <input type="hidden" name="sourceKind" value="">
