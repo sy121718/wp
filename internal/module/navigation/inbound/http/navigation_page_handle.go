@@ -425,8 +425,25 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 	// 能立刻看到库里的当前值并决定怎么改。解析放在 id 判定之前 —— 参数级失败同样要
 	// 带着它回列表页，否则用户回来还得在几十行里重新找那一项。
 	menuID := strings.TrimSpace(c.PostForm("menu"))
+	echo := navEditEcho{
+		ID: id, ProjectID: projectID, Kind: strings.TrimSpace(c.PostForm("kind")),
+		Title: c.PostForm("title"), Path: c.PostForm("path"),
+		Target: c.PostForm("target"), UpdatedAt: c.PostForm("expectedUpdatedAt"),
+		PanelBlockID: c.PostForm("panelBlockId"), PanelWidth: c.PostForm("panelWidth"),
+	}
 	if id == "" {
-		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navInvalidParamText(c), ""))
+		if navEditHTMX(c) {
+			h.renderNavigationEdit(c, echo, navInvalidParamText(c))
+		} else {
+			c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navInvalidParamText(c), ""))
+		}
+		return
+	}
+	if strings.TrimSpace(echo.UpdatedAt) == "" {
+		c.String(http.StatusBadRequest, "%s", navInvalidParamText(c))
+		return
+	}
+	if !h.navEditOwnedRow(c, echo) {
 		return
 	}
 	req := &navigationdto.UpdateReq{ID: id}
@@ -447,10 +464,10 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 		// 业务文案必须回到页面上：冲突（已被别处改过）与「路径被占用」这类结论
 		// 都要让操作者知道该刷新重做还是改字段 —— 通用提示会把这些区别全吞掉。
 		logger.Scene("page").With("id", id).Error(err, "更新导航项失败")
-		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navigationErrPageText(c, err), ""))
+		h.navEditFailure(c, err, echo)
 		return
 	}
-	c.Redirect(http.StatusSeeOther, navListURL(projectID, kind))
+	navEditRedirect(c, navListURL(projectID, kind))
 }
 
 // NavigationDelete 删除菜单项（连同其子项，避免留下孤儿节点）。
@@ -614,6 +631,8 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	// 面板块能力（超级菜单）：装配期注入；未注入时面板入口降级可见（PanelAvail=false）。
 	h.SetBlockPanelPort(blocks)
 	adminPages.GET("/navigations", h.NavigationsPage)
+	// GET 读编辑表单，但代理真正 POST /api/navigation/update 的权限动作。
+	adminPages.GET("/navigations/edit", builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost), h.NavigationEditFragment)
 	// 面板设置复用 navigation:update；新建面板块是**块的创建**，故挂 block:create。
 	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.PanelSet)
 	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.PanelCreate)

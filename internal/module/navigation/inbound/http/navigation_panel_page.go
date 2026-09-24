@@ -52,8 +52,25 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 	// 保存后抽屉重新打开，用户不用在几十行里重新找它。
 	// 解析放在 id 判定之前 —— 参数级失败同样要带着它回列表页。
 	menuID := strings.TrimSpace(c.PostForm("menu"))
+	echo := navEditEcho{
+		ID: id, ProjectID: projectID, Kind: strings.TrimSpace(c.PostForm("kind")),
+		PanelBlockID: c.PostForm("panelBlockId"), PanelWidth: c.PostForm("panelWidth"),
+		UpdatedAt: c.PostForm("expectedUpdatedAt"),
+		Title:     c.PostForm("title"), Path: c.PostForm("path"), Target: c.PostForm("target"),
+	}
 	if id == "" {
-		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navInvalidParamText(c), ""))
+		if navEditHTMX(c) {
+			h.renderNavigationEdit(c, echo, navInvalidParamText(c))
+		} else {
+			c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navInvalidParamText(c), ""))
+		}
+		return
+	}
+	if strings.TrimSpace(echo.UpdatedAt) == "" {
+		c.String(http.StatusBadRequest, "%s", navInvalidParamText(c))
+		return
+	}
+	if !h.navEditOwnedRow(c, echo) {
 		return
 	}
 	// 空串 = 清除面板（服务层把空块 id 归一成 NULL；nil 才是「不改动」）。
@@ -68,10 +85,10 @@ func (h *navigationPageHandle) PanelSet(c *gin.Context) {
 	}
 	if _, err := h.navigations.Update(c.Request.Context(), req); err != nil {
 		logger.Scene("page").With("id", id).Error(err, "设置菜单悬浮面板失败")
-		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, navigationErrPageText(c, err), ""))
+		h.navEditFailure(c, err, echo)
 		return
 	}
-	c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, menuID, "", ""))
+	navEditRedirect(c, navListURLMenu(projectID, kind, menuID, "", ""))
 }
 
 // PanelCreate POST /admin/navigations/panel/create：新建面板块并跳块编辑器。
@@ -84,6 +101,9 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	title := strings.TrimSpace(c.PostForm("title"))
 	// 菜单项 id：块保存后要带着它回到菜单编辑器并重新展开这一项。
 	menuID := strings.TrimSpace(c.PostForm("id"))
+	if !h.navEditOwnedRow(c, navEditEcho{ID: menuID, ProjectID: projectID, Kind: strings.TrimSpace(c.PostForm("kind"))}) {
+		return
+	}
 	if h.blocks == nil {
 		shell.PageErrorBadRequest(c, "navigation", errPanelUnavailable)
 		return
@@ -106,7 +126,7 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 	if back := navListURLMenu(projectID, kind, menuID, "", ""); back != "" {
 		target += "&returnUrl=" + url.QueryEscape(back)
 	}
-	c.Redirect(http.StatusSeeOther, target)
+	navEditRedirect(c, target)
 }
 
 // panelBlockName 面板块的默认名（可辨认来源）。

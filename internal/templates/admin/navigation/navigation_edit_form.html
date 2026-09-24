@@ -1,0 +1,66 @@
+{{tr := .["t"]}}
+{{f := .NavEditEcho}}
+<div data-drawer-fragment data-nav-edit-host>
+    {{if .NavEditError != ""}}<p class="badge badge-warning" role="alert">{{.NavEditError}}</p>{{end}}
+    <form method="post" action="/admin/navigations/update" class="form-stack"
+          hx-post="/admin/navigations/update" hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="projectId" value="{{f.ProjectID}}">
+        <input type="hidden" name="kind" value="{{f.Kind}}">
+        <input type="hidden" name="id" value="{{f.ID}}">
+        <input type="hidden" name="expectedUpdatedAt" value="{{f.UpdatedAt}}">
+        <input type="hidden" name="menu" value="{{f.ID}}">
+        <input type="hidden" name="panelBlockId" value="{{f.PanelBlockID}}">
+        <input type="hidden" name="panelWidth" value="{{f.PanelWidth}}">
+        <label class="form-label" for="nav-edit-title">{{tr("admin.navigations.field.title", "菜单文字")}}</label>
+        <input type="text" id="nav-edit-title" name="title" class="form-input" value="{{f.Title}}" required>
+        <label class="form-label" for="nav-edit-path">{{tr("admin.navigations.field.path", "链接")}}</label>
+        <input type="text" id="nav-edit-path" name="path" class="form-input" value="{{f.Path}}" required>
+        <label class="form-label" for="nav-edit-target">{{tr("admin.navigations.field.target", "打开方式")}}</label>
+        <select id="nav-edit-target" name="target" class="form-select">
+            <option value="self" {{if f.Target == "self"}}selected{{end}}>{{tr("admin.navigations.target.self", "当前窗口")}}</option>
+            <option value="blank" {{if f.Target == "blank"}}selected{{end}}>{{tr("admin.navigations.target.blank", "新标签页")}}</option>
+        </select>
+        <div class="action-row">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
+        </div>
+    </form>
+    {{if .NavEditPanelAvail}}
+    <form method="post" action="/admin/navigations/panel" class="form-stack mt-lg"
+          hx-post="/admin/navigations/panel" hx-target="closest [data-nav-edit-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="projectId" value="{{f.ProjectID}}">
+        <input type="hidden" name="kind" value="{{f.Kind}}">
+        <input type="hidden" name="id" value="{{f.ID}}">
+        <input type="hidden" name="expectedUpdatedAt" value="{{f.UpdatedAt}}">
+        <input type="hidden" name="menu" value="{{f.ID}}">
+        <input type="hidden" name="title" value="{{f.Title}}">
+        <input type="hidden" name="path" value="{{f.Path}}">
+        <input type="hidden" name="target" value="{{f.Target}}">
+        <label class="form-label" for="nav-edit-panel">{{tr("admin.navigations.panel.label", "悬浮面板（超级菜单）")}}</label>
+        <select class="form-select" id="nav-edit-panel" name="panelBlockId">
+            <option value="">{{tr("admin.navigations.panel.none", "（无面板）")}}</option>
+            {{range _, b := .NavEditPanelBlocks}}
+            <option value="{{b.ID}}" {{if b.ID == f.PanelBlockID}}selected{{end}}>{{b.Name}}</option>
+            {{end}}
+        </select>
+        <select class="form-select" name="panelWidth" aria-label="{{tr("admin.navigations.panel.width", "面板宽度")}}">
+            <option value="auto" {{if f.PanelWidth != "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthAuto", "宽度：跟随内容")}}</option>
+            <option value="full" {{if f.PanelWidth == "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthFull", "宽度：通栏")}}</option>
+        </select>
+        <div class="action-row"><button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button></div>
+    </form>
+    <form method="post" action="/admin/navigations/panel/create">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        <input type="hidden" name="projectId" value="{{f.ProjectID}}">
+        <input type="hidden" name="kind" value="{{f.Kind}}">
+        <input type="hidden" name="title" value="{{f.Title}}">
+        <input type="hidden" name="id" value="{{f.ID}}">
+        <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.create", "新建面板块并编辑")}}</button>
+    </form>
+    {{if f.PanelBlockID != ""}}
+    <a class="btn btn-sm" href="/workbench/block/preview?id={{f.PanelBlockID}}&amp;editor=1" target="_blank" rel="noopener">{{tr("admin.navigations.panel.preview", "预览面板")}}</a>
+    {{end}}
+    {{end}}
+</div>

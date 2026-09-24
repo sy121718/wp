@@ -233,7 +233,7 @@
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
-                    <td style="padding-left:{{r.Indent}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-nav-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</td>
+                    <td style="padding-left:{{r.Indent}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</td>
                     <td><code>{{r.Path}}</code></td>
                     <td>{{r.TargetLabel}}</td>
                     <td>
@@ -242,7 +242,7 @@
                     </td>
                     <td class="col-actions">
                         {{if canUpdate}}
-                        <button type="button" class="btn btn-sm" data-drawer-open="#tpl-nav-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                        <button type="button" class="btn btn-sm" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                         {{end}}
                         <button type="submit" form="nav-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.navigations.action.delete", "删除")}}</button>
                     </td>
@@ -284,91 +284,6 @@
         <input type="hidden" name="kind" value="{{kind}}">
         <input type="hidden" name="id" value="{{r.ID}}">
     </form>
-    {{if canUpdate}}
-    <template id="tpl-nav-edit-{{r.ID}}">
-        <form method="post" action="/admin/navigations/update">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="kind" value="{{kind}}">
-            <input type="hidden" name="id" value="{{r.ID}}">
-            {* 乐观锁：把打开抽屉时读到的 update_time 原样回带。服务端比对不上就整条拒绝
-               （不自动合并、不加后缀），并回一句「已被其他窗口修改」的提示要求刷新重做。
-               保存失败后回跳时仍带着它，抽屉自动重开，用户能看到库里的当前值。 *}
-            <input type="hidden" name="expectedUpdatedAt" value="{{r.UpdatedAt}}">
-            <input type="hidden" name="menu" value="{{r.ID}}">
-            <input type="text" name="title" class="form-input" value="{{r.Title}}" placeholder="{{tr("admin.navigations.edit_title_placeholder", "菜单文字")}}" required>
-            <input type="text" name="path" class="form-input" value="{{r.Path}}" placeholder="{{tr("admin.navigations.edit_path_placeholder", "链接")}}" required>
-            <select name="target" class="form-select">
-                <option value="self" {{if r.Target == "self"}}selected{{end}}>{{tr("admin.navigations.target.self", "当前窗口")}}</option>
-                <option value="blank" {{if r.Target == "blank"}}selected{{end}}>{{tr("admin.navigations.target.blank", "新标签页")}}</option>
-            </select>
-            <div class="action-row">
-                <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{tr("admin.navigations.save", "保存")}}</button>
-            </div>
-        </form>
-        {{if isset(.PanelAvail)}}{{if .PanelAvail}}
-        {* 可选键一律链索引 + isset：直接写 .PanelBlocks 在缺键的渲染路径（单测/其它页面数据）会报
-           "no field or method in map"，状态码仍 200、之后整块 HTML 消失。 *}
-        {{panelBlocks := .["PanelBlocks"]}}
-        {* 悬浮面板（超级菜单，迁移 285）：内容存全局块，展示存菜单项 ——
-           与上面的「编辑菜单项」是两次独立写，故各自一个表单（都不做跨模块双写）。 *}
-        <form method="post" action="/admin/navigations/panel" class="form-stack mt-lg">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="kind" value="{{kind}}">
-            <input type="hidden" name="id" value="{{r.ID}}">
-            {* 面板保存同样是 navigation 的一次更新：乐观锁 token 一起带上。 *}
-            <input type="hidden" name="expectedUpdatedAt" value="{{r.UpdatedAt}}">
-            <input type="hidden" name="menu" value="{{r.ID}}">
-            <label class="form-label" for="nav-panel-{{r.ID}}">{{tr("admin.navigations.panel.label", "悬浮面板（超级菜单）")}}</label>
-            <select class="form-select" id="nav-panel-{{r.ID}}" name="panelBlockId">
-                <option value="">{{tr("admin.navigations.panel.none", "（无面板）")}}</option>
-                {{range _, b := panelBlocks}}
-                <option value="{{b.ID}}" {{if b.ID == r.PanelBlockID}}selected{{end}}>{{b.Name}}</option>
-                {{end}}
-            </select>
-            <select class="form-select" name="panelWidth" aria-label="{{tr("admin.navigations.panel.width", "面板宽度")}}">
-                <option value="auto" {{if r.PanelWidth != "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthAuto", "宽度：跟随内容")}}</option>
-                <option value="full" {{if r.PanelWidth == "full"}}selected{{end}}>{{tr("admin.navigations.panel.widthFull", "宽度：通栏")}}</option>
-            </select>
-            <div class="action-row">
-                <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.save", "保存面板")}}</button>
-            </div>
-        </form>
-        <form method="post" action="/admin/navigations/panel/create">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="kind" value="{{kind}}">
-            <input type="hidden" name="title" value="{{r.Title}}">
-            {* 菜单项 id 决定块保存后回到菜单页时要点开哪一项。 *}
-            <input type="hidden" name="id" value="{{r.ID}}">
-            <button type="submit" class="btn btn-sm">{{tr("admin.navigations.panel.create", "新建面板块并编辑")}}</button>
-        </form>
-        {* 悬浮预览：iframe 指向块预览端点（构建期之外的就地预览，不落盘）。
-           鼠标悬停与点击都能打开（触屏只有 click，等价路径在按钮上），Esc 关闭；
-           iframe 的 src 由客户端在首次打开时才写入 —— 一个菜单项一个 iframe 的话，
-           整页渲染就等于同时发起几十次预览编译。 *}
-        {{if r.PanelBlockID != ""}}
-        <div class="nav-panel-preview" data-panel-preview>
-            <button type="button" class="btn btn-sm" data-panel-preview-toggle
-                    aria-expanded="false" aria-controls="nav-panel-preview-{{r.ID}}"
-                    data-preview-src="/workbench/block/preview?id={{r.PanelBlockID}}&amp;editor=1">
-                {{tr("admin.navigations.panel.preview", "预览面板")}}
-            </button>
-            <div class="nav-panel-preview-pop" id="nav-panel-preview-{{r.ID}}" hidden>
-                <div class="nav-panel-preview-head">
-                    <strong>{{tr("admin.navigations.panel.preview", "预览面板")}}</strong>
-                    <button type="button" class="btn btn-sm btn-icon" data-panel-preview-close aria-label="{{tr("admin.navigations.panel.previewClose", "关闭预览")}}">✕</button>
-                </div>
-                <iframe class="nav-panel-preview-frame" data-panel-preview-frame
-                        title="{{tr("admin.navigations.panel.preview", "预览面板")}}" loading="lazy"></iframe>
-            </div>
-        </div>
-        {{end}}
-        {{end}}{{end}}
-    </template>
-    {{end}}
     {{end}}
     {{end}}
 </div>
