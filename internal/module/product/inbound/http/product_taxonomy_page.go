@@ -9,9 +9,8 @@
 // 列表页形态（审计 02-M 的 D12 / D13）：分类页与品牌页都带关键词筛选栏、按页渲染，
 // 并在空态区分「筛出来是空的」与「工程里本来就没有」。
 //
-// 分页：页码窗口与「共 N 条」来自契约的 CountCategories / CountBrands（真源总数，
-// 与 List 同一份过滤条件）。品牌页整条链下推到 service（先计数 → 收敛页码 → 取当页）；
-// 分类树仍整棵取回、摊平、再切页 —— 那是**永久例外**，理由见 listPageSlice。
+// 分类后台页按根或直接子级分页，搜索按命中实体分页并带祖先；
+// 旧 ListCategories 全树契约仅保留给其它调用方。
 package producthttp
 
 import (
@@ -40,48 +39,87 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	// 分类树必须先整棵取回来再摊平：层级（Depth）与行首缩进都来自树结构，
-	// 分页只作用于摊平后的行 —— 翻到第 N 页时每行仍带着自己的层级。
-	// 这是**永久例外**（品牌 / 标签 / 属性三页都已把分页下推到 service）：把分页下推给
-	// service 就必须按行截断树，父不在本页而子在的场景下层级会丢。总数已由
-	// CountCategories 真源给出（数的是行），所以这里只保留「取树 + 摊平 + 切页」。
-	// 关键词过滤下推到查询（service 的 ListCategories 已支持）。
-	// 这里直接调契约而不是复用同包的 flatCategories：那个助手被商品列表 / 编辑页 /
-	// SEO 评分共用（本批不改那些文件），签名里没有关键词位。
-	flat := []*productdto.CategoryResp{}
 	if selected != "" {
-		tree, lerr := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected, Keyword: keyword})
-		if lerr != nil {
-			shell.PageError(c, "product_taxonomy", lerr)
+		found := false
+		for _, project := range projects {
+			if project.ID == selected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			shell.PageError(c, "product_taxonomy", fmt.Errorf("unknown project"))
 			return
 		}
-		flat = flattenCategoryTree(tree)
 	}
-	// 父级下拉要的是**完整**清单（不带关键词）：筛选只作用于表格行 —— 若把筛选后的树
-	// 喂给下拉，编辑一个筛出来的分类时它的父级会从选项里消失（改父级只能改到「顶级」）。
-	// 无筛选时两者是同一份，不重复查。
-	pickFlat := flat
-	if selected != "" && keyword != "" {
-		tree, lerr := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected})
-		if lerr != nil {
-			shell.PageError(c, "product_taxonomy", lerr)
-			return
-		}
-		pickFlat = flattenCategoryTree(tree)
-	}
-	pageRows, page := listPageSlice(flat, productPageNumber(c.Query("page")), productSubListPageSize)
-	// 总数由契约的 CountCategories 给出（与 ListCategories 同一份过滤条件：工程 + 关键词），
-	// 数的是**行** —— 与表格里摊平后的行数同一口径（见 model.CountCategories 的注释）。
-	// 空工程（selected 为空）不发查询：0 条，与表格一致。
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	parentID := strings.TrimSpace(c.Query("parentId"))
+	page := productPageNumber(c.Query("page"))
+	pageRows := []*productdto.CategoryResp{}
+	pickFlat := []*productdto.CategoryResp{}
+	breadcrumbs := []*productdto.CategoryResp{}
 	total := int64(0)
 	if selected != "" {
-		n, cerr := h.products.CountCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected, Keyword: keyword})
-		if cerr != nil {
-			shell.PageError(c, "product_taxonomy", cerr)
+		if keyword != "" {
+			parentID = ""
+		}
+		// Navigation is one level at a time; search pages only matching entities
+		// and carries their ancestors in the same scoped query.
+		if parentID != "" && keyword == "" {
+			seen := map[string]bool{}
+			for id := parentID; id != "" && len(breadcrumbs) < 64 && !seen[id]; {
+				seen[id] = true
+				parent, perr := h.products.GetCategory(ctx, &productdto.GetCategoryReq{ProjectID: selected, ID: id})
+				if perr != nil {
+					shell.PageError(c, "product_taxonomy", perr)
+					return
+				}
+				breadcrumbs = append([]*productdto.CategoryResp{parent}, breadcrumbs...)
+				id = parent.ParentID
+			}
+		}
+		query := &productdto.ListCategoryPageReq{ProjectID: selected, ParentID: parentID, Keyword: keyword, Page: page, Size: productSubListPageSize}
+		result, lerr := h.products.ListCategoryPage(ctx, query)
+		if lerr != nil {
+			shell.PageError(c, "product_taxonomy", lerr)
 			return
 		}
-		total = n
+		total = result.Total
+		page = clampPageToTotal(page, productSubListPageSize, total)
+		if page != query.Page {
+			query.Page = page
+			result, lerr = h.products.ListCategoryPage(ctx, query)
+			if lerr != nil {
+				shell.PageError(c, "product_taxonomy", lerr)
+				return
+			}
+		}
+		pageRows = flattenCategoryTree(result.Items)
+		pickFlat = append(pickFlat, breadcrumbs...)
+		seenOptions := make(map[string]bool, len(pickFlat))
+		for _, item := range pickFlat {
+			seenOptions[item.ID] = true
+		}
+		for _, item := range pageRows {
+			if !seenOptions[item.ID] {
+				pickFlat = append(pickFlat, item)
+				seenOptions[item.ID] = true
+			}
+		}
+		if keyword == "" {
+			for _, item := range pageRows {
+				item.Depth = len(breadcrumbs)
+			}
+		}
+	}
+	options := categoryPickOptions(pickFlat)
+	createForm := categoryDrawerData(c, "create", selected, nil, options)
+	if parentID != "" && keyword == "" {
+		createForm["ParentID"] = parentID
+	}
+	filterQuery := listFilterQuery(selected, keyword)
+	if parentID != "" && keyword == "" {
+		filterQuery.Set("parentId", parentID)
 	}
 	rows := make([]gin.H, 0, len(pageRows))
 	for _, node := range pageRows {
@@ -90,7 +128,8 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
 			"Description": node.Description, "Image": node.Image,
 			"SEOTitle": node.SEOTitle, "SEODescription": node.SEODescription,
-			"EditForm": categoryDrawerData(c, "update", selected, node, categoryPickOptions(pickFlat)),
+			"HasChildren": node.HasChildren, "Matched": node.Matched,
+			"EditForm": categoryDrawerData(c, "update", selected, node, options),
 		})
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
@@ -101,8 +140,10 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		"SelectedProject": selected,
 		"Categories":      rows,
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
-		"Options": categoryPickOptions(pickFlat),
-		"CategoryCreateForm": categoryDrawerData(c, "create", selected, nil, categoryPickOptions(pickFlat)),
+		"Options":            options,
+		"ParentID":           parentID,
+		"Breadcrumbs":        breadcrumbs,
+		"CategoryCreateForm": createForm,
 		// 筛选回显（GET 表单的 value）：提交后条件留在控件上，
 		// 否则用户看不出「现在到底筛了什么」；Filtered 让空态能区分
 		// 「筛出来是空的」与「这个工程还没有分类」。
@@ -115,7 +156,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	// 分页条（shell 组件，服务端渲染）：基地址带当前筛选条件，翻页不丢条件。
 	// 单页或空数据时 BuildPagination 返回 nil，TemplateKeys 给空 map，模板自然不渲染。
 	for k, v := range shell.BuildPagination(total, page, productSubListPageSize,
-		productListBaseURL("/admin/product-categories", listFilterQuery(selected, keyword)),
+		productListBaseURL("/admin/product-categories", filterQuery),
 		shell.TranslateFor(c)).TemplateKeys() {
 		data[k] = v
 	}
@@ -573,14 +614,7 @@ func productListBaseURL(path string, q url.Values) string {
 
 // listPageSlice 切出「第 page 页」，并返回**收敛后**的页码。
 //
-// **唯一调用方是分类页**，且这是永久例外（不是「还没做」）：分页作用在「树按 DFS 前序
-// 摊平之后」的行上，而 service 的 ListCategories 返回的是**树**（父子挂接在 service 完成）。
-// 让 service 按行分页就必须把树截断 —— 父不在本页而子在的场景下层级信息会丢，
-// 树是这份数据的形状，分页不该改变它。所以分类页是「全量取树 → 摊平 → 切一页」，
-// 总数由 CountCategories 给出（数的是行，与摊平后的行数同一口径）。
-//
-// 品牌页与标签页**已经不在这里**：它们的请求类型（ListBrandReq / ListTagReq）已带 Page/Size，
-// 分页整条链下推到 service（先计数 → 收敛页码 → 取当页），与属性页同一形状。
+// 保留旧分页助手供同包既有测试使用；分类页现走受限分类读。
 //
 // 页码收敛与 BuildPagination 同一条规则：page=999 时若不先收敛，会出现「表格为空、
 // 分页条却显示第 999 页」这种自相矛盾的组合（BuildPagination 拿到的 total 与 page
@@ -625,10 +659,21 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 }
 
 func (h *productPageHandle) categoryFormFail(c *gin.Context, mode, msg string) {
-	if !isHXRequest(c) { c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(c.PostForm("projectId"))+"&err="+url.QueryEscape(msg)); return }
+	if !isHXRequest(c) {
+		c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(c.PostForm("projectId"))+"&err="+url.QueryEscape(msg))
+		return
+	}
 	data := categoryDrawerData(c, mode, c.PostForm("projectId"), nil, nil)
-	if mode == "create" && h.products != nil {
-		if options, err := h.flatCategories(c.Request.Context(), c.PostForm("projectId")); err == nil {
+	if h.products != nil {
+		projectID := c.PostForm("projectId")
+		if page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{ProjectID: projectID, Page: 1, Size: 100}); err == nil {
+			options := page.Items
+			parentID := strings.TrimSpace(c.PostForm("parentId"))
+			if parentID != "" {
+				if parent, perr := h.products.GetCategory(c.Request.Context(), &productdto.GetCategoryReq{ProjectID: projectID, ID: parentID}); perr == nil {
+					options = append(options, parent)
+				}
+			}
 			data["Options"] = categoryPickOptions(options)
 		}
 	}

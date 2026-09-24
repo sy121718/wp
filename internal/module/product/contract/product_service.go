@@ -82,6 +82,8 @@ type ProductService interface {
 	// CountCategories 分类总数：与 ListCategories 同一份过滤条件（工程 + 关键词），
 	// 数的是**行**（后台把树摊平成表格行后分页，总数说的就是这些行），供分页算总页数。
 	CountCategories(ctx context.Context, req *productdto.ListCategoryReq) (n int64, err error)
+	// ListCategoryPage 后台分类树受限分页读；不改变 ListCategories 全树契约。
+	ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryPageResp, err error)
 	DeleteCategory(ctx context.Context, req *productdto.DeleteCategoryReq) (err error)
 
 	CreateBrand(ctx context.Context, req *productdto.CreateBrandReq) (res *productdto.BrandResp, err error)

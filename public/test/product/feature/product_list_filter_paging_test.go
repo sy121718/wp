@@ -317,7 +317,7 @@ func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestCategoryKeywordFilterKeepsParentOptions 筛选只作用于表格行，不能把父级下拉筛空。
+// TestCategoryKeywordFilterKeepsParentOptions 搜索展示祖先上下文，父级下拉保留父项。
 //
 // 分类页的父级下拉是「编辑 / 新建抽屉」用的：如果把筛选后的树喂给它，用户筛出一个子分类后
 // 打开编辑，它的父级会从选项里消失 —— 保存就会把层级静默拍平（看起来只是「下拉里没有那一项」）。
@@ -343,11 +343,17 @@ func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	if !strings.Contains(body, "冲锋衣") {
 		t.Fatal("关键词命中的子分类没有出现在表格里")
 	}
-	// 表格行只剩命中的那一条（筛选真的生效）。
-	if got := strings.Count(body, `name="ids"`); got != 1 {
-		t.Fatalf("按「冲锋衣」筛选后表格应有 1 行，实际 %d 行", got)
+	// 命中子级及其祖先各一行，祖先在前、子级紧随。
+	if got := strings.Count(body, `name="ids"`); got != 2 {
+		t.Fatalf("按「冲锋衣」筛选后应展示命中与祖先共 2 行，实际 %d 行", got)
 	}
-	// 但父级下拉仍要给全量：父分类必须还在选项里。
+	if strings.Contains(body, "共 2 条") {
+		t.Fatal("搜索分页总数应只计命中实体，不把祖先上下文算进去")
+	}
+	if strings.Index(body, "户外服装</strong>") > strings.Index(body, "冲锋衣</strong>") {
+		t.Fatal("搜索祖先应排在命中子级之前")
+	}
+	// 父级下拉无需额外整树查询：祖先上下文已包含父分类。
 	if !strings.Contains(body, `value="`+root.ID+`"`) {
 		t.Fatal("筛选后父级下拉缺了父分类 —— 编辑抽屉里改父级只能改到「顶级」，层级会被静默拍平")
 	}

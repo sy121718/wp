@@ -17,6 +17,8 @@ type CategoryResp struct {
 	SEODescription string          `json:"seoDescription"`
 	Sort           int             `json:"sort"`
 	Depth          int             `json:"depth"`
+	HasChildren    bool            `json:"hasChildren,omitempty"`
+	Matched        bool            `json:"matched,omitempty"`
 	Children       []*CategoryResp `json:"children,omitempty"`
 	CreatedAt      string          `json:"createdAt"`
 	UpdatedAt      string          `json:"updatedAt"`
@@ -35,4 +37,11 @@ type BrandResp struct {
 	Sort           int    `json:"sort"`
 	CreatedAt      string `json:"createdAt"`
 	UpdatedAt      string `json:"updatedAt"`
+	Matched        bool   `json:"matched,omitempty"`
+}
+
+// CategoryPageResp 是后台受限分页读结果。Total 只统计匹配实体，不统计祖先上下文。
+type CategoryPageResp struct {
+	Items []*CategoryResp `json:"items"`
+	Total int64           `json:"total"`
 }

@@ -237,6 +237,70 @@ func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCatego
 	return buildCategoryTree(rows), nil
 }
 
+// ListCategoryPage returns a bounded tree level or matching rows with ancestors.
+// The legacy ListCategories path deliberately keeps its whole-tree contract.
+func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryPageResp, err error) {
+	if req == nil {
+		return nil, errors.New(productenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID))
+	if err != nil {
+		return nil, err
+	}
+	parentID, keyword := strings.TrimSpace(req.ParentID), strings.TrimSpace(req.Keyword)
+	if parentID != "" && keyword == "" {
+		parent, perr := s.m.GetCategory(ctx, parentID, projectID)
+		if perr != nil {
+			return nil, mapNotFound(perr)
+		}
+		if parent.ProjectID != projectID {
+			return nil, errors.New(productenums.ErrCategoryParentMismatch)
+		}
+	}
+	page, size := req.Page, req.Size
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+	rows, total, err := s.m.ListCategoryPage(ctx, projectID, parentID, keyword, size, (page-1)*size)
+	if err != nil {
+		return nil, err
+	}
+	res = &productdto.CategoryPageResp{Items: make([]*productdto.CategoryResp, 0, len(rows)), Total: total}
+	if keyword == "" {
+		for _, row := range rows {
+			item := toCategoryResp(&row.ProductCategoryEntity)
+			item.HasChildren = row.HasChildren
+			res.Items = append(res.Items, item)
+		}
+		return res, nil
+	}
+	// Search rows are ordered as a forest, not by their flat SQL order.
+	byID := make(map[string]*productdto.CategoryResp, len(rows))
+	for _, row := range rows {
+		item := toCategoryResp(&row.ProductCategoryEntity)
+		item.HasChildren, item.Matched = row.HasChildren, row.Matched
+		byID[item.ID] = item
+	}
+	for _, row := range rows {
+		item := byID[row.ID]
+		if parent, ok := byID[item.ParentID]; ok && parent != item {
+			parent.Children = append(parent.Children, item)
+		} else {
+			res.Items = append(res.Items, item)
+		}
+	}
+	for _, root := range res.Items {
+		setCategoryDepth(root, 0)
+	}
+	return res, nil
+}
+
 // CountCategories 分类总数（后台分类页的「共 N 条」与总页数）。
 //
 // 数是**行**：后台把树按 DFS 前序摊平成表格行再分页，「共 N 条」说的就是这些行。

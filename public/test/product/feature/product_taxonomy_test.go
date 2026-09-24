@@ -102,6 +102,75 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	}
 }
 
+// TestCategoryBoundedPage verifies level paging, search ancestors and project isolation.
+func TestCategoryBoundedPage(t *testing.T) {
+	f := newAttrFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := t.Context()
+	root, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "根", Slug: "root", Sort: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherRoot, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "另一个根", Slug: "other", Sort: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, ParentID: root.ID, Name: "子", Slug: "child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, ParentID: child.ID, Name: "命中叶", Slug: "leaf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherProject, err := f.projects.Create(ctx, &projectdto.CreateReq{Name: "隔离工程"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: otherProject.ID, Name: "命中叶", Slug: "foreign"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rootPage, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Page: 1, Size: 1})
+	if err != nil || rootPage.Total != 2 || len(rootPage.Items) != 1 || rootPage.Items[0].ID != root.ID || !rootPage.Items[0].HasChildren {
+		t.Fatalf("根级首页: %+v, %v", rootPage, err)
+	}
+	second, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Page: 2, Size: 1})
+	if err != nil || second.Total != 2 || len(second.Items) != 1 || second.Items[0].ID != otherRoot.ID {
+		t.Fatalf("根级次页: %+v, %v", second, err)
+	}
+	children, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, ParentID: root.ID, Page: 1, Size: 20})
+	if err != nil || children.Total != 1 || len(children.Items) != 1 || children.Items[0].ID != child.ID {
+		t.Fatalf("直接子级: %+v, %v", children, err)
+	}
+	search, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Keyword: "命中叶", Page: 1, Size: 1})
+	if err != nil || search.Total != 1 || len(search.Items) != 1 || search.Items[0].ID != root.ID || len(search.Items[0].Children) != 1 || len(search.Items[0].Children[0].Children) != 1 || search.Items[0].Children[0].Children[0].ID != leaf.ID || !search.Items[0].Children[0].Children[0].Matched {
+		t.Fatalf("搜索祖先链: %+v, %v", search, err)
+	}
+	if _, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, ParentID: foreign.ID}); err == nil {
+		t.Fatal("跨工程父分类应拒绝")
+	}
+	secondLeaf, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, ParentID: child.ID, Name: "命中叶乙", Slug: "leaf-two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	search, err = f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Keyword: "命中叶", Size: 20})
+	if err != nil || search.Total != 2 || len(search.Items) != 1 || len(search.Items[0].Children) != 1 || len(search.Items[0].Children[0].Children) != 2 || search.Items[0].Children[0].Children[0].ID != leaf.ID || search.Items[0].Children[0].Children[1].ID != secondLeaf.ID {
+		t.Fatalf("共享祖先只出现一次且祖先在命中之前: %+v, %v", search, err)
+	}
+	literal, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "50%_折扣", Slug: "sale-literal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	percent, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Keyword: "%_", Size: 20})
+	if err != nil || percent.Total != 1 || len(percent.Items) != 1 || percent.Items[0].ID != literal.ID {
+		t.Fatalf("搜索通配符按字面量匹配: %+v, %v", percent, err)
+	}
+}
+
 // TestCategoryCrossProjectAndCycleGuards 换父级的三条硬约束：跨工程 / 自环 / 环。
 func TestCategoryCrossProjectAndCycleGuards(t *testing.T) {
 	f := newAttrFixture(t)
@@ -427,14 +496,17 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	body := rec.Body.String()
 	// 行内按钮文案随改造按「动词 + 对象」收紧：行内不再重复实体名，
 	// 「删除分类」= 行内「删除」（「新建分类」是页头主行动的按钮文案，保留）。
-	for _, want := range []string{"商品分类", "男装", "衬衫", "men", "shirts", "新建分类", ">删除</button>"} {
+	for _, want := range []string{"商品分类", "男装", "men", "新建分类", ">删除</button>", "parentId=" + rootID} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("分类页缺少 %q", want)
+			t.Fatalf("分类根页缺少 %q", want)
 		}
 	}
-	// 子级按层级缩进渲染（全角空格 + 名称）。
-	if !strings.Contains(body, "　衬衫") {
-		t.Fatalf("子分类应按层级缩进渲染")
+	if strings.Contains(body, "shirts</code>") {
+		t.Fatal("根页不应预载子级分类行")
+	}
+	rec = httptestGet(engine, "/admin/product-categories?project="+f.projectID+"&parentId="+rootID)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "shirts</code>") || !strings.Contains(rec.Body.String(), "　衬衫") {
+		t.Fatalf("进入父级后应显示缩进的直接子级: status=%d", rec.Code)
 	}
 
 	// 品牌：表单建品牌 → 页面能看到 logo / slug / 描述。

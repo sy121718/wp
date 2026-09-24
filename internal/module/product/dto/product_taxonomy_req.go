@@ -45,6 +45,17 @@ type ListCategoryReq struct {
 	Keyword   string `form:"keyword"`
 }
 
+// ListCategoryPageReq 是后台分类树的受限读请求。
+// ParentID 非空时只读取该父级的直接子级；Keyword 非空时忽略 ParentID，
+// 按匹配实体分页并补祖先上下文。
+type ListCategoryPageReq struct {
+	ProjectID string `form:"projectId"`
+	ParentID  string `form:"parentId"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
+	Size      int    `form:"size"`
+}
+
 // DeleteCategoryReq 删除分类（有子级或被商品引用时拒绝）。
 type DeleteCategoryReq struct {
 	ID        string `json:"id" binding:"required"`
@@ -85,7 +96,7 @@ type GetBrandReq struct {
 // ListBrandReq 品牌列表（按工程过滤）。
 //
 // Page / Size 是**新增的可选分页字段**：两个都是零值时语义与加字段前一致 —— 取全部
-//（集合源的品牌筛选选项、内容翻译的批量取数都走这条形态，它们要的是全量而不是第一页）。
+// （集合源的品牌筛选选项、内容翻译的批量取数都走这条形态，它们要的是全量而不是第一页）。
 // 后台品牌页显式给出两者，分页下推到 model 的 LIMIT/OFFSET（见 service 的 optionalPaging）。
 type ListBrandReq struct {
 	ProjectID string `form:"projectId"`

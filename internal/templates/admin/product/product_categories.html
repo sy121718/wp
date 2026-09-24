@@ -60,12 +60,19 @@
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
+    {{if isset(.Breadcrumbs)}}{{if len(.Breadcrumbs) > 0}}
+    <nav class="page-context" aria-label="{{ .["t"]("admin.product_categories.list.title", "分类树") }}">
+        <a href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.product_categories.title", "商品分类") }}</a>
+        {{range _, ancestor := .Breadcrumbs}} / <a href="/admin/product-categories?project={{selectedProject}}&amp;parentId={{ancestor.ID}}">{{ancestor.Name}}</a>{{end}}
+    </nav>
+    {{end}}{{end}}
     <section class="card list-card">
         {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
            分页链接由服务端带上同样的条件（productListBaseURL），翻页不会把筛选丢掉。 *}
         <div class="filter-bar">
             <form method="get" action="/admin/product-categories" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
+                {{if isset(.ParentID)}}{{if .ParentID != ""}}<input type="hidden" name="parentId" value="{{.ParentID}}">{{end}}{{end}}
                 <div class="filter-field">
                     <label for="categories-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
                     <input type="text" class="form-input filter-search" id="categories-filter-keyword" name="keyword" value="{{fKeyword}}"
@@ -73,7 +80,7 @@
                 </div>
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}{{if isset(.ParentID)}}{{if .ParentID != ""}}&amp;parentId={{.ParentID}}{{end}}{{end}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
                 </div>
             </form>
         </div>
@@ -118,7 +125,7 @@
                             <p class="empty-title">{{ .["t"]("admin.product_categories.empty.filteredTitle", "没有匹配的分类") }}</p>
                             <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                             <div class="empty-actions">
-                                <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                                <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}{{if isset(.ParentID)}}{{if .ParentID != ""}}&amp;parentId={{.ParentID}}{{end}}{{end}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
                             </div>
                             {{else}}
                             <p class="empty-title">{{ .["t"]("admin.product_categories.empty.title", "还没有分类") }}</p>
@@ -137,7 +144,7 @@
                         <td class="col-check">
                             <input type="checkbox" name="ids" value="{{row.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{row.Label}}</strong></button>{{else}}<strong>{{row.Label}}</strong>{{end}}</td>
+                        <td>{{if row.HasChildren}}<a href="/admin/product-categories?project={{selectedProject}}&amp;parentId={{row.ID}}"><strong>{{row.Label}}</strong></a>{{else}}{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{row.Label}}</strong></button>{{else}}<strong>{{row.Label}}</strong>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>
                         {* 空值占位与同表 Slug 列逐字一致：全站空值一律用 .text-mute 包一个「—」，
@@ -158,7 +165,7 @@
                 </table>
             </div>
         </form>
-        {* 分页条（审计 D13）：全量渲染改成按页渲染，页高不再随分类数无上限增长；
+        {* 分页条按当前层级或搜索命中计数；
            单页时服务端不注入 PaginationLinks，片段自然不渲染。 *}
         {{include "../partials/pagination.html"}}
     </section>

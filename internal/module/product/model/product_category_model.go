@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"go_wp/pkg/database"
 	"go_wp/pkg/rls"
 )
 
@@ -126,6 +127,65 @@ func (m *Model) CountCategories(ctx context.Context, projectID, keyword string) 
 		return q.Count(&n).Error
 	})
 	return n, err
+}
+
+// CategoryPageRow is the bounded read projection for the admin tree.
+type CategoryPageRow struct {
+	ProductCategoryEntity
+	HasChildren bool `gorm:"column:has_children"`
+	Matched     bool `gorm:"column:matched"`
+}
+
+// ListCategoryPage counts one level or search matches, then reads the requested
+// page; search also includes each selected match's ancestor context.
+func (m *Model) ListCategoryPage(ctx context.Context, projectID, parentID, keyword string, limit, offset int) (rows []*CategoryPageRow, total int64, err error) {
+	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Where("project_id = ?", projectID)
+		switch {
+		case keyword != "":
+			q = q.Where(`(name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')`, pattern, pattern)
+		case parentID != "":
+			q = q.Where("parent_id = ?", parentID)
+		default:
+			q = q.Where("parent_id IS NULL")
+		}
+		if e := q.Count(&total).Error; e != nil {
+			return e
+		}
+		if keyword != "" {
+			// Path tracking bounds recursion even if historical data contains a cycle.
+			return tx.WithContext(ctx).Raw(`WITH RECURSIVE picked AS (
+				SELECT id FROM product_categories
+				WHERE project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')
+				ORDER BY sort, create_time, id LIMIT ? OFFSET ?
+			), family AS (
+				SELECT c.id, c.parent_id, ARRAY[c.id] AS path, 0 AS depth
+				FROM product_categories c JOIN picked p ON p.id = c.id
+				UNION ALL
+				SELECT parent.id, parent.parent_id, child.path || parent.id, child.depth + 1
+				FROM product_categories parent JOIN family child ON child.parent_id = parent.id
+				WHERE parent.project_id = ? AND child.depth < 64 AND NOT parent.id = ANY(child.path)
+			)
+			SELECT c.*, EXISTS (SELECT 1 FROM product_categories child
+				WHERE child.project_id = ? AND child.parent_id = c.id) AS has_children,
+				EXISTS (SELECT 1 FROM picked p WHERE p.id = c.id) AS matched
+			FROM product_categories c WHERE c.project_id = ? AND c.id IN (SELECT id FROM family)
+			ORDER BY c.sort, c.create_time, c.id`, projectID, pattern, pattern, limit, offset, projectID, projectID, projectID).Scan(&rows).Error
+		}
+		page := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Select(`product_categories.*, EXISTS (SELECT 1 FROM product_categories child
+				WHERE child.project_id = ? AND child.parent_id = product_categories.id) AS has_children`, projectID).
+			Where("product_categories.project_id = ?", projectID)
+		if parentID == "" {
+			page = page.Where("product_categories.parent_id IS NULL")
+		} else {
+			page = page.Where("product_categories.parent_id = ?", parentID)
+		}
+		return page.Order("product_categories.sort, product_categories.create_time, product_categories.id").
+			Limit(limit).Offset(offset).Scan(&rows).Error
+	})
+	return rows, total, err
 }
 
 // ListCategoriesByIDs 批量取分类（商品引用校验与反查用，避免 N+1），**必带工程作用域**。
