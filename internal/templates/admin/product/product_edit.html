@@ -18,6 +18,8 @@
 {{canUpdate := isset(.PermSet["product:update"])}}
 {{canVariantCreate := isset(.PermSet["product:variant_create"])}}
 {{canVariantGenerate := isset(.PermSet["product:variant_generate"])}}
+{{editBlocked := false}}
+{{if isset(.EditBlocked)}}{{editBlocked = .EditBlocked}}{{end}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -38,7 +40,7 @@
             {{if .HasProduct}}
             <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
             <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
-            <button type="submit" form="product-edit-main" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
+            {{if !editBlocked}}<button type="submit" form="product-edit-main" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>{{end}}
             {{end}}
         </div>
     </header>
@@ -64,7 +66,7 @@
     {{p := .Product}}
     {* id 是页头保存按钮的关联目标（form="product-edit-main"）：字段全部留在这个表单里，
        页头只放按钮。 *}
-    <form id="product-edit-main" method="post" action="/admin/products/update" class="card card-body form-stack">
+    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" method="post" action="/admin/products/update" class="card card-body form-stack">{{end}}
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
@@ -203,8 +205,9 @@
         <div class="action-row">
             <a class="btn btn-ghost" href="{{.BackURL}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
         </div>
-    </form>
+    {{if editBlocked}}</fieldset></section>{{else}}</form>{{end}}
 
+    {{if !editBlocked}}
     {* ==== 变体清单（docs/14 §8 预览—保存模型）====
        从详情页搬来（详情页只读）：清单里的「生成 / 移除」都不写库，「保存变体清单」才落库。
        初始行 = 库里已有的变体（不是重算笛卡尔积），所以上次删掉的组合不会自己冒出来。 *}
@@ -650,6 +653,7 @@
 })();
 </script>
 
+    {{end}}
     {{end}}
 </div>
 {{end}}

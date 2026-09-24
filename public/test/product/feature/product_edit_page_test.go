@@ -12,15 +12,20 @@ package feature
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	producthttp "go_wp/internal/module/product/inbound/http"
+	"go_wp/internal/templates"
 )
 
 // editSaveLocation 提交编辑表单并返回 302 的 Location（PRG 回编辑页）。
@@ -177,6 +182,120 @@ func TestProductEditPageRejectsEmptyName(t *testing.T) {
 	}
 	if got.Name != "原名" {
 		t.Fatalf("名称不该被空值覆盖，实际 %q", got.Name)
+	}
+}
+
+type failedAttributeListService struct {
+	productcontract.ProductService
+}
+
+func (s failedAttributeListService) ListAttributes(context.Context, *productdto.ListAttributeReq) ([]*productdto.AttributeResp, error) {
+	return nil, errors.New("injected attribute list failure: internal detail")
+}
+
+func TestProductEditPageRejectsInvalidNumbersWithoutPartialWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name, field, invalid string
+	}{
+		{name: "defaultPrice", field: "defaultPrice", invalid: "not-a-price"},
+		{name: "weight", field: "weight", invalid: "not-a-weight"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine, f := newVariantPageEngine(t)
+			if engine == nil {
+				return
+			}
+			ctx := context.Background()
+			price, weight := 49.0, 2.0
+			created, err := f.svc.Create(ctx, &productdto.CreateReq{
+				ProjectID: f.projectID, Name: "原名", Slug: "original", DefaultPrice: &price, Weight: &weight,
+			})
+			if err != nil {
+				t.Fatalf("创建商品失败: %v", err)
+			}
+			attr, err := f.svc.CreateAttribute(ctx, &productdto.CreateAttributeReq{
+				ProjectID: f.projectID, Name: "颜色", Key: "color",
+			})
+			if err != nil {
+				t.Fatalf("创建属性组失败: %v", err)
+			}
+			form := url.Values{
+				"projectId": {f.projectID}, "id": {created.ID}, "name": {"用户刚填的名称"},
+				"defaultPrice": {"51.25"}, "weight": {"3.5"}, "subtitle": {"用户刚填的副标题"},
+				"attributeIds": {attr.ID}, "images": {"https://example.com/user.jpg"},
+			}
+			form.Set(tc.field, tc.invalid)
+			rec := postForm(engine, "/admin/products/update", form)
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `role="alert"`) ||
+				!strings.Contains(rec.Body.String(), `value="`+tc.invalid+`"`) ||
+				!strings.Contains(rec.Body.String(), `value="用户刚填的名称"`) ||
+				!strings.Contains(rec.Body.String(), `value="`+attr.ID+`" checked`) ||
+				!strings.Contains(rec.Body.String(), "https://example.com/user.jpg") ||
+				!strings.Contains(rec.Body.String(), "格式无效") {
+				t.Fatalf("非法 %s 应原地展示错误并回填提交值，状态=%d，Location=%q，页面尾部=%s",
+					tc.field, rec.Code, rec.Header().Get("Location"), tailOfPage(rec.Body.String(), 900))
+			}
+			got, err := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
+			if err != nil {
+				t.Fatalf("读回商品失败: %v", err)
+			}
+			if got.Name != "原名" || got.Subtitle != "" || got.DefaultPrice == nil || *got.DefaultPrice != price || got.Weight == nil || *got.Weight != weight {
+				t.Fatalf("非法 %s 不得产生部分更新，实际：name=%q subtitle=%q price=%v weight=%v", tc.field, got.Name, got.Subtitle, got.DefaultPrice, got.Weight)
+			}
+		})
+	}
+}
+
+func TestProductEditPageAttributeListFailureBlocksWrite(t *testing.T) {
+	_, f := newVariantPageEngine(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	attr, err := f.svc.CreateAttribute(ctx, &productdto.CreateAttributeReq{ProjectID: f.projectID, Name: "颜色", Key: "color"})
+	if err != nil {
+		t.Fatalf("创建属性组失败: %v", err)
+	}
+	created, err := f.svc.Create(ctx, &productdto.CreateReq{ProjectID: f.projectID, Name: "原名", Slug: "original", AttributeIDs: []string{attr.ID}})
+	if err != nil {
+		t.Fatalf("创建商品失败: %v", err)
+	}
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	grantProductPerms(engine)
+	handle := producthttp.NewProductPageHandle(failedAttributeListService{ProductService: f.svc}, f.projects)
+	engine.GET("/admin/products/edit", handle.ProductEditPage)
+	engine.POST("/admin/products/update", handle.ProductsUpdate)
+
+	page := httptest.NewRecorder()
+	engine.ServeHTTP(page, httptest.NewRequest(http.MethodGet,
+		"/admin/products/edit?project="+f.projectID+"&product="+created.ID, nil))
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `role="alert"`) ||
+		!strings.Contains(page.Body.String(), "系统内部错误") ||
+		strings.Contains(page.Body.String(), `id="product-edit-main"`) ||
+		strings.Contains(page.Body.String(), `action="/admin/products/variant/save"`) ||
+		strings.Contains(page.Body.String(), `action="/admin/products/rating/add"`) ||
+		strings.Contains(page.Body.String(), "injected attribute list failure") {
+		t.Fatalf("属性取数失败应展示归口错误且不渲染危险表单：状态=%d，页面尾部=%s", page.Code, tailOfPage(page.Body.String(), 900))
+	}
+	// 即使绕开缺失的选择器直接 POST，服务端仍须拒绝本次整体替换。
+	rec := postForm(engine, "/admin/products/update", url.Values{
+		"projectId": {f.projectID}, "id": {created.ID}, "name": {"误写名称"},
+	})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `role="alert"`) ||
+		!strings.Contains(rec.Body.String(), "系统内部错误") ||
+		!strings.Contains(rec.Body.String(), `value="误写名称"`) ||
+		strings.Contains(rec.Body.String(), `id="product-edit-main"`) ||
+		strings.Contains(rec.Body.String(), "injected attribute list failure") {
+		t.Fatalf("属性列表失败的 POST 应原地保留提交值并封锁写入，状态=%d，页面尾部=%s", rec.Code, tailOfPage(rec.Body.String(), 900))
+	}
+	got, err := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
+	if err != nil {
+		t.Fatalf("读回商品失败: %v", err)
+	}
+	if got.Name != "原名" || len(got.AttributeIDs) != 1 || got.AttributeIDs[0] != attr.ID {
+		t.Fatalf("属性列表故障不可改变商品和关联：name=%q attrs=%v", got.Name, got.AttributeIDs)
 	}
 }
 

@@ -33,17 +33,19 @@ import (
 
 // ProductEditPage GET /admin/products/edit：商品基本字段编辑页。
 func (h *productPageHandle) ProductEditPage(c *gin.Context) {
+	h.renderProductEditPage(c, strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("product")), "", false)
+}
+
+func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
 		shell.PageError(c, "product_edit", err)
 		return
 	}
-	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	productID := strings.TrimSpace(c.Query("product"))
 	data := gin.H{
 		"title":           MsgProductsTitle,
 		"menu":            "products",
@@ -51,6 +53,7 @@ func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 		"SelectedProject": selected,
 		"ProductID":       productID,
 		"HasProduct":      false,
+		"EditBlocked":     false,
 		// 变体的两个抽屉（新建 / 生成组合）要归属仓下拉：仓库清单在取数段拿到后填进来
 		// （下面 detail 读到之前先给空切片，模板的 len 判断自然跳过）。
 		"WarehouseOptions": []gin.H{},
@@ -60,6 +63,10 @@ func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 		"Statuses": productStatusOptions(c, ""),
 		"Err":      productPageErr(c),
 		"Done":     productPageDone(c),
+	}
+	if submitErr != "" {
+		data["Err"] = submitErr
+		data["Done"] = ""
 	}
 	if selected != "" && productID != "" {
 		// 取数顺序与列表页一致（分类 / 品牌 / 标签 / 仓库各取一次），
@@ -102,7 +109,12 @@ func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 			data["Statuses"] = productStatusOptions(c, detail.Status)
 			// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
 			// 可选值来自工程属性组清单，勾选态由商品已引用的 id 决定。
-			if opts, aerr := h.attributeOptions(ctx, selected); aerr == nil {
+			opts, aerr := h.attributeOptions(ctx, selected)
+			if aerr != nil {
+				// 选择器缺失与主动取消勾选在 POST 上同形；读故障时撤掉保存入口。
+				data["EditBlocked"] = true
+				data["Err"] = productInternalText(c, aerr)
+			} else {
 				data["AttributeChecks"] = checkedAttributeOptions(opts, detail.AttributeIDs)
 			}
 			// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
@@ -110,6 +122,27 @@ func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 			data["ImageAltsText"] = strings.Join(detail.ImageAlts, "\n")
 			data["WeightText"] = nullableNumberText(detail.Weight)
 			data["DefaultPriceText"] = nullableNumberText(detail.DefaultPrice)
+			if echo {
+				form := formEchoFrom(c)
+				for field, key := range map[string]string{
+					"name": "Name", "subtitle": "Subtitle", "slug": "Slug", "sku": "SKUCode",
+					"unit": "Unit", "seoTitle": "SEOTitle", "seoDescription": "SEODescription",
+				} {
+					row[key] = form.value(field)
+				}
+				data["ImagesText"] = c.PostForm("images")
+				data["ImageAltsText"] = c.PostForm("imageAlts")
+				data["WeightText"] = c.PostForm("weight")
+				data["DefaultPriceText"] = c.PostForm("defaultPrice")
+				data["Statuses"] = productStatusOptions(c, form.value("status"))
+				if checks, ok := data["AttributeChecks"].([]gin.H); ok {
+					data["AttributeChecks"] = checkedProductEditOptions(checks, form.list("attributeIds"))
+				}
+				row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]gin.H), form.list("categoryIds"))
+				row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]gin.H), form.list("tagIds"))
+				row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]gin.H), form.value("primaryCategoryId"))
+				row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]gin.H), form.value("brandId"))
+			}
 			// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
 			// 这里只给一个链接标记（type=variant 时不给这个键，模板据 isset 整块跳过）。
 			data["IsBundle"] = isBundleProduct(detail.Type)
@@ -119,6 +152,22 @@ func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 		}
 	}
 	c.HTML(http.StatusOK, "admin/product/product_edit.html", shell.Prepare(c, data))
+}
+
+func checkedProductEditOptions(options []gin.H, selected []string) []gin.H {
+	for _, option := range options {
+		id, _ := option["ID"].(string)
+		option["Checked"] = containsString(selected, id)
+	}
+	return options
+}
+
+func selectedProductEditOptions(options []gin.H, selected string) []gin.H {
+	for _, option := range options {
+		id, _ := option["ID"].(string)
+		option["Selected"] = id == selected
+	}
+	return options
 }
 
 // ProductsUpdate POST /admin/products/update：保存商品基本字段。
@@ -168,14 +217,20 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 		req.SKUCode = &sku
 	}
 	if raw := strings.TrimSpace(c.PostForm("defaultPrice")); raw != "" {
-		if v, perr := parseFloat(raw); perr == nil {
-			req.DefaultPrice = &v
+		v, perr := parseFloat(raw)
+		if perr != nil {
+			h.productEditValidationFail(c, projectID, id, "默认价格格式无效，请输入数字")
+			return
 		}
+		req.DefaultPrice = &v
 	}
 	if raw := strings.TrimSpace(c.PostForm("weight")); raw != "" {
-		if v, perr := parseFloat(raw); perr == nil {
-			req.Weight = &v
+		v, perr := parseFloat(raw)
+		if perr != nil {
+			h.productEditValidationFail(c, projectID, id, "重量格式无效，请输入数字")
+			return
 		}
+		req.Weight = &v
 	}
 	// 图集与 alt：按行切分（textarea 一行一个），空文本 = 清空该字段。
 	req.Images = splitFormLines(c.PostForm("images"))
@@ -190,6 +245,11 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	brand := strings.TrimSpace(c.PostForm("brandId"))
 	req.BrandID = &brand
 
+	// 空 attributeIds 只有选项读取成功时才表示用户主动取消勾选。
+	if _, err := h.attributeOptions(c.Request.Context(), projectID); err != nil {
+		h.renderProductEditPage(c, projectID, id, productInternalText(c, err), true)
+		return
+	}
 	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
 		c.Redirect(http.StatusFound, productEditLocation(projectID, id, productErrText(c, err)))
 		return
@@ -197,6 +257,10 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	// 保存成功的回执走与其它页同一条读侧白名单（?done= 不是可信边界）：
 	// 文案由 productNoticeTexts 登记，页面刷新后能看见「商品已保存」。
 	c.Redirect(http.StatusFound, productEditLocationWith(projectID, id, "", productBulkTextOf(c, productSaved)))
+}
+
+func (h *productPageHandle) productEditValidationFail(c *gin.Context, projectID, id, msg string) {
+	h.renderProductEditPage(c, projectID, id, msg, true)
 }
 
 // postFormArrayAlways 取同名多值字段，**总是**返回非 nil 切片。
