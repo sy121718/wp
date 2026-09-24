@@ -1,13 +1,9 @@
 package mailhttp
 
-// mail_pagination_test.go — 邮箱后台三处分页的纯逻辑守卫（审计 02-L §2 P1-13）。
+// mail_pagination_test.go — 邮箱后台列表分页的纯逻辑守卫。
 //
-// 三处缺口各不相同，测试也分开钉：
-//  1. mail 页（发信账号 + 邮件模板）：契约只返回 []Item（没有 total / limit / offset），
-//     分页在 handler 侧做 —— 这里钉住切片与**页码收敛**（page=999 时表格不能是空的）；
-//  2. mail_marketing 页：两个列表共用 ?page=，而服务端分页不收敛 —— 这里钉住收敛函数；
-//  3. 分页条本身：单页 / 空数据时不能出现（否则单页列表上挂一条「上一页 / 下一页」），
-//     超一页时链接必须**保留筛选参数**（翻页把用户的筛选丢掉是这类改动最常见的回归）。
+// 邮箱设置页两张表各用独立页码，数据库负责计数与取页；营销页仍用共享页码。
+// 单页 / 空数据时不出现分页条，翻页链接需保留另一张表的状态。
 //
 // 端到端（真页面 + 真模板 + 真 DB）在 public/test/mail/feature/mail_page_pagination_test.go。
 
@@ -18,44 +14,26 @@ import (
 	"go_wp/internal/web/shell"
 )
 
-// TestMailListPageSlice 切片与页码收敛（含越界页、空列表、size 缺省）。
-func TestMailListPageSlice(t *testing.T) {
-	all := make([]int, 45) // 45 条 / 每页 20 → 3 页（20 / 20 / 5）
-	for i := range all {
-		all[i] = i + 1
-	}
-
-	cases := []struct {
-		name      string
-		page      int
-		size      int
-		wantFirst int // 期望首页元素（0 表示空切片）
-		wantLen   int
-		wantPage  int
+// TestMailListPaginationLinks 两张列表分别翻页时保留另一页的状态。
+func TestMailListPaginationLinks(t *testing.T) {
+	for _, tc := range []struct {
+		name, param, other string
 	}{
-		{"第 1 页", 1, 20, 1, 20, 1},
-		{"第 3 页（最后一页只 5 条）", 3, 20, 41, 5, 3},
-		{"页码越界 → 收敛到最后一页而不是空表", 999, 20, 41, 5, 3},
-		{"page 非法（0）→ 按第 1 页", 0, 20, 1, 20, 1},
-		{"size 非法（0）→ 用默认值", 1, 0, 1, mailListPageSize, 1},
-		{"空列表 → 空切片、页码收敛到 1", 1, 20, 0, 0, 1},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			in := all
-			if c.wantLen == 0 {
-				in = nil
+		{"账号翻页保留模板页", "account_page", "template_page=3"},
+		{"模板翻页保留账号页", "template_page", "account_page=3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			keys := mailListPagination(45, 1, tc.param, "/admin/mail", 3, nil)
+			links := keys["PaginationLinks"].([]shell.PageLink)
+			for _, link := range links {
+				if strings.Contains(link.URL, tc.param+"=2") {
+					if !strings.Contains(link.URL, tc.other) || strings.Contains(link.URL, "page=2&limit=") {
+						t.Fatalf("翻页链接丢失另一页参数或泄漏共享页码：%s", link.URL)
+					}
+					return
+				}
 			}
-			rows, page := mailListPageSlice(in, c.page, c.size)
-			if len(rows) != c.wantLen {
-				t.Fatalf("切出 %d 行，期望 %d 行", len(rows), c.wantLen)
-			}
-			if page != c.wantPage {
-				t.Fatalf("收敛后页码 %d，期望 %d", page, c.wantPage)
-			}
-			if c.wantFirst != 0 && rows[0] != c.wantFirst {
-				t.Fatalf("首页元素 %d，期望 %d", rows[0], c.wantFirst)
-			}
+			t.Fatalf("缺少第二页链接：%+v", links)
 		})
 	}
 }

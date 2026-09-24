@@ -18,7 +18,7 @@
 
    为什么是「取值后传参」而不是直接 {{include "partials/pagination.html"}}：
    Jet 的 include 一旦传了 context，被包含模板的 . 就整体换成它 —— 分页片段要用的
-   t / PaginationLinks / PaginationInfo 必须显式传进去。两表共用 ?page=，但各自的
+   t / PaginationLinks / PaginationInfo 必须显式传进去。两表分别使用 account_page / template_page，且各自的
    页数与数据不同，共用一个键名会让后算的那张表覆盖前一张。 *}
 {{accLinks := .["AccountsPaginationLinks"]}}
 {{accInfo := .["AccountsPaginationInfo"]}}

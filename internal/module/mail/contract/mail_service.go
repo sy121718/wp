@@ -17,6 +17,7 @@ type MailService interface {
 	CreateAccount(ctx context.Context, req *maildto.SaveAccountReq) (*maildto.AccountItem, error)
 	UpdateAccount(ctx context.Context, req *maildto.SaveAccountReq) (*maildto.AccountItem, error)
 	ListAccounts(ctx context.Context, purpose string) ([]*maildto.AccountItem, error)
+	ListAccountsPage(ctx context.Context, purpose string, page, limit int) ([]*maildto.AccountItem, int64, int, error)
 	DeleteAccount(ctx context.Context, id uint64) error
 	SetDefaultAccount(ctx context.Context, id uint64) error
 	TestSend(ctx context.Context, req *maildto.TestSendReq) (*maildto.TestSendResp, error)
@@ -24,6 +25,7 @@ type MailService interface {
 	// ---- 邮件模板 ----
 	UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateReq) (*maildto.TemplateItem, error)
 	ListTemplates(ctx context.Context, key string) ([]*maildto.TemplateItem, error)
+	ListTemplatesPage(ctx context.Context, key string, page, limit int) ([]*maildto.TemplateItem, int64, int, error)
 	DeleteTemplate(ctx context.Context, key, locale string) error
 
 	// ---- 联系人 ----

@@ -64,6 +64,19 @@ func (s *Service) ListTemplates(ctx context.Context, key string) (res []*maildto
 	return res, nil
 }
 
+// ListTemplatesPage 只对后台列表分页，其他调用方继续使用全量查询。
+func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit int) (res []*maildto.TemplateItem, total int64, current int, err error) {
+	list, total, current, err := s.m.ListTemplatesPage(ctx, key, page, limit)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	res = make([]*maildto.TemplateItem, 0, len(list))
+	for _, e := range list {
+		res = append(res, templateItemOf(e))
+	}
+	return res, total, current, nil
+}
+
 // DeleteTemplate 删除模板（按 key + locale）。
 func (s *Service) DeleteTemplate(ctx context.Context, key, locale string) (err error) {
 	return s.m.DeleteTemplate(ctx, key, locale)

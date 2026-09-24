@@ -1,12 +1,8 @@
 package feature
 
-// mail_page_pagination_test.go — 邮箱后台三处分页的端到端守卫（审计 02-L §2 P1-13）。
+// mail_page_pagination_test.go — 邮箱后台列表分页的端到端守卫。
 //
-// 三处缺口形状不同，一起覆盖是因为它们共用同一套分页组件与同一批键名约定：
-//
-//	mail            —— 账号 / 模板两张表（契约无 total，handler 侧切片 + BuildPagination）
-//	mail_marketing  —— 联系人（服务端分页）+ 活动（此前硬编码 Page:1），两表共用 ?page=
-//	mail_campaign   —— 收件人明细此前是**假分页**（只有一句「第 N 页」，没有任何翻页控件）
+// 邮箱设置页两表分别使用数据库分页与独立页码；营销页和活动页维持既有分页契约。
 //
 // 断言都是「用户可观察的行为」：第 51 条数据能不能翻到、翻页后筛选还在不在、
 // 页码越界时表格会不会被渲染成「还没有数据」的空态（后一条是这次改动最危险的回归：
@@ -17,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -94,16 +91,99 @@ func TestMailPageAccountsPagination(t *testing.T) {
 	if strings.Contains(first, "账号20") {
 		t.Error("第 1 页不应包含第 21 个账号（排序按创建顺序，最后一条在第 2 页）")
 	}
-	if !strings.Contains(first, "page=2") {
-		t.Error("第 1 页应给出翻到第 2 页的链接")
+	if !strings.Contains(first, "account_page=2") {
+		t.Error("第 1 页应给出账号翻到第 2 页的链接")
 	}
 
-	second := mailGet(t, engine, "/admin/mail?page=2")
+	second := mailGet(t, engine, "/admin/mail?account_page=2")
 	if !strings.Contains(second, "账号20") {
 		t.Errorf("第 2 页应显示第 21 个账号（此前它永远点不到）：%s", mailHead(second))
 	}
 	if !strings.Contains(second, "共 21 条，第 21-21 条") {
 		t.Errorf("第 2 页的分页信息应是「第 21-21 条」：%s", mailHead(second))
+	}
+}
+
+// TestMailPageIndependentPagination 同时翻页时两张表分别计数、保留另一张的页码。
+func TestMailPageIndependentPagination(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	engine := newMailPaginationRouter(t, f)
+	f.seedAccounts(t, 21)
+	for i := 0; i < 41; i++ {
+		_, err := f.svc.UpsertTemplate(context.Background(), &maildto.SaveTemplateReq{
+			TemplateKey: fmt.Sprintf("list_tpl_%02d", i), Name: "分页模板", Subject: "主题", BodyHTML: "<p>x</p>",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := mailGet(t, engine, "/admin/mail?account_page=2&template_page=3")
+	if !strings.Contains(body, "账号20") || !strings.Contains(body, "list_tpl_40") {
+		t.Fatal("独立翻页未同时显示两张列表的末页数据")
+	}
+	if strings.Contains(body, "账号00</button>") || strings.Contains(body, "list_tpl_00</code>") {
+		t.Fatal("末页不应混入首页数据行")
+	}
+	// 取真实导航链接，而非仅检查页面字符串：分页条导航必须保存另一页状态。
+	for _, target := range []struct{ param, other string }{
+		{"account_page", "template_page=3"}, {"template_page", "account_page=2"},
+	} {
+		found := false
+		for _, fragment := range strings.Split(body, `href="`)[1:] {
+			href := strings.SplitN(fragment, `"`, 2)[0]
+			u, err := url.Parse(htmlUnescape(href))
+			if err == nil && u.Query().Has(target.param) && strings.Contains(u.RawQuery, target.other) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s 的翻页链接未保留 %s", target.param, target.other)
+		}
+	}
+	overshoot := mailGet(t, engine, "/admin/mail?account_page=999&template_page=999")
+	if !strings.Contains(overshoot, "账号20") || !strings.Contains(overshoot, "list_tpl_40") {
+		t.Fatal("独立越界页应各自收敛到末页")
+	}
+}
+
+// TestMailListDatabasePageFilters 计数与行查询共享筛选，空结果和越界页不回退为全量。
+func TestMailListDatabasePageFilters(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	f.seedAccounts(t, 21)
+	m := mailmodel.NewMailModel(f.db)
+	accRows, accTotal, accPage, err := m.ListAccountsPage(ctx, mailmodel.AccountPurposeMarketing, false, 3, 20)
+	if err != nil || accTotal != 0 || accPage != 1 || len(accRows) != 0 {
+		t.Fatalf("空筛选应保持空态：total=%d page=%d rows=%d err=%v", accTotal, accPage, len(accRows), err)
+	}
+	accRows, accTotal, accPage, err = m.ListAccountsPage(ctx, mailmodel.AccountPurposeTransactional, false, 99, 20)
+	if err != nil || accTotal != 21 || accPage != 2 || len(accRows) != 1 {
+		t.Fatalf("账号筛选末页应与计数一致：total=%d page=%d rows=%d err=%v", accTotal, accPage, len(accRows), err)
+	}
+	for i := 0; i < 21; i++ {
+		key := "other"
+		if i < 2 {
+			key = "matched"
+		}
+		if _, err := f.svc.UpsertTemplate(ctx, &maildto.SaveTemplateReq{
+			TemplateKey: key, Locale: fmt.Sprintf("l%02d", i), Subject: "主题", BodyHTML: "<p>x</p>",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tplRows, tplTotal, tplPage, err := m.ListTemplatesPage(ctx, "matched", 99, 1)
+	if err != nil || tplTotal != 2 || tplPage != 2 || len(tplRows) != 1 || tplRows[0].TemplateKey != "matched" {
+		t.Fatalf("模板筛选末页应与计数一致：total=%d page=%d rows=%v err=%v", tplTotal, tplPage, tplRows, err)
+	}
+	tplRows, tplTotal, tplPage, err = m.ListTemplatesPage(ctx, "missing", 3, 1)
+	if err != nil || tplTotal != 0 || tplPage != 1 || len(tplRows) != 0 {
+		t.Fatalf("模板空筛选应保持空态：total=%d page=%d rows=%v err=%v", tplTotal, tplPage, tplRows, err)
 	}
 }
 

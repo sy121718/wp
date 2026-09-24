@@ -213,6 +213,43 @@ func (m *MailModel) ListAccounts(ctx context.Context, purpose string, onlyEnable
 	return list, err
 }
 
+// ListAccountsPage 先对用途和启用状态计数，再按同一条件在数据库取当前页。
+func (m *MailModel) ListAccountsPage(ctx context.Context, purpose string, onlyEnabled bool, page, limit int) (list []*MailAccountEntity, total int64, current int, err error) {
+	q := m.tx(ctx).Model(&MailAccountEntity{})
+	if p := strings.TrimSpace(purpose); p != "" {
+		q = q.Where("purpose = ?", p)
+	}
+	if onlyEnabled {
+		q = q.Where("status = ?", AccountStatusEnabled)
+	}
+	if err = q.Count(&total).Error; err != nil {
+		return nil, 0, 0, err
+	}
+	current = mailPageWithinTotal(page, limit, total)
+	if limit < 1 {
+		limit = 20
+	}
+	err = q.Order("is_default DESC, id ASC").Offset((current - 1) * limit).Limit(limit).Find(&list).Error
+	return list, total, current, err
+}
+
+func mailPageWithinTotal(page, limit int, total int64) int {
+	if limit < 1 {
+		limit = 20
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := (total + int64(limit) - 1) / int64(limit)
+	if pages < 1 {
+		pages = 1
+	}
+	if int64(page) > pages {
+		return int(pages)
+	}
+	return page
+}
+
 // DefaultAccount 取某用途的默认账号（不存在返回 gorm.ErrRecordNotFound）。
 func (m *MailModel) DefaultAccount(ctx context.Context, purpose string) (e *MailAccountEntity, err error) {
 	e = &MailAccountEntity{}
@@ -277,6 +314,23 @@ func (m *MailModel) ListTemplates(ctx context.Context, key string) (list []*Mail
 	}
 	err = q.Order("template_key ASC, locale ASC").Find(&list).Error
 	return list, err
+}
+
+// ListTemplatesPage 按模板标识计数并在数据库取当前页。
+func (m *MailModel) ListTemplatesPage(ctx context.Context, key string, page, limit int) (list []*MailTemplateEntity, total int64, current int, err error) {
+	q := m.tx(ctx).Model(&MailTemplateEntity{})
+	if k := strings.TrimSpace(key); k != "" {
+		q = q.Where("template_key = ?", k)
+	}
+	if err = q.Count(&total).Error; err != nil {
+		return nil, 0, 0, err
+	}
+	current = mailPageWithinTotal(page, limit, total)
+	if limit < 1 {
+		limit = 20
+	}
+	err = q.Order("template_key ASC, locale ASC, id ASC").Offset((current - 1) * limit).Limit(limit).Find(&list).Error
+	return list, total, current, err
 }
 
 // UpsertTemplate 新建或覆盖模板（key + locale 唯一）。

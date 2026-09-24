@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -32,55 +33,45 @@ type mailPageHandle struct {
 	mail mailcontract.MailService
 }
 
-// mailListPageSize 邮箱设置页两张表（发信账号 / 邮件模板）每页条数。
-//
-// 与 shell.PageParams 的默认值一致：本页也接受 ?limit=（上限 100 由 PageParams 兜住），
-// 缺省就是 20 条/页 —— 十几条账号加几十条模板时，页高不再随数据量无上限增长。
+// 两张列表的页码互不影响；原有无分页调用仍使用全量查询。
 const mailListPageSize = 20
 
-// mailPageNumber 解析 ?page=（缺省 1；非法值按 1 处理，不报错）。
 func mailPageNumber(raw string) int {
 	page := int(shell.ParseUint(raw))
-	if page <= 0 {
+	if page < 1 {
 		return 1
 	}
 	return page
 }
 
-// mailListPageSlice 切出「第 page 页」，并返回**收敛后**的页码。
-//
-// 为什么在 handler 侧切：mail 契约的 ListAccounts / ListTemplates 只返回 []Item ——
-// 既没有 total，也没有 limit/offset（见 mail/contract 的签名），而分页条要的
-// 「共 N 条，第 X-Y 条」必须由 total 算出（shell.BuildPagination 的第一个入参就是它）。
-// 真源分页（service 暴露 limit/offset + count）会越出本批的独占文件范围，
-// 所以这里先把三件事做对：页高有上限、计数准确、页码可用 —— 与商品域
-// product_taxonomy_page.go 的 listPageSlice 同一手法与同一取舍。
-//
-// current 必须交给 BuildPagination：page=999 时若不先在这里收敛，
-// 会出现「表格为空、分页条却显示第 999 页」这种自相矛盾的组合。
-func mailListPageSlice[T any](all []T, page, size int) (rows []T, current int) {
-	if size < 1 {
-		size = mailListPageSize
+// mailListPagination 在域内重写共享分页组件的固定 page 参数，保留另一张表的页码。
+func mailListPagination(total int64, page int, param, base string, otherPage int, tr func(string, string) string) map[string]any {
+	pagination := shell.BuildPagination(total, page, mailListPageSize, base, tr)
+	if pagination == nil {
+		return map[string]any{}
 	}
-	if page < 1 {
-		page = 1
+	for i := range pagination.Links {
+		link := &pagination.Links[i]
+		if link.URL == "" {
+			continue
+		}
+		u, err := url.Parse(link.URL)
+		if err != nil {
+			return map[string]any{} // 基址由调用方固定，异常时不输出错误链接。
+		}
+		q := u.Query()
+		q.Set(param, q.Get("page"))
+		q.Del("page")
+		q.Del("limit")
+		otherParam := "account_page"
+		if param == "account_page" {
+			otherParam = "template_page"
+		}
+		q.Set(otherParam, strconv.Itoa(otherPage))
+		u.RawQuery = q.Encode()
+		link.URL = u.String()
 	}
-	pages := (len(all) + size - 1) / size
-	if pages < 1 {
-		pages = 1
-	}
-	if page > pages {
-		page = pages
-	}
-	from := (page - 1) * size
-	if from > len(all) {
-		from = len(all)
-	}
-	to := from + size
-	if to > len(all) {
-		to = len(all)
-	}
-	return all[from:to], page
+	return pagination.TemplateKeys()
 }
 
 // NewMailPageHandle 构造邮箱后台页处理器（与 NewHandle 同风格；
@@ -97,24 +88,16 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	// **必须带小写 title**：layout.html 用 {{.title}} 取值，缺这个键会让渲染在 layout 里
 	// 中断（HTTP 仍是 200、正文整块为空）—— 也就是说「取数失败」会变成「白页」，
 	// 运营连那句归口文案都看不到。这两条分支此前正是这样。
-	accounts, err := h.mail.ListAccounts(ctx, "")
+	accountRows, accountTotal, accountPage, err := h.mail.ListAccountsPage(ctx, "", mailPageNumber(c.Query("account_page")), mailListPageSize)
 	if err != nil {
 		c.HTML(http.StatusOK, "admin/mail/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
 		return
 	}
-	templates, err := h.mail.ListTemplates(ctx, "")
+	templateRows, templateTotal, templatePage, err := h.mail.ListTemplatesPage(ctx, "", mailPageNumber(c.Query("template_page")), mailListPageSize)
 	if err != nil {
 		c.HTML(http.StatusOK, "admin/mail/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
 		return
 	}
-	// 注意用小写 title：layout.html 的字段访问是 {{.title}}，缺 key 会渲染报错。
-	//
-	// 两张表共用 ?page=（分页组件的链接参数名写死 page/limit，同页两张表无法各带一个页码），
-	// 但各自按自己的数据切片、各自算分页条 —— 页数少的那张表会被收敛到自己的最后一页，
-	// 不会出现「表里没数据、分页条却翻着」的自相矛盾。
-	page := mailPageNumber(c.Query("page"))
-	accountRows, accountPage := mailListPageSlice(accounts, page, mailListPageSize)
-	templateRows, templatePage := mailListPageSlice(templates, page, mailListPageSize)
 
 	data := shell.Prepare(c, gin.H{
 		"title":     "邮箱设置",
@@ -130,12 +113,10 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	// 各自传一份 context（Jet 的 include 传了 context 后，被包含模板的 . 就是它本身）。
 	// TemplateKeys 在「无分页」时返回空 map，因此这两组键在单页时可能不存在 ——
 	// 模板侧用 {{key := .["X"]}} 取值（缺键为 nil，不中断），片段里的 if 自然跳过。
-	for k, v := range shell.BuildPagination(int64(len(accounts)), accountPage, mailListPageSize,
-		"/admin/mail", shell.TranslateFor(c)).TemplateKeys() {
+	for k, v := range mailListPagination(accountTotal, accountPage, "account_page", "/admin/mail", templatePage, shell.TranslateFor(c)) {
 		data["Accounts"+k] = v
 	}
-	for k, v := range shell.BuildPagination(int64(len(templates)), templatePage, mailListPageSize,
-		"/admin/mail", shell.TranslateFor(c)).TemplateKeys() {
+	for k, v := range mailListPagination(templateTotal, templatePage, "template_page", "/admin/mail", accountPage, shell.TranslateFor(c)) {
 		data["Templates"+k] = v
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail.html", data)

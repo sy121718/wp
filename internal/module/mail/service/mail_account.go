@@ -133,6 +133,19 @@ func (s *Service) ListAccounts(ctx context.Context, purpose string) (res []*mail
 	return res, nil
 }
 
+// ListAccountsPage 保留原全量查询供发信与选择器使用，仅后台列表使用数据库分页。
+func (s *Service) ListAccountsPage(ctx context.Context, purpose string, page, limit int) (res []*maildto.AccountItem, total int64, current int, err error) {
+	list, total, current, err := s.m.ListAccountsPage(ctx, purpose, false, page, limit)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	res = make([]*maildto.AccountItem, 0, len(list))
+	for _, e := range list {
+		res = append(res, accountItemOf(e))
+	}
+	return res, total, current, nil
+}
+
 // DeleteAccount 删除账号。
 func (s *Service) DeleteAccount(ctx context.Context, id uint64) (err error) {
 	return s.m.DeleteAccount(ctx, id)
