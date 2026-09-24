@@ -2,10 +2,10 @@
 
 > 用途：把**当前实际运行**的商品 / 仓库 / 采购逻辑完整交接出去，供外部团队做优化。
 > 本文只写现状（含已核实的缺口），不写目标态；每条结论都标注了权威来源（迁移编号 / 文件路径），可逐条复核。
-> 基线：迁移编号截至 `264`；代码截至 `internal/module/product/**` 当前工作树。
+> 基线：迁移编号截至 `264`；商品代码在 `internal/module/product/**`，库存与采购代码在 `internal/module/inventory/**`。
 > 阅读顺序建议：§1 → §2 → §3（查表用）→ §4（流程）→ §5（不变量）→ §7（缺口）。
 >
-> **权威优先级**（本文与代码冲突时以此为准）：线上数据库实际结构 → `public/migrations/*.sql` → `internal/module/product/**/model/*.go` → 服务层注释 → 文档。
+> **权威优先级**（本文与代码冲突时以此为准）：线上数据库实际结构 → `public/migrations/*.sql` → `internal/module/{product,inventory}/**/model/*.go` → 服务层注释 → 文档。
 > 注意：`docs/13-module-inventory.md`、`docs/14-product-sku-and-cost-model.md` 是设计意图与迁移记录，**个别条目描述的是计划而非现状**（本文 §7 标出了其中已确认的落差）。
 
 ---
@@ -15,7 +15,7 @@
 ### 1.1 三个域、四类实体
 
 ```text
-商品域（product）                    库存域（product/inventory）              采购域（同在 inventory 目录）
+商品域（product）                    库存域（inventory）                      采购域（同在 inventory 模块）
 ────────────────────────────────      ───────────────────────────────────     ─────────────────────────────
 products            商品容器           inventory_warehouses      仓库          inventory_sources          货源
 product_variants    可售规格(SKU)      inventory_stocks          库存真源      inventory_purchase_orders  采购单头
@@ -26,7 +26,7 @@ product_tags        标签(手工/自动)
 product_pricing_*   定价规则与留痕
 ```
 
-**关键结构事实**：商品域与库存域**同属一个 Go 模块**（`internal/module/product/`，库存代码在子目录 `product/inventory/`，issue #32 起合并）。它们之间是**同模块直调**，不再有跨模块端口；库存域对外的边界是 `internal/module/product/inventory/contract/inventory_service.go`。
+**关键结构事实**：商品域与库存域是两个独立 Go 业务模块（`internal/module/product/` 与 `internal/module/inventory/`）。商品侧只依赖库存模块的 `contract` 与不可变 DTO，不导入库存 `service/model`；库存域对外边界在 `internal/module/inventory/contract/`。HTTP 路由、权限码、菜单、模板与数据库表名未随目录迁移改变。
 
 ### 1.2 一个 SKU 的一生（端到端）
 
@@ -554,18 +554,18 @@ bundle 类型分支：**不生成变体、不建库存行**；主体 SKU 必填�
 # 当前 schema 说明文档：docs/schema-snapshot.md
 
 # 商品 / 库存模块测试（真实 PostgreSQL）
-go test ./internal/module/product/...
+go test ./internal/module/product/... ./internal/module/inventory/...
 go test ./public/test/inventory/... -v
 
 # 库存并发的关键回归（锁序 / 无死锁 / 超扣不存在）
-go test -race ./internal/module/product/inventory/...
+go test -race ./internal/module/inventory/...
 
 # 事务边界门禁（静态扫「一个 service 函数里 ≥2 处写却没有事务标记」）
 go test ./public/test/architecture/...
 ```
 
 **优化方最该先看的四处代码**（按信息密度排序）：
-1. `internal/module/product/inventory/service/inventory_change.go` —— 变动契约（锁序、三段式、流水、成本留痕）。
-2. `internal/module/product/inventory/service/inventory_receipt.go` —— 入库的事务形状与幂等。
+1. `internal/module/inventory/service/inventory_change.go` —— 变动契约（锁序、三段式、流水、成本留痕）。
+2. `internal/module/inventory/service/inventory_receipt.go` —— 入库的事务形状与幂等。
 3. `internal/module/product/service/product_crud.go` —— 建商品 → 建 SKU → 多仓认领建行。
 4. `public/migrations/244_inventory_stock_cost.sql`、`251`、`261`、`262` —— 成本 / 外码 / 无限 / 裸码四条口径的原始论证（含**为什么**这么定，以及被否掉的替代方案）。

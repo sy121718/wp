@@ -17,7 +17,7 @@
 - `content/` / `contenttemplate/` / `presentation/` — CMS 内容、版本化结构模板、自动发布实例
 - `blueprint/` — Page Document 初始化工具（用完即弃）
 - `product/` — 商品域（商品 / 变体 / 属性 / 分类 / 品牌 / 标签 / 定价 / 捆绑）
-- `product/inventory/` — 仓库 / 库存真源 / 库存变动 / 物料清单 / 货源 / 采购
+- `inventory/` — 独立库存模块：仓库 / 库存真源 / 库存变动 / 物料清单 / 货源 / 采购；商品经库存 contract 的收窄端口交互
 - `navigation/` — 公开站点导航（与后台 `menu` 严格隔离）
 - `plugin/` — 插件体系
 - `masterdata/` — 主数据字段级变更记录（append-only）
