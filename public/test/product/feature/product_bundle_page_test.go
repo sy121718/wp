@@ -230,7 +230,7 @@ func TestBundleProductsBundlePage(t *testing.T) {
 		t.Fatalf("落库内容与表单不一致: %+v", detail.Options[0])
 	}
 
-	// 非法配置（整单下限不可达）→ 302 带上可读原因回跳，且不落库。
+	// 非法配置（整单下限不可达）→ 原请求 200 回填，且不落库。
 	badWrite := postForm(engine, "/admin/products/bundle/save", url.Values{
 		"productId":   {main.ID},
 		"maxOptions":  {"20"},
@@ -242,11 +242,9 @@ func TestBundleProductsBundlePage(t *testing.T) {
 		"minQty":      {"1"},
 		"maxQty":      {"1"},
 	})
-	if badWrite.Code != http.StatusFound {
-		t.Fatalf("非法配置也应 302 回本页（带提示），实际 %d", badWrite.Code)
-	}
-	if loc := badWrite.Header().Get("Location"); !strings.Contains(loc, "err=") {
-		t.Fatalf("非法配置的回跳应带 err 参数，实际 %q", loc)
+	if badWrite.Code != http.StatusOK || !strings.Contains(badWrite.Body.String(), `role="alert"`) ||
+		!strings.Contains(badWrite.Body.String(), `value="9"`) {
+		t.Fatalf("非法配置应原请求 200 回填并提示，实际 %d", badWrite.Code)
 	}
 
 	// 未选商品时页面仍然可渲染（骨架 + 选择下拉）。

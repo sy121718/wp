@@ -26,6 +26,10 @@ import (
 
 // ProductBundlePage 捆绑配置页。
 func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
+	h.renderBundlePage(c, nil, "", false)
+}
+
+func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productdto.BundleConfig, failure string, fragment bool) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -49,10 +53,12 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 	if selectedProduct != "" {
 		detail, err = h.products.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{ProductID: selectedProduct})
 		if err != nil {
-			// 配置读不出来（商品不存在 / 库存端口未接入）时仍然渲染页面骨架，
-			// 把原因放在页面提示里 —— 比一个 500 空白页可诊断得多。
+			// 配置读不出来时仍渲染页面骨架。
 			detail = nil
 		}
+	}
+	if submitted != nil && detail != nil {
+		detail.Config = *submitted
 	}
 	skus, serr := h.products.ListBundleSKUs(ctx, &productdto.ListBundleSKUReq{ProjectID: selectedProject})
 	if serr != nil {
@@ -84,7 +90,18 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 		shell.PageError(c, "product_bundle", gerr)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/product/product_bundle.html", shell.Prepare(c, gin.H{
+	template := "admin/product/product_bundle.html"
+	if fragment {
+		template = "admin/product/product_bundle_form.html"
+	}
+	if failure == "" {
+		failure = productPageErr(c)
+	}
+	rows := bundleConfigRows(tr, detail, skus)
+	if submitted != nil && detail != nil {
+		rows = bundleSubmittedRows(tr, detail, skus, c)
+	}
+	c.HTML(http.StatusOK, template, shell.Prepare(c, gin.H{
 		"title":           "捆绑配置",
 		"menu":            "products",
 		"Projects":        projects,
@@ -92,10 +109,11 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 		"Products":        list,
 		"SelectedProduct": selectedProduct,
 		"Detail":          detail,
-		"Rows":            bundleConfigRows(tr, detail, skus),
+		"Rows":            rows,
+		"CandidateSKUs":   bundleCandidateOptions(skus),
 		"SkuCount":        len(skus),
 		"MaxOptions":      productdto.BundleMaxOptionsLimit,
-		"Err":             productPageErr(c),
+		"Err":             failure,
 		// 成员来源面板（批次 C）：三种来源 + 各自的候选数据。
 		"Sources":           bundleSourceOptions(tr, source),
 		"Source":            source,
@@ -107,7 +125,7 @@ func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
 	}))
 }
 
-// ProductBundleSave 保存捆绑配置（POST，成功后 302 回本页）。
+// ProductBundleSave 保存捆绑配置；失败在当前请求回填，HX 成功整页跳转。
 func (h *productPageHandle) ProductBundleSave(c *gin.Context) {
 	ctx := c.Request.Context()
 	productID := strings.TrimSpace(c.PostForm("productId"))
@@ -157,11 +175,21 @@ func (h *productPageHandle) ProductBundleSave(c *gin.Context) {
 		// 操作人只从会话取（主数据变更记录要记「谁改的」）。
 		OperatorID: builtin.GetUsername(c),
 	}); err != nil {
-		c.Redirect(http.StatusFound, "/admin/products/bundle?product="+productID+
-			"&err="+url.QueryEscape(productErrText(c, err)))
+		q := url.Values{"product": {productID}}
+		if project := strings.TrimSpace(c.PostForm("projectId")); project != "" {
+			q.Set("project", project)
+		}
+		c.Request.URL.RawQuery = q.Encode()
+		h.renderBundlePage(c, &cfg, productErrText(c, err), c.GetHeader("HX-Request") == "true")
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/products/bundle?product="+productID)
+	destination := "/admin/products/bundle?product=" + url.QueryEscape(productID)
+	if c.GetHeader("HX-Request") == "true" {
+		c.Header("HX-Redirect", destination)
+		c.Status(http.StatusOK)
+		return
+	}
+	c.Redirect(http.StatusFound, destination)
 }
 
 // bundleQueryParam 取本页的上下文参数（工程 / 商品），按候选名依次认第一个非空值。
@@ -179,10 +207,9 @@ func bundleQueryParam(c *gin.Context, names ...string) string {
 	return ""
 }
 
-// bundleConfigRows 配置表单的行（已配置的项 + 若干空行，供继续添加）。
+// bundleConfigRows 配置表单的行（已配置的项 + 唯一空白候选行）。
 //
-// 空行不是「占位符」而是可提交的完整行：留空即被保存逻辑跳过。
-// 不用 JS 动态加行的代价是「一次最多加几行」，换来的是纯服务端表单的可测与可回放。
+// 空白行保留原生表单无 JS 单次添加；已存成员仅展示 SKU 与隐藏身份。
 // **每一行都提交同一组字段**（variantId / required / defaultQty / minQty / maxQty /
 // sourceKind / memberWarehouseId / memberWarehouseSku / memberExternalSku）：
 // 并行数组靠 DOM 顺序对齐，少一个字段就会让后面所有行的索引错位。
@@ -190,44 +217,39 @@ func bundleConfigRows(tr func(key, fallback string) string, detail *productdto.B
 	rows := make([]gin.H, 0, productdto.BundleMaxOptionsLimit)
 	// 已配置项的可用量来自配置详情（service 已按真源批量取好），
 	// 新加的空白行没有可用量可言（还没选 SKU）。
-	availByID := map[string]int{}
-	if detail != nil {
-		for _, o := range detail.Options {
-			availByID[o.VariantID] = o.Available
+	skuByID := make(map[string]string, len(skus))
+	for _, s := range skus {
+		if s != nil {
+			skuByID[s.VariantID] = s.ProductName + " · " + s.SKUCode
 		}
+	}
+	if detail != nil {
 		for _, o := range detail.Options {
 			if o == nil {
 				continue
 			}
-			rows = append(rows, bundleRow(skus, o.BundleOption, availByID[o.VariantID],
-				bundleSourceLabel(tr, o.BundleOption)))
+			label := skuByID[o.VariantID]
+			if label == "" {
+				label = strings.TrimSpace(o.ProductName + " · " + o.SKUCode)
+				if o.SKUCode == "" {
+					label = o.VariantID
+				}
+			}
+			rows = append(rows, bundleRow(o.BundleOption, o.Available,
+				bundleSourceLabel(tr, o.BundleOption), label))
 		}
 	}
-	blank := 3
-	if len(rows) > 0 {
-		blank = 2
-	}
-	for i := 0; i < blank && len(rows) < productdto.BundleMaxOptionsLimit; i++ {
-		rows = append(rows, bundleRow(skus,
-			productdto.BundleOption{Required: true, DefaultQty: 1, MinQty: 1}, 0, ""))
+	if len(rows) < productdto.BundleMaxOptionsLimit {
+		rows = append(rows, bundleRow(productdto.BundleOption{Required: true, DefaultQty: 1, MinQty: 1}, 0, "", ""))
 	}
 	return rows
 }
 
-// bundleRow 一行的表单数据（SKU 下拉的选中态在这里算好，模板只做展示）。
-func bundleRow(skus []*productdto.BundleSKUResp, o productdto.BundleOption, available int, sourceLabel string) gin.H {
-	options := make([]gin.H, 0, len(skus)+1)
-	options = append(options, gin.H{"ID": "", "Label": "— 不选 —", "Selected": o.VariantID == ""})
-	for _, s := range skus {
-		options = append(options, gin.H{
-			"ID":       s.VariantID,
-			"Label":    s.ProductName + " · " + s.SKUCode,
-			"Selected": s.VariantID == o.VariantID,
-		})
-	}
+// bundleRow 构造一行数据；候选 SKU 列表仅供唯一空白行使用。
+func bundleRow(o productdto.BundleOption, available int, sourceLabel, skuLabel string) gin.H {
 	return gin.H{
 		"VariantID":  o.VariantID,
-		"Options":    options,
+		"SKULabel":   skuLabel,
 		"Required":   o.Required,
 		"DefaultQty": o.DefaultQty,
 		"MinQty":     o.MinQty,
@@ -241,6 +263,59 @@ func bundleRow(skus []*productdto.BundleSKUResp, o productdto.BundleOption, avai
 		"ExternalSKU":  o.ExternalSKU,
 		"SourceLabel":  sourceLabel,
 	}
+}
+
+// bundleSubmittedRows rebuilds rows from the posted arrays, not persisted configuration.
+func bundleSubmittedRows(tr func(key, fallback string) string, detail *productdto.BundleConfigResp, skus []*productdto.BundleSKUResp, c *gin.Context) []gin.H {
+	labels := make(map[string]string, len(skus))
+	for _, s := range skus {
+		if s != nil {
+			labels[s.VariantID] = s.ProductName + " · " + s.SKUCode
+		}
+	}
+	for _, o := range detail.Options {
+		if o != nil && labels[o.VariantID] == "" && o.SKUCode != "" {
+			labels[o.VariantID] = strings.TrimSpace(o.ProductName + " · " + o.SKUCode)
+		}
+	}
+	ids := c.PostFormArray("variantId")
+	required, defaults := c.PostFormArray("required"), c.PostFormArray("defaultQty")
+	mins, maxes := c.PostFormArray("minQty"), c.PostFormArray("maxQty")
+	kinds, warehouses := c.PostFormArray("sourceKind"), c.PostFormArray("memberWarehouseId")
+	warehouseSKUs, externalSKUs := c.PostFormArray("memberWarehouseSku"), c.PostFormArray("memberExternalSku")
+	rows := make([]gin.H, 0, len(ids)+1)
+	hasBlank := false
+	for i, rawID := range ids {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			hasBlank = true
+		}
+		option := productdto.BundleOption{
+			VariantID: id, Required: atoiAt(required, i) == 1,
+			DefaultQty: atoiAt(defaults, i), MinQty: atoiAt(mins, i), MaxQty: atoiAt(maxes, i),
+			SourceKind: strAt(kinds, i), WarehouseID: strAt(warehouses, i),
+			WarehouseSKU: strAt(warehouseSKUs, i), ExternalSKU: strAt(externalSKUs, i),
+		}
+		label := labels[id]
+		if label == "" && id != "" {
+			label = id
+		}
+		rows = append(rows, bundleRow(option, 0, bundleSourceLabel(tr, option), label))
+	}
+	if len(rows) < productdto.BundleMaxOptionsLimit && !hasBlank {
+		rows = append(rows, bundleRow(productdto.BundleOption{Required: true, DefaultQty: 1, MinQty: 1}, 0, "", ""))
+	}
+	return rows
+}
+
+func bundleCandidateOptions(skus []*productdto.BundleSKUResp) []gin.H {
+	options := make([]gin.H, 0, len(skus))
+	for _, s := range skus {
+		if s != nil {
+			options = append(options, gin.H{"ID": s.VariantID, "Label": s.ProductName + " · " + s.SKUCode})
+		}
+	}
+	return options
 }
 
 // —— 成员来源面板（docs/14 §1.2 的三种来源，批次 C）——

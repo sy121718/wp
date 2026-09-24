@@ -1,0 +1,137 @@
+{{csrf := .["csrf_token"]}}
+{{selectedProduct := .SelectedProduct}}
+{{maxOptions := .MaxOptions}}
+{{candidateSKUs := .Rows}}
+{{if isset(.CandidateSKUs)}}{{candidateSKUs = .CandidateSKUs}}{{end}}
+<div data-bundle-form-host>
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_bundle.saveError", "保存未完成：") }}{{.Err}}</p>
+    {{end}}{{end}}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
+        {{if .Detail}}
+        <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
+        <form method="post" action="/admin/products/bundle/save" hx-post="/admin/products/bundle/save" hx-target="closest [data-bundle-form-host]" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="productId" value="{{selectedProduct}}">
+            <input type="hidden" name="projectId" value="{{.SelectedProject}}">
+            <div class="form-inline">
+                <label>{{ .["t"]("admin.product_bundle.cfg.maxOptions", "选项数量上限") }}
+                    <input type="number" class="form-input" name="maxOptions" min="1" max="{{maxOptions}}" value="{{.Detail.Config.MaxOptions}}">
+                </label>
+                <label>{{ .["t"]("admin.product_bundle.cfg.minTotalQty", "整单最小总件数") }}
+                    <input type="number" class="form-input" name="minTotalQty" min="0" value="{{.Detail.Config.MinTotalQty}}">
+                </label>
+                <label>{{ .["t"]("admin.product_bundle.cfg.maxTotalQty", "整单最大总件数（0 = 不设上限）") }}
+                    <input type="number" class="form-input" name="maxTotalQty" min="0" value="{{.Detail.Config.MaxTotalQty}}">
+                </label>
+            </div>
+            {* Every member contributes the same nine fields in DOM order. *}
+            <div class="table-wrap" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_bundle.cfg.tableAria", "捆绑选项") }}">
+                <table class="data-table data-table-wide">
+                    <thead>
+                        <tr>
+                            <th>SKU</th><th>{{ .["t"]("admin.product_bundle.source.col.source", "来源") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}</th><th>{{ .["t"]("admin.product_bundle.cfg.col.available", "当前可用") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th>
+                        </tr>
+                    </thead>
+                    <tbody data-bundle-member-list data-bundle-max="{{maxOptions}}">
+                        {{range _, row := .Rows}}
+                        <tr data-bundle-member-row>
+                            <td>
+                                {{if row.VariantID != ""}}
+                                <input type="hidden" name="variantId" value="{{row.VariantID}}">
+                                <code data-member-sku>{{row.SKULabel}}</code>
+                                {{else}}
+                                <select class="form-select" name="variantId" aria-label="SKU" data-bundle-candidate>
+                                    <option value="">— 不选 —</option>
+                                    {{range _, o := candidateSKUs}}
+                                    <option value="{{o.ID}}">{{o.Label}}</option>
+                                    {{end}}
+                                </select>
+                                {{end}}
+                                <input type="hidden" name="sourceKind" value="{{if isset(row.SourceKind)}}{{row.SourceKind}}{{end}}">
+                                <input type="hidden" name="memberWarehouseId" value="{{if isset(row.WarehouseID)}}{{row.WarehouseID}}{{end}}">
+                                <input type="hidden" name="memberWarehouseSku" value="{{if isset(row.WarehouseSKU)}}{{row.WarehouseSKU}}{{end}}">
+                                <input type="hidden" name="memberExternalSku" value="{{if isset(row.ExternalSKU)}}{{row.ExternalSKU}}{{end}}">
+                            </td>
+                            <td>{{if isset(row.SourceLabel)}}{{if row.SourceLabel != ""}}<span data-member-source>{{row.SourceLabel}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else}}<span class="text-mute" data-member-source>—</span>{{end}}</td>
+                            <td>
+                                <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
+                                    <option value="1" {{if row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>
+                                    <option value="0" {{if !row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</option>
+                                </select>
+                            </td>
+                            <td><input type="number" class="form-input" name="defaultQty" min="0" value="{{row.DefaultQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}"></td>
+                            <td><input type="number" class="form-input" name="minQty" min="0" value="{{row.MinQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}"></td>
+                            <td><input type="number" class="form-input" name="maxQty" min="0" value="{{row.MaxQty}}" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}"></td>
+                            <td>{{if row.VariantID != ""}}{{row.Available}}{{else}}—{{end}}</td>
+                            <td class="col-actions">
+                                {{if row.VariantID != ""}}<button type="button" class="btn btn-sm btn-danger" data-bundle-member-remove>{{ .["t"]("admin.product_bundle.source.remove", "移除") }}</button>{{end}}
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{if len(.Rows) >= maxOptions}}
+            <template data-bundle-candidate-template>
+                <tr data-bundle-member-row>
+                    <td>
+                        <select class="form-select" name="variantId" aria-label="SKU" data-bundle-candidate>
+                            <option value="">— 不选 —</option>
+                            {{range _, o := candidateSKUs}}<option value="{{o.ID}}">{{o.Label}}</option>{{end}}
+                        </select>
+                        <input type="hidden" name="sourceKind" value="">
+                        <input type="hidden" name="memberWarehouseId" value="">
+                        <input type="hidden" name="memberWarehouseSku" value="">
+                        <input type="hidden" name="memberExternalSku" value="">
+                    </td>
+                    <td><span class="text-mute" data-member-source>—</span></td>
+                    <td><select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}"><option value="1" selected>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option><option value="0">{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</option></select></td>
+                    <td><input type="number" class="form-input" name="defaultQty" min="0" value="1"></td>
+                    <td><input type="number" class="form-input" name="minQty" min="0" value="1"></td>
+                    <td><input type="number" class="form-input" name="maxQty" min="0" value="0"></td>
+                    <td>—</td><td class="col-actions"></td>
+                </tr>
+            </template>
+            {{end}}
+            <template data-bundle-member-tpl>
+                <tr data-bundle-member-row>
+                    <td>
+                        <input type="hidden" name="variantId" value="">
+                        <code data-member-sku></code>
+                    </td>
+                    <td>
+                        <span data-member-source></span>
+                        <input type="hidden" name="sourceKind" value="">
+                        <input type="hidden" name="memberWarehouseId" value="">
+                        <input type="hidden" name="memberWarehouseSku" value="">
+                        <input type="hidden" name="memberExternalSku" value="">
+                    </td>
+                    <td>
+                        <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
+                            <option value="1" selected>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>
+                            <option value="0">{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</option>
+                        </select>
+                    </td>
+                    <td><input type="number" class="form-input" name="defaultQty" min="0" value="1" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.defaultQty", "默认数量") }}"></td>
+                    <td><input type="number" class="form-input" name="minQty" min="0" value="1" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.minQty", "最小数量") }}"></td>
+                    <td><input type="number" class="form-input" name="maxQty" min="0" value="0" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.maxQty", "最大数量（0 = 不限）") }}"></td>
+                    <td>—</td>
+                    <td class="col-actions">
+                        <button type="button" class="btn btn-sm btn-danger" data-bundle-member-remove>{{ .["t"]("admin.product_bundle.source.remove", "移除") }}</button>
+                    </td>
+                </tr>
+            </template>
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_bundle.cfg.save", "保存配置") }}</button>
+            </div>
+        </form>
+        {{else}}
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.product_bundle.detailFailedTitle", "配置读取失败") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。") }}</p>
+        </div>
+        {{end}}
+    </section>
+</div>
