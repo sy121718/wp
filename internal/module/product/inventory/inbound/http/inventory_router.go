@@ -138,6 +138,7 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 		pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), inventoryPages.InventoryReasonCreate)
 		// 启停 / 改名：内置原因改名由 service 拒绝（它的 key 由系统按 code 派生），停用照常。
 		pages.POST("/inventory/reason/update", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), inventoryPages.InventoryReasonUpdate)
+		pages.POST("/inventory/reasons/bulk-status", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), inventoryPages.InventoryReasonsBulkStatus)
 
 		// 货源管理页（issue #17）：类型与关联方两个结构化维度支撑报表区分。
 		sourcePages := NewInventorySourcePageHandle(svc, project)

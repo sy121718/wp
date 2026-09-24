@@ -39,6 +39,7 @@
     {{if .Ok != ""}}
     <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory.lastOk", "上一次操作已完成。") }}</p>
     {{end}}
+    {{if isset(.Done)}}{{if .Done != ""}}<p class="badge badge-success" role="status">{{.Done}}</p>{{end}}{{end}}
 
     <section class="card list-card">
         {* 列表标题行用 .card-header + .card-title，不借 .filter-bar（审计 02-O §38 / §40）。
@@ -47,16 +48,20 @@
         <div class="card-header">
             <span class="card-title">{{if len(.Reasons) > 0}}{{ .["t"]("admin.inventory.reasons.titleLead", "变动原因字典（") }}{{len(.Reasons)}}{{ .["t"]("admin.inventory.reasons.titleTail", "）") }}{{else}}{{ .["t"]("admin.inventory.reasons.title", "变动原因字典") }}{{end}}</span>
         </div>
-        {* 空数据也渲染 <table>/<thead>（审计 D1）：表头（方向 / 名称 / code / 来源 / 状态 / 操作）
-           是「这里能看什么」的说明，空数据不该连它一起藏掉。
-           空态落在 tbody 的整行里（colspan = 6 个实际列，本表没有勾选列）；
-           .empty-actions 指向本页既有的新建抽屉（审计 D10）。 *}
+        {* 空数据仍保留表头；空态横跨勾选、六个数据列和操作列。 *}
+        <form method="post" action="/admin/inventory/reasons/bulk-status">
+        <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}">
+        {{if isset(.PermSet["inventory:reason_update"])}}{{if len(.Reasons) > 0}}
+        <div class="bulk-bar" data-bulk-bar hidden><span data-bulk-count data-bulk-template="{{ .["t"]("admin.common.bulk.selected", "已选 {n} 项") }}">{{ .["t"]("admin.common.bulk.selected", "已选 {n} 项") }}</span>
+            <button type="submit" class="btn btn-sm" name="status" value="active">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
+            <button type="submit" class="btn btn-sm" name="status" value="disabled">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
+        </div>{{end}}{{end}}
         <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>{{ .["t"]("admin.inventory.reasons.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.name", "名称") }}</th><th>code</th><th>{{ .["t"]("admin.inventory.reasons.col.origin", "来源") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.state", "状态") }}</th><th class="col-actions">{{ .["t"]("admin.common.col.actions", "操作") }}</th></tr></thead>
+            <thead><tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.inventory.reasons.col.direction", "方向") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.name", "名称") }}</th><th>code</th><th>{{ .["t"]("admin.inventory.reasons.col.origin", "来源") }}</th><th>{{ .["t"]("admin.inventory.reasons.col.state", "状态") }}</th><th>{{ .["t"]("admin.inventory.ph.sort", "排序") }}</th><th class="col-actions">{{ .["t"]("admin.common.col.actions", "操作") }}</th></tr></thead>
             <tbody>
             {{if len(.Reasons) == 0}}
-            <tr><td colspan="6" class="cell-wrap">
+            <tr><td colspan="8" class="cell-wrap">
                 <div class="empty-state">
                     <p class="empty-title">{{ .["t"]("admin.inventory.reasons.emptyHeading", "还没有变动原因") }}</p>
                     <p class="empty-desc">{{ .["t"]("admin.inventory.reasons.empty", "这个工程还没有任何变动原因。") }}</p>
@@ -70,27 +75,21 @@
             {{else}}
             {{range _, r := .Reasons}}
             <tr>
+                <td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
                 <td>{{r.DirectionLabel}}</td>
                 <td>{{r.Name}}</td>
                 <td><code>{{r.Code}}</code></td>
                 <td>{{if r.IsBuiltin}}{{ .["t"]("admin.inventory.reasons.builtin", "内置") }}{{else}}{{ .["t"]("admin.inventory.reasons.custom", "自定义") }}{{end}}</td>
                 <td>{{r.StatusLabel}}</td>
+                <td>{{r.Sort}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
-                    {* 内置原因同样可以停用（只能停用）：它的名称是系统按 code 派生的词条，
-                       改名入口因此根本不给 —— 内置的「只读」体现在没有改名按钮，而不是不能停用。 *}
                     {{if isset(.PermSet["inventory:reason_update"])}}
-                    <form method="post" action="/admin/inventory/reason/update" class="inline-form">
-                        <input type="hidden" name="csrf_token" value="{{csrf}}">
-                        <input type="hidden" name="projectId" value="{{selectedProject}}">
-                        <input type="hidden" name="id" value="{{r.ID}}">
-                        {{if r.Status == "active"}}
-                        <input type="hidden" name="status" value="disabled">
-                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
-                        {{else}}
-                        <input type="hidden" name="status" value="active">
-                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
-                        {{end}}
-                    </form>
+                    <button type="button" class="btn btn-sm" data-drawer-open="#tpl-reason-edit-{{r.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
+                    {{if r.Status == "active"}}
+                    <button type="submit" form="reason-status-{{r.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.disable", "停用") }}</button>
+                    {{else}}
+                    <button type="submit" form="reason-status-{{r.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.reasons.enable", "启用") }}</button>
+                    {{end}}
                     {{end}}
                 </td>
             </tr>
@@ -99,7 +98,27 @@
             </tbody>
         </table>
         </div>
+        </form>
     </section>
+
+    {{if isset(.PermSet["inventory:reason_update"])}}
+    {{range _, r := .Reasons}}
+    <form id="reason-status-{{r.ID}}" method="post" action="/admin/inventory/reason/update" hidden>
+        <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{r.ID}}"><input type="hidden" name="status" value="{{if r.Status == "active"}}disabled{{else}}active{{end}}">
+    </form>
+    <template id="tpl-reason-edit-{{r.ID}}">
+        <div data-inventory-reason-host>
+            <form method="post" action="/admin/inventory/reason/update" class="form-stack" hx-post="/admin/inventory/reason/update" hx-target="closest [data-inventory-reason-host]" hx-swap="outerHTML">
+                <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}"><input type="hidden" name="id" value="{{r.ID}}"><input type="hidden" name="builtin" value="{{if r.IsBuiltin}}1{{else}}0{{end}}">
+                {{if !r.IsBuiltin}}<div class="form-group"><label class="form-label req">{{ .["t"]("admin.inventory.reasons.labelName", "原因名称") }}</label><input type="text" class="form-input" name="name" value="{{r.Name}}" required></div>{{end}}
+                <div class="form-group"><label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label><input type="number" class="form-input" name="sort" value="{{r.Sort}}" step="1"></div>
+                <div class="action-row"><button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button><button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button></div>
+            </form>
+        </div>
+    </template>
+    {{end}}
+    {{end}}
 
     {{if isset(.PermSet["inventory:reason_create"])}}
     <template id="tpl-reason-create">

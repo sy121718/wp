@@ -63,6 +63,16 @@ func TestInventoryFormFailurePreservesRawInput(t *testing.T) {
 			func(c *gin.Context) {
 				(&inventoryPageHandle{}).reasonFormFail(c, errors.New(inventoryenums.ErrReasonCodeTaken))
 			}},
+		{"reason builtin edit", "admin/inventory/inventory_reason_form.html", reasonEditFields,
+			url.Values{"projectId": {"p1"}, "id": {"7"}, "builtin": {"1"}, "sort": {" 12 "}},
+			func(c *gin.Context) {
+				(&inventoryPageHandle{}).reasonEditFormFail(c, errors.New(inventoryenums.ErrReasonStatusInvalid))
+			}},
+		{"reason custom edit", "admin/inventory/inventory_reason_form.html", reasonEditFields,
+			url.Values{"projectId": {"p1"}, "id": {"8"}, "builtin": {"0"}, "name": {"  新原因  "}, "sort": {"3"}},
+			func(c *gin.Context) {
+				(&inventoryPageHandle{}).reasonEditFormFail(c, errors.New(inventoryenums.ErrReasonStatusInvalid))
+			}},
 		{"source create", "admin/inventory/inventory_source_form.html", sourceCreateFields,
 			url.Values{"projectId": {"p1"}, "code": {"  SOURCE  "}, "name": {"  货源  "}, "type": {"internal"}, "relatedParty": {"false"}, "settlePrice": {""}, "sort": {""}, "config": {" {\"a\":1}  "}},
 			func(c *gin.Context) {
@@ -132,7 +142,8 @@ func TestInventoryFormEchoFieldsMatchFragments(t *testing.T) {
 		// 仓库模板一个文件服务新建+编辑两态，isDefault 只在新建分支渲染；
 		// 静态扫描按两态字段并集核对，运行时各自分支不会读到对方字段。
 		{"warehouse", append(append([]string{}, warehouseCreateFields...), warehouseEditFields...)},
-		{"reason", reasonCreateFields},
+		// 原因片段同样服务新建与编辑，两份清单的并集必须覆盖每个 echo 键。
+		{"reason", append(append([]string{}, reasonCreateFields...), reasonEditFields...)},
 		{"source", sourceEditFields},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

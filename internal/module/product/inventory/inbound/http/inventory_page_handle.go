@@ -308,6 +308,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		"ReasonCreateForm": reasonFormData(c),
 		"Err":              inventoryPageErr(c),
 		"Ok":               inventoryPageOk(c),
+		"Done":             inventoryPageDone(c),
 	}))
 }
 
@@ -595,18 +596,67 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	req := &inventorydto.UpdateReasonReq{ProjectID: projectID, ID: c.PostForm("id")}
-	if name := strings.TrimSpace(c.PostForm("name")); name != "" {
+	if rawName, submitted := c.GetPostForm("name"); submitted {
+		name := strings.TrimSpace(rawName)
 		req.Name = &name
 	}
 	if status := strings.TrimSpace(c.PostForm("status")); status != "" {
 		req.Status = &status
 	}
+	if rawSort := strings.TrimSpace(c.PostForm("sort")); rawSort != "" {
+		sortValue := parseIntOr(rawSort, 0)
+		req.Sort = &sortValue
+	}
 	if _, err := h.inventory.UpdateReason(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryReasonsPath, projectID, err))
+		h.reasonEditFormFail(c, err)
+		return
+	}
+	if isHXRequest(c) {
+		c.Header("HX-Redirect", inventoryURL(inventoryReasonsPath, projectID, url.Values{"ok": []string{"1"}}))
+		c.Status(http.StatusNoContent)
 		return
 	}
 	extra := url.Values{}
 	extra.Set("ok", "1")
+	c.Redirect(http.StatusFound, inventoryURL(inventoryReasonsPath, projectID, extra))
+}
+
+// InventoryReasonsBulkStatus 按现有更新权限逐条切换原因状态，不触碰名称和排序。
+func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	status := strings.TrimSpace(c.PostForm("status"))
+	if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
+		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryReasonsPath, projectID, errors.New(inventoryenums.ErrReasonStatusInvalid)))
+		return
+	}
+	ids, err := shell.BulkIDs(c)
+	if err != nil {
+		extra := url.Values{"err": {shell.BulkIDsFacingText(c, err)}}
+		c.Redirect(http.StatusFound, inventoryURL(inventoryReasonsPath, projectID, extra))
+		return
+	}
+	if len(ids) == 0 {
+		extra := url.Values{"err": {inventoryBulkText(c, inventoryBulkReasonNoneSelected)}}
+		c.Redirect(http.StatusFound, inventoryURL(inventoryReasonsPath, projectID, extra))
+		return
+	}
+	updated, skipped := 0, 0
+	for _, id := range ids {
+		if _, err := h.inventory.UpdateReason(c.Request.Context(), &inventorydto.UpdateReasonReq{
+			ProjectID: projectID, ID: id, Status: &status,
+		}); err != nil {
+			skipped++
+			continue
+		}
+		updated++
+	}
+	extra := url.Values{}
+	switch {
+	case skipped > 0:
+		extra.Set("err", fmt.Sprintf(inventoryBulkText(c, inventoryBulkReasonPartial), updated, skipped))
+	case updated > 0:
+		extra.Set("done", fmt.Sprintf(inventoryBulkText(c, inventoryBulkReasonDone), updated))
+	}
 	c.Redirect(http.StatusFound, inventoryURL(inventoryReasonsPath, projectID, extra))
 }
 
@@ -1098,14 +1148,18 @@ func inventoryBulkText(c *gin.Context, t inventoryBulkNoticeTemplate) string {
 // **同一张表**取同一条词条再归一比对（数字归一后相等）。两处若各写一份字面量，
 // 改词条时读侧会静默失配（提示在写侧可见、到了页面上变成归口文案）。
 var (
-	inventoryBulkWarehousePartial = inventoryBulkNoticeTemplate{"admin.inventory.bulk.partial", "已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）", false}
-	inventoryBulkWarehouseDone    = inventoryBulkNoticeTemplate{"admin.inventory.bulk.deleted", "已删除 %d 个仓库", false}
-	inventoryBulkSourcePartial    = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourcePartial", "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）", true}
-	inventoryBulkSourceDone       = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourceDone", "已删除 %s 个货源", true}
+	inventoryBulkWarehousePartial   = inventoryBulkNoticeTemplate{"admin.inventory.bulk.partial", "已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）", false}
+	inventoryBulkWarehouseDone      = inventoryBulkNoticeTemplate{"admin.inventory.bulk.deleted", "已删除 %d 个仓库", false}
+	inventoryBulkSourcePartial      = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourcePartial", "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）", true}
+	inventoryBulkSourceDone         = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourceDone", "已删除 %s 个货源", true}
+	inventoryBulkReasonPartial      = inventoryBulkNoticeTemplate{"admin.inventory.bulk.reasonPartial", "已更新 %s 个原因，%s 个未能更新", true}
+	inventoryBulkReasonDone         = inventoryBulkNoticeTemplate{"admin.inventory.bulk.reasonDone", "已更新 %s 个原因", true}
+	inventoryBulkReasonNoneSelected = inventoryBulkNoticeTemplate{"admin.inventory.bulk.reasonNoneSelected", "请选择要操作的原因", false}
 
 	inventoryBulkNoticeTemplates = []inventoryBulkNoticeTemplate{
 		inventoryBulkWarehousePartial, inventoryBulkWarehouseDone,
 		inventoryBulkSourcePartial, inventoryBulkSourceDone,
+		inventoryBulkReasonPartial, inventoryBulkReasonDone, inventoryBulkReasonNoneSelected,
 	}
 )
 
@@ -1385,6 +1439,7 @@ func inventoryRawFormValues(c *gin.Context, fields []string) gin.H {
 }
 
 var reasonCreateFields = []string{"projectId", "code", "name", "direction", "sort"}
+var reasonEditFields = []string{"projectId", "id", "builtin", "name", "status", "sort"}
 
 func reasonFormData(c *gin.Context) gin.H {
 	return gin.H{
@@ -1401,6 +1456,19 @@ func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
 	}
 	data := reasonFormData(c)
 	data["FormEcho"] = inventoryRawFormValues(c, reasonCreateFields)
+	data["SubmitErr"] = inventoryErrText(c, err)
+	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", shell.Prepare(c, data))
+}
+
+func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, err error) {
+	projectID := c.PostForm("projectId")
+	if !isHXRequest(c) {
+		c.Redirect(http.StatusFound, inventoryErrURL(c, inventoryReasonsPath, projectID, err))
+		return
+	}
+	data := reasonFormData(c)
+	data["Edit"] = true
+	data["FormEcho"] = inventoryRawFormValues(c, reasonEditFields)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", shell.Prepare(c, data))
 }

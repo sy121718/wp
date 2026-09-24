@@ -1,33 +1,35 @@
 {{fill := isset(.FormEcho)}}
+{{edit := isset(.Edit) && .Edit}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
 {{echo := map()}}
 {{if fill}}{{echo = .FormEcho}}{{end}}
 <div data-inventory-reason-host>
     {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
-    <form method="post" action="/admin/inventory/reason/create" class="form-stack"
-          hx-post="/admin/inventory/reason/create" hx-target="closest [data-inventory-reason-host]" hx-swap="outerHTML">
+    <form method="post" action="/admin/inventory/reason/{{if edit}}update{{else}}create{{end}}" class="form-stack"
+          hx-post="/admin/inventory/reason/{{if edit}}update{{else}}create{{end}}" hx-target="closest [data-inventory-reason-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{if fill}}{{echo.projectId}}{{else}}{{.SelectedProject}}{{end}}">
-        <div class="form-group">
+        {{if edit}}<input type="hidden" name="id" value="{{echo.id}}"><input type="hidden" name="builtin" value="{{echo.builtin}}">{{if echo.status != ""}}<input type="hidden" name="status" value="{{echo.status}}">{{end}}{{end}}
+        {{if !edit}}<div class="form-group">
             <label class="form-label req">{{tr("admin.inventory.reasons.labelCode", "原因 code")}}</label>
             <input type="text" class="form-input" name="code" value="{{if fill}}{{echo.code}}{{end}}" required autocomplete="off">
-        </div>
-        <div class="form-group">
+        </div>{{end}}
+        {{if !edit || echo.builtin != "1"}}<div class="form-group">
             <label class="form-label req">{{tr("admin.inventory.reasons.labelName", "原因名称")}}</label>
             <input type="text" class="form-input" name="name" value="{{if fill}}{{echo.name}}{{end}}" required>
-        </div>
-        <div class="form-group">
+        </div>{{end}}
+        {{if !edit}}<div class="form-group">
             <label class="form-label req">{{tr("admin.inventory.moves.col.direction", "方向")}}</label>
             <select class="form-select" name="direction" required>
                 {{range _, d := .Directions}}<option value="{{d.Value}}" {{if fill}}{{if d.Value == echo.direction}}selected{{end}}{{end}}>{{d.Label}}</option>{{end}}
             </select>
-        </div>
+        </div>{{end}}
         <div class="form-group"><label class="form-label">{{tr("admin.inventory.ph.sort", "排序")}}</label>
             <input type="number" class="form-input" name="sort" value="{{if fill}}{{echo.sort}}{{else}}0{{end}}" inputmode="numeric" step="1"></div>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-            <button type="submit" class="btn btn-primary">{{tr("admin.inventory.reasons.create", "新建自定义原因")}}</button>
+            <button type="submit" class="btn btn-primary">{{if edit}}{{tr("admin.common.action.save", "保存")}}{{else}}{{tr("admin.inventory.reasons.create", "新建自定义原因")}}{{end}}</button>
         </div>
     </form>
 </div>
