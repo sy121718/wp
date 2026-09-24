@@ -134,14 +134,17 @@ func attributeListFilterQuery(projectID, keyword, variation string) url.Values {
 
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。
 //
-// 行数据由服务端从「表单里已有的行」重建（有序），保证归一 / 去重 / 排序
-// 只有一份实现（service 的 sanitizeAttributeValues），前端不做第二套。
+// 行编辑只重建原始表单值与位置；落库时的归一 / 去重 / 排序仍由 service 负责。
 func (h *productPageHandle) ProductAttributesValueRows(c *gin.Context) {
-	rows := attrRowsFromForm(c)
+	rows := attrEchoRowsFromForm(c)
 	action := strings.TrimSpace(c.PostForm("action"))
 	switch action {
 	case "add":
-		rows = append(rows, productdto.AttributeValueReq{})
+		index := 0
+		if len(rows) > 0 {
+			index = rows[len(rows)-1].Index + 1
+		}
+		rows = append(rows, attrValueFormRow{Index: index, Enabled: true})
 	case "remove":
 		if idx := parseIntOr(c.PostForm("removeIndex"), -1); idx >= 0 && idx < len(rows) {
 			rows = append(rows[:idx], rows[idx+1:]...)
@@ -149,7 +152,7 @@ func (h *productPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	}
 	// 兜底：至少要有一行可编辑，空列表会让「添加」按钮无从下手。
 	if len(rows) == 0 {
-		rows = []productdto.AttributeValueReq{{}}
+		rows = []attrValueFormRow{{Enabled: true}}
 	}
 	groupID := strings.TrimSpace(c.PostForm("groupId"))
 	if groupID == "" {
@@ -157,27 +160,68 @@ func (h *productPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	}
 	c.HTML(http.StatusOK, "admin/product/product_attribute_rows.html", attrRowsCtx{
 		GroupID: groupID,
-		Rows:    rowsToResp(rows),
+		Rows:    rows,
 		Tr:      shell.TranslateFor(c),
 	})
 }
 
-// rowsToResp 把表单行数据转成模板数据（只影响回渲染的形态，不落库）。
-//
-// 归一 / 去重 / 排序的真源在 service（sanitizeAttributeValues），这里只做
-// 「表单里怎么填就怎么回显」的直译，避免出现第二套归一规则。
-func rowsToResp(rows []productdto.AttributeValueReq) []productdto.AttributeValueResp {
-	out := make([]productdto.AttributeValueResp, 0, len(rows))
-	for _, r := range rows {
-		enabled := true
-		if r.Enabled != nil {
-			enabled = *r.Enabled
-		}
-		out = append(out, productdto.AttributeValueResp{
-			ID: r.ID, Key: r.Key, Label: r.Label, Sort: r.Sort, Enabled: enabled,
+// attrValueFormRow 留存失败回显所需的原始索引与控件值；写入解析仍保持原有的空行过滤。
+type attrValueFormRow struct {
+	Index   int
+	ID      string
+	Key     string
+	Label   string
+	Sort    string
+	Enabled bool
+}
+
+func attrRowsFromResp(rows []productdto.AttributeValueResp) []attrValueFormRow {
+	out := make([]attrValueFormRow, 0, len(rows))
+	for i, row := range rows {
+		out = append(out, attrValueFormRow{
+			Index: i, ID: row.ID, Key: row.Key, Label: row.Label,
+			Sort: strconv.Itoa(row.Sort), Enabled: row.Enabled,
 		})
 	}
 	return out
+}
+
+// attrFormRowIndexes 按数值顺序排列提交的行索引，避免 map 遍历顺序改变行序。
+func attrFormRowIndexes(vals url.Values) []int {
+	indexes := make([]int, 0, 8)
+	seen := make(map[int]bool)
+	for key := range vals {
+		if !strings.HasPrefix(key, attrRowPrefix) {
+			continue
+		}
+		rest := key[len(attrRowPrefix):]
+		close := strings.IndexByte(rest, ']')
+		if close <= 0 || !strings.HasPrefix(rest[close:], "].") {
+			continue
+		}
+		idx, err := strconv.Atoi(rest[:close])
+		if err != nil || idx < 0 || seen[idx] {
+			continue
+		}
+		seen[idx] = true
+		indexes = append(indexes, idx)
+	}
+	sort.Ints(indexes)
+	return indexes
+}
+
+func attrEchoRowsFromForm(c *gin.Context) []attrValueFormRow {
+	vals := attrFormValues(c)
+	rows := make([]attrValueFormRow, 0)
+	for _, idx := range attrFormRowIndexes(vals) {
+		base := fmt.Sprintf("values[%d].", idx)
+		rows = append(rows, attrValueFormRow{
+			Index: idx, ID: vals.Get(base + "id"), Key: vals.Get(base + "key"),
+			Label: vals.Get(base + "label"), Sort: vals.Get(base + "sort"),
+			Enabled: formValueHas(vals, base+"enabled", "1"),
+		})
+	}
+	return rows
 }
 
 // splitIDs 解析「逗号 / 空白 / 换行分隔」的 id 串（后台文本框输入）。
@@ -203,7 +247,7 @@ func splitIDs(raw string) []string {
 // 故客户端不需要额外传参。
 type attrRowsCtx struct {
 	GroupID string
-	Rows    []productdto.AttributeValueResp
+	Rows    []attrValueFormRow
 	// Tr 是本片段的取词函数。片段的两条渲染路径都**直接传本结构体**（HTMX 片段端点用
 	// 字面量、抽屉表单 include 传 .RowsCtx），而 Jet 在 struct 上不支持 `.["t"]`
 	//（渲染时报 can't use t as field name in struct type），取词函数只能随数据类一起传
@@ -214,7 +258,7 @@ type attrRowsCtx struct {
 	Tr func(key, fallback string) string
 }
 
-// attrRowsFromForm 从表单的 values[n].* 字段重建有序行数据。
+// attrRowsFromForm 从表单的 values[n].* 字段构造写入请求（空行忽略、数值解析）。
 //
 // n 不保证连续（删了中间一行再提交），故先收集出现过的索引再按**数值升序**取行，
 // 而不是按 0..n-1 硬编码、也不是按 map 的遍历顺序 —— PostForm 是 map，
@@ -228,35 +272,10 @@ func attrRowsFromForm(c *gin.Context) []productdto.AttributeValueReq {
 		_ = c.Request.ParseForm()
 	}
 	reqs := c.Request.PostForm
-	order := make([]string, 0, 8)
-	seen := map[string]bool{}
-	for key := range reqs {
-		if !strings.HasPrefix(key, attrRowPrefix) {
-			continue
-		}
-		rest := key[len(attrRowPrefix):]
-		close := strings.Index(rest, "]")
-		if close <= 0 {
-			continue
-		}
-		idx := rest[:close]
-		if !seen[idx] {
-			seen[idx] = true
-			order = append(order, idx)
-		}
-	}
-	// 数值升序 = 浏览器提交表单时的文档顺序（行不会随机换位）。
-	sort.Slice(order, func(i, j int) bool {
-		ni, ierr := strconv.Atoi(order[i])
-		nj, jerr := strconv.Atoi(order[j])
-		if ierr != nil || jerr != nil {
-			return order[i] < order[j]
-		}
-		return ni < nj
-	})
-	rows := make([]productdto.AttributeValueReq, 0, len(order))
-	for _, idx := range order {
-		base := attrRowPrefix + idx + "]."
+	indexes := attrFormRowIndexes(reqs)
+	rows := make([]productdto.AttributeValueReq, 0, len(indexes))
+	for _, idx := range indexes {
+		base := fmt.Sprintf("values[%d].", idx)
 		label := strings.TrimSpace(reqs.Get(base + "label"))
 		id := strings.TrimSpace(reqs.Get(base + "id"))
 		key := strings.TrimSpace(reqs.Get(base + "key"))

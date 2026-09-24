@@ -2,7 +2,7 @@
 
    与 partials/product_attribute_group_form.html 同一契约（失败分档 / host 替换 / 抽屉申报），
    差别只在：可见字段全是 values[n].* 的行，回填的**主体是 RowsCtx**（由 handler 用
-   attrRowsFromForm 按提交顺序重建）而不是单值 FormEcho —— 单值三键只承载 projectId / id /
+   attrEchoRowsFromForm 按提交位置与原值重建）而不是单值 FormEcho —— 单值三键只承载 projectId / id /
    groupId 这几个隐藏域。行编辑器自身是 partials/product_attribute_rows.html（增删行走 HTMX）。
 
    服务端按 HX-Request 分档（见 product_attribute_page_util.go 的 attrValuesFormFail）：

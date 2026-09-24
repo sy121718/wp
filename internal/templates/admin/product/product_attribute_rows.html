@@ -1,5 +1,5 @@
 {* admin/product/product_attribute_rows.html — 属性值编辑行（issue #7） *}
-{* 数据：Rows（[]productdto.AttributeValueResp）+ GroupID（所在组的 id）。
+{* 数据：Rows（原始表单行，含 Index / Sort 字符串）+ GroupID（所在组的 id）。
    容器 id 按约定 attr-values-<GroupID>；按钮用 formaction 打回本片段，
    hx-include 带上整个表单（hx-include 不会把按钮自身算进去），
    服务端重建有序行数据后回渲染，替换容器 innerHTML。 *}
@@ -23,14 +23,14 @@
     </div>
     {{range i, v := .Rows}}
     <div class="attr-value-row">
-        <span class="attr-value-idx">{{i}}</span>
-        <input type="hidden" name="values[{{i}}].id" value="{{v.ID}}">
-        <input type="text" class="form-input" name="values[{{i}}].key" value="{{v.Key}}" placeholder="{{tr("admin.product_attributes.values.ph.key", "留空自动生成")}}" autocomplete="off">
-        <input type="text" class="form-input" name="values[{{i}}].label" value="{{v.Label}}" placeholder="{{tr("admin.product_attributes.values.ph.label", "如 红色 / S")}}" required>
-        <input type="number" class="form-input" name="values[{{i}}].sort" value="{{v.Sort}}" placeholder="0" inputmode="numeric" step="1">
+        <span class="attr-value-idx">{{v.Index}}</span>
+        <input type="hidden" name="values[{{v.Index}}].id" value="{{v.ID}}">
+        <input type="text" class="form-input" name="values[{{v.Index}}].key" value="{{v.Key}}" placeholder="{{tr("admin.product_attributes.values.ph.key", "留空自动生成")}}" autocomplete="off">
+        <input type="text" class="form-input" name="values[{{v.Index}}].label" value="{{v.Label}}" placeholder="{{tr("admin.product_attributes.values.ph.label", "如 红色 / S")}}" required>
+        <input type="text" class="form-input" name="values[{{v.Index}}].sort" value="{{v.Sort}}" placeholder="0" inputmode="numeric">
         <label class="attr-switch">
-            <input type="hidden" name="values[{{i}}].enabled" value="0">
-            <input type="checkbox" name="values[{{i}}].enabled" value="1" {{if v.Enabled}}checked{{end}}> {{tr("admin.product_attributes.values.enabled", "启用")}}
+            <input type="hidden" name="values[{{v.Index}}].enabled" value="0">
+            <input type="checkbox" name="values[{{v.Index}}].enabled" value="1" {{if v.Enabled}}checked{{end}}> {{tr("admin.product_attributes.values.enabled", "启用")}}
         </label>
         <span class="attr-value-op">
             <button type="button" class="btn btn-sm" formaction="/admin/product-attributes/value-rows" formmethod="post"

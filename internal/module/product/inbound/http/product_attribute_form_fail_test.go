@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/templates"
+
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
 
@@ -316,6 +318,106 @@ func TestAttrValuesFormFailEchoesValueRows(t *testing.T) {
 	}
 	if got, _ := data["FormEcho"].(gin.H)["id"]; got != "a1" {
 		t.Errorf("FormEcho.id = %v，want a1", got)
+	}
+}
+
+// 失败渲染回放原始控件值，落库仍用独立的归一化请求。
+func TestAttrValuesFormFailPreservesSparseRawRows(t *testing.T) {
+	form := url.Values{"projectId": {"pr1"}, "id": {"a1"}, "groupId": {"a1"}, "inDrawer": {"1"}}
+	form.Set("values[0].label", "  红  ")
+	form.Set("values[0].key", " red ")
+	form.Set("values[0].sort", "oops")
+	form.Add("values[0].enabled", "0")
+	form.Add("values[0].enabled", "1")
+	form.Set("values[2].label", "")
+	form.Set("values[2].key", "")
+	form.Set("values[2].sort", "  ")
+	form.Set("values[2].enabled", "0")
+	form.Set("values[5].label", " 蓝 ")
+	form.Set("values[5].sort", "-03")
+	form.Set("values[5].enabled", "0")
+	c, _, cap := newAttrCaptureContext(t, "true", form.Encode())
+	// 写入请求维持原语义：忽略中间空行。
+	if got := attrRowsFromForm(c); len(got) != 2 || got[0].Label != "红" || got[0].Sort != 0 || got[1].Label != "蓝" || got[1].Sort != -3 {
+		t.Fatalf("保存输入 = %+v，want 两条解析后的非空行", got)
+	}
+	(&productPageHandle{}).attrValuesFormFail(c, "pr1", "a1", "重复")
+	data := capturedData(t, cap)
+	rows := data["RowsCtx"].(attrRowsCtx).Rows
+	if len(rows) != 3 || rows[0].Index != 0 || rows[0].Label != "  红  " || rows[0].Key != " red " || rows[0].Sort != "oops" || !rows[0].Enabled ||
+		rows[1].Index != 2 || rows[1].Label != "" || rows[1].Sort != "  " || rows[1].Enabled ||
+		rows[2].Index != 5 || rows[2].Label != " 蓝 " || rows[2].Sort != "-03" || rows[2].Enabled {
+		t.Fatalf("失败回显行 = %+v，want 原始位置、空行、字符串及开关", rows)
+	}
+}
+
+// TestAttrGroupFormFailPreservesRawValueRows 单独覆盖新建属性组的行回显。
+func TestAttrGroupFormFailPreservesRawValueRows(t *testing.T) {
+	form := url.Values{"projectId": {"pr1"}, "inDrawer": {"1"}}
+	form.Set("values[0].label", " ")
+	form.Set("values[0].sort", "")
+	form.Set("values[3].label", " 蓝 ")
+	form.Set("values[3].sort", "bad")
+	c, _, cap := newAttrCaptureContext(t, "true", form.Encode())
+	(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "重复")
+	rows := capturedData(t, cap)["RowsCtx"].(attrRowsCtx).Rows
+	if len(rows) != 2 || rows[0].Index != 0 || rows[0].Label != " " || rows[0].Sort != "" || rows[1].Index != 3 || rows[1].Label != " 蓝 " || rows[1].Sort != "bad" {
+		t.Fatalf("新建属性组失败回显行 = %+v", rows)
+	}
+}
+
+// TestAttrFailedFormJetRender 让三类失败出口经过真实 Jet 渲染器。
+func TestAttrFailedFormJetRender(t *testing.T) {
+	cases := []struct {
+		name, template string
+		withRows       bool
+		fail           func(*gin.Context)
+	}{
+		{"新建组", attrGroupFormTemplate, true, func(c *gin.Context) {
+			(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "重复")
+		}},
+		{"编辑组", attrGroupFormTemplate, false, func(c *gin.Context) {
+			(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", "重复")
+		}},
+		{"属性值", attrValuesFormTemplate, true, func(c *gin.Context) {
+			(&productPageHandle{}).attrValuesFormFail(c, "pr1", "a1", "重复")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := gin.New()
+			engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+			engine.POST("/submit", tc.fail)
+			form := url.Values{"csrf_token": {"tok-1"}, "projectId": {"pr1"}, "id": {"a1"}, "groupId": {"a1"}, "inDrawer": {"1"}, "name": {"颜色"}}
+			form.Set("values[0].label", " 红 ")
+			form.Set("values[0].sort", "oops")
+			form.Set("values[1].label", "")
+			form.Set("values[1].sort", "")
+			form.Set("values[2].label", " 蓝 ")
+			form.Set("values[2].sort", "-03")
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/submit", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("HX-Request", "true")
+			engine.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "页面暂时无法显示") {
+				t.Fatalf("%s 真 Jet 响应状态=%d 内容=%s", tc.template, rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, `role="alert"`) {
+				t.Error("响应缺失错误槽")
+			}
+			if tc.withRows {
+				for _, want := range []string{`name="values[0].sort" value="oops"`, `name="values[1].label" value=""`, `name="values[2].sort" value="-03"`} {
+					if !strings.Contains(body, want) {
+						t.Errorf("响应缺失 %s", want)
+					}
+				}
+				if strings.Contains(body, `name="values[1].sort" value="0"`) {
+					t.Error("空排序值被归一成 0")
+				}
+			}
+		})
 	}
 }
 

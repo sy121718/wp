@@ -73,7 +73,7 @@ var attrGroupFormFields = []string{"projectId", "id", "name", "key", "sort", "is
 
 // attrValuesFormFields 属性值表单的回填字段清单。
 //
-// values[n].* 不在这里：属性值行的回填走 RowsCtx（由 attrRowsFromForm 按提交顺序重建），
+// values[n].* 不在这里：属性值行的回填走 RowsCtx（由 attrEchoRowsFromForm 按原始索引重建），
 // 不是单值回填 —— 塞进 FormEcho 只会得到一串没人读的字符串。
 var attrValuesFormFields = []string{"projectId", "id", "groupId"}
 
@@ -156,7 +156,7 @@ type attrValuesFormOpts struct {
 
 // attrValuesFormData 属性值抽屉表单的渲染数据（首屏与失败重渲染共用）。
 //
-// 回填的**主体是 RowsCtx**（用户刚编辑的那几行，由 attrRowsFromForm 保序重建）；
+// 回填的**主体是 RowsCtx**（用户刚编辑的那几行，由 attrEchoRowsFromForm 保留位置和原值）；
 // FormEcho* 三键只承载 projectId / id / groupId 这几个隐藏域 —— 值表单的可见字段
 // 全是 values[n].*，没有单值字段可回填。
 func attrValuesFormData(o attrValuesFormOpts) gin.H {
@@ -195,7 +195,7 @@ func attrRowDrawerForms(csrf, projectID string, tr func(key, fallback string) st
 	})
 	values := attrValuesFormData(attrValuesFormOpts{
 		Csrf: csrf, ProjectID: projectID, Tr: tr, GroupID: a.ID,
-		Rows: attrRowsCtx{GroupID: a.ID, Rows: a.Values, Tr: tr},
+		Rows: attrRowsCtx{GroupID: a.ID, Rows: attrRowsFromResp(a.Values), Tr: tr},
 	})
 	return group, values
 }
@@ -217,9 +217,8 @@ func (h *productPageHandle) attrGroupFormFail(c *gin.Context, mode, projectID, g
 	data := attrGroupFormData(attrGroupFormOpts{
 		Csrf: attrFormCSRF(c), ProjectID: projectID, Tr: tr,
 		Mode: mode, GroupID: groupID,
-		// 属性值行同样按**这次提交**重建（新建抽屉里有行编辑器，编辑抽屉没有、重建出空行）：
-		// 这是「用户刚编的行」唯一的来源，行序与去重口径与保存路径完全一致。
-		Rows: attrRowsCtx{GroupID: groupID, Rows: rowsToResp(attrRowsFromForm(c)), Tr: tr},
+		// 新建抽屉按本次提交的原始位置和值重建，编辑抽屉没有值编辑器。
+		Rows: attrRowsCtx{GroupID: groupID, Rows: attrEchoRowsFromForm(c), Tr: tr},
 	})
 	data["SubmitErr"] = msg
 	for k, v := range formEchoData(c, attrGroupFormFields...) {
@@ -244,7 +243,7 @@ func (h *productPageHandle) attrValuesFormFail(c *gin.Context, projectID, groupI
 	data := attrValuesFormData(attrValuesFormOpts{
 		Csrf: attrFormCSRF(c), ProjectID: projectID, Tr: tr,
 		GroupID: groupID,
-		Rows:    attrRowsCtx{GroupID: groupID, Rows: rowsToResp(attrRowsFromForm(c)), Tr: tr},
+		Rows:    attrRowsCtx{GroupID: groupID, Rows: attrEchoRowsFromForm(c), Tr: tr},
 	})
 	data["SubmitErr"] = msg
 	for k, v := range formEchoData(c, attrValuesFormFields...) {

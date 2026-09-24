@@ -40,7 +40,7 @@ func attrGroupFragmentData(echo bool) map[string]any {
 	rows := []map[string]any{}
 	if echo {
 		// 用户刚编的那一行：失败重渲染必须把它留住（行数据走 RowsCtx，不是单值回填）。
-		rows = []map[string]any{{"ID": "", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true}}
+		rows = []map[string]any{{"Index": 0, "ID": "", "Key": "red", "Label": "红", "Sort": "0", "Enabled": true}}
 	}
 	d := map[string]any{
 		"Csrf": "tok", "Project": "pr1", "t": TranslateFunc("zh-CN"),
@@ -66,11 +66,11 @@ func attrValuesFragmentData(echo bool) map[string]any {
 	if echo {
 		// 两行：第一行启用、第二行被用户明确取消勾选 —— 回填要把两个状态原样带回来。
 		rows = []map[string]any{
-			{"ID": "av1", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true},
-			{"ID": "av2", "Key": "blue", "Label": "蓝", "Sort": 0, "Enabled": false},
+			{"Index": 0, "ID": "av1", "Key": "red", "Label": "红", "Sort": "0", "Enabled": true},
+			{"Index": 1, "ID": "av2", "Key": "blue", "Label": "蓝", "Sort": "0", "Enabled": false},
 		}
 	} else {
-		rows = []map[string]any{{"ID": "av1", "Key": "red", "Label": "红", "Sort": 0, "Enabled": true}}
+		rows = []map[string]any{{"Index": 0, "ID": "av1", "Key": "red", "Label": "红", "Sort": "0", "Enabled": true}}
 	}
 	d := map[string]any{
 		"Csrf": "tok", "Project": "pr1", "t": TranslateFunc("zh-CN"),
