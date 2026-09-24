@@ -1,6 +1,6 @@
 // Package productservice 商品模块业务实现（issue #5 / T3a）。
 //
-// 边界：本模块只管商品与变体。库存已并入 product/inventory/（同模块直调）；
+// 边界：本模块只管商品与变体。库存事实仅通过 inventory 契约访问；
 // 订单、购物车、客户等仍由各自模块负责，跨模块只走 contract，不 import 对方 service/model。
 //
 // 两条已定语义在本文件落地：
@@ -18,8 +18,7 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
-	inventorymodel "go_wp/internal/module/product/inventory/model"
-	inventoryservice "go_wp/internal/module/product/inventory/service"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
@@ -39,18 +38,16 @@ const (
 type Service struct {
 	m       *productmodel.Model
 	project projectcontract.ProjectService
-	// inv 库存 model（issue #32：商品与库存合并为同一模块后，商品用例直接持有库存 model，
-	// 读真源汇总做**查询期投影**，不再经跨模块端口、也不再有商品侧缓存副本）。
-	// 未注入时库存投影为 0（纯商品单测路径）；注入与否都不影响任何可用量判断。
-	inv *inventorymodel.Model
+	// inv 只读库存事实：查询期投影与删除守卫共用同一份库存真源。
+	// 生产装配必需；未注入时保留纯商品单测的零值路径。
+	inv inventorycontract.ProductStockReader
 	// contentStore 内容译文读取端口（装配期注入，可空）。
 	// 构建期商品可翻译字段（name/subtitle/description）按构建语言取译文；
 	// 未注入 / 语言为空 / 查询失败一律回退原文（兜底铁律，绝不报错）。
 	contentStore i18n.ContentStore
-	// invSvc 库存用例（issue #32：商品与库存合并为同一模块后直接持有对方 service，
-	// 不再经跨模块端口 —— 归属仓解析与库存记录生成本就是库存模块的用例）。
-	// 未注入时变体创建不生成库存记录、SKU 编码不带仓短码前缀（纯商品单测路径）。
-	invSvc *inventoryservice.Service
+	// invSvc 是商品创建/查询所需的有限库存能力；Tx 写入透传同一数据库事务。
+	// 生产装配必需；未注入时保留纯商品单测的零值路径。
+	invSvc inventorycontract.ProductStockPort
 	// availability 库存真源可用量端口（issue #20，由 inventory 模块实现）。
 	// 捆绑品的数量上限与整单下限都受可用量约束，且只看真源、绝不读展示缓存；
 	// 未注入时整单校验 fail-closed（返回 ErrBundleStockUnavailable），不按「无限制」放行。
@@ -75,16 +72,8 @@ type Service struct {
 	invalidator productcontract.DependencyInvalidator
 }
 
-// SetInventory 注入库存 model（issue #32，装配期调用；**必须注入**）。
-//
-// 用途有两处，都属「静默失效」型：查询期库存投影（后台商品库存列）与
-// 「变体仍有非零库存则拒绝删除」守卫。为空时两处都直接放行/返回 0，不报错。
-//
-// 装配自检（审计 CQ-019）：本方法一度**没有任何调用方** —— 结果是后台库存列恒 0、
-// 删除守卫恒被跳过，两者都不报错。现由 routes.go 显式接线（与 inventory service
-// 同一个 db），并登记进 internal/routers/wiring.go 的 wiringManifest（required-port）：
-// 漏接会在启动自检里直接炸掉。
-func (s *Service) SetInventory(m *inventorymodel.Model) { s.inv = m }
+// SetInventory 注入库存真源只读契约；漏接会静默跳过投影和删除守卫，装配期必须自检。
+func (s *Service) SetInventory(reader inventorycontract.ProductStockReader) { s.inv = reader }
 
 // NewService 构造商品用例。
 func NewService(m *productmodel.Model, project projectcontract.ProjectService) *Service {
@@ -98,16 +87,9 @@ func (s *Service) SetContentStore(store i18n.ContentStore) {
 	s.contentStore = store
 }
 
-// SetInventoryService 注入库存用例（issue #32：商品与库存同属一个模块，直接持有对方 service）。
-//
-// **必须注入**（审计 CQ-019 判为 required-port）：为空时建变体不生成库存记录、
-// SKU 编码不带仓短码前缀 —— 库存真源缺行，事后只能靠人工对账发现。
-// 装配方 routes.go 断言失败即 panic，清单登记在 wiring.go 的 wiringManifest。
-//
-// 端口定义在本模块契约里、实现在 inventory 模块：商品模块只知道
-// 「解析归属仓」与「在归属仓生成库存记录」两件事，不认识仓库表结构。
-func (s *Service) SetInventoryService(svc *inventoryservice.Service) {
-	s.invSvc = svc
+// SetInventoryService 注入库存受限契约；生产装配必须确认端口与实现均已接入。
+func (s *Service) SetInventoryService(port inventorycontract.ProductStockPort) {
+	s.invSvc = port
 }
 
 // SetAvailabilityPort 注入库存真源可用量端口（issue #20，装配期调用）。

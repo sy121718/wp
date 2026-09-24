@@ -157,8 +157,8 @@ var wiringManifest = []wiringEntry{
 	// —— 商品 / 库存域 ——
 	{portProductInventoryService, "inventory", "product", wiringRequiredPort,
 		"建变体不生成库存记录、SKU 编码缺仓短码前缀（库存真源缺行）"},
-	{portProductInventoryModel, "inventory model", "product", wiringRequiredPort,
-		"后台商品库存列恒为 0；删变体时「仍有非零库存则拒绝」的守卫失效"},
+	{portProductInventoryModel, "inventory ProductStockReader", "product", wiringRequiredPort,
+		"变体库存投影恒为 0；删变体时非零库存与 BOM 引用守卫失效"},
 	{portInventoryVariantCost, "product", "inventory", wiringRequiredPort,
 		"采购收货 / 生产入库的单价不回写 cost_price（入库单行记 cost_error）"},
 	{portProductMasterDataChanges, "masterdata", "product", wiringRequiredPort,

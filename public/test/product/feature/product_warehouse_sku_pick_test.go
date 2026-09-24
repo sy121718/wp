@@ -11,6 +11,7 @@ package feature
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,7 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 	inventorymodel "go_wp/internal/module/product/inventory/model"
@@ -388,6 +390,73 @@ func TestProductCreateCustomSourceUnchanged(t *testing.T) {
 	}
 	if external != "" {
 		t.Fatalf("没填外部编码时应留空（= 该仓用我们自己的 SKU），实际 %q", external)
+	}
+}
+
+// TestProductCreateInvalidExternalSKURejectsBeforeWrite 外码校验走库存端口，失败不留下商品。
+func TestProductCreateInvalidExternalSKURejectsBeforeWrite(t *testing.T) {
+	f := newWPickFixture(t)
+	if f == nil {
+		return
+	}
+	_, err := f.products.Create(context.Background(), &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "非法外码", Slug: "invalid-external-port",
+		SKUCode: "INVALID-EXT", ExternalSKU: "line\nbreak",
+	})
+	if err == nil || err.Error() != inventoryenums.ErrExternalSKUInvalid {
+		t.Fatalf("非法外码应由库存端口拒绝为 %s，实际 %v", inventoryenums.ErrExternalSKUInvalid, err)
+	}
+	var count int64
+	if err := f.db.Table("products").Where("project_id = ? AND slug = ?", f.projectID, "invalid-external-port").Count(&count).Error; err != nil {
+		t.Fatalf("核查商品行失败: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("外码失败后不应留商品行，实际 %d", count)
+	}
+}
+
+// TestProductCreateExternalSKUUsesInjectedPort verifies that product creation delegates validation.
+func TestProductCreateExternalSKUUsesInjectedPort(t *testing.T) {
+	f := newWPickFixture(t)
+	if f == nil {
+		return
+	}
+	port := &rejectExternalSKU{ProductStockPort: f.inventory}
+	f.products.SetInventoryService(port)
+	_, err := f.products.Create(context.Background(), &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "外码端口探针", Slug: "external-port-probe",
+		SKUCode: "PORT-PROBE", ExternalSKU: "EXT-PROBE",
+	})
+	if !errors.Is(err, errExternalSKUProbe) || port.calls != 1 {
+		t.Fatalf("商品创建应调用注入的归一端口一次，调用=%d 错误=%v", port.calls, err)
+	}
+}
+
+var errExternalSKUProbe = errors.New("external SKU port probe")
+
+type rejectExternalSKU struct {
+	inventorycontract.ProductStockPort
+	calls int
+}
+
+func (p *rejectExternalSKU) NormalizeExternalSKU(string) (string, error) {
+	p.calls++
+	return "", errExternalSKUProbe
+}
+
+// TestProductCreateMissingStockPortRejectsExternalSKU keeps the optional pure-product path explicit.
+func TestProductCreateMissingStockPortRejectsExternalSKU(t *testing.T) {
+	f := newWPickFixture(t)
+	if f == nil {
+		return
+	}
+	f.products.SetInventoryService(nil)
+	_, err := f.products.Create(context.Background(), &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "无库存端口", Slug: "missing-stock-port",
+		SKUCode: "NO-PORT", ExternalSKU: "EXT-NO-PORT",
+	})
+	if err == nil || err.Error() != inventoryenums.ErrStockWarehouseNeeded {
+		t.Fatalf("未注入端口时显式外码必须失败，实际 %v", err)
 	}
 }
 

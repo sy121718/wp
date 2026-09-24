@@ -891,11 +891,11 @@ func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string
 		if n > 0 {
 			return productenums.VariantSkipHasStock, "", nil
 		}
-		parents, berr := s.inv.ListBOMParents(ctx, v.ID, projectID)
+		hasParent, berr := s.inv.HasBOMParent(ctx, v.ID, projectID)
 		if berr != nil {
 			return "", "", berr
 		}
-		if len(parents) > 0 {
+		if hasParent {
 			return productenums.VariantSkipReferenced, "", nil
 		}
 	}

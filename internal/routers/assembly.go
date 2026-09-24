@@ -170,10 +170,7 @@ type assembly struct {
 	contentTemplateSvc contenttemplatecontract.ContentTemplateService
 	masterdataSvc      masterdatacontract.MasterDataService
 	inventorySvc       inventorycontract.InventoryService
-	// inventoryConcrete 是库存模块的具体 service（不是契约）：商品用例经
-	// SetInventoryService 直接持有它，属同模块内直调而非跨模块端口。
-	inventoryConcrete *inventoryservice.Service
-	productSvc        productcontract.ProductService
+	productSvc         productcontract.ProductService
 
 	mailSvc      mailcontract.MailService
 	userSvc      usercontract.UserService
@@ -537,7 +534,6 @@ func (a *assembly) buildIdentityAndCommerce() {
 	if !ok {
 		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
 	}
-	a.inventoryConcrete = invConcrete
 	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc))
 	marks.mark(portWebhookDispatcher)
 
@@ -556,29 +552,27 @@ func (a *assembly) wireProductInventoryPorts() {
 	db := a.db
 	productSvc := a.productSvc
 	inventorySvc := a.inventorySvc
-	invConcrete := a.inventoryConcrete
-
-	// 库存 model 注入商品用例（issue #32）：商品与库存合并为同一模块后，商品查询直接读
-	// 库存真源做**查询期投影**（不再有商品侧缓存列、同步台账与对账）。同模块内直调 model。
-	// 商品与库存同属一个模块（issue #32）：库存用例直接交给商品用例，
-	// 归属仓解析 / 库存记录生成 / 库存展示值投影都走它，不再经跨模块端口。
+	// 商品只接库存的受限端口；具体 service 留给订单适配器使用。
+	stockPort, ok := inventorySvc.(inventorycontract.ProductStockPort)
+	if !ok {
+		panic("库存模块未实现商品库存端口（ProductStockPort）")
+	}
 	if setter, ok := productSvc.(interface {
-		SetInventoryService(*inventoryservice.Service)
+		SetInventoryService(inventorycontract.ProductStockPort)
 	}); ok {
-		setter.SetInventoryService(invConcrete)
+		setter.SetInventoryService(stockPort)
 	} else {
 		panic("商品模块未提供库存 service 注入点（SetInventoryService）")
 	}
 	marks.mark(portProductInventoryService)
-	// 库存 model 注入（issue #32，审计 CQ-019）：商品侧的**库存投影**（后台库存列）
-	// 与「变体仍有非零库存则拒绝删除」守卫都读它。此前只有 setter、没有任何调用方 ——
-	// 投影恒为 0、守卫恒被跳过，两者都不报错。这里显式接线：与库存 service 同一个 db。
+	// Reader 只提供变体投影与删除守卫，使用与库存 service 相同的数据库连接。
+	stockReader := inventorymodel.NewModel(db)
 	if setter, ok := productSvc.(interface {
-		SetInventory(*inventorymodel.Model)
+		SetInventory(inventorycontract.ProductStockReader)
 	}); ok {
-		setter.SetInventory(inventorymodel.NewModel(db))
+		setter.SetInventory(stockReader)
 	} else {
-		panic("商品模块未提供库存 model 注入点（SetInventory）")
+		panic("商品模块未提供库存 reader 注入点（SetInventory）")
 	}
 	marks.mark(portProductInventoryModel)
 	// 商品侧库存缓存端口（issue #16）已删除（issue #32）：商品与库存合并为同一模块后，

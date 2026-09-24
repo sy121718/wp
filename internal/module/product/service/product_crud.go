@@ -20,7 +20,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	inventorydto "go_wp/internal/module/product/inventory/dto"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
-	inventoryservice "go_wp/internal/module/product/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/rls"
 )
@@ -247,7 +246,11 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		}); werr != nil {
 			return nil, werr
 		}
-		if externalSKU, werr = inventoryservice.NormalizeExternalSKU(externalSKU); werr != nil {
+		if s.invSvc == nil {
+			if externalSKU != "" {
+				return nil, errors.New(inventoryenums.ErrStockWarehouseNeeded)
+			}
+		} else if externalSKU, werr = s.invSvc.NormalizeExternalSKU(externalSKU); werr != nil {
 			return nil, werr
 		}
 		// 主体 SKU 唯一性**预检**（工程内唯一，迁移 246 的偏唯一索引 uq_products_project_sku_code）：

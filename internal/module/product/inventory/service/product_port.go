@@ -16,8 +16,16 @@ import (
 	"gorm.io/gorm"
 
 	productcontract "go_wp/internal/module/product/contract"
+	inventorycontract "go_wp/internal/module/product/inventory/contract"
 	inventoryenums "go_wp/internal/module/product/inventory/enums"
 )
+
+var _ inventorycontract.ProductStockPort = (*Service)(nil)
+
+// NormalizeExternalSKU applies the inventory domain's canonical validation.
+func (s *Service) NormalizeExternalSKU(raw string) (code string, err error) {
+	return NormalizeExternalSKU(raw)
+}
 
 // ResolveWarehouse 解析归属仓（warehouseID 为空 → 该工程的默认仓），返回只读引用。
 func (s *Service) ResolveWarehouse(ctx context.Context, projectID, warehouseID string) (ref *productcontract.WarehouseRef, err error) {

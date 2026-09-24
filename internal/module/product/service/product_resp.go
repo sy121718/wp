@@ -331,15 +331,9 @@ func (s *Service) fillVariantStock(ctx context.Context, projectID string, varian
 			ids = append(ids, v.ID)
 		}
 	}
-	rows, err := s.inv.StockTotals(ctx, projectID, ids)
+	totals, err := s.inv.VariantStockTotals(ctx, projectID, ids)
 	if err != nil {
 		return
-	}
-	totals := make(map[string]int, len(rows))
-	for _, row := range rows {
-		if row != nil {
-			totals[row.VariantID] = row.Total
-		}
 	}
 	for _, v := range variants {
 		if v != nil {
