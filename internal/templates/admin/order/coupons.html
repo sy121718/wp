@@ -6,10 +6,10 @@
      · 筛选是「label + 控件」的紧凑单元（.filter-fields / .filter-field）；
      · 行内写操作按钮用 form="<id>" 关联表格外的 .hidden-form（HTML 不允许 form 嵌套）。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；map 用 ["key"] 索引；range 内访问外层值先存变量。 *}
-{* 无 JS 也能用：列表与展开区都是普通 GET 链接（同一页面靠 couponId 参数展开）， *}
+{* 核销记录继续由普通 GET 链接靠 couponId 展开；编辑按钮从按需 GET 端点加载抽屉片段。 *}
 {* 行内启停 / 删除 / 批量这些写操作是原生表单 POST + csrf_token 隐藏域，提交后 302 回本页并把结论经 ?ok= / ?err= 回显。 *}
-{* 新建 / 编辑表单是例外：它们只住在 <template> 里、唯一入口是 data-drawer-open（JS 抽屉），
-   无 JS 时这两个表单不可达 —— 所以它们走「写失败不丢输入」的 htmx 分档（htmx 是唯一真实
+{* 新建表单住在 <template>；编辑表单由 data-drawer-url 按需 GET，不为每行预埋表单。
+   无 JS 时两个抽屉表单均不可达；写操作走「失败不丢输入」的 htmx 分档（唯一真实
    提交通道）：失败 = 200 + 片段自身（错误槽在 host 内、form 外 + 回填），成功 = HX-Redirect；
    表单本体在 coupon_create_form.html / coupon_edit_form.html 两个片段里（契约见
    internal/module/order/inbound/http/coupon_form_echo.go 与 docs/02-T-write-fail-echo-batch1.md），
@@ -197,7 +197,7 @@
             <tr>
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{r.Form.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
                 <td data-label="{{tr("admin.coupons.col.code", "券码")}}"><code>{{r.Code}}</code></td>
-                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-coupon-edit-{{r.Form.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{r.Name}}</button>{{else}}{{r.Name}}{{end}}</td>
+                <td data-label="{{tr("admin.coupons.col.name", "名称")}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-url="{{r.EditFormURL}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{r.Name}}</button>{{else}}{{r.Name}}{{end}}</td>
                 <td data-label="{{tr("admin.coupons.col.discount", "折扣")}}">{{r.DiscountLabel}}</td>
                 <td data-label="{{tr("admin.coupons.col.min_subtotal", "门槛")}}">{{r.MinSubtotalLabel}}</td>
                 <td data-label="{{tr("admin.coupons.col.usage", "已用 / 上限")}}">{{r.UsageLabel}}</td>
@@ -206,9 +206,9 @@
                 <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge {{r.Badge}}">{{r.StatusLabel}}</span></td>
                 <td data-label="{{tr("admin.coupons.col.remark", "备注")}}">{{r.Remark}}</td>
                 <td class="col-actions" data-label="{{tr("admin.coupons.col.actions", "操作")}}">
-                    {* 编辑进右侧抽屉：每行一份 <template>（id 带行 ID），放在表格外。 *}
+                    {* 编辑进右侧抽屉：按需 GET 当前券的表单片段。 *}
                     {{if canUpdate}}
-                    <button type="button" class="btn btn-sm" data-drawer-open="#tpl-coupon-edit-{{r.Form.ID}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{tr("admin.coupons.action.edit", "修改")}}</button>
+                    <button type="button" class="btn btn-sm" data-drawer-url="{{r.EditFormURL}}" data-drawer-title="{{tr("admin.coupons.detail.heading", "修改优惠码")}} {{r.Code}}">{{tr("admin.coupons.action.edit", "修改")}}</button>
                     {{end}}
                     {{if r.Expanded}}
                     <a class="btn btn-sm" href="{{r.CollapseURL}}">{{tr("admin.coupons.action.collapse", "收起")}}</a>
@@ -265,7 +265,7 @@
     </section>
     {{end}}
 
-    {* 行内写操作表单与编辑抽屉模板必须放在表格外：HTML 不允许 form 嵌套，
+    {* 行内写操作表单必须放在表格外：HTML 不允许 form 嵌套，
        按钮用 form="<id>" 关联到这里的隐藏表单（.hidden-form 见 theme.css）。 *}
     {{range _, r := rows}}
     <form id="coupon-toggle-{{r.Form.ID}}" class="hidden-form" method="post" action="/admin/coupons/update">
@@ -290,12 +290,6 @@
         <input type="hidden" name="returnQuery" value="{{r.Back}}">
         <input type="hidden" name="id" value="{{r.Form.ID}}">
     </form>
-    {{if canUpdate}}
-    {* 编辑表单本体在 coupon_edit_form.html（include 相对同目录）：它同时是首屏抽屉
-       内容与「写失败不丢输入」的失败重渲染载体（一个真源两条路径）；首屏在行 range 内
-       include，片段经作用域链读 r 取行值，失败档由 couponEditFail 渲染并注入 FormEcho。 *}
-    <template id="tpl-coupon-edit-{{r.Form.ID}}">{{include "coupon_edit_form.html"}}</template>
-    {{end}}
     {{end}}
 
     {{if canCreate}}

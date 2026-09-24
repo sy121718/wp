@@ -365,51 +365,51 @@ func couponPageData() map[string]any {
 	})
 }
 
-// TestCouponPageRendersDateTimeControlsWithMatchingLabels 渲染后控件与 label 真的配平。
-func TestCouponPageRendersDateTimeControlsWithMatchingLabels(t *testing.T) {
-	out := renderAdminPage(t, "coupons.html", couponPageData())
+// TestCouponPageRendersDateTimeControlsWithMatchingLabels 按需编辑后，列表仅下发新建抽屉；
+// 编辑抽屉由 /admin/coupons/edit 返回独立片段，不能把旧 4 控件断言降格为 2 控件。
+func couponEditFragmentData() map[string]any {
+	echo := map[string]any{"id": "7", "projectId": "pr1", "returnQuery": "project=pr1", "name": "双十一全场券",
+		"discountType": "percent", "discountValue": "20", "minSubtotal": "99", "maxUses": "100",
+		"perUserLimit": "1", "status": "1", "startsAt": "2026-01-01T09:00",
+		"endsAt": "2026-01-31T23:59", "remark": "国庆活动"}
+	return groupDData(map[string]any{"FormEcho": echo, "EditCode": "SAVE20",
+		"TypeOptions": []any{}, "StatusOptions": []any{}, "SubmitErr": ""})
+}
 
-	ids := controlIDs(out, couponDateTimeLocalRe)
-	if len(ids) != 4 {
-		t.Fatalf("渲染后应有 4 个 datetime-local 控件（编辑抽屉 2 + 新建抽屉 2），实际 %d", len(ids))
+func TestCouponPageRendersDateTimeControlsWithMatchingLabels(t *testing.T) {
+	page := renderAdminPage(t, "coupons.html", couponPageData())
+	createIDs := controlIDs(page, couponDateTimeLocalRe)
+	if len(createIDs) != 2 {
+		t.Fatalf("列表页应只下发新建抽屉的两个时间控件，实际 %d", len(createIDs))
 	}
-	seen := map[string]bool{}
-	for _, id := range ids {
-		if seen[id] {
-			t.Errorf("控件 id=%s 重复出现（多实例模板的 id 必须带行标识）", id)
+	if !strings.Contains(page, `data-drawer-url=`) {
+		t.Fatal("编辑入口没有按需加载地址")
+	}
+	for _, id := range []string{"coupon-create-starts-at", "coupon-create-ends-at"} {
+		if !strings.Contains(page, `id="`+id+`"`) || !strings.Contains(page, `for="`+id+`"`) {
+			t.Errorf("新建抽屉时间控件 %s 的 label 未关联", id)
 		}
-		seen[id] = true
-		if !strings.Contains(out, `for="`+id+`"`) {
-			t.Errorf("渲染出的控件 id=%s 没有 label 的 for 指到它", id)
+	}
+
+	edit := renderAdminPage(t, "coupon_edit_form.html", couponEditFragmentData())
+	for _, id := range []string{"coupon-7-starts-at", "coupon-7-ends-at"} {
+		if !strings.Contains(edit, `id="`+id+`"`) || !strings.Contains(edit, `for="`+id+`"`) {
+			t.Errorf("编辑片段时间控件 %s 的 label 未关联", id)
 		}
-	}
-	// 编辑抽屉的 id 必须带行标识（这里行 id 是 7），否则多行展开时 id 互撞。
-	if !seen["coupon-7-starts-at"] || !seen["coupon-7-ends-at"] {
-		t.Errorf("编辑抽屉的时间窗控件 id 应带行标识：实际 %v", ids)
-	}
-	if !seen["coupon-create-starts-at"] || !seen["coupon-create-ends-at"] {
-		t.Errorf("新建抽屉的时间窗控件 id 缺失：实际 %v", ids)
 	}
 }
 
-// TestCouponPageRendersLabelsForNumberAndRemarkFields 三个「原先只有 placeholder」的字段。
+// TestCouponPageRendersLabelsForNumberAndRemarkFields 编辑字段随按需片段交付，逐项核对 label。
 func TestCouponPageRendersLabelsForNumberAndRemarkFields(t *testing.T) {
-	out := renderAdminPage(t, "coupons.html", couponPageData())
-
-	for _, field := range []struct{ name, labelKey string }{
-		{"maxUses", "admin.coupons.detail.ph.max_uses"},
-		{"perUserLimit", "admin.coupons.detail.ph.per_user_limit"},
-		{"remark", "admin.coupons.detail.ph.remark"},
-	} {
-		// 渲染产物里 label 的文案（t() 兜底）与控件必须同时在，且 for 指到控件。
-		if !strings.Contains(out, `for="coupon-7-`+dashName(field.name)+`"`) {
-			t.Errorf("字段 %s 的 label 没有 for 关联（渲染级）", field.name)
+	out := renderAdminPage(t, "coupon_edit_form.html", couponEditFragmentData())
+	for _, name := range []string{"maxUses", "perUserLimit", "remark"} {
+		if !strings.Contains(out, `for="coupon-7-`+dashName(name)+`"`) {
+			t.Errorf("字段 %s 的 label 没有 for 关联（按需片段渲染）", name)
 		}
 	}
-	// label 文案本身（t() 兜底：i18n 未初始化时取模板内原文）。
 	for _, want := range []string{"总次数上限（0 = 不限）", "每人限次（0 = 不限）"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("编辑抽屉缺少字段标签文案 %q", want)
+			t.Errorf("编辑片段缺少字段标签文案 %q", want)
 		}
 	}
 }

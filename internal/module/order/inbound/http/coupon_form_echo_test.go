@@ -76,6 +76,7 @@ func newCouponContext(t *testing.T, hxHeader, body string) (*gin.Context, *httpt
 type fakeCouponOrderService struct {
 	ordercontract.OrderService
 	getCoupon *orderdto.CouponResp
+	getCalls  int
 	getErr    error
 	createErr error
 	updateErr error
@@ -94,6 +95,7 @@ func (f *fakeCouponOrderService) UpdateCoupon(_ context.Context, req *orderdto.C
 }
 
 func (f *fakeCouponOrderService) GetCoupon(_ context.Context, _ uint64) (*orderdto.CouponResp, error) {
+	f.getCalls++
 	return f.getCoupon, f.getErr
 }
 
@@ -327,7 +329,11 @@ func TestCouponFailedWritesRenderSubmittedForms(t *testing.T) {
 				t.Fatalf("失败片段状态 = %d，正文 = %s", rec.Code, rec.Body.String())
 			}
 			out := rec.Body.String()
-			assertContains(t, out, `<div data-coupon-`+tc.host+`-host>`, `data-coupon-`+tc.host+`-err`,
+			root := `<div data-coupon-` + tc.host + `-host>`
+			if tc.host == "edit" {
+				root = `<div data-coupon-edit-host data-drawer-fragment>`
+			}
+			assertContains(t, out, root, `data-coupon-`+tc.host+`-err`,
 				`hx-target="closest [data-coupon-`+tc.host+`-host]"`, `hx-swap="outerHTML"`)
 			if strings.Index(out, `data-coupon-`+tc.host+`-err`) > strings.Index(out, `<form method="post"`) {
 				t.Error("错误槽应在表单之前")
@@ -505,7 +511,7 @@ func TestCouponEchoFragmentsRender(t *testing.T) {
 	})
 	eout := renderCoupon(t, "admin/order/coupon_edit_form.html", edata)
 	assertContains(t, eout,
-		`<div data-coupon-edit-host>`,
+		`<div data-coupon-edit-host data-drawer-fragment>`,
 		`role="alert" data-coupon-edit-err`,
 		`hx-post="/admin/coupons/update"`, `hx-target="closest [data-coupon-edit-host]"`, `hx-swap="outerHTML"`,
 		`name="id" value="7"`, `name="name" value="改过的名"`,
@@ -533,13 +539,14 @@ func TestCouponEchoFragmentsRender(t *testing.T) {
 	assertAbsent(t, fout, "role=\"alert\" data-coupon-create-err") // 首屏没有错误槽
 }
 
-// TestCouponsPageRendersDrawerTemplates 整页首屏渲染冒烟：两个抽屉 template 经 include
-// 引入片段后，页面必须渲染到最后一字节（</html>），且首屏就带 hx 分档属性与 host。
+// TestCouponsPageRendersDrawerTemplates 整页首屏渲染冒烟：新建表单仍内嵌，
+// 编辑入口按行生成远程 URL，编辑表单只在点击后由 GET 加载。
 //
-// order_bulk_page_render_test.go 的既有整页测试不带 PermSet 权限（新建/编辑入口不渲染），
-// 覆盖不到 include 路径，这里补上。
+// order_bulk_page_render_test.go 的既有整页测试不带 PermSet 权限，
+// 这里打开新建/修改权限，核对两个入口分别呈现内嵌与按需形态。
 func TestCouponsPageRendersDrawerTemplates(t *testing.T) {
 	d := couponBulkPageData()
+	d["Rows"].([]any)[0].(map[string]any)["EditFormURL"] = "/admin/coupons/edit-form?id=3&project=p1"
 	if perm, ok := d["PermSet"].(map[string]any); ok {
 		perm["order:coupon_create"] = true
 		perm["order:coupon_update"] = true
@@ -554,8 +561,8 @@ func TestCouponsPageRendersDrawerTemplates(t *testing.T) {
 		"</html>",
 		`<template id="tpl-coupon-create">`, `<div data-coupon-create-host>`,
 		`hx-post="/admin/coupons/create"`,
-		`<template id="tpl-coupon-edit-3">`, `<div data-coupon-edit-host>`,
-		`hx-post="/admin/coupons/update"`,
-		`id="coupon-create-starts-at"`, `id="coupon-3-name"`,
+		`data-drawer-url="/admin/coupons/edit-form?`,
+		`id="coupon-create-starts-at"`,
 	)
+	assertAbsent(t, out, `<template id="tpl-coupon-edit-3">`, `data-coupon-edit-host`, `id="coupon-3-name"`)
 }

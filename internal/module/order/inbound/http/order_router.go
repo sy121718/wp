@@ -5,6 +5,8 @@
 package orderhttp
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -149,6 +151,7 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果（核销明细是真源）。
 		couponPages := NewCouponPageHandle(svc, projects)
 		pages.GET("/coupons", couponPages.CouponsPage)
+		pages.GET("/coupons/edit-form", builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost), couponPages.CouponEditForm)
 		pages.POST("/coupons/create", builtin.CasbinMiddlewareForPath("/api/order/coupon/create"), couponPages.CouponCreate)
 		pages.POST("/coupons/update", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponUpdate)
 		pages.POST("/coupons/delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponDelete)

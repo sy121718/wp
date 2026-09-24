@@ -1,5 +1,5 @@
 {* admin/order/coupon_edit_form.html — 修改优惠码表单片段。
-   两个身份：① 抽屉 tpl-coupon-edit-{id} 的唯一内容（coupons.html 在行 range 内 include）；
+   两个身份：① GET /admin/coupons/edit-form 的按需抽屉响应；
    ② 「写失败不丢输入」的失败重渲染载体 —— 服务端按 HX-Request 分档（契约同
    coupon_create_form.html 的头注释；出口在 coupon_form_echo.go 的 couponEditFail）。
 
@@ -36,7 +36,7 @@
 {{ceStarts := ""}}{{if ceFill}}{{ceStarts = .FormEcho.startsAt}}{{else}}{{ceStarts = r.Form.StartsAt}}{{end}}
 {{ceEnds := ""}}{{if ceFill}}{{ceEnds = .FormEcho.endsAt}}{{else}}{{ceEnds = r.Form.EndsAt}}{{end}}
 {{ceRemark := ""}}{{if ceFill}}{{ceRemark = .FormEcho.remark}}{{else}}{{ceRemark = r.Form.Remark}}{{end}}
-            <div data-coupon-edit-host>
+            <div data-coupon-edit-host data-drawer-fragment>
                 {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
                 <p class="badge badge-warning" role="alert" data-coupon-edit-err>{{.SubmitErr}}</p>
                 {{end}}{{end}}

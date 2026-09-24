@@ -326,10 +326,58 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/order/coupons.html", data)
 }
 
+// CouponEditForm 按需返回一张券的编辑抽屉（GET /admin/coupons/edit-form）。
+// 路由复用 POST 更新权限；参数与券归属在响应片段之前校验。
+func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	rawID := c.Query("id")
+	id := orderQueryID(rawID)
+	projectID := strings.TrimSpace(c.Query("project"))
+	if id == 0 || strconv.FormatUint(id, 10) != rawID || projectID == "" {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	exists, err := h.projects.Exists(c.Request.Context(), projectID)
+	if err != nil {
+		shell.PageError(c, "coupon-edit-form", err)
+		return
+	}
+	if !exists {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	cp, err := h.orders.GetCoupon(c.Request.Context(), id)
+	if err != nil {
+		if err.Error() == orderenums.ErrCouponNotFound {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		shell.PageError(c, "coupon-edit-form", err)
+		return
+	}
+	if cp == nil || cp.ID != id || cp.ProjectID != projectID {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	filter := couponFilter{Status: strings.TrimSpace(c.Query("status")), Keyword: strings.TrimSpace(c.Query("keyword"))}
+	page, limit := orderListWindow(c)
+	row := couponRowView(cp, filter, projectID, page, limit)
+	form := row["Form"].(gin.H)
+	back := couponBackQuery(projectID, filter, page, limit, id)
+	values := gin.H{"id": form["ID"], "projectId": projectID, "returnQuery": back,
+		"name": form["Name"], "discountType": form["DiscountType"], "discountValue": form["DiscountValue"],
+		"minSubtotal": form["MinSubtotal"], "maxUses": form["MaxUses"], "perUserLimit": form["PerUserLimit"],
+		"status": form["StatusValue"], "startsAt": form["StartsAt"], "endsAt": form["EndsAt"], "remark": form["Remark"]}
+	c.HTML(http.StatusOK, "admin/order/coupon_edit_form.html", shell.Prepare(c, gin.H{
+		"FormEcho": values, "EditCode": cp.Code, "TypeOptions": couponTypeOptions,
+		"StatusOptions": couponEnableOptions,
+	}))
+}
+
 // CouponCreate 新建优惠码（POST /admin/coupons/create）。
 //
 // 写失败不丢输入（分档契约见 coupon_form_echo.go）：htmx 提交失败时 200 + 表单片段
-//（错误槽 + 回填），成功时 HX-Redirect；抽屉表单没有无 JS 提交通道，
+// （错误槽 + 回填），成功时 HX-Redirect；抽屉表单没有无 JS 提交通道，
 // 原生 302 只是兜底，两条路的终点 URL 由同一份 couponEchoQuery 构造。
 func (h *couponPageHandle) CouponCreate(c *gin.Context) {
 	req := couponSaveReqFromForm(c)

@@ -20,8 +20,11 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 	if cp == nil {
 		return gin.H{}
 	}
-	// 编辑链接在同一页面上展开（靠 couponId 参数），因此把当前窗口一起带上：
-	// 收起编辑区或再翻页时，用户还站在原来那一屏。
+	// 编辑抽屉按需取数；核销记录链接仍在同页展开。
+	editVals := couponFilterValues(projectID, filter)
+	editVals["id"] = strconv.FormatUint(cp.ID, 10)
+	editVals["page"] = strconv.Itoa(page)
+	editVals["limit"] = strconv.Itoa(limit)
 	vals := couponFilterValues(projectID, filter)
 	vals["couponId"] = strconv.FormatUint(cp.ID, 10)
 	vals["page"] = strconv.Itoa(page)
@@ -41,6 +44,7 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 		"StatusLabel":      cp.StatusLabel,
 		"Badge":            couponStatusBadge(cp.StatusLabel),
 		"Remark":           orderTextOrEmpty(cp.Remark),
+		"EditFormURL":      shell.FilterBaseURL("/admin/coupons/edit-form", editVals),
 		"EditURL":          shell.FilterBaseURL("/admin/coupons", vals),
 		"CollapseURL":      shell.FilterBaseURL("/admin/coupons", collapse),
 		"Expanded":         filter.CouponID == cp.ID,
