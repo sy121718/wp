@@ -135,13 +135,15 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		"UpdatedAt":      articleUpdatedAtOf(item),
 	}
 	out := gin.H{
-		"title":   articleEditTitle,
-		"menu":    "articles",
-		"IsNew":   item == nil && id == "",
-		"Form":    form,
-		"Err":     pageErr,
-		"Ok":      pageOk,
-		"ListURL": "/admin/articles",
+		"title":           articleEditTitle,
+		"menu":            "articles",
+		"IsNew":           item == nil && id == "",
+		"Form":            form,
+		"Err":             pageErr,
+		"Ok":              pageOk,
+		"InvalidField":    "",
+		"EditUnavailable": false,
+		"ListURL":         "/admin/articles",
 		// TemplateEditURL 必须在**任何装配状态下**都存在：模板里是 {{if .TemplateEditURL}}，
 		// 而 Jet 对缺失的键报错并截断整页（下面是装配成功时才会覆盖它）。
 		"TemplateEditURL": "",

@@ -258,18 +258,63 @@ func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
 func (h *articlePageHandle) ArticleUpdate(c *gin.Context) {
 	form := articleFormOf(c)
 	if form.ID == "" {
-		articleRedirectList(c, articleMissingIDText, "")
+		h.articleUpdateFailure(c, articleMissingIDText, "id")
 		return
 	}
 	if form.Title == "" {
-		articleRedirectEdit(c, form.ID, "", articleMissingTitleText)
+		h.articleUpdateFailure(c, articleMissingTitleText, "title")
 		return
 	}
 	if _, err := h.contents.Update(c.Request.Context(), &contentdto.UpdateReq{ID: form.ID, Data: form.data()}); err != nil {
-		articleRedirectEdit(c, form.ID, "", articleFacingError(c, err))
+		h.articleUpdateFailure(c, articleFacingError(c, err), "")
 		return
 	}
 	articleRedirectEdit(c, form.ID, articleSavedText, "")
+}
+
+// articleUpdateFailure reads metadata for the side panels, then replaces every editable
+// field with this POST's raw value (including empty strings).
+func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr, invalidField string) {
+	ctx := c.Request.Context()
+	id := strings.TrimSpace(c.PostForm("id"))
+	var item *contentdto.ContentResp
+	if id != "" {
+		got, err := h.contents.Get(ctx, &contentdto.GetReq{ID: id})
+		if err != nil {
+			// 元数据读取错误只记录日志，页面仍展示原本的保存错误。
+			articleInternalText(c, err)
+		} else {
+			item = got
+		}
+	}
+	data := articleEditPageData(ctx, h, item, id, pageErr, "", requestScoreLang(c))
+	form := data["Form"].(gin.H)
+	for key, field := range map[string]string{
+		"Title": "title", "Body": "body", "Excerpt": "excerpt",
+		"FeaturedImage": "featuredImage", "SEOTitle": "seoTitle",
+		"SEODescription": "seoDescription", "FocusKeyword": "focusKeyword",
+	} {
+		form[key] = c.PostForm(field)
+	}
+	data["IsNew"] = false // 缺 id 时仍展示编辑页，避免误落入新建动作。
+	data["EditUnavailable"] = item == nil
+	if item == nil {
+		// 元数据不可用时禁用依赖旧版本、路径和实体标识的所有后续动作。
+		for k, v := range articlePublishUnavailable("") {
+			data[k] = v
+		}
+		for k, v := range articleImportUnavailable("") {
+			data[k] = v
+		}
+		data["TemplateEditURL"] = ""
+	}
+	data["InvalidField"] = invalidField
+	data["Score"] = articleScoreViewOf(map[string]any{
+		"title": form["Title"], "body": form["Body"], "excerpt": form["Excerpt"],
+		"seoTitle": form["SEOTitle"], "seoDescription": form["SEODescription"],
+		"focusKeyword": form["FocusKeyword"],
+	}, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c))
+	c.HTML(http.StatusOK, "admin/content/article_edit.html", shell.Prepare(c, data))
 }
 
 // ArticleDelete 删除文章（POST /admin/articles/delete，权限点 content:delete）。

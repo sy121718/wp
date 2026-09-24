@@ -48,7 +48,7 @@
             {* ==== 页级动作（清单 02-L P1-8）：保存 / 发布从卡内提到页头 ====
                保存按钮用 form="article-form" 关联左列表单 —— 表单归属与字段一个都没动，
                按钮只是搬了位置（与 mail_automation_edit.html 的保存按钮同款做法，零 JS）。 *}
-            <button type="submit" form="article-form" class="btn btn-primary">{{ .["t"]("admin.article.edit.save", "保存") }}</button>
+            {{if !.EditUnavailable}}<button type="submit" form="article-form" class="btn btn-primary">{{ .["t"]("admin.article.edit.save", "保存") }}</button>{{end}}
             {* ⚠ 维护成本就在这一段：发布动作的三个条件分支在下方的右栏发布卡里**各有一份**，
                两处必须同步改（分支判据见下）。之所以不复用片段：一个给的是「按钮」、另一个给的是
                「表单 + 字段」，yield 参数传不进两种形状，拆片段只会让两份真源藏得更深。
@@ -74,16 +74,20 @@
     </header>
 
     {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+    <p class="badge badge-warning" role="alert" id="article-edit-error">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}
     {{if .Ok != ""}}
     <p class="badge badge-success" role="status">{{.Ok}}</p>
+    {{end}}
+    {{if .EditUnavailable}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.unavailable", "文章信息暂时不可用；以下是本次提交内容，请保留后返回列表重新打开文章。") }}</p>
     {{end}}
 
     <div class="article-edit-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start">
         <form method="post" class="article-edit-main"
               action="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
               id="article-form">
+            {{if .EditUnavailable}}<fieldset disabled style="border:0;padding:0;margin:0;min-width:0">{{end}}
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             {{if !.IsNew}}<input type="hidden" name="id" value="{{form.ID}}">{{end}}
 
@@ -91,7 +95,7 @@
                 <h2>{{ .["t"]("admin.article.edit.bodyHeading", "正文") }}</h2>
                 <label class="form-label" for="article-title">{{ .["t"]("admin.article.edit.titleLabel", "标题") }}</label>
                 <input class="form-input" id="article-title" type="text" name="title"
-                       value="{{form.Title}}" placeholder="{{ .["t"]("admin.article.edit.titlePlaceholder", "文章标题") }}" required>
+                       value="{{form.Title}}" placeholder="{{ .["t"]("admin.article.edit.titlePlaceholder", "文章标题") }}"{{if .["InvalidField"] == "title"}} aria-invalid="true" aria-describedby="article-edit-error"{{end}} required>
 
                 {{if .IsNew}}
                 <div class="field-label-row">
@@ -176,6 +180,7 @@
                 <span class="field-counter" data-counter-out="article-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
             </section>
 
+            {{if .EditUnavailable}}</fieldset>{{end}}
             {* 原「保存卡」整块移除（清单 02-L P1-8）：它只有动作、没有字段，两份动作都已归位 ——
                保存 → 页头；「重新评分」→ 右栏 SEO 评测卡头（动作与分数同栏相邻）。
                注意连带影响：theme.css 的 `.article-edit-page .article-save-card`（sticky 贴底保存条）
@@ -208,7 +213,7 @@
                    title / body / excerpt / focusKeyword / seoTitle / seoDescription
                    （Trix 的隐藏 input name=body 也在那张表单里）；hx-target 仍指向本卡下方的
                    #article-seo-score，落点一个字节没变。 *}
-                {{if !.IsNew}}
+                {{if !.IsNew && !.EditUnavailable}}
                 <div class="action-row">
                     <button type="button" class="btn"
                             hx-post="/admin/articles/score" hx-include="#article-form"
@@ -294,7 +299,7 @@
                 {{else}}
                 <p class="badge badge-warning" role="alert">{{.NoTemplateHint}}</p>
                 {{end}}
-                {{else}}
+                {{else if !.EditUnavailable}}
                 <p class="badge badge-warning" role="alert">{{.PublishHint}}</p>
                 {{end}}
             </section>
@@ -332,7 +337,7 @@
                 <div id="article-import-result">
                     <p class="text-mute text-sm">{{ .["t"]("admin.article.edit.importPreviewEmpty", "还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。") }}</p>
                 </div>
-                {{else}}
+                {{else if !.EditUnavailable}}
                 <p class="badge badge-warning" role="alert">{{.ImportHint}}</p>
                 {{end}}
             </section>
