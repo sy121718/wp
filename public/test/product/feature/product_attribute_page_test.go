@@ -139,17 +139,17 @@ func TestAttributeValueRowsFragmentAddRemove(t *testing.T) {
 		t.Fatalf("add 后应出现第 3 行：%s", body)
 	}
 
-	// remove：删第 0 行（S）后序号重排 —— 剩下的第 0 行是 M。
+	// remove：删第 0 行（S）后保留原索引 1，避免失败回显把用户行值压紧错位。
 	form.Set("action", "remove")
 	form.Set("removeIndex", "0")
 	rec = postForm(engine, "/admin/product-attributes/value-rows", form)
 	body = rec.Body.String()
-	if strings.Contains(body, "values[2].label") {
-		t.Fatalf("remove 后不应再有第 3 行：%s", body)
+	if strings.Contains(body, "values[2].label") || strings.Contains(body, "values[0].label") {
+		t.Fatalf("remove 后只应保留原索引 1 的一行：%s", body)
 	}
-	needle := "values[0].label\" value=\"M\""
+	needle := "values[1].label\" value=\"M\""
 	if !strings.Contains(body, needle) {
-		t.Fatalf("remove 第 0 行后，第 0 行的显示名应为 M：%s", body)
+		t.Fatalf("remove 第 0 行后原索引 1 的显示名应为 M：%s", body)
 	}
 }
 
