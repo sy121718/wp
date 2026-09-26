@@ -273,7 +273,7 @@ media 的 `ErrAttachmentNotFound = "ErrAttachmentNotFound"`」→ **plugin 遵�
 |---|---|---|
 | **页面失败出口**（真缺陷） | `project` 20 处（`theme_admin_pages.go` 7 / `site_settings_admin_pages.go` 7 / `theme_settings_admin_pages.go` 6）**→ 已收口**；`block` 3、`page` 3、`inventory` 2、`order` 2 | 无页壳、文案是裸中文或裸 i18n key。与 admin 六页同型（本轮已按 `303 + ?err=` + 读侧受控收口） |
 
-> **project 域已收口（2026-09，批次记录见 `02-P`）**：20 处 `c.String` 之外还发现第 21 处
+> **project 域已收口（2026-09）**：20 处 `c.String` 之外还发现第 21 处
 > （`buildSiteSettingsData` 写 500 JSON 响应后再 `c.HTML` 渲染同一请求），一并修掉。
 > 修法是「判定表只有一份、JSON 出口与页面出口共用」（`project_err.go`），
 > 读侧走整体白名单而非 `strings.Contains`。**本表其余域的处数已过期** ——
@@ -282,7 +282,6 @@ media 的 `ErrAttachmentNotFound = "ErrAttachmentNotFound"`」→ **plugin 遵�
 > 还有 **14 处是真缺陷**（与 project 同型，含 5 处裸归口 key），其余 65 处是接口/片段出口
 > （workbench 51 / runtimefragment 8 / admin dev_login 4 / mail 退订页 2）——
 > `runtimefragment` 里有 **2 处 `perr.Error()` 真泄漏**（访问面、公开可达）。
-> 完整清单与两个门禁盲区见 `docs/02-P-project-page-err-batch.md` §5。
 | **片段/接口出口**（非本轮判据） | `workbench` 51 处、`runtimefragment` 8 处、`mail_tracking` 3 处 | 这些是被 htmx / fetch 消费的接口响应。**用户可见**（`admin.js:317` 监听 `htmx:responseError` 并把失败报到通知里），但形态是「接口错误文案」而非「脱离页壳的页面响应」—— 它们的 `project` 是文案未走 `enums`/i18n，属规范问题（P2），与「页面失败出口」不是同一条判据 |
 | 历史注释 | `admin_pages_handle.go` 3 处 | 只是注释里提到的旧写法，**该文件已彻底收口** |
 
@@ -363,20 +362,18 @@ media 的 `ErrAttachmentNotFound = "ErrAttachmentNotFound"`」→ **plugin 遵�
 
 ## 0.9 待办与提醒
 
-> **本清单的条目状态已全量核对过（102 条）：见 `docs/02-S-task-status-audit.md`** ——
-> 结论：**P0 五条全部完成**、P1 为 2✅/2⚠️/18❌；`02-M` 7✅/6❌；`02-O` 45 条为 7✅/4⚠️/34❌。
-> 该文同时给出「未完成按主题聚类」的排期输入、**2 条应关闭的失效条目**（P2-9 / P2-16），
+> **本清单的条目状态已全量核对过（102 条）** —— 结论：**P0 五条全部完成**、
+> P1 为 2✅/2⚠️/18❌；`02-M` 7✅/6❌；`02-O` 45 条为 7✅/4⚠️/34❌。
+> 另有「未完成按主题聚类」的排期输入、**2 条应关闭的失效条目**（P2-9 / P2-16），
 > 以及本节所有行号**已整体失效**的说明（引用请按语义定位）。
 >
-> **「失败出口收口」已全站铺开并完成第一批**：跨 9 个域共修 42 处 + 判定不改 4 处（有据），
-> 汇总在 `docs/02-R-cstring-sweep-batch.md`。
-> 遗留按风险排序见 `02-R` §9：① 261 条 enums key 词条缺失（最大的单一来源）
+> **「失败出口收口」已全站铺开并完成第一批**：跨 9 个域共修 42 处 + 判定不改 4 处（有据）。
+> 该批遗留按风险排序：① 261 条 enums key 词条缺失（最大的单一来源）
 > ② order 域 `?err=` 通道渲染裸 key ③ workbench 批 1/批 4（前置已就绪）④ 门禁扩围。
 
-> **本批（项目域页面错误出口）已完成并验证**，批次记录：`docs/02-P-project-page-err-batch.md`
-> —— 含修法判据、6 条守卫测试、浏览器实测证据，以及**全站摸底（80 处待处理）与两个门禁盲区**。
-> 建议的后续顺序（按风险）：`runtimefragment` 的 2 处 `.Error()` → 门禁扩扫描范围 →
-> `workbench` 51 处分类 → 门禁扩判据。
+> **项目域页面错误出口已收口并验证** —— 含修法判据、6 条守卫测试、浏览器实测证据，
+> 以及**全站摸底（80 处待处理）与两个门禁盲区**。建议的后续顺序（按风险）：
+> `runtimefragment` 的 2 处 `.Error()` → 门禁扩扫描范围 → `workbench` 51 处分类 → 门禁扩判据。
 
 - **同形态出口未修 26 处**（见 §0.1 表更正）—— 需单开一批，逐页定回跳 URL + 登记读侧白名单；
 - 另有 8+ 处 `c.String(500, <归口 key>)` 同判据命中，未实测触发路径；

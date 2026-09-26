@@ -113,7 +113,7 @@ func TestPluginsPagePatrolReportsOrphanSchema(t *testing.T) {
 	if !strings.Contains(card, "table-wrap table-scroll") {
 		t.Fatalf("折叠区内的孤儿 schema 表脱离了 table-scroll（窄屏无法横向滚动）")
 	}
-	// 「安装插件」在折叠区**之外**、页尾（02-S §4：安装降到页尾是有意的信息架构）。
+	// 「安装插件」在折叠区**之外**、页尾（安装降到页尾是有意的信息架构）。
 	if strings.Contains(card, installFormAnchor) || strings.Contains(card, `id="plugin-install"`) {
 		t.Fatalf("安装表单被折进了巡检折叠区 —— 它必须留在折叠区之外")
 	}

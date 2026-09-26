@@ -1,6 +1,6 @@
 package workbenchhttp
 
-// workbench_error_shape_test.go — 两个「错误出口形状」的守卫（审计 docs/02-Q §2(b)、§3）。
+// workbench_error_shape_test.go — 两个「错误出口形状」的守卫（形态与文案来源的判据见下）。
 //
 //	① inspector_handle.go 的两个 500 出口：**形态**保持 text/plain（前端 fetch → r.text() →
 //	   morphHTML，不检查 r.ok），但**文案来源**必须是归口译文 —— `c.String` 不经过

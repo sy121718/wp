@@ -9,7 +9,7 @@
 -- key 形态却没有词条时，取词函数按 fallback 回落，页面上直接出现**内部常量名**
 -- （运营看到 `ErrInvalidSlot`、`ErrAttachmentReferenced` 这种英文裸串，本可以是「回列表页重选」）。
 --
--- 本批的复核口径（不沿用 docs/02-R-cstring-sweep-batch.md 的旧读数）：
+-- 本批的复核口径（不沿用早前那批的旧读数）：
 --   1) 用 go/parser 扫 internal/module/*/enums/*.go 的全部 728 个常量，按**值形态**筛 key；
 --   2) 剔除 webhook 的 4 个事件类型标识（order.paid / order.refunded / product.updated /
 --      content.published 是 EventType 常量，点分二段、不进 err|msg 命名空间，不是语言 key）；

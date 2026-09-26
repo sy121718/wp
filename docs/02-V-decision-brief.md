@@ -3,7 +3,7 @@
 > **性质**：只调研、未改一行代码。产出是「现状事实 + 可选方案 + 代价/影响面/风险」，
 > 供决策者挑一条（或直接关掉）。
 >
-> **来源**：`docs/02-O-trade-site-audit.md` 与 `docs/02-S-task-status-audit.md` §3。
+> **来源**：交易域与站点域的操作逻辑审核（`docs/02-O-trade-site-audit.md`）与任务状态核对。
 > 两份文档的**行号已全部失效**，本简报一律按语义定位（函数名 / 类名 / 关键文案 / i18n key），
 > 不引用行号。
 >
@@ -90,7 +90,7 @@ internal/module/order/inbound/http/order_router.go
 失败不降级（`ErrProjectRequired` / 原样返回 err）。
 
 → 第 6 条的「搬 /admin/pages」不是从零造查询，而是**给一个为它写好的能力接线**。
-代价被 `docs/02-S` 严重高估了。
+代价被此前的逐条核对严重高估了。
 
 ---
 
@@ -141,7 +141,7 @@ internal/module/order/inbound/http/order_router.go
 
 - 改什么：无。已付的代价 = 1 条 UPDATE 迁移 + 1 处模板删词 + 1 个测试用例。
 - 代价：**0**（已完成）。
-- 影响面：关闭 `02-O` orders 任务 1；`docs/02-S` §4 的「应删」条目可结案。
+- 影响面：关闭 `02-O` orders 任务 1；此前的逐条核对里那条「应删」条目可结案。
 - 风险：**注释与文档里的因果表述不准**（「没有任何建单端点」）。要么改措辞为「/admin/orders 页面路由无建单入口」，
   要么保持 A 的同时接受「读注释的人会以为后端也没有能力」。这是**文档债**，不是功能债。
 
@@ -444,7 +444,7 @@ case customerStatusPending:     // 2
 
 ## 6. 「待重建影响面」的信息架构归位
 
-### 现状（回代码 —— 与 `docs/02-S` 的记载已不一致）
+### 现状（回代码 —— 与此前逐条核对的记载已不一致）
 
 同一事实（哪些页面处于「有更新未发布」）当前在 **3 个页面以 3 种形态**出现：
 
@@ -458,7 +458,7 @@ case customerStatusPending:     // 2
 可选修法是「搬 `/admin/pages` **或**降级为 `.help` + 徽章」。
 **降级这一路已经落地了** —— `blocks_stale_impact_render_test.go` 里就有一个用例叫
 「有 stale：页头徽章 + 折叠清单，**且不再有常驻只读卡**」。
-所以 `docs/02-S` §3 把它列在「信息架构 / 归位（6 条）」里，记的其实是**未采用的那个修法**。
+所以此前的逐条核对把它列在「信息架构 / 归位（6 条）」里，记的其实是**未采用的那个修法**。
 
 **同时**：`page/service/page_stale_overview.go` 的 `ListStalePages`（全站清单、`staleOverviewLimit = 8`、
 跨工程合并、全局排序、截断、失败不降级）**零调用方**，而它的文件头注释点名消费者是
@@ -471,7 +471,7 @@ case customerStatusPending:     // 2
 
 ### 方案
 
-**A. 搬到 `/admin/pages`（`02-S` 记的方向）**
+**A. 搬到 `/admin/pages`（此前核对记录的方向）**
 
 - 改法：`pages_handle.go` 注入 `ListStalePages` 的结果；`pages.html` 加区块；
   `blocks.html` / `articles.html` 的清单改为指向 `/admin/pages` 的链接或直接删除；
