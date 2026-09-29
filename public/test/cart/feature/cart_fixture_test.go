@@ -11,6 +11,7 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -20,17 +21,18 @@ import (
 	cartdto "go_wp/internal/module/cart/dto"
 	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
 	cartservice "go_wp/internal/module/cart/service"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorymodel "go_wp/internal/module/inventory/model"
+	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
+	inventoryservice "go_wp/internal/module/inventory/service"
 	mailcontract "go_wp/internal/module/mail/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
 	productdto "go_wp/internal/module/product/dto"
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventorymodel "go_wp/internal/module/inventory/model"
-	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
-	inventoryservice "go_wp/internal/module/inventory/service"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
+	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
@@ -85,6 +87,7 @@ type cartFixture struct {
 	products  *productservice.Service
 	inventory *inventoryservice.Service
 	users     *userservice.Service
+	projects  *projectservice.Service
 	mail      *fakeMail
 	db        *gorm.DB
 	projectID string
@@ -148,9 +151,43 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		nil, // webhooks：本用例不接线外部集成通道
 	)
 	cart := cartservice.NewService(orders, products, products, gateway, cartTestSecret)
+	// 站点运费规则端口（本项目新增）：与生产装配（routers.assembly 的 wireRuntimeAccessFace）
+	// 逐字一致 —— 结算的基准运费来自 projects.settings，不再由调用方传入。
+	// 漏接这一行不会报错：运费恒 0，于是「站点配了运费却不收」这类回归在测试里看不出来。
+	if reader, ok := projectcontract.ProjectService(projects).(projectcontract.ShippingPolicyReader); ok {
+		cart.SetShippingPolicyReader(reader)
+	} else {
+		t.Fatal("project service 未实现 ShippingPolicyReader（装配契约变了）")
+	}
 	return &cartFixture{
 		cart: cart, orders: orders, products: products, inventory: inv, users: users,
-		mail: mail, db: db, projectID: project.ID, warehouse: wh.ID,
+		projects: projects, mail: mail, db: db, projectID: project.ID, warehouse: wh.ID,
+	}
+}
+
+// setShippingPolicy 配置站点级运费规则（单位**分**，与库内同口径）。
+//
+// 为什么经 project 契约而不是直接改库：站点设置的真源是 projects.settings 这一列，
+// 而「它长什么样」由 project 的 dto 定义 —— 手拼 JSON 的测试会在键名变化时静默失效
+// （读出来恒为 0，运费变成「没配」），那正是本文件要防的那类静默回归。
+func (f *cartFixture) setShippingPolicy(t *testing.T, baseCents, thresholdCents int64) {
+	t.Helper()
+	ctx := context.Background()
+	current, err := f.projects.Detail(ctx, &projectdto.DetailReq{ID: f.projectID})
+	if err != nil || current == nil {
+		t.Fatalf("读工程失败: %v", err)
+	}
+	settings, err := json.Marshal(projectdto.SiteSettings{
+		ShippingBaseFee:       baseCents,
+		ShippingFreeThreshold: thresholdCents,
+	})
+	if err != nil {
+		t.Fatalf("序列化站点设置失败: %v", err)
+	}
+	if _, err := f.projects.Update(ctx, &projectdto.UpdateReq{
+		ID: f.projectID, Name: current.Name, Settings: settings,
+	}); err != nil {
+		t.Fatalf("保存站点设置失败: %v", err)
 	}
 }
 

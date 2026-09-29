@@ -57,26 +57,36 @@ func FragmentEndpoint(c *gin.Context) {
 	spec, ok := Lookup(typeName)
 	if !ok {
 		// 未知能力：白名单拒绝（不接受任意 endpoint）。
-		c.String(http.StatusNotFound, "片段能力不存在")
+		//
+		// 取词走 fragmentErrorT：走到这里 projectId 还没解析（也不可信），语言无从按工程查，
+		// 只认请求明确声明的 ?lang；命中不了就回落 key 表里的中文兜底。
+		c.String(http.StatusNotFound, fragmentErrTextOf(fragmentErrorT(c), fragmentErrTextCapabilityMissing))
 		return
 	}
 	// 方法与能力声明必须一致：GET 能力不接受 POST 调用（反之亦然）。
 	if spec.Method != "" && !strings.EqualFold(spec.Method, c.Request.Method) {
-		c.String(http.StatusMethodNotAllowed, "片段能力不支持该请求方法")
+		// 同上：语言尚未解析，取词走 fragmentErrorT。
+		c.String(http.StatusMethodNotAllowed, fragmentErrTextOf(fragmentErrorT(c), fragmentErrTextMethodNotAllowed))
 		return
 	}
 	// 认证策略。
 	userID := ""
 	if spec.Auth == AuthSession {
+		// 三条 401 出口共用同一句文案（**一条 key，不是三条**）。
+		//
+		// 取词走 fragmentErrorT 而不是 req.T：认证排在参数校验与 lang 解析**之前**
+		// （req 在这一段之后才构造），此处没有任何已解析的语言可用，
+		// 只能认请求明确声明的 ?lang，命中不了回落 key 表里的中文兜底。
+		authT := fragmentErrorT(c)
 		cs, err := auth.GetCookieSession(c)
 		if err != nil || cs == nil || cs.SessionID == "" {
-			c.String(http.StatusUnauthorized, "需要登录")
+			c.String(http.StatusUnauthorized, fragmentErrTextOf(authT, fragmentErrTextLoginRequired))
 			return
 		}
 		// 句柄 → 身份（P1 句柄化）：cookie 里只有句柄，userID 由服务端索引给出。
 		idx, err := auth.GetSessionIndex(c.Request.Context(), cs.SessionID)
 		if err != nil || idx == nil || idx.UserID == 0 {
-			c.String(http.StatusUnauthorized, "需要登录")
+			c.String(http.StatusUnauthorized, fragmentErrTextOf(authT, fragmentErrTextLoginRequired))
 			return
 		}
 		// 这里与 SessionAuthMiddleware 保持**同一套校验**，刻意不只查索引：
@@ -85,7 +95,7 @@ func FragmentEndpoint(c *gin.Context) {
 		// 此前这里只读 cookie 里的 UserID、不校验会话是否已被删，比中间件弱一档。
 		sess, err := auth.GetUserSession(c.Request.Context(), idx.UserID)
 		if err != nil || sess == nil || sess.SessionID != cs.SessionID {
-			c.String(http.StatusUnauthorized, "需要登录")
+			c.String(http.StatusUnauthorized, fragmentErrTextOf(authT, fragmentErrTextLoginRequired))
 			return
 		}
 		userID = strconv.FormatUint(idx.UserID, 10)
@@ -193,7 +203,10 @@ func FragmentEndpoint(c *gin.Context) {
 			c.Status(http.StatusNoContent)
 			return
 		}
-		c.String(http.StatusInternalServerError, "片段渲染失败")
+		// 渲染失败：语言已按 ?lang + projectId 解析完毕（req 已构造），
+		// 所以取词用 req.T —— 与成功路径共用同一份取词结果，不会出现
+		// 「成功片段是英文、错误提示是中文」。文案与兜底中文见 fragment_err.go 的 key 表。
+		c.String(http.StatusInternalServerError, fragmentErrTextOf(req.T, fragmentErrTextRenderFailed))
 		return
 	}
 	if cacheHit {

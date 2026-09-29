@@ -29,6 +29,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	adminservice "go_wp/internal/module/admin/service"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/logger"
 )
@@ -42,14 +43,16 @@ func (h *Handle) DevLogin(c *gin.Context) {
 	// 锁 2：只认环回。RemoteAddr 形如 127.0.0.1:52331 / [::1]:52331。
 	if !isLoopbackRemote(c.Request.RemoteAddr) {
 		logger.Scene("admin").With("remote", c.Request.RemoteAddr).Warn("拒绝非本机的一键登录请求")
-		c.String(http.StatusForbidden, "开发登录仅限本机访问")
+		// 文案走 key + 中文兜底：这几句是 c.String 直出的响应体，不经过模板取词层，
+		// 写死中文会让英文后台的运营看到中文错误（迁移 452 seed 中英词条）。
+		c.String(http.StatusForbidden, shell.TranslateFor(c)("admin.dev_login.loopback_only", "开发登录仅限本机访问"))
 		return
 	}
 
 	res, err := h.admin.DevLogin(c.Request.Context(), strings.TrimSpace(c.Query("user")))
 	if err != nil {
 		logger.Scene("admin").Error(err, "开发登录失败")
-		c.String(http.StatusInternalServerError, "开发登录失败，详情见服务端日志")
+		c.String(http.StatusInternalServerError, shell.TranslateFor(c)("admin.dev_login.failed", "开发登录失败，详情见服务端日志"))
 		return
 	}
 
@@ -58,12 +61,12 @@ func (h *Handle) DevLogin(c *gin.Context) {
 		SessionID: res.SessionID,
 	}, false); err != nil {
 		logger.Scene("admin").Error(err, "开发登录写会话失败")
-		c.String(http.StatusInternalServerError, "写会话失败，详情见服务端日志")
+		c.String(http.StatusInternalServerError, shell.TranslateFor(c)("admin.dev_login.session_failed", "写会话失败，详情见服务端日志"))
 		return
 	}
 	if _, err := builtin.RotateCSRFToken(c); err != nil {
 		logger.Scene("admin").Error(err, "开发登录轮换 CSRF token 失败")
-		c.String(http.StatusInternalServerError, "轮换 CSRF token 失败，详情见服务端日志")
+		c.String(http.StatusInternalServerError, shell.TranslateFor(c)("admin.dev_login.csrf_failed", "轮换 CSRF token 失败，详情见服务端日志"))
 		return
 	}
 

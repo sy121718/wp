@@ -1,20 +1,24 @@
 {* fragments/article_import.html — 文章导入画布的转换预览（HTMX 局部刷新）
    数据：Err（可展示的错误文案）、Preview（articleImportPreviewView）。
    为什么要有这一块：转换是有损的（不可逆组件变占位、白名单外标签被剥壳），
-   必须让使用者在点「创建页面」之前看到损失清单 —— 决策 5「降级不静默」。 *}
+   必须让使用者在点「创建页面」之前看到损失清单 —— 决策 5「降级不静默」。
+   取词：本片段不经 shell.Prepare，t 由调用点注入（content/inbound/http/article_import.go）；
+   带计数的整句（CountText）在 Go 侧用 i18n.FillTranslate 拼 —— 模板拿不到填充函数，
+   而「3 个组件」与「3 components」语序不同，拆成前后缀会让英文那半落到空串上。 *}
+{{tr := .["t"]}}
 {{if .Err != ""}}
 <p class="badge badge-warning">{{.Err}}</p>
 {{else if .Preview.OK}}
-<p class="hint">转换结果：<strong>{{.Preview.NodeCount}}</strong> 个组件</p>
+<p class="hint">{{.Preview.CountText}}</p>
 <div class="action-row">
     {{range _, t := .Preview.Types}}
     <span class="badge badge-mute">{{t.Label}} × {{t.Count}}</span>
     {{end}}
 </div>
 {{if .Preview.Lossless}}
-<p class="badge badge-success">无损转换：这些内容都能在画布里继续编辑</p>
+<p class="badge badge-success">{{tr("admin.article.import.lossless", "无损转换：这些内容都能在画布里继续编辑")}}</p>
 {{else}}
-<p class="badge badge-warning">有损转换：下面这些内容在导入时发生了降级</p>
+<p class="badge badge-warning">{{tr("admin.article.import.lossy", "有损转换：下面这些内容在导入时发生了降级")}}</p>
 <ul class="hint">
     {{range _, w := .Preview.Warnings}}
     <li><code>{{w.Tag}}</code> · {{w.Action}} —— {{w.Detail}}</li>
@@ -22,5 +26,5 @@
 </ul>
 {{end}}
 {{else}}
-<p class="hint">还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。</p>
+<p class="hint">{{tr("admin.article.import.empty", "还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。")}}</p>
 {{end}}

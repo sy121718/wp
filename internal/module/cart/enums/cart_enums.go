@@ -15,6 +15,18 @@ const (
 	MsgCartCleared = "cart.msg.cleared"
 )
 
+// 支付回调的响应消息（回给**通道**，不是访客页文案）。
+//
+// 与其它消息同口径：值是 i18n key，响应层按请求语言查表；未命中时原样返回 key，
+// 问题可见。原先这三句是 handler / service 里硬编码的中文。
+const (
+	MsgCallbackReceived    = "cart.msg.callbackReceived"
+	MsgCallbackApplied     = "cart.msg.callbackApplied"
+	MsgCallbackUnpaid      = "cart.msg.callbackUnpaid"
+	MsgCallbackNeedsReview = "cart.msg.callbackNeedsReview"
+	MsgCallbackAlreadyPaid = "cart.msg.callbackAlreadyPaid"
+)
+
 // 参数与校验。
 const (
 	ErrInvalidParam    = "cart.err.invalidParam"

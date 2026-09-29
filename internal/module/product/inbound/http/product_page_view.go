@@ -9,10 +9,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	inventorydto "go_wp/internal/module/inventory/dto"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/money"
@@ -165,13 +166,13 @@ func isBundleProduct(productType string) bool {
 func bundleSourceKindLabel(tr func(key, fallback string) string, kind string) string {
 	switch kind {
 	case productenums.BundleSourceProduct:
-		return tr("admin.product_bundle.source.product", "从商品导入")
+		return tr(productenums.ProductBundleSourceProduct, "从商品导入")
 	case productenums.BundleSourceWarehouse:
-		return tr("admin.product_bundle.source.warehouse", "从仓库选")
+		return tr(productenums.ProductBundleSourceWarehouse, "从仓库选")
 	case productenums.BundleSourceAttributes:
-		return tr("admin.product_bundle.source.attributes", "自选属性组合")
+		return tr(productenums.ProductBundleSourceAttributes, "自选属性组合")
 	default:
-		return tr("admin.product_bundle.source.none", "手工指定")
+		return tr(productenums.ProductBundleSourceNone, "手工指定")
 	}
 }
 
@@ -183,10 +184,10 @@ func bundleSourceLabel(tr func(key, fallback string) string, o productdto.Bundle
 	label := bundleSourceKindLabel(tr, strings.TrimSpace(o.SourceKind))
 	parts := make([]string, 0, 2)
 	if sku := strings.TrimSpace(o.WarehouseSKU); sku != "" {
-		parts = append(parts, tr("admin.product_bundle.source.warehouseSkuLabel", "仓库 SKU")+" "+sku)
+		parts = append(parts, tr(productenums.ProductBundleSourceWarehouseSKULabel, "仓库 SKU")+" "+sku)
 	}
 	if ext := strings.TrimSpace(o.ExternalSKU); ext != "" {
-		parts = append(parts, tr("admin.product_bundle.source.externalSkuLabel", "外部编码")+" "+ext)
+		parts = append(parts, tr(productenums.ProductBundleSourceExternalSKULabel, "外部编码")+" "+ext)
 	}
 	if len(parts) == 0 {
 		return label
@@ -273,7 +274,8 @@ func (h *productPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 //
 // 除展示用的 Label 外还带上 Code 与 Name：列表「库存」列的分仓明细要按**工程仓库清单**
 // 逐仓显示三态（服务端只返回有库存行的仓，「这个仓没有这一行」= 未入库，是页面才知道的事实）。
-func (h *productPageHandle) warehouseOptions(ctx context.Context, projectID string) (out []gin.H, err error) {
+func (h *productPageHandle) warehouseOptions(ctx context.Context, projectID string,
+	tr func(key, fallback string) string) (out []gin.H, err error) {
 	out = []gin.H{}
 	if h.inventories == nil || projectID == "" {
 		return out, nil
@@ -285,7 +287,9 @@ func (h *productPageHandle) warehouseOptions(ctx context.Context, projectID stri
 	for _, w := range rows {
 		label := w.Name + "（" + w.Code + "）"
 		if w.IsDefault {
-			label += " · 默认仓"
+			// 默认仓后缀是**跨模块共用的词条**：真源在库存模块（enums 与词条都只有一条，
+			// 见 inventoryenums.InventoryChangeWarehouseDefaultSuffix）—— 两处显示必须同步改。
+			label += " " + tr(inventoryenums.InventoryChangeWarehouseDefaultSuffix, "· 默认仓")
 		}
 		out = append(out, gin.H{
 			"ID": w.ID, "Label": label, "Code": w.Code, "Name": w.Name,

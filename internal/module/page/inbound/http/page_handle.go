@@ -255,15 +255,24 @@ func pageErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, pageservice.ErrDraftVersionConflict),
 		errors.Is(err, pageservice.ErrPathOccupied),
-		errors.Is(err, pageservice.ErrRebuildRequired):
+		errors.Is(err, pageservice.ErrRebuildRequired),
+		// 定时上下线（PIPE-7）：正在执行的排定不能被取消 —— 与「草稿已变更」同属
+		// 「当前状态与请求冲突，刷新后重试」，而不是调用方写错了参数。
+		errors.Is(err, pageservice.ErrScheduleOccupied),
+		errors.Is(err, pageservice.ErrScheduleRunning):
 		return http.StatusConflict
+	case errors.Is(err, pageservice.ErrScheduleNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, pageservice.ErrInvalidParam),
 		errors.Is(err, pageservice.ErrInvalidKind),
 		errors.Is(err, pageservice.ErrInvalidDocument),
 		errors.Is(err, pageservice.ErrInvalidPath),
 		// DB-009 第三批：跨工程扇出入口在「工程表读不到 / 一个工程都没有」时显式失败，
 		// 这是调用环境的问题（400）而不是内部故障（500）—— 它不该被兜底文案吞掉。
-		errors.Is(err, pageservice.ErrProjectRequired):
+		errors.Is(err, pageservice.ErrProjectRequired),
+		// 定时上下线（PIPE-7）：排定时间在过去 / 动作不在白名单内都属于请求本身不合法。
+		errors.Is(err, pageservice.ErrScheduleInPast),
+		errors.Is(err, pageservice.ErrScheduleActionInvalid):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
@@ -271,18 +280,24 @@ func pageErrorStatus(err error) int {
 }
 
 // pageErrorMessage 把 service 错误映射为响应消息：
-// 已知业务错误（sentinel）其 Error() 即 pageenums 文案，直接下发；
-// 未知系统错误（pageErrorStatus 归为 500）改用兜底文案下发，原文只进日志，
-// 避免 err.Error() 把内部细节（SQL 错误、连接信息）泄露给客户端。
+// 已知业务错误（sentinel）按当前语言给出文案 —— **与页面出口（pageFacingText）同一判据、
+// 同一明细协议**，两个出口对同一个错误给出同一个结论；未知系统错误（pageErrorStatus 归为 500）
+// 改用兜底文案下发，原文只进日志，避免 err.Error() 把内部细节（SQL 错误、连接信息）泄露给客户端。
+//
+// 改造前这里是非 500 直接 `err.Error()`：业务 key 是裸 key（英文界面显示 ErrInvalidDocument）、
+// 明细是 builder 的中文原文（`ErrInvalidDocument: 顶级节点 0: 组件树深度 11 超过上限 10…`）。
+// 现在借用 pageFacingText 把两截都按当前语言渲染，明细不是 ErrorDetail 词条时丢弃并落日志。
 func pageErrorMessage(c *gin.Context, err error) string {
-	if pageErrorStatus(err) == http.StatusInternalServerError {
+	if text, ok := pageFacingText(c, err); ok {
+		return text
+	}
+	if err != nil {
 		// 结构化日志带 user_id：事后才能回答「谁点了哪个按钮」。
 		logger.Scene(pageErrScene).
 			With("user_id", shell.CurrentUserID(c)).
 			Error(err, "page 接口内部错误")
-		return pageenums.MsgInternalError
 	}
-	return err.Error()
+	return pageenums.MsgInternalError
 }
 
 // ListSiteSlots 列出系统页面槽位及其绑定状态（含未绑定的槽位）。

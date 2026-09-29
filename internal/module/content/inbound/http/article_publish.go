@@ -26,18 +26,47 @@ import (
 )
 
 // 发布区块的提示文案（同样登记在白名单里，因为它们会进 ?ok= / ?err=）。
+// 本页文案的常量值是 **i18n key**，中文兜底在同文件的 articlePublishFacingMessages ——
+// 两者成对，取词统一走 articlePublishTextOf / articlePublishHintText。
 const (
-	articlePublishedText      = "已发布。文章详情页已上线，访问面立即可见。"
-	articleRebuiltText        = "已重新发布。原路径的产物已更新。"
-	articleURLUpdatedText     = "已改 URL。新路径已上线，旧路径按你的选择处理（301 跳转或直接失效）。"
-	articleNoProjectText      = "请先选择这篇文章属于哪个站点工程。"
-	articleNoURLPathText      = "请填写文章详情页的访问路径。"
-	articleNoTemplatePickText = "请选择一套文章详情模板。"
+	articlePublishedText      = "admin.article.publish.ok.published"
+	articleRebuiltText        = "admin.article.publish.ok.rebuilt"
+	articleURLUpdatedText     = "admin.article.publish.ok.urlUpdated"
+	articleNoProjectText      = "admin.article.publish.err.noProject"
+	articleNoURLPathText      = "admin.article.publish.err.noURLPath"
+	articleNoTemplatePickText = "admin.article.publish.err.noTemplatePick"
 	// articleNoTemplateHint 没有 article 模板时的出口说明（不含任何按钮）。
-	articleNoTemplateHint = "这个站还没有「文章详情模板」（entityType=article 的内容模板），" +
-		"所以现在没有东西可以渲染这篇文章。模板的建立与内容编辑链路目前没有后台入口，" +
-		"需要先建一套 article 类型的内容模板，再回来发布。"
+	articleNoTemplateHint = "admin.article.publish.hint.noTemplate"
+	// articlePublishUnavailableText 发布能力未装配时的出口文案。
+	articlePublishUnavailableText = "admin.article.publish.err.unavailable"
+	// articlePublishDepsMissingText 发布能力未装配（装配缺陷）的就地说明。
+	articlePublishDepsMissingText = "admin.article.publish.err.depsMissing"
+	// articleNewPathRequiredText 改 URL 时没填新路径。
+	articleNewPathRequiredText = "admin.article.publish.err.newPathRequired"
+	// articleSaveFirstHint 还没有实体时的发布区块提示。
+	articleSaveFirstHint = "admin.article.publish.hint.saveFirst"
 )
+
+// articlePublishTextOf 本页文案的当前语言文本（key + 白名单里的中文兜底）。
+//
+// 只留这一个取词出口：各写一份中文的下场是「词条改了、兜底没改」，
+// 页面上时而译文时而旧中文，而两处都不报错。
+func articlePublishTextOf(c *gin.Context, key string) string {
+	return shell.TranslateFor(c)(key, articlePublishFacingMessages[key])
+}
+
+// articlePublishHintText 发布区块提示的取词（可选变参 tr：区块装配在无 gin.Context 的路径上）。
+func articlePublishHintText(tr func(key, fallback string) string, key string) string {
+	return tr(key, articlePublishFacingMessages[key])
+}
+
+// articlePublishTr 取词函数的可选变参：不传时原样返回兜底文案。
+func articlePublishTr(trs []func(key, fallback string) string) func(key, fallback string) string {
+	if len(trs) > 0 && trs[0] != nil {
+		return trs[0]
+	}
+	return func(_, fallback string) string { return fallback }
+}
 
 // articlePublishFacingMessages 发布流程可展示的文案白名单。
 //
@@ -56,12 +85,17 @@ var articlePublishFacingMessages = map[string]string{
 	presentationenums.ErrInvalidPath:          "访问路径不合法：必须以 / 开头，且不含空格、引号与 .. 路径段。",
 	presentationenums.ErrSamePath:             "新路径与当前路径相同，没有需要修改的地方。",
 	presentationenums.ErrPathOccupied:         "这个路径已被其他页面或详情页占用，换一个再试。",
-	articlePublishedText:                      articlePublishedText,
-	articleRebuiltText:                        articleRebuiltText,
-	articleURLUpdatedText:                     articleURLUpdatedText,
-	articleNoProjectText:                      articleNoProjectText,
-	articleNoURLPathText:                      articleNoURLPathText,
-	articleNoTemplatePickText:                 articleNoTemplatePickText,
+	articlePublishedText:                      "已发布。文章详情页已上线，访问面立即可见。",
+	articleRebuiltText:                        "已重新发布。原路径的产物已更新。",
+	articleURLUpdatedText:                     "已改 URL。新路径已上线，旧路径按你的选择处理（301 跳转或直接失效）。",
+	articleNoProjectText:                      "请先选择这篇文章属于哪个站点工程。",
+	articleNoURLPathText:                      "请填写文章详情页的访问路径。",
+	articleNoTemplatePickText:                 "请选择一套文章详情模板。",
+	articleNoTemplateHint:                     "这个站还没有「文章详情模板」（entityType=article 的内容模板），所以现在没有东西可以渲染这篇文章。模板的建立与内容编辑链路目前没有后台入口，需要先建一套 article 类型的内容模板，再回来发布。",
+	articlePublishUnavailableText:             "发布能力未装配，请联系管理员。",
+	articlePublishDepsMissingText:             "发布能力未装配（装配缺陷），本页只显示文章内容。",
+	articleNewPathRequiredText:                "请填写新的访问路径。",
+	articleSaveFirstHint:                      "先保存这篇文章，再回来看发布状态。",
 }
 
 // ArticlePublish 首次发布文章详情页（POST /admin/articles/publish）。
@@ -72,15 +106,15 @@ func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
 	templateID := strings.TrimSpace(c.PostForm("templateId"))
 
 	if h.instances == nil {
-		articleRedirectEdit(c, id, "", "发布能力未装配，请联系管理员。")
+		articleRedirectEdit(c, id, "", articlePublishTextOf(c, articlePublishUnavailableText))
 		return
 	}
 	if projectID == "" {
-		articleRedirectEdit(c, id, "", articleNoProjectText)
+		articleRedirectEdit(c, id, "", articlePublishTextOf(c, articleNoProjectText))
 		return
 	}
 	if urlPath == "" {
-		articleRedirectEdit(c, id, "", articleNoURLPathText)
+		articleRedirectEdit(c, id, "", articlePublishTextOf(c, articleNoURLPathText))
 		return
 	}
 	if !strings.HasPrefix(urlPath, "/") {
@@ -95,7 +129,7 @@ func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
 		articleRedirectEdit(c, id, "", articlePublishFacingError(c, err))
 		return
 	}
-	articleRedirectEdit(c, id, articlePublishedText, "")
+	articleRedirectEdit(c, id, articlePublishTextOf(c, articlePublishedText), "")
 }
 
 // ArticleRebuild 重新发布（POST /admin/articles/rebuild）。
@@ -105,14 +139,14 @@ func (h *articlePageHandle) ArticlePublish(c *gin.Context) {
 func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	if h.instances == nil {
-		articleRedirectEdit(c, id, "", "发布能力未装配，请联系管理员。")
+		articleRedirectEdit(c, id, "", articlePublishTextOf(c, articlePublishUnavailableText))
 		return
 	}
 	if _, err := h.instances.Rebuild(c.Request.Context(), &presentationdto.RebuildReq{EntityID: id}); err != nil {
 		articleRedirectEdit(c, id, "", articlePublishFacingError(c, err))
 		return
 	}
-	articleRedirectEdit(c, id, articleRebuiltText, "")
+	articleRedirectEdit(c, id, articlePublishTextOf(c, articleRebuiltText), "")
 }
 
 // ArticleUpdateURL 修改已发布文章详情页的线上路径（POST /admin/articles/url）。
@@ -123,12 +157,12 @@ func (h *articlePageHandle) ArticleRebuild(c *gin.Context) {
 func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	if h.instances == nil {
-		articleRedirectEdit(c, id, "", "发布能力未装配，请联系管理员。")
+		articleRedirectEdit(c, id, "", articlePublishTextOf(c, articlePublishUnavailableText))
 		return
 	}
 	newPath := strings.TrimSpace(c.PostForm("newPath"))
 	if newPath == "" {
-		articleRedirectEdit(c, id, "", "请填写新的访问路径。")
+		articleRedirectEdit(c, id, "", articlePublishTextOf(c, articleNewPathRequiredText))
 		return
 	}
 	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationdto.UpdateURLReq{
@@ -140,18 +174,20 @@ func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
 		articleRedirectEdit(c, id, "", articlePublishFacingError(c, err))
 		return
 	}
-	articleRedirectEdit(c, id, articleURLUpdatedText, "")
+	articleRedirectEdit(c, id, articlePublishTextOf(c, articleURLUpdatedText), "")
 }
 
 // articlePublishView 组装发布区块渲染数据（纯函数，取数在 articlePublishViewData）。
 //
 // id 为空（新建中）时不查任何东西：还没有实体，发布无从谈起。
-func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []gin.H) gin.H {
+func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []gin.H,
+	trs ...func(key, fallback string) string) gin.H {
+	tr := articlePublishTr(trs)
 	if strings.TrimSpace(id) == "" {
-		return articlePublishUnavailable("先保存这篇文章，再回来看发布状态。")
+		return articlePublishUnavailable(articlePublishHintText(tr, articleSaveFirstHint))
 	}
 	if h.instances == nil {
-		return articlePublishUnavailable("发布能力未装配（装配缺陷），本页只显示文章内容。")
+		return articlePublishUnavailable(articlePublishHintText(tr, articlePublishDepsMissingText))
 	}
 
 	out := articlePublishUnavailable("")
@@ -175,7 +211,7 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 	templates := articleTemplateOptions(ctx, h)
 	out["Templates"] = templates
 	out["HasTemplates"] = len(templates) > 0
-	out["NoTemplateHint"] = articleNoTemplateHint
+	out["NoTemplateHint"] = articlePublishHintText(tr, articleNoTemplateHint)
 	return out
 }
 
@@ -268,7 +304,7 @@ func articlePublishFacingError(c *gin.Context, err error) string {
 			return msg
 		}
 	}
-	if msg := articleFacingText(raw); msg != "" {
+	if msg := articleFacingText(c, raw); msg != "" {
 		return msg
 	}
 	// 未命中：原文只进日志（带 user_id），对外给归口文案。

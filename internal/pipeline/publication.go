@@ -32,6 +32,14 @@ type PublicationState struct {
 	Locator *Locator
 	// Redirect 重定向指令（Kind 为 redirect 时非空）。
 	Redirect *RedirectDirective
+	// Guard 访问面守卫元数据（PIPE-6，Kind 为 page 且产物带守卫时非空）。
+	//
+	// 刻意做成 Kind 之外的**附加字段**而不是新的 PublicationKind 取值：
+	// Kind 被 presentation_ledger.go 与 page_publish_recover.go 按
+	// `Kind != PublicationPage` 判等，多一个取值会让那两条对账 / 恢复路径
+	// 把带守卫的页面误判成「不是页面」（编译期不报错，线上表现为对账漏项、
+	// 恢复流程跳过这一类页面）。守卫是页面产物上的一个属性，不是另一种路由状态。
+	Guard *GuardMeta
 }
 
 // PublicationStore 访问面 URL 激活契约（docs/03-pipeline.md §5）。
@@ -210,7 +218,17 @@ func (s *LocalPublicationStore) Inspect(path string) (*PublicationState, error) 
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	return &PublicationState{Kind: PublicationPage, Locator: loc}, nil
+	// 守卫判定（PIPE-6）：目标目录存在 guard.json 即受限。只看文件系统
+	// （与 redirect 同一口径：不查库、不读路由表）。
+	//
+	// 元数据存在但解析失败 → 返回 error（与 readRedirect 一致）：那是一个需要
+	// 人看的异常状态。访问面不依赖这里的结论 —— 它在中间件里独立判定，
+	// 且解析失败时 fail closed（当受限处理），不会因为 Inspect 报错而放行内容。
+	g, gerr := ReadGuardMeta(resolved)
+	if gerr != nil {
+		return nil, gerr
+	}
+	return &PublicationState{Kind: PublicationPage, Locator: loc, Guard: g}, nil
 }
 
 // readRedirect 读取目标目录中的 redirect.json。

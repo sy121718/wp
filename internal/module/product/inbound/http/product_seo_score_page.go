@@ -15,6 +15,8 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
+	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 // entityTypeProduct 发布实例的实体类型标识（与 presentation 的实例登记一致）。
@@ -43,12 +45,12 @@ func (h *productPageHandle) ProductScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	id := strings.TrimSpace(c.PostForm("productId"))
 	if id == "" {
-		renderScoreEmpty(c, "缺少商品，无法评分")
+		renderScoreEmpty(c, productenums.SEOEmptyMissingProduct, "缺少商品，无法评分")
 		return
 	}
 	detail, err := h.products.Get(ctx, &productdto.GetReq{ID: id})
 	if err != nil || detail == nil {
-		renderScoreEmpty(c, "读不到这个商品，无法评分")
+		renderScoreEmpty(c, productenums.SEOEmptyProductUnreadable, "读不到这个商品，无法评分")
 		return
 	}
 	// 线上路径与「产物是否已带 canonical / JSON-LD」是同一个问题的两面：
@@ -80,12 +82,12 @@ func (h *productPageHandle) ProductCategoryScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	id := strings.TrimSpace(c.PostForm("id"))
 	if id == "" {
-		renderScoreEmpty(c, "缺少分类，无法评分")
+		renderScoreEmpty(c, productenums.SEOEmptyMissingCategory, "缺少分类，无法评分")
 		return
 	}
 	node, err := h.products.GetCategory(ctx, &productdto.GetCategoryReq{ID: id})
 	if err != nil || node == nil {
-		renderScoreEmpty(c, "读不到这个分类，无法评分")
+		renderScoreEmpty(c, productenums.SEOEmptyCategoryUnreadable, "读不到这个分类，无法评分")
 		return
 	}
 	instPath := h.instancePath(ctx, "product_category", node.ID)
@@ -112,12 +114,12 @@ func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	id := strings.TrimSpace(c.PostForm("id"))
 	if id == "" {
-		renderScoreEmpty(c, "缺少品牌，无法评分")
+		renderScoreEmpty(c, productenums.SEOEmptyMissingBrand, "缺少品牌，无法评分")
 		return
 	}
 	brand, err := h.products.GetBrand(ctx, &productdto.GetBrandReq{ID: id})
 	if err != nil || brand == nil {
-		renderScoreEmpty(c, "读不到这个品牌，无法评分")
+		renderScoreEmpty(c, productenums.SEOEmptyBrandUnreadable, "读不到这个品牌，无法评分")
 		return
 	}
 	instPath := h.instancePath(ctx, "product_brand", brand.ID)
@@ -140,17 +142,25 @@ func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个入口共用同一段流程）。
 func (h *productPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
 	res := scoring.ScoreEntityPage(in)
-	dups := scoring.DuplicateTitles(scoring.EntityTitle(in), h.seoTitleIndex(c.Request.Context(), projectID), selfID)
-	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": entityScoreView(in, res, dups)})
+	tr := shell.TranslateFor(c)
+	dups := scoring.DuplicateTitles(scoring.EntityTitle(in), h.seoTitleIndex(c.Request.Context(), projectID, tr), selfID)
+	// t 是片段模板的取词函数：seo_score 片段不经 shell.Prepare，缺 t 时 Jet 把取词调用
+	// 求值成空串（不报错、不 500、不记日志）—— 整片提示会变成空白。
+	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": entityScoreView(tr, in, res, dups), "t": tr})
 }
 
 // renderScoreEmpty 空态片段（读不到实体时不返回 500：面板显示一句可读的话即可）。
-func renderScoreEmpty(c *gin.Context, msg string) {
-	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": scoreView{Empty: msg}})
+//
+// key + 中文兜底由调用点给（形状与模块其它文案一致）：片段里的每一句话都要能按语言取词。
+func renderScoreEmpty(c *gin.Context, key, fallback string) {
+	tr := shell.TranslateFor(c)
+	msg := tr(key, fallback)
+	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": scoreView{Empty: msg}, "t": tr})
 }
 
 // entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。
-func entityScoreView(in *scoring.EntityPageInput, res *scoring.Result, dups []scoring.TitleEntry) scoreView {
+func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPageInput, res *scoring.Result,
+	dups []scoring.TitleEntry) scoreView {
 	sv := scoreView{OK: true}
 	if res != nil {
 		sv.Total = res.Total
@@ -161,17 +171,25 @@ func entityScoreView(in *scoring.EntityPageInput, res *scoring.Result, dups []sc
 			sv.ProfileType = res.Profile.Type
 			sv.ProfileReason = res.Profile.Reason
 		}
+		// 未达标行的整句模板：标签 / 实测 / 基准 / 建议四段都是数据，句子的语序与标点
+		// 由词条决定（英文的冒号与括号与中文不同），命名占位符 + FillTranslate 负责填充
+		//（词条被写坏时自动回落下面那句中文兜底）。
 		for _, sec := range res.Sections {
 			item := scoreSectionView{
 				Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
-				ColorLabel: seoColorLabels[sec.Color],
+				ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
 			}
 			for _, ck := range sec.Checks {
 				if ck.Score >= ck.Max {
 					continue
 				}
 				item.Issues = append(item.Issues, scoreIssueView{
-					Text:   ck.Label + "：" + ck.Actual + "（基准 " + ck.Benchmark + "）→ " + ck.Hint,
+					Text: i18n.FillTranslate(tr, productenums.SEOIssueLine,
+						"{label}：{actual}（基准 {benchmark}）→ {hint}",
+						map[string]string{
+							"label": ck.Label, "actual": ck.Actual,
+							"benchmark": ck.Benchmark, "hint": ck.Hint,
+						}),
 					Target: ck.Target,
 				})
 			}
@@ -181,20 +199,20 @@ func entityScoreView(in *scoring.EntityPageInput, res *scoring.Result, dups []sc
 	title := scoring.EntityTitle(in)
 	sv.SerpTitle = title
 	if sv.SerpTitle == "" {
-		sv.SerpTitle = "（未填写标题）"
+		sv.SerpTitle = tr(productenums.SEOSerpTitleEmpty, "（未填写标题）")
 	} else {
 		sv.SerpTitle = seoscore.TruncateDisplayWidth(sv.SerpTitle, 60)
 	}
 	sv.SerpURL = in.URL
 	if sv.SerpURL == "" {
-		sv.SerpURL = "（线上路径未知）"
+		sv.SerpURL = tr(productenums.SEOSerpURLEmpty, "（线上路径未知）")
 	}
 	sv.SerpDesc = strings.TrimSpace(in.SEODescription)
 	if sv.SerpDesc == "" {
 		sv.SerpDesc = strings.TrimSpace(in.Description)
 	}
 	if sv.SerpDesc == "" {
-		sv.SerpDesc = "（未填写描述）"
+		sv.SerpDesc = tr(productenums.SEOSerpDescEmpty, "（未填写描述）")
 	}
 	// title 唯一性（SEO-018 编辑期轻量版）：结论形状与发布侧体检一致 —— 列出全部冲突页面。
 	if len(dups) > 0 {
@@ -221,7 +239,8 @@ func entityScoreView(in *scoring.EntityPageInput, res *scoring.Result, dups []sc
 //   - 分类 / 品牌：它们是分类法，没有发布状态，随商品上线 —— 全量参与比对；
 //   - 页面：草稿文档里看不出发布与否，按全部页面参与（宁可多提示一次，
 //     也不要漏掉一个即将上线的重复标题）。
-func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string) []scoring.TitleEntry {
+func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string,
+	tr func(key, fallback string) string) []scoring.TitleEntry {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil
@@ -292,7 +311,12 @@ func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string)
 				// contents 列表接口没有工程过滤参数，标题索引据此标注来源：
 				// 多工程部署时别的工程的文章也会进这份索引，宁可报一次重复让人核对，
 				// 也好过因为查不到而假报「没有重复」。
-				out = append(out, scoring.TitleEntry{Title: title, Page: "文章 " + r.Slug, ID: r.ID})
+				out = append(out, scoring.TitleEntry{
+					Title: title,
+					Page: i18n.FillTranslate(tr, productenums.SEOIndexArticle, "文章 {slug}",
+						map[string]string{"slug": r.Slug}),
+					ID: r.ID,
+				})
 			}
 		}
 	}

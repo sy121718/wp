@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	productcontract "go_wp/internal/module/product/contract"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
@@ -139,19 +140,23 @@ func (d *productTranslationsData) sourceOf(contextName, hash string) (sourceCand
 //  1. 语境必须是本模块契约声明的可翻译字段（"实体类型.字段名"）；
 //  2. 原文参与翻译（i18n.ShouldTranslateContent，纯数字/纯符号/空白被拒）；
 //  3. 富文本字段的译文形态与原文一致（是否含 HTML 标签必须相同）。
+//
+// 返回值是**词条 key**（不是中文句子）：它们经 translationMsg 取词后进页面的错误列表，
+// 中文兜底登记在 product_page_shared.go 的 productTranslationMsgFallback 里 ——
+// 写死中文的话英文工作台上永远是中文，而这几条恰好是运营最常撞上的行级结论。
 func validateProductTarget(contextName string, source sourceCandidate, target string) string {
 	entityType, field, ok := parseContextField(contextName)
 	if !ok || !productcontract.IsTranslatableField(entityType, field) {
-		return "语境非法：不是商品域的可翻译字段"
+		return msgProductTargetContextInvalid
 	}
 	if !i18n.ShouldTranslateContent(source.SourceText) {
-		return "原文不参与翻译（空串、纯数字或纯符号）"
+		return msgProductTargetSourceSkipped
 	}
 	if strings.TrimSpace(target) == "" {
-		return "译文不能为空"
+		return msgProductTargetEmpty
 	}
 	if source.Rich && hasMarkup(source.SourceText) != hasMarkup(target) {
-		return "译文形态与原文不一致：原文含 HTML 标签时译文也必须含标签"
+		return msgProductTargetShapeMismatch
 	}
 	return ""
 }
@@ -171,9 +176,23 @@ func parseContextField(contextName string) (entityType, field string, ok bool) {
 	return contextName[:i], contextName[i+1:], true
 }
 
+// 商品翻译工作台的行级校验结论：值是 i18n key（中文兜底见 productTranslationMsgFallback）。
+const (
+	msgProductTargetContextInvalid = "admin.product_translations.err.contextInvalid"
+	msgProductTargetSourceSkipped  = "admin.product_translations.err.sourceSkipped"
+	msgProductTargetEmpty          = "admin.product_translations.err.targetEmpty"
+	msgProductTargetShapeMismatch  = "admin.product_translations.err.shapeMismatch"
+)
+
 // build 组装工作台数据（工程 + 商品 + 语言 + 候选 + 现有译文）。
-func (h *productTranslationHandle) build(ctx context.Context, projectID, productID, wantLang string) (data *productTranslationsData, err error) {
-	data = &productTranslationsData{Title: "商品多语言", Menu: "products", ProjectID: projectID, ProductID: productID}
+//
+// tr 由调用点给（页面标题等文案按请求语言渲染）。
+func (h *productTranslationHandle) build(ctx context.Context, projectID, productID, wantLang string,
+	tr func(key, fallback string) string) (data *productTranslationsData, err error) {
+	data = &productTranslationsData{
+		Title: tr(productenums.ProductTranslationsTitle, "商品多语言"),
+		Menu:  "products", ProjectID: projectID, ProductID: productID,
+	}
 
 	options, projectIDs, oerr := h.projectOptions(ctx, projectID)
 	if oerr != nil {
@@ -230,7 +249,7 @@ func (h *productTranslationHandle) build(ctx context.Context, projectID, product
 		}
 	}
 
-	data.Groups = groupCandidates(cands, targets)
+	data.Groups = groupCandidates(tr, cands, targets)
 	for _, g := range data.Groups {
 		for _, r := range g.Rows {
 			data.Total++
@@ -244,7 +263,9 @@ func (h *productTranslationHandle) build(ctx context.Context, projectID, product
 }
 
 // groupCandidates 按实体分组并挂上现有译文。
-func groupCandidates(cands []productcontract.TranslationCandidate, targets map[string]i18n.ContentTargetInfo) []productTranslationGroup {
+//
+// tr 由调用点传：分组标题里的实体类型名是展示文案（后台翻译页），按请求语言取词。
+func groupCandidates(tr func(key, fallback string) string, cands []productcontract.TranslationCandidate, targets map[string]i18n.ContentTargetInfo) []productTranslationGroup {
 	order := make([]string, 0, len(cands))
 	index := map[string]*productTranslationGroup{}
 	for _, c := range cands {
@@ -255,7 +276,7 @@ func groupCandidates(cands []productcontract.TranslationCandidate, targets map[s
 				Key:        key,
 				EntityType: c.EntityType,
 				EntityID:   c.EntityID,
-				Title:      productcontract.EntityTypeLabel(c.EntityType) + " · " + c.EntityName,
+				Title:      productcontract.EntityTypeLabel(tr, c.EntityType) + " · " + c.EntityName,
 				Subtitle:   c.EntityType,
 			}
 			index[key] = g

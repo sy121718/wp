@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	navigationenums "go_wp/internal/module/navigation/enums"
+	"go_wp/pkg/i18n"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -139,10 +140,12 @@ func navInvalidParamText(c *gin.Context) string {
 // navNoticeNoSourcePicked 「从已有内容添加」一项都没勾时的提示。
 //
 // 这是该抽屉最常见的一条路径（候选复选框默认全不勾，用户直接点「加入菜单」）。
-// 文案与 navigationsBulkResultTemplates 同形：中文常量、**写侧与读侧共用这一份字面量**，
+// 文案与 navigationsBulkResultTemplates 同形：key + 中文兜底、**写侧与读侧共用这一份**，
 // 读侧经 shell.NoticeTemplate 归一后整体比对（另抄一份中文的失配是静默的 —— 提示发出来了，
 // 页面上却不显示）。模板侧另有「本组没有可加入项时按钮置灰」，这里是服务端兜底。
-const navNoticeNoSourcePicked = "请至少勾选一项要加入菜单的内容。"
+var navNoticeNoSourcePicked = navText{
+	Key: "admin.navigations.notice.noSourcePicked", Fallback: "请至少勾选一项要加入菜单的内容。",
+}
 
 // —— 读侧回执的收口（?err= / ?done=）——
 //
@@ -152,15 +155,33 @@ const navNoticeNoSourcePicked = "请至少勾选一项要加入菜单的内容�
 // /admin/navigations?err=任意文案 就能在页面上塞一条顶着「上一次操作未完成」样式的伪造消息。
 // 查询参数与响应体、模板数据一样**不是可信边界**。
 
+// navText 一条待取词文案：i18n key + 中文兜底（兜底同时是词条缺失时的显示值）。
+//
+// 本包所有「Go 侧拼出来、会显示在页面上」的文案都走它 —— 文案与 key 形影不离，
+// 不会出现「改了文案忘了改 key」而静默退回兜底/裸 key 的情况。
+type navText struct{ Key, Fallback string }
+
+// navTextOf 取一条文案的当前语言文本。
+func navTextOf(c *gin.Context, t navText) string {
+	return shell.TranslateFor(c)(t.Key, t.Fallback)
+}
+
 // navigationsBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
 //
-// **写侧与读侧共用这一份字面量**：写侧 navigationsBulkDeleteResult 用它 Sprintf，
-// 读侧 navigationNoticeTexts 用它（经 shell.NoticeTemplate 归一）判定 URL 回显。
-var navigationsBulkResultTemplates = []string{
-	"没有勾选任何菜单项，列表未改动。",
-	"已删除 %d 个菜单项。",
-	"%d 个菜单项都未能删除，列表未改动。",
-	"已删除 %d 个，%d 个未能删除（可能已被删除）。",
+// **写侧与读侧共用这一份**（key + 中文兜底各一份）：写侧 navigationsBulkDeleteResult 用它
+// Sprintf，读侧 navigationNoticeTexts 用它（经 shell.NoticeTemplate 归一）判定 URL 回显。
+// 两侧都经 navTextOf 取当前语言模板，所以语言切到英文时读写仍然一致。
+var navigationsBulkResultTemplates = []navText{
+	{"admin.navigations.bulkResult.noneSelected", "没有勾选任何菜单项，列表未改动。"},
+	{"admin.navigations.bulkResult.allDeleted", "已删除 {count} 个菜单项。"},
+	{"admin.navigations.bulkResult.allSkipped", "{count} 个菜单项都未能删除，列表未改动。"},
+	{"admin.navigations.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（可能已被删除）。"},
+}
+
+// navBulkFilled 把批量结论文案填成成品句子（占位符是命名形态 `{count}`，
+// 不用 Sprintf：词条可被运营在后台改，裸 % 与中英参数错位都会让它输出乱码）。
+func navBulkFilled(c *gin.Context, t navText, params map[string]string) string {
+	return i18n.FillTranslate(shell.TranslateFor(c), t.Key, t.Fallback, params)
 }
 
 // navigationNoticeTexts 本页可以原样展示的回执文案（当前语言）。
@@ -180,9 +201,11 @@ func navigationNoticeTexts(c *gin.Context) []string {
 	)
 	// 参数级提示：navInvalidParamText 的产物（ErrInvalidParam 的译文）已在上面 enums
 	// 白名单里；「未勾选」是本地常量，与批量结论模板同一读法（归一后整体比对）。
-	out = append(out, shell.NoticeTemplate(navNoticeNoSourcePicked))
+	out = append(out, shell.NoticeTemplate(navTextOf(c, navNoticeNoSourcePicked)))
 	for _, tpl := range navigationsBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
+		// 占位符先填成 "0"（写侧填的是真实计数，数字归一后两者可比），
+		// 再走 shell.NoticeTemplate 的 %s/%d 归一 —— 两种占位形态在这一步合流。
+		out = append(out, shell.NoticeTemplate(i18n.ZeroNamedPlaceholders(navTextOf(c, tpl))))
 	}
 	return out
 }

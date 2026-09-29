@@ -32,7 +32,13 @@ import (
 // 通道标识与展示名（落 orders.payment_method / payment_method_title）。
 const (
 	methodCode = "paypal"
-	methodName = "PayPal（模拟）"
+	// methodName 通道展示名；methodNameKey 是它的词条 key（key + 中文兜底成对）。
+	//
+	// 展示名会被**写进 orders.payment_method_title** —— 那是「这单当时是怎么付的」快照，
+	// 历史单据的语言不该随当前界面语言变化，所以落库仍用中文兜底。
+	// key 备好供「通道名按界面语言展示」的批次使用（展示层 tr(keyName, name)）。
+	methodName    = "PayPal（模拟）"
+	methodNameKey = "cart.payment.paypalMock"
 	// idPrefix 让流水号自带「这是模拟单」的标记。
 	idPrefix = "MOCKPAYPAL-"
 )
@@ -50,8 +56,11 @@ func New(secret string) *Gateway { return &Gateway{secret: []byte(secret)} }
 // Method 通道标识。
 func (g *Gateway) Method() string { return methodCode }
 
-// Title 通道展示名。
+// Title 通道展示名（落库快照值，见 methodName 的注释）。
 func (g *Gateway) Title() string { return methodName }
+
+// TitleKey 通道展示名的词条 key（与 Title 成对：key + 中文兜底）。
+func (g *Gateway) TitleKey() string { return methodNameKey }
 
 // Charge 模拟扣款：校验入参后按订单号派生一个稳定的流水号。
 //

@@ -336,6 +336,7 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 		StartsAt:         utils.NewJSONTimePtr(e.StartsAt),
 		EndsAt:           utils.NewJSONTimePtr(e.EndsAt),
 		Status:           e.Status,
+		State:            couponState(e, now),
 		StatusLabel:      couponStatusLabel(e, now),
 		Remark:           e.Remark,
 		CreateTime:       utils.NewJSONTime(e.CreateTime),

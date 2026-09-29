@@ -38,4 +38,17 @@ const (
 
 	// MsgInternalError 块服务内部错误统一兜底提示（禁止直出 err.Error() 泄露内部细节）。
 	MsgInternalError = "MsgInternalError" // 系统内部错误，请稍后重试
+
+	// —— 点分 key 常量（新式）——
+	//
+	// 值是 sys_i18n 的 item_key（文案在迁移里），**不带 `Msg` 前缀**：本文件上面那批 `Msg*`
+	// 是老式形态（值就是常量名本身，`sys_i18n` 里存同名 key），两者混在同一个前缀下会让人
+	// 以为值也是 `MsgXxx`。点分 key 的常量按「去掉模块前缀后的语义路径」命名。
+	ImpactUnavailableNoPageCapability  = "admin.blocks.impact.unavailable.noPageCapability"  // 页面能力未装配，无法统计影响面
+	ImpactUnavailableProjectReadFailed = "admin.blocks.impact.unavailable.projectReadFailed" // 读取站点工程失败，无法统计影响面
+	RefCountUnknown                    = "admin.blocks.refCount.unknown"                    // 引用数未知
+	RefCountNone                       = "admin.blocks.refCount.none"                       // 未被页面引用
+	RefCountPages                      = "admin.blocks.refCount.pages"                      // 引用数（{count} 个页面引用）
+	UsageMore                          = "admin.blocks.usage.more"                          // 引用处数过多时的省略后缀（ 等 {count} 处）
+	ContentSavedRebuildQueued          = "admin.blocks.content.savedRebuild"                // 已保存，关联页面将标记为待重建
 )

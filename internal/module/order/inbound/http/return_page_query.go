@@ -94,17 +94,14 @@ func returnStatusBadge(status string) string {
 	return "badge-mute"
 }
 
-// returnStatusLabel 状态 → 中文标签（筛选项回显用；未知值原样返回）。
-func returnStatusLabel(status string) string {
-	for _, view := range returnStatusViews {
-		if view.Value == status {
-			return view.Label
-		}
-	}
+// returnStatusLabel 状态 → 展示标签（筛选项回显用；未知值原样返回）。
+//
+// 空状态是「不按状态筛」而不是「状态为空」：这里给「全部」，与计数条第一项同一条词条。
+func returnStatusLabel(tr translate, status string) string {
 	if strings.TrimSpace(status) == "" {
-		return "全部"
+		return orderLabelOf(tr, orderStatusAllLabel)
 	}
-	return status
+	return returnStatusText(tr, status)
 }
 
 // returnStatusNote 当前状态该做什么 / 为什么没有按钮 —— 一屏内有且只有一句说明。

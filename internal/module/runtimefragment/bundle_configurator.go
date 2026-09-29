@@ -23,6 +23,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 )
 
@@ -181,7 +182,7 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 		})
 	}
 	totalPrice := formatAmount(res.TotalPrice)
-	msg := r.tr("site.fragment.bundle.calc_ok", "已按当前数量计算套餐价")
+	msg := r.tr(rfenums.BundleCalcOk, "已按当前数量计算套餐价")
 	view := bundleResultView{
 		OK:          true,
 		Message:     msg,
@@ -209,9 +210,9 @@ func formatAmount(v float64) string {
 
 func requiredText(r *Request, required bool) string {
 	if required {
-		return r.tr("site.fragment.bundle.required", "必选")
+		return r.tr(rfenums.BundleRequired, "必选")
 	}
-	return r.tr("site.fragment.bundle.optional", "可选")
+	return r.tr(rfenums.BundleOptional, "可选")
 }
 
 // maxAttr 数量输入的 max 属性（不设上限时返回空串，模板据此省略该属性）。
@@ -224,9 +225,9 @@ func maxAttr(maxQty int) string {
 
 func maxText(r *Request, maxQty int) string {
 	if maxQty > 0 {
-		return fmt.Sprintf(r.tr("site.fragment.bundle.max_pieces", "%d 件"), maxQty)
+		return fmt.Sprintf(r.tr(rfenums.BundleMaxPieces, "%d 件"), maxQty)
 	}
-	return r.tr("site.fragment.bundle.unlimited", "不限")
+	return r.tr(rfenums.BundleUnlimited, "不限")
 }
 
 // totalHint 整单件数区间的可读描述。
@@ -235,13 +236,13 @@ func totalHint(r *Request, cfg productdto.BundleConfig) string {
 	max := cfg.MaxTotalQty
 	switch {
 	case min > 0 && max > 0:
-		return fmt.Sprintf(r.tr("site.fragment.bundle.total_range", "整单 %d ~ %d 件"), min, max)
+		return fmt.Sprintf(r.tr(rfenums.BundleTotalRange, "整单 %d ~ %d 件"), min, max)
 	case min > 0:
-		return fmt.Sprintf(r.tr("site.fragment.bundle.total_min", "整单至少 %d 件"), min)
+		return fmt.Sprintf(r.tr(rfenums.BundleTotalMin, "整单至少 %d 件"), min)
 	case max > 0:
-		return fmt.Sprintf(r.tr("site.fragment.bundle.total_max", "整单最多 %d 件"), max)
+		return fmt.Sprintf(r.tr(rfenums.BundleTotalMax, "整单最多 %d 件"), max)
 	default:
-		return r.tr("site.fragment.bundle.total_unlimited", "整单件数不限")
+		return r.tr(rfenums.BundleTotalUnlimited, "整单件数不限")
 	}
 }
 
@@ -252,28 +253,28 @@ func totalHint(r *Request, cfg productdto.BundleConfig) string {
 func bundleMessage(r *Request, code string) string {
 	switch code {
 	case productenums.ErrBundleNotConfigured:
-		return r.tr("site.fragment.bundle.not_configured", "该商品未配置可选规格")
+		return r.tr(rfenums.BundleNotConfigured, "该商品未配置可选规格")
 	case productenums.ErrBundleOptionRequired:
-		return r.tr("site.fragment.bundle.option_required", "有必选项还没选数量")
+		return r.tr(rfenums.BundleOptionRequired, "有必选项还没选数量")
 	case productenums.ErrBundleQtyInvalid:
-		return r.tr("site.fragment.bundle.qty_invalid", "数量必须是整数且不为负")
+		return r.tr(rfenums.BundleQtyInvalid, "数量必须是整数且不为负")
 	case productenums.ErrBundleQtyBelowMin:
-		return r.tr("site.fragment.bundle.qty_below_min", "有选项的数量低于该项的最小数量")
+		return r.tr(rfenums.BundleQtyBelowMin, "有选项的数量低于该项的最小数量")
 	case productenums.ErrBundleQtyAboveMax:
-		return r.tr("site.fragment.bundle.qty_above_max", "有选项的数量超过了该项的最大数量")
+		return r.tr(rfenums.BundleQtyAboveMax, "有选项的数量超过了该项的最大数量")
 	case productenums.ErrBundleTotalBelowMin:
-		return r.tr("site.fragment.bundle.total_below_min", "整单总件数未达到最小购买数量")
+		return r.tr(rfenums.BundleTotalBelowMin, "整单总件数未达到最小购买数量")
 	case productenums.ErrBundleTotalAboveMax:
-		return r.tr("site.fragment.bundle.total_above_max", "整单总件数超过了上限")
+		return r.tr(rfenums.BundleTotalAboveMax, "整单总件数超过了上限")
 	case productenums.ErrBundleQtyAboveStock:
-		return r.tr("site.fragment.bundle.qty_above_stock", "有选项的数量超过了当前可用库存")
+		return r.tr(rfenums.BundleQtyAboveStock, "有选项的数量超过了当前可用库存")
 	case productenums.ErrBundleVariantNotInConfig:
-		return r.tr("site.fragment.bundle.variant_not_in_config", "选择的规格不属于该套餐")
+		return r.tr(rfenums.BundleVariantNotInConfig, "选择的规格不属于该套餐")
 	case productenums.ErrBundleVariantDuplicated:
-		return r.tr("site.fragment.bundle.variant_dup", "同一个规格重复提交了数量")
+		return r.tr(rfenums.BundleVariantDup, "同一个规格重复提交了数量")
 	case productenums.ErrBundleStockUnavailable:
-		return r.tr("site.fragment.bundle.stock_unavailable", "暂时无法确认库存，请稍后再试")
+		return r.tr(rfenums.BundleStockUnavailable, "暂时无法确认库存，请稍后再试")
 	default:
-		return r.tr("site.fragment.bundle.cannot_order", "当前选择无法下单，请检查数量")
+		return r.tr(rfenums.BundleCannotOrder, "当前选择无法下单，请检查数量")
 	}
 }

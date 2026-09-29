@@ -51,6 +51,9 @@ const (
 // 与 admin 的 adminBulkText 同型（key + fallback 成对）：key 用于查词条（迁移 058 里
 // ErrInstallParse 等 key 已有 zh-CN / en-US 两行），fallback 保证**词条缺失时页面上
 // 仍然是中文**，而不是把裸 key 渲染给运营 —— 这正是本轮缺陷的表象。
+//
+// 本文件 notice 的 key（plugin.err.* / plugin.notice.*）是新增的，登记进词条之前一律走
+// fallback（中文原文），行为与改造前逐字一致。
 type pluginFacingMessage struct{ key, fallback string }
 
 var (
@@ -88,29 +91,34 @@ var pluginFacingMessages = []pluginFacingMessage{
 //
 // 受控性来自「整句都由本页拼出 + 逐条登记在 pluginNoticeTexts 里」，
 // 与 mailFormErrText / shell.BulkIDsFacingText 同一判据：**看文案来自哪里**。
-const (
-	pluginNoticeModuleUnwired = "插件模块未装配，该操作无法执行"
-	pluginNoticeNoFile        = "没有收到插件包文件"
-	pluginNoticeUnreadable    = "插件包读取失败，或文件超过 52MB 上限"
+//
+// 取值形态与上面的业务文案一致（key + 中文兜底，经 pluginFacingText）：这五句此前是裸中文
+// 常量，英文站点上恒为中文 —— 中文当 key 必然查不到（库内没有中文 item_key），也没有任何
+// 办法替换。登记成 key 之后与业务文案走同一条降级链（词条 → 中文兜底），
+// **词条未登记时页面上仍是原句中文，不会出现裸 key**。
+var (
+	pluginNoticeModuleUnwired = pluginFacingMessage{pluginenums.ErrModuleUnwired, "插件模块未装配，该操作无法执行"}
+	pluginNoticeNoFile        = pluginFacingMessage{pluginenums.ErrInstallNoFile, "没有收到插件包文件"}
+	pluginNoticeUnreadable    = pluginFacingMessage{pluginenums.ErrPackageUnreadable, "插件包读取失败，或文件超过 52MB 上限"}
 
 	// pluginNoticeListFailed 列表取数失败的提示（只进模板数据，不经 ?err= 回带，所以不在
 	// pluginNoticeTexts 的候选里：它不是查询参数的产物，放进候选只会给手拼 URL 多一个可伪造的句子）。
-	pluginNoticeListFailed = "插件列表加载失败"
+	pluginNoticeListFailed = pluginFacingMessage{pluginenums.ErrListFailed, "插件列表加载失败"}
 
 	// pluginReselectHint 安装路径的补充提示：回跳会丢掉用户已选的文件。
 	//
 	// 安装是 multipart 上传（上限 52MB，见 plugin_page_handle.go 的 pluginsUploadMax），
 	// 表单字段只属于那一次 POST —— 303 回列表页后浏览器不会重传，用户必须重新选文件。
 	// 不说这句的话，用户看到「插件包解析失败」只会重按一次提交按钮（而那份文件早没了）。
-	pluginReselectHint = "浏览器不会重传已选文件，请重新选择文件后再提交"
+	pluginReselectHint = pluginFacingMessage{pluginenums.NoticeInstallReselect, "浏览器不会重传已选文件，请重新选择文件后再提交"}
 )
 
-// pluginInstallFailText 给安装路径的失败文案补上「重新选择文件」提示。
+// pluginInstallFailText 给安装路径的失败文案补上「重新选择文件」提示（提示取当前语言文本）。
 //
 // 写侧（pluginPageFail 的调用点）与读侧（pluginNoticeTexts 的候选）**共用这一个函数**：
 // 读侧另拼一份的话，写侧文案一改，?err= 就会静默失配，表现是「失败但页面上没有任何提示」。
-func pluginInstallFailText(text string) string {
-	return text + "；" + pluginReselectHint
+func pluginInstallFailText(c *gin.Context, text string) string {
+	return text + "；" + pluginFacingText(c, pluginReselectHint)
 }
 
 // pluginFacingText 取一条业务文案的当前语言文本（词条缺失回落中文兜底）。
@@ -157,16 +165,16 @@ func pluginNoticeTexts(c *gin.Context) []string {
 		base = append(base, pluginFacingText(c, m))
 	}
 	base = append(base,
-		pluginNoticeModuleUnwired,
-		pluginNoticeNoFile,
-		pluginNoticeUnreadable,
+		pluginFacingText(c, pluginNoticeModuleUnwired),
+		pluginFacingText(c, pluginNoticeNoFile),
+		pluginFacingText(c, pluginNoticeUnreadable),
 		shell.PageInternalText(c),
 	)
 
 	out := make([]string, 0, len(base)*2)
 	out = append(out, base...)
 	for _, text := range base {
-		out = append(out, pluginInstallFailText(text))
+		out = append(out, pluginInstallFailText(c, text))
 	}
 	return out
 }

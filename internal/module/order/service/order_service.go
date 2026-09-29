@@ -10,6 +10,7 @@ package orderservice
 // 不持有 *gorm.DB：持久化唯一入口是 model 的具名方法；跨表事务由本层编排。
 
 import (
+	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
@@ -39,6 +40,12 @@ type Service struct {
 	// 允许为 nil：装配点尚未注入时回退到 OrderModel.ListAllProjectIDs 的只读清单
 	//（那条路径的落点与消除办法见 order_scope.go 的注释与 DB-009 报告）。
 	projects projectcontract.ProjectService
+	// membership 会员身份读取端口（BIZ-3 消费侧接入，装配期经 SetMembershipReader 注入）。
+	//
+	// 允许为 nil：未注入即「会员折扣未开启」，建单金额与本端口接入前逐字一致
+	//（见 order_membership_discount.go 的判据）。这里刻意是**收窄的 Reader** 而不是
+	// MembershipService —— 订单只需要「读一条会员身份」，拿不到等级 CRUD 与归属写入能力。
+	membership membershipcontract.Reader
 }
 
 // NewService 构造（参数直传，不用 Deps 结构体）。

@@ -63,9 +63,6 @@ const (
 	orderOperatorTypeAdmin = "admin"
 	// orderFieldEmpty 空字段的展示占位：表格里的空白单元格读不出「没有值」。
 	orderFieldEmpty = "—"
-	// orderPageTitle 页面标题（订单模块 enums 里没有这个标题键，
-	// 本页面不改动它，直接用字面量走 shell.Prepare 的 fallback 链路）。
-	orderPageTitle = "订单管理"
 )
 
 // 订单状态取值（展示用字面量，刻意不 import 订单模块的 model 包）。
@@ -78,18 +75,21 @@ const (
 	orderStatusRefunded  = "refunded"
 )
 
-// orderStatusViews 状态 → 中文标签 + 徽章样式的展示映射表。
+// orderStatusViews 状态 → 徽章样式的展示映射表。
+//
+// **只有「状态值 → 样式」**：文案由 orderStatusLabel 从真源（orderenums.OrderStatusLabel，
+// 与后台客户页共用同一份）取词 —— 展示表里再存一份中文，改一处另一处必然静默漂移。
+// 展示细节（类名）留在这里、不进 enums：enums 管「枚举 → 展示名」，管不了 CSS。
 var orderStatusViews = []struct {
 	Value string
-	Label string
 	Badge string
 }{
-	{orderStatusPending, "待付款", "badge-warning"},
-	{orderStatusPaid, "已付款", "badge-info"},
-	{orderStatusShipped, "已发货", "badge-info"},
-	{orderStatusCompleted, "已完成", "badge-success"},
-	{orderStatusCancelled, "已取消", "badge-mute"},
-	{orderStatusRefunded, "已退款", "badge-danger"},
+	{orderStatusPending, "badge-warning"},
+	{orderStatusPaid, "badge-info"},
+	{orderStatusShipped, "badge-info"},
+	{orderStatusCompleted, "badge-success"},
+	{orderStatusCancelled, "badge-mute"},
+	{orderStatusRefunded, "badge-danger"},
 }
 
 // orderNextStatuses 通用状态流转的候选目标 —— 与订单服务端状态机的出边一致。
@@ -157,6 +157,8 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	// 先于装载计算：装载失败要**压过**它（见下）。
 	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), orderPageFacingText(c))
 	pageOk := shell.FacingQueryText(c.Query("ok"), "", orderPageFacingText(c))
+	// 展示标签的取词函数（视图组装只用它，不再在 Go 里写死中文标签）。
+	tr := shell.TranslateFor(c)
 
 	projects, loadErr := h.projects.List(ctx)
 	// 工程列表读不出来**不拿走整个页面**（判据与 project 域主题页一致，见 theme_admin_pages.go 的 ThemeManage）：
@@ -190,7 +192,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	}
 
 	rows := []gin.H{}
-	counters := orderStatusCounters(nil, filter, selected)
+	counters := orderStatusCounters(tr, nil, filter, selected)
 	detail := gin.H{}
 	var total int64
 
@@ -208,9 +210,9 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		} else {
 			total = list.Total
 			// 计数不受筛选影响（它回答「各状态各有多少单」这个全局问题），直接用服务端给的整份计数。
-			counters = orderStatusCounters(list.Counts, filter, selected)
+			counters = orderStatusCounters(tr, list.Counts, filter, selected)
 			for _, o := range list.List {
-				rows = append(rows, orderListRow(o, filter, selected, page, limit))
+				rows = append(rows, orderListRow(tr, o, filter, selected, page, limit))
 			}
 		}
 		if filter.OrderID > 0 {
@@ -220,27 +222,27 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 			if derr != nil {
 				pageErr = firstNonEmpty(pageErr, orderFacingError(c, derr))
 			} else {
-				detail = orderDetailView(det, filter, selected, page, limit)
+				detail = orderDetailView(tr, det, filter, selected, page, limit)
 			}
 		}
 	}
 
 	data := shell.Prepare(c, gin.H{
-		"title":           orderPageTitle,
+		"title":           orderLabelOf(tr, orderPageTitleLabel),
 		"menu":            "orders",
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Statuses":        counters,
 		// 状态维度**只有**计数徽章一种入口：徽章行已经能点，再摆一个同维度的下拉，
 		// 用户会怀疑两者是否等价（admin-ui-logic §3「同一维度只给一种筛选控件」）。
-		"BulkTargets":   orderBulkTargets(),
+		"BulkTargets":   orderBulkTargets(tr),
 		"FilterStatus":  filter.Status,
 		"FilterKeyword": filter.Keyword,
 		"FilterPayment": filter.PaymentMethod,
-		// 状态的**中文标签**（空态要说「当前还带着状态筛选「待付款」」，直接摊 status 值
+		// 状态的**展示标签**（空态要说「当前还带着状态筛选「待付款」」，直接摊 status 值
 		// 会给运营看一个 pending）。与退货页同名同义（那边注入 returnStatusLabel）。
 		// orderStatusLabel 对认不出的值原样返回 —— 手改 URL 带来的 zzbogus 照样说得清楚。
-		"FilterLabel": orderStatusLabel(filter.Status),
+		"FilterLabel": orderStatusLabel(tr, filter.Status),
 		// 显式布尔：空态要不要给「重置」这个主行动，取决于**当前是不是真的带着筛选**
 		// （无筛选时那个链接指向本页自己，点了页面逐字不变 —— 死按钮比没有按钮更糟）。
 		// 判据与 customers 页同名同义（customer_view.go 的 customerFilterActive）。
@@ -271,7 +273,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 func (h *orderPageHandle) OrderStatusChange(c *gin.Context) {
 	orderID := orderQueryID(c.PostForm("orderId"))
 	if orderID == 0 {
-		orderRedirect(c, "", "订单编号不合法，请回到列表页重新操作。")
+		orderRedirect(c, "", orderInvalidIDLabel.fallback)
 		return
 	}
 	req := &orderdto.ChangeStatusReq{
@@ -297,7 +299,7 @@ func (h *orderPageHandle) OrderStatusChange(c *gin.Context) {
 func (h *orderPageHandle) OrderNoteSave(c *gin.Context) {
 	orderID := orderQueryID(c.PostForm("orderId"))
 	if orderID == 0 {
-		orderRedirect(c, "", "订单编号不合法，请回到列表页重新操作。")
+		orderRedirect(c, "", orderInvalidIDLabel.fallback)
 		return
 	}
 	res, err := h.orders.UpdateOrderNote(c.Request.Context(), &orderdto.UpdateOrderNoteReq{
@@ -320,7 +322,7 @@ func (h *orderPageHandle) OrderNoteSave(c *gin.Context) {
 func (h *orderPageHandle) OrderCancel(c *gin.Context) {
 	orderID := orderQueryID(c.PostForm("orderId"))
 	if orderID == 0 {
-		orderRedirect(c, "", "订单编号不合法，请回到列表页重新操作。")
+		orderRedirect(c, "", orderInvalidIDLabel.fallback)
 		return
 	}
 	req := &orderdto.CancelOrderReq{
@@ -343,7 +345,7 @@ func (h *orderPageHandle) OrderCancel(c *gin.Context) {
 func (h *orderPageHandle) OrderRefund(c *gin.Context) {
 	orderID := orderQueryID(c.PostForm("orderId"))
 	if orderID == 0 {
-		orderRedirect(c, "", "订单编号不合法，请回到列表页重新操作。")
+		orderRedirect(c, "", orderInvalidIDLabel.fallback)
 		return
 	}
 	req := &orderdto.RefundOrderReq{
@@ -414,7 +416,7 @@ func (h *orderPageHandle) OrderBulkStatus(c *gin.Context) {
 func (h *orderPageHandle) OrderBulkCancel(c *gin.Context) {
 	reason := strings.TrimSpace(c.PostForm("remark"))
 	if reason == "" {
-		orderBulkRedirect(c, "批量取消需要先填原因（表单里的备注框），本次没有处理任何订单。")
+		orderBulkRedirect(c, orderBulkTextOf(c, orderBulkCancelReasonRequired))
 		return
 	}
 	projectID := strings.TrimSpace(c.PostForm("project"))

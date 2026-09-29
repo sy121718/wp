@@ -45,6 +45,16 @@ type (
 // ErrOrderNotFound 订单不存在（错误文案取自 enums，供调用方做错误判定而不 import enums）。
 const ErrOrderNotFound = orderenums.ErrOrderNotFound
 
+// OrderStatusLabel 订单状态 → (词条 key, 中文兜底)，真源在 order/enums。
+//
+// 为什么由 contract 转出而不是让调用方自己映射：跨模块只允许依赖 contract 与不可变 dto，
+// 而订单状态 → 展示名的映射必须与订单页**共用同一份** —— 客户详情页的「最近一单」各写一张
+// 中文表的结果是「改一处、另一处静默留在旧说法上」（不报错、测试也不红）。
+// 形态与其它展示标签一致：调用点 tr(key, fallback)，词条缺失时回落中文。
+func OrderStatusLabel(status string) (key, fallback string) {
+	return orderenums.OrderStatusLabel(status)
+}
+
 // OrderService 订单模块对外能力。
 type OrderService interface {
 	// VisitorOrderReader 访客自助查询（只有两条只读方法，user_id 钉死在契约里）。

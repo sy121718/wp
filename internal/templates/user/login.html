@@ -2,8 +2,8 @@
 {{block body()}}
 <div class="g-narrow">
   <div class="g-card">
-    <h1>登录</h1>
-    <p class="g-sub">用用户名或邮箱登录你的账号。</p>
+    <h1>{{ .["t"]("user.act.login", "登录") }}</h1>
+    <p class="g-sub">{{ .["t"]("user.login.sub", "用用户名或邮箱登录你的账号。") }}</p>
 
     {{if .["error"]}}
     <div class="g-alert g-alert--error">{{ .["error"] }}</div>
@@ -14,29 +14,29 @@
       <input type="hidden" name="next" value="{{ .["next"] }}">
 
       <div class="g-field">
-        <label for="account">用户名或邮箱</label>
+        <label for="account">{{ .["t"]("user.login.account_label", "用户名或邮箱") }}</label>
         <input type="text" id="account" name="account" value="{{ .["account"] }}"
                autocomplete="username" required autofocus>
       </div>
 
       <div class="g-field">
-        <label for="password">密码</label>
+        <label for="password">{{ .["t"]("user.field.password", "密码") }}</label>
         <input type="password" id="password" name="password"
                autocomplete="current-password" required>
       </div>
 
       <div class="g-check">
         <input type="checkbox" id="remember" name="remember" value="1">
-        <label for="remember">记住我（7 天内免登录）</label>
+        <label for="remember">{{ .["t"]("user.login.remember", "记住我（7 天内免登录）") }}</label>
       </div>
 
       <div class="g-actions">
-        <button type="submit" class="g-btn">登录</button>
+        <button type="submit" class="g-btn">{{ .["t"]("user.act.login", "登录") }}</button>
       </div>
     </form>
 
     <div class="g-note">
-      <a href="/user/forgot">忘记密码</a> · 还没有账号？<a href="/user/register">立即注册</a>
+      <a href="/user/forgot">{{ .["t"]("user.login.forgot_link", "忘记密码") }}</a> · {{ .["t"]("user.login.no_account", "还没有账号？") }}<a href="/user/register">{{ .["t"]("user.login.go_register", "立即注册") }}</a>
     </div>
   </div>
 </div>

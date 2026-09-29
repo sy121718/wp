@@ -50,10 +50,12 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
 	adminPages.POST("/roles/bulk-delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesBulkDelete)
-	// 角色权限分配（角色分权）。读页复用 role:menu_list、保存复用 role:menu_save ——
+	// 角色权限分配（角色分权）：抽屉片段 + 保存。读复用 role:menu_list、保存复用 role:menu_save ——
 	// 两个权限点在 050 的 seed 里本来就有（它们的 API 路由 /api/role/menu/list 与
 	// /api/role/menu/save 同期建成），只是此前没有任何前端调用方；不新增权限点。
-	adminPages.GET("/roles/permissions", builtin.CasbinMiddlewareForPath("/api/role/menu/list"), handle.RolePermissionsPage)
+	// 片段路由与写路由同权对待：片段里就是该角色的完整勾选集合，不挂鉴权等于把
+	// 角色权限表露给任何登录账号（菜单隐藏不是访问控制）。
+	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"), handle.RolePermissionsDrawer)
 	adminPages.POST("/roles/permissions/save", builtin.CasbinMiddlewareForPath("/api/role/menu/save"), handle.RolePermissionsSave)
 
 	adminPages.GET("/menus", builtin.CasbinMiddlewareForPath("/api/menu/tree"), handle.MenusPage)

@@ -77,7 +77,7 @@ func (h *Handle) renderAccount(c *gin.Context, status int, actionError string) {
 	}
 	account, err := h.svc.GetAccount(c.Request.Context(), sess.UserID)
 	if err != nil {
-		h.renderMessage(c, http.StatusInternalServerError, false, "打不开账号中心", userPageMessage(c, err))
+		h.renderMessage(c, http.StatusInternalServerError, false, userTextOf(c, userMsgAccountOpenFailedTitle), userPageMessage(c, err))
 		return
 	}
 	sessions, serr := h.svc.ListSessions(c.Request.Context(), sess.UserID, currentToken(c))
@@ -177,8 +177,8 @@ func (h *Handle) DoChangePassword(c *gin.Context) {
 		return
 	}
 	_ = clearUserSession(c)
-	h.renderMessage(c, http.StatusOK, true, "密码已修改",
-		"为安全起见，所有设备（包括当前这台）都已退出登录，请用新密码重新登录。")
+	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgPasswordChangedTitle),
+		userTextOf(c, userMsgPasswordChangedBody))
 }
 
 // DoRevokeSession 踢掉某台设备。

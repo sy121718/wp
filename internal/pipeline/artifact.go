@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"go_wp/internal/builder"
@@ -97,6 +98,14 @@ type Manifest struct {
 	// omitempty 是确定性与历史兼容的关键：没有诊断时该字段完全不出现在 JSON 里，
 	// 产物字节与加字段前逐字节一致（hash 不变，无需全量重建）。
 	Diagnostics []builder.Degrade `json:"diagnostics,omitempty"`
+	// Access 访问面守卫标记（PIPE-6）。nil = 公开页面，字段完全不出现。
+	//
+	// omitempty 是确定性与历史兼容的关键（同 Diagnostics）：全部存量页面都是公开的，
+	// 不带这个键时产物字节与加字段前逐字节一致 —— 否则一次升级会改掉全站产物 hash，
+	// 触发全量重建（不变量 5 的可用性一面）。
+	//
+	// 只放类型，不放 bcrypt 哈希：见 ManifestAccess 的说明。
+	Access *ManifestAccess `json:"access,omitempty"`
 }
 
 // TranslationPolicyFallback 内容译文缺失时的字段策略：回退原文并计数（当前唯一实现）。
@@ -207,6 +216,22 @@ func EncodeManifest(m *Manifest) ([]byte, error) {
 // NewArtifact 组装不可变产物：入口 HTML + manifest → 内容寻址哈希。
 // docs/03-pipeline.md §4.1：Artifact 目录保存入口与 manifest，文件名不含可变别名。
 func NewArtifact(html []byte, m *Manifest) (*Artifact, error) {
+	return NewArtifactWithEntries(html, m, nil)
+}
+
+// NewArtifactWithEntries 同 NewArtifact，但额外落盘一组伴随文件（PIPE-6 的守卫页
+// guard.html / guard.json）。
+//
+// 为什么单开一个函数而不是给 NewArtifact 加参数：NewArtifact 还有第二个调用方
+// （presentation 自动发布，presentation_render.go），自动发布不消费页面级访问设置，
+// 改签名只会让它多传一个 nil —— 参数化一个只有一条路径用得上的能力，
+// 换来的是每个调用点都要解释「这里为什么是 nil」。
+//
+// extra 的每个文件都会登记进 Manifest.Files（内容哈希 → 参与产物 hash）：
+// 「同一产物目录里存在两个不同内容」这件事，只能靠 hash 覆盖到所有文件来排除。
+// 哈希不覆盖 guard.json 的后果是具体的 —— 改密码后 hash 不变，
+// PutArtifact 走幂等分支，新密码永远写不进去。
+func NewArtifactWithEntries(html []byte, m *Manifest, extra map[string][]byte) (*Artifact, error) {
 	if m == nil || m.CanonicalPath == "" || m.SourceID == "" {
 		return nil, fmt.Errorf("manifest 不完整：必须包含 canonicalPath 与 sourceId")
 	}
@@ -216,20 +241,33 @@ func NewArtifact(html []byte, m *Manifest) (*Artifact, error) {
 	htmlHash := SHA256(html)
 	m.Files["index.html"] = htmlHash
 
+	entries := map[string][]byte{
+		"index.html":    html,
+		"manifest.json": nil, // 占位：编码完成后再填
+	}
+	for name, data := range extra {
+		if name == "" || !filepath.IsLocal(name) {
+			return nil, fmt.Errorf("伴随文件路径非法: %q", name)
+		}
+		if _, exists := entries[name]; exists {
+			return nil, fmt.Errorf("伴随文件与产物入口重名: %q", name)
+		}
+		entries[name] = data
+		m.Files[name] = SHA256(data)
+	}
+
 	mJSON, err := EncodeManifest(m)
 	if err != nil {
 		return nil, fmt.Errorf("manifest 编码失败: %w", err)
 	}
+	entries["manifest.json"] = mJSON
 	hash := artifactPayloadHash(mJSON, html)
 
 	return &Artifact{
 		Hash:          hash,
 		CanonicalPath: m.CanonicalPath,
 		Manifest:      *m,
-		Entries: map[string][]byte{
-			"index.html":    html,
-			"manifest.json": mJSON,
-		},
+		Entries:       entries,
 	}, nil
 }
 

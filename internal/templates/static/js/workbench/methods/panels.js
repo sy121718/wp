@@ -120,6 +120,33 @@ export const panelsMethods = {
                     morphHTML(body, '<p class="wb-empty">设置面板加载失败</p>');
                 });
             },
+            // 访问密码重设（PIPE-6 AccessGuard）：明文只在这一跳里出现，服务端 bcrypt
+            // 后借 data-wb-apply 的隐藏字段回填哈希 —— 明文绝不写进文档
+            // （文档会进 page_revisions 与历史版本，密码不该出现在那里）。
+            applyAccessPassword() {
+                var body = document.getElementById('wb-settings-body');
+                if (!body) return;
+                var input = body.querySelector('[name=wb-access-password]');
+                if (!input) return;
+                var pwd = input.value || '';
+                if (!pwd) return;
+                var self = this;
+                var form = new URLSearchParams();
+                form.append('document', JSON.stringify(this.doc));
+                form.append('access-password', pwd);
+                fetch('/workbench/settings', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+                    body: form.toString()
+                }).then(function (r) { return r.text(); }).then(function (html) {
+                    morphHTML(body, html);
+                    self.bindSettingsHtmx(body);
+                    self.refreshSeoScoreHtmx();
+                }).catch(function () {
+                    morphHTML(body, '<p class="wb-empty">密码设置失败</p>');
+                });
+            },
             refreshSeoScoreHtmx() {
                 var box = document.getElementById('wb-seo-score');
                 if (!box) return;
@@ -162,6 +189,9 @@ export const panelsMethods = {
                     if (path.indexOf('settings.seo.') === 0) self.refreshSeoScoreHtmx();
                 };
                 body.onclick = function (e) {
+                    // 访问密码：明文不回写文档，交给服务端 bcrypt（PIPE-6）。
+                    var setPwd = e.target && e.target.closest ? e.target.closest('[data-wb-access-set]') : null;
+                    if (setPwd) { self.applyAccessPassword(); return; }
                     var btn = e.target && e.target.closest ? e.target.closest('button[data-wb-setting]') : null;
                     if (!btn) return;
                     var path = btn.getAttribute('data-wb-setting');
@@ -173,6 +203,20 @@ export const panelsMethods = {
                     });
                     if (path.indexOf('settings.seo.') === 0) self.refreshSeoScoreHtmx();
                 };
+                // 服务端就地下发的值（目前只有刚设置的访问密码哈希）：它不是用户输入，
+                // 不会触发 change —— 面板整块替换后在这里应用一次。
+                // 值没变就不写回，避免每次打开面板都把文档标脏、顺便刷一次画布。
+                Array.prototype.forEach.call(body.querySelectorAll('[data-wb-setting][data-wb-apply]'), function (el) {
+                    var path = el.getAttribute('data-wb-setting');
+                    var value = el.getAttribute('data-wb-kind') === 'list'
+                        ? el.value.split(/\s+/).filter(Boolean) : el.value;
+                    var cur = self.doc;
+                    var parts = path.split('.');
+                    for (var i = 0; i < parts.length - 1 && cur; i++) { cur = cur[parts[i]]; }
+                    if (!cur || cur[parts[parts.length - 1]] === value) return;
+                    self.snapshot();
+                    setByPath(path, value);
+                });
                 // 评分建议跳转（data-wb-jump）：settings.seo.x → 聚焦对应输入；node:type → 选中首个该类型组件。
                 var box = document.getElementById('wb-seo-score');
                 if (!box) return;

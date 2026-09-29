@@ -8,6 +8,7 @@ import (
 
 	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
+	productenums "go_wp/internal/module/product/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/web/shell"
@@ -93,7 +94,7 @@ func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
 	productID := strings.TrimSpace(c.Query("product"))
 	lang := strings.TrimSpace(c.Query("lang"))
 
-	data, err := h.build(ctx, projectID, productID, lang)
+	data, err := h.build(ctx, projectID, productID, lang, shell.TranslateFor(c))
 	if err != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(err, "打开商品翻译工作台失败")
@@ -104,9 +105,11 @@ func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
 		data.Saved = true
 		n, _ := strconv.Atoi(strings.TrimSpace(c.Query("n")))
 		if n > 0 {
-			data.SavedNote = "已保存 " + strconv.Itoa(n) + " 条译文；译文变更已标记待重建（下次构建生效）。"
+			data.SavedNote = i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
+				"已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
+				map[string]string{"n": strconv.Itoa(n)})
 		} else {
-			data.SavedNote = "没有需要写入的变化。"
+			data.SavedNote = shell.TranslateFor(c)(productenums.ProductTranslationsSavedNone, "没有需要写入的变化。")
 		}
 	}
 	c.HTML(http.StatusOK, "admin/product/product_translations.html", shell.Prepare(c, data.templateMap()))
@@ -119,7 +122,7 @@ func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	productID := strings.TrimSpace(c.PostForm("product"))
 	lang := strings.TrimSpace(c.PostForm("lang"))
 
-	data, err := h.build(ctx, projectID, productID, lang)
+	data, err := h.build(ctx, projectID, productID, lang, shell.TranslateFor(c))
 	if err != nil {
 		logger.Scene("product").With("project", projectID).Error(err, "商品翻译工作台保存前重建数据失败")
 		c.Redirect(http.StatusSeeOther, "/admin/products")

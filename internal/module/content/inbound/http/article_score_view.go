@@ -60,7 +60,6 @@ type scoreIssueView struct {
 	Target string
 }
 
-// seoColorLabels 评分颜色 → 中文（与前端旧面板一致）。
-var seoColorLabels = map[string]string{
-	"green": "优秀", "lightgreen": "良好", "yellow": "需改进", "red": "差", "red-blocking": "缺失",
-}
+// 评分颜色 → 等级文案的映射**只有一份**，在 seoscore.ScoreGradeText（internal/seo/score_grade.go）。
+// 此前本文件与 project/inbound/http/settings_panel.go 各持一份逐字相同的副本，
+// 且两处注释都写着“正确的归宿是 seoscore 包” —— 已按此收编，取词改调该出口。

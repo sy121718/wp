@@ -71,19 +71,20 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 	if e == nil {
 		return nil, nil
 	}
-	list = append(list, productTextCandidates(e)...)
+	tr := translateFrom(ctx)
+	list = append(list, productTextCandidates(tr, e)...)
 
 	categoryRows, cerr := s.m.ListCategoriesByIDs(ctx, decodeStrings(e.CategoryIDs), e.ProjectID)
 	if cerr != nil {
 		return nil, cerr
 	}
 	for _, row := range categoryRows {
-		list = append(list, entityTextCandidates(productcontract.EntityTypeCategory, row.ID, row.Name,
+		list = append(list, entityTextCandidates(tr, productcontract.EntityTypeCategory, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 	}
 	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
 		if row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID); berr == nil {
-			list = append(list, entityTextCandidates(productcontract.EntityTypeBrand, row.ID, row.Name,
+			list = append(list, entityTextCandidates(tr, productcontract.EntityTypeBrand, row.ID, row.Name,
 				map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle})...)
 		}
 	}
@@ -92,7 +93,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 		return nil, terr
 	}
 	for _, row := range tagRows {
-		list = append(list, entityTextCandidates(productcontract.EntityTypeTag, row.ID, row.Name,
+		list = append(list, entityTextCandidates(tr, productcontract.EntityTypeTag, row.ID, row.Name,
 			map[string]string{"name": row.Name})...)
 	}
 	attrRows, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(e.AttributeIDs), e.ProjectID)
@@ -100,7 +101,7 @@ func (s *Service) translationCandidatesForProduct(ctx context.Context, e *produc
 		return nil, aerr
 	}
 	for _, row := range attrRows {
-		list = append(list, attributeTextCandidates(row)...)
+		list = append(list, attributeTextCandidates(tr, row)...)
 	}
 	return list, nil
 }
@@ -111,8 +112,9 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 	if cerr != nil {
 		return nil, cerr
 	}
+	tr := translateFrom(ctx)
 	for _, row := range categories {
-		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeCategory, row.ID, row.Name,
+		list = appendUniqueCandidates(list, seen, entityTextCandidates(tr, productcontract.EntityTypeCategory, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
 	// 全量取（0, 0）：译文候选要覆盖工程里所有品牌 / 标签，漏掉的会变成永远没有译文入口。
@@ -121,7 +123,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		return nil, berr
 	}
 	for _, row := range brands {
-		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeBrand, row.ID, row.Name,
+		list = appendUniqueCandidates(list, seen, entityTextCandidates(tr, productcontract.EntityTypeBrand, row.ID, row.Name,
 			map[string]string{"name": row.Name, "description": row.Description, "seoTitle": row.SEOTitle}))
 	}
 	tags, terr := s.m.ListTags(ctx, projectID, "", "", 0, 0)
@@ -129,7 +131,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		return nil, terr
 	}
 	for _, row := range tags {
-		list = appendUniqueCandidates(list, seen, entityTextCandidates(productcontract.EntityTypeTag, row.ID, row.Name,
+		list = appendUniqueCandidates(list, seen, entityTextCandidates(tr, productcontract.EntityTypeTag, row.ID, row.Name,
 			map[string]string{"name": row.Name}))
 	}
 	attrs, aerr := s.m.ListAttributesByProject(ctx, projectID)
@@ -137,7 +139,7 @@ func (s *Service) orphanTranslationCandidates(ctx context.Context, projectID str
 		return nil, aerr
 	}
 	for _, row := range attrs {
-		list = appendUniqueCandidates(list, seen, attributeTextCandidates(row))
+		list = appendUniqueCandidates(list, seen, attributeTextCandidates(tr, row))
 	}
 	return list, nil
 }
@@ -156,7 +158,10 @@ func appendUniqueCandidates(dst []productcontract.TranslationCandidate, seen map
 }
 
 // productTextCandidates 商品自身可翻译字段的候选（图集 alt 逐元素展开）。
-func productTextCandidates(e *productmodel.ProductEntity) []productcontract.TranslationCandidate {
+//
+// tr 由调用点传：候选里的 FieldLabel 是**展示文案**（后台翻译页的字段列），
+// 必须按请求语言取词（见 product_translate.go 的取词通道）。
+func productTextCandidates(tr TranslateFunc, e *productmodel.ProductEntity) []productcontract.TranslationCandidate {
 	values := map[string]string{
 		"name":        e.Name,
 		"subtitle":    e.Subtitle,
@@ -166,13 +171,13 @@ func productTextCandidates(e *productmodel.ProductEntity) []productcontract.Tran
 	for _, field := range productcontract.TranslatableFields(productcontract.EntityTypeProduct) {
 		if field == "imageAlts" {
 			for _, alt := range decodeStrings(e.ImageAlts) {
-				if c, ok := makeCandidate(productcontract.EntityTypeProduct, e.ID, e.Name, field, alt); ok {
+				if c, ok := makeCandidate(tr, productcontract.EntityTypeProduct, e.ID, e.Name, field, alt); ok {
 					list = append(list, c)
 				}
 			}
 			continue
 		}
-		if c, ok := makeCandidate(productcontract.EntityTypeProduct, e.ID, e.Name, field, values[field]); ok {
+		if c, ok := makeCandidate(tr, productcontract.EntityTypeProduct, e.ID, e.Name, field, values[field]); ok {
 			list = append(list, c)
 		}
 	}
@@ -183,10 +188,10 @@ func productTextCandidates(e *productmodel.ProductEntity) []productcontract.Tran
 //
 // values 是「字段名 → 原文」映射（原样传入，不做翻译）；
 // 字段集合仍取自 contract 的唯一来源，不在此另列。
-func entityTextCandidates(entityType, id, name string, values map[string]string) []productcontract.TranslationCandidate {
+func entityTextCandidates(tr TranslateFunc, entityType, id, name string, values map[string]string) []productcontract.TranslationCandidate {
 	list := make([]productcontract.TranslationCandidate, 0, len(values))
 	for _, field := range productcontract.TranslatableFields(entityType) {
-		if c, ok := makeCandidate(entityType, id, name, field, values[field]); ok {
+		if c, ok := makeCandidate(tr, entityType, id, name, field, values[field]); ok {
 			list = append(list, c)
 		}
 	}
@@ -194,16 +199,16 @@ func entityTextCandidates(entityType, id, name string, values map[string]string)
 }
 
 // attributeTextCandidates 属性组的候选：组名 + 属性值展示文本逐元素。
-func attributeTextCandidates(e *productmodel.ProductAttributeEntity) []productcontract.TranslationCandidate {
+func attributeTextCandidates(tr TranslateFunc, e *productmodel.ProductAttributeEntity) []productcontract.TranslationCandidate {
 	if e == nil {
 		return nil
 	}
 	list := make([]productcontract.TranslationCandidate, 0, 4)
-	if c, ok := makeCandidate(productcontract.EntityTypeAttribute, e.ID, e.Name, "name", e.Name); ok {
+	if c, ok := makeCandidate(tr, productcontract.EntityTypeAttribute, e.ID, e.Name, "name", e.Name); ok {
 		list = append(list, c)
 	}
 	for _, v := range normalizeValuesFromRaw(e.Values) {
-		if c, ok := makeCandidate(productcontract.EntityTypeAttribute, e.ID, e.Name, "values", v.Label); ok {
+		if c, ok := makeCandidate(tr, productcontract.EntityTypeAttribute, e.ID, e.Name, "values", v.Label); ok {
 			list = append(list, c)
 		}
 	}
@@ -211,7 +216,7 @@ func attributeTextCandidates(e *productmodel.ProductAttributeEntity) []productco
 }
 
 // makeCandidate 组装一条候选（跳过规则命中 / 不在白名单内 → false）。
-func makeCandidate(entityType, id, name, field, source string) (productcontract.TranslationCandidate, bool) {
+func makeCandidate(tr TranslateFunc, entityType, id, name, field, source string) (productcontract.TranslationCandidate, bool) {
 	if !productcontract.IsTranslatableField(entityType, field) {
 		return productcontract.TranslationCandidate{}, false
 	}
@@ -220,7 +225,7 @@ func makeCandidate(entityType, id, name, field, source string) (productcontract.
 	}
 	return productcontract.TranslationCandidate{
 		EntityType: entityType, EntityID: id, EntityName: name,
-		Field: field, FieldLabel: productcontract.FieldLabel(entityType, field),
+		Field: field, FieldLabel: productcontract.FieldLabel(tr, entityType, field),
 		Context:    productcontract.FieldContext(entityType, field),
 		SourceText: source, SourceHash: i18n.ContentHash(source),
 	}, true

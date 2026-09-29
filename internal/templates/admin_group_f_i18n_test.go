@@ -52,6 +52,11 @@ var groupFTemplates = []string{
 // 改历史迁移既违反约定，也不会让已跑过的库丢掉这些词条，只会让「新库少几行、老库多几行」
 // 这种差异变得不可见。
 var groupFRetiredKeys = map[string]bool{
+	// 角色权限分配从「独立页面」改成「角色列表行的抽屉片段」后退役：「返回角色列表」
+	// 这个动作由抽屉自身的关闭（✕ / 取消 / Esc，词条 shell.action.close 与
+	// admin.common.action.cancel）承担 —— 抽屉本来就浮在列表页之上，不需要再给一条回列表的链接。
+	// 词条由 228 seed（历史迁移保持原样），留在库里只占一行、不被任何模板取用。
+	"admin.roles.perm.back": true,
 	// admin/i18n.html 从「三张卡」改为「页头 + 列表卡」：分页文字说明改由 shell 的分页条
 	// 承担（shell.pagination.info，见 internal/web/shell/pagination.go），页尾那张
 	// 「新增 / 编辑」卡片由页头的新建按钮取代。

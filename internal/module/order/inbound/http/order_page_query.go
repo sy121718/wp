@@ -176,7 +176,21 @@ var orderBulkActions = [][2]orderBulkText{
 }
 
 // orderBulkExtraNotices 不走 bulkSummary、但也进 ?done= 的本模块自造文案。
-var orderBulkExtraNotices = []orderBulkText{couponBulkTargetInvalidText}
+var orderBulkExtraNotices = []orderBulkText{
+	couponBulkTargetInvalidText,
+	orderBulkCancelReasonRequired,
+	returnBulkRejectReasonRequired,
+}
+
+// 两条「缺必填参数、整批不处理」的提示（与批量结论同一个通道，写读共用同一份模板）。
+var (
+	// orderBulkCancelReasonRequired 批量取消订单缺原因。
+	orderBulkCancelReasonRequired = orderBulkText{orderenums.BulkCancelReasonRequired,
+		"批量取消需要先填原因（表单里的备注框），本次没有处理任何订单。"}
+	// returnBulkRejectReasonRequired 批量拒绝退货缺理由。
+	returnBulkRejectReasonRequired = orderBulkText{orderenums.BulkReturnRejectReasonRequired,
+		"批量拒绝需要先填理由（表单里的备注框），本次没有处理任何退货申请。"}
+)
 
 // orderDoneTexts 列表页 ?done= 可以原样展示的受控文案（**当前语言**，数字归一后可比）。
 func orderDoneTexts(c *gin.Context) []string {

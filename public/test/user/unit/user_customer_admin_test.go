@@ -225,8 +225,13 @@ func TestSetCustomerStatusEnablesAndDisables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("停用失败: %v", err)
 	}
-	if res.StatusLabel != "已停用" || res.Status != usermodel.UserStatusDisabled {
+	// 回执只带状态取值：展示名由**出口**按请求语言取词（userhttp.localizeCustomerStatusLabel
+	// → userenums.StatusLabel），service 拿不到请求语言，代填中文的表现是英文调用方恒中文。
+	if res.Status != usermodel.UserStatusDisabled {
 		t.Errorf("停用回执不正确：%+v", res)
+	}
+	if res.StatusLabel != "" {
+		t.Errorf("service 不应产出展示文案（留给出口取词），实际 StatusLabel=%q", res.StatusLabel)
 	}
 	stored, err := m.GetByID(ctx, u.ID)
 	if err != nil {

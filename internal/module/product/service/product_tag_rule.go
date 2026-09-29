@@ -23,6 +23,7 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/pkg/i18n"
 	productmodel "go_wp/internal/module/product/model"
 )
 
@@ -37,24 +38,49 @@ const (
 type tagRule struct {
 	// Type 落库的 rule_type。
 	Type string
-	// Name 后台展示名。
-	Name string
-	// Params 参数说明（后台展示，也是调用方唯一的参数文档来源）。
-	Params string
+	// NameKey / Name 后台展示名：NameKey 是词条真源，Name 是中文兜底。展示名是**文案**
+	//（内置规则的固定说法），与用户自定义的标签名（数据）无关。
+	NameKey string
+	Name    string
+	// ParamsKey / Params 参数说明（后台展示，也是调用方唯一的参数文档来源）。
+	ParamsKey string
+	Params    string
 	// Normalize 校验并归一参数（nil / 空对象按各规则自己的必需性判定）。
 	Normalize func(params json.RawMessage) (json.RawMessage, error)
-	// Describe 归一后的参数 → 人类可读描述。
-	Describe func(params json.RawMessage) string
+	// Describe 归一后的参数 → 当前语言的人类可读描述（tr 由调用点给）。
+	Describe func(tr TranslateFunc, params json.RawMessage) string
 	// Evaluate 求值：返回命中的商品 id（可能含其它工程，由 service 过滤到本工程）。
 	Evaluate func(ctx context.Context, m *productmodel.Model, projectID string, params json.RawMessage) ([]string, error)
 }
 
+// 内置标签规则的展示文案 key（词条见迁移 449_i18n_*）。
+//
+// 这些是**内置规则的固定说法**（后台展示名、参数说明、可读描述），不是数据 ——
+// 与用户自定义的标签名无关。中文兜底留在规则表与下面的描述函数里。
+const (
+	tagKeyNewArrivalName        = "admin.product_tags.rule.newArrival.name"
+	tagKeyNewArrivalParams      = "admin.product_tags.rule.newArrival.params"
+	tagKeyNewArrivalDescribe    = "admin.product_tags.rule.newArrival.describe"
+	tagKeyPriceRangeName        = "admin.product_tags.rule.priceRange.name"
+	tagKeyPriceRangeParams      = "admin.product_tags.rule.priceRange.params"
+	tagKeyPriceRangeDescribeBoth = "admin.product_tags.rule.priceRange.describeBoth"
+	tagKeyPriceRangeDescribeMin = "admin.product_tags.rule.priceRange.describeMin"
+	tagKeyPriceRangeDescribeMax = "admin.product_tags.rule.priceRange.describeMax"
+	tagKeyOnSaleName            = "admin.product_tags.rule.onSale.name"
+	tagKeyOnSaleParams          = "admin.product_tags.rule.onSale.params"
+	tagKeyOnSaleDescribe        = "admin.product_tags.rule.onSale.describe"
+	tagKeyParamsInvalid         = "admin.product_tags.rule.paramsInvalid"
+	tagKeyUnknownRule           = "admin.product_tags.rule.unknown"
+)
+
 // tagRules 内置规则表（顺序即后台展示顺序）。新增规则只在这里追加。
 var tagRules = []*tagRule{
 	{
-		Type:   productenums.TagRuleNewArrival,
-		Name:   "新品（上架 N 天内）",
-		Params: "days：必填，1~365 的整数（上架时间以 products.published_at 为准）",
+		Type:      productenums.TagRuleNewArrival,
+		NameKey:   tagKeyNewArrivalName,
+		Name:      "新品（上架 N 天内）",
+		ParamsKey: tagKeyNewArrivalParams,
+		Params:    "days：必填，1~365 的整数（上架时间以 products.published_at 为准）",
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			m, err := decodeRuleParams(params)
 			if err != nil {
@@ -65,27 +91,30 @@ var tagRules = []*tagRule{
 			}
 			raw, ok := m["days"]
 			if !ok {
-				return nil, ruleParamsErr("days 必填")
+				return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamRequired, "field", "days"))
 			}
 			days, derr := ruleInt(raw, "days")
 			if derr != nil {
 				return nil, derr
 			}
 			if days < tagRuleDaysMin || days > tagRuleDaysMax {
-				return nil, ruleParamsErr(fmt.Sprintf("days 必须在 %d~%d 之间，实际 %d", tagRuleDaysMin, tagRuleDaysMax, days))
+				return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamRange,
+					"field", "days", "min", strconv.Itoa(tagRuleDaysMin),
+					"max", strconv.Itoa(tagRuleDaysMax), "value", strconv.Itoa(days)))
 			}
 			return json.RawMessage(fmt.Sprintf("{%q:%d}", "days", days)), nil
 		},
-		Describe: func(params json.RawMessage) string {
+		Describe: func(tr TranslateFunc, params json.RawMessage) string {
 			m, err := decodeRuleParams(params)
 			if err != nil {
-				return "参数不合法"
+				return tr(tagKeyParamsInvalid, "参数不合法")
 			}
 			days, derr := ruleInt(m["days"], "days")
 			if derr != nil {
-				return "参数不合法"
+				return tr(tagKeyParamsInvalid, "参数不合法")
 			}
-			return fmt.Sprintf("上架 %d 天内", days)
+			return i18n.FillTranslate(tr, tagKeyNewArrivalDescribe, "上架 {days} 天内",
+				map[string]string{"days": strconv.Itoa(days)})
 		},
 		Evaluate: func(ctx context.Context, m *productmodel.Model, projectID string, params json.RawMessage) ([]string, error) {
 			p, err := decodeRuleParams(params)
@@ -102,8 +131,10 @@ var tagRules = []*tagRule{
 	},
 	{
 		Type:   productenums.TagRulePriceRange,
-		Name:   "价格区间（存在启用变体落在区间内）",
-		Params: "minPrice / maxPrice：至少给一个，0~1000000000 的非负数，minPrice ≤ maxPrice",
+		NameKey: tagKeyPriceRangeName,
+		Name:    "价格区间（存在启用变体落在区间内）",
+		ParamsKey: tagKeyPriceRangeParams,
+		Params:    "minPrice / maxPrice：至少给一个，0~1000000000 的非负数，minPrice ≤ maxPrice",
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			m, err := decodeRuleParams(params)
 			if err != nil {
@@ -113,7 +144,7 @@ var tagRules = []*tagRule{
 				return nil, err
 			}
 			if len(m) == 0 {
-				return nil, ruleParamsErr("minPrice 与 maxPrice 至少要给一个")
+				return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagPriceNeedsOne))
 			}
 			var minV, maxV *float64
 			if raw, ok := m["minPrice"]; ok {
@@ -122,7 +153,8 @@ var tagRules = []*tagRule{
 					return nil, verr
 				}
 				if v < 0 || v > tagRulePriceMax {
-					return nil, ruleParamsErr(fmt.Sprintf("minPrice 必须在 0~%s 之间", formatRulePrice(tagRulePriceMax)))
+					return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamRangePlain,
+						"field", "minPrice", "min", "0", "max", formatRulePrice(tagRulePriceMax)))
 				}
 				minV = &v
 			}
@@ -132,12 +164,13 @@ var tagRules = []*tagRule{
 					return nil, verr
 				}
 				if v < 0 || v > tagRulePriceMax {
-					return nil, ruleParamsErr(fmt.Sprintf("maxPrice 必须在 0~%s 之间", formatRulePrice(tagRulePriceMax)))
+					return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamRangePlain,
+						"field", "maxPrice", "min", "0", "max", formatRulePrice(tagRulePriceMax)))
 				}
 				maxV = &v
 			}
 			if minV != nil && maxV != nil && *minV > *maxV {
-				return nil, ruleParamsErr("minPrice 不能大于 maxPrice")
+				return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagPriceOrderWrong))
 			}
 			// 归一形态：只保留给了的键，键序固定（落库可读、可比对）。
 			parts := make([]string, 0, 2)
@@ -149,10 +182,10 @@ var tagRules = []*tagRule{
 			}
 			return json.RawMessage("{" + strings.Join(parts, ",") + "}"), nil
 		},
-		Describe: func(params json.RawMessage) string {
+		Describe: func(tr TranslateFunc, params json.RawMessage) string {
 			m, err := decodeRuleParams(params)
 			if err != nil {
-				return "参数不合法"
+				return tr(tagKeyParamsInvalid, "参数不合法")
 			}
 			minV, _ := ruleFloat(m["minPrice"], "minPrice")
 			maxV, _ := ruleFloat(m["maxPrice"], "maxPrice")
@@ -160,13 +193,17 @@ var tagRules = []*tagRule{
 			_, hasMax := m["maxPrice"]
 			switch {
 			case hasMin && hasMax:
-				return fmt.Sprintf("价格 %s ~ %s", formatRulePrice(minV), formatRulePrice(maxV))
+				return i18n.FillTranslate(tr, tagKeyPriceRangeDescribeBoth, "价格 {min} ~ {max}", map[string]string{
+					"min": formatRulePrice(minV), "max": formatRulePrice(maxV),
+				})
 			case hasMin:
-				return fmt.Sprintf("价格 ≥ %s", formatRulePrice(minV))
+				return i18n.FillTranslate(tr, tagKeyPriceRangeDescribeMin, "价格 ≥ {min}",
+					map[string]string{"min": formatRulePrice(minV)})
 			case hasMax:
-				return fmt.Sprintf("价格 ≤ %s", formatRulePrice(maxV))
+				return i18n.FillTranslate(tr, tagKeyPriceRangeDescribeMax, "价格 ≤ {max}",
+					map[string]string{"max": formatRulePrice(maxV)})
 			}
-			return "参数不合法"
+			return tr(tagKeyParamsInvalid, "参数不合法")
 		},
 		Evaluate: func(ctx context.Context, m *productmodel.Model, projectID string, params json.RawMessage) ([]string, error) {
 			p, err := decodeRuleParams(params)
@@ -192,9 +229,11 @@ var tagRules = []*tagRule{
 		},
 	},
 	{
-		Type:   productenums.TagRuleOnSale,
-		Name:   "促销（有划线价）",
-		Params: "无参数（留空即 {}）；命中条件为存在启用变体且对比价高于售价",
+		Type:      productenums.TagRuleOnSale,
+		NameKey:   tagKeyOnSaleName,
+		Name:      "促销（有划线价）",
+		ParamsKey: tagKeyOnSaleParams,
+		Params:    "无参数（留空即 {}）；命中条件为存在启用变体且对比价高于售价",
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			m, err := decodeRuleParams(params)
 			if err != nil {
@@ -205,7 +244,9 @@ var tagRules = []*tagRule{
 			}
 			return json.RawMessage("{}"), nil
 		},
-		Describe: func(json.RawMessage) string { return "有划线价（对比价高于售价）" },
+		Describe: func(tr TranslateFunc, _ json.RawMessage) string {
+			return tr(tagKeyOnSaleDescribe, "有划线价（对比价高于售价）")
+		},
 		Evaluate: func(ctx context.Context, m *productmodel.Model, projectID string, params json.RawMessage) ([]string, error) {
 			return m.ListProductIDsWithDiscount(ctx)
 		},
@@ -224,10 +265,12 @@ func lookupTagRule(ruleType string) *tagRule {
 }
 
 // tagRuleTypeOptions 内置规则类型清单（后台下拉与接口的唯一来源）。
-func tagRuleTypeOptions() (out []*productdto.TagRuleTypeResp) {
+func tagRuleTypeOptions(tr TranslateFunc) (out []*productdto.TagRuleTypeResp) {
 	out = make([]*productdto.TagRuleTypeResp, 0, len(tagRules))
 	for _, r := range tagRules {
-		out = append(out, &productdto.TagRuleTypeResp{Type: r.Type, Name: r.Name, Params: r.Params})
+		out = append(out, &productdto.TagRuleTypeResp{
+			Type: r.Type, Name: tr(r.NameKey, r.Name), Params: tr(r.ParamsKey, r.Params),
+		})
 	}
 	return out
 }
@@ -249,16 +292,16 @@ func normalizeTagRuleParams(ruleType string, params json.RawMessage) (out json.R
 //
 // 未知类型（外部改库改坏 / 旧版本遗留）返回一句可读的「未知规则」而不是报错：
 // 后台列表不该因为一条坏数据整页打不开。
-func describeTagRule(ruleType string, params json.RawMessage) string {
+func describeTagRule(tr TranslateFunc, ruleType string, params json.RawMessage) string {
 	ruleType = strings.TrimSpace(ruleType)
 	if ruleType == "" {
 		return ""
 	}
 	r := lookupTagRule(ruleType)
 	if r == nil {
-		return "未知规则类型：" + ruleType
+		return fmt.Sprintf(tr(tagKeyUnknownRule, "未知规则类型：%s"), ruleType)
 	}
-	return r.Describe(params)
+	return r.Describe(tr, params)
 }
 
 // decodeRuleParams 规则参数必须是 JSON 对象（空 / null 按空对象处理）。
@@ -268,7 +311,7 @@ func decodeRuleParams(raw json.RawMessage) (m map[string]json.RawMessage, err er
 		return map[string]json.RawMessage{}, nil
 	}
 	if err = json.Unmarshal(raw, &m); err != nil || m == nil {
-		return nil, ruleParamsErr("规则参数必须是 JSON 对象")
+		return nil, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamsNotObject))
 	}
 	return m, nil
 }
@@ -289,7 +332,8 @@ func rejectUnknownRuleKeys(m map[string]json.RawMessage, allowed ...string) (err
 		return nil
 	}
 	sort.Strings(unknown)
-	return ruleParamsErr("不支持的参数键：" + strings.Join(unknown, ", "))
+	return ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagUnknownKeys,
+		"keys", strings.Join(unknown, ", ")))
 }
 
 // ruleInt 取整型参数（JSON 数字且必须是整数；字符串形式的数字也拒绝 —— 类型不符即错）。
@@ -299,7 +343,7 @@ func ruleInt(raw json.RawMessage, key string) (v int, err error) {
 		return 0, ferr
 	}
 	if f != float64(int(f)) {
-		return 0, ruleParamsErr(key + " 必须是整数")
+		return 0, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamNotInteger, "field", key))
 	}
 	return int(f), nil
 }
@@ -308,11 +352,11 @@ func ruleInt(raw json.RawMessage, key string) (v int, err error) {
 func ruleFloat(raw json.RawMessage, key string) (v float64, err error) {
 	s := strings.TrimSpace(string(raw))
 	if s == "" {
-		return 0, ruleParamsErr(key + " 必须是数字")
+		return 0, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamNotNumber, "field", key))
 	}
 	f, ferr := strconv.ParseFloat(s, 64)
 	if ferr != nil {
-		return 0, ruleParamsErr(key + " 必须是数字")
+		return 0, ruleParamsErr(i18n.ErrorDetail(productenums.DetailTagParamNotNumber, "field", key))
 	}
 	return f, nil
 }
@@ -330,5 +374,6 @@ func ruleTypeErr(ruleType string) error {
 	if strings.TrimSpace(ruleType) == "" {
 		return errors.New(productenums.ErrTagRuleTypeInvalid)
 	}
-	return fmt.Errorf("%s：%s", productenums.ErrTagRuleTypeInvalid, ruleType)
+	return fmt.Errorf("%s：%s", productenums.ErrTagRuleTypeInvalid,
+		i18n.ErrorDetail(productenums.DetailTagUnknownRuleType, "type", ruleType))
 }

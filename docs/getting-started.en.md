@@ -5,7 +5,8 @@ This guide covers the shortest supported development path. For the broader proje
 ## Prerequisites
 
 - Go 1.26 or newer, matching the version declared in `go.mod`
-- Docker with Docker Compose
+- PostgreSQL 18 or newer running locally
+- Redis 7 or newer running locally
 - GNU Make
 
 The application requires PostgreSQL and Redis. Redis is a required session dependency, not an optional cache.
@@ -13,16 +14,15 @@ The application requires PostgreSQL and Redis. Redis is a required session depen
 ## Run Locally
 
 ```bash
-make up
 make migrate
 make dev
 ```
 
 Open `http://127.0.0.1:8080` after the application starts.
 
-`make up` starts PostgreSQL and Redis. `make migrate` waits for PostgreSQL; migrations and seeds run during application startup because there is no separate migration command. Redis must also be available when the application starts. `make dev` starts the development process with Air reload support.
+`make migrate` checks the local PostgreSQL service with `pg_isready`, maps the `PG*` connection variables to `GOWP_DATABASE_*`, and runs `go run ./cmd -migrate-only`. The command requires a database role with migration privileges. Whether Air automatically runs migrations after each restart is controlled by `database.run_migrations`: set it to `true` for a development database whose application role has DDL privileges; set it to `false` and run `make migrate` manually when using a restricted application role. Redis must also be available when the application starts. `make dev` starts the development process with Air reload support.
 
-Database settings can be overridden with `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`. Their defaults match `docker-compose.yml` and `config.yaml`.
+Database settings can be overridden with `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE`.
 
 ## Useful Checks
 
@@ -32,6 +32,6 @@ go build ./...
 go vet ./...
 ```
 
-Use focused package tests while developing. `make` lists the repository's other targets. `make clean-data` removes the local database and Redis volumes; it is the destructive local target.
+Use focused package tests while developing. `make` lists the repository's other targets. Remove local test databases through PostgreSQL administration when cleanup is needed.
 
 The backend uses Jet templates, native JavaScript, and HTMX. There is no separate frontend bundle to build. Some templates and component assets are embedded in the Go binary, while admin templates and `/static` assets are still served from the filesystem.

@@ -90,3 +90,51 @@ func SplitFacingDetail(msg string) (key, detail string, ok bool) {
 	}
 	return "", "", false
 }
+
+// —— 点分 key 常量（新式）——
+//
+// 值是 sys_i18n 的 item_key（文案真源在迁移 451），命名按「去掉模块子域前缀
+// （`admin.navigation_translations.` / `admin.navigations.`）后的语义路径」：
+// 包名 navigationenums 已经给出模块上下文，再带一遍子域只是噪音。
+//
+// 为什么与上面那批 `MsgXxx = "MsgXxx"` 分开成组：老式形态的值就是常量名本身
+//（`sys_i18n` 里存同名 key），与点分 key 混在同一段里会让人以为值也是 `MsgXxx`。
+// 两组不可互换：老式常量走「常量名即资源 key」，新式常量走 sys_i18n 的 item_key。
+//
+// 中文兜底**不在这里** —— 兜底留在调用点（词条缺失时的回落），见各 inbound/http 文件。
+const (
+	// 译文工作台的保存结果文案。
+	Saved     = "admin.navigation_translations.saved"     // 已保存 %d 条译文；已标记受影响页面待重建（下次构建生效）
+	SavedNone = "admin.navigation_translations.savedNone" // 没有需要写入的变化
+
+	// 译文工作台的行级校验与整体失败文案（进页面错误槽）。
+	ErrRowCountMismatch   = "admin.navigation_translations.err.rowCountMismatch"   // 提交的行数不一致，请刷新后重试
+	ErrStorageUnavailable = "admin.navigation_translations.err.storageUnavailable" // 译文存储不可用
+	ErrContextInvalid     = "admin.navigation_translations.err.contextInvalid"     // 语境非法：导航标签只接受 %s
+	ErrSourceChanged      = "admin.navigation_translations.err.sourceChanged"      // 菜单文字已变化，请刷新后重试
+	ErrNotTranslatable    = "admin.navigation_translations.err.notTranslatable"    // %s：该菜单文字不参与翻译（纯数字或纯符号）
+	ErrSaveFailed         = "admin.navigation_translations.err.saveFailed"         // 保存失败：%s
+	ErrProjectListFailed  = "admin.navigation_translations.err.projectListFailed"  // 读取工程列表失败，请稍后重试
+
+	// 导航类型标题（译文工作台按位置分组）。
+	KindFooter = "admin.navigations.kind.footer" // 页脚导航
+	KindHeader = "admin.navigations.kind.header" // 页眉导航
+
+	// 面板块默认名的位置词（新建块时按当前请求语言拼出，见 navigation_panel_page.go）。
+	PanelBlockNameMenu         = "admin.navigations.panel.blockName.menu"         // 菜单
+	PanelBlockNameHeader       = "admin.navigations.panel.blockName.header"       // 页眉菜单
+	PanelBlockNameHeaderMobile = "admin.navigations.panel.blockName.headerMobile" // 页眉移动菜单
+	PanelBlockNameFooter       = "admin.navigations.panel.blockName.footer"       // 页脚菜单
+	PanelBlockNameFooterMobile = "admin.navigations.panel.blockName.footerMobile" // 页脚移动菜单
+	PanelBlockNamePanel        = "admin.navigations.panel.blockName.panel"        // 面板
+
+	// 来源分组标题（「从已有内容添加」抽屉按来源实体分组）。
+	//
+	// 这批 key 有两个取用者，**分层是有意的**：inbound/http 的 navSourceGroupTitles 带中文兜底
+	//（展示层才拿得到请求语言），outbound/source 的 sourceGroupTitleKey 只回 key（该适配器在
+	// service 层之下，写中文等于把一种语言焊进契约数据）。常量共用这一份，两处形态各自保留。
+	SourcePage     = "admin.navigations.source.page"     // 页面
+	SourceArticle  = "admin.navigations.source.article"  // 文章
+	SourceProduct  = "admin.navigations.source.product"  // 产品
+	SourceCategory = "admin.navigations.source.category" // 分类
+)

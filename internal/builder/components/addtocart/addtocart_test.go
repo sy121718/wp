@@ -201,32 +201,78 @@ func TestEffectiveTargetFallsBack(t *testing.T) {
 	}
 }
 
-// TestApplyI18n 界面文案：默认按钮文字取译文，作者自定义的文案不动。
+// TestApplyI18n 界面文案：固定文案（按钮缺省值、数量框无障碍名）取译文，作者自定义的文案不动。
+//
+// 判据是**收到的 key 集合**，不是「只收到按钮那一个」：实现里三段判定各自独立、不许早退
+// （作者一填自定义按钮文字，aria-label 就永远是中文，而页面上根本看不到这串字 —— 只有看产物
+// 源码或用读屏器才发现）。所以这里同时钉两个方向：该取的都取了、不该取的一个也没多取。
 func TestApplyI18n(t *testing.T) {
-	// 默认文案 → 取译文。
+	// 默认文案 → 两处固定文案都取译文。
 	v := &View{ButtonText: textFallbackButton}
+	asked := map[string]string{}
 	v.ApplyI18n(func(key, fallback string) string {
-		if key != TextKeyButton {
-			t.Errorf("文案键不对: %q", key)
+		asked[key] = fallback
+		switch key {
+		case TextKeyButton:
+			return "Add to cart"
+		case TextKeyQtyAria:
+			return "Quantity"
 		}
-		return "Add to cart"
+		t.Errorf("多取了文案键: %q", key)
+		return fallback
 	})
 	if v.ButtonText != "Add to cart" {
 		t.Fatalf("默认按钮文字应取译文，实际 %q", v.ButtonText)
 	}
+	if v.QtyAria != "Quantity" {
+		t.Fatalf("数量框无障碍名应取译文，实际 %q（英文站点上读屏器会念中文）", v.QtyAria)
+	}
+	if len(asked) != 2 {
+		t.Fatalf("正常渲染只该取按钮与数量框两条文案，实际取了 %d 条: %v", len(asked), asked)
+	}
+	// 兜底值必须原样传下去：取词函数缺该词条时返回 fallback，产物要停在中文而不是空串。
+	if asked[TextKeyQtyAria] != textFallbackQtyAria {
+		t.Fatalf("数量框文案的兜底值不符，实际 %q", asked[TextKeyQtyAria])
+	}
 
-	// 自定义文案 → 不翻译（它属于内容，走 Translatable 那条链路）。
+	// 自定义按钮文字 → 那条不翻译（它属于内容，走 Translatable 链路）；数量框照旧取译文。
 	v2 := &View{ButtonText: "立即抢购"}
-	v2.ApplyI18n(func(string, string) string { return "Buy now" })
+	v2.ApplyI18n(func(key, fallback string) string {
+		if key == TextKeyButton {
+			t.Error("作者自定义的按钮文字不该走界面翻译（它由内容翻译链路负责）")
+		}
+		if key == TextKeyQtyAria {
+			return "Quantity"
+		}
+		return fallback
+	})
 	if v2.ButtonText != "立即抢购" {
 		t.Fatalf("作者自定义的文案不该被界面翻译覆盖，实际 %q", v2.ButtonText)
 	}
+	if v2.QtyAria != "Quantity" {
+		t.Fatalf("自定义按钮文字不该带走数量框的取词（两件事各自独立），实际 %q", v2.QtyAria)
+	}
 
-	// 无翻译函数 → 保持中文兜底，不 panic。
+	// 降级提示：只在异常数据状态下非空，按 BuildView 记下的 key 取词。
+	v2b := &View{ButtonText: textFallbackButton, Notice: noticeNoVariant, noticeKey: TextKeyNoticeNoVariant}
+	v2b.ApplyI18n(func(key, fallback string) string {
+		if key == TextKeyNoticeNoVariant {
+			return "No variant available"
+		}
+		return fallback
+	})
+	if v2b.Notice != "No variant available" {
+		t.Fatalf("降级提示应按记录的 key 取译文，实际 %q", v2b.Notice)
+	}
+
+	// 无翻译函数 → 全部保持中文兜底，不 panic。
 	v3 := &View{ButtonText: textFallbackButton}
 	v3.ApplyI18n(nil)
 	if v3.ButtonText != textFallbackButton {
 		t.Fatalf("无翻译函数时应保持兜底文案，实际 %q", v3.ButtonText)
+	}
+	if v3.QtyAria != textFallbackQtyAria {
+		t.Fatalf("无翻译函数时数量框应保持兜底文案，实际 %q", v3.QtyAria)
 	}
 
 	// nil 视图不 panic。

@@ -1,44 +1,38 @@
 # AGENTS.md
 
-本文件描述 go_wp 仓库的实际开发约定，是 DSH 会话的最高项目级规则。
-兼容说明：根目录不再保留 `CLAUDE.md`（内容已并入本文）；子目录规则见 `internal/module/CLAUDE.md`、`pkg/CLAUDE.md`、`public/CLAUDE.md`、`docs/agents/`。
-强制内容：本系统开发阶段，不需要兼容任何老的代码，有问题直接重构
+go_wp 仓库的开发约定，DSH 会话的最高项目级规则。
+
+- **本文件只放判据、红线与指针**；论证、实测数据、踩坑实例在 [`docs/rules/`](docs/rules/README.md)，按需读
+- 子目录规则：`internal/module/`、`internal/templates/`、`pkg/`、`public/`、`public/test/` 各自的 `CLAUDE.md`；
+  批次执行者读 `docs/agents/parallel-batch-rules.md`
+- 项目规划 / 规格 / 审计 / 模块清单在 `docs/`（那是项目内容，不是规则）
+
+**强制内容**：本系统开发阶段，不需要兼容任何老的代码，有问题直接重构。
 
 ## 语言要求（最高优先级）
 
-- 所有回复、分析、总结、计划、报告一律使用简体中文
-- 推理/思考过程也使用简体中文
+- 所有回复、分析、总结、计划、报告一律使用简体中文；推理/思考过程也是
 - 工具输出、代码、上游数据即使是英文，回复仍必须是中文；代码标识符、专有名词、命令保留原文
 
 ## 项目概览
 
-go_wp 是 `CMS + Visual Website Builder + Static Publishing Engine`。
+go_wp = `CMS + Visual Website Builder + Static Publishing Engine`。
 
-控制面（CMS + Builder + Build Worker）把可编辑的 Page Document 和 CMS 内容编译为不可变静态 Artifact；访问面（Static Server / CDN + Runtime Fragment Endpoint）只读取已激活的 HTML/CSS/JS。Go + Jet 只在 Preview/Publish 构建阶段运行，访客请求不执行任何模板或数据库查询。
+控制面（CMS + Builder + Build Worker）把 Page Document 与 CMS 内容编译为不可变静态 Artifact；
+访问面（Static Server / CDN + Runtime Fragment Endpoint）只读已激活的 HTML/CSS/JS。
+**Go + Jet 只在 Preview/Publish 构建阶段运行，访客请求不执行任何模板或数据库查询。**
 
-**技术栈**：
+选型：Gin + Go ｜ Jet v6（构建期组件 + 后台页面 SSR）｜ HTMX（**本地 vendor**）｜
+Session + Cookie（gin-contrib/sessions）+ Casbin（自研 persist.Adapter）｜ PostgreSQL（主库）+ Redis
+（`pkg/cache`，**Critical，配置必须启用**）｜ Artifact 本地文件系统（`Provider: "local"`，对象存储是预留
+扩展点，**当前只有 local 实现**）｜ Trix 2.x（本地 vendor）+ 服务端白名单清洗。
 
-| 层 | 选型 | 职责 |
-|---|---|---|
-| Web 框架 | Gin | HTTP 路由、中间件链、请求绑定 |
-| 后端与构建器 | Go | CMS、BuildContext、Publish Compiler、版本与发布状态机 |
-| 构建期模板 | Jet v6（`github.com/CloudyKit/jet/v6`） | 发布阶段把受限 Fragment 与 BuildContext 渲染为最终 HTML；后台页面 SSR |
-| Admin 交互 | HTMX（**本地 vendor**：`internal/templates/static/js/ui/htmx.min.js`） | 草稿、预览、构建、发布、回滚请求 |
-| 认证 | Session + Cookie（gin-contrib/sessions + Cookie 存储） | 替代旧 JWT 方案，HTMX 请求自动携带 Cookie |
-| 鉴权 | Casbin（自研 persist.Adapter） | Enforce(user_id, path, method)；业务 API 已挂载 |
-| 公开动态片段 | HTMX + Go Handler | 按 Registry capability 返回受控 HTML Fragment（`runtimefragment`，挂载 `/_fragments/{type}`）；**产物按需内联 htmx** —— 页面 HTML 里出现任一 `hx-*` 属性时由 builder 注入（`ui_script.go` 的前缀命中），一个都没有就一个字节都不注入（htmx 是行为库，不需要控件基座与 `ui.css`） |
-| 富文本编辑器 | Trix 2.x（本地 vendor：/static/vendor/trix/）+ 自研扩展（internal/templates/static/js/rich-editor/） | 文章正文 / 分类描述 / 品牌描述编辑；服务端白名单清洗（internal/builder/core/richtext.go）。**块级元素 h1~h5 与段落原样保留**（原「h1 降级 h2」已取消：标题层级是 SEO 与正文结构的一部分，降级会把作者写的一级标题改掉）；表格、折叠块（details/summary）、水平线在白名单内。表格与折叠块是 Trix 的 attachment 扩展（2.1.19 没有 config.elements，自定义 element 那条路不可用），提交时展开为真 HTML |
-| 数据库 | PostgreSQL（主库） | CMS 内容、Page 草稿、Artifact 元数据和依赖索引；MySQL 为历史兼容；SQLite/SQL Server 驱动已移除 |
-| 会话存储 | Redis（pkg/cache） | 用户会话、封禁标记、在线心跳（**Critical 组件，配置必须启用**） |
-| Artifact 存储 | 本地文件系统（`Provider: "local"`） | 不可变构建文件与内容寻址资源；对象存储是**预留扩展点**（`pipeline.Store` 接口 + `Locator.Provider`），**当前只有 local 实现** |
-| 访问（公开站点） | Static Server / CDN | 直接提供激活后的 Artifact |
-
-> ~~Vue 3 / vue-pure-admin~~ 已废弃并移除。所有后台界面由 Go 渲染 Jet 模板 + HTMX 片段实现。
+完整边界见 [`docs/01-overview.md`](docs/01-overview.md)。Vue 3 / vue-pure-admin 已废弃移除 ——
+后台界面全是 Go 渲染 Jet 模板 + HTMX 片段。
 
 ## 常用命令
 
 ```bash
-# 后端
 go run cmd/main.go
 go build -o app ./cmd        # 生产构建用「包路径」形式，且在 git 工作区内执行（见「组件更新与重建」）
 go test ./...
@@ -46,51 +40,45 @@ go test -race ./...          # 并发回归
 go vet ./...
 ```
 
-
 ### 组件更新与重建
 
-组件（Go 实现 + `internal/templates/components/*.jet` 模板）编译进二进制，**部署新组件后已发布的
-产物仍然是旧组件渲染的字节**。系统不会自动重建，但会在启动时给出准确的影响面：
+组件（Go 实现 + `internal/templates/components/*.jet`）编译进二进制，**部署新组件后已发布的产物仍是旧组件
+渲染的字节**。系统**不自动重建**：启动时比对 `builder.RegistryVersion()` 与 `page_artifacts.registry_version`
+把差异页面标记 stale（只标记），运维经 `page.ListStalePages`（列出）+ `page.RebuildStale`（按 id 重建）处理，
+或由后续编辑/发布自然覆盖。
 
-```text
-启动 → builder.RegistryVersion() 与 page_artifacts.registry_version 比对
-     → 差异页面标记 stale（只标记、不重建，避免拖住启动链）
-     → 日志：检测到组件已更新：相关页面已标记待重建（count / registryVersion）
-     → 运维经 page.RebuildStale 重建，或由后续编辑/发布自然覆盖
-```
-
-`RegistryVersion` = 构建指纹（`vcs.revision`+`vcs.modified`）+ 组件清单指纹（类型 + Props 的
-json/ct 标签结构 + 可翻译白名单）。两者的分辨力互补：
-
-| 构建方式 | vcs.revision | Go 代码改动（BuildView/CompileCSS） | Props/模板改动 |
-|---|---|---|---|
-| `go build -o app ./cmd`（git 工作区内） | ✅ | ✅ | ✅ |
-| `go build -o app cmd/main.go`（单文件） | ✅ | ✅ | ✅ |
-| `go run …` / 无 git 环境 | ❌ | ❌ | ✅ |
-
-无 VCS 信息时退化为「组件清单指纹」单独生效：**能发现字段与控件声明变化，发现不了只有 Go 代码
-变了的改动**。生产环境请确保二进制带 VCS 信息（在 git 工作区内构建即可，Go 1.18+ 默认嵌入）。
-
-> 坑：不要用 `bi.Main.Path` 之类的构建期变量给指纹兜底 —— 它随构建方式变化（`go run cmd/main.go`
-> 是 `command-line-arguments`，包方式是模块路径），会让同一个 commit 因构建命令不同算出不同版本，
-> 表现为「每次切换构建方式就误判全站待重建」。
-
-> 产物文件丢失（误删/磁盘损坏）不属于重建范畴：用 `POST /api/page/artifact/rebuild` 按元数据里的
-> `source_document` 重建，并以返回的 `hashMatched` 判断是否原样恢复（组件已更新时会为 false）；
-> `GET /api/page/publication/audit` 可巡检 active 目录里的悬空链接。
+- 构建**必须在 git 工作区内**：无 VCS 信息时只剩组件清单指纹，**发现不了只有 Go 代码变了的改动**。
+  禁止用 `bi.Main.Path` 之类构建期变量兜底（同一 commit 会因构建方式不同算出不同版本）。
+- 产物文件丢失不属于重建：`POST /api/page/artifact/rebuild`（看返回的 `hashMatched`）；
+  `GET /api/page/publication/audit` 巡检 active 目录的悬空链接。
 
 ## 架构约束（核心不变量）
 
-以下不变量贯穿全系统，违反任意一条即为设计缺陷。详细论证见 `docs/01-overview.md` 等文档。
+违反任意一条即为设计缺陷。论证见 [`docs/01-overview.md`](docs/01-overview.md)。
+代码注释里以「**AGENTS.md 不变量 N**」引用本节第 N 条。
 
-1. **控制面与访问面分离**：访客请求不查询数据库、不执行 Jet、不解释 AST。URL → 文件映射由 PublicationStore 文件系统状态决定，不由数据库指针决定。
-   · **唯一例外：访问统计打点**（BIZ-8）。访问面是静态产物直出，Go 不在请求路径上 —— 计数只可能来自客户端，因此 `POST /analytics/collect` 是访客浏览器发起的**唯一写库路径**。它的边界写死在三个地方：接口形状只有「写一条记录」（没有查询 / 删除能力）、**不参与任何页面渲染**（响应恒为 204 空体）、失败一律静默（写库失败只记日志，绝不影响访客页面）。它落库的也全是匿名派生值：IP / 会话 / 访客标识一律带盐哈希，UA 只存粗粒度分类。
-2. **两条发布路径共享同一管线**：Page（手工）与 PresentationInstance（自动）走同一 Publish Compiler → ArtifactStore → PublicationStore。
-3. **Blueprint 用完即弃，ContentTemplate 每次构建参与**（0-B/0-A2 不变式）：Blueprint 只初始化 Page Document，后续修改不传播。
-4. **Binding 不是 Query DSL**：Document 只保存白名单 FieldBinding / CollectionSource / MediaBinding，不能保存 SQL、过滤表达式或任意 endpoint。
-5. **确定性构建**：同一 Page Document + BuildContext + Registry + Compiler 产生相同 Artifact 字节（有 determinism/fuzz 测试背书）。
-6. **冻结边界不可越权**：每个模块、组件、协议都有明确的「负责 / 禁止」边界，详见 `docs/01-overview.md` §5 冻结边界速查。
-7. **构建期数据源的依赖方向**（issue #35）：共享形状放 `internal/builder/source`（零依赖，谁都能 import）；业务模块在**自己的契约包**里声明**受限数据源接口**（只有读集合 / 元数据 / 可筛值，写方法不进接口）；`builder/core` 直接持有这些契约接口。**契约包不得反向 import `builder/core`** —— 一旦反向即成环（`core → 契约 → core`），core 就再也无法持有业务契约。新领域接入的六步与两条不变量见 `docs/04-B-dynamic-development-guide.md` §1.4。
+1. **控制面与访问面分离**：访客请求不查询数据库、不执行 Jet、不解释 AST。URL → 文件映射由
+   PublicationStore 文件系统状态决定，不由数据库指针决定。
+   · **唯一例外：访问统计打点**（BIZ-8）。`POST /analytics/collect` 是访客浏览器发起的**唯一写库路径**，
+   边界写死三处：接口只有「写一条记录」（无查询/删除）、**不参与任何页面渲染**（响应恒 204 空体）、
+   失败一律静默。落库全是匿名派生值（IP / 会话 / 访客标识带盐哈希，UA 只存粗粒度分类）。
+   · **第二条例外：访问面守卫中间件只读访客会话**（PIPE-6 AccessGuard）。`/site` 的守卫中间件为判定
+   「登录可见」需读 Redis 里的访客会话（`gowp_user_session`）：**只读一个 key、不查 PostgreSQL、不写库、
+   不续期**，判定失败一律 fail closed（当未登录处理）。它与本条不冲突 —— URL → 文件映射仍由
+   PublicationStore 文件系统状态决定，中间件只在映射命中之后决定「这份字节要不要给这个访客」；
+   「密码保护」那一半则完全不碰会话（bcrypt 哈希烘在产物里、解锁走签名 cookie），零 PG 零 Redis。
+2. **两条发布路径共享同一管线**：Page（手工）与 PresentationInstance（自动）走同一 Publish Compiler →
+   ArtifactStore → PublicationStore。
+3. **Blueprint 用完即弃，ContentTemplate 每次构建参与**（0-B/0-A2）：Blueprint 只初始化 Page Document，
+   后续修改不传播。
+4. **Binding 不是 Query DSL**：Document 只保存白名单 FieldBinding / CollectionSource / MediaBinding，
+   不能保存 SQL、过滤表达式或任意 endpoint。
+5. **确定性构建**：同一 Page Document + BuildContext + Registry + Compiler 产生相同 Artifact 字节。
+6. **冻结边界不可越权**：模块、组件、协议各有明确的「负责 / 禁止」边界，见 `docs/01-overview.md` §5。
+7. **构建期数据源的依赖方向**（issue #35）：共享形状放 `internal/builder/source`（零依赖）；业务模块在
+   **自己的契约包**里声明**受限数据源接口**（只有读集合 / 元数据 / 可筛值，写方法不进接口）；
+   `builder/core` 直接持有这些契约。**契约包不得反向 import `builder/core`**（反向即成环）。
+   接入六步见 [`docs/04-B-dynamic-development-guide.md`](docs/04-B-dynamic-development-guide.md) §1.4。
 
 ### 控制面与访问面
 
@@ -100,140 +88,111 @@ json/ct 标签结构 + 可翻译白名单）。两者的分辨力互补：
 ```
 
 - 普通访客请求不得查询 `pages.active_artifact_id` 后再选择模板
-- 数据库指针用于控制、审计和故障恢复；实际 URL 必须由 PublicationStore 映射到已激活的静态文件
-- 库存、购物车、登录状态等实时能力优先通过 HTMX Runtime Fragment 提供；只有纯客户端状态才使用 Client Enhancement
+- 数据库指针用于控制、审计与故障恢复；实际 URL 必须由 PublicationStore 映射到已激活的静态文件
+- 库存、购物车、登录状态等实时能力优先通过 HTMX Runtime Fragment 提供；只有纯客户端状态才用
+  Client Enhancement
 
 ### 关键协议辨析
 
 ```text
-CMS 内容实例      ≠ DocumentSnapshot
-Page              ≠ CMS 展示模板
+CMS 内容实例 ≠ DocumentSnapshot        Page ≠ CMS 展示模板
 PresentationInstance ≠ Page（前者自动，后者手工）
-Blueprint         = Page Document 初始化工具（用完即弃）
-ContentTemplate   = PresentationInstance DocumentSnapshot 的版本化结构来源（仅参与构建期）
-Blueprint         ≠ 构建期或运行时模板
-Page Document     ≠ CMS Content
-Artifact          ≠ 可编辑源码
+Blueprint = Page Document 初始化工具（用完即弃）
+ContentTemplate = DocumentSnapshot 的版本化结构来源（仅参与构建期）
+Blueprint ≠ 构建期或运行时模板          Page Document ≠ CMS Content
+Artifact ≠ 可编辑源码
 ```
 
 ## 模块现状
 
-> **模块清单的权威在 [docs/13-module-inventory.md](./docs/13-module-inventory.md)**：各模块的完整职责、
-> 不变量与落地细节都在那里。本表只保留**一句话边界**，新增 / 更名模块先改那份清单、再来这里补一行，
-> 不要在本文件展开实现细节 —— 同一份清单留两份真源必然会漂移。
+> **模块清单的权威在 [`docs/13-module-inventory.md`](docs/13-module-inventory.md)** —— 各模块完整职责、
+> 不变量与落地细节都在那里。本文件**不重复模块表**（同一份清单留两份真源必然漂移）。
+> 新增 / 更名模块：先改那份清单，代码与清单同一批提交。
 
-| 模块 | 一句话职责 | 不负责 |
-|---|---|---|
-| `admin` | 管理控制面：管理员、角色、权限点、菜单、部门、数据权限 | CMS 内容、公开站点用户 |
-| `common` | 公共业务入口（验证码） | 通用基础设施 |
-| `workbench` | 可视化编辑器平台：仪表盘首页、画布预览、检查器（schema→表单）、结构树 | 业务域页面（各模块自注册） |
-| `media` | 附件与文件分类 | — |
-| `project` | 站点工程、SiteSettings、多主题 | — |
-| `page` | 手工 Page 与 Page Document | 槽位指向页面的外观排版 |
-| `block` | 复用资产（全局块） | — |
-| `artifact` | Artifact 元数据与内容对象闭包 | — |
-| `publication` | URL 占用、激活（两段式回执）、回滚 | 编译内核与模板渲染 |
-| `build` | 构建任务队列 | 队列只做调度，编译内核在 `internal/builder` |
-| `content` | 固定 CMS 内容（`article`） | — |
-| `contenttemplate` | DocumentSnapshot 的版本化结构模板 | — |
-| `presentation` | 自动发布实例 | 手工 Page |
-| `blueprint` | Page Document 初始化工具（用完即弃） | 构建期 / 运行时模板 |
-| `navigation` | 公开站点菜单 | 管理后台权限菜单 |
-| `plugin` | 插件体系（组件注册、能力分层） | — |
-| `product` | 商品域：商品 / 变体 / 属性 / 分类 / 品牌 / 标签 / 定价 / 捆绑 | 库存流水与扣减、采购、订单、客户 |
-| `inventory` | 仓库 / 库存真源 / 库存变动 / 货源 / 采购 | 订单 / 客户（销售侧） |
-| `masterdata` | 主数据字段级变更记录（append-only） | 数量库存的增减；商品与货源的业务规则 |
-| `mail` | 邮箱模块：发信账号、邮件模板 | 短信 / 站内信等其它通知渠道；访客账号 |
-| `user` | 访问面访客账号 | CMS 内容与后台管理；会员等级 / 权益 |
-| `order` | 订单（销售侧） | 购物车与结算页；真支付网关对接；库存真源 |
-| `cart` | 购物车与访客结算 | 订单持久化与状态机；商品与库存真源 |
-| `analytics` | 站点访问统计 | 页面渲染与业务逻辑；实时行为分析；保留期归档 |
-| `webhook` | 外部集成通道：端点白名单（事件类型 × 目标 URL）+ 投递日志 + 异步签名投递 | 业务事件的产生与内容；重试上限之外的人工补偿 |
-| `runtimefragment` | 白名单动态片段（访问面 `/_fragments/{type}`，按 capability 注册） | 页面渲染与编译（片段只产受控 HTML） |
-
-> `build` 有独立模块目录（`internal/module/build`），承载**构建任务队列**（调度与可见性）；
-> 编译内核在 `internal/builder`，发布内核在 `internal/pipeline` —— **编译逻辑不在 build 模块**。
-> `permission/role/menu/dept/datarule` 已并入 `admin` 大模块，不再独立。
-> 模块落地后必须同步更新 `docs/13-module-inventory.md`；新增模块代码与规则文件在同一批提交中更新，禁止只加代码不更新清单。
+- `build` 模块只承载**构建任务队列**（调度与可见性）；编译内核在 `internal/builder`，发布内核在
+  `internal/pipeline` —— **编译逻辑不在 build 模块**。
+- `permission/role/menu/dept/datarule` 已并入 `admin` 大模块，不再独立。
 
 ### 命名约束
 
-- `menu` = 管理后台权限菜单；`navigation` = 公开站点导航，两者不可混用
-- `admin` = 管理控制面账号；`user` = 访问面访客账号。两者是**两个独立领域**：各自的表、cookie、会话命名空间与鉴权链，不允许互相复用（曾经的危险捷径是「让访客共用 admin 表与会话」，那会让访客 cookie 顶掉后台登录态、并让两套 id 空间相互污染）
-- `build → artifact → publication` 是单向流水线，后者不得反向导入前者实现
-- 跨模块只使用 `contract` 和不可变 DTO；不得导入其他模块的 `service/model`（不可变 DTO 允许跨模块传递，对齐 `internal/module/CLAUDE.md` 表隔离约定）
+- `menu` = 管理后台权限菜单；`navigation` = 公开站点导航。两者不可混用。
+- `admin` = 管理控制面账号；`user` = 访问面访客账号。**两个独立领域**：各自的表、cookie、会话命名空间与
+  鉴权链，**不允许互相复用**（共用会让访客 cookie 顶掉后台登录态、两套 id 空间相互污染）。
+- `build → artifact → publication` 是单向流水线，后者不得反向导入前者实现。
+- 跨模块只使用 `contract` 和不可变 DTO；不得导入其他模块的 `service/model`。
 
 ## 核心约定
 
 ### 启动与关闭
 
-统一入口：
+`config.Init()` → `config.InitComponents()`（Critical 优先：database → cache → auth → casbin → …）→
+`config.CloseComponents()`（逆序）。
 
-- `config.Init()` → 读配置
-- `config.InitComponents()` → 初始化所有 `pkg` 组件（Critical 优先：database → cache → auth → casbin → …）
-- `config.CloseComponents()` → 逆序关闭
+组件不自行决定进程退出，只返回 `error`；配置校验在各自 `pkg.Init()` 内部完成。
+**auth fail-fast**：`redis.enabled=false` 时启动失败，release 模式弱 `session_secret` 拒绝启动。
 
-组件不自行决定进程退出，组件只返回 `error`。配置校验在各自 `pkg.Init()` 内部完成。
-**auth 组件 fail-fast**：`redis.enabled=false` 时启动失败（`RequireSessionStorage`），release 模式弱 `session_secret` 拒绝启动。
+### 本地开发与迁移
+
+- 开发依赖使用本机 PostgreSQL / Redis 服务，`Makefile` 不负责通过 Docker 启停依赖；`make migrate` 只用
+  `pg_isready` 检查本机 PostgreSQL，然后执行 `go run ./cmd -migrate-only`。
+- 迁移由 `database.run_migrations` 控制：`true` 时服务启动（包括 air 热重载后的每次重启）自动执行结构迁移与 seed；
+  `false` 时启动跳过迁移，必须使用管理连接手动执行 `make migrate` 或 `go run ./cmd -migrate-only`。
+- 业务连接使用非超级角色时必须保持 `run_migrations: false`，迁移命令通过环境变量覆盖管理连接，避免把 DDL 权限交给运行服务。
+- `make dev` / `scripts/dev.sh` 不隐式修改数据库；是否让 air 自动迁移只由 `database.run_migrations` 配置决定。
 
 ### 模板渲染（Jet v6）
 
-- 所有后台页面由 Go 服务端使用 Jet v6 渲染，实现 `gin.HTMLRender` 接口包装为 Gin 标准 Render
-- 模板位置：`internal/templates/admin/`（后台页面）、`internal/templates/components/`（构建期组件，go:embed）
-- 开发模式 `jet.DevelopmentMode(true)` 禁用模板缓存；**生产模式必须关闭**（由部署配置驱动）
-- Jet 模板内 CSRF token 只有**一条取值链**：渲染数据键 `csrf_token`，经 chain 索引 `{{ .["csrf_token"] }}` 取出。
-  两种写法**等价且都合法**，按复用程度选：
-  · 直接用 `{{ .["csrf_token"] }}`（也用于存在性判断，如 `{{if .["DevLogin"]}}`）—— map 末级缺 key 安全；
-  · 或文件顶部 `{{csrf := .["csrf_token"]}}` 声明一次、本文件内复用 `{{csrf}}` —— 这是**事实主流**写法（模板数与会随迭代增减，不写死数字）。
-  `{{csrf}}` 是 Jet 的**模板内 let 变量，不是全局函数**（`internal/templates/funcs.go` 的 `injectGlobals` 未注册任何 csrf 符号）：
-  未声明就裸用会报 `identifier "csrf" not available …`，且声明必须在使用之前。
-- **禁止 `{{.csrf_token}}`（点号无索引）**：data 是 map 时缺 key 会运行时报错、整个响应失败（渲染器先渲到 buffer，失败走 `http.Error(500, …)` 并丢弃半截内容；htmx 片段因 5xx 不 swap 而毫无反应 —— **不是**「200 + 后面的 HTML 整块消失」，那是渲染器加缓冲区之前的旧行为，2026-09 实测推翻）。
-- 注入点：后台页面 `shell.Prepare`（`internal/web/shell/shell.go`）、访客页面 `user.Handle.render`；
-  **fragment 模板例外** —— `fragments/*.jet` 的 data 是 struct（字段 `CSRFToken`），chain 索引会报
-  `can't use csrf_token as field name in struct type`，只能写 `{{ .CSRFToken }}`。详见 `internal/templates/CLAUDE.md`。
+- 后台页面由 Go 服务端 Jet v6 渲染，实现 `gin.HTMLRender` 包装为 Gin 标准 Render；模板位置
+  `internal/templates/admin/`（后台页面）、`internal/templates/components/`（构建期组件，go:embed）
+- 开发模式 `jet.DevelopmentMode(true)` 禁用缓存；**生产模式必须关闭**（由部署配置驱动）
+- **CSRF 只有一条取值链**：数据键 `csrf_token`，经 chain 索引 `{{ .["csrf_token"] }}` 取出；
+  `{{csrf := .["csrf_token"]}}` 再复用是事实主流写法，两者等价。`{{csrf}}` 是**模板内 let 变量，不是全局
+  函数** —— 未声明就裸用会报 `identifier "csrf" not available …`，声明必须在使用之前。
+- **禁止 `{{.csrf_token}}`（点号无索引）**：缺 key 会运行时报错、整个响应失败（渲染器先渲到 buffer，
+  失败走 `http.Error(500, …)` 并丢弃半截内容；htmx 片段因 5xx 不 swap 而**毫无反应**）。
+  判断存在性用 chain 写法：`{{if .["DevLogin"]}}`。
+- 注入点：后台页面 `shell.Prepare`、访客页面 `user.Handle.render`；**fragment 模板例外** ——
+  `fragments/*.jet` 的 data 是 struct，只能写 `{{ .CSRFToken }}`。细节见 `internal/templates/CLAUDE.md`。
 
 ### 交互方式（HTMX）
 
-所有前台交互**优先**用 HTMX 属性驱动；JS 只做 HTMX 覆盖不到的控件层，收敛在 `internal/templates/static/js/ui/`（抽屉 / 弹层 / 选择器 / 通知等）与 `rich-editor/`（Trix 扩展），媒体库选择器是 `media-lib.js`，构建器前端在 `workbench/`；**不新增上述几处之外的散落业务 JS**（存量还有 `admin.js` / `enhance.js` / `track.js` / `automation/`，属待收敛）。
-CSRF：HTMX 请求经 `<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>` 继承；原生表单必须显式加 `csrf_token` 隐藏域；fetch 请求必须带 `X-CSRF-Token` 头（workbench.js/media-lib.js 已封装）。
+前台交互**优先**用 HTMX 属性驱动；JS 只做 HTMX 覆盖不到的控件层，收敛在
+`internal/templates/static/js/ui/` 与 `rich-editor/`（媒体库选择器 `media-lib.js`，构建器前端 `workbench/`）。
+**不新增这几处之外的散落业务 JS**（存量 `admin.js` / `enhance.js` / `track.js` / `automation/` 属待收敛）。
+
+CSRF：HTMX 请求经 `<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>` 继承；原生表单必须显式加
+`csrf_token` 隐藏域；fetch 请求必须带 `X-CSRF-Token` 头（`workbench.js` / `media-lib.js` 已封装）。
 
 ### 认证与鉴权（三层链）
 
-- `Session + Cookie` → 认证（gin-contrib/sessions + Cookie 存储）：cookie 只存最小认证信息（user_id/username/session_id/issued_at），用户资料走 Redis
-- `CSRF` → 所有 POST 写操作强制 token 校验（登录成功返回 token；`X-CSRF-Token` 头或 `csrf_token` 表单域）
-- `Casbin` → 鉴权（Enforce(user_id, path, method)；权限点由「常量 + 路由注册处声明」定义、启动期幂等 upsert，030/031 只是存量台账 —— 见「数据库」一节；超管 is_admin=1 全量策略）
+`Session + Cookie` 认证（cookie 只存 user_id/username/session_id/issued_at，资料走 Redis）→
+`CSRF`（所有 POST 写操作强制校验）→ `Casbin`（`Enforce(user_id, path, method)`）。
 
-挂载矩阵：
-
-| 路由组 | SessionAuth | CSRF | Casbin |
+| 路由组 | Session | CSRF | Casbin |
 |---|---|---|---|
-| `/api/captcha` | 豁免（直挂，无中间件） | 豁免 | 豁免 |
-| `/api/admin/login` | 豁免（匿名可达，另挂 IP 限流） | 豁免 | 豁免 |
-| `/api/admin/{logout,profile,routes}` | ✅ | ✅ | 豁免（声明 `permission.Exempt`，见 `admin_router.go`） |
-| `/api/*` 其余业务接口（`authorizedAPI` 组，前缀见下） | ✅ | ✅ | ✅ |
+| `/api/captcha`、`/api/admin/login` | 豁免 | 豁免 | 豁免（login 另挂 IP 限流） |
+| `/api/admin/{logout,profile,routes}` | ✅ | ✅ | 豁免（声明 `permission.Exempt`） |
+| `/api/*` 其余业务接口（`authorizedAPI` 组） | ✅ | ✅ | ✅ |
 | `/admin/*` 页面、`/`、`/workbench*` | ✅ | ✅ | —（页面路由） |
-| `/_fragments/{type}`、`/analytics/collect`、`/payment/callback` | 公开面（各自判定，见对应模块） | 公开面 | 不走 Casbin |
+| `/_fragments/{type}`、`/analytics/collect`、`/payment/callback` | 公开面（各自判定） | 公开面 | 不走 |
 
-> 上表是**示意**；`authorizedAPI` 的实际前缀以装配代码与运行时路由表 `internal/routers/testdata/routes.snapshot` 为准。
-> 当前为 `/api/` 下的：`admin`、`role`、`permission`、`menu`、`dept`、`datarule`（管理面六领域**各自独立前缀，不在 `/api/admin` 之下**）、
-> `media`、`project`、`theme`、`block`、`page`、`artifact`、`publication`、`build`、`content`、`contenttemplate`、`presentation`、`blueprint`、
-> `navigation`、`plugin`、`product`、`inventory`、`masterdata`、`mail`、`customer`、`order`、`analytics`、`webhook`。
-
+实际前缀以装配代码与 `internal/routers/testdata/routes.snapshot` 为准。
 Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`。
 
 ### 登录安全
 
 - 密码 bcrypt；验证码图片化（`/api/captcha` 只返回 `captcha_id` + `captcha_image`，答案绝不下发）
 - 登录失败 ≥5 次只写 `locked_until_time = now+30min`（自动过期），**绝不修改 Status**
-- 失败计数必须用原子 SQL（`count = count + 1`），禁止读-改-写回
+- 失败计数必须用**原子 SQL**（`count = count + 1`），禁止读-改-写回
 
 ### 路由
 
-- 只用 `GET` 和 `POST`；禁止 RESTful 路径参数，全部用 Query 参数
+- **只用 `GET` 和 `POST`**；禁止 RESTful 路径参数，全部用 Query 参数
 - 主路由聚合在 `internal/routers/routes.go`；模块路由在 `internal/module/<模块>/inbound/http/`
-- 健康检查：`GET /livez`、`GET /readyz`（组件级就绪）
+- 健康检查 `GET /livez`、`GET /readyz`（组件级就绪）
 - 静态面：`/site`（激活产物，`http.Dir` 只读）、`/storage`（媒体上传）、`/static`（后台静态资源）
-- CORS：白名单来自 `server.cors_allowed_origins`；release 无白名单拒绝跨域；TrustedProxies release 模式为 nil（不信任 XFF）
+- CORS 白名单来自 `server.cors_allowed_origins`；release 无白名单拒绝跨域；release 的 TrustedProxies
+  为 nil（不信任 XFF）
 
 ### 响应与错误处理
 
@@ -244,243 +203,142 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 
 - 未登录页面请求 302 到 `/admin/login`；API 请求返回 401 JSON
 - 业务模块统一通过模块 `enums` 提供响应消息；`pkg` 和系统包直接用中文提示或原始 `err`
-- 后台页面 handler 禁止 `c.String(500, err.Error())` 直出内部错误，必须走 `shell.PageError` / `pkg/response` + enums
-- **「不许直出内部错误」按三种形态一起管到底**（2026-09 收口，实测每一层都是漏过的）：① **响应写入**（`c.String` / `*.ErrorWithMessage`）；② **重定向 query**（`?err="+url.QueryEscape(err.Error())` —— 页面把它渲染出来，等同直出）；③ **模板数据**（`data.Errors = []string{"…："+err.Error()}`）。门禁 `scripts/check-no-internal-error-leak.sh` 覆盖全部三种形态，配**带理由的豁免清单**（条目不再命中即失败，禁止只增不减）。
-- **每个模块要有「错误文案三件套」**：① 可透出业务文案的**白名单**（`XxxFacingMessages`，与 enums 常量一一对应，用 AST 对账测试钉住）；② **归口文案**（未命中时返回的可翻译 key，如 `adminenums.ErrInternal` / `navigation.err.internal`，值带模块前缀 —— `sys_i18n` 主键是 `(item_key, lang)`）；③ **结构化日志**（原文只进日志，带场景与 user_id）。样板：`internal/module/admin/inbound/http/admin_err.go`、`navigation_err.go`、库存页的 `inventoryErrText`、order 的 `orderFacingText`、product 的 `productErrText`。
-- 判据是**形状**不是字面量：新增 handler 时先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名（`r.ErrorWithMessage` 这种别名就漏过一整轮）。
+- **后台页面 handler 禁止直出内部错误**，三种形态一起管：① 响应写入（`c.String(500, err.Error())` /
+  `*.ErrorWithMessage`）；② 重定向 query（`?err=` 里塞 `err.Error()`）；③ 模板数据（`data.Errors = …`）。
+  走 `shell.PageError` / `pkg/response` + enums。门禁 `bash scripts/check-no-internal-error-leak.sh`，
+  配**带理由的豁免清单**（条目不再命中即失败，禁止只增不减）。
+- **每个模块要有「错误文案三件套」**：① 可透出业务文案的**白名单**（`XxxFacingMessages`，与 enums 常量
+  一一对应，用 AST 对账测试钉住）；② **归口文案**（未命中时返回的可翻译 key，如 `adminenums.ErrInternal`；
+  `sys_i18n` 主键是 `(item_key, lang)`）；③ **结构化日志**（原文只进日志，带场景与 user_id）。
+  样板见 `internal/module/admin/inbound/http/admin_err.go`、`navigation_err.go`、`orderFacingText`。
+- 判据是**形状**不是字面量：新增 handler 先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名。
 
-### 数据库
+## 数据库
 
-- 开发/审计查库统一走 dbx MCP：连接名与库名以本机 DBX 配置为准（勿在文档里写死连接名）；应用运行时库名见 `config.yaml` 的 `database.dbname`（示例 `config.yaml.example` 默认为 `wp`）。主库 PostgreSQL，最低版本以 CI（`.github/workflows/go-test.yml` 的 postgres 服务）为准；调用 dbx 时显式传 `connection_name`
-- 当前 schema 权威说明见 `docs/schema-snapshot.md`（`init_builder_schema.sql` 仅为历史快照）
-- 查询一律参数化；context 必须传播（`WithContext`）
-- 迁移：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL（030/031 等**存量台账**，新增权限点不再走 seed —— 见下一条）
-- **新增挂在 `authorizedAPI` 下的接口：加一条权限点常量 + 在路由注册处声明，不写 seed 迁移**：
-  常量加在 `internal/permission/codes.go`，并在该路由的注册处把 `permission.Perm` 作为
-  `RouteGroup.GET/POST` 的第二个参数给出（漏写是编译错误，拼错在装配期 panic）；装配末尾
-  `permission.SyncToDB` 把声明**幂等 upsert** 进 `sys_permission` 与超管（`is_admin=1`）策略
-  （审计 SEC-011）。030/031 是存量权限点台账，新权限点不再往 seed 里加。
-  **为什么权限点必须齐**：该组统一挂 `CasbinMiddleware()`，按**实际请求路径** enforce，
-  权限点缺失时没有任何策略能匹配，**含超管在内全员 403**（072/077/078/079 各踩过一次，
-  151 又补了 page:delete 与 block:clone）。**为什么还要跑 `bash scripts/check-permission-gaps.sh`**：
-  声明式注册只覆盖「编译期写了常量 + 装配期声明过」这一侧，脚本拿**运行时路由表**跟库里的
-  `sys_permission` 比对，专门抓注册期看不见的缺口（人工在库里删了某条权限点、有人绕过
-  `RouteGroup` 直接往授权组挂路由、代码删了权限点但库里还在漂移）
-- datarule 插件字段引用按方言（PG 双引号 / MySQL 反引号）；部门范围整段精确匹配
-- **数据域（datarule）白名单由拥有该表的实体声明**：实体字段上写 `datarule:"label=用户名;ops=EQ,NEQ,LIKE"`，
-  经 `pkg/datarule.DomainFromEntity` 派生（表名取实体 `TableName()`，列名取 gorm `column` 标签），
-  由模块装配入口注册（样板：`internal/module/admin/inbound/http/datarule_bootstrap.go`）。
-  **没有 tag 的字段不在白名单里**（fail-closed），不要另抄一份字段表 —— 抄错列名不会报错，
-  只会在运行时表现为「过滤条件被静默丢弃 / Omit 一个不存在的列」，规则看起来生效、实际什么都没拦。
-  规则配置的字段与操作符在写入侧按域声明逐项校验（dto 声明形状与枚举，service 判定是否属于该域）
-- **时间列命名统一为 `create_time` / `update_time`**（审计 DB-019，迁移 205 收口）：全库已无 `created_at` / `updated_at`，新表新列一律用 `*_time`，不要再引入 `*_at`
-- **时间列类型统一 `timestamptz`**（迁移 212 收口）：全库 191 个时间列现在都是 `timestamp with time zone`。最后 4 个是 webhook 两张表的 `create_time`/`update_time`（199 建表时用 BIGINT 存 `time.Now().Unix()`，205 只改了列名没改类型，于是它们成了仅有的例外），212 用 `USING to_timestamp(...)` 转换过来。**新表一律 `timestamptz` + Go 的 `time.Time`**，不要再引入 int64 时间戳：它丢掉亚秒精度（投递日志同秒内排序不稳定）、无法直接用 PG 的时间运算与区间索引（BRIN / `date_trunc` 分组要先转换）、与其它表的列比较必须显式转换
-- **软删除列名统一为 `deleted_at`**（审计 DB-020，迁移 208 收口）：`sys_menus` 原本的 `deleted_time` 已改名。`sys_attachment` 用 `status` 表达删除属**存量例外**，新表不要照抄
-- **工程隔离的 RLS 策略已铺，但在换连接角色之前不生效（DB-009）**：迁移 215 给 53 个带 `project_id` 的对象（40 张基表 + 分区子表）装了 `ROW LEVEL SECURITY` + `FORCE`，策略谓词读会话变量 `app.project_id`（未设置即行不可见，fail closed；`inventory_change_reasons` / `sys_translation` 额外放行 `project_id IS NULL` 的全局行）。**但 PostgreSQL 的超级用户总是绕过 RLS** —— `FORCE` 只约束到表属主，约束不了 superuser / `BYPASSRLS` 角色，而应用连接用的是超级用户 `root`，所以策略目前一行都挡不住。实测（`themes` 表 1 行数据）：root 未设变量读出 1 行，普通角色未设变量读出 0 行
-  · **要让 RLS 真正生效，顺序不能反**：先给各模块的读写路径包上 `pkg/rls.InProjectScope`，**再**把 `config.yaml` 的 `database.user` 换成非超级的**次级管理员**角色（`bash scripts/rls-role-setup.sh`，默认角色 `go_wp_app`；口令走 `GOWP_RLS_ROLE_PASSWORD` 或 `~/.config/go_wp/rls-role.env`（权限 600），**不再经命令行参数**，含口令的 SQL 一律经 stdin 送 psql；含 `ALTER DEFAULT PRIVILEGES` 让将来新建的表也自动授权）。反过来的话，没包 scope 的路径会**静默返回 0 行**（fail closed 不报错），表现为「功能突然查不到数据」而没有任何错误日志
-  · **「策略铺好了」不等于「隔离生效」，判据只能从库里读（DB-04）**：启动期探针 `database.CheckRLSIdentity` 每次都读 `session_user` / `current_user` / `pg_roles.rolsuper|rolbypassrls` / 当前 schema 的策略覆盖数并以 INFO 打印结论，连接角色会绕过 RLS 时补一条 WARN；把 `database.require_rls_role` 置 `true` 后，这两种角色会让**启动直接失败**。默认 false 是刻意的（迁移与运维脚本复用同一个 database 组件、走管理连接），**换成应用角色之后必须置 true**，这道门禁才算闭环。切换与回滚步骤见 `docs/rls-role-cutover.md`
-  · 分区子表必须单独设：**PG 的 `ENABLE` / `FORCE` 不递归到分区**（实测父表 `relrowsecurity=t`、子表全为 `f`），新分区的策略由 `internal/partition.EnsureAhead` 建表后补
-  · 覆盖面：`pkg/rls.InProjectScope` 已接到 11 个模块的 model / service —— analytics / block / contenttemplate / masterdata / navigation / order / page / presentation / product（含 inventory）/ project / publication；样板见 `internal/module/project/model/locale_model.go`（`project_locales` 是 199 的试点）
-  · **换角色前先看两个已知缺口**：`build_jobs` 是当前**唯一**有 `project_id` 却没有策略的表（该列由迁移 295 新增，215 的名单早于它；队列按状态跨工程捞取）—— 其余 53 张 project_id 表已实测全部 `ENABLE` + `FORCE` + 有读 `app.project_id` 的策略；以及 `internal/pipeline` / `internal/builder/core` 自身不 import `pkg/rls`（构建期的依赖读取带不带作用域取决于被调用方）。精确检索命令见 `docs/rls-role-cutover.md` §7
-- **对外时间默认只到秒（`utils.JSONTime`）**：库里的时间是微秒精度（`timestamptz(6)`，全库 199 列口径一致），但对外 JSON **不该把存储精度透出去** —— Go 的 `time.Time` 默认按 RFC3339Nano 序列化（`2026-09-16T13:57:50.123456+08:00`）：同一秒内的两次写入看起来不同、前端做秒级比较 / 分组要自己截断、每条记录多 7~10 字节（列表接口乘起来很可观），而且协议会跟着存储走。dto 的时间字段一律用 `utils.JSONTime`（可空用 `*JSONTime`）：序列化 RFC3339 **到秒**、零值与 nil 给 `null`（不是 `0001-01-01T00:00:00Z`）、解析比标准库宽松（RFC3339 / `2006-01-02 15:04:05` / `2006-01-02` —— 后两种是后台原生表单与既有客户端在用的）、写库仍走 `time.Time` 保留微秒。service 在 model 与 dto 之间转换：去程 `utils.NewJSONTime` / `utils.NewJSONTimePtr`，回程 `.Time()` / `.TimePtr()`。布局常量收在 `utils.LayoutSecond` / `LayoutDay` / `LayoutJSON`（此前十余处硬编码 `"2006-01-02 15:04:05"`）
-- **model 一律不声明列型**（2026-09 收口，架构测试 `internal/architecture/model_gorm_tag_test.go` 守门）：列的类型由迁移决定，model 标签不重复声明。重复声明就等于**两份真相** —— 抄错时没有任何东西会报错（`sys_admin.status` 真实是 `smallint`、标签写着 `tinyint(4)`；时间列真实是 `timestamptz(6)`、标签写着 `timestamp(3)` 无时区 + 毫秒），而任何 AutoMigrate 路径会照标签把错的列型建出来。本轮清掉 598 处 —— 其中 57 处 `type:timestamp(3)` 与 17 处 `type:datetime(3)` 是**上一轮清过又长回来的**（当时没有测试兜底），所以这次连红线一起立。**唯一例外**：gorm 无法自行推断列型的字段（`json.RawMessage` / `JSONMap` / `StringArray` 等）必须保留 `type:`（或改用 `serializer:`）指明映射 —— 那说的是「Go 值怎么变成 SQL 值」，不是列型真相，删掉会直接报 unsupported data type
-- 改列名时注意两类**不会自动跟随**的对象：**触发器 / plpgsql 函数体**（函数体是字符串，RENAME 后仍按旧名解析，迁移 206 修的就是它）与 **seed SQL**（seed 可重复执行，必须同步改；历史迁移 SQL 保持原样）。索引表达式、视图、约束由 PG 自动重写
-- 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，否则判定恒为 0、迁移每次启动都重跑（178 踩过）
-- **Migrations 台账先跑、Seeds 台账后跑 —— 在 `register` 里做的删除，永远赢不过在 `registerSeed` 里重建它的 seed**（2026-09 实测的真实故障）。`migrator.go` 的 `runAll(All())` 与 `RunSeeds(AllSeeds())` 是两个独立循环，各自按版本排序；所以「先删、后被插回」不取决于版本号大小，只取决于它在哪个台账里。
-  · 实例：迁移 122（`register`）负责删除库存缓存下线后遗留的 `inventory:cache_sync` / `cache_reconcile` 权限点，而 104（`registerSeed`）的 seed 与幂等条件里**还留着这两个码**，条件是「本票 10 个权限点齐了才跳过」。于是每轮启动：122 删 2 个 → 104 条件不满足 → 重新插回 → 库里**一直存在**指向不存在路由的死授权（后台勾选毫无作用，误导配置者）。现象极具欺骗性：122 的日志写着「迁移完成」，104 的日志写着「种子数据已存在，跳过」，两边的日志都正常。
-  · 判据：**删能力时要连 seed 的 SQL 与幂等条件一起收口**（条件计数与 key 列表同批改），不能只删词条/权限点。停在 `register` 里的「删除」只是看起来删了。
-  · 回归：`public/migrations/register_retired_permission_test.go` —— 任一迁移 SQL 里删除的权限点代码，都不得再出现在任何 seed 的 SQL 里（含判据自身的命中/误报自检）。它是启发式（只认 `permission_code IN (…)` 这一种写法），漏掉不代表没问题。
-  · 同类：`order.msg.cancelledStockWarning` 的死常量之所以只能「废弃但保留」，就是因为它的 seed 判定按「本批 key 计数且包含本 key」；180 的两行与 `register_admin_i18n.go` 的判定 key 列表、门槛（`>=62` → `>=61`）同批改掉之后，常量才连同词条一起删净。
-- **主键选型按「这个 id 会不会出现在系统边界之外」判**（DB-020 复核结论）：对外实体（`projects` / `pages` / `products` / `blocks` / `themes` / `content_templates` 等有对外接口，或 id 进了 Page Document / 产物元数据 / 导出物的）用 **uuid**；纯内部流水与字典（`page_views`、`build_jobs`、`publication_receipts`、`page_site_slots`、`inventory_change_reasons`、`sys_*` 全系）用 **bigint identity**。**两套并存是设计，不是待消除的不一致** —— 缺判据才是问题；新表按此选型，别为了「统一」把对外实体改成自增（id 一旦可枚举就少一层纵深，与 DB-009 想要的隔离方向相反）。判据只约束**新表**，**存量按现状为准**：`master_data_changes` / `inventory_stock_movements` 是 uuid 存量（后者 id 已进对外列表投影 `MovementRow`），说明「流水必然内部」这个直觉不成立 —— 别拿判据去反推存量
-- **主键类型的代价是实测过的，别凭感觉排优劣**（本地 PG 18.6，100 万行同结构同 payload）：插入 `bigint identity` 1.90s / `uuid` v7 2.81s / `uuid` v4 5.42s，主键索引 21MB / 30MB / 38MB，**点查三者无差别**（都在测量噪声内 —— 别拿它当任何一方的论据）。所以 uuid 不是「更好的主键」，而是为「id 不可枚举」付的写放大（v4 随机插入导致 B-tree 页分裂，写放大 2.85 倍）：付它的唯一依据就是上面那一行判据，量级越大的内部表越该用 bigint；对外实体真要用 uuid 就用 v7，实测能追回六成以上代价
-- **只增的分区流水表用 UUIDv7**（`inventory_stock_movements` / `master_data_changes`，统一经 `utils.NewTimeOrderedID()`）：写入点集中在索引右端，实测把 v4 的写放大砍掉一半（插入 5.42s → 2.81s、主键索引 38MB → 30MB）。与上一条判据不冲突 —— 判据决定「bigint 还是 uuid」，v7 决定「内部表用哪种形状的 uuid」。两个反作用要记住：**v7 的时间前缀会透露创建时间**，所以对外实体（`projects` / `pages` / `products` / `blocks`）继续用 v4 的 `uuid.NewString()`，别顺手替换；从 v4 切到 v7 后「按 id 排序」会从无序变成等价于创建先后，原先靠 id 排序读创建顺序的写法要显式改用 `create_time`
-- 新表选 uuid 时**在应用层生成**（`uuid.NewString()`，见 project / block 的创建路径）：DDL 的 `DEFAULT gen_random_uuid()` 只是兜底 —— gorm 对 string 主键的零值会**显式写入空串**（不像 int 那样交给 identity），依赖 DB 默认值会踩 22P02。内部流水表用 UUIDv7 见下一条（`uuidv7()` 是 PG 18 函数而 CI 是 PG 16，所以一律走应用层）
-- **改主键类型时，引用会渗进文档内容**：`blocks.id` 同时存在于 `props.blockId`（root 树任意深度）、`settings.structure.headerBlockId/footerBlockId`、`settings.slots.*` 三处，分布在 10 个 JSONB 列（含 `page_revisions` / `document_snapshots` 历史快照与 `page_artifacts.source_document`）加 `page_dependencies.dependency_key`。改这类 id 之前先用键名把存储点摸全（迁移 209 的注释列了完整清单），否则会静默留下断裂引用
+论证、实测数据与操作步骤见 [`docs/rules/database.md`](docs/rules/database.md)。
 
-### model 层定位（重要，评审与开发共同遵守）
+- 查库走 dbx MCP 并显式传 `connection_name`；schema 权威是 [`docs/schema-snapshot.md`](docs/schema-snapshot.md)。
+  查询一律参数化，context 必须传播（`WithContext`）。
+- **时间列**：**新增表**的管理时间列命名 `create_time` / `update_time` —— **不要再用 `created_at` / `updated_at`**
+  （存量各有 119 / 73 处，按现状为准、不做批量改名）；**业务时刻列**沿用既有 `*_at` 风格
+  （`published_at` / `registered_at` / `viewed_at` / `started_at` / `orders.paid_at` /
+  `membership_assignments.assigned_at` 等 —— 「何时发生」与「何时被改」是两类列，
+  不要为了统一名字把业务时刻改成 `*_time`）；类型 `timestamptz` + Go `time.Time`
+  （不再引入 int64 时间戳）；**对外 JSON 只到秒**，dto 时间字段一律 `utils.JSONTime`。
+- **软删除列名**统一 `deleted_at`。
+- **model 一律不声明列型**（`internal/architecture/model_gorm_tag_test.go` 守门）。例外：gorm 无法推断的
+  `json.RawMessage` / `JSONMap` / `StringArray` 等必须保留 `type:` 或 `serializer:`。
+- **新增 `authorizedAPI` 下的接口：加权限点常量 + 在路由注册处声明，不写 seed 迁移**（常量加在
+  `internal/permission/codes.go`，作为 `RouteGroup.GET/POST` 第二个参数）。漏权限点会让**含超管在内全员
+  403**。另跑 `bash scripts/check-permission-gaps.sh` 抓注册期看不见的缺口。
+- **迁移**：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL。
+  · **删能力时要连 seed 的 SQL 与幂等条件一起收口** —— Migrations 台账先跑、Seeds 台账后跑，
+  停在 `register` 里的「删除」会被 `registerSeed` 的 seed 赢回去（122/104 的真实故障）。
+  · 改列名时同步改**触发器 / plpgsql 函数体**与 **seed SQL**（历史迁移 SQL 保持原样）。
+  · `CheckSQL` 的 `?` 由迁移器传入的是**表名**，其它判定值必须写进 SQL 字面量。
+  · **seed 门槛判据必须枚举「本批自己的对象」（上界封闭）**：`item_key IN (…)` / `permission_code IN (…)`
+  逐条列举，**禁止用 `LIKE` 前缀或全库总量**。两个方向都发生过真实故障：前缀下已有别的批次的行 →
+  计数虚高 → **本批被静默跳过**（058）；将来新增同前缀 key → 计数永远追不平 → **每次启动都重跑**
+  （076）。判据的偏差方向要刻意选「宁可重跑，不可静默跳过」。
+  · **新迁移 SQL 上线前用 `PREPARE` 静态校验**：`mustSQL` 只校验 embed 文件**存在**、不校验 SQL 可执行，
+  所以「Go 编译通过」≠「迁移跑得起来」；而迁移链一旦中断会堵住其后**全部**注册项。用 dbx 跑
+  `PREPARE chk AS <去掉注释的 SQL>`（数据库做语法与表/列语义分析、**不执行 DML**）再 `DEALLOCATE`，
+  无需起服务。
+- **主键选型按「这个 id 会不会出现在系统边界之外」判**：对外实体用 **uuid**（应用层 `uuid.NewString()`），
+  纯内部流水与字典用 **bigint identity**；两套并存是设计。只增的分区流水表用 **UUIDv7**
+  （`utils.NewTimeOrderedID()`），对外实体继续 v4（v7 的时间前缀会透露创建时间）。
+  判据只约束新表，**存量按现状为准**。
+- **数据域（datarule）白名单由拥有该表的实体声明**：字段上写 `datarule:"label=…;ops=…"`，经
+  `pkg/datarule.DomainFromEntity` 派生，装配入口注册（且在注册路由之前）。**没有 tag 的字段不在白名单里**
+  （fail-closed）—— 不要另抄一份字段表。
+- **RLS（DB-009）**：策略已铺（迁移 215），但**换连接角色之前不生效**（超级用户绕过 RLS）。顺序不能反：
+  先包 `pkg/rls.InProjectScope`，再换 `database.user` 为非超级角色（`bash scripts/rls-role-setup.sh`），
+  并把 `database.require_rls_role` 置 `true`。详见 [`docs/rls-role-cutover.md`](docs/rls-role-cutover.md)。
 
-`model` 是**表访问单元（Repository）**，不是 DDD Domain Model：
+## model 层定位（评审与开发共同遵守）
 
-- ✅ 允许：本模块表的 CRUD、聚合与**聚合内原子组合**（如 `CreateWithRevision` 在同一事务内写 `pages` + `page_revisions`）；查询条件一律以参数传入，方法内不得写死业务条件
-- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、**跨聚合/跨模块事务**
-- 跨聚合/跨模块事务必须在 service 层编排：model 暴露 `Transaction()` 透传（或方法接受外部 `*gorm.DB`/`*gorm.Session`），由 service 决定事务边界与回滚
-- `DB(ctx)` / `RevisionDB(ctx)` 等裸 gorm 句柄是 model 的**内部实现细节，只允许被本 model 的仓储方法消费**；service 禁止调用它们拼接查询
-- service 对持久化的唯一入口是 model 的具名方法；新增查询需求 = 给 model 加方法，而不是在 service 里写 `.Where().Create()`
-- 评审拦截项：`internal/module/*/service` 中命中 `\.DB(ctx)` 或 `\.RevisionDB(ctx)` 即打回（含先存变量的 `query := x.DB(ctx)` 写法；仅 admin 豁免，见下）
+`model` 是**表访问单元（Repository）**，不是 DDD Domain Model。
+
+- ✅ 允许：本模块表的 CRUD、聚合与**聚合内原子组合**（如 `CreateWithRevision` 在同一事务内写
+  `pages` + `page_revisions`）；查询条件一律以参数传入
+- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、**跨聚合/跨模块事务**、方法内写死业务条件
+- 跨聚合/跨模块事务在 service 层编排：model 暴露 `Transaction()` 透传（或方法接受外部 `*gorm.DB`），
+  由 service 决定事务边界与回滚
+- `DB(ctx)` / `RevisionDB(ctx)` 等裸句柄是 model 的**内部实现细节，只允许被本 model 的仓储方法消费**；
+  service 禁止调用它们拼查询 —— 新增查询需求 = 给 model 加方法
+- 评审拦截项：`internal/module/*/service` 命中 `\.DB(ctx)` / `\.RevisionDB(ctx)` 即打回（含先存变量写法）。
+  机器校验 `bash scripts/check-service-db-boundary.sh`
 - `contract/` 只放模块对外接口；`service` 依赖其他模块能力时直接引用对方 `contract`
 
-**admin 豁免条款**：`admin` 为管理面 CRUD 大模块（六领域合并、同包直调），service 层经 `DB(ctx)` 直查**明文豁免**。豁免边界：仅限 admin 模块、仅限本模块表、跨表事务仍须 `Transaction()` 编排、简单 CRUD 之外的业务查询仍走 model 方法。新增模块一律禁止直查。
+**admin 豁免条款**：`admin` 是管理面 CRUD 大模块（六领域合并、同包直调），service 层经 `DB(ctx)` 直查
+**明文豁免**。边界：仅限 admin 模块、仅限本模块表、跨表事务仍须 `Transaction()` 编排、简单 CRUD 之外的
+业务查询仍走 model 方法。**新增模块一律禁止直查。**
 
-### 写操作的事务与回滚（2026-09 收口，评审必查）
+## 写操作的事务与回滚（评审必查）
 
-**判据**：一次用户可感知的写操作（保存 / 删除 / 状态推进 / 批量 / 导入安装发布），只要涉及**两处及以上持久化写入**，
-就必须落在**同一个数据库事务**里；任一步失败整体回滚，不允许留半截状态 ——「有主实体没关联行」「有单据没库存」
-「有实体没流水」「有商品没库存记录」都算。持久化写入 = 主实体 + 关联行 + 流水/变更记录 + 计数 + 权限策略/菜单 + Redis。
+**判据**：一次用户可感知的写操作（保存 / 删除 / 状态推进 / 批量 / 导入安装发布），只要涉及**两处及以上
+持久化写入**，就必须落在**同一个数据库事务**里；任一步失败整体回滚，不留半截状态 —— 「有主实体没关联行」
+「有单据没库存」「有实体没流水」「有商品没库存记录」都算。持久化写入 = 主实体 + 关联行 + 流水/变更记录 +
+计数 + 权限策略/菜单 + Redis。
 
-- **事务边界由 service 决定，句柄从 model 往下传**：`model.Transaction(ctx, fn)` 起事务；跨模块只把 `*gorm.DB`
-  传给对方的 `…Tx` 方法（先例：`masterdata.RecordChangesTx(ctx, tx, …)`）—— **不共享表、不跨库**。
-  对端没有 `…Tx` 方法就**加一个**，不要用「先写 A 再补偿 B」蒙混过去。
-- **`rls.InProjectScope` 自带事务**：一个方法里若既有 `InProjectScope` 又有**它外面**的写，外面那一处就是缺事务的
-  （事务内再嵌套是允许的，gorm 用 SAVEPOINT；嵌套里任何错误都必须原样返回外层）。
-- **读-改-写必须有行锁或原子 SQL**：`SELECT … FOR UPDATE`（按标识升序加锁避免死锁），或把守卫写进 WHERE 的
-  原子更新（`SET x = x + ? WHERE x + ? <= limit`，受影响行数 0 即拒绝）。禁止「先读出来算完再写回去」。
-- **补偿只用于跨库/外部系统**（文件、Redis、第三方接口这类事务边界之外的动作）：必须**幂等 + 留痕 + 可重放**，
-  并在注释里写明「为什么不能用事务」。跨模块的数据库写入**不在**这一条里 —— 那属于上面的事务透传。
-- **冲突与数据不一致一律打回给人**：唯一键撞车、存量纠正这类情况，错误里要列出**可定位的数据**（哪张表 / 哪个仓 /
-  哪个码 / 哪几行 id / 涉及的商品与变体），让操作者决定；**不允许**自动加后缀、静默合并、丢弃其中一行。
-- **门禁**：`public/test/architecture/tx_boundary_scan_test.go` 静态扫「一个 service 函数里 ≥2 处写调用却看不到
-  事务标记」的候选 —— 命中要么把它包进事务，要么在允许清单里写明「这几处写天然独立（幂等 / 可重放）」的理由；
-  清单里过期的条目会让测试失败（只增不减的豁免清单等于没有门禁）。
-  · 它是**启发式**：命名不在识别表里（`Persist` / `MarkX` / `attachX` / `saveX` …）会漏，事务标记也可能来自被调用方。
-    所以「门禁绿」不等于「事务没问题」—— 评审仍要按上面的判据人看一遍。
+- **事务边界由 service 决定，句柄从 model 往下传**：跨模块只把 `*gorm.DB` 传给对方的 `…Tx` 方法
+  （先例 `masterdata.RecordChangesTx`）—— **不共享表、不跨库**。对端没有 `…Tx` 就加一个，
+  不要用「先写 A 再补偿 B」蒙混。
+- **`rls.InProjectScope` 自带事务**：方法里若既有它、又有**它外面**的写，外面那一处就是缺事务的。
+- **读-改-写必须有行锁或原子 SQL**：`SELECT … FOR UPDATE`（按标识升序加锁避免死锁），或把守卫写进 WHERE
+  的原子更新（`SET x = x + ? WHERE x + ? <= limit`，受影响 0 行即拒绝）。禁止「先读出来算完再写回去」。
+- **补偿只用于跨库/外部系统**（文件、Redis、第三方接口）：必须**幂等 + 留痕 + 可重放**，并在注释里写明
+  「为什么不能用事务」。跨模块的数据库写入不属于这一条。
+- **冲突与数据不一致一律打回给人**：唯一键撞车、存量纠正要在错误里列出**可定位的数据**（哪张表 / 哪个仓 /
+  哪个码 / 哪几行 id），让操作者决定；**不允许**自动加后缀、静默合并、丢弃其中一行。
+- **门禁**：`public/test/architecture/tx_boundary_scan_test.go` 扫「一个 service 函数里 ≥2 处写调用却看不到
+  事务标记」的候选，命中要么包进事务、要么在允许清单写明理由（过期条目会让测试失败）。
+  · 它是**启发式**（命名不在识别表里会漏）—— **「门禁绿」不等于「事务没问题」**，评审仍要人看一遍。
 
 ## 测试
 
-- 默认跑现有测试，不新增额外测试框架
-- 接口优先维护 feature 链路测试（`public/test/`，真实 PostgreSQL 环境），复杂逻辑补 unit
-- 测试基建已迁移到本地 PostgreSQL（sqlite 驱动已移除）；PG/Redis 不可用时相关用例 `t.Skip`
-- **全量测试可以并发：`make test` 走 `-p $(nproc)`**（本机 16 核实测 65s；串行 966s）。2026-09 之前只能 `-p 1`，
-  两道拦路虎都已拆掉：
-  · `pg_trgm` 是**库级唯一**的扩展，装在哪个 schema 只有 search_path 含它的连接才解析得到
-    `gin_trgm_ops` —— 过去串行时靠「测试结束 DROP SCHEMA 把扩展一并删掉、下个 schema 重新装」
-    侥幸通过，一并行就互相踩（后来者 `CREATE EXTENSION IF NOT EXISTS` 静默跳过，随后整条迁移
-    报 operator class does not exist）。现在它固定装在有专用 schema **`ext_shared`**（迁移 210
-    负责既有库搬迁），迁移器 `Run` 统一把该 schema 补进 search_path —— 任何调用方都不会再踩。
-  · **测试不再为每个用例重跑全部迁移**（全部迁移，见下面「模板库」那条），并发时的锁表压力随之消失。
-    这正是当初 `-p 8` 会随机几个包 `out of shared memory` 的原因（失败包每次都不同，别误读成
-    「某个包坏了」）。要再往上提并发，先确认 `max_locks_per_transaction`（默认 64）够用。
-- **按对象名查 catalog 的 SQL 必须限定 `current_schema()`**：`pg_class` / `pg_indexes` 是**全库**的，
-  并发（或库里残留了旧 schema）时同名表 / 索引会被一并查到。迁移判定与测试断言各踩过一次：
-  167 的判定漏了 `schemaname` 会让整条迁移被静默跳过（该 schema 的 trgm 索引全缺），
-  `p7_index_audit_test` 则把 35 个 schema 的同名索引键列拼成了一份。用 `'表名'::regclass` /
-  `to_regclass` 锚定对象是安全的（按 search_path 解析），按 `relname` / `indexname` 过滤才需要显式限定。
-- **迁移必须在单连接上跑**（`Run` 用 `db.Connection`）：`pg_advisory_lock` 是会话级的，而
-  `db.Raw` / `db.Exec` 每次都从连接池取连接 —— 换连接会让 `unlock` 落到别的连接上（锁永不释放，
-  几十个测试进程一起泄漏直接 `out of shared memory`），那把锁也根本保护不到迁移语句本身。
-  锁键按 `current_database() || current_schema()` 派生：生产多实例同库同 schema 仍然互斥（原意），
-  测试各用隔离 schema 时不再互相排队。
-- **测试的表结构一律来自生产迁移**，两个 helper 分工明确，别混用：
-  · `support.NewMigratedPGTestDB(t)` —— 需要真实 schema 的用例（feature / 链路 / 大部分 unit）。
-    它复制一份**模板库**（`CREATE DATABASE ... TEMPLATE wp_test_tpl_<指纹>`，实测约 65ms），
-    模板库由 `migrations.Run` 建成：结构与生产逐字节一致，只是不再为每个用例重付那 1.1s
-    （admin 一个包 116 个用例过去就是 128s，现在 46s）。模板名带 `migrations.Fingerprint()`：
-    迁移一改就换新名字重建，绝不会拿过期结构跑测试；旧模板在建模板时顺手清理。
-  · `support.NewPGTestDB(t)` —— 建**空库**，给自己建表（`AutoMigrate` / 手抄 DDL）或故意构造旧
-    schema 的用例用。**塞给它们完整生产结构反而会坏**：实测 `AutoMigrate` 会去对齐一个名字不同的
-    约束而报 42704，手抄的最小 schema 没有外键、换成生产结构后 INSERT 立刻撞 FK。
-  · **AutoMigrate 不是「简化版建表」**：它照 model 的 gorm 标签建列，与生产 DDL 静默分叉 ——
-    `artifact` / `media` / `plugin` / `publication` 四个包曾因此跑在「没有外键、没有唯一键、列型不对」
-    的表上，断言在测试里全绿、到生产才暴露（`plugin_registry.manifest` 被建成 bytea 而生产是 jsonb、
-    `page_routes` 缺 `page_id/presentation_id` 恰有一个的 check、`receipt_data` 不是 jsonb 于是
-    非法 JSON 也能落库）。四包已全部切到 `support.NewMigratedPGTestDB`（`artifact` 用
-    `NewMigratedPGTestDBTranslateError` 对齐生产的 gorm TranslateError），连带的代价是要补真实父行
-    （`support.SeedProjectRow` + pages / content_templates / presentation_instances 等）；
-    AutoMigrate 只留给「故意构造旧 schema」的用例；`page` / `block` / `project` / `content` 的 unit 包
-    仍用它自建表（当前断言不依赖列型细节，属待收敛的存量），改到那片代码时顺手切过来。
-  · 禁止手抄 `CREATE TABLE` 去伪造「看起来像生产」的表：会与生产静默分叉（`publication` 用例手抄的
-    `publication_receipts` 停在 `uuid` + `created_at`，与生产迁移后的 `bigint` + `create_time` 脱节；
-    同类手抄分布在 7 个 feature 目录）。测试只额外补**真实父行**（`support.SeedProjectRow` 等）。
-- 组件测试在组件包内（`internal/builder/components/*`），含确定性构建与 fuzz 测试
-- 并发敏感代码跑 `go test -race`
-- **交互改动的验证清单**：涉及输入的改动，逐种输入方式各测一遍 —— 鼠标拖拽 / 滚轮与触摸板 /
-  触屏滑动 / 键盘 / 点击。程序化调用（直接设状态、合成单一事件）**覆盖不到**「用鼠标滚一下」
-  「用触屏滑一下」这类真实路径；本项目的多个交互缺陷（堆叠轮播无滚轮、纵向 `touch-action`
-  写死）都只在真实输入下才暴露。产物层面的快速核对：用 CDP 发真实 `mouseWheel` /
-  `PointerEvent(pointerType='touch')`，配合「先聚焦容器再按方向键」验证键盘路径。
-- **所有组件必须适配多端**（硬规则，2026-09 确立）：新建或修改组件时，产出必须在
-  桌面 / 平板 / 手机上都能正确渲染，在鼠标 / 滚轮与触摸板 / 触屏 / 键盘下都能操作。
-  · **宽度不写死**：写 `min(100%, <设计宽度>)`，不要只写 `<设计宽度>`；
-  · **绝对值带上限**：编译期算出的半径 / 位移 / 尺寸用 `min()` / `clamp()` 按视口封顶，
-    且上限要让**元素自身尺寸**参与计算（`calc((100vw - <元素宽>) / 2 - 边距)`）——
-    用 `40vw` 这类经验比例，在「大卡片 + 窄屏」的极端组合下照样溢出；
-  · **触屏是独立环境**：`AddHover` 的规则包在 `@media (hover: hover)` 里，触屏上**根本不输出**。
-    依赖 `:hover` 的任何形态都必须用 `CSSBuckets.AddHoverNone` 给出触屏等价形态，
-    否则手机端该功能等于不存在；按压反馈用 `AddActive`（不带媒体查询）；
-  · **验收**：三种视口（1440 / 768 / 375）各看一次、四种输入各操作一次；
-    窄视口下在控制台确认 `document.documentElement.scrollWidth === clientWidth`，
-    且不存在 `right` 越界的元素。完整规范见 `docs/02-C0-component-base-spec.md` §6.9。
-- **做覆盖全部能力的实例页**是性价比最高的一次集成验证：单组件测试与四五个区块的小案例页
-  都看不出模板截断、盒模型偏移这类缺陷，只有把全部模式铺在一个长页面里才暴露。
-- **动画 / 观察者 / 时间线类改动**：必须读到「**值在变化**」（`transform` / `opacity` / `filter`
-  在不同滚动位置或时刻下确实不同），**只读属性名、时间线名或计算值不算验证**。同时要保证
-  **触发条件真的成立**再下结论：
-  · `IntersectionObserver` 的 `root` 元素必须自身在页面视口内才会触发 —— root 在视口外时
-    连初始回调都没有；
-  · `animation-timeline: view()` 的元素必须真的处于滚动容器可视区内（且该场景下 view() 对
-    **内嵌滚动容器**实测不驱动动画）；
-  · 观察者回调是**异步**的，必须等一轮再读结果，不能在同一次求值里读。
-  本项目已多次因「核对了自己写下的配置、没核对系统实际做的事」而误判通过
-  （`:hover` 未真触发 / 长页面才暴露模板截断 / 动画值恒定不变 / observer 未触发）。
-- **无头 + 自动化环境不出渲染帧**：`IntersectionObserver` 不回调、`requestAnimationFrame`
-  不执行、`scroll` 事件不派发 —— 三者同源（都等下一次渲染帧），页面脚本创建的实例全都
-  静默失效，容易误判成「实现有问题」。
-  · **对策（验证用）**：操作之后调用一次**截图**（`ego_screenshot`，强制产生渲染帧），
-    再读结果；或把手动创建的同参数实例与页面实例对比，能直接区分「环境问题」与「实现问题」。
-  · **对策（实现用）**：增强逻辑优先用**同步几何计算 + `setTimeout` 节流**，而不是
-    `rAF` / `IO` —— 前者在任何环境都可断言，后者只在真实浏览器里可靠。
-- **计数与命名不是判据，结论必须回读语义**：`rg -c` / `grep -c` 只能当**筛查起点** ——
-  任何写进结论、文档、任务书或提交信息的判断，都要回到上下文确认「它到底是不是你要找的那个东西」。
-  实测踩过四种误判，全都是「计数 / 命名对上了，语义没对上」：
-  · **常量名 ≠ 值**：`orderenums.ErrInternal` 名字像 i18n key，值是中文文案「操作失败，请稍后重试」；
-    而同域的 `ErrOrderNotFound` 的值**就是** key（`order.err.orderNotFound`）。
-    判「这是不是裸 key」只能读值 —— 同一个 enums 包里两种形态并存是常态
-    （未接 i18n 的模块直接等于中文常量，见本文件「数据库」一节的口径）。
-  · **类名 / 关键词计数 ≠ 目标数量**：`class` 含 `alert|notice|empty-state` 的行数被当成
-    「提示槽数量」（26 处），真正的判据是 `role="alert"`（**1 处**）。
-  · **计数判据本身选错**：`grep -c 'class="pagination"'` 被当成「有没有分页」的判据 ——
-    已接分页的页面（products / orders / customers / returns / coupons）在同一判据下**同样是 0**，
-    因为分页条在 `partials/pagination.html` 内部。正确判据是 `{{include "partials/pagination.html"}}`
-    或 handler 是否调 `shell.BuildPagination`。
-  · **按域 / 文件一刀切 ≠ 逐条定性**：workbench 51 处 `c.String` 被整体归为「接口出口（P2）」，
-    逐条看调用方后其中 **23 处服务的是页面导航**（`<a href="/workbench?id=…">`），是 P0。
-  反过来说：**读数异常时先怀疑自己的判据，而不是直接下结论** —— 门禁脚本曾因注释里的字面
-  `{{range}}` 产生幻影栈帧（12 处假阳性）；「门禁绿」同样不等于「没问题」
-  （`check-no-internal-error-leak.sh` 的候选集只含带 `.Error()` 的行，硬编码文案与裸 key
-  从来不在它的视野里，修前修后都是绿的）。
-- **任务清单的行号会整体失效**：`docs/02-{L,M,O}` 三份清单里记的文件行号，
-  在后续几批改动后**全部漂移**（核对时逐条重新定位过）。引用它们时按**语义**定位
-  （函数名、类名、结构特征、关键文案、i18n key），不要按行号跳转；
-  清单条目本身（问题描述与判据）仍然可信，读数与行号要重新采信。
-- **委派 / 并行任务：独占文件清单要算上「同包私有函数的签名」**：给并行代理（或自己分批）划
-  「独占文件」边界时，**只列文件是不够的** —— 同包私有函数的**签名**也是边界。改一个签名会波及
-  本包其它文件里的调用点，而那些文件可能正握在另一个并行任务手里，且编译错误会一次炸出一大片。
-  实证：一个代理改了 `flatCategories` / `listBrands` / `listTags` 三个同包私有函数签名，
-  **立刻炸出 9 处清单外调用点**，只能整批回退、改成新增函数（原签名保留给既有调用方）。
-  稳妥顺序是：**先 `rg` 出全部调用点**，再决定「改签名 + 把这些文件一起纳入清单」还是
-  「新增函数 / 在调用点内联」。同理，一旦要动 `contract/` 或 `service/`，那也已经越出
-  「只改这个 handler」的边界了 —— 停下来报告，不要就地扩权。
-- **跨批次写同名 i18n key 是允许的，但要知道谁会赢**：并行批次各自写迁移时，
-  `INSERT ... ON CONFLICT (item_key, lang) DO NOTHING` 保证了**不报错、不重复**，
-  但**按版本号小的先执行、先写者胜出**。实测：407 的 7 行只插进去 2 行，其余 5 行与
-  405/406 重叠被跳过（`MsgInternalError` 的 en-US 取自 405、`loadFailed*` 取自 406）。
-  合批时要**实测最终落库值**（`SELECT item_value`）而不是读迁移文件，并记住「后写的那些行是死代码」。
-- **分页判据要分清「单页」与「多页」**：`shell.BuildPagination(total, page, limit, baseURL, t)` 在
-  **`total <= limit`（单页）或 `total == 0` 时返回 nil**，`TemplateKeys()` 给空 map —— 于是单页场景页面上
-  **根本没有「共 N 条，第 X-Y 条」那一行**。写分页测试时若在「筛选后只剩单页」的分支里断言该文案，
-  会得到一次**假失败**（实测踩过：品牌页关键词筛出 10 条时断言「共 10 条」失败，实际是按设计不渲染）。
-  单页只能断言「无分页条 + 行数」；要断言信息行，先确认 `total > limit`。
+基建实测结论与验证方法论见 [`docs/rules/testing.md`](docs/rules/testing.md)。
+
+- 默认跑现有测试，不新增额外测试框架。接口优先维护 feature 链路测试（`public/test/`，真实 PostgreSQL），
+  复杂逻辑补 unit；PG/Redis 不可用时 `t.Skip`。全量测试并发跑：`make test` 走 `-p $(nproc)`
+- **测试的表结构一律来自生产迁移**：`support.NewMigratedPGTestDB(t)`（复制模板库）管需要真实 schema 的用例；
+  `support.NewPGTestDB(t)`（空库）只给「自建表 / 故意构造旧 schema」的用例。
+  **禁止手抄 `CREATE TABLE` 伪造「看起来像生产」的表** —— 会与生产静默分叉。并发敏感代码跑 `-race`。
+- **计数与命名不是判据**：`rg -c` / `grep -c` 只是筛查起点，写进结论前必须回读上下文确认语义 ——
+  常量名可能不等于值、关键词计数可能不是目标数量、判据本身可能选错。「门禁绿」也不等于「没问题」。
+- **所有组件必须适配多端**（硬规则）：产出必须在桌面 / 平板 / 手机上正确渲染，在鼠标 / 滚轮与触摸板 /
+  触屏 / 键盘下都能操作。宽度写 `min(100%, <设计宽度>)`、绝对值按视口封顶、触屏等价形态用
+  `CSSBuckets.AddHoverNone`。三条视口（1440 / 768 / 375）× 四种输入各验收一次。
+  完整规范见 [`docs/rules/frontend.md`](docs/rules/frontend.md)
+- **交互改动**：逐种输入方式各测一遍（鼠标拖拽 / 滚轮 / 触屏滑动 / 键盘 / 点击）—— 程序化调用覆盖不到
+  真实输入路径。**动画 / 观察者 / 时间线类改动**必须读到「值在变化」，只读属性名或计算值不算验证，
+  且触发条件要真的成立。**无头环境不出渲染帧**（`IO` / `rAF` / `scroll` 都不触发）—— 验证时先截图强制
+  出帧，实现时优先同步几何计算 + `setTimeout` 节流。
+- 一次「覆盖全部能力的实例页」是性价比最高的集成验证。
 
 ## Git 与工具约定
 
 - 每次 commit 用中文注明改动文件路径和修改内容简述
-- **删除能力时**：grep 该能力名称（表名、权限点、枚举、注释关键词）并同步清理相关注释与文档，避免 CQ-024 类过时说明（例：121 删库存缓存后仍引用 `stock_total` / `CacheSync`）
+- **删除能力时**：grep 该能力名称（表名、权限点、枚举、注释关键词）并同步清理相关注释与文档
 - 文档更新与代码提交分开；修改规则文件（本文件及子目录 CLAUDE.md）前先重新读取，桌面端可能并发改写
-- GitHub 操作（仓库/Issue/PR/Release）优先用 `gh` CLI；Go 项目发版优先 GoReleaser（`goreleaser`）
-- 语言运行时版本由 vfox 管理（`~/.vfox`），禁止 Homebrew/apt/系统包安装运行时；Node.js 依赖优先 pnpm，Python 用 uv
+- GitHub 操作优先 `gh` CLI；Go 项目发版优先 GoReleaser
+- 语言运行时版本由 vfox 管理（`~/.vfox`），禁止 Homebrew/apt/系统包安装运行时；Node.js 依赖优先 pnpm，
+  Python 用 uv
 
 ## 文档导航
 
-- `docs/01-overview.md` — 概览、边界、冻结边界速查
-- `docs/13-module-inventory.md` — 模块实现清单（各模块完整职责与不变量；AGENTS.md 的「模块现状」只留一句话边界）
-- `docs/03-pipeline.md` — 发布管线
-- `docs/05-implementation-plan.md` — 阶段计划
-- `docs/06-plugin-system.md` — 插件体系规范（三级能力分层/双轨制/表扩展/样式引擎）
-- `docs/api-stability.md` — HTTP API 稳定性分级（stable / experimental / internal）
-- `docs/schema-snapshot.md` — 当前 schema 查法与枚举约束（DDL vs Go 注册表）
-- `docs/06-A-plugin-ecosystem-roadmap.md` — 插件生态路线图（本体收口/SEO 基建/首批插件清单/商品重轨+壳）
-- `docs/06-B-dual-track-adr.md` — ADR：双轨制决策固化（分轨/admin 契约双口/商品定位/正文双视图单真源/SEO 分工）
-- `docs/02-*` — 组件规格；`docs/03-A-workbench.md` — 工作台
-- `docs/04-B-dynamic-development-guide.md` — 动态能力开发指南（How-To：静态绑定/Fragment/Client Enhancement 三路径）
-- `docs/02-E-seo-scoring-engine.md` — SEO 评分引擎（rubric 权重卡/Yoast 复用策略/自研计算器/执行计划）
-- `docs/agents/` — Issue 追踪、Triage 标签、领域术语
-- `internal/module/CLAUDE.md` — 模块开发规范；`pkg/CLAUDE.md` — pkg 组件规范
+**规则**： [`docs/rules/`](docs/rules/README.md)（数据库 / 测试 / 组件前端细则）·
+[`docs/agents/parallel-batch-rules.md`](docs/agents/parallel-batch-rules.md)（批次执行者）·
+各目录 `CLAUDE.md`
+
+**项目内容**： [`docs/01-overview.md`](docs/01-overview.md)（概览与冻结边界）·
+[`docs/13-module-inventory.md`](docs/13-module-inventory.md)（**模块清单权威**）·
+[`docs/03-pipeline.md`](docs/03-pipeline.md)（发布管线）·
+[`docs/04-B-dynamic-development-guide.md`](docs/04-B-dynamic-development-guide.md)（动态能力 How-To）·
+[`docs/02-C0-component-base-spec.md`](docs/02-C0-component-base-spec.md) 及 `docs/02-*`（组件规格）·
+[`docs/schema-snapshot.md`](docs/schema-snapshot.md)（schema 与枚举）·
+[`docs/06-plugin-system.md`](docs/06-plugin-system.md) 与 `docs/06-*`（插件体系 / 路线图 / ADR）·
+[`docs/03-A-workbench.md`](docs/03-A-workbench.md)（工作台）·
+[`docs/05-implementation-plan.md`](docs/05-implementation-plan.md)（阶段计划）·
+[`docs/api-stability.md`](docs/api-stability.md)（API 稳定性分级）·
+`docs/agents/`（Issue / Triage / 术语）· `docs/audit/`（审计报告）

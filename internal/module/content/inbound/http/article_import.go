@@ -17,6 +17,7 @@ package contenthttp
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -24,8 +25,10 @@ import (
 	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/richdoc"
 	contentdto "go_wp/internal/module/content/dto"
+	"go_wp/internal/web/shell"
 	pagecontract "go_wp/internal/module/page/contract"
 	pageenums "go_wp/internal/module/page/enums"
+	"go_wp/pkg/i18n"
 )
 
 // 导入页面的固定取值。
@@ -41,19 +44,34 @@ const (
 )
 
 // 导入相关文案（登记在白名单里 —— 它们会进 ?err=）。
+//
+// 常量值是 **i18n key**，中文兜底在 articleImportFacingMessages —— 两者成对，
+// 取词统一走 articleImportTextOf。
 const (
-	articleImportEmptyBodyText = "这篇文章的正文是空的，没有可导入的内容。先写点东西再导入。"
-	articleImportNoProjectText = "请先选择目标站点工程。"
-	articleImportNoPathText    = "请填写新页面的访问路径。"
-	articleImportNoPageText    = "导入需要页面能力（未装配），请联系管理员。"
-	articleImportDepsText      = "页面能力未装配（装配缺陷），本页只显示文章内容。"
+	articleImportEmptyBodyText = "admin.article.import.err.emptyBody"
+	articleImportNoProjectText = "admin.article.import.err.noProject"
+	articleImportNoPathText    = "admin.article.import.err.noPath"
+	articleImportNoPageText    = "admin.article.import.err.noPageCapability"
+	articleImportDepsText      = "admin.article.import.err.depsMissing"
 )
+
+// articleImportTextOf 本页文案的当前语言文本（key + 白名单里的中文兜底）。
+func articleImportTextOf(c *gin.Context, key string) string {
+	return shell.TranslateFor(c)(key, articleImportFacingMessages[key])
+}
+
+// articleImportText 组件类型 / 降级动作的词条：key + 中文兜底。
+type articleImportText struct{ Key, Fallback string }
 
 // articleImportPreviewView 预览视图（模板只做分支渲染，不做统计与判断 ——
 // 统计口径只在这里定义一次，真实渲染测试喂同一份数据走同一条组装路径）。
 type articleImportPreviewView struct {
 	OK        bool
 	NodeCount int
+	// CountText 「转换结果：N 个组件」的整句（Go 侧 FillTranslate 生成）。
+	// 为什么不拆成前后缀给模板拼：中英语序不同（「3 个组件」/「3 components」），
+	// 英文那半的前缀是空串，而空串在取值链里等同「缺失」，会静默回落到中文。
+	CountText string
 	Types     []articleImportTypeView
 	Warnings  []articleImportWarningView
 	Lossless  bool
@@ -76,23 +94,23 @@ type articleImportWarningView struct {
 // articleComponentLabels 组件类型 → 中文名（预览里给人看的，不是给机器判的）。
 //
 // 只列会出现的那几个：导入方向只产出可逆子集 + 占位，不会出现几十种组件。
-var articleComponentLabels = map[string]string{
-	"core.heading":   "标题",
-	"core.text":      "正文",
-	"core.list":      "列表",
-	"core.quote":     "引用",
-	"core.image":     "图片",
-	"core.divider":   "分隔线",
-	"core.table":     "表格",
-	"core.container": "容器",
+var articleComponentLabels = map[string]articleImportText{
+	"core.heading":   {"admin.article.import.node.heading", "标题"},
+	"core.text":      {"admin.article.import.node.text", "正文"},
+	"core.list":      {"admin.article.import.node.list", "列表"},
+	"core.quote":     {"admin.article.import.node.quote", "引用"},
+	"core.image":     {"admin.article.import.node.image", "图片"},
+	"core.divider":   {"admin.article.import.node.divider", "分隔线"},
+	"core.table":     {"admin.article.import.node.table", "表格"},
+	"core.container": {"admin.article.import.node.container", "容器"},
 }
 
-// articleImportActionLabels 降级动作 → 中文（与 richdoc.WarningAction 一一对应）。
-var articleImportActionLabels = map[richdoc.WarningAction]string{
-	richdoc.ActionUnwrap:      "去壳保留内容",
-	richdoc.ActionDrop:        "已丢弃",
-	richdoc.ActionTrim:        "已裁剪",
-	richdoc.ActionPlaceholder: "占位（不可还原）",
+// articleImportActionLabels 降级动作 → 文案（与 richdoc.WarningAction 一一对应）。
+var articleImportActionLabels = map[richdoc.WarningAction]articleImportText{
+	richdoc.ActionUnwrap:      {"admin.article.import.action.unwrap", "去壳保留内容"},
+	richdoc.ActionDrop:        {"admin.article.import.action.drop", "已丢弃"},
+	richdoc.ActionTrim:        {"admin.article.import.action.trim", "已裁剪"},
+	richdoc.ActionPlaceholder: {"admin.article.import.action.placeholder", "占位（不可还原）"},
 }
 
 // ArticleImportPreview 预览转换结果（POST /admin/articles/import-preview）。
@@ -103,17 +121,22 @@ func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	item, err := h.articleByID(c)
 	if err != nil {
 		c.HTML(http.StatusOK, "fragments/article_import",
-			gin.H{"Preview": articleImportPreviewView{}, "Err": articleFacingError(c, err)})
+			gin.H{"Preview": articleImportPreviewView{}, "Err": articleFacingError(c, err),
+				"t": shell.TranslateFor(c)})
 		return
 	}
 	res, err := richdoc.HTMLToNodes(articleStr(item.Data, "body"))
 	if err != nil {
 		c.HTML(http.StatusOK, "fragments/article_import",
-			gin.H{"Preview": articleImportPreviewView{}, "Err": articleFacingError(c, err)})
+			gin.H{"Preview": articleImportPreviewView{}, "Err": articleFacingError(c, err),
+				"t": shell.TranslateFor(c)})
 		return
 	}
+	// t 是片段模板的取词函数：片段不经 shell.Prepare，缺 t 时 Jet 把 tr(...) 求值成空串
+	//（不报错、不 500、不记日志），整块提示会变成空白。
 	c.HTML(http.StatusOK, "fragments/article_import",
-		gin.H{"Preview": articleImportPreviewViewOf(res), "Err": ""})
+		gin.H{"Preview": articleImportPreviewViewOf(res, shell.TranslateFor(c)), "Err": "",
+			"t": shell.TranslateFor(c)})
 }
 
 // ArticleImportCreate 新建页面草稿并打开画布（POST /admin/articles/import-page）。
@@ -221,7 +244,8 @@ func articleImportDocument(data map[string]any, nodes []*core.Node) (json.RawMes
 }
 
 // articleImportPreviewViewOf 转换结果 → 预览视图（纯函数）。
-func articleImportPreviewViewOf(res *richdoc.Result) articleImportPreviewView {
+func articleImportPreviewViewOf(res *richdoc.Result, trs ...func(key, fallback string) string) articleImportPreviewView {
+	tr := articlePublishTr(trs)
 	if res == nil {
 		return articleImportPreviewView{}
 	}
@@ -239,21 +263,24 @@ func articleImportPreviewViewOf(res *richdoc.Result) articleImportPreviewView {
 	view := articleImportPreviewView{
 		OK:        true,
 		NodeCount: len(res.Nodes),
-		Lossless:  len(res.Warnings) == 0,
-		Types:     make([]articleImportTypeView, 0, len(order)),
-		Warnings:  make([]articleImportWarningView, 0, len(res.Warnings)),
+		CountText: i18n.FillTranslate(tr, "admin.article.import.resultCount",
+			"转换结果：{count} 个组件", map[string]string{"count": strconv.Itoa(len(res.Nodes))}),
+		Lossless: len(res.Warnings) == 0,
+		Types:    make([]articleImportTypeView, 0, len(order)),
+		Warnings: make([]articleImportWarningView, 0, len(res.Warnings)),
 	}
 	for _, t := range order {
-		label, ok := articleComponentLabels[t]
-		if !ok {
-			label = t // 认不出来的组件显示原始类型名：比显示"未知"更有排查价值
+		// 认不出来的组件显示原始类型名：比显示"未知"更有排查价值。
+		label := t
+		if item, ok := articleComponentLabels[t]; ok {
+			label = tr(item.Key, item.Fallback)
 		}
 		view.Types = append(view.Types, articleImportTypeView{Type: t, Label: label, Count: counts[t]})
 	}
 	for _, w := range res.Warnings {
-		action, ok := articleImportActionLabels[w.Action]
-		if !ok {
-			action = string(w.Action)
+		action := string(w.Action)
+		if item, ok := articleImportActionLabels[w.Action]; ok {
+			action = tr(item.Key, item.Fallback)
 		}
 		view.Warnings = append(view.Warnings, articleImportWarningView{Tag: w.Tag, Action: action, Detail: w.Detail})
 	}
@@ -274,7 +301,7 @@ func articleImportFacingError(c *gin.Context, err error) string {
 			return msg
 		}
 	}
-	if msg := articleFacingText(raw); msg != "" {
+	if msg := articleFacingText(c, raw); msg != "" {
 		return msg
 	}
 	// 未命中：原文只进日志（带 user_id），对外给归口文案。

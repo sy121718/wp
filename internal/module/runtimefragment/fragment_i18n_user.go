@@ -1,5 +1,7 @@
 package runtimefragment
 
+import rfenums "go_wp/internal/module/runtimefragment/enums"
+
 // fragment_i18n_user.go — 访客账号表单片段文案（I18N-012，site.fragment.user.*）。
 
 // userCommonLabels 账号类片段共用文案。
@@ -10,8 +12,8 @@ type userCommonLabels struct {
 
 func userCommonLabelsOf(r *Request) userCommonLabels {
 	return userCommonLabels{
-		SessionNotReady: r.tr("site.fragment.common.session_not_ready", "会话未就绪，请刷新页面后重试。"),
-		GoLogin:         r.tr("site.fragment.common.go_login", "去登录"),
+		SessionNotReady: r.tr(rfenums.CommonSessionNotReady, "会话未就绪，请刷新页面后重试。"),
+		GoLogin:         r.tr(rfenums.CommonGoLogin, "去登录"),
 	}
 }
 
@@ -30,13 +32,13 @@ type userLoginLabels struct {
 func userLoginLabelsOf(r *Request) userLoginLabels {
 	return userLoginLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		Identity:         r.tr("site.fragment.user.login.identity", "邮箱或用户名"),
-		Password:         r.tr("site.fragment.user.login.password", "密码"),
-		Remember:         r.tr("site.fragment.user.login.remember", "记住我（7 天）"),
-		Submit:           r.tr("site.fragment.user.login.submit", "登录"),
-		NoAccount:        r.tr("site.fragment.user.login.no_account", "还没有账号？"),
-		Register:         r.tr("site.fragment.user.login.register", "去注册"),
-		Forgot:           r.tr("site.fragment.user.login.forgot", "忘记密码？"),
+		Identity:         r.tr(rfenums.UserLoginIdentity, "邮箱或用户名"),
+		Password:         r.tr(rfenums.UserLoginPassword, "密码"),
+		Remember:         r.tr(rfenums.UserLoginRemember, "记住我（7 天）"),
+		Submit:           r.tr(rfenums.UserLoginSubmit, "登录"),
+		NoAccount:        r.tr(rfenums.UserLoginNoAccount, "还没有账号？"),
+		Register:         r.tr(rfenums.UserLoginRegister, "去注册"),
+		Forgot:           r.tr(rfenums.UserLoginForgot, "忘记密码？"),
 	}
 }
 
@@ -56,14 +58,14 @@ type userRegisterLabels struct {
 func userRegisterLabelsOf(r *Request) userRegisterLabels {
 	return userRegisterLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		Username:         r.tr("site.fragment.user.register.username", "用户名"),
-		Email:            r.tr("site.fragment.user.register.email", "邮箱"),
-		Nickname:         r.tr("site.fragment.user.register.nickname", "昵称（可选）"),
-		Password:         r.tr("site.fragment.user.register.password", "密码"),
-		Submit:           r.tr("site.fragment.user.register.submit", "注册"),
-		AfterNote:        r.tr("site.fragment.user.register.after_note", "注册后需要去邮箱点激活链接才能登录。"),
-		HasAccount:       r.tr("site.fragment.user.register.has_account", "已经有账号？"),
-		Login:            r.tr("site.fragment.user.register.login", "去登录"),
+		Username:         r.tr(rfenums.UserRegisterUsername, "用户名"),
+		Email:            r.tr(rfenums.UserRegisterEmail, "邮箱"),
+		Nickname:         r.tr(rfenums.UserRegisterNickname, "昵称（可选）"),
+		Password:         r.tr(rfenums.UserRegisterPassword, "密码"),
+		Submit:           r.tr(rfenums.UserRegisterSubmit, "注册"),
+		AfterNote:        r.tr(rfenums.UserRegisterAfterNote, "注册后需要去邮箱点激活链接才能登录。"),
+		HasAccount:       r.tr(rfenums.UserRegisterHasAccount, "已经有账号？"),
+		Login:            r.tr(rfenums.UserRegisterLogin, "去登录"),
 	}
 }
 
@@ -79,10 +81,10 @@ type userForgotLabels struct {
 func userForgotLabelsOf(r *Request) userForgotLabels {
 	return userForgotLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		Email:            r.tr("site.fragment.user.forgot.email", "注册邮箱"),
-		Submit:           r.tr("site.fragment.user.forgot.submit", "发送重置链接"),
-		Privacy:          r.tr("site.fragment.user.forgot.privacy", "无论邮箱是否存在，提交后都会显示同一句提示 —— 那样可以避免被人拿来试探哪些邮箱注册过。"),
-		BackLogin:        r.tr("site.fragment.user.forgot.back_login", "返回登录"),
+		Email:            r.tr(rfenums.UserForgotEmail, "注册邮箱"),
+		Submit:           r.tr(rfenums.UserForgotSubmit, "发送重置链接"),
+		Privacy:          r.tr(rfenums.UserForgotPrivacy, "无论邮箱是否存在，提交后都会显示同一句提示 —— 那样可以避免被人拿来试探哪些邮箱注册过。"),
+		BackLogin:        r.tr(rfenums.UserForgotBackLogin, "返回登录"),
 	}
 }
 
@@ -98,10 +100,10 @@ type userResetLabels struct {
 func userResetLabelsOf(r *Request) userResetLabels {
 	return userResetLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		Email:            r.tr("site.fragment.user.reset.email", "邮箱"),
-		Password:         r.tr("site.fragment.user.reset.password", "新密码"),
-		Submit:           r.tr("site.fragment.user.reset.submit", "设置新密码"),
-		RevokeNote:       r.tr("site.fragment.user.reset.revoke_note", "改完密码会撤销该账号的全部登录会话（包括其它设备）。"),
+		Email:            r.tr(rfenums.UserResetEmail, "邮箱"),
+		Password:         r.tr(rfenums.UserResetPassword, "新密码"),
+		Submit:           r.tr(rfenums.UserResetSubmit, "设置新密码"),
+		RevokeNote:       r.tr(rfenums.UserResetRevokeNote, "改完密码会撤销该账号的全部登录会话（包括其它设备）。"),
 	}
 }
 
@@ -120,13 +122,13 @@ type userAccountPanelLabels struct {
 func userAccountPanelLabelsOf(r *Request) userAccountPanelLabels {
 	return userAccountPanelLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		LoggedIn:         r.tr("site.fragment.user.panel.logged_in", "你已登录。"),
-		AccountCenter:    r.tr("site.fragment.user.panel.account_center", "进入账号中心"),
-		AccountHint:      r.tr("site.fragment.user.panel.account_hint", "（资料 / 偏好 / 改密码 / 登录设备）"),
-		Logout:           r.tr("site.fragment.user.panel.logout", "退出登录"),
-		Guest:            r.tr("site.fragment.user.panel.guest", "你还没有登录。"),
-		NoAccount:        r.tr("site.fragment.user.panel.no_account", "没有账号？"),
-		Register:         r.tr("site.fragment.user.panel.register", "注册一个"),
+		LoggedIn:         r.tr(rfenums.UserPanelLoggedIn, "你已登录。"),
+		AccountCenter:    r.tr(rfenums.UserPanelAccountCenter, "进入账号中心"),
+		AccountHint:      r.tr(rfenums.UserPanelAccountHint, "（资料 / 偏好 / 改密码 / 登录设备）"),
+		Logout:           r.tr(rfenums.UserPanelLogout, "退出登录"),
+		Guest:            r.tr(rfenums.UserPanelGuest, "你还没有登录。"),
+		NoAccount:        r.tr(rfenums.UserPanelNoAccount, "没有账号？"),
+		Register:         r.tr(rfenums.UserPanelRegister, "注册一个"),
 	}
 }
 
@@ -164,32 +166,32 @@ type userAccountProfileLabels struct {
 func userAccountProfileLabelsOf(r *Request) userAccountProfileLabels {
 	return userAccountProfileLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		NeedLogin:        r.tr("site.fragment.user.account.need_login_profile", "请先登录后再查看账号资料。"),
-		Unavailable:      r.tr("site.fragment.user.account.unavailable", "账号资料暂不可用，请稍后再试。"),
-		Username:         r.tr("site.fragment.user.account.username", "用户名"),
-		Email:            r.tr("site.fragment.user.account.email", "邮箱"),
-		Verified:         r.tr("site.fragment.user.account.verified", "已验证"),
-		Unverified:       r.tr("site.fragment.user.account.unverified", "未验证"),
-		RegisteredAt:     r.tr("site.fragment.user.account.registered_at", "注册时间"),
-		LastLogin:        r.tr("site.fragment.user.account.last_login", "上次登录"),
-		Nickname:         r.tr("site.fragment.user.account.nickname", "昵称"),
-		Gender:           r.tr("site.fragment.user.account.gender", "性别"),
-		GenderUnset:      r.tr("site.fragment.user.account.gender_unset", "未填写"),
-		GenderMale:       r.tr("site.fragment.user.account.gender_male", "男"),
-		GenderFemale:     r.tr("site.fragment.user.account.gender_female", "女"),
-		FirstName:        r.tr("site.fragment.user.account.first_name", "名"),
-		LastName:         r.tr("site.fragment.user.account.last_name", "姓"),
-		Birthday:         r.tr("site.fragment.user.account.birthday", "生日"),
-		Phone:            r.tr("site.fragment.user.account.phone", "电话"),
-		Website:          r.tr("site.fragment.user.account.website", "个人主页"),
-		Company:          r.tr("site.fragment.user.account.company", "公司 / 组织"),
-		Country:          r.tr("site.fragment.user.account.country", "国家 / 地区"),
-		Province:         r.tr("site.fragment.user.account.province", "省 / 州"),
-		City:             r.tr("site.fragment.user.account.city", "城市"),
-		Zip:              r.tr("site.fragment.user.account.zip", "邮编"),
-		Address:          r.tr("site.fragment.user.account.address", "地址"),
-		Bio:              r.tr("site.fragment.user.account.bio", "简介"),
-		Save:             r.tr("site.fragment.user.account.save_profile", "保存资料"),
+		NeedLogin:        r.tr(rfenums.UserAccountNeedLoginProfile, "请先登录后再查看账号资料。"),
+		Unavailable:      r.tr(rfenums.UserAccountUnavailable, "账号资料暂不可用，请稍后再试。"),
+		Username:         r.tr(rfenums.UserAccountUsername, "用户名"),
+		Email:            r.tr(rfenums.UserAccountEmail, "邮箱"),
+		Verified:         r.tr(rfenums.UserAccountVerified, "已验证"),
+		Unverified:       r.tr(rfenums.UserAccountUnverified, "未验证"),
+		RegisteredAt:     r.tr(rfenums.UserAccountRegisteredAt, "注册时间"),
+		LastLogin:        r.tr(rfenums.UserAccountLastLogin, "上次登录"),
+		Nickname:         r.tr(rfenums.UserAccountNickname, "昵称"),
+		Gender:           r.tr(rfenums.UserAccountGender, "性别"),
+		GenderUnset:      r.tr(rfenums.UserAccountGenderUnset, "未填写"),
+		GenderMale:       r.tr(rfenums.UserAccountGenderMale, "男"),
+		GenderFemale:     r.tr(rfenums.UserAccountGenderFemale, "女"),
+		FirstName:        r.tr(rfenums.UserAccountFirstName, "名"),
+		LastName:         r.tr(rfenums.UserAccountLastName, "姓"),
+		Birthday:         r.tr(rfenums.UserAccountBirthday, "生日"),
+		Phone:            r.tr(rfenums.UserAccountPhone, "电话"),
+		Website:          r.tr(rfenums.UserAccountWebsite, "个人主页"),
+		Company:          r.tr(rfenums.UserAccountCompany, "公司 / 组织"),
+		Country:          r.tr(rfenums.UserAccountCountry, "国家 / 地区"),
+		Province:         r.tr(rfenums.UserAccountProvince, "省 / 州"),
+		City:             r.tr(rfenums.UserAccountCity, "城市"),
+		Zip:              r.tr(rfenums.UserAccountZip, "邮编"),
+		Address:          r.tr(rfenums.UserAccountAddress, "地址"),
+		Bio:              r.tr(rfenums.UserAccountBio, "简介"),
+		Save:             r.tr(rfenums.UserAccountSaveProfile, "保存资料"),
 	}
 }
 
@@ -213,18 +215,18 @@ type userAccountPreferenceLabels struct {
 func userAccountPreferenceLabelsOf(r *Request) userAccountPreferenceLabels {
 	return userAccountPreferenceLabels{
 		userCommonLabels:  userCommonLabelsOf(r),
-		NeedLogin:         r.tr("site.fragment.user.account.need_login_preference", "请先登录后再查看账号偏好。"),
-		Unavailable:       r.tr("site.fragment.user.account.unavailable_preference", "账号偏好暂不可用，请稍后再试。"),
-		PageSize:          r.tr("site.fragment.user.account.page_size", "每页条数"),
-		Visibility:        r.tr("site.fragment.user.account.visibility", "主页可见性"),
-		VisibilityPublic:  r.tr("site.fragment.user.account.visibility_public", "所有人可见"),
-		VisibilityMembers: r.tr("site.fragment.user.account.visibility_members", "仅登录用户"),
-		VisibilityPrivate: r.tr("site.fragment.user.account.visibility_private", "仅自己"),
-		Timezone:          r.tr("site.fragment.user.account.timezone", "时区"),
-		EmailNotify:       r.tr("site.fragment.user.account.email_notify", "接收邮件通知"),
-		SmsNotify:         r.tr("site.fragment.user.account.sms_notify", "接收短信通知"),
-		ShowOnline:        r.tr("site.fragment.user.account.show_online", "公开我的在线状态"),
-		Save:              r.tr("site.fragment.user.account.save_preference", "保存偏好"),
+		NeedLogin:         r.tr(rfenums.UserAccountNeedLoginPreference, "请先登录后再查看账号偏好。"),
+		Unavailable:       r.tr(rfenums.UserAccountUnavailablePreference, "账号偏好暂不可用，请稍后再试。"),
+		PageSize:          r.tr(rfenums.UserAccountPageSize, "每页条数"),
+		Visibility:        r.tr(rfenums.UserAccountVisibility, "主页可见性"),
+		VisibilityPublic:  r.tr(rfenums.UserAccountVisibilityPublic, "所有人可见"),
+		VisibilityMembers: r.tr(rfenums.UserAccountVisibilityMembers, "仅登录用户"),
+		VisibilityPrivate: r.tr(rfenums.UserAccountVisibilityPrivate, "仅自己"),
+		Timezone:          r.tr(rfenums.UserAccountTimezone, "时区"),
+		EmailNotify:       r.tr(rfenums.UserAccountEmailNotify, "接收邮件通知"),
+		SmsNotify:         r.tr(rfenums.UserAccountSmsNotify, "接收短信通知"),
+		ShowOnline:        r.tr(rfenums.UserAccountShowOnline, "公开我的在线状态"),
+		Save:              r.tr(rfenums.UserAccountSavePreference, "保存偏好"),
 	}
 }
 
@@ -241,11 +243,11 @@ type userAccountPasswordLabels struct {
 func userAccountPasswordLabelsOf(r *Request) userAccountPasswordLabels {
 	return userAccountPasswordLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		NeedLogin:        r.tr("site.fragment.user.account.need_login_password", "请先登录后再修改密码。"),
-		Current:          r.tr("site.fragment.user.account.current_password", "当前密码"),
-		NewPassword:      r.tr("site.fragment.user.account.new_password", "新密码"),
-		Hint:             r.tr("site.fragment.user.account.password_hint", "至少 8 位。修改成功后所有设备都会退出登录。"),
-		Submit:           r.tr("site.fragment.user.account.change_password", "修改密码"),
+		NeedLogin:        r.tr(rfenums.UserAccountNeedLoginPassword, "请先登录后再修改密码。"),
+		Current:          r.tr(rfenums.UserAccountCurrentPassword, "当前密码"),
+		NewPassword:      r.tr(rfenums.UserAccountNewPassword, "新密码"),
+		Hint:             r.tr(rfenums.UserAccountPasswordHint, "至少 8 位。修改成功后所有设备都会退出登录。"),
+		Submit:           r.tr(rfenums.UserAccountChangePassword, "修改密码"),
 	}
 }
 
@@ -267,15 +269,15 @@ type userAccountSessionsLabels struct {
 func userAccountSessionsLabelsOf(r *Request) userAccountSessionsLabels {
 	return userAccountSessionsLabels{
 		userCommonLabels: userCommonLabelsOf(r),
-		Unavailable:      r.tr("site.fragment.user.account.sessions_unavailable", "登录设备暂不可用，请稍后再试。"),
-		NeedLogin:        r.tr("site.fragment.user.account.need_login_sessions", "请先登录后再查看登录设备。"),
-		Empty:            r.tr("site.fragment.user.account.sessions_empty", "没有其它登录设备。"),
-		UnknownBrowser:   r.tr("site.fragment.user.account.unknown_browser", "未知浏览器"),
-		CurrentDevice:    r.tr("site.fragment.user.account.current_device", "当前设备"),
-		IPUnknown:        r.tr("site.fragment.user.account.ip_unknown", "IP 未知"),
-		LastActive:       r.tr("site.fragment.user.account.last_active", "最近活跃"),
-		LoggedInAt:       r.tr("site.fragment.user.account.logged_in_at", "登录于"),
-		Revoke:           r.tr("site.fragment.user.account.revoke", "踢出"),
-		RevokeOthers:     r.tr("site.fragment.user.account.revoke_others", "退出其它所有设备"),
+		Unavailable:      r.tr(rfenums.UserAccountSessionsUnavailable, "登录设备暂不可用，请稍后再试。"),
+		NeedLogin:        r.tr(rfenums.UserAccountNeedLoginSessions, "请先登录后再查看登录设备。"),
+		Empty:            r.tr(rfenums.UserAccountSessionsEmpty, "没有其它登录设备。"),
+		UnknownBrowser:   r.tr(rfenums.UserAccountUnknownBrowser, "未知浏览器"),
+		CurrentDevice:    r.tr(rfenums.UserAccountCurrentDevice, "当前设备"),
+		IPUnknown:        r.tr(rfenums.UserAccountIPUnknown, "IP 未知"),
+		LastActive:       r.tr(rfenums.UserAccountLastActive, "最近活跃"),
+		LoggedInAt:       r.tr(rfenums.UserAccountLoggedInAt, "登录于"),
+		Revoke:           r.tr(rfenums.UserAccountRevoke, "踢出"),
+		RevokeOthers:     r.tr(rfenums.UserAccountRevokeOthers, "退出其它所有设备"),
 	}
 }

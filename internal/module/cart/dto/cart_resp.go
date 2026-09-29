@@ -23,8 +23,13 @@ type CartItem struct {
 	// 「未知」与「为 0」必须分开：把未知说成缺货，会让一次库存抖动变成前台整店下架。
 	Available      int
 	AvailableKnown bool
-	InStock        bool
-	AvailableText  string
+	// AvailableKey 可用性文案的词条 key（与 AvailableText 成对：key + 中文兜底）。
+	//
+	// 取词发生在**渲染侧**（fragments/cart_view.jet 由 runtimefragment 渲染）：
+	// service 层没有请求语言，在这里取词只会拿到默认语言、把界面语言写错。
+	AvailableKey  string
+	AvailableText string
+	InStock       bool
 
 	// Missing 为真表示这个变体已经查不到（下架 / 删除 / 跨工程）：
 	// 展示成「商品已下架」，且**不计入小计** —— 但它留在购物车里让访客自己删，

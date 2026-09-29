@@ -71,7 +71,9 @@ func (s *Service) ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListRe
 		boundOf[b.Slot] = b.PageID
 	}
 	for _, def := range pageenums.SiteSlotDefs {
-		item := pagedto.SiteSlotItem{Slot: def.Key, SlotName: def.Name, Usage: def.Usage}
+		// SlotName / Usage 承载的是 **i18n key**（见 pageenums.SiteSlotDef）：
+		// service 层拿不到请求语言，中文兜底留在 enums 表里，由后台页面层取词。
+		item := pagedto.SiteSlotItem{Slot: def.Key, SlotName: def.NameKey, Usage: def.UsageKey}
 		if pageID, ok := boundOf[def.Key]; ok {
 			item.Bound, item.PageID = true, pageID
 			if idx, found := pageOf[pageID]; found {

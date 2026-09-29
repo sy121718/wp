@@ -2,7 +2,6 @@ package orderhttp
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
 
 	"go_wp/internal/web/shell"
 )
@@ -17,7 +17,7 @@ import (
 // return_page_view.go - 退货入库页的视图构造（列表/详情、状态计数、筛选选项与待处理提示）。
 
 // returnListRow 退货单 → 列表行视图（状态文案、金额、时间都在这里定型）。
-func returnListRow(r *orderdto.ReturnResp, filter returnFilter, projectID string, page, limit int) gin.H {
+func returnListRow(tr translate, r *orderdto.ReturnResp, filter returnFilter, projectID string, page, limit int) gin.H {
 	if r == nil {
 		return gin.H{}
 	}
@@ -32,7 +32,7 @@ func returnListRow(r *orderdto.ReturnResp, filter returnFilter, projectID string
 		"ReturnNo":      r.ReturnNo,
 		"OrderNo":       r.OrderNo,
 		"Status":        r.Status,
-		"StatusLabel":   r.StatusLabel,
+		"StatusLabel":   returnStatusText(tr, r.Status),
 		"Badge":         returnStatusBadge(r.Status),
 		"CustomerName":  orderTextOrEmpty(r.CustomerName),
 		"CustomerEmail": orderTextOrEmpty(r.CustomerEmail),
@@ -43,8 +43,22 @@ func returnListRow(r *orderdto.ReturnResp, filter returnFilter, projectID string
 	}
 }
 
+// returnStatusText 状态 → 展示文案：按状态**值**取词（不拿 service 给的中文标签反查）。
+//
+// 认不出的取值回落「—」：模板直接渲染这个值，空白单元格读不出「不知道」。
+func returnStatusText(tr translate, status string) string {
+	key, fallback := orderenums.ReturnStatusLabel(status)
+	if key == "" {
+		if strings.TrimSpace(status) == "" {
+			return orderFieldEmpty
+		}
+		return fallback
+	}
+	return orderLabelOf(tr, orderLabel{key, fallback})
+}
+
 // returnDetailView 退货单详情（单头 + 逐行明细 + 订单摘要 + 按状态决定的操作）→ 模板视图。
-func returnDetailView(d *orderdto.ReturnDetailResp, filter returnFilter, projectID string, page, limit int) gin.H {
+func returnDetailView(tr translate, d *orderdto.ReturnDetailResp, filter returnFilter, projectID string, page, limit int) gin.H {
 	if d == nil || d.Return == nil {
 		return gin.H{}
 	}
@@ -77,7 +91,7 @@ func returnDetailView(d *orderdto.ReturnDetailResp, filter returnFilter, project
 			"OrderNo":       o.OrderNo,
 			"OrderURL":      shell.FilterBaseURL("/admin/orders", map[string]string{"project": projectID, "orderId": strconv.FormatUint(o.ID, 10)}),
 			"Status":        o.Status,
-			"StatusLabel":   orderStatusLabel(o.Status),
+			"StatusLabel":   orderStatusLabel(tr, o.Status),
 			"Badge":         orderStatusBadge(o.Status),
 			"TotalLabel":    orderMoneyLabel(o.Total, o.Currency),
 			"CreatedAt":     orderTimeLabel(o.CreateTime.Time()),
@@ -119,7 +133,7 @@ func returnDetailView(d *orderdto.ReturnDetailResp, filter returnFilter, project
 			"OrderNo":       ret.OrderNo,
 			"OrderURL":      shell.FilterBaseURL("/admin/orders", map[string]string{"project": projectID, "orderId": strconv.FormatUint(ret.OrderID, 10)}),
 			"Status":        ret.Status,
-			"StatusLabel":   ret.StatusLabel,
+			"StatusLabel":   returnStatusText(tr, ret.Status),
 			"Badge":         returnStatusBadge(ret.Status),
 			"Reason":        orderTextOrEmpty(ret.Reason),
 			"RefundLabel":   ret.RefundLabel,
@@ -151,15 +165,15 @@ func returnDetailView(d *orderdto.ReturnDetailResp, filter returnFilter, project
 //
 // counts 为 nil（未查询 / 查询失败）时全部按 0 渲染：计数条是导航，不是结论，
 // 取不到数就不显示假的数字，但页面结构保持不变。
-func returnStatusCounters(counts map[string]int64, filter returnFilter, projectID string) []gin.H {
+func returnStatusCounters(tr translate, counts map[string]int64, filter returnFilter, projectID string) []gin.H {
 	var all int64
 	for _, n := range counts {
 		all += n
 	}
 	out := make([]gin.H, 0, len(returnStatusViews)+1)
-	out = append(out, returnStatusCounter("", "全部", "badge-mute", false, all, filter, projectID))
+	out = append(out, returnStatusCounter("", orderLabelOf(tr, orderStatusAllLabel), "badge-mute", false, all, filter, projectID))
 	for _, view := range returnStatusViews {
-		out = append(out, returnStatusCounter(view.Value, view.Label, view.Badge, view.Highlight,
+		out = append(out, returnStatusCounter(view.Value, returnStatusText(tr, view.Value), view.Badge, view.Highlight,
 			counts[view.Value], filter, projectID))
 	}
 	return out
@@ -198,7 +212,10 @@ func returnFilterValues(projectID string, filter returnFilter) map[string]string
 
 // returnPendingHint 顶部待办提示：把「有人在等」的两类数字单独拎出来说一句。
 // 两类都为 0 时返回空串，模板据此不渲染。
-func returnPendingHint(counters []gin.H) string {
+//
+// 文案走词条（两条 `{name}` 占位符由调用点按名字填）：数字是变量，而句子的语序随语言变 ——
+// 把中文句子焊在 Go 里，英文界面恒中文。填充用命名替换而非 Sprintf（见 orderLabelFilled）。
+func returnPendingHint(tr translate, counters []gin.H) string {
 	var pending, refund int64
 	for _, item := range counters {
 		switch item["Value"] {
@@ -211,8 +228,15 @@ func returnPendingHint(counters []gin.H) string {
 	if pending == 0 && refund == 0 {
 		return ""
 	}
-	return fmt.Sprintf("当前有 %d 单待审核、%d 单已入库待退款 —— 这两个状态是有人在等着处理的。", pending, refund)
+	return orderLabelFilled(tr, returnPendingHintLabel, map[string]string{
+		"pending": strconv.FormatInt(pending, 10),
+		"refund":  strconv.FormatInt(refund, 10),
+	})
 }
+
+// returnPendingHintLabel 顶部待办提示的词条（两条占位符分别是待审核与待退款单数）。
+var returnPendingHintLabel = orderLabel{"admin.returns.filter.pending_hint",
+	"当前有 {pending} 单待审核、{refund} 单已入库待退款 —— 这两个状态是有人在等着处理的。"}
 
 // —— 表单与文案工具 ——
 
@@ -226,7 +250,7 @@ type returnWarehouseOption struct {
 //
 // 取不到时返回空表：页面据此只渲染「默认仓」一个选项，而不是让整页报错 ——
 // 退货审核本身不依赖仓库列表（服务端在仓库为空时会兜底到默认仓）。
-func (h *returnPageHandle) warehouseOptions(ctx context.Context, projectID string) []returnWarehouseOption {
+func (h *returnPageHandle) warehouseOptions(ctx context.Context, projectID string, tr translate) []returnWarehouseOption {
 	if h.warehouses == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
@@ -236,7 +260,7 @@ func (h *returnPageHandle) warehouseOptions(ctx context.Context, projectID strin
 	}
 	out := make([]returnWarehouseOption, 0, len(list))
 	for _, w := range list {
-		if opt, ok := warehouseOptionOf(&w); ok {
+		if opt, ok := warehouseOptionOf(tr, &w); ok {
 			out = append(out, opt)
 		}
 	}
@@ -251,7 +275,7 @@ func (h *returnPageHandle) warehouseOptions(ctx context.Context, projectID strin
 //	· 标签带短码 —— 短码是仓库在 SKU 编码里的前缀，运营认得出「SZ」比认全名快；
 //	· 默认仓显式标注 —— 留空时的兜底目标要让运营看得见，否则「我什么都没选」与
 //	  「我以为会进某个仓」之间就靠猜。
-func warehouseOptionOf(w *ordercontract.ReturnWarehouse) (opt returnWarehouseOption, ok bool) {
+func warehouseOptionOf(tr translate, w *ordercontract.ReturnWarehouse) (opt returnWarehouseOption, ok bool) {
 	if w == nil || strings.TrimSpace(w.ID) == "" {
 		return opt, false
 	}
@@ -267,7 +291,10 @@ func warehouseOptionOf(w *ordercontract.ReturnWarehouse) (opt returnWarehouseOpt
 		}
 	}
 	if w.IsDefault {
-		label += " · 默认仓"
+		label += orderLabelOf(tr, returnDefaultWarehouseLabel)
 	}
 	return returnWarehouseOption{ID: w.ID, Label: label}, true
 }
+
+// returnDefaultWarehouseLabel 默认仓的标注（前后带空格，直接拼在仓库名后面）。
+var returnDefaultWarehouseLabel = orderLabel{"admin.returns.form.default_warehouse", " · 默认仓"}

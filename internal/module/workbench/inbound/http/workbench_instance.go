@@ -29,13 +29,13 @@ func (h *Handle) SetInstanceOverrideDeps(instances presentationcontract.Presenta
 // workbenchInstance 实例编辑模式外壳。
 func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if h.instances == nil {
-		c.String(http.StatusServiceUnavailable, "实例编辑能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrInstanceEditNotAssembled))
 		return
 	}
 	ctx := c.Request.Context()
 	inst, err := h.instances.Get(ctx, &presentationdto.GetReq{ID: instanceID, ProjectID: c.Query("projectId")})
 	if err != nil {
-		c.String(http.StatusNotFound, "实例不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrInstanceNotFound))
 		return
 	}
 	// 生效文档：override 优先（toResp 随快照返回），否则实例尚无可编辑文档，
@@ -55,9 +55,9 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if renderMode != presentationdto.RenderModeDocument {
 		renderMode = presentationdto.RenderModeTemplate
 	}
-	renderModeLabel := "跟随模板中（模板更新会同步到这里）"
+	renderModeLabel := workbenchShortText(c, workbenchenums.ModeFollowTemplate)
 	if renderMode == presentationdto.RenderModeDocument {
-		renderModeLabel = "独立文档（只影响这个商品）"
+		renderModeLabel = workbenchShortText(c, workbenchenums.ModeDocument)
 	}
 	metaJSON, _ := json.Marshal(gin.H{
 		"target": workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
@@ -67,12 +67,15 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	})
 	schemas, serr := builder.ComponentSchemas()
 	if serr != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
 		return
 	}
 	schemasJSON, _ := json.Marshal(schemas)
-	c.HTML(http.StatusOK, "workbench/layout", gin.H{
-		"title": "自定义商品页", "pageId": inst.ID, "isBlock": false, "isTemplate": true,
+	// 与另外三种画布模式一致地走 shell.Prepare：它注入 t（画布模板的取词函数）、
+	// csrf_token（workbench.js 的 POST fetch 读它）与 lang。此前这个分支直接传 gin.H，
+	// 于是 layout.html 的 `{{ .["csrf_token"] }}` 恒为空串 —— JS 只能靠 sessionStorage 兜底。
+	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
+		"title": workbenchShortText(c, workbenchenums.TitleInstance), "pageId": inst.ID, "isBlock": false, "isTemplate": true,
 		// 双轨状态条（layout.html 据 isset(.instanceMode) 渲染）
 		"instanceMode": true, "renderMode": renderMode, "renderModeLabel": renderModeLabel,
 		"document": string(documentJSON), "meta": string(metaJSON), "schemas": string(schemasJSON),
@@ -83,7 +86,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		// 模板第 17 行就取它，于是实例编辑器整页在 <head> 里中断，只回 445 字节。
 		// 回归守卫：public/test/workbench/feature/workbench_layout_render_test.go 的「实例模式」。
 		"jsVer": workbenchJsVer(),
-	})
+	}))
 }
 
 // InstanceSave POST /workbench/instance/save：保存实例覆盖文档并重建发布。
@@ -104,7 +107,7 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 		ConfirmDetach bool            `json:"confirmDetach"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.ID) == "" || len(body.DraftDoc) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "保存参数不完整"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": workbenchShortText(c, workbenchenums.ErrSaveParamsIncomplete)})
 		return
 	}
 	req := &presentationdto.SaveOverrideReq{
@@ -120,9 +123,8 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 		// 顺序是「先请求、再确认」，因为判据（文档结构是否真的变了）只有服务端算得准。
 		if strings.TrimSpace(err.Error()) == presentationenums.ErrDetachConfirmRequired {
 			c.JSON(http.StatusConflict, gin.H{
-				"code": 409,
-				"message": "这次改动会让本商品转为独立文档：之后模板更新不再同步到这里；" +
-					"想回到跟随时，在商品详情页点「重新套用预设」即可。继续保存？",
+				"code":    409,
+				"message": workbenchShortText(c, workbenchenums.ErrDetachConfirmRequired),
 			})
 			return
 		}

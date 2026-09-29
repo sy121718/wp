@@ -53,6 +53,10 @@ const (
 	RetainPageRevisionDays = 90
 	RetainArtifactDays     = 30
 	RetainMailDays         = 180
+	// RetainPageScheduleDays 定时上下线排定（含执行审计）的保留期。
+	//
+	// 与 page_revisions 同档：排障（「昨晚那次上线为什么没发生」）依赖这段时间内的记录。
+	RetainPageScheduleDays = 90
 )
 
 // declarations 全库增长型表的生命周期声明。
@@ -157,6 +161,22 @@ var declarations = []Declaration{
 		Executor: "（不清理）",
 		Kind:     CleanupNone,
 		Note:     "按天预聚合（DB-005 / IDX-010）：历史窗口的统计读数来源，删了报表就没了；体量可控（天数 × 路径数）",
+	},
+	// 定时上下线待办（PIPE-7，迁移 460）：**终态行才清**，待执行 / 执行中的永远保留。
+	//
+	// 为什么 Retain 是 90 天而不是更短：这张表同时是排定的**执行审计**
+	// （谁在什么时候排了什么、成没成、试了几次）。终态行是「当时确实执行过」的证据，
+	// 排障（「昨晚那次上线为什么没发生」）依赖它；留 90 天与 page_revisions 同档。
+	//
+	// 特别注意判据必须是 status（终态）而不是 create_time 本身：只按时间删会把一条
+	// 排在下周的排定在 90 天后（那时它还是 pending）删掉 —— 那是静默丢待办，
+	// 表现就是「排定在界面上消失了、到点也没发生」。
+	{
+		Table: "page_schedules", TimeColumn: "scheduled_at",
+		Retain:   RetainPageScheduleDays * 24 * time.Hour,
+		Executor: "page 每日保留期任务（PurgeRetention 内，只删 done/failed/canceled）",
+		Kind:     CleanupDelete,
+		Note:     "定时上下线待办与执行审计：只清**终态**（done/failed/canceled）且 scheduled_at 超 90 天的行；pending/running 一律保留（按时间删会静默丢未执行的排定）。保留期与 page_revisions 同档",
 	},
 }
 

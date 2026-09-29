@@ -28,7 +28,7 @@ package mailservice
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,11 +60,13 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 
 	automation, err := s.m.GetAutomation(ctx, run.AutomationID)
 	if err != nil {
-		return s.failRun(ctx, run.ID, "流程已被删除")
+		return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyAutomationGone, nil))
 	}
 	def, derr := ParseDefinition(automation.Definition)
 	if derr != nil {
-		return s.failRun(ctx, run.ID, "流程定义不合法: "+derr.Error())
+		// 落库的是「key + 参数」编码（见 enums/mail_run_text.go）：定义错误的细节仍由
+		// graph 校验器给（那一份同时也经 ?err= 通道对外，本轮不动）。
+		return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyDefInvalid, map[string]string{mailenums.RunArgReason: derr.Error()}))
 	}
 	byKey := make(map[string]AutomationNode, len(def.Nodes))
 	for _, n := range def.Nodes {
@@ -74,7 +76,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 	contact, err := s.m.GetContact(ctx, run.ContactID)
 	if err != nil {
 		// 联系人被删了：实例没有意义，标记停止（不是失败 —— 不是流程的问题）。
-		return s.stopRun(ctx, run.ID, "联系人不存在")
+		return s.stopRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyContactGone, nil))
 	}
 
 	current := ""
@@ -88,7 +90,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 	for step := 0; step < maxStepsPerExecution; step++ {
 		node, ok := byKey[current]
 		if !ok {
-			return s.failRun(ctx, run.ID, fmt.Sprintf("节点不存在: %s", current))
+			return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyNodeGone, map[string]string{mailenums.RunArgNode: current}))
 		}
 
 		// 幂等：这一步已经成功执行过就跳过动作，只推进游标。
@@ -101,7 +103,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 		case NodeTypeTrigger:
 			// 入口不做动作，直接放行。
 			if !done {
-				s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, "触发进入流程")
+				s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, mailenums.EncodeRunText(mailenums.RunKeyTriggerEntered, nil))
 			}
 			current = node.Next
 			if err = s.advance(ctx, run.ID, current); err != nil {
@@ -124,7 +126,9 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 			}
 			mins, _ := toInt(node.Params["minutes"])
 			due := time.Now().Add(time.Duration(mins) * time.Minute)
-			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, fmt.Sprintf("等待 %d 分钟后继续", mins))
+			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK,
+				mailenums.EncodeRunText(mailenums.RunKeyDelayContinue,
+					map[string]string{mailenums.RunArgMinutes: strconv.Itoa(mins)}))
 			// 先推进游标再挂起：唤醒时直接从下一步开始（见文件头说明）。
 			if err = s.m.UpdateRunFields(ctx, run.ID, map[string]any{
 				"status":       mailmodel.RunStatusWaiting,
@@ -162,18 +166,29 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 			})
 			if serr != nil {
 				// 发信失败：写失败日志并让任务重试（队列自带退避）。
-				s.logNode(ctx, run.ID, node, mailmodel.NodeStatusFailed, "发信失败: "+serr.Error())
+				s.logNode(ctx, run.ID, node, mailmodel.NodeStatusFailed,
+					mailenums.EncodeRunText(mailenums.RunKeySendFailed,
+						map[string]string{mailenums.RunArgReason: serr.Error()}))
 				_ = s.m.UpdateRunFields(ctx, run.ID, map[string]any{
 					"error_message": serr.Error(), "update_time": time.Now(),
 				})
 				return serr
 			}
-			detail := "已发信"
-			if res != nil && res.Suppressed {
-				detail = "地址在抑制名单中，未发送"
-			}
-			if subject != "" {
-				detail += "（主题覆盖: " + subject + "）"
+			// 四种组合各有一条词条：拼接（「已发信」+「（主题覆盖: x）」）在取词之后
+			// 就再也拆不开，词序也无法按语言调整，所以宁可多三条词条。
+			suppressed := res != nil && res.Suppressed
+			var detail string
+			switch {
+			case suppressed && subject != "":
+				detail = mailenums.EncodeRunText(mailenums.RunKeyEmailSuppSubj,
+					map[string]string{mailenums.RunArgSubject: subject})
+			case suppressed:
+				detail = mailenums.EncodeRunText(mailenums.RunKeyEmailSuppress, nil)
+			case subject != "":
+				detail = mailenums.EncodeRunText(mailenums.RunKeyEmailSentSubj,
+					map[string]string{mailenums.RunArgSubject: subject})
+			default:
+				detail = mailenums.EncodeRunText(mailenums.RunKeyEmailSent, nil)
 			}
 			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, detail)
 			contact = refreshContact(ctx, s, contact)
@@ -192,10 +207,10 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 				return s.failRun(ctx, run.ID, berr.Error())
 			}
 			branch := node.No
-			tag := "条件不满足，走 no 分支"
+			tag := mailenums.EncodeRunText(mailenums.RunKeyBranchNo, nil)
 			if matched {
 				branch = node.Yes
-				tag = "条件满足，走 yes 分支"
+				tag = mailenums.EncodeRunText(mailenums.RunKeyBranchYes, nil)
 			}
 			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, tag)
 			current = branch
@@ -222,7 +237,10 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 				return s.failRun(ctx, run.ID, terr.Error())
 			}
 			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK,
-				fmt.Sprintf("加标签 %v，去标签 %v", added, removed))
+				mailenums.EncodeRunText(mailenums.RunKeyTagsApplied, map[string]string{
+					mailenums.RunArgAdded:   tagListText(added),
+					mailenums.RunArgRemoved: tagListText(removed),
+				}))
 			contact = refreshContact(ctx, s, contact)
 			current = node.Next
 			if err = s.advance(ctx, run.ID, current); err != nil {
@@ -233,16 +251,16 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 			}
 
 		case NodeTypeEnd:
-			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, "流程结束")
+			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, mailenums.EncodeRunText(mailenums.RunKeyEnded, nil))
 			return s.completeRun(ctx, run.ID)
 
 		default:
-			return s.failRun(ctx, run.ID, "未知节点类型: "+node.Type)
+			return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyUnknownNode, map[string]string{mailenums.RunArgType: node.Type}))
 		}
 	}
 
 	// 步数超限：多半是图被改坏了（保存时的环检测本该拦住）。
-	return s.failRun(ctx, run.ID, "流程执行步数超过上限，可能存在环")
+	return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyStepsExceeded, nil))
 }
 
 // advance 更新实例的游标。
@@ -288,6 +306,9 @@ func (s *Service) stopRun(ctx context.Context, runID uint64, reason string) erro
 }
 
 // logNode 写一条节点日志（失败不影响主流程）。
+//
+// detail 一律是 enums 的运行文案编码（key + 参数），**不是**当时的语言文本 ——
+// 它会被排障页直接渲染，落中文等于把语言固化进数据（见 enums/mail_run_text.go）。
 func (s *Service) logNode(ctx context.Context, runID uint64, node AutomationNode, status, detail string) {
 	e := &mailmodel.MailAutomationNodeLogEntity{
 		RunID:    runID,
@@ -403,7 +424,7 @@ func displayNameOf(c *mailmodel.MailContactEntity) string {
 func (s *Service) evalConditions(ctx context.Context, contact *mailmodel.MailContactEntity, params map[string]any) (bool, error) {
 	conds := toStringSlice(params["conditions"])
 	if len(conds) == 0 {
-		return false, errors.New("条件分支没有条件")
+		return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondMissing, nil))
 	}
 	for _, c := range conds {
 		cond := strings.TrimSpace(c)
@@ -433,7 +454,7 @@ func (s *Service) evalConditions(ctx context.Context, contact *mailmodel.MailCon
 		case strings.HasPrefix(cond, "has_tag:"):
 			tag := strings.TrimSpace(strings.TrimPrefix(cond, "has_tag:"))
 			if tag == "" {
-				return false, errors.New("has_tag 条件缺少标签名")
+				return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondTagMissing, nil))
 			}
 			tags, err := s.m.GetContactTags(ctx, contact.ID)
 			if err != nil {
@@ -450,10 +471,19 @@ func (s *Service) evalConditions(ctx context.Context, contact *mailmodel.MailCon
 				return false, nil
 			}
 		default:
-			return false, fmt.Errorf("未知条件: %s", cond)
+			return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondUnknown,
+				map[string]string{mailenums.RunArgCondition: cond}))
 		}
 	}
 	return true, nil
+}
+
+// tagListText 标签列表 → 展示文本（空列表给「—」，避免词条里出现空的 %s）。
+func tagListText(tags []string) string {
+	if len(tags) == 0 {
+		return "—"
+	}
+	return strings.Join(tags, ", ")
 }
 
 func refreshContact(ctx context.Context, s *Service, c *mailmodel.MailContactEntity) *mailmodel.MailContactEntity {

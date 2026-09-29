@@ -37,6 +37,7 @@ import (
 	// 槽位键名的唯一来源：片段与后台页都从这里取，避免各处手写字符串
 	//（键名写错不会报错，只会静默不生效，是最难查的一类）。
 	pageenums "go_wp/internal/module/page/enums"
+	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 )
 
@@ -232,6 +233,15 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		Tracking:  trackCookiesOf(r),
 		IPAddress: r.IP,
 		UserAgent: r.UserAgent,
+		// 访客身份（BIZ-3）：契约把 UserID 列在「由 inbound 覆盖写入，客户端不可伪造」
+		// 那一段，而它此前**没有任何调用方写入** —— 于是结算链路上的会员折扣与免运费
+		// 永远解析不出身份（静默地按「非会员」结算，不报错）。身份只从**已解析的会话**
+		// 取（r.UserID 由访客身份中间件写入），不认表单里的任何 user 字段。
+		UserID: visitorIDPtrOf(r),
+		// 运费刻意**不从表单取**：结算表单的字段全部来自请求参数（上面逐个 paramOf），
+		// 而运费是收银台上的一笔钱 —— 让客户端填它等于让客人自己免单。
+		// 基准运费由服务端提供（当前系统无站点级运费策略，故为 0）；
+		// 会员的 free_shipping 权益在 cart 侧作用在这一笔上（见 cart 模块的 cart_shipping.go）。
 	})
 	if err != nil {
 		// 订单没建出来：把模块给的原因原样透出（「库存不足」必须让访客看到），
@@ -275,9 +285,9 @@ func renderCartNotice(r *Request, message string) (string, error) {
 	}
 	switch message {
 	case msgCartUnavailable:
-		message = r.tr("site.fragment.cart.unavailable", msgCartUnavailable)
+		message = r.tr(rfenums.CartUnavailable, msgCartUnavailable)
 	case msgCheckoutUnavailable:
-		message = r.tr("site.fragment.checkout.unavailable", msgCheckoutUnavailable)
+		message = r.tr(rfenums.CheckoutUnavailable, msgCheckoutUnavailable)
 	}
 	return templates.RenderFragment("cart_notice", struct{ Message string }{Message: message})
 }
@@ -416,4 +426,17 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// visitorIDPtrOf 本次请求的访客身份，未登录时返回 nil。
+//
+// 与 orders.go 的 visitorIDOf 同源（都从 Request.UserID 解析，都由访客身份中间件写入），
+// 区别只在类型：结算契约里 UserID 是 *uint64（「未登录」必须是可表达的状态 ——
+// 0 是无效账号 id，用它表示未登录会让「没登录」与「登录到 id=0」看起来一样）。
+func visitorIDPtrOf(r *Request) *uint64 {
+	id, ok := visitorIDOf(r)
+	if !ok {
+		return nil
+	}
+	return &id
 }

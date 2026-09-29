@@ -48,9 +48,9 @@ import (
 )
 
 const (
-	// siteSlotPageTitle 页面标题（字面量走 shell.Prepare 的 fallback 链路；
-	// 不改动 page enums 那个文件的既有集合，与订单页同口径）。
-	siteSlotPageTitle = "系统页面"
+	// siteSlotPageTitle 页面标题（**i18n key**：shell.Prepare 会对 "title" 取词；
+	// 词条 admin.site_slots.title 已存在，值即原来的「系统页面」）。
+	siteSlotPageTitle = "admin.site_slots.title"
 	// siteSlotSitePrefix 访问面静态站点的公开前缀（routes.go 把 ActiveRoot 挂在 /site）。
 	// 页面发布记录的 active_path 是站点内逻辑路径（含语言前缀，以 "/" 开头），
 	// 拼上这个前缀才是浏览器能打开的地址。
@@ -58,25 +58,42 @@ const (
 	// siteSlotEmptyField 空字段的展示占位（表格里的空白单元格读不出「没有值」）。
 	siteSlotEmptyField = "—"
 	// 绑定 / 解绑的成功回执（会进 ?ok=，因此也登记在 siteSlotFacingMessages 里）。
-	siteSlotBoundText   = "已绑定。该工程的页面已标记待重建，重新构建那些页面后新链接才会生效。"
-	siteSlotUnboundText = "已解绑。该工程的页面已标记待重建，重新构建那些页面后访问面才会去掉旧链接。"
+	// 常量值是 **i18n key**，中文兜底在同文件的 siteSlotFacingMessages —— 两者必须成对，
+	// 取词统一走 siteSlotText。
+	siteSlotBoundText   = "admin.site_slots.ok.bound"
+	siteSlotUnboundText = "admin.site_slots.ok.unbound"
 	// 参数级错误（本页自造；同样登记白名单 —— 自造文案不登记就会在回显时被自己吞掉）。
-	siteSlotNoProjectText = "没有可用的站点工程：先去页面管理里建一个工程，槽位是挂在工程下的。"
-	siteSlotNoPageText    = "请先在下拉里选一个页面再提交。"
+	siteSlotNoProjectText = "admin.site_slots.err.noProject"
+	siteSlotNoPageText    = "admin.site_slots.err.noPage"
 	// 绑定 / 换绑的话术：动作与服务端完全一致（bind 是 upsert），
 	// 差别只在「这会改掉现有绑定」要不要说出来。两处取词同源（行内操作列与绑定面板）。
-	siteSlotBindAction   = "绑定"
-	siteSlotRebindAction = "换绑"
+	siteSlotBindAction   = "admin.site_slots.action.bind"
+	siteSlotRebindAction = "admin.site_slots.action.rebind"
 )
+
+// siteSlotTrs 取词函数的可选变参：不传时回落「原样返回兜底」。
+//
+// 为什么用变参而不是加一个必填参数：siteSlotPageData / siteSlotFacingText 被同包测试
+// 直接调用（page_page_err_test.go、site_slot_facing_test.go），加必填参数会波及那些
+// 调用点 —— 而它们要验的是装配结果与判定语义，与语言无关。
+// （同先例：NewBlockPageHandle 的 pages 可选变参。）
+func siteSlotTr(trs []func(key, fallback string) string) func(key, fallback string) string {
+	if len(trs) > 0 && trs[0] != nil {
+		return trs[0]
+	}
+	return func(_, fallback string) string { return fallback }
+}
+
+// siteSlotText 一条本页文案的当前语言文本（key + 表内中文兜底）。
+func siteSlotText(c *gin.Context, key string) string {
+	return shell.TranslateFor(c)(key, siteSlotFacingMessages[key])
+}
 
 // siteSlotFacingMessages 本页可以原样展示给运营的文案（白名单）。
 //
-// 键分两类：
-//   - page 模块的错误常量名（pageenums.ErrXxx 的值就是常量名本身），值是面向运营的中文；
-//   - 本页自造的成功 / 参数级文案，值等于自身（它们会进 ?ok= / ?err=）。
-//
-// 取值时**键与值都算命中**（见 siteSlotFacingText）：写侧回填 ?err= 的既有常量名形态、
-// 也有已经转好的中文形态，两种都要能过。
+// **键是 i18n key**（两类都是）：page 模块错误常量的值就是常量名、而常量名即词条 key；
+// 本页自造的成功 / 参数级文案的常量值也已经是 key（见上面的常量块）。值是**中文兜底**，
+// 与词条缺失时页面上显示的那句话逐字相同。
 //
 // 用常量做键而不是手抄字符串：page 模块调整常量值时这里跟着一起变，不会静默失配。
 var siteSlotFacingMessages = map[string]string{
@@ -85,10 +102,24 @@ var siteSlotFacingMessages = map[string]string{
 	pageenums.ErrPageNotFound:    "要绑定的页面不存在，可能已被删除。",
 	pageenums.ErrInvalidSlot:     "槽位键不在白名单内，请回到列表页重新选择。",
 	pageenums.ErrSlotPageMiss:    "要绑定的页面不存在、已被删除，或不属于当前工程。",
-	siteSlotBoundText:            siteSlotBoundText,
-	siteSlotUnboundText:          siteSlotUnboundText,
-	siteSlotNoProjectText:        siteSlotNoProjectText,
-	siteSlotNoPageText:           siteSlotNoPageText,
+	siteSlotBoundText:            "已绑定。该工程的页面已标记待重建，重新构建那些页面后新链接才会生效。",
+	siteSlotUnboundText:          "已解绑。该工程的页面已标记待重建，重新构建那些页面后访问面才会去掉旧链接。",
+	siteSlotNoProjectText:        "没有可用的站点工程：先去页面管理里建一个工程，槽位是挂在工程下的。",
+	siteSlotNoPageText:           "请先在下拉里选一个页面再提交。",
+}
+
+// siteSlotStateLabels 槽位状态标签：状态键 → {i18n key, 中文兜底}。
+var siteSlotStateLabels = map[string]struct{ Key, Fallback string }{
+	"unbound":     {"admin.site_slots.state.unbound", "未绑定"},
+	"deleted":     {"admin.site_slots.state.deleted", "绑定已失效"},
+	"published":   {"admin.site_slots.state.published", "已发布"},
+	"unpublished": {"admin.site_slots.state.unpublished", "已绑定但未发布"},
+}
+
+// siteSlotStateLabel 槽位状态 → 当前语言标签。
+func siteSlotStateLabel(tr func(key, fallback string) string, state string) string {
+	item := siteSlotStateLabels[state]
+	return tr(item.Key, item.Fallback)
 }
 
 // siteSlotPageHandle 系统页面槽位页处理器。
@@ -110,10 +141,11 @@ func NewSiteSlotPageHandle(pages pagecontract.PageService, projects projectcontr
 // 用户既改不了也退不回（AGENTS.md 形态 ①）。原文只进日志（siteSlotFacingError）。
 func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 	ctx := c.Request.Context()
+	tr := shell.TranslateFor(c)
 	projects, err := h.projects.List(ctx)
 	if err != nil {
 		c.HTML(http.StatusOK, "admin/page/site_slots.html",
-			shell.Prepare(c, siteSlotPageData(nil, "", nil, nil, siteSlotFacingError(c, err), "")))
+			shell.Prepare(c, siteSlotPageData(nil, "", nil, nil, siteSlotFacingError(c, err), "", tr)))
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -153,19 +185,23 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 		}
 	}
 
-	data := siteSlotPageData(projects, selected, candidates, slots, pageErr, pageOk)
-	siteSlotApplyBindPanel(data, candidates, slots, bindSlot)
+	data := siteSlotPageData(projects, selected, candidates, slots, pageErr, pageOk, tr)
+	siteSlotApplyBindPanel(data, candidates, slots, bindSlot, tr)
 	c.HTML(http.StatusOK, "admin/page/site_slots.html", shell.Prepare(c, data))
 }
 
 // siteSlotPageData 组装渲染数据（纯函数：不取数、不依赖 gin.Context）。
+//
+// 取词函数以可选变参传入（不传时按中文兜底渲染）：键名与计数口径只在这里定义一次，
+// 真实渲染测试可以直接喂数据走同一条组装路径，而不必构造 gin.Context 去抽语言。
 //
 // 为什么抽出来：渲染键名与计数口径只在这里定义一次，真实渲染测试可以直接喂数据走
 // 同一条组装路径，而不是在测试里手抄一份键名 —— 手抄的那一份会随模板演进静默失配，
 // 而那正是「页面上少了一块、断言却通过」的成因。
 func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 	candidates []pagecontract.PageResp, slots *pagecontract.SiteSlotListResp,
-	pageErr, pageOk string) gin.H {
+	pageErr, pageOk string, trs ...func(key, fallback string) string) gin.H {
+	tr := siteSlotTr(trs)
 	rows := make([]gin.H, 0)
 	boundCount, total, unpublished, deleted := 0, 0, 0, 0
 	if slots != nil {
@@ -179,7 +215,7 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 			case it.Bound && !it.Published:
 				unpublished++
 			}
-			rows = append(rows, siteSlotRow(it, candidates))
+			rows = append(rows, siteSlotRow(tr, it, candidates))
 		}
 	}
 	return gin.H{
@@ -225,17 +261,18 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 //   - slot 不在这个工程的槽位清单里（手拼 URL 猜槽位键）；
 //   - 这个工程一个页面都没有（没有候选可绑 —— 与列表页「不给空下拉」同一判据）。
 func siteSlotApplyBindPanel(data gin.H, candidates []pagecontract.PageResp,
-	slots *pagecontract.SiteSlotListResp, bindSlot string) {
+	slots *pagecontract.SiteSlotListResp, bindSlot string, trs ...func(key, fallback string) string) {
 	if bindSlot == "" || slots == nil || len(candidates) == 0 {
 		return
 	}
+	tr := siteSlotTr(trs)
 	for _, it := range slots.Items {
 		if it.Slot != bindSlot {
 			continue
 		}
 		data["BindSlot"] = it.Slot
-		data["BindSlotName"] = it.SlotName
-		data["BindLabel"] = siteSlotBindLabel(it.Bound)
+		data["BindSlotName"] = tr(it.SlotName, pageenums.SiteSlotName(it.SlotName))
+		data["BindLabel"] = siteSlotBindLabel(tr, it.Bound)
 		data["BindDeleted"] = it.PageDeleted
 		data["BindPageOptions"] = siteSlotPageOptions(candidates, it.PageID)
 		// 行内那条链接据此标 aria-current：读屏用户能听出「面板正开着的是这一行」。
@@ -251,11 +288,11 @@ func siteSlotApplyBindPanel(data gin.H, candidates []pagecontract.PageResp,
 }
 
 // siteSlotBindLabel 绑定 / 换绑的话术（已绑定时说的是「这会改掉现有绑定」）。
-func siteSlotBindLabel(bound bool) string {
+func siteSlotBindLabel(tr func(key, fallback string) string, bound bool) string {
 	if bound {
-		return siteSlotRebindAction
+		return tr(siteSlotRebindAction, "换绑")
 	}
-	return siteSlotBindAction
+	return tr(siteSlotBindAction, "绑定")
 }
 
 // SiteSlotBind 绑定 / 换绑（POST /admin/site-slots/bind）。
@@ -266,7 +303,7 @@ func (h *siteSlotPageHandle) SiteSlotBind(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	pageID := strings.TrimSpace(c.PostForm("pageId"))
 	if pageID == "" {
-		siteSlotRedirect(c, projectID, "", siteSlotNoPageText)
+		siteSlotRedirect(c, projectID, "", siteSlotText(c, siteSlotNoPageText))
 		return
 	}
 	err := h.pages.BindSiteSlot(c.Request.Context(), &pagecontract.SiteSlotBindReq{
@@ -278,7 +315,7 @@ func (h *siteSlotPageHandle) SiteSlotBind(c *gin.Context) {
 		siteSlotRedirect(c, projectID, "", siteSlotFacingError(c, err))
 		return
 	}
-	siteSlotRedirect(c, projectID, siteSlotBoundText, "")
+	siteSlotRedirect(c, projectID, siteSlotText(c, siteSlotBoundText), "")
 }
 
 // SiteSlotUnbind 解绑（POST /admin/site-slots/unbind）。
@@ -294,7 +331,7 @@ func (h *siteSlotPageHandle) SiteSlotUnbind(c *gin.Context) {
 		siteSlotRedirect(c, projectID, "", siteSlotFacingError(c, err))
 		return
 	}
-	siteSlotRedirect(c, projectID, siteSlotUnboundText, "")
+	siteSlotRedirect(c, projectID, siteSlotText(c, siteSlotUnboundText), "")
 }
 
 // —— 页面取数（视图组装：模板不做判断与算术）——
@@ -307,11 +344,11 @@ func (h *siteSlotPageHandle) SiteSlotUnbind(c *gin.Context) {
 //	published    已绑定且已发布（链接生成方会输出链接）；
 //	unpublished  已绑定但未发布（**降级状态**：链接生成方跳过它，必须显眼）；
 //	deleted      绑定的页面已被删除（**必须立刻修**，红色 + 解绑入口）。
-func siteSlotRow(it pagecontract.SiteSlotItem, candidates []pagecontract.PageResp) gin.H {
+func siteSlotRow(tr func(key, fallback string) string, it pagecontract.SiteSlotItem, candidates []pagecontract.PageResp) gin.H {
 	row := gin.H{
 		"Slot":        it.Slot,
-		"SlotName":    it.SlotName,
-		"Usage":       it.Usage,
+		"SlotName":    tr(it.SlotName, pageenums.SiteSlotName(it.SlotName)),
+		"Usage":       tr(it.Usage, pageenums.SiteSlotUsage(it.Usage)),
 		"Bound":       it.Bound,
 		"Unbound":     !it.Bound,
 		"PageDeleted": it.PageDeleted,
@@ -322,18 +359,18 @@ func siteSlotRow(it pagecontract.SiteSlotItem, candidates []pagecontract.PageRes
 		"Published":   it.Published,
 		// Unpublished 单独给一个布尔：它就是「运营以为配好了、实际链接生成方会跳过」的那一类。
 		"Unpublished": it.Bound && !it.PageDeleted && !it.Published,
-		"BindLabel":   siteSlotBindLabel(it.Bound),
+		"BindLabel":   siteSlotBindLabel(tr, it.Bound),
 		"PageOptions": siteSlotPageOptions(candidates, it.PageID),
 	}
 	switch {
 	case !it.Bound:
-		row["Badge"], row["StateLabel"] = "badge-mute", "未绑定"
+		row["Badge"], row["StateLabel"] = "badge-mute", siteSlotStateLabel(tr, "unbound")
 	case it.PageDeleted:
-		row["Badge"], row["StateLabel"] = "badge-danger", "绑定已失效"
+		row["Badge"], row["StateLabel"] = "badge-danger", siteSlotStateLabel(tr, "deleted")
 	case it.Published:
-		row["Badge"], row["StateLabel"] = "badge-success", "已发布"
+		row["Badge"], row["StateLabel"] = "badge-success", siteSlotStateLabel(tr, "published")
 	default:
-		row["Badge"], row["StateLabel"] = "badge-warning", "已绑定但未发布"
+		row["Badge"], row["StateLabel"] = "badge-warning", siteSlotStateLabel(tr, "unpublished")
 	}
 	return row
 }
@@ -378,7 +415,7 @@ func siteSlotFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := siteSlotFacingText(err.Error()); msg != "" {
+	if msg := siteSlotFacingText(err.Error(), shell.TranslateFor(c)); msg != "" {
 		return msg
 	}
 	// 未命中：原文只进日志（场景 + user_id + 原始错误），对外给归口文案。
@@ -402,30 +439,40 @@ var siteSlotFacingValues = func() map[string]bool {
 	return m
 }()
 
-// siteSlotFacingText 白名单校验：命中返回可展示文案，未命中返回空串。
+// siteSlotFacingText 白名单校验：命中返回可展示文案（**当前语言**），未命中返回空串。
 //
 // **键与值两种形态都要认**（原来的实现只认键，是个真缺陷）：
 //
 //	· 写侧把 page 模块错误常量放进 ?err= 时，串是常量的**值**（= 常量名，如 "ErrSlotPageMiss"）
-//	  → 命中 map 的键，取其中文译文；
-//	· 写侧把 siteSlotFacingError 已经转好的**中文文案**放进 ?err= 时，串是 map 的**值**。
+//	  → 命中 map 的键，取其中文兜底 / 当前语言译文；
+//	· 写侧把 siteSlotFacingError / siteSlotText 已经转好的**成品文案**放进 ?err= / ?ok= 时，
+//	  串是 map 的**值**。写侧给的是**当前语言**文案，所以这里也要按当前语言比 ——
+//	  只比中文兜底的话，英文后台里「已绑定。…」会被自己吞掉、回落到归口文案。
 //
 // 只认键会让第二种一律落空，于是该页**所有业务错误都显示归口文案**「系统内部错误，请稍后重试」——
 // 文案明明准备好了却永远不出现，运营看到的是「系统出错了，重试吧」，而实际是「请先选页面」。
 //
 // 值形态必须**整体相等**才算命中，不能用 Contains：否则任何人手拼一个 ?err=、
 // 只要串里包含某条已知文案就能绕过白名单，把任意前缀 / 后缀显示到页面上。
-func siteSlotFacingText(raw string) string {
+//
+// trs 为可选取词函数（不传时原样返回兜底文案，见 siteSlotTr）。
+func siteSlotFacingText(raw string, trs ...func(key, fallback string) string) string {
 	key := strings.TrimSpace(raw)
 	if key == "" {
 		return ""
 	}
-	if msg, ok := siteSlotFacingMessages[key]; ok {
-		return msg
+	tr := siteSlotTr(trs)
+	if fallback, ok := siteSlotFacingMessages[key]; ok {
+		return tr(key, fallback)
 	}
 	if siteSlotFacingValues[key] {
 		// 已经是白名单里的成品文案：原样放行（返回 key 即该文案本身）。
 		return key
+	}
+	for k, fallback := range siteSlotFacingMessages {
+		if key == tr(k, fallback) {
+			return key
+		}
 	}
 	return ""
 }
@@ -436,7 +483,7 @@ func siteSlotQueryText(c *gin.Context, raw, fallback string) string {
 	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
-	if msg := siteSlotFacingText(raw); msg != "" {
+	if msg := siteSlotFacingText(raw, shell.TranslateFor(c)); msg != "" {
 		return msg
 	}
 	return fallback

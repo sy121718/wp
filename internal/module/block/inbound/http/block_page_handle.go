@@ -8,9 +8,9 @@ package blockhttp
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
@@ -99,57 +99,85 @@ func (d *blocksPageData) templateMap() gin.H {
 	}
 }
 
-// kindLabels 块类型中文标签（docs/02-D §4/§5 全量白名单）。
-var kindLabels = map[string]string{
-	"header": "页眉", "footer": "页脚", "block": "区块",
-	"announcement": "公告栏", "sidebar": "侧边栏", "breadcrumb": "面包屑", "drawer": "抽屉导航", "search": "搜索框",
-	"cta": "CTA 段", "trust": "信任徽章", "brands": "品牌墙", "contact": "联系方式", "about": "关于我们",
-	"banner": "横幅", "grid": "多栏布局", "snippet": "片段模板",
+// blockText 一条待取词文案：i18n key + 中文兜底（兜底同时是词条缺失时的显示值）。
+type blockText struct{ Key, Fallback string }
+
+// blockKindLabels 块类型标签（docs/02-D §4/§5 全量白名单）：kind → {key, 中文兜底}。
+//
+// **key 与模板 admin/block/blocks.html 的 kind 下拉是同一批**（`admin.blocks.kind.*`）：
+// 下拉是模板里 16 行硬编码的 tr 调用、本表是列表列直出的 KindLabel —— 两处同义，
+// 因此必须共用同一条词条，否则同一个 kind 在下拉里与列表里会显示成两个词。
+var blockKindLabels = map[string]blockText{
+	"header":       {"admin.blocks.kind.header", "页眉"},
+	"footer":       {"admin.blocks.kind.footer", "页脚"},
+	"block":        {"admin.blocks.kind.block", "区块"},
+	"announcement": {"admin.blocks.kind.announcement", "公告栏"},
+	"sidebar":      {"admin.blocks.kind.sidebar", "侧边栏"},
+	"breadcrumb":   {"admin.blocks.kind.breadcrumb", "面包屑"},
+	"drawer":       {"admin.blocks.kind.drawer", "抽屉导航"},
+	"search":       {"admin.blocks.kind.search", "搜索框"},
+	"cta":          {"admin.blocks.kind.cta", "CTA 段"},
+	"trust":        {"admin.blocks.kind.trust", "信任徽章"},
+	"brands":       {"admin.blocks.kind.brands", "品牌墙"},
+	"contact":      {"admin.blocks.kind.contact", "联系方式"},
+	"about":        {"admin.blocks.kind.about", "关于我们"},
+	"banner":       {"admin.blocks.kind.banner", "横幅"},
+	"grid":         {"admin.blocks.kind.grid", "多栏布局"},
+	"snippet":      {"admin.blocks.kind.snippet", "片段模板"},
 }
 
-func kindLabel(kind string) string {
-	if label, ok := kindLabels[kind]; ok {
-		return label
-	}
-	return "区块"
+// blockReuseModeLabels 复用方式标签（docs/02-D §5）：mode → {key, 中文兜底}。
+var blockReuseModeLabels = map[string]blockText{
+	"template": {"admin.blocks.reuseMode.template", "复制"},
+	"global":   {"admin.blocks.reuseMode.global", "引用"},
 }
 
-// reuseModeLabel 复用方式标签（docs/02-D §5）。
-func reuseModeLabel(mode string) string {
-	if mode == "template" {
-		return "复制"
+// kindLabel 块类型 → 当前语言标签；未登记的 kind 落「区块」（与模板下拉的默认项同义）。
+func kindLabel(tr func(key, fallback string) string, kind string) string {
+	item, ok := blockKindLabels[kind]
+	if !ok {
+		item = blockKindLabels["block"]
 	}
-	return "引用"
+	return tr(item.Key, item.Fallback)
+}
+
+// reuseModeLabel 复用方式 → 当前语言标签；未知取值按「引用」显示（与旧实现的默认分支一致）。
+func reuseModeLabel(tr func(key, fallback string) string, mode string) string {
+	item, ok := blockReuseModeLabels[mode]
+	if !ok {
+		item = blockReuseModeLabels["global"]
+	}
+	return tr(item.Key, item.Fallback)
 }
 
 // toBlockRows 按 kind 精确过滤（header/footer 页眉页脚组）。
-func toBlockRows(blocks []blockcontract.BlockResp, kind string) []blockRow {
+func toBlockRows(tr func(key, fallback string) string, blocks []blockcontract.BlockResp, kind string) []blockRow {
 	rows := make([]blockRow, 0, len(blocks))
 	for _, b := range blocks {
 		if b.Kind != kind {
 			continue
 		}
-		rows = append(rows, toBlockRow(b))
+		rows = append(rows, toBlockRow(tr, b))
 	}
 	return rows
 }
 
 // toOtherBlockRows 其余全部类型（新 kind + snippet 片段模板）归入「区块/复用资产」组。
-func toOtherBlockRows(blocks []blockcontract.BlockResp) []blockRow {
+func toOtherBlockRows(tr func(key, fallback string) string, blocks []blockcontract.BlockResp) []blockRow {
 	rows := make([]blockRow, 0, len(blocks))
 	for _, b := range blocks {
 		if b.Kind == "header" || b.Kind == "footer" {
 			continue
 		}
-		rows = append(rows, toBlockRow(b))
+		rows = append(rows, toBlockRow(tr, b))
 	}
 	return rows
 }
 
-func toBlockRow(b blockcontract.BlockResp) blockRow {
+func toBlockRow(tr func(key, fallback string) string, b blockcontract.BlockResp) blockRow {
 	return blockRow{
-		ID: b.ID, Name: b.Name, Kind: b.Kind, KindLabel: kindLabel(b.Kind),
-		ReuseMode: b.ReuseMode, ReuseModeLabel: reuseModeLabel(b.ReuseMode),
+		ID: b.ID, Name: b.Name, Kind: b.Kind, KindLabel: kindLabel(tr, b.Kind),
+		ReuseMode: b.ReuseMode, ReuseModeLabel: reuseModeLabel(tr, b.ReuseMode),
 		UpdatedAt: b.UpdatedAt.Time().Format("2006-01-02 15:04"),
 	}
 }
@@ -181,17 +209,18 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 			response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
 			return
 		}
-		data.Headers = toBlockRows(blocks, "header")
-		data.Footers = toBlockRows(blocks, "footer")
-		data.Blocks = toOtherBlockRows(blocks)
+		tr := shell.TranslateFor(c)
+		data.Headers = toBlockRows(tr, blocks, "header")
+		data.Footers = toBlockRows(tr, blocks, "footer")
+		data.Blocks = toOtherBlockRows(tr, blocks)
 		// 只读影响面（见 block_page_impact.go）：逐块引用页面数 + 待重建页面清单。
-		h.fillRefCounts(c.Request.Context(), data.Headers)
-		h.fillRefCounts(c.Request.Context(), data.Footers)
-		h.fillRefCounts(c.Request.Context(), data.Blocks)
+		h.fillRefCounts(tr, c.Request.Context(), data.Headers)
+		h.fillRefCounts(tr, c.Request.Context(), data.Footers)
+		h.fillRefCounts(tr, c.Request.Context(), data.Blocks)
 	}
 	// 影响面在两种分支（有工程 / 无工程）下都要给：模板是同一份，
 	// 缺这个键会让取值链中断（HTTP 仍 200、后半页整块消失）。
-	data.StaleImpact = h.blockStaleImpact(c.Request.Context())
+	data.StaleImpact = h.blockStaleImpact(shell.TranslateFor(c), c.Request.Context())
 	c.HTML(http.StatusOK, "admin/block/blocks", shell.Prepare(c, data.templateMap()))
 }
 
@@ -300,7 +329,7 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 		q.Set("project", projectID)
 	}
 	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
-	if msg := blocksBulkDeleteResult(deleted, skipped, details); msg != "" {
+	if msg := blocksBulkDeleteResult(c, deleted, skipped, details); msg != "" {
 		if skipped > 0 {
 			q.Set("err", msg)
 		} else {
@@ -318,7 +347,7 @@ func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
 // details 是逐条跳过原因（最多几条，由调用方截断）：全部跳过 / 部分跳过时附在结论之后，
 // 形状是「受控模板句 + ：+ 定位」，读侧白名单按形态 3（前缀匹配）放行。
-func blocksBulkDeleteResult(deleted, skipped int, details []string) string {
+func blocksBulkDeleteResult(c *gin.Context, deleted, skipped int, details []string) string {
 	// 模板取自 block_err.go 的 blockBulkResultTemplates —— 那里同时也是读侧的
 	// 白名单来源：写侧改措辞时读侧跟着变，不会静默失配成「系统内部错误」。
 	tail := ""
@@ -330,13 +359,15 @@ func blocksBulkDeleteResult(deleted, skipped int, details []string) string {
 	}
 	switch {
 	case deleted == 0 && skipped == 0:
-		return blockBulkResultTemplates[0]
+		return blockBulkFilled(c, blockBulkResultTemplates[0], nil)
 	case skipped == 0:
-		return fmt.Sprintf(blockBulkResultTemplates[1], deleted)
+		return blockBulkFilled(c, blockBulkResultTemplates[1], map[string]string{"count": strconv.Itoa(deleted)})
 	case deleted == 0:
-		return truncateRunes(fmt.Sprintf(blockBulkResultTemplates[2], skipped)+tail, shell.NoticeMaxBytes-1)
+		return truncateRunes(blockBulkFilled(c, blockBulkResultTemplates[2],
+			map[string]string{"count": strconv.Itoa(skipped)})+tail, shell.NoticeMaxBytes-1)
 	default:
-		return truncateRunes(fmt.Sprintf(blockBulkResultTemplates[3], deleted, skipped)+tail, shell.NoticeMaxBytes-1)
+		return truncateRunes(blockBulkFilled(c, blockBulkResultTemplates[3],
+			map[string]string{"deleted": strconv.Itoa(deleted), "skipped": strconv.Itoa(skipped)})+tail, shell.NoticeMaxBytes-1)
 	}
 }
 
@@ -416,7 +447,10 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		c.Redirect(http.StatusSeeOther, target)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "已保存，关联页面将标记为待重建"})
+	// 成功回执走 response 出口（与上面错误路径同族）：message 传 key，由 response 层按键取词，
+	// 不再把中文写在这里 —— 原先的 gin.H{"message": "已保存，关联页面将标记为待重建"}
+	// 是英文界面上唯一说中文的那一句（同文件其余路径都走了 response + enums）。
+	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued)
 }
 
 // blockListURL 全局块列表页回跳地址（PRG）：保留工程上下文，并带上操作结论文案。

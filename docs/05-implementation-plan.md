@@ -2,7 +2,9 @@
 
 > 本文是 go_wp 从当前状态到完整交付的执行路线。每个阶段有明确的验收门禁，未通过不得进入下一阶段。
 >
-> **状态更新于 2026-09（按代码回填）：阶段 0-3 已完成；阶段 4 主链已落地，「CMS 变更自动发布」Page 侧已打通（PIPE-3：依赖记录落库 + 精确 fan-out + 自动重建/回写，presentation 侧待其 DB 持久化对齐）；阶段 5 的 blueprint/media 已落地、component 未落地（语义由 `block.reuse_mode` 承担）；阶段 6/7 已落地。**
+> **状态更新于 2026-09（按代码二次回填）：阶段 0-4、6、7 已完成；阶段 5 部分完成（`blueprint`/`media` 已落地，`component` 未落地，语义由 `block.reuse_mode` 承担，该结论经本轮复核仍准确）。**
+>
+> **本轮（按当前代码）更正的两处过期读数**：① 上一版写「presentation 侧未落地（其持久化与生产 DDL 未对齐）」—— 实测两侧均已接入同一 fan-out，presentation 实例已按生产 DDL 持久化；② 上一版写阶段 7「分页列表与搜索 Shell 的 capability 未注册（当前仅 `loginPanel`/`cartSummary`）」—— 实测已注册 25 条 capability，分页与搜索两条均在其中。留痕见[当前状态](#当前状态)表与阶段 4/7 各节。
 
 ## 冻结决策
 
@@ -57,10 +59,10 @@
 | 阶段 1 | 已完成 | 后台壳 + Session + 安全 |
 | 阶段 2 | 已完成 | 模块 HTMX 迁移（admin 六领域合并大模块，SPA/JWT 已清理） |
 | 阶段 3 | 已完成 | 0-A1 Page 静态发布主链（project/page/artifact/publication 模块落地，两段式回执/占用前置/activating 随机化） |
-| 阶段 4 | 部分完成 | 0-A2 CMS 内容 + 自动发布：`content`/`contenttemplate`/`presentation` 三模块已落地（迁移 042/043/044）；「CMS 变更 → 自动发布」**Page 侧已落地**（PIPE-3：迁移 071 + 依赖记录落库 + 精确 fan-out + 自动重建/回写），**presentation 侧未落地**（其持久化与生产 DDL 未对齐，见 `10-todo.md` PIPE-3）；**未做**「文章编辑页 Trix 集成」（后台无内容管理页） |
-| 阶段 5 | 部分完成 | 0-B Blueprint + Component + Media：`blueprint`（迁移 045）、`media`（迁移 048 + asynq 变体）已落地；`component` **未落地**，其版本/更新策略语义由 `block.reuse_mode` 承担（迁移 049，`internal/module/block/model/block_model.go`） |
+| 阶段 4 | 已完成 | 0-A2 CMS 内容 + 自动发布：`content`/`contenttemplate`/`presentation` 三模块已落地（`042_content.sql`；`content_templates`/`presentation_instances`/`document_snapshots` 建表在 `public/migrations/init_builder_schema.sql` 的 :56/:129/:150，另有 `071_dependency_fanout.sql`）；「CMS 变更 → 自动发布」**两侧均已落地**：content 写入即扇出（`internal/module/content/service/content_service.go:97/124/222` 的 `notifyContentChanged`，键 `direct_content:{type}:{id}` + `content_collection:collection:content:{type}`），装配层注册两个来源与各自重建器（`internal/routers/assembly_publish.go:452/458/482/488`），presentation 侧依赖随构建落库（`internal/module/presentation/service/presentation_persist.go:136` 的 `persistDependenciesTx` 写 `presentation_dependencies`）+ 精确反查 + 自动重建（`internal/module/presentation/service/presentation_stale.go:33` 的 `MarkStaleByDependency`、:176 的 `RebuildStale`）；**文章编辑页 Trix 集成已落地**：`/admin/articles` 列表 + `/admin/articles/edit` 编辑页（`internal/module/content/inbound/http/article_router.go:50/60`，模板 `internal/templates/admin/content/articles.html`、`article_edit.html`，正文经 `core.SanitizeRichHTML` 清洗，调用点 `internal/module/content/inbound/http/article_page_data.go:38`）。**原记录「presentation 侧未落地（其持久化与生产 DDL 未对齐）」「未做文章编辑页 Trix 集成（后台无内容管理页）」已过时。** 依赖键覆盖面的遗留（menu/media/site_setting 等）仍见 `10-todo.md` PIPE-3 |
+| 阶段 5 | 部分完成 | 0-B Blueprint + Component + Media：`blueprint`（建表 `public/migrations/init_builder_schema.sql:30`，DDL 对齐见 `073_blueprint_ddl_align.sql`）、`media`（迁移 `048_media_variant.sql` + asynq 变体任务 `internal/module/media/service/media_variant_task.go`）已落地；`component` **未落地**，其版本/更新策略语义由 `block.reuse_mode` 承担（迁移 `049_block_reuse_mode.sql`；`internal/module/block/model/block_model.go:64` 的 `ReuseMode` 字段、:49/:51 的 `ReuseGlobal`/`ReuseTemplate` 常量）。**本行 component 结论经本轮复核仍然准确、未改**；原记录引用的「迁移 `045_blueprint.sql`」与「`block_model.go:37-40`」已过时（前者不存在；后者是 `kind` 常量区，不是 reuse_mode） |
 | 阶段 6 | 已完成 | 0-C Navigation（`internal/module/navigation`，迁移 046/054，后台 `/admin/navigations`） |
-| 阶段 7 | 部分完成 | 0-D Runtime Fragment：内核已落地（`internal/module/runtimefragment` 的 registry/capability/endpoint/router，`GET /_fragments/:type`）；分页列表与搜索 Shell 的 capability 未注册（当前仅 `loginPanel`/`cartSummary`） |
+| 阶段 7 | 已完成 | 0-D Runtime Fragment：内核与能力白名单均已落地（`internal/module/runtimefragment` 的 registry/capability/endpoint/router，`GET`/`POST /_fragments/:type`，见 `router.go:44/49`）。`internal/module/runtimefragment/` 下经 `Register(Spec{...})` 共注册 **25 条 capability**：`loginPanel`（`capability.go`）、`cartSummary`/`cartView`/`cartAdd`/`cartSetQty`/`cartClear`/`checkout`（`cart.go` 六条）、`productList`（`product_list.go`）、`productVariantAvailability`（`variant_availability.go`）、`productLivePrice`（`live_price.go`）、`searchResults`（`search_results.go`）、`ordersList`/`orderDetail`（`orders.go`）、`returnRequest`（`returns.go`）、`bundleConfigurator`/`bundleConfiguratorCheck`（`bundle_configurator.go`）、`loginForm`/`registerForm`/`forgotForm`/`resetForm`/`accountPanel`（`user_forms.go` 五条）、`accountProfileForm`/`accountPreferenceForm`/`accountPasswordForm`/`accountSessionsPanel`（`user_account_forms.go` 四条）。**原记录「分页列表与搜索 Shell 的 capability 未注册（当前仅 `loginPanel`/`cartSummary`）」已过时**：分页走 `productList`（自第 2 页起把 offset 下推 SQL，`internal/builder/components/productlist/jet.go:246/521`），搜索走 `searchResults`（构建期组件 `core.searchResults` 只输出搜索框 + 挂载点，命中由片段现拉，`internal/builder/components/searchresults/searchresults.go:3/18`） |
 
 ---
 
@@ -77,6 +79,7 @@
   - 实现 `gin.HTMLRender` 接口封装 Jet `*jet.Set`
   - 开发模式 `DevelopmentMode(true)`
 - [x] 建立 `internal/templates/publish/` 目录（构建期模板实际位于 `internal/templates/components/`，go:embed，与 Admin 模板隔离）
+  - **原记录已过时（本轮实测）**：`internal/templates/publish/` 目录不存在；`internal/templates/components/` 现仅剩 `_placeholder.jet`（embed 入口仍是 `internal/templates/components_embed.go:20` 的 `//go:embed components/*.jet`）。构建期组件模板现已与组件源码同目录 —— `internal/builder/components/<组件>/*.jet`（各组件自己的 `//go:embed <name>.jet`）
 - [x] 修复 `public/migrations/`：当前只有 runner 无迁移文件
   - 增加独立 migration 命令
   - 确保 runner 接入启动流程
@@ -101,6 +104,7 @@
 **任务**：
 
 - [x] 在 `routes.go` 注册 `/admin/*` 页面路由和 `/admin/fragments/*` 片段路由
+  - **原记录已过时（本轮实测）**：不存在 `/admin/fragments/*` 路由组（`internal/routers/routes.go` 内无此前缀注册）。后台 HTMX 片段走各模块自己的页面路由，例如 `/admin/product-categories/children`、`/admin/product-tags/hits`
 - [x] 实现 Session 认证中间件（`SessionAuthMiddleware`）
   - gin-contrib/sessions + Cookie 存储
   - Cookie 属性：`HttpOnly`、`Secure`（生产）、`SameSite=Lax`
@@ -108,8 +112,8 @@
 - [x] 实现 CSRF 中间件
   - 所有 POST 请求强制 CSRF Token
   - Token 通过 Jet 模板注入到表单隐藏域
-- [x] 登录页 Jet 模板（`admin/login.jet`）
-- [x] 后台布局 Jet 模板（`admin/layout.jet`）
+- [x] 登录页 Jet 模板（原记录 `admin/login.jet` —— **已过时**：现为 `internal/templates/admin/login.html`）
+- [x] 后台布局 Jet 模板（原记录 `admin/layout.jet` —— **已过时**：现为 `internal/templates/admin/layout.html`）
   - 侧栏导航、顶栏、主题切换按钮
   - HTMX CDN 引入
   - 主题初始化脚本（防 FOUC）
@@ -150,6 +154,7 @@
 
 - [x] 删除 `internal/embed/dist/` 及 `setupEmbeddedFrontend`（embed SPA 已移除）
 - [x] 清理旧 JWT 相关代码（`pkg/auth/jwt.go`、`internal/middleware/builtin/auth.go` 中的 JWT 逻辑）
+  - 本轮复核：`pkg/auth/jwt.go` 已不存在；`internal/middleware/builtin/auth.go` 作为 Session 认证中间件保留，文件内已无 JWT 逻辑（仅剩注释提及「key 与旧 JWT 中间件保持一致」「无需 JWT 自动续期」）
 - [x] 移除 `internal/embed/embed.go` 的 SPA 入口
 
 **验收门禁**：
@@ -175,6 +180,7 @@
 - [x] 创建 `page` 模块：Page Draft / Page Document / 版本与乐观锁
 - [x] 实现 `PageKind + ContentTarget` 封闭枚举、ThemeNode AST、Binding 协议
 - [x] PostgreSQL 迁移：`projects`、`pages`、`page_documents` 表（主库 PostgreSQL，MySQL 历史兼容）
+  - **原记录已过时（本轮实测）**：不存在 `page_documents` 表 —— Page Document 存于 `pages.draft_document`（jsonb，主键内容见 `public/migrations/init_builder_schema.sql:81`），版本表是 `page_revisions`（:117）；同批还有 `page_routes`（:161）、`page_artifacts`（:206）、`page_artifact_objects`（:242）、`page_dependencies`（:250），`projects` 在 :17
 
 **验收**：合法 Draft 可往返序列化；非法 kind/target、重复 Node ID、旧版本写入被拒绝。
 
@@ -203,19 +209,21 @@
 **任务**：
 
 - [x] `content` 模块：固定 CMS 内容（Article/Product/Category/Tag）与单调 revision（`internal/module/content`，迁移 `042_content.sql`）
-- [x] `contenttemplate` 模块：ContentTemplate 草稿、不可变版本、Binding 约束（`internal/module/contenttemplate`，迁移 `043_content_template.sql`）
-- [x] `presentation` 模块：PresentationInstance / DocumentSnapshot / 内容驱动发布入口（`internal/module/presentation`，迁移 `044_presentation.sql`）
-- [ ] CMS 实体变更 → 自动派生 DocumentSnapshot → 经同一 Publish Compiler → ArtifactStore → PublicationStore（**未做**：当前仅手动 `POST /api/presentation/rebuild`，自动 fan-out 见 `03-pipeline.md` §8 与 `10-todo.md` PIPE-3）
-- [ ] 富文本编辑器（Trix 2.x，本地 vendor）集成到文章编辑页（服务端白名单清洗）（**部分**：Trix 已集成工作台富文本字段与媒体上传，`internal/builder/core/richtext.go` 为白名单唯一来源；后台尚无文章/内容编辑页，见 `10-todo.md` INF-1）
+- [x] `contenttemplate` 模块：ContentTemplate 草稿、不可变版本、Binding 约束（`internal/module/contenttemplate`；**原记录「迁移 `043_content_template.sql`」已过时** —— 建表在 `public/migrations/init_builder_schema.sql:56` 的 `content_templates`，后续演进见 `164_content_template_is_default.sql`、`223_content_template_default_per_project.sql`）
+- [x] `presentation` 模块：PresentationInstance / DocumentSnapshot / 内容驱动发布入口（`internal/module/presentation`；**原记录「迁移 `044_presentation.sql`」已过时** —— 建表在 `public/migrations/init_builder_schema.sql` 的 `presentation_instances`:129、`document_snapshots`:150、`presentation_dependencies`:300，依赖 fan-out 迁移 `071_dependency_fanout.sql`）
+- [x] CMS 实体变更 → 自动派生 DocumentSnapshot → 经同一 Publish Compiler → ArtifactStore → PublicationStore
+  - **原记录「未做：当前仅手动 `POST /api/presentation/rebuild`」已过时**：content 写入即触发扇出 —— `internal/module/content/service/content_service.go:50` 的 `notifyContentChanged`（由 Create/Update/Delete 路径在 :97/:124/:222 调用）推导 `direct_content:{type}:{id}` + `content_collection:collection:content:{type}` 两条键；装配层两个来源都注册（`internal/routers/assembly_publish.go:452` page、:458 presentation）并各挂重建器（:482/:488，另有启动自检 `RegisteredSourceTypes()`）；presentation 侧依赖随构建落库（`internal/module/presentation/service/presentation_persist.go:136` 的 `persistDependenciesTx` 写 `presentation_dependencies`）、按 `(kind,key)` 精确反查（`internal/module/presentation/service/presentation_stale.go:33`）、自动重建并重新发布（同文件 :176 的 `RebuildStale`）。手动 `POST /api/presentation/rebuild` 仍在，作为显式入口的兜底。另见 `03-pipeline.md` §8、`10-todo.md` PIPE-3/INF-2
+- [x] 富文本编辑器（Trix 2.x，本地 vendor）集成到文章编辑页（服务端白名单清洗）
+  - **原记录「部分：后台尚无文章/内容编辑页」已过时**：编辑页已落地 —— 列表 `/admin/articles`（`internal/module/content/inbound/http/article_router.go:50`，模板 `internal/templates/admin/content/articles.html`）与编辑页 `/admin/articles/edit`（同文件 :60，模板 `internal/templates/admin/content/article_edit.html`：Trix 富文本 + 摘要 + 封面 + SEO 字段 + 评测侧栏 + 发布区块；Trix 本地 vendor 引用见该模板 :19 的 `trix.css` 与 :350 的 `trix.umd.js`）；正文落库前过白名单唯一来源 `core.SanitizeRichHTML`（定义于 `internal/builder/core/richtext.go:94`，调用点 `internal/module/content/inbound/http/article_page_data.go:38`）。见 `10-todo.md` INF-1
 
 **验收门禁**：
 
 | 检查项 | 标准 |
 |--------|------|
 | 内容 CRUD | ✅ Article/Product/Category 创建/编辑/删除正常（`content` 模块 API） |
-| 自动发布 | ❌ 未通过：内容变更**不**自动触发 PresentationInstance 重建（需手动 `POST /api/presentation/rebuild`） |
-| ContentTemplate 版本 | ❌ 未通过：版本变化未自动触发关联 PresentationInstance 重建（同依赖 fan-out） |
-| 富文本编辑器（Trix 2.x） | ⚠️ 部分：工作台富文本字段加载正常、提交经白名单清洗；文章编辑页尚未存在 |
+| 自动发布 | ✅ 通过（**原「❌ 未通过：内容变更不自动触发」已过时**）：内容写入 → `notifyContentChanged`（`internal/module/content/service/content_service.go:50`）→ `pipeline.Fanout`（装配 `internal/routers/assembly_publish.go:452/458/482/488`）→ `presentation.MarkStaleByDependency`（`internal/module/presentation/service/presentation_stale.go:33`）→ `RebuildStale`（:176）自动重建并重新发布 |
+| ContentTemplate 版本 | ✅ 通过（**原「❌ 未通过：版本变化未自动触发」已过时**）：模板产生新版本 / 切换生效后按 `content_template:{id}` 失效并触发关联实例重建，接线见 `internal/routers/assembly_publish.go:513` 起，依赖键常量见 `internal/pipeline/dependency.go:30` 与 :79-85 的 `ContentTemplateKey` |
+| 富文本编辑器（Trix 2.x） | ✅ 通过（**原「⚠️ 部分：文章编辑页尚未存在」已过时**）：文章编辑页已落地，Trix 加载正常、提交经 `core.SanitizeRichHTML` 白名单清洗 |
 | `go test ./...` | 全绿 |
 
 ---
@@ -226,8 +234,8 @@
 
 **任务**：
 
-- [x] `blueprint` 模块：Blueprint 草稿、不可变版本、Page 初始化（用完即弃）（`internal/module/blueprint`，迁移 `045_blueprint.sql`）
-- [ ] `component` 模块：Global Component、版本、更新策略（immutable/auto-update/pinned）、Registry manifest（**未落地**：无 `internal/module/component`；复用与版本语义由 `block` 的 `reuse_mode` 承担，迁移 `049_block_reuse_mode.sql`，`internal/module/block/model/block_model.go:37-40`）
+- [x] `blueprint` 模块：Blueprint 草稿、不可变版本、Page 初始化（用完即弃）（`internal/module/blueprint`；**原记录「迁移 `045_blueprint.sql`」已过时** —— 建表在 `public/migrations/init_builder_schema.sql:30` 的 `blueprints`，另有 DDL 对齐迁移 `073_blueprint_ddl_align.sql`）
+- [ ] `component` 模块：Global Component、版本、更新策略（immutable/auto-update/pinned）、Registry manifest（**未落地且本轮复核仍准确**：无 `internal/module/component`；复用与版本语义由 `block` 的 `reuse_mode` 承担，迁移 `049_block_reuse_mode.sql`，`internal/module/block/model/block_model.go:64` 的 `ReuseMode` 字段与 :49/:51 的 `ReuseGlobal`/`ReuseTemplate` 常量 —— **原引用 `block_model.go:37-40` 已过时**，那是 `kind` 常量区）
 - [x] `media` 模块：媒体元数据、变体、内容 hash、稳定 assetId（`internal/module/media`，迁移 `048_media_variant.sql`，变体生成走 asynq）
 
 **验收门禁**：
@@ -269,15 +277,15 @@
 
 - [x] `runtimefragment` 模块：capability 白名单、受控 HTML Fragment handler（`internal/module/runtimefragment/registry.go`）
 - [x] HTMX 请求 → Go Handler → 返回受控 HTML 片段（`GET /_fragments/:type`，`router.go`）
-- [ ] 分页列表：构建时只输出第一页静态 HTML，后续页码 HTMX 按需加载（**未注册 capability**）
-- [ ] 搜索 Shell：规范化 Search Shell Page，搜索结果由 HTMX Fragment 按需返回（**未注册 capability**；当前白名单仅 `loginPanel`/`cartSummary`，见 `capability.go`）
+- [x] 分页列表：构建时只输出第一页静态 HTML，后续页码 HTMX 按需加载（**原记录「未注册 capability」已过时**：`productList` 能力已注册（`internal/module/runtimefragment/product_list.go:63`，参数 `page`/`pageSize` 见 :103-104），组件在构建期输出分页控件、静态产物只出默认那一屏，自第 2 页起把 offset 下推 SQL（`internal/builder/components/productlist/jet.go:246` 与 :521 的 `resolveProductsPage`），边界常量 `MaxPage`/`MaxPageSize` 在 `internal/builder/components/productlist/productlist.go:175`）
+- [x] 搜索 Shell：规范化 Search Shell Page，搜索结果由 HTMX Fragment 按需返回（**原记录「未注册 capability；当前白名单仅 `loginPanel`/`cartSummary`」已过时**：`searchResults` 已注册（`internal/module/runtimefragment/search_results.go:62`，参数 `q` 见 :72），构建期组件 `core.searchResults` 只输出搜索框 + 结果挂载点，命中由 `/_fragments/searchResults` 现拉 —— `internal/builder/components/searchresults/searchresults.go:3` 与 :18 的 `searchResultsPath`）
 
 **验收门禁**：
 
 | 检查项 | 标准 |
 |--------|------|
 | 白名单 | ✅ 只允许 Registry 内 capability，拒绝任意 endpoint |
-| 分页 | ❌ 未通过：未注册分页 capability |
-| 搜索 | ❌ 未通过：未注册搜索 capability |
+| 分页 | ✅ 通过（**原「❌ 未通过：未注册分页 capability」已过时**）：`productList` 已注册并按 `page`/`pageSize` 下推 offset（`internal/builder/components/productlist/jet.go:521`） |
+| 搜索 | ✅ 通过（**原「❌ 未通过：未注册搜索 capability」已过时**）：`searchResults` 已注册（`internal/module/runtimefragment/search_results.go:62`），经收窄只读端口 `SetContentSearchProvider` / `SetProductSearchProvider` / `SetPublishedEntityLocator`（同文件 :51/:54/:57）取数，端口未注入时走降级文案、不报 500（同文件 :17/:39 的边界注释） |
 | 安全 | Fragment 不读取 Page Document、不执行 Jet、不接受任意 endpoint |
 | `go test ./...` | 全绿 |

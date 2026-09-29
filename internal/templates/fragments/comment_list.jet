@@ -1,0 +1,69 @@
+{* comment_list.jet — 评论列表 + 提交表单（BIZ-5，由片段 commentList 渲染）。
+   数据是 struct（片段层约定），所以字段一律用点号，**不能**写 .["t"] / .["csrf_token"]
+   （chain 索引在 struct 上会运行时报错 can't use csrf_token as field name in struct type）。
+
+   降级形态由 Go 侧收敛：Unavailable（端口未接入）/ ConfigMissing（页面没给工程或实体）
+   两种形态不渲染列表与表单，只显示 .Notice 一句人话；NeedLogin / NoToken / Failed
+   仍渲染列表（列表是公开的），只是不给表单。
+
+   为什么表单 target 是 closest .sky-comment 且 swap=outerHTML：
+   提交之后要同时更新「提交结果」与「列表」—— 两个片段各换一半会出现
+   「提示说已提交、列表里没有它」的中间态。整块替换是一个真源（同 product_create_form 的取舍）。
+
+   样式：只给语义结构 + sky-comment-* 类名，默认布局由样式表兜底；
+   站点主题可覆盖这些类名（与 cart_view.jet 同口径）。 *}
+<section class="sky-comment" data-fragment="{{ .Fragment }}" data-project="{{ .ProjectID }}"
+         data-entity-type="{{ .EntityType }}" data-entity-id="{{ .EntityID }}">
+<h3 class="sky-comment-title">{{ .Labels.Title }}</h3>
+{{if .Notice}}<p class="sky-comment-notice" role="status">{{ .Notice }}</p>{{end}}
+{{if .Unavailable || .ConfigMissing}}
+{* 端口未接入 / 页面没配实体：没有列表可渲染，也不该给出提交入口。 *}
+{{else}}
+<ul class="sky-comment-list">
+{{if !.HasItems}}
+<li class="sky-comment-empty">{{ .Labels.Empty }}</li>
+{{end}}
+{{range _, it := .Items}}
+<li class="sky-comment-item" data-comment-id="{{ it.ID }}">
+    <p class="sky-comment-meta">
+        <span class="sky-comment-author">{{ it.Author }}</span>
+        <time class="sky-comment-time">{{ it.CreatedAt }}</time>
+    </p>
+    <div class="sky-comment-body">{{ it.Body }}</div>
+    {{if len(it.Replies) > 0}}
+    <ul class="sky-comment-replies">
+        {{range _, rp := it.Replies}}
+        <li class="sky-comment-item is-reply">
+            <p class="sky-comment-meta">
+                <span class="sky-comment-author">{{ rp.Author }}</span>
+                <time class="sky-comment-time">{{ rp.CreatedAt }}</time>
+            </p>
+            <div class="sky-comment-body">{{ rp.Body }}</div>
+        </li>
+        {{end}}
+    </ul>
+    {{end}}
+</li>
+{{end}}
+</ul>
+{{if .HasMore}}
+<a class="sky-comment-more"
+   href="/_fragments/commentList?projectId={{ .ProjectID }}&entityType={{ .EntityType }}&entityId={{ .EntityID }}&page={{ .NextPage }}"
+   hx-get="/_fragments/commentList?projectId={{ .ProjectID }}&entityType={{ .EntityType }}&entityId={{ .EntityID }}&page={{ .NextPage }}"
+   hx-target="closest .sky-comment" hx-swap="outerHTML">{{ .Labels.More }}</a>
+{{end}}
+{{if .CanSubmit}}
+<form class="sky-comment-form" method="post" action="/_fragments/commentSubmit"
+      hx-post="/_fragments/commentSubmit" hx-target="closest .sky-comment" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+    <input type="hidden" name="projectId" value="{{ .ProjectID }}">
+    <input type="hidden" name="entityType" value="{{ .EntityType }}">
+    <input type="hidden" name="entityId" value="{{ .EntityID }}">
+    <h4 class="sky-comment-form-title">{{ .Labels.FormTitle }}</h4>
+    <textarea class="sky-comment-input" name="body" rows="4" maxlength="{{ .MaxBodyLen }}"
+              placeholder="{{ .Labels.Placeholder }}" aria-label="{{ .Labels.FormTitle }}" required></textarea>
+    <button class="sky-comment-submit" type="submit">{{ .Labels.Submit }}</button>
+</form>
+{{end}}
+{{end}}
+</section>

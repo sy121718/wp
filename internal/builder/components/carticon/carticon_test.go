@@ -110,25 +110,73 @@ func TestBuildViewIconFallback(t *testing.T) {
 	}
 }
 
-// TestApplyI18n 界面文案：默认标签取译文，作者自定义的文案不动。
+// TestApplyI18n 界面文案：默认标签与两处运行态文案取译文，作者自定义的标签不动。
+//
+// 判据是**收到的 key 集合**，不是「只收到标签那一个」：加载中 / 查看购物车这两句是图标
+// 自己产出的固定文案（作者填不到），与「作者是否自定义标签」各管一段 —— 实现在这两件事上
+// 不许互相早退。所以这里同时钉两个方向：该取的都取了、不该取的一个也没多取。
 func TestApplyI18n(t *testing.T) {
 	v := &View{Label: textFallbackLabel}
+	asked := map[string]string{}
 	v.ApplyI18n(func(key, fallback string) string {
-		if key != TextKeyLabel {
-			t.Errorf("文案键不对: %q", key)
+		asked[key] = fallback
+		switch key {
+		case TextKeyLabel:
+			return "Cart"
+		case TextKeyLoading:
+			return "Loading…"
+		case TextKeyViewCart:
+			return "View cart"
 		}
-		return "Cart"
+		t.Errorf("多取了文案键: %q", key)
+		return fallback
 	})
 	if v.Label != "Cart" {
 		t.Fatalf("默认标签应取译文，实际 %q", v.Label)
 	}
+	if v.LoadingText != "Loading…" || v.ViewCartText != "View cart" {
+		t.Fatalf("运行态文案应取译文，实际 %q / %q", v.LoadingText, v.ViewCartText)
+	}
+	if len(asked) != 3 {
+		t.Fatalf("无提示的正常渲染只该取标签与两句运行态文案，实际取了 %d 条: %v", len(asked), asked)
+	}
+	// 空值的降级提示不许被「无中生有」地填上：正常渲染的图标凭空多一行提示，
+	// 与「缺站点工程」那条真降级混在一起，用户无从分辨。
+	if v.Notice != "" {
+		t.Fatalf("空提示不该被翻译函数填出内容，实际 %q", v.Notice)
+	}
 
+	// 作者自定义标签 → 标签那条不翻译（它属于内容，走 Translatable 链路）；两句运行态照旧。
 	v2 := &View{Label: "我的车"}
-	v2.ApplyI18n(func(string, string) string { return "Cart" })
+	v2.ApplyI18n(func(key, fallback string) string {
+		if key == TextKeyLabel {
+			t.Error("作者自定义的标签不该走界面翻译（它由内容翻译链路负责）")
+		}
+		if key == TextKeyLoading {
+			return "Loading…"
+		}
+		return fallback
+	})
 	if v2.Label != "我的车" {
 		t.Fatalf("作者自定义的文案不该被界面翻译覆盖，实际 %q", v2.Label)
 	}
+	if v2.LoadingText != "Loading…" {
+		t.Fatalf("自定义标签不该带走运行态文案的取词（两件事各自独立），实际 %q", v2.LoadingText)
+	}
 
+	// 非空的降级提示按 key 取词。
+	v2b := &View{Label: textFallbackLabel, Notice: noticeNoProject}
+	v2b.ApplyI18n(func(key, fallback string) string {
+		if key == TextKeyNotice {
+			return "Cart unavailable"
+		}
+		return fallback
+	})
+	if v2b.Notice != "Cart unavailable" {
+		t.Fatalf("降级提示应取译文，实际 %q", v2b.Notice)
+	}
+
+	// 无翻译函数 → 全部保持中文兜底，不 panic。
 	var v3 *View
 	v3.ApplyI18n(nil) // 不 panic
 }

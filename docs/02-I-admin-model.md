@@ -15,7 +15,7 @@
 |---|---|---|
 | **仪表盘** | `/admin` | 1 |
 | **列表页** | products、orders、customers、coupons、returns、pages、blocks、articles、themes、media、i18n、menus、plugins、administrators、roles、permissions、departments、datarules、navigations、product-attributes/-brands/-categories/-tags、inventory、inventory/warehouses、inventory/sources、inventory/purchases、inventory/reasons、masterdata/changes、page_redirects、mail 系列、site-slots、seo、analytics | ~40 |
-| **编辑页（整页写）** | articles/new、articles/edit、products/new、products/edit、products/detail、content-templates/edit、datarules/edit、themes/settings、mail/automation/edit、customers/detail、roles/permissions、article_translations、page/translations、navigation_translations、product_translations | 15 |
+| **编辑页（整页写）** | articles/new、articles/edit、products/new、products/edit、products/detail、content-templates/edit、datarules/edit、themes/settings、mail/automation/edit、customers/detail、article_translations、page/translations、navigation_translations、product_translations | 14 |
 | **纯配置页** | settings、theme、product-pricing、mail 账号/模板 | 4 |
 | **画布类** | workbench、workbench/preview、mail/automation/canvas | 4 |
 

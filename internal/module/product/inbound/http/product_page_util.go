@@ -65,10 +65,10 @@ func productListFilterURL(projectID, keyword, status string) string {
 func productStatusOptions(c *gin.Context, current string) []gin.H {
 	tr := shell.TranslateFor(c)
 	opts := []struct{ value, key, fallback string }{
-		{"", "admin.products.status.all", "全部状态"},
-		{productenums.StatusDraft, "admin.products.status.draft", "草稿"},
-		{productenums.StatusPublished, "admin.products.status.published", "已上架"},
-		{productenums.StatusArchived, "admin.products.status.archived", "已下架"},
+		{"", productenums.ProductsStatusAll, "全部状态"},
+		{productenums.StatusDraft, productenums.ProductsStatusDraft, "草稿"},
+		{productenums.StatusPublished, productenums.ProductsStatusPublished, "已上架"},
+		{productenums.StatusArchived, productenums.ProductsStatusArchived, "已下架"},
 	}
 	out := make([]gin.H, 0, len(opts))
 	for _, o := range opts {

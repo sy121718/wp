@@ -45,4 +45,12 @@ var (
 	ErrRedirectOccupied    = errors.New(pageenums.ErrRedirectOccupied)
 	ErrRedirectTargetMiss  = errors.New(pageenums.ErrRedirectTargetMiss)
 	ErrRedirectLoop        = errors.New(pageenums.ErrRedirectLoop)
+
+	// 定时上下线（PIPE-7）。到点执行失败**不走这些 sentinel**：那条路径的失败要落进
+	// page_schedules.last_error（业务 key），而不是抛给某个请求的调用方。
+	ErrScheduleNotFound      = errors.New(pageenums.ErrScheduleNotFound)
+	ErrScheduleInPast        = errors.New(pageenums.ErrScheduleInPast)
+	ErrScheduleActionInvalid = errors.New(pageenums.ErrScheduleActionInvalid)
+	ErrScheduleRunning       = errors.New(pageenums.ErrScheduleRunning)
+	ErrScheduleOccupied      = errors.New(pageenums.ErrScheduleOccupied)
 )

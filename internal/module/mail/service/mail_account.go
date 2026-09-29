@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/pkg/crypto"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/mailer"
 
 	maildto "go_wp/internal/module/mail/dto"
@@ -179,11 +180,14 @@ func (s *Service) TestSend(ctx context.Context, req *maildto.TestSendReq) (res *
 	}
 	to := strings.TrimSpace(req.ToEmail)
 	now := time.Now()
+	// 三条内容都按**请求语言**取词：此前 Subject / Text 传的是裸 key（邮件主题直接显示
+	// `mail.test.mailSubject`），HTML 是硬编码中文 —— 两种都到不了收件人眼里。
+	// 兜底一律给代码里的中文常量（词条缺失时宁可给中文，也不能给裸 key）。
 	_, sendErr := sender.Send(ctx, &mailer.Message{
 		To:      []mailer.Address{{Email: to}},
-		Subject: mailenums.TestMailSubject,
-		HTML:    mailenums.TestMailHTML,
-		Text:    mailenums.TestMailText,
+		Subject: i18n.Translate(mailenums.TestMailSubject, mailenums.TestMailSubjectFallback, req.Lang),
+		HTML:    i18n.Translate(mailenums.TestMailHTMLKey, mailenums.TestMailHTMLFallback, req.Lang),
+		Text:    i18n.Translate(mailenums.TestMailText, mailenums.TestMailTextFallback, req.Lang),
 	})
 	res = &maildto.TestSendResp{To: to}
 	if sendErr != nil {

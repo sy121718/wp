@@ -15,6 +15,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
+	workbenchenums "go_wp/internal/module/workbench/enums"
 
 	"go_wp/pkg/logger"
 
@@ -45,7 +46,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
-		c.String(http.StatusBadRequest, "缺少页面 id")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrMissingPageID))
 		return
 	}
 	// 走统一出口 pageOf：Detail 的 projectID 是必填的越权防护 scope，只传 ID 会被
@@ -53,12 +54,12 @@ func (h *Handle) Workbench(c *gin.Context) {
 	// 一个漏传 scope 的调用，在页面上长得一模一样。
 	page, err := h.pageOf(c, pageID)
 	if err != nil {
-		c.String(http.StatusNotFound, "页面不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
 		return
 	}
 	documentJSON, err := json.Marshal(page.DraftDocument)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "草稿文档序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrDraftEncodeFailed))
 		return
 	}
 	// 启用插件的组件库摘要与区块预设（palette 注入，docs/06 §5/§5.2）。
@@ -92,7 +93,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"presets": pluginPresets,
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrEditorMetaEncodeFailed))
 		return
 	}
 	// 组件 Inspector 面板 schema（docs/02-C3）：声明式 Controls 驱动检查器表单，
@@ -100,7 +101,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	// 插件组件 schema 合并（与内置同构，docs/06 §5：上传即出现在检查器）。
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
 		return
 	}
 	if asm != nil {
@@ -110,11 +111,11 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
 		return
 	}
 	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
-		"title":     workbenchTitle(page),
+		"title":     workbenchTitle(c, page),
 		"pageId":    page.ID,
 		"isBlock":   false,
 		"draftPath": page.DraftPath,
@@ -155,12 +156,12 @@ func workbenchJsVer() string {
 func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	block, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: blockID})
 	if err != nil || block == nil {
-		c.String(http.StatusNotFound, "全局块不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrBlockNotFound))
 		return
 	}
 	documentJSON, err := json.Marshal(block.Document)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "块文档序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrBlockEncodeFailed))
 		return
 	}
 	meta := gin.H{
@@ -185,21 +186,21 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	}
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrEditorMetaEncodeFailed))
 		return
 	}
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
 		return
 	}
 	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
-		"title":    "编辑块：" + block.Name,
+		"title":    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
 		"pageId":   block.ID,
 		"isBlock":  true,
 		"document": shell.JsonSafe(string(documentJSON)),
@@ -220,12 +221,12 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 //     真实记录解析，缺它只能看到空白组件（这正是这条校验存在的理由）。
 func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	if h.contenttemplates == nil {
-		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
 		return
 	}
 	tpl, err := h.contenttemplates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
 	if err != nil {
-		c.String(http.StatusNotFound, "模板不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrTemplateNotFound))
 		return
 	}
 	// 无实体模式按**模板行**判定：查询参数是请求方给的，拿它判等于让
@@ -241,22 +242,24 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		// 结构模板没有实体来源：请求带来的 entityId 一律丢弃（无实体模式不解析字段绑定）。
 		entityID = ""
 	} else if entityID == "" {
-		c.String(http.StatusBadRequest, "缺少预览样例实体 entityId（字段绑定预览需要一条真实 "+entityType+" 记录）")
+		// 占位符 {type} 由词条携带：译文顺序可能与中文不同，所以不在这里拼进句子。
+		c.String(http.StatusBadRequest,
+			strings.ReplaceAll(workbenchShortText(c, workbenchenums.ErrPreviewEntityIDRequired), "{type}", entityType))
 		return
 	}
 	// 装配校验按模式分流：无实体模式走 page 编译管线，用不到模板预览端口。
 	if !noEntity && h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
 		return
 	}
 	if noEntity && h.pages == nil {
-		c.String(http.StatusServiceUnavailable, "无实体模板预览能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrStructureTemplatePreviewNotAssembled))
 		return
 	}
 	projectID := strings.TrimSpace(c.Query("projectId"))
 	documentJSON, err := json.Marshal(tpl.DraftDocument)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "模板文档序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrTemplateEncodeFailed))
 		return
 	}
 	metaJSON, err := json.Marshal(gin.H{
@@ -273,22 +276,22 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		"version":      tpl.DraftVersion,
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, "编辑器元数据序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrEditorMetaEncodeFailed))
 		return
 	}
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 生成失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "组件 schema 序列化失败")
+		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
 		return
 	}
 	previewQS := templatePreviewQuery(tpl.ID, entityType, entityID, projectID)
 	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
-		"title":      "编辑模板：" + tpl.Name,
+		"title":      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
 		"pageId":     tpl.ID,
 		"isBlock":    false,
 		"isTemplate": true,
@@ -333,12 +336,12 @@ func (h *Handle) templateByID(c *gin.Context, templateID, projectID string) (*co
 // previewTemplateTarget 取预览目标模板；模板不存在时已写响应并返回 ok=false。
 func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID string) (tpl *contenttemplatedto.TemplateResp, ok bool) {
 	if h.contenttemplates == nil {
-		c.String(http.StatusServiceUnavailable, "内容模板编辑能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
 		return nil, false
 	}
 	tpl, err := h.templateByID(c, templateID, projectID)
 	if err != nil {
-		c.String(http.StatusNotFound, "模板不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrTemplateNotFound))
 		return nil, false
 	}
 	return tpl, true
@@ -351,7 +354,7 @@ func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID str
 func (h *Handle) TemplatePreview(c *gin.Context) {
 	templateID := strings.TrimSpace(c.Query("template"))
 	if templateID == "" {
-		c.String(http.StatusBadRequest, "缺少 template")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrTemplateParamRequired))
 		return
 	}
 	projectID := c.Query("projectId")
@@ -365,13 +368,13 @@ func (h *Handle) TemplatePreview(c *gin.Context) {
 		return
 	}
 	if h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
 		return
 	}
 	entityType := strings.TrimSpace(c.Query("entityType"))
 	entityID := strings.TrimSpace(c.Query("entityId"))
 	if entityType == "" || entityID == "" {
-		c.String(http.StatusBadRequest, "缺少 template / entityType / entityId")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsRequired))
 		return
 	}
 	h.renderTemplatePreview(c, templateID, entityType, entityID, projectID, nil,
@@ -384,7 +387,7 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 	templateID := strings.TrimSpace(c.PostForm("id"))
 	document := json.RawMessage(c.PostForm("draftDocument"))
 	if templateID == "" || len(document) == 0 {
-		c.String(http.StatusBadRequest, "预览参数不完整")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
 		return
 	}
 	projectID := c.PostForm("projectId")
@@ -397,13 +400,13 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 		return
 	}
 	if h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, "内容模板预览能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
 		return
 	}
 	entityType := strings.TrimSpace(c.PostForm("entityType"))
 	entityID := strings.TrimSpace(c.PostForm("entityId"))
 	if entityType == "" || entityID == "" {
-		c.String(http.StatusBadRequest, "预览参数不完整")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
 		return
 	}
 	h.renderTemplatePreview(c, templateID, entityType, entityID, projectID, document, true)
@@ -430,11 +433,11 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 func (h *Handle) renderStructureTemplatePreview(c *gin.Context, document json.RawMessage,
 	projectID string, withEditorBridge bool) {
 	if h.pages == nil {
-		c.String(http.StatusServiceUnavailable, "无实体模板预览能力未装配")
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrStructureTemplatePreviewNotAssembled))
 		return
 	}
 	if len(document) == 0 {
-		c.String(http.StatusBadRequest, "模板文档为空")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrTemplateDocumentEmpty))
 		return
 	}
 	h.renderPreview(c, document, projectID, "", withEditorBridge, previewDocStructureTemplate)
@@ -463,7 +466,7 @@ func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, e
 	}
 	html := res.HTML
 	if withEditorBridge {
-		html = injectEditorBridge(html)
+		html = injectEditorBridge(html, shell.TranslateFor(c))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }

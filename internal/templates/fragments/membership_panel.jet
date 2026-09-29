@@ -1,0 +1,19 @@
+{* membership_panel.jet — 会员面板：等级 + 权益（BIZ-3）。由片段 membershipPanel 渲染。
+   数据是 struct（片段层约定），所以字段一律用点号，不能写 .["t"]。
+   四种降级形态（未登录 / 未给工程 / 端口未接入 / 解析失败）都由 Go 侧收敛成 .Notice 一句话：
+   模板不判断 nil，也不猜「为什么没有数据」—— 那是服务端才知道的事。
+   IsDefaultTier 单独提示「还不是会员」：兜底等级与真实会员等级在页面上必须能分辨。 *}
+<section class="sky-membership-panel" data-fragment="membershipPanel">
+<h3 class="sky-membership-title">{{ .Labels.Title }}</h3>
+{{if .Notice}}
+<p class="sky-membership-note">{{ .Notice }}</p>
+{{else}}
+<p class="sky-membership-tier"><strong>{{ .TierName }}</strong></p>
+{{if .IsDefaultTier}}<p class="sky-membership-hint">{{ .Labels.DefaultHint }}</p>{{end}}
+<ul class="sky-membership-benefits">
+{{if .FreeShippingText}}<li class="sky-membership-benefit">{{ .FreeShippingText }}</li>{{end}}
+{{if .DiscountText}}<li class="sky-membership-benefit">{{ .DiscountText }}</li>{{end}}
+{{if !.FreeShippingText && !.DiscountText}}<li class="sky-membership-benefit sky-membership-none">{{ .Labels.NoBenefit }}</li>{{end}}
+</ul>
+{{end}}
+</section>

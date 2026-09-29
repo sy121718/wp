@@ -63,6 +63,7 @@ const (
 	portProductAvailability            = "product.SetAvailabilityPort"
 	portProductArchiveEnsurer          = "product.SetArchiveInstanceEnsurer"
 	portProductPublishedLocator        = "product.SetPublishedEntityLocator"
+	portProductPurchaseChecker         = "product.SetPurchaseChecker"
 	portProductFragmentCacheBumper     = "product.SetFragmentCacheBumper"
 	portPluginAdminAuthz               = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire            = "project.SetLocaleRetirePort"
@@ -98,6 +99,18 @@ const (
 	portRuntimeFragVisitorReturn       = "runtimefragment.SetVisitorReturnProvider"
 	portRuntimeFragVisitorIdentity     = "runtimefragment.SetVisitorIdentityMiddleware"
 	portRuntimeFragVisitorAccount      = "runtimefragment.SetVisitorAccountPort"
+	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
+	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
+	// —— BIZ-3 会员体系的消费侧接线（本批）——
+	portOrderMembershipReader    = "order.SetMembershipReader"
+	portMembershipPurchaseSource = "membership.SetPurchaseSource"
+	portCartMembershipReader     = "cart.SetMembershipReader"
+	portRuntimeFragMembership    = "runtimefragment.SetMembershipReader"
+	// —— 站点级基础运费（BIZ-3 的后续小批）——
+	portCartShippingPolicy = "cart.SetShippingPolicyReader"
+	// —— 评论（BIZ-5）——
+	portRuntimeFragComment  = "runtimefragment.SetCommentPort"
+	portCommentEntityPolicy = "comment.SetEntityPolicy"
 )
 
 // wiringKind 端口类别。
@@ -173,6 +186,8 @@ var wiringManifest = []wiringEntry{
 		"商品集合项的 url 全空（列表页商品没有链接）"},
 	{portProductFragmentCacheBumper, "runtimefragment", "product", wiringRequiredPort,
 		"商品写操作后片段 HTML 缓存不失效，前台继续显示过期价"},
+	{portProductPurchaseChecker, "order", "product", wiringOptionalDegraded,
+		"「商品评论必须买过」不生效：任何登录访客都能提交商品评论（提交仍进审核队列）"},
 
 	// —— 工程 / 页面 / 发布域 ——
 	{portProjectLocaleRetire, "page", "project", wiringRequiredPort,
@@ -243,6 +258,42 @@ var wiringManifest = []wiringEntry{
 		"片段层永远按未登录渲染（已登录访客看到登录引导）"},
 	{portRuntimeFragVisitorAccount, "user", "runtimefragment", wiringRequiredPort,
 		"账号中心四块永远只显示「账号功能暂不可用」"},
+	// AccessGuard 的登录态探针刻意是 **optional-degraded**：未注入时守卫对
+	// 「登录用户可见」恒判未登录，表现为已登录访客也只看到守卫页（可见、可诊断），
+	// 而不是放行未授权访客。判据（文件头那两条）成立：能说清用户看到什么，
+	// 且失效方向是收紧而不是放开。
+	{portAccessGuardLoginProbe, "user", "访问面守卫（builtin.AccessGuardMiddleware）", wiringOptionalDegraded,
+		"「登录用户可见」的页面把所有人挡在守卫页外（含已登录访客）；密码保护的页面不受影响"},
+
+	// —— BIZ-3 会员体系的消费侧接线 ——
+	//
+	// 这一组端口的分类判据按文件头那两条走（「说得清未注入时用户看到什么」= optional）：
+	// 折扣与免运费未接线时的表现是**金额与接入前逐字一致**（等价于功能开关关闭），
+	// 而消费额端口未接线会让归属重算整体不可用 —— 会员等级永远停在手工状态。
+	{portOrderMembershipReader, "membership", "order", wiringOptionalDegraded,
+		"会员折扣恒为 0：订单金额与本端口接入前逐字一致（会员等级照样显示，只是不参与算钱）"},
+	{portMembershipPurchaseSource, "order", "membership", wiringRequiredPort,
+		"会员归属的自动升级整体不可用：日结调度器禁用（启动日志有 Warn）、后台「立即重算」报错，等级只能手工维护"},
+	{portCartMembershipReader, "membership", "cart", wiringOptionalDegraded,
+		"会员免运费不生效：结算运费与接入前逐字一致（有基准运费时会员照付）"},
+	{portRuntimeFragMembership, "membership", "runtimefragment", wiringOptionalDegraded,
+		"会员片段渲染一句可见文案「会员信息暂时不可用」（不是 500：片段 5xx 会让 htmx 不 swap，访客什么都看不到）"},
+	{portCartShippingPolicy, "project", "cart", wiringOptionalDegraded,
+		"站点级基础运费与满额免运费都不生效：结算运费恒为 0（与接入前逐字一致，故无回归，但后台配了运费会看起来没生效）"},
+
+	// —— 评论（BIZ-5）——
+	//
+	// 两条都判 optional-degraded，判据是文件头那两条（「说得清未注入时用户看到什么」）：
+	//
+	//	· 片段端口未注入 → 评论片段渲染一句可见文案「评论功能暂时不可用」（不是 500：
+	//	  片段 5xx 会让 htmx 不 swap，访客什么都看不到）；
+	//	· 差异化规则端口未注入 → 规则未启用（提交照常进审核队列，等价于功能开关关闭），
+	//	  且装配期会留一条 Warn。它与「买过才能评」之间的差别是**产品策略**而不是安全边界，
+	//	  所以刻意不采用「未注入即拒绝」那种 fail-closed（那会把装配漏行放大成整站不可评论）。
+	{portRuntimeFragComment, "comment", "runtimefragment", wiringOptionalDegraded,
+		"评论片段渲染一句可见文案「评论功能暂时不可用」（不是 500）"},
+	{portCommentEntityPolicy, "product（或其它拥有实体的模块）", "comment", wiringOptionalDegraded,
+		"差异化评论规则（如「商品评论必须买过」）未启用：所有提交一律进审核队列，启动日志有 Warn"},
 }
 
 // wiringMarks 装配期已接入端口的集合（端口名 → true）。

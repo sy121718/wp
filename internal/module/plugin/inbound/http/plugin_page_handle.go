@@ -14,6 +14,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 
@@ -55,14 +56,21 @@ func emptyPatrol() *plugincontract.PatrolResp {
 
 // PluginsPage 插件管理列表页。
 func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
-	data := &pluginsPageData{Title: "插件管理", Menu: "plugins", ArtifactPatrol: emptyPatrol()}
+	// 标题在这里就翻成当前语言：shell.Prepare 对 data 的 title 做的是 t(title, title)，
+	// 已翻译的值不是 key、会原样返回（见 internal/web/shell/shell.go）。写成裸中文的话，
+	// 英文站点的浏览器标题与面包屑恒为中文。
+	data := &pluginsPageData{
+		Title:          shell.TranslateFor(c)(pluginenums.TitlePlugins, "插件管理"),
+		Menu:           "plugins",
+		ArtifactPatrol: emptyPatrol(),
+	}
 	// 写操作失败会 303 回本页并带 ?err=（见 plugin_err.go）；读侧只认受控文案，未命中落统一提示。
 	// 先当默认值放进去，下面若本页取数也失败则覆盖它 —— 用户当下看到的是列表没加载出来。
 	data.Error = pluginPageErr(c)
 	if h.plugins != nil {
 		list, err := h.plugins.List(c.Request.Context())
 		if err != nil {
-			data.Error = pluginNoticeListFailed
+			data.Error = pluginFacingText(c, pluginNoticeListFailed)
 		} else {
 			data.Plugins = list
 		}
@@ -90,23 +98,23 @@ const pluginsUploadMax = 52 << 20
 // 所以安装路径的每条文案都经 pluginInstallFailText 补一句「请重新选择文件」。
 func (h *pluginPageHandle) PluginsInstall(c *gin.Context) {
 	if h.plugins == nil {
-		pluginPageFail(c, pluginNoticeModuleUnwired)
+		pluginPageFail(c, pluginFacingText(c, pluginNoticeModuleUnwired))
 		return
 	}
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		pluginPageFail(c, pluginInstallFailText(pluginNoticeNoFile))
+		pluginPageFail(c, pluginInstallFailText(c, pluginFacingText(c, pluginNoticeNoFile)))
 		return
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, pluginsUploadMax+1))
 	if err != nil || len(data) == 0 || len(data) > pluginsUploadMax {
-		pluginPageFail(c, pluginInstallFailText(pluginNoticeUnreadable))
+		pluginPageFail(c, pluginInstallFailText(c, pluginFacingText(c, pluginNoticeUnreadable)))
 		return
 	}
 	if _, err := h.plugins.Install(c.Request.Context(), data); err != nil {
 		logger.Scene("plugin").Error(err, "插件安装失败")
-		pluginPageFail(c, pluginInstallFailText(pluginErrParam(c, err)))
+		pluginPageFail(c, pluginInstallFailText(c, pluginErrParam(c, err)))
 		return
 	}
 	c.Redirect(http.StatusSeeOther, pluginPagePath)
@@ -118,7 +126,7 @@ func (h *pluginPageHandle) PluginsInstall(c *gin.Context) {
 // 没有导航也没有返回，用户只能按后退键（而 POST 之后的后退会重发表单）。
 func (h *pluginPageHandle) PluginsToggle(c *gin.Context) {
 	if h.plugins == nil {
-		pluginPageFail(c, pluginNoticeModuleUnwired)
+		pluginPageFail(c, pluginFacingText(c, pluginNoticeModuleUnwired))
 		return
 	}
 	req := &plugincontract.ToggleReq{ID: c.PostForm("id"), Enabled: c.PostForm("enabled") == "true" || c.PostForm("enabled") == "on"}
@@ -133,7 +141,7 @@ func (h *pluginPageHandle) PluginsToggle(c *gin.Context) {
 // PluginsUninstall 卸载插件（表单 POST，二次确认由前端 confirm 承担）。
 func (h *pluginPageHandle) PluginsUninstall(c *gin.Context) {
 	if h.plugins == nil {
-		pluginPageFail(c, pluginNoticeModuleUnwired)
+		pluginPageFail(c, pluginFacingText(c, pluginNoticeModuleUnwired))
 		return
 	}
 	req := &plugincontract.UninstallReq{ID: c.PostForm("id")}

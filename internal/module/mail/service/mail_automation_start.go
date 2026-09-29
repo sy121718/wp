@@ -34,7 +34,7 @@ func (s *Service) StartRun(ctx context.Context, automationID, contactID uint64, 
 	}
 	def, derr := ParseDefinition(automation.Definition)
 	if derr != nil {
-		return false, errors.New(mailenums.ErrAutomationGraphInvalid + ": " + derr.Error())
+		return false, graphInvalidError(derr)
 	}
 
 	if _, aerr := s.m.ActiveRun(ctx, automationID, contactID); aerr == nil {

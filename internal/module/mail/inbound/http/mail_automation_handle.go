@@ -9,6 +9,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
@@ -127,6 +128,8 @@ func (h *Handle) AutomationRunList(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
+	// 运行文案编码 → 当前语言（与页面出口同一份助手，见 mail_run_text.go）。
+	mailRunTexts(i18n.TranslateFunc(response.RequestLanguage(c)), res.Items)
 	response.Success(c, res)
 }
 
@@ -137,6 +140,7 @@ func (h *Handle) AutomationRunDetail(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
+	mailRunDetailTexts(i18n.TranslateFunc(response.RequestLanguage(c)), res)
 	response.Success(c, res)
 }
 

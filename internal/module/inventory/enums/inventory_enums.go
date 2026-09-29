@@ -356,3 +356,27 @@ const (
 	// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。同上，词条见迁移 217。
 	MsgInventoryPurchasesTitle = "MsgInventoryPurchasesTitle"
 )
+
+// 业务错误**补充说明**的词条（key + 具名参数 + 中文兜底）。
+//
+// 背景与 product 模块同一套（见 pkg/i18n/errdetail.go）：service 用
+// fmt.Errorf("%s：%s", 业务 key, 补充说明) 把上下文跟在业务文案后，而读侧只翻前半截 key ——
+// 后半截中文在英文界面上永远是中文。改用 ErrorDetail 之后，读侧
+//（inventoryErrDetailText）取词并填 {name} 占位符，整句按当前语言渲染。
+const (
+	// DetailExternalSKUOwner 「该外部编码在本仓已属于商品 X」里的那个商品。
+	//
+	// 形态是「业务 key：明细」，明细自带商品名 —— 只说「冲突了」等于让人去猜哪一条占了它。
+	//
+	// 名字**不带 Err 前缀**：它不是可抛出的业务错误消息（不单独经 ErrorAuto 的形态判据），
+	// 而是「补充说明」的词条 key，由 i18n.ErrorDetail 编码进业务错误的 tail。
+	DetailExternalSKUOwner = "admin.inventory.err.externalSkuOwner"
+)
+
+// ErrDetailFallbacks 上面那组明细词条的中文兜底（i18n 未初始化 / 该 key 没有词条时用）。
+//
+// 占位符与词条一一对应（{name} / …）：读侧填不上某个占位符时判为坏词条、回落这里的中文，
+// 而不是把 {name} 摆给运营看。
+var ErrDetailFallbacks = map[string]string{
+	DetailExternalSKUOwner: "该外部编码在本仓已属于商品 {name}",
+}

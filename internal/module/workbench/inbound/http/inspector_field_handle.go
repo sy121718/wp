@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	workbenchenums "go_wp/internal/module/workbench/enums"
 )
 
 // inspector_field_handle.go - 检查器单字段构造（角/间距/响应式控件、可见性与取值读取）。
 
 // inspectorFieldOf 单个 schema 控件 → 模板字段。
-func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, props map[string]any, projectID string) inspectorField {
+//
+// tr 是「key → 当前语言文案」的取词函数（workbenchTrFunc）：本函数与它的下游
+// （圆角 / 间距 / 响应式控件、导航下拉）产出的 Label 与 Placeholder 会直接进面板 HTML，
+// 模板层不参与这些句子，所以取词必须在这里完成。
+func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, props map[string]any, projectID string, tr func(key string) string) inspectorField {
 	f := inspectorField{Key: ctl.Key, Label: ctl.Label, Min: ctl.Min, Max: ctl.Max, Step: ctl.Step}
 	if f.Label == "" {
 		f.Label = ctl.Key
@@ -24,13 +30,13 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 		if len(ctl.Options) > 0 {
 			refKind = ctl.Options[0].Value
 		}
-		f.Options = entityRefInspectorOptions(ctx, h, projectID, refKind, value)
+		f.Options = entityRefInspectorOptions(ctx, h, projectID, refKind, value, tr)
 		// 导航菜单项：检查器里可以就地新建（写回走 navigation 契约的 Create）。
 		// 三个条件缺一不可 —— refKind 是 navigation、端口已注入、有工程上下文；
 		// 少任何一个都会渲染出一个「提交必然失败」的入口，比不显示更糟。
 		if refKind == "navigation" && h != nil && h.navigations != nil && projectID != "" {
 			f.NavNewRef = refKind
-			f.KindOptions = navigationKindOptions()
+			f.KindOptions = navigationKindOptions(tr)
 		}
 	case "multientityref":
 		// 多选实体（标签 id 列表等，审计 EDT-007）：值仍是逗号分隔串（读写兼容），
@@ -45,7 +51,7 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 			}
 		}
 		for _, kindOpt := range ctl.Options {
-			for _, o := range entityRefInspectorOptions(ctx, h, projectID, kindOpt.Value, "") {
+			for _, o := range entityRefInspectorOptions(ctx, h, projectID, kindOpt.Value, "", tr) {
 				if o.Value == "" {
 					continue // 「（不限）」在单选的语义里有用，在多选里是噪声
 				}
@@ -93,7 +99,7 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 	case "spacing", "margin":
 		f.UI = "spacing"
 		f.Slot = "spacing"
-		f.Inputs = spacingInputs(props, ctl.Key)
+		f.Inputs = spacingInputs(props, ctl.Key, tr)
 	case "boxspacing":
 		// container 的 box.padding/margin：三端 CSS 简写，客户端按「一行四向 + 联动」编辑。
 		f.UI = "boxspacing"
@@ -101,15 +107,15 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 	case "rtext":
 		f.UI = "rtext"
 		f.Slot = "rtext"
-		f.Inputs = responsiveTextInputs(props, ctl.Key)
+		f.Inputs = responsiveTextInputs(props, ctl.Key, tr)
 	case "classes":
 		f.UI = "classes"
 		f.Value = value
-		f.Placeholder = "逗号或空格分隔，禁 sky- 前缀"
+		f.Placeholder = tr(workbenchenums.InspectorPhClasses)
 	case "cssdecls":
 		f.UI = "cssdecls"
 		f.Value = value
-		f.Placeholder = "只写样式/布局/动画属性，分号分隔，如 font-size:16px; padding:12px"
+		f.Placeholder = tr(workbenchenums.InspectorPhCSSDecls)
 	case "media":
 		f.UI = "media"
 		f.Slot = "media"
@@ -122,7 +128,7 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 		f.UI = "dimension"
 		f.Slot = "dimension"
 		f.Value = value
-		f.Placeholder = "如 16px / 1.5rem"
+		f.Placeholder = tr(workbenchenums.InspectorPhDimension)
 	case "collectionfield", "bindingfield":
 		// 集合字段映射（core.cardstack 的 5 个字段）与内容字段绑定（item.<字段>）：
 		// 选项来自后端字段白名单（按当前节点的「内容集合」过滤），手填字段名会绕过白名单，
@@ -139,45 +145,49 @@ func inspectorFieldOf(ctx context.Context, h *Handle, ctl inspectorSchemaItem, p
 }
 
 // cornersField 把四角圆角（组件级 radiusTL 或通用层 radius.topLeft）合并为一个字段。
-func cornersField(ctl inspectorSchemaItem, props map[string]any) inspectorField {
+func cornersField(ctl inspectorSchemaItem, props map[string]any, tr func(key string) string) inspectorField {
 	f := inspectorField{Key: ctl.Key, Label: ctl.Label, UI: "corners", Slot: "corners"}
 	if f.Label == "" {
-		f.Label = "圆角"
+		f.Label = tr(workbenchenums.InspectorCorners)
 	}
 	if strings.HasSuffix(ctl.Key, "radiusTL") {
 		base := strings.TrimSuffix(ctl.Key, "TL")
-		for _, pair := range []struct{ suffix, label string }{
-			{"TL", "左上"}, {"TR", "右上"}, {"BR", "右下"}, {"BL", "左下"},
+		for _, pair := range []struct{ suffix, labelKey string }{
+			{"TL", workbenchenums.InspectorCornerTopLeft}, {"TR", workbenchenums.InspectorCornerTopRight},
+			{"BR", workbenchenums.InspectorCornerBottomRight}, {"BL", workbenchenums.InspectorCornerBottomLeft},
 		} {
 			f.Inputs = append(f.Inputs, inspectorSubInput{
-				Path: base + pair.suffix, Label: pair.label, Value: propString(props, base+pair.suffix),
+				Path: base + pair.suffix, Label: tr(pair.labelKey), Value: propString(props, base+pair.suffix),
 			})
 		}
 		return f
 	}
 	base := strings.TrimSuffix(ctl.Key, "topLeft")
-	for _, pair := range []struct{ suffix, label string }{
-		{"topLeft", "左上"}, {"topRight", "右上"}, {"bottomRight", "右下"}, {"bottomLeft", "左下"},
+	for _, pair := range []struct{ suffix, labelKey string }{
+		{"topLeft", workbenchenums.InspectorCornerTopLeft}, {"topRight", workbenchenums.InspectorCornerTopRight},
+		{"bottomRight", workbenchenums.InspectorCornerBottomRight}, {"bottomLeft", workbenchenums.InspectorCornerBottomLeft},
 	} {
 		f.Inputs = append(f.Inputs, inspectorSubInput{
-			Path: base + pair.suffix, Label: pair.label, Value: propString(props, base+pair.suffix),
+			Path: base + pair.suffix, Label: tr(pair.labelKey), Value: propString(props, base+pair.suffix),
 		})
 	}
 	return f
 }
 
 // spacingInputs 三端 × 四向边距子输入。
-func spacingInputs(props map[string]any, key string) []inspectorSubInput {
+func spacingInputs(props map[string]any, key string, tr func(key string) string) []inspectorSubInput {
 	out := make([]inspectorSubInput, 0, 12)
-	for _, bp := range []struct{ key, label string }{
-		{"desktop", "桌面"}, {"tablet", "平板"}, {"mobile", "手机"},
+	for _, bp := range []struct{ key, labelKey string }{
+		{"desktop", workbenchenums.InspectorBpDesktop}, {"tablet", workbenchenums.InspectorBpTablet},
+		{"mobile", workbenchenums.InspectorBpMobile},
 	} {
-		for _, dir := range []struct{ key, label string }{
-			{"top", "上"}, {"right", "右"}, {"bottom", "下"}, {"left", "左"},
+		for _, dir := range []struct{ key, labelKey string }{
+			{"top", workbenchenums.InspectorDirTop}, {"right", workbenchenums.InspectorDirRight},
+			{"bottom", workbenchenums.InspectorDirBottom}, {"left", workbenchenums.InspectorDirLeft},
 		} {
 			path := fmt.Sprintf("%s.%s.%s", key, bp.key, dir.key)
 			out = append(out, inspectorSubInput{
-				Path: path, Label: bp.label + dir.label, Value: propString(props, path), Placeholder: "0px",
+				Path: path, Label: tr(bp.labelKey) + tr(dir.labelKey), Value: propString(props, path), Placeholder: "0px",
 			})
 		}
 	}
@@ -185,13 +195,14 @@ func spacingInputs(props map[string]any, key string) []inspectorSubInput {
 }
 
 // responsiveTextInputs 三端文本子输入（字号/行高等）。
-func responsiveTextInputs(props map[string]any, key string) []inspectorSubInput {
+func responsiveTextInputs(props map[string]any, key string, tr func(key string) string) []inspectorSubInput {
 	out := make([]inspectorSubInput, 0, 3)
-	for _, bp := range []struct{ key, label string }{
-		{"desktop", "桌面"}, {"tablet", "平板"}, {"mobile", "手机"},
+	for _, bp := range []struct{ key, labelKey string }{
+		{"desktop", workbenchenums.InspectorBpDesktop}, {"tablet", workbenchenums.InspectorBpTablet},
+		{"mobile", workbenchenums.InspectorBpMobile},
 	} {
 		path := key + "." + bp.key
-		out = append(out, inspectorSubInput{Path: path, Label: bp.label, Value: propString(props, path)})
+		out = append(out, inspectorSubInput{Path: path, Label: tr(bp.labelKey), Value: propString(props, path)})
 	}
 	return out
 }

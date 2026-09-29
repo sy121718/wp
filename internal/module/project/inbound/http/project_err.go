@@ -136,6 +136,9 @@ var projectPageErrKeys = []string{
 	projectenums.ErrGSCVerificationInvalid,
 	projectenums.ErrNotFoundHTMLTooLong,
 	projectenums.ErrLangURLModeInvalid,
+	// 站点运费规则的两个字段（单位元的表单值非法：负数 / 非数字 / 超上限）。
+	projectenums.ErrShippingBaseFeeInvalid,
+	projectenums.ErrShippingFreeThresholdInvalid,
 }
 
 // projectErrTexts ?err= 可以原样渲染的受控文案（**当前语言**的译文）。

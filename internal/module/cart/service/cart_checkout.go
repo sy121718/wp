@@ -71,6 +71,19 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 	}
 
 	now := time.Now()
+	// 运费：取值链（站点基础运费 → 满额免运费门槛 → 会员 free_shipping）全在
+	// shippingTotalOf 一处，这里只准备它的两个输入 —— 站点规则（服务端读，客户端不可控）
+	// 与商品小计（服务端按商品域真源现算，只用于判门槛）。**只影响运费**：
+	// 商品小计由订单域在建单时再算一遍并落快照，本函数碰不到它。
+	// 放在建单之前：金额必须在建单那一刻定下来，事后再改运费就要动已落库的订单。
+	policy := s.shippingPolicyOf(ctx, projectID)
+	subtotal := int64(0)
+	if policy.BaseFeeCents > 0 && policy.FreeThresholdCents > 0 {
+		// 只有「要收运费**且**启用了门槛」时小计才有用：不收运费时 0 就是最终答案，
+		// 没门槛时小计没有判定价值 —— 少一次商品域往返，而访客在等这一次往返。
+		subtotal = s.cartSubtotalOf(ctx, projectID, lines)
+	}
+	shippingTotal := s.shippingTotalOf(ctx, projectID, req.UserID, subtotal, policy)
 	created, err := s.orders.CreateOrder(ctx, &ordercontract.CreateOrderReq{
 		ProjectID:     projectID,
 		CustomerEmail: email,
@@ -79,6 +92,7 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 		Items:         items,
 		Shipping:      shipping,
 		Billing:       billingOrShipping(req.Billing, shipping),
+		ShippingTotal: shippingTotal,
 		// 支付方式由通道自己报：结算流程不认识「paypal」这个词，
 		// 只认识「当前装着哪个通道」。
 		PaymentMethod:      s.pay.Method(),

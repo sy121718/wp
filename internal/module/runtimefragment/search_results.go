@@ -32,6 +32,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
+	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
@@ -111,11 +112,11 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 	view := searchResultsView{}
 	if query == "" {
 		// 空关键词不是错误：搜索框还没输入就触发了请求，提示一句即可。
-		view.HasMessage, view.Message = true, r.tr("site.fragment.search.empty_query", "请输入搜索关键词")
+		view.HasMessage, view.Message = true, r.tr(rfenums.SearchEmptyQuery, "请输入搜索关键词")
 		return templates.RenderFragment("search_results", view)
 	}
 	if contentSearchProvider == nil && productSearchProvider == nil {
-		view.HasMessage, view.Message = true, r.tr("site.fragment.search.degraded", "搜索功能暂未接入，请稍后再试")
+		view.HasMessage, view.Message = true, r.tr(rfenums.SearchDegraded, "搜索功能暂未接入，请稍后再试")
 		return templates.RenderFragment("search_results", view)
 	}
 	projectID := strings.TrimSpace(r.Params[searchParamProjectID])
@@ -142,7 +143,7 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 	view.HasProducts = len(view.ProductHits) > 0
 	if !view.HasContent && !view.HasProducts {
 		view.HasMessage = true
-		view.Message = fmt.Sprintf(r.tr("site.fragment.search.no_results", "没有找到与「%s」相关的内容"), query)
+		view.Message = fmt.Sprintf(r.tr(rfenums.SearchNoResults, "没有找到与「%s」相关的内容"), query)
 	}
 	return templates.RenderFragment("search_results", view)
 }

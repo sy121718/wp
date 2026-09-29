@@ -31,13 +31,13 @@ func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomatio
 	var raw map[string]any
 	if len(req.Definition) > 0 {
 		if uerr := json.Unmarshal(req.Definition, &raw); uerr != nil {
-			return nil, errors.New(mailenums.ErrAutomationGraphInvalid + ": " + uerr.Error())
+			return nil, graphInvalidRequestError(uerr.Error())
 		}
 	}
 	// 保存时校验：指向不存在的节点 / 有环 / 不可达，都在这里被拒绝（见 graph 文件头说明）。
 	def, err := ParseDefinition(raw)
 	if err != nil {
-		return nil, errors.New(mailenums.ErrAutomationGraphInvalid + ": " + err.Error())
+		return nil, graphInvalidError(err)
 	}
 	norm, merr := json.Marshal(def)
 	if merr != nil {
@@ -115,7 +115,7 @@ func (s *Service) SaveAutomationLayout(ctx context.Context, req *maildto.SaveAut
 	}
 	def, derr := ParseDefinition(row.Definition)
 	if derr != nil {
-		return errors.New(mailenums.ErrAutomationGraphInvalid + ": " + derr.Error())
+		return graphInvalidError(derr)
 	}
 	changed := false
 	for i := range def.Nodes {
@@ -201,7 +201,7 @@ func (s *Service) SetAutomationStatus(ctx context.Context, req *maildto.SetAutom
 		b, _ := json.Marshal(row.Definition)
 		_ = json.Unmarshal(b, &raw)
 		if _, verr := ParseDefinition(raw); verr != nil {
-			return errors.New(mailenums.ErrAutomationGraphInvalid + ": " + verr.Error())
+			return graphInvalidError(verr)
 		}
 	}
 	return s.m.UpdateAutomationFields(ctx, req.ID, map[string]any{

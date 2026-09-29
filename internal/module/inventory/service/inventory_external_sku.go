@@ -26,6 +26,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/utils"
 )
 
@@ -198,7 +199,8 @@ func (s *Service) assertExternalSKUProductScope(ctx context.Context, projectID, 
 		return err
 	}
 	if owner != "" {
-		return fmt.Errorf("%s：该外部编码在本仓已属于商品 %s", inventoryenums.ErrExternalSKUProductConflict, owner)
+		return fmt.Errorf("%s：%s", inventoryenums.ErrExternalSKUProductConflict,
+			i18n.ErrorDetail(inventoryenums.DetailExternalSKUOwner, "name", owner))
 	}
 	return nil
 }

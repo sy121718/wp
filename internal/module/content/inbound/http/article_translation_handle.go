@@ -68,13 +68,29 @@ func NewArticleTranslationHandle(contents contentcontract.ContentService) *artic
 // SetContentWriter 注入译文写入端口（装配期）。
 func (h *articleTranslationHandle) SetContentWriter(w *i18n.ContentWriter) { h.writer = w }
 
-// articleFieldLabel 字段的中文名（工作台展示用）。
-var articleFieldLabel = map[string]string{
-	"title":          "标题",
-	"body":           "正文",
-	"excerpt":        "摘要",
-	"seoTitle":       "SEO 标题",
-	"seoDescription": "SEO 描述",
+// articleFieldLabel 字段的展示名（工作台用）：字段名 → {i18n key, 中文兜底}。
+var articleFieldLabel = map[string]articleTranslationText{
+	"title":          {"admin.article.translations.field.title", "标题"},
+	"body":           {"admin.article.translations.field.body", "正文"},
+	"excerpt":        {"admin.article.translations.field.excerpt", "摘要"},
+	"seoTitle":       {"admin.article.translations.field.seoTitle", "SEO 标题"},
+	"seoDescription": {"admin.article.translations.field.seoDescription", "SEO 描述"},
+}
+
+// articleTranslationText 一条待取词文案（key + 中文兜底）。
+type articleTranslationText struct{ Key, Fallback string }
+
+// articleTranslationTextField 字段展示名 → 当前语言文案（未登记字段原样回显字段名，便于排查）。
+func articleTranslationTextField(tr func(key, fallback string) string, field string) string {
+	if item, ok := articleFieldLabel[field]; ok {
+		return tr(item.Key, item.Fallback)
+	}
+	return field
+}
+
+// articleTranslationTextOf 本页文案的当前语言文本（key 直接给，兜底在下方 map 里）。
+func articleTranslationTextOf(c *gin.Context, key, fallback string) string {
+	return shell.TranslateFor(c)(key, fallback)
 }
 
 // ArticleTranslations GET /admin/articles/translations。
@@ -84,9 +100,11 @@ func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
 		n, _ := strconv.Atoi(strings.TrimSpace(c.Query("n")))
 		data.Saved = true
 		if n > 0 {
-			data.SavedNote = "已保存 " + strconv.Itoa(n) + " 条译文（下次构建生效）。"
+			data.SavedNote = i18n.FillTranslate(shell.TranslateFor(c),
+				"admin.article.translations.saved", "已保存 {count} 条译文（下次构建生效）。",
+				map[string]string{"count": strconv.Itoa(n)})
 		} else {
-			data.SavedNote = "没有需要写入的变化。"
+			data.SavedNote = articleTranslationTextOf(c, "admin.article.translations.savedNone", "没有需要写入的变化。")
 		}
 	}
 	c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
@@ -102,7 +120,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	data := h.build(c, lang, projectID, keyword)
 	// 保存校验必须使用提交时的同一页，否则第二页的行会被误判为原文已变化。
 	if page != data.Page || c.PostForm("limit") != strconv.Itoa(data.Limit) {
-		data.Errors = []string{"列表页码已变化，请刷新后重试"}
+		data.Errors = []string{articleTranslationTextOf(c, "admin.article.translations.err.pageChanged", "列表页码已变化，请刷新后重试")}
 		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
@@ -111,12 +129,12 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	hashes := c.PostFormArray("rowHash")
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
-		data.Errors = []string{"提交的行数不一致，请刷新后重试"}
+		data.Errors = []string{articleTranslationTextOf(c, "admin.article.translations.err.rowCountMismatch", "提交的行数不一致，请刷新后重试")}
 		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if h.writer == nil {
-		data.Errors = []string{"译文存储不可用"}
+		data.Errors = []string{articleTranslationTextOf(c, "admin.article.translations.err.storageUnavailable", "译文存储不可用")}
 		c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
@@ -130,7 +148,9 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 		contextName := strings.TrimSpace(contexts[i])
 		source, ok := data.sourceOf(contextName, hashes[i])
 		if !ok {
-			rowErrors = append(rowErrors, contextName+"：原文已变化，请刷新后重试")
+			rowErrors = append(rowErrors, i18n.FillTranslate(shell.TranslateFor(c),
+				"admin.article.translations.err.sourceChanged", "{context}：原文已变化，请刷新后重试",
+				map[string]string{"context": contextName}))
 			continue
 		}
 		target := strings.TrimSpace(targets[i])
@@ -143,7 +163,9 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 		}
 		queued[key] = true
 		if verr := validateArticleTarget(contextName, source, target); verr != "" {
-			rowErrors = append(rowErrors, contextName+"："+verr)
+			// verr 是**词条 key**：直接拼到页面上会显示裸 key，必须取词（兜底在下方那句中文里）。
+			rowErrors = append(rowErrors, i18n.FillTranslate(shell.TranslateFor(c), verr, articleTranslationFallbacks[verr],
+				map[string]string{"context": contextName}))
 			continue
 		}
 		items = append(items, i18n.ContentWriteItem{
@@ -192,7 +214,9 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 				With("user_id", shell.CurrentUserID(c)).
 				Error(uerr, "写入文章译文失败")
 			// 这一处已记过带 lang 的日志：文案出口用不记日志的版本，避免同一错误记两条。
-			data.Errors = []string{"保存失败：" + articleFacingOrInternal(c, uerr)}
+			data.Errors = []string{i18n.FillTranslate(shell.TranslateFor(c),
+				"admin.article.translations.err.saveFailed", "保存失败：{detail}",
+				map[string]string{"detail": articleFacingOrInternal(c, uerr)})}
 			c.HTML(http.StatusOK, "admin/content/article_translations.html", shell.Prepare(c, data.templateMap()))
 			return
 		}
@@ -248,17 +272,25 @@ func (d *articleTranslationsData) sourceOf(contextName, hash string) (articleTra
 	return articleTranslationRow{}, false
 }
 
+// articleTranslationFallbacks 校验类文案 key → 中文兜底（写成一张表而不是散在 return 里：
+// 取词点要拿同一个兜底，两处各写一份就会「词条改了、兜底没改」）。
+var articleTranslationFallbacks = map[string]string{
+	"admin.article.translations.err.contextInvalid":  "语境非法：不是文章的可翻译字段",
+	"admin.article.translations.err.notTranslatable": "原文不参与翻译（空串、纯数字或纯符号）",
+	"admin.article.translations.err.richMismatch":    "正文译文的形态与原文不一致：原文含 HTML 标签时译文也必须含标签",
+}
+
 // validateArticleTarget 校验一条文章译文的可写性（与构建期同源）。
 func validateArticleTarget(contextName string, source articleTranslationRow, target string) string {
 	entityType, field, ok := i18n.ParseContentContext(contextName)
 	if !ok || !contentcontract.IsTranslatableField(entityType, field) {
-		return "语境非法：不是文章的可翻译字段"
+		return "admin.article.translations.err.contextInvalid"
 	}
 	if !i18n.ShouldTranslateContent(source.Source) {
-		return "原文不参与翻译（空串、纯数字或纯符号）"
+		return "admin.article.translations.err.notTranslatable"
 	}
 	if source.Rich && hasMarkup(source.Source) != hasMarkup(target) {
-		return "正文译文的形态与原文不一致：原文含 HTML 标签时译文也必须含标签"
+		return "admin.article.translations.err.richMismatch"
 	}
 	return ""
 }
@@ -299,7 +331,7 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 		page = 1
 	}
 	data := &articleTranslationsData{
-		Title: "文章翻译", Menu: "article-translations", Lang: lang,
+		Title: "admin.article.translations.heading", Menu: "article-translations", Lang: lang,
 		Keyword: keyword, Page: page, Limit: limit, ProjectID: projectID,
 		Groups: []articleTranslationGroup{},
 	}
@@ -310,13 +342,15 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 		return data
 	}
 	if h.contents == nil {
-		data.Errors = []string{"内容模块未装配"}
+		data.Errors = []string{articleTranslationTextOf(c, "admin.article.translations.err.depsMissing", "内容模块未装配")}
 		return data
 	}
 	filter := &contentdto.ListReq{EntityType: "article", Keyword: keyword}
 	total, err := h.contents.Count(ctx, filter)
 	if err != nil {
-		data.Errors = []string{"读取文章总数失败：" + articleFacingError(c, err)}
+		data.Errors = []string{i18n.FillTranslate(shell.TranslateFor(c),
+			"admin.article.translations.err.countFailed", "读取文章总数失败：{detail}",
+			map[string]string{"detail": articleFacingError(c, err)})}
 		return data
 	}
 	data.HasData = total > 0
@@ -324,7 +358,9 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 		// 空匹配与真空数据不同：额外计数只在筛选零结果时执行。
 		unfiltered, countErr := h.contents.Count(ctx, &contentdto.ListReq{EntityType: "article"})
 		if countErr != nil {
-			data.Errors = []string{"读取文章总数失败：" + articleFacingError(c, countErr)}
+			data.Errors = []string{i18n.FillTranslate(shell.TranslateFor(c),
+				"admin.article.translations.err.countFailed", "读取文章总数失败：{detail}",
+				map[string]string{"detail": articleFacingError(c, countErr)})}
 			return data
 		}
 		data.HasData = unfiltered > 0
@@ -335,7 +371,9 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 	list, err := h.contents.List(ctx, filter)
 	if err != nil {
 		// 形态③（模板数据 Errors）：err.Error() 直接拼进来会把 PG 原文摆到页面上。
-		data.Errors = []string{"读取文章列表失败：" + articleFacingError(c, err)}
+		data.Errors = []string{i18n.FillTranslate(shell.TranslateFor(c),
+			"admin.article.translations.err.listFailed", "读取文章列表失败：{detail}",
+			map[string]string{"detail": articleFacingError(c, err)})}
 		return data
 	}
 	data.Pagination = shell.BuildPagination(total, page, limit,
@@ -371,7 +409,7 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 				groupIdx: len(groups), rowIdx: len(group.Rows), hash: h, context: contextName,
 			})
 			group.Rows = append(group.Rows, articleTranslationRow{
-				Context: contextName, Field: f, FieldLabel: articleFieldLabel[f],
+				Context: contextName, Field: f, FieldLabel: articleTranslationTextField(shell.TranslateFor(c), f),
 				Source: src, SourceHash: h, Rich: f == "body",
 			})
 		}

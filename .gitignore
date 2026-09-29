@@ -53,3 +53,6 @@ public/a/
 
 # 数据库备份与原型稿（本地参考，不入库）
 public/backup/
+
+# DSH 技能缓存（本机状态，不入库）
+.dsh-mattskillsdeck-cache/

@@ -36,13 +36,12 @@ import (
 
 // 页面标题与统一提示（沿用原 i18n 词条 key，词条缺失时前端回退中文注释值）。
 const (
-	pagesMsgAdministratorsTitle  = "MsgAdministratorsTitle"  // 管理员
-	pagesMsgRolesTitle           = "MsgRolesTitle"           // 角色管理
-	pagesMsgRolePermissionsTitle = "MsgRolePermissionsTitle" // 角色权限分配
-	pagesMsgMenusTitle           = "MsgMenusTitle"           // 菜单管理
-	pagesMsgPermissionsTitle     = "MsgPermissionsTitle"     // 权限资源
-	pagesMsgDepartmentsTitle     = "MsgDepartmentsTitle"     // 部门管理
-	pagesMsgDatarulesTitle       = "MsgDatarulesTitle"       // 数据权限
+	pagesMsgAdministratorsTitle = "MsgAdministratorsTitle" // 管理员
+	pagesMsgRolesTitle          = "MsgRolesTitle"          // 角色管理
+	pagesMsgMenusTitle          = "MsgMenusTitle"          // 菜单管理
+	pagesMsgPermissionsTitle    = "MsgPermissionsTitle"    // 权限资源
+	pagesMsgDepartmentsTitle    = "MsgDepartmentsTitle"    // 部门管理
+	pagesMsgDatarulesTitle      = "MsgDatarulesTitle"      // 数据权限
 )
 
 // AdminPagesHandle 六领域管理页处理器。
@@ -326,7 +325,13 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 // 落点说明：菜单管理（/admin/menus）管菜单**本身**的增删改，角色管理（/admin/roles）管角色的
 // 元信息，两者都不负责「这个角色能用哪些菜单与按钮」。此前 /api/role/menu/list 与
 // /api/role/menu/save 只有服务端实现（含权限点 seed 与超管保护），**没有任何界面调用方** ——
-// 角色分权这件事实际上只能靠直接改库完成。这一页就是它的落点。
+// 角色分权这件事实际上只能靠直接改库完成。这个抽屉就是它的落点。
+//
+// 形态：角色列表行的「权限分配」按钮按需拉片段（data-drawer-url → RolePermissionsDrawer），
+// 保存回同页（RolePermissionsSave）。它曾经是一个独立页面，改成抽屉的理由与两条硬约束
+// 写在 internal/templates/admin/system/role_permissions.html 的文件头 —— 其中一条是
+// 片段里不能出现 <script>（drawer.js 的 fragmentRoot 校验），所以父子联动住在
+// internal/templates/static/js/ui/perm-tree.js。
 
 // permTreeRow 权限分配树的展平行。
 //
@@ -357,54 +362,69 @@ const permRowIndentStep = 20
 //
 // 展平保持 DFS 顺序：页面的折叠与搜索都靠「同一父级的子树在数组里连续」这一性质
 // 实现（隐藏 depth 更大的连续区间），一旦顺序被打乱，折叠就会藏错行。
-func flattenPermissionTree(nodes []admindto.MenuTreeNode, depth int, checked map[uint64]struct{}, out *[]permTreeRow) {
+//
+// tr 从调用点传进来（取词只在 handler 层做）：类型标签是模板直接渲染的文本，
+// 不经过 pkg/response 的 translate。
+func flattenPermissionTree(tr adminLabelTranslate, nodes []admindto.MenuTreeNode, depth int, checked map[uint64]struct{}, out *[]permTreeRow) {
 	for _, n := range nodes {
 		_, ok := checked[n.ID]
 		*out = append(*out, permTreeRow{
-			ID: n.ID, Title: n.Title, Type: n.Type, TypeLabel: adminMenuTypeLabel(n.Type),
+			ID: n.ID, Title: n.Title, Type: n.Type, TypeLabel: adminMenuTypeLabel(tr, n.Type),
 			Depth: depth, PadLeft: (depth-1)*permRowIndentStep + 10,
 			ParentID: n.ParentID, PermissionCode: n.PermissionCode,
 			Status: n.Status, Checked: ok, HasChildren: len(n.Children) > 0,
 		})
 		if len(n.Children) > 0 {
-			flattenPermissionTree(n.Children, depth+1, checked, out)
+			flattenPermissionTree(tr, n.Children, depth+1, checked, out)
 		}
 	}
 }
 
-// RolePermissionsPage 角色权限分配页（GET /admin/roles/permissions?role_id=N）。
+// rolePermissionsDrawerData 抽屉的数据装配：授权树 + 勾选集合 → 深度优先展平行。
 //
-// 为什么是独立页面而不是角色列表行里的抽屉：要勾的是「7 目录 + 45 菜单 + 65 按钮」这个量级
-// （还会随功能增长），抽屉放不下层级 + 搜索 + 折叠，窄屏更是没法用。
-func (h *AdminPagesHandle) RolePermissionsPage(c *gin.Context) {
-	roleID := shell.ParseUint(c.Query("role_id"))
-	if roleID == 0 {
-		// 没有 role_id 就没有目标页（权限树只属于某一个角色），回角色列表并说明原因。
-		adminPageParamFail(c, "/admin/roles")
-		return
-	}
+// checkedOverride 非 nil 时用它代替库里的勾选集合。这是保存失败路径的关键：树要重取
+// （菜单结构可能刚被别处改过），但**勾选必须用本次提交的值** —— 用库里的值会把用户
+// 刚勾的那一屏整块回退成保存前的旧状态，而他正需要在这里改掉那个错误重试。
+func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64, checkedOverride []uint64) (gin.H, error) {
 	tree, err := h.roles.RolePermissionTree(c.Request.Context(), roleID)
 	if err != nil {
-		// 角色不存在（或树查询失败）时不能停在这一页：原先写 500 + 裸 key，用户看到的是一张
-		// 没有页壳的纯文本页 —— 而这个 URL 恰恰是「保存失败」的回跳目标（见 RolePermissionsSave），
-		// 于是「角色不存在」会表现成一屏错误页而不是一句提示。回角色列表，原因经 ?err= 回带。
-		adminPageWriteFail(c, "/admin/roles", err)
-		return
+		return nil, err
 	}
-	checked := make(map[uint64]struct{}, len(tree.MenuIDs))
-	for _, id := range tree.MenuIDs {
+	checkedIDs := tree.MenuIDs
+	if checkedOverride != nil {
+		checkedIDs = checkedOverride
+	}
+	checked := make(map[uint64]struct{}, len(checkedIDs))
+	for _, id := range checkedIDs {
 		checked[id] = struct{}{}
 	}
 	rows := make([]permTreeRow, 0, len(checked)+64)
-	flattenPermissionTree(tree.Tree, 1, checked, &rows)
+	flattenPermissionTree(shell.TranslateFor(c), tree.Tree, 1, checked, &rows)
+	return gin.H{"Role": tree, "Rows": rows}, nil
+}
 
-	c.HTML(http.StatusOK, "admin/system/role_permissions", shell.Prepare(c, gin.H{
-		"title": pagesMsgRolePermissionsTitle,
-		"menu":  "roles",
-		"Role":  tree,
-		"Rows":  rows,
-		"Err":   adminPageErrText(c, c.Query("err")),
-	}))
+// RolePermissionsDrawer 角色权限分配的抽屉片段（GET /admin/roles/permissions/drawer?role_id=N）。
+//
+// 失败一律只给状态码、不给片段内容：drawer.js 对非 200（或形状不合）的响应会显示
+// 「编辑表单加载失败，请重试」并把重试按钮聚焦 —— 这比服务端拼一个「半个片段」诚实，
+// 因为缺 <form> 的片段会被它的 fragmentRoot 校验直接判非法，用户看到的还是同一个失败界面。
+// 没有 role_id 就没有目标树（权限树只属于某一个角色），回角色列表并说明原因。
+func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	roleID := shell.ParseUint(c.Query("role_id"))
+	if roleID == 0 {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	data, err := h.rolePermissionsDrawerData(c, roleID, nil)
+	if err != nil {
+		// 角色不存在或树查询失败：记一条带 user_id 的结构化日志（原文只进日志），
+		// 响应里不出现任何内部细节。
+		adminErrParam(c, err)
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/system/role_permissions.html", shell.Prepare(c, data))
 }
 
 // RolePermissionsSave 保存角色权限（POST /admin/roles/permissions/save）。
@@ -416,18 +436,17 @@ func (h *AdminPagesHandle) RolePermissionsPage(c *gin.Context) {
 // 见 RoleMenuSave）。menu_ids 由 service 侧过白名单（不在 sys_menus 里的 id 直接丢弃），
 // 所以这里不做数量上限——请求方塞再多 id 也只经哈希查表，不进 SQL。
 //
+// 两条出口（与其它抽屉写表单同一套分档，见 templates/CLAUDE.md「写表单失败时原地留住输入」）：
+//   · htmx 失败 → 200 + 片段自身（错误槽 + 用**本次提交的勾选**渲回的树），输入不丢；
+//   · htmx 成功 → 200 + 成功态片段（就地回执 + 「关闭」），不刷新整页：
+//     列表页的角色行没有任何一列体现权限集合，没有可刷的新数据；
+//   · 原生成功 → 303 回角色列表；原生失败 → 303 + ?err= 回角色列表。
+//
 // 不带 ?done= 回执：/admin/* 的 done 通道是受控文案白名单（adminDoneTexts），
 // 里面只有批量结论与模块业务文案，成功文案被刻意排除（见 AdminFacingMessages 的注释）。
-// 不为这一页去扩张那份白名单 —— 返回分配页后按库中真实策略重新渲染出的勾选状态，
-// 比一句「已保存」更硬的确认。
+// 抽屉里那句回执走模板自身的成功态（admin.roles.perm.saved），不占用列表页的通道。
 func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 	roleID := shell.ParseUint(c.PostForm("role_id"))
-	if roleID == 0 {
-		// 缺 role_id：没有可回的分配页（它由 role_id 决定），回角色列表并说明原因。
-		adminPageParamFail(c, "/admin/roles")
-		return
-	}
-
 	raw := c.PostFormArray("menu_ids")
 	menuIDs := make([]uint64, 0, len(raw))
 	for _, v := range raw {
@@ -435,19 +454,38 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 			menuIDs = append(menuIDs, id)
 		}
 	}
+	if roleID == 0 {
+		// 缺 role_id：没有可回的抽屉（片段由 role_id 决定），回角色列表并说明原因。
+		adminDrawerRedirect(c, adminPageErrURL("/admin/roles", response.TranslateMessage(c, adminenums.MsgBadRequest)))
+		return
+	}
 
 	if _, err := h.roles.RoleMenuSave(c.Request.Context(), &admindto.RoleMenuSaveReq{
 		RoleID:     roleID,
 		MenuIDs:    menuIDs,
 		OperatorID: shell.CurrentUserID(c),
 	}); err != nil {
-		// 有 role_id 就回**分配页**（那才是用户刚才在的地方：勾选状态与提示都在那里），
-		// 不是回列表页 —— 回列表会丢掉他刚勾的那一屏上下文。
-		adminPageWriteFail(c, fmt.Sprintf("/admin/roles/permissions?role_id=%d", roleID), err)
+		msg := adminErrParam(c, err)
+		data, treeErr := h.rolePermissionsDrawerData(c, roleID, menuIDs)
+		if !adminDrawerHX(c) || treeErr != nil {
+			// 原生提交（禁用 JS）：页面里没有就地放错误的位置，回列表并带 ?err=。
+			// htmx 但树也取不回来时走同一出口 —— 此时只剩空树可渲，片段会退化成
+			// 「没有可分配的菜单」的空态，那比一句通用错误更误导（像权限被清空了）。
+			adminDrawerRedirect(c, adminPageErrURL("/admin/roles", msg))
+			return
+		}
+		data["Err"] = msg
+		c.HTML(http.StatusOK, "admin/system/role_permissions.html", shell.Prepare(c, data))
 		return
 	}
 
-	c.Redirect(http.StatusSeeOther, fmt.Sprintf("/admin/roles/permissions?role_id=%d", roleID))
+	if adminDrawerHX(c) {
+		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
+		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
+		c.HTML(http.StatusOK, "admin/system/role_permissions.html", shell.Prepare(c, gin.H{"PermSaved": true}))
+		return
+	}
+	c.Redirect(http.StatusSeeOther, "/admin/roles")
 }
 
 // RolesCreate 新建角色（POST /admin/roles/create）。
@@ -719,35 +757,36 @@ type adminMenuRow struct {
 }
 
 // flattenAdminMenuTree 深度优先展平菜单树为带缩进的行（Indent 控制前端层级展示）。
-func flattenAdminMenuTree(nodes []admindto.MenuTreeNode, depth int, out *[]adminMenuRow) {
+//
+// 注意：菜单管理页（menus.html）自己按 m.Type 取词渲染徽章，本函数目前**没有调用方**。
+// 保留并按同一形态取词，是为了它将来接上模板时不会退回中文硬编码。
+func flattenAdminMenuTree(tr adminLabelTranslate, nodes []admindto.MenuTreeNode, depth int, out *[]adminMenuRow) {
 	indent := strings.Repeat("　", (depth-1)*2)
 	for _, n := range nodes {
 		*out = append(*out, adminMenuRow{
-			ID: n.ID, Title: n.Title, Path: n.Path, Type: n.Type, TypeLabel: adminMenuTypeLabel(n.Type),
+			ID: n.ID, Title: n.Title, Path: n.Path, Type: n.Type, TypeLabel: adminMenuTypeLabel(tr, n.Type),
 			ParentID: n.ParentID, Status: n.Status, SortOrder: n.SortOrder,
 			Remark: n.Remark, Indent: indent, Icon: n.Icon,
 		})
 		if len(n.Children) > 0 {
-			flattenAdminMenuTree(n.Children, depth+1, out)
+			flattenAdminMenuTree(tr, n.Children, depth+1, out)
 		}
 	}
 }
 
-func adminMenuTypeLabel(t int) string {
-	switch t {
-	case 1:
-		return "目录"
-	case 2:
-		return "菜单"
-	case 3:
-		return "按钮"
-	case 4:
-		return "iframe"
-	case 5:
-		return "外链"
-	default:
-		return "未知"
+// adminLabelTranslate 展示层取词函数（与 shell.TranslateFor(c) 同形，可直接传它）。
+type adminLabelTranslate = func(key, fallback string) string
+
+// adminMenuTypeLabel 菜单类型 → 当前语言的展示名。
+//
+// 取值映射的真源在 adminenums.MenuTypeLabel（key 与后台模板的 tr("admin.menus.type.*")
+// 是同一批）；这里只负责取词。key 为空（iframe 这类技术名词）直接用兜底。
+func adminMenuTypeLabel(tr adminLabelTranslate, t int) string {
+	key, fallback := adminenums.MenuTypeLabel(t)
+	if tr == nil || strings.TrimSpace(key) == "" {
+		return fallback
 	}
+	return tr(key, fallback)
 }
 
 // MenusPage 菜单管理页（GET /admin/menus）。
@@ -1361,7 +1400,10 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		editURLs[idx] = "/admin/i18n/edit?" + query.Encode()
 	}
 	data := gin.H{
-		"title":        "文案词条",
+		// title 是 i18n **key**（不是中文）：shell.Prepare → injectI18n 会按当前语言翻译它。
+		// admin.i18n.title 是库内既有的词条（zh-CN「文案词条」/ 英文），所以这里复用它 ——
+		// 写中文原文会让英文后台的页面标题恒为中文（其它页面标题都已经是 enums key）。
+		"title":        "admin.i18n.title",
 		"Entries":      items,
 		"I18nEditURLs": editURLs,
 		"Keyword":      filter.Keyword,

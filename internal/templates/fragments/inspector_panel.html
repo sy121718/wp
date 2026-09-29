@@ -1,8 +1,9 @@
 {* fragments/inspector_panel.html — 检查器面板（HTMX 服务端渲染，docs/09 §3 打样）
    数据：NodeID / NodeType / Sections（分组 → 字段）
-   约定：控件带 data-wb-path（相对 props 的路径）与 data-wb-kind，客户端统一事件委托回写 AST。 *}
+   约定：控件带 data-wb-path（相对 props 的路径）与 data-wb-kind，客户端统一事件委托回写 AST。
+   取词：本片段不经 shell.Prepare，t 由调用点单独注入（见 inspector_handle.go 的渲染数据）。 *}
 {{if .NodeID == ""}}
-<p class="wb-empty">在画布或大纲树中选择组件</p>
+<p class="wb-empty">{{ .["t"]("workbench.ui.inspector.empty", "在画布或大纲树中选择组件") }}</p>
 {{else}}
 {{range _, s := .Sections}}
 <details class="wb-inspector-group" data-wb-section="{{s.Key}}"{{if s.Open}} open{{end}}>
@@ -19,7 +20,7 @@
     {{else if f.UI == "select"}}
     <div class="wb-field wb-field-compact"><label>{{f.Label}}</label>
         <select data-wb-path="{{f.Key}}" data-wb-kind="select" aria-label="{{f.Label}}">
-            {{if f.Value == ""}}<option value="" selected>（默认）</option>{{end}}
+            {{if f.Value == ""}}<option value="" selected>{{ .["t"]("workbench.ui.inspector.defaultOption", "（默认）") }}</option>{{end}}
             {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
         </select>
         {{if f.NavNewRef != ""}}
@@ -60,20 +61,20 @@
         <div class="wb-range-rows">
             {{range _, r := f.Rows}}
             <div class="wb-range-row">
-                <input type="text" data-wb-range="min" value="{{r.Min}}" placeholder="起">
+                <input type="text" data-wb-range="min" value="{{r.Min}}" placeholder="{{ .["t"]("workbench.ui.inspector.rangeMin", "起") }}">
                 <span class="wb-range-sep">—</span>
-                <input type="text" data-wb-range="max" value="{{r.Max}}" placeholder="止（留空 = 以上）">
+                <input type="text" data-wb-range="max" value="{{r.Max}}" placeholder="{{ .["t"]("workbench.ui.inspector.rangeMax", "止（留空 = 以上）") }}">
             </div>
             {{end}}
         </div>
-        <p class="wb-hint">每行一个档位；上限留空表示「以上」（如 799+）</p>
+        <p class="wb-hint">{{ .["t"]("workbench.ui.inspector.rangeHint", "每行一个档位；上限留空表示「以上」（如 799+）") }}</p>
     </div>
     {{else if f.UI == "textarea"}}
     <div class="wb-field"><label>{{f.Label}}</label><textarea rows="4" data-wb-path="{{f.Key}}" data-wb-kind="text">{{f.Value}}</textarea></div>
     {{else if f.UI == "cssdecls"}}
     <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="cssdecls" placeholder="{{f.Placeholder}}">{{f.Value}}</textarea></div>
     {{else if f.UI == "mediaList"}}
-    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="mediaList" placeholder="每行一个图片地址">{{f.Value}}</textarea></div>
+    <div class="wb-field"><label>{{f.Label}}</label><textarea rows="3" data-wb-path="{{f.Key}}" data-wb-kind="mediaList" placeholder="{{ .["t"]("workbench.ui.inspector.mediaListPlaceholder", "每行一个图片地址") }}">{{f.Value}}</textarea></div>
     {{else if f.UI == "number"}}
     <div class="wb-field wb-field-compact"><label>{{f.Label}}</label><input type="number" data-wb-path="{{f.Key}}" data-wb-kind="number" value="{{f.Value}}"{{if f.Min}} min="{{f.Min}}"{{end}}{{if f.Max}} max="{{f.Max}}"{{end}} step="{{f.Step}}"></div>
     {{else if f.UI == "color"}}
@@ -81,7 +82,7 @@
     {{else if f.UI == "media"}}
     <div class="wb-field wb-field-media"><label>{{f.Label}}</label>
         <input type="text" data-wb-path="{{f.Key}}" data-wb-kind="media" value="{{f.Value}}">
-        <button type="button" class="wb-btn wb-btn-sm wb-btn-secondary" data-wb-media-pick="{{f.Key}}">选择</button>
+        <button type="button" class="wb-btn wb-btn-sm wb-btn-secondary" data-wb-media-pick="{{f.Key}}">{{ .["t"]("workbench.ui.inspector.pickMedia", "选择") }}</button>
     </div>
     {{else if f.UI == "spacing"}}
     <div class="wb-field wb-field-dims"><label>{{f.Label}}</label>

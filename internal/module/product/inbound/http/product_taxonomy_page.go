@@ -26,7 +26,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 // ProductCategoriesPage 分类管理页：工程切换 + 筛选栏 + 分类树 + 内联新建表单。
@@ -131,7 +133,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
 	data := gin.H{
-		"title":           "商品分类",
+		"title":           shell.TranslateFor(c)(productenums.ProductCategoriesTitle, "商品分类"),
 		"menu":            "product-categories",
 		"Projects":        projects,
 		"SelectedProject": selected,
@@ -186,9 +188,15 @@ func (h *productPageHandle) ProductCategoryChildren(c *gin.Context) {
 			return
 		}
 	}
+	// ChildPageLabel 是**整句**文案（词条 admin.product_categories.children.pageLabel，
+	// {page} 命名占位符）：原先由模板用「前缀 + 数字 + 后缀」两个词条拼空格，英文下必然
+	// 露馅（pageSuffix 的 en-US 曾是空串，而降级链把空串等同缺失 → 英文界面显示「Page 3 页」）。
 	data := gin.H{"Categories": categoryTreeRows(c, projectID, result.Items, nil, false), "SelectedProject": projectID,
-		"ParentID": parentID, "ChildPage": page, "ChildTotal": result.Total, "ChildSize": productSubListPageSize,
-		"PermSet": shell.Prepare(c, gin.H{})["PermSet"], "t": shell.TranslateFor(c), "csrf_token": shell.Prepare(c, gin.H{})["csrf_token"]}
+		"ParentID": parentID, "ChildPage": page, "ChildSize": productSubListPageSize,
+		"ChildPageLabel": i18n.FillTranslate(shell.TranslateFor(c),
+			productenums.ProductCategoriesChildrenPageLabel, "第 {page} 页", map[string]string{"page": strconv.Itoa(page)}),
+		"ChildTotal": result.Total,
+		"PermSet":    shell.Prepare(c, gin.H{})["PermSet"], "t": shell.TranslateFor(c), "csrf_token": shell.Prepare(c, gin.H{})["csrf_token"]}
 	c.HTML(http.StatusOK, "admin/product/product_category_children.html", data)
 }
 
@@ -389,7 +397,7 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 		})
 	}
 	data := gin.H{
-		"title":           "商品品牌",
+		"title":           shell.TranslateFor(c)(productenums.ProductBrandsTitle, "商品品牌"),
 		"menu":            "product-brands",
 		"Projects":        projects,
 		"SelectedProject": selected,
@@ -589,9 +597,9 @@ func checkedCategoryOptions(flat []*productdto.CategoryResp, checked []string) [
 }
 
 // primaryCategoryOptions 商品页的主分类下拉（含「不指定」空项）。
-func primaryCategoryOptions(flat []*productdto.CategoryResp, selected string) []gin.H {
+func primaryCategoryOptions(tr func(key, fallback string) string, flat []*productdto.CategoryResp, selected string) []gin.H {
 	out := make([]gin.H, 0, len(flat)+1)
-	out = append(out, gin.H{"ID": "", "Label": "（不指定主分类）", "Selected": selected == ""})
+	out = append(out, gin.H{"ID": "", "Label": tr(productenums.ProductsOptionNoPrimaryCategory, "（不指定主分类）"), "Selected": selected == ""})
 	for _, node := range flat {
 		out = append(out, gin.H{
 			"ID": node.ID, "Label": categoryLabel(node), "Selected": node.ID == selected,
@@ -621,9 +629,9 @@ func brandNameByID(brands []*productdto.BrandResp, id string) string {
 }
 
 // brandPickOptions 商品页的品牌下拉（含「不指定」空项）。
-func brandPickOptions(brands []*productdto.BrandResp, selected string) []gin.H {
+func brandPickOptions(tr func(key, fallback string) string, brands []*productdto.BrandResp, selected string) []gin.H {
 	out := make([]gin.H, 0, len(brands)+1)
-	out = append(out, gin.H{"ID": "", "Label": "（不指定品牌）", "Selected": selected == ""})
+	out = append(out, gin.H{"ID": "", "Label": tr(productenums.ProductsOptionNoBrand, "（不指定品牌）"), "Selected": selected == ""})
 	for _, b := range brands {
 		if b == nil {
 			continue

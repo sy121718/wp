@@ -75,6 +75,14 @@ const (
 	// 重试构建（POST /api/build/retry）
 	BuildRetry Perm = "build:retry"
 
+	// —— comment（2）——
+	// 评论审核列表（GET /api/comment/list）。评论的后台页 /admin/comments 也以它为可见性依据
+	// （菜单 permission_code 指向它）：看不到这一页的人多半也在审别人的评论。
+	CommentList Perm = "comment:list"
+	// 评论批量通过 / 驳回（POST /api/comment/review）。后台页的批量按钮经
+	// CasbinMiddlewareForPath 复用这一条（真源在此），不再另立一个页面专用权限点。
+	CommentReview Perm = "comment:review"
+
 	// —— content（6）——
 	// 查看内容集合元数据（GET /api/content/collections）
 	ContentCollections Perm = "content:collections"
@@ -299,6 +307,30 @@ const (
 	// 重新生成媒体变体（POST /api/media/variants/generate）
 	MediaVariantsGenerate Perm = "media:variants_generate"
 
+	// —— membership（11）——
+	// 会员归属列表（GET /api/membership/assign/list）
+	MembershipAssignList Perm = "membership:assign_list"
+	// 手工指定会员等级（POST /api/membership/assign/set）
+	MembershipAssignSet Perm = "membership:assign_set"
+	// 取消手工锁定（POST /api/membership/assign/unlock）
+	MembershipAssignUnlock Perm = "membership:assign_unlock"
+	// 保存等级权益（POST /api/membership/entitlement/save）
+	MembershipEntitlementSave Perm = "membership:entitlement_save"
+	// 重算会员归属（POST /api/membership/recalc）
+	MembershipRecalc Perm = "membership:recalc"
+	// 解析会员身份（GET /api/membership/resolve）
+	MembershipResolve Perm = "membership:resolve"
+	// 新建等级（POST /api/membership/tier/create）
+	MembershipTierCreate Perm = "membership:tier_create"
+	// 删除等级（POST /api/membership/tier/delete）
+	MembershipTierDelete Perm = "membership:tier_delete"
+	// 等级详情（GET /api/membership/tier/get）
+	MembershipTierGet Perm = "membership:tier_get"
+	// 等级列表（GET /api/membership/tier/list）
+	MembershipTierList Perm = "membership:tier_list"
+	// 更新等级（POST /api/membership/tier/update）
+	MembershipTierUpdate Perm = "membership:tier_update"
+
 	// —— menu（5）——
 	// 新建菜单（POST /api/menu/create）
 	MenuCreate Perm = "menu:create"
@@ -402,6 +434,12 @@ const (
 	PageRevisionList Perm = "page:revision_list"
 	// 回滚页面（POST /api/page/rollback）
 	PageRollback Perm = "page:rollback"
+	// 排定定时下线（POST /api/page/schedule/cancel）
+	PageScheduleCancel Perm = "page:schedule_cancel"
+	// 排定列表（GET /api/page/schedule/list）
+	PageScheduleList Perm = "page:schedule_list"
+	// 排定定时上线 / 下线（POST /api/page/schedule/set）
+	PageScheduleSet Perm = "page:schedule_set"
 	// SEO 合规巡检（GET /api/page/seo/patrol）
 	PageSEOPatrol Perm = "page:seo_patrol"
 	// 绑定系统页面（POST /api/page/site-slot/bind）
@@ -662,6 +700,10 @@ var specs = map[Perm]spec{
 	BuildQueue: {module: "build", name: "构建队列状态"},
 	BuildRetry: {module: "build", name: "重试构建"},
 
+	// —— comment ——
+	CommentList:   {module: "comment", name: "评论审核列表"},
+	CommentReview: {module: "comment", name: "评论批量审核"},
+
 	// —— content ——
 	ContentCollections: {module: "content", name: "查看内容集合元数据"},
 	ContentCreate:      {module: "content", name: "内容创建"},
@@ -780,6 +822,19 @@ var specs = map[Perm]spec{
 	MediaUpload:           {module: "media", name: "上传媒体"},
 	MediaVariantsGenerate: {module: "media", name: "重新生成媒体变体"},
 
+	// —— membership ——
+	MembershipAssignList:      {module: "membership", name: "会员归属列表"},
+	MembershipAssignSet:       {module: "membership", name: "手工指定会员等级"},
+	MembershipAssignUnlock:    {module: "membership", name: "取消手工锁定"},
+	MembershipEntitlementSave: {module: "membership", name: "保存等级权益"},
+	MembershipRecalc:          {module: "membership", name: "重算会员归属"},
+	MembershipResolve:         {module: "membership", name: "解析会员身份"},
+	MembershipTierCreate:      {module: "membership", name: "新建等级"},
+	MembershipTierDelete:      {module: "membership", name: "删除等级"},
+	MembershipTierGet:         {module: "membership", name: "等级详情"},
+	MembershipTierList:        {module: "membership", name: "等级列表"},
+	MembershipTierUpdate:      {module: "membership", name: "更新等级"},
+
 	// —— menu ——
 	MenuCreate: {module: "menu", name: "新建菜单"},
 	MenuDelete: {module: "menu", name: "删除菜单"},
@@ -835,6 +890,9 @@ var specs = map[Perm]spec{
 	PageRedirectView:     {module: "page", name: "重定向列表"},
 	PageRevisionList:     {module: "page", name: "修订记录"},
 	PageRollback:         {module: "page", name: "回滚页面"},
+	PageScheduleCancel:   {module: "page", name: "取消定时上下线"},
+	PageScheduleList:     {module: "page", name: "定时上下线列表"},
+	PageScheduleSet:      {module: "page", name: "排定定时上下线"},
 	PageSEOPatrol:        {module: "page", name: "SEO 合规巡检"},
 	PageSiteSlotBind:     {module: "page", name: "绑定系统页面"},
 	PageSiteSlotList:     {module: "page", name: "系统页面槽位列表"},

@@ -94,8 +94,11 @@ var MailFacingMessages = []string{
 }
 
 // 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。
+//
+// 三条**都是 i18n key**：service 发送前按请求语言取词（见 service/mail_account.go 的 TestSend），
+// 英文界面上点「测试发送」收到的该是英文邮件。中文兜底在 mail_ui_labels.go：
+// TestMailSubject / TestMailText 的兜底写在 TestSend 调用点，HTML 的兜底是 TestMailHTMLFallback。
 const (
 	TestMailSubject = "mail.test.mailSubject"
-	TestMailHTML    = `<div style="font-family:system-ui,sans-serif;line-height:1.6"><h2>邮件配置连通性测试</h2><p>如果你看到这封邮件，说明发信账号的配置可用：</p><ul><li>SMTP 连接与认证通过</li><li>中文主题编码正常</li><li>HTML 与纯文本正文正常</li></ul><p style="color:#888;font-size:13px">本邮件由后台「测试发送」触发。</p></div>`
 	TestMailText    = "mail.test.mailText"
 )

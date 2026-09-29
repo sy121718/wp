@@ -53,7 +53,7 @@ func (h *Handle) RedirectPage(c *gin.Context) {
 func (h *Handle) RedirectCreate(c *gin.Context) {
 	var req pagedto.RedirectCreateReq
 	if err := c.ShouldBind(&req); err != nil {
-		h.redirectCreateFailure(c, &req, "admin.redirect.err.invalid")
+		h.redirectCreateFailure(c, &req, pageenums.RedirectErrInvalid)
 		return
 	}
 	if _, err := h.svc.CreateRedirect(c.Request.Context(), &req); err != nil {
@@ -293,13 +293,13 @@ func redirectOkKey(code string) string {
 // 让页面去查一条可控 key（轻则显示怪文案，重则成为探测词条表的入口）。
 func redirectErrKeyFromCode(code string) string {
 	switch strings.TrimSpace(code) {
-	case "admin.redirect.err.occupied",
-		"admin.redirect.err.target_missing",
-		"admin.redirect.err.loop",
-		"admin.redirect.err.not_found",
-		"admin.redirect.err.unavailable",
-		"admin.redirect.err.invalid",
-		"admin.redirect.err.internal":
+	case pageenums.RedirectErrOccupied,
+		pageenums.RedirectErrTargetMissing,
+		pageenums.RedirectErrLoop,
+		pageenums.RedirectErrNotFound,
+		pageenums.RedirectErrUnavailable,
+		pageenums.RedirectErrInvalid,
+		pageenums.RedirectErrInternal:
 		return strings.TrimSpace(code)
 	default:
 		return ""
@@ -312,19 +312,19 @@ func redirectErrKey(err error) string {
 	case err == nil:
 		return ""
 	case errors.Is(err, pageservice.ErrRedirectOccupied), errors.Is(err, pageservice.ErrPathOccupied):
-		return "admin.redirect.err.occupied"
+		return pageenums.RedirectErrOccupied
 	case errors.Is(err, pageservice.ErrRedirectTargetMiss):
-		return "admin.redirect.err.target_missing"
+		return pageenums.RedirectErrTargetMissing
 	case errors.Is(err, pageservice.ErrRedirectLoop):
-		return "admin.redirect.err.loop"
+		return pageenums.RedirectErrLoop
 	case errors.Is(err, pageservice.ErrRedirectNotFound):
-		return "admin.redirect.err.not_found"
+		return pageenums.RedirectErrNotFound
 	case errors.Is(err, pageservice.ErrRedirectUnavailable):
-		return "admin.redirect.err.unavailable"
+		return pageenums.RedirectErrUnavailable
 	case errors.Is(err, pageservice.ErrInvalidParam), errors.Is(err, pageservice.ErrInvalidPath):
-		return "admin.redirect.err.invalid"
+		return pageenums.RedirectErrInvalid
 	default:
 		logger.Scene("page").Error(err, "重定向操作失败")
-		return "admin.redirect.err.internal"
+		return pageenums.RedirectErrInternal
 	}
 }

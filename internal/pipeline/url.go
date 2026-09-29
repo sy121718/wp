@@ -12,6 +12,8 @@ package pipeline
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"go_wp/pkg/pathkit"
@@ -52,4 +54,80 @@ func NormalizeURL(raw string) (string, error) {
 		}
 	}
 	return p, nil
+}
+
+// CleanSiteRel 站点内相对路径归一（访问面专用）：去掉首尾斜杠、Clean 后拒绝越界。
+//
+// 唯一实现。此前访问面（routers.cleanSiteRel）与守卫中间件各写一份 —— 两份
+// 分叉的后果不是「行为略有差异」，而是**守卫被绕过**：归一规则松掉一处
+// （少拒绝一种 `..` 写法、或不做 Clean），静态面把请求解析成受限页面的产物，
+// 而守卫按另一个路径判定为「没有守卫」，于是受限内容直接被直出。
+// routers 侧已改为委托本函数（routers/siteFileServeMiddleware）。
+func CleanSiteRel(raw string) (rel string, ok bool) {
+	rel = strings.Trim(raw, "/")
+	if rel == "" {
+		return "", true
+	}
+	clean := filepath.ToSlash(filepath.Clean(rel))
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+		return "", false
+	}
+	return clean, true
+}
+
+// ResolveActiveEntry 站点内相对路径 → 访问面**实际会直出**的激活条目名。
+//
+// 这是本任务的第一安全要点，也是本仓最容易分叉的一条映射：访问面既能用
+// `/about` 取到产物，也能用 `/about/index.html` 取到同一份产物。守卫若只认前者，
+// 一次 `GET /about/index.html` 就是一行就写完的绕过 —— 守卫判 `/about` 受限、
+// 而静态面对显式文件名走「产物内普通文件」分支原样直出受限内容。
+//
+// 两个分支与 routers.siteFileServeMiddleware 逐字对应（routers.activeEntryFile 已
+// 改为委托本函数，两侧不再各持一份规则）：
+//
+//	① URL 路径即条目名：<clean>/index.html 是常规文件 → 条目 = clean
+//	② 显式文件名退路：clean 以 /index.html 结尾、且其前缀是激活符号链接、
+//	   且链接目标里有 index.html → 条目 = 该前缀
+//
+// ② 在 ① 之后：页面 URL 真叫 /foo/index.html 时，① 会命中它自己的产物目录，
+// 那时它才是本次请求的答案（`foo` 是另一份页面）。
+//
+// 产物内其余文件（manifest.json 等）不在本函数的判定范围内 —— 它们不含秘密，
+// 且 guard.json / guard.html 由 AccessGuardMiddleware 单独拦截。将来产物若携带
+// 非公开文件，必须把这里扩展为「以受限条目为前缀的任何子路径」。
+func ResolveActiveEntry(root, rel string) (entry string, ok bool) {
+	clean := strings.Trim(strings.TrimSpace(rel), "/")
+
+	direct := clean
+	if direct == "" {
+		direct = "index"
+	}
+	if isRegularFile(filepath.Join(root, filepath.FromSlash(direct), "index.html")) {
+		return direct, true
+	}
+
+	base, found := strings.CutSuffix(clean, "/index.html")
+	if !found || base == "" {
+		return "", false
+	}
+	link := filepath.Join(root, filepath.FromSlash(base))
+	fi, err := os.Lstat(link)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return "", false
+	}
+	target, err := os.Readlink(link)
+	if err != nil {
+		return "", false
+	}
+	dir := filepath.Clean(filepath.Join(filepath.Dir(link), target))
+	if !isRegularFile(filepath.Join(dir, "index.html")) {
+		return "", false
+	}
+	return base, true
+}
+
+// isRegularFile 路径是常规文件（存在且不是目录）。
+func isRegularFile(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
 }

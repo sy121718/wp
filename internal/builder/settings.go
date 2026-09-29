@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // 版心模式常量。
@@ -39,6 +41,10 @@ type PageSettings struct {
 	ThemeOverride *ThemeSettings `json:"themeOverride,omitempty"`
 	SEO           SEO            `json:"seo"`
 	BodyClasses   []string       `json:"bodyClasses,omitempty"`
+	// Access 访问权限（PIPE-6 AccessGuard）：空/未设置 = 公开可见。
+	// 放在 Page Document 的 settings 里而不是 pages 表的新列 —— 零迁移，且
+	// 「访问权限」与版心/SEO 一样是页面级设置，跟着文档走（回滚修订即回滚权限）。
+	Access *AccessGuardSettings `json:"access,omitempty"`
 	// Structure 全局结构绑定快照（保存时从激活主题 settings 合入）：
 	// 编译装配层读取，构建期内联页眉/页脚块（021_blocks.sql 方案 C）。
 	Structure StructureBindings `json:"structure,omitempty"`
@@ -183,6 +189,55 @@ type SEO struct {
 	RobotsFollow string `json:"robotsFollow,omitempty"`
 }
 
+// 页面访问权限类型（PIPE-6 AccessGuard，规格 docs/0-A2-page-routing-meta.md §2.2）。
+//
+// 三个取值是**同一维度的三态**，不是三个开关：公开不生成守卫产物，
+// 密码与登录各生成一份守卫页 + 元数据，放行判据不同。
+const (
+	// AccessPublic 公开可见（默认）。空串与之等价：存量文档没有 access 字段，
+	// 必须继续按公开处理（否则全部存量页面会在升级后立刻变成打不开）。
+	AccessPublic = "public"
+	// AccessPassword 密码保护：产物里的守卫页收明文密码，元数据收 bcrypt 哈希。
+	AccessPassword = "password"
+	// AccessMembers 登录用户可见：放行判据是访客会话（user 模块域），与密码无关。
+	AccessMembers = "members"
+)
+
+// MaxAccessPasswordBytes 访问密码的字节上限。
+//
+// bcrypt 只吃前 72 字节，更长的输入会被**静默截断**（x/crypto 新版本直接报
+// ErrPasswordTooLong）—— 静默截断意味着「设了 100 字符密码，输前 72 字符就进得去」。
+// 与其在上限之外产生歧义，不如在设置入口直接拒绝。
+const MaxAccessPasswordBytes = 72
+
+// AccessGuardSettings 页面访问权限设置。
+//
+// PasswordHash 只存 bcrypt 哈希，**绝不存明文**：Document 会进 page_revisions、
+// 进产物 manifest 的邻域（sourceHash）、进后台历史版本，明文密码落在任何一处
+// 都等于把站点密码写进数据库备份。
+type AccessGuardSettings struct {
+	// Type 权限类型："" / public / password / members。
+	Type string `json:"type,omitempty"`
+	// PasswordHash bcrypt 哈希（仅 password 类型使用）。
+	PasswordHash string `json:"passwordHash,omitempty"`
+}
+
+// IsPublic 是否为公开（含「未设置」）。
+func (a *AccessGuardSettings) IsPublic() bool {
+	if a == nil {
+		return true
+	}
+	return a.Type == "" || a.Type == AccessPublic
+}
+
+// TypeOrDefault 归一后的权限类型（未设置为公开）。
+func (a *AccessGuardSettings) TypeOrDefault() string {
+	if a == nil || a.Type == "" {
+		return AccessPublic
+	}
+	return a.Type
+}
+
 // validateSettings 校验页面设置。
 func validateSettings(s *PageSettings) (err error) {
 	switch s.Layout.Mode {
@@ -242,6 +297,15 @@ func validateSettings(s *PageSettings) (err error) {
 		return fmt.Errorf("无效的 robots 跟踪指令: %q", s.SEO.RobotsFollow)
 	}
 
+	// 访问权限：三态白名单 + 「密码保护必须有可用的 bcrypt 哈希」。
+	//
+	// 为什么在这里就拒绝「password 但没有哈希」：这条组合在产物侧的含义是
+	// 「页面受限、且任何密码都解不开」—— 部署上去就是永久打不开。它必须在
+	// 保存/编译入口被拦截，而不是等到访问面表现成「密码输不进」。
+	if err := validateAccessSettings(s.Access); err != nil {
+		return err
+	}
+
 	for _, cls := range s.BodyClasses {
 		if !bodyClassRe.MatchString(cls) {
 			return fmt.Errorf("无效的 body 自定义 class: %q", cls)
@@ -253,6 +317,38 @@ func validateSettings(s *PageSettings) (err error) {
 // safeCSS CSS 值白名单校验（委托 core.IsSafeCSSValue，含 url 外联注入封禁）。
 func safeCSS(v string) bool {
 	return core.IsSafeCSSValue(v)
+}
+
+// validateAccessSettings 校验访问权限设置。
+//
+// 三条判据都是 fail closed 的：类型不在白名单、密码类型缺哈希、哈希不是
+// 可解析的 bcrypt —— 任何一个都不许「降级成公开」通过。降级的后果是把受限
+// 内容直接放给所有人，那是不可逆的泄露；拒绝保存只是让人再点一次设置。
+func validateAccessSettings(a *AccessGuardSettings) error {
+	if a == nil {
+		return nil
+	}
+	switch a.Type {
+	case "", AccessPublic, AccessMembers:
+		return nil
+	case AccessPassword:
+		hash := strings.TrimSpace(a.PasswordHash)
+		if hash == "" {
+			return errors.New("密码保护必须先设置访问密码")
+		}
+		if len(hash) > 100 {
+			return errors.New("访问密码哈希长度非法")
+		}
+		// Cost 只解析格式与代价因子，不做比对 —— 拿它当「这段字符串是不是
+		// 一个能用的 bcrypt 哈希」的判据，避免把明文/别的摘要当哈希存进来
+		// （存在去就会让访问面每次都判失败，表现成「密码永远不对」）。
+		if _, err := bcrypt.Cost([]byte(hash)); err != nil {
+			return errors.New("访问密码哈希非法（需为 bcrypt 哈希）")
+		}
+		return nil
+	default:
+		return fmt.Errorf("无效的访问权限类型: %q", a.Type)
+	}
 }
 
 // compileSettingsCSS 编译页面设置为 CSS：body 基底样式与版心约束。

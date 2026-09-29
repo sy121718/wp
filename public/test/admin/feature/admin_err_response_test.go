@@ -104,6 +104,9 @@ type fakeRoleService struct {
 	permTree *admindto.RolePermissionTreeResp
 	// lastMenuSave 记录最近一次 RoleMenuSave 的入参，供表单解析用例断言。
 	lastMenuSave *admindto.RoleMenuSaveReq
+	// menuSaveErr 只让 RoleMenuSave 失败（err 同时影响权限树，那条路径见
+	// admin_role_permissions_page_test.go 的两个保存失败用例）。
+	menuSaveErr error
 }
 
 // RoleList 无注入错误时返回一个空结果：页面渲染用例（admin_page_err_render_test.go）
@@ -137,8 +140,14 @@ func (f *fakeRoleService) RolePermissionTree(context.Context, uint64) (*admindto
 
 // RoleMenuSave 记录入参后按注入的错误返回（返回语义与改动前一致：成功路径给 nil resp，
 // 现有的错误注入用例断言的就是错误文案，不看 data）。
+//
+// menuSaveErr 优先于 err：它只让保存失败、权限树照常取回，用来走「保存失败但树还能取」
+// 这条路径（handler 要就地把错误 + 本次提交的勾选渲回抽屉，而不是整页跳走）。
 func (f *fakeRoleService) RoleMenuSave(_ context.Context, req *admindto.RoleMenuSaveReq) (*admindto.RoleMenuSaveResp, error) {
 	f.lastMenuSave = req
+	if f.menuSaveErr != nil {
+		return nil, f.menuSaveErr
+	}
 	return nil, f.err
 }
 func (f *fakeRoleService) RoleUserList(context.Context, *admindto.RoleUserListReq) (*admindto.RoleUserListResp, error) {

@@ -91,7 +91,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 		}
 		rows = make([]gin.H, 0, len(list))
 		for _, t := range list {
-			row := tagPageRow(t)
+			row := tagPageRow(shell.TranslateFor(c), t)
 			row["EditForm"] = h.tagDrawerData(c, "update", selected, row, ruleTypes)
 			rows = append(rows, row)
 		}
@@ -111,7 +111,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
 	// 与其它后台页面同一渲染入口。
 	data := gin.H{
-		"title":           "商品标签",
+		"title":           shell.TranslateFor(c)(productenums.ProductTagsTitle, "商品标签"),
 		"menu":            "product-tags",
 		"Projects":        projects,
 		"SelectedProject": selected,
@@ -437,12 +437,12 @@ func tagRuleParamsFromForm(c *gin.Context, ruleType string) (raw json.RawMessage
 
 // tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；
 // 命中商品本身不在这里，展开时才由 ProductTagHitsFragment 给 —— 审计 PERF-02）。
-func tagPageRow(t *productdto.TagResp) gin.H {
+func tagPageRow(tr func(key, fallback string) string, t *productdto.TagResp) gin.H {
 	row := gin.H{
 		"ID": t.ID, "Name": t.Name, "Slug": t.Slug, "Kind": t.Kind,
-		"KindLabel": tagKindLabel(t.Kind), "IsRule": t.Kind == productenums.TagKindRule,
+		"KindLabel": tagKindLabel(tr, t.Kind), "IsRule": t.Kind == productenums.TagKindRule,
 		"RuleType": t.RuleType, "RuleLabel": t.RuleLabel,
-		"RecalcAt":     recalcLabel(t.RecalcAt),
+		"RecalcAt":     recalcLabel(tr, t.RecalcAt),
 		"ProductCount": t.ProductCount, "Sort": t.Sort,
 		"HasRuleParams": t.Kind == productenums.TagKindRule,
 		"RuleDays":      ruleParamText(t.RuleParams, "days"),
@@ -463,21 +463,22 @@ func tagProductRows(items []*productdto.TagProductResp) []gin.H {
 	return out
 }
 
-// tagKindLabel 标签类型的中文标签。
-func tagKindLabel(kind string) string {
+// tagKindLabel 标签类型 → 当前语言标签。
+func tagKindLabel(tr func(key, fallback string) string, kind string) string {
 	if kind == productenums.TagKindRule {
-		return "自动"
+		return tr(productenums.ProductTagsKindRule, "自动")
 	}
-	return "手工"
+	return tr(productenums.ProductTagsKindManual, "手工")
 }
 
 // recalcLabel 重算时间的展示文本（手工标签或从未重算时给一句可读说明）。
 //
 // 输入是 RFC3339，这里压成「2006-01-02 15:04」：既好读，又不会因为那一长串
 // 时间戳在窄屏折叠行里连成不可断行的 token 把卡片撑破。
-func recalcLabel(at string) string {
+// 时间是数据（格式固定），只有「没重算过」那句话是文案，走词条。
+func recalcLabel(tr func(key, fallback string) string, at string) string {
 	if strings.TrimSpace(at) == "" {
-		return "未按规则重算过"
+		return tr(productenums.ProductTagsRecalcNone, "未按规则重算过")
 	}
 	if t, err := time.Parse(time.RFC3339, at); err == nil {
 		return t.Local().Format("2006-01-02 15:04")

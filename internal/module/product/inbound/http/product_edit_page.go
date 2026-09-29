@@ -86,7 +86,7 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 			shell.PageError(c, "product_edit", terr)
 			return
 		}
-		warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+		warehouseOptions, werr := h.warehouseOptions(ctx, selected, shell.TranslateFor(c))
 		if werr != nil {
 			shell.PageError(c, "product_edit", werr)
 			return
@@ -97,7 +97,7 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 		detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: selected})
 		if derr == nil && detail != nil {
 			data["HasProduct"] = true
-			row := h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail)
+			row := h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail, shell.TranslateFor(c))
 			// productRow 的汇总段是给**列表列**用的（名称 / 状态 / 价格区间 / 分类 / 品牌 / 标签），
 			// 编辑表单还要几个列表列不需要的字段（副标题 / 单位 / SEO 两栏）——
 			// 在这里补，而不是往共享组装里塞：那会让列表页也背上只有编辑页才用的键。
@@ -219,7 +219,8 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("defaultPrice")); raw != "" {
 		v, perr := parseFloat(raw)
 		if perr != nil {
-			h.productEditValidationFail(c, projectID, id, "默认价格格式无效，请输入数字")
+			h.productEditValidationFail(c, projectID, id,
+				shell.TranslateFor(c)(productenums.ProductEditErrDefaultPriceInvalid, "默认价格格式无效，请输入数字"))
 			return
 		}
 		req.DefaultPrice = &v
@@ -227,7 +228,8 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("weight")); raw != "" {
 		v, perr := parseFloat(raw)
 		if perr != nil {
-			h.productEditValidationFail(c, projectID, id, "重量格式无效，请输入数字")
+			h.productEditValidationFail(c, projectID, id,
+				shell.TranslateFor(c)(productenums.ProductEditErrWeightInvalid, "重量格式无效，请输入数字"))
 			return
 		}
 		req.Weight = &v

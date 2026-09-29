@@ -2,8 +2,8 @@
 {{block body()}}
 <div class="g-narrow">
   <div class="g-card">
-    <h1>设置新密码</h1>
-    <p class="g-sub">为账号 <strong>{{ .["email"] }}</strong> 设置一个新密码。</p>
+    <h1>{{ .["t"]("user.reset.heading", "设置新密码") }}</h1>
+    <p class="g-sub">{{ .["t"]("user.reset.body_prefix", "为账号") }} <strong>{{ .["email"] }}</strong> {{ .["t"]("user.reset.body_suffix", "设置一个新密码。") }}</p>
 
     {{if .["error"]}}
     <div class="g-alert g-alert--error">{{ .["error"] }}</div>
@@ -15,14 +15,14 @@
       <input type="hidden" name="key" value="{{ .["key"] }}">
 
       <div class="g-field">
-        <label for="password">新密码</label>
+        <label for="password">{{ .["t"]("user.field.new_password", "新密码") }}</label>
         <input type="password" id="password" name="password"
                autocomplete="new-password" required autofocus>
-        <div class="g-hint">至少 8 位。重置成功后，所有设备都需要重新登录。</div>
+        <div class="g-hint">{{ .["t"]("user.reset.hint", "至少 8 位。重置成功后，所有设备都需要重新登录。") }}</div>
       </div>
 
       <div class="g-actions">
-        <button type="submit" class="g-btn">重置密码</button>
+        <button type="submit" class="g-btn">{{ .["t"]("user.reset.submit", "重置密码") }}</button>
       </div>
     </form>
   </div>

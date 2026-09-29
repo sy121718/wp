@@ -75,9 +75,29 @@ type siteSettingsData struct {
 	GA4MeasurementID string
 	// SearchConsoleVerification GSC 站点验证 token（构建期注入验证 meta；空 = 不注入，SEO-009）。
 	SearchConsoleVerification string
+	// HeadScripts 站点自定义 Head 代码（构建期注入 </head> 之前；空 = 不注入，PIPE-8）。
+	HeadScripts string
+	// BodyScripts 站点自定义 Body 代码（构建期注入 </body> 之前；空 = 不注入，PIPE-8）。
+	BodyScripts string
+	// HeadScriptsError / BodyScriptsError 自定义代码校验失败的就地提示（空 = 无错误）。
+	//
+	// 与 Err 的分工：Err 是 ?err= 通道（303 回带的一句文案，读侧白名单过滤）；
+	// 这两个是**就地回渲染**的提示 —— 与 LocaleError 同一路，因为这两个字段的内容
+	// 是几百字节的脚本，303 一跳表单就空了，用户填的代码跟着丢（?err= 只带一句文案、
+	// 不带表单内容）；而「用户的输入比错误文案贵」是写表单失败的既有口径。
+	// 值携带 i18n key，模板经 .["t"](key, 中文兜底) 取词，缺词条也不会显示裸 key。
+	HeadScriptsError string
+	BodyScriptsError string
 	// NotFoundHTML 站点自定义 404 页内容（发布时写到激活目录根的 404.html；
 	// 空 = 不配置，且会删除既有 404.html，SEO-013）。
 	NotFoundHTML string
+	// ShippingBaseFeeYuan / ShippingFreeThresholdYuan 站点运费规则（**元**，表单口径）。
+	//
+	// 库内是分、表单是元：换算是这一对字段唯一的存在理由，且只在 fillProjectSettings
+	//（分→元）与 SaveSiteSettings（元→分）两处发生，函数都是 projectdto 里的同一对
+	//（整数拆分，不用 ParseFloat*100 —— 浮点乘偶尔差 1 分）。
+	ShippingBaseFeeYuan       string
+	ShippingFreeThresholdYuan string
 	// URLPatterns URL 规则编辑行（各实体类型的详情页路径模式，WP 固定链接的等价物）。
 	URLPatterns []urlPatternRow
 
@@ -118,7 +138,13 @@ func (d *siteSettingsData) templateMap() gin.H {
 		"GA4MeasurementID": d.GA4MeasurementID,
 
 		"SearchConsoleVerification": d.SearchConsoleVerification,
+		"HeadScripts":               d.HeadScripts,
+		"BodyScripts":               d.BodyScripts,
+		"HeadScriptsError":          d.HeadScriptsError,
+		"BodyScriptsError":          d.BodyScriptsError,
 		"NotFoundHTML":              d.NotFoundHTML,
+		"ShippingBaseFeeYuan":       d.ShippingBaseFeeYuan,
+		"ShippingFreeThresholdYuan": d.ShippingFreeThresholdYuan,
 		"URLPatterns":               d.URLPatterns,
 		"Locales":                   d.Locales,
 		"LocaleError":               d.LocaleError,
@@ -204,8 +230,15 @@ func (h *siteSettingsAdminHandle) fillProjectSettings(c *gin.Context, data *site
 	data.ContactEmail = fields.ContactEmail
 	data.GA4MeasurementID = fields.GA4MeasurementID
 	data.SearchConsoleVerification = fields.SearchConsoleVerification
+	// 自定义注入代码（PIPE-8）：按存储原文回显 —— 片段内部字节一个都不能改，
+	// 否则作者下次保存时会把「设置页显示的那份」写回去，等于偷偷改了他的脚本。
+	data.HeadScripts = fields.HeadScripts
+	data.BodyScripts = fields.BodyScripts
 	data.IndexNowKey = fields.IndexNowKey
 	data.NotFoundHTML = fields.NotFoundHTML
+	// 运费规则：库内分 → 表单元（0 回显为空串 = 未配置，与「留空即不收费」一致）。
+	data.ShippingBaseFeeYuan = projectdto.FormatCentsAsYuan(fields.ShippingBaseFee)
+	data.ShippingFreeThresholdYuan = projectdto.FormatCentsAsYuan(fields.ShippingFreeThreshold)
 	// URL 规则：当前配置（可能为空）+ 默认模式（placeholder，"留空 = 用默认"要看得见）。
 	data.URLPatterns = buildURLPatternRows(fields.URLPatterns)
 	// 语言清单（project_locales）：站点「有哪几种语言」的唯一真源，与构建/路由同源。
@@ -298,6 +331,58 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		}
 		searchConsoleToken = token
 	}
+	// 自定义注入代码（PIPE-8）：形状判据的唯一出口是 builder.NormalizeHeadScripts /
+	// NormalizeBodyScripts（保存与注入共用同一份判据，否则会出现「后台存进去了、
+	// 产物里却没有」这种最难排查的分歧）；非法（含结构性标签 / 超 16 KiB）时**不落库**。
+	//
+	// 出口用就地回渲染而不是 projectErrRedirect(303 + ?err=)：这两个字段装的是几百字节
+	// 的脚本，303 一跳用户看到的是空表单 —— 他刚贴进去的代码就丢了，而 ?err= 只带一句
+	// 文案、带不动表单内容。回渲染把输入原样带回，他只需改那一处（与语言清单保存失败
+	// 同一条路，见下方的 SaveSiteLocales）。
+	//
+	// 附带一层：这两条提示**不进 ?err= 通道**，所以它们的 i18n key 不参与
+	// projectPageErrKeys 的「必须在迁移里登记」那条硬约束（本批不新增迁移）。
+	rawHead := strings.TrimSpace(c.PostForm("headScripts"))
+	rawBody := strings.TrimSpace(c.PostForm("bodyScripts"))
+	headScripts, headOK := builder.NormalizeHeadScripts(rawHead)
+	bodyScripts, bodyOK := builder.NormalizeBodyScripts(rawBody)
+	if (rawHead != "" && !headOK) || (rawBody != "" && !bodyOK) {
+		data := h.buildSiteSettingsData(c, projectID)
+		data.HeadScripts = rawHead // 回显用户输入：校验失败清空表单是最伤的缺陷
+		data.BodyScripts = rawBody
+		if rawHead != "" && !headOK {
+			data.HeadScriptsError = projectenums.SiteSettingsHeadScriptsInvalid
+		}
+		if rawBody != "" && !bodyOK {
+			data.BodyScriptsError = projectenums.SiteSettingsBodyScriptsInvalid
+		}
+		c.HTML(http.StatusOK, "admin/project/settings", shell.Prepare(c, data.templateMap()))
+		return
+	}
+	// 站点运费规则（站点级基础运费 + 满额免运费门槛）：库内单位是**分**，表单是**元**，
+	// 换算与范围判据都在 projectdto（保存与读取同一份判据，见 shipping_policy_dto.go）。
+	//
+	// 非法值**不落库、不静默归零**：负运费等于倒贴钱（订单总额会被减掉一笔），
+	// 而把它悄悄改成 0 会让运营以为自己配的运费生效了 —— 实际从没生效过，
+	// 页面上看不出任何异常，只能等客户问「为什么没收运费」才发现。
+	baseCents, baseErr := projectdto.ParseYuanToCents(c.PostForm("shippingBaseFee"))
+	if baseErr != nil {
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrShippingBaseFeeInvalid))
+		return
+	}
+	thresholdCents, thresholdErr := projectdto.ParseYuanToCents(c.PostForm("shippingFreeThreshold"))
+	if thresholdErr != nil {
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrShippingFreeThresholdInvalid))
+		return
+	}
+	// 组合判据（与读取侧同一个函数）：目前只有「非负 + 上限」，已由上面两次解析把住；
+	// 这一步留着是为了让「什么算合法规则」只有一处定义 —— 将来加「门槛与基础运费的关系」
+	// 这类跨字段规则时，不会漏掉保存侧这条链路。失败时提示落在门槛字段上：跨字段规则
+	// 必然是「门槛与另一个字段的关系」，指到门槛最可定位。
+	if _, nerr := projectdto.NormalizeShippingPolicy(baseCents, thresholdCents); nerr != nil {
+		projectErrRedirect(c, backURL, response.TranslateMessage(c, projectenums.ErrShippingFreeThresholdInvalid))
+		return
+	}
 	// 自定义 404 页（SEO-013）：只卡长度 —— 存的是一份完整 HTML 文档，没有可校验的
 	// 「正确形状」（不同于 GA4 ID / GSC token）。超长会连同 projects.settings 整列一起
 	// 被每次读设置解析，所以在入口拒绝，而不是存进去等发布时才发现。
@@ -314,8 +399,15 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		// 站点验证 token：大小写敏感，原样保存（不做大小写归一化）。
 		SearchConsoleVerification: searchConsoleToken,
 		IndexNowKey:               strings.TrimSpace(c.PostForm("indexNowKey")),
-		NotFoundHTML:              notFoundHTML,
-		URLPatterns:               patterns,
+		// 自定义注入代码：存归一化后的片段（只去两端空白，内部字节不动）——
+		// 构建期注入读到的必须与设置页回显的是同一份字节。
+		HeadScripts:  headScripts,
+		BodyScripts:  bodyScripts,
+		NotFoundHTML: notFoundHTML,
+		URLPatterns:  patterns,
+		// 运费规则（分）：与读取侧同源的两个键，换算已在上面完成。
+		ShippingBaseFee:       baseCents,
+		ShippingFreeThreshold: thresholdCents,
 	})
 	if err != nil {
 		projectErrRedirect(c, backURL, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err))
@@ -371,6 +463,26 @@ func mergeSiteSettings(raw json.RawMessage, fields projectcontract.SiteSettings)
 		obj[key] = encoded
 		return nil
 	}
+	// setInt64 写整数键（运费金额，单位分）。
+	//
+	// 0 走**删除**分支：0 与「键缺失」在语义上等价（ParseSiteSettings 把缺失解析成 0），
+	// 留一个 0 在 JSON 里只是噪声，而且会让「清空 = 关掉」在存储层看起来没生效。
+	// 值直接用 strconv 拼 JSON 数字（不需要 json.Marshal 一层间接）。
+	setInt64 := func(key string, value int64) error {
+		if value == 0 {
+			delete(obj, key)
+			return nil
+		}
+		obj[key] = json.RawMessage(strconv.FormatInt(value, 10))
+		return nil
+	}
+	// 运费规则：与读取侧（ShippingPolicyReader）同源的键名与判据。
+	if err := setInt64("shippingBaseFee", fields.ShippingBaseFee); err != nil {
+		return nil, err
+	}
+	if err := setInt64("shippingFreeThreshold", fields.ShippingFreeThreshold); err != nil {
+		return nil, err
+	}
 	if err := setString("siteName", fields.SiteName); err != nil {
 		return nil, err
 	}
@@ -390,6 +502,14 @@ func mergeSiteSettings(raw json.RawMessage, fields projectcontract.SiteSettings)
 		return nil, err
 	}
 	if err := setString("indexNowKey", fields.IndexNowKey); err != nil {
+		return nil, err
+	}
+	// 自定义注入代码（PIPE-8）：空串走 setString 的删除分支 —— 「清空 = 停止注入」
+	// 在存储层与实际行为一致（产物里一个字节都不多），不留空值噪声。
+	if err := setString("headScripts", fields.HeadScripts); err != nil {
+		return nil, err
+	}
+	if err := setString("bodyScripts", fields.BodyScripts); err != nil {
 		return nil, err
 	}
 	if err := setString("notFoundHtml", fields.NotFoundHTML); err != nil {

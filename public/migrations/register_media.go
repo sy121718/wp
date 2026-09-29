@@ -29,14 +29,13 @@ func registerMediaAndUniqueConstraints() {
 		SQL:       mustSQL("075_navigation_path_unique.sql"),
 	})
 
-	// 076：按工程修正 061 回填的语言（原实现取全局第一个工程的 defaultLang，多工程库全被标成同一语言）。
-	// TableName 故意用不存在的名字：默认 CheckSQL（表是否存在）恒为 0，等价于「每次启动都跑一遍」。
-	// 该 UPDATE 幂等且带 IS DISTINCT FROM 条件，无差异时零行更新。
-	register(Migration{
-		Version:   "076-lang-backfill-per-project",
-		TableName: "page_artifacts_lang_backfill_always",
-		SQL:       mustSQL("076_lang_backfill_per_project.sql"),
-	})
+	// 076（lang 回填）已删除，不要再加回来。它把 page_artifacts.lang 按「工程默认语言」统一改写，
+	// 前提是「一个页面版本只对应一行 artifact」—— 多语言站点下同一 (page_id, version) 有 N 行
+	// （每语言一行），回填会撞唯一键 uk_page_artifacts_page_version_lang；而它的 TableName 故意取
+	// 不存在的名字（每次启动都跑一遍），一旦撞键就让整条迁移链永久卡死在这里。
+	// 它想修的是 061 那次「全局第一个工程的 defaultLang」回填，而 061 的源文件早已修正（见其注释），
+	// 且它读的 projects.settings->>'defaultLang' 在 064 建立 project_locales 之后已是废弃位置
+	// （语言清单真源改为 project_locales，见 internal/module/project/service/locale_service.go）。
 
 	// 077：灾难恢复接口权限点（产物重建 + 激活面巡检）。
 	registerSeed(Seed{

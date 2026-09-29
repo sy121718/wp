@@ -3,28 +3,27 @@
 <div class="g-narrow">
   <div class="g-card">
     <div class="g-mark">✉</div>
-    <h1>验证邮件已发出</h1>
+    <h1>{{ .["t"]("user.register_done.heading", "验证邮件已发出") }}</h1>
     <p class="g-sub">
-      我们向 <strong>{{ .["email"] }}</strong> 发送了一封验证邮件，
-      请在 30 分钟内点击邮件里的链接完成验证。
+      {{ .["t"]("user.register_done.sent_prefix", "我们向") }} <strong>{{ .["email"] }}</strong> {{ .["t"]("user.register_done.sent_suffix", "发送了一封验证邮件，请在 30 分钟内点击邮件里的链接完成验证。") }}
     </p>
 
     {{if .["mailQueued"]}}
-    <div class="g-alert g-alert--ok">邮件已受理，请稍后查收。</div>
+    <div class="g-alert g-alert--ok">{{ .["t"]("user.register_done.queued", "邮件已受理，请稍后查收。") }}</div>
     {{else}}
     <div class="g-alert g-alert--error">
-      邮件暂时发不出去。账号已经创建，但你现在收不到验证信，请点下面的按钮重试。
+      {{ .["t"]("user.register_done.mail_failed", "邮件暂时发不出去。账号已经创建，但你现在收不到验证信，请点下面的按钮重试。") }}
     </div>
     {{end}}
 
     <form method="post" action="/user/resend" class="g-actions">
       <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
       <input type="hidden" name="email" value="{{ .["email"] }}">
-      <button type="submit" class="g-btn g-btn--ghost">重新发送验证邮件</button>
+      <button type="submit" class="g-btn g-btn--ghost">{{ .["t"]("user.register_done.resend", "重新发送验证邮件") }}</button>
     </form>
 
     <div class="g-note">
-      没收到？先检查垃圾邮件箱。已验证完成？<a href="/user/login">去登录</a>
+      {{ .["t"]("user.register_done.no_mail", "没收到？先检查垃圾邮件箱。已验证完成？") }}<a href="/user/login">{{ .["t"]("user.register_done.go_login", "去登录") }}</a>
     </div>
   </div>
 </div>

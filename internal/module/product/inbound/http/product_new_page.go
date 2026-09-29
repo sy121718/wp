@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 )
@@ -32,7 +33,7 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 	}
 	// 建表单片段需要的数据（与列表页同一 helper 同款口径）：属性组勾选列表 +
 	// 「从仓库选」候选。两处取数分叉会让某条入口静默少字段 —— 本会话实测过。
-	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected, shell.TranslateFor(c))
 	if werr != nil {
 		shell.PageError(c, "products_new", werr)
 		return
@@ -61,7 +62,7 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 		}
 	}
 	c.HTML(http.StatusOK, "admin/product/products_new.html", shell.Prepare(c, gin.H{
-		"title": "新建商品", "menu": "products",
+		"title": shell.TranslateFor(c)(productenums.ProductsCreateSubmit, "新建商品"), "menu": "products",
 		"Projects": projects, "SelectedProject": selected,
 		"WarehouseOptions": warehouseOptions, "AttributeOptions": attributeOptions,
 		"WarehouseSKUOptions": warehouseSKUGroups,
@@ -90,7 +91,7 @@ var productCreateFormFields = []string{
 func (h *productPageHandle) productCreateFormData(c *gin.Context, projectID, submitErr string) (gin.H, error) {
 	ctx := c.Request.Context()
 	projectID = strings.TrimSpace(projectID)
-	warehouses, err := h.warehouseOptions(ctx, projectID)
+	warehouses, err := h.warehouseOptions(ctx, projectID, shell.TranslateFor(c))
 	if err != nil {
 		return nil, err
 	}

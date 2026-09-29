@@ -17,7 +17,9 @@ import (
 	userenums "go_wp/internal/module/user/enums"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 )
 
 // Handle 用户侧 HTTP handler。
@@ -28,18 +30,34 @@ type Handle struct {
 // NewHandle 构造。
 func NewHandle(svc *userservice.Service) *Handle { return &Handle{svc: svc} }
 
-// pageTitles 模板名 → 浏览器标题。
+// pageTitles 模板名 → 浏览器标题（key + 中文兜底）。
 //
 // 集中一张表而不是让每个 handler 各自传：这张表同时是「访客侧有哪些页面」的清单，
 // 新增页面时若忘了在这里登记，页面标题会退化成站点名 —— 一眼可见，不会静默出错。
-var pageTitles = map[string]string{
-	"user/login":         "登录",
-	"user/register":      "注册",
-	"user/register_done": "注册成功",
-	"user/forgot":        "找回密码",
-	"user/reset":         "重置密码",
-	"user/message":       "提示",
-	"user/account":       "账号中心",
+//
+// 值不是裸中文：<title> 是**直接渲染**的文本，硬写中文等于英文界面里标题永远中文。
+var pageTitles = map[string]userLabel{
+	"user/login":         {"user.page.login", "登录"},
+	"user/register":      {"user.page.register", "注册"},
+	"user/register_done": {"user.page.register_done", "注册成功"},
+	"user/forgot":        {"user.page.forgot", "找回密码"},
+	"user/reset":         {"user.page.reset", "重置密码"},
+	"user/message":       {"user.page.message", "提示"},
+	"user/account":       {"user.page.account", "账号中心"},
+}
+
+// userTextOf 访客页文案的取词入口（等价于 userLabelOf(shell.TranslateFor(c), l)）。
+func userTextOf(c *gin.Context, l userLabel) string {
+	return userLabelOf(shell.TranslateFor(c), l)
+}
+
+// userTextFilled 取词并按命名参数填充 `{name}` 占位符（复用 pkg/i18n 的实现）。
+//
+// 词条被改坏（填完仍有残留占位符）时 FillTranslate 自动回落中文兜底再填一次；
+// 参数缺失也不补默认值：补 0 会渲染出一句「看起来像结论」的错话，
+// 而页面显示代码里的原文至少能让人看出「这句没配好」。
+func userTextFilled(c *gin.Context, l userLabel, kv map[string]string) string {
+	return i18n.FillTranslate(shell.TranslateFor(c), l.key, l.fallback, kv)
 }
 
 // render 渲染访客页面，自动补齐 CSRF token 与当前登录用户。
@@ -60,8 +78,20 @@ func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
 	if _, ok := data["user"]; !ok {
 		data["user"] = currentSession(c)
 	}
+	// 界面语言与取词函数同源（response.RequestLanguage 的判定链：语言 Cookie → query lang
+	// → Accept-Language → 默认语言）。两者分家会出现「正文按请求语言取词、<html lang>
+	// 恒 zh-CN」这类只在部分页面显现的不一致。
 	if _, ok := data["lang"]; !ok {
-		data["lang"] = "zh-CN"
+		data["lang"] = response.RequestLanguage(c)
+	}
+	// i18n 取词函数（与后台 shell.Prepare 注入的 data["t"] 同源）：访客页面模板用
+	// {{ .["t"]("user.x", "中文兜底") }} 取词。
+	//
+	// **必须在这里无条件注入**：chain 索引 + 函数调用在缺 t 时是静默空串
+	// （不报错、不 500、无日志），漏掉的后果是整页文案一起变空白
+	// （见 internal/templates/CLAUDE.md「缺键的两种后果」）。
+	if _, ok := data["t"]; !ok {
+		data["t"] = shell.TranslateFor(c)
 	}
 	// 书写方向（审计 I18N-02）：访客页面与静态产物用同一条规则
 	// （builder.DirAttr：RTL 才落字节，LTR 是 HTML 缺省）。判据各写一份就会出现
@@ -74,7 +104,7 @@ func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
 		data["site"] = "go_wp"
 	}
 	if _, ok := data["title"]; !ok {
-		data["title"] = pageTitles[name]
+		data["title"] = userLabelOf(shell.TranslateFor(c), pageTitles[name])
 	}
 	c.HTML(status, name, data)
 }

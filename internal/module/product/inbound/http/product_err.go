@@ -81,8 +81,14 @@ var productBulkResultTemplates = []productBulkText{
 
 // —— 列表页 / 详情页的自造回执文案 ——
 
-// productQuantityInvalidText 新建商品时数量字段的校验文案（写侧硬编码，读侧登记）。
-const productQuantityInvalidText = "数量必须是非负整数"
+// productQuantityInvalidText 新建商品时数量字段的校验文案（写侧取词，读侧登记）。
+//
+// key + 中文兜底：写侧与读侧各持有同一份 key 与兜底（读侧还要多收一份译文，
+// 否则英文站点上写侧产出英文、读侧候选里只有中文，整条提示被归口文案顶掉）。
+const (
+	productQuantityInvalidKey      = "admin.products.create.quantityInvalid"
+	productQuantityInvalidFallback = "数量必须是非负整数"
+)
 
 // 批量改价的结论文案模板（%s 是计数或跳过原因）。
 var (
@@ -137,22 +143,35 @@ func productReasonTexts(c *gin.Context) []string {
 // 英文站点（写侧取到英文）与 i18n 尚未初始化的环境会各自漏掉一边。
 func productOwnPageTexts(c *gin.Context) []string {
 	tr := shell.TranslateFor(c)
-	out := make([]string, 0, len(detailTemplateFacingMessages)+len(detailTemplateTemplateMessages)+8)
+	out := make([]string, 0, len(detailTemplateFacingMessages)+len(detailTemplateTemplateMessages)+24)
+	// 下面这几组是「写侧已经取词」的提示：key / 中文兜底 / 当前语言译文三种形态都要进候选。
+	// 只登记中文原文的话，英文站点上写侧产出的是英文译文，读侧一条都匹配不上，
+	// 表现是「写侧发了提示、页面上什么都不显示」——不报错、不记日志。
 	out = append(out,
 		detailTemplateDepsMissingKey,
 		errTemplateDepsMissing,
 		tr(detailTemplateDepsMissingKey, errTemplateDepsMissing),
-		productDetailTemplateNameRequired,
-		productDetailTemplatePathRequired,
+		productDetailTemplateNameRequiredKey,
+		productDetailTemplateNameRequiredFallback,
+		tr(productDetailTemplateNameRequiredKey, productDetailTemplateNameRequiredFallback),
+		productDetailTemplatePathRequiredKey,
+		productDetailTemplatePathRequiredFallback,
+		tr(productDetailTemplatePathRequiredKey, productDetailTemplatePathRequiredFallback),
 		// 菜单入口缺 product 时的引导（详情页模板页的缺参分支，同样进 ?err=）。
-		productDetailTemplateNoProductPrompt,
-		productBundleNoProductText,
+		productDetailTemplateNoProductPromptKey,
+		productDetailTemplateNoProductPromptFallback,
+		tr(productDetailTemplateNoProductPromptKey, productDetailTemplateNoProductPromptFallback),
+		productBundleNoProductKey,
+		productBundleNoProductFallback,
+		tr(productBundleNoProductKey, productBundleNoProductFallback),
 	)
-	for _, msg := range detailTemplateFacingMessages {
-		out = append(out, msg)
+	// 两张白名单同样要收三种形态：facingLookup 现在按请求语言取词（裸 enums key 就是
+	// i18n key），写侧产出的是**译文**——只登记中文兜底会让整条提示被归口文案顶掉。
+	for key, fallback := range detailTemplateFacingMessages {
+		out = append(out, key, fallback, tr(key, fallback))
 	}
-	for _, msg := range detailTemplateTemplateMessages {
-		out = append(out, msg)
+	for key, fallback := range detailTemplateTemplateMessages {
+		out = append(out, key, fallback, tr(key, fallback))
 	}
 	return out
 }
@@ -167,7 +186,9 @@ func productNoticeTexts(c *gin.Context) []string {
 	out = append(out,
 		tr(shell.MsgInternalError, productErrInternalFallback),
 		shell.BulkIDsNoticeTemplate(c),
-		productQuantityInvalidText,
+		productQuantityInvalidKey,
+		productQuantityInvalidFallback,
+		tr(productQuantityInvalidKey, productQuantityInvalidFallback),
 		productBulkTextOf(c, bulkPricingNothingSelected),
 		productBulkTextOf(c, productVariantSaveNoChange),
 		// 商品编辑页保存成功（无占位符，直接取词即可）。

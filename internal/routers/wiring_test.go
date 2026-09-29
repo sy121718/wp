@@ -51,6 +51,7 @@ func TestWiringPortConstantsMatchManifest(t *testing.T) {
 		portProductInventoryService, portProductInventoryModel, portInventoryVariantCost,
 		portProductMasterDataChanges, portInventoryMasterDataChanges, portProductAvailability,
 		portProductArchiveEnsurer, portProductPublishedLocator, portProductFragmentCacheBumper,
+		portProductPurchaseChecker,
 		portPluginAdminAuthz, portProjectLocaleRetire,
 		portPageExternalArtifactOwners, portPageBlueprints, portPageBuildQueue,
 		portPageProductDataSource, portPageI18nStalePeer, portPresentationBuildQueue, portPresentationProductDataSource, portPresentationSiteAssembly,
@@ -65,6 +66,11 @@ func TestWiringPortConstantsMatchManifest(t *testing.T) {
 		portRuntimeFragSitePageResolver, portRuntimeFragProject,
 		portRuntimeFragVisitorOrderReader, portRuntimeFragVisitorReturn,
 		portRuntimeFragVisitorIdentity, portRuntimeFragVisitorAccount,
+		portAccessGuardLoginProbe,
+		portOrderMembershipReader, portMembershipPurchaseSource,
+		portCartMembershipReader, portRuntimeFragMembership,
+		portRuntimeFragComment, portCommentEntityPolicy,
+		portCartShippingPolicy,
 	}
 	inManifest := make(map[string]bool, len(wiringManifest))
 	for _, e := range wiringManifest {

@@ -114,6 +114,63 @@
                 </div>
                 <input type="text" class="form-input" id="set-gsc" name="searchConsoleVerification" value="{{.SearchConsoleVerification}}" maxlength="128" pattern="[A-Za-z0-9_-]{8,128}" placeholder="{{ .["t"]("admin.settings.ph.gsc_token", "Search Console 给的 content 值（约 43 位）") }}">
             </div>
+            {* 自定义代码注入（PIPE-8）：管理员配置的第三方统计与营销片段，构建期原样注入
+                </head> 之前与 </body> 之前（各独占一行，不进任何属性或 JSON 上下文）。
+                这两项**没有**字符集白名单 —— 第三方片段（GA4 / Pixel / Clarity / Hotjar /
+                客服浮窗）无法穷举形状，白名单必漏、转义则让脚本失效。安全责任在信任边界：
+                只有能改站点配置的人（本页保存走 Session + CSRF + /api/project/update）能写，
+                公开面没有写入路径。保存时只卡「不超长（16 KiB）+ 不含结构性标签
+                （<!DOCTYPE>/<html>/<head>/<body>）」。留空 = 产物里一个字节都不多。 *}
+            <div class="form-field form-field--wide">
+                <div class="field-label-row"><label for="set-head-scripts">{{ .["t"]("admin.settings.field.head_scripts", "自定义 Head 代码（高级）") }}</label>
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.settings.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.settings.hint.head_scripts", "整段粘贴第三方统计 / 营销代码（GA4、Meta Pixel、Clarity、Hotjar 等），发布时注入所有页面 </head> 之前、独占一行。保存后") }}<strong>{{ .["t"]("admin.settings.hint.head_scripts.republish", "需要重新发布页面") }}</strong>{{ .["t"]("admin.settings.hint.head_scripts.tail", "才会写进产物。留空或清空即不注入：产物里一个字节都不会多。这里的内容会<strong>原样</strong>进入对外页面（不转义、不改写），等于把脚本执行权交给它的来源 —— 请只填可信来源，并注意这些脚本能读到访客在本站的数据。保存时拒绝整页 HTML（含 <html> / <head> / <body> 标签）与超过 16 KiB 的内容。") }}</span>
+                    </span>
+                </div>
+                <textarea class="form-textarea" id="set-head-scripts" name="headScripts" rows="5" maxlength="16384" spellcheck="false" placeholder="{{ .["t"]("admin.settings.ph.head_scripts", "留空即不注入。例：&lt;script src=&#34;https://cdn.example.com/tag.js&#34; async&gt;&lt;/script&gt;") }}">{{if isset(.HeadScripts)}}{{.HeadScripts}}{{end}}</textarea>
+                {{if isset(.HeadScriptsError)}}{{if .HeadScriptsError}}
+                <p class="badge badge-warning" role="alert">{{ .["t"](.HeadScriptsError, "自定义 Head 代码不合法：不能包含 <!DOCTYPE> / <html> / <head> / <body> 这类结构性标签，且不超过 16 KiB") }}</p>
+                {{end}}{{end}}
+            </div>
+            <div class="form-field form-field--wide">
+                <div class="field-label-row"><label for="set-body-scripts">{{ .["t"]("admin.settings.field.body_scripts", "自定义 Body 代码（高级）") }}</label>
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.settings.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.settings.hint.body_scripts", "整段粘贴需要在正文之后加载的第三方代码（在线客服浮窗、转化追踪等），发布时注入所有页面 </body> 之前、独占一行（排在站点自己的脚本之后）。判据与 Head 代码完全相同：留空即不注入，拒绝整页 HTML 与超过 16 KiB 的内容。") }}</span>
+                    </span>
+                </div>
+                <textarea class="form-textarea" id="set-body-scripts" name="bodyScripts" rows="5" maxlength="16384" spellcheck="false" placeholder="{{ .["t"]("admin.settings.ph.body_scripts", "留空即不注入。例：&lt;script src=&#34;https://cdn.example.com/chat.js&#34; async&gt;&lt;/script&gt;") }}">{{if isset(.BodyScripts)}}{{.BodyScripts}}{{end}}</textarea>
+                {{if isset(.BodyScriptsError)}}{{if .BodyScriptsError}}
+                <p class="badge badge-warning" role="alert">{{ .["t"](.BodyScriptsError, "自定义 Body 代码不合法：不能包含 <!DOCTYPE> / <html> / <head> / <body> 这类结构性标签，且不超过 16 KiB") }}</p>
+                {{end}}{{end}}
+            </div>
+        </div>
+
+        {* 运费（站点级基础运费 + 满额免运费门槛）。库内单位是**分**，这一页进出的都是**元** ——
+            换算只在服务端做（整数拆分，不用浮点乘）：表单能被绕过，判据必须在服务端。
+            留空 = 0 = 不收运费 / 不启用门槛。它只影响运费 —— 商品小计仍由订单域按商品域
+            真源现算，这个值碰不到小计。 *}
+        <h2>{{ .["t"]("admin.settings.section.shipping", "运费") }}</h2>
+        <div class="form-grid">
+            <div class="form-field">
+                <div class="field-label-row"><label for="set-shipping-base-fee">{{ .["t"]("admin.settings.field.shipping_base_fee", "基础运费（元）") }}</label>
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.settings.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.settings.hint.shipping", "结算时对每单收取的固定运费，单位元（最多两位小数，上限 1 万元）。留空或填 0 = 不收运费。它只影响运费：商品小计仍由订单域现算，不会因为这个值变动。小计达到下面的门槛、或下单客户有免运费会员权益时，这一笔会被免掉。") }}</span>
+                    </span>
+                </div>
+                <input type="text" class="form-input" inputmode="decimal" id="set-shipping-base-fee" name="shippingBaseFee" value="{{.ShippingBaseFeeYuan}}" maxlength="12" placeholder="{{ .["t"]("admin.settings.ph.shipping_base_fee", "留空或 0 = 不收运费") }}" autocomplete="off">
+            </div>
+            <div class="form-field">
+                <div class="field-label-row"><label for="set-shipping-free-threshold">{{ .["t"]("admin.settings.field.shipping_free_threshold", "满额免运费门槛（元）") }}</label>
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.settings.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.settings.hint.shipping_threshold", "商品小计达到这个金额就免掉上面的基础运费（单位元）。留空或填 0 = 不启用满额免运费。它与基础运费各自独立：填 50 表示「买满 50 元免运费」，与那笔运费是多少无关。") }}</span>
+                    </span>
+                </div>
+                <input type="text" class="form-input" inputmode="decimal" id="set-shipping-free-threshold" name="shippingFreeThreshold" value="{{.ShippingFreeThresholdYuan}}" maxlength="12" placeholder="{{ .["t"]("admin.settings.ph.shipping_free_threshold", "留空或 0 = 不启用") }}" autocomplete="off">
+            </div>
         </div>
 
         {* 高级项：自定义 404 与 URL 结构都是「配一次就不再动」的，默认收起。 *}

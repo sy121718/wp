@@ -23,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 )
@@ -32,7 +33,18 @@ import (
 // 有上限不是偷懒：表单式编辑器一旦超过十几行就不好用了 —— 那正是该上拖拽的信号。
 const maxAutomationNodes = 12
 
-// nodeTypeOption 类型下拉的一项。
+// mailTr 取词函数签名（shell.TranslateFor(c) 的形态）。
+type mailTr func(key, fallback string) string
+
+// mailLabel 展示名取词：命中出译文、缺词条回落中文兜底；key 为空（未登记）直接给兜底。
+func mailLabel(tr mailTr, pair mailenums.LabelPair) string {
+	if strings.TrimSpace(pair.Key) == "" {
+		return pair.Fallback
+	}
+	return tr(pair.Key, pair.Fallback)
+}
+
+// nodeTypeOption 类型下拉的一项（Label / Hint 已在组装时按当前语言取词）。
 type nodeTypeOption struct {
 	Value string
 	Label string
@@ -40,25 +52,32 @@ type nodeTypeOption struct {
 }
 
 // nodeTypeOptions 类型下拉选项（参数提示直接写在界面上，省得去翻文档）。
-var nodeTypeOptions = []nodeTypeOption{
-	{"trigger", "入口", "流程从这里开始（不需要参数）"},
-	{"delay", "等待", "参数填分钟数，例如 1440 表示一天"},
-	{"email", "发邮件", "参数填邮件模板的模板 key"},
-	{"branch", "条件分支", "参数填条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签；再填 yes 与 no 两条出边"},
-	{"tag", "打标签", "参数填要加的标签（逗号分隔）"},
-	{"end", "结束", "流程到此结束（不需要参数）"},
+//
+// 取值与文案的真源在 mailenums.AutomationNodeTypes（key + 中文兜底），这里只做取词 ——
+// 画布页（mail_automation_canvas.go）与表单页共用同一份，不各写一套。
+func nodeTypeOptions(tr mailTr) []nodeTypeOption {
+	opts := make([]nodeTypeOption, 0, len(mailenums.AutomationNodeTypes))
+	for _, o := range mailenums.AutomationNodeTypes {
+		opts = append(opts, nodeTypeOption{
+			Value: o.Value,
+			Label: mailLabel(tr, o.Label),
+			Hint:  mailLabel(tr, o.Hint),
+		})
+	}
+	return opts
 }
 
 // MailAutomationPage 流程列表 + 实例列表。
 func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	ctx := c.Request.Context()
+	tr := shell.TranslateFor(c)
 	page := int(shell.ParseUint(c.Query("page")))
 	if page <= 0 {
 		page = 1
 	}
 	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailMarketingPageSize})
 	data := gin.H{
-		"title":     "自动化流程",
+		"title":     mailLabel(tr, mailenums.PageTitleAutomation),
 		"Page":      page,
 		"FilterID":  c.Query("automationId"),
 		"FilterRun": c.Query("runStatus"),
@@ -82,7 +101,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		autoRows = append(autoRows, gin.H{
 			"ID": a.ID, "Name": a.Name, "Description": a.Description,
 			"Status": a.Status, "Version": a.Version,
-			"TriggerLabel": triggerLabelOf(a.TriggerType),
+			"TriggerLabel": triggerLabelOf(tr, a.TriggerType),
 		})
 	}
 	data["Automations"] = autoRows
@@ -96,6 +115,8 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		PageSize:     mailMarketingPageSize,
 	})
 	if rerr == nil {
+		// 运行文案（error_message）落库时是「key + 参数」编码，到出口才按语言还原。
+		mailRunTexts(tr, runs.Items)
 		data["Runs"] = runs.Items
 		data["RunTotal"] = runs.Total
 		data["Counts"] = runs.Counts
@@ -111,13 +132,14 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 // MailAutomationEdit 流程编辑页（?id=N 编辑，缺省为新建）。
 func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 	ctx := c.Request.Context()
+	tr := shell.TranslateFor(c)
 	id := shell.ParseUint(c.Query("id"))
 	data := gin.H{
-		"title":    "编辑自动化流程",
+		"title":    mailLabel(tr, mailenums.PageTitleAutomationEdit),
 		"IsNew":    id == 0,
 		"MaxRow":   maxAutomationNodes,
-		"Types":    nodeTypeOptions,
-		"Triggers": triggerOptions(""),
+		"Types":    nodeTypeOptions(tr),
+		"Triggers": triggerOptions(tr, ""),
 		"Rows":     []gin.H{},
 		// 同列表页：回执文案过白名单（表单校验文案也在候选里，见 mail_err.go）。
 		"Err": mailPageErr(c),
@@ -130,19 +152,19 @@ func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 			return
 		}
 		data["A"] = item
-		rows := automationFormRows(item)
+		rows := automationFormRows(tr, item)
 		// 补足空行：Jet 没有 C 风格 for，用一个固定长度的切片当行模板。
 		// 空行在提交时被跳过，所以多给几行是无害的。
 		for len(rows) < maxAutomationNodes {
-			rows = append(rows, emptyAutomationRow(len(rows)+1))
+			rows = append(rows, emptyAutomationRow(tr, len(rows)+1))
 		}
 		data["Rows"] = rows
 		data["Entry"] = item.Entry
-		data["Triggers"] = triggerOptions(item.TriggerType)
+		data["Triggers"] = triggerOptions(tr, item.TriggerType)
 	}
 	if all, ok := data["Rows"].([]gin.H); ok && len(all) < maxAutomationNodes {
 		for len(all) < maxAutomationNodes {
-			all = append(all, emptyAutomationRow(len(all)+1))
+			all = append(all, emptyAutomationRow(tr, len(all)+1))
 		}
 		data["Rows"] = all
 	}
@@ -152,57 +174,37 @@ func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", shell.Prepare(c, data))
 }
 
-// automationTriggerLabels 触发方式的枚举与中文标签。
+// automationTriggerLabels 触发方式的取值与文案（key + 中文兜底的真源在 mailenums）。
 //
 // 下拉选项与列表展示**共用这一份**：此前列表直接把枚举值（manual / contact_created…）
 // 打进表格，同一个值在下拉里叫「新联系人产生」、在列表里叫 contact_created ——
 // 界面自相矛盾，而且把内部标识露给了用户。
-var automationTriggerLabels = []struct{ Value, Label string }{
-	{"manual", "手工添加（后台选人加入）"},
-	{"contact_created", "新联系人产生"},
-	{"contact_subscribed", "变为已订阅"},
-	{"email_opened", "打开过营销邮件"},
-	{"email_clicked", "点击过营销链接"},
-	{"tag_added", "被打上某个标签"},
-}
 
-// triggerLabelOf 枚举 → 中文标签；未知枚举原样返回（不吞掉不认识的取值）。
-func triggerLabelOf(value string) string {
-	for _, o := range automationTriggerLabels {
+// triggerLabelOf 枚举 → 当前语言的标签；未知枚举原样返回（不吞掉不认识的取值）。
+func triggerLabelOf(tr mailTr, value string) string {
+	for _, o := range mailenums.AutomationTriggers {
 		if o.Value == value {
-			return o.Label
+			return mailLabel(tr, o.Label)
 		}
 	}
 	return value
 }
 
-// automationStatusLabel 自动化流程状态 → 中文标签。
+// —— 状态回执 ——
 //
-// 为什么要这一层：状态回执此前是 `"状态已更新为 " + status`，而 status 直接来自表单字段 ——
-// 提交方可以塞任意字符串，它会经 302 的 Location 与页面提示条原样显示出来。
-// 现在只有三个已知状态能拼进文案，其余（含空串）回落到「草稿」以外的中性说法：
-// 「状态已更新。」（读侧白名单只认这三条标签组合）。
-func automationStatusLabel(status string) string {
-	switch strings.TrimSpace(status) {
-	case "active":
-		return mailStatusLabelActive
-	case "paused":
-		return mailStatusLabelPaused
-	case "draft":
-		return mailStatusLabelDraft
-	default:
-		return "未知状态"
-	}
-}
+// 原先这里有一个 automationStatusLabel(status) 返回中文标签（「已启用 / 已暂停 / 草稿」）。
+// 现在取值与文案都在 mailenums.AutomationStatusLabel（key + 中文兜底），拼装只在
+// mail_err.go 的 mailAutomationStatusNotice —— 那一份同时是读侧白名单的候选来源。
+// 判据没变：只有三个已知状态能进文案，其余（含空串、任意提交值）回落「未知状态」。
 
 // triggerOptions 触发方式下拉的选项（带选中态）。
-func triggerOptions(selected string) []gin.H {
+func triggerOptions(tr mailTr, selected string) []gin.H {
 	if selected == "" {
 		selected = "manual"
 	}
-	opts := make([]gin.H, 0, len(automationTriggerLabels))
-	for _, o := range automationTriggerLabels {
-		opts = append(opts, gin.H{"Value": o.Value, "Label": o.Label, "Selected": o.Value == selected})
+	opts := make([]gin.H, 0, len(mailenums.AutomationTriggers))
+	for _, o := range mailenums.AutomationTriggers {
+		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
 	}
 	return opts
 }
@@ -211,32 +213,35 @@ func triggerOptions(selected string) []gin.H {
 //
 // 为什么在 Go 里生成而不是模板里嵌套 range：Jet 的内层 range 拿不到外层变量（行本身），
 // 没法判断「这一行选的是哪个类型」。与其在模板里绕，不如把选项摊平交给模板。
-func automationRowOptions(selected string) []gin.H {
-	opts := make([]gin.H, 0, len(nodeTypeOptions)+1)
-	opts = append(opts, gin.H{"Value": "", "Label": "（不用这行）", "Selected": selected == ""})
-	for _, o := range nodeTypeOptions {
+func automationRowOptions(tr mailTr, selected string) []gin.H {
+	nodeTypes := nodeTypeOptions(tr)
+	opts := make([]gin.H, 0, len(nodeTypes)+1)
+	opts = append(opts, gin.H{
+		"Value": "", "Label": mailLabel(tr, mailenums.AutomationRowNone), "Selected": selected == "",
+	})
+	for _, o := range nodeTypes {
 		opts = append(opts, gin.H{"Value": o.Value, "Label": o.Label, "Selected": o.Value == selected})
 	}
 	return opts
 }
 
 // emptyAutomationRow 一行空白表单行。
-func emptyAutomationRow(index int) gin.H {
+func emptyAutomationRow(tr mailTr, index int) gin.H {
 	return gin.H{
 		"Index": index, "Key": "", "Type": "", "Param": "",
-		"Next": "", "Yes": "", "No": "", "Options": automationRowOptions(""),
+		"Next": "", "Yes": "", "No": "", "Options": automationRowOptions(tr, ""),
 	}
 }
 
 // automationFormRows 把图定义摊成表单行（原样回填，参数按类型还原成文本）。
-func automationFormRows(item *maildto.AutomationItem) []gin.H {
+func automationFormRows(tr mailTr, item *maildto.AutomationItem) []gin.H {
 	rows := make([]gin.H, 0, len(item.Nodes))
 	for i, n := range item.Nodes {
 		row := gin.H{
 			"Index":   i + 1,
 			"Key":     n.Key,
 			"Type":    n.Type,
-			"Options": automationRowOptions(n.Type),
+			"Options": automationRowOptions(tr, n.Type),
 			"Next":    n.Next,
 			"Yes":     n.Yes,
 			"No":      n.No,
@@ -296,7 +301,7 @@ func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape("状态已更新为 "+automationStatusLabel(status)+"。"))
+	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape(mailAutomationStatusNotice(c, status)))
 }
 
 // MailAutomationDelete 删除流程。
@@ -323,8 +328,10 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
+	// Explain / error_message / 时间线 detail 都是写侧落下的运行文案编码，出口按语言还原。
+	mailRunDetailTexts(shell.TranslateFor(c), detail)
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_run.html", shell.Prepare(c, gin.H{
-		"title": "实例排障",
+		"title": mailLabel(shell.TranslateFor(c), mailenums.PageTitleAutomationRun),
 		"D":     detail,
 		"Err":   mailPageErr(c),
 	}))

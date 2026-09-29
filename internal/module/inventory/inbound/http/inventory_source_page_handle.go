@@ -96,7 +96,10 @@ type inventorySourcesPageData struct {
 }
 
 // templateMap 转 Jet 模板键（页面框架字段以小写 title / menu 取值）。
-func (d *inventorySourcesPageData) templateMap() gin.H {
+//
+// c 只用于取词：下拉项文案按请求语言渲染（取词一律经 tr(key, 中文兜底)）。
+func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
+	tr := shell.TranslateFor(c)
 	m := gin.H{
 		"title":           inventoryenums.MsgInventorySourcesTitle,
 		"menu":            "inventory-sources",
@@ -105,9 +108,9 @@ func (d *inventorySourcesPageData) templateMap() gin.H {
 		"Sources":         d.Sources,
 		"HasSummary":      d.HasSummary,
 		"Summary":         d.Summary,
-		"TypeOptions":     sourceTypeOptions(),
-		"StatusOptions":   sourceStatusOptions(),
-		"RelatedOptions":  sourceRelatedOptions(),
+		"TypeOptions":     sourceTypeOptions(tr),
+		"StatusOptions":   sourceStatusOptions(tr),
+		"RelatedOptions":  sourceRelatedOptions(tr),
 		"FilterType":      d.FilterType,
 		"FilterRelated":   d.FilterRelated,
 		"FilterStatus":    d.FilterStatus,
@@ -129,7 +132,7 @@ func (d *inventorySourcesPageData) templateMap() gin.H {
 // renderSourcesPage 货源页的唯一渲染出口：正常与降级两条路都从这里出，
 // 键集只有一处定义（降级分支不必「记得」补齐模板要的每一个键）。
 func (h *inventorySourcePageHandle) renderSourcesPage(c *gin.Context, d *inventorySourcesPageData) {
-	data := d.templateMap()
+	data := d.templateMap(c)
 	data["SourceCreateForm"] = sourceFormData(c, false, nil)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", shell.Prepare(c, data))
 }
@@ -215,8 +218,9 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 					pageErr = inventoryErrText(c, lerr)
 				}
 			} else {
+				tr := shell.TranslateFor(c)
 				for _, s := range list {
-					sources = append(sources, sourceRow(s))
+					sources = append(sources, sourceRow(tr, s))
 				}
 			}
 		}
@@ -393,10 +397,11 @@ func (h *inventorySourcePageHandle) sourceSummary(c *gin.Context, ctx context.Co
 		return out, false
 	}
 	groups := make([]gin.H, 0, len(res.Groups))
+	tr := shell.TranslateFor(c)
 	for _, g := range res.Groups {
 		groups = append(groups, gin.H{
-			"Type": g.Type, "TypeLabel": sourceTypeLabel(g.Type),
-			"RelatedParty": g.RelatedParty, "RelatedPartyLabel": sourceRelatedLabel(g.RelatedParty),
+			"Type": g.Type, "TypeLabel": sourceTypeLabel(tr, g.Type),
+			"RelatedParty": g.RelatedParty, "RelatedPartyLabel": sourceRelatedLabel(tr, g.RelatedParty),
 			"Count": g.Count,
 		})
 	}
@@ -408,72 +413,64 @@ func (h *inventorySourcePageHandle) sourceSummary(c *gin.Context, ctx context.Co
 }
 
 // sourceRow 货源行 → 模板视图（金额与配置都先格式化，模板不做逻辑）。
-func sourceRow(s *inventorydto.SourceResp) gin.H {
+func sourceRow(tr func(key, fallback string) string, s *inventorydto.SourceResp) gin.H {
 	settlePrice := "—"
 	if s.SettlePrice != nil {
 		settlePrice = strconv.FormatFloat(*s.SettlePrice, 'f', 2, 64)
 	}
 	return gin.H{
 		"ID": s.ID, "Code": s.Code, "Name": s.Name,
-		"Type": s.Type, "TypeLabel": sourceTypeLabel(s.Type),
-		"RelatedParty": s.RelatedParty, "RelatedPartyLabel": sourceRelatedLabel(s.RelatedParty),
-		"Status": s.Status, "StatusLabel": sourceStatusLabel(s.Status),
+		"Type": s.Type, "TypeLabel": sourceTypeLabel(tr, s.Type),
+		"RelatedParty": s.RelatedParty, "RelatedPartyLabel": sourceRelatedLabel(tr, s.RelatedParty),
+		"Status": s.Status, "StatusLabel": statusLabel(tr, s.Status),
 		"SettlePrice": settlePrice, "HasSettlePrice": s.SettlePrice != nil,
 		"Config": prettyJSON(s.Config), "Sort": s.Sort, "UpdatedAt": s.UpdatedAt,
 	}
 }
 
 // sourceTypeOptions 类型下拉（外部 / 内部）。
-func sourceTypeOptions() []gin.H {
+func sourceTypeOptions(tr func(key, fallback string) string) []gin.H {
 	return []gin.H{
-		{"Value": inventoryenums.SourceTypeExternal, "Label": sourceTypeLabel(inventoryenums.SourceTypeExternal)},
-		{"Value": inventoryenums.SourceTypeInternal, "Label": sourceTypeLabel(inventoryenums.SourceTypeInternal)},
+		{"Value": inventoryenums.SourceTypeExternal, "Label": sourceTypeLabel(tr, inventoryenums.SourceTypeExternal)},
+		{"Value": inventoryenums.SourceTypeInternal, "Label": sourceTypeLabel(tr, inventoryenums.SourceTypeInternal)},
 	}
 }
 
 // sourceStatusOptions 状态下拉（启用 / 停用）。
-func sourceStatusOptions() []gin.H {
+func sourceStatusOptions(tr func(key, fallback string) string) []gin.H {
 	return []gin.H{
-		{"Value": inventoryenums.SourceStatusActive, "Label": sourceStatusLabel(inventoryenums.SourceStatusActive)},
-		{"Value": inventoryenums.SourceStatusDisabled, "Label": sourceStatusLabel(inventoryenums.SourceStatusDisabled)},
+		{"Value": inventoryenums.SourceStatusActive, "Label": statusLabel(tr, inventoryenums.SourceStatusActive)},
+		{"Value": inventoryenums.SourceStatusDisabled, "Label": statusLabel(tr, inventoryenums.SourceStatusDisabled)},
 	}
 }
 
 // sourceRelatedOptions 关联方三态下拉：空值 = 按类型默认（编辑时 = 不改）。
-func sourceRelatedOptions() []gin.H {
+func sourceRelatedOptions(tr func(key, fallback string) string) []gin.H {
 	return []gin.H{
-		{"Value": "", "Label": "按类型默认 / 不改"},
-		{"Value": "true", "Label": sourceRelatedLabel(true)},
-		{"Value": "false", "Label": sourceRelatedLabel(false)},
+		{"Value": "", "Label": tr(inventoryenums.InventorySourcesRelatedTypeDefault, "按类型默认 / 不改")},
+		{"Value": "true", "Label": sourceRelatedLabel(tr, true)},
+		{"Value": "false", "Label": sourceRelatedLabel(tr, false)},
 	}
 }
 
-// sourceTypeLabel 货源类型 → 展示文案。
-func sourceTypeLabel(sourceType string) string {
+// sourceTypeLabel 货源类型 → 当前语言展示文案。
+func sourceTypeLabel(tr func(key, fallback string) string, sourceType string) string {
 	switch sourceType {
 	case inventoryenums.SourceTypeInternal:
-		return "内部（集团内 / 自家工厂）"
+		return tr(inventoryenums.InventorySourcesTypeInternal, "内部（集团内 / 自家工厂）")
 	case inventoryenums.SourceTypeExternal:
-		return "外部供应商"
+		return tr(inventoryenums.InventorySourcesStatsExternal, "外部供应商")
 	default:
 		return sourceType
 	}
 }
 
-// sourceRelatedLabel 关联方标志 → 展示文案。
-func sourceRelatedLabel(related bool) string {
+// sourceRelatedLabel 关联方标志 → 当前语言展示文案。
+func sourceRelatedLabel(tr func(key, fallback string) string, related bool) string {
 	if related {
-		return "关联方"
+		return tr(inventoryenums.InventorySourcesStatsRelated, "关联方")
 	}
-	return "非关联方"
-}
-
-// sourceStatusLabel 货源状态 → 展示文案。
-func sourceStatusLabel(status string) string {
-	if status == inventoryenums.SourceStatusDisabled {
-		return "已停用"
-	}
-	return "启用中"
+	return tr(inventoryenums.InventorySourcesStatsUnrelated, "非关联方")
 }
 
 // sourceRelatedForm 解析关联方下拉：空串 = 未指定（新建按类型默认 / 编辑不改）。
@@ -536,10 +533,11 @@ var sourceCreateFields = []string{"projectId", "code", "name", "type", "relatedP
 var sourceEditFields = []string{"projectId", "id", "code", "name", "type", "relatedParty", "status", "settlePrice", "sort", "config"}
 
 func sourceFormData(c *gin.Context, edit bool, row gin.H) gin.H {
+	tr := shell.TranslateFor(c)
 	return gin.H{
 		"IsEdit": edit, "Row": row, "SelectedProject": c.PostForm("projectId"),
-		"TypeOptions": sourceTypeOptions(), "RelatedOptions": sourceRelatedOptions(),
-		"StatusOptions": sourceStatusOptions(),
+		"TypeOptions": sourceTypeOptions(tr), "RelatedOptions": sourceRelatedOptions(tr),
+		"StatusOptions": sourceStatusOptions(tr),
 	}
 }
 

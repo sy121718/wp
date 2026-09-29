@@ -18,7 +18,6 @@ package userservice
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	userdto "go_wp/internal/module/user/dto"
@@ -125,10 +124,14 @@ func (s *Service) SetCustomerStatus(ctx context.Context, req *userdto.CustomerSt
 			return nil, err
 		}
 	}
+	// StatusLabel 是**留给出口填的**展示文案（真源在 userenums.StatusLabel，key + 中文兜底）。
+	//
+	// 不在这一层填：service 拿不到请求语言，在这里拼中文的表现是英文站点的接口响应恒中文，
+	// 而不会有任何报错。取词在出口 —— /api/customer/* 走 userhttp 的 localizeCustomerLabels，
+	// 后台页按 Status 值给模板 (key, 兜底) 再取当前语言。
 	return &userdto.CustomerStatusResp{
-		CustomerID:  req.CustomerID,
-		Status:      req.Status,
-		StatusLabel: customerStatusLabel(req.Status),
+		CustomerID: req.CustomerID,
+		Status:     req.Status,
 	}, nil
 }
 
@@ -177,24 +180,11 @@ func customerEmailVerifiedFilter(v int) int {
 	}
 }
 
-// customerStatusLabel 账号状态 → 面向运营的中文。
-//
-// 未知取值带上原始数字：后台出现状态取值漂移时，「未知状态(7)」能让人立刻去查数据，
-// 而只显示「未知状态」只能引来一句「哪里未知？」。
-func customerStatusLabel(status int) string {
-	switch status {
-	case usermodel.UserStatusActive:
-		return "正常"
-	case usermodel.UserStatusDisabled:
-		return "已停用"
-	case usermodel.UserStatusPending:
-		return "待激活"
-	default:
-		return fmt.Sprintf("未知状态(%d)", status)
-	}
-}
-
 // toCustomerResp 实体 → 视图（**只挑展示字段，凭据一律不搬运**）。
+//
+// StatusLabel 是**留给出口填的**展示文案（真源在 userenums.StatusLabel，key + 中文兜底）：
+// 后台页按 Status 值自行取 (key, 兜底) 交给模板取词，/api/customer/* 由 handler 就地取词 ——
+// 这一层只给状态取值，不拼文案（service 拿不到请求语言）。
 func toCustomerResp(e *usermodel.UserEntity, now time.Time) *userdto.CustomerResp {
 	r := &userdto.CustomerResp{
 		ID:                e.ID,
@@ -204,7 +194,6 @@ func toCustomerResp(e *usermodel.UserEntity, now time.Time) *userdto.CustomerRes
 		DisplayName:       deref(e.DisplayName),
 		Avatar:            deref(e.Avatar),
 		Status:            e.Status,
-		StatusLabel:       customerStatusLabel(e.Status),
 		EmailVerified:     e.EmailVerifiedAt != nil,
 		RegisteredAt:      utils.NewJSONTimePtr(e.RegisteredAt),
 		RegisteredAtText:  formatTime(e.RegisteredAt),

@@ -24,8 +24,12 @@ type SaveAccountReq struct {
 }
 
 // TestSendReq 用指定账号发测试邮件。
+//
+// Lang 是**请求语言**（response.RequestLanguage 的取值）：测试邮件的主题与正文
+// 按它取词 —— 英文界面上点「测试发送」收到的该是英文邮件，而不是恒中文。
 type TestSendReq struct {
 	AccountID  uint64
 	ToEmail    string
 	OperatorID uint64
+	Lang       string
 }

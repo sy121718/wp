@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -429,13 +430,18 @@ func (s *Service) DeliverDelivery(ctx context.Context, deliveryID uint64) (err e
 	lastErr := ""
 	var deliverErr error
 
+	// last_error 一律落**可翻译的编码**（enums.EncodeDeliveryErr）：这一列会经
+	// DeliveryItem.LastError 原样返回给调用方，落中文等于把语言固化进投递日志。
+	// 出站客户端给出的原文（perr.Error() 可能带对方主机名）不编码，原样落 —— 那是外部事实。
 	ep, gerr := s.m.GetEndpoint(ctx, d.EndpointID)
 	if gerr != nil {
 		// 端点不存在或已删除：重试无意义，落定 failed 且不返回错误（不让队列空转）。
-		lastErr = "端点不存在或已删除"
+		lastErr = webhookenums.EncodeDeliveryErr(webhookenums.DeliveryErrEndpointMissing, nil)
 	} else if secret, derr := s.decryptSecret(ep.SecretCipher); derr != nil {
-		// 密钥不可用：同样重试无意义。
-		lastErr = derr.Error()
+		// 密钥不可用：同样重试无意义。原文只进日志（crypto 的细节不是给调用方看的），
+		// 对外给可翻译的归口原因。
+		logger.Scene("webhook").With("endpoint_id", ep.ID).Error(derr, "webhook 投递：端点签名密钥不可用")
+		lastErr = webhookenums.EncodeDeliveryErr(webhookenums.DeliveryErrCipherUnavailable, nil)
 	} else {
 		status, perr := postWebhook(ctx, s.client, ep.TargetURL, secret, d.EventType, d.ID, []byte(d.Payload))
 		respStatus = status
@@ -445,7 +451,8 @@ func (s *Service) DeliverDelivery(ctx context.Context, deliveryID uint64) (err e
 			lastErr = perr.Error()
 			deliverErr = fmt.Errorf("webhook 投递未成功: %s", lastErr)
 		} else {
-			lastErr = fmt.Sprintf("远端返回非 2xx 状态（HTTP %d）", status)
+			lastErr = webhookenums.EncodeDeliveryErr(webhookenums.DeliveryErrRemoteStatus,
+				map[string]string{webhookenums.DeliveryErrArgHTTP: strconv.Itoa(status)})
 			deliverErr = fmt.Errorf("webhook 投递未成功: %s", lastErr)
 		}
 	}

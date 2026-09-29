@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/web/shell"
 )
 
@@ -95,7 +96,7 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
 	data := gin.H{
-		"title":           "商品属性",
+		"title":           shell.TranslateFor(c)(productenums.ProductAttributesTitle, "商品属性"),
 		"menu":            "product-attributes",
 		"Projects":        projects,
 		"SelectedProject": selected,

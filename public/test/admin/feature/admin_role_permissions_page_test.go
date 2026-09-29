@@ -1,17 +1,23 @@
 package feature
 
-// admin_role_permissions_page_test.go — 角色权限分配页（/admin/roles/permissions）的页面级用例。
+// admin_role_permissions_page_test.go — 角色权限分配的抽屉片段
+// （GET /admin/roles/permissions/drawer）与其保存出口的用例。
 //
-// 覆盖两件在别处看不到的事：
-//  1. 勾选态是**服务端渲染**的（禁用 JS 时页面也必须正确）—— 目录与菜单的 checkbox
+// 覆盖四件在别处看不到的事：
+//  1. 片段形状符合 ui/drawer.js 的 fragmentRoot 校验（唯一根 + data-drawer-fragment + 含 form，
+//     且**不含 <script>**）—— 形状不合的响应在浏览器里表现为「编辑表单加载失败，请重试」，
+//     后端测试不钉这一条，就只能靠人肉点开抽屉才发现；
+//  2. 勾选态是**服务端渲染**的（禁用 JS 时片段也必须正确）—— 目录与菜单的 checkbox
 //     都要 checked，因为「只勾按钮、没勾它所属的菜单」这个陷阱的补齐发生在服务端；
-//  2. 表单解析：空值、非数字、重复 id 都不该让保存失败（真实落库集合由 service 侧
+//  3. 保存失败时回到片段里的是**本次提交的勾选**，不是库里的旧值（用户刚勾的那一屏不能丢）；
+//  4. 表单解析：空值、非数字、重复 id 都不该让保存失败（真实落库集合由 service 侧
 //     重新过滤，那里有真实 PostgreSQL 用例钉着）。
 //
 // 走真实链路：gin 路由 → AdminPagesHandle → shell.Prepare → Jet 模板 → 响应体。
 // 角色服务用本包的假实现（admin_err_response_test.go 里的 fakeRoleService）。
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,7 +34,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newAdminRolePermissionsEngine 装配带真实 Jet 渲染的角色权限分配页路由。
+// 两个注入用的假错误：断言的是「原文不外泄」，所以它们必须是不可能出现在受控文案里的字符串。
+var (
+	errFakeRoleNotFound = errors.New("role permissions tree: relation does not exist")
+	errFakeRoleSave     = errors.New("role menu save: duplicate key value violates unique constraint")
+)
+
+// newAdminRolePermissionsEngine 装配带真实 Jet 渲染的角色权限分配抽屉路由。
 func newAdminRolePermissionsEngine(t *testing.T, svc *fakeRoleService) *gin.Engine {
 	t.Helper()
 	handle := adminhttp.NewAdminPagesHandle(nil, svc, nil, nil, nil, nil)
@@ -38,7 +50,7 @@ func newAdminRolePermissionsEngine(t *testing.T, svc *fakeRoleService) *gin.Engi
 		InitComponents: true, // 让 shell.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/roles/permissions", handle.RolePermissionsPage)
+			e.GET("/admin/roles/permissions/drawer", handle.RolePermissionsDrawer)
 			e.POST("/admin/roles/permissions/save", handle.RolePermissionsSave)
 		},
 	})
@@ -81,21 +93,36 @@ func permTreeFixture() *admindto.RolePermissionTreeResp {
 	}
 }
 
-// permCheckbox 取出页面上某个菜单 id 的勾选框整段 HTML。
+// permCheckbox 取出片段里某个菜单 id 的勾选框整段 HTML。
 //
-// 不对整页做 strings.Contains("checked")：一个 checked 就能满足整页断言，
+// 不对整段做 strings.Contains("checked")：一个 checked 就能满足整段断言，
 // 于是「未勾选的节点也被渲染成 checked」这种缺陷会漏过。
 func permCheckbox(t *testing.T, body, id string) string {
 	t.Helper()
 	re := regexp.MustCompile(`<input[^>]*value="` + regexp.QuoteMeta(id) + `"[^>]*>`)
 	got := re.FindString(body)
 	if got == "" {
-		t.Fatalf("页面里没有 value=%q 的勾选框", id)
+		t.Fatalf("片段里没有 value=%q 的勾选框", id)
 	}
 	return got
 }
 
-func fetchRolePermissionsPage(t *testing.T, engine *gin.Engine, path string) (int, string) {
+// assertDrawerFragment 钉住 ui/drawer.js 的 fragmentRoot 校验里最容易违反的两条：
+// 唯一根（以 host 的 div 开头、以 </div> 结尾）与「片段里没有活动标记」。
+func assertDrawerFragment(t *testing.T, body string) {
+	t.Helper()
+	trimmed := strings.TrimSpace(body)
+	if !strings.HasPrefix(trimmed, `<div data-drawer-fragment`) || !strings.HasSuffix(trimmed, `</div>`) {
+		t.Fatalf("片段必须是唯一的 data-drawer-fragment 根元素：%s", trimmed)
+	}
+	for _, banned := range []string{"<script", "<style", "<template", "<svg", "<link"} {
+		if strings.Contains(trimmed, banned) {
+			t.Fatalf("片段里出现了 %s：drawer.js 的 fragmentRoot 会整段拒收（表现为「加载失败，请重试」）", banned)
+		}
+	}
+}
+
+func fetchRolePermissionsDrawer(t *testing.T, engine *gin.Engine, path string) (int, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	recorder := httptest.NewRecorder()
@@ -103,17 +130,34 @@ func fetchRolePermissionsPage(t *testing.T, engine *gin.Engine, path string) (in
 	return recorder.Code, recorder.Body.String()
 }
 
-// TestAdminRolePermissionsPageRendersCheckedNodes 服务端把「已补齐祖先」的勾选态渲染进 HTML。
-func TestAdminRolePermissionsPageRendersCheckedNodes(t *testing.T) {
+// postRolePermissions 提交保存表单；hx 为真时带 HX-Request 头（抽屉里的真实路径）。
+func postRolePermissions(t *testing.T, engine *gin.Engine, form url.Values, hx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/admin/roles/permissions/save", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if hx {
+		req.Header.Set("HX-Request", "true")
+	}
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, req)
+	return recorder
+}
+
+// TestAdminRolePermissionsDrawerRendersCheckedNodes 服务端把「已补齐祖先」的勾选态渲染进片段。
+func TestAdminRolePermissionsDrawerRendersCheckedNodes(t *testing.T) {
 	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
 
-	code, body := fetchRolePermissionsPage(t, engine, "/admin/roles/permissions?role_id=7")
+	code, body := fetchRolePermissionsDrawer(t, engine, "/admin/roles/permissions/drawer?role_id=7")
 	if code != http.StatusOK {
-		t.Fatalf("GET 页面状态码 %d", code)
+		t.Fatalf("GET 片段状态码 %d", code)
+	}
+	assertDrawerFragment(t, body)
+	if !strings.Contains(body, "<form") {
+		t.Fatal("片段必须自带表单（drawer.js 的 fragmentRoot 要求）")
 	}
 
 	// 目录（1）也必须在勾选态里：目录没有权限码，反查永远查不出它，
-	// 这一条正是「目录也要勾选」在页面上的落点。
+	// 这一条正是「目录也要勾选」在渲染上的落点。
 	for _, id := range []string{"1", "2", "3"} {
 		if !strings.Contains(permCheckbox(t, body, id), "checked") {
 			t.Fatalf("已授权节点 %s 应渲染为已勾选", id)
@@ -130,35 +174,51 @@ func TestAdminRolePermissionsPageRendersCheckedNodes(t *testing.T) {
 	}
 	// 权限码要显示出来，配置者才能把「勾了什么」和「开了哪个接口」对上。
 	if !strings.Contains(body, "content:delete") {
-		t.Fatal("页面未显示节点的权限码")
+		t.Fatal("片段未显示节点的权限码")
+	}
+	// 联动脚本住在基座（static/js/ui/perm-tree.js），片段只留锚点。
+	if !strings.Contains(body, "data-perm-tree") {
+		t.Fatal("权限树缺少 data-perm-tree 锚点（控件认领不到它）")
 	}
 }
 
-// TestAdminRolePermissionsPageRedirectsWithoutRoleID 缺少 role_id 时回列表并说明原因，不渲染半张空页。
-//
-// 出口形态收口后（见 admin_page_write_failed_test.go 文件头）：回跳地址带 `?err=`，
-// 用户从书签/历史/截断参数进来时能看到「为什么被弹回去」，而不是静默落到角色列表。
-func TestAdminRolePermissionsPageRedirectsWithoutRoleID(t *testing.T) {
-	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{})
-
-	req := httptest.NewRequest(http.MethodGet, "/admin/roles/permissions", nil)
+// TestAdminRolePermissionsDrawerNoStore 片段不能被缓存：勾选态是「打开那一刻的策略快照」。
+func TestAdminRolePermissionsDrawerNoStore(t *testing.T) {
+	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
+	req := httptest.NewRequest(http.MethodGet, "/admin/roles/permissions/drawer?role_id=7", nil)
 	recorder := httptest.NewRecorder()
 	engine.ServeHTTP(recorder, req)
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("片段必须 no-store，实际 %q", got)
+	}
+}
 
-	if recorder.Code != http.StatusSeeOther {
-		t.Fatalf("缺少 role_id 应 303 回列表，实际 %d", recorder.Code)
+// TestAdminRolePermissionsDrawerRejectsMissingRoleID 缺少 role_id 时给状态码，不给半个片段。
+//
+// 抽屉对非 200 的响应会显示「编辑表单加载失败，请重试」并聚焦重试按钮 ——
+// 服务端拼一个缺 form 的片段反而会被 fragmentRoot 判非法，用户看到的还是同一个失败界面。
+func TestAdminRolePermissionsDrawerRejectsMissingRoleID(t *testing.T) {
+	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{permTree: permTreeFixture()})
+
+	code, body := fetchRolePermissionsDrawer(t, engine, "/admin/roles/permissions/drawer")
+	if code != http.StatusBadRequest {
+		t.Fatalf("缺 role_id 应 400，实际 %d（body=%s）", code, body)
 	}
-	loc := recorder.Header().Get("Location")
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatalf("回跳地址无法解析: %q", loc)
+	if strings.TrimSpace(body) != "" {
+		t.Fatalf("失败响应不应带正文（内部细节不外泄）：%s", body)
 	}
-	if u.Path != "/admin/roles" {
-		t.Fatalf("跳转目标不符: %q（期望路径 /admin/roles）", loc)
+}
+
+// TestAdminRolePermissionsDrawerNotFound 角色不存在 / 树取数失败时 404，且响应里没有内部错误原文。
+func TestAdminRolePermissionsDrawerNotFound(t *testing.T) {
+	engine := newAdminRolePermissionsEngine(t, &fakeRoleService{err: errFakeRoleNotFound})
+
+	code, body := fetchRolePermissionsDrawer(t, engine, "/admin/roles/permissions/drawer?role_id=7")
+	if code != http.StatusNotFound {
+		t.Fatalf("树取数失败应 404，实际 %d", code)
 	}
-	// 静默重定向是本条要防的回归：文案缺失时运营完全不知道发生了什么。
-	if errText := u.Query().Get("err"); errText == "" {
-		t.Fatalf("缺少 role_id 的回跳必须带 ?err= 说明原因（否则是静默失败）：Location=%q", loc)
+	if strings.Contains(body, errFakeRoleNotFound.Error()) {
+		t.Fatalf("响应泄漏了内部错误原文：%s", body)
 	}
 }
 
@@ -175,17 +235,13 @@ func TestAdminRolePermissionsSaveParsesMenuIDs(t *testing.T) {
 	form.Add("menu_ids", "abc") // 非数字：解析成 0 后被丢弃
 	form.Add("menu_ids", "12")
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/roles/permissions/save", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, req)
+	recorder := postRolePermissions(t, engine, form, false)
 
 	if recorder.Code != http.StatusSeeOther {
 		t.Fatalf("保存应 303，实际 %d，体: %s", recorder.Code, recorder.Body.String())
 	}
-	// 回到分配页而不是列表页：这个页面的语义是「编辑一个集合」，
-	// 保存后留在原地才能看见服务端重新渲染出的真实勾选态。
-	if loc := recorder.Header().Get("Location"); loc != "/admin/roles/permissions?role_id=7" {
+	// 成功回角色列表：抽屉形态下没有可回的独立分配页。
+	if loc := recorder.Header().Get("Location"); loc != "/admin/roles" {
 		t.Fatalf("保存后跳转目标不符: %q", loc)
 	}
 	if svc.lastMenuSave == nil {
@@ -218,10 +274,7 @@ func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 	form.Set("role_id", "7")
 	form.Set("menu_ids", "") // 浏览器在全部取消勾选时给不出任何 menu_ids
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/roles/permissions/save", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, req)
+	recorder := postRolePermissions(t, engine, form, false)
 
 	if recorder.Code != http.StatusSeeOther {
 		t.Fatalf("空提交应 303，实际 %d", recorder.Code)
@@ -236,17 +289,13 @@ func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 
 // TestAdminRolePermissionsSaveRejectsMissingRoleID 缺 role_id 时 303 回列表 + ?err=，不落库。
 //
-// 出口形态收口后（见 admin_page_write_failed_test.go 文件头）：页面写失败从 400 + JSON
-// 改为 303 + `?err=`。**核心意图不变**：参数不合法时绝不调用服务层（不落库）。
-// 回跳目标按有无 role_id 分流 —— 无 role_id 即没有可返回的分配页，只能回角色列表。
+// 页面写失败从 400 + JSON 改为 303 + `?err=`（见 admin_page_write_failed_test.go 文件头）。
+// **核心意图不变**：参数不合法时绝不调用服务层（不落库）。
 func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/roles/permissions/save", strings.NewReader("menu_ids=3"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	recorder := httptest.NewRecorder()
-	engine.ServeHTTP(recorder, req)
+	recorder := postRolePermissions(t, engine, url.Values{"menu_ids": {"3"}}, false)
 
 	if recorder.Code != http.StatusSeeOther {
 		t.Fatalf("缺 role_id 应 303 回列表页，实际 %d（body=%s）", recorder.Code, recorder.Body.String())
@@ -257,12 +306,126 @@ func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
 		t.Fatalf("回跳地址无法解析: %q", loc)
 	}
 	if u.Path != "/admin/roles" {
-		t.Fatalf("缺 role_id 应回角色列表（没有可返回的分配页），实际 %q", loc)
+		t.Fatalf("缺 role_id 应回角色列表（没有可返回的抽屉），实际 %q", loc)
 	}
 	if errText := u.Query().Get("err"); errText == "" {
 		t.Fatalf("回跳必须带 ?err= 说明原因（否则是静默失败）：Location=%q", loc)
 	}
 	if svc.lastMenuSave != nil {
 		t.Fatal("缺 role_id 不应调用服务层")
+	}
+}
+
+// TestAdminRolePermissionsSaveMissingRoleIDHtmxStillRedirects 缺 role_id 的 htmx 请求走 HX-Redirect。
+//
+// 抽屉里提交的请求都是 htmx 请求：此时附近没有可写的片段（缺 role_id 连树都取不了），
+// 只能整页跳回列表 —— 用 HX-Redirect 而不是 302（XHR 会自己跟随 302，最终响应里读不到
+// Location，整页 HTML 会被塞进片段的位置）。
+func TestAdminRolePermissionsSaveMissingRoleIDHtmxStillRedirects(t *testing.T) {
+	svc := &fakeRoleService{}
+	engine := newAdminRolePermissionsEngine(t, svc)
+
+	recorder := postRolePermissions(t, engine, url.Values{"menu_ids": {"3"}}, true)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("htmx 分支应 200 + HX-Redirect，实际 %d", recorder.Code)
+	}
+	loc := recorder.Header().Get("HX-Redirect")
+	if !strings.HasPrefix(loc, "/admin/roles?err=") {
+		t.Fatalf("htmx 回跳目标不符: %q", loc)
+	}
+	if svc.lastMenuSave != nil {
+		t.Fatal("缺 role_id 不应调用服务层")
+	}
+}
+
+// TestAdminRolePermissionsSaveHtmxFailureKeepsSelectionAndShape 失败时回片段自身：错误槽 + 提交的勾选。
+//
+// 两个断言各自防一类静默缺陷：
+//   · 片段形状 —— 形状不合时 htmx 虽然会 swap 进去，但再下一次提交时抽屉里的节点已不是
+//     片段根，后续失败就无法再就地回报；
+//   · **勾选来自本次提交**（节点 4 库里没勾、这次勾上了）—— 用库里的值渲回去会把用户
+//     刚勾的那一屏整块抹掉，而他正需要在这里改掉那个错误重试。
+func TestAdminRolePermissionsSaveHtmxFailureKeepsSelectionAndShape(t *testing.T) {
+	svc := &fakeRoleService{permTree: permTreeFixture(), menuSaveErr: errFakeRoleSave}
+	engine := newAdminRolePermissionsEngine(t, svc)
+
+	form := url.Values{}
+	form.Set("role_id", "7")
+	for _, id := range []string{"1", "2", "3", "4"} {
+		form.Add("menu_ids", id)
+	}
+
+	recorder := postRolePermissions(t, engine, form, true)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("htmx 失败应 200（5xx 会被 htmx 判成不 swap，用户什么都看不到），实际 %d", recorder.Code)
+	}
+	if recorder.Header().Get("HX-Redirect") != "" {
+		t.Fatal("树可取回来时必须就地回报，不能整页跳走")
+	}
+	body := recorder.Body.String()
+	assertDrawerFragment(t, body)
+	if !strings.Contains(body, `role="alert"`) {
+		t.Fatal("失败片段缺少错误槽（role=alert）")
+	}
+	if strings.Contains(body, errFakeRoleSave.Error()) {
+		t.Fatalf("失败片段泄漏了内部错误原文：%s", body)
+	}
+	if !strings.Contains(permCheckbox(t, body, "4"), "checked") {
+		t.Fatal("失败回片段时勾选必须来自本次提交（节点 4 是这次才勾上的）")
+	}
+}
+
+// TestAdminRolePermissionsSaveHtmxFailureFallsBackToList 连树都取不回来时整页回列表。
+//
+// 只剩空树可渲的片段会退化成「没有可分配的菜单」的空态 —— 那比一句通用错误更误导
+// （看起来像这个角色的权限被清空了）。
+func TestAdminRolePermissionsSaveHtmxFailureFallsBackToList(t *testing.T) {
+	svc := &fakeRoleService{err: errFakeRoleSave}
+	engine := newAdminRolePermissionsEngine(t, svc)
+
+	form := url.Values{"role_id": {"7"}, "menu_ids": {"3"}}
+	recorder := postRolePermissions(t, engine, form, true)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("htmx 分支应 200 + HX-Redirect，实际 %d", recorder.Code)
+	}
+	loc := recorder.Header().Get("HX-Redirect")
+	if !strings.HasPrefix(loc, "/admin/roles?err=") {
+		t.Fatalf("htmx 回跳目标不符: %q", loc)
+	}
+	if strings.Contains(recorder.Body.String(), "没有可分配的菜单") {
+		t.Fatal("树取不回来时不能渲染空态片段（会被读成「权限被清空了」）")
+	}
+}
+
+// TestAdminRolePermissionsSaveHtmxSuccessShowsReceipt 成功后抽屉里就地给回执，不整页跳走。
+func TestAdminRolePermissionsSaveHtmxSuccessShowsReceipt(t *testing.T) {
+	svc := &fakeRoleService{permTree: permTreeFixture()}
+	engine := newAdminRolePermissionsEngine(t, svc)
+
+	form := url.Values{}
+	form.Set("role_id", "7")
+	for _, id := range []string{"1", "2", "3"} {
+		form.Add("menu_ids", id)
+	}
+	recorder := postRolePermissions(t, engine, form, true)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("htmx 成功应 200 + 成功态片段，实际 %d", recorder.Code)
+	}
+	if recorder.Header().Get("HX-Redirect") != "" {
+		t.Fatal("成功不该整页跳走：列表页的角色行没有任何一列体现权限集合，没有可刷的新数据")
+	}
+	body := recorder.Body.String()
+	assertDrawerFragment(t, body)
+	if !strings.Contains(body, "权限已保存") {
+		t.Fatalf("成功态缺少回执文案（否则用户关掉抽屉后无从判断是否生效）：%s", body)
+	}
+	if !strings.Contains(body, "data-drawer-close") {
+		t.Fatal("成功态必须给一条关闭抽屉的出口")
+	}
+	if strings.Contains(body, `name="menu_ids"`) {
+		t.Fatal("成功态不该再渲染权限树（勾选已提交，回执里那棵树会被误读成本次保存的结果快照）")
 	}
 }

@@ -4,6 +4,8 @@
 // 做白名单，不在表里的一律收口到 ErrInternal。
 package orderenums
 
+import "strings"
+
 const (
 	MsgCreateSuccess = "order.msg.createSuccess"
 	MsgStatusChanged = "order.msg.statusChanged"
@@ -175,4 +177,131 @@ const (
 
 	// BulkCouponTargetInvalid 批量启停优惠码时目标状态非法（走 ?done= 的参数级回执）。
 	BulkCouponTargetInvalid = "order.bulk.couponTargetInvalid"
+	// BulkCancelReasonRequired 批量取消缺原因：整批不处理，回一句可展示的提示。
+	BulkCancelReasonRequired = "order.bulk.cancelReasonRequired"
+	// BulkReturnRejectReasonRequired 批量拒绝退货缺理由（与订单侧同口径）。
+	BulkReturnRejectReasonRequired = "order.bulk.returnRejectReasonRequired"
+)
+
+// —— 后台页面展示用的枚举标签（枚举 → 展示名的唯一真源）——
+//
+// 形态统一是 (key, fallback) 两个返回值，调用点 tr(key, fallback)：
+// 只给中文 → 英文界面恒中文；只给 key → 词条缺失时页面显示裸 key
+// （`admin.orders.status.paid`），两个都给 → 命中出译文、未命中出中文兜底。
+//
+// 为什么放 enums 而不是 inbound/http：同一份映射有三个消费方（订单页、后台客户页的
+// 「最近一单」、访客片段），各写一份的结果是「改一处、另两处静默留在旧说法上」。
+// enums 零依赖，任何层都能 import。
+
+// OrderStatusKeyPrefix 订单状态的词条 key 前缀。
+//
+// **复用访客面片段那套 `site.fragment.order.status.*`**（迁移 157 seed，六个状态中英成对）：
+// 后台没有独立的订单状态词条，而 sys_i18n 是一张全局语言表（不存在「哪个面不能用哪个 key」）。
+// 代价是这层跨面耦合：访客面若删除该词条，后台会静默回落到中文兜底（页面仍可用）。
+const OrderStatusKeyPrefix = "site.fragment.order.status."
+
+// OrderStatusLabel 订单状态 → (词条 key, 中文兜底)。
+//
+// 空状态返回空 key + 「—」：那是「没有这一单」，不是一个状态；
+// 认不出的取值返回空 key + 原值（宁可显示生值，也不显示空白 —— 手改 URL 带来的怪值照样说得清）。
+func OrderStatusLabel(status string) (key, fallback string) {
+	switch strings.TrimSpace(status) {
+	case "pending":
+		return OrderStatusKeyPrefix + "pending", "待付款"
+	case "paid":
+		return OrderStatusKeyPrefix + "paid", "已付款"
+	case "shipped":
+		return OrderStatusKeyPrefix + "shipped", "已发货"
+	case "completed":
+		return OrderStatusKeyPrefix + "completed", "已完成"
+	case "cancelled":
+		return OrderStatusKeyPrefix + "cancelled", "已取消"
+	case "refunded":
+		return OrderStatusKeyPrefix + "refunded", "已退款"
+	case "":
+		return "", "—"
+	default:
+		return "", status
+	}
+}
+
+// 退货申请状态的词条 key（后台退货页与访客片段共用）。
+const (
+	ReturnStatusKeyRequested = "admin.returns.status.requested"
+	ReturnStatusKeyApproved  = "admin.returns.status.approved"
+	ReturnStatusKeyReceived  = "admin.returns.status.received"
+	ReturnStatusKeyCompleted = "admin.returns.status.completed"
+	ReturnStatusKeyRejected  = "admin.returns.status.rejected"
+	ReturnStatusKeyCancelled = "admin.returns.status.cancelled"
+)
+
+// ReturnStatusLabel 退货申请状态 → (词条 key, 中文兜底)。
+//
+// 取值与 order 模块的 return 状态机一致（requested / approved / received /
+// completed / rejected / cancelled），认不出的取值原样回显。
+func ReturnStatusLabel(status string) (key, fallback string) {
+	switch strings.TrimSpace(status) {
+	case "requested":
+		return ReturnStatusKeyRequested, "待审核"
+	case "approved":
+		return ReturnStatusKeyApproved, "待收货"
+	case "received":
+		return ReturnStatusKeyReceived, "待退款"
+	case "completed":
+		return ReturnStatusKeyCompleted, "已完成"
+	case "rejected":
+		return ReturnStatusKeyRejected, "已拒绝"
+	case "cancelled":
+		return ReturnStatusKeyCancelled, "已撤销"
+	case "":
+		return "", "—"
+	default:
+		return "", status
+	}
+}
+
+// 优惠码的**展示口径状态**（由生效时间与已用次数算出来，不是 coupons.status 列）。
+//
+// 光看 status 列分不出「启用但是已过期」与「正在生效」：过期、未开始、用尽都是时间的函数，
+// 单独存一列必然与真实状态不同步（要靠定时任务去刷，而定时任务总有停的时候）。
+// 因此 service 只输出这里的**口径值**，文案由展示层按词条渲染 ——
+// 展示层再拿中文标签去反查样式表（旧实现）会让「改一句词条就让徽章静默失效」。
+const (
+	CouponStateEnabled    = "enabled"
+	CouponStateDisabled   = "disabled"
+	CouponStateExpired    = "expired"
+	CouponStateNotStarted = "not_started"
+	CouponStateExhausted  = "exhausted"
+)
+
+// CouponStateLabel 优惠码口径状态 → (词条 key, 中文兜底)。
+func CouponStateLabel(state string) (key, fallback string) {
+	switch strings.TrimSpace(state) {
+	case CouponStateEnabled:
+		return "admin.coupons.status.enabled", "生效中"
+	case CouponStateDisabled:
+		return "admin.coupons.status.disabled", "已停用"
+	case CouponStateExpired:
+		return "admin.coupons.status.expired", "已过期"
+	case CouponStateNotStarted:
+		return "admin.coupons.status.not_started", "未开始"
+	case CouponStateExhausted:
+		return "admin.coupons.status.exhausted", "已用完"
+	case "":
+		return "", "—"
+	default:
+		return "", state
+	}
+}
+
+// —— 点分 key 常量（新式）——
+//
+// 值是 sys_i18n 的 item_key（文案真源在迁移 451），命名按「去掉 `admin.` 模块前缀
+// 后的语义路径」：包名 orderenums 已给出模块上下文。
+//
+// 与上面的 OrderStatusKey* / ReturnStatusKey* 分开成组：那批是「key 前缀常量」
+//（调用方自己拼后缀），本组是完整 item_key。中文兜底留在调用点。
+const (
+	// OrderNewOptionAvailable 代客建单页候选变体行的可用量标注模板（%s = 可用数）。
+	OrderNewOptionAvailable = "admin.order_new.option.available" // 可用 %s
 )

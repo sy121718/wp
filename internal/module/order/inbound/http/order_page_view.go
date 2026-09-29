@@ -13,7 +13,7 @@ import (
 // order_page_view.go - 订单管理页的视图构造（列表/详情、状态计数与筛选选项）。
 
 // orderListRow 订单行 → 模板视图（金额、时间、支付方式都在这里定型）。
-func orderListRow(o *orderdto.OrderResp, filter orderFilter, projectID string, page, limit int) gin.H {
+func orderListRow(tr translate, o *orderdto.OrderResp, filter orderFilter, projectID string, page, limit int) gin.H {
 	if o == nil {
 		return gin.H{}
 	}
@@ -28,7 +28,7 @@ func orderListRow(o *orderdto.OrderResp, filter orderFilter, projectID string, p
 		"ID":            strconv.FormatUint(o.ID, 10),
 		"OrderNo":       o.OrderNo,
 		"Status":        o.Status,
-		"StatusLabel":   orderStatusLabel(o.Status),
+		"StatusLabel":   orderStatusLabel(tr, o.Status),
 		"Badge":         orderStatusBadge(o.Status),
 		"CustomerName":  orderTextOrEmpty(o.CustomerName),
 		"CustomerEmail": orderTextOrEmpty(o.CustomerEmail),
@@ -41,7 +41,7 @@ func orderListRow(o *orderdto.OrderResp, filter orderFilter, projectID string, p
 }
 
 // orderDetailView 详情（头 + 订单项 + 流转链 + 可选操作）→ 模板视图。
-func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID string, page, limit int) gin.H {
+func orderDetailView(tr translate, d *orderdto.OrderDetailResp, filter orderFilter, projectID string, page, limit int) gin.H {
 	if d == nil || d.Head == nil {
 		return gin.H{}
 	}
@@ -72,9 +72,9 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 		}
 		logs = append(logs, gin.H{
 			"Time":              orderTimeLabel(lg.CreateTime.Time()),
-			"FromLabel":         orderStatusLabel(lg.FromStatus),
-			"ToLabel":           orderStatusLabel(lg.ToStatus),
-			"OperatorTypeLabel": orderOperatorTypeLabel(lg.OperatorType),
+			"FromLabel":         orderStatusLabel(tr, lg.FromStatus),
+			"ToLabel":           orderStatusLabel(tr, lg.ToStatus),
+			"OperatorTypeLabel": orderOperatorTypeLabel(tr, lg.OperatorType),
 			"OperatorName":      orderTextOrEmpty(lg.OperatorName),
 			"Remark":            orderTextOrEmpty(lg.Remark),
 		})
@@ -82,7 +82,7 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 
 	transitions := make([]gin.H, 0, 2)
 	for _, to := range orderNextStatuses[head.Status] {
-		transitions = append(transitions, gin.H{"Value": to, "Label": orderStatusLabel(to)})
+		transitions = append(transitions, gin.H{"Value": to, "Label": orderStatusLabel(tr, to)})
 	}
 
 	// 表单回跳参数：操作完回到同一单的详情，而不是被弹回未筛选的列表第一页。
@@ -101,7 +101,7 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 			"ID":              head.ID,
 			"OrderNo":         head.OrderNo,
 			"Status":          head.Status,
-			"StatusLabel":     orderStatusLabel(head.Status),
+			"StatusLabel":     orderStatusLabel(tr, head.Status),
 			"Badge":           orderStatusBadge(head.Status),
 			"CustomerName":    orderTextOrEmpty(head.CustomerName),
 			"CustomerEmail":   orderTextOrEmpty(head.CustomerEmail),
@@ -117,7 +117,7 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 			"PaidAt":          orderTimeLabelPtr(head.PaidAt.TimePtr()),
 			"CompletedAt":     orderTimeLabelPtr(head.CompletedAt.TimePtr()),
 			"CreatedAt":       orderTimeLabel(head.CreateTime.Time()),
-			"CreatedViaLabel": orderCreatedViaLabel(head.CreatedVia),
+			"CreatedViaLabel": orderCreatedViaLabel(tr, head.CreatedVia),
 			"IPAddress":       orderTextOrEmpty(head.IPAddress),
 			"UserAgent":       orderTextOrEmpty(head.UserAgent),
 			"AdminNote":       orderTextOrEmpty(head.AdminNote),
@@ -141,15 +141,15 @@ func orderDetailView(d *orderdto.OrderDetailResp, filter orderFilter, projectID 
 //
 // counts 为 nil（未查询 / 查询失败）时全部按 0 渲染：计数条是导航，不是结论，
 // 取不到数就不显示假的数字，但页面结构保持不变。
-func orderStatusCounters(counts map[string]int64, filter orderFilter, projectID string) []gin.H {
+func orderStatusCounters(tr translate, counts map[string]int64, filter orderFilter, projectID string) []gin.H {
 	var all int64
 	for _, n := range counts {
 		all += n
 	}
 	out := make([]gin.H, 0, len(orderStatusViews)+1)
-	out = append(out, orderStatusCounter("", "全部", "badge-mute", all, filter, projectID))
+	out = append(out, orderStatusCounter("", orderLabelOf(tr, orderStatusAllLabel), "badge-mute", all, filter, projectID))
 	for _, view := range orderStatusViews {
-		out = append(out, orderStatusCounter(view.Value, view.Label, view.Badge, counts[view.Value], filter, projectID))
+		out = append(out, orderStatusCounter(view.Value, orderStatusLabel(tr, view.Value), view.Badge, counts[view.Value], filter, projectID))
 	}
 	return out
 }
@@ -173,14 +173,14 @@ func orderStatusCounter(value, label, badge string, count int64, filter orderFil
 //
 // 取消（要归还库存）与退款（要记流水号）各有独立用例，通用流转入口会拒绝它们 ——
 // 放进候选只会让运营选到一个「全被跳过」的目标。
-func orderBulkTargets() []gin.H {
+func orderBulkTargets(tr translate) []gin.H {
 	options := make([]gin.H, 0, len(orderStatusViews))
 	for _, view := range orderStatusViews {
 		switch view.Value {
 		case orderStatusCancelled, orderStatusRefunded:
 			continue
 		}
-		options = append(options, gin.H{"Value": view.Value, "Label": view.Label})
+		options = append(options, gin.H{"Value": view.Value, "Label": orderStatusLabel(tr, view.Value)})
 	}
 	return options
 }

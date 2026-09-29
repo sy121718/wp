@@ -14,11 +14,11 @@ import (
 	"errors"
 	"strings"
 
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
-	inventorycontract "go_wp/internal/module/inventory/contract"
 	productmodel "go_wp/internal/module/product/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
@@ -70,6 +70,12 @@ type Service struct {
 	// Redis 版本号，这个把事件交给发布内核去标记静态产物 stale 并重建。
 	// 只接前者正是 ARCH-01 的口径差（片段刷新了 ≠ 详情页与列表页的静态产物更新了）。
 	invalidator productcontract.DependencyInvalidator
+	// purchases 购买事实只读端口（「买过才能评」的输入，由 order 模块实现；可缺）。
+	//
+	// 未注入 = 该规则未启用（放行），判据见 product_comment_policy.go 与
+	// productcontract.PurchaseChecker 的注释。刻意是**收窄的是非题端口**而不是
+	// OrderService：商品只需要一个答案，拿不到订单的读写能力。
+	purchases productcontract.PurchaseChecker
 }
 
 // SetInventory 注入库存真源只读契约；漏接会静默跳过投影和删除守卫，装配期必须自检。

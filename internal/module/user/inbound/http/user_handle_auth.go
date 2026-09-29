@@ -16,6 +16,37 @@ import (
 	userservice "go_wp/internal/module/user/service"
 )
 
+// 访客结果页（user/message）的标题与正文（key + 中文兜底）。
+//
+// 这些文本是**直接渲染**进页面的（renderMessage 把成品文案塞进 gin.H 的 title/message），
+// 硬写中文等于英文界面恒中文。带变量的正文用 %s 占位 —— 词条协议只允许字符串占位符，
+// 因此变量先经 fmt.Sprintf 字符串化（用户名 / 邮箱本来就是字符串，无需转换）。
+var (
+	userMsgActivationInvalidTitle = userLabel{"user.message.activation_invalid.title", "验证链接无效"}
+	userMsgActivationFailedTitle  = userLabel{"user.message.activation_failed.title", "验证未通过"}
+	// userMsgActivatedTitle 复用访客消息词条 user.msg.activateSuccess（值同为「邮箱验证成功」）：
+	// 同一句话在消息通道与结果页各留一条词条，翻译改动时必然分叉。
+	userMsgActivatedTitle = userLabel{userenums.MsgActivateSuccess, "邮箱验证成功"}
+	userMsgActivatedBody  = userLabel{"user.message.activated.body", "账号 {username} 已激活，现在可以登录了。"}
+
+	userMsgResendFailedTitle = userLabel{"user.message.resend_failed.title", "重发失败"}
+	userMsgResendDoneTitle   = userLabel{"user.message.resend_done.title", "验证邮件已重发"}
+	userMsgResendDoneBody    = userLabel{"user.message.resend_done.body",
+		"如果 {email} 是一个待验证的账号，新的验证邮件已经发出，请查收。"}
+
+	userMsgLogoutFailedTitle = userLabel{"user.message.logout_failed.title", "登出失败"}
+	userMsgResetMailTitle    = userLabel{"user.message.reset_mail.title", "重置邮件已提交"}
+	userMsgLinkInvalidTitle  = userLabel{"user.message.link_invalid.title", "链接无效"}
+
+	userMsgPasswordResetTitle = userLabel{"user.message.password_reset.title", "密码已重置"}
+	userMsgPasswordResetBody  = userLabel{"user.message.password_reset.body", "请使用新密码登录。"}
+
+	userMsgAccountOpenFailedTitle = userLabel{"user.message.account_open_failed.title", "打不开账号中心"}
+	userMsgPasswordChangedTitle   = userLabel{"user.message.password_changed.title", "密码已修改"}
+	userMsgPasswordChangedBody    = userLabel{"user.message.password_changed.body",
+		"为安全起见，所有设备（包括当前这台）都已退出登录，请用新密码重新登录。"}
+)
+
 // ShowRegister 注册页。
 func (h *Handle) ShowRegister(c *gin.Context) {
 	if currentSession(c) != nil {
@@ -66,7 +97,7 @@ func (h *Handle) DoRegister(c *gin.Context) {
 func (h *Handle) Activate(c *gin.Context) {
 	key := formValue(c, "key")
 	if key == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, "验证链接无效", userKeyText(c, userenums.ErrActivationInvalid))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgActivationInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
 		return
 	}
 	res, err := h.svc.ActivateEmail(c.Request.Context(), &userdto.ActivateEmailReq{
@@ -74,18 +105,18 @@ func (h *Handle) Activate(c *gin.Context) {
 		Locale: locale(c),
 	})
 	if err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, "验证未通过", userPageMessage(c, err))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgActivationFailedTitle), userPageMessage(c, err))
 		return
 	}
-	h.renderMessage(c, http.StatusOK, true, "邮箱验证成功",
-		"账号 "+res.Username+" 已激活，现在可以登录了。")
+	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgActivatedTitle),
+		userTextFilled(c, userMsgActivatedBody, map[string]string{"username": res.Username}))
 }
 
 // DoResendActivation 重发验证邮件。
 func (h *Handle) DoResendActivation(c *gin.Context) {
 	email := formValue(c, "email")
 	if email == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, "重发失败", userKeyText(c, userenums.ErrEmailRequired))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userKeyText(c, userenums.ErrEmailRequired))
 		return
 	}
 	if err := h.svc.ResendActivation(c.Request.Context(), &userdto.ResendActivationReq{
@@ -95,11 +126,11 @@ func (h *Handle) DoResendActivation(c *gin.Context) {
 		// 与密码重置不同，这里**如实报错**：重发接口要求填的邮箱本身就能通过注册接口
 		// 探测出是否被占用，在这里沉默不会多保护任何信息，只会让「邮箱打错了」的人
 		// 盯着「已发送」干等。
-		h.renderMessage(c, http.StatusBadRequest, false, "重发失败", userPageMessage(c, err))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userPageMessage(c, err))
 		return
 	}
-	h.renderMessage(c, http.StatusOK, true, "验证邮件已重发",
-		"如果 "+email+" 是一个待验证的账号，新的验证邮件已经发出，请查收。")
+	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgResendDoneTitle),
+		userTextFilled(c, userMsgResendDoneBody, map[string]string{"email": email}))
 }
 
 // ShowLogin 登录页。
@@ -161,13 +192,13 @@ func (h *Handle) DoLogin(c *gin.Context) {
 // Logout 登出（POST：GET 登出会被浏览器预取或图片标签意外触发）。
 func (h *Handle) Logout(c *gin.Context) {
 	if err := h.svc.Logout(c.Request.Context(), currentToken(c)); err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, "登出失败", userPageMessage(c, err))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLogoutFailedTitle), userPageMessage(c, err))
 		return
 	}
 	// 先撤销服务端会话再清 cookie：反过来的话，若撤销失败，用户看到的是
 	// 「已经登出」（cookie 没了），但服务端会话仍然有效。
 	if err := clearUserSession(c); err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, "登出失败", userKeyText(c, userenums.ErrInternal))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLogoutFailedTitle), userKeyText(c, userenums.ErrInternal))
 		return
 	}
 	c.Redirect(http.StatusFound, "/user/login")
@@ -203,7 +234,7 @@ func (h *Handle) DoForgot(c *gin.Context) {
 		})
 		return
 	}
-	h.renderMessage(c, http.StatusOK, true, "重置邮件已提交", userKeyText(c, userenums.MsgResetMailSent))
+	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgResetMailTitle), userKeyText(c, userenums.MsgResetMailSent))
 }
 
 // ShowReset 重置密码页（链接来自邮件，带 email + key）。
@@ -211,7 +242,7 @@ func (h *Handle) ShowReset(c *gin.Context) {
 	email := formValue(c, "email")
 	key := formValue(c, "key")
 	if email == "" || key == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, "链接无效", userKeyText(c, userenums.ErrActivationInvalid))
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLinkInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
 		return
 	}
 	h.render(c, http.StatusOK, "user/reset", gin.H{
@@ -240,7 +271,7 @@ func (h *Handle) DoReset(c *gin.Context) {
 		return
 	}
 	_ = form
-	h.renderMessage(c, http.StatusOK, true, "密码已重置", "请使用新密码登录。")
+	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgPasswordResetTitle), userTextOf(c, userMsgPasswordResetBody))
 }
 
 // renderMessage 渲染通用结果页（激活 / 重发 / 重置这类一次性结果）。

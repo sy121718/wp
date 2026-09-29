@@ -99,6 +99,16 @@ type CompiledPage struct {
 	// SearchConsoleHead Google Search Console 站点验证 meta（审计 SEO-009）。
 	// 来自 WithSearchConsoleVerification；空 = 零字节注入。
 	SearchConsoleHead string
+	// HeadScripts 站点自定义 Head 代码片段（PIPE-8，来自 WithHeadScripts；空 = 零字节注入）。
+	//
+	// **内容是管理员配置的 HTML/JS 原文**，这是它与 GA4Head / SearchConsoleHead 的
+	// 关键差别（那两项由服务端按白名单字符集拼装，本项不能 —— 第三方脚本无法穷举形状）。
+	// 注入点固定在 </head> 之前、独占一行，因此不参与属性值与 JSON 上下文；
+	// 信任边界、允许原样注入的理由与代价见 site_scripts.go 的文件头注释。
+	HeadScripts string
+	// BodyScripts 站点自定义 Body 代码片段（PIPE-8，来自 WithBodyScripts；空 = 零字节注入）。
+	// 注入点在 </body> 之前、独占一行（增强脚本之后），口径与 HeadScripts 相同。
+	BodyScripts string
 	// Features 渲染期登记的运行时特征（审计 PERF-014）：组件在 BuildView 阶段登记的
 	// 「本次真实输出了哪些 hx-* / data-* 属性、哪些控件外观 class」。RenderDocument
 	// 据此决定注入哪些脚本，不再对整页 HTML 跑 tokenizer。
@@ -164,7 +174,12 @@ type compileConfig struct {
 	// searchConsoleVerification 站点 GSC 验证 token（SiteSettings 快照，空 = 不注入验证 meta）。
 	// 与 ga4MeasurementID 同源、同一条链路（审计 SEO-009）。
 	searchConsoleVerification string
-	structureSlots            []StructureSlot
+	// headScripts / bodyScripts 站点自定义注入代码（SiteSettings 快照，PIPE-8；空 = 零字节注入）。
+	// 与上面两项同源、同一条装配链路（pipeline.AnalyticsCompileOptions），
+	// 差别只在内容：它们是管理员原文，不经过服务端拼接（见 site_scripts.go 的安全论证）。
+	headScripts    string
+	bodyScripts    string
+	structureSlots []StructureSlot
 	// canvasSlotFrames 是否为结构槽位输出画布标记层（编辑器画布专用，默认关）。
 	// 语义与不变量见 core.RenderContext.CanvasSlotFrames。
 	canvasSlotFrames bool
@@ -459,21 +474,21 @@ const MaxNodeDepth = 10
 // 媒体/CMS Binding 在正式 Build 阶段由注入的 Resolver 解析。
 func ValidatePage(p *Page) (err error) {
 	if p == nil {
-		return errors.New("页面文档为空")
+		return ErrPageDocumentEmpty
 	}
 	if err = validateSettings(&p.Settings); err != nil {
-		return fmt.Errorf("页面设置: %w", err)
+		return &PageSettingsError{Err: err}
 	}
 	// 深度防线：超限拒绝（草稿保存即拦截，编译期同样经过此处）。
 	for i, n := range p.Root {
 		if d := nodeDepth(n); d > MaxNodeDepth {
-			return fmt.Errorf("顶级节点 %d: 组件树深度 %d 超过上限 %d（嵌套失控，请简化结构）", i, d, MaxNodeDepth)
+			return &NodeDepthError{Index: i, Depth: d, Max: MaxNodeDepth}
 		}
 	}
 	ids := map[string]bool{}
 	for i, n := range p.Root {
 		if err = core.ValidateNode(n, ids); err != nil {
-			return fmt.Errorf("顶级节点 %d: %w", i, err)
+			return &NodeInvalidError{Index: i, Err: err}
 		}
 	}
 	return nil
@@ -512,7 +527,7 @@ func ValidatePageTolerant(p *Page) (skippedIDs map[string]bool, err error) {
 			reasons = append(reasons, fmt.Sprintf("顶级节点 %d: %v", i, verr))
 			continue
 		}
-		return nil, fmt.Errorf("顶级节点 %d: %w", i, verr)
+		return nil, &NodeInvalidError{Index: i, Err: verr}
 	}
 	if len(reasons) > 0 {
 		logger.Scene("build").With("skipped", reasons).Warn("部分节点配置不完整，已跳过渲染（其余节点照常编译）")
@@ -772,6 +787,8 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		SEOHead:           seoHead,
 		GA4Head:           buildGA4Head(cfg.ga4MeasurementID),
 		SearchConsoleHead: buildSearchConsoleHead(cfg.searchConsoleVerification),
+		HeadScripts:       buildHeadScripts(cfg.headScripts),
+		BodyScripts:       buildBodyScripts(cfg.bodyScripts),
 		TrackConfig:       buildTrackConfig(cfg.projectID, lang),
 		BodyClasses:       classes,
 		HTML:              htmlBuf.String(),
@@ -849,10 +866,16 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		SEOHead:           c.SEOHead,
 		GA4Head:           c.GA4Head,
 		SearchConsoleHead: c.SearchConsoleHead,
-		BodyClass:         strings.Join(c.BodyClasses, " "),
-		HTML:              c.HTML,
-		CSS:               c.CSS + uiCSS,
-		ThemeVarsCSS:      c.ThemeVarsCSS,
+		// 自定义注入代码是**管理员原文**，模板里必须 unsafe 输出：转义会把脚本变成
+		// 页面上的可见文本（功能直接失效）。风险由信任边界承担 —— 只有后台有
+		// /api/project/update 权限的人能写这两个字段，公开面没有写入路径；
+		// 完整论证见 site_scripts.go 的文件头注释。
+		HeadScripts:  c.HeadScripts,
+		BodyScripts:  c.BodyScripts,
+		BodyClass:    strings.Join(c.BodyClasses, " "),
+		HTML:         c.HTML,
+		CSS:          c.CSS + uiCSS,
+		ThemeVarsCSS: c.ThemeVarsCSS,
 		// 采集脚本无条件排在最前：一是每页都要有（不像增强按特征挑块），
 		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
 		// 而归因丢数据是静默的，没人会发现少了什么。
@@ -892,6 +915,8 @@ type documentView struct {
 	SEOHead           string // canonical / OG / Twitter / JSON-LD（已转义，模板 unsafe 输出）
 	GA4Head           string // 站点统计代码（服务端拼装、ID 过白名单；模板 unsafe 输出）
 	SearchConsoleHead string // GSC 站点验证 meta（服务端拼装、token 过白名单；模板 unsafe 输出）
+	HeadScripts       string // 站点自定义 Head 代码（管理员原文、插在 </head> 之前；模板 unsafe 输出）
+	BodyScripts       string // 站点自定义 Body 代码（管理员原文、插在 </body> 之前；模板 unsafe 输出）
 	BodyClass         string // strings.Join(c.BodyClasses, " ")，模板 unsafe 原样输出
 	HTML              string
 	CSS               string

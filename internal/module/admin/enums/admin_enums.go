@@ -195,3 +195,17 @@ const (
 	BulkI18nAllSkipped   = "admin.i18nBulk.allSkipped"
 	BulkI18nPartial      = "admin.i18nBulk.partial"
 )
+
+// —— 点分 key 常量（新式）——
+//
+// 值是 sys_i18n 的 item_key（文案真源在迁移 451），命名按「去掉 `admin.` 模块前缀
+// 后的语义路径」：包名 adminenums 已给出模块上下文。
+//
+// 与上面那批 `ErrXxx = "ErrXxx"` / `MsgXxx = "MsgXxx"` 分开成组：老式形态的值就是
+// 常量名本身（`sys_i18n` 里存同名 key），两者混在同一前缀下会让人以为值也是常量名。
+// 中文兜底留在调用点（词条缺失时的回落），不在这里。
+const (
+	// 数据规则配置编辑器的下拉占位与前置提示（字段与操作符两个下拉各一条）。
+	DatarulesEditorFieldPlaceholder = "admin.datarules.editor.field_placeholder" // 请选择字段
+	DatarulesEditorFieldRequired    = "admin.datarules.editor.field_required"    // 请先选择字段
+)

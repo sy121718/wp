@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	workbenchenums "go_wp/internal/module/workbench/enums"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
@@ -17,7 +18,7 @@ import (
 func (h *Handle) SEOScore(c *gin.Context) {
 	document := json.RawMessage(c.PostForm("draftDocument"))
 	if len(document) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, "草稿文档为空")
+		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDocumentEmpty))
 		return
 	}
 	res, err := seoscore.ScoreDocument(document, c.PostForm("url"), requestScoreLang(c))

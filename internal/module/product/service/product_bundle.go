@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"
 )
 
@@ -633,8 +635,9 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 		}
 		total := combinationCount(dims)
 		if total > MaxVariantCombinations {
-			return nil, fmt.Errorf("%s：%d 个组合超过上限 %d（请减少勾选的属性值或属性维度）",
-				productenums.ErrVariationCountLimit, total, MaxVariantCombinations)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationCountLimit,
+				i18n.ErrorDetail(productenums.DetailVariationCountExceed,
+					"n", strconv.Itoa(total), "max", strconv.Itoa(MaxVariantCombinations)))
 		}
 		variants, verr := s.m.ListVariants(ctx, src.ID)
 		if verr != nil {

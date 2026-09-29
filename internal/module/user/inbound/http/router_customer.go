@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
+	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
@@ -27,10 +28,17 @@ import (
 // users 是 user 模块自己的后台面（装配层用 userSvc 断言 CustomerAdminPort 得到）；
 // orders / projects 允许为 nil：页面据此降级渲染（详情页显式说明订单摘要不可用），
 // 与页面里既有的 h.orders == nil / h.projects == nil 分支同口径，不 panic。
+//
+// membership / membershipFacing 是 BIZ-3 的会员展示端口（装配层从 membership 契约断言取），
+// 同样允许为 nil —— 详情页的「会员等级」块渲染一句「会员模块尚未接入」而不是空白块。
+// 二者成对传入并在同一个 setter 里落地：只接一半的中间态（读得到等级、错误却直出原文）
+// 没有部署理由。
 func SetupCustomerPages(pages *gin.RouterGroup,
 	users usercontract.CustomerAdminPort,
 	orders ordercontract.CustomerOrderSummaryReader,
-	projects projectcontract.ProjectService) {
+	projects projectcontract.ProjectService,
+	membership membershipcontract.Reader,
+	membershipFacing membershipcontract.FacingTexter) {
 	if pages == nil {
 		return
 	}
@@ -39,6 +47,9 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	// 写动作走新权限点 user:customer_status / user:customer_unlock（迁移 152），
 	// 与 /api/customer/* 那组接口是同一个权限点（页面的动作不另立一套授权）。
 	h := NewCustomerPageHandle(users, orders, projects)
+	// 会员展示端口（BIZ-3）：经 setter 注入而不是加进 NewCustomerPageHandle 的签名 ——
+	// 那个构造函数有 10+ 处直调（含渲染测试），为一块展示改签名会把它们全卷进来。
+	h.SetMembershipDisplay(membership, membershipFacing)
 	pages.GET("/customers", h.CustomersPage)
 	pages.GET("/customers/detail", h.CustomerDetailPage)
 	pages.POST("/customers/status",

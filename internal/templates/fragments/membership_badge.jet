@@ -1,0 +1,6 @@
+{* membership_badge.jet — 会员等级角标（BIZ-3）。由片段 membershipBadge 渲染：
+   等级是**每个访客各自的事实**，静态产物按语言维度编译、没有访客级维度，所以它不能烘进产物。
+   未登录 / 端口未接入 / 解析失败三种降级都由 Go 侧决定，模板只显示 .Notice 那一句话。 *}
+<div class="sky-membership-badge" data-fragment="membershipBadge">
+{{if .Notice}}<span class="sky-membership-note">{{ .Notice }}</span>{{else}}<span class="sky-membership-tier">{{ .TierName }}</span>{{end}}
+</div>

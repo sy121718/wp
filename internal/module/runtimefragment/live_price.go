@@ -31,6 +31,7 @@ import (
 
 	"go_wp/internal/builder/core"
 	productcontract "go_wp/internal/module/product/contract"
+	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/money"
 
@@ -146,7 +147,7 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 			// 已下架是产物里没有的事实，且与「价格对不对」无关，独立提示。
 			view.Items = append(view.Items, livePriceItem{
 				VariantID: pair.id,
-				Message:   r.tr("site.fragment.live_price.delisted", "该规格已下架，以结算为准"),
+				Message:   r.tr(rfenums.LivePriceDelisted, "该规格已下架，以结算为准"),
 				Changed:   true,
 			})
 			continue
@@ -160,7 +161,7 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 		view.Items = append(view.Items, livePriceItem{
 			VariantID: pair.id,
 			Message: fmt.Sprintf(
-				r.tr("site.fragment.live_price.updated", "价格已更新为 %s，以结算为准"), amount),
+				r.tr(rfenums.LivePriceUpdated, "价格已更新为 %s，以结算为准"), amount),
 			Changed: true,
 		})
 	}

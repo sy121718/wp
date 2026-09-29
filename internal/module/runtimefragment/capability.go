@@ -8,6 +8,7 @@ package runtimefragment
 import (
 	"context"
 
+	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 )
 
@@ -33,9 +34,9 @@ func init() {
 // 绝不输出裸 key、也不输出空串。
 func renderLoginPanel(_ context.Context, r *Request) (string, error) {
 	// 语义上下文：visitorSession 时显示会话态文案（MVP：统一提示）。
-	label := r.tr("site.fragment.login_panel.login_register", "登录 / 注册")
+	label := r.tr(rfenums.LoginPanelLoginRegister, "登录 / 注册")
 	if r.Context == "visitorSession" {
-		label = r.tr("site.fragment.login_panel.continue_shopping", "继续购物")
+		label = r.tr(rfenums.LoginPanelContinueShopping, "继续购物")
 	}
 	return templates.RenderFragment("login_panel", struct{ Label string }{Label: label})
 }

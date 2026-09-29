@@ -78,7 +78,7 @@ func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productd
 	sourceProductID := strings.TrimSpace(c.Query("sourceProduct"))
 	sourceWarehouseID := strings.TrimSpace(c.Query("sourceWarehouse"))
 	sourceAttrs := h.bundleSourceAttributes(ctx, sourceProductID)
-	warehouses, werr := h.warehouseOptions(ctx, selectedProject)
+	warehouses, werr := h.warehouseOptions(ctx, selectedProject, shell.TranslateFor(c))
 	if werr != nil {
 		shell.PageError(c, "product_bundle", werr)
 		return
@@ -102,7 +102,7 @@ func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productd
 		rows = bundleSubmittedRows(tr, detail, skus, c)
 	}
 	c.HTML(http.StatusOK, template, shell.Prepare(c, gin.H{
-		"title":           "捆绑配置",
+		"title":           tr(productenums.ProductBundleTitle, "捆绑配置"),
 		"menu":            "products",
 		"Projects":        projects,
 		"SelectedProject": selectedProject,
@@ -117,7 +117,7 @@ func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productd
 		// 成员来源面板（批次 C）：三种来源 + 各自的候选数据。
 		"Sources":           bundleSourceOptions(tr, source),
 		"Source":            source,
-		"SourceProducts":    bundleSourceProductOptions(list, sourceProductID),
+		"SourceProducts":    bundleSourceProductOptions(tr, list, sourceProductID),
 		"SourceAttributes":  sourceAttrs,
 		"SourceWarehouses":  bundleSourceWarehouseGroups(warehouseGroups, sourceWarehouseID),
 		"SourceWarehouseID": sourceWarehouseID,
@@ -130,7 +130,8 @@ func (h *productPageHandle) ProductBundleSave(c *gin.Context) {
 	ctx := c.Request.Context()
 	productID := strings.TrimSpace(c.PostForm("productId"))
 	if productID == "" {
-		c.Redirect(http.StatusFound, "/admin/products/bundle?err="+url.QueryEscape(productBundleNoProductText))
+		c.Redirect(http.StatusFound, "/admin/products/bundle?err="+url.QueryEscape(
+			shell.TranslateFor(c)(productBundleNoProductKey, productBundleNoProductFallback)))
 		return
 	}
 	cfg := productdto.NewEmptyBundleConfig()
@@ -345,18 +346,21 @@ func bundleSourceOptions(tr func(key, fallback string) string, selected string) 
 func bundleSourceKey(value string) string {
 	switch value {
 	case productenums.BundleSourceWarehouse:
-		return "admin.product_bundle.source.warehouse"
+		return productenums.ProductBundleSourceWarehouse
 	case productenums.BundleSourceAttributes:
-		return "admin.product_bundle.source.attributes"
+		return productenums.ProductBundleSourceAttributes
 	default:
-		return "admin.product_bundle.source.product"
+		return productenums.ProductBundleSourceProduct
 	}
 }
 
 // bundleSourceProductOptions 来源商品下拉项（工程内全部商品；自引用由服务端拒绝）。
-func bundleSourceProductOptions(products []*productdto.ProductResp, selected string) []gin.H {
+func bundleSourceProductOptions(tr func(key, fallback string) string,
+	products []*productdto.ProductResp, selected string) []gin.H {
 	out := make([]gin.H, 0, len(products)+1)
-	out = append(out, gin.H{"ID": "", "Label": "— 不选 —", "Selected": selected == ""})
+	out = append(out, gin.H{
+		"ID": "", "Label": tr(productenums.ProductBundleOptionNone, "— 不选 —"), "Selected": selected == "",
+	})
 	for _, p := range products {
 		if p == nil {
 			continue
@@ -404,7 +408,14 @@ func (h *productPageHandle) bundleSourceAttributes(ctx context.Context, productI
 }
 
 // productBundleNoProductText 捆绑页的参数级提示（未选商品就提交保存），同样进 ?err=。
-const productBundleNoProductText = "请先选择商品"
+//
+// key + 中文兜底：写侧取词（英文站点不再显示中文），读侧在 product_err.go 的
+// productOwnPageTexts 里把 key / 兜底 / 译文三种形态都登记 —— 只登记中文原文会让
+// 英文站点上的这条提示被归口文案顶掉。
+const (
+	productBundleNoProductKey      = "admin.product_bundle.noProduct"
+	productBundleNoProductFallback = "请先选择商品"
+)
 
 // strAt 取并行数组的第 i 个字符串（缺失一律空串）。
 //

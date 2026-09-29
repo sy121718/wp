@@ -204,6 +204,9 @@ var txBoundaryAllow = map[string]string{
 	// —— 已知可接受（写明「为什么天然独立」，不是待办）——
 	"internal/module/build/service/build_worker.go#execute":                         "误报：MarkFailed / MarkSucceeded 是 if/else 互斥分支，同一执行路径只会触发一支，不存在半截状态",
 	"internal/module/page/service/page_artifact_rebuild.go#GarbageCollectArtifacts": "可接受：产物文件删除（DeleteArtifact，第六批新识别；另有 defer 里的孤儿内容对象回收）+ MarkPayloadState 逐条记录失败原因，且能按 source_document 重建 —— 幂等可重跑",
+	// —— 2026-09-26 定时上下线批（PIPE-7）新命中的两条，逐条核实结论 ——
+	"internal/module/page/service/page_retention.go#PurgeRetention":  "可接受：保留期清理任务 —— 两个 retention.Task 各按时间阈值成批删**不同表**（page_revisions 的历史快照 / page_schedules 的终态排定），幂等可重跑、部分失败仅告警（retention.RunAll 逐任务收口）。两处写之间没有跨行不变量：一张表删成功、另一张失败时，前者的成果不该被回滚（下次运行会继续收敛）。与 mail_retention.go#PurgeRetention 同形 —— 包成一个大事务反而让行锁横跨两张表的成批 DELETE",
+	"internal/module/page/service/page_schedule.go#applyOneSchedule": "误报：三处写（MarkScheduleDone / MarkScheduleFailed / ReleaseScheduleForRetry）是**按执行结果三选一**的互斥分支，同一路径只落一支；且都必须是**单行条件更新**（WHERE id AND status='running' AND lease_token=?）—— 完成归属依赖租约令牌，写错要被 ErrScheduleLeaseLost 挡下。刻意不包事务：到点扫描逐条独立结案，一条排定的失败不该把同批其它排定的结案一起回滚（「单条失败不中断整批」正是这条扫描的设计），而认领与结案都必须跑在 autocommit 上（同 build_jobs 的 claim 注释：事务里一条语句失败后整个事务已中止，重试没有意义）",
 
 	"internal/module/presentation/service/presentation_stale.go#MarkStaleByDependency": "误报：两处写是互斥分支（模板换代只标 template 模式，其余依赖源两种模式都标），单次调用只执行一支；跨工程循环内每工程各一条带 RLS 作用域的 UPDATE，无需合并事务。",
 	// —— 2026-09-19 第三批（识别表补漏后新命中的三条，逐条核实结论）——
@@ -218,7 +221,7 @@ var txBoundaryAllow = map[string]string{
 	"internal/module/page/service/page_publish_kernel.go#syncKernel": "误报：3 处 SaveDraftInput 落在**互斥分支**里 —— ErrPageNotFound 分支、路径/语言落后分支各自写完就 return，只有两个前置条件都不成立时才走第三处。同一执行路径最多写一次，不存在半截状态 —— 与 build_worker.go#execute（MarkFailed / MarkSucceeded 二选一）同形",
 
 	// —— 2026-09-19 第五批（识别表补进 5 个保留期 Delete 后唯一的新命中，逐条核实结论）——
-	"internal/module/mail/service/mail_retention.go#PurgeRetention": "可接受：保留期清理任务 —— 先固化（EnsureCampaignTotals，SetCampaignEventTotalsIfUnset 幂等 IfUnset、单条失败跳过留痕），再按 retention.Task 逐表成批删「早于 cutoff 的历史行」（DeleteEventsBefore / DeleteLogsBefore / DeleteNodeLogsBefore，各表独立任务、按时间阈值成批删、幂等可重跑，部分失败仅告警）。四处写之间没有跨行不变量：固化失败时明确「跳过该活动的固化但继续清理」是设计选择（明细可按保留期内数据重算）；包进一个大事务反而让行锁横跨三张表的成批 DELETE。analytics / page 的同类保留期函数（DeleteViewsBefore / DeleteStaleRevisions 所在函数）各只有 1 处写，本轮不构成候选",
+	"internal/module/mail/service/mail_retention.go#PurgeRetention": "可接受：保留期清理任务 —— 先固化（EnsureCampaignTotals，SetCampaignEventTotalsIfUnset 幂等 IfUnset、单条失败跳过留痕），再按 retention.Task 逐表成批删「早于 cutoff 的历史行」（DeleteEventsBefore / DeleteLogsBefore / DeleteNodeLogsBefore，各表独立任务、按时间阈值成批删、幂等可重跑，部分失败仅告警）。四处写之间没有跨行不变量：固化失败时明确「跳过该活动的固化但继续清理」是设计选择（明细可按保留期内数据重算）；包进一个大事务反而让行锁横跨三张表的成批 DELETE。analytics 的同类保留期函数（DeleteViewsBefore 所在函数）只有 1 处写，本轮不构成候选；page 的同类函数（PurgeRetention）2026-09 接入定时上下线的终态清理后变成 2 处写，已在下方向单列一条（与本条同形）",
 
 	// —— 2026-09-19 第六批（Delete* / Update* 成为前缀后识别表第一次看见的候选）——
 	// 取舍变了：不再像第五批那样「发现一个写变体就按精确名补一条」，改用前缀（实测误报 0，见 writePrefixes）。

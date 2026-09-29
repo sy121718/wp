@@ -53,19 +53,47 @@ const (
 	OriginSource = "source"
 )
 
-// 实体类型展示名。
+// 实体类型展示名：i18n key（词条见迁移 450，中英成对）。
+const (
+	LabelKeyProduct         = "admin.masterdata.entity.product"
+	LabelKeyProductVariant  = "admin.masterdata.entity.product_variant"
+	LabelKeyInventorySource = "admin.masterdata.entity.inventory_source"
+)
+
+// 实体类型展示名的**中文兜底**（与库内 zh-CN 值逐字一致）。
+//
+// 为什么兜底留在代码里：词条缺失时展示的是中文原文，而不是裸 key
+// （`admin.masterdata.entity.product` 摆到页面上，运营只会来报「页面坏了」）。
 const (
 	LabelProduct         = "商品"
 	LabelProductVariant  = "商品变体"
 	LabelInventorySource = "货源"
 )
 
-// 动作展示名。
+// 动作展示名：i18n key（词条见迁移 450）。
+const (
+	LabelKeyActionCreate = "admin.masterdata.action.create"
+	LabelKeyActionUpdate = "admin.masterdata.action.update"
+	LabelKeyActionDelete = "admin.masterdata.action.delete"
+)
+
+// 动作展示名的中文兜底（同实体类型）。
 const (
 	LabelActionCreate = "新增"
 	LabelActionUpdate = "修改"
 	LabelActionDelete = "删除"
 )
+
+// LabelPair 一组展示名取值：i18n key + 中文兜底。
+//
+// 形态是**两个值一起给**，不是单个文案：只给中文 → 英文界面恒中文（拿不到词条）；
+// 只给 key → 词条缺失时页面显示裸 key；两个一起给，调用点 `tr(key, fallback)`
+// 命中出译文、未命中出中文兜底。enums 零依赖，页面层与 service 层都能 import。
+// 同一形态的先例见 user/enums 的 `LabelKeyStatusActive` + `LabelStatusActive`。
+type LabelPair struct {
+	Key      string
+	Fallback string
+}
 
 // 错误消息（handle / service 不硬编码文案，统一取这里）。
 //
@@ -97,31 +125,34 @@ const (
 	MsgListSuccess = "masterdata.msg.listSuccess"
 )
 
-// EntityTypeLabel 实体类型 → 展示名（未知类型原样回显，不吞掉数据）。
-func EntityTypeLabel(entityType string) string {
+// EntityTypeLabel 实体类型 → (i18n key, 中文兜底)。
+//
+// 未知类型返回空 key + 原值：展示层拿到空 key 时直接显示兜底（原样回显枚举值，
+// 不吞掉数据）—— 这与「已登记类型」的差别只是没有词条可查。
+func EntityTypeLabel(entityType string) LabelPair {
 	switch entityType {
 	case EntityProduct:
-		return LabelProduct
+		return LabelPair{LabelKeyProduct, LabelProduct}
 	case EntityProductVariant:
-		return LabelProductVariant
+		return LabelPair{LabelKeyProductVariant, LabelProductVariant}
 	case EntityInventorySource:
-		return LabelInventorySource
+		return LabelPair{LabelKeyInventorySource, LabelInventorySource}
 	default:
-		return entityType
+		return LabelPair{"", entityType}
 	}
 }
 
-// ActionLabel 动作 → 展示名。
-func ActionLabel(action string) string {
+// ActionLabel 动作 → (i18n key, 中文兜底)；未知动作返回空 key + 原值。
+func ActionLabel(action string) LabelPair {
 	switch action {
 	case ActionCreate:
-		return LabelActionCreate
+		return LabelPair{LabelKeyActionCreate, LabelActionCreate}
 	case ActionUpdate:
-		return LabelActionUpdate
+		return LabelPair{LabelKeyActionUpdate, LabelActionUpdate}
 	case ActionDelete:
-		return LabelActionDelete
+		return LabelPair{LabelKeyActionDelete, LabelActionDelete}
 	default:
-		return action
+		return LabelPair{"", action}
 	}
 }
 
@@ -155,35 +186,38 @@ func IsValidAction(action string) bool {
 	}
 }
 
-// fieldLabels 字段展示名表：键是「实体类型.字段名」。
+// fieldLabelPairs 字段展示名表：键是「实体类型.字段名」，值是 (i18n key, 中文兜底)。
 //
 // 字段名本身是主数据模块自己定的白名单键（见各模块的快照函数），这里只负责展示文案；
 // 未登记的字段原样回显字段名 —— 显示一个陌生的英文键，好过把一条记录藏起来。
-var fieldLabels = map[string]string{
-	EntityProduct + ".name":          "商品名",
-	EntityProduct + ".slug":          "URL 段",
-	EntityProduct + ".status":        "上下架状态",
-	EntityProduct + ".default_price": "商品级默认售价",
-	EntityProduct + ".brand_id":      "品牌",
+//
+// key 与中文兜底写在**同一张表**里（不是两张并行的 map）：两份表一旦漏同步，
+// 表现是「这个词条查不到 → 静默回落到字段名」，没有任何报错。
+var fieldLabelPairs = map[string]LabelPair{
+	EntityProduct + ".name":          {"admin.masterdata.field.product.name", "商品名"},
+	EntityProduct + ".slug":          {"admin.masterdata.field.product.slug", "URL 段"},
+	EntityProduct + ".status":        {"admin.masterdata.field.product.status", "上下架状态"},
+	EntityProduct + ".default_price": {"admin.masterdata.field.product.default_price", "商品级默认售价"},
+	EntityProduct + ".brand_id":      {"admin.masterdata.field.product.brand_id", "品牌"},
 
-	EntityProductVariant + ".sku_code":            "SKU 编码",
-	EntityProductVariant + ".barcode":             "条码",
-	EntityProductVariant + ".price":               "售价",
-	EntityProductVariant + ".compare_price":       "划线价",
-	EntityProductVariant + ".cost_price":          "成本价",
-	EntityProductVariant + ".enabled":             "启用状态",
-	EntityProductVariant + ".option_values":       "规格组合",
-	EntityProductVariant + ".home_warehouse_id":   "默认发货仓",
-	EntityProductVariant + ".home_warehouse_code": "默认发货仓短码",
+	EntityProductVariant + ".sku_code":            {"admin.masterdata.field.product_variant.sku_code", "SKU 编码"},
+	EntityProductVariant + ".barcode":             {"admin.masterdata.field.product_variant.barcode", "条码"},
+	EntityProductVariant + ".price":               {"admin.masterdata.field.product_variant.price", "售价"},
+	EntityProductVariant + ".compare_price":       {"admin.masterdata.field.product_variant.compare_price", "划线价"},
+	EntityProductVariant + ".cost_price":          {"admin.masterdata.field.product_variant.cost_price", "成本价"},
+	EntityProductVariant + ".enabled":             {"admin.masterdata.field.product_variant.enabled", "启用状态"},
+	EntityProductVariant + ".option_values":       {"admin.masterdata.field.product_variant.option_values", "规格组合"},
+	EntityProductVariant + ".home_warehouse_id":   {"admin.masterdata.field.product_variant.home_warehouse_id", "默认发货仓"},
+	EntityProductVariant + ".home_warehouse_code": {"admin.masterdata.field.product_variant.home_warehouse_code", "默认发货仓短码"},
 
-	EntityInventorySource + ".code":          "货源编码",
-	EntityInventorySource + ".name":          "货源名称",
-	EntityInventorySource + ".type":          "货源类型",
-	EntityInventorySource + ".related_party": "关联方",
-	EntityInventorySource + ".settle_price":  "内部结算价",
-	EntityInventorySource + ".status":        "货源状态",
-	EntityInventorySource + ".config":        "对接配置",
-	EntityInventorySource + ".sort":          "排序",
+	EntityInventorySource + ".code":          {"admin.masterdata.field.inventory_source.code", "货源编码"},
+	EntityInventorySource + ".name":          {"admin.masterdata.field.inventory_source.name", "货源名称"},
+	EntityInventorySource + ".type":          {"admin.masterdata.field.inventory_source.type", "货源类型"},
+	EntityInventorySource + ".related_party": {"admin.masterdata.field.inventory_source.related_party", "关联方"},
+	EntityInventorySource + ".settle_price":  {"admin.masterdata.field.inventory_source.settle_price", "内部结算价"},
+	EntityInventorySource + ".status":        {"admin.masterdata.field.inventory_source.status", "货源状态"},
+	EntityInventorySource + ".config":        {"admin.masterdata.field.inventory_source.config", "对接配置"},
+	EntityInventorySource + ".sort":          {"admin.masterdata.field.inventory_source.sort", "排序"},
 }
 
 // MsgMasterDataChangesTitle 变更记录页标题（i18n key）。
@@ -192,10 +226,17 @@ var fieldLabels = map[string]string{
 // 在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
 const MsgMasterDataChangesTitle = "MsgMasterDataChangesTitle"
 
-// FieldLabel 字段展示名（未登记时回退字段名本身）。
-func FieldLabel(entityType, field string) string {
-	if label, ok := fieldLabels[entityType+"."+field]; ok {
-		return label
+// PageTitleChanges 变更记录页标题（key + 中文兜底）。
+//
+// handler 先取词再把成品文案交给 shell.Prepare —— Prepare 内部是 `t(title, title)`，
+// 兜底就是 key 本身，词条缺失时页面标题会显示 `MsgMasterDataChangesTitle` 这样的裸 key。
+// 词条沿用历史行（sys_i18n 的 MsgMasterDataChangesTitle，zh/en 成对）。
+var PageTitleChanges = LabelPair{MsgMasterDataChangesTitle, "变更记录"}
+
+// FieldLabel 字段展示名 → (i18n key, 中文兜底)；未登记时返回空 key + 字段名本身。
+func FieldLabel(entityType, field string) LabelPair {
+	if pair, ok := fieldLabelPairs[entityType+"."+field]; ok {
+		return pair
 	}
-	return field
+	return LabelPair{"", field}
 }

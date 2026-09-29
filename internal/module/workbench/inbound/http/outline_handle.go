@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 
+	workbenchenums "go_wp/internal/module/workbench/enums"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -38,19 +40,23 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 	selectedID := strings.TrimSpace(c.PostForm("selectedId"))
 	filter := strings.ToLower(strings.TrimSpace(c.PostForm("filter")))
 	c.HTML(http.StatusOK, "fragments/outline_tree", gin.H{
-		"HTML": renderOutlineHTML(page.Root, selectedID, filter),
+		"HTML": renderOutlineHTML(c, page.Root, selectedID, filter),
 	})
 }
 
 // renderOutlineHTML 递归渲染节点树为 HTML（树结构简单，用拼串而非模板递归）。
-func renderOutlineHTML(nodes []outlineNode, selectedID, filter string) string {
+//
+// c 参与签名只为一件事：按钮提示与徽标文案要按请求语言取词（workbenchShortText）。
+// 这些句子进的是 HTML 属性与文本节点，不经过 Jet 取词层 —— 见 workbenchenums 里
+// workbench.outline.* 那批 key 的说明。
+func renderOutlineHTML(c *gin.Context, nodes []outlineNode, selectedID, filter string) string {
 	var sb strings.Builder
-	writeOutlineNodes(&sb, nodes, selectedID, filter)
+	writeOutlineNodes(c, &sb, nodes, selectedID, filter)
 	return sb.String()
 }
 
 // writeOutlineNodes 深度优先输出 <ul><li><div class="wb-node">…</div><ul>…</ul></li>…</ul>。
-func writeOutlineNodes(sb *strings.Builder, nodes []outlineNode, selectedID, filter string) {
+func writeOutlineNodes(c *gin.Context, sb *strings.Builder, nodes []outlineNode, selectedID, filter string) {
 	sb.WriteString("<ul>")
 	for i := range nodes {
 		n := &nodes[i]
@@ -71,26 +77,32 @@ func writeOutlineNodes(sb *strings.Builder, nodes []outlineNode, selectedID, fil
 		if len(n.Children) > 0 {
 			caret = "▾"
 		}
-		sb.WriteString(`<button class="wb-caret" title="展开/收起">` + caret + `</button>`)
+		sb.WriteString(`<button class="wb-caret" title="` +
+			html.EscapeString(workbenchShortText(c, workbenchenums.OutlineToggle)) + `">` + caret + `</button>`)
 		// data-named 标记用户是否自定义了名称：未命名时客户端用组件中文名覆盖显示。
 		sb.WriteString(`<span class="wb-node-name" data-named="` + boolFlag(n.Name != "") + `">` +
 			html.EscapeString(label) + `</span>`)
 		if n.Hidden {
-			sb.WriteString(`<span class="wb-node-flag" title="编辑期隐藏">隐</span>`)
+			sb.WriteString(`<span class="wb-node-flag" title="` +
+				html.EscapeString(workbenchShortText(c, workbenchenums.OutlineHiddenHint)) + `">` +
+				html.EscapeString(workbenchShortText(c, workbenchenums.OutlineHiddenBadge)) + `</span>`)
 		}
 		if n.Locked {
-			sb.WriteString(`<span class="wb-node-flag" title="已锁定">锁</span>`)
+			sb.WriteString(`<span class="wb-node-flag" title="` +
+				html.EscapeString(workbenchShortText(c, workbenchenums.OutlineLockedHint)) + `">` +
+				html.EscapeString(workbenchShortText(c, workbenchenums.OutlineLockedBadge)) + `</span>`)
 		}
 		sb.WriteString(`<span class="wb-node-actions">`)
-		for _, op := range []struct{ text, title, op string }{
-			{"↑", "上移", "up"}, {"↓", "下移", "down"}, {"⧉", "复制", "dup"}, {"✕", "删除", "del"},
+		for _, op := range []struct{ text, titleKey, op string }{
+			{"↑", workbenchenums.OutlineOpUp, "up"}, {"↓", workbenchenums.OutlineOpDown, "down"},
+			{"⧉", workbenchenums.OutlineOpDup, "dup"}, {"✕", workbenchenums.OutlineOpDel, "del"},
 		} {
 			sb.WriteString(`<button type="button" class="wb-node-action" data-wb-op="` + op.op +
-				`" title="` + op.title + `">` + op.text + `</button>`)
+				`" title="` + html.EscapeString(workbenchShortText(c, op.titleKey)) + `">` + op.text + `</button>`)
 		}
 		sb.WriteString(`</span></div>`)
 		if len(n.Children) > 0 {
-			writeOutlineNodes(sb, n.Children, selectedID, filter)
+			writeOutlineNodes(c, sb, n.Children, selectedID, filter)
 		}
 		sb.WriteString("</li>")
 	}

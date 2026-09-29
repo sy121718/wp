@@ -93,6 +93,13 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 		// 翻译工作台（多语言 P5c，docs/06-D §7.8）：入口在页面列表行内「多语言」按钮。
 		// 保存写 sys_translation（engine=manual）并触发全站标记待重建，鉴权复用「保存草稿」权限点。
 		pages.GET("/page/translations", adminHandle.PageTranslations)
+		// 定时上下线的面板与表单（PIPE-7）：面板是 HTMX 片段（列表页行内「定时」按钮的落点），
+		// 两个 POST 是原生表单（form-urlencoded + 隐藏 csrf_token 域），鉴权复用 API 的权限点路径
+		// —— 页面路径与权限点路径不一致，直接按页面路径 enforce 会因权限点表无此路径而拒绝所有用户
+		// （与 /pages/page-redirects/bulk-delete 同一手法）。
+		pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"), adminHandle.SchedulePanel)
+		pages.POST("/page-schedules/set", builtin.CasbinMiddlewareForPath("/api/page/schedule/set"), adminHandle.ScheduleSet)
+		pages.POST("/page-schedules/cancel", builtin.CasbinMiddlewareForPath("/api/page/schedule/cancel"), adminHandle.ScheduleCancel)
 		pages.POST("/page/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.SavePageTranslations)
 		pages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), adminHandle.CreateProject)
 	}
@@ -113,6 +120,12 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	g.GET("/seo/patrol", permission.PageSEOPatrol, handle.SEOPatrol)
 	// 产物回收：默认 dryRun（只列候选），需显式传 dryRun=false 才实际删除。
 	g.POST("/artifact/gc", permission.PageArtifactGc, handle.GarbageCollectArtifacts)
+	// 定时上下线（PIPE-7）：到点只切指针不重编译；排定后草稿被改则硬失败。
+	// 三条路由的权限点是新增的（page:schedule_*）—— authorizedAPI 组按实际路径 enforce，
+	// 权限点表里没有条目会让含超管在内全员 403（见 AGENTS.md §数据库）。
+	g.POST("/schedule/set", permission.PageScheduleSet, handle.SetSchedule)
+	g.POST("/schedule/cancel", permission.PageScheduleCancel, handle.CancelSchedule)
+	g.GET("/schedule/list", permission.PageScheduleList, handle.ListSchedules)
 	// 保留期任务（IDX-004 / IDX-005）：历史快照收敛 + 产物 GC 定时化。
 	// 此前产物 GC 只能人工调接口、修订快照完全不清理 —— 没有定时任务等于没有保留期。
 	pageservice.StartPageRetentionScheduler(svc)
@@ -124,5 +137,10 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 因此这里不能保留第二个「启动时跑一次」的入口（同一段实现被两个 goroutine
 	// 并发重放虽幂等，仍会白白多跑一遍）。详见 service/page_publish_converge.go。
 	pageservice.StartPendingReceiptConvergenceScheduler(svc)
+	// 定时上下线调度（PIPE-7）：进程内 ticker（不依赖 asynq —— queue.enabled 默认 false，
+	// 挂在队列上会让未启用队列的部署静默不生效）。启动首跑补上进程停机期间到点的排定。
+	// 多实例下重复扫描安全：认领是一条 FOR UPDATE SKIP LOCKED 的原子语句，
+	// 同一瞬间只有一个实例领到同一条排定。
+	pageservice.StartPageScheduleScheduler(svc)
 	return svc
 }

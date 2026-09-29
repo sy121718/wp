@@ -63,7 +63,7 @@ func TestEntityScoreViewCarriesDuplicatePages(t *testing.T) {
 		{Title: "纯棉 T 恤", Page: "/tee-b"},
 		{Title: "纯棉 T 恤", Page: "/tee-c"},
 	}
-	sv := entityScoreView(in, res, dups)
+	sv := entityScoreView(testTranslateFunc(), in, res, dups)
 	if len(sv.Duplicates) != 2 || sv.Duplicates[0] != "/tee-b" || sv.Duplicates[1] != "/tee-c" {
 		t.Fatalf("冲突页面应逐个列出，实际 %+v", sv.Duplicates)
 	}
@@ -79,8 +79,10 @@ func TestEntityScoreViewCarriesDuplicatePages(t *testing.T) {
 func TestSeoScoreFragmentRendersProfileAndDuplicates(t *testing.T) {
 	in := &scoring.EntityPageInput{Kind: scoring.KindProduct, Name: "纯棉 T 恤", Slug: "tee"}
 	res := scoring.ScoreEntityPage(in)
-	sv := entityScoreView(in, res, []scoring.TitleEntry{{Title: "纯棉 T 恤", Page: "/tee-b"}})
-	body := renderAdminTemplate(t, "fragments/seo_score", gin.H{"Score": sv})
+	sv := entityScoreView(testTranslateFunc(), in, res, []scoring.TitleEntry{{Title: "纯棉 T 恤", Page: "/tee-b"}})
+	// t 必须给：fragments/seo_score 的 data 是 gin.H（不是 struct），模板用 .["t"] 取词；
+	// 缺 t 时 Jet 把取词调用求值成空串（不报错、不 500），下面这几条断言会看不到任何文案。
+	body := renderAdminTemplate(t, "fragments/seo_score", gin.H{"Score": sv, "t": testTranslateFunc()})
 	for _, want := range []string{
 		"SEO 评分（0-100）", "页型权重：product", "标题重复", "/tee-b", "重复的 title（纯棉 T 恤）",
 	} {
@@ -93,7 +95,7 @@ func TestSeoScoreFragmentRendersProfileAndDuplicates(t *testing.T) {
 // TestSeoScoreFragmentRendersEntityEmptyState 读不到实体时给一句可读的话，不是空白面板。
 func TestSeoScoreFragmentRendersEntityEmptyState(t *testing.T) {
 	body := renderAdminTemplate(t, "fragments/seo_score",
-		gin.H{"Score": scoreView{Empty: "读不到这个商品，无法评分"}})
+		gin.H{"Score": scoreView{Empty: "读不到这个商品，无法评分"}, "t": testTranslateFunc()})
 	if !strings.Contains(body, "读不到这个商品，无法评分") {
 		t.Fatalf("空态应显示传入的文案，实际输出：%s", body)
 	}
@@ -158,6 +160,18 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 }
 
 // productRowForRender 商品列表行数据（键集合与 ProductsPage 组装的 row 一致）。
+// productRowForRender 商品行数据的渲染用例夹具（评分片段与页面挂载点共用）。
+func testTranslateFunc() func(key, fallback string) string {
+	// 单测里的取词函数：与「i18n 未初始化」时的真实链路一致 —— 返回调用点给的中文兜底。
+	// 展示文案的取词函数在真实请求里由 shell.TranslateFor(c) 提供（页面路由组的中间件）。
+	return func(key, fallback string) string {
+		if fallback != "" {
+			return fallback
+		}
+		return key
+	}
+}
+
 func productRowForRender() gin.H {
 	attr := &productdto.AttributeResp{ID: "a1", Name: "颜色", IsVariation: true}
 	return gin.H{

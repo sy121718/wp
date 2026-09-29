@@ -1,16 +1,18 @@
 {* fragments/history_list.html — 修订历史列表（HTMX 服务端渲染，docs/09 §3）
-   数据：Revisions（Version/Path/CreatedAt）、Error *}
+   数据：Revisions（Version/Path/CreatedAt）、Error
+   取词：本片段不经 shell.Prepare，t 由调用点注入（page/inbound/http/history_handle.go）。 *}
+{{tr := .["t"]}}
 {{if .Error}}
 <p class="wb-empty">{{.Error}}</p>
 {{else if len(.Revisions) == 0}}
-<p class="wb-empty">还没有修订历史。每次保存草稿都会生成一条快照。</p>
+<p class="wb-empty">{{tr("workbench.ui.history.empty", "还没有修订历史。每次保存草稿都会生成一条快照。")}}</p>
 {{else}}
 {{range _, r := .Revisions}}
 <div class="wb-history-row">
     <div class="wb-history-head">
         <strong>v{{r.Version}}</strong>
         <span class="wb-history-info">{{r.Path}} · {{r.CreatedAt}}</span>
-        <button type="button" class="btn btn-secondary btn-sm" data-wb-restore="{{r.Version}}">恢复</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-wb-restore="{{r.Version}}">{{tr("workbench.ui.history.restore", "恢复")}}</button>
     </div>
 </div>
 {{end}}

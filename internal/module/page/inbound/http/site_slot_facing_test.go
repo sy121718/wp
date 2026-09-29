@@ -40,10 +40,19 @@ func TestSiteSlotFacingTextAcceptsBothForms(t *testing.T) {
 	})
 
 	t.Run("本页自造文案同样两种形态都认", func(t *testing.T) {
-		// 成功回执与参数级提示进的是 ?ok= / ?err=，写侧放的就是这些中文常量本身。
-		for _, msg := range []string{siteSlotBoundText, siteSlotUnboundText, siteSlotNoProjectText, siteSlotNoPageText} {
-			if got := siteSlotFacingText(msg); got != msg {
-				t.Fatalf("自造文案 %q 应原样放行，实际 %q", msg, got)
+		// 自造文案的**常量值就是 i18n key**（见 site_slot_handle.go 的常量块），
+		// 中文兜底在白名单里。写侧放 key（常量名形态）与放取词后的成品文案，两种都要能过 ——
+		// 少了后者，?ok= 带回来的成功回执会被自己的白名单吞掉（页面上什么都不显示）。
+		for _, key := range []string{siteSlotBoundText, siteSlotUnboundText, siteSlotNoProjectText, siteSlotNoPageText} {
+			fallback, ok := siteSlotFacingMessages[key]
+			if !ok || fallback == "" {
+				t.Fatalf("白名单里应登记 %s（否则这条测试没有可验证的素材）", key)
+			}
+			if got := siteSlotFacingText(key); got != fallback {
+				t.Fatalf("按 key 查 %q 应得到兜底文案，实际 %q", key, got)
+			}
+			if got := siteSlotFacingText(fallback); got != fallback {
+				t.Fatalf("成品文案 %q 应原样放行，实际 %q", fallback, got)
 			}
 		}
 	})

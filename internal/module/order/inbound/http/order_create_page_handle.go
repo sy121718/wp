@@ -362,7 +362,7 @@ func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 		// 所以这里不做「元 → 分 → 元」的往返换算（那只会引入浮点误差）。
 		label := fmt.Sprintf("%s · %s · ¥%.2f", sku.ProductName, sku.SKUCode, sku.Price)
 		if n, ok := avail[sku.VariantID]; ok {
-			label += "（" + fmt.Sprintf(tr("admin.order_new.option.available", "可用 %s"), strconv.Itoa(n)) + "）"
+			label += "（" + fmt.Sprintf(tr(orderenums.OrderNewOptionAvailable, "可用 %s"), strconv.Itoa(n)) + "）"
 		}
 		out = append(out, gin.H{"ID": sku.VariantID, "Label": label})
 	}

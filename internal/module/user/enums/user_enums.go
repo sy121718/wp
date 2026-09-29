@@ -1,6 +1,10 @@
 // Package userenums 用户模块的响应与错误消息（issue #36）。
 package userenums
 
+import (
+	"fmt"
+)
+
 const (
 	MsgRegisterSuccess = "user.msg.registerSuccess"
 	MsgActivateSuccess = "user.msg.activateSuccess"
@@ -107,3 +111,117 @@ var UserFacingMessages = []string{
 	MsgCustomerEnabled, MsgCustomerDisabled, MsgCustomerUnlocked, MsgCustomerNotLocked,
 	MsgCustomerFailuresCleared, ErrCustomerStatusInvalid,
 }
+
+// —— 账号状态 / 邮箱验证 / 订单状态的展示标签（枚举 → 展示名的唯一真源）——
+//
+// 为什么放在 enums 而不是 service 或 inbound/http：**这一层之上的每个出口都要用它**
+//（后台页取 (key, 兜底) 交给模板取词、/api/customer/* 在 handler 就地取词），
+// 各写一份必然漂移 —— 此前就有三份（http 的字面量表、service 的 customerStatusLabel、
+// 页面 tabs 自带的一份 key），而其中两份没有 key，英文界面上永远是中文。
+// enums 零依赖，任何层都能 import。
+//
+// 注意 service **不再**填 dto 的文案（原先它代填中文兜底）：service 拿不到请求语言，
+// 代填的表现是接口响应恒中文而不报错。展示文案一律在出口取词。
+// 先例：masterdata/enums 的 LabelProduct + EntityTypeLabel / ActionLabel / FieldLabel。
+//
+// **形态是 (key, fallback) 两个返回值**，不是单个文案：
+//   · 只返回中文 → 英文界面恒中文（拿不到词条）；
+//   · 只返回 key → 词条缺失时页面显示裸 key（`admin.customers.badge.active`）；
+//   · 两个都给 → 调用点 tr(key, fallback)：命中出译文，未命中出中文兜底。
+//
+// 词条一律**复用库里已存在的**（admin.customers.badge.*，中英成对，迁移 190 / register_admin_i18n）；
+// 本文件不新增词条、不改 seed —— 需要新词条的地方在调用点留中文兜底并登记待补清单。
+
+// 账号状态取值。
+//
+// 与 usermodel.UserStatus* 同值：enums 零依赖（不 import model，否则 model 的依赖会顺着
+// enums 扩散到每一个只想拿文案的层）。取值本身是 users.status 的语义，真源仍在 model。
+const (
+	// StatusDisabled 已停用（管理动作，不会自己解除）。
+	StatusDisabled = 0
+	// StatusActive 正常。
+	StatusActive = 1
+	// StatusPending 待激活（注册后未完成邮箱验证，登不上去）。
+	StatusPending = 2
+	// StatusAll 状态筛选的「不过滤」取值。
+	//
+	// 用 -1 而不是 0：0 是「已停用」这个**合法**的筛选值，
+	// 拿 0 表示「全部」会永远筛不出停用账号（而它看起来完全正常）。
+	StatusAll = -1
+)
+
+// 展示标签的词条 key（均已在 sys_i18n 中，中英成对）。
+const (
+	LabelKeyStatusAll      = "admin.customers.badge.all"
+	LabelKeyStatusActive   = "admin.customers.badge.active"
+	LabelKeyStatusDisabled = "admin.customers.badge.disabled"
+	LabelKeyStatusPending  = "admin.customers.badge.pending"
+	LabelKeyStatusLocked   = "admin.customers.badge.locked"
+	LabelKeyVerified       = "admin.customers.badge.verified"
+	LabelKeyUnverified     = "admin.customers.badge.unverified"
+	// 状态说明：列表页表头 .help 与详情页的状态解释**共用同一条词条**。
+	//
+	// 三句话语义一一对应（待激活 / 已锁定 / 失败次数未清零），分两份就会漂移成
+	// 「同一件事在两个页面上说法不同」，而运营会以为它们说的是两件事。
+	LabelKeyPendingHint  = "admin.customers.status.help.pending"
+	LabelKeyLockedHint   = "admin.customers.status.help.locked"
+	LabelKeyFailuresHint = "admin.customers.status.help.failures"
+)
+
+// 词条缺失时的中文兜底（与库内 zh-CN 值逐字一致：不一致时，兜底生效与否会表现出两种文案）。
+const (
+	LabelStatusAll      = "全部"
+	LabelStatusActive   = "正常"
+	LabelStatusDisabled = "已停用"
+	LabelStatusPending  = "待激活"
+	LabelStatusLocked   = "已锁定"
+	LabelVerified       = "邮箱已验证"
+	LabelUnverified     = "邮箱未验证"
+	// 状态说明的兜底（词条缺失时用；与库内 zh-CN 同义，与列表页表头 .help 是同一句话）。
+	LabelPendingHint = "待激活：客户还没完成邮箱验证。这类账号本来就登不上去，" +
+		"客户验证完邮箱后状态会变成「正常」，那时再决定是否停用。"
+	LabelLockedHint = "该账号因连续登录失败被临时锁定（到点会自动解除），客户目前登不上去 —— " +
+		"如果确认是本人操作，点「解除锁定」让他不用等。"
+	LabelFailuresHint = "该账号有未清零的登录失败次数：再失败几次就会进入锁定。"
+)
+
+// LabelEmptyField 空字段的展示占位（表格里的空白单元格读不出「没有值」）。
+const LabelEmptyField = "—"
+
+// StatusLabel 账号状态 → (词条 key, 中文兜底)。
+//
+// 认不出的取值：key 留空、兜底带上原始数字。后台出现状态取值漂移时，
+// 「未知状态(7)」能让人立刻去查数据，而只说「未知状态」只能引来一句「哪里未知？」；
+// key 为空串时取词函数据 fallback 原样返回（pkg/i18n.Translate 的兜底链第 3 档），
+// 不会退化成「显示裸 key」。
+func StatusLabel(status int) (key, fallback string) {
+	switch status {
+	case StatusActive:
+		return LabelKeyStatusActive, LabelStatusActive
+	case StatusDisabled:
+		return LabelKeyStatusDisabled, LabelStatusDisabled
+	case StatusPending:
+		return LabelKeyStatusPending, LabelStatusPending
+	case StatusAll:
+		return LabelKeyStatusAll, LabelStatusAll
+	default:
+		return "", fmt.Sprintf("未知状态(%d)", status)
+	}
+}
+
+// EmailVerifiedLabel 邮箱验证 → (词条 key, 中文兜底)。
+//
+// 兜底带主语（「邮箱已验证」而不是「已验证」）：这个徽章与状态徽章并排出现，
+// 少一个词就读成「账号已验证」。
+func EmailVerifiedLabel(verified bool) (key, fallback string) {
+	if verified {
+		return LabelKeyVerified, LabelVerified
+	}
+	return LabelKeyUnverified, LabelUnverified
+}
+
+// 订单状态的展示标签**不在这里**：真源是 order 模块的 enums
+//（orderenums.OrderStatusLabel），跨模块经 ordercontract.OrderStatusLabel 引用 ——
+// 后台客户页的「最近一单」与订单页必须共用同一份映射（各写一张表的结果是
+// 「改一处、另一处静默留在旧说法上」），而 user 模块 import 别的模块的 enums
+// 会破坏「跨模块只用 contract/dto」的边界。

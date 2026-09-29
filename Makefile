@@ -9,11 +9,12 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# 数据库连接（与 docker-compose.yml、config.yaml 的默认值一致）
+# 本机 PostgreSQL 连接；开发依赖由本机服务管理，不通过 Docker 启停。
+# 本机迁移通常使用管理员角色：可通过 make migrate PGUSER=... PGPASSWORD=... 覆盖。
 PGHOST ?= 127.0.0.1
 PGPORT ?= 5432
-PGUSER ?= root
-PGPASSWORD ?= root
+PGUSER ?= $(USER)
+PGPASSWORD ?=
 PGDATABASE ?= wp
 export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 
@@ -21,19 +22,6 @@ export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 help: ## 列出全部可用目标
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
-
-.PHONY: up
-up: ## 起本地依赖（PostgreSQL + Redis）
-	docker compose up -d
-
-.PHONY: down
-down: ## 停依赖（保留数据卷）
-	docker compose down
-
-.PHONY: clean-data
-clean-data: ## 停依赖并**删除数据卷**（会清空本地数据库）
-	@echo '将删除本地数据库与 Redis 数据卷，5 秒内 Ctrl+C 可取消'; sleep 5
-	docker compose down -v
 
 .PHONY: dev
 dev: ## 开发模式（air 热重载）
@@ -73,14 +61,19 @@ check: lint ## 静态检查 + CI 同款门禁脚本
 
 .PHONY: migrate
 # -migrate-only：只执行结构迁移与业务 seed 后退出，不启动 HTTP 服务、不监听端口。
-# 这个入口是 2026-09-16 补的 —— 此前没有独立迁移命令，migrate 只能「把依赖起到位、
-# 让下一次启动自己把库迁好」，失败混在启动日志里；现在真跑一次迁移，成功与否直接
-# 反映在退出码上（CI 也用它准备测试库）。
-migrate: up ## 执行数据库迁移与 seed（幂等；先确保依赖已就绪）
-	@echo '等待 PostgreSQL 就绪…'
+# 开发环境使用本机 PostgreSQL/Redis；本目标只检查本机 PostgreSQL，不依赖 Docker。
+migrate: ## 执行数据库迁移与 seed（幂等；需要管理连接）
+	@echo '等待 PostgreSQL 就绪（$(PGHOST):$(PGPORT)）…'
 	@for i in $$(seq 1 30); do \
-		if docker compose exec -T postgres pg_isready -U $(PGUSER) -d $(PGDATABASE) >/dev/null 2>&1; then \
-			echo '✓ PostgreSQL 已就绪，开始执行迁移与 seed'; exit 0; \
-		fi; sleep 2; \
-	done; echo '✗ PostgreSQL 未在 60 秒内就绪，请查看 docker compose logs postgres' >&2; exit 1
+		if pg_isready -h $(PGHOST) -p $(PGPORT) -U $(PGUSER) -d $(PGDATABASE) >/dev/null 2>&1; then \
+			echo '✓ PostgreSQL 已就绪，开始执行迁移与 seed'; break; \
+		fi; \
+		if [ $$i -eq 30 ]; then echo '✗ PostgreSQL 未在 60 秒内就绪，请检查本机 PostgreSQL 服务' >&2; exit 1; fi; \
+		sleep 2; \
+	done
+	GOWP_DATABASE_HOST='$(PGHOST)' \
+	GOWP_DATABASE_PORT='$(PGPORT)' \
+	GOWP_DATABASE_USER='$(PGUSER)' \
+	GOWP_DATABASE_DBNAME='$(PGDATABASE)' \
+	$(if $(strip $(PGPASSWORD)),GOWP_DATABASE_PASSWORD='$(PGPASSWORD)') \
 	go run ./cmd -migrate-only

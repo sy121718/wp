@@ -97,6 +97,8 @@ func (h *Handle) DeliveryList(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "webhook", err)
 		return
 	}
+	// last_error 落库时是「key + 参数」编码（见 enums/webhook_delivery_err.go），出口按语言还原。
+	webhookDeliveryTexts(response.RequestLanguage(c), res.Items)
 	response.Success(c, res)
 }
 

@@ -15,6 +15,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
 )
 
@@ -320,6 +321,22 @@ func (h *Handle) AuditCouponCounts(c *gin.Context) {
 //（访客没有权限点，能做的只有「操作自己的订单」）。
 // ---------------------------------------------------------------------------
 
+// localizeReturnLabels 退货单的状态标签取词（原处：service 只给状态取值）。
+//
+// 为什么在 handler：service 拿不到请求语言，而 StatusLabel 是**直接给客户端看的文本**
+// （JSON 接口的响应字段 + 访客片段渲染）—— 在那里拼中文的表现是英文站点恒中文，
+// 且不会有任何报错。映射与页面侧共用 returnStatusText（同一份 orderenums.ReturnStatusLabel），
+// 于是同一个状态在列表页、详情页与接口里说同一句话。
+func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
+	tr := shell.TranslateFor(c)
+	for _, r := range resps {
+		if r == nil {
+			continue
+		}
+		r.StatusLabel = returnStatusText(tr, r.Status)
+	}
+}
+
 // ListReturns 退货申请列表 + 各状态计数。
 func (h *Handle) ListReturns(c *gin.Context) {
 	req := &orderdto.ReturnListReq{}
@@ -331,6 +348,9 @@ func (h *Handle) ListReturns(c *gin.Context) {
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
+	}
+	if res != nil {
+		localizeReturnLabels(c, res.List...)
 	}
 	response.Success(c, res)
 }
@@ -353,6 +373,9 @@ func (h *Handle) GetReturn(c *gin.Context) {
 		}
 		return
 	}
+	if res != nil {
+		localizeReturnLabels(c, res.Return)
+	}
 	response.Success(c, res)
 }
 
@@ -369,6 +392,7 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
+	localizeReturnLabels(c, res)
 	response.SuccessWithMessage(c, orderenums.MsgReturnApproved, res)
 }
 
@@ -385,6 +409,7 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
+	localizeReturnLabels(c, res)
 	response.SuccessWithMessage(c, orderenums.MsgReturnRejected, res)
 }
 
@@ -404,6 +429,7 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
+	localizeReturnLabels(c, res)
 	response.SuccessWithMessage(c, orderenums.MsgReturnReceived, res)
 }
 

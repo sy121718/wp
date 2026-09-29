@@ -42,18 +42,17 @@ Page 是手工页面；PresentationInstance 是由内容与展示模板生成的
 
 ## 快速开始
 
-需要 Go 1.26+ 与 Docker。三条命令：
+需要 Go 1.26+、GNU Make、本机 PostgreSQL 与 Redis。开发阶段不依赖 Docker。三条命令：
 
 ```bash
-make up        # 起 PostgreSQL 与 Redis（凭据与 config.yaml 的默认值一致）
-make migrate   # 等依赖就绪；迁移与 seed 随应用启动自动执行，没有独立子命令
+make migrate   # 使用管理连接执行结构迁移与 seed
 make dev       # 开发模式，air 热重载
 ```
 
-然后访问 `http://127.0.0.1:8080`。不带参数跑 `make` 会列出全部目标：`up` / `down` / `clean-data` / `dev` / `build` / `run` / `test` / `test-short` / `lint` / `check` / `migrate`。
+然后访问 `http://127.0.0.1:8080`。不带参数运行 `make` 会列出全部目标：`dev` / `build` / `run` / `test` / `test-short` / `lint` / `check` / `migrate`。
 
-数据库连接可用环境变量覆盖（`PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE`），默认值与 `docker-compose.yml` 一致。
-`make clean-data` 会**删除数据卷**，是唯一会清空本地数据的命令。
+`make migrate` 使用本机 `pg_isready` 检查 PostgreSQL，并将 `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` 映射为 `GOWP_DATABASE_*` 后执行 `-migrate-only`。
+服务是否在 air 重启时自动迁移由 `database.run_migrations` 控制：`true` 自动执行，`false` 需要手动执行迁移。
 
 `scripts/` 下有两类脚本，用途不同：
 

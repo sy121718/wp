@@ -25,7 +25,9 @@ import (
 
 	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/response"
 )
 
 // mailPageHandle 邮箱后台页处理器。
@@ -100,7 +102,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	}
 
 	data := shell.Prepare(c, gin.H{
-		"title":     "邮箱设置",
+		"title":     mailLabel(shell.TranslateFor(c), mailenums.PageTitleMail),
 		"Accounts":  accountRows,
 		"Templates": templateRows,
 		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
@@ -131,7 +133,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 // **title 必须是小写 key**：layout.html 用 {{.title}} 取值，缺它同样会中断。
 func mailPageErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":     "邮箱设置",
+		"title":     mailLabel(shell.TranslateFor(c), mailenums.PageTitleMail),
 		"Err":       mailErrPageText(c, err),
 		"Accounts":  []any{},
 		"Templates": []any{},
@@ -191,6 +193,7 @@ func (h *mailPageHandle) MailAccountTest(c *gin.Context) {
 	res, err := h.mail.TestSend(c.Request.Context(), &maildto.TestSendReq{
 		AccountID: shell.ParseUint(c.PostForm("id")),
 		ToEmail:   c.PostForm("to_email"),
+		Lang:      response.RequestLanguage(c),
 	})
 	if err != nil {
 		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))

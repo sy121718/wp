@@ -11,6 +11,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	"go_wp/internal/web/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,12 +23,12 @@ import (
 func (h *Handle) Preview(c *gin.Context) {
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
-		c.String(http.StatusBadRequest, "缺少页面 id")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrMissingPageID))
 		return
 	}
 	page, err := h.pageOf(c, pageID)
 	if err != nil {
-		c.String(http.StatusNotFound, "页面不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
 		return
 	}
 	h.renderPreview(c, page.DraftDocument, page.ProjectID, page.DraftPath, c.Query("editor") == "1", previewDocPage)
@@ -37,12 +38,12 @@ func (h *Handle) Preview(c *gin.Context) {
 func (h *Handle) BlockPreview(c *gin.Context) {
 	blockID := strings.TrimSpace(c.Query("id"))
 	if blockID == "" {
-		c.String(http.StatusBadRequest, "缺少块 id")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrMissingBlockID))
 		return
 	}
 	block, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: blockID})
 	if err != nil || block == nil {
-		c.String(http.StatusNotFound, "全局块不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrBlockNotFound))
 		return
 	}
 	h.renderPreview(c, block.Document, block.ProjectID, "", c.Query("editor") == "1", previewDocBlock)
@@ -54,16 +55,16 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 	document := json.RawMessage(c.PostForm("draftDocument"))
 	version, err := strconv.ParseInt(c.PostForm("expectedVersion"), 10, 64)
 	if pageID == "" || err != nil || len(document) == 0 {
-		c.String(http.StatusBadRequest, "草稿文档解析失败")
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDecodeFailed))
 		return
 	}
 	page, err := h.pageOf(c, pageID)
 	if err != nil {
-		c.String(http.StatusNotFound, "页面不存在")
+		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
 		return
 	}
 	if version != page.DraftVersion {
-		c.String(http.StatusConflict, "草稿版本已更新，请刷新后重试")
+		c.String(http.StatusConflict, workbenchShortText(c, workbenchenums.ErrDraftVersionStale))
 		return
 	}
 	h.renderPreview(c, document, page.ProjectID, page.DraftPath, true, previewDocPage)
@@ -93,16 +94,18 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 	if err != nil {
 		switch {
 		case errors.Is(err, pagecontract.ErrPreviewInvalidDocument):
-			c.String(http.StatusBadRequest, "草稿文档解析失败")
+			c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDecodeFailed))
 		case errors.Is(err, pagecontract.ErrPreviewCompileFailed):
 			writePreviewCompileRejected(c, document, kind, err)
 		default:
-			c.String(http.StatusInternalServerError, workbenchenums.MsgInternalError)
+			// 这里原先直写 workbenchenums.MsgInternalError —— 那是一个裸 key，
+			// 画布响应体不经过 pkg/response 的翻译层，浏览器里看到的就是 "MsgInternalError"。
+			c.String(http.StatusInternalServerError, shell.PageInternalText(c))
 		}
 		return
 	}
 	if withEditorBridge {
-		html = []byte(injectEditorBridge(string(html)))
+		html = []byte(injectEditorBridge(string(html), shell.TranslateFor(c)))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", html)
 }
@@ -129,9 +132,14 @@ func (h *Handle) pluginAssembly(c *gin.Context) *plugincontract.Assembly {
 	return nil
 }
 
-func workbenchTitle(page *pagecontract.PageResp) string {
+// workbenchTitle 画布标题：作者自己的 SEO 标题优先，否则「前缀 + 草稿路径」。
+//
+// 取词在 Go 侧完成（c 参与签名）：这个值会作为 data.title 交给 shell.Prepare，
+// 而 injectI18n 对 title 的处理是 `t(title, title)` —— 拼接过的句子不是 key，
+// 只会原样返回，所以前缀必须先在这里翻译好（词条 workbench.title.*）。
+func workbenchTitle(c *gin.Context, page *pagecontract.PageResp) string {
 	if page == nil || strings.TrimSpace(page.ID) == "" {
-		return "可视化编辑器"
+		return workbenchShortText(c, workbenchenums.TitleEditor)
 	}
 	var doc struct {
 		Settings struct {
@@ -144,5 +152,5 @@ func workbenchTitle(page *pagecontract.PageResp) string {
 	if doc.Settings.SEO.Title != "" {
 		return doc.Settings.SEO.Title
 	}
-	return "编辑器 · " + page.DraftPath
+	return workbenchShortText(c, workbenchenums.TitleEditorPrefix) + page.DraftPath
 }

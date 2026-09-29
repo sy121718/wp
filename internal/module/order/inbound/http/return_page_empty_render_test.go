@@ -45,9 +45,9 @@ func TestReturnsEmptyFilterActions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := returnBulkPageData()
 			d["Rows"] = []any{}
-			d["Statuses"] = returnStatusCounters(nil, tt.filter, "p1")
+			d["Statuses"] = returnStatusCounters(nil, nil, tt.filter, "p1")
 			d["FilterStatus"] = tt.filter.Status
-			d["FilterLabel"] = returnStatusLabel(tt.filter.Status)
+			d["FilterLabel"] = returnStatusLabel(nil, tt.filter.Status)
 			d["FilterKeyword"] = tt.filter.Keyword
 			d["FilterOrderID"] = returnOrderIDText(tt.filter.OrderID)
 			d["ClearOrderURL"] = shell.FilterBaseURL("/admin/returns", returnFilterValues("p1", returnFilter{

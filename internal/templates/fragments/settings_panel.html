@@ -1,65 +1,93 @@
 {* fragments/settings_panel.html — 页面设置表单（HTMX 服务端渲染，docs/09 §3）
    约定：字段带 data-wb-setting（doc 内路径）与可选 data-wb-kind（list=空格分隔数组）；
-   segment 按钮带 data-wb-setting + data-wb-value，客户端统一事件委托回写。 *}
+   segment 按钮带 data-wb-setting + data-wb-value，客户端统一事件委托回写。
+   取词：本片段不经 shell.Prepare，t 由调用点单独注入（project/inbound/http/settings_panel.go）；
+   缺 t 时 Jet 把 tr(...) 求值成空串（不报错、不 500）—— 所以调用点必须给。 *}
+{{tr := .["t"]}}
 <div class="wb-field wb-field-seg">
-    <label>版心模式</label>
+    <label>{{tr("workbench.ui.settings.layoutMode", "版心模式")}}</label>
     <div class="wb-seg">
-        <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "full"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="full">全宽</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "boxed"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="boxed">定宽</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "full"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="full">{{tr("workbench.ui.settings.layoutFull", "全宽")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.LayoutMode == "boxed"}} is-active{{end}}" data-wb-setting="settings.layout.mode" data-wb-value="boxed">{{tr("workbench.ui.settings.layoutBoxed", "定宽")}}</button>
     </div>
 </div>
 <div class="wb-field wb-field-seg">
-    <label>页面地标</label>
+    <label>{{tr("workbench.ui.settings.mainLandmark", "页面地标")}}</label>
     <div class="wb-seg">
-        <button type="button" class="wb-seg-btn{{if not .Settings.MainLandmark}} is-active{{end}}" data-wb-setting="settings.layout.mainLandmark" data-wb-value="false">不用</button>
+        <button type="button" class="wb-seg-btn{{if not .Settings.MainLandmark}} is-active{{end}}" data-wb-setting="settings.layout.mainLandmark" data-wb-value="false">{{tr("workbench.ui.settings.landmarkNone", "不用")}}</button>
         <button type="button" class="wb-seg-btn{{if .Settings.MainLandmark}} is-active{{end}}" data-wb-setting="settings.layout.mainLandmark" data-wb-value="true">main</button>
     </div>
 </div>
-<div class="wb-field"><label>SEO 标题</label><input type="text" data-wb-setting="settings.seo.title" value="{{.Settings.SEOTitle}}" placeholder="浏览器标签页与搜索结果标题"></div>
-<div class="wb-field"><label>SEO 描述</label><textarea rows="3" data-wb-setting="settings.seo.description" placeholder="搜索结果里的摘要文案">{{.Settings.SEODescription}}</textarea></div>
-<div class="wb-field"><label>焦点关键词</label><input type="text" data-wb-setting="settings.seo.focusKeyword" value="{{.Settings.FocusKeyword}}" placeholder="如 disposable vape"></div>
-<div class="wb-field"><label>Canonical 链接</label><input type="text" data-wb-setting="settings.seo.canonical" value="{{.Settings.Canonical}}" placeholder="规范链接，留空则由页面 URL 推导"></div>
-<div class="wb-field"><label>社交分享图</label><input type="text" data-wb-setting="settings.seo.ogImage" value="{{.Settings.OGImage}}" placeholder="OG/Twitter 卡片图，建议 1200×630"></div>
+<div class="wb-field"><label>{{tr("workbench.ui.settings.seoTitle", "SEO 标题")}}</label><input type="text" data-wb-setting="settings.seo.title" value="{{.Settings.SEOTitle}}" placeholder="{{tr("workbench.ui.settings.seoTitlePlaceholder", "浏览器标签页与搜索结果标题")}}"></div>
+<div class="wb-field"><label>{{tr("workbench.ui.settings.seoDescription", "SEO 描述")}}</label><textarea rows="3" data-wb-setting="settings.seo.description" placeholder="{{tr("workbench.ui.settings.seoDescriptionPlaceholder", "搜索结果里的摘要文案")}}">{{.Settings.SEODescription}}</textarea></div>
+<div class="wb-field"><label>{{tr("workbench.ui.settings.focusKeyword", "焦点关键词")}}</label><input type="text" data-wb-setting="settings.seo.focusKeyword" value="{{.Settings.FocusKeyword}}" placeholder="{{tr("workbench.ui.settings.focusKeywordPlaceholder", "如 disposable vape")}}"></div>
+<div class="wb-field"><label>{{tr("workbench.ui.settings.canonical", "Canonical 链接")}}</label><input type="text" data-wb-setting="settings.seo.canonical" value="{{.Settings.Canonical}}" placeholder="{{tr("workbench.ui.settings.canonicalPlaceholder", "规范链接，留空则由页面 URL 推导")}}"></div>
+<div class="wb-field"><label>{{tr("workbench.ui.settings.ogImage", "社交分享图")}}</label><input type="text" data-wb-setting="settings.seo.ogImage" value="{{.Settings.OGImage}}" placeholder="{{tr("workbench.ui.settings.ogImagePlaceholder", "OG/Twitter 卡片图，建议 1200×630")}}"></div>
 <div class="wb-field wb-field-seg">
-    <label>结构化数据</label>
+    <label>{{tr("workbench.ui.settings.schemaType", "结构化数据")}}</label>
     <div class="wb-seg">
-        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == ""}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="">自动</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "website"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="website">网站</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "article"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="article">文章</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "product"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="product">商品</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == ""}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="">{{tr("workbench.ui.settings.schemaAuto", "自动")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "website"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="website">{{tr("workbench.ui.settings.schemaWebsite", "网站")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "article"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="article">{{tr("workbench.ui.settings.schemaArticle", "文章")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "product"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="product">{{tr("workbench.ui.settings.schemaProduct", "商品")}}</button>
         <button type="button" class="wb-seg-btn{{if .Settings.SchemaType == "faq"}} is-active{{end}}" data-wb-setting="settings.seo.schemaType" data-wb-value="faq">FAQ</button>
     </div>
 </div>
 <div class="wb-field wb-field-seg">
-    <label>搜索引擎收录</label>
+    <label>{{tr("workbench.ui.settings.robotsIndex", "搜索引擎收录")}}</label>
     <div class="wb-seg">
-        <button type="button" class="wb-seg-btn{{if .Settings.RobotsIndex == ""}} is-active{{end}}" data-wb-setting="settings.seo.robotsIndex" data-wb-value="">索引</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.RobotsIndex == "noindex"}} is-active{{end}}" data-wb-setting="settings.seo.robotsIndex" data-wb-value="noindex">不索引</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsIndex == ""}} is-active{{end}}" data-wb-setting="settings.seo.robotsIndex" data-wb-value="">{{tr("workbench.ui.settings.indexOn", "索引")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsIndex == "noindex"}} is-active{{end}}" data-wb-setting="settings.seo.robotsIndex" data-wb-value="noindex">{{tr("workbench.ui.settings.indexOff", "不索引")}}</button>
     </div>
 </div>
 <div class="wb-field wb-field-seg">
-    <label>链接跟踪</label>
+    <label>{{tr("workbench.ui.settings.robotsFollow", "链接跟踪")}}</label>
     <div class="wb-seg">
-        <button type="button" class="wb-seg-btn{{if .Settings.RobotsFollow == ""}} is-active{{end}}" data-wb-setting="settings.seo.robotsFollow" data-wb-value="">跟随</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.RobotsFollow == "nofollow"}} is-active{{end}}" data-wb-setting="settings.seo.robotsFollow" data-wb-value="nofollow">不跟随</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsFollow == ""}} is-active{{end}}" data-wb-setting="settings.seo.robotsFollow" data-wb-value="">{{tr("workbench.ui.settings.followOn", "跟随")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.RobotsFollow == "nofollow"}} is-active{{end}}" data-wb-setting="settings.seo.robotsFollow" data-wb-value="nofollow">{{tr("workbench.ui.settings.followOff", "不跟随")}}</button>
     </div>
 </div>
-<div class="wb-field"><label>次级关键词</label><input type="text" data-wb-setting="settings.seo.secondaryKeywords" data-wb-kind="list" value="{{.Settings.SecondaryKeywords}}" placeholder="空格分隔，如 puff count battery"></div>
+<div class="wb-field"><label>{{tr("workbench.ui.settings.secondaryKeywords", "次级关键词")}}</label><input type="text" data-wb-setting="settings.seo.secondaryKeywords" data-wb-kind="list" value="{{.Settings.SecondaryKeywords}}" placeholder="{{tr("workbench.ui.settings.secondaryKeywordsPlaceholder", "空格分隔，如 puff count battery")}}"></div>
 <div class="wb-field wb-field-seg">
-    <label>查询意图</label>
+    <label>{{tr("workbench.ui.settings.intent", "查询意图")}}</label>
     <div class="wb-seg">
-        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "informational"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="informational">信息型</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "commercial"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="commercial">商业型</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "transactional"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="transactional">交易型</button>
-        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "local"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="local">本地型</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "informational"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="informational">{{tr("workbench.ui.settings.intentInformational", "信息型")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "commercial"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="commercial">{{tr("workbench.ui.settings.intentCommercial", "商业型")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "transactional"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="transactional">{{tr("workbench.ui.settings.intentTransactional", "交易型")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.Intent == "local"}} is-active{{end}}" data-wb-setting="settings.seo.intent" data-wb-value="local">{{tr("workbench.ui.settings.intentLocal", "本地型")}}</button>
     </div>
 </div>
+{* 访问权限（PIPE-6 AccessGuard）：公开 / 密码 / 登录（仅已登录访客可见）。
+   类型按钮走通用的 data-wb-setting 回写（与 robots 那组完全同形）。
+   密码本身**不回写**：明文进不了文档（进了就等于把站点密码写进 page_revisions），
+   所以「设置」按钮把明文 POST 回 /workbench/settings，由服务端 bcrypt 后
+   借下面那个 data-wb-apply 的隐藏字段回填哈希 —— 哈希只在**刚设置**时出现，
+   平时不回填 value（模板里绝不烘入已有哈希）。 *}
+<div class="wb-field wb-field-seg">
+    <label>{{tr("workbench.ui.settings.access", "访问权限")}}</label>
+    <div class="wb-seg">
+        <button type="button" class="wb-seg-btn{{if .Settings.AccessType == "public"}} is-active{{end}}" data-wb-setting="settings.access.type" data-wb-value="">{{tr("workbench.ui.settings.accessPublic", "公开")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.AccessType == "password"}} is-active{{end}}" data-wb-setting="settings.access.type" data-wb-value="password">{{tr("workbench.ui.settings.accessPassword", "密码")}}</button>
+        <button type="button" class="wb-seg-btn{{if .Settings.AccessType == "members"}} is-active{{end}}" data-wb-setting="settings.access.type" data-wb-value="members">{{tr("workbench.ui.settings.accessMembers", "登录可见")}}</button>
+    </div>
+</div>
+{{if .Settings.AccessType == "password"}}
+<div class="wb-field">
+    <label>{{tr("workbench.ui.settings.accessPasswordLabel", "访问密码")}}：{{if .Settings.AccessPasswordSet}}{{tr("workbench.ui.settings.accessPasswordSet", "已设置")}}{{else}}{{tr("workbench.ui.settings.accessPasswordUnset", "未设置")}}{{end}}</label>
+    <div class="wb-access-row">
+        <input type="password" name="wb-access-password" autocomplete="new-password" maxlength="72" placeholder="{{tr("workbench.ui.settings.accessPasswordPlaceholder", "输入新密码后点「设置」")}}">
+        <button type="button" class="wb-access-apply" data-wb-access-set>{{tr("workbench.ui.settings.accessApply", "设置")}}</button>
+    </div>
+    {{if .Settings.AccessError}}<p class="wb-field-err">{{.Settings.AccessError}}</p>{{end}}
+</div>
+{{end}}
+{{if .Settings.AccessHash}}<input type="hidden" data-wb-setting="settings.access.passwordHash" data-wb-apply value="{{.Settings.AccessHash}}">{{end}}
 {* 主题覆盖：本页只写与站点主题不同的项，留空即继承（主题 → 页面 → 组件 三层继承的中间层）。
    合并与快照在保存路径完成（page/service.mergeActiveTheme），产物里仍是完整主题变量。 *}
 {{if .Settings.ThemeOverrides}}
-<div class="wb-palette-group">主题覆盖（留空 = 跟随站点主题）</div>
+<div class="wb-palette-group">{{tr("workbench.ui.settings.themeOverride", "主题覆盖（留空 = 跟随站点主题）")}}</div>
 {{range _, f := .Settings.ThemeOverrides}}
-<div class="wb-field"><label>{{f.Label}}</label><input type="text" data-wb-setting="{{f.Path}}" value="{{f.Value}}" placeholder="留空跟随站点主题" spellcheck="false"></div>
+<div class="wb-field"><label>{{f.Label}}</label><input type="text" data-wb-setting="{{f.Path}}" value="{{f.Value}}" placeholder="{{tr("workbench.ui.settings.themeOverridePlaceholder", "留空跟随站点主题")}}" spellcheck="false"></div>
 {{end}}
 {{end}}
 {* 评分区占位：客户端随后请求 /workbench/seo-score-panel 填入 *}

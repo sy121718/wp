@@ -157,11 +157,13 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 			} else {
 				total = timeline.Total
 				current = &gin.H{
-					"EntityType": timeline.EntityType, "EntityTypeLabel": timeline.EntityTypeLabel,
+					"EntityType": timeline.EntityType,
+					"EntityTypeLabel": masterDataLabel(shell.TranslateFor(c),
+						masterdataenums.EntityTypeLabel(timeline.EntityType)),
 					"EntityID": timeline.EntityID, "EntityLabel": timeline.EntityLabel, "Total": timeline.Total,
 				}
 				for _, row := range timeline.Changes {
-					rows = append(rows, changeRow(row))
+					rows = append(rows, changeRow(shell.TranslateFor(c), row))
 				}
 			}
 		} else {
@@ -170,7 +172,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 				pageErr = firstNonEmpty(pageErr, masterDataErrText(c, lerr))
 			} else {
 				for _, row := range list {
-					rows = append(rows, changeRow(row))
+					rows = append(rows, changeRow(shell.TranslateFor(c), row))
 				}
 			}
 			if count, cerr := h.changes.CountChanges(ctx, listReq); cerr == nil {
@@ -192,7 +194,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, eerr))
 		} else {
 			for _, item := range entities {
-				entityRows = append(entityRows, entityRow(item, filter, selected))
+				entityRows = append(entityRows, entityRow(shell.TranslateFor(c), item, filter, selected))
 			}
 		}
 		if count, cerr := h.changes.CountEntities(ctx, entityReq); cerr == nil {
@@ -211,12 +213,12 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	base := shell.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
 
 	data := shell.Prepare(c, gin.H{
-		"title":           masterdataenums.MsgMasterDataChangesTitle,
+		"title":           masterDataLabel(shell.TranslateFor(c), masterdataenums.PageTitleChanges),
 		"menu":            "masterdata-changes",
 		"Projects":        projects,
 		"SelectedProject": selected,
-		"EntityTypes":     masterDataEntityTypeOptions(),
-		"Actions":         masterDataActionOptions(),
+		"EntityTypes":     masterDataEntityTypeOptions(shell.TranslateFor(c)),
+		"Actions":         masterDataActionOptions(shell.TranslateFor(c)),
 		// 筛选条件逐项传给模板（Jet 对「map 再索引」的链式访问不确定，与货源页同一手法）。
 		"FilterEntityType": filter.EntityType,
 		"FilterEntityID":   filter.EntityID,
@@ -293,34 +295,61 @@ func masterDataErrText(c *gin.Context, err error) string {
 	return shell.PageInternalText(c)
 }
 
+// masterDataTr 取词函数签名（shell.TranslateFor(c) 的形态）。
+type masterDataTr func(key, fallback string) string
+
+// masterDataLabel 展示名取词：命中出译文、缺词条回落中文兜底。
+//
+// 空 key（enums 未登记该取值）直接给兜底 —— 「未登记」与「词条缺失」在展示上要做同一件事，
+// 但前者连查表都不必（兜底就是原值本身，如未知字段名）。
+func masterDataLabel(tr masterDataTr, pair masterdataenums.LabelPair) string {
+	if strings.TrimSpace(pair.Key) == "" {
+		return pair.Fallback
+	}
+	return tr(pair.Key, pair.Fallback)
+}
+
 // changeRow 变更记录行 → 模板视图（时间与取值都先格式化，模板不做逻辑）。
-func changeRow(row *masterdatadto.ChangeResp) gin.H {
+//
+// 三个展示名**用行上的原始值重新取词**，不复用 dto 里的 *Label：那些是 service 填的中文兜底
+// （JSON API 契约），页面要的是当前语言。原始值都在行上（EntityType / Action / Field），
+// 所以这里能自己算，不需要 service 多传一份 key。
+func changeRow(tr masterDataTr, row *masterdatadto.ChangeResp) gin.H {
 	if row == nil {
 		return gin.H{}
 	}
 	return gin.H{
-		"Time":       masterDataTimeLabel(row.CreatedAt),
-		"EntityType": row.EntityType, "EntityTypeLabel": row.EntityTypeLabel,
-		"EntityID": row.EntityID, "EntityLabel": row.EntityLabel,
-		"Action": row.Action, "ActionLabel": row.ActionLabel,
-		"Field": row.Field, "FieldLabel": row.FieldLabel,
-		"OldValue": masterDataValueLabel(row.OldValue),
-		"NewValue": masterDataValueLabel(row.NewValue),
-		"Origin":   row.Origin, "OperatorID": masterDataValueLabel(row.OperatorID),
+		"Time":            masterDataTimeLabel(row.CreatedAt),
+		"EntityType":      row.EntityType,
+		"EntityTypeLabel": masterDataLabel(tr, masterdataenums.EntityTypeLabel(row.EntityType)),
+		"EntityID":        row.EntityID, "EntityLabel": row.EntityLabel,
+		"Action":      row.Action,
+		"ActionLabel": masterDataLabel(tr, masterdataenums.ActionLabel(row.Action)),
+		"Field":       row.Field,
+		"FieldLabel":  masterDataLabel(tr, masterdataenums.FieldLabel(row.EntityType, row.Field)),
+		"OldValue":    masterDataValueLabel(row.OldValue),
+		"NewValue":    masterDataValueLabel(row.NewValue),
+		"Origin":      row.Origin, "OperatorID": masterDataValueLabel(row.OperatorID),
 	}
 }
 
 // entityRow 实体清单行 → 模板视图（带一条锁定该实体的筛选链接）。
-func entityRow(item *masterdatadto.EntityHistoryResp, filter masterDataFilter, projectID string) gin.H {
+func entityRow(tr masterDataTr, item *masterdatadto.EntityHistoryResp, filter masterDataFilter, projectID string) gin.H {
 	if item == nil {
 		return gin.H{}
 	}
 	return gin.H{
-		"EntityType": item.EntityType, "EntityTypeLabel": item.EntityTypeLabel,
+		"EntityType": item.EntityType,
+		"EntityTypeLabel": masterDataLabel(tr,
+			masterdataenums.EntityTypeLabel(item.EntityType)),
 		"EntityID": item.EntityID, "EntityLabel": masterDataValueLabel(item.EntityLabel),
 		"ChangeCount": item.ChangeCount,
-		"LastAction":  item.LastAction, "LastActionLabel": item.LastActionLabel,
-		"LastField": item.LastField, "LastFieldLabel": item.LastFieldLabel,
+		"LastAction":  item.LastAction,
+		"LastActionLabel": masterDataLabel(tr,
+			masterdataenums.ActionLabel(item.LastAction)),
+		"LastField": item.LastField,
+		"LastFieldLabel": masterDataLabel(tr,
+			masterdataenums.FieldLabel(item.EntityType, item.LastField)),
 		"LastOperatorID": masterDataValueLabel(item.LastOperatorID),
 		"LastAt":         masterDataTimeLabel(item.LastAt),
 		"URL": shell.FilterBaseURL("/admin/masterdata/changes",
@@ -349,19 +378,25 @@ func masterDataTimeLabel(at string) string {
 }
 
 // masterDataEntityTypeOptions 实体类型下拉（白名单来自模块 enums，单一来源）。
-func masterDataEntityTypeOptions() []gin.H {
+func masterDataEntityTypeOptions(tr masterDataTr) []gin.H {
 	options := make([]gin.H, 0, len(masterdataenums.EntityTypes()))
 	for _, entityType := range masterdataenums.EntityTypes() {
-		options = append(options, gin.H{"Value": entityType, "Label": masterdataenums.EntityTypeLabel(entityType)})
+		options = append(options, gin.H{
+			"Value": entityType,
+			"Label": masterDataLabel(tr, masterdataenums.EntityTypeLabel(entityType)),
+		})
 	}
 	return options
 }
 
 // masterDataActionOptions 动作下拉（新增 / 修改 / 删除）。
-func masterDataActionOptions() []gin.H {
+func masterDataActionOptions(tr masterDataTr) []gin.H {
 	options := make([]gin.H, 0, len(masterdataenums.Actions()))
 	for _, action := range masterdataenums.Actions() {
-		options = append(options, gin.H{"Value": action, "Label": masterdataenums.ActionLabel(action)})
+		options = append(options, gin.H{
+			"Value": action,
+			"Label": masterDataLabel(tr, masterdataenums.ActionLabel(action)),
+		})
 	}
 	return options
 }

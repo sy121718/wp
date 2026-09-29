@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 
+	"go_wp/internal/web/shell"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -64,21 +66,129 @@ type themeFieldGroupView struct {
 	Fields []themeFieldView
 }
 
+// themeLabelKeys 主题设置的**展示文案**（分组标题 / 字段 label / 下拉选项 label）→ i18n key。
+//
+// 为什么不给 themeField / panelOption 各加一个 Key 字段：同一段文本在三处只是「同一句话」
+// （「颜色」既是分组标题也是字段 label，「默认」在十几个下拉里反复出现），按文本查表
+// 让它们自然共享一条词条；逐条加字段则会造出 90 个只在某一处成立的 key，
+// 改一次措辞要动 90 行表。
+//
+// **表里没有的文本 = 不翻译**（如 value 与 label 相同的 "20px"、"Inter, system-ui, sans-serif"），
+// 取词函数收到空 key 时原样返回 label —— 这正是我们要的行为，不需要为它们造 key。
+var themeLabelKeys = map[string]string{
+	// —— 分组标题（同时是字段 label 的按同一行取词）——
+	"颜色":      "admin.theme_settings.label.colors",
+	"排版 · 标题": "admin.theme_settings.label.typographyHeading",
+	"排版 · 正文": "admin.theme_settings.label.typographyBody",
+	"排版 · 链接": "admin.theme_settings.label.typographyLink",
+	"按钮":      "admin.theme_settings.label.button",
+	"表面":      "admin.theme_settings.label.surface",
+	"图片":      "admin.theme_settings.label.images",
+	"动效":      "admin.theme_settings.label.motion",
+	// —— 字段 label ——
+	"主色":     "admin.theme_settings.label.primaryColor",
+	"次色":     "admin.theme_settings.label.secondaryColor",
+	"点缀色":    "admin.theme_settings.label.accentColor",
+	"成功色":    "admin.theme_settings.label.successColor",
+	"警告色":    "admin.theme_settings.label.warningColor",
+	"危险色":    "admin.theme_settings.label.dangerColor",
+	"正文色":    "admin.theme_settings.label.bodyColor",
+	"标题色":    "admin.theme_settings.label.headingColor",
+	"页面背景":   "admin.theme_settings.label.pageBackground",
+	"卡片底色":   "admin.theme_settings.label.cardSurface",
+	"边框色":    "admin.theme_settings.label.borderColor",
+	"字重":     "admin.theme_settings.label.fontWeight",
+	"基准字号":   "admin.theme_settings.label.headingSize",
+	"标题下间距":  "admin.theme_settings.label.headingSpacing",
+	"字体":     "admin.theme_settings.label.fontFamily",
+	"字号":     "admin.theme_settings.label.bodySize",
+	"行高":     "admin.theme_settings.label.lineHeight",
+	"悬停色":    "admin.theme_settings.label.linkHoverColor",
+	"下划线":    "admin.theme_settings.label.underline",
+	"背景":     "admin.theme_settings.label.buttonBackground",
+	"文字色":    "admin.theme_settings.label.buttonTextColor",
+	"圆角":     "admin.theme_settings.label.radius",
+	"纵向内边距":  "admin.theme_settings.label.paddingY",
+	"横向内边距":  "admin.theme_settings.label.paddingX",
+	"悬停背景":   "admin.theme_settings.label.hoverBackground",
+	"悬停文字色":  "admin.theme_settings.label.hoverTextColor",
+	"边框宽":    "admin.theme_settings.label.borderWidth",
+	"边框样式":   "admin.theme_settings.label.borderStyle",
+	"阴影":     "admin.theme_settings.label.shadow",
+	"全局圆角":   "admin.theme_settings.label.globalRadius",
+	"默认阴影":   "admin.theme_settings.label.defaultShadow",
+	"懒加载默认":  "admin.theme_settings.label.lazyDefault",
+	"懒加载骨架屏": "admin.theme_settings.label.lazySkeleton",
+	"过渡时长":   "admin.theme_settings.label.transitionDuration",
+	"缓动":     "admin.theme_settings.label.easing",
+	"默认入场":   "admin.theme_settings.label.entrance",
+	// —— 下拉选项 label ——
+	"默认":            "admin.theme_settings.label.optDefault",
+	"无":             "admin.theme_settings.label.optNone",
+	"小":             "admin.theme_settings.label.optSmall",
+	"中":             "admin.theme_settings.label.optMedium",
+	"大":             "admin.theme_settings.label.optLarge",
+	"特大":            "admin.theme_settings.label.optXLarge",
+	"直角":            "admin.theme_settings.label.optRadiusNone",
+	"胶囊":            "admin.theme_settings.label.optRadiusPill",
+	"实线":            "admin.theme_settings.label.optBorderSolid",
+	"虚线":            "admin.theme_settings.label.optBorderDashed",
+	"点线":            "admin.theme_settings.label.optBorderDotted",
+	"双线":            "admin.theme_settings.label.optBorderDouble",
+	"无边框":           "admin.theme_settings.label.optBorderNone",
+	"悬停时":           "admin.theme_settings.label.optUnderlineHover",
+	"始终":            "admin.theme_settings.label.optUnderlineAlways",
+	"开启":            "admin.theme_settings.label.optOn",
+	"关闭":            "admin.theme_settings.label.optOff",
+	"开启（推荐）":        "admin.theme_settings.label.optOnRecommended",
+	"常规":            "admin.theme_settings.label.optWeightRegular",
+	"中等":            "admin.theme_settings.label.optWeightMedium",
+	"半粗":            "admin.theme_settings.label.optWeightSemiBold",
+	"粗体":            "admin.theme_settings.label.optWeightBold",
+	"淡入":            "admin.theme_settings.label.optFadeIn",
+	"淡入·上":          "admin.theme_settings.label.optFadeUp",
+	"上滑":            "admin.theme_settings.label.optSlideUp",
+	"缩放":            "admin.theme_settings.label.optZoomIn",
+	"无（瞬时）":         "admin.theme_settings.label.optDurationNone",
+	"8px（推荐）":       "admin.theme_settings.label.optRadius8Recommended",
+	"10px（推荐）":      "admin.theme_settings.label.optRadius10Recommended",
+	"12px（推荐）":      "admin.theme_settings.label.optRadius12Recommended",
+	"16px（推荐）":      "admin.theme_settings.label.optSize16Recommended",
+	"20px（推荐）":      "admin.theme_settings.label.optSize20Recommended",
+	"32px（推荐）":      "admin.theme_settings.label.optSize32Recommended",
+	"200ms（推荐）":     "admin.theme_settings.label.optDuration200Recommended",
+	"1.4（紧凑）":       "admin.theme_settings.label.optLineHeight14Tight",
+	"1.6（常用）":       "admin.theme_settings.label.optLineHeight16Common",
+	"1.7（推荐）":       "admin.theme_settings.label.optLineHeight17Recommended",
+	"1.8（宽松）":       "admin.theme_settings.label.optLineHeight18Loose",
+	"系统默认（推荐）":      "admin.theme_settings.label.optFontSystemRecommended",
+	"默认（跟随主题）":      "admin.theme_settings.label.optFontThemeDefault",
+	"Inter / 现代无衬线": "admin.theme_settings.label.optFontInter",
+	"Georgia（衬线）":   "admin.theme_settings.label.optFontGeorgia",
+	"衬线体":           "admin.theme_settings.label.optFontSerif",
+	"等宽体":           "admin.theme_settings.label.optFontMono",
+	"中文无衬线":         "admin.theme_settings.label.optFontChineseSans",
+}
+
+// themeLabelText 展示文案 → 当前语言文案；表里没有的文本原样返回（见 themeLabelKeys 注释）。
+func themeLabelText(tr func(key, fallback string) string, label string) string {
+	return tr(themeLabelKeys[label], label)
+}
+
 // themeFieldGroups 主题设置字段表（与后端 SaveThemeSettings 的点分键名对齐）。
-var themeFieldGroups = []themeFieldGroup{
-	{Title: "颜色", Fields: []themeField{
-		{Label: "主色", Path: "colors.primary", Name: "colors.primary", Kind: "color"},
-		{Label: "次色", Path: "colors.secondary", Name: "colors.secondary", Kind: "color"},
-		{Label: "点缀色", Path: "colors.accent", Name: "colors.accent", Kind: "color"},
-		{Label: "成功色", Path: "colors.success", Name: "colors.success", Kind: "color"},
-		{Label: "警告色", Path: "colors.warning", Name: "colors.warning", Kind: "color"},
-		{Label: "危险色", Path: "colors.danger", Name: "colors.danger", Kind: "color"},
-		{Label: "正文色", Path: "colors.text", Name: "colors.text", Kind: "color"},
-		{Label: "标题色", Path: "colors.heading", Name: "colors.heading", Kind: "color"},
-		{Label: "页面背景", Path: "colors.background", Name: "colors.background", Kind: "color"},
-		{Label: "卡片底色", Path: "colors.surface", Name: "colors.surface", Kind: "color"},
-		{Label: "边框色", Path: "colors.border", Name: "colors.border", Kind: "color"},
-	}},
+var themeFieldGroups = []themeFieldGroup{{Title: "颜色", Fields: []themeField{
+	{Label: "主色", Path: "colors.primary", Name: "colors.primary", Kind: "color"},
+	{Label: "次色", Path: "colors.secondary", Name: "colors.secondary", Kind: "color"},
+	{Label: "点缀色", Path: "colors.accent", Name: "colors.accent", Kind: "color"},
+	{Label: "成功色", Path: "colors.success", Name: "colors.success", Kind: "color"},
+	{Label: "警告色", Path: "colors.warning", Name: "colors.warning", Kind: "color"},
+	{Label: "危险色", Path: "colors.danger", Name: "colors.danger", Kind: "color"},
+	{Label: "正文色", Path: "colors.text", Name: "colors.text", Kind: "color"},
+	{Label: "标题色", Path: "colors.heading", Name: "colors.heading", Kind: "color"},
+	{Label: "页面背景", Path: "colors.background", Name: "colors.background", Kind: "color"},
+	{Label: "卡片底色", Path: "colors.surface", Name: "colors.surface", Kind: "color"},
+	{Label: "边框色", Path: "colors.border", Name: "colors.border", Kind: "color"},
+}},
 	{Title: "排版 · 标题", Fields: []themeField{
 		{Label: "颜色", Path: "typography.heading.color", Name: "typography.heading.color", Kind: "color"},
 		{Label: "字重", Path: "typography.heading.fontWeight", Name: "typography.heading.weight", Kind: "select",
@@ -183,15 +293,22 @@ func optionsOf(pairs ...string) []panelOption {
 //
 // 工作台的全局设置面板与后台的主题设置页共用这一份 —— 控件类型（下拉/取色器/数值档位）
 // 只在这里定义一次，避免两边各写一套、改了这头忘那头。
-func buildThemeGroups(settings map[string]any) []themeFieldGroupView {
+//
+// tr 为可选取词函数（不传时按中文原文渲染，见 themeLabelKeys）：分组标题、字段 label
+// 与选项 label 全部经它取词，字段表本身只留中文原文。
+func buildThemeGroups(settings map[string]any, trs ...func(key, fallback string) string) []themeFieldGroupView {
+	tr := func(_, fallback string) string { return fallback }
+	if len(trs) > 0 && trs[0] != nil {
+		tr = trs[0]
+	}
 	groups := make([]themeFieldGroupView, 0, len(themeFieldGroups))
 	for _, g := range themeFieldGroups {
-		view := themeFieldGroupView{Title: g.Title, Fields: make([]themeFieldView, 0, len(g.Fields))}
+		view := themeFieldGroupView{Title: themeLabelText(tr, g.Title), Fields: make([]themeFieldView, 0, len(g.Fields))}
 		for _, f := range g.Fields {
 			value := propString(settings, f.Path)
-			item := themeFieldView{Label: f.Label, Path: f.Path, Name: f.Name, Kind: f.Kind, Value: value}
+			item := themeFieldView{Label: themeLabelText(tr, f.Label), Path: f.Path, Name: f.Name, Kind: f.Kind, Value: value}
 			for _, o := range f.Options {
-				item.Options = append(item.Options, panelOption{Value: o.Value, Label: o.Label, Selected: o.Value == value})
+				item.Options = append(item.Options, panelOption{Value: o.Value, Label: themeLabelText(tr, o.Label), Selected: o.Value == value})
 			}
 			view.Fields = append(view.Fields, item)
 		}
@@ -220,13 +337,16 @@ func propString(obj map[string]any, path string) string {
 // workbenchGlobalPanel 渲染全局设置（站点主题）面板片段（POST /workbench/global）。
 func workbenchGlobalPanel(c *gin.Context) {
 	themeID := strings.TrimSpace(c.PostForm("themeId"))
+	// t 是片段模板的取词函数：片段不经 shell.Prepare，缺 t 时 Jet 把取词调用求值成空串。
+	tr := shell.TranslateFor(c)
 	if themeID == "" {
-		c.HTML(http.StatusOK, "fragments/global_panel", gin.H{"ThemeID": ""})
+		c.HTML(http.StatusOK, "fragments/global_panel", gin.H{"ThemeID": "", "t": tr})
 		return
 	}
 	var settings map[string]any
 	if raw := c.PostForm("settings"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings)
 	}
-	c.HTML(http.StatusOK, "fragments/global_panel", gin.H{"ThemeID": themeID, "Groups": buildThemeGroups(settings)})
+	c.HTML(http.StatusOK, "fragments/global_panel",
+		gin.H{"ThemeID": themeID, "Groups": buildThemeGroups(settings, tr), "t": tr})
 }

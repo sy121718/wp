@@ -253,14 +253,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
     <a class="g-brand" href="/">{{ .["site"] }}</a>
     <nav class="g-nav">
       {{if .["user"]}}
-      <a href="/user/account">账号中心</a>
+      <a href="/user/account">{{ .["t"]("user.nav.account_center", "账号中心") }}</a>
       <form method="post" action="/user/logout">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-        <button type="submit" class="g-linklike">退出</button>
+        <button type="submit" class="g-linklike">{{ .["t"]("user.act.logout", "退出") }}</button>
       </form>
       {{else}}
-      <a href="/user/login">登录</a>
-      <a href="/user/register">注册</a>
+      <a href="/user/login">{{ .["t"]("user.act.login", "登录") }}</a>
+      <a href="/user/register">{{ .["t"]("user.act.register", "注册") }}</a>
       {{end}}
     </nav>
   </div>
@@ -271,7 +271,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{
   </div>
 </main>
 <footer class="g-footer">
-  <div class="g-wrap">{{ .["site"] }} 账号服务</div>
+  <div class="g-wrap">{{ .["site"] }} {{ .["t"]("user.footer.service", "账号服务") }}</div>
 </footer>
 </body>
 </html>

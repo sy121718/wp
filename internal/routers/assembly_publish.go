@@ -12,6 +12,7 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
+	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -360,6 +361,12 @@ func (a *assembly) wirePublishingPorts() {
 	// 片段层拿不到注册、改密码、踢出设备这些写能力，越权防护靠接口形状。
 	runtimefragment.SetVisitorAccountPort(a.userSvc)
 	marks.mark(portRuntimeFragVisitorAccount)
+	// 访问面守卫的登录态探针（PIPE-6 AccessGuard，「登录用户可见」）。
+	// 传的是收窄后的 UserService（只用到 ResolveVisitorID 一条只读能力）：
+	// 守卫拿不到注册 / 改密码 / 踢设备，越权防护靠接口形状。
+	// 它只在「该页确实配了 members 守卫」时才被调用，绝大多数静态请求零 Redis 访问。
+	builtin.SetAccessGuardLoginProbe(newVisitorLoginProbe(a.userSvc))
+	marks.mark(portAccessGuardLoginProbe)
 	// 页面 / 自动发布两条构建路径同样接上（issue #35）：装配处拿到的 ProductService
 	// 嵌入了 ProductDataSource，直接传即可（受限接口，写方法传不出去）。
 	if setter, ok := pageService.(interface {
@@ -585,7 +592,11 @@ func (a *assembly) mountAdminPages() {
 		a.contentTemplateSvc, a.pageService, a.presentationSvc)
 	contenttemplatehttp.SetupContentTemplatePages(a.adminPages, a.contentTemplateSvc,
 		a.projectService, a.productSvc, a.contentSvc)
-	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService)
+	// 客户管理页：最后两个参数是 BIZ-3 的会员展示端口（读等级 + 错误文案出口）。
+	// 详情页的「会员等级」块只读展示；等级与权益按「工程 + 客户」解析，
+	// 与同一页的订单摘要用同一个选定工程。
+	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
+		a.membershipSvc, a.membershipFacing)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc)

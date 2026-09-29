@@ -19,7 +19,11 @@ import (
 //
 // 步骤：页面草稿 → builder.CollectContentCandidates（与构建期同源）→
 // 现有译文（含 engine）→ 全站索引（复用提示 + 全站完成度）→ 按组件分组 + 筛选。
-func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID, wantLang, filter string) (*pageTranslationsData, error) {
+func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID, wantLang, filter string,
+	trs ...func(key, fallback string) string) (*pageTranslationsData, error) {
+	// 取词函数可选（不传时按中文兜底渲染）：来源徽章的三条 key + 兜底在
+	// page_translations_blocks.go，本函数只负责把 key 翻成当前语言。
+	tr := pageTranslationsTr(trs)
 	// 这里没有 gin.Context（纯数据组装），因此就地解析一次工程 scope —— 与
 	// pageOf 同一口径：Detail 的 projectID 是必填的越权防护 scope。
 	projectID, err := h.pages.ProjectOfPage(ctx, pageID)
@@ -109,7 +113,7 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 		}
 		// 来源标注：本页没有该 (原文, 语境) 时说明它来自哪个块（全站共享文本）。
 		if !pageKeys[key] {
-			row.Origin = blockInfo.origin[key]
+			row.Origin = translationOriginText(tr, blockInfo.origin[key])
 		}
 		if info, hit := details[key]; hit && info.TargetText != "" {
 			row.Target = info.TargetText
@@ -117,7 +121,7 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 			row.Translated = true
 		}
 		if site != nil {
-			row.ReusePages, row.ReuseTotal, row.ReuseHint = reuseHint(site.reusePathsOf(key), page.DraftPath)
+			row.ReusePages, row.ReuseTotal, row.ReuseHint = reuseHint(site.reusePathsOf(key), page.DraftPath, tr)
 		}
 		if len(groups) == 0 || groups[len(groups)-1].Component != component {
 			groups = append(groups, translationGroup{Component: component})

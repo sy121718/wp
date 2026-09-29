@@ -67,4 +67,34 @@ const (
 	ErrGSCVerificationInvalid   = "ErrGSCVerificationInvalid"   // Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）
 	ErrNotFoundHTMLTooLong      = "ErrNotFoundHTMLTooLong"      // 自定义 404 页内容过长（上限 32 KiB）
 	ErrLangURLModeInvalid       = "ErrLangURLModeInvalid"       // 语言 URL 方案取值非法（可选 off / default_plain / all_prefix）
+	// 站点运费规则（站点级基础运费 / 满额免运费门槛，单位分）。
+	//
+	// 两个字段各一个 key 而不是合成一句「运费配置不合法」：这一页有十几个输入框，
+	// 不指明是哪一个的提示等于让用户自己猜（而他要猜的那两个框长得几乎一样）。
+	ErrShippingBaseFeeInvalid       = "ErrShippingBaseFeeInvalid"       // 基础运费金额不合法（负数 / 非数字 / 超上限）
+	ErrShippingFreeThresholdInvalid = "ErrShippingFreeThresholdInvalid" // 满额免运费门槛金额不合法（同上）
+)
+
+// —— 点分 key 常量（新式）——
+//
+// 值是 sys_i18n 的 item_key（文案真源在迁移 451），命名按「去掉模块子域前缀
+// （`admin.theme_settings.` / `admin.seo.`）后的语义路径」。
+//
+// 与上面那批 `ErrXxx = "ErrXxx"` 分开成组：老式形态的值就是常量名本身
+// （`sys_i18n` 里存同名 key），两者混在同一前缀下会让人以为值也是 `ErrXxx`。
+// 中文兜底留在调用点（词条缺失时的回落），不在这里。
+const (
+	// 主题设置页的结构与分块文案。
+	ThemeSettingsStructureCurrent = "admin.theme_settings.structure.current" // （当前生效）
+	ThemeSettingsBlockUnset       = "admin.theme_settings.block.unset"       // （未设置）
+
+	// SEO 评分卡的条目格式与 SERP 占位。
+	//
+	// SEOScoreIssueFormat 是**跨模块共用**词条：站点设置面板的页面评分卡
+	//（settings_panel.go）与文章编辑页的文章评分卡（content 模块 article_view.go）
+	// 渲染的是同一批检查项。词条 key 以 admin.seo.score 打头、页面级评分卡是本模块
+	// 的主要消费方，故常量登记在本包，content 侧引用来复用（不另抄一份自研 key）。
+	SEOScoreIssueFormat    = "admin.seo.score.issueFormat"    // {label}：{actual}（基准 {benchmark}）→ {hint}
+	SEOScoreSerpTitleEmpty = "admin.seo.score.serpTitleEmpty" // （未填写 SEO 标题）
+	SEOScoreSerpDescEmpty  = "admin.seo.score.serpDescEmpty"  // （未填写 SEO 描述）
 )

@@ -175,8 +175,15 @@ type CouponResp struct {
 	//
 	// 与 startsAt / endsAt 一起返回，后台表单据此提示「填的是哪个时区的时间」——
 	// 少了它，界面上只有一个裸时间，运营只能靠猜；而猜错的后果是券提前生效或永远不生效。
-	TimeZone    string         `json:"timeZone"`
-	Status      int            `json:"status"`
+	TimeZone string `json:"timeZone"`
+	Status   int    `json:"status"`
+	// State 展示口径状态（enabled / disabled / expired / not_started / exhausted）。
+	//
+	// 为什么必须有它：**Status 列回答不了「现在是不是在生效」** —— 过期、未开始、用尽
+	// 都是时间与次数的函数（光看 status=1 看不出券其实已经过期）。展示层要按口径值
+	// 挑徽章样式，拿已翻译的 StatusLabel 去反查样式表的话，运营在后台改一句词条
+	// 就会让徽章静默失效（不报错、测试也不红）。
+	State       string         `json:"state"`
 	StatusLabel string         `json:"statusLabel"`
 	Remark      string         `json:"remark"`
 	CreateTime  utils.JSONTime `json:"createTime"`

@@ -3,7 +3,11 @@ package workbenchhttp
 // editor_bridge.go — 编辑器桥接脚本（工作台 iframe 内注入）。
 // 从 dashboard_handle.go 拆出：单一职责（编辑器桥接），与页面渲染/预览解耦。
 
-import "strings"
+import (
+	"strings"
+
+	workbenchenums "go_wp/internal/module/workbench/enums"
+)
 
 // editorBridgeScript 在 iframe 内运行的编辑器桥接脚本（仅编辑器预览注入）。
 // 职责：节点选择标记还原、点击选中上报、选中高亮、容器/元素下方
@@ -147,7 +151,7 @@ const editorBridgeScript = `<script>
   var insertBtn = document.createElement('button');
   insertBtn.type = 'button';
   insertBtn.className = 'wb-bridge-insert';
-  insertBtn.textContent = '+ 插入组件';
+  insertBtn.textContent = '+ {{bridge.insert}}';
   insertBtn.style.display = 'none';
   document.body.appendChild(insertBtn);
   insertBtn.addEventListener('click', function(ev){
@@ -257,26 +261,26 @@ const editorBridgeScript = `<script>
     }
     function separator(){ var s = document.createElement('div'); s.className='wb-ctx-sep'; ctxMenu.appendChild(s); }
     function send(msg){ parent.postMessage(msg, location.origin); }
-    item('✏️ 编辑文本', function(){ // 触发双击编辑。
+    item('✏️ {{bridge.editText}}', function(){ // 触发双击编辑。
       var el = document.querySelector('[data-sky-id="' + id + '"]');
       if (el) { var d = new MouseEvent('dblclick', {bubbles:true}); el.dispatchEvent(d); }
     });
-    item('⧉ 复制', function(){ send({type:'wb-ctx', id:id, op:'copy'}); });
-    item('✂ 剪切', function(){ send({type:'wb-ctx', id:id, op:'cut'}); });
-    item('📋 粘贴到内部', function(){ send({type:'wb-ctx', id:id, op:'paste-inside'}); });
+    item('⧉ {{bridge.copy}}', function(){ send({type:'wb-ctx', id:id, op:'copy'}); });
+    item('✂ {{bridge.cut}}', function(){ send({type:'wb-ctx', id:id, op:'cut'}); });
+    item('📋 {{bridge.pasteInside}}', function(){ send({type:'wb-ctx', id:id, op:'paste-inside'}); });
     separator();
-    item('↑ 上移', function(){ send({type:'wb-ctx', id:id, op:'move-up'}); });
-    item('↓ 下移', function(){ send({type:'wb-ctx', id:id, op:'move-down'}); });
+    item('↑ {{bridge.moveUp}}', function(){ send({type:'wb-ctx', id:id, op:'move-up'}); });
+    item('↓ {{bridge.moveDown}}', function(){ send({type:'wb-ctx', id:id, op:'move-down'}); });
     separator();
     // 动效快捷子项（效果基本库入口：常用 4 种入场 + 悬浮）。
-    var anim = document.createElement('div'); anim.className='wb-ctx-group'; anim.textContent='✨ 入场动画';
+    var anim = document.createElement('div'); anim.className='wb-ctx-group'; anim.textContent='✨ {{bridge.entranceGroup}}';
     ctxMenu.appendChild(anim);
     ['fade-up','zoom-in','slide-up','blur-in'].forEach(function(eff){
       item('　' + eff, function(){ send({type:'wb-ctx', id:id, op:'entrance', value:eff}); });
     });
-    item('🌀 悬浮上浮', function(){ send({type:'wb-ctx', id:id, op:'hover', value:'lift'}); });
+    item('🌀 {{bridge.hoverLift}}', function(){ send({type:'wb-ctx', id:id, op:'hover', value:'lift'}); });
     separator();
-    item('🗑 删除', function(){ send({type:'wb-ctx', id:id, op:'delete'}); });
+    item('🗑 {{bridge.delete}}', function(){ send({type:'wb-ctx', id:id, op:'delete'}); });
     document.body.appendChild(ctxMenu);
     // 定位（不越界）。
     var x = Math.min(ev.pageX, window.innerWidth - 180);
@@ -307,9 +311,9 @@ const editorBridgeScript = `<script>
       if (el && !el.hasAttribute('data-sky-slot')) positionQuickBar(el); else quickBar.style.display = 'none';
     }
   });
-  [['✏️','编辑',function(){ var el=document.querySelector('[data-sky-id="'+quickBar.getAttribute('data-target-id')+'"]'); if(el) el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); }],
-   ['⧉','复制',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'copy'}); }],
-   ['🗑','删除',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'delete'}); }]
+  [['✏️','{{bridge.editText}}',function(){ var el=document.querySelector('[data-sky-id="'+quickBar.getAttribute('data-target-id')+'"]'); if(el) el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); }],
+   ['⧉','{{bridge.copy}}',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'copy'}); }],
+   ['🗑','{{bridge.delete}}',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'delete'}); }]
   ].forEach(function(t){
     var b = document.createElement('button');
     b.type='button'; b.textContent=t[0]; b.title=t[1];
@@ -366,11 +370,55 @@ const editorBridgeScript = `<script>
 })();
 </script>`
 
-// injectEditorBridge 把编辑器桥接脚本追加到 </body> 前。
-func injectEditorBridge(html string) string {
+// editorBridgeTexts 桥接脚本里的可见文案：占位符名 → 词条 key + 中文兜底。
+//
+// 脚本以 `{{bridge.<name>}}` 书写、注入时替换，而不是把中文直接写在脚本里 ——
+// 这些串会由 iframe 内的 JS 输出（浮标文字、右键菜单项、快捷条 title），
+// 硬编码中文在英文画布上就是漏译。占位符形态还让「脚本里的占位符集合 =
+// 本表的名字集合」成为可机器校验的判据（见 editor_bridge_test.go），
+// 漏登记一个的表现是按钮上原样显示花括号，而这类缺陷不会让任何断言变红。
+var editorBridgeTexts = []struct{ Name, Key, Fallback string }{
+	{"bridge.insert", workbenchenums.BridgeInsert, "插入组件"},
+	{"bridge.editText", workbenchenums.BridgeEditText, "编辑文本"},
+	{"bridge.copy", workbenchenums.BridgeCopy, "复制"},
+	{"bridge.cut", workbenchenums.BridgeCut, "剪切"},
+	{"bridge.pasteInside", workbenchenums.BridgePasteInside, "粘贴到内部"},
+	{"bridge.moveUp", workbenchenums.BridgeMoveUp, "上移"},
+	{"bridge.moveDown", workbenchenums.BridgeMoveDown, "下移"},
+	{"bridge.delete", workbenchenums.BridgeDelete, "删除"},
+	{"bridge.entranceGroup", workbenchenums.BridgeEntranceGroup, "入场动画"},
+	{"bridge.hoverLift", workbenchenums.BridgeHoverLift, "悬浮上浮"},
+}
+
+// editorBridgeScriptFor 按当前语言产出桥接脚本：占位符换成译文后返回完整 <script>。
+func editorBridgeScriptFor(tr func(key, fallback string) string) string {
+	pairs := make([]string, 0, len(editorBridgeTexts)*2)
+	for _, it := range editorBridgeTexts {
+		pairs = append(pairs, "{{"+it.Name+"}}", jsSingleQuoted(tr(it.Key, it.Fallback)))
+	}
+	return strings.NewReplacer(pairs...).Replace(editorBridgeScript)
+}
+
+// jsSingleQuoted 把译文转义成能放进单引号 JS 字符串字面量的形态。
+//
+// 词条是运营可改的数据，不是编译期常量：一个撇号（如 "Don't"）就会当场把脚本打断，
+// 而断掉的后果是**画布里的桥接整体失效**（选中、拖放、右键全部无反应）——
+// 报错在 iframe 控制台，父窗口看起来只是「点了没反应」。
+func jsSingleQuoted(s string) string {
+	return strings.NewReplacer(
+		`\`, `\\`,
+		`'`, `\'`,
+		"\r", `\r`,
+		"\n", `\n`,
+		"</", `<\/`,
+	).Replace(s)
+}
+
+// injectEditorBridge 把编辑器桥接脚本（按请求语言取词后）追加到 </body> 前。
+func injectEditorBridge(html string, tr func(key, fallback string) string) string {
 	idx := strings.LastIndex(html, "</body>")
 	if idx < 0 {
 		return html
 	}
-	return html[:idx] + editorBridgeScript + html[idx:]
+	return html[:idx] + editorBridgeScriptFor(tr) + html[idx:]
 }

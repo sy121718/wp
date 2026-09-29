@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	admindto "go_wp/internal/module/admin/dto"
+	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/datarule"
 
@@ -184,6 +185,9 @@ func dataruleDropEmptyGroups(cfg admindto.RuleConfigDTO) admindto.RuleConfigDTO 
 
 // dataruleEditorContext 组装编辑器片段数据：该域的白名单 + 当前配置的组/行视图。
 func (h *AdminPagesHandle) dataruleEditorContext(c *gin.Context, domain string, cfg admindto.RuleConfigDTO) dataruleEditorCtx {
+	// 取词函数：下拉里的空选项与提示由本文件拼进片段 HTML（模板层不参与这些句子），
+	// 所以在这里取一次当前语言（迁移 452 seed 中英词条）。
+	tr := shell.TranslateFor(c)
 	ctx := dataruleEditorCtx{
 		Domain:     domain,
 		Fields:     []dataruleFieldView{},
@@ -214,7 +218,7 @@ func (h *AdminPagesHandle) dataruleEditorContext(c *gin.Context, domain string, 
 
 	fieldOptions := func(selected string) []dataruleOption {
 		options := make([]dataruleOption, 0, len(order)+1)
-		options = append(options, dataruleOption{Value: "", Label: "请选择字段", Selected: selected == ""})
+		options = append(options, dataruleOption{Value: "", Label: tr(adminenums.DatarulesEditorFieldPlaceholder, "请选择字段"), Selected: selected == ""})
 		for _, field := range order {
 			options = append(options, dataruleOption{
 				Value:    field,
@@ -227,7 +231,7 @@ func (h *AdminPagesHandle) dataruleEditorContext(c *gin.Context, domain string, 
 	opOptions := func(field, selected string) []dataruleOption {
 		ops := opsByField[field]
 		if len(ops) == 0 {
-			return []dataruleOption{{Value: "", Label: "请先选择字段", Selected: true}}
+			return []dataruleOption{{Value: "", Label: tr(adminenums.DatarulesEditorFieldRequired, "请先选择字段"), Selected: true}}
 		}
 		options := make([]dataruleOption, 0, len(ops))
 		for _, op := range ops {

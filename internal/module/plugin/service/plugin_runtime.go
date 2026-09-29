@@ -20,8 +20,10 @@ import (
 	"go_wp/internal/builder/plugincomp"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
+	pluginenums "go_wp/internal/module/plugin/enums"
 	pluginmodel "go_wp/internal/module/plugin/model"
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 )
 
 // EnabledAssembly 构建启用插件的编译装配素材（带进程内缓存，审计 PERF-006）。
@@ -67,6 +69,8 @@ func (s *Service) buildAssembly(ctx context.Context, fingerprint string) (asm *p
 		Components:       make([]plugindto.ComponentSummary, 0),
 		Presets:          make([]plugindto.PresetSummary, 0),
 	}
+	// 组件库默认提示（manifest 未声明 hint 时）：按默认语言取一次，循环内所有组件共用。
+	defaultHint := defaultComponentHint()
 	for _, row := range rows {
 		// 存储目录缺失（被手动清理）→ 跳过该插件并保持注册行（管理员可重装）。
 		if st, serr := os.Stat(row.StoragePath); serr != nil || !st.IsDir() {
@@ -89,7 +93,7 @@ func (s *Service) buildAssembly(ctx context.Context, fingerprint string) (asm *p
 			asm.Components = append(asm.Components, plugindto.ComponentSummary{
 				Type:  plugincomp.TypeOf(manifest.ID, c.Name),
 				Label: c.Label,
-				Hint:  orDefault(c.Hint, "插件组件"),
+				Hint:  orDefault(c.Hint, defaultHint),
 				Props: defaultProps(c.Props),
 			})
 		}
@@ -125,6 +129,19 @@ func defaultProps(props map[string]plugincomp.PropControl) map[string]any {
 		}
 	}
 	return out
+}
+
+// defaultComponentHint 插件组件在组件库里的默认提示（manifest 未声明 hint 时，docs/06 §5）。
+//
+// 取词用**默认语言**：本函数的产物按启用集指纹进程内缓存、跨请求共享（见文件头），
+// 没有请求语言可用 —— 与构建期组件文案的既有口径一致（i18n.TranslateFunc(lang)，
+// lang 来自构建配置）。词条缺失回落中文兜底，绝不把裸 key 写进组件库。
+//
+// 为什么不能继续留裸中文：这条提示随 Assembly.Components 进工作台组件库的 JSON
+// （workbench_handle.go 的 palette 注入）并渲染给运营，裸中文在英文站点上无从替换；
+// 登记成 key 之后可被词条覆盖，取词链与后台页面同一套（pkg/i18n）。
+func defaultComponentHint() string {
+	return i18n.TranslateFunc(i18n.GetDefaultLang())(pluginenums.HintComponentDefault, "插件组件")
 }
 
 // orDefault 空串兜底。

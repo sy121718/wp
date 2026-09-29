@@ -44,8 +44,15 @@ func (d *orderDraft) response() *orderdto.CreateOrderResp {
 
 // buildOrderDraft 把请求变成一个**可以直接落库**的草稿。
 //
-// 步骤顺序与拆分前逐字一致（快照 → 金额 → 券 → 开号 → 订单号 → 订单头）：
-// 券要等小计算出来才能试算，访客开号要在订单号之前（开号结果进订单头）。
+// 步骤顺序：快照 → 券试算 → 开号 → 会员折扣 → 分摊 → 订单号 → 订单头。
+// 三处顺序有硬理由，改动前先读一遍：
+//
+//	· 券要等小计算出来才能试算；
+//	· 开号排在会员折扣之前（BIZ-3 新增）：会员身份按账号解析，而新访客的身份
+//	  正是这一单才建出来的账号；
+//	· 会员折扣排在分摊之前：退款按分摊后的行实付算，折扣不进分摊就会退多。
+//
+// 开号结果同时进订单头（user_id），所以它必然在订单头构造之前 —— 与拆分前一致。
 func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrderReq, projectID, createdVia string) (*orderDraft, error) {
 	now := time.Now()
 	email := strings.TrimSpace(req.CustomerEmail)
@@ -59,24 +66,37 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	if err != nil {
 		return nil, err
 	}
-	// 金额：小计 - 优惠 + 运费 + 税。优惠不得低于 0、也不得超过小计（负数总额没有意义）。
+	// 金额：小计 - 券 - 会员折扣 + 运费 + 税。两项折扣各自不得低于 0，
+	// 合计也不得超过小计（负数总额没有意义，它会顺着 total 一路传到支付金额上）。
 	if discount < 0 {
 		discount = 0
 	}
 	if discount > subtotal {
 		discount = subtotal
 	}
-	allocateLineDiscounts(items, subtotal, discount)
 	shipping := req.ShippingTotal
 	if shipping < 0 {
 		shipping = 0
 	}
-	total := subtotal - discount + shipping
 
 	// 访客开号：走**显式开关**（req.ProvisionGuestAccount）—— 后台代客建单页默认 false
-	// （不开号、不发初始密码邮件），前台 checkout 不传该字段、保持既有行为。
+	//（不开号、不发初始密码邮件），前台 checkout 不传该字段、保持既有行为。
 	// 判定细节与三态语义见 ensureGuestAccount 与 dto.CreateOrderReq 的注释。
+	//
+	// 位置在会员折扣之前（原先在分摊之后）：会员身份按账号解析，而访客的身份恰恰是
+	// 「这一单才建出来的账号」—— 折扣算在开号之前，新客户的第一单就永远拿不到会员价。
 	userID, accountMailed := s.ensureGuestAccount(ctx, req)
+
+	// 会员折扣（BIZ-3）：落在**券之后、分摊之前**。
+	//   · 在券之后：相加扣减下两道折扣合计可能超过小计，会员折扣吃的是券扣完还剩的部分
+	//     （上界夹在小计内，见 membershipDiscountAmount）；
+	//   · 在分摊之前：退款按分摊后的行实付算，会员折扣若不参与分摊，
+	//     部分退货就会按「没打过会员折扣」的行金额退 —— 那是资损，不是舍入差。
+	// 独立计账：金额进 membership_discount_total，**不动** discount_total 的语义
+	//（SEC-001「无优惠码时折扣恒为 0」那条判据必须继续成立）。
+	membershipDiscount := s.resolveMembershipDiscount(ctx, projectID, userID, subtotal, discount)
+	allocateLineDiscounts(items, subtotal, discount+membershipDiscount)
+	total := subtotal - discount - membershipDiscount + shipping
 
 	// 每人限次在 redeemCouponTx 内与核销同事务判定（行锁 + 计数），
 	// 避免事务外先读再写被并发绕过。
@@ -87,44 +107,48 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	}
 
 	head := &ordermodel.OrderEntity{
-		ProjectID:          projectID,
-		OrderNo:            orderNo,
-		Status:             ordermodel.OrderStatusPending,
-		UserID:             userID,
-		CustomerEmail:      email,
-		CustomerName:       strings.TrimSpace(req.CustomerName),
-		CustomerPhone:      strings.TrimSpace(req.CustomerPhone),
-		Currency:           "CNY",
-		Subtotal:           subtotal,
-		DiscountTotal:      discount,
-		ShippingTotal:      shipping,
-		TaxTotal:           0,
-		Total:              total,
-		ShipName:           strings.TrimSpace(req.Shipping.Name),
-		ShipPhone:          strings.TrimSpace(req.Shipping.Phone),
-		ShipProvince:       strings.TrimSpace(req.Shipping.Province),
-		ShipCity:           strings.TrimSpace(req.Shipping.City),
-		ShipDistrict:       strings.TrimSpace(req.Shipping.District),
-		ShipAddress:        strings.TrimSpace(req.Shipping.Address),
-		ShipZip:            strings.TrimSpace(req.Shipping.Zip),
-		BillName:           strings.TrimSpace(req.Billing.Name),
-		BillPhone:          strings.TrimSpace(req.Billing.Phone),
-		BillProvince:       strings.TrimSpace(req.Billing.Province),
-		BillCity:           strings.TrimSpace(req.Billing.City),
-		BillDistrict:       strings.TrimSpace(req.Billing.District),
-		BillAddress:        strings.TrimSpace(req.Billing.Address),
-		BillZip:            strings.TrimSpace(req.Billing.Zip),
-		PaymentMethod:      strings.TrimSpace(req.PaymentMethod),
-		PaymentMethodTitle: strings.TrimSpace(req.PaymentMethodTitle),
-		CreatedVia:         createdVia,
-		IPAddress:          strings.TrimSpace(req.IPAddress),
-		UserAgent:          strings.TrimSpace(req.UserAgent),
-		RequestID:          strings.TrimSpace(req.RequestID),
-		Remark:             strings.TrimSpace(req.Remark),
-		AdminNote:          strings.TrimSpace(req.AdminNote),
-		CreateBy:           req.CreateBy,
-		CreateTime:         now,
-		UpdateTime:         now,
+		ProjectID:     projectID,
+		OrderNo:       orderNo,
+		Status:        ordermodel.OrderStatusPending,
+		UserID:        userID,
+		CustomerEmail: email,
+		CustomerName:  strings.TrimSpace(req.CustomerName),
+		CustomerPhone: strings.TrimSpace(req.CustomerPhone),
+		Currency:      "CNY",
+		Subtotal:      subtotal,
+		DiscountTotal: discount,
+		// 会员折扣与券各自独立计账（相加扣减）：这一列与 DiscountTotal 一起构成总扣减，
+		// 而 Total 已经把它减掉了。两列分开存是为了保住 SEC-001 那条既有判据
+		//（无优惠码时 DiscountTotal 恒为 0），见 order_membership_discount.go 的文件头。
+		MembershipDiscountTotal: membershipDiscount,
+		ShippingTotal:           shipping,
+		TaxTotal:                0,
+		Total:                   total,
+		ShipName:                strings.TrimSpace(req.Shipping.Name),
+		ShipPhone:               strings.TrimSpace(req.Shipping.Phone),
+		ShipProvince:            strings.TrimSpace(req.Shipping.Province),
+		ShipCity:                strings.TrimSpace(req.Shipping.City),
+		ShipDistrict:            strings.TrimSpace(req.Shipping.District),
+		ShipAddress:             strings.TrimSpace(req.Shipping.Address),
+		ShipZip:                 strings.TrimSpace(req.Shipping.Zip),
+		BillName:                strings.TrimSpace(req.Billing.Name),
+		BillPhone:               strings.TrimSpace(req.Billing.Phone),
+		BillProvince:            strings.TrimSpace(req.Billing.Province),
+		BillCity:                strings.TrimSpace(req.Billing.City),
+		BillDistrict:            strings.TrimSpace(req.Billing.District),
+		BillAddress:             strings.TrimSpace(req.Billing.Address),
+		BillZip:                 strings.TrimSpace(req.Billing.Zip),
+		PaymentMethod:           strings.TrimSpace(req.PaymentMethod),
+		PaymentMethodTitle:      strings.TrimSpace(req.PaymentMethodTitle),
+		CreatedVia:              createdVia,
+		IPAddress:               strings.TrimSpace(req.IPAddress),
+		UserAgent:               strings.TrimSpace(req.UserAgent),
+		RequestID:               strings.TrimSpace(req.RequestID),
+		Remark:                  strings.TrimSpace(req.Remark),
+		AdminNote:               strings.TrimSpace(req.AdminNote),
+		CreateBy:                req.CreateBy,
+		CreateTime:              now,
+		UpdateTime:              now,
 	}
 	if head.Attribution, err = marshalAttribution(req.Attribution); err != nil {
 		return nil, err

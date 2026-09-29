@@ -251,7 +251,11 @@ func TestArticleEditPublishStates(t *testing.T) {
 		{
 			name: "无模板",
 			view: gin.H{"PublishConfigured": true, "Published": false, "HasTemplates": false,
-				"NoTemplateHint": articleNoTemplateHint},
+				// NoTemplateHint 在生产路径上是 handler **取词后的成品文案**
+				//（article_publish.go：articlePublishHintText(tr, articleNoTemplateHint)）。
+				// 这里用同一助手 + 无参 tr 复现那条路径：直接把 key 交给模板，模板只会原样
+				// 渲染出 key，于是「页面里有一句人话」这条断言永远找不到目标。
+				"NoTemplateHint": articlePublishHintText(articlePublishTr(nil), articleNoTemplateHint)},
 			want: []string{"还没有「文章详情模板」"},
 			// 没有模板时**不能**渲染发布表单，页头也不能留关联按钮：
 			// 那会是一次必然失败的点击（卡内给的是「为什么发不了」的说明）。
@@ -293,7 +297,10 @@ func TestArticleScoreFragmentRenders(t *testing.T) {
 		"title": "一篇有标题的文章", "body": "<h2>小标题</h2><p>正文内容</p>",
 		"excerpt": "摘要", "focusKeyword": "文章",
 	}, "/blog/x", "zh-CN")
-	body := renderAdminTemplate(t, "fragments/seo_score", gin.H{"Score": score})
+	// t 必须给：fragments/seo_score 用 .["t"] 取词，缺 t 时 Jet 静默输出空串
+	//（不报错、不 500），下面那条断言看到的会是空 span。
+	body := renderAdminTemplate(t, "fragments/seo_score",
+		gin.H{"Score": score, "t": func(_, fallback string) string { return fallback }})
 	if !strings.Contains(body, "SEO 评分（0-100）") {
 		t.Errorf("评分片段未渲染出总分块：%s", body[:min(len(body), 200)])
 	}

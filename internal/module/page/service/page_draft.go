@@ -345,7 +345,9 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 	// 容错校验：编辑中间态允许「某个组件还没配好」（编译时跳过该节点），
 	// 只拦截致命问题（设置非法 / 深度超限）。
 	if _, err = builder.ValidatePageTolerant(page); err != nil {
-		return "", nil, fmt.Errorf("%w: %v", ErrInvalidDocument, err)
+		// 明细走 ErrorDetail 协议（可翻译），不是 builder 的中文原文 ——
+		// ErrInvalidDocument 落 400，两个出口都会把它展示给用户（见 page_document_detail.go）。
+		return "", nil, fmt.Errorf("%w: %s", ErrInvalidDocument, pageDocumentDetail(err))
 	}
 	// 重新编码保证存储 JSON 的规范格式；Document 不接受任意散乱字节。
 	doc, err = json.Marshal(page)

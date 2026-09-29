@@ -32,22 +32,28 @@ const (
 	themeSettingsMsgTitle = "MsgThemeSettingsTitle"
 )
 
-// themeSettingsSavedText 保存成功回执（本页 ?ok= 通道的**唯一一份字面量**，写侧与读侧共用）。
+// themeSettingsSavedTextKey / themeSettingsSavedText 保存成功回执（本页 ?ok= 通道的
+// **唯一一份**，写侧与读侧共用：key + 中文兜底成对，取词统一走 themeSettingsSavedTexts）。
 //
-// 为什么不套 t(key)：模板文案的 key 必须有中英成对词条（`admin_group_f_i18n_test.go` 的判据），
-// 而词条 seed 在 `public/migrations` —— 不在本批文件清单里；新增一个未登记词条的 key
-// 会让页面直接把裸 key 摆给运营看（`datarule_edit.html` 的在位取舍与此一致）。
+// 词条在 `sys_i18n`（迁移 451 已 seed 中英各一条）。此前这里只有一句中文常量、
+// 以「值当 key」的方式取词 —— 库内没有中文 item_key，等于永远只显示中文。
 //
-// 读侧（themeSettingsPageOK）拿的是同一个值经当前语言取词的结果：手拼
+// 读侧（themeSettingsPageOK）拿的是同一个 key 经当前语言取词的结果：手拼
 // `?ok=任意文案` 会被 `shell.FacingNotice` 的整体匹配拒掉 —— 机制与 `project_err.go`
 // 的 ?err= 白名单、`order_page_query.go` 的 ?done= 同源。
-const themeSettingsSavedText = "主题设置已保存，该主题下页面已标记待重建 —— 重新构建后新样式才会出现在访问面。"
+const (
+	themeSettingsSavedTextKey      = "admin.theme_settings.ok.saved"
+	themeSettingsSavedTextFallback = "主题设置已保存，该主题下页面已标记待重建 —— 重新构建后新样式才会出现在访问面。"
+)
 
 // themeSettingsFieldInvalidText 字段级错误的一行红字（就近提示，模板渲染在控件下方）。
 //
 // 措辞只说「允许什么」而不复述白名单实现：`core.IsSafeCSSValue` 放行的是颜色、长度、
 // 字号、关键字这类 CSS 值，用户要做的是「改成一个正常的值」，不是理解校验器。
-const themeSettingsFieldInvalidText = "这个值不合法：只能填颜色（#3d444f）、尺寸（16px）这类 CSS 值。"
+const (
+	themeSettingsFieldInvalidKey      = "admin.theme_settings.err.fieldInvalid"
+	themeSettingsFieldInvalidFallback = "这个值不合法：只能填颜色（#3d444f）、尺寸（16px）这类 CSS 值。"
+)
 
 // themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚块绑定）。
 type themeSettingsData struct {
@@ -202,6 +208,7 @@ func (h *themeAdminHandle) ThemeSettings(c *gin.Context) {
 // loadThemeSettings 组装单主题设置页数据；主题不存在返回 nil。
 func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *themeSettingsData {
 	ctx := c.Request.Context()
+	tr := shell.TranslateFor(c)
 	theme, err := h.projects.GetTheme(ctx, themeID)
 	if err != nil || theme == nil {
 		return nil
@@ -250,7 +257,7 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 			// 否则「选了另一套没生效」会被当成 bug（生效与否由模板列表的「设为生效」决定）。
 			label := o.Name
 			if o.IsDefault {
-				label += "（当前生效）"
+				label += tr(projectenums.ThemeSettingsStructureCurrent, "（当前生效）")
 			}
 			if o.EntityType == "footer" {
 				data.FooterTemplateOptions = append(data.FooterTemplateOptions, structureTemplateOptionView{
@@ -270,12 +277,13 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 	if len(theme.Settings) > 0 {
 		_ = json.Unmarshal(theme.Settings, &rawSettings)
 	}
-	data.Groups = buildThemeGroups(rawSettings)
+	data.Groups = buildThemeGroups(rawSettings, tr)
 	// 页眉/页脚绑定候选：本工程的页眉/页脚类全局块。
 	if blocks, err := h.blocks.List(ctx, &blockcontract.ListReq{ProjectID: theme.ProjectID}); err == nil {
-		data.HeaderBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
-		data.FooterBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
-		data.AnnouncementBlocks = []blockOption{{ID: "", Name: "（未设置）"}}
+		unset := tr(projectenums.ThemeSettingsBlockUnset, "（未设置）")
+		data.HeaderBlocks = []blockOption{{ID: "", Name: unset}}
+		data.FooterBlocks = []blockOption{{ID: "", Name: unset}}
+		data.AnnouncementBlocks = []blockOption{{ID: "", Name: unset}}
 		for _, b := range blocks {
 			opt := blockOption{ID: b.ID, Name: b.Name, Kind: b.Kind}
 			switch b.Kind {
@@ -440,7 +448,8 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	}
 	// 成功：303 回本页 + ?ok=（读侧白名单在 themeSettingsPageOK）。
 	// 保存的后果是「该主题下全部页面标记待重建」，页面与保存前逐字相同，用户需要一个明确的确认。
-	c.Redirect(http.StatusSeeOther, themeSettingsOKRedirectURL(backURL, themeSettingsSavedText))
+	c.Redirect(http.StatusSeeOther, themeSettingsOKRedirectURL(backURL,
+		shell.TranslateFor(c)(themeSettingsSavedTextKey, themeSettingsSavedTextFallback)))
 }
 
 // themeSettingsFailPage 保存失败的**统一出口**：就地重渲本页（200 + 回填 + 错误槽 + 出错字段标红）。
@@ -468,7 +477,8 @@ func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, text string,
 	}
 	themeSettingsEchoForm(c, data)
 	if name, _, _ := themeSettingsInvalidField(data.Groups, fieldErr); name != "" {
-		themeSettingsMarkInvalid(data.Groups, name, themeSettingsFieldInvalidText)
+		themeSettingsMarkInvalid(data.Groups, name,
+			shell.TranslateFor(c)(themeSettingsFieldInvalidKey, themeSettingsFieldInvalidFallback))
 	}
 	c.HTML(http.StatusOK, "admin/project/theme_settings", shell.Prepare(c, data.templateMap()))
 }
@@ -605,7 +615,7 @@ func themeSettingsMarkInvalid(groups []themeFieldGroupView, name, text string) {
 
 // themeSettingsSavedTexts ?ok= 可以原样渲染的受控文案（当前语言；本页只有一条回执）。
 func themeSettingsSavedTexts(c *gin.Context) []string {
-	return []string{shell.TranslateFor(c)(themeSettingsSavedText, themeSettingsSavedText)}
+	return []string{shell.TranslateFor(c)(themeSettingsSavedTextKey, themeSettingsSavedTextFallback)}
 }
 
 // themeSettingsPageOK ?ok= 的受控出口：整体命中受控文案返回原文，未命中落空串。

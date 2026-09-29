@@ -310,3 +310,54 @@ func (m *Model) MarkStaleByDependencyTx(ctx context.Context, tx *gorm.DB, projec
 	}
 	return ids, nil
 }
+
+// ClearPublicationLangTx 在外部事务内退役某页面某语言的发布状态（PIPE-7 定时下线用）。
+//
+// 两步必须同进同出（AGENTS.md「写操作的事务与回滚」）：
+//
+//  1. 删 page_publications 该语言的激活行（**只该语言**：其它语言还在服务，
+//     整页删会让它们立刻失去「已发布」状态而访问面上产物还在 —— 见
+//     DeletePublicationsByLangTx 的同一条论证）；
+//  2. 同步 pages 的单值镜像（active_artifact_id / active_path / published_at）。
+//
+// 为什么第 2 步不能省：pages 那三列是「最近发布语言的镜像」，而列表页与
+// 详情页的「已发布 / 已下线」投影读的正是它（page_list.go 的 pageResp）。
+// 只删 page_publications 会让下线后的页面在后台仍显示「已发布」—— 那是一句假话，
+// 且没有任何报错。镜像的取值按**剩余语言里最近发布的一条**（无剩余则清空）：
+// 这与 MarkPublishedLangTx 的写入口径一致（写入方永远把镜像设成自己那次发布）。
+//
+// 与 RetireLocale 的差别（那边只删页发布指针、不动镜像）：那批是「整页的全部语言一起退役」，
+// 镜像随后由下一次发布覆盖；这里是单语言的定时下线，页面仍在列表页上显示状态，
+// 镜像必须当场正确。
+func (m *Model) ClearPublicationLangTx(ctx context.Context, tx *gorm.DB, projectID, pageID, lang string, at time.Time) error {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	if err := rls.ScopeTx(tx, projectID); err != nil {
+		return err
+	}
+	if derr := tx.WithContext(ctx).Model(&PublicationEntity{}).
+		Where("page_id = ? AND lang = ?", pageID, lang).Delete(&PublicationEntity{}).Error; derr != nil {
+		return derr
+	}
+	// 同事务内读剩余行：本连接看得到自己刚删掉的结果（这正是必须同事务的一半理由 ——
+	// 分开提交时第二次读会读到「删了一半」的中间态）。
+	var rest []PublicationEntity
+	if lerr := tx.WithContext(ctx).Model(&PublicationEntity{}).Where("page_id = ?", pageID).
+		Order("published_at DESC, lang ASC").Find(&rest).Error; lerr != nil {
+		return lerr
+	}
+	updates := map[string]any{"update_time": at}
+	if len(rest) == 0 {
+		updates["active_artifact_id"] = nil
+		updates["active_path"] = nil
+		updates["published_at"] = nil
+	} else {
+		updates["active_artifact_id"] = rest[0].ArtifactID
+		updates["active_path"] = rest[0].ActivePath
+		updates["published_at"] = rest[0].PublishedAt
+	}
+	return tx.WithContext(ctx).Model(&PageEntity{}).
+		Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+		Updates(updates).Error
+}

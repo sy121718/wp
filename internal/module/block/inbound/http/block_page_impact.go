@@ -22,13 +22,15 @@ package blockhttp
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
 	pagecontract "go_wp/internal/module/page/contract"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -39,12 +41,12 @@ const blockStalePageLimit = 30
 //
 // pages 未注入（装配层尚未把 page 契约传进来）时返回 Available=false + 明确说明，
 // 而不是给一份「0 个待重建」的假结论 —— 两者对运营的含义完全不同。
-func (h *blockPageHandle) blockStaleImpact(ctx context.Context) gin.H {
+func (h *blockPageHandle) blockStaleImpact(tr func(key, fallback string) string, ctx context.Context) gin.H {
 	if h == nil || h.pages == nil || h.projects == nil {
 		return gin.H{
 			"Available": false, "Pages": []gin.H{}, "Total": 0, "Truncated": false,
 			"Limit": blockStalePageLimit,
-			"Hint":  "页面能力未装配（装配层未把 page 契约传给块管理页），本次无法统计待重建影响面。",
+			"Hint":  tr(blockenums.ImpactUnavailableNoPageCapability, "页面能力未装配（装配层未把 page 契约传给块管理页），本次无法统计待重建影响面。"),
 		}
 	}
 	projects, err := h.projects.List(ctx)
@@ -53,7 +55,7 @@ func (h *blockPageHandle) blockStaleImpact(ctx context.Context) gin.H {
 		return gin.H{
 			"Available": false, "Pages": []gin.H{}, "Total": 0, "Truncated": false,
 			"Limit": blockStalePageLimit,
-			"Hint":  "读取站点工程失败，本次无法统计待重建影响面。",
+			"Hint":  tr(blockenums.ImpactUnavailableProjectReadFailed, "读取站点工程失败，本次无法统计待重建影响面。"),
 		}
 	}
 	pages := make([]gin.H, 0, blockStalePageLimit)
@@ -102,9 +104,9 @@ func blockStalePagePath(p pagecontract.PageResp) string {
 //
 // 逐块一次 COUNT 查询：块数量是后台量级（每工程几十个），与本页其余查询同一量级；
 // pages 未注入时 blockRefCount 返回 -1，全部显示为「未知」，不产生任何查询。
-func (h *blockPageHandle) fillRefCounts(ctx context.Context, rows []blockRow) {
+func (h *blockPageHandle) fillRefCounts(tr func(key, fallback string) string, ctx context.Context, rows []blockRow) {
 	for i := range rows {
-		rows[i].RefCountText = blockRefCountText(rows[i], h.blockRefCount(ctx, rows[i]))
+		rows[i].RefCountText = blockRefCountText(tr, rows[i], h.blockRefCount(ctx, rows[i]))
 	}
 }
 
@@ -113,16 +115,19 @@ func (h *blockPageHandle) fillRefCounts(ctx context.Context, rows []blockRow) {
 // 「0 个引用」「未知」「不传播」是三件不同的事，必须显示成三种文案：
 // 把「读不到」显示成 0 会让人以为这个块没人用（进而放心删除），
 // 把 template 块显示成 0 会让人以为它需要重建。
-func blockRefCountText(row blockRow, n int64) string {
+func blockRefCountText(tr func(key, fallback string) string, row blockRow, n int64) string {
 	switch {
 	case row.ReuseMode != blockmodel.ReuseGlobal:
 		return "—"
 	case n < 0:
-		return "未知"
+		return tr(blockenums.RefCountUnknown, "未知")
 	case n == 0:
-		return "未被页面引用"
+		return tr(blockenums.RefCountNone, "未被页面引用")
 	default:
-		return fmt.Sprintf("%d 个页面引用", n)
+		// 占位符是命名形态（{count}），不用 Sprintf：词条可被运营在后台改，
+		// 裸 % 与中英参数错位都会让 Sprintf 输出乱码，命名替换对此免疫。
+		return i18n.FillTranslate(tr, blockenums.RefCountPages, "{count} 个页面引用",
+			map[string]string{"count": strconv.FormatInt(n, 10)})
 	}
 }
 

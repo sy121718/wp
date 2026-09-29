@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
+	navigationenums "go_wp/internal/module/navigation/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
@@ -97,6 +99,26 @@ type navSourceGroup struct {
 	Usable bool
 }
 
+// navSourceGroupTitles 来源分组标题：来源类型 → {key, 中文兜底}。
+//
+// contract 的 SourceGroup.Title 只承载 i18n key（见 outbound/source/resolver.go）：
+// 那个适配器在 service 层之下、拿不到请求语言，中英文案必须在展示层取。
+var navSourceGroupTitles = map[string]navText{
+	"page":     {navigationenums.SourcePage, "页面"},
+	"article":  {navigationenums.SourceArticle, "文章"},
+	"product":  {navigationenums.SourceProduct, "产品"},
+	"category": {navigationenums.SourceCategory, "分类"},
+}
+
+// navSourceGroupTitle 来源类型 → 当前语言分组标题；未知类型回落 contract 给的 key 原文
+// （显示成 key 比显示成空标题更容易被发现是新增来源类型没登记）。
+func navSourceGroupTitle(tr func(key, fallback string) string, typ string) string {
+	if item, ok := navSourceGroupTitles[typ]; ok {
+		return tr(item.Key, item.Fallback)
+	}
+	return typ
+}
+
 // navigationsPageData 导航菜单管理页数据。
 // panelBlockOption 面板块下拉选项（超菜单面板选择）。
 type panelBlockOption struct {
@@ -173,6 +195,7 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		selected = projects[0].ID
 	}
 	kind := normalizeNavKind(c.Query("kind"))
+	tr := shell.TranslateFor(c)
 	rows := make([]navMenuRow, 0, 8)
 	var groups []navigationcontract.SourceGroup
 	if selected != "" {
@@ -180,13 +203,15 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		if terr != nil {
 			return nil, terr
 		}
-		flattenNavRows(nodes, 0, &rows)
+		flattenNavRows(tr, nodes, 0, &rows)
 		// 来源候选：页面/文章/产品/分类（依赖模块不可用时对应分组为空）。
 		if groups, terr = h.navigations.SourceGroups(ctx, selected); terr != nil {
 			logger.Scene("page").With("project", selected).Warn("导航来源候选加载失败，管理页仅显示自定义链接")
 		}
 	}
 	// 视图模型：把「本组是否有可加入项」一次算清，模板只做渲染（模板不做查询、不做统计）。
+	// 分组标题在 contract 里只有 i18n key（resolver 是 outbound 适配器、拿不到请求语言），
+	// 取词落在这一层。
 	sourceGroups := make([]navSourceGroup, 0, len(groups))
 	for _, g := range groups {
 		usable := false
@@ -197,7 +222,7 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 			}
 		}
 		sourceGroups = append(sourceGroups, navSourceGroup{
-			Type: g.Type, Title: g.Title, Items: g.Items, Usable: usable,
+			Type: g.Type, Title: navSourceGroupTitle(tr, g.Type), Items: g.Items, Usable: usable,
 		})
 	}
 	// 悬浮面板（超级菜单）：列出可挂的块并回填行上的块名。块能力未装配时整体降级
@@ -261,23 +286,35 @@ func normalizeMenuFocus(raw string) string {
 	return v
 }
 
+// navTargetLabels 打开方式标签：target → {key, 中文兜底}。
+// key 与模板 admin/navigation/navigations.html 的 target 下拉同源（admin.navigations.target.*）。
+var navTargetLabels = map[string]navText{
+	"self":  {"admin.navigations.target.self", "当前窗口"},
+	"blank": {"admin.navigations.target.blank", "新标签页"},
+}
+
+// navTargetLabel 打开方式 → 当前语言标签；未知取值按「当前窗口」（与模板下拉默认项一致）。
+func navTargetLabel(tr func(key, fallback string) string, target string) string {
+	item, ok := navTargetLabels[target]
+	if !ok {
+		item = navTargetLabels["self"]
+	}
+	return tr(item.Key, item.Fallback)
+}
+
 // flattenNavRows 深度优先展平菜单树（同级首末标记用于按钮禁用态）。
-func flattenNavRows(nodes []*navigationdto.NavigationNode, depth int, out *[]navMenuRow) {
+func flattenNavRows(tr func(key, fallback string) string, nodes []*navigationdto.NavigationNode, depth int, out *[]navMenuRow) {
 	for i, n := range nodes {
-		label := "当前窗口"
-		if n.Target == "blank" {
-			label = "新标签页"
-		}
 		*out = append(*out, navMenuRow{
 			ID: n.ID, Title: n.Title, Path: n.Path, Depth: depth,
-			Target: n.Target, TargetLabel: label,
+			Target: n.Target, TargetLabel: navTargetLabel(tr, n.Target),
 			Indent:     fmt.Sprintf("%dpx", depth*24),
 			SourceType: n.SourceType,
 			First:      i == 0, Last: i == len(nodes)-1,
 			PanelBlockID: panelBlockIDOf(n), PanelWidth: n.PanelWidth,
 			UpdatedAt: n.UpdatedAt,
 		})
-		flattenNavRows(n.Children, depth+1, out)
+		flattenNavRows(tr, n.Children, depth+1, out)
 	}
 }
 
@@ -372,7 +409,7 @@ func (h *navigationPageHandle) NavigationAddSource(c *gin.Context) {
 		// 最常见的一条：抽屉里 33 个复选框默认全不勾，用户直接点「加入菜单」。
 		// 模板侧已把「本组没有可加入项」的提交按钮置灰，这里是服务端兜底 —— 两条
 		// 都要有：只靠前端，手工构造的请求仍会拿到一条看不懂的响应。
-		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navNoticeNoSourcePicked, ""))
+		c.Redirect(http.StatusSeeOther, navListURLMenu(projectID, kind, "", navTextOf(c, navNoticeNoSourcePicked), ""))
 		return
 	}
 	groups, err := h.navigations.SourceGroups(ctx, projectID)
@@ -516,7 +553,7 @@ func (h *navigationPageHandle) NavigationsBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
-	msg := navigationsBulkDeleteResult(deleted, skipped)
+	msg := navigationsBulkDeleteResult(c, deleted, skipped)
 	if skipped > 0 {
 		c.Redirect(http.StatusSeeOther, navListURLWith(projectID, kind, msg, ""))
 		return
@@ -526,18 +563,19 @@ func (h *navigationPageHandle) NavigationsBulkDelete(c *gin.Context) {
 
 // navigationsBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
 // （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
-func navigationsBulkDeleteResult(deleted, skipped int) string {
+func navigationsBulkDeleteResult(c *gin.Context, deleted, skipped int) string {
 	// 模板取自 navigation_err.go 的 navigationsBulkResultTemplates ——
 	// 那里同时是读侧候选文案的来源：写侧改措辞时读侧跟着变，不会静默失配。
 	switch {
 	case deleted == 0 && skipped == 0:
-		return navigationsBulkResultTemplates[0]
+		return navBulkFilled(c, navigationsBulkResultTemplates[0], nil)
 	case skipped == 0:
-		return fmt.Sprintf(navigationsBulkResultTemplates[1], deleted)
+		return navBulkFilled(c, navigationsBulkResultTemplates[1], map[string]string{"count": strconv.Itoa(deleted)})
 	case deleted == 0:
-		return fmt.Sprintf(navigationsBulkResultTemplates[2], skipped)
+		return navBulkFilled(c, navigationsBulkResultTemplates[2], map[string]string{"count": strconv.Itoa(skipped)})
 	default:
-		return fmt.Sprintf(navigationsBulkResultTemplates[3], deleted, skipped)
+		return navBulkFilled(c, navigationsBulkResultTemplates[3],
+			map[string]string{"deleted": strconv.Itoa(deleted), "skipped": strconv.Itoa(skipped)})
 	}
 }
 

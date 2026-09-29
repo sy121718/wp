@@ -16,6 +16,9 @@ import (
 	"strings"
 
 	pagecontract "go_wp/internal/module/page/contract"
+	pageenums "go_wp/internal/module/page/enums"
+	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -32,11 +35,12 @@ type historyRowView struct {
 func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	pageID := strings.TrimSpace(c.PostForm("pageId"))
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
-	data := gin.H{"Revisions": []historyRowView{}, "Error": ""}
+	// t 是片段模板的取词函数：片段不经 shell.Prepare，缺 t 时 Jet 把取词调用求值成空串。
+	data := gin.H{"Revisions": []historyRowView{}, "Error": "", "t": shell.TranslateFor(c)}
 	if pageID != "" && h.pages != nil {
 		revs, err := h.pages.ListRevisions(c.Request.Context(), &pagecontract.RevisionReq{PageID: pageID})
 		if err != nil {
-			data["Error"] = "加载失败"
+			data["Error"] = shell.TranslateFor(c)("admin.pages.history.loadFailed", "加载失败")
 		} else {
 			views := make([]historyRowView, 0, len(revs))
 			for _, r := range revs {
@@ -57,12 +61,15 @@ func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 	pageID := strings.TrimSpace(c.PostForm("pageId"))
 	version, err := strconv.ParseInt(strings.TrimSpace(c.PostForm("version")), 10, 64)
 	if pageID == "" || err != nil || h.pages == nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, "参数错误")
+		// 消息一律用模块 enums 的 key（pkg/response 按请求语言取词，中英各一条词条），
+		// 不写字面量中文 —— 这里硬编码过「参数错误」，英文后台下是唯一的中文出口。
+		response.ErrorWithMessage(c, http.StatusBadRequest, pageenums.ErrInvalidParam)
 		return
 	}
 	revs, err := h.pages.ListRevisions(ctx, &pagecontract.RevisionReq{PageID: pageID})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, "加载修订失败")
+		logger.Scene("page").With("page_id", pageID).Error(err, "读取页面修订失败")
+		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
 		return
 	}
 	var target *pagecontract.RevisionResp
@@ -73,12 +80,12 @@ func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 		}
 	}
 	if target == nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, "修订版本不存在")
+		response.ErrorWithMessage(c, http.StatusNotFound, pageenums.ErrRevisionNotFound)
 		return
 	}
 	page, err := h.pageOf(c, pageID)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusNotFound, "页面不存在")
+		response.ErrorWithMessage(c, http.StatusNotFound, pageenums.ErrPageNotFound)
 		return
 	}
 	res, err := h.pages.SaveDraft(ctx, &pagecontract.SaveDraftReq{
@@ -86,7 +93,10 @@ func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 		DraftPath: target.DraftPath, DraftDocument: target.DraftDocument,
 	})
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusConflict, "恢复失败（草稿可能已被其他会话修改）")
+		// 这里是「用某个修订覆盖保存草稿」：最常见的失败是乐观锁冲突（另一个标签页刚存过），
+		// 与原先的 409 语义一致；错误原文只进日志，不再拼进响应体。
+		logger.Scene("page").With("page_id", pageID).Error(err, "恢复页面修订失败")
+		response.ErrorWithMessage(c, http.StatusConflict, pageenums.ErrDraftVersionConflict)
 		return
 	}
 	response.Success(c, gin.H{"draftVersion": res.DraftVersion})

@@ -26,6 +26,7 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
+	"go_wp/pkg/i18n"
 	"go_wp/internal/web/shell"
 )
 
@@ -94,7 +95,8 @@ func blockRefUsageText(c *gin.Context, err error) string {
 		tail := ""
 		if len(locs) > 3 {
 			shown = locs[:3]
-			tail = " 等 " + strconv.Itoa(len(locs)) + " 处"
+			tail = i18n.FillTranslate(tr, blockenums.UsageMore, " 等 {count} 处",
+				map[string]string{"count": strconv.Itoa(len(locs))})
 		}
 		parts = append(parts, tr(key, key)+"："+strings.Join(shown, "、")+tail)
 	}
@@ -115,15 +117,29 @@ func truncateRunes(s string, maxBytes int) string {
 
 // blockBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
 //
-// **写侧与读侧共用这一份字面量**：写侧 blocksBulkDeleteResult 用它 Sprintf 出文案，
-// 读侧 blockNoticeTexts 用它（经 shell.NoticeTemplate 归一）判定 URL 回显。
+// **写侧与读侧共用这一份**（key + 中文兜底各一份）：写侧 blocksBulkDeleteResult 经
+// blockBulkTextOf 取当前语言模板后 Sprintf 出文案，读侧 blockNoticeTexts 用**同一个取法**
+// 拿到当前语言模板、经 shell.NoticeTemplate 归一后判定 URL 回显。
 // 各写一份的后果是静默的 —— 写侧改了措辞，读侧白名单不再命中，运营看到的
 // 就从「已删除 3 个块。」退化成「系统内部错误」。
-var blockBulkResultTemplates = []string{
-	"没有选中任何块，列表未改动。",
-	"已删除 %d 个块。",
-	"%d 个块都未能删除，列表未改动。",
-	"已删除 %d 个，%d 个未能删除（被引用的全局块需先解除引用）。",
+var blockBulkResultTemplates = []blockText{
+	{"admin.blocks.bulkResult.noneSelected", "没有选中任何块，列表未改动。"},
+	{"admin.blocks.bulkResult.allDeleted", "已删除 {count} 个块。"},
+	{"admin.blocks.bulkResult.allSkipped", "{count} 个块都未能删除，列表未改动。"},
+	{"admin.blocks.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。"},
+}
+
+// blockBulkTextOf 取一条批量结论文案的当前语言**模板**（写侧与读侧**共用这一个取法**）。
+//
+// 返回的是模板而不是成品句子：写侧要把 {count} 填成真实计数，读侧要把占位符填成占位符
+// 再归一比对（见 blockNoticeTexts）。
+func blockBulkTextOf(c *gin.Context, t blockText) string {
+	return shell.TranslateFor(c)(t.Key, t.Fallback)
+}
+
+// blockBulkFilled 把批量结论文案模板填成成品句子（占位符命名形态，见 pkg/i18n/placeholder.go）。
+func blockBulkFilled(c *gin.Context, t blockText, params map[string]string) string {
+	return i18n.FillTranslate(shell.TranslateFor(c), t.Key, t.Fallback, params)
 }
 
 // blockRefErrText 块删除被拒时的页面文案：受控文案 + "：" + 引用明细。
@@ -171,7 +187,9 @@ func blockNoticeTexts(c *gin.Context) []string {
 	out = append(out, tr(shell.MsgInternalError, blockErrInternalFallback))
 	out = append(out, shell.BulkIDsNoticeTemplate(c))
 	for _, tpl := range blockBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
+		// 占位符先填成 "0"（写侧填的是真实计数，数字归一后两者可比），
+		// 再走 shell.NoticeTemplate 的 %s/%d 归一 —— 两种占位形态在这一步合流。
+		out = append(out, shell.NoticeTemplate(i18n.ZeroNamedPlaceholders(blockBulkTextOf(c, tpl))))
 	}
 	return out
 }

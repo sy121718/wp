@@ -33,3 +33,25 @@ const (
 	BulkArticleAllSkipped   = "content.bulk.allSkipped"
 	BulkArticlePartial      = "content.bulk.partial"
 )
+
+// —— 点分 key 常量（新式）——
+//
+// 值是 sys_i18n 的 item_key（文案真源在迁移 451），命名按「去掉模块子域前缀
+// （`admin.article.`）后的语义路径」：包名 contentenums 已给出模块上下文。
+//
+// 与上面那批 `MsgXxx = "MsgXxx"` 分开成组：老式形态的值就是常量名本身
+//（`sys_i18n` 里存同名 key），两者混在同一前缀下会让人以为值也是 `MsgXxx`。
+// 中文兜底留在调用点（词条缺失时的回落），不在这里。
+const (
+	// 文章列表页的发布状态文案。
+	StatePublished   = "admin.article.state.published"   // 已发布
+	StateUnpublished = "admin.article.state.unpublished" // 未发布
+
+	// 「导入到画布」区块的不可用说明（三种前置条件各一条）。
+	ImportHintSaveFirst = "admin.article.import.hint.saveFirst" // 先保存这篇文章，再回来把它导入画布。
+	ImportHintNoProject = "admin.article.import.hint.noProject" // 还没有站点工程：先在「页面」里建一个工程
+
+	// 文章 SEO 评分卡 SERP 预览的两个占位。
+	ScoreSerpTitleEmpty = "admin.article.score.serpTitleEmpty" // （未填写文章标题）
+	ScoreSerpDescEmpty  = "admin.article.score.serpDescEmpty"  // （未填写摘要 / SEO 描述）
+)

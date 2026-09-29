@@ -1,8 +1,11 @@
 {* fragments/global_panel.html — 全局设置（站点主题）面板（HTMX 服务端渲染，docs/09 §3）
    数据：ThemeID / Groups（分组 → 字段）
-   约定：普通字段带 name（提交键）与 value；color 字段输出槽，客户端用取色器增强并注入 hidden input。 *}
+   约定：普通字段带 name（提交键）与 value；color 字段输出槽，客户端用取色器增强并注入 hidden input。
+   取词：本片段不经 shell.Prepare，t 由调用点注入（project/inbound/http/theme_field_groups.go）。
+   noTheme 复用迁移 452 的词条（与工作台画布 layout.html 的空态同一句）。 *}
+{{tr := .["t"]}}
 {{if .ThemeID == ""}}
-<p class="wb-empty">当前页面未挂接主题。<br>到后台「主题管理」创建并激活主题后，这里可就地调整。</p>
+<p class="wb-empty">{{tr("workbench.ui.settings.noTheme", "当前页面未挂接主题。")}}<br>{{tr("workbench.ui.settings.noThemeHint", "到后台「主题管理」创建并激活主题后，这里可就地调整。")}}</p>
 {{else}}
 {{range _, g := .Groups}}
 <div class="wb-palette-group">{{g.Title}}</div>
@@ -26,5 +29,5 @@
 {{end}}
 {{end}}
 {{end}}
-<p class="wb-empty">保存后主题设置批量合入全部页面文档，已发布页面需重新构建才会带新主题。</p>
+<p class="wb-empty">{{tr("workbench.ui.settings.saveHint", "保存后主题设置批量合入全部页面文档，已发布页面需重新构建才会带新主题。")}}</p>
 {{end}}

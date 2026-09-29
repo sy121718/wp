@@ -115,7 +115,9 @@ type inventoryPurchasesPageData struct {
 }
 
 // templateMap 转 Jet 模板键（一次性幂等键在这里生成：每次渲染一个新的，双击提交即被挡住）。
-func (d *inventoryPurchasesPageData) templateMap() gin.H {
+//
+// c 只用于取词：状态下拉文案按请求语言渲染。
+func (d *inventoryPurchasesPageData) templateMap(c *gin.Context) gin.H {
 	m := gin.H{
 		"title":           inventoryenums.MsgInventoryPurchasesTitle,
 		"menu":            "inventory-purchases",
@@ -127,7 +129,7 @@ func (d *inventoryPurchasesPageData) templateMap() gin.H {
 		"VariantOptions":  d.VariantOptions,
 		"DraftLines":      purchaseDraftLines(),
 		"Orders":          d.Orders,
-		"StatusOptions":   purchaseStatusOptions(),
+		"StatusOptions":   purchaseStatusOptions(shell.TranslateFor(c)),
 		"FilterStatus":    d.FilterStatus,
 		"FilterSource":    d.FilterSource,
 		"FilterKeyword":   d.FilterKeyword,
@@ -150,7 +152,7 @@ func (d *inventoryPurchasesPageData) templateMap() gin.H {
 
 // renderPurchasesPage 采购页的唯一渲染出口（正常 / 装载失败两条路共用）。
 func (h *inventoryPurchasePageHandle) renderPurchasesPage(c *gin.Context, d *inventoryPurchasesPageData) {
-	c.HTML(http.StatusOK, "admin/inventory/inventory_purchases.html", shell.Prepare(c, d.templateMap()))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_purchases.html", shell.Prepare(c, d.templateMap(c)))
 }
 
 // InventoryPurchasesPage 采购入库页：新建采购单 + 采购单列表（含逐行收货）+ 生产入库 + 进货历史。
@@ -201,12 +203,13 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 		// 本页承载两个入库入口：采购单 → 逐行收货，以及自家工厂**生产入库**
 		// （无采购单、成本价手工填，验收 5）。进货历史不在这里 —— 它就是「按 SKU 看库存流水」，
 		// 已并入库存管理页的流水筛选（同一查询对象的另一个视角）。
-		sources = sourceOptions(ctx, h.inventory, selected, "")
+		tr := shell.TranslateFor(c)
+		sources = sourceOptions(ctx, h.inventory, selected, "", tr)
 		// 生产入库的来源只列**内部货源**（自家工厂 / 集团内关联公司）：外部供应商走采购单，
 		// 没有「无采购单的生产入库」这一说（服务端同样拒绝，见 ErrProductionSourceNotInternal）。
-		internalSources = sourceOptions(ctx, h.inventory, selected, inventoryenums.SourceTypeInternal)
-		warehouses = h.purchaseWarehouseOptions(ctx, selected)
-		variants = h.purchaseVariantOptions(ctx, selected)
+		internalSources = sourceOptions(ctx, h.inventory, selected, inventoryenums.SourceTypeInternal, tr)
+		warehouses = h.purchaseWarehouseOptions(ctx, selected, tr)
+		variants = h.purchaseVariantOptions(ctx, selected, tr)
 		orders, total, page = h.purchaseOrderRows(c, selected, filterStatus, filterSource, filterKeyword,
 			page, limit, &pageErr)
 	}

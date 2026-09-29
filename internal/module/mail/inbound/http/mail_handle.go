@@ -91,6 +91,7 @@ func (h *Handle) AccountTestSend(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
+	req.Lang = response.RequestLanguage(c)
 	res, err := h.svc.TestSend(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)

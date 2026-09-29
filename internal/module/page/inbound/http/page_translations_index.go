@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"go_wp/internal/builder"
+	pageenums "go_wp/internal/module/page/enums"
 	"go_wp/pkg/i18n"
 )
 
@@ -250,7 +251,8 @@ func (h *pagesAdminHandle) buildSiteContentIndex(ctx context.Context) (*siteCont
 // reuseHint 组装复用提示文案（行内提示 + 展开用页面路径）。
 //
 // 返回 (其他页面数, 该文本出现的页面总数, 展开文案)。仅本页出现时返回 0。
-func reuseHint(paths []string, currentPath string) (others int, total int, hint string) {
+func reuseHint(paths []string, currentPath string, trs ...func(key, fallback string) string) (others int, total int, hint string) {
+	tr := pageTranslationsTr(trs)
 	total = len(paths)
 	if total <= 1 {
 		return 0, total, ""
@@ -273,19 +275,23 @@ func reuseHint(paths []string, currentPath string) (others int, total int, hint 
 	if len(shown) > siteContentReuseHintMax {
 		shown = shown[:siteContentReuseHintMax]
 	}
-	hint = joinPaths(shown)
+	hint = joinPaths(tr, shown)
 	if len(paths) > len(shown) {
-		hint = hint + " 等页面"
+		hint = hint + tr(pageenums.ReuseMoreSuffix, " 等页面")
 	}
 	return others, total, hint
 }
 
-// joinPaths 以「、」连接页面路径（模板侧不再做拼接逻辑）。
-func joinPaths(paths []string) string {
+// joinPaths 以当前语言的分隔符连接页面路径（模板侧不再做拼接逻辑）。
+//
+// 分隔符也要取词：中文用「、」，英文用「, 」—— 写死全角顿号会让英文界面上
+// 出现一整串中文标点串起来的路径。
+func joinPaths(tr func(key, fallback string) string, paths []string) string {
+	sep := tr(pageenums.ReusePathSeparator, "、")
 	out := ""
 	for i, p := range paths {
 		if i > 0 {
-			out += "、"
+			out += sep
 		}
 		out += p
 	}

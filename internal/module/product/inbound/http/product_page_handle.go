@@ -26,6 +26,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -123,7 +124,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	}
 	// 归属仓下拉（issue #15）与多仓勾选：变体 / 首建商品的归属仓在这里选（不选 = 默认仓）。
 	// **必须在商品行之前取好**：列表「库存」列的分仓明细要按工程仓库清单补齐未入库的仓。
-	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected, shell.TranslateFor(c))
 	if werr != nil {
 		shell.PageError(c, "product", werr)
 		return
@@ -152,7 +153,8 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 			if derr != nil {
 				continue
 			}
-			rows = append(rows, h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail))
+			rows = append(rows, h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail,
+				shell.TranslateFor(c)))
 		}
 	}
 	// 属性组勾选列表（本批）：新建抽屉引用属性组时不再手打 UUID —— 可选值由服务端给出
@@ -225,7 +227,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 // （与「同一概念两处口径」是同一类问题）。
 func (h *productPageHandle) productRow(ctx context.Context, selected string,
 	flat []*productdto.CategoryResp, brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []gin.H, detail *productdto.ProductResp) gin.H {
+	warehouses []gin.H, detail *productdto.ProductResp, tr func(key, fallback string) string) gin.H {
 	// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
 	rating := ratingOf(h.products, ctx, selected, detail.ID)
 	ratingRows := make([]gin.H, 0, len(rating.Items))
@@ -264,8 +266,8 @@ func (h *productPageHandle) productRow(ctx context.Context, selected string,
 		"CategoryChecks":      checkedCategoryOptions(flat, detail.CategoryIDs),
 		"CategoryCell":        categoryCell,
 		"CategoryOthers":      categoryOthers,
-		"PrimaryOptions":      primaryCategoryOptions(flat, detail.PrimaryCategoryID),
-		"BrandOptions":        brandPickOptions(brands, detail.BrandID),
+		"PrimaryOptions":      primaryCategoryOptions(tr, flat, detail.PrimaryCategoryID),
+		"BrandOptions":        brandPickOptions(tr, brands, detail.BrandID),
 		"PrimaryCategoryName": categoryNameByID(flat, detail.PrimaryCategoryID),
 		"BrandName":           brandNameByID(brands, detail.BrandID),
 		// 标签（issue #11）：手工标签勾选挂载（勾选态服务端算好）；自动标签只读展示 ——
@@ -274,7 +276,7 @@ func (h *productPageHandle) productRow(ctx context.Context, selected string,
 		"TagChecks": tagChecks,
 		"AutoTags":  autoTags,
 		// TagLabel 是**列表列**要的单个值：这个商品挂了哪些标签（手工 + 自动合并的标签名）。
-		"TagLabel": tagCellLabel(tagChecks, autoTags),
+		"TagLabel": tagCellLabel(tr, tagChecks, autoTags),
 		// 评分（issue #30 / #33）：明细 + 投影值。评分是独立表，这里读的是
 		// ListRatings 算出的平均值与条数；**没有评分时 HasRating=false** ——
 		// 空态与「评分 0」是两回事，模板据它给出不同文案。
@@ -313,7 +315,7 @@ func categoryCellLabel(flat []*productdto.CategoryResp, attached []string, prima
 // 不做「手工 N · 自动 M」那种来源分解 —— 读这一列的人要知道「挂了哪些标签」，
 // 而不是「这些标签里有几个是手工建的」（那是标签管理页的问题）；两个数都是 0 时，
 // 那种分解更是纯噪声。名字多于 maxTagNames 时退化成数量，避免单元格被撑成一屏。
-func tagCellLabel(tagChecks, autoTags []gin.H) string {
+func tagCellLabel(tr func(key, fallback string) string, tagChecks, autoTags []gin.H) string {
 	const maxTagNames = 3
 	names := make([]string, 0, len(tagChecks)+len(autoTags))
 	for _, t := range tagChecks {
@@ -334,7 +336,9 @@ func tagCellLabel(tagChecks, autoTags []gin.H) string {
 	case len(names) == 0:
 		return ""
 	case len(names) > maxTagNames:
-		return strconv.Itoa(len(names)) + " 个"
+		// 数量后缀是文案（中文「N 个」/ 英文「N tags」），不是数据：走词条而不是拼中文。
+		return i18n.FillTranslate(tr, productenums.ProductsListTagCount, "{n} 个",
+			map[string]string{"n": strconv.Itoa(len(names))})
 	default:
 		return strings.Join(names, "、")
 	}
@@ -375,7 +379,7 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	}
 	// 仓库清单：只读页不用下拉，但行数据组装（productRow 的库存列）要按工程仓库清单
 	// 补齐未入库的仓 —— 与编辑页 / 列表页共用同一份组装，取数口径不能分叉。
-	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected, shell.TranslateFor(c))
 	if werr != nil {
 		shell.PageError(c, "product", werr)
 		return
@@ -402,7 +406,7 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 				return
 			}
 			hasProduct = true
-			product = h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail)
+			product = h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail, shell.TranslateFor(c))
 			// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与
 			// 履约明细，容器价才是套餐价。type=variant 时**不给这个键**，模板据 isset 整块跳过
 			// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
@@ -412,7 +416,7 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 		}
 	}
 	data := gin.H{
-		"title": "商品详情", "menu": "products",
+		"title": shell.TranslateFor(c)(productenums.ProductDetailTitle, "商品详情"), "menu": "products",
 		"Projects": projects, "SelectedProject": selected,
 		"ProductID": productID, "HasProduct": hasProduct, "Product": product,
 		"WarehouseOptions": warehouseOptions,
@@ -678,7 +682,8 @@ func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 			if qerr != nil || v < 0 {
 				// 数量非法也是**表单失败**：htmx 档留在原页（错误槽 + 回填），不能悄悄跳走 ——
 				// 用户为这一张表填了十几行内容，为一个数字问题全丢是最贵的一种失败。
-				h.productCreateFail(c, req.ProjectID, productQuantityInvalidText)
+				h.productCreateFail(c, req.ProjectID,
+					shell.TranslateFor(c)(productQuantityInvalidKey, productQuantityInvalidFallback))
 				return
 			}
 			qty = v
@@ -1232,9 +1237,40 @@ func productErrText(c *gin.Context, err error) string {
 	}
 	text := shell.TranslateFor(c)(key, productErrFallbacks[key])
 	if tail != "" {
-		text += "：" + tail
+		if detail := productErrDetailText(shell.TranslateFor(c), tail); detail != "" {
+			text += "：" + detail
+		}
 	}
 	return text
+}
+
+// productErrDetailText 业务错误的**补充说明** → 当前语言文案。
+//
+// 补充说明有两种形态：
+//
+//  1. i18n.ErrorDetail 的产物（控制字符开头的「明细词条 key + 具名参数」，可多段）——
+//     service 用它把「为什么被拒」的上下文（哪个属性组 / 超了多少 / 被哪个商品占用）
+//     也词条化，于是整句按当前语言取词并填 {name} 占位符；
+//  2. 其余（受控提示、历史形态的纯文本）—— 原样透出，行为与本通道引入前一致。
+//
+// 未登记的明细 key（拼错 / 新加漏登记）跳过该段并记一条日志：少一句补充说明，
+// 好过把编码串或半截占位符摆到页面上。
+func productErrDetailText(tr func(key, fallback string) string, tail string) string {
+	parts, ok := i18n.ParseErrorDetails(tail)
+	if !ok {
+		return tail
+	}
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		fallback, registered := productenums.ErrDetailFallbacks[p.Key]
+		if !registered || fallback == "" {
+			logger.Scene(productErrScene).With("detail_key", p.Key).
+				Warn("业务错误的补充说明词条未登记，已省略该段")
+			continue
+		}
+		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+	}
+	return strings.Join(out, "；")
 }
 
 // attributeIDsFromForm 收商品表单里的属性组引用。

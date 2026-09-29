@@ -11,6 +11,8 @@ import (
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 // inventory_purchase_page_view.go - 采购入库页的视图构造（采购单/历史行、货源与仓库/变体下拉、状态文案）。
@@ -54,6 +56,7 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectI
 		}
 		return out, total, curPage
 	}
+	tr := shell.TranslateFor(c)
 	for _, o := range orders {
 		lines := make([]gin.H, 0, len(o.Lines))
 		for _, l := range o.Lines {
@@ -70,9 +73,9 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectI
 		out = append(out, gin.H{
 			"ID": o.ID, "Code": o.Code,
 			"SourceName": o.SourceName, "SourceType": o.SourceType,
-			"SourceTypeLabel": sourceTypeLabel(o.SourceType),
+			"SourceTypeLabel": sourceTypeLabel(tr, o.SourceType),
 			"WarehouseName":   o.WarehouseName,
-			"Status":          o.Status, "StatusLabel": purchaseStatusLabel(o.Status),
+			"Status":          o.Status, "StatusLabel": purchaseStatusLabel(tr, o.Status),
 			"OrderedAt": o.OrderedAt, "ExpectedAt": o.ExpectedAt,
 			"Remark": o.Remark, "OperatorID": o.OperatorID,
 			"TotalQuantity": o.TotalQuantity, "ReceivedQuantity": o.ReceivedQuantity,
@@ -104,11 +107,12 @@ func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projec
 		}
 		return out
 	}
+	tr := shell.TranslateFor(c)
 	for _, r := range rows {
 		out = append(out, gin.H{
-			"ReceiptCode": r.ReceiptCode, "Kind": r.Kind, "KindLabel": receiptKindLabel(r.Kind),
+			"ReceiptCode": r.ReceiptCode, "Kind": r.Kind, "KindLabel": receiptKindLabel(tr, r.Kind),
 			"OrderCode": r.OrderCode, "SourceName": r.SourceName,
-			"SourceTypeLabel": sourceTypeLabel(r.SourceType),
+			"SourceTypeLabel": sourceTypeLabel(tr, r.SourceType),
 			"WarehouseName":   r.WarehouseName, "SKUCode": r.SKUCode,
 			"Quantity": r.Quantity, "UnitPrice": strconv.FormatFloat(r.UnitPrice, 'f', 2, 64),
 			"CostUpdated": r.CostUpdated, "Remark": r.Remark,
@@ -122,7 +126,8 @@ func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projec
 //
 // 包级函数而非某个 handler 的方法：库存管理与采购入库两个页面都要用 ——
 // 「生产入库」已从采购页归位到库存管理（它与采购单无关，本质是「手动改库存 + 写成本价」）。
-func sourceOptions(ctx context.Context, svc inventorycontract.InventoryService, projectID, sourceType string) (out []gin.H) {
+func sourceOptions(ctx context.Context, svc inventorycontract.InventoryService, projectID, sourceType string,
+	tr func(key, fallback string) string) (out []gin.H) {
 	out = []gin.H{}
 	if projectID == "" {
 		return out
@@ -136,14 +141,20 @@ func sourceOptions(ctx context.Context, svc inventorycontract.InventoryService, 
 	for _, s := range rows {
 		out = append(out, gin.H{
 			"ID": s.ID, "Code": s.Code, "Name": s.Name, "Type": s.Type,
-			"Label": s.Name + "（" + s.Code + "）· " + sourceTypeLabel(s.Type),
+			"Label": sourceOptionLabel(tr, s),
 		})
 	}
 	return out
 }
 
+// sourceOptionLabel 货源下拉项的文案：「名称（编码）· 类型」。类型走取词（见 sourceTypeLabel）。
+func sourceOptionLabel(tr func(key, fallback string) string, s *inventorydto.SourceResp) string {
+	return s.Name + "（" + s.Code + "）· " + sourceTypeLabel(tr, s.Type)
+}
+
 // purchaseWarehouseOptions 收货仓下拉（默认仓标出来；未选即兜底默认仓）。
-func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Context, projectID string) (out []gin.H) {
+func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Context, projectID string,
+	tr func(key, fallback string) string) (out []gin.H) {
 	out = []gin.H{}
 	if projectID == "" {
 		return out
@@ -155,7 +166,7 @@ func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Conte
 	for _, w := range rows {
 		label := w.Name + "（" + w.Code + "）"
 		if w.IsDefault {
-			label += " · 默认仓"
+			label += " " + tr(inventoryenums.InventoryChangeWarehouseDefaultSuffix, "· 默认仓")
 		}
 		out = append(out, gin.H{"ID": w.ID, "Label": label, "IsDefault": w.IsDefault})
 	}
@@ -169,7 +180,8 @@ func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Conte
 // 库存真源（inventory_stocks.sku_code）—— 它就是「这条货在仓库里叫什么」的权威答案，
 // 商品侧的 v.SKUCode 只是它加了认领仓前缀的投影。没有库存行的变体退回商品侧编码，
 // 由服务端在入库入口按目标仓短码归一（inventory_stock_sku.go）。
-func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context, projectID string) (out []gin.H) {
+func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context, projectID string,
+	tr func(key, fallback string) string) (out []gin.H) {
 	out = []gin.H{}
 	// 商品契约未注入（装配漏接）时下拉为空，页面照常渲染 —— 不因一处装配缺失 500。
 	if projectID == "" || h.products == nil {
@@ -179,6 +191,13 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 	if err != nil {
 		return out
 	}
+	// 成本后缀是一句带命名占位符的文案：取词后用 {value} 填充（词条被写坏时 FillTranslate
+	// 自动回落下面那句中文兜底，页面上不会出现 {value} 这样的字面量）。
+	costSuffix := func(cost string) string {
+		return i18n.FillTranslate(tr, inventoryenums.InventoryPurchasesOptionCostLabel, "（成本 {value}）",
+			map[string]string{"value": cost})
+	}
+	unsetCost := tr(inventoryenums.InventoryPurchasesOptionCostUnset, "未填")
 	for _, p := range list {
 		detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: p.ID})
 		if derr != nil {
@@ -186,7 +205,7 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 		}
 		bare := h.productBareSKUs(ctx, projectID, p.ID)
 		for _, v := range detail.Variants {
-			cost := "未填"
+			cost := unsetCost
 			if v.CostPrice != nil {
 				cost = strconv.FormatFloat(*v.CostPrice, 'f', 2, 64)
 			}
@@ -196,7 +215,7 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 			}
 			out = append(out, gin.H{
 				"VariantID": v.ID, "ProductID": p.ID, "SKUCode": v.SKUCode, "BareSKU": sku,
-				"Label": detail.Name + " · " + v.SKUCode + "（成本 " + cost + "）",
+				"Label": detail.Name + " · " + v.SKUCode + costSuffix(cost),
 			})
 		}
 	}
@@ -228,35 +247,37 @@ func (h *inventoryPurchasePageHandle) productBareSKUs(ctx context.Context, proje
 // —— 表单与文案工具 ——
 
 // purchaseStatusOptions 状态筛选下拉（三种推导值）。
-func purchaseStatusOptions() []gin.H {
+func purchaseStatusOptions(tr func(key, fallback string) string) []gin.H {
 	return []gin.H{
-		{"Value": inventoryenums.PurchaseStatusPending, "Label": purchaseStatusLabel(inventoryenums.PurchaseStatusPending)},
-		{"Value": inventoryenums.PurchaseStatusPartial, "Label": purchaseStatusLabel(inventoryenums.PurchaseStatusPartial)},
-		{"Value": inventoryenums.PurchaseStatusReceived, "Label": purchaseStatusLabel(inventoryenums.PurchaseStatusReceived)},
+		{"Value": inventoryenums.PurchaseStatusPending, "Label": purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPending)},
+		{"Value": inventoryenums.PurchaseStatusPartial, "Label": purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPartial)},
+		{"Value": inventoryenums.PurchaseStatusReceived, "Label": purchaseStatusLabel(tr, inventoryenums.PurchaseStatusReceived)},
 	}
 }
 
-// purchaseStatusLabel 推导状态 → 展示文案。
-func purchaseStatusLabel(status string) string {
+// purchaseStatusLabel 推导状态 → 当前语言展示文案。
+func purchaseStatusLabel(tr func(key, fallback string) string, status string) string {
 	switch status {
 	case inventoryenums.PurchaseStatusPending:
-		return "未入库"
+		return tr(inventoryenums.InventoryPurchasesStatusPending, "未入库")
 	case inventoryenums.PurchaseStatusPartial:
-		return "部分入库"
+		return tr(inventoryenums.InventoryPurchasesStatusPartial, "部分入库")
 	case inventoryenums.PurchaseStatusReceived:
-		return "已入库"
+		// 已入库：与同页列头同一个词（英文都是 Received），复用它的词条。
+		return tr(inventoryenums.InventoryPurchasesColReceived, "已入库")
 	default:
 		return status
 	}
 }
 
-// receiptKindLabel 入库单类型 → 展示文案。
-func receiptKindLabel(kind string) string {
+// receiptKindLabel 入库单类型 → 当前语言展示文案。
+func receiptKindLabel(tr func(key, fallback string) string, kind string) string {
 	switch kind {
 	case inventoryenums.ReceiptKindPurchase:
-		return "采购收货"
+		return tr(inventoryenums.InventoryPurchasesKindPurchase, "采购收货")
 	case inventoryenums.ReceiptKindProduction:
-		return "生产入库"
+		// 生产入库：与采购页的「生产入库」入口同一个词，复用它的词条。
+		return tr(inventoryenums.InventoryPurchasesProductionOpen, "生产入库")
 	default:
 		return kind
 	}

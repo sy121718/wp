@@ -19,7 +19,9 @@ type CustomerResp struct {
 	DisplayName string `json:"displayName"`
 	Avatar      string `json:"avatar"`
 	Status      int    `json:"status"`
-	// StatusLabel 状态的中文文案：状态值与文案必须同源，展示层不自己映射一遍。
+	// StatusLabel 状态的**当前语言**展示名：状态值与文案必须同源（userenums.StatusLabel），
+	// 展示层不自己映射一遍。由**出口**填（handler 用请求语言取词），service 只给 Status ——
+	// service 拿不到请求语言，代填的表现是英文调用方恒中文且不报错。
 	StatusLabel string `json:"statusLabel"`
 	// EmailVerified 邮箱是否已验证（账号能不能自己登录，主要看这一条）。
 	EmailVerified     bool            `json:"emailVerified"`
@@ -61,8 +63,9 @@ type CustomerCounters struct {
 
 // CustomerStatusResp 状态写回执。
 type CustomerStatusResp struct {
-	CustomerID  uint64 `json:"customerId"`
-	Status      int    `json:"status"`
+	CustomerID uint64 `json:"customerId"`
+	Status     int    `json:"status"`
+	// StatusLabel 同 CustomerResp：状态的当前语言展示名，由出口填（service 只给 Status）。
 	StatusLabel string `json:"statusLabel"`
 }
 

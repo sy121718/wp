@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/i18n"
 )
 
 const (
@@ -88,11 +90,11 @@ func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPre
 	return &productdto.PricingPreviewResp{
 		RuleType:       pr.rule.Type,
 		RuleParams:     pr.ruleParams,
-		RuleLabel:      pr.rule.Describe(pr.ruleParams),
+		RuleLabel:      pr.rule.Describe(translateFrom(ctx), pr.ruleParams),
 		Rounding:       pr.rounding,
-		RoundingLabel:  describePricingRounding(pr.rounding),
+		RoundingLabel:  describePricingRounding(translateFrom(ctx), pr.rounding),
 		Scope:          pr.scope,
-		ScopeLabel:     describePricingScope(pr.scope),
+		ScopeLabel:     describePricingScope(translateFrom(ctx), pr.scope),
 		ProjectID:      pr.projectID,
 		TargetCount:    len(lines),
 		ChangedCount:   counts.changed,
@@ -211,11 +213,11 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		AdjustmentID:     adj.ID,
 		RuleType:         pr.rule.Type,
 		RuleParams:       pr.ruleParams,
-		RuleLabel:        pr.rule.Describe(pr.ruleParams),
+		RuleLabel:        pr.rule.Describe(translateFrom(ctx), pr.ruleParams),
 		Rounding:         pr.rounding,
-		RoundingLabel:    describePricingRounding(pr.rounding),
+		RoundingLabel:    describePricingRounding(translateFrom(ctx), pr.rounding),
 		Scope:            pr.scope,
-		ScopeLabel:       describePricingScope(pr.scope),
+		ScopeLabel:       describePricingScope(translateFrom(ctx), pr.scope),
 		ProjectID:        pr.projectID,
 		TargetCount:      len(lines),
 		ChangedCount:     counts.changed,
@@ -226,13 +228,16 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 }
 
 // ListPricingRuleTypes 内置定价规则清单（后台下拉与参数说明的唯一来源）。
-func (s *Service) ListPricingRuleTypes(_ context.Context) (list []*productdto.PricingRuleTypeResp) {
-	return pricingRuleTypeOptions()
+//
+// ctx 只用于取词：展示名与参数说明是文案，按请求语言渲染（取词函数由 inbound 经
+// productTranslateMiddleware 注入，见 product_translate.go）。
+func (s *Service) ListPricingRuleTypes(ctx context.Context) (list []*productdto.PricingRuleTypeResp) {
+	return pricingRuleTypeOptions(translateFrom(ctx))
 }
 
 // ListPricingRoundingOptions 尾数处理清单（后台下拉的唯一来源）。
-func (s *Service) ListPricingRoundingOptions(_ context.Context) (list []*productdto.PricingRoundingOptionResp) {
-	return pricingRoundingOptions()
+func (s *Service) ListPricingRoundingOptions(ctx context.Context) (list []*productdto.PricingRoundingOptionResp) {
+	return pricingRoundingOptions(translateFrom(ctx))
 }
 
 // ListPriceAdjustments 调价留痕列表（新的在前；不含逐变体明细）。
@@ -259,7 +264,7 @@ func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.List
 	}
 	list = make([]*productdto.PriceAdjustmentResp, 0, len(rows))
 	for _, row := range rows {
-		list = append(list, toAdjustmentResp(row, nil))
+		list = append(list, toAdjustmentResp(translateFrom(ctx), row, nil))
 	}
 	return list, nil
 }
@@ -291,7 +296,7 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 	if err != nil {
 		return nil, err
 	}
-	return toAdjustmentResp(row, adjustmentItemResps(details, names)), nil
+	return toAdjustmentResp(translateFrom(ctx), row, adjustmentItemResps(details, names)), nil
 }
 
 // adjustmentProductNames 批量取明细涉及的当前商品名（失败不阻断留痕读取）。
@@ -325,17 +330,19 @@ func (s *Service) adjustmentProductNames(ctx context.Context, projectID string, 
 }
 
 // toAdjustmentResp 批次实体 → 响应（items 为 nil 时只回批次本身）。
-func toAdjustmentResp(e *productmodel.PriceAdjustmentEntity, items []*productdto.PriceAdjustmentItemResp) *productdto.PriceAdjustmentResp {
+//
+// tr 由调用点给（本模块的展示文案一律按请求语言取词，见 product_translate.go）。
+func toAdjustmentResp(tr TranslateFunc, e *productmodel.PriceAdjustmentEntity, items []*productdto.PriceAdjustmentItemResp) *productdto.PriceAdjustmentResp {
 	resp := &productdto.PriceAdjustmentResp{
 		ID: e.ID, ProjectID: e.ProjectID,
 		RuleType: e.RuleType, RuleParams: orJSON(e.RuleParams, "{}"),
-		RuleLabel:     describePricingRule(e.RuleType, e.RuleParams),
+		RuleLabel:     describePricingRule(tr, e.RuleType, e.RuleParams),
 		Rounding:      e.Rounding,
-		RoundingLabel: describePricingRounding(e.Rounding),
+		RoundingLabel: describePricingRounding(tr, e.Rounding),
 		Scope:         e.Scope,
-		ScopeLabel:    describePricingScope(e.Scope),
+		ScopeLabel:    describePricingScope(tr, e.Scope),
 		Filter:        orJSON(e.Filter, "{}"),
-		FilterLabel:   describePricingFilter(e.Filter),
+		FilterLabel:   describePricingFilter(tr, e.Filter),
 		VariantCount:  e.VariantCount,
 		ChangedCount:  e.ChangedCount,
 		Note:          e.Note,
@@ -369,13 +376,22 @@ func adjustmentItemResps(rows []*productmodel.PriceAdjustmentItemEntity, names m
 }
 
 // describePricingFilter 筛选集条件的可读文本（后台回看用；只列真正生效的条件）。
-func describePricingFilter(raw json.RawMessage) string {
+func describePricingFilter(tr TranslateFunc, raw json.RawMessage) string {
 	m, err := decodeRuleParams(raw)
 	if err != nil || len(m) == 0 {
 		return ""
 	}
 	keys := []string{"status", "keyword", "categoryId", "brandId", "tagId"}
-	labels := map[string]string{
+	// 条件名是文案（英文界面上要显示 Status / Keyword / Category …），词条键与中文兜底
+	// 都在本表里；冒号与间隔符是排版标点，两种语言通用。
+	labelKeys := map[string]string{
+		"status":     productenums.ProductPricingFilterStatus,
+		"keyword":    productenums.ProductPricingFilterKeyword,
+		"categoryId": productenums.ProductPricingFilterCategoryID,
+		"brandId":    productenums.ProductPricingFilterBrandID,
+		"tagId":      productenums.ProductPricingFilterTagID,
+	}
+	fallbacks := map[string]string{
 		"status": "状态", "keyword": "关键词", "categoryId": "分类",
 		"brandId": "品牌", "tagId": "标签",
 	}
@@ -393,7 +409,7 @@ func describePricingFilter(raw json.RawMessage) string {
 		if value == "" {
 			continue
 		}
-		parts = append(parts, labels[k]+"："+value)
+		parts = append(parts, tr(labelKeys[k], fallbacks[k])+"："+value)
 	}
 	return strings.Join(parts, " · ")
 }
@@ -439,14 +455,16 @@ func normalizePricingRequest(req *productdto.PricingRuleReq) (pr *pricingRequest
 	case productenums.PricingScopeFilter:
 		// 筛选集必须指定工程：没有工程条件的批量改价会跨工程改到别人的商品上。
 		if pr.projectID == "" {
-			return nil, fmt.Errorf("%s：筛选集范围必须指定工程", productenums.ErrInvalidParam)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrInvalidParam,
+				i18n.ErrorDetail(productenums.DetailPricingFilterProjectRequired))
 		}
 		pr.filter.ProjectID = pr.projectID
 		// 空筛选（只有工程）也不算有效范围：「本工程全部商品」是改价里最危险的一种，
 		// 必须由调用方明确写出条件（状态 / 关键词 / 分类 / 品牌 / 标签至少一个）。
 		if pr.filter.Status == "" && pr.filter.Keyword == "" && pr.filter.CategoryID == "" &&
 			pr.filter.BrandID == "" && pr.filter.TagID == "" {
-			return nil, fmt.Errorf("%s：筛选集至少要给一个筛选条件", productenums.ErrPricingFilterEmpty)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrPricingFilterEmpty,
+				i18n.ErrorDetail(productenums.DetailPricingFilterConditionRequired))
 		}
 	}
 	pr.filterJSON = pricingFilterJSON(pr.filter)
@@ -532,8 +550,9 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 			return nil, errors.New(productenums.ErrPricingFilterEmpty)
 		}
 		if len(products) > maxPricingProducts {
-			return nil, fmt.Errorf("%s：%d 个商品超过单批上限 %d，请收紧筛选条件",
-				productenums.ErrPricingTargetTooMany, len(products), maxPricingProducts)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrPricingTargetTooMany,
+				i18n.ErrorDetail(productenums.DetailPricingTargetTooMany,
+					"n", strconv.Itoa(len(products)), "max", strconv.Itoa(maxPricingProducts)))
 		}
 		ids := make([]string, 0, len(products))
 		for _, p := range products {
@@ -571,7 +590,8 @@ type pricingCounts struct {
 //
 // 单条变体算不出来（缺成本价 / 结果超范围）时只跳过这一条：
 // 一个没填成本的 SKU 不该让整批调价失败，预览会把跳过原因摆出来。
-func (s *Service) computePricingLines(_ context.Context, pr *pricingRequest, targets []*pricingTarget) (lines []*productdto.PricingLineResp, counts pricingCounts, err error) {
+func (s *Service) computePricingLines(ctx context.Context, pr *pricingRequest, targets []*pricingTarget) (lines []*productdto.PricingLineResp, counts pricingCounts, err error) {
+	tr := translateFrom(ctx)
 	lines = make([]*productdto.PricingLineResp, 0, len(targets))
 	for _, t := range targets {
 		if t == nil || t.variant == nil || t.product == nil {
@@ -585,7 +605,7 @@ func (s *Service) computePricingLines(_ context.Context, pr *pricingRequest, tar
 			NewPrice:  t.variant.Price,
 		}
 		if pr.rule.RequiresCost && t.variant.CostPrice == nil {
-			setPricingLineStatus(line, productenums.PricingLineSkipped, productenums.PricingSkipCostMissing)
+			setPricingLineStatus(tr, line, productenums.PricingLineSkipped, productenums.PricingSkipCostMissing)
 			counts.skipped++
 			lines = append(lines, line)
 			continue
@@ -603,7 +623,7 @@ func (s *Service) computePricingLines(_ context.Context, pr *pricingRequest, tar
 			return nil, counts, rerr
 		}
 		if rounded < 0 || rounded > pricingAmountMax {
-			setPricingLineStatus(line, productenums.PricingLineSkipped, productenums.PricingSkipOutOfRange)
+			setPricingLineStatus(tr, line, productenums.PricingLineSkipped, productenums.PricingSkipOutOfRange)
 			counts.skipped++
 			lines = append(lines, line)
 			continue
@@ -611,10 +631,10 @@ func (s *Service) computePricingLines(_ context.Context, pr *pricingRequest, tar
 		line.NewPrice = rounded
 		// 比较用分（整数）而不是浮点：12.30 与 12.3 不该被算成「有改动」。
 		if pricingCentsOf(t.variant.Price) == pricingCentsOf(rounded) {
-			setPricingLineStatus(line, productenums.PricingLineUnchanged, "")
+			setPricingLineStatus(tr, line, productenums.PricingLineUnchanged, "")
 			counts.unchanged++
 		} else {
-			setPricingLineStatus(line, productenums.PricingLineChanged, "")
+			setPricingLineStatus(tr, line, productenums.PricingLineChanged, "")
 			counts.changed++
 		}
 		lines = append(lines, line)
@@ -623,33 +643,33 @@ func (s *Service) computePricingLines(_ context.Context, pr *pricingRequest, tar
 }
 
 // setPricingLineStatus 填状态、状态标签与跳过原因（原因文案只有一份）。
-func setPricingLineStatus(line *productdto.PricingLineResp, status, reason string) {
+func setPricingLineStatus(tr TranslateFunc, line *productdto.PricingLineResp, status, reason string) {
 	line.Status = status
-	line.StatusLabel = pricingStatusLabel(status)
+	line.StatusLabel = pricingStatusLabel(tr, status)
 	line.Reason = reason
-	line.ReasonLabel = pricingReasonLabel(reason)
+	line.ReasonLabel = pricingReasonLabel(tr, reason)
 }
 
-// pricingStatusLabel 试算行状态的中文标签。
-func pricingStatusLabel(status string) string {
+// pricingStatusLabel 试算行状态标签（当前语言）。
+func pricingStatusLabel(tr TranslateFunc, status string) string {
 	switch status {
 	case productenums.PricingLineChanged:
-		return "改价"
+		return tr(productenums.ProductPricingLineChanged, "改价")
 	case productenums.PricingLineUnchanged:
-		return "价格不变"
+		return tr(productenums.ProductPricingLineUnchanged, "价格不变")
 	case productenums.PricingLineSkipped:
-		return "跳过"
+		return tr(productenums.ProductPricingLineSkipped, "跳过")
 	}
 	return status
 }
 
-// pricingReasonLabel 跳过原因的中文说明。
-func pricingReasonLabel(reason string) string {
+// pricingReasonLabel 跳过原因的说明（当前语言）。
+func pricingReasonLabel(tr TranslateFunc, reason string) string {
 	switch reason {
 	case productenums.PricingSkipCostMissing:
-		return "未填成本价，按成本类规则无法计算"
+		return tr(productenums.ProductPricingSkipCostMissing, "未填成本价，按成本类规则无法计算")
 	case productenums.PricingSkipOutOfRange:
-		return "计算结果为负或超过 9999999999.99"
+		return tr(productenums.ProductPricingSkipOutOfRange, "计算结果为负或超过 9999999999.99")
 	}
 	return ""
 }

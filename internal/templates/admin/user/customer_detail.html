@@ -41,10 +41,10 @@
 
     {{if .HasDetail}}
     <section class="card card-body">
-        <h2>{{.DisplayLabel}} <span class="badge {{.StatusBadge}}">{{.StatusLabel}}</span></h2>
+        <h2>{{.DisplayLabel}} <span class="badge {{.StatusBadge}}">{{if isset(.StatusLabelKey)}}{{ .["t"](.StatusLabelKey, .StatusLabelFallback) }}{{end}}</span></h2>
         <dl class="kv">
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.username", "登录名") }}</dt><dd>{{.Username}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge {{if .EmailVerified}}badge-success{{else}}badge-warning{{end}}">{{.EmailVerifiedLabel}}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge {{if .EmailVerified}}badge-success{{else}}badge-warning{{end}}">{{if isset(.EmailVerifiedKey)}}{{ .["t"](.EmailVerifiedKey, .EmailVerifiedFallback) }}{{end}}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.registered_at", "注册时间") }}</dt><dd>{{.RegisteredAtText}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.register_source", "注册来源") }}</dt><dd>{{.RegisterIP}}{{if .RegisterLocation}} · {{.RegisterLocation}}{{end}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login", "最近登录") }}</dt><dd>{{.LastLoginTimeText}}</dd></div>
@@ -61,7 +61,7 @@
                 </dd>
             </div>
         </dl>
-        {{if isset(.LockHint)}}{{if .LockHint != ""}}<p class="hint">{{ .LockHint }}</p>{{end}}{{end}}
+        {{if isset(.LockHintKey)}}<p class="hint">{{ .["t"](.LockHintKey, .LockHintFallback) }}</p>{{end}}
     </section>
 
     <section class="card card-body">
@@ -105,7 +105,43 @@
         <dl class="kv">
             <div class="kv-item kv-item--wide">
                 <dt>{{ .["t"]("admin.customer_detail.orders.last_order", "最近一单") }}</dt>
-                <dd>{{if .LastOrderTimeText}}<a href="{{.LastOrderURL}}"><code>{{.LastOrderNo}}</code></a> · {{.LastOrderStatusLabel}} · {{.LastOrderTimeText}}{{else}}{{ .["t"]("admin.customer_detail.orders.no_order", "这个客户在当前工程里还没有下过单。") }}{{end}}</dd>
+                <dd>{{if .LastOrderTimeText}}<a href="{{.LastOrderURL}}"><code>{{.LastOrderNo}}</code></a> · {{if isset(.LastOrderStatusKey)}}{{ .["t"](.LastOrderStatusKey, .LastOrderStatusFallback) }}{{end}} · {{.LastOrderTimeText}}{{else}}{{ .["t"]("admin.customer_detail.orders.no_order", "这个客户在当前工程里还没有下过单。") }}{{end}}</dd>
+            </div>
+        </dl>
+        {{end}}
+    </section>
+
+    {* 会员等级（BIZ-3 展示侧）：只读展示 —— 指定等级 / 解除锁定在「会员归属」页（各自的权限点）。
+       降级形态（模块未接入 / 没选工程 / 读不出来）由服务端收敛成 .MembershipNotice 一句话：
+       模板不猜原因，也不判断 nil。渲染键由 Go 侧恒设（缺键会让 Jet 中断整页 → 500 → htmx 不 swap）。 *}
+    <section class="card card-body">
+        <h2>{{ .["t"]("admin.customer_detail.membership.heading", "会员等级") }}
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer_detail.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer_detail.membership.hint", "等级按「站点工程 + 客户账号」解析：同一个客户在不同工程可以是不同等级。这里只读 —— 指定等级与解除锁定在「会员归属」页。") }}</span>
+            </span>
+        </h2>
+        {* 三档由服务端收敛：Notice 非空 = 有降级说明；否则看 HasMembership。
+           两者都套 isset —— 「数据里没有这个键」与「值为空」在 Jet 里是两件事，
+           缺键出现在 if 条件里会中断整页渲染（→ 500 → htmx 不 swap，用户什么都看不到）。 *}
+        {{if isset(.MembershipNotice) && .MembershipNotice != ""}}
+        <p class="hint">{{.MembershipNotice}}</p>
+        {{else if isset(.HasMembership) && .HasMembership}}
+        <dl class="kv">
+            <div class="kv-item">
+                <dt>{{ .["t"]("admin.customer_detail.membership.tier", "当前等级") }}</dt>
+                <dd>
+                    <span class="badge badge-info">{{.MembershipTierName}}</span>
+                    {{if .MembershipIsDefault}}<span class="badge badge-mute">{{ .["t"]("admin.customer_detail.membership.default_tier", "默认等级（这个客户还没有会员归属）") }}</span>{{end}}
+                </dd>
+            </div>
+            <div class="kv-item">
+                <dt>{{ .["t"]("admin.customer_detail.membership.benefits", "权益") }}</dt>
+                <dd>
+                    {{if .MembershipFreeShipping}}<span class="badge badge-success">{{ .["t"]("admin.customer_detail.membership.free_shipping", "免运费") }}</span>{{end}}
+                    {{if .MembershipDiscountPercent}}<span class="badge badge-info">{{ .["t"]("admin.customer_detail.membership.discount", "折扣") }} {{.MembershipDiscountPercent}}%</span>{{end}}
+                    {{if !.MembershipFreeShipping && !.MembershipDiscountPercent}}<span class="badge badge-mute">{{ .["t"]("admin.customer_detail.membership.no_benefit", "该等级没有配置权益") }}</span>{{end}}
+                </dd>
             </div>
         </dl>
         {{end}}
@@ -131,7 +167,9 @@
         </form>
         {{else}}
         <p class="hint">
-            {{if isset(.PendingHint)}}{{ .PendingHint }}{{else}}{{ .["t"]("admin.customer_detail.status_locked", "这个账号的状态当前不能在这里修改。") }}{{end}}
+            {* 状态说明（待激活）与「这个状态改不了」的兜底：两者都由服务端给 key + 中文兜底，
+               模板只取词 —— 写死中文就等于英文界面永远中文。 *}
+            {{if isset(.PendingHintKey)}}{{ .["t"](.PendingHintKey, .PendingHintFallback) }}{{else}}{{ .["t"]("admin.customer_detail.status_locked", "这个账号的状态当前不能在这里修改。") }}{{end}}
         </p>
         {{end}}
         {{if .Locked}}

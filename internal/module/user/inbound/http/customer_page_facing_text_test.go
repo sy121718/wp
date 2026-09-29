@@ -80,7 +80,7 @@ func TestCustomerPageFacingTextKeepsNonWhitelistOut(t *testing.T) {
 	}
 	// 本页自造的中文常量：按 key 查不到词条，取词函数据 fallback 原样返回（中英界面都是它）。
 	for _, lang := range []string{"zh-CN", "en-US"} {
-		if got := customerPageFacingText(customerFacingLangCtx(t, lang))(customerUnavailableText); got != customerUnavailableText {
+		if got := customerPageFacingText(customerFacingLangCtx(t, lang))(customerUnavailableLabel.fallback); got != customerUnavailableLabel.fallback {
 			t.Errorf("%s：自造中文文案应原样返回，实际 %q", lang, got)
 		}
 	}

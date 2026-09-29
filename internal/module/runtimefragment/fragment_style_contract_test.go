@@ -30,7 +30,9 @@ var builtinFragmentCapabilities = []string{
 	"accountSessionsPanel",
 	"bundleConfigurator", "bundleConfiguratorCheck",
 	"cartAdd", "cartClear", "cartSetQty", "cartSummary", "cartView", "checkout",
-	"forgotForm", "loginForm", "loginPanel", "orderDetail", "ordersList",
+	"commentList", "commentSubmit",
+	"forgotForm", "loginForm", "loginPanel", "membershipBadge", "membershipPanel",
+	"orderDetail", "ordersList",
 	"productList", "productLivePrice", "productVariantAvailability",
 	"registerForm", "resetForm", "returnRequest", "searchResults",
 }

@@ -4,19 +4,22 @@
 
    被三处复用：页面设置面板、文章编辑页、商品 / 分类 / 品牌页（审计 SEO-016）。
    共用同一份模板是刻意的：同一份评分结果不该有三种呈现方式 ——
-   「哪些检查项算未达标」在三个地方各写一遍，很快会给出三种答案。 *}
+   「哪些检查项算未达标」在三个地方各写一遍，很快会给出三种答案。
+   取词：本片段不经 shell.Prepare，t 由**每个**调用点单独注入（product / project / content
+   三处的渲染入口都给 `"t": templates.TranslateFunc(...)`；漏一处那处就整片空文案）。 *}
+{{tr := .["t"]}}
 {{if .Score.OK}}
 <div class="wb-seo-head">
     <span class="wb-seo-total">{{.Score.Total}}</span>
     <span class="wb-seo-grade">{{.Score.Grade}}</span>
-    <span class="wb-seo-tip">SEO 评分（0-100）</span>
+    <span class="wb-seo-tip">{{tr("workbench.ui.seo.totalTip", "SEO 评分（0-100）")}}</span>
 </div>
 {{if .Score.ProfileReason != ""}}
-<p class="wb-seo-tip">页型权重：{{.Score.ProfileType}} · {{.Score.ProfileReason}}</p>
+<p class="wb-seo-tip">{{tr("workbench.ui.seo.profileWeight", "页型权重：")}}{{.Score.ProfileType}} · {{.Score.ProfileReason}}</p>
 {{end}}
 {{if len(.Score.Duplicates) > 0}}
 <div class="wb-seo-dup">
-    <p class="badge badge-warning">标题重复：另有 {{len(.Score.Duplicates)}} 个页面用了同一个标题</p>
+    <p class="badge badge-warning">{{tr("workbench.ui.seo.dupPrefix", "标题重复：另有 ")}}{{len(.Score.Duplicates)}}{{tr("workbench.ui.seo.dupSuffix", " 个页面用了同一个标题")}}</p>
     <p class="wb-seo-tip">{{.Score.DuplicateNote}}</p>
     <ul class="wb-seo-issues">
         {{range _, page := .Score.Duplicates}}
@@ -34,7 +37,7 @@
 {{if len(sec.Issues) > 0}}
 <ul class="wb-seo-issues">
     {{range _, issue := sec.Issues}}
-    <li{{if issue.Target != ""}} class="is-jump" data-wb-jump="{{issue.Target}}" title="点击定位到需要修改的位置"{{end}}>{{issue.Text}}</li>
+    <li{{if issue.Target != ""}} class="is-jump" data-wb-jump="{{issue.Target}}" title="{{tr("workbench.ui.seo.jumpHint", "点击定位到需要修改的位置")}}"{{end}}>{{issue.Text}}</li>
     {{end}}
 </ul>
 {{end}}
@@ -45,5 +48,5 @@
     <div class="wb-serp-desc">{{.Score.SerpDesc}}</div>
 </div>
 {{else}}
-<p class="wb-empty">{{if len(.Score.Empty) > 0}}{{.Score.Empty}}{{else}}评分不可用（草稿为空或评分失败）{{end}}</p>
+<p class="wb-empty">{{if len(.Score.Empty) > 0}}{{.Score.Empty}}{{else}}{{tr("workbench.ui.seo.unavailable", "评分不可用（草稿为空或评分失败）")}}{{end}}</p>
 {{end}}

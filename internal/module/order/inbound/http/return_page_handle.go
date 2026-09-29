@@ -17,12 +17,20 @@ import (
 )
 
 const (
-	// returnPageTitle 页面标题（订单模块 enums 里没有这个标题键，直接走 shell.Prepare 的 fallback 链路）。
-	returnPageTitle = "退货入库"
 	// returnOperatorTypeAdmin 后台操作人类型（表单不传，由 handler 覆盖写入）。
 	returnOperatorTypeAdmin = "admin"
-	// returnIDInvalidText 表单里的退货单 id 不合法（本页自造文案，已进本页白名单）。
-	returnIDInvalidText = "退货单编号不合法，请回到列表页重新操作。"
+)
+
+// 退货页的展示标签（key + 中文兜底，调用点 tr(key, fallback) 取词）。
+var (
+	// returnPageTitleLabel 页面标题（sys_i18n 已有 admin.returns.heading）。
+	returnPageTitleLabel = orderLabel{"admin.returns.heading", "退货入库"}
+	// returnIDInvalidLabel 表单里的退货单 id 不合法。
+	//
+	// 它走 ?err= 回显：写侧塞的是 **fallback（中文兜底）**，不是当前语言译文 ——
+	// 读侧白名单认的是这条中文串，取词后的英文译文会被自己吞掉（通道本身的改造
+	// 由共享辅助统一做）。key 已备好，通道改造后调用点换成取词即可。
+	returnIDInvalidLabel = orderLabel{"admin.returns.form.invalid_id", "退货单编号不合法，请回到列表页重新操作。"}
 )
 
 // 退货状态取值（展示用字面量，刻意不 import 订单模块的 model 包）。
@@ -35,26 +43,24 @@ const (
 	returnStatusCancelled = "cancelled"
 )
 
-// returnStatusViews 退货状态 → 计数条 / 下拉用的中文标签 + 徽章样式。
+// returnStatusViews 退货状态 → 计数条 / 下拉用的徽章样式。
 //
-// 标签只用于「没有单据上下文」的位置（计数条、状态筛选下拉）；
-// 单据上的状态文案一律用服务端给的 StatusLabel —— 同一个状态在后台页、访客片段、
-// 邮件里必须是同一句话，本页不另造一份文案表。
+// **只有「状态值 → 样式」**：文案由 returnStatusText 从真源（orderenums.ReturnStatusLabel）
+// 取词 —— 展示表里再存一份中文，改一处另一处必然静默漂移（本页此前的 Label 就是这么来的）。
 //
 // Highlight 标记「有人等着处理」的状态：待审核（要审）与待退款（要补退款），
 // 这两个数字在计数条上加粗，运营一眼能看到积压。
 var returnStatusViews = []struct {
 	Value     string
-	Label     string
 	Badge     string
 	Highlight bool
 }{
-	{returnStatusRequested, "待审核", "badge-warning", true},
-	{returnStatusApproved, "待收货", "badge-warning", false},
-	{returnStatusReceived, "待退款", "badge-warning", true},
-	{returnStatusCompleted, "已完成", "badge-success", false},
-	{returnStatusRejected, "已拒绝", "badge-mute", false},
-	{returnStatusCancelled, "已撤销", "badge-mute", false},
+	{returnStatusRequested, "badge-warning", true},
+	{returnStatusApproved, "badge-warning", false},
+	{returnStatusReceived, "badge-warning", true},
+	{returnStatusCompleted, "badge-success", false},
+	{returnStatusRejected, "badge-mute", false},
+	{returnStatusCancelled, "badge-mute", false},
 }
 
 // returnFacingExtras 本页允许原样显示的**模块外**文案。
@@ -75,7 +81,7 @@ var returnFacingExtras = []string{
 	orderenums.MsgReturnApproved, orderenums.MsgReturnRejected, orderenums.MsgReturnReceived,
 	orderenums.ErrReturnRejectReasonRequired, orderenums.ErrReturnNotReviewable, orderenums.ErrReturnNotReceivable,
 	orderenums.ErrReturnNotFound,
-	returnIDInvalidText,
+	returnIDInvalidLabel.fallback,
 }
 
 // returnPageHandle 退货入库管理页处理器。
@@ -116,6 +122,8 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 	// 先于装载计算：装载失败要**压过**它（见下）。
 	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), returnFacingPageText(c))
 	pageOk := returnFacingQueryText(c, c.Query("ok"))
+	// 展示标签的取词函数（视图组装只用它，不再在 Go 里写死中文标签）。
+	tr := shell.TranslateFor(c)
 
 	projects, loadErr := h.projects.List(ctx)
 	// 工程列表读不出来**不拿走整个页面**（判据见 order_page_handle.go 的 OrdersPage）：
@@ -145,7 +153,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 	}
 
 	rows := []gin.H{}
-	counters := returnStatusCounters(nil, filter, selected)
+	counters := returnStatusCounters(tr, nil, filter, selected)
 	detail := gin.H{}
 	var total int64
 
@@ -163,9 +171,9 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		} else {
 			total = list.Total
 			// 计数不受筛选影响（它回答「各状态各有多少单」这个全局问题），直接用服务端给的整份计数。
-			counters = returnStatusCounters(list.Counts, filter, selected)
+			counters = returnStatusCounters(tr, list.Counts, filter, selected)
 			for _, r := range list.List {
-				rows = append(rows, returnListRow(r, filter, selected, page, limit))
+				rows = append(rows, returnListRow(tr, r, filter, selected, page, limit))
 			}
 		}
 		if filter.ReturnID > 0 {
@@ -173,13 +181,13 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 			if derr != nil {
 				pageErr = firstNonEmpty(pageErr, returnFacingError(c, derr))
 			} else {
-				detail = returnDetailView(det, filter, selected, page, limit)
+				detail = returnDetailView(tr, det, filter, selected, page, limit)
 			}
 		}
 	}
 
 	data := shell.Prepare(c, gin.H{
-		"title":           returnPageTitle,
+		"title":           orderLabelOf(tr, returnPageTitleLabel),
 		"menu":            "orders",
 		"Projects":        projects,
 		"SelectedProject": selected,
@@ -187,14 +195,14 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		// 状态维度**只有**计数徽章一种入口（徽章行已经能点，再摆一个同维度的下拉，
 		// 用户会怀疑两者是否等价，见 admin-ui-logic §3）。
 		"FilterStatus":  filter.Status,
-		"FilterLabel":   returnStatusLabel(filter.Status),
+		"FilterLabel":   returnStatusLabel(tr, filter.Status),
 		"FilterKeyword": filter.Keyword,
 		"FilterOrderID": returnOrderIDText(filter.OrderID),
 		"ClearOrderURL": shell.FilterBaseURL("/admin/returns", returnFilterValues(selected, returnFilter{Status: filter.Status, Keyword: filter.Keyword})),
-		"PendingHint":   returnPendingHint(counters),
+		"PendingHint":   returnPendingHint(tr, counters),
 		"Rows":          rows,
 		"Total":         total,
-		"Warehouses":    h.warehouseOptions(ctx, selected),
+		"Warehouses":    h.warehouseOptions(ctx, selected, tr),
 		"Detail":        detail,
 		// 显式布尔：Jet 对空 map 的真值判断不值得押注，页面靠这个键决定要不要渲染详情块。
 		"HasDetail": len(detail) > 0,
@@ -221,7 +229,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 func (h *returnPageHandle) ReturnApprove(c *gin.Context) {
 	returnID := orderQueryID(c.PostForm("returnId"))
 	if returnID == 0 {
-		returnRedirect(c, "", returnIDInvalidText)
+		returnRedirect(c, "", returnIDInvalidLabel.fallback)
 		return
 	}
 	res, err := h.orders.ApproveReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
@@ -253,7 +261,7 @@ func (h *returnPageHandle) ReturnApprove(c *gin.Context) {
 func (h *returnPageHandle) ReturnReject(c *gin.Context) {
 	returnID := orderQueryID(c.PostForm("returnId"))
 	if returnID == 0 {
-		returnRedirect(c, "", returnIDInvalidText)
+		returnRedirect(c, "", returnIDInvalidLabel.fallback)
 		return
 	}
 	remark := strings.TrimSpace(c.PostForm("remark"))
@@ -286,7 +294,7 @@ func (h *returnPageHandle) ReturnReject(c *gin.Context) {
 func (h *returnPageHandle) ReturnReceive(c *gin.Context) {
 	returnID := orderQueryID(c.PostForm("returnId"))
 	if returnID == 0 {
-		returnRedirect(c, "", returnIDInvalidText)
+		returnRedirect(c, "", returnIDInvalidLabel.fallback)
 		return
 	}
 	if _, err := h.orders.ReceiveReturn(c.Request.Context(), &orderdto.ReturnReceiveReq{
@@ -352,7 +360,7 @@ func (h *returnPageHandle) ReturnBulkApprove(c *gin.Context) {
 func (h *returnPageHandle) ReturnBulkReject(c *gin.Context) {
 	remark := strings.TrimSpace(c.PostForm("remark"))
 	if remark == "" {
-		returnBulkRedirect(c, "批量拒绝需要先填理由（表单里的备注框），本次没有处理任何退货申请。")
+		returnBulkRedirect(c, orderBulkTextOf(c, returnBulkRejectReasonRequired))
 		return
 	}
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。

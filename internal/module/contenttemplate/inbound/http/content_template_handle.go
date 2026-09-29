@@ -120,7 +120,10 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		shell.PageError(c, "content_template", err)
 		return
 	}
-	refsByTemplate := contentTemplateRefsByTemplate(impact)
+	// 展示标签（实体类型 / 角色 / 槽位）在 handler 取词：service 拿不到请求语言，
+	// 模板直接渲染的文本也不经过 pkg/response 的 translate（见 enums 的 contenttemplate_labels.go）。
+	tr := shell.TranslateFor(c)
+	refsByTemplate := contentTemplateRefsByTemplate(tr, impact)
 	rows := make([]gin.H, 0, len(list))
 	for _, t := range list {
 		// 结构模板（页眉 / 页脚）不是内容实体：工作台以**无样例实体**模式打开它 ——
@@ -149,8 +152,8 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			// 结构模板（页眉 / 页脚）与内容实体模板在这张表里是两类东西：前者没有实体来源、
 			// 也不接受字段绑定，两者的可编辑性与删除后果都不同，页面上必须一眼分得开。
 			"IsStructure": isStructure,
-			"TypeLabel":   contentTemplateTypeLabel(t.EntityType),
-			"RoleLabel":   contentTemplateRoleLabel(t.TemplateRole),
+			"TypeLabel":   contentTemplateTypeLabel(tr, t.EntityType),
+			"RoleLabel":   contentTemplateRoleLabel(tr, t.TemplateRole),
 			"IsDefault":   t.IsDefault,
 			// SampleErr 是**模板数据**（形态③）：依赖错误只能出归口文案，原文进日志。
 			"EditURL": editURL, "SampleErr": sampleNote,

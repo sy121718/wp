@@ -9,7 +9,8 @@ package mailservice
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	maildto "go_wp/internal/module/mail/dto"
@@ -112,35 +113,42 @@ func (s *Service) ListContactRuns(ctx context.Context, contactID uint64, limit i
 //   - 失败 → 哪一步、什么原因、能不能重试；
 //   - 完成 → 走到哪个结束了。
 func explainRun(row mailmodel.RunRow, res *maildto.AutomationRunDetailResp) string {
-	at := "流程入口"
+	// 这里只组装「key + 参数」编码（enums.FormatRunText 在出口解码）：
+	// 排障页会把 Explain 直接渲染出来，而 service 层拿不到请求语言。
+	at := mailenums.EncodeRunText(mailenums.RunKeyEntryNode, nil)
 	if row.CurrentNode != nil && *row.CurrentNode != "" {
 		at = *row.CurrentNode
 	}
 	switch row.Status {
 	case mailmodel.RunStatusWaiting:
-		when := "（未设定时间）"
+		when := mailenums.EncodeRunText(mailenums.RunKeyWhenUnset, nil)
 		if row.NextRunAt != nil {
 			when = row.NextRunAt.Format("2006-01-02 15:04")
 		}
-		return fmt.Sprintf("等待中，将在 %s 继续（下一个节点 %s）", when, at)
+		return mailenums.EncodeRunText(mailenums.RunKeyWaiting, map[string]string{
+			mailenums.RunArgWhen: when, mailenums.RunArgNode: at})
 	case mailmodel.RunStatusRunning:
-		return fmt.Sprintf("进行中，正在处理节点 %s", at)
+		return mailenums.EncodeRunText(mailenums.RunKeyRunning, map[string]string{mailenums.RunArgNode: at})
 	case mailmodel.RunStatusCompleted:
-		return fmt.Sprintf("已完成（共执行 %d 个节点）", res.DoneNodes)
+		return mailenums.EncodeRunText(mailenums.RunKeyCompleted,
+			map[string]string{mailenums.RunArgCount: strconv.Itoa(res.DoneNodes)})
 	case mailmodel.RunStatusStopped:
-		reason := ""
-		if row.ErrorMessage != nil {
-			reason = "：" + *row.ErrorMessage
+		// 原因是**嵌套编码串**（error_message 本身也是运行文案编码）：FormatRunText 递归解码。
+		if row.ErrorMessage != nil && strings.TrimSpace(*row.ErrorMessage) != "" {
+			return mailenums.EncodeRunText(mailenums.RunKeyStoppedWhy,
+				map[string]string{mailenums.RunArgReason: *row.ErrorMessage})
 		}
-		return "已停止" + reason
+		return mailenums.EncodeRunText(mailenums.RunKeyStopped, nil)
 	case mailmodel.RunStatusFailed:
-		reason := "原因未知"
+		reason := mailenums.EncodeRunText(mailenums.RunKeyReasonUnset, nil)
 		if row.ErrorMessage != nil && *row.ErrorMessage != "" {
 			reason = *row.ErrorMessage
 		}
-		return fmt.Sprintf("失败于节点 %s：%s（修正后可重新触发）", at, reason)
+		return mailenums.EncodeRunText(mailenums.RunKeyFailed, map[string]string{
+			mailenums.RunArgNode: at, mailenums.RunArgReason: reason})
 	}
-	return "状态未知：" + row.Status
+	return mailenums.EncodeRunText(mailenums.RunKeyStatusUnkwn,
+		map[string]string{mailenums.RunArgStatus: row.Status})
 }
 
 func runItemOf(row mailmodel.RunRow) maildto.AutomationRunItem {

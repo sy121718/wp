@@ -129,6 +129,10 @@
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（见下，colspan = 7：勾选 / 路径 / 类型 / 状态 /
            草稿版本 / 更新时间 / 操作）。 *}
+        {* 定时上下线面板的落点（PIPE-7）：行内「定时」按钮把片段换进来。
+           放在表格**之上**而不是行内：面板含表单与一份排定清单，塞进某一列会把表格挤变形；
+           面板标题里带页面路径，因此不依赖「它出现在哪一行下方」来表明归属。 *}
+        <div id="page-schedule-host"></div>
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</strong>
         </div>
@@ -183,6 +187,17 @@
                         {{if p.Stale}}<span class="badge badge-warning">{{tr("admin.pages.status.stale", "有更新未发布")}}</span>{{end}}
                         {{else if p.Staged}}<span class="badge badge-info">{{tr("admin.pages.status.staged", "已暂存待发布")}}</span>
                         {{else}}<span class="badge badge-mute">{{tr("admin.pages.status.draft", "草稿")}}</span>{{end}}
+                        {* 定时上下线（PIPE-7）：有待执行排定时给出到点时刻，让运营一眼看出「这页已经排了队」；
+                           排定失败是决策 2 的「硬失败」在后台的可见面 —— 到点没执行且只在日志里留痕，
+                           与静默不生效没有区别。两处文案与时间都由 Go 侧算好（见 pageRow）。 *}
+                        {* 可选键一律 isset 包裹：直接渲染本模板的单测（pages_list_test.go）
+                           不带这两个键，缺键会让整页在那一行中断（渲染器走 500 + 丢弃半截内容）。 *}
+                        {{if isset(p.SchedulePendingAt)}}{{if p.SchedulePendingAt != ""}}
+                        <span class="badge badge-info">{{tr("admin.pages.status.scheduled", "已排定")}} {{p.SchedulePendingAt}}</span>
+                        {{end}}{{end}}
+                        {{if isset(p.ScheduleAlert)}}{{if p.ScheduleAlert}}
+                        <span class="badge badge-warning" title="{{p.ScheduleFailedNote}}">{{tr("admin.pages.status.schedule_failed", "排定失败")}}</span>
+                        {{end}}{{end}}
                     </td>
                     <td>v{{p.Version}}</td>
                     <td class="text-mute text-sm">{{p.UpdatedAt}}</td>
@@ -191,6 +206,11 @@
                         <a class="btn btn-sm btn-ghost" href="/workbench/preview?id={{p.ID}}" target="_blank">{{tr("admin.pages.action.preview", "预览")}}</a>
                         {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
                         <a class="btn btn-sm btn-ghost" href="/admin/page/translations?pageId={{p.ID}}">{{tr("admin.pages.action.translations", "多语言")}}</a>
+                        {* 定时上下线入口：HTMX 把面板片段换进表格上方的 #page-schedule-host。
+                           写操作（排定 / 取消）在片段内部再提交，鉴权复用 page:schedule_set / cancel。 *}
+                        <button type="button" class="btn btn-sm btn-ghost"
+                                hx-get="/admin/page-schedules/panel?pageId={{p.ID}}"
+                                hx-target="#page-schedule-host" hx-swap="innerHTML">{{tr("admin.pages.action.schedule", "定时")}}</button>
                         {{if p.Active}}
                         <a class="btn btn-sm btn-ghost" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
                         {{end}}

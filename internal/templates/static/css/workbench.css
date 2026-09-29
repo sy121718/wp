@@ -687,6 +687,21 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 /* 字段联动提示（如切换「电话/邮件」后仍需补全号码） */
 .wb-field-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--sky-c-warn, #b45309); }
 
+/* 访问密码重设行（PIPE-6）：输入框与「设置」按钮同排，窄屏自动换行（flex-wrap）。
+   按钮给足点击高度，触屏与鼠标都好点。 */
+.wb-access-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wb-access-row input[type="password"] { flex: 1 1 180px; min-width: 0; }
+.wb-access-apply {
+    flex: 0 0 auto; min-height: 36px; padding: 8px 14px;
+    font-size: 12px; line-height: 1;
+    border: 1px solid var(--sky-c-border-strong, #d1d5db); border-radius: 6px;
+    background: var(--sky-c-surface, #fff); color: var(--sky-c-text, #1f2937);
+    cursor: pointer;
+    transition: border-color 150ms var(--ui-ease-out), color 150ms var(--ui-ease-out);
+}
+.wb-access-apply:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
+.wb-field-err { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--sky-c-warn, #b45309); }
+
 /* 原生 select 兜底（repeater 等非 wb-field 容器）：去 UA 灰底，统一观感。 */
 .wb-field select, .wb-repeater-mid select, .wb-repeater-mid input:not([type="checkbox"]):not([type="radio"]) {
     background: var(--sky-c-surface, #fff); color: var(--sky-c-text, #1f2937); cursor: pointer;

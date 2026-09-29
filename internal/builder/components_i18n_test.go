@@ -16,6 +16,9 @@ package builder
 // 只看模板、不看 Go：Go 里的中文常常正是 I18nAware 的**兜底常量**
 //（text 为 nil 时用），把它算成硬编码会得到一堆假阳性。模板里的中文文案
 // 没有这层歧义 —— 它就是会烘进产物、访客会读到的那串字。
+//
+// 「扫描逻辑本身还有效」由两部分各自负责，见文件末尾两处断言的说明：
+// 覆盖面看 TestComponentI18nDeclarations 的计数，正则在 TestComponentI18nScanLogic 里自检。
 
 import (
 	"os"
@@ -52,16 +55,62 @@ func visibleText(tpl string) string {
 	return htmlCommentRe.ReplaceAllString(tpl, "")
 }
 
+// hasVisibleCJK 模板里是否存在**访客可见**的中文（即「硬编码文案」的唯一判据）。
+//
+// 抽成函数是为了让它可被 TestComponentI18nScanLogic 用自造输入直接验证：
+// 原来这层逻辑内联在主测试的循环里，只能靠「扫到了东西」间接推断它没坏 ——
+// 而那个推断在 i18n 做完之后不再成立（见主测试末尾的说明）。
+func hasVisibleCJK(tpl string) bool {
+	return cjkRe.MatchString(visibleText(tpl))
+}
+
+// TestComponentI18nScanLogic 扫描逻辑的自检：判据不依赖生产模板的当前状态。
+//
+// 为什么需要它：主测试原先用「扫到的组件数 > 0」来证明扫描逻辑有效，但那个数会随
+// i18n key 化的推进**趋近于零**（目标就是零），于是判据在改造完成时必然变红
+// （实测：HEAD 版 2 个 → 组件模板全部 key 化后 0 个）。换成本测试之后，
+// 「正则写坏 / 注释过滤失效」仍然会被抓住，且与生产模板有多少文案**无关**。
+//
+// 正负例覆盖三个过滤层：CJK 命中、Jet 注释 `{* *}` 排除、HTML 注释 `<!-- -->` 排除。
+// 少测任何一层，那层的失效都会退化成「候选集变小」而无人察觉。
+func TestComponentI18nScanLogic(t *testing.T) {
+	cases := []struct {
+		name string
+		tpl  string
+		want bool
+	}{
+		{"可见中文命中", `<button class="btn">提交</button>`, true},
+		{"中文属性值也命中", `<input placeholder="请输入关键词">`, true},
+		{"纯英文不命中", `<button class="btn">Submit</button>`, false},
+		{"Jet 注释里的中文不命中", `{* 提交按钮：说明 *}<span>Submit</span>`, false},
+		{"HTML 注释里的中文不命中", `<!-- 提交按钮 --><span>Submit</span>`, false},
+		{"多行 Jet 注释里的中文不命中", "{*\n第一行说明\n第二行说明\n*}\n<p>ok</p>", false},
+		{"注释之外有中文则命中", "{* 注释 *}<p>确定</p>", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasVisibleCJK(tc.tpl); got != tc.want {
+				t.Fatalf("hasVisibleCJK(%q) = %v，期望 %v", tc.tpl, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestComponentI18nDeclarations(t *testing.T) {
 	entries, err := os.ReadDir("components")
 	if err != nil {
 		t.Fatalf("读取组件目录失败: %v", err)
 	}
 	var checked, implemented, gaps []string
+	// dirCount / jetCount 是**扫描覆盖面**的自检计数：它们把原判据里「路径有没有读对」
+	// 这一半独立出来（见末尾断言）。结果集非空做不到这件事 —— 它无法区分
+	//「目录读错了」与「文案已全部搬走」。
+	var dirCount, jetCount int
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
+		dirCount++
 		dir := filepath.Join("components", e.Name())
 		files, derr := os.ReadDir(dir)
 		if derr != nil {
@@ -75,7 +124,8 @@ func TestComponentI18nDeclarations(t *testing.T) {
 			}
 			switch {
 			case strings.HasSuffix(f.Name(), ".jet"):
-				if cjkRe.MatchString(visibleText(string(data))) {
+				jetCount++
+				if hasVisibleCJK(string(data)) {
 					hasText = true
 				}
 			case strings.HasSuffix(f.Name(), ".go"):
@@ -100,8 +150,17 @@ func TestComponentI18nDeclarations(t *testing.T) {
 		}
 		gaps = append(gaps, e.Name())
 	}
+	// 覆盖面：扫不到组件目录或 .jet 文件 = 路径 / 工作目录变了，此时后面所有断言
+	// 都会「因为没东西可查」而通过 —— 这正是要 fail-fast 的那种假绿。
+	if dirCount == 0 || jetCount == 0 {
+		t.Fatalf("组件扫描覆盖面为零：读到 %d 个组件目录、%d 个 .jet 模板（路径或工作目录变了）",
+			dirCount, jetCount)
+	}
 	if len(checked) == 0 {
-		t.Fatalf("没有扫到任何含硬编码文案的组件 —— 扫描逻辑可能失效（路径或正则）")
+		// 不是故障，是**目标状态**：模板里的硬编码文案已被搬进 I18nAware 的取词常量。
+		// 「扫描逻辑还有效」由上面的计数与 TestComponentI18nScanLogic 的正负例保证。
+		t.Logf("全部 %d 个组件（%d 个 .jet 模板）均无访客可见中文 —— i18n key 化已完成，这是目标状态",
+			dirCount, jetCount)
 	}
 	if len(gaps) > 0 {
 		sort.Strings(gaps)

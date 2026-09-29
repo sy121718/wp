@@ -192,7 +192,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 		return
 	}
 	data, err := h.buildPageTranslationsData(c.Request.Context(), pageID,
-		strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("filter")))
+		strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("filter")), shell.TranslateFor(c))
 	if err != nil {
 		logger.Scene("page").With("pageId", pageID).Error(err, "打开翻译工作台失败")
 		c.Redirect(http.StatusSeeOther, "/admin/pages")
@@ -343,7 +343,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 
 // renderTranslationError 校验/写入失败：回渲染工作台（200）并展示逐行错误，不落库。
 func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []string) {
-	data, err := h.buildPageTranslationsData(c.Request.Context(), pageID, lang, "")
+	data, err := h.buildPageTranslationsData(c.Request.Context(), pageID, lang, "", shell.TranslateFor(c))
 	if err != nil {
 		c.Redirect(http.StatusSeeOther, "/admin/pages")
 		return

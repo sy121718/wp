@@ -27,7 +27,8 @@ func SetupMediaPages(adminPages *gin.RouterGroup) {
 // 页面骨架由模板渲染，数据与交互由 media-admin.js 驱动（复用 /api/media/*）。
 func MediaPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "admin/media/media", shell.Prepare(c, gin.H{
-		"title": "媒体库",
+		// 标题写 i18n key（shell.Prepare 对 "title" 取词），词条 admin.media.heading 已存在。
+		"title": "admin.media.heading",
 		"menu":  "media",
 		"jsVer": mediaLibJsVer(),
 	}))

@@ -194,51 +194,54 @@ func TranslatableFields(entityType string) []string {
 	return out
 }
 
-// EntityTypeLabel 实体类型的中文展示名（后台翻译页分组标题）。
-func EntityTypeLabel(entityType string) string {
+// EntityTypeLabel 实体类型的展示名（后台翻译页分组标题）。
+//
+// tr 由调用点给：本包不依赖 gin / shell，取词函数一律从 inbound / service 传进来
+// （与 productservice.translateFrom 同一条约定）。中文是兜底，词条 key 见迁移 449。
+func EntityTypeLabel(tr func(key, fallback string) string, entityType string) string {
 	switch entityType {
 	case EntityTypeCategory:
-		return "商品分类"
+		return tr(productenums.ProductTranslationsEntityTypeCategory, "商品分类")
 	case EntityTypeBrand:
-		return "商品品牌"
+		return tr(productenums.ProductTranslationsEntityTypeBrand, "商品品牌")
 	case EntityTypeTag:
-		return "商品标签"
+		return tr(productenums.ProductTranslationsEntityTypeTag, "商品标签")
 	case EntityTypeAttribute:
-		return "商品属性"
+		return tr(productenums.ProductTranslationsEntityTypeAttribute, "商品属性")
 	default:
-		return "商品"
+		return tr(productenums.ProductTranslationsEntityTypeProduct, "商品")
 	}
 }
 
-// FieldLabel 可翻译字段的中文展示名（后台翻译页字段列；未知字段原样返回）。
-func FieldLabel(entityType, field string) string {
+// FieldLabel 可翻译字段的展示名（后台翻译页字段列；未知字段原样返回 —— 字段名是数据）。
+func FieldLabel(tr func(key, fallback string) string, entityType, field string) string {
 	switch entityType + "." + field {
 	case EntityTypeProduct + ".name":
-		return "商品名"
+		return tr(productenums.ProductTranslationsFieldProductName, "商品名")
 	case EntityTypeProduct + ".subtitle":
-		return "副标题"
+		return tr(productenums.ProductTranslationsFieldProductSubtitle, "副标题")
 	case EntityTypeProduct + ".description":
-		return "描述"
+		return tr(productenums.ProductTranslationsFieldProductDescription, "描述")
 	case EntityTypeProduct + ".imageAlts":
-		return "图片 alt"
+		return tr(productenums.ProductTranslationsFieldProductImageAlts, "图片 alt")
 	case EntityTypeCategory + ".name":
-		return "分类名"
+		return tr(productenums.ProductTranslationsFieldCategoryName, "分类名")
 	case EntityTypeCategory + ".description":
-		return "分类描述"
+		return tr(productenums.ProductTranslationsFieldCategoryDescription, "分类描述")
 	case EntityTypeCategory + ".seoTitle":
-		return "分类 SEO 标题"
+		return tr(productenums.ProductTranslationsFieldCategorySeoTitle, "分类 SEO 标题")
 	case EntityTypeBrand + ".name":
-		return "品牌名"
+		return tr(productenums.ProductTranslationsFieldBrandName, "品牌名")
 	case EntityTypeBrand + ".description":
-		return "品牌描述"
+		return tr(productenums.ProductTranslationsFieldBrandDescription, "品牌描述")
 	case EntityTypeBrand + ".seoTitle":
-		return "品牌 SEO 标题"
+		return tr(productenums.ProductTranslationsFieldBrandSeoTitle, "品牌 SEO 标题")
 	case EntityTypeTag + ".name":
-		return "标签名"
+		return tr(productenums.ProductTranslationsFieldTagName, "标签名")
 	case EntityTypeAttribute + ".name":
-		return "属性组名"
+		return tr(productenums.ProductTranslationsFieldAttributeName, "属性组名")
 	case EntityTypeAttribute + ".values":
-		return "属性值展示文本"
+		return tr(productenums.ProductTranslationsFieldAttributeValues, "属性值展示文本")
 	default:
 		return field
 	}
@@ -262,8 +265,14 @@ func FieldContext(entityType, field string) string {
 // 是组件侧的契约面，不随实现模块迁移而改名（现有工作台选项与文档历史值都不变）。
 const CollectionSourceProduct = "content:product"
 
-// CollectionLabel 集合源展示名（工作台集合源下拉）。
+// CollectionLabel 集合源展示名的中文兜底（取词未命中时用）。
+//
+// 与 content 模块的集合源共用同一条词条（CollectionLabelKey）：sys_i18n 是一张
+// 全局语言表，同一个语义（「商品列表」这个集合源）没有「哪个模块不能用哪个 key」。
 const CollectionLabel = "商品列表"
+
+// CollectionLabelKey 集合源展示名的 i18n key（取词在出口 handler，见 builder/source 的 CollectionSchema）。
+const CollectionLabelKey = "admin.collection.product"
 
 // 集合源过滤维度的键（issue #21）。
 //

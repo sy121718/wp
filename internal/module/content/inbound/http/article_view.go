@@ -16,10 +16,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	contentdto "go_wp/internal/module/content/dto"
+	contentenums "go_wp/internal/module/content/enums"
 	presentationdto "go_wp/internal/module/presentation/dto"
+	projectenums "go_wp/internal/module/project/enums"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -138,7 +141,8 @@ func articlesPublished(ctx context.Context, port articlePublishPort, list []*con
 // scoreViewFromResult 评分结果 → 视图（不含 SERP 预览：那部分由调用方按自己的
 // 标题/描述来源填）。页面设置面板与文章编辑页共用这一份转换 —— 两处各写一遍的话，
 // 「哪些检查项算未达标」这种判断会分叉。
-func scoreViewFromResult(res *scoring.Result) scoreView {
+func scoreViewFromResult(res *scoring.Result, trs ...func(key, fallback string) string) scoreView {
+	tr := articlePublishTr(trs)
 	if res == nil {
 		return scoreView{}
 	}
@@ -146,14 +150,15 @@ func scoreViewFromResult(res *scoring.Result) scoreView {
 	for _, sec := range res.Sections {
 		item := scoreSectionView{
 			Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
-			ColorLabel: seoColorLabels[sec.Color],
+			ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
 		}
 		for _, ck := range sec.Checks {
 			if ck.Score >= ck.Max {
 				continue
 			}
 			item.Issues = append(item.Issues, scoreIssueView{
-				Text:   fmt.Sprintf("%s：%s（基准 %s）→ %s", ck.Label, ck.Actual, ck.Benchmark, ck.Hint),
+				Text: i18n.FillTranslate(tr, projectenums.SEOScoreIssueFormat, "{label}：{actual}（基准 {benchmark}）→ {hint}",
+					map[string]string{"label": ck.Label, "actual": ck.Actual, "benchmark": ck.Benchmark, "hint": ck.Hint}),
 				Target: ck.Target,
 			})
 		}
@@ -163,18 +168,20 @@ func scoreViewFromResult(res *scoring.Result) scoreView {
 }
 
 // articleScoreViewOf 文章字段 → 评分视图（编辑页初始渲染与评分片段共用）。
-func articleScoreViewOf(data map[string]any, articleURL, lang string) scoreView {
-	sv := scoreViewFromResult(seoscore.ScoreArticle(data, articleURL, lang))
+func articleScoreViewOf(data map[string]any, articleURL, lang string,
+	trs ...func(key, fallback string) string) scoreView {
+	tr := articlePublishTr(trs)
+	sv := scoreViewFromResult(seoscore.ScoreArticle(data, articleURL, lang), tr)
 	if !sv.OK {
 		return sv
 	}
 	sv.SerpTitle = firstNonEmpty(articleStr(data, "seoTitle"), articleStr(data, "title"))
 	if sv.SerpTitle == "" {
-		sv.SerpTitle = "（未填写文章标题）"
+		sv.SerpTitle = tr(contentenums.ScoreSerpTitleEmpty, "（未填写文章标题）")
 	}
 	sv.SerpDesc = firstNonEmpty(articleStr(data, "seoDescription"), articleStr(data, "excerpt"))
 	if sv.SerpDesc == "" {
-		sv.SerpDesc = "（未填写摘要 / SEO 描述）"
+		sv.SerpDesc = tr(contentenums.ScoreSerpDescEmpty, "（未填写摘要 / SEO 描述）")
 	}
 	sv.SerpURL = articleURL
 	if sv.SerpURL == "" {
@@ -235,7 +242,7 @@ func articleFacingOrInternal(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := articleFacingText(err.Error()); msg != "" {
+	if msg := articleFacingText(c, err.Error()); msg != "" {
 		return msg
 	}
 	return shell.PageInternalText(c)
@@ -246,31 +253,37 @@ func articleFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := articleFacingText(err.Error()); msg != "" {
+	if msg := articleFacingText(c, err.Error()); msg != "" {
 		return msg
 	}
 	return articleInternalText(c, err)
 }
 
-// articleErrControlledPrefixes 受控提示的前缀白名单。
+// articleErrControlledPrefixes 受控提示的前缀白名单（**按当前语言生成**）。
 //
 // 它们不是 enums key（因此进不了 articleFacingMessages），但整句都由本仓库自己拼出：
 // 不含表名 / SQLSTATE / 路径，且带着运营照着做的数字。目前只有一条 ——
-// shell.BulkIDs 的上限拒绝「一次最多操作 N 项，当前 M 项，请分批进行」（internal/web/shell/bulk.go）。
+// shell.BulkIDs 的上限拒绝（internal/web/shell/bulk.go 的 BulkIDsFacingText）。
+//
+// 前缀必须跟着语言算：shell 那条提示是**按请求语言**取词渲染的，写死中文前缀会让
+// 英文后台下的这条受控提示被判成未命中 → 回落归口文案（用户看不到「分批做」这句可行动的话）。
+// 取词用**同一个 key 与同一个兜底模板**（shell.MsgBulkIDsTooMany），
+// 与 shell 的写侧同源，不另抄一份措辞。
 //
 // 按**前缀**判而不是按来源直接透出：上游将来改成上抛别的错误时前缀不再命中，
 // 会自动退回归口文案 / 回显 fallback，不会把不认识的原文顺出去。
-var articleErrControlledPrefixes = []string{
-	fmt.Sprintf("一次最多操作 %d 项", shell.MaxBulkIDs),
+func articleErrControlledPrefixes(c *gin.Context) []string {
+	tpl := shell.TranslateFor(c)(shell.MsgBulkIDsTooMany, "一次最多操作 %s 项")
+	return []string{fmt.Sprintf(strings.ReplaceAll(tpl, "%s", "%d"), shell.MaxBulkIDs)}
 }
 
 // articleControlledText 受控提示 → 原样透出（保留可行动信息）；未命中返回空串。
-func articleControlledText(raw string) string {
+func articleControlledText(c *gin.Context, raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
 	}
-	for _, prefix := range articleErrControlledPrefixes {
+	for _, prefix := range articleErrControlledPrefixes(c) {
 		if strings.HasPrefix(raw, prefix) {
 			return raw
 		}
@@ -286,7 +299,7 @@ func articleControlledText(raw string) string {
 //
 // 第二类必须按前缀命中，只做精确匹配的话它们会全部落到统一内部错误 ——
 // 运营看到「系统内部错误」而实际问题只是提交了一个不支持的字段。
-func articleFacingText(raw string) string {
+func articleFacingText(c *gin.Context, raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
@@ -294,15 +307,18 @@ func articleFacingText(raw string) string {
 	// 受控提示（shell.BulkIDs 的上限拒绝）放行：不是 enums key，但整句由本仓库拼出。
 	// 写入侧（articleRedirectList）与回显侧（articleQueryText）共用这一份判据 ——
 	// 少了它，「一次最多操作 10 项」会在回显时被自己的白名单吞掉（用户看不到任何提示）。
-	if msg := articleControlledText(raw); msg != "" {
+	if msg := articleControlledText(c, raw); msg != "" {
 		return msg
 	}
-	if msg, ok := articleFacingMessages[raw]; ok {
-		return msg
+	tr := shell.TranslateFor(c)
+	if fallback, ok := articleFacingMessages[raw]; ok {
+		return tr(raw, fallback)
 	}
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
-		if msg, ok := articleFacingMessages[strings.TrimSpace(raw[:idx])]; ok {
-			return msg
+		if key := strings.TrimSpace(raw[:idx]); key != "" {
+			if fallback, ok := articleFacingMessages[key]; ok {
+				return tr(key, fallback)
+			}
 		}
 	}
 	return ""
@@ -313,7 +329,7 @@ func articleQueryText(c *gin.Context, raw, fallback string) string {
 	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
-	if msg := articleFacingText(raw); msg != "" {
+	if msg := articleFacingText(c, raw); msg != "" {
 		return msg
 	}
 	return fallback

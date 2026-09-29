@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
 )
@@ -100,7 +101,7 @@ func (h *mailPageHandle) MailMarketingPage(c *gin.Context) {
 	templates, _ := h.mail.ListTemplates(ctx, "")
 
 	data := shell.Prepare(c, gin.H{
-		"title":         "邮件营销",
+		"title":         mailLabel(shell.TranslateFor(c), mailenums.PageTitleMarketing),
 		"Contacts":      contacts.Items,
 		"ContactTotal":  contacts.Total,
 		"Campaigns":     campaigns.Items,
@@ -138,7 +139,7 @@ func (h *mailPageHandle) MailMarketingPage(c *gin.Context) {
 // 运营连那句归口文案都只能看到半页。
 func mailMarketingErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":        "邮件营销",
+		"title":        mailLabel(shell.TranslateFor(c), mailenums.PageTitleMarketing),
 		"Err":          mailErrPageText(c, err),
 		"Contacts":     []any{},
 		"ContactTotal": int64(0),
@@ -272,7 +273,7 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 		}
 	}
 	data := shell.Prepare(c, gin.H{
-		"title": "活动报表",
+		"title": mailLabel(shell.TranslateFor(c), mailenums.PageTitleCampaignReport),
 		"R":     report,
 		"Page":  page,
 		"Err":   mailPageErr(c),

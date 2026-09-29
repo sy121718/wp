@@ -29,6 +29,7 @@ import (
 
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/mailer"
 )
@@ -89,16 +90,50 @@ func mailErrPageText(c *gin.Context, err error) string {
 
 // translateMailFacing 把命中的白名单文案翻成当前语言。
 //
-// `key: 细节` 只翻 key，细节原样保留 —— 细节是本模块 service 自己生成的定位信息
-// （「节点 b 的下一步 c 不存在」），不是词条、也不该按词条去查表。
+// `key: 明细` 只翻能识别的部分：key 取词条，明细按 i18n.ErrorDetail 协议取词并填 {name}。
+// **明细不是 ErrorDetail 词条就丢弃并落日志** —— 改造前这里是 `text + ": " + detail`
+//（原样拼回 service 的中文原文），英文界面上必然中英混排，而那句话会经 302 的 ?err=
+// 进页面与浏览器历史（见 mail_automation.go 的 graphInvalidError 调用点）。
 func translateMailFacing(translate func(key, fallback string) string, msg string) string {
 	key, detail, hasDetail := strings.Cut(msg, ": ")
 	// 兜底给 key 本身：词条缺失时页面显示的是 key（一眼可见），而不是把整句吞掉。
 	text := translate(key, key)
-	if hasDetail {
-		return text + ": " + detail
+	if hasDetail && detail != "" {
+		if d := mailDetailText(translate, detail); d != "" {
+			return text + "：" + d
+		}
 	}
 	return text
+}
+
+// mailDetailText 业务错误的**补充说明** → 当前语言文案（不是词条时返回空串）。
+//
+// 接受的形态只有一种：i18n.ErrorDetail 的产物（控制字符开头的「明细词条 key + 具名参数」，
+// 可多段）。其余一律**丢弃并落日志** —— 与 product / inventory 的读侧口径有意不同：
+// 那两处的 `return tail` 是为了兼容改造前就已存在的纯文本明细，而 mail 这一族从本批起
+// 全部改走 ErrorDetail（写侧见 service/mail_graph_err.go），所以不再保留「原样透出」这条
+// 无界通道 —— 它正是英文界面上中文混排的来源。
+//
+// 未登记的明细 key（拼错 / 新加漏登记）跳过该段并记一条日志：少一句补充说明，
+// 好过把编码串或半截占位符摆到页面上。
+func mailDetailText(tr func(key, fallback string) string, tail string) string {
+	parts, ok := i18n.ParseErrorDetails(tail)
+	if !ok {
+		logger.Scene(mailErrScene).With("tail", i18n.DetailTailForLog(tail)).
+			Warn("业务错误的补充说明不是登记的词条形态，已丢弃（不再原样透出）")
+		return ""
+	}
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		fallback, registered := mailenums.ErrDetailFallbacks[p.Key]
+		if !registered || fallback == "" {
+			logger.Scene(mailErrScene).With("detail_key", p.Key).
+				Warn("业务错误的补充说明词条未登记，已省略该段")
+			continue
+		}
+		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+	}
+	return strings.Join(out, "；")
 }
 
 // mailFormErrText 本页表单校验的错误文案（由 parseAutomationForm 组装，带「第 N 行」定位）。
@@ -220,13 +255,13 @@ var mailBulkResultTemplates = []string{
 }
 
 // mail自造回执文案（不是 enums key、也不来自 shell —— 但它们会进 ?err= / ?ok=）。
+//
+// 状态标签与测试发送文案**不在这里**：那两组是 (key, 中文兜底) 形态，真源在
+// mailenums（mail_status_labels.go）—— 因为它们的读侧白名单要用同一份取值重拼候选集。
 const (
 	mailTemplateListFailedText = "读取模板列表失败，本次没有删除任何模板。"
 	mailContactStatusBadText   = "目标状态不合法，本次没有处理任何联系人。"
 	mailAutomationDeletedText  = "已删除"
-	mailStatusLabelActive      = "已启用"
-	mailStatusLabelPaused      = "已暂停"
-	mailStatusLabelDraft       = "草稿"
 )
 
 // mailFormNoticeTemplates 本页自造的表单校验文案模板（parseAutomationForm / 组装层）。
@@ -252,18 +287,28 @@ var mailCountedNoticeTemplates = []string{
 	"活动已开始发送，目标 %d 人；进度可在下方列表刷新查看。",
 }
 
-// mailTestSendFailedTemplates 测试发送失败的受控文案（SMTP 原文只进日志）。
+// mailTestSendFailedLabel 发送失败分类 → 受控文案标签。
 //
-// 分类取自 mailer 的 Kind（temporary / permanent / configuration）—— 有限的枚举，
-// 而 SMTP 的响应码与主机名一律不出现在页面上：它们既不是给运营看的，
-// 也不该经浏览器历史与 Referer 留在 URL 里。
-var mailTestSendFailedTemplates = map[string]string{
-	string(mailer.KindTemporary):     "测试邮件发送失败（可重试的临时故障），详情见服务端日志。",
-	string(mailer.KindPermanent):     "测试邮件发送失败（被对方永久拒绝），详情见服务端日志。",
-	string(mailer.KindConfiguration): "测试邮件发送失败（配置问题，需人工处理），详情见服务端日志。",
+// 取值映射用 mailer 的 Kind 常量（不写字面量）：Kind 改了值而这里写死字符串的话，
+// 表现是「所有失败都落进未分类」—— 页面照常显示，只是永远说不出原因。
+func mailTestSendFailedLabel(kind string) mailenums.LabelPair {
+	switch strings.TrimSpace(kind) {
+	case string(mailer.KindTemporary):
+		return mailenums.TestSendFailedTemporary
+	case string(mailer.KindPermanent):
+		return mailenums.TestSendFailedPermanent
+	case string(mailer.KindConfiguration):
+		return mailenums.TestSendFailedConfiguration
+	default:
+		return mailenums.TestSendFailedUnknown
+	}
 }
 
 // mailTestSendFailedText 测试发送失败的受控回执 + 结构化日志。
+//
+// 文案按当前语言取词：这一句既会进 302 的 ?err=，也会作为读侧白名单的候选参与比对
+// （mailNoticeTexts 调它生成候选）—— 两边都必须走这里，否则英文后台写侧写英文、
+// 读侧认中文，运营看到的是「系统内部错误」。
 func mailTestSendFailedText(c *gin.Context, kind, detail string) string {
 	if strings.TrimSpace(detail) != "" {
 		logger.Scene(mailErrScene).
@@ -272,10 +317,7 @@ func mailTestSendFailedText(c *gin.Context, kind, detail string) string {
 			With("kind", kind).
 			Error(errors.New(detail), "测试邮件发送失败")
 	}
-	if tpl, ok := mailTestSendFailedTemplates[strings.TrimSpace(kind)]; ok {
-		return tpl
-	}
-	return "测试邮件发送失败（未分类），详情见服务端日志。"
+	return mailLabel(shell.TranslateFor(c), mailTestSendFailedLabel(kind))
 }
 
 // —— 缺 id 的引导文案与前置判据（审计 P0：三处「无 id 前置判定」）——
@@ -288,9 +330,10 @@ func mailTestSendFailedText(c *gin.Context, kind, detail string) string {
 // 而那个页面上**没有任何参数可改** —— 用户没有任何出路。
 //
 // 分档判据（两档的差别不是措辞，而是「用户下一步该干什么」）：
-//   · 没给 id → 这是**引导**：说清去哪找（本页列出的三句话都点名了列表页）；
-//   · 给了 id 但查不到 → 保留 service 的业务文案（活动不存在 / 自动化实例不存在 /
-//     自动化流程不存在）—— 那句话是对的，缺的是前面那一档。
+//
+//	· 没给 id → 这是**引导**：说清去哪找（本页列出的三句话都点名了列表页）；
+//	· 给了 id 但查不到 → 保留 service 的业务文案（活动不存在 / 自动化实例不存在 /
+//	  自动化流程不存在）—— 那句话是对的，缺的是前面那一档。
 //
 // 为什么这三句是中文硬编码而不是 mailenums 的 i18n key：与上面的
 // mailTemplateListFailedText / mailContactStatusBadText 同一取舍 —— 它们是**本页自造**
@@ -331,6 +374,22 @@ func mailQueryID(c *gin.Context) (uint64, bool) {
 	return shell.ParseUint(raw), true
 }
 
+// mailAutomationStatusNotice 状态变更回执（当前语言）。
+//
+// **写侧与读侧共用这一份**：写侧（MailAutomationStatus）把它拼进 302 的 ?ok=，
+// 读侧（mailNoticeTexts）用它生成白名单候选 —— 两边只要有一处自己拼字面量，
+// 就会出现「写侧写了个读侧不认的值」：运营点完按钮，页面上什么都没有，
+// 而服务端不报错、日志里也看不出来。
+//
+// 整句外壳也是词条（AutomationStatusChanged）：只把状态标签词条化的话，
+// 英文界面会显示成「状态已更新为 Enabled.」—— 半句中文比全句中文更像渲染故障。
+func mailAutomationStatusNotice(c *gin.Context, status string) string {
+	tr := shell.TranslateFor(c)
+	return i18n.FillTranslate(tr,
+		mailenums.AutomationStatusChanged, mailenums.AutomationStatusChangedFallback,
+		map[string]string{"status": mailLabel(tr, mailenums.AutomationStatusLabel(status))})
+}
+
 // mailNoticeTexts 本页可以原样展示的回执文案（当前语言）。
 func mailNoticeTexts(c *gin.Context) []string {
 	translate := shell.TranslateFor(c)
@@ -344,13 +403,18 @@ func mailNoticeTexts(c *gin.Context) []string {
 		mailTemplateListFailedText,
 		mailContactStatusBadText,
 		mailAutomationDeletedText,
-		"状态已更新为 "+mailStatusLabelActive+"。",
-		"状态已更新为 "+mailStatusLabelPaused+"。",
-		"状态已更新为 "+mailStatusLabelDraft+"。",
-		"状态已更新为 未知状态。",
+		// 状态变更回执：与**写侧同一份拼装**（mailAutomationStatusNotice）。
+		// 三条已知状态 + 未知档各生成一条候选 —— 少一条的表现是那一档回执
+		// 在页面上静默消失（成功通道未命中回落空串）。
+		mailAutomationStatusNotice(c, "active"),
+		mailAutomationStatusNotice(c, "paused"),
+		mailAutomationStatusNotice(c, "draft"),
+		mailAutomationStatusNotice(c, ""),
 		mailTestSendFailedText(c, string(mailer.KindTemporary), ""),
 		mailTestSendFailedText(c, string(mailer.KindPermanent), ""),
 		mailTestSendFailedText(c, string(mailer.KindConfiguration), ""),
+		// 未分类档（Kind 为空 / 取值漂移）：写侧会落到它，读侧不登记就会把那条回执丢掉。
+		mailTestSendFailedText(c, "", ""),
 	)
 	// 缺 id 的引导文案（见 mailIDRequiredTexts）：不登记的话读侧会把它丢掉，
 	// 运营看到的会从「请先从活动列表选择一条活动」退化成「系统内部错误」。

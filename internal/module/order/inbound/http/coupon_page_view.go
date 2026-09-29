@@ -9,14 +9,53 @@ import (
 	"github.com/gin-gonic/gin"
 
 	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
 
 	"go_wp/internal/web/shell"
 )
 
 // coupon_page_view.go - 优惠码管理页的视图构造（列表/编辑/核销行、状态徽章与有效期文案）。
 
+// 券页的展示标签（key + 中文兜底；**按口径值与原始金额在展示层拼**，不用 service 的
+// DiscountLabel / MinSubtotalLabel —— 那是固定中文的 API 字段，页面直接渲染它等于英文界面恒中文）。
+var (
+	couponDiscountPercentLabel = orderLabel{"admin.coupons.discount.percent", "减 {value}%"}
+	couponDiscountFixedLabel   = orderLabel{"admin.coupons.discount.fixed", "减 {value} 元"}
+	// couponYuanLabel 「<金额> 元」的展示（使用门槛与核销金额共用：同一个「元」后缀
+	// 两处各写一条词条，翻译改动时必然分叉）。
+	couponYuanLabel          = orderLabel{"admin.coupons.discount.yuan", "{value} 元"}
+	couponAnonymousUserLabel = orderLabel{"admin.coupons.redemption.anonymous", "匿名访客"}
+)
+
+// couponStateText 券口径状态 → 展示文案（key + 中文兜底；未知值原样回显）。
+func couponStateText(tr translate, state string) string {
+	key, fallback := orderenums.CouponStateLabel(state)
+	if key == "" {
+		return fallback
+	}
+	return orderLabelOf(tr, orderLabel{key, fallback})
+}
+
+// couponDiscountText 券的折扣口径展示（「减 20%」「减 20.00 元」）。
+//
+// 占位符是 `{value}`，用命名替换（orderLabelFilled）而非 Sprintf：词条里的裸 `%`
+// （「减 20%」就有）在 Sprintf 下会被当成格式化动词，输出乱码 —— 而词条能在后台被运营改。
+func couponDiscountText(tr translate, discountType string, value int64) string {
+	if strings.TrimSpace(discountType) == "percent" {
+		return orderLabelFilled(tr, couponDiscountPercentLabel,
+			map[string]string{"value": strconv.FormatInt(value, 10)})
+	}
+	return orderLabelFilled(tr, couponDiscountFixedLabel,
+		map[string]string{"value": orderAmountText(value)})
+}
+
+// couponYuanText 金额（分）→ 「<元> 元」的展示（使用门槛与核销金额共用）。
+func couponYuanText(tr translate, cents int64) string {
+	return orderLabelFilled(tr, couponYuanLabel, map[string]string{"value": orderAmountText(cents)})
+}
+
 // couponRowView 优惠码行 → 模板视图（展示文本、编辑链接、停用表单的隐藏域都在这里定型）。
-func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID string, page, limit int) gin.H {
+func couponRowView(tr translate, cp *orderdto.CouponResp, filter couponFilter, projectID string, page, limit int) gin.H {
 	if cp == nil {
 		return gin.H{}
 	}
@@ -36,13 +75,13 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 	return gin.H{
 		"Code":             cp.Code,
 		"Name":             orderTextOrEmpty(cp.Name),
-		"DiscountLabel":    cp.DiscountLabel,
-		"MinSubtotalLabel": cp.MinSubtotalLabel,
-		"UsageLabel":       couponUsageLabel(cp.UsedCount, cp.MaxUses),
-		"PerUserLabel":     couponNumberLabel(cp.PerUserLimit),
-		"WindowLabel":      couponWindowLabel(cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
-		"StatusLabel":      cp.StatusLabel,
-		"Badge":            couponStatusBadge(cp.StatusLabel),
+		"DiscountLabel":    couponDiscountText(tr, cp.DiscountType, cp.DiscountValue),
+		"MinSubtotalLabel": couponYuanText(tr, cp.MinSubtotal),
+		"UsageLabel":       couponUsageLabel(tr, cp.UsedCount, cp.MaxUses),
+		"PerUserLabel":     couponNumberLabel(tr, cp.PerUserLimit),
+		"WindowLabel":      couponWindowLabel(tr, cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
+		"StatusLabel":      couponStateText(tr, cp.State),
+		"Badge":            couponStatusBadge(cp.State),
 		"Remark":           orderTextOrEmpty(cp.Remark),
 		"EditFormURL":      shell.FilterBaseURL("/admin/coupons/edit-form", editVals),
 		"EditURL":          shell.FilterBaseURL("/admin/coupons", vals),
@@ -50,7 +89,7 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 		"Expanded":         filter.CouponID == cp.ID,
 		// 停用 / 启用复用更新接口，表单必须回送**全部可改字段**（见 CouponUpdate 的注释）。
 		"ToggleStatus": strconv.Itoa(couponToggleStatus(cp.Status)),
-		"ToggleLabel":  couponToggleLabel(cp.Status),
+		"ToggleLabel":  couponToggleLabel(tr, cp.Status),
 		"Form": gin.H{
 			"ID":            strconv.FormatUint(cp.ID, 10),
 			"Name":          cp.Name,
@@ -71,7 +110,7 @@ func couponRowView(cp *orderdto.CouponResp, filter couponFilter, projectID strin
 }
 
 // couponEditView 展开区（编辑表单 + 该券的当前状态摘要）→ 模板视图。
-func couponEditView(cp *orderdto.CouponResp, filter couponFilter, projectID string, page, limit int) gin.H {
+func couponEditView(tr translate, cp *orderdto.CouponResp, filter couponFilter, projectID string, page, limit int) gin.H {
 	if cp == nil {
 		return gin.H{}
 	}
@@ -87,26 +126,26 @@ func couponEditView(cp *orderdto.CouponResp, filter couponFilter, projectID stri
 		"StartsAt":         couponFormTime(cp.StartsAt.TimePtr()),
 		"EndsAt":           couponFormTime(cp.EndsAt.TimePtr()),
 		"StatusValue":      strconv.Itoa(cp.Status),
-		"StatusLabel":      cp.StatusLabel,
-		"Badge":            couponStatusBadge(cp.StatusLabel),
-		"DiscountLabel":    cp.DiscountLabel,
-		"MinSubtotalLabel": cp.MinSubtotalLabel,
-		"UsageLabel":       couponUsageLabel(cp.UsedCount, cp.MaxUses),
-		"PerUserLabel":     couponNumberLabel(cp.PerUserLimit),
-		"WindowLabel":      couponWindowLabel(cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
+		"StatusLabel":      couponStateText(tr, cp.State),
+		"Badge":            couponStatusBadge(cp.State),
+		"DiscountLabel":    couponDiscountText(tr, cp.DiscountType, cp.DiscountValue),
+		"MinSubtotalLabel": couponYuanText(tr, cp.MinSubtotal),
+		"UsageLabel":       couponUsageLabel(tr, cp.UsedCount, cp.MaxUses),
+		"PerUserLabel":     couponNumberLabel(tr, cp.PerUserLimit),
+		"WindowLabel":      couponWindowLabel(tr, cp.StartsAt.TimePtr(), cp.EndsAt.TimePtr()),
 		"Remark":           cp.Remark,
 		"Back":             couponBackQuery(projectID, filter, page, limit, filter.CouponID),
 	}
 }
 
 // couponRedemptionRow 核销记录行 → 模板视图。
-func couponRedemptionRow(rd *orderdto.CouponRedemptionResp) gin.H {
+func couponRedemptionRow(tr translate, rd *orderdto.CouponRedemptionResp) gin.H {
 	if rd == nil {
 		return gin.H{}
 	}
 	// 匿名下单（结算链路不要求先注册）没有 userId：显示「匿名访客」而不是空单元格，
 	// 否则看起来像是「核销人丢了」。
-	user := "匿名访客"
+	user := orderLabelOf(tr, couponAnonymousUserLabel)
 	if rd.UserID != nil && *rd.UserID > 0 {
 		user = strconv.FormatUint(*rd.UserID, 10)
 	}
@@ -114,7 +153,7 @@ func couponRedemptionRow(rd *orderdto.CouponRedemptionResp) gin.H {
 		"Time":          orderTimeLabel(rd.CreateTime.Time()),
 		"OrderNo":       orderTextOrEmpty(rd.OrderNo),
 		"UserID":        user,
-		"DiscountLabel": rd.DiscountLabel,
+		"DiscountLabel": couponYuanText(tr, rd.DiscountAmount),
 	}
 }
 
@@ -127,43 +166,46 @@ func couponFilterValues(projectID string, filter couponFilter) map[string]string
 	}
 }
 
-// couponStatusBadge 状态文案 → 徽章样式；认不出的状态给中性徽章（不猜颜色）。
-func couponStatusBadge(statusLabel string) string {
-	if badge, ok := couponStatusBadges[strings.TrimSpace(statusLabel)]; ok {
+// couponStatusBadge 状态**口径值** → 徽章样式；认不出的状态给中性徽章（不猜颜色）。
+//
+// 判据是口径值（cp.State），不是展示文案：文案会随词条与语言变，拿它当键等于
+// 「后台改一句词条 → 徽章静默变灰」。
+func couponStatusBadge(state string) string {
+	if badge, ok := couponStatusBadges[strings.TrimSpace(state)]; ok {
 		return badge
 	}
 	return "badge-mute"
 }
 
 // couponUsageLabel 用次展示：「3 / 100」「3 / 不限」。
-func couponUsageLabel(used, max int) string {
+func couponUsageLabel(tr translate, used, max int) string {
 	if max <= 0 {
-		return fmt.Sprintf("%d / %s", used, couponUnlimitedLabel)
+		return fmt.Sprintf("%d / %s", used, orderLabelOf(tr, couponUnlimitedLabel))
 	}
 	return fmt.Sprintf("%d / %d", used, max)
 }
 
 // couponNumberLabel 次数类字段展示：0 = 不限（每人限次与总上限同口径）。
-func couponNumberLabel(limit int) string {
+func couponNumberLabel(tr translate, limit int) string {
 	if limit <= 0 {
-		return couponUnlimitedLabel
+		return orderLabelOf(tr, couponUnlimitedLabel)
 	}
 	return strconv.Itoa(limit)
 }
 
 // couponWindowLabel 时间窗展示：两端都不限时只说一次「不限」，不做「不限 ~ 不限」这种噪音。
-func couponWindowLabel(startsAt, endsAt *time.Time) string {
+func couponWindowLabel(tr translate, startsAt, endsAt *time.Time) string {
 	if startsAt == nil && endsAt == nil {
-		return couponUnlimitedLabel
+		return orderLabelOf(tr, couponUnlimitedLabel)
 	}
-	return couponWindowSide(startsAt) + " ~ " + couponWindowSide(endsAt)
+	return couponWindowSide(tr, startsAt) + " ~ " + couponWindowSide(tr, endsAt)
 }
 
 // couponWindowSide 时间窗的一端：nil = 不限（不是「没有值」——
 // 这里「不限」说明该侧没有约束，「—」会让人以为数据缺了）。
-func couponWindowSide(at *time.Time) string {
+func couponWindowSide(tr translate, at *time.Time) string {
 	if at == nil {
-		return couponUnlimitedLabel
+		return orderLabelOf(tr, couponUnlimitedLabel)
 	}
 	return orderTimeLabel(*at)
 }
@@ -200,9 +242,9 @@ func couponToggleStatus(status int) int {
 }
 
 // couponToggleLabel 停用 / 启用按钮文案。
-func couponToggleLabel(status int) string {
+func couponToggleLabel(tr translate, status int) string {
 	if status == 1 {
-		return "停用"
+		return orderLabelOf(tr, couponFormDisabledLabel)
 	}
-	return "启用"
+	return orderLabelOf(tr, couponFormEnabledLabel)
 }

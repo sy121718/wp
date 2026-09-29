@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/permission"
@@ -91,6 +92,19 @@ func SetupRoutes(router *gin.Engine, ready func() error) {
 func setupStaticFace(router *gin.Engine) {
 	root := pipeline.ActiveRoot()
 
+	// 解锁端点（PIPE-6 AccessGuard）**必须显式注册**：站点独占域名根之后，
+	// 根挂载点的静态面是 NoRoute，未显式注册的路径会被它当「站点里没有这个路径」
+	// 吃掉（表现是守卫页提交后 404）。
+	//
+	// 限流挂在这里而不是全局：bcrypt 是慢哈希，没有次数上限的解锁端点仍然是
+	// 「一次脚本跑一整本字典」的成本（慢哈希只把爆破成本乘了个常数）。
+	// 额度与后台登录同档（每 IP 每分钟 10 次）。
+	//
+	// 路径落在站点命名空间里（/access/unlock）：站点若正好有一个页面的 URL 是
+	// 这个路径，显式路由优先 —— 那属于保留路径，页面侧应当另选地址。
+	router.POST(accessUnlockPath, builtin.RequestRateLimitMiddleware(10, time.Minute),
+		builtin.AccessUnlockHandler())
+
 	// 兼容入口：/site（控制台里的「打开站点」与既有书签仍可用）。
 	router.Group(siteFacePath, siteFaceChain(siteFacePath)...).StaticFS("/", gin.Dir(root, false))
 
@@ -108,13 +122,22 @@ func setupStaticFace(router *gin.Engine) {
 	router.NoRoute(chain...)
 }
 
+// accessUnlockPath 访问面解锁端点路径（与 builtin.AccessUnlockPath 同值）。
+//
+// 常量分属两包（那边是 middleware 的公开常量）：这里引用它即可，不重复写字面量 ——
+// 两处分叉的表现是「守卫页表单提交到一个没人注册的地址」，而两边都编译通过。
+const accessUnlockPath = builtin.AccessUnlockPath
+
 // siteFaceChain 访问面中间件链（挂载点无关）。
 //
-// 排位有讲究：SiteRedirect 在前（301 响应没有 body，压缩无从谈起），
+// 排位有讲究：SiteRedirect 在前（301 响应没有 body，压缩无从谈起）；
+// AccessGuard 紧随其后（它要在 SiteCache 之前终结受限请求，自己下发
+// private/no-store 覆盖公开缓存头，且必须在任何静态文件处理之前）；
 // siteDirIndexServe 在后（它在 StaticGzip 之后落桶，首页与其它产物一样有传输压缩）。
 func siteFaceChain(prefix string) []gin.HandlerFunc {
 	return []gin.HandlerFunc{
 		builtin.SiteRedirectMiddleware(prefix),
+		builtin.AccessGuardMiddleware(prefix),
 		builtin.SiteCacheMiddleware(),
 		builtin.StaticGzipMiddleware(),
 		siteDirIndexServeMiddleware(prefix),
@@ -126,21 +149,21 @@ func siteFaceChain(prefix string) []gin.HandlerFunc {
 // 产物布局：<active>/<条目>/index.html，**条目名就是 URL 路径**
 // （pipeline.relActivePath），且 "/" 的条目名是字面量 "index"。
 //
-// 为什么单独抽出来：这个映射有两处易错，两处都真的踩过 ——
-//   1. 拼成 <rel>/index/index.html：只在 rel 为空时碰巧对
-//      （<root>/index/index.html 正是首页文件），rel 非空时**全部 404**；
-//   2. rel 为空时直接拼 <root>/index.html：文件其实在 index 目录里。
-// 两处合起来的表现极具迷惑性：**只有首页能打开，其余页面与文章整片 404**。
+// 「哪一个是本次请求的条目」由 pipeline.ResolveActiveEntry 单源判定
+// （/about 与 /about/index.html 取同一份产物；页面 URL 真叫 /foo/index.html 时
+// 它又是另一份产物）。这里只负责把条目名加上入口文件名。
+//
+// 为什么必须单源：这条映射此前在访问面与守卫各写一份，而两份的任何一处差异
+// 都会让守卫被绕过 —— 守卫判 `/about` 受限、访问面对 `/about/index.html`
+// 原样直出。原注释里那两处易错（拼成 <rel>/index/index.html、rel 为空时直接拼
+// <root>/index.html）现在由同一个函数统一处理：**只有首页能打开、其余页面与文章
+// 整片 404** 那类症状不会再有第二份成因。
 func activeEntryFile(root, rel string) (string, bool) {
-	entry := rel
-	if entry == "" {
-		entry = "index"
-	}
-	file := filepath.ToSlash(filepath.Join(entry, "index.html"))
-	st, err := os.Stat(filepath.Join(root, filepath.FromSlash(file)))
-	if err != nil || st.IsDir() {
+	entry, ok := pipeline.ResolveActiveEntry(root, rel)
+	if !ok {
 		return "", false
 	}
+	file := filepath.ToSlash(filepath.Join(filepath.FromSlash(entry), "index.html"))
 	return file, true
 }
 
@@ -175,16 +198,12 @@ func siteFileServeMiddleware(root string) gin.HandlerFunc {
 }
 
 // cleanSiteRel 站内路径归一；越界（绝对路径 / ".."）返回 ok=false。
+//
+// 唯一实现在 pipeline.CleanSiteRel：访问面用它取文件、守卫用它取判定路径，
+// 两份实现分叉就是一条绕过（归一松掉一处，静态面把请求解析成受限页面的产物，
+// 而守卫按另一个路径判定为「没有守卫」）。
 func cleanSiteRel(reqPath string) (string, bool) {
-	rel := strings.Trim(reqPath, "/")
-	if rel == "" {
-		return "", true
-	}
-	clean := filepath.ToSlash(filepath.Clean(rel))
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
-		return "", false
-	}
-	return clean, true
+	return pipeline.CleanSiteRel(reqPath)
 }
 
 // serveArtifactFile 直出产物文件。
@@ -259,8 +278,9 @@ func siteDirIndexServeMiddleware(prefix string) gin.HandlerFunc {
 		}
 		rel = strings.Trim(rel, "/")
 		if rel != "" {
-			clean := filepath.ToSlash(filepath.Clean(rel))
-			if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
+			// 归一与其它访问面通道同源（pipeline.CleanSiteRel）。
+			clean, ok := pipeline.CleanSiteRel(rel)
+			if !ok {
 				c.Next()
 				return
 			}

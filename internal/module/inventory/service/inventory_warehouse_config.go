@@ -48,18 +48,6 @@ func normalizeWarehouseType(raw string) (out string, err error) {
 	}
 }
 
-// warehouseTypeLabelKey 仓库类型 → 页面文案 key（新增类型必须同批 seed 词条，见迁移 243）。
-func warehouseTypeLabelKey(typ string) (key, fallback string) {
-	switch typ {
-	case inventoryenums.WarehouseTypeThirdParty:
-		return "admin.inventory.warehouse.type.third_party", "第三方仓"
-	case inventoryenums.WarehouseTypeVirtual:
-		return "admin.inventory.warehouse.type.virtual", "虚拟仓"
-	default:
-		return "admin.inventory.warehouse.type.self", "自营仓"
-	}
-}
-
 // knownConfigKeys config 里由本模块识别的固定键（小写比较）。
 var knownConfigKeys = map[string]bool{
 	inventoryenums.WarehouseConfigKeyProvider:       true,

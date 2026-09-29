@@ -309,8 +309,9 @@ func (s *Service) ListTags(ctx context.Context, req *productdto.ListTagReq) (lis
 		return nil, cerr
 	}
 	list = make([]*productdto.TagResp, 0, len(rows))
+	tr := translateFrom(ctx)
 	for _, r := range rows {
-		resp := toTagResp(r)
+		resp := toTagResp(tr, r)
 		// 未命中的标签不在聚合结果里，缺省 0（不是「没查到」）。
 		resp.ProductCount = int(counts[r.ID])
 		list = append(list, resp)
@@ -476,7 +477,7 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 
 // ListTagRuleTypes 内置规则类型清单（后台规则下拉与参数说明的唯一来源）。
 func (s *Service) ListTagRuleTypes(ctx context.Context) (list []*productdto.TagRuleTypeResp) {
-	return tagRuleTypeOptions()
+	return tagRuleTypeOptions(translateFrom(ctx))
 }
 
 // RecalcTags 手动触发重算（重算时机之一）。
@@ -736,19 +737,21 @@ func (s *Service) tagDetail(ctx context.Context, e *productmodel.ProductTagEntit
 	if cerr != nil {
 		return nil, cerr
 	}
-	resp := toTagResp(e)
+	resp := toTagResp(translateFrom(ctx), e)
 	resp.Products = toTagProductResps(rows)
 	resp.ProductCount = int(total)
 	return resp, nil
 }
 
 // toTagResp 实体 → 响应（规则描述由服务端翻好，后台不解释规则参数）。
-func toTagResp(e *productmodel.ProductTagEntity) *productdto.TagResp {
+//
+// tr 由调用点给（展示文案按请求语言取词，见 product_translate.go）。
+func toTagResp(tr TranslateFunc, e *productmodel.ProductTagEntity) *productdto.TagResp {
 	resp := &productdto.TagResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
 		Kind: e.Kind, RuleType: e.RuleType,
 		RuleParams: orJSON(e.RuleParams, "{}"),
-		RuleLabel:  describeTagRule(e.RuleType, e.RuleParams),
+		RuleLabel:  describeTagRule(tr, e.RuleType, e.RuleParams),
 		Sort:       e.Sort,
 		CreatedAt:  e.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:  e.UpdatedAt.Format(time.RFC3339),

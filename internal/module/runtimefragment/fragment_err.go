@@ -33,6 +33,11 @@ package runtimefragment
 // 路由」，面向访客的文案走 site.fragment.* 词条（fragment_i18n.go / fragment_i18n_*.go 的
 // 既有惯例）。访问面必须多语言 —— 293 修的正是「loginPanel 两句写死在 Go 里，
 // 英文站点一直显示中文」，这里不能重蹈。
+//
+// 补记（取词 key 收进常量之后）：本包**取词调用点的 key** 现已收进 enums/enums.go
+// （包 runtimefragmentenums），但**错误出口这 9 个 key 常量刻意留在本文件**，不是漏迁 ——
+// site.fragment.* 是四段 key，以 `Err` 开头命名会让 pkg/response 的 enums 对账测试变红
+// （详见 enums/enums.go 头部「与错误消息 enums 的区别」）。两类 key 因此分居两处，各有唯一真源。
 
 import (
 	"errors"
@@ -76,6 +81,15 @@ const (
 	fragmentErrKeyParamInvalid = "site.fragment.err.param_invalid"
 	fragmentErrKeyContext      = "site.fragment.err.context"
 	fragmentErrKeyInternal     = "site.fragment.err.internal"
+
+	// —— endpoint.go 里「固定受控短句」形态的 4 条出口（本批收口）——
+	//
+	// 它们与上面的判定表**不同源**：不是「哨兵 → 文案」，而是直接在端点里按状态码分支写的短句。
+	// 收口前它们是 Go 侧硬编码中文，英文站点恒显示中文（与 293 修过的 loginPanel 同一类缺陷）。
+	fragmentErrKeyCapabilityMissing = "site.fragment.err.capability_missing"
+	fragmentErrKeyMethodNotAllowed  = "site.fragment.err.method_not_allowed"
+	fragmentErrKeyLoginRequired     = "site.fragment.err.login_required"
+	fragmentErrKeyRenderFailed      = "site.fragment.err.render_failed"
 )
 
 // fragmentErrText 一条受控文案（i18n key + 中文原文）。
@@ -94,6 +108,17 @@ var (
 	fragmentErrTextTooMany   = fragmentErrText{fragmentErrKeyTooManyParam, "片段请求参数过多"}
 	fragmentErrTextParam     = fragmentErrText{fragmentErrKeyParamInvalid, "片段请求参数不合法"}
 	fragmentErrTextContext   = fragmentErrText{fragmentErrKeyContext, "片段语义上下文不合法"}
+
+	// —— endpoint.go 的 4 条固定短句（中文原文逐字沿用收口前的写法）——
+	//
+	// 同一张表的好处与上面四条一致：文案只有一处定义，读侧（Go 兜底）与写侧（迁移登记）
+	// 指向同一批 key。**「需要登录」是一条 key 而不是三条** —— 三处 401 出口说的是同一件事，
+	// 拆分会让将来改一处措辞必须记得改三处。
+	fragmentErrTextCapabilityMissing = fragmentErrText{fragmentErrKeyCapabilityMissing, "片段能力不存在"}
+	fragmentErrTextMethodNotAllowed  = fragmentErrText{fragmentErrKeyMethodNotAllowed, "片段能力不支持该请求方法"}
+	fragmentErrTextLoginRequired     = fragmentErrText{fragmentErrKeyLoginRequired, "需要登录"}
+	fragmentErrTextRenderFailed      = fragmentErrText{fragmentErrKeyRenderFailed, "片段渲染失败"}
+
 	// fragmentErrTextInternal 归口文案：判定表**未命中**时用。
 	//
 	// 当前值域封闭，正常走不到它；留着是因为 fragmentFail 是通用出口 ——
@@ -132,9 +157,21 @@ func fragmentErrTextOf(t func(key, fallback string) string, e fragmentErrText) s
 
 // fragmentFail 片段端点的统一失败出口：受控文案进响应，原文只进日志。
 //
-// 这是本包**唯一**允许写 4xx / 5xx 响应体的地方（endpoint.go 的其余出口是 401「需要登录」、
-// 404「片段能力不存在」、405、204 与 500「片段渲染失败」，它们本来就是固定受控短句）。
-// 收成一个出口的意义：以后新增拒绝点时，写响应这件事不再需要每次重新判断「这句话能不能给出去」。
+// 本包写 4xx / 5xx 响应体的地方**只有两处形状**：
+//
+//   - 带 error 的拒绝（参数白名单、语义上下文）→ 本函数（判定表 + 结构化日志）；
+//   - 无 error 的固定短句（404 能力不存在 / 405 方法不符 / 401 需要登录 / 500 渲染失败）
+//     → endpoint.go 内直接 c.String，但文案同样取自本文件的 fragmentErrText* 表、
+//     经 fragmentErrTextOf 取词（收口前它们是写死的中文，英文站点恒显示中文）。
+//
+// （204「无需替换」不写响应体，不在其中。）
+//
+// 取词来源按「语言此刻能不能解析」分：404/405/401 都在参数校验与 lang 解析**之前**，
+// 只能走 fragmentErrorT（只认请求明确声明的 ?lang）；500 渲染失败发生在 req 构造之后，
+// 用 req.T —— 与成功路径共用同一份取词结果。
+//
+// 收成一处定义的意义：以后新增拒绝点时，写响应这件事不再需要每次重新判断
+// 「这句话能不能给出去」。
 //
 // fields 是附加的日志字段（如非法的 context 值）—— 它们**只进日志**，不进响应。
 func fragmentFail(c *gin.Context, err error, t func(key, fallback string) string, fields map[string]any) {

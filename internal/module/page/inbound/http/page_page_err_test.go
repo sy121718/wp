@@ -87,6 +87,13 @@ func TestPageFacingKeysCoverErrorStatusOutputs(t *testing.T) {
 		pageservice.ErrPathOccupied,
 		pageservice.ErrRebuildRequired,
 		pageservice.ErrNoStagedArtifact,
+		// 定时上下线（PIPE-7）：五个业务 sentinel 都要在判定表里被认成非 500，
+		// 且文案 key 在读侧白名单里 —— 漏一个的症状是「用户能自己修的问题被说成系统内部错误」。
+		pageservice.ErrScheduleNotFound,
+		pageservice.ErrScheduleInPast,
+		pageservice.ErrScheduleActionInvalid,
+		pageservice.ErrScheduleRunning,
+		pageservice.ErrScheduleOccupied,
 	}
 	registered := make(map[string]bool, len(pageFacingKeys))
 	for _, k := range pageFacingKeys {

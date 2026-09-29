@@ -14,6 +14,7 @@ import (
 	mediacontract "go_wp/internal/module/media/contract"
 	mediadto "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -228,7 +229,8 @@ func (h *Handle) Download(c *gin.Context) {
 		response.ParamError(c, mediaenums.MsgBadRequest)
 		return
 	}
-	plan, err := h.svc.BuildDownloadPlan(c.Request.Context(), id)
+	// 产物语言 = 请求语言：README.txt 会跟着 zip 落到用户机器上。
+	plan, err := h.svc.BuildDownloadPlan(c.Request.Context(), id, response.RequestLanguage(c))
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
@@ -244,7 +246,7 @@ func (h *Handle) DownloadBatch(c *gin.Context) {
 		response.ParamError(c, mediaenums.ErrDownloadEmpty)
 		return
 	}
-	plan, err := h.svc.BuildBatchDownloadPlan(c.Request.Context(), ids)
+	plan, err := h.svc.BuildBatchDownloadPlan(c.Request.Context(), ids, response.RequestLanguage(c))
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
@@ -301,7 +303,14 @@ func writeZipResponse(c *gin.Context, plan *mediadto.DownloadPlan) {
 		f, err := os.Open(entry.Path)
 		if err != nil {
 			// 单文件缺失：写入占位说明，不阻断整包。
-			_, _ = io.WriteString(w, "文件读取失败： "+entry.Name+"\n")
+			// 命名占位符 + 显式替换：词条里出现裸 % 也不会被当成格式化动词。
+			text, ok := i18n.FillNamedPlaceholders(
+				i18n.Translate(mediaenums.PackageReadFailed, "文件读取失败： {name}\n", response.RequestLanguage(c)),
+				map[string]string{"name": entry.Name})
+			if !ok {
+				text = "文件读取失败： " + entry.Name + "\n"
+			}
+			_, _ = io.WriteString(w, text)
 			continue
 		}
 		_, err = io.Copy(w, f)

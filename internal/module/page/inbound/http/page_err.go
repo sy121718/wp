@@ -68,7 +68,9 @@ func pageControlledText(raw string) string {
 // ErrPageNotFound → 「页面不存在」），所以这里翻一次再返回：?err= 与模板数据都是
 // 直接渲染的文本，不经过 pkg/response 的翻译层 —— 不翻的话运营看到的是 ErrPageNotFound。
 //
-// 「key：明细」形态（service 用 fmt.Errorf("%s：…") 包过）保留明细，只翻 key 部分；
+// 「key：明细」形态（service 用 fmt.Errorf("%w: <ErrorDetail 编码>") 包过）只翻能识别的部分：
+// key 取词条，明细按 i18n.ErrorDetail 协议取词并填 {name}；**明细不是词条就丢弃并落日志** ——
+// 改造前这里是 `text += "：" + tail`（原样透出 builder 的中文原文），英文界面上必然中英混排。
 // 取不到词条时 TranslateFunc 回落 key 本身（pkg/i18n 的兜底链），不输出空串。
 func pageFacingText(c *gin.Context, err error) (string, bool) {
 	if err == nil {
@@ -87,9 +89,41 @@ func pageFacingText(c *gin.Context, err error) (string, bool) {
 	}
 	text := shell.TranslateFor(c)(key, key)
 	if tail != "" {
-		text += "：" + tail
+		if detail := pageDetailText(shell.TranslateFor(c), tail); detail != "" {
+			text += "：" + detail
+		}
 	}
 	return text, true
+}
+
+// pageDetailText 业务错误的**补充说明** → 当前语言文案（不是词条时返回空串）。
+//
+// 接受的形态只有一种：i18n.ErrorDetail 的产物（控制字符开头的「明细词条 key + 具名参数」，
+// 可多段）。其余一律**丢弃并落日志** —— 这与 product / inventory 的读侧口径有意不同：
+// 那两处的 `return tail` 是为了兼容改造前就已存在的纯文本明细，而 page 这一族从本批起
+// 全部改走 ErrorDetail（写侧见 page/service/page_document_detail.go），所以不再保留
+// 「原样透出」这条无界通道 —— 它正是英文界面上中文混排的来源。
+//
+// 未登记的明细 key（拼错 / 新加漏登记）跳过该段并记一条日志：少一句补充说明，
+// 好过把编码串或半截占位符摆到页面上。
+func pageDetailText(tr func(key, fallback string) string, tail string) string {
+	parts, ok := i18n.ParseErrorDetails(tail)
+	if !ok {
+		logger.Scene(pageErrScene).With("tail", i18n.DetailTailForLog(tail)).
+			Warn("业务错误的补充说明不是登记的词条形态，已丢弃（不再原样透出）")
+		return ""
+	}
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		fallback, registered := pageenums.ErrDetailFallbacks[p.Key]
+		if !registered || fallback == "" {
+			logger.Scene(pageErrScene).With("detail_key", p.Key).
+				Warn("业务错误的补充说明词条未登记，已省略该段")
+			continue
+		}
+		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+	}
+	return strings.Join(out, "；")
 }
 
 // pageFacingOrInternal 页面路径的文案出口（**不记日志**）。
@@ -257,6 +291,13 @@ var pageFacingKeys = []string{
 	pageenums.ErrPathOccupied,
 	pageenums.ErrRebuildRequired,
 	pageenums.ErrNoStagedArtifact,
+	// 定时上下线（PIPE-7）。
+	pageenums.ErrScheduleNotFound,
+	pageenums.ErrScheduleInPast,
+	pageenums.ErrScheduleActionInvalid,
+	pageenums.ErrScheduleRunning,
+	pageenums.ErrScheduleOccupied,
+	pageenums.ErrScheduleApplyFailed,
 }
 
 // pageNoticeTexts 页面管理页可以原样展示的回执文案（当前语言）。

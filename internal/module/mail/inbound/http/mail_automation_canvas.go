@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
 )
 
@@ -61,7 +62,7 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	// 发信节点的模板下拉（与表单页同一份数据）。
 	templates, _ := h.mail.ListTemplates(ctx, "")
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", shell.Prepare(c, gin.H{
-		"title":     "流程画布",
+		"title":     mailLabel(shell.TranslateFor(c), mailenums.PageTitleAutomationCanvas),
 		"A":         item,
 		"NodesJSON": shell.JsonSafe(string(nodesJSON)),
 		"MetaJSON":  shell.JsonSafe(string(metaJSON)),

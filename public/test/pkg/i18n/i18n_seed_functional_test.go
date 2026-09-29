@@ -164,25 +164,26 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	// 总量只在「新增 seed 时同步核对」这一层起作用；业务词条仍在下文按 key 和语言逐项校验，
 	// 总量不能替代语义检查。下限拦截两种语言同时漏词条、集合对账却相等的空转；
 	// 上限不钉死，让后续成对新增词条不必反复维护全仓总数账本。
-	const minEnglishKeys = 4240 // 干净库执行至 442 后的实测下限。
+	const minEnglishKeys = 4240 // 干净库执行至 442 后的实测下限（只作下限，后续批次新增只会把它抬高）。
 	zhCount := countRows(t, db, "sys_i18n", "lang = ?", "zh-CN")
 	enCount := countRows(t, db, "sys_i18n", "lang = ?", "en-US")
 	t.Logf("sys_i18n 干净库词条：zh-CN=%d en-US=%d", zhCount, enCount)
-	if enCount < minEnglishKeys || zhCount < minEnglishKeys+13 {
-		t.Fatalf("sys_i18n 中英词条低于已验证基线：zh-CN=%d en-US=%d，基线至少 %d/%d", zhCount, enCount, minEnglishKeys+13, minEnglishKeys)
+	// 447 补齐最后一批「只有中文」的词条之后，中英两侧应当**完全对齐**：
+	// 此前 zhCount 比 enCount 多出的 13 行就是 058 的历史例外（见下），偏移已归零，
+	// 两侧因此共用同一个下限。
+	if enCount < minEnglishKeys || zhCount < minEnglishKeys {
+		t.Fatalf("sys_i18n 中英词条低于已验证基线：zh-CN=%d en-US=%d，基线至少 %d", zhCount, enCount, minEnglishKeys)
 	}
 
-	// 058 留下的 13 个 dashboard 词条只有中文。差集必须逐个精确匹配这些历史例外：
-	// 少了例外意味着 seed 漏写，两种语言同时漏掉同一例外也会被此检查捕获。
-	historicalZHOnly := map[string]bool{
-		"MsgAdminGenericFailed": true, "MsgAdministratorsTitle": true,
-		"MsgBlocksTitle": true, "MsgDatarulesTitle": true,
-		"MsgDepartmentsTitle": true, "MsgMenusTitle": true,
-		"MsgNavigationsTitle": true, "MsgPermissionsTitle": true,
-		"MsgRolesTitle": true, "MsgSiteSettingsSaved": true,
-		"MsgSiteSettingsTitle": true, "MsgThemeSettingsTitle": true,
-		"MsgThemesTitle": true,
-	}
+	// 中英 key 集合必须一致（**零例外**）。
+	//
+	// 058 曾留下 13 个只有中文的词条（MsgAdminGenericFailed / MsgAdministratorsTitle /
+	// MsgBlocksTitle / MsgDatarulesTitle / MsgDepartmentsTitle / MsgMenusTitle /
+	// MsgNavigationsTitle / MsgPermissionsTitle / MsgRolesTitle / MsgSiteSettingsSaved /
+	// MsgSiteSettingsTitle / MsgThemeSettingsTitle / MsgThemesTitle），本测试一度把
+	// 「zh-only 恰好只有这 13 个」当作允许的历史例外钉住。
+	// 447 已把这 13 个 key 的 en-US 行补齐，**例外清零**，断言随之加严：
+	// 任何单侧 key 都是缺陷，不再有白名单可依。
 	var languageDiff []struct {
 		Side    string
 		ItemKey string
@@ -194,33 +195,33 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 		ORDER BY side, item_key`).Scan(&languageDiff).Error; err != nil {
 		t.Fatalf("查询中英差异键失败: %v", err)
 	}
-	unexpected := make([]string, 0)
-	for _, diff := range languageDiff {
-		if diff.Side != "zh-only" || !historicalZHOnly[diff.ItemKey] {
-			unexpected = append(unexpected, diff.Side+":"+diff.ItemKey)
-			continue
-		}
-		delete(historicalZHOnly, diff.ItemKey)
+	if len(languageDiff) > 0 {
+		t.Fatalf("sys_i18n 出现单侧 key（中英必须一一对应）：%v", languageDiff)
 	}
-	if len(unexpected) > 0 || len(historicalZHOnly) > 0 || zhCount-enCount != 13 {
-		t.Fatalf("sys_i18n 中英键未对齐：异常差异=%v，缺失历史中文专有键=%v，zh-CN=%d en-US=%d", unexpected, historicalZHOnly, zhCount, enCount)
+	// 差集为空 + 两侧行数相等 ⟹ 每个 key 中英各一行（主键 (item_key, lang) 保证每侧至多一行）。
+	if zhCount != enCount {
+		t.Fatalf("sys_i18n 中英行数不等：zh-CN=%d en-US=%d", zhCount, enCount)
 	}
 	// 钉住最近的新增双语 key，防止未来批次补量掩盖旧批次两语言同时漏写。
+	// 447 新增的两条（模板先前只能回落中文兜底）也在钉住范围内。
 	for _, key := range []string{
 		"admin.mail.marketing.contacts.empty.initial.title",
 		"admin.mail.marketing.contacts.empty.initial",
 		"admin.inventory.moves.title",
 		"admin.media.bulk.delete",
+		"admin.media.heading",
+		"admin.article.edit.unavailable",
 	} {
 		if got := countRows(t, db, "sys_i18n", "item_key = ? AND lang IN ?", key, []string{"zh-CN", "en-US"}); got != 2 {
 			t.Fatalf("%s 应有完整中英词条，实际 %d 行", key, got)
 		}
 	}
-	// 检查最新三批确实进入 AllSeeds，且两轮执行后的真实幂等守卫成立。
+	// 检查最近几批确实进入 AllSeeds，且两轮执行后的真实幂等守卫成立。
 	latestSeeds := map[string]bool{
 		"440-i18n-product-list-help":       false,
 		"441-i18n-mail-empty-states":       false,
 		"442-i18n-inventory-moves-heading": false,
+		"447-i18n-missing-en-and-unseeded": false,
 	}
 	for _, seed := range migrations.AllSeeds() {
 		if _, expected := latestSeeds[seed.Version]; !expected {

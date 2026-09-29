@@ -105,4 +105,6 @@ func init() {
 	// 不在此处重复调用 —— 两处都调虽然被 sync.Once 兜住不重复执行，
 	// 但会让「谁负责注册」出现两个真源。
 	registerClientFilterEmptyI18n()
+	// 460：页面定时上下线待办表（PIPE-7，见 register_page_schedule.go）。
+	registerPageSchedules()
 }

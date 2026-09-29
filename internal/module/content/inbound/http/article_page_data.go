@@ -9,6 +9,7 @@ import (
 
 	"go_wp/internal/builder/core"
 	contentdto "go_wp/internal/module/content/dto"
+	contentenums "go_wp/internal/module/content/enums"
 )
 
 // article_page_data.go - 文章管理页的数据装配（列表/编辑页数据、表单绑定与导入块视图）。
@@ -62,10 +63,12 @@ func (f articleForm) data() map[string]any {
 }
 
 // articleListPageData 列表页渲染数据（纯函数：不取数、不依赖 gin.Context）。
-func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr, pageOk string) gin.H {
+func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr, pageOk string,
+	trs ...func(key, fallback string) string) gin.H {
+	tr := articlePublishTr(trs)
 	rows := make([]gin.H, 0, len(list))
 	for _, it := range list {
-		rows = append(rows, articleListRow(it, published[it.ID]))
+		rows = append(rows, articleListRow(tr, it, published[it.ID]))
 	}
 	return gin.H{
 		"title":          articlePageTitle,
@@ -86,7 +89,7 @@ func articleListPageData(list []*contentdto.ContentResp, published map[string]st
 //
 // 发布状态只有两种取值来源：查到了线上路径（已发布）或没查到（未发布 / 未建实例）。
 // 不区分「未发布」与「查询失败」—— 列表页不是排查页，编辑页会给出完整状态。
-func articleListRow(it *contentdto.ContentResp, urlPath string) gin.H {
+func articleListRow(tr func(key, fallback string) string, it *contentdto.ContentResp, urlPath string) gin.H {
 	published := strings.TrimSpace(urlPath) != ""
 	return gin.H{
 		"ID":         it.ID,
@@ -99,16 +102,16 @@ func articleListRow(it *contentdto.ContentResp, urlPath string) gin.H {
 		"URLPath":    urlPath,
 		"PublicURL":  articlePublicURL(urlPath),
 		"EditURL":    articleEditURL(it.ID),
-		"StateLabel": articleStateLabel(published),
+		"StateLabel": articleStateLabel(tr, published),
 	}
 }
 
-// articleStateLabel 列表页的发布状态文案。
-func articleStateLabel(published bool) string {
+// articleStateLabel 列表页的发布状态文案（key + 中文兜底，取词在调用点）。
+func articleStateLabel(tr func(key, fallback string) string, published bool) string {
 	if published {
-		return "已发布"
+		return tr(contentenums.StatePublished, "已发布")
 	}
-	return "未发布"
+	return tr(contentenums.StateUnpublished, "未发布")
 }
 
 // articleEditPageData 编辑页渲染数据。
@@ -116,7 +119,8 @@ func articleStateLabel(published bool) string {
 // item 为 nil 表示新建（表单全空）；id 非空但 item 为 nil 表示读取失败
 // （pageErr 已带上原因），此时仍渲染空表单让编辑者能重新保存。
 func articleEditPageData(ctx context.Context, h *articlePageHandle, item *contentdto.ContentResp,
-	id string, pageErr, pageOk, lang string) gin.H {
+	id string, pageErr, pageOk, lang string, trs ...func(key, fallback string) string) gin.H {
+	tr := articlePublishTr(trs)
 	data := gin.H{}
 	if item != nil {
 		data = item.Data
@@ -149,14 +153,14 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		"TemplateEditURL": "",
 		// 初始评分：已保存的正文直接算一遍，编辑者打开页面就能看到当前水平
 		// （改动后按「重新评分」走 HTMX 片段，见 ArticleScorePanel）。
-		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), lang),
+		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), lang, tr),
 	}
 	// 工程列表查一次、两个区块共用（发布区块与导入区块都要它）。
 	projectOptions := articleProjectOptions(ctx, h)
-	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item), projectOptions) {
+	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item), projectOptions, tr) {
 		out[k] = v
 	}
-	for k, v := range articleImportBlockView(h, item, id, projectOptions) {
+	for k, v := range articleImportBlockView(h, item, id, projectOptions, tr) {
 		out[k] = v
 	}
 	if h != nil && h.templates != nil && id != "" {
@@ -194,15 +198,16 @@ func articleTemplateEditURL(templateID, entityType, entityID, projectID string) 
 // 三个按钮的可用性条件必须在这里判清楚：一个点了会 500 的按钮比不给按钮更糟。
 // 新建中（还没有文章 id）、没有工程、页面能力未装配 —— 三种情况各给各的说法。
 func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, id string,
-	projectOptions []gin.H) gin.H {
+	projectOptions []gin.H, trs ...func(key, fallback string) string) gin.H {
+	tr := articlePublishTr(trs)
 	if id == "" {
-		return articleImportUnavailable("先保存这篇文章，再回来把它导入画布。")
+		return articleImportUnavailable(tr(contentenums.ImportHintSaveFirst, "先保存这篇文章，再回来把它导入画布。"))
 	}
 	if h == nil || h.pages == nil {
 		return articleImportUnavailable(articleImportDepsText)
 	}
 	if len(projectOptions) == 0 {
-		return articleImportUnavailable("还没有站点工程：先在「页面」里建一个工程，导入需要知道页面挂到哪个站。")
+		return articleImportUnavailable(tr(contentenums.ImportHintNoProject, "还没有站点工程：先在「页面」里建一个工程，导入需要知道页面挂到哪个站。"))
 	}
 	// 默认路径 /article-<slug>：这里**刻意不走**站点 URL 规则（siteurl）——
 	// 导入生成的是一个**手工页面**，页面路径本身就是它的身份（没有 slug 可依），

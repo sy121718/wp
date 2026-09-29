@@ -41,6 +41,11 @@ type View struct {
 	Lang string
 	// ButtonText 按钮文字（参与内容翻译）。
 	ButtonText string
+	// QtyAria 数量输入框的无障碍名（构建期按当前语言填充，多语言 P4）。
+	//
+	// 此前硬编码在模板里（aria-label="数量"）：读屏器在英文站点上念中文，
+	// 而页面上根本看不到这串字 —— 只有看产物源码或用读屏器才会发现。
+	QtyAria string
 	// ShowQuantity 是否输出数量输入。
 	ShowQuantity bool
 	// Rows 加购行。
@@ -56,6 +61,11 @@ type View struct {
 	// 用提示而不是构建失败：商品暂时没上架变体是**数据状态**，不是配置错误 ——
 	// 为它让整页构建失败，等于一次运营操作把页面打没了。
 	Notice string
+	// noticeKey Notice 对应的词条 key（非导出：模板只消费文案本身）。
+	//
+	// 按 key 取词而不是「拿当前值反查属于哪条词条」：两条提示的译文一旦相同，
+	// 值比较就分不清是哪一条，改译文会改错地方。
+	noticeKey string
 }
 
 // 界面文案键（多语言 P5b）。
@@ -65,23 +75,49 @@ type View struct {
 // 两条链路各管一段，互不覆盖。
 const (
 	TextKeyButton = "site.component.addToCart.button"
-	// textFallbackButton 按钮文字的中文兜底。
-	textFallbackButton = defaultButtonText
+	// TextKeyQtyAria 数量输入框的无障碍名（模板里此前硬编码「数量」）。
+	TextKeyQtyAria = "site.component.addToCart.qtyAria"
+	// TextKeyNoticeNoProject / TextKeyNoticeNoVariant 两条降级提示的词条
+	//（都只在异常数据状态下出现，见 BuildView）。
+	TextKeyNoticeNoProject = "site.component.addToCart.notice.noProject"
+	TextKeyNoticeNoVariant = "site.component.addToCart.notice.noVariant"
 )
 
-// ApplyI18n 按当前语言填充按钮文字（实现 core.I18nAware）。
+// 中文兜底：取词函数为 nil（未接入 i18n）时用这些值，产物与接入前逐字一致。
+const (
+	// textFallbackButton 按钮文字的中文兜底。
+	textFallbackButton = defaultButtonText
+	// textFallbackQtyAria 数量输入框无障碍名的中文兜底。
+	textFallbackQtyAria = "数量"
+	// noticeNoProject / noticeNoVariant 提示语的中文兜底：BuildView 把它们写进
+	// View.Notice 作为初值，ApplyI18n 再按 View 记下的 key 覆盖（不做值比较）。
+	noticeNoProject = "加购暂不可用（未取到站点工程）"
+	noticeNoVariant = "暂无可购买的规格"
+)
+
+// ApplyI18n 按当前语言回填固定文案（实现 core.I18nAware）。
+//
+// 三段**各自独立**判定，不能整函数早退：按钮文字「作者是否自定义」与数量框
+// 无障碍名「有没有译文」是两件事 —— 早退会让作者一填自定义按钮文字，
+// aria-label 就永远是中文（读屏器在英文站点念中文，页面上看不出来）。
 func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if v == nil {
 		return
 	}
-	if v.ButtonText != textFallbackButton {
-		return // 作者自定义的文案不在这里翻译
-	}
 	if text == nil {
-		v.ButtonText = textFallbackButton
+		// BuildView 已落中文兜底；这里补上零值构造（测试直连 View）的情况。
+		v.QtyAria = textFallbackQtyAria
 		return
 	}
-	v.ButtonText = text(TextKeyButton, textFallbackButton)
+	v.QtyAria = text(TextKeyQtyAria, textFallbackQtyAria)
+	// 按钮文字：作者填过的那条走内容翻译（sys_translation），这里只管缺省值。
+	if v.ButtonText == textFallbackButton {
+		v.ButtonText = text(TextKeyButton, textFallbackButton)
+	}
+	// 提示语：只在异常数据状态下非空，按 BuildView 记下的 key 取词。
+	if v.noticeKey != "" {
+		v.Notice = text(v.noticeKey, v.Notice)
+	}
 }
 
 // CompileCSS 导出样式编译（复用组件内部的 compileCSS）。
@@ -103,6 +139,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		ProjectID:    strings.TrimSpace(projectID),
 		Lang:         strings.TrimSpace(lang),
 		ButtonText:   effectiveButtonText(p),
+		QtyAria:      textFallbackQtyAria,
 		ShowQuantity: p.ShowQuantity,
 	}
 	if content == nil {
@@ -116,7 +153,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		// 整页发布不了」，而页面其余部分明明好好的。
 		// 所以降级成一句**看得见**的提示：访客看到「暂不可用」，页面作者能顺着它去查，
 		// 而不是静默渲染一个点了没反应的按钮。
-		view.Notice = "加购暂不可用（未取到站点工程）"
+		view.Notice, view.noticeKey = noticeNoProject, TextKeyNoticeNoProject
 		return view, nil
 	}
 
@@ -134,7 +171,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 	if len(options) == 0 {
 		// 有规格维度、但没有可买的组合（未上架 / 全部停用）：留一句提示，
 		// 不做成一个点了没反应的按钮。
-		view.Notice = "暂无可购买的规格"
+		view.Notice, view.noticeKey = noticeNoVariant, TextKeyNoticeNoVariant
 		return view, nil
 	}
 

@@ -3,6 +3,7 @@ package contenthttp
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -10,6 +11,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
 )
 
@@ -102,7 +104,8 @@ func (h *Handle) Collections(c *gin.Context) {
 			response.ErrorAuto(c, http.StatusBadRequest, "content", err)
 			return
 		}
-		response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess, gin.H{"collections": items})
+		response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess,
+			gin.H{"collections": localizeCollectionLabels(c, items)})
 		return
 	}
 	provider, ok := h.svc.(core.CollectionSchemaProvider)
@@ -115,7 +118,26 @@ func (h *Handle) Collections(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "content", err)
 		return
 	}
-	response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess, gin.H{"collections": items})
+	response.SuccessWithMessage(c, contentenums.MsgCollectionsSuccess,
+		gin.H{"collections": localizeCollectionLabels(c, items)})
+}
+
+// localizeCollectionLabels 集合源展示名取词（LabelKey 为空 = Label 已是终值）。
+//
+// 为什么取词只在出口：service 拿不到请求语言，而**构建期**那条路径（组件按 schema
+// 校验字段白名单）只看 Source / Fields，从不读 Label —— 在那里翻译既做不到也没必要。
+// 复制一份再改，不动 provider 返回的底层数组（避免将来某个 provider 缓存了切片时被就地改写）。
+func localizeCollectionLabels(c *gin.Context, items []core.CollectionSchema) []core.CollectionSchema {
+	out := make([]core.CollectionSchema, len(items))
+	copy(out, items)
+	tr := shell.TranslateFor(c)
+	for i := range out {
+		if strings.TrimSpace(out[i].LabelKey) == "" {
+			continue
+		}
+		out[i].Label = tr(out[i].LabelKey, out[i].Label)
+	}
+	return out
 }
 
 // Delete 删除内容。

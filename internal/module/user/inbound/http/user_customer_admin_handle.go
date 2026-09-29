@@ -24,6 +24,7 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/permission"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
@@ -59,6 +60,30 @@ func SetupCustomerAdminRoutes(rg *permission.RouteGroup, svc usercontract.Custom
 	g.POST("/unlock", permission.UserCustomerUnlock, h.UnlockCustomer)
 }
 
+// localizeCustomerLabels 客户状态标签的出口取词（原处：service 只给状态取值）。
+//
+// 为什么在 handler：service 拿不到请求语言，而 StatusLabel 是**直接给客户端看的文本**
+// （/api/customer/* 的响应字段）—— 在那里拼中文的表现是英文调用方恒中文，且不会有任何报错。
+// 映射与后台页共用 userenums.StatusLabel（同一份 key + 中文兜底），于是同一个状态
+// 在页面与接口里说同一句话。
+func localizeCustomerLabels(c *gin.Context, resps ...*userdto.CustomerResp) {
+	tr := shell.TranslateFor(c)
+	for _, r := range resps {
+		if r == nil {
+			continue
+		}
+		r.StatusLabel = customerStatusText(tr, r.Status)
+	}
+}
+
+// localizeCustomerStatusLabel 状态写回执的状态标签取词（同上，回执是另一种 dto）。
+func localizeCustomerStatusLabel(c *gin.Context, res *userdto.CustomerStatusResp) {
+	if res == nil {
+		return
+	}
+	res.StatusLabel = customerStatusText(shell.TranslateFor(c), res.Status)
+}
+
 // ListCustomers 客户列表（GET /api/customer/list）。
 func (h *CustomerHandle) ListCustomers(c *gin.Context) {
 	req := &userdto.CustomerListReq{
@@ -85,6 +110,9 @@ func (h *CustomerHandle) ListCustomers(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
 		return
 	}
+	if res != nil {
+		localizeCustomerLabels(c, res.List...)
+	}
 	response.Success(c, res)
 }
 
@@ -99,6 +127,9 @@ func (h *CustomerHandle) GetCustomer(c *gin.Context) {
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "user", err)
 		return
+	}
+	if res != nil {
+		localizeCustomerLabels(c, res)
 	}
 	response.Success(c, res)
 }
@@ -116,6 +147,7 @@ func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 		return
 	}
 	// 回执文案按目标状态给：调用方拿到「账号已启用」比拿到一个数字更不容易用错。
+	localizeCustomerStatusLabel(c, res)
 	msg := userenums.MsgCustomerDisabled
 	if res.Status == 1 {
 		msg = userenums.MsgCustomerEnabled

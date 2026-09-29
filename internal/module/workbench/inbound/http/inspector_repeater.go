@@ -36,6 +36,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	workbenchenums "go_wp/internal/module/workbench/enums"
 )
 
 // repeaterRow 一条重复项的数据。
@@ -68,7 +69,12 @@ func repeaterRowsOf(props map[string]any, spec *core.AlignedRepeaterSpec) []repe
 //
 // panelCount 是画布上对应的面板节点数：两者不一致时给红色提示（历史脏数据或直接在
 // 画布上增删面板都可能造成不一致），让用户保存前就知道会被校验拦下。
-func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int) string {
+//
+// tr 是「key → 当前语言文案」的取词函数（workbenchTrFunc）：本文件的 HTML 由 Go 拼串产出，
+// 模板只做 `|unsafe` 插槽，所以按钮提示与数量说明必须在这里取词。
+// spec.Noun（项名，如「折叠项」）来自组件声明（builder/core），不属于本模块的文案，
+// 作为占位符 {noun} 填进已翻译的句子 —— 译文语序与中文不同也不会错位。
+func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int, tr func(key string) string) string {
 	var b strings.Builder
 	b.WriteString(`<div class="wb-repeater" data-wb-rep="` + html.EscapeString(spec.Type) +
 		`" data-wb-rep-field="` + html.EscapeString(spec.Field) + `">`)
@@ -88,12 +94,14 @@ func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, pane
 		}
 		b.WriteString(`</div><div class="wb-repeater-acts">`)
 		if i > 0 {
-			b.WriteString(repeaterButton("↑", "上移（面板一起移动）", "move", i, "-1", "wb-btn wb-btn-sm wb-btn-ghost"))
+			b.WriteString(repeaterButton("↑", tr(workbenchenums.InspectorRepeaterMoveUp), "move", i, "-1", "wb-btn wb-btn-sm wb-btn-ghost"))
 		}
 		if i < len(rows)-1 {
-			b.WriteString(repeaterButton("↓", "下移（面板一起移动）", "move", i, "1", "wb-btn wb-btn-sm wb-btn-ghost"))
+			b.WriteString(repeaterButton("↓", tr(workbenchenums.InspectorRepeaterMoveDown), "move", i, "1", "wb-btn wb-btn-sm wb-btn-ghost"))
 		}
-		b.WriteString(repeaterButton("✕", "删除该"+spec.Noun+"（同时删除对应面板）", "remove", i, "", "wb-icon-btn"))
+		b.WriteString(repeaterButton("✕",
+			strings.ReplaceAll(tr(workbenchenums.InspectorRepeaterRemove), "{noun}", spec.Noun),
+			"remove", i, "", "wb-icon-btn"))
 		b.WriteString(`</div></div>`)
 	}
 	b.WriteString(`<button type="button" class="wb-btn wb-btn-secondary wb-btn-sm wb-repeater-add" data-wb-rep-op="add">` +
@@ -104,14 +112,27 @@ func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, pane
 	}
 	b.WriteString(`>`)
 	if len(rows) == panelCount {
-		b.WriteString(html.EscapeString(spec.Noun + "与面板数量一致（" + fmt.Sprint(len(rows)) +
-			"）：↑ ↓ 可整体调序，面板内容在画布中编辑。"))
+		b.WriteString(html.EscapeString(fillRepeaterText(tr(workbenchenums.InspectorRepeaterMatched), map[string]string{
+			"{noun}": spec.Noun, "{count}": fmt.Sprint(len(rows)),
+		})))
 	} else {
-		b.WriteString(html.EscapeString("数量不一致（" + spec.Noun + " " + fmt.Sprint(len(rows)) +
-			" 个 / 面板 " + fmt.Sprint(panelCount) + " 个），保存会被校验拦下：点「+ 添加」补齐，或删除多余标签。"))
+		b.WriteString(html.EscapeString(fillRepeaterText(tr(workbenchenums.InspectorRepeaterMismatch), map[string]string{
+			"{noun}": spec.Noun, "{rows}": fmt.Sprint(len(rows)), "{panels}": fmt.Sprint(panelCount),
+		})))
 	}
 	b.WriteString(`</p></div>`)
 	return b.String()
+}
+
+// fillRepeaterText 用占位符值填充已翻译的句子（占位符约定同 sys_i18n 的 {name}）。
+//
+// 键之间互不为子串，所以 map 的遍历顺序不影响结果；用它而不是 fmt.Sprintf 是为了让
+// 译文重新排序占位符时不必改 Go 代码。
+func fillRepeaterText(text string, values map[string]string) string {
+	for k, v := range values {
+		text = strings.ReplaceAll(text, k, v)
+	}
+	return text
 }
 
 // repeaterButton 行内操作按钮（to 为相对位移，仅 move 用）。
@@ -127,7 +148,7 @@ func repeaterButton(text, title, op string, index int, to, cls string) string {
 // appendRepeaterPanel 把重复项面板的服务端骨架挂进「内容」分组末尾。
 //
 // 只出结构 —— 行为留在客户端（repeater.js 的 bindRepeaterPanel）。
-func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[string]any, tab string) []inspectorSection {
+func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[string]any, tab string, tr func(key string) string) []inspectorSection {
 	if tab == "style" || tab == "motion" {
 		return sections
 	}
@@ -137,7 +158,7 @@ func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[s
 	}
 	field := inspectorField{
 		Key:  "__repeater",
-		HTML: renderRepeaterHTML(spec, repeaterRowsOf(props, spec), len(node.Children)),
+		HTML: renderRepeaterHTML(spec, repeaterRowsOf(props, spec), len(node.Children), tr),
 	}
 	for i := range sections {
 		if sections[i].Key == "content" {
@@ -148,5 +169,5 @@ func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[s
 	// 组件没有内容分组时补一个：tabs 的字段全在样式里（竖向 / 对齐 / 配色），
 	// 但「页签列表」本身是内容 —— 挂在样式分组里位置不对。
 	// content 是分组顺序表 inspectorSectionOrder 的第一项，前置插入即可。
-	return append([]inspectorSection{{Key: "content", Title: "内容", Open: true, Fields: []inspectorField{field}}}, sections...)
+	return append([]inspectorSection{{Key: "content", Title: tr(workbenchenums.InspectorSectionContent), Open: true, Fields: []inspectorField{field}}}, sections...)
 }

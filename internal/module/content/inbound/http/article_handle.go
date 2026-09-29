@@ -55,17 +55,20 @@ const (
 )
 
 // 成功回执（进 ?ok=，因此同样登记在白名单里）。
+//
+// 常量值是 **i18n key**，中文兜底在同文件的 articleFacingMessages —— 两者成对，
+// 取词统一走 articleFacingText（它按当前语言翻）。此前这里的常量值是中文本身、
+// 被当成 key 去查库，而库内没有中文 item_key，于是永远只显示中文。
 const (
-	articleCreatedText = "文章已创建。写完正文后记得保存。"
-	articleSavedText   = "已保存。引用这篇文章的页面与已发布的详情页已标记待重建。"
-	articleDeletedText = "文章已删除。"
+	articleCreatedText = "admin.article.ok.created"
+	articleSavedText   = "admin.article.ok.saved"
+	articleDeletedText = "admin.article.ok.deleted"
 )
 
 // articleFacingMessages 本页可以原样展示给运营的文案（白名单）。
 //
-// 键有两类：
-//   - content 模块的错误常量值（常量值就是常量名本身，见 contentenums）；
-//   - 本页自造的成功 / 参数级文案，值等于自身（它们会进 ?ok= / ?err=）。
+// **键是 i18n key**（两类都是）：content 模块错误常量的值就是常量名、而常量名即词条 key；
+// 本页自造的成功 / 参数级文案的常量值也已经是 key。值是**中文兜底**（词条缺失时显示的那句）。
 //
 // 为什么必须有这份白名单：content 契约把错误当字符串返回，未命中的多半是数据库原文
 // （可能带表名甚至 SQL 片段），那是给运维看的，不能直接进页面。
@@ -76,19 +79,20 @@ var articleFacingMessages = map[string]string{
 	contentenums.ErrInvalidField: "提交了不支持的字段，请刷新页面后重试。",
 	contentenums.ErrSlugTaken:    "这个路径（slug）已被另一篇文章占用，换一个。",
 	contentenums.ErrDataInvalid:  "文章数据格式异常，请联系管理员。",
-	articleCreatedText:           articleCreatedText,
-	articleSavedText:             articleSavedText,
-	articleDeletedText:           articleDeletedText,
+	articleCreatedText:           "文章已创建。写完正文后记得保存。",
+	articleSavedText:             "已保存。引用这篇文章的页面与已发布的详情页已标记待重建。",
+	articleDeletedText:           "文章已删除。",
 	articleMissingIDText:         "缺少文章标识，请回到列表页重试。",
 	articleMissingTitleText:      "请先填写文章标题。",
 	articleMissingSlugText:       "请先填写文章路径（slug）。",
 }
 
 // 参数级错误（本页自造；同样登记白名单 —— 自造文案不登记会在回显时被自己吞掉）。
+// 值是 i18n key，中文兜底见 articleFacingMessages。
 const (
-	articleMissingIDText    = "缺少文章标识，请回到列表页重试。"
-	articleMissingTitleText = "请先填写文章标题。"
-	articleMissingSlugText  = "请先填写文章路径（slug）。"
+	articleMissingIDText    = "admin.article.err.missingID"
+	articleMissingTitleText = "admin.article.err.missingTitle"
+	articleMissingSlugText  = "admin.article.err.missingSlug"
 )
 
 // articlePublishPort 发布区块所需的自动发布能力（消费者侧最窄接口）。
@@ -160,7 +164,7 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	if err != nil {
 		pageErr = firstNonEmpty(pageErr, articleFacingError(c, err))
 	}
-	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk)
+	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr, pageOk, shell.TranslateFor(c))
 	data["Keyword"] = keyword
 	data["Limit"] = limit
 	data["ClearFilterURL"] = shell.FilterBaseURL("/admin/articles", map[string]string{"limit": strconv.Itoa(limit)})
@@ -179,7 +183,7 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	}
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
 	// 本批只做可见性，不做自动重建（见 article_stale_impact.go）。
-	data["StaleImpact"] = articleStaleImpact(ctx, h)
+	data["StaleImpact"] = articleStaleImpact(ctx, h, shell.TranslateFor(c))
 	// 批量动作的结果走独立的 ?done=：本页的 ?err= 要过 articleFacingMessages 白名单
 	// （防数据库原文直出），带计数的动态文案进不了那张表（值互不相同）。回显因此走
 	// articlePageDone 的受控出口 —— 值由服务端拼装，但**页面不是可信边界**：
@@ -229,7 +233,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 		}
 	}
 	c.HTML(http.StatusOK, "admin/content/article_edit.html",
-		shell.Prepare(c, articleEditPageData(ctx, h, item, id, pageErr, pageOk, requestScoreLang(c))))
+		shell.Prepare(c, articleEditPageData(ctx, h, item, id, pageErr, pageOk, requestScoreLang(c), shell.TranslateFor(c))))
 }
 
 // ArticleCreate 新建文章（POST /admin/articles/create，权限点 content:create）。
@@ -287,7 +291,7 @@ func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr, invali
 			item = got
 		}
 	}
-	data := articleEditPageData(ctx, h, item, id, pageErr, "", requestScoreLang(c))
+	data := articleEditPageData(ctx, h, item, id, pageErr, "", requestScoreLang(c), shell.TranslateFor(c))
 	form := data["Form"].(gin.H)
 	for key, field := range map[string]string{
 		"Title": "title", "Body": "body", "Excerpt": "excerpt",
@@ -313,7 +317,7 @@ func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr, invali
 		"title": form["Title"], "body": form["Body"], "excerpt": form["Excerpt"],
 		"seoTitle": form["SEOTitle"], "seoDescription": form["SEODescription"],
 		"focusKeyword": form["FocusKeyword"],
-	}, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c))
+	}, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c))
 	c.HTML(http.StatusOK, "admin/content/article_edit.html", shell.Prepare(c, data))
 }
 
@@ -431,8 +435,11 @@ func articlePageDone(c *gin.Context, raw string) string {
 // 各写一份模板只会让「哪些检查项算未达标」的呈现方式慢慢分叉。
 func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
+	// t 是片段模板的取词函数：seo_score 片段不经 shell.Prepare，缺 t 时 Jet 把取词调用
+	// 求值成空串（不报错、不 500），整片提示会变成空白。
 	c.HTML(http.StatusOK, "fragments/seo_score",
-		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c))})
+		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c)),
+			"t": shell.TranslateFor(c)})
 }
 
 // —— 表单与视图 ——

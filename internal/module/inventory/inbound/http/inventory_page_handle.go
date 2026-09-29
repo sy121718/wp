@@ -140,7 +140,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 					"WarehouseName": w["Name"], "WarehouseCode": w["Code"],
 					"VariantID": "", "SKUCode": sku, "ExternalSKU": "",
 					"TrackQuantity": false, "Quantity": 0, "UpdatedAt": "",
-					"QuantityLabel": tr("admin.inventory.stock.notStocked", "未入库"),
+					"QuantityLabel": tr(inventoryenums.InventoryStockNotStocked, "未入库"),
 					"CostPrice":     nil, "CostLabel": stockCostLabel(tr, nil),
 				})
 				continue
@@ -191,8 +191,9 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		return
 	}
 
+	tr := shell.TranslateFor(c)
 	pageData := gin.H{
-		"title":            "库存管理",
+		"title":            tr(inventoryenums.InventoryTitle, "库存管理"),
 		"menu":             "inventory",
 		"Projects":         projects,
 		"SelectedProject":  selected,
@@ -204,7 +205,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		"Reasons":          reasons,
 		"AdjustReasons":    adjustReasonOptions(reasons),
 		"AdjustDirections": adjustDirectionOptions(c),
-		"Directions":       directionOptions(),
+		"Directions":       directionOptions(tr),
 		"Movements":        movements,
 		"FilterWarehouse":  filterWarehouse,
 		"FilterDirection":  filterDirection,
@@ -261,8 +262,9 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		shell.PageError(c, "inventory", err)
 		return
 	}
+	tr := shell.TranslateFor(c)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouses.html", shell.Prepare(c, gin.H{
-		"title":               "仓库管理",
+		"title":               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		"menu":                "inventory-warehouses",
 		"Projects":            projects,
 		"SelectedProject":     selected,
@@ -298,13 +300,14 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		shell.PageError(c, "inventory", err)
 		return
 	}
+	tr := shell.TranslateFor(c)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_reasons.html", shell.Prepare(c, gin.H{
-		"title":            "变动原因字典",
+		"title":            tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		"menu":             "inventory-reasons",
 		"Projects":         projects,
 		"SelectedProject":  selected,
 		"Reasons":          reasons,
-		"Directions":       directionOptions(),
+		"Directions":       directionOptions(tr),
 		"ReasonCreateForm": reasonFormData(c),
 		"Err":              inventoryPageErr(c),
 		"Ok":               inventoryPageOk(c),
@@ -680,7 +683,7 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 		item := gin.H{
 			"ID": w.ID, "Code": w.Code, "Name": w.Name, "Type": w.Type, "Status": w.Status,
 			"IsDefault": w.IsDefault, "Sort": w.Sort,
-			"StatusLabel":      warehouseStatusLabel(w.Status),
+			"StatusLabel":      statusLabel(tr, w.Status),
 			"TypeLabel":        warehouseTypeLabelText(tr, w.Type),
 			"HasThirdParty":    w.Type == inventoryenums.WarehouseTypeThirdParty,
 			"Provider":         "",
@@ -729,9 +732,9 @@ func (h *inventoryPageHandle) listReasons(c *gin.Context, projectID string) (out
 	for _, r := range rows {
 		out = append(out, gin.H{
 			"ID": r.ID, "Code": r.Code, "Name": tr(r.Name, r.Code),
-			"Direction": r.Direction, "DirectionLabel": directionLabel(r.Direction),
+			"Direction": r.Direction, "DirectionLabel": directionLabel(tr, r.Direction),
 			"IsBuiltin": r.IsBuiltin, "Status": r.Status, "Sort": r.Sort,
-			"StatusLabel": reasonStatusLabel(r.Status),
+			"StatusLabel": statusLabel(tr, r.Status),
 		})
 	}
 	return out, nil
@@ -793,7 +796,7 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 		out = append(out, gin.H{
 			"ID": m.ID, "SKUCode": m.SKUCode, "WarehouseName": m.WarehouseName,
 			"WarehouseCode": m.WarehouseCode, "Direction": m.Direction,
-			"DirectionLabel": directionLabel(m.Direction),
+			"DirectionLabel": directionLabel(tr, m.Direction),
 			"Quantity":       m.Quantity, "QuantityBefore": m.QuantityBefore, "QuantityAfter": m.QuantityAfter,
 			"ReasonName": tr(m.ReasonName, m.ReasonCode), "ReasonCode": m.ReasonCode,
 			"SourceType": m.SourceType, "SourceRef": m.SourceRef, "Remark": m.Remark,
@@ -923,11 +926,11 @@ func thirdPartyForm(c *gin.Context, typ string) *inventorydto.WarehouseThirdPart
 // —— 取词 / 文案 ——
 
 // directionOptions 库存变动方向的可选项（出 / 入 / 调整三类，仅供**筛选**使用）。
-func directionOptions() []gin.H {
+func directionOptions(tr func(key, fallback string) string) []gin.H {
 	return []gin.H{
-		{"Value": inventoryenums.DirectionIn, "Label": directionLabel(inventoryenums.DirectionIn)},
-		{"Value": inventoryenums.DirectionOut, "Label": directionLabel(inventoryenums.DirectionOut)},
-		{"Value": inventoryenums.DirectionAdjust, "Label": directionLabel(inventoryenums.DirectionAdjust)},
+		{"Value": inventoryenums.DirectionIn, "Label": directionLabel(tr, inventoryenums.DirectionIn)},
+		{"Value": inventoryenums.DirectionOut, "Label": directionLabel(tr, inventoryenums.DirectionOut)},
+		{"Value": inventoryenums.DirectionAdjust, "Label": directionLabel(tr, inventoryenums.DirectionAdjust)},
 	}
 }
 
@@ -937,8 +940,8 @@ func directionOptions() []gin.H {
 func adjustDirectionOptions(c *gin.Context) []gin.H {
 	tr := shell.TranslateFor(c)
 	return []gin.H{
-		{"Value": inventoryenums.DirectionAdjust, "Label": tr("admin.inventory.adjust.direction.adjust", "盘点（填目标绝对量）")},
-		{"Value": inventoryenums.DirectionOut, "Label": tr("admin.inventory.adjust.direction.out", "报损（填本次减少量）")},
+		{"Value": inventoryenums.DirectionAdjust, "Label": tr(inventoryenums.InventoryAdjustDirectionAdjust, "盘点（填目标绝对量）")},
+		{"Value": inventoryenums.DirectionOut, "Label": tr(inventoryenums.InventoryAdjustDirectionOut, "报损（填本次减少量）")},
 	}
 }
 
@@ -952,38 +955,50 @@ func warehouseTypeOptions(c *gin.Context) []gin.H {
 	}
 }
 
-// warehouseTypeLabelText 仓库类型 → 当前语言文案（下拉用）。
+// warehouseTypeLabelText 仓库类型 → 当前语言文案（列表与下拉共用）。
+//
+// 本函数是仓库类型 → 文案的**唯一一份**映射：service 侧原先另有一份函数体逐字相同的
+// warehouseTypeLabelKey，但它全仓没有任何调用点，且 service 层不应持有页面文案
+// （中文兜底只属于展示层）—— 合并时直接删除。新增仓库类型改这一处，并同批 seed 词条（迁移 243）。
 func warehouseTypeLabelText(tr func(key, fallback string) string, typ string) string {
 	switch typ {
 	case inventoryenums.WarehouseTypeThirdParty:
-		return tr("admin.inventory.warehouse.type.third_party", "第三方仓")
+		return tr(inventoryenums.InventoryWarehouseTypeThirdParty, "第三方仓")
 	case inventoryenums.WarehouseTypeVirtual:
-		return tr("admin.inventory.warehouse.type.virtual", "虚拟仓")
+		return tr(inventoryenums.InventoryWarehouseTypeVirtual, "虚拟仓")
 	default:
-		return tr("admin.inventory.warehouse.type.self", "自营仓")
+		return tr(inventoryenums.InventoryWarehouseTypeSelf, "自营仓")
 	}
 }
 
-// directionLabel 变动方向 → 展示文案。
-func directionLabel(direction string) string {
+// directionLabel 变动方向 → 当前语言展示文案。
+func directionLabel(tr func(key, fallback string) string, direction string) string {
 	switch direction {
 	case inventoryenums.DirectionIn:
-		return "入库"
+		return tr(inventoryenums.InventoryDirectionIn, "入库")
 	case inventoryenums.DirectionOut:
-		return "出库"
+		return tr(inventoryenums.InventoryDirectionOut, "出库")
 	case inventoryenums.DirectionAdjust:
-		return "调整"
+		return tr(inventoryenums.InventoryDirectionAdjust, "调整")
 	default:
 		return direction
 	}
 }
 
-// reasonStatusLabel 原因状态 → 展示文案。
-func reasonStatusLabel(status string) string {
+// statusLabel 启停状态 → 当前语言展示文案（仓库 / 盘点原因 / 货源三处共用）。
+//
+// 三处原先各写一份**函数体逐字相同**的实现（warehouseStatusLabel / reasonStatusLabel /
+// sourceStatusLabel）：判定用的常量不同（StatusDisabled / SourceStatusDisabled），但两者
+// 的值同为 "disabled"，词条 key 与中文兜底完全一致 —— 输出等价，同一批展示文案只留一份定义。
+//
+// 为什么落 http 层而不是 enums：本模块 enums 的既定约定是「中文兜底留在调用点，不搬进
+// enums」（见 inventory_text_keys.go 头部），本函数同时要 tr 回调与兜底文案，两者都只在
+// 展示层存在；三个调用点又同属 inventoryhttp 包，无需跨包导出。
+func statusLabel(tr func(key, fallback string) string, status string) string {
 	if status == inventoryenums.StatusDisabled {
-		return "已停用"
+		return tr(inventoryenums.InventoryStatusDisabled, "已停用")
 	}
-	return "启用中"
+	return tr(inventoryenums.InventoryStatusActive, "启用中")
 }
 
 // stockCostLabel 库存行的成本展示文案（(仓库, SKU) 的当前成本价，迁移 244）。
@@ -993,7 +1008,7 @@ func reasonStatusLabel(status string) string {
 // 「这个仓这条 SKU 没成本」和「这条 SKU 不要钱」。
 func stockCostLabel(tr func(key, fallback string) string, cost *float64) string {
 	if cost == nil {
-		return tr("admin.inventory.cost.unknown", "未核算")
+		return tr(inventoryenums.InventoryCostUnknown, "未核算")
 	}
 	return fmt.Sprintf("%.2f", *cost)
 }
@@ -1005,17 +1020,9 @@ func stockCostLabel(tr func(key, fallback string) string, cost *float64) string 
 // 第三态「未入库」（这个仓没有这一行）不走本函数，由调用点直接取 notStocked 文案。
 func stockQuantityLabel(tr func(key, fallback string) string, track bool, quantity int) string {
 	if !track {
-		return "∞ " + tr("admin.inventory.stock.unlimited", "无限")
+		return "∞ " + tr(inventoryenums.InventoryStockUnlimited, "无限")
 	}
 	return fmt.Sprintf("%d", quantity)
-}
-
-// warehouseStatusLabel 仓库状态 → 展示文案。
-func warehouseStatusLabel(status string) string {
-	if status == inventoryenums.StatusDisabled {
-		return "已停用"
-	}
-	return "启用中"
 }
 
 // —— 回跳地址与错误文案 ——
@@ -1088,11 +1095,41 @@ func inventoryErrText(c *gin.Context, err error) string {
 	}
 	text := tr(key, inventoryErrFallback(key))
 	if tail != "" {
-		// 补充说明原样跟在译文后：service 写进去的是「为什么被拒」的上下文
-		//（例如被哪个商品占了外码），吞掉它就等于让人去猜。
-		text += "：" + tail
+		if detail := inventoryErrDetailText(tr, tail); detail != "" {
+			// 补充说明原样跟在译文后：service 写进去的是「为什么被拒」的上下文
+			//（例如被哪个商品占了外码），吞掉它就等于让人去猜。
+			text += "：" + detail
+		}
 	}
 	return text
+}
+
+// inventoryErrDetailText 业务错误的**补充说明** → 当前语言文案。
+//
+// 补充说明有两种形态：
+//
+//  1. i18n.ErrorDetail 的产物（控制字符开头的「明细词条 key + 具名参数」，可多段）——
+//     service 用它把「为什么被拒」也词条化（例如「该外部编码在本仓已属于商品 X」），
+//     整句按当前语言取词并填 {name} 占位符；
+//  2. 其余（历史形态的纯文本）—— 原样透出，行为与本通道引入前一致。
+//
+// 未登记的明细 key 跳过该段并记一条日志（少一句补充说明，好过把编码串摆到页面上）。
+func inventoryErrDetailText(tr func(key, fallback string) string, tail string) string {
+	parts, ok := i18n.ParseErrorDetails(tail)
+	if !ok {
+		return tail
+	}
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		fallback, registered := inventoryenums.ErrDetailFallbacks[p.Key]
+		if !registered || fallback == "" {
+			logger.Scene(inventoryErrScene).With("detail_key", p.Key).
+				Warn("业务错误的补充说明词条未登记，已省略该段")
+			continue
+		}
+		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
+	}
+	return strings.Join(out, "；")
 }
 
 // —— 读侧回执的收口（?err= / ?ok= / ?done=）——
@@ -1444,7 +1481,7 @@ var reasonEditFields = []string{"projectId", "id", "builtin", "name", "status", 
 func reasonFormData(c *gin.Context) gin.H {
 	return gin.H{
 		"SelectedProject": c.PostForm("projectId"),
-		"Directions":      directionOptions(),
+		"Directions":      directionOptions(shell.TranslateFor(c)),
 	}
 }
 

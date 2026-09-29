@@ -60,7 +60,7 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 			OrderNo: order.OrderNo,
 			Status:  order.Status,
 			Paid:    false,
-			Message: "通道通知支付未成功，订单保持待付款",
+			Message: cartenums.MsgCallbackUnpaid,
 		}, nil
 	}
 
@@ -75,11 +75,11 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 	if perr != nil {
 		return nil, perr
 	}
-	message := "回调已入账"
+	message := cartenums.MsgCallbackApplied
 	if paid.NeedsManualReview {
-		message = "支付成功但订单已终态，已记流水待人工核对"
+		message = cartenums.MsgCallbackNeedsReview
 	} else if paid.AlreadyPaid {
-		message = "订单此前已付款，本次未改动（幂等命中）"
+		message = cartenums.MsgCallbackAlreadyPaid
 	}
 	return &cartdto.PaymentCallbackResp{
 		OrderID: order.ID,

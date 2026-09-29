@@ -26,7 +26,7 @@
     {{if isset(.ChildTotal)}}{{if .ChildTotal == 0}}<p class="text-mute">{{tr("admin.product_categories.children.empty", "没有子分类")}}</p>{{end}}{{if .ChildTotal > .ChildSize}}
     <nav aria-label="{{tr("admin.product_categories.children.paginationLabel", "子分类分页")}}" class="pagination">
         {{if .ChildPage > 1}}<button type="button" class="btn btn-sm" hx-get="/admin/product-categories/children?project={{selectedProject}}&amp;parentId={{.ParentID}}&amp;page={{.ChildPage - 1}}" hx-target="closest [data-category-children]" hx-swap="innerHTML">{{tr("shell.pagination.prev", "上一页")}}</button>{{end}}
-        <span>{{tr("admin.product_categories.children.pagePrefix", "第")}} {{.ChildPage}} {{tr("admin.product_categories.children.pageSuffix", "页")}}</span>
+        <span>{{.ChildPageLabel}}</span>
         {{if .ChildPage * .ChildSize < .ChildTotal}}<button type="button" class="btn btn-sm" hx-get="/admin/product-categories/children?project={{selectedProject}}&amp;parentId={{.ParentID}}&amp;page={{.ChildPage + 1}}" hx-target="closest [data-category-children]" hx-swap="innerHTML">{{tr("shell.pagination.next", "下一页")}}</button>{{end}}
     </nav>{{end}}{{end}}
     {{range _, row := .Categories}}

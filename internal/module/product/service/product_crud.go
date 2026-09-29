@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"
 )
 
@@ -856,7 +858,11 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 		if projectID != "" && row.ProjectID != projectID {
 			// 带上对方工程 id：跨工程引用只能靠「两个工程的运营对账」解决，
 			// 光有商品 id 找不到人（PROD-01 要求拒绝信息可定位）。
-			crossProject = append(crossProject, fmt.Sprintf("%s（属于工程 %s）", id, row.ProjectID))
+			//
+			// 形态是纯数据 `商品id@所属工程id`（原先的「id（属于工程 proj）」里的
+			// 「属于工程」是文案，会被整段塞进明细参数里无法翻译）；`@` 的含义写在
+			// 明细词条本身（见 productenums.DetailRelatedCrossProject）。
+			crossProject = append(crossProject, id+"@"+row.ProjectID)
 			continue
 		}
 		out = append(out, id)
@@ -864,15 +870,20 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 	if len(selfRefs)+len(missing)+len(crossProject) == 0 {
 		return out, nil
 	}
+	// 三段互相独立的补充说明（各自一条词条 + 具名参数）用 JoinErrorDetails 连成一条：
+	// 读侧逐段取词后用「；」拼回一整句，英文界面上三段都是英文。
 	parts := make([]string, 0, 3)
 	if len(selfRefs) > 0 {
-		parts = append(parts, fmt.Sprintf("不能指向自己（%d 个：%s）", len(selfRefs), strings.Join(selfRefs, ", ")))
+		parts = append(parts, i18n.ErrorDetail(productenums.DetailRelatedSelfReference,
+			"n", strconv.Itoa(len(selfRefs)), "ids", strings.Join(selfRefs, ", ")))
 	}
 	if len(missing) > 0 {
-		parts = append(parts, fmt.Sprintf("不存在（%d 个：%s）", len(missing), strings.Join(missing, ", ")))
+		parts = append(parts, i18n.ErrorDetail(productenums.DetailRelatedMissing,
+			"n", strconv.Itoa(len(missing)), "ids", strings.Join(missing, ", ")))
 	}
 	if len(crossProject) > 0 {
-		parts = append(parts, fmt.Sprintf("不属于本工程（%d 个：%s）", len(crossProject), strings.Join(crossProject, "；")))
+		parts = append(parts, i18n.ErrorDetail(productenums.DetailRelatedCrossProject,
+			"n", strconv.Itoa(len(crossProject)), "ids", strings.Join(crossProject, "；")))
 	}
-	return nil, fmt.Errorf("%s：%s", productenums.ErrRelatedInvalid, strings.Join(parts, "；"))
+	return nil, fmt.Errorf("%s：%s", productenums.ErrRelatedInvalid, i18n.JoinErrorDetails(parts...))
 }

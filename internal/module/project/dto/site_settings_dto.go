@@ -26,6 +26,20 @@ type SiteSettings struct {
 	// 空值 = 一个字节都不注入。形状校验唯一出口是 builder.NormalizeSearchConsoleVerification
 	// （保存与注入同一判据）。token 是 base64url，**大小写敏感**：这里不做大小写归一化。
 	SearchConsoleVerification string `json:"searchConsoleVerification,omitempty"`
+	// HeadScripts 站点自定义 Head 代码（PIPE-8：第三方统计 / 营销追踪片段）。
+	//
+	// 构建期由 builder 注入产物 </head> 之前（独占一行）；空值 = 一个字节都不注入。
+	// 与 GA4 / GSC 的实质差别：它**不是白名单字符集能覆盖的东西** —— GA4、Facebook Pixel、
+	// Clarity、Hotjar 各有各的写法且随时新增，白名单必漏、转义则让脚本失效。
+	// 因此形状判据只做「非空 + 不超长（16 KiB）+ 不含结构性标签（<!DOCTYPE>/<html>/
+	// <head>/<body>）」，安全责任由信任边界承担：只有后台站点设置页（Session + CSRF +
+	// Casbin /api/project/update）能写，公开面没有写入路径。
+	// 形状校验唯一出口是 builder.NormalizeHeadScripts（保存与注入同一判据）；
+	// 完整安全论证见 internal/builder/site_scripts.go 的文件头注释。
+	HeadScripts string `json:"headScripts,omitempty"`
+	// BodyScripts 站点自定义 Body 代码（PIPE-8：在线客服浮窗 / 转化追踪片段）。
+	// 构建期注入产物 </body> 之前（独占一行、增强脚本之后），口径与 HeadScripts 完全一致。
+	BodyScripts string `json:"bodyScripts,omitempty"`
 	// IndexNowKey IndexNow 协议密钥（SEO-022）；空 = 不 ping。
 	IndexNowKey string `json:"indexNowKey,omitempty"`
 	// NotFoundHTML 站点自定义 404 页内容（SEO-013）。
@@ -57,6 +71,19 @@ type SiteSettings struct {
 	//	从本字段恢复。它只是进程配置的「站点级覆盖」，不是第二份存储：运行时唯一
 	//	读取口仍是 pkg/i18n 的 siteLangURLMode。
 	LangURLMode string `json:"langURLMode,omitempty"`
+	// ShippingBaseFee 站点级基础运费（**分**；0 = 不收运费）。
+	//
+	// 结算（cart）在建单之前经 project 的 ShippingPolicyReader 读出它，作为本单运费的
+	// 起点；满额免运费门槛与会员免运费都作用在这一笔上，**不动商品小计**。
+	// 单位是分（与 orders 同口径）：元只出现在后台表单边界，换算单源见
+	// ParseYuanToCents / FormatCentsAsYuan（整数拆分，不用浮点乘）。
+	// 形状校验唯一出口是 NormalizeShippingPolicy（保存与读取同一判据）。
+	ShippingBaseFee int64 `json:"shippingBaseFee,omitempty"`
+	// ShippingFreeThreshold 满额免运费门槛（**分**；0 = 不启用）。
+	//
+	// > 0 时：订单商品小计达到该额即免基础运费。与 ShippingBaseFee 的高低不做比较
+	//（门槛是「买多少免运费」的独立商业参数，见 NormalizeShippingPolicy）。
+	ShippingFreeThreshold int64 `json:"shippingFreeThreshold,omitempty"`
 }
 
 // ParseSiteSettings 解析站点设置：非对象、空值、字段缺失一律按零值处理，

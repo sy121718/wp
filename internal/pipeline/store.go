@@ -94,9 +94,24 @@ func (s *LocalStore) PutArtifact(a *Artifact) (Locator, error) {
 		return Locator{}, err
 	}
 	defer os.RemoveAll(tmp) // rename 成功后临时目录已不存在，RemoveAll 为 no-op
-	for _, path := range []string{"manifest.json", "index.html"} {
-		if err := writeFileSync(filepath.Join(tmp, path), a.Entries[path]); err != nil {
+	// 落盘内容**由 Artifact.Entries 决定**，不再硬编码两个文件名（PIPE-6）：
+	// 硬编码的文件列表会让伴随文件（guard.html / guard.json）永远写不进产物目录 ——
+	// 编译通过、单测不覆盖就发现不了，线上表现是「守卫页 404 → 访问面只能一直走兜底页」。
+	// 路径先过 filepath.IsLocal：Entries 由内核构造（理论可信），但产物落盘是
+	// 不可逆的磁盘写入，越界路径在这里必须fail closed 而不是靠上游自觉。
+	for path, data := range a.Entries {
+		if !filepath.IsLocal(path) {
+			return Locator{}, fmt.Errorf("产物包含非法相对路径: %q", path)
+		}
+		if err := writeFileSync(filepath.Join(tmp, path), data); err != nil {
 			return Locator{}, err
+		}
+	}
+	// Entries 必须自带入口与清单：GetArtifact 只认这两个文件，缺了它这个 hash
+	// 目录就会「写进去但读不出来」（Verify 每次都失败 → 永久砖死）。
+	for _, required := range []string{"manifest.json", "index.html"} {
+		if _, ok := a.Entries[required]; !ok {
+			return Locator{}, fmt.Errorf("产物缺少必需文件: %q", required)
 		}
 	}
 	// 目录项本身也要 fsync：只落盘文件内容时，rename 之后掉电仍可能让整个目录项

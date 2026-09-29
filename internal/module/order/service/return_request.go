@@ -41,27 +41,13 @@ var returnableOrderStatuses = map[string]bool{
 	ordermodel.OrderStatusCompleted: true,
 }
 
-// returnStatusLabel 状态 → 中文文案。
+// 退货状态 → 展示文案的映射**不在这里**。
 //
-// 只此一份：后台页、访客片段、将来的邮件都必须说同一句话；
-// 同一个状态在三处各写一个名字，最后一定会出现「已入库待退款」与「待退款」并存。
-func returnStatusLabel(status string) string {
-	switch status {
-	case ordermodel.ReturnStatusRequested:
-		return "待审核"
-	case ordermodel.ReturnStatusApproved:
-		return "待收货"
-	case ordermodel.ReturnStatusReceived:
-		return "已入库待退款"
-	case ordermodel.ReturnStatusCompleted:
-		return "已完成"
-	case ordermodel.ReturnStatusRejected:
-		return "已拒绝"
-	case ordermodel.ReturnStatusCancelled:
-		return "已撤销"
-	}
-	return status
-}
+// 真源是 orderenums.ReturnStatusLabel（key + 中文兜底，词条 admin.returns.status.*），
+// 取词在出口：后台页（inbound/http 的 returnStatusText）、JSON 接口（order_handle.go
+// 的 localizeReturnStatusLabels）、访客片段（runtimefragment 的 returnStatusLabelOf）。
+// service 拿不到请求语言 —— 在这里拼中文的表现是英文站点的接口响应与访客页面恒中文，
+// 而页面上不会有任何报错。
 
 // RequestReturn 客户提交退货申请。
 func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.ReturnResp, err error) {
@@ -375,6 +361,13 @@ func groupReturnItems(items []*ordermodel.ReturnItemEntity) map[uint64][]*orderm
 }
 
 // toReturnResp 实体 → 视图（金额与状态文案都在这里算好，模板零算术）。
+//
+// StatusLabel 是**留给出口填的**展示文案（状态词条 admin.returns.status.* 已中英成对，
+// 见本文件上方那段说明）。
+//
+// RefundLabel 仍由本层产出：金额单位（「元」）是另一条独立的收口线，牵涉优惠码折扣、
+// 订单金额等成组字段，不在状态标签这一批里 —— 与其在这里单独把它改成 key 让同一个
+// 结构体的两个字段形态不一致，不如让它跟那条线一起改。
 func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEntity, returnable map[uint64]int) *orderdto.ReturnResp {
 	if e == nil {
 		return nil
@@ -382,7 +375,7 @@ func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEnti
 	res := &orderdto.ReturnResp{
 		ID: e.ID, ProjectID: e.ProjectID,
 		OrderID: e.OrderID, OrderNo: e.OrderNo, ReturnNo: e.ReturnNo,
-		Status: e.Status, StatusLabel: returnStatusLabel(e.Status),
+		Status:        e.Status,
 		Reason:        e.Reason,
 		RefundAmount:  e.RefundAmount,
 		RefundLabel:   yuanText(e.RefundAmount),

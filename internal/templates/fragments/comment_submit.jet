@@ -1,0 +1,8 @@
+{* comment_submit.jet — 评论提交结果（BIZ-5，由片段 commentSubmit 渲染）。
+   data 是 struct：字段用点号（见 comment_list.jet 的说明）。
+
+   为什么成功与失败共用一个模板：两者都是「一句人话」，分开写迟早会出现
+   「成功那支说了待审核，失败那支说了什么没人记得」。OK 只用来决定样式类。 *}
+<div class="sky-comment-result{{if .OK}} is-ok{{end}}" data-fragment="{{ .Fragment }}" role="status">
+<p class="sky-comment-notice">{{ .Notice }}</p>
+</div>

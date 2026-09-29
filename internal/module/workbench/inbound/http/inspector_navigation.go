@@ -46,8 +46,8 @@ func (h *Handle) SetNavigationPicker(p NavigationPickerPort) {
 //
 // 标签带位置前缀：同一个工程里「产品」这类标题在页眉与移动端各有一条，
 // 只显示标题会让检查器里出现两个一模一样的选项，选错就静默绑到另一端的菜单上。
-func navigationInspectorOptions(ctx context.Context, h *Handle, projectID, selected string) []inspectorOption {
-	out := []inspectorOption{{Value: "", Label: "（不限）", Selected: selected == ""}}
+func navigationInspectorOptions(ctx context.Context, h *Handle, projectID, selected string, tr func(key string) string) []inspectorOption {
+	out := []inspectorOption{{Value: "", Label: tr(workbenchenums.InspectorNavAny), Selected: selected == ""}}
 	if h == nil || h.navigations == nil || projectID == "" {
 		return out
 	}
@@ -66,7 +66,7 @@ func navigationInspectorOptions(ctx context.Context, h *Handle, projectID, selec
 		}
 		out = append(out, inspectorOption{
 			Value:    row.ID,
-			Label:    navigationKindLabel(row.Kind) + " · " + row.Title,
+			Label:    navigationKindLabel(row.Kind, tr) + " · " + row.Title,
 			Selected: row.ID == selected,
 		})
 	}
@@ -88,7 +88,9 @@ func navigationInspectorOptions(ctx context.Context, h *Handle, projectID, selec
 //	  文案 + 日志），不直出 err.Error()。
 func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	if h == nil || h.navigations == nil {
-		response.ErrorWithMessage(c, http.StatusServiceUnavailable, workbenchenums.MsgInternalError)
+		// 归口译文：c.JSON 的 message 不经过模板取词层，直接写 MsgInternalError（裸 key）
+		// 会让前端弹出一串 "MsgInternalError"。
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, shell.PageInternalText(c))
 		return
 	}
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
@@ -110,7 +112,7 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	}
 	response.Success(c, gin.H{
 		"id": created.ID, "title": created.Title, "path": created.Path,
-		"kind": created.Kind, "label": navigationKindLabel(created.Kind) + " · " + created.Title,
+		"kind": created.Kind, "label": navigationKindLabel(created.Kind, workbenchTrFunc(c)) + " · " + created.Title,
 	})
 }
 
@@ -127,26 +129,26 @@ func (h *Handle) navigationFacingText(c *gin.Context, err error) string {
 }
 
 // navigationKindOptions 新建菜单项时的位置选项（与导航管理页的四个位置一致）。
-func navigationKindOptions() []inspectorOption {
+func navigationKindOptions(tr func(key string) string) []inspectorOption {
 	return []inspectorOption{
-		{Value: "header", Label: navigationKindLabel("header"), Selected: true},
-		{Value: "header_mobile", Label: navigationKindLabel("header_mobile")},
-		{Value: "footer", Label: navigationKindLabel("footer")},
-		{Value: "footer_mobile", Label: navigationKindLabel("footer_mobile")},
+		{Value: "header", Label: navigationKindLabel("header", tr), Selected: true},
+		{Value: "header_mobile", Label: navigationKindLabel("header_mobile", tr)},
+		{Value: "footer", Label: navigationKindLabel("footer", tr)},
+		{Value: "footer_mobile", Label: navigationKindLabel("footer_mobile", tr)},
 	}
 }
 
-// navigationKindLabel 位置的中文名（与 admin 导航页的选项文案一致）。
-func navigationKindLabel(kind string) string {
+// navigationKindLabel 位置名（与 admin 导航页的选项文案同义，按请求语言取词）。
+func navigationKindLabel(kind string, tr func(key string) string) string {
 	switch kind {
 	case "header":
-		return "页眉"
+		return tr(workbenchenums.InspectorNavKindHeader)
 	case "header_mobile":
-		return "页眉（移动端）"
+		return tr(workbenchenums.InspectorNavKindHeaderMobile)
 	case "footer":
-		return "页脚"
+		return tr(workbenchenums.InspectorNavKindFooter)
 	case "footer_mobile":
-		return "页脚（移动端）"
+		return tr(workbenchenums.InspectorNavKindFooterMobile)
 	}
 	return kind
 }

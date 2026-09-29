@@ -40,7 +40,15 @@ type CollectionSchema struct {
 	// Source 集合源标识（"content:article" 等）。
 	Source string
 	// Label 展示名（工作台下拉用）。
+	//
+	// 语义是「中文兜底」：LabelKey 非空且出口能取词时，界面显示的是当前语言的译文。
 	Label string
+	// LabelKey 展示名的 i18n key；为空表示 Label 已是终值（没有第二条语言可切）。
+	//
+	// 为什么不在这里取词：本层拿不到请求语言（构建期根本没有请求），而运行时片段
+	// 与后台页面的语言来自各自的协商链。谁把 schema 交给界面、谁取词；
+	// Label 同时保留可读兜底 —— 于是「忘记取词」的表现是中文，而不是空白或裸 key。
+	LabelKey string
 	// Fields 允许渲染的字段白名单。
 	Fields []string
 	// Filters 允许的过滤维度（键 + 枚举）。

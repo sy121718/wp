@@ -15,8 +15,26 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 )
+
+// contentTemplateTranslate 展示层取词函数（与 shell.TranslateFor(c) 同形）。
+//
+// 展示标签一律经它取词，**中文原文留在 enums 里当兜底**：模板直接渲染的文本
+// 不经过 pkg/response 的 translate，在 Go 侧写死中文等于英文界面恒中文。
+type contentTemplateTranslate = func(key, fallback string) string
+
+// contentTemplateLabel 取一条标签的当前语言文本。
+//
+// key 为空（认不出的取值 / 纯定位说明）直接给兜底：`tr("", …)` 查不到行，
+// 白白多一次查表，语义也不清。
+func contentTemplateLabel(tr contentTemplateTranslate, pair contenttemplateenums.LabelPair) string {
+	if tr == nil || strings.TrimSpace(pair.Key) == "" {
+		return pair.Fallback
+	}
+	return tr(pair.Key, pair.Fallback)
+}
 
 // contentTemplatePageRef 页面引用的一行。
 //
@@ -52,7 +70,7 @@ type contentTemplateImpactRow struct {
 //
 // 一次扫描服务整页：列表页每套模板都要显示「引用 N 处」，逐个模板各扫一遍页面与实例
 // 文档就是 N 次全表扫描（页面一多这一页就点不动）。
-func contentTemplateRefsByTemplate(impact *contenttemplatedto.ImpactResp) map[string]*contentTemplateImpactRow {
+func contentTemplateRefsByTemplate(tr contentTemplateTranslate, impact *contenttemplatedto.ImpactResp) map[string]*contentTemplateImpactRow {
 	out := map[string]*contentTemplateImpactRow{}
 	if impact == nil {
 		return out
@@ -63,7 +81,7 @@ func contentTemplateRefsByTemplate(impact *contenttemplatedto.ImpactResp) map[st
 			row = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
 			out[ref.TemplateID] = row
 		}
-		slots := contentTemplateSlotsLabel(ref.Slots)
+		slots := contentTemplateSlotsLabel(tr, ref.Slots)
 		switch ref.Kind {
 		case contenttemplatedto.ReferenceKindPage:
 			label := strings.TrimSpace(ref.PageTitle)
@@ -99,7 +117,7 @@ func contentTemplateRefsByTemplate(impact *contenttemplatedto.ImpactResp) map[st
 //
 // 判据复用 builder 的槽位常量而不是就地写 "header"/"footer"：构建期就是按这两个
 // 常量合并绑定的，写死字符串的话槽位改名只会在这一页静默失效（引用列少一半）。
-func contentTemplateSlotsLabel(slots []string) string {
+func contentTemplateSlotsLabel(tr contentTemplateTranslate, slots []string) string {
 	if len(slots) == 0 {
 		return ""
 	}
@@ -107,10 +125,12 @@ func contentTemplateSlotsLabel(slots []string) string {
 	for _, slot := range slots {
 		switch slot {
 		case builder.SlotHeader:
-			labels = append(labels, "页眉")
+			labels = append(labels, contentTemplateLabel(tr, contenttemplateenums.LabelSlotHeader))
 		case builder.SlotFooter:
-			labels = append(labels, "页脚")
+			labels = append(labels, contentTemplateLabel(tr, contenttemplateenums.LabelSlotFooter))
 		default:
+			// 认不出的槽位原样显示（不是空白）：兜底行为与改前一致，
+			// 让手改数据带来的怪值照样说得清。
 			labels = append(labels, slot)
 		}
 	}
@@ -118,38 +138,16 @@ func contentTemplateSlotsLabel(slots []string) string {
 	return strings.Join(labels, " / ")
 }
 
-// contentTemplateTypeLabel 实体类型 → 面向运营的说法（结构模板与内容实体模板要一眼分得开）。
-func contentTemplateTypeLabel(entityType string) string {
-	switch entityType {
-	case "header":
-		return "页眉（结构）"
-	case "footer":
-		return "页脚（结构）"
-	case "product":
-		return "商品详情"
-	case "article":
-		return "文章详情"
-	case "category":
-		return "分类归档"
-	case "tag":
-		return "标签归档"
-	case "brand":
-		return "品牌归档"
-	default:
-		return entityType
-	}
+// contentTemplateTypeLabel 实体类型 → 当前语言的展示名（结构模板与内容实体模板要一眼分得开）。
+//
+// 取值映射的真源在 contenttemplateenums.EntityTypeLabel，本函数只负责取词。
+func contentTemplateTypeLabel(tr contentTemplateTranslate, entityType string) string {
+	return contentTemplateLabel(tr, contenttemplateenums.EntityTypeLabel(entityType))
 }
 
-// contentTemplateRoleLabel 模板角色 → 面向运营的说法。
-func contentTemplateRoleLabel(role string) string {
-	switch role {
-	case "archive":
-		return "归档页"
-	case "", "detail":
-		return "详情页"
-	default:
-		return role
-	}
+// contentTemplateRoleLabel 模板角色 → 当前语言的展示名（真源同上）。
+func contentTemplateRoleLabel(tr contentTemplateTranslate, role string) string {
+	return contentTemplateLabel(tr, contenttemplateenums.TemplateRoleLabel(role))
 }
 
 // contentTemplateImpactNote 影响面状态提示（空串 = 无需提示）。

@@ -21,6 +21,17 @@ const (
 	ErrNameRequired    = "ErrNameRequired"    // 商品名称必填
 )
 
+// 评论（BIZ-5）：商品评论的差异化规则由本模块实现，见 service/product_comment_policy.go。
+const (
+	// ErrCommentPurchaseRequired 发表商品评论前必须先购买过该商品。
+	//
+	// 它是**消费方**（comment 模块）要展示的拒绝理由：值即 i18n key，经
+	// commentcontract.PolicyDenial.Message 传出去，中文兜底由 policy 实现随
+	// Fallback 一起给（comment 侧不认识本模块的词条，只能按 key + 兜底翻译）。
+	// 词条真源见 public/migrations/468_comment_purchase_i18n.sql。
+	ErrCommentPurchaseRequired = "product.err.commentPurchaseRequired"
+)
+
 // 构建期上下文缺失（DB-009 第四批）。单独一块，避免把上面那批常量名的对齐列宽一起改掉。
 const (
 	// ErrMissingProjectContext 构建期实体字段源拿不到工程上下文（core.WithBuildProjectID 未注入）。

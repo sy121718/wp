@@ -191,8 +191,8 @@ func (h *couponPageHandle) couponCreateFail(c *gin.Context, msg string) {
 	// 失败档的 context 键全部由这里给齐：片段对页面键用 chain/isset 读取，
 	// 唯一硬前提是 FormEcho* 三键（couponFormEchoData 已按清单补零值）。
 	data["SelectedProject"] = strings.TrimSpace(c.PostForm("projectId"))
-	data["TypeOptions"] = couponTypeOptions
-	data["StatusOptions"] = couponEnableOptions
+	data["TypeOptions"] = couponTypeOptions(shell.TranslateFor(c))
+	data["StatusOptions"] = couponEnableOptions(shell.TranslateFor(c))
 	data["SubmitErr"] = msg
 	c.HTML(http.StatusOK, "admin/order/coupon_create_form.html", shell.Prepare(c, data))
 }
@@ -218,8 +218,8 @@ func (h *couponPageHandle) couponEditFail(c *gin.Context, msg string) {
 		return
 	}
 	data := couponFormEchoData(c, couponEditFormFields...)
-	data["TypeOptions"] = couponTypeOptions
-	data["StatusOptions"] = couponEnableOptions
+	data["TypeOptions"] = couponTypeOptions(shell.TranslateFor(c))
+	data["StatusOptions"] = couponEnableOptions(shell.TranslateFor(c))
 	data["EditCode"] = code
 	data["SubmitErr"] = msg
 	c.HTML(http.StatusOK, "admin/order/coupon_edit_form.html", shell.Prepare(c, data))

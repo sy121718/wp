@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder"
+	workbenchenums "go_wp/internal/module/workbench/enums"
 	"go_wp/internal/templates"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/response"
@@ -120,18 +121,19 @@ type inspectorSection struct {
 	Fields []inspectorField
 }
 
-// 分组顺序与中文标题（与前端旧面板保持一致）。
-var inspectorSectionOrder = []struct{ Key, Title string }{
-	{"content", "内容"},
-	{"style", "基础"},
-	{"layout", "布局"},
-	{"background", "背景"},
-	{"border", "边框"},
-	{"transform", "变换"},
-	{"motion", "动效"},
-	{"hover", "悬停"},
-	{"responsive", "响应式"},
-	{"advanced", "高级"},
+// 分组顺序与中文标题 key（与前端旧面板保持一致）。标题按请求语言取词：
+// 拼进面板 HTML 的是译文，key 与中文兜底登记在 workbenchenums（workbench.inspector.section.*）。
+var inspectorSectionOrder = []struct{ Key, TitleKey string }{
+	{"content", workbenchenums.InspectorSectionContent},
+	{"style", workbenchenums.InspectorSectionStyle},
+	{"layout", workbenchenums.InspectorSectionLayout},
+	{"background", workbenchenums.InspectorSectionBackground},
+	{"border", workbenchenums.InspectorSectionBorder},
+	{"transform", workbenchenums.InspectorSectionTransform},
+	{"motion", workbenchenums.InspectorSectionMotion},
+	{"hover", workbenchenums.InspectorSectionHover},
+	{"responsive", workbenchenums.InspectorSectionResponsive},
+	{"advanced", workbenchenums.InspectorSectionAdvanced},
 }
 
 // docNode 页面文档节点（仅面板定位所需字段）。
@@ -147,7 +149,12 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	nodeID := strings.TrimSpace(c.PostForm("nodeId"))
 	node, err := findDocNode(json.RawMessage(c.PostForm("document")), nodeID)
 	if err != nil || node == nil {
-		c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{"NodeID": ""})
+		c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
+			"NodeID": "",
+			// 空态分支也要给 t：片段模板里的取词（workbench.ui.inspector.empty 等）缺 t 时
+			// Jet 会静默输出空串（不是报错），空面板会变成一句话都没有。
+			"t": templates.TranslateFunc(response.RequestLanguage(c)),
+		})
 		return
 	}
 	schemas, err := builder.ComponentSchemas()
@@ -174,9 +181,9 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	// tab：content / style（空 = 渲染全部，向后兼容旧调用）。
 	tab := strings.TrimSpace(c.PostForm("tab"))
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	sections := buildInspectorSections(c.Request.Context(), h, items, props, tab, projectID)
+	sections := buildInspectorSections(c.Request.Context(), h, items, props, tab, projectID, workbenchTrFunc(c))
 	// 重复项面板（折叠项 / 页签）：结构由服务端生成，客户端只绑行为。
-	sections = appendRepeaterPanel(sections, node, props, tab)
+	sections = appendRepeaterPanel(sections, node, props, tab, workbenchTrFunc(c))
 	c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
 		"NodeID": nodeID, "NodeType": node.Type,
 		"Sections": sections,
@@ -213,7 +220,10 @@ func findDocNode(doc json.RawMessage, nodeID string) (*docNode, error) {
 }
 
 // buildInspectorSections 把 schema 控件按分组转成模板数据（跳过 hidden 与不满足条件的字段）。
-func buildInspectorSections(ctx context.Context, h *Handle, items []inspectorSchemaItem, props map[string]any, tab, projectID string) []inspectorSection {
+//
+// tr 是「key → 当前语言文案」的取词函数（workbenchTrFunc）：分组标题与各字段的
+// Label / Placeholder 都在本函数的下游产出，模板只负责把它们铺出来。
+func buildInspectorSections(ctx context.Context, h *Handle, items []inspectorSchemaItem, props map[string]any, tab, projectID string, tr func(key string) string) []inspectorSection {
 	buckets := map[string][]inspectorField{}
 	used := map[string]int{}
 	// corners 合并：radiusTL/TR/BR/BL 与 advanced.radius.topLeft/… 各只渲染一次。
@@ -231,13 +241,13 @@ func buildInspectorSections(ctx context.Context, h *Handle, items []inspectorSch
 				continue
 			}
 			cornersDone = true
-			buckets[sec] = append(buckets[sec], cornersField(ctl, props))
+			buckets[sec] = append(buckets[sec], cornersField(ctl, props, tr))
 			continue
 		}
 		if isCornerTailKey(ctl.Key) {
 			continue
 		}
-		f := inspectorFieldOf(ctx, h, ctl, props, projectID)
+		f := inspectorFieldOf(ctx, h, ctl, props, projectID, tr)
 		if f.Key == "" {
 			continue
 		}
@@ -258,7 +268,7 @@ func buildInspectorSections(ctx context.Context, h *Handle, items []inspectorSch
 		}
 		seen[s.Key] = true
 		out = append(out, inspectorSection{
-			Key: s.Key, Title: s.Title, Fields: fields, Used: used[s.Key],
+			Key: s.Key, Title: tr(s.TitleKey), Fields: fields, Used: used[s.Key],
 			// 展开规则：有值的分组展开、内容分组默认展开、首个分组兜底展开
 			// （空面板全收起时用户看不到任何控件，必须至少露一组）。
 			Open: used[s.Key] > 0 || s.Key == "content" || len(out) == 0,

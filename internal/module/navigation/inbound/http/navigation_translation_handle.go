@@ -15,6 +15,7 @@ package navigationhttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
+	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
@@ -113,15 +115,16 @@ func navigationTranslationContext() string {
 func (h *navigationTranslationHandle) NavigationTranslations(c *gin.Context) {
 	projectID := strings.TrimSpace(c.Query("project"))
 	lang := strings.TrimSpace(c.Query("lang"))
-	data := h.build(c.Request.Context(), projectID, lang)
+	data := h.build(c.Request.Context(), projectID, lang, shell.TranslateFor(c))
 	data.filter(strings.TrimSpace(c.Query("keyword")))
 	if strings.TrimSpace(c.Query("saved")) == "1" {
 		n, _ := strconv.Atoi(strings.TrimSpace(c.Query("n")))
+		tr := shell.TranslateFor(c)
 		data.Saved = true
 		if n > 0 {
-			data.SavedNote = "已保存 " + strconv.Itoa(n) + " 条译文；已标记受影响页面待重建（下次构建生效）。"
+			data.SavedNote = fmt.Sprintf(tr(navigationenums.Saved, "已保存 %d 条译文；已标记受影响页面待重建（下次构建生效）。"), n)
 		} else {
-			data.SavedNote = "没有需要写入的变化。"
+			data.SavedNote = tr(navigationenums.SavedNone, "没有需要写入的变化。")
 		}
 	}
 	c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
@@ -133,19 +136,20 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 	projectID := strings.TrimSpace(c.PostForm("project"))
 	lang := strings.TrimSpace(c.PostForm("lang"))
 	keyword := strings.TrimSpace(c.PostForm("keyword"))
-	data := h.build(ctx, projectID, lang)
+	tr := shell.TranslateFor(c)
+	data := h.build(ctx, projectID, lang, tr)
 	data.filter(keyword)
 
 	contexts := c.PostFormArray("rowContext")
 	hashes := c.PostFormArray("rowHash")
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
-		data.Errors = []string{"提交的行数不一致，请刷新后重试"}
+		data.Errors = []string{tr(navigationenums.ErrRowCountMismatch, "提交的行数不一致，请刷新后重试")}
 		c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
 	if h.writer == nil {
-		data.Errors = []string{"译文存储不可用"}
+		data.Errors = []string{tr(navigationenums.ErrStorageUnavailable, "译文存储不可用")}
 		c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 		return
 	}
@@ -160,12 +164,12 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 	for i := range contexts {
 		contextName := strings.TrimSpace(contexts[i])
 		if contextName != navigationTranslationContext() {
-			rowErrors = append(rowErrors, "语境非法：导航标签只接受 "+navigationTranslationContext())
+			rowErrors = append(rowErrors, fmt.Sprintf(tr(navigationenums.ErrContextInvalid, "语境非法：导航标签只接受 %s"), navigationTranslationContext()))
 			continue
 		}
 		source, ok := data.sourceOf(hashes[i])
 		if !ok {
-			rowErrors = append(rowErrors, "菜单文字已变化，请刷新后重试")
+			rowErrors = append(rowErrors, tr(navigationenums.ErrSourceChanged, "菜单文字已变化，请刷新后重试"))
 			continue
 		}
 		target := strings.TrimSpace(targets[i])
@@ -178,7 +182,7 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 		}
 		queued[key] = true
 		if !i18n.ShouldTranslateContent(source.Source) {
-			rowErrors = append(rowErrors, source.Source+"：该菜单文字不参与翻译（纯数字或纯符号）")
+			rowErrors = append(rowErrors, fmt.Sprintf(tr(navigationenums.ErrNotTranslatable, "%s：该菜单文字不参与翻译（纯数字或纯符号）"), source.Source))
 			continue
 		}
 		items = append(items, i18n.ContentWriteItem{
@@ -233,7 +237,7 @@ func (h *navigationTranslationHandle) SaveNavigationTranslations(c *gin.Context)
 			logger.Scene("navigation").With("lang", lang).Error(uerr, "写入导航译文失败")
 			// 归口文案：命中 enums 白名单的业务文案原样透出，其余（数据库原文：
 			// 表名 / 约束名 / SQLSTATE）只进上面那条日志，页面拿归口提示。
-			data.Errors = []string{"保存失败：" + navigationErrPageText(c, uerr)}
+			data.Errors = []string{fmt.Sprintf(tr(navigationenums.ErrSaveFailed, "保存失败：%s"), navigationErrPageText(c, uerr))}
 			c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", shell.Prepare(c, data.templateMap()))
 			return
 		}
@@ -396,9 +400,11 @@ func navigationTranslationFilteredLocation(projectID, lang, keyword string, writ
 }
 
 // build 组装工作台数据：两个位置的全部菜单项 → 现有译文。
-func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang string) *navigationTranslationsData {
+func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang string,
+	tr func(key, fallback string) string) *navigationTranslationsData {
 	data := &navigationTranslationsData{
-		Title: "导航译文", Menu: "navigation-translations",
+		// 标题写 i18n key：shell.Prepare 会对 "title" 取词，词条见 sys_i18n。
+		Title: "admin.navigation_translations.heading", Menu: "navigation-translations",
 		ProjectID: projectID, Lang: lang,
 		Groups:    []navigationTranslationGroup{},
 		NoProject: projectID == "" && h.projects == nil,
@@ -410,7 +416,7 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 		projects, perr := h.projects.List(ctx)
 		if perr != nil {
 			logger.Scene("navigation").Error(perr, "读取导航译文工程列表失败")
-			data.Errors = []string{"读取工程列表失败，请稍后重试"}
+			data.Errors = []string{tr(navigationenums.ErrProjectListFailed, "读取工程列表失败，请稍后重试")}
 			return data
 		}
 		data.NoProject = len(projects) == 0
@@ -439,7 +445,7 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 			logger.Scene("navigation").With("kind", kind).Error(terr, "读取导航树失败")
 			continue
 		}
-		group := navigationTranslationGroup{Kind: kind, Title: navKindTitle(kind), Rows: []navigationTranslationRow{}}
+		group := navigationTranslationGroup{Kind: kind, Title: navKindTitle(tr, kind), Rows: []navigationTranslationRow{}}
 		var walk func(list []*navigationdto.NavigationNode)
 		walk = func(list []*navigationdto.NavigationNode) {
 			for _, n := range list {
@@ -490,10 +496,10 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 	return data
 }
 
-// navKindTitle 菜单位置的中文名。
-func navKindTitle(kind string) string {
+// navKindTitle 菜单位置的当前语言名（key 与导航页的 kind 下拉同源：admin.navigations.kind.*）。
+func navKindTitle(tr func(key, fallback string) string, kind string) string {
 	if kind == "footer" {
-		return "页脚导航"
+		return tr(navigationenums.KindFooter, "页脚导航")
 	}
-	return "页眉导航"
+	return tr(navigationenums.KindHeader, "页眉导航")
 }

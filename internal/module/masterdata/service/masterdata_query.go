@@ -110,7 +110,7 @@ func (s *Service) EntityTimeline(ctx context.Context, req *masterdatadto.EntityT
 		return nil, err
 	}
 	res = &masterdatadto.EntityTimelineResp{
-		EntityType: entityType, EntityTypeLabel: masterdataenums.EntityTypeLabel(entityType),
+		EntityType: entityType, EntityTypeLabel: masterdataenums.EntityTypeLabel(entityType).Fallback,
 		EntityID: entityID, Total: total, Changes: make([]*masterdatadto.ChangeResp, 0, len(rows)),
 	}
 	for _, row := range rows {
@@ -133,16 +133,20 @@ func (s *Service) queryArgsOf(ctx context.Context, req *masterdatadto.ListChange
 }
 
 // toChangeResp 记录行 → 响应（展示文案统一在模块 enums 里取）。
+//
+// dto 里的 *Label 一律填**中文兜底**：service 层拿不到请求语言，而这些字段同时供
+// JSON API 出口使用（契约保持「已可读的展示名」）。页面出口不复用它们 ——
+// inbound/http 用行上的原始值（EntityType / Action / Field）重新取词，见 changeRow。
 func toChangeResp(e *masterdatamodel.ChangeEntity) *masterdatadto.ChangeResp {
 	if e == nil {
 		return nil
 	}
 	return &masterdatadto.ChangeResp{
 		ID: e.ID, ProjectID: e.ProjectID,
-		EntityType: e.EntityType, EntityTypeLabel: masterdataenums.EntityTypeLabel(e.EntityType),
+		EntityType: e.EntityType, EntityTypeLabel: masterdataenums.EntityTypeLabel(e.EntityType).Fallback,
 		EntityID: e.EntityID, EntityLabel: e.EntityLabel,
-		Action: e.Action, ActionLabel: masterdataenums.ActionLabel(e.Action),
-		Field: e.Field, FieldLabel: masterdataenums.FieldLabel(e.EntityType, e.Field),
+		Action: e.Action, ActionLabel: masterdataenums.ActionLabel(e.Action).Fallback,
+		Field: e.Field, FieldLabel: masterdataenums.FieldLabel(e.EntityType, e.Field).Fallback,
 		OldValue: e.OldValue, NewValue: e.NewValue,
 		Origin: e.Origin, OperatorID: e.OperatorID,
 		CreatedAt: e.CreatedAt.Format(time.RFC3339),
@@ -155,11 +159,11 @@ func toEntityHistoryResp(row *masterdatamodel.EntityHistoryRow) *masterdatadto.E
 		return nil
 	}
 	return &masterdatadto.EntityHistoryResp{
-		EntityType: row.EntityType, EntityTypeLabel: masterdataenums.EntityTypeLabel(row.EntityType),
+		EntityType: row.EntityType, EntityTypeLabel: masterdataenums.EntityTypeLabel(row.EntityType).Fallback,
 		EntityID: row.EntityID, EntityLabel: row.EntityLabel,
 		ChangeCount: row.ChangeCount,
-		LastAction:  row.LastAction, LastActionLabel: masterdataenums.ActionLabel(row.LastAction),
-		LastField: row.LastField, LastFieldLabel: masterdataenums.FieldLabel(row.EntityType, row.LastField),
+		LastAction:  row.LastAction, LastActionLabel: masterdataenums.ActionLabel(row.LastAction).Fallback,
+		LastField: row.LastField, LastFieldLabel: masterdataenums.FieldLabel(row.EntityType, row.LastField).Fallback,
 		LastOperatorID: row.LastOperatorID,
 		LastAt:         row.LastAt.Format(time.RFC3339),
 	}

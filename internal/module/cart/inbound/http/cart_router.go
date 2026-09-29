@@ -79,7 +79,7 @@ func (h *CallbackHandle) PaymentCallback(c *gin.Context) {
 		}
 		return
 	}
-	response.SuccessWithMessage(c, "回调已接收", res)
+	response.SuccessWithMessage(c, cartenums.MsgCallbackReceived, res)
 }
 
 // callbackErrorKey 回调对外只认这四条业务 key（命中返回 key，未命中返回空串）。

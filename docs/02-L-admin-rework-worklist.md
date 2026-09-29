@@ -368,12 +368,20 @@ media 的 `ErrAttachmentNotFound = "ErrAttachmentNotFound"`」→ **plugin 遵�
 > 以及本节所有行号**已整体失效**的说明（引用请按语义定位）。
 >
 > **「失败出口收口」已全站铺开并完成第一批**：跨 9 个域共修 42 处 + 判定不改 4 处（有据）。
-> 该批遗留按风险排序：① 261 条 enums key 词条缺失（最大的单一来源）
-> ② order 域 `?err=` 通道渲染裸 key ③ workbench 批 1/批 4（前置已就绪）④ 门禁扩围。
+> 该批遗留按风险排序（2026-09-26 复核读数）：① enums key 词条缺失（当初摸底 261 条；迁移 430
+> 已补 218 个 key / 337 行）② order 域 `?err=` 通道渲染裸 key（**已闭环**：`order_page_query.go`
+> 按 key 取词）③ workbench 批 1 / 批 4（**仍未做**：`workbench_handle.go` 还有 30 处硬编码中文
+> `c.String`，`workbench_preview_handle.go:100` 直出 `MsgInternalError` 英文裸 key）④ 门禁扩围
+> （**仍未做**：`check-no-internal-error-leak.sh` 的 TARGETS 仍是 `*/inbound/http`、候选仍以
+> `.Error()` 行为入口）。
 
-> **项目域页面错误出口已收口并验证** —— 含修法判据、6 条守卫测试、浏览器实测证据，
-> 以及**全站摸底（80 处待处理）与两个门禁盲区**。建议的后续顺序（按风险）：
-> `runtimefragment` 的 2 处 `.Error()` → 门禁扩扫描范围 → `workbench` 51 处分类 → 门禁扩判据。
+> **项目域页面错误出口已收口并验证** —— 原批次记录（已随文档清理删除）含修法判据、6 条守卫测试
+> （`internal/module/project/inbound/http/project_err*_test.go` 等）、浏览器实测证据，
+> 以及**全站摸底（80 处待处理）与两个门禁盲区**：① 候选集是「含 `.Error()` 的行」
+> ⇒ 硬编码文案与裸归口 key 从不在候选；② 扫描范围 `internal/module/*/inbound/http` ⇒ 扁平单包的
+> `runtimefragment` 整批漏过。**两条至今未修**，该记录此前由已删文档承载 —— 要长期留存应写进
+> `scripts/check-no-internal-error-leak.sh` 头注释。建议的后续顺序（按风险）：
+> `runtimefragment` 的 2 处 `.Error()`（**已闭环**）→ 门禁扩扫描范围 → `workbench` 51 处分类 → 门禁扩判据。
 
 - **同形态出口未修 26 处**（见 §0.1 表更正）—— 需单开一批，逐页定回跳 URL + 登记读侧白名单；
 - 另有 8+ 处 `c.String(500, <归口 key>)` 同判据命中，未实测触发路径；

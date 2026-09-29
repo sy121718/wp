@@ -91,15 +91,33 @@ func renderReturnRequest(ctx context.Context, r *Request) (string, error) {
 	if res == nil {
 		return renderReturnResult(r, returnResultData{Notice: fragmentUserMessage(r, orderenums.ErrInternal), Labels: labels})
 	}
+	// 状态与金额的展示文案在**出口**按请求语言生成，不拿 service 给的中文标签：
+	// order 的 service 拿不到请求语言（它同时服务后台页与 JSON 接口），
+	// 而这一页是给访客看的 —— 英文站点上恒中文的表现是「人家看不懂」，不会有人来报。
+	statusLabel := returnStatusLabelOf(r, res.Status)
+	refundLabel := formatCentsLabel(r, res.RefundAmount)
 	return renderReturnResult(r, returnResultData{
 		ReturnNo:    res.ReturnNo,
-		StatusLabel: res.StatusLabel,
-		RefundLabel: res.RefundLabel,
+		StatusLabel: statusLabel,
+		RefundLabel: refundLabel,
 		Reason:      res.Reason,
-		StatusLine:  fmt.Sprintf(labels.StatusLine, res.ReturnNo, res.StatusLabel),
-		RefundNote:  fmt.Sprintf(labels.RefundNote, res.RefundLabel),
+		StatusLine:  fmt.Sprintf(labels.StatusLine, res.ReturnNo, statusLabel),
+		RefundNote:  fmt.Sprintf(labels.RefundNote, refundLabel),
 		Labels:      labels,
 	})
+}
+
+// returnStatusLabelOf 退货状态的展示名（按请求语言）。
+//
+// 映射的真源是 orderenums.ReturnStatusLabel（key + 中文兜底），r.tr 是它的消费者 ——
+// 与同包的 orderStatusLabelOf 同一条判据：key 为空表示这一档没有词条可查
+// （空值 / 认不出的取值），直接用兜底。
+func returnStatusLabelOf(r *Request, status string) string {
+	key, fallback := orderenums.ReturnStatusLabel(status)
+	if key == "" || r == nil {
+		return fallback
+	}
+	return r.tr(key, fallback)
 }
 
 // returnItemsOf 解析并行数组（orderItemId / quantity 一一对应）。

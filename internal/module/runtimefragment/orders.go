@@ -336,10 +336,13 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 		}); lerr == nil && list != nil {
 			for _, rt := range list.List {
 				data.Returns = append(data.Returns, orderReturnSummary{
-					ReturnNo:    rt.ReturnNo,
-					StatusLabel: rt.StatusLabel,
+					ReturnNo: rt.ReturnNo,
+					// 状态与金额在出口按请求语言生成：order 的 service 拿不到请求语言
+					// （它同时服务后台页与 JSON 接口），这里拿 service 给的中文标签
+					// 会让英文站点的访客页面恒中文。
+					StatusLabel: returnStatusLabelOf(r, rt.Status),
 					Reason:      rt.Reason,
-					RefundLabel: rt.RefundLabel,
+					RefundLabel: formatCentsLabel(r, rt.RefundAmount),
 					TimeLabel:   rt.CreateTime.Time().Format("2006-01-02 15:04"),
 				})
 			}

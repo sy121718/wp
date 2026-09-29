@@ -10,6 +10,8 @@
 #     未安装时提示 go install github.com/air-verse/air@latest。
 #   - 配置见项目根 .air.toml：Go/模板/config.yaml 改动自动重编译重启；
 #     静态资源（/static 由 gin.Dir 直读文件系统）改完刷新浏览器即可。
+#   - 是否在 air 重启时自动执行迁移由 database.run_migrations 控制；false 时不会隐式改库，
+#     需使用管理连接手动执行 make migrate 或 go run ./cmd -migrate-only。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

@@ -21,6 +21,7 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
+	navigationenums "go_wp/internal/module/navigation/enums"
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
@@ -108,7 +109,7 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 		shell.PageErrorBadRequest(c, "navigation", errPanelUnavailable)
 		return
 	}
-	name := panelBlockName(kind, title)
+	name := panelBlockName(shell.TranslateFor(c), kind, title)
 	created, err := h.blocks.Create(c.Request.Context(), &blockcontract.CreateReq{
 		ProjectID: projectID, Name: name, Kind: "block",
 	})
@@ -130,21 +131,29 @@ func (h *navigationPageHandle) PanelCreate(c *gin.Context) {
 }
 
 // panelBlockName 面板块的默认名（可辨认来源）。
-func panelBlockName(kind, title string) string {
-	pos := "菜单"
+//
+// **这个名字会落库**（blockcontract.CreateReq.Name）：它是块的初始名、用户随后可以在
+// 块编辑器里改。取词只影响「新建那一刻用哪种语言拼出这个名字」，落库之后就是普通用户数据、
+// 不再随后台语言变化 —— 彻底的解法是给 Block 表加「默认名 key」字段、展示时按 key 取词，
+// 那要动 block 模块的 contract/model/迁移与全局块列表页，超出本批范围（见报告）。
+//
+// 位置词用当前请求语言取词：英文后台里新建的块名至少与界面语言一致，
+// 而不是让一张中文表格里突然出现一个纯中文名。
+func panelBlockName(tr func(key, fallback string) string, kind, title string) string {
+	pos := tr(navigationenums.PanelBlockNameMenu, "菜单")
 	switch kind {
 	case "header":
-		pos = "页眉菜单"
+		pos = tr(navigationenums.PanelBlockNameHeader, "页眉菜单")
 	case "header_mobile":
-		pos = "页眉移动菜单"
+		pos = tr(navigationenums.PanelBlockNameHeaderMobile, "页眉移动菜单")
 	case "footer":
-		pos = "页脚菜单"
+		pos = tr(navigationenums.PanelBlockNameFooter, "页脚菜单")
 	case "footer_mobile":
-		pos = "页脚移动菜单"
+		pos = tr(navigationenums.PanelBlockNameFooterMobile, "页脚移动菜单")
 	}
 	t := strings.TrimSpace(title)
 	if t == "" {
-		t = "面板"
+		t = tr(navigationenums.PanelBlockNamePanel, "面板")
 	}
 	return pos + "·" + t
 }

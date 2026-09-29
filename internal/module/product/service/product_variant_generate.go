@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"
 )
 
@@ -80,8 +82,9 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	}
 	total := combinationCount(dims)
 	if total > MaxVariantCombinations {
-		return nil, fmt.Errorf("%s：%d 个组合超过上限 %d（请减少勾选的属性值或属性维度）",
-			productenums.ErrVariationCountLimit, total, MaxVariantCombinations)
+		return nil, fmt.Errorf("%s：%s", productenums.ErrVariationCountLimit,
+			i18n.ErrorDetail(productenums.DetailVariationCountExceed,
+				"n", strconv.Itoa(total), "max", strconv.Itoa(MaxVariantCombinations)))
 	}
 
 	// 归属仓（issue #15）：本批变体统一落在该仓（不选则默认仓），短码参与 SKU 编码，
@@ -238,8 +241,8 @@ func buildVariationDimensions(p *productmodel.ProductEntity, attrs []*productmod
 		}
 		seenSel[id] = true
 		if a, ok := byID[id]; !ok || !a.IsVariation {
-			return nil, fmt.Errorf("%s：属性组 %s 未被该商品引用，或未标记为参与变体",
-				productenums.ErrVariationAttributeInvalid, id)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationAttributeInvalid,
+				i18n.ErrorDetail(productenums.DetailVariationAttributeUnreferenced, "attribute", id))
 		}
 	}
 	for _, id := range decodeStrings(p.AttributeIDs) {
@@ -274,8 +277,9 @@ func buildVariationDimensions(p *productmodel.ProductEntity, attrs []*productmod
 		return nil, errors.New(productenums.ErrVariationNoDimension)
 	}
 	if len(dims) > MaxVariationDimensions {
-		return nil, fmt.Errorf("%s：%d 个维度超过上限 %d（请减少参与变体的属性组）",
-			productenums.ErrVariationDimensionLimit, len(dims), MaxVariationDimensions)
+		return nil, fmt.Errorf("%s：%s", productenums.ErrVariationDimensionLimit,
+			i18n.ErrorDetail(productenums.DetailVariationDimensionExceed,
+				"n", strconv.Itoa(len(dims)), "max", strconv.Itoa(MaxVariationDimensions)))
 	}
 	return dims, nil
 }
@@ -306,8 +310,8 @@ func pickAttributeValues(a *productmodel.ProductAttributeEntity, enabled []produ
 			continue
 		}
 		if !enabledSet[id] {
-			return nil, fmt.Errorf("%s：属性组 %s 下没有启用中的属性值 %s",
-				productenums.ErrVariationValueInvalid, a.Key, id)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationValueInvalid,
+				i18n.ErrorDetail(productenums.DetailVariationValueNotEnabled, "attribute", a.Key, "value", id))
 		}
 		want[id] = true
 	}
@@ -592,8 +596,9 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 	}
 	total := combinationCount(dims)
 	if total > MaxVariantCombinations {
-		return nil, fmt.Errorf("%s：%d 个组合超过上限 %d（请减少勾选的属性值或属性维度）",
-			productenums.ErrVariationCountLimit, total, MaxVariantCombinations)
+		return nil, fmt.Errorf("%s：%s", productenums.ErrVariationCountLimit,
+			i18n.ErrorDetail(productenums.DetailVariationCountExceed,
+				"n", strconv.Itoa(total), "max", strconv.Itoa(MaxVariantCombinations)))
 	}
 	ref, werr := s.resolveWarehouseRef(ctx, p.ProjectID, req.WarehouseID)
 	if werr != nil {
@@ -981,12 +986,12 @@ func normalizeListOptionPairs(raw json.RawMessage, allowed map[string]map[string
 	for _, p := range pairs {
 		values, ok := allowed[p.Key]
 		if !ok {
-			return nil, fmt.Errorf("%s：属性组 %s 未参与该商品的变体",
-				productenums.ErrVariationAttributeInvalid, p.Key)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationAttributeInvalid,
+				i18n.ErrorDetail(productenums.DetailVariationAttributeNotInProduct, "attribute", p.Key))
 		}
 		if !values[p.Value] {
-			return nil, fmt.Errorf("%s：属性组 %s 下没有启用中的属性值 %s",
-				productenums.ErrVariationValueInvalid, p.Key, p.Value)
+			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationValueInvalid,
+				i18n.ErrorDetail(productenums.DetailVariationValueNotEnabled, "attribute", p.Key, "value", p.Value))
 		}
 	}
 	return sortedOptionPairs(pairs, groupOrder), nil

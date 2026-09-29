@@ -8,6 +8,7 @@
 {{ end }}{{ if .SEOHead }}{{ .SEOHead | unsafe }}
 {{ end }}{{ if .GA4Head }}{{ .GA4Head | unsafe }}
 {{ end }}{{ if .SearchConsoleHead }}{{ .SearchConsoleHead | unsafe }}
+{{ end }}{{ if .HeadScripts }}{{ .HeadScripts | unsafe }}
 {{ end }}<style>
 {{ if .ThemeVarsCSS }}{{ .ThemeVarsCSS | unsafe }}
 {{ end }}{{ .CSS | unsafe }}
@@ -16,5 +17,6 @@
 <body{{ if .BodyClass }} class="{{ .BodyClass | unsafe }}"{{ end }}>
 {{ .HTML | unsafe }}
 {{ if .EnhanceScript }}<script>{{ .EnhanceScript | unsafe }}</script>
+{{ end }}{{ if .BodyScripts }}{{ .BodyScripts | unsafe }}
 {{ end }}</body>
 </html>

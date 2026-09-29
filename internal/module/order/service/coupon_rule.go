@@ -180,25 +180,38 @@ func couponDiscountLabel(e *ordermodel.CouponEntity) string {
 	return fmt.Sprintf("减 %s 元", centsToYuanLabel(e.DiscountValue))
 }
 
-// couponStatusLabel 券当前状态的展示文案（按时间与次数算出来，不看单一列）。
+// couponState 券当前的**展示口径状态**（按时间与次数算出来，不看单一列）。
 //
 // 状态列只表达「运营有没有手动停用」；过期、未开始、用尽都是时间的函数，
 // 单独存一列必然与真实状态不同步（要靠定时任务去刷，而定时任务总有停的时候）。
-func couponStatusLabel(e *ordermodel.CouponEntity, now time.Time) string {
+//
+// 返回值是枚举口径值（orderenums.CouponState*），**不是文案**：
+// 展示层拿它挑徽章样式并按词条渲染文案 —— 拿中文标签反查样式表的旧实现，
+// 运营在后台改一句词条就能让徽章静默失效。
+func couponState(e *ordermodel.CouponEntity, now time.Time) string {
 	if e == nil {
 		return ""
 	}
 	switch {
 	case e.Status != ordermodel.CouponStatusEnabled:
-		return "已停用"
+		return orderenums.CouponStateDisabled
 	case e.EndsAt != nil && now.After(*e.EndsAt):
-		return "已过期"
+		return orderenums.CouponStateExpired
 	case e.StartsAt != nil && now.Before(*e.StartsAt):
-		return "未开始"
+		return orderenums.CouponStateNotStarted
 	case e.MaxUses > 0 && e.UsedCount >= e.MaxUses:
-		return "已用完"
+		return orderenums.CouponStateExhausted
 	}
-	return "生效中"
+	return orderenums.CouponStateEnabled
+}
+
+// couponStatusLabel 券当前状态的展示文案（API 响应字段）。
+//
+// 中文取自 enums 的同一条真源（orderenums.CouponStateLabel 的兜底），
+// 后台页面不再用它 —— 页面按 State 取词，多语言界面才可能正确。
+func couponStatusLabel(e *ordermodel.CouponEntity, now time.Time) string {
+	_, fallback := orderenums.CouponStateLabel(couponState(e, now))
+	return fallback
 }
 
 // usageLabel 用次展示：「3 / 不限」「3 / 100」。

@@ -84,6 +84,9 @@ func settingsRenderData(projects []map[string]any, selected string) map[string]a
 		"SearchConsoleVerification": "",
 		"NotFoundHTML":              "",
 		"URLPatterns":               []map[string]any{},
+		// 运费规则（表单元，后端由分换算得出）。
+		"ShippingBaseFeeYuan":       "",
+		"ShippingFreeThresholdYuan": "",
 		"Locales":                   []map[string]any{},
 		// 三个可选键按模板既有写法直接参与 {{if}}，缺失会让渲染在那一行中断。
 		"LocaleError":       "",

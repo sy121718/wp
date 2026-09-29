@@ -82,7 +82,18 @@ func (s *Service) PurgeRetention(ctx context.Context) (deletedRevisions int64, e
 			return total, nil
 		},
 	}
-	outcomes := retention.RunAll(ctx, []retention.Task{revisions}, now)
+	// 定时上下线的排定记录（PIPE-7）：只清**终态**且到点时刻超保留期的行。
+	// 保留期常量取自 retention 包（与 internal/retention/catalog.go 的声明同一个数字）——
+	// 两处各写一份的下场是「声明说留 90 天、实际清了 30 天」且没人会去比。
+	schedules := retention.Task{
+		Name: "page_schedules", Table: "page_schedules", TimeColumn: "scheduled_at",
+		Retain: retention.RetainPageScheduleDays * 24 * time.Hour, BatchSize: pageRetentionBatch,
+		Note: "只清终态（done/failed/canceled）且到点时刻早于保留期的行；待执行 / 执行中一律保留",
+		Sweep: func(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+			return s.model.DeleteFinishedSchedules(ctx, cutoff, limit)
+		},
+	}
+	outcomes := retention.RunAll(ctx, []retention.Task{revisions, schedules}, now)
 	total, failed := retention.Summary(outcomes)
 	if len(failed) > 0 {
 		logger.Scene("page").With("failed", failed).Warn("保留期任务部分失败")

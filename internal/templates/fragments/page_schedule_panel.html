@@ -1,0 +1,86 @@
+{* fragments/page_schedule_panel.html — 页面定时上下线面板（PIPE-7，HTMX 服务端渲染）
+   数据（由 page/inbound/http/page_schedule_handle.go 的 schedulePanelData 注入，**全部键总是存在**）：
+     t（取词函数）/ CSRFToken / PageID / Path / Items（[]scheduleRowView）/ Error / Done / DefaultAt
+   字段全部来自**数据库**（page_schedules），不从页面文档猜 —— 文档里没有「排定」这件事。
+   取词：本片段不经 shell.Prepare，t 由调用点注入。 *}
+{{tr := .["t"]}}
+{* range 内的点号是当前行（不是外层数据），因此外层的标量先取成变量。 *}
+{{pageID := .PageID}}
+{{csrf := .CSRFToken}}
+<div class="sched-panel" id="page-schedule-{{pageID}}">
+    <div class="list-toolbar">
+        <strong>{{tr("admin.page.schedule.title", "定时上下线")}}</strong>
+        {* 字符串比较而不是裸 if：Jet 的 if 只接受 bool，拿 string 直接判断会在运行期报错
+           （pages.html 的 Err/Done 同样是 `!= ""` 的显式比较）。 *}
+        {{if .Path != ""}}<span class="text-mono text-mute">{{ .Path }}</span>{{end}}
+    </div>
+    {{if .Error != ""}}<p class="badge badge-warning" role="alert">{{ .Error }}</p>{{end}}
+    {{if .Done != ""}}<p class="badge badge-info" role="status">{{ .Done }}</p>{{end}}
+    <form method="post" action="/admin/page-schedules/set"
+          hx-post="/admin/page-schedules/set"
+          hx-target="#page-schedule-{{pageID}}" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="pageId" value="{{pageID}}">
+        <div class="form-row">
+            <label class="form-label" for="sched-action-{{pageID}}">{{tr("admin.page.schedule.action", "动作")}}</label>
+            <select class="form-input" id="sched-action-{{pageID}}" name="action">
+                <option value="publish">{{tr("admin.page.schedule.action.publish", "上线")}}</option>
+                <option value="offline">{{tr("admin.page.schedule.action.offline", "下线")}}</option>
+            </select>
+            <label class="form-label" for="sched-at-{{pageID}}">{{tr("admin.page.schedule.time", "执行时间")}}</label>
+            <input class="form-input" type="datetime-local" id="sched-at-{{pageID}}" name="scheduledAt"
+                   value="{{ .DefaultAt }}" required>
+        </div>
+        <div class="form-row">
+            <label class="form-label" for="sched-lang-{{pageID}}">{{tr("admin.page.schedule.lang", "语言")}}</label>
+            <input class="form-input" type="text" id="sched-lang-{{pageID}}" name="lang"
+                   placeholder="{{tr("admin.page.schedule.lang_hint", "留空 = 站点默认语言")}}">
+            <label class="form-label" for="sched-redirect-{{pageID}}">{{tr("admin.page.schedule.redirect", "下线后跳转到")}}</label>
+            <input class="form-input" type="text" id="sched-redirect-{{pageID}}" name="redirectPath"
+                   placeholder="{{tr("admin.page.schedule.redirect_hint", "/new-path（留空 = 直接 404）")}}">
+        </div>
+        <p class="stat-note">{{tr("admin.page.schedule.note", "上线到点只切访问面指针，用排定当时构建的那份产物；排定之后草稿又被改动的话，到点不会上线，而是记一条「排定失败」（不按新草稿重新编译）。执行时刻按站点时区理解。")}}</p>
+        <button type="submit" class="btn btn-primary btn-sm">{{tr("admin.page.schedule.submit", "排定")}}</button>
+    </form>
+    {{if len(.Items) == 0}}
+    <p class="stat-note">{{tr("admin.page.schedule.empty", "这个页面还没有排定记录。")}}</p>
+    {{else}}
+    <div class="table-wrap table-scroll">
+        <table class="data-table">
+            <thead>
+            <tr>
+                <th>{{tr("admin.page.schedule.col.time", "执行时间")}}</th>
+                <th>{{tr("admin.page.schedule.col.action", "动作")}}</th>
+                <th>{{tr("admin.page.schedule.col.lang", "语言")}}</th>
+                <th>{{tr("admin.page.schedule.col.status", "状态")}}</th>
+                <th>{{tr("admin.page.schedule.col.note", "说明")}}</th>
+                <th class="col-actions">{{tr("admin.page.schedule.col.actions", "操作")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range _, r := .Items}}
+            <tr>
+                <td class="text-mono">{{r.Time}}</td>
+                <td>{{r.Action}}</td>
+                <td>{{r.Lang}}</td>
+                <td>{{r.Status}}</td>
+                <td class="text-sm">{{r.Note}}</td>
+                <td class="col-actions">
+                    {{if r.CanCancel}}
+                    <form method="post" action="/admin/page-schedules/cancel"
+                          hx-post="/admin/page-schedules/cancel"
+                          hx-target="#page-schedule-{{pageID}}" hx-swap="outerHTML">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="pageId" value="{{pageID}}">
+                        <input type="hidden" name="id" value="{{r.ID}}">
+                        <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.page.schedule.cancel", "取消")}}</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{end}}
+</div>

@@ -63,7 +63,11 @@ type MediaService interface {
 	// 供构建期响应式图片（srcset）使用；非媒体库 URL 或变体未就绪返回 nil。
 	ProbeImageVariants(ctx context.Context, url string) []int
 	// BuildDownloadPlan 构建单个附件的资源包（zip）打包计划。
-	BuildDownloadPlan(ctx context.Context, attachmentID uint64) (*mediadto.DownloadPlan, error)
-	// BuildBatchDownloadPlan 构建多个附件的资源包（zip）批量打包计划。
-	BuildBatchDownloadPlan(ctx context.Context, ids []uint64) (*mediadto.DownloadPlan, error)
+	//
+	// langs 是可选的**产物语言**（zip 内 README.txt 用）：不传时按默认语言生成。
+	// 它必须显式传进来而不是从 ctx 取 —— service 层拿不到请求语言，而 README
+	// 是要落进用户下载的文件里的文案，写死一种语言等于把中文焊进导出产物。
+	BuildDownloadPlan(ctx context.Context, attachmentID uint64, langs ...string) (*mediadto.DownloadPlan, error)
+	// BuildBatchDownloadPlan 构建多个附件的资源包（zip）批量打包计划（langs 同上）。
+	BuildBatchDownloadPlan(ctx context.Context, ids []uint64, langs ...string) (*mediadto.DownloadPlan, error)
 }

@@ -114,9 +114,13 @@ func (s *Service) CollectionSchemas(_ context.Context) ([]core.CollectionSchema,
 	types := contentcontract.EntityTypes()
 	out := make([]core.CollectionSchema, 0, len(types))
 	for _, t := range types {
+		// 展示名给 (key, 中文兜底) 两份：service 拿不到请求语言（构建期根本没有请求），
+		// 取词在出口 handler —— 见 contentenums.EntityTypeLabel 与 CollectionSchema.LabelKey。
+		key, fallback := contentenums.EntityTypeLabel(t)
 		out = append(out, core.CollectionSchema{
-			Source: collectionSourcePrefix + t,
-			Label:  entityTypeLabel(t),
+			Source:   collectionSourcePrefix + t,
+			Label:    fallback,
+			LabelKey: key,
 			// 集合项字段用**集合白名单**：下拉里不该出现正文与主关键词，
 			// 它们既不在查询投影里、也不会被渲染。三处（下拉 / 构建期校验 / SQL 投影）
 			// 共用这一个定义，才不会出现「选得到、构建出来是空」的静默失败。
@@ -124,20 +128,6 @@ func (s *Service) CollectionSchemas(_ context.Context) ([]core.CollectionSchema,
 		})
 	}
 	return out, nil
-}
-
-// entityTypeLabel 内容类型的展示名（工作台集合源/字段下拉）。
-func entityTypeLabel(entityType string) string {
-	switch entityType {
-	case "article":
-		return "文章列表"
-	case "product":
-		return "商品列表"
-	case "category":
-		return "分类列表"
-	default:
-		return entityType
-	}
 }
 
 // 编译期断言：Service 实现集合解析与集合元数据两个契约。

@@ -20,6 +20,8 @@ const (
 	ErrInvalidPath          = "ErrInvalidPath"          // 页面访问路径不合法
 	ErrDraftVersionConflict = "ErrDraftVersionConflict" // 草稿版本已更新，请刷新后重试
 	ErrPathOccupied         = "ErrPathOccupied"         // 页面访问路径已被占用
+	// ErrRevisionNotFound 修订历史里没有请求的版本（面板显示的是快照列表，列表过期后常见）。
+	ErrRevisionNotFound = "ErrRevisionNotFound" // 修订版本不存在
 	// ErrBlueprintUnavailable 蓝图能力未接入（装配缺失）：从蓝图建页时明确报错，
 	// 而不是静默建成空页 —— 空页在后台看起来像「新建成功但内容是白的」。
 	ErrBlueprintUnavailable = "ErrBlueprintUnavailable" // 蓝图能力未接入
@@ -114,24 +116,41 @@ const (
 // SiteSlotDef 槽位定义（后台按这个顺序与名称渲染）。
 type SiteSlotDef struct {
 	Key string
-	// Name 展示名。
-	Name string
-	// Usage 这个槽位会被谁用到（写在后台页上，省得作者猜「绑了有什么用」）。
-	Usage string
+	// NameKey 展示名的 i18n key；Name 是**中文兜底**（词条缺失时页面上显示的原文）。
+	//
+	// 为什么表里同时留 key 与兜底：本表在 enums 包里、没有请求语言，
+	// contract 的 SiteSlotItem.SlotName 承载的是 **key**（见 page/service/page_slot.go），
+	// 取词落在后台页面层（page/inbound/http/site_slot_handle.go）。把中文写进 contract
+	// 就等于把一种语言焊进跨模块数据。
+	NameKey string
+	Name    string
+	// UsageKey 用途说明的 i18n key；Usage 是中文兜底。
+	UsageKey string
+	Usage    string
 }
 
 // SiteSlotDefs 全部槽位，顺序即后台展示顺序。
 var SiteSlotDefs = []SiteSlotDef{
-	{SiteSlotShop, "商品列表", "商品卡与导航的「全部商品」指向它"},
-	{SiteSlotBlog, "文章列表", "文章列表页"},
-	{SiteSlotCart, "购物车", "承载 cartView 片段；加购后跳转到这里"},
-	{SiteSlotCheckout, "结算", "承载 checkout 片段；购物车的「去结算」指向它"},
-	{SiteSlotAccount, "个人中心", "访客账号中心"},
-	{SiteSlotLogin, "登录", "登录页；需要登录时跳转到这里"},
-	{SiteSlotRegister, "注册", "注册页；登录页的「注册」指向它"},
-	{SiteSlotForgot, "忘记密码", "申请重置密码的页面"},
-	{SiteSlotReset, "重置密码", "带 token 的重置密码页"},
-	{SiteSlotOrders, "我的订单", "访客订单列表（可与个人中心同页）"},
+	{Key: SiteSlotShop, NameKey: "admin.site_slots.slot.shop.name", Name: "商品列表",
+		UsageKey: "admin.site_slots.slot.shop.usage", Usage: "商品卡与导航的「全部商品」指向它"},
+	{Key: SiteSlotBlog, NameKey: "admin.site_slots.slot.blog.name", Name: "文章列表",
+		UsageKey: "admin.site_slots.slot.blog.usage", Usage: "文章列表页"},
+	{Key: SiteSlotCart, NameKey: "admin.site_slots.slot.cart.name", Name: "购物车",
+		UsageKey: "admin.site_slots.slot.cart.usage", Usage: "承载 cartView 片段；加购后跳转到这里"},
+	{Key: SiteSlotCheckout, NameKey: "admin.site_slots.slot.checkout.name", Name: "结算",
+		UsageKey: "admin.site_slots.slot.checkout.usage", Usage: "承载 checkout 片段；购物车的「去结算」指向它"},
+	{Key: SiteSlotAccount, NameKey: "admin.site_slots.slot.account.name", Name: "个人中心",
+		UsageKey: "admin.site_slots.slot.account.usage", Usage: "访客账号中心"},
+	{Key: SiteSlotLogin, NameKey: "admin.site_slots.slot.login.name", Name: "登录",
+		UsageKey: "admin.site_slots.slot.login.usage", Usage: "登录页；需要登录时跳转到这里"},
+	{Key: SiteSlotRegister, NameKey: "admin.site_slots.slot.register.name", Name: "注册",
+		UsageKey: "admin.site_slots.slot.register.usage", Usage: "注册页；登录页的「注册」指向它"},
+	{Key: SiteSlotForgot, NameKey: "admin.site_slots.slot.forgot.name", Name: "忘记密码",
+		UsageKey: "admin.site_slots.slot.forgot.usage", Usage: "申请重置密码的页面"},
+	{Key: SiteSlotReset, NameKey: "admin.site_slots.slot.reset.name", Name: "重置密码",
+		UsageKey: "admin.site_slots.slot.reset.usage", Usage: "带 token 的重置密码页"},
+	{Key: SiteSlotOrders, NameKey: "admin.site_slots.slot.orders.name", Name: "我的订单",
+		UsageKey: "admin.site_slots.slot.orders.usage", Usage: "访客订单列表（可与个人中心同页）"},
 }
 
 // IsSiteSlot 判断键是否在槽位白名单内。
@@ -144,14 +163,28 @@ func IsSiteSlot(key string) bool {
 	return false
 }
 
-// SiteSlotName 槽位展示名（未知键回退键本身，便于排查）。
-func SiteSlotName(key string) string {
+// SiteSlotName 槽位展示名的**中文兜底**（未知 key 回退 key 本身，便于排查）。
+//
+// 入参是展示名的 i18n key（SiteSlotDef.NameKey）而不是槽位键 —— 名字与用途两条
+// 兜底文案都只在本表写一次，取词的调用点（page/inbound/http/site_slot_handle.go）
+// 只负责翻，不负责再抄一份中文。
+func SiteSlotName(nameKey string) string {
 	for _, d := range SiteSlotDefs {
-		if d.Key == key {
+		if d.NameKey == nameKey {
 			return d.Name
 		}
 	}
-	return key
+	return nameKey
+}
+
+// SiteSlotUsage 槽位用途的中文兜底（未知 key 回退 key 本身）。
+func SiteSlotUsage(usageKey string) string {
+	for _, d := range SiteSlotDefs {
+		if d.UsageKey == usageKey {
+			return d.Usage
+		}
+	}
+	return usageKey
 }
 
 // MsgInternalError handler 内部错误统一兜底提示（禁止直出 err.Error() 泄露内部细节）。
@@ -199,4 +232,54 @@ func ValidatePageContentContract(kind, targetType string, targetID *string) bool
 	default:
 		return false
 	}
+}
+
+// —— 定时上下线（PIPE-7）——
+//
+// 业务错误 key：与其它 Err* 同族（值即 i18n key，读侧取词后展示）。
+// 到点执行失败时的 last_error 也存这一族的 key（见 ScheduleFailureFallbacks）——
+// page_schedules.last_error 会显示在后台，存原文等于把内部错误摆到页面上。
+const (
+	// ErrScheduleNotFound 这条排定不存在（或不属于该页面）。
+	ErrScheduleNotFound = "ErrScheduleNotFound" // 排定不存在
+	// ErrScheduleInPast 排定时间必须晚于当前时刻（「到点」已经过去 = 这次排定永远不会执行）。
+	ErrScheduleInPast = "ErrScheduleInPast" // 排定时间必须晚于当前时刻
+	// ErrScheduleActionInvalid 排定动作不在白名单内（只接受 publish / offline）。
+	ErrScheduleActionInvalid = "ErrScheduleActionInvalid" // 排定动作不合法
+	// ErrScheduleRunning 这条排定正在执行（已被认领），无法取消。
+	ErrScheduleRunning = "ErrScheduleRunning" // 排定正在执行，无法取消
+	// ErrScheduleOccupied 该页面该语言已有待执行 / 执行中的同类排定。
+	//
+	// 与「重排」的区别：同动作的 pending 会被新排定**取代**（旧决策作废，不报错），
+	// 只有 running 才拒绝 —— 执行者手上还拿着那一条的租约与快照。
+	ErrScheduleOccupied = "ErrScheduleOccupied" // 同类排定正在执行，请稍后再试
+	// ErrScheduleApplyFailed 到点执行失败的**归口** key（内部错误统一用它，
+	// 原文只进日志；具体可归因的失败用更精确的 key，如 ErrRebuildRequired）。
+	ErrScheduleApplyFailed = "ErrScheduleApplyFailed" // 排定执行失败，请查看服务日志
+)
+
+const (
+	// MsgScheduleSet 排定成功（到点自动执行）。
+	MsgScheduleSet = "MsgScheduleSet" // 已排定，到点自动执行
+	// MsgScheduleCanceled 排定已取消。
+	MsgScheduleCanceled = "MsgScheduleCanceled" // 排定已取消
+)
+
+// ScheduleFailureFallbacks 到点执行失败的 last_error 词条 → 中文兜底。
+//
+// 与 ErrDetailFallbacks（page_err_detail.go）同形：键是写侧写进 page_schedules.last_error 的
+// 取值集合，值是 i18n 未初始化 / 词条缺失时页面上显示的原文。
+//
+// **两个消费者共用这一份**：service 写 last_error 时只写 key（不写原文），
+// 后台读侧（pages_handle.go 的排定投影）用本表取词 —— 两边各抄一份清单的下场是
+// 「新增一个失败原因，页面上显示成裸 key」且不报错。
+//
+// 取值刻意全是既有业务错误 key（不加新词条即可用）：到点失败的两类成因就是
+// 「产物不再代表当前草稿」与「访问面/占用出问题」，它们的文案早已存在。
+var ScheduleFailureFallbacks = map[string]string{
+	ErrRebuildRequired:     "草稿已变更，请重新构建后再发布",
+	ErrNoStagedArtifact:    "无暂存产物，请先构建",
+	ErrPathOccupied:        "页面访问路径已被占用",
+	ErrPageNotFound:        "页面不存在",
+	ErrScheduleApplyFailed: "排定执行失败，请查看服务日志",
 }

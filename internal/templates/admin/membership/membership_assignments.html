@@ -1,0 +1,147 @@
+{* admin/membership/membership_assignments.html — 会员归属（BIZ-3）。
+   这一页回答「谁是什么等级」：按等级 / 来源 / 访客筛选列表、手工指定等级、解除手工锁定。
+   等级与权益的定义在 membership.html。
+
+   手工指定与自动重算的关系在这页上必须说清（页面上的那一句说明就是它）：
+   手工指定过的归属不会被日结按消费额覆盖，直到有人在这里解除锁定。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.membership.assign.title", "会员归属") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.membership.assign.intro", "归属按「工程 + 访客账号」唯一。日结按累计消费额自动升级那些来源为「自动重算」的行；这里手工指定的行不会被自动重算覆盖，要交还自动重算请点该行的「解除锁定」。还没有归属行的访客按工程的默认等级计算 —— 那个值不在这张表里，它是解析时的内存兜底。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-ghost" href="/admin/membership?project={{selectedProject}}">{{ .["t"]("admin.membership.link.tiers", "等级与权益") }}</a>
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/membership/assignments">
+                <label class="sr-only" for="ma-project">{{ .["t"]("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="ma-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.loadFailed", "工程列表没读出来，本页数据未加载，请稍后重试。") }}</p>{{end}}
+    {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.lastError", "上一次操作未完成：") }}{{.Err}}</p>{{end}}
+    {{if .Done != ""}}<p class="badge badge-success" role="status">{{.Done}}</p>{{end}}
+    {{if !.RecalcAvailable}}<p class="badge" role="status">{{ .["t"]("admin.membership.assign.recalcUnavailable", "自动升级尚未启用：消费额数据源（订单侧的批量聚合）还没接入，日结不会运行；这里的归属只能手工维护。") }}</p>{{end}}
+
+    {* ===== 手工指定 ===== *}
+    {{if isset(.PermSet["membership:assign_set"])}}
+    <section class="card">
+        <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.assign.setTitle", "手工指定等级") }}</span></div>
+        <form method="post" action="/admin/membership/assign/set" class="form-stack">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label req" for="ma-user">{{ .["t"]("admin.membership.assign.field.user", "访客账号 ID") }}</label>
+                    <input type="text" class="form-input" id="ma-user" name="userId" inputmode="numeric" required autocomplete="off" placeholder="{{ .["t"]("admin.membership.assign.field.userPh", "如 1024") }}">
+                    <p class="form-hint">{{ .["t"]("admin.membership.assign.field.userHint", "客户列表里的账号 ID。指定后该账号在这个工程不再参与自动升级，直到解除锁定。") }}</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label req" for="ma-tier">{{ .["t"]("admin.membership.assign.field.tier", "等级") }}</label>
+                    <select class="form-select" id="ma-tier" name="tierId" required>
+                        {{range _, t := .TierOptions}}
+                        <option value="{{t.Value}}">{{t.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
+            </div>
+        </form>
+    </section>
+    {{end}}
+
+    {* ===== 筛选 ===== *}
+    <section class="card">
+        <form method="get" action="/admin/membership/assignments" class="filter-bar">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <label class="sr-only" for="ma-f-tier">{{ .["t"]("admin.membership.assign.field.tier", "等级") }}</label>
+            <select class="form-select" id="ma-f-tier" name="tierId">
+                <option value="">{{ .["t"]("admin.common.filter.optionAll", "全部") }}</option>
+                {{range _, t := .TierOptions}}
+                <option value="{{t.Value}}" {{if t.Selected}}selected{{end}}>{{t.Label}}</option>
+                {{end}}
+            </select>
+            <label class="sr-only" for="ma-f-source">{{ .["t"]("admin.membership.assign.col.source", "来源") }}</label>
+            <select class="form-select" id="ma-f-source" name="source">
+                {{range _, s := .SourceOptions}}
+                <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{s.Label}}</option>
+                {{end}}
+            </select>
+            <label class="sr-only" for="ma-f-user">{{ .["t"]("admin.membership.assign.filter.user", "按访客 ID 查") }}</label>
+            <input type="text" class="form-input" id="ma-f-user" name="userId" value="{{if .FilterUser > 0}}{{.FilterUser}}{{end}}" inputmode="numeric" placeholder="{{ .["t"]("admin.membership.assign.filter.user", "按访客 ID 查") }}">
+            <button type="submit" class="btn">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
+            <a class="btn btn-ghost" href="/admin/membership/assignments?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+        </form>
+    </section>
+
+    {* ===== 列表 ===== *}
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{if .Total > 0}}{{ .["t"]("admin.membership.assign.totalLead", "归属（") }}{{.Total}}{{ .["t"]("admin.membership.assign.totalTail", "）") }}{{else}}{{ .["t"]("admin.membership.assign.title", "会员归属") }}{{end}}</span>
+        </div>
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead><tr>
+                <th>{{ .["t"]("admin.membership.assign.col.user", "访客账号") }}</th>
+                <th>{{ .["t"]("admin.membership.assign.col.tier", "等级") }}</th>
+                <th>{{ .["t"]("admin.membership.assign.col.source", "来源") }}</th>
+                <th>{{ .["t"]("admin.membership.assign.col.assignedAt", "生效时间") }}</th>
+                <th class="col-actions">{{ .["t"]("admin.common.col.actions", "操作") }}</th>
+            </tr></thead>
+            <tbody>
+            {{if len(.Rows) == 0}}
+            <tr><td colspan="5" class="cell-wrap">
+                <div class="empty-state">
+                    <p class="empty-title">{{ .["t"]("admin.membership.assign.emptyHeading", "还没有会员归属") }}</p>
+                    <p class="empty-desc">{{ .["t"]("admin.membership.assign.empty", "自动升级在日结时写入归属；也可以在上面的表单里手工指定一个。没有归属的访客按工程的默认等级计算。") }}</p>
+                </div>
+            </td></tr>
+            {{end}}
+            {{range _, r := .Rows}}
+            <tr>
+                <td>{{r.UserID}}</td>
+                <td>{{r.TierName}}</td>
+                <td>{{r.SourceText}}</td>
+                <td>{{r.AssignedAt}}</td>
+                <td class="col-actions">
+                    {{if r.IsManual}}
+                    {{if isset(.PermSet["membership:assign_unlock"])}}
+                    <form method="post" action="/admin/membership/assign/unlock">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="projectId" value="{{selectedProject}}">
+                        <input type="hidden" name="userId" value="{{r.UserID}}">
+                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
+                    </form>
+                    {{end}}
+                    {{else}}
+                    <span class="form-hint">{{ .["t"]("admin.membership.assign.autoHint", "随日结自动变化") }}</span>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {* 分页条：单页 / 装载失败时 handler 不注入那两个键，片段自然不渲染。 *}
+        {{include "../partials/pagination.html"}}
+    </section>
+</div>
+{{end}}

@@ -24,12 +24,41 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// 块内文本的来源标签（工作台行徽章）。
+// 块内文本的来源标签（工作台行徽章）：值是 **i18n key**，取词在 buildPageTranslationsData。
 const (
-	translationOriginHeader = "页眉块"
-	translationOriginFooter = "页脚块"
-	translationOriginBlock  = "全局块"
+	translationOriginHeader = "admin.page_translations.origin.header"
+	translationOriginFooter = "admin.page_translations.origin.footer"
+	translationOriginBlock  = "admin.page_translations.origin.block"
 )
+
+// translationOriginFallback 来源徽章的中文兜底（词条缺失时显示的原文）。
+//
+// 与 key 一一对应；这里是三处唯一的兜底来源，取词点只按 key 查这张表 ——
+// 各写一份兜底的后果是「缺词条时显示什么」变成第二份真相。
+var translationOriginFallback = map[string]string{
+	translationOriginHeader: "页眉块",
+	translationOriginFooter: "页脚块",
+	translationOriginBlock:  "全局块",
+}
+
+// translationOriginText 来源标签 → 当前语言文案（key + 中文兜底）。
+func translationOriginText(tr func(key, fallback string) string, origin string) string {
+	if origin == "" {
+		return ""
+	}
+	return tr(origin, translationOriginFallback[origin])
+}
+
+// pageTranslationsTr 取词函数的可选变参：不传时原样返回兜底文案。
+//
+// 用变参而不是必填参数：buildPageTranslationsData 被同包测试直接调用，
+// 那些用例验的是分组 / 筛选 / 完成度口径，与语言无关（同先例：siteSlotTr）。
+func pageTranslationsTr(trs []func(key, fallback string) string) func(key, fallback string) string {
+	if len(trs) > 0 && trs[0] != nil {
+		return trs[0]
+	}
+	return func(_, fallback string) string { return fallback }
+}
 
 // blockCandidateInfo 块内候选集合：候选列表 + 每个 (hash, context) 的来源标签。
 type blockCandidateInfo struct {

@@ -84,10 +84,10 @@ func TestProductPageErrAcceptsBothEnumsForms(t *testing.T) {
 func TestProductPageErrAcceptsPageOwnTexts(t *testing.T) {
 	owner := []string{
 		errTemplateDepsMissing,
-		productDetailTemplateNameRequired,
-		productDetailTemplatePathRequired,
-		productDetailTemplateNoProductPrompt,
-		productBundleNoProductText,
+		productDetailTemplateNameRequiredFallback,
+		productDetailTemplatePathRequiredFallback,
+		productDetailTemplateNoProductPromptFallback,
+		productBundleNoProductFallback,
 	}
 	for _, msg := range detailTemplateFacingMessages {
 		owner = append(owner, msg)
@@ -158,8 +158,8 @@ func TestProductDetailTemplateBackURLRoundTrip(t *testing.T) {
 	h := &productPageHandle{}
 	writers := []string{
 		errTemplateDepsMissing,
-		productDetailTemplateNameRequired,
-		productDetailTemplatePathRequired,
+		productDetailTemplateNameRequiredFallback,
+		productDetailTemplatePathRequiredFallback,
 		detailTemplateFacingMessages[presentationenums.ErrInvalidPath],
 		detailTemplateTemplateMessages[contenttemplateenums.ErrDataInvalid],
 	}

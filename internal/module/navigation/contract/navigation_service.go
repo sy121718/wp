@@ -52,7 +52,8 @@ type SourceResolver interface {
 type SourceGroup struct {
 	// Type 来源类型：page/article/product/category/block。
 	Type string
-	// Title 分组标题（页面/文章/产品/分类/全局块）。
+	// Title 分组标题的 **i18n key**（admin.navigations.source.*），不是文案本身：
+	// 适配器拿不到请求语言，展示层按 key 取词并自带中文兜底。
 	Title string
 	// Items 该分组下的候选实体。
 	Items []SourceCandidate

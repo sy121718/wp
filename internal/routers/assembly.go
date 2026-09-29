@@ -37,17 +37,27 @@ import (
 	carthttp "go_wp/internal/module/cart/inbound/http"
 	mockpaypal "go_wp/internal/module/cart/outbound/mockpaypal"
 	cartservice "go_wp/internal/module/cart/service"
+	commentcontract "go_wp/internal/module/comment/contract"
+	commenthttp "go_wp/internal/module/comment/inbound/http"
+	commentservice "go_wp/internal/module/comment/service"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
+	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
+	inventorymodel "go_wp/internal/module/inventory/model"
+	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
+	inventoryservice "go_wp/internal/module/inventory/service"
 	mailcontract "go_wp/internal/module/mail/contract"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	mediacontract "go_wp/internal/module/media/contract"
 	mediahttp "go_wp/internal/module/media/inbound/http"
+	membershipcontract "go_wp/internal/module/membership/contract"
+	membershiphttp "go_wp/internal/module/membership/inbound/http"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	ordercontract "go_wp/internal/module/order/contract"
@@ -56,12 +66,8 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
+	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
-	inventorymodel "go_wp/internal/module/inventory/model"
-	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
-	inventoryservice "go_wp/internal/module/inventory/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubcontract "go_wp/internal/module/publication/contract"
@@ -178,6 +184,15 @@ type assembly struct {
 
 	orderSvc ordercontract.OrderService
 
+	// membershipSvc 会员等级与权益（BIZ-3）。装配在 userSvc 之后、orderSvc 之前：
+	// 它依赖工程契约，而订单侧（折扣）是它的消费方。
+	membershipSvc membershipcontract.MembershipService
+	// membershipFacing 会员模块的文案出口（FacingTexter，装配期从 membershipSvc 断言取）。
+	//
+	// 单独存一份是因为它**不在 MembershipService 接口里**：那个接口是模块能力清单，
+	// 而文案出口只服务消费方（片段层 / 客户页拿不到 membership 的 enums 白名单）。
+	membershipFacing membershipcontract.FacingTexter
+
 	analyticsSvc analyticscontract.AnalyticsService
 
 	presentationSvc    presentationcontract.PresentationService
@@ -187,6 +202,11 @@ type assembly struct {
 
 	// availabilityLookup 在商品端口注入段取到，购物车建单时要用同一份实现。
 	availabilityLookup productcontract.VariantAvailabilityLookupPort
+
+	// commentSvc 评论模块契约（BIZ-5）。装配在订单之后：它只依赖工程契约与 adminPages，
+	// 但排在交易域之后便于阅读（评论是内容侧的横切能力，独立模块）。
+	// 片段层用的是它的**收窄接口**（commentcontract.FragmentPort），见 wireRuntimeAccessFace。
+	commentSvc commentcontract.CommentService
 }
 
 // dataRuleSnapshotPort 装配期消费的数据权限快照端口（admin 实现，只取装配需要的四条）。
@@ -500,6 +520,27 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("用户模块未实现 CustomerAdminPort（后台客户管理契约），装配缺陷")
 	}
 	userhttp.SetupCustomerAdminRoutes(authorizedAPI, userAdminSvc)
+
+	// 会员等级与权益（BIZ-3）：等级按工程定义、归属按 (project, user) 唯一。
+	// 装配位置在 userSvc 之后（两者都围绕访客账号，但会员是**独立领域** ——
+	// AGENTS.md 的命名约束把 admin / user 定义为两个独立领域，会员等级要被
+	// order / cart / runtimefragment 消费，塞进 user 会让片段层拿到完整 UserService）、
+	// orderSvc 之前（订单侧是消费方：折扣要读会员身份）。
+	//
+	// 消费额批量只读端口（membershipcontract.PurchaseSource）由**订单侧实现**，
+	// 而订单装配在本段之后 —— 所以这里只能先建服务，端口在订单段就绪后回填
+	//（见下面 order 段末尾的 SetPurchaseSource；不改成构造参数依赖：那会把
+	// 「order 依赖 membership 的折扣」与「membership 依赖 order 的消费额」变成构造环）。
+	membershipSvc := membershiphttp.SetupMembershipRoutes(authorizedAPI, a.adminPages, db, a.projectService)
+	// 文案出口不在 MembershipService 接口里（它只服务消费方，不是模块能力的一部分），
+	// 装配层断言一次：客户页与片段层都要用它 —— 缺了就只能一律通用提示，
+	// 把「这个工程还没配默认等级」这类可行动差异吞掉。
+	membershipFacing, membershipFacingOK := membershipSvc.(membershipcontract.FacingTexter)
+	if !membershipFacingOK {
+		panic("会员模块未实现 FacingTexter（消费方文案出口契约），装配缺陷")
+	}
+	a.membershipSvc = membershipSvc
+	a.membershipFacing = membershipFacing
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	// webhook 外部集成通道（OSS-006 端点白名单 + SEC-015 SSRF 防护）：
@@ -537,11 +578,83 @@ func (a *assembly) buildIdentityAndCommerce() {
 	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc))
 	marks.mark(portWebhookDispatcher)
 
+	// —— 会员 ↔ 订单的端口对接（BIZ-3 消费侧）——
+	//
+	// 两条方向相反的接线，都用 setter 回填（order 在 membership 之后装配，
+	// 改成构造参数就会形成「order 要 membership 的折扣、membership 要 order 的消费额」的环）：
+	//
+	//	① order ← membership：折扣要读会员身份（Reader，收窄到一条只读方法）。
+	//	   未注入 = 会员折扣功能未开启（金额与接入前逐字一致），故是可选降级；
+	//	   这里仍然断言注入 —— 本进程内 membership 恒定可得，缺了就是装配缺陷。
+	//	② membership ← order：消费额批量只读端口（PurchaseSource）。
+	//	   membership 读不到 users 表、也不该读 orders 表，「谁该升级」只有订单侧能回答。
+	membershipReaderSetter, membershipReaderOK := orderSvc.(interface {
+		SetMembershipReader(membershipcontract.Reader)
+	})
+	if !membershipReaderOK {
+		panic("订单模块未提供会员身份注入点（SetMembershipReader），装配缺陷：会员折扣不会生效")
+	}
+	membershipReaderSetter.SetMembershipReader(a.membershipSvc)
+	marks.mark(portOrderMembershipReader)
+
+	purchaseSource, purchaseOK := orderSvc.(membershipcontract.PurchaseSource)
+	if !purchaseOK {
+		panic("订单模块未实现消费额批量只读契约（membershipcontract.PurchaseSource），装配缺陷")
+	}
+	a.membershipSvc.SetPurchaseSource(purchaseSource)
+	marks.mark(portMembershipPurchaseSource)
+	// 日结重算在端口就绪之后启动（幂等）：放在这里而不是会员装配段，
+	// 因为端口未注入时 StartRecalcScheduler 只会留一条 Warn 就返回 ——
+	// 那会让「日结从来没跑过」看起来像「订单侧没接线」，而实际只是启动顺序错了。
+	a.membershipSvc.StartRecalcScheduler()
+
+	// —— 评论（BIZ-5）：独立模块，多态挂载 ——
+	//
+	// 为什么是独立模块而不是每个实体模块自带一张评论表：评论的横切关注点
+	// （审核状态机 / 限流 / 防刷 / 审核后台 / i18n / 分页）与实体无关，
+	// 每模块自带等于把这一整套写 N 遍、运营还要跑 N 个后台页。
+	//
+	// 实体类型的白名单**由拥有该实体的模块声明**（见 commentEntityTypes），
+	// comment 模块不认识 article / product 的任何细节：装配层把两个常量搬过去而已。
+	// 新增一种可评论实体 = 在这里加一行 + 拥有者模块的常量已存在，不改 comment 模块。
+	commentSvc := commenthttp.SetupCommentRoutes(authorizedAPI, a.adminPages, db, a.projectService, commentEntityTypes())
+	a.commentSvc = commentSvc
+
 	a.mailSvc = mailSvc
 	a.userSvc = userSvc
 	a.userAdminSvc = userAdminSvc
 	a.orderSvc = orderSvc
 }
+
+// commentEntityTypes 评论可挂载的实体类型（**取值由拥有该实体的模块声明**）。
+//
+// 这是「白名单由拥有者声明」这条原则在装配层的落地形态（同 pkg/datarule 的域声明）：
+// comment 模块只认 contract.EntityType 这个结构，取值一律从 content / product 的
+// contract 常量搬过来 —— 本模块与装配层都**不抄一份取值表**。
+//
+// label 的 i18n key 也来自拥有者：
+//   - product 侧有现成常量（productcontract.EntityTypeLabel 用的就是它）；
+//   - content 侧没有把「文章」收成常量（该词条在模板里以字面量使用），这里引用
+//     内容模块自己的词条 key（admin.article.list.heading），而不是新造一个 ——
+//     新造会让同一个概念在两处有两种说法（一处改了另一处不知道）。
+func commentEntityTypes() []commentcontract.EntityType {
+	return []commentcontract.EntityType{
+		{
+			Type:  contentcontract.EntityTypeArticle,
+			Label: commentcontract.LabelPair{Key: contentArticleLabelKey, Fallback: "文章"},
+		},
+		{
+			Type:  productcontract.EntityTypeProduct,
+			Label: commentcontract.LabelPair{Key: productenums.ProductTranslationsEntityTypeProduct, Fallback: "商品"},
+		},
+	}
+}
+
+// contentArticleLabelKey 内容模块「文章」的展示名词条（内容模块自己的词条表）。
+//
+// 写成常量而不是散在调用点：它必须与内容模块词条表里的 key 逐字一致，
+// 且 i18n 是**字符串协议**（写错不会编译失败，只会静默回落中文兜底）。
+const contentArticleLabelKey = "admin.article.list.heading"
 
 // wireProductInventoryPorts 商品 ↔ 库存之间的端口注入（同一模块内直调 + 跨契约端口）。
 //
@@ -716,8 +829,87 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// HMAC-SHA256(secret, 原始报文)，换成真通道时只改这一行。
 	paymentCallbackSecret := resolvePurposeSecret("cart.payment_callback_secret", "支付回调验签", sessionSecret)
 	cartSvc := cartservice.NewService(orderSvc, productSvc, availabilityLookup, mockpaypal.New(paymentCallbackSecret), cartCookieSecret)
+	// 购物车 ↔ 会员（BIZ-3 免运费）：结算时按等级决定运费。经 setter 注入而不是加进
+	// NewService 的签名 —— 那个构造函数在测试里有 10+ 处直调。
+	// 未注入 = 免运费未开启（运费与接入前逐字一致），故是可选降级。
+	cartSvc.SetMembershipReader(a.membershipSvc)
+	marks.mark(portCartMembershipReader)
+	// 购物车 ↔ 站点运费规则：结算以站点设置的基础运费（shippingBaseFee）为起点，
+	// 满额免运费门槛（shippingFreeThreshold）与会员权益依次作用在同一笔上。
+	// 经 setter 注入而不是加进 NewService 的签名 —— 那个构造函数在测试里有 10+ 处直调。
+	//
+	// 取端口用类型断言而不是把它加进 ProjectService 接口：那是 project 模块的**大接口**，
+	// 每加一条方法都会波及全部消费者与测试替身；这里只要「读这个工程的运费规则」一条
+	//（见 internal/module/project/contract/shipping_policy.go）。
+	// 未接入 = 站点不收运费（结算运费恒 0，与接入前逐字一致），故是可选降级。
+	if policyReader, ok := a.projectService.(projectcontract.ShippingPolicyReader); ok {
+		cartSvc.SetShippingPolicyReader(policyReader)
+		marks.mark(portCartShippingPolicy)
+	} else {
+		logger.Scene("init").Warn("project 模块未提供站点运费规则读取端口（ShippingPolicyReader）：" +
+			"结算运费恒为 0 —— 站点级基础运费与满额免运费都不会生效")
+	}
 	runtimefragment.SetCartProvider(cartSvc)
 	marks.mark(portRuntimeFragCart)
+	// 片段层的会员身份（BIZ-3）：两个新能力（membershipBadge / membershipPanel）的读取端口
+	// 与文案出口。可选降级 —— 未注入时片段渲染「会员信息暂时不可用」这句**可见文案**，
+	// 而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
+	runtimefragment.SetMembershipReader(a.membershipSvc)
+	runtimefragment.SetMembershipFacingTexter(a.membershipFacing)
+	marks.mark(portRuntimeFragMembership)
+	// 商品评论差异化规则的**输入**（order → product）：把「某访客买过某商品吗」交给
+	// 商品模块，由它实现 commentcontract.EntityPolicy（紧接着的下一段把它注入 comment）。
+	//
+	// 两段是同一条链路的两个环节，放在一起读：order（事实）→ product（规则）→
+	// comment（存储与审核）。分开写会让后来的人以为 purchases 是别的用途。
+	//
+	// **可选降级**：未注入 = 「买过才能评」未启用（放行），product 侧记 Warn。
+	if checker, ok := orderSvc.(productcontract.PurchaseChecker); ok {
+		if setter, sok := productSvc.(interface {
+			SetPurchaseChecker(productcontract.PurchaseChecker)
+		}); sok {
+			setter.SetPurchaseChecker(checker)
+			marks.mark(portProductPurchaseChecker)
+		}
+	} else {
+		logger.Scene("init").Warn("order 模块未实现购买事实只读端口（productcontract.PurchaseChecker）：" +
+			"「商品评论必须买过」这条规则不生效，任何登录访客都能提交")
+	}
+	// 评论片段（BIZ-5）：两个能力（commentList / commentSubmit）的读写端口、文案出口与
+	// 来源 IP 哈希的盐。**可选降级** —— 未注入时片段渲染「评论功能暂时不可用」这句
+	// 可见文案，而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
+	if a.commentSvc != nil {
+		runtimefragment.SetCommentPort(a.commentSvc)
+		runtimefragment.SetCommentFacingTexter(a.commentSvc)
+		// 哈希口径留在评论模块（本包 import 它的 service 会被架构门禁拦下），
+		// 装配层只把「盐从哪来」这件事接上：按用途分离密钥（同 cart cookie / 支付回调的
+		// 既有手法），未配置时回退会话密钥并告警（resolvePurposeSecret 内部记 Warn）。
+		commentSalt := resolvePurposeSecret("comment.ip_pepper", "评论来源 IP 哈希", sessionSecret)
+		runtimefragment.SetCommentSourceHasher(func(ip string) string {
+			return commentservice.HashSourceIP(commentSalt, ip)
+		})
+		marks.mark(portRuntimeFragComment)
+		// 差异化规则的提供方（「商品评论必须买过」这类）：由**拥有该实体的模块**实现。
+		//
+		// 本批 product 尚未实现该端口 → 不注入 = **放行**（判断与理由见
+		// commentcontract.EntityPolicy 的注释：它是产品策略而不是安全边界，
+		// 且未注入即拒绝会把「装配漏了一行」表现成「整站评论功能废掉」）。
+		// 留一条 Warn 让「规则没生效」可见 —— 否则它会表现成「评论随便发」而无从解释。
+		if policy, ok := a.productSvc.(commentcontract.EntityPolicy); ok {
+			// 端口注入点不在 CommentService 契约里（那是模块对外能力清单，
+			// 差异化规则只服务消费侧），所以用类型断言取注入点 ——
+			// 与 SetMasterDataChanges / SetAvailabilityPort 的既有手法一致。
+			if setter, sok := a.commentSvc.(interface {
+				SetEntityPolicy(commentcontract.EntityPolicy)
+			}); sok {
+				setter.SetEntityPolicy(policy)
+				marks.mark(portCommentEntityPolicy)
+			}
+		} else {
+			logger.Scene("init").Warn("product 模块未实现评论差异化规则端口（commentcontract.EntityPolicy）：" +
+				"商品评论不做「买过才算」这类校验，所有提交一律进审核队列")
+		}
+	}
 	// 支付回调（BIZ-1）：公开路由，靠签名验签 —— 通道不可能持有后台会话与 CSRF token，
 	// 所以它不进 /api 的三层链，也不走片段端点（片段有参数与上下文两条协议约束，
 	// 而回调带的是原始报文）。

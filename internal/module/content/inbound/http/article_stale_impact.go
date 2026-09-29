@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	blockenums "go_wp/internal/module/block/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	"go_wp/pkg/logger"
 )
@@ -52,14 +53,19 @@ func staleImpactView(available bool, pages []gin.H, total int, truncated bool, h
 //
 // 取不到数据时返回明确说明而不是空清单：「影响面 0」与「读不到影响面」是两件事，
 // 混在一起会让运营把一次读取失败当成「没有待重建页面」。
-func articleStaleImpact(ctx context.Context, h *articlePageHandle) gin.H {
+func articleStaleImpact(ctx context.Context, h *articlePageHandle, trs ...func(key, fallback string) string) gin.H {
+	tr := articlePublishTr(trs)
 	if h == nil || h.pages == nil || h.projects == nil {
-		return staleImpactView(false, nil, 0, false, "页面能力未装配，无法统计待重建影响面。")
+		// 与 block 侧的待重建影响面文案**共用同一批 key**（两个页面说的是同一件事，
+		// 各写一份的下场是同一个现象在两页上有两种说法 —— 见本文件顶部注释）。
+		return staleImpactView(false, nil, 0, false,
+			tr(blockenums.ImpactUnavailableNoPageCapability, "页面能力未装配（装配层未把 page 契约传给块管理页），本次无法统计待重建影响面。"))
 	}
 	projects, err := h.projects.List(ctx)
 	if err != nil {
 		logger.Scene("content").Error(err, "读取工程列表失败，待重建影响面本次不可用")
-		return staleImpactView(false, nil, 0, false, "读取站点工程失败，本次无法统计待重建影响面。")
+		return staleImpactView(false, nil, 0, false,
+			tr(blockenums.ImpactUnavailableProjectReadFailed, "读取站点工程失败，本次无法统计待重建影响面。"))
 	}
 
 	pages := make([]gin.H, 0, staleImpactPageLimit)

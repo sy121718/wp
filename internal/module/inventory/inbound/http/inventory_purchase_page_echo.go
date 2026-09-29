@@ -35,11 +35,12 @@ func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, project
 	}
 	// 候选项由当前工程重取，表单值只取此次提交。
 	ctx := c.Request.Context()
+	tr := shell.TranslateFor(c)
 	data := gin.H{
 		"FormEcho": fields, "SelectedProject": projectID, "DraftLines": rows,
-		"Sources":        sourceOptions(ctx, h.inventory, projectID, ""),
-		"Warehouses":     h.purchaseWarehouseOptions(ctx, projectID),
-		"VariantOptions": h.purchaseVariantOptions(ctx, projectID),
+		"Sources":        sourceOptions(ctx, h.inventory, projectID, "", tr),
+		"Warehouses":     h.purchaseWarehouseOptions(ctx, projectID, tr),
+		"VariantOptions": h.purchaseVariantOptions(ctx, projectID, tr),
 		"SubmitErr":      inventoryErrText(c, err),
 	}
 	c.HTML(http.StatusOK, "admin/inventory/inventory_purchase_create_form.html", shell.Prepare(c, data))

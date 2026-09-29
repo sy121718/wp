@@ -14,6 +14,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	navigationcontract "go_wp/internal/module/navigation/contract"
+	navigationenums "go_wp/internal/module/navigation/enums"
 	pagecontract "go_wp/internal/module/page/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -60,16 +61,35 @@ func (r *Resolver) Candidates(ctx context.Context, projectID string) (groups []n
 	if g := r.pageCandidates(ctx, projectID); len(g.Items) > 0 {
 		out = append(out, g)
 	}
-	for _, t := range []struct{ entityType, title string }{
-		{"article", "文章"}, {"product", "产品"}, {"category", "分类"},
-	} {
-		if g := r.contentCandidates(ctx, t.entityType, t.title); len(g.Items) > 0 {
+	for _, entityType := range []string{"article", "product", "category"} {
+		if g := r.contentCandidates(ctx, entityType); len(g.Items) > 0 {
 			out = append(out, g)
 		}
 	}
 	// 全局块不进候选：块是内容片段、没有公开 URL，加入菜单只会得到一个空链接。
 	// 来源类型 block 仍被 ResolveSource 支持（历史数据/API 直建），标题取块名。
 	return out, nil
+}
+
+// sourceGroupTitleKey 来源分组的 i18n key。
+//
+// 本包是 outbound 适配器，**不在这一层拼文案**：它没有请求语言，写出中文就等于把
+// 一种语言焊进契约数据。contract 的 SourceGroup.Title 因此只承载 key，
+// 由展示层（navigation/inbound/http 的 navSourceGroupTitle）取词 + 兜底。
+func sourceGroupTitleKey(entityType string) string {
+	switch strings.TrimSpace(entityType) {
+	case "page":
+		return navigationenums.SourcePage
+	case "article":
+		return navigationenums.SourceArticle
+	case "product":
+		return navigationenums.SourceProduct
+	case "category":
+		return navigationenums.SourceCategory
+	default:
+		// 未知来源类型：回显类型名（空标题更难查），它是枚举值、不含文案。
+		return strings.TrimSpace(entityType)
+	}
 }
 
 // pageCandidates 页面候选（按工程过滤；label 用页面路径、title 用文档 SEO 标题）。
@@ -79,7 +99,7 @@ func (r *Resolver) Candidates(ctx context.Context, projectID string) (groups []n
 // 标题静默回退成路径 —— 抽屉里 13 个候选全显示 /about、/blog，用户想挑「加哪个页面进菜单」
 // 却只能靠猜路径（2026-09 修复）。标题在 SQL 侧取出，整份 JSONB 不进 Go。
 func (r *Resolver) pageCandidates(ctx context.Context, projectID string) navigationcontract.SourceGroup {
-	group := navigationcontract.SourceGroup{Type: "page", Title: "页面"}
+	group := navigationcontract.SourceGroup{Type: "page", Title: sourceGroupTitleKey("page")}
 	if r.pages == nil {
 		return group
 	}
@@ -104,8 +124,8 @@ func (r *Resolver) pageCandidates(ctx context.Context, projectID string) navigat
 }
 
 // contentCandidates 内容候选（文章/产品/分类；label 用 slug，URL 取自动发布实例路径）。
-func (r *Resolver) contentCandidates(ctx context.Context, entityType, title string) navigationcontract.SourceGroup {
-	group := navigationcontract.SourceGroup{Type: entityType, Title: title}
+func (r *Resolver) contentCandidates(ctx context.Context, entityType string) navigationcontract.SourceGroup {
+	group := navigationcontract.SourceGroup{Type: entityType, Title: sourceGroupTitleKey(entityType)}
 	if r.contents == nil {
 		return group
 	}

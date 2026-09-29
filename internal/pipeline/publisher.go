@@ -833,7 +833,17 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 	// 产物字节与改造前逐字节一致；有归因时 hash 随之改变 —— 这正是「这份产物少了东西」
 	// 这件事值得被记录的理由。
 	m.Diagnostics = in.Diagnostics.Items()
-	a, err = NewArtifact(html, m)
+	// 访问面守卫（PIPE-6）：Page Document 的 settings.access → 产物内的
+	// guard.html + guard.json，并在 Manifest 上打 access 标记。
+	// 公开页面（存量文档的全部）在这里得到 nil/nil，产物字节与加字段前逐字节一致。
+	// 文档解析失败即构建失败：那说明「这份产物属于哪个访问设置」无法判定，
+	// 而按公开出一个「不知道权限」的页面，是不可逆的放行。
+	guardFiles, access, gerr := PageGuardEntries(in.DocJSON, in.Lang)
+	if gerr != nil {
+		return nil, fmt.Errorf("页面访问设置解析失败: %w", gerr)
+	}
+	m.Access = access
+	a, err = NewArtifactWithEntries(html, m, guardFiles)
 	if err != nil {
 		return nil, err
 	}

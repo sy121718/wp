@@ -59,7 +59,7 @@ func themeError(c *gin.Context, err error) {
 func (h *ThemeHandle) List(c *gin.Context) {
 	projectID := c.Query("projectId")
 	if projectID == "" {
-		response.ParamError(c, "缺少 projectId")
+		response.ParamError(c, projectenums.ErrThemeProjectIDEmpty)
 		return
 	}
 	res, err := h.svc.ListThemes(c.Request.Context(), projectID)
@@ -132,7 +132,7 @@ func (h *ThemeHandle) Delete(c *gin.Context) {
 func (h *ThemeHandle) Active(c *gin.Context) {
 	projectID := c.Query("projectId")
 	if projectID == "" {
-		response.ParamError(c, "缺少 projectId")
+		response.ParamError(c, projectenums.ErrThemeProjectIDEmpty)
 		return
 	}
 	res, err := h.svc.GetActiveTheme(c.Request.Context(), projectID)

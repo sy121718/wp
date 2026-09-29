@@ -13,23 +13,32 @@
 # 计数口径：**行**。一行里出现未被 t() 包住的中日韩字符即记一行。
 # 注释（Jet 的 {* *} 与 HTML 的 <!-- -->）整段剔除 —— 注释不是给访客看的。
 # t() 调用内的中文是**兜底文案**（key 命中失败时用），不算未 key 化。
+#
+# **扫描范围**（2026-09 扩展）：internal/templates/**admin**/ 与 **fragments**/ 下的 .html，
+# 两个目录**合并**计一个数字。为什么合并而不是各设一条基线：两者是同一批给人看的文案
+# （片段是 HTMX 局部刷新，admin 是整页），分设两条会让「这边抽掉 3 行、那边新增 3 行」
+# 在两条线上互相掩盖；而分别下调基线的动作又是同一个流程，没有需要区分的信息。
+# 只收 .html：fragments/*.jet 的渲染 data 是 struct，取词走 struct 字段而不是 .["t"]，
+# 套用本脚本的行判据会把它误算成硬编码（口径见 internal/templates/CLAUDE.md）。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TPL_DIR="$ROOT/internal/templates/admin"
+TPL_ROOT="$ROOT/internal/templates"
 BASELINE_FILE="$ROOT/scripts/i18n-coverage-baseline.txt"
 LIST_FILE="${I18N_COVERAGE_LIST:-/tmp/i18n-coverage-lines.txt}"
 
-if [ ! -d "$TPL_DIR" ]; then
-  echo "找不到后台模板目录：$TPL_DIR" >&2
-  exit 2
-fi
+for d in "$TPL_ROOT/admin" "$TPL_ROOT/fragments"; do
+  if [ ! -d "$d" ]; then
+    echo "找不到模板目录：$d" >&2
+    exit 2
+  fi
+done
 
 # 1) 剔除注释后逐行判断：含中日韩字符且不含 t() 调用 → 记为未 key 化。
 #    -p 保留行号（便于直接跳到问题行）。
-python3 - "$TPL_DIR" "$LIST_FILE" <<'PYEOF'
+python3 - "$TPL_ROOT" "$LIST_FILE" <<'PYEOF'
 import glob, os, re, sys
-tpl_dir, out_path = sys.argv[1], sys.argv[2]
+tpl_root, out_path = sys.argv[1], sys.argv[2]
 cjk = re.compile('[一-鿿぀-ヿ]')
 jet_comment = re.compile(r'\{\*.*?\*\}', re.S)
 html_comment = re.compile(r'<!--.*?-->', re.S)
@@ -57,10 +66,17 @@ t_call = re.compile(r'\(\s*"[a-z][a-zA-Z0-9_.]*\.[a-zA-Z0-9_.]+"\s*,\s*"')
 # 兜底形态：不带兜底文案的取词调用（t("key") / .["t"]("key")）。
 t_call_bare = re.compile(r'(?:\.\["t"\]|\btr)\(')
 rows = []
-# **必须递归**：admin/ 已按后端模块分子目录（admin/<模块>/x.html，根下只剩 layout / login /
+# **admin/ 必须递归**：admin/ 已按后端模块分子目录（admin/<模块>/x.html，根下只剩 layout / login /
 # dashboard 三个壳页面）。写成 `admin/*.html` 会静默缩水成「只查 3 个文件」—— 门禁照样绿，
 # 但它已经不再守任何东西（2026-09-23 实测：分目录后基线仍是 0，而真实水位不是）。
-for path in sorted(glob.glob(os.path.join(tpl_dir, '**', '*.html'), recursive=True)):
+# **fragments/ 不递归**：片段是平铺的（没有子目录），写成 `**/*.html` 反而会把将来
+# 误放进子目录的东西悄悄纳入统计。两种形态都写明，避免后人「顺手统一」改坏其一。
+patterns = [
+    os.path.join(tpl_root, 'admin', '**', '*.html'),
+    os.path.join(tpl_root, 'fragments', '*.html'),
+]
+paths = sorted(set(p for pat in patterns for p in glob.glob(pat, recursive=True)))
+for path in paths:
     src = open(path, encoding='utf-8').read()
     src = jet_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     src = html_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
@@ -72,14 +88,14 @@ for path in sorted(glob.glob(os.path.join(tpl_dir, '**', '*.html'), recursive=Tr
             continue
         if lang_self_name.search(line):
             continue
-        rows.append('%s:%d:%s' % (os.path.relpath(path, os.path.dirname(tpl_dir.rstrip('/'))), i, line.strip()[:120]))
+        rows.append('%s:%d:%s' % (os.path.relpath(path, tpl_root), i, line.strip()[:120]))
 with open(out_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join(rows) + ('\n' if rows else ''))
 print(len(rows))
 PYEOF
 
 CURRENT=$(python3 -c "import sys; print(sum(1 for _ in open(sys.argv[1], encoding='utf-8')))" "$LIST_FILE")
-echo "后台模板未 key 化中文行数：$CURRENT"
+echo "模板未 key 化中文行数（admin + fragments 合并）：$CURRENT"
 
 if [ ! -f "$BASELINE_FILE" ]; then
   echo "$CURRENT" > "$BASELINE_FILE"
@@ -91,7 +107,10 @@ BASE=$(tr -d '[:space:]' < "$BASELINE_FILE")
 if [ "$CURRENT" -gt "$BASE" ]; then
   echo "" >&2
   echo "✗ 新增了硬编码文案：$BASE → $CURRENT" >&2
-  echo "  请改用 {{ .[\"t\"](\"admin.<模块>.<语义>\", \"中文兜底\") }}，并同批 seed 词条。" >&2
+  echo "  后台页面改用 {{ .[\"t\"](\"admin.<模块>.<语义>\", \"中文兜底\") }}；" >&2
+  echo "  HTMX 片段改用 {{tr := .[\"t\"]}} 后 tr(\"workbench.<面>.<语义>\", \"中文兜底\")，" >&2
+  echo "  并**在渲染入口注入 t**（片段不经 shell.Prepare；漏注入不是报错而是整片空文案）。" >&2
+  echo "  两种形态都要同批 seed 中英词条。" >&2
   echo "  新出现的行（前 20 条，完整清单见 $LIST_FILE）：" >&2
   tail -20 "$LIST_FILE" >&2
   exit 1

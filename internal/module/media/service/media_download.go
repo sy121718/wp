@@ -21,6 +21,8 @@ import (
 	mediamodel "go_wp/internal/module/media/model"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/i18n"
 )
 
 // zipDirOriginal 等四个 zip 内固定目录名。
@@ -77,36 +79,51 @@ func zipDirVariantType(dir string) string {
 	}
 }
 
-// variantStatusText 变体状态中文文案（README 用）。
-func variantStatusText(status string) string {
-	switch status {
-	case mediamodel.VariantStatusPending:
-		return "排队中（pending）"
-	case mediamodel.VariantStatusProcessing:
-		return "生成中（processing）"
-	case mediamodel.VariantStatusFailed:
-		return "生成失败（failed）"
-	default:
-		return "无变体记录（missing）"
+// variantStatusText 变体状态文案（README 用，按产物语言取词）。
+var variantStatusTexts = []struct{ Status, Key, Fallback string }{
+	{mediamodel.VariantStatusPending, "admin.media.variantStatus.pending", "排队中（pending）"},
+	{mediamodel.VariantStatusProcessing, "admin.media.variantStatus.processing", "生成中（processing）"},
+	{mediamodel.VariantStatusFailed, "admin.media.variantStatus.failed", "生成失败（failed）"},
+}
+
+func variantStatusText(status, lang string) string {
+	for _, s := range variantStatusTexts {
+		if s.Status == status {
+			return i18n.Translate(s.Key, s.Fallback, lang)
+		}
 	}
+	return i18n.Translate(mediaenums.VariantStatusMissing, "无变体记录（missing）", lang)
 }
 
 // buildVariantReadme 生成变体目录的 README.txt 内容（该变体未 ready 时占位说明）。
-func buildVariantReadme(dirName string, status string) string {
+//
+// 文案按 lang 取词：README 会跟着 zip 落到用户机器上，是**导出产物**的一部分，
+// 不该恒定是中文（词条缺失时回落代码里的中文原文）。
+func buildVariantReadme(dirName, status, lang string) string {
+	tr := func(key, fallback string) string { return i18n.Translate(key, fallback, lang) }
 	var b strings.Builder
-	b.WriteString("go_wp 媒体资源包\n")
-	b.WriteString("====================\n")
-	fmt.Fprintf(&b, "目录：%s\n", dirName)
-	fmt.Fprintf(&b, "内容：%s 变体\n", zipDirVariantType(dirName))
-	fmt.Fprintf(&b, "状态：%s\n", variantStatusText(status))
-	b.WriteString("说明：该变体文件当前不可用，原图见 original/ 目录。\n")
-	b.WriteString("可在媒体库详情页点「重新生成变体」，生成完成后重新下载。\n")
+	b.WriteString(tr(mediaenums.PackageTitle, "go_wp 媒体资源包"))
+	b.WriteString("\n====================\n")
+	// 占位符是命名形态（{name}）：词条可被运营在后台改，裸 % 会让 Sprintf 输出乱码。
+	b.WriteString(i18n.FillTranslate(tr, mediaenums.PackageDir, "目录：{name}",
+		map[string]string{"name": dirName}))
+	b.WriteString("\n")
+	b.WriteString(i18n.FillTranslate(tr, mediaenums.PackageVariantType, "内容：{name} 变体",
+		map[string]string{"name": zipDirVariantType(dirName)}))
+	b.WriteString("\n")
+	b.WriteString(i18n.FillTranslate(tr, mediaenums.PackageStatus, "状态：{name}",
+		map[string]string{"name": variantStatusText(status, lang)}))
+	b.WriteString("\n")
+	b.WriteString(tr(mediaenums.PackageVariantUnavailable, "说明：该变体文件当前不可用，原图见 original/ 目录。"))
+	b.WriteString("\n")
+	b.WriteString(tr(mediaenums.PackageRegenHint, "可在媒体库详情页点「重新生成变体」，生成完成后重新下载。"))
+	b.WriteString("\n")
 	return b.String()
 }
 
 // appendAttachmentEntries 把单个附件的四目录结构追加进 plan：
 // prefix 为空表示单图包根目录，批量模式为 <stem>_<id>/ 子目录。
-func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.DownloadPlan, att *mediamodel.AttachmentEntity, prefix string) error {
+func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.DownloadPlan, att *mediamodel.AttachmentEntity, prefix, lang string) error {
 	if att.StorageType != "local" {
 		return errors.New(mediaenums.ErrDownloadStorageNotLocal)
 	}
@@ -127,12 +144,12 @@ func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.Dow
 	if srcPath, err := localObjectPath(attachmentStorageKey(att)); err != nil {
 		plan.Entries = append(plan.Entries, mediato.DownloadEntry{
 			Name:    join(prefix, zipDirOriginal, "README.txt"),
-			Content: "原图存储路径非法，无法打包。\n",
+			Content: i18n.Translate(mediaenums.PackageOriginalPathInvalid, "原图存储路径非法，无法打包。\n", lang),
 		})
 	} else if _, statErr := os.Stat(srcPath); statErr != nil {
 		plan.Entries = append(plan.Entries, mediato.DownloadEntry{
 			Name:    join(prefix, zipDirOriginal, "README.txt"),
-			Content: "原图物理文件已缺失，仅剩元数据。\n",
+			Content: i18n.Translate(mediaenums.PackageOriginalMissing, "原图物理文件已缺失，仅剩元数据。\n", lang),
 		})
 	} else {
 		plan.Entries = append(plan.Entries, mediato.DownloadEntry{
@@ -160,7 +177,7 @@ func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.Dow
 			}
 			plan.Entries = append(plan.Entries, mediato.DownloadEntry{
 				Name:    join(prefix, dir, "README.txt"),
-				Content: buildVariantReadme(dir, status),
+				Content: buildVariantReadme(dir, status, lang),
 			})
 			continue
 		}
@@ -168,7 +185,7 @@ func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.Dow
 		if perr != nil {
 			plan.Entries = append(plan.Entries, mediato.DownloadEntry{
 				Name:    join(prefix, dir, "README.txt"),
-				Content: buildVariantReadme(dir, mediamodel.VariantStatusFailed),
+				Content: buildVariantReadme(dir, mediamodel.VariantStatusFailed, lang),
 			})
 			continue
 		}
@@ -180,8 +197,17 @@ func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.Dow
 	return nil
 }
 
+// mediaDownloadLang 取产物语言（可选变参）：空串 = 默认语言（i18n 内部按默认语言解析）。
+func mediaDownloadLang(langs []string) string {
+	if len(langs) > 0 {
+		return strings.TrimSpace(langs[0])
+	}
+	return ""
+}
+
 // BuildDownloadPlan 构建单个附件的资源包打包计划（契约方法）。
-func (s *Service) BuildDownloadPlan(ctx context.Context, attachmentID uint64) (plan *mediato.DownloadPlan, err error) {
+func (s *Service) BuildDownloadPlan(ctx context.Context, attachmentID uint64, langs ...string) (plan *mediato.DownloadPlan, err error) {
+	lang := mediaDownloadLang(langs)
 	att, err := s.am.GetByID(ctx, attachmentID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -193,7 +219,7 @@ func (s *Service) BuildDownloadPlan(ctx context.Context, attachmentID uint64) (p
 		FileName: sanitizeZipName(strings.TrimSuffix(att.FileName, filepath.Ext(att.FileName))) + "_package.zip",
 		Entries:  []mediato.DownloadEntry{},
 	}
-	if err := s.appendAttachmentEntries(ctx, plan, att, ""); err != nil {
+	if err := s.appendAttachmentEntries(ctx, plan, att, "", lang); err != nil {
 		return nil, err
 	}
 	return plan, nil
@@ -201,7 +227,8 @@ func (s *Service) BuildDownloadPlan(ctx context.Context, attachmentID uint64) (p
 
 // BuildBatchDownloadPlan 构建多个附件的资源包批量打包计划（契约方法）。
 // 每图一个 <stem>_<id>/ 子文件夹（id 后缀防重名），子文件夹内同四目录。
-func (s *Service) BuildBatchDownloadPlan(ctx context.Context, ids []uint64) (plan *mediato.DownloadPlan, err error) {
+func (s *Service) BuildBatchDownloadPlan(ctx context.Context, ids []uint64, langs ...string) (plan *mediato.DownloadPlan, err error) {
+	lang := mediaDownloadLang(langs)
 	ids = normalizeIDs(ids)
 	if len(ids) == 0 {
 		return nil, errors.New(mediaenums.ErrDownloadEmpty)
@@ -221,7 +248,7 @@ func (s *Service) BuildBatchDownloadPlan(ctx context.Context, ids []uint64) (pla
 		}
 		stem := strings.TrimSuffix(filepath.Base(filepath.ToSlash(att.FileName)), filepath.Ext(att.FileName))
 		prefix := sanitizeZipName(fmt.Sprintf("%s_%d", stem, att.ID))
-		if aerr := s.appendAttachmentEntries(ctx, plan, att, prefix); aerr != nil {
+		if aerr := s.appendAttachmentEntries(ctx, plan, att, prefix, lang); aerr != nil {
 			return nil, aerr
 		}
 	}

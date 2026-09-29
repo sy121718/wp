@@ -21,6 +21,15 @@ type View struct {
 	IconSVG string
 	// Label 标签文字（同时是无障碍标签）。
 	Label string
+	// LoadingText 浮层里购物车片段拉回来之前的占位文案（构建期按当前语言填充）。
+	//
+	// 此前硬编码在模板里：它是访客在片段返回前唯一看得到的东西，
+	// 英文站点上多出这一句中文会显得整个浮层没接多语言。
+	LoadingText string
+	// ViewCartText 占位文案里指向购物车页的兜底链接文字。
+	//
+	// 无 JS 时片段拉不进来，这个链接是访客唯一的出路 —— 文案同样不能是硬编码中文。
+	ViewCartText string
 	// ShowLabel 图标旁是否显示文字。
 	ShowLabel bool
 	// ShowCount 是否显示件数角标。
@@ -54,19 +63,21 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 func BuildView(p *Props, projectID, lang, cartURL string) View {
 	mode := effectiveMode(p)
 	view := View{
-		Mode:       mode,
-		IconSVG:    iconSVG(p),
-		Label:      effectiveLabel(p),
-		ShowLabel:  p.ShowLabel,
-		ShowCount:  p.ShowCount,
-		UseDetails: mode != ModeHover,
-		CartURL:    strings.TrimSpace(cartURL),
+		Mode:         mode,
+		IconSVG:      iconSVG(p),
+		Label:        effectiveLabel(p),
+		LoadingText:  textFallbackLoading,
+		ViewCartText: textFallbackViewCart,
+		ShowLabel:    p.ShowLabel,
+		ShowCount:    p.ShowCount,
+		UseDetails:   mode != ModeHover,
+		CartURL:      strings.TrimSpace(cartURL),
 	}
 	view.HasCartURL = view.CartURL != ""
 	if strings.TrimSpace(projectID) == "" {
 		// 没有工程 id 就取不到购物车（片段端点按工程定位）。留一句可见提示，
 		// 而不是渲染一个点开永远空着的图标 —— 那种「看起来正常但不工作」最难查。
-		view.Notice = "购物车暂不可用（未取到站点工程）"
+		view.Notice = noticeNoProject
 		return view
 	}
 	q := url.Values{}
@@ -81,29 +92,56 @@ func BuildView(p *Props, projectID, lang, cartURL string) View {
 	return view
 }
 
-// ApplyI18n 按当前语言填充标签文字（实现 core.I18nAware）。
+// 界面文案键（多语言 P5b）。
+const (
+	TextKeyLabel = "site.component.cartIcon.label"
+	// TextKeyLoading 浮层里购物车片段拉回来之前的占位文案（模板里此前硬编码）。
+	TextKeyLoading = "site.component.cartIcon.loading"
+	// TextKeyViewCart 占位文案里指向购物车页的兜底链接（无 JS 时唯一的出路）。
+	TextKeyViewCart = "site.component.cartIcon.viewCart"
+	// TextKeyNotice 缺站点工程时的降级提示。
+	TextKeyNotice = "site.component.cartIcon.notice"
+)
+
+// 中文兜底：取词函数为 nil（未接入 i18n）时用这些值，产物与接入前逐字一致。
+const (
+	// textFallbackLabel 标签文字的中文兜底。
+	textFallbackLabel = defaultLabel
+	// textFallbackLoading / textFallbackViewCart 浮层占位文案的中文兜底。
+	textFallbackLoading  = "正在加载购物车…"
+	textFallbackViewCart = "查看购物车"
+	// noticeNoProject 缺站点工程时的提示：BuildView 把它写进 View.Notice 作为初值。
+	noticeNoProject = "购物车暂不可用（未取到站点工程）"
+)
+
+// ApplyI18n 按当前语言回填固定文案（实现 core.I18nAware）。
 //
-// 只在作者**没有自定义**文案时生效：自定义文案属于内容，走 Translatable 那条链路。
+// 三段**各自独立**判定，不能整函数早退：标签文字「作者是否自定义」与占位文案
+// 「有没有译文」是两件事 —— 早退会让作者一填自定义标签，浮层占位与降级提示
+// 就永远是中文（占位文案只在片段回来之前闪现，截图往往抓不到）。
 func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if v == nil {
 		return
 	}
-	if v.Label != textFallbackLabel {
-		return // 作者自定义的文案不在这里翻译
-	}
 	if text == nil {
+		// BuildView 已落中文兜底；这里补上零值构造（测试直连 View）的情况。
 		v.Label = textFallbackLabel
+		v.LoadingText = textFallbackLoading
+		v.ViewCartText = textFallbackViewCart
 		return
 	}
-	v.Label = text(TextKeyLabel, textFallbackLabel)
+	// 标签文字：作者填过的那条走内容翻译（Translatable 白名单），这里只管缺省值。
+	if v.Label == textFallbackLabel {
+		v.Label = text(TextKeyLabel, textFallbackLabel)
+	}
+	v.LoadingText = text(TextKeyLoading, textFallbackLoading)
+	v.ViewCartText = text(TextKeyViewCart, textFallbackViewCart)
+	// 提示语只在「缺站点工程」这条降级路径上有值：空值时不填，
+	// 否则正常渲染的图标会凭空多出一行提示（与 orderlist 同一规则）。
+	if v.Notice != "" {
+		v.Notice = text(TextKeyNotice, noticeNoProject)
+	}
 }
-
-// 界面文案键（多语言 P5b）。
-const (
-	TextKeyLabel = "site.component.cartIcon.label"
-	// textFallbackLabel 标签文字的中文兜底。
-	textFallbackLabel = defaultLabel
-)
 
 // DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：购物车图标本身是静态外壳，
 // 内容与件数都由 /_fragments/cartView 与 cartSummary 现拉（hx-get / hx-trigger / hx-swap），

@@ -58,10 +58,11 @@ type scoreIssueView struct {
 	Target string
 }
 
-// seoColorLabels 评分颜色 → 中文（与前端旧面板一致）。
-var seoColorLabels = map[string]string{
-	"green": "优秀", "lightgreen": "良好", "yellow": "需改进", "red": "差", "red-blocking": "缺失",
-}
+// 评分等级文案（颜色 → 当前语言）的**唯一映射**在 seoscore.ScoreGradeText
+//（internal/seo/score_grade.go），调用点在 product_seo_score_page.go 的
+// entityScoreView。本文件此前自带一份 key + 中文兜底表（与本模块 enums 里的
+// admin.seo.grade.* 常量配套），已按「同一批展示文案只能有一份定义」收编 ——
+// 收编后 product 取到的是 content / project 用的同一批词条 admin.seo.score.grade.*。
 
 // requestScoreLang 评分使用的语言（后台 Cookie / Accept-Language，SEO-001）。
 func requestScoreLang(c *gin.Context) string {
@@ -75,6 +76,12 @@ var productTranslationMsgFallback = map[string]string{
 	MsgTranslationInvalid:     "提交数据不完整，请刷新页面后重试",
 	MsgTranslationStale:       "原文已变更，请刷新页面后重新翻译",
 	MsgTranslationLangInvalid: "目标语言未启用，请先在站点设置里启用",
+	// 行级校验结论（validateProductTarget 的返回值，见 product_translation_page_data.go）：
+	// 它们是页面上最常出现的几句话，同样必须能按语言取词。
+	msgProductTargetContextInvalid: "语境非法：不是商品域的可翻译字段",
+	msgProductTargetSourceSkipped:  "原文不参与翻译（空串、纯数字或纯符号）",
+	msgProductTargetEmpty:          "译文不能为空",
+	msgProductTargetShapeMismatch:  "译文形态与原文不一致：原文含 HTML 标签时译文也必须含标签",
 }
 
 // translationMsg 把 enums key 翻成当前语言；非 key（如 service 校验的原始中文）原样返回。

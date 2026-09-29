@@ -38,6 +38,13 @@ func SetupProductPages(pages *gin.RouterGroup,
 	if pages == nil {
 		return nil
 	}
+	// 取词注入：本域页面 handler 里的 `ctx := c.Request.Context()` 因此自带取词函数
+	// （service 层的展示文案 —— 内置规则名与描述、筛选标签等 —— 按请求语言渲染）。
+	//
+	// 用**子组**而不是直接在 pages 上 Use：pages 是装配层创建的共享页面组，
+	// 直接 Use 会把中间件挂到其它模块的路由链上。子组前缀留空，路径逐字不变。
+	pages = pages.Group("")
+	pages.Use(productTranslateMiddleware())
 	// 商品管理页（issue #5）：页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
 	// 写动作复用商品 API 权限点做 Casbin 鉴权（与既有管理页一致）。
 	productPages := NewProductPageHandle(products, projects)

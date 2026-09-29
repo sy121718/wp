@@ -27,7 +27,9 @@ type SiteSlotUnbindReq struct {
 // Path 与 Published 分开给：**绑定存在**与**访问面真的有产物**是两件事 ——
 // 页面可以是草稿、可以已下线，那时路径是空的，链接生成方据此降级而不是输出死链。
 type SiteSlotItem struct {
-	Slot     string `json:"slot"`
+	Slot string `json:"slot"`
+	// SlotName / Usage 是 **i18n key**（pageenums.SiteSlotDef.NameKey / UsageKey），
+	// 不是文案：service 层拿不到请求语言，中文兜底在 enums 表里，由展示层取词。
 	SlotName string `json:"slotName"`
 	Usage    string `json:"usage"`
 	Bound    bool   `json:"bound"`

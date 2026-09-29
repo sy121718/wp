@@ -34,20 +34,22 @@ func customerDoneCtx(raw string) *gin.Context {
 func TestCustomerPageDoneAcceptsEveryWriterShape(t *testing.T) {
 	counts := []int{0, 1, 3, 128}
 	var shapes []string
+	// 批量结论按当前语言生成：读侧候选与写侧文案取同一批词条，测试在同一上下文中比对。
+	ctx := customerDoneCtx("")
 	// 空结果两支。
-	shapes = append(shapes, customerBulkSummary("", 0, 0), customerBulkUnlockSummary(0, 0, 0))
+	shapes = append(shapes, customerBulkSummary(ctx, "", 0, 0), customerBulkUnlockSummary(ctx, 0, 0, 0))
 	for _, status := range []int{customerStatusActive, customerStatusDisabled} {
-		verb := customerStatusActionVerb(status)
+		verb := customerStatusActionVerb(ctx, status)
 		for _, done := range counts {
 			for _, skipped := range counts {
-				shapes = append(shapes, customerBulkSummary(verb, done, skipped))
+				shapes = append(shapes, customerBulkSummary(ctx, verb, done, skipped))
 			}
 		}
 	}
 	for _, unlocked := range counts {
 		for _, noop := range counts {
 			for _, skipped := range counts {
-				shapes = append(shapes, customerBulkUnlockSummary(unlocked, noop, skipped))
+				shapes = append(shapes, customerBulkUnlockSummary(ctx, unlocked, noop, skipped))
 			}
 		}
 	}
@@ -87,11 +89,12 @@ func TestCustomerPageDoneRejectsForged(t *testing.T) {
 // （不报错、日志里也没有）。这里断言候选里确实含有写侧每种动词的输出 ——
 // 有人把候选改成硬编码清单并漏了一个动词时，这条会红。
 func TestCustomerPageDoneCandidatesAreDerivedNotHandWritten(t *testing.T) {
+	ctx := customerDoneCtx("")
 	for _, status := range []int{customerStatusActive, customerStatusDisabled} {
-		verb := customerStatusActionVerb(status)
-		want := shell.NoticeTemplate(customerBulkSummary(verb, 2, 0))
+		verb := customerStatusActionVerb(ctx, status)
+		want := shell.NoticeTemplate(customerBulkSummary(ctx, verb, 2, 0))
 		found := false
-		for _, cand := range customerBulkNoticeCandidates {
+		for _, cand := range customerBulkNoticeCandidates(ctx) {
 			if cand == want {
 				found = true
 				break

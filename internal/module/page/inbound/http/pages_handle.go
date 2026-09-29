@@ -179,6 +179,16 @@ type pageRow struct {
 	Stale     bool
 	Version   int64
 	UpdatedAt string
+
+	// 定时上下线（PIPE-7）的行内投影：有待执行排定时显示「已排定 + 到点时刻」，
+	// 有失败排定时显示「排定失败 + 原因」。
+	//
+	// 判据与文案都在 Go 侧算好（模板是磁盘热读文件，判据写进模板会随两边不同步而漂移）：
+	// 时间已按**站点时区**格式化，失败原因已按当前语言取词 —— 模板只输出这两个字符串。
+	SchedulePendingAt  string
+	ScheduleFailedNote string
+	// ScheduleAlert 是否有需要运营看一眼的失败排定（模板据此选徽标样式）。
+	ScheduleAlert bool
 }
 
 // PagesList 页面列表页。
@@ -230,14 +240,38 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	if err != nil {
 		return nil, err
 	}
+	// 排定投影（PIPE-7）：一次批量取回这批页面的待执行 / 最近失败记录。
+	// 读取失败只记日志、页面照常渲染：与回执观测同一口径 ——
+	// 一个附加观测不该让整张列表页 500（缺的是两个徽标，不是列表本身）。
+	schedules := map[string]pagecontract.SchedulePageSummary{}
+	pageIDs := make([]string, 0, len(pages))
+	for i := range pages {
+		pageIDs = append(pageIDs, pages[i].ID)
+	}
+	if len(pageIDs) > 0 {
+		got, serr := h.pages.ListSchedulesForPages(ctx, pageIDs)
+		if serr != nil {
+			logger.Scene("page").Error(serr, "读取页面排定投影失败（列表页不显示定时徽标）")
+		} else {
+			schedules = got
+		}
+	}
 	rows := make([]pageRow, 0, len(pages))
 	for _, p := range pages {
-		rows = append(rows, pageRow{
+		row := pageRow{
 			ID: p.ID, ProjectID: p.ProjectID, Kind: p.Kind,
 			DraftPath: p.DraftPath, Active: p.ActiveArtifactID != nil,
 			Staged: p.StagedArtifactID != nil, Stale: p.Stale,
 			Version: p.DraftVersion, UpdatedAt: p.UpdatedAt.Time().Format("2006-01-02 15:04"),
-		})
+		}
+		if summary, ok := schedules[p.ID]; ok {
+			row.SchedulePendingAt = scheduleRowTime(summary.Pending)
+			if summary.Failed != nil {
+				row.ScheduleAlert = true
+				row.ScheduleFailedNote = scheduleFailureText(shell.TranslateFor(c), summary.Failed.LastError)
+			}
+		}
+		rows = append(rows, row)
 	}
 	// 待收敛回执观测（只读）：读取失败只记日志，页面照常渲染 ——
 	// 一个观测字段不该让整张列表页 500。
@@ -352,9 +386,9 @@ func formatReceiptAge(d time.Duration) string {
 // staleOverviewLimit 「全站待重建」区块一次列出的页面数。
 //
 // 这是**消费者口径**，所以定义在调用方：ListStalePages 的 limit 由调用方给
-//（service 不写死业务条件），不填时才落到 model 的 DefaultStaleListLimit = 50 ——
+// （service 不写死业务条件），不填时才落到 model 的 DefaultStaleListLimit = 50 ——
 // 一份 50 行的折叠清单会把页面列表顶出首屏，而那正是审计 02-L P1-10 记录的原缺陷
-//（只读影响面卡占了列表主位）。
+// （只读影响面卡占了列表主位）。
 //
 // 数为什么是 8：只读区块的作用是「让人看见影响面」，不是完整清单；被截断的条数由 Total
 // 给出并在页面上显式说明。service 里那份同名同值的未导出常量已随之删除（它没有任何调用方，

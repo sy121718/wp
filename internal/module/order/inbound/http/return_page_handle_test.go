@@ -28,7 +28,7 @@ func TestWarehouseOptionOf(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opt, ok := warehouseOptionOf(tt.in)
+			opt, ok := warehouseOptionOf(nil, tt.in)
 			if ok != tt.wantOK {
 				t.Fatalf("ok=%v, want=%v", ok, tt.wantOK)
 			}
@@ -43,7 +43,7 @@ func TestWarehouseOptionOf(t *testing.T) {
 // 而不是让整页报错 —— 退货审核本身不依赖仓库列表（服务端会兜底到默认仓）。
 func TestWarehouseOptionsWithoutService(t *testing.T) {
 	h := &returnPageHandle{}
-	if got := h.warehouseOptions(nil, "proj-1"); len(got) != 0 {
+	if got := h.warehouseOptions(nil, "proj-1", nil); len(got) != 0 {
 		t.Fatalf("未注入时应返回空表，实际 %+v", got)
 	}
 }

@@ -28,6 +28,8 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	handle := NewHandle(svc)
 
 	g := rg.Group("/product")
+	// 取词注入：service 层的展示文案（内置规则名 / 描述等）按请求语言渲染。
+	g.Use(productTranslateMiddleware())
 	g.GET("/list", permission.ProductList, handle.List)
 	g.GET("/get", permission.ProductGet, handle.Get)
 	g.POST("/create", permission.ProductCreate, handle.Create)

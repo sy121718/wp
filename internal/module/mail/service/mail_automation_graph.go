@@ -18,9 +18,9 @@ package mailservice
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
+
+	mailenums "go_wp/internal/module/mail/enums"
 )
 
 // 节点类型。
@@ -84,7 +84,7 @@ func (n AutomationNode) outgoing() []string {
 // ParseDefinition 解析并校验图定义；返回纯 Go 结构供执行器使用。
 func ParseDefinition(raw map[string]any) (*AutomationDefinition, error) {
 	if len(raw) == 0 {
-		return nil, errors.New("流程定义不能为空")
+		return nil, graphErr(mailenums.DetailGraphEmptyDefinition, "流程定义不能为空")
 	}
 	b, err := json.Marshal(raw)
 	if err != nil {
@@ -92,7 +92,8 @@ func ParseDefinition(raw map[string]any) (*AutomationDefinition, error) {
 	}
 	var def AutomationDefinition
 	if err := json.Unmarshal(b, &def); err != nil {
-		return nil, fmt.Errorf("流程定义不是合法的图结构: %w", err)
+		return nil, graphErr(mailenums.DetailGraphNotGraph,
+			"流程定义不是合法的图结构: {reason}", "reason", err.Error())
 	}
 	if err := ValidateDefinition(&def); err != nil {
 		return nil, err
@@ -103,7 +104,7 @@ func ParseDefinition(raw map[string]any) (*AutomationDefinition, error) {
 // ValidateDefinition 校验图定义，返回第一条可定位的问题。
 func ValidateDefinition(def *AutomationDefinition) error {
 	if def == nil || len(def.Nodes) == 0 {
-		return errors.New("流程里至少要有一个节点")
+		return graphErr(mailenums.DetailGraphNoNode, "流程里至少要有一个节点")
 	}
 
 	byKey := make(map[string]AutomationNode, len(def.Nodes))
@@ -111,13 +112,15 @@ func ValidateDefinition(def *AutomationDefinition) error {
 	for _, n := range def.Nodes {
 		key := strings.TrimSpace(n.Key)
 		if key == "" {
-			return errors.New("存在没有 key 的节点")
+			return graphErr(mailenums.DetailGraphNodeKeyMissing, "存在没有 key 的节点")
 		}
 		if _, dup := byKey[key]; dup {
-			return fmt.Errorf("节点 key 重复: %s", key)
+			return graphErr(mailenums.DetailGraphNodeKeyDup, "节点 key 重复: {node}", "node", key)
 		}
 		if _, err := nodeArity(n); err != nil {
-			return fmt.Errorf("节点 %s: %w", key, err)
+			// 明细自带 {node} 参数（nodeArity 拿得到节点自身），这里不再包一层「节点 X:」——
+			// 包了参数会重复出现两次，译文读起来是「节点 n1: 节点 n1: 等待…」。
+			return err
 		}
 		byKey[key] = n
 		order = append(order, key)
@@ -125,17 +128,18 @@ func ValidateDefinition(def *AutomationDefinition) error {
 
 	entry := strings.TrimSpace(def.Entry)
 	if entry == "" {
-		return errors.New("没有指定入口节点")
+		return graphErr(mailenums.DetailGraphEntryMissing, "没有指定入口节点")
 	}
 	if _, ok := byKey[entry]; !ok {
-		return fmt.Errorf("入口节点不存在: %s", entry)
+		return graphErr(mailenums.DetailGraphEntryNotExist, "入口节点不存在: {node}", "node", entry)
 	}
 
 	// 出边必须指向存在的节点。
 	for _, n := range def.Nodes {
 		for _, to := range n.outgoing() {
 			if _, ok := byKey[to]; !ok {
-				return fmt.Errorf("节点 %s 指向了不存在的节点 %s", n.Key, to)
+				return graphErr(mailenums.DetailGraphEdgeTargetMissing,
+					"节点 {from} 指向了不存在的节点 {to}", "from", n.Key, "to", to)
 			}
 		}
 	}
@@ -151,7 +155,8 @@ func ValidateDefinition(def *AutomationDefinition) error {
 	visit = func(key string, path []string) error {
 		switch color[key] {
 		case gray:
-			return fmt.Errorf("流程里有环: %s", strings.Join(append(path, key), " → "))
+			return graphErr(mailenums.DetailGraphCycle,
+				"流程里有环: {path}", "path", strings.Join(append(path, key), " → "))
 		case black:
 			return nil
 		}
@@ -177,13 +182,19 @@ func ValidateDefinition(def *AutomationDefinition) error {
 		}
 	}
 	if len(unreachable) > 0 {
-		return fmt.Errorf("有节点从入口走不到: %s", strings.Join(unreachable, ", "))
+		return graphErr(mailenums.DetailGraphUnreachable,
+			"有节点从入口走不到: {nodes}", "nodes", strings.Join(unreachable, ", "))
 	}
 	return nil
 }
 
 // nodeArity 校验节点类型的出边形状与必需参数。
+//
+// 明细自带 {node} 定位参数（与本函数返回的中文原文同源）：图校验错误要按当前语言
+// 展示给作者，参数化的定位比「有一条边配错了」有用得多。调用方（ValidateDefinition）
+// 因此不再包一层「节点 X:」。
 func nodeArity(n AutomationNode) (int, error) {
+	key := strings.TrimSpace(n.Key)
 	switch n.Type {
 	case NodeTypeTrigger:
 		// 入口节点：有出边就往前走，没有就是「触发即结束」（合法但少用）。
@@ -191,33 +202,39 @@ func nodeArity(n AutomationNode) (int, error) {
 	case NodeTypeDelay:
 		mins, _ := toInt(n.Params["minutes"])
 		if mins <= 0 {
-			return 0, errors.New("等待节点需要正数的 minutes")
+			return 0, graphErr(mailenums.DetailGraphNeedMinutes,
+				"节点 {node}: 等待节点需要正数的 minutes", "node", key)
 		}
 		return 1, nil
 	case NodeTypeEmail:
 		if strings.TrimSpace(toString(n.Params["template_key"])) == "" {
-			return 0, errors.New("发信节点需要 template_key")
+			return 0, graphErr(mailenums.DetailGraphNeedTemplate,
+				"节点 {node}: 发信节点需要 template_key", "node", key)
 		}
 		return 1, nil
 	case NodeTypeBranch:
 		if n.Yes == "" || n.No == "" {
-			return 0, errors.New("条件分支需要 yes 与 no 两条出边")
+			return 0, graphErr(mailenums.DetailGraphNeedTwoArms,
+				"节点 {node}: 条件分支需要 yes 与 no 两条出边", "node", key)
 		}
 		if len(toStringSlice(n.Params["conditions"])) == 0 {
-			return 0, errors.New("条件分支需要至少一个条件")
+			return 0, graphErr(mailenums.DetailGraphNeedCondition,
+				"节点 {node}: 条件分支需要至少一个条件", "node", key)
 		}
 		return 2, nil
 	case NodeTypeTag:
 		add := toStringSlice(n.Params["add"])
 		remove := toStringSlice(n.Params["remove"])
 		if len(add) == 0 && len(remove) == 0 {
-			return 0, errors.New("标签节点需要 add 或 remove")
+			return 0, graphErr(mailenums.DetailGraphNeedTagAction,
+				"节点 {node}: 标签节点需要 add 或 remove", "node", key)
 		}
 		return 1, nil
 	case NodeTypeEnd:
 		return 0, nil
 	default:
-		return 0, fmt.Errorf("未知节点类型: %s", n.Type)
+		return 0, graphErr(mailenums.DetailGraphUnknownNodeTyp,
+			"节点 {node}: 未知节点类型: {type}", "node", key, "type", n.Type)
 	}
 }
 

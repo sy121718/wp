@@ -176,12 +176,16 @@
                 <td data-label="{{tr("admin.customers.col.email", "邮箱")}}">
                     {{r.Email}}
                     <div class="hint">
-                        {{if r.EmailVerified}}<span class="badge badge-success">{{r.EmailVerifiedLabel}}</span>
-                        {{else}}<span class="badge badge-warning">{{r.EmailVerifiedLabel}}</span>{{end}}
+                        {* 邮箱验证徽章的 key 与兜底都由服务端给（userenums.EmailVerifiedLabel），
+                           模板只负责取词：写死中文就等于英文界面永远中文。
+                           isset 是双保险 —— 键由 customerRow 保证存在，但真缺了的话
+                           点号取值会把整页渲染打断（500 / htmx 不 swap），而不是少显示一个徽章。 *}
+                        {{if r.EmailVerified}}<span class="badge badge-success">{{if isset(r.EmailVerifiedKey)}}{{tr(r.EmailVerifiedKey, r.EmailVerifiedFallback)}}{{end}}</span>
+                        {{else}}<span class="badge badge-warning">{{if isset(r.EmailVerifiedKey)}}{{tr(r.EmailVerifiedKey, r.EmailVerifiedFallback)}}{{end}}</span>{{end}}
                     </div>
                 </td>
                 <td data-label="{{tr("admin.customers.col.status", "状态")}}">
-                    <span class="badge {{r.StatusBadge}}">{{r.StatusLabel}}</span>
+                    <span class="badge {{r.StatusBadge}}">{{if isset(r.StatusLabelKey)}}{{tr(r.StatusLabelKey, r.StatusLabelFallback)}}{{end}}</span>
                     {{if r.Locked}}
                     <div class="hint"><span class="badge badge-warning">{{tr("admin.customers.status.locked", "已锁定")}}</span>{{tr("admin.customers.status.locked_until", " 至 ")}}{{r.LockedUntilText}}</div>
                     {{end}}

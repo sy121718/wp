@@ -229,11 +229,12 @@ func (s *Service) taxonomyIndex(ctx context.Context, projectID string, rows []*p
 // 过滤维度与排序键同出 contract —— 集合源元数据不含第二份白名单。
 func (s *Service) CollectionSchemas(_ context.Context) ([]core.CollectionSchema, error) {
 	return []core.CollectionSchema{{
-		Source:  productcontract.CollectionSourceProduct,
-		Label:   productcontract.CollectionLabel,
-		Fields:  productcontract.FieldWhitelist(productcontract.EntityTypeProduct),
-		Filters: productcontract.CollectionFilters(),
-		OrderBy: productcontract.CollectionOrderBy(),
+		Source:   productcontract.CollectionSourceProduct,
+		Label:    productcontract.CollectionLabel,
+		LabelKey: productcontract.CollectionLabelKey,
+		Fields:   productcontract.FieldWhitelist(productcontract.EntityTypeProduct),
+		Filters:  productcontract.CollectionFilters(),
+		OrderBy:  productcontract.CollectionOrderBy(),
 	}}, nil
 }
 

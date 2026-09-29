@@ -25,6 +25,36 @@ const currencyCNY = "CNY"
 // 是最容易被当成 bug 的那种不一致。
 const availabilityLowStockThreshold = 5
 
+// 购物车可用性文案：**词条 key + 中文兜底**成对放进 CartItem。
+//
+// 取词发生在渲染侧（fragments/cart_view.jet 由 runtimefragment 渲染）：service 层没有
+// 请求语言，在这里调 tr 只会拿到默认语言、把界面语言写错。渲染侧改成
+// `tr(AvailableKey, AvailableText)`（带参数的再走 i18n.FillTranslate）即完成多语言。
+//
+// key 尽量复用访客片段已有的 site.fragment.stock.*（库存提示在商品卡与购物车里
+// 必须是同一句话）；只有库里没有的两句才新引入。带计数的兜底仍用 %d 是因为
+// 存量 site.fragment.stock.low 词条本身就是 `%d` 形态（存量占位符由各自批次迁移），
+// 新引入的 site.fragment.stock.insufficient 用 `{count}`。
+const (
+	cartStockKeyOffShelf  = "site.fragment.stock.off_shelf"
+	cartStockTextOffShelf = "商品已下架，请移除"
+
+	cartStockKeyOut  = "site.fragment.stock.out"
+	cartStockTextOut = "暂时缺货"
+
+	cartStockKeyInsufficient  = "site.fragment.stock.insufficient"
+	cartStockTextInsufficient = "库存仅剩 %d 件"
+
+	cartStockKeyLow  = "site.fragment.stock.low"
+	cartStockTextLow = "仅剩 %d 件"
+
+	cartStockKeyIn  = "site.fragment.stock.in"
+	cartStockTextIn = "库存充足"
+
+	cartStockKeyCheckout  = "site.fragment.stock.checkout"
+	cartStockTextCheckout = "以结算时库存为准"
+)
+
 // View 只读查询购物车。
 func (s *Service) View(ctx context.Context, req *cartdto.CartViewReq) (res *cartdto.CartSnapshot, err error) {
 	if req == nil {
@@ -236,7 +266,7 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 			// 下架的商品留在车里让访客自己删，但**不计入小计** ——
 			// 把下架商品的钱算进总额，会让购物车的数字和结算页永远对不上。
 			item.Missing = true
-			item.AvailableText = "商品已下架，请移除"
+			item.AvailableKey, item.AvailableText = cartStockKeyOffShelf, cartStockTextOffShelf
 			item.MaxQuantity = 0
 			res.Items = append(res.Items, item)
 			continue
@@ -257,20 +287,22 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 			item.InStock = q > 0
 			switch {
 			case q <= 0:
-				item.AvailableText = "暂时缺货"
+				item.AvailableKey, item.AvailableText = cartStockKeyOut, cartStockTextOut
 			case q < l.Quantity:
-				item.AvailableText = fmt.Sprintf("库存仅剩 %d 件", q)
+				item.AvailableKey = cartStockKeyInsufficient
+				item.AvailableText = fmt.Sprintf(cartStockTextInsufficient, q)
 			case q <= availabilityLowStockThreshold:
-				item.AvailableText = fmt.Sprintf("仅剩 %d 件", q)
+				item.AvailableKey = cartStockKeyLow
+				item.AvailableText = fmt.Sprintf(cartStockTextLow, q)
 			default:
-				item.AvailableText = "库存充足"
+				item.AvailableKey, item.AvailableText = cartStockKeyIn, cartStockTextIn
 			}
 			if q > 0 && q < item.MaxQuantity {
 				item.MaxQuantity = q
 			}
 		} else {
 			// 「未知」不是「缺货」：库存端口未接入时页面照样可用，结论交给结算。
-			item.AvailableText = "以结算时库存为准"
+			item.AvailableKey, item.AvailableText = cartStockKeyCheckout, cartStockTextCheckout
 			item.InStock = true
 		}
 

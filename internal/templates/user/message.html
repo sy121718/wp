@@ -13,9 +13,9 @@
 
     <div class="g-note">
       {{if .["user"]}}
-      <a href="/user/account">返回账号中心</a>
+      <a href="/user/account">{{ .["t"]("user.message.back_account", "返回账号中心") }}</a>
       {{else}}
-      <a href="/user/login">去登录</a> · <a href="/user/register">注册新账号</a>
+      <a href="/user/login">{{ .["t"]("user.message.go_login", "去登录") }}</a> · <a href="/user/register">{{ .["t"]("user.message.register_new", "注册新账号") }}</a>
       {{end}}
     </div>
   </div>

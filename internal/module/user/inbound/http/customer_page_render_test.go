@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -184,7 +185,7 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 // —— 列表页模板 ——
 
 func TestCustomersListTemplateRenders(t *testing.T) {
-	data := customerListPageData(customerListSample(), customerFilter{
+	data := customerListPageData(nil, customerListSample(), customerFilter{
 		Keyword: "alice", Status: customerStatusAll,
 	}, 1, 20, "", "", false)
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
@@ -227,7 +228,7 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 		Counters: userdto.CustomerCounters{Total: 1, Pending: 1, Unverified: 1}}
 
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
+		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
 
 	if strings.Contains(body, "/admin/customers/status") {
 		t.Errorf("待激活账号不应渲染停用按钮")
@@ -257,7 +258,7 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 		Counters: userdto.CustomerCounters{Total: 1, Active: 1, Locked: 1}}
 
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
+		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
 
 	for _, want := range []string{"/admin/customers/unlock", "已锁定", "2026-09-20 09:00", "连续登录失败"} {
 		if !strings.Contains(body, want) {
@@ -273,13 +274,13 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 // 用同一句话兜住，运营会以为站点里没人注册过（admin-ui-logic §7）。
 func TestCustomersListTemplateEmptyState(t *testing.T) {
 	plain := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
+		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
 	if !strings.Contains(plain, "还没有客户") {
 		t.Errorf("无筛选的空列表应当说明「还没有客户」")
 	}
 
 	filtered := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", "", false)))
+		customerListPageData(nil, nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", "", false)))
 	if !strings.Contains(filtered, "该筛选条件下暂时没有账号") {
 		t.Errorf("带筛选的空列表应当说明「该筛选条件下暂时没有账号」")
 	}
@@ -288,9 +289,9 @@ func TestCustomersListTemplateEmptyState(t *testing.T) {
 // TestCustomersListTemplateCapabilityMissing 能力未装配时给说明，不渲染必然失败的按钮。
 func TestCustomersListTemplateCapabilityMissing(t *testing.T) {
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, customerFilter{Status: customerStatusAll}, 1, 20,
-			customerUnavailableText, "", true)))
-	for _, want := range []string{customerUnavailableText, "装配问题"} {
+		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20,
+			customerUnavailableLabel.fallback, "", true)))
+	for _, want := range []string{customerUnavailableLabel.fallback, "装配问题"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("能力未装配时应渲染 %q", want)
 		}
@@ -556,7 +557,7 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 // TestCustomersCounterTabsAreClickableFilters 徽章是链接，URL 由服务端生成：
 // 只动自己那个维度，其他条件保留；当前生效的那个带 aria-current 与图标。
 func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
-	data := customerListPageData(customerListSample(),
+	data := customerListPageData(nil, customerListSample(),
 		customerFilter{Status: customerStatusActive}, 1, 20, "", "", false)
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
@@ -646,6 +647,77 @@ func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 	for _, want := range []string{"keyword=alice", "page=2"} {
 		if !strings.Contains(loc, want) {
 			t.Errorf("回跳应保留筛选 %q：%s", want, loc)
+		}
+	}
+}
+
+// —— 状态 / 邮箱验证 / 订单状态标签的取词（本次重构的主验收点）——
+
+// TestCustomersLabelsGoThroughI18n 标签必须经取词渲染，而不是直接渲染服务端给的中文。
+//
+// 为什么用**假取词函数**而不是真 i18n：模块内单测不起库，TranslateFunc 会走中文兜底 ——
+// 那正好与「模板硬编码中文」的表现一模一样，压根分不出对错。假函数按 key 返回可辨认的
+// 英文，一旦模板改回直接渲染中文字段（不走 tr），页面里就不会出现这些英文，当场红。
+//
+// 顺带钉住「计数徽章与行内状态标签共用同一份 key 来源」：同一个 key 在列表页出现两次
+// （徽章一次、行一次），只改其中一处（比如徽章自己留一份 key）会让计数变成 1。
+func TestCustomersLabelsGoThroughI18n(t *testing.T) {
+	fakeTr := func(key, fallback string) string {
+		switch key {
+		case userenums.LabelKeyStatusActive:
+			return "Active"
+		case userenums.LabelKeyVerified:
+			return "Email verified"
+		case "site.fragment.order.status.paid":
+			return "Paid"
+		default:
+			return fallback
+		}
+	}
+
+	listData := customerTestLayoutData(customerListPageData(nil, customerListSample(),
+		customerFilter{Status: customerStatusAll}, 1, 20, "", "", false))
+	listData["t"] = fakeTr
+	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", listData)
+	for _, want := range []string{"Active", "Email verified"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("列表页应经取词渲染出 %q", want)
+		}
+	}
+	if n := strings.Count(body, "Active"); n < 2 {
+		t.Errorf("计数徽章与行内状态标签应共用同一份 key（各出现一次），实际 %d 次", n)
+	}
+
+	detailData := customerTestLayoutData(customerDetailPageData(customerSample(), detailProjects(),
+		"p1", detailSummary(), false, false, "", "", nil))
+	detailData["t"] = fakeTr
+	body = renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", detailData)
+	for _, want := range []string{"Active", "Email verified", "Paid"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("详情页应经取词渲染出 %q", want)
+		}
+	}
+}
+
+// TestCustomerTemplatesRenderNoRawLabels 模板不得再直接渲染未取词的标签字段。
+//
+// 断言模板**源文本**（而不是渲染结果）：渲染结果在中文下与被禁止的写法长得一样，
+// 只有源文本能区分「走了取词但兜底是中文」与「压根没走取词」。
+func TestCustomerTemplatesRenderNoRawLabels(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "..", "templates", "admin", "user")
+	for _, name := range []string{"customers.html", "customer_detail.html"} {
+		src, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("读取模板 %s 失败：%v", name, err)
+		}
+		for _, banned := range []string{
+			"{{r.StatusLabel}}", "{{.StatusLabel}}",
+			"{{r.EmailVerifiedLabel}}", "{{.EmailVerifiedLabel}}",
+			"{{.LastOrderStatusLabel}}",
+		} {
+			if strings.Contains(string(src), banned) {
+				t.Errorf("%s 仍直接渲染未取词的 %s（应改为 tr(key, 兜底)）", name, banned)
+			}
 		}
 	}
 }

@@ -66,34 +66,43 @@ import (
 //     表单里不存在这两个字段：能被客户端伪造的操作人，等于审计上没有操作人。
 
 const (
-	// couponPageTitle 页面标题（订单模块 enums 里没有这个标题键，直接走 shell.Prepare 的 fallback 链路）。
-	couponPageTitle = "优惠码管理"
 	// couponRedemptionPageSize 核销记录区一次列出的条数。
 	//
 	// 核销记录区不做独立分页（一张券的核销次数受 MaxUses 约束，展开一屏基本看得完），
 	// 超过这个数只显示最近一批，并在页面上写明「共 N 条、只显示最近 M 条」。
 	// 上限同时要 ≤ 200：订单 model 对 limit 的处理是「<=0 或 >200 一律回落到 20」。
 	couponRedemptionPageSize = 50
-	// couponUnlimitedLabel 「不限」口径的展示文案（次数上限 / 每人限次 / 时间窗共用）。
-	couponUnlimitedLabel = "不限"
-	// couponIDInvalidText 表单里的券 id 不合法（本页自造文案，已进本页白名单）。
-	couponIDInvalidText = "优惠码编号不合法，请回到列表页重新操作。"
-	// couponForeignText couponId 指向的是别的工程的券（本页自造文案，已进本页白名单）。
-	couponForeignText = "这张优惠码不属于当前选中的站点工程，请切回它所属的工程再操作。"
 )
 
-// couponStatusFilters 状态筛选下拉的取值白名单（与 CouponListReq.Status 一致）。
+// 优惠码页的展示标签（key + 中文兜底，调用点 tr(key, fallback) 取词）。
+var (
+	// couponPageTitleLabel 页面标题（sys_i18n 已有 admin.coupons.heading）。
+	couponPageTitleLabel = orderLabel{"admin.coupons.heading", "优惠码管理"}
+	// couponUnlimitedLabel 「不限」口径的展示文案（次数上限 / 每人限次 / 时间窗共用）。
+	//
+	// 复用列表页脚注里那条现成词条（admin.coupons.list.footer.strong_unlimited = 不限）：
+	// 同一个「不限」在同一页面上再灌一条同值词条，只会让翻译多一份要维护的东西。
+	couponUnlimitedLabel = orderLabel{"admin.coupons.list.footer.strong_unlimited", "不限"}
+	// couponIDInvalidLabel 表单里的券 id 不合法（走 ?err= 回显）。
+	//
+	// 写侧塞的是 **fallback（中文兜底）**：读侧白名单认的是这条中文串，
+	// 取词后的译文会被自己吞掉（通道改造由共享辅助统一做，key 已备好）。
+	couponIDInvalidLabel = orderLabel{"admin.coupons.form.invalid_id", "优惠码编号不合法，请回到列表页重新操作。"}
+	// couponForeignLabel couponId 指向的是别的工程的券（同样走 ?err=）。
+	couponForeignLabel = orderLabel{"admin.coupons.form.foreign_project", "这张优惠码不属于当前选中的站点工程，请切回它所属的工程再操作。"}
+)
+
+// couponStatusFilterValues 状态筛选下拉的取值白名单（与 CouponListReq.Status 一致）。
 //
 // 这四个是**展示口径**：服务端把它们翻译成时间与次数条件再下推 ——
 // 过期、未开始、用尽都是时间的函数，coupons 表里并没有这些列。
-var couponStatusFilters = []struct {
-	Value string
-	Label string
-}{
-	{"enabled", "生效中"},
-	{"disabled", "已停用"},
-	{"expired", "已过期"},
-	{"exhausted", "已用完"},
+// 文案不在这里：真源是 orderenums.CouponStateLabel（口径值 → 词条 key），
+// 表里再存一份中文就会与它漂移。顺序 = 下拉里的顺序。
+var couponStatusFilterValues = []string{
+	orderenums.CouponStateEnabled,
+	orderenums.CouponStateDisabled,
+	orderenums.CouponStateExpired,
+	orderenums.CouponStateExhausted,
 }
 
 // couponFilterStatusValue 状态筛选的**生效值**：把 URL 上的 status 归一到白名单的写法。
@@ -112,42 +121,62 @@ func couponFilterStatusValue(raw string) (value string, ok bool) {
 	if s == "" {
 		return "", false
 	}
-	for _, o := range couponStatusFilters {
-		if o.Value == s {
+	for _, v := range couponStatusFilterValues {
+		if v == s {
 			return s, true
 		}
 	}
 	return strings.TrimSpace(raw), false
 }
 
-// couponStatusBadges 状态**文案** → 徽章样式。
+// couponStatusBadges 状态**口径值** → 徽章样式。
 //
-// 键是服务端算好的 StatusLabel 而不是状态列的取值（1/0）：一张启用的券是「生效中」
-// 还是「已过期」，取决于当前时间与已用次数，页面自己再算一遍迟早会和服务端分叉。
+// 键必须是口径值（enabled / not_started / …），**不能是展示文案** ——
+// 这是同仓实测过的缺陷：拿服务端算好的中文 StatusLabel 当键时，运营在后台改一句词条
+// （或加一条英文词条后切语言），查表就失配，徽章静默变成灰色（不报错、测试也不红）。
 var couponStatusBadges = map[string]string{
-	"生效中": "badge-success",
-	"未开始": "badge-warning",
-	"已用完": "badge-mute",
-	"已过期": "badge-mute",
-	"已停用": "badge-danger",
+	orderenums.CouponStateEnabled:    "badge-success",
+	orderenums.CouponStateNotStarted: "badge-warning",
+	orderenums.CouponStateExhausted:  "badge-mute",
+	orderenums.CouponStateExpired:    "badge-mute",
+	orderenums.CouponStateDisabled:   "badge-danger",
 }
 
 // couponTypeOptions 折扣类型下拉（与 CouponSaveReq.DiscountType 的白名单一致）。
-var couponTypeOptions = []struct {
-	Value string
-	Label string
-}{
-	{"percent", "按比例（折扣力度 1..100）"},
-	{"fixed", "固定金额（单位：分）"},
+//
+// 文案按当前语言取词；返回值形状（Value / Label）与模板读法一致，模板不用改。
+func couponTypeOptions(tr translate) []gin.H {
+	return []gin.H{
+		{"Value": "percent", "Label": orderLabelOf(tr, couponTypePercentLabel)},
+		{"Value": "fixed", "Label": orderLabelOf(tr, couponTypeFixedLabel)},
+	}
 }
 
+var (
+	couponTypePercentLabel = orderLabel{"admin.coupons.type.percent", "按比例（折扣力度 1..100）"}
+	couponTypeFixedLabel   = orderLabel{"admin.coupons.type.fixed", "固定金额（单位：分）"}
+)
+
 // couponEnableOptions 启停状态下拉（表单字段 Status：1 启用 / 0 停用）。
-var couponEnableOptions = []struct {
-	Value string
-	Label string
-}{
-	{"1", "启用"},
-	{"0", "停用"},
+func couponEnableOptions(tr translate) []gin.H {
+	return []gin.H{
+		{"Value": "1", "Label": orderLabelOf(tr, couponFormEnabledLabel)},
+		{"Value": "0", "Label": orderLabelOf(tr, couponFormDisabledLabel)},
+	}
+}
+
+var (
+	couponFormEnabledLabel  = orderLabel{"admin.coupons.form.enabled", "启用"}
+	couponFormDisabledLabel = orderLabel{"admin.coupons.form.disabled", "停用"}
+)
+
+// couponStatusFilterOptions 状态筛选下拉项（文案按当前语言取词，形状与模板读法一致）。
+func couponStatusFilterOptions(tr translate) []gin.H {
+	out := make([]gin.H, 0, len(couponStatusFilterValues))
+	for _, v := range couponStatusFilterValues {
+		out = append(out, gin.H{"Value": v, "Label": couponStateText(tr, v)})
+	}
+	return out
 }
 
 // couponFacingExtras 本页可原样展示的**管理侧**文案。
@@ -163,7 +192,7 @@ var couponFacingExtras = []string{
 	orderenums.MsgCouponCreated, orderenums.MsgCouponUpdated, orderenums.MsgCouponDeleted,
 	orderenums.ErrCouponCodeTaken, orderenums.ErrCouponTypeInvalid, orderenums.ErrCouponValueInvalid,
 	orderenums.ErrCouponWindowInvalid, orderenums.ErrCouponInUse,
-	couponIDInvalidText, couponForeignText,
+	couponIDInvalidLabel.fallback, couponForeignLabel.fallback,
 }
 
 // couponPageHandle 优惠码管理页处理器。
@@ -199,6 +228,8 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 	// 先于装载计算：装载失败要**压过**它（见下）。
 	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), couponPageFacingText(c))
 	pageOk := shell.FacingQueryText(c.Query("ok"), "", couponPageFacingText(c))
+	// 展示标签的取词函数（视图组装只用它，不再在 Go 里写死中文标签）。
+	tr := shell.TranslateFor(c)
 
 	projects, loadErr := h.projects.List(ctx)
 	// 工程列表读不出来**不拿走整个页面**（判据见 order_page_handle.go 的 OrdersPage）：
@@ -249,7 +280,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		} else {
 			total = list.Total
 			for _, cp := range list.List {
-				rows = append(rows, couponRowView(cp, filter, selected, page, limit))
+				rows = append(rows, couponRowView(tr, cp, filter, selected, page, limit))
 			}
 		}
 
@@ -262,9 +293,9 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 				// couponId 与 project 是两个独立参数，切了工程之后 URL 上可能还留着一张
 				// 属于别的工程的券。既不展开它，也不静默忽略 —— 静默忽略会让
 				// 「点了修改没反应」变成一个查不出来的现象。
-				pageErr = firstNonEmpty(pageErr, couponForeignText)
+				pageErr = firstNonEmpty(pageErr, couponForeignLabel.fallback)
 			default:
-				detail = couponEditView(cp, filter, selected, page, limit)
+				detail = couponEditView(tr, cp, filter, selected, page, limit)
 				rl, rerr := h.orders.ListCouponRedemptions(ctx, &orderdto.CouponRedemptionListReq{
 					ProjectID: selected,
 					CouponID:  filter.CouponID,
@@ -276,7 +307,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 				} else {
 					redemptionTotal = rl.Total
 					for _, rd := range rl.List {
-						redemptions = append(redemptions, couponRedemptionRow(rd))
+						redemptions = append(redemptions, couponRedemptionRow(tr, rd))
 					}
 				}
 			}
@@ -289,13 +320,13 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 	collapse["limit"] = strconv.Itoa(limit)
 
 	data := shell.Prepare(c, gin.H{
-		"title":             couponPageTitle,
+		"title":             orderLabelOf(tr, couponPageTitleLabel),
 		"menu":              "coupons",
 		"Projects":          projects,
 		"SelectedProject":   selected,
-		"FilterOptions":     couponStatusFilters,
-		"TypeOptions":       couponTypeOptions,
-		"StatusOptions":     couponEnableOptions,
+		"FilterOptions":     couponStatusFilterOptions(tr),
+		"TypeOptions":       couponTypeOptions(tr),
+		"StatusOptions":     couponEnableOptions(tr),
 		"FilterStatus":      filterStatusValue,
 		"FilterStatusValid": filterStatusValid,
 		"FilterKeyword":     filter.Keyword,
@@ -361,7 +392,8 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 	}
 	filter := couponFilter{Status: strings.TrimSpace(c.Query("status")), Keyword: strings.TrimSpace(c.Query("keyword"))}
 	page, limit := orderListWindow(c)
-	row := couponRowView(cp, filter, projectID, page, limit)
+	tr := shell.TranslateFor(c)
+	row := couponRowView(tr, cp, filter, projectID, page, limit)
 	form := row["Form"].(gin.H)
 	back := couponBackQuery(projectID, filter, page, limit, id)
 	values := gin.H{"id": form["ID"], "projectId": projectID, "returnQuery": back,
@@ -369,8 +401,8 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 		"minSubtotal": form["MinSubtotal"], "maxUses": form["MaxUses"], "perUserLimit": form["PerUserLimit"],
 		"status": form["StatusValue"], "startsAt": form["StartsAt"], "endsAt": form["EndsAt"], "remark": form["Remark"]}
 	c.HTML(http.StatusOK, "admin/order/coupon_edit_form.html", shell.Prepare(c, gin.H{
-		"FormEcho": values, "EditCode": cp.Code, "TypeOptions": couponTypeOptions,
-		"StatusOptions": couponEnableOptions,
+		"FormEcho": values, "EditCode": cp.Code, "TypeOptions": couponTypeOptions(tr),
+		"StatusOptions": couponEnableOptions(tr),
 	}))
 }
 
@@ -404,7 +436,7 @@ func (h *couponPageHandle) CouponCreate(c *gin.Context) {
 func (h *couponPageHandle) CouponUpdate(c *gin.Context) {
 	req := couponSaveReqFromForm(c)
 	if req.ID == 0 {
-		h.couponEditFail(c, couponIDInvalidText)
+		h.couponEditFail(c, couponIDInvalidLabel.fallback)
 		return
 	}
 	if req.ProjectID == "" {
@@ -426,7 +458,7 @@ func (h *couponPageHandle) CouponUpdate(c *gin.Context) {
 func (h *couponPageHandle) CouponDelete(c *gin.Context) {
 	id := orderQueryID(c.PostForm("id"))
 	if id == 0 {
-		couponRedirect(c, "", couponIDInvalidText)
+		couponRedirect(c, "", couponIDInvalidLabel.fallback)
 		return
 	}
 	if err := h.orders.DeleteCoupon(c.Request.Context(), id); err != nil {

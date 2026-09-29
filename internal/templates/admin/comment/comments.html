@@ -1,0 +1,141 @@
+{* admin/comment/comments.html — 评论审核（BIZ-5）。
+   一页管一件事：审核队列（列表 + 筛选 + 批量通过 / 驳回）。
+
+   工程是必选上下文：评论按「站点工程 + 实体」隔离（数据库层也有 RLS 策略），
+   所以页面顶部有工程下拉；一个工程都没有时是明确的空态，而不是一张空表。
+
+   表头**必须常驻**：空态行放进 tbody 的 <td colspan="7"> 里，colspan 精确等于列数
+   （列数：勾选 / 内容 / 评论对象 / 评论人 / 状态 / 提交时间 / 操作 = 7）——
+   否则「筛选无结果」时用户看不到有哪些列、也无从确认自己是不是筛错了
+   （门禁 scripts/check-empty-state-table-head.sh）。
+
+   批量动作走同一个表单：按钮用 name=status value=approved|rejected 带目标状态，
+   选中的 id 由 data-bulk-template 的复选组提交（admin.js 的批量条约定）。
+   权限：没有 comment:review 的账号看不到批量按钮（PermSet 由 shell.Prepare 注入）。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ tr("admin.comment.menu", "评论审核") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ tr("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ tr("admin.comment.hint", "评论按「站点工程 + 实体」隔离；只有「已通过」的评论会出现在公开页面上。") }}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/comments">
+                <label class="sr-only" for="cm-project">{{ tr("admin.common.field.project", "站点工程") }}</label>
+                <select class="form-select" id="cm-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.load_failed", "评论列表暂时读不出来 —— 稍后重试。") }}</p>{{end}}
+    {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.lastError", "上一次操作未完成：") }}{{.Err}}</p>{{end}}
+    {{if .Done != ""}}<p class="badge badge-success" role="status">{{.Done}}</p>{{end}}
+    {{if .NoProject}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.no_project", "还没有站点工程：评论按工程隔离，先建一个工程再看这一页。") }}</p>{{end}}
+
+    {* ===== 筛选 ===== *}
+    <section class="card">
+        <form method="get" action="/admin/comments" class="filter-bar">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <label class="sr-only" for="cm-f-status">{{ tr("admin.comment.filter.status", "状态") }}</label>
+            <select class="form-select" id="cm-f-status" name="status">
+                {{range _, o := .StatusOptions}}
+                <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                {{end}}
+            </select>
+            <label class="sr-only" for="cm-f-entity">{{ tr("admin.comment.filter.entity_type", "实体类型") }}</label>
+            <select class="form-select" id="cm-f-entity" name="entityType">
+                {{range _, o := .EntityOptions}}
+                <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                {{end}}
+            </select>
+            <label class="sr-only" for="cm-f-keyword">{{ tr("admin.comment.filter.keyword", "关键词") }}</label>
+            <input type="text" class="form-input" id="cm-f-keyword" name="keyword" value="{{.FilterKeyword}}"
+                   placeholder="{{ tr("admin.comment.filter.keyword", "关键词") }}">
+            <button type="submit" class="btn">{{ tr("admin.comment.filter.search", "筛选") }}</button>
+            <a class="btn btn-ghost" href="/admin/comments?project={{selectedProject}}">{{ tr("admin.comment.filter.reset", "重置") }}</a>
+        </form>
+    </section>
+
+    {* ===== 列表 ===== *}
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{ tr("admin.comment.menu", "评论审核") }}{{if .Total > 0}}（{{.Total}}）{{end}}</span>
+        </div>
+        <form method="post" action="/admin/comments/review">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="filterStatus" value="{{.FilterStatus}}">
+            <input type="hidden" name="filterEntityType" value="{{.FilterEntity}}">
+            <input type="hidden" name="filterKeyword" value="{{.FilterKeyword}}">
+            {{if isset(.PermSet["comment:review"])}}
+            {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+                {{yield bulkBtn(label=tr("admin.comment.action.approve", "通过"), cls="btn btn-sm", name="status", value="approved")}}
+                {{yield bulkBtn(label=tr("admin.comment.action.reject", "驳回"), cls="btn btn-sm", name="status", value="rejected", confirm=tr("admin.comment.confirmReject", "驳回选中的评论？驳回后它们不会出现在公开页面上。"), danger=true)}}
+            {{yield bulkBarClose()}}
+            {{end}}
+            <div class="table-wrap table-scroll" tabindex="0">
+            <table class="data-table data-table-wide">
+                <thead><tr>
+                    {{if isset(.PermSet["comment:review"])}}<th class="col-check"><span class="sr-only">{{ tr("admin.common.bulk.selectAll", "全选") }}</span></th>{{end}}
+                    <th>{{ tr("admin.comment.col.body", "内容") }}</th>
+                    <th>{{ tr("admin.comment.col.entity", "评论对象") }}</th>
+                    <th>{{ tr("admin.comment.col.author", "评论人") }}</th>
+                    <th>{{ tr("admin.comment.col.status", "状态") }}</th>
+                    <th>{{ tr("admin.comment.col.time", "提交时间") }}</th>
+                    <th class="col-actions">{{ tr("admin.comment.col.actions", "操作") }}</th>
+                </tr></thead>
+                <tbody>
+                {{if len(.Rows) == 0}}
+                <tr><td colspan="{{if isset(.PermSet["comment:review"])}}7{{else}}6{{end}}" class="cell-wrap">
+                    <div class="empty-state">
+                        <p class="empty-title">{{ tr("admin.comment.empty", "没有符合条件的评论。") }}</p>
+                        <p class="empty-desc">{{ tr("admin.comment.empty_hint", "换一个筛选条件，或等访客提交新的评论。") }}</p>
+                    </div>
+                </td></tr>
+                {{end}}
+                {{range _, r := .Rows}}
+                <tr>
+                    {{if isset(.PermSet["comment:review"])}}
+                    <td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ tr("admin.common.bulk.selectRow", "选择该行") }}"></td>
+                    {{end}}
+                    <td class="cell-wrap">
+                        {{if r.IsReply}}<span class="badge">{{ tr("admin.comment.replyBadge", "回复") }}</span>{{end}}
+                        <div class="cell-body">{{r.Body}}</div>
+                    </td>
+                    <td class="cell-wrap">
+                        <div>{{r.EntityLabel}}</div>
+                        <div class="form-hint">{{r.EntityID}}</div>
+                    </td>
+                    <td>#{{r.UserID}}</td>
+                    <td><span class="badge {{r.StatusClass}}">{{r.StatusLabel}}</span></td>
+                    <td>{{r.CreateTime}}</td>
+                    <td class="col-actions">
+                        {{if r.Reviewed != ""}}<span class="form-hint">{{r.Reviewed}}</span>{{end}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+            </div>
+        </form>
+        {* 分页条：单页 / 装载失败时 handler 不注入那两个键，片段自然不渲染。 *}
+        {{include "../partials/pagination.html"}}
+    </section>
+</div>
+{{end}}

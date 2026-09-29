@@ -33,6 +33,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/siteurl"
 	"go_wp/internal/web/shell"
 )
@@ -52,9 +53,17 @@ const productDetailTemplatePath = "/admin/products/template"
 // 在用户眼里是同一件事。
 //
 // 这条文案与其余进 ?err= 的提示一样，必须在 product_err.go 的 productOwnPageTexts
-// 里登记：读侧 productPageErr 是候选白名单，漏登记的后果不是「文案不准」，而是整条提示
-// 被归口文案顶掉（实测页面上显示「系统内部错误，请稍后重试」）。
-const productDetailTemplateNoProductPrompt = "请先从商品列表选择一件商品，再配置它的详情页模板。"
+// 里登记（key / 中文兜底 / 当前语言译文三种形态都登记）：读侧 productPageErr 是候选白名单，
+// 漏登记的后果不是「文案不准」，而是整条提示被归口文案顶掉（实测页面上显示「系统内部错误，请稍后重试」）。
+const (
+	productDetailTemplateNoProductPromptKey      = "admin.product_detail_template.noProductPrompt"
+	productDetailTemplateNoProductPromptFallback = "请先从商品列表选择一件商品，再配置它的详情页模板。"
+)
+
+// productDetailTemplateNoProductPromptText 上面那条引导的当前语言文本（写侧唯一的取法）。
+func productDetailTemplateNoProductPromptText(c *gin.Context) string {
+	return shell.TranslateFor(c)(productDetailTemplateNoProductPromptKey, productDetailTemplateNoProductPromptFallback)
+}
 
 // ProductPagePorts 后台商品相关页面消费的自动发布能力：翻译工作台要「按依赖标记待重建」，
 // 详情页模板页要「读绑定 / 预览 / 发布 / 切换模板」。两个窄接口的并集作为装配参数类型，
@@ -120,7 +129,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	}
 	productID := strings.TrimSpace(c.Query("product"))
 	data := gin.H{
-		"title": "商品详情页模板", "menu": "products",
+		"title": shell.TranslateFor(c)(productenums.ProductDetailTemplateTitle, "商品详情页模板"), "menu": "products",
 		"Projects": projects, "SelectedProject": selected,
 		"Err": productPageErr(c),
 	}
@@ -133,7 +142,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		// 菜单入口（不带 product）走这里：带一句指名去哪选的引导再回列表，
 		// 不静默跳转 —— 文案与其它失败分支同一形态（?err= + QueryEscape）。
 		c.Redirect(http.StatusFound, "/admin/products?project="+url.QueryEscape(selected)+
-			"&err="+url.QueryEscape(productDetailTemplateNoProductPrompt))
+			"&err="+url.QueryEscape(productDetailTemplateNoProductPromptText(c)))
 		return
 	}
 	product, err := h.products.Get(ctx, &productdto.GetReq{ID: productID})
@@ -213,7 +222,8 @@ func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	copyFrom := strings.TrimSpace(c.PostForm("copyFrom"))
 	if name == "" {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, productDetailTemplateNameRequired))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID,
+			shell.TranslateFor(c)(productDetailTemplateNameRequiredKey, productDetailTemplateNameRequiredFallback)))
 		return
 	}
 	doc, err := h.templateDocument(c.Request.Context(), projectID, copyFrom)
@@ -293,7 +303,8 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 	productID := c.PostForm("productId")
 	newPath := strings.TrimSpace(c.PostForm("newPath"))
 	if newPath == "" {
-		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, productDetailTemplatePathRequired))
+		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID,
+			shell.TranslateFor(c)(productDetailTemplatePathRequiredKey, productDetailTemplatePathRequiredFallback)))
 		return
 	}
 	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationdto.UpdateURLReq{
@@ -388,14 +399,19 @@ var detailTemplateTemplateMessages = map[string]string{
 // 只在这两种形态里认：service 会用 fmt.Errorf("%s: %w", enumsKey, err) 把 key 拼进整句话，
 // 精确匹配会让这类错误全部落到归口文案 —— 运营看到「系统内部错误」而实际问题只是
 // 路径撞车。这与 content 模块 articleFacingText 的 key 前缀判定是同一判据。
-func facingLookup(raw string, table map[string]string) string {
+//
+// 查到的中文是**兜底**、不是产物：enums 常量值本身就是 i18n key（库里已有通用词条，
+// 如 ErrPathOccupied → 页面访问路径已被占用），所以这里按请求语言取词，词条缺失 /
+// i18n 未初始化时才回落这张表的中文 —— 否则英文站点上这条提示永远是中文。
+func facingLookup(tr func(key, fallback string) string, raw string, table map[string]string) string {
 	raw = strings.TrimSpace(raw)
 	if msg, ok := table[raw]; ok {
-		return msg
+		return tr(raw, msg)
 	}
 	if idx := strings.IndexByte(raw, ':'); idx > 0 {
-		if msg, ok := table[strings.TrimSpace(raw[:idx])]; ok {
-			return msg
+		key := strings.TrimSpace(raw[:idx])
+		if msg, ok := table[key]; ok {
+			return tr(key, msg)
 		}
 	}
 	return ""
@@ -409,7 +425,7 @@ func detailTemplateFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := facingLookup(err.Error(), detailTemplateFacingMessages); msg != "" {
+	if msg := facingLookup(shell.TranslateFor(c), err.Error(), detailTemplateFacingMessages); msg != "" {
 		return msg
 	}
 	return productInternalText(c, err)
@@ -420,7 +436,7 @@ func detailTemplateTemplateErrText(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if msg := facingLookup(err.Error(), detailTemplateTemplateMessages); msg != "" {
+	if msg := facingLookup(shell.TranslateFor(c), err.Error(), detailTemplateTemplateMessages); msg != "" {
 		return msg
 	}
 	return productInternalText(c, err)
@@ -475,7 +491,11 @@ func (h *productPageHandle) detailTemplateDepsMissingRedirect(c *gin.Context) {
 }
 
 // 本页的两个参数级提示（同样进 ?err=，因此在 product_err.go 的读侧候选里登记）。
+//
+// key + 中文兜底：两侧必须是同一条词条（写侧取词、读侧把 key / 兜底 / 译文三种形态都收进候选）。
 const (
-	productDetailTemplateNameRequired = "模板名不能为空"
-	productDetailTemplatePathRequired = "请填写新的访问路径。"
+	productDetailTemplateNameRequiredKey      = "admin.product_detail_template.nameRequired"
+	productDetailTemplateNameRequiredFallback = "模板名不能为空"
+	productDetailTemplatePathRequiredKey      = "admin.product_detail_template.pathRequired"
+	productDetailTemplatePathRequiredFallback = "请填写新的访问路径。"
 )

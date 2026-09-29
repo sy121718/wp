@@ -25,19 +25,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
+	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/i18n"
 )
 
-// refDetailBudget 明细部分的字节预算。
+// refGuardRefSamples 明细里最多列出的商品样本数。
+const refGuardRefSamples = 2
+
+// refDetailBudget 明细部分的字节预算（**当前实现不再逐级收敛**，保留常量说明上限）。
 //
 // 整条回执 = 业务文案（最长的一条约 60 字节）+ "：" + 明细，必须留在
-// shell.NoticeMaxBytes（512）以内，这里按 320 留足余量；超预算时逐级收敛
-// （先砍商品示例，再砍工程清单），而不是让它整条作废。
+// shell.NoticeMaxBytes（512）以内。改成「词条骨架 + 纯数据样本」之后不再需要收敛：
+// 样本形如 `商品id(SKU)@工程id`（每条约 30 字节），中文词条 ~90 字节 + 两条样本 ~60
+// ≈ 150，英文 ≈ 210 —— 都远在上限以内。
 const refDetailBudget = 380
 
-// refDetailProjectIDs 明细里最多列出的工程 id 数。
+// refDetailProjectIDs 明细里最多列出的工程 id 数（工程 id 只出现在商品样本的 `@` 之后，
+// 清单本身不再单独列出，数量由词条里的 {projects} 参数给出）。
 const refDetailProjectIDs = 2
 
 // crossProjectRefScope 跨工程引用检查的工程枚举（全站工程 id）。
@@ -89,67 +97,40 @@ func crossProjectRefBlocked(key string, ref *productmodel.CrossProjectRef) error
 
 // refGuardDetail 跨工程引用的可定位明细。
 //
-// 内容（按要求给全）：引用面（表.列）、命中商品数、涉及工程数与工程 id、商品 id（带工程）。
-// 长度按 refDetailBudget 逐级收敛：完整 → 去掉商品示例 → 去掉工程清单 → 只剩表与计数。
+// 内容是「引用面（表.列）+ 命中商品数 + 涉及工程数 + 商品样本」，整句由词条
+// （productenums.DetailRefGuardBlocked）承载、样本作为纯数据参数传入 ——
+// 读侧（productErrText）取词并填 {columns} / {n} / {projects} / {refs}，
+// 于是英文界面上这句也是英文。
 func refGuardDetail(ref *productmodel.CrossProjectRef) string {
 	if !ref.Referenced() {
 		return ""
 	}
-	cols := strings.Join(ref.RefColumns, " + ")
-	head := fmt.Sprintf("引用面 %s；命中 %d 个商品、涉及 %d 个工程", cols, ref.Total, len(ref.ProjectIDs))
-	projects := refProjectList(ref)
-	const advice = "。请先在对应工程解绑后重试（守卫不自动清理）"
-	// 逐级收敛：先减商品示例（2 → 1 → 无），再减工程清单，最后只剩表与计数 ——
-	// 明细写长到超过读侧上限（shell.NoticeMaxBytes）会让**整条**回执被判成伪造，
-	// 那比「少列一个示例」糟得多。
-	for _, candidate := range []string{
-		head + projects + refProductList(ref, 2) + advice,
-		head + projects + refProductList(ref, 1) + advice,
-		head + projects + advice,
-		head + advice,
-		head,
-	} {
-		if len(candidate) <= refDetailBudget {
-			return candidate
-		}
-	}
-	return head
+	return i18n.ErrorDetail(productenums.DetailRefGuardBlocked,
+		"columns", strings.Join(ref.RefColumns, " + "),
+		"n", strconv.Itoa(ref.Total),
+		"projects", strconv.Itoa(len(ref.ProjectIDs)),
+		"refs", refGuardRefs(ref))
 }
 
-// refProjectList 命中的工程清单片段（超过上限只列前几个 + 总数）。
-func refProjectList(ref *productmodel.CrossProjectRef) string {
-	ids := ref.ProjectIDs
-	if len(ids) == 0 {
-		return ""
-	}
-	if len(ids) > refDetailProjectIDs {
-		return fmt.Sprintf("（%s 等 %d 个）", strings.Join(ids[:refDetailProjectIDs], "、"), len(ids))
-	}
-	return fmt.Sprintf("（%s）", strings.Join(ids, "、"))
-}
-
-// refProductList 命中的商品片段（每个商品带主体 SKU 与所属工程，人才能定位到哪个工程去解绑）。
+// refGuardRefs 命中的商品样本（**纯数据**，人才能定位到哪个工程去解绑）。
 //
-// max 是本形态允许列出的条数（逐级收敛用）：0 或负数返回空串。
-func refProductList(ref *productmodel.CrossProjectRef, max int) string {
-	if len(ref.Products) == 0 || max <= 0 {
+// 形态 `商品id(SKU)@工程id`：SKU 只在有值时带上（运营按编码找人），存量空串只报 id。
+// 「工程」二字不在这里出现 —— 骨架文案（含样本格式的说明）在词条里。
+func refGuardRefs(ref *productmodel.CrossProjectRef) string {
+	if len(ref.Products) == 0 {
 		return ""
 	}
 	listed := len(ref.Products)
-	if listed > max {
-		listed = max
+	if listed > refGuardRefSamples {
+		listed = refGuardRefSamples
 	}
 	parts := make([]string, 0, listed)
 	for _, p := range ref.Products[:listed] {
-		// 有主体 SKU 就带上（运营按编码找人），存量空串只报 id 与工程。
 		if sku := strings.TrimSpace(p.SKUCode); sku != "" {
-			parts = append(parts, fmt.Sprintf("%s（%s，工程 %s）", p.ProductID, sku, p.ProjectID))
+			parts = append(parts, p.ProductID+"("+sku+")@"+p.ProjectID)
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s（工程 %s）", p.ProductID, p.ProjectID))
+		parts = append(parts, p.ProductID+"@"+p.ProjectID)
 	}
-	if ref.Total > listed {
-		return fmt.Sprintf("；商品 %s 等 %d 个", strings.Join(parts, "、"), ref.Total)
-	}
-	return fmt.Sprintf("；商品 %s", strings.Join(parts, "、"))
+	return strings.Join(parts, "、")
 }

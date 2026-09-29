@@ -2,98 +2,48 @@
 
 `internal/module/` 存放业务模块代码。模块直接平铺在本目录下，不区分前后台。
 
-当前已有模块（只列一句话边界；完整职责、不变量与迁移细节见 `docs/13-module-inventory.md`）：
-
-- `admin/` — 管理控制面大模块（管理员、角色、权限点、菜单、部门、数据权限）
-- `common/` — 公共业务能力（验证码）
-- `workbench/` — 可视化编辑器平台（仪表盘首页、画布预览、检查器、结构树）；各业务域的后台页面由**各模块自己**在 `inbound/http` 注册（壳层公共能力在 `internal/web/shell`）
-- `media/` — 附件与文件分类
-- `project/` — 站点工程、SiteSettings、多主题
-- `page/` — 手工 Page 与 Page Document（草稿 / 构建 / 发布 / 回滚 / 改 URL、系统页面槽位）
-- `block/` — 复用资产（全局块）：kind + reuse_mode 与 stale 传播编排
-- `artifact/` — Artifact 元数据与内容对象闭包
-- `build/` — 构建任务队列（调度与可见性，不含编译逻辑）
-- `publication/` — URL 占用、激活（两段式回执）、回滚
-- `content/` / `contenttemplate/` / `presentation/` — CMS 内容、版本化结构模板、自动发布实例
-- `blueprint/` — Page Document 初始化工具（用完即弃）
-- `product/` — 商品域（商品 / 变体 / 属性 / 分类 / 品牌 / 标签 / 定价 / 捆绑）
-- `inventory/` — 独立库存模块：仓库 / 库存真源 / 库存变动 / 物料清单 / 货源 / 采购；商品经库存 contract 的收窄端口交互
-- `navigation/` — 公开站点导航（与后台 `menu` 严格隔离）
-- `plugin/` — 插件体系
-- `masterdata/` — 主数据字段级变更记录（append-only）
-- `mail/` — 邮箱模块（发信账号 / 邮件模板）
-- `user/` — 访问面访客账号（注册 / 登录 / 账号中心；与后台 admin 完全隔离）
-- `order/` — 订单（销售侧）：订单头 / 明细 / 状态机 / 支付落账 / 优惠码 / 退货入库
-- `cart/` — 购物车与访客结算（状态只在客户端签名 cookie；六个运行时片段能力）
-- `analytics/` — 站点访问统计（唯一由访客浏览器写库的路径；后台只读聚合）
-- `webhook/` — 外部集成通道（OSS-006）：端点白名单（事件类型 × 目标 URL，管理员预注册）+ 投递日志 + 异步签名投递 worker。对外两个出口：管理面 `contract.EndpointService`（三层链）/ 派发口 `contract.Dispatcher`（一条 `DispatchEvent`，业务模块注入后 best-effort 通知）
-- `runtimefragment/` — 白名单动态片段（无 contract，直挂访问面路由 `/_fragments/{type}`）：能力按文件分组注册，跨模块依赖经收窄只读端口在装配期注入
-
-> 编译内核在 `internal/builder`，发布内核在 `internal/pipeline`；`build/` 模块只承载**构建任务队列**（调度与可见性），不含任何编译逻辑。
-> 模块落地后必须同步更新本列表与 `docs/13-module-inventory.md`（模块实现清单），同一批提交完成，禁止「目录已存在、规则仍写未落地」的漂移。
-> `AGENTS.md`「模块现状」只保留一句话级边界，详情一律记在清单里。
-
-> 管理面六领域（管理员/角色/权限/菜单/部门/数据权限）已合并为 `admin` 大模块：
-> 每个领域占 model/dto/handle/service 下的一个文件（如 `role_model.go`、`role_crud.go`），
-> service 层同包互调、无 setter 注入；`contract/` 预留对外能力，当前无外部消费者。
-> admin 的 service 层经 `DB(ctx)` 直查有明文豁免（见下方 model 层定位）。新增管理面领域时沿用此模式。
+> **模块清单的权威在 [`docs/13-module-inventory.md`](../../docs/13-module-inventory.md)** —— 各模块的完整职责、
+> 不变量与落地细节都在那里，本文件**不重复模块列表**（两份真源必然漂移）。新增 / 更名模块时先改那份清单。
+> 编译内核在 `internal/builder`，发布内核在 `internal/pipeline`，`build/` 模块只承载**构建任务队列**。
 
 ## 目录结构
 
 ```text
 module_name/
-├── contract/
-│   └── <module>_service.go     # 本模块对外暴露契约
-├── inbound/
-│   ├── http/
-│   │   ├── <module>_handle.go
-│   │   └── <module>_router.go   # 自装配 + 路由注册
-├── outbound/
-│   └── <dependency>/            # 按需：外部协议转换或适配
-├── service/
-│   ├── <module>_service.go
-│   └── <module>_<action>.go
-├── model/
-│   └── <module>_model.go
-├── dto/
-│   ├── <module>_req.go
-│   └── <module>_resp.go
-└── enums/                       # 必选，响应消息与错误消息
-    └── <module>_enums.go
+├── contract/                   # 本模块对外暴露契约（<module>_service.go）
+├── inbound/http/               # <module>_handle.go + <module>_router.go（自装配 + 路由注册）
+├── outbound/<dependency>/      # 按需：外部协议转换或适配
+├── service/                    # <module>_service.go + <module>_<action>.go
+├── model/                      # <module>_model.go
+├── dto/                        # <module>_req.go + <module>_resp.go
+└── enums/                      # 必选：响应消息与错误消息
 ```
+
+- `contract/` — 只放本模块对外暴露的接口，不定义外部依赖接口；所有接口放一个文件即可
+- `inbound` — 承接外部调用 · `service` — 实现本模块契约 · `model` — 持久化与表访问
+- `outbound` — **非必需**，用于 RPC / HTTP / MQ / SDK / cache 外部调用；直接引用对方 `contract` 就够时不要加
+- `dto` — 请求/响应结构，数据流 `inbound -> service -> inbound`
+- `enums` — **必须存在**，统一管理响应消息
 
 ## 核心关系
 
-- `contract/` — 只放本模块对外暴露的接口，不定义外部依赖接口
-- `inbound` — 承接外部调用
-- `service` — 实现本模块契约，可直接依赖其他模块的 `contract/`（及不可变 `dto/`），禁止导入其他模块的 `service/model`（豁免规则见 model 层定位）
-- `outbound` — 按需增加，用于外部协议转换或适配（非必需目录）
-- `model` — 持久化模型与数据库访问
-- `dto` — 请求/响应结构
-- `enums` — 必须存在，统一管理响应消息
-
-## contract
-
-- 只放本模块对外暴露的接口，如 `<module>_service.go`
-- 不定义外部依赖接口；需要其他模块的能力时，直接引用对方 `contract` 包
-- 所有接口放在一个文件即可，不必拆分多个文件
+- `service` 可直接依赖其他模块的 `contract/`（及不可变 `dto/`），**禁止导入其他模块的 `service/model`**
+- 跨模块依赖直接注入目标模块的 `contract` 接口，并加编译期断言
+  `var _ <contract>.XXXService = (*Service)(nil)`
+- 实现依赖契约时（outbound 适配器）同样要加编译期断言
 
 ## inbound/http
 
-- `router.go` 自行获取 `db`、创建 `model` 和 `service`、注册路由。
-- `handle` 只负责参数绑定、调用 service、输出响应。
-- 返回给前端的响应消息统一取 `enums`。
+- `router.go` 自行获取 `db`、创建 `model` 与 `service`、注册路由
+- `handle` 只负责参数绑定、调用 service、输出响应；响应消息统一取 `enums`
+- 取当前操作人一律用 `shell.CurrentUserID(c)` / `shell.CurrentUserIDText(c)`（内部走 `builtin.GetUserID`，
+  带类型断言保护 —— 裸断言在类型异常时会把请求打成 500）。只有确实要区分「未登录 → 401」与
+  「会话值类型异常 → 500」时才直接读 `c.Get("user_id")`，并写明理由。
 - **列表页批量操作（多选后删除 / 改状态 / 审批）必须成对遵守两条**：
-  · id 一律经 `shell.BulkIDs(c)` 读取，不要直接 `c.PostFormArray("ids")` —— 它负责去空白、
-  去重与数量上限（`MaxBulkIDs`），超限**整批拒绝**并把可展示的原因回带列表页。直接取数组
-  等于把循环次数交给请求方决定：一次提交上万个 id 就是上万次数据库往返（每次还各带一个事务）。
-  · 逐条走各自的单条路径、**单条失败不中断整批** —— 一条失败就整批回滚会让人以为「一条都没删」
-  然后反复重试；结论按「成功 N / 跳过 M」回带列表页，不允许静默的部分成功。
-- 取当前操作人一律用 `shell.CurrentUserID(c)` / `shell.CurrentUserIDText(c)`（内部走
-  `builtin.GetUserID`，带类型断言保护 —— 裸断言在类型异常时会把请求打成 500）。只有确实要区分
-  「未登录 → 401」与「会话值类型异常 → 500」时才直接读 `c.Get("user_id")`，并写明理由。
-
-示例：
+  · id 一律经 `shell.BulkIDs(c)` 读取，不要直接 `c.PostFormArray("ids")` —— 它负责去空白、去重与数量上限
+  （`MaxBulkIDs`），超限**整批拒绝**并把可展示的原因回带列表页。直接取数组等于把循环次数交给请求方决定。
+  · 逐条走各自的单条路径、**单条失败不中断整批** —— 一条失败就整批回滚会让人以为「一条都没删」然后反复
+  重试；结论按「成功 N / 跳过 M」回带，不允许静默的部分成功。
 
 ```go
 func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
@@ -108,177 +58,126 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 
 ## service
 
-- `xxx_service.go` 只放 `Service` / `NewService()`
-- `Service` struct 只持有本模块 `model` + 契约接口，不持有 `*gorm.DB`
-- service 禁止调用 `model.DB(ctx)` 等裸句柄拼接查询；持久化唯一入口是 model 具名方法（admin 豁免，见 model 层定位）
-- 跨模块依赖直接注入目标模块的 `contract` 接口
+- `xxx_service.go` 只放 `Service` / `NewService()`；业务用例拆到 `xxx_<action>.go`
+- `Service` struct 只持有本模块 `model` + 契约接口，**不持有 `*gorm.DB`**
 - 构造函数直接传参，不用 `Deps` 结构体（参数 ≤6 时直传）
-- 必须加编译期断言：`var _ <contract>.XXXService = (*Service)(nil)`
-- 业务用例拆到 `xxx_<action>.go`
-- 返回 `error`，业务错误消息统一取 `enums`
-- 使用命名返回值：`func (s *Service) Xxx(ctx, req) (res *XxxResp, err error)`
-- **写操作必须有事务边界**：一个 service 方法里出现**两处及以上持久化写入**（主实体 + 关联行 + 流水/变更记录 +
-  计数 + 权限策略/菜单 + Redis）就必须包进**同一个事务**，任一步失败整体回滚，不留半截状态。
-  跨模块只把 `*gorm.DB` 句柄传给对方的 `…Tx` 方法（先例：`masterdata.RecordChangesTx(ctx, tx, …)`）——
-  不共享表、不跨库；对端没有 `…Tx` 方法就加一个，不要用「先写 A 再补偿 B」蒙混（补偿只用于跨库/外部系统）。
-  读-改-写必须有行锁或原子 SQL；数据冲突一律打回给人、不自动加后缀或静默合并。
-  完整判据与门禁见 AGENTS.md「写操作的事务与回滚」与 `public/test/architecture/tx_boundary_scan_test.go`
+- 返回 `error`，业务错误消息统一取 `enums`；使用命名返回值
+  `func (s *Service) Xxx(ctx, req) (res *XxxResp, err error)`
+- **写操作必须有事务边界**：一个方法里出现**两处及以上持久化写入**就必须包进同一事务，任一步失败整体回滚。
+  完整判据与门禁见 `AGENTS.md` §「写操作的事务与回滚」
 
 ## 编码风格
 
-- import 别名：`pagedto`、`adminmodel`、`pubcontract`、`pagemodel`（模式：`<模块名小写>dto/model/contract/enums`）
+- import 别名：`pagedto`、`adminmodel`、`pubcontract`（模式：`<模块名小写>dto/model/contract/enums`）
 - 函数签名使用命名返回值，`error` 放最后
 
 ## model
 
-- 放 Entity + `NewXxxModel(db)` + `DB(ctx)` + 通用查询方法
-- 可放本模块固定常量（表名、状态值、API 路径）
-- 请求/响应结构放 `dto/`，不放入 `model/`
+- 放 Entity + `NewXxxModel(db)` + `DB(ctx)` + 通用查询方法；可放本模块固定常量（表名、状态值、API 路径）
 - `DB(ctx)` 返回 `m.db.WithContext(ctx).Model(&Entity{})`
 - 查询条件、分页、排序以**参数**传入方法（仅限本模块表）；方法内不得写死业务条件，不得多表关联
-- 不放业务规则（状态机、归属校验等留在 service）
+- **不放业务规则**（状态机、归属校验等留在 service）；请求/响应结构放 `dto/`，不放入 `model/`
 
-### model 层定位（Repository，非 DDD Domain Model）
-
-> 权威版本见 `AGENTS.md` §「model 层定位」；两处冲突时以 AGENTS.md 为准，本节保持同步摘录。
-
-- ✅ 允许：本模块表的 CRUD、聚合与**聚合内原子组合**（如全量替换 `Delete+Create` 在同一事务内）；查询条件以参数传入
-- ❌ 禁止：跨 model 调用、业务规则/决策（谁能删、状态机）、**跨聚合/跨模块事务**
-- 跨聚合/跨模块事务必须在 service 层编排：model 暴露 `Transaction()` 透传（或方法接受外部 `*gorm.DB`/`*gorm.Session`），由 service 决定事务边界与回滚
-- `DB(ctx)` 等裸 gorm 句柄是 model 内部实现细节，**只允许被本 model 的仓储方法消费**；service 禁止调用它拼接查询
-- 评审拦截项：`internal/module/*/service` 命中 `\.DB(ctx)` 或 `\.RevisionDB(ctx)` 即打回（含先存变量的写法）；**仅 admin 有明文豁免**（仅限本模块表、简单 CRUD；跨表事务仍须 `Transaction()` 编排），新增模块一律禁止直查
-
-## outbound
-
-- 用于 RPC / HTTP / MQ / SDK / cache 等外部调用
-- **非必需目录**，直接引用对方 `contract` 即可满足需求时不加 outbound
-- 实现依赖契约时必须加编译期断言
-
-## 构建期数据源接入（issue #35）
-
-业务模块要给构建器（组件渲染页面时）提供数据，按这个形状接 —— 详细六步见
-`docs/04-B-dynamic-development-guide.md` §1.4：
-
-1. 在**本模块 contract 包**声明受限数据源接口（如 `ProductDataSource`）：只嵌
-   `source.CollectionResolver` / `source.CollectionSchemaProvider`（可再加
-   `source.CollectionFilterOptionsProvider`）—— **写方法不进这个接口**，
-   越权防护靠接口形状而不是调用方自觉；
-2. 本模块的服务契约**嵌入**它（`type ProductService interface { ProductDataSource; ... }`），
-   并加编译期断言 `var _ xxxcontract.XxxDataSource = (*Service)(nil)`；
-3. `builder/core` 的 `RenderContext` 加一个字段、builder 加一个 CompileOption，
-   装配期注入（片段 / 页面 / 发布三条路径都要接）。
-
-两条死线：
-
-- **共享形状放 `internal/builder/source`，本模块 contract 包不得反向 import
-  `builder/core`** —— 反向即成环（`core → 契约 → core`），core 无法再持有业务契约；
-- **读取集合项用 `source` 的访问器与字段常量**（`source.ItemFloat(item, source.ItemFieldMinPrice)`），
-  不要裸写 `item["minPrice"]`：`ok=false` 表示「没有这个值」而不是「值为零」，
-  「没有启用变体」与「0 元」是两回事。
+> **model 层定位（Repository，非 DDD Domain Model）的权威版本在 `AGENTS.md`** —— 允许/禁止边界、
+> `DB(ctx)` 的使用限制、admin 豁免条款、评审拦截项都在那里。本文件不重复摘录。
 
 ## 表隔离约定
 
 模块间的数据表严格隔离，不允许跨模块直接关联查询。
-
-### 隔离机制
 
 ```text
 page/service
   ├── 持有 pagemodel.Model                → 只能碰本模块表
   ├── 持有 pubcontract.PublicationService → 接口，不知道数据从哪来
   └── 不持有 *gorm.DB                     → 无法 .Table() 切表
+
+跨模块：page/service → 调 pubcontract.PublicationService
+                    → publication/service → publication/model → publication 路由表
 ```
 
-跨模块数据链路：
-
-```text
-page/service → 调 pubcontract.PublicationService
-  → publication/service → publication/model → publication 路由表
-```
-
-这里强调的是依赖方向：调用方只依赖目标模块的 `contract`，目标模块自行负责其数据访问。
-
-### 规则
-
-- service 层禁止使用 `.Table()` / `.Model()` 切换到非本模块的表
-- model 的 `DB(ctx)` 恒绑定本模块表（`WithContext + Model(&Entity{})`），不得重绑定到其他表；service 不得调用 `DB(ctx)`（见 model 层定位）
-- 跨模块调用统一依赖目标模块的 `contract`；跨模块可传递的数据类型是 `contract` 与**不可变 dto**（对齐 `AGENTS.md`「命名约束」），禁止导入目标模块的 `service`、`model`
+- service 层禁止用 `.Table()` / `.Model()` 切换到非本模块的表
+- model 的 `DB(ctx)` 恒绑定本模块表，不得重绑定；service 不得调用它（见 AGENTS.md）
+- 跨模块调用统一依赖目标模块的 `contract`；可传递类型是 `contract` 与**不可变 dto**，
+  **禁止导入目标模块的 `service` / `model`**
 
 ## 装配
 
-各模块自己负责装配 `model` 和 `service`，顶层 `routes.go` 获取通用依赖（`db`）并按依赖顺序调用模块的 Setup 函数。
-
-### 数据域（datarule）注册
-
-模块要用数据权限（行级过滤 / 字段屏蔽）时，**域声明属于拥有该表的模块**：
-
-- 白名单写在实体字段的 tag 上：`DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`，
-  没有 tag 的字段不可配（fail-closed）；表名取实体的 `TableName()`，不另写字符串；
-- 域值由 model 暴露（如 `adminmodel.AdminDataRuleDomain()`），**注册动作在装配入口**完成，
-  并且要在注册路由之前 —— 域没注册上的表不会被任何规则拦住（引擎按表名匹配域，匹配不到就直接放行）；
-- 声明写错（未知操作符、缺 label、字段名非法）一律装配期失败，不要降级成「这个域没有白名单」；
-- 运行时校验在 service：规则的字段/操作符必须属于该域声明，越界拒绝落库（模板见
-  `internal/module/admin/service/datarule_crud.go` 的 `validateRuleConfig`），
-  request 形状与枚举放 dto 的 `binding` tag。
-
-对于需要跨模块契约的模块，顶层 routes.go 在调用时从被依赖模块获取契约并传递过去：
+各模块自己装配 `model` 与 `service`；顶层 `routes.go` 获取通用依赖（`db`）并按依赖顺序调用模块 Setup 函数。
+需要跨模块契约时，由顶层从被依赖模块取契约再传入：
 
 ```go
 projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
 blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
-presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, contentSvc)
-```（示意摘录；实际装配已按审计 CQ-008 分段：`internal/routers/routes.go` 只保留入口与顺序调用，各装配段落见 `assembly.go` 与 `assembly_publish.go`，与依赖顺序一致）
+```
 
-## 测试策略（审计 CQ-020）
+> 实际装配已按审计 CQ-008 分段：`internal/routers/routes.go` 只保留入口与顺序调用，
+> 各装配段落见 `assembly.go` 与 `assembly_publish.go`，与依赖顺序一致。
 
-两层，各管一段，不追求覆盖率数字。
+### 数据域（datarule）注册
 
-**模块内就近单测**（`internal/module/**/*_test.go`）—— 纯逻辑，不碰数据库、不走装配：
-状态机流转表、金额计算、文档校验、路径归一化、错误映射、哈希。
-放模块内的理由是**改动成本**：这类逻辑几乎每次改动都会碰到，就近跑一次不到一秒；
-扔进 `public/test` 就要先起库，于是最该被覆盖的改动反而最少被跑到。
+**域声明属于拥有该表的模块**，注册动作在**装配入口**完成（且必须在**注册路由之前** —— 域没注册上的表不会被
+任何规则拦住）。白名单写在实体字段的 tag 上，没有 tag 的字段不可配（fail-closed）：
 
-已覆盖：`order`（状态机穷举边 + 金额）、`page`（发布纯函数、槽位与 kind 枚举）、
-`presentation`（模板解析的错误分类）、`blueprint`（文档校验）、
-`contenttemplate`（文档校验与哈希）、`analytics`、`cart`、`mail`（自动化图）、
-`runtimefragment`、`user`（局部）。
+```go
+DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,NOT_IN"`
+```
 
-**feature / 集成测试**（`public/test/**`）—— 需要数据库、事务、HTTP 或完整装配路径的行为：
-`admin`、`artifact`、`block`、`content`、`masterdata`、`media`、`navigation`、`plugin`、
-`product`、`project`、`publication`，以及 `page` / `presentation` / `contenttemplate` 的发布链。
+域值由 model 暴露（如 `adminmodel.AdminDataRuleDomain()`）。声明写错（未知操作符、缺 label、字段名非法）
+一律**装配期失败**，不要降级成「这个域没有白名单」。完整规则见
+[`docs/rules/database.md`](../../docs/rules/database.md)。
 
-判定标准是**「这个判断错了会不会静默出错」**：会（多记一条流转、多标一个 stale、金额舍入、
-错误被压成同一句话）就补模块内单测；不会、只是路径走不通，交给 feature 测试。
+## 构建期数据源接入（issue #35）
 
-## dto
+业务模块给构建器（组件渲染页面时）提供数据，按这个形状接 —— 详细六步见
+[`docs/04-B-dynamic-development-guide.md`](../../docs/04-B-dynamic-development-guide.md) §1.4：
 
-- `*_req.go` 给 `inbound` 绑定
-- `*_resp.go` 给 `service` 返回
-- 数据流：`inbound -> service -> inbound`
+1. 在**本模块 contract 包**声明受限数据源接口（如 `ProductDataSource`）：只嵌 `source.CollectionResolver` /
+   `source.CollectionSchemaProvider`（可再加 `source.CollectionFilterOptionsProvider`）——
+   **写方法不进这个接口**，越权防护靠接口形状而不是调用方自觉；
+2. 本模块服务契约**嵌入**它（`type ProductService interface { ProductDataSource; ... }`），
+   并加编译期断言 `var _ xxxcontract.XxxDataSource = (*Service)(nil)`；
+3. `builder/core` 的 `RenderContext` 加字段、builder 加 CompileOption，装配期注入
+   （片段 / 页面 / 发布三条路径都要接）。
+
+两条死线：
+
+- **契约包不得反向 import `builder/core`**（反向即成环，core 无法再持有业务契约）；
+- **读取集合项用 `source` 的访问器与字段常量**（`source.ItemFloat(item, source.ItemFieldMinPrice)`），
+  不要裸写 `item["minPrice"]`：`ok=false` 表示「没有这个值」而不是「值为零」——
+  「没有启用变体」与「0 元」是两回事。
+
+## 测试策略
+
+两层，各管一段，**不追求覆盖率数字**。完整方法论见 [`docs/rules/testing.md`](../../docs/rules/testing.md)。
+
+- **模块内就近单测**（`internal/module/**/*_test.go`）—— 纯逻辑，不碰数据库、不走装配：状态机流转表、
+  金额计算、文档校验、路径归一化、错误映射、哈希。放模块内的理由是**改动成本**：这类逻辑几乎每次改动都会
+  碰到，就近跑一次不到一秒；扔进 `public/test` 就要先起库，于是最该被覆盖的改动反而最少被跑到。
+- **feature / 集成测试**（`public/test/**`）—— 需要数据库、事务、HTTP 或完整装配路径的行为。
+- 判定标准是**「这个判断错了会不会静默出错」**：会（多记一条流转、多标一个 stale、金额舍入、错误被压成
+  同一句话）就补模块内单测；不会、只是路径走不通，交给 feature 测试。
+
+## 响应与路由
+
+| 请求类型 | 响应格式 |
+|---|---|
+| HTMX 请求（`HX-Request: true`） | Jet 渲染的 HTML 片段（列表刷新、局部更新、弹窗内容） |
+| JSON API | `pkg/response` 的 `Response{Code,Message,Data}` |
+
+- JSON 统一走 `pkg/response`（`Success` / `SuccessWithMessage` / `ErrorWithMessage`），消息来自模块 `enums`
+- HTMX 响应直接渲染 Jet 片段返回，**不走** `pkg/response`
+- 路由**只用 `GET` / `POST`**：`GET` 查询，`POST` 用于新增、修改、删除、状态变化
 
 ## enums
 
-- `enums/` 是必须目录
-- 所有响应内容都走模块 `enums`
+- `enums/` 是**必须目录**；所有响应内容都走模块 `enums`
 - 包括：成功消息、参数错误消息、未授权消息、业务错误消息
-- `handle` 和 `service` 不直接硬编码响应文案
+- `handle` 和 `service` **不直接硬编码响应文案**
 - 未接好 `i18n` 时，`ErrXxx` / `MsgXxx` 直接等于中文常量
 
-## 响应
+## 管理面大模块（admin）
 
-按请求类型区分两种响应模式：
-
-| 请求类型 | 响应格式 | 说明 |
-|---------|---------|------|
-| HTMX 请求（`HX-Request: true`） | Jet 渲染的 HTML 片段 | 列表刷新、表单提交后局部更新、弹窗内容 |
-| JSON API | `pkg/response` JSON 结构 | 纯数据接口 |
-
-- JSON 响应统一走 `pkg/response`：`response.Success`、`response.SuccessWithMessage`、`response.ErrorWithMessage`
-- 传给 `response` 的消息统一来自模块 `enums`
-- HTMX 响应直接渲染 Jet 模板片段返回，不走 `pkg/response`
-
-## 路由
-
-- 只用 `GET` / `POST`
-- `GET` 查询
-- `POST` 用于新增、修改、删除、状态变化
+管理面六领域（管理员 / 角色 / 权限 / 菜单 / 部门 / 数据权限）已合并为 `admin` 大模块：每个领域占
+model/dto/handle/service 下的一个文件（如 `role_model.go`、`role_crud.go`），service 层同包互调、无 setter
+注入；`contract/` 预留对外能力。**admin 的 service 层经 `DB(ctx)` 直查有明文豁免**（边界见 `AGENTS.md`）。
+新增管理面领域时沿用此模式。
