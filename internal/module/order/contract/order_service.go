@@ -1,4 +1,14 @@
 // Package ordercontract 订单模块对外契约（BIZ-1 销售侧）。
+//
+// 文件分三段，改之前先看清自己在哪一段：
+//
+//	· 对外能力 —— 别的模块能用订单做什么（OrderService 与它嵌的收窄子接口）。
+//	  收窄是越权防护手段：片段层只拿得到 VisitorReturnPort，抄不走审核 / 入库 / 退款。
+//	· 跨模块形状 —— 调用方要传进来、要收回去的类型：dto 重导出 + 展示标签。
+//	  重导出是为了让调用方只依赖本包（取舍见该段注释）。
+//	· 索要的端口 —— 订单需要外部给什么（库存扣减、退货仓库下拉），**由对方实现**
+//	  （库存侧 outbound/orderstock）；入参形状在这里自有，订单不 import 库存的 dto ——
+//	  否则订单就认识了库存的绑定层（审计 CQ-004）。
 package ordercontract
 
 import (
@@ -10,50 +20,9 @@ import (
 	orderenums "go_wp/internal/module/order/enums"
 )
 
-// 跨模块调用方使用的**形状重导出**（与 publication 契约同一手法）：调用方只依赖 contract，
-// 不直接 import order/dto 或 order/enums。
-//
-// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
-// （建单入参 / 支付入参 / 订单视图就是它对外的语义），dto 上的 json/form 标签只影响 HTTP 绑定，
-// 不改变语义。另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」
-// 换成「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
-//
-// 边界：本模块内部（service / model / inbound）继续用 orderdto 作为实现形状；
-// 重导出只服务于跨模块调用方。
-type (
-	// 建单（cart 结算链路）。
-	CreateOrderReq  = orderdto.CreateOrderReq
-	CreateOrderResp = orderdto.CreateOrderResp
-	OrderItemReq    = orderdto.OrderItemReq
-	OrderAddress    = orderdto.OrderAddress
-	// 支付落账（cart 结算与支付回调链路）。
-	PayOrderReq  = orderdto.PayOrderReq
-	PayOrderResp = orderdto.PayOrderResp
-	// 按商户单号取单（支付回调链路）。
-	GetOrderByNoReq = orderdto.GetOrderByNoReq
-	OrderResp       = orderdto.OrderResp
-	// 归因与轨迹快照（cart 在下单那一刻从追踪 cookie 定格后交进来）。
-	Attribution = orderdto.Attribution
-	FirstTouch  = orderdto.FirstTouch
-	UTMInfo     = orderdto.UTMInfo
-	AdInfo      = orderdto.AdInfo
-	SessionInfo = orderdto.SessionInfo
-	DeviceInfo  = orderdto.DeviceInfo
-	TrailPage   = orderdto.TrailPage
-)
-
-// ErrOrderNotFound 订单不存在（错误文案取自 enums，供调用方做错误判定而不 import enums）。
-const ErrOrderNotFound = orderenums.ErrOrderNotFound
-
-// OrderStatusLabel 订单状态 → (词条 key, 中文兜底)，真源在 order/enums。
-//
-// 为什么由 contract 转出而不是让调用方自己映射：跨模块只允许依赖 contract 与不可变 dto，
-// 而订单状态 → 展示名的映射必须与订单页**共用同一份** —— 客户详情页的「最近一单」各写一张
-// 中文表的结果是「改一处、另一处静默留在旧说法上」（不报错、测试也不红）。
-// 形态与其它展示标签一致：调用点 tr(key, fallback)，词条缺失时回落中文。
-func OrderStatusLabel(status string) (key, fallback string) {
-	return orderenums.OrderStatusLabel(status)
-}
+// ==========================================================================
+// 对外能力：别的模块能用订单做什么
+// ==========================================================================
 
 // OrderService 订单模块对外能力。
 type OrderService interface {
@@ -152,6 +121,110 @@ type ReturnService interface {
 	ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceiveReq) (res *orderdto.ReturnResp, err error)
 }
 
+// CustomerOrderSummaryReader 按客户取订单聚合事实（只读，一条方法）。
+//
+// 后台客户管理页要用它 —— 而客户页需要的东西只有一件：这个客户在本工程里
+// 下过几单、累计消费多少、最近一单是什么时候。所以它既不是 ListOrders
+// （那会顺带给出全站状态计数与客户列表），也不是任何写能力。
+// 与 VisitorOrderReader 同一条思路：越权防护靠接口形状，不靠调用方自觉。
+type CustomerOrderSummaryReader interface {
+	// CustomerOrderSummaryOf 累计口径（哪些状态算消费）由订单模块决定，
+	// 调用方只拿到结论，不参与计算。
+	CustomerOrderSummaryOf(ctx context.Context, req *orderdto.CustomerOrderSummaryReq) (res *orderdto.CustomerOrderSummaryResp, err error)
+}
+
+// OrderNoReader 按商户单号取订单。
+//
+// 支付通道的异步回调只有商户单号（它不认识我们的自增 id），而 PayOrder 只接受内部 id ——
+// 这是刻意的（见 PayOrderReq 注释），两者之间需要这一层翻译。
+type OrderNoReader interface {
+	GetOrderByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderResp, err error)
+}
+
+// VisitorOrderReader 访客自助查询自己订单的能力。
+//
+// 为什么不让访客直接调 ListOrders：那条路径返回全站状态计数、且 UserID 只是个可选过滤项 ——
+// 「必须限定在自己名下」这件事交给调用方记得传，总有一天会有人忘。
+// 这里两个方法把 user_id 钉进契约：调用方没有不传的选项，归属过滤写在 SQL 条件里。
+type VisitorOrderReader interface {
+	ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOrderListReq) (res *orderdto.VisitorOrderListResp, err error)
+	GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.OrderDetailResp, err error)
+}
+
+// CouponService 优惠码能力。
+//
+// 试算（ValidateCoupon）是纯读、不占次数，供结算页在提交前先告诉访客能减多少；
+// 真正的核销发生在 CreateOrder 的事务里（见 CreateOrderReq.CouponCode），**不单独暴露核销入口** ——
+// 允许「先核销、后建单」的接口一定会被用出「券没了但没下单」这种状态。
+type CouponService interface {
+	CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error)
+	UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error)
+	ListCoupons(ctx context.Context, req *orderdto.CouponListReq) (res *orderdto.CouponListResp, err error)
+	GetCoupon(ctx context.Context, couponID uint64) (res *orderdto.CouponResp, err error)
+	DeleteCoupon(ctx context.Context, couponID uint64) (err error)
+	ValidateCoupon(ctx context.Context, req *orderdto.CouponValidateReq) (res *orderdto.CouponValidateResp, err error)
+	ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error)
+	// AuditCouponCounts 对账 coupons.used_count 与核销明细行数（DB-021）。
+	//
+	// 只读、不修正：used_count 是并发守卫（`WHERE used_count < max_uses`）依赖的投影，
+	// 明细才是真源，偏差该往哪边修取决于原因（手工改库 / 早期逻辑缺口 / 守卫未命中），
+	// 自动修可能把真源也改错。
+	AuditCouponCounts(ctx context.Context, req *orderdto.CouponCountAuditReq) (res *orderdto.CouponCountAuditResp, err error)
+}
+
+// ==========================================================================
+// 跨模块形状：调用方要传进来、要收回去的类型
+// ==========================================================================
+
+// 跨模块调用方使用的**形状重导出**（与 publication 契约同一手法）：调用方只依赖 contract，
+// 不直接 import order/dto 或 order/enums。
+//
+// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
+// （建单入参 / 支付入参 / 订单视图就是它对外的语义），dto 上的 json/form 标签只影响 HTTP 绑定，
+// 不改变语义。另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」
+// 换成「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
+//
+// 边界：本模块内部（service / model / inbound）继续用 orderdto 作为实现形状；
+// 重导出只服务于跨模块调用方。
+type (
+	// 建单（cart 结算链路）。
+	CreateOrderReq  = orderdto.CreateOrderReq
+	CreateOrderResp = orderdto.CreateOrderResp
+	OrderItemReq    = orderdto.OrderItemReq
+	OrderAddress    = orderdto.OrderAddress
+	// 支付落账（cart 结算与支付回调链路）。
+	PayOrderReq  = orderdto.PayOrderReq
+	PayOrderResp = orderdto.PayOrderResp
+	// 按商户单号取单（支付回调链路）。
+	GetOrderByNoReq = orderdto.GetOrderByNoReq
+	OrderResp       = orderdto.OrderResp
+	// 归因与轨迹快照（cart 在下单那一刻从追踪 cookie 定格后交进来）。
+	Attribution = orderdto.Attribution
+	FirstTouch  = orderdto.FirstTouch
+	UTMInfo     = orderdto.UTMInfo
+	AdInfo      = orderdto.AdInfo
+	SessionInfo = orderdto.SessionInfo
+	DeviceInfo  = orderdto.DeviceInfo
+	TrailPage   = orderdto.TrailPage
+)
+
+// ErrOrderNotFound 订单不存在（错误文案取自 enums，供调用方做错误判定而不 import enums）。
+const ErrOrderNotFound = orderenums.ErrOrderNotFound
+
+// OrderStatusLabel 订单状态 → (词条 key, 中文兜底)，真源在 order/enums。
+//
+// 为什么由 contract 转出而不是让调用方自己映射：跨模块只允许依赖 contract 与不可变 dto，
+// 而订单状态 → 展示名的映射必须与订单页**共用同一份** —— 客户详情页的「最近一单」各写一张
+// 中文表的结果是「改一处、另一处静默留在旧说法上」（不报错、测试也不红）。
+// 形态与其它展示标签一致：调用点 tr(key, fallback)，词条缺失时回落中文。
+func OrderStatusLabel(status string) (key, fallback string) {
+	return orderenums.OrderStatusLabel(status)
+}
+
+// ==========================================================================
+// 索要的端口：订单需要外部给什么（由对方实现）
+// ==========================================================================
+
 // StockOperator 订单需要的库存能力 —— **只有扣减与增加这两条**。
 //
 // 为什么不直接依赖 inventorycontract.InventoryService：那个接口有二十来个方法
@@ -210,6 +283,27 @@ type StockLine struct {
 	WarehouseID string
 }
 
+// StockDeduction 建单出库的入参。
+type StockDeduction struct {
+	ProjectID  string
+	ReasonCode string
+	// SourceType / SourceRef 来源引用（订单号），供库存流水回溯到这张单。
+	SourceType string
+	SourceRef  string
+	Remark     string
+	Lines      []StockLine
+}
+
+// StockAdjustment 把货加回库存的入参（方向恒为入库）。
+type StockAdjustment struct {
+	ProjectID  string
+	ReasonCode string
+	SourceType string
+	SourceRef  string
+	Remark     string
+	Lines      []StockLine
+}
+
 // ReturnWarehouseSource 退货页「入库仓库」下拉所需的最窄读能力。
 //
 // 与 StockOperator 同一手法（CQ-004）：订单侧不 import 库存的 dto ——
@@ -232,76 +326,4 @@ type ReturnWarehouse struct {
 	Status string
 	// IsDefault 是否默认仓（留空时的兜底目标）。
 	IsDefault bool
-}
-
-// StockDeduction 建单出库的入参。
-type StockDeduction struct {
-	ProjectID  string
-	ReasonCode string
-	// SourceType / SourceRef 来源引用（订单号），供库存流水回溯到这张单。
-	SourceType string
-	SourceRef  string
-	Remark     string
-	Lines      []StockLine
-}
-
-// StockAdjustment 把货加回库存的入参（方向恒为入库）。
-type StockAdjustment struct {
-	ProjectID  string
-	ReasonCode string
-	SourceType string
-	SourceRef  string
-	Remark     string
-	Lines      []StockLine
-}
-
-// CustomerOrderSummaryReader 按客户取订单聚合事实（只读，一条方法）。
-//
-// 后台客户管理页要用它 —— 而客户页需要的东西只有一件：这个客户在本工程里
-// 下过几单、累计消费多少、最近一单是什么时候。所以它既不是 ListOrders
-// （那会顺带给出全站状态计数与客户列表），也不是任何写能力。
-// 与 VisitorOrderReader 同一条思路：越权防护靠接口形状，不靠调用方自觉。
-type CustomerOrderSummaryReader interface {
-	// CustomerOrderSummaryOf 累计口径（哪些状态算消费）由订单模块决定，
-	// 调用方只拿到结论，不参与计算。
-	CustomerOrderSummaryOf(ctx context.Context, req *orderdto.CustomerOrderSummaryReq) (res *orderdto.CustomerOrderSummaryResp, err error)
-}
-
-// OrderNoReader 按商户单号取订单。
-//
-// 支付通道的异步回调只有商户单号（它不认识我们的自增 id），而 PayOrder 只接受内部 id ——
-// 这是刻意的（见 PayOrderReq 注释），两者之间需要这一层翻译。
-type OrderNoReader interface {
-	GetOrderByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderResp, err error)
-}
-
-// VisitorOrderReader 访客自助查询自己订单的能力。
-//
-// 为什么不让访客直接调 ListOrders：那条路径返回全站状态计数、且 UserID 只是个可选过滤项 ——
-// 「必须限定在自己名下」这件事交给调用方记得传，总有一天会有人忘。
-// 这里两个方法把 user_id 钉进契约：调用方没有不传的选项，归属过滤写在 SQL 条件里。
-type VisitorOrderReader interface {
-	ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOrderListReq) (res *orderdto.VisitorOrderListResp, err error)
-	GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.OrderDetailResp, err error)
-}
-
-// CouponService 优惠码能力。
-//
-// 试算（ValidateCoupon）是纯读、不占次数，供结算页在提交前先告诉访客能减多少；
-// 真正的核销发生在 CreateOrder 的事务里（见 CreateOrderReq.CouponCode），**不单独暴露核销入口** ——
-// 允许「先核销、后建单」的接口一定会被用出「券没了但没下单」这种状态。
-type CouponService interface {
-	CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error)
-	UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error)
-	ListCoupons(ctx context.Context, req *orderdto.CouponListReq) (res *orderdto.CouponListResp, err error)
-	GetCoupon(ctx context.Context, couponID uint64) (res *orderdto.CouponResp, err error)
-	DeleteCoupon(ctx context.Context, couponID uint64) (err error)
-	ValidateCoupon(ctx context.Context, req *orderdto.CouponValidateReq) (res *orderdto.CouponValidateResp, err error)
-	ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error)
-	// AuditCouponCounts 对账 coupons.used_count 与核销明细行数（DB-021）。
-	//
-	// 只读、不修正：used_count 是并发守卫（`WHERE used_count < max_uses`）依赖的投影，
-	// 明细才是真源，偏差该往哪边修取决于原因（手工改库 / 早期逻辑缺口 / 守卫未命中），
-	// 自动修可能把真源也改错。
-	AuditCouponCounts(ctx context.Context, req *orderdto.CouponCountAuditReq) (res *orderdto.CouponCountAuditResp, err error)
 }
