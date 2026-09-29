@@ -105,6 +105,7 @@ func schemaTypeOf(entityType string) string {
 // 只列**确实存在且语义就是头图**的字段：
 //   - 文章：featuredImage（内容字段白名单里的封面）；
 //   - 商品：defaultImage 是主图，images 是图集（取首张）。
+//
 // 候选外的字段一律不看 —— 猜一个字段名只会得到一张错的分享图。
 var entityImageCandidates = map[string][]string{
 	entityTypeArticle: {"featuredImage"},

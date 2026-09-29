@@ -18,10 +18,10 @@ import (
 	"database/sql"
 	"testing"
 
-	orderdto "go_wp/internal/module/order/dto"
-	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	orderdto "go_wp/internal/module/order/dto"
+	productdto "go_wp/internal/module/product/dto"
 )
 
 // setOwningWarehouseCost 把某变体在默认仓的当前成本写成 cost（走真实入库路径的显式成本）。

@@ -44,7 +44,10 @@ func TestAutomationStatusChangedTemplate(t *testing.T) {
 }
 
 func TestTestSendFailedLabels(t *testing.T) {
-	cases := []struct{ got LabelPair; key, fallback string }{
+	cases := []struct {
+		got           LabelPair
+		key, fallback string
+	}{
 		{TestSendFailedTemporary, "admin.mail.test_send.temporary", "测试邮件发送失败（可重试的临时故障），详情见服务端日志。"},
 		{TestSendFailedPermanent, "admin.mail.test_send.permanent", "测试邮件发送失败（被对方永久拒绝），详情见服务端日志。"},
 		{TestSendFailedConfiguration, "admin.mail.test_send.configuration", "测试邮件发送失败（配置问题，需人工处理），详情见服务端日志。"},

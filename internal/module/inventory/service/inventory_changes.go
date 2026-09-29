@@ -14,9 +14,9 @@ import (
 
 	"gorm.io/gorm"
 
+	inventorymodel "go_wp/internal/module/inventory/model"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
 )
 
 // sourceChangeSnapshot 货源主数据的字段白名单快照。

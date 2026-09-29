@@ -15,9 +15,9 @@ import (
 
 	"gorm.io/gorm"
 
-	productcontract "go_wp/internal/module/product/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 var _ inventorycontract.ProductStockPort = (*Service)(nil)

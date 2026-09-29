@@ -64,12 +64,12 @@ func TestInventoryMovementTitleOmitsZeroCount(t *testing.T) {
 		translations                          map[string]string
 	}{
 		{"中文词条", "zh-CN", "库存流水", "库存流水（最近 1 条）", map[string]string{
-			"admin.inventory.moves.title": "库存流水",
+			"admin.inventory.moves.title":     "库存流水",
 			"admin.inventory.moves.titleLead": "库存流水（最近 ",
 			"admin.inventory.moves.titleTail": " 条）",
 		}},
 		{"英文词条", "en-US", "Stock ledger", "Stock ledger (latest 1)", map[string]string{
-			"admin.inventory.moves.title": "Stock ledger",
+			"admin.inventory.moves.title":     "Stock ledger",
 			"admin.inventory.moves.titleLead": "Stock ledger (latest ",
 			"admin.inventory.moves.titleTail": ")",
 		}},

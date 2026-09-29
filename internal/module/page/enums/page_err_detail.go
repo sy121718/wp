@@ -10,7 +10,7 @@ package pageenums
 // 那半句永远是中文，而它恰好是信息量最大的一半（第几个顶级节点、深了多少层、上限多少）。
 //
 // 本文件是那半句的真源：page/service 用 i18n.ErrorDetail(常量, name, value, …) 产出
-//「key + 具名参数」编码，读侧（page/inbound/http 的 pageDetailText）取词并填 {name}。
+// 「key + 具名参数」编码，读侧（page/inbound/http 的 pageDetailText）取词并填 {name}。
 // 中文兜底留在这里（i18n 未初始化 / 词条缺失时用），与 product / inventory 的
 // ErrDetailFallbacks 同一形态。
 //
@@ -35,7 +35,7 @@ const (
 // DetailKeys 上面那组词条的**全量清单**（登记对账的唯一来源）。
 //
 // 读侧只认 ErrDetailFallbacks 里登记过的 key，而这份清单与兜底表由用例
-//（page/inbound/http 的 page_err_detail_test.go）双向对账：新增词条漏了任何一边都会变红。
+// （page/inbound/http 的 page_err_detail_test.go）双向对账：新增词条漏了任何一边都会变红。
 // 少登记的表现是「明细被静默丢弃」——不报错、不 500，只是页面上少一句话。
 var DetailKeys = []string{
 	DetailDocEmpty,
@@ -50,9 +50,9 @@ var DetailKeys = []string{
 // 占位符与词条一一对应（{index} / {depth} / {max}），且**值与 builder 的中文原文同义**：
 // 词条缺失时页面显示的就是这句，运营照着它去改文档。
 var ErrDetailFallbacks = map[string]string{
-	DetailDocEmpty:           "页面文档为空，没有可保存的内容",
-	DetailDocSettingsInvalid: "页面设置不合法",
-	DetailDocNodeDepthExceed: "顶级节点 {index} 的组件树深度 {depth} 超过上限 {max}（嵌套失控，请简化结构）",
-	DetailDocNodeInvalid:     "顶级节点 {index} 的配置不合法",
+	DetailDocEmpty:            "页面文档为空，没有可保存的内容",
+	DetailDocSettingsInvalid:  "页面设置不合法",
+	DetailDocNodeDepthExceed:  "顶级节点 {index} 的组件树深度 {depth} 超过上限 {max}（嵌套失控，请简化结构）",
+	DetailDocNodeInvalid:      "顶级节点 {index} 的配置不合法",
 	DetailDocStructureInvalid: "页面文档结构不合法",
 }

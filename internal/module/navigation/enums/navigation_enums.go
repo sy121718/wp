@@ -98,7 +98,7 @@ func SplitFacingDetail(msg string) (key, detail string, ok bool) {
 // 包名 navigationenums 已经给出模块上下文，再带一遍子域只是噪音。
 //
 // 为什么与上面那批 `MsgXxx = "MsgXxx"` 分开成组：老式形态的值就是常量名本身
-//（`sys_i18n` 里存同名 key），与点分 key 混在同一段里会让人以为值也是 `MsgXxx`。
+// （`sys_i18n` 里存同名 key），与点分 key 混在同一段里会让人以为值也是 `MsgXxx`。
 // 两组不可互换：老式常量走「常量名即资源 key」，新式常量走 sys_i18n 的 item_key。
 //
 // 中文兜底**不在这里** —— 兜底留在调用点（词条缺失时的回落），见各 inbound/http 文件。

@@ -5,11 +5,12 @@ import "sync"
 // register_customers_status_help_i18n.go — 客户列表的词条（431）。
 //
 // 见 431_i18n_customers_status_help.sql 的头部，两组：
-//   · 状态列解释 3 key —— customers.html 原先逐行插一整行 colspan 说明（待激活 / 已锁定 /
-//     失败次数未清零），文案是 Go 侧硬编码中文；本批把说明移到状态列表头的 .help 并 key 化。
-//   · 筛选态空态 2 key —— `empty_filtered_heading` / `empty_filtered_desc` 在 sys_i18n 与
-//     全仓 seed 里都不存在（模板在用时取中文兜底），英文界面因此回落中文
-//     （docs/02-V-decision-brief.md §3「顺带发现」、§8 结论表第 3 行的方案 A）。
+//
+//	· 状态列解释 3 key —— customers.html 原先逐行插一整行 colspan 说明（待激活 / 已锁定 /
+//	  失败次数未清零），文案是 Go 侧硬编码中文；本批把说明移到状态列表头的 .help 并 key 化。
+//	· 筛选态空态 2 key —— `empty_filtered_heading` / `empty_filtered_desc` 在 sys_i18n 与
+//	  全仓 seed 里都不存在（模板在用时取中文兜底），英文界面因此回落中文
+//	  （docs/02-V-decision-brief.md §3「顺带发现」、§8 结论表第 3 行的方案 A）。
 //
 // 注册方式：本文件自带 init()（与 register_customers_empty_retire.go 同形），
 // 不在 register.go 的 init() 里再加一行 —— 那会让「谁负责注册」出现两个真源。

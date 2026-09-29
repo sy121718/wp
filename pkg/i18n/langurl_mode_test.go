@@ -41,7 +41,7 @@ func TestParseSiteLangURLMode(t *testing.T) {
 }
 
 // TestSetSiteLangURLModeRoundTrip 设置页保存路径的热更新语义：写入后进程值立即变化
-//（保存即生效），这是 saveLangURLMode 双步（落库 + 热更新）中第二步的依据。
+// （保存即生效），这是 saveLangURLMode 双步（落库 + 热更新）中第二步的依据。
 func TestSetSiteLangURLModeRoundTrip(t *testing.T) {
 	orig := SiteLangURLModeValue()
 	defer SetSiteLangURLMode(orig)

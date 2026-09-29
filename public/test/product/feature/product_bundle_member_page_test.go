@@ -20,10 +20,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	inventorydto "go_wp/internal/module/inventory/dto"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
-	inventorydto "go_wp/internal/module/inventory/dto"
 	"go_wp/internal/templates"
 )
 

@@ -32,11 +32,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
-	productdto "go_wp/internal/module/product/dto"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"

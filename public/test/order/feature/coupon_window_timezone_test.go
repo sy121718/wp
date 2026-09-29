@@ -99,8 +99,9 @@ func TestCouponWindowStatusIndependentOfProcessTimeZone(t *testing.T) {
 // （orderhttp.couponFormTimeValue）转换一次。
 //
 // 本用例把这条链的两端都钉住，且**故意先断言未转换的形态会被拒绝**：
-//   · 若控件形态被直接接受 → 说明服务端已能识别带 T 的写法，归口那层是多余的，该删；
-//   · 若归一化后的形态被拒绝 → 就是「表单自己生成的格式自己都不收」，控件换对了也存不了。
+//
+//	· 若控件形态被直接接受 → 说明服务端已能识别带 T 的写法，归口那层是多余的，该删；
+//	· 若归一化后的形态被拒绝 → 就是「表单自己生成的格式自己都不收」，控件换对了也存不了。
 //
 // 「控件提交 → 归口转换」那一半在 internal/module/order/inbound/http/coupon_page_query_test.go。
 func TestCouponWindowAcceptsDateTimePickerForm(t *testing.T) {

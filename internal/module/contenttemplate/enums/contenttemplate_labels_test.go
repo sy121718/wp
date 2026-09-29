@@ -54,7 +54,10 @@ func TestTemplateRoleLabelPairs(t *testing.T) {
 }
 
 func TestSlotLabelPairs(t *testing.T) {
-	for _, tc := range []struct{ got LabelPair; key, fallback string }{
+	for _, tc := range []struct {
+		got           LabelPair
+		key, fallback string
+	}{
 		{LabelSlotHeader, "admin.content.templates.slotHeader", "页眉"},
 		{LabelSlotFooter, "admin.content.templates.slotFooter", "页脚"},
 	} {

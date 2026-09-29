@@ -17,10 +17,10 @@ import (
 	"strings"
 	"testing"
 
-	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 )
 

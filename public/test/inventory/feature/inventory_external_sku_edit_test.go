@@ -27,9 +27,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
+	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
 	"go_wp/internal/web/shell"
 	pkgcasbin "go_wp/pkg/casbin"

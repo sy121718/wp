@@ -8,10 +8,10 @@ import (
 
 	"go_wp/config"
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
 )

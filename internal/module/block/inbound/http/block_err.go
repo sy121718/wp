@@ -26,8 +26,8 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
-	"go_wp/pkg/i18n"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
 )
 
 // blockRefDetailMaxBytes 引用明细允许占用的字节上限。

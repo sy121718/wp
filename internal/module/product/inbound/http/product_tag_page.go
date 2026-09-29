@@ -215,7 +215,7 @@ func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 	data := gin.H{
 		"Mode": mode, "Project": projectID, "Csrf": csrf, "t": shell.TranslateFor(c),
 		"RuleTypes": ruleTypes,
-		"ID": "", "Name": "", "Slug": "", "IsRule": false, "Sort": 0,
+		"ID":        "", "Name": "", "Slug": "", "IsRule": false, "Sort": 0,
 		"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
 	}
 	if row != nil {

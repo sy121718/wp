@@ -144,7 +144,7 @@ func registerAnalyticsSeoAndPermissions() {
 		CheckSQL: "SELECT CASE WHEN to_regclass(?) IS NULL THEN 1 " +
 			"WHEN EXISTS (SELECT 1 FROM content_templates WHERE entity_type = 'article' " +
 			"AND draft_document::text LIKE '%\"mode\": \"plain\"%') THEN 0 ELSE 1 END",
-		SQL:       mustSQL("313_article_detail_template_props.sql"),
+		SQL: mustSQL("313_article_detail_template_props.sql"),
 	})
 
 	register(Migration{

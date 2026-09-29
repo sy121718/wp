@@ -41,7 +41,7 @@ const MsgTranslationSiteScanTooMany = "MsgTranslationSiteScanTooMany" // 页面�
 // （`admin.page_translations.`）后的语义路径」。
 //
 // 与上面那批 `MsgXxx = "MsgXxx"` 分开成组：老式形态的值就是常量名本身
-//（`sys_i18n` 里存同名 key），两者混在同一前缀下会让人以为值也是 `MsgXxx`。
+// （`sys_i18n` 里存同名 key），两者混在同一前缀下会让人以为值也是 `MsgXxx`。
 // 中文兜底留在调用点（词条缺失时的回落），不在这里。
 const (
 	// ReuseMoreSuffix 跨页面复用提示的省略后缀（列出上限之外还有页面时接在后头）。

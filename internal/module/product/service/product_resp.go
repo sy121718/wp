@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	inventorydto "go_wp/internal/module/inventory/dto"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	inventorydto "go_wp/internal/module/inventory/dto"
 	productmodel "go_wp/internal/module/product/model"
 )
 

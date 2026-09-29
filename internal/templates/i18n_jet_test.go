@@ -32,8 +32,8 @@ func memSet(t *testing.T, files map[string]string) *jet.Set {
 
 // render 渲染模板并返回输出。
 // resolveAdminTemplateName 把 `admin/<短名>` 解析成模板分目录后的真实名字
-//（`admin/product/product_brands.html`）。已经是 `admin/<模块>/<名字>`，或非 admin/ 前缀的
-//（fragments/ site/）一律原样返回。
+// （`admin/product/product_brands.html`）。已经是 `admin/<模块>/<名字>`，或非 admin/ 前缀的
+// （fragments/ site/）一律原样返回。
 //
 // 为什么放在 render 里而不是改一片调用点：调用点只该关心「哪个页面」，不该知道文件被搬去了
 // 哪个子目录 —— 否则每搬一次目录就是一片 `template not found` 的红，而那些红与断言无关，
@@ -446,7 +446,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		"PermSet": map[string]bool{"i18n:manage": true},
 		"Keyword": "", "LangFilter": "", "CatFilter": "",
 		"I18nEditURLs": []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"},
-		"Saved": "site.component.gallery.prev · en-US", "Errored": "",
+		"Saved":        "site.component.gallery.prev · en-US", "Errored": "",
 		"Entries": []i18n.Entry{{
 			Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
 			Category: "ui", UpdateTime: "2026-09-14 10:00",

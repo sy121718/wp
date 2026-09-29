@@ -32,7 +32,7 @@ func (f *fakePurchaseChecker) HasPurchasedProduct(ctx context.Context, projectID
 //
 // 尤其要钉住的是失败模式的选择：**判定失败时放行**，不是拒绝。
 // 它是本实现对 commentcontract.EntityPolicy 注释里那条判据的落地
-//（产品策略不是安全边界），改它等于改变「数据库抖动时访客看到什么」。
+// （产品策略不是安全边界），改它等于改变「数据库抖动时访客看到什么」。
 func TestAllowCommentPurchasePolicy(t *testing.T) {
 	const (
 		articleType = "article" // content 模块的实体类型：本模块不该对它立规矩

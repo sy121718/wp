@@ -14,13 +14,13 @@ import (
 
 	"gorm.io/gorm"
 
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"

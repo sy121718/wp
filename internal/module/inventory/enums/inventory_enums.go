@@ -362,7 +362,7 @@ const (
 // 背景与 product 模块同一套（见 pkg/i18n/errdetail.go）：service 用
 // fmt.Errorf("%s：%s", 业务 key, 补充说明) 把上下文跟在业务文案后，而读侧只翻前半截 key ——
 // 后半截中文在英文界面上永远是中文。改用 ErrorDetail 之后，读侧
-//（inventoryErrDetailText）取词并填 {name} 占位符，整句按当前语言渲染。
+// （inventoryErrDetailText）取词并填 {name} 占位符，整句按当前语言渲染。
 const (
 	// DetailExternalSKUOwner 「该外部编码在本仓已属于商品 X」里的那个商品。
 	//

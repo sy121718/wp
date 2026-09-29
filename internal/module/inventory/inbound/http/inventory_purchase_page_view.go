@@ -7,10 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	productdto "go_wp/internal/module/product/dto"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
 )

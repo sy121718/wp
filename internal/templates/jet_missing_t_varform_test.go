@@ -9,7 +9,7 @@ import (
 //
 // 背景：既有的 TestJetTranslateFuncPath 已证实**直调形态** `{{ .["t"]("k","兜底") }}` 在缺 t 时
 // 渲染空串且不报错。但模板的事实主流是**变量形态** `{{tr := .["t"]}}` + `{{tr(...)}}`
-//（Jet 不允许 `.["t"](...)` 出现在赋值右侧 / 单目表达式里，见 internal/templates/CLAUDE.md）。
+// （Jet 不允许 `.["t"](...)` 出现在赋值右侧 / 单目表达式里，见 internal/templates/CLAUDE.md）。
 //
 // 两者在 Jet 里的求值路径不同：直调形态的 base 是 chain 索引，变量形态的 base 是变量标识符，
 // 后者会走到 evalCallExpression 里 `baseExpr.Kind() != reflect.Func → errorf` 那一支。

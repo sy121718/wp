@@ -300,7 +300,7 @@ func CouponStateLabel(state string) (key, fallback string) {
 // 后的语义路径」：包名 orderenums 已给出模块上下文。
 //
 // 与上面的 OrderStatusKey* / ReturnStatusKey* 分开成组：那批是「key 前缀常量」
-//（调用方自己拼后缀），本组是完整 item_key。中文兜底留在调用点。
+// （调用方自己拼后缀），本组是完整 item_key。中文兜底留在调用点。
 const (
 	// OrderNewOptionAvailable 代客建单页候选变体行的可用量标注模板（%s = 可用数）。
 	OrderNewOptionAvailable = "admin.order_new.option.available" // 可用 %s

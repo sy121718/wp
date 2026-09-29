@@ -92,7 +92,7 @@ func mailErrPageText(c *gin.Context, err error) string {
 //
 // `key: 明细` 只翻能识别的部分：key 取词条，明细按 i18n.ErrorDetail 协议取词并填 {name}。
 // **明细不是 ErrorDetail 词条就丢弃并落日志** —— 改造前这里是 `text + ": " + detail`
-//（原样拼回 service 的中文原文），英文界面上必然中英混排，而那句话会经 302 的 ?err=
+// （原样拼回 service 的中文原文），英文界面上必然中英混排，而那句话会经 302 的 ?err=
 // 进页面与浏览器历史（见 mail_automation.go 的 graphInvalidError 调用点）。
 func translateMailFacing(translate func(key, fallback string) string, msg string) string {
 	key, detail, hasDetail := strings.Cut(msg, ": ")

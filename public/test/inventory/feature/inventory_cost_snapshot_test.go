@@ -18,9 +18,9 @@ import (
 	"database/sql"
 	"testing"
 
-	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productdto "go_wp/internal/module/product/dto"
 
 	"go_wp/public/migrations"
 )

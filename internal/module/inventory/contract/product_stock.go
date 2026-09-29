@@ -3,8 +3,8 @@ package inventorycontract
 import (
 	"context"
 
-	productcontract "go_wp/internal/module/product/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
+	productcontract "go_wp/internal/module/product/contract"
 	"gorm.io/gorm"
 )
 

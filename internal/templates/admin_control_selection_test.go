@@ -79,7 +79,7 @@ var couponDateTimeLocalRe = regexp.MustCompile(`<input[^>]*type="datetime-local"
 // couponFormSources coupons.html 与两个抽屉表单片段的拼接源码。
 //
 // 2026-09「写失败不丢输入」批把新建/编辑抽屉的表单本体迁进了独立片段
-//（coupon_create_form.html / coupon_edit_form.html，片段同时是失败重渲染载体），
+// （coupon_create_form.html / coupon_edit_form.html，片段同时是失败重渲染载体），
 // 时间窗控件跟着表单走 —— 控件选型与 label 关联的判据对象跟着扩成三个文件，
 // 数量判据（4 个时间窗控件）不变，只是分布从单文件变成「页面 0 + 片段 2+2」。
 func couponFormSources(t *testing.T) string {

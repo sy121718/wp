@@ -10,15 +10,16 @@ import "sync"
 // 英文页面上会原样显示中文。
 //
 // 本批新增 8 个 key × 2 语言，并为既有的 MsgThemeSettingsInvalid 补 en-US（此前只有 zh-CN）：
-//   ErrProjectRequired             —— 页面入口没有工程作用域（存量 key，此前从未登记词条）
-//   ErrThemeIDRequired             —— 主题设置页缺 id
-//   MsgThemeSettingsInvalid        —— 主题设置未过 CSS 值白名单（补 en-US）
-//   MsgThemeSettingsRefreshFailed  —— 保存成功但整站刷新失败（部分成功）
-//   ErrSiteSettingsNameRequired    —— 站点设置缺工程或站点名
-//   ErrGA4IDInvalid                —— GA4 测量 ID 非法
-//   ErrGSCVerificationInvalid      —— GSC 验证 token 非法
-//   ErrNotFoundHTMLTooLong         —— 自定义 404 页超长
-//   ErrLangURLModeInvalid          —— 语言 URL 方案非法
+//
+//	ErrProjectRequired             —— 页面入口没有工程作用域（存量 key，此前从未登记词条）
+//	ErrThemeIDRequired             —— 主题设置页缺 id
+//	MsgThemeSettingsInvalid        —— 主题设置未过 CSS 值白名单（补 en-US）
+//	MsgThemeSettingsRefreshFailed  —— 保存成功但整站刷新失败（部分成功）
+//	ErrSiteSettingsNameRequired    —— 站点设置缺工程或站点名
+//	ErrGA4IDInvalid                —— GA4 测量 ID 非法
+//	ErrGSCVerificationInvalid      —— GSC 验证 token 非法
+//	ErrNotFoundHTMLTooLong         —— 自定义 404 页超长
+//	ErrLangURLModeInvalid          —— 语言 URL 方案非法
 //
 // 注册方式：本文件自带 init()（与 register_product_inventory_empty_i18n.go 同形）。
 // init 的注册顺序不影响执行顺序：迁移按 compareVersion 排序、种子按版本号排序，

@@ -29,10 +29,10 @@ import (
 	"github.com/google/uuid"
 
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 )

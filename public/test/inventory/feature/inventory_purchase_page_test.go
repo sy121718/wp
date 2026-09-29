@@ -22,10 +22,10 @@ import (
 
 	"go_wp/internal/web/shell"
 
-	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
+	productdto "go_wp/internal/module/product/dto"
 
 	"go_wp/internal/templates"
 

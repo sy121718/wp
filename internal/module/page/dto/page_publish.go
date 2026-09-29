@@ -53,10 +53,10 @@ type LangPublishResult struct {
 
 // PublishAllResp 一键发布全部启用语言的聚合结果。
 type PublishAllResp struct {
-	PageID   string              `json:"pageId"`
-	Results  []LangPublishResult `json:"results"`
+	PageID  string              `json:"pageId"`
+	Results []LangPublishResult `json:"results"`
 	// Published 成功激活的语言数（与 Results 中 status=ok 的条数一致，便于前端速览）。
-	Published int               `json:"published"`
+	Published int `json:"published"`
 }
 
 // RollbackReq 回滚到指定历史产物。

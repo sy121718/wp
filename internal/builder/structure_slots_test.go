@@ -206,7 +206,7 @@ func TestStructureSlotsCanvasFramesOnlyForEditor(t *testing.T) {
 		t.Fatalf("NewComponentSet: %v", serr)
 	}
 	blocks := stubBlocks{
-		"h1":                          "{\"settings\":{},\"root\":[{\"id\":\"hdr\",\"type\":\"core.text\",\"props\":{\"text\":\"HEADER-MARK\"}}]}",
+		"h1":                         "{\"settings\":{},\"root\":[{\"id\":\"hdr\",\"type\":\"core.text\",\"props\":{\"text\":\"HEADER-MARK\"}}]}",
 		"__structure_template__tp-1": "{\"settings\":{},\"root\":[{\"id\":\"hdr\",\"type\":\"core.text\",\"props\":{\"text\":\"HEADER-MARK\"}}]}",
 	}
 	build := func(blockID string, editor bool) string {

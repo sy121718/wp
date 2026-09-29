@@ -3,9 +3,9 @@ package orderstock
 import (
 	"context"
 
-	ordercontract "go_wp/internal/module/order/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
+	ordercontract "go_wp/internal/module/order/contract"
 )
 
 // WarehouseSource 退货页「入库仓库」下拉的库存侧适配器（CQ-004：适配器在库存侧）。

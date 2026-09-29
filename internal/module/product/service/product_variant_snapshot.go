@@ -8,8 +8,8 @@ import (
 	"math"
 	"strings"
 
-	productcontract "go_wp/internal/module/product/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
+	productcontract "go_wp/internal/module/product/contract"
 )
 
 // 编译期断言：本 service 满足订单域需要的快照端口。

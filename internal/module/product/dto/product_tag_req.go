@@ -46,7 +46,7 @@ type GetTagReq struct {
 // ListTagReq 标签列表（按工程过滤；kind 为空表示手工与自动都要）。
 //
 // Page / Size 是**新增的可选分页字段**：两个都是零值时语义与加字段前一致 —— 取全部
-//（重算回执的标签清单、商品页的标签勾选项都要全量）。后台标签页显式给出两者，
+// （重算回执的标签清单、商品页的标签勾选项都要全量）。后台标签页显式给出两者，
 // 分页下推到 model 的 LIMIT/OFFSET（见 service 的 optionalPaging）。
 type ListTagReq struct {
 	ProjectID string `form:"projectId"`

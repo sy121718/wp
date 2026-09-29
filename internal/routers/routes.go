@@ -247,7 +247,6 @@ func serveArtifactFile(c *gin.Context, path string) {
 // 排位：**在 StaticGzipMiddleware 之后**，这样 c.Data 走的是已被 gzip 包裹的
 // c.Writer，首页与其它产物一样有传输压缩与 Cache-Control。
 //
-//
 // 存在的理由（原本是审计里明确挂着的一条未修项）：激活目录里每个页面的条目名就是它的
 // URL 路径 —— 无扩展名的**目录符号链接**（pipeline.relActivePath："/" → "index"、
 // "/about" → "about"），index.html 在那个目录里面。而 http.FileServer 处理

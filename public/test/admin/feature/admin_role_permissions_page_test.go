@@ -342,10 +342,11 @@ func TestAdminRolePermissionsSaveMissingRoleIDHtmxStillRedirects(t *testing.T) {
 // TestAdminRolePermissionsSaveHtmxFailureKeepsSelectionAndShape 失败时回片段自身：错误槽 + 提交的勾选。
 //
 // 两个断言各自防一类静默缺陷：
-//   · 片段形状 —— 形状不合时 htmx 虽然会 swap 进去，但再下一次提交时抽屉里的节点已不是
-//     片段根，后续失败就无法再就地回报；
-//   · **勾选来自本次提交**（节点 4 库里没勾、这次勾上了）—— 用库里的值渲回去会把用户
-//     刚勾的那一屏整块抹掉，而他正需要在这里改掉那个错误重试。
+//
+//	· 片段形状 —— 形状不合时 htmx 虽然会 swap 进去，但再下一次提交时抽屉里的节点已不是
+//	  片段根，后续失败就无法再就地回报；
+//	· **勾选来自本次提交**（节点 4 库里没勾、这次勾上了）—— 用库里的值渲回去会把用户
+//	  刚勾的那一屏整块抹掉，而他正需要在这里改掉那个错误重试。
 func TestAdminRolePermissionsSaveHtmxFailureKeepsSelectionAndShape(t *testing.T) {
 	svc := &fakeRoleService{permTree: permTreeFixture(), menuSaveErr: errFakeRoleSave}
 	engine := newAdminRolePermissionsEngine(t, svc)

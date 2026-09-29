@@ -20,9 +20,9 @@ import (
 	"strings"
 	"testing"
 
-	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	productdto "go_wp/internal/module/product/dto"
 )
 
 // externalSKUOf 直读真源里的外部编码（空串 = 该仓用我们自己的 SKU）。

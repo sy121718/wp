@@ -6,9 +6,10 @@ import "sync"
 //
 // 见 413_i18n_content_list_filter.sql 的头部：articles / pages / blocks / navigations 四页
 // 此前没有任何筛选入口（审计 02-L §2 P1-12）。本轮按「service 的 List 支持什么维度」逐页补：
-//   · pages 做服务端筛选（工程下拉，?project= 进 page Service.ListReq.ProjectID）；
-//   · articles / blocks / navigations 做客户端筛选（admin.js 的 [data-filter-input]）——
-//     三者的 service 侧没有关键词 / 状态维度，为不越界改 service 走既有客户端过滤机制。
+//
+//	· pages 做服务端筛选（工程下拉，?project= 进 page Service.ListReq.ProjectID）；
+//	· articles / blocks / navigations 做客户端筛选（admin.js 的 [data-filter-input]）——
+//	  三者的 service 侧没有关键词 / 状态维度，为不越界改 service 走既有客户端过滤机制。
 //
 // 两种机制的文案都必须走 i18n：客户端筛选的「无匹配结果」提示是**直接渲染的文本**
 // （不经过 pkg/response 的翻译层），没有词条就只能硬编码中文，英文界面永远显示中文。

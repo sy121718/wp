@@ -100,11 +100,11 @@ const (
 // pricingRules 内置定价规则表（顺序即后台展示顺序）。新增规则只在这里追加。
 var pricingRules = []*pricingRule{
 	{
-		Type:      productenums.PricingRuleCostMultiple,
-		NameKey:   pricingKeyCostMultipleName,
-		Name:      "成本乘倍数",
-		ParamsKey: pricingKeyCostMultipleParams,
-		Params:    "multiplier：必填，0.01~100（售价 = 成本 × multiplier）",
+		Type:         productenums.PricingRuleCostMultiple,
+		NameKey:      pricingKeyCostMultipleName,
+		Name:         "成本乘倍数",
+		ParamsKey:    pricingKeyCostMultipleParams,
+		Params:       "multiplier：必填，0.01~100（售价 = 成本 × multiplier）",
 		RequiresCost: true,
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			return normalizeSinglePricingParam(params, "multiplier", pricingMultiplierMin, pricingMultiplierMax)
@@ -130,11 +130,11 @@ var pricingRules = []*pricingRule{
 		},
 	},
 	{
-		Type:      productenums.PricingRuleCostMarkup,
-		NameKey:   pricingKeyCostMarkupName,
-		Name:      "成本加价",
-		ParamsKey: pricingKeyCostMarkupParams,
-		Params:    "amount：必填，0~1000000000（售价 = 成本 + amount）",
+		Type:         productenums.PricingRuleCostMarkup,
+		NameKey:      pricingKeyCostMarkupName,
+		Name:         "成本加价",
+		ParamsKey:    pricingKeyCostMarkupParams,
+		Params:       "amount：必填，0~1000000000（售价 = 成本 + amount）",
 		RequiresCost: true,
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			return normalizeSinglePricingParam(params, "amount", 0, pricingMarkupMax)
@@ -160,11 +160,11 @@ var pricingRules = []*pricingRule{
 		},
 	},
 	{
-		Type:      productenums.PricingRuleTargetMargin,
-		NameKey:   pricingKeyTargetMarginName,
-		Name:      "目标毛利率",
-		ParamsKey: pricingKeyTargetMarginParams,
-		Params:    "margin：必填，0.0001~0.95 的小数（售价 = 成本 ÷ (1 - margin)，如 0.3 表示毛利率 30%）",
+		Type:         productenums.PricingRuleTargetMargin,
+		NameKey:      pricingKeyTargetMarginName,
+		Name:         "目标毛利率",
+		ParamsKey:    pricingKeyTargetMarginParams,
+		Params:       "margin：必填，0.0001~0.95 的小数（售价 = 成本 ÷ (1 - margin)，如 0.3 表示毛利率 30%）",
 		RequiresCost: true,
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			return normalizeSinglePricingParam(params, "margin", pricingMarginMin, pricingMarginMax)
@@ -194,11 +194,11 @@ var pricingRules = []*pricingRule{
 		},
 	},
 	{
-		Type:      productenums.PricingRuleFixedPrice,
-		NameKey:   pricingKeyFixedPriceName,
-		Name:      "统一售价",
-		ParamsKey: pricingKeyFixedPriceParams,
-		Params:    "amount：必填，0~9999999999.99（不看成本，全部改为此售价）",
+		Type:         productenums.PricingRuleFixedPrice,
+		NameKey:      pricingKeyFixedPriceName,
+		Name:         "统一售价",
+		ParamsKey:    pricingKeyFixedPriceParams,
+		Params:       "amount：必填，0~9999999999.99（不看成本，全部改为此售价）",
 		RequiresCost: false,
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {
 			return normalizeSinglePricingParam(params, "amount", 0, pricingAmountMax)

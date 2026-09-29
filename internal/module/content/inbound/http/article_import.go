@@ -25,9 +25,9 @@ import (
 	"go_wp/internal/builder/core"
 	"go_wp/internal/builder/richdoc"
 	contentdto "go_wp/internal/module/content/dto"
-	"go_wp/internal/web/shell"
 	pagecontract "go_wp/internal/module/page/contract"
 	pageenums "go_wp/internal/module/page/enums"
+	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
 )
 

@@ -9,9 +9,10 @@ import "sync"
 // 所以 D8 / D9 / D10 的三处文案修正只能由一条新迁移完成。
 //
 // 本批只**新增** 7 个 key（2 语言共 14 行），不修改任何既有词条：
-//   admin.inventory.moves.emptyLead / .emptyPurchaseLink / .emptyTail   —— 流水空态拆三段拼链接
-//   admin.inventory.list.emptyNew                                       —— 仓库空态（原句指向不存在的表单）
-//   admin.inventory_sources.list.emptyTitle / .emptyNew / .emptyFiltered —— 货源空态分两档
+//
+//	admin.inventory.moves.emptyLead / .emptyPurchaseLink / .emptyTail   —— 流水空态拆三段拼链接
+//	admin.inventory.list.emptyNew                                       —— 仓库空态（原句指向不存在的表单）
+//	admin.inventory_sources.list.emptyTitle / .emptyNew / .emptyFiltered —— 货源空态分两档
 //
 // 注册方式：本文件自带 init()（与 register_list_empty_i18n.go / register_showcase_blueprints.go 同形）。
 // init 的注册顺序不影响执行顺序：迁移按 compareVersion 排序、种子按版本号排序，

@@ -6,12 +6,14 @@ import "sync"
 //
 // 见 406_i18n_order_page_err.sql 的头部：本批把订单 / 优惠码 / 退货入库三个列表页的
 // `c.String(500, orderenums.ErrInternal)`（纯文本 + 硬编码中文）改成降级渲染
-//（空列表 + 归口提示 + HTTP 200 + 页面结构完好），随之需要一个「这一页没读出来」的空态档位 ——
+// （空列表 + 归口提示 + HTTP 200 + 页面结构完好），随之需要一个「这一页没读出来」的空态档位 ——
 // 否则模板只能把「装载失败」显示成「还没有站点工程」/「这个工程还没有订单」，把用户引向建工程 / 改筛选。
 //
 // 本批新增 2 个 key × 2 语言（三个页面共用同一档空态）：
-//   admin.common.list.loadFailedTitle —— 空态标题
-//   admin.common.list.loadFailedDesc  —— 空态说明
+//
+//	admin.common.list.loadFailedTitle —— 空态标题
+//	admin.common.list.loadFailedDesc  —— 空态说明
+//
 // 归口提示本身（MsgInternalError）不新增：zh-CN 见 058、en-US 见 405。
 //
 // 注册方式：本文件自带 init()（与 register_project_page_err_i18n.go /

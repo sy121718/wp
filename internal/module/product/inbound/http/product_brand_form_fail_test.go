@@ -21,22 +21,32 @@ func TestBrandDrawerFailureEchoAndRedirect(t *testing.T) {
 				t.Fatalf("failure: %d %q", rec.Code, cap.name)
 			}
 			data := capturedData(t, cap)
-			if data["SubmitErr"] != "duplicate" { t.Errorf("error: %v", data["SubmitErr"]) }
+			if data["SubmitErr"] != "duplicate" {
+				t.Errorf("error: %v", data["SubmitErr"])
+			}
 			echo := data["FormEcho"].(gin.H)
 			for _, key := range []string{"projectId", "id", "name", "slug", "sort", "logo", "description", "seoTitle", "seoDescription"} {
-				if echo[key] != values.Get(key) { t.Errorf("%s: %q != %q", key, echo[key], values.Get(key)) }
+				if echo[key] != values.Get(key) {
+					t.Errorf("%s: %q != %q", key, echo[key], values.Get(key))
+				}
 			}
 		})
 	}
 	c, rec, _ := newAttrCaptureContext(t, "", values.Encode())
 	h.brandFormFail(c, "update", "duplicate")
 	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/product-brands?project=p1&err=") { t.Fatalf("native failure: %d %v", rec.Code, rec.Header()) }
+	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/product-brands?project=p1&err=") {
+		t.Fatalf("native failure: %d %v", rec.Code, rec.Header())
+	}
 	for _, hx := range []string{"true", ""} {
 		c, rec, _ := newAttrCaptureContext(t, hx, values.Encode())
 		brandFormSuccess(c, "p1")
 		c.Writer.WriteHeaderNow()
-		if hx == "true" && (rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != "/admin/product-brands?project=p1") { t.Errorf("HX success: %d %v", rec.Code, rec.Header()) }
-		if hx == "" && (rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/product-brands?project=p1") { t.Errorf("native success: %d %v", rec.Code, rec.Header()) }
+		if hx == "true" && (rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != "/admin/product-brands?project=p1") {
+			t.Errorf("HX success: %d %v", rec.Code, rec.Header())
+		}
+		if hx == "" && (rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/product-brands?project=p1") {
+			t.Errorf("native success: %d %v", rec.Code, rec.Header())
+		}
 	}
 }

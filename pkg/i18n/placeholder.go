@@ -84,7 +84,7 @@ func HasStringPlaceholdersOnly(s string) bool {
 // namedPlaceholderPattern 命名占位符：`{count}` / `{max}` / `{name}`。
 //
 // 只认「字母数字下划线」—— 不含 `%`、空格与中文，避免把正文里的普通花括号
-//（如 JSON 片段 `{"a":1}`）误当成占位符。
+// （如 JSON 片段 `{"a":1}`）误当成占位符。
 var namedPlaceholderPattern = regexp.MustCompile(`\{[A-Za-z0-9_]+\}`)
 
 // HasNamedPlaceholders 判断文本里是否还有命名占位符（未填充 / 词条写错时用）。
@@ -96,7 +96,7 @@ func HasNamedPlaceholders(text string) bool {
 //
 // 返回 (填充后的文本, ok)。ok=false 表示**填完仍有残留**（参数名拼错、词条被改坏），
 // 调用方应当丢弃这一条并落兜底文案 —— 缺参数时不补默认值：补 0 会渲染出
-//「已删除 0 个」这种看起来像成功结论的错话，比不显示更危险。
+// 「已删除 0 个」这种看起来像成功结论的错话，比不显示更危险。
 func FillNamedPlaceholders(tpl string, params map[string]string) (string, bool) {
 	out := tpl
 	for name, value := range params {

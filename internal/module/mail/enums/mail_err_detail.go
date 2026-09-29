@@ -11,7 +11,7 @@ package mailenums
 // 环的路径、哪些节点走不到）。它还会经 302 的 ?err= 进页面与浏览器历史。
 //
 // 本文件是那半句的真源：service 侧用 i18n.ErrorDetail(常量, name, value, …) 产出
-//「key + 具名参数」，读侧取词并填 {name} 占位符。中文兜底留在这里（i18n 未初始化 /
+// 「key + 具名参数」，读侧取词并填 {name} 占位符。中文兜底留在这里（i18n 未初始化 /
 // 词条缺失时用）。词条的 zh-CN 值与图校验器的中文原文同义 —— 后者仍留在
 // mail_automation_graph.go（它是日志与单测断言的文本），两处都必须改是这次的已知代价：
 // 文本进日志、词条进界面，判据不同所以不能只留一份。
@@ -42,17 +42,17 @@ const (
 	DetailGraphUnknownNodeTyp = "admin.mail.detail.unknownNodeType"
 
 	// —— 入口与边 ——
-	DetailGraphEntryMissing       = "admin.mail.detail.entryMissing"
-	DetailGraphEntryNotExist      = "admin.mail.detail.entryNotExist"
-	DetailGraphEdgeTargetMissing  = "admin.mail.detail.edgeTargetMissing"
-	DetailGraphCycle              = "admin.mail.detail.cycle"
-	DetailGraphUnreachable        = "admin.mail.detail.unreachable"
+	DetailGraphEntryMissing      = "admin.mail.detail.entryMissing"
+	DetailGraphEntryNotExist     = "admin.mail.detail.entryNotExist"
+	DetailGraphEdgeTargetMissing = "admin.mail.detail.edgeTargetMissing"
+	DetailGraphCycle             = "admin.mail.detail.cycle"
+	DetailGraphUnreachable       = "admin.mail.detail.unreachable"
 )
 
 // DetailKeys 上面那组词条的**全量清单**（登记对账的唯一来源）。
 //
 // 读侧只认 ErrDetailFallbacks 里登记过的 key，而这份清单与兜底表由用例
-//（mail/inbound/http 的 mail_err_detail_test.go）双向对账：新增词条漏了任何一边都会变红。
+// （mail/inbound/http 的 mail_err_detail_test.go）双向对账：新增词条漏了任何一边都会变红。
 // 少登记的表现是「明细被静默丢弃」——不报错，只是页面上少一句话。
 var DetailKeys = []string{
 	DetailGraphEmptyDefinition,

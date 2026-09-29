@@ -24,12 +24,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	productdto "go_wp/internal/module/product/dto"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"

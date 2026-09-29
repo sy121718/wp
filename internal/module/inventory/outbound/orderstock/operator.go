@@ -20,9 +20,9 @@ import (
 
 	"gorm.io/gorm"
 
-	ordercontract "go_wp/internal/module/order/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	ordercontract "go_wp/internal/module/order/contract"
 )
 
 // Operator 订单侧库存契约的库存实现。

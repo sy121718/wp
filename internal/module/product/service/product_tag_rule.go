@@ -23,8 +23,8 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	"go_wp/pkg/i18n"
 	productmodel "go_wp/internal/module/product/model"
+	"go_wp/pkg/i18n"
 )
 
 // 规则参数取值范围（越界即拒绝，不做静默裁剪）。
@@ -58,19 +58,19 @@ type tagRule struct {
 // 这些是**内置规则的固定说法**（后台展示名、参数说明、可读描述），不是数据 ——
 // 与用户自定义的标签名无关。中文兜底留在规则表与下面的描述函数里。
 const (
-	tagKeyNewArrivalName        = "admin.product_tags.rule.newArrival.name"
-	tagKeyNewArrivalParams      = "admin.product_tags.rule.newArrival.params"
-	tagKeyNewArrivalDescribe    = "admin.product_tags.rule.newArrival.describe"
-	tagKeyPriceRangeName        = "admin.product_tags.rule.priceRange.name"
-	tagKeyPriceRangeParams      = "admin.product_tags.rule.priceRange.params"
+	tagKeyNewArrivalName         = "admin.product_tags.rule.newArrival.name"
+	tagKeyNewArrivalParams       = "admin.product_tags.rule.newArrival.params"
+	tagKeyNewArrivalDescribe     = "admin.product_tags.rule.newArrival.describe"
+	tagKeyPriceRangeName         = "admin.product_tags.rule.priceRange.name"
+	tagKeyPriceRangeParams       = "admin.product_tags.rule.priceRange.params"
 	tagKeyPriceRangeDescribeBoth = "admin.product_tags.rule.priceRange.describeBoth"
-	tagKeyPriceRangeDescribeMin = "admin.product_tags.rule.priceRange.describeMin"
-	tagKeyPriceRangeDescribeMax = "admin.product_tags.rule.priceRange.describeMax"
-	tagKeyOnSaleName            = "admin.product_tags.rule.onSale.name"
-	tagKeyOnSaleParams          = "admin.product_tags.rule.onSale.params"
-	tagKeyOnSaleDescribe        = "admin.product_tags.rule.onSale.describe"
-	tagKeyParamsInvalid         = "admin.product_tags.rule.paramsInvalid"
-	tagKeyUnknownRule           = "admin.product_tags.rule.unknown"
+	tagKeyPriceRangeDescribeMin  = "admin.product_tags.rule.priceRange.describeMin"
+	tagKeyPriceRangeDescribeMax  = "admin.product_tags.rule.priceRange.describeMax"
+	tagKeyOnSaleName             = "admin.product_tags.rule.onSale.name"
+	tagKeyOnSaleParams           = "admin.product_tags.rule.onSale.params"
+	tagKeyOnSaleDescribe         = "admin.product_tags.rule.onSale.describe"
+	tagKeyParamsInvalid          = "admin.product_tags.rule.paramsInvalid"
+	tagKeyUnknownRule            = "admin.product_tags.rule.unknown"
 )
 
 // tagRules 内置规则表（顺序即后台展示顺序）。新增规则只在这里追加。
@@ -130,9 +130,9 @@ var tagRules = []*tagRule{
 		},
 	},
 	{
-		Type:   productenums.TagRulePriceRange,
-		NameKey: tagKeyPriceRangeName,
-		Name:    "价格区间（存在启用变体落在区间内）",
+		Type:      productenums.TagRulePriceRange,
+		NameKey:   tagKeyPriceRangeName,
+		Name:      "价格区间（存在启用变体落在区间内）",
 		ParamsKey: tagKeyPriceRangeParams,
 		Params:    "minPrice / maxPrice：至少给一个，0~1000000000 的非负数，minPrice ≤ maxPrice",
 		Normalize: func(params json.RawMessage) (json.RawMessage, error) {

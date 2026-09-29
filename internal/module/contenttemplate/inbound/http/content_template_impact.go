@@ -15,8 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder"
-	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 )
 
 // contentTemplateTranslate 展示层取词函数（与 shell.TranslateFor(c) 同形）。

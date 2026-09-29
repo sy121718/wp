@@ -104,7 +104,7 @@ func TestProductTagHitsFragmentProvidesCardShell(t *testing.T) {
 		t.Fatalf("命中商品片段渲染失败: %v", err)
 	}
 	for _, want := range []string{
-		`class="card card-body"`,  // 卡壳随片段一起来
+		`class="card card-body"`,   // 卡壳随片段一起来
 		`class="card-title mb-lg"`, // 卡标题
 		"命中的商品", "<strong>清仓</strong>",
 		`<table class="data-table`, "上架商品",
