@@ -12,7 +12,7 @@
 module_name/
 ├── contract/                   # 本模块对外暴露契约（<module>_service.go）
 ├── inbound/http/               # <module>_handle.go + <module>_router.go（自装配 + 路由注册）
-├── outbound/<dependency>/      # 按需：外部协议转换或适配
+├── outbound/<适配谁>/          # 按需：形状翻译层（见下方判据；顺手能满足端口就留 service 同包）
 ├── service/                    # <module>_service.go + <module>_<action>.go
 ├── model/                      # <module>_model.go
 ├── dto/                        # <module>_req.go + <module>_resp.go
@@ -26,12 +26,26 @@ module_name/
   · **索要的端口**：本模块需要外部给什么（`XxxPort` / `XxxReader` / `XxxSource` / `XxxResolver` / `XxxEnqueuer` …）
     —— **由对方实现**（对方放在 `outbound/<本模块名>/` 并加编译期断言），入参形状在这里自有、
     **不借用对方的 dto**：借了就等于本模块认识了对方的绑定层，对方改一个请求字段本模块跟着编译错（审计 CQ-004）。
-  判据：**跨模块可见即入契约**；只在本模块内流转的实现形状不进。接口默认放一个文件；
-  单文件超过 ~300 行时按上面三段重排（每段一个 `// ===` 分区标题），**不按类型拆文件**。
+  判据：**跨模块可见即入契约**；只在本模块内流转的实现形状不进。
   跨契约引用（契约 import 别的模块契约）**只允许用于传递形状**（如 `blockcontract.BlockUsage` 作返回类型）；
   要把对方的能力接口直接透出自定义方法签名时必须写明理由并确认它是收窄过的。
+- **契约的文件怎么分**：默认一个文件（`<module>_service.go`），**按能力域拆、不按类型拆**。
+  · 按能力域 = 按「会独立演进的能力单元」拆：加退货状态只动 `order_return.go`、加优惠规则只动 `order_coupon.go`。
+    规模线：单文件 ≤ ~200 行不拆；超过且能划出清晰能力边界时才拆（`product/contract/` 11 个文件就是这么来的）。
+  · **不按类型拆**（不用给 errors / dto 重导出 / 端口各开一个文件）：读一个能力要翻三个文件，而这三类
+    几乎从不独立演进（改服务时顺手就改它的端口）；`block_errors.go`(39) / `page_preview_problem.go`(54)
+    是「给主文件减行数」的产物，不值得再制造。
+  · 单文件内部按上面三段顺序排列（对外能力 → 跨模块形状 → 索要的端口）；超过 ~300 行时给每段加
+    `// ===` 分区标题（`order/contract` / `page/contract` 是样板）。**不必为整齐回填式重拆**已有包。
 - `inbound` — 承接外部调用 · `service` — 实现本模块契约 · `model` — 持久化与表访问
-- `outbound` — **非必需**，用于 RPC / HTTP / MQ / SDK / cache 外部调用；直接引用对方 `contract` 就够时不要加
+- `outbound/<适配谁>/` — **非必需**，是**形状翻译层**，判据是「要不要翻译」而不是「依不依赖外部」：
+  · 需要**翻译**（换字段 / 拼多个来源 / 换数据源 / 换实现）→ 独立子包，目录名说清适配谁
+    （`outbound/orderstock` = 给订单的库存适配、`outbound/source` = 菜单项的来源解析）；
+  · 只是**顺手满足**对方端口（签名对得上、用的还是自己的 model）→ **留在 `service` 同包** + 编译期断言
+    （`order/service/order_purchase.go` 实现 `productcontract.PurchaseChecker` 就是这类，多包一层反而要暴露内部）；
+  · 同一契约的**多个实现**（假通道 / 真通道）→ 一个实现一个子包（`cart/outbound/mockpaypal`，真通道来了加兄弟目录，service 不动）。
+  纯 RPC / HTTP / MQ / SDK 客户端同此判据。**不要把所有适配器并进一个 `outbound` 包**：包名会退化成位置词，
+  「适配谁」这条信息从目录名里消失，且不同性质的适配同包互相可见。
 - `dto` — 请求/响应结构，数据流 `inbound -> service -> inbound`
 - `enums` — **必须存在**，统一管理响应消息
 
