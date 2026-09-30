@@ -1203,11 +1203,3 @@ button.row-title-link {
 .media-gallery-addbox { appearance: none; -webkit-appearance: none; aspect-ratio: 1 / 1; font-size: 22px; color: var(--sky-c-text-mute, #6b7280); background: transparent; border-style: dashed; }
 @media (hover: hover) { .media-gallery-addbox:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); } }
 
-/* ===== 媒体字段并排（主图 + 图集）=====
-   两个媒体字段竖排时各自占满一行、各自带标题，页面平白多出两百多像素；
-   并排后左列放 180 方框的单图（主图 / 封面），右列留给多图网格。
-   两列都写 minmax(0, …)：默认的 min-content 下限会让多图网格把左列挤扁。
-   窄屏落回一栏 —— 触屏上并排的两个可点区域太窄，容易点错。 */
-.media-pair { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 16px; align-items: start; }
-.media-pair-item { min-width: 0; }
-@media (max-width: 640px) { .media-pair { grid-template-columns: minmax(0, 1fr); } }

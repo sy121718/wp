@@ -1532,18 +1532,22 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .product-edit-aside { position: sticky; top: 16px; }
 
 /* 窄屏落单列：右栏预览在窄屏是「表单之后的一大块」，而不是被挤成一条缝。
-   1100px 是断点 —— 再窄时 35% 只剩不到 390px，预览回到「看不清」的状态。 */
+   1100px 是断点 —— 再窄时 35% 只剩不到 390px，预览回到「看不清」的状态。
+   单列也要写 minmax(0, 1fr)：1fr 的下限是 auto，会被列内最宽的那块内容
+   （富文本工具条 / 媒体网格）顶开 —— 实测窄屏下算出 1474px 的列宽，
+   整列伸出视口，右半边的输入框看不见、也没有横向滚动条可滚（单列网格的通病，不止这一处）。 */
 @media (max-width: 1100px) {
     .article-edit-panes,
-    .product-edit-panes { grid-template-columns: 1fr; }
+    .product-edit-panes { grid-template-columns: minmax(0, 1fr); }
     .article-edit-panes > .article-edit-side,
     .product-edit-aside { position: static; }
 }
 
 /* 成对字段并排（同一表单里别处满行时，一对短文本各占半栏比「半截」清楚）。
-   窄屏落单列 —— 半栏在手机上放不下一个可用的输入框。 */
+   窄屏落单列 —— 半栏在手机上放不下一个可用的输入框。
+   单列同样是 minmax(0, 1fr)：与上面两栏同一判据（1fr 的下限 auto 会被内容顶开）。 */
 .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
-@media (max-width: 720px) { .form-row-2 { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .form-row-2 { grid-template-columns: minmax(0, 1fr); } }
 
 /* 多图字段（ui/media-gallery.js）：缩略图网格 + 逐张 alt。
    网格用 auto-fill 固定列宽：图是等大的方块，按容器宽塞尽量多的列即可。 */

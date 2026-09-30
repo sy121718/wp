@@ -250,7 +250,7 @@ func TestProductEditRendersMediaGallery(t *testing.T) {
 		"WeightText":      "", "DefaultPriceText": "",
 	}))
 	for _, want := range []string{
-		"data-media-gallery", "data-gallery-grid", "data-gallery-add",
+		"data-media-gallery", "data-gallery-grid", "data-gallery-addbox",
 		`name="images"`, `name="imageAlts"`,
 		"data-gallery-values", "data-gallery-alts",
 		// 主图：契约里一直有（CreateReq/UpdateReq 的 defaultImage），页面上曾经完全没有
@@ -263,6 +263,14 @@ func TestProductEditRendersMediaGallery(t *testing.T) {
 	}
 	if strings.Contains(out, `id="product-edit-images"`) {
 		t.Error("图集仍是裸 textarea：应换成多图控件")
+	}
+	// 添加入口只留网格末尾的「＋」框：标题行那个同动作的「添加图片」按钮已删
+	//（两个入口分处标题行与网格，看着像两件事）。负向断言防它被加回来。
+	if n, box := strings.Count(out, "data-gallery-add"), strings.Count(out, "data-gallery-addbox"); n != box {
+		t.Errorf("图集的添加入口应只有「＋」框一个：data-gallery-add 出现 %d 次、data-gallery-addbox 出现 %d 次", n, box)
+	}
+	if strings.Contains(out, "media-pair") {
+		t.Error("主图与图集应各占一整行：并排后屏幕上并排两个虚线「＋」框，像同一个控件的两个格子")
 	}
 }
 

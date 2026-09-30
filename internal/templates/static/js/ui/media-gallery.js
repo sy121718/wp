@@ -43,7 +43,7 @@
     }
 
 
-    // appendAddBox 在网格末尾放一个「＋」框，点击与标题行的按钮同一动作。
+    // appendAddBox 在网格末尾放一个「＋」框 —— 它是本控件**唯一**的添加入口。
     function appendAddBox(root, grid) {
         var box = root.querySelector('[data-gallery-addbox]');
         if (!box) {
@@ -258,12 +258,11 @@
                     render(root);
                 });
             };
-            // 两个入口同一动作：标题行右上角的按钮 + 网格末尾的「＋」框。
-            // 事件委托到容器上 —— 「＋」框在每次 render 时被重建，逐个绑会漏。
+            // 「＋」框是唯一的添加入口。事件委托到容器上 —— 它在每次 render 时被重建，逐个绑会漏。
             root.addEventListener('click', function (e) {
                 var t = e.target;
                 if (!t || !t.closest) { return; }
-                if (t.closest('[data-gallery-add]') || t.closest('[data-gallery-addbox]')) {
+                if (t.closest('[data-gallery-addbox]')) {
                     addTo();
                 }
             });

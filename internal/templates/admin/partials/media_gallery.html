@@ -17,14 +17,13 @@
  * 注意：本文件注释里**不写完整的控件标签字面量** —— admin_form_base_test.go 的扫描器
  * 不剥 Jet 注释标记，会把例子当成真控件计入「裸控件」基线。同理不写控制块标签的完整成对写法。 *}
 {{block mediaGallery(field, altField, key, values, alts, heading, addLabel, altPlaceholder, emptyLabel)}}<div class="media-gallery" data-media-gallery>
-    {* 标题与添加按钮同一行：按钮在**右上角**、用主色 —— 它原来是网格下方一个幽灵按钮，
-       而图集为空时网格是空的，「添加图片」挤在空网格下面完全不像主操作。 *}
+    {* 添加入口**只有一个**：网格末尾的「＋」框（data-gallery-addbox，JS 每次渲染时重建）。
+       标题行曾经还有一个主色「添加图片」按钮，与「＋」是同一个动作 —— 两个入口分处标题行与网格里，
+       看着像两件事，实测后删掉；addLabel 参数继续作「＋」框的 aria-label（读屏要说话）。 *}
     <div class="media-gallery-head">
         <span class="form-label">{{heading}}</span>
-        <button type="button" class="btn btn-sm btn-primary" data-gallery-add>{{addLabel}}</button>
     </div>
-    {* 网格末尾的「＋」框与标题行的按钮是同一个动作（点哪儿都能加）：
-       期望的形态就是「缩略图一排，后面跟一个空的添加框」。 *}
+    {* 期望的形态就是「缩略图一排，后面跟一个空的添加框」。 *}
     <div class="media-gallery-grid" data-gallery-grid>
         <button type="button" class="media-gallery-addbox" data-gallery-addbox aria-label="{{addLabel}}">＋</button>
     </div>
