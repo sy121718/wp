@@ -706,7 +706,7 @@ type AITranslateResponse struct {
 
 | 实体 | `context` | 是否进 `sys_translation` |
 |---|---|---|
-| 商品 | `product.name` / `product.description` / `product.seoTitle` / `product.seoDescription` | ✅ |
+| 商品 | `product.name` / `product.description`（`product.seoTitle` / `product.seoDescription` 已与 name / subtitle 合并，值取它们的译文） | ✅ |
 | 商品 | `product.price` / `product.sku` / `product.images` | ❌ 语言无关 |
 | 文章 | `article.title` / `article.body` / `article.excerpt` | ✅ |
 | 文章 | `article.seoTitle` / `article.seoDescription` | ❌（2026-09-30 与 title / excerpt 合并，值取它们的译文） |
@@ -741,7 +741,7 @@ type AITranslateResponse struct {
 |---|---|---|---|---|
 | product | `name` | ✅ | 翻译表 | 名称本地化是核心诉求 |
 | product | `description` | ✅ | 翻译表 | 同上 |
-| product | `seoTitle` / `seoDescription` | ✅ | 翻译表 | 各语言 SERP 独立 |
+| product | `seoTitle` / `seoDescription` | ❌ | — | 已与 name / subtitle 合并（2026-09-30）：值取它们的译文，各语言 SERP 依然独立 |
 | product | `price` | ❌ | 主表 | 数值事实；显示格式由构建期 locale 决定（D8） |
 | product | `images` | ❌ | 主表 | 媒体二进制；alt 另议（D6） |
 | article | `title` | ✅ | 翻译表 | |
