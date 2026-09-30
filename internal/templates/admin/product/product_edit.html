@@ -100,7 +100,9 @@
            字段名 descriptionHtml 而不是 description —— 表单给的是裸 HTML，
            包装成 jsonb 对象在 handler 里做（见 product_edit_page.go）。
            默认收起（2026-09-30）：富文本本体很高，而改描述是低频动作；收起时字段仍在
-           DOM 里、照常随表单提交（提交载体是富文本片段里的隐藏 input），展开只点一下标题。 *}
+           DOM 里、照常随表单提交（提交载体是富文本片段里的隐藏 input），展开只点一下标题。
+           注意「收起」不等于「不提交」：富文本按编辑器序列化写回（与文章正文同一行为），
+           所以保存一次商品就会把描述重新序列化一遍 —— 视觉等价、字节可能变。 *}
         <details class="edit-fold">
             <summary>{{ .["t"]("admin.products.label.description", "商品描述") }}</summary>
             {{yield richEditor(field="descriptionHtml", key="product", value=p.DescriptionHTML)}}
