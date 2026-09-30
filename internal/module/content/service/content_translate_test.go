@@ -51,9 +51,16 @@ func TestTranslateDataFieldSelection(t *testing.T) {
 	}
 	out := svc.translateData(context.Background(), "en-US", "article", data)
 
-	for _, f := range []string{"title", "excerpt", "seoTitle", "seoDescription"} {
+	for _, f := range []string{"title", "excerpt"} {
 		if out[f] != "English title" {
 			t.Errorf("%s 应取到译文，实际 %q", f, out[f])
+		}
+	}
+	// seoTitle / seoDescription 已从可翻译字段里去掉（2026-09-30 与 title / excerpt 合并）：
+	// stubStore 仍为这两个语境准备了译文行，实现若还去取就会命中 —— 断言随之失败。
+	for _, f := range []string{"seoTitle", "seoDescription"} {
+		if out[f] != "中文标题" {
+			t.Errorf("%s 不该参与翻译，实际 %q", f, out[f])
 		}
 	}
 	// body 不在 data 里，跳过；下面两个是**刻意不翻**的字段。
@@ -115,15 +122,15 @@ func TestTranslateDataKeepsPlainTextUntouched(t *testing.T) {
 	}
 }
 
-// TestTranslatableFieldsExcludeAssets 清单本身守一遍：资源与评分器字段不在可翻译集合里。
+// TestTranslatableFieldsExcludeAssets 清单本身守一遍：资源、评分器字段与已合并的 SEO 别名不在集合里。
 func TestTranslatableFieldsExcludeAssets(t *testing.T) {
-	for _, f := range []string{"featuredImage", "focusKeyword"} {
+	for _, f := range []string{"featuredImage", "focusKeyword", "seoTitle", "seoDescription"} {
 		if contentcontract.IsTranslatableField("article", f) {
 			t.Errorf("%s 不应在可翻译字段里", f)
 		}
 	}
 	got := contentcontract.TranslatableFields("article")
-	if len(got) != 5 {
-		t.Fatalf("article 应有 5 个可翻译字段，实际 %v", got)
+	if len(got) != 3 {
+		t.Fatalf("article 应有 3 个可翻译字段（title / body / excerpt），实际 %v", got)
 	}
 }

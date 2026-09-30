@@ -201,7 +201,9 @@ func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string,
 				continue
 			}
 			out = append(out, scoring.TitleEntry{
-				Title: scoring.PreferredTitle(p.SEOTitle, p.Name),
+				// 标题就是商品名（2026-09-30 合并后口径）：唯一性检查必须拿**会发布出去
+				// 的那个标题**比对，再读 seo_title 只会拿库里的残留旧值去比。
+				Title: p.Name,
 				Page:  slashSlug(p.Slug),
 				ID:    p.ID,
 			})
@@ -213,7 +215,7 @@ func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string,
 				continue
 			}
 			out = append(out, scoring.TitleEntry{
-				Title: scoring.PreferredTitle(cat.SEOTitle, cat.Name),
+				Title: cat.Name,
 				Page:  slashSlug(cat.Slug),
 				ID:    cat.ID,
 			})
@@ -225,7 +227,7 @@ func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string,
 				continue
 			}
 			out = append(out, scoring.TitleEntry{
-				Title: scoring.PreferredTitle(b.SEOTitle, b.Name),
+				Title: b.Name,
 				Page:  slashSlug(b.Slug),
 				ID:    b.ID,
 			})
@@ -251,7 +253,8 @@ func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string,
 				if r == nil || r.Data == nil {
 					continue
 				}
-				title := scoring.PreferredTitle(contentText(r.Data, "seoTitle"), contentText(r.Data, "title"))
+				// 文章的 SEO 标题即标题（2026-09-30 合并）：不再优先读 seoTitle。
+				title := contentText(r.Data, "title")
 				if title == "" {
 					continue
 				}
@@ -320,13 +323,16 @@ func (h *productPageHandle) entityScoreInputOf(ctx context.Context, c *gin.Conte
 		if err != nil || node == nil {
 			return nil, "", emptyOf(productenums.SEOEmptyCategoryUnreadable, "读不到这个分类，无法评分")
 		}
+		// SEO 标题 / 描述与「分类名 / 分类描述」合并（2026-09-30，与商品同口径）：
+		// 分类名即 <title>、分类描述即 meta description。描述是富文本，先去掉标签
+		// 再喂给评分器 —— 否则 <p> 会被算进 meta 描述长度。
 		instPath := h.instancePath(ctx, "product_category", node.ID)
 		return &scoring.EntityPageInput{
 			Kind:           scoring.KindCategory,
 			Name:           node.Name,
-			Description:    node.Description,
-			SEOTitle:       node.SEOTitle,
-			SEODescription: node.SEODescription,
+			Description:    stripEntityTags(node.Description),
+			SEOTitle:       node.Name,
+			SEODescription: stripEntityTags(node.Description),
 			Slug:           node.Slug,
 			URL:            firstNonEmptyString(instPath, slashSlug(node.Slug)),
 			Images:         singleImage(node.Image, "hero"),
@@ -341,13 +347,14 @@ func (h *productPageHandle) entityScoreInputOf(ctx context.Context, c *gin.Conte
 		if err != nil || brand == nil {
 			return nil, "", emptyOf(productenums.SEOEmptyBrandUnreadable, "读不到这个品牌，无法评分")
 		}
+		// 同分类：品牌名即 <title>、品牌描述即 meta description（2026-09-30 合并）。
 		instPath := h.instancePath(ctx, "product_brand", brand.ID)
 		return &scoring.EntityPageInput{
 			Kind:           scoring.KindBrand,
 			Name:           brand.Name,
-			Description:    brand.Description,
-			SEOTitle:       brand.SEOTitle,
-			SEODescription: brand.SEODescription,
+			Description:    stripEntityTags(brand.Description),
+			SEOTitle:       brand.Name,
+			SEODescription: stripEntityTags(brand.Description),
 			Slug:           brand.Slug,
 			URL:            firstNonEmptyString(instPath, slashSlug(brand.Slug)),
 			Images:         singleImage(brand.Logo, "hero"),

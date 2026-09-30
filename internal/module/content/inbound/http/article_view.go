@@ -175,11 +175,13 @@ func articleScoreViewOf(data map[string]any, articleURL, lang string,
 	if !sv.OK {
 		return sv
 	}
-	sv.SerpTitle = firstNonEmpty(articleStr(data, "seoTitle"), articleStr(data, "title"))
+	// SERP 预览取的就是标题与摘要（2026-09-30 字段合并）：seoTitle / seoDescription
+	// 已与它们合并，这里不再做「SEO 字段优先」的二段取值。
+	sv.SerpTitle = articleStr(data, "title")
 	if sv.SerpTitle == "" {
 		sv.SerpTitle = tr(contentenums.ScoreSerpTitleEmpty, "（未填写文章标题）")
 	}
-	sv.SerpDesc = firstNonEmpty(articleStr(data, "seoDescription"), articleStr(data, "excerpt"))
+	sv.SerpDesc = articleStr(data, "excerpt")
 	if sv.SerpDesc == "" {
 		sv.SerpDesc = tr(contentenums.ScoreSerpDescEmpty, "（未填写摘要 / SEO 描述）")
 	}

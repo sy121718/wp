@@ -82,7 +82,9 @@ func TestArticleUpdateFailureEchoesSubmittedFields(t *testing.T) {
 					t.Errorf("缺少 %q", want)
 				}
 			}
-			for field, value := range map[string]string{"title": tc.form.Get("title"), "body": tc.form.Get("body"), "excerpt": tc.form.Get("excerpt"), "featuredImage": tc.form.Get("featuredImage"), "seoTitle": tc.form.Get("seoTitle"), "seoDescription": tc.form.Get("seoDescription"), "focusKeyword": tc.form.Get("focusKeyword")} {
+			// seoTitle / seoDescription 不在这里：两栏已与标题 / 摘要合并（2026-09-30），
+			// 表单里没有对应输入框，页面自然也不回显它们的提交值。
+			for field, value := range map[string]string{"title": tc.form.Get("title"), "body": tc.form.Get("body"), "excerpt": tc.form.Get("excerpt"), "featuredImage": tc.form.Get("featuredImage"), "focusKeyword": tc.form.Get("focusKeyword")} {
 				if !strings.Contains(body, html.EscapeString(value)) {
 					t.Errorf("%s 未保留原始提交值 %q", field, value)
 				}
@@ -118,13 +120,13 @@ func TestArticleUpdateMissingIDAndMetadataFailure(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &articleUpdateContentStub{getErr: tc.getErr}
-			form := url.Values{"id": {tc.id}, "title": {""}, "body": {"<p>提交的正文</p>"}, "seoTitle": {"提交的 SEO"}}
+			form := url.Values{"id": {tc.id}, "title": {""}, "body": {"<p>提交的正文</p>"}, "focusKeyword": {"提交的关键词"}}
 			rec := articleUpdatePost(articleUpdateTestEngine(s), form)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("应原地渲染 200，实际 %d: %s", rec.Code, rec.Body.String())
 			}
 			body := rec.Body.String()
-			for _, want := range []string{"</html>", tc.message, `action="/admin/articles/update"`, `name="body" value="&lt;p&gt;提交的正文&lt;/p&gt;"`, `name="seoTitle"`, "提交的 SEO"} {
+			for _, want := range []string{"</html>", tc.message, `action="/admin/articles/update"`, `name="body" value="&lt;p&gt;提交的正文&lt;/p&gt;"`, `name="focusKeyword"`, "提交的关键词"} {
 				if !strings.Contains(body, want) {
 					t.Errorf("缺少 %q", want)
 				}

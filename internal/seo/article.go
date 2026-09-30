@@ -4,13 +4,16 @@ package seo
 //
 // 与 extract.go 的分工：那里从 Page Document 的节点树提取（页面草稿，画布 AST），
 // 这里从文章实体的扁平字段提取（contents.data：title / body / excerpt /
-// featuredImage / seoTitle / seoDescription / focusKeyword）。两条路径共用同一个
-// scoring 引擎 —— 规则只有一份，省得「页面评分」与「文章评分」给出两套口径。
+// featuredImage / focusKeyword —— seoTitle / seoDescription 已与 title / excerpt 合并，
+// 见 2026-09-30 的字段合并）。两条路径共用同一个 scoring 引擎 —— 规则只有一份，
+// 省得「页面评分」与「文章评分」给出两套口径。
 //
 // 三个刻意的取舍：
 //
-//  1. **SEO 标题/描述优先取 seoTitle / seoDescription**，缺了才回落 title / excerpt：
-//     与运营的心智一致（专门的 SEO 字段填了就该用它），也与构建期 meta 的取法同向。
+//  1. **标题与描述直接取 title / excerpt**（2026-09-30 字段合并）：编辑页只有一个标题框、
+//     一个摘要框，SEO 标题与 meta description 就是它们 —— 不再有单独的 seoTitle /
+//     seoDescription 取值口径。遗留字段由读侧归一（content/service/content_resolver.go），
+//     所以这里的取法与发布出去的 meta 逐字一致。
 //
 //  2. **hasCanonical / hasSchema 判真**：这两项由构建期注入，不由编辑者补。
 //     文章详情页的产物现在带 canonical（来自实例线上路径）与 JSON-LD
@@ -54,8 +57,8 @@ func ScoreArticle(data map[string]any, articleURL, lang string) *scoring.Result 
 		URL:             articleURL,
 		Locale:          lang,
 		IsHTTPS:         true,
-		Title:           firstNonEmpty(articleField(data, "seoTitle"), articleField(data, "title")),
-		MetaDescription: firstNonEmpty(articleField(data, "seoDescription"), articleField(data, "excerpt")),
+		Title:           articleField(data, "title"),
+		MetaDescription: articleField(data, "excerpt"),
 		FocusKeyword:    articleField(data, "focusKeyword"),
 	}
 	in.BodyText = articlePlainText(body)

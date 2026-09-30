@@ -300,11 +300,12 @@ func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr, invali
 	form := data["Form"].(gin.H)
 	for key, field := range map[string]string{
 		"Title": "title", "Body": "body", "Excerpt": "excerpt",
-		"FeaturedImage": "featuredImage", "SEOTitle": "seoTitle",
-		"SEODescription": "seoDescription", "FocusKeyword": "focusKeyword",
+		"FeaturedImage": "featuredImage", "FocusKeyword": "focusKeyword",
 	} {
 		form[key] = c.PostForm(field)
 	}
+	// SEO 标题 / 描述与标题 / 摘要合并（2026-09-30）：表单里已没有这两个框，
+	// 回填与实时评分都取同一口径（下面的评分直接读 Title / Excerpt）。
 	data["IsNew"] = false // 缺 id 时仍展示编辑页，避免误落入新建动作。
 	data["EditUnavailable"] = item == nil
 	if item == nil {
@@ -320,7 +321,6 @@ func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr, invali
 	data["InvalidField"] = invalidField
 	data["Score"] = articleScoreViewOf(map[string]any{
 		"title": form["Title"], "body": form["Body"], "excerpt": form["Excerpt"],
-		"seoTitle": form["SEOTitle"], "seoDescription": form["SEODescription"],
 		"focusKeyword": form["FocusKeyword"],
 	}, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c))
 	c.HTML(http.StatusOK, "admin/content/article_edit.html", shell.Prepare(c, data))

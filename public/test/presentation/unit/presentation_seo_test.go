@@ -135,8 +135,8 @@ func stripURLTags(html string) string {
 	return strings.Join(out, "\n")
 }
 
-// TestPresentationSEOArticleUsesEntityFields 文章详情页：seoTitle / seoDescription
-// 进 SEO 头，canonical 取实例线上路径，og:type 与结构化数据类型为 article。
+// TestPresentationSEOArticleUsesEntityFields 文章详情页：标题与摘要（SEO 标题 / 描述已与
+// 它们合并，2026-09-30）进 SEO 头，canonical 取实例线上路径，og:type 与结构化数据类型为 article。
 func TestPresentationSEOArticleUsesEntityFields(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {
@@ -146,6 +146,7 @@ func TestPresentationSEOArticleUsesEntityFields(t *testing.T) {
 	tplID := createSEOTemplate(t, f.templates, f.projectID, "article", seoDoc(""))
 	entityID := createSEOArticle(t, f, "seo-entity-fields", map[string]any{
 		"title": "夏季衬衫", "excerpt": "轻薄透气",
+		// 遗留的 SEO 字段（已与 title / excerpt 合并）：必须被忽略。
 		"seoTitle": "夏季衬衫｜官方商城", "seoDescription": "轻薄透气，四季可穿",
 	})
 	const urlPath = "/articles/summer-shirt"
@@ -160,17 +161,20 @@ func TestPresentationSEOArticleUsesEntityFields(t *testing.T) {
 	containsAll(t, published,
 		"<link rel=\"canonical\" href=\""+urlPath+"\">",
 		"<meta property=\"og:type\" content=\"article\">",
-		"<meta property=\"og:title\" content=\"夏季衬衫｜官方商城\">",
-		"<meta name=\"twitter:title\" content=\"夏季衬衫｜官方商城\">",
-		"<meta property=\"og:description\" content=\"轻薄透气，四季可穿\">",
+		"<meta property=\"og:title\" content=\"夏季衬衫\">",
+		"<meta name=\"twitter:title\" content=\"夏季衬衫\">",
+		"<meta property=\"og:description\" content=\"轻薄透气\">",
 		"<script type=\"application/ld+json\">",
 		"\"@type\":\"Article\"",
-		"\"name\":\"夏季衬衫｜官方商城\"",
+		"\"name\":\"夏季衬衫\"",
 		"\"url\":\""+urlPath+"\"",
 	)
-	// seoTitle 优先于 title：不应回落到实体主标题。
-	if strings.Contains(published, "<meta property=\"og:title\" content=\"夏季衬衫\">") {
-		t.Fatalf("seoTitle 非空时不应回落到 title\n产物: %s", published)
+	// SEO 标题 / 描述就是标题与摘要：库里遗留的旧 seoTitle / seoDescription 不进产物
+	//（否则一篇没重新保存过的老文章，线上 meta 与编辑页看到的标题不是同一个）。
+	for _, stale := range []string{"夏季衬衫｜官方商城", "轻薄透气，四季可穿"} {
+		if strings.Contains(published, stale) {
+			t.Fatalf("遗留 SEO 字段不该进产物（已与 title / excerpt 合并）：%q\n产物: %s", stale, published)
+		}
 	}
 
 	// 预览：不激活 URL → 无 canonical，其余 SEO 头与发布一致。
@@ -200,8 +204,8 @@ func TestPresentationSEOArticleUsesEntityFields(t *testing.T) {
 	}
 }
 
-// TestPresentationSEOArticleFallsBackToMainFields 文章未填 SEO 专用字段时，
-// 标题回落 title、描述回落 excerpt。
+// TestPresentationSEOArticleFallsBackToMainFields 文章的 SEO 标题 / 描述就是标题 / 摘要
+//（2026-09-30 字段合并后，这正是唯一的取值口径）。
 func TestPresentationSEOArticleFallsBackToMainFields(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {

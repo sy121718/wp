@@ -273,10 +273,10 @@ func templateLineWith(t *testing.T, src, needle string) string {
 
 // TestCatalogEmptyCellPlaceholderIsConsistent 空值占位符在同一页里只有一种写法。
 //
-// 缺陷形态（审计 02-L §3 P2-11）：product_categories.html 的 SEO 标题列写「未填」，
-// 同一张表的 Slug 列写「—」；product_brands.html 同病。两页都渲染一次，断言：
-//   - SEO 标题为空的行渲染出与 Slug 列**逐字相同**的占位（同一个 span + 同一个字符）；
-//   - 渲染结果里不再出现「未填」。
+// 历史缺陷（审计 02-L §3 P2-11）：product_categories.html 的 SEO 标题列写「未填」，
+// 同一张表的 Slug 列写「—」；product_brands.html 同病。SEO 标题列已随字段合并移除
+// （2026-09-30），判据收敛为：两页渲染一次，slug 列的空值占位为统一的 span + 字符，
+// 且页面里不再出现「未填」。
 func TestCatalogEmptyCellPlaceholderIsConsistent(t *testing.T) {
 	const placeholder = `<span class="text-mute">—</span>`
 
@@ -307,9 +307,9 @@ func assertEmptyCellPlaceholder(t *testing.T, name, out, placeholder string) {
 	if strings.Contains(out, "未填") {
 		t.Errorf("%s 仍渲染出「未填」—— 同一张表里两种空值写法会让人以为它们代表不同的状态", name)
 	}
-	// 两列（slug / seo title）各一处，形态逐字相同。
-	if got := strings.Count(out, placeholder); got < 2 {
-		t.Errorf("%s 的空值占位应有两处（slug 列与 SEO 标题列），实际匹配 %d 处", name, got)
+	// slug 列一处（SEO 标题列已随字段合并移除，2026-09-30）。
+	if got := strings.Count(out, placeholder); got < 1 {
+		t.Errorf("%s 的空值占位应有一处（slug 列），实际匹配 %d 处", name, got)
 	}
 }
 

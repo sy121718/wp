@@ -378,8 +378,9 @@ func TestProductListEmptyStateKeepsTableHead(t *testing.T) {
 	filtered := getWholePage(t, engine, "/admin/product-brands?keyword=zzznomatch")
 	for _, want := range []string{
 		`class="data-table"`, "<thead", `class="empty-state"`,
-		// colspan = 勾选列 + 品牌 / URL 段 / 排序 / SEO 标题 / 更新时间 + 操作。
-		`colspan="7"`,
+		// colspan = 勾选列 + 品牌 / URL 段 / 排序 / 更新时间 + 操作（SEO 标题列已随
+		// 字段合并移除，2026-09-30）。
+		`colspan="6"`,
 		"没有匹配的品牌",
 	} {
 		if !strings.Contains(filtered, want) {
@@ -405,7 +406,7 @@ func TestProductListEmptyStateKeepsTableHead(t *testing.T) {
 		return
 	}
 	empty := getWholePage(t, emptyEngine, "/admin/product-brands")
-	for _, want := range []string{`class="data-table"`, "<thead", `class="empty-state"`, `colspan="7"`, "还没有品牌"} {
+	for _, want := range []string{`class="data-table"`, "<thead", `class="empty-state"`, `colspan="6"`, "还没有品牌"} {
 		if !strings.Contains(empty, want) {
 			t.Fatalf("空工程的空态缺少 %q；页面片段=%s", want, clip(empty, 1200))
 		}

@@ -15,16 +15,17 @@ import (
 // article_page_data.go - 文章管理页的数据装配（列表/编辑页数据、表单绑定与导入块视图）。
 
 // articleForm 编辑表单的字段集合（与 content 字段白名单一一对应）。
+//
+// 不含 seoTitle / seoDescription：两者已与 title / excerpt 合并（2026-09-30），
+// 编辑页不再有这两个输入框，落库时由 data() 直接取标题与摘要。
 type articleForm struct {
-	ID             string
-	Slug           string
-	Title          string
-	Body           string
-	Excerpt        string
-	FeaturedImage  string
-	SEOTitle       string
-	SEODescription string
-	FocusKeyword   string
+	ID            string
+	Slug          string
+	Title         string
+	Body          string
+	Excerpt       string
+	FeaturedImage string
+	FocusKeyword  string
 }
 
 // articleFormOf 从 POST 表单读字段。
@@ -33,15 +34,13 @@ type articleForm struct {
 // 直接落库等于把「谁能写 script」这个问题交给前端 —— 清洗必须在写入口做。
 func articleFormOf(c *gin.Context) articleForm {
 	return articleForm{
-		ID:             strings.TrimSpace(c.PostForm("id")),
-		Slug:           strings.TrimSpace(c.PostForm("slug")),
-		Title:          strings.TrimSpace(c.PostForm("title")),
-		Body:           core.SanitizeRichHTML(c.PostForm("body")),
-		Excerpt:        strings.TrimSpace(c.PostForm("excerpt")),
-		FeaturedImage:  strings.TrimSpace(c.PostForm("featuredImage")),
-		SEOTitle:       strings.TrimSpace(c.PostForm("seoTitle")),
-		SEODescription: strings.TrimSpace(c.PostForm("seoDescription")),
-		FocusKeyword:   strings.TrimSpace(c.PostForm("focusKeyword")),
+		ID:            strings.TrimSpace(c.PostForm("id")),
+		Slug:          strings.TrimSpace(c.PostForm("slug")),
+		Title:         strings.TrimSpace(c.PostForm("title")),
+		Body:          core.SanitizeRichHTML(c.PostForm("body")),
+		Excerpt:       strings.TrimSpace(c.PostForm("excerpt")),
+		FeaturedImage: strings.TrimSpace(c.PostForm("featuredImage")),
+		FocusKeyword:  strings.TrimSpace(c.PostForm("focusKeyword")),
 	}
 }
 
@@ -49,15 +48,19 @@ func articleFormOf(c *gin.Context) articleForm {
 //
 // 空字符串**照写不落**（与「清空这个字段」是同一个意思）：字段白名单里的字段
 // 全部提交，用户删掉的内容才会真的被删掉；写成「空值跳过」的话，编辑者永远删不掉
-// 一个已填的 SEO 标题 —— 那是比多写几行空字符串严重得多的 bug。
+// 一个已填的摘要 —— 那是比多写几行空字符串严重得多的 bug。
+//
+// seoTitle / seoDescription 与 title / excerpt 合并（2026-09-30）：这里直接把标题与
+// 摘要写进那两个键，历史数据里遗留的旧 SEO 值会在下一次保存时被覆盖 ——
+// 与读侧口径（service/content_resolver.go 的归一）一致。
 func (f articleForm) data() map[string]any {
 	return map[string]any{
 		"title":          f.Title,
 		"body":           f.Body,
 		"excerpt":        f.Excerpt,
 		"featuredImage":  f.FeaturedImage,
-		"seoTitle":       f.SEOTitle,
-		"seoDescription": f.SEODescription,
+		"seoTitle":       f.Title,
+		"seoDescription": f.Excerpt,
 		"focusKeyword":   f.FocusKeyword,
 	}
 }
@@ -126,17 +129,15 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 		data = item.Data
 	}
 	form := gin.H{
-		"ID":             id,
-		"Slug":           articleSlugOf(item),
-		"Title":          articleStr(data, "title"),
-		"Body":           articleStr(data, "body"),
-		"Excerpt":        articleStr(data, "excerpt"),
-		"FeaturedImage":  articleStr(data, "featuredImage"),
-		"SEOTitle":       articleStr(data, "seoTitle"),
-		"SEODescription": articleStr(data, "seoDescription"),
-		"FocusKeyword":   articleStr(data, "focusKeyword"),
-		"Revision":       articleRevisionOf(item),
-		"UpdatedAt":      articleUpdatedAtOf(item),
+		"ID":            id,
+		"Slug":          articleSlugOf(item),
+		"Title":         articleStr(data, "title"),
+		"Body":          articleStr(data, "body"),
+		"Excerpt":       articleStr(data, "excerpt"),
+		"FeaturedImage": articleStr(data, "featuredImage"),
+		"FocusKeyword":  articleStr(data, "focusKeyword"),
+		"Revision":      articleRevisionOf(item),
+		"UpdatedAt":     articleUpdatedAtOf(item),
 	}
 	out := gin.H{
 		"title":           articleEditTitle,

@@ -41,7 +41,7 @@ func TestArticleEditSaveFailureKeepsPostValues(t *testing.T) {
 		"id": {id}, "title": {"草稿 & <特别> \"引号\""},
 		"body":    {"<h2>新正文 &amp; 内容</h2><p>第二段</p>"},
 		"excerpt": {"第一行\n第二行"}, "featuredImage": {"https://img.example/cover?a=1&b=2"},
-		"seoTitle": {""}, "seoDescription": {"描述 <>&\"'"}, "focusKeyword": {"新关键词"},
+		"focusKeyword": {"新关键词"},
 	}
 	// A database constraint rejects the write while the old row remains readable.
 	if err := db.Exec(`ALTER TABLE contents ADD CONSTRAINT article_save_failure_test CHECK (revision < 2)`).Error; err != nil {
@@ -60,7 +60,9 @@ func TestArticleEditSaveFailureKeepsPostValues(t *testing.T) {
 			t.Errorf("失败页缺少 %q", want)
 		}
 	}
-	for _, key := range []string{"title", "body", "excerpt", "featuredImage", "seoTitle", "seoDescription", "focusKeyword"} {
+	// seoTitle / seoDescription 已与标题 / 摘要合并（2026-09-30）：表单里没有这两栏，
+	// 失败回显自然也不包含它们（库里旧值仍不应回显，见下一条断言）。
+	for _, key := range []string{"title", "body", "excerpt", "featuredImage", "focusKeyword"} {
 		if !strings.Contains(body, html.EscapeString(posted.Get(key))) {
 			t.Errorf("%s 提交原值丢失: %q", key, posted.Get(key))
 		}

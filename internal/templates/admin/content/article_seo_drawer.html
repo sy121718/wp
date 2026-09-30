@@ -12,8 +12,9 @@
      · 所有 hx-* 指向同源（这里是 /admin/articles/score）。
 
    「重新评分」的 hx-include="#article-form" 指向**抽屉外面**的表单：htmx 的选择器不受
-   DOM 位置限制，所以它照旧带上左列表单里的 title / body / excerpt / focusKeyword /
-   seoTitle / seoDescription（Trix 的隐藏 input name=body 也在那张表单里）；
+   DOM 位置限制，所以它照旧带上左列表单里的 title / body / excerpt / focusKeyword
+   （Trix 的隐藏 input name=body 也在那张表单里）；SEO 标题与描述已与 title / excerpt
+   合并（2026-09-30），评分直接读它们；
    hx-target 指向本片段里的 #article-seo-score —— 刷新只落在这个抽屉内。
 
    首屏分数来自**库里已保存的数据**（GET 那一刻的实体）；要看未保存改动后的分数，

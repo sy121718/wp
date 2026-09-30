@@ -78,23 +78,25 @@ func TestArticleImages(t *testing.T) {
 	}
 }
 
-// TestScoreArticleSEOTitleWins 钉住回落顺序：SEO 字段填了就用它。
-func TestScoreArticleSEOTitleWins(t *testing.T) {
+// TestScoreArticleTitleIsSeoTitle 钉住合并口径：文章的 SEO 标题就是标题（2026-09-30）。
+// data 里即使还留着历史 seoTitle / seoDescription，评分也不再读它们。
+func TestScoreArticleTitleIsSeoTitle(t *testing.T) {
 	base := map[string]any{
-		"title":          "很短",
-		"body":           "<p>" + strings.Repeat("正文内容 ", 200) + "</p>",
-		"excerpt":        "摘要",
-		"focusKeyword":   "关键词",
-		"seoTitle":       "一个长度合适、且把关键词放在前半段的 SEO 标题文本",
-		"seoDescription": "一段长度合适、带行动号召的描述文本，用于结果页点击率。",
+		"title":        "一个长度合适、且把关键词放在前半段的标题文本",
+		"body":         "<p>" + strings.Repeat("正文内容 ", 200) + "</p>",
+		"excerpt":      "一段长度合适、带行动号召的描述文本，用于结果页点击率。",
+		"focusKeyword": "关键词",
+		// 遗留字段：值刻意写成不合格的短文本，被采纳就会露馅。
+		"seoTitle":       "很短",
+		"seoDescription": "短",
 	}
 	res := ScoreArticle(base, "/blog/x", "zh-CN")
 	if res == nil {
 		t.Fatal("评分结果为空")
 	}
-	// 用 seoTitle 时必须命中「标题含关键词且在前半段」这一项。
+	// 用文章标题时必须命中「标题含关键词且在前半段」这一项。
 	if !hasFullScore(res, "title_keyword_first_half") {
-		t.Errorf("SEO 标题未被采纳（title_keyword_first_half 未满分）；分数 %d", res.Total)
+		t.Errorf("文章标题未被当作 SEO 标题采纳（title_keyword_first_half 未满分）；分数 %d", res.Total)
 	}
 }
 

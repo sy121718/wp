@@ -4,9 +4,10 @@
        加上保存 / 重新发布 / 发布（清单 02-L P1-8 —— 发布的三条件分支在页头与右栏各一份，
        同步改的义务写在页头那一段的注释里）；
      · 字段级说明全部收进行内 .help 悬浮（字段旁 ? ），正文零说明文字；
-     · SEO 字段保持纯文本：seoTitle 用 input + 字数提示，seoDescription 用 textarea + 字数提示，
-       正文（body）用 Trix 富文本，且与商品分类 / 品牌描述共用 partials/rich_editor.html ——
-       meta 不能带标签，正文才需要格式；编辑器接线只留一份。 *}
+     · 正文（body）用 Trix 富文本，与商品分类 / 品牌描述共用 partials/rich_editor.html ——
+       meta 不能带标签，正文才需要格式；编辑器接线只留一份；
+     · SEO 标题 / 描述已与「标题 / 摘要」合并（2026-09-30）：SEO 卡里只剩主关键词，
+       合并口径的说明挂在卡片标题的 .help 上。 *}
 {* Jet 方言：extends 相对本目录；{{include}} 共享当前数据上下文；map 取值用 ["key"]。 *}
 {{extends "../layout.html"}}
 {{import "../partials/rich_editor.html"}}
@@ -174,7 +175,12 @@
             </section>
 
             <section class="card card-body">
-                <h2>{{ .["t"]("admin.article.edit.seoHeading", "SEO 字段") }}</h2>
+                <h2>{{ .["t"]("admin.article.edit.seoHeading", "SEO 字段") }}
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.seoMergedHint", "搜索引擎结果页显示的标题就是上面的「标题」、描述就是「摘要」—— 不用再填一遍（这两栏已合并）。这里只剩主关键词这一项。") }}</span>
+                    </span>
+                </h2>
                 <div class="field-label-row">
                     <label class="form-label" for="article-focus">{{ .["t"]("admin.article.edit.focusKeywordLabel", "主关键词") }}</label>
                     <span class="help">
@@ -184,22 +190,6 @@
                 </div>
                 <input class="form-input" id="article-focus" type="text" name="focusKeyword"
                        value="{{form.FocusKeyword}}" placeholder="{{ .["t"]("admin.article.edit.focusKeywordPlaceholder", "这篇文章主打的那一个词") }}">
-
-                <div class="field-label-row">
-                    <label class="form-label" for="article-seo-title">{{ .["t"]("admin.article.edit.seoTitleLabel", "SEO 标题") }}</label>
-                    <span class="help">
-                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.seoTitleHint", "留空时评测与 SERP 预览用文章标题；搜索引擎结果页看的是这一条。") }}</span>
-                    </span>
-                </div>
-                <input class="form-input" id="article-seo-title" type="text" name="seoTitle" data-counter="60"
-                       value="{{form.SEOTitle}}" placeholder="{{ .["t"]("admin.article.edit.seoTitlePlaceholder", "留空则按标题评测") }}">
-                <span class="field-counter" data-counter-out="article-seo-title" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-
-                <label class="form-label" for="article-seo-desc">{{ .["t"]("admin.article.edit.seoDescLabel", "SEO 描述") }}</label>
-                <textarea class="form-input" id="article-seo-desc" name="seoDescription" rows="3" data-counter="155"
-                          placeholder="{{ .["t"]("admin.article.edit.seoDescPlaceholder", "留空则按摘要评测") }}">{{form.SEODescription}}</textarea>
-                <span class="field-counter" data-counter-out="article-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
                 </details>
             </section>
 

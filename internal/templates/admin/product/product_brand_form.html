@@ -16,12 +16,9 @@
                 pickLabel=tr("admin.common.media.pick", "媒体库"),
                 clearLabel=tr("admin.common.media.clear", "清除"))}}
         </div>
-        <label class="form-label" for="brand-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_brands.label.seoTitle", "SEO 标题")}}</label>
-        <input class="form-input" type="text" id="brand-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" name="seoTitle" value="{{if fill}}{{.FormEcho.seoTitle}}{{else}}{{.SEOTitle}}{{end}}" data-counter="60">
-        <span class="field-counter" data-counter-out="brand-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
-        <label class="form-label" for="brand-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_brands.label.seoDesc", "SEO 描述")}}</label>
-        <textarea class="form-textarea" id="brand-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" name="seoDescription" rows="3" data-counter="155">{{if fill}}{{.FormEcho.seoDescription}}{{else}}{{.SEODescription}}{{end}}</textarea>
-        <span class="field-counter" data-counter-out="brand-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
+        {* SEO 标题 / 描述已合并进「品牌名称 / 品牌描述」（2026-09-30）：品牌名即网页标题、
+           品牌描述即 meta description，编辑者不必把同一段话写两遍。
+            不在这里另做输入框；product_brands.seo_title / seo_description 两列保留但不再暴露。 *}
         <label class="form-label" for="rich-description-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_brands.label.description", "品牌描述")}}</label>
         {{desc := .Description}}{{if fill}}{{desc = .FormEcho.description}}{{end}}
         {{key := .ID}}{{if create}}{{key = "new"}}{{end}}

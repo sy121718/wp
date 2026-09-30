@@ -102,16 +102,15 @@
                     <th>{{ .["t"]("admin.product_brands.col.name", "品牌") }}</th>
                     <th>{{ .["t"]("admin.product_brands.col.slug", "URL 段") }}</th>
                     <th>{{ .["t"]("admin.product_brands.col.sort", "排序") }}</th>
-                    <th>{{ .["t"]("admin.product_brands.col.seo", "SEO 标题") }}</th>
                     <th>{{ .["t"]("admin.product_brands.col.updated", "更新时间") }}</th>
                     <th class="col-actions">{{ .["t"]("admin.product_brands.col.actions", "操作") }}</th>
                 </tr>
                 </thead>
                 <tbody>
                 {{if len(.Brands) == 0}}
-                {* 空态整行：colspan = 7 个实际渲染的列（勾选列 + 品牌 / URL 段 / 排序 / SEO 标题 / 更新时间 + 操作）。
+                {* 空态整行：colspan = 6 个实际渲染的列（勾选列 + 品牌 / URL 段 / 排序 / 更新时间 + 操作）。
                    勾选列在空态下不渲染行内控件 —— 没有行可勾。 *}
-                <tr><td colspan="7" class="cell-wrap">
+                <tr><td colspan="6" class="cell-wrap">
                     <div class="empty-state">
                         {{if isset(.Filtered) && .Filtered}}
                         <p class="empty-title">{{ .["t"]("admin.product_brands.empty.filteredTitle", "没有匹配的品牌") }}</p>
@@ -142,9 +141,6 @@
                     </td>
                     <td>{{if b.Slug != ""}}<code>{{b.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{b.Sort}}</td>
-                    {* 空值占位与同表 Slug 列逐字一致（同 product_categories.html：全站空值一律用
-                       .text-mute 包一个「—」，「未填」是这两页独有的第三种写法）。 *}
-                    <td>{{if b.SEOTitle != ""}}{{b.SEOTitle}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
@@ -194,12 +190,7 @@
             {{yield mediaField(field="logo", key=b.ID, value=logoValue,
                 pickLabel=tr("admin.common.media.pick", "媒体库"),
                 clearLabel=tr("admin.common.media.clear", "清除"))}}
-            <label class="form-label" for="brand-seo-title-{{b.ID}}">{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}</label>
-            <input class="form-input" type="text" id="brand-seo-title-{{b.ID}}" name="seoTitle" value="{{b.SEOTitle}}" data-counter="60" placeholder="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}">
-            <span class="field-counter" data-counter-out="brand-seo-title-{{b.ID}}" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <label class="form-label" for="brand-seo-desc-{{b.ID}}">{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}</label>
-            <textarea class="form-textarea" id="brand-seo-desc-{{b.ID}}" name="seoDescription" rows="3" data-counter="155" placeholder="{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}">{{b.SEODescription}}</textarea>
-            <span class="field-counter" data-counter-out="brand-seo-desc-{{b.ID}}" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
+            {* SEO 标题 / 描述已合并进「品牌名称 / 品牌描述」（2026-09-30）：不再单开两个输入框。 *}
             {* 品牌描述是「一段话」，单行 input 放不下 —— 改用全站统一的富文本片段。
                存量纯文本由 rich-editor/index.js 在装载时转义 + 分段（纯文本绝不当作 HTML 直接塞给编辑器）。 *}
             <label class="form-label" for="rich-description-{{b.ID}}">{{ .["t"]("admin.product_brands.label.description", "品牌描述") }}</label>
@@ -235,12 +226,6 @@
             {{yield mediaField(field="logo", key="new", value="",
                 pickLabel=tr("admin.common.media.pick", "媒体库"),
                 clearLabel=tr("admin.common.media.clear", "清除"))}}
-            <label class="form-label" for="brand-new-seo-title">{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}</label>
-            <input class="form-input" type="text" id="brand-new-seo-title" name="seoTitle" data-counter="60" placeholder="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}">
-            <span class="field-counter" data-counter-out="brand-new-seo-title" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
-            <label class="form-label" for="brand-new-seo-desc">{{ .["t"]("admin.product_brands.label.seoDesc", "SEO 描述") }}</label>
-            <textarea class="form-textarea" id="brand-new-seo-desc" name="seoDescription" rows="3" data-counter="155" placeholder="{{ .["t"]("admin.product_brands.ph.seoDesc", "SEO 描述（可留空）") }}"></textarea>
-            <span class="field-counter" data-counter-out="brand-new-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
             <label class="form-label" for="rich-description-new">{{ .["t"]("admin.product_brands.ph.description", "品牌描述（可留空）") }}</label>
             {{yield richEditor(field="description", key="new", value="")}}
             <div class="action-row">

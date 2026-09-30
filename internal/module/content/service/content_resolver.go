@@ -47,7 +47,27 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	// 没有译文时逐字节回退原文（TranslateContent 的语义），英文站点缺译文是常态。
 	lang := core.BuildLang(ctx)
 	data = s.translateData(ctx, lang, entityType, data)
+	mergeSEOFields(entityType, data)
 	return &entityResolver{entityType: entityType, data: data}, nil
+}
+
+// mergeSEOFields 把已合并的 SEO 字段指向正文字段（2026-09-30）。
+//
+// 文章标题即 <title>、摘要即 meta description，编辑页不再有单独的 SEO 输入框。
+// 归一放在**翻译之后**：seoTitle / seoDescription 直接取已翻译的 title / excerpt，
+// 历史数据里遗留的旧 SEO 值因此也漏不进发布产物（否则一篇没重新保存过的老文章，
+// 线上 <title> 与编辑页看到的标题会不是同一个）。字段白名单仍保留这两个字段
+// （旧文档里的 Binding 可能绑着它们），所以这里是「值从哪来」的唯一收口。
+func mergeSEOFields(entityType string, data map[string]any) {
+	if entityType != "article" || data == nil {
+		return
+	}
+	if v, ok := data["title"]; ok {
+		data["seoTitle"] = v
+	}
+	if v, ok := data["excerpt"]; ok {
+		data["seoDescription"] = v
+	}
 }
 
 // entityResolver 绑定单实体的字段解析器。

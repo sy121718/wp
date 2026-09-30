@@ -31,11 +31,12 @@ var fieldWhitelist = map[string][]string{
 // 语境命名与商品域一致（docs/06-D §7.5）：article.title / article.body …。
 var translatableFields = map[string]map[string]bool{
 	"article": {
-		"title":          true,
-		"body":           true,
-		"excerpt":        true,
-		"seoTitle":       true,
-		"seoDescription": true,
+		"title":   true,
+		"body":    true,
+		"excerpt": true,
+		// seoTitle / seoDescription 不再单列（2026-09-30 字段合并）：两者的值
+		// 分别是 title / excerpt 的别名（读侧归一，见 service/content_resolver.go），
+		// 单列出来只会得到一个「填了也不生效」的翻译输入框。
 	},
 }
 

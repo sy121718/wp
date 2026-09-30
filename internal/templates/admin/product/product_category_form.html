@@ -33,10 +33,9 @@
                 pickLabel=tr("admin.common.media.pick", "媒体库"),
                 clearLabel=tr("admin.common.media.clear", "清除"))}}
         </div>
-        <input aria-label="{{tr("admin.product_categories.label.seoTitle", "SEO 标题")}}" class="form-input" type="text" name="seoTitle" id="cat-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter="60" value="{{if fill}}{{.FormEcho.seoTitle}}{{else}}{{.SEOTitle}}{{end}}">
-        <span class="field-counter" data-counter-out="cat-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
-        <textarea aria-label="{{tr("admin.product_categories.label.seoDesc", "SEO 描述")}}" class="form-textarea" name="seoDescription" id="cat-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" rows="3" data-counter="155">{{if fill}}{{.FormEcho.seoDescription}}{{else}}{{.SEODescription}}{{end}}</textarea>
-        <span class="field-counter" data-counter-out="cat-seo-desc-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
+        {* SEO 标题 / 描述已合并进「分类名称 / 分类描述」（2026-09-30）：分类名即网页标题、
+           分类描述即 meta description，不再单开两个框让编辑者抄一遍。
+           product_categories.seo_title / seo_description 两列保留但不再暴露。 *}
         <label class="form-label" for="rich-description-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_categories.label.description", "分类描述")}}</label>
         {{desc := .Description}}{{if fill}}{{desc = .FormEcho.description}}{{end}}
         {{key := .ID}}{{if create}}{{key = "new"}}{{end}}

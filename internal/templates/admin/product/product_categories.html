@@ -112,15 +112,14 @@
                         <th>{{ .["t"]("admin.product_categories.col.name", "分类") }}</th>
                         <th>{{ .["t"]("admin.product_categories.col.slug", "URL 段") }}</th>
                         <th>{{ .["t"]("admin.product_categories.col.sort", "排序") }}</th>
-                        <th>{{ .["t"]("admin.product_categories.col.seo", "SEO 标题") }}</th>
                         <th class="col-actions">{{ .["t"]("admin.product_categories.col.actions", "操作") }}</th>
                     </tr>
                     </thead>
                     <tbody>
                     {{if len(.Categories) == 0}}
-                    {* 空态整行：colspan = 6 个实际渲染的列（勾选列 + 分类 / URL 段 / 排序 / SEO 标题 + 操作）。
+                    {* 空态整行：colspan = 5 个实际渲染的列（勾选列 + 分类 / URL 段 / 排序 + 操作）。
                        勾选列在空态下不渲染行内控件 —— 没有行可勾。 *}
-                    <tr><td colspan="6" class="cell-wrap">
+                    <tr><td colspan="5" class="cell-wrap">
                         <div class="empty-state">
                             {{if isset(.Filtered) && .Filtered}}
                             <p class="empty-title">{{ .["t"]("admin.product_categories.empty.filteredTitle", "没有匹配的分类") }}</p>
@@ -149,9 +148,6 @@
                         {{if row.SearchMode}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>
-                        {* 空值占位与同表 Slug 列逐字一致：全站空值一律用 .text-mute 包一个「—」，
-                           不写成「未填」—— 同一张表里两种空值写法会让人以为它们代表不同的状态。 *}
-                        <td>{{if row.SEOTitle != ""}}{{row.SEOTitle}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td class="col-actions">
                             {{if canUpdate}}
                             <button type="button" class="btn btn-sm" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
@@ -161,7 +157,7 @@
                             {{end}}
                         </td>
                     </tr>
-                    {{if row.HasChildren}}{{if !row.SearchMode}}<tr data-category-child-row hidden><td colspan="6"><div id="category-children-{{row.ID}}" data-category-children></div></td></tr>{{end}}{{end}}
+                    {{if row.HasChildren}}{{if !row.SearchMode}}<tr data-category-child-row hidden><td colspan="5"><div id="category-children-{{row.ID}}" data-category-children></div></td></tr>{{end}}{{end}}
                     {{end}}
                     {{end}}
                     </tbody>

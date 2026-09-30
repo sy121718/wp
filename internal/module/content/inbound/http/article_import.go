@@ -221,12 +221,13 @@ func (e *articleImportError) Error() string { return e.text }
 //
 // 文章的 SEO 字段带进页面设置：页面设置面板、构建期 meta 与编辑期评分器读的都是那里，
 // 带过去之后"导入"就不会把已经写好的标题/描述/主关键词丢在文章里。
+// 标题与描述取 title / excerpt（2026-09-30 字段合并：文章的 SEO 标题与描述就是它们）。
 func articleImportDocument(data map[string]any, nodes []*core.Node) (json.RawMessage, error) {
 	seo := map[string]any{"schemaType": "article"}
-	if v := firstNonEmpty(articleStr(data, "seoTitle"), articleStr(data, "title")); v != "" {
+	if v := articleStr(data, "title"); v != "" {
 		seo["title"] = v
 	}
-	if v := firstNonEmpty(articleStr(data, "seoDescription"), articleStr(data, "excerpt")); v != "" {
+	if v := articleStr(data, "excerpt"); v != "" {
 		seo["description"] = v
 	}
 	if v := articleStr(data, "focusKeyword"); v != "" {

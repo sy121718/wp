@@ -248,8 +248,8 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 		rows = append(rows, gin.H{
 			"ID": node.ID, "Name": node.Name, "Slug": node.Slug, "Label": node.Name,
 			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
-			"SEOTitle": node.SEOTitle, "HasChildren": node.HasChildren,
-			"Matched": node.Matched, "SearchMode": searching,
+			"HasChildren": node.HasChildren,
+			"Matched":     node.Matched, "SearchMode": searching,
 			"EditForm": categoryDrawerData(c, "update", projectID, node, options),
 		})
 	}
@@ -259,16 +259,17 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 // ProductCategoriesCreate 新建分类。
 func (h *productPageHandle) ProductCategoriesCreate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
+	// SEO 标题 / 描述不再从表单读（2026-09-30 字段合并）：分类名即网页标题、
+	// 分类描述即 meta description，读侧统一映射（service 的 categoryValues、
+	// SEO 评分、构建期 SEO 头）。列保留但不再是任何 UI 的来源。
 	req := &productdto.CreateCategoryReq{
-		ProjectID:      projectID,
-		ParentID:       strings.TrimSpace(c.PostForm("parentId")),
-		Name:           strings.TrimSpace(c.PostForm("name")),
-		Slug:           strings.TrimSpace(c.PostForm("slug")),
-		Description:    c.PostForm("description"),
-		Image:          strings.TrimSpace(c.PostForm("image")),
-		SEOTitle:       c.PostForm("seoTitle"),
-		SEODescription: c.PostForm("seoDescription"),
-		Sort:           parseIntOr(c.PostForm("sort"), 0),
+		ProjectID:   projectID,
+		ParentID:    strings.TrimSpace(c.PostForm("parentId")),
+		Name:        strings.TrimSpace(c.PostForm("name")),
+		Slug:        strings.TrimSpace(c.PostForm("slug")),
+		Description: c.PostForm("description"),
+		Image:       strings.TrimSpace(c.PostForm("image")),
+		Sort:        parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.products.CreateCategory(c.Request.Context(), req); err != nil {
 		h.categoryFormFail(c, "create", productErrText(c, err))
@@ -277,7 +278,7 @@ func (h *productPageHandle) ProductCategoriesCreate(c *gin.Context) {
 	categoryFormSuccess(c, projectID)
 }
 
-// ProductCategoriesUpdate 修改分类（改名 / 换父级 / 排序 / SEO 字段）。
+// ProductCategoriesUpdate 修改分类（改名 / 换父级 / 排序 / 描述与图）。
 func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	parentID := strings.TrimSpace(c.PostForm("parentId"))
@@ -285,14 +286,13 @@ func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
 	slug := strings.TrimSpace(c.PostForm("slug"))
 	description := c.PostForm("description")
 	image := strings.TrimSpace(c.PostForm("image"))
-	seoTitle := c.PostForm("seoTitle")
-	seoDescription := c.PostForm("seoDescription")
 	sortValue := parseIntOr(c.PostForm("sort"), 0)
+	// SEO 标题 / 描述**不提交**（req 里保持 nil = 不改）：库里可能有编辑者写过的
+	// 历史值，不动它就不会丢数据；而它们已经不是读侧口径。
 	req := &productdto.UpdateCategoryReq{
 		ProjectID: projectID,
 		ID:        c.PostForm("id"), ParentID: &parentID, Name: &name, Slug: &slug,
-		Description: &description, Image: &image,
-		SEOTitle: &seoTitle, SEODescription: &seoDescription, Sort: &sortValue,
+		Description: &description, Image: &image, Sort: &sortValue,
 	}
 	if _, err := h.products.UpdateCategory(c.Request.Context(), req); err != nil {
 		h.categoryFormFail(c, "update", productErrText(c, err))
@@ -391,9 +391,9 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	for _, b := range pageRows {
 		brands = append(brands, gin.H{
 			"ID": b.ID, "Name": b.Name, "Slug": b.Slug, "Logo": b.Logo,
-			"Sort": b.Sort, "Description": b.Description, "SEOTitle": b.SEOTitle,
-			"SEODescription": b.SEODescription, "UpdatedAt": b.UpdatedAt,
-			"EditForm": brandDrawerData(c, "update", selected, b),
+			"Sort": b.Sort, "Description": b.Description,
+			"UpdatedAt": b.UpdatedAt,
+			"EditForm":  brandDrawerData(c, "update", selected, b),
 		})
 	}
 	data := gin.H{
@@ -419,15 +419,15 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 // ProductBrandsCreate 新建品牌。
 func (h *productPageHandle) ProductBrandsCreate(c *gin.Context) {
 	projectID := c.PostForm("projectId")
+	// SEO 标题 / 描述不再从表单读（2026-09-30 字段合并）：品牌名即网页标题、
+	// 品牌描述即 meta description（读侧统一映射，见 service 的 brandValues）。
 	req := &productdto.CreateBrandReq{
-		ProjectID:      projectID,
-		Name:           strings.TrimSpace(c.PostForm("name")),
-		Slug:           strings.TrimSpace(c.PostForm("slug")),
-		Logo:           strings.TrimSpace(c.PostForm("logo")),
-		Description:    c.PostForm("description"),
-		SEOTitle:       c.PostForm("seoTitle"),
-		SEODescription: c.PostForm("seoDescription"),
-		Sort:           parseIntOr(c.PostForm("sort"), 0),
+		ProjectID:   projectID,
+		Name:        strings.TrimSpace(c.PostForm("name")),
+		Slug:        strings.TrimSpace(c.PostForm("slug")),
+		Logo:        strings.TrimSpace(c.PostForm("logo")),
+		Description: c.PostForm("description"),
+		Sort:        parseIntOr(c.PostForm("sort"), 0),
 	}
 	if _, err := h.products.CreateBrand(c.Request.Context(), req); err != nil {
 		h.brandFormFail(c, "create", productErrText(c, err))
@@ -443,14 +443,12 @@ func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
 	slug := strings.TrimSpace(c.PostForm("slug"))
 	logo := strings.TrimSpace(c.PostForm("logo"))
 	description := c.PostForm("description")
-	seoTitle := c.PostForm("seoTitle")
-	seoDescription := c.PostForm("seoDescription")
 	sortValue := parseIntOr(c.PostForm("sort"), 0)
+	// SEO 标题 / 描述**不提交**（nil = 不改），理由同分类。
 	req := &productdto.UpdateBrandReq{
 		ProjectID: projectID,
 		ID:        c.PostForm("id"), Name: &name, Slug: &slug, Logo: &logo,
-		Description: &description, SEOTitle: &seoTitle,
-		SEODescription: &seoDescription, Sort: &sortValue,
+		Description: &description, Sort: &sortValue,
 	}
 	if _, err := h.products.UpdateBrand(c.Request.Context(), req); err != nil {
 		h.brandFormFail(c, "update", productErrText(c, err))

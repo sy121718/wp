@@ -15,12 +15,18 @@ import (
 // categoryValues 分类的可绑定字段值（作者文本按 lang 取译文）。
 func (s *Service) categoryValues(ctx context.Context, lang string, e *productmodel.ProductCategoryEntity) map[string]string {
 	values := map[string]string{
-		"name":           e.Name,
-		"slug":           e.Slug,
-		"description":    e.Description,
-		"image":          e.Image,
-		"seoTitle":       e.SEOTitle,
-		"seoDescription": e.SEODescription,
+		"name":        e.Name,
+		"slug":        e.Slug,
+		"description": e.Description,
+		"image":       e.Image,
+		// SEO 标题 / 描述与「分类名 / 分类描述」**就是同一个东西**（2026-09-30 合并）：
+		// 分类名即 <title>、分类描述即 meta description（富文本由 presentation 的
+		// seoDescriptionText 去标签，不在这里另做一份）。键保留 —— 模板里绑
+		// {{category.seoTitle}} 的地方不用改，值就是分类名。
+		// product_categories.seo_title / seo_description 两列保留但不再暴露：
+		// 里面可能有编辑者认真写过的历史值，删列会丢数据。
+		"seoTitle":       e.Name,
+		"seoDescription": e.Description,
 	}
 	return s.translateFields(ctx, lang, productcontract.EntityTypeCategory, values)
 }
@@ -28,12 +34,15 @@ func (s *Service) categoryValues(ctx context.Context, lang string, e *productmod
 // brandValues 品牌的可绑定字段值。
 func (s *Service) brandValues(ctx context.Context, lang string, e *productmodel.ProductBrandEntity) map[string]string {
 	values := map[string]string{
-		"name":           e.Name,
-		"slug":           e.Slug,
-		"logo":           e.Logo,
-		"description":    e.Description,
-		"seoTitle":       e.SEOTitle,
-		"seoDescription": e.SEODescription,
+		"name":        e.Name,
+		"slug":        e.Slug,
+		"logo":        e.Logo,
+		"description": e.Description,
+		// 同分类：品牌名即 <title>、品牌描述即 meta description（2026-09-30 合并）。
+		// 键保留 —— 模板里绑 {{brand.seoTitle}} 的地方不用改，值就是品牌名。
+		// product_brands.seo_title / seo_description 两列保留但不再暴露。
+		"seoTitle":       e.Name,
+		"seoDescription": e.Description,
 	}
 	return s.translateFields(ctx, lang, productcontract.EntityTypeBrand, values)
 }

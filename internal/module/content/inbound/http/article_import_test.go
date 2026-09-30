@@ -56,12 +56,13 @@ func (failingContentService) Get(context.Context, *contentdto.GetReq) (*contentd
 
 func TestArticleImportDocumentCompiles(t *testing.T) {
 	data := map[string]any{
-		"title":          "文章标题（正文里的）",
-		"body":           `<h2>小节</h2><p>正文 <strong>加粗</strong></p><ul><li>列表项</li></ul><blockquote>引用</blockquote><hr><img src="/storage/image/a.webp" alt="图">`,
-		"excerpt":        "摘要",
+		"title":        "文章标题（正文里的）",
+		"body":         `<h2>小节</h2><p>正文 <strong>加粗</strong></p><ul><li>列表项</li></ul><blockquote>引用</blockquote><hr><img src="/storage/image/a.webp" alt="图">`,
+		"excerpt":      "摘要",
+		"focusKeyword": "主关键词",
+		// 遗留的 SEO 字段（2026-09-30 已与标题 / 摘要合并）：必须被忽略。
 		"seoTitle":       "SEO 标题优先于文章标题",
 		"seoDescription": "SEO 描述",
-		"focusKeyword":   "主关键词",
 	}
 	res, err := richdoc.HTMLToNodes(articleStr(data, "body"))
 	if err != nil {
@@ -76,11 +77,11 @@ func TestArticleImportDocumentCompiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("生成的文档不是合法 Page 文档：%v\n%s", err, doc)
 	}
-	if page.Settings.SEO.Title != "SEO 标题优先于文章标题" {
-		t.Errorf("SEO 标题应优先取 seoTitle，实际 %q", page.Settings.SEO.Title)
+	if page.Settings.SEO.Title != "文章标题（正文里的）" {
+		t.Errorf("SEO 标题应取文章标题，实际 %q", page.Settings.SEO.Title)
 	}
-	if page.Settings.SEO.Description != "SEO 描述" {
-		t.Errorf("SEO 描述应取 seoDescription，实际 %q", page.Settings.SEO.Description)
+	if page.Settings.SEO.Description != "摘要" {
+		t.Errorf("SEO 描述应取摘要，实际 %q", page.Settings.SEO.Description)
 	}
 	if page.Settings.SEO.FocusKeyword != "主关键词" {
 		t.Errorf("主关键词未带过去：%q", page.Settings.SEO.FocusKeyword)

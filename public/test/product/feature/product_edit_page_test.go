@@ -66,19 +66,17 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 
 	// 2. 保存：一次提交把各类字段都改一遍。
 	loc := editSaveLocation(t, engine, url.Values{
-		"projectId":      {f.projectID},
-		"id":             {created.ID},
-		"name":           {"编辑后"},
-		"slug":           {"after-edit"},
-		"subtitle":       {"副标题"},
-		"status":         {productenums.StatusPublished},
-		"unit":           {"件"},
-		"weight":         {"0.5"},
-		"defaultPrice":   {"88.50"},
-		"seoTitle":       {"SEO 标题"},
-		"seoDescription": {"SEO 描述"},
-		"images":         {"https://cdn.example.com/a.jpg\nhttps://cdn.example.com/b.jpg"},
-		"imageAlts":      {"图一\n图二"},
+		"projectId":    {f.projectID},
+		"id":           {created.ID},
+		"name":         {"编辑后"},
+		"slug":         {"after-edit"},
+		"subtitle":     {"副标题"},
+		"status":       {productenums.StatusPublished},
+		"unit":         {"件"},
+		"weight":       {"0.5"},
+		"defaultPrice": {"88.50"},
+		"images":       {"https://cdn.example.com/a.jpg\nhttps://cdn.example.com/b.jpg"},
+		"imageAlts":    {"图一\n图二"},
 	})
 	// PRG：回编辑页（而不是回列表）并带成功回执（?done= 已过读侧白名单）。
 	if !strings.HasPrefix(loc, "/admin/products/edit?") || !strings.Contains(loc, "product="+created.ID) {
@@ -104,8 +102,10 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	if got.DefaultPrice == nil || *got.DefaultPrice != 88.5 {
 		t.Fatalf("默认价格未落库：%v", got.DefaultPrice)
 	}
-	if got.SEOTitle != "SEO 标题" || got.SEODescription != "SEO 描述" {
-		t.Fatalf("SEO 两栏未落库：%q / %q", got.SEOTitle, got.SEODescription)
+	// SEO 标题 / 描述已与商品名 / 副标题合并（2026-09-30）：表单里没有这两栏，
+	// 提交里塞了也不会被采纳 —— 这两列保持原值（这里是新建商品，两列为空）。
+	if got.SEOTitle != "" || got.SEODescription != "" {
+		t.Fatalf("SEO 两栏不该由表单写入：%q / %q", got.SEOTitle, got.SEODescription)
 	}
 	if len(got.Images) != 2 {
 		t.Fatalf("图集应按行切成 2 条，实际 %v", got.Images)

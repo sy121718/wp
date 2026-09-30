@@ -164,7 +164,7 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{
-		"第一篇", "hello-world", "摘要一", "SEO 标题", "SEO 描述", "关键词",
+		"第一篇", "hello-world", "摘要一", "关键词",
 		"/storage/image/cover.webp",
 		// 正文编辑器与商品分类 / 品牌描述共用 partials/rich_editor.html：隐藏 input（name=body）、
 		// trix-editor、扩展入口与扩展样式都由片段给出 —— 这里钉住它们真的渲染出来了
@@ -182,6 +182,13 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("编辑页渲染结果缺少 %q", want)
+		}
+	}
+	// SEO 标题 / 描述已与标题 / 摘要合并（2026-09-30）：数据里遗留的同名字段
+	// 不该再被渲染成输入框（旧值仍可读，但编辑入口只有一个）。
+	for _, gone := range []string{`name="seoTitle"`, `name="seoDescription"`, "SEO 标题", "SEO 描述"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("SEO 字段已合并，编辑页不该再出现 %q", gone)
 		}
 	}
 	// 页级动作归位（清单 02-L P1-8）：保存按钮必须在 .page-head 的 .page-actions 里，

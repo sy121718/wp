@@ -98,9 +98,13 @@
 
         {* 商品描述：库里是 {"html": "..."}（jsonb），表单里走富文本字段。
            字段名 descriptionHtml 而不是 description —— 表单给的是裸 HTML，
-           包装成 jsonb 对象在 handler 里做（见 product_edit_page.go）。 *}
-        <label class="form-label">{{ .["t"]("admin.products.label.description", "商品描述") }}</label>
-        {{yield richEditor(field="descriptionHtml", key="product", value=p.DescriptionHTML)}}
+           包装成 jsonb 对象在 handler 里做（见 product_edit_page.go）。
+           默认收起（2026-09-30）：富文本本体很高，而改描述是低频动作；收起时字段仍在
+           DOM 里、照常随表单提交（提交载体是富文本片段里的隐藏 input），展开只点一下标题。 *}
+        <details class="edit-fold">
+            <summary>{{ .["t"]("admin.products.label.description", "商品描述") }}</summary>
+            {{yield richEditor(field="descriptionHtml", key="product", value=p.DescriptionHTML)}}
+        </details>
 
         <label class="form-label" for="product-edit-slug">{{ .["t"]("admin.products.col.slug", "URL 段") }}</label>
         <input type="text" class="form-input" id="product-edit-slug" name="slug" value="{{p.Slug}}"
@@ -143,23 +147,30 @@
            商品名就是网页标题、副标题就是 meta description —— 见 entity_source_fields.go 的说明。
            这里不再有这两个输入框，编辑者不用把同一个标题抄两遍。 *}
 
-        {* 主图（default_image）：契约里一直支持（CreateReq.DefaultImage / UpdateReq 的 *string
-           「不传即不改」），构建期还拿它当**图集为空时的兜底图** —— 但页面上从来没有这个字段，
-           于是运营只能通过导入或接口设它。补上：单图媒体字段，走媒体库。
-           放在图集之前，与「先定主图、再排图集」的语义顺序一致。 *}
-        <label class="form-label">{{ .["t"]("admin.products.label.defaultImage", "主图") }}</label>
-        {{yield mediaField(field="defaultImage", key="product", value=p.DefaultImage,
-            pickLabel=tr("admin.common.media.pick", "媒体库"),
-            clearLabel=tr("admin.common.media.clear", "清除"))}}
-
-        {* 图集：多图控件（缩略图网格 + 媒体库多选 + 逐张 alt）。原来是「一行一个地址」的
-           textarea —— 看不到图长什么样，也没有从媒体库挑的入口，敲错要等发布才发现。
-           alt 与图集**逐行对应**，所以它们合成一个控件（两个字段仍是分开提交的）。 *}
-        {{yield mediaGallery(field="images", altField="imageAlts", key="product", values=.ImagesText, alts=.ImageAltsText,
-            heading=tr("admin.products.label.images", "图集"),
-            addLabel=tr("admin.products.media.add", "添加图片"),
-            altPlaceholder=tr("admin.products.media.altPlaceholder", "这张图的 alt 文本"),
-            emptyLabel=tr("admin.products.media.empty", "还没有图片。点「添加图片」从媒体库里挑 —— 上传也在媒体库里做。"))}}
+        {* 主图与图集并排（2026-09-30）：两者都占一整行、各自带标题，竖排时平白多出两百多像素。
+           并排后左列是 180 方框的主图、右列是图集网格 —— 语义顺序不变（先主图后图集），
+           窄屏由 CSS 落回一栏。 *}
+        <div class="media-pair">
+            <div class="media-pair-item">
+                {* 主图（default_image）：契约里一直支持（CreateReq.DefaultImage / UpdateReq 的 *string
+                   「不传即不改」），构建期还拿它当**图集为空时的兜底图** —— 但页面上从来没有这个字段，
+                   于是运营只能通过导入或接口设它。补上：单图媒体字段，走媒体库。 *}
+                <label class="form-label">{{ .["t"]("admin.products.label.defaultImage", "主图") }}</label>
+                {{yield mediaField(field="defaultImage", key="product", value=p.DefaultImage,
+                    pickLabel=tr("admin.common.media.pick", "媒体库"),
+                    clearLabel=tr("admin.common.media.clear", "清除"))}}
+            </div>
+            <div class="media-pair-item">
+                {* 图集：多图控件（缩略图网格 + 媒体库多选 + 逐张 alt）。原来是「一行一个地址」的
+                   textarea —— 看不到图长什么样，也没有从媒体库挑的入口，敲错要等发布才发现。
+                   alt 与图集**逐行对应**，所以它们合成一个控件（两个字段仍是分开提交的）。 *}
+                {{yield mediaGallery(field="images", altField="imageAlts", key="product", values=.ImagesText, alts=.ImageAltsText,
+                    heading=tr("admin.products.label.images", "图集"),
+                    addLabel=tr("admin.products.media.add", "添加图片"),
+                    altPlaceholder=tr("admin.products.media.altPlaceholder", "这张图的 alt 文本"),
+                    emptyLabel=tr("admin.products.media.empty", "还没有图片。点「添加图片」从媒体库里挑 —— 上传也在媒体库里做。"))}}
+            </div>
+        </div>
 
         {* 属性组：勾选列表（可选值由服务端给出）。勾选态来自商品当前引用的 id；
            一个都不勾 = 解绑全部（服务端按整体替换处理）。 *}

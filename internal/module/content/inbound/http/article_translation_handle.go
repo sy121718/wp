@@ -70,11 +70,12 @@ func (h *articleTranslationHandle) SetContentWriter(w *i18n.ContentWriter) { h.w
 
 // articleFieldLabel 字段的展示名（工作台用）：字段名 → {i18n key, 中文兜底}。
 var articleFieldLabel = map[string]articleTranslationText{
-	"title":          {"admin.article.translations.field.title", "标题"},
-	"body":           {"admin.article.translations.field.body", "正文"},
-	"excerpt":        {"admin.article.translations.field.excerpt", "摘要"},
-	"seoTitle":       {"admin.article.translations.field.seoTitle", "SEO 标题"},
-	"seoDescription": {"admin.article.translations.field.seoDescription", "SEO 描述"},
+	"title":   {"admin.article.translations.field.title", "标题"},
+	"body":    {"admin.article.translations.field.body", "正文"},
+	"excerpt": {"admin.article.translations.field.excerpt", "摘要"},
+	// seoTitle / seoDescription 的登记已删（2026-09-30 字段合并）：两个字段的值
+	// 分别是 title / excerpt 的别名，已从可翻译字段清单里去掉（contentcontract），
+	// 这里留着标签表只会让「有个能翻的 SEO 标题」看起来还存在。
 }
 
 // articleTranslationText 一条待取词文案（key + 中文兜底）。
