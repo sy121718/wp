@@ -49,15 +49,19 @@
             });
             rows.forEach(function (row) { rowById[row.getAttribute('data-perm-row')] = row; });
 
+            /* disabled 的勾选框（管理员的「来自角色」继承项）不参与任何联动：
+               它们**不提交**，勾了也不产生授权、取消了也不撤销任何东西 —— 让它们跟着联动
+               只会制造「看起来取消了、其实没有」的假象。 */
             function checkAncestors(box) {
                 var parent = box.getAttribute('data-parent');
                 while (parent && parent !== '0' && boxById[parent]) {
-                    boxById[parent].checked = true;
+                    if (!boxById[parent].disabled) { boxById[parent].checked = true; }
                     parent = boxById[parent].getAttribute('data-parent');
                 }
             }
 
             function uncheckSubtree(box) {
+                if (box.disabled) { return; }
                 box.checked = false;
                 (childBoxes[box.getAttribute('data-id')] || []).forEach(uncheckSubtree);
             }
@@ -92,7 +96,7 @@
             function refreshCount() {
                 if (!countEl) { return; }
                 var n = 0;
-                boxes.forEach(function (box) { if (box.checked) { n++; } });
+                boxes.forEach(function (box) { if (box.checked && !box.disabled) { n++; } });
                 var tpl = countEl.getAttribute('data-selected-template') || '已选 {n} 项';
                 countEl.textContent = tpl.replace('{n}', String(n));
             }
@@ -147,7 +151,7 @@
             });
 
             function setAll(checked) {
-                boxes.forEach(function (box) { box.checked = checked; });
+                boxes.forEach(function (box) { if (!box.disabled) { box.checked = checked; } });
                 refreshPartial();
             }
 

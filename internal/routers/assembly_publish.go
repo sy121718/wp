@@ -170,7 +170,14 @@ func (a *assembly) buildPublishingModules() {
 	if setter, ok := blockSvc.(interface {
 		SetStalePropagator(func(ctx context.Context, blockID string) error)
 	}); ok {
-		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService, presentationSvc))
+		// presentation 的重建器单独取：契约接口只声明 MarkStaleByDependency，RebuildStale 是
+		// pipeline 端口。断言而不是「断言失败就只标记」—— 静默降级会退化成
+		// 「改了页眉块、自动发布实例永远停在旧字节且无报错」（与下面扇出注册处同一取舍）。
+		presentationRebuilder, ok := presentationSvc.(pipeline.StaleRebuilder)
+		if !ok {
+			panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+		}
+		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService, presentationSvc, presentationRebuilder))
 	}
 	// 删除保护的引用检查（审计 ARCH-02）：五条来源在 BlockReferenceChecker 内合并。
 	// 断言而不是「命中即跳过」：漏接的表现是「删除保护整体失效或只覆盖一部分」，
@@ -437,7 +444,12 @@ func (a *assembly) startRuntimeTasks() {
 		logger.Scene("init").Error(verr, "组件版本比对失败（不阻断启动）")
 	} else if len(marked) > 0 {
 		logger.Scene("init").With("count", len(marked)).With("registryVersion", builder.RegistryVersion()).
-			Info("检测到组件已更新：相关页面已标记待重建（可经 RebuildStale 重建）")
+			Info("检测到组件已更新：相关页面已标记待重建并开始自动重建")
+		// 自动重建（异步）：部署新组件后全站产物都是旧组件渲染的字节，这一批**没有别的事件
+		// 会再来触发**（组件是编译进二进制的，不存在「下次保存」）—— 只标记的结果就是
+		// 一直躺在待重建清单里等一个不存在的人工入口。异步执行，不拖启动链。
+		// 单次上限与溢出入队由 RebuildStale 自己处理（超限部分交给构建队列）。
+		rebuildStaleAsync("init", pageService, marked)
 	}
 	// 自动发布实例的同一条启动收敛（报告 ARCH-03）：它同样保存 registry_version，
 	// 但此前没有任何入口据此比对 —— 组件升级后商品详情页一直是旧字节，后台看不到 stale、
@@ -448,7 +460,8 @@ func (a *assembly) startRuntimeTasks() {
 		logger.Scene("init").Error(verr, "自动发布实例组件版本比对失败（不阻断启动）")
 	} else if len(marked) > 0 {
 		logger.Scene("init").With("count", len(marked)).With("registryVersion", builder.RegistryVersion()).
-			Info("检测到组件已更新：相关自动发布实例已标记待重建（可经 RebuildStale 重建）")
+			Info("检测到组件已更新：相关自动发布实例已标记待重建并开始自动重建")
+		rebuildStaleAsync("init", presentationStaleRebuilder(presentationSvc), marked)
 	}
 	// 依赖 fan-out（PIPE-3，docs/03-pipeline.md §8.2）：内容实体变更 → 按依赖表
 	// 反查受影响产物 → 精确标记 stale（不再是全站标记）→ 自动重建。
@@ -634,4 +647,17 @@ func (a *assembly) mountPublicFace() {
 	// NoRoute 由 setupStaticFace 一次性装成「站点中间件链 → 静态文件 → 站点 404」。
 	// 在这里再设一次会把它整个覆盖掉（gin 的 NoRoute 是单槽位），
 	// 表现为首页与全部站内页 404 —— 而控制面看着一切正常。
+}
+
+// presentationStaleRebuilder 取自动发布实例的重建器。
+//
+// 为什么需要它：presentation 契约只声明了 MarkStaleByDependency，RebuildStale 属于
+// pipeline 端口；而「标记了却不重建」正是审计 CQ-019 记的那类静默降级
+// （内容陈旧、日志干净）。断言失败即 panic —— 装配期缺件应当早失败。
+func presentationStaleRebuilder(svc presentationcontract.PresentationService) pipeline.StaleRebuilder {
+	r, ok := svc.(pipeline.StaleRebuilder)
+	if !ok {
+		panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
+	}
+	return r
 }

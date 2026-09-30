@@ -52,6 +52,7 @@ func (s *Service) MenuPage(ctx context.Context, page, limit int, keyword string)
 		resp.Rows = append(resp.Rows, admindto.MenuPageRow{
 			ID: item.ID, Title: item.Title, Path: item.Path, Type: item.Type, ParentID: item.ParentID,
 			ParentTitle: parentTitle, Status: item.Status, SortOrder: item.SortOrder, Remark: remark, Icon: item.Icon,
+			PermissionCodes: item.PermissionCodes,
 		})
 	}
 	return resp, nil
@@ -76,7 +77,7 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 	if err := validateComponentBinding(req.Type, req.Component); err != nil {
 		return err
 	}
-	if err := s.validatePermissionBinding(req.Type, req.PermissionCode, ctx); err != nil {
+	if err := s.validatePermissionBinding(req.Type, req.PermissionCodes, ctx); err != nil {
 		return err
 	}
 	if err := s.validateMenuPlacement(ctx, req.ParentID, req.Type); err != nil {
@@ -97,14 +98,13 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 		IsPublic:    req.IsPublic,
 		SortOrder:   req.SortOrder,
 	}
-	if req.PermissionCode != "" {
-		entity.PermissionCode = &req.PermissionCode
-	}
 	if req.Remark != "" {
 		entity.Remark = &req.Remark
 	}
 
-	if err := s.mm.Create(ctx, entity); err != nil {
+	// 菜单行与它的权限码集合在同一事务内写入（见 model.CreateWithPermissionCodes）：
+	// 只写菜单行会让新菜单在授权树里勾不出来，而列表里看着一切正常。
+	if err := s.mm.CreateWithPermissionCodes(ctx, entity, req.PermissionCodes); err != nil {
 		return err
 	}
 	invalidateMenuCache()
@@ -140,7 +140,7 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 	if err := validateComponentBinding(req.Type, req.Component); err != nil {
 		return err
 	}
-	if err := s.validatePermissionBinding(req.Type, req.PermissionCode, ctx); err != nil {
+	if err := s.validatePermissionBinding(req.Type, req.PermissionCodes, ctx); err != nil {
 		return err
 	}
 	if err := s.validateMenuPlacement(ctx, req.ParentID, req.Type); err != nil {
@@ -159,18 +159,15 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 	entity.IsHidden = req.IsHidden
 	entity.IsPublic = req.IsPublic
 	entity.SortOrder = req.SortOrder
-	if req.PermissionCode != "" {
-		entity.PermissionCode = &req.PermissionCode
-	} else {
-		entity.PermissionCode = nil
-	}
 	if req.Remark != "" {
 		entity.Remark = &req.Remark
 	} else {
 		entity.Remark = nil
 	}
 
-	if err := s.mm.Update(ctx, entity); err != nil {
+	// 权限码单独走一张表（迁移 470）：旧列 permission_code 由 model 写「集合首码」，
+	// 这里不再手工赋值 —— 两处都写会得到两个真源，而它们迟早会分叉。
+	if err := s.mm.UpdateWithPermissionCodes(ctx, entity, req.PermissionCodes); err != nil {
 		return err
 	}
 	invalidateMenuCache()
@@ -201,7 +198,7 @@ func (s *Service) MenuDelete(ctx context.Context, req *admindto.MenuDeleteReq) e
 		}
 	}
 
-	_, err := s.mm.SoftDelete(ctx, req.IDs)
+	_, err := s.mm.SoftDeleteWithPermissionCodes(ctx, req.IDs)
 	if err != nil {
 		return err
 	}
@@ -232,13 +229,22 @@ func validateComponentBinding(menuType int, component string) error {
 	return nil
 }
 
-// validatePermissionBinding 校验 type 与 permission_code 的绑定约束。
-func (s *Service) validatePermissionBinding(menuType int, code string, ctx context.Context) error {
+// validatePermissionBinding 校验 type 与权限码集合的绑定约束。
+//
+// 迁移 470 之后一个菜单可以挂多个码，规则与单值时代一致，只是逐码展开：
+//   - 目录 / iframe / 外链：一个码都不许绑（它们的可见性由 is_public 或父级决定）；
+//   - 菜单 / 按钮：至少要绑一个码，否则这个节点在授权树里勾了也换不出任何 API 权限 ——
+//     「勾了却没授权」是静默失败里最难查的一类；每个码都必须存在且启用。
+//
+// 判据用 model 的 DedupePermissionCodes，与写入侧同一份实现（两份去重迟早分叉）。
+func (s *Service) validatePermissionBinding(menuType int, codes []string, ctx context.Context) error {
+	unique := adminmodel.DedupePermissionCodes(codes)
+
 	// 目录、iframe、外链不得绑定权限
 	if menuType == adminmodel.MenuTypeDirectory ||
 		menuType == adminmodel.MenuTypeIframe ||
 		menuType == adminmodel.MenuTypeExternal {
-		if code != "" {
+		if len(unique) > 0 {
 			return errors.New(adminenums.ErrCodeNotBindable)
 		}
 		return nil
@@ -246,16 +252,18 @@ func (s *Service) validatePermissionBinding(menuType int, code string, ctx conte
 
 	// 菜单和按钮必须绑定权限
 	if menuType == adminmodel.MenuTypeMenu || menuType == adminmodel.MenuTypeButton {
-		if code == "" {
+		if len(unique) == 0 {
 			return errors.New(adminenums.ErrCodeRequired)
 		}
-		// 校验 code 存在且启用（同包直调）
-		ok, err := s.ExistsEnabledCode(ctx, code)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New(adminenums.ErrCodeNotEnabled)
+		// 逐码校验存在且启用（同包直调）：停用的码照挂会让「勾了保存却没生效」无从解释。
+		for _, code := range unique {
+			ok, err := s.ExistsEnabledCode(ctx, code)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return errors.New(adminenums.ErrCodeNotEnabled)
+			}
 		}
 	}
 	return nil
@@ -328,31 +336,27 @@ func menuDefaultStatus(status int) int {
 
 // menuEntityToDetailResp MenuEntity 转 DetailResp。
 func menuEntityToDetailResp(e *adminmodel.MenuEntity) *admindto.MenuDetailResp {
-	code := ""
-	if e.PermissionCode != nil {
-		code = *e.PermissionCode
-	}
 	remark := ""
 	if e.Remark != nil {
 		remark = *e.Remark
 	}
 	return &admindto.MenuDetailResp{
-		ID:             e.ID,
-		PermissionCode: code,
-		Title:          e.Title,
-		TitleKey:       e.TitleKey,
-		ParentID:       e.ParentID,
-		Type:           e.Type,
-		Path:           e.Path,
-		Component:      e.Component,
-		ExternalURL:    e.ExternalURL,
-		Icon:           e.Icon,
-		Status:         e.Status,
-		IsHidden:       e.IsHidden,
-		IsPublic:       e.IsPublic,
-		IsSystem:       e.IsSystem,
-		SortOrder:      e.SortOrder,
-		Remark:         remark,
+		ID:              e.ID,
+		PermissionCodes: e.PermissionCodes,
+		Title:           e.Title,
+		TitleKey:        e.TitleKey,
+		ParentID:        e.ParentID,
+		Type:            e.Type,
+		Path:            e.Path,
+		Component:       e.Component,
+		ExternalURL:     e.ExternalURL,
+		Icon:            e.Icon,
+		Status:          e.Status,
+		IsHidden:        e.IsHidden,
+		IsPublic:        e.IsPublic,
+		IsSystem:        e.IsSystem,
+		SortOrder:       e.SortOrder,
+		Remark:          remark,
 	}
 }
 
@@ -420,10 +424,6 @@ func buildMenuTree(list []adminmodel.MenuEntity) []admindto.MenuTreeNode {
 
 // menuEntityToNode MenuEntity 转树节点 MenuTreeNode。
 func menuEntityToNode(m adminmodel.MenuEntity) admindto.MenuTreeNode {
-	code := ""
-	if m.PermissionCode != nil {
-		code = *m.PermissionCode
-	}
 	remark := ""
 	if m.Remark != nil {
 		remark = *m.Remark
@@ -433,21 +433,21 @@ func menuEntityToNode(m adminmodel.MenuEntity) admindto.MenuTreeNode {
 		titleKey = *m.TitleKey
 	}
 	return admindto.MenuTreeNode{
-		ID:             m.ID,
-		PermissionCode: code,
-		Title:          m.Title,
-		TitleKey:       titleKey,
-		ParentID:       m.ParentID,
-		Type:           m.Type,
-		Path:           m.Path,
-		Component:      m.Component,
-		ExternalURL:    m.ExternalURL,
-		Icon:           m.Icon,
-		Status:         m.Status,
-		IsHidden:       m.IsHidden,
-		IsPublic:       m.IsPublic,
-		IsSystem:       m.IsSystem,
-		SortOrder:      m.SortOrder,
-		Remark:         remark,
+		ID:              m.ID,
+		PermissionCodes: m.PermissionCodes,
+		Title:           m.Title,
+		TitleKey:        titleKey,
+		ParentID:        m.ParentID,
+		Type:            m.Type,
+		Path:            m.Path,
+		Component:       m.Component,
+		ExternalURL:     m.ExternalURL,
+		Icon:            m.Icon,
+		Status:          m.Status,
+		IsHidden:        m.IsHidden,
+		IsPublic:        m.IsPublic,
+		IsSystem:        m.IsSystem,
+		SortOrder:       m.SortOrder,
+		Remark:          remark,
 	}
 }

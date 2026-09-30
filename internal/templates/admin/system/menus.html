@@ -54,13 +54,13 @@
         <div class="table-wrap table-scroll" tabindex="0" role="region">
             <table class="data-table">
                 <thead>
-                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th class="col-icon">{{ .["t"]("admin.menus.col.icon", "图标") }}</th><th>{{ .["t"]("admin.menus.col.title", "标题") }}</th><th>{{ .["t"]("admin.menus.field.parent", "上级菜单") }}</th><th>{{ .["t"]("admin.menus.col.type", "类型") }}</th><th>{{ .["t"]("admin.menus.col.path", "路径") }}</th><th>{{ .["t"]("admin.menus.col.status", "状态") }}</th><th>{{ .["t"]("admin.menus.col.sort", "排序") }}</th><th>{{ .["t"]("admin.menus.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.menus.col.actions", "操作") }}</th></tr>
+                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th class="col-icon">{{ .["t"]("admin.menus.col.icon", "图标") }}</th><th>{{ .["t"]("admin.menus.col.title", "标题") }}</th><th>{{ .["t"]("admin.menus.field.parent", "上级菜单") }}</th><th>{{ .["t"]("admin.menus.col.type", "类型") }}</th><th>{{ .["t"]("admin.menus.col.permissions", "权限点") }}</th><th>{{ .["t"]("admin.menus.col.path", "路径") }}</th><th>{{ .["t"]("admin.menus.col.status", "状态") }}</th><th>{{ .["t"]("admin.menus.col.sort", "排序") }}</th><th>{{ .["t"]("admin.menus.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.menus.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
                 {{if len(.Rows) == 0}}
-                {* 空态整行：colspan = 9 个业务列（图标 / 标题 / 上级 / 类型 / 路径 / 状态 / 排序 / 备注 / 操作）
+                {* 空态整行：colspan = 10 个业务列（图标 / 标题 / 上级 / 类型 / 权限点 / 路径 / 状态 / 排序 / 备注 / 操作）
                    + 有删除权限时多出来的勾选框列。 *}
-                <tr><td colspan="{{if canDelete}}10{{else}}9{{end}}" class="cell-wrap">
+                <tr><td colspan="{{if canDelete}}11{{else}}10{{end}}" class="cell-wrap">
                     <div class="empty-state">
                         {{keyword := ""}}{{if isset(.FilterKeyword)}}{{keyword = .FilterKeyword}}{{end}}
                         {{if keyword}}<p class="empty-title">{{tr("admin.menus.filter_empty", "没有匹配的菜单项。")}}</p>{{else}}<p class="empty-title">{{ .["t"]("admin.menus.empty", "还没有菜单，点右上「新建菜单」创建一个。") }}</p>{{end}}
@@ -81,6 +81,12 @@
                 <td>{{if isset(.PermSet["menu:update"])}}<button type="button" class="row-title-link" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{m.Title}}</button>{{else}}{{m.Title}}{{end}}</td>
                 <td class="text-mute">{{if m.ParentTitle}}{{m.ParentTitle}}{{else}}—{{end}}</td>
                 <td>{{if m.Type == 1}}<span class="badge badge-mute">{{tr("admin.menus.type.dir", "目录")}}</span>{{else if m.Type == 2}}<span class="badge">{{tr("admin.menus.type.menu", "菜单")}}</span>{{else if m.Type == 3}}<span class="badge badge-mute">{{tr("admin.menus.type.button", "按钮")}}</span>{{else if m.Type == 4}}<span class="badge badge-mute">iframe</span>{{else if m.Type == 5}}<span class="badge badge-mute">{{tr("admin.menus.type.link", "外链")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.menus.type.unknown", "未知")}}</span>{{end}}</td>
+                {* 权限点：一个菜单可以挂多个码（迁移 470），逐个渲染成 code 徽标；
+                   没绑的显示破折号（目录 / iframe / 外链是常态，不是缺陷）。 *}
+                {* isset 包裹是硬要求：直接渲染模板的单测用手写 map 造行数据，缺这个键时
+                   len() 会让整页渲染中断（Jet: argument is not a valid value），
+                   而它的表现是 500 / htmx 不 swap —— 与「这一列没显示」完全不是一个量级。 *}
+                <td class="cell-perms">{{if isset(m.PermissionCodes) && len(m.PermissionCodes) > 0}}{{range _, code := m.PermissionCodes}}<code class="perm-code">{{code}}</code>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                 <td class="text-mute">{{if m.Path}}{{m.Path}}{{end}}</td>
                 <td>{{if m.Status == 1}}<span class="badge badge-success">{{tr("admin.menus.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.menus.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{m.SortOrder}}</td>
@@ -151,6 +157,7 @@
             <label class="form-label">{{ .["t"]("admin.menus.field.path", "路径") }}</label>
             <input type="text" name="path" class="form-input" maxlength="100" placeholder="{{ .["t"]("admin.menus.field.path_placeholder", "如：/admin/menus") }}">
         </div>
+        {{include "menu_perm_field.html"}}
         <div class="form-group">
             <label class="form-label">{{ .["t"]("admin.menus.field.icon", "图标") }}</label>
             <div data-icon-field></div>

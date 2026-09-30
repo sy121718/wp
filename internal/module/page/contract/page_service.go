@@ -339,11 +339,17 @@ type PageService interface {
 	// RefreshStructureForTheme 把主题的页眉/页脚块绑定批量合入挂在该主题下
 	// 全部页面的 settings.structure（主题换绑全局块后调用）。
 	RefreshStructureForTheme(ctx context.Context, themeID string, structure json.RawMessage) error
-	// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用）。
-	MarkStaleForTheme(ctx context.Context, themeID string) error
+	// MarkStaleForTheme 把挂在该主题下全部页面标记为待重建（页眉/页脚块内容变更后调用），
+	// 返回**本次真正命中**的页面 ID（RETURNING id 的回读结果，不是入参回显）。
+	//
+	// 为什么要把 ids 透出来：调用方（块/主题变更传播器）拿到它才能**立刻重建**。
+	// 「只标记、重建靠人工触发」的那条不对称正是「改了页眉块，后台显示待重建、
+	// 线上一个月不变」的来源 —— 而人工入口当时并不存在。
+	MarkStaleForTheme(ctx context.Context, themeID string) (ids []string, err error)
 	// MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
 	// 自选绑定该块的页面标记为待重建（块内容变更后调用，与 MarkStaleForTheme 互补）。
-	MarkStaleForBlock(ctx context.Context, blockID string) error
+	// 返回值语义与 MarkStaleForTheme 逐字相同。
+	MarkStaleForBlock(ctx context.Context, blockID string) (ids []string, err error)
 	// MarkStaleByRegistryVersion 把「产物由旧组件产出」的页面标记为待重建。
 	//
 	// 触发时机：服务启动时。组件编译进二进制，部署新组件后没有运行时事件能提示

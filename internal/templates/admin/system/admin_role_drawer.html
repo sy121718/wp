@@ -1,0 +1,72 @@
+{* admin/system/admin_role_drawer.html — 给管理员分配角色的**抽屉片段**。
+
+   形态：管理员列表行的「分配角色」按钮按需 GET（data-drawer-url=/admin/administrators/roles/drawer）
+   并由抽屉插进 .drawer-body。三条硬约束与 role_permissions.html 同源（ui/drawer.js 的 fragmentRoot 校验）：
+    ① 根元素唯一且带 data-drawer-fragment，并且自身或后代含 <form>；
+    ② 片段里**不能出现** script / style / link / meta / iframe / svg / template —— 所以没有内联脚本，
+       这一屏也不需要联动（角色之间互相独立，没有父子关系）；
+    ③ 所有 href / src / action / hx-* 必须同源。
+
+   为什么值得一个抽屉：管理员列表一行就是一个人，「他能用哪些角色」属于这一行的属性。
+   此前这条链路（/api/admin/role/list|save）只有服务端实现，没有任何界面调用方 ——
+   改一个人的角色只能直接写 sys_casbin_rule。
+
+   保存的两条出口（与角色权限抽屉同一套分档）：
+     · htmx 失败 → 200 + 本片段自身（错误槽 + 用**本次提交**勾选重渲染的清单），输入不丢；
+     · htmx 成功 → 200 + 成功态（就地回执 + 「关闭」）；
+     · 原生提交（禁用 JS）走 303 回管理员列表，成功 / 失败都带 ?err=。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{saved := false}}
+{{if isset(.Saved)}}{{saved = .Saved}}{{end}}
+<div data-drawer-fragment class="perm-drawer">
+    {{if saved}}
+    {* 成功态：角色绑定不体现在管理员列表的任何一列上，必须就地给一句回执，
+       否则用户关掉抽屉后无从判断这次保存是否生效。 *}
+    <p class="badge badge-success" role="status">{{tr("admin.admins.role.saved", "角色已保存")}}</p>
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary" data-drawer-close>{{tr("shell.action.close", "关闭")}}</button>
+    </div>
+    {{else}}
+    {* 错误槽在 <form> 之外、host 之内：放进 form 里会被下一次提交整块换掉。 *}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    <p class="perm-intro">{{tr("admin.admins.role.intro", "勾选该管理员拥有的角色。保存按当前勾选做全量替换：没勾的会被解除绑定。角色带来的权限在「菜单权限」抽屉里显示为「来自角色」且不可在那里取消。")}}</p>
+
+    <form method="post" action="/admin/administrators/roles/save"
+          hx-post="/admin/administrators/roles/save" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="user_id" value="{{.Account.ID}}">
+
+        {{if len(.Rows) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{tr("admin.admins.role.empty", "还没有可分配的角色，先去「角色管理」建一个。")}}</p>
+            {* 空态动作指向真正的下一步：角色清单来自角色管理，这里什么都分不了。
+               不给「保存」之类的按钮 —— 空清单保存下去等于清空该账号的全部角色绑定。 *}
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/roles">{{tr("admin.admins.role.empty.action", "去角色管理")}}</a>
+            </div>
+        </div>
+        {{else}}
+        <div class="role-pick">
+            {{range _, r := .Rows}}
+            <label class="role-pick-row">
+                <input type="checkbox" class="perm-box" name="role_codes" value="{{r.Code}}"{{if r.Checked}} checked{{end}}>
+                <code class="perm-code">{{r.Code}}</code>
+                <span class="perm-picker-name">{{r.Name}}</span>
+                {* 已绑定但角色表里已经查不到（被删或禁用后 g 策略还在）：照样渲染并勾上，
+                   否则管理员一保存就把这条绑定静默删掉了，而界面上什么都没显示过。 *}
+                {{if r.Missing}}<span class="badge badge-warning">{{tr("admin.admins.role.missing", "未知角色")}}</span>{{else if r.Status == 0}}<span class="badge badge-mute">{{tr("admin.roles.status.disabled", "禁用")}}</span>{{end}}
+            </label>
+            {{end}}
+        </div>
+        {{end}}
+
+        <div class="form-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{tr("admin.admins.role.save", "保存角色")}}</button>
+        </div>
+    </form>
+    {{end}}
+</div>

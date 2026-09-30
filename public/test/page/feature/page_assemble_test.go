@@ -97,7 +97,7 @@ func TestPageAssembleInlinesHeaderBlock(t *testing.T) {
 	}
 
 	// stale 传播：标记后页面应变为待重建。
-	if err = svc.MarkStaleForTheme(ctx, theme.ID); err != nil {
+	if _, err = svc.MarkStaleForTheme(ctx, theme.ID); err != nil {
 		t.Fatalf("标记 stale 失败: %v", err)
 	}
 	staled, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: page.ID})

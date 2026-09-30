@@ -43,7 +43,7 @@
     }
 
     // 模块按依赖顺序加载：util 最先，toolbar 依赖 block-level 的 LEVELS。
-    var MODULES = ['util.js', 'block-level.js', 'dialog.js', 'horizontal-rule.js', 'table.js', 'accordion.js', 'toolbar.js'];
+    var MODULES = ['util.js', 'block-level.js', 'dialog.js', 'horizontal-rule.js', 'table.js', 'accordion.js', 'image.js', 'attachment.js', 'toolbar.js'];
 
     function loadOne(name) {
         return new Promise(function (resolve) {

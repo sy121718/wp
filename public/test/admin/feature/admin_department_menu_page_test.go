@@ -22,7 +22,9 @@ import (
 func newDepartmentMenuPageEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 	t.Helper()
 	svc := adminservice.NewService(db)
-	h := adminhttp.NewAdminPagesHandle(nil, nil, nil, svc, svc, nil)
+	// perms 也要给：菜单页在渲染时取权限点候选（菜单绑定权限点的复选清单，迁移 470），
+	// 少传一个契约会让那一页在渲染期 panic（nil 接口调用）。
+	h := adminhttp.NewAdminPagesHandle(nil, nil, svc, svc, svc, nil)
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath: support.NewComponentTestConfig(t), GinMode: gin.TestMode, InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {

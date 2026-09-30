@@ -433,7 +433,7 @@ func createMenuWithPerm(t *testing.T, e *env, _ uint64, code string) uint64 {
 		Type:           adminmodel.MenuTypeMenu,
 		Path:           "/test/menu",
 		Component:      "view.testMenu",
-		PermissionCode: code,
+		PermissionCodes: []string{code},
 		Status:         1,
 	})
 	wantErr(t, err, "")

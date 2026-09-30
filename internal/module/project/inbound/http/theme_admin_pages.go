@@ -8,6 +8,7 @@ package projecthttp
 // project 反向持有 page 契约是装配层注入的编排点（brief 明确保留）。
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -225,8 +226,22 @@ func (h *themeAdminHandle) refreshThemePages(c *gin.Context, themeID string, set
 	if err := h.pages.RefreshStructureForTheme(ctx, themeID, structureJSON); err != nil {
 		return http.StatusInternalServerError
 	}
-	if err := h.pages.MarkStaleForTheme(ctx, themeID); err != nil {
+	pageIDs, err := h.pages.MarkStaleForTheme(ctx, themeID)
+	if err != nil {
 		return http.StatusInternalServerError
+	}
+	// 标记完立刻重建（异步）：主题设置一改，挂它的页面产物就全部落后于设置 ——
+	// 与块变更、组件更新同一条口径。同步做会把「保存主题设置」这个请求拖到
+	// 整站构建完才返回（页面数量随站点规模线性增长）。
+	if len(pageIDs) > 0 {
+		batch := append([]string(nil), pageIDs...)
+		go func() {
+			// Background：重建要活过发起它的请求。
+			if err := h.pages.RebuildStale(context.Background(), batch); err != nil {
+				logger.Scene("theme").With("theme_id", themeID).With("count", len(batch)).
+					Error(err, "主题变更后的自动重建失败（页面保持待重建，等下次触发）")
+			}
+		}()
 	}
 	return 0
 }

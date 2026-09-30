@@ -1082,9 +1082,11 @@ button.row-title-link {
     background: rgba(15, 23, 42, .45);
 }
 .media-pick-mask[hidden] { display: none; }
+/* 三栏面板（左分类 + 中网格 + 右详情）：960px 放不下三栏，宽度与高度都要放开。
+   窄屏（<=900px）退回两栏 —— 分类树收进顶部、详情改在网格下方。 */
 .media-pick-panel {
     display: flex; flex-direction: column;
-    width: min(960px, 100%); max-height: min(80vh, 720px);
+    width: min(1200px, 100%); height: min(88vh, 860px);
     background: var(--sky-c-bg, #fff);
     border-radius: 12px;
     box-shadow: 0 20px 48px rgba(0, 0, 0, .24);
@@ -1098,18 +1100,34 @@ button.row-title-link {
 .media-pick-search { flex: 1 1 auto; min-width: 0; }
 .media-pick-grid {
     flex: 1 1 auto; overflow-y: auto; min-height: 160px;
-    display: grid; gap: var(--ui-sp-sm);
-    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    display: grid;
+    /* 行列都用**显式值**，不引用变量：这一段的样式直接决定「看得清不清楚」，
+       不该把它的生效取决于别处某个自定义属性有没有被定义/被覆盖。 */
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    /* 行高按内容走、行不拉伸：
+       aspect-ratio 在 grid item 上遇到「行高由轨道决定」时会失效 ——
+       图片于是各按自身比例出高矮，看起来像挤在一起。这两条把它钉死。 */
+    grid-auto-rows: min-content;
+    align-content: start;
     padding: var(--ui-sp-md);
 }
+/* 格子 = 正方形缩图 + 一行文件名。
+   aspect-ratio 从格子移到 img 上：格子本身现在是「图 + 名称」的纵向盒子，
+   再锁 1/1 会把名称行挤进图里。 */
 .media-pick-cell {
     appearance: none; -webkit-appearance: none;
-    padding: 0; aspect-ratio: 1 / 1; overflow: hidden;
+    display: flex; flex-direction: column;
+    padding: 0; height: auto; min-height: 0;
+    overflow: hidden;
     background: var(--sky-c-surface, #f4f5f6);
-    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border: 1px solid var(--sky-c-border-strong, #c9ced6);
     border-radius: 8px; cursor: pointer;
 }
-.media-pick-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-pick-cell img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; }
+/* 文件名：单行、超出省略；完整名称由 title 提供（hover 可见）。
+   不换行是刻意的 —— 换行会让同一行的格子高度不一致，网格看起来就散了。 */
+.media-pick-name { display: block; width: 100%; padding: 4px 6px; font-size: 11px; line-height: 1.5; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--sky-c-text-mute, #6b7280); background: #fff; border-top: 1px solid var(--sky-c-border, #e5e7eb); }
 @media (hover: hover) {
     .media-pick-cell:hover { border-color: var(--sky-c-primary, #3d444f); }
 }
@@ -1125,3 +1143,62 @@ button.row-title-link {
     font-size: 13px; color: var(--sky-c-text-mute, #6b7280);
 }
 .media-pick-spacer { flex: 1 1 auto; }
+
+/* ===== 媒体选择面板的三区（ui/mediafield.js）=====
+   与媒体库列表页同构：左分类树 / 中网格 / 右详情。 */
+.media-pick-body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 260px; flex: 1 1 auto; min-height: 0; }
+/* 详情栏只在选中图片后才占列：它的 hidden 属性挡得住自身渲染，挡不住 grid 轨道 ——
+   否则打开面板时右侧永远空着一块 260px。 */
+.media-pick-body:has(> [data-pick-detail][hidden]) { grid-template-columns: 200px minmax(0, 1fr); }
+.media-pick-body.is-no-tree:has(> [data-pick-detail][hidden]) { grid-template-columns: minmax(0, 1fr); }
+.media-pick-body.is-no-tree:not(:has(> [data-pick-detail][hidden])) { grid-template-columns: minmax(0, 1fr) 260px; }
+.media-pick-tree { display: flex; flex-direction: column; gap: 6px; padding: var(--ui-sp-sm); border-right: 1px solid var(--sky-c-border, #e5e7eb); overflow-y: auto; }
+.media-pick-tree-search { width: 100%; }
+.media-pick-tree-box { display: flex; flex-direction: column; gap: 2px; }
+.media-pick-tree-node { appearance: none; -webkit-appearance: none; width: 100%; text-align: left; padding: 6px 8px; border: 0; border-radius: 6px; background: none; font-size: 13px; cursor: pointer; color: inherit; }
+.media-pick-tree-node.is-selected { background: var(--sky-c-surface, #f4f5f6); font-weight: 600; }
+@media (hover: hover) { .media-pick-tree-node:hover { background: var(--sky-c-surface, #f4f5f6); } }
+.media-pick-main { display: flex; flex-direction: column; min-height: 0; }
+.media-pick-detail { padding: var(--ui-sp-md); border-left: 1px solid var(--sky-c-border, #e5e7eb); overflow-y: auto; }
+.media-pick-detail-img { width: 100%; border-radius: 8px; background: var(--sky-c-surface, #f4f5f6); }
+.media-pick-detail-kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: var(--ui-sp-md) 0; font-size: 12px; }
+.media-pick-detail-kv dt { color: var(--sky-c-text-mute, #6b7280); }
+.media-pick-detail-kv dd { margin: 0; overflow-wrap: anywhere; }
+.media-pick-detail-act { width: 100%; }
+@media (max-width: 900px) {
+    .media-pick-body { grid-template-columns: minmax(0, 1fr); }
+    .media-pick-tree { border-right: 0; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); max-height: 30vh; }
+    .media-pick-detail { border-left: 0; border-top: 1px solid var(--sky-c-border, #e5e7eb); }
+}
+
+/* ===== 单图字段：图像框（ui/mediafield.js）=====
+   空态是虚线框 + 一句提示，点击即开媒体库；有图时换成缩略图。
+   宽度跟着字段走（min(100%, 320px)），不让一个图片框独占整行。 */
+/* 图像框的公共观感（单图框 / 多图格子 / 多图的「＋」框共用）：
+   同一套虚实线、圆角、悬停反馈 —— 三处的差别只在尺寸与内容，
+   不共用的话改一次要改三处，很快它们就会长得不一样。 */
+.media-field-box,
+.media-gallery-cell,
+.media-gallery-addbox {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; overflow: hidden;
+    background: var(--sky-c-surface, #f4f5f6);
+    border: 1px solid var(--sky-c-border-strong, #c9ced6);
+    border-radius: 8px; cursor: pointer;
+}
+/* 单图框比多图格子大一点（主图/封面要看清），但不再占掉半个表单宽度。 */
+.media-field-box { width: min(100%, 180px); aspect-ratio: 1 / 1; border-style: dashed; }
+.media-field-box img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.media-field-empty { color: var(--sky-c-text-mute, #6b7280); font-size: 13px; }
+.media-field-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; width: min(100%, 320px); }
+.media-field-url { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-field.is-filled .media-field-box { border-style: solid; }
+/* hidden 属性只是 UA 的 display:none —— 本块里任何显式 display 都会盖掉它：
+   img 的 display:block 会让空框里塞进一个 100% 宽的占位（提示文字被挤到框外），
+   .btn 的 inline-flex 会让空态的「清除」照样显示。这两条把它钉回去。 */
+.media-field [hidden] { display: none !important; }
+@media (hover: hover) { .media-field-box:hover { border-color: var(--sky-c-primary, #3d444f); } }
+
+/* 多图网格末尾的「＋」框：与图片格子等宽等高，虚线、不带文件名行。 */
+.media-gallery-addbox { appearance: none; -webkit-appearance: none; aspect-ratio: 1 / 1; font-size: 22px; color: var(--sky-c-text-mute, #6b7280); background: transparent; border-style: dashed; }
+@media (hover: hover) { .media-gallery-addbox:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); } }

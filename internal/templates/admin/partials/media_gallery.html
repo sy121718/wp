@@ -1,0 +1,35 @@
+{* admin/partials/media_gallery.html — 多图字段片段（缩略图网格 + 媒体库多选 + 逐张 alt）。
+
+ * 与单图那条路（media_field.html）的分工：那个管「一张图」，这个管「一组图」。
+ * 两者共用同一个媒体库弹窗（ui/mediafield.js），只是多图走多选模式 —— 上传与选择
+ * **只有媒体库一个入口**，控件自己不持有文件输入。
+
+ * 真值来源是两个隐藏域（图集字段 + alt 字段），DOM 只是它们的视图；后端字段形态
+ *（每行一个地址 / 每行一个 alt）因此完全不用改。
+
+ * 用法：页面顶部 import 本片段，表单里 yield 一次 mediaGallery —— 参数是
+ *「图集字段名 / alt 字段名 / 唯一 key / 图集值 / alt 值 / 标题文案 / 添加按钮文案 /
+ *  alt 占位文案 / 空态文案」，写法与调用点一致（示例见 admin/product/product_edit.html）。
+ *
+ * 标题由**本片段**渲染（而不是调用点自己写 label）：添加按钮要在标题那一行的右上角，
+ * 两者必须同处一个 flex 行 —— 拆到两个文件里各写一半，改版式时必然对不齐。
+
+ * 注意：本文件注释里**不写完整的控件标签字面量** —— admin_form_base_test.go 的扫描器
+ * 不剥 Jet 注释标记，会把例子当成真控件计入「裸控件」基线。同理不写控制块标签的完整成对写法。 *}
+{{block mediaGallery(field, altField, key, values, alts, heading, addLabel, altPlaceholder, emptyLabel)}}<div class="media-gallery" data-media-gallery>
+    {* 标题与添加按钮同一行：按钮在**右上角**、用主色 —— 它原来是网格下方一个幽灵按钮，
+       而图集为空时网格是空的，「添加图片」挤在空网格下面完全不像主操作。 *}
+    <div class="media-gallery-head">
+        <span class="form-label">{{heading}}</span>
+        <button type="button" class="btn btn-sm btn-primary" data-gallery-add>{{addLabel}}</button>
+    </div>
+    {* 网格末尾的「＋」框与标题行的按钮是同一个动作（点哪儿都能加）：
+       期望的形态就是「缩略图一排，后面跟一个空的添加框」。 *}
+    <div class="media-gallery-grid" data-gallery-grid>
+        <button type="button" class="media-gallery-addbox" data-gallery-addbox aria-label="{{addLabel}}">＋</button>
+    </div>
+    <p class="media-gallery-empty" data-gallery-empty>{{emptyLabel}}</p>
+    <input type="hidden" name="{{field}}" value="{{values}}" data-gallery-values>
+    <input type="hidden" name="{{altField}}" value="{{alts}}" data-gallery-alts>
+    <span class="media-gallery-hint" data-gallery-alt-placeholder hidden>{{altPlaceholder}}</span>
+</div>{{end}}

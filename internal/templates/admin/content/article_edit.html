@@ -45,6 +45,22 @@
             {{if .TemplateEditURL != ""}}
             <a class="btn" href="{{.TemplateEditURL}}">{{ .["t"]("admin.article.edit.editTemplate", "编辑详情页模板") }}</a>
             {{end}}
+            {* SEO 评测（原右栏常驻卡 → 抽屉）：编辑页两栏该留给「正文 + 预览」，
+               而评测是按需看的（写完一段才想看分）。按钮上带当前分数，不点开也知道水平；
+               分数取自**已保存**的数据，看未保存改动按抽屉里的「重新评分」。 *}
+            {{if !.EditUnavailable}}
+            <button type="button" class="btn"
+                    data-drawer-url="/admin/articles/seo/drawer?id={{.Form.ID}}"
+                    data-drawer-title="{{ .["t"]("admin.article.edit.seoScoreHeading", "SEO 评测") }}">{{ .["t"]("admin.article.edit.seoScoreHeading", "SEO 评测") }}{{if .Score.OK}} <span class="badge">{{.Score.Total}} {{.Score.Grade}}</span>{{end}}</button>
+            {{end}}
+
+            {* 可视化编辑入口：目标区块一直在右栏最下方，但没有任何入口指向它 ——
+               只写「编辑详情页模板」会让人以为「文章本身不能可视化编辑」。
+               锚点跳转即可（区块与锚点 id 都在同一页上，不需要 JS）。 *}
+            {{if .["ImportAvailable"]}}
+            <a class="btn" href="#article-visual">{{ .["t"]("admin.article.edit.visualHeading", "可视化编辑") }}</a>
+            {{end}}
+
             {* ==== 页级动作（清单 02-L P1-8）：保存 / 发布从卡内提到页头 ====
                保存按钮用 form="article-form" 关联左列表单 —— 表单归属与字段一个都没动，
                按钮只是搬了位置（与 mail_automation_edit.html 的保存按钮同款做法，零 JS）。 *}
@@ -83,7 +99,11 @@
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.unavailable", "文章信息暂时不可用；以下是本次提交内容，请保留后返回列表重新打开文章。") }}</p>
     {{end}}
 
-    <div class="article-edit-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start">
+    {* 两栏：左编辑 / 右预览。右列占 35%（不是固定像素）—— 预览是**按真实桌面视口渲染
+       再等比缩小**的，栏越宽 → 缩放比越大 → 越看得清；固定 400px 时缩略只有 0.27，字小到没法用。
+       原来这里是一层 repeat(auto-fit, minmax(340px,1fr)) 的内联 grid：它按容器宽自动铺列，
+       于是「两栏」实际是「自动列数里的一格」—— 换成显式的 panes，列宽才是可控的那 35%。 *}
+    <div class="article-edit-panes">
         <form method="post" class="article-edit-main"
               action="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
               id="article-form">
@@ -92,7 +112,11 @@
             {{if !.IsNew}}<input type="hidden" name="id" value="{{form.ID}}">{{end}}
 
             <section class="card card-body">
-                <h2>{{ .["t"]("admin.article.edit.bodyHeading", "正文") }}</h2>
+                {* 正文区默认展开、可整块收起（原生 details，零 JS）——写长文时要腾出左栏看预览，
+                   而收起只需点一下标题。用 <details open> 而不是自己写切换：原生元素自带键盘
+                   （Enter/Space）与触屏语义，也不用为「展开状态」维护一份 JS 状态。 *}
+                <details class="article-body-fold" open>
+                    <summary class="fold-title">{{ .["t"]("admin.article.edit.bodyHeading", "正文") }}</summary>
                 <label class="form-label" for="article-title">{{ .["t"]("admin.article.edit.titleLabel", "标题") }}</label>
                 <input class="form-input" id="article-title" type="text" name="title"
                        value="{{form.Title}}" placeholder="{{ .["t"]("admin.article.edit.titlePlaceholder", "文章标题") }}"{{if .["InvalidField"] == "title"}} aria-invalid="true" aria-describedby="article-edit-error"{{end}} required>
@@ -146,9 +170,7 @@
                    裸文本框的形态让运营既看不到填的图，也只能手敲 URL（敲错发布后才发现）。 *}
                 {{yield mediaField(field="featuredImage", key="article", value=form.FeaturedImage,
                     pickLabel=tr("admin.common.media.pick", "媒体库"),
-                    clearLabel=tr("admin.common.media.clear", "清除"),
-                    emptyLabel=tr("admin.common.media.empty", "未选择图片"),
-                    placeholder=tr("admin.article.edit.coverPlaceholder", "/storage/image/... 或完整地址"))}}
+                    clearLabel=tr("admin.common.media.clear", "清除"))}}
             </section>
 
             <section class="card card-body">
@@ -178,6 +200,7 @@
                 <textarea class="form-input" id="article-seo-desc" name="seoDescription" rows="3" data-counter="155"
                           placeholder="{{ .["t"]("admin.article.edit.seoDescPlaceholder", "留空则按摘要评测") }}">{{form.SEODescription}}</textarea>
                 <span class="field-counter" data-counter-out="article-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
+                </details>
             </section>
 
             {{if .EditUnavailable}}</fieldset>{{end}}
@@ -189,44 +212,8 @@
         </form>
 
         <aside class="article-edit-side">
-            <section class="card card-body">
-                <h2>{{ .["t"]("admin.article.new.previewHeading", "实时预览") }}
-                    <span class="help">
-                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.new.previewHint", "正文改动约 0.2 秒后同步到这里。预览在独立文档里渲染（白底正文排版），后台的主题样式不会影响它 —— 看到的接近访客最终看到的。") }}</span>
-                    </span>
-                </h2>
-                <iframe id="article-live-preview" class="article-preview-frame" sandbox=""
-                        title="{{ .["t"]("admin.article.new.previewHeading", "实时预览") }}"
-                        style="width:100%;min-height:420px;border:1px solid var(--border,#d0d7de);border-radius:6px;background:#fff;"></iframe>
-            </section>
-            <section class="card card-body">
-                <h2>{{ .["t"]("admin.article.edit.seoScoreHeading", "SEO 评测") }}
-                    <span class="help">
-                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.seoScoreLead", "评测覆盖四个维度：") }}<strong>{{ .["t"]("admin.article.edit.seoScoreBasic", "基础") }}</strong>{{ .["t"]("admin.article.edit.seoScoreBasicTail", "（标题/描述/URL）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreContent", "内容") }}</strong>{{ .["t"]("admin.article.edit.seoScoreContentTail", "（字数/段落/句长可读性）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreKeywords", "关键词") }}</strong>{{ .["t"]("admin.article.edit.seoScoreKeywordsTail", "（密度/出现位置）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreLinks", "链接与图片") }}</strong>{{ .["t"]("admin.article.edit.seoScoreLinksTail", "（内链数/锚文本/图片 alt）。") }}<br><br><strong>{{ .["t"]("admin.article.edit.canonicalStrong", "canonical 与结构化数据不由你填") }}</strong>{{ .["t"]("admin.article.edit.canonicalTail", "：发布文章详情页时，系统会按实例的线上路径写 canonical，并按文章类型输出 JSON-LD。评测里的这两项因此恒为达标 —— 它们标出来只是说明「这页产物有这些」，不是待办。") }}</span>
-                    </span>
-                </h2>
-                {* 「重新评分」从原保存卡搬到这里（清单 02-L P1-8）：分数就渲染在正下方，
-                   动作与结果同栏相邻（原本挂在跨栏的保存卡上，离分数一屏远）。
-                   hx-include 走的是选择器、与按钮位置无关：仍读左列 form#article-form 的
-                   title / body / excerpt / focusKeyword / seoTitle / seoDescription
-                   （Trix 的隐藏 input name=body 也在那张表单里）；hx-target 仍指向本卡下方的
-                   #article-seo-score，落点一个字节没变。 *}
-                {{if !.IsNew && !.EditUnavailable}}
-                <div class="action-row">
-                    <button type="button" class="btn"
-                            hx-post="/admin/articles/score" hx-include="#article-form"
-                            hx-target="#article-seo-score" hx-swap="innerHTML">{{ .["t"]("admin.article.edit.rescore", "重新评分") }}</button>
-                    <span class="help">
-                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.rescoreHint", "「重新评分」只算分，不保存 —— 先看分数再决定要不要改，改完再保存。评分是提示性的，") }}<strong>{{ .["t"]("admin.article.edit.rescoreHintStrong", "不会拦住保存") }}</strong>{{ .["t"]("admin.article.edit.rescoreHintTail", "：草稿先存下来是常态。") }}</span>
-                    </span>
-                </div>
-                {{end}}
-                <div id="article-seo-score">{{include "../../fragments/seo_score.html"}}</div>
-            </section>
-
+            {* 发布卡移到右栏最上：它回答的是「这一页现在是什么状态」（线上路径 / 待重建 / 未发布），
+               而状态该在动手之前看到 —— 原来它排在预览下方，要滚到右下角才知道自己这页还没上线。 *}
             <section class="card card-body">
                 <h2>{{ .["t"]("admin.article.edit.publishHeading", "发布") }}</h2>
                 {{if .["Published"]}}
@@ -303,8 +290,39 @@
                 <p class="badge badge-warning" role="alert">{{.PublishHint}}</p>
                 {{end}}
             </section>
-
             <section class="card card-body">
+                {* 编辑页给的是**详情页真实形态**（详情页模板渲染的预览帧），不是正文回显 ——
+                   正文回显照不出模板的任何东西（以前那版只有白底排版，看不出发布后长什么样）。
+                   代价：只反映**已保存**的数据，改完正文要先保存再刷新。 *}
+                <h2 class="card-title">{{ .["t"]("admin.article.edit.previewRealHeading", "详情页预览") }}
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.previewRealHint", "这里用详情页模板渲染这篇文章，看到的就是访客看到的样子。它只反映**已保存**的内容：改完正文先点保存，再点下面的「刷新预览」。") }}</span>
+                    </span>
+                </h2>
+                {{if .IsNew}}
+                <p class="page-sub">{{ .["t"]("admin.article.preview.needSave", "保存这篇文章后，这里会显示它的详情页真实形态。") }}</p>
+                {{else}}
+                {* iframe 带 name，刷新用 <a target=…> 而不是按钮 + JS：浏览器原生就把这次导航
+                   放进 iframe（不刷新整页），既不引脚本也不用维护状态。 *}
+                {* 缩略看**完整形态**（iframe 按 1440 宽渲染再等比缩小，缩放比由 ui/preview-thumb.js 算）——
+                   窄视口塞桌面布局只会看到页面的一条，那不是「预览」而是「局部」。 *}
+                <div class="preview-thumb" data-preview-thumb data-preview-height="1600" data-preview-zoom="{{ .["t"]("admin.article.edit.previewRealHeading", "详情页预览")}}" role="button" tabindex="0">
+                    <iframe id="article-preview-frame" name="article-preview-frame" sandbox="allow-same-origin"
+                            src="/admin/articles/preview-frame?id={{form.ID}}"
+                            title="{{ .["t"]("admin.article.edit.previewRealHeading", "详情页预览") }}"></iframe>
+                </div>
+                <div class="action-row">
+                    <a class="btn btn-ghost" href="/admin/articles/preview-frame?id={{form.ID}}" target="article-preview-frame">{{ .["t"]("admin.article.edit.previewRefresh", "刷新预览") }}</a>
+                    <a class="btn btn-ghost" href="/admin/articles/preview-frame?id={{form.ID}}" target="_blank" rel="noopener">{{ .["t"]("admin.article.edit.previewOpenFull", "新标签打开（1:1）") }}</a>
+                </div>
+                {{end}}
+            </section>
+            {* SEO 评测卡已移入抽屉（页头按钮是入口）：这一栏只留「实时预览」与「发布」——
+               写文章时一直要看的是正文与预览，评测是按需看的。 *}
+
+
+            <section class="card card-body" id="article-visual">
                 <h2>{{ .["t"]("admin.article.edit.visualHeading", "可视化编辑") }}
                     <span class="help">
                         <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
@@ -349,5 +367,4 @@
    入口幂等（见 rich-editor/index.js 顶部），第二次执行负责在 Trix 就绪后补启动。 *}
 <script src="/static/vendor/trix/trix.umd.js"></script>
 <script src="/static/js/rich-editor/index.js"></script>
-<script src="/static/js/rich-editor/live-preview.js"></script>
 {{end}}

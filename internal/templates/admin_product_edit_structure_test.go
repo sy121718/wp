@@ -28,7 +28,9 @@ import (
 var productEditProtocolFields = []string{
 	"csrf_token", "projectId", "id",
 	"name", "subtitle", "slug", "sku", "status", "defaultPrice", "unit", "weight",
-	"seoTitle", "seoDescription", "images", "imageAlts",
+	// seoTitle / seoDescription 已合并进 name 与 subtitle（2026-09-30），表单不再提交它们 ——
+	// 清单挪掉这两项是跟着**行为**走，不是放宽判据：其余字段一个都没少。
+	"images", "imageAlts",
 	"attributeIds", "categoryIds", "primaryCategoryId", "brandId", "tagIds",
 }
 
@@ -138,16 +140,19 @@ func TestProductEditListCardTitlesUseCardTitle(t *testing.T) {
 	}
 }
 
-// TestProductEditLowFrequencyBlocksFolded ② 两个低频只读块收进折叠区，且折叠不丢字段。
+// TestProductEditLowFrequencyBlocksFolded ② 低频只读块收进折叠区，且折叠不丢字段。
+//
+// 「低频只读块」现在只剩**详情页模板**一个：SEO 检查已移入抽屉（页头按钮是入口）——
+// 抽屉同样满足这条判据的本意（不常驻、不占版面），只是换了容器。
 func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
-	root, _ := productEditRender(t)
+	root, raw := productEditRender(t)
 	stack := productEditStack(t, root)
 
 	folds := peAll(stack, func(n *html.Node) bool {
 		return peEl(n, "details") && peClass(n, "section-fold")
 	})
-	if len(folds) != 2 {
-		t.Fatalf("低频只读块应恰好 2 个折叠区（SEO 检查 / 详情页模板），实际 %d 个", len(folds))
+	if len(folds) != 1 {
+		t.Fatalf("低频只读块应恰好 1 个折叠区（详情页模板；SEO 检查已改抽屉），实际 %d 个", len(folds))
 	}
 	for i, f := range folds {
 		var summary *html.Node
@@ -172,27 +177,17 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 		}
 	}
 
-	// 按内容定位两块：SEO 检查（seo-score 表单）与详情页模板（重新套用预设 / 回滚）。
-	seoForms := productEditFormByAction(stack, "/admin/products/seo-score")
-	if len(seoForms) != 1 {
-		t.Fatalf("SEO 检查表单应恰好一个，实际 %d 个", len(seoForms))
+	// SEO 检查已移入抽屉（页头按钮是入口）：这里只校验**入口**在、且评测表单不在页面上。
+	// 评测表单与结果容器本身在 admin/product/entity_seo_drawer.html，由模块内的用例守着
+	// （那边断言 hx-post / hx-target / 容器 id 三者一致）。
+	//
+	// 这条替代了原来的「SEO 表单应在折叠区内」：本判据的本意是「低频只读内容不得摊在页面上」，
+	// 抽屉满足它，只是换了容器 —— 所以断言入口与「不再常驻」两件事。
+	if !strings.Contains(raw, `data-drawer-url="/admin/products/seo/drawer?productId=`) {
+		t.Fatal("商品编辑页缺少 SEO 抽屉入口（评测面板的唯一落点）")
 	}
-	seoFold := peUp(seoForms[0], func(n *html.Node) bool { return peEl(n, "details") && peClass(n, "section-fold") })
-	if seoFold == nil {
-		t.Fatal("SEO 检查的表单应在折叠区内（否则「折叠」只是把标题收起来、内容还摊在外面）")
-	}
-	// 折叠的前提：这块里没有可见输入字段，折起来不会藏掉任何要填的东西。
-	for _, ctl := range peAll(seoFold, peIsFormControl) {
-		if peEl(ctl, "input") && strings.EqualFold(peAttr(ctl, "type"), "hidden") {
-			continue
-		}
-		t.Fatalf("SEO 检查折叠区内出现了可见输入控件 <%s type=%q name=%q>：折起来就会藏掉要填的字段",
-			ctl.Data, peAttr(ctl, "type"), peAttr(ctl, "name"))
-	}
-	// 提交按钮与结果容器都在折叠区内：展开即可提交并看到结果。
-	submitInFold(t, seoFold, "/admin/products/seo-score")
-	if len(peAll(seoFold, func(n *html.Node) bool { return peAttr(n, "id") == "product-seo-score-p1" })) != 1 {
-		t.Fatal("SEO 结果容器 #product-seo-score-p1 不在折叠区内（HTMX 换入的目标必须在同一块里）")
+	if n := len(productEditFormByAction(stack, "/admin/products/seo-score")); n != 0 {
+		t.Fatalf("SEO 评分表单不应再出现在编辑页上（实际 %d 个）：它属于抽屉片段", n)
 	}
 
 	// 详情页模板：两个 form-inline（重新套用预设 / 回滚文档）都在同一个折叠区内。
@@ -205,9 +200,8 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	if tplFold == nil {
 		t.Fatal("「重新套用预设」表单应在折叠区内")
 	}
-	if tplFold == seoFold {
-		t.Fatal("两块低频内容应各占一个折叠区，不该塞进同一个 <details>")
-	}
+	// （原「两块低频内容不该塞进同一个 details」的判据随 SEO 检查移入抽屉而消失：
+	//  折叠区现在只剩这一个，不存在「两块挤在一起」的可能。）
 	if got := peUp(rollback[0], func(n *html.Node) bool { return peEl(n, "details") && peClass(n, "section-fold") }); got != tplFold {
 		t.Fatal("「回滚文档」表单应在详情页模板那一个折叠区内")
 	}
@@ -311,13 +305,24 @@ func TestProductEditEveryContentCardHasTitle(t *testing.T) {
 	root, _ := productEditRender(t)
 	stack := productEditStack(t, root)
 
+	// 递归收集「顶层 card」（不再嵌在另一张 card 里）：两栏化之后表单卡与预览卡分别落在
+	// .product-edit-panes 与 .product-edit-aside 里，按 stack 的直接子级数会漏掉它们 ——
+	// 而漏掉的正是这次改动新增/搬走的东西，断言会静默失去意义。
 	var cards []*html.Node
-	for _, kid := range peKids(stack) {
-		if peClass(kid, "card") {
-			cards = append(cards, kid)
+	var collectCards func(n *html.Node)
+	collectCards = func(n *html.Node) {
+		for _, kid := range peKids(n) {
+			if peClass(kid, "card") {
+				cards = append(cards, kid)
+				continue
+			}
+			collectCards(kid)
 		}
 	}
-	const wantCards = 6 // 基本信息表单 / 变体 / 评分 / SEO 检查 / 详情页模板 / 捆绑构成
+	collectCards(stack)
+	// 基本信息表单 / 变体 / 评分 / 详情页模板 / 捆绑构成 / 详情页预览（右栏）。
+	// SEO 检查改抽屉后不再自占一卡。
+	const wantCards = 6
 	if len(cards) != wantCards {
 		t.Fatalf("商品编辑页应有 %d 张内容卡，实际 %d 张", wantCards, len(cards))
 	}

@@ -198,6 +198,7 @@ func (s *Service) RunPageBuildJob(ctx context.Context, req *pagedto.PageBuildJob
 	// intent=dependency 且 lang 为空（存量任务）时 langs 留空，交给计划按站点语言集合解析。
 	plan, perr := s.planPageRebuild(ctx, page, langs, intent)
 	if perr != nil {
+		s.markRebuildFailure(ctx, page, pageRebuildStagePlan)
 		return perr
 	}
 	if req.DraftVersion > 0 && req.DraftVersion != page.DraftVersion {
@@ -209,8 +210,13 @@ func (s *Service) RunPageBuildJob(ctx context.Context, req *pagedto.PageBuildJob
 	if rerr != nil {
 		logger.Scene("build").With("pageId", page.ID).With("lang", req.Lang).With("intent", plan.Intent).
 			With("rebuilt", rebuilt).With("published", published).Error(rerr, "构建任务执行失败（页面保持 stale）")
+		s.markRebuildFailure(ctx, page, pageRebuildStageBuild)
 		return rerr
 	}
+	// 成功**不**清失败痕迹：队列任务按语言拆行（迁移 307），一条任务成功不等于整页恢复 ——
+	// 若另一语言的同类任务还在失败，清了痕迹会让界面上那个失败消失，而页面其实仍然落后。
+	// 清空只由「整页语义」的重建负责（RebuildStale 的逐页循环）。这是刻意的偏差方向：
+	// 宁可让痕迹多留一会儿（界面会带上失败时刻，读的人自己看得旧），也不谎报恢复。
 	logger.Scene("build").With("pageId", page.ID).With("lang", req.Lang).With("intent", plan.Intent).
 		With("rebuilt", rebuilt).With("published", published).Info("构建任务执行完成")
 	return nil

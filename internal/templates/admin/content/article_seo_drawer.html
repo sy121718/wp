@@ -1,0 +1,44 @@
+{* admin/content/article_seo_drawer.html — 文章编辑页的 SEO 评测抽屉片段。
+
+   为什么从常驻卡改成抽屉：编辑页的两栏空间该留给「正文 + 预览」（写文章时一直要看的东西），
+   而评测是**按需看**的 —— 写完一段才想看分。常驻卡会一直占着右栏 1/3 的宽度，
+   而它在不看的时刻只是噪声。入口按钮上带当前分数，所以「不点开也知道水平」。
+
+   片段形状（ui/drawer.js 的 fragmentRoot 校验）：
+     · 唯一根元素 + data-drawer-fragment；
+     · **data-drawer-readonly** 表示「本片段不靠原生表单提交」—— 这里只有一个 htmx 按钮
+       （重新评分），没有任何需要 POST 的表单字段，塞一个空 form 只为过校验是给框架打工；
+     · 不能出现 script / style / link / meta / iframe / svg / template；
+     · 所有 hx-* 指向同源（这里是 /admin/articles/score）。
+
+   「重新评分」的 hx-include="#article-form" 指向**抽屉外面**的表单：htmx 的选择器不受
+   DOM 位置限制，所以它照旧带上左列表单里的 title / body / excerpt / focusKeyword /
+   seoTitle / seoDescription（Trix 的隐藏 input name=body 也在那张表单里）；
+   hx-target 指向本片段里的 #article-seo-score —— 刷新只落在这个抽屉内。
+
+   首屏分数来自**库里已保存的数据**（GET 那一刻的实体）；要看未保存改动后的分数，
+   按「重新评分」。这与改造前完全一致（常驻卡的首屏也是保存时的分数）。 *}
+{{tr := .["t"]}}
+<div data-drawer-fragment data-drawer-readonly class="perm-drawer">
+    <p class="perm-intro">{{ .["t"]("admin.article.edit.seoScoreLead", "评测覆盖四个维度：") }}<strong>{{ .["t"]("admin.article.edit.seoScoreBasic", "基础") }}</strong>{{ .["t"]("admin.article.edit.seoScoreBasicTail", "（标题/描述/URL）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreContent", "内容") }}</strong>{{ .["t"]("admin.article.edit.seoScoreContentTail", "（字数/段落/句长可读性）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreKeywords", "关键词") }}</strong>{{ .["t"]("admin.article.edit.seoScoreKeywordsTail", "（密度/出现位置）、") }}<strong>{{ .["t"]("admin.article.edit.seoScoreLinks", "链接与图片") }}</strong>{{ .["t"]("admin.article.edit.seoScoreLinksTail", "（内链数/锚文本/图片 alt）。") }}</p>
+    <p class="perm-intro"><strong>{{ .["t"]("admin.article.edit.canonicalStrong", "canonical 与结构化数据不由你填") }}</strong>{{ .["t"]("admin.article.edit.canonicalTail", "：发布文章详情页时，系统会按实例的线上路径写 canonical，并按文章类型输出 JSON-LD。评测里的这两项因此恒为达标 —— 它们标出来只是说明「这页产物有这些」，不是待办。") }}</p>
+
+    {* 重新评分：只算分、不保存。带上左列表单的当前值，所以「改完先看分」这条路径
+       与改造前逐字一致（按钮挪了位置，hx-include / hx-target 的语义没变）。 *}
+    {{if !.IsNew}}
+    <div class="action-row">
+        <button type="button" class="btn"
+                hx-post="/admin/articles/score" hx-include="#article-form"
+                hx-target="#article-seo-score" hx-swap="innerHTML">{{ .["t"]("admin.article.edit.rescore", "重新评分") }}</button>
+        <span class="help">
+            <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+            <span class="help-pop" role="tooltip">{{ .["t"]("admin.article.edit.rescoreHint", "「重新评分」只算分，不保存 —— 先看分数再决定要不要改，改完再保存。评分是提示性的，") }}<strong>{{ .["t"]("admin.article.edit.rescoreHintStrong", "不会拦住保存") }}</strong>{{ .["t"]("admin.article.edit.rescoreHintTail", "：草稿先存下来是常态。") }}</span>
+        </span>
+    </div>
+    {{end}}
+    <div id="article-seo-score">{{include "../../fragments/seo_score.html"}}</div>
+
+    <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+    </div>
+</div>

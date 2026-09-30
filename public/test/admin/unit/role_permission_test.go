@@ -32,7 +32,7 @@ func createPermMenu(t *testing.T, e *env, parent uint64, typ int, code string) u
 		SortOrder: 1,
 	}
 	if code != "" {
-		req.PermissionCode = code
+		req.PermissionCodes = []string{code}
 	}
 	// 菜单类型必须绑组件（目录与按钮不绑）：与生产写入侧的校验一致。
 	if typ == adminmodel.MenuTypeMenu {

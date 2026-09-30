@@ -119,13 +119,24 @@ type StalePageRow struct {
 	ActivePath *string   `gorm:"column:active_path"`
 	Stale      bool      `gorm:"column:stale"`
 	UpdatedAt  time.Time `gorm:"column:update_time"`
+	// RebuildFailedAt / RebuildFailedStage：这一页最近一次**自动重建失败**的时刻与阶段
+	// （重建成功后由 ClearRebuildFailure 清空）。
+	//
+	// 为什么值得单独记：stale 为 true 有两种截然不同的含义 —— 「还没轮到重建」
+	// 与「重建过了但失败了」。前者等着就好，后者要人去查日志。只给一个布尔值，
+	// 读的人只能靠猜，而这两件事的处置完全相反。
+	//
+	// 阶段是闭集：pageRebuildStagePlan / pageRebuildStageBuild（见 service 侧常量）。
+	RebuildFailedAt    *time.Time `gorm:"column:rebuild_failed_at"`
+	RebuildFailedStage *string    `gorm:"column:rebuild_failed_stage"`
 }
 
 // stalePageSelect 只读投影的 SELECT 片段（与 StalePageRow 的列一一对应）。
 //
 // 与 staleTitleExpr 同源：标题表达式只在这里出现一次。
 func stalePageSelect() string {
-	return "id, project_id, " + staleTitleExpr + " AS title, draft_path, active_path, stale, update_time"
+	return "id, project_id, " + staleTitleExpr + " AS title, draft_path, active_path, stale, update_time, " +
+		"rebuild_failed_at, rebuild_failed_stage"
 }
 
 // staleOrderClause 拼 ORDER BY 子句（列名是校验过的排序键，方向由布尔决定）。
@@ -216,4 +227,40 @@ func (m *Model) ListBriefsByIDs(ctx context.Context, projectID string, ids []str
 			Scan(&list).Error
 	})
 	return list, err
+}
+
+// MarkRebuildFailure 记下「这一页最近一次自动重建失败」的阶段与时刻。
+//
+// 只记阶段与时刻、**不记错误原文**：构建/发布错误里可能带 SQL、路径与内部标识，
+// 而后台页面不得直出内部错误（AGENTS.md 红线）—— 原文继续只进结构化日志（那里带 page_id）。
+//
+// 写入失败由调用方只记日志：为了记下失败原因而把重建流程打回去，是拿主流程换观测。
+// 作用域必填（pages 带 FORCE 策略）：漏了它这条 UPDATE 在换非超级角色后静默 0 行，
+// 表现是「重建一直失败，界面上却一切正常」。
+func (m *Model) MarkRebuildFailure(ctx context.Context, projectID, pageID, stage string, at time.Time) error {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return m.db.WithContext(ctx).Model(&PageEntity{}).
+		Where("id = ? AND project_id = ?", pageID, projectID).
+		Updates(map[string]any{
+			"rebuild_failed_at":    at.UTC(),
+			"rebuild_failed_stage": stage,
+		}).Error
+}
+
+// ClearRebuildFailure 清掉失败痕迹（重建成功后调用）。
+//
+// 成功必须清：留着上一次的失败时刻会让「刚重建成功」的页面继续显示「重建失败」，
+// 那比不显示更糟 —— 读的人会去查一个已经不存在的问题。
+func (m *Model) ClearRebuildFailure(ctx context.Context, projectID, pageID string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return ErrProjectRequired
+	}
+	return m.db.WithContext(ctx).Model(&PageEntity{}).
+		Where("id = ? AND project_id = ?", pageID, projectID).
+		Updates(map[string]any{
+			"rebuild_failed_at":    nil,
+			"rebuild_failed_stage": nil,
+		}).Error
 }

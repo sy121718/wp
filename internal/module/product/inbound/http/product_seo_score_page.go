@@ -41,121 +41,68 @@ func (h *productPageHandle) SetSeoTitleSources(pages pagecontract.PageService, c
 
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
 func (h *productPageHandle) ProductScorePanel(c *gin.Context) {
-	ctx := c.Request.Context()
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	id := strings.TrimSpace(c.PostForm("productId"))
-	if id == "" {
-		renderScoreEmpty(c, productenums.SEOEmptyMissingProduct, "缺少商品，无法评分")
+	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoreKindProduct,
+		strings.TrimSpace(c.PostForm("productId")), projectID)
+	if in == nil {
+		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
+		// 成功路径返回的也是零值 scoreView（OK=false），用它分流会把每次成功都判成空态。
+		renderScoreView(c, emptyView)
 		return
 	}
-	detail, err := h.products.Get(ctx, &productdto.GetReq{ID: id})
-	if err != nil || detail == nil {
-		renderScoreEmpty(c, productenums.SEOEmptyProductUnreadable, "读不到这个商品，无法评分")
-		return
-	}
-	// 线上路径与「产物是否已带 canonical / JSON-LD」是同一个问题的两面：
-	// 实例有线上路径 = 详情页真的发布过 = 构建期已注入这两样（presentation 的 applyEntitySEO）。
-	instPath := h.instancePath(ctx, entityTypeProduct, detail.ID)
-	in := &scoring.EntityPageInput{
-		Kind:           scoring.KindProduct,
-		Name:           detail.Name,
-		Subtitle:       detail.Subtitle,
-		Description:    entityPlainText(detail.Description),
-		SEOTitle:       detail.SEOTitle,
-		SEODescription: detail.SEODescription,
-		Slug:           detail.Slug,
-		URL:            firstNonEmptyString(instPath, slashSlug(detail.Slug)),
-		Images:         productPageImages(detail),
-		SpecNames:      variationSpecNames(detail),
-		ChildNames:     productCategoryNames(detail),
-		Locale:         requestScoreLang(c),
-		// 未发布时判假：评分器只该显示编辑者能改的东西，而这两项要发布一次才会出现。
-		HasCanonical: instPath != "",
-		HasSchema:    instPath != "",
-	}
-	h.renderEntityScore(c, in, projectID, detail.ID)
+	h.renderEntityScore(c, in, projectID, selfID)
 }
 
 // ProductCategoryScorePanel 商品分类页的编辑期评分（POST /admin/product-categories/seo-score）。
 func (h *productPageHandle) ProductCategoryScorePanel(c *gin.Context) {
-	ctx := c.Request.Context()
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	id := strings.TrimSpace(c.PostForm("id"))
-	if id == "" {
-		renderScoreEmpty(c, productenums.SEOEmptyMissingCategory, "缺少分类，无法评分")
+	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoreKindCategory,
+		strings.TrimSpace(c.PostForm("id")), projectID)
+	if in == nil {
+		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
+		// 成功路径返回的也是零值 scoreView（OK=false），用它分流会把每次成功都判成空态。
+		renderScoreView(c, emptyView)
 		return
 	}
-	node, err := h.products.GetCategory(ctx, &productdto.GetCategoryReq{ID: id})
-	if err != nil || node == nil {
-		renderScoreEmpty(c, productenums.SEOEmptyCategoryUnreadable, "读不到这个分类，无法评分")
-		return
-	}
-	instPath := h.instancePath(ctx, "product_category", node.ID)
-	in := &scoring.EntityPageInput{
-		Kind:           scoring.KindCategory,
-		Name:           node.Name,
-		Description:    node.Description,
-		SEOTitle:       node.SEOTitle,
-		SEODescription: node.SEODescription,
-		Slug:           node.Slug,
-		URL:            firstNonEmptyString(instPath, slashSlug(node.Slug)),
-		Images:         singleImage(node.Image, "hero"),
-		ChildNames:     categoryChildNames(ctx, h, projectID, node.ID),
-		Locale:         requestScoreLang(c),
-		HasCanonical:   instPath != "",
-		HasSchema:      instPath != "",
-	}
-	h.renderEntityScore(c, in, projectID, node.ID)
+	h.renderEntityScore(c, in, projectID, selfID)
 }
 
 // ProductBrandScorePanel 品牌页的编辑期评分（POST /admin/product-brands/seo-score）。
 func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
-	ctx := c.Request.Context()
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	id := strings.TrimSpace(c.PostForm("id"))
-	if id == "" {
-		renderScoreEmpty(c, productenums.SEOEmptyMissingBrand, "缺少品牌，无法评分")
+	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoreKindBrand,
+		strings.TrimSpace(c.PostForm("id")), projectID)
+	if in == nil {
+		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
+		// 成功路径返回的也是零值 scoreView（OK=false），用它分流会把每次成功都判成空态。
+		renderScoreView(c, emptyView)
 		return
 	}
-	brand, err := h.products.GetBrand(ctx, &productdto.GetBrandReq{ID: id})
-	if err != nil || brand == nil {
-		renderScoreEmpty(c, productenums.SEOEmptyBrandUnreadable, "读不到这个品牌，无法评分")
-		return
-	}
-	instPath := h.instancePath(ctx, "product_brand", brand.ID)
-	in := &scoring.EntityPageInput{
-		Kind:           scoring.KindBrand,
-		Name:           brand.Name,
-		Description:    brand.Description,
-		SEOTitle:       brand.SEOTitle,
-		SEODescription: brand.SEODescription,
-		Slug:           brand.Slug,
-		URL:            firstNonEmptyString(instPath, slashSlug(brand.Slug)),
-		Images:         singleImage(brand.Logo, "hero"),
-		Locale:         requestScoreLang(c),
-		HasCanonical:   instPath != "",
-		HasSchema:      instPath != "",
-	}
-	h.renderEntityScore(c, in, projectID, brand.ID)
+	h.renderEntityScore(c, in, projectID, selfID)
 }
 
-// renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个入口共用同一段流程）。
-func (h *productPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
+// entityScoreViewOf 算分 + 查 title 重复 → 片段视图（三个 POST 端点与抽屉共用同一段流程）。
+func (h *productPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Context,
+	in *scoring.EntityPageInput, projectID, selfID string) scoreView {
 	res := scoring.ScoreEntityPage(in)
 	tr := shell.TranslateFor(c)
-	dups := scoring.DuplicateTitles(scoring.EntityTitle(in), h.seoTitleIndex(c.Request.Context(), projectID, tr), selfID)
-	// t 是片段模板的取词函数：seo_score 片段不经 shell.Prepare，缺 t 时 Jet 把取词调用
-	// 求值成空串（不报错、不 500、不记日志）—— 整片提示会变成空白。
-	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": entityScoreView(tr, in, res, dups), "t": tr})
+	dups := scoring.DuplicateTitles(scoring.EntityTitle(in), h.seoTitleIndex(ctx, projectID, tr), selfID)
+	return entityScoreView(tr, in, res, dups)
 }
 
-// renderScoreEmpty 空态片段（读不到实体时不返回 500：面板显示一句可读的话即可）。
-//
-// key + 中文兜底由调用点给（形状与模块其它文案一致）：片段里的每一句话都要能按语言取词。
-func renderScoreEmpty(c *gin.Context, key, fallback string) {
+// renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
+func (h *productPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
 	tr := shell.TranslateFor(c)
-	msg := tr(key, fallback)
-	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": scoreView{Empty: msg}, "t": tr})
+	// t 是片段模板的取词函数：seo_score 片段不经 shell.Prepare，缺 t 时 Jet 把取词调用
+	// 求值成空串（不报错、不 500、不记日志）—— 整片提示会变成空白。
+	c.HTML(http.StatusOK, "fragments/seo_score",
+		gin.H{"Score": h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID), "t": tr})
+}
+
+// renderScoreView 渲染评分片段（空态与结果共用同一份模板：片段按 Score.OK 分流）。
+func renderScoreView(c *gin.Context, sv scoreView) {
+	tr := shell.TranslateFor(c)
+	c.HTML(http.StatusOK, "fragments/seo_score", gin.H{"Score": sv, "t": tr})
 }
 
 // entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。
@@ -336,3 +283,150 @@ func (h *productPageHandle) instancePath(ctx context.Context, entityType, entity
 	}
 	return strings.TrimSpace(inst.URLPath)
 }
+
+// 评分实体类型（取数分派共用同一组取值）。
+const (
+	scoreKindProduct  = "product"
+	scoreKindCategory = "category"
+	scoreKindBrand    = "brand"
+)
+
+// entityScoreInputOf 按实体类型取数并构造评分输入。
+//
+// 三个 POST 端点共用这一份：同一个实体不该有两种取数口径（抽屉与行内按钮各写一份，
+// 下场是「同一个商品在两处分数不同」）。
+//
+// 第三个返回值是**空态视图**（OK=false，Empty 已取好词）：非 OK 时调用方直接渲染它 ——
+// 三个端点因此共用同一条失败路径，不必各自拼一句文案。
+func (h *productPageHandle) entityScoreInputOf(ctx context.Context, c *gin.Context,
+	kind, id, projectID string) (in *scoring.EntityPageInput, selfID string, emptyView scoreView) {
+	tr := shell.TranslateFor(c)
+	emptyOf := func(key, fallback string) scoreView { return scoreView{Empty: tr(key, fallback)} }
+
+	if id == "" {
+		switch kind {
+		case scoreKindCategory:
+			return nil, "", emptyOf(productenums.SEOEmptyMissingCategory, "缺少分类，无法评分")
+		case scoreKindBrand:
+			return nil, "", emptyOf(productenums.SEOEmptyMissingBrand, "缺少品牌，无法评分")
+		default:
+			return nil, "", emptyOf(productenums.SEOEmptyMissingProduct, "缺少商品，无法评分")
+		}
+	}
+
+	switch kind {
+	case scoreKindCategory:
+		node, err := h.products.GetCategory(ctx, &productdto.GetCategoryReq{ID: id})
+		if err != nil || node == nil {
+			return nil, "", emptyOf(productenums.SEOEmptyCategoryUnreadable, "读不到这个分类，无法评分")
+		}
+		instPath := h.instancePath(ctx, "product_category", node.ID)
+		return &scoring.EntityPageInput{
+			Kind:           scoring.KindCategory,
+			Name:           node.Name,
+			Description:    node.Description,
+			SEOTitle:       node.SEOTitle,
+			SEODescription: node.SEODescription,
+			Slug:           node.Slug,
+			URL:            firstNonEmptyString(instPath, slashSlug(node.Slug)),
+			Images:         singleImage(node.Image, "hero"),
+			ChildNames:     categoryChildNames(ctx, h, projectID, node.ID),
+			Locale:         requestScoreLang(c),
+			HasCanonical:   instPath != "",
+			HasSchema:      instPath != "",
+		}, node.ID, scoreView{}
+
+	case scoreKindBrand:
+		brand, err := h.products.GetBrand(ctx, &productdto.GetBrandReq{ID: id})
+		if err != nil || brand == nil {
+			return nil, "", emptyOf(productenums.SEOEmptyBrandUnreadable, "读不到这个品牌，无法评分")
+		}
+		instPath := h.instancePath(ctx, "product_brand", brand.ID)
+		return &scoring.EntityPageInput{
+			Kind:           scoring.KindBrand,
+			Name:           brand.Name,
+			Description:    brand.Description,
+			SEOTitle:       brand.SEOTitle,
+			SEODescription: brand.SEODescription,
+			Slug:           brand.Slug,
+			URL:            firstNonEmptyString(instPath, slashSlug(brand.Slug)),
+			Images:         singleImage(brand.Logo, "hero"),
+			Locale:         requestScoreLang(c),
+			HasCanonical:   instPath != "",
+			HasSchema:      instPath != "",
+		}, brand.ID, scoreView{}
+
+	default:
+		detail, err := h.products.Get(ctx, &productdto.GetReq{ID: id})
+		if err != nil || detail == nil {
+			return nil, "", emptyOf(productenums.SEOEmptyProductUnreadable, "读不到这个商品，无法评分")
+		}
+		// 线上路径与「产物是否已带 canonical / JSON-LD」是同一个问题的两面：
+		// 实例有线上路径 = 详情页真的发布过 = 构建期已注入这两样（presentation 的 applyEntitySEO）。
+		instPath := h.instancePath(ctx, entityTypeProduct, detail.ID)
+		return &scoring.EntityPageInput{
+			Kind:        scoring.KindProduct,
+			Name:        detail.Name,
+			Subtitle:    detail.Subtitle,
+			Description: entityPlainText(detail.Description),
+			// 评分与前台对齐（2026-09-30 合并）：商品名即 <title>、副标题即 meta description。
+			// 若这里仍读 seo_title/seo_description，评分看到的标题会和实际发布出去的**不是同一个**——
+			// 编辑改商品名、分数不动，是最难解释的一种不一致。
+			SEOTitle:       detail.Name,
+			SEODescription: detail.Subtitle,
+			Slug:           detail.Slug,
+			URL:            firstNonEmptyString(instPath, slashSlug(detail.Slug)),
+			Images:         productPageImages(detail),
+			SpecNames:      variationSpecNames(detail),
+			ChildNames:     productCategoryNames(detail),
+			Locale:         requestScoreLang(c),
+			// 未发布时判假：评分器只该显示编辑者能改的东西，而这两项要发布一次才会出现。
+			HasCanonical: instPath != "",
+			HasSchema:    instPath != "",
+		}, detail.ID, scoreView{}
+	}
+}
+
+// EntitySeoDrawer 商品 SEO 评分抽屉片段（GET /admin/products/seo/drawer?productId=&project=）。
+//
+// 为什么只有商品走抽屉：抽屉基座（ui/drawer.js）是**单例** —— 打开新抽屉会替换当前那个。
+// 而分类 / 品牌的评分按钮活在**行内编辑抽屉**里（列表页的编辑模板 include 了表单片段），
+// 把那里改成跳转式抽屉，用户在分类编辑到一半点「SEO 评分」，正在填的表单会被顶掉且无路返回。
+// 那两处保持原有的「htmx 就地展开分数」形态 —— 它们本来就不占常驻版面，没有要修的问题。
+//
+// 商品编辑页是**独立整页**，不存在这个冲突，且它原来有一张常驻折叠卡占着版面底部。
+//
+// 打开即算：抽屉本来就是「我要看分」这个动作的落点，不该再要用户先点一次「开始评分」
+// （行内按钮需要那一步，是因为它没有「打开」这个动作）。
+func (h *productPageHandle) EntitySeoDrawer(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id := strings.TrimSpace(c.Query("productId"))
+	projectID := strings.TrimSpace(c.Query("project"))
+	if h == nil || h.products == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	data := gin.H{
+		"ScoreURL":     "/admin/products/seo-score",
+		"TargetID":     "product-seo-score-" + id,
+		"HiddenFields": productScoreHiddenFields(id, projectID),
+	}
+	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoreKindProduct, id, projectID)
+	if in == nil {
+		// 读不到实体：仍给 200 + 片段（里面就是那句空态文案）—— 这不是「加载失败」，
+		// 抽屉的失败重试界面会把「这个商品读不到」伪装成网络问题。
+		data["Score"] = emptyView
+		c.HTML(http.StatusOK, "admin/product/entity_seo_drawer.html", shell.Prepare(c, data))
+		return
+	}
+	data["Score"] = h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID)
+	c.HTML(http.StatusOK, "admin/product/entity_seo_drawer.html", shell.Prepare(c, data))
+}
+
+// productScoreHiddenFields 商品评分端点的隐藏字段（与页面上那个 POST 端点同一口径）。
+func productScoreHiddenFields(id, projectID string) []seoHiddenField {
+	return []seoHiddenField{{"projectId", projectID}, {"productId", id}}
+}
+
+// seoHiddenField 抽屉里「评分」表单的一个隐藏字段。
+type seoHiddenField struct{ Name, Value string }

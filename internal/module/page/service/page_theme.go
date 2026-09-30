@@ -130,11 +130,13 @@ func (s *Service) RefreshStructureForTheme(ctx context.Context, themeID string, 
 // 没有任何逐页凭据，读者只能看到一个全局 stale 计数 —— 而「主题一变全站都 stale」正是
 // 那个计数最没有区分度的场景。
 //
-// 方法签名与 contract 不变（调用方依赖它）：样本只进日志，不出现在返回值里。
-func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
+// 返回值自 2026-09 起把命中 id 一并透出（此前只进日志）：调用方拿它触发自动重建 ——
+// 块/主题变更曾经只标记不重建，而人工入口并不存在，结果是「线上一直跑旧字节、后台只显示
+// 一堆待重建」。日志回执照旧（样本进日志、ids 进返回值，两件事互不替代）。
+func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) (ids []string, err error) {
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hit := &staleIDCollector{}
 	for _, projectID := range projectIDs {
@@ -143,12 +145,13 @@ func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
 		}
 		ids, merr := s.model.MarkStaleForTheme(ctx, projectID, themeID)
 		if merr != nil {
-			return merr
+			return nil, merr
 		}
 		hit.add(ids)
 	}
-	s.logStaleImpact(ctx, "theme:"+themeID, hit.list())
-	return nil
+	affected := hit.list()
+	s.logStaleImpact(ctx, "theme:"+themeID, affected)
+	return affected, nil
 }
 
 // MarkStaleForBlock 把文档中经 core.globalref 引用或 settings.structure 页眉/页脚
@@ -160,10 +163,10 @@ func (s *Service) MarkStaleForTheme(ctx context.Context, themeID string) error {
 // 影响面回执同 MarkStaleForTheme：逐工程命中的页面在扇出结束后聚合成一条
 // 「N 个页面 + 前 K 条标题 / 路径」的日志 —— 一个全局 stale 计数回答不了
 // 「改了这块，是哪些页面要重建」。
-func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) error {
+func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) (ids []string, err error) {
 	projectIDs, err := s.fanoutProjectIDs(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hit := &staleIDCollector{}
 	for _, projectID := range projectIDs {
@@ -172,12 +175,13 @@ func (s *Service) MarkStaleForBlock(ctx context.Context, blockID string) error {
 		}
 		ids, merr := s.model.MarkStaleForBlock(ctx, projectID, blockID)
 		if merr != nil {
-			return merr
+			return nil, merr
 		}
 		hit.add(ids)
 	}
-	s.logStaleImpact(ctx, "block:"+blockID, hit.list())
-	return nil
+	affected := hit.list()
+	s.logStaleImpact(ctx, "block:"+blockID, affected)
+	return affected, nil
 }
 
 // CountBlockReference 统计引用该块的未删除页面数（globalref / structure 自选绑定），

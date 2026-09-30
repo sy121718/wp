@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"sort"
@@ -20,6 +21,7 @@ import (
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	pagecontract "go_wp/internal/module/page/contract"
+	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -1446,4 +1448,56 @@ func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
 		text = fmt.Sprintf(productBulkTextOf(c, productBulkDone), strconv.Itoa(deleted))
 	}
 	c.Redirect(http.StatusFound, productListURLFiltered(projectID, keyword, status, page, mark, text))
+}
+
+// ProductPreviewFrame 商品详情页的真实预览帧（GET /admin/products/preview-frame?productId=&project=）。
+//
+// 与文章编辑页的同类帧同构：用**详情页模板**渲染一份不写库、不激活的预览（PreviewInstance），
+// 看到的就是访客看到的样子。拼字段 HTML 那种回显照不出模板的任何东西 —— 商品详情页有图集、
+// 变体分组、关联分区，靠拼字符串还原不了。
+//
+// 代价与文章页一样：只反映**已保存**的数据。改完先保存，再点「刷新预览」。
+//
+// 为什么 iframe 直接 src：详情页是完整文档（自带样式与脚本），塞进 srcdoc 会与后台页面同源、
+// 脚本可能互扰；指一个页面组路由（Session 鉴权、不需 CSRF）最省事也最隔离。
+func (h *productPageHandle) ProductPreviewFrame(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	tr := shell.TranslateFor(c)
+	id := strings.TrimSpace(c.Query("productId"))
+	projectID := strings.TrimSpace(c.Query("project"))
+	if id == "" {
+		productPreviewFrameNotice(c, tr("admin.products.preview.needSave", "保存这个商品后，这里会显示它的详情页真实形态。"))
+		return
+	}
+	if h == nil || h.instances == nil {
+		productPreviewFrameNotice(c, tr("admin.products.preview.unavailable", "预览不可用：发布能力未装配。"))
+		return
+	}
+	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
+		EntityType: entityTypeProduct, EntityID: id, ProjectID: projectID,
+	})
+	if err != nil {
+		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
+		logger.Scene("product").With("product_id", id).Error(err, "商品详情页预览渲染失败")
+		productPreviewFrameNotice(c, tr("admin.products.preview.failed", "预览渲染失败（多半是这个商品还没有可用的详情页模板）。"))
+		return
+	}
+	if res == nil || strings.TrimSpace(res.HTML) == "" {
+		productPreviewFrameNotice(c, tr("admin.products.preview.empty", "还没有可渲染的详情页：先给 product 类型建一套内容模板。"))
+		return
+	}
+	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物），不是错误信息。
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+}
+
+// productPreviewFrameNotice 预览不可用时的替代页（iframe 里的一句人话）。
+//
+// 与 content 模块那个同形但是两份：各自在自己的模块包里（跨模块共用要走契约，而这是纯展示装配）。
+// 不用 5xx：iframe 对 5xx 显示浏览器自带错误页，读的人只会以为后台坏了 —— 而这里大多数情况是
+// 「还没保存」或「还没建模板」，都是正常状态。
+func productPreviewFrameNotice(c *gin.Context, text string) {
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
+		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
+			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
+			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
 }

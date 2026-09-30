@@ -1,0 +1,22 @@
+-- 474 · 页面记住「最近一次自动重建失败」的阶段与时刻。
+--
+-- 缺口：三条 stale 来源（内容依赖、块/主题变更、组件版本更新）现在都会自动重建，
+--   而重建失败只写日志 —— 页面上留下的唯一痕迹是 stale 仍为 true。于是「待重建影响面」
+--   显示非零时，读的人分不清三件事：① 重建还没轮到（队列在追）；② 重建失败了；
+--   ③ 重建反复失败。三者的处置完全不同（等 / 查日志 / 修问题），界面上却长得一样。
+--
+-- 本迁移只补**可见性**：记「失败发生在哪个阶段 + 什么时候」。**不记错误原文** ——
+--   构建/发布错误里可能带 SQL、路径、内部标识，而 AGENTS.md 的红线是后台页面不得直出
+--   内部错误；原文继续只进结构化日志（那里带 page_id，可定位）。
+--
+-- 为什么是两列而不是一张表：「最近一次」就是全部所需语义（同一个页面反复失败时，
+--   读的人要的是当前状态，不是历史曲线）。与 stale 同一行，读清单时零成本带出、不需要 join。
+--   阶段是**闭集**（plan / build），用 VARCHAR(16) 而不是 VARCHAR(255)。
+--
+-- 命名：rebuild_failed_at 是业务时刻列，沿用既有 `*_at` 风格（与 published_at 同类），
+--   不是 create_time / update_time 那对「管理时间列」。
+--
+-- 幂等：ADD COLUMN IF NOT EXISTS；重复执行安全。
+-- 注册见 register_page_rebuild_failure.go。
+ALTER TABLE pages ADD COLUMN IF NOT EXISTS rebuild_failed_at TIMESTAMPTZ;
+ALTER TABLE pages ADD COLUMN IF NOT EXISTS rebuild_failed_stage VARCHAR(16);

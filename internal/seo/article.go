@@ -63,6 +63,8 @@ func ScoreArticle(data map[string]any, articleURL, lang string) *scoring.Result 
 	in.Headings = articleHeadings(body)
 	in.Images = articleImages(body, articleField(data, "featuredImage"))
 	in.InternalLinks, in.ExternalLinks, in.AnchorTexts = articleLinks(body)
+	// 文章的正文是富文本 HTML（Trix 产出的表格就是 <table>，没有第二种形态）。
+	in.HasComparisonTable = hasComparisonTableHTML(body)
 	// canonical 与结构化数据由构建期注入（presentation 侧的 applyEntitySEO）：
 	// 发布出来的详情页一定带这两样，所以判真 —— 评分侧栏只该显示"编辑者能改的东西"，
 	// 把系统保证项挂在上面只会教人忽略它。

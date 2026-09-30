@@ -249,8 +249,14 @@ func TestPageMarkStaleForTheme(t *testing.T) {
 	// 手动清除 stale 模拟已构建。
 	db.Table("pages").Where("id = ?", page.ID).Update("stale", false)
 
-	if err := svc.MarkStaleForTheme(ctx, theme.ID); err != nil {
+	// 返回值是本次命中的页面 id（调用方据此自动重建），这里顺带钉住它非空 ——
+	// 空集会让「标记成功、重建没东西可重建」这种静默退化溜过去。
+	marked, err := svc.MarkStaleForTheme(ctx, theme.ID)
+	if err != nil {
 		t.Fatalf("标记 stale 失败: %v", err)
+	}
+	if len(marked) == 0 {
+		t.Error("MarkStaleForTheme 应返回命中的页面 id（调用方靠它自动重建）")
 	}
 	var stale bool
 	db.Raw(`SELECT stale FROM pages WHERE id = ?`, page.ID).Scan(&stale)

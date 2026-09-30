@@ -537,6 +537,9 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 	}
 	h := NewBlockPageHandle(blocks, projects, pages...)
 	adminPages.GET("/blocks", h.BlocksList)
+	// 待重建影响面清单（只读抽屉片段）：页头徽章是入口，清单在抽屉里。
+	// 鉴权复用列表页读权限点（GET 与 /api/block/list 的策略动词一致）。
+	adminPages.GET("/blocks/stale/drawer", builtin.CasbinMiddlewareForPath("/api/block/list"), h.BlocksStaleDrawer)
 	adminPages.POST("/blocks/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.CreateBlock)
 	adminPages.POST("/blocks/delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), h.DeleteBlock)
 	// 批量删除复用单条删除的权限点（不新增权限点、不写迁移）：能删一个块的人就能删一批。

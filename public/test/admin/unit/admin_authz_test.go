@@ -31,7 +31,7 @@ func TestAdminRoutesBuild(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "菜单A", Type: adminmodel.MenuTypeMenu, Path: "/routes/a",
-		Component: "view.routesA", PermissionCode: menuCode, ParentID: dir.ID, Status: 1,
+		Component: "view.routesA", PermissionCodes: []string{menuCode}, ParentID: dir.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestAdminRoutesBuild(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "按钮X", Type: adminmodel.MenuTypeButton, Path: "",
-		PermissionCode: btnCode, ParentID: menuA.ID, Status: 1,
+		PermissionCodes: []string{btnCode}, ParentID: menuA.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建按钮失败: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	// 两个菜单（type=2）
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "AM菜单A", Type: adminmodel.MenuTypeMenu, Path: "/am/a",
-		Component: "view.amA", PermissionCode: codeA, Status: 1,
+		Component: "view.amA", PermissionCodes: []string{codeA}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "AM菜单B", Type: adminmodel.MenuTypeMenu, Path: "/am/b",
-		Component: "view.amB", PermissionCode: codeB, Status: 1,
+		Component: "view.amB", PermissionCodes: []string{codeB}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "授权菜单", Type: adminmodel.MenuTypeMenu, Path: "/authz/m",
-		Component: "view.authzM", PermissionCode: code, ParentID: dir.ID, Status: 1,
+		Component: "view.authzM", PermissionCodes: []string{code}, ParentID: dir.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	createPerm(t, e, otherCode, "/api/noauth")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "未授权菜单", Type: adminmodel.MenuTypeMenu, Path: "/noauth",
-		Component: "view.noAuth", PermissionCode: otherCode, Status: 1,
+		Component: "view.noAuth", PermissionCodes: []string{otherCode}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}

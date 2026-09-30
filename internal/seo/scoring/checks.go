@@ -49,12 +49,18 @@ func allSections() []Section {
 				Benchmark: "H1→H2→H3 无跳级", Hint: "补回缺失的中间层级，避免 H2 直接跳到 H4"},
 		}},
 		{Key: "content", Label: "内容质量", Weight: 0.25, Checks: []Check{
-			{Key: "content_length", Label: "内容长度", Max: 15, Score: chkContentLength,
+			// 维度内 25 分的分配自 2026-09-29 起是 12/4/4/5（原来是 15/5/5）：
+			// 对比表是新增的硬要求，分数从长度与可读性两项里让出来 —— 维度总分不变，
+			// 但「写得很长」不再自动等于「内容质量高」。
+			{Key: "content_length", Label: "内容长度", Max: 12, Score: chkContentLength,
 				Benchmark: "按查询意图分档（信息型 1500+ / 交易型 500+）", Hint: "补充子主题、FAQ、案例与证据"},
-			{Key: "paragraph_length", Label: "段落长度", Max: 5, Score: chkParagraphLength,
+			{Key: "paragraph_length", Label: "段落长度", Max: 4, Score: chkParagraphLength,
 				Benchmark: "单段 ≤150 词 / ≤200 字", Hint: "拆成多段，每段一个要点"},
-			{Key: "sentence_length", Label: "句子长度", Max: 5, Score: chkSentenceLength,
+			{Key: "sentence_length", Label: "句子长度", Max: 4, Score: chkSentenceLength,
 				Benchmark: "长句占比 ≤20%", Hint: "长句拆短，降低阅读负担"},
+			{Key: "comparison_table", Label: "对比表", Max: 5, Score: chkComparisonTable,
+				Benchmark: "比较型 / 购买型意图需有结构化对比表（信息型不要求）",
+				Hint:      "补一张对比表或矩阵（逐项对照、可据以决策），而不是把规格再列一遍"},
 		}},
 		{Key: "keywords", Label: "关键词优化", Weight: 0.15, Checks: []Check{
 			{Key: "keyword_density", Label: "关键词密度", Max: 8, Score: chkKeywordDensity,

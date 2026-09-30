@@ -171,11 +171,14 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 		//（片段没接上时页面不报错，只是编辑器退化成一块没有工具条的空白区）。
 		"trix-editor", `rich-body-article`, `data-rich-editor="body"`, `name="body"`,
 		"/static/js/rich-editor/index.js", "/static/css/rich-editor.css",
-		"/admin/articles/score", "/admin/articles/update",
-		"SEO 评测", "重新评分", "保存",
+		"/admin/articles/update",
+		// SEO 评测已从右栏常驻卡改成抽屉：编辑页本身只留**入口**，评测内容与「重新评分」
+		// 都在抽屉片段里（片段自身的断言见下一个用例）。
+		"SEO 评测", `data-drawer-url="/admin/articles/seo/drawer?id=`,
+		"保存",
 		// 导入到画布区块（06-B 决策 5 的入口）：能力未装配时给提示而不是按钮。
-		// 可视化编辑（原「导入到画布」的直白措辞，行为不变：复制而非绑定）+ 实时预览容器。
-		"可视化编辑", "article-live-preview",
+		// 可视化编辑（原「导入到画布」的直白措辞，行为不变：复制而非绑定）+ 详情页真实预览帧。
+		"可视化编辑", "article-preview-frame",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("编辑页渲染结果缺少 %q", want)
@@ -194,22 +197,16 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 	if strings.Contains(body, "article-save-card") {
 		t.Error("保存卡应已移除（保存按钮进页头），实际仍渲染出 article-save-card")
 	}
-	// 右栏仍是非 tabs 的四张卡（实时预览 / SEO 评测 / 发布 / 可视化编辑）：
-	// 清单原文的「三张卡收进 tabs」已被否决 —— 实时预览的存在理由就是改正文时同步可见，
-	// tab 化等于废掉它；三张卡也不是「同一数据的多种切法」。
+	// 右栏三张卡（实时预览 / 发布 / 可视化编辑）：SEO 评测搬进抽屉后不再占栏宽 ——
+	// 写文章时一直要看的是正文与预览，评测是按需看的。
 	aside := articleSection(t, body, `<aside class="article-edit-side">`, "</aside>")
-	if n := strings.Count(aside, `<section class="card`); n != 4 {
-		t.Errorf("aside 卡片数应为 4（未 tabs 化），实际 %d", n)
+	if n := strings.Count(aside, `<section class="card`); n != 3 {
+		t.Errorf("aside 卡片数应为 3（评测已移入抽屉），实际 %d", n)
 	}
-	// 「重新评分」从保存卡搬进右栏 SEO 卡：跨栏依赖必须原样保留 ——
-	// hx-include 指向左列表单、hx-target 指向本卡下方的分数容器，任一断掉按钮就静默失效。
-	if !strings.Contains(aside, `hx-post="/admin/articles/score"`) ||
-		!strings.Contains(aside, `hx-include="#article-form"`) ||
-		!strings.Contains(aside, `hx-target="#article-seo-score"`) {
-		t.Error("右栏 SEO 卡的「重新评分」缺少 hx-post / hx-include=\"#article-form\" / hx-target=\"#article-seo-score\"")
-	}
-	if !strings.Contains(body, `<div id="article-seo-score">`) {
-		t.Error("hx-target=\"#article-seo-score\" 的落点容器不见了")
+	// 反向：评测内容不该再常驻在页面上（否则「移进抽屉」只是多渲染一份）。
+	if strings.Contains(aside, `hx-post="/admin/articles/score"`) ||
+		strings.Contains(body, `<div id="article-seo-score">`) {
+		t.Error("SEO 评测仍常驻在编辑页上：应只有抽屉入口，评测内容与分数容器都在片段里")
 	}
 	// 评分侧栏必须真的渲染出分数（而不是空态）—— 正文与标题都在，评分应当可用。
 	if strings.Contains(body, "评分不可用") {
@@ -366,5 +363,42 @@ func TestArticleScorePanelRendersFragment(t *testing.T) {
 	}
 	if !strings.Contains(body, "SEO 评分（0-100）") {
 		t.Errorf("评分片段缺少总分块：%s", body[:min(len(body), 200)])
+	}
+}
+
+// TestArticleSeoDrawerFragmentRenders 抽屉片段：评测内容与「重新评分」都在这里。
+//
+// 为什么单独一条：评测从常驻卡搬进抽屉后，编辑页的断言只剩「有入口」——
+// 若片段本身接错（hx-include 指错表单、hx-target 指不到容器、片段缺 data-drawer-readonly），
+// 用户点开抽屉会看到「加载失败」或按了「重新评分」毫无反应，而页面测试全绿。
+func TestArticleSeoDrawerFragmentRenders(t *testing.T) {
+	score := scoreView{OK: true, Total: 56, Grade: "D",
+		SerpTitle: "标题", SerpURL: "/blog/hello-world", SerpDesc: "描述"}
+	body := renderAdminTemplate(t, "admin/content/article_seo_drawer.html", gin.H{
+		"Score": score, "IsNew": false,
+		"t": func(_, fallback string) string { return fallback },
+	})
+	for _, want := range []string{
+		// 只读抽屉的显式声明（drawer.js 的 fragmentRoot 校验：片段要么含 form，
+		// 要么声明 data-drawer-readonly —— 本片段只有一个 htmx 按钮，没有可提交字段）。
+		"data-drawer-fragment", "data-drawer-readonly",
+		// 跨栏依赖必须原样保留：hx-include 指向**抽屉外面**的表单（htmx 选择器不受 DOM 位置限制），
+		// hx-target 指向片段内的分数容器 —— 任一断掉按钮就静默失效。
+		`hx-post="/admin/articles/score"`, `hx-include="#article-form"`,
+		`hx-target="#article-seo-score"`,
+		`<div id="article-seo-score">`,
+		"重新评分",
+		// 关闭出口（抽屉里的取消按钮）
+		"data-drawer-close",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("抽屉片段缺少 %q", want)
+		}
+	}
+	// 抽屉片段不得出现 script / iframe 等（fragmentRoot 会直接拒绝）。
+	for _, bad := range []string{"<script", "<iframe", "<template"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("抽屉片段出现 %q：drawer.js 会判非法", bad)
+		}
 	}
 }

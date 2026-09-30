@@ -298,6 +298,13 @@ func (h *Handle) AdminMenuSave(c *gin.Context) {
 		adminBindFail(c, err)
 		return
 	}
+	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
+	uid := shell.CurrentUserID(c)
+	if uid == 0 {
+		r.ErrorWithMessage(c, 401, adminenums.MsgUnauthorized)
+		return
+	}
+	req.OperatorID = uid
 	res, err := h.admin.AdminMenuSave(c.Request.Context(), &req)
 	if err != nil {
 		adminFail(c, err)

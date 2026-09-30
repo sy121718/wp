@@ -1,0 +1,35 @@
+{* admin/product/entity_seo_drawer.html — 商品编辑页的 SEO 评分抽屉片段。
+
+   为什么只有商品走抽屉：抽屉基座是**单例**（打开新的会把当前的换掉），而分类 / 品牌的评分
+   按钮活在列表页的**行内编辑抽屉**里 —— 在那里改成跳转式抽屉会把用户正在填的表单顶掉。
+   那两处保持「htmx 就地展开分数」的原形态（它们本来就不占常驻版面）。
+
+   片段形状（ui/drawer.js 的 fragmentRoot 校验）：唯一根 + data-drawer-fragment + 含 <form>
+   （「SEO 评分」是表单提交），不能出现 script / style / iframe 等，链接与 hx-* 必须同源。
+
+   数据键（调用方给齐，缺键会让整个抽屉渲染中断 → htmx 因 5xx 不 swap，用户点开是空白）：
+     Score（fragments/seo_score 的入参）、ScoreURL、TargetID、HiddenFields（name/value 对）。
+
+   容器 id 与提交端点沿用改造前的命名（product-seo-score-<id> 等）：它们是既有测试与
+   .wb-seo-panel 样式的锚点，改名的收益只是好看。 *}
+{{tr := .["t"]}}
+<div data-drawer-fragment class="perm-drawer">
+    <p class="perm-intro">{{tr("admin.products.seo.drawerHint", "评测按商品页的权重档案，覆盖标题、描述、关键词、内容与图片等维度。分数是提示性的：它不会拦住保存，也不会写库或改动产物。")}}</p>
+
+    {* 「SEO 评分」按需重算：hx-target 指向本片段里的结果容器，提交端点按实体类型由 Go 侧给出
+       （商品 / 分类 / 品牌各一个 POST 端点）。 *}
+    <form method="post" action="{{.ScoreURL}}" hx-post="{{.ScoreURL}}" hx-target="#{{.TargetID}}" hx-swap="innerHTML">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        {{range _, f := .HiddenFields}}<input type="hidden" name="{{f.Name}}" value="{{f.Value}}">
+        {{end}}
+        <div class="action-row">
+            <button type="submit" class="btn">{{tr("admin.products.row.seoScore", "SEO 评分")}}</button>
+        </div>
+    </form>
+
+    <div id="{{.TargetID}}" class="wb-seo-panel">{{include "../../fragments/seo_score.html"}}</div>
+
+    <div class="form-actions">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+    </div>
+</div>

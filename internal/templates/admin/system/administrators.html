@@ -90,6 +90,9 @@
                     {{else}}<span class="badge badge-mute">{{tr("admin.admins.status.unknown", "未知")}}</span>{{end}}
                 </td>
                 <td class="col-actions">
+                    {* 授权分配走抽屉按需拉片段（data-drawer-url）：一次只装一个人的授权集合。 *}
+                    {{if isset(.PermSet["admin:role_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/roles/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.role.title", "分配角色：")}}{{a.Username}}">{{tr("admin.admins.role.action", "分配角色")}}</button>{{end}}
+                    {{if isset(.PermSet["admin:menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/menus/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.menu.title", "菜单权限：")}}{{a.Username}}">{{tr("admin.admins.menu.action", "菜单权限")}}</button>{{end}}
                     {{if isset(.PermSet["admin:edit"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{tr("admin.admins.action.edit", "编辑")}}</button>{{end}}
                     {{if isset(.PermSet["admin:delete"])}}<button type="submit" form="admin-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.admins.action.delete", "删除")}}</button>{{end}}
                 </td>

@@ -41,6 +41,7 @@
             <label class="form-label">{{tr("admin.menus.field.path", "路径")}}</label>
             <input type="text" name="path" class="form-input" maxlength="100" value="{{path}}">
         </div>
+        {{include "menu_perm_field.html"}}
         <div class="form-group">
             <label class="form-label">{{tr("admin.menus.field.icon", "图标")}}</label>
             <div data-icon-field></div>

@@ -11,8 +11,12 @@
    变体 / 评分的 action 与字段名与搬页前逐字相同（改版式不改协议）。 *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "../layout.html"}}
+{{import "../partials/media_gallery.html"}}
+{{import "../partials/media_field.html"}}
+{{import "../partials/rich_editor.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}
 {{warehouseOptions := .WarehouseOptions}}
 {{canUpdate := isset(.PermSet["product:update"])}}
@@ -20,6 +24,10 @@
 {{canVariantGenerate := isset(.PermSet["product:variant_generate"])}}
 {{editBlocked := false}}
 {{if isset(.EditBlocked)}}{{editBlocked = .EditBlocked}}{{end}}
+{* 富文本（商品描述）要的三个资源由**调用方页面**引：片段只出结构与扩展入口。
+   漏引的表现是编辑器变成一个没有工具条的空框，页面不报错。 *}
+<link rel="stylesheet" href="/static/vendor/trix/trix.css">
+<link rel="stylesheet" href="/static/css/rich-editor.css">
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -36,6 +44,12 @@
            mail_automation_edit.html / article_translations.html）。
            商品不存在时没有那个表单，按钮也不渲染（否则点了没反应）。 *}
         <div class="page-actions">
+            {* SEO 评分（原底部折叠卡 → 抽屉）：打开即算，「SEO 评分」按钮按需重算。 *}
+            {{if .HasProduct}}
+            <button type="button" class="btn"
+                    data-drawer-url="/admin/products/seo/drawer?productId={{.ProductID}}&project={{.SelectedProject}}"
+                    data-drawer-title="{{ .["t"]("admin.products.seo.title", "SEO 检查") }}">{{ .["t"]("admin.products.row.seoScore", "SEO 评分") }}</button>
+            {{end}}
             <a class="btn btn-ghost" href="{{.BackURL}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
             {{if .HasProduct}}
             <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
@@ -66,6 +80,9 @@
     {{p := .Product}}
     {* id 是页头保存按钮的关联目标（form="product-edit-main"）：字段全部留在这个表单里，
        页头只放按钮。 *}
+    {* 两栏：左编辑（表单） / 右预览（详情页真实形态）。预览只在有商品时才有意义 ——
+       新建走的是另一个页面，这里 HasProduct 为假时右栏给一句说明。 *}
+    <div class="product-edit-panes">
     {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" method="post" action="/admin/products/update" class="card card-body form-stack">{{end}}
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -78,6 +95,12 @@
 
         <label class="form-label" for="product-edit-subtitle">{{ .["t"]("admin.products.label.subtitle", "副标题") }}</label>
         <input type="text" class="form-input" id="product-edit-subtitle" name="subtitle" value="{{p.Subtitle}}" autocomplete="off">
+
+        {* 商品描述：库里是 {"html": "..."}（jsonb），表单里走富文本字段。
+           字段名 descriptionHtml 而不是 description —— 表单给的是裸 HTML，
+           包装成 jsonb 对象在 handler 里做（见 product_edit_page.go）。 *}
+        <label class="form-label">{{ .["t"]("admin.products.label.description", "商品描述") }}</label>
+        {{yield richEditor(field="descriptionHtml", key="product", value=p.DescriptionHTML)}}
 
         <label class="form-label" for="product-edit-slug">{{ .["t"]("admin.products.col.slug", "URL 段") }}</label>
         <input type="text" class="form-input" id="product-edit-slug" name="slug" value="{{p.Slug}}"
@@ -112,26 +135,35 @@
 
         {* SEO 是纯文本字段（技能 §8 硬规则）：meta 里出现富文本标签等于把标签喂给搜索引擎，
            所以用 textarea 而不是富文本；长度只是展示建议，超长不拦截保存。 *}
-        <label class="form-label" for="product-edit-seo-title">{{ .["t"]("admin.products.label.seoTitle", "SEO 标题") }}</label>
-        <input type="text" class="form-input input-wide" id="product-edit-seo-title" name="seoTitle" value="{{p.SEOTitle}}" data-counter="60" autocomplete="off">
-        <span class="field-counter" data-counter-out="product-edit-seo-title" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
+        {* 宽度按**字段内容**定，同一张表单里不再一半满行、一半 320px：
+           · SEO 标题与描述是一对短文本 → 并排两列（各约半栏，成对感比「半截」清楚）；
+           · 图集与 alt 是「一行一个地址」的多行列表 → 满行（320px 放一条 URL 就折行）。
+           原来的 input-wide 名字叫 wide、实际是 min(100%,320px) 的窄限，四个字段一起被压成半截。 *}
+        {* SEO 标题与 SEO 描述已合并进「商品」与「副标题」（2026-09-30）：
+           商品名就是网页标题、副标题就是 meta description —— 见 entity_source_fields.go 的说明。
+           这里不再有这两个输入框，编辑者不用把同一个标题抄两遍。 *}
 
-        <label class="form-label" for="product-edit-seo-desc">{{ .["t"]("admin.products.label.seoDescription", "SEO 描述") }}</label>
-        <textarea class="form-input input-wide" id="product-edit-seo-desc" name="seoDescription" rows="3" data-counter="155">{{p.SEODescription}}</textarea>
-        <span class="field-counter" data-counter-out="product-edit-seo-desc" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
+        {* 主图（default_image）：契约里一直支持（CreateReq.DefaultImage / UpdateReq 的 *string
+           「不传即不改」），构建期还拿它当**图集为空时的兜底图** —— 但页面上从来没有这个字段，
+           于是运营只能通过导入或接口设它。补上：单图媒体字段，走媒体库。
+           放在图集之前，与「先定主图、再排图集」的语义顺序一致。 *}
+        <label class="form-label">{{ .["t"]("admin.products.label.defaultImage", "主图") }}</label>
+        {{yield mediaField(field="defaultImage", key="product", value=p.DefaultImage,
+            pickLabel=tr("admin.common.media.pick", "媒体库"),
+            clearLabel=tr("admin.common.media.clear", "清除"))}}
 
-        {* 图集：一行一个地址（textarea 是「格式自由 + 长度自由」的字段的正确控件形态）。 *}
-        <label class="form-label" for="product-edit-images">{{ .["t"]("admin.products.label.images", "图集") }}</label>
-        <textarea class="form-input input-wide" id="product-edit-images" name="images" rows="4"
-                  placeholder="{{ .["t"]("admin.products.edit.ph.images", "每行一个图片地址，留空即清空图集") }}">{{.ImagesText}}</textarea>
-
-        <label class="form-label" for="product-edit-image-alts">{{ .["t"]("admin.products.label.imageAlts", "图片 alt（与上一栏逐行对应）") }}</label>
-        <textarea class="form-input input-wide" id="product-edit-image-alts" name="imageAlts" rows="4"
-                  placeholder="{{ .["t"]("admin.products.edit.ph.imageAlts", "每行一个 alt 文本，与图集逐行对应") }}">{{.ImageAltsText}}</textarea>
+        {* 图集：多图控件（缩略图网格 + 媒体库多选 + 逐张 alt）。原来是「一行一个地址」的
+           textarea —— 看不到图长什么样，也没有从媒体库挑的入口，敲错要等发布才发现。
+           alt 与图集**逐行对应**，所以它们合成一个控件（两个字段仍是分开提交的）。 *}
+        {{yield mediaGallery(field="images", altField="imageAlts", key="product", values=.ImagesText, alts=.ImageAltsText,
+            heading=tr("admin.products.label.images", "图集"),
+            addLabel=tr("admin.products.media.add", "添加图片"),
+            altPlaceholder=tr("admin.products.media.altPlaceholder", "这张图的 alt 文本"),
+            emptyLabel=tr("admin.products.media.empty", "还没有图片。点「添加图片」从媒体库里挑 —— 上传也在媒体库里做。"))}}
 
         {* 属性组：勾选列表（可选值由服务端给出）。勾选态来自商品当前引用的 id；
            一个都不勾 = 解绑全部（服务端按整体替换处理）。 *}
-        <h3>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</h3>
+        <details class="edit-fold"><summary>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</summary>
         {{if isset(.AttributeChecks)}}
         {{if len(.AttributeChecks) > 0}}
         <fieldset class="var-group">
@@ -148,7 +180,8 @@
         {{end}}
 
         {* 分类与品牌：分类可多选（主分类必属于挂载分类，不变量由服务端维持），品牌单选。 *}
-        <h3>{{ .["t"]("admin.products.taxonomy.title", "分类与品牌") }}</h3>
+        </details>
+        <details class="edit-fold"><summary>{{ .["t"]("admin.products.taxonomy.title", "分类与品牌") }}</summary>
         {{if len(p.CategoryChecks) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.taxonomy.legendCategories", "挂载分类（可多选，一个都不勾即解绑全部）") }}</legend>
@@ -179,7 +212,8 @@
         </div>
 
         {* 手工标签：自动标签只读展示（归属由规则重算维护，手工改会被下一次重算覆盖）。 *}
-        <h3>{{ .["t"]("admin.products.tags.title", "标签") }}</h3>
+        </details>
+        <details class="edit-fold"><summary>{{ .["t"]("admin.products.tags.title", "标签") }}</summary>
         {{if len(p.TagChecks) > 0}}
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendManual", "手工标签（可多选，一个都不勾即解绑全部手工标签）") }}</legend>
@@ -200,12 +234,39 @@
             {{end}}
         </fieldset>
         {{end}}
+        </details>
 
         {* 主行动（保存）在页头：这里只留取消，避免同一个动作出现两个按钮。 *}
         <div class="action-row">
             <a class="btn btn-ghost" href="{{.BackURL}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
         </div>
     {{if editBlocked}}</fieldset></section>{{else}}</form>{{end}}
+    <aside class="product-edit-aside">
+        <section class="card card-body">
+            {* 详情页预览（与文章编辑页同构）：用详情页模板渲染，看清发布后的形态。
+               它只反映**已保存**的数据 —— 改完先保存，再点「刷新预览」。 *}
+            <h2 class="card-title">{{ .["t"]("admin.products.preview.heading", "详情页预览") }}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.products.preview.hint", "这里用详情页模板渲染这个商品，看到的就是访客看到的样子（图集、变体分组、关联分区都在）。它只反映**已保存**的内容：改完先点保存，再点「刷新预览」。") }}</span>
+                </span>
+            </h2>
+            {{if .HasProduct}}
+            <div class="preview-thumb" data-preview-thumb data-preview-height="1600" data-preview-zoom="{{ .["t"]("admin.products.preview.heading", "详情页预览")}}" role="button" tabindex="0">
+                <iframe id="product-preview-frame" name="product-preview-frame" sandbox="allow-same-origin"
+                        src="/admin/products/preview-frame?productId={{.ProductID}}&amp;project={{.SelectedProject}}"
+                        title="{{ .["t"]("admin.products.preview.heading", "详情页预览") }}"></iframe>
+            </div>
+            <div class="action-row">
+                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.ProductID}}&amp;project={{.SelectedProject}}" target="product-preview-frame">{{ .["t"]("admin.products.preview.refresh", "刷新预览") }}</a>
+                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.ProductID}}&amp;project={{.SelectedProject}}" target="_blank" rel="noopener">{{ .["t"]("admin.products.preview.openFull", "新标签打开（1:1）") }}</a>
+            </div>
+            {{else}}
+            <p class="page-sub">{{ .["t"]("admin.products.preview.needSave", "保存这个商品后，这里会显示它的详情页真实形态。") }}</p>
+            {{end}}
+        </section>
+    </aside>
+    </div>
 
     {{if !editBlocked}}
     {* ==== 变体清单（docs/14 §8 预览—保存模型）====
@@ -319,27 +380,9 @@
         </div>
     </section>
 
-    {* ==== SEO 检查（审计 SEO-016）：只读计算，不写库、不改产物 ====
-       它虽然是 POST，但落不了任何库，属「看」的动作 —— 只读的详情页不渲染它，编辑页渲染。
-       低频只读块默认收起（.section-fold）：卡内只有一个按钮 + 空结果容器，
-       没有输入字段，折起来不丢任何东西；按钮与结果容器都在折叠区内，展开即可用。 *}
-    <details class="section-fold card">
-        <summary>
-            <span class="fold-title">{{ .["t"]("admin.products.seo.title", "SEO 检查") }}</span>
-        </summary>
-        <div class="fold-body">
-            <form method="post" action="/admin/products/seo-score"
-                  hx-post="/admin/products/seo-score" hx-target="#product-seo-score-{{p.ID}}" hx-swap="innerHTML">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="projectId" value="{{selectedProject}}">
-                <input type="hidden" name="productId" value="{{p.ID}}">
-                <button type="submit" class="btn">{{ .["t"]("admin.products.row.seoScore", "SEO 评分") }}</button>
-            </form>
-            {* 结果容器：点上面的按钮后由片段填充（空容器不占位）。 *}
-            <div id="product-seo-score-{{p.ID}}" class="wb-seo-panel"></div>
-        </div>
-    </details>
-
+    {* ==== SEO 检查：已收进抽屉（入口在页头）====
+       它只读计算、不写库、不改产物；原先是一张折叠卡常驻在页面底部 —— 而「这个商品 SEO 怎么样」
+       是按需问的问题，不该在每次编辑时都占一段版面。 *}
     {* ==== 详情页模板（docs/04-C-instance-override.md §5，双轨版）====
        模式徽标 + 两个模式各自的入口 —— template 模式下改布局的正确位置是**模板**
        （改一次、全站跟随的商品都变）；document 模式才改这个商品自己的文档。
@@ -656,4 +699,5 @@
     {{end}}
     {{end}}
 </div>
+<script src="/static/vendor/trix/trix.umd.js"></script>
 {{end}}

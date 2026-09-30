@@ -46,11 +46,11 @@
                先过 isset —— 缺键直接参与 {{if}} 会让整页在那一行中断（HTTP 仍 200）。 *}
             {{if isset(.StaleImpact)}}{{if .StaleImpact.Available}}{{if .StaleImpact.Total}}
             <p class="page-sub">
-                <span class="badge badge-warning">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</span>
-                <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.blocks.impact.help", "块、内容、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。") }}</span>
-                </span>
+                {* 徽章是可点入口：清单收进抽屉（/admin/blocks/stale/drawer），
+                   说明文字也在抽屉里 —— 悬浮解释与抽屉说的是同一件事，留两份只是噪声。 *}
+                <button type="button" class="badge badge-warning badge-btn"
+                        data-drawer-url="/admin/blocks/stale/drawer"
+                        data-drawer-title="{{ .["t"]("admin.blocks.impact.heading", "待重建影响面") }}">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</button>
             </p>
             {{end}}{{end}}{{end}}
         </div>
@@ -76,31 +76,12 @@
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.blocks.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}{{end}}
 
-    {* 待重建影响面（02-L P1-10）的清单侧，三档语义一个都不能少：
-         · Available=false（页面契约未装配 / 读工程失败）→ Hint 原文 —— 这一档**绝不能**
-           与「没有待重建」合并：读失败显示成「一切正常」会把故障静默掉，运维再也不会去看；
-         · Available=true 且 Total=0 → 明确说「当前没有待重建的页面」；
-         · 有数据 → 折叠清单（默认收起），页头那行徽章给计数与入口提示。
-       只读可见性：这里没有任何「立即重建」按钮，不改任何构建行为。 *}
+    {* 有 stale 时**什么都不渲染**：清单在抽屉里，页头徽章就是入口。
+       这里只保留另外两档 —— 「没有待重建」与「读不到」是两类结论，
+       都不能靠抽屉的空态表达（那会把一次读取失败伪装成「一切正常」）。 *}
     {{if isset(.StaleImpact)}}
     {{if .StaleImpact.Available}}
     {{if .StaleImpact.Total}}
-    <details class="section-fold card">
-        <summary>
-            <span class="fold-title">{{ .["t"]("admin.blocks.impact.heading", "待重建影响面") }}</span>
-            <span class="fold-note">{{ .StaleImpact.Total }}{{ .["t"]("admin.blocks.impact.badgeTail", " 个页面有更新未发布") }}</span>
-        </summary>
-        <div class="fold-body">
-            <ul>
-                {{range _, p := .StaleImpact.Pages}}
-                <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span></li>
-                {{end}}
-            </ul>
-            {{if .StaleImpact.Truncated}}
-            <p class="stat-note">{{ .["t"]("admin.blocks.impact.moreLead", "（清单只列了前 ") }}{{ .StaleImpact.Limit }}{{ .["t"]("admin.blocks.impact.moreTail", " 条，其余只有计数；完整清单请到页面列表逐个查看。）") }}</p>
-            {{end}}
-        </div>
-    </details>
     {{else}}
     <p class="stat-note">{{ .["t"]("admin.blocks.impact.none", "当前没有待重建的页面：所有页面的产物都与最新内容一致。") }}</p>
     {{end}}
@@ -108,6 +89,7 @@
     <p class="stat-note">{{ .StaleImpact.Hint }}</p>
     {{end}}
     {{end}}
+
     {{if isset(.Done)}}{{if .Done != ""}}
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}

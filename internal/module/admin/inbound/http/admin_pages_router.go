@@ -45,6 +45,16 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 权限点复用单条删除的业务 API，不新增权限点。
 	adminPages.POST("/administrators/bulk-delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsBulkDelete)
 
+	// 管理员的授权分配：角色（g 策略）+ 直接额外菜单（p 策略，sub=user_id）。
+	// 两件事都挂在管理员列表的行上 ——「这个人能做什么」是一个问题，拆到两个页面会让
+	// 「给他加个角色、再补一个菜单入口」变成两次往返。读侧与写侧同权对待：抽屉里就是
+	// 该账号的完整授权集合，不挂鉴权等于把它露给任何登录账号（菜单隐藏不是访问控制）。
+	// 权限点复用 050 就 seed 的 admin:role_list/save、admin:menu_list/save，不新增。
+	adminPages.GET("/administrators/roles/drawer", builtin.CasbinMiddlewareForPath("/api/admin/role/list"), handle.AdministratorRolesDrawer)
+	adminPages.POST("/administrators/roles/save", builtin.CasbinMiddlewareForPath("/api/admin/role/save"), handle.AdministratorRolesSave)
+	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"), handle.AdministratorMenusDrawer)
+	adminPages.POST("/administrators/menus/save", builtin.CasbinMiddlewareForPath("/api/admin/menu/save"), handle.AdministratorMenusSave)
+
 	adminPages.GET("/roles", builtin.CasbinMiddlewareForPath("/api/role/list"), handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)

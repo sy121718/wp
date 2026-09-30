@@ -43,6 +43,12 @@ type Input struct {
 	HasSchema         bool
 	IsHTTPS           bool
 	Locale            string // zh / en，空按 zh
+	// HasComparisonTable 正文里是否存在**结构化对比表**（富文本表格 / 矩阵）。
+	//
+	// 判据来自 seo 工作区的文章生产门禁（content-writer/references/quality-gate.md，
+	// 2026-09-29 版）：比较型 / 购买型意图下，「唯一价值资产」必须包含一张对比表或矩阵
+	// （不是规格堆砌），否则那一档不给分。信息型 / 定义型不要求 —— 它们的问题不是「选哪个」。
+	HasComparisonTable bool
 }
 
 // CheckResult 单项检查结果。

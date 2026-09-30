@@ -24,6 +24,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -279,7 +280,7 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	// 全站待重建区块（只读）：取数作用域是**全部站点工程**，与上面按工程聚焦的页面列表
 	// 不是一个数（块 / 文章 / 主题 / 词条改动影响的是全站）。读不到时它自己给失败态，
 	// 同样不让整张列表页失败。
-	stale := h.staleOverview(ctx)
+	stale := h.staleOverview(ctx, shell.TranslateFor(c))
 	return &pagesPageData{
 		Title: pageenums.MsgPagesTitle, Menu: "pages",
 		Projects: projects, Pages: rows,
@@ -406,6 +407,10 @@ type staleOverviewItem struct {
 	// Published 是否已上线（有活跃产物路径）：用来区分「已发布但有更新未发布」与「从未上线」——
 	// 后者的处置方式不同（重建也还不会出现在访问面，要先发布）。
 	Published bool
+	// FailedNote 最近一次自动重建失败的一句文案（空串 = 没有失败痕迹）。
+	// 非空即「这页不是还没轮到，而是重建失败过」—— 与 stale 徽标合起来才能回答
+	// 「为什么它还在这儿」。
+	FailedNote string
 }
 
 // staleOverview 取「全站待重建」区块的数据（只读观测）。
@@ -422,7 +427,9 @@ type staleOverviewItem struct {
 // 唯一的例外是「一个站点工程都没有」：ListStalePages 按语义返回 ErrProjectRequired
 // （没有可作用域的工程），而那时全站确实没有任何页面 —— 那是确定的事实，不是读取失败，
 // 按空态处理（此时下方列表也正落在「还没有页面」那一档）。
-func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
+// tr 由调用方传入（取词只在 handler 层做）：本函数要组装「最近一次重建失败」的文案，
+// 而它自己拿不到 gin.Context。
+func (h *pagesAdminHandle) staleOverview(ctx context.Context, tr func(key, fallback string) string) gin.H {
 	empty := gin.H{
 		"Available": true, "Total": 0, "Pages": []staleOverviewItem{},
 		// Limit 给真实口径（模板在空态下不读它，但零值会让「清单上限是多少」在两个分支里
@@ -463,6 +470,7 @@ func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
 			Path:        strings.TrimSpace(res.Pages[i].Path),
 			ProjectName: strings.TrimSpace(res.Pages[i].ProjectName),
 			Published:   res.Pages[i].Published,
+			FailedNote:  rebuildFailureNote(tr, res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
 	return gin.H{
@@ -621,4 +629,28 @@ func pagesBackURL(errText, doneText string) string {
 		return "/admin/pages?" + enc
 	}
 	return "/admin/pages"
+}
+
+// rebuildFailureNote 组装「最近一次自动重建失败」的一句文案；没有失败痕迹时返回空串。
+//
+// 阶段与时刻来自迁移 474 落在 pages 上的两列；**不含错误原文**（后台页面不得直出内部错误，
+// 原文只进结构化日志，带 page_id 可定位）。与 /admin/articles、/admin/blocks 上同名函数
+// 是三份：各自在自己的模块包内（跨模块共用要走契约，而这是纯展示装配）。
+// 三处文案与阶段取值必须一致，改一处请同步另两处。
+func rebuildFailureNote(tr func(key, fallback string) string, stage string, at *utils.JSONTime) string {
+	if strings.TrimSpace(stage) == "" && at == nil {
+		return ""
+	}
+	label := stage
+	switch stage {
+	case "plan":
+		label = tr("admin.pages.impact.stage_plan", "计划阶段（站点语言清单或旧发布范围读不到）")
+	case "build":
+		label = tr("admin.pages.impact.stage_build", "构建 / 发布阶段")
+	}
+	prefix := tr("admin.pages.impact.rebuild_failed", "最近一次自动重建失败：")
+	if at == nil {
+		return prefix + label
+	}
+	return prefix + label + "（" + time.Time(*at).Local().Format("2006-01-02 15:04") + "）"
 }

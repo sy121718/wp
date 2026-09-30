@@ -48,6 +48,17 @@ type StalePageResp struct {
 	Stale bool `json:"stale"`
 	// UpdatedAt 最近一次标记 / 变更时刻（页面列表用它排在「最近影响的在前」）。
 	UpdatedAt utils.JSONTime `json:"updatedAt"`
+	// RebuildFailedAt / RebuildFailedStage 最近一次**自动重建失败**的时刻与阶段。
+	//
+	// 为什么它与 Stale 不是同一件事：stale=true 有两种含义 ——「还没轮到重建」与
+	// 「重建过了但失败了」。前者等着就好，后者要人查日志。只给布尔值，读的人只能靠猜。
+	// 重建成功后由 ClearRebuildFailure 清空（成功必须清：留着旧时刻会让刚恢复的页面
+	// 继续显示「失败」，比不显示更糟）。
+	//
+	// 阶段是闭集（plan / build），**不含错误原文**：原文可能带 SQL / 路径 / 内部标识，
+	// 后台页面不得直出内部错误（AGENTS.md 红线），它只进结构化日志（带 page_id 可定位）。
+	RebuildFailedAt    *utils.JSONTime `json:"rebuildFailedAt,omitempty"`
+	RebuildFailedStage string          `json:"rebuildFailedStage,omitempty"`
 }
 
 // StalePageListResp 待重建清单（Total 是完整计数，Pages 是按 Limit 截断后的清单）。

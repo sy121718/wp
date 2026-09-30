@@ -14,6 +14,7 @@ package producthttp
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -120,13 +121,18 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"AttributeChecks": []gin.H{},
 		"ImagesText":      "", "ImageAltsText": "", "WeightText": "", "DefaultPriceText": "",
 	}))
+	// 商品编辑页只留**抽屉入口**：评测内容（分数容器、隐藏字段、评分按钮）已移进
+	// admin/product/entity_seo_drawer.html —— 它们不该再常驻在编辑页上。
 	for _, want := range []string{
-		"hx-post=\"/admin/products/seo-score\"", "id=\"product-seo-score-p1\"",
-		"name=\"productId\" value=\"p1\"",
+		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
+		"SEO 评分",
 	} {
 		if !strings.Contains(products, want) {
 			t.Fatalf("商品编辑页应包含 %q，实际输出：%s", want, products)
 		}
+	}
+	if strings.Contains(products, `id="product-seo-score-p1"`) {
+		t.Error("评分容器不应再常驻编辑页：它属于抽屉片段")
 	}
 
 	categories := renderAdminTemplate(t, "admin/product/product_categories.html", productPageLayoutData(gin.H{
@@ -191,5 +197,106 @@ func productRowForRender() gin.H {
 		"PrimaryCategoryName": "男装", "BrandName": "—",
 		"TagIDs": []string{}, "TagChecks": []gin.H{}, "AutoTags": []gin.H{},
 		"Ratings": []gin.H{}, "HasRating": false, "RatingAvg": "0.00", "RatingCount": 0,
+	}
+}
+
+// TestProductSeoDrawerFragmentRenders 抽屉片段：评分按钮、提交端点与结果容器都在这里。
+//
+// 与编辑页那条断言是一对：编辑页只剩入口，而入口指向的片段若接错（端点写错、容器 id 与
+// hx-target 不一致、缺 csrf 隐藏域），用户点开抽屉会看到一个按不动的按钮 —— 页面测试全绿。
+func TestProductSeoDrawerFragmentRenders(t *testing.T) {
+	body := renderAdminTemplate(t, "admin/product/entity_seo_drawer.html", productPageLayoutData(gin.H{
+		"Score":        scoreView{OK: true, Total: 72, Grade: "C"},
+		"ScoreURL":     "/admin/products/seo-score",
+		"TargetID":     "product-seo-score-p1",
+		"HiddenFields": []seoHiddenField{{"projectId", "proj-1"}, {"productId", "p1"}},
+	}))
+	for _, want := range []string{
+		"data-drawer-fragment",
+		`action="/admin/products/seo-score"`, `hx-post="/admin/products/seo-score"`,
+		`hx-target="#product-seo-score-p1"`, `id="product-seo-score-p1"`,
+		`name="productId" value="p1"`, `name="csrf_token"`,
+		"data-drawer-close",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("抽屉片段缺少 %q", want)
+		}
+	}
+	for _, bad := range []string{"<script", "<iframe"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("抽屉片段出现 %q：drawer.js 会判非法", bad)
+		}
+	}
+}
+
+// TestProductEditRendersMediaGallery 图集字段必须是多图控件，而不是裸 textarea。
+//
+// 为什么值得钉：图集原来是「一行一个地址」的 textarea —— 运营看不到图长什么样、也没有
+// 从媒体库挑的入口（上传与选择只走媒体库，控件自己不持有文件输入）。换控件时最容易出的
+// 事故是「后端协议被顺手改掉」：本用例同时断言两个字段名仍是 images / imageAlts，
+// 值仍走隐藏域（后端的「每行一个」形态不变）。
+func TestProductEditRendersMediaGallery(t *testing.T) {
+	product := productRowForRender()
+	out := renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
+		"title": "编辑商品", "menu": "products",
+		"Projects": []gin.H{}, "SelectedProject": "proj-1",
+		"WarehouseOptions": []gin.H{}, "Err": "",
+		"HasProduct": true, "ProductID": "p1", "BackURL": "/admin/products",
+		"Product":         product,
+		"Statuses":        []gin.H{{"Value": "draft", "Label": "草稿", "Selected": true}},
+		"AttributeChecks": []gin.H{},
+		"ImagesText":      "http://127.0.0.1:8080/storage/372.webp",
+		"ImageAltsText":   "示例 alt",
+		"WeightText":      "", "DefaultPriceText": "",
+	}))
+	for _, want := range []string{
+		"data-media-gallery", "data-gallery-grid", "data-gallery-add",
+		`name="images"`, `name="imageAlts"`,
+		"data-gallery-values", "data-gallery-alts",
+		// 主图：契约里一直有（CreateReq/UpdateReq 的 defaultImage），页面上曾经完全没有
+		// 对应控件 —— 运营只能靠导入或接口设它。这条断言防的是「再次掉回契约有、UI 缺」。
+		`name="defaultImage"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("商品编辑页的图集控件缺少 %q", want)
+		}
+	}
+	if strings.Contains(out, `id="product-edit-images"`) {
+		t.Error("图集仍是裸 textarea：应换成多图控件")
+	}
+}
+
+// TestTaxonomyFormsUseMediaField 分类图与品牌 logo 必须走媒体字段（缩略图 + 媒体库 + 清除），
+// 而不是裸文本框。
+//
+// 判据是「入口只有一个」：控件自己不持有文件输入，唯一的上传/选择入口是媒体库弹窗。
+// 裸文本框的失效模式不是崩，而是运营只能手敲 URL —— 敲错要等发布后才发现。
+//
+// 读模板源而不是渲染：这两个表单是**片段**（被列表页 include），渲染它们要凑齐一整套
+// 由 handler 装配的 data，而这里要问的问题（「这个字段是什么控件」）本来就是源文件的事实。
+func TestTaxonomyFormsUseMediaField(t *testing.T) {
+	cases := []struct {
+		name  string
+		path  string
+		field string
+	}{
+		{"分类图", "../../../../../internal/templates/admin/product/product_category_form.html", "image"},
+		{"品牌 logo", "../../../../../internal/templates/admin/product/product_brand_form.html", "logo"},
+	}
+	for _, tc := range cases {
+		raw, err := os.ReadFile(tc.path)
+		if err != nil {
+			t.Fatalf("读模板源失败：%v", err)
+		}
+		src := string(raw)
+		for _, want := range []string{"media_field.html", "yield mediaField(", `field="` + tc.field + `"`} {
+			if !strings.Contains(src, want) {
+				t.Errorf("%s 的媒体字段缺少 %q", tc.name, want)
+			}
+		}
+		// 反向：不该再有裸文件输入（上传只走媒体库）。
+		if strings.Contains(src, `type="file"`) {
+			t.Errorf("%s 出现了文件输入：上传与选择只该走媒体库", tc.name)
+		}
 	}
 }

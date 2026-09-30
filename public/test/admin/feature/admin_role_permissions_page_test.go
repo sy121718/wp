@@ -75,17 +75,17 @@ func permTreeFixture() *admindto.RolePermissionTreeResp {
 				Children: []admindto.MenuTreeNode{
 					{
 						ID: 2, ParentID: 1, Title: "文章", Type: adminmodel.MenuTypeMenu,
-						Path: "/admin/articles", PermissionCode: "content:list", Status: 1,
+						Path: "/admin/articles", PermissionCodes: []string{"content:list"}, Status: 1,
 						Children: []admindto.MenuTreeNode{
 							{
 								ID: 3, ParentID: 2, Title: "删除文章", Type: adminmodel.MenuTypeButton,
-								PermissionCode: "content:delete", Status: 1,
+								PermissionCodes: []string{"content:delete"}, Status: 1,
 							},
 						},
 					},
 					{
 						ID: 4, ParentID: 1, Title: "分类", Type: adminmodel.MenuTypeMenu,
-						Path: "/admin/categories", PermissionCode: "content:category", Status: 1,
+						Path: "/admin/categories", PermissionCodes: []string{"content:category"}, Status: 1,
 					},
 				},
 			},

@@ -210,7 +210,8 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		`action="/admin/products/update"`,
 		`name="name"`, `name="subtitle"`, `name="slug"`, `name="sku"`, `name="status"`,
 		`name="defaultPrice"`, `name="unit"`, `name="weight"`,
-		`name="seoTitle"`, `name="seoDescription"`,
+		// SEO 标题/描述已合并进商品名与副标题（2026-09-30）；表单现在多的是商品描述的富文本字段。
+		`name="descriptionHtml"`,
 		`name="images"`, `name="imageAlts"`,
 		`name="attributeIds"`, `name="categoryIds"`, `name="primaryCategoryId"`,
 		`name="brandId"`, `name="tagIds"`,
@@ -224,7 +225,9 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		`action="/admin/products/variant/create"`,
 		`action="/admin/products/rating/add"`,
 		`action="/admin/products/rating/delete"`,
-		`action="/admin/products/seo-score"`, `id="product-seo-score-p1"`,
+		// SEO 评分已移入抽屉：编辑页只留入口，评分按钮与结果容器在
+		// admin/product/entity_seo_drawer.html（该片段由模块内的用例守着）。
+		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)

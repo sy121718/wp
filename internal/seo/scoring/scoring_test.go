@@ -199,3 +199,47 @@ func TestScoreDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestComparisonTableCheck 对比表检查项的三档：要求意图下有/无表，以及不要求意图下跳过。
+//
+// 判据来自 seo 工作区的文章生产门禁（content-writer/references/quality-gate.md 2026-09-29 版）：
+// 比较型 / 购买型意图的「唯一价值资产」必须含一张结构化对比表 —— 所以它进了「内容质量」维度。
+//
+// 第三档（跳过）是本用例最容易被改坏的一条：把「不要求」写成 0 分，
+// 会让一篇信息型长文因为「没写对比表」丢 5 分，而写对比表对它毫无意义。
+func TestComparisonTableCheck(t *testing.T) {
+	scoreOf := func(in *Input) (score, max int, skipped bool) {
+		res := Score(in, nil)
+		for _, sec := range res.Sections {
+			if sec.Key != "content" {
+				continue
+			}
+			for _, ck := range sec.Checks {
+				if ck.Key == "comparison_table" {
+					return ck.Score, ck.Max, ck.Skipped
+				}
+			}
+		}
+		t.Fatal("内容质量维度里找不到 comparison_table 检查项")
+		return
+	}
+
+	buying := *idealInput()
+	buying.Intent = IntentCommercial
+	buying.HasComparisonTable = true
+	if score, max, skipped := scoreOf(&buying); skipped || score != max || max != 5 {
+		t.Errorf("比较型 + 有表应为满分 5：score=%d max=%d skipped=%v", score, max, skipped)
+	}
+
+	buying.HasComparisonTable = false
+	if score, _, skipped := scoreOf(&buying); skipped || score != 0 {
+		t.Errorf("比较型 + 无表应为 0 分（不是跳过）：score=%d skipped=%v", score, skipped)
+	}
+
+	info := *idealInput()
+	info.Intent = IntentInformational
+	info.HasComparisonTable = false
+	if _, _, skipped := scoreOf(&info); !skipped {
+		t.Error("信息型不要求对比表：应跳过（不计入维度分母），而不是记 0 分")
+	}
+}

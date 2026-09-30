@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -17,10 +18,21 @@ import (
 type blockPageTarget struct {
 	pagecontract.PageService
 	hit string
+	// rebuilt 记录自动重建收到的 id（异步执行，用 rebuildDone 同步断言）。
+	rebuilt     []string
+	rebuildDone chan struct{}
 }
 
-func (p *blockPageTarget) MarkStaleForBlock(_ context.Context, id string) error {
+func (p *blockPageTarget) MarkStaleForBlock(_ context.Context, id string) ([]string, error) {
 	p.hit = id
+	// 回一件命中 id：传播器拿它触发自动重建（本次改动的核心 —— 标记与重建不再分家）。
+	return []string{"page-1", "page-2"}, nil
+}
+
+// RebuildStale 记录重建调用（自动重建是异步的，断言前需要等待，见下面的 waitFor）。
+func (p *blockPageTarget) RebuildStale(_ context.Context, ids []string) error {
+	p.rebuilt = append(p.rebuilt, ids...)
+	p.rebuildDone <- struct{}{}
 	return nil
 }
 
@@ -31,19 +43,30 @@ func (p blockProjectTarget) ListThemesByBlockID(context.Context, string) ([]proj
 }
 
 type blockPresentationTarget struct {
-	kind, key string
-	err       error
+	kind, key   string
+	err         error
+	rebuilt     []string
+	rebuildDone chan struct{}
 }
 
 func (p *blockPresentationTarget) MarkStaleByDependency(_ context.Context, kind, key string) ([]string, error) {
 	p.kind, p.key = kind, key
-	return nil, p.err
+	if p.err != nil {
+		return nil, p.err
+	}
+	return []string{"inst-1"}, nil
+}
+
+func (p *blockPresentationTarget) RebuildStale(_ context.Context, ids []string) error {
+	p.rebuilt = append(p.rebuilt, ids...)
+	p.rebuildDone <- struct{}{}
+	return nil
 }
 
 func TestBlockChangesReachBothPublishingSources(t *testing.T) {
-	pages := &blockPageTarget{}
-	instances := &blockPresentationTarget{}
-	propagate := BlockStalePropagator(pages, blockProjectTarget{}, instances)
+	pages := &blockPageTarget{rebuildDone: make(chan struct{}, 4)}
+	instances := &blockPresentationTarget{rebuildDone: make(chan struct{}, 4)}
+	propagate := BlockStalePropagator(pages, blockProjectTarget{}, instances, instances)
 	if err := propagate(t.Context(), "shared-block"); err != nil {
 		t.Fatal(err)
 	}
@@ -51,9 +74,31 @@ func TestBlockChangesReachBothPublishingSources(t *testing.T) {
 	if pages.hit != "shared-block" || instances.kind != want.Kind || instances.key != want.Key {
 		t.Fatalf("块变更必须同时标记两种发布来源：%+v %+v", pages, instances)
 	}
+
+	// 标记之后必须**自动重建**（异步）：只标记不重建正是「改了页眉块、线上一直不变」的来源
+	// —— 那段时间里没有任何人工入口能触发它。
+	waitFor(t, pages.rebuildDone)
+	waitFor(t, instances.rebuildDone)
+	if len(pages.rebuilt) == 0 {
+		t.Error("块变更后未自动重建页面（标记与重建分家了）")
+	}
+	if len(instances.rebuilt) == 0 {
+		t.Error("块变更后未自动重建自动发布实例")
+	}
+
 	instances.err = errors.New("依赖写入失败")
 	if err := propagate(t.Context(), "shared-block"); !errors.Is(err, instances.err) {
 		t.Fatalf("不得吞掉自动实例标记错误：%v", err)
+	}
+}
+
+// waitFor 异步重建完成（带超时，避免实现坏了变成永久挂起）。
+func waitFor(t *testing.T, done chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("等待自动重建超时")
 	}
 }
 

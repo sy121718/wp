@@ -48,6 +48,10 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 		articlePages.SetArticleLinkLocator(loc)
 	}
 	pages.GET("/articles", articlePages.ArticlesPage)
+	// 待重建影响面清单（只读抽屉片段）：与页头徽章同一个查询，徽章给数、抽屉给清单。
+	// 鉴权复用列表页的读权限点 —— 片段里就是全站待重建页面清单，不挂鉴权等于把它
+	// 露给任何登录账号（菜单隐藏不是访问控制）。GET 与 /api/content/list 的策略动词一致。
+	pages.GET("/articles/stale/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleStaleDrawer)
 	// 文章新建整页（弃抽屉，对齐商品的 /admin/products/new）：左正文右实时预览。
 	// 页面 GET 本走 /admin 组（Session+CSRF，无 Casbin），但打开它就等于拿到建文章的
 	// 表单 —— 与 POST /articles/create 同挂 content:create 权限点，能建才能进。
@@ -80,6 +84,12 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
 	pages.POST("/articles/score", articlePages.ArticleScorePanel)
+	// SEO 评测抽屉片段（只读观测 + 一个 htmx 动作）：与编辑页同一权限点（content:list 的
+	// 写侧是 content:update，评测本身不改数据，按读侧鉴权即可）。GET 与策略动词一致。
+	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleSeoDrawer)
+	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），**不挂 Casbin** ——
+	// 与评分抽屉同一取舍：它只读渲染、不落库，而 iframe 无法携带 CSRF 头。
+	pages.GET("/articles/preview-frame", articlePages.ArticlePreviewFrame)
 	// 内链建议（SEO-015）：同为只读计算（候选来自已上线路径解析端口），
 	// 权限策略与评分侧栏一致 —— Session + CSRF，不叠权限点。
 	pages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)

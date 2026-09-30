@@ -111,6 +111,9 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 		if perr != nil {
 			logger.Scene("dependency").With("page_id", id).
 				Error(perr, "自动重建跳过：站点语言清单或旧发布范围不可读（页面保持 stale）")
+			// 除了日志，还把「失败在计划阶段」落到页面行上（见 markRebuildFailure 的注释）：
+			// 界面上看到的 stale 从此能区分「还没轮到」与「重建失败过」。
+			s.markRebuildFailure(ctx, page, pageRebuildStagePlan)
 			continue
 		}
 		r, p, rerr := s.rebuildPage(ctx, plan)
@@ -119,7 +122,10 @@ func (s *Service) RebuildStale(ctx context.Context, ids []string) error {
 		if rerr != nil {
 			logger.Scene("dependency").With("page_id", id).
 				Error(rerr, "依赖失效后的自动重建失败（页面保持 stale）")
+			s.markRebuildFailure(ctx, page, pageRebuildStageBuild)
+			continue
 		}
+		s.clearRebuildFailure(ctx, page)
 	}
 	if rebuilt > 0 {
 		logger.Scene("dependency").With("rebuilt", rebuilt).With("published", published).
@@ -322,4 +328,39 @@ func (s *Service) collectionSourcesOf(ctx context.Context, roots []*core.Node) [
 		}
 	}
 	return out
+}
+
+// 自动重建失败的阶段（闭集；与 pages.rebuild_failed_stage 的 VARCHAR(16) 对齐）。
+//
+// 只分两级而不是按错误类型细分：这两级已经足以决定「下一步做什么」——
+// plan = 读不到语言清单 / 旧发布范围（先查配置与语言表），build = 构建或发布失败
+// （查构建日志）。再细的分类需要把错误映射成枚举，而那层映射本身就会漂。
+const (
+	pageRebuildStagePlan  = "plan"
+	pageRebuildStageBuild = "build"
+)
+
+// markRebuildFailure 把「这一页自动重建失败在哪个阶段」写到页面行上。
+//
+// 为什么值得单独一处：重建失败此前只进日志，界面上留下的唯一痕迹是 stale 仍为 true —
+// 于是「待重建影响面」显示非零时，读的人分不清「还没轮到」与「反复失败」。
+//
+// 写入失败只记日志：观测不该反过来打断主流程（那句失败原文已经在调用点的日志里了）。
+func (s *Service) markRebuildFailure(ctx context.Context, page *pagemodel.PageEntity, stage string) {
+	if page == nil {
+		return
+	}
+	if err := s.model.MarkRebuildFailure(ctx, page.ProjectID, page.ID, stage, time.Now()); err != nil {
+		logger.Scene("dependency").With("page_id", page.ID).Error(err, "记录重建失败阶段失败（页面上的失败原因会缺失）")
+	}
+}
+
+// clearRebuildFailure 重建成功后清掉失败痕迹。
+func (s *Service) clearRebuildFailure(ctx context.Context, page *pagemodel.PageEntity) {
+	if page == nil {
+		return
+	}
+	if err := s.model.ClearRebuildFailure(ctx, page.ProjectID, page.ID); err != nil {
+		logger.Scene("dependency").With("page_id", page.ID).Error(err, "清除重建失败痕迹失败（该页可能继续显示上一次失败）")
+	}
 }

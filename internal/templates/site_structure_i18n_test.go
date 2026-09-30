@@ -204,13 +204,13 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"Rows": []map[string]any{{
 					"ID": "m1", "ParentID": "0", "Title": "内容管理", "Path": "/admin/pages",
 					"Remark": "站点结构", "Icon": "folder", "Type": 1, "Status": 1,
-					"SortOrder": 1, "Indent": "",
+					"SortOrder": 1, "Indent": "", "PermissionCodes": []string{"page:list"},
 				}},
 				"Parents": []map[string]any{{"ID": "m0", "Title": "根", "Type": 1, "Indent": ""}},
 				"PermSet": map[string]any{"menu:create": true, "menu:update": true, "menu:delete": true},
 			},
 			// 编辑表单按需从 /admin/menus/edit 获取；列表只交付编辑入口和新建表单。
-			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "data-drawer-url"},
+			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "权限点", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "data-drawer-url", "page:list"},
 		},
 	}
 

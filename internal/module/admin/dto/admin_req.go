@@ -131,4 +131,8 @@ type AdminMenuListReq struct {
 type AdminMenuSaveReq struct {
 	UserID  uint64   `json:"user_id" binding:"required" validate:"required"`
 	MenuIDs []uint64 `json:"menu_ids"`
+	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
+	// 与 AdminRoleSaveReq 同一个字段、同一个理由：超管保护的判定依据不能来自请求体，
+	// 否则提权者只要在 JSON 里写 operator_id=1 就能绕过保护。
+	OperatorID uint64 `json:"-"`
 }

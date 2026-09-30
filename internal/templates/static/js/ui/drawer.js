@@ -65,8 +65,14 @@
             throw new Error('fragment root');
         }
         var root = parsed.body.children[0];
+        /* data-drawer-readonly：**不靠原生表单提交**的片段 —— 只读清单（待重建影响面）、
+           或只有 htmx 动作的片段（SEO 评测抽屉里的「重新评分」走 hx-post，没有可提交字段）。
+           要求显式声明而不是无条件放宽：变成「含 form 或随便什么」会让「取错了片段」
+           从加载期失败退化成静默渲染半截内容。
+           安全边界不变：单根、data-drawer-fragment、无内联事件、链接同源都还在。 */
         if (!root.matches('[data-drawer-fragment]') ||
-            !(root.matches('form') || root.querySelector('form'))) {
+            (!root.matches('[data-drawer-readonly]') &&
+                !(root.matches('form') || root.querySelector('form')))) {
             throw new Error('missing form fragment');
         }
         var nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*')));

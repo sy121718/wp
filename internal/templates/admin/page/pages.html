@@ -85,7 +85,9 @@
             <p class="stat-note">{{tr("admin.pages.impact.scope_note", "口径：全部站点工程。下方页面列表只显示当前聚焦的工程，两处的数不是同一个。")}}</p>
             <ul>
                 {{range _, p := .StaleOverview.Pages}}
-                <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span>{{if !p.Published}} <span class="badge badge-mute">{{tr("admin.pages.impact.never_published", "未上线")}}</span>{{end}} <a href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a></li>
+                <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span>{{if !p.Published}} <span class="badge badge-mute">{{tr("admin.pages.impact.never_published", "未上线")}}</span>{{end}} <a href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
+                    {* 失败痕迹：与文章 / 块页的抽屉同一口径（同一批页面，三处显示必须一致）。 *}
+                    {{if p.FailedNote}}<div class="stat-note">{{p.FailedNote}}</div>{{end}}</li>
                 {{end}}
             </ul>
             {{if .StaleOverview.Truncated}}

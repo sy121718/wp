@@ -21,7 +21,7 @@ var registerAdminBatchI18nOnce sync.Once
 
 // registerAdminBatchI18nSeed 注册 432（真正干活的那一半）。
 func registerAdminBatchI18nSeed() {
-	// 门槛 = 本批 71 个新 key 的 **en-US** 行都在（= 71 行）。挑 en-US 而不是 zh-CN：
+	// 门槛 = 本批 70 个新 key 的 **en-US** 行都在（= 71 行）。挑 en-US 而不是 zh-CN：
 	// 中文行与模板里的 fallback 同形，容易被别处顺手加上，按 zh-CN 计数会让门槛在
 	// 「本批还没跑」时就成立、整批词条被静默跳过（416 / 431 的同一理由）。
 	//
@@ -36,7 +36,7 @@ func registerAdminBatchI18nSeed() {
 	registerSeed(Seed{
 		Version:   "432-i18n-admin-batch",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 71 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 70 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang = 'en-US' AND item_key IN (" +
 			"'admin.article.edit.visualCreate','admin.article.edit.visualGo'," +
 			"'admin.article.edit.visualHeading','admin.article.edit.visualIntro'," +
@@ -52,7 +52,7 @@ func registerAdminBatchI18nSeed() {
 			"'admin.blocks.impact.heading','admin.blocks.impact.moreLead'," +
 			"'admin.blocks.impact.moreTail','admin.blocks.impact.none'," +
 			"'admin.blocks.lastError','admin.common.default'," +
-			"'admin.common.media.clear','admin.common.media.empty'," +
+			"'admin.common.media.clear'," +
 			"'admin.common.media.pick','admin.coupons.status.unknown_lead'," +
 			"'admin.coupons.status.unknown_tail','admin.customers.filter.hint.clickable'," +
 			"'admin.depts.filter_empty','admin.mail.marketing.contact_status.pick'," +

@@ -30,30 +30,90 @@ import (
 //
 // 自动发布实例按真实构建依赖反查（含嵌套全局块）。
 // 路径 2/3 由 page 契约按 blockID 反查；重叠命中同一页面时 stale=true 幂等，无妨。
-func BlockStalePropagator(pages pagecontract.PageService, projects projectcontract.ProjectService, presentations pipeline.DependencyTarget) func(context.Context, string) error {
+//
+// **标记之后立刻重建**（异步，见 rebuildStaleAsync）。此前这里只标记、把重建留给「人工触发」——
+// 而那个入口当时并不存在（RebuildStale 只有契约方法、没有 HTTP 路由），于是「改了页眉块 →
+// 后台显示一堆待重建 → 线上一个月不变」。文章/商品那条路径早就自动重建了（pipeline.Fanout），
+// 这里补的是同一条语义的另一半。
+//
+// 为什么异步：内容写入的请求路径不该被整站 Build+Publish 拖住（与 Fanout 的取舍逐字一致）。
+// 拿到 ids 才谈得上重建，所以契约上的两个标记方法同时改成回传命中 id。
+func BlockStalePropagator(pages pagecontract.PageService, projects projectcontract.ProjectService, presentations pipeline.DependencyTarget, presentationRebuilder pipeline.StaleRebuilder) func(context.Context, string) error {
 	return func(ctx context.Context, blockID string) error {
 		themes, err := projects.ListThemesByBlockID(ctx, blockID)
 		if err != nil {
 			logger.Scene("block").With("block_id", blockID).Error(err, "反查绑定块的主题失败")
 			return err
 		}
+		pageIDs := make([]string, 0, 8)
 		for _, t := range themes {
-			if err := pages.MarkStaleForTheme(ctx, t.ID); err != nil {
-				logger.Scene("block").With("block_id", blockID).With("theme_id", t.ID).Error(err, "标记页面待重建失败")
-				return err
+			ids, merr := pages.MarkStaleForTheme(ctx, t.ID)
+			if merr != nil {
+				logger.Scene("block").With("block_id", blockID).With("theme_id", t.ID).Error(merr, "标记页面待重建失败")
+				return merr
 			}
+			pageIDs = append(pageIDs, ids...)
 		}
-		if err := pages.MarkStaleForBlock(ctx, blockID); err != nil {
+		ids, err := pages.MarkStaleForBlock(ctx, blockID)
+		if err != nil {
 			logger.Scene("block").With("block_id", blockID).Error(err, "反查引用块页面标待重建失败")
 			return err
 		}
+		pageIDs = append(pageIDs, ids...)
+
 		dep := pipeline.BlockKey(blockID)
-		if _, err := presentations.MarkStaleByDependency(ctx, dep.Kind, dep.Key); err != nil {
+		instIDs, err := presentations.MarkStaleByDependency(ctx, dep.Kind, dep.Key)
+		if err != nil {
 			logger.Scene("block").With("block_id", blockID).Error(err, "标记引用块的自动发布实例待重建失败")
 			return err
 		}
+
+		// 重建排在标记之后、且不受标记失败影响：标记成功的那部分照常重建。
+		// page 侧直接用 pages（它同时是标记目标与重建器）；presentation 侧两者分开传 ——
+		// 契约接口只声明了 MarkStaleByDependency，RebuildStale 是 pipeline 端口
+		// （装配处已经断言过 presentationSvc 实现了它，见 assembly_publish 的扇出注册）。
+		rebuildStaleAsync("block", pages, pageIDs)
+		rebuildStaleAsync("block", presentationRebuilder, instIDs)
 		return nil
 	}
+}
+
+// rebuildStaleAsync 标记完之后立刻重建，不阻塞调用方（内容写入 / 启动的调用栈）。
+//
+// ids 先去重再拷一份：入参切片可能来自多个来源（主题命中 + 块引用命中会重叠），
+// 而 goroutine 读的是调用方的切片 —— 拷贝是为了不与调用方的后续写入共享底层数组。
+func rebuildStaleAsync(scene string, rebuilder pipeline.StaleRebuilder, ids []string) {
+	batch := uniqueIDs(ids)
+	if len(batch) == 0 || rebuilder == nil {
+		return
+	}
+	go func() {
+		// context.Background：重建要活过发起它的请求（请求一结束就取消等于没重建）。
+		if err := rebuilder.RebuildStale(context.Background(), batch); err != nil {
+			logger.Scene(scene).With("count", len(batch)).
+				Error(err, "变更后的自动重建失败（相关页面保持待重建，等下次触发）")
+		}
+	}()
+}
+
+// uniqueIDs 去重并保持首次出现的顺序（重建是按 id 逐个跑的，顺序稳定便于对日志）。
+func uniqueIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // BlockReferenceChecker 块删除 / global→template 切换前的引用检查：合并全部

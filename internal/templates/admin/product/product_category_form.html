@@ -1,4 +1,5 @@
 {{import "../partials/rich_editor.html"}}
+{{import "../partials/media_field.html"}}
 {{fill := isset(.FormEcho)}}
 {{tr := .["t"]}}
 {{create := .Mode == "create"}}
@@ -25,7 +26,12 @@
             <div data-category-parent-results role="status"></div>
             </div>
             <input aria-label="{{tr("admin.product_categories.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{if fill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" inputmode="numeric" step="1">
-            <input aria-label="{{tr("admin.product_categories.label.image", "分类图 URL")}}" class="form-input" type="text" name="image" value="{{if fill}}{{.FormEcho.image}}{{else}}{{.Image}}{{end}}" autocomplete="off">
+            {* 单图字段走媒体字段（缩略图 + 媒体库 + 清除）：上传与选择只从媒体库走，
+               本页不持有文件输入 —— 与商品图集的多图控件同一条约定。 *}
+            {{imgValue := .Image}}{{if fill}}{{imgValue = .FormEcho.image}}{{end}}
+            {{yield mediaField(field="image", key="cat", value=imgValue,
+                pickLabel=tr("admin.common.media.pick", "媒体库"),
+                clearLabel=tr("admin.common.media.clear", "清除"))}}
         </div>
         <input aria-label="{{tr("admin.product_categories.label.seoTitle", "SEO 标题")}}" class="form-input" type="text" name="seoTitle" id="cat-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter="60" value="{{if fill}}{{.FormEcho.seoTitle}}{{else}}{{.SEOTitle}}{{end}}">
         <span class="field-counter" data-counter-out="cat-seo-title-{{if create}}new{{else}}{{.ID}}{{end}}" data-counter-template="{{tr("admin.common.counter.chars", "{n} / {max} 字符")}}"></span>
@@ -38,8 +44,8 @@
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
             {{if !create}}<button type="button" class="btn" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{.ID}}" hx-swap="innerHTML">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
+        {{if !create}}<div id="category-seo-score-{{.ID}}" class="wb-seo-panel"></div>{{end}}
             <button type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
         </div>
-        {{if !create}}<div id="category-seo-score-{{.ID}}" class="wb-seo-panel"></div>{{end}}
-    </form>
+            </form>
 </div>

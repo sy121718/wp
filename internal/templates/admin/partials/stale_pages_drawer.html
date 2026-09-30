@@ -1,0 +1,56 @@
+{* partials/stale_pages_drawer.html — 「待重建页面」清单的**只读抽屉**片段（/admin/articles 与 /admin/blocks 共用）。
+
+   为什么是抽屉：这份清单是**全站**口径的观测（与当前页面的内容没有直接关系），摊在列表页上
+   既挤占首屏、又和页面主题不搭。改成抽屉后列表页只留一行可点的徽章作入口，清单本身则有足够
+   宽度排成表格（路径 / 工程 / 状态 / 操作），而不是一条「路径 工程名 编辑」的裸列表。
+
+   片段形状（ui/drawer.js 的 fragmentRoot 校验）：
+     · 唯一根元素 + data-drawer-fragment；
+     · 只读抽屉用 **data-drawer-readonly** 显式声明 —— 校验原本要求片段含 <form>（抽屉过去只装表单），
+       这份清单没有任何可提交内容，为通过校验塞一个空 form 是给框架打工；
+     · 不能出现 script / style / link / meta / iframe / svg / template，链接必须同源（本片段只有
+       /workbench 一个同源链接）。
+
+   数据键（调用方给齐；缺键会让整个抽屉渲染中断 → htmx 因 5xx 不 swap，用户点开是空白）：
+     Rows（含 ID / Path / ProjectName / Published）、Total、Truncated、Limit、MultiProject。
+
+   两处（文章 / 块）共用同一份模板与同一批词条：它们说的是同一件事，各写一份的下场是同一个现象
+   在两个页面上有两种说法。 *}
+{{tr := .["t"]}}
+{{multi := .MultiProject}}
+<div data-drawer-fragment data-drawer-readonly class="perm-drawer">
+    <p class="perm-intro">{{tr("admin.blocks.impact.help", "块、内容、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。")}}</p>
+    {* 列数必须与数据行的 td 数一致（含 multi 开关的两列）：不一致时浏览器不报错，
+       而是把缺的那列补在行尾 → 整表左移一列，模板层没有任何异常。 *}
+    <div class="table-wrap table-scroll" tabindex="0" role="region">
+        <table class="data-table">
+            <thead>
+            <tr>
+                <th>{{tr("admin.pages.col.path", "路径")}}</th>
+                {{if multi}}<th>{{tr("admin.dashboard.col.project", "所属工程")}}</th>{{end}}
+                <th>{{tr("admin.pages.col.status", "状态")}}</th>
+                <th class="col-actions">{{tr("admin.pages.col.actions", "操作")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range _, p := .Rows}}
+            <tr>
+                <td><code>{{p.Path}}</code></td>
+                {{if multi}}<td class="text-mute">{{p.ProjectName}}</td>{{end}}
+                {* 「已发布但有更新」与「从未上线」是两件事：后者的处置不是重建，而是先发布 ——
+                   合并成一句会让运营按「重建」处理一个根本还没上线的页面。 *}
+                <td>{{if p.Published}}<span class="badge badge-warning">{{tr("admin.pages.status.stale", "有更新未发布")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.pages.impact.never_published", "未上线")}}</span>{{end}}
+                    {* 失败痕迹：非空说明这页**不是还没轮到重建，而是重建失败过** ——
+                       两者的处置相反（等 vs 查日志），只给 stale 徽标时读的人只能猜。
+                       文案在 Go 侧组装（含阶段与时刻），模板不做判据。 *}
+                    {{if p.FailedNote}}<div class="stat-note" role="status">{{p.FailedNote}}</div>{{end}}</td>
+                <td class="col-actions"><a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a></td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{if .Truncated}}
+    <p class="stat-note">{{tr("admin.article.list.staleMoreLead", "（清单只列了前 ")}}{{ .Limit }}{{tr("admin.article.list.staleMoreTail", " 条，其余只有计数；完整清单请按页面视图逐个查看。）")}}</p>
+    {{end}}
+</div>

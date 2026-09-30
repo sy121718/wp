@@ -109,6 +109,14 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// **只读计算**（不写库、不写产物、不激活 URL），因此与文章编辑页的评分侧栏一样
 	// 不叠加 Casbin 权限点 —— 页面组已有 Session + CSRF；评分是提示性的，不拦保存。
 	pages.POST("/products/seo-score", productPages.ProductScorePanel)
+	// SEO 评分抽屉片段（商品 / 分类 / 品牌共用一个）：四处入口（商品编辑页、两个表单页、
+	// 两个列表页的行内按钮）统一落到这里。与上面两个 POST 端点**同一取舍** ——
+	// 只读计算（不写库、不写产物），页面组已有 Session + CSRF，不叠加 Casbin 权限点；
+	// 给一个只读片段单独挂权限点，会让「能看编辑页却打不开评分」这种状态冒出来。
+	pages.GET("/products/seo/drawer", productPages.EntitySeoDrawer)
+	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），理由同上一行 ——
+	// 只读渲染、不落库，而 iframe 无法携带 CSRF 头。
+	pages.GET("/products/preview-frame", productPages.ProductPreviewFrame)
 	pages.POST("/product-categories/seo-score", productPages.ProductCategoryScorePanel)
 	pages.POST("/product-brands/seo-score", productPages.ProductBrandScorePanel)
 

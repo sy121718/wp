@@ -31,8 +31,16 @@ func productFieldValues(p *productmodel.ProductEntity, variants []*productmodel.
 		// SEO 字段原样透出（不套 descriptionHTML）：它们是给 <title> 与 meta description
 		// 用的纯文本，套上富文本包装反而要在消费侧再去标签
 		//（presentation 侧仍会做一次归一，兜住历史数据里混进的标记）。
-		"seoTitle":       p.SEOTitle,
-		"seoDescription": p.SEODescription,
+		// SEO 标题与商品名**就是同一个东西**（2026-09-30 合并）：商品名即网页标题。
+		// 原来分开两个字段，是从 WordPress 那套抄来的形状 —— 它分开是因为原生没有独立标题概念，
+		// 而这里「商品叫什么」本来就是我们要的 <title>，多一个框只会逼编辑者抄一遍。
+		// seoTitle 这个**键保留**：模板里绑 {{product.seoTitle}} 的地方不用改，值就是商品名。
+		// 副标题同理充当 meta description（按他说的「网页悬浮显示的那行」）。
+		//
+		// products.seo_title / seo_description 两列**保留但不再暴露**：里面可能有编辑者
+		// 认真写过的历史值，删列会丢数据。它们不再是任何 UI 的来源。
+		"seoTitle":       p.Name,
+		"seoDescription": p.Subtitle,
 		"imageAlts":      imageAltsJSON(p, loc),
 		"slug":           p.Slug,
 		"unit":           p.Unit,

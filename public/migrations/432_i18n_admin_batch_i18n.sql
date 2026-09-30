@@ -98,8 +98,6 @@ VALUES
     ('admin.common.default', 'en-US', 'Default', 200, 'admin', 'admin/product/products_new.html: 「默认」选项', 1, now(), now()),
     ('admin.common.media.clear', 'zh-CN', '清除', 200, 'admin', 'admin/content/article_edit.html: 媒体选择器「清除」按钮', 1, now(), now()),
     ('admin.common.media.clear', 'en-US', 'Clear', 200, 'admin', 'admin/content/article_edit.html: 媒体选择器「清除」按钮', 1, now(), now()),
-    ('admin.common.media.empty', 'zh-CN', '未选择图片', 200, 'admin', 'admin/content/article_edit.html: 媒体选择器空态', 1, now(), now()),
-    ('admin.common.media.empty', 'en-US', 'No image selected', 200, 'admin', 'admin/content/article_edit.html: 媒体选择器空态', 1, now(), now()),
     ('admin.common.media.pick', 'zh-CN', '媒体库', 200, 'admin', 'admin/content/article_edit.html: 媒体选择器「媒体库」按钮', 1, now(), now()),
     ('admin.common.media.pick', 'en-US', 'Media library', 200, 'admin', 'admin/content/article_edit.html: 媒体选择器「媒体库」按钮', 1, now(), now()),
     ('admin.coupons.status.unknown_lead', 'zh-CN', '（未知状态：', 200, 'admin', 'admin/order/coupons.html: 未知状态文案 ①（拼接段，英文以空格结尾）', 1, now(), now()),

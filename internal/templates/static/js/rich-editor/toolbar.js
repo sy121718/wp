@@ -71,7 +71,12 @@
         html.push('<button type="button" class="trix-button sre-toolbar-btn" data-sre-insert="rule" title="插入水平线">水平线</button>');
         html.push('<button type="button" class="trix-button sre-toolbar-btn" data-sre-insert="table" title="插入表格">表格</button>');
         html.push('<button type="button" class="trix-button sre-toolbar-btn" data-sre-insert="accordion" title="插入折叠块">折叠块</button>');
-        html.push(actionButton('attachFiles', '附件', '插入附件'));
+        // 图片走媒体库选择器（rich-editor/image.js），不是 Trix 原生的附件上传：
+        // 原生那条走 Trix 自己的 /attachments 端点，本项目没有它。
+        html.push('<button type="button" class="trix-button sre-toolbar-btn" data-sre-insert="image" title="插入图片">图片</button>');
+        // 附件也走统一分派（原来用 actionButton('attachFiles') 走 Trix 原生上传，
+        // 而本项目没有那个端点 —— 点了没反应）。行为见 rich-editor/attachment.js。
+        html.push('<button type="button" class="trix-button sre-toolbar-btn" data-sre-insert="attachment" title="插入附件">附件</button>');
         html.push('</span>');
 
         // 撤销 / 重做
@@ -159,7 +164,11 @@
                 event.preventDefault();
                 editorEl.focus();
                 var kind = insertBtn.getAttribute('data-sre-insert');
-                if (kind === 'rule') {
+                if (kind === 'image') {
+                    SRE.image.insert(editorEl.editor);
+                } else if (kind === 'attachment') {
+                    SRE.attachment.insert(editorEl.editor);
+                } else if (kind === 'rule') {
                     SRE.rule.insert(editorEl.editor);
                 } else if (kind === 'table') {
                     SRE.table.insert(editorEl.editor);

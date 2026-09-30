@@ -571,3 +571,31 @@ func firstWords(text string, n int, locale string) string {
 	}
 	return strings.Join(f, " ")
 }
+
+// needsComparisonTable 该意图是否要求结构化对比表。
+//
+// 只有比较型与购买型要求：它们的问题是「选哪个」，一张逐项对照的表是决策资产；
+// 信息型/定义型的问题是「这是什么」，强制要表只会逼出规格堆砌 —— 那正是新规则里
+// 明确排除的（"not a spec repeat"）。本地型同理不要求（它要的是门店/服务信息）。
+func needsComparisonTable(intent QueryIntent) bool {
+	return intent == IntentCommercial || intent == IntentTransactional
+}
+
+// chkComparisonTable 比较型 / 购买型意图下，正文是否给了结构化对比表。
+//
+// 返回负数 = 不适用（引擎据此跳过该项、不计入维度分母）：信息型 / 定义型 / 本地型，
+// 以及**意图未知**（空）都不要求 —— 意图是从页面/商品元数据推断的，推不出来时
+// 扣分是拿编辑者无法控制的东西罚他。
+//
+// 只判「有没有表」而不判「表好不好」：判定后者需要读懂表里在比什么（列是不是决策维度、
+// 值能不能对照），那是人/模型的判断，不是纯函数能给的。规则原文的 "not a spec repeat"
+// 因此留在提示文案里由人把关，评分只保证「有这个结构」。
+func chkComparisonTable(in *Input) (int, string) {
+	if !needsComparisonTable(in.Intent) {
+		return -1, "不适用（该意图不要求对比表）"
+	}
+	if in.HasComparisonTable {
+		return 5, "有结构化对比表"
+	}
+	return 0, "缺少对比表"
+}

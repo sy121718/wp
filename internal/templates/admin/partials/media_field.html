@@ -1,46 +1,31 @@
-{* admin/partials/media_field.html — 媒体字段片段（缩略图预览 + 媒体库选择 + 外链粘贴）。
- *
- * 为什么要有它：媒体地址字段在后台散落成裸文本框（文章封面、商品图集、页面背景……），
- * 运营既看不到自己填的图长什么样，也没有从媒体库挑的入口 —— 只能手敲 URL，敲错要等发布后
- * 才发现。工作台检查器早就有「缩略图 + 媒体库 + 清除 + 外链」四件套
- * （static/js/workbench/methods/controls/media.js），后台表单这条路一直没有对应实现。
- *
- * 注意：注释里**不要写完整的控件标签字面量**（哪怕只是举例）——
- * admin_form_base_test.go 的扫描器不剥 Jet 注释标记，会把注释里的标签
- * 当成真控件计入「裸控件」基线，凭空让覆盖率先红一次。
- *
- * 用法：在页面顶部 import 本片段（import 必须写在 extends 之后、任何 block 之前），
- * 然后在表单里 yield 一次 mediaField —— 参数是
- * 「字段名 / 唯一 key / 当前值 / 媒体库按钮文案 / 清除按钮文案 / 占位文案 / 未选中文案」，
- * 逐项与下列调用点写法一致（示例见 admin/article_edit.html 的封面图字段）：
- *     mediaField(field="featuredImage", key="article", value=form.FeaturedImage,
- *                pickLabel=tr("admin.common.media.pick", "媒体库"), …)
- *
- * 四条约定：
- *   · **input 仍是唯一真值来源**：媒体库选中只写回这只输入框并广播 change，
- *     页面既有的表单收集逻辑一行都不用改；
- *   · key 只用来拼唯一 id（同一个页面里同一字段可能出现 N 次：每行一个抽屉）。
- *     传空串也可以（id 会退化成一个固定值），但**同一页出现两次同名字段请给不同 key**；
- *   · 本片段不含中文文案：按钮与占位文案由调用点用 t() 取词传入，
- *     片段只收结构（与 bulk_bar.html / rich_editor.html 的分工一致）；
- *   · 行为在 static/js/ui/mediafield.js（控件基座统一加载，无需调用方引脚本）。
- *     它按 data-media-field 扫描，htmx 局部替换后会重新增强。
- *
- * 两个已踩过的坑，别再犯：
- *   · 注释里不要写完整的控件标签字面量 —— admin_form_base_test.go 的扫描器不剥注释，
- *     会把例子当成真控件计入「裸控件」基线；
- *   · 注释里也不要出现控制块标签的完整写法（block / if / range / with 的成对写法），
- *     admin_template_integrity_test.go 同样不剥注释，会判定「控制块不配平」。 *}
+{* admin/partials/media_field.html — 媒体字段片段（图像框：点击选图 / 预览 / 移除）。
 
-{{block mediaField(field, key, value, pickLabel, clearLabel, placeholder, emptyLabel)}}<div class="media-field" data-media-field>
-    <div class="media-field-preview" data-media-preview>
+ * 形态（2026-09-30 改）：**一个图像框**，空态是虚线框加一句提示，点击即开媒体库；
+ * 有图时显示缩略图，框下方一行小字给地址（便于核对）与「移除」。
+ * 原来那种「大输入框 + 两个按钮」的写法把半个表单宽度让给了一个几乎没人手填的 URL 框，
+ * 而图片字段真正要做的事只有一件：挑一张图。
+
+ * 为什么去掉手填地址：本项目的约定是**上传与选择只走媒体库**（与图集的多图控件同一条），
+ * 手填外链会绕过媒体库的登记与引用追踪。地址仍然显示出来（只读），是为了核对选对了没有。
+
+ * 真值来源仍是那个隐藏域：媒体库选中只写它并广播 change，页面既有的表单收集逻辑一行都不用改。
+
+ * 注意：注释里**不要写完整的控件标签字面量**（admin_form_base_test.go 的扫描器不剥 Jet 注释，
+ * 会把例子当成真控件计入「裸控件」基线）。
+
+ * 用法：页面顶部 import 本片段，表单里 yield 一次 mediaField —— 参数是
+ *「字段名 / 唯一 key / 当前值 / 选择按钮文案 / 清除按钮文案」。
+ *
+ * 空态是一个「＋」而不是一句文案：一个图片框要做什么，看形状就知道，
+ * 写「尚未选择图片」只是把同一件事说了第二遍，还多一条要翻译的词条。 *}
+{{block mediaField(field, key, value, pickLabel, clearLabel)}}<div class="media-field" data-media-field>
+    <button type="button" class="media-field-box" data-media-pick aria-label="{{pickLabel}}">
         <img alt="" data-media-img hidden>
-        <span class="media-field-tip" data-media-tip>{{emptyLabel}}</span>
+        <span class="media-field-empty" data-media-tip aria-hidden="true">＋</span>
+    </button>
+    <div class="media-field-foot">
+        <span class="media-field-url" data-media-url></span>
+        <button type="button" class="btn btn-sm btn-ghost" data-media-clear>{{clearLabel}}</button>
     </div>
-    <div class="media-field-row">
-        <input class="form-input" type="text" id="media-{{field}}-{{key}}" name="{{field}}"
-               value="{{value}}" placeholder="{{placeholder}}" data-media-input>
-        <button type="button" class="btn btn-sm" data-media-pick>{{pickLabel}}</button>
-        <button type="button" class="btn btn-sm" data-media-clear>{{clearLabel}}</button>
-    </div>
+    <input type="hidden" name="{{field}}" value="{{value}}" data-media-input>
 </div>{{end}}

@@ -98,7 +98,7 @@
                            {{if r.Checked}}checked{{end}}>
                     <span class="perm-title">{{r.Title}}</span>
                     <span class="perm-type perm-type-{{r.Type}}">{{r.TypeLabel}}</span>
-                    {{if r.PermissionCode}}<code class="perm-code">{{r.PermissionCode}}</code>{{end}}
+                    {{range _, code := r.PermissionCodes}}<code class="perm-code">{{code}}</code>{{end}}
                     {{if r.Status == 0}}<span class="badge badge-mute">{{tr("admin.roles.perm.badge.disabled", "已禁用")}}</span>{{end}}
                 </label>
             </div>

@@ -7,6 +7,7 @@
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{import "../partials/media_field.html"}}
 {{import "../partials/rich_editor.html"}}
 {{block body()}}
 {{tr := .["t"]}}
@@ -186,8 +187,13 @@
                 <input aria-label="{{ .["t"]("admin.product_brands.label.name", "品牌名称") }}" class="form-input" type="text" name="name" value="{{b.Name}}" placeholder="{{ .["t"]("admin.product_brands.label.name", "品牌名称") }}" required>
                 <input aria-label="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" class="form-input" type="text" name="slug" value="{{b.Slug}}" placeholder="{{ .["t"]("admin.product_brands.label.slug", "URL 段") }}" autocomplete="off">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="{{b.Sort}}" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                <input aria-label="{{ .["t"]("admin.product_brands.label.logo", "logo URL") }}" class="form-input" type="text" name="logo" value="{{b.Logo}}" placeholder="{{ .["t"]("admin.product_brands.label.logo", "logo URL") }}" autocomplete="off">
             </div>
+            {* logo 从行内挪出来单独成块：媒体字段是块级（缩略图 + 输入 + 两个按钮），
+               塞进 .form-inline 会把那一行撑成两行、左右都错位。 *}
+            {{logoValue := b.Logo}}
+            {{yield mediaField(field="logo", key=b.ID, value=logoValue,
+                pickLabel=tr("admin.common.media.pick", "媒体库"),
+                clearLabel=tr("admin.common.media.clear", "清除"))}}
             <label class="form-label" for="brand-seo-title-{{b.ID}}">{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}</label>
             <input class="form-input" type="text" id="brand-seo-title-{{b.ID}}" name="seoTitle" value="{{b.SEOTitle}}" data-counter="60" placeholder="{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}">
             <span class="field-counter" data-counter-out="brand-seo-title-{{b.ID}}" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>
@@ -208,7 +214,8 @@
                         hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
             </div>
-            {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。 *}
+            {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。
+               hx-target 指向它，少一个字符按钮就静默失效 —— 别在其中插空格。 *}
             <div id="brand-seo-score-{{b.ID}}" class="wb-seo-panel"></div>
         </form>
     </template>
@@ -224,8 +231,10 @@
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" required>
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.slug", "URL 段（留空自动生成）") }}" class="form-input" type="text" name="slug" placeholder="{{ .["t"]("admin.product_brands.ph.slug", "URL 段（留空自动生成）") }}" autocomplete="off">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" class="form-input" type="number" name="sort" value="0" placeholder="{{ .["t"]("admin.product_brands.ph.sort", "排序") }}" inputmode="numeric" step="1">
-                <input aria-label="{{ .["t"]("admin.product_brands.ph.logo", "logo URL（可留空）") }}" class="form-input" type="text" name="logo" placeholder="{{ .["t"]("admin.product_brands.ph.logo", "logo URL（可留空）") }}" autocomplete="off">
             </div>
+            {{yield mediaField(field="logo", key="new", value="",
+                pickLabel=tr("admin.common.media.pick", "媒体库"),
+                clearLabel=tr("admin.common.media.clear", "清除"))}}
             <label class="form-label" for="brand-new-seo-title">{{ .["t"]("admin.product_brands.label.seoTitle", "SEO 标题") }}</label>
             <input class="form-input" type="text" id="brand-new-seo-title" name="seoTitle" data-counter="60" placeholder="{{ .["t"]("admin.product_brands.ph.seoTitle", "SEO 标题（可留空）") }}">
             <span class="field-counter" data-counter-out="brand-new-seo-title" data-counter-template="{{ .["t"]("admin.common.counter.chars", "{n} / {max} 字符") }}"></span>

@@ -83,16 +83,16 @@ func TestAdminEmptyStateKeepsTableHead(t *testing.T) {
 		assertEmptyKeepsTableHead(t, "departments+delete", out, "8", []string{"还没有部门", "data-check-all"})
 	})
 
-	t.Run("menus/无删除权限→colspan9", func(t *testing.T) {
+	t.Run("menus/无删除权限→colspan10", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{"Rows": []any{}, "Parents": []any{}})
-		assertEmptyKeepsTableHead(t, "menus", out, "9", []string{"还没有菜单"})
+		assertEmptyKeepsTableHead(t, "menus", out, "10", []string{"还没有菜单"})
 	})
 
-	t.Run("menus/有删除权限→colspan10", func(t *testing.T) {
+	t.Run("menus/有删除权限→colspan11", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{
 			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"menu:delete": true},
 		})
-		assertEmptyKeepsTableHead(t, "menus+delete", out, "10", []string{"还没有菜单", "data-check-all"})
+		assertEmptyKeepsTableHead(t, "menus+delete", out, "11", []string{"还没有菜单", "data-check-all"})
 	})
 
 	t.Run("i18n→colspan7", func(t *testing.T) {
@@ -124,7 +124,8 @@ func TestAdminEmptyStateKeepsTableHead(t *testing.T) {
 // TestAdminDataFormUnchanged 有数据形态：不出现空态、数据行照常渲染（防「修空态把正常行改坏」）。
 func TestAdminDataFormUnchanged(t *testing.T) {
 	t.Run("menus", func(t *testing.T) {
-		row := map[string]any{"ID": "m1", "Title": "首页", "Type": 2, "Path": "/", "Status": 1, "SortOrder": 1, "Indent": "", "Icon": "home", "Remark": ""}
+		row := map[string]any{"ID": "m1", "Title": "首页", "Type": 2, "Path": "/", "Status": 1, "SortOrder": 1, "Indent": "", "Icon": "home", "Remark": "",
+			"PermissionCodes": []string{"menu:list", "menu:create"}}
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{"Rows": []any{row}, "Parents": []any{row}})
 		if strings.Contains(out, `class="empty-state"`) {
 			t.Error("menus 有数据时不应出现空态")

@@ -161,34 +161,39 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 	}
 }
 
-// TestBlocksStaleImpactTierStalePage 有 stale：页头徽章 + 折叠清单，且不再有常驻只读卡。
+// TestBlocksStaleImpactTierStalePage 有 stale：页头只剩一行**可点徽章**，清单在抽屉里。
+//
+// 这一条钉的是「清单不再落在列表页上」：抽屉的内容由 /admin/blocks/stale/drawer 渲染
+// （片段形态见 templates 包的同名用例），页面本身只该给入口 —— 否则又回到
+// 「13 条清单把列表顶出首屏」的老毛病，只是换了个外壳。
 func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 	data := blocksBaseData(true)
 	data["StaleImpact"] = gin.H{
 		"Available": true,
 		"Pages":     []gin.H{{"ID": "pg1", "Path": "/blog/hello-world", "ProjectName": "站点"}},
-		"Total":     1, "Truncated": false, "Limit": 30, "Hint": "",
+		"Total":     1, "Truncated": false, "Limit": 8, "Hint": "",
 	}
 	body := renderBlocksPage(t, data)
 
 	for _, want := range []string{
 		"1", "个页面有更新未发布", // 页头徽章的计数与后缀
-		`class="badge badge-warning"`,
+		`class="badge badge-warning badge-btn"`,
 		`class="page-sub"`,
-		`<details class="section-fold card">`,
-		"待重建影响面", "/blog/hello-world",
+		`data-drawer-url="/admin/blocks/stale/drawer"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("有 stale 时缺少 %q", want)
 		}
 	}
-	// 降级判据：列表卡之上的常驻只读卡（旧形态是 <section class="card">）不再存在。
-	if strings.Contains(body, `<section class="card">`) {
-		t.Error("影响面仍是常驻只读卡：应降级为页头徽章 + <details class=\"section-fold card\"> 折叠清单")
-	}
-	// 清单默认收起：details 不带 open（不占首屏）。
-	if strings.Contains(body, `<details class="section-fold card" open>`) {
-		t.Error("影响面清单默认展开了 —— 本次降级的目的正是不让它顶掉列表首屏")
+	// 反向判据：页面本身不该再渲染清单 / 折叠卡 / 常驻卡。
+	for _, notWant := range []string{
+		"/blog/hello-world",                  // 清单条目
+		`<details class="section-fold card">`, // 折叠清单
+		`<section class="card">`,              // 常驻只读卡（最早的形态）
+	} {
+		if strings.Contains(body, notWant) {
+			t.Errorf("列表页不该再渲染 %q —— 清单已移入抽屉", notWant)
+		}
 	}
 }
 
@@ -206,8 +211,8 @@ func TestBlocksStaleImpactTierNone(t *testing.T) {
 	if strings.Contains(body, "个页面有更新未发布") {
 		t.Error("没有 stale 时页头不应显示待重建徽章")
 	}
-	if strings.Contains(body, `<details class="section-fold card">`) {
-		t.Error("没有 stale 时不应渲染空的折叠清单")
+	if strings.Contains(body, `class="badge badge-warning badge-btn"`) {
+		t.Error("没有 stale 时不该给抽屉入口")
 	}
 }
 
@@ -220,7 +225,7 @@ func TestBlocksStaleImpactTierUnavailableKeepsHint(t *testing.T) {
 	data := blocksBaseData(true)
 	data["StaleImpact"] = gin.H{
 		"Available": false, "Pages": []gin.H{}, "Total": 0, "Truncated": false,
-		"Limit": 30, "Hint": hint,
+		"Limit": 8, "Hint": hint,
 	}
 	body := renderBlocksPage(t, data)
 

@@ -9,6 +9,7 @@ package contenthttp
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -26,6 +27,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 const (
@@ -105,6 +107,9 @@ type articlePublishPort interface {
 	Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error)
 	// UpdateURL 改 URL（发布后换路径）：新路径激活 + 旧路径 301 / 取消激活。
 	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
+	// PreviewInstance 用详情页模板渲染一份**不写库不激活**的预览（编辑页右栏的预览帧）。
+	// 它是「看得出发布后长什么样」的唯一来源：拼正文 HTML 那种回显照不出模板的任何东西。
+	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
 }
 
 // articlePageHandle 文章管理页处理器。
@@ -440,6 +445,93 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	c.HTML(http.StatusOK, "fragments/seo_score",
 		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c)),
 			"t": shell.TranslateFor(c)})
+}
+
+// ArticleSeoDrawer SEO 评测抽屉片段（GET /admin/articles/seo/drawer?id=xxx）。
+//
+// 评测面板从编辑页右栏移到了抽屉：右栏该留给「正文 + 预览」（写的时候一直要看的东西），
+// 评测是按需看的 —— 写完一段才想看分。常驻卡在不看的时刻只是噪声，还占掉 1/3 栏宽。
+//
+// 取数：库里**已保存**的文章（不是表单当前值 —— 抽屉打开那一刻，页面上未保存的改动
+// 不在服务端）。要看改动后的分数用抽屉里的「重新评分」：它 hx-include="#article-form"
+// 带上当前表单值，与改造前那条路径逐字一致（改造只搬了容器位置）。
+//
+// 失败一律给状态码、不拼半截片段：drawer.js 对非 200 与对「缺 data-drawer-fragment /
+// 缺列的片段」是同一种处置（都是「加载失败，请重试」），拼半截只是多花一次渲染。
+func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	id := strings.TrimSpace(c.Query("id"))
+	if id == "" || h == nil || h.contents == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	var item *contentdto.ContentResp
+	got, err := h.contents.Get(c.Request.Context(), &contentdto.GetReq{ID: id})
+	if err != nil {
+		logger.Scene("content").With("article_id", id).Error(err, "读取文章失败（SEO 评测抽屉片段）")
+		c.Status(http.StatusNotFound)
+		return
+	}
+	item = got
+	if item == nil || item.ID != id {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	data := item.Data
+	c.HTML(http.StatusOK, "admin/content/article_seo_drawer.html", shell.Prepare(c, gin.H{
+		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
+		"IsNew": false,
+	}))
+}
+
+// ArticlePreviewFrame 文章详情页的真实预览帧（GET /admin/articles/preview-frame?id=xxx）。
+//
+// 与「实时回显」的分工（rich-editor/live-preview.js 仍服务新建页）：那个把编辑器内容拼进 iframe，
+// 改一下立刻看到，但只有白底正文排版 —— 看不到详情页模板的任何东西。
+// 这个用**详情页模板**渲染（presentation.PreviewInstance，不写库、不激活），看到的就是发布后的形态，
+// 代价是只反映**已保存**的数据：改完正文先保存，再刷新这里。
+//
+// 为什么 iframe 直接 src 而不是前端取 HTML 塞 srcdoc：详情页是完整文档（自带样式与脚本），
+// 塞进 srcdoc 会与外层后台页面同源、脚本可能互扰；指一个页面组路由（Session 鉴权，不需 CSRF）
+// 既最省事也最隔离。
+func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	tr := shell.TranslateFor(c)
+	id := strings.TrimSpace(c.Query("id"))
+	if id == "" {
+		articlePreviewFrameNotice(c, tr("admin.article.preview.needSave", "保存这篇文章后，这里会显示它的详情页真实形态。"))
+		return
+	}
+	if h == nil || h.instances == nil {
+		articlePreviewFrameNotice(c, tr("admin.article.preview.unavailable", "预览不可用：发布能力未装配。"))
+		return
+	}
+	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
+		EntityType: articleEntityType, EntityID: id,
+	})
+	if err != nil {
+		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
+		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
+		articlePreviewFrameNotice(c, tr("admin.article.preview.failed", "预览渲染失败（多半是这部文章还没有可用的详情页模板）。"))
+		return
+	}
+	if res == nil || strings.TrimSpace(res.HTML) == "" {
+		articlePreviewFrameNotice(c, tr("admin.article.preview.empty", "还没有可渲染的详情页：先给 article 类型建一套内容模板。"))
+		return
+	}
+	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物），不是错误信息。
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+}
+
+// articlePreviewFrameNotice 预览不可用时的替代页（iframe 里的一句人话）。
+//
+// 不用 5xx：iframe 对 5xx 显示的是浏览器自带错误页，读的人只会以为「后台坏了」——
+// 而这里大多数情况是「还没保存」或「还没建模板」，都是正常状态。
+func articlePreviewFrameNotice(c *gin.Context, text string) {
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
+		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
+			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
+			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
 }
 
 // —— 表单与视图 ——

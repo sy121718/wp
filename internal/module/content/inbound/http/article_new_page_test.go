@@ -78,7 +78,10 @@ func TestArticleEditRendersPreviewAndImport(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{
-		"article-live-preview", "live-preview.js", // 实时预览容器与脚本
+		// 编辑页的预览是**详情页真实形态**（iframe 指预览帧），不是正文回显：
+		// 回显照不出模板的任何东西（旧版只有白底排版，看不出发布后长什么样）。
+		// 回显仍服务新建页（那边还没有实体可渲染），脚本因此还在，只是不再被编辑页引用。
+		"article-preview-frame", "/admin/articles/preview-frame?id=", "刷新预览",
 		"可视化编辑", // 导入卡标题（直白措辞，行为不变：复制而非绑定）
 	} {
 		if !strings.Contains(body, want) {

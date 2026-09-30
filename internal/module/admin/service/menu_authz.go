@@ -15,28 +15,53 @@ import (
 // 判据是「这个节点有没有权限码」，**不按菜单类型白名单过滤**：
 //   - 目录（type=1）本来就没有权限码（迁移 224 重建的 7 个目录全为空），会被自然跳过；
 //   - iframe / 外链（type=4/5）如果配了码，同样应当生效。此前写死 type=2/3 会让它们
-//     「勾了保存后静默消失」—— 反查路径 ListByPermissionCodes 并不过滤类型，于是它们
-//     出现在已勾选列表里、看起来已授权，一保存又被丢掉，表现为「配置随机丢失」。
+//     「勾了保存后静默消失」—— 反查路径不过滤类型，于是它们出现在已勾选列表里、
+//     看起来已授权，一保存又被丢掉，表现为「配置随机丢失」。
+//
+// 一个菜单可以有多个码（迁移 470 的 sys_menu_permission）：返回值是按 menu_id 升序、
+// 再按码升序收集的去重集合 —— 顺序确定，因为它的下游是 Casbin 全量替换，
+// 不确定的集合顺序会让同一次保存产生不同的策略写入顺序（测试与审计都无法复现）。
 //
 // 调用方传进来的 id 里混着目录、不存在的 id 都是常态（前端提交的是整棵勾选树）：
-// ListByIDs 只回存在的行，其余自然被忽略，不需要在这里做额外校验。
+// 关联表只回存在的行，其余自然被忽略，不需要在这里做额外校验。
 func (s *Service) GetPermissionCodesByIDs(ctx context.Context, menuIDs []uint64) ([]string, error) {
-	menus, err := s.mm.ListByIDs(ctx, menuIDs)
+	byMenu, err := s.mm.ListPermissionCodesByMenuIDs(ctx, menuIDs)
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]uint64, 0, len(byMenu))
+	for id := range byMenu {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
 	seen := make(map[string]struct{})
 	var codes []string
-	for _, m := range menus {
-		if m.PermissionCode != nil && *m.PermissionCode != "" {
-			if _, ok := seen[*m.PermissionCode]; !ok {
-				seen[*m.PermissionCode] = struct{}{}
-				codes = append(codes, *m.PermissionCode)
+	for _, id := range ids {
+		for _, code := range byMenu[id] {
+			if _, ok := seen[code]; ok {
+				continue
 			}
+			seen[code] = struct{}{}
+			codes = append(codes, code)
 		}
 	}
 	return codes, nil
+}
+
+// matchedMenuCodes 返回菜单的码里命中用户权限集合的那些（保持集合内的原有顺序）。
+//
+// 菜单可见性 / 按钮授权的判据都收敛到这一处：一个菜单挂多个码（迁移 470）之后，
+// 「有任意一个码被授权」就算这个节点可用 —— 只要有一个动作能调，入口就不该消失，
+// 否则会出现「API 能调、侧栏没有入口」的分裂授权（与 withAncestorMenuIDs 同一取舍）。
+func matchedMenuCodes(codes []string, codeSet map[string]struct{}) []string {
+	var hit []string
+	for _, code := range codes {
+		if _, ok := codeSet[code]; ok {
+			hit = append(hit, code)
+		}
+	}
+	return hit
 }
 
 // withAncestorMenuIDs 向上补齐祖先 id（目录与父菜单），返回去重且升序的集合。
@@ -138,13 +163,22 @@ func buildPermissionTree(all []adminmodel.MenuEntity, checkedIDs []uint64) []adm
 }
 
 // GetIDsByPermissionCodes 根据 permission_code 列表反查 menu_id。
+//
+// 两步而不是一次 join：model 层不做多表关联（internal/module/CLAUDE.md），
+// 所以先按码取关联行里的 menu_id，再用 ListByIDs 过滤掉不存在与已软删的菜单。
+// 顺序沿用 ListByIDs 的 sort_order, id —— 与迁移 470 之前逐条扫菜单表时的顺序一致，
+// 回显勾选态不受影响。
 func (s *Service) GetIDsByPermissionCodes(ctx context.Context, codes []string) ([]uint64, error) {
-	menus, err := s.mm.ListByPermissionCodes(ctx, codes)
+	candidates, err := s.mm.ListMenuIDsByPermissionCodes(ctx, codes)
+	if err != nil {
+		return nil, err
+	}
+	menus, err := s.mm.ListByIDs(ctx, candidates)
 	if err != nil {
 		return nil, err
 	}
 
-	var ids []uint64
+	ids := make([]uint64, 0, len(menus))
 	for _, m := range menus {
 		ids = append(ids, m.ID)
 	}
@@ -152,8 +186,16 @@ func (s *Service) GetIDsByPermissionCodes(ctx context.Context, codes []string) (
 }
 
 // CountByPermissionCodes 统计引用指定权限编码的未删除菜单数。
+//
+// 判据是「有几个菜单在用这个码」，**按菜单去重**：一个菜单同时挂两个待删权限点时只算一个，
+// 否则「删 2 个权限点会波及 3 个菜单」这种数字会凭空出现，操作者无法核对。
+// 与 GetIDsByPermissionCodes 同路：关联表取候选 → ListByIDs 过滤软删。
 func (s *Service) CountByPermissionCodes(ctx context.Context, codes []string) (count int64, err error) {
-	return s.mm.CountByPermissionCodes(ctx, codes)
+	ids, err := s.GetIDsByPermissionCodes(ctx, codes)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(ids)), nil
 }
 
 // BuildAuthorizedTree 根据有效 permission_code 列表构建用户可见菜单树。
@@ -182,10 +224,8 @@ func buildAuthorizedTree(all []adminmodel.MenuEntity, codes []string) []admindto
 			visibleIDs[m.ID] = struct{}{}
 			continue
 		}
-		if m.PermissionCode != nil {
-			if _, ok := codeSet[*m.PermissionCode]; ok {
-				visibleIDs[m.ID] = struct{}{}
-			}
+		if len(matchedMenuCodes(m.PermissionCodes, codeSet)) > 0 {
+			visibleIDs[m.ID] = struct{}{}
 		}
 	}
 
@@ -239,11 +279,13 @@ func (s *Service) BuildAuthorizedRoutes(ctx context.Context, codes []string, lan
 	}
 	buttonAuths := make(map[uint64][]string)
 	for _, item := range all {
-		if item.Status != adminmodel.MenuStatusEnabled || item.Type != adminmodel.MenuTypeButton || item.PermissionCode == nil {
+		if item.Status != adminmodel.MenuStatusEnabled || item.Type != adminmodel.MenuTypeButton {
 			continue
 		}
-		if _, authorized := codeSet[*item.PermissionCode]; authorized {
-			buttonAuths[item.ParentID] = append(buttonAuths[item.ParentID], *item.PermissionCode)
+		// 一个按钮可以挂多个码（迁移 470）：命中的都授权给它所属菜单，
+		// 前端按这些码决定「新建 / 删除」这类动作按钮显不显示。
+		for _, code := range matchedMenuCodes(item.PermissionCodes, codeSet) {
+			buttonAuths[item.ParentID] = append(buttonAuths[item.ParentID], code)
 		}
 	}
 
@@ -258,10 +300,10 @@ func buildRouteNodes(nodes []admindto.MenuTreeNode, buttonAuths map[uint64][]str
 	routes := make([]admindto.RouteNode, 0, len(nodes))
 	for _, node := range nodes {
 		children := buildRouteNodes(node.Children, buttonAuths, fmt.Sprintf("Menu%d", node.ID), lang)
-		auths := make([]string, 0, 1+len(buttonAuths[node.ID]))
-		if node.PermissionCode != "" {
-			auths = append(auths, node.PermissionCode)
-		}
+		// 菜单自身的码全部带上（迁移 470 起可能不止一个），再并上它名下按钮的码：
+		// 前端按这个集合决定页面内的按钮显不显示，少一个就会出现「后端放行、按钮不见」。
+		auths := make([]string, 0, len(node.PermissionCodes)+len(buttonAuths[node.ID]))
+		auths = append(auths, node.PermissionCodes...)
 		auths = append(auths, buttonAuths[node.ID]...)
 		routeName := fmt.Sprintf("Menu%d", node.ID)
 		if parentName != "" {

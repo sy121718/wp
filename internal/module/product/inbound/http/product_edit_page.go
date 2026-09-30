@@ -19,6 +19,7 @@
 package producthttp
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -105,6 +106,10 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 			row["Unit"] = detail.Unit
 			row["SEOTitle"] = detail.SEOTitle
 			row["SEODescription"] = detail.SEODescription
+			// 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
+			// 这里破一次「表单字段名 = DTO json 标签」的例：两边形态本来就不同
+			//（对象 vs HTML 字符串），硬对齐只会把包装逻辑推到前端散落脚本里。
+			row["DescriptionHTML"] = productDescriptionHTML(detail.Description)
 			data["Product"] = row
 			data["Statuses"] = productStatusOptions(c, detail.Status)
 			// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
@@ -205,10 +210,14 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	req.Subtitle = &subtitle
 	unit := strings.TrimSpace(c.PostForm("unit"))
 	req.Unit = &unit
-	seoTitle := strings.TrimSpace(c.PostForm("seoTitle"))
-	req.SEOTitle = &seoTitle
-	seoDesc := strings.TrimSpace(c.PostForm("seoDescription"))
-	req.SEODescription = &seoDesc
+	// 表单已不再提交 seoTitle / seoDescription（两者合并进商品名与副标题）。
+	// **这里不能改成 req.SEOTitle = &""**：那会让「改个商品名顺手清空 SEO 标题」——
+	// 两列保留着编辑者写过的历史值，不传即不改才是它们该有的归宿。
+	// 商品描述：富文本字段给的是裸 HTML，入库形态是 {"html": "..."}。
+	// 包装在这里做（不 trim：正文里的空白是有意义的排版）。
+	if descHTML, derr := json.Marshal(map[string]string{"html": c.PostForm("descriptionHtml")}); derr == nil {
+		req.Description = descHTML
+	}
 	if status := strings.TrimSpace(c.PostForm("status")); status != "" {
 		req.Status = &status
 	}
@@ -315,4 +324,25 @@ func checkedAttributeOptions(options []gin.H, selected []string) []gin.H {
 		out = append(out, item)
 	}
 	return out
+}
+
+// productDescriptionHTML 从商品描述的 JSON 里取正文（富文本字段要裸 HTML）。
+//
+// 兼容两种存量形态：{"html": "..."} 与裸字符串。取不到就给空串 ——
+// 这个值只用于**回填编辑器**，猜错会让编辑者看到别人的正文，比空着危险得多。
+func productDescriptionHTML(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(raw, &asMap); err == nil {
+		if s, ok := asMap["html"].(string); ok {
+			return s
+		}
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return asString
+	}
+	return ""
 }

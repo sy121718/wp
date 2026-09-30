@@ -118,10 +118,28 @@ func (s *Service) AdminMenuList(ctx context.Context, req *admindto.AdminMenuList
 
 // AdminMenuSave 全量替换用户的直接额外权限。
 // menu_ids → permission_codes → [path, method, code] → Casbin ReplaceUserPermissions。
+//
+// 超管保护：**与 AdminRoleSave 同款，此前这条路径漏了**（它没有任何界面调用方，
+// 所以缺口一直没被走到）。直接权限是 p 策略里 r.sub == p.sub 那一支，写入集合一旦覆盖
+// 全部启用权限点，目标账号即刻等价超管 —— 而入口只需要 admin:menu_save 这一个权限点。
+// 三个判据与 RoleMenuSave 一致：新集合是否超管等价、目标账号是否本来就是超管，
+// 任一为真则仅超管可操作（requireSuperAdminForSensitiveTarget）。
 func (s *Service) AdminMenuSave(ctx context.Context, req *admindto.AdminMenuSaveReq) (res *admindto.AdminMenuSaveResp, err error) {
 	// menu_ids → permission_codes
 	codes, err := s.GetPermissionCodesByIDs(ctx, req.MenuIDs)
 	if err != nil {
+		return nil, err
+	}
+
+	willBeSuper, err := s.codesCoverAllEnabled(ctx, codes)
+	if err != nil {
+		return nil, err
+	}
+	targetSuper, err := s.IsSuperAdmin(ctx, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.requireSuperAdminForSensitiveTarget(ctx, req.OperatorID, willBeSuper || targetSuper); err != nil {
 		return nil, err
 	}
 

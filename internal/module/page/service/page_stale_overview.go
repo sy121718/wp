@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	pagedto "go_wp/internal/module/page/dto"
 	pagemodel "go_wp/internal/module/page/model"
@@ -397,7 +398,28 @@ func staleRowToDTO(row pagemodel.StalePageRow, names map[string]string) pagedto.
 		Published:   stalePublished(row),
 		Stale:       row.Stale,
 		UpdatedAt:   utils.NewJSONTime(row.UpdatedAt),
+		// 失败痕迹按原样带出，不做「多久算旧」的判断：判据属于展示层
+		// （时间旧不旧要看的人自己权衡），读侧只如实给出事实。
+		RebuildFailedAt:    failedAtDTO(row.RebuildFailedAt),
+		RebuildFailedStage: strings.TrimSpace(derefString(row.RebuildFailedStage)),
 	}
+}
+
+// failedAtDTO 只把**有值**的失败时刻转成 DTO（nil 进 nil 出，避免 JSON 里出现零值时间）。
+func failedAtDTO(at *time.Time) *utils.JSONTime {
+	if at == nil || at.IsZero() {
+		return nil
+	}
+	v := utils.NewJSONTime(*at)
+	return &v
+}
+
+// derefString 取字符串指针的值（nil 与空串同义：这一列要么有值、要么是 NULL）。
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // staleDisplayPath 页面的可读标识：已上线路径优先，其次草稿路径，都没有时退回 id。

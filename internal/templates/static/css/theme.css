@@ -1433,3 +1433,147 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     overflow-y: visible;
 }
 
+
+/* 菜单绑定权限点（控件锚点 static/js/ui/perm-picker.js）。
+   与 .perm-tree 同一个抽屉里可能同屏出现（角色分权抽屉 vs 菜单编辑抽屉，目前不同页），
+   所以类名另起一段而不是复用 .perm-*：两处的交互不同（树有父子联动，这里是扁平多选）。
+   高度上限 + 内部滚动：候选近 300 条，不限制高度会把抽屉里的其他字段全挤出首屏。 */
+.perm-picker { border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; overflow: hidden; }
+.perm-picker-tools {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 8px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+}
+.perm-picker-tools .form-input { flex: 1 1 160px; min-width: 0; width: auto; }
+.perm-picker-list { max-height: 260px; overflow: auto; padding: 4px 0; }
+.perm-picker-group-title {
+    position: sticky; top: 0; margin: 0; padding: 5px 10px;
+    font-size: 12px; font-weight: 600; letter-spacing: .02em;
+    color: var(--sky-c-text-mute, #6b7280);
+    background: var(--sky-c-bg-soft, #f4f5f6);
+}
+.perm-picker-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 10px; cursor: pointer;
+}
+.perm-picker-row[hidden], .perm-picker-group[hidden], .perm-picker-empty[hidden] { display: none; }
+@media (hover: hover) {
+    .perm-picker-row:hover { background: var(--sky-c-bg-hover, #ececec); }
+}
+.perm-picker-row .perm-code { flex: 0 0 auto; }
+.perm-picker-name { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
+.perm-picker-empty { margin: 0; padding: 14px 10px; text-align: center; color: var(--sky-c-text-mute, #6b7280); }
+/* 列表里的多码徽标（菜单列表的「权限点」列）：同一行可能有几个码，横向换行不撑破列宽。 */
+.cell-perms .perm-code { margin: 0 4px 2px 0; display: inline-block; }
+
+/* 管理员的角色勾选清单（admin_role_drawer.html）：一行一个角色，无层级，
+   所以不复用 .perm-tree（那是有父子联动的树）。 */
+.role-pick { max-height: 320px; overflow: auto; padding: 4px 0; }
+.role-pick-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.role-pick-row[hidden] { display: none; }
+@media (hover: hover) {
+    .role-pick-row:hover { background: var(--sky-c-bg-hover, #ececec); }
+}
+.role-pick-row .perm-picker-name { flex: 1 1 auto; }
+/* 菜单权限抽屉：按钮类节点弱化 + 继承项（disabled 勾选框）的视觉区分。
+   用兄弟选择器而不是 :has()：一层关系就够，且不依赖较新的浏览器特性。 */
+.perm-node.is-button .perm-title { color: var(--sky-c-text-mute, #6b7280); }
+.perm-node .perm-box[disabled] { cursor: not-allowed; }
+.perm-node .perm-box[disabled] ~ .perm-title { opacity: .75; }
+
+/* 可点徽章（.badge 是 span 的观感，按钮要用它得清掉 UA 默认样式与内边距）。
+   用途：页头「N 个页面有更新未发布」—— 它是抽屉的入口，不是装饰。 */
+.badge-btn {
+    border: 0; cursor: pointer; font: inherit;
+    line-height: inherit; padding: 2px 8px;
+}
+.badge-btn:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
+
+/* 只读抽屉里的表格：slug 可能很长（/article-iget-bar-pro-flavours-australia），
+   不换行会把整张表撑出横向滚动条 —— 只在抽屉里放宽路径列的断行，
+   不动全局 .data-table（列表页的路径列有自己的取舍）。 */
+.perm-drawer .data-table td code { word-break: break-all; }
+.perm-drawer .data-table th:first-child, .perm-drawer .data-table td:first-child { width: 60%; }
+
+/* 文章编辑页的正文折叠（article_edit.html 的 .article-body-fold）。
+   只补交互细节：summary 自带键盘与触屏语义，缺的是「看起来可点」与一个方向指示。
+   默认展开（模板上是 <details open>）—— 折叠是给写长文时腾地方用的，不是默认收起。 */
+.article-body-fold > summary { cursor: pointer; user-select: none; display: flex; align-items: center; gap: .5rem; font-size: 1.05rem; font-weight: 600; }
+.article-body-fold > summary::-webkit-details-marker { display: none; }
+.article-body-fold > summary::after { content: "▾"; margin-left: auto; opacity: .55; font-weight: 400; }
+.article-body-fold:not([open]) > summary::after { content: "▸"; }
+.article-body-fold[open] > summary { margin-bottom: .75rem; }
+
+/* 商品编辑页两栏（左表单 + 右详情页预览）。
+   窄屏落成单列：右栏预览在手机上是「表单之后的一大块」，而不是被挤成一条缝。 */
+
+/* 详情页预览的等比缩略（ui/preview-thumb.js 算 --preview-scale）。
+   iframe 按**真实桌面视口**渲染（1440×900），再由 transform 整体缩放：
+   右栏里因此是完整的页面形态，而不是窄视口下的「一条」。 */
+.preview-thumb { position: relative; overflow: hidden; border: 1px solid var(--border, #d0d7de); border-radius: 6px; background: #fff; height: var(--preview-outer-height, 420px); }
+.preview-thumb > iframe { width: var(--preview-viewport-width, 1440px); height: var(--preview-viewport-height, 900px); border: 0; display: block; transform-origin: 0 0; transform: scale(var(--preview-scale, 1)); }
+.preview-thumb-empty { margin: 0; padding: 24px; color: #57606a; font-size: 14px; line-height: 1.7; }
+
+/* 预览放大覆盖层（ui/preview-zoom.js）：大但仍在后台页面上，Esc 回到编辑。
+   内层 iframe 与右栏缩略同一套缩放模型（1440 视口 + transform scale）。 */
+.preview-thumb.is-zoomable { cursor: zoom-in; }
+.preview-zoom-mask { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 4vh 4vw; background: rgba(0, 0, 0, .45); }
+.preview-zoom-box { display: flex; flex-direction: column; width: min(1440px, 92vw); height: 88vh; overflow: hidden; background: #fff; border-radius: 8px; box-shadow: 0 12px 40px rgba(0, 0, 0, .28); }
+.preview-zoom-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border, #d0d7de); font-size: 14px; font-weight: 600; }
+.preview-zoom-bar > span { margin-right: auto; }
+.preview-zoom-frame { flex: 1 1 auto; width: var(--preview-viewport-width, 1440px); height: var(--preview-viewport-height, 900px); border: 0; display: block; transform-origin: 0 0; transform: scale(var(--preview-scale, 1)); }
+
+/* 编辑页两栏（文章 / 商品同构）：左编辑 + 右详情页预览。
+   右列给 35% 而不是固定像素：预览是按真实桌面视口（1440）渲染再等比缩小，
+   栏越宽缩放比越大、字越清楚；固定 400px 时缩略只有 0.27，看不清任何东西。 */
+.article-edit-panes,
+.product-edit-panes { display: grid; grid-template-columns: minmax(0, 1fr) 35%; gap: 16px; align-items: start; }
+.article-edit-panes > .article-edit-side,
+.product-edit-aside { position: sticky; top: 16px; }
+
+/* 窄屏落单列：右栏预览在窄屏是「表单之后的一大块」，而不是被挤成一条缝。
+   1100px 是断点 —— 再窄时 35% 只剩不到 390px，预览回到「看不清」的状态。 */
+@media (max-width: 1100px) {
+    .article-edit-panes,
+    .product-edit-panes { grid-template-columns: 1fr; }
+    .article-edit-panes > .article-edit-side,
+    .product-edit-aside { position: static; }
+}
+
+/* 成对字段并排（同一表单里别处满行时，一对短文本各占半栏比「半截」清楚）。
+   窄屏落单列 —— 半栏在手机上放不下一个可用的输入框。 */
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+@media (max-width: 720px) { .form-row-2 { grid-template-columns: 1fr; } }
+
+/* 多图字段（ui/media-gallery.js）：缩略图网格 + 逐张 alt。
+   网格用 auto-fill 固定列宽：图是等大的方块，按容器宽塞尽量多的列即可。 */
+.media-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: 12px; }
+.media-gallery-cell { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 8px; border: 1px solid var(--border, #d0d7de); border-radius: 6px; background: #fff; }
+.media-gallery-cell img { width: 100%; height: 96px; object-fit: contain; background: #f6f8fa; border-radius: 4px; }
+.media-gallery-alt { font-size: 12px; }
+.media-gallery-del { align-self: flex-start; }
+.media-gallery-empty { margin: 0 0 8px; color: #57606a; font-size: 14px; }
+/* 媒体库多选状态条（ui/mediafield.js 的 openModal(multi)） */
+.media-pick-multi { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; }
+.media-pick-count { font-size: 13px; color: #57606a; }
+.media-pick-cell.is-picked { outline: 2px solid #1f883d; outline-offset: -2px; }
+
+/* 多图字段的排序：拖拽把手 + 键盘等价的左右移动按钮。
+   touch-action: none 加在把手上 —— 否则触屏拖拽会被页面滚动抢走（JS 里也 preventDefault，双保险）。 */
+.media-gallery-handle { cursor: grab; user-select: none; touch-action: none; align-self: flex-start; color: #57606a; font-size: 14px; line-height: 1; padding: 0 2px; }
+.media-gallery-cell.is-dragging { opacity: .6; outline: 2px dashed #1f883d; }
+.media-gallery-cell.is-dragging .media-gallery-handle { cursor: grabbing; }
+.media-gallery-cell-actions { display: flex; gap: 4px; align-items: center; }
+
+/* 图集头部行：标题 + 右上角的主色「添加图片」。 */
+.media-gallery-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+
+/* 商品编辑页的次要区块折叠（属性引用 / 分类与品牌 / 标签）。
+   主字段（名称 / 描述 / 主图 / 图集 / 价格）保持展开 —— 那是天天改的东西；
+   这三块是选配，默认收起后整页短一大截。 */
+.edit-fold { border-top: 1px solid var(--border, #d0d7de); padding-top: 12px; margin-top: 12px; }
+.edit-fold > summary { cursor: pointer; user-select: none; display: flex; align-items: center; gap: .5rem; font-weight: 600; }
+.edit-fold > summary::-webkit-details-marker { display: none; }
+.edit-fold > summary::after { content: "▾"; margin-left: auto; opacity: .55; font-weight: 400; }
+.edit-fold:not([open]) > summary::after { content: "▸"; }
+.edit-fold[open] > summary { margin-bottom: .75rem; }

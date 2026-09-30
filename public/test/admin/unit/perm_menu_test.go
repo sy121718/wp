@@ -197,7 +197,7 @@ func TestPermDeleteMenuReferencedRejected(t *testing.T) {
 	permID := createPerm(t, e, code, "/api/ref")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "引用菜单", Type: adminmodel.MenuTypeMenu, Path: "/ref",
-		Component: "view.refMenu", PermissionCode: code, Status: 1,
+		Component: "view.refMenu", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestMenuCreateSuccess(t *testing.T) {
 	createPerm(t, e, code, "/api/menu")
 	err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "用户管理", Type: adminmodel.MenuTypeMenu, Path: "/system/user",
-		Component: "view.systemUser", PermissionCode: code, Status: 1, SortOrder: 3,
+		Component: "view.systemUser", PermissionCodes: []string{code}, Status: 1, SortOrder: 3,
 	})
 	wantErr(t, err, "")
 
@@ -253,8 +253,21 @@ func TestMenuCreateSuccess(t *testing.T) {
 	if err := e.db.Where("title = ?", "用户管理").First(&menu).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
-	if menu.Component != "view.systemUser" || menu.PermissionCode == nil || *menu.PermissionCode != code {
+	if menu.Component != "view.systemUser" {
 		t.Fatalf("菜单字段不符: %+v", menu)
+	}
+	// 权限码自迁移 470 起写在关联表里，而且**旧列不再由界面写入**（它只作 seed 的写入通道与
+	// 幂等判据）—— 所以这里同时钉住两件事：关联行有一条，旧列仍为空。
+	var linked []string
+	if err := e.db.Table("sys_menu_permission").Where("menu_id = ?", menu.ID).
+		Pluck("permission_code", &linked).Error; err != nil {
+		t.Fatalf("查询菜单权限关联失败: %v", err)
+	}
+	if len(linked) != 1 || linked[0] != code {
+		t.Fatalf("菜单权限关联不符: %v（期望 [%s]）", linked, code)
+	}
+	if menu.PermissionCode != nil {
+		t.Fatalf("界面写入不应再改旧列 permission_code，实际为 %q", *menu.PermissionCode)
 	}
 }
 
@@ -299,7 +312,7 @@ func TestMenuCreateDirectoryRejectsCode(t *testing.T) {
 
 	err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "目录带码", Type: adminmodel.MenuTypeDirectory, Path: "/dir",
-		PermissionCode: "any:code",
+		PermissionCodes: []string{"any:code"},
 	})
 	wantErr(t, err, adminenums.ErrCodeNotBindable)
 }
@@ -323,7 +336,7 @@ func TestMenuCreateCodeNotEnabled(t *testing.T) {
 
 	err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "坏码菜单", Type: adminmodel.MenuTypeMenu, Path: "/badcode",
-		Component: "view.badCode", PermissionCode: "no_such_code_xyz",
+		Component: "view.badCode", PermissionCodes: []string{"no_such_code_xyz"},
 	})
 	wantErr(t, err, adminenums.ErrCodeNotEnabled)
 }
@@ -337,7 +350,7 @@ func TestMenuUpdateCircleSelf(t *testing.T) {
 	createPerm(t, e, code, "/api/circle")
 	err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "环菜单", Type: adminmodel.MenuTypeMenu, Path: "/circle",
-		Component: "view.circle", PermissionCode: code, Status: 1,
+		Component: "view.circle", PermissionCodes: []string{code}, Status: 1,
 	})
 	wantErr(t, err, "")
 	var menu adminmodel.MenuEntity
@@ -346,7 +359,7 @@ func TestMenuUpdateCircleSelf(t *testing.T) {
 	}
 	err = e.svc.MenuUpdate(ctx, &admindto.MenuUpdateReq{
 		ID: menu.ID, Title: "环菜单", Type: adminmodel.MenuTypeMenu, Path: "/circle",
-		Component: "view.circle", PermissionCode: code, ParentID: menu.ID, Status: 1,
+		Component: "view.circle", PermissionCodes: []string{code}, ParentID: menu.ID, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrMenuCircle)
 }
@@ -360,7 +373,7 @@ func TestMenuUpdateCircleDescendant(t *testing.T) {
 	createPerm(t, e, code, "/api/cir2")
 	// 父菜单
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: "父", Type: adminmodel.MenuTypeMenu, Path: "/p", Component: "view.p", PermissionCode: code, Status: 1,
+		Title: "父", Type: adminmodel.MenuTypeMenu, Path: "/p", Component: "view.p", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建父菜单失败: %v", err)
 	}
@@ -371,7 +384,7 @@ func TestMenuUpdateCircleDescendant(t *testing.T) {
 	// 子菜单挂在父下
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "子", Type: adminmodel.MenuTypeMenu, Path: "/c", Component: "view.c",
-		PermissionCode: code, ParentID: parent.ID, Status: 1,
+		PermissionCodes: []string{code}, ParentID: parent.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建子菜单失败: %v", err)
 	}
@@ -383,7 +396,7 @@ func TestMenuUpdateCircleDescendant(t *testing.T) {
 	// 把父挂到子下面 → 环
 	err := e.svc.MenuUpdate(ctx, &admindto.MenuUpdateReq{
 		ID: parent.ID, Title: "父", Type: adminmodel.MenuTypeMenu, Path: "/p",
-		Component: "view.p", PermissionCode: code, ParentID: child.ID, Status: 1,
+		Component: "view.p", PermissionCodes: []string{code}, ParentID: child.ID, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrMenuCircle)
 }
@@ -397,7 +410,7 @@ func TestMenuUpdateSystemTypeImmutable(t *testing.T) {
 	createPerm(t, e, code, "/api/sys")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "系统菜单", Type: adminmodel.MenuTypeMenu, Path: "/sys",
-		Component: "view.sys", PermissionCode: code, Status: 1,
+		Component: "view.sys", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -411,7 +424,7 @@ func TestMenuUpdateSystemTypeImmutable(t *testing.T) {
 
 	err := e.svc.MenuUpdate(ctx, &admindto.MenuUpdateReq{
 		ID: menu.ID, Title: "系统菜单", Type: adminmodel.MenuTypeDirectory, Path: "/sys",
-		Component: "", PermissionCode: code, Status: 1,
+		Component: "", PermissionCodes: []string{code}, Status: 1,
 	})
 	wantErr(t, err, adminenums.ErrMenuIsSystem)
 }
@@ -424,7 +437,7 @@ func TestMenuDeleteHasChildren(t *testing.T) {
 	code := "menu_children:" + uniq("")
 	createPerm(t, e, code, "/api/ch")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: "父菜单", Type: adminmodel.MenuTypeMenu, Path: "/pc", Component: "view.pc", PermissionCode: code, Status: 1,
+		Title: "父菜单", Type: adminmodel.MenuTypeMenu, Path: "/pc", Component: "view.pc", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建父菜单失败: %v", err)
 	}
@@ -434,7 +447,7 @@ func TestMenuDeleteHasChildren(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "子菜单", Type: adminmodel.MenuTypeMenu, Path: "/cc", Component: "view.cc",
-		PermissionCode: code, ParentID: parent.ID, Status: 1,
+		PermissionCodes: []string{code}, ParentID: parent.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建子菜单失败: %v", err)
 	}
@@ -452,7 +465,7 @@ func TestMenuDeleteSystemRejected(t *testing.T) {
 	createPerm(t, e, code, "/api/sysdel")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "待删系统菜单", Type: adminmodel.MenuTypeMenu, Path: "/sd",
-		Component: "view.sd", PermissionCode: code, Status: 1,
+		Component: "view.sd", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -497,14 +510,14 @@ func TestMenuTreeBuild(t *testing.T) {
 	// 子菜单
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "子菜单X", Type: adminmodel.MenuTypeMenu, Path: "/sub",
-		Component: "view.subX", PermissionCode: code, ParentID: dir.ID, Status: 1,
+		Component: "view.subX", PermissionCodes: []string{code}, ParentID: dir.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建子菜单失败: %v", err)
 	}
 	// 孤儿（父不存在）
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "孤儿菜单", Type: adminmodel.MenuTypeMenu, Path: "/orphan",
-		Component: "view.orphan", PermissionCode: code, ParentID: 987654, Status: 1,
+		Component: "view.orphan", PermissionCodes: []string{code}, ParentID: 987654, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建孤儿菜单失败: %v", err)
 	}
@@ -537,7 +550,7 @@ func TestMenuSoftDelete(t *testing.T) {
 	createPerm(t, e, code, "/api/soft")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "待软删", Type: adminmodel.MenuTypeMenu, Path: "/soft",
-		Component: "view.soft", PermissionCode: code, Status: 1,
+		Component: "view.soft", PermissionCodes: []string{code}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}

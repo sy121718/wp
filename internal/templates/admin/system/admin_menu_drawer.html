@@ -1,0 +1,89 @@
+{* admin/system/admin_menu_drawer.html — 给管理员分配「直接额外菜单权限」的抽屉片段。
+
+   这是 Casbin matcher 里 `r.sub == p.sub` 那一支的界面（用户直接权限），与角色继承并列：
+   角色是「换一整套权限」，这里是「这个人额外需要的那几个入口」。
+
+   三条形态约束与 role_permissions.html 同源（ui/drawer.js 的 fragmentRoot 校验），
+   父子联动因此住在 static/js/ui/perm-tree.js（基座控件）：片段里不能出现 <script>。
+
+   **本页与角色权限抽屉的关键差异**：树里两种勾选态要分开显示 ——
+     · 直接授权（本抽屉可改）：正常勾选框；
+     · 角色继承（本抽屉不可改）：勾选框 disabled + 「来自角色」徽标。
+   不这样做的后果是「取消勾选点了没反应」：权限来自角色的 p 策略，取消这条直接授权并不撤销它。
+   要撤销继承来的权限，去「分配角色」抽屉或角色的「权限分配」。
+
+   保存是**全量替换**直接授权集合（Casbin ReplaceUserPermissions）：
+   提交上来的 menu_ids 就是这个人最终的直接权限；一项都没勾是合法提交（等于收回全部直接授权）。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{saved := false}}
+{{if isset(.Saved)}}{{saved = .Saved}}{{end}}
+<div data-drawer-fragment class="perm-drawer">
+    {{if saved}}
+    <p class="badge badge-success" role="status">{{tr("admin.admins.menu.saved", "菜单权限已保存")}}</p>
+    <div class="form-actions">
+        <button type="button" class="btn btn-primary" data-drawer-close>{{tr("shell.action.close", "关闭")}}</button>
+    </div>
+    {{else}}
+    {{if isset(.Err)}}{{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    <p class="perm-intro">{{tr("admin.admins.menu.intro", "勾选该管理员额外需要的菜单入口（超出角色已有的部分）。标着「来自角色」的项由角色授权，在这里取消不会生效，要去角色里改。保存按整棵树的当前勾选做全量替换。")}}</p>
+
+    <form method="post" action="/admin/administrators/menus/save"
+          hx-post="/admin/administrators/menus/save" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="user_id" value="{{.Account.ID}}">
+
+        <div class="perm-toolbar">
+            <input type="search" data-perm-search class="form-input" autocomplete="off"
+                   placeholder="{{tr("admin.roles.perm.ph.search", "搜索菜单名称或权限码")}}"
+                   aria-label="{{tr("admin.roles.perm.ph.search", "搜索菜单名称或权限码")}}">
+            <div class="perm-tools">
+                <button type="button" class="btn btn-sm btn-ghost" data-perm-all>{{tr("admin.roles.perm.action.all", "全选")}}</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-perm-none>{{tr("admin.roles.perm.action.none", "清空")}}</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-perm-expand>{{tr("admin.roles.perm.action.expand", "展开全部")}}</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-perm-collapse>{{tr("admin.roles.perm.action.collapse", "折叠全部")}}</button>
+                {* 计数只数可编辑的项（控件侧跳过 disabled）：它回答的是「本次要提交几个直接授权」，
+                   把继承项也算进去会让这个数字与保存结果对不上。 *}
+                <span class="badge badge-mute" data-selected-count data-selected-template="{{tr("admin.common.bulk.selected", "已选 {n} 项")}}" aria-live="polite"></span>
+            </div>
+        </div>
+        <p class="perm-hint">{{tr("admin.admins.menu.hint", "搜索与折叠只影响显示，保存始终提交整棵树的勾选（继承项不参与提交）。")}}</p>
+
+        {{if len(.Rows) == 0}}
+        <div class="empty-state">
+            <p class="empty-title">{{tr("admin.roles.perm.empty", "没有可分配的菜单，先去「菜单管理」建目录与菜单。")}}</p>
+            <div class="empty-actions">
+                <a class="btn btn-primary" href="/admin/menus">{{tr("admin.roles.perm.empty.action", "去菜单管理")}}</a>
+            </div>
+        </div>
+        {{else}}
+        <div class="perm-tree" data-perm-tree>
+            {{range _, r := .Rows}}
+            <div class="perm-node{{if r.Type == 3}} is-button{{end}}" data-perm-row="{{r.ID}}" data-depth="{{r.Depth}}" data-parent="{{r.ParentID}}" style="padding-left:{{r.PadLeft}}px">
+                {{if r.HasChildren}}
+                <button type="button" class="perm-toggle" data-perm-toggle aria-expanded="true" aria-label="{{tr("admin.roles.perm.toggle", "展开 / 收起子项")}}"><span class="caret"></span></button>
+                {{else}}
+                <span class="perm-toggle is-leaf" aria-hidden="true"></span>
+                {{end}}
+                <label class="perm-label">
+                    <input type="checkbox" class="perm-box" name="menu_ids" value="{{r.ID}}"
+                           data-perm-node data-id="{{r.ID}}" data-parent="{{r.ParentID}}" data-depth="{{r.Depth}}"
+                           {{if r.Checked}}checked{{end}}{{if r.Inherited}} disabled{{end}}>
+                    <span class="perm-title">{{r.Title}}</span>
+                    <span class="perm-type perm-type-{{r.Type}}">{{r.TypeLabel}}</span>
+                    {{if r.Inherited}}<span class="badge badge-mute">{{tr("admin.admins.menu.inherited", "来自角色")}}</span>{{end}}
+                </label>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+
+        <div class="perm-actions">
+            <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+            <button type="submit" class="btn btn-primary">{{tr("admin.admins.menu.save", "保存菜单权限")}}</button>
+        </div>
+    </form>
+    {{end}}
+</div>

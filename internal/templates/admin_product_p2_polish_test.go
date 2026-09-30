@@ -103,7 +103,10 @@ func TestProductP2SEOFieldsHaveCounters(t *testing.T) {
 		data map[string]any
 		want int
 	}{
-		{"product_edit", productEditPageData(), 2},
+		// 商品页 0：SEO 标题/描述已合并进商品名与副标题，不再有独立输入框。
+		// 品牌页保持 4：品牌**没有**做这个合并（商品名即标题那条论证不适用于品牌），
+		// 两处的期望必须分开写 —— 统一成 0 会把品牌页仍在用的字段说成缺陷。
+		{"product_edit", productEditPageData(), 0},
 		{"product_brands", groupDData(map[string]any{
 			"SelectedProject": "pr1", "Projects": groupDProjects(), "Err": "",
 			"Brands": []map[string]any{{"ID": "b1", "Name": "山野", "Slug": "outdoor", "Sort": 1, "SEOTitle": "标题", "SEODescription": "描述", "UpdatedAt": "今天"}},

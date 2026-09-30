@@ -136,7 +136,7 @@ func TestRLS_PageFanout_MarkStaleForBlockAndCountAcrossProjects(t *testing.T) {
 		t.Fatalf("跨工程引用数应为 3（A 1 + B 2），实际 %d —— 扇出漏了某个工程", count)
 	}
 
-	if err := svc.MarkStaleForBlock(ctx, blk); err != nil {
+	if _, err := svc.MarkStaleForBlock(ctx, blk); err != nil {
 		t.Fatalf("MarkStaleForBlock 失败: %v", err)
 	}
 	if got := staleCount(t, db, pA); got != 1 {
