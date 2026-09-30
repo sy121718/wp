@@ -340,13 +340,14 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		"product.imageAlts":            {"正面图", "背面图"},
 		"product_category.name":        {"夏季新品"},
 		"product_category.description": {"清凉一夏的当季商品"},
-		"product_category.seoTitle":    {"夏季新品 SEO"},
 		"product_brand.name":           {"晴山"},
 		"product_brand.description":    {"山里的颜色"},
-		"product_brand.seoTitle":       {"晴山 SEO"},
 		"product_tag.name":             {"当季"},
 		"product_attribute.name":       {"颜色"},
 		"product_attribute.values":     {"红色", "蓝色"},
+		// seoTitle / seoDescription 不在候选里（2026-09-30 字段合并）：它们是
+		// name / subtitle（分类与品牌是 name / description）的别名，译文直接取源字段的，
+		// 单列出来等于给翻译工作台加两个「填了也不生效」的输入框。
 	}
 	for contextName, sources := range want {
 		for _, src := range sources {
@@ -356,13 +357,16 @@ func TestProductTranslationCandidatesScopeAndNonTranslatable(t *testing.T) {
 		}
 	}
 
-	// 验收 4：非翻译字段不进候选（标识 / 链接 / 数字 / 白名单外字段）。
+	// 验收 4：非翻译字段不进候选（标识 / 链接 / 数字 / 白名单外字段 / 已合并的 SEO 别名）。
 	for _, forbidden := range []string{
 		"product.slug", "product.sku", "product.unit", "product.images", "product.defaultImage",
 		"product.price", "product.comparePrice", "product.priceRange", "product.minPrice", "product.maxPrice",
 		"product.options", "product.variants", "product.related",
-		"product_category.slug", "product_category.image", "product_category.seoDescription",
-		"product_brand.slug", "product_brand.logo", "product_brand.seoDescription",
+		"product.seoTitle", "product.seoDescription",
+		"product_category.slug", "product_category.image",
+		"product_category.seoTitle", "product_category.seoDescription",
+		"product_brand.slug", "product_brand.logo",
+		"product_brand.seoTitle", "product_brand.seoDescription",
 		"product_tag.slug", "product_attribute.key",
 	} {
 		if idx.hasContext(forbidden) {

@@ -107,22 +107,20 @@ var translatableFields = map[string]map[string]bool{
 		"subtitle":    true,
 		"description": true,
 		"imageAlts":   true,
-		// SEO 文案与其他可翻译字段一样按语言取译文：多语言站点里商品详情页的
-		// <title> 与 meta description 不该永远是建站时填的那一种语言。
-		// （分类 / 品牌只登记了 seoTitle，seoDescription 缺登记 —— 属既有不一致，
-		// 不在本次改动范围内，留待统一。）
-		"seoTitle":       true,
-		"seoDescription": true,
+		// seoTitle / seoDescription 不在此列（2026-09-30 字段合并）：两者的值分别是
+		// name 与 subtitle 的别名（见 service/entity_source_fields.go），译文直接取那两个
+		// 字段的 —— 单列出来只会让翻译工作台多出两个「填了也不生效」的输入框，还会让
+		// meta 标题与页面标题在英文站点上取到两份彼此无关的译文。
+		// 分类（name / description）与品牌（name / description）同理，别名同步见
+		// service/entity_source_translate.go 的 seoAliasFields。
 	},
 	EntityTypeCategory: {
 		"name":        true,
 		"description": true,
-		"seoTitle":    true,
 	},
 	EntityTypeBrand: {
 		"name":        true,
 		"description": true,
-		"seoTitle":    true,
 	},
 	EntityTypeTag: {
 		"name": true,

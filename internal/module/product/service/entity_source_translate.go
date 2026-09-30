@@ -12,6 +12,18 @@ import (
 	"go_wp/pkg/i18n"
 )
 
+// seoAliasFields 字段合并后的别名关系：别名 → 源字段（2026-09-30）。
+//
+// 商品 SEO 标题 / 描述与商品名 / 副标题、分类与品牌的 SEO 字段与名称 / 描述就是同一个东西，
+// 它们已从可翻译字段集合（contract 的 translatableFields）里去掉，值是**源字段翻译后的值** ——
+// 所以同步必须发生在取词之后（见 translateFieldsBatch 末尾的 applySEOAliases）：
+// 先同步再取词的话，英文站点上 meta 标题会拿着中文原文去查 seoTitle 语境。
+var seoAliasFields = map[string]map[string]string{
+	productcontract.EntityTypeProduct:  {"seoTitle": "name", "seoDescription": "subtitle"},
+	productcontract.EntityTypeCategory: {"seoTitle": "name", "seoDescription": "description"},
+	productcontract.EntityTypeBrand:    {"seoTitle": "name", "seoDescription": "description"},
+}
+
 // categoryValues 分类的可绑定字段值（作者文本按 lang 取译文）。
 func (s *Service) categoryValues(ctx context.Context, lang string, e *productmodel.ProductCategoryEntity) map[string]string {
 	values := map[string]string{
@@ -141,6 +153,9 @@ func (s *Service) translateFieldsBatch(ctx context.Context, lang, entityType str
 		}
 	}
 	if len(hashes) == 0 {
+		// 没有可翻译文本（值全是数字 / 符号）：源字段没被改写，但别名仍同步一次 ——
+		// 「别名 = 源字段」这条在任何路径上都得成立，别把不变量寄托在「构造时已经设好」。
+		applySEOAliases(entityType, batches)
 		return
 	}
 	// 工程作用域（审计 I18N-009）：工程 id 取自构建上下文（core.WithBuildProjectID
@@ -148,6 +163,24 @@ func (s *Service) translateFieldsBatch(ctx context.Context, lang, entityType str
 	tr := i18n.NewContentTranslatorScoped(ctx, core.BuildProjectID(ctx), s.contentStore, lang, hashes)
 	for _, item := range work {
 		batches[item.batchIdx][item.field] = tr.TranslateContent(item.source, item.context)
+	}
+	applySEOAliases(entityType, batches)
+}
+
+// applySEOAliases 把 SEO 别名字段同步为源字段的当前值（已按 lang 取过译文）。
+//
+// 幂等：源字段不存在时保持原值（旧模板可能只绑了别名，不该在这里被清成空串）。
+func applySEOAliases(entityType string, batches []map[string]string) {
+	aliases := seoAliasFields[entityType]
+	if len(aliases) == 0 {
+		return
+	}
+	for _, values := range batches {
+		for alias, source := range aliases {
+			if v, ok := values[source]; ok {
+				values[alias] = v
+			}
+		}
 	}
 }
 
