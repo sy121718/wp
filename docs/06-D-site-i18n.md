@@ -433,7 +433,7 @@ context     = "core.button.text"          # 语境独立成列
 |---|---|
 | 构建器组件 | `core.button.text`、`core.image.alt`、`core.heading.text`、`core.card.title` |
 | CMS 商品 | `product.name`、`product.description`、`product.seoTitle` |
-| CMS 文章 | `article.title`、`article.body`、`article.excerpt`、`article.seoTitle` |
+| CMS 文章 | `article.title`、`article.body`、`article.excerpt`（`article.seoTitle` 已与 title 合并，值同源、不再单独进翻译表） |
 | CMS 分类 | `category.name`、`category.description` |
 
 组件定义新增白名单字段（示意，未实现）：
@@ -708,7 +708,8 @@ type AITranslateResponse struct {
 |---|---|---|
 | 商品 | `product.name` / `product.description` / `product.seoTitle` / `product.seoDescription` | ✅ |
 | 商品 | `product.price` / `product.sku` / `product.images` | ❌ 语言无关 |
-| 文章 | `article.title` / `article.body` / `article.excerpt` / `article.seoTitle` / `article.seoDescription` | ✅ |
+| 文章 | `article.title` / `article.body` / `article.excerpt` | ✅ |
+| 文章 | `article.seoTitle` / `article.seoDescription` | ❌（2026-09-30 与 title / excerpt 合并，值取它们的译文） |
 | 文章 | `article.featuredImage` | ❌ |
 | 分类 | `category.name` / `category.description` | ✅ |
 | 分类 | `category.image` | ❌ |

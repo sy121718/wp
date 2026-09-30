@@ -216,6 +216,8 @@ product (internal/module/product/contract/product_entity.go):
          .images, .defaultImage, .price, .comparePrice, .priceRange, .minPrice, .maxPrice
 article (internal/module/content/contract/content_service.go):
          .title, .body, .excerpt, .featuredImage, .seoTitle, .seoDescription
+         （seoTitle / seoDescription 是 title / excerpt 的别名：2026-09-30 字段合并，
+           编辑页不再有这两栏，读取侧由 service/content_resolver.go 的 mergeSEOFields 归一）
 ```
 
 未注册的实体类型（如 `category`）不可作为数据源：类型合法性完全由注册表判定。
