@@ -12,7 +12,7 @@
 | 1 | 标题标签 | `title` | 15% | 15 | 主关键词在**前半段**；50-60 字符；唯一；有利益点/修饰；意图匹配；品牌置尾；截断风险低 | rubric + Yoast |
 | 2 | 元描述 | `meta` | 5% | 5 | 关键词自然出现；150-160 字符；含 CTA；唯一；准确概括 | rubric + Yoast |
 | 3 | 标题结构 | `headings` | 10% | 10 | **唯一 H1**；H1 含关键词；H1→H2→H3 层级递进；H2 覆盖关键侧面 | rubric |
-| 4 | 内容质量 | `content` | 25% | 25 | 按查询类型长度；覆盖完整；独有价值；可读排版；阅读难度适中；E-E-A-T 信号 | rubric |
+| 4 | 内容质量 | `content` | 25% | 25 | 按查询类型长度；覆盖完整；独有价值（**比较/购买型意图需有结构化对比表**）；可读排版；阅读难度适中；E-E-A-T 信号 | rubric + 文章生产门禁 |
 | 5 | 关键词优化 | `keywords` | 15% | 15 | 关键词出现在 title/H1/首 100 词/URL/alt/meta；2-3 个次级词；LSI 语义词；密度自然 | rubric + Yoast |
 | 6 | 内外链 | `links` | 10% | 10 | 每千字 3-5 条上下文内链；目标相关；锚文本描述性；权威外链；无死链 | rubric |
 | 7 | 图片优化 | `images` | 10% | 10 | 文件名描述性；体积达标；WebP/AVIF/SVG；首屏下懒加载；alt 完整 | rubric + WCAG |
@@ -42,7 +42,23 @@
 
 > 印证：RankMath 建议区间 1-1.5%，主判仍用 rubric 的 0.5-2.0%。
 
-### 2.3 内链数量（按篇幅）
+### 2.3 内链数量（按篇幅）—— ⚠️ 口径已于 2026-09-29 变更
+
+> **新口径（源自 seo 工作区 `content-writer/references/quality-gate.md` 2026-09-29 版，
+> 与 `content-auditor/references/audit-rubric.md` 同步）**：
+>
+> > every named product, brand, or cluster sibling **with a live target** is linked.
+> > **No count, range, or ratio applies**
+>
+> 即：判据是「**点名即链**」——正文里点到的产品 / 品牌 / 同簇兄弟页（有线上目标）都必须被链；
+> **不按数量、区间或比例评分**。下表这套「按篇幅算条数」的基准因此**不再是判据**，
+> 保留在此仅供人工撰写时参考。
+>
+> **go_wp 实现状态：未实现。** 判据要回答两件事 ——「正文点名了哪些产品 / 品牌 / 同簇兄弟页」
+> 与「它们有没有被链」。第二件现成（提取侧已经在收集内链），**第一件拿不到**：content / page
+> 模块没有产品与品牌契约的读取口，无法枚举站点实体名。接线需要装配层把只读契约注入这两个模块，
+> 属跨模块改动，未在本批完成；在那之前，内链维度仍按上表的条数口径评分 —— 这是**已知的偏差**，
+> 不是「已经改好了」。
 
 | 篇幅 | 最低 | 理想 | 过多 |
 |---|---|---|---|
@@ -128,7 +144,8 @@ type Check struct {
 | keywords | `keyword_density` | 查 2.2 表 |
 | keywords | `keyword_positions` | 五点位命中数 |
 | keywords | `secondary_keywords` | 2-3 个次级词出现 |
-| links | `internal_link_count` | 查 2.3 表 |
+| content | `comparison_table` | 比较/购买型意图需有结构化对比表（信息型跳过，不计入分母） |
+| links | `internal_link_count` | 查 2.3 表（⚠️ 该表已非判据，见 2.3 节的新口径与实现状态） |
 | links | `external_authority` | ≥1 条权威外链 |
 | links | `anchor_descriptive` | 无 "点击这里" 类锚文本 |
 | images | `alt_coverage` | 内容图 100% 有功能性 alt |
