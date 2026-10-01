@@ -23,9 +23,16 @@ package templates
 // 逼清单跟着收缩 —— 清单只增不减就等于门禁失效。
 //
 // 已知让步（写在这里避免下一个人误判）：
-//   · 动态前缀（JS 的 'is-' + x、模板的 is-{{…}}）按「前缀覆盖」处理，不逐条豁免。
-//     代价是 is- 前缀会连同 is-success / is-green 这类真死样式一起放行 ——
-//     被放行的类会以 t.Log 列出，供人工复核（见 TestCSSClassesDefinedButUnused）。
+//   · 动态类名放行必须**有据可查**：dynamicClassEvidence 里每条前缀都写明
+//     拼接点（file:line + 表达式）与可枚举的取值域，放行条件 = 前缀匹配 **且** 后缀在取值域里。
+//     只按前缀放行会让「同前缀的孤立变体」（没人会拼出来的 is-xxx）永远逃过 B 方向 ——
+//     那正是收窄要治的病。证据表里的拼接点在本次扫描找不到时，TestDynamicClassEvidenceIsCurrent 会红。
+//   · A 方向收窄为「属于定义侧已存在的类家族」才判红（见 auditFamilyDefined）：
+//     完全新家族的无样式钩子（media-detail-form / customers-page-table 这类结构类）不判红，
+//     因为「无外观需求」是它们的常态，判红只会制造噪声；
+//     而「往既有家族里加了个没定义的变体」（form-input--x / btn-huge / wbd-month）仍然判红 ——
+//     那才是「想加样式却漏了定义」的高发形态。
+//     「JS 动态生成控件漏带基座类」那类真缺陷不靠本方向抓，它由 media_admin_js_base_test.go 的 JS 侧判据覆盖。
 //   · 只扫 internal/templates/static/css + static/vendor 的 CSS 与模板内联 <style>。
 //     前台片段（fragments/*.jet 的 sky-*、user/*.html 的 g-*）样式真源在
 //     internal/builder/components/*/*.css 这类构建期组件样式里，不在本定义侧，
@@ -75,10 +82,13 @@ func TestCSSClassesUsedButUndefined(t *testing.T) {
 	facts := collectCSSAuditFacts(t)
 
 	missing := auditMissing(facts.usedStrict, func(cls string) bool {
-		if _, ok := facts.defined[cls]; ok {
+		if len(facts.defined[cls]) > 0 {
 			return false
 		}
-		return !auditPrefixCovered(facts.dynPrefixes, cls)
+		if auditDynamicCovered(cls) {
+			return false
+		}
+		return auditFamilyDefined(facts.defined, cls)
 	}, cssUndefinedAllowed)
 
 	if len(missing) > 0 {
@@ -106,7 +116,7 @@ func TestCSSClassesUsedButUndefined(t *testing.T) {
 func TestCSSClassesDefinedButUnused(t *testing.T) {
 	facts := collectCSSAuditFacts(t)
 
-	unused, prefixCovered := auditUnused(facts.definedOwn, facts.usedStrict, facts.looseTokens, facts.dynPrefixes, cssUnusedAllowed)
+	unused, prefixCovered := auditUnused(facts.definedOwn, facts.usedStrict, facts.looseTokens, cssUnusedAllowed)
 	if len(unused) > 0 {
 		var b strings.Builder
 		b.WriteString("这些类在定义侧存在，但使用侧（模板 + JS 文本）里以 token 边界找不到任何出现 —— 要么是死样式，要么使用点藏在扫描范围之外：\n")
@@ -133,7 +143,7 @@ func TestCSSClassesDefinedButUnused(t *testing.T) {
 			sorted = append(sorted, cls)
 		}
 		sort.Strings(sorted)
-		t.Logf("以下 %d 个类靠动态前缀被放行（前缀 %s），若要精确判定请人工复核：%s",
+		t.Logf("以下 %d 个类靠动态证据放行（前缀 %s；拼接点与取值域见 dynamicClassEvidence）：%s",
 			len(sorted), strings.Join(sortedPrefixKeys(facts.dynPrefixes), ", "), strings.Join(sorted, ", "))
 	}
 }
@@ -155,7 +165,7 @@ func auditMissing(used map[string][]string, keep func(string) bool, allowed map[
 }
 
 // auditUnused 返回定义了却没人用的类名，以及被动态前缀放行的类名。
-func auditUnused(defined map[string][]string, strict map[string][]string, loose map[string]bool, prefixes map[string][]string, allowed map[string]string) ([]string, map[string]bool) {
+func auditUnused(defined map[string][]string, strict map[string][]string, loose map[string]bool, allowed map[string]string) ([]string, map[string]bool) {
 	var unused []string
 	prefixCovered := map[string]bool{}
 	for cls := range defined {
@@ -165,7 +175,7 @@ func auditUnused(defined map[string][]string, strict map[string][]string, loose 
 		if len(strict[cls]) > 0 {
 			continue
 		}
-		if auditPrefixCovered(prefixes, cls) {
+		if auditDynamicCovered(cls) {
 			prefixCovered[cls] = true
 			continue
 		}
@@ -188,8 +198,8 @@ func staleUndefinedAllowed(f cssAuditFacts) []string {
 			stale = append(stale, cls) // 使用点消失 → 门禁已经守不到它
 		case len(f.defined[cls]) > 0:
 			stale = append(stale, cls) // 类已被定义 → 不再是「用了但没定义」
-		case auditPrefixCovered(f.dynPrefixes, cls):
-			stale = append(stale, cls) // 已被动态前缀接管 → 不必逐条豁免
+		case auditDynamicCovered(cls) || !auditFamilyDefined(f.defined, cls):
+			stale = append(stale, cls) // 收窄后不再判红（动态有据可查 / 属完全新家族）→ 条目该收回
 		}
 	}
 	sort.Strings(stale)
@@ -206,21 +216,124 @@ func staleUnusedAllowed(f cssAuditFacts) []string {
 			stale = append(stale, cls) // 类已删 → 清单条目连同 CSS 一起收口
 		case f.looseTokens[cls] || len(f.usedStrict[cls]) > 0:
 			stale = append(stale, cls) // 有人用了 → 不再是死样式
-		case auditPrefixCovered(f.dynPrefixes, cls):
-			stale = append(stale, cls) // 已被动态前缀放行 → 不必逐条豁免
+		case auditDynamicCovered(cls):
+			stale = append(stale, cls) // 已被动态证据覆盖 → 不必逐条豁免
 		}
 	}
 	sort.Strings(stale)
 	return stale
 }
 
-func auditPrefixCovered(prefixes map[string][]string, cls string) bool {
-	for p := range prefixes {
-		if strings.HasPrefix(cls, p) {
+// auditDynamicCovered 动态类名放行判据：前缀匹配 **且** 后缀落在该前缀的可枚举取值域里。
+// 取值域为空（枚举不出来）时退回前缀放行，理由写在 dynamicClassEvidence 的 note 里。
+func auditDynamicCovered(cls string) bool {
+	for prefix, ev := range dynamicClassEvidence {
+		if !strings.HasPrefix(cls, prefix) {
+			continue
+		}
+		if len(ev.values) == 0 {
+			return true
+		}
+		suffix := strings.TrimPrefix(cls, prefix)
+		for _, v := range ev.values {
+			if v == suffix {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// auditFamilyDefined 判定「这个未定义的类是否属于定义侧已存在的某个类家族」。
+// 形状：把类名逐级剥短 —— BEM 的 -- / __ 前缀各取一次，再逐段去掉尾部的 -segment；
+// 任一候选父名在定义侧出现即算「既有家族」。
+func auditFamilyDefined(defined map[string][]string, cls string) bool {
+	for _, parent := range auditParentCandidates(cls) {
+		if len(defined[parent]) > 0 {
 			return true
 		}
 	}
 	return false
+}
+
+func auditParentCandidates(cls string) []string {
+	var out []string
+	add := func(s string) {
+		if s == "" || s == cls || contains(out, s) {
+			return
+		}
+		out = append(out, s)
+	}
+	if i := strings.Index(cls, "--"); i > 0 {
+		add(cls[:i])
+	}
+	if i := strings.Index(cls, "__"); i > 0 {
+		add(cls[:i])
+	}
+	parts := strings.Split(cls, "-")
+	for i := len(parts) - 1; i > 0; i-- {
+		add(strings.Join(parts[:i], "-"))
+	}
+	return out
+}
+
+// dynPrefixEvidence 一条动态前缀的放行证据。
+type dynPrefixEvidence struct {
+	site   string   // 拼接点：file:line + 表达式（可核对）
+	values []string // 可枚举的取值域（去前缀后的后缀）
+	note   string   // 取值域来源；不可枚举时写明为何只能退回前缀放行
+}
+
+// dynamicClassEvidence 动态类名放行的唯一出口：没有条目的前缀一律不放行。
+var dynamicClassEvidence = map[string]dynPrefixEvidence{
+	"is-": {
+		site: "ui/toast.js:61 `'wb-toast is-' + type`；media-admin.js:334 `'media-variant-badge is-' + (v.status || 'pending')`；workbench/methods/canvas.js `'wb-canvas-frame is-' + cfg.bp`；fragments/seo_score.html:33 `is-{{sec.Color}}`",
+		values: []string{
+			"info", "success", "error",
+			"pending", "processing", "ready", "failed",
+			"desktop", "tablet", "mobile",
+			"green", "lightgreen", "yellow", "red", "red-blocking",
+		},
+		note: "四个拼接点各自的取值域 —— toast type {info,success,error}（toast.js:15 的注释）；媒体变体 status {pending,processing,ready,failed}（media-admin.js:331 的 texts 映射键，与 media-lib.css:213-216 的四个变体一一对应）；断点 bp {desktop,tablet,mobile}（workbench/methods/state.js:16-18）；SEO 维度色 {green,lightgreen,yellow,red,red-blocking}（workbench.css:790-794 的五个变体，另见 scoring_test.go:70 的 red-blocking）",
+	},
+	"is-drop-": {
+		site:   "workbench/methods/tree.js:106 `classList.add('is-drop-target', 'is-drop-' + placement)`",
+		values: []string{"before", "after", "inside"},
+		note:   "placement 取值见同文件 111/120 行的 remove 列表",
+	},
+	"wb-drop-": {
+		site:   "workbench/methods/canvas.js:563 `target.classList.add('wb-drop-' + placement)`",
+		values: []string{"before", "after", "inside"},
+		note:   "取值见 canvas.js:544-545 的 remove 列表",
+	},
+	"edge-": {
+		site:   "automation/graph.js:205 `' edge-' + edges[e].kind`",
+		values: []string{"yes", "no"},
+		note:   "kind ∈ {'',yes,no}（graph.js:59 注释与 64-65 行的赋值），空值不拼类；对应 automation.css 的 .edge-yes / .edge-no",
+	},
+	"perm-type-": {
+		site:   "admin/system/role_permissions.html:100 `class=\"perm-type perm-type-{{r.Type}}\"`",
+		values: nil,
+		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
+	},
+}
+
+// TestDynamicClassEvidenceIsCurrent 放行证据必须与代码同步：
+// 表里的前缀在本次扫描找不到拼接点 → 证据失效（代码改了写法或删了功能），必须更新或删条目；
+// 扫描到表里没有的前缀 → 有新的动态点被静默放过，必须补「拼接点 + 取值域」。
+func TestDynamicClassEvidenceIsCurrent(t *testing.T) {
+	facts := collectCSSAuditFacts(t)
+	for prefix, ev := range dynamicClassEvidence {
+		if len(facts.dynPrefixes[prefix]) == 0 {
+			t.Errorf("dynamicClassEvidence 里的前缀 %q 在本次扫描里找不到任何拼接点（登记的证据：%s）：证据已失效，请更新或删除该条", prefix, ev.site)
+		}
+	}
+	for prefix := range facts.dynPrefixes {
+		if _, ok := dynamicClassEvidence[prefix]; !ok {
+			t.Errorf("扫描到动态前缀 %q（来源 %v）却没有证据条目：请先写明拼接点与取值域，再决定放行范围",
+				prefix, facts.dynPrefixes[prefix])
+		}
+	}
 }
 
 func sortedPrefixKeys(prefixes map[string][]string) []string {
@@ -567,66 +680,47 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-// cssUndefinedAllowed —— 方向 A 豁免：确认是纯结构/JS 钩子、不需要外观的类。
+// 收窄后不再判红、且已逐个核实过的钩子（登记在此备查；它们不进未命中集合，
+// 写进豁免清单会立刻因「不再命中」变红 —— 那是机制的正确行为，不是漏登记）：
+//
+//   · 工作台 JS 生成的 7 个 wb-*（lead 要求逐条核实，结论：全部非缺样式，无需补 CSS）
+//     wb-input              workbench/methods/controls/misc.js:231 —— 容器 div.wb-hint 在
+//                           div.wb-field 内（misc.js:187），外观由 workbench.css:62 的
+//                           `.wb-field input:not([type=checkbox]):not([type=radio])` 后代选择器提供；
+//     wb-preset-item        workbench/methods/canvas.js:120 —— 与 .wb-palette-item 配对写，
+//                           外观来自 workbench.css:51；
+//     wb-preset-thumb       workbench/methods/canvas.js:125 —— 尺寸 / 圆角 / object-fit / 背景全由
+//                           内联 style 给（该处代码注释明写「内联尺寸约束（不改 CSS 文件）」）；
+//     wb-repeater-acts      workbench/methods/controls/repeater.js:242 —— 布局由父 .wb-repeater-row
+//                           决定（workbench.css:317 display:flex; gap:6px; align-items:center）；
+//     wb-faq-answer-field   workbench/methods/controls/repeater.js:92 —— 富文本挂载槽（ctx.panel=ansBox），
+//                           内容由 richTextField 生成、外观来自 .wb-field-richtext（workbench.css:227）；
+//     wb-icon-page-info     workbench/methods/controls/text.js:350 —— 纯文字 span（只 set textContent），
+//                           无尺寸需求、字号靠继承；
+//     wb-richtext-upload-hint workbench/methods/controls/text.js:54 —— 外观全由内联 style 给
+//                           （marginTop / fontSize / lineHeight / color）。
+//
+//   · 模板结构钩子（收窄前 38 条，如 analytics-page / customers-page-table / stock-qty / list-plain）：
+//     全是「完全新家族」的无样式钩子，无外观需求是常态。
+//
+//   · sre-toolbar-btn / sre-toolbar-row（原结论保留）：JS 里与 vendor 的 trix-button /
+//     trix-button-row 配对写（rich-editor/toolbar.js:28、:40），基础外观来自 trix.css。
+//     收窄后 sre 家族在定义侧不存在 → 不再判红，故不留在清单里。
+//   · sre-attachment--accordion / --rule / --table：父名 sre-attachment 已定义（rich-editor.css:219
+//     的卡片外观）→ 仍判红，故留在下面的清单里（理由已写成核实结论）。
+
+// cssUndefinedAllowed —— 方向 A 豁免：已逐个核实过「有生成点/外观另有来源」的钩子类。
 var cssUndefinedAllowed = map[string]string{
-	"analytics-page":            "模板结构钩子（admin/analytics/analytics.html:64），定义侧零命中：无外观需求，待复核是否可删",
-	"article-edit-grid":         "模板结构钩子（admin/content/article_new.html:29），定义侧零命中：无外观需求，待复核是否可删",
-	"article-edit-main":         "模板结构钩子（admin/content/article_edit.html:108），定义侧零命中：无外观需求，待复核是否可删",
-	"article-new-page":          "模板结构钩子（admin/content/article_new.html:14），定义侧零命中：无外观需求，待复核是否可删",
-	"article-preview-frame":     "模板结构钩子（admin/content/article_new.html:78），定义侧零命中：无外观需求，待复核是否可删",
-	"articles-page":             "模板结构钩子（admin/content/articles.html:19），定义侧零命中：无外观需求，待复核是否可删",
-	"auto-stage":                "JS 运行时生成元素的类（static/js/automation/canvas.js:60），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"cell-body":                 "模板结构钩子（admin/comment/comments.html:119），定义侧零命中：无外观需求，待复核是否可删",
-	"check-inline":              "模板结构钩子（admin/inventory/inventory.html:176），定义侧零命中：无外观需求，待复核是否可删",
-	"coupons-page":              "模板结构钩子（admin/order/coupons.html:37），定义侧零命中：无外观需求，待复核是否可删",
-	"coupons-page-table":        "模板结构钩子（admin/order/coupons.html:155），定义侧零命中：无外观需求，待复核是否可删",
-	"customer-detail-page":      "模板结构钩子（admin/user/customer_detail.html:10），定义侧零命中：无外观需求，待复核是否可删",
-	"customers-page":            "模板结构钩子（admin/user/customers.html:25），定义侧零命中：无外观需求，待复核是否可删",
-	"customers-page-table":      "模板结构钩子（admin/user/customers.html:138），定义侧零命中：无外观需求，待复核是否可删",
-	"datarule-logic":            "模板结构钩子（admin/system/datarule_config_editor.html:35），定义侧零命中：无外观需求，待复核是否可删",
-	"field":                     "模板结构钩子（admin/content/article_translations.html:101），定义侧零命中：无外观需求，待复核是否可删",
-	"has-icon":                  "JS 运行时生成元素的类（static/js/ui/iconfield.js:50），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"hits-head":                 "模板结构钩子（admin/product/product_tag_hits.html:23），定义侧零命中：无外观需求，待复核是否可删",
-	"list-plain":                "模板结构钩子（admin/product/products_new.html:34），定义侧零命中：无外观需求，待复核是否可删",
-	"media-detail-form":         "JS 运行时生成元素的类（static/js/media-admin.js:279），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"media-gallery":             "模板结构钩子（admin/partials/media_gallery.html:19），定义侧零命中：无外观需求，待复核是否可删",
-	"media-gallery-hint":        "模板结构钩子（admin/partials/media_gallery.html:33），定义侧零命中：无外观需求，待复核是否可删",
-	"media-pick-detail-body":    "JS 运行时生成元素的类（static/js/ui/mediafield.js:132），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"media-tree-item":           "JS 运行时生成元素的类（static/js/media-lib.js:53），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"media-tree-search":         "模板结构钩子（admin/media/media.html:17），定义侧零命中：无外观需求，待复核是否可删",
-	"nav-source-title":          "模板结构钩子（admin/navigation/navigations.html:157），定义侧零命中：无外观需求，待复核是否可删",
-	"order-new-page":            "模板结构钩子（admin/order/order_new.html:26），定义侧零命中：无外观需求，待复核是否可删",
-	"orders-page":               "模板结构钩子（admin/order/orders.html:25），定义侧零命中：无外观需求，待复核是否可删",
-	"orders-page-table":         "模板结构钩子（admin/order/orders.html:134），定义侧零命中：无外观需求，待复核是否可删",
-	"receipt-head":              "模板结构钩子（admin/inventory/inventory_purchases.html:198），定义侧零命中：无外观需求，待复核是否可删",
-	"receipt-row":               "模板结构钩子（admin/inventory/inventory_purchases.html:197），定义侧零命中：无外观需求，待复核是否可删",
-	"returns-page":              "模板结构钩子（admin/order/returns.html:26），定义侧零命中：无外观需求，待复核是否可删",
-	"sidebar-pinned":            "JS 运行时生成元素的类（static/js/admin.js:74），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"site-slots-page":           "模板结构钩子（admin/page/page_redirects.html:43），定义侧零命中：无外观需求，待复核是否可删",
-	"site-slots-table":          "模板结构钩子（admin/page/site_slots.html:84），定义侧零命中：无外观需求，待复核是否可删",
-	"sre-attachment--accordion": "JS 运行时生成元素的类（static/js/rich-editor/accordion.js:87），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"sre-attachment--rule":      "JS 运行时生成元素的类（static/js/rich-editor/horizontal-rule.js:50），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"sre-attachment--table":     "JS 运行时生成元素的类（static/js/rich-editor/table.js:208），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"sre-toolbar-btn":           "JS 生成的按钮同时带 vendor 的 trix-button（rich-editor/toolbar.js:28），基础外观来自 trix.css；本类只作 .sre-toolbar-btn--active 变体（rich-editor.css:167）的钩子 —— lead 已核实，非缺样式",
-	"sre-toolbar-row":           "JS 生成的容器同时带 vendor 的 trix-button-row（rich-editor/toolbar.js:40），外观来自 trix.css —— lead 已核实，非缺样式",
-	"stack-sm":                  "模板结构钩子（admin/content/article_edit.html:226），定义侧零命中：无外观需求，待复核是否可删",
-	"stock-cell":                "模板结构钩子（admin/product/products.html:190），定义侧零命中：无外观需求，待复核是否可删",
-	"stock-qty":                 "模板结构钩子（admin/inventory/inventory.html:182），定义侧零命中：无外观需求，待复核是否可删",
-	"stock-rows":                "模板结构钩子（admin/product/products.html:200），定义侧零命中：无外观需求，待复核是否可删",
-	"stock-wh":                  "模板结构钩子（admin/product/products.html:203），定义侧零命中：无外观需求，待复核是否可删",
-	"tab":                       "有意无样式：按钮外观挂在 .tab-list > [role=\"tab\"]（ui.css 页签段的既定写法），.tab 只是标记类",
-	"tr-component":              "模板结构钩子（admin/page/page_translations.html:141），定义侧零命中：无外观需求，待复核是否可删",
-	"tr-group":                  "模板结构钩子（admin/page/page_translations.html:134），定义侧零命中：无外观需求，待复核是否可删",
-	"tr-table-wrap":             "模板结构钩子（admin/product/product_translations.html:86），定义侧零命中：无外观需求，待复核是否可删",
-	"wb-confirm-ok":             "JS 运行时生成元素的类（static/js/ui/confirm.js:39），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-faq-answer-field":       "JS 运行时生成元素的类（static/js/workbench/methods/controls/repeater.js:92），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-icon-page-info":         "JS 运行时生成元素的类（static/js/workbench/methods/controls/text.js:350），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-input":                  "JS 运行时生成元素的类（static/js/workbench/methods/controls/misc.js:231），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-preset-item":            "JS 运行时生成元素的类（static/js/workbench/methods/canvas.js:120），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-preset-thumb":           "JS 运行时生成元素的类（static/js/workbench/methods/canvas.js:125），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-repeater-acts":          "JS 运行时生成元素的类（static/js/workbench/methods/controls/repeater.js:242），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-richtext-upload-hint":   "JS 运行时生成元素的类（static/js/workbench/methods/controls/text.js:54），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wb-seo-panel":              "模板结构钩子（admin/product/entity_seo_drawer.html:30），定义侧零命中：无外观需求，待复核是否可删",
+	"media-detail-form":         "media-admin.js:279 的详情字段容器；子控件由 mkBaseControl() 带 form-input/form-textarea/form-select 基座类，容器自身只做分组 —— 已核实，非缺样式",
+	"media-pick-detail-body":    "ui/mediafield.js:132 的空槽位（详情片段由 JS 塞入），外观来自父 .media-pick-detail 与塞入内容 —— 已核实，非缺样式",
+	"media-tree-item":           "media-lib.js:53 的 li 容器；行外观由内部 .media-tree-node（media-lib.css:29）提供，li 只做列表项 —— 已核实，非缺样式",
+	"media-tree-search":         "admin/media/media.html:17 的 input 同时带 form-input 基座类，本类只是定位钩子 —— 已核实，非缺样式",
+	"sre-attachment--accordion": "rich-editor/accordion.js:87 的 figure 同时带 .sre-attachment（rich-editor.css:219 的卡片外观），本类是变体钩子 —— 已核实，非缺样式",
+	"sre-attachment--rule":      "rich-editor/horizontal-rule.js:50 的 figure 同时带 .sre-attachment（rich-editor.css:219），本类是变体钩子 —— 已核实，非缺样式",
+	"sre-attachment--table":     "rich-editor/table.js:208 的 figure 同时带 .sre-attachment（rich-editor.css:219），本类是变体钩子 —— 已核实，非缺样式",
+	"stack-sm":                  "admin/content/article_edit.html:226 的 form；与 .stack（ui.css:569）同族但无定义 —— 表单元素天然块级堆叠、当前无视觉差异，是否补「小间距」变体属设计决定 —— 已核实无功能影响",
+	"tr-table-wrap":             "admin/product/product_translations.html:86 的容器同时带 table-wrap 基座类，本类只是命名钩子 —— 已核实，非缺样式",
+	"wb-confirm-ok":             "ui/confirm.js:39 的按钮同时带 btn btn-primary 基座类（.wb-confirm* 家族见 ui.css:202-211）—— 已核实，非缺样式",
 	"wbd-blank":                 "JS 生成的月初空位 span（ui/daterange.js:301），作为 .wbd-grid 的 grid item 由轨道定尺寸 —— lead 已核实，非缺样式",
 	"wbd-month":                 "JS 生成的月份容器（ui/daterange.js:287），尺寸由父 .wbd-months 的 grid 轨道决定（ui.css:148），无需自身外观 —— lead 已核实，非缺样式",
 	"wbd-title":                 "JS 生成的月份标题（ui/daterange.js:337），位于 .wbd-titles 网格内（ui.css:135），样式与文字靠继承 —— lead 已核实，非缺样式",

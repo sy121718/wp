@@ -19,7 +19,7 @@
 
     --c-text:             #1a1d21;
     --c-text-secondary:   #4b5563;
-    --c-text-mute:        #6b7280;
+    --c-text-mute:        #5f6670;    /* 4.09:1 → 4.91:1（配 --c-bg-hover #ececec）：浅色真值此前不达 AA，见 task-12 追加项 */
     --c-text-faint:       #9ca3af;
 
     --c-border:           #e5e7eb;
@@ -29,7 +29,7 @@
     --c-success:          #3f6b4f;
     --c-success-bg:       #eef4ef;
     --c-warning:          #8a6d3b;
-    --c-warning-bg:       #f7f3e8;
+    --c-warning-bg:       #fbf9f3;    /* 配 --c-warning #8a6d3b：4.37:1 → 4.61:1 */
     --c-danger:           #b34a4a;
     --c-danger-bg:        #f7eded;
 
@@ -232,11 +232,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .source-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
 .source-page .card-header > * { min-width: 0; }
 .source-page .form-inline .wbs { width: min(100%, 220px); }
-.source-page .form-inline textarea {
-    padding: 8px 10px; font-size: 13px; line-height: 20px; resize: vertical;
+/* 对接配置 textarea：外观（内边距 / 边框 / 圆角 / 背景 / 字号 / color）走基座 ——
+   inventory_sources.html 的两个控件都带 class="form-textarea"。容器只留宽度与行为。
+   等宽字体与 20px 行高是这处的**刻意差异**（配置内容是 JSON），按门禁的口径写成
+   基座类限定选择器：修饰的是「已带基座类的控件」，不是给裸控件兜底。 */
+.source-page .form-inline textarea.form-textarea {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px;
-    background: var(--sky-c-surface, #fff); color: inherit;
+    line-height: 20px; resize: vertical;
     width: min(100%, 420px); min-width: 0;
 }
 .source-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin: 8px 0 12px; }
@@ -276,9 +278,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .purchase-page .form-inline select,
 .purchase-page .form-inline .wbs { width: min(100%, 220px); }
 .purchase-page .receipt-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* 采购入库的数量输入：外观走基座，容器只留宽度。
+   注意 .receipt-form 当前在**使用侧零命中**（css_class_audit_test.go 已登记为疑似死样式），
+   这条规则眼下没有匹配对象 —— 只删外观、保留布局，整块清理归死样式批次。 */
 .purchase-page .receipt-form input[type="number"] {
-    padding: 6px 8px; font-size: 13px; border: 1px solid var(--sky-c-border, #e5e7eb);
-    border-radius: 8px; background: var(--sky-c-surface, #fff); color: inherit;
     width: min(100%, 120px); min-width: 0;
 }
 .purchase-page .receipt-form input[name="unitPrice"] { width: min(100%, 180px); }
@@ -376,10 +379,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .attr-value-row .attr-value-idx,
 .attr-value-head .attr-value-idx { font-family: monospace; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+/* 属性值行的控件：外观走基座（product_attribute_rows.html 的三个 input 都带 class="form-input"），
+   容器只留列宽约束（列宽由 .attr-value-row 的 grid 定义）。 */
 .attr-value-row input[type="text"],
 .attr-value-row input[type="number"] {
-    padding: 6px 10px; font-size: 13px; border: 1px solid var(--sky-c-border, #e5e7eb);
-    border-radius: 8px; background: var(--sky-c-surface, #fff); color: inherit;
     width: 100%; min-width: 0;
 }
 .attr-value-row .attr-value-op { display: flex; justify-content: flex-end; }
@@ -428,10 +431,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tr-table td { vertical-align: top; }
 .tr-field { white-space: nowrap; font-family: monospace; font-size: 12px; }
 .tr-source { max-width: 320px; word-break: break-word; }
+/* 译文文本域：外观走基座（page_translations.html 与 product_translations.html 都带
+   class="form-textarea"），容器只留宽度与行高（行高不属外观属性，且译文逐行对齐需要它）。 */
 .tr-target textarea {
-    width: 100%; min-width: min(100%, 240px); padding: 6px 10px; font-size: 13px; line-height: 20px;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; font-family: inherit;
-    background: var(--sky-c-surface, #fff); color: inherit;
+    width: 100%; min-width: min(100%, 240px); line-height: 20px;
 }
 .tr-reuse summary { cursor: pointer; color: var(--sky-c-text-mute, #6b7280); font-size: 12px; }
 .tr-alert {
@@ -475,10 +478,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
     padding: 12px 24px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
 }
 .list-toolbar .toolbar-search { flex: 0 1 280px; max-width: 280px; }
+/* 工具条搜索框：外观走基座，容器只留宽度。
+   同样提醒：.toolbar-search 当前使用侧零命中（css_class_audit_test.go 登记为疑似死样式），
+   这条规则眼下没有匹配对象，整块清理归死样式批次。 */
 .list-toolbar .toolbar-search input {
-    width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 13px;
-    color: var(--sky-c-text, #1f2937); background: var(--sky-c-bg, #fff);
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 6px;
+    width: 100%;
 }
 .list-toolbar .toolbar-spacer { flex: 1; }
 .hidden-form { display: none; }

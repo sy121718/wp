@@ -2,6 +2,9 @@
  *
  * 约定：颜色一律走 --sky-* 主题变量（可被主题覆写），不写死；
  * 单个控件一个段落，选择器统一 .wbs-*（WBUI Select）前缀。
+ * **兜底值一律写浅色主题的真值**：本文件会被注入到没有 theme.css 的前台产物里，
+ * 兜底值在那里直接生效 —— 抄深色主题的值会让产物侧「浅底浅字 / 浅底深边」。
+ * 判据：ui_token_fallback_test.go（新写深色兜底直接红）。
  * 后台/前台共用这一份：后台经 <link>，前台由构建期注入。
  */
 
@@ -130,17 +133,19 @@
 .wbd-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px; margin-bottom: 6px; }
 .wbd-titles { display: grid; grid-template-columns: 1fr; gap: 12px; text-align: center; font-size: 13px; font-weight: 600; }
 .wbd-pop.is-double .wbd-titles { grid-template-columns: 1fr 1fr; }
-.wbd-nav {
-    width: 28px; height: 28px;
+/* 日历内部的两个小圆角图标按钮（上/下月、清除）：同为「图标触发按钮」，外观必须同源 ——
+   共同部分放这条组规则里，各自的尺寸与文字色留在下面。
+   它们**不是**基座外观组的成员（基座组管文本类控件与值触发器），所以这里用显式的两条
+   类选择器，不往基座组里塞。组规则与单类块属性不重叠，写在前面也不会被覆盖。 */
+.wbd-nav,
+.wbd-clear {
     display: inline-flex; align-items: center; justify-content: center;
-    border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit;
-    font: inherit; font-size: 14px; line-height: 1; cursor: pointer;
+    border: 1px solid transparent; border-radius: 6px; background: transparent;
+    font: inherit; line-height: 1; cursor: pointer;
     transition: background-color var(--ui-motion-fast);
 }
-@media (hover: hover) {
-.wbd-nav:hover { background: var(--sky-c-bg-hover, #ececec); }
-}
-.wbd-nav:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+.wbd-nav { width: 28px; height: 28px; font-size: 14px; color: inherit; }
+.wbd-clear { width: 26px; height: 26px; font-size: 15px; color: var(--sky-c-text-mute, #6b7280); }
 .wbd-months { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .wbd-pop.is-double .wbd-months { grid-template-columns: 1fr 1fr; }
 .wbd-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
@@ -174,9 +179,13 @@
     transition: background-color var(--ui-motion-fast);
 }
 .wbd-clear[hidden] { display: none; }
+/* 悬停反馈：两个按钮同一份底色；清除按钮额外把文字色提到正文色（它默认是 mute）。 */
 @media (hover: hover) {
-.wbd-clear:hover { background: var(--sky-c-bg-hover, #ececec); color: var(--sky-c-text, #1a1d21); }
+.wbd-nav:hover,
+.wbd-clear:hover { background: var(--sky-c-bg-hover, #ececec); }
+.wbd-clear:hover { color: var(--sky-c-text, #1a1d21); }
 }
+.wbd-nav:focus-visible,
 .wbd-clear:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 /* 触屏是独立环境：:hover 那几条不输出，触摸目标单独放大（≥ 40px）。 */
 @media (pointer: coarse) {
@@ -741,7 +750,7 @@ button.row-title-link {
     font-weight: 500;
     color: var(--sky-c-text-secondary, #4b5563);
 }
-.form-label .req { color: var(--sky-c-danger, #cf8080); }
+.form-label .req { color: var(--sky-c-danger, #b34a4a); }
 
 /* 这里曾有一层「后台裸控件兜底外观」（审计 UIK-009）：挂在后台布局容器上的
    :where(input, select, textarea) 规则。2026-10-01 清洗掉：它想兜住的 55 个真裸控件
@@ -828,13 +837,13 @@ button.row-title-link {
 .form-input[aria-invalid="true"],
 .form-select[aria-invalid="true"],
 .form-textarea[aria-invalid="true"] {
-    border-color: var(--sky-c-danger, #cf8080);
+    border-color: var(--sky-c-danger, #b34a4a);
 }
 .form-input[aria-invalid="true"]:focus,
 .form-select[aria-invalid="true"]:focus {
     box-shadow: 0 0 0 3px rgb(179 74 74 / 15%);
 }
-.form-input::placeholder { color: var(--sky-c-text-faint, #5d656e); }
+.form-input::placeholder { color: var(--sky-c-text-faint, #9ca3af); }
 /* 原生 select **专属**的那点差别：抹掉平台默认箭头（每个平台一个形状），换成与下拉 /
    折叠共用的 Lucide chevron。右侧留出「图标 + 间距 + 一点余量」，文字不会压到箭头上；
    RTL 下镜像到左侧 —— background-position 的 right/left 不会跟着书写方向走。
@@ -879,8 +888,8 @@ select.form-select {
     select.form-select { appearance: auto; -webkit-appearance: auto; background-image: none; }
 }
 .form-textarea { resize: vertical; min-height: 100px; }
-.form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-text-mute, #8a9199); }
-.form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-danger, #cf8080); }
+.form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-danger, #b34a4a); }
 
 /* ===== 折叠控件（details / summary）的默认指示图标 =====
    摘要行是**后台控件**而不是正文内容，所以基座直接给图标 —— 新页面不用再各写一遍 ▾ / ▸。
@@ -956,11 +965,16 @@ details[open] > summary::after { transform: rotate(0deg); }
     border-radius: var(--ui-r-pill);
     line-height: 20px;
 }
-.badge-success { background: var(--sky-c-success-bg, #1b2820); color: var(--sky-c-success, #7fb28d); }
-.badge-warning { background: var(--sky-c-warning-bg, #2a2318); color: var(--sky-c-warning, #c2a06a); }
-.badge-danger  { background: var(--sky-c-danger-bg, #2b1c1c);  color: var(--sky-c-danger, #cf8080); }
+.badge-success { background: var(--sky-c-success-bg, #eef4ef); color: var(--sky-c-success, #3f6b4f); }
+/* badge 的两处兜底刻意比浅色真值**再深/再亮一档**：浅色真值自身的对比度不足
+   （--sky-c-warning on --sky-c-warning-bg = 4.37:1、--sky-c-text-mute on --sky-c-bg-hover
+   = 4.09:1，都低于 4.5:1）—— 那是 theme.css 浅色真值的问题（已有批次在处理），
+   但 ui.css 的兜底会进**没有 theme.css** 的产物，不能把不达标的组合复制过去。
+   有 theme.css 时这两处的计算值与改前完全一致（真值生效，兜底不参与）。 */
+.badge-warning { background: var(--sky-c-warning-bg, #fbf9f3); color: var(--sky-c-warning, #8a6d3b); }
+.badge-danger  { background: var(--sky-c-danger-bg, #f7eded);  color: var(--sky-c-danger, #b34a4a); }
 .badge-info { background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f); }
-.badge-mute    { background: var(--sky-c-bg-hover, #1f242b);   color: var(--sky-c-text-mute, #8a9199); }
+.badge-mute    { background: var(--sky-c-bg-hover, #ececec);   color: var(--sky-c-text-mute, #5f6670); }
 
 /* 徽章当筛选器用时的「当前项」：把整行计数徽章做成可点击筛选之后（见 admin-ui-logic §2），
    选中态必须一眼可辨 —— 只靠一个 ✓ 前缀在 12px 的 pill 里几乎看不出来。
@@ -980,10 +994,10 @@ details[open] > summary::after { transform: rotate(0deg); }
     border-radius: 50%;
     margin-inline-end: var(--ui-sp-xs);
 }
-.dot-success { background: var(--sky-c-success, #7fb28d); }
-.dot-warning { background: var(--sky-c-warning, #c2a06a); }
-.dot-danger  { background: var(--sky-c-danger, #cf8080); }
-.dot-mute    { background: var(--sky-c-text-faint, #5d656e); }
+.dot-success { background: var(--sky-c-success, #3f6b4f); }
+.dot-warning { background: var(--sky-c-warning, #8a6d3b); }
+.dot-danger  { background: var(--sky-c-danger, #b34a4a); }
+.dot-mute    { background: var(--sky-c-text-faint, #9ca3af); }
 
 /* ==========================================================================
    分页
@@ -993,10 +1007,10 @@ details[open] > summary::after { transform: rotate(0deg); }
     align-items: center;
     gap: var(--ui-sp-xs);
     padding: var(--ui-sp-md) var(--ui-sp-lg);
-    border-top: 1px solid var(--sky-c-border, #232830);
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
     justify-content: space-between;
 }
-.pagination-info { font-size: 13px; color: var(--sky-c-text-mute, #8a9199); }
+.pagination-info { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
 .pagination-pages { display: flex; gap: var(--ui-sp-xxs); }
 /* 类选择器而非元素选择器：同一个分页条有三种载体 —— 链接（服务端渲染的翻页）、
    span（当前页 / 不可点）、button（客户端 AJAX 分页，如媒体库）。
@@ -1018,7 +1032,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
 @media (hover: hover) {
-.pagination-pages .pagination-btn:hover { background: var(--sky-c-bg-hover, #1f242b); text-decoration: none; }
+.pagination-pages .pagination-btn:hover { background: var(--sky-c-bg-hover, #ececec); text-decoration: none; }
 }
 .pagination-pages .pagination-btn.is-active {
     /* 兜底值同样是**浅色主题真值**（本文件会进没有 theme.css 的前台产物，
@@ -1051,7 +1065,7 @@ details[open] > summary::after { transform: rotate(0deg); }
 .mb-md { margin-bottom: var(--ui-sp-md); }
 .mb-lg { margin-bottom: var(--ui-sp-lg); }
 .mb-xl { margin-bottom: var(--ui-sp-xl); }
-.text-mute { color: var(--sky-c-text-mute, #8a9199); }
+.text-mute { color: var(--sky-c-text-mute, #6b7280); }
 .text-sm { font-size: 13px; }
 .text-xs { font-size: 12px; }
 .text-right { text-align: right; }
@@ -1066,7 +1080,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     justify-content: center;
     width: 36px;
     height: 36px;
-    border: 1px solid var(--sky-c-border, #232830);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-pill);
     background: var(--sky-c-surface, #fff);
     cursor: pointer;
@@ -1075,7 +1089,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
 @media (hover: hover) {
-.theme-toggle:hover { background: var(--sky-c-bg-hover, #1f242b); }
+.theme-toggle:hover { background: var(--sky-c-bg-hover, #ececec); }
 }
 
 /* ==========================================================================
@@ -1095,7 +1109,7 @@ details[open] > summary::after { transform: rotate(0deg); }
 .lang-submit {
     height: 36px;
     padding: 0 10px;
-    border: 1px solid var(--sky-c-border, #232830);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: var(--ui-r-pill);
     background: var(--sky-c-surface, #fff);
     color: var(--sky-c-text-secondary, #4b5563);
@@ -1112,7 +1126,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     border-radius: var(--ui-r-pill);
 }
 @media (hover: hover) {
-.lang-link:hover { background: var(--sky-c-bg-hover, #1f242b); }
+.lang-link:hover { background: var(--sky-c-bg-hover, #ececec); }
 }
 .lang-link.is-active { color: var(--sky-c-text, #1a1d21); border-color: var(--sky-c-primary-soft, #5b6572); cursor: default; }
 /* 视觉隐藏但屏幕阅读器可读（语言下拉的 label） */

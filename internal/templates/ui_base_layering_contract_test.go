@@ -168,18 +168,16 @@ type chromeHit struct{ key, detail string }
 
 // containerChromeExempt 存量违规的**带理由**豁免清单。
 //
-// 两类：① 文件不在本任务的写作用域（theme.css 由另一批在改、media-lib.css 由另一批在改），
-// 它们是 UIK-009 那次清洗的漏网存量，修法同源（模板控件带基座类 + 删容器里的外观声明）；
+// 2026-10-01（task-12）：theme.css 那 6 条存量已全部迁移完毕，清单随之清空 ——
+// 控件侧本来就带基座类（inventory_sources.html 的 form-textarea、product_attribute_rows.html
+// 的 form-input、两个翻译页的 form-textarea），删掉的是容器里重复的外观声明；
+// .receipt-form 与 .toolbar-search 两条连使用点都没有（css_class_audit_test.go 登记为疑似死样式），
+// 只删外观，整块清理归死样式批次。于是这门禁回到**零豁免**状态。
+//
+// 两类历史条目（将来若再登记，必须带可核对理由）：① 文件不在写作用域；
 // ② 选择器限定在**非文本控件**上（复选框宿主容器没写 type 属性，静态判不出来）。
 // 清单条目**不再命中即失败**，所以它不会变成永久豁免区。
-var containerChromeExempt = map[string]string{
-	"static/css/theme.css :: .source-page .form-inline textarea":                  "存量：前台 source 页的长文本域（theme.css 不在本任务写作用域，待派单迁移）",
-	"static/css/theme.css :: .purchase-page .receipt-form input[type=\"number\"]": "存量：采购入库页的数量输入（同上）",
-	"static/css/theme.css :: .attr-value-row input[type=\"text\"]":                "存量：属性值行的文本框（同上）",
-	"static/css/theme.css :: .attr-value-row input[type=\"number\"]":              "存量：属性值行的数字框（同上）",
-	"static/css/theme.css :: .tr-target textarea":                                 "存量：转写目标文本域（同上）",
-	"static/css/theme.css :: .list-toolbar .toolbar-search input":                 "存量：列表工具条搜索框（同上）",
-}
+var containerChromeExempt = map[string]string{}
 
 // TestNoContainerSuppliedControlChrome 禁止「容器给控件外观」复活。
 //
