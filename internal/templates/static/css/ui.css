@@ -32,12 +32,21 @@
 .wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 .wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 下拉箭头与原生 select / 折叠共用同一枚图标（见文件顶部 --ui-icon-chevron）：
+   原来是 border 拼出的 7px L 形 —— 线宽 1.5 与图标库的 2 对不上，opacity .55 还把对比
+   压到 2:1 上下（低于「有意义的图形」要求的 3:1）。mask 取 alpha、颜色由 background-color
+   决定，深浅主题与上下文颜色都跟着走。 */
 .wbs-caret {
-    flex: 0 0 auto; width: 7px; height: 7px; margin-inline-end: 3px;
-    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-    transform: translateY(-2px) rotate(45deg); opacity: .55; transition: transform var(--ui-motion-fast);
+    flex: 0 0 auto;
+    width: var(--ui-icon-chevron-size); height: var(--ui-icon-chevron-size);
+    margin-inline-end: 0;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    opacity: .75;
+    transition: transform var(--ui-motion-fast);
 }
-.wbs.is-open .wbs-caret { transform: translateY(1px) rotate(-135deg); }
+.wbs.is-open .wbs-caret { transform: rotate(180deg); }
 .wbs-menu {
     position: absolute; z-index: 60; inset-inline: 0; margin: 4px 0 0; padding: 4px;
     list-style: none; max-height: 260px; overflow: auto;
@@ -95,12 +104,18 @@
     font-variant-numeric: tabular-nums;
 }
 .wbd:not(.has-value) .wbd-value { color: var(--sky-c-text-mute, #6b7280); }
+/* 同上（.wbd 是另一套自研下拉）：两套下拉的箭头曾经也长得不一样。 */
 .wbd-caret {
-    flex: 0 0 auto; width: 7px; height: 7px; margin-inline-end: 3px;
-    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-    transform: translateY(-2px) rotate(45deg); opacity: .55; transition: transform var(--ui-motion-fast);
+    flex: 0 0 auto;
+    width: var(--ui-icon-chevron-size); height: var(--ui-icon-chevron-size);
+    margin-inline-end: 0;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    opacity: .75;
+    transition: transform var(--ui-motion-fast);
 }
-.wbd.is-open .wbd-caret { transform: translateY(1px) rotate(-135deg); }
+.wbd.is-open .wbd-caret { transform: rotate(180deg); }
 .wbd-pop {
     position: absolute; z-index: 60; top: calc(100% + 4px); left: 0;
     /* 宽度上限由 JS 按「元素自身到视口两侧的实际距离」设；这里只是拿到值之前的一帧兜底。 */
@@ -434,6 +449,26 @@ body.drawer-open { overflow: hidden; }
     --ui-tr-base: var(--ui-motion-base);
     --ui-shadow-sm: var(--shadow-sm, 0 1px 2px rgba(16, 20, 26, .06));
     --ui-shadow-md: var(--shadow-md, 0 4px 12px rgba(16, 20, 26, .10));
+
+    /* ---- 下拉 / 折叠的指示图标 ----------------------------------------
+       三处「三角」原先各画各的：原生 select 用浏览器默认箭头（每个平台一个样子）、
+       自研 .wbs / .wbd 用 border 拼出的 7px L 形、details 用文字 ▾ / ▸（字形随字体变），
+       同一屏上三种箭头。这里统一到同一枚 Lucide 描边图标，与 js/icons.js 的
+       'chevron-down' 逐字同源（24×24 viewBox、stroke-width 2、round cap/join）。
+
+       两条形态各一份：mask 版本给伪元素用（取 alpha 通道，颜色由 background-color 给，
+       所以随主题与上下文自动变）；background-image 版本给原生 select 用 —— 表单控件
+       没有伪元素，颜色只能烘进 SVG，因此按主题各一条。 */
+    --ui-icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    --ui-icon-chevron-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    --ui-icon-chevron-size: 16px;
+    --ui-select-caret-gap: 10px;
+}
+
+/* 深色主题下 select 的箭头换成深色 token 的描边色（--c-text-mute dark = #8a9199）：
+   #8a9199 on #1e222a ≈ 6:1，过 WCAG 1.4.11 对「有意义的图形」要求的 3:1。 */
+[data-theme="dark"] {
+    --ui-icon-chevron-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a9199' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* ==========================================================================
@@ -778,7 +813,9 @@ button.row-title-link {
 .form-textarea:disabled {
     opacity: .6;
     cursor: not-allowed;
-    background: var(--sky-c-bg-hover, #f4f5f7);
+    /* background-color 而非 background：shorthand 会把下面 select 的箭头图一起抹掉
+       （这一条的特异性比 .form-select 的箭头规则高，禁用态会变成没有箭头的空框）。 */
+    background-color: var(--sky-c-bg-hover, #f4f5f7);
 }
 /* 校验失败（服务端回填 aria-invalid 时）：边框与提示同一套语义色。 */
 .form-input[aria-invalid="true"],
@@ -791,9 +828,64 @@ button.row-title-link {
     box-shadow: 0 0 0 3px rgb(179 74 74 / 15%);
 }
 .form-input::placeholder { color: var(--sky-c-text-faint, #5d656e); }
+/* 原生 select 的箭头：抹掉平台默认那枚（每个平台一个形状），换成与下拉 / 折叠共用的
+   Lucide chevron。右侧留出「图标 + 间距 + 一点余量」，文字不会压到箭头上；
+   RTL 下镜像到左侧 —— background-position 的 right/left 不会跟着书写方向走。 */
+.form-select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-inline-end: calc(var(--ui-icon-chevron-size) + var(--ui-select-caret-gap) + 6px);
+    background-image: var(--ui-icon-chevron-line);
+    background-repeat: no-repeat;
+    background-position: right var(--ui-select-caret-gap) center;
+    background-size: var(--ui-icon-chevron-size);
+}
+[dir="rtl"] .form-select { background-position: left var(--ui-select-caret-gap) center; }
+/* 高对比模式交给系统自己画：appearance: none 会连系统箭头一起抹掉。 */
+@media (forced-colors: active) {
+    .form-select { appearance: auto; -webkit-appearance: auto; background-image: none; }
+}
 .form-textarea { resize: vertical; min-height: 100px; }
 .form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-text-mute, #8a9199); }
 .form-error { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-danger, #cf8080); }
+
+/* ===== 折叠控件（details / summary）的默认指示图标 =====
+   摘要行是**后台控件**而不是正文内容，所以基座直接给图标 —— 新页面不用再各写一遍 ▾ / ▸。
+   此前四处各写一份（.filter-more / .section-fold / .article-body-fold / .edit-fold），
+   字形由字体决定、平台间不一样，而且都是从「文字」直接换成另一个「文字」。
+
+   三件事一起做：
+     · 清掉浏览器自带的三角 —— 只写 ::-webkit-details-marker 不够，Firefox 认 list-style，
+       两边都没清时页面上会同时出现两枚三角；
+     · ::after 用与下拉共用的 Lucide chevron（见文件顶部 --ui-icon-chevron），
+       颜色走 currentColor，跟随摘要行的文字色与主题；
+     · 展开与否用 transform 旋转表达（只动 transform），并尊重 prefers-reduced-motion。
+
+   位置与尺寸差异留给各自的类（如 .edit-fold > summary::after 的 margin-left: auto）：
+   基座只管「这枚图标长什么样」。 */
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::after {
+    content: "";
+    display: inline-block;
+    width: var(--ui-icon-chevron-size);
+    height: var(--ui-icon-chevron-size);
+    flex: 0 0 auto;
+    vertical-align: middle;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    opacity: .7;
+    transform: rotate(-90deg); /* 收起：指向右 */
+    transition: transform var(--ui-motion-fast);
+}
+details[open] > summary::after { transform: rotate(0deg); }
+@media (prefers-reduced-motion: reduce) {
+    summary::after { transition: none; }
+}
+@media (forced-colors: active) {
+    summary::after { background-color: CanvasText; }
+}
 
 .form-row {
     display: grid;
@@ -966,13 +1058,17 @@ button.row-title-link {
     font-size: 13px;
     font-family: inherit;
     color: var(--sky-c-text-secondary, #c2c8cf);
-    background: var(--sky-c-surface, #fff);
+    /* background-color 而不是 background：这条规则排在 .form-select 的箭头之后，
+       shorthand 会把语言下拉的箭头图一起抹掉（下拉就只剩一个纯文字胶囊）。
+       下面的 :hover 同理。 */
+    background-color: var(--sky-c-surface, #fff);
     border: 1px solid var(--sky-c-border, #232830);
     border-radius: var(--ui-r-pill);
     cursor: pointer;
+    padding-inline-end: calc(var(--ui-icon-chevron-size) + var(--ui-select-caret-gap) + 6px);
 }
 @media (hover: hover) {
-.lang-select:hover { background: var(--sky-c-bg-hover, #1f242b); }
+.lang-select:hover { background-color: var(--sky-c-bg-hover, #1f242b); }
 }
 .lang-submit {
     height: 36px;
