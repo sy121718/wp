@@ -14,15 +14,19 @@
     'use strict';
 
     var SRE = (window.SkyRichEditor = window.SkyRichEditor || {});
-    if (SRE.blockLevelInstalled) {
-        return;
-    }
-    SRE.blockLevelInstalled = true;
 
+    // 就绪判断必须在安装标记**之前**：模块由 index.js 动态加载，可能跑在 vendor 的
+    // trix.umd.js 之前（partial 嵌在文档中间，vendor 脚本在文末）。先打标记再 return，
+    // 后续任何一次重跑都会在标记处早退 —— 扩展永久不生效，商品编辑页的工具条因此
+    // 一直停留在 Trix 默认那套（2026-10-01 实测：SRE.blocks 缺失 → boot 永远失败）。
     var Trix = window.Trix;
     if (!Trix || !Trix.config || !Trix.config.blockAttributes) {
         return;
     }
+    if (SRE.blockLevelInstalled) {
+        return;
+    }
+    SRE.blockLevelInstalled = true;
 
     // 互斥的块级属性：Trix 的块属性是「属性集合」，多个同时激活时标签名由内部取值顺序决定，
     // 不保证是我们点的那个。所以切换一律走 switchBlock()：先把这一组全部取消，再激活目标。

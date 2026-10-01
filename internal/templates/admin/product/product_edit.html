@@ -710,4 +710,9 @@
     {{end}}
 </div>
 <script src="/static/vendor/trix/trix.umd.js"></script>
+{* 文末再引一次扩展入口（partials/rich_editor.html 注释里的推荐做法）：partial 嵌在表单中间，
+   会先于 vendor 的 trix.umd.js 执行。补这一次，扩展才在 Trix 就绪后再走一遍 boot，
+   工具条被换成项目自定义那套 —— 分类页 / 品牌页 / 文章页都这么写；本页原先漏了，
+   描述字段因此一直停在 Trix 默认工具条（图标按钮、英文 title、Tab 不可达）。 *}
+<script src="/static/js/rich-editor/index.js"></script>
 {{end}}

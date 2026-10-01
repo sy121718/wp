@@ -273,6 +273,22 @@
         }
     }
 
+    // rebootTries / scheduleReboot：模块比 Trix 先执行完时的自愈路径。
+    // 「等下一次补启动」只对**在文末又引了一次 index.js** 的调用方成立（partial 注释里的推荐做法），
+    // 而并非每个调用方都引 —— 商品编辑页就没有，于是它的富文本一直是 Trix 默认工具条。
+    // 这里自己把模块重跑一遍（模块都幂等），最多 3 次，间隔递增。
+    var rebootTries = 0;
+
+    function scheduleReboot() {
+        if (rebootTries >= 3) {
+            return;
+        }
+        rebootTries++;
+        setTimeout(function () {
+            loadAll().then(boot);
+        }, 100 * rebootTries);
+    }
+
     function boot() {
         if (SRE.__booted) {
             return;
@@ -282,7 +298,8 @@
         if (!Trix || !Trix.config || !SRE.toolbar || !SRE.blocks) {
             // 刻意不在这里置 __booted：Trix 晚于本脚本加载是正常顺序（vendor 脚本在文末），
             // 在这里定局就再也没有重试机会。
-            console.error('[rich-editor] Trix 未加载或扩展模块缺失，等下一次补启动');
+            console.error('[rich-editor] Trix 未加载或扩展模块缺失，重跑扩展模块');
+            scheduleReboot();
             return;
         }
         SRE.__booted = true;
