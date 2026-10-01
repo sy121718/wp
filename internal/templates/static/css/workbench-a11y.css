@@ -127,7 +127,9 @@ a[href]:focus-visible,
     /* 2.4 明确保留的「状态指示」类变换（只去过渡，终态照常可见）：
        - .wb-caret / .wb-acc-arrow 的 rotate(90deg) 表示折叠已展开
        - .wb-palette-caret::before 的 rotate(-90deg) 表示分组已收起
-       - .wb-rail-btn::before 的高度表示当前激活面板
+       - .wb-rail-btn::before 的 translateY(-50%) scaleY(.55/.7) 表示悬停/当前激活面板
+         （指示条已是 transform 缩放而非 height 动画；这里只去掉过渡，终态 scaleY 照常生效，
+          仍能看出当前面板）
        若把这几处 transform 一并清零，用户将看不出展开/收起状态。 */
     .wb-caret,
     .wb-acc-head .wb-acc-arrow,

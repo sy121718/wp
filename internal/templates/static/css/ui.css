@@ -714,10 +714,14 @@ button.row-title-link {
                 -12px 0 22px -10px rgba(16, 20, 26, .30);
 }
 /* 行悬停时 sticky 列必须自己也变色：它有独立的不透明背景，不会跟随 tr:hover，
-   否则整行只剩操作列「断了一截」不变色。写在 is-selected 之前 —— 两者选择器
-   同权重，靠后的一条生效，选中态要压过悬停态。 */
+   否则整行只剩操作列「断了一截」不变色。
+
+   两条规则的命中集合**互斥**，不依赖书写顺序：悬停那条带 :not(.is-selected)，
+   选中行永远落不进它。于是「选中行悬停保持选中色」是选择器的语义结论，
+   而不是「谁写在后面」的结果 —— 同权重靠顺序取胜时，任何一次重排都会静默回归
+   （本文件里已经发生过一次这类事故，见下面的下拉箭头注释）。 */
 @media (hover: hover) {
-.data-table tbody tr:hover td.col-actions { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+.data-table tbody tr:not(.is-selected):hover td.col-actions { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
 }
 .data-table tbody tr.is-selected td.col-actions { background: var(--sky-c-bg-active, #eceff2); }
 
@@ -734,13 +738,15 @@ button.row-title-link {
 }
 .form-label .req { color: var(--sky-c-danger, #cf8080); }
 
-/* 这里曾有一层「后台裸控件兜底外观」（审计 UIK-009 的 .admin-layout :where(input…, select,
-   textarea)）。2026-10-01 清洗掉：它想兜住的 55 个真裸控件在之前几批里已全部迁到基座类，
-   剩下的 media 4 个与 locale_rows 1 个本来就有各自的完整样式，login 那 3 个从不在它的
-   作用域内（不在 .admin-layout，也只引 theme.css）—— 零消费者。
+/* 这里曾有一层「后台裸控件兜底外观」（审计 UIK-009）：挂在后台布局容器上的
+   :where(input, select, textarea) 规则。2026-10-01 清洗掉：它想兜住的 55 个真裸控件
+   在之前几批里已全部迁到基座类，剩下的 media 4 个与 locale_rows 1 个本来就有各自的
+   完整样式，login 那 3 个从不在它的作用域内（不在后台布局容器里，也只引 theme.css）—— 零消费者。
    留着的代价不是几行 CSS，而是「控件外观可以由容器强制给」这条隐性依赖：
    真源从一个（基座类）变成两个（基座类 + 容器兜底），往后每次改基座都要重新判断谁赢。
-   现在真源只有基座类；裸控件由 admin_form_base_test.go 钉住「必须为 0」，新增裸写即失败。 */
+   现在真源只有基座类；裸控件由 admin_form_base_test.go 钉住「必须为 0」，新增裸写即失败。
+   附注：墓碑本身也不能写真容器类名 —— forms 段会随产物一起注入，类名点号字面量会把
+   后台专属规则名带进站点字节（门禁：ui_css_ownership_test.go 的产物断言）。 */
 
 /* 原始控件：输入 / 下拉 / 多行文本。
  *
@@ -818,6 +824,26 @@ button.row-title-link {
     background-size: var(--ui-icon-chevron-size);
 }
 [dir="rtl"] .form-select { background-position: left var(--ui-select-caret-gap) center; }
+/* 紧凑尺寸的**基座尺寸修饰类**（不是某页私有样式）：紧凑下拉在后台外壳里已有真实消费点
+   （语言切换），把它提升到基座后，页面不再用「自己的类排在基类之后」来压基座尺寸。
+
+   与 .form-select 的组合契约三条：
+     ① 选择器写成**双类** `.form-select.form-select--sm`：(0,2,0) 高于基座基础块的 (0,1,0)，
+        「修饰类永远赢基座」是结构性保证，不靠书写顺序 —— 本块搬到文件任何位置都成立
+        （紧挨基类定义只是为了就近阅读，下一次重排不会把它变成静默失效的死规则）。
+        该特异性与基座的 :focus / :focus-visible / :disabled 同为 (0,2,0)，但**属性不重叠**
+        （那三条管 border-color / box-shadow / outline / opacity / cursor / background-color，
+        本类只管高度与内边距方向），所以提特异性不会压掉任何状态反馈。
+     ② **不写 padding 简写** —— 简写会连 padding-inline-end 一起重置，抹掉基座给箭头让位的
+        calc(--ui-icon-chevron-size + --ui-select-caret-gap + 6px)：只声明 block 方向与 start
+        方向，end 方向继续由基座的箭头算法负责（抄第二份就多一个「改了箭头尺寸忘改这里」的点）；
+     ③ 字号沿用基座的 13px（原语言下拉与基座本就一致），不为「看起来完整」重复一条等值声明。
+   高度 36px 与后台外壳其它控件同节奏。 */
+.form-select.form-select--sm {
+    height: 36px;
+    padding-block: 0;
+    padding-inline-start: 8px;
+}
 /* 高对比模式交给系统自己画：appearance: none 会连系统箭头一起抹掉。 */
 @media (forced-colors: active) {
     .form-select { appearance: auto; -webkit-appearance: auto; background-image: none; }
@@ -1030,19 +1056,25 @@ details[open] > summary::after { transform: rotate(0deg); }
    而不是解除本段的 backend 归属（门禁：ui_css_split.go 的 BackendExclusiveSectionClasses）。 */
 .lang-switch { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .lang-select {
-    height: 36px;
-    padding: 0 8px;
-    font-size: 13px;
-    font-family: inherit;
+    /* 只保留与基座**不重复**的差异：形状（胶囊）、语义色、交互指针。
+       尺寸（高度 / 内边距 / 字号）与「右侧给箭头让位」都在基座里 ——
+       forms 段的 .form-select 负责箭头算法、.form-select--sm 负责紧凑尺寸，
+       模板写 class="form-select form-select--sm lang-select"。
+       于是本块不必再靠书写顺序压掉基座尺寸，也就不会再出现「用 background 简写
+       抹掉基座箭头图」那类事故（那次事故的成因正是本块排在基座的箭头规则之后）。
+
+       【层叠层次 · 不得提升本块特异性】本块必须保持**单类 (0,1,0)**：
+         · 靠书写顺序赢基座**基础**块（同权重、写在后面），这是想要的（形状 / 语义色要生效）；
+         · 同时**严格弱于**基座的状态规则 `.form-select:focus` / `:focus-visible` / `:disabled`
+           （(0,2,0)），于是聚焦时边框该变主色就变主色、禁用态该变淡就变淡。
+       千万不要为了「消顺序依赖」把它写成 `.lang-switch .lang-select` 或再加一个类：
+       那会把它提到 (0,2,0)，与 `.form-select:focus` 平级 —— 而本段（langswitch）在文件末尾，
+       顺序取胜，`border` 会把聚焦时的主色边框**静默压掉**（复核 diff 时差点这么改）。
+       机器判据：ui_css_ownership_test.go 的 TestLangSelectKeepsSingleClassSpecificity。 */
     color: var(--sky-c-text-secondary, #4b5563);
-    /* background-color 而不是 background：这条规则排在 .form-select 的箭头之后，
-       shorthand 会把语言下拉的箭头图一起抹掉（下拉就只剩一个纯文字胶囊）。
-       下面的 :hover 同理。 */
-    background-color: var(--sky-c-surface, #fff);
     border: 1px solid var(--sky-c-border, #232830);
     border-radius: var(--ui-r-pill);
     cursor: pointer;
-    padding-inline-end: calc(var(--ui-icon-chevron-size) + var(--ui-select-caret-gap) + 6px);
 }
 @media (hover: hover) {
 .lang-select:hover { background-color: var(--sky-c-bg-hover, #1f242b); }

@@ -325,6 +325,271 @@ func TestBackendExclusiveClassesStayInControlPlane(t *testing.T) {
 	}
 }
 
+// TestDataTableActionsHoverExcludesSelected sticky 操作列的「悬停 / 选中」必须互斥，
+// 不能靠书写顺序决胜。
+//
+// 现状背景：`.data-table tbody tr:hover td.col-actions` 与 `.data-table tbody tr.is-selected
+// td.col-actions` 特异性**完全相同**（各 3 个类 + 3 个元素），历史上靠「选中态写在后」生效。
+// 实测（Chromium，forced-hover 伪类 + 只把选中规则在内存样式表里上移一行）：顺序一改，
+// 选中行悬停的 td.col-actions 立刻从选中色 #e4e4e4 掉回悬停色 #ececec —— 即
+// 「选中行悬停保持选中色」是书写顺序的副作用，任何一次重排都会静默回归。
+// 给悬停那条加 :not(.is-selected) 后命中集合互斥，搬动顺序不再改变结果（同法实测）。
+func TestDataTableActionsHoverExcludesSelected(t *testing.T) {
+	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
+	const wantHover = ".data-table tbody tr:not(.is-selected):hover td.col-actions"
+	if !strings.Contains(src, wantHover) {
+		t.Errorf("ui.css 缺少互斥的悬停规则 %q：不带 :not(.is-selected) 时它与选中规则同权重，"+
+			"选中行悬停的底色由两条规则的书写顺序决定（实测顺序一改即变悬停色）", wantHover)
+	}
+	if strings.Contains(src, ".data-table tbody tr:hover td.col-actions") {
+		t.Error("ui.css 仍有未排除选中态的悬停规则 .data-table tbody tr:hover td.col-actions：" +
+			"它与选中规则命中集合重叠、特异性相同，胜负只由书写顺序决定")
+	}
+	// 选中规则本身也不得消失：sticky 列有自己的不透明背景，不跟随 tr.is-selected，
+	// 删掉它会让选中行的操作列退回基色（整行只剩操作列「断了一截」）。
+	if !strings.Contains(src, ".data-table tbody tr.is-selected td.col-actions") {
+		t.Error("ui.css 缺少选中态的 sticky 操作列规则 .data-table tbody tr.is-selected td.col-actions")
+	}
+}
+
+// TestLangSelectDelegatesBaseChromeToModifier 语言下拉不再用「自己的类排在基类之后」
+// 压掉基座的尺寸 —— 紧凑尺寸提升为基座修饰类 .form-select--sm（forms 段）。
+//
+// 为什么要这条：`.lang-select` 原本重写了 height / padding / font-size / font-family，
+// 全部靠书写顺序覆盖 .form-select。同样的顺序依赖已经造成过一次事故（块内注释记载：
+// 有人用 `background` 简写写过一次，把基座的箭头图整块抹掉）。
+// 判据三条：① 修饰类存在且进得了产物（forms 段、非后台专属）；② 修饰类不许写 padding 简写
+// 或 padding-inline-end（那会重置 / 重复基座给箭头让位的算法）；③ .lang-select 块内不得再出现
+// 基座已承载的属性名（尺寸 / 排版 / 背景 / 箭头），模板必须同时带基类与修饰类。
+func TestLangSelectDelegatesBaseChromeToModifier(t *testing.T) {
+	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
+
+	const smSelector = ".form-select.form-select--sm"
+	smBlock, ok := cssRuleBlock(src, smSelector)
+	if !ok {
+		t.Fatalf("ui.css 缺少 %s：紧凑尺寸修饰类必须写成**双类**，把特异性提到基座基础块之上；"+
+			"写成单类就退回「靠书写顺序压基座」，任何一次重排都会让它静默失效", smSelector)
+	}
+	if regexp.MustCompile(`(?m)^[ \t]*\.form-select--sm[ \t]*\{`).MatchString(src) {
+		t.Error("ui.css 仍有单类形式的 .form-select--sm 规则：它与基座基础块 .form-select 同为 (0,1,0)，" +
+			"「修饰类赢基座」只能靠书写顺序")
+	}
+	if !cssMoreSpecific(smSelector, ".form-select") {
+		t.Errorf("%s 的特异性不高于 .form-select（%v vs %v）：修饰类赢基座要由特异性保证，不是顺序",
+			smSelector, cssSpecificity(smSelector), cssSpecificity(".form-select"))
+	}
+	smProps := cssPropNames(smBlock)
+	for _, forbidden := range []string{"padding", "padding-inline-end", "padding-right", "font-size", "font-family"} {
+		if _, hit := smProps[forbidden]; hit {
+			t.Errorf(".form-select--sm 声明了 %q：padding 简写会重置基座给箭头让位的 padding-inline-end，"+
+				"padding-inline-end/right 则是把箭头算法抄了第二份（改一处漏一处）", forbidden)
+		}
+	}
+	for _, want := range []string{"height", "padding-block", "padding-inline-start"} {
+		if _, hit := smProps[want]; !hit {
+			t.Errorf(".form-select--sm 缺少 %q：紧凑尺寸没写在修饰类里，模板换类名后视觉会变", want)
+		}
+	}
+
+	// .lang-select 只允许保留与基座不重复的差异（形状 / 语义色 / 指针）。
+	lsBlock, ok := cssRuleBlock(src, ".lang-select")
+	if !ok {
+		t.Fatal("ui.css 缺少 .lang-select 规则块：该块属于 langswitch 段（owner=backend），类名必须保留")
+	}
+	baseOwned := []string{
+		"height", "width", "min-width", "box-sizing",
+		"padding", "padding-block", "padding-inline", "padding-top", "padding-right",
+		"padding-bottom", "padding-left", "padding-inline-start", "padding-inline-end",
+		"font-size", "font-family", "line-height",
+		"background", "background-color", "background-image", "background-repeat",
+		"background-position", "background-size",
+		"appearance", "-webkit-appearance", "transition", "outline",
+	}
+	lsProps := cssPropNames(lsBlock)
+	for _, prop := range baseOwned {
+		if _, hit := lsProps[prop]; hit {
+			t.Errorf(".lang-select 重复声明了基座已承载的 %q：这条规则排在基座之后，"+
+				"重复即「靠书写顺序压基座」，改基座时这里会被静默盖住", prop)
+		}
+	}
+	// 有意保留的差异（不许被「顺手清理」掉）：外层边线 / 正文色 / 胶囊形状 / 手形指针。
+	for _, want := range []string{"border", "border-radius", "color", "cursor"} {
+		if _, hit := lsProps[want]; !hit {
+			t.Errorf(".lang-select 丢了 %q：它是与基座**有意的差异**（更弱的边线与文字色、胶囊形状、"+
+				"手形指针），删掉就不是零变化了", want)
+		}
+	}
+
+	// 模板必须同时带基类与修饰类 —— 只改 CSS 不改模板，尺寸真源依旧落在页面上。
+	layout := readUIOwnershipFile(t, filepath.Join("admin", "layout.html"))
+	if !strings.Contains(layout, `class="form-select form-select--sm lang-select"`) {
+		t.Error(`admin/layout.html 的语言下拉必须写成 class="form-select form-select--sm lang-select"：` +
+			"紧凑尺寸在基座修饰类里，模板不带它就会退回基座默认尺寸（视觉变化）")
+	}
+
+	// 修饰类必须在 forms 段（shared）：产物里要能拿到它，否则站点侧的紧凑下拉没有样式来源。
+	out, err := builder.RenderDocument(&builder.CompiledPage{
+		Lang:    "zh-CN",
+		HTML:    `<div class="form-group"><input class="form-input" type="text"></div>`,
+		UIStyle: UICSS(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, ".form-select.form-select--sm") {
+		t.Error("产物里没有 .form-select.form-select--sm：它不在 forms 段（或被误判成后台专属段整段跳过）")
+	}
+}
+
+// TestLangSelectKeepsSingleClassSpecificity 语言下拉必须**刻意**保持单类 (0,1,0)。
+//
+// 这是本块真正的技术点，也是「别顺手把特异性提上去」的机器判据。它要的层次是：
+//   · 靠书写顺序赢基座**基础**块 `.form-input, .form-select, .form-textarea`（同为 (0,1,0)、
+//     写在后面）—— 胶囊形状 / 语义色 / 指针要生效；
+//   · 同时**严格弱于**基座的状态规则 `.form-select:focus` / `:focus-visible` / `:disabled`
+//     （(0,2,0)）—— 聚焦时边框该变主色、禁用时该变淡。
+//
+// 反面实测（Chromium，自建 headless 实例，只改内存里的样式表文本、不动磁盘）：把本块选择器
+// 临时改成 `.form-select.lang-select`（(0,2,0)，位置不变）后聚焦语言下拉，border-color 从
+// 主色 rgb(174,182,192) 掉成灰 rgb(229,231,235)，页面上没有任何报错 —— 焦点反馈被静默压掉。
+// 这正是「本段在文件末尾、靠顺序取胜」的代价，所以这里的『弱』是有意的，不是没收拾干净。
+func TestLangSelectKeepsSingleClassSpecificity(t *testing.T) {
+	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
+	re := regexp.MustCompile(`(?m)^[ \t]*([^{}\n]*\.lang-select[^{}\n]*?)[ \t]*\{`)
+	seen := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(src, -1) {
+		sel := strings.Join(strings.Fields(m[1]), " ")
+		seen[sel] = true
+		switch sel {
+		case ".lang-select", ".lang-select:hover":
+		default:
+			t.Errorf("ui.css 出现选择器 %q：.lang-select 只允许单类基础规则与它的 :hover。"+
+				"祖先选择器 / 双类 / 额外伪类都会把它抬到 (0,2,0)，与 .form-select:focus 平级，"+
+				"而本段在文件末尾靠顺序取胜 —— 聚焦时的主色边框会被静默压掉（实测过）", sel)
+		}
+	}
+	if !seen[".lang-select"] {
+		t.Fatal("ui.css 缺少 .lang-select 规则块：该块属于 langswitch 段（owner=backend），类名必须保留")
+	}
+	if !seen[".lang-select:hover"] {
+		t.Error("ui.css 缺少 .lang-select:hover：悬停底色是语言下拉的既有行为")
+	}
+	if spec := cssSpecificity(".lang-select"); spec != [3]int{0, 1, 0} {
+		t.Errorf(".lang-select 的选择器特异性是 %v，必须严格等于 (0,1,0)：它要弱于基座的状态规则", spec)
+	}
+	if !cssMoreSpecific(".form-select:focus", ".lang-select") {
+		t.Error(".lang-select 的特异性不低于 .form-select:focus：聚焦态会被它压掉")
+	}
+	if !cssMoreSpecific(".form-select:disabled", ".lang-select") {
+		t.Error(".lang-select 的特异性不低于 .form-select:disabled：禁用态会被它压掉")
+	}
+}
+
+// cssSpecificity 计算选择器的特异度 (id, 类/属性/伪类, 元素/伪元素)。
+//
+// 刻意用最小实现而不是引入 CSS 解析库：本文件只需要「能比较大小」这一件事，
+// 且用到的语法固定（类 / 元素 / 伪类 / 属性；不用 :is()/:where()/:not() 参与比较）。
+// 函数式伪类的参数会被整体跳过（本项目里参与比较的选择器都没有参数）。
+func cssSpecificity(sel string) [3]int {
+	var spec [3]int
+	i := 0
+	for i < len(sel) {
+		switch ch := sel[i]; {
+		case ch == '#':
+			spec[0]++
+			i = skipCSSIdent(sel, i+1)
+		case ch == '.':
+			spec[1]++
+			i = skipCSSIdent(sel, i+1)
+		case ch == '[':
+			spec[1]++
+			for i < len(sel) && sel[i] != ']' {
+				i++
+			}
+			i++
+		case ch == ':':
+			if i+1 < len(sel) && sel[i+1] == ':' { // 伪元素算元素层
+				spec[2]++
+				i = skipCSSIdent(sel, i+2)
+				continue
+			}
+			spec[1]++ // 伪类
+			i = skipCSSIdent(sel, i+1)
+			if i < len(sel) && sel[i] == '(' { // 函数式伪类的参数整体跳过
+				depth := 0
+			paramLoop:
+				for i < len(sel) {
+					switch sel[i] {
+					case '(':
+						depth++
+					case ')':
+						depth--
+						if depth == 0 {
+							i++
+							break paramLoop
+						}
+					}
+					i++
+				}
+			}
+		case ch == '*' || ch == '>' || ch == '+' || ch == '~' || ch == ' ' || ch == '\t' || ch == ',':
+			i++
+		default:
+			if isCSSIdentByte(ch) {
+				spec[2]++
+				i = skipCSSIdent(sel, i)
+				continue
+			}
+			i++
+		}
+	}
+	return spec
+}
+
+func skipCSSIdent(s string, i int) int {
+	for i < len(s) && isCSSIdentByte(s[i]) {
+		i++
+	}
+	return i
+}
+
+func isCSSIdentByte(b byte) bool {
+	return b == '-' || b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// cssMoreSpecific a 的特异度是否严格高于 b。
+func cssMoreSpecific(a, b string) bool {
+	sa, sb := cssSpecificity(a), cssSpecificity(b)
+	for i := 0; i < 3; i++ {
+		if sa[i] != sb[i] {
+			return sa[i] > sb[i]
+		}
+	}
+	return false
+}
+
+// cssRuleBlock 取出「独占一行的选择器 + { ... }」规则的声明体。
+//
+// 适用前提（本文件满足）：目标选择器独占一行、块内无嵌套规则。`.lang-select` 这样的
+// 前缀同时出现在 `.lang-select:hover` 里，所以正则要求选择器后紧跟 `{`，避免误取派生规则。
+func cssRuleBlock(src, selector string) (string, bool) {
+	re := regexp.MustCompile(`(?m)^[ \t]*` + regexp.QuoteMeta(selector) + `[ \t]*\{([^}]*)\}`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// cssPropNames 取出一段声明体里的属性名集合（简写与长写都按原样返回）。
+func cssPropNames(block string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, m := range regexp.MustCompile(`(?m)^[ \t]*(-?[a-zA-Z][a-zA-Z-]*)[ \t]*:`).FindAllStringSubmatch(block, -1) {
+		out[strings.ToLower(m[1])] = struct{}{}
+	}
+	return out
+}
+
 // classTokens 取出一段 HTML 里 class 属性的所有类名 token。
 func classTokens(src string) []string {
 	var out []string

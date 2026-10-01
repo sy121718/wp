@@ -298,7 +298,7 @@
 .wb-seg-btn {
     border: 1px solid var(--sky-c-border, #e5e7eb); background: var(--sky-c-surface, #fff);
     border-radius: 6px; cursor: pointer; font-size: 12px; padding: 5px 10px;
-    color: inherit; transition: all .12s ease;
+    color: inherit;
 }
 @media (hover: hover) {
 .wb-seg-btn:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
@@ -483,7 +483,7 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 .wb-media-cell-badge {
     width: 100%; height: 72px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; color: var(--sky-c-text-mute, #6b7280);
+    font-size: 12px; color: var(--sky-c-text-secondary, #4b5563);
     background: var(--sky-c-bg-hover, #f3f4f6); border-radius: 8px;
 }
 
@@ -491,6 +491,8 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 .sky-social-fallback { font-weight: 700; font-size: 0.9em; }
 
 /* ===== 视觉化图标选择器 ===== */
+/* .wb-icon-search 基态 outline: none 的替代在下方第 9 节 :focus-visible 组内就地声明，
+   取值与 workbench-a11y.css 完全一致（幂等，运行时不会出现双环）。 */
 .wb-icon-toolbar {
     display: flex; flex-direction: column; gap: 8px;
     margin-bottom: 8px;
@@ -593,7 +595,7 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
     border: 1px dashed var(--sky-c-border, #d1d5db);
     border-radius: 8px;
     background: var(--sky-c-bg-hover, #f3f4f6);
-    color: var(--sky-c-text-mute, #9ca3af);
+    color: var(--sky-c-text-secondary, #4b5563);
     font-size: 12px;
     padding: 16px;
     box-sizing: border-box;
@@ -648,17 +650,19 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 
 /* —— 左侧图标栏：hover 背景 + 激活指示条滑入 —— */
 .wb-rail-btn { position: relative; }
+/* 指示条用 transform 缩放（不再动 height）：满高基准 + translateY(-50%) 仍以按钮垂直
+   中心为轴展开，scaleY 终态与旧的 55%/70% 高度几何等价，且不触发布局动画。 */
 .wb-rail-btn::before {
     content: ''; position: absolute; left: 0; top: 50%;
-    width: 3px; height: 0; border-radius: 0 3px 3px 0;
+    width: 3px; height: 100%; border-radius: 0 3px 3px 0;
     background: var(--sky-c-primary, #3d444f);
-    transform: translateY(-50%);
-    transition: height 150ms var(--ui-ease-out);
+    transform: translateY(-50%) scaleY(0);
+    transition: transform 150ms var(--ui-ease-out);
 }
 @media (hover: hover) {
-.wb-rail-btn:hover::before { height: 55%; }
+.wb-rail-btn:hover::before { transform: translateY(-50%) scaleY(.55); }
 }
-.wb-rail-btn.is-active::before { height: 70%; }
+.wb-rail-btn.is-active::before { transform: translateY(-50%) scaleY(.7); }
 
 /* 面板进场动效由 ui.css 的 .wb-panel 提供。 */
 
@@ -1110,7 +1114,8 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 .wb-dims-input:focus-visible,
 .wb-margin-row input:focus-visible,
 .wb-cp input:focus-visible,
-.wb-cp button:focus-visible {
+.wb-cp button:focus-visible,
+.wb-icon-search:focus-visible {
     outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 2px;
 }

@@ -188,6 +188,40 @@ func TestAdminNavBreakpointRules(t *testing.T) {
 	}
 }
 
+// TestAdminNavBreakpointTakesOverCollapsedWidth 断点块必须把 sidebar-collapsed 的占位宽度
+// 也接管回来（实测故障：cookie sidebar_open=0 的用户把窗口拉窄后点开抽屉，二级栏只剩
+// 21px 宽 —— padding 20px + 边框 1px，内容整块看不见）。
+//
+// 为什么必须显式接管：基础区 `body.sidebar-collapsed .subnav { width: 0 }` 特异性 (0,2,1)，
+// 压得过断点块里低特异性的 `.subnav { width: min(...) }`；断点块原先只接管了
+// flex-basis / opacity / border-right，宽度就被桌面收起态赢走了。
+//
+// 断言取「含 body.sidebar-collapsed .subnav 的那条规则体」并要求其中自带 width，
+// 而不是在整块里做子串匹配 —— 整块匹配会被同块里别的规则或注释满足，退化成假绿。
+func TestAdminNavBreakpointTakesOverCollapsedWidth(t *testing.T) {
+	_, blocks := splitCSSMedia(readAdminThemeCSS(t))
+	mobile := blockWith(blocks, "@media (max-width: 1023px)")
+	if mobile == "" {
+		t.Fatal("缺少 @media (max-width: 1023px) 断点块")
+	}
+	const want = "min(var(--subnav-w, 224px), calc(100vw - var(--rail-w, 88px)))"
+
+	body := ruleBody(mobile, "body.sidebar-collapsed .subnav")
+	if body == "" {
+		t.Fatal("断点块里找不到 body.sidebar-collapsed .subnav 规则（窄屏接管桌面收起态的唯一出口）")
+	}
+	if !strings.Contains(body, "width: "+want) {
+		t.Errorf("断点块里 body.sidebar-collapsed .subnav 没有接管 width（缺少 \"width: %s\"）：\n"+
+			"漏掉它时基础区的 width: 0 会赢，窄屏抽屉被压成 padding+border = 21px，二级栏内容不可见。\n"+
+			"实际规则体：%s", want, strings.TrimSpace(body))
+	}
+
+	// 两处表达式必须逐字一致：各写一套值迟早漂移，抽屉宽度与桌面占位宽度就分成两个真源。
+	if subnavBody := ruleBody(mobile, ".subnav {"); !strings.Contains(subnavBody, "width: "+want) {
+		t.Errorf("断点块里 .subnav 的宽度表达式与接管条不一致（应同为 \"width: %s\"）", want)
+	}
+}
+
 // TestNavToggleHiddenOnDesktop 汉堡按钮与遮罩在桌面端必须默认不渲染不占位。
 func TestNavToggleHiddenOnDesktop(t *testing.T) {
 	base, blocks := splitCSSMedia(readAdminThemeCSS(t))

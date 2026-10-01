@@ -512,11 +512,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
     width: 3px; height: 22px; border-radius: 0 3px 3px 0; background: var(--sky-c-primary);
 }
 
+/* 折叠动效：保留 flex-basis 过渡是有意为之 —— flex-basis 本身也是布局属性，但折叠侧栏必然
+   让主内容重排，这正是设计意图；transform 无法表达「占位宽度变化」。删掉的只是与它并列的
+   width 过渡：本元素是 flex 项，主轴尺寸由非 auto 的 flex-basis 决定（width 被覆盖），
+   两条过渡动画的是同一个尺寸，纯属冗余（也会被 ui-refit 的 layout-anim 判成 FAIL）。
+   所以本处并不是「零布局动画」，不要据此把 flex-basis 也删掉。 */
 .subnav {
     flex: 0 0 var(--subnav-w, 224px); width: var(--subnav-w, 224px);
     background: var(--sky-c-bg); border-right: 1px solid var(--sky-c-border);
     padding: 14px 10px 0; display: flex; flex-direction: column; overflow: hidden;
-    transition: flex-basis 220ms cubic-bezier(.4, 0, .2, 1), width 220ms cubic-bezier(.4, 0, .2, 1), opacity 160ms ease;
+    transition: flex-basis 220ms cubic-bezier(.4, 0, .2, 1), opacity 160ms ease;
 }
 .subnav-scroll { flex: 1; overflow-y: auto; padding-bottom: 12px; }
 body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opacity: 0; }
@@ -773,10 +778,14 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     }
     /* 服务端按 cookie 渲染的 sidebar-collapsed 只服务桌面「自动收起」；
        窄屏抽屉的开合由 body.nav-open 独占，两条状态不能互相干扰
-       （否则从窄屏回到宽屏、或残留 cookie=0 时抽屉会自己塌掉）。 */
+       （否则从窄屏回到宽屏、或残留 cookie=0 时抽屉会自己塌掉）。
+       下面这条必须连 width 一起接管：基础区收起态那条的 width 是 0、特异性更高 (0,2,1)，
+       压得过本块里低特异性的宽度声明；只接管 flex-basis / opacity 时抽屉会塌成
+       「padding 20px + 边框 1px」= 21px，二级栏内容整块看不见。 */
     .subnav,
     body.sidebar-collapsed .subnav {
         flex-basis: auto; opacity: 1; border-right: 1px solid var(--sky-c-border);
+        width: min(var(--subnav-w, 224px), calc(100vw - var(--rail-w, 88px)));
     }
     body.nav-open .rail, body.nav-open .subnav { transform: translateX(0); }
     body.nav-open { overflow: hidden; }
