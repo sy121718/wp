@@ -607,8 +607,8 @@ var cssUndefinedAllowed = map[string]string{
 	"sre-attachment--accordion": "JS 运行时生成元素的类（static/js/rich-editor/accordion.js:87），定义侧零命中：状态/结构钩子，待复核是否缺样式",
 	"sre-attachment--rule":      "JS 运行时生成元素的类（static/js/rich-editor/horizontal-rule.js:50），定义侧零命中：状态/结构钩子，待复核是否缺样式",
 	"sre-attachment--table":     "JS 运行时生成元素的类（static/js/rich-editor/table.js:208），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"sre-toolbar-btn":           "JS 运行时生成元素的类（static/js/rich-editor/toolbar.js:28），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"sre-toolbar-row":           "JS 运行时生成元素的类（static/js/rich-editor/toolbar.js:40），定义侧零命中：状态/结构钩子，待复核是否缺样式",
+	"sre-toolbar-btn":           "JS 生成的按钮同时带 vendor 的 trix-button（rich-editor/toolbar.js:28），基础外观来自 trix.css；本类只作 .sre-toolbar-btn--active 变体（rich-editor.css:167）的钩子 —— lead 已核实，非缺样式",
+	"sre-toolbar-row":           "JS 生成的容器同时带 vendor 的 trix-button-row（rich-editor/toolbar.js:40），外观来自 trix.css —— lead 已核实，非缺样式",
 	"stack-sm":                  "模板结构钩子（admin/content/article_edit.html:226），定义侧零命中：无外观需求，待复核是否可删",
 	"stock-cell":                "模板结构钩子（admin/product/products.html:190），定义侧零命中：无外观需求，待复核是否可删",
 	"stock-qty":                 "模板结构钩子（admin/inventory/inventory.html:182），定义侧零命中：无外观需求，待复核是否可删",
@@ -627,9 +627,9 @@ var cssUndefinedAllowed = map[string]string{
 	"wb-repeater-acts":          "JS 运行时生成元素的类（static/js/workbench/methods/controls/repeater.js:242），定义侧零命中：状态/结构钩子，待复核是否缺样式",
 	"wb-richtext-upload-hint":   "JS 运行时生成元素的类（static/js/workbench/methods/controls/text.js:54），定义侧零命中：状态/结构钩子，待复核是否缺样式",
 	"wb-seo-panel":              "模板结构钩子（admin/product/entity_seo_drawer.html:30），定义侧零命中：无外观需求，待复核是否可删",
-	"wbd-blank":                 "JS 运行时生成元素的类（static/js/ui/daterange.js:301），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wbd-month":                 "JS 运行时生成元素的类（static/js/ui/daterange.js:287），定义侧零命中：状态/结构钩子，待复核是否缺样式",
-	"wbd-title":                 "JS 运行时生成元素的类（static/js/ui/daterange.js:337），定义侧零命中：状态/结构钩子，待复核是否缺样式",
+	"wbd-blank":                 "JS 生成的月初空位 span（ui/daterange.js:301），作为 .wbd-grid 的 grid item 由轨道定尺寸 —— lead 已核实，非缺样式",
+	"wbd-month":                 "JS 生成的月份容器（ui/daterange.js:287），尺寸由父 .wbd-months 的 grid 轨道决定（ui.css:148），无需自身外观 —— lead 已核实，非缺样式",
+	"wbd-title":                 "JS 生成的月份标题（ui/daterange.js:337），位于 .wbd-titles 网格内（ui.css:135），样式与文字靠继承 —— lead 已核实，非缺样式",
 }
 
 // cssUnusedAllowed —— 方向 B 豁免：定义侧存在但使用侧零出现的类。
