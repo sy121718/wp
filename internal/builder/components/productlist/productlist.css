@@ -78,7 +78,7 @@
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 999px;
   font-size: .85rem;
   text-decoration: none;
@@ -131,7 +131,7 @@
 
 & .sky-product-list-tool-label {
   font-size: .85rem;
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
 }
 
 & .sky-product-list-pager {
@@ -144,7 +144,7 @@
 
 & .sky-product-list-page {
   padding: 6px 14px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 8px;
   text-decoration: none;
   color: inherit;
@@ -152,7 +152,7 @@
 
 & .sky-product-list-page-current {
   font-size: .9rem;
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
 }
 
 /* 价格滑块 (issue #28): 原生 range 是触屏与键盘天然可用的控件 (拖拽, 方向键都行),
@@ -176,7 +176,7 @@
 & .sky-product-list-price-label {
   flex: 0 0 auto;
   font-size: .85rem;
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
 }
 
 & .sky-product-list-price-range {
@@ -196,7 +196,7 @@
 & .sky-product-list-price-apply {
   align-self: flex-start;
   padding: 5px 12px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 8px;
   background: transparent;
   cursor: pointer;
@@ -231,7 +231,7 @@
   object-fit: contain;
 }
 
-/* 折扣角标：源站是蓝色胶囊压在图左上角（#0084ff / 白字 / 12px / 圆角 5px）。 */
+/* 折扣角标：蓝色胶囊压在图左上角（白字 / 12px / 圆角 5px）。 */
 & .sky-product-list-discount {
   position: absolute;
   top: 12px;
@@ -241,8 +241,8 @@
   min-height: 24px;
   padding: 0 10px;
   border-radius: 5px;
-  /* 底色比品牌主色深一档：白字对比 5.4:1（#0084ff 只有 3.66:1，12px 小字不达标）。 */
-  background: var(--sky-c-primary-deep, #0068cc);
+  /* 底色取主色深一档：白字对比 6.7:1（主色 #2563eb 只有 5.1:1，12px 小字贴边）。 */
+  background: var(--sky-c-primary-deep, #1d4ed8);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -312,7 +312,7 @@
 
 & .sky-product-list-compare {
   text-decoration: line-through;
-  color: var(--sky-c-muted, rgba(0,0,0,0.45));
+  color: var(--sky-c-muted, #6b7280);
   font-size: .9em;
 }
 
@@ -331,14 +331,14 @@
   padding: 0 8px;
   border-radius: 999px;
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
-  color: var(--sky-c-muted, rgba(0,0,0,0.65));
+  color: var(--sky-c-muted, #6b7280);
 }
 
 & .sky-product-list-empty {
   margin: 0;
   padding: 24px 0;
   text-align: center;
-  color: var(--sky-c-muted, rgba(0,0,0,0.55));
+  color: var(--sky-c-muted, #6b7280);
 }
 
 /* 列表页入口（系统页面槽位 shop，BIZ-2）：槽位没绑 / 那页没发布时模板根本不输出这个节点，
@@ -357,7 +357,7 @@
   width: min(100%, 320px);
   min-height: 44px;
   padding: 10px 18px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 8px;
   color: var(--sky-c-primary, #2563eb);
   font-weight: 600;
@@ -462,19 +462,19 @@
   width: 15px;
   height: 15px;
   margin: 0;
-  accent-color: var(--sky-c-primary, #0084ff);
+  accent-color: var(--sky-c-primary, #2563eb);
   pointer-events: none;
 }
 
 /* 半选：子树里选了一部分 —— 原生 indeterminate 需要 JS，这里用行文字主色
    + 框内横线（画在包层的 ::before 上）表达。 */
 & .sky-product-list-node-label[aria-checked="partial"] .sky-product-list-node-box {
-  border-color: var(--sky-c-primary, #0084ff);
+  border-color: var(--sky-c-primary, #2563eb);
 }
 
 /* 单选（data-multi=off）：不渲染勾选框，选中项用浅底 + 主色文字表达。 */
 & [data-multi="off"] .sky-product-list-node-label[aria-checked="all"] {
-  background: rgba(0, 132, 255, .08);
+  background: var(--sky-c-primary-weak, rgba(37,99,235,0.08));
 }
 
 /* 子级：引导竖线 + 缩进；勾选框列与父级垂直对齐。 */
@@ -482,7 +482,7 @@
   list-style: none;
   margin: 0 0 0 .62em;
   padding: 0 0 0 .95em;
-  border-left: 1px solid var(--sky-c-border, #e5e5e5);
+  border-left: 1px solid var(--sky-c-border, #e5e7eb);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -490,12 +490,12 @@
 
 /* 键盘焦点环（不依赖 hover，触屏/键盘同样成立）。 */
 & .sky-product-list-node-label:focus-visible {
-  outline: 2px solid var(--sky-c-primary, #0084ff);
+  outline: 2px solid var(--sky-c-primary, #2563eb);
   outline-offset: 1px;
 }
 
 & .sky-product-list-node-caret-row:focus-visible {
-  outline: 2px solid var(--sky-c-primary, #0084ff);
+  outline: 2px solid var(--sky-c-primary, #2563eb);
   outline-offset: -1px;
 }
 

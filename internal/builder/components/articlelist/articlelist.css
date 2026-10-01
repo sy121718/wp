@@ -59,7 +59,7 @@
   margin: 0;
   font-size: .92rem;
   line-height: 1.7;
-  color: var(--sky-c-text-mute, #4b5563);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 & .sky-article-list-link {

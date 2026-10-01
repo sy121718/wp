@@ -33,7 +33,7 @@ func TestFormCSSParsesAndKeepsRules(t *testing.T) {
 		{"输入控件 :is() 合并", []string{".sky-node-test :is(input[type=text],input[type=email],select) {", "padding: 10px 12px", "border-radius: 6px"}},
 		{"textarea", []string{".sky-node-test textarea {", "min-height: 96px", "resize: vertical"}},
 		{"聚焦 ring（占位指令已展开）", []string{".sky-node-test :is(input,textarea,select):focus {"}},
-		{"校验错误态 父容器", []string{".sky-node-test .sky-form-field:has(:user-invalid) {", "color: var(--sky-danger, #dc2626)"}},
+		{"校验错误态 父容器", []string{".sky-node-test .sky-form-field:has(:user-invalid) {", "color: var(--sky-c-danger, #dc2626)"}},
 		{"校验错误态 输入框", []string{".sky-node-test :user-invalid {", "box-shadow: 0 0 0 3px rgba(220, 38, 38, .12)"}},
 		{"提交按钮", []string{".sky-node-test .sky-form-submit {", "padding: 11px 24px", "cursor: pointer"}},
 		{"提交按钮 hover", []string{".sky-node-test .sky-form-submit:hover {", "var(--sky-btn-hover-bg"}},

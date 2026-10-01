@@ -16,7 +16,7 @@ func TestFAQCSSRules(t *testing.T) {
 		".sky-c-t {\n  display: flex;",
 		"gap: 8px",
 		".sky-c-t details {",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1))",
+		"border: 1px solid var(--sky-c-border, #e5e7eb)",
 		".sky-c-t summary {",
 		"list-style: none",
 		"justify-content: space-between",

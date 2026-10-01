@@ -118,7 +118,7 @@ func TestCompileCSS(t *testing.T) {
 		"flex-direction: column",
 		"gap: 16px",
 		".sky-form-field",
-		"border: 1px solid var(--sky-c-border, rgba(0,0,0,.15))",
+		"border: 1px solid var(--sky-c-border-strong, #d1d5db)",
 		"border-radius: 6px",
 		".sky-form-submit",
 		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",

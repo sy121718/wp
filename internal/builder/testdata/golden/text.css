@@ -59,7 +59,7 @@ body {
 .sky-c-t2 blockquote {
   padding-inline-start: 1em;
   border-inline-start: 3px solid var(--sky-c-border, #e5e7eb);
-  color: var(--sky-c-text-mute, #4b5563);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 .sky-c-t2 hr {

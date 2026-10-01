@@ -22,7 +22,7 @@ body {
   font-size: 15px;
   font-weight: 600;
   background: var(--sky-c-surface, #fff);
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: 10px;
   background: #f9f9f9;
 }
@@ -36,7 +36,7 @@ body {
   width: 16px;
   height: 16px;
   margin-left: 12px;
-  color: rgba(0,0,0,.4);
+  color: var(--sky-c-text-mute, #6b7280);
   transition: transform .2s;
 }
 
@@ -50,7 +50,7 @@ body {
 
 .sky-c-ac1 .sky-accordion-body {
   padding: 14px 18px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-top: 0;
   border-radius: 0 0 10px 10px;
   margin-top: -8px;
@@ -73,7 +73,7 @@ body {
   font-size: 15px;
   font-weight: 600;
   background: var(--sky-c-surface, #fff);
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: 10px;
 }
 
@@ -86,7 +86,7 @@ body {
   width: 16px;
   height: 16px;
   margin-left: 12px;
-  color: rgba(0,0,0,.4);
+  color: var(--sky-c-text-mute, #6b7280);
   transition: transform .2s;
 }
 
@@ -100,7 +100,7 @@ body {
 
 .sky-c-ac2 .sky-accordion-body {
   padding: 14px 18px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-top: 0;
   border-radius: 0 0 10px 10px;
   margin-top: -8px;
@@ -112,7 +112,7 @@ body {
 
 .sky-c-ac2.sky-accordion-borderless .sky-accordion-head {
   border: 0;
-  border-bottom: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: 0;
   padding-left: 0;
   padding-right: 0;
@@ -127,7 +127,7 @@ body {
 
 @media (hover: hover) {
   .sky-c-ac1 .sky-accordion-head:hover, .sky-c-ac2 .sky-accordion-head:hover {
-  background: var(--sky-c-surface, #f3f4f6);
+  background: var(--sky-c-surface-muted, #f3f4f6);
 
 }
 }

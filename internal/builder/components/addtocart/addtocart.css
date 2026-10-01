@@ -48,7 +48,7 @@
 & .sky-cart-add-compare {
   font-weight: 400;
   font-size: 0.85rem;
-  color: var(--sky-c-text-muted, #9ca3af);
+  color: var(--sky-c-text-muted, #6b7280);
 }
 
 & .sky-cart-add-qty {
@@ -56,7 +56,7 @@
   width: min(100%, 72px);
   min-height: 44px;
   padding: 6px 8px;
-  border: 1px solid var(--sky-c-border, #d1d5db);
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 8px;
   background: var(--sky-c-surface, #fff);
   color: inherit;

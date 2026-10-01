@@ -57,7 +57,7 @@
   object-fit: contain;
 }
 
-/* 折扣角标：源站是蓝色胶囊压在图左上角（#0084ff / 白字 / 12px / 圆角 5px）。 */
+/* 折扣角标：蓝色胶囊压在图左上角（主色 / 白字 / 12px / 圆角 5px）。 */
 & .sky-product-discount {
   position: absolute;
   top: 14px;
@@ -67,7 +67,7 @@
   min-height: 24px;
   padding: 0 10px;
   border-radius: 5px;
-  background: var(--sky-c-primary, #0084ff);
+  background: var(--sky-c-primary, #2563eb);
   color: #fff;
   font-size: 12px;
   font-weight: 500;
@@ -119,12 +119,12 @@
 }
 
 & .sky-product-category {
-  color: var(--sky-c-primary, #0084ff);
+  color: var(--sky-c-primary, #2563eb);
   text-decoration: none;
 }
 
 & .sky-product-categories-sep {
-  color: var(--sky-c-text-mute, rgba(0,0,0,0.45));
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 /* 评价行（源站「0 Reviews  Write a review」）。 */
@@ -134,7 +134,7 @@
   align-items: baseline;
   gap: 8px;
   font-size: 14px;
-  color: var(--sky-c-text-mute, rgba(0,0,0,0.45));
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 & .sky-product-rating-value {
@@ -158,13 +158,13 @@
 }
 
 & .sky-product-brand-link {
-  color: var(--sky-c-primary, #0084ff);
+  color: var(--sky-c-primary, #2563eb);
   text-decoration: none;
 }
 
 & .sky-product-subtitle {
   margin: 0;
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
   line-height: 1.6;
 }
 
@@ -186,7 +186,7 @@
 & .sky-product-compare {
   font-size: 17.5px;
   text-decoration: line-through;
-  color: var(--sky-c-text-mute, rgba(0,0,0,0.45));
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 /* 窄视口：标题与价格按比例收，避免 30px 标题在 375px 屏上占满整屏。 */
@@ -222,7 +222,7 @@
    烘进产物等于发布一份过期库存). 样式覆盖两种状态: 默认 (充足 / 以结算为准) 与缺货. */
 & .sky-product-variant-stock {
   font-size: .85rem;
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
   flex: 1 0 100%;
 }
 
@@ -256,7 +256,7 @@
   padding: 0;
   margin-right: 4px;
   font-size: 13px;
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
 }
 
 /* radio 视觉隐藏但保留可聚焦 (display:none 会把整组从键盘序列里移除). */
@@ -280,7 +280,7 @@
   max-width: 100%;
   min-height: 36px;
   padding: 6px 14px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.15));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 8px;
   font-size: 13px;
   line-height: 1.4;
@@ -332,7 +332,7 @@
 }
 
 & .sky-product-variant-options {
-  color: var(--sky-c-muted, rgba(0,0,0,0.6));
+  color: var(--sky-c-muted, #6b7280);
   min-width: 0;
   word-break: break-word;
 }

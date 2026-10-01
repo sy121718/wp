@@ -164,7 +164,7 @@ body {
 
 .sky-c-sb2 .sky-social-btn {
   color: #123456;
-  background: rgba(0,0,0,.06);
+  background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
 }
 
 @media (hover: hover) {

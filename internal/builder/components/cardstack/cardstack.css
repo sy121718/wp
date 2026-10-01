@@ -64,7 +64,7 @@
   padding: {{cardPaddingContent}};
   background-color: {{cardBackgroundContent}};
   color: var(--sky-cardstack-text, #1f2430);
-  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: {{cardBorderContent}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusContent}};
   box-shadow: 0 15px 50px rgba(0,0,0,.12);
   overflow: hidden;
@@ -79,7 +79,7 @@
   justify-content: center;
   align-items: center;
   background-color: {{cardBackgroundSolid}};
-  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: {{cardBorderSolid}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusSolid}};
   box-shadow: 0 15px 50px rgba(0,0,0,.1);
   color: rgba(0,0,0,0);
@@ -163,7 +163,7 @@
   padding: {{cardPaddingContent}};
   background-color: {{cardBackgroundContent}};
   color: var(--sky-cardstack-text, #1f2430);
-  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: {{cardBorderContent}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusContent}};
   box-shadow: 0 15px 50px rgba(0,0,0,.12);
   overflow: hidden;
@@ -178,7 +178,7 @@
   justify-content: center;
   align-items: center;
   background-color: {{cardBackgroundSolid}};
-  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: {{cardBorderSolid}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusSolid}};
   box-shadow: 0 15px 50px rgba(0,0,0,.1);
   color: rgba(0,0,0,0);
@@ -239,12 +239,12 @@
 /* 悬停底色进 hover 桶（构建期包 @media (hover: hover)）：触屏上不输出，
    避免点一下把箭头底色粘住。 */
 @hover & .sky-cardstack-arrow:hover {
-  background: var(--sky-c-surface, #ffffff);
+  background: var(--sky-c-surface, #fff);
 }
 
 /* 触屏等价形态：箭头是切卡入口，触屏没有悬停 —— 给按压反馈（@active 不包媒体查询）。 */
 @active & .sky-cardstack-arrow:active {
-  background: var(--sky-c-surface, #ffffff);
+  background: var(--sky-c-surface, #fff);
 }
 @endif
 
@@ -312,7 +312,7 @@
   padding: {{cardPaddingContent}};
   background-color: {{cardBackgroundContent}};
   color: var(--sky-cardstack-text, #1f2430);
-  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: {{cardBorderContent}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusContent}};
   box-shadow: 0 15px 50px rgba(0,0,0,.12);
   overflow: hidden;
@@ -327,7 +327,7 @@
   justify-content: center;
   align-items: center;
   background-color: {{cardBackgroundSolid}};
-  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: {{cardBorderSolid}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusSolid}};
   box-shadow: 0 15px 50px rgba(0,0,0,.1);
   color: rgba(0,0,0,0);
@@ -466,7 +466,7 @@
   padding: {{cardPaddingContent}};
   background-color: {{cardBackgroundContent}};
   color: var(--sky-cardstack-text, #1f2430);
-  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: {{cardBorderContent}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusContent}};
   box-shadow: 0 15px 50px rgba(0,0,0,.12);
   overflow: hidden;
@@ -481,7 +481,7 @@
   justify-content: center;
   align-items: center;
   background-color: {{cardBackgroundSolid}};
-  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: {{cardBorderSolid}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusSolid}};
   box-shadow: 0 15px 50px rgba(0,0,0,.1);
   color: rgba(0,0,0,0);
@@ -562,7 +562,7 @@
   padding: {{cardPaddingContent}};
   background-color: {{cardBackgroundContent}};
   color: var(--sky-cardstack-text, #1f2430);
-  border: {{cardBorderContent}} solid var(--sky-c-border, rgba(0,0,0,.08));
+  border: {{cardBorderContent}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusContent}};
   box-shadow: 0 15px 50px rgba(0,0,0,.12);
   overflow: hidden;
@@ -577,7 +577,7 @@
   justify-content: center;
   align-items: center;
   background-color: {{cardBackgroundSolid}};
-  border: {{cardBorderSolid}} solid var(--sky-c-border, rgba(0,0,0,.1));
+  border: {{cardBorderSolid}} solid var(--sky-c-border, #e5e7eb);
   border-radius: {{cardRadiusSolid}};
   box-shadow: 0 15px 50px rgba(0,0,0,.1);
   color: rgba(0,0,0,0);
@@ -617,7 +617,7 @@
 }
 
 @active & .sky-cardstack-card:active {
-  background-color: var(--sky-c-primary, #5e5cfc);
+  background-color: var(--sky-c-primary, #2563eb);
   color: var(--sky-cardstack-label, rgba(0,0,0,.25));
   z-index: 100;
 }
@@ -750,14 +750,14 @@
   margin: 0;
   font-size: 1.05em;
   font-weight: 700;
-  color: var(--sky-c-primary, #5e5cfc);
+  color: var(--sky-c-primary, #2563eb);
 }
 
 & .sky-cardstack-link {
   align-self: flex-start;
   margin-top: auto;
   font-size: .88em;
-  color: var(--sky-c-primary, #5e5cfc);
+  color: var(--sky-c-primary, #2563eb);
   text-decoration: none;
   border-bottom: 1px solid currentColor;
 }
@@ -779,9 +779,9 @@
   width: min(100%, 320px);
   min-height: 44px;
   padding: 10px 18px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,.12));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 999px;
-  color: var(--sky-c-primary, #5e5cfc);
+  color: var(--sky-c-primary, #2563eb);
   font-weight: 600;
   text-decoration: none;
 }
@@ -790,7 +790,7 @@
    描边按钮（基础态已有 1px 边框 + 主色文字 + min-height 44px），触屏上「可点」
    已经表达清楚，悬停只是把边框加深一档；按压反馈另有 @active。 */
 @hover & .sky-cardstack-more-link {
-  border-color: var(--sky-c-primary, #5e5cfc);
+  border-color: var(--sky-c-primary, #2563eb);
 }
 
 @active & .sky-cardstack-more-link {

@@ -167,7 +167,7 @@ body {
 .sky-c-tb2.sky-tabs-vertical .sky-tabs-nav {
   flex-direction: column;
   border-bottom: 0;
-  border-right: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
+  border-right: 1px solid var(--sky-c-border, #e5e7eb);
   min-width: min(100%, 140px);
   padding: 4px 0;
 }

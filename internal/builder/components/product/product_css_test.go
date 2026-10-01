@@ -59,7 +59,7 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 		{"信息栏", ".sky-c-t .sky-product-info {", []string{"flex-direction: column", "gap: 10px", "min-width: 0"}},
 		// 标题 30px / 600：源站实测 h1 为 30px + font-weight 600 + 行高 1.4。
 		{"标题", ".sky-c-t .sky-product-title {", []string{"font-size: 30px", "font-weight: 600", "line-height: 1.4"}},
-		{"副标题", ".sky-c-t .sky-product-subtitle {", []string{"color: var(--sky-c-muted, rgba(0,0,0,0.6))", "line-height: 1.6"}},
+		{"副标题", ".sky-c-t .sky-product-subtitle {", []string{"color: var(--sky-c-muted, #6b7280)", "line-height: 1.6"}},
 		{"价格行", ".sky-c-t .sky-product-price-row {", []string{"align-items: baseline", "flex-wrap: wrap"}},
 		// 价格用**黑色粗体**而不是品牌色：源站现价是黑色 17.5px/700，品牌色只留给折扣胶囊与链接。
 		{"价格", ".sky-c-t .sky-product-price {", []string{"font-weight: 700", "font-size: 17.5px", "color: var(--sky-c-heading, #000)"}},

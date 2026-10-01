@@ -25,9 +25,9 @@
 /* 表头底纹与分隔线。 */
 & thead th {
   font-weight: 600;
-  background: var(--sky-c-surface, #f5f6f8);
+  background: var(--sky-c-surface-muted, #f3f4f6);
   /* 表头分隔线跟主题边框色（此前写死，主题改边框它不变）。 */
-  border-bottom: 2px solid var(--sky-c-border, rgba(0,0,0,0.12));
+  border-bottom: 2px solid var(--sky-c-border-strong, #d1d5db);
 }
 
 @if striped
@@ -56,6 +56,6 @@
 @if bordered
 /* 边框：th/td 加 1px 边框（与上面那条同选择器，是两条独立规则）。 */
 & th, & td {
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
 }
 @endif

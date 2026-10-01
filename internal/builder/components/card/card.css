@@ -6,7 +6,7 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--sky-c-surface, #fff);
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: 12px;
   padding: var(--sky-density-pad, 16px);
 }
@@ -55,7 +55,7 @@
 
 & p {
   margin: 0;
-  color: rgba(0,0,0,0.65);
+  color: var(--sky-c-muted, #6b7280);
   line-height: 1.6;
 }
 

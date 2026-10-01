@@ -44,15 +44,15 @@ func TestSocialCSSBrandOrder(t *testing.T) {
 // TestSocialCSSCSColorModes 三种配色互斥：只命中一个分支。
 func TestSocialCSSCSColorModes(t *testing.T) {
 	brand := socialCSSFor(&Props{})
-	if strings.Contains(brand, "color: #6b7280;") {
+	if strings.Contains(brand, "var(--sky-c-muted, #6b7280)") {
 		t.Errorf("品牌模式不该产出单色配色:\n%s", brand)
 	}
-	if strings.Contains(brand, "background: rgba(0,0,0,.06);") {
+	if strings.Contains(brand, "var(--sky-c-surface-alt, rgba(0,0,0,0.05))") {
 		t.Errorf("品牌模式不该产出单色底:\n%s", brand)
 	}
 
 	mono := socialCSSFor(&Props{Color: ColorMono})
-	if !strings.Contains(mono, "color: #6b7280;") {
+	if !strings.Contains(mono, "color: var(--sky-c-muted, #6b7280);") {
 		t.Errorf("单色配色缺失:\n%s", mono)
 	}
 	if strings.Contains(mono, "aria-label=") {

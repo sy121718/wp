@@ -1062,7 +1062,7 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 .wb-range-row { display: flex; align-items: center; gap: 8px; }
 .wb-range-row .wb-range {
     flex: 1 1 auto; min-width: 0; margin: 0; height: 4px;
-    accent-color: var(--sky-c-primary, #5e5cfc); cursor: pointer;
+    accent-color: var(--sky-c-primary, #3d444f); cursor: pointer;
 }
 .wb-range-row input[type="number"] { flex: 0 0 76px; width: min(100%, 76px); }
 

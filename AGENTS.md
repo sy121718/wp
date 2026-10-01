@@ -158,7 +158,13 @@ Artifact ≠ 可编辑源码
 
 前台交互**优先**用 HTMX 属性驱动；JS 只做 HTMX 覆盖不到的控件层，收敛在
 `internal/templates/static/js/ui/` 与 `rich-editor/`（媒体库选择器 `media-lib.js`，构建器前端 `workbench/`）。
-**不新增这几处之外的散落业务 JS**（存量 `admin.js` / `enhance.js` / `track.js` / `automation/` 属待收敛）。
+**不新增这几处之外的散落业务 JS**。存量散落清单（全量登记，括号内是性质与收敛方向）：
+`admin.js`（后台业务逻辑：菜单候选过滤等，控件已迁基座，剩余随页面迁移逐步清零）、
+`media-admin.js`（媒体库页面左树右库业务逻辑，依赖 `media-lib.js`）、
+`product-create-form.js`（商品新建表单增强，须自挂 `htmx:afterSwap`，见 `internal/templates/CLAUDE.md`）、
+`automation/`（自动化画布 graph/canvas）、`enhance.js`（组件增强迁移残余，目标清空）、
+`track.js`（访问归因采集，构建期内联产物，长期保留）、
+`icons.js`（Lucide 图标数据，vendor 性质，不算业务 JS）。
 
 CSRF：HTMX 请求经 `<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"}'>` 继承；原生表单必须显式加
 `csrf_token` 隐藏域；fetch 请求必须带 `X-CSRF-Token` 头（`workbench.js` / `media-lib.js` 已封装）。

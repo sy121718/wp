@@ -141,7 +141,7 @@ const (
 // 取色（与 badge/quote/progress 同一约定：CSS 变量 + 兜底色，主题可整体覆写）。
 // 色值本身写在 cardstack.css 里；这里只留 Go 侧算兜底值时引用的两个。
 const (
-	colorPrimary = "var(--sky-c-primary, #5e5cfc)"
+	colorPrimary = "var(--sky-c-primary, #2563eb)"
 	colorSurface = "var(--sky-c-surface, #fff)"
 )
 

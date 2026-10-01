@@ -69,7 +69,7 @@
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,.12));
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
   background: var(--sky-c-surface, #fff);
   cursor: pointer;
   font-size: 20px;

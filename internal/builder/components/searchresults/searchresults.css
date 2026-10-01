@@ -24,7 +24,7 @@
 	width: 100%;
 	min-height: 44px;
 	padding: 8px 12px;
-	border: 1px solid var(--sky-c-border, #d1d5db);
+	border: 1px solid var(--sky-c-border-strong, #d1d5db);
 	border-radius: 8px;
 	font: inherit;
 }
@@ -34,7 +34,7 @@
 	padding: 8px 16px;
 	border: 0;
 	border-radius: 8px;
-	background: var(--sky-c-primary, #111827);
+	background: var(--sky-c-primary, #2563eb);
 	color: #fff;
 	font: inherit;
 	cursor: pointer;
@@ -65,11 +65,11 @@
    样式源解析器只认 max-width 断点（桌面优先），字面媒体查询会直接构建期报错；
    而 @hover 由构建期统一包 hover 媒体查询，触屏上不输出粘滞悬停态。 */
 @hover & .sky-search-submit:hover {
-	background: var(--sky-c-primary-strong, #374151);
+	background: var(--sky-c-primary-deep, #1d4ed8);
 }
 
 /* 触屏等价形态（审计 UI-015 的多端硬规则）：提交是搜索的唯一操作入口，
    触屏没有悬停 —— 手指按下即触发 @active 的加深反馈（@active 不包媒体查询）。 */
 @active & .sky-search-submit:active {
-	background: var(--sky-c-primary-deep, #1f2937);
+	background: var(--sky-c-primary-deep, #1d4ed8);
 }

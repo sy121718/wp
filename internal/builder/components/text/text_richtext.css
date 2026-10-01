@@ -37,7 +37,7 @@
 & blockquote {
   padding-inline-start: 1em;
   border-inline-start: 3px solid var(--sky-c-border, #e5e7eb);
-  color: var(--sky-c-text-mute, #4b5563);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 & hr { margin-block: 2em; border: 0; border-top: 1px solid var(--sky-c-border, #e5e7eb); }
 & code, & pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }

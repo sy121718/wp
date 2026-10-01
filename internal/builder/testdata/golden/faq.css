@@ -12,7 +12,7 @@ body {
 }
 
 .sky-c-fq1 details {
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: 10px;
   background: var(--sky-c-surface, #fff);
 }
@@ -37,7 +37,7 @@ body {
   width: 16px;
   height: 16px;
   margin-left: 12px;
-  color: rgba(0,0,0,0.4);
+  color: var(--sky-c-text-mute, #6b7280);
   transition: transform .2s;
 }
 
@@ -47,7 +47,7 @@ body {
 
 .sky-c-fq1 .sky-faq-answer {
   padding: 0 18px 14px;
-  color: rgba(0,0,0,0.65);
+  color: var(--sky-c-muted, #6b7280);
   line-height: 1.6;
 }
 }

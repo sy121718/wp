@@ -79,7 +79,7 @@ func TestCompileCSS(t *testing.T) {
 		{
 			name:  "边框",
 			props: &Props{Bordered: true},
-			wants: []string{"border: 1px solid var(--sky-c-border, rgba(0,0,0,0.12))"},
+			wants: []string{"border: 1px solid var(--sky-c-border-strong, #d1d5db)"},
 		},
 	}
 	for _, tt := range tests {

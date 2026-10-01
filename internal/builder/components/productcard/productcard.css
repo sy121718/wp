@@ -9,7 +9,7 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--sky-c-surface, #fff);
-  border: 1px solid var(--sky-c-border, rgba(0,0,0,0.1));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: 12px;
   height: 100%;
   min-width: 0;
@@ -81,7 +81,7 @@
 
 & .sky-product-card-compare {
   text-decoration: line-through;
-  color: var(--sky-c-muted, rgba(0,0,0,0.45));
+  color: var(--sky-c-muted, #6b7280);
   font-size: .9em;
 }
 
@@ -100,5 +100,5 @@
   padding: 0 8px;
   border-radius: 999px;
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
-  color: var(--sky-c-muted, rgba(0,0,0,0.65));
+  color: var(--sky-c-muted, #6b7280);
 }

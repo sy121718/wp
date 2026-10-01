@@ -110,7 +110,7 @@ func TestProductListCSSListOnlyRules(t *testing.T) {
 	}
 	// 折扣角标：源站是蓝色胶囊压在图左上角（底色加深一档：白字 12px 需 4.5:1 对比）。
 	badge := listRuleText(t, grid, ".sky-c-t .sky-product-list-discount {")
-	for _, want := range []string{"position: absolute", "border-radius: 5px", "background: var(--sky-c-primary-deep, #0068cc)", "color: #fff", "font-weight: 600"} {
+	for _, want := range []string{"position: absolute", "border-radius: 5px", "background: var(--sky-c-primary-deep, #1d4ed8)", "color: #fff", "font-weight: 600"} {
 		if !strings.Contains(badge, want) {
 			t.Errorf("折扣角标规则缺少 %q:\n%s", want, badge)
 		}
