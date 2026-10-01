@@ -26,19 +26,19 @@ var documentedControlClasses = []string{
 	// 按钮
 	"btn", "btn-primary", "btn-secondary", "btn-ghost", "btn-danger", "btn-sm", "btn-icon",
 	// 卡片
-	"card", "card-header", "card-title", "card-body", "card-footer",
+	"card", "card-header", "card-title", "card-body",
 	// 表格
 	"data-table", "table-wrap",
 	// 徽标与状态点
 	"badge", "badge-success", "badge-warning", "badge-danger", "badge-mute",
-	"dot", "dot-success", "dot-warning", "dot-danger", "dot-mute",
+	"dot",
 }
 
 // utilityClasses 文档 §10.2 末尾单列的工具类：故意不进基座清单。
 // 它们必须真实存在于 ui.css —— 否则本测试是空转，证明不了「不收工具类」这个取舍。
 var utilityClasses = []string{
-	"w-full", "text-sm", "text-xs", "text-mute", "text-right",
-	"flex", "items-center", "justify-between", "gap-md", "mt-md", "mb-md",
+	"text-sm", "text-xs", "text-mute", "flex",
+	"gap-sm", "mt-lg", "mb-lg", "col-actions", "sr-only",
 }
 
 // classSelectorRe 从 CSS 源码里取类选择器名（够用即可：目的是核对清单里的类确实被定义过）。

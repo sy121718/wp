@@ -178,7 +178,7 @@ trix-toolbar .sre-toolbar-btn--active {
 
 trix-toolbar .trix-button:disabled {
     background: transparent;
-    color: var(--sky-c-text-faint, #5d656e);
+    color: var(--sky-c-text-faint, #9ca3af);
     opacity: .55;
     cursor: default;
 }

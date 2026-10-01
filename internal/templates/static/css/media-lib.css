@@ -62,15 +62,6 @@
     .media-tree-panel { flex-basis: auto; max-height: min(230px, 35dvh); }
     .media-detail { flex-basis: auto; max-height: 65dvh; }
 }
-.media-toolbar {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    background: var(--sky-c-surface, #fff);
-    border: 1px solid var(--sky-c-border, #e5e7eb);
-    border-radius: 12px; padding: 10px 12px;
-}
-.media-toolbar .media-select { width: auto; }
-.media-toolbar .media-search { width: min(100%, 220px); }
-.media-flex-spacer { flex: 1 1 auto; }
 .media-view-toggle { display: inline-flex; border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; overflow: hidden; }
 .media-view-toggle button {
     border: none; background: var(--sky-c-surface, #fff); padding: 6px 10px; cursor: pointer; font-size: 14px;

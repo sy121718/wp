@@ -1,6 +1,6 @@
 package templates
 
-// ui_token_fallback_test.go —— ui.css 的 token 兜底值必须是**浅色主题真值**。
+// ui_token_fallback_test.go —— 全部 CSS 的 token 兜底值必须是**浅色主题真值**。
 //
 // 为什么需要它：ui.css 会被注入到**没有 theme.css** 的前台产物里（段切分后内联进 HTML），
 // 那时 `var(--sky-c-X, Y)` 的兜底 Y 直接生效。若 Y 抄的是**深色主题**的真值，产物侧就会
@@ -15,6 +15,11 @@ package templates
 //     不判失败：它们不是「抄了深色主题」，是否该收敛属于别的判据。
 //
 // 真值来源是 theme.css（运行时读取），所以 theme.css 改 token 时这里自动跟着走。
+//
+// 扫描范围（清账批扩到全部）：ui.css / media-lib.css / workbench.css / workbench-a11y.css /
+// rich-editor.css / automation.css —— 它们都会随产物投递。theme.css 也在范围内，但它是
+// **token 定义处**：`[data-theme="…"]` 块里的深色值就是定义本身、别名层的
+// `--sky-c-X: var(--c-X, Y)` 也是定义，所以对 theme.css 先剥掉定义区，只扫消费行。
 
 import (
 	"regexp"
@@ -22,9 +27,45 @@ import (
 	"testing"
 )
 
+// cssFallbackFiles 会随产物投递、因而兜底值会直接生效的样式文件。
+var cssFallbackFiles = []string{
+	"ui.css", "theme.css", "media-lib.css", "workbench.css", "workbench-a11y.css", "rich-editor.css", "automation.css",
+}
+
+// stripThemeTokenDefinitions 剥掉 theme.css 里的 **token 定义区**，只留消费行：
+//
+//	· [data-theme="light"|"dark"] 与 [data-theme] 三个块（两套真值表与别名层就是定义）；
+//	· 其余位置的自定义属性声明行（`--x: …;`）—— 例如某处只覆盖单个 token 的写法。
+//
+// 不剥的话，定义行本身会被当成「兜底取了深色值」而误报。
+func stripThemeTokenDefinitions(src string) string {
+	out := src
+	for _, sel := range []string{`[data-theme="light"]`, `[data-theme="dark"]`, "[data-theme]"} {
+		for {
+			i := strings.Index(out, sel)
+			if i < 0 {
+				break
+			}
+			open := strings.Index(out[i:], "{")
+			if open < 0 {
+				break
+			}
+			open += i
+			end := matchBrace(out, open) + 1
+			out = out[:i] + out[end:]
+		}
+	}
+	re := regexp.MustCompile(`(?m)^[ \t]*--[a-z0-9-]+\s*:[^;{}]*;[ \t]*$`)
+	return re.ReplaceAllString(out, "")
+}
+
 // 例外表：兜底**故意**取深色真值的场景。默认没有例外。
 // 条目不再命中即失败（同项目其它豁免约定），防止清单变成永久豁免区。
-var tokenFallbackExempt = map[string]string{}
+var tokenFallbackExempt = map[string]string{
+	"--sky-c-bg = #101318":       "workbench.css「10. 深色主题」段（选择器全部限定 [data-theme=\"dark\"]）—— 只在深色语境下生效，兜底取深色真值是有意的",
+	"--sky-c-bg-soft = #171b21":  "同上：workbench.css 深色主题段（[data-theme=\"dark\"] .wb-media-field）",
+	"--sky-c-bg-hover = #1f242b": "同上：workbench.css 深色主题段（[data-theme=\"dark\"] .wb-media-cell img）",
+}
 
 // normalizeColor 把颜色值归一化到可比较的形式：小写、去掉空白、#abc → #aabbcc。
 func normalizeColor(v string) string {
@@ -99,42 +140,47 @@ func themeTokenFallbacks(t *testing.T, themeSrc string) (light, dark map[string]
 func TestUIFallbacksAreLightThemeValues(t *testing.T) {
 	themeSrc := readUIOwnershipFile(t, "static/css/theme.css")
 	light, dark := themeTokenFallbacks(t, themeSrc)
-	uiSrc := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
 
 	fbRe := regexp.MustCompile(`var\(\s*(--sky-c-[a-z0-9-]+)\s*,\s*([^)]*)\)`)
 	seen := map[string]bool{}
 	var hits []string
 	var notes []string
 	total := 0
-	for _, m := range fbRe.FindAllStringSubmatch(uiSrc, -1) {
-		token, fallback := m[1], normalizeColor(m[2])
-		total++
-		if fallback == "" {
-			continue // var(--sky-c-X,) 之类：交给别的判据
+	for _, file := range cssFallbackFiles {
+		src := uiCssStripComments(readUIOwnershipFile(t, "static/css/"+file))
+		if file == "theme.css" {
+			src = stripThemeTokenDefinitions(src)
 		}
-		if dv, ok := dark[token]; ok && fallback == dv {
-			if lv, same := light[token]; same && lv == dv {
-				continue // 两侧真值相同：取谁都一样
+		for _, m := range fbRe.FindAllStringSubmatch(src, -1) {
+			token, fallback := m[1], normalizeColor(m[2])
+			total++
+			if fallback == "" {
+				continue // var(--sky-c-X,) 之类：交给别的判据
 			}
-			key := token + " = " + fallback
-			if reason, exempt := tokenFallbackExempt[key]; exempt {
-				seen[key] = true
-				_ = reason
+			if dv, ok := dark[token]; ok && fallback == dv {
+				if lv, same := light[token]; same && lv == dv {
+					continue // 两侧真值相同：取谁都一样
+				}
+				key := token + " = " + fallback
+				if reason, exempt := tokenFallbackExempt[key]; exempt {
+					seen[key] = true
+					_ = reason
+					continue
+				}
+				hits = append(hits, file+"  "+token+" 兜底 "+fallback+"（= 深色真值）")
 				continue
 			}
-			hits = append(hits, token+" 兜底 "+fallback+"（= 深色真值）")
-			continue
+			if lv, ok := light[token]; ok && fallback == lv {
+				continue
+			}
+			notes = append(notes, file+"  "+token+" 兜底 "+fallback+"（既非浅色也非深色真值）")
 		}
-		if lv, ok := light[token]; ok && fallback == lv {
-			continue
-		}
-		notes = append(notes, token+" 兜底 "+fallback+"（既非浅色也非深色真值）")
 	}
-	if total < 100 {
-		t.Fatalf("只扫到 %d 处 var(--sky-c-*, …)（预期 ≥100）：口径可能已失效", total)
+	if total < 300 {
+		t.Fatalf("只扫到 %d 处 var(--sky-c-*, …)（预期 ≥300）：口径或扫描范围可能已失效", total)
 	}
 	if len(hits) > 0 {
-		t.Errorf("ui.css 有 %d 处兜底取了**深色主题真值**（ui.css 会进没有 theme.css 的前台产物，"+
+		t.Errorf("有 %d 处兜底取了**深色主题真值**（这些 CSS 会进没有 theme.css 的前台产物，"+
 			"那时兜底直接生效）：\n  %s\n请改成浅色真值；确实要取深色值的场景写进 tokenFallbackExempt 并注明理由",
 			len(hits), strings.Join(hits, "\n  "))
 	}

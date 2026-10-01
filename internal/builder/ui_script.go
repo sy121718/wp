@@ -48,12 +48,12 @@ var uiBaseClasses = []string{
 	// 成组排布
 	"form-inline", "form-row",
 	// 卡片
-	"card", "card-header", "card-title", "card-body", "card-footer",
+	"card", "card-header", "card-title", "card-body",
 	// 表格（table-wrap 是窄屏横向滚动的外观容器，与 data-table 同段）
 	"table-wrap", "data-table", "data-table-wide",
 	// 徽标与状态点
 	"badge", "badge-success", "badge-warning", "badge-danger", "badge-info", "badge-mute",
-	"dot", "dot-success", "dot-warning", "dot-danger", "dot-mute",
+	"dot",
 }
 
 var uiBlocks = []uiBlock{

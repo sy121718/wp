@@ -231,16 +231,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 键盘：原生控件 Tab 序即视觉序；统计数字只作展示，不参与交互。 */
 .source-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
 .source-page .card-header > * { min-width: 0; }
-.source-page .form-inline .wbs { width: min(100%, 220px); }
-/* 对接配置 textarea：外观（内边距 / 边框 / 圆角 / 背景 / 字号 / color）走基座 ——
-   inventory_sources.html 的两个控件都带 class="form-textarea"。容器只留宽度与行为。
-   等宽字体与 20px 行高是这处的**刻意差异**（配置内容是 JSON），按门禁的口径写成
-   基座类限定选择器：修饰的是「已带基座类的控件」，不是给裸控件兜底。 */
-.source-page .form-inline textarea.form-textarea {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    line-height: 20px; resize: vertical;
-    width: min(100%, 420px); min-width: 0;
-}
 .source-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin: 8px 0 12px; }
 .source-stat {
     display: flex; flex-direction: column; gap: 2px; padding: 10px 12px;
@@ -260,8 +250,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
         padding: 8px 10px; margin-bottom: 8px;
     }
     .source-page-table td { border: 0; padding: 2px 0; }
-    .source-page .form-inline .wbs,
-    .source-page .form-inline textarea { width: 100%; }
     .source-page .action-row .btn { width: 100%; }
 }
 
@@ -277,17 +265,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .purchase-page .form-inline input[type="number"],
 .purchase-page .form-inline select,
 .purchase-page .form-inline .wbs { width: min(100%, 220px); }
-.purchase-page .receipt-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-/* 采购入库的数量输入：外观走基座，容器只留宽度。
-   注意 .receipt-form 当前在**使用侧零命中**（css_class_audit_test.go 已登记为疑似死样式），
-   这条规则眼下没有匹配对象 —— 只删外观、保留布局，整块清理归死样式批次。 */
-.purchase-page .receipt-form input[type="number"] {
-    width: min(100%, 120px); min-width: 0;
-}
-.purchase-page .receipt-form input[name="unitPrice"] { width: min(100%, 180px); }
 .purchase-page-table { table-layout: fixed; }
 .purchase-page-table th, .purchase-page-table td { word-break: break-word; overflow-wrap: anywhere; }
-.purchase-page-table .receipt-form { min-width: 0; }
 .purchase-page .card-header { flex-wrap: wrap; gap: 4px 8px; }
 .purchase-page .card-header > * { min-width: 0; }
 /* 手机：表格改堆叠块，列名用 data-label 回显；输入与按钮占满整行。 */
@@ -307,10 +286,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .purchase-page .form-inline input[type="number"],
     .purchase-page .form-inline select,
     .purchase-page .form-inline .wbs { width: 100%; }
-    .purchase-page .receipt-form { width: 100%; }
-    .purchase-page .receipt-form input[type="number"],
-    .purchase-page .receipt-form input[name="unitPrice"],
-    .purchase-page .receipt-form .btn { width: 100%; }
     .purchase-page .action-row .btn { width: 100%; }
 }
 
@@ -366,7 +341,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 键盘：原生 input/button/checkbox，Tab 序即视觉序，无需自定义键位。 */
 .attr-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .attr-switch input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--sky-c-primary, #3d444f); }
-.attr-fold { margin-top: 12px; }
 .attr-values { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
 .attr-value-table { display: flex; flex-direction: column; gap: 8px; }
 .attr-value-head {
@@ -406,8 +380,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 勾选面板用 flex + wrap，窄屏自动折行；宽度一律 auto/max-width:100%，不写死像素；
      · 按压反馈用 :active（不带媒体查询）—— 触屏上 :hover 根本不触发，只有 :active 存在；
      · 只用原生 checkbox + label：鼠标点选 / 触屏点按 / 键盘（Tab 进组、空格勾选）都可用。 */
-.var-fold { margin-top: 12px; }
-.var-form { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; }
 .var-group {
     border: 0; margin: 0; padding: 0; min-width: 0;
     display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -427,7 +399,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .var-value { min-height: 44px; padding: 8px 14px; }
 }
 /* ===== 翻译工作台（admin/page_translations.html，多语言 P5c） ===== */
-.tr-toolbar { align-items: center; gap: 12px; flex-wrap: wrap; }
 .tr-table td { vertical-align: top; }
 .tr-field { white-space: nowrap; font-family: monospace; font-size: 12px; }
 .tr-source { max-width: 320px; word-break: break-word; }
@@ -476,13 +447,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .list-toolbar {
     display: flex; align-items: center; gap: 12px;
     padding: 12px 24px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
-}
-.list-toolbar .toolbar-search { flex: 0 1 280px; max-width: 280px; }
-/* 工具条搜索框：外观走基座，容器只留宽度。
-   同样提醒：.toolbar-search 当前使用侧零命中（css_class_audit_test.go 登记为疑似死样式），
-   这条规则眼下没有匹配对象，整块清理归死样式批次。 */
-.list-toolbar .toolbar-search input {
-    width: 100%;
 }
 .list-toolbar .toolbar-spacer { flex: 1; }
 .hidden-form { display: none; }
@@ -544,7 +508,6 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
 }
 .subnav-overview.is-active { background: var(--sky-c-primary-bg); color: var(--sky-c-primary); }
 .subnav-overview svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; flex: 0 0 auto; }
-.subnav-divider { height: 1px; background: var(--sky-c-border); margin: 0 4px 10px; }
 .subnav-pin { display: flex; align-items: center; gap: 8px; padding: 10px 8px; border-top: 1px solid var(--sky-c-border); }
 .pin-btn {
     display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--sky-c-border);
@@ -867,7 +830,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .page-head-main { display: flex; flex-direction: column; gap: var(--ui-sp-xxs); min-width: 0; }
 /* 标题与它的说明必须同行：help 作为独立 flex 子项会被 space-between 推到页头中间，悬空。 */
 .page-title-row { display: flex; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
-.page-head h1, .page-title {
+.page-head h1{
     margin: 0; font-size: 20px; font-weight: 600; line-height: 1.35;
     letter-spacing: -0.01em; color: var(--sky-c-text, #1a1d21);
 }
@@ -963,22 +926,11 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     padding: var(--ui-sp-md) var(--ui-sp-lg);
 }
 .filter-bar .filter-search { flex: 1 1 200px; max-width: 320px; min-width: 0; }
-.filter-bar .filter-spacer { flex: 1 1 auto; }
 .filter-bar .form-select, .filter-bar .form-input, .filter-bar .wbs { width: min(100%, 200px); }
 .filter-bar .form-input.filter-search { width: 100%; }
 /* 「更多筛选」：次要条件收进原生 details，默认不占高度。 */
-.filter-more > summary {
-    display: inline-flex; align-items: center; gap: var(--ui-sp-xs);
-    padding: 6px 10px; font-size: 13px; color: var(--sky-c-text-mute, #6b7280);
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: var(--ui-r-sm);
-    cursor: pointer; list-style: none; background: transparent;
-}
-.filter-more > summary::-webkit-details-marker { display: none; }
 /* 箭头图标由基座统一画（ui.css 的 summary::after + --ui-icon-chevron）：
    这里不再有 content: '▾' / '▴' 的字符替换 —— 那个字形是字体给的，平台之间不一样。 */
-.filter-more > .filter-bar { padding: 0; margin-top: var(--ui-sp-sm); flex-basis: 100%; }
-@media (hover: hover) { .filter-more > summary:hover { color: var(--sky-c-text, #1a1d21); background: var(--sky-c-bg-hover, #ececec); } }
-
 /* 表格滚动区：表头吸顶 + 高度封顶 —— 「列表被压得不能用」的直接解药。
    默认最多占「视口减去页头/工具行/内边距」的剩余空间，最少 240px。 */
 .table-wrap.table-scroll, .table-scroll {
@@ -1143,12 +1095,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 }
 /* 字数提示：上限是**建议值**，超出转警告色而不是拦截输入
    （meta 长度影响的是搜索结果里的展示截断，不是能不能存）。 */
-.field-counter {
-    display: block; margin-top: 2px; font-size: 12px; line-height: 1.5;
-    color: var(--sky-c-text-mute, #6b7280);
-}
-.field-counter.is-over { color: var(--sky-c-warning, #8a6d3b); }
-
 /* ── 13. 列表卡的标题行 ────────────────────────────────────────────────
    列表卡的标题行落点是 `.card-header > .card-title`；本节只为「工具行里放标题」的
    `.list-toolbar` 补一条样式（product_edit 的评分小节用这个形态）。
@@ -1210,7 +1156,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    点击是触屏的等价路径；按钮本身可聚焦，所以键盘同样可达，Esc 关闭。
    浮层用 fixed + 左右 margin auto 居中、宽度 max-width: min(720px, 100vw - 24px)：
    抽屉贴着屏幕右侧，absolute 朝右展开在窄视口必然溢出；居中 + 视口封顶与两侧空间无关。 */
-.nav-panel-preview { display: inline-block; }
 .nav-panel-preview-pop {
     position: fixed; z-index: 60;
     top: calc(var(--ui-sp-lg, 16px) + 52px);
@@ -1227,14 +1172,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 /* [hidden] 必须显式压过上面的 display: flex：浏览器默认的 [hidden]{display:none}
    优先级低于类选择器，不写这一条浮层会「永远显示」。 */
 .nav-panel-preview-pop[hidden] { display: none; }
-.nav-panel-preview-head {
-    display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-sm, 8px);
-    padding: var(--ui-sp-sm, 8px) var(--ui-sp-lg, 16px);
-    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
-    background: var(--sky-c-bg-soft, #f4f5f6);
-}
-.nav-panel-preview-frame { flex: 1 1 auto; width: 100%; min-height: 240px; border: 0; background: #fff; }
-
 /* ── 16. 「从已有内容添加」抽屉里的来源分组 ──────────────────────────────
    这套标记此前没有样式，靠外层 .card 的默认排版撑着。搬进抽屉后外层不再有 .card，
    必须自带外观，否则 20 个复选框会挤成一片。
@@ -1538,8 +1475,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    右栏里因此是完整的页面形态，而不是窄视口下的「一条」。 */
 .preview-thumb { position: relative; overflow: hidden; border: 1px solid var(--border, #d0d7de); border-radius: 6px; background: #fff; height: var(--preview-outer-height, 420px); }
 .preview-thumb > iframe { width: var(--preview-viewport-width, 1440px); height: var(--preview-viewport-height, 900px); border: 0; display: block; transform-origin: 0 0; transform: scale(var(--preview-scale, 1)); }
-.preview-thumb-empty { margin: 0; padding: 24px; color: #57606a; font-size: 14px; line-height: 1.7; }
-
 /* 预览放大覆盖层（ui/preview-zoom.js）：大但仍在后台页面上，Esc 回到编辑。
    内层 iframe 与右栏缩略同一套缩放模型（1440 视口 + transform scale）。 */
 .preview-thumb.is-zoomable { cursor: zoom-in; }
@@ -1572,9 +1507,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 /* 成对字段并排（同一表单里别处满行时，一对短文本各占半栏比「半截」清楚）。
    窄屏落单列 —— 半栏在手机上放不下一个可用的输入框。
    单列同样是 minmax(0, 1fr)：与上面两栏同一判据（1fr 的下限 auto 会被内容顶开）。 */
-.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
-@media (max-width: 720px) { .form-row-2 { grid-template-columns: minmax(0, 1fr); } }
-
 /* 多图字段（ui/media-gallery.js）：缩略图网格 + 逐张 alt。
    网格用 auto-fill 固定列宽：图是等大的方块，按容器宽塞尽量多的列即可。 */
 .media-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)); gap: 12px; }

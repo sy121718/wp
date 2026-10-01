@@ -17,8 +17,6 @@
 }
 .wb-topbar-left, .wb-topbar-right { display: flex; align-items: center; gap: 8px; }
 .wb-topbar-center { display: flex; gap: 4px; }
-.wb-brand { font-weight: 600; letter-spacing: -0.2px; }
-.wb-brand span { color: var(--sky-c-primary, #3d444f); }
 .wb-status { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; margin-right: 4px; }
 
 /* ===== 按钮 ===== */
@@ -44,10 +42,6 @@
 .wb-tabs button.is-active { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
 .wb-inspector-body { display: flex; flex-direction: column; gap: 10px; }
 .wb-palette { padding-bottom: 10px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
-.wb-palette-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-.wb-palette-head span { color: var(--sky-c-text-mute, #6b7280); font-size: 11px; }
-.wb-palette-head span::after { content: '，也可直接拖到画布或结构树'; }
-.wb-palette-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .wb-palette-item {
     min-height: 54px; padding: 7px 8px; text-align: left; cursor: pointer;
     border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 7px; background: var(--sky-c-surface, #fff);
@@ -103,7 +97,6 @@
 .wb-node.is-drop-after::after { bottom: -2px; }
 .wb-node.is-drop-inside { outline: 1px dashed var(--sky-c-primary, #3d444f); }
 .wb-node.is-drop-inside::after { content: '放入容器'; margin-left: auto; color: var(--sky-c-primary, #3d444f); font-size: 10px; }
-.wb-node .wb-node-type { color: var(--sky-c-text-mute, #6b7280); font-size: 11px; }
 .wb-node .wb-node-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-caret { border: none; background: none; cursor: pointer; width: 16px; text-align: center; }
 
@@ -208,11 +201,7 @@
 .wb-media-cell img { width: 100%; height: 84px; object-fit: cover; border-radius: 5px; display: block; background: #f3f4f6; }
 .wb-media-cell span { display: block; margin-top: 4px; font-size: 11px; color: var(--sky-c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-field { position: relative; }
-.wb-media-pick { margin-top: 6px; }
 /* 输入框与媒体按钮同行:按钮绝对定位右侧,输入框留出空间 */
-.wb-field .wb-media-pick { position: absolute; right: 6px; bottom: 6px; padding: 2px 8px; font-size: 11px; }
-
-
 /* ===== 组件库插入位置提示 ===== */
 .wb-library-hint {
     margin: 0; padding: 6px 10px; font-size: 12px; border-radius: 6px;
@@ -248,17 +237,6 @@
     text-transform: none; letter-spacing: .5px; border-bottom: 1px solid var(--sky-c-border, #e5e7eb); padding-bottom: 4px;
 }
 .wb-palette-group:first-child { margin-top: 0; }
-.wb-block-card {
-    grid-column: 1 / -1; display: block; text-align: left; cursor: pointer;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; background: var(--sky-c-surface, #fff); padding: 10px 12px;
-}
-@media (hover: hover) {
-.wb-block-card:hover { border-color: var(--sky-c-primary, #3d444f); background: var(--sky-c-primary-bg, #eceef1); }
-}
-.wb-block-card strong { display: block; font-size: 13px; }
-.wb-block-card span { display: block; margin-top: 2px; color: var(--sky-c-text-mute, #6b7280); font-size: 11px; }
-
-
 /* ===== 单位值输入与三端切换 ===== */
 .wb-unit-row { display: flex; gap: 6px; align-items: center; }
 .wb-unit-value { flex: 1 1 auto; min-width: 0; }
@@ -378,7 +356,6 @@
 .wb-rail-btn:hover { background: var(--sky-c-bg-hover, #f3f4f6); }
 }
 .wb-rail-btn.is-active { background: var(--sky-c-primary-bg, #eff6ff); color: var(--sky-c-primary, #3d444f); }
-.wb-rail-spacer { flex: 1 1 auto; }
 /* 顶栏内的图标栏：去掉独立工具栏的 padding/border/背景，融入顶栏一行 */
 .wb-topbar .wb-rail { padding: 0; border-bottom: none; background: transparent; gap: 2px; }
 /* 顶栏里的图标按钮略小一点，与 8px 顶栏内边距协调 */
@@ -471,11 +448,6 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 .wb-media-tree-node.is-selected { background: var(--sky-c-primary-bg, #eff6ff); color: var(--sky-c-primary, #3d444f); font-weight: 500; }
 .wb-media-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .wb-media-toolbar { display: flex; }
-.wb-media-type {
-    padding: 5px 8px; font-size: 13px;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 6px;
-    background: var(--sky-c-surface, #fff); color: inherit;
-}
 .wb-media-grid { overflow-y: auto; }
 
 /* 媒体弹窗非图片类型角标 */
@@ -547,18 +519,6 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
     background: var(--sky-c-primary-bg, #eff6ff);
     color: var(--sky-c-primary, #3d444f);
 }
-.wb-icon-inline {
-    width: 32px; height: 32px; flex: none;
-    border: 1px solid var(--sky-c-border, #e5e7eb);
-    border-radius: 6px; background: var(--sky-c-surface, #fff);
-    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-    font-size: 16px; color: var(--sky-c-text-secondary, #4b5563);
-}
-.wb-icon-inline svg { width: 16px; height: 16px; }
-@media (hover: hover) {
-.wb-icon-inline:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
-}
-
 /* ===== 检查器紧凑化（减少松散留白） ===== */
 .wb-field { margin-bottom: 2px; }
 .wb-field > label { display: block; margin-bottom: 3px; font-size: 12px; }
@@ -771,8 +731,6 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 .wb-slot-ext { margin-left: auto; color: var(--sky-c-text-faint, #9ca3af); font-size: 12px; }
 
 /* 样式分组标签（基础/布局/背景/边框/变换/动效）：WP 式分段，可换行 */
-.wb-group-tabs { flex-wrap: wrap; }
-.wb-group-tabs .wb-subtab { flex: 0 0 auto; padding: 4px 10px; }
 /* 导航菜单子项缩进 */
 .wb-nav-sub-items { margin-left: 16px; padding-left: 8px; border-left: 2px solid var(--sky-c-border, #e5e7eb); }
 
@@ -816,33 +774,11 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 }
 
 /* 样式折叠区块（基础/布局/背景/边框/变换/动效）：折叠即「未使用」 */
-.wb-acc-head {
-    display: flex; align-items: center; gap: 7px; width: 100%;
-    margin: 14px 0 8px; padding: 7px 10px; text-align: left; cursor: pointer;
-    font-size: 12px; font-weight: 600; border-radius: 8px;
-    border: 1px solid var(--sky-c-border, #e5e7eb); background: var(--sky-c-bg-hover, #f9fafb); color: var(--sky-c-text, #1f2937);
-}
-.wb-acc-head:first-child { margin-top: 0; }
-@media (hover: hover) {
-.wb-acc-head:hover { border-color: var(--sky-c-primary, #3d444f); }
-}
-.wb-acc-arrow {
-    flex: none; width: 0; height: 0; border-left: 5px solid currentColor;
-    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
-    transition: transform .15s ease;
-}
-.wb-acc-head.is-open .wb-acc-arrow { transform: rotate(90deg); }
-.wb-acc-title { flex: 1 1 auto; }
-.wb-acc-count { flex: none; font-size: 11px; font-weight: 400; color: var(--sky-c-text-faint, #9ca3af); }
-
 /* 间距控件的三端切换 */
 .wb-device-tabs { margin-bottom: 6px; }
 .wb-device-tabs .wb-subtab { padding: 3px 8px; font-size: 11px; }
 
 /* 组内「标准 / 悬停」状态切换 */
-.wb-state-tabs { margin-top: -2px; }
-.wb-state-tabs .wb-subtab { padding: 4px 8px; font-size: 11px; }
-
 /* ---------- 检查器样式子标签（基础 / 边框 / 悬停 / 动效） ---------- */
 .wb-subtabs { display: flex; gap: 4px; margin: 2px 0 10px; }
 .wb-subtab {
@@ -1011,10 +947,9 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 /* ---- 2. 字段：相邻 8px；标签与控件同行（.wb-field-compact / 颜色 / 媒体）---- */
 .wb-field { margin-bottom: 8px; }
 .wb-field:last-child { margin-bottom: 0; }
-.wb-field > label,
-.wb-field-label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.wb-field > label,{ display: block; margin-bottom: 4px; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
 .wb-field-compact { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; gap: 8px; }
-.wb-field-compact > label, .wb-field-compact > .wb-field-label { margin-bottom: 0; }
+.wb-field-compact > label{ margin-bottom: 0; }
 .wb-field-color { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; gap: 8px; }
 .wb-field-color > label { margin-bottom: 0; }
 .wb-field-media { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
@@ -1034,10 +969,6 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
     border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
 }
 .wb-group-count { font-size: 11px; font-weight: 400; color: var(--sky-c-text-faint, #9ca3af); }
-.wb-acc-head { margin: 16px 0 8px; padding: 8px; font-size: 14px; border-radius: 8px; }
-.wb-acc-count { font-size: 11px; }
-.wb-inspector-empty { font-size: 12px; padding: 12px; }
-
 /* ---- 4. 控件高度 32px / 紧凑 28px，圆角 6px ---- */
 .wb-field input:not([type="checkbox"]):not([type="radio"]), .wb-field select, .wb-field textarea {
     padding: 4px 8px; font-size: 13px; border-radius: 6px;
@@ -1051,9 +982,8 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 /* ---- 5. 按钮 / 分段 / 子标签：28px 紧凑、32px 默认、圆角 6px ---- */
 .wb-subtabs { gap: 4px; margin: 0 0 8px; }
 .wb-subtab { min-height: 28px; padding: 4px 8px; border-radius: 6px; color: var(--sky-c-text-mute, #6b7280); }
-.wb-group-tabs .wb-subtab, .wb-device-tabs .wb-subtab, .wb-state-tabs .wb-subtab { padding: 4px 8px; }
+.wb-device-tabs .wb-subtab{ padding: 4px 8px; }
 .wb-device-tabs { margin-bottom: 8px; }
-.wb-state-tabs { margin-top: 0; }
 .wb-seg { gap: 4px; }
 .wb-seg-btn { min-height: 28px; padding: 4px 8px; border-radius: 6px; }
 .wb-dev-btn { min-height: 28px; padding: 4px 8px; border-radius: 6px; }
@@ -1063,7 +993,7 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 .wb-field-dims .wb-dims-grid { gap: 4px; }
 .wb-dims-input { min-height: 28px; padding: 4px; border-radius: 6px; }
 .wb-dims-link { min-height: 28px; padding: 4px 8px; border-radius: 6px; }
-.wb-dim-label, .wb-margin-side > span { font-size: 11px; color: var(--sky-c-text-mute, #6b7280); }
+.wb-margin-side > span{ font-size: 11px; color: var(--sky-c-text-mute, #6b7280); }
 .wb-margin-row { gap: 8px; }
 .wb-margin-side { gap: 4px; }
 .wb-margin-side > input { min-height: 32px; padding: 4px 8px; border-radius: 6px; }
@@ -1090,7 +1020,6 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 .wb-media-row { gap: 8px; }
 .wb-media-field { background-color: var(--sky-c-bg, #f9fafb); }
 .wb-media-cell img { background: var(--sky-c-bg-soft, #f3f4f6); }
-.wb-media-field .wb-media-pick { right: 4px; bottom: 4px; padding: 4px 8px; font-size: 11px; }
 .wb-palette-item { border-radius: 6px; }
 .wb-icon-page-btn { border-radius: 6px; }
 

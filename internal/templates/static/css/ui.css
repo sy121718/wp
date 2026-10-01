@@ -570,15 +570,7 @@ body.drawer-open { overflow: hidden; }
 .form-inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); min-width: 0; }
 .form-inline > :is(.form-input, .form-select, .form-textarea, .wbs) { width: min(100%, 220px); min-width: 0; }
 .input-wide { width: min(100%, 320px) !important; }
-.inline-form { display: inline-flex; align-items: center; gap: var(--ui-sp-xs); margin: 0; }
 .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-xs); }
-.action-row .inline-form { flex: 0 0 auto; }
-.entity-row {
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
-    padding: var(--ui-sp-md) 0; border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
-}
-.entity-row > :first-child { flex: 1 1 320px; min-width: 0; }
-.entity-row > .btn, .entity-row > .inline-form { flex: 0 0 auto; }
 .hint { margin: 0; color: var(--sky-c-text-mute, #6b7280); font-size: 13px; line-height: 1.5; }
 .list-reset { list-style: none; margin: 0; padding: 0; }
 .text-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
@@ -600,13 +592,6 @@ body.drawer-open { overflow: hidden; }
 .disclosure > summary:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
 .disclosure[open] > summary { margin-bottom: var(--ui-sp-lg); }
 .disclosure > form + form { margin-top: var(--ui-sp-lg); }
-
-.card-footer {
-    padding: var(--ui-sp-lg) var(--ui-sp-xl);
-    border-top: 1px solid var(--sky-c-border, #e5e7eb);
-    background: var(--sky-c-bg-soft, #f4f5f6);
-}
-
 /* ==========================================================================
    表格
    ========================================================================== */
@@ -893,7 +878,7 @@ select.form-select {
 
 /* ===== 折叠控件（details / summary）的默认指示图标 =====
    摘要行是**后台控件**而不是正文内容，所以基座直接给图标 —— 新页面不用再各写一遍 ▾ / ▸。
-   此前四处各写一份（.filter-more / .section-fold / .article-body-fold / .edit-fold），
+   此前各页各写一份（已收敛到这里：各处的折叠实现与死样式在清账批一并清理），
    字形由字体决定、平台间不一样，而且都是从「文字」直接换成另一个「文字」。
 
    三件事一起做：
@@ -994,11 +979,6 @@ details[open] > summary::after { transform: rotate(0deg); }
     border-radius: 50%;
     margin-inline-end: var(--ui-sp-xs);
 }
-.dot-success { background: var(--sky-c-success, #3f6b4f); }
-.dot-warning { background: var(--sky-c-warning, #8a6d3b); }
-.dot-danger  { background: var(--sky-c-danger, #b34a4a); }
-.dot-mute    { background: var(--sky-c-text-faint, #9ca3af); }
-
 /* ==========================================================================
    分页
    ========================================================================== */
@@ -1052,25 +1032,12 @@ details[open] > summary::after { transform: rotate(0deg); }
    工具类
    ========================================================================== */
 .flex { display: flex; }
-.items-center { align-items: center; }
-.justify-between { justify-content: space-between; }
 .gap-sm { gap: var(--ui-sp-sm); }
-.gap-md { gap: var(--ui-sp-md); }
-.gap-lg { gap: var(--ui-sp-lg); }
-.mt-sm { margin-top: var(--ui-sp-sm); }
-.mt-md { margin-top: var(--ui-sp-md); }
 .mt-lg { margin-top: var(--ui-sp-lg); }
-.mt-xl { margin-top: var(--ui-sp-xl); }
-.mb-sm { margin-bottom: var(--ui-sp-sm); }
-.mb-md { margin-bottom: var(--ui-sp-md); }
 .mb-lg { margin-bottom: var(--ui-sp-lg); }
-.mb-xl { margin-bottom: var(--ui-sp-xl); }
 .text-mute { color: var(--sky-c-text-mute, #6b7280); }
 .text-sm { font-size: 13px; }
 .text-xs { font-size: 12px; }
-.text-right { text-align: right; }
-.w-full { width: 100%; }
-
 /* ==========================================================================
    主题切换按钮
    ========================================================================== */
