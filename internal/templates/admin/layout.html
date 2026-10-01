@@ -83,7 +83,7 @@
                 <form class="lang-switch" method="get" action="/admin/lang">
                     <input type="hidden" name="redirect" value="{{ .["lang_redirect"] }}">
                     <label class="sr-only" for="lang-select">{{ .["t"]("shell.lang.label", "语言") }}</label>
-                    <select class="form-select form-select--sm lang-select" id="lang-select" name="lang"
+                    <select class="form-select form-select--sm" id="lang-select" name="lang"
                             title="{{ .["t"]("shell.lang.label", "语言") }}"
                             onchange="this.form.submit()">
                         {{range _, l := .["langs"]}}

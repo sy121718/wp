@@ -14,14 +14,18 @@
     position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
     opacity: 0; pointer-events: none; border: 0;
 }
+/* 自绘下拉的可见触发器（`<button>`）：**外观来自下面 forms 段的共享外观组**
+   （与 .form-input / .form-select / .form-textarea 在同一条规则里），这里只声明
+   它作为「flex 触发器」特有的排布与交互 —— 盒模型 / 内边距 / 边线 / 圆角 / 底色 /
+   字号一律不再重复（这份外观此前被写了两遍，值还漂了：这里写死 8px 10px，
+   基座走 token 是 8px 12px）。
+
+   与共享外观组的属性**不重叠**（共享组管 width / padding / border / background /
+   color / font / transition / outline，本块管 display / gap / cursor / text-align），
+   所以本块写在共享组之前也不会被覆盖 —— 不依赖书写顺序。 */
 .wbs-trigger {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    width: 100%; box-sizing: border-box; padding: 8px 10px;
-    font-size: 13px; font-family: inherit; line-height: 1.4;
-    border: 1px solid var(--sky-c-border-input, #c6ccd4); border-radius: var(--ui-r-sm);
-    background: var(--sky-c-surface, #fff); color: inherit;
     cursor: pointer; text-align: start;
-    transition: border-color var(--ui-motion-fast), box-shadow var(--ui-motion-fast), background-color var(--ui-motion-fast);
 }
 .wbs-trigger:disabled { opacity: .6; cursor: not-allowed; }
 .wbs-menu[hidden] { display: none; }
@@ -339,8 +343,13 @@ body.drawer-open { overflow: hidden; }
    用户扫一眼就知道自己填的值是不是想要的那个颜色。
    用 background-image 而不是 border-left —— 色带两侧要各画一条极淡的分界线，
    否则 #ffffff / #f4f5f6 这类浅色在白底输入框里等于不存在（实测过）。
-   padding-inline-start 相应让到色带内侧，文字不压在色带上。 */
-.wbc > input {
+   padding-inline-start 相应让到色带内侧，文字不压在色带上。
+
+   选择器用 `.form-input` 而不是裸 `input`：色带是**基座输入框**的补充外观，
+   而包装层里还有一个隐藏的原生 `input[type=color]`（.wbc-native）—— 用裸 input
+   会连它一起命中（今天无害，但下一个往这里加外观的人会误伤它）；
+   按基座类选也顺带满足「给原生控件提供外观的选择器必须含基座类」这条契约。 */
+.wbc > .form-input {
     flex: 1 1 auto; min-width: 0; width: auto;
     padding-inline-start: 14px;
     background-repeat: no-repeat;
@@ -352,7 +361,7 @@ body.drawer-open { overflow: hidden; }
 }
 /* RTL 色带（审计 I18N-02）：渐变没有「内侧/外侧」的逻辑写法，只能显式翻向 ——
    不翻的话色带在 RTL 下留在右边，而文字已经让到右边 14px，两者叠在同一处。 */
-[dir="rtl"] .wbc > input {
+[dir="rtl"] .wbc > .form-input {
     background-image: linear-gradient(to left,
         rgba(16, 20, 26, .3) 0 1px,
         var(--wbc-color, transparent) 1px 7px,
@@ -765,7 +774,8 @@ button.row-title-link {
  * 新页面直接用 class="form-input" / "form-select" / "form-textarea"。 */
 .form-input,
 .form-select,
-.form-textarea {
+.form-textarea,
+.wbs-trigger {
     width: 100%; min-width: 0; box-sizing: border-box;
     font-family: inherit; line-height: 1.4;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
@@ -811,10 +821,16 @@ button.row-title-link {
     box-shadow: 0 0 0 3px rgb(179 74 74 / 15%);
 }
 .form-input::placeholder { color: var(--sky-c-text-faint, #5d656e); }
-/* 原生 select 的箭头：抹掉平台默认那枚（每个平台一个形状），换成与下拉 / 折叠共用的
-   Lucide chevron。右侧留出「图标 + 间距 + 一点余量」，文字不会压到箭头上；
-   RTL 下镜像到左侧 —— background-position 的 right/left 不会跟着书写方向走。 */
-.form-select {
+/* 原生 select **专属**的那点差别：抹掉平台默认箭头（每个平台一个形状），换成与下拉 /
+   折叠共用的 Lucide chevron。右侧留出「图标 + 间距 + 一点余量」，文字不会压到箭头上；
+   RTL 下镜像到左侧 —— background-position 的 right/left 不会跟着书写方向走。
+
+   为什么带 `select.` 前缀（而不是裸 .form-select）：**箭头是原生 select 的事**。
+   自绘替身（.wbs-trigger）用自己的 .wbs-caret 元素画箭头，两者不能共用这条规则 ——
+   否则「给下拉加外观」会顺手作用到触发器上（.wbs-native 那个隐藏的原生 select 仍会匹配
+   本选择器，它本来就是原生 select，箭头留着无害）。共享外观组只管盒模型 / 字体 / 色，
+   元素专属的差别集中在这里。 */
+select.form-select {
     appearance: none;
     -webkit-appearance: none;
     padding-inline-end: calc(var(--ui-icon-chevron-size) + var(--ui-select-caret-gap) + 6px);
@@ -823,7 +839,7 @@ button.row-title-link {
     background-position: right var(--ui-select-caret-gap) center;
     background-size: var(--ui-icon-chevron-size);
 }
-[dir="rtl"] .form-select { background-position: left var(--ui-select-caret-gap) center; }
+[dir="rtl"] select.form-select { background-position: left var(--ui-select-caret-gap) center; }
 /* 紧凑尺寸的**基座尺寸修饰类**（不是某页私有样式）：紧凑下拉在后台外壳里已有真实消费点
    （语言切换），把它提升到基座后，页面不再用「自己的类排在基类之后」来压基座尺寸。
 
@@ -844,9 +860,9 @@ button.row-title-link {
     padding-block: 0;
     padding-inline-start: 8px;
 }
-/* 高对比模式交给系统自己画：appearance: none 会连系统箭头一起抹掉。 */
+/* 高对比模式交给系统自己画：appearance: none 会连系统箭头一起抹掉（同上，原生专属）。 */
 @media (forced-colors: active) {
-    .form-select { appearance: auto; -webkit-appearance: auto; background-image: none; }
+    select.form-select { appearance: auto; -webkit-appearance: auto; background-image: none; }
 }
 .form-textarea { resize: vertical; min-height: 100px; }
 .form-hint { margin-top: var(--ui-sp-xs); font-size: 12px; color: var(--sky-c-text-mute, #8a9199); }
@@ -1055,30 +1071,11 @@ details[open] > summary::after { transform: rotate(0deg); }
    各自在自己的作用域里实现）；将来站点组件要用它，应把 .sr-only 拆到 shared 段，
    而不是解除本段的 backend 归属（门禁：ui_css_split.go 的 BackendExclusiveSectionClasses）。 */
 .lang-switch { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
-.lang-select {
-    /* 只保留与基座**不重复**的差异：形状（胶囊）、语义色、交互指针。
-       尺寸（高度 / 内边距 / 字号）与「右侧给箭头让位」都在基座里 ——
-       forms 段的 .form-select 负责箭头算法、.form-select--sm 负责紧凑尺寸，
-       模板写 class="form-select form-select--sm lang-select"。
-       于是本块不必再靠书写顺序压掉基座尺寸，也就不会再出现「用 background 简写
-       抹掉基座箭头图」那类事故（那次事故的成因正是本块排在基座的箭头规则之后）。
-
-       【层叠层次 · 不得提升本块特异性】本块必须保持**单类 (0,1,0)**：
-         · 靠书写顺序赢基座**基础**块（同权重、写在后面），这是想要的（形状 / 语义色要生效）；
-         · 同时**严格弱于**基座的状态规则 `.form-select:focus` / `:focus-visible` / `:disabled`
-           （(0,2,0)），于是聚焦时边框该变主色就变主色、禁用态该变淡就变淡。
-       千万不要为了「消顺序依赖」把它写成 `.lang-switch .lang-select` 或再加一个类：
-       那会把它提到 (0,2,0)，与 `.form-select:focus` 平级 —— 而本段（langswitch）在文件末尾，
-       顺序取胜，`border` 会把聚焦时的主色边框**静默压掉**（复核 diff 时差点这么改）。
-       机器判据：ui_css_ownership_test.go 的 TestLangSelectKeepsSingleClassSpecificity。 */
-    color: var(--sky-c-text-secondary, #4b5563);
-    border: 1px solid var(--sky-c-border, #232830);
-    border-radius: var(--ui-r-pill);
-    cursor: pointer;
-}
-@media (hover: hover) {
-.lang-select:hover { background-color: var(--sky-c-bg-hover, #1f242b); }
-}
+/* 语言下拉的**私有视觉已退场**：它现在是「基座外观 + 尺寸修饰类」——
+   模板写 class="form-select form-select--sm"，控件长什么样只有一个真源（forms 段）。
+   本段只留 .lang-switch 这层布局（inline-flex / 对齐 / 间距），不再给控件本身任何外观。
+   退场前它靠「排在基座之后」压掉基座尺寸，历史上已经被 background 简写抹掉过一次
+   刚加的箭头图；现在连这条顺序依赖的对象都没有了。 */
 .lang-submit {
     height: 36px;
     padding: 0 10px;

@@ -242,6 +242,16 @@
     }
 
     // ---------- 详情侧栏 ----------
+    // 详情面板里的控件外观统一走基座类（form-input / form-select / form-textarea）。
+    // media-lib.css 不再为这个容器里的控件兜底外观：上一轮「清理容器兜底」漏掉的正是
+    // 这批**动态生成**的控件 —— 模板门禁（admin_form_base_test.go）只扫模板，扫不到这里。
+    // 新增字段一律经 mkBaseControl 创建，别再裸写 createElement；判据见
+    // internal/templates/media_admin_js_base_test.go。
+    function mkBaseControl(tag, baseClass) {
+        var el = document.createElement(tag);
+        el.className = baseClass;
+        return el;
+    }
     function openDetail(item) {
         state.selected = item;
         var panel = document.getElementById('ml-detail');
@@ -273,9 +283,9 @@
             var label = document.createElement('label'); label.textContent = f.label; wrap.appendChild(label);
             var input;
             if (f.type === 'textarea') {
-                input = document.createElement('textarea'); input.rows = 3;
+                input = mkBaseControl('textarea', 'form-textarea'); input.rows = 3;
             } else if (f.type === 'category') {
-                input = document.createElement('select');
+                input = mkBaseControl('select', 'form-select');
                 var optAll = document.createElement('option'); optAll.value = '0'; optAll.textContent = '未分类';
                 input.appendChild(optAll);
                 (function fill(nodes, depth) {
@@ -289,7 +299,7 @@
                 })(state.tree, 0);
                 input.value = String(f.value || 0);
             } else {
-                input = document.createElement('input'); input.type = 'text';
+                input = mkBaseControl('input', 'form-input'); input.type = 'text';
             }
             input.value = f.value == null ? '' : String(f.value);
             inputs[f.key] = input;
@@ -334,7 +344,8 @@
         }).catch(function () { /* 变体状态拉取失败不打断详情 */ });
         var urlRow = document.createElement('div');
         urlRow.className = 'media-detail-url';
-        var urlInput = document.createElement('input'); urlInput.type = 'text'; urlInput.readOnly = true; urlInput.value = item.url || '';
+        var urlInput = mkBaseControl('input', 'form-input');
+        urlInput.type = 'text'; urlInput.readOnly = true; urlInput.value = item.url || '';
         var copyBtn = document.createElement('button'); copyBtn.type = 'button'; copyBtn.className = 'btn btn-sm'; copyBtn.textContent = '复制';
         copyBtn.addEventListener('click', function () { urlInput.select(); document.execCommand('copy'); notify('已复制 URL'); });
         urlRow.appendChild(urlInput); urlRow.appendChild(copyBtn);

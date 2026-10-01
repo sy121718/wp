@@ -123,15 +123,21 @@
 .media-detail-img { width: 100%; border-radius: 8px; margin-bottom: 12px; }
 .media-detail-field { margin-bottom: 10px; }
 .media-detail-field label { display: block; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); margin-bottom: 4px; }
-.media-detail-field input, .media-detail-field select, .media-detail-field textarea {
-    width: 100%; box-sizing: border-box;
-    padding: 7px 10px; font-size: 13px;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px;
-    background: var(--sky-c-surface, #fff); color: inherit;
-}
+/* 字段控件的外观**与宽度**都由基座类提供（form-input / form-select / form-textarea，
+   基座自己声明了 width:100% / box-sizing / 内边距 / 边框 / 圆角 / 字号），所以这里不留任何
+   以容器为作用域的控件规则。这里曾有一份 7px 10px / #e5e7eb / 8px 的兜底外观，与基座的
+   8px 12px / #c6ccd4 / 6px 在同一个抽屉里并存成两种控件 —— 兜底退役的直接原因是
+   media-admin.js 动态生成的字段现在带基座类，判据见 internal/templates/media_admin_js_base_test.go。 */
 .media-detail-meta { font-size: 12px; color: var(--sky-c-text-mute, #6b7280); margin: 12px 0; display: flex; flex-direction: column; gap: 4px; }
 .media-detail-url { display: flex; gap: 6px; margin-bottom: 12px; }
-.media-detail-url input { flex: 1; font-size: 11px; }
+/* 只读 URL 展示框：只留布局（flex:1 与「复制」按钮同排），外观一律由基座类给。
+   这里曾有一条 font-size: 11px（2026-08-31 引入，改动前它是这个框唯一的自定义声明 ——
+   其余外观全是浏览器默认）。实测它确实有收益：11px 时 218px 宽能放下约 45 个字符，
+   13px 时约 38 个（少 18%）。但它是一条「容器给控件外观」的声明，与同抽屉其余控件
+   （基座 13px）又不一致，等于把「控件长什么样」重新变成两处判断 —— 按单一真源的口径删掉。
+   将来若真要更紧凑的只读展示框，正确做法是给基座加一个尺寸修饰类（像 .form-select--sm），
+   不要在这个容器选择器里写视觉。 */
+.media-detail-url input { flex: 1; }
 .media-detail-actions { display: flex; gap: 8px; }
 .media-detail-actions .btn { flex: 1; }
 
