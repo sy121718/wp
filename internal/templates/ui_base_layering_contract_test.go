@@ -29,7 +29,7 @@ import (
 
 // baseSharedClasses 共享外观组的成员；baseStateSuffixes 状态层后缀。
 var (
-	baseSharedClasses = []string{".form-input", ".form-select", ".form-textarea", ".wbs-trigger"}
+	baseSharedClasses = []string{".form-input", ".form-select", ".form-textarea", ".wbs-trigger", ".wbd-trigger"}
 	baseStateSuffixes = []string{":focus-visible", ":focus", ":disabled", `[aria-invalid="true"]`, "::placeholder"}
 )
 
@@ -46,19 +46,19 @@ var sizeProps = []string{
 	"font-size", "line-height", "box-sizing", "letter-spacing",
 }
 
-// TestBaseAppearanceGroupIsSingleSource 控件外观只有一个真源：四个类在同一条规则里。
+// TestBaseAppearanceGroupIsSingleSource 控件外观只有一个真源：五个类在同一条规则里。
 //
-// 防的真实缺陷：同一份外观被写两遍、值还漂了 —— `.wbs-trigger` 曾经自己写死
-// `padding: 8px 10px`，而基座走 token 是 `8px 12px`，同一个下拉在两处显示不同内边距。
+// 防的真实缺陷：同一份外观被写两遍、值还漂了 —— `.wbs-trigger` 与 `.wbd-trigger`
+// 曾经各自写死 `padding: 8px 10px`，而基座走 token 是 `8px 12px`（同一份 UI 里三种内边距）。
 // 白名单是**闭集**：往共享组里塞原生 select 专属属性（background-image 等）会被打回，
 // 否则自绘触发器也会长出浏览器原生那枚箭头。
 func TestBaseAppearanceGroupIsSingleSource(t *testing.T) {
 	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
-	re := regexp.MustCompile(`(?m)^\.form-input,\s*\n\.form-select,\s*\n\.form-textarea,\s*\n\.wbs-trigger\s*\{([^}]*)\}`)
+	re := regexp.MustCompile(`(?m)^\.form-input,\s*\n\.form-select,\s*\n\.form-textarea,\s*\n\.wbs-trigger,\s*\n\.wbd-trigger\s*\{([^}]*)\}`)
 	m := re.FindStringSubmatch(src)
 	if m == nil {
-		t.Fatal("共享外观组不是「.form-input, .form-select, .form-textarea, .wbs-trigger」这一条规则：" +
-			"控件外观被拆成两处真源（.wbs-trigger 曾因此与基座内边距漂了 2px）")
+		t.Fatal("共享外观组不是「.form-input, .form-select, .form-textarea, .wbs-trigger, .wbd-trigger」这一条规则：" +
+			"控件外观被拆成多处真源（两个自绘触发器都曾因此与基座内边距漂了 2px）")
 	}
 	props := cssPropNames(m[1])
 	allowed := map[string]bool{
@@ -69,7 +69,7 @@ func TestBaseAppearanceGroupIsSingleSource(t *testing.T) {
 	}
 	for p := range props {
 		if !allowed[p] {
-			t.Errorf("共享外观组多出属性 %q：它是四条选择器共用的外观真源，"+
+			t.Errorf("共享外观组多出属性 %q：它是五条选择器共用的外观真源，"+
 				"原生 select 专属的东西（箭头）、状态反馈（描边 / 底色 / 透明度）都不该进来", p)
 		}
 	}
@@ -78,20 +78,22 @@ func TestBaseAppearanceGroupIsSingleSource(t *testing.T) {
 			t.Errorf("共享外观组缺少 %q：控件外观的唯一真源必须完整（缺项会被各页面的容器规则补回去）", want)
 		}
 	}
-	// 触发器特有的排布仍然只声明在它自己那段里。
-	trig, ok := cssRuleBlock(src, ".wbs-trigger")
-	if !ok {
-		t.Fatal("ui.css 缺少 .wbs-trigger 规则块")
-	}
-	tp := cssPropNames(trig)
-	for _, p := range []string{"padding", "border", "border-radius", "background", "color", "font-size", "width"} {
-		if _, hit := tp[p]; hit {
-			t.Errorf(".wbs-trigger 段落又声明了 %q：该属性属于共享外观组，写在这里即第二个真源", p)
+	// 触发器特有的排布仍然只声明在它自己那段里（两个触发器同一口径）。
+	for _, trigSel := range []string{".wbs-trigger", ".wbd-trigger"} {
+		trig, ok := cssRuleBlock(src, trigSel)
+		if !ok {
+			t.Fatalf("ui.css 缺少 %s 规则块", trigSel)
 		}
-	}
-	for _, want := range []string{"display", "gap", "cursor"} {
-		if _, hit := tp[want]; !hit {
-			t.Errorf(".wbs-trigger 段落缺少它特有的 %q（flex 触发器排布）", want)
+		tp := cssPropNames(trig)
+		for _, p := range []string{"padding", "border", "border-radius", "background", "color", "font-size", "width", "box-sizing", "transition"} {
+			if _, hit := tp[p]; hit {
+				t.Errorf("%s 段落又声明了 %q：该属性属于共享外观组，写在这里即第二个真源", trigSel, p)
+			}
+		}
+		for _, want := range []string{"display", "gap", "cursor"} {
+			if _, hit := tp[want]; !hit {
+				t.Errorf("%s 段落缺少它特有的 %q（可点的值触发器排布）", trigSel, want)
+			}
 		}
 	}
 }
@@ -302,6 +304,30 @@ func isInheritanceReset(block string, chrome []string) bool {
 type cssRule struct {
 	selectors []string
 	body      string
+}
+
+// TestPrimaryFallbacksUseLightThemeValues `var(--sky-c-primary…, X)` 的兜底值必须是浅色真值。
+//
+// 防的真实缺陷：ui.css 会被注入到**没有 theme.css** 的前台产物里，那里的 --sky-c-primary
+// 直接取兜底值。兜底写成深色主题的主色（这里曾经是 #aeb6c0）会让产物里的焦点环偏浅，
+// 而同页的自绘控件（.wbd-day / .wbc-swatch…）取的是浅色真值 #3d444f —— 同一份 UI 两套焦点环。
+// 与上一批修掉的 5 处 `var(--sky-c-text-secondary, #c2c8cf)` 是同一类缺陷。
+func TestPrimaryFallbacksUseLightThemeValues(t *testing.T) {
+	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
+	re := regexp.MustCompile(`var\(--sky-c-primary(?:-bg)?,\s*([^)]+)\)`)
+	hits := re.FindAllStringSubmatch(src, -1)
+	if len(hits) < 5 {
+		t.Fatalf("只扫到 %d 处 --sky-c-primary 兜底（预期 ≥5）：口径可能已失效", len(hits))
+	}
+	for _, m := range hits {
+		switch v := strings.TrimSpace(m[1]); v {
+		case "#3d444f", "#eceef1":
+			// 浅色主题真值：--c-primary / --c-primary-bg
+		default:
+			t.Errorf("--sky-c-primary 系列兜底取了 %q：必须是浅色主题真值（#3d444f / #eceef1）——"+
+				"它在缺 theme.css 的前台产物里直接生效，写深色值会让焦点环在产物里偏浅", v)
+		}
+	}
 }
 
 // cssRuleBodyFor 取出「选择器列表里包含 sel」的那条规则的声明体 —— 基座的状态规则是

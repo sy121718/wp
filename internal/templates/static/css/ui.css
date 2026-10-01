@@ -27,13 +27,15 @@
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     cursor: pointer; text-align: start;
 }
-.wbs-trigger:disabled { opacity: .6; cursor: not-allowed; }
 .wbs-menu[hidden] { display: none; }
 .wbs-option[hidden] { display: none; }
+/* 自绘触发器族的悬停反馈：两个触发器（下拉 / 日期区间）一份规则。
+   刻意**不进**基座共享组 —— 原生 input / select 没有 hover 边框反馈，
+   并进去等于改基座行为（超出「触发器族归一」的范围）。 */
 @media (hover: hover) {
-.wbs-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+.wbs-trigger:hover,
+.wbd-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
 }
-.wbs-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 .wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 下拉箭头与原生 select / 折叠共用同一枚图标（见文件顶部 --ui-icon-chevron）：
@@ -87,21 +89,15 @@
     position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
+/* 日期区间的「值触发器」：与自绘下拉的触发器（.wbs-trigger）是**同一语义角色** ——
+   「显示当前值、点了展开」的触发面，所以外观必须同源，一律来自下面 forms 段的共享外观组
+   （.wbs-trigger 是上一批归一的先例；这两块曾经逐字相同，等于同一份外观写两遍）。
+   这里只留它在这个 flex 行里特有的排布，以及打开/禁用/悬停状态。 */
 .wbd-trigger {
-    flex: 1 1 auto; min-width: 0;
+    flex: 1 1 auto;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    box-sizing: border-box; padding: 8px 10px;
-    font-size: 13px; font-family: inherit; line-height: 1.4;
-    border: 1px solid var(--sky-c-border-input, #c6ccd4); border-radius: var(--ui-r-sm);
-    background: var(--sky-c-surface, #fff); color: inherit;
     cursor: pointer; text-align: start;
-    transition: border-color var(--ui-motion-fast), box-shadow var(--ui-motion-fast), background-color var(--ui-motion-fast);
 }
-.wbd-trigger:disabled { opacity: .6; cursor: not-allowed; }
-@media (hover: hover) {
-.wbd-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
-}
-.wbd-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
 .wbd.is-open .wbd-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbd-value {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -775,7 +771,8 @@ button.row-title-link {
 .form-input,
 .form-select,
 .form-textarea,
-.wbs-trigger {
+.wbs-trigger,
+.wbd-trigger {
     width: 100%; min-width: 0; box-sizing: border-box;
     font-family: inherit; line-height: 1.4;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
@@ -788,24 +785,41 @@ button.row-title-link {
     transition: border-color var(--ui-tr-fast), box-shadow var(--ui-tr-fast);
     outline: none;
 }
-/* 键盘可见焦点：鼠标点击不显得脏，Tab 进来必须看得见（无障碍硬要求）。 */
+/* 键盘可见焦点：鼠标点击不显得脏，Tab 进来必须看得见（无障碍硬要求）。
+   原生三个控件与自绘两个触发器共用同一条规则 —— 焦点环在整套 UI 里只有一份外观。
+   兜底值必须是**浅色主题的真值** #3d444f：本文件会被注入到**没有 theme.css** 的前台产物里，
+   兜底值在那里直接生效；写成深色主题的主色（这里曾经是 #aeb6c0）会让产物里的焦点环偏浅、
+   与自绘控件各取一套值。 */
 .form-input:focus-visible,
 .form-select:focus-visible,
-.form-textarea:focus-visible {
-    outline: 2px solid var(--sky-c-primary, #aeb6c0);
+.form-textarea:focus-visible,
+.wbs-trigger:focus-visible,
+.wbd-trigger:focus-visible {
+    outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 1px;
 }
+/* 同上：焦点态的边线与光晕兜底也用浅色真值（--sky-c-primary-bg 的浅色真值是 #eceef1 ——
+   与 .wbd-day / .wbd-nav 这些自绘控件取的是同一个）。 */
 .form-input:focus,
 .form-select:focus,
 .form-textarea:focus {
-    border-color: var(--sky-c-primary, #aeb6c0);
-    box-shadow: 0 0 0 3px var(--sky-c-primary-bg, #2a3038);
+    border-color: var(--sky-c-primary, #3d444f);
+    box-shadow: 0 0 0 3px var(--sky-c-primary-bg, #eceef1);
 }
+/* 禁用态：五个触发面共用同一份反馈（两个自绘触发器此前各写了一遍一样的 opacity / cursor）。 */
+.form-input:disabled,
+.form-select:disabled,
+.form-textarea:disabled,
+.wbs-trigger:disabled,
+.wbd-trigger:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+/* 禁用**底色**只给原生控件：自绘触发器的禁用态按现状由 opacity 表达 ——
+   给它们加底色属可见变化（实测确认现状无底色），不在本次归一范围内。 */
 .form-input:disabled,
 .form-select:disabled,
 .form-textarea:disabled {
-    opacity: .6;
-    cursor: not-allowed;
     /* background-color 而非 background：shorthand 会把下面 select 的箭头图一起抹掉
        （这一条的特异性比 .form-select 的箭头规则高，禁用态会变成没有箭头的空框）。 */
     background-color: var(--sky-c-bg-hover, #f4f5f7);
@@ -1007,8 +1021,10 @@ details[open] > summary::after { transform: rotate(0deg); }
 .pagination-pages .pagination-btn:hover { background: var(--sky-c-bg-hover, #1f242b); text-decoration: none; }
 }
 .pagination-pages .pagination-btn.is-active {
-    background: var(--sky-c-primary-bg, #2a3038);
-    color: var(--sky-c-primary, #aeb6c0);
+    /* 兜底值同样是**浅色主题真值**（本文件会进没有 theme.css 的前台产物，
+       写深色主题的 #2a3038 / #aeb6c0 会让产物里的激活态偏暗）。 */
+    background: var(--sky-c-primary-bg, #eceef1);
+    color: var(--sky-c-primary, #3d444f);
     font-weight: 500;
 }
 .pagination-pages .pagination-btn:disabled,
