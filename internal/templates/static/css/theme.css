@@ -562,12 +562,17 @@ body.sidebar-collapsed .subnav { flex-basis: 0; width: 0; border-right: 0; opaci
 @media (hover: hover) {
 .tree-toggle:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-text); }
 }
+/* 树折叠的三角：与下拉共用同一枚 Lucide chevron（ui.css 的 --ui-icon-chevron）。
+   原来是 border 拼的 4px 实心三角 —— 全站这类手绘三角一共有八九处，各画各的形状。 */
 .tree-toggle .caret {
-    width: 0; height: 0; border-left: 4px solid currentColor; border-top: 3.5px solid transparent;
-    border-bottom: 3.5px solid transparent; transform: rotate(90deg); transform-origin: 40% 50%;
+    width: 14px; height: 14px;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    transform: rotate(0deg); /* 展开：指向下 */
     transition: transform var(--tr-fast);
 }
-.tree-node:not(.is-open) > .tree-toggle .caret { transform: rotate(0deg); }
+.tree-node:not(.is-open) > .tree-toggle .caret { transform: rotate(-90deg); /* 收起：指向右 */ }
 .tree-node.has-children > .tree-link { padding-right: 30px; }
 .tree-branch-body { display: none; }
 .tree-node.is-open > .tree-branch-body { display: block; }
@@ -954,8 +959,8 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     cursor: pointer; list-style: none; background: transparent;
 }
 .filter-more > summary::-webkit-details-marker { display: none; }
-.filter-more > summary::after { content: '▾'; font-size: 10px; }
-.filter-more[open] > summary::after { content: '▴'; }
+/* 箭头图标由基座统一画（ui.css 的 summary::after + --ui-icon-chevron）：
+   这里不再有 content: '▾' / '▴' 的字符替换 —— 那个字形是字体给的，平台之间不一样。 */
 .filter-more > .filter-bar { padding: 0; margin-top: var(--ui-sp-sm); flex-basis: 100%; }
 @media (hover: hover) { .filter-more > summary:hover { color: var(--sky-c-text, #1a1d21); background: var(--sky-c-bg-hover, #ececec); } }
 
@@ -1172,8 +1177,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     cursor: pointer; list-style: none;
 }
 .section-fold > summary::-webkit-details-marker { display: none; }
-.section-fold > summary::after { content: '▾'; margin-left: auto; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
-.section-fold[open] > summary::after { content: '▴'; }
+.section-fold > summary::after { margin-left: auto; }
 .section-fold > summary .fold-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, #1a1d21); }
 .section-fold > summary .fold-note { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
 .section-fold[open] > summary { border-bottom: 1px solid var(--sky-c-border, #e5e7eb); }
@@ -1237,16 +1241,21 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     background: var(--sky-c-bg-soft, #f4f5f6);
     cursor: pointer; list-style: none;
 }
-/* 去掉原生三角，用自绘 caret 保证跨浏览器一致 */
+/* 去掉原生三角，用与下拉共用的 Lucide chevron 保证跨浏览器一致 */
 .nav-source-summary::-webkit-details-marker { display: none; }
+/* 本行的箭头在**左侧**且由 ::before 自绘：基座那条 summary::after 在这里必须关掉，
+   否则同一行会出现两个箭头。 */
+.nav-source-summary::after { content: none; -webkit-mask: none; mask: none; }
 .nav-source-summary::before {
     content: ''; flex: 0 0 auto;
-    width: 6px; height: 6px;
-    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-    transform: rotate(-45deg); transition: transform var(--ui-motion-fast, 120ms);
-    opacity: .6;
+    width: 14px; height: 14px;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    transform: rotate(-90deg); /* 收起：指向右 */
+    transition: transform var(--ui-motion-fast, 120ms);
 }
-.nav-source-group[open] > .nav-source-summary::before { transform: rotate(45deg); }
+.nav-source-group[open] > .nav-source-summary::before { transform: rotate(0deg); /* 展开：指向下 */ }
 @media (hover: hover) {
     .nav-source-summary:hover { background: var(--sky-c-bg-hover, #f4f5f7); }
 }
@@ -1298,12 +1307,15 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     .perm-toggle:hover { background: var(--sky-c-bg-active, #e4e4e4); color: var(--sky-c-text, #1a1d21); }
 }
 .perm-toggle.is-leaf { background: transparent; cursor: default; }
+/* 同上：权限树的折叠三角也曾是 border 拼的 6px L 形。 */
 .perm-toggle .caret {
-    width: 6px; height: 6px;
-    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
-    transform: rotate(45deg) translate(-1px, -1px);
+    width: 14px; height: 14px;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    transform: rotate(0deg); /* 展开：指向下 */
 }
-.perm-node.is-collapsed > .perm-toggle .caret { transform: rotate(-45deg) translate(-1px, 1px); }
+.perm-node.is-collapsed > .perm-toggle .caret { transform: rotate(-90deg); /* 收起：指向右 */ }
 .perm-label {
     flex: 1 1 auto; min-width: 0;
     display: flex; align-items: center; gap: 8px;
@@ -1500,8 +1512,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    默认展开（模板上是 <details open>）—— 折叠是给写长文时腾地方用的，不是默认收起。 */
 .article-body-fold > summary { cursor: pointer; user-select: none; display: flex; align-items: center; gap: .5rem; font-size: 1.05rem; font-weight: 600; }
 .article-body-fold > summary::-webkit-details-marker { display: none; }
-.article-body-fold > summary::after { content: "▾"; margin-left: auto; opacity: .55; font-weight: 400; }
-.article-body-fold:not([open]) > summary::after { content: "▸"; }
+.article-body-fold > summary::after { margin-left: auto; }
 .article-body-fold[open] > summary { margin-bottom: .75rem; }
 
 /* 商品编辑页两栏（左表单 + 右详情页预览）。
@@ -1578,6 +1589,5 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .edit-fold { border-top: 1px solid var(--border, #d0d7de); padding-top: 12px; margin-top: 12px; }
 .edit-fold > summary { cursor: pointer; user-select: none; display: flex; align-items: center; gap: .5rem; font-weight: 600; }
 .edit-fold > summary::-webkit-details-marker { display: none; }
-.edit-fold > summary::after { content: "▾"; margin-left: auto; opacity: .55; font-weight: 400; }
-.edit-fold:not([open]) > summary::after { content: "▸"; }
+.edit-fold > summary::after { margin-left: auto; }
 .edit-fold[open] > summary { margin-bottom: .75rem; }

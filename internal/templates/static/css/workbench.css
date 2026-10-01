@@ -405,7 +405,17 @@
 @media (hover: hover) {
 button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
 }
-.wb-palette-caret::before { content: '▾'; display: inline-block; transition: transform .15s; }
+/* 与下拉 / 折叠共用同一枚 Lucide chevron（ui.css 的 --ui-icon-chevron）。 */
+.wb-palette-caret::before {
+    content: '';
+    display: inline-block;
+    width: 14px; height: 14px;
+    vertical-align: middle;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    transition: transform .15s;
+}
 .wb-palette-group:not(.is-open) .wb-palette-caret::before { transform: rotate(-90deg); }
 .wb-palette-group-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 2px 0 8px; }
 

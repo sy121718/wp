@@ -91,6 +91,9 @@ trix-editor.rich-editor details {
     border-radius: 6px;
 }
 trix-editor.rich-editor summary { cursor: pointer; font-weight: 600; }
+/* 编辑器正文里的折叠块是**作者内容**，不是后台控件：基座那枚折叠箭头（ui.css 的
+   summary::after）不适用于它 —— 否则正文排版里凭空多出一个后台控件的图标。 */
+trix-editor.rich-editor summary::after { content: none; -webkit-mask: none; mask: none; }
 
 /* ── 工具条：软底分段条（2026-10-01 refit）────────────────────────────────
  *

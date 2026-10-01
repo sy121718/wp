@@ -169,8 +169,20 @@
     cursor: pointer; color: var(--sky-c-text-mute, #9ca3af);
     font-size: 10px; flex: none; padding: 0;
 }
-.media-tree-caret::before { content: '▾'; }
-.media-tree-caret.is-collapsed::before { content: '▸'; }
+/* 与下拉 / 折叠共用同一枚 Lucide chevron（ui.css 的 --ui-icon-chevron）：
+   原来是文字 ▾ / ▸，字形随字体与平台变。 */
+.media-tree-caret::before {
+    content: '';
+    display: block;
+    width: 14px; height: 14px;
+    margin: 0 auto;
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    transform: rotate(0deg); /* 展开：指向下 */
+    transition: transform .15s;
+}
+.media-tree-caret.is-collapsed::before { transform: rotate(-90deg); /* 收起：指向右 */ }
 .media-tree-caret:empty { visibility: hidden; }
 .media-tree-children.is-collapsed { display: none; }
 /* ===== 媒体变体与批量下载（048 改造） ===== */
