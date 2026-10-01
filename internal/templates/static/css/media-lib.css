@@ -21,11 +21,9 @@
 }
 .media-tree-head { display: flex; align-items: center; justify-content: space-between; }
 .media-tree-head strong { font-size: 14px; }
-.media-tree-search, .media-search, .media-select {
-    padding: 7px 10px; font-size: 13px;
-    border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px;
-    background: var(--sky-c-surface, #fff); color: inherit; width: 100%; box-sizing: border-box;
-}
+/* 这三个控件的外观走基座（模板里已带 class="form-input" / "form-select"）：
+   这里不再重复写内边距 / 边框 / 圆角 / 背景 —— 那是把「输入框长什么样」抄成两份，
+   改一处就会与另一处分叉（基座清洗前的写法正是如此）。宽度差异由下面两条容器规则给。 */
 .media-tree { font-size: 13px; }
 .media-tree-children { list-style: none; margin: 0; padding: 0 0 0 14px; }
 .media-tree-node {

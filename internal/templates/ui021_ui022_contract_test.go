@@ -44,7 +44,10 @@ func TestUI022AdminLoginResponsiveContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"width: min(100%, 416px)", "padding: 16px", "box-sizing: border-box", "max-height: calc(100vh - 32px)", `role="alert"`, `aria-live="polite"`, "msgEl.focus()", "max-width: 42%", "outline: 2px solid var(--c-primary"} {
+	for _, want := range []string{"width: min(100%, 416px)", "padding: 16px", "box-sizing: border-box", "max-height: calc(100vh - 32px)", `role="alert"`, `aria-live="polite"`, "msgEl.focus()", "max-width: 42%",
+		// 输入框视觉走基座（2026-10-01 基座清洗）：本页只留尺寸差异，
+		// 边框 / 圆角 / 焦点 / 禁用态由 ui.css 给 —— 契约跟着改成断言这两件引用。
+		"/static/css/ui.css", `class="form-input"`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("登录页契约缺少 %q", want)
 		}

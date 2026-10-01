@@ -16,7 +16,7 @@
 {{if hasRows}}
 {{range i, l := .Locales}}
 <div class="locale-row">
-    <input class="locale-lang" type="text" name="langs" value="{{l.Lang}}" maxlength="35" list="sky-locale-options" placeholder="{{ .["t"]("admin.common.locale.ph.lang", "语言码，如 zh-CN") }}" required>
+    <input class="form-input locale-lang" type="text" name="langs" value="{{l.Lang}}" maxlength="35" list="sky-locale-options" placeholder="{{ .["t"]("admin.common.locale.ph.lang", "语言码，如 zh-CN") }}" required>
     <label class="locale-flag"><input type="radio" name="defaultIndex" value="{{i}}"{{if l.IsDefault}} checked{{end}}> {{ .["t"]("admin.common.default", "默认") }}</label>
     <label class="locale-flag"><input type="checkbox" name="enabledIndex" value="{{i}}"{{if l.Enabled}} checked{{end}}> {{ .["t"]("admin.common.locale.enabled", "启用") }}</label>
     <button type="button" class="btn btn-sm" hx-post="/admin/settings/locales/rows" hx-vals='{"action":"remove","removeIndex":"{{i}}"}' hx-include="#locale-form" hx-target="#locale-rows" hx-swap="innerHTML">{{ .["t"]("admin.common.action.delete", "删除") }}</button>

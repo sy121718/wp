@@ -99,24 +99,20 @@ func readUIOwnershipFile(t *testing.T, rel string) string {
 	return string(raw)
 }
 
-// TestAdminFormFallbackScopeIsNarrow 裸控件兜底必须存在、且只用 :where 降特异性。
-func TestAdminFormFallbackScopeIsNarrow(t *testing.T) {
+// TestAdminFormFallbackIsGone 裸控件兜底不得回来。
+//
+// 它曾经存在（.admin-layout :where(input…, select, textarea)，审计 UIK-009）。2026-10-01 清洗：
+// 真裸控件已清零（见 admin_form_base_test.go），控件外观只有「基座类」一个真源 ——
+// 「容器可以强制给外观」会把这一个真源变成两个（基座类 + 容器兜底），
+// 往后每次改基座都要重新判断谁赢。这里反向钉住它不回流。
+func TestAdminFormFallbackIsGone(t *testing.T) {
 	sels := uiCssSelectors(readUIOwnershipFile(t, "static/css/ui.css"))
-	var fallback []string
 	for _, s := range sels {
 		if strings.Contains(s, ".admin-layout") {
-			fallback = append(fallback, s)
+			t.Errorf("ui.css 又出现了 .admin-layout 相关规则 %q：控件外观只应由基座类提供", s)
 		}
 	}
-	if len(fallback) == 0 {
-		t.Fatal("ui.css 缺少后台裸控件的兜底规则（.admin-layout :where(...)）：新增裸控件会掉回浏览器默认外观")
-	}
-	for _, s := range fallback {
-		if !strings.HasPrefix(s, ".admin-layout :where(") {
-			t.Errorf("兜底选择器 %q 没有用 :where() 降特异性：它会和基座类、桥接规则抢样式", s)
-		}
-	}
-	// 作用域隔离：.admin-layout 只应出现在后台外壳模板里，否则兜底会跟着产物投递出去。
+	// 作用域隔离（原断言保留）：.admin-layout 只应出现在后台外壳模板里。
 	// 递归枚举（模板已按后端模块分进子目录）：退回 `admin/*.html` 只会扫到根下 3 个壳页面，
 	// 「.admin-layout 只该有一个宿主」这条判据就形同虚设了。
 	pages := adminTemplateFiles(t)
@@ -128,25 +124,21 @@ func TestAdminFormFallbackScopeIsNarrow(t *testing.T) {
 			continue
 		}
 		if strings.Contains(readUIOwnershipFile(t, p), "admin-layout") {
-			t.Errorf("%s 自带 .admin-layout：兜底样式的作用域前提被打破（这个类只该有一个宿主）", p)
+			t.Errorf("%s 自带 .admin-layout：这个类只该有一个宿主（admin/layout.html）", p)
 		}
 	}
 }
 
-// TestLegacyBridgeSelectorsRemovedFromBase ui.css 里不再有零匹配的容器桥接选择器。
+// TestLegacyBridgeSelectorsRemovedFromBase ui.css 里没有任何容器桥接选择器。
+//
+// 三种桥接（.pages-form / .attr-form-head / .locale-add input）到 2026-10-01 全部退役：
+// 控件模板都带基座类了，靠祖先容器给外观的写法留着只会让「输入框长什么样」有两个真源。
 func TestLegacyBridgeSelectorsRemovedFromBase(t *testing.T) {
 	sels := uiCssSelectors(readUIOwnershipFile(t, "static/css/ui.css"))
-	for _, prefix := range []string{".pages-form ", ".pages-form:", ".attr-form-head"} {
+	for _, prefix := range []string{".pages-form ", ".pages-form:", ".attr-form-head", ".locale-add"} {
 		if hits := uiCssSelWithPrefix(sels, prefix); len(hits) > 0 {
-			t.Errorf("ui.css 仍有零匹配的桥接选择器 %v：容器已不在 admin 模板里出现（pages_class_migration_test.go），应改用基座类", hits)
+			t.Errorf("ui.css 仍有容器桥接选择器 %v：模板已带基座类，视觉只该由基座类提供", hits)
 		}
-	}
-	if !uiCssHasSelector(sels, ".locale-add input") {
-		t.Error("ui.css 缺少 .locale-add input：settings.html 的语言新增行仍依赖它（本轮唯一还在用的桥接）")
-	}
-	// 反向：桥接的宿主仍在模板里，否则上面那条断言会因为「容器也没了」而失去意义。
-	if !strings.Contains(adminTemplateSource(t, "settings.html"), "locale-add") {
-		t.Error("settings.html 不再使用 locale-add：ui.css 的 .locale-add input 已成死选择器，请一并删除")
 	}
 }
 

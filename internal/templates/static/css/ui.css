@@ -618,7 +618,9 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    color: var(--sky-c-text-mute, #6b7280);
+    /* text-secondary 而不是 text-mute：表头是 12px 小字，mute 在 bg-soft 上只有 4.43:1，
+       差一点点够不到 4.5:1（WCAG 1.4.3）。 */
+    color: var(--sky-c-text-secondary, #4b5563);
     background: var(--sky-c-bg-soft, #f4f5f6);
     border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
     white-space: nowrap;
@@ -728,37 +730,17 @@ button.row-title-link {
     margin-bottom: var(--ui-sp-xs);
     font-size: 13px;
     font-weight: 500;
-    color: var(--sky-c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #4b5563);
 }
 .form-label .req { color: var(--sky-c-danger, #cf8080); }
 
-/* ===== 后台裸控件的兜底外观（审计 UIK-009）=====
-   【消费端归属 · 后台专属段（owner=backend）】产物注入时整段跳过（审计 UI-01）：
-   .admin-layout 只出现在 admin/layout.html，站点产物侧没有任何消费者；此前它随 forms 段
-   进产物 —— 每个用到表单控件的产物白带约 6KB 的后台兜底。
-   后台是 <link href="/static/css/ui.css"> 直引整份，本段在后台照常生效（语义未变）。
-   后台仍有页面把输入框裸写：既没有 form-input 系列类，也不在任何桥接容器里，
-   于是走浏览器默认外观 —— 同一个后台里同样是输入框却有三种长相（基座 / 桥接 / 默认）。
-   这里补一层兜底，作用域与优先级都收得很紧：
-     · 只覆盖 .admin-layout —— 这个类只出现在 admin/layout.html，前台产物与工作台都没有它，
-       基座注入不会把后台外观带进产出页面；
-     · 只补外观不补宽度 —— 裸控件所在容器（工具栏 / 行内表单）自己决定宽度，
-       这里写 width: 100% 会把 .form-inline 里的小输入框撑满整行；
-     · .admin-layout :where(...) 的特异性是 (0,1,0)，且写在基座控件之前 ——
-       .form-input 等同特异性规则、桥接容器规则都在它之后定义，
-       谁都不会被它改写；它只对「没有任何类规则命中」的裸控件生效。
-   已知边界：login.html 不在 .admin-layout 内，且只引 theme.css 不引 ui.css，
-   那 3 个输入框走不到这里（待办清单里单独记）。 */
-.admin-layout :where(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="color"]):not([type="range"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not(.wbs-native), select, textarea) {
-    padding: var(--ui-sp-sm) var(--ui-sp-md);
-    font-family: inherit;
-    font-size: 13px;
-    line-height: 1.4;
-    color: var(--sky-c-text, #1a1d21);
-    background: var(--sky-c-surface, #fff);
-    border: 1px solid var(--sky-c-border-input, #c6ccd4);
-    border-radius: var(--ui-r-sm);
-}
+/* 这里曾有一层「后台裸控件兜底外观」（审计 UIK-009 的 .admin-layout :where(input…, select,
+   textarea)）。2026-10-01 清洗掉：它想兜住的 55 个真裸控件在之前几批里已全部迁到基座类，
+   剩下的 media 4 个与 locale_rows 1 个本来就有各自的完整样式，login 那 3 个从不在它的
+   作用域内（不在 .admin-layout，也只引 theme.css）—— 零消费者。
+   留着的代价不是几行 CSS，而是「控件外观可以由容器强制给」这条隐性依赖：
+   真源从一个（基座类）变成两个（基座类 + 容器兜底），往后每次改基座都要重新判断谁赢。
+   现在真源只有基座类；裸控件由 admin_form_base_test.go 钉住「必须为 0」，新增裸写即失败。 */
 
 /* 原始控件：输入 / 下拉 / 多行文本。
  *
@@ -770,19 +752,14 @@ button.row-title-link {
  *   · 新页面直接用 class="form-input" / "form-select"，不要依赖容器选择器 ——
  *     依赖容器的写法正是「换个地方用就掉样式」的根源。
  */
-/* 存量桥接（审计 UIK-010 的收尾）：.pages-form / .attr-form-head 的容器选择器已从这里删除 ——
- * 依赖它们的存量页面在本轮之前已全部迁到公共类（admin 模板里不再出现 pages-*，
- * pages_class_migration_test.go 钉住这一点），选择器零匹配，留着只会让「哪些容器还受支持」
- * 变得含糊。仍然保留 .locale-add input：settings.html 的语言新增行还在用它，
- * 它的视觉与其它输入框共用下面这组规则（唯一来源没有分叉）。
- *
- * 新页面请直接用 class="form-input" / "form-select" —— 桥接只为存量，不再扩大使用面。
- * 逐页迁移的进度与规则见 docs/02-F-ui-kit.md §10。
- */
+/* 桥接容器已全部退役（2026-10-01 收尾）：.pages-form / .attr-form-head 早先就删了，
+ * .locale-add input 这次也去掉 —— settings.html 的语言行与 partials/locale_rows.html
+ * 现在都直接带基座类。于是「输入框长什么样」只剩下面这一处真源；
+ * 容器规则只写布局差异（宽度 / 间距 / 排列），不再重复写视觉。
+ * 新页面直接用 class="form-input" / "form-select" / "form-textarea"。 */
 .form-input,
 .form-select,
-.form-textarea,
-.locale-add input {
+.form-textarea {
     width: 100%; min-width: 0; box-sizing: border-box;
     font-family: inherit; line-height: 1.4;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
@@ -978,7 +955,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     border-radius: var(--ui-r-sm);
     font-size: 13px;
     font-family: inherit;
-    color: var(--sky-c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #4b5563);
     background: transparent;
     border: 1px solid transparent;
     cursor: pointer;
@@ -1036,7 +1013,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     background: var(--sky-c-surface, #fff);
     cursor: pointer;
     font-size: 16px;
-    color: var(--sky-c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #4b5563);
     transition: background var(--ui-tr-fast), border-color var(--ui-tr-fast);
 }
 @media (hover: hover) {
@@ -1057,7 +1034,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     padding: 0 8px;
     font-size: 13px;
     font-family: inherit;
-    color: var(--sky-c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #4b5563);
     /* background-color 而不是 background：这条规则排在 .form-select 的箭头之后，
        shorthand 会把语言下拉的箭头图一起抹掉（下拉就只剩一个纯文字胶囊）。
        下面的 :hover 同理。 */
@@ -1076,7 +1053,7 @@ details[open] > summary::after { transform: rotate(0deg); }
     border: 1px solid var(--sky-c-border, #232830);
     border-radius: var(--ui-r-pill);
     background: var(--sky-c-surface, #fff);
-    color: var(--sky-c-text-secondary, #c2c8cf);
+    color: var(--sky-c-text-secondary, #4b5563);
     cursor: pointer;
 }
 /* 登录页语言切换：卡片内居中、与副标题留出间距（链接式，登录前不写 Cookie） */

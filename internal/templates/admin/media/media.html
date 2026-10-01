@@ -14,7 +14,7 @@
             <strong>{{ .["t"]("admin.media.tree.title", "分类") }}</strong>
             <button type="button" class="btn btn-sm" id="ml-category-add" title="{{ .["t"]("admin.media.tree.new_category", "新建分类") }}">＋ {{ .["t"]("admin.media.tree.new", "新建") }}</button>
         </div>
-        <input type="search" class="media-tree-search" id="ml-tree-search" placeholder="{{ .["t"]("admin.media.tree.search_placeholder", "搜索分类…") }}">
+        <input type="search" class="form-input media-tree-search" id="ml-tree-search" placeholder="{{ .["t"]("admin.media.tree.search_placeholder", "搜索分类…") }}">
         <div class="media-tree" id="ml-tree">
             <div class="media-tree-node is-root" data-id="0">
                 <span class="media-tree-label" data-id="0">{{ .["t"]("admin.media.tree.all", "全部") }}</span>
@@ -96,7 +96,7 @@
             <div class="media-upload-list" id="ml-upload-list"></div>
             <div class="media-upload-actions">
                 <label>{{ .["t"]("admin.media.upload.category_label", "归类到分类：") }}</label>
-                <select id="ml-upload-category" class="media-select"></select>
+                <select id="ml-upload-category" class="form-select media-select"></select>
             </div>
         </div>
     </div>
@@ -112,9 +112,9 @@
         <div class="wb-modal-body">
             <input type="hidden" id="ml-cat-id">
             <label for="ml-cat-parent">{{ .["t"]("admin.media.category.parent", "上级分类") }}</label>
-            <select id="ml-cat-parent" class="media-select"></select>
+            <select id="ml-cat-parent" class="form-select media-select"></select>
             <label for="ml-cat-name">{{ .["t"]("admin.media.category.name", "分类名称") }}</label>
-            <input type="text" id="ml-cat-name" class="media-select" placeholder="{{ .["t"]("admin.media.category.name", "分类名称") }}">
+            <input type="text" id="ml-cat-name" class="form-input media-select" placeholder="{{ .["t"]("admin.media.category.name", "分类名称") }}">
         </div>
         <footer class="wb-modal-foot">
             <button type="button" class="btn btn-primary" id="ml-cat-save">{{ .["t"]("admin.media.action.save", "保存") }}</button>

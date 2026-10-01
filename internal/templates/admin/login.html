@@ -18,6 +18,9 @@
         })();
     </script>
     <link rel="stylesheet" href="/static/css/theme.css">
+    {* ui.css：输入框基座（.form-input）。登录页此前是唯一不引它、且把输入框视觉整份内联写死的页面
+       —— 基座清洗后「输入框长什么样」只有一处真源，本页只保留自己的尺寸差异（见下面的 .login-field input）。 *}
+    <link rel="stylesheet" href="/static/css/ui.css">
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         body {
@@ -46,21 +49,12 @@
         .login-sub { text-align: center; color: var(--c-text-mute, #6b7280); font-size: 13px; margin-bottom: 24px; }
         .login-field { margin-bottom: 16px; }
         .login-field label { display: block; font-size: 13px; color: var(--c-text-secondary, #4b5563); margin-bottom: 6px; }
+        /* 登录卡的输入框用基座（class="form-input"）：这里只写本页的**尺寸差异**
+           —— 登录页比后台表单更"松"一点（字号 14px、内边距 9px 12px）。边框 / 背景 /
+           圆角 / 焦点 / 禁用态一律由基座那一处给，页面不再各写一份。 */
         .login-field input {
-            width: 100%;
-            box-sizing: border-box;
             padding: 9px 12px;
             font-size: 14px;
-            color: var(--c-text, #1a1d21);
-            background: var(--c-bg, #fff);
-            border: 1px solid var(--c-border-input, #c6ccd4);
-            border-radius: 8px;
-            outline: none;
-        }
-        .login-field input:focus {
-            border-color: var(--c-primary-soft, #5b6572);
-            outline: 2px solid var(--c-primary, #3d444f);
-            outline-offset: 2px;
         }
         .captcha-row { display: flex; gap: 8px; align-items: stretch; }
         .captcha-row input { flex: 1; min-width: 0; }
@@ -110,16 +104,16 @@
               data-msg-network="{{ .["t"]("shell.login.network_error", "网络异常，请重试") }}">
             <div class="login-field">
                 <label for="username">{{ .["t"]("shell.login.username", "用户名") }}</label>
-                <input id="username" name="username" type="text" autocomplete="username" required>
+                <input class="form-input" id="username" name="username" type="text" autocomplete="username" required>
             </div>
             <div class="login-field">
                 <label for="password">{{ .["t"]("shell.login.password", "密码") }}</label>
-                <input id="password" name="password" type="password" autocomplete="current-password" required>
+                <input class="form-input" id="password" name="password" type="password" autocomplete="current-password" required>
             </div>
             <div class="login-field">
                 <label for="captcha">{{ .["t"]("shell.login.captcha", "验证码") }}</label>
                 <div class="captcha-row">
-                    <input id="captcha" name="captcha" type="text" maxlength="10" autocomplete="off" required>
+                    <input class="form-input" id="captcha" name="captcha" type="text" maxlength="10" autocomplete="off" required>
                     {* 服务端渲染了验证码图则直接展示；点击图片或图缺失时经 /api/captcha 刷新 *}
                     {* JS 文案经 data-msg-* 下发（属性转义安全，避免在 script 内拼接被 HTML 转义的字符串）；
                        占位符 %s 由 JS 用 replace 填充。 *}

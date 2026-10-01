@@ -441,14 +441,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ===== 站点语言清单（admin/settings.html 语言分组，多语言 P3） ===== */
 .locale-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
-.locale-row .locale-lang { padding: 6px 10px; font-size: 13px; border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 8px; min-width: min(100%, 160px); }
+/* 语言码输入框：视觉走基座（模板里是 class="form-input locale-lang"），
+   这里只留本行的宽度约束。 */
+.locale-row .locale-lang { min-width: min(100%, 160px); }
 .locale-flag { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
 .locale-add { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-/* .locale-add input 的视觉规则已删（审计 UIK-010）：它与 ui.css 桥接段里的同名选择器
-   特异性同为 0,1,1，而 ui.css 在 theme.css 之后加载 —— padding / font-size / border /
-   border-radius / min-width 五项全部被桥接覆盖，是一条永远不生效的规则。
-   注：桥接给的是 width: 100%（基座控件口径），这里原本想要的 220px 固定宽度没有生效过，
-   若要恢复那个布局意图，应在 ui.css 的桥接层声明（已记入待办）。 */
+/* 这一行原本有一条 .locale-add input 的视觉规则，与 ui.css 的桥接层同名、特异性相同、
+   加载更早 —— 五项属性全部被覆盖，是一条永远不生效的规则（审计 UIK-010 已删）。
+   2026-10-01 基座清洗：桥接层（.form-input, .form-select, .form-textarea, .locale-add input）
+   也退役了，settings.html 的语言行直接带 class="form-input" —— 于是这里连"被谁覆盖"都不用再记。
+   若要恢复当年的 220px 固定宽度，就在模板那一行写 width，不要再回到容器选择器。 */
 
 /* ===== 主题设置页 ===== */
 .theme-color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }

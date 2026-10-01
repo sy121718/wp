@@ -91,9 +91,8 @@ func uiCSSSections() []uiCSSSection {
 		{id: "cards", anchor: "卡片", trigger: sectionTriggerClasses},
 		{id: "tables", anchor: "表格", trigger: sectionTriggerClasses},
 		{id: "forms", anchor: "表单", trigger: sectionTriggerClasses},
-		// 后台裸控件的兜底外观（UIK-009）：宿主类 .admin-layout 只出现在 admin/layout.html，
-		// 站点产物侧没有任何消费者 —— 标 backend 后它不再随 forms 段进产物（UI-01）。
-		{id: "bareform", anchor: "/* ===== 后台裸控件的兜底外观（审计 UIK-009）=====", trigger: sectionTriggerClasses, owner: ownerBackend},
+		// 这里曾有 bareform 段（后台裸控件兜底，UIK-009）。2026-10-01 基座清洗：兜底规则删了，
+		// 真裸控件清零（internal/templates/admin_form_base_test.go 断言必须为 0），段随之消失。
 		{id: "badges", anchor: "徽章 / 标签 / 状态", trigger: sectionTriggerClasses},
 		{id: "pagination", anchor: "分页", trigger: sectionTriggerClasses},
 		{id: "utilities", anchor: "工具类", trigger: sectionTriggerPublic},
