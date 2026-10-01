@@ -129,7 +129,7 @@
             '      </footer>',
             '    </div>',
             '    <aside class="media-pick-detail" data-pick-detail hidden>',
-            '      <div class="media-pick-detail-body" data-pick-detail-body></div>',
+            '      <div data-pick-detail-body></div>',
             '    </aside>',
             '  </div>',
             '</div>'

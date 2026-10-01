@@ -22,6 +22,13 @@ package templates
 // 下一批把「待清理」的死样式删掉后，对应条目会失去命中点、测试随即变红，
 // 逼清单跟着收缩 —— 清单只增不减就等于门禁失效。
 //
+// 使用侧包含三条扫描面：模板（.html/.jet）、控制面 JS（static/js/**）、
+// 以及 **Go 代码里拼的 HTML class 字面量**（整棵 internal 树，排除 _test.go 与本包）。
+// 第三条是清账批实锤出来的盲区：`wb-node-actions` / `wb-node-flag` 由
+// internal/module/workbench/inbound/http/outline_handle.go 拼出，前两条扫描面都看不见，
+// 于是那两条**在用**的规则被当死样式删掉，靠工作台浏览器抽查发现 11 个元素带类才还原。
+// Go 侧只作「有人用」的证据（looseTokens），不进方向 A —— 它常与运行时值拼接，进 A 会误报。
+//
 // 已知让步（写在这里避免下一个人误判）：
 //   · 动态类名放行必须**有据可查**：dynamicClassEvidence 里每条前缀都写明
 //     拼接点（file:line + 表达式）与可枚举的取值域，放行条件 = 前缀匹配 **且** 后缀在取值域里。
@@ -73,6 +80,7 @@ type cssAuditFacts struct {
 	definedOwn  map[string][]string // 只含本仓库自己的 CSS（static/css + 模板内联 style）：方向 B 的定义侧
 	usedStrict  map[string][]string // 方向 A：静态类名 → "文件:行: 片段"
 	looseTokens map[string]bool     // 方向 B：使用侧文本全集里的 token
+	goClasses   map[string][]string // Go 侧拼 HTML 的 class 字面量 → 出处（弱证据，只进 looseTokens）
 	dynPrefixes map[string][]string // 动态前缀 → 来源
 }
 
@@ -136,6 +144,20 @@ func TestCSSClassesDefinedButUnused(t *testing.T) {
 		t.Errorf("cssUnusedAllowed 里的 %q 已经不再命中未使用集合（类已被定义处删除，或已经有人用了）：清单必须同步收缩", cls)
 	}
 
+	// Go 侧扫描的覆盖面必须可观测：空转就等于盲区还在。
+	if len(facts.goClasses) < 10 {
+		t.Fatalf("Go 侧只扫到 %d 个 class 字面量（预期 ≥10）：扫描口径或路径可能已失效", len(facts.goClasses))
+	}
+	var goUndefined []string
+	for cls := range facts.goClasses {
+		if len(facts.defined[cls]) == 0 {
+			goUndefined = append(goUndefined, cls)
+		}
+	}
+	sort.Strings(goUndefined)
+	t.Logf("Go 侧 class 字面量扫出 %d 个类名（出处 %d 个文件）；其中 %d 个在定义侧没有对应规则（仅提示，不判失败）：%v",
+		len(facts.goClasses), len(goFilesOf(facts)), len(goUndefined), goUndefined)
+
 	// 被动态前缀放行的类：不失败，但要留痕 —— 前缀覆盖是让步，不是结论。
 	if len(prefixCovered) > 0 {
 		sorted := make([]string, 0, len(prefixCovered))
@@ -186,6 +208,17 @@ func auditUnused(defined map[string][]string, strict map[string][]string, loose 
 	}
 	sort.Strings(unused)
 	return unused, prefixCovered
+}
+
+// goFilesOf 统计 Go 侧字面量来自多少个文件（t.Log 用）。
+func goFilesOf(f cssAuditFacts) map[string]bool {
+	files := map[string]bool{}
+	for _, sites := range f.goClasses {
+		for _, s := range sites {
+			files[s] = true
+		}
+	}
+	return files
 }
 
 // staleUndefinedAllowed 找出方向 A 清单里已经不该留的条目：
@@ -360,6 +393,7 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		definedOwn:  map[string][]string{},
 		usedStrict:  map[string][]string{},
 		looseTokens: map[string]bool{},
+		goClasses:   map[string][]string{},
 		dynPrefixes: map[string][]string{},
 	}
 	addDefined := func(file, src string, own bool) {
@@ -409,6 +443,30 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		}
 	}
 
+	// 使用侧（弱证据）：Go 代码里拼的 HTML class 字面量。
+	//
+	// 防的是 wb-node-actions / wb-node-flag 那次实锤盲区：它们由
+	// internal/module/workbench/inbound/http/outline_handle.go 用 sb.WriteString 拼出，
+	// 模板与 JS 里都看不见 —— 清账批第一遍把这两条**在用**的规则当死样式删了，
+	// 靠工作台浏览器抽查发现 11 个元素带类才还原。这条扫描补的就是这个缺口。
+	// 范围取整棵 internal 树（排除本包与 _test.go）：会拼 HTML 的 Go 代码不止 module 一处
+	// （builder 的组件 Go、pipeline 的守卫也在拼），只扫 module 等于留同类盲区。
+	// 口径刻意弱：只认能静态确定的 token，拼接（+ / %s / 反引号变量 / {{…}}）整体跳过；
+	// 并且**只当「有人用」的证据**（looseTokens），不进方向 A —— Go 侧常与运行时值拼接，
+	// 进 A 会把变量名当类名报红。
+	for _, p := range walkFiles(t, filepath.Join("..", "..", "internal"), func(p string) bool {
+		slashed := filepath.ToSlash(p)
+		return strings.HasSuffix(slashed, ".go") && !strings.HasSuffix(slashed, "_test.go") &&
+			!strings.HasPrefix(slashed, "../../internal/templates/")
+	}) {
+		for _, cls := range auditGoClassLiterals(readFile(t, p)) {
+			f.looseTokens[cls] = true
+			if site := rel(t, p); !contains(f.goClasses[cls], site) {
+				f.goClasses[cls] = append(f.goClasses[cls], site)
+			}
+		}
+	}
+
 	// 使用侧（严格）：后台 / 工作台模板的 class 属性 + 控制面 JS 的类名字面量
 	for _, p := range tplFiles {
 		r := rel(t, p)
@@ -442,6 +500,34 @@ func collectCSSAuditFacts(t *testing.T) cssAuditFacts {
 		sort.Strings(f.definedOwn[cls])
 	}
 	return f
+}
+
+var (
+	reGoClassRaw = regexp.MustCompile(`class="([^"]*)"`)       // 反引号字符串里的 HTML
+	reGoClassEsc = regexp.MustCompile(`class=\\"([^\\"]*)\\"`) // 双引号字符串里转义的 HTML
+)
+
+// auditGoClassLiterals 从 Go 源码里取能静态确定的 class token。
+// 含 `+` / 反引号 / `$` / `{{…}}`（拼接或模板变量）的值整体跳过 —— 那里面混的变量名不是类名。
+func auditGoClassLiterals(src string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, re := range []*regexp.Regexp{reGoClassRaw, reGoClassEsc} {
+		for _, m := range re.FindAllStringSubmatch(src, -1) {
+			val := m[1]
+			if strings.ContainsAny(val, "+$") || strings.Contains(val, "`") ||
+				strings.Contains(val, "{{") || strings.Contains(val, "%") {
+				continue
+			}
+			for _, tok := range strings.Fields(val) {
+				if reAuditStaticTok.MatchString(tok) && !seen[tok] {
+					seen[tok] = true
+					out = append(out, tok)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // auditClassValue 处理 class="..." 的值。JS 里拼接出来的值（class="edge' + cls + '"）
@@ -709,27 +795,13 @@ func contains(list []string, want string) bool {
 //   · sre-attachment--accordion / --rule / --table：父名 sre-attachment 已定义（rich-editor.css:219
 //     的卡片外观）→ 仍判红，故留在下面的清单里（理由已写成核实结论）。
 
-// cssUndefinedAllowed —— 方向 A 豁免：已逐个核实过「有生成点/外观另有来源」的钩子类。
+// cssUndefinedAllowed —— 方向 A 豁免：收尾清理后只剩 1 条「无样式但被 JS 查询」的功能钩子。
 var cssUndefinedAllowed = map[string]string{
-	"media-detail-form":         "media-admin.js:279 的详情字段容器；子控件由 mkBaseControl() 带 form-input/form-textarea/form-select 基座类，容器自身只做分组 —— 已核实，非缺样式",
-	"media-pick-detail-body":    "ui/mediafield.js:132 的空槽位（详情片段由 JS 塞入），外观来自父 .media-pick-detail 与塞入内容 —— 已核实，非缺样式",
-	"media-tree-item":           "media-lib.js:53 的 li 容器；行外观由内部 .media-tree-node（media-lib.css:29）提供，li 只做列表项 —— 已核实，非缺样式",
-	"media-tree-search":         "admin/media/media.html:17 的 input 同时带 form-input 基座类，本类只是定位钩子 —— 已核实，非缺样式",
-	"sre-attachment--accordion": "rich-editor/accordion.js:87 的 figure 同时带 .sre-attachment（rich-editor.css:219 的卡片外观），本类是变体钩子 —— 已核实，非缺样式",
-	"sre-attachment--rule":      "rich-editor/horizontal-rule.js:50 的 figure 同时带 .sre-attachment（rich-editor.css:219），本类是变体钩子 —— 已核实，非缺样式",
-	"sre-attachment--table":     "rich-editor/table.js:208 的 figure 同时带 .sre-attachment（rich-editor.css:219），本类是变体钩子 —— 已核实，非缺样式",
-	"stack-sm":                  "admin/content/article_edit.html:226 的 form；与 .stack（ui.css:569）同族但无定义 —— 表单元素天然块级堆叠、当前无视觉差异，是否补「小间距」变体属设计决定 —— 已核实无功能影响",
-	"tr-table-wrap":             "admin/product/product_translations.html:86 的容器同时带 table-wrap 基座类，本类只是命名钩子 —— 已核实，非缺样式",
-	"wb-confirm-ok":             "ui/confirm.js:39 的按钮同时带 btn btn-primary 基座类（.wb-confirm* 家族见 ui.css:202-211）—— 已核实，非缺样式",
-	"wbd-blank":                 "JS 生成的月初空位 span（ui/daterange.js:301），作为 .wbd-grid 的 grid item 由轨道定尺寸 —— lead 已核实，非缺样式",
-	"wbd-month":                 "JS 生成的月份容器（ui/daterange.js:287），尺寸由父 .wbd-months 的 grid 轨道决定（ui.css:148），无需自身外观 —— lead 已核实，非缺样式",
-	"wbd-title":                 "JS 生成的月份标题（ui/daterange.js:337），位于 .wbd-titles 网格内（ui.css:135），样式与文字靠继承 —— lead 已核实，非缺样式",
+	"wb-confirm-ok": "功能钩子（**不能只看类名有没有样式**）：static/js/ui/confirm.js:45 用 `dlg.querySelector('.wb-confirm-ok')` 查询它来接管确认按钮的提交；同元素另有 btn / btn-primary 基座类给外观，但真正让确认框能用的是这个查询 —— 属「无样式但有人在查」的类，**勿删**",
 }
 
 // cssUnusedAllowed —— 方向 B 豁免：清账批收口后只剩 4 条「不是死样式」的类（站点产物侧 3 条 + vendor 运行时 1 条）。
 var cssUnusedAllowed = map[string]string{
-	"wb-node-actions":     "生成点在本仓模板/JS 之外：internal/module/workbench/inbound/http/outline_handle.go:95 由 Go 拼 HTML（`sb.WriteString(\"<span class=\\\"wb-node-actions\\\">\")`），门禁的扫描范围外 —— 工作台大纲树实测在用（2026-10 清账批首次误删后由浏览器抽查发现并还原），**不是死样式，勿删**",
-	"wb-node-flag":        "同源盲区：outline_handle.go:86/91 由 Go 拼 `class=\"wb-node-flag\"`（同一处大纲树渲染），工作台实测在用，**不是死样式，勿删**",
 	"sky-image-missing":   "站点产物侧：workbench.css:536 注释「媒体缺失占位（媒体库已删除时渲染，不阻塞编译）」—— 消费者是构建期产出的占位片段，本仓模板/JS 静态扫不到是正常的（同族实例见 internal/builder/components/socialbuttons/socialbuttons.jet 渲染的 .sky-social-fallback），**不是死样式，勿删**",
 	"sky-social-fallback": "站点产物侧：由构建期组件 internal/builder/components/socialbuttons/socialbuttons.jet:1 渲染（`<span class=\"sky-social-fallback\">`），消费者在前台产物里，本仓模板/JS 零命中是正常的，**不是死样式，勿删**",
 	"sky-video-missing":   "站点产物侧：workbench.css:536 注释「媒体缺失占位（媒体库已删除时渲染，不阻塞编译）」—— 消费者是构建期产出的占位片段，本仓模板/JS 静态扫不到是正常的，**不是死样式，勿删**",

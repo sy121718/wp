@@ -47,7 +47,7 @@
             filename: '分隔线'
         }));
         figure.setAttribute('data-trix-content-type', SRE.MIME.RULE);
-        figure.className = 'attachment attachment--preview sre-attachment sre-attachment--rule';
+        figure.className = 'attachment attachment--preview sre-attachment';
         figure.innerHTML = '<span class="sre-attachment__badge">分隔线</span>';
         void Trix;
         void node;

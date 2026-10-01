@@ -14,7 +14,7 @@
             <strong>{{ .["t"]("admin.media.tree.title", "分类") }}</strong>
             <button type="button" class="btn btn-sm" id="ml-category-add" title="{{ .["t"]("admin.media.tree.new_category", "新建分类") }}">＋ {{ .["t"]("admin.media.tree.new", "新建") }}</button>
         </div>
-        <input type="search" class="form-input media-tree-search" id="ml-tree-search" placeholder="{{ .["t"]("admin.media.tree.search_placeholder", "搜索分类…") }}">
+        <input type="search" class="form-input" id="ml-tree-search" placeholder="{{ .["t"]("admin.media.tree.search_placeholder", "搜索分类…") }}">
         <div class="media-tree" id="ml-tree">
             <div class="media-tree-node is-root" data-id="0">
                 <span class="media-tree-label" data-id="0">{{ .["t"]("admin.media.tree.all", "全部") }}</span>

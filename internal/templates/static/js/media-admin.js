@@ -276,7 +276,6 @@
             { key: 'description', label: '说明', type: 'textarea', value: extra.description }
         ];
         var form = document.createElement('div');
-        form.className = 'media-detail-form';
         var inputs = {};
         fields.forEach(function (f) {
             var wrap = document.createElement('div'); wrap.className = 'media-detail-field';

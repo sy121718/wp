@@ -84,7 +84,7 @@
             filename: title
         }));
         figure.setAttribute('data-trix-content-type', SRE.MIME.ACCORDION);
-        figure.className = 'attachment attachment--preview sre-attachment sre-attachment--accordion';
+        figure.className = 'attachment attachment--preview sre-attachment';
         figure.innerHTML = '<span class="sre-attachment__badge">折叠块：' + SRE.util.escapeHTML(title) + '</span>';
         return figure;
     }

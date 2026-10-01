@@ -83,7 +83,7 @@
        所以空态自己带一张同列的表头，空态整行落在 tbody 里（colspan = 5 列）。
        （注释里不要写字面的双花括号 token：门禁脚本按 token 名做栈配对，会被它带偏。） *}
     <section class="card card-body">
-        <div class="table-wrap tr-table-wrap">
+        <div class="table-wrap">
             <table class="data-table data-table-wide tr-table">
                 <thead>
                 <tr>
@@ -115,7 +115,7 @@
         {{range _, g := .Groups}}
         <section class="card card-body">
             <h2 class="card-title mb-lg">{{g.Title}} <span class="badge badge-mute">{{ .["t"]("admin.product_translations.groupMetaLead", "（") }}{{len(g.Rows)}}{{ .["t"]("admin.product_translations.groupMetaMid", " 条 · ") }}{{g.Subtitle}}{{ .["t"]("admin.product_translations.groupMetaTail", "）") }}</span></h2>
-            <div class="table-wrap tr-table-wrap">
+            <div class="table-wrap">
                 <table class="data-table data-table-wide tr-table">
                     <thead>
                     <tr>

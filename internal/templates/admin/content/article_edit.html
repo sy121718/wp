@@ -223,7 +223,7 @@
                 {* 「重新发布」表单已整块搬到页头（它只有 csrf + id 两个隐藏域，整体可搬）——
                    本卡保留状态说明与「改 URL」：改 URL 带 newPath / withRedirect 字段，搬不动。
                    staleHint 里的「在这里手动重新发布一次」仍指本页，只是按钮位置在页头。 *}
-                <form method="post" action="/admin/articles/url" class="stack-sm">
+                <form method="post" action="/admin/articles/url">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
                     <div class="field-label-row">
@@ -253,7 +253,7 @@
                 {* 这张表单有了 id：页头的「发布」按钮用 form="article-publish-form" 指回这里。
                    卡内的提交按钮**保留** —— 它是表单自身的动作；375px 折成一栏后页头与这三个字段
                    相隔一两屏，只留页头按钮会变成「填完没处点」。两处指向同一张表单，不冲突。 *}
-                <form method="post" action="/admin/articles/publish" id="article-publish-form" class="stack-sm">
+                <form method="post" action="/admin/articles/publish" id="article-publish-form">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
                     <label class="form-label" for="article-publish-project">{{ .["t"]("admin.article.edit.projectLabel", "站点工程") }}</label>
@@ -323,7 +323,7 @@
                 {{if !.ImportHasPublished}}
                 <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.importEmptyBody", "正文还是空的 —— 导入会得到零个组件，先去上面写点内容。") }}</p>
                 {{end}}
-                <form method="post" action="/admin/articles/import-page" id="article-import-form" class="stack-sm">
+                <form method="post" action="/admin/articles/import-page" id="article-import-form">
                     <input type="hidden" name="csrf_token" value="{{csrf}}">
                     <input type="hidden" name="id" value="{{form.ID}}">
                     <label class="form-label" for="article-import-project">{{ .["t"]("admin.article.edit.importProjectLabel", "目标工程") }}</label>

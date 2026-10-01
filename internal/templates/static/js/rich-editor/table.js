@@ -205,7 +205,7 @@
             filename: '表格 ' + rows.length + ' × ' + maxColumns(rows)
         }));
         figure.setAttribute('data-trix-content-type', SRE.MIME.TABLE);
-        figure.className = 'attachment attachment--preview sre-attachment sre-attachment--table';
+        figure.className = 'attachment attachment--preview sre-attachment';
         figure.innerHTML = '<span class="sre-attachment__badge">表格 ' + rows.length + ' × ' + maxColumns(rows) + '</span>';
         return figure;
     }

@@ -50,7 +50,6 @@
         function build(nodes, ul) {
             nodes.forEach(function (n) {
                 var li = document.createElement('li');
-                li.className = 'media-tree-item';
                 var row = document.createElement('div');
                 row.className = 'media-tree-node' + (opts.selectedId === n.id ? ' is-selected' : '');
                 row.dataset.id = n.id;

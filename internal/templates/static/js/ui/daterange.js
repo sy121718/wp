@@ -284,7 +284,6 @@
 
         function buildMonth(ym) {
             var wrap = document.createElement('div');
-            wrap.className = 'wbd-month';
             var grid = document.createElement('div');
             grid.className = 'wbd-grid';
             // 日期按钮自带完整日期名，星期行只是视觉表头，不重复给读屏器。
@@ -298,7 +297,6 @@
             var lead = weekdayIndex(ym.y, ym.m, 1);
             for (var i = 0; i < lead; i++) {
                 var blank = document.createElement('span');
-                blank.className = 'wbd-blank';
                 grid.appendChild(blank);
             }
             var total = daysInMonth(ym.y, ym.m);
@@ -334,7 +332,6 @@
             for (var i = 0; i < monthCount; i++) {
                 var ym = shiftMonth(state.view, i);
                 var title = document.createElement('span');
-                title.className = 'wbd-title';
                 title.textContent = monthLabel(ym);
                 titles.appendChild(title);
                 months.appendChild(buildMonth(ym));
