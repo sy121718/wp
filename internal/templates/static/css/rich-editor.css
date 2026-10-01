@@ -92,47 +92,124 @@ trix-editor.rich-editor details {
 }
 trix-editor.rich-editor summary { cursor: pointer; font-weight: 600; }
 
-/* ── 工具条：Trix 默认按钮是图标方块，这里全部换成带文字的原生按钮 ───────── */
-trix-toolbar .sre-toolbar-row {
+/* ── 工具条：软底分段条（2026-10-01 refit）────────────────────────────────
+ *
+ * 原来的形态是「每个按钮各自描边 + vendor 再给整组画一圈框」：十几个小方块并排，
+ * 分组完全看不见；vendor 的 .trix-button-row 又是 space-between + nowrap，
+ * 我们覆盖成 wrap 之后，组被撑到行的两端、还在**组内部**被拆行换行。
+ *
+ * 现在按**已有的分组**（data-trix-button-group；键盘方向键也按它走）画成软底分段：
+ * 一组 = 一个胶囊，组内按钮无边框、只在悬停时浮一块底，激活态是深色实心 ——
+ * 工具条上同时亮着的那几个按钮，就是「当前这段文字是什么样式」的读数。
+ * 选择器只读既有属性（data-trix-* / data-sre-*），类名与行为一个都没动。
+ *
+ * 注意 :not(:first-child) 那两条 vendor 规则（组左外边距、按钮左分隔线）：
+ * 带伪类的特异性比裸选择器高一级，必须用同样带 :not 的选择器覆盖，否则改不动。 */
+
+trix-toolbar .trix-button-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-wrap: wrap;            /* 以「组」为单位换行（组自己 nowrap，见下） */
+    justify-content: flex-start;/* 覆盖 vendor 的 space-between：组不再被撑到两端 */
     align-items: center;
-    padding: 6px 0;
+    gap: 8px;
+    padding: 4px 0 8px;
+    overflow: visible;          /* 覆盖 vendor 的 overflow-x: auto：整条随容器换行 */
 }
 
-trix-toolbar .sre-toolbar-btn {
-    min-width: 34px;
-    height: 30px;
-    padding: 0 8px;
-    border: 1px solid var(--sky-c-border, #d5d9e0);
-    border-radius: 6px;
-    background: var(--sky-c-bg, #ffffff);
-    color: var(--sky-c-text, #1f2430);
-    font-size: 13px;
-    line-height: 1;
-    cursor: pointer;
+trix-toolbar .trix-button-group {
+    display: inline-flex;
+    flex-wrap: nowrap;          /* 一组是一个整体，绝不在组内断行 */
+    gap: 2px;
+    margin: 0;
+    padding: 2px;
+    border: 0;                  /* 覆盖 vendor 的 1px #bbb + 上下异色立体框 */
+    border-radius: 8px;
+    background: var(--sky-c-bg-soft, #f4f5f6);
 }
+
+trix-toolbar .trix-button-group:not(:first-child) { margin-left: 0; }
+
+trix-toolbar .trix-button {
+    height: 30px;
+    min-width: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sky-c-text, #1a1d21);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background-color .12s ease, color .12s ease;
+}
+
+trix-toolbar .trix-button:not(:first-child) { border-left: 0; }
 
 @media (hover: hover) {
-    trix-toolbar .sre-toolbar-btn:hover {
-        background: var(--sky-c-bg-soft, #f4f6f9);
+    trix-toolbar .trix-button:hover {
+        background: var(--sky-c-bg, #ffffff);
     }
 }
 
+trix-toolbar .trix-button:active {
+    background: var(--sky-c-bg-active, #e4e4e4);
+}
+
+/* 激活态统一成「深底白字」：vendor 自己的 .trix-active（浅蓝 #cbeefa）与块级按钮的
+   aria-pressed 走同一套，两种来源不再各亮各的色。--sky-c-primary 是深石板灰，
+   白字对比约 9:1，在软底组里一眼能挑出来。 */
+trix-toolbar .trix-button.trix-active,
+trix-toolbar .trix-button[aria-pressed="true"],
+trix-toolbar .sre-toolbar-btn--active {
+    background: var(--sky-c-primary, #3d444f);
+    color: #ffffff;
+}
+
+@media (hover: hover) {
+    trix-toolbar .trix-button.trix-active:hover,
+    trix-toolbar .trix-button[aria-pressed="true"]:hover {
+        background: var(--sky-c-primary-deep, #2f353d);
+    }
+}
+
+trix-toolbar .trix-button:disabled {
+    background: transparent;
+    color: var(--sky-c-text-faint, #5d656e);
+    opacity: .55;
+    cursor: default;
+}
+
 /* 键盘焦点必须可见：工具条的键盘可达性靠它才成立。 */
-trix-toolbar .sre-toolbar-btn:focus-visible,
 trix-toolbar .trix-button:focus-visible {
-    outline: 2px solid var(--sky-c-primary, #2f6fed);
+    outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 1px;
 }
 
-trix-toolbar .sre-toolbar-btn--active,
-trix-toolbar .sre-toolbar-btn[aria-pressed="true"],
-trix-toolbar .trix-button.trix-active {
-    border-color: var(--sky-c-primary, #2f6fed);
-    background: var(--sky-c-primary-soft, #e8f0ff);
-    color: var(--sky-c-primary, #2f6fed);
+/* 形状即含义：B / I / S 用各自的字形，代码用等宽 —— 比三个同款字母快得多。 */
+trix-toolbar .trix-button[data-trix-attribute="bold"] { font-weight: 700; }
+trix-toolbar .trix-button[data-trix-attribute="italic"] { font-style: italic; }
+trix-toolbar .trix-button[data-trix-attribute="strike"] { text-decoration: line-through; }
+trix-toolbar .trix-button[data-trix-attribute="code"] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+}
+
+/* 标题按钮排出级别：H1 最大、H5 最小 —— 级别顺序不用读字也知道。
+   属性值是 block-level.js 的 level.name（heading1..heading5），不是标签名。 */
+trix-toolbar .trix-button[data-sre-block="heading1"] { font-size: 15px; font-weight: 600; }
+trix-toolbar .trix-button[data-sre-block="heading2"] { font-size: 14px; font-weight: 600; }
+trix-toolbar .trix-button[data-sre-block="heading3"] { font-size: 13px; }
+trix-toolbar .trix-button[data-sre-block="heading4"] { font-size: 12.5px; }
+trix-toolbar .trix-button[data-sre-block="heading5"] { font-size: 12px; }
+
+/* 历史组是动作而不是格式开关：压一档颜色，让格式组先被看见。 */
+trix-toolbar .trix-button-group[data-trix-button-group="history-tools"] .trix-button {
+    color: var(--sky-c-text-mute, #6b7280);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    trix-toolbar .trix-button { transition: none; }
 }
 
 /* ── 扩展块在编辑器里的卡片形态（Trix 的 attachment） ─────────────────── */
@@ -223,11 +300,23 @@ dialog.sre-dialog::backdrop {
     margin-top: 16px;
 }
 
-/* 窄屏（手机 / 平板）下工具条按钮放大到可点尺寸，编辑器高度按视口收。 */
+/* 窄屏（手机 / 平板）：按钮放大到触屏可点尺寸（44px），编辑器高度按视口收。
+   组在这个宽度下允许换行 —— 插入组有 5 个中文按钮（最宽的「折叠块」约 60px），
+   nowrap 会把它推出 320px 视口；换成整组折行，胶囊变成两行的小块，仍是一组。 */
 @media (max-width: 640px) {
-    trix-toolbar .sre-toolbar-btn {
-        min-width: 40px;
-        height: 36px;
+    trix-toolbar .trix-button-row {
+        gap: 8px;
+    }
+
+    trix-toolbar .trix-button-group {
+        flex-wrap: wrap;
+        max-width: 100%;
+    }
+
+    trix-toolbar .trix-button {
+        min-width: 44px;
+        height: 44px;
+        padding: 0 12px;
         font-size: 14px;
     }
 
