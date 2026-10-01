@@ -56,13 +56,12 @@ const (
 	ProductTagsRecalcNone = "admin.product_tags.recalcNone"
 
 	// —— 分类 / 品牌 / 属性 / 详情页模板 / 商品编辑 ——
-	ProductCategoriesTitle             = "admin.product_categories.title"
-	ProductCategoriesChildrenPageLabel = "admin.product_categories.children.pageLabel"
-	ProductBrandsTitle                 = "admin.product_brands.title"
-	ProductAttributesTitle             = "admin.product_attributes.title"
-	ProductDetailTemplateTitle         = "admin.product_detail_template.title"
-	ProductEditErrDefaultPriceInvalid  = "admin.product_edit.err.defaultPriceInvalid"
-	ProductEditErrWeightInvalid        = "admin.product_edit.err.weightInvalid"
+	ProductCategoriesTitle            = "admin.product_categories.title"
+	ProductBrandsTitle                = "admin.product_brands.title"
+	ProductAttributesTitle            = "admin.product_attributes.title"
+	ProductDetailTemplateTitle        = "admin.product_detail_template.title"
+	ProductEditErrDefaultPriceInvalid = "admin.product_edit.err.defaultPriceInvalid"
+	ProductEditErrWeightInvalid       = "admin.product_edit.err.weightInvalid"
 
 	// —— 捆绑配置 ——
 	ProductBundleTitle                   = "admin.product_bundle.title"

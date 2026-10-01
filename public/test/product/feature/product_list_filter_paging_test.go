@@ -317,10 +317,11 @@ func TestProductListFilterI18nSeedIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestCategoryKeywordFilterKeepsParentOptions 搜索展示祖先上下文，父级下拉保留父项。
+// TestCategoryKeywordFilterKeepsParentOptions 搜索把命中渲染成树（根 + 路径），父级下拉保留全部父项。
 //
-// 分类页的父级下拉是「编辑 / 新建抽屉」用的：如果把筛选后的树喂给它，用户筛出一个子分类后
-// 打开编辑，它的父级会从选项里消失 —— 保存就会把层级静默拍平（看起来只是「下拉里没有那一项」）。
+// 分类页的父级下拉是「编辑 / 新建抽屉」用的：如果只把筛选后（或当前这一页）的树喂给它，
+// 用户筛出一个子分类后打开编辑，它的父级会从选项里消失 —— 保存就会把层级静默拍平
+// （看起来只是「下拉里没有那一项」）。所以下拉恒取工程内全部分类。
 func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	engine, f := newTaxonomyPageEngine(t)
 	if engine == nil {
@@ -333,9 +334,10 @@ func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建父分类失败: %v", err)
 	}
-	if _, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{
+	child, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{
 		ProjectID: f.projectID, Name: "冲锋衣", Slug: "jackets", ParentID: root.ID,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("创建子分类失败: %v", err)
 	}
 
@@ -343,17 +345,21 @@ func TestCategoryKeywordFilterKeepsParentOptions(t *testing.T) {
 	if !strings.Contains(body, "冲锋衣") {
 		t.Fatal("关键词命中的子分类没有出现在表格里")
 	}
-	// 命中子级及其祖先各一行，祖先在前、子级紧随。
+	// 命中项连着它的上级路径一起渲染成树：两行（根 + 命中），根在前、命中缩进成子级。
 	if got := strings.Count(body, `name="ids"`); got != 2 {
 		t.Fatalf("按「冲锋衣」筛选后应展示命中与祖先共 2 行，实际 %d 行", got)
 	}
 	if strings.Contains(body, "共 2 条") {
-		t.Fatal("搜索分页总数应只计命中实体，不把祖先上下文算进去")
+		t.Fatal("分页总数按根分类计，不该把命中条数当页数")
 	}
-	if strings.Index(body, "户外服装</strong>") > strings.Index(body, "冲锋衣</strong>") {
+	rootPos := strings.Index(body, `data-category-id="`+root.ID+`"`)
+	childPos := strings.Index(body, `data-category-id="`+child.ID+`"`)
+	if rootPos < 0 || childPos < 0 || rootPos > childPos {
 		t.Fatal("搜索祖先应排在命中子级之前")
 	}
-	// 父级下拉无需额外整树查询：祖先上下文已包含父分类。
+	if !strings.Contains(body, `<span class="tree-elbow"`) {
+		t.Fatal("命中行没有渲染成子级：缺树枝前缀")
+	}
 	if !strings.Contains(body, `value="`+root.ID+`"`) {
 		t.Fatal("筛选后父级下拉缺了父分类 —— 编辑抽屉里改父级只能改到「顶级」，层级会被静默拍平")
 	}

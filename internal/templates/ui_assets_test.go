@@ -152,42 +152,45 @@ assert.equal(ui.transitionTime({}),0);
 	}
 }
 
-func TestProductCategoryTreeKeyboardExpansion(t *testing.T) {
+// TestProductCategoryTreeSelectionSync 分类树脚本只剩勾选态与父级搜索：
+// 树由服务端一次渲染完（没有展开 / 折叠），勾选态仍要正确汇总到批量条。
+func TestProductCategoryTreeSelectionSync(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		if os.Getenv("GOWP_REQUIRE_NODE") == "1" {
-			t.Fatal("分类树键盘检查要求 Node")
+			t.Fatal("分类树勾选态检查要求 Node")
 		}
 		t.Skip("缺少 Node")
 	}
 	script := `
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const handlers = {};
-const form = {querySelectorAll: () => [], querySelector: () => null};
-const childRow = {hidden: true, hasAttribute: name => name === 'data-category-child-row', querySelectorAll: () => [], querySelector: () => null};
-const row = {nextElementSibling: childRow};
-let expanded = 'false', clicks = 0;
-const button = {
-  closest: selector => selector === '[data-category-row]' ? row : (selector === '[data-category-tree-form]' ? form : null),
-  getAttribute: name => name === 'aria-expanded' ? expanded : null,
-  setAttribute: (name, value) => { if (name === 'aria-expanded') expanded = value; },
-  click: () => { clicks++; expanded = 'true'; childRow.hidden = false; }
+const bar = {hidden: true};
+const count = {dataset: {bulkTemplate: '已选 {n} 项'}, textContent: ''};
+const all = {checked: false, indeterminate: false};
+const marked = [];
+const row = {classList: {toggle: (cls, on) => marked.push([cls, on])}};
+const makeBox = checked => ({
+  checked, disabled: false,
+  matches: selector => selector.includes('data-check-item'),
+  closest: selector => selector === '[data-category-tree-form]' ? form : (selector === '[data-category-row]' ? row : null)
+});
+const boxes = [makeBox(true), makeBox(false)];
+const form = {
+  querySelectorAll: selector => selector === '[data-check-item]' ? boxes : [],
+  querySelector: selector => selector === '[data-check-all]' ? all
+    : (selector === '[data-bulk-bar]' ? bar : (selector === '[data-bulk-count]' ? count : null))
 };
 const document = {addEventListener: (type, fn) => { handlers[type] = fn; }};
 vm.runInNewContext(fs.readFileSync('static/js/ui/product-category-tree.js', 'utf8'), {document, window: {}});
-assert.ok(handlers.keydown, '没有注册分类树键盘监听');
-let prevented = 0;
-const target = {closest: selector => selector === '[data-category-toggle]' ? button : null};
-handlers.keydown({target, key: 'ArrowRight', preventDefault: () => prevented++});
-assert.equal(clicks, 1, '右方向键没有展开分支');
-assert.equal(expanded, 'true');
-assert.equal(childRow.hidden, false);
-handlers.keydown({target, key: 'ArrowLeft', preventDefault: () => prevented++});
-assert.equal(expanded, 'false', '左方向键没有折叠分支');
-assert.equal(childRow.hidden, true);
-assert.equal(prevented, 2);
+assert.ok(!handlers.keydown, '展开 / 折叠已退役，键盘监听不该还在');
+handlers.change({target: boxes[0], stopPropagation: () => {}});
+assert.equal(count.textContent, '已选 1 项', '批量条计数没有跟着勾选走');
+assert.equal(bar.hidden, false, '勾选后批量条应显示');
+assert.equal(all.indeterminate, true, '部分勾选应是半选态');
+assert.deepEqual(marked[0], ['is-selected', true], '选中行没有标记');
 `
 	if out, err := exec.Command(node, "--eval", script).CombinedOutput(); err != nil {
-		t.Fatalf("分类树键盘展开契约失败: %v\n%s", err, out)
+		t.Fatalf("分类树勾选态契约失败: %v\n%s", err, out)
 	}
 }

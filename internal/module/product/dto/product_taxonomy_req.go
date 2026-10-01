@@ -45,12 +45,12 @@ type ListCategoryReq struct {
 	Keyword   string `form:"keyword"`
 }
 
-// ListCategoryPageReq 是后台分类树的受限读请求。
-// ParentID 非空时只读取该父级的直接子级；Keyword 非空时忽略 ParentID，
-// 按匹配实体分页并补祖先上下文。
+// ListCategoryPageReq 是后台分类树的分页读请求。
+// Keyword 为空时按**顶级分类**分页，并把每棵子树的全部后代一起带出来；
+// Keyword 非空时按「命中所属的根分类」分页，只带出根到命中的路径
+// （分页单位一律是树根 —— 逐层点进去的导航与子级懒加载已退役）。
 type ListCategoryPageReq struct {
 	ProjectID string `form:"projectId"`
-	ParentID  string `form:"parentId"`
 	Keyword   string `form:"keyword"`
 	Page      int    `form:"page"`
 	Size      int    `form:"size"`

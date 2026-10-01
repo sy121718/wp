@@ -9,7 +9,8 @@
 // 列表页形态（审计 02-M 的 D12 / D13）：分类页与品牌页都带关键词筛选栏、按页渲染，
 // 并在空态区分「筛出来是空的」与「工程里本来就没有」。
 //
-// 分类后台页按根或直接子级分页，搜索按命中实体分页并带祖先；
+// 分类后台页一律按**树根**分页：浏览态是顶级分类，搜索态是命中所属的根分类，
+// 每页都把该页的整棵树一次读出来交给模板渲染。逐层点进去的导航与子级懒加载已退役，
 // 旧 ListCategories 全树契约仅保留给其它调用方。
 package producthttp
 
@@ -21,14 +22,11 @@ import (
 	"strconv"
 	"strings"
 
-	"go_wp/pkg/logger"
-
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/web/shell"
-	"go_wp/pkg/i18n"
 )
 
 // ProductCategoriesPage 分类管理页：工程切换 + 筛选栏 + 分类树 + 内联新建表单。
@@ -57,38 +55,18 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		}
 	}
 	keyword := strings.TrimSpace(c.Query("keyword"))
-	parentID := strings.TrimSpace(c.Query("parentId"))
 	page := productPageNumber(c.Query("page"))
 	pageRows := []*productdto.CategoryResp{}
 	pickFlat := []*productdto.CategoryResp{}
-	breadcrumbs := []*productdto.CategoryResp{}
-	total := int64(0)
+	total, matchTotal := int64(0), int64(0)
 	if selected != "" {
-		if keyword != "" {
-			parentID = ""
-		}
-		// Navigation is one level at a time; search pages only matching entities
-		// and carries their ancestors in the same scoped query.
-		if parentID != "" && keyword == "" {
-			seen := map[string]bool{}
-			for id := parentID; id != "" && len(breadcrumbs) < 64 && !seen[id]; {
-				seen[id] = true
-				parent, perr := h.products.GetCategory(ctx, &productdto.GetCategoryReq{ProjectID: selected, ID: id})
-				if perr != nil {
-					shell.PageError(c, "product_taxonomy", perr)
-					return
-				}
-				breadcrumbs = append([]*productdto.CategoryResp{parent}, breadcrumbs...)
-				id = parent.ParentID
-			}
-		}
-		query := &productdto.ListCategoryPageReq{ProjectID: selected, ParentID: parentID, Keyword: keyword, Page: page, Size: productSubListPageSize}
+		query := &productdto.ListCategoryPageReq{ProjectID: selected, Keyword: keyword, Page: page, Size: productSubListPageSize}
 		result, lerr := h.products.ListCategoryPage(ctx, query)
 		if lerr != nil {
 			shell.PageError(c, "product_taxonomy", lerr)
 			return
 		}
-		total = result.Total
+		total, matchTotal = result.Total, result.MatchTotal
 		page = clampPageToTotal(page, productSubListPageSize, total)
 		if page != query.Page {
 			query.Page = page
@@ -98,39 +76,21 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 				return
 			}
 		}
+		// 一页的树 → DFS 扁平行（父在前、子紧随，模板按 Depth 缩进）。
 		pageRows = flattenCategoryTree(result.Items)
-		pickFlat = append(pickFlat, breadcrumbs...)
-		seenOptions := make(map[string]bool, len(pickFlat))
-		for _, item := range pickFlat {
-			seenOptions[item.ID] = true
+		// 父级下拉要的是**工程内全部分类**，不是当前这一页 ——
+		// 树状列表之后没有面包屑兜底，缺项会直接表现为「新建子分类时选不到父级」。
+		all, aerr := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected})
+		if aerr != nil {
+			shell.PageError(c, "product_taxonomy", aerr)
+			return
 		}
-		for _, item := range pageRows {
-			if !seenOptions[item.ID] {
-				pickFlat = append(pickFlat, item)
-				seenOptions[item.ID] = true
-			}
-		}
-		if keyword == "" {
-			for _, item := range pageRows {
-				item.Depth = len(breadcrumbs)
-			}
-		}
+		pickFlat = flattenCategoryTree(all)
 	}
 	options := categoryPickOptions(pickFlat)
 	createForm := categoryDrawerData(c, "create", selected, nil, options)
-	if parentID != "" && keyword == "" {
-		createForm["ParentID"] = parentID
-	}
 	filterQuery := listFilterQuery(selected, keyword)
-	if parentID != "" && keyword == "" {
-		filterQuery.Set("parentId", parentID)
-	}
 	rows := categoryTreeRows(c, selected, pageRows, options, keyword != "")
-	if keyword != "" {
-		for _, row := range rows {
-			row["HasChildren"] = false
-		}
-	}
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
 	data := gin.H{
 		"title":           shell.TranslateFor(c)(productenums.ProductCategoriesTitle, "商品分类"),
@@ -139,11 +99,10 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		"SelectedProject": selected,
 		"Categories":      rows,
 		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
-		"Options":            options,
-		"ParentID":           parentID,
-		"SearchMode":         keyword != "",
-		"MatchTotal":         total,
-		"Breadcrumbs":        breadcrumbs,
+		"Options":    options,
+		"SearchMode": keyword != "",
+		// MatchTotal 是**命中条数**（提示文案用）；分页条按 Total（= 命中所属的根分类数）。
+		"MatchTotal":         matchTotal,
 		"CategoryCreateForm": createForm,
 		// 筛选回显（GET 表单的 value）：提交后条件留在控件上，
 		// 否则用户看不出「现在到底筛了什么」；Filtered 让空态能区分
@@ -162,42 +121,6 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		data[k] = v
 	}
 	c.HTML(http.StatusOK, "admin/product/product_categories.html", shell.Prepare(c, data))
-}
-
-// ProductCategoryChildren renders one parent's directly paged children, never the entire tree.
-func (h *productPageHandle) ProductCategoryChildren(c *gin.Context) {
-	projectID, parentID := strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("parentId"))
-	if parentID == "" || !h.categoryProjectExists(c, projectID) {
-		c.Status(http.StatusNotFound)
-		return
-	}
-	page := productPageNumber(c.Query("page"))
-	req := &productdto.ListCategoryPageReq{ProjectID: projectID, ParentID: parentID, Page: page, Size: productSubListPageSize}
-	result, err := h.products.ListCategoryPage(c.Request.Context(), req)
-	if err != nil {
-		logger.Scene("product").With("projectId", projectID).With("parentId", parentID).With("reason", err.Error()).Warn("分类子级加载失败")
-		c.Status(http.StatusNotFound)
-		return
-	}
-	page = clampPageToTotal(page, productSubListPageSize, result.Total)
-	if page != req.Page {
-		req.Page = page
-		result, err = h.products.ListCategoryPage(c.Request.Context(), req)
-		if err != nil {
-			c.Status(http.StatusInternalServerError)
-			return
-		}
-	}
-	// ChildPageLabel 是**整句**文案（词条 admin.product_categories.children.pageLabel，
-	// {page} 命名占位符）：原先由模板用「前缀 + 数字 + 后缀」两个词条拼空格，英文下必然
-	// 露馅（pageSuffix 的 en-US 曾是空串，而降级链把空串等同缺失 → 英文界面显示「Page 3 页」）。
-	data := gin.H{"Categories": categoryTreeRows(c, projectID, result.Items, nil, false), "SelectedProject": projectID,
-		"ParentID": parentID, "ChildPage": page, "ChildSize": productSubListPageSize,
-		"ChildPageLabel": i18n.FillTranslate(shell.TranslateFor(c),
-			productenums.ProductCategoriesChildrenPageLabel, "第 {page} 页", map[string]string{"page": strconv.Itoa(page)}),
-		"ChildTotal": result.Total,
-		"PermSet":    shell.Prepare(c, gin.H{})["PermSet"], "t": shell.TranslateFor(c), "csrf_token": shell.Prepare(c, gin.H{})["csrf_token"]}
-	c.HTML(http.StatusOK, "admin/product/product_category_children.html", data)
 }
 
 // ProductCategoryParents is a bounded, project-scoped parent picker search.
@@ -767,7 +690,8 @@ func (h *productPageHandle) categoryFormFail(c *gin.Context, mode, msg string) {
 	if h.products != nil {
 		projectID := c.PostForm("projectId")
 		if page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{ProjectID: projectID, Page: 1, Size: 100}); err == nil {
-			options := page.Items
+			// 列表读的是树，父级下拉要的是扁平行 —— 不摊平的话下拉里只剩顶级分类。
+			options := flattenCategoryTree(page.Items)
 			parentID := strings.TrimSpace(c.PostForm("parentId"))
 			if parentID != "" {
 				if parent, perr := h.products.GetCategory(c.Request.Context(), &productdto.GetCategoryReq{ProjectID: projectID, ID: parentID}); perr == nil {

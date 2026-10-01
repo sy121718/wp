@@ -102,7 +102,10 @@ func TestCategoryTreeHierarchySortSlugSEO(t *testing.T) {
 	}
 }
 
-// TestCategoryBoundedPage verifies level paging, search ancestors and project isolation.
+// TestCategoryBoundedPage 校验「按树根分页 + 搜索带路径 + 工程隔离」。
+//
+// 列表一次渲染整棵树：浏览态一页 = 一页顶级分类及其全部后代，
+// 搜索态一页 = 命中所属的根分类（按命中分页会让同一棵树跨页重复出现）。
 func TestCategoryBoundedPage(t *testing.T) {
 	f := newAttrFixture(t)
 	if f == nil {
@@ -129,36 +132,51 @@ func TestCategoryBoundedPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreign, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: otherProject.ID, Name: "命中叶", Slug: "foreign"})
-	if err != nil {
+	// 另一个工程里的同名分类：只是用来证明工程作用域把命中数压住（下面断言 MatchTotal == 1）。
+	if _, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: otherProject.ID, Name: "命中叶", Slug: "foreign"}); err != nil {
 		t.Fatal(err)
 	}
 
-	rootPage, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Page: 1, Size: 1})
-	if err != nil || rootPage.Total != 2 || len(rootPage.Items) != 1 || rootPage.Items[0].ID != root.ID || !rootPage.Items[0].HasChildren {
-		t.Fatalf("根级首页: %+v, %v", rootPage, err)
+	// 分页单位是**树根**：一页 = 一页的树，不是一层节点 ——
+	// 列表把整棵子树（含全部后代）一次渲染出来，所以首页带着 root 的两级后代。
+	first, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Page: 1, Size: 1})
+	if err != nil || first.Total != 2 || len(first.Items) != 1 {
+		t.Fatalf("根级首页: %+v, %v", first, err)
+	}
+	tree := first.Items[0]
+	if tree.ID != root.ID || tree.Depth != 0 || !tree.HasChildren {
+		t.Fatalf("首页根节点不对: %+v", tree)
+	}
+	if len(tree.Children) != 1 || tree.Children[0].ID != child.ID || tree.Children[0].Depth != 1 {
+		t.Fatalf("首页应带出直接子级: %+v", tree)
+	}
+	if len(tree.Children[0].Children) != 1 || tree.Children[0].Children[0].ID != leaf.ID || tree.Children[0].Children[0].Depth != 2 {
+		t.Fatalf("首页应带出整棵子树: %+v", tree)
 	}
 	second, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Page: 2, Size: 1})
-	if err != nil || second.Total != 2 || len(second.Items) != 1 || second.Items[0].ID != otherRoot.ID {
+	if err != nil || second.Total != 2 || len(second.Items) != 1 || second.Items[0].ID != otherRoot.ID || len(second.Items[0].Children) != 0 {
 		t.Fatalf("根级次页: %+v, %v", second, err)
 	}
-	children, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, ParentID: root.ID, Page: 1, Size: 20})
-	if err != nil || children.Total != 1 || len(children.Items) != 1 || children.Items[0].ID != child.ID {
-		t.Fatalf("直接子级: %+v, %v", children, err)
-	}
 	search, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Keyword: "命中叶", Page: 1, Size: 1})
-	if err != nil || search.Total != 1 || len(search.Items) != 1 || search.Items[0].ID != root.ID || len(search.Items[0].Children) != 1 || len(search.Items[0].Children[0].Children) != 1 || search.Items[0].Children[0].Children[0].ID != leaf.ID || !search.Items[0].Children[0].Children[0].Matched {
-		t.Fatalf("搜索祖先链: %+v, %v", search, err)
+	if err != nil || search.Total != 1 || search.MatchTotal != 1 || len(search.Items) != 1 || search.Items[0].ID != root.ID {
+		t.Fatalf("搜索按根分页: %+v, %v", search, err)
 	}
-	if _, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, ParentID: foreign.ID}); err == nil {
-		t.Fatal("跨工程父分类应拒绝")
+	if len(search.Items[0].Children) != 1 || len(search.Items[0].Children[0].Children) != 1 ||
+		search.Items[0].Children[0].Children[0].ID != leaf.ID || !search.Items[0].Children[0].Children[0].Matched {
+		t.Fatalf("搜索祖先链应成树且只标命中项: %+v", search.Items[0])
+	}
+	// MatchTotal 只数命中项：另一个工程里的同名分类不参与（工程作用域收窄）。
+	if search.MatchTotal != 1 {
+		t.Fatalf("跨工程同名分类不应计入命中: %d", search.MatchTotal)
 	}
 	secondLeaf, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, ParentID: child.ID, Name: "命中叶乙", Slug: "leaf-two"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	search, err = f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Keyword: "命中叶", Size: 20})
-	if err != nil || search.Total != 2 || len(search.Items) != 1 || len(search.Items[0].Children) != 1 || len(search.Items[0].Children[0].Children) != 2 || search.Items[0].Children[0].Children[0].ID != leaf.ID || search.Items[0].Children[0].Children[1].ID != secondLeaf.ID {
+	if err != nil || search.Total != 1 || search.MatchTotal != 2 || len(search.Items) != 1 ||
+		len(search.Items[0].Children) != 1 || len(search.Items[0].Children[0].Children) != 2 ||
+		search.Items[0].Children[0].Children[0].ID != leaf.ID || search.Items[0].Children[0].Children[1].ID != secondLeaf.ID {
 		t.Fatalf("共享祖先只出现一次且祖先在命中之前: %+v, %v", search, err)
 	}
 	literal, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "50%_折扣", Slug: "sale-literal"})
@@ -166,7 +184,7 @@ func TestCategoryBoundedPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	percent, err := f.svc.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{ProjectID: f.projectID, Keyword: "%_", Size: 20})
-	if err != nil || percent.Total != 1 || len(percent.Items) != 1 || percent.Items[0].ID != literal.ID {
+	if err != nil || percent.Total != 1 || percent.MatchTotal != 1 || len(percent.Items) != 1 || percent.Items[0].ID != literal.ID {
 		t.Fatalf("搜索通配符按字面量匹配: %+v, %v", percent, err)
 	}
 }
@@ -496,17 +514,18 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	body := rec.Body.String()
 	// 行内按钮文案随改造按「动词 + 对象」收紧：行内不再重复实体名，
 	// 「删除分类」= 行内「删除」（「新建分类」是页头主行动的按钮文案，保留）。
-	for _, want := range []string{"商品分类", "男装", "men", "新建分类", ">删除</button>", "parentId=" + rootID} {
+	for _, want := range []string{"商品分类", "男装", "men", "新建分类", ">删除</button>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("分类根页缺少 %q", want)
 		}
 	}
-	if strings.Contains(body, "shirts</code>") {
-		t.Fatal("根页不应预载子级分类行")
+	// 列表一次渲染整棵树：顶级行下面直接跟着子级（缩进 + 树枝前缀），
+	// 不再「点父级进入下一层」，也不预载成隐藏行等懒加载。
+	if !strings.Contains(body, "shirts</code>") || !strings.Contains(body, `<span class="tree-elbow"`) {
+		t.Fatal("分类页应把子级直接渲染在顶级下面（缩进成树）")
 	}
-	rec = httptestGet(engine, "/admin/product-categories?project="+f.projectID+"&parentId="+rootID)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "shirts</code>") || !strings.Contains(rec.Body.String(), "　衬衫") {
-		t.Fatalf("进入父级后应显示缩进的直接子级: status=%d", rec.Code)
+	if strings.Contains(body, "parentId="+rootID) {
+		t.Fatal("逐层导航已退役：列表本身就是树，不该再出现「进入父级」的链接")
 	}
 
 	// 品牌：表单建品牌 → 页面能看到 logo / slug / 描述。

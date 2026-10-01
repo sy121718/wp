@@ -15,6 +15,7 @@ package productservice
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -237,8 +238,12 @@ func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCatego
 	return buildCategoryTree(rows), nil
 }
 
-// ListCategoryPage returns a bounded tree level or matching rows with ancestors.
-// The legacy ListCategories path deliberately keeps its whole-tree contract.
+// ListCategoryPage 后台分类树的分页读，返回**树**（顶级分类带 Children 嵌套）。
+//
+// 分页单位一律是树根：浏览态 = 顶级分类，搜索态 = 命中所属的根分类。
+// 逐层点进去的导航（parentId）与子级懒加载已退役 —— 列表本身就是整棵树，
+// 逐层导航与树并存只会让人在两套「在哪一层」的心智模型之间来回切。
+// 旧的 ListCategories（全树契约）留给构建期与其它调用方，本方法管后台分页。
 func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryPageResp, err error) {
 	if req == nil {
 		return nil, errors.New(productenums.ErrInvalidParam)
@@ -247,16 +252,7 @@ func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCate
 	if err != nil {
 		return nil, err
 	}
-	parentID, keyword := strings.TrimSpace(req.ParentID), strings.TrimSpace(req.Keyword)
-	if parentID != "" && keyword == "" {
-		parent, perr := s.m.GetCategory(ctx, parentID, projectID)
-		if perr != nil {
-			return nil, mapNotFound(perr)
-		}
-		if parent.ProjectID != projectID {
-			return nil, errors.New(productenums.ErrCategoryParentMismatch)
-		}
-	}
+	keyword := strings.TrimSpace(req.Keyword)
 	page, size := req.Page, req.Size
 	if page < 1 {
 		page = 1
@@ -267,37 +263,29 @@ func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCate
 	if size > 100 {
 		size = 100
 	}
-	rows, total, err := s.m.ListCategoryPage(ctx, projectID, parentID, keyword, size, (page-1)*size)
-	if err != nil {
-		return nil, err
-	}
-	res = &productdto.CategoryPageResp{Items: make([]*productdto.CategoryResp, 0, len(rows)), Total: total}
 	if keyword == "" {
-		for _, row := range rows {
-			item := toCategoryResp(&row.ProductCategoryEntity)
-			item.HasChildren = row.HasChildren
-			res.Items = append(res.Items, item)
+		rows, total, lerr := s.m.ListCategoryRootsPage(ctx, projectID, size, (page-1)*size)
+		if lerr != nil {
+			return nil, lerr
 		}
+		return &productdto.CategoryPageResp{Items: buildCategoryPageTree(rows), Total: total}, nil
+	}
+	rows, matchTotal, lerr := s.m.ListCategorySearchForest(ctx, projectID, keyword)
+	if lerr != nil {
+		return nil, lerr
+	}
+	roots := buildCategoryPageTree(rows)
+	res = &productdto.CategoryPageResp{Total: int64(len(roots)), MatchTotal: matchTotal}
+	start := (page - 1) * size
+	if start >= len(roots) {
+		// 页码越界：分页条由调用方按 Total 夹住，这里只保证不切出 panic。
 		return res, nil
 	}
-	// Search rows are ordered as a forest, not by their flat SQL order.
-	byID := make(map[string]*productdto.CategoryResp, len(rows))
-	for _, row := range rows {
-		item := toCategoryResp(&row.ProductCategoryEntity)
-		item.HasChildren, item.Matched = row.HasChildren, row.Matched
-		byID[item.ID] = item
+	end := start + size
+	if end > len(roots) {
+		end = len(roots)
 	}
-	for _, row := range rows {
-		item := byID[row.ID]
-		if parent, ok := byID[item.ParentID]; ok && parent != item {
-			parent.Children = append(parent.Children, item)
-		} else {
-			res.Items = append(res.Items, item)
-		}
-	}
-	for _, root := range res.Items {
-		setCategoryDepth(root, 0)
-	}
+	res.Items = roots[start:end]
 	return res, nil
 }
 
@@ -518,6 +506,44 @@ func containsID(ids []string, id string) bool {
 		}
 	}
 	return false
+}
+
+// buildCategoryPageTree 分页读的行 → 树（并填 Depth / HasChildren / Matched）。
+//
+// 排序在这里做而不是在 SQL 里：递归 CTE 的输出顺序在 UNION ALL 之后没有语义，
+// 同一层的兄弟必须按 sort / create_time / id 定序才对得上用户在表单里看到的顺序。
+func buildCategoryPageTree(rows []*productmodel.CategoryPageRow) []*productdto.CategoryResp {
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if a.Sort != b.Sort {
+			return a.Sort < b.Sort
+		}
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.Before(b.CreatedAt)
+		}
+		return a.ID < b.ID
+	})
+	byID := make(map[string]*productdto.CategoryResp, len(rows))
+	for _, row := range rows {
+		item := toCategoryResp(&row.ProductCategoryEntity)
+		item.HasChildren, item.Matched = row.HasChildren, row.Matched
+		byID[item.ID] = item
+	}
+	roots := make([]*productdto.CategoryResp, 0, len(rows))
+	for _, row := range rows {
+		node := byID[row.ID]
+		if row.ParentID != nil && *row.ParentID != "" {
+			if parent, ok := byID[*row.ParentID]; ok && parent != node {
+				parent.Children = append(parent.Children, node)
+				continue
+			}
+		}
+		roots = append(roots, node)
+	}
+	for _, root := range roots {
+		setCategoryDepth(root, 0)
+	}
+	return roots
 }
 
 // buildCategoryTree 扁平行 → 树（父级缺失 / 自环 / 环数据一律按顶级处理，节点不丢）。

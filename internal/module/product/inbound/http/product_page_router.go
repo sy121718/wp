@@ -152,9 +152,9 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
 
 	// 商品分类与品牌管理页（issue #10）：分类是树（父子层级 / 排序 / slug / SEO 字段），
+	// 列表一次渲染整棵树，按树根分页 —— 没有「子级懒加载」端点。
 	// 品牌是独立实体（logo / 描述 / slug / SEO 字段）。写动作复用商品 API 权限点做 Casbin 鉴权。
 	pages.GET("/product-categories", productPages.ProductCategoriesPage)
-	pages.GET("/product-categories/children", productPages.ProductCategoryChildren)
 	pages.GET("/product-categories/parents", productPages.ProductCategoryParents)
 	pages.POST("/product-categories/create", builtin.CasbinMiddlewareForPath("/api/product/category/create"), productPages.ProductCategoriesCreate)
 	pages.POST("/product-categories/update", builtin.CasbinMiddlewareForPath("/api/product/category/update"), productPages.ProductCategoriesUpdate)

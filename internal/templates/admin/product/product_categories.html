@@ -60,19 +60,15 @@
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
-    {{if isset(.Breadcrumbs)}}{{if len(.Breadcrumbs) > 0}}
-    <nav class="page-context" aria-label="{{ .["t"]("admin.product_categories.list.title", "分类树") }}">
-        <a href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.product_categories.title", "商品分类") }}</a>
-        {{range _, ancestor := .Breadcrumbs}} / <a href="/admin/product-categories?project={{selectedProject}}&amp;parentId={{ancestor.ID}}">{{ancestor.Name}}</a>{{end}}
-    </nav>
-    {{end}}{{end}}
+    {* 没有面包屑导航：列表本身就是整棵树（顶级分类带全部子类），
+       不再「点父级进下一层」—— 两套「现在在哪一层」的心智模型只会互相干扰。 *}
+
     <section class="card list-card">
         {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
            分页链接由服务端带上同样的条件（productListBaseURL），翻页不会把筛选丢掉。 *}
         <div class="filter-bar">
             <form method="get" action="/admin/product-categories" class="filter-fields">
                 <input type="hidden" name="project" value="{{selectedProject}}">
-                {{if isset(.ParentID)}}{{if .ParentID != ""}}<input type="hidden" name="parentId" value="{{.ParentID}}">{{end}}{{end}}
                 <div class="filter-field">
                     <label for="categories-filter-keyword">{{ .["t"]("admin.common.field.keyword", "关键词") }}</label>
                     <input type="text" class="form-input filter-search" id="categories-filter-keyword" name="keyword" value="{{fKeyword}}"
@@ -80,7 +76,7 @@
                 </div>
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}{{if isset(.ParentID)}}{{if .ParentID != ""}}&amp;parentId={{.ParentID}}{{end}}{{end}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
                 </div>
             </form>
         </div>
@@ -125,7 +121,7 @@
                             <p class="empty-title">{{ .["t"]("admin.product_categories.empty.filteredTitle", "没有匹配的分类") }}</p>
                             <p class="empty-desc">{{ .["t"]("admin.common.filter.emptyHint", "换个关键词再试，或清掉筛选看全部。") }}</p>
                             <div class="empty-actions">
-                                <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}{{if isset(.ParentID)}}{{if .ParentID != ""}}&amp;parentId={{.ParentID}}{{end}}{{end}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
+                                <a class="btn btn-sm btn-ghost" href="/admin/product-categories?project={{selectedProject}}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>
                             </div>
                             {{else}}
                             <p class="empty-title">{{ .["t"]("admin.product_categories.empty.title", "还没有分类") }}</p>
@@ -140,11 +136,16 @@
                     </td></tr>
                     {{else}}
                     {{range _, row := .Categories}}
-                    <tr data-category-row data-category-id="{{row.ID}}" data-category-parent="{{row.ParentID}}" aria-level="{{if isset(row.Depth)}}{{row.Depth + 1}}{{else}}1{{end}}" {{if isset(.SearchMode)}}{{if .SearchMode}}{{if row.Matched}}data-category-match{{else}}data-category-ancestor{{end}}{{end}}{{end}}>
+                    {* Depth 按可选键取（模板单测直接渲染本页时行数据里没有它）：
+                       缺键时点号访问会中断整页渲染 —— HTTP 仍 200，整块 HTML 却不见了。 *}
+                    {{rowDepth := 0}}{{if isset(row.Depth)}}{{rowDepth = row.Depth}}{{end}}
+                    <tr data-category-row data-category-id="{{row.ID}}" data-category-parent="{{row.ParentID}}" aria-level="{{rowDepth + 1}}" {{if isset(.SearchMode)}}{{if .SearchMode}}{{if row.Matched}}data-category-match{{else}}data-category-ancestor{{end}}{{end}}{{end}}>
                         <td class="col-check">
                             <input type="checkbox" name="ids" value="{{row.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                         </td>
-                        <td style="padding-inline-start:calc({{if isset(row.Depth)}}{{row.Depth}}{{else}}0{{end}} * 1.25rem)">{{if row.HasChildren}}{{if !row.SearchMode}}<button type="button" class="row-title-link" data-category-toggle aria-expanded="false" aria-controls="category-children-{{row.ID}}" hx-get="/admin/product-categories/children?project={{selectedProject}}&amp;parentId={{row.ID}}" hx-target="#category-children-{{row.ID}}" hx-swap="innerHTML"><strong>{{row.Label}}</strong></button>{{else}}<strong>{{row.Label}}</strong>{{end}}{{else}}<strong>{{row.Label}}</strong>{{end}}
+                        {* 树状行：层级由服务端按父子关系算好（模板不自己推 Depth），
+                           子行缩进 + 树枝前缀，父行加粗、子行普通字重 —— 一眼看出谁挂在谁下面。 *}
+                        <td style="padding-inline-start:calc({{rowDepth}} * 1.5rem)">{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if rowDepth == 0}}<strong>{{row.Label}}</strong>{{else}}{{row.Label}}{{end}}
                         {{if row.SearchMode}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>
@@ -157,7 +158,6 @@
                             {{end}}
                         </td>
                     </tr>
-                    {{if row.HasChildren}}{{if !row.SearchMode}}<tr data-category-child-row hidden><td colspan="5"><div id="category-children-{{row.ID}}" data-category-children></div></td></tr>{{end}}{{end}}
                     {{end}}
                     {{end}}
                     </tbody>

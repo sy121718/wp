@@ -40,8 +40,14 @@ type BrandResp struct {
 	Matched        bool   `json:"matched,omitempty"`
 }
 
-// CategoryPageResp 是后台受限分页读结果。Total 只统计匹配实体，不统计祖先上下文。
+// CategoryPageResp 是后台分类树的分页读结果。
+//
+// Items 是**树**（顶级分类带 Children 嵌套）—— 列表一次渲染整棵树，不再逐层点进去。
+// Total 是分页单位的数量：浏览态 = 顶级分类数，搜索态 = 命中所属的根分类数
+// （搜索按根分页，否则同一棵树会跨页重复出现）。
+// MatchTotal 只在搜索态有值：命中的分类条数（提示文案用它，分页不用）。
 type CategoryPageResp struct {
-	Items []*CategoryResp `json:"items"`
-	Total int64           `json:"total"`
+	Items      []*CategoryResp `json:"items"`
+	Total      int64           `json:"total"`
+	MatchTotal int64           `json:"matchTotal,omitempty"`
 }

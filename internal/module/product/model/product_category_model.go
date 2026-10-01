@@ -136,56 +136,79 @@ type CategoryPageRow struct {
 	Matched     bool `gorm:"column:matched"`
 }
 
-// ListCategoryPage counts one level or search matches, then reads the requested
-// page; search also includes each selected match's ancestor context.
-func (m *Model) ListCategoryPage(ctx context.Context, projectID, parentID, keyword string, limit, offset int) (rows []*CategoryPageRow, total int64, err error) {
-	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+// ListCategoryRootsPage 读一页**顶级分类的完整子树**（分页单位是顶级分类）。
+//
+// 分类列表直接渲染整棵树：不再「点父级进入下一层」，也不再按父级懒加载子级。
+// 不为一层一页留退路 —— 分类是人工维护的品类表，一个工程几十条，
+// 整棵树一次读完的代价远小于「分页 + 逐层展开」的交互成本（YAGNI）。
+func (m *Model) ListCategoryRootsPage(ctx context.Context, projectID string, limit, offset int) (rows []*CategoryPageRow, total int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).Where("project_id = ?", projectID)
-		switch {
-		case keyword != "":
-			q = q.Where(`(name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')`, pattern, pattern)
-		case parentID != "":
-			q = q.Where("parent_id = ?", parentID)
-		default:
-			q = q.Where("parent_id IS NULL")
-		}
-		if e := q.Count(&total).Error; e != nil {
+		countQ := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Where("project_id = ? AND parent_id IS NULL", projectID)
+		if e := countQ.Count(&total).Error; e != nil {
 			return e
 		}
-		if keyword != "" {
-			// Path tracking bounds recursion even if historical data contains a cycle.
-			return tx.WithContext(ctx).Raw(`WITH RECURSIVE picked AS (
+		// path 只用于把递归结果停在 64 层并防住环，排序交给调用方
+		// （按 sort / create_time / id 建树，SQL 的顺序在这里没有语义）。
+		return tx.WithContext(ctx).Raw(`WITH RECURSIVE roots AS (
 				SELECT id FROM product_categories
-				WHERE project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')
-				ORDER BY sort, create_time, id LIMIT ? OFFSET ?
-			), family AS (
-				SELECT c.id, c.parent_id, ARRAY[c.id] AS path, 0 AS depth
-				FROM product_categories c JOIN picked p ON p.id = c.id
+				WHERE project_id = ? AND parent_id IS NULL
+				ORDER BY sort, create_time, id
+				LIMIT ? OFFSET ?
+			), tree AS (
+				SELECT c.id, ARRAY[c.id] AS path, 0 AS depth
+				FROM product_categories c JOIN roots r ON r.id = c.id
 				UNION ALL
-				SELECT parent.id, parent.parent_id, child.path || parent.id, child.depth + 1
-				FROM product_categories parent JOIN family child ON child.parent_id = parent.id
-				WHERE parent.project_id = ? AND child.depth < 64 AND NOT parent.id = ANY(child.path)
+				SELECT child.id, t.path || child.id, t.depth + 1
+				FROM product_categories child JOIN tree t ON child.parent_id = t.id
+				WHERE child.project_id = ? AND t.depth < 64 AND NOT child.id = ANY(t.path)
 			)
-			SELECT c.*, EXISTS (SELECT 1 FROM product_categories child
-				WHERE child.project_id = ? AND child.parent_id = c.id) AS has_children,
-				EXISTS (SELECT 1 FROM picked p WHERE p.id = c.id) AS matched
-			FROM product_categories c WHERE c.project_id = ? AND c.id IN (SELECT id FROM family)
-			ORDER BY c.sort, c.create_time, c.id`, projectID, pattern, pattern, limit, offset, projectID, projectID, projectID).Scan(&rows).Error
-		}
-		page := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
-			Select(`product_categories.*, EXISTS (SELECT 1 FROM product_categories child
-				WHERE child.project_id = ? AND child.parent_id = product_categories.id) AS has_children`, projectID).
-			Where("product_categories.project_id = ?", projectID)
-		if parentID == "" {
-			page = page.Where("product_categories.parent_id IS NULL")
-		} else {
-			page = page.Where("product_categories.parent_id = ?", parentID)
-		}
-		return page.Order("product_categories.sort, product_categories.create_time, product_categories.id").
-			Limit(limit).Offset(offset).Scan(&rows).Error
+			SELECT c.*, EXISTS (SELECT 1 FROM product_categories ch
+					WHERE ch.project_id = ? AND ch.parent_id = c.id) AS has_children,
+				FALSE AS matched
+			FROM tree t JOIN product_categories c ON c.id = t.id`,
+			projectID, limit, offset, projectID, projectID).Scan(&rows).Error
 	})
 	return rows, total, err
+}
+
+// ListCategorySearchForest 读「命中项 + 各自到根的祖先路径」，交给调用方按根分页。
+//
+// 分页单位是**根分类**而不是命中条数：一条命中必须连着它的上级路径一起显示，
+// 按命中分页会让同一棵树在多页里重复出现。
+//
+// matchTotal 是命中的分类条数（提示文案用）；返回行里 matched 标出哪些是命中项，
+// 其余都是「仅供定位」的祖先。全量返回不做分页 —— 命中越多每棵树越浅，
+// 这里宁可整片森林一起读，也不引入「命中分页 + 树分页」两套坐标。
+func (m *Model) ListCategorySearchForest(ctx context.Context, projectID, keyword string) (rows []*CategoryPageRow, matchTotal int64, err error) {
+	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		matchQ := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Where(`project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')`, projectID, pattern, pattern)
+		if e := matchQ.Count(&matchTotal).Error; e != nil {
+			return e
+		}
+		// 与旧查询同一条路径跟踪：历史数据里若有环，递归停住而不是打转。
+		return tx.WithContext(ctx).Raw(`WITH RECURSIVE picked AS (
+				SELECT id FROM product_categories
+				WHERE project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')
+			), family AS (
+				SELECT c.id, c.parent_id, ARRAY[c.id] AS path, 0 AS steps, TRUE AS matched
+				FROM product_categories c JOIN picked p ON p.id = c.id
+				UNION ALL
+				SELECT parent.id, parent.parent_id, child.path || parent.id, child.steps + 1, FALSE
+				FROM product_categories parent JOIN family child ON child.parent_id = parent.id
+				WHERE parent.project_id = ? AND child.steps < 64 AND NOT parent.id = ANY(child.path)
+			), keep AS (
+				SELECT id, bool_or(matched) AS matched FROM family GROUP BY id
+			)
+			SELECT c.*, EXISTS (SELECT 1 FROM product_categories ch
+					WHERE ch.project_id = ? AND ch.parent_id = c.id) AS has_children,
+				keep.matched
+			FROM keep JOIN product_categories c ON c.id = keep.id`,
+			projectID, pattern, pattern, projectID, projectID).Scan(&rows).Error
+	})
+	return rows, matchTotal, err
 }
 
 // ListCategoriesByIDs 批量取分类（商品引用校验与反查用，避免 N+1），**必带工程作用域**。

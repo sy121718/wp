@@ -616,6 +616,9 @@ button.row-title-link {
 .data-table .row-title-link:hover { color: var(--sky-c-primary, #3d444f); text-decoration: underline; }
 }
 .data-table .row-title-link:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
+/* 树形列表的树枝前缀（商品分类）：只出现在子行，颜色浅于正文，与名称之间留一点空隙。
+   层级本身由行内的 padding-inline-start（服务端按 Depth 算）表达，这里只补视觉引导。 */
+.data-table .tree-elbow { color: var(--sky-c-text-mute, #6b7280); margin-inline-end: 6px; }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background var(--ui-tr-fast); }
 @media (hover: hover) {
