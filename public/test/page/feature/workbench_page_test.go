@@ -30,6 +30,11 @@ func TestWorkbenchPageShell(t *testing.T) {
 			// jsVer 由真实 handler 注入（dashboard_handle.go）；模板 head/body 均引用它，
 			// 缺失会让 Jet 在第一个 jsVer 表达式处运行时报错并截断输出。
 			"jsVer": "test-1",
+			// 取词函数：模板顶部 `{{tr := .["t"]}}` 从 data 取它（真实路径由 shell.Prepare
+			// 注入）。**缺这个键时模板里所有 tr(...) 都输出空** —— class / id 结构仍在，
+			// 中文文案却整片消失，于是「外壳缺少区块 组件」这类断言会把「测试没给取词函数」
+			// 误报成「模板缺了区块」。与其它模板测试同口径走 TranslateFunc。
+			"t": templates.TranslateFunc("zh-CN"),
 		})
 	})
 
