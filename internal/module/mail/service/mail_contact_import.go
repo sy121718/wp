@@ -126,13 +126,16 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 	toInsert := make([]*mailmodel.MailContactEntity, 0, len(list))
 	toUpdate := make([]mailmodel.ContactImportUpdate, 0, len(list))
 	// 触发相关的粗判（**一次查询**）：有没有启用中的 tag_added 流程。
-	// 只有存在时才值得为「标签差集」读每个联系人的旧标签（每行一次主键读）。
+	// 没有的话整块标签差集都不必算 —— 零配置站点不为它付任何代价。
 	// 触发本身不在这里做，由写库后的批量入口各自匹配一次流程。
 	needTagDiff := hasTriggerType(s.activeAutomations(ctx), mailmodel.TriggerTagAdded)
 	// tagAdds 记录「本次真正**新增**的标签」（email → 新增标签）：tag_added 触发只认新增部分。
 	// 少了这层过滤，一次「标签一个都没变」的重新导入会把所有人重新推进 tag_added 流程。
 	// 差集必须在写库**之前**算 —— 写完之后就查不到旧值了。
 	tagAdds := make(map[string][]string, len(list))
+	// pendingTags 收集「已存在、要更新、带了标签」的行，稍后**一次**批量读旧标签。
+	// 逐条读是 N+1（每个这样的联系人一次主键读）；这里天然有 id 集合可批。
+	pendingTags := make([]pendingTagDiff, 0, len(list))
 	for _, e := range list {
 		key := strings.ToLower(e.Email)
 		if _, exists := existing[key]; !exists {
@@ -151,9 +154,28 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 		// 同意状态（status / subscribed_at / consent_source）不能被一次导入悄悄改写，
 		// 否则「已退订的人」会被导入变回订阅，等于自己造投诉。
 		toUpdate = append(toUpdate, mailmodel.ContactImportUpdate{Email: e.Email, Name: e.Name, Tags: e.Tags})
-		if needTagDiff {
-			if added := s.addedTags(ctx, existing[key], e.Tags); len(added) > 0 {
-				tagAdds[key] = added
+		if needTagDiff && len(e.Tags) > 0 && existing[key] != 0 {
+			pendingTags = append(pendingTags, pendingTagDiff{email: key, contactID: existing[key], tags: e.Tags})
+		}
+	}
+
+	// 一次批量读旧标签，再在内存里取差集（差集必须在写库之前算完）。
+	if len(pendingTags) > 0 {
+		ids := make([]uint64, 0, len(pendingTags))
+		for _, p := range pendingTags {
+			ids = append(ids, p.contactID)
+		}
+		oldTags, terr := s.m.TagsByContactIDs(ctx, ids)
+		if terr != nil {
+			// 读失败一律当作「没有新增」：触发是附加行为，不能让它把导入本身打失败
+			// （与事件入口自带 recover 同一取舍）。
+			logger.Scene("mail").With("contacts", len(ids)).
+				Warn("批量读取联系人旧标签失败，本次导入不触发 tag_added（导入本身不受影响）")
+		} else {
+			for _, p := range pendingTags {
+				if added := diffTags(oldTags[p.contactID], p.tags); len(added) > 0 {
+					tagAdds[p.email] = added
+				}
 			}
 		}
 	}
@@ -230,27 +252,14 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 	return res, nil
 }
 
-// addedTags 算出「本次新增的标签」：读旧标签后取差集。
+// pendingTagDiff 待算标签差集的一行（已存在、要更新、带了标签）。
 //
-// 为什么需要旧值：tag_added 触发只认**新增**（见 OnTagsAdded 的调用约定）；
-// 少了这层过滤，一次「标签没变」的重新导入会把所有联系人重新推进 tag_added 流程，
-// 表现是重复发信。
-//
-// 读法是主键单行读：模型层没有「按邮箱批量取标签」的方法，而这里只对
-// 「本次带了标签、且命中已存在联系人」的行读 —— 导入是低频人工操作，
-// 主键读是最便宜的可用手段。读失败一律当作「没有新增」：触发是附加行为，
-// 不能让它把导入本身打失败（与 fireTrigger 同一取舍）。
-func (s *Service) addedTags(ctx context.Context, contactID uint64, incoming []string) []string {
-	if contactID == 0 || len(incoming) == 0 {
-		return nil
-	}
-	row, err := s.m.GetContact(ctx, contactID)
-	if err != nil {
-		logger.Scene("mail").With("contact_id", contactID).
-			Warn("读取联系人旧标签失败，本次导入不触发 tag_added（导入本身不受影响）")
-		return nil
-	}
-	return diffTags(row.Tags, incoming)
+// 收集成一批是为了**一次**读旧标签（mailmodel.TagsByContactIDs）：逐条读是 N+1，
+// 而这里天然有 id 集合可批。差集口径（diffTags）不变，只是旧值的取法从逐条变批量。
+type pendingTagDiff struct {
+	email     string
+	contactID uint64
+	tags      []string
 }
 
 // diffTags 返回 incoming 中**不在** old 里的标签（去空白、保序）。

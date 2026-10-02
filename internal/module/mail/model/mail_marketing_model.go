@@ -311,6 +311,65 @@ func (m *MailModel) ExistingContactIDs(ctx context.Context, emails []string) (id
 	return ids, nil
 }
 
+// contactTagsChunkSize 单条 IN 最多带多少个 id。
+//
+// PostgreSQL 的绑定参数上限是 65535，这里取 2000 留足余量：单条语句的元素越多，
+// planner 为它构造的表达式与内存占用增长越快，而分块只是把一条语句变几条同类语句。
+const contactTagsChunkSize = 2000
+
+// TagsByContactIDs **批量**取联系人的标签（一次 WHERE id IN (...)，按块切）。
+//
+// 用途：导入路径要算「本次真正新增的标签」差集，而差集需要旧值 —— 逐条取旧标签就是
+// N+1（每个带标签的待更新联系人一次主键读）。调用方一次预算好，差集在内存里算。
+//
+// 只读本模块表、条件以参数传入（model 是表访问单元）：不做标签归一化 / 去空白，
+// 也不判断「这个标签意味着什么」，那些属于 service。
+//
+// 两个边界刻意写在这里：
+//   - ids 为空**不发查询** —— 空 IN () 在 PG 上是语法错误，而不是「返回空集」；
+//   - 超大集合分批（见 contactTagsChunkSize），避免撞上绑定参数上限。
+//
+// 返回的 map 只含查到的行：调用方要用「缺失即无标签」的语义（新建的联系人本来就不在
+// 这张表里，不应该为它编一个空切片）。
+func (m *MailModel) TagsByContactIDs(ctx context.Context, ids []uint64) (tags map[uint64][]string, err error) {
+	tags = make(map[uint64][]string, len(ids))
+	if len(ids) == 0 {
+		return tags, nil
+	}
+	uniq := make([]uint64, 0, len(ids))
+	seen := make(map[uint64]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	for start := 0; start < len(uniq); start += contactTagsChunkSize {
+		end := start + contactTagsChunkSize
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		var rows []struct {
+			ID   uint64
+			Tags StringArray
+		}
+		if qerr := m.tx(ctx).Model(&MailContactEntity{}).
+			Select("id", "tags").
+			Where("id IN ?", uniq[start:end]).
+			Scan(&rows).Error; qerr != nil {
+			return nil, qerr
+		}
+		for _, r := range rows {
+			tags[r.ID] = r.Tags
+		}
+	}
+	return tags, nil
+}
+
 // BatchInsertContacts 批量新增联系人（导入的新增那一批）。
 func (m *MailModel) BatchInsertContacts(ctx context.Context, list []*MailContactEntity, batchSize int) (err error) {
 	if len(list) == 0 {

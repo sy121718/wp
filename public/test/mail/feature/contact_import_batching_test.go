@@ -11,6 +11,7 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -202,4 +203,74 @@ func TestImportUpdateKeepsConsentState(t *testing.T) {
 	if got.Name == nil || *got.Name != "新名" {
 		t.Fatalf("非同意字段（姓名）应被更新，实际 %v", got.Name)
 	}
+}
+
+// TestImportTagDiffReadsOldTagsInOneQuery 有 tag_added 流程时，标签差集的「旧值读取」
+// 必须是**一次批量读**，不能是每个联系人一次主键读。
+//
+// 为什么单开一条：`needTagDiff` 的粗判（有没有启用中的 tag_added 流程）让零配置站点
+// 根本不走到这段 —— 导入语句数恒为常数，所以既有的 TestImportWriteStatementProfile
+// 覆盖不到它：把批量读退回逐条读时，那条护栏照样绿。
+// N 取 300：逐条读会立刻变成 300 条，批量读是常数条（阈值 20）。
+func TestImportTagDiffReadsOldTagsInOneQuery(t *testing.T) {
+	counter := &sqlCounter{}
+	svc, _ := importFixture(t, counter)
+	ctx := context.Background()
+
+	// 「被打上 vip 标签」的启用流程 —— 它是 needTagDiff 为真的唯一条件。
+	def := map[string]any{"entry": "n1", "nodes": []any{
+		newNode("n1", "trigger", nil, "n2"),
+		newNode("n2", "end", nil, ""),
+	}}
+	raw, err := json.Marshal(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := svc.SaveAutomation(ctx, &maildto.SaveAutomationReq{
+		Name: "打上 vip 标签跟进", TriggerType: mailmodel.TriggerTagAdded,
+		Definition: raw, TriggerParams: map[string]any{"tag": "vip"},
+	})
+	if err != nil {
+		t.Fatalf("建流程失败: %v", err)
+	}
+	if err = svc.SetAutomationStatus(ctx, &maildto.SetAutomationStatusReq{
+		ID: item.ID, Status: mailmodel.AutomationStatusActive,
+	}); err != nil {
+		t.Fatalf("启用流程失败: %v", err)
+	}
+
+	const n = 300
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&sb, "tagdiff%d@example.com\n", i)
+	}
+	content := []byte(sb.String())
+
+	// 第一遍：全部新增（新联系人的旧标签集合为空，无需读差集）。
+	if _, err = svc.ImportContacts(ctx, &maildto.ImportContactsReq{
+		Content: content, DefaultTags: []string{"vip"},
+	}); err != nil {
+		t.Fatalf("首轮导入失败: %v", err)
+	}
+
+	// 第二遍：同一批全部命中已存在 → 走 needTagDiff 的差集读；标签没有新增，
+	// 所以除了那一次批量读，不该再为每行付出任何读取。
+	counter.reset()
+	res, err := svc.ImportContacts(ctx, &maildto.ImportContactsReq{
+		Content: content, DefaultTags: []string{"vip"}, UpdateExisting: true,
+	})
+	if err != nil {
+		t.Fatalf("二次导入失败: %v", err)
+	}
+	if res.Updated != n {
+		t.Fatalf("二次应更新 %d 条，实际 %d（错误 %+v）", n, res.Updated, res.Errors)
+	}
+	stmts, sample := counter.snapshot()
+	if stmts > 20 {
+		t.Errorf("差集读退回逐条了：%d 行发出 %d 条语句（阈值 20）—— 旧标签必须一次批量读", n, stmts)
+		for i, s := range sample {
+			t.Logf("样本 %d: %.160s", i, s)
+		}
+	}
+	t.Logf("有 tag_added 流程时二次导入 %d 行：语句数=%d", n, stmts)
 }
