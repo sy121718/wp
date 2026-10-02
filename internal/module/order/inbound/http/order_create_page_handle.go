@@ -38,8 +38,12 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 )
 
@@ -105,6 +109,11 @@ type orderCreateForm struct {
 //
 // 前缀 FormEcho 不是装饰：整页与将来可能的片段共用同一份键空间，
 // 通用键名（Form / Data / Item）迟早撞上页面已有键（见 internal/templates/CLAUDE.md）。
+//
+// **国家/地区不在清单里**（刻意）：它的回填形态不是「字符串填回输入框」，而是**选项选中** ——
+// 收货与账单的下拉各自带一份 ShipCountries / BillCountries，Selected 由 handler 按
+// 「已提交值 → 站点默认国家」算好。清单是双向断言的口径（模板读的 FormEcho* 键 ∈ 清单），
+// 加一个模板根本不读的键会当场把那个断言打红 —— 那不是遗漏，是两国不同的回填形状。
 var orderCreateEchoKeys = []string{
 	"FormEchoEmail", "FormEchoCustomerName", "FormEchoCustomerPhone",
 	"FormEchoPaymentMethod", "FormEchoPaymentMethodTitle", "FormEchoShippingTotal",
@@ -136,16 +145,23 @@ type orderCreatePageHandle struct {
 	catalog productcontract.ProductService
 	// availability 可用量只读端口：**可选**能力（未装配库存时为 nil）。
 	availability productcontract.VariantAvailabilityLookupPort
+	// dict 系统字典只读口：只用来给收货 / 账单的国家下拉供数。
+	// 可选依赖 —— 未注入时下拉只剩「（不填写）」，页面照常渲染、订单照常可建
+	//（国家是选填项，读不到字典不该让建单页打不开）。
+	dict sysconfigcontract.DictReader
 }
 
 // NewOrderCreatePageHandle 构造。
 //
 // 可用量走类型断言而不是新增参数：变体可用量是「有则显示、无则降级」的展示信息，
 // 缺它不该让建单页打不开（订单列表页的工程列表失败也是同一档处理）。
+// dict 是新增参数（与可用量不同）：它来自装配层的同一实例，没有「顺着 catalog 断言出来」
+// 的路径 —— 硬凑一条反而会绕开显式的依赖声明。
 func NewOrderCreatePageHandle(orders ordercontract.OrderService,
 	projects projectcontract.ProjectService,
-	catalog productcontract.ProductService) *orderCreatePageHandle {
-	h := &orderCreatePageHandle{orders: orders, projects: projects, catalog: catalog}
+	catalog productcontract.ProductService,
+	dict sysconfigcontract.DictReader) *orderCreatePageHandle {
+	h := &orderCreatePageHandle{orders: orders, projects: projects, catalog: catalog, dict: dict}
 	if catalog != nil {
 		if lookup, ok := catalog.(productcontract.VariantAvailabilityLookupPort); ok {
 			h.availability = lookup
@@ -274,6 +290,13 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 	}
 	rowAdd.Set("rows", strconv.Itoa(len(form.Items)+1))
 
+	// 国家/地区下拉（收货与账单各一份）：字典**整表只取一次**，两份视图各自标选中项 ——
+	// 一份地址查一次库，等于同一份两百多行的清单在一屏里读两遍。
+	tr := shell.TranslateFor(c)
+	countries := h.countryList(c)
+	shipCountries := countryOptionViews(tr, countries, form.Ship.Country)
+	billCountries := countryOptionViews(tr, countries, form.Bill.Country)
+
 	data := shell.Prepare(c, gin.H{
 		"title": orderCreatePageTitle,
 		"menu":  "orders",
@@ -291,7 +314,10 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 		"CandidateError":   candidateErr,
 		"ItemRows":         form.Items,
 		"MaxRows":          orderCreateMaxRows,
-		"RowAddURL":        "/admin/orders/new?" + rowAdd.Encode(),
+		// 国家/地区下拉的选项（含首位「（不填写）」空项，国家是选填）。
+		"ShipCountries": shipCountries,
+		"BillCountries": billCountries,
+		"RowAddURL":     "/admin/orders/new?" + rowAdd.Encode(),
 		// 错误出口：字段级（标红 + 行内文案）与页级（顶部提示栏）分开。
 		"Err":                        pageErr,
 		"Invalid":                    invalid,
@@ -325,6 +351,69 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 		"FormEchoBillZip":            form.Bill.Zip,
 	})
 	c.HTML(http.StatusOK, "admin/order/order_new.html", data)
+}
+
+// countryNoneLabelKey 「（不填写）」空项的 i18n key（中文兜底写在 countryOptionViews 里）。
+const countryNoneLabelKey = "admin.order_new.field.country_none"
+
+// countryOptionView 国家/地区下拉的一项（模板只读这三个字段）。
+type countryOptionView struct {
+	Code     string
+	Label    string
+	Selected bool
+}
+
+// countryList 取启用国家清单（字典未接入或读取失败时返回 nil）。
+//
+// 读失败**不升级成整页错误**：国家是选填项，下拉空着页面照常可用、订单照常可建 ——
+// 与「工程列表装载失败 → 空列表 + 归口提示 + 200」同一档处理（真因由 sysconfig 侧记日志）。
+func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigdto.CountryOption {
+	if h.dict == nil {
+		return nil
+	}
+	opts, err := h.dict.ListCountryOptions(c.Request.Context(), response.RequestLanguage(c))
+	if err != nil {
+		return nil
+	}
+	return opts
+}
+
+// countryOptionViews 国家清单 → 下拉视图。
+//
+// 首位是「（不填写）」空项：国家**选填** —— 非中国站点、或这单不需要寄的场景下，
+// 强行预选一个默认国家会让运营要么照错填、要么每次手动改回来。
+//
+// 选中项按「已提交的值 → 站点默认国家」定：失败重渲时回填的是运营刚提交的那一个，
+// 初次打开时预选站点默认国家（国内后台绝大多数是国内单，省掉一次手选；它只是预选，随时可改）。
+//
+// 已提交但字典里没有的码会**原样补进列表并选中**：运营在页面上看到的就是会被落库的值，
+// 而不是「下拉里没有这一项，于是浏览器悄悄改选了第一项」—— 后者是「改了一个字段、
+// 另一个字段跟着变了」这类事故里最难查的一种。
+func countryOptionViews(tr translate, countries []sysconfigdto.CountryOption, submitted string) []countryOptionView {
+	selected := orderdto.NormalizeCountryCode(submitted)
+	if selected == "" {
+		selected = orderdto.NormalizeCountryCode(i18n.GetDefaultCountry())
+	}
+	out := make([]countryOptionView, 0, len(countries)+2)
+	out = append(out, countryOptionView{Label: tr(countryNoneLabelKey, "（不填写）"), Selected: selected == ""})
+	hit := false
+	for _, o := range countries {
+		code := strings.TrimSpace(o.Code)
+		if code == "" {
+			continue
+		}
+		label := strings.TrimSpace(o.Label)
+		if label == "" {
+			label = code
+		}
+		matched := selected != "" && strings.EqualFold(code, selected)
+		hit = hit || matched
+		out = append(out, countryOptionView{Code: code, Label: label, Selected: matched})
+	}
+	if selected != "" && !hit {
+		out = append(out, countryOptionView{Code: selected, Label: selected, Selected: true})
+	}
+	return out
 }
 
 // candidateViews 候选变体 → 模板下拉项（标签在服务端拼好，模板不做算术与取词）。
@@ -402,6 +491,7 @@ func orderCreateFormFromPost(c *gin.Context) orderCreateForm {
 		Ship: orderdto.OrderAddress{
 			Name:     strings.TrimSpace(c.PostForm("shipName")),
 			Phone:    strings.TrimSpace(c.PostForm("shipPhone")),
+			Country:  orderdto.NormalizeCountryCode(c.PostForm("shipCountry")),
 			Province: strings.TrimSpace(c.PostForm("shipProvince")),
 			City:     strings.TrimSpace(c.PostForm("shipCity")),
 			District: strings.TrimSpace(c.PostForm("shipDistrict")),
@@ -411,6 +501,7 @@ func orderCreateFormFromPost(c *gin.Context) orderCreateForm {
 		Bill: orderdto.OrderAddress{
 			Name:     strings.TrimSpace(c.PostForm("billName")),
 			Phone:    strings.TrimSpace(c.PostForm("billPhone")),
+			Country:  orderdto.NormalizeCountryCode(c.PostForm("billCountry")),
 			Province: strings.TrimSpace(c.PostForm("billProvince")),
 			City:     strings.TrimSpace(c.PostForm("billCity")),
 			District: strings.TrimSpace(c.PostForm("billDistrict")),

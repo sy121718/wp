@@ -82,3 +82,54 @@ type MediaService interface {
 	// BuildBatchDownloadPlan 构建多个附件的资源包（zip）批量打包计划（langs 同上）。
 	BuildBatchDownloadPlan(ctx context.Context, ids []uint64, langs ...string) (*mediadto.DownloadPlan, error)
 }
+
+// === 索要的端口 ===
+
+// 变体文件名带内容指纹（<stem>_<type>-<generation>-<hash8>.jpg，见 ProbeImageVariants），
+// 于是「同一 URL 的字节不可变」成立，/storage 才敢给它 immutable 长缓存。
+// 代价是把「内容变了要通知引用方」变成 media 的义务：
+//
+//	换图 → generation+1 → 一组**新的**变体文件名 → 已发布产物里的 srcset 仍指向旧名，
+//	而旧文件按设计保留（见 media/service/media_replace.go），旧 URL 继续返回旧字节。
+//	访客端 srcset 按 sizes 选中的**多数是变体而不是 src**，所以「换图后新图不可见」
+//	不是缓存 bug，是设计缺口 —— 唯一出口是引用方重建产物、新产物引用新名。
+//
+// 引用集（谁引用了这张图）就在本模块的 sys_attachment.extra_info.refs 里，
+// 而「页面 / 实例怎么算待重建」在对方模块的表里 —— 跨模块表访问是禁止的
+//（AGENTS.md §表隔离），所以这里只声明索要的端口，由引用方模块实现、装配层注入。
+
+// 引用方类型常量：与 extra_info.refs 的 kind 取值一一对应 —— 写入侧是 media 自己
+// （SyncReferences 的 RefKind），读取侧（换图失效通知）也在这里，两边不会各写一份字符串。
+// 新增一种引用方时**必须同时**给出实现并在装配期注入，否则 SetStaleMarkers 当场失败。
+const (
+	// RefKindPage 手工页面（page 模块的发布产物）。
+	RefKindPage = "page"
+	// RefKindPresentation 自动发布实例（presentation 模块的发布产物）。
+	RefKindPresentation = "presentation"
+)
+
+// MediaRef 一条「引用方标识」（引用集里的一项）。
+//
+// 契约自有形状，不是任何模块 dto 的别名：只有 kind 与 id 两个语义字段 ——
+// 标题之类的展示加成是引用方自己的事，media 不该认识。
+type MediaRef struct {
+	// Kind 引用方类型（RefKind* 之一）。
+	Kind string
+	// ID 引用方标识（页面 id / 实例 id）。
+	ID string
+}
+
+// StaleMarker 换图失效通知端口（引用方模块实现，装配层注入）。
+//
+// 实现准则（与其它装配期端口同）：
+//   - 只认领 RefKinds() 声明的类型，入参里不会有别的 kind；
+//   - 返回**真正命中**的引用方 id（RETURNING 回读），不是入参回显 ——
+//     换图的影响面日志读这个集合，回显会让「说标了 8 个、其实只有 3 个存在」查不出来；
+//   - 失败即失败：**禁止**在实现里吞掉错误后返回空集合 —— 那会让「通知没送达」与
+//     「没有引用方」在下游完全同形，而这两件事的处置动作相反。
+type StaleMarker interface {
+	// RefKinds 本实现认领的引用方类型（取 RefKind* 常量）。
+	RefKinds() []string
+	// MarkStaleByMediaRefs 把 refs 描述的引用方标记为待重建，返回真正命中的引用方 ID。
+	MarkStaleByMediaRefs(ctx context.Context, refs []MediaRef) (marked []string, err error)
+}

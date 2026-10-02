@@ -149,6 +149,10 @@ type compileConfig struct {
 	siteLinkResolver func(string) string
 	// assetProbe 响应式图片变体探测（WithAssetProbe 注入）：返回 URL + 宽度。
 	// 返回 URL 而非纯宽度的理由见 WithAssetProbe 的注释。
+	//
+	// 这里是装配层给的**原始**探测函数（无缓存）；Compile 会为每次编译包一层
+	// 单次编译作用域的 memoize 再进 RenderContext —— 为什么缓存只能活一次编译、
+	// 不能挂在装配期那个跨构建的闭包上，见 asset_probe.go 的文件头论证。
 	assetProbe func(string) []mediacontract.VariantRef
 	theme      *ThemeSettings
 	ctx        context.Context
@@ -338,7 +342,12 @@ func WithProjectID(projectID string) CompileOption {
 // 返回**完整 URL** 而不是纯宽度：变体名带内容指纹
 // （<stem>_<type>-<generation>-<hash8>.jpg），generation 与指纹只有 media 模块知道，
 // 调用方按宽度自行拼名 = 第二份命名真源。
-// 由 media 模块实现——构建期查库与文件系统，访客零查询。
+//
+// 现状（勿按旧注释推理）：media 模块的实现（Service.ProbeImageVariants）是**查库**，
+// 不查文件系统 —— 每次调用两条 SQL（按 file_path 取附件 → 取该附件的变体清单）。
+// 「访客零查询」成立的理由是它只在构建期执行，不是因为它查文件系统。
+// 该代价由 Compile 兜住：注入的 fn 本身不带缓存，每次编译会被包一层单次编译作用域的
+// memoize（见 asset_probe.go），同一 URL 在一次编译里只探测一次。
 func WithAssetProbe(fn func(string) []mediacontract.VariantRef) CompileOption {
 	return func(c *compileConfig) { c.assetProbe = fn }
 }
@@ -671,9 +680,13 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		},
 		RevealInherit:         cfg.theme.RevealInheritOf(),
 		RevealDefaultEntrance: cfg.theme.RevealDefaultEntranceOf(),
-		AssetProbe:            cfg.assetProbe,
-		Features:              features,
-		CanvasSlotFrames:      cfg.canvasSlotFrames,
+		// 图片变体探测按**单次编译作用域** memoize：同一张图在文档里出现 n 次
+		// （多个 image 节点 / 同一 src 复用），原来就是 n 次探测 = 2n 条 SQL。
+		// 缓存在这里新建，随本次编译的 RenderContext 生灭 —— 不跨构建，因此不会
+		// 缓存住旧 generation 的变体 URL（论证见 asset_probe.go）。
+		AssetProbe:       newAssetProbeMemo(cfg.assetProbe),
+		Features:         features,
+		CanvasSlotFrames: cfg.canvasSlotFrames,
 	}
 	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
 	ctx.SetSitePages(cfg.sitePages)

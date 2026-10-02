@@ -40,6 +40,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	sysconfigmodel "go_wp/internal/module/sysconfig/model"
+	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	"go_wp/internal/templates"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
@@ -480,7 +482,10 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
-	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products)
+	// 系统字典传**真**的 sysconfig service（同一隔离库）：国家下拉的选项来自 sys_area 的 seed，
+	// 用替身就得把它的语义再抄一份进测试，而抄错的那份不会报错。
+	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(f.db), nil)
+	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products, dict)
 	engine.GET("/admin/orders/new", page.OrderCreatePage)
 	engine.POST("/admin/orders/create", page.OrderCreateSubmit)
 	return &orderCreatePageEnv{engine: engine, fixture: f, project: f.projectID}

@@ -48,32 +48,37 @@ import (
 // 端口名常量：与 wiringManifest 的 Port 字段一一对应。routes.go 只经这些常量标记，
 // 手写字符串一旦拼错，自检就会「永远通过」——那比没有自检更糟。
 const (
-	portContentCollectionSource        = "content.CollectionSourceProvider"
-	portProductCollectionSource        = "product.CollectionSourceProvider"
-	portProductContentStore            = "product.SetContentStore"
-	portContentContentStore            = "content.SetContentStore"
-	portMailCipherSecret               = "mail.SetCipherSecret"
-	portWebhookCipherSecret            = "webhook.SetCipherSecret"
-	portWebhookDispatcher              = "order.SetWebhookDispatcher"
-	portProductInventoryService        = "product.SetInventoryService"
-	portProductInventoryModel          = "product.SetInventory"
-	portInventoryVariantCost           = "inventory.SetVariantCost"
-	portProductMasterDataChanges       = "product.SetMasterDataChanges"
-	portInventoryMasterDataChanges     = "inventory.SetMasterDataChanges"
-	portProductAvailability            = "product.SetAvailabilityPort"
-	portProductArchiveEnsurer          = "product.SetArchiveInstanceEnsurer"
-	portProductPublishedLocator        = "product.SetPublishedEntityLocator"
-	portProductPurchaseChecker         = "product.SetPurchaseChecker"
-	portProductFragmentCacheBumper     = "product.SetFragmentCacheBumper"
-	portPluginAdminAuthz               = "plugin.SetAdminAuthz"
-	portProjectLocaleRetire            = "project.SetLocaleRetirePort"
-	portPageExternalArtifactOwners     = "page.SetExternalArtifactOwners"
-	portPageBlueprints                 = "page.SetBlueprints"
-	portPageBuildQueue                 = "page.SetBuildQueue"
-	portPageProductDataSource          = "page.SetProductDataSource"
-	portPageCheckoutCountries          = "page.SetCheckoutCountries"
-	portPageI18nStalePeer              = "page.SetI18nStalePeer"
-	portPageStructureTemplates         = "page.SetStructureTemplatePort"
+	portContentCollectionSource    = "content.CollectionSourceProvider"
+	portProductCollectionSource    = "product.CollectionSourceProvider"
+	portProductContentStore        = "product.SetContentStore"
+	portContentContentStore        = "content.SetContentStore"
+	portMailCipherSecret           = "mail.SetCipherSecret"
+	portWebhookCipherSecret        = "webhook.SetCipherSecret"
+	portWebhookDispatcher          = "order.SetWebhookDispatcher"
+	portProductInventoryService    = "product.SetInventoryService"
+	portProductInventoryModel      = "product.SetInventory"
+	portInventoryVariantCost       = "inventory.SetVariantCost"
+	portProductMasterDataChanges   = "product.SetMasterDataChanges"
+	portInventoryMasterDataChanges = "inventory.SetMasterDataChanges"
+	portProductAvailability        = "product.SetAvailabilityPort"
+	portProductArchiveEnsurer      = "product.SetArchiveInstanceEnsurer"
+	portProductPublishedLocator    = "product.SetPublishedEntityLocator"
+	portProductPurchaseChecker     = "product.SetPurchaseChecker"
+	portProductFragmentCacheBumper = "product.SetFragmentCacheBumper"
+	portPluginAdminAuthz           = "plugin.SetAdminAuthz"
+	portProjectLocaleRetire        = "project.SetLocaleRetirePort"
+	portPageExternalArtifactOwners = "page.SetExternalArtifactOwners"
+	portPageBlueprints             = "page.SetBlueprints"
+	portPageBuildQueue             = "page.SetBuildQueue"
+	portPageProductDataSource      = "page.SetProductDataSource"
+	portPageCheckoutCountries      = "page.SetCheckoutCountries"
+	portPageI18nStalePeer          = "page.SetI18nStalePeer"
+	portPageStructureTemplates     = "page.SetStructureTemplatePort"
+	// —— 换图失效通知（媒体变体的缓存与失效）——
+	// media 索要的端口（契约见 mediacontract.StaleMarker），由 page / presentation
+	// 各自实现一条收窄实现后经 media.SetStaleMarkers 注入。
+	portMediaStaleMarkerPage           = "media.SetStaleMarker(page)"
+	portMediaStaleMarkerPresentation   = "media.SetStaleMarker(presentation)"
 	portPresentationBuildQueue         = "presentation.SetBuildQueue"
 	portPresentationProductDataSource  = "presentation.SetProductDataSource"
 	portPresentationCheckoutCountries  = "presentation.SetCheckoutCountries"
@@ -202,6 +207,13 @@ var wiringManifest = []wiringEntry{
 		"「从蓝图建页」静默建出空白页（要等编辑者打开画布才发现）"},
 	{portPageStructureTemplates, "contenttemplate", "page", wiringRequiredPort,
 		"页眉 / 页脚绑定的结构模板静默失效：构建期回退到旧块绑定，站点上仍是旧页眉（或没有页眉），且没有任何报错"},
+	// 换图失效通知：变体文件名带内容指纹（immutable 长缓存的前提），换图产出新文件名，
+	// 旧文件按设计保留 —— 引用方不重建，旧 URL 就永远返回旧字节。所以「未注入」的后果
+	// 不是一句降级提示，而是「换图对访客等于没发生」，且日志里什么都没有。
+	{portMediaStaleMarkerPage, "page", "media", wiringRequiredPort,
+		"换图后已发布页面永不更新：产物 srcset 指向旧变体名，旧文件按设计保留且 immutable 长缓存，访客一直看到旧图"},
+	{portMediaStaleMarkerPresentation, "presentation", "media", wiringRequiredPort,
+		"换图后自动发布实例永不更新（判据同上：旧变体名仍返回旧字节且 immutable）"},
 	{portPresentationBuildQueue, "build", "presentation", wiringRequiredPort,
 		"自动发布实例的失效重建仍在触发进程里持进程内锁同步执行，多实例部署下拦不住重复重建"},
 	{portPageBuildQueue, "build", "page", wiringRequiredPort,

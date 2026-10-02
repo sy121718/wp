@@ -66,9 +66,12 @@ type mediaReconcileRoundResult struct {
 	variantsScanned  int
 	missingFiles     int
 	orphanFiles      int
-	draftRows        int
-	unattributed     int
-	truncated        bool
+	// supersededVariants 被取代的历史产物（换图 / 重新生成变体后的旧文件名）。
+	// **不是不一致**：它们是刻意保留的（已发布产物可能仍引用），不计入 inconsistent()。
+	supersededVariants int
+	draftRows          int
+	unattributed       int
+	truncated          bool
 
 	// 变体补偿重放
 	backfillErr     error
@@ -77,10 +80,13 @@ type mediaReconcileRoundResult struct {
 	backfillSkipped int
 }
 
-// inconsistent 本轮只读对账发现的不一致条数（三类清单之和）。
+// inconsistent 本轮只读对账发现的**需要人处理**的不一致条数（三类清单之和）。
 //
 // 「无法归属」的文件（存量随机名）不计入：它不是不一致，只是认不出归属 ——
 // 把它算进来会让每一轮都报「有不一致」，真不一致就被淹掉了。
+// 「被取代的历史产物」（superseded_variant）同样不计入，理由更强一层：
+// 它是**设计结果**（换图必然留下旧名文件，见 media_replace.go），不是异常；
+// 计进来会让每次换图之后的每一轮巡检都告警 —— 巡检就没人看了。
 func (r mediaReconcileRoundResult) inconsistent() int {
 	return r.missingFiles + r.orphanFiles + r.draftRows
 }
@@ -106,6 +112,7 @@ func runMediaReconcileRound(ctx context.Context, svc *Service) (res mediaReconci
 		res.variantsScanned = report.VariantsScanned
 		res.missingFiles = len(report.MissingFiles)
 		res.orphanFiles = len(report.OrphanFiles)
+		res.supersededVariants = len(report.SupersededVariants)
 		res.draftRows = len(report.DraftRows)
 		res.unattributed = report.UnattributedFiles
 		res.truncated = report.Truncated
@@ -224,6 +231,7 @@ func logMediaReconcileRound(res mediaReconcileRoundResult, cost time.Duration) {
 		With("variants_scanned", res.variantsScanned).
 		With("missing_files", res.missingFiles).
 		With("orphan_files", res.orphanFiles).
+		With("superseded_variants", res.supersededVariants).
 		With("draft_rows", res.draftRows).
 		With("unattributed_files", res.unattributed).
 		With("truncated", res.truncated).

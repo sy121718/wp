@@ -14,6 +14,12 @@ const (
 	ErrReplaceFailed        = "ErrReplaceFailed"        // 换图失败
 	ErrReplaceExtMismatch   = "ErrReplaceExtMismatch"   // 换图需保持扩展名一致（URL 稳定引用的前提）
 	ErrAttachmentReferenced = "ErrAttachmentReferenced" // 附件被页面引用，删除被拒绝
+	// ErrReplaceStaleNotifyFailed 换图内容已替换，但引用方（页面 / 实例）没能标记为待重建。
+	//
+	// 与 ErrReplaceFailed 分开单列：前者说的是「内容没换上去」，本项说的是「换上了，
+	// 但引用它的页面不会更新」—— 处置动作不同（前者重传是为了落盘，后者重传是为了
+	// 重发失效通知，内容替换本身已经幂等），压成同一句话会让操作者不知该做什么。
+	ErrReplaceStaleNotifyFailed = "ErrReplaceStaleNotifyFailed"
 )
 
 const (

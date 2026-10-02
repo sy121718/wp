@@ -38,9 +38,15 @@ storage.StaticFS("/", gin.Dir("public/storage", false))
 #   · 用 "~"（大小写敏感）而不是 "~*" —— Go 侧 regexp 默认大小写敏感；
 #   · 只认小写 hex [0-9a-f]，与 Go 侧一致。
 # 两个引号都不能省：正则含 { } 不加引号会被 nginx 当成块语法；值含逗号不加引号会被拆词。
-map $uri $gowp_storage_cache_control {
-    default                                             "public, max-age=0, must-revalidate";
-    "~_(thumb|small|medium|full)-\d+-[0-9a-f]{8}\.jpg$" "public, max-age=31536000, immutable";
+#
+# **判据是形状 + 状态码两段**（与 Go 侧一致，见 storage_cache.go 文件头）：
+# 形状只说明「这个 URL 与内容绑定」，还要它真的命中了一个 2xx 才配 immutable。
+# 只按形状分发时，「形状合法但文件不存在」会拿到 immutable 404 —— 浏览器同样把 404
+# 钉住 max-age，而且这条路径在换图后清理旧变体、变体生成失败等场景下真实存在。
+# 所以 map 的输入串里带上 $status，只放 2xx 进 immutable 档。
+map "$uri:$status" $gowp_storage_cache_control {
+    default                                                                "public, max-age=0, must-revalidate";
+    "~_(thumb|small|medium|full)-[0-9]+-[0-9a-f]{8}\.jpg:2[0-9][0-9]$"     "public, max-age=31536000, immutable";
 }
 ```
 
@@ -86,21 +92,29 @@ location = /storage { return 404; }
 
 | # | 语义 | Go 侧（真源 `storage_cache.go` / `assembly.go`） | nginx 侧（本文片段） |
 |---|---|---|---|
-| 1 | 带指纹变体 → 缓存头 | `storageImmutableVariant` 命中 → `public, max-age=31536000, immutable` | map 同正则（`~`）→ **同一字符串** |
-| 2 | 其余（原图 / 无指纹旧变体 / 未知路径）→ 缓存头 | `storageCacheRevalidate` = `public, max-age=0, must-revalidate` | map `default` → **同一字符串** |
+| 1 | 带指纹变体 → 缓存头 | `storageImmutableVariant` 命中 **且状态码为 2xx** → `public, max-age=31536000, immutable` | map 同正则 + `$status` 2xx 档（`~`）→ **同一字符串** |
+| 2 | 其余（原图 / 无指纹旧变体 / 未知路径 / **任何非 2xx**）→ 缓存头 | `storageCacheRevalidate` = `public, max-age=0, must-revalidate` | map `default` → **同一字符串** |
 | 3 | 匹配对象 | `path.Base(c.Request.URL.Path)`：只取 URL 路径最后一段（已解码） | `$uri`：全路径（已解码，不含查询串），正则锚定结尾，语义等价 |
-| 4 | 404 / 目录请求 | 头在中间件里**无条件**设置：`/storage/`、`/storage/nope.jpg` 均为 404 + must-revalidate | `add_header … always`（缺 `always` 则 4xx 不带）；目录请求由 `autoindex off` 给 **403**，见差异第 7 条 |
+| 4 | 404 / 目录请求 | 形状命中但**非 2xx**（含 `/storage/123_thumb-9-fedcba98.jpg` 这种形状合法而文件不存在的路径）→ 保持 `must-revalidate`；`/storage/`、`/storage/nope.jpg` 同理（状态码覆盖缓存头，不改形状判据） | map 输入串带 `$status`、immutable 档只认 `2xx`；`add_header … always`（缺 `always` 则 4xx 不带）；目录请求由 `autoindex off` 给 **403**，见差异第 7 条 |
 | 5 | nosniff | 匿名中间件无条件 `X-Content-Type-Options: nosniff`（SEC-014） | 同一头 + `always` |
 | 6 | 目录列表 | `gin.Dir(dir, false)` → `OnlyFilesFS`，列表请求 404 | `autoindex off` + `location = /storage { return 404; }` |
 | 7 | 传输压缩 | `/storage` 未挂 gzip 中间件（只有 `/static` 挂 `StaticGzipMiddleware`） | 不配 gzip |
 | 8 | 条件请求验证器 | `Last-Modified`（`http.ServeContent`），**无** ETag | `Last-Modified` + ETag（nginx 默认生成），见差异第 1 条 |
 
-指纹正则当前值（**四档**）：`_(?:thumb|small|medium|full)-\d+-[0-9a-f]{8}\.jpg$`。
+指纹正则当前值（**四档**）：Go 侧 `_(?:thumb|small|medium|full)-\d+-[0-9a-f]{8}\.jpg$`；
+nginx 片段写 `_(thumb|small|medium|full)-[0-9]+-[0-9a-f]{8}\.jpg`（`\d` 换成 `[0-9]` 是
+第 6 条差异里的可选加固，本片段直接采用，避免 PCRE 的 UCP 语义漂移）。
 两侧引擎（Go RE2 / nginx PCRE）在代表性文件名上逐一比对过，结果一致，例如
 `100_small-1-0af15413.jpg`、`100_thumb-1-ab12cd34.jpg`、`photo_thumb-1-92ca61da.jpg` 命中；
 `100.jpg`、`100_medium.jpg`（无指纹旧变体）、`100_thumb-1-AB12CD34.jpg`（大写 hex）、
 `100_thumb-1-ab12cd3.jpg`（7 位）、`100_thumb-ab12cd34.jpg`（缺 generation）、
 `100_thumb-1-ab12cd34.jpeg`（非 .jpg）不命中。
+
+**状态码维度**（本批新增，两侧同判据）：形状命中只决定「能不能长缓存」，
+还要这一条响应真的是 2xx。所以 Go 侧把缓存头延迟到状态码已知、nginx 侧把 `$status`
+拼进 map 输入串 —— 否则形状合法而文件不存在的路径会拿到 **immutable 404**，
+浏览器把 404 钉一年（`/storage/123_thumb-9-fedcba98.jpg` 就是这种形态：
+换成旧变体已清理、或变体生成失败只留下 DB 行的场景）。
 
 ## 4. 为什么两边规则必须同源
 
@@ -151,6 +165,9 @@ location = /storage { return 404; }
    ```bash
    curl -sI http://HOST/storage/100_thumb-1-ab12cd34.jpg | rg -i '^(HTTP|cache-control|x-content-type-options)'
    # 期望：200 + public, max-age=31536000, immutable + nosniff
+   curl -sI http://HOST/storage/100_thumb-9-fedcba98.jpg | rg -i '^(HTTP|cache-control|x-content-type-options)'
+   # 期望：404 + public, max-age=0, must-revalidate + nosniff
+   # （形状合法但文件不存在：必须落协商缓存，不能是 immutable 404 —— 见第 3 节的「状态码维度」）
    curl -sI http://HOST/storage/100.jpg | rg -i '^(HTTP|cache-control|x-content-type-options)'
    # 期望：200 + public, max-age=0, must-revalidate + nosniff
    curl -sI http://HOST/storage/ | rg -i '^(HTTP|cache-control|x-content-type-options)'

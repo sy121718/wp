@@ -206,4 +206,17 @@ func registerOrderAndSiteSlots() {
 			"AND table_name = 'orders' AND column_name IN ('ship_country', 'bill_country')",
 		SQL: mustSQL("501_order_ship_country.sql"),
 	})
+
+	// 504：代客建单页「国家 / 地区」下拉的两个文案位（中英各一行，共 4 行）。
+	//
+	// 判定按**本批自己的两个 key** 逐条枚举计数：用全库总量会被别的批次已 seed 的行满足
+	// 而静默跳过（058 踩过），用 LIKE 前缀又会被将来新增的同前缀 key 带跑（076 踩过）。
+	// ConditionSQL 里**不能出现 ?** —— 它不接受迁移器传参，带了 ? 会让判定恒为 0、每次启动都重跑。
+	registerSeed(Seed{
+		Version:   "504-order-new-country-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key IN (" +
+			"'admin.order_new.field.country', 'admin.order_new.field.country_none')",
+		SQL: mustSQL("504_i18n_order_new_country.sql"),
+	})
 }

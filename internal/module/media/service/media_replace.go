@@ -31,7 +31,9 @@ import (
 //
 // 返回语义：
 //   - 内容与现状 md5 相同：不改动任何字段，直接返回现状（幂等，不 +1）；
-//   - 内容变化：落盘覆盖 → generation +1 → md5/大小/MIME 回填 → 图片类重建变体；
+//     但仍重发一次失效通知（幂等分支注释里写了为什么）；
+//   - 内容变化：落盘覆盖 → generation +1 → md5/大小/MIME 回填 → 图片类重建变体 →
+//     **标记引用方待重建**（变体名带内容指纹，不通知引用方则新图永远不可见）；
 //   - 扩展名与现有 file_path 不一致：拒绝（见文件头说明）。
 func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHeader) (res *mediato.AttachmentResp, err error) {
 	if file == nil {
@@ -63,7 +65,15 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceFailed, err)
 	}
 	// 内容未变：不动 generation，直接返回现状（前端可据此提示「内容相同」）。
+	//
+	// 但仍然走一次失效通知：这一次换图没有产生新 URL，可**上一次**同文件换图的
+	// 通知可能失败（见 notifyRefsStale 的失败语义），而重传同一个文件是用户手边
+	// 唯一的自愈动作 —— 在这里补一次通知，重传就能把「页面停在旧字节」修好。
+	// 没有引用方时 ListRefs 返回空，这里的代价只有一条查询。
 	if att.MD5 != nil && *att.MD5 == md5hex {
+		if nerr := s.notifyRefsStale(ctx, att.ID); nerr != nil {
+			return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceStaleNotifyFailed, nerr)
+		}
 		resp := entityToResp(att)
 		list := []mediato.AttachmentResp{*resp}
 		s.fillVariants(ctx, list)
@@ -127,12 +137,29 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 	// 变体重建：原图内容变了，thumb/medium/full 必须重算（失败降级，不影响换图结果）。
 	//
 	// generation 已在上面推进过 —— 新变体名带新 generation 与新内容指纹，于是换图
-	// 天然产出一组新 URL；旧变体文件保留，历史产物引用的旧名仍可访问，
-	// 换图不会让已发布的页面当场 404。
+	// 天然产出一组新 URL。旧变体文件**保留**：已发布产物里的 srcset 仍指向旧名，
+	// 删了会让那些页面当场 404，而重建是异步的、且可能失败（构建报错 / worker 没跑 /
+	// 队列堆积），回收旧文件必须排在「引用方都重建完」之后。
+	// 保留的代价是对账会把它们列出来 —— 分类与处置见 media_reconcile.go 的
+	// ReconcileKindSupersededVariant：单列一类、标注「可能仍被线上产物引用」，
+	// 与真正的孤儿文件分开，不由巡检自动清理。两处的意图是同一句话：**留着，直到有人
+	// 确认引用方已重建**。
 	if variantEligible(att.FileType, att.FileName) {
 		if _, gerr := s.GenerateVariants(ctx, id); gerr != nil {
 			logger.Scene("media").With("attachment_id", id).Error(gerr, "换图后变体重建失败（已降级）")
 		}
+	}
+
+	// 失效通知：把「引用了这个附件」的引用方标记为待重建（见 media_stale_notify.go）。
+	//
+	// 顺序是刻意的：先重建变体（新 URL 此时才存在），再通知引用方 —— 引用方重建时按
+	// 现态取 srcset，反过来会产出一份仍指向旧名的产物。缺了这一步，旧 URL 会一直
+	// 返回旧字节（immutable 长缓存），换图对访客等于没发生。
+	//
+	// 失败不吞：内容已经换掉，但「引用方不会更新」必须让操作者看见（错误文案说明
+	// 内容已替换、重传同一文件可重试这条通知）。
+	if nerr := s.notifyRefsStale(ctx, id); nerr != nil {
+		return nil, fmt.Errorf("%s: %w", mediaenums.ErrReplaceStaleNotifyFailed, nerr)
 	}
 
 	resp := entityToResp(att)

@@ -13,10 +13,11 @@ package mediaservice
 //
 // 所以这一段只做两件事，都不依赖事务：
 //
-//   1. **对账（ReconcileStorage）**：只读地把三类不一致找出来 ——
-//      「有记录没文件」「有文件没记录」「草稿残留」，连**可定位的数据**
-//      （表名 / id / 路径）一起打回给人。**不自动删、不自动合并、不丢行**：
-//      自动处理会把「可能只是这次没扫到」直接变成不可逆的数据丢失。
+//   1. **对账（ReconcileStorage）**：只读地把四类不一致找出来 ——
+//      「有记录没文件」「有文件没记录（真孤儿）」「被取代的历史产物」「草稿残留」，
+//      连**可定位的数据**（表名 / id / 路径）一起打回给人。**不自动删、不自动合并、
+//      不丢行**：自动处理会把「可能只是这次没扫到」直接变成不可逆的数据丢失；
+//      尤其「被取代的历史产物」—— 它们可能仍被已发布产物引用，删了就是线上 404。
 //   2. **重放补偿（ReplayVariantBackfill）**：把「附件在、变体记录不齐 / 没就绪」的附件
 //      重新投递变体生成任务。**幂等**（GenerateVariants 重跑先清旧记录再重建）
 //      + **留痕**（每条都记结构化日志）+ **可重放**（重复调用不产生副作用叠加）。
@@ -119,8 +120,17 @@ type ReconcileReq struct {
 const (
 	// ReconcileKindMissingFile 有记录没文件：DB 行指向的路径在磁盘上不存在。
 	ReconcileKindMissingFile = "missing_file"
-	// ReconcileKindOrphanFile 有文件没记录：磁盘文件不符合任何 DB 行的路径。
+	// ReconcileKindOrphanFile 有文件没记录，且**归属不到任何现存附件**：
+	// 真正的孤儿（两阶段登记中断留下的文件、换图暂存残留）。
 	ReconcileKindOrphanFile = "orphan_file"
+	// ReconcileKindSupersededVariant 被取代的历史产物：文件归属得到现存附件，
+	// 但没有任何记录再引用这个路径（换图 / 重新生成变体后留下的旧文件名）。
+	//
+	// 为什么不并进 orphan_file：**它不该被删**。变体名带内容指纹，已发布产物里的
+	// srcset 指向换图前的那一批名字，而重建是异步的、且可能失败 —— 删掉这些文件
+	// 等于让线上图片 404。与「孤儿」混在一张清单里，运维照单清理就会踩这个坑
+	//（见 media_replace.go 里为什么保留旧变体文件：两处是同一个意图）。
+	ReconcileKindSupersededVariant = "superseded_variant"
 	// ReconcileKindDraftRow 草稿残留：status=0 且 file_path 为空的上传半成品行。
 	ReconcileKindDraftRow = "draft_row"
 )
@@ -148,8 +158,15 @@ type ReconcileReport struct {
 	// UnattributedFiles 不能按命名约定归属到附件 id 的磁盘文件数（存量随机名），不计入孤儿。
 	UnattributedFiles int             `json:"unattributedFiles"`
 	MissingFiles      []ReconcileItem `json:"missingFiles"`
-	OrphanFiles       []ReconcileItem `json:"orphanFiles"`
-	DraftRows         []ReconcileItem `json:"draftRows"`
+	// OrphanFiles 真孤儿：文件归属不到任何现存附件（两阶段登记中断、暂存残留）。
+	// **只有这一类是可以直接删的** —— 它不被任何记录、也不被任何附件引用。
+	OrphanFiles []ReconcileItem `json:"orphanFiles"`
+	// SupersededVariants 被取代的历史产物（换图 / 重新生成变体后留下的旧文件名）。
+	//
+	// 单列一类的唯一目的是让运维**不把它当垃圾**：这批文件很可能仍被已发布产物引用，
+	// 删了就是线上图片 404。判据与处置写在每条的 Detail 里（不要求读者去翻源码）。
+	SupersededVariants []ReconcileItem `json:"supersededVariants"`
+	DraftRows          []ReconcileItem `json:"draftRows"`
 	// Truncated 任一类清单被 Limit 截断（true 时不要据此断言「只剩这些」）。
 	Truncated bool `json:"truncated"`
 	// Note 不可自动判定的部分说明（例如附件行过多导致反向对账整体跳过）。
@@ -167,10 +184,15 @@ func normalizeLimit(v int) int {
 	return v
 }
 
-// ReconcileStorage 只读对账：把「有记录没文件」「有文件没记录」「草稿残留」找出来并报告。
+// ReconcileStorage 只读对账：把「有记录没文件」「有文件没记录（真孤儿）」
+// 「被取代的历史产物」「草稿残留」找出来并报告。
 //
 // 幂等且无副作用（不写库、不动文件），可以随时重复跑；结果**打回给人**，
 // 本方法不做任何删除 / 合并 / 补写 —— 冲突与不一致一律由操作者决定怎么处理。
+//
+// 「被取代的历史产物」与「真孤儿」分开列（见 ReconcileKindSupersededVariant）：
+// 前者删不得，后者才是可清理的。混在一起等于把「线上会 404」的风险藏进一份
+// 看起来像垃圾清单的输出里。
 func (s *Service) ReconcileStorage(ctx context.Context, req *ReconcileReq) (*ReconcileReport, error) {
 	if req == nil {
 		req = &ReconcileReq{}
@@ -178,10 +200,11 @@ func (s *Service) ReconcileStorage(ctx context.Context, req *ReconcileReq) (*Rec
 	limit := normalizeLimit(req.Limit)
 	root := filepath.Clean(upload.LocalDir())
 	report := &ReconcileReport{
-		StorageRoot:  root,
-		MissingFiles: []ReconcileItem{},
-		OrphanFiles:  []ReconcileItem{},
-		DraftRows:    []ReconcileItem{},
+		StorageRoot:        root,
+		MissingFiles:       []ReconcileItem{},
+		OrphanFiles:        []ReconcileItem{},
+		SupersededVariants: []ReconcileItem{},
+		DraftRows:          []ReconcileItem{},
 	}
 
 	total, err := s.am.CountForAudit(ctx)
@@ -299,10 +322,17 @@ func (s *Service) ReconcileStorage(ctx context.Context, req *ReconcileReq) (*Rec
 			return
 		}
 		if _, exists := attachmentIDs[id]; exists {
-			// 附件在，但这条路径不被任何记录引用（例如换图 / 重跑后残留的旧变体文件）。
-			report.OrphanFiles = appendItem(report.OrphanFiles, ReconcileItem{
-				Kind: ReconcileKindOrphanFile, Table: "文件系统", ID: id, Path: rel,
-				Detail: "附件存在但没有任何记录引用这个路径（重跑 / 换图后的残留文件？）",
+			// 附件在、但这条路径不被任何记录引用：**不是垃圾**，是被取代的历史产物
+			//（换图 / 重新生成变体后留下的旧文件名；软删附件的文件也落在这一类 ——
+			//  删除附件同样按设计保留文件）。
+			//
+			// 单列一类而不是并进 OrphanFiles 的理由就是下面这句 Detail：已发布产物
+			// 很可能仍引用它，删了会让线上图片 404。这与 media_replace.go「为什么保留
+			// 旧变体文件」是同一个意图的两半。
+			report.SupersededVariants = appendItem(report.SupersededVariants, ReconcileItem{
+				Kind: ReconcileKindSupersededVariant, Table: "文件系统", ID: id, Path: rel,
+				Detail: "被取代的历史产物（换图 / 重新生成变体后的旧文件名）：**可能仍被已发布产物引用，" +
+					"删除会让线上图片 404**。先确认引用它的页面 / 实例都已重建（后台「待重建」清空），再逐个删。",
 			}, limit, &report.Truncated)
 			return
 		}
@@ -337,6 +367,7 @@ func (s *Service) logReconcile(r *ReconcileReport) {
 		With("files_scanned", r.FilesScanned).
 		With("missing_files", len(r.MissingFiles)).
 		With("orphan_files", len(r.OrphanFiles)).
+		With("superseded_variants", len(r.SupersededVariants)).
 		With("draft_rows", len(r.DraftRows)).
 		With("unattributed_files", r.UnattributedFiles).
 		With("truncated", r.Truncated).

@@ -436,6 +436,32 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布实例模块未提供站点装配注入点（SetNavigationService / SetSitePageResolver / SetMediaProbe / SetPluginService）")
 	}
 	marks.mark(portPresentationSiteAssembly)
+
+	// 换图失效通知（媒体变体的缓存与失效）：media 拿到「谁引用了这张图」后回调引用方
+	// 标记待重建。变体文件名带内容指纹（这是 /storage 敢给 immutable 长缓存的前提），
+	// 换图产出**一组新文件名**、旧文件按设计保留 —— 没有这一步，旧 URL 会一直返回旧字节，
+	// 换图对访客等于没发生（访客端 srcset 选中的多数是变体而不是 src）。
+	//
+	// 类型断言而不是静态依赖：media 不认识 page / presentation（依赖方向相反），
+	// 由装配点接线。每一处漏接都当场炸，并并入 wiring 的 required-port 清单
+	//（见 wiringManifest 的 media.SetStaleMarker 两条）。
+	pageMarker, ok := pageService.(mediacontract.StaleMarker)
+	if !ok {
+		panic("页面模块未实现媒体换图失效端口（mediacontract.StaleMarker）：换图后已发布页面永不更新")
+	}
+	presentationMarker, ok := presentationSvc.(mediacontract.StaleMarker)
+	if !ok {
+		panic("发布实例模块未实现媒体换图失效端口（mediacontract.StaleMarker）：换图后自动发布详情页永不更新")
+	}
+	mediaSetter, ok := mediaSvc.(interface {
+		SetStaleMarkers(...mediacontract.StaleMarker)
+	})
+	if !ok {
+		panic("媒体模块未提供换图失效通知注入点（SetStaleMarkers）")
+	}
+	mediaSetter.SetStaleMarkers(pageMarker, presentationMarker)
+	marks.mark(portMediaStaleMarkerPage)
+	marks.mark(portMediaStaleMarkerPresentation)
 }
 
 // startRuntimeTasks 启动期的一次性后台任务与运行时接线：默认主题补齐、组件版本比对、

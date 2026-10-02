@@ -59,6 +59,7 @@ func TestWiringPortConstantsMatchManifest(t *testing.T) {
 		portProductDependencyInvalidator,
 		portContentTemplateInvalidator,
 		portPageStructureTemplates,
+		portMediaStaleMarkerPage, portMediaStaleMarkerPresentation,
 		portNavigationSourceResolver, portNavigationMenuDispatcher, portDashboardBlueprints,
 		portRuntimeFragBundle, portRuntimeFragVariantAvailability, portRuntimeFragVariantSnapshot,
 		portRuntimeFragCart, portRuntimeFragCollectionResolver, portRuntimeFragProductDataSource,
@@ -212,4 +213,54 @@ func TestRequireWiringPortPanicsWithPortName(t *testing.T) {
 		}
 	}()
 	RequireWiringPort(portProductAvailability, false)
+}
+
+// TestWiringReportsMissingMediaStaleMarkers 换图失效通知的两条端口缺任一条，
+// 自检都要报出**端口名 + 未注入后果**：这两条未接入的表现是「换图后已发布页面 /
+// 实例永远停在旧字节」—— 旧变体名继续返回旧字节且带 immutable 长缓存，
+// 日志里什么都没有，事后几乎不可能从现象反推到装配。
+func TestWiringReportsMissingMediaStaleMarkers(t *testing.T) {
+	marks := newWiringMarks()
+	for _, e := range wiringManifest {
+		marks.mark(e.Port)
+	}
+	delete(marks, portMediaStaleMarkerPage)
+	delete(marks, portMediaStaleMarkerPresentation)
+
+	missing, unknown := CheckWiring(marks)
+	if len(unknown) != 0 {
+		t.Fatalf("不该有清单漂移：%v", unknown)
+	}
+	if len(missing) != 2 {
+		t.Fatalf("应报出 2 条缺失端口，实际 %d 条：%v", len(missing), missing)
+	}
+	joined := strings.Join(missing, "\n")
+	for _, want := range []string{
+		portMediaStaleMarkerPage, portMediaStaleMarkerPresentation,
+		"换图后已发布页面永不更新", "immutable 长缓存",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("缺失报告里应含 %q：\n%s", want, joined)
+		}
+	}
+	t.Logf("自检缺失报告：\n%s", joined)
+
+	// 装配末尾的 fail-fast 同样要一次报出这两条（不炸在第一个）。
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("缺必需端口时 mustAllPortsWired 应当 panic")
+		}
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("panic 值应为字符串，实际 %T", r)
+		}
+		for _, want := range []string{portMediaStaleMarkerPage, portMediaStaleMarkerPresentation} {
+			if !strings.Contains(msg, want) {
+				t.Fatalf("启动自检的 panic 文案缺少 %q：\n%s", want, msg)
+			}
+		}
+		t.Logf("启动自检 panic 文案：\n%s", msg)
+	}()
+	mustAllPortsWired(marks)
 }

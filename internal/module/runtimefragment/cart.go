@@ -212,9 +212,11 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 			// 让访客为「我要寄给别人」再填一遍是把他当成了异常情况。
 			Name:  firstNonEmpty(paramOf(r, "shipName"), paramOf(r, "name")),
 			Phone: firstNonEmpty(paramOf(r, "shipPhone"), paramOf(r, "phone")),
-			// 国家/地区代码：只做形状约束（见 orderCountryCode），认不出的一律丢弃成空串，
-			// 不像运费那样是收银台上的钱 —— 它只是地址的一行，不影响金额与库存。
-			Country:  orderCountryCode(paramOf(r, "country")),
+			// 国家/地区代码：只做形状约束（orderdto.NormalizeCountryCode，与后台代客建单页
+			// 共用同一份规则 —— 两条入口各写一份必然漂移，而漂移只在写库那一刻暴露），
+			// 认不出的一律丢弃成空串。它不像运费那样是收银台上的钱：只是地址的一行，
+			// 不影响金额与库存。
+			Country:  orderdto.NormalizeCountryCode(paramOf(r, "country")),
 			Province: paramOf(r, "province"),
 			City:     paramOf(r, "city"),
 			District: paramOf(r, "district"),
@@ -224,7 +226,7 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		Billing: orderdto.OrderAddress{
 			Name:     paramOf(r, "billName"),
 			Phone:    paramOf(r, "billPhone"),
-			Country:  orderCountryCode(paramOf(r, "billCountry")),
+			Country:  orderdto.NormalizeCountryCode(paramOf(r, "billCountry")),
 			Province: paramOf(r, "billProvince"),
 			City:     paramOf(r, "billCity"),
 			District: paramOf(r, "billDistrict"),
@@ -361,37 +363,6 @@ func paramOf(r *Request, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(r.Params[key])
-}
-
-// orderCountryCode 结算表单里的国家/地区代码：**只做形状约束**（恰好两个 ASCII 字母），
-// 通过后大写归一化，其余一律丢弃成空串。
-//
-// 为什么只约束形状、不做「这个国家存不存在」的校验：
-//
-//	· 表单字段是客户端可控输入，而国家码**不影响金额与库存** —— 与结算请求里那句
-//	  「运费刻意不从表单取」（收银台上的钱不能让客人自己填）是同一节的两种情形：
-//	  能左右金额的字段一个都不收，只是地址一行文字的字段只约束形状；
-//	  访客把 country 填成 "ZZ" 不会让订单少收一分钱，它只是收件地址里的一行。
-//	· 真正的判据是**长度**：库里是 VARCHAR(2)（迁移 501），放进去超过两个字符的串会让
-//	  整单落库失败，而访客看到的只会是一句「下单失败」—— 三个字母的 "CHN"、国家全名
-//	  "China"、乃至中文名都在这里被挡掉，而不是拖到写库那一刻才炸。
-//	· 「码有没有对应国家」属展示层的事：查不到就显示代码本身（展示标签，不是订单语义），
-//	  把字典查询拉进收参路径只会让下单多一次查库、并在字典缺行时拒绝一笔合法订单。
-//
-// 大写归一化是必须的：sys_area 的国家 code 是 ISO 3166-1 alpha-2 的大写口径（CN / US），
-// 大小写混着存会让「按码取名」的展示静默查不到（页面显示 cn 而不是「中国」）。
-func orderCountryCode(raw string) string {
-	v := strings.TrimSpace(raw)
-	if len(v) != 2 {
-		return ""
-	}
-	for i := 0; i < len(v); i++ {
-		c := v[i]
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
-			return ""
-		}
-	}
-	return strings.ToUpper(v)
 }
 
 // cartProjectID 站点工程 id（页面作者在 hx-get 里拼进来的实例配置）。

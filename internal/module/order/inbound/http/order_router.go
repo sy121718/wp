@@ -128,7 +128,7 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		//
 		// 这一页是整页表单（字段 20+、明细可多行），失败一律**就地重渲 200 + 回填**，
 		// 不走 303 + ?err= 回跳：303 之后是 GET，没有 PostForm，几十个字段必然全丢。
-		orderCreate := NewOrderCreatePageHandle(svc, projects, product)
+		orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
 		pages.GET("/orders/new", orderCreate.OrderCreatePage)
 		pages.POST("/orders/create", builtin.CasbinMiddlewareForPath("/api/order/create"), orderCreate.OrderCreateSubmit)
 		pages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)

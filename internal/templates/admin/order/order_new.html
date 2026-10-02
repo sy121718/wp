@@ -176,6 +176,12 @@
         <section class="card card-body">
             <h2>{{ .["t"]("admin.order_new.section.shipping", "收货地址") }}</h2>
             <div class="form-stack">
+                {* 国家/地区排在最前：地址书写从大到小，与订单详情页的展示顺序一致。
+                   选项来自系统字典（handler 注入 ShipCountries，含首位「（不填写）」空项）。 *}
+                <label class="form-label" for="order-new-ship-country">{{ .["t"]("admin.order_new.field.country", "国家 / 地区") }}</label>
+                {{if isset(.ShipCountries)}}<select class="form-select" id="order-new-ship-country" name="shipCountry" autocomplete="country">
+                    {{range .ShipCountries}}<option value="{{.Code}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+                </select>{{end}}
                 <label class="form-label" for="order-new-ship-name">{{ .["t"]("admin.order_new.field.ship_name", "收货人") }}</label>
                 <input type="text" class="form-input" id="order-new-ship-name" name="shipName" value="{{.FormEchoShipName}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-phone">{{ .["t"]("admin.order_new.field.ship_phone", "收货人电话") }}</label>
@@ -200,6 +206,11 @@
                 <span>{{ .["t"]("admin.order_new.field.same_billing", "同收货地址（勾选后下面的账单地址不适用，服务端按收货地址落库）") }}</span>
             </label>
             <div class="form-stack">
+                {* 与收货地址同一口径：同一份字典、同一顺序，只是选中项各自独立。 *}
+                <label class="form-label" for="order-new-bill-country">{{ .["t"]("admin.order_new.field.country", "国家 / 地区") }}</label>
+                {{if isset(.BillCountries)}}<select class="form-select" id="order-new-bill-country" name="billCountry" autocomplete="country">
+                    {{range .BillCountries}}<option value="{{.Code}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+                </select>{{end}}
                 <label class="form-label" for="order-new-bill-name">{{ .["t"]("admin.order_new.field.bill_name", "账单联系人") }}</label>
                 <input type="text" class="form-input" id="order-new-bill-name" name="billName" value="{{.FormEchoBillName}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-phone">{{ .["t"]("admin.order_new.field.bill_phone", "账单电话") }}</label>
