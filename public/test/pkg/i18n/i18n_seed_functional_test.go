@@ -580,11 +580,18 @@ func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	}
 
 	// 4-B) 访客面组件词条（060）：13 个 key，zh-CN/en-US 各一行；中英必须都有（不许缺翻译）。
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got != 56 {
-		t.Fatalf("site.component.* zh-CN 应为 56 行（060 的 13 + 065 的 1 + 176 的 16 + 177 的 26），实际 %d", got)
+	// 判据是**下界**而不是精确值：这里要验的是「这些词条确实在库里、且中英都不缺」，
+	// 而 `site.component.*` 是一族**会继续长**的 key（060 的 13 + 065 的 1 + 176 的 16 +
+	// 177 的 26 = 56 是当时的快照）。写成 `!= 56` 会让每次有别的批次新增组件词条时
+	// 这条断言变红，而它红了并不说明任何东西坏了 —— 那种红点最后只会被当成噪音忽略，
+	// 于是它**真正想拦的**「整族词条缺失 / 只有中文没有英文」也跟着失去保护。
+	// 缺翻译仍由下面逐 key 的中英比对（取值必须不同）钉住。
+	const siteComponentFloor = 56
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "zh-CN"); got < siteComponentFloor {
+		t.Fatalf("site.component.* zh-CN 至少应有 %d 行（060 的 13 + 065 的 1 + 176 的 16 + 177 的 26），实际 %d", siteComponentFloor, got)
 	}
-	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "en-US"); got != 56 {
-		t.Fatalf("site.component.* en-US 应为 56 行（060 的 13 + 065 的 1 + 176 的 16 + 177 的 26），实际 %d", got)
+	if got := countRows(t, db, "sys_i18n", "item_key LIKE 'site.component.%' AND lang = ?", "en-US"); got < siteComponentFloor {
+		t.Fatalf("site.component.* en-US 至少应有 %d 行（缺失 = 英文界面回落中文兜底），实际 %d", siteComponentFloor, got)
 	}
 	// 065 语言切换器容器标签：中英各一行且取值不同。
 	if got := countRows(t, db, "sys_i18n", "item_key = 'site.component.languages.label' AND lang = ?", "zh-CN"); got != 1 {

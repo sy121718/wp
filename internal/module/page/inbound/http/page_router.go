@@ -61,10 +61,6 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	g.POST("/redirect/create", permission.PageRedirectCreate, handle.RedirectCreate)
 	g.POST("/redirect/delete", permission.PageRedirectDelete, handle.RedirectDelete)
 	g.POST("/redirect/merge", permission.PageRedirectMerge, handle.RedirectMerge)
-	// 缺译报告（U2）：按 页面 × 语言 列出内容缺译，操作列直接调 ExcludePageLang（不另写下线逻辑）。
-	// 权限点复用：读用 page:list；写（取消该语言）用 page:publish —— 取消会下线产物，与「撤下」是同一件事。
-	g.GET("/translation-misses", permission.PageList, handle.TranslationMissesPage)
-	g.POST("/translation-misses/cancel", permission.PagePublish, handle.TranslationMissCancel)
 	// 系统页面槽位（BIZ-1）：把「结算页是哪一页」这类事实固定下来，供链接生成与跳转使用。
 	g.GET("/site-slot/list", permission.PageSiteSlotList, handle.ListSiteSlots)
 	g.POST("/site-slot/bind", permission.PageSiteSlotBind, handle.BindSiteSlot)
@@ -116,6 +112,10 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 		// 显式重新发布（V4）：恢复排除只解除限制、不自动上线 —— 译好后要真的回到线上，
 		// 需要一个一次点击的入口（同步 Build + Publish，结果当场可见）。权限点同上。
 		pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRepublish)
+		// 缺译报告（U2）：按 页面 × 语言 列出内容缺译，操作列直接调 ExcludePageLang（不另写下线逻辑）。
+		// 挂后台页面组（与 /page-schedules/* 同形），写操作显式复用「发布页面」权限点。
+		pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"), adminHandle.TranslationMissesPage)
+		pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.TranslationMissCancel)
 		pages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), adminHandle.CreateProject)
 	}
 	// 修订历史列表与恢复（HTMX 化，docs/09 §3）：挂编辑器根级页面组。

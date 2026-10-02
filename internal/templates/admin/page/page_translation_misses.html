@@ -25,6 +25,25 @@
     </div>
     {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ .Err }}</p>{{end}}
     {{if .Done != ""}}<p class="badge badge-info" role="status">{{ .Done }}</p>{{end}}
+    {* 工程选择器：照页面列表页的既有形态（GET 表单 + select）—— 多工程下按工程看报告。
+       只有一个工程时仍渲染（它同时是「这份报告属于哪个站点」的显式说明，且报告是按工程算的）。 *}
+    {{if len(.Projects) > 0}}
+    <div class="filter-bar">
+        <form class="filter-fields" method="get" action="/admin/page-translation-misses">
+            <div class="filter-field">
+                <label for="miss-project">{{tr("admin.page.translation_misses.filter_project", "站点工程")}}</label>
+                <select class="form-select" id="miss-project" name="project">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}"{{if p.ID == projectID}} selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.page.translation_misses.filter_submit", "查询")}}</button>
+            </div>
+        </form>
+    </div>
+    {{end}}
     <p class="stat-note">{{tr("admin.page.translation_misses.hint", "这里列出「语言可用、但页面内容还没译」的组合：界面词条齐了（站点级准入已放行），缺的是页面内容译文。缺失数是构建期取词未命中的次数，与候选字段数量纲不同，因此不给百分比。取消该语言会把这一页从这个语言撤下来（产物下线，切换器 / hreflang / sitemap 同步移除）；补齐内容译文后重新发布即可回来。")}}</p>
     {* 空态表头常驻（门禁 check-empty-state-table-head.sh）：table 不进 if，空态整行进 tbody。 *}
     <div class="table-wrap table-scroll">
@@ -49,7 +68,7 @@
                 <td>{{r.Lang}}</td>
                 <td><strong>{{r.Misses}}</strong> {{tr("admin.page.translation_misses.unit.misses", "处取词未命中")}} <span class="text-mute">（{{tr("admin.page.translation_misses.candidates", "候选字段")}} {{r.Candidates}}）</span></td>
                 <td class="col-actions">
-                    <form method="post" action="/api/page/translation-misses/cancel">
+                    <form method="post" action="/admin/page-translation-misses/cancel">
                         <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                         <input type="hidden" name="project" value="{{projectID}}">
                         <input type="hidden" name="pageId" value="{{r.PageID}}">

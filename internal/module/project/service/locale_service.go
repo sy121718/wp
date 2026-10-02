@@ -159,7 +159,19 @@ func (s *Service) SaveLocales(ctx context.Context, req *projectdto.LocalesSaveRe
 			continue
 		}
 		n, cerr := i18n.CountByLang(ctx, rows[i].Lang)
-		if cerr != nil {
+		switch {
+		case errors.Is(cerr, i18n.ErrI18nUnavailable):
+			// 「没有接入词条存储」不等于「这个语言没有词条」——这是两种不同的事实：
+			//   · 词条存储未接（pkg/i18n 的全局库句柄为空）：只出现在测试进程与精简进程里，
+			//     生产装配的 database 组件恒先于本模块就绪；此时放行并留一条日志。
+			//     若在这里拒绝，任何没有装配文案存储的调用方都保存不了语言清单
+			//     （实测：四个 page feature 用例就是被这条卡住的）。
+			//   · 查询本身失败（库在、SQL/连接出错）：下面那支一律拒绝 —— 放行的后果是
+			//     静默启用一个空语言，而拒绝的后果只是「稍后重试」。
+			logger.Scene("project").With("project", req.ProjectID).With("lang", rows[i].Lang).
+				Warn("词条存储未接入，跳过语言准入校验（生产装配下不会出现）")
+			continue
+		case cerr != nil:
 			logger.Scene("project").With("project", req.ProjectID).With("lang", rows[i].Lang).
 				Error(cerr, "校验语言词条数失败，本次保存被拒绝")
 			return nil, cerr

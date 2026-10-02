@@ -482,8 +482,12 @@ func registerCoreSchemaAndAccess() {
 	// 因此不会在后续启动中把它重新插回来。
 	//
 	// CheckSQL 表达「已完成」：目标行全部 is_hidden = 1（计数为 0）才跳过。
-	// CAST(? AS text) IS NOT NULL 是「接收迁移器传入的表名」的形状（与 225 同一写法）——
-	// migrator_test.go 的 TestCustomMigrationChecksAcceptTableParameter 会把不带 ? 的检查拦下。
+	//
+	// `CAST(? AS text) IS NOT NULL` 是恒真条件，当初只为满足一条**写反了的护栏**
+	// （旧 TestCustomMigrationChecksAcceptTableParameter 要求每条自定义 CheckSQL 都含 `?`）。
+	// 现在护栏改成「含 `?` 时恰好一个 + 每条都要能按迁移器的调用约定执行」
+	// （migrator_check_sql_test.go），这个装饰**不再必要**；本批只改注释、不动 SQL
+	// （去掉它属于另一件事：改迁移 SQL 要连判定一起回归）。
 	register(Migration{
 		Version:   "401-hide-mail-campaign-menu",
 		TableName: "sys_menus",

@@ -12,10 +12,26 @@ func TestMigrationRegistryHasUniqueVersions(t *testing.T) {
 	}
 }
 
-func TestCustomMigrationChecksAcceptTableParameter(t *testing.T) {
+// TestCustomMigrationChecksParameterConvention 自定义 CheckSQL 的参数约定。
+//
+// **这条断言原先写反了**：它要求「每条自定义 CheckSQL 都必须含 `?`」，而 migrator.apply
+// 的实现与注释明说——只在 SQL 里真的出现 `?` 时才把表名传进去，因为按
+// `pg_constraint` / `pg_indexes` / `information_schema.columns` 判定对象是否存在的语句
+// **根本不接受参数**（无条件传参会直接报 `expected 0 arguments, got 1`）。
+// 474 的 CheckSQL 就是按列数判断、不含 `?` 的那种，它是**合法**写法。
+//
+// 所以真正成立的判据是：
+//  1. 含 `?` 时必须**恰好一个** —— 迁移器只传表名一个参数，多一个就是参数个数不符；
+//  2. 每条自定义 CheckSQL 都要能被迁移器**那样**执行（含 `?` 传表名、不含则不传）——
+//     这条需要真库，见 migrator_check_sql_test.go。
+func TestCustomMigrationChecksParameterConvention(t *testing.T) {
 	for _, m := range allMigrations {
-		if m.CheckSQL != "" && !strings.Contains(m.CheckSQL, "?") {
-			t.Errorf("迁移 %s 的 CheckSQL 未接收迁移器传入的表名参数", m.Version)
+		if m.CheckSQL == "" {
+			continue
+		}
+		if n := strings.Count(m.CheckSQL, "?"); n > 1 {
+			t.Errorf("迁移 %s 的 CheckSQL 含 %d 个 `?`：迁移器只传表名一个参数，"+
+				"其余判定值必须写进 SQL 字面量（178 踩过：判定恒为 0、每次启动重跑）", m.Version, n)
 		}
 	}
 }

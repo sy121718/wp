@@ -34,6 +34,9 @@
             {{if canCreatePage}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-page-create" data-drawer-title="{{ .["t"]("admin.pages.create_page_heading", "新建页面") }}">＋ {{ .["t"]("admin.pages.create_page_submit", "创建页面") }}</button>
             {{end}}
+            {* 缺译报告入口（U2/W4）：说的是「语言可用、但页面内容没译」的组合 ——
+               与站点设置页的语言启用（词条门槛）是两件事，所以放在页面域而不是设置页。 *}
+            <a class="btn btn-ghost" href="/admin/page-translation-misses?project={{selectedProject}}">{{ .["t"]("admin.pages.action.translation_misses", "缺译报告") }}</a>
             {{end}}
         </div>
     </header>

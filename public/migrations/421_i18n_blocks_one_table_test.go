@@ -30,9 +30,14 @@ var blocksOneTableWants = map[string]map[string]string{
 		"zh-CN": " 个页面有更新未发布",
 		"en-US": " pages have unpublished changes",
 	},
+	// `admin.blocks.impact.help` 的期望值是 **473 覆盖之后**的文案：473 把行为从
+	// 「手动重建」改成「自动重建」（块/主题/组件版本三条 stale 来源都接上了自动重建），
+	// 文案随之改写 —— 原文案在教用户去找一个不存在的重建按钮。
+	// 这里跟的是 473 的最终值，不是 421 的初值：**覆盖迁移之后的真源是后者**，
+	// 谁下次看到不一致，先查这条 key 有没有更晚的覆盖迁移，别当成漂移改回去。
 	"admin.blocks.impact.help": {
-		"zh-CN": "块、内容、主题或导航改动过，产物的字节还停在旧版本。重新构建这些页面后新内容才会出现在访问面。",
-		"en-US": "Blocks, content, themes or navigation changed, but the published bytes still carry the old version. Rebuild these pages to publish the new content.",
+		"zh-CN": "块、内容、主题或导航改动过，产物的字节还停在旧版本。系统会在改动后自动重建这些页面；若长时间停在这里，说明重建失败或构建队列积压（原因已记入服务日志）。",
+		"en-US": "Blocks, content, themes or navigation changed, but the published bytes still carry the old version. These pages are rebuilt automatically; if they stay here for long, the rebuild failed or the build queue is backed up (see the service log).",
 	},
 	"admin.blocks.list_empty": {
 		"zh-CN": "还没有全局块。页眉 / 页脚块在「主题管理 → 设置」里绑定到主题，构建页面时编译期内联；区块用于跨页面复用的结构片段，工作台「全局块」页签可一键引用。",

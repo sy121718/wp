@@ -117,4 +117,6 @@ func init() {
 	registerSettingsLocaleModeHintI18n()
 	// 494：语言面板「重新发布」的词条（见 register_page_langs_republish_i18n.go）。
 	registerPageLangsRepublishI18n()
+	// 495：页面列表页「缺译报告」入口词条（见 register_page_translation_misses_entry_i18n.go）。
+	registerPageTranslationMissesEntryI18n()
 }

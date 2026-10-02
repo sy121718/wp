@@ -378,8 +378,9 @@ func registerAnalyticsSeoAndPermissions() {
 	// RENAME COLUMN 只重写索引 / 视图 / 约束这类可解析对象，plpgsql 函数体是字符串，
 	// 改名后仍按旧名解析（实测：采购收货链路整片失败）。
 	// 判定按「函数定义里已无 updated_at」，而不是「函数是否存在」。
-	// 判定里的 ? 接表名（护栏 TestCustomMigrationChecksAcceptTableParameter 要求每个自定义
-	// 判定都接收它）：这里取该触发器真正操作的单头表，语义是「表在 且 函数已修好」——
+	// 判定里的 ? 接表名（**这里是真的要用它**：护栏
+	// TestCustomMigrationChecksParameterConvention 只要求「含 ? 时恰好一个」）：
+	// 取该触发器真正操作的单头表，语义是「表在 且 函数已修好」——
 	// 表都没了就不该算完成（那说明库被人手改过，启动时应当停下来而不是静默跳过）。
 	register(Migration{
 		Version:   "206-inventory-status-sync-fn-time-column",

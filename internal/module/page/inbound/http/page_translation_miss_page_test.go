@@ -20,12 +20,14 @@ import (
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
+	projectmodel "go_wp/internal/module/project/model"
+	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
 )
 
 // seedMissFixture 一个工程 + 一个页面 + 一条带 translationMisses 的产物行。
-func seedMissFixture(t *testing.T) (svc *pageservice.Service, projectID, projectEmpty string) {
+func seedMissFixture(t *testing.T) (svc *pageservice.Service, proj *projectservice.Service, projectID, projectEmpty string) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -49,7 +51,8 @@ func seedMissFixture(t *testing.T) (svc *pageservice.Service, projectID, project
 	// 没有缺失的语言（misses=0）不应出现。
 	insertMissArtifact(t, db, pageID, "ja", 1, `{"misses": 0, "candidates": 12, "policy": "fallback"}`)
 
-	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil), projectID, projectEmpty
+	projSvc := projectservice.NewService(projectmodel.NewProjectModel(db))
+	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projSvc, nil, nil, nil, nil, nil), projSvc, projectID, projectEmpty
 }
 
 // insertMissArtifact 插一条带 translationMisses 的产物行（只给 NOT NULL 列 + manifest）。
@@ -69,22 +72,22 @@ func insertMissArtifact(t *testing.T, db *gorm.DB, pageID, lang string, version 
 }
 
 // renderMissPage 渲染报告页一次。
-func renderMissPage(t *testing.T, svc *pageservice.Service, query string) *httptest.ResponseRecorder {
+func renderMissPage(t *testing.T, svc *pageservice.Service, proj *projectservice.Service, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	h := pagehttp.NewHandle(svc)
-	router.GET("/api/page/translation-misses", h.TranslationMissesPage)
+	h := pagehttp.NewPagesAdminHandle(svc, proj, nil, nil)
+	router.GET("/admin/page-translation-misses", h.TranslationMissesPage)
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/page/translation-misses"+query, nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/page-translation-misses"+query, nil))
 	return rec
 }
 
 // TestTranslationMissesPageRenders 渲染：整页完整、只列最新版本、只列 misses>0、不给百分比。
 func TestTranslationMissesPageRenders(t *testing.T) {
-	svc, projectID, _ := seedMissFixture(t)
-	rec := renderMissPage(t, svc, "?project="+projectID)
+	svc, proj, projectID, _ := seedMissFixture(t)
+	rec := renderMissPage(t, svc, proj, "?project="+projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("报告页应渲染成功，实际 %d", rec.Code)
 	}
@@ -95,8 +98,9 @@ func TestTranslationMissesPageRenders(t *testing.T) {
 	for _, want := range []string{
 		"/about", "zh-CN", "48", // 最新版本那条（version=2）
 		`name="csrf_token"`, // 取消表单必须带 CSRF
-		`action="/api/page/translation-misses/cancel"`,
-		"取词未命中", // 文案有兜底
+		`action="/admin/page-translation-misses/cancel"`,
+		"取词未命中",          // 文案有兜底
+		`name="project"`, // W4：工程选择器（GET 表单 + select，照页面列表页形态）
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("报告页缺少 %q：body=%s", want, body)
@@ -117,8 +121,8 @@ func TestTranslationMissesPageRenders(t *testing.T) {
 
 // TestTranslationMissesPageEmptyRenders 没有缺译时：表头常驻 + 空态整行进 tbody（colspan=4）。
 func TestTranslationMissesPageEmptyRenders(t *testing.T) {
-	svc, _, projectEmpty := seedMissFixture(t)
-	rec := renderMissPage(t, svc, "?project="+projectEmpty)
+	svc, proj, _, projectEmpty := seedMissFixture(t)
+	rec := renderMissPage(t, svc, proj, "?project="+projectEmpty)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("空态也应渲染成功，实际 %d", rec.Code)
@@ -136,8 +140,8 @@ func TestTranslationMissesPageEmptyRenders(t *testing.T) {
 
 // TestTranslationMissesPageWithoutProject 没有工程上下文时给可读文案（不直出内部错误）。
 func TestTranslationMissesPageWithoutProject(t *testing.T) {
-	svc, _, _ := seedMissFixture(t)
-	rec := renderMissPage(t, svc, "")
+	svc, proj, _, _ := seedMissFixture(t)
+	rec := renderMissPage(t, svc, proj, "")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("缺工程时应降级渲染，实际 %d", rec.Code)
