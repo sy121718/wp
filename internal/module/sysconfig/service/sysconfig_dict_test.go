@@ -107,4 +107,14 @@ func TestCountryLabelPicksLanguageAndFallsBack(t *testing.T) {
 	if got := svc.CountryLabel(ctx, "zh-CN", "QQ"); got != "QQ" {
 		t.Fatalf("缓存路径上未知代码应回落显示代码，实际 %q", got)
 	}
+
+	// 缓存生效的**正向证据**：把库里的名字改掉，TTL 未到时再读应仍拿到旧值
+	// （命中缓存、没有重新查库）。没有这条，「缓存真的在用」在本文件里就没有证据 ——
+	// 而那正是运营最在意的事：每次渲染都回查库扛不住。
+	if err := db.Exec("UPDATE sys_area SET name_zh = '被改掉的名字' WHERE code = 'CN'").Error; err != nil {
+		t.Fatalf("改字面失败: %v", err)
+	}
+	if got := svc.CountryLabel(ctx, "zh-CN", "CN"); got != "中国" {
+		t.Fatalf("TTL 未到时应命中缓存而不再查库，实际读到 %q（读到新值就说明缓存没生效）", got)
+	}
 }

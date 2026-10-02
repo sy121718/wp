@@ -8,6 +8,7 @@ package sysconfigservice
 import (
 	"context"
 	"strings"
+	"time"
 
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
@@ -70,8 +71,8 @@ func (s *Service) CountryLabel(ctx context.Context, lang, code string) string {
 		return code
 	}
 	key := normalizeLabelLang(lang)
-	if cached, ok := s.countryLabels.Load(key); ok {
-		return labelFromIndex(cached.(map[string]string), code)
+	if index, ok := s.countryIndex(key); ok {
+		return labelFromIndex(index, code)
 	}
 	rows, err := s.m.ListAreasByKind(ctx, sysconfigmodel.AreaKindCountry)
 	if err != nil {
@@ -89,8 +90,33 @@ func (s *Service) CountryLabel(ctx context.Context, lang, code string) string {
 		// 差一个大小写就查不到名字 —— 那是「同一个码有时显示 CN、有时显示中国」的来源。
 		index[strings.ToUpper(rowCode)] = countryNameOf(rows[i], zh)
 	}
-	s.countryLabels.Store(key, index)
+	s.countryLabels.Store(key, countryLabelEntry{index: index, expires: time.Now().Add(countryLabelTTL)})
 	return labelFromIndex(index, code)
+}
+
+// countryIndex 取未过期的「码 → 名」索引；未命中或已过期返回 ok=false（由调用方重建）。
+//
+// 过期**就地重建**、不加锁：TTL 到期那一瞬可能有几个并发请求同时重建，每个各做一次
+// 247 行的全表读 —— 代价可忽略（每 5 分钟最多一次），换掉一把锁是划算的，
+// 也维持了 sync.Map「读远多于写」的设计前提。
+func (s *Service) countryIndex(key string) (map[string]string, bool) {
+	v, ok := s.countryLabels.Load(key)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := v.(countryLabelEntry)
+	if !ok || !entry.valid(time.Now()) {
+		return nil, false
+	}
+	return entry.index, true
+}
+
+// valid 条目在 now 时刻是否仍然可用（过期即失效）。
+//
+// 抽成方法而不是内联在 countryIndex 里：过期判断是本缓存**唯一的失效路径**，
+// 它必须能被单独钉住 —— 内联在查库流程里就只能靠「等 5 分钟」来验证，那进不了回归。
+func (e countryLabelEntry) valid(now time.Time) bool {
+	return now.Before(e.expires)
 }
 
 // labelFromIndex 从码索引里取显示名；缺行（或值为空）回落 code。
