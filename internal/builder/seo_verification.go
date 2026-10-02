@@ -42,12 +42,6 @@ func NormalizeSearchConsoleVerification(raw string) (token string, ok bool) {
 	return token, searchConsoleVerificationPattern.MatchString(token)
 }
 
-// ValidSearchConsoleVerification 判断 token 是否合法（后台表单校验用）。
-func ValidSearchConsoleVerification(raw string) bool {
-	_, ok := NormalizeSearchConsoleVerification(raw)
-	return ok
-}
-
 // buildSearchConsoleHead 生成注入 <head> 的站点验证 meta。
 //
 // 空值、非法值都返回空串（零字节注入）；非法值额外记一条告警 ——

@@ -17,12 +17,14 @@ import (
 	"encoding/csv"
 	"errors"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
+	"go_wp/pkg/logger"
 )
 
 // maxImportBytes 单次导入内容上限（防止把内存吃满）。
@@ -123,9 +125,22 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 
 	toInsert := make([]*mailmodel.MailContactEntity, 0, len(list))
 	toUpdate := make([]mailmodel.ContactImportUpdate, 0, len(list))
+	// 触发相关的粗判（**一次查询**）：有没有启用中的 tag_added 流程。
+	// 只有存在时才值得为「标签差集」读每个联系人的旧标签（每行一次主键读）。
+	// 触发本身不在这里做，由写库后的批量入口各自匹配一次流程。
+	needTagDiff := hasTriggerType(s.activeAutomations(ctx), mailmodel.TriggerTagAdded)
+	// tagAdds 记录「本次真正**新增**的标签」（email → 新增标签）：tag_added 触发只认新增部分。
+	// 少了这层过滤，一次「标签一个都没变」的重新导入会把所有人重新推进 tag_added 流程。
+	// 差集必须在写库**之前**算 —— 写完之后就查不到旧值了。
+	tagAdds := make(map[string][]string, len(list))
 	for _, e := range list {
-		if _, exists := existing[strings.ToLower(e.Email)]; !exists {
+		key := strings.ToLower(e.Email)
+		if _, exists := existing[key]; !exists {
 			toInsert = append(toInsert, e)
+			// 新联系人的全部标签都是新增的（旧集合为空），无需读旧值。
+			if len(e.Tags) > 0 {
+				tagAdds[key] = []string(e.Tags)
+			}
 			continue
 		}
 		if !req.UpdateExisting {
@@ -136,6 +151,11 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 		// 同意状态（status / subscribed_at / consent_source）不能被一次导入悄悄改写，
 		// 否则「已退订的人」会被导入变回订阅，等于自己造投诉。
 		toUpdate = append(toUpdate, mailmodel.ContactImportUpdate{Email: e.Email, Name: e.Name, Tags: e.Tags})
+		if needTagDiff {
+			if added := s.addedTags(ctx, existing[key], e.Tags); len(added) > 0 {
+				tagAdds[key] = added
+			}
+		}
 	}
 
 	if len(toUpdate) > 0 {
@@ -148,7 +168,144 @@ func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContact
 		return nil, err
 	}
 	res.Imported = len(toInsert)
+
+	// ---- 事件触发（issue #38 P3 的入口侧）----
+	//
+	// 触发统一放在**写库之后**：事件描述的是已经发生的事，而 StartRun 内部要按
+	// contact_id 反查联系人 —— 写之前那个 id 还不存在。顺序也决定了失败语义：
+	// 导入是用户要的结果、触发是附加行为（事件入口自带 recover、不返回错误），
+	// 所以下面这些调用不会让一次成功的导入变成失败。
+	//
+	// 为什么必须在这里接：这两个触发器此前**零调用方**（后台 UI 却提供了
+	// 「新联系人产生」「被打上某个标签」两个选项），配了它们的流程永不启动，
+	// 列表页看不出任何异常。
+	//
+	// 为什么是「按规模分派」而不是统统走批量 / 统统走单条：
+	//   · 单条入口每人查一次流程表 —— 2000 行导入会发出 2000 条查询（护栏测试
+	//     TestImportWriteStatementProfile 实测 2006 条语句，阈值 20）；
+	//   · 单条源（注册 / 手工建号）仍走单条入口，语义与批量入口共用同一个
+	//     startRunsWithAutomations，不存在两套启动规则。
+	// 所以：1 条走单条入口，多条走批量入口；标签按标签分组（trigger_params 的 tag 条件按标签匹配）。
+	failed := failedImportEmails(res)
+	newIDs := make(map[string]uint64, len(toInsert))
+	createdIDs := make([]uint64, 0, len(toInsert))
+	for _, e := range toInsert {
+		if e.ID == 0 {
+			continue // 主键未回填：没有 id 就触发不了（StartRun 要求 contactID > 0）
+		}
+		newIDs[strings.ToLower(e.Email)] = e.ID
+		createdIDs = append(createdIDs, e.ID)
+	}
+	switch {
+	case len(createdIDs) == 1:
+		s.OnContactCreated(ctx, createdIDs[0])
+	case len(createdIDs) > 1:
+		s.OnContactsCreated(ctx, createdIDs)
+	}
+
+	tagContacts := make(map[string][]uint64, len(tagAdds))
+	for _, email := range sortedKeys(tagAdds) {
+		if failed[email] {
+			continue // 这一行的标签没写进去，不该按「被打上标签」触发
+		}
+		id := existing[email]
+		if id == 0 {
+			id = newIDs[email]
+		}
+		if id == 0 {
+			continue
+		}
+		for _, tag := range tagAdds[email] {
+			tagContacts[tag] = append(tagContacts[tag], id)
+		}
+	}
+	for _, tag := range sortedKeys(tagContacts) {
+		ids := tagContacts[tag]
+		if len(ids) == 1 {
+			s.OnTagsAdded(ctx, ids[0], []string{tag})
+			continue
+		}
+		s.OnTagsAddedBatch(ctx, tag, ids)
+	}
 	return res, nil
+}
+
+// addedTags 算出「本次新增的标签」：读旧标签后取差集。
+//
+// 为什么需要旧值：tag_added 触发只认**新增**（见 OnTagsAdded 的调用约定）；
+// 少了这层过滤，一次「标签没变」的重新导入会把所有联系人重新推进 tag_added 流程，
+// 表现是重复发信。
+//
+// 读法是主键单行读：模型层没有「按邮箱批量取标签」的方法，而这里只对
+// 「本次带了标签、且命中已存在联系人」的行读 —— 导入是低频人工操作，
+// 主键读是最便宜的可用手段。读失败一律当作「没有新增」：触发是附加行为，
+// 不能让它把导入本身打失败（与 fireTrigger 同一取舍）。
+func (s *Service) addedTags(ctx context.Context, contactID uint64, incoming []string) []string {
+	if contactID == 0 || len(incoming) == 0 {
+		return nil
+	}
+	row, err := s.m.GetContact(ctx, contactID)
+	if err != nil {
+		logger.Scene("mail").With("contact_id", contactID).
+			Warn("读取联系人旧标签失败，本次导入不触发 tag_added（导入本身不受影响）")
+		return nil
+	}
+	return diffTags(row.Tags, incoming)
+}
+
+// diffTags 返回 incoming 中**不在** old 里的标签（去空白、保序）。
+//
+// 抽成纯函数是为了能就近单测：这一段错了不会报错，只会让「重复导入同标签」
+// 每次都重新触发一次 tag_added（表现是重复发信），而那种偏差在集成测试里很容易被
+// 别的原因掩盖。标签比较是精确匹配（大小写敏感）——与按标签筛人群的口径一致。
+func diffTags(old []string, incoming []string) []string {
+	if len(incoming) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(old))
+	for _, t := range old {
+		seen[strings.TrimSpace(t)] = struct{}{}
+	}
+	// 没有新增时返回 nil（而不是空切片）：调用方一律按 len() 判断，
+	// 而 nil 能让「这次没有新增标签」这件事在日志/调试时一眼可辨。
+	var out []string
+	for _, t := range incoming {
+		v := strings.TrimSpace(t)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{} // 同一批里的重复标签只算一次
+		out = append(out, v)
+	}
+	return out
+}
+
+// failedImportEmails 收集本次导入报错的行（email → true），供触发侧跳过。
+//
+// 逐行报告里的 email 已经归一化（用例见 parseContactRows / updateExistingContacts），
+// 与 tagAdds 的键口径一致（都走 strings.ToLower）。
+func failedImportEmails(res *maildto.ImportContactsResp) map[string]bool {
+	out := make(map[string]bool, len(res.Errors))
+	for _, e := range res.Errors {
+		if email := strings.ToLower(strings.TrimSpace(e.Email)); email != "" {
+			out[email] = true
+		}
+	}
+	return out
+}
+
+// sortedKeys 按字典序返回 map 的键：触发顺序因此与 map 迭代顺序无关（可复现）。
+// 泛型：同一份实现同时服务「email → 标签」与「标签 → 联系人 id」两张表。
+func sortedKeys[T any](m map[string][]T) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // updateExistingContacts 写回导入命中的已存在联系人（审计 DB-006）。

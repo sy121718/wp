@@ -59,11 +59,16 @@ func (o *Operator) DeductStock(ctx context.Context, in *ordercontract.StockDeduc
 // ChangeStock 把货加回库存（取消订单归还 / 退货入库）。
 //
 // Direction 恒为 in：契约类型没有方向字段，方向是这条能力的语义本身。
+//
+// 走库存的 **RestockStock**（自动归还策略）而不是 ChangeStock：归还的是订单出库时
+// **扣掉过**的数量，而无限（不跟踪）的行出库时根本没扣 —— 用普通入库语义会把那些行
+// 切成跟踪，把「无限商品」变成「库存 N」，第 N+1 件直接被判库存不足（BIZ-03）。
+// 本方法只服务订单归还，管理员手工入库 / 采购收货走的是另一条路（HTTP → ChangeStock）。
 func (o *Operator) ChangeStock(ctx context.Context, in *ordercontract.StockAdjustment) (err error) {
 	if in == nil {
 		return nil
 	}
-	_, err = o.svc.ChangeStock(ctx, &inventorydto.ChangeStockReq{
+	_, err = o.svc.RestockStock(ctx, &inventorydto.ChangeStockReq{
 		ProjectID:  in.ProjectID,
 		Direction:  "in",
 		ReasonCode: in.ReasonCode,
@@ -93,11 +98,14 @@ func (o *Operator) DeductStockTx(ctx context.Context, tx *gorm.DB, in *ordercont
 }
 
 // ChangeStockTx 把货加回库存的**事务透传版**（取消归还 / 退货入库），Direction 恒为 in。
+//
+// 与 ChangeStock 同源：走 RestockStockTx（自动归还策略），对不跟踪的行跳过 ——
+// 这是订单侧唯一实际在用的归还入口（order_status 取消归还、return_review 退货入库）。
 func (o *Operator) ChangeStockTx(ctx context.Context, tx *gorm.DB, in *ordercontract.StockAdjustment) (err error) {
 	if in == nil {
 		return nil
 	}
-	return o.svc.ChangeStockTx(ctx, tx, &inventorydto.ChangeStockReq{
+	return o.svc.RestockStockTx(ctx, tx, &inventorydto.ChangeStockReq{
 		ProjectID:  in.ProjectID,
 		Direction:  "in",
 		ReasonCode: in.ReasonCode,

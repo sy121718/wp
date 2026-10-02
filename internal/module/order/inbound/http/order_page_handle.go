@@ -378,7 +378,10 @@ func (h *orderPageHandle) OrderRefund(c *gin.Context) {
 // 目标状态只列通用流转的三个：取消与退款各有独立用例（取消要归还库存、退款要记流水号），
 // 走通用入口必被服务端拒绝，放进候选只会制造「选了一个全被跳过的目标」。
 func (h *orderPageHandle) OrderBulkStatus(c *gin.Context) {
-	toStatus := strings.TrimSpace(c.PostForm("status"))
+	// 目标状态读 toStatus（与单条流转同名字段，也与 orders.html 批量下拉的 name 一致）。
+	// 批量表单里另有一个 status，那是**回跳保留的筛选值**，两者不同义：读错这一处，
+	// toStatus 恒为空串 → 整批被判「非法目标状态」→ 回执「0 个已流转」，而用户以为一条都没做。
+	toStatus := strings.TrimSpace(c.PostForm("toStatus"))
 	remark := strings.TrimSpace(c.PostForm("remark"))
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)

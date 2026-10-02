@@ -442,8 +442,14 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	}
 }
 
-// TestOrderRefundDoesNotReturnStock：退款是钱的事，不动物流。
-func TestOrderRefundDoesNotReturnStock(t *testing.T) {
+// TestOrderRefundUnshippedReturnsStock：未发货订单的退款归还库存（口径变更，BIZ-07 方案 A）。
+//
+// 原先这条断言的是「退款一律不归还库存」—— 那与「取消」在同一状态上给出了相反的库存结果：
+// 同一张 paid 订单点「取消」货会回来、点「退款」货不回来，而页面上两个按钮看不出区别。
+// 现在未发货（paid）的退款按「订购数量 − 已实际退货入库数量」归还库存，与取消同一本账；
+// 已发货的退款仍然不归还（要经退货入库验收），那条在
+// order_return_account_test.go 的 TestUnshippedRefundRestocksStock 里钉着。
+func TestOrderRefundUnshippedReturnsStock(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
@@ -464,8 +470,8 @@ func TestOrderRefundDoesNotReturnStock(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("退款失败: %v", err)
 	}
-	if got := f.stockOf(t, vid); got != 3 {
-		t.Fatalf("退款不该动库存（应仍是 3），实际 %d", got)
+	if got := f.stockOf(t, vid); got != 5 {
+		t.Fatalf("未发货退款应把货归还（应回到 5），实际 %d", got)
 	}
 	detail, err := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
 	if err != nil {

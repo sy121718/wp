@@ -278,7 +278,12 @@ type ContentMissCounter interface {
 	Misses() int64
 }
 
-// SetSiteLangs 记录本次发布冻结的站点语言表（审计 I18N-02）。
+// SetSiteLangs 显式注入本次发布冻结的站点语言表（审计 I18N-02）。
+//
+// 生产路径**不经过这里**：站点语言表随发布计划一起冻结，由 SetPublicationPlan 写进
+// 同一个存储位（见那里的注释）—— 本方法是「没有发布计划、但仍要知道站点语言」时的
+// 注入通道，当前唯一调用点是 public/test/pipeline/unit/i18n02_manifest_locale_test.go。
+// 新调用方接入前先确认它真的拿不到 PublicationPlan。
 func (u *CompileUsage) SetSiteLangs(langs []string) {
 	if u == nil || len(langs) == 0 {
 		return

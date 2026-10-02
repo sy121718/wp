@@ -23,6 +23,42 @@ import (
 	"go_wp/pkg/rls"
 )
 
+// orderNetTotalSQLExpr 订单的**净消费额**表达式：订单金额 − 该单已实际收货的退款额，下界 0。
+//
+// 这个常量是**两处共用的唯一真源**：客户页订单摘要（SummaryByUser，见 order_model.go）
+// 与会员候选聚合（SpentTotalsByProject，见本文件）必须算同一个数 —— 会员按净额分档、
+// 客户页按总额显示，是两个数字静默分叉（两边都不报错、只在有人对账时才发现）。
+// 任何一处复制它的文本都会立刻产生第二份口径；「改一次两处同时生效」是这个常量存在的全部意义。
+//
+// 形状是**相关标量子查询**（不是 JOIN，也不是 LATERAL）：退款要按**订单**粒度扣，
+// 直接 join 退货表会让一笔订单的多张退货单把订单行乘起来，再 SUM(o.total) 就把金额重复计了。
+// 它引用外层的订单别名 **o**，所以拼进 SQL 的外层必须是 `FROM orders o`。
+//
+// 它内部含**一个 ? 参数**（退货状态名单 ReturnedStatuses）：调用方的实参顺序要按 SQL 文本里
+// ? 的出现顺序排 —— 改这个表达式的形状会同时改变两处的参数顺序，两边都要跟着看。
+//
+// 只扣「已经实际收货」（ReturnedStatuses = received / completed）的退款：申请中与已同意待收货的
+// 钱还没退出去，扣了会让会员等级凭空下降。全额退货的单会转成 refunded、本来就不在 paidStatuses
+// 里，在状态过滤阶段就被排除，不会再被这里扣一次（两处口径不重叠）。
+//
+// GREATEST(..., 0) 的夹取与 SpentTotalsByProject 的既有行为一致：净额不会被脏数据
+// （退款额超过订单金额）算成负数，但**净额为 0 的行仍然会出现在结果里** —— 这是既有行为，
+// 不要顺手改成过滤掉。
+const orderNetTotalSQLExpr = "GREATEST(o.total - COALESCE((SELECT SUM(r.refund_amount) " +
+	"FROM order_returns r WHERE r.order_id = o.id AND r.project_id = o.project_id " +
+	"AND r.status = ANY(string_to_array(?, ',')::text[])), 0), 0)"
+
+// spentTotalsSQL 消费额聚合：**净额口径**（订单金额 − 已经实际收货的退款额）。
+//
+// 参数顺序（按 ? 在文本里出现的顺序）：
+// 退货状态名单（orderNetTotalSQLExpr 里的那个）、project_id、计入消费的订单状态名单（paidStatuses）。
+const spentTotalsSQL = `SELECT o.user_id, COALESCE(SUM(` + orderNetTotalSQLExpr + `), 0) AS amount
+  FROM orders o
+ WHERE o.project_id = ?
+   AND o.user_id IS NOT NULL
+   AND o.status = ANY(string_to_array(?, ',')::text[])
+ GROUP BY o.user_id`
+
 // SpentTotalsByProject 返回本工程「有可计入消费」的访客 → 累计消费额（**分**）。
 //
 // 一条 GROUP BY 聚合，而不是对每个客户各调一次 SummaryByUser：那是 N+1 ——
@@ -32,22 +68,32 @@ import (
 // （金额为 0 的行在调用方那边也定不出档，多送过去只是让重算多做一轮无用功）。
 // 早退不判 projectID 是否为空：空工程在本仓是**查不到行**（uuid 不匹配），
 // 返回空 map 是正确结论；把它当参数错误会让调用方多写一条不必要的分支。
+//
+// **口径（BIZ-09）：消费额是净额 —— 订单金额减去已经实际收货的退款额。**
+//
+//   - 只扣「已经实际收货」（ReturnedStatuses = received / completed）的退款：
+//     申请中与已同意待收货的钱还没退出去，扣了会让会员等级凭空下降；
+//   - 全额退货的单会转成 refunded 状态、本来就不在 paidStatuses 里 —— 它在 WHERE 阶段
+//     就被排除了，不会再被这里扣一次（两处口径不重叠）；
+//   - 因此**部分退货会降档**：消费额按实际净消费算，退款回去的钱不再计入。
+//     这是产品口径上的选择，理由是它必须与「全额退货不计入」自洽 ——
+//     否则会出现「全退不计、退一半全计」的阶梯，退得越多反而等级越高。
+//     代价是已发出的等级会随退款回落，这正是「按净消费分档」的应有之义。
+//
+// 与客户页订单摘要（SummaryByUser 的 total_amount）用**同一个表达式常量**
+// （orderNetTotalSQLExpr）：那边是同一件事的单客户视图，两处口径必须逐字一致 ——
+// 它们共享一个常量，改一处即两处生效；跨路径一致性另有 feature 用例钉住。
 func (m *OrderModel) SpentTotalsByProject(ctx context.Context, projectID string) (totals map[uint64]int64, err error) {
 	var rows []struct {
 		UserID uint64 `gorm:"column:user_id"`
 		Amount int64  `gorm:"column:amount"`
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&OrderEntity{}).
-			Select("user_id, COALESCE(SUM(total), 0) AS amount").
-			Where("project_id = ?", projectID).
-			// user_id 可空（访客下单还没开号、后台代客建单都可能为空）：
-			// 没有账号就没有会员身份，这些订单不构成任何人的消费额。
-			Where("user_id IS NOT NULL").
-			// 状态名单由 paidStatuses 拼出（只声明一次，见 order_model.go）。
-			Where("status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ",")).
-			Group("user_id").
-			Scan(&rows).Error
+		return tx.Raw(spentTotalsSQL,
+			strings.Join(ReturnedStatuses, ","),
+			projectID,
+			strings.Join(paidStatuses, ","),
+		).Scan(&rows).Error
 	})
 	if err != nil {
 		return nil, err

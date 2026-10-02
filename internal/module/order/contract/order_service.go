@@ -66,11 +66,18 @@ type OrderService interface {
 	// 备注不是状态流转：它不改变订单处在哪一步，因此不写 status_logs ——
 	// 混进流转链会让「这单什么时候发的货」变成要翻记录才能看出来。
 	UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrderNoteReq) (res *orderdto.OrderResp, err error)
-	// RefundOrder 退款：改状态 + 记流水号。
+	// RefundOrder 退款：改状态 + 记流水号；**未发货时归还库存**（BIZ-07 方案 A）。
 	//
-	// **不归还库存** —— 退款是钱的事，退货入库是货的事，两者可以不同步
-	// （比如只退运费、或有质量问题直接退款不退货）。合并成一步会让「只退款」
-	// 这种正常诉求没法表达。
+	// 「退钱」与「退货」是两件事：退款不强制退货（只退运费、质量问题直接退款不退货
+	// 都是正常诉求），所以这条路径仍然不碰退货单。
+	//
+	// 但**未发货（paid）**的订单是例外：货从未出库，钱退了货自然还在仓库里 ——
+	// 同一状态上「取消」把货还回去、「退款」不还，两个按钮给出不同的库存结果，
+	// 运营点哪个按钮决定了库存对不对，而页面上看不出区别。所以未发货退款按
+	// 「订购数量 − 已实际退货入库数量」归还库存（与取消同一本账）。
+	//
+	// 已发货（shipped / completed）的退款仍然**不归还**：货已经出库，
+	// 要回来必须经退货入库（有实物验收环节），凭空加回来等于把系统里的数当成仓库里的货。
 	RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq) (err error)
 }
 

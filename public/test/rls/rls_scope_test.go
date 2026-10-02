@@ -76,7 +76,7 @@ func seedProject(t *testing.T, db *gorm.DB, id, name string) {
 
 // rlsFixture 准备一套「生产结构 + 非超级角色」的环境。
 //
-// 表结构来自生产迁移（含 215 的 53 个对象）而不是手抄 DDL：手抄的会在下一次迁移
+// 表结构来自生产迁移（含 215 铺下 RLS 的那批对象）而不是手抄 DDL：手抄的会在下一次迁移
 // 推进时与生产静默分叉，这正是 AGENTS.md 反复拦过的事。
 func rlsFixture(t *testing.T) (*gorm.DB, string) {
 	t.Helper()
@@ -134,7 +134,7 @@ func rlsFixture(t *testing.T) (*gorm.DB, string) {
 		adminSQL.Close()
 	})
 
-	// 表结构来自**生产迁移**（含 215 的 53 个对象），而不是手抄 DDL：手抄的会在下一次
+	// 表结构来自**生产迁移**（含 215 铺下 RLS 的那批对象），而不是手抄 DDL：手抄的会在下一次
 	// 迁移推进时与生产静默分叉，这正是 AGENTS.md 反复拦过的事。
 	if err := migrations.Run(db); err != nil {
 		t.Fatalf("执行生产迁移失败: %v", err)

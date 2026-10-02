@@ -425,8 +425,13 @@ type CustomerOrderSummaryRow struct {
 
 // customerOrderSummarySQL 客户订单摘要的单条查询（窗口函数，见 SummaryByUser 的说明）。
 //
-// 两处 ? 都是计入消费的状态名单（由 paidStatuses 拼出，名单仍只声明一次）；
-// 参数顺序：paid_order_count 名单、total_amount 名单、project_id、user_id。
+// total_amount 拼的是**订单净消费额表达式** orderNetTotalSQLExpr（定义在 order_spent_model.go）——
+// 与会员候选聚合 SpentTotalsByProject **同一个常量**，而不是同一套口径抄两遍：
+// 会员按净额分档、客户页按总额显示是两个数字静默分叉，而两边都不报错。
+// 改那个表达式会同时改变这里的参数顺序，见下。
+//
+// 参数顺序（按 ? 在文本里出现的顺序）：paid_order_count 名单、
+// orderNetTotalSQLExpr 里的退货状态名单、total_amount 的 FILTER 名单、project_id、user_id。
 const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order_count,
        COALESCE(w.paid_order_count, 0) AS paid_order_count,
        COALESCE(w.total_amount, 0)     AS total_amount,
@@ -436,13 +441,13 @@ const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order
        w.create_time AS last_order_time
   FROM (SELECT 1) AS anchor
   LEFT JOIN (
-        SELECT id, order_no, status, create_time,
+        SELECT o.id, o.order_no, o.status, o.create_time,
                COUNT(*) OVER () AS order_count,
-               COUNT(*) FILTER (WHERE status = ANY(string_to_array(?, ',')::text[])) OVER () AS paid_order_count,
-               COALESCE(SUM(total) FILTER (WHERE status = ANY(string_to_array(?, ',')::text[])) OVER (), 0) AS total_amount
-          FROM orders
-         WHERE project_id = ? AND user_id = ?
-         ORDER BY id DESC
+               COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) OVER () AS paid_order_count,
+               COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) OVER (), 0) AS total_amount
+          FROM orders o
+         WHERE o.project_id = ? AND o.user_id = ?
+         ORDER BY o.id DESC
          LIMIT 1
   ) AS w ON TRUE`
 
@@ -461,7 +466,12 @@ const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order
 func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID uint64) (row CustomerOrderSummaryRow, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Raw(customerOrderSummarySQL,
-			strings.Join(paidStatuses, ","), strings.Join(paidStatuses, ","),
+			// 五个实参对应 SQL 文本里五个 ? 的出现顺序（见 customerOrderSummarySQL 的注释）：
+			// paid_order_count 名单 → 净额表达式里的退货状态名单 → total_amount 的 FILTER 名单
+			// → project_id → user_id。
+			strings.Join(paidStatuses, ","),
+			strings.Join(ReturnedStatuses, ","),
+			strings.Join(paidStatuses, ","),
 			projectID, userID).
 			Scan(&row).Error
 	})

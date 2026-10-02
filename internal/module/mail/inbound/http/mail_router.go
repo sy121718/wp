@@ -39,6 +39,11 @@ func SetupMailRoutes(rg *permission.RouteGroup, db *gorm.DB, pages *gin.RouterGr
 	// 没有定时任务时这两张表只增不减 —— 一次大群发就能把事件表撑到不可维护。
 	mailservice.StartMailRetentionScheduler(svc)
 
+	// 自动化延时兜底（#38 P3）：等待节点的唤醒主路径是队列延时任务，而 Redis 掉数据 /
+	// queue.enabled=false / worker 崩在入队与执行之间时，到点的实例会永远挂着
+	//（只能等运营在后台手工点一次「补投一轮」）。这条周期扫描就是那条兜底保证。
+	mailservice.StartMailAutomationScheduler(svc)
+
 	handle := NewHandle(svc)
 	g := rg.Group("/mail")
 	g.GET("/account/list", permission.MailAccountList, handle.AccountList)

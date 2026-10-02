@@ -22,42 +22,36 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// persistOrder 建单的写入阶段：订单头 + 订单项 + 流转流水 + 券核销 + **扣库存**，一个事务。
-//
-// 券的核销与订单**同生共死**：核销失败（用尽 / 超每人限次）则订单一起回滚，
-// 不会出现「券核销了但单没下成」或「单下了但券没用掉」两种半截状态；
-// 扣减失败同理 —— 订单与库存一起回滚，所以不再需要任何事后补偿。
+// persistOrderTx 建单写入的**事务内实现**（tx 由调用方负责提交 / 回滚）。
 //
 // 回填 head.ID：订单项与流水都要挂这个 id，而它是 CreateTx 之后才有的。
-func (s *Service) persistOrder(ctx context.Context, d *orderDraft) error {
-	return s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		if cerr := s.orders.CreateTx(ctx, tx, d.head); cerr != nil {
-			return cerr
-		}
-		for _, it := range d.items {
-			it.OrderID = d.head.ID
-		}
-		if cerr := s.items.CreateBatchTx(ctx, tx, d.items); cerr != nil {
-			return cerr
-		}
-		if lerr := s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
-			OrderID:      d.head.ID,
-			FromStatus:   "",
-			ToStatus:     ordermodel.OrderStatusPending,
-			OperatorType: operatorTypeOf(d.head.CreatedVia),
-			OperatorID:   d.head.CreateBy,
-			Remark:       "建单",
-			CreateTime:   d.now,
-		}); lerr != nil {
-			return lerr
-		}
-		if rerr := s.redeemCouponTx(ctx, tx, d.appliedCoupon, d.head.ID, d.head.OrderNo, d.head.DiscountTotal, d.head.UserID, d.now); rerr != nil {
-			return rerr
-		}
-		// 扣库存：同库跨模块，把**订单事务的句柄**传给库存的 …Tx 方法。
-		// 不足 / 不可用都让整个事务回滚 —— 订单、项、流水、券核销一起消失。
-		return s.deductStockTx(ctx, tx, d)
-	})
+func (s *Service) persistOrderTx(ctx context.Context, tx *gorm.DB, d *orderDraft) error {
+	if cerr := s.orders.CreateTx(ctx, tx, d.head); cerr != nil {
+		return cerr
+	}
+	for _, it := range d.items {
+		it.OrderID = d.head.ID
+	}
+	if cerr := s.items.CreateBatchTx(ctx, tx, d.items); cerr != nil {
+		return cerr
+	}
+	if lerr := s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
+		OrderID:      d.head.ID,
+		FromStatus:   "",
+		ToStatus:     ordermodel.OrderStatusPending,
+		OperatorType: operatorTypeOf(d.head.CreatedVia),
+		OperatorID:   d.head.CreateBy,
+		Remark:       "建单",
+		CreateTime:   d.now,
+	}); lerr != nil {
+		return lerr
+	}
+	if rerr := s.redeemCouponTx(ctx, tx, d.appliedCoupon, d.head.ID, d.head.OrderNo, d.head.DiscountTotal, d.head.UserID, d.now); rerr != nil {
+		return rerr
+	}
+	// 扣库存：同库跨模块，把**订单事务的句柄**传给库存的 …Tx 方法。
+	// 不足 / 不可用都让整个事务回滚 —— 订单、项、流水、券核销一起消失。
+	return s.deductStockTx(ctx, tx, d)
 }
 
 // deductStockTx 建单出库（在订单事务内）：库存变动落在调用方的事务里，失败原样反馈。

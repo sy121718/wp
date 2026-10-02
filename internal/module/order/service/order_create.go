@@ -27,11 +27,14 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"go_wp/pkg/database"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	usercontract "go_wp/internal/module/user/contract"
 )
 
 const (
@@ -75,15 +78,34 @@ func (s *Service) createOrder(ctx context.Context, req *orderdto.CreateOrderReq,
 		return existing, nil
 	}
 
-	// 备料：商品事实、金额、优惠码、归因、访客账号 —— 全部在事务之外算好。
+	// 备料：商品事实、金额、优惠码、归因 —— 全部在事务之外算好。
+	// （访客开号**不在这里**：BIZ-11 把它移进了下面的事务。）
 	draft, err := s.buildOrderDraft(ctx, req, projectID, createdVia)
 	if err != nil {
 		return nil, err
 	}
 
-	// 订单（头 + 项 + 流水 + 券核销）与扣库存**同一个事务**：任一步失败整单不存在，
-	// 不再有「先提交、再扣库存、失败补偿成已取消」的半截路径。
-	if err = s.persistOrder(ctx, draft); err != nil {
+	// 订单（头 + 项 + 流水 + 券核销 + 扣库存）与**访客开号**同一个事务：
+	// 任一步失败整单不存在，账号也随之不存在 —— 不再有「建号成功、订单回滚」
+	// 留下的孤儿账号（客户能登录、却没有任何订单，还已经收到了初始密码邮件）。
+	//
+	// 初始密码邮件**不在这里发**（事务还没提交，发了回滚收不回）：载荷带出来，
+	// 提交成功之后再发；发信失败只影响响应里的 AccountMailed，不回滚任何东西。
+	var pendingMail *usercontract.GuestAccountMail
+	if err = s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+		userID, mail, perr := s.provisionGuestAccountTx(ctx, tx, req)
+		if perr != nil {
+			return perr
+		}
+		if !sameUserID(userID, draft.head.UserID) {
+			// 会员身份与事务前预解析的不一致（通常是事务内刚建出了账号）：
+			// 用真实身份重算会员折扣、逐行分摊与总额，再落库。
+			draft.head.UserID = userID
+			s.applyLineMoney(ctx, draft, userID)
+		}
+		pendingMail = mail
+		return s.persistOrderTx(ctx, tx, draft)
+	}); err != nil {
 		// 并发同键撞唯一索引：另一个请求已经把单建出来了，回读它原样返回。
 		if database.IsUniqueViolation(err) {
 			if dup, derr := s.orderByRequestID(ctx, projectID, req.RequestID); derr == nil && dup != nil {
@@ -92,8 +114,21 @@ func (s *Service) createOrder(ctx context.Context, req *orderdto.CreateOrderReq,
 		}
 		return nil, err
 	}
+	// 事务已提交：这时才发初始密码邮件。发不出去不是下单失败 —— 账号已经在了，
+	// 客户可以走「忘记密码」自己重置；这里只影响响应里的 AccountMailed。
+	if pendingMail != nil && s.guest != nil && s.guest.SendGuestAccountMail(ctx, pendingMail) == nil {
+		draft.accountMailed = true
+	}
 
 	return draft.response(), nil
+}
+
+// sameUserID 比较两个可空会员身份（指针本身不参与比较，比的是它指向的 id）。
+func sameUserID(a, b *uint64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 // validateCreateOrderReq 入参校验：不碰数据库，纯形状检查。

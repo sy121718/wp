@@ -75,12 +75,14 @@ func (a *assembly) wireContentTemplateImpact() {
 		return
 	}
 	setter.SetImpactPort(ContentTemplateImpactPort(a.pageService, a.presentationSvc))
+	a.marks.mark(portContentTemplateImpactPort)
 	// 同一批接线里注入「结构模板候选」（主题设置页的「选结构模板」下拉数据源）：
 	// 两者都依赖 contenttemplate 契约，分开两处注入只会让「谁负责接哪个端口」变得难查。
 	if optSetter, ok := a.projectService.(interface {
 		SetStructureTemplateOptionsPort(projectcontract.StructureTemplateOptionsPort)
 	}); ok {
 		optSetter.SetStructureTemplateOptionsPort(&structureTemplateOptionsPort{templates: a.contentTemplateSvc})
+		a.marks.mark(portProjectStructureTemplates)
 	} else {
 		logger.Scene("init").Warn("project 模块未提供结构模板候选注入点（SetStructureTemplateOptionsPort）：" +
 			"主题设置页的「选结构模板」下拉将只有「不绑定」")

@@ -46,6 +46,18 @@ var ReturnActiveStatuses = []string{
 	ReturnStatusRequested, ReturnStatusApproved, ReturnStatusReceived, ReturnStatusCompleted,
 }
 
+// ReturnedStatuses 货**已经实际入库**的退货单状态集合。
+//
+// 与 ReturnActiveStatuses 是两本不同的账，用途不可互换：
+//   - ReturnActiveStatuses（含 requested / approved）＝「额度被占用」——
+//     用来算「这件商品还能再申请退几件」。在途申请必须占额度，否则同一件商品能被申请两次。
+//   - ReturnedStatuses ＝「货真的回来了」—— 用来算库存归还量与「是不是全退」。
+//
+// 混用正是 BIZ-01 / BIZ-02 / BIZ-04 的根因：把「客户已经申请」当成「货已经退货」，
+// 于是只收到一件就把整单判成已退款、取消订单时按没扣减的原始数量全额归还、
+// 订单已终态之后还能再收一次货。
+var ReturnedStatuses = []string{ReturnStatusReceived, ReturnStatusCompleted}
+
 // ReturnEntity 对应 order_returns 表。
 type ReturnEntity struct {
 	ID        uint64 `gorm:"column:id;primaryKey"`
@@ -387,6 +399,46 @@ func (m *ReturnModel) SumQuantityByOrderItemsTx(ctx context.Context, tx *gorm.DB
 	if err = tx.WithContext(ctx).Model(&ReturnItemEntity{}).
 		Select("order_item_id, SUM(quantity) AS qty").
 		Where("return_id IN ? AND order_item_id IN ?", returnIDs, orderItemIDs).
+		Group("order_item_id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		sums[r.OrderItemID] = int(r.Qty)
+	}
+	return sums, nil
+}
+
+// SumReceivedQuantityByOrderItemsTx 事务内统计这些订单项**已经实际收货入库**的数量。
+//
+// 与 SumQuantityByOrderItemsTx 的区别是「哪一行」与「哪一列」都不同：
+//   - 申请额度用**所有非终态申请**的 quantity（客户说要退多少）；
+//   - 这本账只用 **received / completed 申请**的 received_quantity（仓库真的收到多少）。
+//
+// 用 received_quantity 而不是 quantity 是刻意的：列的存在意义就是「申请 3 件、实到 2 件」，
+// 拿申请数量当实收数量，账会从第一笔「少件」开始一路漂下去。
+//
+// projectID 必填（order_returns 带 FORCE 策略，缺作用域时 IDsByOrderTx 会静默返回空集 ——
+// 那会让「已归还数量」恒为 0，即超退与重复归还）。
+func (m *ReturnModel) SumReceivedQuantityByOrderItemsTx(ctx context.Context, tx *gorm.DB,
+	projectID string, orderID uint64, orderItemIDs []uint64) (sums map[uint64]int, err error) {
+	sums = map[uint64]int{}
+	if orderID == 0 || len(orderItemIDs) == 0 {
+		return sums, nil
+	}
+	ids, ierr := m.IDsByOrderTx(ctx, tx, projectID, orderID, ReturnedStatuses)
+	if ierr != nil {
+		return nil, ierr
+	}
+	if len(ids) == 0 {
+		return sums, nil
+	}
+	var rows []struct {
+		OrderItemID uint64 `gorm:"column:order_item_id"`
+		Qty         int64  `gorm:"column:qty"`
+	}
+	if err = tx.WithContext(ctx).Model(&ReturnItemEntity{}).
+		Select("order_item_id, SUM(received_quantity) AS qty").
+		Where("return_id IN ? AND order_item_id IN ?", ids, orderItemIDs).
 		Group("order_item_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}

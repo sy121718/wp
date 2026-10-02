@@ -1,0 +1,40 @@
+-- ========================================
+-- 506 · page_schedules 补「全状态」的 page_id 复合索引（审计 DB-06）
+--
+-- 背景：460 建的三条二级索引里，唯一含 page_id 的是 **PARTIAL**：
+--     uq_page_schedules_active (page_id, lang, action) WHERE status IN ('pending','running')
+-- 而读路径里有两条**覆盖全部状态**的查询（internal/module/page/model/page_schedule_model.go）：
+--
+--   ListSchedulesByPage   WHERE page_id = ? ORDER BY create_time DESC, id DESC LIMIT 50
+--   ListSchedulesByPages  WHERE page_id IN (…) [AND status IN (…)] ORDER BY create_time DESC, id DESC
+--
+-- 终态行（done / failed / canceled）不在那个 partial 索引里，于是「看某页历史排定」
+-- 这类查询只能走 page_schedules_pkey 顺序扫 + 过滤 + 排序 —— 表越小越划算，
+-- 一旦表拿到真实的排定历史就开始随行数线性退化，而这是后台每次打开页面面板都要跑的查询。
+--
+-- 索引形状为什么是 (page_id, create_time DESC, id DESC) 而不是别的：
+--   · 第一列必须是 page_id：两条查询都以它作等值 / IN 过滤（等值列放最左，左前缀规则）；
+--   · 后两列是查询的 ORDER BY，且与索引方向**一致**（DESC, DESC）—— 排序完全由索引满足，
+--     不需要 Sort 节点。create_time 可重复（同一秒排定多条），因此必须带 id 兜底成一个
+--     全序；只写 create_time 的话 PG 仍要一次 incremental sort 才能定序。
+--   · 不带 WHERE：page_schedules **没有** deleted_at（本表用状态机表达生命周期，
+--     见 460 的文件头），做不成 partial 索引也不该做。
+--   · 不 INCLUDE 任何列：读路径是 Find(&list) 取全列，index-only scan 不可能，
+--     INCLUDE 只会白白加宽索引。
+--
+-- 为什么在「表还是空的」时候加：索引的收益随行数增长，而代价在写入侧是常量
+-- （每次 create / 状态推进维护一条索引项）。等到表大了再补，建索引本身就是一次长锁 ——
+-- 现在 0 行，`CREATE INDEX` 是毫秒级。判断依据与实测见批次报告（含 EXPLAIN 对照）。
+--
+-- 锁：`CREATE INDEX`（非 CONCURRENTLY）对表取 SHARE 锁，阻塞写入但不阻塞读；
+-- 迁移在启动期执行，此时应用尚未接流量。此处**刻意不用** CONCURRENTLY：
+-- 它不能在事务块里运行，与迁移器的执行模型冲突（migrator 逐条语句直接在连接上执行，
+-- 而 CONCURRENTLY 失败会留下 invalid 索引，需要人工重建）。表是发布台账量级，
+-- 不值得为它引入这个运维面。
+--
+-- 幂等：IF NOT EXISTS —— 本迁移是**结构变更**，注册时**刻意不带 TableName**
+-- （page_schedules 早已存在，带上会被「表存在即跳过」永远跳过，见 register_page_schedule_index.go）。
+-- ========================================
+
+CREATE INDEX IF NOT EXISTS idx_page_schedules_page_created
+    ON page_schedules (page_id, create_time DESC, id DESC);

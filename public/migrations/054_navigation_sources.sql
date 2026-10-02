@@ -1,4 +1,6 @@
--- 047_navigation_sources.sql — 导航项多来源（对齐 WP「外观 → 菜单」）。
+-- 054_navigation_sources.sql — 导航项多来源（对齐 WP「外观 → 菜单」）。
+-- （文件头曾误写 047 —— 047 是 block_category 的迁移，按编号定位会找错文件；
+--   只改这一行注释，下面的 SQL 语句与幂等判据未变。）
 -- 菜单项不再只是「文字 + 链接」：可以从页面/文章/产品/分类/全局块取，
 -- 构建期由 NavigationResolver 解析出标题与 URL；custom 表示手填链接。
 -- target 对齐 WP 的「在新标签页打开」。

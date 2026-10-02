@@ -257,16 +257,6 @@ func (m *Model) Save(ctx context.Context, projectID string, e *TemplateEntity) e
 	})
 }
 
-// SetCurrentVersion 更新当前版本指针（版本行写入后回填）。
-func (m *Model) SetCurrentVersion(ctx context.Context, projectID, templateID, versionID string, at time.Time) error {
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&TemplateEntity{}).Where("id = ? AND project_id = ?", templateID, projectID).Updates(map[string]any{
-			"current_version_id": versionID,
-			"update_time":        at,
-		}).Error
-	})
-}
-
 // CreateVersion 写入不可变版本快照。
 func (m *Model) CreateVersion(ctx context.Context, v *VersionEntity) error {
 	return m.DBVersion(ctx).Create(v).Error

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -299,35 +298,27 @@ func Register(provider uploadprovider.Provider) error {
 	return nil
 }
 
-func Providers() []string {
-	stateMu.RLock()
-	defer stateMu.RUnlock()
-
-	result := make([]string, 0, len(providers))
-	for name := range providers {
-		result = append(result, name)
-	}
-	sort.Strings(result)
-	return result
-}
-
+// Upload 按当前组件配置上传（生产路径：provider 由 upload.default_provider 决定，
+// 上传前经 config.InitComponents 的 Init 完成就绪检查）。
 func Upload(ctx context.Context, file File, req Request) (Result, error) {
 	return uploadWithProvider(ctx, "", RuntimeConfig{}, file, req)
 }
 
-func UploadWithConfig(ctx context.Context, runtime RuntimeConfig, file File, req Request) (Result, error) {
-	return uploadWithProvider(ctx, runtime.Provider, runtime, file, req)
-}
-
+// Use 按 provider 名构造 Client（同一进程内按调用点选 provider 的入口）。
 func Use(provider string) Client {
 	return Client{provider: normalizeProvider(provider)}
 }
 
+// UseCfg 按一份显式运行时配置构造 Client（provider 名与配置一起给出）。
+//
+// 与 Upload / Use 的分工：那条路径的 provider 配置来自全局 Init(cfg)；
+// 本入口把配置交给调用方，供「同一进程内用不同 provider 配置上传」的场景使用。
 func UseCfg(runtime RuntimeConfig) Client {
 	cfg := runtime
 	return Client{provider: normalizeProvider(cfg.Provider), runtime: &cfg}
 }
 
+// NewUploader 构造一个绑定了默认 Request 的上传器（provider 名 + 每次调用的 Request）。
 func NewUploader(provider string, request Request) Uploader {
 	return Uploader{
 		client:  Use(provider),
@@ -335,13 +326,7 @@ func NewUploader(provider string, request Request) Uploader {
 	}
 }
 
-func NewUploaderWithConfig(runtime RuntimeConfig, request Request) Uploader {
-	return Uploader{
-		client:  UseCfg(runtime),
-		request: request,
-	}
-}
-
+// Client 是「provider 维度」的上传门面（见 Use / UseCfg）。
 func (c Client) Upload(ctx context.Context, file File, req Request) (Result, error) {
 	if c.runtime != nil {
 		return uploadWithProvider(ctx, c.provider, *c.runtime, file, req)
@@ -349,6 +334,7 @@ func (c Client) Upload(ctx context.Context, file File, req Request) (Result, err
 	return uploadWithProvider(ctx, c.provider, RuntimeConfig{}, file, req)
 }
 
+// Uploader 是「provider + 默认 Request」维度的门面（见 NewUploader）。
 func (u Uploader) Upload(ctx context.Context, file File) (Result, error) {
 	return u.client.Upload(ctx, file, u.request)
 }

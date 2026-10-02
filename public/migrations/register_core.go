@@ -290,10 +290,15 @@ func registerCoreSchemaAndAccess() {
 		SQL: mustSQL("227_i18n_seed_common_actions.sql"),
 	})
 
-	// 228：角色权限分配页（角色分权）的词条。页面是本轮新增的：在此之前角色与菜单的
+	// 228b：角色权限分配页（角色分权）的词条。页面是本轮新增的：在此之前角色与菜单的
 	// 授权接口只有服务端实现、没有任何界面调用方。判定同样限定在自己的 key 上（理由见 226）。
+	//
+	// 补丁位 b 而不是裸 228：228 主编号还被 register_i18n_layer.go 的页面标题 seed 用着，
+	// 两条都是「228 + 无后缀」时排序退化成整串字典序。补位后语义键变成 (228, "b")，
+	// 排序与改前**逐项一致**（page-titles 那条是 (228,"") 仍在前，与改前
+	// 「page-titles 的整串字典序更小」相同），两条 seed 写的是不同 item_key、无依赖。
 	registerSeed(Seed{
-		Version:   "228-i18n-seed-role-permissions",
+		Version:   "228b-i18n-seed-role-permissions",
 		TableName: "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 15 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang = 'zh-CN' AND item_key IN ('MsgRolePermissionsTitle', " +

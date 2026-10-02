@@ -122,13 +122,16 @@ func TestAdminBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 // 这是「响应里不含原始错误串」这条判据的可验证形态 —— 原始错误串在包装之后
 // 与本模块页面显示的文本再无任何关系（去重后的条数由类型字段给出）。
 func TestAdminBulkLimitTextDoesNotDeriveFromErrorText(t *testing.T) {
-	wrapped := fmt.Errorf(`批量删除管理员失败: SQLSTATE 23505 uq_sys_admin_username: %w`,
+	// 约束名用库里真实存在的那个（`uk_sys_admin_username`，见 init_schema.sql）：
+	// 以前写的 `uq_sys_admin_username` 在库里不存在，样本形状与真实报错不符 ——
+	// 「真名不许出网」这条判据其实是空的。
+	wrapped := fmt.Errorf(`批量删除管理员失败: SQLSTATE 23505 uk_sys_admin_username: %w`,
 		&shell.BulkIDsError{Count: shell.MaxBulkIDs + 1, Max: shell.MaxBulkIDs})
 	got := shell.BulkIDsFacingText(bulkProbeContext(t), wrapped)
 	if !strings.Contains(got, "一次最多操作") {
 		t.Fatalf("命中 sentinel 的错误应给出受控提示，实际 %q", got)
 	}
-	for _, tok := range []string{"SQLSTATE", "23505", "uq_sys_admin_username", "sys_admin"} {
+	for _, tok := range []string{"SQLSTATE", "23505", "uk_sys_admin_username", "sys_admin"} {
 		if strings.Contains(got, tok) {
 			t.Fatalf("包装进来的内部上下文 %q 不许出现在文案里：%q", tok, got)
 		}

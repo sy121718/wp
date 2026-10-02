@@ -78,8 +78,14 @@ func TestSearchConsoleVerificationCasePreserved(t *testing.T) {
 func TestSearchConsoleVerificationShape(t *testing.T) {
 	valid := []string{"AbCdEfGh", "a_b-cD9-12345678", seoTestToken}
 	for _, in := range valid {
-		if !ValidSearchConsoleVerification(in) {
+		// 与保存 / 注入共用同一入口（NormalizeSearchConsoleVerification）：合法 = ok，
+		// 且归一化结果非空（空结果写进产物等于没写验证 meta）。
+		token, ok := NormalizeSearchConsoleVerification(in)
+		if !ok {
 			t.Errorf("应判为合法: %q", in)
+		}
+		if token == "" {
+			t.Errorf("合法 token 归一化后不得为空串: %q", in)
 		}
 	}
 	invalid := []string{
@@ -89,7 +95,7 @@ func TestSearchConsoleVerificationShape(t *testing.T) {
 		"<meta name=\"google-site-verification\" content=\"abc\">",
 	}
 	for _, in := range invalid {
-		if ValidSearchConsoleVerification(in) {
+		if _, ok := NormalizeSearchConsoleVerification(in); ok {
 			t.Errorf("应判为非法: %q", in)
 		}
 		if got := buildSearchConsoleHead(in); got != "" {

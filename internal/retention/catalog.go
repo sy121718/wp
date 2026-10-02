@@ -121,6 +121,16 @@ var declarations = []Declaration{
 		Note:     "内容寻址目录 artifacts/<hash>/；删除失败只记日志，孤儿目录由反向对账（IDX-015）暴露",
 	},
 	{
+		// 审计 IDX-016 的落地：共享内容对象的回收此前只有写入路径（迁移 068 的注释里
+		// 就记着「content_objects 的 GC 待落地」），本行把它纳入统一声明 ——
+		// 少了它，IDX-019 的不变量「新增增长表必须声明保留期」对这张表失效。
+		Table: "content_objects", TimeColumn: "create_time",
+		Retain:   RetainArtifactDays * 24 * time.Hour,
+		Executor: "page 每日任务（产物 GC 同一趟：GarbageCollectArtifacts → collectOrphanContentObjects，DryRun=false）",
+		Kind:     CleanupDelete,
+		Note:     "标记清除：标记 =「是否仍被现存产物行引用」（page_artifact_objects 闭包 + 注入的外部引用来源），只回收无标记对象；保留窗口与产物 GC 同口径（30 天，窗口内一律不回收）；闭包行随对象级联删除（迁移 204）。保留期给了天数但**真正的判据是引用关系**，时间只是安全窗",
+	},
+	{
 		Table: "order_status_logs", TimeColumn: "create_time",
 		Retain:   0,
 		Executor: "（无需清理）",

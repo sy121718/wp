@@ -16,6 +16,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"gorm.io/gorm"
+
 	orderdto "go_wp/internal/module/order/dto"
 	usercontract "go_wp/internal/module/user/contract"
 )
@@ -23,12 +25,36 @@ import (
 // fakeGuestAccountProvisioner 只数调用次数，不做任何真实开号。
 type fakeGuestAccountProvisioner struct {
 	calls int
+	// mails 事务提交后发信的次数（BIZ-11：发信从建号里拆了出来）。
+	mails int
 }
 
 func (f *fakeGuestAccountProvisioner) EnsureGuestAccount(_ context.Context,
 	_ *usercontract.GuestAccountInput) (*usercontract.GuestAccountResult, error) {
 	f.calls++
 	return &usercontract.GuestAccountResult{UserID: 9, Username: "guest9", Created: true, PasswordMailed: true}, nil
+}
+
+// EnsureGuestAccountTx 事务内建号（BIZ-11）：不发信，把载荷带出来。
+func (f *fakeGuestAccountProvisioner) EnsureGuestAccountTx(_ context.Context, _ *gorm.DB,
+	_ *usercontract.GuestAccountInput) (*usercontract.GuestAccountResult, error) {
+	f.calls++
+	return &usercontract.GuestAccountResult{
+		UserID: 9, Username: "guest9", Created: true,
+		PendingMail: &usercontract.GuestAccountMail{Email: "customer@example.com", Username: "guest9", Password: "pw"},
+	}, nil
+}
+
+func (f *fakeGuestAccountProvisioner) SendGuestAccountMail(_ context.Context, mail *usercontract.GuestAccountMail) error {
+	if mail != nil {
+		f.mails++
+	}
+	return nil
+}
+
+// LookupGuestAccount 只读查账号：本替身一律「没有既有账号」（新建路径）。
+func (f *fakeGuestAccountProvisioner) LookupGuestAccount(_ context.Context, _ string) (uint64, bool, error) {
+	return 0, false, nil
 }
 
 func boolPtr(v bool) *bool { return &v }
@@ -49,7 +75,7 @@ func TestEnsureGuestAccountFollowsExplicitSwitch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			guest := &fakeGuestAccountProvisioner{}
 			s := &Service{guest: guest}
-			id, mailed := s.ensureGuestAccount(context.Background(), &orderdto.CreateOrderReq{
+			id, mail, _ := s.provisionGuestAccountTx(context.Background(), nil, &orderdto.CreateOrderReq{
 				CustomerEmail:         "customer@example.com",
 				ProvisionGuestAccount: tc.switcher,
 			})
@@ -60,7 +86,7 @@ func TestEnsureGuestAccountFollowsExplicitSwitch(t *testing.T) {
 				if id == nil || *id != 9 {
 					t.Fatalf("应当关联开出来的账号，实际 %v", id)
 				}
-				if !mailed {
+				if mail == nil {
 					t.Error("新建账号且密码寄出时应回执已发信（页面据此提示客户查收）")
 				}
 				return
@@ -68,7 +94,7 @@ func TestEnsureGuestAccountFollowsExplicitSwitch(t *testing.T) {
 			if id != nil {
 				t.Fatalf("不开号时 user_id 必须留空，实际 %d", *id)
 			}
-			if mailed {
+			if mail != nil {
 				t.Error("不开号时不该回执「已发初始密码」")
 			}
 		})
@@ -94,7 +120,7 @@ func TestEnsureGuestAccountIgnoresJSONCreatedVia(t *testing.T) {
 			}
 			guest := &fakeGuestAccountProvisioner{}
 			s := &Service{guest: guest}
-			id, _ := s.ensureGuestAccount(context.Background(), &req)
+			id, _, _ := s.provisionGuestAccountTx(context.Background(), nil, &req)
 			if guest.calls != tc.wantCalls || (id != nil) != tc.provision {
 				t.Fatalf("伪造来源时开户次数=%d id=%v，期望次数=%d", guest.calls, id, tc.wantCalls)
 			}
@@ -109,19 +135,19 @@ func TestEnsureGuestAccountShortCircuits(t *testing.T) {
 
 	// 已有 user_id（访客已登录）：不重复开号，且显式 true 也不覆盖既有身份。
 	existing := uint64(42)
-	id, mailed := s.ensureGuestAccount(context.Background(), &orderdto.CreateOrderReq{
+	id, mail, _ := s.provisionGuestAccountTx(context.Background(), nil, &orderdto.CreateOrderReq{
 		UserID: &existing, CustomerEmail: "customer@example.com", ProvisionGuestAccount: boolPtr(true),
 	})
-	if guest.calls != 0 || id == nil || *id != existing || mailed {
-		t.Fatalf("已有 user_id 时应原样返回且不调开号端口：calls=%d id=%v mailed=%v", guest.calls, id, mailed)
+	if guest.calls != 0 || id == nil || *id != existing || mail != nil {
+		t.Fatalf("已有 user_id 时应原样返回且不调开号端口：calls=%d id=%v mail=%v", guest.calls, id, mail)
 	}
 
 	// 未装配用户模块（guest == nil）：下单照常，只是不自动开号。
 	s = &Service{}
-	id, mailed = s.ensureGuestAccount(context.Background(), &orderdto.CreateOrderReq{
+	id, mail, _ = s.provisionGuestAccountTx(context.Background(), nil, &orderdto.CreateOrderReq{
 		CustomerEmail: "customer@example.com", ProvisionGuestAccount: boolPtr(true),
 	})
-	if id != nil || mailed {
-		t.Fatalf("未接用户模块时不该关联账号：id=%v mailed=%v", id, mailed)
+	if id != nil || mail != nil {
+		t.Fatalf("未接用户模块时不该关联账号：id=%v mail=%v", id, mail)
 	}
 }

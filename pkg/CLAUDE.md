@@ -75,7 +75,10 @@ response.ErrorWithMessage(c, 400, "请求参数错误")
 
 - `database` —— 显式初始化、driver 分发、运行时性能选项
 - `queue` —— 任务注册 facade、入队 facade
-- `upload` —— `Upload` / `UploadWithConfig` / `Use` / `UseCfg` / `NewUploader` / `NewUploaderWithConfig`
+- `upload` —— `Upload`（生产路径：provider 与配置来自全局 `Init`）；
+  `Use` / `UseCfg` / `NewUploader` 是同族的 **provider 维度门面**（`Client` / `Uploader`），
+  当前调用方是 `public/test/pkg/upload` 的用例 —— 生产没有任何调用点。
+  给它们加调用方时先想清「为什么 `Upload` 不够」，不要只为绕过全局配置而用。
 
 ## 新增 pkg 的要求
 

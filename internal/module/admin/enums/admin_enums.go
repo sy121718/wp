@@ -18,7 +18,7 @@ const (
 // AdminFacingMessages 可以原样展示给前端的管理面业务文案（**白名单**）。
 //
 // 存在的理由：service 的业务错误全部来自本包，而基础设施错误的原文
-// （PostgreSQL 的 23505、约束名 uq_sys_role_role_code、表名、文件路径）不该出网。
+// （PostgreSQL 的 23505、约束名 uk_sys_role_code、表名、文件路径）不该出网。
 // handler 侧的归口助手（internal/module/admin/inbound/http/admin_err.go）拿这张表做白名单：
 // 命中 → 原样透出（前端据此提示「哪一项不合法」）；未命中 → 记日志 + ErrInternal 归口文案。
 //

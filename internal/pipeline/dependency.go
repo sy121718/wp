@@ -54,6 +54,13 @@ const (
 	// DepKindI18N 界面词条或内容译文变化（构建期取词进产物字节）。
 	DepKindI18N = "i18n"
 	// DepKindRuntime 非构建依赖（仅运行时 Fragment 缓存键，不触发重建）。
+	//
+	// **决策：保留常量，不加构造函数**（FIX-22 复核结论）。
+	// 理由：它的语义是「不参与重建的运行时缓存键」，而运行时 Fragment 的缓存键当前由
+	// rfcache 各自拼（带版本号），不经过本文件的 DepKey；删掉常量只会让「哪些 kind 是
+	// 构建依赖」这件事少一档显式记录，不会消除任何重复实现。
+	// 反过来，给它补一个构造函数才是引入第二份真源（一个谁都不用的键构造）。
+	// 若将来运行时缓存也走 DepKey，先删这里的常量、再加唯一构造函数。
 	DepKindRuntime = "runtime"
 )
 
@@ -104,6 +111,23 @@ func BlockKey(blockID string) DepKey {
 // key 由 page 与 presentation 两条构建路径用同一个构造函数产出，两侧必须一致。
 func MenuKey(projectID, kind string) DepKey {
 	return DepKey{Kind: DepKindMenu, Key: "menu:" + projectID + ":" + kind}
+}
+
+// SiteSettingKey 站点/工程设置依赖键，如 site_setting:{projectID}:{key}。
+//
+// **当前没有发射点**（FIX-22 的结论）：站点设置的读取方（builder 的 site_scripts /
+// document.jet / head meta / 404 页）都在构建期直接读工程设置，没有任何一处登记
+// 「我依赖了 site_setting:{project}:headScripts」—— 于是 SaveSiteSettings 无法按键精确反查，
+// 只能用站点级 stale 网（见 project 模块 markPagesStaleForSiteSettingsChange 的注释）。
+//
+// 为什么仍把构造函数放在这里：**它是消除重复实现的一半**（FIX-22 的核心是「一次收口」）——
+// 登记侧（构建期）与反查侧（保存侧）必须用同一个构造函数产出同一个键，否则两侧拼串
+// 一旦不一致，反查恒 0 行且**不报错**（表现是「标了 stale 但没重建」）。
+// 接线清单：构建期在 page / presentation 两条路径登记本键（与 page_dependency.go /
+// presentation_render.go 同形），保存侧改为按变化的键调 MarkStaleByDependency。
+// 该接线的落点在 page / presentation 的构建路径里，不在本批写作用域内（见报告）。
+func SiteSettingKey(projectID, key string) DepKey {
+	return DepKey{Kind: DepKindSiteSetting, Key: "site_setting:" + projectID + ":" + key}
 }
 
 // NavigationKey 按具体菜单项引用的依赖键，如 navigation:{itemID}。

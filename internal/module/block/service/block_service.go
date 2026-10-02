@@ -53,8 +53,13 @@ func (s *Service) SetStalePropagator(p func(ctx context.Context, blockID string)
 	s.propagate = p
 }
 
-// SetReferenceChecker 注入引用检查器（dashboard 在 page/project 装配后绑定，
-// 与 SetStalePropagator 同模式）。生产装配必须调用 RequireWiring。
+// SetReferenceChecker 注入引用检查器（**布尔形式**：只回答「有没有引用」）。
+//
+// 与 SetStalePropagator 同模式（打破「block 先于 page 装配」的顺序约束）。
+// 生产装配用的是 SetReferenceUsageChecker（明细形式，两处都注入时以它为准）；
+// 本 setter 当前的调用方是**测试** —— 用例用它注入一个固定的引用判定，
+// 或用 SetReferenceChecker(nil) 撤掉默认检查器让用例独立跑。
+// 生产新增调用方之前先确认：明细检查器为什么不够。
 func (s *Service) SetReferenceChecker(r func(ctx context.Context, blockID string) (bool, error)) {
 	s.referenced = r
 }
@@ -71,7 +76,7 @@ func (s *Service) SetReferenceUsageChecker(r func(ctx context.Context, blockID s
 // RequireWiring 编排完成后调用：传播器或引用检查器未注入则 fail-fast。
 func (s *Service) RequireWiring() {
 	if s.propagate == nil || (s.referenced == nil && s.usages == nil) {
-		panic("block.Service: stale 传播器与引用检查器必须注入（dashboard 装配后调用 RequireWiring）")
+		panic("block.Service: stale 传播器与引用检查器必须注入（装配层在 page 装配后调用 RequireWiring）")
 	}
 }
 

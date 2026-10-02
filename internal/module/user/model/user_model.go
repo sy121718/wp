@@ -158,6 +158,34 @@ func (m *UserModel) Create(ctx context.Context, e *UserEntity) (err error) {
 	return m.DB(ctx).Create(e).Error
 }
 
+// CreateTx 在**调用方的事务**里新建用户（BIZ-11）。
+//
+// 为什么必须能透传句柄：访客开号与建单是同一次用户可感知的写操作，账号要与订单
+// 一起提交、一起回滚。分两个事务的后果实测过 —— 建号成功、订单因库存不足回滚，
+// 于是留下一个能登录、却没有任何订单的**孤儿账号**（而且客户已经收到了初始密码邮件）。
+func (m *UserModel) CreateTx(ctx context.Context, tx *gorm.DB, e *UserEntity) (err error) {
+	return tx.WithContext(ctx).Create(e).Error
+}
+
+// GetByEmailTx 与 GetByEmail 同语义，但读在调用方事务内（见 CreateTx 的理由：
+// 事务内要能看到自己刚建的账号，不能另开连接去读）。
+func (m *UserModel) GetByEmailTx(ctx context.Context, tx *gorm.DB, email string) (e *UserEntity, err error) {
+	addr := strings.TrimSpace(email)
+	if addr == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	e = &UserEntity{}
+	err = tx.WithContext(ctx).Where("lower(email) = lower(?)", addr).First(e).Error
+	return e, err
+}
+
+// GetByUsernameTx 与 GetByUsername 同语义，读在调用方事务内（生成未占用用户名时用）。
+func (m *UserModel) GetByUsernameTx(ctx context.Context, tx *gorm.DB, username string) (e *UserEntity, err error) {
+	e = &UserEntity{}
+	err = tx.WithContext(ctx).Where("lower(username) = lower(?)", username).First(e).Error
+	return e, err
+}
+
 // GetByID 按主键取（不存在返回 gorm.ErrRecordNotFound）。
 func (m *UserModel) GetByID(ctx context.Context, id uint64) (e *UserEntity, err error) {
 	e = &UserEntity{}

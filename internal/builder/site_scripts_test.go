@@ -99,8 +99,15 @@ func TestSiteScriptsShape(t *testing.T) {
 		"<!-- 统计代码：等待市场部确认 -->",
 	}
 	for _, in := range valid {
-		if !ValidHeadScripts(in) || !ValidBodyScripts(in) {
+		// 判据走生产同一入口（Normalize*）：合法 = ok，且归一化结果必须非空 ——
+		// 「ok 但结果是空串」在保存路径上会写成空片段，等于把作者的内容丢掉。
+		head, headOK := NormalizeHeadScripts(in)
+		body, bodyOK := NormalizeBodyScripts(in)
+		if !headOK || !bodyOK {
 			t.Errorf("应判为合法: %q", in)
+		}
+		if head == "" || body == "" {
+			t.Errorf("合法输入归一化后不得为空串: %q", in)
 		}
 	}
 	invalid := []string{
@@ -117,10 +124,10 @@ func TestSiteScriptsShape(t *testing.T) {
 		strings.Repeat("a", maxSiteScriptBytes+1),
 	}
 	for _, in := range invalid {
-		if ValidHeadScripts(in) {
+		if _, ok := NormalizeHeadScripts(in); ok {
 			t.Errorf("应判为非法（Head）: %q", in)
 		}
-		if ValidBodyScripts(in) {
+		if _, ok := NormalizeBodyScripts(in); ok {
 			t.Errorf("应判为非法（Body）: %q", in)
 		}
 		if got := buildHeadScripts(in); got != "" {
@@ -135,7 +142,7 @@ func TestSiteScriptsShape(t *testing.T) {
 	if len(atLimit) != maxSiteScriptBytes {
 		t.Fatalf("样本长度构造错误: %d", len(atLimit))
 	}
-	if !ValidHeadScripts(atLimit) {
+	if _, ok := NormalizeHeadScripts(atLimit); !ok {
 		t.Errorf("长度恰好等于上限 %d 应判为合法", maxSiteScriptBytes)
 	}
 }

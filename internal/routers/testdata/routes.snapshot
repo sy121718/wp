@@ -4,12 +4,18 @@ GET /_t/o/:token
 GET /_t/u/:token
 GET /admin
 GET /admin/administrators
+GET /admin/administrators/menus/drawer
+GET /admin/administrators/roles/drawer
 GET /admin/analytics
 GET /admin/articles
 GET /admin/articles/edit
 GET /admin/articles/new
+GET /admin/articles/preview-frame
+GET /admin/articles/seo/drawer
+GET /admin/articles/stale/drawer
 GET /admin/articles/translations
 GET /admin/blocks
+GET /admin/blocks/stale/drawer
 GET /admin/comments
 GET /admin/content-templates
 GET /admin/content-templates/edit
@@ -48,7 +54,9 @@ GET /admin/navigations/edit
 GET /admin/navigations/translations
 GET /admin/orders
 GET /admin/orders/new
+GET /admin/page-langs/panel
 GET /admin/page-schedules/panel
+GET /admin/page-translation-misses
 GET /admin/page/translations
 GET /admin/pages
 GET /admin/permissions
@@ -57,7 +65,6 @@ GET /admin/plugins
 GET /admin/product-attributes
 GET /admin/product-brands
 GET /admin/product-categories
-GET /admin/product-categories/children
 GET /admin/product-categories/parents
 GET /admin/product-pricing
 GET /admin/product-tags
@@ -67,6 +74,8 @@ GET /admin/products/bundle
 GET /admin/products/detail
 GET /admin/products/edit
 GET /admin/products/new
+GET /admin/products/preview-frame
+GET /admin/products/seo/drawer
 GET /admin/products/template
 GET /admin/products/translations
 GET /admin/returns
@@ -75,6 +84,7 @@ GET /admin/roles/permissions/drawer
 GET /admin/seo
 GET /admin/settings
 GET /admin/site-slots
+GET /admin/system
 GET /admin/theme
 GET /admin/themes
 GET /admin/themes/settings
@@ -203,6 +213,7 @@ GET /api/role/detail
 GET /api/role/list
 GET /api/role/menu/list
 GET /api/role/user/list
+GET /api/sysconfig/get
 GET /api/theme/active
 GET /api/theme/list
 GET /api/webhook/delivery/list
@@ -230,6 +241,8 @@ POST /access/unlock
 POST /admin/administrators/bulk-delete
 POST /admin/administrators/create
 POST /admin/administrators/delete
+POST /admin/administrators/menus/save
+POST /admin/administrators/roles/save
 POST /admin/administrators/update
 POST /admin/articles/bulk-delete
 POST /admin/articles/create
@@ -336,9 +349,13 @@ POST /admin/orders/create
 POST /admin/orders/note
 POST /admin/orders/refund
 POST /admin/orders/status
+POST /admin/page-langs/exclude
+POST /admin/page-langs/republish
+POST /admin/page-langs/restore
 POST /admin/page-redirects/bulk-delete
 POST /admin/page-schedules/cancel
 POST /admin/page-schedules/set
+POST /admin/page-translation-misses/cancel
 POST /admin/page/translations/save
 POST /admin/pages/bulk-delete
 POST /admin/pages/create
@@ -416,6 +433,7 @@ POST /admin/settings/locales/save
 POST /admin/settings/save
 POST /admin/site-slots/bind
 POST /admin/site-slots/unbind
+POST /admin/system/save
 POST /admin/themes/activate
 POST /admin/themes/create
 POST /admin/themes/delete
@@ -579,6 +597,7 @@ POST /api/role/delete
 POST /api/role/menu/save
 POST /api/role/update
 POST /api/role/user/save
+POST /api/sysconfig/save
 POST /api/theme/activate
 POST /api/theme/create
 POST /api/theme/delete

@@ -18,8 +18,8 @@ const tableNameProjectLocales = "project_locales"
 
 // withProjectScope 在事务内设置 RLS 会话变量 app.project_id 后执行 fn。
 //
-// 实现已上提到 **pkg/rls.InProjectScope**（DB-009 全量覆盖时）：Migration 215 给
-// 53 个带 project_id 的对象都铺了同样的策略，「在事务里设变量」这件事不该在
+// 实现已上提到 **pkg/rls.InProjectScope**（DB-009 全量覆盖时）：迁移 215 铺开的那批
+// 带 project_id 的对象都装了同样的策略，「在事务里设变量」这件事不该在
 // 每个模块的 model 里各抄一份。这里保留方法名与签名，调用方（ListLocales /
 // ReplaceLocales）不变。
 //

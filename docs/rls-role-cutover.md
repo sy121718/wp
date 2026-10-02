@@ -7,7 +7,9 @@
 
 ## 1. 为什么必须切角色
 
-迁移 215 给 53 个带 `project_id` 的对象装了 `ROW LEVEL SECURITY` + `FORCE`，
+迁移 215 给带 `project_id` 的对象装了 `ROW LEVEL SECURITY` + `FORCE`
+（覆盖数量以 `pkg/rls` 的连接身份探针读数 `Identity.RLSTables` 为准 —— 迁移仍在追加对象，
+文档里不写死数字），
 策略谓词读会话变量 `app.project_id`（未设置即行不可见，fail closed）。但
 **PostgreSQL 的超级用户总是绕过 RLS** —— `FORCE` 约束的是表属主，约束不了
 superuser / `BYPASSRLS` 角色。应用原先连的是 `root`（`rolsuper=t`），
@@ -177,9 +179,9 @@ require_rls_role=true，服务真实起在 127.0.0.1:8099 并用 dev-login 会�
 
 ### 6.2 无策略表（**不会** fail closed，但没有隔离）
 
-1. **build_jobs**：全库唯一「有 project_id、没有 ROW LEVEL SECURITY」的表（project_id 由迁移 295 新增，215 的名单早于它）。切角色后它的查询既不报错也不被限制 —— Claim / ReclaimStale 按状态**跨工程**捞取是**有意**的队列语义，必须保持；而面向运维的 Stats / List / Retry 原本是「全队列视角」。本分支给它们加了**可选**工程过滤（GET /api/build/queue?project=、GET /api/build/jobs?project=、POST /api/build/retry 的 projectId），不带参数时行为与改造前逐字一致。**是否要把默认收敛成「只看本工程」是产品取舍，未擅自改。** 另：当前**没有**「某页面的构建任务列表」这类接口；将来要加，工程过滤必须写在 SQL 里（build/model 包注释已写死这条）。
+1. **build_jobs**：两张「有 project_id、没有 ROW LEVEL SECURITY」的表之一（另一张见下条；project_id 由迁移 295 新增，215 的名单早于它）。切角色后它的查询既不报错也不被限制 —— Claim / ReclaimStale 按状态**跨工程**捞取是**有意**的队列语义，必须保持；而面向运维的 Stats / List / Retry 原本是「全队列视角」。本分支给它们加了**可选**工程过滤（GET /api/build/queue?project=、GET /api/build/jobs?project=、POST /api/build/retry 的 projectId），不带参数时行为与改造前逐字一致。**是否要把默认收敛成「只看本工程」是产品取舍，未擅自改。** 另：当前**没有**「某页面的构建任务列表」这类接口；将来要加，工程过滤必须写在 SQL 里（build/model 包注释已写死这条）。
 2. **product_outbox_events**：同样是队列（按状态跨工程领取），没有生产侧的按工程读路径；ListOutboxEvents / CountPendingOutbox 只有测试与诊断调用。不需要动作。
-3. **projects** 表本身没有 project_id、不在 53 个对象里 —— ListAllProjectIDs 这类「逐工程定位」的兜底清单读它，**不受换角色影响**（实测：块 / 导航 / 订单 / 页面的作用域探测正常）。
+3. **projects** 表本身没有 project_id、不在迁移 215 的策略名单里 —— ListAllProjectIDs 这类「逐工程定位」的兜底清单读它，**不受换角色影响**（实测：块 / 导航 / 订单 / 页面的作用域探测正常）。
 
 ### 6.3 构建 / 发布期读取的结论
 

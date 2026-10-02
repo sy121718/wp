@@ -96,18 +96,6 @@ func NormalizeBodyScripts(raw string) (script string, ok bool) {
 	return normalizeSiteScript(raw)
 }
 
-// ValidHeadScripts 判断自定义 Head 代码是否合法（后台表单校验用）。
-func ValidHeadScripts(raw string) bool {
-	_, ok := NormalizeHeadScripts(raw)
-	return ok
-}
-
-// ValidBodyScripts 判断自定义 Body 代码是否合法（后台表单校验用）。
-func ValidBodyScripts(raw string) bool {
-	_, ok := NormalizeBodyScripts(raw)
-	return ok
-}
-
 // normalizeSiteScript 两个片段共用的归一化 + 形状校验（唯一出口）。
 func normalizeSiteScript(raw string) (script string, ok bool) {
 	script = strings.TrimSpace(raw)

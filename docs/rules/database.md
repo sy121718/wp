@@ -191,7 +191,9 @@ identity），依赖 DB 默认值会踩 22P02。
 
 ### 现状：策略已铺，但在换连接角色之前不生效
 
-迁移 215 给 53 个带 `project_id` 的对象（40 张基表 + 分区子表）装了 `ROW LEVEL SECURITY` + `FORCE`，
+迁移 215 给带 `project_id` 的对象装了 `ROW LEVEL SECURITY` + `FORCE`
+（覆盖多少张**不写死数字**：迁移 462 / 466 等还在追加，以 `pkg/rls` 的连接身份探针读数
+`Identity.RLSTables` 为准 —— 写死的数字一定会再次过时，且过时是静默的），
 策略谓词读会话变量 `app.project_id`（未设置即行不可见，fail closed；`inventory_change_reasons` /
 `sys_translation` 额外放行 `project_id IS NULL` 的全局行）。
 
@@ -262,11 +264,20 @@ masterdata / navigation / order / page / presentation / product（含 inventory�
 
 ### 换角色前先看两个已知缺口
 
-- `build_jobs` 是当前**唯一**有 `project_id` 却没有策略的表（该列由迁移 295 新增，215 的名单早于它；
-  队列按状态跨工程捞取）—— 其余 53 张 project_id 表已实测全部 `ENABLE` + `FORCE` + 有读
-  `app.project_id` 的策略；
+- 有 `project_id` 却**没有**策略的表有**两张**：`build_jobs` 与 `product_outbox_events`。
+  两张都是「按状态跨工程领取」的队列，消费者一次领取所有工程的待办 —— 装了策略会让 worker
+  看不见别的工程的待办，所以豁免是**有意**的（`product_outbox_events` 的迁移 309 注释自己也写了
+  「本表不装 RLS 策略」，`build_jobs.project_id` 由迁移 295 新增，215 的名单早于它）。
+  **代价与别的表相反**：切角色后它们的查询既不报错也不被限制，工程过滤必须显式写在 SQL 里；
+- 其余带 `project_id` 的表已实测全部 `ENABLE` + `FORCE` + 有读 `app.project_id` 的策略
+  （**张数以运行时探针为准**，不在文档里写死：迁移一直在追加对象）；
 - `internal/pipeline` / `internal/builder/core` 自身不 import `pkg/rls`（构建期的依赖读取带不带作用域
   取决于被调用方）。
+
+> 这句「除白名单外全部 `ENABLE` + `FORCE`」有**可执行**判据：
+> `public/test/rls/rls_policy_coverage_test.go` —— 扫生产迁移建出的 schema，
+> 白名单（该测试内逐条列出的豁免表 + 理由）之外的「带 `project_id` 的基表」必须有
+> `relrowsecurity` + `relforcerowsecurity`。新增无策略表而不登记 → 测试红。
 
 精确检索命令见 `docs/rls-role-cutover.md` §7。
 

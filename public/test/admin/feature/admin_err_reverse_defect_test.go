@@ -268,7 +268,7 @@ func TestAdminInternalEndpointInfraErrorStaysCollected(t *testing.T) {
 			assertNoLeak(t, tc.name, body)
 
 			logText := readLog()
-			if !strings.Contains(logText, "uq_sys_role_role_code") || !strings.Contains(logText, "SQLSTATE") {
+			if !strings.Contains(logText, "uk_sys_role_code") || !strings.Contains(logText, "SQLSTATE") {
 				t.Fatalf("内部错误原文必须进日志（收口 ≠ 吞掉），日志内容=%s", logText)
 			}
 		})

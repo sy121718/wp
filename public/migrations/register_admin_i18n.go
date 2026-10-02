@@ -585,6 +585,12 @@ func registerAdminI18nSeedsAndLatest() {
 	// 195：sys_translation 工程作用域（审计 I18N-009）。
 	// 判据按**本批自己的列名 + 索引名**枚举计数 —— sys_translation 早已存在，
 	// 用默认的「表存在即跳过」必然误跳过；也不可用总量。
+	//
+	// 判据里这两个名字**不要按 DB-07 的口径「纠正」**：它们是 195 自己 CREATE 出来的
+	// 真实对象名（`uq_sys_translation_scope_key` 是唯一索引，实测存在于 pg_indexes），
+	// 只不过用了历史前缀 `uq_`（仓库 001 起的约定是 `uk_`）。改名要连已执行迁移的
+	// CREATE INDEX 一起改，而本判据一旦对不上（计数永远 < 3）就会**每次启动重跑**该迁移
+	// —— 这里宁保留不一致的命名，也不动已执行迁移与幂等判据。
 	register(Migration{
 		Version:   "195-sys-translation-project-scope",
 		TableName: "sys_translation",

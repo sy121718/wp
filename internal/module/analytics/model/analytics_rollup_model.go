@@ -111,7 +111,7 @@ func (m *Model) RollupDay(ctx context.Context, projectID string, day, from, to t
 // 汇总任务也不该被空工程拖着跑。
 //
 // 实现形状（DB-009 第七批）：工程清单取自 projects 表 —— 它是隔离的**主体**
-// （没有 project_id 列、不在迁移 215 的 53 个对象里），读它不涉及任何被隔离数据 ——
+// （没有 project_id 列、不在迁移 215 的策略名单里），读它不涉及任何被隔离数据 ——
 // 再**逐工程在作用域内**探测明细是否存在。原来的写法是
 // SELECT DISTINCT project_id FROM page_views，而 page_views 带 FORCE 策略、
 // 谓词读会话变量 app.project_id：没有作用域时那条 SELECT 恒返回空集（fail closed 不报错）。

@@ -41,12 +41,6 @@ func NormalizeGA4MeasurementID(raw string) (id string, ok bool) {
 	return id, ga4MeasurementIDPattern.MatchString(id)
 }
 
-// ValidGA4MeasurementID 判断测量 ID 是否合法（后台表单校验用）。
-func ValidGA4MeasurementID(raw string) bool {
-	_, ok := NormalizeGA4MeasurementID(raw)
-	return ok
-}
-
 // buildGA4Head 生成注入 <head> 的 GA4 片段。
 //
 // 空值、非法值都返回空串（零字节注入）；非法值额外记一条告警 ——

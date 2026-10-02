@@ -346,8 +346,28 @@ func (a *assembly) buildFoundation(ready func() error) {
 	//
 	// onChanged 注入 Invalidate：配置保存成功后立刻重读，否则运维保存完看到的行为仍是旧的
 	// （那正是「写进库了但不生效」的老毛病）。
-	sysConfigSvc := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(db), i18n.Invalidate)
+	// onChanged：进程内默认值刷新 + 站点级 stale 标记。
+	//
+	// 为什么保存配置也要标 stale：i18n 组的三个键**都进产物字节** ——
+	// 默认语言进 <html lang> 与 hreflang 的 x-default；站点语言 URL 方案决定
+	// default_plain 下哪条链接不带前缀；语言短码覆盖改变站内链接里的短码形态。
+	// 只刷新进程内值而不标 stale 的表现是「后台改了默认语言，线上仍是旧的 URL 形态与切换器」
+	// —— 而且没有任何报错（与 FIX-21 的站点设置是同一个失效模式）。
+	//
+	// 走既有的站点级 stale 网（MarkStaleForI18n）：影响面本来就是全站（每一页都带
+	// <html lang> 与语言链接），不是「图省事退化成全站标记」。
+	// pageService 在本步（buildFoundation）尚未装配，故延迟到回调触发时读取 ——
+	// 回调只在后台保存配置时发生，那时装配早已完成。
+	sysConfigSvc := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(db), func() {
+		i18n.Invalidate()
+		if a.pageService != nil {
+			if merr := a.pageService.MarkStaleForI18n(context.Background()); merr != nil {
+				logger.Scene("sysconfig").Error(merr, "系统配置保存后标记全站待重建失败")
+			}
+		}
+	})
 	i18n.SetValueLoader(sysconfigi18nvalues.New(sysConfigSvc).Load)
+	a.marks.mark(portI18nValueLoader)
 	// 同一个实例挂到装配对象上：系统设置页（在后面的 core CRUD 段落装配）要复用它，
 	// 保存后的主动刷新走的正是上面注入的 onChanged。
 	a.sysConfigSvc = sysConfigSvc
@@ -423,6 +443,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	}
 	snapPort.StartDataRuleSnapshotAutoRefresh(context.Background())
 	builtin.SetDataRuleDeptResolver(snapPort.DeptSubtreeIDsFromSnapshot)
+	marks.mark(portDataRuleDeptResolver)
 
 	// 后台页面组在这里就绪：各模块在自己的 Setup 里既注册 /api/* 也注册 /admin/*，
 	// 中间件链（Session + CSRF + 权限上下文 / 侧栏菜单树）只由这一处定义 ——
@@ -505,6 +526,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 所以 products 不进参数表，改为后置注入（装配期写一次、之后只读；
 	// 与 runtimefragment.SetBundleProvider 同一手法），handler 侧对 nil 降级为下拉为空。
 	inventoryhttp.SetProductCatalog(productSvc)
+	marks.mark(portInventoryProductCatalog)
 	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
 	marks.mark(portProductContentStore)
 
@@ -901,6 +923,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
 	runtimefragment.SetMembershipReader(a.membershipSvc)
 	runtimefragment.SetMembershipFacingTexter(a.membershipFacing)
+	marks.mark(portRuntimeFragMembershipTexter)
 	marks.mark(portRuntimeFragMembership)
 	// 商品评论差异化规则的**输入**（order → product）：把「某访客买过某商品吗」交给
 	// 商品模块，由它实现 commentcontract.EntityPolicy（紧接着的下一段把它注入 comment）。
@@ -926,6 +949,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 	if a.commentSvc != nil {
 		runtimefragment.SetCommentPort(a.commentSvc)
 		runtimefragment.SetCommentFacingTexter(a.commentSvc)
+		marks.mark(portRuntimeFragCommentTexter)
 		// 哈希口径留在评论模块（本包 import 它的 service 会被架构门禁拦下），
 		// 装配层只把「盐从哪来」这件事接上：按用途分离密钥（同 cart cookie / 支付回调的
 		// 既有手法），未配置时回退会话密钥并告警（resolvePurposeSecret 内部记 Warn）。
@@ -933,6 +957,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 		runtimefragment.SetCommentSourceHasher(func(ip string) string {
 			return commentservice.HashSourceIP(commentSalt, ip)
 		})
+		marks.mark(portRuntimeFragCommentHasher)
 		marks.mark(portRuntimeFragComment)
 		// 差异化规则的提供方（「商品评论必须买过」这类）：由**拥有该实体的模块**实现。
 		//

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -438,13 +439,70 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		projectErrRedirect(c, backURL, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err))
 		return
 	}
+	// 构建可见的字段**是否真的变了**：changed 决定保存后要不要标 stale。
+	// 比较的是同一个 mergeSiteSettings 产出的规范化 JSON（键顺序稳定），
+	// 因此「只点了一次保存、什么都没改」不会误判成变化 —— 那会把保存按钮变成一次全量重建。
+	settingsChanged := siteSettingsDiffer(project.Settings, settingsJSON)
 	if _, err := h.projects.Update(c.Request.Context(), &projectcontract.UpdateReq{
 		ID: projectID, Name: name, Settings: settingsJSON,
 	}); err != nil {
 		projectErrRedirect(c, backURL, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err))
 		return
 	}
+	// 保存成功之后才标记（失败路径不标：配置没落库，标了只会白重建一次）。
+	h.markPagesStaleForSiteSettingsChange(c.Request.Context(), projectID, settingsChanged)
 	c.Redirect(http.StatusSeeOther, backURL)
+}
+
+// siteSettingsDiffer 比较两份 settings 的**语义**（不看键顺序与空白）。
+//
+// 为什么不能逐字节比：raw 是从 PostgreSQL 的 jsonb 列读出来的（PG 会按自己的规则重排键、
+// 去掉多余空白），merged 是 Go 的 json.Marshal 产物（按键排序）—— 同一份内容两边字节不同。
+// 实测：逐字节比会把「什么都没改、只点了一次保存」判成变化，于是每次保存都全站重建
+// （正是本函数要避免的事）。
+//
+// 解析失败按「变」处理（保守方向）：宁可多标一次 stale，也不要因为一份读不懂的旧值
+// 而漏掉真正的内容变更。
+func siteSettingsDiffer(before, after json.RawMessage) bool {
+	var b, a map[string]any
+	if err := json.Unmarshal(before, &b); err != nil {
+		return true
+	}
+	if err := json.Unmarshal(after, &a); err != nil {
+		return true
+	}
+	return !reflect.DeepEqual(b, a)
+}
+
+// markPagesStaleForSiteSettingsChange 站点设置变更后标记全站待重建。
+//
+// **为什么这些字段必须标 stale**：它们全部进产物字节 ——
+//
+//	· headScripts / bodyScripts → 注入 </head> 前 / </body> 前（builder/site_scripts.go、document.jet）
+//	· searchConsoleVerification → head 里的验证 meta
+//	· ga4MeasurementId → gtag 注入
+//	· notFoundHtml → 自定义 404 页的响应体
+//	· siteName / siteDesc → title 与 meta description
+//	· urlPatterns → 详情页路径形态（站内链接与 canonical）
+//
+// 不标 stale 的表现是「改了统计脚本 / 换了 GSC token / 换了站点名 → 线上一个字节都不变」，
+// 且没有任何报错 —— 只有手工全量重建才能生效（与 SaveSiteLocales 的清单变更是同一个失效模式）。
+//
+// **为什么用站点级标记而不是逐页反查**：影响面本来就是全站（没有哪一页不读这些键），
+// 这不是「图省事退化成全站标记」—— 契约里那条「禁止退化为全站标记」针对的是
+// **依赖键能精确匹配却图省事**的情形（MarkStaleByDependency 的注释）。站点设置目前没有
+// 依赖键（DepKindSiteSetting 无发射点，见 pipeline/dependency.go 的说明），
+// 走既有的站点级 stale 网是当下唯一正确且已有构建期登记的路径。
+//
+// 失败只记日志、不阻断保存：配置已落库，标记失败可由运维手动重建补上；
+// 把保存回报成失败会让操作者重复提交（而第二次提交本身没有任何额外作用）。
+func (h *siteSettingsAdminHandle) markPagesStaleForSiteSettingsChange(ctx context.Context, projectID string, changed bool) {
+	if !changed || h.pages == nil {
+		return
+	}
+	if err := h.pages.MarkStaleForI18n(ctx); err != nil {
+		logger.Scene("settings").With("project", projectID).Error(err, "站点设置变更后标记全站待重建失败")
+	}
 }
 
 // maxNotFoundHTMLLen 自定义 404 页内容上限（32 KiB）。

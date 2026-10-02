@@ -83,7 +83,8 @@ func ScopeTx(tx *gorm.DB, projectID string) error {
 
 // BypassedRole 报告当前连接的角色是否会**无条件绕过** RLS（superuser / BYPASSRLS）。
 //
-// 迁移 215 之后策略已在 53 个对象上，但超级用户总是绕过 RLS —— FORCE 只约束表属主，
+// 迁移 215 之后策略已在带 project_id 的对象上（数量以 ProbeIdentity 的读数为准，
+// 不写死数字：迁移仍在追加），但超级用户总是绕过 RLS —— FORCE 只约束表属主，
 // 约束不了 superuser / BYPASSRLS 角色。所以「策略铺好了」不等于「隔离生效」，
 // 两者的差别全在这一个布尔值上。
 //

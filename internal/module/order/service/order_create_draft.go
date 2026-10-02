@@ -14,12 +14,15 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 )
 
 // orderDraft 建单的中间结果：订单头、订单项、命中的优惠码、访客开号结果。
@@ -32,6 +35,12 @@ type orderDraft struct {
 	appliedCoupon *ordermodel.CouponEntity
 	accountMailed bool
 	now           time.Time
+
+	// 算钱用的三个输入（BIZ-11 抽出 applyLineMoney 后必须在草稿上留一份）：
+	// 会员身份在事务内可能变化，那时要拿这三项重算折扣、分摊与总额。
+	subtotal       int64
+	couponDiscount int64
+	shippingTotal  int64
 }
 
 // response 建单成功（或未重复）时的响应。
@@ -45,15 +54,17 @@ func (d *orderDraft) response() *orderdto.CreateOrderResp {
 
 // buildOrderDraft 把请求变成一个**可以直接落库**的草稿。
 //
-// 步骤顺序：快照 → 券试算 → 开号 → 会员折扣 → 分摊 → 订单号 → 订单头。
+// 步骤顺序：快照 → 券试算 → 会员身份预解析 → 会员折扣 → 分摊 → 订单号 → 订单头。
 // 三处顺序有硬理由，改动前先读一遍：
 //
 //	· 券要等小计算出来才能试算；
-//	· 开号排在会员折扣之前（BIZ-3 新增）：会员身份按账号解析，而新访客的身份
-//	  正是这一单才建出来的账号；
+//	· 会员身份排在会员折扣之前（BIZ-3 新增）：会员身份按账号解析，而访客的身份
+//	  恰恰是这一单才建出来的账号；
 //	· 会员折扣排在分摊之前：退款按分摊后的行实付算，折扣不进分摊就会退多。
 //
-// 开号结果同时进订单头（user_id），所以它必然在订单头构造之前 —— 与拆分前一致。
+// **BIZ-11**：开号本身已经移进建单事务（见 provisionGuestAccountTx），这里只做
+// **只读**的身份预解析（resolveDraftUserID）—— 事务内拿到真实账号后若身份变了，
+// 由 order_create.go 调 applyLineMoney 重算一次折扣与总额。
 func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrderReq, projectID, createdVia string) (*orderDraft, error) {
 	now := time.Now()
 	email := strings.TrimSpace(req.CustomerEmail)
@@ -80,24 +91,14 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		shipping = 0
 	}
 
-	// 访客开号：走**显式开关**（req.ProvisionGuestAccount）—— 后台代客建单页默认 false
-	//（不开号、不发初始密码邮件），前台 checkout 不传该字段、保持既有行为。
-	// 判定细节与三态语义见 ensureGuestAccount 与 dto.CreateOrderReq 的注释。
-	//
-	// 位置在会员折扣之前（原先在分摊之后）：会员身份按账号解析，而访客的身份恰恰是
-	// 「这一单才建出来的账号」—— 折扣算在开号之前，新客户的第一单就永远拿不到会员价。
-	userID, accountMailed := s.ensureGuestAccount(ctx, req)
+	// 会员身份：只用**事务前能确定**的那一份（调用方显式传入的登录身份，或按邮箱
+	// 只读查到的既有账号）。新邮箱在这里还没有账号 —— 开号在事务内完成，
+	// 那时若真的建出了账号，会有一次重算（见 applyLineMoney）。
+	userID := s.resolveDraftUserID(ctx, req)
 
-	// 会员折扣（BIZ-3）：落在**券之后、分摊之前**。
-	//   · 在券之后：相加扣减下两道折扣合计可能超过小计，会员折扣吃的是券扣完还剩的部分
-	//     （上界夹在小计内，见 membershipDiscountAmount）；
-	//   · 在分摊之前：退款按分摊后的行实付算，会员折扣若不参与分摊，
-	//     部分退货就会按「没打过会员折扣」的行金额退 —— 那是资损，不是舍入差。
-	// 独立计账：金额进 membership_discount_total，**不动** discount_total 的语义
-	//（SEC-001「无优惠码时折扣恒为 0」那条判据必须继续成立）。
-	membershipDiscount := s.resolveMembershipDiscount(ctx, projectID, userID, subtotal, discount)
-	allocateLineDiscounts(items, subtotal, discount+membershipDiscount)
-	total := subtotal - discount - membershipDiscount + shipping
+	// 会员折扣与分摊不在这里算：它们依赖**会员身份**，而身份的最终形态要等事务内的
+	// 开号结果（BIZ-11）。草稿构造完之后由 applyLineMoney 统一算一次 ——
+	// 事务内若开出了新账号、身份变了，就再算一次（同一份实现，不会漂移）。
 
 	// 每人限次在 redeemCouponTx 内与核销同事务判定（行锁 + 计数），
 	// 避免事务外先读再写被并发绕过。
@@ -120,23 +121,21 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		//
 		// 这一列是**下单当时的快照**（快照原则）：改配置只影响此后新建的订单，
 		// 历史订单的 currency 不动 —— 订单详情要还原的是「当时是什么」。
-		Currency:      orderCurrency(),
-		Subtotal:      subtotal,
-		DiscountTotal: discount,
-		// 会员折扣与券各自独立计账（相加扣减）：这一列与 DiscountTotal 一起构成总扣减，
-		// 而 Total 已经把它减掉了。两列分开存是为了保住 SEC-001 那条既有判据
+		Currency: orderCurrency(),
+		Subtotal: subtotal,
+		// 会员折扣与总额由 applyLineMoney 统一填（见该方法的注释）：
+		// 会员折扣与券各自独立计账（相加扣减），两列分开存是为了保住 SEC-001
 		//（无优惠码时 DiscountTotal 恒为 0），见 order_membership_discount.go 的文件头。
-		MembershipDiscountTotal: membershipDiscount,
-		ShippingTotal:           shipping,
-		TaxTotal:                0,
-		Total:                   total,
-		ShipName:                strings.TrimSpace(req.Shipping.Name),
-		ShipPhone:               strings.TrimSpace(req.Shipping.Phone),
-		ShipProvince:            strings.TrimSpace(req.Shipping.Province),
-		ShipCity:                strings.TrimSpace(req.Shipping.City),
-		ShipDistrict:            strings.TrimSpace(req.Shipping.District),
-		ShipAddress:             strings.TrimSpace(req.Shipping.Address),
-		ShipZip:                 strings.TrimSpace(req.Shipping.Zip),
+		DiscountTotal: discount,
+		ShippingTotal: shipping,
+		TaxTotal:      0,
+		ShipName:      strings.TrimSpace(req.Shipping.Name),
+		ShipPhone:     strings.TrimSpace(req.Shipping.Phone),
+		ShipProvince:  strings.TrimSpace(req.Shipping.Province),
+		ShipCity:      strings.TrimSpace(req.Shipping.City),
+		ShipDistrict:  strings.TrimSpace(req.Shipping.District),
+		ShipAddress:   strings.TrimSpace(req.Shipping.Address),
+		ShipZip:       strings.TrimSpace(req.Shipping.Zip),
 		// 国家代码只做 TrimSpace，与同一批地址列一致：形状校验（两个 ASCII 字母、大写归一化）
 		// 落在**收参处**（结算表单是客户端可控输入），落库层不重复一份规则。
 		ShipCountry:        strings.TrimSpace(req.Shipping.Country),
@@ -164,14 +163,60 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		return nil, err
 	}
 
-	return &orderDraft{
-		projectID:     projectID,
-		head:          head,
-		items:         items,
-		appliedCoupon: appliedCoupon,
-		accountMailed: accountMailed,
-		now:           now,
-	}, nil
+	d := &orderDraft{
+		projectID:      projectID,
+		head:           head,
+		items:          items,
+		appliedCoupon:  appliedCoupon,
+		subtotal:       subtotal,
+		couponDiscount: discount,
+		shippingTotal:  shipping,
+		now:            now,
+	}
+	// 会员折扣 + 逐行分摊 + 总额（唯一实现，事务内身份变化时会再调一次）。
+	s.applyLineMoney(ctx, d, userID)
+	return d, nil
+}
+
+// applyLineMoney 用给定会员身份算会员折扣、逐行分摊与订单总额（BIZ-11 抽出）。
+//
+// 为什么抽出来：开号移进建单事务之后，「算钱那一刻的会员身份」与「最终落库的身份」
+// 可能在**同一个订单内**发生变化（事务内建出了新账号，或发现邮箱其实早有账号）。
+// 抽出这一份实现，草稿阶段与事务内各调一次，两处不可能漂移 —— 复制一份到事务里
+// 才是真正的资损风险（一处改了、另一处忘改）。
+//
+// 口径与拆分前逐字一致：
+//   - 会员折扣落在**券之后**（相加扣减，上界夹在小计内，见 membershipDiscountAmount）；
+//   - 落在**分摊之前**（退款按分摊后的行实付算，折扣不进分摊就会退多）；
+//   - 独立计账：进 membership_discount_total，**不动** discount_total 的语义
+//     （SEC-001「无优惠码时折扣恒为 0」）。
+func (s *Service) applyLineMoney(ctx context.Context, d *orderDraft, userID *uint64) {
+	if d == nil || d.head == nil {
+		return
+	}
+	membership := s.resolveMembershipDiscount(ctx, d.projectID, userID, d.subtotal, d.couponDiscount)
+	allocateLineDiscounts(d.items, d.subtotal, d.couponDiscount+membership)
+	d.head.MembershipDiscountTotal = membership
+	d.head.DiscountTotal = d.couponDiscount
+	d.head.Total = d.subtotal - d.couponDiscount - membership + d.shippingTotal
+}
+
+// resolveDraftUserID 建单前对会员身份做**只读**预解析（BIZ-11）。
+//
+// 三态与开号的判定同源（见 provisionGuestAccountTx），区别只有一个：这里**不建号**。
+// 为什么需要它：会员折扣要按既有身份算，而开号已经移进事务 —— 不预解析的话，
+// 「未登录但邮箱早就是会员」的老客户会从「有会员价」静默变成「没有会员价」。
+func (s *Service) resolveDraftUserID(ctx context.Context, req *orderdto.CreateOrderReq) *uint64 {
+	if req == nil || req.UserID != nil || s.guest == nil {
+		return req.UserID
+	}
+	if req.ProvisionGuestAccount != nil && !*req.ProvisionGuestAccount {
+		return nil
+	}
+	if uid, found, err := s.guest.LookupGuestAccount(ctx, strings.TrimSpace(req.CustomerEmail)); err == nil && found && uid != 0 {
+		return &uid
+	}
+	return nil
 }
 
 // buildOrderItems 落订单项快照并算出小计。
@@ -273,42 +318,43 @@ func (s *Service) resolveCoupon(ctx context.Context, projectID, couponCode strin
 	return ce, couponDiscount(ce, subtotal), nil
 }
 
-// ensureGuestAccount 访客开号：邮箱还没有账号就建一个并把新账号关联到订单。
+// provisionGuestAccountTx 访客开号（BIZ-11：在**建单事务内**执行）。
 //
-// 失败**不阻断下单**：订单是主体、账号是附赠能力；开号失败时订单照常落库、user_id 留空
-// （客户仍可用这个邮箱走「忘记密码」自己开号）。
+// 三态判定与拆分前逐字一致（显式开关 req.ProvisionGuestAccount，见 dto 的注释），
+// 只有两点不同：
+//
+//  1. 建号写进**调用方的事务** —— 订单回滚时账号一起回滚。原来开号在事务之外，
+//     建号成功而订单因库存不足回滚，就留下一个能登录却没有订单的孤儿账号；
+//  2. **不在事务内发信**（发了回滚收不回）：邮件载荷原样返回给调用方，
+//     由它在事务提交后调 SendGuestAccountMail。
+//
+// 开号失败**不阻断下单**（既有口径）：订单是主体、账号是附赠能力 —— 出错时记日志
+// 并继续，user_id 留空（客户仍可用这个邮箱走「忘记密码」自己开号）。
+//
 // 邮箱已有账号时只关联、**绝不改密码** —— 那条安全边界在 user 模块里守着。
-//
-// **开号与否只看显式请求字段 req.ProvisionGuestAccount**（docs/02-W §4）：
-// CreatedVia 由建单入口确定，只供订单审计使用，不决定客户是否开户。
-// 三态语义见 dto.CreateOrderReq.ProvisionGuestAccount 的注释，其中：
-//
-//	· false → 明确不开号（后台代客建单页的默认档）；
-//	· nil   → 调用方未表态，保持既有前台 checkout 行为（下单即开户）。
-//
-// 返回值二：只有「这次确实新建了账号、且初始密码寄出去了」才为 true。
-// 邮箱已有账号时我们只关联、绝不改密码，此时告诉客户「密码已发到你邮箱」
-// 会让他在邮箱里白找一场。
-func (s *Service) ensureGuestAccount(ctx context.Context, req *orderdto.CreateOrderReq) (*uint64, bool) {
-	if req.UserID != nil || s.guest == nil {
-		return req.UserID, false
+func (s *Service) provisionGuestAccountTx(ctx context.Context, tx *gorm.DB, req *orderdto.CreateOrderReq) (*uint64, *usercontract.GuestAccountMail, error) {
+	if req == nil || req.UserID != nil || s.guest == nil {
+		return req.UserID, nil, nil
 	}
 	// 显式开关优先：明确说了不开号就到此为止（后台代客建单的默认档走这一支）。
 	// nil 落到下面那一段 —— 那是既有 checkout 链路，行为与本次改动之前逐字一致。
 	if req.ProvisionGuestAccount != nil && !*req.ProvisionGuestAccount {
-		return req.UserID, false
+		return req.UserID, nil, nil
 	}
-	gres, gerr := s.guest.EnsureGuestAccount(ctx, &usercontract.GuestAccountInput{
+	gres, gerr := s.guest.EnsureGuestAccountTx(ctx, tx, &usercontract.GuestAccountInput{
 		Email:      strings.TrimSpace(req.CustomerEmail),
 		Name:       strings.TrimSpace(req.CustomerName),
 		Locale:     req.Locale,
 		RegisterIP: req.IPAddress,
 	})
 	if gerr != nil || gres == nil || gres.UserID == 0 {
-		return req.UserID, false
+		if gerr != nil {
+			logger.Scene("order").Error(gerr, "访客开号失败（不阻断下单）")
+		}
+		return req.UserID, nil, nil
 	}
 	id := gres.UserID
-	return &id, gres.Created && gres.PasswordMailed
+	return &id, gres.PendingMail, nil
 }
 
 // orderCurrency 新建订单的币种标签。

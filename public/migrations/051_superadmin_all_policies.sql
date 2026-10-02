@@ -11,7 +11,13 @@
 -- 权限点表新增条目后重新执行本 seed 即可补全，不再需要逐个模块维护策略清单。
 --
 -- 幂等：NOT EXISTS 守卫；重复执行只补缺失项。
--- 注册：public/migrations/register.go（Seed 051-superadmin-all-policies）。
+-- 注册：public/migrations/register_core.go（Seed **999**-superadmin-all-policies）。
+--
+-- ⚠️ 文件名是 051，注册版本却是 **999** —— 这是**有意**的，不是笔误：
+-- 本 seed 做的是「超管 = 全部启用权限点」的全量补全，必须排在**所有权限点 seed 之后**。
+-- 用 051 前缀时它先于 072 等后来新增的权限点 seed 运行，检查时「没有缺失」→ 直接跳过，
+-- 之后新插入的权限点永远补不上（实测后果见上）。挪回 051 会让这条静默失效。参见
+-- register_core.go 里该 Seed 之上的完整论证。
 -- ========================================
 INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
 SELECT 'p', CAST(a.id AS VARCHAR), p.api_path, p.api_method, p.permission_code

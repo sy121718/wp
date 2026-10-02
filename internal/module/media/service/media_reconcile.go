@@ -33,7 +33,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	mediamodel "go_wp/internal/module/media/model"
@@ -554,21 +553,4 @@ func variantBackfillReason(rows []mediamodel.MediaVariantEntity) string {
 		}
 	}
 	return ""
-}
-
-// SortReconcileItems 按 (kind, table, id, path) 稳定排序（报告可复现，便于人工逐条核对）。
-func SortReconcileItems(list []ReconcileItem) {
-	sort.Slice(list, func(i, j int) bool {
-		a, b := list[i], list[j]
-		if a.Kind != b.Kind {
-			return a.Kind < b.Kind
-		}
-		if a.Table != b.Table {
-			return a.Table < b.Table
-		}
-		if a.ID != b.ID {
-			return a.ID < b.ID
-		}
-		return a.Path < b.Path
-	})
 }

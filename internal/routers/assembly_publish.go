@@ -180,6 +180,9 @@ func (a *assembly) buildPublishingModules() {
 			panic("自动发布模块未实现依赖失效重建接口（pipeline.StaleRebuilder）")
 		}
 		setter.SetStalePropagator(BlockStalePropagator(pageService, projectService, presentationSvc, presentationRebuilder))
+		marks.mark(portBlockStalePropagator)
+	} else {
+		panic("block 模块未提供 stale 传播注入点（SetStalePropagator）")
 	}
 	// 删除保护的引用检查（审计 ARCH-02）：五条来源在 BlockReferenceChecker 内合并。
 	// 断言而不是「命中即跳过」：漏接的表现是「删除保护整体失效或只覆盖一部分」，
@@ -188,11 +191,14 @@ func (a *assembly) buildPublishingModules() {
 		SetReferenceUsageChecker(func(ctx context.Context, blockID string) ([]blockcontract.BlockUsage, error))
 	}); ok {
 		checker.SetReferenceUsageChecker(BlockReferenceChecker(blockSvc, pageService, projectService, presentationSvc, contentTemplateSvc))
+		marks.mark(portBlockReferenceUsageChecker)
 	} else {
 		panic("block 模块未提供引用明细注入点（SetReferenceUsageChecker）")
 	}
 	if wired, ok := blockSvc.(interface{ RequireWiring() }); ok {
 		wired.RequireWiring()
+	} else {
+		panic("block 模块未提供装配自检入口（RequireWiring）")
 	}
 
 	a.presentationSvc = presentationSvc
@@ -360,6 +366,7 @@ func (a *assembly) wirePublishingPorts() {
 	// 与后台订单页共用实例（缓存也只有一份）。未注入时片段照常渲染、国家显示代码 ——
 	// 所以它不是 required-port，这里的注入不是为了「能力可用」而是为了「显示是人话」。
 	runtimefragment.SetCountryLabelReader(a.sysConfigDict)
+	marks.mark(portRuntimeFragCountryLabel)
 	// 访客退货片段（RMA）：orderSvc 嵌入了收窄的 VisitorReturnPort（只读申请面，
 	// 拿不到「后台审核 / 入库 / 退款」）。此端口此前**从未被任何地方注入** ——
 	// 退货申请片段因此恒返回「退货功能暂不可用」（审计 CQ-019：静默降级窗口）。
@@ -676,8 +683,10 @@ func (a *assembly) mountAdminPages() {
 		a.blueprintSvc, a.productSvc, nil)
 	// 实例编辑模式（docs/04-C）：?instance= 画布改覆盖文档，保存走 SaveOverrideDocument。
 	workbenchHandle.SetInstanceOverrideDeps(a.presentationSvc)
+	marks.mark(portWorkbenchInstanceOverrideDeps)
 	// 检查器的「具体菜单项」下拉（nav 组件 Props.Navigation，ct=entityref,navigation）。
 	workbenchHandle.SetNavigationPicker(a.navigationSvc)
+	marks.mark(portWorkbenchNavigationPicker)
 	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
 	marks.mark(portDashboardBlueprints)
 }

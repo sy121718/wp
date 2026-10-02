@@ -259,8 +259,8 @@ func TestArtifactPrecompressedCoversGuardAndCompanionFiles(t *testing.T) {
 // mime.TypeByExtension 对 .html 的返回取决于系统 mime.types，不保证带 charset。
 func TestAssetContentTypeHtmlHasCharset(t *testing.T) {
 	cases := map[string]string{
-		"index.html":    "text/html; charset=utf-8",
-		"about.HTML":    "text/html; charset=utf-8",
+		"index.html": "text/html; charset=utf-8",
+		"about.HTML": "text/html; charset=utf-8",
 		// .js 的具体串随系统 mime.types（本机给出 text/javascript; charset=utf-8，
 		// 旧表给 application/javascript）—— 这里只断「是 JS 类型」，
 		// 「能不能压缩」由 builtin 侧拿 isGzipType 对账（那才是真正要一致的那一条）。

@@ -124,6 +124,33 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 	}
 
 	// ① 扣款。失败不是错误（订单已经在了），只是这一单停在待付款。
+	//
+	// 但**0 元订单没有钱可收**，不能送进通道：通道对 Amount <= 0 是明确拒绝的
+	//（支付金额必须为正），送进去只会让订单停在 pending，30 分钟后被 order_expire
+	// 自动取消（归还库存、释放券）—— 客户永远付不了这一单（BIZ-05）。
+	// 免费商品（price=0）与 100% 折扣 + 无运费都会走到这里。
+	//
+	// 落账走与真实支付**可区分**的通道（free）：对账时「本来就 0 元」不能混进通道营收；
+	// 流水号由订单号派生（与模拟通道同一手法），重复调用必然得到同一个号，无需共享状态。
+	if created.Total == 0 {
+		paid, perr := s.orders.PayOrder(ctx, &ordercontract.PayOrderReq{
+			OrderID:            created.ID,
+			PaymentMethod:      freePaymentMethod,
+			PaymentMethodTitle: freePaymentMethodTitle,
+			TransactionID:      freeTransactionIDPrefix + created.OrderNo,
+			Remark:             "0 元订单免支付，直接落账",
+		})
+		if perr != nil {
+			// 与扣款失败同一档：订单已建，落账没成功，停在待付款并带出错误码。
+			// 这条分支只可能来自基础设施故障（锁等待 / 库不可用），不是业务拒绝。
+			res.PaymentError = cartenums.ErrPaymentFailed
+			return res, nil
+		}
+		res.Paid = true
+		res.Status = paid.Status
+		return res, nil
+	}
+
 	charge, cerr := s.pay.Charge(ctx, &cartcontract.PaymentChargeReq{
 		OrderNo:  created.OrderNo,
 		Amount:   created.Total,
@@ -175,3 +202,17 @@ func (s *Service) emptyCookie() string {
 	}
 	return cookie
 }
+
+// 0 元订单的落账通道（BIZ-05）。
+const (
+	// freePaymentMethod 免支付通道标识（落 orders.payment_method）。
+	//
+	// 与真实通道**必须可区分**：对账时「这单本来就 0 元」与「这单收了钱」是两件事，
+	// 混进 paypal 会让营收报表出现一笔并不存在的流水。
+	freePaymentMethod = "free"
+	// freePaymentMethodTitle 免支付通道展示名（落订单上的快照值，后台一眼能认）。
+	freePaymentMethodTitle = "无需支付（0 元订单）"
+	// freeTransactionIDPrefix 免支付流水号前缀：由订单号派生（幂等，无需共享状态），
+	// 且与通道流水号在后台列表里一眼可分。
+	freeTransactionIDPrefix = "FREE-"
+)

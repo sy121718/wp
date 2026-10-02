@@ -52,13 +52,17 @@ var businessCopyForms = map[string]bool{
 
 // leakMarkers 内部错误原文里那些**绝不能出现在响应里**的片段。
 // dbErrText 就是照 PostgreSQL 真实报错拼的：驱动前缀 + 唯一约束名 + SQLSTATE + 表名。
+//
+// 约束名用**库里真实存在的那个**（`uk_sys_role_code`，见 init_schema.sql；实测自 pg_constraint）：
+// 以前写的 `uq_sys_role_role_code` 在库里根本不存在，样本形状与真实报错不符 ——
+// 「真名不许出网」这条判据当时是空的。
 var leakMarkers = []string{
-	"uq_sys_role_role_code", "SQLSTATE", "23505", "duplicate key", "constraint",
+	"uk_sys_role_code", "SQLSTATE", "23505", "duplicate key", "constraint",
 	"sys_role", "sys_casbin_rule", "pq:", "RoleCreateReq", "sort_order", "cannot unmarshal",
 }
 
 // dbErrText 一条「长得就像会泄漏」的驱动错误原文（Go 原始字符串，避免转义噪声）。
-const dbErrText = `pq: duplicate key value violates unique constraint "uq_sys_role_role_code" (SQLSTATE 23505): ` +
+const dbErrText = `pq: duplicate key value violates unique constraint "uk_sys_role_code" (SQLSTATE 23505): ` +
 	`INSERT INTO sys_role (role_code) VALUES ($1)`
 
 // withTempLogDir 把 logger 指到临时目录（pkg/logger 的 log.base_dir 配置键），
@@ -226,7 +230,7 @@ func TestAdminHandlerInternalErrorIsCollected(t *testing.T) {
 
 	// 另一半判据：原文不能消失 —— 必须落在日志里，否则「收口」会退化成「吞掉」。
 	logText := readLog()
-	if !strings.Contains(logText, "uq_sys_role_role_code") || !strings.Contains(logText, "SQLSTATE") {
+	if !strings.Contains(logText, "uk_sys_role_code") || !strings.Contains(logText, "SQLSTATE") {
 		t.Fatalf("内部错误原文必须进日志（响应收口 ≠ 吞掉错误），日志内容=%s", logText)
 	}
 	if !strings.Contains(logText, "admin 接口内部错误") {

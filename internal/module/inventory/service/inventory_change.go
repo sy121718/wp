@@ -85,6 +85,24 @@ type changeOutcome struct {
 	reasonNames map[string]string
 }
 
+// stockPolicy 变动路径的**行级策略**：不跟踪（无限）的行怎么处理（BIZ-03）。
+//
+// 为什么需要它：入库 / 调整路径原本无条件把不跟踪的行切成跟踪（「显式给了数量就说明
+// 要开始跟踪」）。这条规则对人类意图成立，但**系统自动归还**也走同一条函数并显式传数量
+// —— 取消订单归还 5 件会把一个「无限」商品变成「库存 5」，第 6 件直接判库存不足。
+// 而出库对不跟踪的行是**跳过**的（数量不构成约束，连流水都不写）：归还与出库不对称
+// 才是缺陷本体 —— 没扣过的数量不该被加回来。
+type stockPolicy int
+
+const (
+	// stockPolicyExplicit 显式变动（管理员入库 / 盘点调整 / 采购收货 / 生产入库）：
+	// 不跟踪的行在入库 / 调整时切成跟踪（迁移 261 拍板的口径，保持不变）。
+	stockPolicyExplicit stockPolicy = iota
+	// stockPolicyRestore 系统自动归还（取消订单归还 / 退货入库）：不跟踪的行**跳过**，
+	// 与出库对称 —— 不切开关、不写数量、不写流水。
+	stockPolicyRestore
+)
+
 // changeMeta 一次变动的公共元数据（来源引用 / 原因 / 备注 / 操作人）。
 type changeMeta struct {
 	reason     *inventorymodel.ReasonEntity
@@ -115,6 +133,32 @@ func (s *Service) ChangeStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 	return err
 }
 
+// RestockStock 系统自动归还（补偿性入库）：取消订单归还 / 退货入库走这条。
+//
+// 与 ChangeStock 的唯一差别是**行级策略**（见 stockPolicy）：不跟踪的行跳过，
+// 不把它切成跟踪、也不写数量与流水。其余一切（加锁顺序、流水构造、成本写入、
+// 幂等建行、事务语义）逐字相同 —— 复用同一条写入路径，不是另起一份实现。
+//
+// 为什么不复用 ChangeStock 加一个布尔参数：本包被 4 个方向调用（管理员 / 采购收货 /
+// 生产入库 / 订单归还），加参数会让每个调用点都要表态，而其中 3 个的答案永远一样。
+// 显式入口表达的是**语义**（归还 ≠ 入库），调用方选错时在代码审查里看得见。
+func (s *Service) RestockStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error) {
+	out, projectID, direction, err := s.changeStockTrackingPolicyTx(ctx, nil, req, nil, stockPolicyRestore)
+	if err != nil {
+		return nil, err
+	}
+	return s.finishChange(ctx, projectID, direction, out), nil
+}
+
+// RestockStockTx 与 RestockStock 逐字同一条路径，但在**调用方的事务**里执行（tx 非 nil）。
+//
+// 订单侧的取消 / 退货入库走的就是它（经 inventory/outbound/orderstock 适配）：
+// 归还必须与订单状态推进同事务，失败整体回滚。
+func (s *Service) RestockStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq) (err error) {
+	_, _, _, err = s.changeStockTrackingPolicyTx(ctx, tx, req, nil, stockPolicyRestore)
+	return err
+}
+
 // changeStockTracking 与 ChangeStock 是**同一条**路径，额外允许把若干行的
 // **跟踪开关**在同一事务里一并写回（trackOverride：key = (变体, 仓库)，值 = 本次变动后
 // 该行的目标开关）。
@@ -135,13 +179,23 @@ func (s *Service) changeStockTracking(ctx context.Context, req *inventorydto.Cha
 	return s.finishChange(ctx, projectID, direction, out), nil
 }
 
-// changeStockTrackingTx 变动契约的**事务实现**：tx 为 nil 时自己开一个事务，
+// changeStockTrackingTx 变动契约的**事务实现**（显式策略）：tx 为 nil 时自己开一个事务，
 // 非 nil 时全部写入落在调用方的事务里（提交 / 回滚由调用方负责）。
 //
 // 校验与入参归一（resolveProjectID / resolveReason / resolveWarehouse）是只读动作，
 // 放在事务外与事务内没有区别 —— 写入只有 applyStockChangesTx 一处。
 func (s *Service) changeStockTrackingTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq,
 	trackOverride map[stockKey]bool) (out *changeOutcome, projectID, direction string, err error) {
+	return s.changeStockTrackingPolicyTx(ctx, tx, req, trackOverride, stockPolicyExplicit)
+}
+
+// changeStockTrackingPolicyTx 与 changeStockTrackingTx 同一条路径，多一个**行级策略**
+// （stockPolicy）：决定不跟踪的行在本次入库 / 调整里是「切成跟踪」还是「跳过」。
+//
+// 只有策略不同，其余（校验 / 归一 / 加锁序 / 流水 / 成本）逐字共用 —— 归还与入库
+// 不该有两条会各自漂移的写路径。
+func (s *Service) changeStockTrackingPolicyTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq,
+	trackOverride map[stockKey]bool, policy stockPolicy) (out *changeOutcome, projectID, direction string, err error) {
 	if req == nil {
 		return nil, "", "", errors.New(inventoryenums.ErrInvalidParam)
 	}
@@ -168,7 +222,7 @@ func (s *Service) changeStockTrackingTx(ctx context.Context, tx *gorm.DB, req *i
 	if err != nil {
 		return nil, "", "", err
 	}
-	if out, err = s.applyStockChangesOn(ctx, tx, projectID, items, trackOverride); err != nil {
+	if out, err = s.applyStockChangesOn(ctx, tx, projectID, items, trackOverride, policy); err != nil {
 		return nil, "", "", err
 	}
 	return out, projectID, direction, nil
@@ -226,7 +280,7 @@ func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 			return nil, "", err
 		}
 	}
-	if out, err = s.applyStockChangesOn(ctx, tx, projectID, items, nil); err != nil {
+	if out, err = s.applyStockChangesOn(ctx, tx, projectID, items, nil, stockPolicyExplicit); err != nil {
 		return nil, "", err
 	}
 	return out, projectID, nil
@@ -363,13 +417,13 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 // 两种形态共用同一份实现（applyStockChangesTx），因此「自足调用」与「事务透传调用」
 // 的加锁顺序、流水构造、成本写入逐字一致 —— 不存在两条会各自漂移的写路径。
 func (s *Service) applyStockChangesOn(ctx context.Context, tx *gorm.DB, projectID string, items []changeItem,
-	trackOverride map[stockKey]bool) (out *changeOutcome, err error) {
+	trackOverride map[stockKey]bool, policy stockPolicy) (out *changeOutcome, err error) {
 	if tx != nil {
-		return s.applyStockChangesTx(ctx, tx, projectID, items, trackOverride)
+		return s.applyStockChangesTx(ctx, tx, projectID, items, trackOverride, policy)
 	}
 	err = s.m.Transaction(ctx, func(t *gorm.DB) error {
 		var e error
-		out, e = s.applyStockChangesTx(ctx, t, projectID, items, trackOverride)
+		out, e = s.applyStockChangesTx(ctx, t, projectID, items, trackOverride, policy)
 		return e
 	})
 	if err != nil {
@@ -389,7 +443,7 @@ func (s *Service) applyStockChangesOn(ctx context.Context, tx *gorm.DB, projectI
 // ①②必须分成两趟而不能边建边锁：边建边锁会让两个批次在「各自已持有的行」上互等，
 // 那才会真正成环（见 inventory_change_test.go 的对向扣减并发用例）。
 func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectID string, items []changeItem,
-	trackOverride map[stockKey]bool) (out *changeOutcome, err error) {
+	trackOverride map[stockKey]bool, policy stockPolicy) (out *changeOutcome, err error) {
 	if len(items) == 0 {
 		return nil, errors.New(inventoryenums.ErrStockLinesRequired)
 	}
@@ -489,6 +543,12 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 		for _, it := range sortItems(items) {
 			e := locked[it.key]
 			if !e.TrackQuantity && it.direction == inventoryenums.DirectionOut {
+				continue
+			}
+			// 系统自动归还（取消订单归还 / 退货入库）对不跟踪的行**跳过**，与出库对称：
+			// 出库时它没被扣过（连流水都没有），归还时自然也不该加回来 ——
+			// 加了就会把这个「无限」商品悄悄变成「库存 N」（BIZ-03）。
+			if !e.TrackQuantity && policy == stockPolicyRestore {
 				continue
 			}
 			before := e.Quantity

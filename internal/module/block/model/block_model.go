@@ -90,7 +90,7 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 // 或将来某个装配点漏接）定位会整体失败，表现为「块明明在却报不存在」，而日志里什么都没有。
 // page / order / navigation model 的 ListAllProjectIDs 是同一处境的同形兜底。
 //
-// projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的 53 个对象里，
+// projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的策略名单里，
 // 读它不涉及任何被隔离数据。正确做法仍是装配点注入 project 契约（生产装配已注入）。
 func (m *Model) ListAllProjectIDs(ctx context.Context) (ids []string, err error) {
 	err = m.db.WithContext(ctx).

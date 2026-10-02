@@ -29,6 +29,10 @@ jobs:
         run: |
           scripts/check-no-internal-error-leak.sh
           scripts/check-i18n-coverage.sh
+          # 「key 被用但没 seed」门禁（批次 2 · FIX-10）：admin. / workbench. 的词条唯一来源是迁移 seed，
+          # 漏 seed 时 t(key, "中文兜底") 静默回落中文 —— 不报错、不 500、日志干净，只有切 en-US 才看得见。
+          # 基线 scripts/i18n-keys-seeded-baseline.txt **只降不升**。
+          scripts/check-i18n-keys-seeded.sh
           scripts/check-service-db-boundary.sh
           # 多端硬规则守卫（审计 UI-015）：裸 :hover / 写死 px 宽度 / 有 hover 桶无触屏等价形态 /
           # clamp 下界超最窄视口。**现在是 error —— 硬门禁**：未豁免违规直接让这一步失败，

@@ -85,9 +85,15 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("154_presentation_update_url_permission.sql"),
 	})
 
-	// 155：presentation 多语言产物（I18N-013）。
+	// 155b：presentation 多语言产物（I18N-013）。
+	//
+	// 补丁位 b 而不是裸 155：155 主编号被下面那条（同一个 SQL 的第二段，按列存在判定）
+	// 一起用，两条都是「155 + 无后缀」时 compareVersion 只能靠整串字典序兜底
+	// —— 顺序仍然确定，但按编号定位会命中错文件。补位后语义键变成 (155, "b")，
+	// 排序结果与改前**逐项一致**（artifacts 那条是 (155,"") 仍在前，与改前
+	// 「artifacts 的整串字典序更小」的结论相同），所以是纯可读性修正。
 	register(Migration{
-		Version:   "155-presentation-i18n",
+		Version:   "155b-presentation-i18n",
 		TableName: "presentation_publications",
 		SQL:       mustSQL("155_presentation_i18n.sql"),
 	})
@@ -293,22 +299,34 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("175_archive_presentation_role.sql"),
 	})
 
-	// 199：webhook 外部集成通道（OSS-006 + SEC-015）。
+	// 199b：webhook 外部集成通道（OSS-006 + SEC-015）。
+	//
+	// 后缀 b 而不是裸 199：主编号 199 已经被 register_i18n_layer.go 的
+	// `199-rls-project-locales` 用掉，两个都是「199 + 无后缀」时 compareVersion 的
+	// 同号分支会退化成整串字典序 —— 顺序仍然确定，但读代码的人无法判断谁先谁后。
+	// 补上补丁位后语义键变成 (199, "b")，排序结果与改前**逐字一致**
+	// （`199-rls-project-locales` < `199b-webhook`），所以是纯可读性修正、零行为变化。
 	register(Migration{
-		Version:   "199-webhook",
+		Version:   "199b-webhook",
 		TableName: "webhook_endpoints",
 		CheckSQL:  "SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?) THEN 1 ELSE 0 END",
 		SQL:       mustSQL("199_webhook.sql"),
 	})
 
 	// 201：DB-019/020 第一批（build_jobs 等五表 id→bigint identity + created_at→create_time）。
+	//
+	// 文件名曾写作 `199_db019_db020_batch1.sql`（版本是 201、文件是 199）：按编号定位迁移会
+	// 命中错文件。已重命名为 `201_db019_db020_batch1.sql`。
+	// **执行顺序不变**：compareVersion 排的是 Version 而不是文件名，改的只是名字。
+	// 幂等判据也没变（看的是 build_jobs.create_time 列是否已存在），所以已执行过的库不受影响
+	// —— 本仓库的迁移器不写版本台账（没有 sys_migrations 表），无法也无需「对台账改名」。
 	register(Migration{
 		Version:   "201-db019-db020-batch1",
 		TableName: "build_jobs",
 		// 必须按「目标列已存在」判定：build_jobs 由 init_builder_schema.sql 先建，
 		// 默认判据（表存在即跳过）会让整批 SQL 永不执行。
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'create_time'",
-		SQL:      mustSQL("199_db019_db020_batch1.sql"),
+		SQL:      mustSQL("201_db019_db020_batch1.sql"),
 	})
 
 	// 202：DB-015 残余第三处 —— inventory_warehouses.status 的 DDL CHECK。

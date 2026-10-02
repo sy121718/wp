@@ -358,8 +358,12 @@ type StatusCount struct {
 	Count  int64  `gorm:"column:count"`
 }
 
-// 本表无 RLS 策略（DB-009 切角色必读，见包注释）：build_jobs 是全库**唯一**「有 project_id
-// 却没有 ROW LEVEL SECURITY」的表 —— project_id 由迁移 295 新增，215 的策略名单早于它。
+// 本表无 RLS 策略（DB-009 切角色必读，见包注释）：有 project_id 却没有 ROW LEVEL SECURITY 的
+// 表全库有**两张** —— build_jobs 与 **product_outbox_events**（迁移 309；那张自己也不装策略，
+// 理由同本表）。build_jobs.project_id 由迁移 295 新增，215 的策略名单早于它。
+// 这两张表的豁免有共同理由：都是「按状态跨工程领取」的队列，装了策略 worker 就看不见
+// 别的工程的待办。可执行判据见 public/test/rls/rls_policy_coverage_test.go
+// （白名单之外的带 project_id 表必须有 ENABLE + FORCE）。
 //
 // 这条差异的后果与别的表**相反**：换到非超级业务角色后，本表的查询既不会被拦下，
 // 也不会被限制在本工程 —— 不是 fail closed（静默 0 行），而是**没有隔离**（跨工程可见）。

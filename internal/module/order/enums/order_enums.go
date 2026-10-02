@@ -116,7 +116,12 @@ var UserFacingMessages = []string{
 	ErrAlreadyCancelled, ErrAlreadyRefunded, ErrCancelReasonRequired,
 	ErrPaymentMethodRequired, ErrPaymentChannelFailed,
 	ErrVariantNotFound, ErrStockInsufficient, ErrStockUnavailable,
-	// 优惠码：结算链路会把它们直接显示给访客。
+	// 优惠码：**后台代客建单页与 /api/order/create 会把它们直接透出给操作者**。
+	//
+	// 口径修正（BIZ-10）：这批文案此前写着「结算链路会把它们直接显示给访客」，
+	// 而事实是**访客结算链路没有券入口** —— CartCheckoutReq 不带 couponCode、
+	// 结算片段也不解析它，因此 resolveCoupon 恒返回 (nil, 0)，这些文案在访客侧
+	// 到不了任何页面。补上券入口时它们已经是可以直接展示的（无需新增文案）。
 	ErrCouponNotFound, ErrCouponCodeRequired, ErrCouponDisabled,
 	ErrCouponNotStarted, ErrCouponExpired, ErrCouponExhausted,
 	ErrCouponUserLimit, ErrCouponMinSubtotal,

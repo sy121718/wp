@@ -136,15 +136,34 @@ type CategoryPageRow struct {
 	Matched     bool `gorm:"column:matched"`
 }
 
+// categoryRootFilter 后台分类树「算作根」的判定：没有父级，**或父级不在本工程**。
+//
+// 后半句是必需的修复：跨工程遗留（父级被挪到别的工程）或父级行已不存在的分类，
+// 既不是根、也不在任何可见父节点的子树里 —— 递归树整个漏掉它，后台分类页上**整行消失**
+// （用户既看不到也改不了）。
+//
+// 判定用**显式的 project_id** 而不是依赖 RLS：策略未切非超级角色时子查询照样看得见
+// 跨工程行，切了角色后两侧结论一致 —— 不会随部署形态变卦。
+//
+// 只兜底「算作根」，不掩盖数据：行照原样渲染（ParentID 仍指向那个父级），
+// 界面上另有提示说明上级不在本工程（见 inbound/http 的 categoryParentOutOfScopeLabel）。
+const categoryRootFilter = `project_id = ? AND (parent_id IS NULL OR NOT EXISTS (
+				SELECT 1 FROM product_categories p
+				WHERE p.id = product_categories.parent_id AND p.project_id = ?
+			))`
+
 // ListCategoryRootsPage 读一页**顶级分类的完整子树**（分页单位是顶级分类）。
 //
 // 分类列表直接渲染整棵树：不再「点父级进入下一层」，也不再按父级懒加载子级。
 // 不为一层一页留退路 —— 分类是人工维护的品类表，一个工程几十条，
 // 整棵树一次读完的代价远小于「分页 + 逐层展开」的交互成本（YAGNI）。
+//
+// 根集合走 categoryRootFilter（与 count 同一口径）：父级不在本工程的分类也作为根读出来 ——
+// 「数据坏了」不该表现为「在列表上看不见」。
 func (m *Model) ListCategoryRootsPage(ctx context.Context, projectID string, limit, offset int) (rows []*CategoryPageRow, total int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		countQ := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
-			Where("project_id = ? AND parent_id IS NULL", projectID)
+			Where(categoryRootFilter, projectID, projectID)
 		if e := countQ.Count(&total).Error; e != nil {
 			return e
 		}
@@ -152,7 +171,7 @@ func (m *Model) ListCategoryRootsPage(ctx context.Context, projectID string, lim
 		// （按 sort / create_time / id 建树，SQL 的顺序在这里没有语义）。
 		return tx.WithContext(ctx).Raw(`WITH RECURSIVE roots AS (
 				SELECT id FROM product_categories
-				WHERE project_id = ? AND parent_id IS NULL
+				WHERE `+categoryRootFilter+`
 				ORDER BY sort, create_time, id
 				LIMIT ? OFFSET ?
 			), tree AS (
@@ -167,7 +186,7 @@ func (m *Model) ListCategoryRootsPage(ctx context.Context, projectID string, lim
 					WHERE ch.project_id = ? AND ch.parent_id = c.id) AS has_children,
 				FALSE AS matched
 			FROM tree t JOIN product_categories c ON c.id = t.id`,
-			projectID, limit, offset, projectID, projectID).Scan(&rows).Error
+			projectID, projectID, limit, offset, projectID, projectID).Scan(&rows).Error
 	})
 	return rows, total, err
 }

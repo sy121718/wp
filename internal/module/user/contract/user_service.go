@@ -4,6 +4,8 @@ package usercontract
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	mailcontract "go_wp/internal/module/mail/contract"
 	userdto "go_wp/internal/module/user/dto"
 )
@@ -81,6 +83,31 @@ type GuestAccountProvisioner interface {
 	// 不存在才建号（随机初始密码，经邮件发给客户）；**已存在则只返回既有账号，
 	// 绝不触碰它的密码** —— 否则任何人拿别人邮箱下一单就能把对方密码换掉。
 	EnsureGuestAccount(ctx context.Context, in *GuestAccountInput) (res *GuestAccountResult, err error)
+
+	// EnsureGuestAccountTx 与 EnsureGuestAccount 同语义，但**写入落在调用方的事务里**（BIZ-11）。
+	//
+	// 两条硬约定：
+	//
+	//  1. **不发初始密码邮件** —— 事务还没提交，此时发信会在回滚后留下一封指向
+	//     不存在账号的密码邮件。邮件载荷经结果的 PendingMail 带出，由调用方在
+	//     **事务提交之后**调 SendGuestAccountMail 发出（失败只记日志，不回滚账号）。
+	//  2. 未提供 tx（nil）时等同于用自己的事务执行一次「只建号、不发信」，便于调用方
+	//     在非事务路径上复用同一份实现。
+	EnsureGuestAccountTx(ctx context.Context, tx *gorm.DB, in *GuestAccountInput) (res *GuestAccountResult, err error)
+
+	// SendGuestAccountMail 把初始密码邮件发出去（BIZ-11：事务提交后调用）。
+	//
+	// 入参来自 EnsureGuestAccountTx 的 GuestAccountResult.PendingMail；
+	// mail 为 nil 或字段不全时不做任何事、不报错（账号已经建好了，
+	// 「没发出去」是运维问题，不该让调用方在这里失败）。
+	SendGuestAccountMail(ctx context.Context, mail *GuestAccountMail) error
+
+	// LookupGuestAccount 按邮箱**只读**查账号（不开号、不发信），查不到返回 (0, false, nil)。
+	//
+	// 为什么需要一条只读口（BIZ-11）：开号已经移进建单事务，事务前拿不到「这个邮箱
+	// 是不是已有账号」的结论，而**会员折扣**要按既有身份计算 —— 没有这条口，
+	// 未登录的老客户会从「有会员价」静默变成「没有会员价」。
+	LookupGuestAccount(ctx context.Context, email string) (userID uint64, found bool, err error)
 }
 
 // GuestAccountInput 为访客下单自动开号的入参 —— 契约自有形状，不是 dto 的别名。
@@ -112,6 +139,27 @@ type GuestAccountResult struct {
 	Created bool
 	// PasswordMailed 初始密码邮件是否已受理（仅新建且发信成功时为真）。
 	PasswordMailed bool
+	// PendingMail 待发出的初始密码邮件（BIZ-11）：仅 EnsureGuestAccountTx 且**新建**账号时非空。
+	//
+	// 事务内的建号不能顺手发信（回滚后邮件收不回），于是把载荷带出来，
+	// 由调用方在**事务提交后**调 SendGuestAccountMail。
+	//
+	// **含明文初始密码**：调用方只允许把它直接交给 SendGuestAccountMail，
+	// 不得写日志、不得入库、不得放进任何可序列化的响应结构。
+	PendingMail *GuestAccountMail
+}
+
+// GuestAccountMail 初始密码邮件的载荷（BIZ-11，见 GuestAccountResult.PendingMail）。
+//
+// 明文密码从 user 模块经契约交给调用方、再交回 user 模块发送 —— 中间那一跳是
+// 「事务提交后才发信」的代价。调用方（订单模块）**只做搬运**：
+// 不落库、不记日志、不放进任何对外响应。
+type GuestAccountMail struct {
+	Email    string
+	Name     string
+	Username string
+	Password string
+	Locale   string
 }
 
 // MailSender 用户模块需要的邮件能力 —— **只有发送事务邮件这一条**。

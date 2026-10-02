@@ -118,7 +118,10 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 		path string
 		form url.Values
 	}{
-		{"/admin/orders/bulk-status", orderOverLimitForm(url.Values{"status": {"paid"}})},
+		// 目标状态字段名与 orders.html 的批量下拉一致（toStatus）；表单里另有一个
+		// status（回跳筛选值）。旧用例跟着 handler 读错的字段构造请求，于是这条链路
+		// 「测过了」，而真实页面提交的 toStatus 从未被读到。
+		{"/admin/orders/bulk-status", orderOverLimitForm(url.Values{"toStatus": {"paid"}})},
 		{"/admin/orders/bulk-cancel", orderOverLimitForm(url.Values{"remark": {"测试"}, "project": {"p"}})},
 		{"/admin/coupons/bulk-delete", orderOverLimitForm(nil)},
 		{"/admin/coupons/bulk-toggle", orderOverLimitForm(url.Values{"status": {"1"}})},

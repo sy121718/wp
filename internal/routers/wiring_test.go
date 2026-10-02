@@ -41,51 +41,10 @@ func TestWiringManifestEntriesAreWellFormed(t *testing.T) {
 	}
 }
 
-// TestWiringPortConstantsMatchManifest 常量与清单必须一一对应：
-// 常量写错一个字，routes.go 的标记就落不到清单上，自检会永远报缺失（或永远通过）。
-func TestWiringPortConstantsMatchManifest(t *testing.T) {
-	constants := []string{
-		portContentCollectionSource, portProductCollectionSource,
-		portProductContentStore, portContentContentStore, portMailCipherSecret,
-		portWebhookCipherSecret, portWebhookDispatcher,
-		portProductInventoryService, portProductInventoryModel, portInventoryVariantCost,
-		portProductMasterDataChanges, portInventoryMasterDataChanges, portProductAvailability,
-		portProductArchiveEnsurer, portProductPublishedLocator, portProductFragmentCacheBumper,
-		portProductPurchaseChecker,
-		portPluginAdminAuthz, portProjectLocaleRetire,
-		portPageExternalArtifactOwners, portPageBlueprints, portPageBuildQueue,
-		portPageProductDataSource, portPageCheckoutCountries, portPageI18nStalePeer, portPresentationBuildQueue, portPresentationProductDataSource, portPresentationCheckoutCountries, portPresentationSiteAssembly,
-		portPipelinePageRebuilder, portPipelinePresentationRebuilder, portContentDependencyInvalidator,
-		portProductDependencyInvalidator,
-		portContentTemplateInvalidator,
-		portPageStructureTemplates,
-		portMediaStaleMarkerPage, portMediaStaleMarkerPresentation,
-		portNavigationSourceResolver, portNavigationMenuDispatcher, portDashboardBlueprints,
-		portRuntimeFragBundle, portRuntimeFragVariantAvailability, portRuntimeFragVariantSnapshot,
-		portRuntimeFragCart, portRuntimeFragCollectionResolver, portRuntimeFragProductDataSource,
-		portRuntimeFragContentSearch, portRuntimeFragProductSearch, portRuntimeFragPublishedLocator,
-		portRuntimeFragSitePageResolver, portRuntimeFragProject,
-		portRuntimeFragVisitorOrderReader, portRuntimeFragVisitorReturn,
-		portRuntimeFragVisitorIdentity, portRuntimeFragVisitorAccount,
-		portAccessGuardLoginProbe,
-		portOrderMembershipReader, portMembershipPurchaseSource,
-		portCartMembershipReader, portRuntimeFragMembership,
-		portRuntimeFragComment, portCommentEntityPolicy,
-		portCartShippingPolicy,
-	}
-	inManifest := make(map[string]bool, len(wiringManifest))
-	for _, e := range wiringManifest {
-		inManifest[e.Port] = true
-	}
-	for _, c := range constants {
-		if !inManifest[c] {
-			t.Fatalf("常量 %q 在 wiringManifest 里没有对应条目", c)
-		}
-	}
-	if len(constants) != len(wiringManifest) {
-		t.Fatalf("常量数 %d 与清单条目数 %d 不一致（有端口没被标记）", len(constants), len(wiringManifest))
-	}
-}
+// 端口名常量与清单的对应关系**由编译期保证**：wiringManifest 的每条 Port 写的就是常量本身
+// （写错名字编译不过），因此不需要一份手工维护的常量清单去「对账」—— 那份清单此前是第二处真源，
+// 新增端口要两处都改，漏改一处只会得到「常量数 63 与清单条目数 65 不一致」这种与真实缺陷
+// 无关的失败。真正需要防的是**注入点没进清单**，由 TestEverySetterCallIsInWiringManifest 覆盖。
 
 // TestCheckWiringReportsMissingRequiredPort 缺一个必需端口：报出它的名字与后果。
 func TestCheckWiringReportsMissingRequiredPort(t *testing.T) {

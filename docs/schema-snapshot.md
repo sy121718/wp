@@ -93,3 +93,19 @@
 ## 3. 历史表与注释漂移
 
 部分早期迁移注释描述的能力已被后续迁移删除（例如迁移 `121` 去掉商品侧 `stock_total` 与 `inventory_stock_cache_syncs`）。**已执行的迁移 SQL 语句不改**；注释会在文档/迁移头中标注「已被 NNN 取代」，避免按注释维护已删除的缓存体系。
+
+### 3.1 保留表 `page_component_pins`：保留但无实现（审计 DB-09）
+
+`init_builder_schema.sql` 建的 `page_component_pins` 在迁移 069 里被**明确保留**（069 的删除清单只针对「设计已被取代」的 6 张表），此后它的状态是：
+
+- **无实现**：迁移目录之外全仓零引用（唯一出现处是 `register_i18n_layer.go` 把它的两个外键名字符串列在清理清单里）。姊妹表 `content_template_component_pins` 相反 —— 它有 model（`internal/module/contenttemplate/model/contenttemplate_model.go` 的 `tableNameContentTemplatePins`）。
+- **不参与任何读写路径**：069 解绑了它指向已废弃组件表的 4 个外键，已降级为弱引用。
+- **决策（2026-10）**：暂不删除 —— 删表不可逆，而它不占写入路径、不参与查询；**若半年内仍无使用计划则删除**，届时走一条新迁移，不要回头改 069（已执行过的迁移只增不改）。同一决策也记在 `069_drop_obsolete_design_tables.sql` 的头部注释里。
+
+**与 RLS 豁免名单的边界**（两类判断，别混）：
+
+- 本节讲的是「**没有实现、也没有 `project_id`**」的保留表 —— 它连行级隔离的话题都进不去。
+- 「带 `project_id` 但刻意不做行级隔离」是另一类**工程判断**（当前是 `build_jobs` 与 `product_outbox_events` 两张）。它的**归口在 [`docs/rules/database.md`](rules/database.md)**，代码侧由 `internal/partition.AuditRLSCoverage` 的**调用方**传入豁免名单 —— `internal/partition` 包刻意不持有那份名单：持有它就是第二份真源，而漂移的表现是「巡检放过一张本该被拦的表」或反过来「报出一张有明写豁免理由的表」，两种都会让这条巡检被忽略。
+- 分区侧的隔离对账（迁移 507 与 `internal/partition.ReconcileRLS`）走的是另一条判据 ——「根表有策略则叶子分区必须有」，**零外部输入**，因此不需要任何名单。三者分工写在 `internal/partition/partition.go` 的「工程隔离覆盖巡检」一节。
+
+同一节里的另一个例子说明这条决策不是客套：069 当时把 `publication_events` 也列为「明确保留」并给了理由，而 207（CQ-015）后来照样把它 DROP 掉了 —— 保留决定只有半年的保质期。

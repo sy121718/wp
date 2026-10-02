@@ -74,6 +74,24 @@ const (
 	portPageCheckoutCountries      = "page.SetCheckoutCountries"
 	portPageI18nStalePeer          = "page.SetI18nStalePeer"
 	portPageStructureTemplates     = "page.SetStructureTemplatePort"
+	// —— block ↔ page 的装配期接线（FIX-05）——
+	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
+	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
+	portBlockStalePropagator       = "block.SetStalePropagator"
+	portBlockReferenceUsageChecker = "block.SetReferenceUsageChecker"
+	// —— FIX-25：此前「已注入但未进盘点表」的 11 处（自检覆盖空洞）——
+	// 判据仍是文件头那条：说不清「未注入 → 用户看到什么」的就是 required-port。
+	portI18nValueLoader               = "i18n.SetValueLoader"
+	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
+	portInventoryProductCatalog       = "inventory.SetProductCatalog"
+	portRuntimeFragMembershipTexter   = "runtimefragment.SetMembershipFacingTexter"
+	portRuntimeFragCommentTexter      = "runtimefragment.SetCommentFacingTexter"
+	portRuntimeFragCommentHasher      = "runtimefragment.SetCommentSourceHasher"
+	portRuntimeFragCountryLabel       = "runtimefragment.SetCountryLabelReader"
+	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
+	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
+	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
+	portProjectStructureTemplates     = "project.SetStructureTemplateOptionsPort"
 	// —— 换图失效通知（媒体变体的缓存与失效）——
 	// media 索要的端口（契约见 mediacontract.StaleMarker），由 page / presentation
 	// 各自实现一条收窄实现后经 media.SetStaleMarkers 注入。
@@ -205,6 +223,32 @@ var wiringManifest = []wiringEntry{
 		"反向产物对账把自动发布实例的产物误报成孤儿（一份看不出真假的对账结果）"},
 	{portPageBlueprints, "blueprint", "page", wiringRequiredPort,
 		"「从蓝图建页」静默建出空白页（要等编辑者打开画布才发现）"},
+	{portI18nValueLoader, "sysconfig", "pkg/i18n（全局默认值）", wiringRequiredPort,
+		"全局默认语言 / 站点语言 URL 方案 / 默认币种读不到 —— 静默使用代码内常量（站点行为与配置不一致，日志里只有一行载入失败）"},
+	{portDataRuleDeptResolver, "admin", "builtin（数据权限中间件）", wiringRequiredPort,
+		"按部门的数据权限规则静默失效：该被拦的数据放行或被误拦，页面上看不出区别"},
+	{portInventoryProductCatalog, "product", "inventory（商品 → 变体下拉）", wiringOptionalDegraded,
+		"库存页的「商品 → 变体」下拉为空（用户看到空列表，不是错误）"},
+	{portRuntimeFragMembershipTexter, "membership", "runtimefragment", wiringOptionalDegraded,
+		"会员片段渲染「会员信息暂时不可用」这句可见文案（不是 500，片段照常 swap）"},
+	{portRuntimeFragCommentTexter, "comment", "runtimefragment", wiringOptionalDegraded,
+		"评论片段渲染「评论功能暂时不可用」这句可见文案"},
+	{portRuntimeFragCommentHasher, "装配层（盐来自配置）", "runtimefragment", wiringOptionalDegraded,
+		"评论来源 IP 哈希退化为无盐 / 会话密钥回退（resolvePurposeSecret 记 Warn）"},
+	{portRuntimeFragCountryLabel, "sysconfig（字典只读口）", "runtimefragment", wiringOptionalDegraded,
+		"访客订单地址的国家/地区显示代码（CN）而不是名称（中国）—— 肉眼可见"},
+	{portWorkbenchInstanceOverrideDeps, "presentation", "workbench", wiringOptionalDegraded,
+		"实例编辑模式（?instance= 画布改覆盖文档）的保存走不通：编辑者改了画布不生效"},
+	{portWorkbenchNavigationPicker, "navigation", "workbench", wiringOptionalDegraded,
+		"检查器的「具体菜单项」下拉为空（nav 组件绑定导航时要手输 id）"},
+	{portContentTemplateImpactPort, "page + presentation", "contenttemplate", wiringOptionalDegraded,
+		"模板影响面与删除保护退化为仅查本模块表与实例外键（删模板不再拦页面引用）"},
+	{portProjectStructureTemplates, "contenttemplate", "project（主题设置）", wiringOptionalDegraded,
+		"主题设置页的「选结构模板」下拉只有「不绑定」"},
+	{portBlockStalePropagator, "block", "page / presentation", wiringRequiredPort,
+		"块变更不传播 → 改了页眉块站点停旧字节且无报错"},
+	{portBlockReferenceUsageChecker, "block", "block（删除保护）", wiringRequiredPort,
+		"删除保护整体失效或只覆盖一部分：块被删掉后，引用它的页面到下一次构建才暴露（且不报错）"},
 	{portPageStructureTemplates, "contenttemplate", "page", wiringRequiredPort,
 		"页眉 / 页脚绑定的结构模板静默失效：构建期回退到旧块绑定，站点上仍是旧页眉（或没有页眉），且没有任何报错"},
 	// 换图失效通知：变体文件名带内容指纹（immutable 长缓存的前提），换图产出新文件名，

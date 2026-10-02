@@ -87,10 +87,15 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 		}
 		pickFlat = flattenCategoryTree(all)
 	}
-	options := categoryPickOptions(pickFlat)
-	createForm := categoryDrawerData(c, "create", selected, nil, options)
+	// 候选列表**只收本工程**的分类：ListCategories 的跨工程可见性由 RLS 决定
+	//（未切非超级角色时策略不生效，别的工程的分类会一起回来），而这里的选择动作是工程内行为 ——
+	// 混进来会让「父级在别的工程」这种坏数据在界面上看起来完全正常。
+	options := categoryPickOptions(filterCategoriesInProject(pickFlat, selected))
+	createForm := categoryDrawerData(c, "create", selected, nil, options, nil)
 	filterQuery := listFilterQuery(selected, keyword)
-	rows := categoryTreeRows(c, selected, pageRows, options, keyword != "")
+	// 父级不在候选列表里（跨工程遗留 / 父级行已不存在）时，抽屉仍要渲染「当前选中的父级」
+	// 那一项，并说明它为什么不在候选里 —— 那是操作者唯一的可见信号。
+	rows := categoryTreeRows(c, selected, pageRows, options, keyword != "", h.missingParentLabels(c, selected, pageRows, options))
 	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
 	data := gin.H{
 		"title":           shell.TranslateFor(c)(productenums.ProductCategoriesTitle, "商品分类"),
@@ -165,7 +170,11 @@ func (h *productPageHandle) categoryProjectExists(c *gin.Context, projectID stri
 	return false
 }
 
-func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H, searching bool) []gin.H {
+// categoryTreeRows 分类树 → 列表行；每行带自己的编辑抽屉数据。
+//
+// parentLabels 是「父级不在候选列表里」的分类 → 父级名称（见 missingParentLabels），
+// 只用于抽屉里那一项的回显。传 nil 表示没有这类行（新建表单就走这条路）。
+func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H, searching bool, parentLabels map[string]string) []gin.H {
 	rows := make([]gin.H, 0, len(nodes))
 	for _, node := range nodes {
 		rows = append(rows, gin.H{
@@ -173,7 +182,7 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
 			"HasChildren": node.HasChildren,
 			"Matched":     node.Matched, "SearchMode": searching,
-			"EditForm": categoryDrawerData(c, "update", projectID, node, options),
+			"EditForm": categoryDrawerData(c, "update", projectID, node, options, parentLabels),
 		})
 	}
 	return rows
@@ -658,16 +667,122 @@ func listPageSlice[T any](all []T, page, size int) (rows []T, current int) {
 	return all[from:to], page
 }
 
-func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []gin.H) gin.H {
+// categoryParentOutOfScopeText 「上级不在本工程」的说明后缀（拼在父级名称后面）。
+//
+// 这里刻意用**受控中文常量**而不是新增 i18n key：词条门禁
+// （scripts/check-i18n-keys-seeded.sh）要求「模板/Go 里出现的 key 必须同批 seed」，
+// 而 seed 迁移由迁移批次负责 —— 只加 key 不加词条会把门禁基线顶上去。
+// 本页文案的 i18n 化与补词条一起做，不拆成两批。
+const categoryParentOutOfScopeText = "（不属于本工程）"
+
+// filterCategoriesInProject 只保留属于 projectID 的分类。
+//
+// 判据是行自己的 ProjectID，**不依赖 RLS**：策略未切非超级角色时 ListCategories 会把别的
+// 工程的分类一起返回，混进「本工程的父级候选」里 —— 分类是工程内实体，不该串门。
+func filterCategoriesInProject(flat []*productdto.CategoryResp, projectID string) []*productdto.CategoryResp {
+	out := make([]*productdto.CategoryResp, 0, len(flat))
+	for _, node := range flat {
+		if node.ProjectID == projectID {
+			out = append(out, node)
+		}
+	}
+	return out
+}
+
+// missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。
+//
+// 纯逻辑部分单独成函数：候选集合的判定（不是 service 读）才是「谁会走模板那条额外分支」
+// 的判据，单测在没有数据库时也能把它钉住。
+func missingParentIDs(nodes []*productdto.CategoryResp, options []gin.H) []string {
+	known := make(map[string]struct{}, len(options))
+	for _, option := range options {
+		if id, ok := option["ID"].(string); ok {
+			known[id] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{}, len(nodes))
+	var ids []string
+	for _, node := range nodes {
+		parentID := strings.TrimSpace(node.ParentID)
+		if parentID == "" {
+			continue
+		}
+		if _, ok := known[parentID]; ok {
+			continue
+		}
+		if _, ok := seen[parentID]; ok {
+			continue
+		}
+		seen[parentID] = struct{}{}
+		ids = append(ids, parentID)
+	}
+	return ids
+}
+
+// missingParentLabels 为「父级不在候选列表里」的分类补上父级文案（id → 文案）。
+//
+// 候选列表是**本工程**分类的全集（见 filterCategoriesInProject），父级不在其中的情形有两种：
+// 父级行已不存在，或父级属于别的工程（历史搬迁留下的坏数据）。两种都要让操作者看出来 ——
+// 否则下拉里要么是一串裸 ID、要么看起来像个正常选项，用户以为层级没问题。
+//
+// 文案形态：本工程的父级只给名称；跨工程的补一句说明（categoryParentOutOfScopeText）。
+// 名称都读不到（父级行没了 / RLS 切角色后跨工程行不可见）时留空，模板退回显示原始 ID ——
+// 显示裸 ID 也比编一个父级名安全。逐个父级查一次库：只对本页里真正缺失的那几个发生。
+func (h *productPageHandle) missingParentLabels(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H) map[string]string {
+	if h.products == nil {
+		return nil
+	}
+	ids := missingParentIDs(nodes, options)
+	if len(ids) == 0 {
+		return nil
+	}
+	labels := make(map[string]string, len(ids))
+	for _, parentID := range ids {
+		parent, err := h.products.GetCategory(c.Request.Context(), &productdto.GetCategoryReq{ProjectID: projectID, ID: parentID})
+		if err != nil || parent == nil {
+			continue
+		}
+		labels[parentID] = categoryParentText(parent, projectID)
+	}
+	return labels
+}
+
+// categoryParentText 父级那一项的文案：属本工程只给名称，跨工程补一句说明。
+func categoryParentText(parent *productdto.CategoryResp, projectID string) string {
+	if parent.ProjectID == projectID {
+		return parent.Name
+	}
+	return parent.Name + categoryParentOutOfScopeText
+}
+
+func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []gin.H, parentLabels map[string]string) gin.H {
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": shell.Prepare(c, gin.H{})["csrf_token"], "t": shell.TranslateFor(c)}
 	if row != nil {
 		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID
 		if row.ParentID != "" {
-			data["ParentMissing"] = true
+			parentMissing := true
 			for _, option := range options {
 				if option["ID"] == row.ParentID {
-					data["ParentMissing"] = false
+					parentMissing = false
 					break
+				}
+			}
+			data["ParentMissing"] = parentMissing
+			// 父级在候选里时模板走 range 那一项；缺失时模板额外渲染一行，
+			// 它的文案**必须**是这个键（模板写 isset(.ParentLabel) 才用，否则退回裸 ID）。
+			//
+			// 可达性（2026-10 实测，别按「死代码」删）：修「孤儿分类丢行」之前这条分支**不可达** ——
+			// 悬空 parent_id 的分类既不是根（根条件是 parent_id IS NULL）也不在任何可见父节点的子树里，
+			// 整行不进列表；跨工程父级则被 ListCategories 一起带进候选，于是 ParentMissing 恒为 false。
+			// 现在两侧都收口了：根集合兜底读孤儿（model 的 categoryRootFilter）、候选只收本工程分类
+			// （filterCategoriesInProject）—— 分支因此真正走到，文案里还带上「不属于本工程」。
+			//
+			// 保留理由：RLS 切到非超级角色后（docs/rls-role-cutover.md 的顺序），GetCategory 会因
+			// 作用域读不到跨工程父级 → 名称取不到 → 这里退回模板的「原始 ID」出口。那是兜底，
+			// 不是新功能；不要因为「本地构造不出名称」就把整段删掉。
+			if parentMissing {
+				if label := strings.TrimSpace(parentLabels[row.ParentID]); label != "" {
+					data["ParentLabel"] = label
 				}
 			}
 		}
@@ -686,7 +801,7 @@ func (h *productPageHandle) categoryFormFail(c *gin.Context, mode, msg string) {
 		c.Redirect(http.StatusFound, "/admin/product-categories?project="+url.QueryEscape(c.PostForm("projectId"))+"&err="+url.QueryEscape(msg))
 		return
 	}
-	data := categoryDrawerData(c, mode, c.PostForm("projectId"), nil, nil)
+	data := categoryDrawerData(c, mode, c.PostForm("projectId"), nil, nil, nil)
 	if h.products != nil {
 		projectID := c.PostForm("projectId")
 		if page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{ProjectID: projectID, Page: 1, Size: 100}); err == nil {

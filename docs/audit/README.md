@@ -224,7 +224,7 @@ AGENTS.md 要求的三视口（1440 / 768 / 375）+ 四种输入的真实浏览�
 | presentation 为拿一个枚举常量 import 了对方 model | 跨模块依赖数据访问包，与「只用 contract 与不可变 dto」相悖 | `contenttemplate/contract`（`TemplateRole*` 常量上移，model 转发） |
 | `cmd/` 不在 gofmt lint 范围 | `make lint` 只扫 internal/pkg/public，`cmd/main.go` 长期不合规 | `Makefile` 的 `lint` / `test-short` / `check` 三个目标 |
 | `scripts/index-usage-report.sh` 的表头 printf 把 `\n` 写成了真换行 | **无参数运行只打到表头就失败** —— bash 把换行当字面量输出、awk 的程序文本直接语法错误（runaway string constant），拿不到任何数据，而脚本退出码仍是 0，看起来像「跑了但没候选」 | 同文件的 `--diff` 分支写法是对的，所以只有审计未点名的那条默认快照路坏（审计要求的是 `--save` / `--diff` 两步） |
-| analytics 三处注释把预聚合表写成已废弃的 `analytics_daily_stats` | 注释把人指向一张代码**零读零写**的空表（迁移 170 重构前那一版的表名）；同一批里迁移 215 的 RLS 名单也同时列了新旧两个名字 | `analytics_dto.go`（SourceSummary）/ `analytics_rollup_model.go`（RollupDay 的作用域说明）/ `analytics_rollup.go`（文件头），修正见 `1f41764` |
+| analytics 三处注释把预聚合表写成已废弃的 `analytics_daily_stats` | 注释把人指向一张代码**零读零写**的空表（迁移 170 重构前那一版的表名）；同一批里迁移 215 的 RLS 名单也同时列了新旧两个名字 | `analytics_dto.go`（SourceSummary）/ `analytics_rollup_model.go`（RollupDay 的作用域说明）/ `analytics_rollup.go`（文件头）。**修正后的准确状态**：Go 注释三处已在 `1f41764` 改对；**迁移 215 第 60 行的名单里名字仍在**（仓库里没有任何 `CREATE TABLE analytics_daily_stats`，全新库执行到那里会被 `215` 的 `IF to_regclass(t) IS NULL THEN CONTINUE` 静默跳过）—— 215 已执行过，按硬约束「不改历史迁移」不动它，改为**不再声称固定对象数**：`docs/rules/database.md` 的 RLS 段与 `pkg/rls` / `scripts/rls-role-setup.sh` 的口径统一改成「以运行时探针读数为准」 |
 - 批量标记脚本：`scripts/audit-mark-resolved.py`（标记新 resolved）、`scripts/audit-fix-note.py`（覆盖已 resolved 条目的结论修订）
 
 ## 怎么读

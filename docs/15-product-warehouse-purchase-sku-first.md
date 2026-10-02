@@ -461,11 +461,11 @@ bundle 类型分支：**不生成变体、不建库存行**；主体 SKU 必填�
 
 ### A3. RLS 策略已铺满，但**当前一行都拦不住**
 
-- 迁移 `215` 给 53 个带 `project_id` 的对象装了 `ENABLE` + `FORCE ROW LEVEL SECURITY`，策略谓词读 `app.project_id`（未设置即行不可见，fail closed）。
+- 迁移 `215` 给带 `project_id` 的对象装了 `ENABLE` + `FORCE ROW LEVEL SECURITY`（覆盖面以 `pkg/rls` 的连接身份探针读数 `Identity.RLSTables` 为准，文档不写死数字），策略谓词读 `app.project_id`（未设置即行不可见，fail closed）。
 - 但应用连接用的是**超级用户**，PostgreSQL 的超级用户恒绕过 RLS（`FORCE` 只约束到表属主）。**「策略铺好了」≠「隔离生效」**，判据只能从库里读（启动期探针 `database.CheckRLSIdentity` 会打 INFO/WARN）。
 - 结果：代码里遍布的 `rls.InProjectScope` 当前只是「为将来切角色做好准备」；现在真正起隔离作用的是 `WHERE project_id = ?` 这类普通过滤。
 - **切角色的顺序不能反**：先把各读写路径都包上作用域，再换非超级角色（`docs/rls-role-cutover.md`）。反过来会出现**静默 0 行**（功能「查不到数据」且无错误日志）。
-- 另有已知缺口：`build_jobs` 有 `project_id` 却没有策略；`internal/pipeline` 与 `internal/builder/core` 不 import `pkg/rls`。
+- 另有已知缺口：`build_jobs` 与 `product_outbox_events` 两张表有 `project_id` 却没有策略（都是按状态跨工程领取的队列，豁免见 `docs/rules/database.md`）；`internal/pipeline` 与 `internal/builder/core` 不 import `pkg/rls`。
 
 ### A4. `product_variants` 没有 RLS 策略，也没有 `project_id` 列
 

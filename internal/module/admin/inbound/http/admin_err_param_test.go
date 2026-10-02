@@ -38,13 +38,17 @@ var pageBusinessCopyForms = map[string]bool{
 }
 
 // pageLeakMarkers 内部错误原文里绝不能出现在页面提示里的片段（照 PostgreSQL 真实报错拼）。
+//
+// 约束名用**库里真实存在的名字**（`init_schema.sql` 的 `uk_sys_i18n_key_lang`）：
+// 以前这里写的是拼错的 `uq_sys_i18n_item_key_lang`——那样样本永远不可能出现在真实报错里，
+// 于是一条只会匹配「不存在的名字」的断言永远绿，真正的泄漏形态没人钉。
 var pageLeakMarkers = []string{
-	"uq_sys_i18n_item_key_lang", "SQLSTATE", "23505", "42P01", "duplicate key",
+	"uk_sys_i18n_key_lang", "SQLSTATE", "23505", "42P01", "duplicate key",
 	"constraint", "sys_i18n", "sys_rule", "pq:", "relation",
 }
 
 // pageDBErrText 一条「长得就像会泄漏」的驱动错误原文（Go 原始字符串，避免转义噪声）。
-const pageDBErrText = `pq: duplicate key value violates unique constraint "uq_sys_i18n_item_key_lang" (SQLSTATE 23505): INSERT INTO sys_i18n (item_key, lang) VALUES ($1, $2)`
+const pageDBErrText = `pq: duplicate key value violates unique constraint "uk_sys_i18n_key_lang" (SQLSTATE 23505): INSERT INTO sys_i18n (item_key, lang) VALUES ($1, $2)`
 
 // newPageErrContext 组一个带 GET query 的测试上下文（归口助手读 user_id 与语言都从它取）。
 func newPageErrContext(t *testing.T) *gin.Context {
@@ -113,7 +117,7 @@ func TestAdminErrParamInternalErrorIsCollected(t *testing.T) {
 	}
 
 	logText := readLog()
-	if !strings.Contains(logText, "uq_sys_i18n_item_key_lang") || !strings.Contains(logText, "SQLSTATE") {
+	if !strings.Contains(logText, "uk_sys_i18n_key_lang") || !strings.Contains(logText, "SQLSTATE") {
 		t.Fatalf("内部错误原文必须进日志（收口 ≠ 吞掉），日志内容=%s", logText)
 	}
 	if !strings.Contains(logText, "admin 接口内部错误") {

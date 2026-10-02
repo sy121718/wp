@@ -174,10 +174,6 @@ func NotFound(c *gin.Context, msg ...string) {
 	ErrorWithMessage(c, http.StatusNotFound, message)
 }
 
-func SuccessWithData(c *gin.Context, data interface{}) {
-	Success(c, data)
-}
-
 // TranslateMessage 将业务消息按请求语言翻译（translate 的公开出口）。
 // 供中间件等需要直接构造 response.Response 的场景使用（如 AbortWithStatusJSON）。
 func TranslateMessage(c *gin.Context, message string) string {

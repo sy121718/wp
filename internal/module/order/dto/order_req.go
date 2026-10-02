@@ -284,7 +284,12 @@ type CouponValidateReq struct {
 	// Subtotal 订单小计（分）：折扣按它算，折后价不由客户端决定。
 	Subtotal int64 `form:"subtotal" json:"subtotal"`
 	// UserID 0 = 匿名访客（按人限次对匿名不生效）。
-	// 由调用方从**会话 / 片段身份**写入：客户端传了也不生效，否则限次可以被绕过。
+	//
+	// 口径修正（BIZ-10）：此前这里写着「由调用方从**会话 / 片段身份**写入」，
+	// 而**没有任何调用方写它** —— 唯一入口是后台的 `GET /api/order/coupon/validate`
+	//（order_handle.go 只做 ShouldBindQuery，而本字段是 form:"-"），
+	// 于是访客侧的按人限次判定当前恒按匿名处理。
+	// 补访客券入口时，这里必须由片段层从访客会话显式赋值（客户端传了也不生效）。
 	UserID uint64 `form:"-" json:"-"`
 }
 

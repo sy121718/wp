@@ -180,7 +180,7 @@ func TestAdminPageWriteFailedCollectsInfraError(t *testing.T) {
 	assertNoLeak(t, "基础设施错误分支（Location）", loc)
 
 	logText := readLog()
-	if !strings.Contains(logText, "uq_sys_role_role_code") || !strings.Contains(logText, "SQLSTATE") {
+	if !strings.Contains(logText, "uk_sys_role_code") || !strings.Contains(logText, "SQLSTATE") {
 		t.Fatalf("内部错误原文必须进日志（收口 ≠ 吞掉），日志内容=%s", logText)
 	}
 }

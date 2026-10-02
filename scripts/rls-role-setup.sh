@@ -2,8 +2,10 @@
 # rls-role-setup.sh — 为 RLS 生效准备非超级用户连接角色（审计 DB-009 第二步 / DB-04）。
 #
 # 背景（实测，不是推测）：
-#   迁移 199 试点、215 铺开，给 53 个带 project_id 的对象装了 ROW LEVEL SECURITY +
-#   FORCE ROW LEVEL SECURITY，策略谓词读会话变量 app.project_id。
+#   迁移 199 试点、215 铺开（之后的 462 / 466 等继续追加），给带 project_id 的对象装了
+#   ROW LEVEL SECURITY + FORCE ROW LEVEL SECURITY，策略谓词读会话变量 app.project_id。
+#   覆盖了多少张**不要看这里的数字**：跑一次 pkg/rls 的连接身份探针
+#   （Identity.RLSTables），迁移一直在追加对象，写死的数字必然过时。
 #   但 **PostgreSQL 的超级用户总是绕过 RLS**（FORCE 也不例外 —— FORCE 约束的是表属主，
 #   不能约束 superuser / BYPASSRLS 角色）。而应用连接用的正是超级用户 root，
 #   所以策略目前一行都没挡住。对照实测（wp 库的 themes 表，有 1 行数据）：
@@ -99,7 +101,13 @@ if [ ! -f config.yaml ]; then
     exit 1
 fi
 
-# 从 config.yaml 的 database 段取值（不在脚本里另存一份口令）。
+# 去掉 YAML / 口令文件里可选的成对引号（"..." 或 '...'）。
+# 必要：config.yaml 的口令写作 `password: "..."`，直接塞进 PGPASSWORD 会连引号一起当口令。
+unquote() {
+    printf '%s' "$1" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
+}
+
+# 从 config.yaml 的 database 段取值（脚本里不另存一份口令）。
 yaml_db() {
     awk -v key="$1" '
         /^database:/ { in_db = 1; next }
@@ -108,11 +116,19 @@ yaml_db() {
     ' config.yaml
 }
 
-DB_HOST="$(yaml_db host)"
-DB_PORT="$(yaml_db port)"
-DB_USER="$(yaml_db user)"
-DB_PASS="$(yaml_db password)"
-DB_NAME="$(yaml_db dbname)"
+# 管理连接取值：**先看 GOWP_DATABASE_* 环境变量，再回退 config.yaml**。
+# 沿用迁移命令的既有覆盖机制 —— Makefile 的 migrate 目标传给 `go run ./cmd -migrate-only`
+# 的就是这五个变量名（GOWP_DATABASE_HOST/PORT/USER/PASSWORD/DBNAME），不另造第二套参数，
+# 也不要求把管理口令写回 config.yaml。
+#
+# 为什么必须有这条覆盖链：切到应用角色之后 config.yaml 的 database.user 就是 go_wp_app，
+# 而本脚本要 CREATE / ALTER ROLE + GRANT + ALTER DEFAULT PRIVILEGES —— 用应用角色跑必然失败。
+# 正确修法是**换管理连接**，绝不是给应用角色加 CREATEROLE / DDL 权限（那等于拆掉工程隔离）。
+DB_HOST="$(unquote "${GOWP_DATABASE_HOST:-$(yaml_db host)}")"
+DB_PORT="$(unquote "${GOWP_DATABASE_PORT:-$(yaml_db port)}")"
+DB_USER="$(unquote "${GOWP_DATABASE_USER:-$(yaml_db user)}")"
+DB_PASS="$(unquote "${GOWP_DATABASE_PASSWORD:-$(yaml_db password)}")"
+DB_NAME="$(unquote "${GOWP_DATABASE_DBNAME:-$(yaml_db dbname)}")"
 
 psql_query() {
     PGPASSWORD="$2" psql -h "$DB_HOST" -p "$DB_PORT" -U "$1" -d "$DB_NAME" -v ON_ERROR_STOP=1 -tA -f -
@@ -125,6 +141,21 @@ run_as_app() { psql_query "$ROLE" "$PASS"; }
 pick_value() {
     grep -oE "^$1=.*" | head -n 1 | cut -d= -f2- || true
 }
+
+# 管理连接能力自检（动任何东西之前）：本脚本要 CREATE / ALTER ROLE + GRANT +
+# ALTER DEFAULT PRIVILEGES，必须连在一个**能管角色**的身份上。
+# config.yaml 切到应用角色之后（database.user = go_wp_app），这里会明确失败并给出修法 ——
+# 而不是让第 1 步抛 psql 的裸 "permission denied to create role"（那个报错不指向原因，
+# 而且很容易被误「修」成给应用角色加 CREATEROLE 权限，那等于拆掉工程隔离）。
+ADMIN_CAN="$(printf '%s\n' "SELECT 'ADMINCAN=' || CASE WHEN (SELECT (rolsuper OR rolbypassrls OR rolcreaterole) FROM pg_roles WHERE rolname = current_user) THEN 'YES' ELSE 'NO' END" | run_as_admin | pick_value ADMINCAN)"
+if [ "$ADMIN_CAN" != "YES" ]; then
+    echo "✗ 管理连接 $DB_USER@$DB_HOST:$DB_PORT 不可用：要么连不上（口令 / 库名不对），要么该角色没有管角色能力（rolsuper / rolbypassrls / rolcreaterole 全为假）。" >&2
+    echo "  database.user 在切换后就是应用角色，而本脚本必须用管理连接执行 DDL。用与迁移同一条覆盖链指定管理连接：" >&2
+    echo "      GOWP_DATABASE_USER=root GOWP_DATABASE_PASSWORD='...' bash scripts/rls-role-setup.sh $ROLE" >&2
+    echo "  （GOWP_DATABASE_* 与 Makefile 的 migrate 目标传给 cmd -migrate-only 的是同一组变量；" >&2
+    echo "    不要给应用角色加 DDL / CREATEROLE 权限。）" >&2
+    exit 1
+fi
 
 echo "→ 目标库 $DB_NAME@$DB_HOST:$DB_PORT（管理连接用户 $DB_USER；口令来源：$PASS_SOURCE）"
 
@@ -168,28 +199,49 @@ if [ -z "$CANDIDATES" ]; then
     echo "✗ 当前库里没有「带 project_id 且启用 RLS」的表 —— 迁移 215 是否已经跑过？" >&2
     exit 1
 fi
+# 探针表必须**同时**满足两个条件，缺一不可：
+#   ① 至少有 1 行 —— 否则「管理连接 0 行 / 应用角色 0 行」两个 0 相等，什么也证明不了；
+#   ② 数据分属 ≥2 个工程 —— 否则第 5 步的「跨工程不可见」无从验证。
+# 找不到就**报错退出**：这里曾经是「优先选……否则回退到第一张候选」，
+# 而候选里可能全是空表 —— 于是一张空表被拿来当探针，两个 0 行被判成「RLS 生效」。
+# 这是 RLS 上线的验收门，假绿会让隔离根本没生效就切角色，所以宁可不通过。
 PROBE=""
-FALLBACK=""
+DIAG=""
 for candidate in $CANDIDATES; do
-    # 第一个候选先兜底（可能是空表）；优先选「有数据」的表，
-    # 再优先选「有 ≥2 个工程」的表 —— 这样脚本自己就能验出跨工程不可见。
-    [ -n "$FALLBACK" ] || FALLBACK="$candidate"
     has="$(printf '%s\n' "SELECT 'HAS=' || count(*) FROM (SELECT 1 FROM $candidate LIMIT 1) AS probe" | run_as_admin | pick_value HAS)"
-    if [ "$has" = "1" ]; then
-        [ -n "$PROBE" ] || PROBE="$candidate"
-        distinct="$(printf '%s\n' "SELECT 'D=' || count(*) FROM (SELECT DISTINCT project_id FROM $candidate LIMIT 2) AS probe" | run_as_admin | pick_value D)"
-        if [ "$distinct" = "2" ]; then
-            PROBE="$candidate"
-            break
-        fi
+    if [ "$has" != "1" ]; then
+        DIAG="$DIAG
+     · $candidate：0 行"
+        continue
     fi
+    distinct="$(printf '%s\n' "SELECT 'D=' || count(*) FROM (SELECT DISTINCT project_id FROM $candidate LIMIT 2) AS probe" | run_as_admin | pick_value D)"
+    if [ "$distinct" = "2" ]; then
+        PROBE="$candidate"
+        break
+    fi
+    DIAG="$DIAG
+     · $candidate：有数据，但只涉及 ${distinct:-?} 个工程（需要 ≥2）"
 done
-[ -n "$PROBE" ] || PROBE="$FALLBACK"
+if [ -z "$PROBE" ]; then
+    echo "✗ 没有合格的探针表：需要一张「带 project_id、已启用 RLS、有数据且数据分属 ≥2 个工程」的表。" >&2
+    echo "   候选实测：$DIAG" >&2
+    echo "   空表 / 单工程表无法验证 RLS（0 行对 0 行说明不了任何事）—— 请先造数据（至少两个工程各一行），" >&2
+    echo "   或按 docs/rls-role-cutover.md 换一张有数据的表再跑。" >&2
+    exit 1
+fi
+
 AS_ADMIN="$(printf '%s\n' "SELECT 'ADMIN=' || count(*) FROM $PROBE" | run_as_admin | pick_value ADMIN)"
 AS_APP="$(printf '%s\n' "SELECT 'APP=' || count(*) FROM $PROBE" | run_as_app 2>/dev/null | pick_value APP || true)"
 [ -n "$AS_APP" ] || AS_APP="ERR"
 
 echo "   探针表 $PROBE：管理连接 $AS_ADMIN 行 / 应用角色（未设 app.project_id）$AS_APP 行"
+
+# 前置断言（防假通过）：管理连接下必须是正数行。缺了它，「0 行 = 0 行」会被判成
+# 「应用角色 fail closed」—— 空表、权限错、表名错都会落到这个分支里，而结论看起来是对的。
+if [ "$AS_ADMIN" = "0" ] || [ -z "$AS_ADMIN" ]; then
+    echo "   ✗ 探针表 $PROBE 在管理连接下也是 0 行 —— 空表无法验证 RLS（换一张有数据的表，或先造数据）" >&2
+    exit 1
+fi
 if [ "$AS_APP" = "0" ]; then
     echo "   ✓ RLS 生效（应用角色 fail closed）"
 elif [ "$AS_APP" = "ERR" ]; then
@@ -200,32 +252,32 @@ else
     exit 1
 fi
 
-# 5) 更强的验证（探针表有数据时）：设了 app.project_id 只看到本工程，别的工程不可见。
-if [ "$AS_ADMIN" != "0" ]; then
-    OWN_PID="$(printf '%s\n' "SELECT 'OWN=' || project_id::text FROM $PROBE LIMIT 1" | run_as_admin | grep -oE '^OWN=.*' | cut -d= -f2 || true)"
-    OTHER_PID="$(printf '%s\n' "SELECT 'OTHER=' || project_id::text FROM $PROBE WHERE project_id::text <> '$OWN_PID' LIMIT 1" | run_as_admin | grep -oE '^OTHER=.*' | cut -d= -f2 || true)"
-    # 用 %s 占位拼 SQL：单引号经 SQ 传入，避免 printf 格式串里再叠一层引号转义。
-    SQ="'"
-    SCOPED="$(printf 'BEGIN;\nSELECT set_config(%sapp.project_id%s, %s%s%s, true) IS NOT NULL;\nSELECT %sSCOPED=%s || count(*) FROM %s;\nCOMMIT;\n' "$SQ" "$SQ" "$SQ" "$OWN_PID" "$SQ" "$SQ" "$SQ" "$PROBE" | run_as_app | pick_value SCOPED)"
-    [ -n "$SCOPED" ] || SCOPED="ERR"
-    echo "   本工程 $OWN_PID：设变量后可见 $SCOPED 行"
-    if [ "$SCOPED" = "0" ] || [ "$SCOPED" = "ERR" ]; then
-        echo "   ✗ 设了 app.project_id 仍读不到本工程的行（SCOPED=$SCOPED）—— 策略谓词或变量名对不上" >&2
-        exit 1
-    fi
-    if [ -n "$OTHER_PID" ]; then
-        CROSS="$(printf 'BEGIN;\nSELECT set_config(%sapp.project_id%s, %s%s%s, true) IS NOT NULL;\nSELECT %sCROSS=%s || count(*) FROM %s WHERE project_id::text = %s%s%s;\nCOMMIT;\n' "$SQ" "$SQ" "$SQ" "$OWN_PID" "$SQ" "$SQ" "$SQ" "$PROBE" "$SQ" "$OTHER_PID" "$SQ" | run_as_app | pick_value CROSS)"
-        [ -n "$CROSS" ] || CROSS="ERR"
-        echo "   别的工程 $OTHER_PID（作用域仍是 $OWN_PID）：可见 $CROSS 行"
-        if [ "$CROSS" != "0" ]; then
-            echo "   ✗ 跨工程可见（CROSS=$CROSS）—— 工程隔离被破坏" >&2
-            exit 1
-        fi
-        echo "   ✓ 本工程可读写、别的工程不可见"
-    fi
-else
-    echo "   （探针表为空，跳过跨工程可见性验证：先跑一次应用或造一行数据）"
+# 5) 更强的验证：设了 app.project_id 只看到本工程，别的工程不可见。
+#    探针表按上面的选择规则必然是「有数据且分属 ≥2 个工程」，所以这一步**没有跳过分支**
+#    —— 能跳过就等于没验完（旧版本正是在这里对空表放行，把没验的事写成绿色结论）。
+OWN_PID="$(printf '%s\n' "SELECT 'OWN=' || project_id::text FROM $PROBE LIMIT 1" | run_as_admin | grep -oE '^OWN=.*' | cut -d= -f2 || true)"
+OTHER_PID="$(printf '%s\n' "SELECT 'OTHER=' || project_id::text FROM $PROBE WHERE project_id::text <> '$OWN_PID' LIMIT 1" | run_as_admin | grep -oE '^OTHER=.*' | cut -d= -f2 || true)"
+if [ -z "$OWN_PID" ] || [ -z "$OTHER_PID" ]; then
+    echo "   ✗ 探针表 $PROBE 取不到两个不同工程（own='${OWN_PID}' other='${OTHER_PID}'）—— 探测期间数据被改动，重跑一次" >&2
+    exit 1
 fi
+# 用 %s 占位拼 SQL：单引号经 SQ 传入，避免 printf 格式串里再叠一层引号转义。
+SQ="'"
+SCOPED="$(printf 'BEGIN;\nSELECT set_config(%sapp.project_id%s, %s%s%s, true) IS NOT NULL;\nSELECT %sSCOPED=%s || count(*) FROM %s;\nCOMMIT;\n' "$SQ" "$SQ" "$SQ" "$OWN_PID" "$SQ" "$SQ" "$SQ" "$PROBE" | run_as_app | pick_value SCOPED)"
+[ -n "$SCOPED" ] || SCOPED="ERR"
+echo "   本工程 $OWN_PID：设变量后可见 $SCOPED 行"
+if [ "$SCOPED" = "0" ] || [ "$SCOPED" = "ERR" ]; then
+    echo "   ✗ 设了 app.project_id 仍读不到本工程的行（SCOPED=$SCOPED）—— 策略谓词或变量名对不上" >&2
+    exit 1
+fi
+CROSS="$(printf 'BEGIN;\nSELECT set_config(%sapp.project_id%s, %s%s%s, true) IS NOT NULL;\nSELECT %sCROSS=%s || count(*) FROM %s WHERE project_id::text = %s%s%s;\nCOMMIT;\n' "$SQ" "$SQ" "$SQ" "$OWN_PID" "$SQ" "$SQ" "$SQ" "$PROBE" "$SQ" "$OTHER_PID" "$SQ" | run_as_app | pick_value CROSS)"
+[ -n "$CROSS" ] || CROSS="ERR"
+echo "   别的工程 $OTHER_PID（作用域仍是 $OWN_PID）：可见 $CROSS 行"
+if [ "$CROSS" != "0" ]; then
+    echo "   ✗ 跨工程可见（CROSS=$CROSS）—— 工程隔离被破坏" >&2
+    exit 1
+fi
+echo "   ✓ 本工程可读写、别的工程不可见"
 
 cat <<'TXT'
 

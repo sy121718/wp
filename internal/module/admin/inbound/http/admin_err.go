@@ -4,7 +4,7 @@ package adminhttp
 //
 // 背景：本模块的 inbound/http 曾有 74 处把 err.Error() 直接拼进响应消息 ——
 // 44 处 `MsgBadRequest+": "+err.Error()`（请求绑定失败）与 30 处裸 `err.Error()`（service 错误）。
-// service 一旦把 PostgreSQL 原文上抛（表名、唯一约束名 uq_sys_role_role_code、SQLSTATE 23505），
+// service 一旦把 PostgreSQL 原文上抛（表名、唯一约束名 uk_sys_role_code、SQLSTATE 23505），
 // 它就会原样渲染到后台页面上 —— 响应不是可信边界。
 // 门禁：scripts/check-no-internal-error-leak.sh（判据是「任何 *.ErrorWithMessage( / c.String( 的
 // 实参里出现 .Error()」）。

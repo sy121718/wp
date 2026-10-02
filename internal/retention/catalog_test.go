@@ -7,6 +7,7 @@ package retention
 // 审计列出的表都在、声明之间不自相矛盾、每个条目都写明了理由。
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,11 @@ func TestCatalogCoversGrowthTables(t *testing.T) {
 		"page_views", "inventory_stock_movements", "mail_campaign_events", "mail_logs",
 		"master_data_changes", "page_revisions", "page_artifacts", "artifacts 磁盘目录",
 		"order_status_logs", "sys_translation", "mail_automation_node_logs",
-		"product_ratings",
+		"product_ratings", "page_views_daily", "page_schedules",
+		// content_objects（审计 IDX-016）：实现早就在（artifact 的内容对象 GC，
+		// 挂在 page 每日任务的产物 GC 上），声明与这里的 want 却都没有它 ——
+		// 于是「新增增长表必须声明保留期」这条不变量对这张表静默失效。
+		"content_objects",
 	}
 	for _, table := range want {
 		if _, ok := DeclarationOf(table); !ok {
@@ -26,6 +31,23 @@ func TestCatalogCoversGrowthTables(t *testing.T) {
 	}
 	if len(Declarations()) < len(want) {
 		t.Fatalf("声明条数应不少于审计清单: %d < %d", len(Declarations()), len(want))
+	}
+}
+
+// TestFormatDeclarationsListsEverything 读出口（cmd/retention-catalog）必须列出**全部**声明：
+// 少列一张，等于那句话（「运维手册从这里取」）对那张表不成立，而运维不会知道自己漏看了什么。
+func TestFormatDeclarationsListsEverything(t *testing.T) {
+	out := FormatDeclarations()
+	if !strings.Contains(out, "共 "+strconv.Itoa(len(Declarations()))+" 张表") {
+		t.Errorf("读出口的抬头应给出声明条数：\n%s", out)
+	}
+	for _, d := range Declarations() {
+		if !strings.Contains(out, "· "+d.Table) {
+			t.Errorf("读出口缺少 %s 的条目", d.Table)
+		}
+		if !strings.Contains(out, d.Executor) {
+			t.Errorf("读出口缺少 %s 的执行者", d.Table)
+		}
 	}
 }
 

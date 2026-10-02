@@ -73,7 +73,7 @@ func TestGA4MeasurementIDShape(t *testing.T) {
 		`G-ABC"><script>alert(1)</script>`, "G-ABC'1234", "G-ABC<br>",
 	}
 	for _, in := range invalid {
-		if ValidGA4MeasurementID(in) {
+		if _, ok := NormalizeGA4MeasurementID(in); ok {
 			t.Errorf("应判为非法: %q", in)
 		}
 		if got := buildGA4Head(in); got != "" {

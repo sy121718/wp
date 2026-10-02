@@ -6,14 +6,20 @@ package orderservice
 // 而这正是退货流程最容易被薅的地方 —— 所以收货把入库放在退款之前，
 // 且入库失败时直接返回，绝不进退款。
 //
-// 三段式（2026-09-19 事务收口后重写；跨模块库存变动改为事务透传）：
+// 两段式（批次4-A 收口；跨模块库存变动走事务透传）：
 //   ① 门闩 + 入库 + 逐行登记入库数量，**一个事务**：approved → received 只有跨过这一步的
 //      那一次调用会执行入库（重复点击 / 网络重试 / 并发点两次都只有一个能通过 ——
 //      库存的 ChangeStock 没有幂等键，这道门闩是唯一的护栏）；库存句柄经 ChangeStockTx
 //      传进同一事务，任一步失败整体回滚 —— 状态不会停在 received 而货没入库，
 //      因此不再需要「失败把状态退回 approved」的补偿（rollbackReceive 已删）。
-//   ② 退款（事务外）：全额退货走 RefundOrder（订单转 refunded）；部分退货只记流水号，
-//      订单状态不动 —— 还有没退的货，把整单标成已退款会让财务对不上账。
+//      前置还要校验**订单**状态（BIZ-04）：订单已取消 / 已退款时货早已归还过，这里拒绝收货。
+//   ② 退款 + 置 completed，**同一个事务**（BIZ-06）：原先两者各一个事务，退款成功而收尾
+//      失败时退货单永远停在 received（重试补退款必报「已退款」）。全额退货走 refundOrderTx
+//      把订单转 refunded；部分退货只记流水号，订单状态不动 —— 还有没退的货，
+//      把整单标成已退款会让财务对不上账。
+//
+// 「全额」的判据是**已实际收货入库**的数量（BIZ-01），不是「已申请」：
+// 在途申请还没回来，算进去会让只收到一件的订单提前整单退款。
 
 import (
 	"context"
@@ -259,13 +265,13 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 		return s.returnRespOf(ctx, rt.ID)
 	}
 
-	// ② 退款。失败停在 received（货已入库），可重试 —— 重试时门闩不再放行，
-	// 所以不会二次入库，只会补做退款。
-	if rerr := s.refundReturn(ctx, rt, req.TransactionID, req.OperatorType, req.OperatorID, req.OperatorName); rerr != nil {
-		return nil, rerr
-	}
-
-	// ④ 收尾：置 completed 并记流水号。
+	// ② 退款 + ④ 收尾：**同一个事务**（BIZ-06）。
+	//
+	// 原先两者各开一个事务：退款提交成功、置 completed 的写入失败（或进程中断）时，
+	// 退货单停在 received，而重试路径补退款必报「已退款」—— 单子永远收不了尾。
+	// 合成一个事务之后，失败就是整体回滚（退货单仍是 received、退款也没发生），
+	// 重试是一条干净路径；修复前中断留下的存量单（订单已 refunded、退货单 received）
+	// 由 refundReturnTx 的「退款已完成、只补收尾」分支接住。
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
 		e, lerr := s.returns.LockByIDTx(ctx, tx, rt.ProjectID, rt.ID)
@@ -277,6 +283,9 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 		}
 		if e.Status == ordermodel.ReturnStatusCompleted {
 			return nil
+		}
+		if rerr := s.refundReturnTx(ctx, tx, e, req.TransactionID, req.OperatorType, req.OperatorID, req.OperatorName); rerr != nil {
+			return rerr
 		}
 		fields := map[string]any{
 			"status":      ordermodel.ReturnStatusCompleted,
@@ -323,6 +332,26 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 		rt = e
 		switch e.Status {
 		case ordermodel.ReturnStatusApproved:
+			// 前置校验**订单**状态（BIZ-04）：门闩只看退货单是不够的。
+			//
+			// 订单在申请之后被取消（库存已全额归还）或被退款时，货其实已经在那边回来过了 ——
+			// 这里再入库就是同一批货归还两次；而紧接着的退款必然失败（订单已是终态），
+			// 退货单于是停在 received：货加了、钱没退、单子卡死，只能人工处理。
+			// 拒绝得早不如拒绝得准：这一次调用什么都不做，退货单留在 approved。
+			//
+			// 加锁读订单（不是普通读）：它与「取消订单」是两条会同时改库存的路径，
+			// 必须串行化。加锁顺序恒为**退货单 → 订单**（本函数先锁退货单，再锁订单；
+			// CancelOrder 只锁订单），不会形成环。
+			order, oerr := s.orders.LockByIDTx(ctx, tx, e.ProjectID, e.OrderID)
+			if oerr != nil {
+				return oerr
+			}
+			if order == nil {
+				return errors.New(orderenums.ErrOrderNotFound)
+			}
+			if !returnableOrderStatuses[order.Status] {
+				return errors.New(orderenums.ErrReturnOrderNotReturnable)
+			}
 			admitted = true
 			fields := map[string]any{
 				"status":      ordermodel.ReturnStatusReceived,
@@ -400,82 +429,111 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 	return nil
 }
 
-// refundReturn 退款。返回是否为**全额**退货。
+// receivedByItemTx 该订单各订单项**已经实际收货入库**的数量 —— BIZ-01 / 02 / 04 / 07 共用的那本账。
 //
-// 全额 → 走 RefundOrder 把订单推进到 refunded（它自带行锁与幂等）；
-// 部分 → 订单状态不动，只在流转链上记一条说明（还有没退的货）。
+// 传订单项而不是传 id 列表：调用点手上永远已经有 items（要么刚读过、要么正要归还它们），
+// 让调用方各自去拼 id 列表，就是在三个地方重复同一段 5 行代码。
 //
-// 读取口径（审计中优先项）：明细与退货汇总一律**用本事务的 tx 读**（…Tx 方法）——
-// 原先这两个读挂在 ctx 上，走的是另一条连接、读事务外的快照，且缺工程作用域
-// （order_items / order_return_items 都带 FORCE 策略）。全额 / 部分的判定建立在这份
-// 快照上，并发退货时会把「还有没退的货」判成全退。这里不为了压缩事务而保留 ctx 读：
-// 读的量级是「一张单的订单项 + 该单的退货申请行」，锁范围只有订单头那一行。
-func (s *Service) refundReturn(ctx context.Context, rt *ordermodel.ReturnEntity, transactionID, operatorType string, operatorID uint64, operatorName string) error {
-	var orderID uint64
-	var orderStatus string
-	var full bool
-	err := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
-		order, lerr := s.orders.LockByIDTx(ctx, tx, rt.ProjectID, rt.OrderID)
-		if lerr != nil {
-			return lerr
-		}
-		if order == nil {
-			return errors.New(orderenums.ErrOrderNotFound)
-		}
-		orderID = order.ID
-		orderStatus = order.Status
-		orderItems, ierr := s.items.ListByOrderIDTx(ctx, tx, rt.OrderID)
-		if ierr != nil {
-			return ierr
-		}
-		ids, derr := s.returns.IDsByOrderTx(ctx, tx, rt.ProjectID, rt.OrderID, ordermodel.ReturnActiveStatuses)
-		if derr != nil {
-			return derr
-		}
-		itemIDs := make([]uint64, 0, len(orderItems))
-		for _, it := range orderItems {
-			itemIDs = append(itemIDs, it.ID)
-		}
-		sums, serr := s.returns.SumQuantityByOrderItemsTx(ctx, tx, ids, itemIDs)
-		if serr != nil {
-			return serr
-		}
-		full = true
-		for _, it := range orderItems {
-			if sums[it.ID] < it.Quantity {
-				full = false
-				break
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
+// 必须用 tx 读：这份账决定「还要归还多少」「是不是全退」—— 挂在 ctx 上会走另一条连接、
+// 读到事务外的快照，并发收货时会把「还有没退的货」判成全退。
+func (s *Service) receivedByItemTx(ctx context.Context, tx *gorm.DB, projectID string, orderID uint64,
+	items []*ordermodel.OrderItemEntity) (map[uint64]int, error) {
+	itemIDs := make([]uint64, 0, len(items))
+	for _, it := range items {
+		itemIDs = append(itemIDs, it.ID)
 	}
-	if full {
-		return s.RefundOrder(ctx, &orderdto.RefundOrderReq{
-			OrderID:       orderID,
-			Reason:        "退货入库后退款（" + rt.ReturnNo + "）",
-			TransactionID: strings.TrimSpace(transactionID),
-			OperatorType:  operatorType,
-			OperatorID:    operatorID,
-			OperatorName:  operatorName,
+	return s.returns.SumReceivedQuantityByOrderItemsTx(ctx, tx, projectID, orderID, itemIDs)
+}
+
+// restockLinesFor 把「还没归还的」订单项拼成库存归还行。
+//
+// 归还量 = 订购数量 − **已实际收货入库**的数量（BIZ-02）：部分退货已经把那部分货加回仓库了，
+// 取消（或未发货退款）再按原始数量归还一次就是凭空多出库存 —— 净多一件，且不报错。
+//
+// 零数量的行直接丢掉：库存变动不接受「归还 0 件」，而那样的调用本身也没有业务含义。
+func restockLinesFor(items []*ordermodel.OrderItemEntity, received map[uint64]int) []ordercontract.StockLine {
+	lines := make([]ordercontract.StockLine, 0, len(items))
+	for _, it := range items {
+		left := it.Quantity - received[it.ID]
+		if left <= 0 {
+			continue
+		}
+		lines = append(lines, ordercontract.StockLine{
+			ProductID: it.ProductID,
+			VariantID: it.VariantID,
+			SKUCode:   it.SKU,
+			Quantity:  left,
 		})
 	}
-	// 部分退货：订单状态不动（还有没退的货），但流转链上要留一条 ——
-	// 财务对账看的是「这单退了多少钱」，而不是只看状态列。
-	return s.logs.Transaction(ctx, func(tx *gorm.DB) error {
+	return lines
+}
+
+// refundReturnTx 事务内退款（句柄由调用方给，BIZ-06）：全额 → 把订单推进到 refunded；
+// 部分 → 订单状态不动，只在流转链上记一条说明（还有没退的货）。
+//
+// 读取口径（审计中优先项）：明细与退货账一律**用本事务的 tx 读**（…Tx 方法）——
+// 原先这两个读挂在 ctx 上，走的是另一条连接、读事务外的快照，且缺工程作用域
+// （order_items / order_return_items 都带 FORCE 策略）。全额 / 部分的判定建立在这份
+// 快照上，并发退货时会把「还有没退的货」判成全退。
+//
+// 「全额」的判据是**已实际收货入库**的数量而不是「已申请」（BIZ-01）：把在途申请算成已退，
+// 会出现「只收到 A 就把整单判成已退款」，B 的申请之后收货时退款必报「已退款」、
+// 退货单永久停在 received。
+func (s *Service) refundReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermodel.ReturnEntity,
+	transactionID, operatorType string, operatorID uint64, operatorName string) error {
+	order, lerr := s.orders.LockByIDTx(ctx, tx, rt.ProjectID, rt.OrderID)
+	if lerr != nil {
+		return lerr
+	}
+	if order == nil {
+		return errors.New(orderenums.ErrOrderNotFound)
+	}
+	orderItems, ierr := s.items.ListByOrderIDTx(ctx, tx, rt.OrderID)
+	if ierr != nil {
+		return ierr
+	}
+	received, rerr := s.receivedByItemTx(ctx, tx, rt.ProjectID, rt.OrderID, orderItems)
+	if rerr != nil {
+		return rerr
+	}
+	full := len(orderItems) > 0
+	for _, it := range orderItems {
+		if received[it.ID] < it.Quantity {
+			full = false
+			break
+		}
+	}
+
+	if !full {
+		// 部分退货：订单状态不动（还有没退的货），但流转链上要留一条 ——
+		// 财务对账看的是「这单退了多少钱」，而不是只看状态列。
 		return s.logs.CreateTx(ctx, tx, &ordermodel.OrderStatusLogEntity{
-			OrderID:      orderID,
-			FromStatus:   orderStatus,
-			ToStatus:     orderStatus,
+			OrderID:      order.ID,
+			FromStatus:   order.Status,
+			ToStatus:     order.Status,
 			OperatorType: defaultString(operatorType, ordermodel.OperatorTypeAdmin),
 			OperatorID:   operatorID,
 			OperatorName: strings.TrimSpace(operatorName),
 			Remark:       fmt.Sprintf("部分退货退款 %s（%s）", yuanText(rt.RefundAmount), rt.ReturnNo),
 			CreateTime:   time.Now(),
 		})
-	})
+	}
+
+	if order.Status == ordermodel.OrderStatusRefunded {
+		// 退款已经完成、只差收尾 —— 修复前「退款成功但置 completed 失败」留下的存量单。
+		// 不重复退款、也不报「已退款」：调用方接着把 completed 补上就把这单救回来了。
+		return nil
+	}
+	// 全额：退款。restock=false —— 货已经由本单的入库步骤归还过（BIZ-07 的「未发货也归还」
+	// 是给后台直接退款那条路径的，退货这里再归一次就是把同一批货加两遍）。
+	return s.refundOrderTx(ctx, tx, rt.ProjectID, &orderdto.RefundOrderReq{
+		OrderID:       rt.OrderID,
+		Reason:        "退货入库后退款（" + rt.ReturnNo + "）",
+		TransactionID: strings.TrimSpace(transactionID),
+		OperatorType:  operatorType,
+		OperatorID:    operatorID,
+		OperatorName:  operatorName,
+	}, false)
 }
 
 // returnRespOf 取一张退货单的视图（含明细）。
