@@ -36,6 +36,7 @@ package builtin
 // 的事实**，零额外 IO —— 判据从「猜文件在不在」换成「看服务返回了什么」，更准也更便宜。
 
 import (
+	"io"
 	"net/http"
 	"path"
 	"regexp"
@@ -117,4 +118,32 @@ func (w *storageCacheWriter) Write(b []byte) (int, error) {
 // isCacheableOK 只有 2xx 才是「真的命中了一个不变的字节」。
 func isCacheableOK(code int) bool {
 	return code >= http.StatusOK && code < http.StatusMultipleChoices
+}
+
+// Unwrap 让零拷贝穿透继续向下（见 sendfile.go 的 sfZeroCopyTarget）。
+// 本层只延迟缓存头，不改变字节流向，因此对下层的存在必须透明。
+func (w *storageCacheWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// ReadFrom 覆盖 http.ServeContent 的零拷贝分支。
+//
+// 为什么不实现它就等于零拷贝断在这里：io.CopyN 的源被 *io.LimitedReader 包住
+// （LimitedReader 不实现 WriterTo），所以整条加速链只能走 dst.(io.ReaderFrom)；
+// 而本层嵌入的是 gin.ResponseWriter **接口**，接口方法集里没有 ReadFrom →
+// 不提升 → 传输层永远收不到调用（见 sendfile.go 条件①）。
+//
+// 【必须先 sfCommitHeader，这不是可选优化】
+// http.ServeContent 走的是两段式：先 w.WriteHeader(code)，再 io.CopyN。而 gin 的
+// WriteHeader **只把状态码记在结构体里**。一旦这里直通到底层的
+// (*http.response).ReadFrom，那条路的两处判断都会出错：按**隐式 200** 写头
+// （206 Partial Content 会变成 200，Content-Range 与状态码自相矛盾），
+// 且小于 512 字节的响应会被 Content-Type 嗅探分支提前返回、零拷贝静默失效。
+// 完整论证见 sendfile.go 的 sfCommitHeader。
+//
+// 语义与 Write 同口径：先按状态码决定缓存头，再落头，最后转交。
+func (w *storageCacheWriter) ReadFrom(r io.Reader) (int64, error) {
+	if isCacheableOK(w.ResponseWriter.Status()) {
+		w.ResponseWriter.Header().Set("Cache-Control", storageCacheImmutable)
+	}
+	sfCommitHeader(w.ResponseWriter)
+	return sfForward(w.ResponseWriter, r)
 }

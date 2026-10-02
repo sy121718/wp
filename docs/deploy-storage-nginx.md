@@ -98,7 +98,7 @@ location = /storage { return 404; }
 | 4 | 404 / 目录请求 | 形状命中但**非 2xx**（含 `/storage/123_thumb-9-fedcba98.jpg` 这种形状合法而文件不存在的路径）→ 保持 `must-revalidate`；`/storage/`、`/storage/nope.jpg` 同理（状态码覆盖缓存头，不改形状判据） | map 输入串带 `$status`、immutable 档只认 `2xx`；`add_header … always`（缺 `always` 则 4xx 不带）；目录请求由 `autoindex off` 给 **403**，见差异第 7 条 |
 | 5 | nosniff | 匿名中间件无条件 `X-Content-Type-Options: nosniff`（SEC-014） | 同一头 + `always` |
 | 6 | 目录列表 | `gin.Dir(dir, false)` → `OnlyFilesFS`，列表请求 404 | `autoindex off` + `location = /storage { return 404; }` |
-| 7 | 传输压缩 | `/storage` 未挂 gzip 中间件（只有 `/static` 挂 `StaticGzipMiddleware`） | 不配 gzip |
+| 7 | 传输压缩 | `/storage` 未挂 gzip 中间件（挂 gzip 的是 `/static` 的 `StaticGzipMiddleware` 与访问面的 `PrecompressedAssetMiddleware` + `StaticGzipMiddleware`，见第 7 节） | 不配 gzip |
 | 8 | 条件请求验证器 | `Last-Modified`（`http.ServeContent`），**无** ETag | `Last-Modified` + ETag（nginx 默认生成），见差异第 1 条 |
 
 指纹正则当前值（**四档**）：Go 侧 `_(?:thumb|small|medium|full)-\d+-[0-9a-f]{8}\.jpg$`；
@@ -177,7 +177,116 @@ nginx 片段写 `_(thumb|small|medium|full)-[0-9]+-[0-9a-f]{8}\.jpg`（`\d` 换�
 
 4. **回滚**：删掉该 location 即回到 Go 直出；Go 侧规则未动，无需改代码、无需重新构建。
 
-## 7. 维护约定
+## 7. `/site` 与 `/static`：产物里已经有 `.gz`，但**不要**顺手加 `gzip_static`
+
+> 状态同上：**参考文档，写进文档 ≠ 生效**。仓库里没有 nginx 配置文件，
+> 本节也没有任何自动化会去应用它。
+
+### 7.1 构建期已经压好了
+
+`internal/pipeline/precompress.go` 在产物组装时，对文本类条目多落一份同名 `.gz`
+（`index.html` → `index.html.gz`），与明文**同一个 `artifacts/{hash}` 目录** ——
+跟着 `{hash}` 一起不可变、一起激活、一起回滚，不需要在产物之外再维护一份预压缩缓存。
+
+| 维度 | 取值 | 说明 |
+|---|---|---|
+| 类型白名单 | `.html .htm .css .js .mjs .json .xml .svg .txt .webmanifest .map` | 图片 / 字体 / 音视频不压：它们本身已是压缩格式，再压一次往往比原文还大 |
+| 阈值 | 明文 < 1024 B 不生成 | 与传输中间件的 `gzipMinSize` 同值，有测试（`TestPrecompressMinSizeAlignedWithGzipMiddleware`）钉住 |
+| 级别 | `gzip.BestCompression` | 构建是离线一次性成本，换访问面每次传输的体积 |
+| 确定性 | 只由明文决定 | gzip header 的 MTIME / OS 被写死（`pipeline.GzipDeterministic`），同一份文档两次构建逐字节相同 |
+| 进产物 hash？ | **不进** | `.gz` 不登记在 `manifest.json` 的 `files` 里。登记会让产物 hash 依赖压缩库实现（Go 升版换了 flate 输出 ⇒ 全站 hash 变 ⇒ 全量重建）。推论：**`.gz` 缺失不算产物损坏**，删掉即回落到实时压缩 |
+
+访问面命中 `.gz` 时由 `middleware/builtin` 的 `PrecompressedAssetMiddleware` 直接下发该文件
+（`Content-Encoding: gzip` + `Content-Length` + `Vary: Accept-Encoding`）；未命中由链上后一个
+`StaticGzipMiddleware` **实时压缩**兜底 —— 检测这一段最简单的方式是看响应有没有 `Content-Length`：
+预压缩路径有，实时压缩被迫走 chunked、没有。
+
+### 7.2 为什么这两个面仍然 Go 直出（三条语义搬不动）
+
+不是偏好，是这三条各自都会在 `location` 那一层断掉：
+
+| 语义 | 真源 | 搬进 nginx 会丢什么 |
+|---|---|---|
+| AccessGuard（登录可见 / 密码保护） | `internal/middleware/builtin/access_guard.go` | 判定必须发生在**产出字节之前**：它读 cookie 签名与 Redis 里的访客会话，命中受限时用产物内的 `guard.html` 兜底。nginx 的 `auth_request` 只能模仿前半段 —— 密码解锁后的签名 cookie 由 Go 签发，拆开就是两套密钥、两套过期规则 |
+| SiteRedirect（改 URL 后旧路径 301） | 产物目录里的 `redirect.json` | 它是**每次发布可变**的产物指令，不是配置项。搬进 nginx 等于要求每次改 URL 都重新生成并 reload 一份配置 |
+| 站点根映射（`/` → `<active>/index/index.html`、`/en/` 语言根） | `pipeline.ResolveActiveEntry` | 这是「URL → 文件」的**唯一权威**。在 nginx 里重写一份 = 第二次实现；两份分叉的真实后果是「守卫判 `/about` 受限，而访问面对 `/about/index.html` 原样直出」 |
+
+`/static`（后台静态资源）另有理由：生产模式走 `go:embed`，磁盘上**没有目录**能 `root` 指过去。
+
+### 7.3 结论：当前装配下 `gzip_static` 没有安全落点
+
+`ngx_http_gzip_static_module` 只作用于**它自己服务的静态文件**，因此：
+
+- 给 `/site` 加一个 `location` 直出产物 → 上面三条语义全丢（**绕过访问守卫**，这不是性能取舍）；
+- 让 nginx 只做 `proxy_pass` 反代 → `gzip_static` 对**上游响应**不生效，配了也是空的；
+- `/storage` 不该开 gzip（图片已压缩，且开 gzip 会让该响应失去 `sendfile`，见第 2 节）。
+
+**所以默认不要加。** 唯一允许加的前提是「这个站不用任何访问守卫、不用 redirect 产物」，
+落地前先核对产物目录（两条都为空才成立）：
+
+```bash
+# 有任何一份产物带守卫 → 不能把 /site 交给 nginx
+find /srv/gowp/public/runtime/artifacts -name guard.json | head
+# 有任何一份重定向产物 → 同理
+find /srv/gowp/public/runtime/artifacts/redirects -name redirect.json | head
+```
+
+### 7.4 若确实要加：三处必须注意（官方文档原文依据）
+
+```nginx
+# server { } 内，接管 /site 静态产物的前提是 7.3 的两条核对都为空。
+location /site/ {
+    alias /srv/gowp/public/runtime/artifacts/public/active/;   # 指向激活目录
+    gzip_static on;          # 只认与请求文件同目录同名的 .gz，与本仓产物布局一致
+    gzip_vary on;            # ← 必须显式打开，理由见下
+    autoindex off;
+    # 不要写 gzip_static always;
+}
+```
+
+1. **`gzip_static always` 绝不能用**。官方文档对 `always` 的定义是「在任何情况下都使用
+   gz 文件，不检查客户端是否支持」（[nginx 文档](http://nginx.org/en/docs/http/ngx_http_gzip_static_module.html)），
+   它针对的是「磁盘上原本就没有未压缩文件」的场景。而产物目录里**明文和 `.gz` 都在** ——
+   用了 `always`，不支持 gzip 的客户端会收到无法解码的字节流。
+2. **`gzip_vary on;` 必须显式打开**：`gzip_vary` 默认 `off`，命中 `gzip_static` 时
+   **不会**下发 `Vary: Accept-Encoding`；而 Go 侧两条路径（预压缩与实时压缩）都是无条件下发的。
+   少了这个头，CDN / 共享缓存会拿 gzip 的响应去满足一个不支持 gzip 的客户端。
+3. **判据不是同一套**：`gzip_static` 还受 `gzip_http_version`（默认 1.1）、`gzip_proxied`、
+   `gzip_disable` 影响；Go 侧只看 `Accept-Encoding` 与其中的 q 值。排查「为什么这个客户端拿到
+   明文」时要知道差异在哪一侧。另外该模块**默认不编译**，先确认：
+
+   ```bash
+   nginx -V 2>&1 | tr ' ' '\n' | rg gzip_static || echo "缺 --with-http_gzip_static_module"
+   ```
+
+### 7.5 推荐形态：只把 nginx 当缓存层（不改路由语义）
+
+Go 已经下发 `Vary: Accept-Encoding`，nginx 在这一层只需按它分档缓存：
+
+```nginx
+proxy_cache_path /var/cache/nginx/gowp levels=1:2 keys_zone=gowp_site:64m inactive=1h;
+
+location /site/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_cache gowp_site;
+    proxy_cache_valid 200 10m;
+    proxy_cache_key "$scheme$host$request_uri$http_accept_encoding";  # 按 Accept-Encoding 分档
+    add_header X-Cache-Status $upstream_cache_status always;
+    # 不要在这里配 gzip / gzip_static：上游已经是 gzip，再压一层是嵌套 Content-Encoding。
+}
+```
+
+自检：
+
+```bash
+# ① 预压缩路径：有 Content-Length 且 Content-Encoding 为 gzip
+curl -sI -H 'Accept-Encoding: gzip' http://HOST/site/ | rg -i '^(HTTP|content-encoding|content-length|vary)'
+# ② 协商不满足：必须是明文、且没有 Content-Encoding
+curl -sI http://HOST/site/ | rg -i '^(HTTP|content-encoding|vary)'
+# ③ 回落（.gz 缺失时仍应有 gzip，但无 Content-Length）
+```
+
+## 8. 维护约定
 
 改 `internal/middleware/builtin/storage_cache.go` 的**任何**规则 —— 正则的类型词白名单、
 两条常量字符串、匹配对象 —— 都要**同批改本文**第 2 节片段与第 3 节对照表。

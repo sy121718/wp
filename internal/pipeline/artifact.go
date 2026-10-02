@@ -272,6 +272,22 @@ func NewArtifactWithEntries(html []byte, m *Manifest, extra map[string][]byte) (
 		return nil, fmt.Errorf("manifest 编码失败: %w", err)
 	}
 	entries["manifest.json"] = mJSON
+
+	// 构建期预压缩（PIPE-GZ）：文本类条目各派生一份 <name>.gz，与明文同目录落盘。
+	//
+	// 落在 Entries 而不是 LocalStore.PutArtifact：Entries 是「这份产物包含哪些字节」的
+	// 唯一来源，本地与对象存储两个实现因此都自动获得 .gz。放进 PutArtifact 等于要求每个
+	// 存储实现各写一遍；而且 PutArtifact 的幂等分支（同 hash 目录已存在直接返回）会让
+	// 「补写缺失的 .gz」变成修改不可变产物 —— 那是比缺 .gz 严重得多的问题。
+	//
+	// 放在 manifest 编码**之后**：判据统一由扩白名单 + 明文长度决定，而不是依赖
+	// 「此刻 manifest.json 还是 nil 占位」这个巧合。
+	//
+	// 派生结果不进 Manifest.Files（不进产物 hash）—— 理由见 precompress.go PrecompressEntries。
+	if err = PrecompressEntries(entries); err != nil {
+		return nil, err
+	}
+
 	hash := artifactPayloadHash(mJSON, html)
 
 	return &Artifact{

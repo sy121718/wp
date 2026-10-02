@@ -11,7 +11,6 @@
 package routers
 
 import (
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -106,7 +105,10 @@ func setupStaticFace(router *gin.Engine) {
 		builtin.AccessUnlockHandler())
 
 	// 兼容入口：/site（控制台里的「打开站点」与既有书签仍可用）。
-	router.Group(siteFacePath, siteFaceChain(siteFacePath)...).StaticFS("/", gin.Dir(root, false))
+	// builtin.NoDirListFS 与 gin.Dir(root,false) 对外行为一致（都禁目录列表、
+	// 目录无 index.html 时 404），差别只在普通文件仍以 *os.File 透出 ——
+	// 内核零拷贝（sendfile）才有条件发生。见 middleware/builtin/static_fs.go。
+	router.Group(siteFacePath, siteFaceChain(siteFacePath)...).StaticFS("/", builtin.NoDirListFS(root))
 
 	// 根入口：**站点独占域名根**（生产语义，也是开发环境与线上一致的前提）。
 	//
@@ -134,11 +136,15 @@ const accessUnlockPath = builtin.AccessUnlockPath
 // AccessGuard 紧随其后（它要在 SiteCache 之前终结受限请求，自己下发
 // private/no-store 覆盖公开缓存头，且必须在任何静态文件处理之前）；
 // siteDirIndexServe 在后（它在 StaticGzip 之后落桶，首页与其它产物一样有传输压缩）。
+//
+// PrecompressedAssetMiddleware（PIPE-GZ）追加在 StaticGzip 之前：它只管「有没有
+// 构建期生成的 .gz」，命中就 Abort、未命中完全透明 —— 实时压缩策略仍归 StaticGzip。
 func siteFaceChain(prefix string) []gin.HandlerFunc {
 	return []gin.HandlerFunc{
 		builtin.SiteRedirectMiddleware(prefix),
 		builtin.AccessGuardMiddleware(prefix),
 		builtin.SiteCacheMiddleware(),
+		builtin.PrecompressedAssetMiddleware(prefix),
 		builtin.StaticGzipMiddleware(),
 		siteDirIndexServeMiddleware(prefix),
 	}
@@ -225,14 +231,10 @@ func serveArtifactFile(c *gin.Context, path string) {
 		c.Next()
 		return
 	}
-	ctype := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
-	if strings.HasSuffix(strings.ToLower(path), ".html") {
-		ctype = "text/html; charset=utf-8"
-	}
-	if ctype == "" {
-		ctype = "application/octet-stream"
-	}
-	c.Header("Content-Type", ctype)
+	// 判据单源在 pipeline.AssetContentType：预压缩层（middleware/builtin 的
+	// PrecompressedAssetMiddleware）用同一个函数。两份判据漂移的表现是「同一份产物
+	// 走 .gz 时被当附件下载、走明文时正常」，而两条路径各自的测试都是绿的。
+	c.Header("Content-Type", pipeline.AssetContentType(path))
 	http.ServeContent(c.Writer, c.Request, filepath.Base(path), st.ModTime(), f)
 	c.Abort()
 }

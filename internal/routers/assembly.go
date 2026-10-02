@@ -250,18 +250,20 @@ func (a *assembly) buildFoundation(ready func() error) {
 	router.HTMLRender = templates.NewJetHTMLRender("internal/templates", gin.Mode() != gin.ReleaseMode)
 
 	// 静态文件服务（admin CSS + builder JS/CSS 统一在此）。
-	// gin.Dir(listDirectory=false) 禁目录列表：无 index 文件时返回空列表而非
-	// 泄漏目录清单（审计 Low：/static 目录列表开启）。
+	// builtin.NoDirListFS 禁目录列表：无 index.html 的目录当不存在（404），
+	// 不泄漏目录清单（审计 Low：/static 目录列表开启）。它与 gin.Dir(path,false)
+	// 行为等价，但对普通文件仍以 *os.File 透出，静态大文件才能走内核零拷贝。
 	// StaticGzipMiddleware：文本类资源（js/css/svg）gzip 传输压缩。
 	// StaticCacheMiddleware：静态资源统一协商缓存（no-cache + Last-Modified），
 	// 避免 ES modules 子模块因启发式缓存执行旧代码（docs/09 §3 拆分后修复）。
 	// 静态资源来源按模式分流（审计 OSS-018）：开发模式读磁盘（改 CSS/JS 立即生效），
 	// 生产模式走 embed —— 二进制自带静态资产，不再要求部署时附带源码树。
-	staticFS := gin.Dir("internal/templates/static", false)
+	staticFS := builtin.NoDirListFS("internal/templates/static")
 	if gin.Mode() == gin.ReleaseMode {
 		if embedded, err := templates.EmbeddedStaticFS(); err != nil {
 			logger.Scene("init").Error(err, "静态资源 embed 不可用，回退磁盘目录")
 		} else {
+			// embed 的字节在内存里，本来就没有 WriteTo —— 零拷贝不适用，无需包装。
 			staticFS = embedded
 		}
 	}
@@ -279,7 +281,7 @@ func (a *assembly) buildFoundation(ready func() error) {
 		},
 		builtin.StorageCacheMiddleware(),
 	)
-	storage.StaticFS("/", gin.Dir("public/storage", false))
+	storage.StaticFS("/", builtin.NoDirListFS("public/storage"))
 
 	// 静态访问面：已发布站点直出激活产物（只读文件系统，零查库零模板）。
 	// ActiveRoot 位于产物根下两级（{root}/public/active），符号链接目标相对可达。
