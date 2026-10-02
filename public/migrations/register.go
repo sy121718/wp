@@ -107,4 +107,14 @@ func init() {
 	registerClientFilterEmptyI18n()
 	// 460：页面定时上下线待办表（PIPE-7，见 register_page_schedule.go）。
 	registerPageSchedules()
+	// 484-486：系统配置表 + 地理地区树 + 语言货币字典（见 register_sys_reference.go）。
+	registerSysReference()
+	// 491：pages.excluded_langs（页面级语言排除，见 register_page_excluded_langs.go）。
+	// 结构迁移**刻意不带 TableName**（pages 早已存在，带上会被「表存在即跳过」永远跳过）。
+	registerPageExcludedLangs() // 492：语言准入（U1）与缺译报告（U2）的词条（见 register_locale_admission_i18n.go）。
+	registerLocaleAdmissionI18n()
+	// 493：站点设置页「语言方案说明」的文案覆盖（见 register_settings_locale_mode_hint_i18n.go）。
+	registerSettingsLocaleModeHintI18n()
+	// 494：语言面板「重新发布」的词条（见 register_page_langs_republish_i18n.go）。
+	registerPageLangsRepublishI18n()
 }
