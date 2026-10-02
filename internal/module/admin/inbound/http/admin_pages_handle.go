@@ -347,8 +347,8 @@ type permTreeRow struct {
 	// PadLeft 缩进像素值，在 Go 侧算好再交给模板。
 	// Jet 的表达式求值在算术上不报错但语义容易踩（整数除法、优先级），
 	// 而这种「一行一个数」的计算放 Go 侧是零成本的，也让模板保持纯渲染。
-	PadLeft     int
-	ParentID    uint64
+	PadLeft  int
+	ParentID uint64
 	// PermissionCodes 是这个节点挂的全部权限码（迁移 470 起多对多，可能为空）。
 	// 抽屉里逐个渲染成 <code> 徽标：管理员要能一眼看出「这个菜单代表哪些 API 权限」，
 	// 因为勾选树是按菜单节点勾的，码本身不显示就会让「勾了什么」变得不可核对。

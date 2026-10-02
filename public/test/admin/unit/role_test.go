@@ -429,12 +429,12 @@ func (e *env) dbGetRole(id uint64) (*adminmodel.RoleEntity, error) {
 func createMenuWithPerm(t *testing.T, e *env, _ uint64, code string) uint64 {
 	t.Helper()
 	err := e.svc.MenuCreate(context.Background(), &admindto.MenuCreateReq{
-		Title:          "测试菜单 " + uniq(""),
-		Type:           adminmodel.MenuTypeMenu,
-		Path:           "/test/menu",
-		Component:      "view.testMenu",
+		Title:           "测试菜单 " + uniq(""),
+		Type:            adminmodel.MenuTypeMenu,
+		Path:            "/test/menu",
+		Component:       "view.testMenu",
 		PermissionCodes: []string{code},
-		Status:         1,
+		Status:          1,
 	})
 	wantErr(t, err, "")
 	var menu adminmodel.MenuEntity
