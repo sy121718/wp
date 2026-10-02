@@ -146,6 +146,10 @@
                         {* 树状行：层级由服务端按父子关系算好（模板不自己推 Depth），
                            子行缩进 + 树枝前缀，父行加粗、子行普通字重 —— 一眼看出谁挂在谁下面。 *}
                         <td style="padding-inline-start:calc({{rowDepth}} * 1.5rem)">{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if rowDepth == 0}}<strong>{{row.Label}}</strong>{{else}}{{row.Label}}{{end}}
+                        {* 父级属于别的工程（或父级行已不存在）：这类行的 ParentID 指向本工程之外，
+                           只看分类名看不出来，给个可见标记 —— 真正的修法是在抽屉里改父级或删掉它。
+                           键缺时点号访问会中断整页渲染，故先 isset。 *}
+                        {{if isset(row.ParentOutOfScope)}}{{if row.ParentOutOfScope}}<span class="badge badge-warning">{{tr("admin.product_categories.parent.out_of_scope", "（不属于本工程）")}}</span>{{end}}{{end}}
                         {{if row.SearchMode}}{{if row.Matched}}<span class="badge badge-info">{{tr("admin.product_categories.search.matched", "匹配")}}</span>{{else}}<span class="text-mute">{{tr("admin.product_categories.search.ancestor", "上级路径")}}</span>{{end}}{{end}}</td>
                         <td>{{if row.Slug != ""}}<code>{{row.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                         <td>{{row.Sort}}</td>

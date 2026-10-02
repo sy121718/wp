@@ -105,6 +105,81 @@ func TestCategoryDrawerParentLabelNoNameFallsBackToID(t *testing.T) {
 	}
 }
 
+// TestCategoryTreeRowsFlagsOutOfScopeParent 列表行徽章（product_categories.html）的判据：
+// 父级不在本工程的候选列表里。
+//
+// parentLabels 传 nil 是刻意的 —— 判据必须取 missingParentIDs（父级不在候选列表），
+// 不能用 parentLabels：后者只收「名称读得到」的父级，RLS 切非超级角色后跨工程父级读不到
+// 名称会被它漏掉，而那时恰恰最该让操作者看见异常。改成用 parentLabels 判，第一条断言直接红。
+func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
+	c, _, _ := newAttrCaptureContext(t, "", "")
+
+	flagged := categoryTreeRows(c, parentLabelProjectID,
+		[]*productdto.CategoryResp{parentLabelRow()}, parentLabelOptions(), false, nil)
+	if len(flagged) != 1 {
+		t.Fatalf("应有一行，实际 %d", len(flagged))
+	}
+	if out, _ := flagged[0]["ParentOutOfScope"].(bool); !out {
+		t.Fatalf("父级 %s 不在候选列表里，该行应标记 ParentOutOfScope", parentLabelParentID)
+	}
+
+	// 父级确实在候选列表里 → 不标。
+	inScope := parentLabelRow()
+	inScope.ParentID = "pr1cat1"
+	clean := categoryTreeRows(c, parentLabelProjectID,
+		[]*productdto.CategoryResp{inScope}, parentLabelOptions(), false, nil)
+	if out, _ := clean[0]["ParentOutOfScope"].(bool); out {
+		t.Fatalf("父级在本工程候选列表里，不该标记 ParentOutOfScope")
+	}
+
+	// 顶级分类（无父级）→ 不标。
+	root := parentLabelRow()
+	root.ParentID = ""
+	top := categoryTreeRows(c, parentLabelProjectID,
+		[]*productdto.CategoryResp{root}, parentLabelOptions(), false, nil)
+	if out, _ := top[0]["ParentOutOfScope"].(bool); out {
+		t.Fatalf("顶级分类没有父级，不该标记 ParentOutOfScope")
+	}
+}
+
+// TestCategoryRowOutOfScopeBadgeRendered 徽章要真的渲出来 —— 数据层标了脏而模板没渲染
+// （或渲染在别的行上）都是静默无效：页面照常 200、日志干净，操作者依然看不出这一行有问题。
+// 断言落在「那一行的 HTML 里」而不是整页含不含某个类名，避免被页面别处的同类样式骗过。
+func TestCategoryRowOutOfScopeBadgeRendered(t *testing.T) {
+	render := func(t *testing.T, outOfScope bool) string {
+		t.Helper()
+		return renderAdminTemplate(t, "admin/product/product_categories.html", productPageLayoutData(gin.H{
+			"title": "商品分类", "menu": "product-categories",
+			"Projects": []gin.H{}, "SelectedProject": parentLabelProjectID, "Options": []gin.H{},
+			"Categories": []gin.H{{
+				"ID": "c1", "Name": "夹克", "Slug": "jackets", "Label": "夹克", "Sort": 0,
+				"SEOTitle": "", "SEODescription": "", "Description": "", "Image": "",
+				"ParentID": parentLabelParentID, "Depth": 0, "SearchMode": false,
+				"ParentOutOfScope": outOfScope,
+			}},
+			"PermSet": map[string]any{},
+			"Err":     "",
+		}))
+	}
+	rowRE := regexp.MustCompile(`(?s)<tr data-category-row data-category-id="c1".*?</tr>`)
+
+	flagged := rowRE.FindString(render(t, true))
+	if flagged == "" {
+		t.Fatal("渲染结果里找不到那一行（data-category-id=\"c1\"）")
+	}
+	if !strings.Contains(flagged, "badge badge-warning") {
+		t.Fatalf("父级不在本工程时该行应渲出徽章，实际那一行：%s", flagged)
+	}
+	if !strings.Contains(flagged, "夹克") {
+		t.Fatalf("徽章不该把分类名顶掉，实际那一行：%s", flagged)
+	}
+
+	clean := rowRE.FindString(render(t, false))
+	if strings.Contains(clean, "badge badge-warning") {
+		t.Fatalf("父级正常时不该出现徽章，实际那一行：%s", clean)
+	}
+}
+
 // TestCategoryTreeRowsThreadsParentLabels categoryTreeRows → categoryDrawerData 的接线：
 // 名称必须真的进到每一行的 EditForm（模板读的就是 EditForm 里的 ParentLabel）。
 func TestCategoryTreeRowsThreadsParentLabels(t *testing.T) {
@@ -178,15 +253,16 @@ func TestFilterCategoriesInProject(t *testing.T) {
 }
 
 // TestCategoryParentTextMarksOutOfScope 跨工程父级的文案必须写明「不属于本工程」——
-// 这是操作者唯一的可见信号（列表行只能显示成顶级分类，看不出层级已经断了）。
+// 抽屉的父级下拉直接显示它，列表行的徽章靠同一个 key 取词（见 ParentOutOfScope）。
 func TestCategoryParentTextMarksOutOfScope(t *testing.T) {
+	c, _, _ := newAttrCaptureContext(t, "", "")
 	same := &productdto.CategoryResp{ID: "p1", ProjectID: parentLabelProjectID, Name: "男装"}
-	if got := categoryParentText(same, parentLabelProjectID); got != "男装" {
+	if got := categoryParentText(c, same, parentLabelProjectID); got != "男装" {
 		t.Fatalf("本工程父级只给名称，实际 %q", got)
 	}
 	foreign := &productdto.CategoryResp{ID: "p1", ProjectID: "prj-other", Name: "男装"}
-	got := categoryParentText(foreign, parentLabelProjectID)
-	if !strings.Contains(got, "男装") || !strings.Contains(got, categoryParentOutOfScopeText) {
+	got := categoryParentText(c, foreign, parentLabelProjectID)
+	if !strings.Contains(got, "男装") || !strings.Contains(got, categoryParentOutOfScopeFallback) {
 		t.Fatalf("跨工程父级应写明「不属于本工程」，实际 %q", got)
 	}
 }
@@ -213,7 +289,7 @@ func TestMissingParentLabelsReadsNameFromService(t *testing.T) {
 		ID: parentLabelParentID, ProjectID: "prj-other", Name: "男装",
 	}}
 	labels = NewProductPageHandle(foreign, nil).missingParentLabels(c, parentLabelProjectID, nodes, parentLabelOptions())
-	if got := labels[parentLabelParentID]; !strings.Contains(got, "男装") || !strings.Contains(got, categoryParentOutOfScopeText) {
+	if got := labels[parentLabelParentID]; !strings.Contains(got, "男装") || !strings.Contains(got, categoryParentOutOfScopeFallback) {
 		t.Fatalf("跨工程父级应写成「男装（不属于本工程）」，实际 %q", got)
 	}
 

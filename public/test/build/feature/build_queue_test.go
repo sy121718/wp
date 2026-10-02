@@ -265,7 +265,7 @@ func enqueueInProject(t *testing.T, svc *buildservice.Service, sourceType, proje
 
 // TestQueueProjectFilter build_jobs 没有 RLS 策略，工程过滤只能显式写在 SQL 里。
 //
-// 这是本表与其它 53 张带 project_id 的表**相反**的一处：换到非超级业务角色后，策略
+// 这是本表与迁移 215 铺开策略的那批表**相反**的一处：换到非超级业务角色后，策略
 // 既不会把这里的查询挡成 0 行，也不会把它限制在本工程 —— 不带过滤的查询照样把别的工程
 // 的任务列出来（fail open 而不是 fail closed）。所以 Stats / List / Retry 都加了可选
 // projectID，这条断言钉住三件事：

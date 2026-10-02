@@ -174,15 +174,28 @@ func (h *productPageHandle) categoryProjectExists(c *gin.Context, projectID stri
 //
 // parentLabels 是「父级不在候选列表里」的分类 → 父级名称（见 missingParentLabels），
 // 只用于抽屉里那一项的回显。传 nil 表示没有这类行（新建表单就走这条路）。
+//
+// ParentOutOfScope 是列表行上的徽章：父级属于别的工程（或父级行已不存在）时置真 ——
+// 这类行的 ParentID 指向本工程之外，操作者只看分类名看不出来，得有个可见标记。
 func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H, searching bool, parentLabels map[string]string) []gin.H {
+	// 判据取 missingParentIDs（父级不在候选列表）而**不是** parentLabels：后者只收
+	// 「名称读得到」的那些父级，RLS 切非超级角色后跨工程父级读不到名称会被它漏掉，
+	// 而那时恰恰最该让操作者看见异常。两者共用同一个判定函数，不另起一份候选集合逻辑。
+	outOfScope := make(map[string]struct{})
+	for _, parentID := range missingParentIDs(nodes, options) {
+		outOfScope[parentID] = struct{}{}
+	}
 	rows := make([]gin.H, 0, len(nodes))
 	for _, node := range nodes {
+		_, flagged := outOfScope[node.ParentID]
 		rows = append(rows, gin.H{
 			"ID": node.ID, "Name": node.Name, "Slug": node.Slug, "Label": node.Name,
 			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
-			"HasChildren": node.HasChildren,
-			"Matched":     node.Matched, "SearchMode": searching,
-			"EditForm": categoryDrawerData(c, "update", projectID, node, options, parentLabels),
+			"HasChildren":      node.HasChildren,
+			"Matched":          node.Matched,
+			"SearchMode":       searching,
+			"ParentOutOfScope": flagged,
+			"EditForm":         categoryDrawerData(c, "update", projectID, node, options, parentLabels),
 		})
 	}
 	return rows
@@ -667,13 +680,16 @@ func listPageSlice[T any](all []T, page, size int) (rows []T, current int) {
 	return all[from:to], page
 }
 
-// categoryParentOutOfScopeText 「上级不在本工程」的说明后缀（拼在父级名称后面）。
+// categoryParentOutOfScopeKey 「上级不在本工程」的文案 key。
 //
-// 这里刻意用**受控中文常量**而不是新增 i18n key：词条门禁
-// （scripts/check-i18n-keys-seeded.sh）要求「模板/Go 里出现的 key 必须同批 seed」，
-// 而 seed 迁移由迁移批次负责 —— 只加 key 不加词条会把门禁基线顶上去。
-// 本页文案的 i18n 化与补词条一起做，不拆成两批。
-const categoryParentOutOfScopeText = "（不属于本工程）"
+// 一处定义、两处消费：抽屉里拼在父级名称后面（categoryParentText），列表行上的徽章
+// （product_categories.html）用同一个 key 取词 —— 两处是同一句话，不能各写一份常量。
+// 词条门禁（scripts/check-i18n-keys-seeded.sh）要求「用了 key 就必须同批 seed」，
+// 迁移 508 已补中英成对；基线只降不升，所以 key 与词条必须同批落地。
+const categoryParentOutOfScopeKey = "admin.product_categories.parent.out_of_scope"
+
+// categoryParentOutOfScopeFallback key 未命中时的兜底原文（与迁移 508 的 zh-CN 值一致）。
+const categoryParentOutOfScopeFallback = "（不属于本工程）"
 
 // filterCategoriesInProject 只保留属于 projectID 的分类。
 //
@@ -725,7 +741,7 @@ func missingParentIDs(nodes []*productdto.CategoryResp, options []gin.H) []strin
 // 父级行已不存在，或父级属于别的工程（历史搬迁留下的坏数据）。两种都要让操作者看出来 ——
 // 否则下拉里要么是一串裸 ID、要么看起来像个正常选项，用户以为层级没问题。
 //
-// 文案形态：本工程的父级只给名称；跨工程的补一句说明（categoryParentOutOfScopeText）。
+// 文案形态：本工程的父级只给名称；跨工程的补一句说明（categoryParentOutOfScopeKey）。
 // 名称都读不到（父级行没了 / RLS 切角色后跨工程行不可见）时留空，模板退回显示原始 ID ——
 // 显示裸 ID 也比编一个父级名安全。逐个父级查一次库：只对本页里真正缺失的那几个发生。
 func (h *productPageHandle) missingParentLabels(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H) map[string]string {
@@ -742,17 +758,20 @@ func (h *productPageHandle) missingParentLabels(c *gin.Context, projectID string
 		if err != nil || parent == nil {
 			continue
 		}
-		labels[parentID] = categoryParentText(parent, projectID)
+		labels[parentID] = categoryParentText(c, parent, projectID)
 	}
 	return labels
 }
 
 // categoryParentText 父级那一项的文案：属本工程只给名称，跨工程补一句说明。
-func categoryParentText(parent *productdto.CategoryResp, projectID string) string {
+//
+// 说明文字走 i18n（categoryParentOutOfScopeKey）：这条文案在抽屉下拉与列表行徽章上
+// 各出现一次，en-US 后台下两处都该是英文。
+func categoryParentText(c *gin.Context, parent *productdto.CategoryResp, projectID string) string {
 	if parent.ProjectID == projectID {
 		return parent.Name
 	}
-	return parent.Name + categoryParentOutOfScopeText
+	return parent.Name + shell.TranslateFor(c)(categoryParentOutOfScopeKey, categoryParentOutOfScopeFallback)
 }
 
 func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []gin.H, parentLabels map[string]string) gin.H {
