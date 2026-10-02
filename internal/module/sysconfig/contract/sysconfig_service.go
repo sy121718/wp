@@ -20,6 +20,9 @@ type Service interface {
 	ListGroups(ctx context.Context) ([]Group, error)
 	// SetGroup 整组保存（乐观锁：带读到的 Version，库内已变则整组拒绝）。
 	SetGroup(ctx context.Context, req *SetGroupReq) (*Group, error)
+	// SetGroups 多组一次保存（**单事务** + 逐组乐观锁）：后台一张表单同时改两组时用，
+	// 避免「第一组改了、第二组失败」的半截状态。
+	SetGroups(ctx context.Context, req *SetGroupsReq) ([]Group, error)
 }
 
 // === 错误值（跨模块可见的语义错误）===
@@ -56,6 +59,9 @@ type Group = sysconfigdto.Group
 
 // SetGroupReq 整组保存请求。
 type SetGroupReq = sysconfigdto.SetGroupReq
+
+// SetGroupsReq 多组一次保存请求。
+type SetGroupsReq = sysconfigdto.SetGroupsReq
 
 // 分组键：跨模块可见的键名。写死在这里而不是让各方裸写字符串 —— 键写错不报错、
 // 只表现为「配置读了但没生效」。

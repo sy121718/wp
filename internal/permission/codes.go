@@ -607,6 +607,12 @@ const (
 	// 更新项目（POST /api/project/update）
 	ProjectUpdate Perm = "project:update"
 
+	// —— sysconfig（2）——
+	// 读取系统设置（GET /api/sysconfig/get）
+	SysConfigGet Perm = "sysconfig:get"
+	// 保存系统设置（POST /api/sysconfig/save）
+	SysConfigSave Perm = "sysconfig:save"
+
 	// —— publication（2）——
 	// 待处理发布回执（GET /api/publication/receipts/pending）
 	PublicationReceiptsPending Perm = "publication:receipts_pending"
@@ -981,6 +987,9 @@ var specs = map[Perm]spec{
 	ProjectThemeUpdate:   {module: "project", name: "更新主题"},
 	ProjectUpdate:        {module: "project", name: "更新项目"},
 
+	// —— sysconfig ——
+	SysConfigGet:  {module: "sysconfig", name: "读取系统设置"},
+	SysConfigSave: {module: "sysconfig", name: "保存系统设置"},
 	// —— publication ——
 	PublicationReceiptsPending: {module: "publication", name: "待处理发布回执"},
 	PublicationSEOAudit:        {module: "publication", name: "SEO 审计"},

@@ -1,0 +1,85 @@
+{* admin/system/settings.html — 系统设置（全局默认值）。
+   数据见 sysconfig/inbound/http/sysconfig_admin_pages.go 的 SystemPage：
+     I18N / Trade（groupView：Key / Version / Data）、LangOptions / CurrencyOptions /
+     CountryOptions（字典下拉）、ModeOptions、Err / Done。
+   与「站点设置」（/admin/settings，工程级 projects.settings）分工不同：本页是**全局默认**，
+   工程级覆盖仍走站点设置；读取链是「工程值 > 全局默认（本页）> 启动兜底（代码常量）」。
+   前端：四字段用 .form-grid（桌面两列、窄屏一列，宽度 min(100%, …)），控件全是原生
+   <select> —— 鼠标 / 滚轮 / 触屏 / 键盘四种输入天然可用。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.system.title", "系统设置") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.system.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip"><strong>{{ .["t"]("admin.system.help.title", "这一页管什么") }}</strong>{{ .["t"]("admin.system.help.global", "这里改的是**全局默认值**：站点没有自己的工程级设置时才会用到。") }}<br>{{ .["t"]("admin.system.help.trade", "默认国家与默认货币目前只是全局默认 + 兜底，还没有读取方 —— 设了不会立刻改变某个表单的初始值（工程级覆盖仍走站点设置页）。") }}<br>{{ .["t"]("admin.system.help.shortcode", "语言短码覆盖表（lang_url_codes）属于专家项，不在本页编辑，保存时原样保留。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {{if isset(.Err)}}{{if .Err}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <form method="post" action="/admin/system/save" class="card card-body">
+        <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+        {* 乐观锁：带上读到的版本；库内已变则整批拒绝（不自动重试、不静默覆盖）。 *}
+        <input type="hidden" name="i18nVersion" value="{{.I18N.Version}}">
+        <input type="hidden" name="tradeVersion" value="{{.Trade.Version}}">
+
+        <h2>{{ .["t"]("admin.system.section.locale", "语言") }}</h2>
+        <div class="form-grid">
+            <div class="form-field">
+                <label for="default-lang">{{ .["t"]("admin.system.field.default_lang", "默认语言") }}</label>
+                <select class="form-select" id="default-lang" name="defaultLang" required>
+                    {{range _, o := .LangOptions}}
+                    <option value="{{o.Code}}"{{if o.Code == .I18N.Data["default_lang"]}} selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+                <p class="form-hint">{{ .["t"]("admin.system.hint.default_lang", "站点默认语言：进产物字节（<html lang>、hreflang 的 x-default）。改后需重建页面才反映到访问面。") }}</p>
+            </div>
+            <div class="form-field">
+                <label for="lang-url-mode">{{ .["t"]("admin.system.field.site_lang_url_mode", "语言 URL 方案") }}</label>
+                <select class="form-select" id="lang-url-mode" name="siteLangURLMode" required>
+                    {{range _, m := .ModeOptions}}
+                    <option value="{{m}}"{{if m == .I18N.Data["site_lang_url_mode"]}} selected{{end}}>{{m}}</option>
+                    {{end}}
+                </select>
+                <p class="form-hint">{{ .["t"]("admin.system.hint.site_lang_url_mode", "default_plain：默认语言不带前缀；all_prefix：所有语言都带前缀；off：不做语言 URL 分离。工程可在站点设置里覆盖。") }}</p>
+            </div>
+        </div>
+
+        <h2>{{ .["t"]("admin.system.section.trade", "交易默认值") }}</h2>
+        <div class="form-grid">
+            <div class="form-field">
+                <label for="default-country">{{ .["t"]("admin.system.field.default_country", "默认国家") }}</label>
+                <select class="form-select" id="default-country" name="defaultCountry" required>
+                    {{range _, o := .CountryOptions}}
+                    <option value="{{o.Code}}"{{if o.Code == .Trade.Data["default_country"]}} selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-field">
+                <label for="default-currency">{{ .["t"]("admin.system.field.default_currency", "默认货币") }}</label>
+                <select class="form-select" id="default-currency" name="defaultCurrency" required>
+                    {{range _, o := .CurrencyOptions}}
+                    <option value="{{o.Code}}"{{if o.Code == .Trade.Data["default_currency"]}} selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+        </div>
+        <p class="form-hint">{{ .["t"]("admin.system.hint.trade", "默认国家与默认货币是全局默认 + 兜底：目前还没有读取方（工程级覆盖仍走站点设置页），设置后不会立刻改变某个表单的初始值。") }}</p>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.system.submit", "保存") }}</button>
+        </div>
+    </form>
+</div>
+{{end}}

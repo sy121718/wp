@@ -1,0 +1,31 @@
+package sysconfigdto
+
+// sysconfig_dict.go — 字典下拉的展示形状（数据流 model → service → inbound）。
+
+// DictOption 一个字典下拉项。
+type DictOption struct {
+	// Code 值（语言形如 zh-CN，货币形如 CNY）。
+	Code string `json:"code"`
+	// Label 展示文案（语言用 code 本身，货币用「CNY ¥」）。
+	Label string `json:"label"`
+}
+
+// CountryOption 一个国家下拉项。
+//
+// Label 按当前界面语言取中文或英文名：sys_area 两列都有（name_zh / name_en），
+// 由 service 依当前语言挑一列 —— 下拉里显示「安哥拉 / Angola」取决于是谁在看。
+type CountryOption struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+}
+
+// SetGroupsReq 多组一次保存（同一事务）。
+//
+// 为什么不是「循环调 SetGroup」：系统设置页一张表单同时改 i18n 与 trade 两组，
+// 逐组独立提交会出现「语言改了、货币没改」的半截状态，而界面上它们是一次提交。
+type SetGroupsReq struct {
+	// Groups 要保存的组（每组自带 version 乐观锁前置条件与完整数据）。
+	Groups []SetGroupReq
+	// UpdateBy 操作人 ID（0 = 系统 / 未登录）。
+	UpdateBy int64
+}

@@ -119,4 +119,6 @@ func init() {
 	registerPageLangsRepublishI18n()
 	// 495：页面列表页「缺译报告」入口词条（见 register_page_translation_misses_entry_i18n.go）。
 	registerPageTranslationMissesEntryI18n()
+	// 497：系统设置页（trade 组 + 本页词条，见 register_system_settings_page.go）。
+	registerSystemSettingsPage()
 }
