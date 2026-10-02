@@ -591,9 +591,28 @@ func (h *pagesAdminHandle) PagesBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
-	// 有跳过就进 ?err=（警告条更显眼，用户下次会去看剩下那些）；全成功才进 ?done=。
+	// 受控回执（FIX-24 顺带裁决落地）：URL 里只带白名单 key 与有上限的计数，
+	// 句子由词条决定 —— 旧形态的计数是客户端可改的（模板归一化后比对，999999 与真回执同形）。
+	// 有跳过走警告槽（更显眼，用户下次会去看剩下那些），全成功走 info 槽。
+	warn := skipped > 0
+	key := noticeBulkDeleted
+	switch {
+	case deleted == 0 && skipped == 0:
+		key = noticeBulkNothing
+	case skipped > 0 && deleted > 0:
+		key = noticeBulkPartial
+	case deleted == 0:
+		key = noticeBulkSkipped
+	}
+	if q, ok := bulkNoticeQueryOf(warn, key, map[string]int{"n": deleted, "m": skipped}); ok {
+		target := "/admin/pages?" + q.Encode()
+		c.Redirect(http.StatusSeeOther, target)
+		return
+	}
+	// 写侧配置出错（key/参数拼错）：回退旧的整串回执 —— 操作者必须看到结论，
+	// 「什么都没显示」比「显示旧形状的一条提示」糟得多。
 	msg := pagesBulkDeleteResult(c, deleted, skipped)
-	if skipped > 0 {
+	if warn {
 		c.Redirect(http.StatusSeeOther, pagesBackURL(msg, ""))
 		return
 	}

@@ -322,6 +322,12 @@ func pageNoticeTexts(c *gin.Context) []string {
 
 // pagePageErr 页面管理页 ?err= 的统一出口（未命中落归口文案）。
 func pagePageErr(c *gin.Context) string {
+	// 受控回执优先（批量操作的「有跳过」走这条）：先看警告槽，命中即用它。
+	// fallback 传空串而不是归口文案：这一层只说「受控槽位里有没有东西」，
+	// 归口文案由下面的旧路径按语义决定（否则任何请求都会显示一条「内部错误」）。
+	if text := pageBulkNoticeText(c, pageBulkNoticeErr); text != "" {
+		return text
+	}
 	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
 		return shell.FacingNotice(raw, pageNoticeTexts(c))
 	})
@@ -329,6 +335,11 @@ func pagePageErr(c *gin.Context) string {
 
 // pagePageDone 页面管理页 ?done= 的统一出口（成功提示：未命中落空串）。
 func pagePageDone(c *gin.Context) string {
+	// 受控回执优先（批量操作走这条）：URL 里只有白名单 key + 有上限的计数。
+	if text := pageBulkNoticeText(c, pageBulkNoticeDone); text != "" {
+		return text
+	}
+	// 回退旧形态（单独删除 / 排期 / 重定向等入口仍用它）：语义一个字没改。
 	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
 		return shell.FacingNotice(raw, pageNoticeTexts(c))
 	})
