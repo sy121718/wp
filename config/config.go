@@ -55,6 +55,12 @@ var envBindableKeys = []string{
 	// 而 release 会改变静态资源与模板的来源 —— 悄悄不生效的代价不只是「模式没切」，
 	// 而是「按 release 部署却按 debug 跑」。
 	"server.mode",
+	// 「这条连接会不会绕过 RLS」的开关（pkg/database/rls_probe.go）：
+	// 生产服务要 true（fail fast，见 docs/rules/database.md 的 RLS 一节），
+	// 而**本地/CI 跑迁移要 false** —— 迁移走管理连接（超级用户）执行 DDL，探针在这个
+	// 场景没有意义，一旦默认 fail fast，正常运维会被自己的门禁拦住。
+	// 它属于「换个环境就得换值」这一类：同一个部署资产在服务与迁移两个场景下要两个值。
+	"database.require_rls_role",
 	// 数据库连接
 	"database.host",
 	"database.port",

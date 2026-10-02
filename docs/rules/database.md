@@ -225,6 +225,30 @@ WARN；把 `database.require_rls_role` 置 `true` 后，这两种角色会让**�
 默认 false 是刻意的（迁移与运维脚本复用同一个 database 组件、走管理连接），
 **换成应用角色之后必须置 true**，这道门禁才算闭环。切换与回滚步骤见 `docs/rls-role-cutover.md`。
 
+### `require_rls_role=true` 与「跑迁移」互斥，以及怎么解
+
+这两件事在同一个进程里是**互相排斥**的，实测下来三步都堵：
+
+1. 服务侧正确配置是 `require_rls_role: true` + `database.user = go_wp_app`（非超级、
+   `rolbypassrls=false`）；
+2. 迁移要 DDL 权限，而 `go_wp_app` 没有 —— `scripts/rls-role-setup.sh` 刻意只给它 DML 与
+   `USAGE`（**这是设计，不是遗漏**：服务连接不该有 DDL 权限）；
+3. 换成超级用户（`sky`，`rolbypassrls=true`）跑迁移，又会被探针拒（`require_rls_role=true`）；
+   而 `require_rls_role` **曾经不在 `config.envBindableKeys` 里**，环境变量覆盖不了
+   ——于是「换个角色也跑不了迁移」。
+
+**解法是让迁移能关掉探针，而不是给应用角色加 DDL 权限**：
+
+- `database.require_rls_role` 已纳入 `config/config.go` 的 `envBindableKeys`（它在「换个环境
+  就得换值」这一类：服务侧要 true、迁移场景要 false）；
+- `Makefile` 的 `migrate` 目标带 `GOWP_DATABASE_REQUIRE_RLS_ROLE=false`（**只影响这一条命令**，
+  不动服务启动路径与 `database.run_migrations` 的语义），依据就是 `pkg/database/rls_probe.go`
+  的那句「默认 `require_rls_role=false` 是刻意的：迁移与运维脚本用管理连接（超级用户）执行 DDL」。
+
+**不要用「给应用角色加 `GRANT CREATE`」来解决**：那等于把工程隔离拆掉换方便 —— 服务连接一旦
+有 DDL 权限，任何一处被攻破（SQL 注入 / 依赖漏洞 / 配置泄露）都能改结构，而 RLS 恰恰是
+「应用角色权限尽量小」这条链的最后一环。迁移的 DDL 权限属于**管理连接**，不属于运行服务的角色。
+
 ### 分区子表必须单独设
 
 **PG 的 `ENABLE` / `FORCE` 不递归到分区**（实测父表 `relrowsecurity=t`、子表全为 `f`），

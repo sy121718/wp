@@ -62,6 +62,13 @@ check: lint ## 静态检查 + CI 同款门禁脚本
 .PHONY: migrate
 # -migrate-only：只执行结构迁移与业务 seed 后退出，不启动 HTTP 服务、不监听端口。
 # 开发环境使用本机 PostgreSQL/Redis；本目标只检查本机 PostgreSQL，不依赖 Docker。
+# migrate 走**管理连接**（超级用户）执行 DDL，因此这里把 RLS 角色探针关掉：
+# `require_rls_role=true` 是**服务侧**的门禁（连进去的业务角色不许绕过 RLS），而迁移
+# 与运维脚本用的是同一个 database 组件、却必须用超级用户跑 DDL —— 探针在这个场景没有
+# 意义（迁移不读业务数据、不受 RLS 约束）。依据见 pkg/database/rls_probe.go 的注释：
+# 「默认 require_rls_role=false 是刻意的：迁移与运维脚本用管理连接（超级用户）执行 DDL」。
+# **只影响这一条命令**：服务的启动路径与 database.run_migrations 的语义都不动。
+# 绝不要用「给应用角色加 DDL 权限」来解决 —— 那是把工程隔离拆掉换方便。
 migrate: ## 执行数据库迁移与 seed（幂等；需要管理连接）
 	@echo '等待 PostgreSQL 就绪（$(PGHOST):$(PGPORT)）…'
 	@for i in $$(seq 1 30); do \
@@ -76,4 +83,5 @@ migrate: ## 执行数据库迁移与 seed（幂等；需要管理连接）
 	GOWP_DATABASE_USER='$(PGUSER)' \
 	GOWP_DATABASE_DBNAME='$(PGDATABASE)' \
 	$(if $(strip $(PGPASSWORD)),GOWP_DATABASE_PASSWORD='$(PGPASSWORD)') \
+	GOWP_DATABASE_REQUIRE_RLS_ROLE=false \
 	go run ./cmd -migrate-only
