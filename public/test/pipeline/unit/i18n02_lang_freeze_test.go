@@ -48,6 +48,10 @@ func (s *stubLangProject) DefaultLocale(ctx context.Context, projectID string) (
 	return i18n.GetDefaultLang(), nil
 }
 
+// SiteLangURLMode 工程级语言 URL 方案覆盖。本用例不涉及该维度，返回空串 =
+// 「该工程未配置」→ 解析回退全局默认方案（与实测行为一致）。
+func (s *stubLangProject) SiteLangURLMode(context.Context, string) (string, error) { return "", nil }
+
 // TestResolveSiteLangsVisibleFallsBack 预览口径：读取失败降级为默认语言一种，不报错。
 func TestResolveSiteLangsVisibleFallsBack(t *testing.T) {
 	project := &stubLangProject{err: errors.New("数据库不可用")}
@@ -164,8 +168,6 @@ func TestSiteCompileOptionsFreezeLangTableByScope(t *testing.T) {
 // TestLocaleViewFrozenLangsDriveAlternates 冻结的语言表就是互指的唯一来源：
 // 传进来的 SiteLangs 直接决定产物里的互指，不再回读工程服务。
 func TestLocaleViewFrozenLangsDriveAlternates(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	calls := 0
 	project := &stubLangProject{err: errors.New("不该被读到"), calls: &calls}
@@ -187,8 +189,6 @@ func TestLocaleViewFrozenLangsDriveAlternates(t *testing.T) {
 // TestLocaleViewForbiddenPolicyEmitsNoAlternates 发布口径下语言表不可读且调用方漏了
 // 上游检查时：宁可**没有互指**，也不产出「只指默认语言」的假互指。
 func TestLocaleViewForbiddenPolicyEmitsNoAlternates(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	project := &stubLangProject{err: errors.New("数据库不可用")}
 	alts, links := pipeline.LocaleView(pipeline.LocaleViewInput{

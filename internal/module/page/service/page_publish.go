@@ -46,6 +46,12 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	// 构建语言（多语言 P2）：请求显式指定优先，否则站点默认语言；
 	// 实际访问路径由 sitePath 单点映射（开启前缀时 /{lang}/path）。
 	lang := buildLang(req.Lang)
+	// 页面级语言排除（迁移 491）：被排除的语言本页不产出 —— 在这里拦，而不是等到
+	// 产物产出后再删（那样会白编译一份、并在访问面留下一瞬的字节）。
+	// 批量发布把这个错误记成 skipped（正常业务状态），单语言入口把它原样报给调用方。
+	if pageExcludesLang(page, lang) {
+		return nil, ErrPageLangExcluded
+	}
 	// 发布计划（审计 I18N-01）：已冻结且草稿未变 → 原样沿用；否则按当前站点语言配置
 	// 重新冻结，并在写暂存指针的同一事务里落库。路径映射用计划里的默认语言 ——
 	// 与产物里的 x-default 同源。
@@ -165,6 +171,13 @@ func (s *Service) PublishAllLanguages(ctx context.Context, req *pagedto.PublishR
 			})
 			break
 		}
+		// 页面级语言排除：跳过而不是失败 —— 作者主动把这一页从该语言撤下来是正常决策，
+		// 记 skipped 让回执如实反映「这一批发了哪几种、跳了哪几种」，不伪装成错误。
+		if pageExcludesLang(page, lang) {
+			res.Results = append(res.Results, pagedto.LangPublishResult{Lang: lang, Status: langPublishSkipped})
+			res.Skipped++
+			continue
+		}
 		if _, berr := s.Build(ctx, &pagedto.BuildReq{ID: req.ID, Lang: lang}); berr != nil {
 			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
 				Error(berr, "一键发布：语言构建失败")
@@ -202,6 +215,11 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 		return nil, err
 	}
 	lang := buildLang(req.Lang)
+	// 页面级语言排除（迁移 491）：与 Build 同一判据，堵住「直接调发布、绕过构建」的入口。
+	// 排除动作会下线该语言的产物，放它进来等于刚删掉的字节又被激活回访问面。
+	if pageExcludesLang(page, lang) {
+		return nil, ErrPageLangExcluded
+	}
 	// 发布计划（审计 I18N-01）：发布是**发布决策的落点**，这里的计划必须与暂存产物的
 	// 构建输入一致。已冻结且草稿未变时原样沿用，于是随后的确定性复构建看到的语言输入
 	// 与构建时逐字相同 —— 「第二次一致性构建看到的在线语言集合变了」这个成因被消除。
@@ -390,6 +408,9 @@ func (s *Service) publish(ctx context.Context, req *pagedto.PublishReq, refreshP
 			Error(lerr, "站点语言清单不可读，跳过 sitemap/robots 刷新（保留上一版站点文件）")
 	} else if rerr := s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot(),
 		siteLangs, s.defaultLocaleOf(ctx, page.ProjectID),
+		// 方案按**本工程**解析（publication 不认识 project 契约）：
+		// 站点文件与这个工程的页面路径必须用同一份方案。
+		string(pipeline.SiteLangURLModeOf(ctx, s.project, page.ProjectID)),
 		s.notFoundHTMLOf(ctx, page.ProjectID)); rerr != nil {
 		logger.Scene("publication").With("pageId", page.ID).Error(rerr, "sitemap/robots 刷新失败")
 	}

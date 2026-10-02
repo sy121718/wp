@@ -36,7 +36,7 @@ import (
 )
 
 // refreshFeed 生成/刷新站点级 feed（写入激活目录根，与 sitemap.xml 同级）。
-func (s *Service) refreshFeed(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang string) (err error) {
+func (s *Service) refreshFeed(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang, siteLangMode string) (err error) {
 	if projectID == "" || dir == "" {
 		return nil
 	}
@@ -49,28 +49,34 @@ func (s *Service) refreshFeed(ctx context.Context, projectID, baseURL, dir strin
 	if err != nil {
 		return err
 	}
-	items := feedItems(dir, baseURL, routes, langs, defaultLang)
-	channel := feedChannel(dir, baseURL, routes, langs, defaultLang)
+	items := feedItems(dir, baseURL, routes, langs, defaultLang, siteLangMode)
+	channel := feedChannel(dir, baseURL, routes, langs, defaultLang, siteLangMode)
 	return seo.WriteFeed(dir, channel, items, seo.FeedLimit())
 }
 
 // siteLangRule 构造站点语言 URL 规则（sitemap 分组与 feed 归属的唯一构造点）。
 //
+// siteLangMode 是调用方按**工程**解析出来的方案（pipeline.SiteLangURLModeOf）：
+// publication 不认识 project 契约，不自己查设置 —— 站点文件与构建期产物必须用
+// 同一份方案，否则 feed 里的语言归属与页面实际路径会对不上。
+//
 // 第二个返回值为 false 表示「不做语言分组」：单语言站点（langs < 2）或语言路径
 // 未分离时，路径本身就是逻辑路径，再分一次组会把条目全过滤掉。
-func siteLangRule(langs []string, defaultLang string) (rule pipeline.LangURLRule, ok bool) {
-	if !i18n.SiteLangURLsSeparated() || len(langs) < 2 {
+func siteLangRule(langs []string, defaultLang, siteLangMode string) (rule pipeline.LangURLRule, ok bool) {
+	if !i18n.SiteLangURLsSeparated(i18n.SiteLangURLMode(siteLangMode)) || len(langs) < 2 {
 		return pipeline.LangURLRule{}, false
 	}
-	return pipeline.NewLangURLRule(true, i18n.SiteLangURLPrefixDefault(), defaultLang, i18n.URLCodeOverrides()), true
+	// 规则构造与构建期同源（pipeline.LangURLRuleOf）：方案 + 默认语言 + 语言码覆盖
+	// 三样一起决定路径形态，自己拼一份就会出现「页面在 /en/about、feed 认为它在 /about」。
+	return pipeline.LangURLRuleOf(i18n.SiteLangURLMode(siteLangMode), defaultLang), true
 }
 
 // feedItems 已激活路由 → feed 条目（由 seo.BuildRSS 负责排序与截断）。
 //
 // 顺序先按「最近激活时刻倒序 → 路径升序」定好：feed 的条目上限截断发生在
 // BuildRSS 内部，若这里不先排序，「最新 N 条」会退化成「路径最小的 N 条」。
-func feedItems(dir, baseURL string, routes []pubmodel.RouteEntity, langs []string, defaultLang string) []seo.FeedItem {
-	rule, separate := siteLangRule(langs, defaultLang)
+func feedItems(dir, baseURL string, routes []pubmodel.RouteEntity, langs []string, defaultLang, siteLangMode string) []seo.FeedItem {
+	rule, separate := siteLangRule(langs, defaultLang, siteLangMode)
 	// 默认语言未知（调用方没拿到站点语言清单）时不做语言筛选：宁可多收几条，
 	// 也不能因为「不知道哪个是默认语言」而把 feed 收空。
 	separate = separate && strings.TrimSpace(defaultLang) != ""
@@ -120,12 +126,12 @@ func feedItems(dir, baseURL string, routes []pubmodel.RouteEntity, langs []strin
 // 标题与描述取默认语言首页产物的 <head>：站点名与站点描述在构建期就烘进了首页产物，
 // 而 publication 没有 project 契约可查站点设置（跨模块取数要改装配签名）。取不到时
 // 回退 host —— 空 title 的 feed 在阅读器里是没有名字的订阅源（见 seo.BuildRSS）。
-func feedChannel(dir, baseURL string, routes []pubmodel.RouteEntity, langs []string, defaultLang string) seo.FeedChannel {
+func feedChannel(dir, baseURL string, routes []pubmodel.RouteEntity, langs []string, defaultLang, siteLangMode string) seo.FeedChannel {
 	ch := seo.FeedChannel{
 		Link:     seo.JoinURL(baseURL, "/"),
 		Language: strings.TrimSpace(defaultLang),
 	}
-	for _, p := range homeCandidatePaths(langs, defaultLang) {
+	for _, p := range homeCandidatePaths(langs, defaultLang, siteLangMode) {
 		if ch.Title != "" && ch.Description != "" {
 			break
 		}
@@ -154,9 +160,9 @@ func feedChannel(dir, baseURL string, routes []pubmodel.RouteEntity, langs []str
 //
 // 三种写法都可能出现：多语言方案下默认语言根是 /index（all_prefix 下是 /{code}/index）、
 // 单语言站点是 /index 或 /。全部试一遍比「猜哪种方案」可靠。
-func homeCandidatePaths(langs []string, defaultLang string) []string {
+func homeCandidatePaths(langs []string, defaultLang, siteLangMode string) []string {
 	out := make([]string, 0, 3)
-	if rule, ok := siteLangRule(langs, defaultLang); ok && strings.TrimSpace(defaultLang) != "" {
+	if rule, ok := siteLangRule(langs, defaultLang, siteLangMode); ok && strings.TrimSpace(defaultLang) != "" {
 		if p, err := rule.Path(defaultLang, "/"); err == nil {
 			out = append(out, p)
 		}

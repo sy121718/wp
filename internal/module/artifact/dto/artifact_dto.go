@@ -8,7 +8,7 @@ import (
 // RecordReq 归档一条已落盘产物的元数据；闭包对象由服务端从 manifest 提取。
 //
 // Lang 是产物行唯一键 (pageId, version, lang) 的第三维（多语言 P3）：
-// 空 = 站点默认语言（i18n.default_lang），service 落库前统一归一化，绝不留空。
+// 空 = 全局默认语言（sys_config 的 i18n 组 default_lang），service 落库前统一归一化，绝不留空。
 type RecordReq struct {
 	ArtifactID       string          `json:"artifactId" binding:"required"`
 	PageID           string          `json:"pageId" binding:"required"`

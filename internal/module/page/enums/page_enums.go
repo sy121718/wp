@@ -5,6 +5,22 @@ import "strings"
 
 const (
 	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
+	// —— 页面级语言排除（迁移 491）——
+	//
+	// 四条哨兵的取值即 i18n key（与其它 page 错误同形）；未接好词条前，后台页在调用点
+	// 给中文兜底（page_langs_handle.go 的 pageLangErrText），不显示裸 key。
+	//
+	// ErrPageLangExcluded 该语言已被本页排除：发布 / 构建入口据此跳过。
+	// 它是**正常业务状态**（作者主动撤下该语言），批量发布记成 skipped 而不是失败。
+	ErrPageLangExcluded = "ErrPageLangExcluded"
+	// ErrCannotExcludeDefaultLang 不允许排除站点默认语言：它的产物承载 x-default，
+	// 且 default_plain 方案下「默认语言无前缀」是路径映射的锚点，排除它会让所有互指
+	// 指向一条永远不会有产物的路径。
+	ErrCannotExcludeDefaultLang = "ErrCannotExcludeDefaultLang"
+	// ErrLangAlreadyExcluded 该语言此前已被排除（幂等入口不重复下线）。
+	ErrLangAlreadyExcluded = "ErrLangAlreadyExcluded"
+	// ErrLangNotExcluded 该语言不在本页的排除集合里（无从恢复）。
+	ErrLangNotExcluded = "ErrLangNotExcluded"
 	ErrInvalidParam    = "ErrInvalidParam"    // 请求参数无效
 	ErrPageNotFound    = "ErrPageNotFound"    // 页面不存在
 	ErrProjectNotFound = "ErrProjectNotFound" // 站点工程不存在

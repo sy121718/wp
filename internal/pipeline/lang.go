@@ -11,8 +11,9 @@ package pipeline
 //   - 非默认语言 → /{短码}/about、/{短码}/index。
 //
 // 内部逻辑一律使用完整语言码（zh-CN / en-US），URL 路径段使用短码（zh / en）：
-// 映射表内置（builtinURLCodes）+ 配置覆盖（LangURLRule.Codes，来自
-// i18n.lang_url_codes）+ 确定性回退（主语言子标签小写，如 fr-CA → fr）。
+// 映射表内置（builtinURLCodes）+ 配置覆盖（LangURLRule.Codes，来自 sys_config 的
+// i18n 组 lang_url_codes —— 全局默认值的唯一来源，见 pkg/i18n/values.go）+ 确定性回退
+//（主语言子标签小写，如 fr-CA → fr）。
 //
 // 为什么语言根不占 /{code}（§4.4 硬坑，实测确认）：page_routes 只做精确路径唯一、
 // 无父子前缀互斥；LocalPublicationStore.Activate 对 /{code}/about 会先 MkdirAll
@@ -57,7 +58,7 @@ func NormalizeLang(raw string) (string, error) {
 //
 // 只收录存在业界共识短码的常见语言；未收录的语言走确定性回退（主语言子标签）。
 // 表内不出现同一短码对应两个语言码（zh-CN → zh，zh-TW → zh-tw），
-// 否则需由 i18n.lang_url_codes 显式区分。
+// 否则需由全局配置的 lang_url_codes（sys_config 的 i18n 组）显式区分。
 var builtinURLCodes = map[string]string{
 	"zh": "zh", "zh-CN": "zh", "zh-Hans": "zh", "zh-SG": "zh",
 	"zh-TW": "zh-tw", "zh-HK": "zh-hk", "zh-Hant": "zh-tw",
@@ -273,7 +274,7 @@ func (r LangURLRule) Locate(path string, langs []string) (lang, logical string, 
 }
 
 // Validate 校验启用语言在 URL 层是否互斥：两种语言映射到同一短码时必须显式
-// 配置 i18n.lang_url_codes（否则 page_routes 的 (project_id, path) 唯一键会撞车，
+// 配置 lang_url_codes（sys_config 的 i18n 组；否则 page_routes 的 (project_id, path) 唯一键会撞车，
 // 或后构建者静默覆盖前者）。默认语言在无前缀方案下不占短码，跳过。
 func (r LangURLRule) Validate(langs []string) error {
 	if !r.Separated {
@@ -290,7 +291,7 @@ func (r LangURLRule) Validate(langs []string) error {
 		}
 		code := r.URLCode(l)
 		if prev, ok := seen[code]; ok && !strings.EqualFold(prev, l) {
-			return fmt.Errorf("语言 %s 与 %s 映射到同一 URL 短码 %q：请在 i18n.lang_url_codes 显式区分", prev, l, code)
+			return fmt.Errorf("语言 %s 与 %s 映射到同一 URL 短码 %q：请在系统配置的 i18n 组 lang_url_codes 里显式区分", prev, l, code)
 		}
 		seen[code] = l
 	}

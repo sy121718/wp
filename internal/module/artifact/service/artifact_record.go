@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// normalizeLang 归一化产物语言：空 → 站点默认语言（i18n.default_lang，未初始化回退 zh-CN）。
+// normalizeLang 归一化产物语言：空 → 全局默认语言（sys_config 的 i18n 组 default_lang，未初始化回退 zh-CN）。
 //
 // 必要性：lang 是 page_artifacts 唯一键 (page_id, version, lang) 的第三维，
 // 落库为空会让唯一键退化成 (page_id, version)，同页多语言重新互相覆盖

@@ -65,6 +65,39 @@
 迁移的 `CheckSQL` 里 `?` 由迁移器传入的是**表名**；判定要用的其它值（权限点代码等）必须写进 SQL 字面量，
 否则判定恒为 0、迁移每次启动都重跑（178 踩过）。
 
+### `PREPARE` 校验只对 DML 有效，结构迁移得靠「执行 + 回读 + 重跑」
+
+AGENTS.md 里「新迁移 SQL 上线前用 `PREPARE` 静态校验」这条**只适用于 DML 迁移**（INSERT / UPDATE / DELETE / SELECT）。
+
+`PREPARE` 走的是「可优化语句」通道，**`ALTER TABLE` / `CREATE TABLE` / `COMMENT ON` 这类 DDL 一律直接报错**：
+
+```
+PREPARE chk491 AS ALTER TABLE pages ADD COLUMN IF NOT EXISTS excluded_langs text[] NOT NULL DEFAULT '{}';
+→ ERROR: syntax error at or near "ALTER"
+```
+
+这个报错**不说明 SQL 有问题**（同一条语句直接执行成功）—— 只是 `PREPARE` 不接受 DDL。
+而 `mustSQL` 只校验 embed 文件**存在**、不校验可执行，于是「Go 编译通过 + PREPARE 报错」
+很容易被读成「迁移坏了」，也可能反过来：因为怕报错而干脆不校验结构迁移。
+
+**结构迁移的验证手段**（三者都要做，缺一都会漏）：
+
+1. **真实执行**一次（开发库），确认没有语法 / 权限 / 约束错误；
+2. **目录回读**：从系统目录确认对象真的长成了要的样子 ——
+   `pg_attribute`（列名 / `format_type` / `attnotnull` / 默认值）、`pg_constraint`（约束）、
+   `pg_indexes`（索引）、`col_description`（注释）；
+3. **幂等重跑**一次，确认 0 行且不报错（`ADD COLUMN IF NOT EXISTS` 会给出
+   `NOTICE: column … already exists, skipping`，那是**成功**不是失败）。
+
+**实例（2026-10-02，迁移 491 给 `pages` 加 `excluded_langs text[]`）**：`PREPARE` 报
+`syntax error at or near "ALTER"`，改用上面三步 —— 执行 0 行（DDL 无行计数）、
+`pg_attribute` 回读确认 `text[]` / NOT NULL / 默认 `'{}'::text[]` / 注释在位、
+重跑给出 `already exists, skipping` 且**不影响存量行**（13 行全为空数组、无 NULL）。
+
+**附带一条同类陷阱**：结构迁移若指向**已存在的表**，注册时**不能填 `TableName`** ——
+`migrator.apply` 的默认 `CheckSQL` 是「表存在即跳过」，会整条跳过、ALTER 永不执行，
+于是全新库有这一列、存量库没有（484–486 与 491 都为此刻意不填，代价是文件里只能放幂等语句）。
+
 ### Migrations 先跑、Seeds 后跑
 
 **在 `register` 里做的删除，永远赢不过在 `registerSeed` 里重建它的 seed**（2026-09 实测的真实故障）。

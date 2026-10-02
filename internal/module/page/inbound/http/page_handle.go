@@ -263,6 +263,14 @@ func pageErrorStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, pageservice.ErrScheduleNotFound):
 		return http.StatusNotFound
+	// 页面级语言排除（迁移 491）：「这一页不产出该语言」/「默认语言不能排除」都是
+	// **当前状态与请求冲突**（刷新后能看到真实状态），不是调用方写错参数，
+	// 也不是内部故障 —— 归到 409 与排定占用同一档，前端据此给"可展示的业务文案"。
+	case errors.Is(err, pageservice.ErrPageLangExcluded),
+		errors.Is(err, pageservice.ErrCannotExcludeDefaultLang),
+		errors.Is(err, pageservice.ErrLangAlreadyExcluded),
+		errors.Is(err, pageservice.ErrLangNotExcluded):
+		return http.StatusConflict
 	case errors.Is(err, pageservice.ErrInvalidParam),
 		errors.Is(err, pageservice.ErrInvalidKind),
 		errors.Is(err, pageservice.ErrInvalidDocument),

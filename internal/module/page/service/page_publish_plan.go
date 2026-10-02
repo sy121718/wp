@@ -66,6 +66,16 @@ func (s *Service) frozenPublicationPlan(ctx context.Context, page *pagemodel.Pag
 			Info("草稿已更新：按当前站点语言配置重新冻结发布计划")
 		return nil, false
 	}
+	// 页面级语言排除（迁移 491）是**第二条**让既有计划失效的判据：计划里若还留着本页
+	// 现在排除的语言，继续沿用就会把那批「不产出的语言」原样写回产物（Manifest.SiteLangs、
+	// 批次口径的互指）—— 那是错的产物且看起来正常。排除集合变化属于「产出范围变了」，
+	// 与草稿变更同级：重新冻结，而不是沿用。
+	if planHasExcludedLang(plan, page.ExcludedLangs) {
+		logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
+			With("excluded", strings.Join(page.ExcludedLangs, ",")).
+			Info("本页排除了计划里包含的语言：按当前产出范围重新冻结发布计划")
+		return nil, false
+	}
 	return &plan, true
 }
 
@@ -89,6 +99,18 @@ func (s *Service) publicationPlanFor(ctx context.Context, page *pagemodel.PageEn
 	if err != nil {
 		return pipeline.PublicationPlan{}, false, err
 	}
+	// 页面级语言排除（迁移 491）在**冻结时**扣掉，而不是等发布循环里逐个跳过。
+	//
+	// 两条路径的差别不是风格，而是产物对不对：
+	//   · 只在循环里跳过 → 计划（以及写进 Manifest 的 SiteLangs）仍声称「这次发布了该语言」，
+	//     而产物根本不存在；批次口径下产物的互指直接按这份集合生成，于是出现
+	//     「hreflang 指向一条本站永远不会有产物的路径」——产物自己说的话是错的。
+	//   · 冻结时扣掉 → 产物只依赖「确实会产出的语言集合」，站点语言清单改了、排除集合
+	//     改了都通过重新冻结体现，不存在半截冻结。
+	//
+	// 由此也定了「改排除后旧计划要不要重新冻结」：**要**（见 frozenPublicationPlan 的
+	// 含排除语言即失效），否则旧计划里那份含被排除语言的集合会被后续重建忠实复现。
+	inputs = dropExcludedLangs(inputs, page.ExcludedLangs)
 	plan := pipeline.PlanOfSiteLangInputs(inputs)
 	if plan.Empty() {
 		return pipeline.PublicationPlan{}, false, pipeline.ErrLangTableUnavailable
@@ -128,6 +150,9 @@ func (s *Service) warnPlanDrift(ctx context.Context, page *pagemodel.PageEntity,
 	if err != nil || len(current) == 0 {
 		return
 	}
+	// 被本页排除的语言不在「应当产出」的集合里，必须一起扣掉：否则每次发布都会记一条
+	// 「站点移除了这些语言」的假警告（真实成因是这一页主动排除），把告警噪音当信号用。
+	current = dropExcludedLangs(pipeline.SiteLangInputs{SiteLangs: current}, page.ExcludedLangs).SiteLangs
 	added, removed := langSetDiff(plan.SiteLangs, current)
 	if added == nil && removed == nil {
 		return

@@ -23,7 +23,10 @@ func SetupProjectRoutes(rg *permission.RouteGroup, db *gorm.DB) projectcontract.
 	model := projectmodel.NewProjectModel(db)
 	svc := projectservice.NewService(model)
 	handle := NewHandle(svc)
-	restoreLangURLMode(svc)
+	// 语言 URL 方案不再做「启动恢复到进程级变量」：它按工程读
+	// （projects.settings.langURLMode，唯一解析入口 pipeline.SiteLangURLModeOf），
+	// 装配期没有需要恢复的进程状态。原先的 restoreLangURLMode 取「第一个配置了该键的
+	// 工程」写进 pkg/i18n 的包级变量，是多工程数据污染的源头，已删除。
 
 	SetupThemeRoutes(rg, db)
 	g := rg.Group("/project", builtin.SessionAuthMiddleware())

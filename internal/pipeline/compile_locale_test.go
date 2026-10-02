@@ -20,8 +20,6 @@ func TestLocaleCompileOptions(t *testing.T) {
 
 // TestHighlightPath 逻辑路径映射为本语言访问路径。
 func TestHighlightPath(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	got := HighlightPath(context.Background(), nil, "", "en-US", "/about")
 	if got != "/en/about" {

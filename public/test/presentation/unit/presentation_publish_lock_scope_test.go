@@ -32,7 +32,6 @@ import (
 	"go_wp/internal/builder/core"
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
-	"go_wp/pkg/i18n"
 )
 
 // errCompileNotOverlapped 编译阶段没等来第二个发布会话 —— 实例锁仍覆盖编译。
@@ -133,8 +132,6 @@ func TestPresentationPublishCompileRunsOutsideInstanceLock(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 	// 三种语言：一次发布会话要在编译阶段被拦住三次，跨会话会合的机会足够。
 	enableLangs(t, f, "zh-CN", "en-US", "ja-JP")
 	f.createTemplate(t)

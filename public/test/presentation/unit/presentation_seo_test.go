@@ -205,7 +205,7 @@ func TestPresentationSEOArticleUsesEntityFields(t *testing.T) {
 }
 
 // TestPresentationSEOArticleFallsBackToMainFields 文章的 SEO 标题 / 描述就是标题 / 摘要
-//（2026-09-30 字段合并后，这正是唯一的取值口径）。
+// （2026-09-30 字段合并后，这正是唯一的取值口径）。
 func TestPresentationSEOArticleFallsBackToMainFields(t *testing.T) {
 	f := newPresFixture(t)
 	if f == nil {

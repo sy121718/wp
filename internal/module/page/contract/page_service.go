@@ -25,6 +25,10 @@ type (
 	DeleteReq     = pagedto.DeleteReq
 	PageResp      = pagedto.PageResp
 	PageDraftResp = pagedto.PageDraftResp
+	// PageLangState 页面级语言排除的状态投影（迁移 491），见 PageService.PageLangStates。
+	PageLangState = pagedto.PageLangState
+	// TranslationMissRow 缺译报告的一行（页面 × 语言），见 PageService.UntranslatedPageLangs。
+	TranslationMissRow = pagedto.TranslationMissRow
 	// PageTitleResp 页面标题投影（不含 draft_document），见 PageService.ListPageTitles。
 	PageTitleResp = pagedto.PageTitleResp
 	BuildReq      = pagedto.BuildReq
@@ -244,6 +248,27 @@ type PageService interface {
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
 	List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error)
+	// —— 页面级语言排除（迁移 491）——
+
+	// —— 缺译报告（U2）——
+
+	// UntranslatedPageLangs 列出该工程缺译的（页面 × 语言），只含 misses > 0，
+	// 且已排除该语言的页面不出现在结果里（排除后不再产出，也就不存在缺译）。
+	//
+	// 数据源是产物 Manifest 的 translationMisses（构建期事实），不是实时重算 ——
+	// 实时算会得出与线上字节不一致的第二份真相（译者补了译文但没重建）。
+	UntranslatedPageLangs(ctx context.Context, projectID string) (rows []TranslationMissRow, err error)
+
+	// PageLangStates 该页各启用语言的排除 / 发布状态（默认语言在前，后台面板展示用）。
+	PageLangStates(ctx context.Context, pageID string) (rows []PageLangState, err error)
+	// ExcludePageLang 排除某语言：下线该语言产物 + 清发布/暂存/路由/计划（同一事务）+ 写排除列。
+	//
+	// 返回下线掉的路径数（0 = 该语言本来没发布过，仍是成功的排除）。
+	// 默认语言不可排除（ErrCannotExcludeDefaultLang）；已排除则 ErrLangAlreadyExcluded。
+	ExcludePageLang(ctx context.Context, pageID, lang string) (retired int, err error)
+	// RestorePageLang 解除排除（**不自动重新发布**：重新上线走常规发布入口，那一步有回执与回滚语义）。
+	RestorePageLang(ctx context.Context, pageID, lang string) error
+
 	// ListPageTitles 列出工程内页面的**标题投影**（id / 草稿路径 / 激活路径 / SEO 标题），
 	// 必须带 projectID。
 	//

@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -92,6 +93,14 @@ func StartAutoRefresh(interval time.Duration) {
 			case <-ticker.C:
 				if err := LoadCache(); err != nil {
 					logger.Error(err, "i18n 自动刷新失败")
+				}
+				// 同一个 tick 顺带刷新全局默认值（默认语言 / 站点语言 URL 方案 /
+				// 语言码覆盖，见 values.go）。为什么不另起一个 goroutine：两套定时
+				// 机制意味着两个「多久生效」的答案，而运维只记得住一个（配置面板上
+				// 写的就是 refresh_interval）。未注入配置源时静默跳过 —— 那不是故障，
+				// 每 tick 打一条只会把日志淹掉。
+				if err := refreshRuntimeValues(ctx); err != nil && !errors.Is(err, errNoValueLoader) {
+					logger.Error(err, "i18n 全局默认值刷新失败")
 				}
 			}
 		}

@@ -5,7 +5,7 @@ package pagedto
 type BuildReq struct {
 	ID              string `json:"id" binding:"required"`
 	ExpectedVersion int64  `json:"expectedVersion"`
-	// Lang 构建语言（多语言 P2）：空 = 站点默认语言（i18n.default_lang）。
+	// Lang 构建语言（多语言 P2）：空 = 全局默认语言（sys_config 的 i18n 组 default_lang）。
 	Lang string `json:"lang"`
 }
 
@@ -43,7 +43,8 @@ type PublishReq struct {
 type LangPublishResult struct {
 	// Lang 本条结果对应的语言（完整语言码）。
 	Lang string `json:"lang"`
-	// Status ok / failed（单语言失败不阻断其余语言，失败原因在 Error）。
+	// Status ok / failed / skipped（单语言失败不阻断其余语言，失败原因在 Error）。
+	// skipped = 该语言已被本页排除（作者主动决策，不是失败）。
 	Status string `json:"status"`
 	// ActiveHash 激活产物哈希（成功时回传；失败为空）。
 	ActiveHash string `json:"activeHash,omitempty"`
@@ -57,6 +58,9 @@ type PublishAllResp struct {
 	Results []LangPublishResult `json:"results"`
 	// Published 成功激活的语言数（与 Results 中 status=ok 的条数一致，便于前端速览）。
 	Published int `json:"published"`
+	// Skipped 被本页排除而跳过的语言数（status=skipped）。与 Published 分开计数：
+	// 「跳过了几种语言」是这一页的产出范围，不是本批的失败。
+	Skipped int `json:"skipped"`
 }
 
 // RollbackReq 回滚到指定历史产物。

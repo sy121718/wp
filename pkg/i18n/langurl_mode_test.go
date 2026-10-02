@@ -40,13 +40,28 @@ func TestParseSiteLangURLMode(t *testing.T) {
 	}
 }
 
-// TestSetSiteLangURLModeRoundTrip 设置页保存路径的热更新语义：写入后进程值立即变化
-// （保存即生效），这是 saveLangURLMode 双步（落库 + 热更新）中第二步的依据。
-func TestSetSiteLangURLModeRoundTrip(t *testing.T) {
-	orig := SiteLangURLModeValue()
-	defer SetSiteLangURLMode(orig)
-	SetSiteLangURLMode(SiteLangURLModeAllPrefix)
-	if got := SiteLangURLModeValue(); got != SiteLangURLModeAllPrefix {
-		t.Errorf("SetSiteLangURLMode 后进程值 = %q, 期望 all_prefix", got)
+// TestSiteLangURLModePurePredicates 方案判定是**纯函数**（入参决定结果，无全局可变状态）：
+// off 不分离路径、all_prefix 连默认语言也带前缀、default_plain 介于两者之间。
+//
+// 替代原先的「写入进程值后立即变化」round-trip 测试：那个 setter 已删除 ——
+// 方案是**工程级**的值（projects.settings.langURLMode），按工程解析（pipeline.SiteLangURLModeOf）；
+// 进程级可变值会让一个工程的设置决定另一个工程的判定，并被全局默认值的定时刷新周期打回。
+func TestSiteLangURLModePurePredicates(t *testing.T) {
+	cases := []struct {
+		mode              SiteLangURLMode
+		wantSeparated     bool
+		wantPrefixDefault bool
+	}{
+		{SiteLangURLModeOff, false, false},
+		{SiteLangURLModeDefaultPlain, true, false},
+		{SiteLangURLModeAllPrefix, true, true},
+	}
+	for _, c := range cases {
+		if got := SiteLangURLsSeparated(c.mode); got != c.wantSeparated {
+			t.Errorf("SiteLangURLsSeparated(%q) = %v, 期望 %v", c.mode, got, c.wantSeparated)
+		}
+		if got := SiteLangURLPrefixDefault(c.mode); got != c.wantPrefixDefault {
+			t.Errorf("SiteLangURLPrefixDefault(%q) = %v, 期望 %v", c.mode, got, c.wantPrefixDefault)
+		}
 	}
 }

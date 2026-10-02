@@ -1,6 +1,7 @@
 package i18n_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -54,7 +55,6 @@ func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
 	cfg.Set("database.password", "root")
 	cfg.Set("database.max_idle_conns", 1)
 	cfg.Set("database.max_open_conns", 1)
-	cfg.Set("i18n.default_lang", "en-US")
 	cfg.Set("i18n.auto_refresh", true)
 	cfg.Set("i18n.refresh_interval", "20ms")
 
@@ -80,6 +80,9 @@ func TestI18nInitUsesConfigAndAutoRefresh(t *testing.T) {
 		t.Fatalf("写入 i18n 测试数据失败: %v", err)
 	}
 
+	// 全局默认语言不再来自 viper（config.yaml 的 i18n.default_lang 已删除）：
+	// 它由装配层从 sys_config 的 i18n 组注入（pkg/i18n 的 ValueLoader），测试走同一入口。
+	stubDefaultLang(t, "en-US")
 	if err := i18n.Init(cfg); err != nil {
 		t.Fatalf("初始化 i18n 失败: %v", err)
 	}
@@ -154,8 +157,9 @@ func TestI18nReinitAppliesLatestRuntimeConfig(t *testing.T) {
 	}
 
 	reinitCfg := viper.New()
-	reinitCfg.Set("i18n.default_lang", "en-US")
 	reinitCfg.Set("i18n.auto_refresh", false)
+	// 重初始化后**重新注入**配置源：默认语言的来源是 sys_config，不是启动配置。
+	stubDefaultLang(t, "en-US")
 
 	if err := i18n.Init(reinitCfg); err != nil {
 		t.Fatalf("重初始化 i18n 失败: %v", err)
@@ -250,4 +254,20 @@ func waitForText(t *testing.T, getter func() string, expected string) {
 	}
 
 	t.Fatalf("等待 i18n 自动刷新超时: want=%s got=%s", expected, getter())
+}
+
+// stubDefaultLang 用正式入口给 i18n 的全局默认值打桩，并在用例结束复位。
+//
+// 默认语言 / 站点语言 URL 方案 / 语言码覆盖的唯一来源是 sys_config 的 i18n 组，
+// 装配层经 SetValueLoader 注入；测试里没有 sys_config，就用同一入口给值。
+func stubDefaultLang(t *testing.T, lang string) {
+	t.Helper()
+	i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) {
+		return i18n.RuntimeValues{DefaultLang: lang}, nil
+	})
+	t.Cleanup(func() {
+		// 复位到「未注入 = 代码内常量」：先注入零值把已生效的值打回常量，再摘掉 loader。
+		i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) { return i18n.RuntimeValues{}, nil })
+		i18n.SetValueLoader(nil)
+	})
 }

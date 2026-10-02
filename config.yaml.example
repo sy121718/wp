@@ -103,26 +103,35 @@ auth:
 casbin:
   enabled: true
 
-# i18n 配置（数据库为唯一数据源）
+# i18n 运行参数
+#
+# **这里不再配置业务默认值**：默认语言（default_lang）、站点语言 URL 方案
+# （site_lang_url_mode）、语言 URL 短码覆盖（lang_url_codes）的唯一来源是
+# sys_config 表的 i18n 组 —— 后台「系统设置」保存后运行期即时生效，不需要重启
+# （刷新节奏由本组的 auto_refresh / refresh_interval 驱动）。原先的兼容键
+# i18n.site_lang_prefix 已随之删除：开发阶段不留第二处可改的地方。
+#
+# 取值口径（真源：docs/06-D-site-i18n.md §5；初始行由迁移 489 灌入，语言码覆盖由迁移 490 补入）：
+#   default_lang       全局默认语言，完整语言码（zh-CN / en-US）。
+#   site_lang_url_mode 站点语言 URL 方案：
+#     default_plain = 默认语言**无前缀**（/about、/index），非默认语言用**短码**
+#                     （/en/about、/en/index）——推荐方案，初始值；
+#     all_prefix    = 全语言带短码前缀（/zh/about、/en/about），历史「全前缀」方案；
+#     off           = 全语言共用逻辑路径（/about），单语言站点兼容形态
+#                     （多语言无法同时在线，后发布者覆盖线上内容）。
+#   lang_url_codes     语言码 → URL 短码覆盖表。**当前值：en-AU → en**
+#                      （内置表本该把它映射成 en-au，即 /en-au/about；本站的英文目录走 /en/about）。
+#                      它不是空键：删掉这一项，英文目录会退回 /en-au/ 前缀，已发布链接全部悬空。
+# 注意 site_lang_url_mode 是**全局默认**（所有工程都没配 projects.settings.langURLMode 时用什么）；
+# 每个工程可以在站点设置里单独覆盖它。
+# 内部逻辑（数据库 lang 列 / sys_i18n / sys_translation / project_locales /
+# BuildContext.lang / 产物 Manifest.lang）始终使用**完整语言码**，只有 URL 路径段
+# 使用短码；映射表内置（zh-CN→zh、en-US→en …），未收录语言按「主语言子标签小写」
+# 确定性回退（fr-CA→fr），可被 lang_url_codes 覆盖；短码撞车在构建期直接报错，不静默覆盖。
 i18n:
-  default_lang: zh-CN
+  # 自动刷新开关与间隔：同时驱动词条缓存与上面那组全局默认值（共用同一个 tick）。
   auto_refresh: true
   refresh_interval: 20s
-  # 站点访问路径的语言方案（多语言 P2/P3，docs/06-D §5 方案 A'）：
-  #   default_plain = 默认语言**无前缀**（/about、/index），非默认语言用**短码**
-  #                   （/en/about、/en/index）——推荐方案，默认值；
-  #   all_prefix    = 全语言带短码前缀（/zh/about、/en/about），历史「全前缀」方案；
-  #   off           = 全语言共用逻辑路径（/about），单语言站点兼容形态
-  #                   （多语言无法同时在线，后发布者覆盖线上内容）。
-  # 内部逻辑（数据库 lang 列 / sys_i18n / sys_translation / project_locales /
-  # BuildContext.lang / 产物 Manifest.lang）始终使用**完整语言码**（zh-CN / en-US），
-  # 只有 URL 路径段使用短码；映射表内置（zh-CN→zh、en-US→en …），未收录语言按
-  # 「主语言子标签小写」确定性回退（fr-CA→fr），可用 lang_url_codes 覆盖。
-  # 兼容：旧键 site_lang_prefix（bool）仍可识别——true → all_prefix、false → off。
-  site_lang_url_mode: default_plain
-  # lang_url_codes:        # 可选：语言码 → URL 短码覆盖表（短码冲突时必须显式配置）
-  #   zh-CN: zh
-  #   en-US: en
 
 # 队列配置
 queue:

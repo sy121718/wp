@@ -15,7 +15,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 
 	"go_wp/internal/builder"
-	"go_wp/pkg/i18n"
 )
 
 // instanceStale 实例当前的 stale 标记。
@@ -49,8 +48,6 @@ func TestMarkStaleByRegistryVersionOnInstance(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	if err := f.db.Exec(
 		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) "+

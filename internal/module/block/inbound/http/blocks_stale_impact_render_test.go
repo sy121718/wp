@@ -187,7 +187,7 @@ func TestBlocksStaleImpactTierStalePage(t *testing.T) {
 	}
 	// 反向判据：页面本身不该再渲染清单 / 折叠卡 / 常驻卡。
 	for _, notWant := range []string{
-		"/blog/hello-world",                  // 清单条目
+		"/blog/hello-world",                   // 清单条目
 		`<details class="section-fold card">`, // 折叠清单
 		`<section class="card">`,              // 常驻只读卡（最早的形态）
 	} {

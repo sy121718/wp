@@ -73,6 +73,9 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
+	sysconfigmodel "go_wp/internal/module/sysconfig/model"
+	sysconfigi18nvalues "go_wp/internal/module/sysconfig/outbound/i18nvalues"
+	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	usercontract "go_wp/internal/module/user/contract"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	webhookcontract "go_wp/internal/module/webhook/contract"
@@ -83,6 +86,7 @@ import (
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/public/migrations"
@@ -313,6 +317,22 @@ func (a *assembly) buildFoundation(ready func() error) {
 		return
 	}
 	a.db = db
+
+	// 系统配置（sys_config）与 i18n 全局默认值的接线（阶段 3）。
+	//
+	// 全局默认语言 / 站点语言 URL 方案 / 语言码覆盖的**唯一来源**是 sys_config 的 i18n 组
+	// （原先在 config.yaml：改一次要重启，且散落多处）。pkg/i18n 只声明 ValueLoader 形状、
+	// 不认识业务包，这里把 sysconfig 的**只读窄口**适配后注入 —— 依赖方向 internal → pkg。
+	//
+	// 时机：紧跟 db 就绪之后、任何消费它的模块之前 —— 默认语言进产物字节（<html lang>、
+	// hreflang 的 x-default、default_plain 下哪条链接不带前缀），值被读进产物就是既有事实。
+	// 本步与「是否跳过 seed」无关（表由迁移链建，读不到组时 loader 返回空值 → pkg/i18n
+	// 退回代码内常量并记日志，不阻断启动）。
+	//
+	// onChanged 注入 Invalidate：配置保存成功后立刻重读，否则运维保存完看到的行为仍是旧的
+	// （那正是「写进库了但不生效」的老毛病）。
+	sysConfigSvc := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(db), i18n.Invalidate)
+	i18n.SetValueLoader(sysconfigi18nvalues.New(sysConfigSvc).Load)
 
 	// 业务权限 seed：权限点（sys_permission）、菜单（sys_menus）与默认超管策略（sys_casbin_rule）。
 	// 表结构迁移由装配链上的 migrations 组件负责；此处幂等执行 seed（ConditionSQL 已存在则跳过），

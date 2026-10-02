@@ -135,6 +135,8 @@
            放在表格**之上**而不是行内：面板含表单与一份排定清单，塞进某一列会把表格挤变形；
            面板标题里带页面路径，因此不依赖「它出现在哪一行下方」来表明归属。 *}
         <div id="page-schedule-host"></div>
+        {* 语言产出范围面板的落点（行内「语言」按钮）：与排定面板同形的 HTMX 片段。 *}
+        <div id="page-langs-host"></div>
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</strong>
         </div>
@@ -213,6 +215,10 @@
                         <button type="button" class="btn btn-sm btn-ghost"
                                 hx-get="/admin/page-schedules/panel?pageId={{p.ID}}"
                                 hx-target="#page-schedule-host" hx-swap="innerHTML">{{tr("admin.pages.action.schedule", "定时")}}</button>
+                        {* 语言产出范围：把该页各语言的产出状态换进 #page-langs-host（排除/恢复在片段内提交）。 *}
+                        <button type="button" class="btn btn-sm btn-ghost"
+                                hx-get="/admin/page-langs/panel?pageId={{p.ID}}"
+                                hx-target="#page-langs-host" hx-swap="innerHTML">{{tr("admin.pages.action.langs", "语言")}}</button>
                         {{if p.Active}}
                         <a class="btn btn-sm btn-ghost" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
                         {{end}}

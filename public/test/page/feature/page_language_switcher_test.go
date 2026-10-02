@@ -196,8 +196,7 @@ func TestPagePreviewLocaleLinksDefaultPlain(t *testing.T) {
 // TestPageArtifactLanguageSwitcherHiddenWithoutPrefix off 方案（各语言共用逻辑路径）时
 // 多语言映射到同一路径，切换器整块不渲染：单语言站点产物字节与 P3 之前一致。
 func TestPageArtifactLanguageSwitcherHiddenWithoutPrefix(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeOff)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
+	stubGlobalSiteLangURLMode(t, i18n.SiteLangURLModeOff)
 	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 

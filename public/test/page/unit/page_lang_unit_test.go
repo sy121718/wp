@@ -21,11 +21,27 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// withLangURLMode 切换站点语言 URL 方案（测试结束恢复默认 default_plain）。
+// withLangURLMode 切换**全局默认**方案（工程未配置时的兜底；测试结束复位）。
+//
+// 进程级 setter 已删除：全局默认方案由配置源（sys_config 的 i18n 组）注入，测试走同一
+// 入口 ValueLoader 打桩；工程级覆盖（projects.settings.langURLMode）由各用例的工程
+// settings 决定 —— 不再有「一次设置影响全进程所有工程」的旁路。
 func withLangURLMode(t *testing.T, mode i18n.SiteLangURLMode) {
 	t.Helper()
-	i18n.SetSiteLangURLMode(mode)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
+	stubGlobalSiteLangURLMode(t, mode)
+}
+
+// stubGlobalSiteLangURLMode 用正式入口给全局默认方案打桩，并在用例结束复位。
+func stubGlobalSiteLangURLMode(t *testing.T, mode i18n.SiteLangURLMode) {
+	t.Helper()
+	i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) {
+		return i18n.RuntimeValues{SiteLangURLMode: string(mode)}, nil
+	})
+	t.Cleanup(func() {
+		// 复位到「未注入 = 代码内常量」：先注入零值把已生效的值打回常量，再摘掉 loader。
+		i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) { return i18n.RuntimeValues{}, nil })
+		i18n.SetValueLoader(nil)
+	})
 }
 
 // withDefaultPlain 默认语言无前缀 + 非默认语言短码。

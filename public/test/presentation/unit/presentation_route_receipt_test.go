@@ -20,7 +20,6 @@ import (
 	contentdto "go_wp/internal/module/content/dto"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/pkg/i18n"
 )
 
 // routeFaultInjector 路由契约的故障注入包装：Activate 可被切换为「总是失败」。
@@ -80,8 +79,6 @@ func TestPresentationRouteRegisterFailureIsRecoverable(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 	enableTwoLangs(t, f)
 	f.createTemplate(t)
 

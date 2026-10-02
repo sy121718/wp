@@ -37,10 +37,58 @@ func LangURLRuleForProject(ctx context.Context, project projectcontract.ProjectS
 // 与发布计划里的冻结值（审计 I18N-01）。规则只认传进来的那一个 ——
 // 规则若自己去读一次，冻结就只剩半截（语言表冻结了、默认语言没有），
 // 而 is_default 一改，既有产物的 x-default 与「无前缀」指向都会跟着换。
+//
+// 方案（off / default_plain / all_prefix）在本函数里按**工程**解析（SiteLangURLModeOf），
+// 不再读进程级全局值：多工程下各站点可以配不同方案，读全局等于让一个工程的设置决定
+// 另一个工程的访问路径。
 func LangURLRuleForProjectWithDefault(ctx context.Context, project projectcontract.ProjectService, projectID, defaultLang string) LangURLRule {
+	return LangURLRuleOf(SiteLangURLModeOf(ctx, project, projectID), defaultLang)
+}
+
+// SiteLangURLModeOf 站点语言 URL 方案的**按工程解析**（唯一入口）。
+//
+// 取值两层，次序固定：
+//  1. 工程级 projects.settings.langURLMode（非空且合法）—— 多工程各自的开关；
+//  2. 全局默认方案（sys_config 的 i18n 组，i18n.DefaultSiteLangURLMode）——
+//     「所有工程都没配时用什么」的兜底。
+//
+// 为什么收敛到一处：方案决定「同一份文档映射到哪个访问路径」。读点分散会出现
+// 「页面按 A 方案生成、导航链接按 B 方案生成」（只差一个前缀的坏链）；而它曾经是
+// 进程级可变值（设置页保存时热更新），多工程下 A 工程的保存直接改 B 工程的判定。
+//
+// 读取失败 / 取值非法一律回退全局默认并记日志：方案是**配置**，配置读不到不该让构建
+// 失败 —— 真正的失败信号是产物路径与预期不符，而那是可见的（有日志与产物可比对）。
+func SiteLangURLModeOf(ctx context.Context, project projectcontract.ProjectService, projectID string) i18n.SiteLangURLMode {
+	if project != nil && strings.TrimSpace(projectID) != "" {
+		raw, err := project.SiteLangURLMode(ctx, projectID)
+		if err != nil {
+			logger.Scene("settings").With("project", projectID).
+				Error(err, "读取站点语言 URL 方案失败，回退全局默认方案")
+		} else if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			mode, perr := i18n.ParseSiteLangURLMode(trimmed)
+			if perr != nil {
+				logger.Scene("settings").With("project", projectID).With("raw", raw).
+					Error(perr, "站点语言 URL 方案取值非法，回退全局默认方案")
+			} else {
+				return mode
+			}
+		}
+	}
+	return i18n.DefaultSiteLangURLMode()
+}
+
+// LangURLRuleOf 由**给定**方案与默认语言构造语言 URL 规则（纯函数）。
+//
+// 与 SiteLangURLModeOf 分开是让「取值」与「构造」各只有一处：冻结口径的调用方
+// （发布编译、LocaleView）已经拿着方案，不该再解析一遍 —— 两次解析之间工程设置被改，
+// 同一次编译里就会出现两种路径形态。
+//
+// 语言码覆盖仍取全局配置（i18n.URLCodeOverrides）：它没有工程级维度，是「这个部署里
+// 某个语言码怎么显示」的部署级约定（短码撞车在构建期由 LangURLRule.Validate 拦住）。
+func LangURLRuleOf(mode i18n.SiteLangURLMode, defaultLang string) LangURLRule {
 	return NewLangURLRule(
-		i18n.SiteLangURLsSeparated(),
-		i18n.SiteLangURLPrefixDefault(),
+		i18n.SiteLangURLsSeparated(mode),
+		i18n.SiteLangURLPrefixDefault(mode),
 		defaultLang,
 		i18n.URLCodeOverrides(),
 	)
@@ -117,7 +165,8 @@ func EnabledLangs(ctx context.Context, project projectcontract.ProjectService, p
 	return langs
 }
 
-// DefaultLocale 站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
+// DefaultLocale 站点默认语言（清单 is_default，缺失回退全局默认语言 —— sys_config 的
+// i18n 组 default_lang，见 pkg/i18n/values.go）。
 func DefaultLocale(ctx context.Context, project projectcontract.ProjectService, projectID string) string {
 	if project != nil && strings.TrimSpace(projectID) != "" {
 		if d, err := project.DefaultLocale(ctx, projectID); err == nil && d != "" {
@@ -318,7 +367,15 @@ type LocaleViewInput struct {
 	// Rule 调用方**已冻结**的语言 URL 规则（审计 I18N-01）。nil = 现场构造。
 	//
 	// 与 DefaultLang 成对：规则里含默认语言，只冻结语言表不冻结默认语言等于没冻结。
+	// 规则同时含**方案**（Separated / PrefixDefault），所以冻结它也就冻结了方案。
 	Rule *LangURLRule
+
+	// SiteLangURLMode 调用方**已冻结**的站点语言 URL 方案（取值口径同 SiteLangURLModeOf）。
+	//
+	// 为空 = 未冻结：按工程解析（in.Project / in.ProjectID），与 defaultLang 的现场解析同源。
+	// 传它的理由是「同一次编译只解析一次方案」—— 判定与构规则各解析一次，两次之间工程
+	// 设置被改就会产出「按 A 方案判定、按 B 方案拼路径」的产物。
+	SiteLangURLMode string
 
 	// LangFallback 自行解析语言清单时的等级策略（SiteLangs 为空才用）。
 	// 零值 = 允许可见告警回退；发布口径的调用方要么传 SiteLangs、要么传 Forbidden。
@@ -343,7 +400,13 @@ type LocaleViewInput struct {
 //     且只跳过**非当前语言**：当前语言那一项必须保留，否则切换器里没有
 //     「你正在看的这一版」。
 func LocaleView(in LocaleViewInput) (alts []builder.Alternate, links []core.LocaleLink) {
-	if !i18n.SiteLangURLsSeparated() || strings.TrimSpace(in.ProjectID) == "" || strings.TrimSpace(in.LogicalPath) == "" {
+	// 方案：冻结入参优先，没冻结才按工程解析（与 defaultLang / rule 同一口径）。
+	// off 方案下各语言共用逻辑路径，互指与切换器都没有意义 —— 直接不产出。
+	mode, perr := i18n.ParseSiteLangURLMode(in.SiteLangURLMode)
+	if perr != nil || strings.TrimSpace(in.SiteLangURLMode) == "" {
+		mode = SiteLangURLModeOf(in.Ctx, in.Project, in.ProjectID)
+	}
+	if !i18n.SiteLangURLsSeparated(mode) || strings.TrimSpace(in.ProjectID) == "" || strings.TrimSpace(in.LogicalPath) == "" {
 		return nil, nil
 	}
 	// 语言集合的唯一来源：有批次就按批次；否则用调用方冻结的那份；再否则自行解析
@@ -367,7 +430,7 @@ func LocaleView(in LocaleViewInput) (alts []builder.Alternate, links []core.Loca
 	if defaultLang == "" {
 		defaultLang = DefaultLocale(in.Ctx, in.Project, in.ProjectID)
 	}
-	rule := LangURLRuleForProjectWithDefault(in.Ctx, in.Project, in.ProjectID, defaultLang)
+	rule := LangURLRuleOf(mode, defaultLang)
 	if in.Rule != nil {
 		rule = *in.Rule
 	}

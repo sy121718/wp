@@ -250,7 +250,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res
 
 // publishedPathOf 取该语言当前线上激活路径（page_publications 为真源）。
 //
-// 兼容口径：关闭站点语言前缀（i18n.site_lang_prefix=false）的单语言站点，
+// 兼容口径：关闭站点语言前缀（全局配置 site_lang_url_mode=off）的单语言站点，
 // pages.active_path 单值即该语言的路径，历史行（迁移 062 回填前）也按此读；
 // 开启前缀时不猜测——没有该语言的激活记录就返回空（本语言从未发布），
 // 绝不拿别的语言的路径去 Deactivate（这正是 Publish(en-US) 取消 /zh-CN/about 的根因）。
@@ -262,7 +262,7 @@ func (s *Service) publishedPathOf(ctx context.Context, page *pagemodel.PageEntit
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", err
 	}
-	if !i18n.SiteLangURLsSeparated() {
+	if !i18n.SiteLangURLsSeparated(pipeline.SiteLangURLModeOf(ctx, s.project, page.ProjectID)) {
 		return page.ActivePathValue(), nil
 	}
 	return "", nil

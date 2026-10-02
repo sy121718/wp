@@ -44,8 +44,6 @@ type feedXML struct {
 
 // TestFeedXMLParsesAndItemLinksResolve 写出的 feed 可解析、必需元素齐全、条目链接可达。
 func TestFeedXMLParsesAndItemLinksResolve(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeOff)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	dir := t.TempDir()
 	writeActiveArtifact(t, dir, "/", "<html><head><title>示例站</title>"+
@@ -55,8 +53,8 @@ func TestFeedXMLParsesAndItemLinksResolve(t *testing.T) {
 	routes := []pubmodel.RouteEntity{
 		feedTestRoute("/blog/hello", true, time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC)),
 	}
-	items := feedItems(dir, "https://e.com", routes, nil, "")
-	ch := feedChannel(dir, "https://e.com", nil, nil, "")
+	items := feedItems(dir, "https://e.com", routes, nil, "", string(i18n.SiteLangURLModeOff))
+	ch := feedChannel(dir, "https://e.com", nil, nil, "", string(i18n.SiteLangURLModeOff))
 	if err := seo.WriteFeed(dir, ch, items, seo.FeedLimit()); err != nil {
 		t.Fatalf("写 feed 失败: %v", err)
 	}
@@ -114,7 +112,7 @@ func TestRefreshFeedDisabledRemovesFeed(t *testing.T) {
 
 	t.Setenv("GO_WP_SEO_FEED", "off")
 	svc := &Service{}
-	if err := svc.refreshFeed(context.Background(), "p-1", "https://e.com", dir, nil, ""); err != nil {
+	if err := svc.refreshFeed(context.Background(), "p-1", "https://e.com", dir, nil, "", string(i18n.SiteLangURLModeOff)); err != nil {
 		t.Fatalf("关闭开关时刷新应成功（只删除），实际: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -122,12 +120,12 @@ func TestRefreshFeedDisabledRemovesFeed(t *testing.T) {
 	}
 
 	// 幂等：文件不存在时再关一次也不报错。
-	if err := svc.refreshFeed(context.Background(), "p-1", "https://e.com", dir, nil, ""); err != nil {
+	if err := svc.refreshFeed(context.Background(), "p-1", "https://e.com", dir, nil, "", string(i18n.SiteLangURLModeOff)); err != nil {
 		t.Fatalf("关闭开关的刷新应幂等，实际: %v", err)
 	}
 	// 空目录/空工程直接跳过（与 sitemap 同约定），不查库也不报错。
 	t.Setenv("GO_WP_SEO_FEED", "")
-	if err := svc.refreshFeed(context.Background(), "", "https://e.com", dir, nil, ""); err != nil {
+	if err := svc.refreshFeed(context.Background(), "", "https://e.com", dir, nil, "", string(i18n.SiteLangURLModeOff)); err != nil {
 		t.Fatalf("空工程应跳过: %v", err)
 	}
 }

@@ -69,8 +69,18 @@ type ProjectService interface {
 	ListLocales(ctx context.Context, projectID string) (res []projectdto.LocaleResp, err error)
 	// EnabledLangs 返回站点启用语言（默认语言在前；无清单时回退站点默认语言一种）。
 	EnabledLangs(ctx context.Context, projectID string) (langs []string, err error)
-	// DefaultLocale 返回站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
+	// DefaultLocale 返回站点默认语言（清单 is_default，缺失回退全局默认语言 —— sys_config 的 i18n 组 default_lang）。
 	DefaultLocale(ctx context.Context, projectID string) (lang string, err error)
+	// SiteLangURLMode 返回该工程配置的站点语言 URL 方案原文（projects.settings.langURLMode）。
+	//
+	// 未配置返回空串；取值合法性与「未配置时用什么」不在本方法判定 ——
+	// 解析与回退口径的唯一落点是 pipeline.SiteLangURLModeOf（工程值非空且合法用它，
+	// 否则回退全局默认方案）。分层判据只留一处，避免「谁来回退」有两个答案。
+	//
+	// 为什么必须是**按工程**读：方案是工程级维度（多工程可各不相同）。曾经用
+	// 「设置页保存时写 pkg/i18n 的包级变量」实现，于是 A 工程的保存会改变 B 工程的判定
+	// （数据污染），叠加全局默认值的定时刷新后还会被周期打回。进程级可变值已删除。
+	SiteLangURLMode(ctx context.Context, projectID string) (raw string, err error)
 	// SaveLocales 全量保存站点语言清单（至少一种语言、至多一个默认且默认必须启用）。
 	SaveLocales(ctx context.Context, req *projectdto.LocalesSaveReq) (res []projectdto.LocaleResp, err error)
 

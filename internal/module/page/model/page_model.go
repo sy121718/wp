@@ -64,10 +64,13 @@ type PageEntity struct {
 	StagedArtifactID  *string         `gorm:"column:staged_artifact_id"`
 	ActiveArtifactID  *string         `gorm:"column:active_artifact_id"`
 	Stale             bool            `gorm:"column:stale;not null"`
-	DeletedAt         *time.Time      `gorm:"column:deleted_at"`
-	PublishedAt       *time.Time      `gorm:"column:published_at"`
-	CreatedAt         time.Time       `gorm:"column:create_time;not null"`
-	UpdatedAt         time.Time       `gorm:"column:update_time;not null"`
+	// ExcludedLangs 本页排除的语言（迁移 491，见 page_langs_model.go）：被排除的语言
+	// 本页不产出，也不进语言切换器 / hreflang / sitemap；空数组 = 全部站点语言都产出。
+	ExcludedLangs StringArray `gorm:"column:excluded_langs;type:text[]"`
+	DeletedAt     *time.Time  `gorm:"column:deleted_at"`
+	PublishedAt   *time.Time  `gorm:"column:published_at"`
+	CreatedAt     time.Time   `gorm:"column:create_time;not null"`
+	UpdatedAt     time.Time   `gorm:"column:update_time;not null"`
 }
 
 func (PageEntity) TableName() string { return tableNamePages }

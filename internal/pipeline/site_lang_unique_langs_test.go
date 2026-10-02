@@ -71,10 +71,8 @@ func linkLangs(links []core.LocaleLink) []string {
 func TestLocaleViewLanguageSetUnique(t *testing.T) {
 	prevDefault := i18n.GetDefaultLang()
 	i18n.SetDefaultLang("zh-CN")
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
 	t.Cleanup(func() {
 		i18n.SetDefaultLang(prevDefault)
-		i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
 	})
 
 	// 批次口径（自动发布实例）：语言集合由调用方传入，重复项在这里被吸收。

@@ -23,6 +23,12 @@ var errLocaleInvalid = errors.New("语言清单不合法")
 // 直接保存会在访问面留下无人认领的 /en/… 路由。
 var errLocaleRetireNeeded = errors.New("禁用语言需要确认")
 
+// ErrLocaleNoTranslations 该语言在 sys_i18n 里没有任何启用中的词条（站点级准入门槛，U1）。
+//
+// 导出（与其它 project 业务哨兵同形）：读侧（inbound/http 的页面错误归口）要按
+// errors.Is 分类成「可展示的业务错误」，而不是落 500 + 归口文案。
+var ErrLocaleNoTranslations = errors.New("该语言没有任何界面词条")
+
 // ListLocales 列出站点语言清单（默认语言在前；无记录时返回空切片）。
 func (s *Service) ListLocales(ctx context.Context, projectID string) (res []projectdto.LocaleResp, err error) {
 	if strings.TrimSpace(projectID) == "" {
@@ -62,7 +68,7 @@ func (s *Service) EnabledLangs(ctx context.Context, projectID string) (langs []s
 	return langs, nil
 }
 
-// DefaultLocale 返回站点默认语言：清单里 is_default 那一行，缺失时回退 i18n.default_lang。
+// DefaultLocale 返回站点默认语言：清单里 is_default 那一行，缺失时回退全局默认语言（sys_config 的 i18n 组 default_lang）。
 func (s *Service) DefaultLocale(ctx context.Context, projectID string) (lang string, err error) {
 	rows, err := s.model.ListLocales(ctx, projectID)
 	if err != nil {
@@ -128,6 +134,42 @@ func (s *Service) SaveLocales(ctx context.Context, req *projectdto.LocalesSaveRe
 		}
 	}
 	rows[defaultIdx].IsDefault = true
+
+	// 站点级准入（U1）：**新增 / 新启用**的语言必须有界面词条，否则拒绝保存。
+	//
+	// 语义分工（与 U2 的「审核报告 + 一键取消」成对）：
+	//   · 这里拦的是「这个语言整体还没准备好」—— 一个词条都没有的语言上线，站点上所有
+	//     固定文案都会逐字段回退原文，运营看到的是「语言已启用」，访客看到的是原始语言；
+	//   · U2 处理的是「语言准备好了（有词条），但某些页面的内容译文没填」—— 那是内容
+	//     层面的缺失，按页面 × 语言逐条呈现并允许把某个页面从该语言撤下来。
+	//
+	// **只校新增 / 新启用**（第二次改动）：已存在的语言一律放行。否则判据将来一调整
+	// （阈值、口径、甚至 sys_i18n 一次误清理），老站点会因为存量数据被**整体拒绝保存**——
+	// 用户改不了任何东西，而原因与他正在做的操作无关。判据只作用于「这次新加进来的」。
+	//
+	// 读不到词条数（库故障）时同样拒绝：放行的后果是静默启用一个空语言，
+	// 而拒绝的后果只是「稍后重试」—— 方向取 fail closed。
+	beforeEnabled := s.enabledLangsOf(ctx, req.ProjectID)
+	wasEnabled := make(map[string]bool, len(beforeEnabled))
+	for _, l := range beforeEnabled {
+		wasEnabled[l] = true
+	}
+	for i := range rows {
+		if !rows[i].Enabled || wasEnabled[rows[i].Lang] {
+			continue
+		}
+		n, cerr := i18n.CountByLang(ctx, rows[i].Lang)
+		if cerr != nil {
+			logger.Scene("project").With("project", req.ProjectID).With("lang", rows[i].Lang).
+				Error(cerr, "校验语言词条数失败，本次保存被拒绝")
+			return nil, cerr
+		}
+		if n == 0 {
+			logger.Scene("project").With("project", req.ProjectID).With("lang", rows[i].Lang).
+				Warn("新增/新启用的语言没有任何启用中的词条，拒绝保存")
+			return nil, fmt.Errorf("%w: %s", ErrLocaleNoTranslations, rows[i].Lang)
+		}
+	}
 
 	// 禁用语言会留下一批**失去归属**的已激活路由（审计 I18N-017）：
 	// 访问面还服务着 /en/…，而语言清单里已经没有 en —— 后台再没有任何入口能改它或

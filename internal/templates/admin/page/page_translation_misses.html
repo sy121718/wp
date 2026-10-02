@@ -1,0 +1,68 @@
+{* admin/page/page_translation_misses.html — 内容缺译报告（U2）。
+   数据（page/inbound/http/page_translation_miss_handle.go 的 translationMissPageData）：
+     t / csrf_token / SelectedProject / Rows（[]translationMissRowView）/ Err / Done
+   分工（页面上也写明，避免把 U1 与 U2 混成一个开关）：
+     · 站点级准入（U1）：语言在 sys_i18n 的启用词条数 > 0 才允许启用 —— 拦「语言整体没准备好」；
+     · 本页（U2）：语言可用，但**某些页面的内容**没译 —— 逐条处理（补译文，或把这一页从该语言撤下）。
+   缺失量只给条数、不给百分比：misses 是渲染期取词未命中次数，candidates 是去重后的字段数，
+   两者量纲不同（misses > candidates 正常），相除会得出 > 100% 的假比率。 *}
+{{tr := .["t"]}}
+{{csrfToken := .["csrf_token"]}}
+{{projectID := .SelectedProject}}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{tr("admin.page.translation_misses.title", "内容缺译报告")}}</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body class="admin-shell">
+<main class="page-wrap">
+    <div class="page-head">
+        <h1>{{tr("admin.page.translation_misses.title", "内容缺译报告")}}</h1>
+        <a class="btn btn-sm btn-ghost" href="/admin/pages?project={{projectID}}">{{tr("admin.page.translation_misses.back", "返回页面列表")}}</a>
+    </div>
+    {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ .Err }}</p>{{end}}
+    {{if .Done != ""}}<p class="badge badge-info" role="status">{{ .Done }}</p>{{end}}
+    <p class="stat-note">{{tr("admin.page.translation_misses.hint", "这里列出「语言可用、但页面内容还没译」的组合：界面词条齐了（站点级准入已放行），缺的是页面内容译文。缺失数是构建期取词未命中的次数，与候选字段数量纲不同，因此不给百分比。取消该语言会把这一页从这个语言撤下来（产物下线，切换器 / hreflang / sitemap 同步移除）；补齐内容译文后重新发布即可回来。")}}</p>
+    {* 空态表头常驻（门禁 check-empty-state-table-head.sh）：table 不进 if，空态整行进 tbody。 *}
+    <div class="table-wrap table-scroll">
+        <table class="data-table">
+            <thead>
+            <tr>
+                <th>{{tr("admin.page.translation_misses.col.page", "页面")}}</th>
+                <th>{{tr("admin.page.translation_misses.col.lang", "语言")}}</th>
+                <th>{{tr("admin.page.translation_misses.col.misses", "缺失情况")}}</th>
+                <th class="col-actions">{{tr("admin.page.translation_misses.col.actions", "操作")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{if len(.Rows) == 0}}
+            <tr>
+                <td colspan="4" class="text-mute">{{tr("admin.page.translation_misses.empty", "没有缺译的页面：所有已产出的语言都取到了译文。")}}</td>
+            </tr>
+            {{else}}
+            {{range _, r := .Rows}}
+            <tr>
+                <td class="text-mono">{{r.Path}}</td>
+                <td>{{r.Lang}}</td>
+                <td><strong>{{r.Misses}}</strong> {{tr("admin.page.translation_misses.unit.misses", "处取词未命中")}} <span class="text-mute">（{{tr("admin.page.translation_misses.candidates", "候选字段")}} {{r.Candidates}}）</span></td>
+                <td class="col-actions">
+                    <form method="post" action="/api/page/translation-misses/cancel">
+                        <input type="hidden" name="csrf_token" value="{{csrfToken}}">
+                        <input type="hidden" name="project" value="{{projectID}}">
+                        <input type="hidden" name="pageId" value="{{r.PageID}}">
+                        <input type="hidden" name="lang" value="{{r.Lang}}">
+                        <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.page.translation_misses.action.cancel", "取消该语言")}}</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</main>
+</body>
+</html>

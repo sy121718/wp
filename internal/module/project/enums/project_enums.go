@@ -67,6 +67,15 @@ const (
 	ErrGSCVerificationInvalid   = "ErrGSCVerificationInvalid"   // Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）
 	ErrNotFoundHTMLTooLong      = "ErrNotFoundHTMLTooLong"      // 自定义 404 页内容过长（上限 32 KiB）
 	ErrLangURLModeInvalid       = "ErrLangURLModeInvalid"       // 语言 URL 方案取值非法（可选 off / default_plain / all_prefix）
+	// ErrLocaleNoTranslations 该语言在 sys_i18n 里没有任何启用中的词条（站点级准入门槛，U1）。
+	//
+	// 判据由用户定：「词条数 > 0 才准启用」。理由是这个语言一旦启用，界面上所有
+	// 固定文案都会走取词 —— 没有词条时整站逐字段回退原文，运营看到的是「这个语言做好了」，
+	// 访客看到的是原始语言。拦在保存时，代价是一条可读的提示；放过去，代价是整站语言失效。
+	//
+	// 文案里必须给出**下一步**（去文案管理补词条），否则运营只会反复点保存。
+	ErrLocaleNoTranslations = "ErrLocaleNoTranslations"
+
 	// 站点运费规则（站点级基础运费 / 满额免运费门槛，单位分）。
 	//
 	// 两个字段各一个 key 而不是合成一句「运费配置不合法」：这一页有十几个输入框，

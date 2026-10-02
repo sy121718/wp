@@ -1,0 +1,82 @@
+{* fragments/page_langs.html — 页面级语言排除面板（迁移 491，HTMX 服务端渲染）
+   数据（由 page/inbound/http/page_langs_handle.go 的 pageLangsPanelData 注入，**全部键总是存在**）：
+     t（取词函数）/ CSRFToken / PageID / Path / Items（[]pageLangRowView）/ Error / Done
+   一行 = 一个**站点启用语言**在本页的产出状态。列语义：
+     · 语言   —— 完整语言码
+     · 状态   —— 已排除（不产出）/ 已发布 / 未发布
+     · 说明   —— 默认语言等不可操作的原因
+     · 操作   —— 排除（会下线该语言产物）/ 恢复（只解除排除，不自动重新发布）
+   取词：本片段不经 shell.Prepare，t 由调用点注入。 *}
+{{tr := .["t"]}}
+{{pageID := .PageID}}
+{{csrf := .CSRFToken}}
+<div class="langs-panel" id="page-langs-{{pageID}}">
+    <div class="list-toolbar">
+        <strong>{{tr("admin.page.langs.title", "语言产出范围")}}</strong>
+        {{if .Path != ""}}<span class="text-mono text-mute">{{ .Path }}</span>{{end}}
+    </div>
+    {{if .Error != ""}}<p class="badge badge-warning" role="alert">{{ .Error }}</p>{{end}}
+    {{if .Done != ""}}<p class="badge badge-info" role="status">{{ .Done }}</p>{{end}}
+    {* 空态表头常驻（门禁 check-empty-state-table-head.sh）：table 不进 if，空态整行进 tbody。 *}
+    <div class="table-wrap table-scroll">
+        <table class="data-table">
+            <thead>
+            <tr>
+                <th>{{tr("admin.page.langs.col.lang", "语言")}}</th>
+                <th>{{tr("admin.page.langs.col.status", "状态")}}</th>
+                <th>{{tr("admin.page.langs.col.note", "说明")}}</th>
+                <th class="col-actions">{{tr("admin.page.langs.col.actions", "操作")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{if len(.Items) == 0}}
+            <tr>
+                <td colspan="4" class="text-mute">{{tr("admin.page.langs.empty", "这个页面还没有可展示的语言（站点语言清单为空）。")}}</td>
+            </tr>
+            {{else}}
+            {{range _, r := .Items}}
+            <tr>
+                <td class="text-mono">{{r.Lang}}</td>
+                <td>{{r.Status}}</td>
+                <td class="text-sm">{{r.Note}}</td>
+                <td class="col-actions">
+                    {{if r.Excluded}}
+                    <form method="post" action="/admin/page-langs/restore"
+                          hx-post="/admin/page-langs/restore"
+                          hx-target="#page-langs-{{pageID}}" hx-swap="outerHTML">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="pageId" value="{{pageID}}">
+                        <input type="hidden" name="lang" value="{{r.Lang}}">
+                        <button type="submit" class="btn btn-sm">{{tr("admin.page.langs.action.restore", "恢复")}}</button>
+                    </form>
+                    {{else}}
+                    <form method="post" action="/admin/page-langs/republish"
+                          hx-post="/admin/page-langs/republish"
+                          hx-target="#page-langs-{{pageID}}" hx-swap="outerHTML" class="inline-form">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="pageId" value="{{pageID}}">
+                        <input type="hidden" name="lang" value="{{r.Lang}}">
+                        <button type="submit" class="btn btn-sm">{{tr("admin.page.langs.action.republish", "重新发布")}}</button>
+                    </form>
+                    {{end}}
+                    {{if r.IsDefault}}
+                    <span class="text-mute text-sm">{{tr("admin.page.langs.action.keep", "始终产出")}}</span>
+                    {{else}}
+                    <form method="post" action="/admin/page-langs/exclude"
+                          hx-post="/admin/page-langs/exclude"
+                          hx-target="#page-langs-{{pageID}}" hx-swap="outerHTML">
+                        <input type="hidden" name="csrf_token" value="{{csrf}}">
+                        <input type="hidden" name="pageId" value="{{pageID}}">
+                        <input type="hidden" name="lang" value="{{r.Lang}}">
+                        <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.page.langs.action.exclude", "排除")}}</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+    <p class="stat-note">{{tr("admin.page.langs.note", "排除某语言会同时下线该语言已发布的产物（访问面入口随之消失），它也不再出现在语言切换器、hreflang 与 sitemap 里；恢复只解除排除，重新上线请走常规发布。")}}</p>
+</div>

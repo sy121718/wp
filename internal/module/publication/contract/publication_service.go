@@ -85,10 +85,13 @@ type PublicationService interface {
 	// 与自定义 404 页（dir 为空则跳过）。
 	// langs 为站点启用语言（默认语言在前，多语言 P3），defaultLang 用于 x-default；
 	// 二者为空时按单语言输出（与 P3 之前一致）。
+	// siteLangMode 为该工程**生效**的语言 URL 方案（off / default_plain / all_prefix）：
+	// 方案是工程级的值，解析入口只有 pipeline.SiteLangURLModeOf —— publication 不认识
+	// project 契约，不能自己查，也不能读任何「当前站点方案」的进程级状态。
 	// notFoundHTML 为站点自定义 404 页内容（projects.settings 里的 HTML）；空 = 未配置，
 	// 此时删除激活目录里既有的 404.html（激活目录直接对外服务，不删等于继续返回已下线的旧页）。
 	// 内容由调用方（page 装配层，持有 project 契约）传入 —— publication 不跨模块读站点设置。
-	RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang string, notFoundHTML string) (err error)
+	RefreshSiteFiles(ctx context.Context, projectID, baseURL, dir string, langs []string, defaultLang, siteLangMode, notFoundHTML string) (err error)
 	// DeleteRoutesByPage 清理页面全部路径占用（页面删除时释放，幂等）。
 	DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error)
 	// ListActivePathsByPresentation 返回展示实例已激活（active/redirect）的路径集合。

@@ -108,9 +108,13 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 	if lerr != nil {
 		return nil, lerr
 	}
+	// 方案按**工程**解析一次，规则与 LocaleView 共用同一份：方案决定路径形态
+	// （加不加语言前缀），同一次编译里解析两次会在两次之间工程设置被改时产出
+	// 「按 A 方案判定是否产出互指、按 B 方案拼路径」的产物。
+	mode := SiteLangURLModeOf(p.Ctx, ports.Project, p.ProjectID)
 	// 规则与默认语言同源：默认语言取自冻结输入（或同一次现场解析），
 	// 不再由规则自己去读一次 is_default。
-	rule := LangURLRuleForProjectWithDefault(p.Ctx, ports.Project, p.ProjectID, inputs.DefaultLang)
+	rule := LangURLRuleOf(mode, inputs.DefaultLang)
 	if ports.Navigation != nil {
 		opts = append(opts, builder.WithNavigationResolver(&NavigationAdapter{
 			Svc: ports.Navigation, Project: ports.Project, Ctx: p.Ctx,
@@ -181,7 +185,8 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 			// 冻结输入直接传下去：本次编译只认这一份语言表与默认语言，不再回读工程服务
 			// （两次读之间清单被改，产物与 Manifest 就会各说各话）。
 			SiteLangs: inputs.SiteLangs, DefaultLang: inputs.DefaultLang, Rule: &rule,
-			LangFallback: policy,
+			SiteLangURLMode: string(mode),
+			LangFallback:    policy,
 		})
 		if len(alts) > 1 {
 			opts = append(opts, builder.WithAlternates(alts))

@@ -115,11 +115,22 @@ type Manifest struct {
 // 消费方按同一个字段判定，不需要新认一个标记。
 const TranslationPolicyFallback = "fallback"
 
-// ManifestTranslationMisses 内容译文缺失统计（按字段计数）。
+// ManifestTranslationMisses 内容译文缺失统计。
 //
-// Candidates 是本次编译收集到的可翻译候选字段数，Misses 是其中未命中译文的字段数。
-// 两者一起才可判读：misses=3 在 candidates=3（整页没翻译）与 candidates=300
-// （只有 3 个字段漏翻）是完全不同的质量问题。
+// **两个字段量纲不同，不得相除**（这条曾经写反过，实测 `{"misses":48,"candidates":45}`
+// 就是照旧注释读出来的「>100% 缺失率」）：
+//
+//   - Candidates = 去重后的**可翻译字段数**（builder.CollectContentCandidates 去重，
+//     同一原文在文档里出现多次只算一个字段）；
+//   - Misses = 渲染期**取词未命中的调用次数**（pkg/i18n.ContentTranslator.TranslateContent
+//     每次未命中 +1）。**不去重**：同一个字段被渲染 N 次就计 N 次（列表项复用同一原文、
+//     组件重复取同一属性都会这样）。
+//
+// 因此 Misses **不是** Candidates 的子集，`misses > candidates` 是正常现象；
+// 想表达「缺了多少」，用 misses 的**绝对条数**并说明它是取词未命中次数，
+// 不要算比率（要算得先有一个「按字段去重的缺失数」，当前没有这个量）。
+// 两个值仍可一起看趋势：candidates=3 而 misses=48 说明整页都在回退原文，
+// candidates=300 而 misses=48 说明只有少数位置漏翻 —— 但这是**并列比较**，不是分母分子。
 type ManifestTranslationMisses struct {
 	Policy     string `json:"policy"`
 	Candidates int    `json:"candidates"`

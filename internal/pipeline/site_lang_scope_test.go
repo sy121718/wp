@@ -16,13 +16,10 @@ import (
 	"testing"
 
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/pkg/i18n"
 )
 
 // TestLocaleViewBatchScopeIgnoresPublished 批次口径下，published 回调一律不参与判定。
 func TestLocaleViewBatchScopeIgnoresPublished(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	// 「首发布」的复刻：这一批语言的账本行都还没写，访问面上除了本语言什么都没有。
 	never := func(string) bool { return false }
@@ -59,11 +56,13 @@ func (s stubLangProject) DefaultLocale(ctx context.Context, projectID string) (s
 	return s.langs[0], nil
 }
 
+// SiteLangURLMode 工程级语言 URL 方案覆盖。本用例不涉及该维度，返回空串 =
+// 「该工程未配置」→ 解析回退全局默认方案（与实测行为一致）。
+func (s stubLangProject) SiteLangURLMode(context.Context, string) (string, error) { return "", nil }
+
 // TestLocaleViewPageScopeKeepsPublishedFilter 没有批次时（手工 Page）退回访问面口径，
 // I18N-021 的过滤一条不少 —— 未发布的语言不进互指，当前语言一定保留。
 func TestLocaleViewPageScopeKeepsPublishedFilter(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	project := stubLangProject{langs: []string{"zh-CN", "en-US"}}
 	never := func(string) bool { return false }

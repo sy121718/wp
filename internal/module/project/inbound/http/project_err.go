@@ -78,6 +78,10 @@ func projectErrStatusText(err error, fallbackKey string) (status int, key string
 		return http.StatusBadRequest, projectenums.ErrInvalidSettings
 	case errors.Is(err, service.ErrInvalidParam):
 		return http.StatusBadRequest, projectenums.ErrInvalidParam
+	// 站点语言准入（U1）：词条数为 0 的语言被拒绝启用 —— 用户能自己修（去补词条），
+	// 属于预期内的输入问题，不该落 500 冒充系统故障。
+	case errors.Is(err, service.ErrLocaleNoTranslations):
+		return http.StatusBadRequest, projectenums.ErrLocaleNoTranslations
 
 	default:
 		// 基础设施故障（连接池 / 约束冲突 / 驱动原文）：key 落归口文案，原文只进日志。
@@ -121,6 +125,7 @@ var projectPageErrKeys = []string{
 	projectenums.ErrInvalidThemeSettings,
 	projectenums.ErrProjectRequired,
 	projectenums.ErrProjectNotFound,
+	projectenums.ErrLocaleNoTranslations,
 	projectenums.ErrInvalidName,
 	projectenums.ErrInvalidSettings,
 	projectenums.ErrInvalidParam,

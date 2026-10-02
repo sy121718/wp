@@ -21,7 +21,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationservice "go_wp/internal/module/presentation/service"
 	pubcontract "go_wp/internal/module/publication/contract"
-	"go_wp/pkg/i18n"
 )
 
 // seedPartialPublish 造出一条 presentation 的 pending 回执：
@@ -68,8 +67,6 @@ func newConvergeFixture(t *testing.T, injector *routeFaultInjector) *presFixture
 	if f == nil {
 		return nil
 	}
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 	enableTwoLangs(t, f)
 	f.createTemplate(t)
 	return f

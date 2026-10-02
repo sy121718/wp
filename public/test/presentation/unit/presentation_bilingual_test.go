@@ -22,8 +22,7 @@ func TestPresentationBilingualSiteOnline(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
+	withGlobalSiteLangURLMode(t, i18n.SiteLangURLModeDefaultPlain)
 
 	if err := f.db.Exec(
 		"INSERT INTO project_locales (project_id, lang, sort_order, is_default, enabled, create_time, update_time) VALUES (?, ?, 0, true, true, now(), now()), (?, ?, 1, false, true, now(), now())",
@@ -128,4 +127,20 @@ func TestPresentationBilingualSiteOnline(t *testing.T) {
 	if zhPaths[entity.ID] != logicalPath {
 		t.Fatalf("zh-CN locator 应返回 %q，实际 %q", logicalPath, zhPaths[entity.ID])
 	}
+}
+
+// withGlobalSiteLangURLMode 给**全局默认**方案打桩（工程未配置时的兜底），用例结束复位。
+//
+// 进程级 setter 已删除：全局默认方案由配置源（sys_config 的 i18n 组）注入，测试走同一入口
+// ValueLoader；工程级覆盖（projects.settings.langURLMode）由各用例的工程 settings 决定。
+func withGlobalSiteLangURLMode(t *testing.T, mode i18n.SiteLangURLMode) {
+	t.Helper()
+	i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) {
+		return i18n.RuntimeValues{SiteLangURLMode: string(mode)}, nil
+	})
+	t.Cleanup(func() {
+		// 复位到「未注入 = 代码内常量」：先注入零值把已生效的值打回常量，再摘掉 loader。
+		i18n.SetValueLoader(func(context.Context) (i18n.RuntimeValues, error) { return i18n.RuntimeValues{}, nil })
+		i18n.SetValueLoader(nil)
+	})
 }

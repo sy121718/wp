@@ -64,8 +64,6 @@ func feedTestRoute(path string, presentation bool, updated time.Time) pubmodel.R
 
 // TestFeedItemsCollectsArticleInstancesOnly 只收「实例归属 + 文章结构化数据」的已激活路径。
 func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeOff)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	dir := t.TempDir()
 	old := time.Date(2026, 9, 10, 8, 0, 0, 0, time.UTC)
@@ -81,7 +79,7 @@ func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
 		feedTestRoute("/products/p1", true, fresh),
 		feedTestRoute("/about", false, fresh), // 手工页面：presentation_id 为空
 	}
-	items := feedItems(dir, "https://e.com", routes, nil, "")
+	items := feedItems(dir, "https://e.com", routes, nil, "", string(i18n.SiteLangURLModeOff))
 	if len(items) != 2 {
 		t.Fatalf("应只收 2 篇文章，实际 %d 条: %+v", len(items), items)
 	}
@@ -98,8 +96,6 @@ func TestFeedItemsCollectsArticleInstancesOnly(t *testing.T) {
 
 // TestFeedItemsSkipsMissingArtifact 路径已激活但产物读不到时跳过（不产出死链条目）。
 func TestFeedItemsSkipsMissingArtifact(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeOff)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	dir := t.TempDir()
 	writeActiveArtifact(t, dir, "/blog/here", feedTestArticleHTML("在这儿", "d"))
@@ -107,7 +103,7 @@ func TestFeedItemsSkipsMissingArtifact(t *testing.T) {
 		feedTestRoute("/blog/here", true, time.Now().UTC()),
 		feedTestRoute("/blog/gone", true, time.Now().UTC()),
 	}
-	items := feedItems(dir, "https://e.com", routes, nil, "")
+	items := feedItems(dir, "https://e.com", routes, nil, "", string(i18n.SiteLangURLModeOff))
 	if len(items) != 1 || items[0].Link != "https://e.com/blog/here" {
 		t.Fatalf("产物缺失的路径应被跳过，实际 %+v", items)
 	}
@@ -115,8 +111,6 @@ func TestFeedItemsSkipsMissingArtifact(t *testing.T) {
 
 // TestFeedItemsMultiLangKeepsDefaultOnly 多语言站点只收默认语言版本（站点级 feed 一份）。
 func TestFeedItemsMultiLangKeepsDefaultOnly(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	dir := t.TempDir()
 	writeActiveArtifact(t, dir, "/blog/hello", feedTestArticleHTML("你好", "默认语言"))
@@ -127,7 +121,7 @@ func TestFeedItemsMultiLangKeepsDefaultOnly(t *testing.T) {
 		feedTestRoute("/blog/hello", true, now),
 		feedTestRoute("/en/blog/hello", true, now),
 	}
-	items := feedItems(dir, "https://e.com", routes, []string{"zh-CN", "en-US"}, "zh-CN")
+	items := feedItems(dir, "https://e.com", routes, []string{"zh-CN", "en-US"}, "zh-CN", string(i18n.SiteLangURLModeDefaultPlain))
 	if len(items) != 1 {
 		t.Fatalf("多语言站点应只收默认语言条目，实际 %+v", items)
 	}
@@ -138,8 +132,6 @@ func TestFeedItemsMultiLangKeepsDefaultOnly(t *testing.T) {
 
 // TestFeedItemsKeepsAllWhenDefaultLangUnknown 默认语言未知时不做语言筛选（宁可多收不可收空）。
 func TestFeedItemsKeepsAllWhenDefaultLangUnknown(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	dir := t.TempDir()
 	writeActiveArtifact(t, dir, "/blog/hello", feedTestArticleHTML("你好", "d"))
@@ -149,7 +141,7 @@ func TestFeedItemsKeepsAllWhenDefaultLangUnknown(t *testing.T) {
 		feedTestRoute("/blog/hello", true, now),
 		feedTestRoute("/en/blog/hello", true, now),
 	}
-	items := feedItems(dir, "https://e.com", routes, []string{"zh-CN", "en-US"}, "")
+	items := feedItems(dir, "https://e.com", routes, []string{"zh-CN", "en-US"}, "", string(i18n.SiteLangURLModeDefaultPlain))
 	if len(items) != 2 {
 		t.Fatalf("默认语言未知时不应过滤，实际 %+v", items)
 	}
@@ -157,14 +149,12 @@ func TestFeedItemsKeepsAllWhenDefaultLangUnknown(t *testing.T) {
 
 // TestFeedChannelFromHomeArtifact 站点级元信息取默认语言首页产物；缺失时回退 host。
 func TestFeedChannelFromHomeArtifact(t *testing.T) {
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeOff)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 
 	dir := t.TempDir()
 	writeActiveArtifact(t, dir, "/", "<html><head><title>示例站</title>"+
 		"<meta name=\"description\" content=\"站点描述\"></head><body></body></html>")
 
-	ch := feedChannel(dir, "https://e.com", nil, nil, "")
+	ch := feedChannel(dir, "https://e.com", nil, nil, "", string(i18n.SiteLangURLModeOff))
 	if ch.Title != "示例站" || ch.Description != "站点描述" {
 		t.Fatalf("channel 应取首页产物的 title/description，实际 %+v", ch)
 	}
@@ -174,7 +164,7 @@ func TestFeedChannelFromHomeArtifact(t *testing.T) {
 
 	// 空目录：标题回退 host（空 title 的 feed 在阅读器里没有名字）。
 	empty := t.TempDir()
-	fallback := feedChannel(empty, "https://e.com", nil, nil, "")
+	fallback := feedChannel(empty, "https://e.com", nil, nil, "", string(i18n.SiteLangURLModeOff))
 	if fallback.Title != "e.com" {
 		t.Fatalf("取不到首页产物时应回退 host，实际 %q", fallback.Title)
 	}

@@ -278,6 +278,9 @@ func (s *Service) refreshSiteFilesAfterSchedule(ctx context.Context, page *pagem
 	}
 	if rerr := s.routes.RefreshSiteFiles(ctx, page.ProjectID, siteBaseURL(), pipeline.ActiveRoot(),
 		siteLangs, s.defaultLocaleOf(ctx, page.ProjectID),
+		// 方案按**本工程**解析后传下去：publication 不认识 project 契约，
+		// 站点文件必须与这个工程的页面路径用同一份方案。
+		string(pipeline.SiteLangURLModeOf(ctx, s.project, page.ProjectID)),
 		s.notFoundHTMLOf(ctx, page.ProjectID)); rerr != nil {
 		logger.Scene("page").With("pageId", page.ID).Error(rerr, "定时上下线后刷新 sitemap/robots 失败")
 	}

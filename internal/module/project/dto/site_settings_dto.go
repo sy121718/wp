@@ -66,10 +66,15 @@ type SiteSettings struct {
 	//	off = 各语言共用逻辑路径（单语言兼容）；default_plain = 默认语言无前缀、
 	//	非默认语言短码前缀；all_prefix = 所有语言一律加短码前缀。
 	//
-	//	空 = 未在设置页配置，跟随进程启动配置（config.yaml i18n.site_lang_url_mode）。
-	//	设置页保存非空值时同步热更新进程值（i18n.SetSiteLangURLMode），启动时由装配层
-	//	从本字段恢复。它只是进程配置的「站点级覆盖」，不是第二份存储：运行时唯一
-	//	读取口仍是 pkg/i18n 的 siteLangURLMode。
+	//	空 = 未在设置页配置，跟随**全局默认**（sys_config 的 i18n 组 site_lang_url_mode：
+	//	「所有工程都没配时用什么」）。
+	//
+	//	它是**工程级**的值：构建期按工程读（唯一解析入口 pipeline.SiteLangURLModeOf ——
+	//	工程值非空且合法用它，否则回退全局默认）。保存后立即生效，因为读的就是这份 settings。
+	//
+	//	（历史）这里一度在保存时热更新 pkg/i18n 的包级变量、启动时再按「第一个配置了该键的
+	//	工程」恢复：多工程下 A 工程的保存会改变 B 工程的判定（数据污染），且全局默认值的
+	//	定时刷新会把它周期打回。该 setter 与恢复逻辑已删除。
 	LangURLMode string `json:"langURLMode,omitempty"`
 	// ShippingBaseFee 站点级基础运费（**分**；0 = 不收运费）。
 	//

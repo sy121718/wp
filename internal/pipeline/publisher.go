@@ -786,10 +786,50 @@ func draftPlan(p *PublicationPlan) *PublicationPlan {
 	return &cp
 }
 
+// freezeBuildLang 在**构建入口**冻结本次构建的目标语言（AGENTS.md 不变量 5）。
+//
+// 取值口径：冻结计划里的默认语言优先 —— `in.Plan.DefaultLang` 是本次发布已经固化下来的
+// 站点语言输入（审计 I18N-01），与产物里的 x-default、default_plain 下「哪一条不带前缀」
+// 同源；构建入口若在这里现读进程值，就会出现「语言表按计划冻结、默认语言按现场取值」，
+// 半截冻结比不冻结更难查。
+//
+// 计划为空时保持空串返回（预览、灾难恢复这类没有计划的入口），由 builder 的最后防线兜底：
+// 它们不参与「同一份构建输入两次构建必须同字节」的比对，且没有计划可用。
+//
+// 因果链（阶段 0 + 阶段 2 同一条）：默认语言单一来源化到 sys_config 之后，运行期热更
+// 成为常态 —— 正因为可热更，才必须在构建入口把它钉进冻结输入；反过来说，也就是因为
+// 这里钉住了，装配层注入 loader 才敢让保存后立即生效。
+func freezeBuildLang(in BuildInput) BuildInput {
+	if strings.TrimSpace(in.Lang) != "" {
+		return in
+	}
+	if in.Plan == nil {
+		return in
+	}
+	// 走 SiteLangInputsOfPlan 而不是直接读 Plan.DefaultLang：计划里只写了语言表、
+	// 默认语言留空的早期行由它按「默认语言在前」补首项，口径与发布冻结处同一份。
+	if inputs, ok := SiteLangInputsOfPlan(in.Plan); ok {
+		in.Lang = inputs.DefaultLang
+		return in
+	}
+	in.Lang = strings.TrimSpace(in.Plan.DefaultLang)
+	return in
+}
+
 // compileArtifact 锁外编译并落盘（纯函数，不碰 Publisher 锁）。
 // in 为锁内取出的冻结快照（页面 ID / 语言 / 路径 / 文档字节），编译期间不访问
 // rec 可变字段，因此可在锁外并行执行——慢操作不再阻塞其他页面的状态机（M2）。
 func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Artifact, err error) {
+	// 目标语言在**构建入口**冻结（AGENTS.md 不变量 5 确定性构建）。
+	//
+	// 为什么不能留给下游在 lang == "" 时现读 i18n.GetDefaultLang()：全局默认语言现在是
+	// sys_config 里**运行期可热更**的值（装配层把 sysconfig 的只读配置口注入 pkg/i18n，
+	// 保存即生效）。一旦「空语言」一路下沉到 builder（resolveCompileI18n 与
+	// RenderDocument 的同名回退），同一份构建输入就会因「取值那一刻默认语言是多少」
+	// 产出不同字节 —— 产物 hash 随之变化，故障形态是「重建就换一份产物」而**没有任何
+	// 报错**。所以发布路径的实际取值点收敛在这一处；builder 里那两处保留为最后防线
+	// （没有计划的入口才会走到那），不要再把它移回去。
+	in = freezeBuildLang(in)
 	// 依赖线索收集器随 ctx 下沉（审计 I18N-02）：装配层拿不到 BuildInput，而它才知道
 	// 「发布冻结了哪份语言表」「这次有多少字段缺译文」，只有 ctx 是这条链上已经贯通的
 	// 通道（见 WithCompileUsage）。预览路径的 Usage 是 nil，ctx 里就没有收集器。
@@ -820,6 +860,9 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 		if plan := in.Usage.PublicationPlan(); plan != nil {
 			m.SiteDefaultLang = plan.DefaultLang
 		}
+		// 缺译统计：两个字段**量纲不同**（见 ManifestTranslationMisses 的注释）——
+		// candidates 是去重后的可翻译字段数，misses 是渲染期取词未命中的**调用次数**
+		// （不去重：同一字段渲染 N 次计 N 次），因此 misses > candidates 正常、不得相除。
 		if candidates, misses := in.Usage.ContentTranslationMisses(); candidates > 0 || misses > 0 {
 			m.TranslationMisses = &ManifestTranslationMisses{
 				Policy: TranslationPolicyFallback, Candidates: candidates, Misses: misses,

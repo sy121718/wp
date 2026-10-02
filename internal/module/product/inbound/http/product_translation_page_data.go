@@ -352,9 +352,9 @@ func (h *productTranslationHandle) projectOptions(ctx context.Context, want stri
 // sourceLangOf 站点源语言。
 //
 // 判定依据（与构建期同一来源，见 pipeline.DefaultLocale）：project_locales 里 is_default
-// 的那一行；清单缺失、没有默认标记或表不可读时，project 契约自身回退 i18n.default_lang
-// （见 internal/module/project/service/locale_service.go 的 DefaultLocale），这里再加一层
-// 兜底保证源语言永远非空。
+// 的那一行；清单缺失、没有默认标记或表不可读时，project 契约自身回退全局默认语言
+// （sys_config 的 i18n 组 default_lang，见 internal/module/project/service/locale_service.go
+// 的 DefaultLocale），这里再加一层兜底保证源语言永远非空。
 // 商品文案（商品名 / 描述 / 分类名 / 品牌名 …）存的都是源语言原文，译文只对**非源语言**
 // 有意义，所以翻译目标一律从启用语言里剔掉它。
 func (h *productTranslationHandle) sourceLangOf(ctx context.Context, projectID string) string {

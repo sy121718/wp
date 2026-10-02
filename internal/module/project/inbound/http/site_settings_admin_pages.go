@@ -247,14 +247,19 @@ func (h *siteSettingsAdminHandle) fillProjectSettings(c *gin.Context, data *site
 	// 面板必须展示「现在真的在跑的那个」，否则开关的语义就是假的。
 	data.LangURLMode = strings.TrimSpace(fields.LangURLMode)
 	if data.LangURLMode == "" {
-		data.LangURLMode = string(i18n.SiteLangURLModeValue())
+		// 未配置 → 回显**全局默认**（sys_config 的 i18n 组）：
+		// 面板必须展示「这个工程现在真的在跑的那个」，否则开关的语义就是假的。
+		data.LangURLMode = string(i18n.DefaultSiteLangURLMode())
 	}
-	data.LangURLOffWarning = langURLOffWarning(data.Locales)
+	data.LangURLOffWarning = langURLOffWarning(data.LangURLMode, data.Locales)
 }
 
-// langURLOffWarning 启用多种语言且 url_mode=off 时提示（I18N-016）。
-func langURLOffWarning(rows []localeRow) bool {
-	if i18n.SiteLangURLModeValue() != i18n.SiteLangURLModeOff {
+// langURLOffWarning 启用多种语言且该工程**生效**的方案为 off 时提示（I18N-016）。
+//
+// 入参是该工程生效的方案原文（工程值，未配置时调用方已填全局默认）：不再读进程级全局值 ——
+// 那个值会让 A 工程设置页的提示按 B 工程的配置显示（多工程数据污染）。
+func langURLOffWarning(mode string, rows []localeRow) bool {
+	if strings.TrimSpace(mode) != string(i18n.SiteLangURLModeOff) {
 		return false
 	}
 	enabled := 0
@@ -665,7 +670,20 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 			projectErrRedirect(c, localesBackURL, response.TranslateMessage(c, projectenums.ErrLangURLModeInvalid))
 			return
 		}
-		if mode != i18n.SiteLangURLModeValue() {
+		// 与**该工程**当前生效的方案比较：此前比的是进程级全局值，多工程下等于拿
+		// 别的工程的设置当基准（判定本身就是错的）。未配置时基准是全局默认方案。
+		current, cerr := h.projects.SiteLangURLMode(c.Request.Context(), projectID)
+		if cerr != nil {
+			// 读不到基准时按「已变更」处理：多标记一次全站待重建是可接受的代价，
+			// 漏标记则会让「方案切换后产物路径没换」静默留在线上。
+			logger.Scene("settings").With("project", projectID).
+				Error(cerr, "读取当前语言 URL 方案失败，本次保存按已变更处理")
+			current = ""
+		}
+		if strings.TrimSpace(current) == "" {
+			current = string(i18n.DefaultSiteLangURLMode())
+		}
+		if mode != i18n.SiteLangURLMode(strings.TrimSpace(current)) {
 			modeChanged = true
 		}
 		if err := h.saveLangURLMode(c.Request.Context(), projectID, mode); err != nil {
@@ -697,9 +715,13 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 
 // saveLangURLMode 把语言 URL 方案持久化到工程 settings 并热更新进程值。
 //
-// 两步缺一不可：只热更新不落库，重启后被 config.yaml 打回；只落库不热更新，
-// 作者保存后看到的站点行为不变（产物要等重建才发现）。i18n 的 setter 自带锁，
-// 并发请求下后写者胜 —— 与「设置页最后一次保存生效」的直觉一致。
+// saveLangURLMode 把语言 URL 方案持久化到**该工程的 settings**。
+//
+// 只落库、不写任何进程级状态：方案是工程级的，构建期按工程读（pipeline.SiteLangURLModeOf）。
+// 此前这里有一步「热更新 pkg/i18n 的包级变量」，它同时造成两个缺陷 ——
+// ① 多工程下 A 工程的保存会改变 B 工程的判定（数据污染）；
+// ② 全局默认值改为由 sys_config 定时刷新后，这处热更新会被周期打回（保存最多生效 20s）。
+// 现在保存后**立即生效**：下一个读点（构建 / 预览 / 设置页回显）直接读这份 settings。
 func (h *siteSettingsAdminHandle) saveLangURLMode(ctx context.Context, projectID string, mode i18n.SiteLangURLMode) error {
 	project, err := h.projects.Detail(ctx, &projectcontract.DetailReq{ID: projectID})
 	if err != nil || project == nil {
@@ -728,46 +750,7 @@ func (h *siteSettingsAdminHandle) saveLangURLMode(ctx context.Context, projectID
 	if _, err := h.projects.Update(ctx, &projectcontract.UpdateReq{ID: projectID, Name: project.Name, Settings: settingsJSON}); err != nil {
 		return err
 	}
-	i18n.SetSiteLangURLMode(mode)
 	return nil
-}
-
-// restoreLangURLMode 启动恢复：把设置页持久化的语言 URL 方案（projects.settings.langURLMode）
-// 恢复成进程当前值。
-//
-// 为什么必须在启动时做：langURLMode 是对进程配置（config.yaml i18n.site_lang_url_mode）的
-// **站点级覆盖**，运行时唯一读取口是 pkg/i18n 的包级变量 —— 设置页保存时只热更新了内存，
-// 不在启动时读回，重启后就被 config.yaml 打回旧值，设置页的开关就只剩半个生命周期。
-//
-// 取值口径与设置页一致：取**第一个**配置了该键的工程（工程选择器默认选中第一个工程，
-// 两处同源）；恢复失败只记日志不阻断启动 —— 进程配置仍是兜底真源，失败的表现是
-// 「开关退回 config.yaml 的值」，而不是站点起不来。
-func restoreLangURLMode(svc projectcontract.ProjectService) {
-	if svc == nil {
-		return
-	}
-	projects, err := svc.List(context.Background())
-	if err != nil {
-		logger.Scene("settings").Error(err, "恢复语言 URL 方案失败：读取工程列表失败")
-		return
-	}
-	for _, p := range projects {
-		fields := projectcontract.ParseSiteSettings(p.Settings)
-		raw := strings.TrimSpace(fields.LangURLMode)
-		if raw == "" {
-			continue
-		}
-		mode, perr := i18n.ParseSiteLangURLMode(raw)
-		if perr != nil {
-			logger.Scene("settings").With("project", p.ID).With("raw", raw).
-				Error(perr, "恢复语言 URL 方案失败：取值非法，保留进程配置")
-			continue
-		}
-		i18n.SetSiteLangURLMode(mode)
-		logger.Scene("settings").With("project", p.ID).With("mode", string(mode)).
-			Info("已从站点设置恢复语言 URL 方案")
-		return
-	}
 }
 
 // markPagesStaleForLocaleChange 语言清单内容确实变化后，把全站页面标记为待重建。

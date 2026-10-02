@@ -118,6 +118,31 @@ func ListEntries(ctx context.Context, f EntryFilter) (items []Entry, total int64
 	return items, total, err
 }
 
+// CountByLang 统计某语言**启用中**的词条数（站点级语言准入门槛用，U1）。
+//
+// 口径与 LoadCache 逐字一致（status = 1）：只有会真正进内存、访客能看到的词条
+// 才算「这个语言准备好了」。把停用行算进来等于用「曾经有过词条」冒充「现在有词条」——
+// 那种语言上线后整站回退原文，而门槛却说它通过了。
+//
+// 为什么不复用 ListEntries 的 total：那个接口带分页上限与排序，为拿一个计数
+// 拉回一页数据既慢又多一层「分页语义」的耦合；计数就该只计数。
+func CountByLang(ctx context.Context, lang string) (int64, error) {
+	lang = strings.TrimSpace(lang)
+	if lang == "" {
+		return 0, ErrI18nLangEmpty
+	}
+	db, err := i18nAdminDB()
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	if err = db.WithContext(ctx).Table("sys_i18n").
+		Where("lang = ? AND status = 1", lang).Count(&n).Error; err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // GetEntry reads one exact (key, lang) pair without using a paginated list.
 func GetEntry(ctx context.Context, key, lang string) (entry *Entry, err error) {
 	key, lang = strings.TrimSpace(key), strings.TrimSpace(lang)

@@ -24,7 +24,6 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
-	"go_wp/pkg/i18n"
 )
 
 // enableLangs 写入语言清单（首个语言为默认语言），sort_order 按传入顺序。
@@ -124,8 +123,6 @@ func TestPresentationMultiLangPartialFailureNeverClaimsUnpublished(t *testing.T)
 		return
 	}
 	ctx := context.Background()
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 	enableLangs(t, f, "zh-CN", "en-US", "ja-JP")
 	f.createTemplate(t)
 
@@ -300,8 +297,6 @@ func TestPresentationMultiLangRebuildIdempotent(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain)
-	t.Cleanup(func() { i18n.SetSiteLangURLMode(i18n.SiteLangURLModeDefaultPlain) })
 	enableLangs(t, f, "zh-CN", "en-US", "ja-JP")
 	f.createTemplate(t)
 

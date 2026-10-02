@@ -5,7 +5,7 @@ package pageservice
 // 语言是构建环境维度：构建、预览、发布都必须显式携带目标语言，访问路径
 // 单点经 pipeline.LangURLRule.Path 计算（禁止各处手拼 "/" + code + path）。
 //
-// 方案（docs/06-D §5 方案 A'，配置 i18n.site_lang_url_mode）：
+// 方案（docs/06-D §5 方案 A'，取值来自 sys_config 的 i18n 组 site_lang_url_mode）：
 //   - default_plain（默认）：默认语言无前缀 /about、/index；非默认语言短码 /en/about；
 //   - all_prefix：全语言带短码前缀 /zh/about、/en/about；
 //   - off：全语言共用逻辑路径（单语言兼容）。
@@ -28,7 +28,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// buildLang 解析本次构建语言：请求显式指定优先，否则站点默认语言（i18n.default_lang）。
+// buildLang 解析本次构建语言：请求显式指定优先，否则全局默认语言（sys_config 的 i18n 组 default_lang）。
 func buildLang(requested string) string {
 	lang := strings.TrimSpace(requested)
 	if lang == "" {
@@ -39,9 +39,9 @@ func buildLang(requested string) string {
 
 // langURLRuleOf 构造站点语言 URL 规则（唯一映射点的规则载体）。
 //
-// 方案取自配置（i18n.site_lang_url_mode / 兼容键 site_lang_prefix），
-// 默认语言取自站点清单（project_locales.is_default，缺失回退 i18n.default_lang）——
-// 「默认语言无前缀」必须按站点判定，不能只看全局 i18n.default_lang。
+// 方案取自全局配置（sys_config 的 i18n 组 site_lang_url_mode；旧的兼容键 site_lang_prefix
+// 已随本批删除），默认语言取自站点清单（project_locales.is_default，缺失回退全局默认语言）——
+// 「默认语言无前缀」必须按站点判定，不能只看全局默认语言。
 func (s *Service) langURLRuleOf(ctx context.Context, projectID string) pipeline.LangURLRule {
 	return pipeline.LangURLRuleForProject(ctx, s.project, projectID)
 }
@@ -220,7 +220,7 @@ func (s *Service) enabledLangsOf(ctx context.Context, projectID string) []string
 	return pipeline.EnabledLangs(ctx, s.project, projectID)
 }
 
-// defaultLocaleOf 站点默认语言（清单 is_default，缺失回退 i18n.default_lang）。
+// defaultLocaleOf 站点默认语言（清单 is_default，缺失回退全局默认语言）。
 func (s *Service) defaultLocaleOf(ctx context.Context, projectID string) string {
 	return pipeline.DefaultLocale(ctx, s.project, projectID)
 }
