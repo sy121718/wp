@@ -22,6 +22,13 @@ const FragmentPath = "/_fragments/checkout"
 // 因此这里直接给中文；产物按当前构建语言输出同一份文字。
 const DefaultSubmitLabel = "提交订单"
 
+// 优惠码那一行的文案（与 DefaultSubmitLabel 同口径：组件固定文案目前只有中文，
+// 见上面的说明）。单独给券这一行接 i18n 会让组件内出现两套文案来源，不做。
+const (
+	CouponFieldLabel       = "优惠码"
+	CouponFieldPlaceholder = "有优惠码就填在这里"
+)
+
 // noticeNoProject 缺站点工程时的提示（编辑器画布 / 单测编译等无工程上下文的场景）。
 //
 // 为什么是提示而不是报错：组件库的「每个条目插入后都能编译」是既有契约
@@ -85,6 +92,21 @@ type GroupView struct {
 	Fields []FieldView
 }
 
+// CouponView 优惠码输入行的渲染视图。
+//
+// 为什么券**不走 Groups**（不是「字段清单里的一个字段」）：`Fields` 来自订单契约的
+// CheckoutField，描述的是收货 / 账单**地址信息**；券码是结算动作的参数，不落进地址、
+// 不参与运费与库存计算。它由组件固定渲染一行，字段名固定 `couponCode`
+// （与 runtimefragment renderCheckout 读的参数名一致），也不做开关 ——
+// 券是结算的通用能力：有输入框而无券可用只是「填了会被明确拒绝」，无害；
+// 而没有入口则等于券对访客整体不可用。
+type CouponView struct {
+	// Label 输入框标签（空 = 整行不渲染）。
+	Label string
+	// Placeholder 占位提示（空则不输出属性）。
+	Placeholder string
+}
+
 // View 结算表单渲染视图（供 checkoutform.jet 使用）。
 type View struct {
 	// Notice 非空表示本组件处于「不可用」状态（缺站点工程）：只渲染提示，不渲染表单。
@@ -95,6 +117,8 @@ type View struct {
 	SubmitLabel string
 	// Groups 分组后的字段。
 	Groups []GroupView
+	// Coupon 优惠码输入行（见 CouponView）。
+	Coupon CouponView
 	// Hidden 隐藏字段（projectId / lang）。
 	Hidden []HiddenView
 }
@@ -173,7 +197,11 @@ func BuildView(p *Props, ctx *core.RenderContext) (View, error) {
 		Action:      FragmentPath,
 		SubmitLabel: submit,
 		Groups:      groups,
-		Hidden:      hidden,
+		Coupon: CouponView{
+			Label:       CouponFieldLabel,
+			Placeholder: CouponFieldPlaceholder,
+		},
+		Hidden: hidden,
 	}, nil
 }
 

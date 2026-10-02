@@ -80,6 +80,15 @@ type CartCheckoutReq struct {
 	// Locale 访客语言（决定自动开号的初始密码邮件用哪套模板）。
 	Locale string
 
+	// CouponCode 优惠码（可选，空 = 不用券）。
+	//
+	// 这里**只做透传**：归一化（去空白转大写）、试算折扣与核销全在 order 侧
+	// （normalizeCouponCode / resolveCoupon / redeemCouponTx），且核销发生在**建单事务内**——
+	// 在 cart 侧重写一份券规则，必然与后台代客建单页那条路径漂移，而漂移只在写库那一刻暴露。
+	// 券不可用的原因由 order 的 enums 分四种给出（不存在 / 已过期 / 不可用 / 已达限次），
+	// 不要在这里压成一句「优惠码无效」。
+	CouponCode string
+
 	Tracking TrackCookies
 
 	// 以下由 inbound 覆盖写入，客户端不可伪造。

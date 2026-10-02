@@ -207,6 +207,9 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		Email:     paramOf(r, "email"),
 		Name:      paramOf(r, "name"),
 		Phone:     paramOf(r, "phone"),
+		// 优惠码（可选）：结算表单里那一行由 core.checkoutForm 渲染，字段名就是 couponCode。
+		// 只透传 —— 试算与核销都在 order 的建单事务里，券不可用的原因也由它分四种给出。
+		CouponCode: paramOf(r, "couponCode"),
 		Shipping: orderdto.OrderAddress{
 			// 收货人与电话缺省沿用联系人：绝大多数订单两者一致，
 			// 让访客为「我要寄给别人」再填一遍是把他当成了异常情况。

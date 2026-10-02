@@ -95,6 +95,30 @@ func TestCheckoutFormRendersNativeForm(t *testing.T) {
 	}
 }
 
+// TestCheckoutFormRendersCouponField 结算表单固定渲染一行优惠码，字段名与片段端一致。
+//
+// 钉的是**两端接得上**：组件输出 name="couponCode"，而 runtimefragment 的 renderCheckout
+// 就读 paramOf(r, "couponCode")。名字写错属于静默失效：表单照常渲染、提交时券被当成没填，
+// 页面上完全看不出异常 —— 与 projectId / lang 必须走隐藏字段（不能只挂 URL）是同一类判据。
+func TestCheckoutFormRendersCouponField(t *testing.T) {
+	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)
+
+	for _, want := range []string{
+		`<fieldset class="sky-checkout-group sky-checkout-coupon" data-group="coupon">`,
+		`name="couponCode"`,
+		`优惠码`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("产物缺少 %q\nHTML=%s", want, html)
+		}
+	}
+	// 券码是普通文本输入：不是 country（没有选项）、不是 textarea（H5 里券码是短串）。
+	if strings.Contains(html, `<select id="sky-checkout-cf1-couponCode"`) ||
+		strings.Contains(html, `<textarea id="sky-checkout-cf1-couponCode"`) {
+		t.Fatalf("券码不该渲染成下拉或文本域\nHTML=%s", html)
+	}
+}
+
 // TestCheckoutFormCountrySelectBaked 国家字段：原生 select + 构建期烘焙选项 + 默认国家预选中。
 func TestCheckoutFormCountrySelectBaked(t *testing.T) {
 	html := compileCheckoutDoc(t, checkoutDocument, checkoutCompileOptions(t)...)

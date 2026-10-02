@@ -100,6 +100,9 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 		Remark:             strings.TrimSpace(req.Remark),
 		RequestID:          strings.TrimSpace(req.RequestID),
 		Locale:             req.Locale,
+		// 券码只做透传：试算与核销都在 order 侧的建单事务里（见 CartCheckoutReq.CouponCode
+		// 的注释）—— 券无效会以 order 的 enums 原因返回，这里不预判、不改写。
+		CouponCode: strings.TrimSpace(req.CouponCode),
 		// 归因在下单这一刻从 cookie 定格（cookie 之后会过期、来源会被覆盖）。
 		Attribution: buildAttribution(req.Tracking, req.UserAgent, now),
 		UserID:      req.UserID,
