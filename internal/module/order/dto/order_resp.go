@@ -13,27 +13,29 @@ import (
 
 // OrderResp 订单头视图。
 type OrderResp struct {
-	ID                 uint64          `json:"id"`
-	ProjectID          string          `json:"projectId"`
-	OrderNo            string          `json:"orderNo"`
-	Status             string          `json:"status"`
-	UserID             *uint64         `json:"userId"`
-	CustomerEmail      string          `json:"customerEmail"`
-	CustomerName       string          `json:"customerName"`
-	CustomerPhone      string          `json:"customerPhone"`
-	Currency           string          `json:"currency"`
-	Subtotal           int64           `json:"subtotal"`
-	DiscountTotal      int64           `json:"discountTotal"`
-	ShippingTotal      int64           `json:"shippingTotal"`
-	TaxTotal           int64           `json:"taxTotal"`
-	Total              int64           `json:"total"`
-	ShipName           string          `json:"shipName"`
-	ShipPhone          string          `json:"shipPhone"`
-	ShipProvince       string          `json:"shipProvince"`
-	ShipCity           string          `json:"shipCity"`
-	ShipDistrict       string          `json:"shipDistrict"`
-	ShipAddress        string          `json:"shipAddress"`
-	ShipZip            string          `json:"shipZip"`
+	ID            uint64  `json:"id"`
+	ProjectID     string  `json:"projectId"`
+	OrderNo       string  `json:"orderNo"`
+	Status        string  `json:"status"`
+	UserID        *uint64 `json:"userId"`
+	CustomerEmail string  `json:"customerEmail"`
+	CustomerName  string  `json:"customerName"`
+	CustomerPhone string  `json:"customerPhone"`
+	Currency      string  `json:"currency"`
+	Subtotal      int64   `json:"subtotal"`
+	DiscountTotal int64   `json:"discountTotal"`
+	ShippingTotal int64   `json:"shippingTotal"`
+	TaxTotal      int64   `json:"taxTotal"`
+	Total         int64   `json:"total"`
+	ShipName      string  `json:"shipName"`
+	ShipPhone     string  `json:"shipPhone"`
+	ShipProvince  string  `json:"shipProvince"`
+	ShipCity      string  `json:"shipCity"`
+	ShipDistrict  string  `json:"shipDistrict"`
+	ShipAddress   string  `json:"shipAddress"`
+	ShipZip       string  `json:"shipZip"`
+	// ShipCountry / BillCountry 国家/地区代码快照（ISO 3166-1 alpha-2，空 = 未收集）。
+	ShipCountry        string          `json:"shipCountry"`
 	BillName           string          `json:"billName"`
 	BillPhone          string          `json:"billPhone"`
 	BillProvince       string          `json:"billProvince"`
@@ -41,6 +43,7 @@ type OrderResp struct {
 	BillDistrict       string          `json:"billDistrict"`
 	BillAddress        string          `json:"billAddress"`
 	BillZip            string          `json:"billZip"`
+	BillCountry        string          `json:"billCountry"`
 	PaymentMethod      string          `json:"paymentMethod"`
 	PaymentMethodTitle string          `json:"paymentMethodTitle"`
 	TransactionID      string          `json:"transactionId"`

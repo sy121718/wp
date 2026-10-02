@@ -19,6 +19,7 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 	productcontract "go_wp/internal/module/product/contract"
 	usercontract "go_wp/internal/module/user/contract"
+	"go_wp/pkg/i18n"
 )
 
 // orderDraft 建单的中间结果：订单头、订单项、命中的优惠码、访客开号结果。
@@ -114,7 +115,12 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		CustomerEmail: email,
 		CustomerName:  strings.TrimSpace(req.CustomerName),
 		CustomerPhone: strings.TrimSpace(req.CustomerPhone),
-		Currency:      "CNY",
+		// 币种取全局默认（进程内缓存值，不查库）：币种是**标签**，金额仍是数值（分），
+		// 按产品口径货币由后台全局限定为单值、前台不提供货币选择。
+		//
+		// 这一列是**下单当时的快照**（快照原则）：改配置只影响此后新建的订单，
+		// 历史订单的 currency 不动 —— 订单详情要还原的是「当时是什么」。
+		Currency:      orderCurrency(),
 		Subtotal:      subtotal,
 		DiscountTotal: discount,
 		// 会员折扣与券各自独立计账（相加扣减）：这一列与 DiscountTotal 一起构成总扣减，
@@ -131,24 +137,28 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		ShipDistrict:            strings.TrimSpace(req.Shipping.District),
 		ShipAddress:             strings.TrimSpace(req.Shipping.Address),
 		ShipZip:                 strings.TrimSpace(req.Shipping.Zip),
-		BillName:                strings.TrimSpace(req.Billing.Name),
-		BillPhone:               strings.TrimSpace(req.Billing.Phone),
-		BillProvince:            strings.TrimSpace(req.Billing.Province),
-		BillCity:                strings.TrimSpace(req.Billing.City),
-		BillDistrict:            strings.TrimSpace(req.Billing.District),
-		BillAddress:             strings.TrimSpace(req.Billing.Address),
-		BillZip:                 strings.TrimSpace(req.Billing.Zip),
-		PaymentMethod:           strings.TrimSpace(req.PaymentMethod),
-		PaymentMethodTitle:      strings.TrimSpace(req.PaymentMethodTitle),
-		CreatedVia:              createdVia,
-		IPAddress:               strings.TrimSpace(req.IPAddress),
-		UserAgent:               strings.TrimSpace(req.UserAgent),
-		RequestID:               strings.TrimSpace(req.RequestID),
-		Remark:                  strings.TrimSpace(req.Remark),
-		AdminNote:               strings.TrimSpace(req.AdminNote),
-		CreateBy:                req.CreateBy,
-		CreateTime:              now,
-		UpdateTime:              now,
+		// 国家代码只做 TrimSpace，与同一批地址列一致：形状校验（两个 ASCII 字母、大写归一化）
+		// 落在**收参处**（结算表单是客户端可控输入），落库层不重复一份规则。
+		ShipCountry:        strings.TrimSpace(req.Shipping.Country),
+		BillName:           strings.TrimSpace(req.Billing.Name),
+		BillPhone:          strings.TrimSpace(req.Billing.Phone),
+		BillProvince:       strings.TrimSpace(req.Billing.Province),
+		BillCity:           strings.TrimSpace(req.Billing.City),
+		BillDistrict:       strings.TrimSpace(req.Billing.District),
+		BillAddress:        strings.TrimSpace(req.Billing.Address),
+		BillZip:            strings.TrimSpace(req.Billing.Zip),
+		BillCountry:        strings.TrimSpace(req.Billing.Country),
+		PaymentMethod:      strings.TrimSpace(req.PaymentMethod),
+		PaymentMethodTitle: strings.TrimSpace(req.PaymentMethodTitle),
+		CreatedVia:         createdVia,
+		IPAddress:          strings.TrimSpace(req.IPAddress),
+		UserAgent:          strings.TrimSpace(req.UserAgent),
+		RequestID:          strings.TrimSpace(req.RequestID),
+		Remark:             strings.TrimSpace(req.Remark),
+		AdminNote:          strings.TrimSpace(req.AdminNote),
+		CreateBy:           req.CreateBy,
+		CreateTime:         now,
+		UpdateTime:         now,
 	}
 	if head.Attribution, err = marshalAttribution(req.Attribution); err != nil {
 		return nil, err
@@ -299,4 +309,19 @@ func (s *Service) ensureGuestAccount(ctx context.Context, req *orderdto.CreateOr
 	}
 	id := gres.UserID
 	return &id, gres.Created && gres.PasswordMailed
+}
+
+// orderCurrency 新建订单的币种标签。
+//
+// 币种是**标签**：金额本来就是数值（分），改币种只改标签 —— 按产品口径货币由后台
+// 全局限定为单值、前台不提供货币选择（用户只能改自己的地区）。
+// 读的是 pkg/i18n 的进程内缓存值（装配期载入、tick 与保存后刷新），不在请求路径查库。
+//
+// 注意：orders.currency 是**下单当时的快照**，本函数只在建单时取值 ——
+// 历史订单的币种不随配置变化（订单详情要还原「当时是什么」）。
+func orderCurrency() string {
+	if v := strings.TrimSpace(i18n.GetDefaultCurrency()); v != "" {
+		return v
+	}
+	return "CNY"
 }

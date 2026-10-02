@@ -49,6 +49,21 @@ func (a Adapter) Load(ctx context.Context) (i18n.RuntimeValues, error) {
 		return i18n.RuntimeValues{}, nil
 	}
 	values, problems := RuntimeValuesOf(group.Data)
+	// trade 组（全局默认国家 / 货币）：与 i18n 组同一次刷新里读出来，**不新增刷新机制** ——
+	// 交易默认值只有展示与结构化数据两个读取方（见 pkg/i18n.RuntimeValues.DefaultCurrency），
+	// 走的就是「装配期载入 + StartAutoRefresh 的 tick + 保存后 Invalidate」这条既有链路。
+	//
+	// 组不存在（还没跑迁移 497）不是错误：与 i18n 组同一口径，回退代码内常量继续跑。
+	if trade, terr := a.reader.GetGroup(ctx, sysconfigcontract.GroupTrade); terr == nil && trade != nil {
+		if v, ok := trade.Data["default_country"].(string); ok {
+			values.DefaultCountry = strings.TrimSpace(v)
+		}
+		if v, ok := trade.Data["default_currency"].(string); ok {
+			values.DefaultCurrency = strings.TrimSpace(v)
+		}
+	} else if terr != nil && !errors.Is(terr, sysconfigcontract.ErrGroupNotFound) {
+		return i18n.RuntimeValues{}, terr
+	}
 	// 有问题的键必须留痕：类型写错的键会被当成「没配」，表现为「配置改了没生效」，
 	// 而人只会怀疑自己没保存（迁移 484 的列注释：组内键由代码白名单约束、
 	// 解析失败一律回退默认值 —— 回退是**可见的**，不是静默的）。

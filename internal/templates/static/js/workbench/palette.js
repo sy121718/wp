@@ -51,7 +51,7 @@ export const paletteTypeOrder = [
     'core.countdown', 'core.icon', 'core.badge', 'core.breadcrumb', 'core.progress',
     'core.loader', 'core.rating', 'core.form', 'core.product', 'core.productCard',
     'core.productList', 'core.productSelector', 'core.addToCart', 'core.cartIcon',
-    'core.orderList', 'core.searchResults', 'core.userForms'
+    'core.orderList', 'core.searchResults', 'core.userForms', 'core.checkoutForm'
 ];
 
 /** 组件库全部类型：排序表在前的先出，其余按字典序追加（新组件自动可见）。 */

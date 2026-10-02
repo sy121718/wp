@@ -58,7 +58,10 @@ func returnStatusText(tr translate, status string) string {
 }
 
 // returnDetailView 退货单详情（单头 + 逐行明细 + 订单摘要 + 按状态决定的操作）→ 模板视图。
-func returnDetailView(tr translate, d *orderdto.ReturnDetailResp, filter returnFilter, projectID string, page, limit int) gin.H {
+//
+// countryLabel 与订单详情页同一条解析（当前界面语言的国家名，nil = 未接入时显示代码）。
+func returnDetailView(tr translate, d *orderdto.ReturnDetailResp, filter returnFilter, projectID string, page, limit int,
+	countryLabel func(string) string) gin.H {
 	if d == nil || d.Return == nil {
 		return gin.H{}
 	}
@@ -99,8 +102,10 @@ func returnDetailView(tr translate, d *orderdto.ReturnDetailResp, filter returnF
 			"CustomerEmail": orderTextOrEmpty(o.CustomerEmail),
 			"ShipName":      orderTextOrEmpty(o.ShipName),
 			"ShipPhone":     orderTextOrEmpty(o.ShipPhone),
-			"ShipAddress": orderAddressLabel(o.ShipProvince, o.ShipCity, o.ShipDistrict,
-				o.ShipAddress, o.ShipZip),
+			// 国家/地区与订单详情页同一口径：放在地址最前，值取订单快照里的代码，
+			// 渲染前换成当前语言的名字（查不到回落代码）。
+			"ShipAddress": orderAddressLabel(applyCountryLabel(countryLabel, o.ShipCountry),
+				o.ShipProvince, o.ShipCity, o.ShipDistrict, o.ShipAddress, o.ShipZip),
 		}
 	}
 

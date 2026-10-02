@@ -33,6 +33,7 @@ package presentationservice
 import (
 	"encoding/json"
 	"fmt"
+	"go_wp/pkg/i18n"
 	"regexp"
 	"strconv"
 	"strings"
@@ -211,9 +212,13 @@ func productOfferLD(entityType string, writable []string, resolver core.ContentR
 		return nil
 	}
 	offer := &builder.ProductOfferLD{
-		SKU:           read("sku"),
-		Price:         price,
-		PriceCurrency: "CNY",
+		SKU:   read("sku"),
+		Price: price,
+		// 币种取**全局默认**（进程内缓存值，不查库）：这一层是展示 / 结构化数据，
+		// 接上不会动任何金额口径 —— 购物车与订单的金额仍固定人民币（那里的常量
+		// 不能跟着本值走，否则会造出「配置设成 USD、订单落 USD，金额却按人民币算」
+		// 的新不一致，见 pkg/i18n.RuntimeValues.DefaultCurrency 的注释）。
+		PriceCurrency: i18n.GetDefaultCurrency(),
 		Availability:  "InStock",
 	}
 	if variants := read("variants"); variants == "" || variants == "[]" {

@@ -299,7 +299,7 @@ func (s *Service) Detail(ctx context.Context, req *mediato.DetailReq) (*mediato.
 		return nil, err
 	}
 	resp := entityToResp(e)
-	// 详情填充变体状态（thumb/medium/webp 徽标数据源）。
+	// 详情填充变体状态（thumb/medium/full 徽标数据源）。
 	list := []mediato.AttachmentResp{*resp}
 	s.fillVariants(ctx, list)
 	return &list[0], nil

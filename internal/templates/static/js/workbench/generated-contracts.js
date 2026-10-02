@@ -139,6 +139,72 @@ export const paletteSpec = {
                 "showLabel": false
             }
         },
+        "core.checkoutForm": {
+            "type": "core.checkoutForm",
+            "displayName": "结算表单",
+            "hint": "购物车结算：字段来自订单契约，标签与顺序可配",
+            "category": "basic",
+            "defaultProps": {
+                "collectBilling": false,
+                "fields": [
+                    {
+                        "key": "email"
+                    },
+                    {
+                        "key": "name"
+                    },
+                    {
+                        "key": "phone"
+                    },
+                    {
+                        "key": "country"
+                    },
+                    {
+                        "key": "province"
+                    },
+                    {
+                        "key": "city"
+                    },
+                    {
+                        "key": "district"
+                    },
+                    {
+                        "key": "address"
+                    },
+                    {
+                        "key": "zip"
+                    },
+                    {
+                        "key": "remark"
+                    },
+                    {
+                        "key": "billName"
+                    },
+                    {
+                        "key": "billPhone"
+                    },
+                    {
+                        "key": "billCountry"
+                    },
+                    {
+                        "key": "billProvince"
+                    },
+                    {
+                        "key": "billCity"
+                    },
+                    {
+                        "key": "billDistrict"
+                    },
+                    {
+                        "key": "billAddress"
+                    },
+                    {
+                        "key": "billZip"
+                    }
+                ],
+                "submitLabel": "提交订单"
+            }
+        },
         "core.container": {
             "type": "core.container",
             "displayName": "容器",

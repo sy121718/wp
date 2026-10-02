@@ -54,7 +54,7 @@ func TestWiringPortConstantsMatchManifest(t *testing.T) {
 		portProductPurchaseChecker,
 		portPluginAdminAuthz, portProjectLocaleRetire,
 		portPageExternalArtifactOwners, portPageBlueprints, portPageBuildQueue,
-		portPageProductDataSource, portPageI18nStalePeer, portPresentationBuildQueue, portPresentationProductDataSource, portPresentationSiteAssembly,
+		portPageProductDataSource, portPageCheckoutCountries, portPageI18nStalePeer, portPresentationBuildQueue, portPresentationProductDataSource, portPresentationCheckoutCountries, portPresentationSiteAssembly,
 		portPipelinePageRebuilder, portPipelinePresentationRebuilder, portContentDependencyInvalidator,
 		portProductDependencyInvalidator,
 		portContentTemplateInvalidator,

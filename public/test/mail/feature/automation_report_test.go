@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
@@ -52,8 +53,13 @@ func TestRunDetailExplainsWaiting(t *testing.T) {
 	if detail.AutomationName != "解释流程" {
 		t.Fatalf("详情应带流程名，实际 %q", detail.AutomationName)
 	}
-	if !strings.Contains(detail.Explain, "等待中") || !strings.Contains(detail.Explain, "继续") {
-		t.Fatalf("等待态解释应说明在等、何时继续，实际 %q", detail.Explain)
+	// Explain 是**运行文案编码**（词条 key + 具名参数）：service 层拿不到请求语言，出口用
+	// mailenums.FormatRunText 按语言还原（入站两处：JSON API 与后台排障页）。断言必须走还原，
+	// 否则测的是中间产物。取词用「只回兜底」的函数 —— 断言的是代码内兜底文案，不依赖测试库
+	// 里的词条质量（词条本身由 i18n 门禁单独守）。
+	explain := mailenums.FormatRunText(func(_, fallback string) string { return fallback }, detail.Explain)
+	if !strings.Contains(explain, "等待中") || !strings.Contains(explain, "继续") {
+		t.Fatalf("等待态解释应说明在等、何时继续，实际 %q", explain)
 	}
 	if detail.TotalNodes != 3 {
 		t.Fatalf("进度分母应为流程节点数 3，实际 %d", detail.TotalNodes)
@@ -120,8 +126,8 @@ func TestRunDetailExplainsFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(detail.Explain, "失败") || !strings.Contains(detail.Explain, "外星人登录过") {
-		t.Fatalf("失败解释应说明哪一步、什么原因，实际 %q", detail.Explain)
+	if explain := mailenums.FormatRunText(func(_, fallback string) string { return fallback }, detail.Explain); !strings.Contains(explain, "失败") || !strings.Contains(explain, "外星人登录过") {
+		t.Fatalf("失败解释应说明哪一步、什么原因，实际 %q", explain)
 	}
 }
 
@@ -153,8 +159,8 @@ func TestRunDetailExplainsCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(detail.Explain, "已完成") {
-		t.Fatalf("完成态解释应说明已完成，实际 %q", detail.Explain)
+	if explain := mailenums.FormatRunText(func(_, fallback string) string { return fallback }, detail.Explain); !strings.Contains(explain, "已完成") {
+		t.Fatalf("完成态解释应说明已完成，实际 %q", explain)
 	}
 }
 

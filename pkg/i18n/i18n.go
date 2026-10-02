@@ -19,6 +19,10 @@ var (
 	initMu      sync.Mutex
 	inited      bool
 	defaultLang = fallbackDefaultLang
+	// defaultCountry / defaultCurrency 交易默认值（全局默认 + 兜底，读取方见
+	// RuntimeValues 的字段注释）：与 defaultLang 同一套载入 / 刷新 / 失效机制。
+	defaultCountry  = fallbackDefaultCountry
+	defaultCurrency = fallbackDefaultCurrency
 	// siteLangURLMode 站点访问路径的语言方案（默认 default_plain：默认语言无前缀
 	// + 非默认语言短码前缀，见 langurl.go）。
 	siteLangURLMode = SiteLangURLModeDefaultPlain
@@ -90,6 +94,37 @@ func GetDefaultLang() string {
 	initMu.Lock()
 	defer initMu.Unlock()
 	return defaultLang
+}
+
+// GetDefaultCountry 全局默认国家（ISO 3166-1 alpha-2）。
+//
+// 语义是「全局默认 + 兜底」：工程级覆盖仍走 projects.settings。
+func GetDefaultCountry() string {
+	initMu.Lock()
+	defer initMu.Unlock()
+	if defaultCountry == "" {
+		return fallbackDefaultCountry
+	}
+	return defaultCountry
+}
+
+// GetDefaultCurrency 全局默认货币（ISO 4217）。返回值**保证非空**（未配置时回退代码内常量，
+// 调用方不必再兜底）。
+//
+// **币种是标签，不是换算**：金额始终是数值（分），本值只决定这个数字代表哪种货币；
+// 完整含义与运营风险（改了它 = 声明本站按该币种定价收款）见 RuntimeValues.DefaultCurrency。
+//
+// 读取方：SEO 的 priceCurrency、购物车金额展示、新建订单的 orders.currency 快照。
+//
+// 读的是**进程内缓存值**（由 i18n.SetValueLoader 在装配期载入、StartAutoRefresh 的 tick
+// 与保存后的 Invalidate 刷新），因此可以在请求路径上直接调用 —— 不会每个请求查库。
+func GetDefaultCurrency() string {
+	initMu.Lock()
+	defer initMu.Unlock()
+	if defaultCurrency == "" {
+		return fallbackDefaultCurrency
+	}
+	return defaultCurrency
 }
 
 // Get returns full i18n result.

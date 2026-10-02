@@ -23,9 +23,19 @@ func TestMediaFileAttachmentID(t *testing.T) {
 	}{
 		{"12.png", 12},
 		{"a/b/1024.jpg", 1024},
+		// 旧格式（无指纹）：存量文件与历史产物引用的都是这种，必须继续认 ——
+		// 只认新名会把整批存量变体报成「有文件没记录」。
 		{"7_thumb.jpg", 7},
 		{"7_medium.jpg", 7},
+		{"7_full.jpg", 7},
+		// 历史槽位名 webp：迁移 496 只改 DB 侧的 variant_type，磁盘上那批 *_webp.jpg
+		// **不会被改名** —— 反查必须继续认它们，否则存量文件从「可归属」退化成「无法归属」。
 		{"7_webp.jpg", 7},
+		{"7_webp-1-ab12cd34.jpg", 7},
+		// 新格式（带内容指纹）：<generation>-<sha256 前 8 位小写 hex>。
+		{"7_thumb-1-ab12cd34.jpg", 7},
+		{"7_medium-12-0f1e2d3c.jpg", 7},
+		{"a/b/7_full-99-deadbeef.jpg", 7},
 		{"99.webp", 99},
 		{"5", 5},
 	}
@@ -39,10 +49,13 @@ func TestMediaFileAttachmentID(t *testing.T) {
 		}
 	}
 	no := []string{
-		"1699999999_ab12cd.png", // 历史随机名（时间戳_随机 hex）
-		"logo.png",              // 有语义的原名
-		"tmp/replace_3_1.png",   // 换图暂存（由 tmp/ 前缀单独识别）
-		"7_thumb.png",           // 变体只可能是 .jpg（别的形状不是本系统的产物）
+		"1699999999_ab12cd.png",  // 历史随机名（时间戳_随机 hex）
+		"logo.png",               // 有语义的原名
+		"tmp/replace_3_1.png",    // 换图暂存（由 tmp/ 前缀单独识别）
+		"7_thumb.png",            // 变体只可能是 .jpg（别的形状不是本系统的产物）
+		"7_thumb-1-AB12CD34.jpg", // 指纹只认小写 hex（大写是另一套命名，不猜）
+		"7_thumb-1-ab12cd3.jpg",  // 7 位指纹：位数不符
+		"7_thumb-ab12cd34.jpg",   // 有指纹无 generation：两段必须成对出现
 		"12.jpg.bak",
 		"",
 	}
@@ -87,12 +100,16 @@ func TestMediaParseUint64(t *testing.T) {
 // 全 ready 却仍被判为需要补偿 → 每次调用都把全部附件重新生成一遍（幂等但白烧 CPU/IO）；
 // 非 ready 却被判为不需要 → 存量永远补不齐。
 func TestMediaVariantBackfillReason(t *testing.T) {
+	// 由 VariantTypes() 派生，不手写列表：档位增删时这里必须自动跟随 ——
+	// 手写列表会让「按设计加了档位」表现成这条用例失败，而它想验的是补偿判据本身。
 	ready := func() []mediamodel.MediaVariantEntity {
-		return []mediamodel.MediaVariantEntity{
-			{VariantType: mediamodel.VariantTypeThumb, Status: mediamodel.VariantStatusReady},
-			{VariantType: mediamodel.VariantTypeMedium, Status: mediamodel.VariantStatusReady},
-			{VariantType: mediamodel.VariantTypeWebp, Status: mediamodel.VariantStatusReady},
+		rows := make([]mediamodel.MediaVariantEntity, 0, len(mediamodel.VariantTypes()))
+		for _, vt := range mediamodel.VariantTypes() {
+			rows = append(rows, mediamodel.MediaVariantEntity{
+				VariantType: vt, Status: mediamodel.VariantStatusReady,
+			})
 		}
+		return rows
 	}
 	if got := variantBackfillReason(ready()); got != "" {
 		t.Fatalf("三个变体全 ready 不该触发补偿，实际 %q", got)

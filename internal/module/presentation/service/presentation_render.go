@@ -325,6 +325,13 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if s.productDS != nil {
 		compileOpts = append(compileOpts, builder.WithProductDataSource(s.productDS))
 	}
+	// 结算表单的国家下拉（core.checkoutForm）：与 page 路径同一注入方式与同一条判据
+	//（取到空清单不注入，让「表单里有国家字段」的构建显式失败）。
+	if s.checkoutCountries != nil {
+		if countries := s.checkoutCountries(ctx, lang); len(countries) > 0 {
+			compileOpts = append(compileOpts, builder.WithCheckoutCountries(countries))
+		}
+	}
 	compileOpts = append(compileOpts, pipeline.AnalyticsCompileOptions(ctx, s.project, projectID)...)
 	if len(slotList) > 0 {
 		compileOpts = append(compileOpts, builder.WithBlockResolver(slotResolver))

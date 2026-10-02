@@ -57,9 +57,13 @@ type adminFormScan struct {
 // scanAdminFormControls 判定每个可见表单控件有没有基座类。
 // 只用标准库 tokenizer：Jet 模板片段（{{ }}）会被当作文本，不影响标签配对。
 // 桥接容器退役后不再需要祖先栈 —— 判定只看控件自己的 class。
+//
+// 先剥 Jet 注释（stripJetComments，本包 admin_template_integrity_test.go）：tokenizer
+// 不认识它，会把注释里提到的标签字面量当成真控件 —— 而「本页控件全是原生 <select>」
+// 正是最自然的说明写法，不剥就会报出一个并不存在的裸控件（settings.html 第 8 行踩过）。
 func scanAdminFormControls(src string) adminFormScan {
 	var out adminFormScan
-	z := html.NewTokenizer(strings.NewReader(src))
+	z := html.NewTokenizer(strings.NewReader(stripJetComments(src)))
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {

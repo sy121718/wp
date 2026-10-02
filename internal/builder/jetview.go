@@ -32,6 +32,7 @@ import (
 	cardPkg "go_wp/internal/builder/components/card"
 	cardstackPkg "go_wp/internal/builder/components/cardstack"
 	carticonPkg "go_wp/internal/builder/components/carticon"
+	checkoutformPkg "go_wp/internal/builder/components/checkoutform"
 	containerPkg "go_wp/internal/builder/components/container"
 	countdownPkg "go_wp/internal/builder/components/countdown"
 	counterPkg "go_wp/internal/builder/components/counter"
@@ -207,6 +208,8 @@ func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 		return ratingViewOf(node, topLevel, ctx)
 	case formPkg.Type:
 		return formViewOf(node, topLevel, ctx)
+	case checkoutformPkg.Type:
+		return checkoutFormViewOf(node, topLevel, ctx)
 	default:
 		// 插件组件（plugin.{id}.{name}）：经 RenderContext.Plugin 取规格渲染。
 		if strings.HasPrefix(node.Type, pluginTypePrefix) {
@@ -1120,6 +1123,39 @@ func languagesViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	return &nodeView{
 		Type:     languagesPkg.Type,
 		Template: "languages",
+		NodeID:   node.ID,
+		Classes:  strings.Join(classes, " "),
+		CustomID: customID,
+		TopLevel: topLevel,
+		Props:    p,
+		V:        view,
+	}, nil
+}
+
+// checkoutFormViewOf 转换结算表单节点（原子，无 children）。
+//
+// 与 languagesViewOf 同形而非 atomViewOf：BuildView 要的是构建上下文里的**站点工程 ID
+// 与国家下拉清单**（片段地址带 projectId；国家选项构建期烘焙），只依赖 props 的通用助手
+// 拿不到它们。
+//
+// BuildView 会返回 error：表单里出现国家字段、而构建期没有注入国家清单时**构建失败**
+// —— 判据见该函数的注释（静默降级成「只有一个默认国家的下拉」会把访客锁死，
+// 而页面上完全看不出异常）。
+func checkoutFormViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+	p, err := decodeProps[checkoutformPkg.Props](node)
+	if err != nil {
+		return nil, err
+	}
+	classes, customID := advancedClasses(node, &p, ctx)
+	checkoutformPkg.CompileCSS(node.ID, &p, ctx.CSS)
+	view, err := checkoutformPkg.BuildView(&p, ctx)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	declareViewFeatures(view, ctx)
+	return &nodeView{
+		Type:     checkoutformPkg.Type,
+		Template: "checkoutform",
 		NodeID:   node.ID,
 		Classes:  strings.Join(classes, " "),
 		CustomID: customID,

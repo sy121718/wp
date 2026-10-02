@@ -73,6 +73,13 @@ func ErrorInternal(c *gin.Context, scene string, err error) {
 
 // businessErrKey 匹配「业务错误」的消息形态：`模块.类别.语义`，例如 cart.err.outOfStock。
 //
+// **类别本身可以是多级**（`模块.类别.子类别.语义`）：`admin.navigation_translations.err.rowCountMismatch`
+// 与 `admin.product_edit.err.defaultPriceInvalid` 都把类别写成 `xxx.err` 两级，全仓 33 个此类值。
+// 因此判据是「三段起，可更长」而不是「恰好三段」：原分支只认恰好三段，把这 33 个里的 7 个判成
+// 「不命中任何判据」，而它们的词条都在库里、运行时并不会退化成 500 —— 那是**判据的假阳性**，
+// 不是命名违约。放宽到多段没有削弱它守的东西：内部错误（fmt.Errorf / SQL / os）不长成
+// 点分小写的形状，多一级类别也不改变这个结论。
+//
 // 为什么用**形态**而不是错误类型来判定：项目的业务错误由 enums 常量构造，
 // 那些常量本身就是 i18n key（见各模块 enums 包），而 Go 的内部错误（`fmt.Errorf`、
 // 驱动返回的 SQL 错误、os 的路径错误）天然长不成这个形状。
@@ -87,7 +94,7 @@ func ErrorInternal(c *gin.Context, scene string, err error) {
 // 收敛的代价是 pkg/response 知道了业务错误的**形态**（不是具体错误码，也不引入 enums 依赖）。
 // 两害相权取收敛 —— 但如果你要恢复约定，删掉 ErrorAuto/IsBusinessError 即可，
 // 调用点改回 ErrorInternal 或明写 ErrorWithMessage，不会有隐藏耦合。
-var businessErrKey = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-zA-Z0-9_]+(\|.*)?$`)
+var businessErrKey = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*(\|.*)?$`)
 
 // businessErrConstant 未迁形态的 enums 常量名形态：ErrAttachmentNotFound / MsgListSuccess。
 //

@@ -22,6 +22,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/siteurl"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
@@ -121,6 +122,9 @@ type siteSettingsData struct {
 	// 见 SaveSiteLocales）；Err 是本页其余保存路径（站点信息 / GA4 / GSC / 404 页 / 语言 URL 方案）
 	// 经 303 回带的一句提示。两者可以同时为空 —— 那时页面上没有任何提示条。
 	Err string
+	// LangOptions 已收录语言（sys_dict type='language' 的启用项）——语言码 datalist 的
+	// 唯一提示来源。与 project_locales.lang 同口径（完整语言码，如 zh-CN）。
+	LangOptions []sysconfigcontract.DictOption
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
@@ -146,6 +150,7 @@ func (d *siteSettingsData) templateMap() gin.H {
 		"ShippingBaseFeeYuan":       d.ShippingBaseFeeYuan,
 		"ShippingFreeThresholdYuan": d.ShippingFreeThresholdYuan,
 		"URLPatterns":               d.URLPatterns,
+		"LangOptions":               d.LangOptions,
 		"Locales":                   d.Locales,
 		"LocaleError":               d.LocaleError,
 		"LocaleSaved":               d.LocaleSaved,
@@ -171,11 +176,17 @@ func siteSettingsBackURL(projectID string) string {
 type siteSettingsAdminHandle struct {
 	projects projectcontract.ProjectService
 	pages    pagecontract.PageService
+	// dict 字典只读口（语言码 datalist 的供数来源）；nil 时 datalist 为空。
+	dict sysconfigcontract.DictReader
 }
 
-// NewSiteSettingsAdminHandle 测试与外部装配用的导出构造（窄两个契约，均可 nil 降级）。
-func NewSiteSettingsAdminHandle(projects projectcontract.ProjectService, pages pagecontract.PageService) *siteSettingsAdminHandle {
-	return &siteSettingsAdminHandle{projects: projects, pages: pages}
+// NewSiteSettingsAdminHandle 测试与外部装配用的导出构造（三个契约均可 nil 降级）。
+//
+// dict 是**字典只读口**（sysconfig 契约）：给语言码的 datalist 供数。nil 时 datalist
+// 为空 —— 用户仍可手输语言码（页面本来就是这个交互），只是失去了「已收录语言」的提示，
+// 因此不算致命降级；但装配层必须传（见 assembly.go）。
+func NewSiteSettingsAdminHandle(projects projectcontract.ProjectService, pages pagecontract.PageService, dict sysconfigcontract.DictReader) *siteSettingsAdminHandle {
+	return &siteSettingsAdminHandle{projects: projects, pages: pages, dict: dict}
 }
 
 // SiteSettings 站点设置页（GET /admin/settings）。
@@ -208,6 +219,15 @@ func (h *siteSettingsAdminHandle) buildSiteSettingsData(c *gin.Context, selected
 	data.Selected = selected
 	if data.Selected == "" && len(projects) > 0 {
 		data.Selected = projects[0].ID
+	}
+	// 语言码 datalist 的供数（字典只读口）：读失败**不**中断页面 —— 语言码输入框
+	// 本来就允许手输，datalist 只是「已收录语言」的提示；把它升级成错误会让整页打不开。
+	// 这里刻意不走缓存：站点设置页是后台页面路径（非访问面热路径），一次 100 行的
+	// 字典查询可以接受；访问面的读取方走 pkg/i18n 的进程内缓存（见 RuntimeValues）。
+	if h.dict != nil {
+		if opts, derr := h.dict.ListDictOptions(c.Request.Context(), "language"); derr == nil {
+			data.LangOptions = opts
+		}
 	}
 	if data.Selected != "" {
 		h.fillProjectSettings(c, data)

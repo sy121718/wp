@@ -35,6 +35,10 @@ var manualViewBuildersWithoutI18n = map[string]string{
 	"accordionViewOf":   "core.accordion 的标题来自作者",
 	"marqueeViewOf":     "core.marquee 的内容来自作者",
 	"blockRefViewOf":    "core.blockref 是全局块引用，文案在被引用的块里",
+	// core.checkoutForm：字段标签 / 分组标题 / 按钮文字目前只有中文（本批不做多语言表单文案，
+	// 见 docs 的批次边界）。作者可在 Props 里覆盖标签与按钮文案，那些走内容翻译（Translatable）。
+	// 固定文案 key 化（site.component.checkoutForm.*）留到多语言批次，届时把它移到 applyI18n 覆盖。
+	"checkoutFormViewOf": "core.checkoutForm 的固定文案 key 化留待多语言批次；作者填写部分走内容翻译",
 }
 
 // viewBuilderFuncRe 匹配文件顶层的 *ViewOf 函数定义。

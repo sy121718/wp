@@ -205,7 +205,7 @@ func newAdminPagesTestEnv(t *testing.T) *adminPagesTestEnv {
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
 				shell.PermContextMiddleware(adminAuthzSvc))
 			// 文案词条页的「站点待重建」标记与两条用例无关，pages 传 nil（未注入即 no-op）。
-			adminhttp.SetupAdminPages(adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, nil)
+			adminhttp.SetupAdminPages(adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, nil, nil)
 		},
 	})
 	if err != nil {

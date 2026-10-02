@@ -15,7 +15,7 @@
                 <h1>{{ .["t"]("admin.system.title", "系统设置") }}</h1>
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.system.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip"><strong>{{ .["t"]("admin.system.help.title", "这一页管什么") }}</strong>{{ .["t"]("admin.system.help.global", "这里改的是**全局默认值**：站点没有自己的工程级设置时才会用到。") }}<br>{{ .["t"]("admin.system.help.trade", "默认国家与默认货币目前只是全局默认 + 兜底，还没有读取方 —— 设了不会立刻改变某个表单的初始值（工程级覆盖仍走站点设置页）。") }}<br>{{ .["t"]("admin.system.help.shortcode", "语言短码覆盖表（lang_url_codes）属于专家项，不在本页编辑，保存时原样保留。") }}</span>
+                    <span class="help-pop" role="tooltip"><strong>{{ .["t"]("admin.system.help.title", "这一页管什么") }}</strong>{{ .["t"]("admin.system.help.global", "这里改的是**全局默认值**：站点没有自己的工程级设置时才会用到。") }}<br>{{ .["t"]("admin.system.help.trade", "货币由后台全局限定为单值，影响新订单与展示（含 SEO 结构化数据）；前台用户改的是地区，不是货币。改币种只改标签、不换算金额 —— 改它等于声明本站商品定价本来就是该币种。") }}<br>{{ .["t"]("admin.system.help.shortcode", "语言短码覆盖表（lang_url_codes）属于专家项，不在本页编辑，保存时原样保留。") }}</span>
                 </span>
             </div>
         </div>
@@ -75,7 +75,7 @@
                 </select>
             </div>
         </div>
-        <p class="form-hint">{{ .["t"]("admin.system.hint.trade", "默认国家与默认货币是全局默认 + 兜底：目前还没有读取方（工程级覆盖仍走站点设置页），设置后不会立刻改变某个表单的初始值。") }}</p>
+        <p class="form-hint">{{ .["t"]("admin.system.hint.trade", "默认国家与默认货币是全局默认 + 兜底（工程级覆盖走站点设置页）。货币由后台全局限定为单值：它影响新订单的币种标签与页面展示（含 SEO 结构化数据）；前台用户只能改自己的地区（国家 / 省），没有货币选择器。已下单的订单保留当时的币种快照。注意：改币种只改标签，不换算金额 —— 它等于声明本站商品定价本来就是该币种；若商品价格按人民币填，改成美元后显示的是同样的数字（如 ¥19.90 显示为 $19.90），不是换算后的价格。") }}</p>
 
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">{{ .["t"]("admin.system.submit", "保存") }}</button>

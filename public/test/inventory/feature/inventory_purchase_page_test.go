@@ -357,10 +357,12 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("读样式表失败: %v", err)
 	}
 	css := string(raw)
+	// 断言的是**真实在用**的规则：`.receipt-form` 已从模板与样式表一并清掉（该 class 无任何
+	// 使用点，css_class_audit_test 把它登记为疑似死样式）—— 继续要求它存在，等于把「清理死样式」
+	// 变成红灯。要恢复这条断言，先在模板里真的用上这个 class。
 	for _, want := range []string{
 		".purchase-page-table",
 		".purchase-page .form-inline .wbs",
-		".purchase-page .receipt-form",
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("样式表缺少采购入库页规则 %s", want)

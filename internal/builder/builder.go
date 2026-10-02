@@ -26,6 +26,7 @@ import (
 	"go_wp/internal/builder/core"
 
 	contentcontract "go_wp/internal/module/content/contract"
+	mediacontract "go_wp/internal/module/media/contract"
 	productcontract "go_wp/internal/module/product/contract"
 )
 
@@ -146,13 +147,19 @@ type compileConfig struct {
 	archiveEntityID   string
 	// siteLinkResolver 站内链接本地化器（审计 I18N-015，可空）。
 	siteLinkResolver func(string) string
-	assetProbe       func(string) []int
-	theme            *ThemeSettings
-	ctx              context.Context
+	// assetProbe 响应式图片变体探测（WithAssetProbe 注入）：返回 URL + 宽度。
+	// 返回 URL 而非纯宽度的理由见 WithAssetProbe 的注释。
+	assetProbe func(string) []mediacontract.VariantRef
+	theme      *ThemeSettings
+	ctx        context.Context
 	// alternates 同页其他语言版本（hreflang 互指，多语言 P3）。
 	alternates []Alternate
 	// locales 站点语言切换器条目（多语言 P3）：与 alternates 同源（装配层一次算出）。
 	locales []core.LocaleLink
+	// checkoutCountries 结算表单的国家下拉选项：装配层按当前语言从 sys_area 算好的一份
+	// 静态数据（core.checkoutForm 消费）。默认选中的国家不在这里 —— 它在每次编译时取
+	// i18n.GetDefaultCountry()，见 Compile 里构造 RenderContext.Checkout 的那一处。
+	checkoutCountries []core.CheckoutCountry
 	// lang 本次编译目标语言（空=取 i18n.GetDefaultLang()，多语言 P4）。
 	lang string
 	// translate 构建期取词函数（空=默认 i18n.TranslateFunc(lang)）。
@@ -326,9 +333,13 @@ func WithProjectID(projectID string) CompileOption {
 }
 
 // WithAssetProbe 注入媒体资源探测函数（构建期响应式图片）：
-// 传入媒体 URL 返回可用变体宽度（降序），如 [1280, 320]；返回空则只输出原图。
-// 由装配层（page service）按本地存储根目录实现——构建期查文件系统，访客零查询。
-func WithAssetProbe(fn func(string) []int) CompileOption {
+// 传入媒体 URL 返回可用变体（URL + 宽度，升序）；返回空则只输出原图。
+//
+// 返回**完整 URL** 而不是纯宽度：变体名带内容指纹
+// （<stem>_<type>-<generation>-<hash8>.jpg），generation 与指纹只有 media 模块知道，
+// 调用方按宽度自行拼名 = 第二份命名真源。
+// 由 media 模块实现——构建期查库与文件系统，访客零查询。
+func WithAssetProbe(fn func(string) []mediacontract.VariantRef) CompileOption {
 	return func(c *compileConfig) { c.assetProbe = fn }
 }
 
@@ -410,6 +421,15 @@ func WithAlternates(alternates []Alternate) CompileOption {
 // 各语言的静态链接。未注入（单语言站点 / 页面未放切换器）时产物字节与 P3 之前一致。
 func WithLocaleLinks(links []core.LocaleLink) CompileOption {
 	return func(c *compileConfig) { c.locales = links }
+}
+
+// WithCheckoutCountries 注入结算表单的国家下拉选项（core.checkoutForm 消费）。
+//
+// 与 WithLocaleLinks 同形：都是「装配层算好的站点级静态数据」，组件只决定怎么显示。
+// 未注入时组件**明确报错**（不是静默降级）—— 结算表单消失是交易入口消失，
+// 而产物本身完全正常（无报错、无日志），这类缺陷比构建失败难查得多。
+func WithCheckoutCountries(countries []core.CheckoutCountry) CompileOption {
+	return func(c *compileConfig) { c.checkoutCountries = countries }
 }
 
 // WithTranslator 注入自定义取词函数（key, fallback → 文案）。
@@ -638,6 +658,12 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
 		Lang: lang, Translate: translate, Locales: cfg.locales,
+		// 结算表单的构建期输入：国家清单来自装配层，默认国家在**每次编译**时从
+		// pkg/i18n 的进程内缓存取（随系统设置刷新，不在装配期冻结）。
+		Checkout: core.CheckoutInput{
+			Countries:      cfg.checkoutCountries,
+			DefaultCountry: i18n.GetDefaultCountry(),
+		},
 		ContentTranslate: contentTranslateFunc(cfg.contentTranslator),
 		ImageDefaults: core.ImageDefaults{
 			LazyLoad: cfg.theme.LazyLoadEnabled(),

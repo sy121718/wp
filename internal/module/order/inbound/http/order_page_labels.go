@@ -5,8 +5,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	orderenums "go_wp/internal/module/order/enums"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 )
 
 // order_page_labels.go - 订单管理页的展示文案映射（状态、操作人、来源、支付、金额、地址、时间）。
@@ -167,6 +171,11 @@ func orderAmountText(cents int64) string {
 
 // orderAddressLabel 地址拼接：逐段丢掉空值（地址字段常常只填一半），
 // 全空时返回空串由模板决定怎么显示。
+//
+// 调用方把**国家/地区排在第一位**（地址书写从大到小）。库里存的是下单时刻的
+// 代码快照（迁移 501），传进来之前已经由 countryLabelFn 换成当前语言的显示名；
+// 这一层**只拼接**，不认识字典也不做语言判断 —— 把它改成要 ctx 的方法，等于让
+// 每个调用点都得先想清楚自己在什么语言下（那是解析器的事，不是拼接的事）。
 func orderAddressLabel(parts ...string) string {
 	segments := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -175,6 +184,43 @@ func orderAddressLabel(parts ...string) string {
 		}
 	}
 	return strings.Join(segments, " ")
+}
+
+// countryLabelFn 生成「国家/地区代码 → 当前界面语言显示名」的解析闭包。
+//
+// 返回 nil 表示**没有解析能力**（字典未注入 / 装配退化）：调用方经 applyCountryLabel
+// 原样显示 code —— 「未接入」与「接入但查不到」刻意走同一条回落路径，这样页面在
+// 两种情形下的表现一致（都是显示代码），不会出现「装配漏了」只在某个页面变成空白。
+//
+// 这里刻意不返回 error：展示标签的读取失败不该让订单详情整页 500 或变成一行报错。
+// 字典读不到时记日志在 sysconfig 侧（那是它知道失败原因的地方），页面照常渲染。
+//
+// lang 取当前请求语言（response.RequestLanguage，与 sysconfig 后台页同源）。
+func countryLabelFn(c *gin.Context, dict sysconfigcontract.DictReader) func(string) string {
+	if c == nil || dict == nil {
+		return nil
+	}
+	ctx := c.Request.Context()
+	lang := response.RequestLanguage(c)
+	return func(code string) string {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			return ""
+		}
+		if label := strings.TrimSpace(dict.CountryLabel(ctx, lang, code)); label != "" {
+			return label
+		}
+		return code
+	}
+}
+
+// applyCountryLabel 用解析闭包把代码换成显示名；闭包为 nil（未接入字典）时原样返回代码。
+func applyCountryLabel(label func(string) string, code string) string {
+	code = strings.TrimSpace(code)
+	if label == nil || code == "" {
+		return code
+	}
+	return label(code)
 }
 
 // orderTimeLabel 时间 → 后台展示文本（本地时区，分钟精度）。

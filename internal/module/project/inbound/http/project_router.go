@@ -7,6 +7,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,7 @@ import (
 // 主题管理 / 站点设置 / 多语言行挂 adminPages，编辑器设置面板（SettingsPanel /
 // GlobalPanel）挂 workbenchPages。pages 与 blocks 为页面换皮编排与主题设置只读取数
 // 所需的 page/block 契约，由装配层注入。
-func SetupProjectRoutes(rg *permission.RouteGroup, db *gorm.DB) projectcontract.ProjectService {
+func SetupProjectRoutes(rg *permission.RouteGroup, db *gorm.DB, dict sysconfigcontract.DictReader) projectcontract.ProjectService {
 	model := projectmodel.NewProjectModel(db)
 	svc := projectservice.NewService(model)
 	handle := NewHandle(svc)
@@ -42,7 +43,8 @@ func SetupProjectRoutes(rg *permission.RouteGroup, db *gorm.DB) projectcontract.
 // SetupProjectPages 注册主题 / 站点设置页面（adminPages）与编辑器面板（workbenchPages）。
 // 独立入口的原因与 content 同构：页面依赖的 page / block 契约晚于 project 装配。
 func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
-	svc projectcontract.ProjectService, pages pagecontract.PageService, blocks blockcontract.BlockService) {
+	svc projectcontract.ProjectService, pages pagecontract.PageService, blocks blockcontract.BlockService,
+	dict sysconfigcontract.DictReader) {
 	if adminPages != nil {
 		themes := &themeAdminHandle{projects: svc, pages: pages, blocks: blocks}
 		adminPages.GET("/themes", themes.ThemeManage)
@@ -53,7 +55,7 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 		adminPages.POST("/themes/settings/save", builtin.CasbinMiddlewareForPath("/api/theme/update"), themes.SaveThemeSettings)
 		adminPages.GET("/theme", themes.ThemeRedirect)
 
-		settings := &siteSettingsAdminHandle{projects: svc, pages: pages}
+		settings := &siteSettingsAdminHandle{projects: svc, pages: pages, dict: dict}
 		adminPages.GET("/settings", settings.SiteSettings)
 		adminPages.POST("/settings/save", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.SaveSiteSettings)
 		adminPages.POST("/settings/locales/rows", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.LocaleRowsFragment)

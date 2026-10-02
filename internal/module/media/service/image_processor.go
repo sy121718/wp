@@ -48,6 +48,13 @@ const (
 	// mediumVariantEdge 调节尺寸变体的 Fit 边长（1280x1280）。
 	mediumVariantEdge = 1280
 
+	// smallVariantEdge 中间档变体的 Fit 边长（768x768）。
+	//
+	// 取值理由：组件的 sizes 是「≤640px 视口 100vw、其余 50vw」，DPR=2 的 375pt
+	// 手机需要约 750 设备像素。取 640 会让这些机型仍然只能选 1280（规则是「满足
+	// 所需的最小候选」，640 < 750 不满足），取 768 才真正落进这一档。
+	smallVariantEdge = 768
+
 	// variantJPEGQuality JPEG 变体编码质量：82 是「视觉无损」常用档，
 	// 相比无损 webp 体积小 5~10 倍，是页面加载速度的关键。
 	variantJPEGQuality = 82
@@ -105,15 +112,18 @@ func encodeJPEGBytes(img image.Image) ([]byte, error) {
 // buildVariantImage 按变体类型生成目标图像：
 //
 //	thumb  = imaging.Fit 320x320 Lanczos
+//	small  = imaging.Fit 768x768 Lanczos
 //	medium = imaging.Fit 1280x1280 Lanczos
-//	webp   = 原图尺寸（重编码）
+//	full   = 原图尺寸（重编码为 JPEG）
 func buildVariantImage(src image.Image, variantType string) (image.Image, error) {
 	switch variantType {
 	case mediamodel.VariantTypeThumb:
 		return imaging.Fit(src, thumbVariantEdge, thumbVariantEdge, imaging.Lanczos), nil
+	case mediamodel.VariantTypeSmall:
+		return imaging.Fit(src, smallVariantEdge, smallVariantEdge, imaging.Lanczos), nil
 	case mediamodel.VariantTypeMedium:
 		return imaging.Fit(src, mediumVariantEdge, mediumVariantEdge, imaging.Lanczos), nil
-	case mediamodel.VariantTypeWebp:
+	case mediamodel.VariantTypeFull:
 		return src, nil
 	default:
 		return nil, errUnknownVariantType

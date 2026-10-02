@@ -13,6 +13,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/web/shell"
@@ -126,11 +127,16 @@ var orderStatusRefundable = map[string]bool{
 type orderPageHandle struct {
 	orders   ordercontract.OrderService
 	projects projectcontract.ProjectService
+	// dict 系统字典只读口：只用来把订单快照里的国家/地区代码换成当前语言的显示名。
+	// 可选依赖 —— 未注入时详情照常渲染、国家显示代码（见 applyCountryLabel）：
+	// 一个展示标签的字典读不到，不该让整页失败。
+	dict sysconfigcontract.DictReader
 }
 
 // NewOrderPageHandle 构造。
-func NewOrderPageHandle(orders ordercontract.OrderService, projects projectcontract.ProjectService) *orderPageHandle {
-	return &orderPageHandle{orders: orders, projects: projects}
+func NewOrderPageHandle(orders ordercontract.OrderService, projects projectcontract.ProjectService,
+	dict sysconfigcontract.DictReader) *orderPageHandle {
+	return &orderPageHandle{orders: orders, projects: projects, dict: dict}
 }
 
 // orderFilter 页面筛选条件（GET 参数，全部可选）。
@@ -222,7 +228,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 			if derr != nil {
 				pageErr = firstNonEmpty(pageErr, orderFacingError(c, derr))
 			} else {
-				detail = orderDetailView(tr, det, filter, selected, page, limit)
+				detail = orderDetailView(tr, det, filter, selected, page, limit, countryLabelFn(c, h.dict))
 			}
 		}
 	}

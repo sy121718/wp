@@ -17,6 +17,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	orderdto "go_wp/internal/module/order/dto"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	usercontract "go_wp/internal/module/user/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/utils"
@@ -158,5 +160,77 @@ func TestOrdersFragmentRejectsNonNumericOrderID(t *testing.T) {
 	}
 	if strings.TrimSpace(body) == "" {
 		t.Fatal("非法 id 也要给出可见结论")
+	}
+}
+
+// fakeCountryDict 国家字典替身：只认 CN，其余回落代码（与真实实现的回落口径一致）。
+type fakeCountryDict struct{ calls int }
+
+func (f *fakeCountryDict) ListDictOptions(context.Context, string) ([]sysconfigdto.DictOption, error) {
+	return nil, nil
+}
+
+func (f *fakeCountryDict) ListCountryOptions(context.Context, string) ([]sysconfigdto.CountryOption, error) {
+	return nil, nil
+}
+
+func (f *fakeCountryDict) CountryLabel(_ context.Context, lang, code string) string {
+	f.calls++
+	if strings.EqualFold(strings.TrimSpace(code), "CN") {
+		if strings.HasPrefix(strings.ToLower(lang), "zh") {
+			return "中国"
+		}
+		return "China"
+	}
+	return strings.TrimSpace(code)
+}
+
+// 编译期断言：替身实现契约（契约多一条方法时在这里先失败，而不是等到装配期）。
+var _ sysconfigcontract.DictReader = (*fakeCountryDict)(nil)
+
+// TestOrderDetailRendersCountryName 订单地址里的国家代码渲染成当前语言的名称。
+//
+// 断言的是**渲染出来的 HTML 字节**（走 jet 模板），覆盖四条路径：
+//
+//	· 中文界面 → 中国，英文界面 → China（语言来自片段的 lang 参数）；
+//	· 字典里没有这个码 → 显示代码本身，整段地址不被吞掉；
+//	· 字典未接入（装配退化）→ 同样显示代码，详情照常渲染、不失败。
+func TestOrderDetailRendersCountryName(t *testing.T) {
+	detail := &orderdto.OrderDetailResp{
+		Head: &orderdto.OrderResp{
+			ID: 9, OrderNo: "NO-9", Status: "shipped", Total: 100,
+			ShipCountry: "CN", ShipCity: "深圳市", ShipAddress: "某某路 1 号",
+			CreateTime: utils.NewJSONTime(time.Now()),
+		},
+	}
+	SetVisitorOrderReader(&fakeVisitorOrders{detail: detail})
+	SetCountryLabelReader(&fakeCountryDict{})
+	t.Cleanup(func() {
+		SetVisitorOrderReader(nil)
+		SetCountryLabelReader(nil)
+	})
+
+	zh := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
+	if !strings.Contains(zh, "中国 深圳市") {
+		t.Fatalf("中文界面应把 CN 渲染成国家名；实际：%s", zh)
+	}
+
+	en := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=en-US", 5)
+	if !strings.Contains(en, "China 深圳市") {
+		t.Fatalf("英文界面应渲染英文国家名；实际：%s", en)
+	}
+
+	// 快照里的码不在字典里（未收录地区 / 字典还没补）→ 显示代码，不丢这一段地址。
+	detail.Head.ShipCountry = "ZZ"
+	unknown := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
+	if !strings.Contains(unknown, "ZZ 深圳市") {
+		t.Fatalf("字典缺行时应回落显示代码；实际：%s", unknown)
+	}
+
+	// 未接入字典：显示代码，页面照常。
+	SetCountryLabelReader(nil)
+	noDict := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
+	if !strings.Contains(noDict, "ZZ 深圳市") {
+		t.Fatalf("未接入字典时应回落显示代码；实际：%s", noDict)
 	}
 }

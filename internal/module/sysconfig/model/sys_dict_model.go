@@ -35,12 +35,17 @@ const AreaKindCountry = "country"
 // 不映射 iso639_1 / minor_unit 之类：读的时候用不到，映射进来只会多一处需要跟着
 // 迁移改的地方。列的真源是建表迁移。
 type SysDictEntity struct {
-	Type      string `gorm:"column:type;primaryKey"`
-	Code      string `gorm:"column:code;primaryKey"`
-	URLCode   string `gorm:"column:url_code"`
-	Symbol    string `gorm:"column:symbol"`
-	Enabled   bool   `gorm:"column:enabled"`
-	SortOrder int    `gorm:"column:sort_order"`
+	Type    string `gorm:"column:type;primaryKey"`
+	Code    string `gorm:"column:code;primaryKey"`
+	URLCode string `gorm:"column:url_code"`
+	Symbol  string `gorm:"column:symbol"`
+	Enabled bool   `gorm:"column:enabled"`
+	// UIAvailable 界面译文是否已有（sys_dict 的既有列，此前零消费方）。
+	//
+	// 含义只有这一个：**这种语言的界面文案已有人译过**。它不表示「语言可用」
+	// （那是 enabled），也不表示「内容已翻译」。i18n 词条页用它标记选项。
+	UIAvailable bool `gorm:"column:ui_available"`
+	SortOrder   int  `gorm:"column:sort_order"`
 }
 
 // TableName 表名。

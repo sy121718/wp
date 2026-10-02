@@ -94,8 +94,8 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
-	pages := orderhttp.NewOrderPageHandle(orders, projects)
-	returns := orderhttp.NewReturnPageHandle(orders, projects, nil)
+	pages := orderhttp.NewOrderPageHandle(orders, projects, nil)
+	returns := orderhttp.NewReturnPageHandle(orders, projects, nil, nil)
 	engine.GET("/admin/orders", pages.OrdersPage)
 	engine.GET("/admin/returns", returns.ReturnsPage)
 

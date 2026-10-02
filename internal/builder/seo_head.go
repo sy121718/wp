@@ -3,6 +3,7 @@ package builder
 import (
 	"encoding/json"
 	"fmt"
+	"go_wp/pkg/i18n"
 	"html"
 	"net/url"
 	"os"
@@ -402,9 +403,12 @@ func buildJSONLD(url, title, description, image, schemaType string, offer *Produ
 		}
 		if offer.Price != "" {
 			doc["offers"] = map[string]any{
-				"@type":         "Offer",
-				"price":         offer.Price,
-				"priceCurrency": seoDefaultString(offer.PriceCurrency, "CNY"),
+				"@type": "Offer",
+				"price": offer.Price,
+				// 兜底值同样取全局默认币种（进程内缓存值）：结构化数据与页面 props
+				// 之前一个写码、一个写符号（¥），两处自相矛盾；接上同一个来源后
+				// 「声称 CNY、页面显示 $」这个裂口不会再出现。
+				"priceCurrency": seoDefaultString(offer.PriceCurrency, i18n.GetDefaultCurrency()),
 				"availability":  "https://schema.org/" + seoDefaultString(offer.Availability, "InStock"),
 				"url":           url,
 			}

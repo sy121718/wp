@@ -1,0 +1,144 @@
+/* checkoutform.css — 结算表单样式（core.checkoutForm）。
+ *
+ * 语法约定（见 internal/builder/core/component_css.go）：
+ *   &                 该组件实例的作用域选择器（同一组件多实例互不污染）
+ *   @focus-transition / @focus-ring   Go 侧计算的声明占位（效果基本库，保持一份实现）
+ *   @hover / @active   选择器前缀，指定进哪个桶（构建期决定要不要包 @media (hover: hover)）
+ *   @media (max-width: Npx)          只认既有断点 1024 / 767，自造断点会构建期报错
+ *
+ * 多端适配（docs/rules/frontend.md 硬规则）：
+ *   · 字段栅格用 auto-fit + minmax(min(100%, 220px), 1fr)：桌面两列、平板两列、
+ *     手机自动一列，靠容器宽度而不是断点硬切（不会在窄屏溢出）；
+ *   · 所有控件 width:100% + min-width:0，绝对值（圆角 / ring）都是固定小值；
+ *   · 悬停反馈进 @hover 桶（触屏不输出），触屏等价形态走 @active 按压态；
+ *   · 键盘：focus 用 :focus-visible 的 ring，顺序即 DOM 顺序（分组内字段顺序 = 作者配置顺序）。
+ */
+
+/* 表单容器：分组纵向排列。 */
+& {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* 不可用提示（缺站点工程）。 */
+& .sky-checkout-notice {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--sky-c-text-muted, #6b7280);
+  background: var(--sky-c-surface-alt, rgba(0,0,0,0.03));
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 8px;
+}
+
+/* 分组（fieldset 自带边框与内距，全部清掉，只留语义）。 */
+& .sky-checkout-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* 分组标题。 */
+& .sky-checkout-legend {
+  margin: 0 0 2px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: inherit;
+}
+
+/* 字段栅格：桌面/平板自动两列，窄屏自动一列（auto-fit 随容器宽度决定列数）。 */
+& .sky-checkout-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+/* 单个字段：标签在上、控件在下。 */
+& .sky-checkout-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 14px;
+}
+
+/* 整行字段（多行备注、以及作者按语义需要独占一行的项）。 */
+& .sky-checkout-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+/* 控件通用外观（:is() 合并同声明选择器，与仓库既有表单口径一致）。 */
+& :is(input[type=text],input[type=email],input[type=tel],select) {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 15px;
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
+  border-radius: 6px;
+  background: var(--sky-c-surface, #fff);
+  color: var(--sky-c-text, #111827);
+  @focus-transition;
+}
+& textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 15px;
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
+  border-radius: 6px;
+  background: var(--sky-c-surface, #fff);
+  color: var(--sky-c-text, #111827);
+  @focus-transition;
+  min-height: 96px;
+  resize: vertical;
+}
+
+/* 聚焦 ring（键盘与触屏都可见；--sky-focus-ring 可由主题覆写）。 */
+& :is(input,textarea,select):focus {
+  @focus-ring;
+}
+
+/* 原生校验态（零 JS）：用户交互后字段非法 → 字段容器与控件同步标红。
+   用 :user-invalid 而非 :invalid，避开「刚打开页面就全部标红」。 */
+& .sky-checkout-field:has(:user-invalid) {
+  color: var(--sky-c-danger, #dc2626);
+}
+& :user-invalid {
+  border-color: var(--sky-c-danger, #dc2626);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+
+/* 提交按钮。 */
+& .sky-checkout-submit {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sky-btn-color, #fff);
+  background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .15s;
+}
+/* 悬停提亮进 hover 桶（构建期包 @media (hover: hover)），触屏上不输出。 */
+@hover & .sky-checkout-submit:hover {
+  background: var(--sky-btn-hover-bg, var(--sky-c-primary-deep, #1d4ed8));
+}
+
+/* 触屏等价形态：按压反馈（@active 不包媒体查询，手指按下即触发）。 */
+@active & .sky-checkout-submit:active {
+  background: var(--sky-btn-hover-bg, var(--sky-c-primary-deep, #1d4ed8));
+}

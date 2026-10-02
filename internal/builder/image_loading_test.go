@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	mediacontract "go_wp/internal/module/media/contract"
 	"go_wp/internal/templates"
 )
 
@@ -70,9 +71,15 @@ func TestImageLoadingAllComponents(t *testing.T) {
 // TestImageSrcsetFromAssetProbe 媒体变体存在时输出 srcset/sizes（构建期探测，访客零查询）。
 func TestImageSrcsetFromAssetProbe(t *testing.T) {
 	set, _ := templates.NewEmbeddedComponentSet()
-	probe := func(url string) []int {
+	// 伪候选故意用**与 media 模块真实命名同形**的名字
+	// （<stem>_<type>-<generation>-<hash8>.jpg）：用占位名会让「命名约定一变、
+	// 这里仍然绿」—— 断言就失去了守住约定的能力。
+	probe := func(url string) []mediacontract.VariantRef {
 		if url == "/storage/a.jpg" {
-			return []int{320, 1280}
+			return []mediacontract.VariantRef{
+				{URL: "/storage/a_thumb-1-ab12cd34.jpg", Width: 320},
+				{URL: "/storage/a_medium-1-ab12cd34.jpg", Width: 1280},
+			}
 		}
 		return nil
 	}
@@ -85,7 +92,8 @@ func TestImageSrcsetFromAssetProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败: %v", err)
 	}
-	want := `srcset="/storage/a_thumb.jpg 320w, /storage/a_medium.jpg 1280w"`
+	// 候选按宽度升序输出，URL 原样取自 probe（组件层不再自行拼名）。
+	want := `srcset="/storage/a_thumb-1-ab12cd34.jpg 320w, /storage/a_medium-1-ab12cd34.jpg 1280w"`
 	if !strings.Contains(c.HTML, want) {
 		t.Errorf("缺少 srcset 候选 %q\n%s", want, c.HTML)
 	}

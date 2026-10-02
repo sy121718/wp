@@ -102,6 +102,13 @@ type Service struct {
 	// 进程内观测值，供 PendingReceiptStatus 与健康检查判断「本实例的收敛还在跑」；
 	// 多实例部署下每个实例各记各的，不做全局真源（这是进程健康信号，不是业务状态）。
 	lastConvergeAt atomic.Int64
+
+	// checkoutCountries 结算表单国家下拉的来源（装配期注入，构建期按本页语言取一份）。
+	//
+	// 是**函数**而不是一份切片：国家选项与语言有关（sys_area 的中文名 / 英文名两列），
+	// 而编译是逐语言的 —— 注入一份冻结的切片会让英文站点拿到中文国名。
+	// 未注入时结算表单若含国家字段会在构建期明确报错（见 core.checkoutForm）。
+	checkoutCountries func(ctx context.Context, lang string) []core.CheckoutCountry
 }
 
 // NewService 创建 Page 服务；同时初始化本地产物根（GO_WP_ARTIFACT_ROOT 可覆盖，
@@ -183,6 +190,15 @@ func (s *Service) getExistingPage(ctx context.Context, id string) (page *pagemod
 
 // SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
 func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }
+
+// SetCheckoutCountries 注入结算表单国家下拉的来源（core.checkoutForm 的构建期输入）。
+//
+// 传函数而不是切片：国家清单与语言有关，而编译是逐语言的（见字段注释）。
+// 未注入的后果可见：页面里有结算表单 + 国家字段时构建失败（不是静默出一个空国家下拉），
+// 因此装配层按必需端口断言。
+func (s *Service) SetCheckoutCountries(fn func(ctx context.Context, lang string) []core.CheckoutCountry) {
+	s.checkoutCountries = fn
+}
 
 // SetBlueprints 注入蓝图契约（装配期调用，审计 VIS-010）。
 //

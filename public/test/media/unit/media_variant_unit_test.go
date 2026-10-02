@@ -124,12 +124,15 @@ func TestMediaVariantGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("生成变体失败: %v", err)
 	}
-	if len(variants) != 3 {
-		t.Fatalf("应生成 3 个变体: got=%d", len(variants))
+	// 期望条数**由 VariantTypes() 派生**，不写死数字：增删档位时这里应当自动跟随，
+	// 写死会让「实现按设计加了档位」表现为测试失败而不是缺陷。
+	want := len(mediamodel.VariantTypes())
+	if len(variants) != want {
+		t.Fatalf("应生成 %d 个变体: got=%d", want, len(variants))
 	}
 	records := variantMap(listVariants(t, db, id))
-	if len(records) != 3 {
-		t.Fatalf("应有 3 条变体记录: got=%d", len(records))
+	if len(records) != want {
+		t.Fatalf("应有 %d 条变体记录: got=%d", want, len(records))
 	}
 	for _, vt := range mediamodel.VariantTypes() {
 		rec, ok := records[vt]
@@ -161,9 +164,10 @@ func TestMediaVariantGenerateSuccess(t *testing.T) {
 	if medium.Width == nil || *medium.Width <= 0 || *medium.Width > 1280 || *medium.Height > 1280 {
 		t.Fatalf("medium 尺寸应 Fit 1280x1280: %dx%d", derefInt(medium.Width), derefInt(medium.Height))
 	}
-	webp := records[mediamodel.VariantTypeWebp]
-	if webp.Width == nil || *webp.Width != 640 || *webp.Height != 480 {
-		t.Fatalf("webp 变体应保持原图尺寸 640x480: %dx%d", derefInt(webp.Width), derefInt(webp.Height))
+	// full 槽位 = 原尺寸重编码（该槽位原名 webp，名不副实：产物从来是 JPEG）。
+	full := records[mediamodel.VariantTypeFull]
+	if full.Width == nil || *full.Width != 640 || *full.Height != 480 {
+		t.Fatalf("full 变体应保持原图尺寸 640x480: %dx%d", derefInt(full.Width), derefInt(full.Height))
 	}
 }
 
@@ -187,7 +191,7 @@ func TestMediaVariantDecodeFailureFailed(t *testing.T) {
 	}
 }
 
-// TestMediaVariantOversizeSkipped 边长 >6000px（伪造 header）：三条 failed，跳过生成。
+// TestMediaVariantOversizeSkipped 边长 >6000px（伪造 header）：四条 failed，跳过生成。
 func TestMediaVariantOversizeSkipped(t *testing.T) {
 	db, svc := newMediaUnitService(t)
 	tmp := initVariantUploadForTest(t)
@@ -198,8 +202,8 @@ func TestMediaVariantOversizeSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("超大图应降级而非报错: %v", err)
 	}
-	if len(variants) != 3 {
-		t.Fatalf("应返回 3 条 failed 记录: got=%d", len(variants))
+	if want := len(mediamodel.VariantTypes()); len(variants) != want {
+		t.Fatalf("应返回 %d 条 failed 记录: got=%d", want, len(variants))
 	}
 	for _, v := range variants {
 		if v.Status != mediamodel.VariantStatusFailed {
@@ -226,8 +230,8 @@ func TestMediaVariantRegenerateIdempotent(t *testing.T) {
 		t.Fatalf("重新生成失败: %v", err)
 	}
 	records := listVariants(t, db, id)
-	if len(records) != 3 {
-		t.Fatalf("重新生成后应仍为 3 条（先清旧）: got=%d", len(records))
+	if want := len(mediamodel.VariantTypes()); len(records) != want {
+		t.Fatalf("重新生成后应仍为 %d 条（先清旧）: got=%d", want, len(records))
 	}
 	for _, rec := range records {
 		if rec.Status != mediamodel.VariantStatusReady {
@@ -246,8 +250,8 @@ func TestMediaEnsureVariantRecords(t *testing.T) {
 	// 正常图片：3 条 pending。
 	idPNG := seedVariantAttachmentNamed(t, db, "up.png", "up.png", "image", "image/png")
 	svc.EnsureVariantRecords(t.Context(), mustAttachment(t, db, idPNG))
-	if got := len(listVariants(t, db, idPNG)); got != 3 {
-		t.Fatalf("正常图片应登记 3 条变体记录: got=%d", got)
+	if got, want := len(listVariants(t, db, idPNG)), len(mediamodel.VariantTypes()); got != want {
+		t.Fatalf("正常图片应登记 %d 条变体记录: got=%d", want, got)
 	}
 	for _, rec := range listVariants(t, db, idPNG) {
 		if rec.Status != mediamodel.VariantStatusPending {
@@ -276,8 +280,8 @@ func TestMediaEnsureVariantRecords(t *testing.T) {
 	idBad := seedVariantAttachmentNamed(t, db, "broken.png", "broken.png", "image", "image/png")
 	svc.EnsureVariantRecords(t.Context(), mustAttachment(t, db, idBad))
 	bad := listVariants(t, db, idBad)
-	if len(bad) != 3 {
-		t.Fatalf("探测失败应登记 3 条: got=%d", len(bad))
+	if want := len(mediamodel.VariantTypes()); len(bad) != want {
+		t.Fatalf("探测失败应登记 %d 条: got=%d", want, len(bad))
 	}
 	for _, rec := range bad {
 		if rec.Status != mediamodel.VariantStatusFailed {

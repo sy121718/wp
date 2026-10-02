@@ -11,6 +11,7 @@ import (
 
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
+	"go_wp/pkg/logger"
 )
 
 // ListDictOptions 列出某类型字典的启用项（按 sort_order，稳定）。
@@ -34,7 +35,7 @@ func (s *Service) ListDictOptions(ctx context.Context, dictType string) (res []s
 			// 语言：短码与 code 不同时带上（运营要能看出 URL 里会出现什么）。
 			label = r.Code + "（/" + url + "）"
 		}
-		res = append(res, sysconfigdto.DictOption{Code: r.Code, Label: label})
+		res = append(res, sysconfigdto.DictOption{Code: r.Code, Label: label, UIAvailable: r.UIAvailable})
 	}
 	return res, nil
 }
@@ -48,18 +49,87 @@ func (s *Service) ListCountryOptions(ctx context.Context, lang string) (res []sy
 	if err != nil {
 		return nil, err
 	}
-	zh := strings.HasPrefix(strings.ToLower(strings.TrimSpace(lang)), "zh")
+	zh := isChineseLang(lang)
 	res = make([]sysconfigdto.CountryOption, 0, len(rows))
 	for i := range rows {
 		r := rows[i]
-		label := r.NameEn
-		if zh {
-			label = r.NameZh
-		}
-		if strings.TrimSpace(label) == "" {
-			label = r.Code // 两列都缺时用 code：宁可显示 AO，也不要空行
-		}
-		res = append(res, sysconfigdto.CountryOption{Code: r.Code, Label: label})
+		res = append(res, sysconfigdto.CountryOption{Code: r.Code, Label: countryNameOf(r, zh)})
 	}
 	return res, nil
+}
+
+// CountryLabel 把国家/地区代码换成给定界面语言下的显示名（查不到回落 code）。
+//
+// 缓存形状是「归一语言 → (码 → 名)」：订单详情一次渲染可能解析收货与账单两个地址，
+// 而列表页一屏有几十行 —— 不缓存的话每行都要把 sys_area 拉一遍。
+// 读失败**不写缓存**（下一次渲染重试），并只记日志不改返回：这里返回的是一行展示文字，
+// 读不到字典的正确表现是「显示代码」，不是让整个页面失败。
+func (s *Service) CountryLabel(ctx context.Context, lang, code string) string {
+	code = strings.TrimSpace(code)
+	if code == "" || s == nil || s.m == nil {
+		return code
+	}
+	key := normalizeLabelLang(lang)
+	if cached, ok := s.countryLabels.Load(key); ok {
+		return labelFromIndex(cached.(map[string]string), code)
+	}
+	rows, err := s.m.ListAreasByKind(ctx, sysconfigmodel.AreaKindCountry)
+	if err != nil {
+		logger.Scene("sysconfig").Error(err, "国家名读取失败，本次回落显示国家代码")
+		return code
+	}
+	zh := key == labelLangZh
+	index := make(map[string]string, len(rows))
+	for i := range rows {
+		rowCode := strings.TrimSpace(rows[i].Code)
+		if rowCode == "" {
+			continue
+		}
+		// 键统一大写：快照里的 code 由收参层归一过，但 API 直传或存量数据可能是小写，
+		// 差一个大小写就查不到名字 —— 那是「同一个码有时显示 CN、有时显示中国」的来源。
+		index[strings.ToUpper(rowCode)] = countryNameOf(rows[i], zh)
+	}
+	s.countryLabels.Store(key, index)
+	return labelFromIndex(index, code)
+}
+
+// labelFromIndex 从码索引里取显示名；缺行（或值为空）回落 code。
+func labelFromIndex(index map[string]string, code string) string {
+	if label, ok := index[strings.ToUpper(strings.TrimSpace(code))]; ok && strings.TrimSpace(label) != "" {
+		return label
+	}
+	return code
+}
+
+// countryNameOf 一行的显示名：中文界面取 name_zh，否则 name_en；两列都缺时用 code
+// （宁可显示 AO，也不要空行 / 空地址段）。
+func countryNameOf(r sysconfigmodel.SysAreaEntity, zh bool) string {
+	label := r.NameEn
+	if zh {
+		label = r.NameZh
+	}
+	if strings.TrimSpace(label) == "" {
+		label = r.Code
+	}
+	return label
+}
+
+// 归一后的语言键。**只有两档**，与 ListCountryOptions 的判据同源（字典表当前只有
+// name_zh / name_en 两列）：不归一的话 zh-CN 与 zh-TW 会各查一次库、各缓存一份完全相同的清单。
+const (
+	labelLangZh = "zh"
+	labelLangEn = "en"
+)
+
+// normalizeLabelLang 把界面语言归一到上面两档。
+func normalizeLabelLang(lang string) string {
+	if isChineseLang(lang) {
+		return labelLangZh
+	}
+	return labelLangEn
+}
+
+// isChineseLang 判「以 zh 开头」（zh / zh-CN / zh-Hant 都算中文界面）。
+func isChineseLang(lang string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(lang)), "zh")
 }

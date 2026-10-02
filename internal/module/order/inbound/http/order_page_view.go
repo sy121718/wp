@@ -41,7 +41,11 @@ func orderListRow(tr translate, o *orderdto.OrderResp, filter orderFilter, proje
 }
 
 // orderDetailView 详情（头 + 订单项 + 流转链 + 可选操作）→ 模板视图。
-func orderDetailView(tr translate, d *orderdto.OrderDetailResp, filter orderFilter, projectID string, page, limit int) gin.H {
+//
+// countryLabel 把订单快照里的国家/地区代码换成当前界面语言的显示名；nil（字典未接入）
+// 时原样显示代码，见 applyCountryLabel。
+func orderDetailView(tr translate, d *orderdto.OrderDetailResp, filter orderFilter, projectID string, page, limit int,
+	countryLabel func(string) string) gin.H {
 	if d == nil || d.Head == nil {
 		return gin.H{}
 	}
@@ -123,10 +127,15 @@ func orderDetailView(tr translate, d *orderdto.OrderDetailResp, filter orderFilt
 			"AdminNote":       orderTextOrEmpty(head.AdminNote),
 			"Remark":          orderTextOrEmpty(head.Remark),
 			"CancelReason":    orderTextOrEmpty(head.CancelReason),
-			"ShippingAddress": orderAddressLabel(head.ShipName, head.ShipPhone, head.ShipProvince,
-				head.ShipCity, head.ShipDistrict, head.ShipAddress, head.ShipZip),
-			"BillingAddress": orderAddressLabel(head.BillName, head.BillPhone, head.BillProvince,
-				head.BillCity, head.BillDistrict, head.BillAddress, head.BillZip),
+			// 国家/地区排在最前：地址书写从大到小（国家 → 省 → 市 → 区 → 街道）。
+			// 值来自快照（迁移 501 存的是代码），这里经 countryLabel 换成当前语言的名字，
+			// 换不换得到都不影响订单本身的语义。
+			"ShippingAddress": orderAddressLabel(applyCountryLabel(countryLabel, head.ShipCountry),
+				head.ShipName, head.ShipPhone,
+				head.ShipProvince, head.ShipCity, head.ShipDistrict, head.ShipAddress, head.ShipZip),
+			"BillingAddress": orderAddressLabel(applyCountryLabel(countryLabel, head.BillCountry),
+				head.BillName, head.BillPhone,
+				head.BillProvince, head.BillCity, head.BillDistrict, head.BillAddress, head.BillZip),
 		},
 		"Items":       items,
 		"Logs":        logs,

@@ -41,7 +41,7 @@ func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, stri
 	if err != nil {
 		t.Fatalf("创建测试工程失败: %v", err)
 	}
-	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil)
+	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/settings", handle.SiteSettings)

@@ -206,7 +206,7 @@ func TestMediaDownloadSingleZip(t *testing.T) {
 	if _, ok := entries["medium/README.txt"]; !ok {
 		t.Fatalf("未 ready 的 medium 目录应有 README.txt: %v", keysOf(entries))
 	}
-	if _, ok := entries["webp/README.txt"]; !ok {
+	if _, ok := entries["full/README.txt"]; !ok {
 		t.Fatalf("无记录的 webp 目录应有 README.txt: %v", keysOf(entries))
 	}
 }
@@ -237,7 +237,7 @@ func TestMediaDownloadBatchZip(t *testing.T) {
 		"a1_" + uint64ToString(id1) + "/original/a1.png",
 		"b2_" + uint64ToString(id2) + "/original/b2.png",
 		"a1_" + uint64ToString(id1) + "/thumb/README.txt",
-		"b2_" + uint64ToString(id2) + "/webp/README.txt",
+		"b2_" + uint64ToString(id2) + "/full/README.txt",
 	} {
 		if _, ok := entries[want]; !ok {
 			t.Fatalf("批量包缺少条目 %s: %v", want, keysOf(entries))

@@ -58,7 +58,7 @@ func postSiteSettingsSave(t *testing.T, projects projectcontract.ProjectService,
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	h := NewSiteSettingsAdminHandle(projects, nil)
+	h := NewSiteSettingsAdminHandle(projects, nil, nil)
 	router.POST("/admin/settings/save", h.SaveSiteSettings)
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/settings/save", strings.NewReader(form.Encode()))

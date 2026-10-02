@@ -8,6 +8,13 @@ import (
 	mediadto "go_wp/internal/module/media/dto"
 )
 
+// VariantRef 已就绪的图片变体引用（构建期 srcset 消费）—— mediadto 的重导出。
+//
+// 为什么不另造一组「契约自有形状」：它要传给 builder / pipeline / page / presentation
+// 四个消费方，两处逐字段等价的定义等于把「一处改、调用方编译错」换成「一处改、
+// 另一处静默分叉」。真源在 dto，这里只做跨模块可见性的显式声明。
+type VariantRef = mediadto.VariantRef
+
 // SyncRefsInput 引用同步的入参 —— 契约自有形状，不是 dto 的别名。
 //
 // 四个字段就是这件事的全部语义：谁引用（RefKind + RefID）、引用方标题（RefTitle）、
@@ -56,12 +63,16 @@ type MediaService interface {
 	UpdateAttachment(ctx context.Context, req *mediadto.AttachmentUpdateReq) error
 	// CategoryTree 获取文件分类树。
 	CategoryTree(ctx context.Context) ([]mediadto.CategoryTreeNode, error)
-	// GenerateVariants 同步生成/重新生成指定附件的全部图片变体（thumb/medium/webp），
+	// GenerateVariants 同步生成/重新生成指定附件的全部图片变体（thumb/medium/full），
 	// 供「重新生成」按钮与存量回填复用；返回生成后的变体状态列表。
 	GenerateVariants(ctx context.Context, attachmentID uint64) ([]mediadto.VariantResp, error)
-	// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体宽度列表，
+	// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体，
 	// 供构建期响应式图片（srcset）使用；非媒体库 URL 或变体未就绪返回 nil。
-	ProbeImageVariants(ctx context.Context, url string) []int
+	//
+	// 返回**完整 URL + 宽度**而不是只返回宽度：变体文件名带内容指纹
+	// （<stem>_<type>-<generation>-<hash8>.jpg），而 generation 与 hash 只有本模块知道。
+	// 调用方按宽度自行拼文件名 = 第二份命名真源，改一处就是 srcset 静默指向不存在的文件。
+	ProbeImageVariants(ctx context.Context, url string) []mediadto.VariantRef
 	// BuildDownloadPlan 构建单个附件的资源包（zip）打包计划。
 	//
 	// langs 是可选的**产物语言**（zip 内 README.txt 用）：不传时按默认语言生成。

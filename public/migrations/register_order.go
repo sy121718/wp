@@ -191,4 +191,19 @@ func registerOrderAndSiteSlots() {
 			"'admin.inventory_purchases.production.submit')",
 		SQL: mustSQL("272_inventory_production_inbound_i18n.sql"),
 	})
+
+	// 501：订单地址的国家 / 地区快照列（收货 + 账单，纯 DDL，走 Migrations 台账）。
+	//
+	// CheckSQL 判**两个列都已存在**，而不是判 orders 表存在：135 早已把表建好，
+	// 「表在」恒为真会让本迁移每次启动都被跳过、列永远建不出来
+	//（256 与 DB-015 同因：判据指向一个一直为真的东西 = 迁移静默失效）。
+	// 表名参数照 135/147 的写法传进来：占位符 ? 由迁移器绑定为 m.TableName。
+	register(Migration{
+		Version:   "501-order-ship-country",
+		TableName: "orders",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 2 THEN 1 ELSE 0 END FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name = 'orders' AND column_name IN ('ship_country', 'bill_country')",
+		SQL: mustSQL("501_order_ship_country.sql"),
+	})
 }

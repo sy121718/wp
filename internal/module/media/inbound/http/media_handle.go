@@ -222,7 +222,7 @@ func (h *Handle) GenerateVariants(c *gin.Context) {
 }
 
 // Download 单图资源包下载（GET /api/media/download?id=1）。
-// zip 内部分目录 original/、webp/、thumb/、medium/（变体未 ready 的目录为 README.txt）。
+// zip 内部分目录 original/、thumb/、small/、medium/、full/（变体未 ready 的目录为 README.txt）。
 func (h *Handle) Download(c *gin.Context) {
 	id, err := strconv.ParseUint(strings.TrimSpace(c.Query("id")), 10, 64)
 	if err != nil || id == 0 {
@@ -239,7 +239,7 @@ func (h *Handle) Download(c *gin.Context) {
 }
 
 // DownloadBatch 多图资源包打包下载（GET /api/media/download/batch?ids=1,2,3）。
-// 每图一个 <文件名>_<id>/ 子文件夹，子文件夹内同四目录。
+// 每图一个 <文件名>_<id>/ 子文件夹，子文件夹内同五目录。
 func (h *Handle) DownloadBatch(c *gin.Context) {
 	ids, err := parseIDList(c.Query("ids"))
 	if err != nil || len(ids) == 0 {

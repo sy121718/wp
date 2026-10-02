@@ -14,9 +14,22 @@ const tableNameSysMediaVariant = "sys_media_variant"
 
 // 变体类型常量（与迁移 048_media_variant.sql 的取值一致）。
 const (
-	VariantTypeThumb  = "thumb"
+	VariantTypeThumb = "thumb"
+	// VariantTypeSmall 中间档：768 Fit Lanczos。
+	//
+	// 为什么需要它（2026-10-02 补）：srcset 原先只有 320 / 1280 两档，而组件的
+	// sizes 是「≤640px 视口 100vw、其余 50vw」—— DPR=2 的 375pt 手机需要约 750
+	// 设备像素：320 太小，1280 又远大于所需。浏览器在「满足所需的最小候选」规则下
+	// 只能选 1280，移动端因此下载一份桌面对图像。768 正好落在这一档。
+	VariantTypeSmall  = "small"
 	VariantTypeMedium = "medium"
-	VariantTypeWebp   = "webp"
+	// VariantTypeFull 全尺寸槽位：与原图同尺寸的 JPEG 重编码。
+	//
+	// 本槽位此前叫 webp —— 那个名字是骗人的：产物从来是 JPEG（编码统一走
+	// image_processor.go 的 encodeJPEGBytes / variantJPEGQuality），从不输出 WebP。
+	// 将来真要接 WebP/AVIF 输出时，这个名字会把改代码的人骗一次（以为换掉编码器
+	// 就是 WebP，实际上类型名与产物格式是两回事），所以在造成误解之前改名 full。
+	VariantTypeFull = "full"
 )
 
 // 变体生成状态常量（varchar，服务端状态机）。
@@ -29,7 +42,10 @@ const (
 
 // VariantTypes 返回全部受支持的变体类型（生成顺序固定）。
 func VariantTypes() []string {
-	return []string{VariantTypeThumb, VariantTypeMedium, VariantTypeWebp}
+	// 顺序即生成顺序，按边长升序：thumb(320) → small(768) → medium(1280) → full(原尺寸)。
+	// 这个切片的**长度就是「该附件应有几条变体记录」的判据**（见 variantBackfillReason），
+	// 所以增删档位会顺带让存量附件判为「记录条数不齐」，由调度器幂等补偿重建 —— 这是设计。
+	return []string{VariantTypeThumb, VariantTypeSmall, VariantTypeMedium, VariantTypeFull}
 }
 
 // MediaVariantEntity 对应 sys_media_variant 表。
@@ -140,7 +156,7 @@ func (m *MediaVariantModel) GetByFilePath(ctx context.Context, filePath string) 
 	return &e, nil
 }
 
-// ListByAttachment 查询指定附件的全部变体记录，按 thumb/medium/webp 固定顺序。
+// ListByAttachment 查询指定附件的全部变体记录，按 id 升序（即 VariantTypes 的生成顺序）。
 func (m *MediaVariantModel) ListByAttachment(ctx context.Context, attachmentID uint64) ([]MediaVariantEntity, error) {
 	var list []MediaVariantEntity
 	err := m.varDB(ctx).Where("attachment_id = ?", attachmentID).Order("id ASC").Find(&list).Error

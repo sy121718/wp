@@ -25,6 +25,33 @@ type Service interface {
 	SetGroups(ctx context.Context, req *SetGroupsReq) ([]Group, error)
 }
 
+// DictReader 数据字典**只读口**（窄接口）：只够后台页面给下拉 / datalist 供数。
+//
+// 为什么是独立一条而不是并进 Service：写能力（SetGroup）与读字典是两条边界 ——
+// 后台页面只要读；把整条 Service 递过去，等于把「谁能改全局配置」扩散到每个读点
+// （同样的理由见 content 的匿名检索端口、user 的访客账号端口）。
+//
+// **只读、不做 CRUD**：字典的编辑界面与生命周期是独立批次；现在只做「给下拉供数」
+// 这一件事，免得把还没想清楚的编辑语义裹进来。
+//
+// 实现方与消费方都在 internal：本接口跨模块可见即入契约；页面的选项来源因此不必
+// 各自写 SQL（那会破 model 边界）。
+type DictReader interface {
+	// ListDictOptions 列出某类型（language / currency）的**启用**项。
+	ListDictOptions(ctx context.Context, dictType string) ([]DictOption, error)
+	// ListCountryOptions 列出启用国家（label 按给定界面语言取中文或英文名）。
+	ListCountryOptions(ctx context.Context, lang string) ([]CountryOption, error)
+	// CountryLabel 把国家/地区代码换成给定界面语言下的**显示名**（列表 / 详情渲染用）。
+	//
+	// **查不到一律回落 code**（字典缺行、该语言没有对应名称、code 为空、读取失败）：
+	// 它只是展示标签，不是订单语义 —— 少一行字典不该让订单详情整页失败。
+	// 这与构建期「国家清单缺失即构建失败」不同：那是产物，这是一次渲染里的一个字段。
+	//
+	// 与 ListCountryOptions 分工：后者给下拉供数（要顺序、要整份清单），
+	// 前者给「已经存了 code、现在要显示」的场景（要查得快，不要每次拉整表）。
+	CountryLabel(ctx context.Context, lang, code string) string
+}
+
 // === 错误值（跨模块可见的语义错误）===
 
 // ErrGroupNotFound 配置分组不存在。
@@ -60,6 +87,12 @@ type Group = sysconfigdto.Group
 // SetGroupReq 整组保存请求。
 type SetGroupReq = sysconfigdto.SetGroupReq
 
+// DictOption 字典下拉项（language / currency）。
+type DictOption = sysconfigdto.DictOption
+
+// CountryOption 国家下拉项。
+type CountryOption = sysconfigdto.CountryOption
+
 // SetGroupsReq 多组一次保存请求。
 type SetGroupsReq = sysconfigdto.SetGroupsReq
 
@@ -71,6 +104,13 @@ const (
 	// 这三项的**唯一来源**就是本组（原先在 config.yaml，改一次要重启且散落多处）；
 	// 工程级覆盖仍在 projects.settings（那是多工程维度，不是兼容层）。
 	GroupI18n = "i18n"
+	// GroupTrade 交易默认值组：默认国家 / 默认货币。
+	//
+	// **语义是「全局默认 + 兜底」**：工程级覆盖仍走 projects.settings。
+	// 目前只有两个读取方，都在展示与结构化数据层（SEO 的 priceCurrency）；
+	// 订单与购物车的金额口径仍是固定人民币，多币种是独立特性（见
+	// pkg/i18n.RuntimeValues.DefaultCurrency 的注释）。
+	GroupTrade = "trade"
 )
 
 // i18n 组的组内键名（业务语义键，由消费方解释）。

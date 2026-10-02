@@ -121,4 +121,14 @@ func init() {
 	registerPageTranslationMissesEntryI18n()
 	// 497：系统设置页（trade 组 + 本页词条，见 register_system_settings_page.go）。
 	registerSystemSettingsPage()
+	// 498：系统设置页侧栏入口（见 register_system_settings_menu.go）。
+	registerSystemSettingsMenu()
+	// 499：系统设置页 hint 改准（币种已接 SEO，见 register_system_settings_hint_currency.go）。
+	registerSystemSettingsHintCurrency()
+	// 500：trade 提示按产品口径改准（币种全局限定，见 register_system_settings_hint_trade_scope.go）。
+	registerSystemSettingsHintTradeScope()
+	// 503：trade 提示补「改币种不换算金额」（见 register_system_settings_hint_currency_no_conversion.go）。
+	registerSystemSettingsHintCurrencyNoConversion()
+	// 502：i18n 页语言标记词条（见 register_admin_i18n_option_ui_available.go）。
+	registerAdminI18nOptionUIAvailable()
 }

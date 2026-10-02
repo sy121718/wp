@@ -88,9 +88,9 @@ func orderRedirectErr(t *testing.T, rec *httptest.ResponseRecorder) string {
 // 这条路径本来就不该碰数据库。
 func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	orderPages := orderhttp.NewOrderPageHandle(nil, nil)
+	orderPages := orderhttp.NewOrderPageHandle(nil, nil, nil)
 	couponPages := orderhttp.NewCouponPageHandle(nil, nil)
-	returnPages := orderhttp.NewReturnPageHandle(nil, nil, nil)
+	returnPages := orderhttp.NewReturnPageHandle(nil, nil, nil, nil)
 
 	engine := gin.New()
 	engine.POST("/admin/orders/bulk-status", orderPages.OrderBulkStatus)
@@ -156,7 +156,7 @@ func TestOrderPageHidesInternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/orders", orderhttp.NewOrderPageHandle(f.orders, projects).OrdersPage)
+	engine.GET("/admin/orders", orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
 
 	// 制造**真实**基础设施错误。
 	if err := f.db.Exec("DROP TABLE IF EXISTS orders CASCADE").Error; err != nil {

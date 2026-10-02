@@ -7,10 +7,10 @@ package image
 
 import (
 	"fmt"
-	"path"
 	"strings"
 
 	"go_wp/internal/builder/core"
+	mediacontract "go_wp/internal/module/media/contract"
 	"go_wp/pkg/upload"
 )
 
@@ -68,7 +68,7 @@ type View struct {
 
 // BuildView 生成图片渲染视图：URL 直出 + 点击动作分支判定 + 图注（与 render 输出结构一致）。
 // class 为已合并的节点 class（nodeView 层计算），customID 为 Advanced 自定义 Element ID。
-func BuildView(node *core.Node, p *Props, class, customID string, content core.ContentResolver, defaults core.ImageDefaults, probe func(string) []int, siteLink func(string) string) (View, error) {
+func BuildView(node *core.Node, p *Props, class, customID string, content core.ContentResolver, defaults core.ImageDefaults, probe func(string) []mediacontract.VariantRef, siteLink func(string) string) (View, error) {
 	// 图片地址：CMS 绑定优先，否则手填 Src（媒体库/外链统一 URL）。
 	//
 	// 出口归一成**完整链接**：产物里的地址直接给访客用，相对路径在「站点与 CMS
@@ -121,17 +121,24 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 	}
 
 	// 响应式图片：媒体变体存在时输出 srcset（构建期探测，访客零查询）。
-	// 变体命名约定 <stem>_<type>.jpg：1280→medium、320→thumb（见 media 模块）。
+	//
+	// 候选 URL 由 media 模块**连同宽度一起**给出，本层只做拼装 —— 不再按宽度自行
+	// 拼 `<stem>_<type>.jpg`：变体名带内容指纹（<stem>_<type>-<generation>-<hash8>.jpg），
+	// 而 generation 与指纹只有 media 模块知道。自己拼名等于把命名约定抄成第二份真源，
+	// 一旦命名演进，症状是「srcset 静默指向不存在的文件」——浏览器只是悄悄回退到 src，
+	// 没有控制台报错、没有构建失败。
+	//
+	// 只列已存在的变体：原图仍在 src 里，浏览器可自行回退，
+	// 无需猜测原图宽度（猜错会让 srcset 的 w 描述符失真）。
 	if probe != nil {
-		if widths := probe(src); len(widths) > 0 {
-			parts := make([]string, 0, len(widths))
-			for _, w := range widths {
-				if u := variantURL(src, w); u != "" {
-					parts = append(parts, fmt.Sprintf("%s %dw", u, w))
+		if refs := probe(src); len(refs) > 0 {
+			parts := make([]string, 0, len(refs))
+			for _, ref := range refs {
+				if ref.URL == "" || ref.Width <= 0 {
+					continue
 				}
+				parts = append(parts, fmt.Sprintf("%s %dw", ref.URL, ref.Width))
 			}
-			// 只列已存在的变体：原图仍在 src 里，浏览器可自行回退，
-			// 无需猜测原图宽度（猜错会让 srcset 的 w 描述符失真）。
 			if len(parts) > 0 {
 				v.Srcset = strings.Join(parts, ", ")
 				v.Sizes = "(max-width: 640px) 100vw, 50vw"
@@ -163,14 +170,6 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 	return v, nil
 }
 
-// variantURL 按宽度返回媒体变体 URL，与 media 模块命名约定 <stem>_<type>.jpg 对齐：
-//
-//	≤320  → _thumb（320×320 Fit）
-//	≤1280 → _medium（1280×1280 Fit）
-//	其余  → 空串（无对应变体，跳过该候选）
-//
-// 变体统一编码为 JPEG，故后缀固定 .jpg（源图后缀只用于截断 stem）。
-// 带查询串的 URL 不参与（变体按对象键生成，查询串会让路径失配）。
 // resolveImageAlt 图片替代文本：手填 Alt 优先，否则走 AltBinding 绑定字段。
 //
 // 两条都不命中时返回空串：**不替作者编一个描述** —— 编出来的 alt 比空 alt 更糟
@@ -194,23 +193,4 @@ func resolveImageAlt(p *Props, content core.ContentResolver) string {
 		return s
 	}
 	return strings.TrimSpace(p.AltBinding.Fallback)
-}
-
-func variantURL(src string, width int) string {
-	if src == "" || strings.Contains(src, "?") {
-		return ""
-	}
-	ext := path.Ext(src)
-	if ext == "" {
-		return ""
-	}
-	stem := strings.TrimSuffix(src, ext)
-	switch {
-	case width <= 320:
-		return stem + "_thumb.jpg"
-	case width <= 1280:
-		return stem + "_medium.jpg"
-	default:
-		return ""
-	}
 }

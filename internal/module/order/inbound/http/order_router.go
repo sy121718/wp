@@ -15,6 +15,7 @@ import (
 	orderservice "go_wp/internal/module/order/service"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 
@@ -49,6 +50,10 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// 库存侧持有适配器 —— CQ-004 同一手法，订单模块不 import 库存的 dto）：
 	// 退货入到哪个仓是运营的决定，让他手填仓库 id 是把内部标识当输入项，填错不报错、货就进错仓。
 	warehouses ordercontract.ReturnWarehouseSource,
+	// dict 系统字典只读口（sysconfig 的 DictReader）：订单详情 / 退货详情的订单摘要
+	// 要把快照里的国家代码显示成当前语言的名字。**可选** —— 传 nil 时页面显示代码、
+	// 不做任何降级处理（一个展示标签读不到，不该让整页失败）。
+	dict sysconfigcontract.DictReader,
 ) ordercontract.OrderService {
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db),
@@ -115,7 +120,7 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		// 订单管理页：列表 + 状态计数 + 详情（同一页面靠 orderId 展开）+ 流转 / 取消 / 退款 / 备注。
 		// 状态合法性不在这里判断：服务端状态机拒绝哪条边，页面就把哪条边藏起来 ——
 		// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
-		orderPages := NewOrderPageHandle(svc, projects)
+		orderPages := NewOrderPageHandle(svc, projects, dict)
 		pages.GET("/orders", orderPages.OrdersPage)
 		// 后台代客建单页（docs/02-W-admin-order-create.md）：独立整页，页头与空态两个入口
 		// 都指向它（同一个 URL）。写动作复用 order:create —— 与上面几条同手法，
@@ -138,7 +143,7 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 
 		// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 		// **先入库、后退款**的强顺序由 service 保证（见 return_review.go）。
-		returnPages := NewReturnPageHandle(svc, projects, warehouses)
+		returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
 		pages.GET("/returns", returnPages.ReturnsPage)
 		pages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
 		pages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)

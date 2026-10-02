@@ -124,7 +124,11 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 	att.MimeType = &mimeType
 	att.Generation = gen
 
-	// 变体重建：原图内容变了，thumb/medium/webp 必须重算（失败降级，不影响换图结果）。
+	// 变体重建：原图内容变了，thumb/medium/full 必须重算（失败降级，不影响换图结果）。
+	//
+	// generation 已在上面推进过 —— 新变体名带新 generation 与新内容指纹，于是换图
+	// 天然产出一组新 URL；旧变体文件保留，历史产物引用的旧名仍可访问，
+	// 换图不会让已发布的页面当场 404。
 	if variantEligible(att.FileType, att.FileName) {
 		if _, gerr := s.GenerateVariants(ctx, id); gerr != nil {
 			logger.Scene("media").With("attachment_id", id).Error(gerr, "换图后变体重建失败（已降级）")

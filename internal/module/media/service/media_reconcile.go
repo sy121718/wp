@@ -46,6 +46,22 @@ const (
 	reconcileMaxLimit     = 2000
 )
 
+// variantBackfillDefaultLimit 变体补偿的默认批量，与对账的 200 **刻意不同**。
+//
+// 为什么补偿必须一次覆盖全库：它按 id 升序取前 N 个附件、再逐个判定 ——
+// **已齐的附件同样占住窗口**。N 小于附件总数时，排在 N 之后的那批永远等不到补偿。
+// 实测（2026-10-02，419 个附件、走默认 200）：首轮 fixed=198，第二轮就变成
+// fixed=0 / skipped=200（同一批全部已齐），第三轮起完全空转 ——
+// 存量永久停在「记录不齐」，而日志上每轮都显示「巡检正常」。
+//
+// 对账侧保留 200 是刻意的：那一轮要遍历整个存储目录，是固定成本，宁可截断。
+// 补偿的判定本身极廉价：全部已齐时实测 200 个附件耗时 33ms，
+// 只有真需要重建的那批才产生解码/编码开销。
+//
+// 附件数超过本上限时仍会截断 —— 届时的正解是把窗口筛成「只取记录不齐的附件」
+// （SQL 层），而不是继续调大这个数字。
+const variantBackfillDefaultLimit = 2000
+
 // 反向归属的三个命名约定（只有命中才敢把文件算作某个附件的产物）。
 //
 // 为什么不能笼统写成「纯数字开头」：存量随机名是 <unixNano>_<6位hex>.<ext>
@@ -54,8 +70,20 @@ const (
 var (
 	// 原图：<id>.<ext>（上传时用主键命名，见 media_crud.go 的 objectKey 推导）。
 	mediaOriginalRe = regexp.MustCompile(`^(\d+)\.[A-Za-z0-9]{1,10}$`)
-	// 变体：<id>_<variantType>.jpg（variantObjectKey，类型限 thumb/medium/webp）。
-	mediaVariantRe = regexp.MustCompile(`^(\d+)_(?:thumb|medium|webp)\.jpg$`)
+	// 变体：<id>_<variantType>[-<generation>-<hash8>].jpg
+	// （variantObjectKey 的预期名 / variantObjectKeyFingerprinted 的真实名）。
+	//
+	// 类型词必须**同时认两代**：
+	//   · webp —— 历史槽位名。迁移 496 只在 DB 层把 variant_type 改名为 full，
+	//     磁盘上那批 *_webp.jpg **不会被改名**（file_path 仍指向它们）。
+	//     不认它们 = 这些文件从「可归属」退化成「无法归属」，对账能力凭空倒退。
+	//   · full —— 迁移后的新名与今后生成的名字。small 是 2026-10-02 新增的中间档。
+	// 生成侧只产出 thumb/small/medium/full（见 mediamodel.VariantTypes），
+	// 认 webp 纯粹是为了**读懂历史**。
+	//
+	// 指纹段**必须可选**：磁盘上同时存在两代命名 —— 存量文件与历史产物引用的是
+	// 旧名（无指纹），新生成的是带指纹名。只认新名会把全部存量变体报成「有文件没记录」。
+	mediaVariantRe = regexp.MustCompile(`^(\d+)_(?:thumb|small|medium|full|webp)(?:-\d+-[0-9a-f]{8})?\.jpg$`)
 	// 无扩展名原图：<id>。
 	mediaBareIDRe = regexp.MustCompile(`^(\d+)$`)
 )
@@ -411,7 +439,16 @@ func (s *Service) ReplayVariantBackfill(ctx context.Context, req *VariantBackfil
 	if req == nil {
 		req = &VariantBackfillReq{}
 	}
-	limit := normalizeLimit(req.Limit)
+	// 补偿用**自己的**默认批量，不复用 normalizeLimit（它默认对账的 200）：
+	// ListForAudit 按 id 升序取前 N 个，**已齐的附件照样占窗口** —— 附件数超过 N 时，
+	// 排在后面的那批永远等不到补偿。理由与实测见 variantBackfillDefaultLimit。
+	limit := req.Limit
+	if limit <= 0 {
+		limit = variantBackfillDefaultLimit
+	}
+	if limit > reconcileMaxLimit {
+		limit = reconcileMaxLimit
+	}
 	report := &VariantBackfillReport{Items: []VariantBackfillItem{}}
 
 	total, err := s.am.CountForAudit(ctx)

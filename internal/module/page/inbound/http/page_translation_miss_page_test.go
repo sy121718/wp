@@ -20,14 +20,17 @@ import (
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
-	projectmodel "go_wp/internal/module/project/model"
-	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
 )
 
 // seedMissFixture 一个工程 + 一个页面 + 一条带 translationMisses 的产物行。
-func seedMissFixture(t *testing.T) (svc *pageservice.Service, proj *projectservice.Service, projectID, projectEmpty string) {
+//
+// project 端口一律传 nil（下面 NewService / NewPagesAdminHandle 两处）：本用例只走报告页
+// 渲染，该页读的是 page 自己的 model 与产物清单，不经 project 服务。跨模块构造真实
+// project/service 会被 architecture 门禁判违规（跨模块只允许 contract）；传 nil 一旦真被
+// 读到就是 panic，不会静默通过。
+func seedMissFixture(t *testing.T) (svc *pageservice.Service, projectID, projectEmpty string) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -51,8 +54,7 @@ func seedMissFixture(t *testing.T) (svc *pageservice.Service, proj *projectservi
 	// 没有缺失的语言（misses=0）不应出现。
 	insertMissArtifact(t, db, pageID, "ja", 1, `{"misses": 0, "candidates": 12, "policy": "fallback"}`)
 
-	projSvc := projectservice.NewService(projectmodel.NewProjectModel(db))
-	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projSvc, nil, nil, nil, nil, nil), projSvc, projectID, projectEmpty
+	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil), projectID, projectEmpty
 }
 
 // insertMissArtifact 插一条带 translationMisses 的产物行（只给 NOT NULL 列 + manifest）。
@@ -72,12 +74,12 @@ func insertMissArtifact(t *testing.T, db *gorm.DB, pageID, lang string, version 
 }
 
 // renderMissPage 渲染报告页一次。
-func renderMissPage(t *testing.T, svc *pageservice.Service, proj *projectservice.Service, query string) *httptest.ResponseRecorder {
+func renderMissPage(t *testing.T, svc *pageservice.Service, query string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	h := pagehttp.NewPagesAdminHandle(svc, proj, nil, nil)
+	h := pagehttp.NewPagesAdminHandle(svc, nil, nil, nil)
 	router.GET("/admin/page-translation-misses", h.TranslationMissesPage)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/page-translation-misses"+query, nil))
@@ -86,8 +88,8 @@ func renderMissPage(t *testing.T, svc *pageservice.Service, proj *projectservice
 
 // TestTranslationMissesPageRenders 渲染：整页完整、只列最新版本、只列 misses>0、不给百分比。
 func TestTranslationMissesPageRenders(t *testing.T) {
-	svc, proj, projectID, _ := seedMissFixture(t)
-	rec := renderMissPage(t, svc, proj, "?project="+projectID)
+	svc, projectID, _ := seedMissFixture(t)
+	rec := renderMissPage(t, svc, "?project="+projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("报告页应渲染成功，实际 %d", rec.Code)
 	}
@@ -121,8 +123,8 @@ func TestTranslationMissesPageRenders(t *testing.T) {
 
 // TestTranslationMissesPageEmptyRenders 没有缺译时：表头常驻 + 空态整行进 tbody（colspan=4）。
 func TestTranslationMissesPageEmptyRenders(t *testing.T) {
-	svc, proj, _, projectEmpty := seedMissFixture(t)
-	rec := renderMissPage(t, svc, proj, "?project="+projectEmpty)
+	svc, _, projectEmpty := seedMissFixture(t)
+	rec := renderMissPage(t, svc, "?project="+projectEmpty)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("空态也应渲染成功，实际 %d", rec.Code)
@@ -140,8 +142,8 @@ func TestTranslationMissesPageEmptyRenders(t *testing.T) {
 
 // TestTranslationMissesPageWithoutProject 没有工程上下文时给可读文案（不直出内部错误）。
 func TestTranslationMissesPageWithoutProject(t *testing.T) {
-	svc, proj, _, _ := seedMissFixture(t)
-	rec := renderMissPage(t, svc, proj, "")
+	svc, _, _ := seedMissFixture(t)
+	rec := renderMissPage(t, svc, "")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("缺工程时应降级渲染，实际 %d", rec.Code)

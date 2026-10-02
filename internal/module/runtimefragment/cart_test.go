@@ -300,5 +300,70 @@ func TestCartMethodMismatchRejected(t *testing.T) {
 	}
 }
 
+// TestCheckoutBindsCountryCodes 结算表单的 country / billCountry 进入地址快照。
+func TestCheckoutBindsCountryCodes(t *testing.T) {
+	fake := &fakeCart{checkoutResp: &cartdto.CheckoutResp{
+		OrderID: 1, OrderNo: "GWP20260101ABCDEF", Cookie: "empty.cart",
+	}}
+	SetCartProvider(fake)
+	defer SetCartProvider(nil)
+
+	form := url.Values{
+		"projectId": {"p1"}, "email": {"buyer@example.com"},
+		// 收货填合法（小写，要归一化），账单填非法（三个字母装不进 VARCHAR(2)）。
+		"country": {"cn"}, "billCountry": {"China"},
+	}
+	c, w := newFragmentCtx(t, http.MethodPost, "checkout", form, nil)
+	FragmentEndpoint(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("状态码应为 200，实际 %d（%s）", w.Code, w.Body.String())
+	}
+	req := fake.checkoutReq
+	if req == nil {
+		t.Fatal("结算请求没有到达 service")
+	}
+	if req.Shipping.Country != "CN" {
+		t.Fatalf("小写国家码应大写归一化后落单，实际 %q", req.Shipping.Country)
+	}
+	// 非法值必须**丢弃成空**而不是原样透传：它会被写进 VARCHAR(2) 列，
+	// 原样透传的后果不是「国家显示不对」，而是整单落库失败、访客只看到「下单失败」。
+	if req.Billing.Country != "" {
+		t.Fatalf("形状不合法的国家码应丢弃成空串，实际 %q", req.Billing.Country)
+	}
+	if req.Shipping.City != "" {
+		t.Fatalf("表单没填的地址字段保持空串（不编造缺省），实际 %q", req.Shipping.City)
+	}
+}
+
+// TestOrderCountryCode 国家/地区代码只做形状约束：恰好两个 ASCII 字母才收，其余一律丢弃。
+func TestOrderCountryCode(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "大写原样", in: "CN", want: "CN"},
+		{name: "小写归一化", in: "cn", want: "CN"},
+		{name: "混合大小写", in: "uS", want: "US"},
+		{name: "两侧空白去掉", in: "  jp  ", want: "JP"},
+		{name: "三字母码不收（列是 VARCHAR(2)）", in: "CHN", want: ""},
+		{name: "国家全名不收", in: "China", want: ""},
+		{name: "单字母不收", in: "C", want: ""},
+		{name: "空串", in: "", want: ""},
+		{name: "只有空白", in: "   ", want: ""},
+		{name: "字母数字混排不收", in: "C1", want: ""},
+		{name: "带连字符的码不收（不是裸 alpha-2）", in: "CN-", want: ""},
+		{name: "中文名不收", in: "中国", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := orderCountryCode(tt.in); got != tt.want {
+				t.Fatalf("orderCountryCode(%q) = %q，期望 %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // 编译期断言：替身实现契约（契约变了这里先失败，而不是等到装配期）。
 var _ cartcontract.CartService = (*fakeCart)(nil)

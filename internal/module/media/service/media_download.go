@@ -3,7 +3,7 @@ package mediaservice
 // media_download.go — 媒体资源包（zip）下载计划：
 //   单图 GET /api/media/download?id=1        → <原文件名>_package.zip
 //   批量 GET /api/media/download/batch?ids=1,2,3 → media_export_<日期>.zip
-//   zip 内固定四目录：original/（恒有原图）、webp/、thumb/、medium/；
+//   zip 内固定目录：original/（恒有原图）与四个变体目录 thumb/、small/、medium/、full/；
 //   变体未 ready 的目录放 README.txt 说明生成状态。
 //   service 只产出打包计划（zip 条目名 + 本地路径），handler 据此流式写响应，不落盘临时文件。
 
@@ -28,8 +28,9 @@ import (
 // zipDirOriginal 等四个 zip 内固定目录名。
 const (
 	zipDirOriginal = "original"
-	zipDirWebp     = "webp"
+	zipDirFull     = "full"
 	zipDirThumb    = "thumb"
+	zipDirSmall    = "small"
 	zipDirMedium   = "medium"
 )
 
@@ -56,10 +57,12 @@ func variantTypeToZipDir(vt string) string {
 	switch vt {
 	case mediamodel.VariantTypeThumb:
 		return zipDirThumb
+	case mediamodel.VariantTypeSmall:
+		return zipDirSmall
 	case mediamodel.VariantTypeMedium:
 		return zipDirMedium
-	case mediamodel.VariantTypeWebp:
-		return zipDirWebp
+	case mediamodel.VariantTypeFull:
+		return zipDirFull
 	default:
 		return ""
 	}
@@ -70,10 +73,12 @@ func zipDirVariantType(dir string) string {
 	switch dir {
 	case zipDirThumb:
 		return mediamodel.VariantTypeThumb
+	case zipDirSmall:
+		return mediamodel.VariantTypeSmall
 	case zipDirMedium:
 		return mediamodel.VariantTypeMedium
-	case zipDirWebp:
-		return mediamodel.VariantTypeWebp
+	case zipDirFull:
+		return mediamodel.VariantTypeFull
 	default:
 		return ""
 	}
@@ -121,7 +126,7 @@ func buildVariantReadme(dirName, status, lang string) string {
 	return b.String()
 }
 
-// appendAttachmentEntries 把单个附件的四目录结构追加进 plan：
+// appendAttachmentEntries 把单个附件的五目录结构追加进 plan：
 // prefix 为空表示单图包根目录，批量模式为 <stem>_<id>/ 子目录。
 func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.DownloadPlan, att *mediamodel.AttachmentEntity, prefix, lang string) error {
 	if att.StorageType != "local" {
@@ -158,7 +163,7 @@ func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediato.Dow
 		})
 	}
 
-	// 2) webp/ thumb/ medium/：ready 的变体直接打文件；未 ready 打 README 说明。
+	// 2) thumb/ small/ medium/ full/：ready 的变体直接打文件；未 ready 打 README 说明。
 	variants, err := s.vm.ListByAttachment(ctx, att.ID)
 	if err != nil {
 		return err
@@ -226,7 +231,7 @@ func (s *Service) BuildDownloadPlan(ctx context.Context, attachmentID uint64, la
 }
 
 // BuildBatchDownloadPlan 构建多个附件的资源包批量打包计划（契约方法）。
-// 每图一个 <stem>_<id>/ 子文件夹（id 后缀防重名），子文件夹内同四目录。
+// 每图一个 <stem>_<id>/ 子文件夹（id 后缀防重名），子文件夹内同五目录。
 func (s *Service) BuildBatchDownloadPlan(ctx context.Context, ids []uint64, langs ...string) (plan *mediato.DownloadPlan, err error) {
 	lang := mediaDownloadLang(langs)
 	ids = normalizeIDs(ids)

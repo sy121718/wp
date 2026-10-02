@@ -225,7 +225,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ===== 货源管理（admin/inventory_sources.html，issue #17） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
-     · 对接配置是多行文本，textarea 走同一收口（min(100%, 420px)）并允许纵向拉伸；
+     · 对接配置是多行文本，textarea 的宽度收口已**上收到基座**（ui.css 的
+       `.form-inline > :is(.form-input, .form-select, .form-textarea, .wbs)`），
+       页面级不再重复声明；纵向可拉伸由 rows 与 resize 控制；
      · <select> 被 WBUI 自绘替身接管后可见元素是 .wbs，按同一档宽度收口；
      · 触屏只需原生控件，按压反馈走 .btn:active（不带媒体查询）；
      · 键盘：原生控件 Tab 序即视觉序；统计数字只作展示，不参与交互。 */

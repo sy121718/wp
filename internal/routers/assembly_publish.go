@@ -23,6 +23,7 @@ import (
 	contenthttp "go_wp/internal/module/content/inbound/http"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
+	mediacontract "go_wp/internal/module/media/contract"
 	mediahttp "go_wp/internal/module/media/inbound/http"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
@@ -40,6 +41,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
+	sysconfigcheckout "go_wp/internal/module/sysconfig/outbound/checkoutcountries"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 	"go_wp/internal/partition"
@@ -354,6 +356,10 @@ func (a *assembly) wirePublishingPorts() {
 	// 那部分能力传不进片段层。归属校验在 order 模块的 SQL 条件里，不在这层。
 	runtimefragment.SetVisitorOrderReader(a.orderSvc)
 	marks.mark(portRuntimeFragVisitorOrderReader)
+	// 访客订单地址里的国家/地区名（迁移 501 存的是代码快照）：同一份系统字典只读口，
+	// 与后台订单页共用实例（缓存也只有一份）。未注入时片段照常渲染、国家显示代码 ——
+	// 所以它不是 required-port，这里的注入不是为了「能力可用」而是为了「显示是人话」。
+	runtimefragment.SetCountryLabelReader(a.sysConfigDict)
 	// 访客退货片段（RMA）：orderSvc 嵌入了收窄的 VisitorReturnPort（只读申请面，
 	// 拿不到「后台审核 / 入库 / 退款」）。此端口此前**从未被任何地方注入** ——
 	// 退货申请片段因此恒返回「退货功能暂不可用」（审计 CQ-019：静默降级窗口）。
@@ -392,11 +398,34 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布实例模块未提供商品数据源注入点（SetProductDataSource）")
 	}
 	marks.mark(portPresentationProductDataSource)
+	// 结算表单的国家下拉（core.checkoutForm）：从 sys_area 字典取一次（进程内缓存），
+	// 两条构建路径共用**同一个来源实例** —— 各建一个会出现「手工页有国家、自动发布页没有」
+	// 这种只在某一类页面上暴露的分叉。
+	//
+	// 装配时机不查库：来源是惰性的，首次构建到含国家字段的页面时才读字典，
+	// 失败返回空清单并记日志（组件在「表单里有国家字段」时构建失败，真因在日志里）。
+	checkoutCountrySource := sysconfigcheckout.New(a.sysConfigDict)
+	if setter, ok := pageService.(interface {
+		SetCheckoutCountries(func(ctx context.Context, lang string) []core.CheckoutCountry)
+	}); ok {
+		setter.SetCheckoutCountries(checkoutCountrySource.Countries)
+	} else {
+		panic("页面模块未提供结算国家清单注入点（SetCheckoutCountries）")
+	}
+	marks.mark(portPageCheckoutCountries)
+	if setter, ok := presentationSvc.(interface {
+		SetCheckoutCountries(func(ctx context.Context, lang string) []core.CheckoutCountry)
+	}); ok {
+		setter.SetCheckoutCountries(checkoutCountrySource.Countries)
+	} else {
+		panic("发布实例模块未提供结算国家清单注入点（SetCheckoutCountries）")
+	}
+	marks.mark(portPresentationCheckoutCountries)
 	// 自动发布详情页与手工页面共用站点级装配（EDT-003）：导航 / 槽位 / 响应式图片。
 	if setter, ok := presentationSvc.(interface {
 		SetNavigationService(navigationcontract.NavigationService)
 		SetSitePageResolver(pagecontract.SitePageResolver)
-		SetMediaProbe(func(context.Context, string) []int)
+		SetMediaProbe(func(context.Context, string) []mediacontract.VariantRef)
 		SetPluginService(plugincontract.PluginService)
 	}); ok {
 		setter.SetNavigationService(navigationSvc)
@@ -590,7 +619,7 @@ func (a *assembly) mountAdminPages() {
 	// 与 workbenchPages（根级前缀，编辑器与仪表盘首页），均由 assembly.go 创建。
 	// pageService 一并传入：文案词条页改完词条要标记站点待重建（词条在构建期烘进产物字节，
 	// 漏接 = 改了文案站点不更新且无报错，与页面 / 商品 / 导航翻译、站点设置同一动作）。
-	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService)
+	adminhttp.SetupAdminPages(a.adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, a.pageService, a.sysConfigDict)
 	adminhttp.SetupAdminShellPages(a.router)
 
 	// pageService 作为可选第 4 参传入：块的「待重建影响面」要经 page 的只读反查（引用数 +
@@ -612,7 +641,7 @@ func (a *assembly) mountAdminPages() {
 		a.membershipSvc, a.membershipFacing)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
-	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc)
+	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)
 
 	// 编辑器平台（workbench 模块）：仪表盘首页 + /workbench/* 全部路由。
 	// contentStore 传 nil：未注入时模块内部惰性回退默认实现（与原行为一致）。

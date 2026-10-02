@@ -122,7 +122,7 @@ func newAuthFeatureEngine(t *testing.T) (*gin.Engine, *support.AdminSession) {
 			authorizedGroup := api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware())
 			authorizedAPI := permission.NewRouteGroup(authorizedGroup)
 			// 真实业务模块装配（与 routes.go 相同的中间件链），验证 seed 策略在真实业务链路上生效
-			projecthttp.SetupProjectRoutes(authorizedAPI, db)
+			projecthttp.SetupProjectRoutes(authorizedAPI, db, nil)
 			// /ping 是测试专用探针（策略在上面显式写入 sys_casbin_rule），不参与权限点声明：
 			// 直接挂底层组，避免为一条测试路径造一条权限点。
 			authorizedGroup.GET("/ping", func(c *gin.Context) {

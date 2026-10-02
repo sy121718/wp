@@ -1,0 +1,18 @@
+{* checkoutform.jet — 结算表单（core.checkoutForm）。
+
+   零客户端 JS：原生 <form> + hx-post。hx-post 缺席时 method/action 照旧把表单整页提交
+   （降级不完美但可用，与 cart_view.jet 的既有口径一致）。
+
+   projectId / lang 必须是**隐藏字段**，不能只挂在 URL 上：片段端 POST 只读表单体
+   （runtimefragment/endpoint.go 的 collectFragmentParams：POST 走 PostForm、GET 走 query），
+   写在 action 的 query 里到不了处理器 —— 而缺失 projectId 的结算会以「工程缺失」被拒。
+
+   国家是原生 <select>（选项构建期烘焙）。刻意不加 data-ui-select：那是控件基座的 JS 替身，
+   而本组件的约束是零 JS。
+
+   不可用分支（缺站点工程）只渲染一句提示：这条分支不输出任何 hx-*，因此产物里
+   一个字节的 htmx 都不该带（DeclareFeatures 同步返回空）。
+
+   本批不做省市区级联：省 / 市 / 区保持文本输入（只有中国有区划数据，级联要么上 JS、
+   要么把上千选项烘进产物），这是有意的取舍，不是遗漏。 *}
+{{ if .V.Notice }}<div class="{{ .Classes }} sky-checkout sky-checkout-unavailable"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} role="status"><p class="sky-checkout-notice">{{ .V.Notice }}</p></div>{{ else }}<form class="{{ .Classes }} sky-checkout" method="post" action="{{ .V.Action }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} hx-post="{{ .V.Action }}" hx-target="closest .sky-checkout" hx-swap="outerHTML">{{ range _, h := .V.Hidden }}<input type="hidden" name="{{ h.Name }}" value="{{ h.Value }}">{{ end }}{{ range _, g := .V.Groups }}<fieldset class="sky-checkout-group" data-group="{{ g.Key }}"><legend class="sky-checkout-legend">{{ g.Title }}</legend><div class="sky-checkout-grid">{{ range _, f := g.Fields }}<div class="sky-checkout-field{{ if f.Wide }} is-wide{{ end }}"><label for="sky-checkout-{{ .NodeID }}-{{ f.Key }}">{{ f.Label }}</label>{{ if f.Type == "country" }}<select id="sky-checkout-{{ .NodeID }}-{{ f.Key }}" name="{{ f.Key }}"{{ if f.Required }} required{{ end }}>{{ range _, o := f.Options }}<option value="{{ o.Code }}"{{ if o.Selected }} selected{{ end }}>{{ o.Label }}</option>{{ end }}</select>{{ else if f.Type == "textarea" }}<textarea id="sky-checkout-{{ .NodeID }}-{{ f.Key }}" name="{{ f.Key }}"{{ if f.Placeholder }} placeholder="{{ f.Placeholder }}"{{ end }}{{ if f.Required }} required{{ end }}></textarea>{{ else }}<input id="sky-checkout-{{ .NodeID }}-{{ f.Key }}" type="{{ f.Type }}" name="{{ f.Key }}"{{ if f.Placeholder }} placeholder="{{ f.Placeholder }}"{{ end }}{{ if f.Required }} required{{ end }}>{{ end }}</div>{{ end }}</div></fieldset>{{ end }}<button type="submit" class="sky-checkout-submit">{{ .V.SubmitLabel }}</button></form>{{ end }}

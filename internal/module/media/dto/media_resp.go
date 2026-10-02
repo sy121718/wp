@@ -21,7 +21,18 @@ type AttachmentResp struct {
 	Variants []VariantResp `json:"variants,omitempty"`
 }
 
-// VariantResp 图片变体响应（thumb/medium/webp 生成状态与结果）。
+// VariantRef 已就绪的图片变体引用（构建期 srcset 消费）。
+//
+// 为什么返回 URL 而不是只返回宽度：变体文件名带内容指纹
+// （<stem>_<type>-<generation>-<hash8>.jpg），而 generation 与 hash 只有 media 模块
+// 知道 —— 让调用方按宽度自己拼文件名，等于把命名约定抄成第二份真源，
+// 命名一改就是「srcset 静默指向不存在的文件」这种最难查的类型。
+type VariantRef struct {
+	URL   string `json:"url"`
+	Width int    `json:"width"`
+}
+
+// VariantResp 图片变体响应（thumb/medium/full 生成状态与结果）。
 type VariantResp struct {
 	VariantType string `json:"variant_type"`
 	Status      string `json:"status"`

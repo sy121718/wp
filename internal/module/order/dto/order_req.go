@@ -23,6 +23,11 @@ type OrderAddress struct {
 	District string `json:"district"`
 	Address  string `json:"address"`
 	Zip      string `json:"zip"`
+	// Country 国家/地区代码（ISO 3166-1 alpha-2，如 CN）。空 = 未收集（非中国站点 / 存量数据）。
+	//
+	// 存的是**下单时刻的代码快照**，与地址其余几段同性质：展示时按当前语言查字典取名
+	// 只是标签，改字典不改历史订单。
+	Country string `json:"country"`
 }
 
 // CreateOrderReq 建单请求。

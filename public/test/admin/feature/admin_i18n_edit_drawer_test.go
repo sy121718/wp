@@ -28,7 +28,7 @@ func TestAdminI18nEditDrawerExactPairAndWrite(t *testing.T) {
 				c.Set("perm_set", map[string]bool{"i18n:manage": true})
 				c.Next()
 			})
-			adminhttp.SetupAdminPages(pages, nil, nil, nil, nil, nil, nil, nil)
+			adminhttp.SetupAdminPages(pages, nil, nil, nil, nil, nil, nil, nil, nil)
 		},
 	})
 	if err != nil {

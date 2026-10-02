@@ -149,7 +149,11 @@ func TestRelatedIDsRejectsSelfReference(t *testing.T) {
 	_, err := f.svc.Update(ctx, &productdto.UpdateReq{
 		ID: p.ID, ProjectID: f.projectID, RelatedIDs: []string{p.ID},
 	})
-	requireRelatedRejected(t, err, p.ID, "不能指向自己")
+	// 明细是**编码产物**（词条 key + 具名参数）：service 层拿不到请求语言，中文由读侧
+	// productErrText 按语言还原（见 product_page_handle.go 的 productErrDetailText）。所以这里
+	// 断言的是 service 层的契约 —— 可定位的 key 与参数值，而不是最终中文；断言中文等于把
+	// 中间产物当输出，服务端一改成编码就会红，而它对不对根本不看这里。
+	requireRelatedRejected(t, err, p.ID, productenums.DetailRelatedSelfReference)
 }
 
 // TestRelatedIDsReportsAllInvalidAtOnce 三类问题一次列全，且整批拒绝（不部分写入）。

@@ -15,10 +15,21 @@ import (
 	cartdto "go_wp/internal/module/cart/dto"
 	cartenums "go_wp/internal/module/cart/enums"
 	productcontract "go_wp/internal/module/product/contract"
+	"go_wp/pkg/i18n"
 )
 
-// currencyCNY 购物车与订单当前唯一支持的币种（订单表的 currency 列固定写 CNY）。
-const currencyCNY = "CNY"
+// cartCurrency 购物车金额的展示币种。
+//
+// **币种是标签 / 口径，不是算术**：金额本来就是数值（分），改币种只改标签 —— 按产品口径
+// 货币由后台全局限定为**单值**，前台不提供货币选择（用户只能改自己的地区），
+// 也不存在「同一商品按币种分别定价」这回事。所以这里读全局默认值不会改变任何金额计算。
+//
+// 读的是 pkg/i18n 的**进程内缓存值**（装配期载入、tick 与保存后刷新），不在请求路径查库；
+// 该 getter 内部已保证非空（未配置时回退代码内常量），这里直接透传 —— 再兜一层是永不
+// 触发的分支，只会让读者以为它可能返回空串，且与 order 模块的同名包装各抄一份迟早漂移。
+func cartCurrency() string {
+	return i18n.GetDefaultCurrency()
+}
 
 // availabilityLowStockThreshold 低库存提示阈值（<= 这个数就提示「仅剩 N 件」）。
 // 与 productVariantAvailability 片段的阈值同口径：两处对同一批库存说不同的话，
@@ -224,7 +235,7 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 	lines := p.cartLines()
 	res = &cartdto.CartSnapshot{
 		Items:    make([]*cartdto.CartItem, 0, len(lines)),
-		Currency: currencyCNY,
+		Currency: cartCurrency(),
 		Cookie:   cookie,
 	}
 	if len(lines) == 0 {

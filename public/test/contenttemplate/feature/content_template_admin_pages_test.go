@@ -109,10 +109,10 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 
 	body := env.getPage(t)
 	for _, want := range []string{
-		"当前生效",   // 生效徽标
-		"设为生效",   // 非生效那套的切换按钮
-		"页眉（结构）", // 结构模板与内容实体模板在类型列上分得开
-		"页脚（结构）",
+		"当前生效",     // 生效徽标
+		"设为生效",     // 非生效那套的切换按钮
+		"页眉（结构模板）", // 结构模板与内容实体模板在类型列上分得开
+		"页脚（结构模板）",
 		"/admin/content-templates/activate", // 切换按钮真的指向页面入口
 		"引用未知",                              // 端口未装配 → 不是「无引用」
 		"/workbench?entityType=header",      // 结构模板的可视化编辑入口（无样例实体模式）

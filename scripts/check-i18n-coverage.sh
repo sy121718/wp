@@ -48,6 +48,12 @@ html_comment = re.compile(r'<!--.*?-->', re.S)
 #     渲染进 data-msg-* 属性，字符串只是属性缺失时的原文兜底，与 t(key, 中文兜底) 同性质）。
 # 不剥会让门禁数字虚高，而虚高的数字会让人不再相信这个门禁。
 script_block = re.compile(r'<script\b.*?</script>', re.S)
+# <style> 整段剔除：与 script 块同理 —— CSS 里的中文是**注释**（/* … */），
+#   是写给维护者的样式决策说明，既不渲染给访客看，也不该被要求取 i18n key 化
+#   （CSS 注释没有「按请求语言渲染」的形态：同一份 <style> 对所有语言是同一份字节）。
+# 不剥会让门禁数字虚高，而虚高的数字会让人不再相信这个门禁：
+#   admin/login.html 的 <style> 里三行中文注释被当成「未 key 化文案」（实测 0 → 3）。
+style_block = re.compile(r'<style\b.*?</style>', re.S)
 # 语言自称（简体中文 / 繁體中文 / 日本語 / English / 한국어）在语言下拉里**刻意不翻译**：
 # 语言名按自称显示，否则用户用看不懂的语言看到自己的语言名。整行豁免。
 lang_self_name = re.compile('简体中文|繁體中文|日本語|한국어|English')
@@ -81,6 +87,7 @@ for path in paths:
     src = jet_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     src = html_comment.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     src = script_block.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
+    src = style_block.sub(lambda m: re.sub(r'[^\n]', ' ', m.group(0)), src)
     for i, line in enumerate(src.split('\n'), 1):
         if not cjk.search(line):
             continue

@@ -11,6 +11,7 @@ import (
 	// 这一步能成立，正是因为共享形状已剥到 builder/source ——
 	// 业务契约包不再反向依赖 core，环断了。
 	contentcontract "go_wp/internal/module/content/contract"
+	mediacontract "go_wp/internal/module/media/contract"
 	productcontract "go_wp/internal/module/product/contract"
 )
 
@@ -106,9 +107,12 @@ type RenderContext struct {
 	// core 不依赖 builder，故用轻量投影结构；builder 注入时从 ThemeSettings 转换。
 	ImageDefaults ImageDefaults
 	// AssetProbe 媒体资源探测（构建期响应式图片用）：传入媒体 URL（如
-	// /storage/xxx.jpg），返回同目录变体的可用宽度列表（如 [320, 1280]，按需
-	// 降序）与是否可用。未注入时组件不输出 srcset（只出原图）。
-	AssetProbe func(url string) []int
+	// /storage/xxx.jpg），返回该媒体已就绪的变体（URL + 宽度，升序）。
+	// 未注入时组件不输出 srcset（只出原图）。
+	//
+	// 返回完整 URL 而不是纯宽度：变体名带内容指纹
+	// （<stem>_<type>-<generation>-<hash8>.jpg），generation 与指纹只有 media 模块知道。
+	AssetProbe func(url string) []mediacontract.VariantRef
 	// Lang 本次编译的目标语言（构建期组件文案翻译用，多语言 P4）。
 	// 空表示默认语言；由 builder.WithLanguage 显式指定，未指定时取 i18n.GetDefaultLang()。
 	// P4 只预留维度：产物路径 /{lang}/ 与多语言路由属后续 P2，本轮不涉及。
@@ -130,6 +134,16 @@ type RenderContext struct {
 	// 由装配层按「本页逻辑路径 + 站点启用语言」逐语言算出（与产物 head 的 hreflang
 	// 同一份计算）；空或少于两条时切换器整块不渲染（单语言站点字节不变）。
 	Locales []LocaleLink
+	// Checkout 结算表单的构建期输入（core.checkoutForm 消费）。
+	//
+	// 形态选择：**装配层算好的数据直接放字段**（与 Locales 同类），不是能力接口。
+	// 判据是「数据在哪、有没有参数维度」——
+	//   · 商品数据源（Product）是能力接口，因为它后面是数据库、要按工程与筛选条件取集合；
+	//   · 国家下拉是站点级静态数据（sys_area 的 247 行，无分页、无筛选），
+	//     装配层按当前语言算好一份即可，接口只会多一层转发。
+	// 字段清单（ordercontract.CheckoutFields）则**完全不进本上下文**：它是代码声明的
+	// 静态表，组件直接引用即唯一真源，注入一份副本只会制造第二处定义。
+	Checkout CheckoutInput
 	// Features 本次编译的运行时特征登记表（审计 PERF-014）：组件在渲染期登记自己
 	// **真实输出**的属性 / class（hx-* 属性、data-* 控件属性、控件外观类），
 	// 产物组装层据此决定注入哪些脚本，不再对整页 HTML 跑一遍 tokenizer。
@@ -531,3 +545,30 @@ const (
 	SiteSlotReset    = "reset"
 	SiteSlotOrders   = "orders"
 )
+
+// CheckoutCountry 结算表单国家下拉的一个选项（构建期数据，core.checkoutForm 消费）。
+//
+// 只携带「码 + 展示名」：展示名由装配层按当前语言从 sys_area 取（name_zh / name_en），
+// 组件不做本地化决策 —— 与 LocaleLink 同一条分工（数据在装配层、展示在组件）。
+type CheckoutCountry struct {
+	// Code ISO 3166-1 alpha-2 大写码（如 CN），提交值。
+	Code string
+	// Label 当前语言的展示名（取不到时装配层回退为 Code 本身，绝不输出空选项）。
+	Label string
+}
+
+// CheckoutInput 结算表单的构建期输入。
+//
+// 未注入（Countries 为空）时组件**明确报错**而不是静默不渲染 —— 判据见
+// components/checkoutform 的 BuildView：结算表单是交易入口，静默消失的表现是
+// 「站长以为配好了、访客看不到结算入口」，而产物本身完全正常（无报错、无日志）。
+type CheckoutInput struct {
+	// Countries 国家下拉选项（装配层注入）。空 = 装配缺失。
+	Countries []CheckoutCountry
+	// DefaultCountry 默认选中项（ISO alpha-2）。
+	//
+	// 由 builder 在每次编译时取 i18n.GetDefaultCountry()（进程内缓存，随系统设置刷新），
+	// **不在装配期冻结**：装配期读一次会让「改了全局默认国家、重建页面仍不生效」。
+	// 未配置时为空串，组件退回「选项里的第一项」。
+	DefaultCountry string
+}

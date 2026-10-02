@@ -14,6 +14,7 @@ package pagehttp_test
 // 不手抄 CREATE TABLE。
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,14 +25,67 @@ import (
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
-	projectmodel "go_wp/internal/module/project/model"
-	projectservice "go_wp/internal/module/project/service"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
 )
 
+// langPanelProjectList 站点工程契约替身：只覆写跨工程扇出真正调用的 List。
+//
+// 内嵌 nil 接口让其余方法自动满足（调用即 panic）—— 与同包 filterProjectList 同一手法。
+//
+// 这里给的**不是凑数形参**：page 侧在没有工程上下文问页面归属时会走
+// fanoutProjectIDs → List（page_scope.go）。契约缺失虽有一条「直接读 projects 表」的兜底，
+// 但那张表有 RLS、无作用域时读回 0 行 → ErrProjectRequired → 面板整块空，而它的表现是
+// 「运营点了语言按钮什么都没出来」。所以这是真实依赖，不是装饰。
+type langPanelProjectList struct {
+	projectcontract.ProjectService
+	ids   []string
+	langs []string
+}
+
+func (f langPanelProjectList) List(context.Context) ([]projectcontract.ProjectResp, error) {
+	out := make([]projectcontract.ProjectResp, 0, len(f.ids))
+	for _, id := range f.ids {
+		out = append(out, projectcontract.ProjectResp{ID: id})
+	}
+	return out, nil
+}
+
+// EnabledLangs 站点启用语言（默认语言在前）。**必须与上面 INSERT 进 project_locales 的两条一致**：
+// 面板列的是「本页每种语言能不能产出」，而语言清单是站点级设置、不在这套表里。
+// 返回副本：pipeline.EnabledLangs 会就地排序，别把 fixture 的切片改掉。
+func (f langPanelProjectList) EnabledLangs(context.Context, string) ([]string, error) {
+	return append([]string(nil), f.langs...), nil
+}
+
+// DefaultLocale 站点默认语言。契约保证 EnabledLangs 的**默认语言在前**，所以取首项 ——
+// 面板要拿它把「默认语言不可排除」那一行的文案与不可操作性渲染出来。
+func (f langPanelProjectList) DefaultLocale(context.Context, string) (string, error) {
+	if len(f.langs) == 0 {
+		return "", nil
+	}
+	return f.langs[0], nil
+}
+
+// Exists 工程是否存在 —— 只在本 fixture 造的工程集里判定，不去猜不存在的 id。
+func (f langPanelProjectList) Exists(_ context.Context, id string) (bool, error) {
+	for _, candidate := range f.ids {
+		if candidate == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GetActiveTheme 工程激活主题。本用例没有主题，按「没有主题」返回 (nil, nil) ——
+// 与同包 filterProjectList 同口径：调用方据此走无主题分支，而不是把它当错误。
+func (f langPanelProjectList) GetActiveTheme(context.Context, string) (*projectcontract.ThemeResp, error) {
+	return nil, nil
+}
+
 // seedLangPanelFixture 一个工程 + 两种启用语言（en-AU 默认 / zh-CN 非默认）+ 一个页面。
-func seedLangPanelFixture(t *testing.T) (svc *pageservice.Service, proj *projectservice.Service, pageID, projectID string) {
+func seedLangPanelFixture(t *testing.T) (svc *pageservice.Service, projects projectcontract.ProjectService, pageID, projectID string) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	if db == nil {
@@ -58,18 +112,18 @@ func seedLangPanelFixture(t *testing.T) (svc *pageservice.Service, proj *project
 		"30000000-0000-0000-0000-0000000000a2", projectID).Error; err != nil {
 		t.Fatalf("准备已排除页面行失败：%v", err)
 	}
-	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil,
-			projectservice.NewService(projectmodel.NewProjectModel(db)), nil, nil, nil, nil, nil),
-		projectservice.NewService(projectmodel.NewProjectModel(db)), pageID, projectID
+	projects = langPanelProjectList{ids: []string{projectID}, langs: []string{"en-AU", "zh-CN"}}
+	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil),
+		projects, pageID, projectID
 }
 
 // TestPageLangsPanelRenders 面板渲染：两种语言各按自己的状态给出不同操作。
 func TestPageLangsPanelRenders(t *testing.T) {
-	svc, proj, pageID, _ := seedLangPanelFixture(t)
+	svc, projects, pageID, _ := seedLangPanelFixture(t)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	h := pagehttp.NewPagesAdminHandle(svc, proj, nil, nil)
+	h := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
 	router.GET("/admin/page-langs/panel", h.PageLangsPanel)
 
 	rec := httptest.NewRecorder()
@@ -129,13 +183,13 @@ func TestPageLangsPanelDegradesOnLoadFailure(t *testing.T) {
 	}
 	projectID := "30000000-0000-0000-0000-000000000002"
 	support.SeedProjectRow(t, db, projectID, "降级用例")
-	proj := projectservice.NewService(projectmodel.NewProjectModel(db))
-	svc := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, proj, nil, nil, nil, nil, nil)
+	projects := langPanelProjectList{ids: []string{projectID}, langs: []string{"en-AU", "zh-CN"}}
+	svc := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	h := pagehttp.NewPagesAdminHandle(svc, proj, nil, nil)
+	h := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
 	router.GET("/admin/page-langs/panel", h.PageLangsPanel)
 
 	rec := httptest.NewRecorder()

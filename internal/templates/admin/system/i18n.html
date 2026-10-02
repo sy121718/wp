@@ -63,8 +63,12 @@
                 <input type="text" class="form-input filter-search" name="keyword" value="{{.Keyword}}" placeholder="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}" autocomplete="off" aria-label="{{ .["t"]("admin.i18n.ph.keyword", "key 或内容关键词") }}">
                 <select name="lang" class="form-select" aria-label="{{ .["t"]("admin.i18n.label.lang", "语言") }}">
                     <option value="">{{ .["t"]("admin.i18n.option.all_langs", "全部语言") }}</option>
-                    <option value="zh-CN"{{if langFilter == "zh-CN"}} selected{{end}}>zh-CN</option>
-                    <option value="en-US"{{if langFilter == "en-US"}} selected{{end}}>en-US</option>
+                    {* 语言来自字典（sys_dict type='language' 且 enabled），不再写死两条 ——
+                       写死时已收录的其它语言在页面上完全选不到，只能手输 URL 参数。
+                       筛选项**不**展示「已有译文」标记：这里筛的是已有词条，标记只是噪音。 *}
+                    {{if isset(.LangOptions)}}{{range _, o := .LangOptions}}
+                    <option value="{{o.Code}}"{{if o.Code == langFilter}} selected{{end}}>{{o.Code}}</option>
+                    {{end}}{{end}}
                 </select>
                 <select name="category" class="form-select" aria-label="{{ .["t"]("admin.i18n.label.category", "分类") }}">
                     <option value="">{{ .["t"]("admin.i18n.option.all_cats", "全部分类") }}</option>
@@ -174,9 +178,13 @@
                 </div>
                 <div class="form-field">
                     <label class="form-label">{{ .["t"]("admin.i18n.label.lang", "语言") }}</label>
+                    {* 新建词条的语言：同样来自字典。这里**展示** ui_available 标记 ——
+                       它直接回答运营的下一步问题「我该给哪个语言补词条」；
+                       标记只是提示（选择本身不受限：没有译文的语言正是最该建词条的）。 *}
                     <select name="lang" class="form-select">
-                        <option value="zh-CN">zh-CN</option>
-                        <option value="en-US">en-US</option>
+                        {{if isset(.LangOptions)}}{{range _, o := .LangOptions}}
+                        <option value="{{o.Code}}">{{o.Code}}{{if o.UIAvailable}} {{ .["t"]("admin.i18n.option.ui_available", "（界面已有译文）") }}{{end}}</option>
+                        {{end}}{{end}}
                     </select>
                 </div>
                 <div class="form-field form-field--wide">

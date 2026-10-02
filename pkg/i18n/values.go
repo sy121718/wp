@@ -43,6 +43,23 @@ type RuntimeValues struct {
 	SiteLangURLMode string
 	// LangURLCodes 语言码 → URL 短码覆盖表；空 = 无覆盖。
 	LangURLCodes map[string]string
+	// DefaultCountry 全局默认国家（ISO 3166-1 alpha-2，如 CN）；空 = 未配置。
+	//
+	// 语义是「全局默认 + 兜底」：工程级覆盖仍走 projects.settings，本值只在该工程
+	// 没有自己的设置时生效。
+	DefaultCountry string
+	// DefaultCurrency 全局默认货币（ISO 4217，如 CNY）；空 = 未配置。
+	//
+	// **它是币种标签，不是换算**：金额在本系统里始终是数值（分），改本值只改「这个数字
+	// 代表哪种货币」，不会把 ¥19.90 换算成对应的美元金额。因此改它的正确含义是
+	// **声明本站商品定价本来就是该币种** —— 运营若按人民币填了价格却把本值改成 USD，
+	// 得到的是「$19.90」，不是换算后的价格。多币种（汇率 / 变体定价 / 展示换算）
+	// 是独立特性，不是读一个默认值就能接上的。
+	//
+	// 读取方分两类，都经 pkg/i18n 的进程内缓存（装配期载入、tick 与保存后刷新）：
+	//   · 展示与结构化数据：SEO 的 priceCurrency、购物车金额展示；
+	//   · 落库快照：orders.currency —— 下单当时的值，改配置只影响此后新建的订单。
+	DefaultCurrency string
 }
 
 // ValueLoader 取一次全局默认值的回调。
@@ -154,7 +171,27 @@ func applyRuntimeValues(vals RuntimeValues) {
 		logger.With("mode", string(SiteLangURLModeOff)).Warn(
 			"站点语言 URL 方案为 off：各语言映射到同一路径，语言切换器不会渲染；启用多种语言时请改用 default_plain 或 all_prefix")
 	}
+
+	// 交易默认值：与上面三项同一处收敛（缺键 / 空串一律回退代码内常量）。
+	// 读取方只有展示与结构化数据（见 DefaultCurrency 的注释），因此这里不做形状校验 ——
+	// 一个写错的货币码不会让谁算错钱，只会出现在 SEO 的 priceCurrency 里。
+	initMu.Lock()
+	defaultCountry = strings.TrimSpace(vals.DefaultCountry)
+	if defaultCountry == "" {
+		defaultCountry = fallbackDefaultCountry
+	}
+	defaultCurrency = strings.TrimSpace(vals.DefaultCurrency)
+	if defaultCurrency == "" {
+		defaultCurrency = fallbackDefaultCurrency
+	}
+	initMu.Unlock()
 }
+
+// 代码内常量兜底：配置读不到时用的值，不可配置，因此不构成「第二个来源」。
+const (
+	fallbackDefaultCountry  = "CN"
+	fallbackDefaultCurrency = "CNY"
+)
 
 // copyURLCodes 复制覆盖表（空表归零）：调用方持有的 map 之后被改，不该影响已生效的映射。
 func copyURLCodes(codes map[string]string) map[string]string {

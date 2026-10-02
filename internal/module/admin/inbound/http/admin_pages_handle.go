@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"go_wp/config"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/captcha"
 	"go_wp/pkg/i18n"
@@ -1417,6 +1418,14 @@ type adminI18nEntryHandle struct {
 	// 词条页此前漏了这一环（词条是全局的：sys_i18n 没有工程维度，所以没有"精确到某页"
 	// 的选项，一律按 i18n:site 依赖做全站标记）。
 	pages adminI18nPageMarker
+	// dict 字典只读口（sysconfig 契约，装配期注入）：给语言筛选下拉与「新建词条」的
+	// 语言下拉供数。此前两处各写死 zh-CN / en-US 两条 option —— 于是**已收录的其它语言
+	// 在页面上完全不可选**，建词条只能靠手输 URL 里的参数。
+	//
+	// 用不用 ui_available 做区分：**用**，但只在「新建词条」那一处 —— 那一处的下一步
+	// 问题是「我该给哪个语言补词条」，标记出哪些语种已有界面译文正好回答它；
+	// 筛选下拉不加标记（筛的是已有词条，标记只是噪音）。
+	dict sysconfigcontract.DictReader
 }
 
 // adminI18nPageMarker 页面侧的最小失效端口（消费者侧定义，跨模块只依赖这一条）。
@@ -1426,6 +1435,9 @@ type adminI18nPageMarker interface {
 
 // SetPageMarker 注入页面失效端口（装配期）。
 func (h *adminI18nEntryHandle) SetPageMarker(m adminI18nPageMarker) { h.pages = m }
+
+// SetDictReader 注入字典只读口（装配期）：语言下拉的供数来源。
+func (h *adminI18nEntryHandle) SetDictReader(r sysconfigcontract.DictReader) { h.dict = r }
 
 // NewAdminI18nEntryHandle 构造。
 func NewAdminI18nEntryHandle() *adminI18nEntryHandle { return &adminI18nEntryHandle{} }
@@ -1506,6 +1518,13 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		// 可信边界**：手拼一个 ?done=任意文案 就能伪造一条顶着「成功」样式的消息。
 		"Done": adminPageDone(c, c.Query("done")),
 		"Err":  adminPageErrText(c, c.Query("err")),
+	}
+	// 语言下拉的供数（字典只读口）：读失败给空列表 —— 页面仍可筛「全部语言」，
+	// 只是少了按语言筛的能力，不该因此整页打不开。
+	if h.dict != nil {
+		if opts, derr := h.dict.ListDictOptions(c.Request.Context(), "language"); derr == nil {
+			data["LangOptions"] = opts
+		}
 	}
 	// 分页条：原版只渲染「第 X / Y 页」文字，没有页码链接 —— Total 超过一页时第 2 页起
 	// 完全不可达（列表页最要紧的缺陷）。链接与筛选同源，翻页不丢 keyword / lang / category。

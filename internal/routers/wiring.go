@@ -71,10 +71,12 @@ const (
 	portPageBlueprints                 = "page.SetBlueprints"
 	portPageBuildQueue                 = "page.SetBuildQueue"
 	portPageProductDataSource          = "page.SetProductDataSource"
+	portPageCheckoutCountries          = "page.SetCheckoutCountries"
 	portPageI18nStalePeer              = "page.SetI18nStalePeer"
 	portPageStructureTemplates         = "page.SetStructureTemplatePort"
 	portPresentationBuildQueue         = "presentation.SetBuildQueue"
 	portPresentationProductDataSource  = "presentation.SetProductDataSource"
+	portPresentationCheckoutCountries  = "presentation.SetCheckoutCountries"
 	portPresentationSiteAssembly       = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
 	portPipelinePageRebuilder          = "pipeline.Fanout.SetRebuilder(page)"
 	portPipelinePresentationRebuilder  = "pipeline.Fanout.SetRebuilder(presentation)"
@@ -208,6 +210,10 @@ var wiringManifest = []wiringEntry{
 		"页面里的商品组件回退按名路由（取数口径与集合源不一致）"},
 	{portPresentationProductDataSource, "product", "presentation", wiringRequiredPort,
 		"详情页模板里的商品组件回退按名路由"},
+	{portPageCheckoutCountries, "sysconfig", "page", wiringRequiredPort,
+		"含结算表单（且表单收集国家）的页面构建失败，报「未注入国家清单」（手工页整页发不出去）"},
+	{portPresentationCheckoutCountries, "sysconfig", "presentation", wiringRequiredPort,
+		"自动发布详情页里的结算表单构建失败（与手工页面同一条判据，来源实例是同一个）"},
 	{portPresentationSiteAssembly, "navigation/page/media/plugin", "presentation", wiringRequiredPort,
 		"自动发布详情页缺头尾菜单 / 槽位链接 / 响应式 srcset / 插件组件（只有详情页受影响）"},
 	{portPipelinePageRebuilder, "page", "pipeline.Fanout", wiringRequiredPort,

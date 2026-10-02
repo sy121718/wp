@@ -11,6 +11,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/web/shell"
@@ -91,12 +92,15 @@ type returnPageHandle struct {
 	// warehouses 只用来渲染「入库仓库」下拉：退货入库落在哪个仓是**运营的决定**，
 	// 让运营填一个仓库 ID 是把内部标识当输入项 —— 填错不报错，货就进错仓了。
 	warehouses ordercontract.ReturnWarehouseSource
+	// dict 系统字典只读口：退货详情里的订单摘要要显示国家名（与订单详情页同一口径）。
+	// 可选依赖 —— 未注入时显示代码，页面照常渲染。
+	dict sysconfigcontract.DictReader
 }
 
 // NewReturnPageHandle 构造。
 func NewReturnPageHandle(orders ordercontract.OrderService, projects projectcontract.ProjectService,
-	warehouses ordercontract.ReturnWarehouseSource) *returnPageHandle {
-	return &returnPageHandle{orders: orders, projects: projects, warehouses: warehouses}
+	warehouses ordercontract.ReturnWarehouseSource, dict sysconfigcontract.DictReader) *returnPageHandle {
+	return &returnPageHandle{orders: orders, projects: projects, warehouses: warehouses, dict: dict}
 }
 
 // returnFilter 页面筛选条件（GET 参数，全部可选）。
@@ -181,7 +185,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 			if derr != nil {
 				pageErr = firstNonEmpty(pageErr, returnFacingError(c, derr))
 			} else {
-				detail = returnDetailView(tr, det, filter, selected, page, limit)
+				detail = returnDetailView(tr, det, filter, selected, page, limit, countryLabelFn(c, h.dict))
 			}
 		}
 	}

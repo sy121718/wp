@@ -65,9 +65,9 @@ func (f *fakeOrderProjectService) List(context.Context) ([]projectdto.ProjectRes
 // newOrderPageEngine 装配三个列表页（真实 Jet 渲染 + 组件初始化：判据是整页断言）。
 func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *gin.Engine {
 	t.Helper()
-	orders := orderhttp.NewOrderPageHandle(nil, projects)
+	orders := orderhttp.NewOrderPageHandle(nil, projects, nil)
 	coupons := orderhttp.NewCouponPageHandle(nil, projects)
-	returns := orderhttp.NewReturnPageHandle(nil, projects, nil)
+	returns := orderhttp.NewReturnPageHandle(nil, projects, nil, nil)
 
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath:     support.NewComponentTestConfig(t),

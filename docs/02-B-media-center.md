@@ -101,7 +101,7 @@ internal/builder/
 |---|---|---|
 | `sys_attachment` | 附件主表：自增 `id`（引用标识）、`file_name`/`file_path`/`file_size`/`file_type`/`mime_type`、`storage_type`/`storage_path`/`url`、`md5`（留痕）、`extra_info`、`status`、分类外键 | §1 稳定引用、§2 SEO/检索 |
 | `sys_file_category` | 文件分类表（树形分类，媒体库筛选维度） | §2 多维检索 |
-| `sys_media_variant` | 变体表：`attachment_id` + `variant_type`（thumb/medium/webp）+ `file_path` + 宽高 + `status`（pending/processing/ready/failed），`UNIQUE(attachment_id, variant_type)`，级联删除 | §2 自动变体生成 |
+| `sys_media_variant` | 变体表：`attachment_id` + `variant_type`（thumb/medium/full）+ `file_path` + 宽高 + `status`（pending/processing/ready/failed），`UNIQUE(attachment_id, variant_type)`，级联删除 | §2 自动变体生成 |
 
 依据：`public/migrations/init_schema.sql:204,236`、`public/migrations/048_media_variant.sql:17`、`internal/module/media/model/media_model.go:13-14`、`internal/module/media/model/media_variant_model.go:13`。
 

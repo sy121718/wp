@@ -24,6 +24,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	pageenums "go_wp/internal/module/page/enums"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/templates"
 
 	"github.com/google/uuid"
@@ -38,6 +39,16 @@ var visitorOrders ordercontract.VisitorOrderReader
 
 // SetVisitorOrderReader 注入访客订单查询能力（装配期调用；**必须注入**，见字段注释）。
 func SetVisitorOrderReader(r ordercontract.VisitorOrderReader) { visitorOrders = r }
+
+// countryLabelDict 系统字典只读口（sysconfig 的 DictReader）：把订单快照里的
+// 国家/地区代码显示成访客界面语言的名称。
+//
+// 与 visitorOrders 的关键差别：这是**可选**依赖 —— 未注入时订单详情照常渲染，
+// 只是地址里的国家显示代码。一个展示标签的字典读不到，不该让访客的订单页失败。
+var countryLabelDict sysconfigcontract.DictReader
+
+// SetCountryLabelReader 注入国家字典只读口（装配期调用；未注入 = 显示代码）。
+func SetCountryLabelReader(dict sysconfigcontract.DictReader) { countryLabelDict = dict }
 
 func init() {
 	Register(Spec{Type: "ordersList", Method: "GET", Auth: AuthAnonymous, Render: renderOrdersList})
@@ -300,7 +311,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 	if head.PaidAt != nil {
 		data.PaidAtLabel = head.PaidAt.Time().Format("2006-01-02 15:04")
 	}
-	data.Address = orderAddressOf(head)
+	data.Address = orderAddressOf(ctx, r, head)
 	data.Remark = head.Remark
 	for _, it := range res.Items {
 		data.Items = append(data.Items, orderDetailItem{
@@ -482,17 +493,48 @@ func orderDetailURL(r *Request, projectID string, orderID uint64) string {
 }
 
 // orderAddressOf 收货地址一行展示（空字段跳过，不留一串逗号）。
-func orderAddressOf(o *orderdto.OrderResp) string {
+//
+// 国家/地区排在最前（地址书写从大到小），值取订单落库时的代码快照，
+// 经 countryLabelOf 换成访客当前语言的名称；空 = 当时没收集，整段跳过。
+func orderAddressOf(ctx context.Context, r *Request, o *orderdto.OrderResp) string {
 	if o == nil {
 		return ""
 	}
-	parts := make([]string, 0, 6)
-	for _, p := range []string{o.ShipProvince, o.ShipCity, o.ShipDistrict, o.ShipAddress, o.ShipZip} {
+	parts := make([]string, 0, 7)
+	for _, p := range []string{
+		countryLabelOf(ctx, r, o.ShipCountry),
+		o.ShipProvince, o.ShipCity, o.ShipDistrict, o.ShipAddress, o.ShipZip,
+	} {
 		if s := strings.TrimSpace(p); s != "" {
 			parts = append(parts, s)
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// countryLabelOf 把订单快照里的国家/地区代码换成访客界面语言的显示名。
+//
+// 未接入字典 / 字典里没有这个码 / code 为空 → 原样返回 code：国家名是**展示标签**，
+// 读不到字典的正确表现是「显示代码」，而不是让访客的订单详情整段失败。
+//
+// 语言取请求语言（r.Lang 由片段端点解析后写入，缺省由 URL 的 lang 参数兜底）；
+// 归一到 zh / en 两档由字典侧完成 —— 片段层不复制那套判据。
+func countryLabelOf(ctx context.Context, r *Request, code string) string {
+	code = strings.TrimSpace(code)
+	if code == "" || countryLabelDict == nil {
+		return code
+	}
+	lang := ""
+	if r != nil {
+		lang = strings.TrimSpace(r.Lang)
+		if lang == "" {
+			lang = strings.TrimSpace(paramOf(r, fragmentLangParam))
+		}
+	}
+	if label := strings.TrimSpace(countryLabelDict.CountryLabel(ctx, lang, code)); label != "" {
+		return label
+	}
+	return code
 }
 
 // orderUserMessage 把订单域错误映射成可原样给访客看的文案。

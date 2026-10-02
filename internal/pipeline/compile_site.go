@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder"
+	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -28,7 +29,12 @@ type SiteCompilePorts struct {
 	// 可空是刻意的：为 nil 时语言切换器按「全部已发布」输出，行为与接入前逐字一致；
 	// 实现由装配层提供（已激活产物的访问面本身就是真相），pipeline 不猜它的来源。
 	RoutePublished func(accessPath string) bool
-	MediaProbe     func(ctx context.Context, url string) []int
+	// MediaProbe 探测媒体资源当前可用的变体（构建期 srcset 候选）。
+	//
+	// 返回 **URL + 宽度** 而不是纯宽度：变体名带内容指纹
+	// （<stem>_<type>-<generation>-<hash8>.jpg），generation 与指纹只有 media 模块知道，
+	// 调用方按宽度自行拼名 = 第二份命名真源。
+	MediaProbe func(ctx context.Context, url string) []mediacontract.VariantRef
 }
 
 // SiteCompileParams 单次编译的站点上下文。
@@ -225,7 +231,7 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 	}
 	if ports.MediaProbe != nil {
 		probe := ports.MediaProbe
-		opts = append(opts, builder.WithAssetProbe(func(url string) []int {
+		opts = append(opts, builder.WithAssetProbe(func(url string) []mediacontract.VariantRef {
 			return probe(p.Ctx, url)
 		}))
 	}

@@ -15,6 +15,7 @@ import (
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
+	mediacontract "go_wp/internal/module/media/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/pipeline"
@@ -150,8 +151,18 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if s.productDS != nil {
 		opts = append(opts, builder.WithProductDataSource(s.productDS))
 	}
+	// 结算表单的国家下拉（core.checkoutForm）：站点级静态数据，按**本页语言**取一份。
+	//
+	// 取到空清单时不注入选项 —— 组件那边会按「未注入」处理：表单里有国家字段时构建失败
+	// （真因由装配层的适配器记日志）。这里刻意不做「拿空清单兜底注入」：
+	// 那会让失败从构建期滑到运行时（访客面对一个只有默认国家的下拉）。
+	if s.checkoutCountries != nil {
+		if countries := s.checkoutCountries(ctx, lang); len(countries) > 0 {
+			opts = append(opts, builder.WithCheckoutCountries(countries))
+		}
+	}
 	// 站点级装配（EDT-003）：导航 / 槽位 / 高亮 / hreflang / srcset —— 与 presentation 共用 pipeline.SiteCompileOptions。
-	var mediaProbe func(context.Context, string) []int
+	var mediaProbe func(context.Context, string) []mediacontract.VariantRef
 	if s.media != nil {
 		mediaProbe = s.media.ProbeImageVariants
 	}

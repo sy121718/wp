@@ -8,6 +8,11 @@ type DictOption struct {
 	Code string `json:"code"`
 	// Label 展示文案（语言用 code 本身，货币用「CNY ¥」）。
 	Label string `json:"label"`
+	// UIAvailable 该语言的界面文案是否已有译文（sys_dict.ui_available）。
+	//
+	// 消费方按用途决定要不要展示它：i18n 词条页的「新建词条」语言下拉用它标记
+	// （「我该给哪个语言补词条」），而筛选下拉不展示（筛的是已有词条，标记是噪音）。
+	UIAvailable bool `json:"uiAvailable"`
 }
 
 // CountryOption 一个国家下拉项。

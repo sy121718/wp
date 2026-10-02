@@ -10,6 +10,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	pagecontract "go_wp/internal/module/page/contract"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +32,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	admins admincontract.AdminService, roles admincontract.RoleService,
 	perms admincontract.PermService, menus admincontract.MenuService,
 	depts admincontract.DeptService, rules admincontract.RuleService,
-	pages pagecontract.PageService) {
+	pages pagecontract.PageService, dict sysconfigcontract.DictReader) {
 	if adminPages == nil {
 		return
 	}
@@ -104,6 +105,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 的 act 取自实际请求方法，页面是 GET 而 i18n:manage 的策略只有 POST ——
 	// 复用会让 enforce 匹配不到任何策略，**含超管在内全员 403**。
 	i18nPages := NewAdminI18nEntryHandle()
+	// 语言下拉的字典只读口（dict 可选：未注入时下拉只有「全部语言」）。
+	if dict != nil {
+		i18nPages.SetDictReader(dict)
+	}
 	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
 	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
 	i18nPages.SetPageMarker(pages)

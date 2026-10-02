@@ -73,6 +73,8 @@ import (
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigi18nvalues "go_wp/internal/module/sysconfig/outbound/i18nvalues"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
@@ -155,6 +157,12 @@ type assembly struct {
 	// 注册时必须给出权限点（permission.Perm），路径由注册动作自身算出，
 	// 装配末尾统一幂等 upsert 进 sys_permission 与超管策略。
 	authorizedAPI *permission.RouteGroup
+	// sysConfigSvc 系统配置契约（buildFoundation 里创建，系统设置页复用同一实例）。
+	sysConfigSvc sysconfigcontract.Service
+	// sysConfigDict 同一实例的**字典只读口**（sys_config 的宽接口不含它，见 contract 的
+	// DictReader）：站点设置页的语言码 datalist 与 i18n 页的语言下拉要用它。
+	sysConfigDict sysconfigcontract.DictReader
+
 	// adminPages 是后台页面路由组（Session + CSRF + 权限上下文），在 admin 模块装配后
 	// 立即创建 —— admin 是全部模块里最早装配的，所以页面组能在任何模块注册后台页面
 	// 之前就绪。各模块在自己的 Setup 里拿它注册页面，与注册 API 完全同构。
@@ -262,10 +270,15 @@ func (a *assembly) buildFoundation(ready func() error) {
 	// 媒体上传存储（pkg/upload local provider 默认 public/storage）。
 	// 同样禁目录列表（审计 Low：/storage 目录列表开启）。
 	// SEC-014：用户上传文件同域直出，加 nosniff 降低 MIME 嗅探执行风险。
-	storage := router.Group("/storage", func(c *gin.Context) {
-		c.Header("X-Content-Type-Options", "nosniff")
-		c.Next()
-	})
+	// StorageCacheMiddleware：按 URL 是否带内容指纹二分缓存语义 —— 带指纹的变体
+	// 可 immutable 长缓存，原图 URL 换图后不变只能协商缓存（判据见该中间件注释）。
+	storage := router.Group("/storage",
+		func(c *gin.Context) {
+			c.Header("X-Content-Type-Options", "nosniff")
+			c.Next()
+		},
+		builtin.StorageCacheMiddleware(),
+	)
 	storage.StaticFS("/", gin.Dir("public/storage", false))
 
 	// 静态访问面：已发布站点直出激活产物（只读文件系统，零查库零模板）。
@@ -333,6 +346,10 @@ func (a *assembly) buildFoundation(ready func() error) {
 	// （那正是「写进库了但不生效」的老毛病）。
 	sysConfigSvc := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(db), i18n.Invalidate)
 	i18n.SetValueLoader(sysconfigi18nvalues.New(sysConfigSvc).Load)
+	// 同一个实例挂到装配对象上：系统设置页（在后面的 core CRUD 段落装配）要复用它，
+	// 保存后的主动刷新走的正是上面注入的 onChanged。
+	a.sysConfigSvc = sysConfigSvc
+	a.sysConfigDict = sysConfigSvc
 
 	// 业务权限 seed：权限点（sys_permission）、菜单（sys_menus）与默认超管策略（sys_casbin_rule）。
 	// 表结构迁移由装配链上的 migrations 组件负责；此处幂等执行 seed（ConditionSQL 已存在则跳过），
@@ -427,9 +444,12 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 		api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
 	a.api = api
 	a.authorizedAPI = authorizedAPI
+	// 系统设置页（/admin/system）：读写 sys_config 的 i18n / trade 两组全局默认值。
+	// 复用上面那个已是 ValueLoader 的实例 —— 保存后的主动刷新（i18n.Invalidate）走的就是它。
+	sysconfighttp.SetupSysConfigRoutes(authorizedAPI, a.adminPages, a.sysConfigSvc)
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
-	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db)
+	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 	artifactSvc := artifacthttp.SetupArtifactRoutes(authorizedAPI, db)
 	publicationSvc := pubhttp.SetupPublicationRoutes(authorizedAPI, db)
@@ -595,7 +615,10 @@ func (a *assembly) buildIdentityAndCommerce() {
 	if !ok {
 		panic("库存模块装配返回的不是具体 service（无法注入商品用例）")
 	}
-	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc))
+	// 末位参数 a.sysConfigDict（系统字典只读口）：订单 / 退货详情的地址要把快照里的
+	// 国家代码显示成当前语言的名字。传的是同一实例（它在 sysconfig 内部按语言缓存
+	// 「码 → 名」），不是另建一个 —— 每个消费方各建一层缓存等于同一份字典查 N 遍。
+	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc), a.sysConfigDict)
 	marks.mark(portWebhookDispatcher)
 
 	// —— 会员 ↔ 订单的端口对接（BIZ-3 消费侧）——

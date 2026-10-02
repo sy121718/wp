@@ -22,6 +22,7 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -62,12 +63,16 @@ type Service struct {
 	collection core.CollectionResolver
 	// productDS 商品构建期数据源（issue #35）：模板里的商品组件直连受限接口。
 	productDS productcontract.ProductDataSource
+	// checkoutCountries 结算表单国家下拉的来源（装配期注入，构建期按本实例语言取一份）。
+	// 与 page 路径同一条来源函数（同一个适配器实例）：两条发布路径共用同一份清单，
+	// 各解一次迟早会出现「手工页有国家、自动发布页没有」的分叉。
+	checkoutCountries func(ctx context.Context, lang string) []core.CheckoutCountry
 	// navigation 公开站点菜单（EDT-003）：core.nav 构建期解析。
 	navigation navigationcontract.NavigationService
 	// sitePages 系统页面槽位（EDT-003）：购物车/登录等链接烘进详情页产物。
 	sitePages pagecontract.SitePageResolver
 	// mediaProbe 响应式图片变体探测（EDT-003）；nil 时不输出 srcset。
-	mediaProbe func(ctx context.Context, url string) []int
+	mediaProbe func(ctx context.Context, url string) []mediacontract.VariantRef
 	// plugins 启用插件装配（EDT-003）：CompositeSet + PluginResolver + ExtraCSS。
 	plugins plugincontract.PluginService
 	// contentStore 内容译文读取端口（P5b）：nil 时用 pkg/i18n 默认存储。
@@ -193,6 +198,14 @@ func (s *Service) SourceType() string { return pipeline.SourceTypePresentation }
 // SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
 func (s *Service) SetProductDataSource(ds productcontract.ProductDataSource) { s.productDS = ds }
 
+// SetCheckoutCountries 注入结算表单国家下拉的来源（core.checkoutForm 的构建期输入）。
+//
+// 与 page 路径同一形状与同一条判据：取到空清单不注入，由组件在「表单里有国家字段」时
+// 显式失败（真因在装配层适配器的日志里）。未注入本身按必需端口断言。
+func (s *Service) SetCheckoutCountries(fn func(ctx context.Context, lang string) []core.CheckoutCountry) {
+	s.checkoutCountries = fn
+}
+
 // SetNavigationService 注入公开站点导航（EDT-003，装配期调用）。
 func (s *Service) SetNavigationService(nav navigationcontract.NavigationService) { s.navigation = nav }
 
@@ -200,7 +213,7 @@ func (s *Service) SetNavigationService(nav navigationcontract.NavigationService)
 func (s *Service) SetSitePageResolver(r pagecontract.SitePageResolver) { s.sitePages = r }
 
 // SetMediaProbe 注入响应式图片变体探测（EDT-003，装配期调用）。
-func (s *Service) SetMediaProbe(probe func(ctx context.Context, url string) []int) {
+func (s *Service) SetMediaProbe(probe func(ctx context.Context, url string) []mediacontract.VariantRef) {
 	s.mediaProbe = probe
 }
 

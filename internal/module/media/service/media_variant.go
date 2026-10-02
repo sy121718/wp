@@ -1,12 +1,14 @@
 package mediaservice
 
-// media_variant.go — 图片变体生成（thumb / medium / webp）：
+// media_variant.go — 图片变体生成（thumb / medium / full）：
 //   上传切入点 EnsureVariantRecords 登记 pending 记录并投递 asynq 任务（scheduleVariants）；
 //   GenerateVariants 同步生成，供 worker、详情页「重新生成」与存量回填复用；
 //   任何变体失败一律降级为 status=failed 记录，不回滚主上传、不阻断主流程。
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -45,15 +47,44 @@ func variantEligible(fileType string, fileName string) bool {
 	return true
 }
 
-// variantObjectKey 由原图存储 key 推导变体存储 key：
+// variantObjectKey 由原图存储 key 推导变体的**预期**存储 key：
 // 与原图同目录，命名 <stem>_<variantType>.jpg（变体统一有损 JPEG 编码）。
-// 文件名可推导，zip 打包/排查不依赖额外约定。
+//
+// 这是记录登记时的初始值，**不是最终落盘名** —— 真实产物名带内容指纹
+// （variantObjectKeyFingerprinted），生成成功后回填 file_path。
+// 保留「可推导」这条性质：zip 打包与存量排查不依赖额外约定。
 func variantObjectKey(sourceKey string, variantType string) string {
-	dir := filepath.ToSlash(filepath.Dir(strings.TrimPrefix(filepath.ToSlash(sourceKey), "/")))
-	base := filepath.Base(strings.TrimPrefix(filepath.ToSlash(sourceKey), "/"))
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	name := stem + "_" + variantType + ".jpg"
-	if dir == "" || dir == "." {
+	dir, stem := splitVariantSourceKey(sourceKey)
+	return joinVariantKey(dir, stem+"_"+variantType+".jpg")
+}
+
+// variantObjectKeyFingerprinted 带内容指纹的变体存储 key：
+// <stem>_<variantType>-<generation>-<hash8>.jpg
+//
+// 为什么必须带指纹（PERF-007 收口）：变体 URL 稳定时，浏览器只能靠启发式缓存
+// （无 Cache-Control + 有 Last-Modified 时大致取「距今时间的 10%」），换图之后
+// 要么长时间显示旧图、要么每次浏览都回源重验证 —— 二选一，且随浏览器漂移。
+// 指纹把 URL 与内容绑定后，变体才可以发 immutable 永久缓存：
+// 换图 → generation+1 → URL 变 → 缓存自然失效，不需要任何清理动作。
+func variantObjectKeyFingerprinted(sourceKey string, variantType string, generation int, hash8 string) string {
+	dir, stem := splitVariantSourceKey(sourceKey)
+	return joinVariantKey(dir, fmt.Sprintf("%s_%s-%d-%s.jpg", stem, variantType, generation, hash8))
+}
+
+// splitVariantSourceKey 拆原图存储 key 为「存储相对目录 + 去掉扩展名的词干」。
+func splitVariantSourceKey(sourceKey string) (dir string, stem string) {
+	slash := strings.TrimPrefix(filepath.ToSlash(sourceKey), "/")
+	base := filepath.Base(slash)
+	dir = filepath.Dir(slash)
+	if dir == "." {
+		dir = ""
+	}
+	return dir, strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// joinVariantKey 拼存储相对 key（目录为空时不带前导斜杠）。
+func joinVariantKey(dir, name string) string {
+	if dir == "" {
 		return name
 	}
 	return dir + "/" + name
@@ -136,14 +167,19 @@ func attachmentStorageKey(att *mediamodel.AttachmentEntity) string {
 
 // variantProduceResult 单个变体的生成结果（回填记录用）。
 type variantProduceResult struct {
+	// Key 带内容指纹的存储相对 key —— 必须回填进记录：
+	// 探测侧（ProbeImageVariants）与对账侧都从这里取真实路径，不看预期名。
+	Key    string
 	Width  int
 	Height int
 	Size   int64
 }
 
-// produceVariant 生成单个变体文件：按类型缩放/重编码 → JPEG 有损编码 → 落盘，
-// 返回变体实际宽高与文件大小。
-func produceVariant(src image.Image, variantType string, key string) (variantProduceResult, error) {
+// produceVariant 生成单个变体文件：按类型缩放/重编码 → JPEG 有损编码 →
+// 算内容指纹定名 → 落盘，返回真实 key 与宽高大小。
+//
+// 定名必须在编码**之后**：指纹取自产物字节，字节只有编码完成才知道。
+func produceVariant(src image.Image, variantType string, sourceKey string, generation int) (variantProduceResult, error) {
 	img, err := buildVariantImage(src, variantType)
 	if err != nil {
 		return variantProduceResult{}, err
@@ -152,6 +188,7 @@ func produceVariant(src image.Image, variantType string, key string) (variantPro
 	if err != nil {
 		return variantProduceResult{}, err
 	}
+	key := variantObjectKeyFingerprinted(sourceKey, variantType, generation, contentFingerprint(data))
 	absPath, err := localObjectPath(key)
 	if err != nil {
 		return variantProduceResult{}, err
@@ -159,7 +196,21 @@ func produceVariant(src image.Image, variantType string, key string) (variantPro
 	if err := writeLocalFile(absPath, data); err != nil {
 		return variantProduceResult{}, err
 	}
-	return variantProduceResult{Width: img.Bounds().Dx(), Height: img.Bounds().Dy(), Size: int64(len(data))}, nil
+	return variantProduceResult{
+		Key:    key,
+		Width:  img.Bounds().Dx(),
+		Height: img.Bounds().Dy(),
+		Size:   int64(len(data)),
+	}, nil
+}
+
+// contentFingerprint 变体内容指纹：产物字节 sha256 的前 8 位小写 hex。
+//
+// 8 位 hex（32 bit）在「单附件四槽位」的规模下碰撞概率可忽略，
+// 同时让文件名保持人类可读 —— 对账时能一眼看出是哪一代产物。
+func contentFingerprint(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:4])
 }
 
 // probeVariantStatus 只读探测该附件变体的初始状态（不写库）：
@@ -194,7 +245,7 @@ func (s *Service) probeVariantStatus(ctx context.Context, att *mediamodel.Attach
 	return mediamodel.VariantStatusPending
 }
 
-// variantRecordsFor 按探测结果构造三条变体初始记录（纯函数，不写库）。
+// variantRecordsFor 按探测结果构造四条变体初始记录（纯函数，不写库）。
 //
 // status 为空串（不可变体）时返回 nil —— 调用方据此跳过写入。
 // 纯函数的意义：同一批记录可以在**事务内**构造并随元数据回填一起提交，
@@ -219,7 +270,7 @@ func variantRecordsFor(att *mediamodel.AttachmentEntity, status string) []*media
 	return records
 }
 
-// EnsureVariantRecords 图片类附件登记三条变体初始记录（自足入口：探测 + 批量插入）。
+// EnsureVariantRecords 图片类附件登记四条变体初始记录（自足入口：探测 + 批量插入）。
 //
 // 上传主路径**不再直接调用它** —— 上传的第二段事务里要的是「同一批记录与元数据回填
 // 一起提交」，所以那里改用 probeVariantStatus + variantRecordsFor + CreateBatchTx。
@@ -336,16 +387,17 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 
 	for _, rec := range records {
 		vt := rec.VariantType
-		key := rec.FilePath
-		produced, gerr := produceVariant(src, vt, key)
+		produced, gerr := produceVariant(src, vt, sourceKey, att.Generation)
 		if gerr != nil {
 			_ = s.vm.Update(ctx, rec.ID, map[string]any{"status": mediamodel.VariantStatusFailed, "update_time": time.Now()})
 			logger.Scene("media").With("attachment_id", attachmentID).With("variant", vt).Error(gerr, "变体生成失败")
 			rec.Status = mediamodel.VariantStatusFailed
 		} else {
+			// file_path 回填**带指纹的真实名**（不是登记时写的预期名）：
+			// 探测（ProbeImageVariants）与对账都从这里取路径，不看预期名。
 			_ = s.vm.Update(ctx, rec.ID, map[string]any{
 				"status":      mediamodel.VariantStatusReady,
-				"file_path":   key,
+				"file_path":   produced.Key,
 				"width":       produced.Width,
 				"height":      produced.Height,
 				"file_size":   produced.Size,
@@ -353,6 +405,7 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 				"update_time": time.Now(),
 			})
 			rec.Status = mediamodel.VariantStatusReady
+			rec.FilePath = produced.Key
 		}
 		res = append(res, variantEntityToResp(rec))
 	}
@@ -395,11 +448,15 @@ func variantEntityToResp(e *mediamodel.MediaVariantEntity) mediato.VariantResp {
 	}
 }
 
-// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体宽度列表，
-// 供构建期响应式图片（srcset）使用：宽度取变体类型的标准边并与文件命名
-// <stem>_<type>.jpg 一一对应；升序去重，保证同一文档重复编译产物字节一致。
+// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体，
+// 供构建期响应式图片（srcset）使用：宽度取变体类型的标准边，
+// URL 取记录里的**真实路径**（带内容指纹）；升序去重，
+// 保证同一文档重复编译产物字节一致。
 // 非媒体库 URL、附件不存在或变体未就绪返回 nil（调用方不输出 srcset）。
-func (s *Service) ProbeImageVariants(ctx context.Context, url string) []int {
+//
+// 为什么 URL 由这里给出、而不是让调用方按宽度自己拼：变体名带
+// <generation>-<hash8> 指纹，只有本模块（以及它查的记录）知道这两段。
+func (s *Service) ProbeImageVariants(ctx context.Context, url string) []mediato.VariantRef {
 	const prefix = "/storage/"
 	if !strings.HasPrefix(url, prefix) {
 		return nil
@@ -416,17 +473,19 @@ func (s *Service) ProbeImageVariants(ctx context.Context, url string) []int {
 	if err != nil {
 		return nil
 	}
-	// webp 变体与源图同尺寸，不参与 srcset（原图已由 src 兜底）。
-	widths := make([]int, 0, len(list))
+	// full 变体与源图同尺寸，不参与 srcset（原图已由 src 兜底）。
+	refs := make([]mediato.VariantRef, 0, len(list))
 	seen := make(map[int]bool, len(list))
 	for _, v := range list {
-		if v.Status != mediamodel.VariantStatusReady {
+		if v.Status != mediamodel.VariantStatusReady || strings.TrimSpace(v.FilePath) == "" {
 			continue
 		}
 		var w int
 		switch v.VariantType {
 		case mediamodel.VariantTypeThumb:
 			w = thumbVariantEdge
+		case mediamodel.VariantTypeSmall:
+			w = smallVariantEdge
 		case mediamodel.VariantTypeMedium:
 			w = mediumVariantEdge
 		default:
@@ -436,8 +495,11 @@ func (s *Service) ProbeImageVariants(ctx context.Context, url string) []int {
 			continue
 		}
 		seen[w] = true
-		widths = append(widths, w)
+		refs = append(refs, mediato.VariantRef{
+			URL:   upload.StorageURL(filepath.ToSlash(v.FilePath)),
+			Width: w,
+		})
 	}
-	sort.Ints(widths)
-	return widths
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Width < refs[j].Width })
+	return refs
 }

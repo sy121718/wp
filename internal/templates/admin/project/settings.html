@@ -267,20 +267,15 @@
                 </select>
             </div>
             {{end}}
-            <datalist id="sky-locale-options">
-                <option value="zh-CN">简体中文</option>
-                <option value="zh-TW">繁體中文</option>
-                <option value="en-US">English (US)</option>
-                <option value="en-GB">English (UK)</option>
-                <option value="ja">日本語</option>
-                <option value="ko">한국어</option>
-                <option value="fr">Français</option>
-                <option value="de">Deutsch</option>
-                <option value="es">Español</option>
-                <option value="pt-BR">Português (BR)</option>
-                <option value="ru">Русский</option>
-                <option value="ar">العربية</option>
-            </datalist>
+            {* 语言码 datalist：来源是 sys_dict type='language' 且 enabled 的项（字典只读口供数），
+   与 project_locales.lang 同口径（完整语言码）。此前这里是 12 条硬编码 option ——
+   它既漏掉已收录的语言，也会在新增语言后继续显示旧清单（「已收录语言」的提示来源
+   与实际收录集合必须同一处）。*}
+{{if isset(.LangOptions)}}<datalist id="sky-locale-options">
+    {{range _, o := .LangOptions}}
+    <option value="{{o.Code}}">{{o.Label}}</option>
+    {{end}}
+</datalist>{{end}}
             <span class="field-label-row">{{ .["t"]("admin.settings.locales.rules_label", "清单规则") }}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.settings.help.label", "查看说明") }}" aria-expanded="false">?</button>

@@ -73,10 +73,11 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("读样式表失败: %v", err)
 	}
 	css := string(raw)
+	// 断言的是**真实在用**的规则：货源页模板里没有 .form-inline 结构（该页表单是整块
+	// form-stack，表格内联输入走 .wbs），这两条 `.form-inline …` 对应的选择器在模板里
+	// 无使用点，已随死样式一并清掉 —— 继续要求它们存在等于把「清理死样式」变成红灯。
 	for _, want := range []string{
 		".source-page-table",
-		".source-page .form-inline textarea",
-		".source-page .form-inline .wbs",
 		".source-stats",
 	} {
 		if !strings.Contains(css, want) {
@@ -95,8 +96,10 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 	if !strings.Contains(block, "max-width: 720px") || !strings.Contains(block, ".source-page-table thead { display: none; }") {
 		t.Fatalf("窄屏断点缺少货源页交叉表的堆叠规则：%s", block)
 	}
-	// 输入宽度不写死：收口写法必须是 min(100%, …)。
-	if !strings.Contains(css, "width: min(100%, 420px)") || !strings.Contains(css, "width: min(100%, 220px)") {
+	// 输入宽度不写死：收口写法必须是 min(100%, …)。页面级只留这一档；textarea 那一档
+	// 已**上收到基座**（ui.css 的 `.form-inline > :is(…, .form-textarea, …)`），
+	// 页面不再重复声明 —— 所以这里不再断言一条已不存在的页面规则。
+	if !strings.Contains(css, "width: min(100%, 220px)") {
 		t.Fatalf("输入宽度应按 min(100%%, <设计宽度>) 收口，不能写死像素")
 	}
 }

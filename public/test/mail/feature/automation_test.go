@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 )
 
@@ -307,7 +308,14 @@ func TestAutomationSuppressionSkipsSend(t *testing.T) {
 	logs, _ := f.m.ListNodeLogs(ctx, run.ID, 10)
 	foundSkip := false
 	for _, l := range logs {
-		if l.NodeKey == "n2" && l.Detail != nil && strings.Contains(*l.Detail, "抑制名单") {
+		// Detail 与 Explain 同源，都是**运行文案编码**（service 层拿不到请求语言），出口用
+		// mailenums.FormatRunText 还原。断言必须走还原，否则测的是中间产物。
+		// 取词用「只回兜底」的函数：断言代码内兜底文案，不依赖测试库词条质量。
+		if l.NodeKey != "n2" || l.Detail == nil {
+			continue
+		}
+		detail := mailenums.FormatRunText(func(_, fallback string) string { return fallback }, *l.Detail)
+		if strings.Contains(detail, "抑制名单") {
 			foundSkip = true
 		}
 	}
