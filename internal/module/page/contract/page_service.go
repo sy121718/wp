@@ -202,6 +202,23 @@ type PageDependencyLookup interface {
 		refs []DependencyPageRef, err error)
 }
 
+// PagePathKindLookup 按线上访问路径**批量**反查页面类型（只读）。
+//
+// 为什么是「按路径反查」而不是「列出全站路径」：消费方（文章页浏览量排行这类聚合）
+// 手上只有一串**被访问过**的路径，它要的是「这些路径里哪些是文章页」。列出全站路径
+// 会让调用方拿到成千上万条与本次统计无关的路径、再自己求一次交集，而每次统计只关心几十条。
+//
+// 刻意只回 kind，不回标题 / 文档 / 发布状态：带齐就成了第二个「页面列表」投影
+// （ListPageTitles 已有），而这里的唯一用途是分类过滤。
+type PagePathKindLookup interface {
+	// KindsOfPaths 返回 path → kind，只含本工程内**未删除且已发布**（active_path 命中）的页面。
+	//
+	// 查不到的路径**不出现在结果里**：调用方据此排除它们，而不是猜一个默认类型 ——
+	// 猜默认会让「已下线的文章页」继续被算进文章页统计，而且没有任何报错。
+	// 路径为空、重复或全为空白时返回空 map（不是错误：调用方的路径集合本来就可能是空的）。
+	KindsOfPaths(ctx context.Context, projectID string, paths []string) (map[string]string, error)
+}
+
 // BuildQueueEnqueuer 构建队列的入队端口（审计 DB-007）。
 //
 // 由 build 模块实现、装配期注入。接口定义在**本模块**（而不是反向 import build 的契约）：
@@ -244,6 +261,8 @@ type PageService interface {
 	SitePageResolver
 	// PageDependencyLookup 按依赖键只读反查页面（反查面；写路径是下面的 MarkStaleByDependency）。
 	PageDependencyLookup
+	// PagePathKindLookup 按线上访问路径批量反查页面类型（只读，跨模块聚合用）。
+	PagePathKindLookup
 
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
