@@ -187,6 +187,10 @@ func init() {
 	registerAIAccessToken()
 	// 543：对外访问令牌的词条（见 register_ai_token_i18n.go）。
 	registerAITokenI18n()
+	// 544：「MCP 与外部访问」菜单项（见 register_ai_mcp_menu.go）。
+	registerAIMcpMenu()
+	// 545：MCP 与外部访问页的词条（见 register_ai_mcp_i18n.go）。
+	registerAIMcpI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

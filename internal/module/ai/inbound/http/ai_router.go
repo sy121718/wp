@@ -111,6 +111,12 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 
 	if adminPages != nil {
 		page := NewPageHandle(svc)
+		// MCP 与外部访问页：读权限点用 token/list（与菜单的 permission_code 同一个值 ——
+		// 两处不一致会出现「菜单看得见、点进去 403」），两个写操作各用自己的权限点。
+		mcpPage := NewMcpPageHandle(tokenSvc, toolRegistry)
+		adminPages.GET("/ai/mcp", builtin.CasbinMiddlewareForPathAs("/api/ai/token/list", http.MethodGet), mcpPage.Page)
+		adminPages.POST("/ai/mcp/token/create", builtin.CasbinMiddlewareForPath("/api/ai/token/create"), mcpPage.TokenCreate)
+		adminPages.POST("/ai/mcp/token/revoke", builtin.CasbinMiddlewareForPath("/api/ai/token/revoke"), mcpPage.TokenRevoke)
 		// 页面路径与权限点路径不同，必须显式指定 casbin obj（口径见 sysconfig 页面路由）。
 		adminPages.GET("/ai/providers", builtin.CasbinMiddlewareForPathAs("/api/ai/provider/list", http.MethodGet), page.ProvidersPage)
 

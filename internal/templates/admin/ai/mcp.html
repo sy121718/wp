@@ -1,0 +1,101 @@
+{* admin/ai/mcp.html — 「MCP 与外部访问」页。
+
+   结构：页头（说明气泡）→ 回执 → 接入地址 → 生成令牌 → 令牌区块 → 可用工具。
+   令牌区块抽成 ai/mcp_tokens.html：创建与撤销都只重渲染那一块（HTMX 片段），
+   整页 include 同一份标记 —— 两处各写一遍必然漂移。
+
+   上下文需要：Title / Endpoint / Tokens（tokenRow 视图行）/ Tools（toolRow）/
+   ScopeOptions（Code + Label）/ NewToken（一次性明文，通常为空）/ ErrText / DoneText，
+   以及 shell.Prepare 注入的 t 与 csrf_token。 *}
+{{extends "../layout.html"}}
+
+{{block body()}}
+{{tr := .["t"]}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{tr("admin.ai.mcp.title", "MCP 与外部访问")}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.ai.mcp.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip"><strong>{{tr("admin.ai.mcp.help.title", "这一页管什么")}}</strong>{{tr("admin.ai.mcp.help.body", "把本站的工具开放给外部程序调用。外部程序带一把令牌（Authorization: Bearer）连 POST /mcp，按 MCP 协议先列工具、再调工具。令牌明文只在生成时出现一次，请立刻保存。")}}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {{if .ErrText}}<p class="badge badge-warning" role="alert">{{.ErrText}}</p>{{end}}
+    {{if .DoneText}}<p class="badge" role="status">{{.DoneText}}</p>{{end}}
+
+    <section class="card">
+        <div class="card-header"><h2 class="card-title">{{tr("admin.ai.mcp.endpoint.title", "接入地址")}}</h2></div>
+        <div class="card-body">
+            <p class="form-hint">{{tr("admin.ai.mcp.endpoint.hint", "把下面这个地址填进 MCP 客户端（HTTP 传输），并在请求头带上 Authorization: Bearer <令牌>。")}}</p>
+            <p><code>{{.Endpoint}}</code></p>
+            <p><code>Authorization: Bearer &lt;令牌&gt;</code></p>
+            <p class="form-hint">{{tr("admin.ai.mcp.scope.hint", "令牌只能调用它声明、且账号自身仍有权限的工具；两者取交集，缺一不可。")}}</p>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-header"><h2 class="card-title">{{tr("admin.ai.mcp.token.create.section", "生成新令牌")}}</h2></div>
+        <div class="card-body">
+            <form hx-post="/admin/ai/mcp/token/create" hx-target="#mcp-token-panel" hx-swap="outerHTML">
+                <div class="form-group">
+                    <label class="form-label req" for="mcp-token-name">{{tr("admin.ai.mcp.token.create.name", "用途备注")}}</label>
+                    <input id="mcp-token-name" type="text" class="form-input" name="name" required maxlength="100" autocomplete="off" placeholder="{{tr("admin.ai.mcp.token.create.name.ph", "例如：dsh 本地客户端")}}">
+                    <p class="form-hint">{{tr("admin.ai.mcp.token.create.name.hint", "写清「给谁用」；日后要撤销时，只能靠这一行认出来。")}}</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.mcp.token.create.scopes", "权限点")}}</label>
+                    {{if .ScopeOptions}}
+                    {{range .ScopeOptions}}
+                    <label class="form-label"><input type="checkbox" name="scopes" value="{{.Code}}"> {{.Label}}</label>
+                    {{end}}
+                    {{else}}
+                    <p class="form-hint">{{tr("admin.ai.mcp.token.create.noScopes", "当前没有注册任何工具，因此没有可勾选的权限点。")}}</p>
+                    {{end}}
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="mcp-token-expires">{{tr("admin.ai.mcp.token.create.expires", "过期日（可空，当天有效）")}}</label>
+                    <input id="mcp-token-expires" type="date" class="form-input" name="expiresAt">
+                </div>
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">{{tr("admin.ai.mcp.token.create.submit", "生成令牌")}}</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    {{include "mcp_tokens.html"}}
+
+    <section class="card">
+        <div class="card-header"><h2 class="card-title">{{tr("admin.ai.mcp.tool.section", "可用工具")}}</h2></div>
+        <div class="card-body">
+            <p class="form-hint">{{tr("admin.ai.mcp.tool.hint", "工具在代码里注册（各模块的 inbound/mcp），装配期一次性完成 —— 这一页只读，运行期没有增删入口。")}}</p>
+            {{if .Tools}}
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.ai.mcp.tool.section", "可用工具")}}">
+                <table class="data-table">
+                    <thead><tr>
+                        <th>{{tr("admin.ai.mcp.tool.col.name", "工具")}}</th>
+                        <th>{{tr("admin.ai.mcp.tool.col.desc", "说明")}}</th>
+                        <th>{{tr("admin.ai.mcp.tool.col.perm", "所需权限")}}</th>
+                    </tr></thead>
+                    <tbody>
+                    {{range .Tools}}
+                        <tr>
+                            <td><code>{{.Name}}</code></td>
+                            <td>{{.Description}}</td>
+                            <td><code>{{.Permission}}</code></td>
+                        </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{else}}
+            <p class="form-hint">{{tr("admin.ai.mcp.tool.empty", "没有注册任何工具。")}}</p>
+            {{end}}
+        </div>
+    </section>
+</div>
+{{end}}

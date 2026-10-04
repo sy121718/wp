@@ -1,0 +1,64 @@
+{* admin/ai/mcp_tokens.html — 令牌区块。
+
+   两种进入方式共用这一份标记：
+     · 整页（ai/mcp.html）{{include}} 它；
+     · HTMX：生成与撤销都 POST 回这一区块（hx-target="#mcp-token-panel" / hx-swap="outerHTML"）。
+   所以 id 必须在这一层，且**不能**依赖页面其它部分 —— 片段替换后页面其余状态不变。
+
+   为什么撤销也走片段而不是 PRG：撤销按钮在表格行里，而 <form> 不能包住 <tr>，
+   每行一个表单不是合法 HTML；片段替换绕开这个限制。
+
+   上下文：Tokens（tokenRow）/ NewToken（一次性明文，通常为空）/ t。 *}
+{{tr := .["t"]}}
+<section id="mcp-token-panel" class="card">
+    <div class="card-header"><h2 class="card-title">{{tr("admin.ai.mcp.token.section", "访问令牌")}}</h2></div>
+
+    {{if .NewToken}}
+    <div class="card-body">
+        <p class="badge badge-warning" role="alert">{{tr("admin.ai.mcp.token.once.title", "令牌只显示这一次")}}</p>
+        <p class="form-hint">{{tr("admin.ai.mcp.token.once.hint", "请现在复制保存。刷新或离开本页后无法再查看，只能吊销后重新生成。")}}</p>
+        <p><code>{{.NewToken}}</code></p>
+    </div>
+    {{end}}
+
+    <div class="card-body">
+        {{if .Tokens}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.ai.mcp.token.section", "访问令牌")}}">
+            <table class="data-table">
+                <thead><tr>
+                    <th>{{tr("admin.ai.mcp.token.col.name", "用途")}}</th>
+                    <th>{{tr("admin.ai.mcp.token.col.prefix", "令牌前缀")}}</th>
+                    <th>{{tr("admin.ai.mcp.token.col.scopes", "权限点")}}</th>
+                    <th>{{tr("admin.ai.mcp.token.col.status", "状态")}}</th>
+                    <th>{{tr("admin.ai.mcp.token.col.lastUsed", "最近使用")}}</th>
+                    <th>{{tr("admin.ai.mcp.token.col.expires", "过期")}}</th>
+                    <th><span class="sr-only">{{tr("admin.ai.mcp.token.col.actions", "操作")}}</span></th>
+                </tr></thead>
+                <tbody>
+                {{range .Tokens}}
+                    <tr>
+                        <td>{{.Name}}</td>
+                        <td><code>{{.Prefix}}…</code></td>
+                        <td>{{.ScopesText}}</td>
+                        <td>{{.StatusLabel}}</td>
+                        <td>{{if .LastUsedText}}{{.LastUsedText}}{{else}}{{tr("admin.ai.mcp.token.never", "从未使用")}}{{end}}</td>
+                        <td>{{if .ExpiresText}}{{.ExpiresText}}{{else}}{{tr("admin.ai.mcp.token.noExpiry", "不过期")}}{{end}}</td>
+                        <td>
+                            {{if not .Revoked}}
+                            <button type="button" class="btn btn-danger btn-sm"
+                                    hx-post="/admin/ai/mcp/token/revoke" hx-vals='{"id":{{.ID}}}'
+                                    hx-target="#mcp-token-panel" hx-swap="outerHTML"
+                                    hx-confirm="{{tr("admin.ai.mcp.token.revokeConfirm", "确定撤销这把令牌？撤销后立刻失效且无法恢复。")}}">{{tr("admin.ai.mcp.token.revoke", "撤销")}}</button>
+                            {{end}}
+                        </td>
+                    </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        <p class="form-hint">{{tr("admin.ai.mcp.token.revokedHint", "已撤销的令牌保留在表里（审计要能回答「什么时候撤的」），但不再可用。")}}</p>
+        {{else}}
+        <p class="form-hint">{{tr("admin.ai.mcp.token.empty", "还没有令牌。")}}</p>
+        {{end}}
+    </div>
+</section>
