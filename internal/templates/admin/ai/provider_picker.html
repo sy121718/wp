@@ -1,0 +1,55 @@
+{* admin/ai/provider_picker.html — 「选择要添加的模型」弹窗（候选勾选）。
+
+   渲染时机：点「获取可用模型」后服务端**重新渲染整个供应商页**并带上 Picker 数据
+   （候选列表）。为什么不走 htmx 片段：候选列表要挂在页面上唯一的一个弹窗里，
+   而片段换入后需要再触发打开；整页渲染里弹窗自带 data-modal-auto-open，
+   modal 控件扫描时就打开它 —— 少一层「谁来打开」的时序问题。
+
+   勾选提交到 /admin/ai/providers/models/append：服务端把勾中的 id 追加进目录后重定向回页面。
+   勾选本身是纯客户端行为（列表筛选 / 全选走 admin.js 的 data-filter-* 与 data-check-* 基座）。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{picker := .Picker}}
+{{p := picker.Provider}}
+{{existing := picker.Existing}}
+<dialog class="wb-modal" id="ai-model-picker" data-modal data-modal-auto-open
+        data-modal-autofocus="#ai-picker-search" style="width:min(94vw,720px)">
+    <div class="wb-modal-inner">
+        <header class="wb-modal-head">
+            <strong>{{tr("admin.ai.picker.title", "选择要添加的模型")}}</strong>
+            <button type="button" class="wb-modal-x" data-modal-close aria-label="{{tr("admin.ai.picker.close", "关闭")}}">×</button>
+        </header>
+        <form method="post" action="/admin/ai/providers/models/append">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="providerId" value="{{p.ID}}">
+            <input type="hidden" name="version" value="{{p.Version}}">
+            <div class="wb-modal-body">
+                <p class="form-hint">{{tr("admin.ai.picker.lead", "以下是模型提供商的可用模型，勾选要添加的模型。")}}</p>
+
+                <div class="ai-picker-bar">
+                    <input type="search" class="form-input" id="ai-picker-search" data-filter-input
+                           placeholder="{{tr("admin.ai.picker.search", "搜索模型")}}" autocomplete="off">
+                    <label class="var-value"><input type="checkbox" data-check-all> {{tr("admin.ai.picker.selectAll", "全选")}}</label>
+                </div>
+
+                {{if len(picker.Candidates) == 0}}
+                <p class="form-hint">{{tr("admin.ai.picker.empty", "该提供商没有返回可添加的模型。")}}</p>
+                {{end}}
+
+                {{range _, id := picker.Candidates}}
+                <label class="var-value ai-picker-row" data-filter-text="{{id}}">
+                    <input type="checkbox" name="modelIds" value="{{id}}" data-check-item {{if isset(existing[id])}}disabled{{end}}>
+                    <code>{{id}}</code>
+                    {{if isset(existing[id])}}<span class="badge">{{tr("admin.ai.picker.inCatalog", "已在目录")}}</span>{{end}}
+                </label>
+                {{end}}
+
+                <p class="form-hint" data-filter-empty hidden>{{tr("admin.ai.picker.filterEmpty", "没有匹配的模型。")}}</p>
+            </div>
+            <footer class="wb-modal-foot">
+                <button type="button" class="btn btn-ghost" data-modal-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.ai.picker.submit", "添加所选")}}</button>
+            </footer>
+        </form>
+    </div>
+</dialog>

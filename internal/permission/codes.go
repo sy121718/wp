@@ -662,6 +662,44 @@ const (
 	WebhookEndpointSave Perm = "webhook:endpoint_save"
 	// 启停集成端点（POST /api/webhook/endpoint/status）
 	WebhookEndpointStatus Perm = "webhook:endpoint_status"
+
+	// —— ai（18）——
+	// AI 供应商列表（GET /api/ai/provider/list）
+	AIProviderList Perm = "ai:provider_list"
+	// AI 供应商详情（GET /api/ai/provider/get）
+	AIProviderGet Perm = "ai:provider_get"
+	// AI 供应商可用模型列表（GET /api/ai/provider/models/list）
+	AIProviderModelsList Perm = "ai:provider_models_list"
+	// 保存 AI 供应商（POST /api/ai/provider/save）
+	AIProviderSave Perm = "ai:provider_save"
+	// 删除 AI 供应商（POST /api/ai/provider/delete）
+	AIProviderDelete Perm = "ai:provider_delete"
+	// 启停 AI 供应商（POST /api/ai/provider/status）
+	AIProviderStatus Perm = "ai:provider_status"
+	// 保存 AI 供应商模型目录（POST /api/ai/provider/models/save）
+	AIProviderModelsSave Perm = "ai:provider_models_save"
+	// 恢复 AI 供应商默认模型（POST /api/ai/provider/models/restore）
+	AIProviderModelsRestore Perm = "ai:provider_models_restore"
+	// 拉取 AI 供应商可用模型（POST /api/ai/provider/models/fetch）
+	AIProviderModelsFetch Perm = "ai:provider_models_fetch"
+	// AI 会话列表（GET /api/ai/session/list）
+	AISessionList Perm = "ai:session_list"
+	// AI 会话详情（GET /api/ai/session/get）
+	AISessionGet Perm = "ai:session_get"
+	// AI 会话事件日志（GET /api/ai/session/events）
+	AISessionEvents Perm = "ai:session_events"
+	// AI 会话折叠建议（POST /api/ai/session/fold/plan）
+	AISessionFoldPlan Perm = "ai:session_fold_plan"
+	// 追加 AI 会话事件（POST /api/ai/session/append）
+	AISessionAppend Perm = "ai:session_append"
+	// 重命名 AI 会话（POST /api/ai/session/rename）
+	AISessionRename Perm = "ai:session_rename"
+	// 归档 / 恢复 AI 会话（POST /api/ai/session/archive）
+	AISessionArchive Perm = "ai:session_archive"
+	// 折叠 AI 会话上下文（POST /api/ai/session/fold）
+	AISessionFold Perm = "ai:session_fold"
+	// AI 对话入口（POST /api/ai/chat）
+	AIChat Perm = "ai:chat"
 )
 
 // specs 权限点元数据：中文名与所属模块。启动期 upsert 时写进 sys_permission 的
@@ -1018,4 +1056,23 @@ var specs = map[Perm]spec{
 	WebhookEndpointList:   {module: "webhook", name: "集成端点列表"},
 	WebhookEndpointSave:   {module: "webhook", name: "保存集成端点"},
 	WebhookEndpointStatus: {module: "webhook", name: "启停集成端点"},
+	// —— ai ——
+	AIProviderList:          {module: "ai", name: "供应商列表"},
+	AIProviderGet:           {module: "ai", name: "供应商详情"},
+	AIProviderModelsList:    {module: "ai", name: "供应商可用模型列表"},
+	AIProviderSave:          {module: "ai", name: "保存供应商"},
+	AIProviderDelete:        {module: "ai", name: "删除供应商"},
+	AIProviderStatus:        {module: "ai", name: "启停供应商"},
+	AIProviderModelsSave:    {module: "ai", name: "保存模型目录"},
+	AIProviderModelsRestore: {module: "ai", name: "恢复默认模型"},
+	AIProviderModelsFetch:   {module: "ai", name: "拉取可用模型"},
+	AISessionList:           {module: "ai", name: "会话列表"},
+	AISessionGet:            {module: "ai", name: "会话详情"},
+	AISessionEvents:         {module: "ai", name: "会话事件日志"},
+	AISessionFoldPlan:       {module: "ai", name: "会话折叠建议"},
+	AISessionAppend:         {module: "ai", name: "追加会话事件"},
+	AISessionRename:         {module: "ai", name: "重命名会话"},
+	AISessionArchive:        {module: "ai", name: "归档会话"},
+	AISessionFold:           {module: "ai", name: "折叠会话"},
+	AIChat:                  {module: "ai", name: "对话入口"},
 }

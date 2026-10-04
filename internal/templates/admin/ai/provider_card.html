@@ -1,0 +1,102 @@
+{* admin/ai/provider_card.html — 单张供应商卡片（被整页 include，作用域是这张卡片自己的数据 map）。
+
+   卡片体内两个并列 form：供应商（密钥 / 自定义设置）与模型目录（provider_models.html 片段）。
+   启停 / 删除是两个 .hidden-form，用 form="<id>" 从卡片头关联 —— form 不能嵌套。
+
+   密钥框只读占位、不回明文：模板里根本没有明文可渲染，服务端只给 HasAPIKey。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{p := .Provider}}
+{{canSave := isset(.PermSet["ai:provider_save"])}}
+{{canToggle := isset(.PermSet["ai:provider_status"])}}
+{{canDelete := isset(.PermSet["ai:provider_delete"])}}
+<details class="card ai-provider" data-ai-provider="{{p.ID}}">
+    <summary class="card-header ai-provider-head">
+        <span class="badge {{if p.Status == 1}}badge-success{{else}}badge-warning{{end}}">{{if p.Status == 1}}{{tr("admin.ai.status.enabled", "启用")}}{{else}}{{tr("admin.ai.status.disabled", "停用")}}{{end}}</span>
+        <span class="card-title">{{p.DisplayName}}</span>
+        <code class="move-meta">{{p.ProviderKey}}</code>
+        <span class="ai-provider-actions">
+            {{if canToggle}}
+            <button type="submit" form="ai-toggle-{{p.ID}}" class="btn btn-sm">{{if p.Status == 1}}{{tr("admin.ai.action.disable", "停用")}}{{else}}{{tr("admin.ai.action.enable", "启用")}}{{end}}</button>
+            {{end}}
+            {{if canDelete}}
+            <button type="submit" form="ai-del-{{p.ID}}" class="btn btn-sm btn-danger"
+                    data-confirm="{{tr("admin.ai.confirm.delete", "删除该供应商？它下面的模型目录会一并删除。")}}" data-confirm-danger>{{tr("admin.common.action.delete", "删除")}}</button>
+            {{end}}
+        </span>
+    </summary>
+
+    <div class="stack ai-provider-body">
+        {{if isset(.ModelsNotice)}}{{if .ModelsNotice != ""}}
+        <p class="badge {{if isset(.ModelsNoticeErr)}}{{if .ModelsNoticeErr}}badge-warning{{else}}badge-success{{end}}{{else}}badge-success{{end}}" role="{{if isset(.ModelsNoticeErr)}}{{if .ModelsNoticeErr}}alert{{else}}status{{end}}{{else}}status{{end}}">{{.ModelsNotice}}</p>
+        {{end}}{{end}}
+
+        {{if canSave}}
+        <form method="post" action="/admin/ai/providers/save">
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="providerId" value="{{p.ID}}">
+            <input type="hidden" name="version" value="{{p.Version}}">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.field.displayName", "显示名称")}}</label>
+                    <input type="text" class="form-input" name="displayName" value="{{p.DisplayName}}" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.status", "状态")}}</label>
+                    <select class="form-select" name="status">
+                        <option value="1" {{if p.Status == 1}}selected{{end}}>{{tr("admin.ai.status.enabled", "启用")}}</option>
+                        <option value="0" {{if p.Status == 0}}selected{{end}}>{{tr("admin.ai.status.disabled", "停用")}}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.sort", "排序")}}</label>
+                    <input type="number" class="form-input" name="sort" value="{{p.Sort}}" inputmode="numeric" step="1">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.ai.field.apiKey", "API 密钥")}}</label>
+                <input type="password" class="form-input" name="apiKey" autocomplete="new-password"
+                       placeholder="{{if p.HasAPIKey}}{{tr("admin.ai.ph.apiKeySet", "已配置 —— 输入新值可替换")}}{{else}}{{tr("admin.ai.ph.apiKeyNew", "填写后加密存储，页面只回是否已配置")}}{{end}}">
+                <p class="form-hint">{{if p.HasAPIKey}}{{tr("admin.ai.hint.apiKeySet", "已配置（密文存储）。留空表示不修改。")}}{{else}}{{tr("admin.ai.hint.apiKeyNew", "密钥只保存密文，任何接口都不会回传明文。")}}{{end}}</p>
+            </div>
+            <details class="section-fold">
+                <summary>{{tr("admin.ai.section.custom", "自定义设置")}}</summary>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.baseUrl", "API 地址")}}</label>
+                        <input type="text" class="form-input" name="baseUrl" value="{{p.BaseURL}}" placeholder="{{tr("admin.ai.ph.baseUrl", "提供商默认")}}" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.protocol", "API 协议")}}</label>
+                        <select class="form-select" name="protocol">
+                            {{range _, o := .ProtocolOptions}}<option value="{{o.Value}}" {{if o.Value == p.Protocol}}selected{{end}}>{{o.Label}}</option>{{end}}
+                        </select>
+                    </div>
+                </div>
+                <p class="form-hint">{{tr("admin.ai.hint.baseUrl", "API 地址留空时使用该供应商的默认地址（")}}{{if isset(.DefaultBaseURL)}}{{if .DefaultBaseURL != ""}}<code>{{.DefaultBaseURL}}</code>{{else}}{{tr("admin.ai.hint.baseUrlNone", "该供应商没有内置默认地址")}}{{end}}{{else}}{{tr("admin.ai.hint.baseUrlNone", "该供应商没有内置默认地址")}}{{end}}{{tr("admin.ai.hint.baseUrlTail", "）。")}}</p>
+            </details>
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">{{tr("admin.ai.action.saveProvider", "保存供应商")}}</button>
+            </div>
+        </form>
+        {{end}}
+
+        {{include "provider_models.html" .}}
+    </div>
+</details>
+
+{{if canToggle}}
+{* 卡片头按钮的落点表单：启停按当前状态取反（服务端对「已是目标状态」幂等返回）。 *}
+<form id="ai-toggle-{{p.ID}}" method="post" action="/admin/ai/providers/status" class="hidden-form">
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <input type="hidden" name="providerId" value="{{p.ID}}">
+    <input type="hidden" name="version" value="{{p.Version}}">
+    <input type="hidden" name="status" value="{{if p.Status == 1}}0{{else}}1{{end}}">
+</form>
+{{end}}
+{{if canDelete}}
+<form id="ai-del-{{p.ID}}" method="post" action="/admin/ai/providers/delete" class="hidden-form">
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <input type="hidden" name="providerId" value="{{p.ID}}">
+</form>
+{{end}}

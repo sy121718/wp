@@ -1,0 +1,100 @@
+{* admin/ai/provider_models.html — 模型目录区。
+
+   两条渲染路径共用这一个片段：整页里被 provider_card.html include，编辑动作里作为 htmx 片段
+   被单独渲染（服务端渲染的就是片段自身）。所以片段的**根节点必须自带 data-ai-models-host**：
+   hx-swap="outerHTML" 替换掉的是宿主元素本身，片段单独返回时也要能当宿主。
+
+   所有写操作按钮都在同一个 form 里，靠 formaction 换落点 —— form 不能嵌套，
+   而行增删 / 恢复默认都必须带上当前表单里**用户正在编辑的行**。
+
+   「获取可用模型」是例外：它回的是整页（候选弹窗），所以另起一个 form 放在 form 之外。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{p := .Provider}}
+{{canManage := isset(.PermSet["ai:provider_models_save"])}}
+{{canRestore := isset(.PermSet["ai:provider_models_restore"])}}
+{{canFetch := isset(.PermSet["ai:provider_models_fetch"])}}
+{{noticeErr := false}}
+{{if isset(.ModelsNoticeErr)}}{{noticeErr = .ModelsNoticeErr}}{{end}}
+<div class="ai-models" data-ai-models-host>
+    {{if isset(.ModelsNotice)}}{{if .ModelsNotice != ""}}
+    <p class="badge {{if noticeErr}}badge-warning{{else}}badge-success{{end}}" role="{{if noticeErr}}alert{{else}}status{{end}}">{{.ModelsNotice}}</p>
+    {{end}}{{end}}
+
+    <div class="card-header ai-models-head">
+        <span class="card-title">{{tr("admin.ai.models.title", "模型目录")}}</span>
+        <span class="ai-models-actions">
+            {{if canRestore}}
+            <button type="submit" form="ai-models-form-{{p.ID}}" formaction="/admin/ai/providers/models/restore" class="btn btn-sm">{{tr("admin.ai.models.restore", "恢复默认模型")}}</button>
+            {{end}}
+            {{if canFetch}}
+            {* 「获取可用模型」刻意放在**独立 form**里、不走 htmx：它回的是整页（渲染候选弹窗），
+               若走 htmx 会把整页 HTML 塞进 models 宿主。csrf 与 version 在这里重带一份。 *}
+            <form method="post" action="/admin/ai/providers/models/candidates" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="providerId" value="{{p.ID}}">
+                <input type="hidden" name="version" value="{{p.Version}}">
+                <button type="submit" class="btn btn-sm">{{tr("admin.ai.models.fetch", "获取可用模型")}}</button>
+            </form>
+            {{end}}
+        </span>
+    </div>
+
+    <form id="ai-models-form-{{p.ID}}" method="post" action="/admin/ai/providers/models/save"
+          hx-post="/admin/ai/providers/models/save"
+          hx-target="closest [data-ai-models-host]" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="providerId" value="{{p.ID}}">
+        <input type="hidden" name="version" value="{{p.Version}}">
+
+        {{if len(.Rows) == 0}}
+        <p class="form-hint">{{tr("admin.ai.models.empty", "还没有模型。可以「获取可用模型」拉取候选，或手工添加。")}}</p>
+        {{end}}
+
+        {{range _, row := .Rows}}
+        <div class="ai-model-row">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.models.modelId", "模型 ID")}}</label>
+                    <input type="text" class="form-input" name="modelId" value="{{row.ID}}" placeholder="{{tr("admin.ai.ph.modelId", "如 deepseek-chat")}}" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.models.displayName", "显示名称")}}</label>
+                    <input type="text" class="form-input" name="modelDisplayName" value="{{row.DisplayName}}" placeholder="{{tr("admin.ai.ph.modelDisplayName", "列表里显示的名字")}}" autocomplete="off">
+                </div>
+                {{if canManage}}
+                <div class="form-group">
+                    <span class="form-label">&nbsp;</span>
+                    <button type="submit" formaction="/admin/ai/providers/models/row/delete" name="rowIndex" value="{{row.Index}}" class="btn btn-sm btn-ghost">{{tr("admin.ai.models.removeRow", "移除该模型")}}</button>
+                </div>
+                {{end}}
+            </div>
+            <details class="section-fold">
+                <summary>{{tr("admin.ai.models.detail", "详情")}}</summary>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.contextWindow", "上下文窗口")}}</label>
+                        <input type="number" class="form-input" name="modelContextWindow" value="{{row.ContextWindow}}" inputmode="numeric" step="1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.maxOutputTokens", "最大输出 token 数")}}</label>
+                        <input type="number" class="form-input" name="modelMaxOutputTokens" value="{{row.MaxOutputTokens}}" inputmode="numeric" step="1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <span class="form-label">{{tr("admin.ai.field.inputTypes", "输入类型")}}</span>
+                        <label class="var-value"><input type="checkbox" name="input_text_{{row.Index}}" value="text" {{if row.TextChecked}}checked{{end}}> {{tr("admin.ai.input.text", "文本")}}</label>
+                        <label class="var-value"><input type="checkbox" name="input_image_{{row.Index}}" value="image" {{if row.ImageChecked}}checked{{end}}> {{tr("admin.ai.input.image", "图片")}}</label>
+                    </div>
+                </div>
+            </details>
+        </div>
+        {{end}}
+
+        {{if canManage}}
+        <div class="action-row">
+            <button type="submit" formaction="/admin/ai/providers/models/row/add" class="btn btn-sm">＋ {{tr("admin.ai.models.addRow", "添加模型")}}</button>
+            <button type="submit" class="btn btn-primary">{{tr("admin.ai.models.save", "保存模型目录")}}</button>
+        </div>
+        {{end}}
+    </form>
+</div>

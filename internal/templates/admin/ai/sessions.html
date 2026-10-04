@@ -1,0 +1,264 @@
+{* admin/ai/sessions.html — 后台「AI 会话」页：会话列表 + 详情（当前上下文投影 + 原始事件日志）+ 折叠操作。
+
+   数据见 ai/inbound/http/ai_session_page.go 的 SessionsPage：
+     Rows / Total / Page / Keyword / Status（列表与筛选）、Err / Done（PRG 回执，渲染时才翻译）、
+     Detail（*SessionDetail，带 ?id= 时才有）、DetailErr、Events（原始日志）、FoldPlan（折叠建议）。
+
+   形态决策：会话是「一列短实体 + 一个不断增长的事件流」，用列表 + 同页详情，
+   避免为每条会话开一个路由；详情里的三段（投影 / 折叠 / 日志）用 <details> 折叠收起，
+   窄屏不会一次铺三张表。
+
+   回执槽 done/err 放的是 i18n key，经 facingQuery 按请求语言翻译 —— 译文不进 URL。
+
+   前端：所有控件是原生 form / select / button（鼠标 / 滚轮 / 触摸板 / 触屏 / 键盘天然可用）；
+   列表用 .data-table（窄屏横向可滚），表单用 .form-grid（桌面两列、窄屏一列）。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{canRename := isset(.PermSet["ai:session_rename"])}}
+{{canArchive := isset(.PermSet["ai:session_archive"])}}
+{{canFold := isset(.PermSet["ai:session_fold"])}}
+{{canAppend := isset(.PermSet["ai:session_append"])}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{tr("admin.ai.session.title", "AI 会话")}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.ai.session.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.ai.session.lead", "会话的事件日志与当前上下文。折叠只改写「当前上下文」，被折叠的原始事件永久保留，随时可展开与审计。")}}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {{if isset(.Err)}}{{if .Err}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{end}}{{end}}
+    {{if isset(.Done)}}{{if .Done}}
+    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {{end}}{{end}}
+
+    <form method="get" action="/admin/ai/sessions" class="filter-bar">
+        <div class="filter-fields">
+            <div class="filter-field">
+                <input class="form-input filter-search" type="search" name="keyword" value="{{.Keyword}}" placeholder="{{tr("admin.ai.session.search.ph", "搜索标题或会话标识")}}" aria-label="{{tr("admin.ai.session.search.ph", "搜索标题或会话标识")}}">
+            </div>
+            <div class="filter-field">
+                <select class="form-select" name="status" aria-label="{{tr("admin.ai.session.col.status", "状态")}}">
+                    <option value="-1"{{if .Status == -1}} selected{{end}}>{{tr("admin.ai.session.status.all", "全部状态")}}</option>
+                    <option value="1"{{if .Status == 1}} selected{{end}}>{{tr("admin.ai.session.status.active", "进行中")}}</option>
+                    <option value="0"{{if .Status == 0}} selected{{end}}>{{tr("admin.ai.session.status.archived", "已归档")}}</option>
+                </select>
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary">{{tr("admin.ai.session.search.submit", "筛选")}}</button>
+        </div>
+    </form>
+
+    <section class="card list-card">
+        <div class="card-header">
+            <h2 class="card-title">{{tr("admin.ai.session.list.title", "会话列表")}}</h2>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>{{tr("admin.ai.session.col.title", "标题")}}</th>
+                    <th>{{tr("admin.ai.session.col.status", "状态")}}</th>
+                    <th>{{tr("admin.ai.session.col.events", "事件数")}}</th>
+                    <th>{{tr("admin.ai.session.col.tokens", "上下文 token")}}</th>
+                    <th>{{tr("admin.ai.session.col.compact", "压缩次数")}}</th>
+                    <th>{{tr("admin.ai.session.col.updated", "最后更新")}}</th>
+                    <th class="col-actions">{{tr("admin.ai.session.action.view", "查看")}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{if !.Rows}}
+                <tr>
+                    <td colspan="7" class="cell-wrap">
+                        <div class="empty-state">
+                            <p class="empty-title">{{tr("admin.ai.session.empty", "还没有任何会话。")}}</p>
+                        </div>
+                    </td>
+                </tr>
+                {{else}}
+                {{range _, r := .Rows}}
+                <tr>
+                    <td class="cell-wrap">{{r.Title}}<br><span class="badge badge-mute">{{r.SessionKey}}</span></td>
+                    <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.ai.session.status.active", "进行中")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.ai.session.status.archived", "已归档")}}</span>{{end}}</td>
+                    <td>{{r.EventCount}}</td>
+                    <td>{{r.ContextTokens}}</td>
+                    <td>{{r.CompactCount}}</td>
+                    <td>{{r.UpdateTime}}</td>
+                    <td class="col-actions">
+                        <a class="btn btn-sm" href="/admin/ai/sessions?id={{r.ID}}">{{tr("admin.ai.session.action.view", "查看")}}</a>
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+            </tbody>
+        </table>
+    </section>
+
+    {{if isset(.DetailErr)}}{{if .DetailErr}}
+    <p class="badge badge-warning" role="alert">{{.DetailErr}}</p>
+    {{end}}{{end}}
+
+    {{if isset(.Detail)}}
+    <section class="card card-body">
+        <h2 class="card-title">{{tr("admin.ai.session.detail.title", "会话详情")}}</h2>
+        <p class="form-hint">
+            {{tr("admin.ai.session.detail.key", "会话标识")}}: <strong>{{.Detail.SessionKey}}</strong>
+            · {{tr("admin.ai.session.detail.version", "版本")}}: {{.Detail.Version}}
+            · {{tr("admin.ai.session.col.tokens", "上下文 token")}}: {{.Detail.ContextTokens}}
+            · {{tr("admin.ai.session.col.compact", "压缩次数")}}: {{.Detail.CompactCount}}
+        </p>
+
+        <div class="form-inline">
+            {{if canRename}}
+            <form method="post" action="/admin/ai/sessions/rename" class="form-group">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
+                <input type="hidden" name="version" value="{{.Detail.Version}}">
+                <label for="session-title">{{tr("admin.ai.session.rename.label", "标题")}}</label>
+                <input class="form-input" id="session-title" type="text" name="title" value="{{.Detail.Title}}" maxlength="120">
+                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.ai.session.rename.submit", "保存标题")}}</button>
+            </form>
+            {{end}}
+            {{if canArchive}}
+            <form method="post" action="/admin/ai/sessions/archive" class="form-group">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
+                <input type="hidden" name="version" value="{{.Detail.Version}}">
+                {{if .Detail.Status == 1}}
+                <input type="hidden" name="status" value="0">
+                <button type="submit" class="btn btn-sm btn-ghost" onclick="return confirm('{{tr("admin.ai.session.action.confirmArchive", "归档后不能再写入，确定？")}}')">{{tr("admin.ai.session.action.archive", "归档")}}</button>
+                {{else}}
+                <input type="hidden" name="status" value="1">
+                <button type="submit" class="btn btn-sm btn-ghost">{{tr("admin.ai.session.action.restore", "恢复")}}</button>
+                {{end}}
+            </form>
+            {{end}}
+        </div>
+
+        <details class="disclosure" open>
+            <summary class="fold-title">{{tr("admin.ai.session.detail.visible", "当前上下文（投影）")}}</summary>
+            <div class="fold-body">
+                {{if !.Detail.Items}}
+                <p class="form-hint">{{tr("admin.ai.session.detail.visibleEmpty", "当前上下文为空。")}}</p>
+                {{else}}
+                <ol>
+                    {{range _, it := .Detail.Items}}
+                    <li>
+                        {{if it.Folded}}<span class="badge badge-info">{{tr("admin.ai.session.detail.folded", "折叠块")}} #{{it.FoldedFrom}}–{{it.FoldedTo}}</span>{{end}}
+                        <span class="badge badge-mute">#{{it.Seq}}</span>
+                        <span class="cell-wrap">{{it.Content}}</span>
+                        <span class="badge badge-mute">{{it.Tokens}}</span>
+                    </li>
+                    {{end}}
+                </ol>
+                {{end}}
+            </div>
+        </details>
+
+        {{if isset(.FoldPlan)}}{{if .FoldPlan}}
+        <details class="disclosure">
+            <summary class="fold-title">{{tr("admin.ai.session.fold.planTitle", "折叠建议")}}</summary>
+            <div class="fold-body">
+                {{if .FoldPlan.Worthwhile}}
+                <p class="badge badge-info">{{tr("admin.ai.session.fold.reason.ok", "该段值得折叠")}}</p>
+                {{else if .FoldPlan.Reason == "no_segment"}}
+                <p class="badge badge-mute">{{tr("admin.ai.session.fold.reason.no_segment", "可见上下文还不够长，暂无可折的段")}}</p>
+                {{else if .FoldPlan.Reason == "short_segment"}}
+                <p class="badge badge-mute">{{tr("admin.ai.session.fold.reason.short_segment", "待折段太小，摘要开销会吃掉收益")}}</p>
+                {{else}}
+                <p class="badge badge-mute">{{tr("admin.ai.session.fold.reason.not_positive", "净收益不为正，不值得折")}}</p>
+                {{end}}
+                <p class="form-hint">
+                    {{tr("admin.ai.session.fold.range", "建议区间")}}: #{{.FoldPlan.FromSeq}}–#{{.FoldPlan.ToSeq}}
+                    · {{.FoldPlan.SegmentTokens}} → {{.FoldPlan.EstimatedAfter}}
+                </p>
+                {{if canFold}}{{if .FoldPlan.Worthwhile}}
+                <form method="post" action="/admin/ai/sessions/fold" class="form-group">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
+                    <input type="hidden" name="fromSeq" value="{{.FoldPlan.FromSeq}}">
+                    <input type="hidden" name="toSeq" value="{{.FoldPlan.ToSeq}}">
+                    <label for="session-summary">{{tr("admin.ai.session.fold.summary", "摘要")}}</label>
+                    <textarea class="form-input" id="session-summary" name="summary" rows="4" required></textarea>
+                    <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.ai.session.fold.submit", "执行折叠")}}</button>
+                </form>
+                {{end}}{{end}}
+            </div>
+        </details>
+        {{end}}{{end}}
+
+        {{if canAppend}}
+        <details class="disclosure">
+            <summary class="fold-title">{{tr("admin.ai.session.append.title", "追加事件")}}</summary>
+            <div class="fold-body">
+                <form method="post" action="/admin/ai/sessions/append" class="form-group">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
+                    <div class="form-field">
+                        <label for="session-kind">{{tr("admin.ai.session.append.kind", "事件类型")}}</label>
+                        <select class="form-select" id="session-kind" name="kind">
+                            <option value="user">{{tr("admin.ai.session.kind.user", "用户")}}</option>
+                            <option value="assistant">{{tr("admin.ai.session.kind.assistant", "助手")}}</option>
+                            <option value="tool">{{tr("admin.ai.session.kind.tool", "工具")}}</option>
+                            <option value="note">{{tr("admin.ai.session.kind.note", "备注")}}</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="session-content">{{tr("admin.ai.session.append.content", "内容")}}</label>
+                        <textarea class="form-input" id="session-content" name="content" rows="4" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.ai.session.append.submit", "追加")}}</button>
+                </form>
+            </div>
+        </details>
+        {{end}}
+
+        <details class="disclosure">
+            <summary class="fold-title">{{tr("admin.ai.session.detail.log", "事件日志")}}</summary>
+            <div class="fold-body">
+                {{if !.Events}}
+                <p class="form-hint">{{tr("admin.ai.session.detail.logEmpty", "还没有事件。")}}</p>
+                {{else}}
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>{{tr("admin.ai.session.append.kind", "事件类型")}}</th>
+                            <th>{{tr("admin.ai.session.append.content", "内容")}}</th>
+                            <th>{{tr("admin.ai.session.col.tokens", "上下文 token")}}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range _, ev := .Events}}
+                        <tr>
+                            <td>{{ev.Seq}}</td>
+                            <td>
+                                {{if ev.Kind == "user"}}{{tr("admin.ai.session.kind.user", "用户")}}
+                                {{else if ev.Kind == "assistant"}}{{tr("admin.ai.session.kind.assistant", "助手")}}
+                                {{else if ev.Kind == "tool"}}{{tr("admin.ai.session.kind.tool", "工具")}}
+                                {{else if ev.Kind == "note"}}{{tr("admin.ai.session.kind.note", "备注")}}
+                                {{else if ev.Kind == "compact_start"}}{{tr("admin.ai.session.kind.compact_start", "折叠开始")}}
+                                {{else if ev.Kind == "compact_summary"}}{{tr("admin.ai.session.kind.compact_summary", "折叠摘要")}}
+                                {{else}}{{tr("admin.ai.session.kind.compact_end", "折叠结束")}}{{end}}
+                            </td>
+                            <td class="cell-wrap">{{ev.Content}}</td>
+                            <td>{{ev.ContentTokens}}</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+                {{end}}
+            </div>
+        </details>
+    </section>
+    {{end}}
+</div>
+{{end}}
