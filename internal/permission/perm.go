@@ -103,6 +103,34 @@ func Declare(method, path string, p Perm) {
 	declared = append(declared, RouteSpec{Method: method, Path: path, Perm: p, Module: s.module, Name: s.name})
 }
 
+// RoutesOf 返回声明了权限点 p 的路由（按 路径 + 方法 排序，结果稳定）。
+//
+// 用途：**没有 HTTP 请求上下文**的调用点（AI 工具、后台任务、导出）手里只有权限点，
+// 而 Casbin 策略的 obj 是路由路径。把这层换算收在这里，判定口径就与路由中间件同源
+// （同一份 declared 表）—— 自己另写一份「权限点 → 策略」的映射等于给同一件事两套真源，
+// 而分叉的表现是「页面上看不见的东西，AI 却查得到」。
+//
+// 空结果表示这个权限点还没被任何路由声明过：调用方应当按**无权限**处理（fail closed），
+// 而不是跳过判定。请注意一个权限点通常声明在多条路由上（一条 API + 若干后台页面路由），
+// 判定时**任一条通过即可**（它们同属一个能力）。
+func RoutesOf(p Perm) []RouteSpec {
+	regMu.Lock()
+	defer regMu.Unlock()
+	out := make([]RouteSpec, 0, 2)
+	for _, r := range declared {
+		if r.Perm == p {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Path != out[j].Path {
+			return out[i].Path < out[j].Path
+		}
+		return out[i].Method < out[j].Method
+	})
+	return out
+}
+
 // Snapshot 返回已声明路由的副本（按 路径 + 方法 排序，保证启动日志与测试输出稳定）。
 func Snapshot() []RouteSpec {
 	regMu.Lock()

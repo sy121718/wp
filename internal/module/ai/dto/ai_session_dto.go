@@ -165,6 +165,12 @@ type SendMessageResult struct {
 	Session        Session          `json:"session"`
 	UserEvent      SessionEventItem `json:"userEvent"`
 	AssistantEvent SessionEventItem `json:"assistantEvent"`
+	// ToolEvents 本轮的工具调用与结果（按发生顺序成对出现：调用一条、结果一条）。
+	//
+	// 单独成一列而不是塞进 AssistantEvent 的正文：它们在事件日志里各有自己的 seq，
+	// 是**并列的独立事件**。合并会让「模型说的话」与「工具回的数据」再也分不开，
+	// 而页面要能分别渲染（前者是回答，后者是可展开的取数证据）。
+	ToolEvents []SessionEventItem `json:"toolEvents,omitempty"`
 }
 
 // —— 会话页的用量统计与多维筛选（后台看板）——

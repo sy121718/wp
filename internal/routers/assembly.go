@@ -21,6 +21,7 @@ import (
 	"go_wp/config"
 
 	"go_wp/internal/builder/core"
+	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -63,6 +64,7 @@ import (
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderhttp "go_wp/internal/module/order/inbound/http"
+	ordermcp "go_wp/internal/module/order/inbound/mcp"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -186,6 +188,9 @@ type assembly struct {
 	collectionRegistry core.CollectionRegistry
 	contentSvc         contentcontract.ContentService
 	entityRegistry     core.EntitySourceRegistry
+	// toolRegistry 模型可调用工具的**跨模块注册表**：各领域模块在装配期把只读工具注册进去，
+	// AI 会话层在运行期读它。用 tools() 惰性取用，不要直接读这个字段（见该方法的注释）。
+	toolRegistry       *mcp.Registry
 	contentTemplateSvc contenttemplatecontract.ContentTemplateService
 	masterdataSvc      masterdatacontract.MasterDataService
 	inventorySvc       inventorycontract.InventoryService
@@ -412,6 +417,18 @@ func (a *assembly) buildFoundation(ready func() error) {
 // content → contenttemplate → masterdata → inventory → product）。
 //
 // 这一段是装配顺序的**主干**：后面所有端口注入都建立在这里拿到的契约之上。
+// tools 工具注册表的惰性取用。
+//
+// 惰性（而不是在某个 build 阶段显式赋值）是为了**摆脱装配顺序**：AI 模块与领域模块
+// 分属两个 build 函数，谁先跑都是实现细节。注册表只在运行期被读（第一次读一定晚于全部装配），
+// 所以「第一次取用即建」就足以让两边拿到同一个实例。
+func (a *assembly) tools() *mcp.Registry {
+	if a.toolRegistry == nil {
+		a.toolRegistry = mcp.NewRegistry()
+	}
+	return a.toolRegistry
+}
+
 func (a *assembly) buildAPIAndCoreCRUD() {
 	router := a.router
 	marks := a.marks
@@ -483,7 +500,11 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// AI 模块（配置面 /api/ai/* + 后台页 /admin/ai/providers，会话面 /api/ai/session/* + /admin/ai/sessions）：
 	// 装配期把 app.secret 交给服务层当密文密钥（api_key_cipher 只存密文，接口只回「是否已配置」）；
 	// 权限点 ai:provider_* / ai:session_* 由装配末尾的 permission.SyncToDB 幂等落库，无需在本迁移里 seed。
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db)
+	//
+	// 工具注册表在这里**先建、后填**：AI 会话层拿到的是同一个指针，各领域模块的工具在它们
+	// 自己装配时注册（见下面订单模块那段）—— 顺序无关，是因为注册表只在**运行期**被读
+	//（第一次读一定晚于全部装配），而不是因为「恰好 AI 排在最后」。
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools())
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)
@@ -657,6 +678,15 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 国家代码显示成当前语言的名字。传的是同一实例（它在 sysconfig 内部按语言缓存
 	// 「码 → 名」），不是另建一个 —— 每个消费方各建一层缓存等于同一份字典查 N 遍。
 	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc), a.sysConfigDict)
+	// 订单模块的模型可调用工具（只读聚合）注册进上面那个表。
+	// 装配顺序在这里不构成约束：注册表是同一个指针，AI 侧只在**运行期**读它。
+	// 注册失败即 panic（权限点重复 / 依赖缺失这类装配缺陷，必须在启动时炸掉，
+	// 而不是让 AI 静默地少一个工具 —— 那种缺陷的表现是「它就是不查订单」，无从排查）。
+	if orderTools, err := ordermcp.Tools(orderSvc); err != nil {
+		panic("订单模块工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(orderTools...); err != nil {
+		panic("订单工具注册失败：" + err.Error())
+	}
 	marks.mark(portWebhookDispatcher)
 
 	// —— 会员 ↔ 订单的端口对接（BIZ-3 消费侧）——

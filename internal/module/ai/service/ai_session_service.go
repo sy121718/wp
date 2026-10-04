@@ -68,6 +68,9 @@ type SessionService struct {
 	// callLog 是调用流水（ai_call_log）的读取端口，装配层用 SetCallLogReader 注入（见 ai_session_calls.go）。
 	// 未注入时 SessionCallsOf 回空集合：悬浮卡少一段，而不是整页崩。
 	callLog CallLogReader
+	// tools 是「模型可调用工具」的能力，装配层用 SetToolProvider 注入（见 ai_session_chat.go）。
+	// 未注入 = 不带工具的一问一答：工具是可选增强，缺了不该让普通对话也用不了。
+	tools ToolProvider
 }
 
 // NewSessionService 构造。

@@ -177,6 +177,8 @@ func init() {
 	registerAICallLog()
 	// 538：会话行悬浮卡「最近调用」的词条（见 register_ai_session_calls_i18n.go）。
 	registerAISessionCallsI18n()
+	// 539：AI 会话「工具调用」的词条（见 register_ai_session_tools_i18n.go）。
+	registerAISessionToolsI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

@@ -44,6 +44,15 @@ func (t Tool) Description() string         { return t.desc }
 func (t Tool) Schema() Schema              { return t.schema }
 func (t Tool) Permission() permission.Perm { return t.perm }
 
+// SchemaJSON 参数的 JSON Schema 原文（发给上游的 tools 片段用）。
+//
+// 回 error 而不是在这里 panic 或兜底成空对象：空对象 schema 的语义是「这个工具不吃参数」，
+// 与「序列化失败」完全是两回事 —— 后者被兜底成前者之后，模型会一直用空参数调它，
+// 而所有调用都会被参数校验拒掉，看起来像工具本身坏了。
+func (t Tool) SchemaJSON() (json.RawMessage, error) {
+	return json.Marshal(t.schema)
+}
+
 // Invoke 执行工具：先按 schema 校验参数，再解码进 handler 的类型化入参。
 func (t Tool) Invoke(ctx context.Context, args json.RawMessage) (Result, error) {
 	return t.handler(ctx, args)

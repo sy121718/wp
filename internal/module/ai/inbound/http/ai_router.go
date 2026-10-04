@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/config"
+	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
 	aimodel "go_wp/internal/module/ai/model"
@@ -20,8 +21,13 @@ import (
 
 // SetupAIRoutes 装配 ai 模块并注册路由，返回给装配层（供其它模块以契约消费）。
 //
+// toolRegistry 是**跨模块**的工具注册表（各领域模块在装配期把自己的只读工具注册进去）：
+// 传 nil 表示不接工具（用例测试与轻装配场景），此时会话页退化成不带工具的一问一答。
+// 注册表是指针，且各模块的装配顺序在本调用之后 —— 「先建、后填、运行期读」正是它能工作的原因，
+// 不要在这里缓存它的内容（见 ai_tools_wire.go 关于 Specs 的注释）。
+//
 // adminPages 为 nil 时只挂 JSON 接口（用例测试与轻装配场景）。
-func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB) aicontract.AIService {
+func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry) aicontract.AIService {
 	svc := aiservice.NewService(aimodel.NewAIModel(db))
 	if v, err := config.GetViper(); err == nil && v != nil {
 		svc.SetCipherSecret(v.GetString("app.secret"))
@@ -40,6 +46,12 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	sessionSvc := aiservice.NewSessionService(aimodel.NewSessionModel(db))
 	// 对话能力以窄接口注入，sessionSvc 不 import 配置面的 Service：会话页的「发消息」走这条路。
 	sessionSvc.SetChatPort(svc)
+	// 工具能力（可选增强）：注册表由各领域模块在装配期填入，权限判定复用 Casbin
+	//（obj=路由路径、act=HTTP 方法，与页面中间件同一套策略，见 ai_tools_wire.go）。
+	// 未传注册表时不注入 —— 会话页照常一问一答，而不是整个发消息功能不可用。
+	if toolRegistry != nil {
+		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, casbinAuthorizer)})
+	}
 	// 调用流水的读侧（悬浮卡的「最近调用」）。
 	sessionSvc.SetCallLogReader(callLog)
 	sessionHandle := NewSessionHandle(sessionSvc)
