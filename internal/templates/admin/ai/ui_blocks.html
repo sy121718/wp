@@ -1,0 +1,108 @@
+{* admin/ai/ui_blocks.html — spec 渲染器的 Jet 片段（docs/17 P5）。
+
+   调用方把 []uispec.View 放进上下文键 Views，然后 include 本片段。
+
+   三条纪律，都不是风格偏好：
+
+   ① **按 Type 字符串分派**（{{if .Type == "stat"}}），不按形状字段是否为 nil。Jet 的 `if`
+      要求 bool，nil 指针 / nil 接口会让渲染**在那一行中断** —— 整个响应 500、buffer 里的半截
+      内容被丢弃；htmx 片段还会因为 5xx 默认不 swap 而**毫无反应**（用户点了没动静，日志里只有
+      「页面模板渲染失败」）。字符串比较没有这个问题。
+
+   ② **所有判断都写显式比较**（`.X != ""` / `len(.X) > 0`），不依赖空串或空切片的真值 ——
+      同上一条：非 bool 参与 `if` 会中断。
+
+   ③ **视觉沿用后台既有类**（stat-grid / stat-card / data-table / table-wrap / section-fold），
+      不新增样式。P5 的闸门之一是「渲染出的表格与手写页面视觉一致」—— 另起一套样式就等于放弃
+      这条闸门，且下次改主题（深色对比度那类）必然漏掉这里。
+
+   单元格的对齐与补齐已在 Go 侧完成（uispec.buildTableView）：模板只输出，不做判断。
+   这样「表头 N 列、数据行 N-1 个 td」这种「浏览器不报错但整张表左移一列」的缺陷，
+   在 Go 侧就被可测地挡住了。
+
+   渲染上下文：Views []uispec.View。空数据不渲染任何东西 —— 「暂无数据」由数据源放进 Empty
+   决定要不要给，模板不硬编码中文（本片段不依赖 i18n 上下文，单独渲染也不会缺键）。 *}
+{{range .Views}}
+{{if .Type == "stat"}}
+<div class="stat-grid">
+    {{range .Stat.Items}}
+    <div class="card stat-card">
+        <div class="stat-label">{{.Label}}</div>
+        <div class="stat-value">{{.Value}}</div>
+        {{if .Delta != ""}}<div class="stat-note">{{.Delta}}</div>{{end}}
+    </div>
+    {{end}}
+</div>
+{{if len(.Stat.Items) == 0}}{{if .Stat.Empty != ""}}<p class="form-hint">{{.Stat.Empty}}</p>{{end}}{{end}}
+{{end}}
+
+{{if .Type == "table"}}
+<div class="card">
+    {{if .Title != ""}}<div class="card-header"><h3 class="card-title">{{.Title}}</h3></div>{{end}}
+    <div class="card-body">
+        {{if len(.Table.Rows) > 0}}
+        <div class="table-wrap table-scroll" tabindex="0" role="region"{{if .Title != ""}} aria-label="{{.Title}}"{{end}}>
+            <table class="data-table">
+                <thead>
+                    <tr>{{range .Table.Columns}}<th{{if .Align == "right"}} class="col-num"{{end}}>{{.Label}}</th>{{end}}</tr>
+                </thead>
+                <tbody>
+                    {{range .Table.Rows}}
+                    <tr>{{range .Cells}}<td{{if .Num}} class="col-num"{{end}}>{{.Text}}</td>{{end}}</tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else if .Table.Empty != ""}}
+        <p class="form-hint">{{.Table.Empty}}</p>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{if .Type == "list"}}
+<div class="card">
+    {{if .Title != ""}}<div class="card-header"><h3 class="card-title">{{.Title}}</h3></div>{{end}}
+    <div class="card-body">
+        {{if len(.List.Items) > 0}}
+        <table class="data-table">
+            <tbody>
+                {{range .List.Items}}
+                <tr>
+                    <td>{{.Label}}{{if .Hint != ""}}<div class="stat-note">{{.Hint}}</div>{{end}}</td>
+                    <td class="col-num">{{.Value}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else if .List.Empty != ""}}
+        <p class="form-hint">{{.List.Empty}}</p>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{if .Type == "accordion"}}
+{{range .Accord.Groups}}
+<details class="section-fold card">
+    <summary><span class="fold-title">{{.Title}}</span></summary>
+    <div class="fold-body">
+        {{if .Body != ""}}<p>{{.Body}}</p>{{end}}
+        {{if len(.Items) > 0}}
+        <table class="data-table">
+            <tbody>
+                {{range .Items}}
+                <tr>
+                    <td>{{.Label}}{{if .Hint != ""}}<div class="stat-note">{{.Hint}}</div>{{end}}</td>
+                    <td class="col-num">{{.Value}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </div>
+</details>
+{{end}}
+{{if len(.Accord.Groups) == 0}}{{if .Accord.Empty != ""}}<p class="form-hint">{{.Accord.Empty}}</p>{{end}}{{end}}
+{{end}}
+{{end}}
