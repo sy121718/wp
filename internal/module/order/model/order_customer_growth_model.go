@@ -25,6 +25,48 @@ import (
 	"go_wp/pkg/rls"
 )
 
+// orderCustomerCTEs 区间客户口径的**唯一**定义（两个 CTE）。
+//
+// 抽成常量而不是让两个查询各写一份：客户概览页的「新客 12」与客户列表按「新客」筛出来的
+// 条数必须相等（docs/17 §P7 的对账闸门）。各写一份 SQL 时，改一处滤条件（比如把
+// `>=` 改成 `>`）不会让另一处变红，只会让两个页面的数字悄悄差一个人 ——
+// 而差一个人是最难被发现的那种错。
+//
+// 参数顺序（按 ? 出现顺序）：ranged 的 project_id / from / to / 状态名单，
+// 再是 firsts 的 project_id / 状态名单。
+const orderCustomerCTEs = `WITH ranged AS (
+    SELECT o.user_id, COUNT(*) AS order_count
+      FROM orders o
+     WHERE o.project_id = ?
+       AND o.create_time >= ?
+       AND o.create_time < ?
+       AND o.status = ANY(string_to_array(?, ',')::text[])
+       AND o.user_id IS NOT NULL
+     GROUP BY o.user_id
+),
+firsts AS (
+    SELECT o.user_id, MIN(o.create_time) AS first_at
+      FROM orders o
+     WHERE o.project_id = ?
+       AND o.status = ANY(string_to_array(?, ',')::text[])
+       AND o.user_id IS NOT NULL
+     GROUP BY o.user_id
+)`
+
+// 三个分段条件（只有这三个，白名单常量拼进 SQL，不接受任何调用方字符串）。
+//
+// ranged 里 order_count 已经限定在区间内，firsts 里 first_at 是不限区间的首单时刻：
+//   - new：首单落在区间内；
+//   - returning：首单在区间之前（老客）；
+//   - repurchasing：区间内 ≥ 2 单。
+//
+// 三个条件各自需要一个区间参数（new / returning 各一个上界；repurchasing 无参数）。
+const (
+	customerSegmentWhereNew          = "f.first_at >= ?"
+	customerSegmentWhereReturning    = "f.first_at < ?"
+	customerSegmentWhereRepurchasing = "r.order_count >= 2"
+)
+
 // orderCustomerGrowthSQL 一条 SQL 取回区间内客户增长的五个数。
 //
 // **为什么一条而不是五条**：五个数描述的是同一批订单（区间内下单的人），
@@ -44,26 +86,8 @@ import (
 // 就算「回来的」，不必再复购一次），分母 = 区间内下单客户数。这个式子写在 service 里
 // 一处，页面与 AI 都不重算（两个消费方各算一次必然分叉）。
 //
-// 参数顺序（按 ? 出现顺序）：ranged 的 project_id / from / to / 状态名单，
-// firsts 的 project_id / 状态名单，随后三个 FILTER 的区间上界各一次。
-const orderCustomerGrowthSQL = `WITH ranged AS (
-    SELECT o.user_id, COUNT(*) AS order_count
-      FROM orders o
-     WHERE o.project_id = ?
-       AND o.create_time >= ?
-       AND o.create_time < ?
-       AND o.status = ANY(string_to_array(?, ',')::text[])
-       AND o.user_id IS NOT NULL
-     GROUP BY o.user_id
-),
-firsts AS (
-    SELECT o.user_id, MIN(o.create_time) AS first_at
-      FROM orders o
-     WHERE o.project_id = ?
-       AND o.status = ANY(string_to_array(?, ',')::text[])
-       AND o.user_id IS NOT NULL
-     GROUP BY o.user_id
-)
+// 参数顺序（按 ? 出现顺序）：见 orderCustomerCTEs，随后三个 FILTER 的区间上界各一次。
+const orderCustomerGrowthSQL = orderCustomerCTEs + `
 SELECT COUNT(*) AS ordering_customers,
        COUNT(*) FILTER (WHERE f.first_at >= ?) AS new_customers,
        COUNT(*) FILTER (WHERE f.first_at < ? AND r.order_count >= 2) AS new_repurchasers,

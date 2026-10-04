@@ -38,6 +38,8 @@ type OrderService interface {
 	CustomerOrderSummaryReader
 	// CustomerGrowthReader 区间客户增长（只读，一条方法）。
 	CustomerGrowthReader
+	// CustomerSegmentReader 按分段取客户 id（只读，一条方法）。
+	CustomerSegmentReader
 	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
 	OrderRangeSummaryReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
@@ -158,6 +160,19 @@ type CustomerGrowthReader interface {
 	// CustomerGrowthByRange 复购率、新客与回头客的划分都由订单模块算好，
 	// 调用方拿到的是结论（含展示用串），不重算任何比例。
 	CustomerGrowthByRange(ctx context.Context, req *orderdto.CustomerGrowthReq) (res *orderdto.CustomerGrowthResp, err error)
+}
+
+// CustomerSegmentReader 按「工程 + 区间 + 分段」取客户 id 列表（只读，一条方法）。
+//
+// 与 CustomerGrowthReader 的分工：那个回答「有多少人」（概览页要的数字），
+// 这个回答「是哪些人」（列表页要的行）。两者在订单模块内共用同一段 SQL，
+// 所以「概览说 12、列表筛出 13」这种自相矛盾不会有地方长出来。
+//
+// 返回的是 id 而不是客户行：客户行归客户模块（表归属），这里只交出「谁在这段里」。
+type CustomerSegmentReader interface {
+	// CustomerSegmentIDsByRange 分段名取白名单外的值一律报错，不静默回落到「全部」——
+	// 静默回落会让 UI 上一个拼错的分段显示成「全部客户」，而看起来是对的。
+	CustomerSegmentIDsByRange(ctx context.Context, req *orderdto.CustomerSegmentIDsReq) (res *orderdto.CustomerSegmentIDsResp, err error)
 }
 
 // OrderRangeSummaryReader 按「工程 + 时间区间」取订单聚合事实（只读，一条方法）。
