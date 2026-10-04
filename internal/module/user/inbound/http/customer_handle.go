@@ -241,6 +241,11 @@ type customerFilter struct {
 	// 它单独存在（而不是并进 Segment）：「下过 ≥3 单的客户」本身就是完整的一句话，
 	// 不选分段也该能筛。给了次数不选分段时，订单模块按「复购」处理（同一段代码）。
 	MinOrders int
+	// RfmSegment RFM 分段：""（全部）/ vip / potential / low_value。
+	//
+	// **与 Segment 是两套不同的分段**：那三个看下单行为（新客 / 回头客 / 复购），
+	// 这一条看 RFM 总分。同时给出时取交集 —— 两个条件都必须成立。
+	RfmSegment string
 }
 
 // customerPageSegment 分段查询值 → 已知分段（认不出一律回落「全部」）。
@@ -269,6 +274,21 @@ const (
 // 一律回落 0（= 不按次数筛，而不是回落到默认门槛 2 —— 回落会让 URL 上写着 7 的筛选
 // 实际跑的是 2，结果看起来正常却少了一半人）。
 var customerSegmentMinOrders = map[int]bool{2: true, 3: true, 5: true, 10: true}
+
+// customerRfmSegments RFM 分段的可选值（与订单模块的白名单同集合）。
+var customerRfmSegments = map[string]bool{"vip": true, "potential": true, "low_value": true}
+
+// customerPageRfmSegment RFM 分段查询值 → 已知分段（认不出一律回落「全部」）。
+//
+// 与消费分段同一条口径：URL 是用户可编辑的，手改出来的未知分段不该让整页报错，
+// 也不能被当成某种分段 —— 回落「全部」是唯一不会静默说错话的选择。
+func customerPageRfmSegment(v string) string {
+	trimmed := strings.TrimSpace(v)
+	if customerRfmSegments[trimmed] {
+		return trimmed
+	}
+	return ""
+}
 
 // customerPageMinOrders 次数查询值 → 已知档位（认不出一律回落 0）。
 func customerPageMinOrders(v string) int {
@@ -335,6 +355,11 @@ func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerF
 // 筛选结果，不如取满上限、让结果在超过时由用户自己缩小时间范围。
 const customerSegmentFilterLimit = 500
 
+// customerRfmSegmentUnavailableText RFM 分段筛不了时的归口文案。
+//
+// 与消费分段的文案分开：两者可能同时出错，而用户需要知道是哪一维没生效。
+const customerRfmSegmentUnavailableText = "按 RFM 分段筛选暂时不可用（数据没接上），请先用其它条件。"
+
 // customerSegmentUnavailableText 分段筛不了时的提示（归口文案，不外泄内部错误）。
 const customerSegmentUnavailableText = "按消费分段筛选暂时不可用（数据没接上），请先用其它条件。"
 
@@ -375,6 +400,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		SegmentFrom:    strings.TrimSpace(c.Query("segmentFrom")),
 		SegmentTo:      strings.TrimSpace(c.Query("segmentTo")),
 		MinOrders:      customerPageMinOrders(c.Query("minOrders")),
+		RfmSegment:     customerPageRfmSegment(c.Query("rfm")),
 	}
 
 	// 回显走 customerPageFacingText（判定 + 取译文）：白名单里是 item_key，
@@ -392,6 +418,12 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	if segErr != "" {
 		pageErr = customerFirstNonEmpty(pageErr, segErr)
 	}
+	// RFM 分段是**另一维**：两个筛选都要成立，所以取交集（见 intersectCustomerIDs）。
+	rfmIDs, rfmErr := h.rfmSegmentIDs(ctx, filter)
+	if rfmErr != "" {
+		pageErr = customerFirstNonEmpty(pageErr, rfmErr)
+	}
+	filterIDs := intersectCustomerIDs(segIDs, rfmIDs)
 
 	var list *userdto.CustomerListResp
 	switch {
@@ -400,6 +432,12 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		pageErr = customerFirstNonEmpty(pageErr, userLabelOf(tr, customerUnavailableLabel))
 	case segErr != "":
 		// 分段没取到就不查列表：查出来的是「全部客户」，而页面上写着「新客」。
+		_ = segErr
+	case rfmErr != "":
+		// RFM 分段同理。**两个分支都要有**：只挡消费分段时，RFM 那一维失败会
+		// 一路走到 default 查出全部客户，而页面上写着「高价值」——
+		// 这正是「筛不出来显示成全部客户」最容易被相信的形态。
+		_ = rfmErr
 	default:
 		res, err := h.users.ListCustomers(ctx, &userdto.CustomerListReq{
 			Keyword:        filter.Keyword,
@@ -408,7 +446,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 			LockedOnly:     filter.Locked,
 			RegisteredFrom: utils.NewJSONTimePtr(customerPageDayStart(filter.RegisteredFrom)),
 			RegisteredTo:   utils.NewJSONTimePtr(customerPageDayEnd(filter.RegisteredTo)),
-			UserIDs:        segIDs,
+			UserIDs:        filterIDs,
 			Offset:         (page - 1) * limit,
 			Limit:          limit,
 		})
@@ -858,4 +896,75 @@ func customerRedirect(c *gin.Context, okText, errText string) {
 		target = customerDetailPath
 	}
 	c.Redirect(http.StatusFound, target+"?"+q.Encode())
+}
+
+// rfmSegmentIDs 把「RFM 分段 + 时间窗口」换成一批客户 id（三态同 segmentCustomerIDs）。
+//
+// 与消费分段走**两套**不同的分段：那三个看下单行为（新客 / 回头客 / 复购），
+// 这一条看 RFM 总分。两者同时给出时调用方取交集（见 intersectCustomerIDs）。
+func (h *customerPageHandle) rfmSegmentIDs(ctx context.Context, f customerFilter) ([]int64, string) {
+	if f.RfmSegment == "" {
+		return nil, ""
+	}
+	// 端口没接、没有工程、取数失败：都明确说「筛不了」，而不是当作没筛
+	//（当作没筛会让「筛不出来」显示成「全部客户」，而那正是用户最可能相信的结果）。
+	if h.rfm == nil || h.projects == nil {
+		return nil, customerRfmSegmentUnavailableText
+	}
+	list, perr := h.projects.List(ctx)
+	if perr != nil {
+		return nil, customerRfmSegmentUnavailableText
+	}
+	if len(list) == 0 {
+		// 还没建站点工程：没有任何订单可算 —— 正常状态，结果是「零个人」。
+		return []int64{}, ""
+	}
+	from, to := customerSegmentWindow(f, time.Now())
+	res, err := h.rfm.CustomerRfmSegmentIDsByRange(ctx, &orderdto.CustomerRfmSegmentIDsReq{
+		ProjectID: list[0].ID,
+		From:      from,
+		To:        to,
+		Segment:   f.RfmSegment,
+		// 取满上限：这一批 id 要当客户列表的过滤条件用，列表自己还会分页。
+		Limit: customerSegmentFilterLimit,
+	})
+	if err != nil {
+		return nil, customerRfmSegmentUnavailableText
+	}
+	ids := res.UserIDs
+	if ids == nil {
+		ids = []int64{}
+	}
+	return ids, ""
+}
+
+// intersectCustomerIDs 两个 id 列表的交集；nil 表示「这一维不筛」。
+//
+// 三态比两态更容易写错，所以规则写死在这里：
+//   - 两个都是 nil（都不筛）      → nil（不过滤）；
+//   - 只有一个是 nil              → 另一个（含空切片，空切片必须保持非 nil）；
+//   - 两个都不是 nil              → 交集（任一为空则交集为空）。
+//
+// 中间那条是关键的：**nil 与空切片不能互相顶替** —— nil 一路传到 model 的
+// `id IN (...)` 之前会被短路成「不过滤」，空切片被短路成「没人」。
+func intersectCustomerIDs(a, b []int64) []int64 {
+	switch {
+	case a == nil && b == nil:
+		return nil
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	}
+	inA := make(map[int64]bool, len(a))
+	for _, id := range a {
+		inA[id] = true
+	}
+	out := make([]int64, 0, len(b))
+	for _, id := range b {
+		if inA[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }

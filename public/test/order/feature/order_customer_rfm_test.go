@@ -152,3 +152,56 @@ func TestCustomerRfmRejectsUnknownSegment(t *testing.T) {
 func fmtSegOrderNo(user, seq int) string {
 	return "RFM-" + strconv.Itoa(user) + "-" + strconv.Itoa(seq)
 }
+
+// TestCustomerRfmSegmentIDsShareScoring 分段取 id 与 RFM 页的计数必须同源。
+//
+// 两处各写一条打分 SQL 会在数据变动的边界上给出不同分档 —— 表现是
+// 「RFM 页说他是 vip，用 vip 筛客户列表却查不到他」，而两边各自的页面看起来都对。
+// 这条断言的就是那个等式：分段取 id 的 Total == RFM 页该分段的计数。
+func TestCustomerRfmSegmentIDsShareScoring(t *testing.T) {
+	_, m, svc := newRangeFixture(t)
+	if m == nil {
+		t.Skip("无数据库")
+	}
+	const pid = summaryProjectA
+	ctx := context.Background()
+
+	// 五个客户，保证五个分位每一档都有人（NTILE(5) 在样本太小时会退化）。
+	for i, u := range []uint64{5101, 5102, 5103, 5104, 5105} {
+		for k := 0; k <= i; k++ {
+			mkGrowthOrder(t, m, pid, fmtSegOrderNo(int(u), k), "paid", int64(100*(i+1)), rangeTime(2), growthUser(u))
+		}
+	}
+
+	page, err := svc.CustomerRfmByRange(ctx, &orderdto.CustomerRfmReq{
+		ProjectID: pid, From: "2026-09-01", To: "2026-09-05",
+	})
+	if err != nil {
+		t.Fatalf("取 RFM 失败: %v", err)
+	}
+	for seg, want := range map[string]int64{
+		"vip": page.Vip, "potential": page.Potential, "low_value": page.LowValue,
+	} {
+		res, err := svc.CustomerRfmSegmentIDsByRange(ctx, &orderdto.CustomerRfmSegmentIDsReq{
+			ProjectID: pid, From: "2026-09-01", To: "2026-09-05", Segment: seg, Limit: 200,
+		})
+		if err != nil {
+			t.Fatalf("分段 %s 取 id 失败: %v", seg, err)
+		}
+		if res.Total != want {
+			t.Errorf("分段 %s：取 id 的总数 %d != RFM 页计数 %d（两处打分必须同源）",
+				seg, res.Total, want)
+		}
+		if int64(len(res.UserIDs)) != res.Total {
+			t.Errorf("分段 %s：返回 %d 个 id 但总数是 %d", seg, len(res.UserIDs), res.Total)
+		}
+	}
+	// 认不出的分段当场拒（不静默回落成「全部」）。
+	for _, bad := range []string{"", "gold", "VIP"} {
+		if _, err := svc.CustomerRfmSegmentIDsByRange(ctx, &orderdto.CustomerRfmSegmentIDsReq{
+			ProjectID: pid, From: "2026-09-01", To: "2026-09-05", Segment: bad, Limit: 10,
+		}); err == nil {
+			t.Errorf("分段 %q 不在白名单里，应报错", bad)
+		}
+	}
+}

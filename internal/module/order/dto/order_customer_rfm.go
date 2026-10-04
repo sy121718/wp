@@ -59,3 +59,30 @@ type CustomerRfmResp struct {
 	Total int64             `json:"total"`
 	Items []CustomerRfmItem `json:"items"`
 }
+
+// CustomerRfmSegmentIDsReq 取某个 RFM 分段内的客户 id（客户列表按 RFM 分段筛用）。
+//
+// 与列表页那三个分段（新客 / 回头客 / 复购）**是两套不同的分段**：
+// 那三个看下单行为，这三个看 RFM 总分。它们在页面上是两个独立的筛选项，
+// 同时给出时取交集（见 customerPageHandle 的 rfmSegmentIDs）。
+type CustomerRfmSegmentIDsReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+	From      string `form:"from" json:"from"`
+	To        string `form:"to" json:"to"`
+	// Segment "vip" / "potential" / "low_value"（白名单，认不出当场拒）。
+	Segment string `form:"segment" json:"segment"`
+	Limit   int    `form:"limit" json:"limit"`
+	Offset  int    `form:"offset" json:"offset"`
+}
+
+// CustomerRfmSegmentIDsResp 分段内的客户 id。
+type CustomerRfmSegmentIDsResp struct {
+	ProjectID string `json:"projectId"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Segment   string `json:"segment"`
+	// UserIDs 该分段的客户 id（按 RFM 总分降序，稳定分页）。
+	UserIDs []int64 `json:"userIds"`
+	// Total 该分段的客户总数（可能大于 len(UserIDs)：这里按上限取一批）。
+	Total int64 `json:"total"`
+}

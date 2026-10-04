@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -246,5 +247,131 @@ func TestCustomersPageMinOrdersUnknownFallsBack(t *testing.T) {
 		if seg.call != 0 {
 			t.Errorf("minOrders=%q 应回落成「不按次数筛」，实际却去查了订单模块（%+v）", bad, seg.got)
 		}
+	}
+}
+
+// TestCustomersPageRfmSegmentFiltersByIDList 按 RFM 分段筛：id 列表要传给客户列表。
+func TestCustomersPageRfmSegmentFiltersByIDList(t *testing.T) {
+	rfm := &fakeRfmReader{segRes: &orderdto.CustomerRfmSegmentIDsResp{
+		Segment: "vip", UserIDs: []int64{301, 302, 303},
+	}}
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	h.SetCustomerRfm(rfm)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?rfm=vip", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if rfm.segGot == nil {
+		t.Fatal("选了 RFM 分段却没有向订单模块取 id 列表")
+	}
+	if rfm.segGot.Segment != "vip" || rfm.segGot.ProjectID == "" {
+		t.Errorf("传给订单模块的分段/工程不对：%+v", rfm.segGot)
+	}
+	if admin.lastListRe == nil || len(admin.lastListRe.UserIDs) != 3 {
+		t.Errorf("id 列表应原样传给客户列表，实得 %+v", admin.lastListRe)
+	}
+	if !strings.Contains(rec.Body.String(), "rfm=vip") {
+		t.Error("翻页/计数链接应保留 rfm")
+	}
+}
+
+// TestCustomersPageRfmIntersectsWithSpendSegment 两个分段同时选：**取交集**。
+//
+// 取并集或「后一个覆盖前一个」都会让页面显示比筛选条件更宽的集合 ——
+// 用户看到的人数变多，看起来像筛对了。
+func TestCustomersPageRfmIntersectsWithSpendSegment(t *testing.T) {
+	seg := &fakeSegmentReader{ids: []int64{301, 999}}
+	rfm := &fakeRfmReader{segRes: &orderdto.CustomerRfmSegmentIDsResp{
+		Segment: "vip", UserIDs: []int64{301, 302},
+	}}
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	h.SetCustomerSegments(seg)
+	h.SetCustomerRfm(rfm)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?segment=new&rfm=vip", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if admin.lastListRe == nil {
+		t.Fatal("没有查客户列表")
+	}
+	got := admin.lastListRe.UserIDs
+	if len(got) != 1 || got[0] != 301 {
+		t.Errorf("两个分段同时选时应取交集（只有 301），实得 %v", got)
+	}
+}
+
+// TestCustomersPageRfmIntersectionWithEmptyIsEmpty 任一维筛出零个人时交集为空，
+// 而**不能**退化成「不筛」—— 那会把「一个都没有」显示成「全部客户」。
+func TestCustomersPageRfmIntersectionWithEmptyIsEmpty(t *testing.T) {
+	seg := &fakeSegmentReader{ids: []int64{}} // 有这一维，但一个人都没有
+	rfm := &fakeRfmReader{segRes: &orderdto.CustomerRfmSegmentIDsResp{UserIDs: []int64{301}}}
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	h.SetCustomerSegments(seg)
+	h.SetCustomerRfm(rfm)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?segment=new&rfm=vip", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if admin.lastListRe == nil {
+		t.Fatal("没有查客户列表")
+	}
+	if admin.lastListRe.UserIDs == nil {
+		t.Error("交集为空时必须是空切片而不是 nil —— nil 会被当成「不过滤」")
+	}
+	if len(admin.lastListRe.UserIDs) != 0 {
+		t.Errorf("交集应为空，实得 %v", admin.lastListRe.UserIDs)
+	}
+}
+
+// TestCustomersPageRfmUnknownFallsBack 手改出来的未知分段回落「不限分段」。
+func TestCustomersPageRfmUnknownFallsBack(t *testing.T) {
+	rfm := &fakeRfmReader{}
+	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
+	h.SetCustomerRfm(rfm)
+	engine := newCustomerTestEngine(h)
+
+	// 注意 "vip "（带尾空白）不在这一批：TrimSpace 之后它就是合法值，
+	// 接受它是对的（URL 里带空白是编码层面的问题，不该让筛选失效）。
+	for _, bad := range []string{"gold", "VIP", "0", "vip_x"} {
+		rfm.segCall = 0
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?rfm="+url.QueryEscape(bad), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("rfm=%q 不该让整页报错，实得 %d", bad, rec.Code)
+		}
+		if rfm.segCall != 0 {
+			t.Errorf("rfm=%q 应回落成「不限分段」（注意 'vip ' 带空白也要拒），实际却去查了订单模块", bad)
+		}
+	}
+}
+
+// TestCustomersPageRfmWithoutPortShowsNotice 端口缺席时明说「筛不了」，而不是当作没筛。
+func TestCustomersPageRfmWithoutPortShowsNotice(t *testing.T) {
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?rfm=vip", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "按 RFM 分段筛选暂时不可用") {
+		t.Error("端口缺席时应显示「暂时不可用」的说明")
+	}
+	if admin.lastListRe != nil {
+		t.Error("筛不了时不该照常列出全部客户 —— 「筛不出来」会显示成「全部客户」")
 	}
 }

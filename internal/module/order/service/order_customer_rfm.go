@@ -111,3 +111,41 @@ func segmentLabelOf(segment string) string {
 	}
 	return segment
 }
+
+// CustomerRfmSegmentIDsByRange 取某个 RFM 分段内的客户 id（客户列表按 RFM 分段筛用）。
+//
+// **打分批与明细行都来自同一批 SQL**（model 的 CustomerRfmSegmentIDs）：这里只做
+// 窗口归一化、分段白名单与分页收敛，不重算任何分数。
+func (s *Service) CustomerRfmSegmentIDsByRange(ctx context.Context, req *orderdto.CustomerRfmSegmentIDsReq) (res *orderdto.CustomerRfmSegmentIDsResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New(orderenums.ErrProjectRequired)
+	}
+	segment := strings.TrimSpace(req.Segment)
+	// 与 RFM 页同一条口径：认不出的分段当场拒，不静默回落成「全部」——
+	// 回落会让一个写错的筛选显示成完整报表，而那时用户以为自己看的是「高价值客户」。
+	if _, ok := knownRfmSegments[segment]; !ok {
+		return nil, errors.New(orderenums.ErrInvalidParam)
+	}
+	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	limit, offset := utils.NormalizeLimitOffset(req.Limit, req.Offset, customerRfmDefaultLimit, customerRfmMaxLimit)
+
+	ids, total, err := s.orders.CustomerRfmSegmentIDs(ctx, req.ProjectID, from, to, segment, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if ids == nil {
+		ids = []int64{}
+	}
+	return &orderdto.CustomerRfmSegmentIDsResp{
+		ProjectID: req.ProjectID,
+		From:      from.Format(utils.LayoutDay),
+		// to 是半开上界（次日零点），减一天才是用户看到的「结束日」。
+		To:      to.AddDate(0, 0, -1).Format(utils.LayoutDay),
+		Segment: segment,
+		UserIDs: ids,
+		Total:   total,
+	}, nil
+}

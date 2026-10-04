@@ -228,6 +228,8 @@ func init() {
 	registerCustomerCohortI18n()
 	// 563：客户列表「复购次数」筛选词条（见 register_customer_min_orders_i18n.go）。
 	registerCustomerMinOrdersI18n()
+	// 564：客户列表「RFM 分段」筛选词条（见 register_customer_rfm_filter_i18n.go）。
+	registerCustomerRfmFilterI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

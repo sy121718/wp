@@ -52,6 +52,7 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 		"FilterSegmentFrom": filter.SegmentFrom,
 		"FilterSegmentTo":   filter.SegmentTo,
 		"FilterMinOrders":   customerMinOrdersQueryValue(filter.MinOrders),
+		"FilterRfm":         filter.RfmSegment,
 		"CapabilityMissing": capabilityMissing,
 		"Err":               pageErr,
 		"Ok":                pageOk,
@@ -335,6 +336,7 @@ func customerFilterValues(filter customerFilter) map[string]string {
 		// 或「点一下状态计数」会静默丢掉分段筛选，列表变回全部客户。
 		"segment":     filter.Segment,
 		"minOrders":   customerMinOrdersQueryValue(filter.MinOrders),
+		"rfm":         filter.RfmSegment,
 		"segmentFrom": filter.SegmentFrom,
 		"segmentTo":   filter.SegmentTo,
 	}

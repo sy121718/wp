@@ -25,6 +25,24 @@ type fakeRfmReader struct {
 	// rejected 记录被拒的请求（认不出的分段名 —— 本页在调用前就回落成正整数，
 	// 所以这里正常情况下一次都不该收到非法值）。
 	call int
+	// segRes / segGot / segErr / segCall 供客户列表按 RFM 分段筛的用例使用。
+	segRes  *orderdto.CustomerRfmSegmentIDsResp
+	segGot  *orderdto.CustomerRfmSegmentIDsReq
+	segErr  error
+	segCall int
+}
+
+// CustomerRfmSegmentIDsByRange 客户列表按 RFM 分段筛时走这一条（同包的两个页面共用本 fake）。
+func (f *fakeRfmReader) CustomerRfmSegmentIDsByRange(_ context.Context, req *orderdto.CustomerRfmSegmentIDsReq) (*orderdto.CustomerRfmSegmentIDsResp, error) {
+	f.segCall++
+	f.segGot = req
+	if f.segErr != nil {
+		return nil, f.segErr
+	}
+	if f.segRes != nil {
+		return f.segRes, nil
+	}
+	return &orderdto.CustomerRfmSegmentIDsResp{Segment: req.Segment, UserIDs: []int64{}}, nil
 }
 
 func (f *fakeRfmReader) CustomerRfmByRange(_ context.Context, req *orderdto.CustomerRfmReq) (*orderdto.CustomerRfmResp, error) {

@@ -24,6 +24,7 @@
 {{fSegmentFrom := .FilterSegmentFrom}}
 {{fSegmentTo := .FilterSegmentTo}}
 {{fMinOrders := .FilterMinOrders}}
+{{fRfm := .FilterRfm}}
 {{fPage := .Page}}
 {{fLimit := .Limit}}
 <div class="stack customers-page">
@@ -110,6 +111,14 @@
                         <option value="10"{{if fMinOrders == "10"}} selected{{end}}>{{ .["t"]("admin.customers.minOrders.10", "下过 ≥10 单") }}</option>
                     </select>
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.minOrders.note", "下单次数只算所选时间段内的订单；不选时间就是本月。") }}</span>
+                    <label for="customers-filter-rfm">{{ .["t"]("admin.customers.field.rfm", "RFM 分段") }}</label>
+                    <select class="form-select" id="customers-filter-rfm" name="rfm">
+                        <option value=""{{if fRfm == ""}} selected{{end}}>{{ .["t"]("admin.customers.rfm.all", "不限分段") }}</option>
+                        <option value="vip"{{if fRfm == "vip"}} selected{{end}}>{{ .["t"]("admin.customers.rfm.vip", "高价值") }}</option>
+                        <option value="potential"{{if fRfm == "potential"}} selected{{end}}>{{ .["t"]("admin.customers.rfm.potential", "潜力") }}</option>
+                        <option value="low_value"{{if fRfm == "low_value"}} selected{{end}}>{{ .["t"]("admin.customers.rfm.low_value", "一般") }}</option>
+                    </select>
+                    <span class="text-mute text-sm">{{ .["t"]("admin.customers.rfm.note", "分段按所选时间段内的 RFM 总分划分（≥12 高价值 / ≥8 潜力）；三项分数都是相对分，换个时间段会变。与上面的「消费分段」同时选时两个条件都要成立。") }}</span>
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.segment.note", "不选时间就是本月；只统计已付款及以后的订单，游客单不计入。") }}</span>
                 </div>
                 <div class="filter-field">
@@ -156,6 +165,7 @@
                列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
             <input type="hidden" name="segment" value="{{fSegment}}">
             <input type="hidden" name="minOrders" value="{{fMinOrders}}">
+            <input type="hidden" name="rfm" value="{{fRfm}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
@@ -271,6 +281,7 @@
                列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
             <input type="hidden" name="segment" value="{{fSegment}}">
             <input type="hidden" name="minOrders" value="{{fMinOrders}}">
+            <input type="hidden" name="rfm" value="{{fRfm}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
@@ -289,6 +300,7 @@
                列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
             <input type="hidden" name="segment" value="{{fSegment}}">
             <input type="hidden" name="minOrders" value="{{fMinOrders}}">
+            <input type="hidden" name="rfm" value="{{fRfm}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">

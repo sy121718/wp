@@ -185,6 +185,10 @@ type CustomerSegmentReader interface {
 // 分段看「谁在这段里」、RFM 看「这些人各自值多少」。三者都只有订单模块答得出来。
 type CustomerRfmReader interface {
 	CustomerRfmByRange(ctx context.Context, req *orderdto.CustomerRfmReq) (res *orderdto.CustomerRfmResp, err error)
+	// CustomerRfmSegmentIDsByRange 分段内取 id（客户列表按「RFM 分段」筛）。
+	// **与 CustomerRfmByRange 共用同一条打分批**：两处各算一遍五分位会在数据变动的
+	// 边界上给出不同分档 —— 表现是「RFM 页说他是 vip，用 vip 筛客户却查不到他」。
+	CustomerRfmSegmentIDsByRange(ctx context.Context, req *orderdto.CustomerRfmSegmentIDsReq) (res *orderdto.CustomerRfmSegmentIDsResp, err error)
 }
 
 // CustomerCohortReader 群组留存矩阵（只读，一条方法）。

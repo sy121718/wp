@@ -90,6 +90,18 @@ const (
 	RfmSegmentLowValue  = "low_value"
 )
 
+// IsKnownRfmSegment 分段名的白名单判定（三个值，其余一律拒）。
+//
+// 抽成函数而不是在三处各写一遍字符串比较：新增一个分段时漏改一处，
+// 表现是「那个分段在列表页筛不出来」，而没有任何报错。
+func IsKnownRfmSegment(segment string) bool {
+	switch segment {
+	case RfmSegmentVip, RfmSegmentPotential, RfmSegmentLowValue:
+		return true
+	}
+	return false
+}
+
 // OrderCustomerRfmRow 一个客户的 RFM 明细。
 type OrderCustomerRfmRow struct {
 	UserID     int64     `gorm:"column:user_id"`
@@ -152,7 +164,7 @@ func (m *OrderModel) CustomerRfmList(ctx context.Context, projectID string, from
 	if from.IsZero() || to.IsZero() {
 		return nil, 0, ErrRangeRequired
 	}
-	if segment != "" && segment != RfmSegmentVip && segment != RfmSegmentPotential && segment != RfmSegmentLowValue {
+	if segment != "" && !IsKnownRfmSegment(segment) {
 		return nil, 0, ErrSegmentUnknown
 	}
 	if limit <= 0 {
@@ -204,4 +216,53 @@ SELECT *, COUNT(*) OVER () AS total
 		total = r.Total
 	}
 	return rows, total, nil
+}
+
+// CustomerRfmSegmentIDs 取某个 RFM 分段内的 user_id（客户列表按「RFM 分段」筛用）。
+//
+// 与 CustomerRfmList 的关系：**同一条 rfmScoredCTE、同一套打分列定义**，区别只在这里
+// 只取 id（列表要的是「哪些人是 vip」，不是他们的分数）。
+// 不另写一条打分 SQL 的理由：RFM 是五分位（相对分），两处各算一遍会在数据变动的
+// 边界上给出不同分档 —— 表现是「RFM 页说他是 vip，用 vip 筛客户列表却查不到他」，
+// 而两边各自的页面看起来都对。
+//
+// 排序与 CustomerRfmList 一致（总分降序 + user_id 兜底）：没有稳定排序时
+// PostgreSQL 每次可以给出不同的前 N 行，翻页会漏人（而不报错）。
+func (m *OrderModel) CustomerRfmSegmentIDs(ctx context.Context, projectID string, from, to time.Time, segment string, limit, offset int) (ids []int64, total int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, 0, ErrProjectRequired
+	}
+	if from.IsZero() || to.IsZero() {
+		return nil, 0, ErrRangeRequired
+	}
+	if !IsKnownRfmSegment(segment) {
+		return nil, 0, ErrSegmentUnknown
+	}
+	if limit <= 0 {
+		return nil, 0, ErrRangeRequired
+	}
+	// 分段是**结果列**，不能在 WHERE 里直接引用（SQL 不允许）—— 包一层子查询（同 CustomerRfmList）。
+	const sql = rfmScoredCTE + `
+SELECT user_id, COUNT(*) OVER () AS total
+  FROM (SELECT ` + rfmRowColumns + ` FROM scored) s
+ WHERE segment = ?
+ ORDER BY total_score DESC, user_id LIMIT ? OFFSET ?`
+	type idRow struct {
+		UserID int64 `gorm:"column:user_id"`
+		Total  int64 `gorm:"column:total"`
+	}
+	var raw []idRow
+	args := append(orderCustomerRfmArgs(projectID, from, to), segment, limit, offset)
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(sql, args...).Scan(&raw).Error
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	ids = make([]int64, 0, len(raw))
+	for _, r := range raw {
+		ids = append(ids, r.UserID)
+		total = r.Total // 每行都带全量计数，取最后一行的即可（空结果时保持 0）
+	}
+	return ids, total, nil
 }
