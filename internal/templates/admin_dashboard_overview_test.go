@@ -24,6 +24,7 @@ type tmplOverviewKPI struct {
 	RangeItems       int64
 	PageViews        int64
 	ArticleViews     int64
+	NewCustomers     int64
 	ShipPendingCount int64
 	PendingCount     int64
 }
@@ -107,7 +108,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		KPI: tmplOverviewKPI{
 			RangeOrders: 12, RangeSalesLabel: "CNY 1,234.50",
 			RangeItems: 23, PageViews: 456,
-			ArticleViews: 88, ShipPendingCount: 3, PendingCount: 2,
+			ArticleViews: 88, NewCustomers: 7, ShipPendingCount: 3, PendingCount: 2,
 		},
 		Trend: []tmplTrendPoint{
 			// 09-29：有单但金额为 0（金额口径与件数不同），浏览量那套柱高不为 0 ——
@@ -142,6 +143,9 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		`name="from"`, `value="2026-09-29"`,
 		// KPI 卡可点击跳订单页（带口径的链接）。
 		"stat-card-link", `href="/admin/orders"`,
+		// 第 6 张卡：新客（区间口径）。链接把当前区间带给客户概览页 ——
+		// 不带的话点进去是那页自己的默认档，两页会显示两段不同时间的新客数而都像对的。
+		"新客户", "7", `href="/admin/customers/overview?range=week"`,
 		// 图表两个 Tab：面板全部渲染在服务端，切换由 admin.js 的 data-tabs 接管。
 		`data-tabs`, `role="tablist"`, "dash-tab-sales", "dash-tab-views",
 		`id="dash-panel-sales"`, `id="dash-panel-views"`,

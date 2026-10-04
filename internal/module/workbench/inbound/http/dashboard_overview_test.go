@@ -22,8 +22,23 @@ type stubOrderPort struct {
 	daily    map[string]*orderdto.OrderDailySeriesResp
 	top      map[string]*orderdto.OrderTopProductsResp
 	items    map[string]*orderdto.OrderSoldQuantityResp
+	growth   map[string]*orderdto.CustomerGrowthResp
 	failWith error
 	calls    int
+	// growthReq 记下最后一次收到的区间：概览页与客户概览页必须落在同一个窗口。
+	growthReq *orderdto.CustomerGrowthReq
+}
+
+// CustomerGrowthByRange 新客数（与客户概览页同一个聚合、同一个区间）。
+func (s *stubOrderPort) CustomerGrowthByRange(_ context.Context, req *orderdto.CustomerGrowthReq) (*orderdto.CustomerGrowthResp, error) {
+	s.growthReq = req
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.growth[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &orderdto.CustomerGrowthResp{ProjectID: req.ProjectID}, nil
 }
 
 func (s *stubOrderPort) SummaryByRange(_ context.Context, req *orderdto.OrderRangeSummaryReq) (*orderdto.OrderRangeSummaryResp, error) {
@@ -345,4 +360,30 @@ func TestFormatCents(t *testing.T) {
 // testRange 用例用的固定区间：7 天窗口（与改动前的固定窗口同形，断言数字不必跟着变）。
 func testRange() overviewRange {
 	return newRange(rangeWeek, "2026-01-01", "2026-01-07", false)
+}
+
+// TestOverviewKPIIncludesNewCustomers 概览页第 6 张卡：区间新客。
+//
+// 数字必须与客户概览页同源（同一个方法、同一个区间）—— 所以这里除了断言被累加，
+// 还断言**传下去的区间就是页面的区间**：传错窗口不会报错，只会让两页显示两个新客数。
+func TestOverviewKPIIncludesNewCustomers(t *testing.T) {
+	orders := &stubOrderPort{growth: map[string]*orderdto.CustomerGrowthResp{
+		"p1": {ProjectID: "p1", NewCustomers: 4},
+		"p2": {ProjectID: "p2", NewCustomers: 3},
+	}}
+	h := &Handle{}
+	h.SetOverviewPorts(orders, nil, nil)
+	rng := testRange()
+	snap := h.collectOverview(context.Background(), []string{"p1", "p2"}, rng)
+
+	if snap.KPI.NewCustomers != 7 {
+		t.Errorf("两个工程的新客应累加为 7，实得 %d", snap.KPI.NewCustomers)
+	}
+	if orders.growthReq == nil {
+		t.Fatal("没有调用区间客户增长")
+	}
+	if orders.growthReq.From != rng.From || orders.growthReq.To != rng.To {
+		t.Errorf("传下去的区间应与页面区间一致：got %s~%s, want %s~%s",
+			orders.growthReq.From, orders.growthReq.To, rng.From, rng.To)
+	}
 }

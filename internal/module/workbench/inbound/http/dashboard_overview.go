@@ -50,6 +50,12 @@ type OverviewOrderPort interface {
 	TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error)
 	StatusCounts(ctx context.Context, req *orderdto.OrderStatusCountsReq) (res *orderdto.OrderStatusCountsResp, err error)
 	SoldQuantityByRange(ctx context.Context, req *orderdto.OrderSoldQuantityReq) (res *orderdto.OrderSoldQuantityResp, err error)
+	// CustomerGrowthByRange 区间内的新客数（客户域的唯一一格）。
+	//
+	// 放在这个接口里而不是新开一个端口：它同样是订单模块的只读聚合 ——
+	// 「谁是新人」只有看得到 orders 表的那一侧答得出来（用户模块手里只有注册时间，
+	// 按注册时间算出来的「新客」与这里的口径会是两个数）。
+	CustomerGrowthByRange(ctx context.Context, req *orderdto.CustomerGrowthReq) (res *orderdto.CustomerGrowthResp, err error)
 }
 
 // OverviewAnalyticsPort 概览页所需的访问统计只读面（一条方法）。
@@ -62,7 +68,7 @@ type OverviewPageKindPort interface {
 	KindsOfPaths(ctx context.Context, projectID string, paths []string) (map[string]string, error)
 }
 
-// overviewKPI 四张卡的数字（全部为**当天**口径）。
+// overviewKPI KPI 卡片的数字（除「待发货 / 待付款」两个状态计数外，全部为**当前区间**口径）。
 type overviewKPI struct {
 	// RangeOrders / RangeSalesCents 是**当前区间**的口径（不再是「今日」）。
 	//
@@ -82,7 +88,12 @@ type overviewKPI struct {
 	//
 	// 只算文章页要问 page 模块「这个路径是不是文章页」（表隔离：analytics 只认 path），
 	// 且路径排行只取前 N 条 —— 所以它是**下界**，不是精确值。页面上的小字注明口径。
-	ArticleViews     int64
+	ArticleViews int64
+	// NewCustomers 区间内的新客数（首次下单落在这个窗口里的人数）。
+	//
+	// 与「区间下单客户」不是同一格：那个数在客户概览页上（那里的分母是它）。
+	// 这里只放最常被问的那一个 —— 「这段时间拉来多少新人」。
+	NewCustomers     int64
 	ShipPendingCount int64
 	PendingCount     int64
 }
@@ -236,6 +247,15 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 			snap.fail("order", pid, err)
 		} else {
 			snap.KPI.RangeItems += res.Quantity
+		}
+
+		// 新客：与客户概览页同一个方法、同一个区间，两处显示的必须是同一个数。
+		if res, err := h.overviewOrders.CustomerGrowthByRange(ctx, &orderdto.CustomerGrowthReq{
+			ProjectID: pid, From: rng.From, To: rng.To,
+		}); err != nil {
+			snap.fail("order", pid, err)
+		} else {
+			snap.KPI.NewCustomers += res.NewCustomers
 		}
 
 		if res, err := h.overviewOrders.StatusCounts(ctx, &orderdto.OrderStatusCountsReq{ProjectID: pid}); err != nil {

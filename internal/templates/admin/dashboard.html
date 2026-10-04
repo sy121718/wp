@@ -58,7 +58,7 @@
 
     {* KPI 卡可点击跳订单页（口径闸门）。带得上的筛选参数就带上：销售额与待发货都落在
        「已付款」这一档上，订单页用自己的 status 参数表达同一件事。 *}
-    <div class="stat-grid">
+    <div class="stat-grid stat-grid-six">
         <a class="card stat-card stat-card-link" href="/admin/orders">
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.orders", "订单数") }}</div>
             <div class="stat-value">{{.Overview.KPI.RangeOrders}}</div>
@@ -73,6 +73,16 @@
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.items", "商品销售总量") }}</div>
             <div class="stat-value">{{.Overview.KPI.RangeItems}}</div>
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.itemsNote", "件数，只算计入消费的订单") }}</div>
+        </a>
+        {* 新客：与客户概览页同一个聚合、同一个区间，两处显示的必须是同一个数。
+           链接把当前区间带过去（?range=…）：不带的话点进去是那页自己的默认档，
+           两页会显示两段不同时间的新客数，而看起来都像对的。
+           custom 档客户概览页不认（它会回落默认档）—— 这是刻意的：那页只有预设，
+           与其在两个页面里各维护一套自定义区间收敛规则，不如让链接退化到默认。 *}
+        <a class="card stat-card stat-card-link" href="/admin/customers/overview?range={{.Overview.Range.Key}}">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.newCustomers", "新客户") }}</div>
+            <div class="stat-value">{{.Overview.KPI.NewCustomers}}</div>
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.newCustomersNote", "首次下单落在这段时间") }}</div>
         </a>
         <div class="card stat-card">
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.pageViews", "页面浏览") }}</div>

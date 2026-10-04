@@ -214,6 +214,8 @@ func init() {
 	registerCustomerCatalog()
 	// 556：客户概览页词条（见 register_customer_overview_i18n.go）。
 	registerCustomerOverviewI18n()
+	// 557：概览页「新客户」KPI 词条（见 register_dashboard_new_customers_kpi_i18n.go）。
+	registerDashboardNewCustomersKPI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

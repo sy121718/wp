@@ -1070,6 +1070,13 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     gap: var(--ui-sp-md);
 }
 .stat-card { padding: var(--ui-sp-md) var(--ui-sp-lg); }
+/* 六格 KPI：auto-fit 在 1248 宽下排成 5+1 —— 最后一张孤零零占一整行，
+   看起来像「多出来的一张」而不是「第二行的第一张」。
+   只作用于显式加了类的网格（仪表盘的六格），其它页面的 .stat-grid 不受影响；
+   960px 以下回到 auto-fit，窄屏该换行就换行。 */
+@media (min-width: 960px) {
+    .stat-grid.stat-grid-six { grid-template-columns: repeat(3, 1fr); }
+}
 .stat-label { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
 .stat-value {
     margin-top: var(--ui-sp-xxs); font-size: 26px; font-weight: 600;
