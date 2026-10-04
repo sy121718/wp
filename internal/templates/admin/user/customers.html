@@ -20,6 +20,9 @@
 {{fVerified := .FilterVerified}}
 {{fFrom := .FilterFrom}}
 {{fTo := .FilterTo}}
+{{fSegment := .FilterSegment}}
+{{fSegmentFrom := .FilterSegmentFrom}}
+{{fSegmentTo := .FilterSegmentTo}}
 {{fPage := .Page}}
 {{fLimit := .Limit}}
 <div class="stack customers-page">
@@ -83,6 +86,28 @@
                 <input type="hidden" name="status" value="{{if fStatus >= 0}}{{fStatus}}{{end}}">
                 <input type="hidden" name="emailVerified" value="{{if fVerified > 0}}{{fVerified}}{{end}}">
                 <input type="hidden" name="locked" value="{{if .FilterLocked}}1{{end}}">
+                {* 消费分段：问的是「这个人下过什么单」，口径在订单模块 ——
+                   选中后服务端先把「谁在这段里」的 id 要回来，再筛客户行。
+                   「全部客户」这个空值必须是一个**显式选项**，与状态筛选的「全部」徽章同一条口径：
+                   没有这个选项时，用户无法把已经选好的分段取消掉（除非点重置，那会连关键词一起清）。
+                   时间窗口与下面的注册时间是**两个不同的窗口**（下单 vs 注册），所以另配一对日期框，
+                   不能合成一个 —— 「这周来的新客」与「这周注册的人」是两批人。 *}
+                <div class="filter-field">
+                    <label for="customers-filter-segment">{{ .["t"]("admin.customers.field.segment", "消费分段") }}</label>
+                    <select class="form-select" id="customers-filter-segment" name="segment">
+                        <option value=""{{if fSegment == ""}} selected{{end}}>{{ .["t"]("admin.customers.segment.all", "全部客户") }}</option>
+                        <option value="new"{{if fSegment == "new"}} selected{{end}}>{{ .["t"]("admin.customers.segment.new", "新客（首次下单在这段时间）") }}</option>
+                        <option value="returning"{{if fSegment == "returning"}} selected{{end}}>{{ .["t"]("admin.customers.segment.returning", "回头客（首单在这段时间之前）") }}</option>
+                        <option value="repurchasing"{{if fSegment == "repurchasing"}} selected{{end}}>{{ .["t"]("admin.customers.segment.repurchasing", "复购（这段时间内 ≥2 单）") }}</option>
+                    </select>
+                    <span class="text-mute text-sm">{{ .["t"]("admin.customers.segment.note", "不选时间就是本月；只统计已付款及以后的订单，游客单不计入。") }}</span>
+                </div>
+                <div class="filter-field">
+                    <label for="segmentFrom">{{ .["t"]("admin.customers.field.segment_from", "下单时间（起）") }}</label>
+                    <input type="date" class="form-input" id="segmentFrom" name="segmentFrom" value="{{fSegmentFrom}}">
+                    <label for="segmentTo">{{ .["t"]("admin.customers.field.segment_to", "下单时间（止）") }}</label>
+                    <input type="date" class="form-input" id="segmentTo" name="segmentTo" value="{{fSegmentTo}}">
+                </div>
                 {* 注册时间是一个**区间**：容器加 data-wb-daterange 后由 ui/daterange.js 接管
                    （审计 02-O G5 / 02-K §3）。两个原生 date 仍留在 DOM 里参与表单提交
                    （name/value/label[for] 全部照旧），区间控件只做渐进增强。 *}
@@ -117,6 +142,11 @@
             <input type="hidden" name="locked" value="{{if .FilterLocked}}1{{end}}">
             <input type="hidden" name="registeredFrom" value="{{fFrom}}">
             <input type="hidden" name="registeredTo" value="{{fTo}}">
+            {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
+               列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
+            <input type="hidden" name="segment" value="{{fSegment}}">
+            <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
+            <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
             <input type="hidden" name="limit" value="{{fLimit}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
@@ -226,6 +256,11 @@
             <input type="hidden" name="emailVerified" value="{{fVerified}}">
             <input type="hidden" name="registeredFrom" value="{{fFrom}}">
             <input type="hidden" name="registeredTo" value="{{fTo}}">
+            {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
+               列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
+            <input type="hidden" name="segment" value="{{fSegment}}">
+            <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
+            <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
             <input type="hidden" name="limit" value="{{fLimit}}">
         </form>
@@ -238,6 +273,11 @@
             <input type="hidden" name="emailVerified" value="{{fVerified}}">
             <input type="hidden" name="registeredFrom" value="{{fFrom}}">
             <input type="hidden" name="registeredTo" value="{{fTo}}">
+            {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
+               列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
+            <input type="hidden" name="segment" value="{{fSegment}}">
+            <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
+            <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
             <input type="hidden" name="limit" value="{{fLimit}}">
         </form>

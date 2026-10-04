@@ -48,6 +48,9 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 		"FilterVerified":    filter.EmailVerified,
 		"FilterFrom":        filter.RegisteredFrom,
 		"FilterTo":          filter.RegisteredTo,
+		"FilterSegment":     filter.Segment,
+		"FilterSegmentFrom": filter.SegmentFrom,
+		"FilterSegmentTo":   filter.SegmentTo,
 		"CapabilityMissing": capabilityMissing,
 		"Err":               pageErr,
 		"Ok":                pageOk,
@@ -327,6 +330,11 @@ func customerFilterValues(filter customerFilter) map[string]string {
 		"locked":         customerLockedQueryValue(filter.Locked),
 		"registeredFrom": filter.RegisteredFrom,
 		"registeredTo":   filter.RegisteredTo,
+		// 消费分段三个参数：翻页与计数器链接都必须带上，否则「翻到第二页」
+		// 或「点一下状态计数」会静默丢掉分段筛选，列表变回全部客户。
+		"segment":     filter.Segment,
+		"segmentFrom": filter.SegmentFrom,
+		"segmentTo":   filter.SegmentTo,
 	}
 }
 

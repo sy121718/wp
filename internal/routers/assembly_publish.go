@@ -670,9 +670,10 @@ func (a *assembly) mountAdminPages() {
 	// 客户管理页：中间两个参数是 BIZ-3 的会员展示端口（读等级 + 错误文案出口），
 	// 详情页的「会员等级」块只读展示；等级与权益按「工程 + 客户」解析，
 	// 与同一页的订单摘要用同一个选定工程。
-	// 最后一个参数是客户域的区间增长聚合（P7-a 的能力，客户概览页消费）。
+	// 最后两个参数是客户域的订单侧聚合：区间增长（客户概览页用）与分段取 id
+	//（列表按「新客 / 回头客 / 复购」筛选用）。两者都在 orderSvc 上。
 	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
-		a.membershipSvc, a.membershipFacing, a.orderSvc)
+		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)

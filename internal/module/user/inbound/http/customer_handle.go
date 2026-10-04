@@ -1,12 +1,15 @@
 package userhttp
 
 import (
+	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
+	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
@@ -171,6 +174,16 @@ type customerPageHandle struct {
 	// NewCustomerPageHandle 有 10+ 处直调（含大量渲染测试），为一块展示改签名会把它们全卷进来。
 	// 口径与计算都在订单模块，这里只拿结论 —— 客户模块读不到 orders 表。
 	growth ordercontract.CustomerGrowthReader
+	// segments 客户分段取 id（列表页按「新客 / 回头客 / 复购」筛选）。
+	//
+	// 同样经 setter 注入：口径在订单模块（只有它看得到 orders 表），这里只拿 id 列表。
+	segments ordercontract.CustomerSegmentReader
+}
+
+// SetCustomerSegments 注入客户分段端口（允许为 nil：列表页会明确说「筛不了」，
+// 而不是把「没筛」显示成筛选结果）。
+func (h *customerPageHandle) SetCustomerSegments(segments ordercontract.CustomerSegmentReader) {
+	h.segments = segments
 }
 
 // SetCustomerGrowth 注入区间客户增长端口（允许为 nil：概览页据此渲染一句
@@ -196,6 +209,117 @@ type customerFilter struct {
 	Locked         bool   // 只看当前被锁定的账号（与「停用」是两条轴）
 	RegisteredFrom string // 原样保留（date 字符串，回显与回跳都用它）
 	RegisteredTo   string
+	// Segment 消费分段：""（全部）/ new / returning / repurchasing。
+	//
+	// 这一条与上面几条**不同源**：它问的是「这个人下过什么单」，只有订单模块答得出来，
+	// 所以要先把 id 要回来再筛客户行（见 segmentCustomerIDs）。
+	Segment string
+	// SegmentFrom / SegmentTo 分段的时间窗口（YYYY-MM-DD，闭区间）。
+	//
+	// 只在 Segment 非空时有意义。**与注册时间筛选是两个不同的窗口**，
+	// 不能合成一个日期控件 —— 「这周来的新客」与「这周注册的人」是两批人。
+	SegmentFrom string
+	SegmentTo   string
+}
+
+// customerPageSegment 分段查询值 → 已知分段（认不出一律回落「全部」）。
+//
+// 与状态筛选同一条口径：URL 是用户可编辑的，一个手改出来的未知分段名不该让整页报错，
+// 但也不能被当成某种分段 —— 回落「全部」是唯一不会静默说错话的选择。
+// （往下传给订单模块时它还会再判一次白名单，认不出会当场拒。）
+func customerPageSegment(v string) string {
+	switch strings.TrimSpace(v) {
+	case customerSegmentNew, customerSegmentReturning, customerSegmentRepurchasing:
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+// 分段名（与订单模块的白名单同字面量；两处都有测试钉住）。
+const (
+	customerSegmentNew          = "new"
+	customerSegmentReturning    = "returning"
+	customerSegmentRepurchasing = "repurchasing"
+)
+
+// segmentCustomerIDs 把「消费分段 + 时间窗口」换成一批客户 id。
+//
+// 返回值是三态（调用方据此决定「不筛 / 筛 / 报错」）：
+//   - Segment 为空            → nil，不筛；
+//   - 端口缺席或取数失败      → nil + 非空错误文案（调用方**不查列表**，见 CustomersPage）；
+//   - 取到了（含零个人）      → **非 nil** 切片（零个人是空切片）。
+//
+// 第三种里的空切片是关键：它一路传到 model 的 `id IN (...)` 之前被短路成空结果。
+// 若在这里折成 nil，「这个分段一个人都没有」就会显示成「全部客户」。
+//
+// 工程取第一个（与客户概览页同规则）：客户列表页没有工程选择器，
+// 而分段口径是工程维度的 —— 不选工程就没法算。
+func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerFilter) ([]int64, string) {
+	if f.Segment == "" {
+		return nil, ""
+	}
+	if h.segments == nil {
+		// 没接线时明确说「筛不了」，而不是当作没筛。
+		return nil, customerSegmentUnavailableText
+	}
+	if h.projects == nil {
+		return nil, customerSegmentUnavailableText
+	}
+	list, perr := h.projects.List(ctx)
+	if perr != nil {
+		return nil, customerSegmentUnavailableText
+	}
+	if len(list) == 0 {
+		// 还没建站点工程：没有任何订单可算 —— 这是正常状态，结果是「零个人」。
+		return []int64{}, ""
+	}
+	from, to := customerSegmentWindow(f, time.Now())
+	res, err := h.segments.CustomerSegmentIDsByRange(ctx, &orderdto.CustomerSegmentIDsReq{
+		ProjectID: list[0].ID,
+		From:      from,
+		To:        to,
+		Segment:   f.Segment,
+		// 取满上限：这一批 id 要当客户列表的过滤条件用，列表自己还会分页。
+		Limit: customerSegmentFilterLimit,
+	})
+	if err != nil {
+		return nil, customerSegmentUnavailableText
+	}
+	if res == nil {
+		return []int64{}, ""
+	}
+	return res.UserIDs, ""
+}
+
+// customerSegmentFilterLimit 列表筛选一次最多取多少个分段 id。
+//
+// 与订单侧的上限同值：再多也拿不到（那边会截断），与其让页面显示一个「少了人」的
+// 筛选结果，不如取满上限、让结果在超过时由用户自己缩小时间范围。
+const customerSegmentFilterLimit = 500
+
+// customerSegmentUnavailableText 分段筛不了时的提示（归口文案，不外泄内部错误）。
+const customerSegmentUnavailableText = "按消费分段筛选暂时不可用（数据没接上），请先用其它条件。"
+
+// customerSegmentWindow 分段的默认时间窗口：没给就用本月（与客户概览页默认档一致）。
+//
+// 与注册时间筛选**不共用**：那是账号的窗口，这是下单的窗口，两者是不同的问题。
+// 复用同一个日期控件会让「筛这周注册的新客」这种查询无法表达。
+func customerSegmentWindow(f customerFilter, now time.Time) (from, to string) {
+	from = strings.TrimSpace(f.SegmentFrom)
+	to = strings.TrimSpace(f.SegmentTo)
+	if from != "" && to != "" {
+		return from, to
+	}
+	u := now.UTC()
+	first := time.Date(u.Year(), u.Month(), 1, 0, 0, 0, 0, time.UTC)
+	today := time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+	if strings.TrimSpace(f.SegmentFrom) == "" {
+		from = first.Format(utils.LayoutDay)
+	}
+	if strings.TrimSpace(f.SegmentTo) == "" {
+		to = today.Format(utils.LayoutDay)
+	}
+	return from, to
 }
 
 // CustomersPage 客户列表（GET /admin/customers）。
@@ -209,6 +333,9 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		Locked:         customerPageLocked(c.Query("locked")),
 		RegisteredFrom: strings.TrimSpace(c.Query("registeredFrom")),
 		RegisteredTo:   strings.TrimSpace(c.Query("registeredTo")),
+		Segment:        customerPageSegment(c.Query("segment")),
+		SegmentFrom:    strings.TrimSpace(c.Query("segmentFrom")),
+		SegmentTo:      strings.TrimSpace(c.Query("segmentTo")),
 	}
 
 	// 回显走 customerPageFacingText（判定 + 取译文）：白名单里是 item_key，
@@ -218,11 +345,22 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	// 展示标签与自造文案的取词函数（不再在 Go 里写死中文）。
 	tr := shell.TranslateFor(c)
 
+	// 消费分段：先把「谁在这段里」从订单模块要回来，再筛客户行。
+	//
+	// 失败时**不回落成「不筛」**：回落会让「筛不出来」显示成「全部客户」，
+	// 而那正好是运营最可能相信的结果（数字变大了，看起来像筛对了）。
+	segIDs, segErr := h.segmentCustomerIDs(ctx, filter)
+	if segErr != "" {
+		pageErr = customerFirstNonEmpty(pageErr, segErr)
+	}
+
 	var list *userdto.CustomerListResp
 	switch {
 	case h.users == nil:
 		// 能力未装配：给出说明而不是 500，也不渲染一个点了必然失败的按钮。
 		pageErr = customerFirstNonEmpty(pageErr, userLabelOf(tr, customerUnavailableLabel))
+	case segErr != "":
+		// 分段没取到就不查列表：查出来的是「全部客户」，而页面上写着「新客」。
 	default:
 		res, err := h.users.ListCustomers(ctx, &userdto.CustomerListReq{
 			Keyword:        filter.Keyword,
@@ -231,6 +369,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 			LockedOnly:     filter.Locked,
 			RegisteredFrom: utils.NewJSONTimePtr(customerPageDayStart(filter.RegisteredFrom)),
 			RegisteredTo:   utils.NewJSONTimePtr(customerPageDayEnd(filter.RegisteredTo)),
+			UserIDs:        segIDs,
 			Offset:         (page - 1) * limit,
 			Limit:          limit,
 		})

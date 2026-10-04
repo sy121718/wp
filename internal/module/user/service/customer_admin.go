@@ -55,9 +55,12 @@ func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListRe
 		RegisteredFrom: req.RegisteredFrom.TimePtr(),
 		RegisteredTo:   req.RegisteredTo.TimePtr(),
 		LockedOnly:     req.LockedOnly,
-		Now:            now,
-		Offset:         offset,
-		Limit:          limit,
+		// 分段筛选（nil = 不限制，空切片 = 零个人）：原样透传，不在中间折算成
+		// 「长度是否为 0」—— 那一步一旦写成 `if len(...) > 0`，空分段就会变成「全部客户」。
+		UserIDs: req.UserIDs,
+		Now:     now,
+		Offset:  offset,
+		Limit:   limit,
 	})
 	if lerr != nil {
 		return nil, lerr

@@ -36,8 +36,17 @@ type CustomerListReq struct {
 	// 到点自己过期，停用是管理动作。做成独立开关而不是塞进 Status 的某个取值，
 	// 否则「已锁定的正常账号」这个真实存在的组合无法表达。
 	LockedOnly bool
-	Offset     int
-	Limit      int
+	// UserIDs 把结果限定为这批客户（**nil = 不限制；空切片 = 限定为零个人**）。
+	//
+	// 来源是订单模块的客户分段（见 ordercontract.CustomerSegmentReader）：
+	// 「新客 / 回头客 / 复购」那几条口径只有看得到 orders 表的一侧答得出来，
+	// 客户模块拿到 id 之后再筛自己的行。
+	//
+	// **nil 与空切片必须区别对待**：分段筛出 0 个人时若当成「不限制」，
+	// 页面会把「这个分段没人」显示成「全部客户」—— 看起来完全正常。
+	UserIDs []int64
+	Offset  int
+	Limit   int
 }
 
 // CustomerStatusAll 列表筛选里「状态不过滤」的取值。

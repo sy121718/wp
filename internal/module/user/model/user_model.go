@@ -149,8 +149,17 @@ type UserFilter struct {
 	// 管理员有时要查「谁注销过」，所以这里给一个显式开关，而不是让默认查询看得见 ——
 	// 默认可见会让各处忘记过滤，把注销用户当成正常用户。
 	IncludeDeleted bool
-	Offset         int
-	Limit          int
+	// UserIDs 把结果限定为这批主键（**nil 表示不限制；空切片表示限定为零个人**）。
+	//
+	// nil 与空切片必须区别对待：客户列表按「新客」筛选时，订单模块可能返回一批 id，
+	// 也可能返回**零个** id（这个分段确实没人）。两者都写进同一个字段，若把空切片
+	// 当成 nil 处理，页面会把「这个分段一个客户都没有」显示成「全部客户」——
+	// 而那个结果看起来完全正常。
+	//
+	// SQL 里 IN () 是语法错误，所以空切片在构造查询前直接短路返回空结果。
+	UserIDs []int64
+	Offset  int
+	Limit   int
 }
 
 // Create 新建用户（唯一索引冲突由 service 转成业务错误）。
@@ -256,6 +265,13 @@ func (m *UserModel) List(ctx context.Context, f UserFilter) (list []*UserEntity,
 	}
 	if f.RegisteredTo != nil {
 		q = q.Where("registered_at <= ?", *f.RegisteredTo)
+	}
+	if f.UserIDs != nil {
+		if len(f.UserIDs) == 0 {
+			// 限定为零个人：直接返回空结果，不必查库（IN () 是 SQL 语法错误）。
+			return []*UserEntity{}, 0, nil
+		}
+		q = q.Where("id IN ?", f.UserIDs)
 	}
 	if err = q.Count(&total).Error; err != nil {
 		return nil, 0, err
