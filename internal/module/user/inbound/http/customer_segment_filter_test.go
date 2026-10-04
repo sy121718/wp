@@ -192,3 +192,59 @@ func TestCustomersPageWithoutSegmentDoesNotQuerySegment(t *testing.T) {
 		t.Error("没选分段时 UserIDs 必须是 nil（不限制），而不是空切片（零个人）")
 	}
 }
+
+// TestCustomersPageMinOrdersFiltersByIDList 只给次数（没给分段）也要能筛。
+//
+// 「下过 ≥5 单的客户」本身就是完整的一句话，不选分段也该成立；订单模块收到的是
+// 空 segment + 次数，由它按「复购」处理（同一段代码，见 order_customer_segment.go）。
+func TestCustomersPageMinOrdersFiltersByIDList(t *testing.T) {
+	seg := &fakeSegmentReader{ids: []int64{41, 42}}
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	h.SetCustomerSegments(seg)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?minOrders=5", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if seg.got == nil {
+		t.Fatal("给了次数却没有向订单模块取 id 列表")
+	}
+	if seg.got.MinOrders != 5 {
+		t.Errorf("次数档位应为 5，实得 %d", seg.got.MinOrders)
+	}
+	if seg.got.Segment != "" {
+		t.Errorf("没选分段时 Segment 应为空（由订单模块按复购处理），实得 %q", seg.got.Segment)
+	}
+	if admin.lastListRe == nil || len(admin.lastListRe.UserIDs) != 2 {
+		t.Errorf("id 列表应原样传给客户列表，实得 %+v", admin.lastListRe)
+	}
+	// 翻页链接必须带上次数，否则翻第二页会静默变回全部客户。
+	if !strings.Contains(rec.Body.String(), "minOrders=5") {
+		t.Error("翻页/计数链接应保留 minOrders")
+	}
+}
+
+// TestCustomersPageMinOrdersUnknownFallsBack URL 是用户可编辑的：
+// 不在这几个档位里的一律回落「不限次数」，且**不该**回落到默认门槛 2
+// （回落成 2 会让 URL 上写着 7 的筛选实际跑的是 2，结果看起来正常却少了一半人）。
+func TestCustomersPageMinOrdersUnknownFallsBack(t *testing.T) {
+	seg := &fakeSegmentReader{ids: []int64{41}}
+	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
+	h.SetCustomerSegments(seg)
+	engine := newCustomerTestEngine(h)
+
+	for _, bad := range []string{"7", "0", "-3", "abc", "2.5"} {
+		seg.call, seg.got = 0, nil
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?minOrders="+bad, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("minOrders=%q 不该让整页报错，实得 %d", bad, rec.Code)
+		}
+		if seg.call != 0 {
+			t.Errorf("minOrders=%q 应回落成「不按次数筛」，实际却去查了订单模块（%+v）", bad, seg.got)
+		}
+	}
+}

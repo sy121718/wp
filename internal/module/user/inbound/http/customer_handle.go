@@ -236,6 +236,11 @@ type customerFilter struct {
 	// 不能合成一个日期控件 —— 「这周来的新客」与「这周注册的人」是两批人。
 	SegmentFrom string
 	SegmentTo   string
+	// MinOrders 复购次数下限（0 = 用默认门槛）。
+	//
+	// 它单独存在（而不是并进 Segment）：「下过 ≥3 单的客户」本身就是完整的一句话，
+	// 不选分段也该能筛。给了次数不选分段时，订单模块按「复购」处理（同一段代码）。
+	MinOrders int
 }
 
 // customerPageSegment 分段查询值 → 已知分段（认不出一律回落「全部」）。
@@ -258,6 +263,22 @@ const (
 	customerSegmentRepurchasing = "repurchasing"
 )
 
+// customerSegmentMinOrders 复购次数的可选档位（与订单模块的白名单同集合）。
+//
+// 收任意值的话，「≥ 7 次」这种档位会出现在 URL 里并被分享、被回放；不在这张表里的
+// 一律回落 0（= 不按次数筛，而不是回落到默认门槛 2 —— 回落会让 URL 上写着 7 的筛选
+// 实际跑的是 2，结果看起来正常却少了一半人）。
+var customerSegmentMinOrders = map[int]bool{2: true, 3: true, 5: true, 10: true}
+
+// customerPageMinOrders 次数查询值 → 已知档位（认不出一律回落 0）。
+func customerPageMinOrders(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || !customerSegmentMinOrders[n] {
+		return 0
+	}
+	return n
+}
+
 // segmentCustomerIDs 把「消费分段 + 时间窗口」换成一批客户 id。
 //
 // 返回值是三态（调用方据此决定「不筛 / 筛 / 报错」）：
@@ -271,7 +292,7 @@ const (
 // 工程取第一个（与客户概览页同规则）：客户列表页没有工程选择器，
 // 而分段口径是工程维度的 —— 不选工程就没法算。
 func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerFilter) ([]int64, string) {
-	if f.Segment == "" {
+	if f.Segment == "" && f.MinOrders == 0 {
 		return nil, ""
 	}
 	if h.segments == nil {
@@ -295,6 +316,7 @@ func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerF
 		From:      from,
 		To:        to,
 		Segment:   f.Segment,
+		MinOrders: f.MinOrders,
 		// 取满上限：这一批 id 要当客户列表的过滤条件用，列表自己还会分页。
 		Limit: customerSegmentFilterLimit,
 	})
@@ -352,6 +374,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		Segment:        customerPageSegment(c.Query("segment")),
 		SegmentFrom:    strings.TrimSpace(c.Query("segmentFrom")),
 		SegmentTo:      strings.TrimSpace(c.Query("segmentTo")),
+		MinOrders:      customerPageMinOrders(c.Query("minOrders")),
 	}
 
 	// 回显走 customerPageFacingText（判定 + 取译文）：白名单里是 item_key，

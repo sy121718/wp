@@ -15,8 +15,13 @@ type CustomerSegmentIDsReq struct {
 	To        string `form:"to" json:"to"`
 	// Segment 取 "new" / "returning" / "repurchasing"（白名单，见 model 的 CustomerSegment）。
 	Segment string `form:"segment" json:"segment"`
-	Limit   int    `form:"limit" json:"limit"`
-	Offset  int    `form:"offset" json:"offset"`
+	// MinOrders 复购次数下限（只对 segment = repurchasing 有意义；0 = 用默认门槛）。
+	//
+	// 它让「复购 ≥ 3 次」这种筛选与「复购」走同一段代码：单独开一个 segment 名
+	// 会让「什么是复购」在代码里出现第二个定义。
+	MinOrders int `form:"minOrders" json:"minOrders"`
+	Limit     int `form:"limit" json:"limit"`
+	Offset    int `form:"offset" json:"offset"`
 }
 
 // CustomerSegmentIDsResp 分段内的客户 id 与总数。
@@ -32,4 +37,9 @@ type CustomerSegmentIDsResp struct {
 	UserIDs []int64 `json:"userIds"`
 	// Total 分段内的客户总数。
 	Total int64 `json:"total"`
+	// MinOrders 实际生效的复购次数门槛（0 = 该分段不看次数）。
+	//
+	// 回显它是为了让调用方能核对「我筛的是不是我以为的那一档」——
+	// 页面把筛选条件回显给用户时用的就是这个值，而不是 URL 参数。
+	MinOrders int `json:"minOrders"`
 }

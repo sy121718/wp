@@ -226,6 +226,8 @@ func init() {
 	registerCustomerCohortMenu()
 	// 562：群组留存页词条（见 register_customer_cohort_i18n.go）。
 	registerCustomerCohortI18n()
+	// 563：客户列表「复购次数」筛选词条（见 register_customer_min_orders_i18n.go）。
+	registerCustomerMinOrdersI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

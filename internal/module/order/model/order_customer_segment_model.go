@@ -14,6 +14,7 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -38,18 +39,39 @@ const (
 	CustomerSegmentRepurchasing CustomerSegment = "repurchasing"
 )
 
+// customerRepurchaseMinOrders 复购的默认门槛（「复购」= 区间内下单 ≥ 这个数）。
+//
+// 这是**唯一**真源：客户概览的复购数、列表按「复购」筛、列表按自定义次数筛，
+// 三处都从这里出发。各写一份字面量 2 的话，改一处不会让另一处变红，
+// 只会让两个页面对「什么算复购」给出不同答案。
+const customerRepurchaseMinOrders = 2
+
+// customerRepurchaseWhere 复购条件（次数下限）。
+//
+// minOrders < 2 时回落到默认门槛；除此之外不接受调用方给的数字之外的任何东西 ——
+// 拼进 SQL 的是一个 int（不是字符串），所以不存在注入面；调用方的档位白名单在 service。
+func customerRepurchaseWhere(minOrders int) string {
+	if minOrders < customerRepurchaseMinOrders {
+		minOrders = customerRepurchaseMinOrders
+	}
+	return fmt.Sprintf("r.order_count >= %d", minOrders)
+}
+
 // customerSegmentWhere 段名 → SQL 条件片段（**白名单**，不接受调用方拼进来的任何字符串）。
 //
 // 返回的第二个值表示「这个条件是否需要区间上界参数」—— 拼 SQL 与拼参数必须同步进行，
 // 让调用方自己数参数个数迟早会数错，而数错的后果是参数错位（不报错、结果全错）。
-func customerSegmentWhere(segment CustomerSegment) (where string, needsFrom bool, ok bool) {
+//
+// minOrders 只对 repurchasing 有意义（其余分段忽略）：它让「复购 ≥ 3 次」这种筛选
+// 与「复购（默认 ≥ 2 次）」走**同一段代码**，而不是各写一条 SQL。
+func customerSegmentWhere(segment CustomerSegment, minOrders int) (where string, needsFrom bool, ok bool) {
 	switch segment {
 	case CustomerSegmentNew:
 		return customerSegmentWhereNew, true, true
 	case CustomerSegmentReturning:
 		return customerSegmentWhereReturning, true, true
 	case CustomerSegmentRepurchasing:
-		return customerSegmentWhereRepurchasing, false, true
+		return customerRepurchaseWhere(minOrders), false, true
 	}
 	return "", false, false
 }
@@ -72,14 +94,14 @@ SELECT r.user_id, COUNT(*) OVER () AS total
 //
 // projectID 必填、区间必填：orders 带 FORCE 策略，缺作用域在非超级角色下静默返回空集，
 // 调用方拿到的会是「这个分段一个人都没有」—— 与真实的空分段无法区分。
-func (m *OrderModel) CustomerSegmentIDsByRange(ctx context.Context, projectID string, from, to time.Time, segment CustomerSegment, limit, offset int) (ids []int64, total int64, err error) {
+func (m *OrderModel) CustomerSegmentIDsByRange(ctx context.Context, projectID string, from, to time.Time, segment CustomerSegment, minOrders, limit, offset int) (ids []int64, total int64, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, 0, ErrProjectRequired
 	}
 	if from.IsZero() || to.IsZero() {
 		return nil, 0, ErrRangeRequired
 	}
-	where, needsFrom, ok := customerSegmentWhere(segment)
+	where, needsFrom, ok := customerSegmentWhere(segment, minOrders)
 	if !ok {
 		return nil, 0, ErrSegmentUnknown
 	}

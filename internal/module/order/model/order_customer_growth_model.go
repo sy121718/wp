@@ -58,9 +58,10 @@ firsts AS (
 // ranged 里 order_count 已经限定在区间内，firsts 里 first_at 是不限区间的首单时刻：
 //   - new：首单落在区间内；
 //   - returning：首单在区间之前（老客）；
-//   - repurchasing：区间内 ≥ 2 单。
+//   - repurchasing：区间内下单 ≥ customerRepurchaseMinOrders。
 //
-// 三个条件各自需要一个区间参数（new / returning 各一个上界；repurchasing 无参数）。
+// new / returning 条件各需要一个区间参数（上界）。repurchasing 的次数门槛不在这里
+// 另写字面量：orderCustomerGrowthSQL 用 customerRepurchaseWhere 拼同一段条件。
 const (
 	customerSegmentWhereNew          = "f.first_at >= ?"
 	customerSegmentWhereReturning    = "f.first_at < ?"
@@ -87,11 +88,14 @@ const (
 // 一处，页面与 AI 都不重算（两个消费方各算一次必然分叉）。
 //
 // 参数顺序（按 ? 出现顺序）：见 orderCustomerCTEs，随后三个 FILTER 的区间上界各一次。
-const orderCustomerGrowthSQL = orderCustomerCTEs + `
+//
+// `customerRepurchaseWhere(0)` 在包初始化时求值（纯函数，回落默认门槛）：
+// 「什么算复购」因此与列表筛选共用同一个定义，而不是两处各写一个 2。
+var orderCustomerGrowthSQL = orderCustomerCTEs + `
 SELECT COUNT(*) AS ordering_customers,
        COUNT(*) FILTER (WHERE f.first_at >= ?) AS new_customers,
-       COUNT(*) FILTER (WHERE f.first_at < ? AND r.order_count >= 2) AS new_repurchasers,
-       COUNT(*) FILTER (WHERE r.order_count >= 2) AS repurchasers,
+       COUNT(*) FILTER (WHERE f.first_at < ? AND ` + customerRepurchaseWhere(0) + `) AS new_repurchasers,
+       COUNT(*) FILTER (WHERE ` + customerRepurchaseWhere(0) + `) AS repurchasers,
        COUNT(*) FILTER (WHERE f.first_at < ?) AS returning_customers
   FROM ranged r
   JOIN firsts f ON f.user_id = r.user_id`

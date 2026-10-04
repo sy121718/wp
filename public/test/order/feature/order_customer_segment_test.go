@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	orderdto "go_wp/internal/module/order/dto"
+	ordermodel "go_wp/internal/module/order/model"
 )
 
 func TestCustomerSegmentIDsReconcileWithGrowth(t *testing.T) {
@@ -156,5 +157,39 @@ func TestCustomerSegmentRejectsUnknownName(t *testing.T) {
 		if _, err := svc.CustomerSegmentIDsByRange(context.Background(), req); err == nil {
 			t.Errorf("期望报错，实得 nil：%+v", req)
 		}
+	}
+}
+
+// TestCustomerSegmentMinOrdersWhitelist 复购次数档位是白名单（2/3/5/10），其余当场拒。
+//
+// 页面侧已经把认不出的值回落成 0（不按次数筛），所以只有**直接调服务**才暴露这一层 ——
+// 而 AI 工具与将来别的调用方就是直接调的。静默收下 7 会让调用方以为自己筛的是
+// 「≥7 单」，实际跑的是默认门槛 2。
+func TestCustomerSegmentMinOrdersWhitelist(t *testing.T) {
+	_, m, svc := newRangeFixture(t)
+	if svc == nil {
+		t.Skip("无数据库")
+	}
+	if _, _, err := m.CustomerSegmentIDsByRange(context.Background(), summaryProjectA, rangeTime(1), rangeTime(5),
+		ordermodel.CustomerSegmentRepurchasing, 5, 10, 0); err != nil {
+		t.Fatalf("合法档位不该报错: %v", err)
+	}
+	for _, bad := range []int{1, 4, 7, -1} {
+		if _, err := svc.CustomerSegmentIDsByRange(context.Background(), &orderdto.CustomerSegmentIDsReq{
+			ProjectID: summaryProjectA, From: "2026-09-01", To: "2026-09-05",
+			Segment: "repurchasing", MinOrders: bad,
+		}); err == nil {
+			t.Errorf("档位 %d 不在白名单里，应报错", bad)
+		}
+	}
+	// 只给次数不给分段：按「复购」处理（返回的 Segment 要能看出这一点）。
+	res, err := svc.CustomerSegmentIDsByRange(context.Background(), &orderdto.CustomerSegmentIDsReq{
+		ProjectID: summaryProjectA, From: "2026-09-01", To: "2026-09-05", MinOrders: 3,
+	})
+	if err != nil {
+		t.Fatalf("只给次数不该报错: %v", err)
+	}
+	if res.Segment != "repurchasing" || res.MinOrders != 3 {
+		t.Errorf("只给次数应按复购处理并回显档位，实得 segment=%q minOrders=%d", res.Segment, res.MinOrders)
 	}
 }

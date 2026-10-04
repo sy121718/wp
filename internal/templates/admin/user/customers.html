@@ -23,6 +23,7 @@
 {{fSegment := .FilterSegment}}
 {{fSegmentFrom := .FilterSegmentFrom}}
 {{fSegmentTo := .FilterSegmentTo}}
+{{fMinOrders := .FilterMinOrders}}
 {{fPage := .Page}}
 {{fLimit := .Limit}}
 <div class="stack customers-page">
@@ -100,6 +101,15 @@
                         <option value="returning"{{if fSegment == "returning"}} selected{{end}}>{{ .["t"]("admin.customers.segment.returning", "回头客（首单在这段时间之前）") }}</option>
                         <option value="repurchasing"{{if fSegment == "repurchasing"}} selected{{end}}>{{ .["t"]("admin.customers.segment.repurchasing", "复购（这段时间内 ≥2 单）") }}</option>
                     </select>
+                    <label for="customers-filter-minOrders">{{ .["t"]("admin.customers.field.min_orders", "复购次数") }}</label>
+                    <select class="form-select" id="customers-filter-minOrders" name="minOrders">
+                        <option value=""{{if fMinOrders == ""}} selected{{end}}>{{ .["t"]("admin.customers.minOrders.any", "不限次数") }}</option>
+                        <option value="2"{{if fMinOrders == "2"}} selected{{end}}>{{ .["t"]("admin.customers.minOrders.2", "下过 ≥2 单") }}</option>
+                        <option value="3"{{if fMinOrders == "3"}} selected{{end}}>{{ .["t"]("admin.customers.minOrders.3", "下过 ≥3 单") }}</option>
+                        <option value="5"{{if fMinOrders == "5"}} selected{{end}}>{{ .["t"]("admin.customers.minOrders.5", "下过 ≥5 单") }}</option>
+                        <option value="10"{{if fMinOrders == "10"}} selected{{end}}>{{ .["t"]("admin.customers.minOrders.10", "下过 ≥10 单") }}</option>
+                    </select>
+                    <span class="text-mute text-sm">{{ .["t"]("admin.customers.minOrders.note", "下单次数只算所选时间段内的订单；不选时间就是本月。") }}</span>
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.segment.note", "不选时间就是本月；只统计已付款及以后的订单，游客单不计入。") }}</span>
                 </div>
                 <div class="filter-field">
@@ -145,6 +155,7 @@
             {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
                列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
             <input type="hidden" name="segment" value="{{fSegment}}">
+            <input type="hidden" name="minOrders" value="{{fMinOrders}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
@@ -259,6 +270,7 @@
             {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
                列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
             <input type="hidden" name="segment" value="{{fSegment}}">
+            <input type="hidden" name="minOrders" value="{{fMinOrders}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
@@ -276,6 +288,7 @@
             {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
                列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
             <input type="hidden" name="segment" value="{{fSegment}}">
+            <input type="hidden" name="minOrders" value="{{fMinOrders}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">

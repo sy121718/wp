@@ -33,6 +33,13 @@ const (
 // 这里再判一遍而不是直接交给 model：service 是**对外契约的边界**，
 // 让一个拼错的分段名走到 model 才被拒，错误类型会从「参数不对」变成「模型层未知分段」，
 // 调用方（HTTP / AI 工具）拿到的东西就不可判了。
+// customerSegmentMinOrdersAllowed 复购次数的可选档位（下拉给固定几档，不收任意值）。
+//
+// 收任意值的话，「≥ 7 次」这种档位会出现在 URL 里并被分享、被回放 ——
+// 而运营真正需要的档位只有下面这几个。不在这里的一律拒（不静默回落到默认门槛：
+// 回落会让 URL 上写着 7 的筛选实际跑的是 2，结果看起来正常却少了一半人）。
+var customerSegmentMinOrdersAllowed = map[int]bool{2: true, 3: true, 5: true, 10: true}
+
 var knownCustomerSegments = map[string]ordermodel.CustomerSegment{
 	"new":          ordermodel.CustomerSegmentNew,
 	"returning":    ordermodel.CustomerSegmentReturning,
@@ -48,7 +55,17 @@ func (s *Service) CustomerSegmentIDsByRange(ctx context.Context, req *orderdto.C
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, errors.New(orderenums.ErrProjectRequired)
 	}
-	segment, ok := knownCustomerSegments[strings.TrimSpace(req.Segment)]
+	// 只给了次数（没给分段名）时按「复购」处理：这是同一个筛选（区间内下单 ≥ N 单），
+	// 单独开一个分段名会让「什么算复购」在代码里出现第二个定义。
+	name := strings.TrimSpace(req.Segment)
+	minOrders := req.MinOrders
+	if minOrders != 0 && !customerSegmentMinOrdersAllowed[minOrders] {
+		return nil, errors.New(orderenums.ErrInvalidParam)
+	}
+	if name == "" && minOrders > 0 {
+		name = string(ordermodel.CustomerSegmentRepurchasing)
+	}
+	segment, ok := knownCustomerSegments[name]
 	if !ok {
 		return nil, errors.New(orderenums.ErrInvalidParam)
 	}
@@ -58,7 +75,7 @@ func (s *Service) CustomerSegmentIDsByRange(ctx context.Context, req *orderdto.C
 	}
 	limit, offset := utils.NormalizeLimitOffset(req.Limit, req.Offset, customerSegmentDefaultLimit, customerSegmentMaxLimit)
 
-	ids, total, err := s.orders.CustomerSegmentIDsByRange(ctx, req.ProjectID, from, to, segment, limit, offset)
+	ids, total, err := s.orders.CustomerSegmentIDsByRange(ctx, req.ProjectID, from, to, segment, minOrders, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -69,9 +86,10 @@ func (s *Service) CustomerSegmentIDsByRange(ctx context.Context, req *orderdto.C
 		ProjectID: req.ProjectID,
 		From:      from.Format(utils.LayoutDay),
 		// to 是半开上界（次日零点），减一天才是用户看到的「结束日」（同 CustomerGrowthByRange）。
-		To:      to.AddDate(0, 0, -1).Format(utils.LayoutDay),
-		Segment: string(segment),
-		UserIDs: ids,
-		Total:   total,
+		To:        to.AddDate(0, 0, -1).Format(utils.LayoutDay),
+		Segment:   string(segment),
+		MinOrders: minOrders,
+		UserIDs:   ids,
+		Total:     total,
 	}, nil
 }
