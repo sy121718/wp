@@ -1085,7 +1085,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    admin_dashboard_ui012 那条「模板里不许出现内联 style 属性」的判据。 */
 .grid-split {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
     gap: var(--ui-sp-md);
     align-items: start;
 }

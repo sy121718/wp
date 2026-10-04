@@ -93,7 +93,7 @@
                 <p class="empty-desc">{{ .["t"]("admin.dashboard.top.empty", "这段时间没有已付款的订单") }}</p>
             </div>
             {{else}}
-            <div class="table-wrap">
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.top.title", "热销商品（近 7 天）") }}">
                 <table class="data-table">
                     <thead>
                     <tr>
