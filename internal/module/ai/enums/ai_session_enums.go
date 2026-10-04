@@ -92,6 +92,48 @@ const (
 	CallStatusError CallStatus = "error"
 )
 
+// ToolCallStatus 是 ai_tool_call_log.status 的取值：一次**工具调用**的结果分类。
+//
+// 比 CallStatus 多两态（args_error / forbidden）：那两类不是系统故障，
+// 而是「模型参数给错」与「调用者没权限」——安全审计要能一眼分出来，
+// 否则「被拒了多少次」会混进「工具坏了多少次」里。
+type ToolCallStatus string
+
+const (
+	// ToolCallStatusOK 工具正常执行并返回了结果（结果可能被剪枝，见 truncated 列）。
+	ToolCallStatusOK ToolCallStatus = "ok"
+	// ToolCallStatusArgsError 模型给的参数不合 schema：可据此改参重试，不是故障。
+	ToolCallStatusArgsError ToolCallStatus = "args_error"
+	// ToolCallStatusForbidden 调用者缺少该工具对应权限点的权限（安全审计最关心这一类）。
+	ToolCallStatusForbidden ToolCallStatus = "forbidden"
+	// ToolCallStatusFailed 其余失败：工具不存在 / 执行报错 / 上下文取消。
+	ToolCallStatusFailed ToolCallStatus = "failed"
+)
+
+// IsValidToolCallStatus 判断取值是否在白名单内（写入口必须先过这一关）。
+func IsValidToolCallStatus(s ToolCallStatus) bool {
+	switch s {
+	case ToolCallStatusOK, ToolCallStatusArgsError, ToolCallStatusForbidden, ToolCallStatusFailed:
+		return true
+	}
+	return false
+}
+
+// ToolCallStatusLabel 返回中文标签（后台列表直接渲染，与 SessionStatusLabel 同口径）。
+func ToolCallStatusLabel(s ToolCallStatus) string {
+	switch s {
+	case ToolCallStatusOK:
+		return "成功"
+	case ToolCallStatusArgsError:
+		return "参数错误"
+	case ToolCallStatusForbidden:
+		return "无权限"
+	case ToolCallStatusFailed:
+		return "失败"
+	}
+	return string(s)
+}
+
 // SessionStatusLabel 返回中文标签（后台列表直接渲染，不走 i18n 词条：状态是运维口径）。
 func SessionStatusLabel(s SessionStatus) string {
 	if s == SessionActive {

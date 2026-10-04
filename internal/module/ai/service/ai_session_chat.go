@@ -53,6 +53,18 @@ type ChatPort interface {
 	Chat(ctx context.Context, req *aidto.ChatReq) (*aidto.ChatResult, error)
 }
 
+// ToolRunResult 一次工具执行的结论。
+//
+// 为什么要分类而不是只回文本：文本是**给模型看的**（成功是结果、失败是一句能力范围内的交代），
+// 而审计要的是**给运维与安全看的**结论 —— 「模型参数给错」和「这个账号没权限」
+// 在文本上都是「工具执行失败」，混在一起就答不出「被拒了多少次」。
+type ToolRunResult struct {
+	// Text 回给模型 / 落进工具事件的文本。
+	Text string
+	// Status 结论分类（见 aienums.ToolCallStatus）。装配层留空时按失败记 —— 拿不准就别记成功。
+	Status aienums.ToolCallStatus
+}
+
 // ToolProvider 会话层需要的「工具清单 + 执行」能力，由装配层注入。
 //
 // 未注入 = 不带工具的一问一答。这与 ChatPort 未注入时的处理**刻意不同**：
@@ -69,7 +81,7 @@ type ToolProvider interface {
 	// 契约：**业务性失败也必须以文本返回**（越权、参数不合法、查库失败）——
 	// 那些话要由模型转述给用户（「你没有权限查订单」是用户能得到的最好回答）。
 	// error 只用于「这轮对话不该继续」（上下文取消），由本层上抛。
-	Run(ctx context.Context, userID int64, name, arguments string) (string, error)
+	Run(ctx context.Context, userID int64, name, arguments string) (ToolRunResult, error)
 }
 
 // SetChatPort 注入对话能力；未注入时 SendMessage 回 ErrSessionChatUnavailable（不 panic）。
@@ -211,7 +223,7 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 			if err != nil {
 				return nil, err
 			}
-			text := s.runTool(ctx, req.UserID, call)
+			text := s.runTool(ctx, sessionID, req.UserID, call)
 			resultRes, err := s.appendToolEvent(ctx, sessionID, req, providerKey, model, call, toolPhaseResult, text)
 			if err != nil {
 				return nil, err
@@ -325,7 +337,7 @@ func (s *SessionService) toolSpecs() []aidto.ToolSpec {
 	return s.tools.Specs()
 }
 
-// runTool 执行一次工具调用，把结果或失败文案回给模型。
+// runTool 执行一次工具调用，把结果或失败文案回给模型，并落一条审计流水。
 //
 // 失败**不中断对话**：模型需要知道「这次没查到」，才能回答「查询失败，请稍后再试」
 // 而不是自己编一个数字。所以业务性失败回一段归口文案继续往下走；
@@ -333,27 +345,66 @@ func (s *SessionService) toolSpecs() []aidto.ToolSpec {
 //
 // 失败原文一律只进日志：工具错误里可能带连接串、表名、内部路径，
 // 而它会经模型的嘴出现在页面上。
-func (s *SessionService) runTool(ctx context.Context, userID int64, call aidto.ToolCall) string {
-	if s.tools == nil {
-		return facingToolText(aienums.ErrToolRunFailed)
+//
+// 审计在这里写而不是在装配层：本层**同时**看得到会话、账号、工具、结论与耗时，
+// 且「模型看到的结果」正是在这里成形（剪枝后）—— 审计与上下文必须对同一份文本，
+// 否则「审计说 320 字、模型看到 4000 字」这类账对不上。
+//
+// 注意异常路径的文案是固定的 ErrToolRunFailed，不按 status 挑：
+// 「参数不合法」「没有权限」这两类由装配层给出**具体**文本（含缺了哪个字段、
+// 缺哪个权限点），本层拿不到那些细节，硬挑一个笼统的译法反而把有用信息盖掉。
+func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, call aidto.ToolCall) string {
+	start := time.Now()
+	// fail 是异常路径的统一出口：顺手把审计写了，
+	// 免得下面几个提前 return 各写一遍（漏一个就少一条流水）。
+	fail := func(status aienums.ToolCallStatus) string {
+		text := facingToolText(aienums.ErrToolRunFailed)
+		e := newToolCallLog(sessionID, userID, call.Name, call.Arguments, time.Since(start))
+		e.Status = string(status)
+		e.ErrorKey = toolErrorKeyOf(status)
+		e.ResultSummary = summarizeForLog(text)
+		e.ResultLen = int64(len([]rune(text)))
+		s.logToolCallAsync(ctx, e)
+		return text
 	}
-	text, err := s.tools.Run(ctx, userID, call.Name, call.Arguments)
+
+	if s.tools == nil {
+		return fail(aienums.ToolCallStatusFailed)
+	}
+	res, err := s.tools.Run(ctx, userID, call.Name, call.Arguments)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			// 上下文已取消：这一轮不该继续，但也没必要把整个会话打断 ——
 			// 回一句失败文案让上层照常收尾（用户在页面上看到的是「工具执行失败」而不是 500）。
 			logger.Scene("ai").With("tool", call.Name).Error(ctxErr, "工具调用被取消")
-			return facingToolText(aienums.ErrToolRunFailed)
+			return fail(aienums.ToolCallStatusFailed)
 		}
 		logger.Scene("ai").With("tool", call.Name).With("user", userID).Error(err, "工具执行失败")
-		return facingToolText(aienums.ErrToolRunFailed)
+		return fail(aienums.ToolCallStatusFailed)
 	}
+	status := res.Status
+	if !aienums.IsValidToolCallStatus(status) {
+		// 装配层没给分类（或给了白名单外的值）：按失败记。拿不准就别记成功 ——
+		// 审计表里每一条「成功」都应该是真的成功了。
+		status = aienums.ToolCallStatusFailed
+	}
+
+	// 剪枝：结果进上下文之前先收一次，剪枝标记一并回给模型（见 pruneToolResult）。
+	text, truncated := pruneToolResult(res.Text)
 	// 空文本不能作为 tool 消息内容：上游会把它当成「没有内容」，
 	// 而模型看到的是「调用成功了但什么都没返回」—— 与失败无法区分。
 	if strings.TrimSpace(text) == "" {
 		logger.Scene("ai").With("tool", call.Name).Warn("工具返回了空结果")
-		return facingToolText(aienums.ErrToolRunFailed)
+		return fail(status)
 	}
+
+	e := newToolCallLog(sessionID, userID, call.Name, call.Arguments, time.Since(start))
+	e.Status = string(status)
+	e.ErrorKey = toolErrorKeyOf(status)
+	e.ResultSummary = summarizeForLog(text)
+	e.ResultLen = int64(len([]rune(res.Text)))
+	e.Truncated = truncated
+	s.logToolCallAsync(ctx, e)
 	return text
 }
 

@@ -52,6 +52,9 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	if toolRegistry != nil {
 		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, casbinAuthorizer)})
 	}
+	// 工具调用流水（审计）：写法与调用流水一致（旁路观测、异步写）。
+	// 未注入时审计是空操作 —— 审计写不进去不该让对话失败（见 ai_tool_call_log.go）。
+	sessionSvc.SetToolCallLogWriter(aimodel.NewToolCallLogModel(db))
 	// 调用流水的读侧（悬浮卡的「最近调用」）。
 	sessionSvc.SetCallLogReader(callLog)
 	sessionHandle := NewSessionHandle(sessionSvc)

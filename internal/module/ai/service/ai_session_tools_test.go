@@ -29,18 +29,24 @@ import (
 )
 
 // stubToolProvider 假工具端口：记录调用、回固定文本。
+//
+// status 留空表示用例不关心分类（服务层会把空值当失败记，但本文件不查审计）。
 type stubToolProvider struct {
-	specs []aidto.ToolSpec
-	text  string
-	err   error
-	runs  []string
+	specs  []aidto.ToolSpec
+	text   string
+	status aienums.ToolCallStatus
+	err    error
+	runs   []string
 }
 
 func (s *stubToolProvider) Specs() []aidto.ToolSpec { return s.specs }
 
-func (s *stubToolProvider) Run(_ context.Context, _ int64, name, arguments string) (string, error) {
+func (s *stubToolProvider) Run(_ context.Context, _ int64, name, arguments string) (aiservice.ToolRunResult, error) {
 	s.runs = append(s.runs, name+" "+arguments)
-	return s.text, s.err
+	if s.err != nil {
+		return aiservice.ToolRunResult{}, s.err
+	}
+	return aiservice.ToolRunResult{Text: s.text, Status: s.status}, nil
 }
 
 // ordersSummarySpec 一条工具声明（内容与真实 tools 无关，用例只验证「传下去了」）。

@@ -14,6 +14,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
+	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 )
@@ -83,19 +84,21 @@ func (p *toolProvider) Specs() []aidto.ToolSpec {
 // 契约（见 aiservice.ToolProvider）：**业务性失败以文本返回**（err = nil），
 // 让模型能转述给用户或据此改正；error 只用于「这轮对话不该继续」。
 // 这里把所有执行错误都翻成文本，因为它们无一例外都属于「模型该知道、用户该被告知」那一类。
-func (p *toolProvider) Run(ctx context.Context, userID int64, name, arguments string) (string, error) {
+func (p *toolProvider) Run(ctx context.Context, userID int64, name, arguments string) (aiservice.ToolRunResult, error) {
 	res, err := p.runner.Run(ctx, userID, name, arguments)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			// 上下文取消由服务层处理（它知道该不该上抛），这里不吞。
-			return "", ctxErr
+			return aiservice.ToolRunResult{}, ctxErr
 		}
-		return failureText(name, err), nil
+		text, status := failureText(name, err)
+		return aiservice.ToolRunResult{Text: text, Status: status}, nil
 	}
-	return res.Text, nil
+	// 成功：结果文本由服务层剪枝后进上下文，这里不预判长度。
+	return aiservice.ToolRunResult{Text: res.Text, Status: aienums.ToolCallStatusOK}, nil
 }
 
-// failureText 把执行错误翻成能回给模型的一句话。
+// failureText 把执行错误翻成「能回给模型的一句话」+「给审计的结论分类」。
 //
 // 分档的判据是「模型拿这句话能做什么」：
 //
@@ -103,19 +106,22 @@ func (p *toolProvider) Run(ctx context.Context, userID int64, name, arguments st
 //	· 越权     → 明确的「没有权限」（用户需要知道这不是故障，而是账号权限问题）；
 //	· 其它     → 统一的失败文案。原文可能带表名、连接串、内部路径，
 //	             而它最终会经模型的嘴出现在页面上。
-func failureText(tool string, err error) string {
+//
+// 分类必须与文案同源返回（一个 error → 一对结果）：分两次判断会让
+// 「文案说没权限、审计记成失败」这种事在改动中悄悄发生。
+func failureText(tool string, err error) (string, aienums.ToolCallStatus) {
 	var argsErr *mcp.ArgsError
 	if errors.As(err, &argsErr) {
-		return argsErr.Msg
+		return argsErr.Msg, aienums.ToolCallStatusArgsError
 	}
 	var permErr *mcp.PermissionError
 	if errors.As(err, &permErr) {
-		return facingKey(aienums.ErrToolForbidden)
+		return facingKey(aienums.ErrToolForbidden), aienums.ToolCallStatusForbidden
 	}
 	// 未知工具名归到这里：模型拼错了名字，对它来说「这次没查成」就够了 ——
 	// 不必告诉用户「工具 orders_sumary 不存在」（那是模型的问题，不是他的）。
 	logger.Scene("ai").With("tool", tool).Error(err, "工具执行失败")
-	return facingKey(aienums.ErrToolRunFailed)
+	return facingKey(aienums.ErrToolRunFailed), aienums.ToolCallStatusFailed
 }
 
 // facingKey 查面向用户的文案并保证非空（未登记时回 key 本身，缺陷可见）。

@@ -181,6 +181,8 @@ func init() {
 	registerAISessionToolsI18n()
 	// 540：概览页 KPI / 趋势 / 热销商品的词条（见 register_dashboard_overview_i18n.go）。
 	registerDashboardOverviewI18n()
+	// 541：模型工具调用流水表 ai_tool_call_log（见 register_ai_tool_call_log.go）。
+	registerAIToolCallLog()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
