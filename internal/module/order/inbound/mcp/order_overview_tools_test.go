@@ -23,10 +23,12 @@ type stubOverview struct {
 	gotDaily  *orderdto.OrderDailySeriesReq
 	gotTop    *orderdto.OrderTopProductsReq
 	gotCounts *orderdto.OrderStatusCountsReq
+	gotItems  *orderdto.OrderSoldQuantityReq
 
 	dailyRes  *orderdto.OrderDailySeriesResp
 	topRes    *orderdto.OrderTopProductsResp
 	countsRes *orderdto.OrderStatusCountsResp
+	itemsRes  *orderdto.OrderSoldQuantityResp
 	err       error
 }
 
@@ -43,6 +45,14 @@ func (s *stubOverview) TopProducts(_ context.Context, req *orderdto.OrderTopProd
 func (s *stubOverview) StatusCounts(_ context.Context, req *orderdto.OrderStatusCountsReq) (*orderdto.OrderStatusCountsResp, error) {
 	s.gotCounts = req
 	return s.countsRes, s.err
+}
+
+// SoldQuantityByRange 属于 ordercontract.OrderOverviewReader，但**没有**对应的 MCP 工具
+// （件数是概览页 KPI 的一格，模型问「一共卖了多少件」走的是同一族的其它工具）。
+// 它必须在这里实现，否则 *stubOverview 不满足那个接口，整个包编译不过。
+func (s *stubOverview) SoldQuantityByRange(_ context.Context, req *orderdto.OrderSoldQuantityReq) (*orderdto.OrderSoldQuantityResp, error) {
+	s.gotItems = req
+	return s.itemsRes, s.err
 }
 
 func mustOverviewTools(t *testing.T, stub *stubOverview) map[string]mcp.Tool {

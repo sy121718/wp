@@ -43,6 +43,7 @@ PLAIN_SCRIPTS=(
   check-contract-deps.sh
   check-dto-immutability.sh
   check-static-scans.sh
+  check-go-vet.sh
   check-page-title.sh
 )
 

@@ -36,6 +36,8 @@ type OrderService interface {
 	ReturnService
 	// CustomerOrderSummaryReader 后台客户管理页的订单摘要（只读，一条方法）。
 	CustomerOrderSummaryReader
+	// CustomerGrowthReader 区间客户增长（只读，一条方法）。
+	CustomerGrowthReader
 	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
 	OrderRangeSummaryReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
@@ -142,6 +144,20 @@ type CustomerOrderSummaryReader interface {
 	// CustomerOrderSummaryOf 累计口径（哪些状态算消费）由订单模块决定，
 	// 调用方只拿到结论，不参与计算。
 	CustomerOrderSummaryOf(ctx context.Context, req *orderdto.CustomerOrderSummaryReq) (res *orderdto.CustomerOrderSummaryResp, err error)
+}
+
+// CustomerGrowthReader 按「工程 + 时间区间」取客户增长事实（只读，一条方法）。
+//
+// 与 CustomerOrderSummaryReader 的分工：那个回答「**这个**客户下过几单、花了多少」，
+// 本接口回答「**这段时间**来了多少新客、多少人回来复购」。前者按客户查、后者按区间查，
+// 合成一个接口只会让两个调用方各自拿到一半用不上的东西。
+//
+// 口径（谁是新人、什么算复购）出自 docs/17 §4.4，实现落在订单模块 ——
+// 客户模块手里只有账号（注册时间、状态），读不到订单表。
+type CustomerGrowthReader interface {
+	// CustomerGrowthByRange 复购率、新客与回头客的划分都由订单模块算好，
+	// 调用方拿到的是结论（含展示用串），不重算任何比例。
+	CustomerGrowthByRange(ctx context.Context, req *orderdto.CustomerGrowthReq) (res *orderdto.CustomerGrowthResp, err error)
 }
 
 // OrderRangeSummaryReader 按「工程 + 时间区间」取订单聚合事实（只读，一条方法）。
