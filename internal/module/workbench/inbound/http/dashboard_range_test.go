@@ -222,3 +222,42 @@ func TestLayoutTrendBarsFitsChart(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildTrendWeeklyMergesViews 周粒度对**浏览量那一侧**同样生效。
+//
+// 按天画一年的柱子看不清，所以长区间要按周聚合 —— 这条对两张图都成立。
+// 只合并销售额而把浏览量留在按天粒度，会让两张图的横坐标对不上（同一个 Tab 组里
+// 两张图共用一根日期轴）。
+func TestBuildTrendWeeklyMergesViews(t *testing.T) {
+	// 先钉用例前提：2026-09-28 是周一（ISO 周起点）。
+	if time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC).Weekday() != time.Monday {
+		t.Fatalf("用例前提不成立：2026-09-28 应是周一")
+	}
+	byDay := map[string]*overviewTrendPoint{
+		"2026-09-29": {Orders: 1, NetSales: 100},
+		"2026-09-30": {Orders: 2, NetSales: 200},
+	}
+	views := map[string]int64{"2026-09-29": 10, "2026-10-01": 5}
+
+	got := buildTrend(byDay, views, true)
+	if len(got) != 1 {
+		t.Fatalf("同一 ISO 周的三天应合并成 1 根柱子，实得 %d：%+v", len(got), got)
+	}
+	p := got[0]
+	if p.Day != "2026-09-28" {
+		t.Errorf("合并后的日期应取那一周的周一（2026-09-28），实得 %s", p.Day)
+	}
+	if p.Orders != 3 || p.NetSales != 300 {
+		t.Errorf("订单侧应合并为 3 单 / 300 分，实得 %d / %d", p.Orders, p.NetSales)
+	}
+	// 10-01 那天没有订单、只有浏览：它也要被并进这根柱子（否则浏览量图会少一截）。
+	if p.Views != 15 {
+		t.Errorf("浏览量应合并为 15（10 + 5，含只有浏览没有订单的那天），实得 %d", p.Views)
+	}
+
+	// 按天时三天各一根。
+	daily := buildTrend(byDay, views, false)
+	if len(daily) != 3 {
+		t.Errorf("按天应得到 3 根柱子（订单两天 + 只有浏览的一天），实得 %d", len(daily))
+	}
+}

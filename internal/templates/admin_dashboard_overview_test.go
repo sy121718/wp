@@ -29,14 +29,16 @@ type tmplOverviewKPI struct {
 }
 
 type tmplTrendPoint struct {
-	Day        string
-	DayLabel   string
-	Orders     int64
-	SalesLabel string
-	HeightPct  int
-	X          int
-	BarWidth   int
-	ShowLabel  bool
+	Day            string
+	DayLabel       string
+	Orders         int64
+	SalesLabel     string
+	Views          int64
+	SalesHeightPct int
+	ViewsHeightPct int
+	X              int
+	BarWidth       int
+	ShowLabel      bool
 }
 
 type tmplTopProduct struct {
@@ -98,8 +100,10 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 			ArticleViews: 88, ShipPendingCount: 3, PendingCount: 2,
 		},
 		Trend: []tmplTrendPoint{
-			{Day: "2026-09-29", DayLabel: "09-29", Orders: 1, SalesLabel: "CNY 10.00", HeightPct: 0, X: 1, BarWidth: 68, ShowLabel: true},
-			{Day: "2026-10-05", DayLabel: "10-05", Orders: 12, SalesLabel: "CNY 1,234.50", HeightPct: 100, X: 71, BarWidth: 68, ShowLabel: true},
+			// 09-29：有单但金额为 0（金额口径与件数不同），浏览量那套柱高不为 0 ——
+			// 两条数据放在一起才能证明两张图各用各的字段。
+			{Day: "2026-09-29", DayLabel: "09-29", Orders: 1, SalesLabel: "CNY 0.00", Views: 40, SalesHeightPct: 4, ViewsHeightPct: 66, X: 1, BarWidth: 68, ShowLabel: true},
+			{Day: "2026-10-05", DayLabel: "10-05", Orders: 12, SalesLabel: "CNY 1,234.50", Views: 60, SalesHeightPct: 100, ViewsHeightPct: 100, X: 71, BarWidth: 68, ShowLabel: true},
 		},
 		Top: []tmplTopProduct{
 			{Rank: 1, ProductName: "TEO 香水 50ml", SKU: "TEO-50-01", Quantity: 5, AmountLabel: "CNY 400.00"},
@@ -113,7 +117,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	for _, want := range []string{
 		"订单数", "净销售额", "CNY 1,234.50", "商品销售总量", "23",
 		"页面浏览", "456", "全站路径；其中文章页：", "88", "待发货",
-		"销售趋势（按天）", "热销商品（当前区间）", "TEO 香水 50ml", "TEO-50-01", "09-29",
+		"趋势（按天）", "热销商品（当前区间）", "TEO 香水 50ml", "TEO-50-01", "09-29",
 		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
 		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",
 		`<input type="hidden" name="range" value="custom">`,
@@ -124,6 +128,10 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		`name="from"`, `value="2026-09-29"`,
 		// KPI 卡可点击跳订单页（带口径的链接）。
 		"stat-card-link", `href="/admin/orders"`,
+		// 图表两个 Tab：面板全部渲染在服务端，切换由 admin.js 的 data-tabs 接管。
+		`data-tabs`, `role="tablist"`, "dash-tab-sales", "dash-tab-views",
+		`id="dash-panel-sales"`, `id="dash-panel-views"`,
+		"销售额与订单", "页面浏览",
 		// 柱状图是内联 SVG，柱高走属性（不是 style）。
 		"<svg", "trend-bar", "height=\"120\"",
 		// 未接线提示在这条路径上不该出现。
@@ -138,6 +146,21 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 	if strings.Contains(out, "（区间已按上限截取）") {
 		t.Error("未发生收敛时不该显示截取提示")
+	}
+	// 两个面板：销售额那个默认可见，浏览量那个带 hidden（由 JS 按 aria-selected 切换）。
+	if !strings.Contains(out, `id="dash-panel-views" role="tabpanel" aria-labelledby="dash-tab-views" hidden`) {
+		t.Error("浏览量面板初始应带 hidden（选中态由 data-tabs 的那套 aria 属性表达）")
+	}
+	if strings.Contains(out, `id="dash-panel-sales" role="tabpanel" aria-labelledby="dash-tab-sales" hidden`) {
+		t.Error("销售额面板是默认选中的那个，不该带 hidden")
+	}
+	// 两张图各用各的柱高字段：浏览量图里 09-29 的柱高来自 ViewsHeightPct（66 -> 79），
+	// 而销售额图里同一天是 SalesHeightPct（4 -> 4）。两个高度都必须在页面上出现。
+	if !strings.Contains(out, `height="79.2"`) {
+		t.Error("浏览量图应出现 ViewsHeightPct 折算出的柱高（66% -> 79.2px），说明它没借用销售额的归一化")
+	}
+	if !strings.Contains(out, `height="4.8"`) {
+		t.Error("销售额图应出现 SalesHeightPct 折算出的柱高（4% -> 4.8px）")
 	}
 	if strings.Contains(out, "暂不可用") {
 		t.Error("端口已就绪时不该显示「暂不可用」提示")

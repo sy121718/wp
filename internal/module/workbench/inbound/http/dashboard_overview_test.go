@@ -137,12 +137,19 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 		},
 	}
 	// Total 是**全站** PV（含非文章页路径），Paths 只是前 N 条里文章页那部分。
+	// Daily 是两张图的日期轴来源之一：10-04 那天**只有浏览没有订单**，
+	// 用来钉「两侧都要落进同一根日期轴」（少了它，那天会被静默丢掉）。
 	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{
-		"p1": {Total: 100, Paths: []analyticsdto.PathCount{
+		"p1": {Total: 45, Daily: []analyticsdto.DailyCount{
+			{Day: "2026-09-29", Views: 40},
+			{Day: "2026-10-04", Views: 5},
+		}, Paths: []analyticsdto.PathCount{
 			{Path: "/blog/a", Views: 30},
 			{Path: "/about", Views: 7},
 		}},
-		"p2": {Total: 60, Paths: []analyticsdto.PathCount{{Path: "/blog/b", Views: 12}}},
+		"p2": {Total: 60, Daily: []analyticsdto.DailyCount{
+			{Day: "2026-10-05", Views: 60},
+		}, Paths: []analyticsdto.PathCount{{Path: "/blog/b", Views: 12}}},
 	}}
 	kinds := &stubPageKindPort{byProject: map[string]map[string]string{
 		"p1": {"/blog/a": "article", "/about": "page"},
@@ -171,26 +178,46 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if snap.KPI.RangeItems != 14 {
 		t.Errorf("商品销售总量应跨工程累加 = 14，实得 %d", snap.KPI.RangeItems)
 	}
-	if snap.KPI.PageViews != 160 {
-		t.Errorf("页面浏览总量应取 analytics 的 Total 并跨工程累加（100+60），实得 %d", snap.KPI.PageViews)
+	if snap.KPI.PageViews != 105 {
+		t.Errorf("页面浏览总量应取 analytics 的 Total 并跨工程累加（45+60），实得 %d", snap.KPI.PageViews)
 	}
 	if snap.KPI.ArticleViews != 42 {
 		t.Errorf("其中文章页应只算 article 路径（30+12），实得 %d", snap.KPI.ArticleViews)
 	}
-	if len(snap.Trend) != 2 {
-		t.Fatalf("趋势点应合并成 2 天，实得 %d：%+v", len(snap.Trend), snap.Trend)
+	// 日期轴是**订单与浏览量的并集**：09-29 / 10-04 / 10-05（10-04 只有浏览）。
+	if len(snap.Trend) != 3 {
+		t.Fatalf("趋势点应合并成 3 天，实得 %d：%+v", len(snap.Trend), snap.Trend)
 	}
-	if snap.Trend[0].Day != "2026-09-29" || snap.Trend[1].Day != "2026-10-05" {
-		t.Errorf("趋势应按日期升序，实得 %s / %s", snap.Trend[0].Day, snap.Trend[1].Day)
+	byDay := map[string]overviewTrendPoint{}
+	for _, p := range snap.Trend {
+		byDay[p.Day] = p
 	}
-	if snap.Trend[0].Orders != 3 || snap.Trend[1].Orders != 4 {
-		t.Errorf("每天单数应跨工程累加，实得 %+v", snap.Trend)
+	for i, want := range []string{"2026-09-29", "2026-10-04", "2026-10-05"} {
+		if snap.Trend[i].Day != want {
+			t.Errorf("第 %d 天应为 %s（按日期升序），实得 %s", i, want, snap.Trend[i].Day)
+		}
 	}
-	if snap.Trend[1].HeightPct != 100 {
-		t.Errorf("金额最高的那天柱高应为 100，实得 %d", snap.Trend[1].HeightPct)
+	if got := byDay["2026-09-29"]; got.Orders != 3 || got.Views != 40 {
+		t.Errorf("09-29 应为 3 单 / 40 浏览，实得 %d / %d", got.Orders, got.Views)
 	}
-	if snap.Trend[0].HeightPct == 0 {
-		t.Error("有单的那天柱高不该是 0（与「一单都没有」长得一样）")
+	// 只有浏览的那天：订单为 0，浏览照旧在轴上（少了它图会短一截且不报错）。
+	if got := byDay["2026-10-04"]; got.Orders != 0 || got.Views != 5 {
+		t.Errorf("10-04 应为 0 单 / 5 浏览（只有浏览没有订单的天不能被丢掉），实得 %d / %d", got.Orders, got.Views)
+	}
+	if got := byDay["2026-10-05"]; got.Orders != 4 || got.Views != 60 {
+		t.Errorf("10-05 应为 4 单 / 60 浏览，实得 %d / %d", got.Orders, got.Views)
+	}
+	// 两套柱高各自归一，互不影响：销售额最高的是 10-05，浏览量最高的也是 10-05，
+	// 所以拿 10-04（Sales=0 / Views=5）当判据 —— 它的浏览量柱高必须来自浏览量那一套。
+	if got := byDay["2026-10-05"]; got.SalesHeightPct != 100 || got.ViewsHeightPct != 100 {
+		t.Errorf("10-05 两套柱高都该是 100（各自的最大值），实得 %d / %d", got.SalesHeightPct, got.ViewsHeightPct)
+	}
+	if got := byDay["2026-10-04"]; got.SalesHeightPct != 0 || got.ViewsHeightPct == 0 {
+		t.Errorf("10-04 销售额柱高应为 0、浏览量柱高应大于 0（两套归一化不能互相借用），实得 %d / %d",
+			got.SalesHeightPct, got.ViewsHeightPct)
+	}
+	if got := byDay["2026-09-29"]; got.SalesHeightPct == 0 {
+		t.Errorf("有单的那天销售额柱高不该是 0（与「一单都没有」长得一样），实得 %+v", got)
 	}
 	if len(snap.Top) != 2 || snap.Top[0].ProductName != "B" || snap.Top[0].Rank != 1 {
 		t.Errorf("榜单应跨工程按销量合并并重排名次，实得 %+v", snap.Top)
@@ -198,7 +225,8 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 }
 
 func TestCollectOverviewKeepsOtherBlocksWhenOneFails(t *testing.T) {
-	// 订单块整体失败：KPI / 趋势 / 榜单为空，但文章浏览仍要算出来，
+	// 订单块整体失败：订单侧 KPI / 榜单为空（本例的 analytics 没给按天数据，
+	// 所以趋势也为空 —— 趋势轴是两侧的并集，有浏览量的那天照旧会出现在轴上），
 	// 且失败信息只记**模块名**（错误文本进日志、不进页面）。
 	orders := &stubOrderPort{failWith: errors.New("db down: password=secret")}
 	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{

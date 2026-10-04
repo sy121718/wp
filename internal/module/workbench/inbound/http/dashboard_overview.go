@@ -66,9 +66,9 @@ type overviewKPI struct {
 	//
 	// 字段名跟着语义走：区间可以是一天、一周、一年，叫 Today 的名字会在下一次改动里
 	// 把某个人骗一次 —— 他会在「本月」的窗口上按「今日订单」去解释这个数字。
-	RangeOrders      int64
-	RangeSalesCents  int64
-	RangeSalesLabel  string
+	RangeOrders     int64
+	RangeSalesCents int64
+	RangeSalesLabel string
 	// RangeItems 区间内售出的商品总件数（只算计入消费的订单，与热销榜同口径）。
 	//
 	// 与「净销售额」并列时两者回答的是不同问题：件数看规模、金额看收入。
@@ -94,8 +94,15 @@ type overviewTrendPoint struct {
 	Orders     int64
 	NetSales   int64
 	SalesLabel string
-	// HeightPct 0~100：模板不做算术，柱高在服务端算好（页面与 AI 都不会各算一份）。
-	HeightPct int
+	// Views 该天（按周聚合时是该周）的页面浏览数（PV，全部路径）。
+	Views int64
+	// SalesHeightPct / ViewsHeightPct 0~100：模板不做算术，柱高在服务端算好。
+	//
+	// **两套柱高分开放**：同一根柱子在两张图里代表不同指标。共用一个高度字段会让
+	// 「切到浏览量」时柱子仍按销售额的高低排 —— 图形看着正常，数字全错位，
+	// 而这种错没有任何报错会提示。
+	SalesHeightPct int
+	ViewsHeightPct int
 	// X / BarWidth 这根柱子在 viewBox 里的横坐标与宽度（按点数分配，见 layoutTrendBars）。
 	//
 	// 不给模板一个固定步长：固定步长在长区间上会把后面的柱子推出画布，
@@ -161,8 +168,12 @@ func (h *Handle) SetOverviewPorts(orders OverviewOrderPort, analytics OverviewAn
 // 窗口，所以「本月」这个词只在一个地方被翻译成日期。
 func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng overviewRange) overviewSnapshot {
 	snap := overviewSnapshot{Range: rng}
-	h.collectOrderOverview(ctx, projectIDs, rng, &snap)
-	h.collectViews(ctx, projectIDs, rng, &snap)
+	byDay := h.collectOrderOverview(ctx, projectIDs, rng, &snap)
+	viewsByDay := make(map[string]int64)
+	h.collectViews(ctx, projectIDs, rng, &snap, viewsByDay)
+	// 趋势图在收完两块数据之后一次装配：两张图共用一根日期轴，
+	// 各画各的柱子（销售额图与浏览量图），所以合并只做一次。
+	snap.Trend = buildTrend(byDay, viewsByDay, rng.Weekly)
 	snap.KPI.RangeSalesLabel = moneyLabel(snap.KPI.RangeSalesCents)
 	snap.PortsReady = snap.OrdersReady && snap.AnalyticsReady
 	return snap
@@ -173,9 +184,11 @@ func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng o
 // 逐工程而不是一次全局查询：orders 带 FORCE 策略，聚合方法都要求显式工程 id
 // （那正是「不许出现不限工程的查询」这条纪律的形状）。工程数量在个位数量级，
 // 多几次查询换来的是「不可能读到别人的数据」。
-func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) {
+// 返回值是「天 → 点」的映射而不是已装配的序列：调用方要把浏览量的按天数据并进同一根
+// 日期轴再装配（见 collectOverview / buildTrend），这里只负责把订单侧的事实取回来。
+func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) map[string]*overviewTrendPoint {
 	if h.overviewOrders == nil {
-		return
+		return nil
 	}
 	snap.OrdersReady = true
 	byDay := make(map[string]*overviewTrendPoint, rng.Days)
@@ -239,8 +252,8 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 			}
 		}
 	}
-	snap.Trend = buildTrend(byDay, rng.Weekly)
 	snap.Top = buildTop(products)
+	return byDay
 }
 
 // collectViews 统计**区间内**的页面浏览（全站总量 + 其中文章页那部分）。
@@ -251,7 +264,7 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 //
 // 总量（PageViews）不依赖 page 模块：它是 analytics 直接给的 Total，
 // 所以 page 端口没接线时总量照旧可用，只有「其中文章页」那半格失去意义。
-func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) {
+func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot, viewsByDay map[string]int64) {
 	if h.overviewAnalytics == nil {
 		return
 	}
@@ -265,6 +278,11 @@ func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng over
 			continue
 		}
 		snap.KPI.PageViews += res.Total
+		// 按天浏览量并进同一根日期轴。analytics 的 Daily **只含有点击的天**，
+		// 缺的天由 buildTrend 与订单侧的日期集求并集后统一处理（谁有数据谁说了算）。
+		for _, d := range res.Daily {
+			viewsByDay[d.Day] += d.Views
+		}
 		if h.overviewPageKinds == nil {
 			continue
 		}
@@ -318,20 +336,33 @@ const (
 //
 // 柱宽由**点数**决定（早先是固定步长 70）：固定步长在 30 天的区间上会画到 viewBox
 // 之外被裁掉，用户看到的是半张图而页面不会报任何错。
-func buildTrend(byDay map[string]*overviewTrendPoint, weekly bool) []overviewTrendPoint {
-	buckets := make(map[string]*overviewTrendPoint, len(byDay))
-	for day, p := range byDay {
-		key := day
+func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int64, weekly bool) []overviewTrendPoint {
+	buckets := make(map[string]*overviewTrendPoint, len(byDay)+len(viewsByDay))
+	bucketKey := func(day string) string {
 		if weekly {
-			key = weekStartOf(day)
+			return weekStartOf(day)
 		}
+		return day
+	}
+	// at 取（必要时新建）某一天的桶。**两侧都要走它**：订单与浏览量各自只覆盖
+	// 一部分日期，谁先到都要能落进同一根柱子 —— 否则「有一半天只有浏览没有订单」时，
+	// 那几天的浏览量会被静默丢掉（图短一截，且没有任何报错）。
+	at := func(day string) *overviewTrendPoint {
+		key := bucketKey(day)
 		pt := buckets[key]
 		if pt == nil {
 			pt = &overviewTrendPoint{Day: key}
 			buckets[key] = pt
 		}
+		return pt
+	}
+	for day, p := range byDay {
+		pt := at(day)
 		pt.Orders += p.Orders
 		pt.NetSales += p.NetSales
+	}
+	for day, v := range viewsByDay {
+		at(day).Views += v
 	}
 	points := make([]overviewTrendPoint, 0, len(buckets))
 	for _, p := range buckets {
@@ -339,10 +370,13 @@ func buildTrend(byDay map[string]*overviewTrendPoint, weekly bool) []overviewTre
 	}
 	sort.Slice(points, func(i, j int) bool { return points[i].Day < points[j].Day })
 
-	var maxSales int64
+	var maxSales, maxViews int64
 	for _, p := range points {
 		if p.NetSales > maxSales {
 			maxSales = p.NetSales
+		}
+		if p.Views > maxViews {
+			maxViews = p.Views
 		}
 	}
 	for i := range points {
@@ -352,19 +386,26 @@ func buildTrend(byDay map[string]*overviewTrendPoint, weekly bool) []overviewTre
 		} else {
 			points[i].DayLabel = points[i].Day
 		}
-		if maxSales <= 0 {
-			continue
-		}
-		// 柱高按净销售额归一。最小 4% 是「有单但很少」的那天不至于看不见 ——
-		// 归一到 0 会和「一单都没有」长得一样，而这两件事对运营是不同的信息。
-		pct := int(points[i].NetSales * 100 / maxSales)
-		if points[i].NetSales > 0 && pct < 4 {
-			pct = 4
-		}
-		points[i].HeightPct = pct
+		points[i].SalesHeightPct = barHeightPct(points[i].NetSales, maxSales)
+		points[i].ViewsHeightPct = barHeightPct(points[i].Views, maxViews)
 	}
 	layoutTrendBars(points)
 	return points
+}
+
+// barHeightPct 把某个值归一成 0~100 的柱高。
+//
+// 最小 4% 是「有量但很少」的那天不至于看不见 —— 归一到 0 会和「一单都没有」
+// 长得一样，而这两件事对运营是不同的信息。
+func barHeightPct(v, max int64) int {
+	if max <= 0 {
+		return 0
+	}
+	pct := int(v * 100 / max)
+	if v > 0 && pct < 4 {
+		pct = 4
+	}
+	return pct
 }
 
 // layoutTrendBars 按点数分配柱宽、横坐标与标签密度。

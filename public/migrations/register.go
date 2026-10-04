@@ -203,6 +203,8 @@ func init() {
 	registerDashboardRangeI18n()
 	// 551：概览页新增两格 KPI 的词条（见 register_dashboard_kpi_i18n.go）。
 	registerDashboardKpiI18n()
+	// 552：概览页图表双 Tab 的词条（见 register_dashboard_chart_tabs_i18n.go）。
+	registerDashboardChartTabsI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
