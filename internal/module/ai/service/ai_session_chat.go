@@ -11,6 +11,7 @@ package aiservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
+	"go_wp/internal/uispec"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -63,6 +65,12 @@ type ToolRunResult struct {
 	Text string
 	// Status 结论分类（见 aienums.ToolCallStatus）。装配层留空时按失败记 —— 拿不准就别记成功。
 	Status aienums.ToolCallStatus
+	// Data 供**渲染**用的结构化结果：不进模型上下文，只落进工具事件的 meta.render。
+	//
+	// 与 Text 刻意分开，而且是**单向**的：Text 进模型，Data 不进。反过来（把结构或数字
+	// 塞进 Text）会让模型把它当成自己已知的事实复述出去 —— 于是「数字只来自查询」这条约束
+	// 在下一轮就失效了，而页面上看起来一切正常。
+	Data any
 }
 
 // ToolProvider 会话层需要的「工具清单 + 执行」能力，由装配层注入。
@@ -219,12 +227,12 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 
 		// 有工具调用：逐个执行并把「调用 / 结果」成对落库。
 		for _, call := range chatRes.ToolCalls {
-			callRes, err := s.appendToolEvent(ctx, sessionID, req, providerKey, model, call, toolPhaseCall, "")
+			callRes, err := s.appendToolEvent(ctx, sessionID, req, providerKey, model, call, toolPhaseCall, "", nil)
 			if err != nil {
 				return nil, err
 			}
-			text := s.runTool(ctx, sessionID, req.UserID, call)
-			resultRes, err := s.appendToolEvent(ctx, sessionID, req, providerKey, model, call, toolPhaseResult, text)
+			runRes := s.runTool(ctx, sessionID, req.UserID, call)
+			resultRes, err := s.appendToolEvent(ctx, sessionID, req, providerKey, model, call, toolPhaseResult, runRes.Text, runRes.Data)
 			if err != nil {
 				return nil, err
 			}
@@ -232,11 +240,11 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 			// 两条必须一起追加（缺 assistant 那条会被上游判成「结果没有对应的调用」）。
 			rounds = append(rounds,
 				aidto.ChatMessage{Role: roleAssistant, ToolCalls: []aidto.ToolCall{call}},
-				aidto.ChatMessage{Role: roleTool, ToolCallID: call.ID, Name: call.Name, Content: text},
+				aidto.ChatMessage{Role: roleTool, ToolCallID: call.ID, Name: call.Name, Content: runRes.Text},
 			)
 			toolEvents = append(toolEvents,
 				sentEventItem(callRes, string(aienums.EventKindTool), toolCallText(call)),
-				sentEventItem(resultRes, string(aienums.EventKindTool), text),
+				sentEventItem(resultRes, string(aienums.EventKindTool), runRes.Text),
 			)
 		}
 	}
@@ -284,23 +292,38 @@ func (s *SessionService) appendToolEvent(
 	providerKey, model string,
 	call aidto.ToolCall,
 	phase, result string,
+	data any,
 ) (*aidto.AppendEventResult, error) {
 	content := toolCallText(call)
 	if phase == toolPhaseResult {
 		content = result
 	}
+	// meta 是**给机器看的**那半：投影只带 content（人读的部分），
+	// 而「哪个工具、哪次调用」只有结构化字段能可靠表达（正文里解析出来的东西迟早会分叉）。
+	meta := map[string]any{
+		"phase":     phase,
+		"callId":    call.ID,
+		"tool":      call.Name,
+		"arguments": call.Arguments,
+	}
+	// 可渲染的结构单独一个键（render）：页面侧只认它，不需要知道工具的种类。
+	// 超限就不落库（页面会退化成只有正文），而不是截断 —— 半个 JSON 反序列化必然失败，
+	// 存下去只会让「为什么这块没渲染」变成一个查不出来的问题。
+	if phase == toolPhaseResult && data != nil {
+		if raw, err := json.Marshal(data); err != nil {
+			logger.Scene("ai").With("tool", call.Name).Warn("渲染数据序列化失败：" + err.Error())
+		} else if len(raw) > renderMetaLimit {
+			logger.Scene("ai").With("tool", call.Name).With("bytes", len(raw)).
+				Warn("渲染数据超过上限，未落库（页面将只显示正文）")
+		} else {
+			meta["render"] = string(raw)
+		}
+	}
 	return s.AppendEvent(ctx, aidto.AppendEventReq{
-		SessionID: sessionID,
-		Kind:      string(aienums.EventKindTool),
-		Content:   content,
-		// meta 是**给机器看的**那半：投影只带 content（人读的部分），
-		// 而「哪个工具、哪次调用」只有结构化字段能可靠表达（正文里解析出来的东西迟早会分叉）。
-		Meta: map[string]any{
-			"phase":     phase,
-			"callId":    call.ID,
-			"tool":      call.Name,
-			"arguments": call.Arguments,
-		},
+		SessionID:   sessionID,
+		Kind:        string(aienums.EventKindTool),
+		Content:     content,
+		Meta:        meta,
 		UserID:      req.UserID,
 		ProviderKey: providerKey,
 		ModelID:     model,
@@ -353,11 +376,11 @@ func (s *SessionService) toolSpecs() []aidto.ToolSpec {
 // 注意异常路径的文案是固定的 ErrToolRunFailed，不按 status 挑：
 // 「参数不合法」「没有权限」这两类由装配层给出**具体**文本（含缺了哪个字段、
 // 缺哪个权限点），本层拿不到那些细节，硬挑一个笼统的译法反而把有用信息盖掉。
-func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, call aidto.ToolCall) string {
+func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, call aidto.ToolCall) ToolRunResult {
 	start := time.Now()
 	// fail 是异常路径的统一出口：顺手把审计写了，
 	// 免得下面几个提前 return 各写一遍（漏一个就少一条流水）。
-	fail := func(status aienums.ToolCallStatus) string {
+	fail := func(status aienums.ToolCallStatus) ToolRunResult {
 		text := facingToolText(aienums.ErrToolRunFailed)
 		e := NewToolCallEntry(sessionID, userID, call.Name, call.Arguments, time.Since(start))
 		e.Status = string(status)
@@ -365,7 +388,7 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 		e.ResultSummary = SummarizeForLog(text)
 		e.ResultLen = int64(len([]rune(text)))
 		s.toolCalls.Record(ctx, e)
-		return text
+		return ToolRunResult{Text: text, Status: status}
 	}
 
 	if s.tools == nil {
@@ -398,6 +421,22 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 		return fail(status)
 	}
 
+	// 展示指令（ui_render）：**在这里**逐块取数，而不是在工具里 ——
+	// 只有这一层知道调用者是谁（userID），而每个数据源都要过一次权限判定。
+	// 权限问的是「这个账号能不能读这张表」，不是「这个工具有没有这个能力」，
+	// 所以取数必须回到有身份的这一层来做。
+	var data any
+	if spec, ok := res.Data.(*uispec.Spec); ok {
+		views := s.renderSpec(ctx, sessionID, userID, spec)
+		if len(views) > 0 {
+			data = views
+		} else if len(spec.Blocks) > 0 {
+			// 一块都没渲出来：必须让模型知道「用户这一轮什么都没看到」，
+			// 否则它会以为图已经出好了，接着解释一张并不存在的表。
+			text = strings.TrimSpace(text) + "\n（系统提示：这次的图表数据源都没有取到数据，用户看不到任何图表。）"
+		}
+	}
+
 	e := NewToolCallEntry(sessionID, userID, call.Name, call.Arguments, time.Since(start))
 	e.Status = string(status)
 	e.ErrorKey = ToolErrorKeyOf(status)
@@ -405,7 +444,7 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 	e.ResultLen = int64(len([]rune(res.Text)))
 	e.Truncated = truncated
 	s.toolCalls.Record(ctx, e)
-	return text
+	return ToolRunResult{Text: text, Status: status, Data: data}
 }
 
 // buildChatInput 把当前投影拼成一段纯文本发给上游。

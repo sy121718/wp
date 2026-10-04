@@ -32,7 +32,7 @@
         <div class="card-body">
             <p class="form-hint">{{tr("admin.ai.mcp.endpoint.hint", "把下面这个地址填进 MCP 客户端（HTTP 传输），并在请求头带上 Authorization: Bearer <令牌>。")}}</p>
             <p><code>{{.Endpoint}}</code></p>
-            <p><code>Authorization: Bearer &lt;令牌&gt;</code></p>
+            <p class="form-hint">{{tr("admin.ai.mcp.endpoint.auth", "请求头：Authorization: Bearer 你的令牌")}}</p>
             <p class="form-hint">{{tr("admin.ai.mcp.scope.hint", "令牌只能调用它声明、且账号自身仍有权限的工具；两者取交集，缺一不可。")}}</p>
         </div>
     </section>

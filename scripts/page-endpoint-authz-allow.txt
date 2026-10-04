@@ -18,6 +18,7 @@ internal/module/runtimefragment/router.go /_fragments/:type	访客片段面：�
 internal/module/analytics/inbound/http/analytics_router.go /analytics/collect	访客采集端点：控制面/访问面分离的明文例外
 internal/module/cart/inbound/http/cart_router.go /payment/callback	支付网关回调：调用方不是后台用户，鉴权靠 HMAC 验签（失败只回四条业务 key）
 internal/module/user/inbound/http/user_router.go /register	公开注册（访客自助开户）
+internal/module/ai/inbound/http/ai_router.go /mcp	公开面（外部接入点）：调用方不是后台用户，而是持有对外访问令牌（PAT）的 MCP 客户端 —— 鉴权是「Bearer 令牌校验 + 令牌 scope ∩ 账号 Casbin 权限」两关（见 ai_mcp_endpoint.go），没有会话可挂。挂上 CasbinMiddlewareForPath 反而会把这唯一合法的调用方挡在外面
 internal/module/user/inbound/http/user_router.go /resend	公开重发激活邮件（带敏感操作限流）
 internal/module/user/inbound/http/user_router.go /login	访客登录（带敏感操作限流）
 internal/module/user/inbound/http/user_router.go /logout	访客登出

@@ -230,6 +230,7 @@ func (s *SessionService) ListEvents(ctx context.Context, sessionID int64, page, 
 			Content:        rows[i].Content,
 			ContentTokens:  rows[i].ContentTokens,
 			CreateTime:     utils.JSONTime(rows[i].CreateTime),
+			Meta:           map[string]any(rows[i].Meta),
 		})
 	}
 	return out, total, nil

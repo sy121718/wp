@@ -95,7 +95,9 @@ func (p *toolProvider) Run(ctx context.Context, userID int64, name, arguments st
 		return aiservice.ToolRunResult{Text: text, Status: status}, nil
 	}
 	// 成功：结果文本由服务层剪枝后进上下文，这里不预判长度。
-	return aiservice.ToolRunResult{Text: res.Text, Status: aienums.ToolCallStatusOK}, nil
+	// Data 一并带出去 —— 它是**渲染**用的结构（如 uispec.Spec），不进模型上下文，
+	// 由会话层在拿到身份之后决定要不要据此取数。
+	return aiservice.ToolRunResult{Text: res.Text, Status: aienums.ToolCallStatusOK, Data: res.Data}, nil
 }
 
 // failureText 把执行错误翻成「能回给模型的一句话」+「给审计的结论分类」。

@@ -67,6 +67,16 @@ var defaultDTOExposureAllow = map[string]string{
 	"SessionDetail.VisibleTokens":    "计量字段：当前窗口内可见内容的 token 数（整型），不是凭据",
 	"SessionEventItem.ContentTokens": "计量字段：单条事件内容长度的 token 计数（整型），不是凭据",
 	"FoldPlanResult.SegmentTokens":   "计量字段：折叠分段各自的 token 数（整型），不是凭据",
+	// 对外访问令牌（迁移 542）。两条都不是「把存着的凭据搬出来」：
+	//   · TokenPrefix 是令牌**前缀**（前 12 字符），只用于在列表里辨认「哪一把」，
+	//     与落库的 SHA-256 哈希无关、不能据此反推明文；
+	//   · TokenCreateResp.Token 是**刚生成的一次性明文**，只在创建应答里出现这一次
+	//     （页面用 HTMX 片段承载而不是重定向，因而不进浏览器历史 / 访问日志 / Referer），
+	//     此后任何接口都不回显明文 —— 与 Provider.HasAPIKey 恰好相反：
+	//     那个是「存了密钥但不给看」，这个是「刚生成的凭据交给它的创建者」，
+	//     不给他就没人能用这把令牌。
+	"TokenItem.TokenPrefix": "展示用前缀（令牌前 12 字符），仅用于辨认是哪一把；与落库哈希无关，不能据此反推明文",
+	"TokenCreateResp.Token": "刚生成的一次性明文令牌，只在创建应答出现一次（此后无任何读回明文的接口）；不交给创建者就无法使用",
 	// 对话结果（ai_chat.go）：上游**上报**的用量。同样命中词根 "token"，同样不是凭据 ——
 	// 它们回答的是「这次调用按 token 计用了多少」，值是上游 usage 里的整数；
 	// UsageReported=false 时三列恒为 0（表示这家没上报），也没有任何字符串通道能承载凭据。

@@ -59,6 +59,10 @@ type SessionEventItem struct {
 	Content        string         `json:"content"`
 	ContentTokens  int64          `json:"contentTokens"`
 	CreateTime     utils.JSONTime `json:"createTime"`
+	// Meta 事件的附加结构；展示指令交给页面渲染的视图在 meta.render 里。
+	//
+	// omitempty：没有附加结构的事件保持原样，客户端不必区分「空对象」与「没有」。
+	Meta map[string]any `json:"meta,omitempty"`
 }
 
 // AppendEventReq 追加一条事件。

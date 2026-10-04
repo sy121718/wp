@@ -26,6 +26,7 @@ import (
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	aihttp "go_wp/internal/module/ai/inbound/http"
+	aimcp "go_wp/internal/module/ai/inbound/mcp"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticshttp "go_wp/internal/module/analytics/inbound/http"
 	artifactcontract "go_wp/internal/module/artifact/contract"
@@ -694,6 +695,11 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("订单概览工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(overviewTools...); err != nil {
 		panic("订单概览工具注册失败：" + err.Error())
+	}
+	// AI 模块自己的工具（展示指令）：它不拥有业务表，只把模型的展示意图收敛成受校验的 spec；
+	// 真正的取数发生在会话层（那里才有调用者身份，权限逐块判）。
+	if err := a.tools().RegisterAll(aimcp.UIRenderTools()...); err != nil {
+		panic("AI 展示工具注册失败：" + err.Error())
 	}
 	marks.mark(portWebhookDispatcher)
 

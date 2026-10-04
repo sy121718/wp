@@ -191,6 +191,8 @@ func init() {
 	registerAIMcpMenu()
 	// 545：MCP 与外部访问页的词条（见 register_ai_mcp_i18n.go）。
 	registerAIMcpI18n()
+	// 546：MCP 与外部访问页新增的一处文案（见 register_ai_mcp_i18n_auth.go）。
+	registerAIMcpI18nAuth()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
