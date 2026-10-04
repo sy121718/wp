@@ -240,9 +240,12 @@ func registerCoreSchemaAndAccess() {
 	registerSeed(Seed{
 		Version:   "224-admin-nav-menu-rebuild",
 		TableName: "sys_menus",
+		// 分组名里的「订单」在 555 之前叫「交易」（2026-10 更名，见那个迁移的文件头）；
+		// 这里同步跟着改 —— 判据与它判定的对象脱节时，本 seed 会每次启动重跑，
+		// 而它的 INSERT 会重建一个空的「交易」分组。
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 7 THEN 1 ELSE 0 END FROM sys_menus " +
 			"WHERE deleted_at IS NULL AND (" +
-			"(type = 1 AND title IN ('管理', '内容', '商品与库存', '交易', '站点', '系统')) " +
+			"(type = 1 AND title IN ('管理', '内容', '商品与库存', '订单', '站点', '系统')) " +
 			"OR (type = 2 AND path = '/admin'))",
 		SQL: mustSQL("224_admin_nav_menu_rebuild.sql"),
 	})

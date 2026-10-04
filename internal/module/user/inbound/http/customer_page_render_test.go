@@ -173,6 +173,7 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/customers", h.CustomersPage)
+	engine.GET("/admin/customers/overview", h.CustomerOverviewPage)
 	engine.GET("/admin/customers/detail", h.CustomerDetailPage)
 	engine.POST("/admin/customers/status", h.CustomerStatusSave)
 	engine.POST("/admin/customers/unlock", h.CustomerUnlock)

@@ -209,6 +209,11 @@ func init() {
 	registerDashboardRankTabsI18n()
 	// 554：页面类型标签 notFound（见 register_dashboard_page_kind_notfound_i18n.go）。
 	registerDashboardPageKindNotFoundI18n()
+	// 555：客户目录（「交易」更名「订单」+ 一级分组「客户」+ 客户概览菜单）
+	//（见 register_customer_catalog.go）。
+	registerCustomerCatalog()
+	// 556：客户概览页词条（见 register_customer_overview_i18n.go）。
+	registerCustomerOverviewI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

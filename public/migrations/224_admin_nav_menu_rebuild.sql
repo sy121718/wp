@@ -21,6 +21,12 @@
 --      角色授权按 menu_id 收集 permission_code（GetPermissionCodesByIDs），
 --      删行会让已授权角色静默缩权。
 --
+-- 2026-10 补记：「交易」这个分组名在后来的客户目录改造（555）里改成了「订单」，
+-- 本文件的三处 '交易' 同步改成 '订单'（分组 VALUES、/admin/orders 的归属映射、
+-- register_core.go 里的 ConditionSQL）。**必须一起改**：留一处旧名，ConditionSQL
+-- 就永远不满足 → 本 seed 每次启动重跑 → 而它的 INSERT 会把已经改名的「订单」当成
+-- 缺失，重新插一个空的「交易」分组出来（SQL 幂等挡不住「判据与对象脱节」）。
+--
 -- 为什么不改既有菜单的 title：多条 seed 的 ConditionSQL 按 title 判定「是否已完成」
 -- （如 084 的 title = '商品管理'、register_order.go 的 title IN ('订单管理','优惠码')），
 -- 改名会让那些 seed 被判定为未执行而重跑。目录「站点工程」是唯一例外 —— 它从模块名
@@ -40,7 +46,7 @@ SELECT v.title, 0, 1, '', v.icon, 1, v.sort, 0, NOW(), 0, NOW()
 FROM (VALUES
     ('管理',       'shield-check',  1),
     ('商品与库存', 'boxes',         3),
-    ('交易',       'shopping-cart', 4),
+    ('订单',       'shopping-cart', 4),
     ('站点',       'globe',         5),
     ('系统',       'settings',      6)
 ) AS v(title, icon, sort)
@@ -110,10 +116,10 @@ FROM (VALUES
     ('/admin/inventory/sources',   '商品与库存'),
     ('/admin/inventory/purchases', '商品与库存'),
     ('/admin/masterdata/changes',  '商品与库存'),
-    ('/admin/orders',              '交易'),
-    ('/admin/returns',             '交易'),
-    ('/admin/coupons',             '交易'),
-    ('/admin/customers',           '交易'),
+    ('/admin/orders',              '订单'),
+    ('/admin/returns',             '订单'),
+    ('/admin/coupons',             '订单'),
+    ('/admin/customers',           '订单'),
     ('/admin/themes',              '站点'),
     ('/admin/settings',            '站点'),
     ('/admin/seo',                 '站点'),
@@ -149,8 +155,8 @@ FROM (VALUES
     ('导航菜单',       '内容',       '/admin/navigations',        'navigation:list',       7),
     -- 商品域
     ('商品详情模板',   '商品与库存', '/admin/products/template',  'product:get',           8),
-    -- 交易
-    ('退货入库',       '交易',       '/admin/returns',            'order:return_list',     2),
+    -- 订单
+    ('退货入库',       '订单',       '/admin/returns',            'order:return_list',     2),
     -- 站点
     ('主题管理',       '站点',       '/admin/themes',             'project:theme_list',    1),
     ('站点设置',       '站点',       '/admin/settings',           'project:detail',        2),

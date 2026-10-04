@@ -165,6 +165,18 @@ type customerPageHandle struct {
 	// 收窄到 Reader —— 客户页只读等级，没有改等级 / 解锁 / 重算的能力。
 	membership       membershipcontract.Reader
 	membershipFacing membershipcontract.FacingTexter
+	// growth 区间客户增长（新客 / 复购 / 回头客）。
+	//
+	// 同样经 setter 注入（见 SetCustomerGrowth），理由与会员展示端口一样：
+	// NewCustomerPageHandle 有 10+ 处直调（含大量渲染测试），为一块展示改签名会把它们全卷进来。
+	// 口径与计算都在订单模块，这里只拿结论 —— 客户模块读不到 orders 表。
+	growth ordercontract.CustomerGrowthReader
+}
+
+// SetCustomerGrowth 注入区间客户增长端口（允许为 nil：概览页据此渲染一句
+// 「客户增长数据暂不可用」，而不是显示一片 0 —— 0 会被当成真实统计）。
+func (h *customerPageHandle) SetCustomerGrowth(growth ordercontract.CustomerGrowthReader) {
+	h.growth = growth
 }
 
 // NewCustomerPageHandle 构造。

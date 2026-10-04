@@ -38,7 +38,8 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	orders ordercontract.CustomerOrderSummaryReader,
 	projects projectcontract.ProjectService,
 	membership membershipcontract.Reader,
-	membershipFacing membershipcontract.FacingTexter) {
+	membershipFacing membershipcontract.FacingTexter,
+	growth ordercontract.CustomerGrowthReader) {
 	if pages == nil {
 		return
 	}
@@ -50,7 +51,11 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	// 会员展示端口（BIZ-3）：经 setter 注入而不是加进 NewCustomerPageHandle 的签名 ——
 	// 那个构造函数有 10+ 处直调（含渲染测试），为一块展示改签名会把它们全卷进来。
 	h.SetMembershipDisplay(membership, membershipFacing)
+	h.SetCustomerGrowth(growth)
 	pages.GET("/customers", h.CustomersPage)
+	// 客户概览：目录（客户）下的第一项。只读，走 /admin 组认证即可 ——
+	// 与列表页同源（同一张 users 表的两种看法），不另立权限点。
+	pages.GET("/customers/overview", h.CustomerOverviewPage)
 	pages.GET("/customers/detail", h.CustomerDetailPage)
 	pages.POST("/customers/status",
 		builtin.CasbinMiddlewareForPath("/api/customer/status"), h.CustomerStatusSave)

@@ -1,0 +1,65 @@
+{* admin/user/customer_overview.html — 客户概览：区间的客户增长（新客 / 回头客 / 复购） *}
+{* 这一页只回答一个问题：这段时间客户是怎么变的。四个数全部由订单模块的一条聚合算好， *}
+{* 本页不做任何自己的算术 —— 口径的解释权只在拥有 orders 表的那个模块（见 AGENTS.md「聚合口径（跨模块只读）」）。 *}
+{* Jet 方言：range 用 `range _, x := .List` 形式时 `.` 仍指向根作用域，元素走绑定变量。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+<div class="stack customers-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.customer.overview.title", "客户概览") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer.overview.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer.overview.hint.lead", "这里的「新客」按") }}<strong>{{ .["t"]("admin.customer.overview.hint.lead.strong", "首次下单") }}</strong>{{ .["t"]("admin.customer.overview.hint.lead.tail", "算，不按注册时间 —— 有人注册了半年才下第一单，他对这段时间来说是新人。") }}<br><br><strong>{{ .["t"]("admin.customer.overview.hint.repurchase.strong", "复购") }}</strong>{{ .["t"]("admin.customer.overview.hint.repurchase.mid", "指的是") }}<strong>{{ .["t"]("admin.customer.overview.hint.repurchase.strong2", "在这段时间内") }}</strong>{{ .["t"]("admin.customer.overview.hint.repurchase.tail", "下了两单及以上的人 —— 一个人上个月和这个月各下一单，不在这段时间的复购口径里。只统计已付款及以后的订单，游客单（没有账号）不计入。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {* 时间筛选条：与仪表盘同一批档位、同一批词条（两页的「本周」必须是同一个意思）。 *}
+    {* 链接由服务端拼好（URL/LabelKey 都在 Go 侧），模板不拼 query 字符串。 *}
+    <div class="range-bar">
+        {{range _, p := .Presets}}
+        <a class="range-chip{{if p.Active}} is-active{{end}}" href="{{p.URL}}">{{ .["t"](p.LabelKey, p.Key) }}</a>
+        {{end}}
+    </div>
+    <p class="text-mute text-sm">{{.Range.From}} ~ {{.Range.To}}</p>
+
+    {{if .Err != ""}}
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{else if !.GrowthReady}}
+    {* 空态与错误分开：没有工程 / 区间内确实没人下单，都不是「出错了」。
+       但也有可能只是没接线 —— 上面那条 Err 已经覆盖了那种情况。 *}
+    <p class="empty-state">{{ .["t"]("admin.customer.overview.empty", "这段时间里没有可统计的客户：可能是还没有站点工程，也可能确实没有已付款的订单。换个时间段试试。") }}</p>
+    {{else}}
+    <div class="stat-grid">
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.customer.overview.ordering", "区间下单客户") }}</div>
+            <div class="stat-value">{{.OrderingCustomers}}</div>
+            <div class="stat-note">{{ .["t"]("admin.customer.overview.orderingNote", "这段时间里有已付款订单的人数") }}</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.customer.overview.new", "新客") }}</div>
+            <div class="stat-value">{{.NewCustomers}}</div>
+            <div class="stat-note">{{ .["t"]("admin.customer.overview.newNote", "首次下单落在这段时间") }}</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.customer.overview.returning", "回头客") }}</div>
+            <div class="stat-value">{{.ReturningCustomers}}</div>
+            <div class="stat-note">{{ .["t"]("admin.customer.overview.returningNote", "首单在这段时间之前") }}</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.customer.overview.repurchasers", "复购客户") }}</div>
+            <div class="stat-value">{{.Repurchasers}}</div>
+            <div class="stat-note">{{ .["t"]("admin.customer.overview.repurchasersNote", "其中新客：") }}{{.NewRepurchasers}}</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-label">{{ .["t"]("admin.customer.overview.repurchaseRate", "复购率") }}</div>
+            <div class="stat-value">{{.RepurchaseRateLabel}}</div>
+            <div class="stat-note">{{ .["t"]("admin.customer.overview.repurchaseRateNote", "复购人数 ÷ 区间下单客户") }}</div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}
