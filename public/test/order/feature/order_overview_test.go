@@ -293,11 +293,80 @@ func TestOrderOverviewRejectsBadRequest(t *testing.T) {
 	}
 }
 
+// TestOrderSoldQuantitySharesScopeWithTopProducts 商品销售总量与热销榜**同口径**。
+//
+// 这一条是这一批的核心判据：件数（KPI 卡）与榜单（排行榜）摆在同一个页面上，
+// 两张卡的数字必须自洽 —— 榜单里几个商品的销量加起来就该是总量。两条 SQL 各写一份
+// WHERE 的失败模式是「榜单排除了取消单、总量忘了排除」，两个数字互相矛盾而每一处单独看都对。
+func TestOrderSoldQuantitySharesScopeWithTopProducts(t *testing.T) {
+	db, m, svc := newRangeFixture(t)
+	if db == nil {
+		return
+	}
+	im := ordermodel.NewOrderItemModel(db)
+	const productA = "11111111-1111-1111-1111-111111111111"
+	const productB = "22222222-2222-2222-2222-222222222222"
+	const productC = "33333333-3333-3333-3333-333333333333"
+	const productD = "44444444-4444-4444-4444-444444444444"
+
+	// 与热销榜用例同一组数据：A 两单共 5 件、B 一单 3 件，
+	// C 取消单 10 件、D 待付款 20 件（两者都不该计入）。
+	o1 := mkOverviewOrder(t, m, summaryProjectA, "Q-A1", ordermodel.OrderStatusPaid, 3100, rangeTime(2))
+	mkOverviewItem(t, im, o1, productA, "TEO 香水 50ml", "TEO-50-01", 3, 24000)
+	o2 := mkOverviewOrder(t, m, summaryProjectA, "Q-A2", ordermodel.OrderStatusCompleted, 3200, rangeTime(3))
+	mkOverviewItem(t, im, o2, productA, "TEO 香水 50ml", "TEO-50-01", 2, 16000)
+	o3 := mkOverviewOrder(t, m, summaryProjectA, "Q-B1", ordermodel.OrderStatusShipped, 3300, rangeTime(3))
+	mkOverviewItem(t, im, o3, productB, "NEAFF Eau de Parfum", "NEA-100-02", 3, 21000)
+	o4 := mkOverviewOrder(t, m, summaryProjectA, "Q-C1", ordermodel.OrderStatusCancelled, 3400, rangeTime(4))
+	mkOverviewItem(t, im, o4, productC, "取消的商品", "CAN-01", 10, 100000)
+	o5 := mkOverviewOrder(t, m, summaryProjectA, "Q-D1", ordermodel.OrderStatusPending, 3500, rangeTime(4))
+	mkOverviewItem(t, im, o5, productD, "还没付款的商品", "PEN-01", 20, 200000)
+	// 干扰项：同工程但区间之外（次日）的单；别的工程的单。
+	o6 := mkOverviewOrder(t, m, summaryProjectA, "Q-AFTER", ordermodel.OrderStatusPaid, 3600, rangeTime(6))
+	mkOverviewItem(t, im, o6, productA, "TEO 香水 50ml", "TEO-50-01", 7, 56000)
+	const otherProject = "22222222-2222-2222-2222-222222222222"
+	o7 := mkOverviewOrder(t, m, otherProject, "Q-OTHER", ordermodel.OrderStatusPaid, 3700, rangeTime(3))
+	mkOverviewItem(t, im, o7, productA, "TEO 香水 50ml", "TEO-50-01", 9, 72000)
+
+	res, err := svc.SoldQuantityByRange(context.Background(), &orderdto.OrderSoldQuantityReq{
+		ProjectID: summaryProjectA, From: "2026-09-01", To: "2026-09-05",
+	})
+	if err != nil {
+		t.Fatalf("取商品销售总量失败: %v", err)
+	}
+	if res.Quantity != 8 {
+		t.Errorf("件数 = %d，期望 8（A 的 5 件 + B 的 3 件；取消与待付款不计）", res.Quantity)
+	}
+	if res.OrderCount != 3 {
+		t.Errorf("贡献订单数 = %d，期望 3（A 两单 + B 一单）", res.OrderCount)
+	}
+	// 回显生效窗口：页面标题要写「哪一段」，写请求值可能在收敛后变成一句错的说明。
+	if res.From != "2026-09-01" || res.To != "2026-09-05" {
+		t.Errorf("窗口回显 = %s ~ %s，期望 2026-09-01 ~ 2026-09-05", res.From, res.To)
+	}
+
+	// **自洽**：榜单里各商品的销量之和 == 总量。
+	top, err := svc.TopProducts(context.Background(), &orderdto.OrderTopProductsReq{
+		ProjectID: summaryProjectA, From: "2026-09-01", To: "2026-09-05", Limit: 50,
+	})
+	if err != nil {
+		t.Fatalf("取热销榜失败: %v", err)
+	}
+	var sum int64
+	for _, it := range top.Items {
+		sum += it.Quantity
+	}
+	if sum != res.Quantity {
+		t.Errorf("榜单销量之和 = %d，总量 = %d —— 两处口径分叉了（同一张页面上的两个数字互相矛盾）", sum, res.Quantity)
+	}
+}
+
 // 编译期断言：service 仍满足 contract 的两个只读聚合接口（装配处靠它接线）。
 var (
 	_ interface {
 		DailySeries(context.Context, *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error)
 		TopProducts(context.Context, *orderdto.OrderTopProductsReq) (*orderdto.OrderTopProductsResp, error)
 		StatusCounts(context.Context, *orderdto.OrderStatusCountsReq) (*orderdto.OrderStatusCountsResp, error)
+		SoldQuantityByRange(context.Context, *orderdto.OrderSoldQuantityReq) (*orderdto.OrderSoldQuantityResp, error)
 	} = (*orderservice.Service)(nil)
 )

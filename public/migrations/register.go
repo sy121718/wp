@@ -201,6 +201,8 @@ func init() {
 	registerAIMcpSwitchI18n()
 	// 550：概览页时间筛选条与区间口径的词条（见 register_dashboard_range_i18n.go）。
 	registerDashboardRangeI18n()
+	// 551：概览页新增两格 KPI 的词条（见 register_dashboard_kpi_i18n.go）。
+	registerDashboardKpiI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

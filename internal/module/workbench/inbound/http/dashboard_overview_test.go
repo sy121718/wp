@@ -20,6 +20,7 @@ type stubOrderPort struct {
 	status   map[string]*orderdto.OrderStatusCountsResp
 	daily    map[string]*orderdto.OrderDailySeriesResp
 	top      map[string]*orderdto.OrderTopProductsResp
+	items    map[string]*orderdto.OrderSoldQuantityResp
 	failWith error
 	calls    int
 }
@@ -63,6 +64,17 @@ func (s *stubOrderPort) TopProducts(_ context.Context, req *orderdto.OrderTopPro
 		return res, nil
 	}
 	return &orderdto.OrderTopProductsResp{ProjectID: req.ProjectID}, nil
+}
+
+// SoldQuantityByRange 按工程回商品件数（缺省 0，与其它 stub 同形）。
+func (s *stubOrderPort) SoldQuantityByRange(_ context.Context, req *orderdto.OrderSoldQuantityReq) (*orderdto.OrderSoldQuantityResp, error) {
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.items[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &orderdto.OrderSoldQuantityResp{ProjectID: req.ProjectID}, nil
 }
 
 type stubAnalyticsPort struct {
@@ -119,13 +131,18 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 			"p1": {Items: []orderdto.OrderTopProductItemDTO{{ProductName: "A", SKU: "A-1", Quantity: 5, Amount: 5000, AmountLabel: "50.00"}}},
 			"p2": {Items: []orderdto.OrderTopProductItemDTO{{ProductName: "B", SKU: "B-1", Quantity: 9, Amount: 9000, AmountLabel: "90.00"}}},
 		},
+		items: map[string]*orderdto.OrderSoldQuantityResp{
+			"p1": {Quantity: 5},
+			"p2": {Quantity: 9},
+		},
 	}
+	// Total 是**全站** PV（含非文章页路径），Paths 只是前 N 条里文章页那部分。
 	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{
-		"p1": {Paths: []analyticsdto.PathCount{
+		"p1": {Total: 100, Paths: []analyticsdto.PathCount{
 			{Path: "/blog/a", Views: 30},
 			{Path: "/about", Views: 7},
 		}},
-		"p2": {Paths: []analyticsdto.PathCount{{Path: "/blog/b", Views: 12}}},
+		"p2": {Total: 60, Paths: []analyticsdto.PathCount{{Path: "/blog/b", Views: 12}}},
 	}}
 	kinds := &stubPageKindPort{byProject: map[string]map[string]string{
 		"p1": {"/blog/a": "article", "/about": "page"},
@@ -151,8 +168,14 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if snap.KPI.ShipPendingCount != 5 || snap.KPI.PendingCount != 1 {
 		t.Errorf("待发货/待付款 = %d/%d，期望 5/1", snap.KPI.ShipPendingCount, snap.KPI.PendingCount)
 	}
+	if snap.KPI.RangeItems != 14 {
+		t.Errorf("商品销售总量应跨工程累加 = 14，实得 %d", snap.KPI.RangeItems)
+	}
+	if snap.KPI.PageViews != 160 {
+		t.Errorf("页面浏览总量应取 analytics 的 Total 并跨工程累加（100+60），实得 %d", snap.KPI.PageViews)
+	}
 	if snap.KPI.ArticleViews != 42 {
-		t.Errorf("文章浏览应只算 article 路径（30+12），实得 %d", snap.KPI.ArticleViews)
+		t.Errorf("其中文章页应只算 article 路径（30+12），实得 %d", snap.KPI.ArticleViews)
 	}
 	if len(snap.Trend) != 2 {
 		t.Fatalf("趋势点应合并成 2 天，实得 %d：%+v", len(snap.Trend), snap.Trend)

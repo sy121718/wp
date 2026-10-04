@@ -16,6 +16,18 @@ import (
 	"go_wp/pkg/rls"
 )
 
+// orderItemScopeSQL 订单行聚合的公共筛选条件（热销榜与商品销售总量共用）。
+//
+// 抽成常量而不是各写一份：「哪些单计入消费」是一条口径，两份 WHERE 各自维护的失败模式
+// 是榜单排除了取消单、总量忘了排除 —— 两个数字摆在同一个页面上互相矛盾，而每一处单独看都对。
+//
+// 参数顺序（按 ? 在文本里出现的顺序）：project_id、from、to、状态名单。
+const orderItemScopeSQL = `
+  WHERE o.project_id = ?
+    AND o.create_time >= ?
+    AND o.create_time < ?
+    AND o.status = ANY(string_to_array(?, ',')::text[])`
+
 // orderTopProductsSQL 区间内按销量排序的商品榜。
 //
 // **商品名与 SKU 取订单行上的快照**（order_items.product_name / sku），不是关联商品表现取：
@@ -32,21 +44,31 @@ import (
 // 排序用 quantity DESC 主序、amount DESC 次序、product_id 收尾：前两个相等时若没有
 // 第三个键，同一次查询在两台机器上可能给出不同顺序 —— 榜单会随机抖动，测试也会偶发。
 //
-// 参数顺序：project_id、from、to、状态名单、limit。
+// 参数顺序：project_id、from、to、状态名单、limit（末位那个是本条自己的）。
 const orderTopProductsSQL = `SELECT i.product_id,
        i.product_name,
        i.sku,
        SUM(i.quantity) AS quantity,
        COALESCE(SUM(i.line_total), 0) AS amount
   FROM order_items i
-  JOIN orders o ON o.id = i.order_id
- WHERE o.project_id = ?
-   AND o.create_time >= ?
-   AND o.create_time < ?
-   AND o.status = ANY(string_to_array(?, ',')::text[])
+  JOIN orders o ON o.id = i.order_id` + orderItemScopeSQL + `
  GROUP BY i.product_id, i.product_name, i.sku
  ORDER BY quantity DESC, amount DESC, i.product_id
  LIMIT ?`
+
+// orderSoldQuantitySQL 区间内售出的商品总件数（Σ order_items.quantity）。
+//
+// 与榜单**同一个筛选条件**（orderItemScopeSQL）：这里回答「一共卖了多少件」，
+// 榜单回答「哪些商品卖得多」，两者必须自洽。
+//
+// 顺带把贡献订单数一起回：运营看到「38 件」的下一个问题是「几个单贡献的」，
+// 分两次查会在两次查询之间落进新单而互相矛盾（与区间摘要用一条 SQL 取三个数同理）。
+//
+// 参数顺序：project_id、from、to、状态名单。
+const orderSoldQuantitySQL = `SELECT COALESCE(SUM(i.quantity), 0) AS quantity,
+       COUNT(DISTINCT i.order_id) AS order_count
+  FROM order_items i
+  JOIN orders o ON o.id = i.order_id` + orderItemScopeSQL
 
 // MaxTopProductLimit 榜单最多能取多少行。
 //
@@ -63,6 +85,32 @@ type OrderTopProductRow struct {
 	Quantity int64 `gorm:"column:quantity"`
 	// Amount 区间内该商品的行实付合计（分，不含退款分摊）。
 	Amount int64 `gorm:"column:amount"`
+}
+
+// OrderSoldQuantityRow 区间内的商品销售总量。
+type OrderSoldQuantityRow struct {
+	// Quantity 区间内售出的商品总件数（只算计入消费的订单）。
+	Quantity int64 `gorm:"column:quantity"`
+	// OrderCount 贡献这些件数的订单数（去重后的订单数，会小于等于明细行数）。
+	OrderCount int64 `gorm:"column:order_count"`
+}
+
+// SoldQuantityByRange 取区间 [from, to) 内售出的商品总件数。
+//
+// 与 TopProductsByRange 同一个作用域与同一个筛选条件；两者的差别只在 SELECT 与是否分组。
+func (m *OrderModel) SoldQuantityByRange(ctx context.Context, projectID string, from, to time.Time) (row OrderSoldQuantityRow, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return row, ErrProjectRequired
+	}
+	if from.IsZero() || to.IsZero() {
+		return row, ErrRangeRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(orderSoldQuantitySQL,
+			projectID, from, to,
+			strings.Join(paidStatuses, ",")).Scan(&row).Error
+	})
+	return row, err
 }
 
 // TopProductsByRange 取区间 [from, to) 内销量最高的若干商品。

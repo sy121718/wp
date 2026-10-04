@@ -21,6 +21,8 @@ import (
 type tmplOverviewKPI struct {
 	RangeOrders      int64
 	RangeSalesLabel  string
+	RangeItems       int64
+	PageViews        int64
 	ArticleViews     int64
 	ShipPendingCount int64
 	PendingCount     int64
@@ -92,6 +94,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		},
 		KPI: tmplOverviewKPI{
 			RangeOrders: 12, RangeSalesLabel: "CNY 1,234.50",
+			RangeItems: 23, PageViews: 456,
 			ArticleViews: 88, ShipPendingCount: 3, PendingCount: 2,
 		},
 		Trend: []tmplTrendPoint{
@@ -108,7 +111,8 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"订单数", "净销售额", "CNY 1,234.50", "文章浏览", "88", "待发货",
+		"订单数", "净销售额", "CNY 1,234.50", "商品销售总量", "23",
+		"页面浏览", "456", "全站路径；其中文章页：", "88", "待发货",
 		"销售趋势（按天）", "热销商品（当前区间）", "TEO 香水 50ml", "TEO-50-01", "09-29",
 		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
 		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",

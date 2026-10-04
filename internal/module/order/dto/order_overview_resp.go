@@ -71,3 +71,19 @@ type OrderStatusCountsResp struct {
 	// TotalCount 全部状态的订单总数。
 	TotalCount int64 `json:"totalCount"`
 }
+
+// OrderSoldQuantityResp 区间内的商品销售总量。
+//
+// 与 NetSales 不是同一件事的两个说法：一个是「卖了多少件」，一个是「收了多少钱」。
+// 件数和钱对不上的场合是正常的（打折、赠品、退款），所以两个数必须各有自己的标签 ——
+// 叫成「销售额 / 销量」而实际混用，运营会以为其中一个算错了。
+type OrderSoldQuantityResp struct {
+	ProjectID string `json:"projectId"`
+	// From / To 实际生效的窗口（含当天，与区间摘要同口径）。
+	From string `json:"from"`
+	To   string `json:"to"`
+	// Quantity 区间内售出的商品总件数（只算计入消费的订单）。
+	Quantity int64 `json:"quantity"`
+	// OrderCount 贡献这些件数的订单数。
+	OrderCount int64 `json:"orderCount"`
+}

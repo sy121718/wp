@@ -69,10 +69,16 @@
             <div class="stat-value">{{.Overview.KPI.RangeSalesLabel}}</div>
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.salesNote", "净额（已扣已收货退款）") }}</div>
         </a>
+        <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.items", "商品销售总量") }}</div>
+            <div class="stat-value">{{.Overview.KPI.RangeItems}}</div>
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.itemsNote", "件数，只算计入消费的订单") }}</div>
+        </a>
         <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.articleViews", "文章浏览") }}</div>
-            <div class="stat-value">{{.Overview.KPI.ArticleViews}}</div>
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.articleViewsNote", "只看文章页路径") }}</div>
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.pageViews", "页面浏览") }}</div>
+            <div class="stat-value">{{.Overview.KPI.PageViews}}</div>
+            {* 文章页那部分是路径排行的下界（只取前 N 条路径），措辞用「其中」而不是「其中全部」。 *}
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pageViewsNote", "全站路径；其中文章页：") }}{{.Overview.KPI.ArticleViews}}</div>
         </div>
         <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.shipPending", "待发货") }}</div>

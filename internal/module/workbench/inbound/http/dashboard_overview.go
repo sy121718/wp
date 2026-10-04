@@ -47,6 +47,7 @@ type OverviewOrderPort interface {
 	DailySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error)
 	TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error)
 	StatusCounts(ctx context.Context, req *orderdto.OrderStatusCountsReq) (res *orderdto.OrderStatusCountsResp, err error)
+	SoldQuantityByRange(ctx context.Context, req *orderdto.OrderSoldQuantityReq) (res *orderdto.OrderSoldQuantityResp, err error)
 }
 
 // OverviewAnalyticsPort 概览页所需的访问统计只读面（一条方法）。
@@ -68,6 +69,17 @@ type overviewKPI struct {
 	RangeOrders      int64
 	RangeSalesCents  int64
 	RangeSalesLabel  string
+	// RangeItems 区间内售出的商品总件数（只算计入消费的订单，与热销榜同口径）。
+	//
+	// 与「净销售额」并列时两者回答的是不同问题：件数看规模、金额看收入。
+	// 它们对不上是正常的（打折、赠品、退款），所以两格各有自己的标签。
+	RangeItems int64
+	// PageViews 区间内全站页面浏览总量（PV，全部路径）。
+	PageViews int64
+	// ArticleViews 其中发生在文章页上的那部分。
+	//
+	// 只算文章页要问 page 模块「这个路径是不是文章页」（表隔离：analytics 只认 path），
+	// 且路径排行只取前 N 条 —— 所以它是**下界**，不是精确值。页面上的小字注明口径。
 	ArticleViews     int64
 	ShipPendingCount int64
 	PendingCount     int64
@@ -150,7 +162,7 @@ func (h *Handle) SetOverviewPorts(orders OverviewOrderPort, analytics OverviewAn
 func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng overviewRange) overviewSnapshot {
 	snap := overviewSnapshot{Range: rng}
 	h.collectOrderOverview(ctx, projectIDs, rng, &snap)
-	h.collectArticleViews(ctx, projectIDs, rng, &snap)
+	h.collectViews(ctx, projectIDs, rng, &snap)
 	snap.KPI.RangeSalesLabel = moneyLabel(snap.KPI.RangeSalesCents)
 	snap.PortsReady = snap.OrdersReady && snap.AnalyticsReady
 	return snap
@@ -179,6 +191,16 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 		} else {
 			snap.KPI.RangeOrders += res.OrderCount
 			snap.KPI.RangeSalesCents += res.NetSales
+		}
+
+		// 商品销售总量：与热销榜同一个筛选条件（只算计入消费的订单），
+		// 所以页面上「总量」与「榜单各项之和」必须自洽（feature 测试钉住这一点）。
+		if res, err := h.overviewOrders.SoldQuantityByRange(ctx, &orderdto.OrderSoldQuantityReq{
+			ProjectID: pid, From: rng.From, To: rng.To,
+		}); err != nil {
+			snap.fail("order", pid, err)
+		} else {
+			snap.KPI.RangeItems += res.Quantity
 		}
 
 		if res, err := h.overviewOrders.StatusCounts(ctx, &orderdto.OrderStatusCountsReq{ProjectID: pid}); err != nil {
@@ -221,13 +243,16 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 	snap.Top = buildTop(products)
 }
 
-// collectArticleViews 统计**区间内**发生在文章页上的浏览量。
+// collectViews 统计**区间内**的页面浏览（全站总量 + 其中文章页那部分）。
 //
 // 两步而非一步：analytics 只认 path，判断「这个路径是不是文章页」要靠 page 模块
 // （表隔离：analytics 读不到 pages）。查不到类型的路径按**非文章页**处理 ——
 // 猜一个默认值会让已下线的文章页继续被算进来，而两边都不会报错。
-func (h *Handle) collectArticleViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) {
-	if h.overviewAnalytics == nil || h.overviewPageKinds == nil {
+//
+// 总量（PageViews）不依赖 page 模块：它是 analytics 直接给的 Total，
+// 所以 page 端口没接线时总量照旧可用，只有「其中文章页」那半格失去意义。
+func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) {
+	if h.overviewAnalytics == nil {
 		return
 	}
 	snap.AnalyticsReady = true
@@ -237,6 +262,10 @@ func (h *Handle) collectArticleViews(ctx context.Context, projectIDs []string, r
 		})
 		if err != nil {
 			snap.fail("analytics", pid, err)
+			continue
+		}
+		snap.KPI.PageViews += res.Total
+		if h.overviewPageKinds == nil {
 			continue
 		}
 		paths := make([]string, 0, len(res.Paths))

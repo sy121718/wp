@@ -29,3 +29,10 @@ type OrderTopProductsReq struct {
 type OrderStatusCountsReq struct {
 	ProjectID string `form:"projectId" json:"projectId"`
 }
+
+// OrderSoldQuantityReq 按「工程 + 时间区间」取商品销售总量（件数）。
+type OrderSoldQuantityReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+	From      string `form:"from" json:"from"`
+	To        string `form:"to" json:"to"`
+}

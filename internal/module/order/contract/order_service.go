@@ -169,6 +169,11 @@ type OrderOverviewReader interface {
 	TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error)
 	// StatusCounts 各状态的订单条数与几个已解释过的口径（待付款 / 待发货 / 总数）。
 	StatusCounts(ctx context.Context, req *orderdto.OrderStatusCountsReq) (res *orderdto.OrderStatusCountsResp, err error)
+	// SoldQuantityByRange 区间内售出的商品总件数与贡献订单数。
+	//
+	// 与 TopProducts 同一个筛选条件（只算计入消费的订单）：一个回答「一共卖了多少件」，
+	// 一个回答「哪些商品卖得多」，两者必须自洽。
+	SoldQuantityByRange(ctx context.Context, req *orderdto.OrderSoldQuantityReq) (res *orderdto.OrderSoldQuantityResp, err error)
 }
 
 // OrderNoReader 按商户单号取订单。
