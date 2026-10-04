@@ -42,6 +42,8 @@ type OrderService interface {
 	CustomerSegmentReader
 	// CustomerRfmReader 客户 RFM 分层（只读，一条方法）。
 	CustomerRfmReader
+	// CustomerCohortReader 群组留存矩阵（只读，一条方法）。
+	CustomerCohortReader
 	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
 	OrderRangeSummaryReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
@@ -183,6 +185,15 @@ type CustomerSegmentReader interface {
 // 分段看「谁在这段里」、RFM 看「这些人各自值多少」。三者都只有订单模块答得出来。
 type CustomerRfmReader interface {
 	CustomerRfmByRange(ctx context.Context, req *orderdto.CustomerRfmReq) (res *orderdto.CustomerRfmResp, err error)
+}
+
+// CustomerCohortReader 群组留存矩阵（只读，一条方法）。
+//
+// 与 CustomerGrowthReader 的关系：增长看「这段时间来了多少新客户」，群组留存看
+// 「这些新人之后还回不回来」。两者共用同一个分群判据（首单落在区间内），
+// 所以群组各行人数之和必须等于增长里的新客数 —— 测试钉住这条等式。
+type CustomerCohortReader interface {
+	CustomerCohortByRange(ctx context.Context, req *orderdto.CustomerCohortReq) (res *orderdto.CustomerCohortResp, err error)
 }
 
 // OrderRangeSummaryReader 按「工程 + 时间区间」取订单聚合事实（只读，一条方法）。

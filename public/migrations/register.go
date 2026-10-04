@@ -222,6 +222,10 @@ func init() {
 	registerCustomerRfmMenu()
 	// 560：RFM 分析页词条（见 register_customer_rfm_i18n.go）。
 	registerCustomerRfmI18n()
+	// 561：客户目录「群组留存」菜单（见 register_customer_cohort_menu.go）。
+	registerCustomerCohortMenu()
+	// 562：群组留存页词条（见 register_customer_cohort_i18n.go）。
+	registerCustomerCohortI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

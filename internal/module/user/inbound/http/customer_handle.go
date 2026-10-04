@@ -180,6 +180,14 @@ type customerPageHandle struct {
 	segments ordercontract.CustomerSegmentReader
 	// rfm 客户 RFM 分层（RFM 分析页）。
 	rfm ordercontract.CustomerRfmReader
+	// cohort 群组留存矩阵（Cohort 分析页）。
+	cohort ordercontract.CustomerCohortReader
+}
+
+// SetCustomerCohort 注入群组留存端口（允许为 nil：分析页会明确说「暂时不可用」，
+// 而不是渲染一张空矩阵 —— 空矩阵会被读成「这批人一个月都没回来」）。
+func (h *customerPageHandle) SetCustomerCohort(cohort ordercontract.CustomerCohortReader) {
+	h.cohort = cohort
 }
 
 // SetCustomerRfm 注入 RFM 端口（允许为 nil：分析页会明确说「暂时不可用」，

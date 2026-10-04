@@ -673,7 +673,7 @@ func (a *assembly) mountAdminPages() {
 	// 最后两个参数是客户域的订单侧聚合：区间增长（客户概览页用）与分段取 id
 	//（列表按「新客 / 回头客 / 复购」筛选用）。两者都在 orderSvc 上。
 	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
-		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc, a.orderSvc)
+		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)

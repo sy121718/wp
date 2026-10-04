@@ -1,0 +1,71 @@
+{* admin/user/customer_cohort.html — 群组留存：按首单月份分群 + 留存矩阵 *}
+{* 行 = 群（首单所在自然月），列 = 相对月序号（0 = 首单当月），格 = 该月有购买的人占本群的比例。 *}
+{* 口径与每一格的取值全在订单模块，本页只编排与展示。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{rows := .Rows}}
+<div class="stack customers-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.customer.cohort.title", "群组留存") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer.cohort.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer.cohort.hint.read.lead", "怎么读这张表：") }}<strong>{{ .["t"]("admin.customer.cohort.hint.read.strong", "每一行是一批人") }}</strong>{{ .["t"]("admin.customer.cohort.hint.read.tail", "——他们的第一单都落在同一个自然月。横向看这一行，就是这批人后来还回不回来：首月是 100%（他们的第一单就在那个月），往右每一格是该月又有购买的人占本批人的比例。") }}<br><br><strong>{{ .["t"]("admin.customer.cohort.hint.blank.strong", "空白的格子是「时间还没到」") }}</strong>{{ .["t"]("admin.customer.cohort.hint.blank.tail", "，不是 0%。最后几个月的空格会很多，那是正常的；显示成 0% 的话看起来会像客户断崖式流失，而真实原因只是还没到那个月。") }}<br><br><strong>{{ .["t"]("admin.customer.cohort.hint.denom.strong", "分母是本批人数") }}</strong>{{ .["t"]("admin.customer.cohort.hint.denom.tail", "，不是全部客户数 —— 所以不同行之间可以直接比。只统计计入消费的订单；游客单（没有账号）不计入。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {* 时间筛选条：与仪表盘、客户概览、RFM 同一批档位、同一批词条。 *}
+    <div class="range-bar">
+        {{range _, p := .Presets}}
+        <a class="range-chip{{if p.Active}} is-active{{end}}" href="{{p.URL}}">{{ .["t"](p.LabelKey, p.Key) }}</a>
+        {{end}}
+    </div>
+
+    <section class="card list-card">
+        <div class="table-scroll">
+            <table class="data-table cohort-table">
+                <thead>
+                    <tr>
+                        <th>{{ .["t"]("admin.customer.cohort.col.cohort", "首单月份") }}</th>
+                        <th class="col-num">{{ .["t"]("admin.customer.cohort.col.size", "人数") }}</th>
+                        {{range _, c := .Columns}}
+                        <th class="col-num">{{if c.Index == 0}}{{ .["t"]("admin.customer.cohort.col.first", "首月") }}{{else}}+{{c.Index}}{{ .["t"]("admin.customer.cohort.col.monthSuffix", "月") }}{{end}}</th>
+                        {{end}}
+                    </tr>
+                </thead>
+                <tbody>
+                    {{if .Err != ""}}
+                    {* 查询失败：表头仍然保留（用户能看见这一页有哪些列），原因放进正文。 *}
+                    <tr><td colspan="{{.Colspan}}" class="cell-wrap">{{.Err}}</td></tr>
+                    {{else if !.CohortReady}}
+                    <tr><td colspan="{{.Colspan}}" class="cell-wrap">{{ .["t"]("admin.customer.cohort.empty", "这段时间里没有新客户：可能是还没有站点工程，也可能确实没有新客户在这里下过单。换个时间段试试。") }}</td></tr>
+                    {{else if len(rows) == 0}}
+                    <tr><td colspan="{{.Colspan}}" class="cell-wrap">{{ .["t"]("admin.customer.cohort.noRows", "这段时间里没有新客户：没有人的第一单落在这里。") }}</td></tr>
+                    {{end}}
+                    {{range _, r := rows}}
+                    <tr>
+                        <td>{{r.CohortLabel}}</td>
+                        <td class="col-num">{{r.CohortSize}}</td>
+                        {{range _, c := r.Cells}}
+                        {* 未到达的月份留空：0% 会被读成「这个月一个人都没回来」，那是另一回事。 *}
+                        {{if c.Reached}}
+                        <td class="col-num" title="{{c.MonthLabel}}">{{c.RetentionLabel}}<div class="text-mute text-sm">{{c.ActiveCustomers}}</div></td>
+                        {{else}}
+                        <td class="col-num text-mute" title="{{c.MonthLabel}}">—</td>
+                        {{end}}
+                        {{end}}
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {{if .CohortReady}}
+    <p class="text-mute text-sm">{{ .["t"]("admin.customer.cohort.scope", "区间：") }}{{.Range.From}} ~ {{.Range.To}} · {{ .["t"]("admin.customer.cohort.totals", "群数") }} {{.Cohorts}} · {{ .["t"]("admin.customer.cohort.totalCustomers", "新客户合计") }} {{.Customers}}</p>
+    {{end}}
+</div>
+{{end}}
