@@ -333,6 +333,69 @@
             </div>
             {{end}}
         </div>
+
+        {* 详情区：只在 ?id= 时渲染。与列表同一个 URL —— 详情是叠加在列表上的一块，
+           所以它没有自己的路由与权限点：能看这个标签页就够看细节。 *}
+        {{if isset(.DetailID)}}
+        <section class="card card-body" id="ai-session-detail">
+            <div class="page-head-main">
+                <h2 class="card-title">{{tr("admin.ai.detail.title", "会话详情")}} #{{.DetailID}}</h2>
+            </div>
+
+            {{if isset(.DetailErr)}}
+            <p class="badge badge-warning" role="alert">{{.DetailErr}}</p>
+            {{else}}
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-label">{{tr("admin.ai.detail.provider", "供应商 / 模型")}}</div>
+                    <div class="stat-value stat-value-sm">{{.Detail.ProviderKey}}{{if .Detail.ModelID != ""}} / {{.Detail.ModelID}}{{end}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">{{tr("admin.ai.detail.events", "事件条数")}}</div>
+                    <div class="stat-value">{{.Detail.EventCount}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">{{tr("admin.ai.detail.visible", "当前上下文")}}</div>
+                    <div class="stat-value">{{.Detail.VisibleTokens}}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">{{tr("admin.ai.detail.compacts", "已折叠")}}</div>
+                    <div class="stat-value">{{.Detail.CompactCount}}</div>
+                </div>
+            </div>
+
+            {{if isset(.EventsErr)}}
+            <p class="badge badge-warning" role="alert">{{.EventsErr}}</p>
+            {{else}}
+
+            <h3 class="card-title">{{tr("admin.ai.detail.timeline", "事件时间线")}}</h3>
+            {{if len(.Events) == 0}}
+            <p class="form-hint">{{tr("admin.ai.detail.noEvents", "这个会话还没有任何事件。")}}</p>
+            {{end}}
+            <div class="event-list">
+                {{range _, e := .Events}}
+                <article class="event-item">
+                    <header class="event-head">
+                        <span class="badge{{if e.Tone != ""}} badge-{{e.Tone}}{{end}}">{{e.Kind}}</span>
+                        <span class="form-hint">#{{e.Seq}}</span>
+                        {{if e.Tool != ""}}<span class="form-hint">{{e.Tool}}{{if e.Phase != ""}} · {{e.Phase}}{{end}}</span>{{end}}
+                        <span class="event-time">{{e.TimeLabel}}</span>
+                    </header>
+                    <div class="event-body">{{e.Content}}</div>
+                    {{if e.HasViews}}
+                    <div class="event-views">
+                        {{include "ui_blocks.html" e.ViewsCtx}}
+                    </div>
+                    {{end}}
+                </article>
+                {{end}}
+            </div>
+            {{end}}
+
+            {{end}}
+        </section>
+        {{end}}
         </div>
         {{end}}
 

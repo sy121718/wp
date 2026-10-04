@@ -1102,6 +1102,24 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     line-height: 1.2; letter-spacing: -0.01em; color: var(--sky-c-text, #1a1d21);
 }
 
+/* ── 会话详情的事件时间线 ─────────────────────────────────────────────
+   一条事件 = 徽标行 + 正文 + 可选的图表区。正文必须保换行（模型回复是多段文本），
+   这里用 pre-wrap 而不是 <pre>：等宽字体会让正文与页面其它文字脱节。 */
+.event-list { display: flex; flex-direction: column; gap: var(--sp-sm); margin-top: var(--sp-sm); }
+.event-item {
+    display: flex; flex-direction: column; gap: var(--sp-xs); min-width: 0;
+    padding: var(--sp-sm) var(--sp-md);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: var(--r-sm);
+    background: var(--sky-c-surface, #fff);
+}
+/* 时间靠右用 margin-left:auto，而不是 space-between：徽标、序号、工具名要挨在一起，
+   右侧只该把时间推过去。 */
+.event-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-sm); }
+.event-time { margin-left: auto; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
+.event-body { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.event-views { min-width: 0; overflow-x: auto; }
+
 /* ── 12. 描述类字段的控件基座：富文本容器与字数提示 ────────────────────
    控件选型见 admin-ui-logic §9 —— 可含格式的多段描述用 Trix 富文本
    （.rich-editor，落库前过 core.SanitizeRichHTML 白名单清洗）；

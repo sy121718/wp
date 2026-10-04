@@ -10,6 +10,7 @@ package aihttp
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,7 +21,10 @@ import (
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aiservice "go_wp/internal/module/ai/service"
+	"go_wp/internal/uispec"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 const (
@@ -117,6 +121,8 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 		"Done":            facingQuery(c, "done"),
 	})
 
+	// 详情（?id=）先装配：它决定详情区显示什么，而看板与卡片与它无关，各自独立降级。
+	h.attachSessionDetail(c, ctx, data)
 	h.attachSessionUsage(c, ctx, data, filter)
 	h.attachProviderCards(c, ctx, data)
 
@@ -403,4 +409,133 @@ func sessionBackURL(raw string) string {
 		return raw
 	}
 	return sessionPath
+}
+
+// sessionDetailEventSize 详情时间线渲染的事件条数上限。
+//
+// 与 sessionEventTop 同值：详情回答的是「最近发生了什么」，不是全量导出
+// （要看完整日志走 /api/ai/session/events 分页）。
+const sessionDetailEventSize = sessionEventTop
+
+// attachSessionDetail 装配 ?id= 的会话详情：会话头 + 事件时间线（含图表）+ 折叠预览。
+//
+// 只在带 ?id= 时装配：列表与详情是同一个 URL，详情是叠加在列表上的一块；
+// 不带 id 的请求不该为它多查三次库。
+//
+// 三块各自独立降级（各自一个 Err 键）：一个会话的事件查询失败不该把整页打成 500，
+// 也不该让另外两块跟着消失。
+func (h *SessionPageHandle) attachSessionDetail(c *gin.Context, ctx context.Context, data gin.H) {
+	raw := strings.TrimSpace(c.Query("id"))
+	if raw == "" {
+		return
+	}
+	id := parseInt64(raw)
+	if id <= 0 {
+		data["DetailErr"] = internalFallback(c)
+		return
+	}
+
+	detail, err := h.svc.GetSession(ctx, id)
+	if err != nil {
+		// 会话头取不到就没必要再查事件：详情区只显示这一条提示。
+		data["DetailErr"] = aiErrText(c, err)
+		return
+	}
+	data["Detail"] = detail
+	data["DetailID"] = id
+
+	events, _, err := h.svc.ListEvents(ctx, id, 1, sessionDetailEventSize)
+	if err != nil {
+		data["EventsErr"] = aiErrText(c, err)
+	} else {
+		data["Events"] = sessionEventRows(events)
+	}
+
+	// 折叠预览只算不写（FoldPlan 不落库），失败只影响这一块。
+	plan, err := h.svc.FoldPlan(ctx, aidto.FoldPlanReq{SessionID: id})
+	if err != nil {
+		data["FoldPlanErr"] = aiErrText(c, err)
+	} else {
+		data["FoldPlan"] = plan
+	}
+}
+
+// sessionEventRows 把事件翻成模板行：类型分档 + 正文 + 可渲染的图表视图。
+func sessionEventRows(events []aidto.SessionEventItem) []gin.H {
+	out := make([]gin.H, 0, len(events))
+	for i := range events {
+		e := events[i]
+		views := renderViewsOf(e.Meta)
+		row := gin.H{
+			"Seq":       e.Seq,
+			"Kind":      e.Kind,
+			"Tone":      sessionEventTone(e.Kind),
+			"Content":   e.Content,
+			"Views":     views,
+			"HasViews":  len(views) > 0,
+			"TimeLabel": sessionTimeLabel(e.CreateTime),
+			"Tool":      "",
+			"Phase":     "",
+			// ui_blocks.html 读的是上下文键 **Views**（它自己 range .Views），
+			// 所以 include 时得给它一个带这个键的上下文，而不是直接把切片丢过去。
+			"ViewsCtx": gin.H{"Views": views},
+		}
+		// 工具事件把工具名与阶段提出来单独显示：正文里可能只有「工具执行失败」几个字，
+		// 是哪个工具、是调用还是结果，只有结构化字段说得清。
+		if e.Meta != nil {
+			if v, ok := e.Meta["tool"].(string); ok {
+				row["Tool"] = v
+			}
+			if v, ok := e.Meta["phase"].(string); ok {
+				row["Phase"] = v
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// renderViewsOf 把事件 meta 里的 render 结构解成视图。
+//
+// 解不出来就返回 nil（那一块不渲染），**不报错**：库里可能躺着旧版本写下的结构、
+// 或者被人手工改过；一个坏结构不该让整页 500，也不该让同一轮别的块跟着消失。
+func renderViewsOf(meta map[string]any) []uispec.View {
+	if len(meta) == 0 {
+		return nil
+	}
+	raw, ok := meta["render"].(string)
+	if !ok || raw == "" {
+		return nil
+	}
+	var views []uispec.View
+	if err := json.Unmarshal([]byte(raw), &views); err != nil {
+		logger.Scene("ai").Warn("事件里的渲染结构解不出来，已跳过：" + err.Error())
+		return nil
+	}
+	return views
+}
+
+// sessionEventTone 事件类型 → 徽标分档（模板据此选 class）。
+//
+// 分档而不是直接把 kind 当类名：kind 是数据、类名是样式契约，
+// 让数据直接进 class 会让「新增一种 kind」变成「页面上冒出一个没有样式的徽标」。
+func sessionEventTone(kind string) string {
+	switch kind {
+	case string(aienums.EventKindUser):
+		return "info"
+	case string(aienums.EventKindAssistant):
+		return "ok"
+	case string(aienums.EventKindTool):
+		return "warn"
+	default:
+		return ""
+	}
+}
+
+// sessionTimeLabel 事件时间的展示串（Jet 侧没有日期函数，格式化只能在 Go 里做）。
+func sessionTimeLabel(t utils.JSONTime) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Time().Format("01-02 15:04")
 }
