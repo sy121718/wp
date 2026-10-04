@@ -1,8 +1,10 @@
-{* admin/dashboard.html — 仪表盘：真实概览（站点工程 / 页面发布状态 / 最近更新） *}
+{* admin/dashboard.html — 仪表盘：经营概览（今日 KPI / 近 7 天趋势与热销 / 站点内容 / 最近更新） *}
 {* 版式遵循列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §2.1/§7）：
      · 正文零说明文字，口径说明进 .help 悬浮；
      · 统计卡只放契约能查到的真实值 —— 本页曾整页是静态演示数据（假管理员 128 人、
-       假表单、组件展台），运营会把示例数字当真实统计，属 P0 缺陷。 *}
+       假表单、组件展台），运营会把示例数字当真实统计，属 P0 缺陷。
+     · 概览数据源未接线时整块换成一句提示：显示一片 0 同样会被当成真实统计
+       （「今天一单都没有」），而这个页面是登录后的第一跳，它的数字有人真的会照着做决定。 *}
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
@@ -12,11 +14,12 @@
                 <h1>{{ .["t"]("admin.dashboard.title", "仪表盘") }}</h1>
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.dashboard.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.dashboard.intro", "统计口径：工程数取站点工程总数；页面数按草稿是否已激活产物区分「已发布」与「草稿 / 待发布」；「有更新未发布」指草稿在发布之后又改过、线上还是旧版本。全部为实时查询，不做缓存。") }}</span>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.dashboard.intro", "统计口径：KPI 与趋势按 UTC 日界（与访问统计同口径），“今日”指 UTC 当天。销售额为净额 = 计入消费的订单金额 − 已实际收货的退款额，货币为站点默认货币。「热销商品」只统计已付款/已发货/已完成的订单，商品名与 SKU 是下单当时的快照，金额不含退款分摊。全部为实时查询，不做缓存。") }}</span>
                 </span>
             </div>
         </div>
         <div class="page-actions">
+            <a class="btn" href="/admin/orders">{{ .["t"]("admin.dashboard.action.orders", "订单管理") }}</a>
             <a class="btn" href="/admin/pages">{{ .["t"]("admin.dashboard.action.pages", "页面管理") }}</a>
             <a class="btn" href="/admin/products">{{ .["t"]("admin.dashboard.action.products", "商品管理") }}</a>
         </div>
@@ -28,31 +31,133 @@
 
     {* 概览数据块整体用 isset 守卫：本模板也被「只渲染外壳」的测试直接加载，
        那些数据里没有统计键 —— 直接取用缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.RecentPages)}}
+    {{if isset(.Overview)}}
+    {{if .Overview.PortsReady}}
     <div class="stat-grid">
         <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.projects", "站点工程") }}</div>
-            <div class="stat-value">{{.ProjectCount}}</div>
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.ordersToday", "今日订单") }}</div>
+            <div class="stat-value">{{.Overview.KPI.TodayOrders}}</div>
         </div>
         <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.pages", "页面总数") }}</div>
-            <div class="stat-value">{{.PageTotal}}</div>
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.salesToday", "今日销售额") }}</div>
+            <div class="stat-value">{{.Overview.KPI.TodaySalesLabel}}</div>
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.salesNote", "净额（已扣已收货退款）") }}</div>
         </div>
         <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.published", "已发布") }}</div>
-            <div class="stat-value">{{.PagePublished}}</div>
-            <div class="stat-note tone-ok">{{ .["t"]("admin.dashboard.stat.publishedNote", "线上可访问") }}</div>
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.articleViews", "文章浏览") }}</div>
+            <div class="stat-value">{{.Overview.KPI.ArticleViews}}</div>
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.articleViewsNote", "只看文章页路径") }}</div>
         </div>
         <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.stat.draft", "草稿 / 待发布") }}</div>
-            <div class="stat-value">{{.PageDraft}}</div>
-            {{if isset(.PageStale)}}{{if .PageStale}}
-            <div class="stat-note tone-warn">{{ .["t"]("admin.dashboard.stat.staleLead", "其中 ") }}{{.PageStale}}{{ .["t"]("admin.dashboard.stat.staleTail", " 个有更新未发布") }}</div>
-            {{else}}
-            <div class="stat-note">{{ .["t"]("admin.dashboard.stat.staleNone", "没有待发布的改动") }}</div>
-            {{end}}{{end}}
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.shipPending", "待发货") }}</div>
+            <div class="stat-value">{{.Overview.KPI.ShipPendingCount}}</div>
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pendingNote", "待付款：") }}{{.Overview.KPI.PendingCount}}</div>
         </div>
     </div>
+
+    <div class="grid-split">
+        <section class="card">
+            <div class="card-header">
+                <span class="card-title">{{ .["t"]("admin.dashboard.trend.title", "销售趋势（近 7 天）") }}</span>
+                <span class="text-mute text-sm">{{.Overview.From}} ~ {{.Overview.Today}}</span>
+            </div>
+            <div class="card-body">
+                {{if len(.Overview.Trend) == 0}}
+                <p class="empty-desc">{{ .["t"]("admin.dashboard.trend.empty", "这段时间没有订单") }}</p>
+                {{else}}
+                {* 柱高用 SVG 属性表达（不是内联 style —— 那会违反 UI-012 的判据）。
+                   坐标算术只算布局：x 按序号、y/height 由服务端给的 HeightPct 折算。 *}
+                <svg class="trend-chart" viewBox="0 0 490 160" role="img"
+                     aria-label="{{ .["t"]("admin.dashboard.trend.title", "销售趋势（近 7 天）") }}">
+                    {{range i, p := .Overview.Trend}}
+                    <rect class="trend-bar{{if p.HeightPct == 0}} is-zero{{end}}"
+                          x="{{i * 70 + 21}}" y="{{120 - p.HeightPct * 12 / 10}}"
+                          width="28" height="{{p.HeightPct * 12 / 10}}" rx="4">
+                        <title>{{p.DayLabel}} · {{p.Orders}} {{ .["t"]("admin.dashboard.trend.ordersUnit", "单") }} · {{p.SalesLabel}}</title>
+                    </rect>
+                    <text class="trend-day" x="{{i * 70 + 35}}" y="140" text-anchor="middle">{{p.DayLabel}}</text>
+                    <text class="trend-val" x="{{i * 70 + 35}}" y="154" text-anchor="middle">{{p.Orders}}</text>
+                    {{end}}
+                    <line class="trend-axis" x1="0" y1="120" x2="490" y2="120"></line>
+                </svg>
+                {{end}}
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <span class="card-title">{{ .["t"]("admin.dashboard.top.title", "热销商品（近 7 天）") }}</span>
+            </div>
+            {{if len(.Overview.Top) == 0}}
+            <div class="card-body">
+                <p class="empty-desc">{{ .["t"]("admin.dashboard.top.empty", "这段时间没有已付款的订单") }}</p>
+            </div>
+            {{else}}
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th class="col-num">{{ .["t"]("admin.dashboard.top.col.rank", "名次") }}</th>
+                        <th>{{ .["t"]("admin.dashboard.top.col.product", "商品") }}</th>
+                        <th class="col-num">{{ .["t"]("admin.dashboard.top.quantity", "销量") }}</th>
+                        <th class="col-num">{{ .["t"]("admin.dashboard.top.amount", "销售额") }}</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{range _, it := .Overview.Top}}
+                    <tr>
+                        <td class="text-mute">{{it.Rank}}</td>
+                        <td>
+                            <div>{{it.ProductName}}</div>
+                            <div class="text-mute text-sm text-mono">{{it.SKU}}</div>
+                        </td>
+                        <td class="col-num">{{it.Quantity}}</td>
+                        <td class="col-num">{{it.AmountLabel}}</td>
+                    </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+            </div>
+            {{end}}
+        </section>
+    </div>
+    {{else}}
+    <p class="badge badge-warning">{{ .["t"]("admin.dashboard.overview.unavailable", "部分概览数据暂不可用（对应模块未接线）。") }}</p>
+    {{end}}
+    {{end}}
+
+    {{if isset(.RecentPages)}}
+    <section class="card">
+        <div class="card-header">
+            <span class="card-title">{{ .["t"]("admin.dashboard.content.title", "站点内容") }}</span>
+        </div>
+        <div class="card-body">
+            <div class="stat-grid">
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.projects", "站点工程") }}</div>
+                    <div class="stat-value-sm">{{.ProjectCount}}</div>
+                </div>
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.pages", "页面总数") }}</div>
+                    <div class="stat-value-sm">{{.PageTotal}}</div>
+                </div>
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.published", "已发布") }}</div>
+                    <div class="stat-value-sm">{{.PagePublished}}</div>
+                    <div class="stat-note tone-ok">{{ .["t"]("admin.dashboard.stat.publishedNote", "线上可访问") }}</div>
+                </div>
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.draft", "草稿 / 待发布") }}</div>
+                    <div class="stat-value-sm">{{.PageDraft}}</div>
+                    {{if isset(.PageStale)}}{{if .PageStale}}
+                    <div class="stat-note tone-warn">{{ .["t"]("admin.dashboard.stat.staleLead", "其中 ") }}{{.PageStale}}{{ .["t"]("admin.dashboard.stat.staleTail", " 个有更新未发布") }}</div>
+                    {{else}}
+                    <div class="stat-note">{{ .["t"]("admin.dashboard.stat.staleNone", "没有待发布的改动") }}</div>
+                    {{end}}{{end}}
+                </div>
+            </div>
+        </div>
+    </section>
 
     <section class="card list-card">
         {* 这一行是列表卡的**标题行**，不是筛选栏：里面只有一个标题和一个链接，没有任何筛选控件。

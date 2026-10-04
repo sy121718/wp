@@ -121,6 +121,9 @@ const (
 	portNavigationSourceResolver      = "navigation.SetSourceResolver"
 	portNavigationMenuDispatcher      = "navigation.SetMenuStaleDispatcher"
 	portDashboardBlueprints           = "dashboard.SetBlueprints"
+	// 概览页的跨模块只读数据（订单聚合 / 访问统计 / 路径→页面类型）。
+	// 三条依赖都由 setter 注入：概览页是唯一同时需要它们的页面，其余页面不受影响。
+	portDashboardOverview = "dashboard.SetOverviewPorts(frontend)"
 	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
 	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
 	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
@@ -303,6 +306,8 @@ var wiringManifest = []wiringEntry{
 		"改公开站点导航不派发任何失效：已发布页面的页眉/页脚永远停在旧菜单（全站可见且无报错）"},
 	{portDashboardBlueprints, "blueprint", "dashboard", wiringOptionalDegraded,
 		"新建页面表单不显示「从蓝图开始」下拉（建页照常走空白草稿）"},
+	{portDashboardOverview, "order/analytics/page", "dashboard", wiringOptionalDegraded,
+		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
 	// —— 运行时片段层（访问面）——
 	{portRuntimeFragBundle, "product", "runtimefragment", wiringRequiredContract,

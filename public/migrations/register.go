@@ -179,6 +179,8 @@ func init() {
 	registerAISessionCallsI18n()
 	// 539：AI 会话「工具调用」的词条（见 register_ai_session_tools_i18n.go）。
 	registerAISessionToolsI18n()
+	// 540：概览页 KPI / 趋势 / 热销商品的词条（见 register_dashboard_overview_i18n.go）。
+	registerDashboardOverviewI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

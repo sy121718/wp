@@ -55,6 +55,11 @@ type Handle struct {
 	// 除了下面几个「未下沉的装配位」（collection / blueprints / contentStore 与
 	// templatePreview / instances 两个端口），其余跨模块能力一律经 svc 取用。
 	svc *workbenchservice.Service
+	// overviewOrders / overviewAnalytics / overviewPageKinds 概览页的三个跨模块只读端口
+	//（经 SetOverviewPorts 注入；任一为 nil 时对应块按空态渲染，见 dashboard_overview.go）。
+	overviewOrders    OverviewOrderPort
+	overviewAnalytics OverviewAnalyticsPort
+	overviewPageKinds OverviewPageKindPort
 }
 
 // TemplatePreviewPort 模板工作台预览所需的最窄 presentation 能力。
@@ -170,7 +175,17 @@ func (h *Handle) Dashboard(c *gin.Context) {
 		"PageDraft":     pageTotal - pagePublished,
 		"PageStale":     pageStale,
 		"RecentPages":   recentPages,
+		"Overview":      h.collectOverview(ctx, projectIDs(projects)),
 	}))
+}
+
+// projectIDs 取出工程 id 列表（概览的跨模块聚合按工程逐个调用，见 dashboard_overview.go）。
+func projectIDs(projects []projectcontract.ProjectResp) []string {
+	ids := make([]string, 0, len(projects))
+	for _, p := range projects {
+		ids = append(ids, p.ID)
+	}
+	return ids
 }
 
 // SetupWorkbenchRoutes 注册仪表盘首页（"/"）与编辑器本体全部路由。

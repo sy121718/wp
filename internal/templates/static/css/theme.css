@@ -1079,6 +1079,29 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .stat-note.tone-warn { color: var(--sky-c-warning, #8a6d3b); }
 .stat-note.tone-ok { color: var(--sky-c-success, #3f6b4f); }
 
+/* ── 11.1 概览页的并排块与趋势图 ──────────────────────────────────────
+   两个并排块在窄屏落成上下两屏（minmax 的下界给足，不靠媒体查询）；
+   趋势图用内联 SVG 画柱子：柱高是**属性**而不是 style，所以不违反
+   admin_dashboard_ui012 那条「模板里不许出现内联 style 属性」的判据。 */
+.grid-split {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: var(--ui-sp-md);
+    align-items: start;
+}
+.trend-chart { display: block; width: 100%; height: auto; }
+.trend-chart .trend-bar { fill: var(--sky-c-primary, #2563eb); }
+.trend-chart .trend-bar.is-zero { fill: var(--sky-c-border, #e5e7eb); }
+.trend-chart .trend-axis { stroke: var(--sky-c-border, #e5e7eb); stroke-width: 1; }
+.trend-chart .trend-day { fill: var(--sky-c-text-mute, #6b7280); font-size: 11px; }
+.trend-chart .trend-val { fill: var(--sky-c-text-secondary, #4b5563); font-size: 11px; }
+/* 站点内容小节的数字：与顶部 KPI 同形但更小 —— 它是次要信息，不该抢 KPI 的视线。 */
+.stat-card-inline { min-width: 0; }
+.stat-value-sm {
+    margin-top: 2px; font-size: 18px; font-weight: 600;
+    line-height: 1.2; letter-spacing: -0.01em; color: var(--sky-c-text, #1a1d21);
+}
+
 /* ── 12. 描述类字段的控件基座：富文本容器与字数提示 ────────────────────
    控件选型见 admin-ui-logic §9 —— 可含格式的多段描述用 Trix 富文本
    （.rich-editor，落库前过 core.SanitizeRichHTML 白名单清洗）；

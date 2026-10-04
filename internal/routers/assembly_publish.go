@@ -687,6 +687,11 @@ func (a *assembly) mountAdminPages() {
 	// 检查器的「具体菜单项」下拉（nav 组件 Props.Navigation，ct=entityref,navigation）。
 	workbenchHandle.SetNavigationPicker(a.navigationSvc)
 	marks.mark(portWorkbenchNavigationPicker)
+	// 概览页的跨模块只读数据：订单聚合（KPI / 趋势 / 榜单）、访问统计（浏览量）、
+	// 页面类型（判断哪些浏览发生在文章页上）。三者在此处都已装配完毕
+	//（buildAPIAndCoreCRUD → buildIdentityAndCommerce → wireRuntimeAccessFace → 本步）。
+	workbenchHandle.SetOverviewPorts(a.orderSvc, a.analyticsSvc, a.pageService)
+	marks.mark(portDashboardOverview)
 	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
 	marks.mark(portDashboardBlueprints)
 }

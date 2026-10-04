@@ -1,0 +1,245 @@
+package workbenchhttp
+
+// dashboard_overview_test.go — 概览页跨模块取数的单元判据（stub 端口，不连库）。
+//
+// 这里钉的是「拼装」这一层：多工程累加、趋势按天合并与柱高归一、榜单合并与截断、
+// 文章浏览只算文章页、以及**单块失败不拖垮整页**。SQL 与口径的正确性由 order /
+// page / analytics 各自的测试负责，这里只保证它们被正确地问、正确地拼。
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	analyticsdto "go_wp/internal/module/analytics/dto"
+	orderdto "go_wp/internal/module/order/dto"
+)
+
+type stubOrderPort struct {
+	summary  map[string]*orderdto.OrderRangeSummaryResp
+	status   map[string]*orderdto.OrderStatusCountsResp
+	daily    map[string]*orderdto.OrderDailySeriesResp
+	top      map[string]*orderdto.OrderTopProductsResp
+	failWith error
+	calls    int
+}
+
+func (s *stubOrderPort) SummaryByRange(_ context.Context, req *orderdto.OrderRangeSummaryReq) (*orderdto.OrderRangeSummaryResp, error) {
+	s.calls++
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.summary[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &orderdto.OrderRangeSummaryResp{ProjectID: req.ProjectID}, nil
+}
+
+func (s *stubOrderPort) StatusCounts(_ context.Context, req *orderdto.OrderStatusCountsReq) (*orderdto.OrderStatusCountsResp, error) {
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.status[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &orderdto.OrderStatusCountsResp{ProjectID: req.ProjectID}, nil
+}
+
+func (s *stubOrderPort) DailySeries(_ context.Context, req *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error) {
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.daily[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &orderdto.OrderDailySeriesResp{ProjectID: req.ProjectID}, nil
+}
+
+func (s *stubOrderPort) TopProducts(_ context.Context, req *orderdto.OrderTopProductsReq) (*orderdto.OrderTopProductsResp, error) {
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.top[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &orderdto.OrderTopProductsResp{ProjectID: req.ProjectID}, nil
+}
+
+type stubAnalyticsPort struct {
+	byProject map[string]*analyticsdto.SummaryResp
+	failWith  error
+}
+
+func (s *stubAnalyticsPort) Summary(_ context.Context, req *analyticsdto.SummaryReq) (*analyticsdto.SummaryResp, error) {
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.byProject[req.ProjectID]; ok {
+		return res, nil
+	}
+	return &analyticsdto.SummaryResp{ProjectID: req.ProjectID}, nil
+}
+
+type stubPageKindPort struct {
+	byProject map[string]map[string]string
+	failWith  error
+}
+
+func (s *stubPageKindPort) KindsOfPaths(_ context.Context, projectID string, _ []string) (map[string]string, error) {
+	if s.failWith != nil {
+		return nil, s.failWith
+	}
+	if res, ok := s.byProject[projectID]; ok {
+		return res, nil
+	}
+	return map[string]string{}, nil
+}
+
+func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
+	orders := &stubOrderPort{
+		summary: map[string]*orderdto.OrderRangeSummaryResp{
+			"p1": {OrderCount: 3, NetSales: 10000, NetSalesLabel: "100.00"},
+			"p2": {OrderCount: 4, NetSales: 20050, NetSalesLabel: "200.50"},
+		},
+		status: map[string]*orderdto.OrderStatusCountsResp{
+			"p1": {ShipPendingCount: 2, PendingCount: 1},
+			"p2": {ShipPendingCount: 3, PendingCount: 0},
+		},
+		daily: map[string]*orderdto.OrderDailySeriesResp{
+			"p1": {Points: []orderdto.OrderDailyPointDTO{
+				{Day: "2026-09-29", OrderCount: 1, NetSales: 1000},
+				{Day: "2026-10-05", OrderCount: 2, NetSales: 9000},
+			}},
+			"p2": {Points: []orderdto.OrderDailyPointDTO{
+				{Day: "2026-09-29", OrderCount: 2, NetSales: 500},
+				{Day: "2026-10-05", OrderCount: 2, NetSales: 1000},
+			}},
+		},
+		top: map[string]*orderdto.OrderTopProductsResp{
+			"p1": {Items: []orderdto.OrderTopProductItemDTO{{ProductName: "A", SKU: "A-1", Quantity: 5, Amount: 5000, AmountLabel: "50.00"}}},
+			"p2": {Items: []orderdto.OrderTopProductItemDTO{{ProductName: "B", SKU: "B-1", Quantity: 9, Amount: 9000, AmountLabel: "90.00"}}},
+		},
+	}
+	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{
+		"p1": {Paths: []analyticsdto.PathCount{
+			{Path: "/blog/a", Views: 30},
+			{Path: "/about", Views: 7},
+		}},
+		"p2": {Paths: []analyticsdto.PathCount{{Path: "/blog/b", Views: 12}}},
+	}}
+	kinds := &stubPageKindPort{byProject: map[string]map[string]string{
+		"p1": {"/blog/a": "article", "/about": "page"},
+		"p2": {"/blog/b": "article"},
+	}}
+
+	h := &Handle{}
+	h.SetOverviewPorts(orders, analytics, kinds)
+	snap := h.collectOverview(context.Background(), []string{"p1", "p2"})
+
+	if !snap.PortsReady {
+		t.Fatal("三个端口都已注入，PortsReady 应为 true")
+	}
+	if snap.KPI.TodayOrders != 7 {
+		t.Errorf("今日订单应跨工程累加 = 7，实得 %d", snap.KPI.TodayOrders)
+	}
+	if snap.KPI.TodaySalesCents != 30050 {
+		t.Errorf("今日销售额 = %d 分，期望 30050", snap.KPI.TodaySalesCents)
+	}
+	if snap.KPI.TodaySalesLabel != "CNY 300.50" && snap.KPI.TodaySalesLabel != "300.50" {
+		t.Errorf("销售额展示串 = %q（货币由站点默认货币决定）", snap.KPI.TodaySalesLabel)
+	}
+	if snap.KPI.ShipPendingCount != 5 || snap.KPI.PendingCount != 1 {
+		t.Errorf("待发货/待付款 = %d/%d，期望 5/1", snap.KPI.ShipPendingCount, snap.KPI.PendingCount)
+	}
+	if snap.KPI.ArticleViews != 42 {
+		t.Errorf("文章浏览应只算 article 路径（30+12），实得 %d", snap.KPI.ArticleViews)
+	}
+	if len(snap.Trend) != 2 {
+		t.Fatalf("趋势点应合并成 2 天，实得 %d：%+v", len(snap.Trend), snap.Trend)
+	}
+	if snap.Trend[0].Day != "2026-09-29" || snap.Trend[1].Day != "2026-10-05" {
+		t.Errorf("趋势应按日期升序，实得 %s / %s", snap.Trend[0].Day, snap.Trend[1].Day)
+	}
+	if snap.Trend[0].Orders != 3 || snap.Trend[1].Orders != 4 {
+		t.Errorf("每天单数应跨工程累加，实得 %+v", snap.Trend)
+	}
+	if snap.Trend[1].HeightPct != 100 {
+		t.Errorf("金额最高的那天柱高应为 100，实得 %d", snap.Trend[1].HeightPct)
+	}
+	if snap.Trend[0].HeightPct == 0 {
+		t.Error("有单的那天柱高不该是 0（与「一单都没有」长得一样）")
+	}
+	if len(snap.Top) != 2 || snap.Top[0].ProductName != "B" || snap.Top[0].Rank != 1 {
+		t.Errorf("榜单应跨工程按销量合并并重排名次，实得 %+v", snap.Top)
+	}
+}
+
+func TestCollectOverviewKeepsOtherBlocksWhenOneFails(t *testing.T) {
+	// 订单块整体失败：KPI / 趋势 / 榜单为空，但文章浏览仍要算出来，
+	// 且失败信息只记**模块名**（错误文本进日志、不进页面）。
+	orders := &stubOrderPort{failWith: errors.New("db down: password=secret")}
+	analytics := &stubAnalyticsPort{byProject: map[string]*analyticsdto.SummaryResp{
+		"p1": {Paths: []analyticsdto.PathCount{{Path: "/blog/a", Views: 11}}},
+	}}
+	kinds := &stubPageKindPort{byProject: map[string]map[string]string{"p1": {"/blog/a": "article"}}}
+
+	h := &Handle{}
+	h.SetOverviewPorts(orders, analytics, kinds)
+	snap := h.collectOverview(context.Background(), []string{"p1"})
+
+	if snap.KPI.TodayOrders != 0 || len(snap.Trend) != 0 || len(snap.Top) != 0 {
+		t.Errorf("订单块失败时应为空：%+v", snap.KPI)
+	}
+	if snap.KPI.ArticleViews != 11 {
+		t.Errorf("订单块失败不该影响文章浏览，实得 %d", snap.KPI.ArticleViews)
+	}
+	if len(snap.FailedBlocks) != 1 || snap.FailedBlocks[0] != "order" {
+		t.Errorf("失败块应记模块名并去重，实得 %+v", snap.FailedBlocks)
+	}
+}
+
+func TestCollectOverviewWithoutPortsIsNotReady(t *testing.T) {
+	h := &Handle{}
+	snap := h.collectOverview(context.Background(), []string{"p1"})
+	if snap.PortsReady {
+		t.Fatal("未注入任何端口时 PortsReady 应为 false（页面据此显示「暂不可用」而不是一片 0）")
+	}
+	if snap.Today == "" || snap.From == "" {
+		t.Error("窗口字段在任何情况下都应有值（模板要显示区间）")
+	}
+}
+
+func TestBuildTopCapsAtFive(t *testing.T) {
+	in := make([]overviewTopProduct, 0, 8)
+	for i := 0; i < 8; i++ {
+		in = append(in, overviewTopProduct{ProductName: string(rune('A' + i)), Quantity: int64(10 - i)})
+	}
+	out := buildTop(in)
+	if len(out) != overviewTopLimit {
+		t.Fatalf("榜单应截到 %d 条，实得 %d", overviewTopLimit, len(out))
+	}
+	for i := range out {
+		if out[i].Rank != i+1 {
+			t.Errorf("第 %d 行的名次应为 %d，实得 %d", i, i+1, out[i].Rank)
+		}
+	}
+}
+
+func TestFormatCents(t *testing.T) {
+	cases := []struct {
+		cents int64
+		want  string
+	}{
+		{0, "0.00"},
+		{5, "0.05"},
+		{100, "1.00"},
+		{123456, "1,234.56"},
+		{100000000, "1,000,000.00"},
+		{-250, "-2.50"},
+	}
+	for _, tc := range cases {
+		if got := formatCents(tc.cents); got != tc.want {
+			t.Errorf("formatCents(%d) = %q，期望 %q", tc.cents, got, tc.want)
+		}
+	}
+}
