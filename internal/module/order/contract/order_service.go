@@ -146,7 +146,7 @@ type CustomerOrderSummaryReader interface {
 //
 // 与 CustomerOrderSummaryReader 同一条思路：越权防护靠接口形状 —— 工程与区间都必填，
 // 调用方没有「忘了传」的选项。它比 ListOrders 更适合只想要数字的调用方
-//（概览页 KPI、只读聚合）：后者会顺带给出全站状态计数与一整页列表。
+// （概览页 KPI、只读聚合）：后者会顺带给出全站状态计数与一整页列表。
 type OrderRangeSummaryReader interface {
 	// SummaryByRange 区间口径（哪些状态算消费、时间窗怎么取）由订单模块决定，
 	// 调用方只拿到结论，不参与计算。

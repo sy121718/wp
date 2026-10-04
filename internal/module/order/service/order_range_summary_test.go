@@ -67,7 +67,7 @@ func TestNormalizeRangeWindow(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "跨度刚好等于上限：接受",
+			name: "跨度刚好等于上限：接受",
 			// 366 天 = maxRangeDays，边界应放行（否则「一年」这个常用区间会被拒）。
 			rawFrom: "2025-10-04", rawTo: "2026-10-04",
 			wantFrom: day(2025, 10, 4), wantTo: day(2026, 10, 5),

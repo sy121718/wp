@@ -60,7 +60,7 @@ func (s *Service) SummaryByRange(ctx context.Context, req *orderdto.OrderRangeSu
 //   - from 晚于 to → ErrInvalidParam；跨度超过 maxRangeDays → ErrInvalidParam。
 //
 // **按 UTC 日界**而不是本地时区：全站的按天聚合都是 UTC 的 day 桶
-//（analytics 的按天统计就是），本地时区会让「今天的订单数」与「今天那根柱子」
+// （analytics 的按天统计就是），本地时区会让「今天的订单数」与「今天那根柱子」
 // 在同一个页面上错开一个时区的量。
 //
 // now 由调用方传入而不是内部取 time.Now()：窗口收敛规则要能被测试钉住，
