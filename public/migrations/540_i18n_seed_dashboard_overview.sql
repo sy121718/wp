@@ -35,7 +35,7 @@ VALUES
 ('admin.dashboard.content.title', 'en-US', 'Site content', 200, 'admin', 'admin/dashboard.html: 站点内容小节标题', 1, now(), now()),
 ('admin.dashboard.content.title', 'zh-CN', '站点内容', 200, 'admin', 'admin/dashboard.html: 站点内容小节标题', 1, now(), now()),
 ('admin.dashboard.overview.unavailable', 'en-US', 'Some overview data is not available yet (the module is not wired).', 200, 'admin', 'admin/dashboard.html: 概览数据源未接线时的提示', 1, now(), now()),
-('admin.dashboard.overview.unavailable', 'zh-CN', '部分概览数据暂不可用（对应模块未接线）。', 200, 'admin', 'admin/dashboard.html: 概览数据源未接线时的提示', 1, now(), now())
+('admin.dashboard.overview.unavailable', 'zh-CN', '部分概览数据暂不可用（对应模块未接线）。', 200, 'admin', 'admin/dashboard.html: 概览数据源未接线时的提示', 1, now(), now()),
 ('admin.dashboard.action.orders', 'en-US', 'Orders', 200, 'admin', 'admin/dashboard.html: 页头动作（订单管理）', 1, now(), now()),
 ('admin.dashboard.action.orders', 'zh-CN', '订单管理', 200, 'admin', 'admin/dashboard.html: 页头动作（订单管理）', 1, now(), now()),
 ('admin.dashboard.kpi.salesNote', 'en-US', 'Net of received refunds', 200, 'admin', 'admin/dashboard.html: 销售额卡片小注', 1, now(), now()),
@@ -47,7 +47,7 @@ VALUES
 ('admin.dashboard.top.col.rank', 'en-US', 'Rank', 200, 'admin', 'admin/dashboard.html: 热销商品表头（名次）', 1, now(), now()),
 ('admin.dashboard.top.col.rank', 'zh-CN', '名次', 200, 'admin', 'admin/dashboard.html: 热销商品表头（名次）', 1, now(), now()),
 ('admin.dashboard.top.col.product', 'en-US', 'Product', 200, 'admin', 'admin/dashboard.html: 热销商品表头（商品）', 1, now(), now()),
-('admin.dashboard.top.col.product', 'zh-CN', '商品', 200, 'admin', 'admin/dashboard.html: 热销商品表头（商品）', 1, now(), now()),
+('admin.dashboard.top.col.product', 'zh-CN', '商品', 200, 'admin', 'admin/dashboard.html: 热销商品表头（商品）', 1, now(), now())
 ON CONFLICT (item_key, lang) DO NOTHING;
 
 -- 口径说明覆盖（旧文案讲的是「工程数 / 页面数」，新概览要先讲清日界与金额口径）。
