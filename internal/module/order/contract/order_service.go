@@ -38,6 +38,8 @@ type OrderService interface {
 	CustomerOrderSummaryReader
 	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
 	OrderRangeSummaryReader
+	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
+	OrderOverviewReader
 
 	// CreateOrder 访客结算建单，来源固定 checkout。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
@@ -151,6 +153,22 @@ type OrderRangeSummaryReader interface {
 	// SummaryByRange 区间口径（哪些状态算消费、时间窗怎么取）由订单模块决定，
 	// 调用方只拿到结论，不参与计算。
 	SummaryByRange(ctx context.Context, req *orderdto.OrderRangeSummaryReq) (res *orderdto.OrderRangeSummaryResp, err error)
+}
+
+// OrderOverviewReader 概览页的其余只读聚合（趋势 / 榜单 / 状态计数）。
+//
+// 三个方法与 OrderRangeSummaryReader 分开成两个接口而不是合成一个：它们回答的问题不同 ——
+// 区间摘要是「这段时间一共多少」，本接口是「每天各多少」「卖得最好的是谁」「现在有多少单等着处理」。
+// 合成一个会让只想画趋势的调用方（将来 analytics 或报表）也被迫依赖榜单与状态计数。
+//
+// 越权防护同样靠接口形状：趋势与榜单都强制「工程 + 区间」，状态计数强制工程。
+type OrderOverviewReader interface {
+	// DailySeries 区间内逐日连续的订单数据（空天已补零）。
+	DailySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error)
+	// TopProducts 区间内销量最高的若干商品（含名次，已按销量降序）。
+	TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error)
+	// StatusCounts 各状态的订单条数与几个已解释过的口径（待付款 / 待发货 / 总数）。
+	StatusCounts(ctx context.Context, req *orderdto.OrderStatusCountsReq) (res *orderdto.OrderStatusCountsResp, err error)
 }
 
 // OrderNoReader 按商户单号取订单。

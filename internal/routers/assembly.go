@@ -687,6 +687,13 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(orderTools...); err != nil {
 		panic("订单工具注册失败：" + err.Error())
 	}
+	// 概览聚合工具（趋势 / 热销榜 / 状态计数）与上面的区间摘要分开装配：
+	// 两者的依赖接口不同，函数分开之后每类工具的依赖都能收窄到自己需要的那几条只读方法。
+	if overviewTools, err := ordermcp.OverviewTools(orderSvc); err != nil {
+		panic("订单概览工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(overviewTools...); err != nil {
+		panic("订单概览工具注册失败：" + err.Error())
+	}
 	marks.mark(portWebhookDispatcher)
 
 	// —— 会员 ↔ 订单的端口对接（BIZ-3 消费侧）——

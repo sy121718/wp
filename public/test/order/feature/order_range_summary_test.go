@@ -32,7 +32,7 @@ func rangeTime(day int) time.Time {
 }
 
 // newRangeFixture 只装配订单三张表用得到的 model 与 service
-//（与 order_customer_summary_window_test.go 同一形态：product / stock 等端口传 nil）。
+// （与 order_customer_summary_window_test.go 同一形态：product / stock 等端口传 nil）。
 func newRangeFixture(t *testing.T) (*gorm.DB, *ordermodel.OrderModel, *orderservice.Service) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
