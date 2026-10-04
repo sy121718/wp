@@ -64,6 +64,7 @@ func (h *PageHandle) renderPage(c *gin.Context, picker gin.H) error {
 		return err
 	}
 	page := shell.Prepare(c, gin.H{
+		"title":           shell.TranslateFor(c)(aienums.AdminProvidersTitle, "模型"),
 		"Presets":         aiservice.BuiltinPresets(),
 		"BuiltinKeys":     aiservice.BuiltinProviderKeys(),
 		"ProtocolOptions": aienums.ProtocolOptions,

@@ -65,6 +65,7 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 		return
 	}
 	data := shell.Prepare(c, gin.H{
+		"title":   shell.TranslateFor(c)(aienums.AdminSessionsTitle, "AI 会话"),
 		"Rows":    rows,
 		"Total":   total,
 		"Page":    page,

@@ -12,7 +12,9 @@
    所有写请求（上传/分类增删改）全部 403 CSRF 校验失败。
    withCSRF() 已把 token 注入渲染数据，这里补一个 meta 就让两条通道对上了。 *}
 <meta name="csrf-token" content="{{ .["csrf_token"] }}">
-    <title>{{.title}} — go_wp {{ .["t"]("shell.brand", "管理后台") }}</title>
+    {* 标题兜底：handler 漏给 title 时回落品牌名 —— 点号取字段缺键会抛错，整页 500。
+       兜底只是止损，页面仍应在 shell.Prepare 的数据里给 title（门禁 scripts/check-page-title.sh）。 *}
+    <title>{{if isset(.title)}}{{.title}}{{else}}{{ .["t"]("shell.brand", "管理后台") }}{{end}} — go_wp {{ .["t"]("shell.brand", "管理后台") }}</title>
     <script>
         {* 防止主题闪烁：在 CSS 加载前就从 localStorage 读取主题 *}
         (function() {

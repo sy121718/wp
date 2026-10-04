@@ -91,6 +91,15 @@ var FacingMessages = map[string]string{
 	ErrInternal: "服务器内部错误，请稍后重试",
 }
 
+// 页面标题（layout 的 <title>）：值与模板 h1 同源，已在迁移 513 / 516 seed，
+// 所以这里只登记常量、不新增词条。
+const (
+	// AdminProvidersTitle 供应商配置页标题（模板 admin/ai/providers.html）。
+	AdminProvidersTitle = "admin.ai.title"
+	// AdminSessionsTitle 会话页标题（模板 admin/ai/sessions.html）。
+	AdminSessionsTitle = "admin.ai.session.title"
+)
+
 // FacingText 查面向用户的文案（key → 中文兜底）；未登记返回 ("", false)。
 func FacingText(key string) (string, bool) {
 	text, ok := FacingMessages[key]

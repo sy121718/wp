@@ -153,4 +153,6 @@ func init() {
 	registerAIStalePermissionCleanup()
 	// 519：AI 会话页「发消息」词条（见 register_ai_session_chat_i18n.go）。
 	registerAISessionChatI18n()
+	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
+	registerPageTitleI18n()
 }

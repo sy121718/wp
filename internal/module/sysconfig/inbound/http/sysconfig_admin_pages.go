@@ -114,6 +114,7 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 		doneText = shell.TranslateFor(c)("admin.system.saved", "系统设置已保存（全局默认值立即对读取方生效）")
 	}
 	c.HTML(http.StatusOK, "admin/system/settings", shell.Prepare(c, gin.H{
+		"title":           shell.TranslateFor(c)(sysconfigenums.AdminSystemTitle, "系统设置"),
 		"I18N":            i18nGroup,
 		"Trade":           tradeGroup,
 		"LangOptions":     langs,

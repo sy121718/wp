@@ -37,6 +37,12 @@ const (
 	ErrInternal = "sysconfig.err.internal" // 操作失败，请稍后重试（细节只进日志）
 )
 
+// 页面标题（layout 的 <title>）：值为 sys_i18n key，词条由迁移 520 seed。
+const (
+	// AdminSystemTitle 系统设置页标题（模板 admin/system/settings.html）。
+	AdminSystemTitle = "admin.system.title"
+)
+
 // SysConfigFacingMessages 可以原样展示给前端的业务文案（**白名单**）。
 //
 // 命中 → 原样透出；未命中 → inbound 的归口助手记结构化日志并返回 ErrInternal。
