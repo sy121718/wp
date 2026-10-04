@@ -1,0 +1,85 @@
+{* admin/user/customer_rfm.html — RFM 分析：区间内的客户价值分层 *}
+{* 三段打分（R 多久没来 / F 来了几次 / M 花了多少）各按本项目数据的五分位给 1-5 分， *}
+{* 总分决定分段（高价值 / 潜力 / 一般）。口径与打分全在订单模块，本页只做编排与展示。 *}
+{* **分数是相对的**：分位按当次查询的那批人算，同一个人换个区间得分会变 —— *}
+{* 这一点必须写在页面上，否则分数一定会被读成绝对等级。 *}
+{* Jet 方言：range 用 `range _, x := .List` 形式时 `.` 仍指向根作用域，元素走绑定变量。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{rows := .Rows}}
+<div class="stack customers-page">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.customer.rfm.title", "RFM 分析") }}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customer.rfm.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer.rfm.hint.score.lead", "R / F / M 三个分数都是") }}<strong>{{ .["t"]("admin.customer.rfm.hint.score.strong", "五分位（相对分）") }}</strong>{{ .["t"]("admin.customer.rfm.hint.score.tail", "：按这段时间里下单的这批人排队，前 20% 得 5 分、后 20% 得 1 分。同一个人换一个时间段，分数会变 —— 它们不是绝对等级，换个区间比分数没有意义。") }}<br><br><strong>{{ .["t"]("admin.customer.rfm.hint.def.strong", "三个字母的意思") }}</strong>{{ .["t"]("admin.customer.rfm.hint.def.tail", "：R = 最近一次下单距今多久（越近分越高）；F = 这段时间里下了几单；M = 这段时间的净消费额。前两个都只看计入消费的订单，游客单（没有账号）不计入。") }}<br><br><strong>{{ .["t"]("admin.customer.rfm.hint.seg.strong", "分段") }}</strong>{{ .["t"]("admin.customer.rfm.hint.seg.tail", "按三项总分划分：≥12 是高价值，≥8 是潜力，其余是一般。") }}</span>
+                </span>
+            </div>
+        </div>
+    </header>
+
+    {* 时间筛选条：与仪表盘、客户概览同一批档位、同一批词条。 *}
+    <div class="range-bar">
+        {{range _, p := .Presets}}
+        <a class="range-chip{{if p.Active}} is-active{{end}}" href="{{p.URL}}">{{ .["t"](p.LabelKey, p.Key) }}</a>
+        {{end}}
+    </div>
+
+    {* 分段徽章既是统计也是筛选：点一下只看那一段。计数为 0 的照样可点（点进去看到空态是合理预期）。 *}
+    <div class="filter-bar">
+        <div class="filter-row">
+            {{range _, tab := .SegmentTabs}}
+            <a class="badge {{tab.Badge}}" href="{{tab.URL}}"{{if tab.Active}} aria-current="true"{{end}}>{{if tab.Active}}<strong>✓ {{ .["t"](tab.LabelKey, tab.Label) }}</strong>{{else}}{{ .["t"](tab.LabelKey, tab.Label) }}{{end}} {{tab.Count}}</a>
+            {{end}}
+            <span class="text-mute text-sm">{{ .["t"]("admin.customer.rfm.scope", "范围：") }}{{.Range.From}} ~ {{.Range.To}}</span>
+        </div>
+    </div>
+
+    <section class="card list-card">
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>{{ .["t"]("admin.customer.rfm.col.customer", "客户") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.lastOrder", "最近下单") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.recency", "距今") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.frequency", "区间单数") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.monetary", "区间消费") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.scores", "R / F / M") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.total", "总分") }}</th>
+                        <th>{{ .["t"]("admin.customer.rfm.col.segment", "分段") }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range _, r := rows}}
+                    <tr>
+                        <td>
+                            <a href="{{r.DetailURL}}">{{if r.Name != ""}}{{r.Name}}{{else}}{{ .["t"]("admin.customer.rfm.unnamed", "客户 #") }}{{r.UserID}}{{end}}</a>
+                            {{if r.Email != ""}}<div class="text-mute text-sm">{{r.Email}}</div>{{end}}
+                        </td>
+                        <td>{{r.LastOrderAt}}</td>
+                        <td>{{r.RecencyDays}}{{ .["t"]("admin.customer.rfm.daysBefore", " 天前") }}</td>
+                        <td class="col-num">{{r.Frequency}}</td>
+                        <td class="col-num">{{r.MonetaryLabel}}</td>
+                        <td class="col-num">{{r.RScore}} / {{r.FScore}} / {{r.MScore}}</td>
+                        <td class="col-num">{{r.TotalScore}}</td>
+                        <td>{{r.SegmentLabel}}</td>
+                    </tr>
+                    {{end}}
+                    {{if .Err != ""}}
+                    {* 查询失败：仍然保留表头（用户能看见这一页有哪些列），把原因放进正文。 *}
+                    <tr><td colspan="8" class="cell-wrap">{{.Err}}</td></tr>
+                    {{else if !.RfmReady}}
+                    <tr><td colspan="8" class="cell-wrap">{{ .["t"]("admin.customer.rfm.empty", "这段时间里没有可分析的客户：可能是还没有站点工程，也可能确实没有已付款的订单。换个时间段试试。") }}</td></tr>
+                    {{else if len(rows) == 0}}
+                    <tr><td colspan="8" class="cell-wrap">{{ .["t"]("admin.customer.rfm.noRows", "这个分段在这段时间里没有客户。") }}</td></tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{include "../partials/pagination.html"}}
+    </section>
+</div>
+{{end}}

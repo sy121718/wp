@@ -178,6 +178,14 @@ type customerPageHandle struct {
 	//
 	// 同样经 setter 注入：口径在订单模块（只有它看得到 orders 表），这里只拿 id 列表。
 	segments ordercontract.CustomerSegmentReader
+	// rfm 客户 RFM 分层（RFM 分析页）。
+	rfm ordercontract.CustomerRfmReader
+}
+
+// SetCustomerRfm 注入 RFM 端口（允许为 nil：分析页会明确说「暂时不可用」，
+// 而不是渲染三格 0 —— 0 会被读成「这段时间一个客户都没有」）。
+func (h *customerPageHandle) SetCustomerRfm(rfm ordercontract.CustomerRfmReader) {
+	h.rfm = rfm
 }
 
 // SetCustomerSegments 注入客户分段端口（允许为 nil：列表页会明确说「筛不了」，

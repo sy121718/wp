@@ -40,7 +40,8 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	membership membershipcontract.Reader,
 	membershipFacing membershipcontract.FacingTexter,
 	growth ordercontract.CustomerGrowthReader,
-	segments ordercontract.CustomerSegmentReader) {
+	segments ordercontract.CustomerSegmentReader,
+	rfm ordercontract.CustomerRfmReader) {
 	if pages == nil {
 		return
 	}
@@ -54,10 +55,14 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h.SetMembershipDisplay(membership, membershipFacing)
 	h.SetCustomerGrowth(growth)
 	h.SetCustomerSegments(segments)
+	h.SetCustomerRfm(rfm)
 	pages.GET("/customers", h.CustomersPage)
 	// 客户概览：目录（客户）下的第一项。只读，走 /admin 组认证即可 ——
 	// 与列表页同源（同一张 users 表的两种看法），不另立权限点。
 	pages.GET("/customers/overview", h.CustomerOverviewPage)
+	// RFM 分析：客户目录下的第三项。只读，与列表页同源（同一张表的另一种看法），
+	// 不另立权限点 —— 与客户概览同一条口径。
+	pages.GET("/customers/rfm", h.CustomerRfmPage)
 	pages.GET("/customers/detail", h.CustomerDetailPage)
 	pages.POST("/customers/status",
 		builtin.CasbinMiddlewareForPath("/api/customer/status"), h.CustomerStatusSave)

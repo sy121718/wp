@@ -218,6 +218,10 @@ func init() {
 	registerDashboardNewCustomersKPI18n()
 	// 558：客户列表「消费分段」筛选词条（见 register_customer_segment_filter_i18n.go）。
 	registerCustomerSegmentFilterI18n()
+	// 559：客户目录「RFM 分析」菜单（见 register_customer_rfm_menu.go）。
+	registerCustomerRfmMenu()
+	// 560：RFM 分析页词条（见 register_customer_rfm_i18n.go）。
+	registerCustomerRfmI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
