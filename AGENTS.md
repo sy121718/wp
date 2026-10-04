@@ -272,6 +272,22 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   先包 `pkg/rls.InProjectScope`，再换 `database.user` 为非超级角色（`bash scripts/rls-role-setup.sh`），
   并把 `database.require_rls_role` 置 `true`。详见 [`docs/rls-role-cutover.md`](docs/rls-role-cutover.md)。
 
+## 聚合口径（跨模块只读）
+
+表隔离下，同一个业务事实的取数口只属于拥有那张表的模块；消费方（概览页 / AI 工具 / 外部
+MCP / 客户页）只拿结论、不参与计算（`order_range_model.go` / `order_top_product_model.go` 的文件头
+各记了一次）。
+
+- **同一张页面上的两个数字必须同源**：若它们回答的是同一批行（例如「区间商品销售总量」与
+  「热销商品榜」都由 `order_items` 按同一条件聚合），筛选条件要抽成一个共享常量
+  （`orderItemScopeSQL`），不要各写一份 `WHERE`。两份各自维护的失败模式是「榜单排除了取消单、
+  总量忘了排除」—— 两个数字互相矛盾，而每一处单独看都对、也都不报错。
+- **这条要有会变红的判据**：feature 测试直接断言两侧的等式（榜单各项之和 == 总量，
+  见 `TestOrderSoldQuantitySharesScopeWithTopProducts`），而不是只断言各自的值 ——
+  只断言各自的值时，改了一侧仍然全绿。
+- **参数顺序写进注释**：拼接会改变 SQL 文本，但不该改变 `?` 的顺序。参数错位不编译报错，
+  只会给一个看起来合理的数字。
+
 ## model 层定位（评审与开发共同遵守）
 
 `model` 是**表访问单元（Repository）**，不是 DDD Domain Model。
