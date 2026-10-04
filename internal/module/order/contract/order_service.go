@@ -36,6 +36,8 @@ type OrderService interface {
 	ReturnService
 	// CustomerOrderSummaryReader 后台客户管理页的订单摘要（只读，一条方法）。
 	CustomerOrderSummaryReader
+	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
+	OrderRangeSummaryReader
 
 	// CreateOrder 访客结算建单，来源固定 checkout。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
@@ -138,6 +140,17 @@ type CustomerOrderSummaryReader interface {
 	// CustomerOrderSummaryOf 累计口径（哪些状态算消费）由订单模块决定，
 	// 调用方只拿到结论，不参与计算。
 	CustomerOrderSummaryOf(ctx context.Context, req *orderdto.CustomerOrderSummaryReq) (res *orderdto.CustomerOrderSummaryResp, err error)
+}
+
+// OrderRangeSummaryReader 按「工程 + 时间区间」取订单聚合事实（只读，一条方法）。
+//
+// 与 CustomerOrderSummaryReader 同一条思路：越权防护靠接口形状 —— 工程与区间都必填，
+// 调用方没有「忘了传」的选项。它比 ListOrders 更适合只想要数字的调用方
+//（概览页 KPI、只读聚合）：后者会顺带给出全站状态计数与一整页列表。
+type OrderRangeSummaryReader interface {
+	// SummaryByRange 区间口径（哪些状态算消费、时间窗怎么取）由订单模块决定，
+	// 调用方只拿到结论，不参与计算。
+	SummaryByRange(ctx context.Context, req *orderdto.OrderRangeSummaryReq) (res *orderdto.OrderRangeSummaryResp, err error)
 }
 
 // OrderNoReader 按商户单号取订单。
