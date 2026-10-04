@@ -30,6 +30,8 @@ import (
 const (
 	// overviewTopLimit 热销榜条数（口径「热销商品前十」，见 docs/17 §P6）。
 	overviewTopLimit = 10
+	// overviewPageTopLimit 页面排行榜展示几条（口径「页面前十」，见 docs/17 §P6）。
+	overviewPageTopLimit = 10
 	// overviewPathLimit 取路径排行时一次要多少条。
 	//
 	// 文章浏览量 = 「路径排行里的文章页之和」，所以要够大才不漏：取 200（analytics 的上限）。
@@ -122,6 +124,23 @@ type overviewTopProduct struct {
 	AmountLabel string
 }
 
+// overviewTopPage 页面排行的一行（跨工程合并后重排名次）。
+//
+// 展示的是**路径**而不是页面标题：analytics 只记 path（表隔离，读不到 pages），
+// 而排行榜要的是「哪些地址被看得最多」；标题只对文章页有意义，落地页与首页没有标题。
+// Kind 由 page 模块补（查不到时为空串），只作辅助列 —— 拿不到类型不影响排行本身。
+type overviewTopPage struct {
+	Rank  int
+	Path  string
+	Kind  string
+	Views int64
+	// KindKey 类型对应的 i18n 词条 key（空串 = 类型未知，展示层不渲染那枚标签）。
+	//
+	// 服务端只给 key、不给中文：后台文案一律走词条（硬编码中文会被 i18n 覆盖门禁判红），
+	// 而「类型 → 文案」的映射放在 Go 里只写一次，模板不必再维护一份。
+	KindKey string
+}
+
 // overviewSnapshot 概览页的全部跨模块数据。
 type overviewSnapshot struct {
 	// OrdersReady / AnalyticsReady 表示对应端口**已接线**（不是「有数据」）：
@@ -139,6 +158,8 @@ type overviewSnapshot struct {
 	KPI     overviewKPI
 	Trend   []overviewTrendPoint
 	Top     []overviewTopProduct
+	// TopPages 页面排行（浏览量降序，跨工程合并）。
+	TopPages []overviewTopPage
 	// PortsReady 三个跨模块端口是否都已接线。
 	//
 	// 未接线时页面渲染的是一片 0，而 0 会被当成真实统计（「今天一单都没有」）——
@@ -170,7 +191,8 @@ func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng o
 	snap := overviewSnapshot{Range: rng}
 	byDay := h.collectOrderOverview(ctx, projectIDs, rng, &snap)
 	viewsByDay := make(map[string]int64)
-	h.collectViews(ctx, projectIDs, rng, &snap, viewsByDay)
+	viewsByPath := make(map[string]int64)
+	h.collectViews(ctx, projectIDs, rng, &snap, viewsByDay, viewsByPath)
 	// 趋势图在收完两块数据之后一次装配：两张图共用一根日期轴，
 	// 各画各的柱子（销售额图与浏览量图），所以合并只做一次。
 	snap.Trend = buildTrend(byDay, viewsByDay, rng.Weekly)
@@ -264,11 +286,13 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 //
 // 总量（PageViews）不依赖 page 模块：它是 analytics 直接给的 Total，
 // 所以 page 端口没接线时总量照旧可用，只有「其中文章页」那半格失去意义。
-func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot, viewsByDay map[string]int64) {
+func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot, viewsByDay map[string]int64, viewsByPath map[string]int64) {
 	if h.overviewAnalytics == nil {
 		return
 	}
 	snap.AnalyticsReady = true
+	// 路径 → 类型（跨工程合并；同一个路径在不同工程里可能是不同类型，谁先给出非空值用谁）。
+	kindOfPath := make(map[string]string)
 	for _, pid := range projectIDs {
 		res, err := h.overviewAnalytics.Summary(ctx, &analyticsdto.SummaryReq{
 			ProjectID: pid, From: rng.From, To: rng.To, PathLimit: overviewPathLimit,
@@ -282,6 +306,11 @@ func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng over
 		// 缺的天由 buildTrend 与订单侧的日期集求并集后统一处理（谁有数据谁说了算）。
 		for _, d := range res.Daily {
 			viewsByDay[d.Day] += d.Views
+		}
+		// 排行按路径合并**不需要** page 端口：它是 analytics 直接给的，
+		// 端口未接线时少的只是「类型」那一列的标签。
+		for _, p := range res.Paths {
+			viewsByPath[p.Path] += p.Views
 		}
 		if h.overviewPageKinds == nil {
 			continue
@@ -299,8 +328,13 @@ func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng over
 			if kinds[p.Path] == pageenums.PageKindArticle {
 				snap.KPI.ArticleViews += p.Views
 			}
+			// 空值不覆盖已有值：多工程下同一个路径可能只有其中一处能查到类型。
+			if kindOfPath[p.Path] == "" && kinds[p.Path] != "" {
+				kindOfPath[p.Path] = kinds[p.Path]
+			}
 		}
 	}
+	snap.TopPages = buildTopPages(viewsByPath, kindOfPath)
 }
 
 // fail 记一次取数失败（去重模块名 + 结构化日志）。
@@ -446,6 +480,60 @@ func weekStartOf(day string) string {
 }
 
 // buildTop 跨工程合并榜单：按销量降序（并列看金额与名字），重排名次后取前 N。
+// buildTopPages 把「路径 → 浏览量」排成榜单（降序，取前 overviewPageTopLimit 条，重排名次）。
+//
+// 排序键要带路径收尾：浏览量并列时若只按那个数字排，同一次请求在两台机器上可能给出
+// 不同顺序 —— 排行榜会随机抖动，测试也会偶发（与热销榜同一条考虑）。
+func buildTopPages(viewsByPath map[string]int64, kindOfPath map[string]string) []overviewTopPage {
+	items := make([]overviewTopPage, 0, len(viewsByPath))
+	for path, views := range viewsByPath {
+		kind := kindOfPath[path]
+		items = append(items, overviewTopPage{
+			Path: path, Views: views, Kind: kind, KindKey: overviewPageKindKey(kind),
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Views != items[j].Views {
+			return items[i].Views > items[j].Views
+		}
+		return items[i].Path < items[j].Path
+	})
+	if len(items) > overviewPageTopLimit {
+		items = items[:overviewPageTopLimit]
+	}
+	for i := range items {
+		items[i].Rank = i + 1
+	}
+	return items
+}
+
+// overviewPageKindKey 页面类型 → i18n 词条 key（认不出的类型回空串，不渲染标签）。
+//
+// 键名与 pageenums 的常量逐条对齐；这里用 switch 而不是拼字符串，
+// 是为了让「page 模块新增一种类型」在编译期就能被看见（拼串会静默给出一个不存在的 key，
+// 页面上表现为那枚标签凭空消失）。
+func overviewPageKindKey(kind string) string {
+	switch kind {
+	case pageenums.PageKindHome:
+		return "admin.dashboard.pageKind.home"
+	case pageenums.PageKindPage:
+		return "admin.dashboard.pageKind.page"
+	case pageenums.PageKindArticle:
+		return "admin.dashboard.pageKind.article"
+	case pageenums.PageKindTag:
+		return "admin.dashboard.pageKind.tag"
+	case pageenums.PageKindArchive:
+		return "admin.dashboard.pageKind.archive"
+	case pageenums.PageKindSearch:
+		return "admin.dashboard.pageKind.search"
+	// 404 也进路径排行，而且它往往是运营最该看见的一类流量（用户在找不存在的页）。
+	case pageenums.PageKindNotFound:
+		return "admin.dashboard.pageKind.notFound"
+	default:
+		return ""
+	}
+}
+
 func buildTop(products []overviewTopProduct) []overviewTopProduct {
 	if len(products) == 0 {
 		return nil

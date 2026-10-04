@@ -1746,3 +1746,14 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (hover: hover) {
     .ai-picker-row:hover { background: var(--sky-c-primary-bg, #eceef1); }
 }
+
+/* ===== 概览页：排行表的路径列（admin/dashboard.html） =====
+   长路径不能把表格撑破（后台常见带一长串 utm_* 的曝光地址）。
+   这里用 max-width + 任意位置换行，而**不是** text-overflow: ellipsis：
+   省略号会让两条不同的路径看起来一模一样（都是 /blog/2026-…），
+   而这一列的价值恰好是「到底是哪个地址」。 */
+.cell-path { max-width: 22rem; }
+.cell-path > .text-mono { overflow-wrap: anywhere; }
+
+/* 路径下面那枚类型标签（只有 page 模块能给出类型时才渲染）。 */
+.cell-path > .badge { margin-top: var(--sp-xs); }

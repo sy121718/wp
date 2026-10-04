@@ -156,37 +156,86 @@
 
         <section class="card">
             <div class="card-header">
-                <span class="card-title">{{ .["t"]("admin.dashboard.top.title", "热销商品（当前区间）") }}</span>
+                <span class="card-title">{{ .["t"]("admin.dashboard.top.title", "排行榜（当前区间）") }}</span>
             </div>
-            {{if len(.Overview.Top) == 0}}
+            {{if len(.Overview.Top) == 0 && len(.Overview.TopPages) == 0}}
             <div class="card-body">
-                <p class="empty-desc">{{ .["t"]("admin.dashboard.top.empty", "这段时间没有已付款的订单") }}</p>
+                <p class="empty-desc">{{ .["t"]("admin.dashboard.rank.empty", "这段时间没有可排行的数据") }}</p>
             </div>
             {{else}}
-            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.top.title", "热销商品（当前区间）") }}">
-                <table class="data-table">
-                    <thead>
-                    <tr>
-                        <th class="col-num">{{ .["t"]("admin.dashboard.top.col.rank", "名次") }}</th>
-                        <th>{{ .["t"]("admin.dashboard.top.col.product", "商品") }}</th>
-                        <th class="col-num">{{ .["t"]("admin.dashboard.top.quantity", "销量") }}</th>
-                        <th class="col-num">{{ .["t"]("admin.dashboard.top.amount", "销售额") }}</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {{range _, it := .Overview.Top}}
-                    <tr>
-                        <td class="text-mute">{{it.Rank}}</td>
-                        <td>
-                            <div>{{it.ProductName}}</div>
-                            <div class="text-mute text-sm text-mono">{{it.SKU}}</div>
-                        </td>
-                        <td class="col-num">{{it.Quantity}}</td>
-                        <td class="col-num">{{it.AmountLabel}}</td>
-                    </tr>
+            {* 与趋势图同一套 Tab 契约（data-tabs + aria-controls + 面板 hidden）。
+               两张表是不同的事实（卖了多少件 / 哪些地址被看得最多），服务端两份都渲染好。 *}
+            <div class="tabs" data-tabs>
+                <div class="tab-list" role="tablist" aria-label="{{ .["t"]("admin.dashboard.rank.tabs", "排行维度") }}">
+                    <button type="button" class="tab" role="tab" id="dash-tab-topprod" aria-controls="dash-panel-topprod"
+                            aria-selected="true" tabindex="0">{{ .["t"]("admin.dashboard.rank.tabProducts", "热销商品") }}</button>
+                    <button type="button" class="tab" role="tab" id="dash-tab-toppage" aria-controls="dash-panel-toppage"
+                            aria-selected="false" tabindex="-1">{{ .["t"]("admin.dashboard.rank.tabPages", "热门页面") }}</button>
+                </div>
+                <div class="tab-panel" id="dash-panel-topprod" role="tabpanel" aria-labelledby="dash-tab-topprod">
+                    {{if len(.Overview.Top) == 0}}
+                    <div class="card-body">
+                        <p class="empty-desc">{{ .["t"]("admin.dashboard.top.empty", "这段时间没有已付款的订单") }}</p>
+                    </div>
+                    {{else}}
+                    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.rank.tabProducts", "热销商品") }}">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th class="col-num">{{ .["t"]("admin.dashboard.top.col.rank", "名次") }}</th>
+                                <th>{{ .["t"]("admin.dashboard.top.col.product", "商品") }}</th>
+                                <th class="col-num">{{ .["t"]("admin.dashboard.top.quantity", "销量") }}</th>
+                                <th class="col-num">{{ .["t"]("admin.dashboard.top.amount", "销售额") }}</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{range _, it := .Overview.Top}}
+                            <tr>
+                                <td class="text-mute">{{it.Rank}}</td>
+                                <td>
+                                    <div>{{it.ProductName}}</div>
+                                    <div class="text-mute text-sm text-mono">{{it.SKU}}</div>
+                                </td>
+                                <td class="col-num">{{it.Quantity}}</td>
+                                <td class="col-num">{{it.AmountLabel}}</td>
+                            </tr>
+                            {{end}}
+                            </tbody>
+                        </table>
+                    </div>
                     {{end}}
-                    </tbody>
-                </table>
+                </div>
+                <div class="tab-panel" id="dash-panel-toppage" role="tabpanel" aria-labelledby="dash-tab-toppage" hidden>
+                    {{if len(.Overview.TopPages) == 0}}
+                    <div class="card-body">
+                        <p class="empty-desc">{{ .["t"]("admin.dashboard.pages.empty", "这段时间没有访问记录") }}</p>
+                    </div>
+                    {{else}}
+                    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.rank.tabPages", "热门页面") }}">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th class="col-num">{{ .["t"]("admin.dashboard.top.col.rank", "名次") }}</th>
+                                <th>{{ .["t"]("admin.dashboard.pages.col.path", "路径") }}</th>
+                                <th class="col-num">{{ .["t"]("admin.dashboard.pages.col.views", "浏览量") }}</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{range _, it := .Overview.TopPages}}
+                            <tr>
+                                <td class="text-mute">{{it.Rank}}</td>
+                                <td class="cell-path">
+                                    <div class="text-mono">{{it.Path}}</div>
+                                    {{if it.KindKey}}<span class="badge badge-mute">{{ .["t"](it.KindKey, it.Kind) }}</span>{{end}}
+                                </td>
+                                <td class="col-num">{{it.Views}}</td>
+                            </tr>
+                            {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+                    {{end}}
+                </div>
             </div>
             {{end}}
         </section>

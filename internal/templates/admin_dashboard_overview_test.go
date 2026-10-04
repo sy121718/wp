@@ -66,6 +66,15 @@ type tmplRangePreset struct {
 	Active   bool
 }
 
+// tmplTopPage 页面排行的一行（KindKey 是词条 key，不是类型原名）。
+type tmplTopPage struct {
+	Rank    int
+	Path    string
+	Kind    string
+	Views   int64
+	KindKey string
+}
+
 type tmplOverview struct {
 	PortsReady bool
 	Range      tmplRange
@@ -73,6 +82,7 @@ type tmplOverview struct {
 	KPI        tmplOverviewKPI
 	Trend      []tmplTrendPoint
 	Top        []tmplTopProduct
+	TopPages   []tmplTopPage
 }
 
 func TestDashboardRendersOverviewBlocks(t *testing.T) {
@@ -108,6 +118,10 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		Top: []tmplTopProduct{
 			{Rank: 1, ProductName: "TEO 香水 50ml", SKU: "TEO-50-01", Quantity: 5, AmountLabel: "CNY 400.00"},
 		},
+		TopPages: []tmplTopPage{
+			{Rank: 1, Path: "/blog/teo-50", Kind: "article", Views: 40, KindKey: "admin.dashboard.pageKind.article"},
+			{Rank: 2, Path: "/about", Views: 7},
+		},
 	}
 	out, err := render(t, newAdminTestSet(), "admin/dashboard", data)
 	if err != nil {
@@ -117,7 +131,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	for _, want := range []string{
 		"订单数", "净销售额", "CNY 1,234.50", "商品销售总量", "23",
 		"页面浏览", "456", "全站路径；其中文章页：", "88", "待发货",
-		"趋势（按天）", "热销商品（当前区间）", "TEO 香水 50ml", "TEO-50-01", "09-29",
+		"趋势（按天）", "排行榜（当前区间）", "热销商品", "热门页面", "TEO 香水 50ml", "TEO-50-01", "09-29",
 		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
 		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",
 		`<input type="hidden" name="range" value="custom">`,
@@ -131,7 +145,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		// 图表两个 Tab：面板全部渲染在服务端，切换由 admin.js 的 data-tabs 接管。
 		`data-tabs`, `role="tablist"`, "dash-tab-sales", "dash-tab-views",
 		`id="dash-panel-sales"`, `id="dash-panel-views"`,
-		"销售额与订单", "页面浏览",
+		"销售额与订单", "页面浏览", "排行维度", "热销商品", "热门页面",
 		// 柱状图是内联 SVG，柱高走属性（不是 style）。
 		"<svg", "trend-bar", "height=\"120\"",
 		// 未接线提示在这条路径上不该出现。
@@ -153,6 +167,28 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 	if strings.Contains(out, `id="dash-panel-sales" role="tabpanel" aria-labelledby="dash-tab-sales" hidden`) {
 		t.Error("销售额面板是默认选中的那个，不该带 hidden")
+	}
+	// 排行榜那一组同理：商品榜默认可见、页面榜带 hidden。
+	if !strings.Contains(out, `id="dash-panel-toppage" role="tabpanel" aria-labelledby="dash-tab-toppage" hidden`) {
+		t.Error("页面榜面板初始应带 hidden")
+	}
+	if strings.Contains(out, `id="dash-panel-topprod" role="tabpanel" aria-labelledby="dash-tab-topprod" hidden`) {
+		t.Error("热销商品面板是默认选中的那个，不该带 hidden")
+	}
+	// 页面排行渲染的是**路径**（analytics 只记 path）。
+	//
+	// 类型标签取词的**文案**这里验不了：测试里的 t 是 stub（没有词条表），
+	// 它的取值链是「词条缺失 → 回退第二参」，所以页面上会出现 Kind 原文。
+	// 「词条真的存在」由 group F 的门禁（模板取词必须在迁移里 seed）与
+	// pageKind.* 那六条本身的 seed 覆盖；这里只验结构。
+	if !strings.Contains(out, "/blog/teo-50") || !strings.Contains(out, "/about") {
+		t.Error("页面排行应渲染路径")
+	}
+	if !strings.Contains(out, `class="badge badge-mute"`) {
+		t.Error("KindKey 非空的行应渲染类型标签（空 Key 的行不渲染，见下一条）")
+	}
+	if strings.Contains(out, `class="badge badge-mute">`+"/about") {
+		t.Error("KindKey 为空的行不该渲染类型标签")
 	}
 	// 两张图各用各的柱高字段：浏览量图里 09-29 的柱高来自 ViewsHeightPct（66 -> 79），
 	// 而销售额图里同一天是 SalesHeightPct（4 -> 4）。两个高度都必须在页面上出现。

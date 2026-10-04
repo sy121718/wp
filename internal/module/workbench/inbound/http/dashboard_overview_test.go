@@ -13,6 +13,7 @@ import (
 
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	orderdto "go_wp/internal/module/order/dto"
+	pageenums "go_wp/internal/module/page/enums"
 )
 
 type stubOrderPort struct {
@@ -221,6 +222,47 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	}
 	if len(snap.Top) != 2 || snap.Top[0].ProductName != "B" || snap.Top[0].Rank != 1 {
 		t.Errorf("榜单应跨工程按销量合并并重排名次，实得 %+v", snap.Top)
+	}
+	// 页面排行：跨工程合并后按浏览量降序（/blog/a 30 > /blog/b 12 > /about 7）。
+	if len(snap.TopPages) != 3 {
+		t.Fatalf("页面排行应合并成 3 条，实得 %d：%+v", len(snap.TopPages), snap.TopPages)
+	}
+	wantPages := []struct {
+		path  string
+		views int64
+		kind  string
+	}{
+		{"/blog/a", 30, "article"},
+		{"/blog/b", 12, "article"},
+		{"/about", 7, "page"},
+	}
+	for i, want := range wantPages {
+		got := snap.TopPages[i]
+		if got.Path != want.path || got.Views != want.views || got.Rank != i+1 {
+			t.Errorf("第 %d 条应为 %s / %d 浏览，实得 %+v", i+1, want.path, want.views, got)
+		}
+		if got.Kind != want.kind {
+			t.Errorf("%s 的类型应为 %s，实得 %q", want.path, want.kind, got.Kind)
+		}
+		if got.KindKey == "" {
+			t.Errorf("%s 的类型已知，KindKey 不该为空（否则页面上不渲染标签）", want.path)
+		}
+	}
+}
+
+// TestOverviewPageKindKeyCoversEveryKnownKind 页面类型 → 词条 key 的映射不漏项。
+//
+// 用 pageenums.PageKinds() 当输入：page 模块新增一种类型时这条会红，
+// 而不是「页面上那枚标签凭空消失」（认不出的类型回空串，展示层就不渲染它）。
+func TestOverviewPageKindKeyCoversEveryKnownKind(t *testing.T) {
+	for _, kind := range pageenums.PageKinds() {
+		if got := overviewPageKindKey(kind); got == "" {
+			t.Errorf("页面类型 %q 没有对应的词条 key —— 新增类型时忘了补 overviewPageKindKey", kind)
+		}
+	}
+	// 认不出的类型回空串（展示层据此不渲染标签，而不是渲染一个空 badge）。
+	if got := overviewPageKindKey("no-such-kind"); got != "" {
+		t.Errorf("未知类型应回空串，实得 %q", got)
 	}
 }
 

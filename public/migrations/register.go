@@ -205,6 +205,10 @@ func init() {
 	registerDashboardKpiI18n()
 	// 552：概览页图表双 Tab 的词条（见 register_dashboard_chart_tabs_i18n.go）。
 	registerDashboardChartTabsI18n()
+	// 553：概览页排行榜双 Tab 的词条（见 register_dashboard_rank_tabs_i18n.go）。
+	registerDashboardRankTabsI18n()
+	// 554：页面类型标签 notFound（见 register_dashboard_page_kind_notfound_i18n.go）。
+	registerDashboardPageKindNotFoundI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
