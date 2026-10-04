@@ -140,3 +140,29 @@ type RenameSessionReq struct {
 	Version     int64
 	UserID      int64
 }
+
+// SendMessageReq 会话页「发消息」：写 user 事件 → 取会话上下文投影 → 打一次模型 → 写 assistant 事件。
+//
+// SessionID 与 SessionKey 二选一：给 SessionID 就往这条已有会话里发；只给 SessionKey 时
+// 走 EnsureSession 续写或新建（ProviderKey / ModelID 同时是新建会话的会话头）。
+//
+// 这里不带 binding:"required"：空值与「没选模型」都要回可翻译的业务 key（见 service 的校验），
+// 交给框架的 required 会变成不可控的绑定错误文本。
+type SendMessageReq struct {
+	SessionID       int64  `json:"sessionId" form:"sessionId"`
+	SessionKey      string `json:"sessionKey" form:"sessionKey"`
+	ProviderKey     string `json:"providerKey" form:"providerKey" binding:"max=50"`
+	Model           string `json:"model" form:"model" binding:"max=200"`
+	Input           string `json:"input" form:"input" binding:"max=200000"`
+	MaxOutputTokens int64  `json:"maxOutputTokens" form:"maxOutputTokens"`
+	UserID          int64  `json:"-"`
+}
+
+// SendMessageResult 一次「发消息」的结果：会话头 + 落下来的两条事件（用户输入 / 模型回复）。
+//
+// 两条事件都带分配到的序号与内容 token，前端据此原地渲染，不必再回查事件日志。
+type SendMessageResult struct {
+	Session        Session          `json:"session"`
+	UserEvent      SessionEventItem `json:"userEvent"`
+	AssistantEvent SessionEventItem `json:"assistantEvent"`
+}

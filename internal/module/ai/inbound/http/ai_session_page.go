@@ -9,6 +9,7 @@
 package aihttp
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -29,12 +30,23 @@ const (
 	sessionEventTop = 50
 )
 
-// SessionPageHandle 会话管理页处理器。
-type SessionPageHandle struct{ svc *aiservice.SessionService }
+// providerLister 会话页需要的最小供应商读取能力（发消息区的 provider 下拉 / model 候选）。
+//
+// 用窄接口而不是 aiservice.Service：会话页对配置面保持「只读、单向、可替换」，
+// 用例测试塞一个假列表即可，不必建出整条配置面。
+type providerLister interface {
+	ListProviders(ctx context.Context) ([]aidto.Provider, error)
+}
 
-// NewSessionPageHandle 构造。
-func NewSessionPageHandle(svc *aiservice.SessionService) *SessionPageHandle {
-	return &SessionPageHandle{svc: svc}
+// SessionPageHandle 会话管理页处理器。
+type SessionPageHandle struct {
+	svc       *aiservice.SessionService
+	providers providerLister
+}
+
+// NewSessionPageHandle 构造；providers 为 nil 时不渲染发消息区的供应商候选。
+func NewSessionPageHandle(svc *aiservice.SessionService, providers providerLister) *SessionPageHandle {
+	return &SessionPageHandle{svc: svc, providers: providers}
 }
 
 // SessionsPage GET /admin/ai/sessions：会话列表；带 ?id= 时同时渲染详情。
@@ -75,6 +87,16 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 			if plan, perr := h.svc.FoldPlan(ctx, aidto.FoldPlanReq{SessionID: id}); perr == nil {
 				data["FoldPlan"] = plan
 			}
+		}
+	}
+
+	// 发消息区的供应商候选：拉取失败不阻断整页（列表与详情照常渲染），
+	// 只把错误交给模板在发消息区里显示 —— 一个次要区块不该把整页拖红。
+	if h.providers != nil {
+		if ps, perr := h.providers.ListProviders(ctx); perr == nil {
+			data["Providers"] = ps
+		} else {
+			data["ProviderErr"] = aiErrText(c, perr)
 		}
 	}
 	c.HTML(http.StatusOK, sessionTemplate, data)
@@ -148,6 +170,27 @@ func (h *SessionPageHandle) SessionFold(c *gin.Context) {
 		return
 	}
 	h.redirectSession(c, id, "done", aienums.MsgSessionFolded)
+}
+
+// SessionSend POST /admin/ai/sessions/send：发一条消息 —— 写 user 事件 → 把当前投影拼成
+// 一段文本打一次模型 → 把回复写成 assistant 事件 → 回会话页。
+//
+// 权限借 /api/ai/chat 的 casbin obj：发消息本质就是一次对话，不新开权限点。
+func (h *SessionPageHandle) SessionSend(c *gin.Context) {
+	id := parseInt64(c.PostForm("sessionId"))
+	res, err := h.svc.SendMessage(c.Request.Context(), aidto.SendMessageReq{
+		SessionID:       id,
+		ProviderKey:     strings.TrimSpace(c.PostForm("providerKey")),
+		Model:           strings.TrimSpace(c.PostForm("model")),
+		Input:           strings.TrimSpace(c.PostForm("input")),
+		MaxOutputTokens: parseInt64(c.PostForm("maxOutputTokens")),
+		UserID:          userID(c),
+	})
+	if err != nil {
+		h.redirectSession(c, id, "err", aiErrKey(err))
+		return
+	}
+	h.redirectSession(c, res.Session.ID, "done", aienums.MsgSessionSent)
 }
 
 // redirectSession 回会话页（带 ?id= 与回执槽）；HTMX 与原生走 redirectWhere 的两条口径。

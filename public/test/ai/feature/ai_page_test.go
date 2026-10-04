@@ -82,6 +82,8 @@ func pageBaseData(title string) gin.H {
 			"ai:session_list": true, "ai:session_get": true, "ai:session_events": true,
 			"ai:session_fold_plan": true, "ai:session_append": true, "ai:session_rename": true,
 			"ai:session_archive": true, "ai:session_fold": true,
+			// 会话页的发消息区按对话入口的权限点渲染（页面路由借 /api/ai/chat 的 casbin obj）。
+			"ai:chat": true,
 		},
 		"Err":  "",
 		"Done": "",

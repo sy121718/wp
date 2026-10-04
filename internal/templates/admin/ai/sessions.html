@@ -20,6 +20,8 @@
 {{canArchive := isset(.PermSet["ai:session_archive"])}}
 {{canFold := isset(.PermSet["ai:session_fold"])}}
 {{canAppend := isset(.PermSet["ai:session_append"])}}
+{* 发消息是对话，走 ai:chat 权限点（页面路由借 /api/ai/chat 的 casbin obj）。 *}
+{{canSend := isset(.PermSet["ai:chat"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -162,6 +164,54 @@
                 {{end}}
             </div>
         </details>
+
+        {{if canSend}}
+        <details class="disclosure" open>
+            <summary class="fold-title">{{tr("admin.ai.session.send.title", "发消息")}}</summary>
+            <div class="fold-body">
+                {{if isset(.ProviderErr)}}{{if .ProviderErr}}
+                <p class="badge badge-warning" role="alert">{{.ProviderErr}}</p>
+                {{end}}{{end}}
+                {{if !.Providers}}
+                <p class="form-hint">{{tr("admin.ai.session.send.noProvider", "还没有可用的供应商，先到「AI 供应商」页配置后再回来。")}}</p>
+                {{else}}
+                <form method="post" action="/admin/ai/sessions/send" class="form-grid">
+                    <input type="hidden" name="csrf_token" value="{{csrf}}">
+                    <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
+                    <div class="form-field">
+                        <label for="session-send-provider">{{tr("admin.ai.session.send.provider", "供应商")}}</label>
+                        <select class="form-select" id="session-send-provider" name="providerKey" required>
+                            {{range _, p := .Providers}}
+                            <option value="{{p.ProviderKey}}">{{p.DisplayName}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="session-send-model">{{tr("admin.ai.session.send.model", "模型")}}</label>
+                        <input class="form-input" id="session-send-model" type="text" name="model" list="session-send-model-list" maxlength="200" required>
+                        <datalist id="session-send-model-list">
+                            {{range _, p := .Providers}}{{range _, m := p.Models}}
+                            <option value="{{m.ID}}">{{m.DisplayName}}</option>
+                            {{end}}{{end}}
+                        </datalist>
+                    </div>
+                    <div class="form-field form-field--wide">
+                        <label for="session-send-input">{{tr("admin.ai.session.send.input", "消息")}}</label>
+                        <textarea class="form-input" id="session-send-input" name="input" rows="4" maxlength="200000" required></textarea>
+                        <p class="form-hint">{{tr("admin.ai.session.send.hint", "发送后先记下你的消息，再把当前上下文投影发给模型，回复追加进事件日志。")}}</p>
+                    </div>
+                    <div class="form-field">
+                        <label for="session-send-max">{{tr("admin.ai.session.send.maxTokens", "最大输出 token")}}</label>
+                        <input class="form-input" id="session-send-max" type="number" name="maxOutputTokens" min="0" step="1" value="0">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">{{tr("admin.ai.session.send.submit", "发送")}}</button>
+                    </div>
+                </form>
+                {{end}}
+            </div>
+        </details>
+        {{end}}
 
         {{if isset(.FoldPlan)}}{{if .FoldPlan}}
         <details class="disclosure">

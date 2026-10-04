@@ -62,6 +62,9 @@ const (
 // SessionService 会话层用例编排。
 type SessionService struct {
 	model *aimodel.SessionModel
+	// chat 是「打一次模型」的能力，由装配层用 SetChatPort 注入（见 ai_session_chat.go）。
+	// 用接口而非 *Service：会话层不依赖配置层的具体类型，未注入时 SendMessage 回业务错误而不是崩。
+	chat ChatPort
 }
 
 // NewSessionService 构造。

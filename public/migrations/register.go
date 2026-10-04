@@ -149,4 +149,8 @@ func init() {
 	registerAISessionI18n()
 	// 517：AI 预设双 tab 与选模型弹窗词条（见 register_ai_preset_i18n.go）。
 	registerAIPresetI18n()
+	// 518：AI 早期「一码多路由」遗留的陈旧权限行清理（见 register_ai_permission_cleanup.go）。
+	registerAIStalePermissionCleanup()
+	// 519：AI 会话页「发消息」词条（见 register_ai_session_chat_i18n.go）。
+	registerAISessionChatI18n()
 }
