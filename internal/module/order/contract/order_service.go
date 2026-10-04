@@ -40,6 +40,8 @@ type OrderService interface {
 	CustomerGrowthReader
 	// CustomerSegmentReader 按分段取客户 id（只读，一条方法）。
 	CustomerSegmentReader
+	// CustomerRfmReader 客户 RFM 分层（只读，一条方法）。
+	CustomerRfmReader
 	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
 	OrderRangeSummaryReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
@@ -173,6 +175,14 @@ type CustomerSegmentReader interface {
 	// CustomerSegmentIDsByRange 分段名取白名单外的值一律报错，不静默回落到「全部」——
 	// 静默回落会让 UI 上一个拼错的分段显示成「全部客户」，而看起来是对的。
 	CustomerSegmentIDsByRange(ctx context.Context, req *orderdto.CustomerSegmentIDsReq) (res *orderdto.CustomerSegmentIDsResp, err error)
+}
+
+// CustomerRfmReader 客户 RFM 分层（只读，一条方法）。
+//
+// 与 CustomerGrowthReader / CustomerSegmentReader 的关系：增长看「来了多少新人」、
+// 分段看「谁在这段里」、RFM 看「这些人各自值多少」。三者都只有订单模块答得出来。
+type CustomerRfmReader interface {
+	CustomerRfmByRange(ctx context.Context, req *orderdto.CustomerRfmReq) (res *orderdto.CustomerRfmResp, err error)
 }
 
 // OrderRangeSummaryReader 按「工程 + 时间区间」取订单聚合事实（只读，一条方法）。
