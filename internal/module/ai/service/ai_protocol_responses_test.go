@@ -13,9 +13,15 @@ import (
 	"net/http"
 	"testing"
 
+	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 )
+
+// userMsgs 构造「一条 user 消息」的入参：协议层用例里绝大多数都是它。
+func userMsgs(text string) []aidto.ChatMessage {
+	return []aidto.ChatMessage{{Role: roleUser, Content: text}}
+}
 
 func decodeBody(t *testing.T, b []byte) map[string]any {
 	t.Helper()
@@ -29,7 +35,7 @@ func decodeBody(t *testing.T, b []byte) map[string]any {
 // === responses 请求体 ===
 
 func TestBuildResponsesBody_Fields(t *testing.T) {
-	body, err := buildResponsesBody("muse-spark-1.3-contributor", "ping", 16)
+	body, err := buildResponsesBody("muse-spark-1.3-contributor", userMsgs("ping"), nil, 16)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -49,7 +55,7 @@ func TestBuildResponsesBody_Fields(t *testing.T) {
 }
 
 func TestBuildResponsesBody_OmitsMaxTokensWhenNonPositive(t *testing.T) {
-	body, err := buildResponsesBody("m", "x", 0)
+	body, err := buildResponsesBody("m", userMsgs("x"), nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -59,7 +65,7 @@ func TestBuildResponsesBody_OmitsMaxTokensWhenNonPositive(t *testing.T) {
 }
 
 func TestBuildResponsesBody_RejectsEmptyModel(t *testing.T) {
-	if _, err := buildResponsesBody("   ", "x", 1); err == nil {
+	if _, err := buildResponsesBody("   ", userMsgs("x"), nil, 1); err == nil {
 		t.Fatal("空 model 应报错")
 	}
 }
@@ -68,7 +74,8 @@ func TestBuildResponsesBody_RejectsEmptyModel(t *testing.T) {
 
 func TestParseResponsesReply_FromOutputContent(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"pong"}]}]}`)
-	got, _, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	got := rep.Content
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -79,7 +86,8 @@ func TestParseResponsesReply_FromOutputContent(t *testing.T) {
 
 func TestParseResponsesReply_PrefersTopLevelOutputText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"direct","output":[{"type":"message","content":[{"type":"output_text","text":"nested"}]}]}`)
-	got, _, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	got := rep.Content
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -90,7 +98,8 @@ func TestParseResponsesReply_PrefersTopLevelOutputText(t *testing.T) {
 
 func TestParseResponsesReply_ConcatenatesParts(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"a"},{"type":"output_text","text":"b"}]}]}`)
-	got, _, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	got := rep.Content
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -101,7 +110,7 @@ func TestParseResponsesReply_ConcatenatesParts(t *testing.T) {
 
 func TestParseResponsesReply_RejectsFailedStatus(t *testing.T) {
 	body := []byte(`{"object":"response","status":"failed","output":[]}`)
-	if _, _, err := parseResponsesReply(body); err == nil {
+	if _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("status=failed 应报错")
 	}
 }
@@ -109,7 +118,7 @@ func TestParseResponsesReply_RejectsFailedStatus(t *testing.T) {
 // TestParseResponsesReply_FailedStatusStillRejectedWithText 真失败不因「碰巧有正文」被放行。
 func TestParseResponsesReply_FailedStatusStillRejectedWithText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"failed","output_text":"partial","output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}`)
-	if _, _, err := parseResponsesReply(body); err == nil {
+	if _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("status=failed 即使带正文也应报错")
 	}
 }
@@ -118,7 +127,8 @@ func TestParseResponsesReply_FailedStatusStillRejectedWithText(t *testing.T) {
 // 不是失败：正文已生成就要取回来 —— 把「用户给的上限太小」归口「服务器内部错误」是主 bug。
 func TestParseResponsesReply_IncompleteWithTextReturnsText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"half an answer"}]}]}`)
-	got, _, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	got := rep.Content
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -130,21 +140,21 @@ func TestParseResponsesReply_IncompleteWithTextReturnsText(t *testing.T) {
 // TestParseResponsesReply_IncompleteWithoutTextRejected incomplete 且确实没有正文 → 仍归口错误。
 func TestParseResponsesReply_IncompleteWithoutTextRejected(t *testing.T) {
 	body := []byte(`{"object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`)
-	if _, _, err := parseResponsesReply(body); err == nil {
+	if _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("status=incomplete 且无正文片段应报错")
 	}
 }
 
 func TestParseResponsesReply_RejectsWrongObject(t *testing.T) {
 	body := []byte(`{"object":"chat.completion","output_text":"x"}`)
-	if _, _, err := parseResponsesReply(body); err == nil {
+	if _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("object 不是 response 应报错")
 	}
 }
 
 func TestParseResponsesReply_RejectsNoText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[]}`)
-	if _, _, err := parseResponsesReply(body); err == nil {
+	if _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("没有任何文本片段应报错")
 	}
 }
@@ -156,7 +166,8 @@ func TestParseResponsesReply_RejectsNoText(t *testing.T) {
 
 func TestParseResponsesReply_ReadsUsage(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"pong","usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}}`)
-	_, usage, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	usage := rep.Usage
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -168,7 +179,8 @@ func TestParseResponsesReply_ReadsUsage(t *testing.T) {
 // TestParseResponsesReply_UsageMissingIsNotReported 没有 usage 对象 → Reported=false（不是 0 消耗）。
 func TestParseResponsesReply_UsageMissingIsNotReported(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"pong"}`)
-	_, usage, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	usage := rep.Usage
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -180,7 +192,8 @@ func TestParseResponsesReply_UsageMissingIsNotReported(t *testing.T) {
 // TestParseResponsesReply_UsageTotalFilledFromParts 上游只报前两个数时 total 由本地补齐。
 func TestParseResponsesReply_UsageTotalFilledFromParts(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"pong","usage":{"input_tokens":3,"output_tokens":4}}`)
-	_, usage, err := parseResponsesReply(body)
+	rep, err := parseResponsesReply(body)
+	usage := rep.Usage
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -192,7 +205,9 @@ func TestParseResponsesReply_UsageTotalFilledFromParts(t *testing.T) {
 // TestParseChatCompletionsReply_ReadsUsage chat/completions 的字段名是 prompt/completion_tokens。
 func TestParseChatCompletionsReply_ReadsUsage(t *testing.T) {
 	body := []byte(`{"choices":[{"message":{"content":"pong"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`)
-	text, usage, err := parseChatCompletionsReply(body)
+	rep, err := parseChatCompletionsReply(body)
+	text := rep.Content
+	usage := rep.Usage
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -208,7 +223,9 @@ func TestParseChatCompletionsReply_ReadsUsage(t *testing.T) {
 // 上游返回了正文之外的坏形状时，用量仍然是有价值的观测数据（调用流水照记）。
 func TestParseChatCompletionsReply_KeepsUsageOnParseFailure(t *testing.T) {
 	body := []byte(`{"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":1}}`)
-	if _, usage, err := parseChatCompletionsReply(body); err == nil || !usage.Reported || usage.TotalTokens != 10 {
+	rep, err := parseChatCompletionsReply(body)
+	usage := rep.Usage
+	if err == nil || !usage.Reported || usage.TotalTokens != 10 {
 		t.Fatalf("err = %v, usage = %+v", err, usage)
 	}
 }
@@ -235,7 +252,7 @@ func TestProtocolPath_RejectsUnimplemented(t *testing.T) {
 }
 
 func TestBuildProtocolBody_RejectsUnimplemented(t *testing.T) {
-	if _, err := buildProtocolBody(aienums.ProtocolGeminiGenerateContent, "m", "x", 1); err == nil {
+	if _, err := buildProtocolBody(aienums.ProtocolGeminiGenerateContent, "m", userMsgs("x"), nil, 1); err == nil {
 		t.Fatal("未实现的协议必须报错")
 	}
 }
@@ -251,7 +268,7 @@ func TestBuildProtocolRequest_UnknownProtocolDoesNotFallBack(t *testing.T) {
 		BaseURL:     "https://opencode.ai/zen/go/v1",
 		Protocol:    aienums.ProtocolAnthropicMessages,
 	}
-	if _, err := svc.buildProtocolRequest(context.Background(), provider, "m", "x", 0); err == nil {
+	if _, err := svc.buildProtocolRequest(context.Background(), provider, protocolRequestInput{Model: "m", Messages: userMsgs("x")}); err == nil {
 		t.Fatal("未实现协议不应被静默回落")
 	}
 }
@@ -337,7 +354,7 @@ func TestBuildProtocolRequest_AssemblesResponsesEndpoint(t *testing.T) {
 			"x-opencode-session": "{{uuid}}",
 		}},
 	}
-	req, err := svc.buildProtocolRequest(context.Background(), provider, "muse-spark-1.3-contributor", "ping", 16)
+	req, err := svc.buildProtocolRequest(context.Background(), provider, protocolRequestInput{Model: "muse-spark-1.3-contributor", Messages: userMsgs("ping"), MaxOutputTokens: 16})
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -368,7 +385,7 @@ func TestBuildProtocolRequest_HeadersOnlyFromProviderConfig(t *testing.T) {
 		BaseURL:     "https://opencode.ai/zen/go/v1",
 		Protocol:    aienums.ProtocolOpenAIResponses,
 	}
-	req, err := svc.buildProtocolRequest(context.Background(), provider, "m", "ping", 0)
+	req, err := svc.buildProtocolRequest(context.Background(), provider, protocolRequestInput{Model: "m", Messages: userMsgs("ping")})
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}

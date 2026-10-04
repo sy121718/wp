@@ -85,7 +85,18 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 
 	reqCtx, cancel := context.WithTimeout(ctx, ClientTimeout)
 	defer cancel()
-	httpReq, berr := s.buildProtocolRequest(reqCtx, provider, model, req.Input, maxTokens)
+	// 两个入口在这里汇合：带工具的轮次给 Messages，一问一答只给 Input。
+	// 空消息序列**不静默补空串**：Input 是调用方必填字段，缺了在下面的出站构造里报 ErrInvalidParam。
+	msgs := req.Messages
+	if len(msgs) == 0 {
+		msgs = []aidto.ChatMessage{{Role: roleUser, Content: req.Input}}
+	}
+	httpReq, berr := s.buildProtocolRequest(reqCtx, provider, protocolRequestInput{
+		Model:           model,
+		Messages:        msgs,
+		Tools:           req.Tools,
+		MaxOutputTokens: maxTokens,
+	})
 	if berr != nil {
 		return nil, berr
 	}
@@ -105,10 +116,11 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 		log.Error(rerr, "对话失败：读取响应中断")
 		return nil, ErrInternal
 	}
-	output, usage, perr := parseProtocolReply(provider.Protocol, body)
+	reply, perr := parseProtocolReply(provider.Protocol, body)
 	if perr != nil {
 		return nil, perr
 	}
+	usage := reply.Usage
 	// 用量只记上游**上报**的值：这家没报就留 0 + UsageReported=false，
 	// 不在这里估算补齐（估算值混进流水会被当成真用量）。
 	entry.InputTokens = usage.InputTokens
@@ -119,7 +131,8 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 	return &aidto.ChatResult{
 		ProviderKey:   provider.ProviderKey,
 		Model:         model,
-		Output:        output,
+		Output:        reply.Content,
+		ToolCalls:     reply.ToolCalls,
 		Protocol:      provider.Protocol,
 		InputTokens:   usage.InputTokens,
 		OutputTokens:  usage.OutputTokens,

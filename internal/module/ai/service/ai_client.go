@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 
+	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 )
@@ -83,29 +84,29 @@ func protocolPath(protocol string) (string, error) {
 }
 
 // buildProtocolBody 按协议构造请求体（responses / chat_completions 各一份实现）。
-func buildProtocolBody(protocol, model, input string, maxOutputTokens int64) ([]byte, error) {
+func buildProtocolBody(protocol, model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64) ([]byte, error) {
 	switch protocol {
 	case aienums.ProtocolOpenAIChatCompletions:
-		return buildChatCompletionsBody(model, input, maxOutputTokens)
+		return buildChatCompletionsBody(model, msgs, tools, maxOutputTokens)
 	case aienums.ProtocolOpenAIResponses:
-		return buildResponsesBody(model, input, maxOutputTokens)
+		return buildResponsesBody(model, msgs, tools, maxOutputTokens)
 	default:
 		return nil, ErrProtocolUnsupported
 	}
 }
 
-// parseProtocolReply 按协议解析响应正文与用量；未实现的协议返回 ErrProtocolUnsupported。
+// parseProtocolReply 按协议解析响应（正文 + 工具调用 + 用量）；未实现的协议返回 ErrProtocolUnsupported。
 //
-// 正文与用量一起回：两者来自同一个响应体，分两次解析等于把同一份 JSON 解两遍，
-// 而且「解析失败」的归口口径会被迫写两处（容易分叉）。
-func parseProtocolReply(protocol string, body []byte) (string, ReplyUsage, error) {
+// 三者一起回：它们来自同一个响应体，分几次解析等于把同一份 JSON 解几遍，
+// 而且「解析失败」的归口口径会被迫写多处（容易分叉）。
+func parseProtocolReply(protocol string, body []byte) (ProtocolReply, error) {
 	switch protocol {
 	case aienums.ProtocolOpenAIChatCompletions:
 		return parseChatCompletionsReply(body)
 	case aienums.ProtocolOpenAIResponses:
 		return parseResponsesReply(body)
 	default:
-		return "", ReplyUsage{}, ErrProtocolUnsupported
+		return ProtocolReply{}, ErrProtocolUnsupported
 	}
 }
 
@@ -169,11 +170,22 @@ func firstPositiveInt(obj map[string]any, keys ...string) int64 {
 	return 0
 }
 
+// protocolRequestInput 一次出站请求的入参。
+//
+// 收成一个结构体而不是继续加形参：这一串字段（模型 / 消息 / 工具 / 上限）都是
+// 「这次要发什么」，将来再加一项（temperature、response_format）不该再动一遍调用点。
+type protocolRequestInput struct {
+	Model           string
+	Messages        []aidto.ChatMessage
+	Tools           []aidto.ToolSpec
+	MaxOutputTokens int64
+}
+
 // buildProtocolRequest 组装一次对话出站请求：地址拼接 → SSRF 校验 → 请求体 → 头。
 //
 // 协议取 provider.Protocol。空串会落到 protocolPath 的 default 分支报 ErrProtocolUnsupported ——
 // 「协议为空按默认协议处理」由 SaveProvider 在写入时保证，出站层不再兜底猜测。
-func (s *Service) buildProtocolRequest(ctx context.Context, provider *aimodel.AIProviderEntity, model, input string, maxOutputTokens int64) (*http.Request, error) {
+func (s *Service) buildProtocolRequest(ctx context.Context, provider *aimodel.AIProviderEntity, in protocolRequestInput) (*http.Request, error) {
 	if provider == nil {
 		return nil, ErrProviderNotFound
 	}
@@ -192,7 +204,7 @@ func (s *Service) buildProtocolRequest(ctx context.Context, provider *aimodel.AI
 	if verr := validateURL(endpoint); verr != nil {
 		return nil, verr
 	}
-	body, berr := buildProtocolBody(provider.Protocol, model, input, maxOutputTokens)
+	body, berr := buildProtocolBody(provider.Protocol, in.Model, in.Messages, in.Tools, in.MaxOutputTokens)
 	if berr != nil {
 		return nil, berr
 	}
