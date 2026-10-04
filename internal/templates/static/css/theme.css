@@ -1102,6 +1102,47 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     line-height: 1.2; letter-spacing: -0.01em; color: var(--sky-c-text, #1a1d21);
 }
 
+/* ── 11.2 概览页的时间筛选条 ──────────────────────────────────────────
+   排在三块（KPI / 趋势 / 榜单）之前：「这一页的数字是哪一段的」必须先于数字被读到。
+   胶囊用 <a> 而不是按钮：它是导航（换一个 URL），不是提交。自定义区间的日期表单
+   与胶囊同一行，窄屏随 flex-wrap 落行。 */
+.range-bar {
+    display: flex; flex-wrap: wrap; gap: var(--ui-sp-xs); align-items: center;
+    margin-bottom: var(--ui-sp-xs);
+}
+.range-chip {
+    padding: 4px 10px; border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 999px; font-size: 13px; line-height: 1.6;
+    color: var(--sky-c-text-secondary, #4b5563); text-decoration: none;
+    background: var(--sky-c-surface, #fff);
+}
+/* 选中态：既换底色也加粗 —— 只换颜色在色弱与灰度打印下分不出来。 */
+.range-chip.is-active {
+    background: var(--sky-c-primary, #2563eb); border-color: var(--sky-c-primary, #2563eb);
+    color: #fff; font-weight: 600;
+}
+.range-custom { display: flex; flex-wrap: wrap; gap: var(--ui-sp-xs); align-items: center; }
+/* 日期框只声明**本页的尺寸差异**：边框 / 底色 / 圆角由基座类 form-input 承担。
+   在这里给它上外观等于复活「容器给控件上样式」——那会让「输入框长什么样」有两个真源
+   （审计条目 UIK-009，判据见 ui_base_layering_contract_test.go）。
+
+   width 必须显式收回来：基座类 form-input 是块级满宽（单独的表单里那是对的），
+   放进这一行的 flex 里会让两个日期框各自占满一行、把筛选条撑成三行。
+
+   写成 .form-input.range-date（两个类）而不是单类：基座类与它同为单类选择器，
+   谁赢取决于两张样式表的加载顺序 —— 实测 ui.css 在后，单类的 width:auto 会被
+   form-input 的 width:100% 盖掉（页面表现是日期框竖排，没有任何报错）。 */
+.form-input.range-date { width: auto; padding: 3px 6px; font-size: 13px; }
+/* KPI 卡可点击时保持卡片外观：<a> 默认的下划线与蓝字会把「统计卡」变成「链接」。 */
+.stat-card-link { display: block; text-decoration: none; color: inherit; }
+
+/* 悬停一律包在 (hover: hover) 里：触屏上 :hover 会粘滞 —— 手指点过之后那一格
+   一直保持悬停态，直到点了别处。 */
+@media (hover: hover) {
+    .range-chip:hover { background: var(--sky-c-bg-hover, rgba(16, 20, 26, .04)); }
+    .stat-card-link:hover { border-color: var(--sky-c-primary, #2563eb); }
+}
+
 /* ── 会话详情的事件时间线 ─────────────────────────────────────────────
    一条事件 = 徽标行 + 正文 + 可选的图表区。正文必须保换行（模型回复是多段文本），
    这里用 pre-wrap 而不是 <pre>：等宽字体会让正文与页面其它文字脱节。 */

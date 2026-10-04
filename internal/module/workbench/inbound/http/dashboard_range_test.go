@@ -1,0 +1,224 @@
+package workbenchhttp
+
+// dashboard_range_test.go — 概览页时间区间的判据（纯函数，不连库、不起路由）。
+//
+// 这里钉的是三件事：
+//  1. 预设键 → from/to 的映射（含 ISO 周以周一为起点）；
+//  2. 自定义区间的四种收敛，以及**收敛要被记下来**（Clamped）——静默改口径比报错更糟；
+//  3. 趋势按点数排版：柱子不越出画布、标签稀疏到可读。
+//
+// 用固定的 today 而不是 time.Now()：区间逻辑全是「相对今天」的算术，
+// 用真实时钟会让用例在周一 / 月末 / 年末有不同的行为（也就会周期性变红）。
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// rangeCtx 造一个只带 query 的 gin 上下文。
+func rangeCtx(target string) *gin.Context {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, target, nil)
+	return c
+}
+
+// rangeTodayUTC 用例的「今天」：2026-10-05（周一）。
+func rangeTodayUTC() time.Time {
+	return time.Date(2026, 10, 5, 8, 30, 0, 0, time.UTC)
+}
+
+func TestParseOverviewRangePresets(t *testing.T) {
+	today := rangeTodayUTC()
+	cases := []struct {
+		query     string
+		wantKey   string
+		wantFrom  string
+		wantTo    string
+		wantDays  int
+		wantWeekl bool
+	}{
+		{"?range=today", rangeToday, "2026-10-05", "2026-10-05", 1, false},
+		{"?range=yesterday", rangeYesterday, "2026-10-04", "2026-10-04", 1, false},
+		{"?range=week", rangeWeek, "2026-10-05", "2026-10-05", 1, false},
+		{"?range=month", rangeMonth, "2026-10-01", "2026-10-05", 5, false},
+		// 本年 278 天 > 31 → 按周聚合（278 根柱子画不出来）。
+		{"?range=year", rangeYear, "2026-01-01", "2026-10-05", 278, true},
+		// 认不出的键（老链接、手改的 URL）按默认走：不报错，也不猜语义。
+		{"?range=bogus", rangeWeek, "2026-10-05", "2026-10-05", 1, false},
+		{"", rangeWeek, "2026-10-05", "2026-10-05", 1, false},
+	}
+	for _, tc := range cases {
+		got := parseOverviewRange(rangeCtx("/admin/dashboard"+tc.query), today)
+		if got.Key != tc.wantKey || got.From != tc.wantFrom || got.To != tc.wantTo {
+			t.Errorf("%q：区间 = %s [%s~%s]，期望 %s [%s~%s]",
+				tc.query, got.Key, got.From, got.To, tc.wantKey, tc.wantFrom, tc.wantTo)
+		}
+		if got.Days != tc.wantDays {
+			t.Errorf("%q：天数 = %d，期望 %d", tc.query, got.Days, tc.wantDays)
+		}
+		if got.Weekly != tc.wantWeekl {
+			t.Errorf("%q：Weekly = %v，期望 %v", tc.query, got.Weekly, tc.wantWeekl)
+		}
+		if got.Clamped {
+			t.Errorf("%q：预设区间不该标为收敛", tc.query)
+		}
+	}
+}
+
+// TestParseOverviewRangeWeekStartsMonday 钉 ISO 周：周一为起点。
+//
+// 先断言锚点本身（2026-10-05 是周一），锚点假设错了要报「前提不成立」，
+// 而不是让用例替实现背锅。
+func TestParseOverviewRangeWeekStartsMonday(t *testing.T) {
+	today := rangeTodayUTC()
+	if today.Weekday() != time.Monday {
+		t.Fatalf("用例前提不成立：2026-10-05 应是周一，实为 %s", today.Weekday())
+	}
+	// 同周的周三，本周区间必须与周一完全相同（否则「本周」会随看的日子漂移）。
+	wednesday := today.AddDate(0, 0, 2)
+	if wednesday.Weekday() != time.Wednesday {
+		t.Fatalf("用例前提不成立：应是周三，实为 %s", wednesday.Weekday())
+	}
+	mon := parseOverviewRange(rangeCtx("/admin/dashboard?range=week"), today)
+	wed := parseOverviewRange(rangeCtx("/admin/dashboard?range=week"), wednesday)
+	if mon.From != wed.From {
+		t.Errorf("同一 ISO 周的起点应相同：周一算出 %s、周三算出 %s", mon.From, wed.From)
+	}
+	if mon.From != "2026-10-05" {
+		t.Errorf("本周起点应是周一 2026-10-05，实得 %s", mon.From)
+	}
+	if wed.To != "2026-10-07" {
+		t.Errorf("周三看到的本周终点应是当天，实得 %s", wed.To)
+	}
+}
+
+func TestParseCustomRangeClamps(t *testing.T) {
+	today := rangeTodayUTC()
+	cases := []struct {
+		name      string
+		query     string
+		wantFrom  string
+		wantTo    string
+		wantClamp bool
+	}{
+		{"正常区间", "?range=custom&from=2026-09-01&to=2026-09-10", "2026-09-01", "2026-09-10", false},
+		// 顺序写反：用户想表达的是「这几天」，不该变成空区间。
+		{"首尾颠倒", "?range=custom&from=2026-09-10&to=2026-09-01", "2026-09-01", "2026-09-10", true},
+		// 未来日期：未来的订单不存在，窗口伸到未来只会把「日均」拉小。
+		{"终点在未来", "?range=custom&from=2026-10-01&to=2026-12-31", "2026-10-01", "2026-10-05", true},
+		// 超长：保留 to 往前截，保住「最近」这一半。
+		{"超长区间", "?range=custom&from=2020-01-01&to=2026-10-05", "2025-10-05", "2026-10-05", true},
+		// 解析不出来（复制截断、手改）→ 回落默认区间。
+		{"日期非法", "?range=custom&from=oops&to=2026-10-05", "2026-10-05", "2026-10-05", false},
+	}
+	for _, tc := range cases {
+		got := parseOverviewRange(rangeCtx("/admin/dashboard"+tc.query), today)
+		if got.From != tc.wantFrom || got.To != tc.wantTo {
+			t.Errorf("%s：区间 = [%s~%s]，期望 [%s~%s]", tc.name, got.From, got.To, tc.wantFrom, tc.wantTo)
+		}
+		if got.Clamped != tc.wantClamp {
+			t.Errorf("%s：Clamped = %v，期望 %v（静默改口径比报错更糟）", tc.name, got.Clamped, tc.wantClamp)
+		}
+	}
+}
+
+// TestCustomRangeMaxDays 钉收敛后的上限：最长 366 天含首尾。
+func TestCustomRangeMaxDays(t *testing.T) {
+	today := rangeTodayUTC()
+	got := parseOverviewRange(rangeCtx("/admin/dashboard?range=custom&from=2020-01-01&to=2026-10-05"), today)
+	if got.Days != rangeMaxDays {
+		t.Errorf("收敛后应为 %d 天，实得 %d", rangeMaxDays, got.Days)
+	}
+}
+
+func TestNewRangeGranularity(t *testing.T) {
+	cases := []struct {
+		days       int
+		wantWeekly bool
+	}{
+		{1, false}, {31, false}, {32, true}, {366, true},
+	}
+	for _, tc := range cases {
+		from := "2026-01-01"
+		to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, tc.days-1).Format("2006-01-02")
+		got := newRange(rangeCustom, from, to, false)
+		if got.Weekly != tc.wantWeekly {
+			t.Errorf("%d 天：Weekly = %v，期望 %v", tc.days, got.Weekly, tc.wantWeekly)
+		}
+	}
+}
+
+func TestRangePresetURLKeepsOtherFilters(t *testing.T) {
+	c := rangeCtx("/admin/dashboard?project=p1&range=custom&from=2026-09-01&to=2026-09-10")
+	// 切回预设：from/to 必须被丢掉，否则新区间会带着旧的自定义日期一起提交。
+	preset := rangePresetURL(c, rangeWeek, "2026-09-01", "2026-09-10")
+	if preset != "/admin?project=p1&range=week" {
+		t.Errorf("预设链接 = %q（应保留 project、丢掉 from/to，且指向 /admin）", preset)
+	}
+	// 自定义：from/to 要带上（供表单回显当前区间）。
+	custom := rangePresetURL(c, rangeCustom, "2026-09-01", "2026-09-10")
+	for _, want := range []string{"project=p1", "range=custom", "from=2026-09-01", "to=2026-09-10"} {
+		if !strings.Contains(custom, want) {
+			t.Errorf("自定义链接 %q 应含 %q", custom, want)
+		}
+	}
+}
+
+// TestRangePresetsMarksActive 钉选中态：一排按钮里恰好一个 active。
+func TestRangePresetsMarksActive(t *testing.T) {
+	c := rangeCtx("/admin/dashboard?range=month")
+	got := rangePresets(c, parseOverviewRange(c, rangeTodayUTC()))
+	if len(got) != 6 {
+		t.Fatalf("预设按钮应有 6 个，实得 %d", len(got))
+	}
+	active := 0
+	for _, p := range got {
+		if p.Active {
+			active++
+		}
+		// 词条键必须由服务端给全：模板不做字符串拼接。
+		if p.LabelKey != "admin.dashboard.range."+p.Key {
+			t.Errorf("按钮 %s 的词条键 = %q", p.Key, p.LabelKey)
+		}
+	}
+	if active != 1 {
+		t.Errorf("选中态应恰好 1 个，实得 %d", active)
+	}
+}
+
+// TestLayoutTrendBarsFitsChart 钉排版：柱子不越出画布，标签稀疏到可读。
+func TestLayoutTrendBarsFitsChart(t *testing.T) {
+	for _, n := range []int{1, 7, 30, 53} {
+		points := make([]overviewTrendPoint, n)
+		for i := range points {
+			points[i].Day = "2026-01-01"
+		}
+		layoutTrendBars(points)
+
+		last := points[n-1]
+		if last.X+last.BarWidth > trendChartWidth {
+			t.Errorf("%d 根柱子：最后一根右边到 %d，超出画布 %d（SVG 会直接裁掉，页面不报错）",
+				n, last.X+last.BarWidth, trendChartWidth)
+		}
+		labels := 0
+		for _, p := range points {
+			if p.BarWidth < 2 {
+				t.Errorf("%d 根柱子：柱宽 %d < 2（宽度为 0 的矩形不渲染，表现为「图里少了几天」）", n, p.BarWidth)
+			}
+			if p.ShowLabel {
+				labels++
+			}
+		}
+		if labels > trendLabelMax+1 {
+			t.Errorf("%d 根柱子：标签 %d 个，超过稀疏上限 %d", n, labels, trendLabelMax)
+		}
+		if !points[0].ShowLabel || !points[n-1].ShowLabel {
+			t.Errorf("%d 根柱子：首尾必须带标签（区间两端是读者最想确认的）", n)
+		}
+	}
+}

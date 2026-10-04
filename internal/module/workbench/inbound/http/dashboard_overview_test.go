@@ -134,19 +134,19 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 
 	h := &Handle{}
 	h.SetOverviewPorts(orders, analytics, kinds)
-	snap := h.collectOverview(context.Background(), []string{"p1", "p2"})
+	snap := h.collectOverview(context.Background(), []string{"p1", "p2"}, testRange())
 
 	if !snap.PortsReady {
 		t.Fatal("三个端口都已注入，PortsReady 应为 true")
 	}
-	if snap.KPI.TodayOrders != 7 {
-		t.Errorf("今日订单应跨工程累加 = 7，实得 %d", snap.KPI.TodayOrders)
+	if snap.KPI.RangeOrders != 7 {
+		t.Errorf("区间订单应跨工程累加 = 7，实得 %d", snap.KPI.RangeOrders)
 	}
-	if snap.KPI.TodaySalesCents != 30050 {
-		t.Errorf("今日销售额 = %d 分，期望 30050", snap.KPI.TodaySalesCents)
+	if snap.KPI.RangeSalesCents != 30050 {
+		t.Errorf("区间销售额 = %d 分，期望 30050", snap.KPI.RangeSalesCents)
 	}
-	if snap.KPI.TodaySalesLabel != "CNY 300.50" && snap.KPI.TodaySalesLabel != "300.50" {
-		t.Errorf("销售额展示串 = %q（货币由站点默认货币决定）", snap.KPI.TodaySalesLabel)
+	if snap.KPI.RangeSalesLabel != "CNY 300.50" && snap.KPI.RangeSalesLabel != "300.50" {
+		t.Errorf("销售额展示串 = %q（货币由站点默认货币决定）", snap.KPI.RangeSalesLabel)
 	}
 	if snap.KPI.ShipPendingCount != 5 || snap.KPI.PendingCount != 1 {
 		t.Errorf("待发货/待付款 = %d/%d，期望 5/1", snap.KPI.ShipPendingCount, snap.KPI.PendingCount)
@@ -185,9 +185,9 @@ func TestCollectOverviewKeepsOtherBlocksWhenOneFails(t *testing.T) {
 
 	h := &Handle{}
 	h.SetOverviewPorts(orders, analytics, kinds)
-	snap := h.collectOverview(context.Background(), []string{"p1"})
+	snap := h.collectOverview(context.Background(), []string{"p1"}, testRange())
 
-	if snap.KPI.TodayOrders != 0 || len(snap.Trend) != 0 || len(snap.Top) != 0 {
+	if snap.KPI.RangeOrders != 0 || len(snap.Trend) != 0 || len(snap.Top) != 0 {
 		t.Errorf("订单块失败时应为空：%+v", snap.KPI)
 	}
 	if snap.KPI.ArticleViews != 11 {
@@ -200,19 +200,24 @@ func TestCollectOverviewKeepsOtherBlocksWhenOneFails(t *testing.T) {
 
 func TestCollectOverviewWithoutPortsIsNotReady(t *testing.T) {
 	h := &Handle{}
-	snap := h.collectOverview(context.Background(), []string{"p1"})
+	snap := h.collectOverview(context.Background(), []string{"p1"}, testRange())
 	if snap.PortsReady {
 		t.Fatal("未注入任何端口时 PortsReady 应为 false（页面据此显示「暂不可用」而不是一片 0）")
 	}
-	if snap.Today == "" || snap.From == "" {
-		t.Error("窗口字段在任何情况下都应有值（模板要显示区间）")
+	if snap.Range.From == "" || snap.Range.To == "" {
+		t.Error("窗口在任何情况下都应有效（模板要显示区间）")
 	}
 }
 
-func TestBuildTopCapsAtFive(t *testing.T) {
-	in := make([]overviewTopProduct, 0, 8)
-	for i := 0; i < 8; i++ {
-		in = append(in, overviewTopProduct{ProductName: string(rune('A' + i)), Quantity: int64(10 - i)})
+// TestBuildTopCapsAtLimit 榜单截断：造得比上限多，验证截到上限且名次重排。
+//
+// 造数用 overviewTopLimit+3 而不是写死的 8：上限是常量（口径「热销商品前十」），
+// 写死条数会让这个用例在上限调整时以「实得 N」的形式红掉，而它想钉的其实是截断这件事。
+func TestBuildTopCapsAtLimit(t *testing.T) {
+	n := overviewTopLimit + 3
+	in := make([]overviewTopProduct, 0, n)
+	for i := 0; i < n; i++ {
+		in = append(in, overviewTopProduct{ProductName: string(rune('A' + i)), Quantity: int64(n - i)})
 	}
 	out := buildTop(in)
 	if len(out) != overviewTopLimit {
@@ -242,4 +247,9 @@ func TestFormatCents(t *testing.T) {
 			t.Errorf("formatCents(%d) = %q，期望 %q", tc.cents, got, tc.want)
 		}
 	}
+}
+
+// testRange 用例用的固定区间：7 天窗口（与改动前的固定窗口同形，断言数字不必跟着变）。
+func testRange() overviewRange {
+	return newRange(rangeWeek, "2026-01-01", "2026-01-07", false)
 }

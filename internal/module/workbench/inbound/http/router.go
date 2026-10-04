@@ -175,7 +175,8 @@ func (h *Handle) Dashboard(c *gin.Context) {
 		"PageDraft":     pageTotal - pagePublished,
 		"PageStale":     pageStale,
 		"RecentPages":   recentPages,
-		"Overview":      h.collectOverview(ctx, projectIDs(projects)),
+		// 区间在 handler 里解析（query → from/to），三块（KPI / 趋势 / 榜单）共用同一个窗口。
+		"Overview": withPresets(c, h.collectOverview(ctx, projectIDs(projects), parseOverviewRange(c, time.Now().UTC()))),
 	}))
 }
 

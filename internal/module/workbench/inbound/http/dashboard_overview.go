@@ -28,10 +28,8 @@ import (
 )
 
 const (
-	// overviewTrendDays 趋势图与热销榜的窗口（含当天）。
-	overviewTrendDays = 7
-	// overviewTopLimit 热销榜条数（与商品榜卡片的固定高度对应）。
-	overviewTopLimit = 5
+	// overviewTopLimit 热销榜条数（口径「热销商品前十」，见 docs/17 §P6）。
+	overviewTopLimit = 10
 	// overviewPathLimit 取路径排行时一次要多少条。
 	//
 	// 文章浏览量 = 「路径排行里的文章页之和」，所以要够大才不漏：取 200（analytics 的上限）。
@@ -63,9 +61,13 @@ type OverviewPageKindPort interface {
 
 // overviewKPI 四张卡的数字（全部为**当天**口径）。
 type overviewKPI struct {
-	TodayOrders      int64
-	TodaySalesCents  int64
-	TodaySalesLabel  string
+	// RangeOrders / RangeSalesCents 是**当前区间**的口径（不再是「今日」）。
+	//
+	// 字段名跟着语义走：区间可以是一天、一周、一年，叫 Today 的名字会在下一次改动里
+	// 把某个人骗一次 —— 他会在「本月」的窗口上按「今日订单」去解释这个数字。
+	RangeOrders      int64
+	RangeSalesCents  int64
+	RangeSalesLabel  string
 	ArticleViews     int64
 	ShipPendingCount int64
 	PendingCount     int64
@@ -82,6 +84,14 @@ type overviewTrendPoint struct {
 	SalesLabel string
 	// HeightPct 0~100：模板不做算术，柱高在服务端算好（页面与 AI 都不会各算一份）。
 	HeightPct int
+	// X / BarWidth 这根柱子在 viewBox 里的横坐标与宽度（按点数分配，见 layoutTrendBars）。
+	//
+	// 不给模板一个固定步长：固定步长在长区间上会把后面的柱子推出画布，
+	// 而 SVG 的默认 overflow 是 hidden —— 结果是「图只画了一半」且没有任何错误。
+	X        int
+	BarWidth int
+	// ShowLabel 是否画日期标签（标签稀疏化，见 trendLabelMax）。
+	ShowLabel bool
 }
 
 // overviewTopProduct 榜单的一行（跨工程合并后重排名次）。
@@ -99,11 +109,17 @@ type overviewSnapshot struct {
 	// 未接线时模板渲染空态并说明「暂不可用」，而不是显示一片 0 —— 0 会被当成真实统计。
 	OrdersReady    bool
 	AnalyticsReady bool
-	Today          string
-	From           string
-	KPI            overviewKPI
-	Trend          []overviewTrendPoint
-	Top            []overviewTopProduct
+	// Range 生效的区间（含首尾、粒度与是否被收敛）—— 窗口的**唯一**来源。
+	//
+	// 早先这里另有 Today / From / To 三个平行字段，改动后它们与 Range 重复：
+	// 同一个窗口存两份，迟早出现「筛选条显示本月、标题显示上周」这种一致性问题，
+	// 而两份各自看都对。窗口收成一个字段。
+	Range overviewRange
+	// Presets 筛选条上的一排预设按钮（URL 已拼好，模板不拼 query）。
+	Presets []rangePreset
+	KPI     overviewKPI
+	Trend   []overviewTrendPoint
+	Top     []overviewTopProduct
 	// PortsReady 三个跨模块端口是否都已接线。
 	//
 	// 未接线时页面渲染的是一片 0，而 0 会被当成真实统计（「今天一单都没有」）——
@@ -128,16 +144,14 @@ func (h *Handle) SetOverviewPorts(orders OverviewOrderPort, analytics OverviewAn
 }
 
 // collectOverview 汇总全部工程的概览数据（任一模块失败只影响它自己的块）。
-func (h *Handle) collectOverview(ctx context.Context, projectIDs []string) overviewSnapshot {
-	// UTC 日界：与 order 的按天桶、analytics 的按天聚合同口径（见文件头）。
-	now := time.Now().UTC()
-	today := now.Format(utils.LayoutDay)
-	from := now.AddDate(0, 0, -(overviewTrendDays - 1)).Format(utils.LayoutDay)
-
-	snap := overviewSnapshot{Today: today, From: from}
-	h.collectOrderOverview(ctx, projectIDs, from, today, &snap)
-	h.collectArticleViews(ctx, projectIDs, today, &snap)
-	snap.KPI.TodaySalesLabel = moneyLabel(snap.KPI.TodaySalesCents)
+//
+// 区间由调用方解析好传进来（见 dashboard_range.go）：KPI / 趋势 / 榜单三块必须是**同一个**
+// 窗口，所以「本月」这个词只在一个地方被翻译成日期。
+func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng overviewRange) overviewSnapshot {
+	snap := overviewSnapshot{Range: rng}
+	h.collectOrderOverview(ctx, projectIDs, rng, &snap)
+	h.collectArticleViews(ctx, projectIDs, rng, &snap)
+	snap.KPI.RangeSalesLabel = moneyLabel(snap.KPI.RangeSalesCents)
 	snap.PortsReady = snap.OrdersReady && snap.AnalyticsReady
 	return snap
 }
@@ -147,22 +161,24 @@ func (h *Handle) collectOverview(ctx context.Context, projectIDs []string) overv
 // 逐工程而不是一次全局查询：orders 带 FORCE 策略，聚合方法都要求显式工程 id
 // （那正是「不许出现不限工程的查询」这条纪律的形状）。工程数量在个位数量级，
 // 多几次查询换来的是「不可能读到别人的数据」。
-func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, from, today string, snap *overviewSnapshot) {
+func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) {
 	if h.overviewOrders == nil {
 		return
 	}
 	snap.OrdersReady = true
-	byDay := make(map[string]*overviewTrendPoint, overviewTrendDays)
+	byDay := make(map[string]*overviewTrendPoint, rng.Days)
 	var products []overviewTopProduct
 
 	for _, pid := range projectIDs {
+		// KPI / 趋势 / 榜单同一窗口：这里只认 rng 算好的 from/to，
+		// 不接受「今日」之类的词（见 dashboard_range.go 文件头）。
 		if res, err := h.overviewOrders.SummaryByRange(ctx, &orderdto.OrderRangeSummaryReq{
-			ProjectID: pid, From: today, To: today,
+			ProjectID: pid, From: rng.From, To: rng.To,
 		}); err != nil {
 			snap.fail("order", pid, err)
 		} else {
-			snap.KPI.TodayOrders += res.OrderCount
-			snap.KPI.TodaySalesCents += res.NetSales
+			snap.KPI.RangeOrders += res.OrderCount
+			snap.KPI.RangeSalesCents += res.NetSales
 		}
 
 		if res, err := h.overviewOrders.StatusCounts(ctx, &orderdto.OrderStatusCountsReq{ProjectID: pid}); err != nil {
@@ -173,7 +189,7 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 		}
 
 		if res, err := h.overviewOrders.DailySeries(ctx, &orderdto.OrderDailySeriesReq{
-			ProjectID: pid, From: from, To: today,
+			ProjectID: pid, From: rng.From, To: rng.To,
 		}); err != nil {
 			snap.fail("order", pid, err)
 		} else {
@@ -189,7 +205,7 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 		}
 
 		if res, err := h.overviewOrders.TopProducts(ctx, &orderdto.OrderTopProductsReq{
-			ProjectID: pid, From: from, To: today, Limit: overviewTopLimit,
+			ProjectID: pid, From: rng.From, To: rng.To, Limit: overviewTopLimit,
 		}); err != nil {
 			snap.fail("order", pid, err)
 		} else {
@@ -201,23 +217,23 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 			}
 		}
 	}
-	snap.Trend = buildTrend(byDay)
+	snap.Trend = buildTrend(byDay, rng.Weekly)
 	snap.Top = buildTop(products)
 }
 
-// collectArticleViews 统计**当天**发生在文章页上的浏览量。
+// collectArticleViews 统计**区间内**发生在文章页上的浏览量。
 //
 // 两步而非一步：analytics 只认 path，判断「这个路径是不是文章页」要靠 page 模块
 // （表隔离：analytics 读不到 pages）。查不到类型的路径按**非文章页**处理 ——
 // 猜一个默认值会让已下线的文章页继续被算进来，而两边都不会报错。
-func (h *Handle) collectArticleViews(ctx context.Context, projectIDs []string, today string, snap *overviewSnapshot) {
+func (h *Handle) collectArticleViews(ctx context.Context, projectIDs []string, rng overviewRange, snap *overviewSnapshot) {
 	if h.overviewAnalytics == nil || h.overviewPageKinds == nil {
 		return
 	}
 	snap.AnalyticsReady = true
 	for _, pid := range projectIDs {
 		res, err := h.overviewAnalytics.Summary(ctx, &analyticsdto.SummaryReq{
-			ProjectID: pid, From: today, To: today, PathLimit: overviewPathLimit,
+			ProjectID: pid, From: rng.From, To: rng.To, PathLimit: overviewPathLimit,
 		})
 		if err != nil {
 			snap.fail("analytics", pid, err)
@@ -252,10 +268,44 @@ func (s *overviewSnapshot) fail(block, projectID string, err error) {
 		Error(err, "概览页取数失败")
 }
 
-// buildTrend 把「天 → 点」的映射整理成升序序列并算好柱高。
-func buildTrend(byDay map[string]*overviewTrendPoint) []overviewTrendPoint {
-	points := make([]overviewTrendPoint, 0, len(byDay))
-	for _, p := range byDay {
+// 趋势图的画布参数（viewBox 宽度与模板保持一致）。
+const (
+	trendChartWidth = 490
+	// trendBarGap 柱间隙：相邻两根贴在一起会被读成一根。
+	trendBarGap = 2
+	// trendLabelMax 最多显示几个月/日标签。
+	//
+	// 30 根柱子每个都带日期会重叠成一团黑 —— 稀疏到 12 个以内仍然能读出「这是哪一段」，
+	// 而每根柱子的精确日期在 <title> 里（鼠标悬停可见）。
+	trendLabelMax = 12
+)
+
+// buildTrend 把「天 → 点」的映射整理成升序序列，并算好每根柱子的位置与高度。
+//
+// weekly 为真时先按**周**合并（每根柱子是一周，Day 取那一周的周一）：
+// 按天画一年会得到 365 根不到 1px 的柱子 —— 读者什么也看不出来，只会以为图没加载。
+// 合并放在这里而不是让上游换一种查询：上游回的是**事实**（每天多少单），
+// 「怎么画」是展示层的取舍。
+//
+// 柱宽由**点数**决定（早先是固定步长 70）：固定步长在 30 天的区间上会画到 viewBox
+// 之外被裁掉，用户看到的是半张图而页面不会报任何错。
+func buildTrend(byDay map[string]*overviewTrendPoint, weekly bool) []overviewTrendPoint {
+	buckets := make(map[string]*overviewTrendPoint, len(byDay))
+	for day, p := range byDay {
+		key := day
+		if weekly {
+			key = weekStartOf(day)
+		}
+		pt := buckets[key]
+		if pt == nil {
+			pt = &overviewTrendPoint{Day: key}
+			buckets[key] = pt
+		}
+		pt.Orders += p.Orders
+		pt.NetSales += p.NetSales
+	}
+	points := make([]overviewTrendPoint, 0, len(buckets))
+	for _, p := range buckets {
 		points = append(points, *p)
 	}
 	sort.Slice(points, func(i, j int) bool { return points[i].Day < points[j].Day })
@@ -284,7 +334,45 @@ func buildTrend(byDay map[string]*overviewTrendPoint) []overviewTrendPoint {
 		}
 		points[i].HeightPct = pct
 	}
+	layoutTrendBars(points)
 	return points
+}
+
+// layoutTrendBars 按点数分配柱宽、横坐标与标签密度。
+//
+// 与 buildTrend 分开：那一步算的是**数据**（谁高谁矮），这一步算的是**版面**
+// （谁在哪儿）。混在一起以后，改版面要读一整套聚合逻辑。
+func layoutTrendBars(points []overviewTrendPoint) {
+	n := len(points)
+	if n == 0 {
+		return
+	}
+	step := trendChartWidth / n
+	if step < 1 {
+		step = 1
+	}
+	barWidth := step - trendBarGap
+	if barWidth < 2 {
+		// 点极多时宁可让柱子贴在一起，也不要宽度为 0 的矩形（它不渲染，
+		// 表现为「图里少了几天」，而那天其实有单）。
+		barWidth = 2
+	}
+	labelEvery := (n + trendLabelMax - 1) / trendLabelMax
+	for i := range points {
+		points[i].X = i*step + (step-barWidth)/2
+		points[i].BarWidth = barWidth
+		// 首尾都标：区间两端的日期是读者最想确认的那两个。
+		points[i].ShowLabel = i%labelEvery == 0 || i == n-1
+	}
+}
+
+// weekStartOf 一天的 ISO 周一（YYYY-MM-DD）；解析失败原样返回（宁可少合并，不要丢点）。
+func weekStartOf(day string) string {
+	t, err := time.Parse(utils.LayoutDay, day)
+	if err != nil {
+		return day
+	}
+	return t.AddDate(0, 0, -((int(t.Weekday()) + 6) % 7)).Format(utils.LayoutDay)
 }
 
 // buildTop 跨工程合并榜单：按销量降序（并列看金额与名字），重排名次后取前 N。

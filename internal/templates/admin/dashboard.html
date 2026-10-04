@@ -33,50 +33,83 @@
        那些数据里没有统计键 —— 直接取用缺失键会让整页在此中断（HTTP 仍 200）。 *}
     {{if isset(.Overview)}}
     {{if .Overview.PortsReady}}
+    {* 时间筛选条排在三块之前：「这一页的数字是哪一段的」必须比数字本身先读到。
+       三块（KPI / 趋势 / 榜单）共用同一个窗口，所以它属于页面而不是某一块。
+       预设链接由服务端拼好（带上其它筛选），模板不拼 query。 *}
+    <div class="range-bar">
+        {{range _, r := .Overview.Presets}}
+        <a class="range-chip{{if r.Active}} is-active{{end}}" href="{{r.URL}}">{{ .["t"](r.LabelKey, r.Label) }}</a>
+        {{end}}
+        {* action 必须是 /admin：仪表盘注册在 workbench 的根级前缀组（router.go 的
+           SetupWorkbenchRoutes 里 g.GET("/admin", h.Dashboard)），写成 /admin/dashboard 会 404。
+           预设链接（r.URL）由服务端按同一个常量拼好，两处同源由
+           TestAdminDashboardFormActionMatchesRoute 钉住。 *}
+        <form method="get" action="/admin" class="range-custom">
+            <input type="hidden" name="range" value="custom">
+            <input type="date" name="from" class="form-input range-date" value="{{.Overview.Range.From}}" aria-label="{{ .["t"]("admin.dashboard.range.from", "起始日") }}">
+            <input type="date" name="to" class="form-input range-date" value="{{.Overview.Range.To}}" aria-label="{{ .["t"]("admin.dashboard.range.to", "结束日") }}">
+            <button type="submit" class="btn btn-sm">{{ .["t"]("admin.dashboard.range.apply", "应用") }}</button>
+        </form>
+    </div>
+    <p class="text-mute text-sm">
+        {{.Overview.Range.From}} ~ {{.Overview.Range.To}}
+        {{if .Overview.Range.Clamped}}{{ .["t"]("admin.dashboard.range.clamped", "（区间已按上限截取）") }}{{end}}
+    </p>
+
+    {* KPI 卡可点击跳订单页（口径闸门）。带得上的筛选参数就带上：销售额与待发货都落在
+       「已付款」这一档上，订单页用自己的 status 参数表达同一件事。 *}
     <div class="stat-grid">
-        <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.ordersToday", "今日订单") }}</div>
-            <div class="stat-value">{{.Overview.KPI.TodayOrders}}</div>
-        </div>
-        <div class="card stat-card">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.salesToday", "今日销售额") }}</div>
-            <div class="stat-value">{{.Overview.KPI.TodaySalesLabel}}</div>
+        <a class="card stat-card stat-card-link" href="/admin/orders">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.orders", "订单数") }}</div>
+            <div class="stat-value">{{.Overview.KPI.RangeOrders}}</div>
+            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.ordersNote", "区间内创建的全部订单（含取消）") }}</div>
+        </a>
+        <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.sales", "净销售额") }}</div>
+            <div class="stat-value">{{.Overview.KPI.RangeSalesLabel}}</div>
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.salesNote", "净额（已扣已收货退款）") }}</div>
-        </div>
+        </a>
         <div class="card stat-card">
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.articleViews", "文章浏览") }}</div>
             <div class="stat-value">{{.Overview.KPI.ArticleViews}}</div>
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.articleViewsNote", "只看文章页路径") }}</div>
         </div>
-        <div class="card stat-card">
+        <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.shipPending", "待发货") }}</div>
             <div class="stat-value">{{.Overview.KPI.ShipPendingCount}}</div>
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pendingNote", "待付款：") }}{{.Overview.KPI.PendingCount}}</div>
-        </div>
+        </a>
     </div>
 
     <div class="grid-split">
         <section class="card">
             <div class="card-header">
-                <span class="card-title">{{ .["t"]("admin.dashboard.trend.title", "销售趋势（近 7 天）") }}</span>
-                <span class="text-mute text-sm">{{.Overview.From}} ~ {{.Overview.Today}}</span>
+                <span class="card-title">{{if .Overview.Range.Weekly}}{{ .["t"]("admin.dashboard.trend.titleWeekly", "销售趋势（按周）") }}{{else}}{{ .["t"]("admin.dashboard.trend.title", "销售趋势（按天）") }}{{end}}</span>
+                <span class="text-mute text-sm">{{.Overview.Range.From}} ~ {{.Overview.Range.To}}</span>
             </div>
             <div class="card-body">
                 {{if len(.Overview.Trend) == 0}}
                 <p class="empty-desc">{{ .["t"]("admin.dashboard.trend.empty", "这段时间没有订单") }}</p>
                 {{else}}
                 {* 柱高用 SVG 属性表达（不是内联 style —— 那会违反 UI-012 的判据）。
-                   坐标算术只算布局：x 按序号、y/height 由服务端给的 HeightPct 折算。 *}
+                   横坐标与柱宽由服务端按点数算好（X / BarWidth）：模板里写固定步长会在
+                   长区间上把柱子推出 viewBox，而 SVG 默认裁掉溢出内容 —— 页面不报错，
+                   用户看到的只是半张图。y/height 仍是这里的定值算术（与点数无关）。
+                   日期标签稀疏化（ShowLabel）：30 根柱子每个都带日期会糊成一团。 *}
                 <svg class="trend-chart" viewBox="0 0 490 160" role="img"
-                     aria-label="{{ .["t"]("admin.dashboard.trend.title", "销售趋势（近 7 天）") }}">
-                    {{range i, p := .Overview.Trend}}
+                     aria-label="{{ .["t"]("admin.dashboard.trend.aria", "销售趋势柱状图") }}">
+                    {{range _, p := .Overview.Trend}}
                     <rect class="trend-bar{{if p.HeightPct == 0}} is-zero{{end}}"
-                          x="{{i * 70 + 21}}" y="{{120 - p.HeightPct * 12 / 10}}"
-                          width="28" height="{{p.HeightPct * 12 / 10}}" rx="4">
-                        <title>{{p.DayLabel}} · {{p.Orders}} {{ .["t"]("admin.dashboard.trend.ordersUnit", "单") }} · {{p.SalesLabel}}</title>
+                          x="{{p.X}}" y="{{120 - p.HeightPct * 12 / 10}}"
+                          width="{{p.BarWidth}}" height="{{p.HeightPct * 12 / 10}}" rx="4">
+                        <title>{{p.Day}} · {{p.Orders}} {{ .["t"]("admin.dashboard.trend.ordersUnit", "单") }} · {{p.SalesLabel}}</title>
                     </rect>
-                    <text class="trend-day" x="{{i * 70 + 35}}" y="140" text-anchor="middle">{{p.DayLabel}}</text>
-                    <text class="trend-val" x="{{i * 70 + 35}}" y="154" text-anchor="middle">{{p.Orders}}</text>
+                    {* 标签与数字同一密度：两根柱子各带一个数字在 30 根的区间上会叠成一排。
+                       被跳过的那些仍能从 <title> 读到（悬停），而首尾一定有。 *}
+                    {{if p.ShowLabel}}
+                    <text class="trend-day" x="{{p.X + p.BarWidth / 2}}" y="140" text-anchor="middle">{{p.DayLabel}}</text>
+                    <text class="trend-val" x="{{p.X + p.BarWidth / 2}}" y="154" text-anchor="middle">{{p.Orders}}</text>
+                    {{end}}
                     {{end}}
                     <line class="trend-axis" x1="0" y1="120" x2="490" y2="120"></line>
                 </svg>
@@ -86,14 +119,14 @@
 
         <section class="card">
             <div class="card-header">
-                <span class="card-title">{{ .["t"]("admin.dashboard.top.title", "热销商品（近 7 天）") }}</span>
+                <span class="card-title">{{ .["t"]("admin.dashboard.top.title", "热销商品（当前区间）") }}</span>
             </div>
             {{if len(.Overview.Top) == 0}}
             <div class="card-body">
                 <p class="empty-desc">{{ .["t"]("admin.dashboard.top.empty", "这段时间没有已付款的订单") }}</p>
             </div>
             {{else}}
-            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.top.title", "热销商品（近 7 天）") }}">
+            <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.top.title", "热销商品（当前区间）") }}">
                 <table class="data-table">
                     <thead>
                     <tr>

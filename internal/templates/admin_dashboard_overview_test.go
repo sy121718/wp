@@ -12,13 +12,15 @@ package templates
 // 结构体在两边同形即可；这也让本包不必依赖 workbench 的 inbound 包。
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 type tmplOverviewKPI struct {
-	TodayOrders      int64
-	TodaySalesLabel  string
+	RangeOrders      int64
+	RangeSalesLabel  string
 	ArticleViews     int64
 	ShipPendingCount int64
 	PendingCount     int64
@@ -30,6 +32,9 @@ type tmplTrendPoint struct {
 	Orders     int64
 	SalesLabel string
 	HeightPct  int
+	X          int
+	BarWidth   int
+	ShowLabel  bool
 }
 
 type tmplTopProduct struct {
@@ -40,10 +45,27 @@ type tmplTopProduct struct {
 	AmountLabel string
 }
 
+type tmplRange struct {
+	Key     string
+	From    string
+	To      string
+	Days    int
+	Weekly  bool
+	Clamped bool
+}
+
+type tmplRangePreset struct {
+	Key      string
+	LabelKey string
+	Label    string
+	URL      string
+	Active   bool
+}
+
 type tmplOverview struct {
 	PortsReady bool
-	Today      string
-	From       string
+	Range      tmplRange
+	Presets    []tmplRangePreset
 	KPI        tmplOverviewKPI
 	Trend      []tmplTrendPoint
 	Top        []tmplTopProduct
@@ -62,14 +84,19 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	data["PageStale"] = 1
 	data["RecentPages"] = []map[string]any{}
 	data["Overview"] = tmplOverview{
-		PortsReady: true, Today: "2026-10-05", From: "2026-09-29",
+		PortsReady: true,
+		Range:      tmplRange{Key: "week", From: "2026-09-29", To: "2026-10-05", Days: 7},
+		Presets: []tmplRangePreset{
+			{Key: "week", LabelKey: "admin.dashboard.range.week", Label: "本周", URL: "/admin?range=week", Active: true},
+			{Key: "month", LabelKey: "admin.dashboard.range.month", Label: "本月", URL: "/admin?range=month"},
+		},
 		KPI: tmplOverviewKPI{
-			TodayOrders: 12, TodaySalesLabel: "CNY 1,234.50",
+			RangeOrders: 12, RangeSalesLabel: "CNY 1,234.50",
 			ArticleViews: 88, ShipPendingCount: 3, PendingCount: 2,
 		},
 		Trend: []tmplTrendPoint{
-			{Day: "2026-09-29", DayLabel: "09-29", Orders: 1, SalesLabel: "CNY 10.00", HeightPct: 0},
-			{Day: "2026-10-05", DayLabel: "10-05", Orders: 12, SalesLabel: "CNY 1,234.50", HeightPct: 100},
+			{Day: "2026-09-29", DayLabel: "09-29", Orders: 1, SalesLabel: "CNY 10.00", HeightPct: 0, X: 1, BarWidth: 68, ShowLabel: true},
+			{Day: "2026-10-05", DayLabel: "10-05", Orders: 12, SalesLabel: "CNY 1,234.50", HeightPct: 100, X: 71, BarWidth: 68, ShowLabel: true},
 		},
 		Top: []tmplTopProduct{
 			{Rank: 1, ProductName: "TEO 香水 50ml", SKU: "TEO-50-01", Quantity: 5, AmountLabel: "CNY 400.00"},
@@ -81,8 +108,18 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"今日订单", "今日销售额", "CNY 1,234.50", "文章浏览", "88", "待发货",
-		"销售趋势（近 7 天）", "热销商品（近 7 天）", "TEO 香水 50ml", "TEO-50-01", "09-29",
+		"订单数", "净销售额", "CNY 1,234.50", "文章浏览", "88", "待发货",
+		"销售趋势（按天）", "热销商品（当前区间）", "TEO 香水 50ml", "TEO-50-01", "09-29",
+		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
+		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",
+		`<input type="hidden" name="range" value="custom">`,
+		// 日期框带基座类（外观只有一个真源）+ 本页的尺寸类。
+		`class="form-input range-date"`,
+		// 分开断言而不是连成 `name="from" value="..."`：属性之间还夹着 aria-label，
+		// 连写会把「属性顺序」也变成判据，而顺序不是这里要钉的东西。
+		`name="from"`, `value="2026-09-29"`,
+		// KPI 卡可点击跳订单页（带口径的链接）。
+		"stat-card-link", `href="/admin/orders"`,
 		// 柱状图是内联 SVG，柱高走属性（不是 style）。
 		"<svg", "trend-bar", "height=\"120\"",
 		// 未接线提示在这条路径上不该出现。
@@ -90,6 +127,13 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("渲染结果应含 %q", want)
 		}
+	}
+	// 选中态只该落在当前区间那一个按钮上（两个预设，一个 active）。
+	if n := strings.Count(out, "range-chip is-active"); n != 1 {
+		t.Errorf("选中的胶囊应恰好 1 个，实得 %d", n)
+	}
+	if strings.Contains(out, "（区间已按上限截取）") {
+		t.Error("未发生收敛时不该显示截取提示")
 	}
 	if strings.Contains(out, "暂不可用") {
 		t.Error("端口已就绪时不该显示「暂不可用」提示")
@@ -118,5 +162,30 @@ func TestDashboardOverviewDegradesWhenPortsMissing(t *testing.T) {
 		if strings.Contains(out, bad) {
 			t.Errorf("端口未接线时不该渲染 KPI 卡 %q（一片 0 会被当成真实统计）", bad)
 		}
+	}
+}
+
+// TestAdminDashboardFormActionMatchesRoute 钉筛选条表单的 action。
+//
+// 依据：仪表盘注册在 workbench 的**根级前缀组**里 —— router.go 的
+// SetupWorkbenchRoutes 中写的是 `g.GET("/admin", h.Dashboard)`，没有 /admin/dashboard 这条。
+// 写错了的表现是「点应用什么都不发生」（404 页面被 htmx/浏览器吞掉），
+// 而模板渲染、Go 编译、其余测试全都不报错。
+//
+// 服务端那一半（预设胶囊的链接）由 workbenchhttp 的 dashboardPath 常量给出，
+// 本用例额外禁止全文出现 /admin/dashboard，保证两处不会各自漂移。
+func TestAdminDashboardFormActionMatchesRoute(t *testing.T) {
+	src, err := os.ReadFile(filepath.FromSlash("admin/dashboard.html"))
+	if err != nil {
+		t.Fatalf("读取模板失败：%v", err)
+	}
+	src0 := src
+	if !strings.Contains(string(src0), `action="/admin"`) {
+		t.Error(`筛选条的 form action 应为 "/admin"（仪表盘的真实路由）`)
+	}
+	// 带前引号匹配**属性值**：说明文字里可以（也应当）写出错误路径长什么样，
+	// 那正是这条注释存在的意义；要拦的是真把它写进 action / href。
+	if strings.Contains(string(src0), `"/admin/dashboard`) {
+		t.Error(`模板里不该把 /admin/dashboard 写进属性值：那条路由不存在（点下去 404，页面不报错）`)
 	}
 }

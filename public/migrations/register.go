@@ -199,6 +199,8 @@ func init() {
 	registerAIConfigGroup()
 	// 549：对外接入点开关的词条（见 register_ai_mcp_switch_i18n.go）。
 	registerAIMcpSwitchI18n()
+	// 550：概览页时间筛选条与区间口径的词条（见 register_dashboard_range_i18n.go）。
+	registerDashboardRangeI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
