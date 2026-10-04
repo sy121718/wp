@@ -45,7 +45,10 @@ func buildResponsesBody(model, input string, maxOutputTokens int64) ([]byte, err
 	return json.Marshal(payload)
 }
 
-// parseResponsesReply 从 /responses 的响应体里取出回复正文。
+// parseResponsesReply 从 /responses 的响应体里取出回复正文与用量（usage）。
+//
+// usage 缺失不算错：它只影响调用流水的用量列（Reported=false），正文该回还是要回 ——
+// 把「这家没报 usage」判成失败会让一次成功的对话看起来像挂了。
 //
 // 取值优先级：
 //
@@ -58,20 +61,22 @@ func buildResponsesBody(model, input string, maxOutputTokens int64) ([]byte, err
 // status=incomplete（截断 / content_filter）**不提前返回**：它只说明这轮没跑到 completed，
 // 正文可能照样生成，继续走下面的取值路径；真取不到片段时落到末尾唯一的「无正文」出口。
 // 提前把 incomplete 归口 ErrInternal 会把「用户给的上限太小」伪装成「服务器内部错误」。
-func parseResponsesReply(body []byte) (string, error) {
+func parseResponsesReply(body []byte) (string, ReplyUsage, error) {
 	var root map[string]any
 	if err := json.Unmarshal(body, &root); err != nil {
-		return "", ErrInternal
+		return "", ReplyUsage{}, ErrInternal
 	}
 	if obj, _ := root["object"].(string); obj != "" && obj != responsesObjectName {
-		return "", ErrInternal
+		return "", ReplyUsage{}, ErrInternal
 	}
 	if status, _ := root["status"].(string); status == responsesStatusFailed {
-		return "", ErrInternal
+		return "", ReplyUsage{}, ErrInternal
 	}
+	// usage 缺失不算错（只影响调用流水的用量列），所以先取出来、后面每个出口都带上它。
+	usage := usageFromJSON(root["usage"])
 
 	if text, ok := root["output_text"].(string); ok && text != "" {
-		return text, nil
+		return text, usage, nil
 	}
 
 	var sb strings.Builder
@@ -102,7 +107,7 @@ func parseResponsesReply(body []byte) (string, error) {
 		}
 	}
 	if sb.Len() == 0 {
-		return "", ErrInternal
+		return "", usage, ErrInternal
 	}
-	return sb.String(), nil
+	return sb.String(), usage, nil
 }

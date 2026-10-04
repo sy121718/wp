@@ -1,28 +1,27 @@
-{* admin.mail_automation_edit.html — 表单式流程编辑器（issue #38 P3，目标 ⑦） *}
-{* 版式遵循后台页面骨架规范（docs/02-H-admin-page-shell.md §2）与评审规则（admin-ui-logic §2.1/§2.2/§7）：
-     · 正文零说明文字 —— 节点写法、图校验规则、触发方式语义、类型与参数、分支规则整段进 .help 悬浮；
-       「类型与参数」原先占一张 7 行表格，现在由 handler 已传入的 .Types 在悬浮里逐条渲染（不做第二份真相）；
-     · 「只有一个保存按钮」的卡已删除，保存按钮进 .page-head（表格外按钮用 form="<id>" 关联表单）；
-     · 流程说明是列表里显示的一句话摘要 → textarea rows=2（不是富文本：标签会污染列表行）。 *}
+{* admin.mail_automation_edit.html — 步骤式流程编辑器（issue #38 P3 重做，task-4 稿 B） *}
+{* 用户概念只剩「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框已从界面消失。
+   版式遵循 docs/02-H-admin-page-shell.md §2 与评审规则（admin-ui-logic §2.1/§2.2/§7）：
+     · 正文零说明文字 —— 执行顺序、分支规则、类型与参数、触发方式语义整段进 .help 悬浮；
+     · 主行动（保存）进 .page-head .page-actions，表格外按钮用 form="<id>" 关联表单；
+     · 说明是列表里显示的一句话摘要 → textarea rows=2（不是富文本：标签会污染列表行）；
+     · 一行一步：类型下拉决定这一行的参数控件与是否需要「跳到第几步」，连边由服务端算
+       （顺序即执行顺序，末步自动接结束）—— 换算全在 mail_automation_form.go。 *}
 {{extends "../layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
-{{tr := .["t"]}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
       <div class="page-title-row">
-        <h1>{{if .IsNew}}{{ .["t"]("admin.mail.automation_edit.heading_new", "新建自动化流程") }}{{else}}{{ .["t"]("admin.mail.automation_edit.heading_edit", "编辑：") }}{{.A.Name}}{{end}}</h1>
+        <h1>{{if .IsNew}}{{ .["t"]("admin.mail.automation_edit.heading_new", "新建自动化流程") }}{{else}}{{ .["t"]("admin.mail.automation_edit.heading_edit", "编辑：") }}{{.Form.Name}}{{end}}</h1>
         <span class="help">
           <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.mail.automation_edit.help.label", "查看说明") }}" aria-expanded="false">?</button>
           <span class="help-pop" role="tooltip">
-            <strong>{{ .["t"]("admin.mail.automation_edit.hint.strong_lead", "一行一个节点") }}</strong>{{ .["t"]("admin.mail.automation_edit.hint.tail_lead", "，用「下一步」把标识串起来（标识自己起，如 n1 / n2）。只填需要的行，空行忽略。") }}<br>
-            {{ .["t"]("admin.mail.automation_edit.hint.graph_lead", "保存时会检查图：") }}<strong>{{ .["t"]("admin.mail.automation_edit.hint.graph_strong", "有环、指向不存在的节点、从入口走不到的节点") }}</strong>{{ .["t"]("admin.mail.automation_edit.hint.graph_tail", "都会被拒绝 —— 有环的图在运行期就是无限循环发邮件，所以必须在保存时拦住。") }}<br>
-            {{ .["t"]("admin.mail.automation_edit.trigger.lead", "触发方式决定「谁会进入流程」。") }}<strong>{{ .["t"]("admin.mail.automation_edit.trigger.strong_manual", "手工添加") }}</strong>{{ .["t"]("admin.mail.automation_edit.trigger.manual_tail", "最可控（后台挑人加入，适合先试跑）；事件触发随业务动作自动发生。注意：批量导入") }}<strong>{{ .["t"]("admin.mail.automation_edit.trigger.strong_not", "不会") }}</strong>{{ .["t"]("admin.mail.automation_edit.trigger.tail", "逐条触发（1000 次查询太贵），需要时用后台批量加入。") }}<br>
+            {{ .["t"]("admin.mail.automation_edit.guide.order", "从上往下执行：一步做完做下一步。只有「条件分支」需要你指定跳到哪一步，其它步骤系统自动接着往下走。") }}<br>
+            {{ .["t"]("admin.mail.automation_edit.guide.branch", "「条件分支」先选一个判断条件（打开过邮件 / 点击过链接 / 已经订阅 / 带着某个标签），再分别指定「满足」和「不满足」时跳到哪一步或结束。") }}<br>
+            {{ .["t"]("admin.mail.automation_edit.guide.enable", "流程保存后要「启用」才会接收新的人。") }}<br>
             <strong>{{ .["t"]("admin.mail.automation_edit.types.strong", "类型与参数") }}</strong>{{ .["t"]("admin.mail.automation_edit.types.colon", "：") }}<br>
             {{range _, ty := .Types}}<strong>{{ty.Label}}</strong>{{ .["t"]("admin.mail.automation_edit.types.dash", " — ") }}{{ty.Hint}}<br>{{end}}
-            {{ .["t"]("admin.mail.automation_edit.branch.lead", "条件分支要填") }} <strong>{{ .["t"]("admin.mail.automation_edit.branch.strong", "yes 与 no") }}</strong>{{ .["t"]("admin.mail.automation_edit.branch.mid", "两条出边（都指向存在的标识）；其它类型填「下一步」即可，结束节点留空。发信节点的参数填") }}<strong>{{ .["t"]("admin.mail.automation_edit.branch.strong_mail", "邮件模板的 key") }}</strong>{{ .["t"]("admin.mail.automation_edit.branch.tail", "。") }}<br>
-            {{ .["t"]("admin.mail.automation_edit.entry_hint", "入口节点的标识（通常就是第一行的标识）。") }}<br>
             {{if .Templates}}{{ .["t"]("admin.mail.automation_edit.templates_hint", "可用模板 key：") }}{{range _, tp := .Templates}}<code>{{tp.TemplateKey}}</code> {{end}}<br>{{end}}
             {{if not .IsNew}}{{ .["t"]("admin.mail.automation_edit.save_note", "保存会推进版本号；已运行的实例继续用它们启动时的版本（改图不影响在跑的人）。") }}{{end}}
           </span>
@@ -31,25 +30,61 @@
     </div>
     <div class="page-actions">
       <a class="btn btn-sm btn-ghost" href="/admin/mail/automation">← {{ .["t"]("admin.mail.automation_edit.back", "返回列表") }}</a>
-      {* 画布链接只在编辑已有流程时出现：新建时 .A 不存在，直接写 .A.ID 会让整页渲染失败。 *}
-      {{if not .IsNew}}<a class="btn btn-sm btn-ghost" href="/admin/mail/automation/canvas?id={{.A.ID}}">{{ .["t"]("admin.mail.automation_edit.canvas_link", "用画布摆位置") }}</a>{{end}}
-      <button type="submit" form="automation-form" class="btn btn-primary">{{ .["t"]("admin.mail.automation_edit.save", "保存") }}</button>
+      {{if not .IsNew}}<a class="btn btn-sm btn-ghost" href="/admin/mail/automation/canvas?id={{.Form.ID}}">{{ .["t"]("admin.mail.automation_edit.canvas_link", "用画布摆位置") }}</a>{{end}}
+      {{if not .Fallback}}<button type="submit" form="automation-form" class="btn btn-primary">{{ .["t"]("admin.mail.automation_edit.save", "保存") }}</button>{{end}}
     </div>
   </header>
 
   {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{.Err}}</p>{{end}}
   {{if .Ok != ""}}<p class="badge badge-success" role="status">{{.Ok}}</p>{{end}}
 
+  {{if .Fallback}}
+  {* 只读兜底：这条流程的图超出表单能表达的范围（环 / 入口不是触发节点 / 有步骤走不到 / 多个条件）。
+     这里不给可提交的表单 —— 渲染出来的表单是空的，用户一保存就把这些节点整段删掉。 *}
+  <section class="card list-card">
+    <div class="card-header">
+      <h2>{{ .["t"]("admin.mail.automation_edit.fallback_heading", "这条流程不能用步骤表单编辑") }}</h2>
+    </div>
+    <p class="empty-desc">{{ .["t"]("admin.mail.automation_edit.fallback", "它用了表单表达不了的跳转，为避免改坏，这里只显示原样。请用画布修改。") }}</p>
+    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation_edit.fallback_heading", "这条流程不能用步骤表单编辑") }}">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ .["t"]("admin.mail.automation_edit.col.key", "标识") }}</th>
+            <th>{{ .["t"]("admin.mail.automation_edit.col.type", "做什么") }}</th>
+            <th>{{ .["t"]("admin.mail.automation_edit.col.next", "下一步") }}</th>
+            <th>{{ .["t"]("admin.mail.automation_edit.col.yes", "满足时") }}</th>
+            <th>{{ .["t"]("admin.mail.automation_edit.col.no", "不满足时") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{range _, fw := .FallbackRows}}
+          <tr>
+            <td><code>{{fw.Key}}</code></td>
+            <td>{{fw.Type}}</td>
+            <td class="text-mute">{{if fw.Next}}{{fw.Next}}{{else}}—{{end}}</td>
+            <td class="text-mute">{{if fw.Yes}}{{fw.Yes}}{{else}}—{{end}}</td>
+            <td class="text-mute">{{if fw.No}}{{fw.No}}{{else}}—{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{else}}
   <form id="automation-form" class="form-stack" method="post" action="/admin/mail/automation/save">
     <input type="hidden" name="csrf_token" value="{{csrf}}">
-    <input type="hidden" name="id" value="{{if .IsNew}}0{{else}}{{.A.ID}}{{end}}">
+    <input type="hidden" name="id" value="{{.Form.ID}}">
+    {* 入口节点的 key：界面上不出现（用户不需要知道「入口节点」是什么），但既有流程必须原样带回 ——
+       运行中的实例用节点 key 记录「走到哪了」，换 key 会让它们全部找不到当前节点。 *}
+    <input type="hidden" name="entry" value="{{.Form.Entry}}">
 
     <section class="card card-body">
       <h2>{{ .["t"]("admin.mail.automation_edit.basic_heading", "基本信息") }}</h2>
       <div class="form-grid">
         <div class="form-field">
           <label class="form-label" for="auto-name">{{ .["t"]("admin.mail.automation_edit.field.name", "流程名称") }}</label>
-          <input class="form-input" id="auto-name" type="text" name="name" value="{{if .IsNew}}{{else}}{{.A.Name}}{{end}}" required>
+          <input class="form-input" id="auto-name" type="text" name="name" value="{{.Form.Name}}" required>
         </div>
         <div class="form-field">
           <label class="form-label" for="auto-trigger">{{ .["t"]("admin.mail.automation_edit.field.trigger", "触发方式") }}</label>
@@ -59,46 +94,114 @@
           {{end}}
           </select>
         </div>
-        <div class="form-field">
-          <label class="form-label" for="auto-entry">{{ .["t"]("admin.mail.automation_edit.field.entry", "入口节点标识") }}</label>
-          <input class="form-input" id="auto-entry" type="text" name="entry" value="{{if .IsNew}}n1{{else}}{{.Entry}}{{end}}" size="8">
-        </div>
         <div class="form-field form-field--wide">
           <label class="form-label" for="auto-description">{{ .["t"]("admin.mail.automation_edit.field.description", "说明") }}</label>
-          <textarea class="form-textarea" id="auto-description" name="description" rows="2">{{if .IsNew}}{{else}}{{.A.Description}}{{end}}</textarea>
+          <textarea class="form-textarea" id="auto-description" name="description" rows="2">{{.Form.Description}}</textarea>
         </div>
       </div>
     </section>
 
     <section class="card card-body">
-      <h2>{{ .["t"]("admin.mail.automation_edit.nodes_heading", "节点") }}</h2>
-      <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation_edit.nodes_heading", "节点") }}">
-      <table class="data-table">
-        <thead>
-          <tr><th>#</th><th>{{ .["t"]("admin.mail.automation_edit.col.key", "标识") }}</th><th>{{ .["t"]("admin.mail.automation_edit.col.type", "类型") }}</th><th>{{ .["t"]("admin.mail.automation_edit.col.param", "参数") }}</th><th>{{ .["t"]("admin.mail.automation_edit.col.next", "下一步") }}</th><th>yes</th><th>no</th></tr>
-        </thead>
-        <tbody>
-        {{range _, rw := .Rows}}
-        <tr>
-          <td class="text-mute">{{rw.Index}}</td>
-          <td><input class="form-input" type="text" name="node_key_{{rw.Index}}" value="{{rw.Key}}" size="6" aria-label="{{ .["t"]("admin.mail.automation_edit.col.key", "标识") }} {{rw.Index}}"></td>
-          <td>
-            <select class="form-select" name="node_type_{{rw.Index}}" aria-label="{{ .["t"]("admin.mail.automation_edit.col.type", "类型") }} {{rw.Index}}">
-            {{range _, o := rw.Options}}
-              <option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>
-            {{end}}
-            </select>
-          </td>
-          <td><input class="form-input" type="text" name="param_{{rw.Index}}" value="{{rw.Param}}" size="26" aria-label="{{ .["t"]("admin.mail.automation_edit.col.param", "参数") }} {{rw.Index}}"></td>
-          <td><input class="form-input" type="text" name="next_{{rw.Index}}" value="{{rw.Next}}" size="6" aria-label="{{ .["t"]("admin.mail.automation_edit.col.next", "下一步") }} {{rw.Index}}"></td>
-          <td><input class="form-input" type="text" name="yes_{{rw.Index}}" value="{{rw.Yes}}" size="6" aria-label="yes {{rw.Index}}"></td>
-          <td><input class="form-input" type="text" name="no_{{rw.Index}}" value="{{rw.No}}" size="6" aria-label="no {{rw.Index}}"></td>
-        </tr>
-        {{end}}
-        </tbody>
-      </table>
+      <h2>{{ .["t"]("admin.mail.automation_edit.nodes_heading", "步骤") }}</h2>
+      <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation_edit.nodes_heading", "步骤") }}">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{{ .["t"]("admin.mail.automation_edit.col.step", "步骤") }}</th>
+              <th>{{ .["t"]("admin.mail.automation_edit.col.type", "做什么") }}</th>
+              <th>{{ .["t"]("admin.mail.automation_edit.col.param", "参数") }}</th>
+              <th>{{ .["t"]("admin.mail.automation_edit.col.next", "下一步") }}</th>
+              <th class="col-actions">{{ .["t"]("admin.mail.automation_edit.col.actions", "操作") }}</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{range _, rw := .Rows}}
+            <tr>
+              <td class="text-mute">
+                {{rw.StepLabel}}
+                {* 既有步骤的 key 跟着这一行走（用户看不见）：它是实例的定位，不是界面的字段。 *}
+                <input type="hidden" name="node_key_{{rw.Index}}" value="{{rw.Key}}">
+              </td>
+              <td>
+                <select class="form-select" name="node_type_{{rw.Index}}" aria-label="{{rw.StepLabel}}{{ .["t"]("admin.mail.automation_edit.col.type_suffix", "：做什么") }}">
+                {{range _, o := rw.TypeOptions}}
+                  <option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>
+                {{end}}
+                </select>
+              </td>
+              <td>
+                {{if rw.IsDelay}}
+                <div class="form-inline">
+                  <input class="form-input" type="number" min="1" step="1" name="param_unit_value_{{rw.Index}}" value="{{rw.UnitValue}}" aria-label="{{ .["t"]("admin.mail.automation_edit.param.delay_value", "等待时长") }}">
+                  <select class="form-select" name="param_unit_{{rw.Index}}" aria-label="{{ .["t"]("admin.mail.automation_edit.param.delay_unit", "等待单位") }}">
+                  {{range _, u := rw.UnitOptions}}
+                    <option value="{{u.Value}}"{{if u.Selected}} selected{{end}}>{{u.Label}}</option>
+                  {{end}}
+                  </select>
+                </div>
+                {{end}}
+                {{if rw.IsEmail}}
+                <input class="form-input" type="text" name="param_{{rw.Index}}" value="{{rw.Param}}" list="au-tpl-keys" placeholder="{{ .["t"]("admin.mail.automation_edit.param.email", "邮件模板 key") }}">
+                {{end}}
+                {{if rw.IsTag}}
+                <input class="form-input" type="text" name="param_{{rw.Index}}" value="{{rw.Param}}" placeholder="{{ .["t"]("admin.mail.automation_edit.param.tag", "标签，多个用逗号分隔") }}">
+                {{end}}
+                {{if rw.IsBranch}}
+                <div class="form-inline">
+                  <select class="form-select" name="param_{{rw.Index}}" aria-label="{{ .["t"]("admin.mail.automation_edit.col.condition", "判断条件") }}">
+                  {{range _, c := rw.ConditionOptions}}
+                    <option value="{{c.Value}}"{{if c.Selected}} selected{{end}}>{{c.Label}}</option>
+                  {{end}}
+                  </select>
+                  <input class="form-input" type="text" name="param_tag_{{rw.Index}}" value="{{rw.Tag}}" placeholder="{{ .["t"]("admin.mail.automation_edit.param.tag_name", "标签名") }}">
+                </div>
+                {{end}}
+                {{if rw.IsEnd}}<span class="text-mute">—</span>{{end}}
+                {{if rw.IsBlank}}<span class="text-mute">{{ .["t"]("admin.mail.automation_edit.param.blank", "选一个类型后填参数") }}</span>{{end}}
+              </td>
+              <td>
+                {{if rw.IsBranch}}
+                <div class="form-inline">
+                  <span class="text-mute">{{ .["t"]("admin.mail.automation_edit.col.yes", "满足时") }}</span>
+                  <select class="form-select" name="yes_{{rw.Index}}" aria-label="{{rw.StepLabel}}{{ .["t"]("admin.mail.automation_edit.col.yes_suffix", "：满足时") }}">
+                  {{range _, y := rw.YesOptions}}
+                    <option value="{{y.Value}}"{{if y.Selected}} selected{{end}}>{{y.Label}}</option>
+                  {{end}}
+                  </select>
+                  <span class="text-mute">{{ .["t"]("admin.mail.automation_edit.col.no", "不满足时") }}</span>
+                  <select class="form-select" name="no_{{rw.Index}}" aria-label="{{rw.StepLabel}}{{ .["t"]("admin.mail.automation_edit.col.no_suffix", "：不满足时") }}">
+                  {{range _, nn := rw.NoOptions}}
+                    <option value="{{nn.Value}}"{{if nn.Selected}} selected{{end}}>{{nn.Label}}</option>
+                  {{end}}
+                  </select>
+                </div>
+                {{else}}
+                <span class="text-mute">{{rw.NextLabel}}</span>
+                {{end}}
+              </td>
+              <td class="col-actions">
+                {{if rw.CanMoveUp}}<button type="submit" class="btn btn-sm btn-ghost" name="move_step" value="{{rw.Index}}:up" formnovalidate>{{ .["t"]("admin.mail.automation_edit.move_up", "上移") }}</button>{{end}}
+                {{if rw.CanMoveDown}}<button type="submit" class="btn btn-sm btn-ghost" name="move_step" value="{{rw.Index}}:down" formnovalidate>{{ .["t"]("admin.mail.automation_edit.move_down", "下移") }}</button>{{end}}
+                {* 换成这个类型：改了「做什么」之后，这一行的参数区要跟着重画 —— 无 JS 也能用（服务端重渲染，不保存）。 *}
+                {{if not rw.IsBlank}}<button type="submit" class="btn btn-sm btn-ghost" name="switch_step" value="{{rw.Index}}" formnovalidate>{{ .["t"]("admin.mail.automation_edit.switch_ctl", "换成这个类型") }}</button>{{end}}
+                <button type="submit" class="btn btn-sm btn-danger" name="remove_step" value="{{rw.Index}}" formnovalidate data-confirm="{{ .["t"]("admin.mail.automation_edit.remove_step", "删除这一步？") }}" data-confirm-danger>{{ .["t"]("admin.mail.automation_edit.remove", "删除") }}</button>
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
       </div>
+      {* 模板 key 的可选项：datalist 而不是 select —— 模板可能被删，datalist 允许手填原有 key。 *}
+      <datalist id="au-tpl-keys">
+        {{range _, tp := .Templates}}<option value="{{tp.TemplateKey}}"></option>{{end}}
+      </datalist>
+      {{if .CanAddStep}}
+      <div class="form-inline">
+        <button type="submit" class="btn btn-sm" name="add_step" value="1" formnovalidate>{{ .["t"]("admin.mail.automation_edit.add_step", "＋ 添加一步") }}</button>
+      </div>
+      {{end}}
     </section>
   </form>
+  {{end}}
 </div>
 {{end}}

@@ -79,6 +79,19 @@ const (
 	SessionActive SessionStatus = 1
 )
 
+// CallStatus 是 ai_call_log.status 的取值：一次上游调用的结果分类。
+//
+// 只有两态：调用流水记的是「这次出站成没成」，失败的具体原因在 error_key 里
+// （i18n key，与 enums 的哨兵同源），不在这里再铺一层分类。
+type CallStatus string
+
+const (
+	// CallStatusOK 上游正常返回并解析出正文。
+	CallStatusOK CallStatus = "ok"
+	// CallStatusError 这次调用失败（上游非 2xx / 网络失败 / 响应解析不了 / 供应商不存在…）。
+	CallStatusError CallStatus = "error"
+)
+
 // SessionStatusLabel 返回中文标签（后台列表直接渲染，不走 i18n 词条：状态是运维口径）。
 func SessionStatusLabel(s SessionStatus) string {
 	if s == SessionActive {

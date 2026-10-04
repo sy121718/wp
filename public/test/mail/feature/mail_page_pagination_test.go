@@ -41,7 +41,8 @@ func newMailPaginationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
 	engine.GET("/admin/mail", h.MailPage)
-	engine.GET("/admin/mail/marketing", h.MailMarketingPage)
+	engine.GET("/admin/mail/templates", h.MailTemplatesPage)
+	engine.GET("/admin/mail/contacts", h.MailContactsPage)
 	engine.GET("/admin/mail/campaign", h.MailCampaignPage)
 	return engine
 }
@@ -104,7 +105,7 @@ func TestMailPageAccountsPagination(t *testing.T) {
 	}
 }
 
-// TestMailPageIndependentPagination 同时翻页时两张表分别计数、保留另一张的页码。
+// TestMailPageIndependentPagination 拆页后账号页（account_page）与模板页（page）各自计数、互不带页码。
 func TestMailPageIndependentPagination(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -120,32 +121,39 @@ func TestMailPageIndependentPagination(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	body := mailGet(t, engine, "/admin/mail?account_page=2&template_page=3")
-	if !strings.Contains(body, "账号20") || !strings.Contains(body, "list_tpl_40") {
-		t.Fatal("独立翻页未同时显示两张列表的末页数据")
+	accountBody := mailGet(t, engine, "/admin/mail?account_page=2")
+	if !strings.Contains(accountBody, "账号20") {
+		t.Fatalf("账号页第 2 页应显示第 21 个账号：%s", mailHead(accountBody))
 	}
-	if strings.Contains(body, "账号00</button>") || strings.Contains(body, "list_tpl_00</code>") {
-		t.Fatal("末页不应混入首页数据行")
+	if strings.Contains(accountBody, "list_tpl_40") {
+		t.Fatal("账号页不应再渲染模板表（模板已拆到 /admin/mail/templates）")
 	}
-	// 取真实导航链接，而非仅检查页面字符串：分页条导航必须保存另一页状态。
-	for _, target := range []struct{ param, other string }{
-		{"account_page", "template_page=3"}, {"template_page", "account_page=2"},
-	} {
-		found := false
-		for _, fragment := range strings.Split(body, `href="`)[1:] {
-			href := strings.SplitN(fragment, `"`, 2)[0]
-			u, err := url.Parse(htmlUnescape(href))
-			if err == nil && u.Query().Has(target.param) && strings.Contains(u.RawQuery, target.other) {
-				found = true
-			}
+	tplBody := mailGet(t, engine, "/admin/mail/templates?page=3")
+	if !strings.Contains(tplBody, "list_tpl_40") {
+		t.Fatalf("模板页第 3 页应显示最后一个模板：%s", mailHead(tplBody))
+	}
+	// 拆页判据：两个列表各自翻页，任何一页的链接都不能带上另一个列表的页码参数，
+	// 否则用户在账号页翻页会把模板列表也一起翻走（这正是拆页前必须切断的耦合）。
+	assertNoQueryParam(t, accountBody, "template_page")
+	assertNoQueryParam(t, tplBody, "account_page")
+	// 越界页各自收敛到末页：服务端分页不收敛会渲染成空态 + 真实 total，用户以为数据没了。
+	if got := mailGet(t, engine, "/admin/mail?account_page=999"); !strings.Contains(got, "账号20") {
+		t.Fatal("账号页越界应收敛到末页")
+	}
+	if got := mailGet(t, engine, "/admin/mail/templates?page=999"); !strings.Contains(got, "list_tpl_40") {
+		t.Fatal("模板页越界应收敛到末页")
+	}
+}
+
+// assertNoQueryParam 断言页面里任何 href 都不带指定 query 参数。
+func assertNoQueryParam(t *testing.T, body, param string) {
+	t.Helper()
+	for _, fragment := range strings.Split(body, `href="`)[1:] {
+		href := strings.SplitN(fragment, `"`, 2)[0]
+		u, err := url.Parse(htmlUnescape(href))
+		if err == nil && u.Query().Has(param) {
+			t.Errorf("链接不应带 %s 参数（拆页后两个列表各自翻页）：%s", param, href)
 		}
-		if !found {
-			t.Errorf("%s 的翻页链接未保留 %s", target.param, target.other)
-		}
-	}
-	overshoot := mailGet(t, engine, "/admin/mail?account_page=999&template_page=999")
-	if !strings.Contains(overshoot, "账号20") || !strings.Contains(overshoot, "list_tpl_40") {
-		t.Fatal("独立越界页应各自收敛到末页")
 	}
 }
 
@@ -206,7 +214,7 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 		t.Fatalf("造 VIP 联系人失败：%v", err)
 	}
 
-	page1 := mailGet(t, engine, "/admin/mail/marketing?keyword=bulk")
+	page1 := mailGet(t, engine, "/admin/mail/contacts?keyword=bulk")
 	if !strings.Contains(page1, `class="pagination"`) {
 		t.Fatal("51 个匹配联系人应出现分页条")
 	}
@@ -219,7 +227,7 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 		t.Error("关键词筛选应把不匹配的 VIP 联系人挡住（它是客户端唯一的筛后结果校验）")
 	}
 
-	page2 := mailGet(t, engine, "/admin/mail/marketing?keyword=bulk&page=2")
+	page2 := mailGet(t, engine, "/admin/mail/contacts?keyword=bulk&page=2")
 	// 联系人按 id 倒序（最新在前）：第 1 页是 bulk50…bulk01，第 2 页只剩最早的那条 bulk00。
 	if !strings.Contains(page2, "bulk00@example.com") {
 		t.Errorf("第 2 页应显示第 51 个联系人（此前翻页控件不存在）：%s", mailHead(page2))
@@ -229,7 +237,7 @@ func TestMailMarketingContactsPaginationKeepsFilter(t *testing.T) {
 	}
 
 	// 页码越界：联系人页数少的那一侧被收敛，**不能**渲染成「没有匹配的联系人」的空态。
-	overshoot := mailGet(t, engine, "/admin/mail/marketing?keyword=bulk&page=9")
+	overshoot := mailGet(t, engine, "/admin/mail/contacts?keyword=bulk&page=9")
 	if strings.Contains(overshoot, "没有匹配的联系人") {
 		t.Errorf("页码越界时不应渲染空态（数据其实有 51 条）：%s", mailHead(overshoot))
 	}

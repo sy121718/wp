@@ -2,8 +2,9 @@ package mailhttp
 
 // mail_pagination_test.go — 邮箱后台列表分页的纯逻辑守卫。
 //
-// 邮箱设置页两张表各用独立页码，数据库负责计数与取页；营销页仍用共享页码。
-// 单页 / 空数据时不出现分页条，翻页链接需保留另一张表的状态。
+// 拆成六页后每页各自一张表：分页参数不再互带（账号页的 account_page 不会出现在
+// 其它页的分页链接里），页码收敛也退化成单表收敛。数据库负责计数与取页。
+// 单页 / 空数据时不出现分页条。
 //
 // 端到端（真页面 + 真模板 + 真 DB）在 public/test/mail/feature/mail_page_pagination_test.go。
 
@@ -14,53 +15,71 @@ import (
 	"go_wp/internal/web/shell"
 )
 
-// TestMailListPaginationLinks 两张列表分别翻页时保留另一页的状态。
+// TestMailListPaginationLinks 列表翻页链接只带自己的页码参数。
 func TestMailListPaginationLinks(t *testing.T) {
-	for _, tc := range []struct {
-		name, param, other string
+	keys := mailListPagination(45, 1, "account_page", "/admin/mail", nil)
+	links, ok := keys["PaginationLinks"].([]shell.PageLink)
+	if !ok || len(links) == 0 {
+		t.Fatalf("应注入分页链接，实际 %#v", keys)
+	}
+	for _, link := range links {
+		if !strings.Contains(link.URL, "account_page=2") {
+			continue
+		}
+		// 拆页前两张表共用 ?page=，链接里必须互带另一张表的页码；
+		// 拆页后每页只有一张表，链接里既不该有共享 page（会被误读成另一页的页码），
+		// 也不该出现另一页的参数（那会把用户送到一个不存在的筛选状态）。
+		if strings.Contains(link.URL, "template_page") || strings.Contains(link.URL, "limit=") {
+			t.Fatalf("翻页链接泄漏了无关参数：%s", link.URL)
+		}
+		return
+	}
+	t.Fatalf("缺少第二页链接：%+v", links)
+}
+
+// TestMailContactsClampPage 单表页码收敛（越界收敛到最大页，空数据收敛到 1）。
+//
+// 为什么必须收敛：mail 服务端分页返回的是「空列表 + 真实 total」，
+// 不收敛就会把「有 51 个联系人、只是页码落到第 9 页」渲染成「没有匹配的联系人」。
+func TestMailContactsClampPage(t *testing.T) {
+	cases := []struct {
+		name  string
+		page  int
+		total int64
+		want  int
 	}{
-		{"账号翻页保留模板页", "account_page", "template_page=3"},
-		{"模板翻页保留账号页", "template_page", "account_page=3"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			keys := mailListPagination(45, 1, tc.param, "/admin/mail", 3, nil)
-			links := keys["PaginationLinks"].([]shell.PageLink)
-			for _, link := range links {
-				if strings.Contains(link.URL, tc.param+"=2") {
-					if !strings.Contains(link.URL, tc.other) || strings.Contains(link.URL, "page=2&limit=") {
-						t.Fatalf("翻页链接丢失另一页参数或泄漏共享页码：%s", link.URL)
-					}
-					return
-				}
+		{"在范围内 → 不动", 2, 120, 2},
+		{"越界 → 收敛到最大页", 3, 10, 1},
+		{"空数据 → 收敛到 1（不显示空页码）", 7, 0, 1},
+		{"页码非法（负数）→ 1", -2, 120, 1},
+		{"刚好整除的边界：total=100/每页 50 → 第 2 页有效", 2, 100, 2},
+		{"刚好整除的边界：第 3 页越界", 3, 100, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := mailContactsClampPage(c.page, c.total); got != c.want {
+				t.Fatalf("收敛后页码 %d，期望 %d", got, c.want)
 			}
-			t.Fatalf("缺少第二页链接：%+v", links)
 		})
 	}
 }
 
-// TestMailMarketingClampPage 两张表共用页码时的收敛（取两表中更小的最大页）。
-func TestMailMarketingClampPage(t *testing.T) {
+// TestMailCampaignsClampPage 活动页的收敛与联系人页同规则（分页语义一致）。
+func TestMailCampaignsClampPage(t *testing.T) {
 	cases := []struct {
-		name   string
-		page   int
-		totals []int64
-		want   int
+		page  int
+		total int64
+		want  int
 	}{
-		{"两表都在范围内 → 不动", 2, []int64{120, 60}, 2},
-		{"联系人有一页、活动也有一页 → 收敛到 1", 3, []int64{10, 5}, 1},
-		{"只按页数少的那张表收敛", 3, []int64{200, 5}, 1},
-		{"活动为空（total=0）→ 只按联系人收敛", 3, []int64{60, 0}, 2},
-		{"两表都空 → 收敛到 1（不显示空页码）", 7, []int64{0, 0}, 1},
-		{"页码非法（负数）→ 1", -2, []int64{120, 60}, 1},
-		{"刚好整除的边界：total=100/每页 50 → 第 2 页有效", 2, []int64{100, 100}, 2},
-		{"刚好整除的边界：第 3 页越界", 3, []int64{100, 100}, 2},
+		{1, 0, 1},
+		{4, 51, 2},
+		{2, 51, 2},
+		{-1, 51, 1},
 	}
 	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := mailMarketingClampPage(c.page, c.totals...); got != c.want {
-				t.Fatalf("收敛后页码 %d，期望 %d", got, c.want)
-			}
-		})
+		if got := mailCampaignsClampPage(c.page, c.total); got != c.want {
+			t.Fatalf("page=%d total=%d 收敛后 %d，期望 %d", c.page, c.total, got, c.want)
+		}
 	}
 }
 
@@ -72,8 +91,8 @@ func TestMailMarketingClampPage(t *testing.T) {
 // 单页列表上就会出现一条只有一个「1」的分页条。
 func TestMailPaginationOnlyBeyondOnePage(t *testing.T) {
 	t.Run("空数据 / 单页 → 不注入", func(t *testing.T) {
-		for _, total := range []int64{0, 1, int64(mailMarketingPageSize)} {
-			keys := shell.BuildPagination(total, 1, mailMarketingPageSize, "/admin/mail/marketing", nil).TemplateKeys()
+		for _, total := range []int64{0, 1, int64(mailContactsPageSize)} {
+			keys := shell.BuildPagination(total, 1, mailContactsPageSize, "/admin/mail/contacts", nil).TemplateKeys()
 			if len(keys) != 0 {
 				t.Fatalf("total=%d 不应注入分页键，实际 %v", total, keys)
 			}
@@ -81,10 +100,10 @@ func TestMailPaginationOnlyBeyondOnePage(t *testing.T) {
 	})
 
 	t.Run("超一页 → 注入页码，且链接保留筛选", func(t *testing.T) {
-		base := shell.FilterBaseURL("/admin/mail/marketing", map[string]string{
+		base := shell.FilterBaseURL("/admin/mail/contacts", map[string]string{
 			"keyword": "vip@example.com", "status": "subscribed",
 		})
-		keys := shell.BuildPagination(int64(mailMarketingPageSize)+1, 1, mailMarketingPageSize, base, nil).TemplateKeys()
+		keys := shell.BuildPagination(int64(mailContactsPageSize)+1, 1, mailContactsPageSize, base, nil).TemplateKeys()
 		links, ok := keys["PaginationLinks"].([]shell.PageLink)
 		if !ok || len(links) == 0 {
 			t.Fatalf("超一页应注入页码链接，实际 %#v", keys)
@@ -100,7 +119,7 @@ func TestMailPaginationOnlyBeyondOnePage(t *testing.T) {
 		if href == "" {
 			t.Fatalf("应存在可点的页码链接，实际 %+v", links)
 		}
-		for _, want := range []string{"keyword=vip%40example.com", "status=subscribed", "page=2", "limit=" + itoaTest(mailMarketingPageSize)} {
+		for _, want := range []string{"keyword=vip%40example.com", "status=subscribed", "page=2", "limit=" + itoaTest(mailContactsPageSize)} {
 			if !strings.Contains(href, want) {
 				t.Errorf("翻页链接 %q 缺少 %q —— 翻页会丢筛选或丢每页条数", href, want)
 			}

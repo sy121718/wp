@@ -47,7 +47,7 @@ func TestMailCampaignPageRenders(t *testing.T) {
 	body := recorder.Body.String()
 	for _, want := range []string{
 		"九月活动", "投递与互动", "打开率", "估算",
-		"点击率", "链接点击排行", "收件人明细", "返回营销页",
+		"点击率", "链接点击排行", "收件人明细", "返回群发活动",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q；前 600 字：\n%s", want, firstN(body, 600))

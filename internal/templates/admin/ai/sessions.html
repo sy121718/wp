@@ -1,12 +1,23 @@
-{* admin/ai/sessions.html — 后台「AI 会话」页：会话列表 + 详情（当前上下文投影 + 原始事件日志）+ 折叠操作。
+{* admin/ai/sessions.html — 后台「AI 会话」页（AI 管理主页）：用量看板（指标卡 + Token 趋势）
+    + 多维筛选 + 会话明细与详情，页内第二个标签是模型配置。
+
+   为什么两个标签在同一个页面：需求方要的是「AI 模型与 AI 会话放一个页面」（m00289）。
+   两块内容由服务端一次渲染完（不跳转、不做 htmx 二次请求）：切标签不该重新走一遍请求；
+   模型标签直接用配置页那套供应商卡片（provider_card.html + cardData），不存在第二份形状。
 
    数据见 ai/inbound/http/ai_session_page.go 的 SessionsPage：
-     Rows / Total / Page / Keyword / Status（列表与筛选）、Err / Done（PRG 回执，渲染时才翻译）、
-     Detail（*SessionDetail，带 ?id= 时才有）、DetailErr、Events（原始日志）、FoldPlan（折叠建议）。
+     Rows / Total / Page / PageSize / TotalPages / HasPrev / HasNext / PrevURL / NextURL（列表与分页）
+     Filter（aidto.SessionQuery，筛选项回填）、FilterOptions（三个下拉的候选）
+     Usage（指标卡）、Trend（aidto.SessionTrend：From / To / PeakText / Series，折线图）
+     ProviderCards / Presets / BuiltinKeys / ProtocolOptions（模型标签）
+     Detail / DetailErr / Events / FoldPlan（带 ?id= 时的详情）、Err / Done（PRG 回执，渲染时才翻译）
+
+   图表自绘（内联 SVG 折线，坐标由 service 算成 points 字符串）：项目没有图表基座，
+   为一个趋势图引第三方库不划算。按 (供应商, 模型) 分多序列 —— 柱状图一天只有一根、
+   一个高度，多序列只能堆叠或并排，两种都看不出单条趋势。
 
    形态决策：会话是「一列短实体 + 一个不断增长的事件流」，用列表 + 同页详情，
-   避免为每条会话开一个路由；详情里的三段（投影 / 折叠 / 日志）用 <details> 折叠收起，
-   窄屏不会一次铺三张表。
+   避免为每条会话开一个路由；详情里的几段用 <details> 折叠收起，窄屏不会一次铺三张表。
 
    回执槽 done/err 放的是 i18n key，经 facingQuery 按请求语言翻译 —— 译文不进 URL。
 
@@ -22,14 +33,34 @@
 {{canAppend := isset(.PermSet["ai:session_append"])}}
 {* 发消息是对话，走 ai:chat 权限点（页面路由借 /api/ai/chat 的 casbin obj）。 *}
 {{canSend := isset(.PermSet["ai:chat"])}}
+{{canManage := isset(.PermSet["ai:provider_save"])}}
+{* 标签级权限：没权限的标签连按钮带面板一起不渲染 —— 一个点进去全是 403 的入口
+   比没有入口更糟。两个都没有时页面走空态（见文末）。 *}
+{{canViewModels := .CanViewModels}}
+{{canViewSessions := .CanViewSessions}}
+{{f := .Filter}}
+{{u := .Usage}}
+{{isModels := .IsModels}}
+{* 标签状态用模板内变量而不是内联条件：`{{if c}}...{{end}}` 嵌在属性中间是既定写法，
+   而属性值里的比较表达式求值时机不好把握。 *}
+{{selSessions := "true"}}
+{{selModels := "false"}}
+{{idxSessions := "0"}}
+{{idxModels := "-1"}}
+{{if isModels}}
+{{selSessions = "false"}}
+{{selModels = "true"}}
+{{idxSessions = "-1"}}
+{{idxModels = "0"}}
+{{end}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
-                <h1>{{tr("admin.ai.session.title", "AI 会话")}}</h1>
+                <h1>{{tr("admin.ai.menu.title", "大模型管理")}}</h1>
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.ai.session.help.label", "查看说明")}}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{tr("admin.ai.session.lead", "会话的事件日志与当前上下文。折叠只改写「当前上下文」，被折叠的原始事件永久保留，随时可展开与审计。")}}</span>
+                    <span class="help-pop" role="tooltip">{{tr("admin.ai.lead", "两个标签：AI 模型配置供应商与模型目录；AI 会话是每个会话的用量记录 —— 谁在什么时候消耗了多少 token。")}}</span>
                 </span>
             </div>
         </div>
@@ -42,273 +73,316 @@
     <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
-    <form method="get" action="/admin/ai/sessions" class="filter-bar">
-        <div class="filter-fields">
-            <div class="filter-field">
-                <input class="form-input filter-search" type="search" name="keyword" value="{{.Keyword}}" placeholder="{{tr("admin.ai.session.search.ph", "搜索标题或会话标识")}}" aria-label="{{tr("admin.ai.session.search.ph", "搜索标题或会话标识")}}">
-            </div>
-            <div class="filter-field">
-                <select class="form-select" name="status" aria-label="{{tr("admin.ai.session.col.status", "状态")}}">
-                    <option value="-1"{{if .Status == -1}} selected{{end}}>{{tr("admin.ai.session.status.all", "全部状态")}}</option>
-                    <option value="1"{{if .Status == 1}} selected{{end}}>{{tr("admin.ai.session.status.active", "进行中")}}</option>
-                    <option value="0"{{if .Status == 0}} selected{{end}}>{{tr("admin.ai.session.status.archived", "已归档")}}</option>
-                </select>
-            </div>
-        </div>
-        <div class="filter-actions">
-            <button type="submit" class="btn btn-primary">{{tr("admin.ai.session.search.submit", "筛选")}}</button>
-        </div>
-    </form>
-
-    <section class="card list-card">
-        <div class="card-header">
-            <h2 class="card-title">{{tr("admin.ai.session.list.title", "会话列表")}}</h2>
-        </div>
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>{{tr("admin.ai.session.col.title", "标题")}}</th>
-                    <th>{{tr("admin.ai.session.col.status", "状态")}}</th>
-                    <th>{{tr("admin.ai.session.col.events", "事件数")}}</th>
-                    <th>{{tr("admin.ai.session.col.tokens", "上下文 token")}}</th>
-                    <th>{{tr("admin.ai.session.col.compact", "压缩次数")}}</th>
-                    <th>{{tr("admin.ai.session.col.updated", "最后更新")}}</th>
-                    <th class="col-actions">{{tr("admin.ai.session.action.view", "查看")}}</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{if !.Rows}}
-                <tr>
-                    <td colspan="7" class="cell-wrap">
-                        <div class="empty-state">
-                            <p class="empty-title">{{tr("admin.ai.session.empty", "还没有任何会话。")}}</p>
-                        </div>
-                    </td>
-                </tr>
-                {{else}}
-                {{range _, r := .Rows}}
-                <tr>
-                    <td class="cell-wrap">{{r.Title}}<br><span class="badge badge-mute">{{r.SessionKey}}</span></td>
-                    <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.ai.session.status.active", "进行中")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.ai.session.status.archived", "已归档")}}</span>{{end}}</td>
-                    <td>{{r.EventCount}}</td>
-                    <td>{{r.ContextTokens}}</td>
-                    <td>{{r.CompactCount}}</td>
-                    <td>{{r.UpdateTime}}</td>
-                    <td class="col-actions">
-                        <a class="btn btn-sm" href="/admin/ai/sessions?id={{r.ID}}">{{tr("admin.ai.session.action.view", "查看")}}</a>
-                    </td>
-                </tr>
-                {{end}}
-                {{end}}
-            </tbody>
-        </table>
-    </section>
-
-    {{if isset(.DetailErr)}}{{if .DetailErr}}
-    <p class="badge badge-warning" role="alert">{{.DetailErr}}</p>
-    {{end}}{{end}}
-
-    {{if isset(.Detail)}}
-    <section class="card card-body">
-        <h2 class="card-title">{{tr("admin.ai.session.detail.title", "会话详情")}}</h2>
-        <p class="form-hint">
-            {{tr("admin.ai.session.detail.key", "会话标识")}}: <strong>{{.Detail.SessionKey}}</strong>
-            · {{tr("admin.ai.session.detail.version", "版本")}}: {{.Detail.Version}}
-            · {{tr("admin.ai.session.col.tokens", "上下文 token")}}: {{.Detail.ContextTokens}}
-            · {{tr("admin.ai.session.col.compact", "压缩次数")}}: {{.Detail.CompactCount}}
-        </p>
-
-        <div class="form-inline">
-            {{if canRename}}
-            <form method="post" action="/admin/ai/sessions/rename" class="form-group">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
-                <input type="hidden" name="version" value="{{.Detail.Version}}">
-                <label for="session-title">{{tr("admin.ai.session.rename.label", "标题")}}</label>
-                <input class="form-input" id="session-title" type="text" name="title" value="{{.Detail.Title}}" maxlength="120">
-                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.ai.session.rename.submit", "保存标题")}}</button>
-            </form>
+    <div class="tabs ai-tabs" data-tabs>
+        <div class="tab-list" role="tablist">
+            {* 模型在前：这个入口叫「大模型管理」，第一屏就该是模型配置（默认标签也在这里）。 *}
+            {{if canViewModels}}
+            <button type="button" role="tab" id="ai-tab-models" aria-controls="ai-panel-models" aria-selected="{{selModels}}" tabindex="{{idxModels}}">{{tr("admin.ai.tab.models", "AI 模型")}}</button>
             {{end}}
-            {{if canArchive}}
-            <form method="post" action="/admin/ai/sessions/archive" class="form-group">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
-                <input type="hidden" name="version" value="{{.Detail.Version}}">
-                {{if .Detail.Status == 1}}
-                <input type="hidden" name="status" value="0">
-                <button type="submit" class="btn btn-sm btn-ghost" onclick="return confirm('{{tr("admin.ai.session.action.confirmArchive", "归档后不能再写入，确定？")}}')">{{tr("admin.ai.session.action.archive", "归档")}}</button>
-                {{else}}
-                <input type="hidden" name="status" value="1">
-                <button type="submit" class="btn btn-sm btn-ghost">{{tr("admin.ai.session.action.restore", "恢复")}}</button>
-                {{end}}
-            </form>
+            {{if canViewSessions}}
+            <button type="button" role="tab" id="ai-tab-sessions" aria-controls="ai-panel-sessions" aria-selected="{{selSessions}}" tabindex="{{idxSessions}}">{{tr("admin.ai.tab.sessions", "AI 会话")}}</button>
             {{end}}
         </div>
 
-        <details class="disclosure" open>
-            <summary class="fold-title">{{tr("admin.ai.session.detail.visible", "当前上下文（投影）")}}</summary>
-            <div class="fold-body">
-                {{if !.Detail.Items}}
-                <p class="form-hint">{{tr("admin.ai.session.detail.visibleEmpty", "当前上下文为空。")}}</p>
+        {* ============ 标签 2：AI 会话（用量看板 + 筛选 + 明细） ============ *}
+        {{if canViewSessions}}
+        <div class="tab-panel" role="tabpanel" id="ai-panel-sessions" aria-labelledby="ai-tab-sessions"{{if isModels}} hidden{{end}}>
+        <div class="stack">
+            {{if isset(.UsageErr)}}{{if .UsageErr}}
+            <p class="badge badge-warning" role="alert">{{.UsageErr}}</p>
+            {{end}}{{end}}
+
+            {* 指标卡：只放列表里看不出来的聚合。口径都写在下方小字里 ——「累计 token」与列里的
+               「上下文 token」是两回事，不写清楚会被当成同一个数。
+               刻意不做「压缩次数」「平均每会话」：前者是列表里已有的列，后者是能一眼除出来的
+               派生值，摆成指标卡只是把同一份信息重复三遍。 *}
+            <div class="stat-grid">
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.ai.session.stat.sessions", "会话数")}}</div>
+                    <div class="stat-value">{{u.Sessions}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.ai.session.stat.events", "事件数")}}</div>
+                    <div class="stat-value">{{u.Events}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.ai.session.stat.tokens", "累计 token")}}</div>
+                    <div class="stat-value">{{u.TokensText}}</div>
+                    <div class="stat-note">{{tr("admin.ai.session.stat.tokens.note", "按事件正文估算，非当前上下文")}}</div>
+                </div>
+            </div>
+
+            <section class="card card-body">
+                <h2 class="card-title">{{tr("admin.ai.session.trend.title", "Token 用量趋势")}}</h2>
+                {{if len(.Trend.Series) == 0}}
+                <p class="form-hint">{{tr("admin.ai.session.trend.empty", "这段时间还没有事件。")}}</p>
                 {{else}}
-                <ol>
-                    {{range _, it := .Detail.Items}}
-                    <li>
-                        {{if it.Folded}}<span class="badge badge-info">{{tr("admin.ai.session.detail.folded", "折叠块")}} #{{it.FoldedFrom}}–{{it.FoldedTo}}</span>{{end}}
-                        <span class="badge badge-mute">#{{it.Seq}}</span>
-                        <span class="cell-wrap">{{it.Content}}</span>
-                        <span class="badge badge-mute">{{it.Tokens}}</span>
+                <div class="ai-trend">
+                    {* 折线而不是柱状：柱状图一天只有一根、一个高度，多序列只能堆叠或并排 ——
+                       堆叠看不出单条趋势，并排又把一天切成一簇细柱。viewBox 固定 + preserveAspectRatio="none"
+                       让图自适应容器宽度，描边靠 CSS 的 non-scaling-stroke 保住 2px。 *}
+                    <svg class="ai-trend-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img"
+                         aria-label="{{tr("admin.ai.session.trend.title", "Token 用量趋势")}} {{.Trend.From}} – {{.Trend.To}}">
+                        {{range _, s := .Trend.Series}}
+                        {{if s.Single}}
+                        {* 单点用方块而不是圆：viewBox 被 preserveAspectRatio="none" 横向拉伸，
+                           圆会被拉成椭圆（宽高比随容器变），方块只是变胖一点。 *}
+                        <rect class="ai-trend-point" x="{{s.DotX}}" y="{{s.DotY}}" width="14" height="14" rx="3"
+                              transform="translate(-7,-7)" style="fill: var(--chart-c{{s.Color}})"></rect>
+                        {{else}}
+                        <polyline class="ai-trend-line" points="{{s.Points}}" style="stroke: var(--chart-c{{s.Color}})"></polyline>
+                        {{end}}
+                        {{end}}
+                    </svg>
+                </div>
+                <ul class="ai-trend-legend">
+                    {{range _, s := .Trend.Series}}
+                    <li class="ai-trend-legend-item">
+                        <span class="ai-trend-swatch" style="background: var(--chart-c{{s.Color}})"></span>
+                        <span class="ai-trend-legend-label">
+                            {{if s.OtherCount > 0}}{{tr("admin.ai.session.trend.other", "其他")}}（{{s.OtherCount}}）
+                            {{else if s.ProviderKey == ""}}{{tr("admin.ai.session.usage.unrecorded", "未记录")}}
+                            {{else}}{{s.ProviderKey}}{{if s.ModelID != ""}} / {{s.ModelID}}{{end}}{{end}}
+                        </span>
+                        <span class="ai-trend-legend-value">{{s.TotalText}}</span>
                     </li>
                     {{end}}
-                </ol>
+                </ul>
+                <p class="form-hint">
+                    {{.Trend.From}} – {{.Trend.To}}
+                    · {{tr("admin.ai.session.trend.peak", "峰值")}}：{{.Trend.PeakText}}
+                </p>
                 {{end}}
-            </div>
-        </details>
+            </section>
 
-        {{if canSend}}
-        <details class="disclosure" open>
-            <summary class="fold-title">{{tr("admin.ai.session.send.title", "发消息")}}</summary>
-            <div class="fold-body">
-                {{if isset(.ProviderErr)}}{{if .ProviderErr}}
-                <p class="badge badge-warning" role="alert">{{.ProviderErr}}</p>
-                {{end}}{{end}}
-                {{if !.Providers}}
-                <p class="form-hint">{{tr("admin.ai.session.send.noProvider", "还没有可用的供应商，先到「AI 供应商」页配置后再回来。")}}</p>
-                {{else}}
-                <form method="post" action="/admin/ai/sessions/send" class="form-grid">
-                    <input type="hidden" name="csrf_token" value="{{csrf}}">
-                    <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
-                    <div class="form-field">
-                        <label for="session-send-provider">{{tr("admin.ai.session.send.provider", "供应商")}}</label>
-                        <select class="form-select" id="session-send-provider" name="providerKey" required>
-                            {{range _, p := .Providers}}
-                            <option value="{{p.ProviderKey}}">{{p.DisplayName}}</option>
+            <form method="get" action="/admin/ai/sessions" class="filter-bar">
+                <input type="hidden" name="tab" value="sessions">
+                <div class="filter-fields">
+                    <div class="filter-field">
+                        <input class="form-input filter-search" type="search" name="keyword" value="{{f.Keyword}}" placeholder="{{tr("admin.ai.session.search.ph", "搜索标题或会话标识")}}" aria-label="{{tr("admin.ai.session.search.ph", "搜索标题或会话标识")}}">
+                    </div>
+                    <div class="filter-field">
+                        <select class="form-select" name="status" aria-label="{{tr("admin.ai.session.col.status", "状态")}}">
+                            <option value="-1"{{if f.Status == -1}} selected{{end}}>{{tr("admin.ai.session.status.all", "全部状态")}}</option>
+                            <option value="1"{{if f.Status == 1}} selected{{end}}>{{tr("admin.ai.session.status.active", "进行中")}}</option>
+                            <option value="0"{{if f.Status == 0}} selected{{end}}>{{tr("admin.ai.session.status.archived", "已归档")}}</option>
+                        </select>
+                    </div>
+                    <div class="filter-field">
+                        <select class="form-select" name="provider" aria-label="{{tr("admin.ai.session.col.provider", "供应商")}}">
+                            <option value="">{{tr("admin.ai.session.filter.allProvider", "全部供应商")}}</option>
+                            {{range _, p := .FilterOptions.Providers}}
+                            <option value="{{p}}"{{if f.ProviderKey == p}} selected{{end}}>{{p}}</option>
                             {{end}}
                         </select>
                     </div>
-                    <div class="form-field">
-                        <label for="session-send-model">{{tr("admin.ai.session.send.model", "模型")}}</label>
-                        <input class="form-input" id="session-send-model" type="text" name="model" list="session-send-model-list" maxlength="200" required>
-                        <datalist id="session-send-model-list">
-                            {{range _, p := .Providers}}{{range _, m := p.Models}}
-                            <option value="{{m.ID}}">{{m.DisplayName}}</option>
-                            {{end}}{{end}}
-                        </datalist>
-                    </div>
-                    <div class="form-field form-field--wide">
-                        <label for="session-send-input">{{tr("admin.ai.session.send.input", "消息")}}</label>
-                        <textarea class="form-input" id="session-send-input" name="input" rows="4" maxlength="200000" required></textarea>
-                        <p class="form-hint">{{tr("admin.ai.session.send.hint", "发送后先记下你的消息，再把当前上下文投影发给模型，回复追加进事件日志。")}}</p>
-                    </div>
-                    <div class="form-field">
-                        <label for="session-send-max">{{tr("admin.ai.session.send.maxTokens", "最大输出 token")}}</label>
-                        <input class="form-input" id="session-send-max" type="number" name="maxOutputTokens" min="0" step="1" value="0">
-                    </div>
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">{{tr("admin.ai.session.send.submit", "发送")}}</button>
-                    </div>
-                </form>
-                {{end}}
-            </div>
-        </details>
-        {{end}}
-
-        {{if isset(.FoldPlan)}}{{if .FoldPlan}}
-        <details class="disclosure">
-            <summary class="fold-title">{{tr("admin.ai.session.fold.planTitle", "折叠建议")}}</summary>
-            <div class="fold-body">
-                {{if .FoldPlan.Worthwhile}}
-                <p class="badge badge-info">{{tr("admin.ai.session.fold.reason.ok", "该段值得折叠")}}</p>
-                {{else if .FoldPlan.Reason == "no_segment"}}
-                <p class="badge badge-mute">{{tr("admin.ai.session.fold.reason.no_segment", "可见上下文还不够长，暂无可折的段")}}</p>
-                {{else if .FoldPlan.Reason == "short_segment"}}
-                <p class="badge badge-mute">{{tr("admin.ai.session.fold.reason.short_segment", "待折段太小，摘要开销会吃掉收益")}}</p>
-                {{else}}
-                <p class="badge badge-mute">{{tr("admin.ai.session.fold.reason.not_positive", "净收益不为正，不值得折")}}</p>
-                {{end}}
-                <p class="form-hint">
-                    {{tr("admin.ai.session.fold.range", "建议区间")}}: #{{.FoldPlan.FromSeq}}–#{{.FoldPlan.ToSeq}}
-                    · {{.FoldPlan.SegmentTokens}} → {{.FoldPlan.EstimatedAfter}}
-                </p>
-                {{if canFold}}{{if .FoldPlan.Worthwhile}}
-                <form method="post" action="/admin/ai/sessions/fold" class="form-group">
-                    <input type="hidden" name="csrf_token" value="{{csrf}}">
-                    <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
-                    <input type="hidden" name="fromSeq" value="{{.FoldPlan.FromSeq}}">
-                    <input type="hidden" name="toSeq" value="{{.FoldPlan.ToSeq}}">
-                    <label for="session-summary">{{tr("admin.ai.session.fold.summary", "摘要")}}</label>
-                    <textarea class="form-input" id="session-summary" name="summary" rows="4" required></textarea>
-                    <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.ai.session.fold.submit", "执行折叠")}}</button>
-                </form>
-                {{end}}{{end}}
-            </div>
-        </details>
-        {{end}}{{end}}
-
-        {{if canAppend}}
-        <details class="disclosure">
-            <summary class="fold-title">{{tr("admin.ai.session.append.title", "追加事件")}}</summary>
-            <div class="fold-body">
-                <form method="post" action="/admin/ai/sessions/append" class="form-group">
-                    <input type="hidden" name="csrf_token" value="{{csrf}}">
-                    <input type="hidden" name="sessionId" value="{{.Detail.ID}}">
-                    <div class="form-field">
-                        <label for="session-kind">{{tr("admin.ai.session.append.kind", "事件类型")}}</label>
-                        <select class="form-select" id="session-kind" name="kind">
-                            <option value="user">{{tr("admin.ai.session.kind.user", "用户")}}</option>
-                            <option value="assistant">{{tr("admin.ai.session.kind.assistant", "助手")}}</option>
-                            <option value="tool">{{tr("admin.ai.session.kind.tool", "工具")}}</option>
-                            <option value="note">{{tr("admin.ai.session.kind.note", "备注")}}</option>
+                    <div class="filter-field">
+                        <select class="form-select" name="model" aria-label="{{tr("admin.ai.session.col.model", "模型")}}">
+                            <option value="">{{tr("admin.ai.session.filter.allModel", "全部模型")}}</option>
+                            {{range _, m := .FilterOptions.Models}}
+                            <option value="{{m}}"{{if f.ModelID == m}} selected{{end}}>{{m}}</option>
+                            {{end}}
                         </select>
                     </div>
-                    <div class="form-field">
-                        <label for="session-content">{{tr("admin.ai.session.append.content", "内容")}}</label>
-                        <textarea class="form-input" id="session-content" name="content" rows="4" required></textarea>
+                    {* 创建人只显示 id：AI 模块的契约面没有「按 id 批量取管理员名」的能力，
+                       为此跨模块查 admin 表会破坏表隔离（见 internal/module/CLAUDE.md）。 *}
+                    <div class="filter-field">
+                        <select class="form-select" name="user" aria-label="{{tr("admin.ai.session.filter.user", "创建人")}}">
+                            <option value="">{{tr("admin.ai.session.filter.allUser", "全部创建人")}}</option>
+                            {{range _, uid := .FilterOptions.Creators}}
+                            <option value="{{uid}}"{{if f.CreateBy == uid}} selected{{end}}>#{{uid}}</option>
+                            {{end}}
+                        </select>
                     </div>
-                    <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.ai.session.append.submit", "追加")}}</button>
-                </form>
-            </div>
-        </details>
-        {{end}}
+                    <div class="filter-field">
+                        <div class="wbd" data-wb-daterange data-wb-clear="{{tr("admin.common.media.clear", "清除")}}">
+                            <label for="ai-sess-from">{{tr("admin.ai.session.filter.from", "起始日期")}}</label>
+                            <input type="date" class="form-input" id="ai-sess-from" name="from" value="{{f.From}}">
+                            <label for="ai-sess-to">{{tr("admin.ai.session.filter.to", "结束日期")}}</label>
+                            <input type="date" class="form-input" id="ai-sess-to" name="to" value="{{f.To}}">
+                        </div>
+                    </div>
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary">{{tr("admin.ai.session.search.submit", "筛选")}}</button>
+                    <a class="btn btn-ghost" href="/admin/ai/sessions">{{tr("admin.ai.session.filter.reset", "重置")}}</a>
+                </div>
+            </form>
 
-        <details class="disclosure">
-            <summary class="fold-title">{{tr("admin.ai.session.detail.log", "事件日志")}}</summary>
-            <div class="fold-body">
-                {{if !.Events}}
-                <p class="form-hint">{{tr("admin.ai.session.detail.logEmpty", "还没有事件。")}}</p>
-                {{else}}
+            <section class="card list-card">
+                <div class="card-header">
+                    <h2 class="card-title">{{tr("admin.ai.session.list.title", "会话列表")}}</h2>
+                    <span class="badge">{{tr("admin.ai.session.list.total", "共")}} {{.Total}}</span>
+                </div>
+                <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.ai.session.list.title", "会话列表")}}">
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>#</th>
-                            <th>{{tr("admin.ai.session.append.kind", "事件类型")}}</th>
-                            <th>{{tr("admin.ai.session.append.content", "内容")}}</th>
+                            <th>{{tr("admin.ai.session.col.title", "标题")}}</th>
+                            <th>{{tr("admin.ai.session.col.provider", "供应商")}}</th>
+                            <th>{{tr("admin.ai.session.col.model", "模型")}}</th>
+                            <th>{{tr("admin.ai.session.col.status", "状态")}}</th>
+                            <th>{{tr("admin.ai.session.col.events", "事件数")}}</th>
                             <th>{{tr("admin.ai.session.col.tokens", "上下文 token")}}</th>
+                            <th>{{tr("admin.ai.session.col.updated", "最后更新")}}</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {{range _, ev := .Events}}
+                        {{if len(.Rows) == 0}}
                         <tr>
-                            <td>{{ev.Seq}}</td>
-                            <td>
-                                {{if ev.Kind == "user"}}{{tr("admin.ai.session.kind.user", "用户")}}
-                                {{else if ev.Kind == "assistant"}}{{tr("admin.ai.session.kind.assistant", "助手")}}
-                                {{else if ev.Kind == "tool"}}{{tr("admin.ai.session.kind.tool", "工具")}}
-                                {{else if ev.Kind == "note"}}{{tr("admin.ai.session.kind.note", "备注")}}
-                                {{else if ev.Kind == "compact_start"}}{{tr("admin.ai.session.kind.compact_start", "折叠开始")}}
-                                {{else if ev.Kind == "compact_summary"}}{{tr("admin.ai.session.kind.compact_summary", "折叠摘要")}}
-                                {{else}}{{tr("admin.ai.session.kind.compact_end", "折叠结束")}}{{end}}
+                            <td colspan="7" class="cell-wrap">
+                                <div class="empty-state">
+                                    <p class="empty-title">{{tr("admin.ai.session.empty", "还没有任何会话。")}}</p>
+                                </div>
                             </td>
-                            <td class="cell-wrap">{{ev.Content}}</td>
-                            <td>{{ev.ContentTokens}}</td>
                         </tr>
+                        {{else}}
+                        {{range _, row := .Rows}}
+                        {{r := row.Session}}
+                        <tr>
+                            <td class="cell-wrap">{{r.Title}}<br><span class="badge badge-mute">{{r.SessionKey}}</span></td>
+                            <td>{{if r.ProviderKey}}{{r.ProviderKey}}{{else}}—{{end}}</td>
+                            <td>{{if r.ModelID}}{{r.ModelID}}{{else}}—{{end}}</td>
+                            <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.ai.session.status.active", "进行中")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.ai.session.status.archived", "已归档")}}</span>{{end}}</td>
+                            <td>{{r.EventCount}}</td>
+                            {* token 单元格是这一页的信息入口：总量本身没多少信息量，
+                               「哪家供应商 / 哪个模型消耗的」才是要回答的问题。
+                               悬浮卡由 ui/hovercard.js 渲染到 fixed 图层（不能放在 .table-scroll 里
+                               用绝对定位，会被容器裁掉）；触屏点一下同样能开。
+                               没有拆分数据时退回纯文本 —— 一个点了没反应的按钮比没有按钮更糟。 *}
+                            <td>
+                                {{if len(row.Usage) == 0}}
+                                <span>{{r.ContextTokens}}</span>
+                                {{else}}
+                                <span data-wb-hover>
+                                    <button type="button" class="wb-hover-trigger">{{r.ContextTokens}}</button>
+                                    <template class="wb-hover-panel">
+                                        <div class="card-title">{{tr("admin.ai.session.usage.breakdown", "Token 消耗（按供应商 / 模型）")}}</div>
+                                        <table class="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>{{tr("admin.ai.session.col.provider", "供应商")}}</th>
+                                                    <th>{{tr("admin.ai.session.col.model", "模型")}}</th>
+                                                    <th>{{tr("admin.ai.session.col.events", "事件数")}}</th>
+                                                    <th>{{tr("admin.ai.session.col.tokens", "上下文 token")}}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {{range _, u := row.Usage}}
+                                                <tr>
+                                                    <td>{{if u.Unrecorded}}<span class="badge badge-mute">{{tr("admin.ai.session.usage.unrecorded", "未记录")}}</span>{{else}}{{u.ProviderKey}}{{end}}</td>
+                                                    <td>{{if u.Unrecorded}}—{{else if u.ModelID}}{{u.ModelID}}{{else}}—{{end}}</td>
+                                                    <td>{{u.Events}}</td>
+                                                    <td>{{u.TokensText}}</td>
+                                                </tr>
+                                                {{end}}
+                                            </tbody>
+                                        </table>
+                                        {* 聚合回答「钱花在哪家」，流水回答「哪一次特别慢 / 哪一次失败了」——
+                                           两段都要：用户问的是「每个会话的每个请求的数据」，聚合给不出这个。
+                                           只显示最近若干条（见 service 的 sessionCallPreview），总数另行给出，
+                                           读的人才知道自己看到的是全部还是片段。 *}
+                                        {{if len(row.Calls.Rows) > 0}}
+                                        <div class="card-title">{{tr("admin.ai.session.calls.title", "最近调用")}}
+                                            <span class="badge badge-mute">{{tr("admin.ai.session.calls.total", "共")}} {{row.Calls.Total}} {{tr("admin.ai.session.calls.unit", "次调用")}}</span>
+                                        </div>
+                                        <table class="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>{{tr("admin.ai.session.calls.col.time", "时间")}}</th>
+                                                    <th>{{tr("admin.ai.session.col.model", "模型")}}</th>
+                                                    <th>{{tr("admin.ai.session.calls.col.latency", "耗时")}}</th>
+                                                    <th>{{tr("admin.ai.session.calls.col.tokens", "Token")}}</th>
+                                                    <th>{{tr("admin.ai.session.calls.col.status", "状态")}}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {{range _, c := row.Calls.Rows}}
+                                                <tr>
+                                                    <td>{{c.Time}}</td>
+                                                    <td>{{if c.ModelID}}{{c.ModelID}}{{else}}—{{end}}</td>
+                                                    <td>{{c.LatencyText}}</td>
+                                                    <td>{{c.TokensText}}</td>
+                                                    {* 失败那一格显示归口后的原因（i18n key + 中文兜底），
+                                                       不是一句干巴巴的「失败」—— 排查时要知道是「供应商不存在」
+                                                       还是「上游非 2xx」。 *}
+                                                    <td>{{if c.OK}}<span class="badge badge-success">{{tr("admin.ai.session.calls.ok", "成功")}}</span>{{else}}<span class="badge badge-warning">{{tr(c.ErrorKey, c.ErrorText)}}</span>{{end}}</td>
+                                                </tr>
+                                                {{end}}
+                                            </tbody>
+                                        </table>
+                                        {{end}}
+                                    </template>
+                                </span>
+                                {{end}}
+                            </td>
+                            <td>{{r.UpdateTime}}</td>
+                        </tr>
+                        {{end}}
                         {{end}}
                     </tbody>
                 </table>
+                </div>
+            </section>
+
+            {{if .TotalPages > 1}}
+            <div class="action-row">
+                <span class="form-hint">{{.Page}} / {{.TotalPages}}</span>
+                {{if .HasPrev}}<a class="btn btn-sm" href="{{.PrevURL}}">{{tr("admin.ai.session.page.prev", "上一页")}}</a>{{end}}
+                {{if .HasNext}}<a class="btn btn-sm" href="{{.NextURL}}">{{tr("admin.ai.session.page.next", "下一页")}}</a>{{end}}
+            </div>
+            {{end}}
+        </div>
+        </div>
+        {{end}}
+
+        {* ============ 标签 1：AI 模型（与配置页同一套供应商卡片） ============ *}
+        {{if canViewModels}}
+        <div class="tab-panel" role="tabpanel" id="ai-panel-models" aria-labelledby="ai-tab-models"{{if !isModels}} hidden{{end}}>
+        <div class="stack">
+            <div class="ai-tab-toolbar">
+                <h2 class="card-title">{{tr("admin.ai.title", "模型")}}</h2>
+                {{if canManage}}
+                <button type="button" class="btn btn-primary" data-drawer-open="#tpl-ai-provider-create" data-drawer-title="{{tr("admin.ai.create.title", "新建供应商")}}">＋ {{tr("admin.ai.create.title", "新建供应商")}}</button>
                 {{end}}
             </div>
-        </details>
-    </section>
-    {{end}}
+
+            {{if isset(.ProviderErr)}}{{if .ProviderErr}}
+            <p class="badge badge-warning" role="alert">{{.ProviderErr}}</p>
+            {{end}}{{end}}
+
+            {{if len(.ProviderCards) == 0}}
+            <section class="card list-card">
+                <div class="empty-state">
+                    <p class="empty-title">{{tr("admin.ai.empty", "还没有配置任何 AI 供应商。")}}</p>
+                </div>
+            </section>
+            {{end}}
+
+            {{range _, card := .ProviderCards}}
+            {{include "provider_card.html" card}}
+            {{end}}
+        </div>
+        </div>
+        {{end}}
+
+        {* 两个标签都没权限：直接访问 URL 时会走到这里，给一句说明比空白页清楚。 *}
+        {{if !canViewModels}}
+        {{if !canViewSessions}}
+        <section class="card list-card">
+            <div class="empty-state">
+                <p class="empty-title">{{tr("admin.ai.noAccess", "你没有任何 AI 功能的访问权限，请联系管理员。")}}</p>
+            </div>
+        </section>
+        {{end}}
+        {{end}}
+    </div>
 </div>
+
+{{if canManage}}
+{{include "provider_create.html" .}}
+{{end}}
+
+{* 「获取可用模型」的候选弹窗宿主：片段由 /admin/ai/providers/models/candidates 经 htmx 换进来。 *}
+<div id="ai-picker-host"></div>
 {{end}}

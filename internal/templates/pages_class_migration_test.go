@@ -66,9 +66,12 @@ func TestAdminTemplatesHaveNoLegacyPagesClasses(t *testing.T) {
 func TestMailAdminTemplatesUseSharedClasses(t *testing.T) {
 	pages := []string{
 		"admin/mail/mail.html",
-		"admin/mail/mail_marketing.html",
+		"admin/mail/mail_templates.html",
+		"admin/mail/mail_contacts.html",
+		"admin/mail/mail_campaigns.html",
 		"admin/mail/mail_campaign.html",
 		"admin/mail/mail_automation.html",
+		"admin/mail/mail_automation_runs.html",
 		"admin/mail/mail_automation_edit.html",
 		"admin/mail/mail_automation_run.html",
 	}

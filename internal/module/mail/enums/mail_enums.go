@@ -13,16 +13,24 @@ const (
 )
 
 const (
-	ErrInvalidParam             = "mail.err.invalidParam"
-	ErrAccountNotFound          = "mail.err.accountNotFound"
-	ErrTemplateNotFound         = "mail.err.templateNotFound"
-	ErrContactNotFound          = "mail.err.contactNotFound"
-	ErrCampaignNotFound         = "mail.err.campaignNotFound"
-	ErrAccountDisabled          = "mail.err.accountDisabled"
-	ErrAccountIncomplete        = "mail.err.accountIncomplete"
-	ErrSuppressed               = "mail.err.suppressed"
-	ErrEmailRequired            = "mail.err.emailRequired"
-	ErrEmailInvalid             = "mail.err.emailInvalid"
+	ErrInvalidParam       = "mail.err.invalidParam"
+	ErrAccountNotFound    = "mail.err.accountNotFound"
+	ErrTemplateNotFound   = "mail.err.templateNotFound"
+	ErrContactNotFound    = "mail.err.contactNotFound"
+	ErrCampaignNotFound   = "mail.err.campaignNotFound"
+	ErrAccountDisabled    = "mail.err.accountDisabled"
+	ErrAccountIncomplete  = "mail.err.accountIncomplete"
+	ErrSuppressed         = "mail.err.suppressed"
+	ErrEmailRequired      = "mail.err.emailRequired"
+	ErrEmailInvalid       = "mail.err.emailInvalid"
+	ErrContactEmailExists = "mail.err.contactEmailExists"
+	ErrContactTagEmpty    = "mail.err.contactTagEmpty"
+	// ErrConsentSourceRequired 置为「已订阅」但没写同意来源。
+	//
+	// 与导入路径的 ConsentDeclared 是同一条合规底线的两个入口：那边靠勾选强制，
+	// 这边（新建 / 编辑）必须由服务端强制 —— 页面文案承诺「要置为已订阅就得写清来源」，
+	// 服务端不执行就是文案在撒谎，而这条底线正是本模块页头 help 里写的那件事。
+	ErrConsentSourceRequired    = "mail.err.consentSourceRequired"
 	ErrImportEmpty              = "mail.err.importEmpty"
 	ErrImportTooLarge           = "mail.err.importTooLarge"
 	ErrCampaignNotDraft         = "mail.err.campaignNotDraft"
@@ -78,7 +86,9 @@ var MailFacingMessages = []string{
 	// 业务错误
 	ErrInvalidParam, ErrAccountNotFound, ErrTemplateNotFound, ErrContactNotFound,
 	ErrCampaignNotFound, ErrAccountDisabled, ErrAccountIncomplete, ErrSuppressed,
-	ErrEmailRequired, ErrEmailInvalid, ErrImportEmpty, ErrImportTooLarge,
+	ErrEmailRequired, ErrEmailInvalid, ErrContactEmailExists, ErrContactTagEmpty,
+	ErrConsentSourceRequired,
+	ErrImportEmpty, ErrImportTooLarge,
 	ErrCampaignNotDraft, ErrCampaignNoRecipient, ErrCipherSecretMissing,
 	ErrCipherUnavailable, ErrTemplateSyntax, ErrCampaignSending,
 	ErrAutomationNotFound, ErrAutomationTriggerInvalid, ErrAutomationGraphInvalid,

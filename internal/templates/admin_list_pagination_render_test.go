@@ -9,8 +9,9 @@ package templates
 //
 // 三条判据：
 //  1. 无分页数据（键缺失）时**不出现** `.pagination` —— 单页列表上挂一条「上一页 / 下一页」是噪声；
-//  2. 有分页数据时出现在**正确的那张表下面**（同一个页面有两张表时，两处各自渲染自己的分页数据 ——
-//     mail / mail_marketing 都是这种形状，共用一组键名会让后算的那张表覆盖前一张）；
+//  2. 有分页数据时出现在**正确的那张表下面**（拆页前一个页面有两张表、各自渲染自己的分页数据，
+//     共用一组键名会让后算的那张表覆盖前一张；那个结构已随 issue #37 拆页消失，但
+//     「键名与渲染位置一一对应」这条判据要留着守 —— 对错位置同样是用户看不见分页）；
 //  3. 分页链接保留筛选参数（翻页不能把用户的筛选条件丢掉）。
 //
 // 为什么这里用本地的 `pageLinkProbe` 而不是 shell.PageLink：`internal/web/shell` 反向 import 了
@@ -88,52 +89,46 @@ func TestAdminListPaginationRenders(t *testing.T) {
 		}
 	})
 
-	t.Run("mail/两张表各自的分页条", func(t *testing.T) {
-		data := map[string]any{"Accounts": []any{}, "Templates": []any{}}
+	// 拆页后每页只有一张表：账号表的分页数据落在账号页自己的分页条上，
+	// 不再有「两表共用一组键名互相覆盖」的风险（拆页前那正是本用例守的东西）。
+	t.Run("mail/账号表的分页条", func(t *testing.T) {
+		data := map[string]any{"Accounts": []any{}}
 		for k, v := range paginationKeys("共 41 条，第 1-20 条", mailProbeLinks(1)) {
-			data["Accounts"+k] = v
-		}
-		for k, v := range paginationKeys("共 61 条，第 21-40 条", mailProbeLinks(2)) {
-			data["Templates"+k] = v
+			data[k] = v
 		}
 		out := renderAdminEmptyProbe(t, "admin/mail/mail", data)
-		if got := strings.Count(out, `class="pagination"`); got != 2 {
-			t.Fatalf("mail：两张表各有分页数据时应渲染 2 条分页条，实际 %d 条 —— 说明两表共用了一组键", got)
+		if got := strings.Count(out, `class="pagination"`); got != 1 {
+			t.Fatalf("mail：账号表有分页数据时应渲染 1 条分页条，实际 %d 条", got)
 		}
-		if !strings.Contains(out, "共 41 条，第 1-20 条") || !strings.Contains(out, "共 61 条，第 21-40 条") {
-			t.Error("mail：两张表的分页信息被串了（应各显示自己的「共 N 条」）")
+		if !strings.Contains(out, "共 41 条，第 1-20 条") {
+			t.Error("mail：分页信息未渲染")
 		}
 	})
 
-	t.Run("mail_marketing/两张表各自的分页条且保留筛选", func(t *testing.T) {
-		out := renderAdminEmptyProbe(t, "admin/mail/mail_marketing", marketingProbeData(map[string]any{
-			"Contacts": []any{}, "Campaigns": []any{},
-			"Keyword": "vip@example.com", "Status": "subscribed",
-			"ContactsPaginationInfo":  "共 120 条，第 51-100 条",
-			"CampaignsPaginationInfo": "共 60 条，第 51-60 条",
+	t.Run("mail_contacts/分页条且保留筛选", func(t *testing.T) {
+		out := renderAdminEmptyProbe(t, "admin/mail/mail_contacts", marketingProbeData(map[string]any{
+			"Contacts": []any{},
+			"Keyword":  "vip@example.com", "Status": "subscribed",
+			"PaginationInfo": "共 120 条，第 51-100 条",
 			// 分页条里的当前页渲染成 <span>（没有 href），所以断言筛选参数必须看**非当前页**
 			// 的链接 —— 这正好是用户点「翻页」时走的那条。
-			"ContactsPaginationLinks": []pageLinkProbe{
-				{Label: "1", URL: "/admin/mail/marketing?keyword=vip%40example.com&status=subscribed&page=1&limit=50"},
-				{Label: "2", URL: "/admin/mail/marketing?keyword=vip%40example.com&status=subscribed&page=2&limit=50", Active: true},
-			},
-			"CampaignsPaginationLinks": []pageLinkProbe{
-				{Label: "1", URL: "/admin/mail/marketing?keyword=vip%40example.com&status=subscribed&page=1&limit=50"},
-				{Label: "2", URL: "/admin/mail/marketing?keyword=vip%40example.com&status=subscribed&page=2&limit=50", Active: true},
+			"PaginationLinks": []pageLinkProbe{
+				{Label: "1", URL: "/admin/mail/contacts?keyword=vip%40example.com&status=subscribed&page=1"},
+				{Label: "2", URL: "/admin/mail/contacts?keyword=vip%40example.com&status=subscribed&page=2", Active: true},
 			},
 		}))
-		if got := strings.Count(out, `class="pagination"`); got != 2 {
-			t.Fatalf("mail_marketing：两张表各有分页数据时应渲染 2 条分页条，实际 %d 条", got)
+		if got := strings.Count(out, `class="pagination"`); got != 1 {
+			t.Fatalf("mail_contacts：分页数据应渲染 1 条分页条，实际 %d 条", got)
 		}
 		// 翻页链接必须带筛选参数，否则点下一页就回到未筛选的全量列表。
 		// 先反转义再断言：Jet 会把 href 里的 `&` 转成 `&amp;`（合法的 HTML），
 		// 直接比对原始输出会把「转义」误判成「丢了参数」。
 		plain := html.UnescapeString(out)
 		if !strings.Contains(plain, "keyword=vip%40example.com") || !strings.Contains(plain, "status=subscribed") {
-			t.Errorf("mail_marketing：分页链接丢了筛选参数（翻页会回到未筛选状态）：%s", plainPaginationHrefs(plain))
+			t.Errorf("mail_contacts：分页链接丢了筛选参数（翻页会回到未筛选状态）：%s", plainPaginationHrefs(plain))
 		}
-		if !strings.Contains(out, "共 120 条，第 51-100 条") || !strings.Contains(out, "共 60 条，第 51-60 条") {
-			t.Error("mail_marketing：两张表的分页信息被串了")
+		if !strings.Contains(out, "共 120 条，第 51-100 条") {
+			t.Error("mail_contacts：分页信息未渲染")
 		}
 	})
 

@@ -36,23 +36,23 @@ var AutomationNodeTypes = []AutomationNodeTypeOption{
 	{
 		Value: "delay",
 		Label: LabelPair{"admin.mail.automation_edit.node.delay.label", "等待"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.delay.hint", "参数填分钟数，例如 1440 表示一天"},
+		Hint:  LabelPair{"admin.mail.automation_edit.node.delay.hint", "填时长并选单位，例如 2 小时"},
 	},
 	{
 		Value: "email",
 		Label: LabelPair{"admin.mail.automation_edit.node.email.label", "发邮件"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.email.hint", "参数填邮件模板的模板 key"},
+		Hint:  LabelPair{"admin.mail.automation_edit.node.email.hint", "选一个邮件模板"},
 	},
 	{
 		Value: "branch",
 		Label: LabelPair{"admin.mail.automation_edit.node.branch.label", "条件分支"},
 		Hint: LabelPair{"admin.mail.automation_edit.node.branch.hint",
-			"参数填条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签；再填 yes 与 no 两条出边"},
+			"选一个判断条件，再指定满足与不满足时各跳到哪一步"},
 	},
 	{
 		Value: "tag",
 		Label: LabelPair{"admin.mail.automation_edit.node.tag.label", "打标签"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.tag.hint", "参数填要加的标签（逗号分隔）"},
+		Hint:  LabelPair{"admin.mail.automation_edit.node.tag.hint", "填要加的标签（逗号分隔）"},
 	},
 	{
 		Value: "end",
@@ -104,13 +104,16 @@ const (
 // 为什么 handler 先取词再把**成品文案**交给 shell.Prepare：Prepare 内部是 `t(title, title)`
 // （兜底就是 key 本身），词条缺失时页面标题会显示 `admin.mail.heading` 这样的裸 key。
 // 先取一次词，交出去的就是可读文案，中文兜底也回到了代码里。
-// 四条已存在的 key 直接复用（admin.mail.heading / marketing.heading / automation.heading /
-// automation_run.heading），只有「编辑页 / 报表页 / 画布页」三个标题是本轮新增。
+// 已存在的 key 一律复用（admin.mail.heading / templates.heading / marketing.contacts.heading /
+// marketing.campaigns.heading / automation.heading / automation.runs.heading / automation_run.heading），
+// 只有「编辑页 / 报表页 / 画布页」三个标题是新增词条。
 var (
-	// PageTitleMail 邮箱设置页。
-	PageTitleMail = LabelPair{"admin.mail.heading", "邮箱设置"}
-	// PageTitleMarketing 邮件营销页。
-	PageTitleMarketing = LabelPair{"admin.mail.marketing.heading", "邮件营销"}
+	// PageTitleAccounts 发信账号页（/admin/mail）的 H1 标题。
+	// 侧栏菜单标题仍是 admin.mail.heading「邮箱管理」——菜单描述模块归属、H1 描述页面内容，
+	// 两者不是同一个 key，别再合回去（合并的结果是页面 H1 写着模块名，用户看不出这页干什么）。
+	PageTitleAccounts = LabelPair{"admin.mail.accounts.heading", "发信账号"}
+	// 营销页（/admin/mail/marketing）已拆成联系人页与群发活动页（issue #37），
+	// 旧标题标签随之删除；侧栏菜单标题由 sys_menus 维护，不再经 LabelPair。
 	// PageTitleCampaignReport 活动报表页。
 	PageTitleCampaignReport = LabelPair{"admin.mail.campaign.heading", "活动报表"}
 	// PageTitleAutomation 自动化流程列表页。
@@ -121,4 +124,113 @@ var (
 	PageTitleAutomationRun = LabelPair{"admin.mail.automation_run.heading", "实例排障"}
 	// PageTitleAutomationCanvas 流程画布页。
 	PageTitleAutomationCanvas = LabelPair{"admin.mail.automation_canvas.title", "流程画布"}
+	// PageTitleTemplates 邮件模板页（从邮箱设置页拆出的独立职能）。
+	PageTitleTemplates = LabelPair{"admin.mail.templates.heading", "邮件模板"}
+	// PageTitleContacts 联系人页（从邮件营销页拆出，含导入）。
+	PageTitleContacts = LabelPair{"admin.mail.marketing.contacts.heading", "联系人"}
+	// PageTitleCampaigns 群发活动页（从邮件营销页拆出）。
+	PageTitleCampaigns = LabelPair{"admin.mail.marketing.campaigns.heading", "群发活动"}
+	// PageTitleAutomationRuns 自动化运行记录页（从自动化流程页拆出）。
+	PageTitleAutomationRuns = LabelPair{"admin.mail.automation.runs.heading", "运行实例（排障）"}
+)
+
+// —— 自动化编辑器的「步骤」概念（issue #38 P3 重做）——
+//
+// 用户概念只有「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框从界面消失
+// （用户原话「新建自动化不知道是个什么东西完全没法用」）。下面这几组取值是**编辑器**的
+// 界面概念，与引擎的图定义之间有一次换算（见 inbound/http/mail_automation_form.go）：
+//
+//	· 等待 = 时长（数字）+ 单位（分钟 / 小时 / 天）→ 引擎的 `minutes` 整数；
+//	· 条件分支 = 一个条件下拉（+ 标签名）→ 引擎的 `conditions` 编码（has_tag:<标签>）；
+//	· 跳转 = 第 N 步 / 结束 → 引擎的节点 key。
+//
+// 换算只写一处：编码是内部语法（`has_tag:vip`、`minutes=1440`），露给用户就是旧版的问题。
+
+// AutomationWaitUnitOption 等待步骤的时长单位。
+type AutomationWaitUnitOption struct {
+	Value string
+	// Minutes 一个单位等于多少分钟（提交时按它换算，读回来时按同样规则反解）。
+	Minutes int
+	Label   LabelPair
+}
+
+// AutomationWaitUnits 等待单位选项（顺序即界面顺序）。
+var AutomationWaitUnits = []AutomationWaitUnitOption{
+	{"minute", 1, LabelPair{"admin.mail.automation_edit.unit.minute", "分钟"}},
+	{"hour", 60, LabelPair{"admin.mail.automation_edit.unit.hour", "小时"}},
+	{"day", 1440, LabelPair{"admin.mail.automation_edit.unit.day", "天"}},
+}
+
+// AutomationConditionOption 条件分支的判断条件。
+type AutomationConditionOption struct {
+	Value string
+	Label LabelPair
+	// NeedsTag 该条件还要再填一个标签名（只有 has_tag）。
+	NeedsTag bool
+}
+
+// AutomationConditions 条件分支的选项（顺序即界面顺序）。
+var AutomationConditions = []AutomationConditionOption{
+	{"opened", LabelPair{"admin.mail.automation_edit.cond.opened", "打开过邮件"}, false},
+	{"clicked", LabelPair{"admin.mail.automation_edit.cond.clicked", "点击过链接"}, false},
+	{"subscribed", LabelPair{"admin.mail.automation_edit.cond.subscribed", "已经订阅"}, false},
+	{"has_tag", LabelPair{"admin.mail.automation_edit.cond.has_tag", "带着某个标签"}, true},
+}
+
+// AutomationFormErr* 编辑页的表单校验文案（B5 十二条口径）。
+//
+// 具名而不是按下标访问 AutomationFormMessages：插一条就全错位，而错位的表现是
+// 「第 3 步报的是第 5 步的错」—— 用户照着改永远改不对。
+var (
+	AutomationFormErrNameRequired     = LabelPair{"admin.mail.automation_edit.err.name_required", "流程名称不能为空"}
+	AutomationFormErrStepsRequired    = LabelPair{"admin.mail.automation_edit.err.steps_required", "至少要排一个步骤"}
+	AutomationFormErrStepTypeRequired = LabelPair{"admin.mail.automation_edit.err.step_type_required", "第 %d 步：请选择步骤类型"}
+	AutomationFormErrStepTemplate     = LabelPair{"admin.mail.automation_edit.err.step_template_required", "第 %d 步：请选择要发送的邮件模板"}
+	AutomationFormErrStepDelayValue   = LabelPair{"admin.mail.automation_edit.err.step_delay_value", "第 %d 步：等待时长要填大于 0 的整数"}
+	AutomationFormErrStepDelayUnit    = LabelPair{"admin.mail.automation_edit.err.step_delay_unit", "第 %d 步：等待单位只能选分钟 / 小时 / 天"}
+	AutomationFormErrStepCondition    = LabelPair{"admin.mail.automation_edit.err.step_condition_required", "第 %d 步：请选择判断条件"}
+	AutomationFormErrStepTag          = LabelPair{"admin.mail.automation_edit.err.step_tag_required", "第 %d 步：请填写至少一个标签"}
+	// 目标选错有两种事实，措辞必须分开：往回跳时那个步号**就在页面上**，
+	// 说「不存在」与用户所见直接冲突（他会以为是自己没选上而反复重试）；
+	// 只有目标步被删掉之后步号才真的失效。合成一条会让前者变成假话。
+	AutomationFormErrStepTargetBackward = LabelPair{"admin.mail.automation_edit.err.step_target_backward", "第 %d 步：跳转目标只能选本步之后的步骤"}
+	AutomationFormErrStepTargetInvalid  = LabelPair{"admin.mail.automation_edit.err.step_target_invalid", "第 %d 步：跳转目标已不存在（可能已被删除），请重新选择"}
+	AutomationFormErrStepsTooMany       = LabelPair{"admin.mail.automation_edit.err.steps_too_many", "最多只能排 12 步，请拆分流程"}
+	AutomationFormErrEndNotLast         = LabelPair{"admin.mail.automation_edit.err.end_not_last", "第 %d 步：结束步骤必须是最后一步"}
+	AutomationFormErrAssemble           = LabelPair{"admin.mail.automation_edit.err.assemble_failed", "流程保存失败，请检查各步的填写内容后重试"}
+)
+
+// AutomationFormMessages 上面全部校验文案（读侧白名单按当前语言展开它）。
+//
+// 与 mail_err.go 的 mailFormNoticeTemplates 是一对：那份**不是**第二份真源，
+// 只是把这个切片取词后交给 shell.NoticeTemplate 归一。写侧拼译文、读侧只认中文的话，
+// 运营看到的会从「第 3 步：请选择步骤类型」退化成「系统内部错误」。
+var AutomationFormMessages = []LabelPair{
+	AutomationFormErrNameRequired,
+	AutomationFormErrStepsRequired,
+	AutomationFormErrStepTypeRequired,
+	AutomationFormErrStepTemplate,
+	AutomationFormErrStepDelayValue,
+	AutomationFormErrStepDelayUnit,
+	AutomationFormErrStepCondition,
+	AutomationFormErrStepTag,
+	AutomationFormErrStepTargetBackward,
+	AutomationFormErrStepTargetInvalid,
+	AutomationFormErrStepsTooMany,
+	AutomationFormErrEndNotLast,
+	AutomationFormErrAssemble,
+}
+
+// 编辑页的控件文案（下拉空选项 / 行内只读标签）。
+//
+// 「第 %d 步」这类带数字的模板由 Go 侧 Sprintf：Jet 没有 Sprintf，而把步号拼在模板里
+// 等于在模板里做逻辑（下一轮改文案的人不会想到这里还有一处拼装）。
+var (
+	AutomationStepNone      = LabelPair{"admin.mail.automation_edit.step_none", "请选择步骤类型"}
+	AutomationConditionNone = LabelPair{"admin.mail.automation_edit.cond.none", "请选择判断条件"}
+	AutomationTargetNext    = LabelPair{"admin.mail.automation_edit.target.next", "下一步"}
+	AutomationTargetEnd     = LabelPair{"admin.mail.automation_edit.target.end", "结束"}
+	AutomationStepLabel     = LabelPair{"admin.mail.automation_edit.step_label", "第 %d 步"}
+	AutomationNextStepLabel = LabelPair{"admin.mail.automation_edit.next_step", "下一步：第 %d 步"}
+	AutomationNextEnd       = LabelPair{"admin.mail.automation_edit.next_end", "下一步：结束"}
 )

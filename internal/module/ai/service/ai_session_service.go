@@ -65,6 +65,9 @@ type SessionService struct {
 	// chat 是「打一次模型」的能力，由装配层用 SetChatPort 注入（见 ai_session_chat.go）。
 	// 用接口而非 *Service：会话层不依赖配置层的具体类型，未注入时 SendMessage 回业务错误而不是崩。
 	chat ChatPort
+	// callLog 是调用流水（ai_call_log）的读取端口，装配层用 SetCallLogReader 注入（见 ai_session_calls.go）。
+	// 未注入时 SessionCallsOf 回空集合：悬浮卡少一段，而不是整页崩。
+	callLog CallLogReader
 }
 
 // NewSessionService 构造。

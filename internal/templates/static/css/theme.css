@@ -1542,6 +1542,116 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .edit-fold > summary::after { margin-left: auto; }
 .edit-fold[open] > summary { margin-bottom: .75rem; }
 
+/* AI 供应商卡片（templates/admin/ai/provider_card.html + provider_models.html）。
+   <details class="card ai-provider"> 的头部借 .card-header 的 16/24 内边距；
+   卡体与「模型目录」是这张卡内部的两个分区，内边距由本段提供 ——
+   这三组类此前一个都没定义，整片卡体（密钥 / 地址 / 协议 / 模型行）贴着卡片左边渲染。 */
+.ai-provider-body { padding: var(--ui-sp-xl); }
+/* 模型目录是卡体内的分区，不是第二张卡：不让 .ai-models-head 再借 .card-header 的 padding
+   （否则叠成 24+24=48px，比卡片头还深，还会多画一条内缩的分隔线）。 */
+.ai-models { display: flex; flex-direction: column; gap: var(--ui-sp-lg); min-width: 0; }
+/* theme.css 在 layout 里排在 ui.css **之前**，同特异性下会输给 .card-header ——
+   这条必须带 .ai-provider-body 前缀（0,2,0）压过去，不能只写单类。 */
+.ai-provider-body .ai-models-head { padding: 0; border-bottom: 0; }
+.ai-models-actions { display: inline-flex; align-items: center; gap: var(--ui-sp-xs); }
+/* 模型目录逐行：每行两个主字段 + 一个「详情」折叠。行间给一条分隔线，
+   否则连续多行会糊成一片（两列 form-grid 在 ≥1320px 生效）。 */
+.ai-model-row {
+    display: flex; flex-direction: column; gap: var(--ui-sp-md);
+    padding: var(--ui-sp-md) 0;
+    border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+
+/* AI 管理主页的两个标签（templates/admin/ai/sessions.html）：会话看板 + 模型配置。
+   标签本体走基座 .tabs，这里只补面板与标签条之间的间距 ——
+   .tab-panel 在基座里只有 min-width: 0，没有内边距。 */
+.ai-tabs > .tab-panel { padding-top: var(--ui-sp-lg); }
+/* 标签内的工具行（标题 + 主行动）。刻意不用 .card-header：这里没有卡片边框，
+   借 .card-header 会白白多出 16/24 的内边距和一条悬空的分隔线。 */
+.ai-tab-toolbar {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: var(--ui-sp-sm);
+}
+
+/* 折线图配色（.ai-trend-* 用）。8 号刻意选灰调：它留给「其他」那条聚合线，
+   灰在深浅两套主题下都不会被误读成「又一个供应商」。 */
+:root {
+    --chart-c1: #1f6feb;
+    --chart-c2: #d29922;
+    --chart-c3: #2da44e;
+    --chart-c4: #cf222e;
+    --chart-c5: #8250df;
+    --chart-c6: #0969da;
+    --chart-c7: #bf8700;
+    --chart-c8: #6e7781;
+}
+
+/* Token 用量趋势：按 (供应商, 模型) 分组的**多序列折线**，坐标由服务端算好（dto.TrendSeries.Points）。
+   没有引图表库：这是全站唯一的图表，为它拉一个第三方包不划算。
+   为什么不是柱状：柱状图一天只有一根、一个高度，多序列只能堆叠或并排 —— 堆叠看不出单条趋势，
+   并排又把一天切成一簇细柱；折线天然就是多序列的形态。
+   viewBox 固定 1000×200 + preserveAspectRatio="none" 让图自适应容器宽度，代价是横向拉伸会把描边带粗，
+   所以线必须挂 vector-effect: non-scaling-stroke（否则宽屏上 2px 会被拉成 6px）。 */
+.ai-trend { margin-top: var(--ui-sp-md); }
+.ai-trend-svg { display: block; width: 100%; height: 180px; }
+.ai-trend-line {
+    fill: none; stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+    stroke-linejoin: round; stroke-linecap: round;
+}
+/* 单点序列的方块点：viewBox 被横向拉伸，圆会变成椭圆，方块只变胖一点。 */
+.ai-trend-point { vector-effect: non-scaling-stroke; }
+
+/* 图例：色块 + 名称 + 总量。名称可能很长（供应商 / 模型），超出按省略号收，
+   不让一条长名字把整行图例挤到换行。 */
+.ai-trend-legend {
+    display: flex; flex-wrap: wrap; gap: var(--ui-sp-sm) var(--ui-sp-md);
+    margin: var(--ui-sp-sm) 0 0; padding: 0; list-style: none;
+}
+.ai-trend-legend-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; min-width: 0;
+}
+.ai-trend-swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.ai-trend-legend-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: min(48vw, 260px);
+}
+.ai-trend-legend-value { color: var(--sky-c-text-muted, #6b7280); flex: none; }
+
+
+/* 行内悬浮明细卡（templates/static/js/ui/hovercard.js）。
+   卡片挂在 body 下的 fixed 图层里，**不能**用 absolute：列表包在 .table-scroll
+   （overflow: auto）里，绝对定位的浮层会被容器裁掉。z-index 取 55 —— 压过 .help-pop(50)，
+   但不越过抽屉与弹层（60/61），抽屉打开时不该被表格里的悬浮卡盖住。 */
+.wb-hover-layer { position: fixed; inset: 0; z-index: 55; pointer-events: none; }
+.wb-hover-card {
+    position: fixed;
+    pointer-events: auto;
+    max-width: min(92vw, 420px);
+    max-height: min(70vh, 420px);
+    overflow: auto;
+    padding: var(--ui-sp-md);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, .16);
+    font-size: 13px;
+}
+/* 触发器是单元格里的一个数字/文字，做成「有虚线下划线」的按钮态：
+   它可点（触屏），但不能看起来像主行动按钮。 */
+.wb-hover-trigger {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 0; border: 0; background: none; cursor: pointer;
+    color: inherit; font: inherit;
+    border-bottom: 1px dashed var(--sky-c-border-strong, #b9bfc7);
+}
+.wb-hover-trigger:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 2px; }
+[data-open] > .wb-hover-trigger { border-bottom-style: solid; }
+/* 卡里的明细表比列表页的紧一档：它是浮层，不是页面主体。 */
+.wb-hover-card .data-table { font-size: 13px; }
+.wb-hover-card .data-table th, .wb-hover-card .data-table td { padding: 4px 6px; }
+
 /* AI 候选模型弹窗（templates/admin/ai/provider_picker.html）。
    候选可能有几百条（openrouter 386 / vercel-ai-gateway 246），列表靠 .wb-modal-body 自身滚动；
    顶部「搜索 + 全选」一行在窄屏折行，宽度用 min() 封顶，不做横向溢出。

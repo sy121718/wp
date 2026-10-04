@@ -1,0 +1,210 @@
+{* admin/mail_templates.html — 邮件模板（issue #37 拆页） *}
+{* 一页一职能（评审规则 admin-ui-logic §2）：本页只回答「有哪些模板、变量对不对」。
+    拆页前它与发信账号同处「邮箱设置」页，两张表各有自己的批量 form 与分页 ——
+    改一次 SMTP 密码要越过整张模板表，配一次模板又要往下滚过整张账号表。 *}
+{* 版式遵循后台页面骨架（docs/02-H-admin-page-shell.md §2）与评审规则（admin-ui-logic §7）：
+     · 正文零说明文字 —— 模板变量的报错语义进 .help 悬浮；
+     · 主行动（新建 / 覆盖模板）进 .page-head，不再单独占一张卡；
+     · 列表是标准 .data-table + 首列勾选 + 末列 .col-actions，行内表单移到表格外用 form="<id>" 关联；
+     · 模板的唯一键是 key + locale（同一标识可有多语言版本），删除按 key + locale 走。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
+{* 分页键由 handler 注入在顶层。单页或空数据时不存在 —— 取到 nil 不中断渲染，
+   分页片段里的 if 自然跳过。 *}
+{{tplLinks := .["PaginationLinks"]}}
+{{tplInfo := .["PaginationInfo"]}}
+{{canSaveTemplate := isset(.PermSet["mail:template_save"])}}
+{* 批量动作复用对应单条动作的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
+{{canDeleteTemplate := isset(.PermSet["mail:template_delete"])}}
+<div class="stack">
+  <header class="page-head">
+    <div class="page-head-main">
+      <div class="page-title-row">
+        <h1>{{ .["t"]("admin.mail.templates.heading", "邮件模板") }}</h1>
+        <span class="help">
+          <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+          <span class="help-pop" role="tooltip">
+            {{ .["t"]("admin.mail.templates.hint.lead", "模板变量用") }} <code>{{`{{.name}}`}}</code> {{ .["t"]("admin.mail.templates.hint.mid", "这种写法。") }}<strong>{{ .["t"]("admin.mail.templates.hint.strong", "变量缺失会直接报错") }}</strong>{{ .["t"]("admin.mail.templates.hint.tail", "而不是渲染成") }} <code>&lt;no value&gt;</code>{{ .["t"]("admin.mail.templates.hint.tail2", " —— 否则群发时一个变量拼错就会静默发出几千封错邮件。") }}
+          </span>
+        </span>
+      </div>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-sm btn-ghost" href="/admin/mail">{{ .["t"]("admin.mail.accounts.heading", "发信账号") }}</a>
+      <a class="btn btn-sm btn-ghost" href="/admin/mail/campaigns">{{ .["t"]("admin.mail.marketing.campaigns.heading", "群发活动") }}</a>
+      {{if canSaveTemplate}}
+      <button type="button" class="btn btn-primary" data-drawer-open="#tpl-mail-template" data-drawer-title="{{ .["t"]("admin.mail.template_form.heading", "新建 / 覆盖模板") }}">＋ {{ .["t"]("admin.mail.template_form.new", "新建 / 覆盖模板") }}</button>
+      {{end}}
+    </div>
+  </header>
+
+  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），
+     直接比较会让整页在那一行中断 —— HTTP 仍是 200，之后的列表整块消失。 *}
+  {{if isset(.Err)}}{{if .Err != ""}}
+  <p class="badge badge-warning" role="alert">{{ .["t"]("admin.mail.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+  {{end}}{{end}}
+  {{if isset(.Ok)}}{{if .Ok != ""}}
+  <p class="badge badge-success" role="status">{{ .["t"]("admin.mail.ok_done", "上一次操作已完成。") }}</p>
+  {{end}}{{end}}
+  {* Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。 *}
+  {{if isset(.Done)}}{{if .Done != ""}}
+  <p class="badge badge-info" role="status">{{.Done}}</p>
+  {{end}}{{end}}
+
+  <section class="card list-card">
+    <div class="card-header">
+      <span class="card-title">{{ .["t"]("admin.mail.templates.heading", "邮件模板") }}</span>
+    </div>
+    {* 批量删除 form：勾选框提交模板行的主键 id，handler 再映射回 key + locale
+       走同一条单条删除路径（模板的唯一键是 key+locale，不是主键）。 *}
+    <form method="post" action="/admin/mail/templates/bulk-delete">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
+      {{if canDeleteTemplate}}{{if len(.Templates) > 0}}
+      {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.templates.bulk_delete_confirm", "删除选中的邮件模板？用到它们的邮件会发不出去。"), danger=true)}}
+      {{yield bulkBarClose()}}
+      {{end}}{{end}}
+      <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.templates.heading", "邮件模板") }}">
+      <table class="data-table">
+      <thead><tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.mail.templates.col.key", "标识") }}</th><th>{{ .["t"]("admin.mail.templates.col.locale", "语言") }}</th><th>{{ .["t"]("admin.mail.templates.col.name", "名称") }}</th><th>{{ .["t"]("admin.mail.templates.col.subject", "主题") }}</th><th>{{ .["t"]("admin.mail.templates.col.variables", "变量") }}</th><th class="col-actions">{{ .["t"]("admin.mail.templates.col.actions", "操作") }}</th></tr></thead>
+      <tbody>
+      {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 7：
+         勾选 / 标识 / 语言 / 名称 / 主题 / 变量 / 操作）。 *}
+      {{if len(.Templates) == 0}}
+      <tr><td colspan="7" class="cell-wrap">
+    <div class="empty-state">
+      <p class="empty-title">{{ .["t"]("admin.mail.templates.empty.title", "还没有邮件模板") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.templates.empty", "新建邮件模板，填写主题与正文。") }}</p>
+      {{if canSaveTemplate}}
+      <div class="empty-actions">
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-mail-template" data-drawer-title="{{ .["t"]("admin.mail.template_form.heading", "新建 / 覆盖模板") }}">＋ {{ .["t"]("admin.mail.template_form.new", "新建 / 覆盖模板") }}</button>
+      </div>
+      {{end}}
+    </div>
+      </td></tr>
+      {{else}}
+      {{range _, tp := .Templates}}
+      <tr>
+        <td class="col-check"><input type="checkbox" name="ids" value="{{tp.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
+        <td><code>{{tp.TemplateKey}}</code></td>
+        <td>{{if tp.Locale == ""}}{{tr("admin.mail.templates.locale_common", "通用")}}{{else}}{{tp.Locale}}{{end}}</td>
+        <td>{{if canSaveTemplate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-template-edit-{{tp.ID}}" data-drawer-title="{{tr("admin.mail.templates.action.edit_full", "编辑模板：")}}{{tp.TemplateKey}}">{{tp.Name}}</button>{{else}}{{tp.Name}}{{end}}</td>
+        <td>{{tp.Subject}}</td>
+        <td>{{if len(tp.Variables) == 0}}<span class="text-mute">—</span>{{else}}{{range _, v := tp.Variables}}<span class="badge badge-mute">{{v}}</span> {{end}}{{end}}</td>
+        <td class="col-actions">
+          {{if canSaveTemplate}}
+          <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-template-edit-{{tp.ID}}" data-drawer-title="{{tr("admin.mail.templates.action.edit_full", "编辑模板：")}}{{tp.TemplateKey}}">{{tr("admin.mail.accounts.action.edit", "编辑")}}</button>
+          {{end}}
+          <button type="submit" form="template-del-{{tp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
+        </td>
+      </tr>
+      {{end}}
+      {{end}}
+      </tbody>
+      </table>
+      </div>
+    </form>
+    {* 邮件模板表的分页条（每页 20 条；单页时不渲染）。 *}
+    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", tplLinks, "PaginationInfo", tplInfo)}}
+  </section>
+
+  {* 行内表单与抽屉模板放表格外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}
+  {{range _, tp := .Templates}}
+  <form id="template-del-{{tp.ID}}" class="hidden-form" method="post" action="/admin/mail/template/delete"
+        data-confirm="{{tr("admin.mail.templates.confirm.delete", "删除该模板？用到它的邮件会发不出去。")}}" data-confirm-danger>
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <input type="hidden" name="template_key" value="{{tp.TemplateKey}}">
+    <input type="hidden" name="locale" value="{{tp.Locale}}">
+  </form>
+  {{if canSaveTemplate}}
+  <template id="tpl-template-edit-{{tp.ID}}">
+    <form method="post" action="/admin/mail/template/save" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="tpl-key-{{tp.ID}}">{{tr("admin.mail.template_form.key", "标识") }}</label>
+          <input class="form-input" id="tpl-key-{{tp.ID}}" type="text" name="template_key" value="{{tp.TemplateKey}}" required>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="tpl-locale-{{tp.ID}}">{{tr("admin.mail.template_form.locale", "语言") }}</label>
+          <input class="form-input" id="tpl-locale-{{tp.ID}}" type="text" name="locale" value="{{tp.Locale}}" placeholder="{{tr("admin.mail.template_form.ph.locale", "留空 = 通用")}}">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="tpl-name-{{tp.ID}}">{{tr("admin.mail.template_form.name", "名称") }}</label>
+          <input class="form-input" id="tpl-name-{{tp.ID}}" type="text" name="name" value="{{tp.Name}}">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="tpl-subject-{{tp.ID}}">{{tr("admin.mail.template_form.subject", "主题") }}</label>
+          <input class="form-input" id="tpl-subject-{{tp.ID}}" type="text" name="subject" value="{{tp.Subject}}" required>
+        </div>
+        <div class="form-field form-field--wide">
+          <label class="form-label" for="tpl-vars-{{tp.ID}}">{{tr("admin.mail.template_form.variables", "变量（逗号分隔）") }}</label>
+          <input class="form-input" id="tpl-vars-{{tp.ID}}" type="text" name="variables" value="{{range _, v := tp.Variables}}{{v}},{{end}}" placeholder="name,email">
+        </div>
+      </div>
+      {* HTML / 纯文本正文是邮件源码（完整 HTML 结构 + 内联样式），不是「一段描述」：
+         富文本编辑器会剥掉 table 与 style，故保持 textarea（评审规则 §8 的对照项）。 *}
+      <div class="form-field">
+        <label class="form-label" for="tpl-html-{{tp.ID}}">{{tr("admin.mail.template_form.body_html", "HTML 正文") }}</label>
+        <textarea class="form-textarea" id="tpl-html-{{tp.ID}}" name="body_html" rows="8">{{tp.BodyHTML}}</textarea>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="tpl-text-{{tp.ID}}">{{tr("admin.mail.template_form.body_text", "纯文本正文") }}</label>
+        <textarea class="form-textarea" id="tpl-text-{{tp.ID}}" name="body_text" rows="4">{{tp.BodyText}}</textarea>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
+      </div>
+    </form>
+  </template>
+  {{end}}
+  {{end}}
+
+  {{if canSaveTemplate}}
+  <template id="tpl-mail-template">
+    <form method="post" action="/admin/mail/template/save" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="tpl-new-key">{{tr("admin.mail.template_form.key", "标识") }}</label>
+          <input class="form-input" id="tpl-new-key" type="text" name="template_key" placeholder="register_verify" required>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="tpl-new-locale">{{tr("admin.mail.template_form.locale", "语言") }}</label>
+          <input class="form-input" id="tpl-new-locale" type="text" name="locale" placeholder="{{tr("admin.mail.template_form.ph.locale", "留空 = 通用")}}">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="tpl-new-name">{{tr("admin.mail.template_form.name", "名称") }}</label>
+          <input class="form-input" id="tpl-new-name" type="text" name="name">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="tpl-new-subject">{{tr("admin.mail.template_form.subject", "主题") }}</label>
+          <input class="form-input" id="tpl-new-subject" type="text" name="subject" required>
+        </div>
+        <div class="form-field form-field--wide">
+          <label class="form-label" for="tpl-new-vars">{{tr("admin.mail.template_form.variables", "变量（逗号分隔）") }}</label>
+          <input class="form-input" id="tpl-new-vars" type="text" name="variables" placeholder="name,email">
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="tpl-new-html">{{tr("admin.mail.template_form.body_html", "HTML 正文") }}</label>
+        <textarea class="form-textarea" id="tpl-new-html" name="body_html" rows="8"></textarea>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="tpl-new-text">{{tr("admin.mail.template_form.body_text", "纯文本正文") }}</label>
+        <textarea class="form-textarea" id="tpl-new-text" name="body_text" rows="4"></textarea>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{tr("admin.mail.template_form.save", "保存模板")}}</button>
+      </div>
+    </form>
+  </template>
+  {{end}}
+</div>
+{{end}}

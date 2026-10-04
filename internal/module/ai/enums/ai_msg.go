@@ -48,6 +48,12 @@ const (
 	ErrURLUnresolvable      = "ai.err.urlUnresolvable"
 	ErrURLDenied            = "ai.err.urlDenied"
 
+	// ErrUserRequired AI 调用的第一关卡：调用方没有身份（未登录 / 会话里取不到 user_id）。
+	//
+	// 这是**业务错误**而不是内部错误：它描述的是「这个请求不该被受理」，
+	// 用户看到的应该是可理解的一句话，而不是「服务器内部错误」。
+	ErrUserRequired = "ai.err.userRequired"
+
 	// ErrInternal 归口：未登记的底层错误在页面上统一显示它（原文只进日志）。
 	ErrInternal = "ai.err.internal"
 )
@@ -88,16 +94,16 @@ var FacingMessages = map[string]string{
 	ErrURLUnresolvable:      "API 地址无法解析",
 	ErrURLDenied:            "API 地址指向内网或保留地址，已拒绝",
 
+	ErrUserRequired: "请先登录后再使用 AI 功能",
+
 	ErrInternal: "服务器内部错误，请稍后重试",
 }
 
 // 页面标题（layout 的 <title>）：值与模板 h1 同源，已在迁移 513 / 516 seed，
 // 所以这里只登记常量、不新增词条。
 const (
-	// AdminProvidersTitle 供应商配置页标题（模板 admin/ai/providers.html）。
-	AdminProvidersTitle = "admin.ai.title"
-	// AdminSessionsTitle 会话页标题（模板 admin/ai/sessions.html）。
-	AdminSessionsTitle = "admin.ai.session.title"
+	// AdminLLMTitle 合并后统一入口的标题（侧栏菜单与页面 h1 同源）。
+	AdminLLMTitle = "admin.ai.menu.title"
 )
 
 // FacingText 查面向用户的文案（key → 中文兜底）；未登记返回 ("", false)。

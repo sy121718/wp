@@ -472,11 +472,13 @@
    按 WAI-ARIA tabs 模式实现 —— 点击切换，左右方向键在标签间移动，Home/End 到首尾，
    选中态用 aria-selected，面板用 hidden 控制（不用 display:none 内联样式，
    否则打印与"仅 CSS 可见性"的断言都会失真）。
-   面板在服务端全部渲染好，切换是纯前端行为，不产生请求。 */
-(function () {
-    var roots = document.querySelectorAll('[data-tabs]');
-    if (!roots.length) return;
+   面板在服务端全部渲染好，切换是纯前端行为，不产生请求。
 
+   **走事件委托，不在加载时逐节点绑**：标签组还会出现在加载之后才进 DOM 的容器里
+   （抽屉从 <template> 克隆进来、htmx swap 进来的片段），一次性 querySelectorAll
+   会漏掉它们 —— 表现是「点标签毫无反应、控制台也不报错」，比抛错更难查。
+   委托版本对静态与动态两种来源一视同仁，也不需要重复初始化。 */
+(function () {
     function activate(root, target) {
         var tabs = root.querySelectorAll('[role="tab"]');
         Array.prototype.forEach.call(tabs, function (t) {
@@ -489,25 +491,36 @@
         });
     }
 
-    Array.prototype.forEach.call(roots, function (root) {
+    /* 命中的节点必须是「某个 [data-tabs] 之内的 [role=tab]」——
+       前者限定作用域（页面可有多个标签组），后者排除图表等自带 role=tab 的第三方结构。 */
+    function tabOf(node) {
+        if (!node || !node.closest) return null;
+        var tab = node.closest('[role="tab"]');
+        return tab && tab.closest('[data-tabs]') ? tab : null;
+    }
+
+    document.addEventListener('click', function (e) {
+        var tab = tabOf(e.target);
+        if (!tab) return;
+        activate(tab.closest('[data-tabs]'), tab);
+        tab.focus();
+    });
+
+    document.addEventListener('keydown', function (e) {
+        var tab = tabOf(e.target);
+        if (!tab) return;
+        var root = tab.closest('[data-tabs]');
         var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
-        tabs.forEach(function (t, i) {
-            t.addEventListener('click', function () {
-                activate(root, t);
-                t.focus();
-            });
-            t.addEventListener('keydown', function (e) {
-                var next = null;
-                if (e.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
-                else if (e.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
-                else if (e.key === 'Home') next = tabs[0];
-                else if (e.key === 'End') next = tabs[tabs.length - 1];
-                if (!next) return;
-                e.preventDefault();
-                activate(root, next);
-                next.focus();
-            });
-        });
+        var i = tabs.indexOf(tab);
+        var next = null;
+        if (e.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+        else if (e.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
+        else if (e.key === 'Home') next = tabs[0];
+        else if (e.key === 'End') next = tabs[tabs.length - 1];
+        if (!next) return;
+        e.preventDefault();
+        activate(root, next);
+        next.focus();
     });
 })();
 

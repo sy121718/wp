@@ -26,6 +26,13 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	if v, err := config.GetViper(); err == nil && v != nil {
 		svc.SetCipherSecret(v.GetString("app.secret"))
 	}
+	// 调用流水（ai_call_log）一个实例两个方向：
+	//   · 写侧注到**出站层** —— 流水记的是「打了一次上游」，唯一出站点是 Service.Chat，
+	//     挂在那里无论谁发起对话都记得到（详见 ai_call_log.go）；
+	//   · 读侧注到**会话层** —— 会话行悬浮卡要显示「最近调用」（详见 ai_session_calls.go）。
+	// 同一个 CallLogModel 即可：它无状态，只是这张表的访问入口。
+	callLog := aimodel.NewCallLogModel(db)
+	svc.SetCallLogWriter(callLog)
 
 	handle := NewHandle(svc)
 	// 会话层与配置层零耦合：会话只记 provider_key / model_id 两个字符串，用独立的 model 与 service，
@@ -33,6 +40,8 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	sessionSvc := aiservice.NewSessionService(aimodel.NewSessionModel(db))
 	// 对话能力以窄接口注入，sessionSvc 不 import 配置面的 Service：会话页的「发消息」走这条路。
 	sessionSvc.SetChatPort(svc)
+	// 调用流水的读侧（悬浮卡的「最近调用」）。
+	sessionSvc.SetCallLogReader(callLog)
 	sessionHandle := NewSessionHandle(sessionSvc)
 	g := authorizedAPI.Group("/ai")
 

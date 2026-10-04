@@ -254,12 +254,18 @@ const (
 	MailCampaignSave Perm = "mail:campaign_save"
 	// 启动群发活动（POST /api/mail/campaign/start）
 	MailCampaignStart Perm = "mail:campaign_start"
+	// 删除联系人（POST /api/mail/contact/delete）
+	MailContactDelete Perm = "mail:contact_delete"
 	// 导入联系人（POST /api/mail/contact/import）
 	MailContactImport Perm = "mail:contact_import"
 	// 联系人列表（GET /api/mail/contact/list）
 	MailContactList Perm = "mail:contact_list"
+	// 保存联系人（POST /api/mail/contact/save）
+	MailContactSave Perm = "mail:contact_save"
 	// 修改联系人状态（POST /api/mail/contact/status）
 	MailContactStatus Perm = "mail:contact_status"
+	// 批量打标签（POST /api/mail/contact/tag）
+	MailContactTag Perm = "mail:contact_tag"
 	// 删除邮件模板（POST /api/mail/template/delete）
 	MailTemplateDelete Perm = "mail:template_delete"
 	// 邮件模板列表（GET /api/mail/template/list）
@@ -837,9 +843,12 @@ var specs = map[Perm]spec{
 	MailCampaignList:        {module: "mail", name: "群发活动列表"},
 	MailCampaignSave:        {module: "mail", name: "保存群发活动"},
 	MailCampaignStart:       {module: "mail", name: "启动群发活动"},
+	MailContactDelete:       {module: "mail", name: "删除联系人"},
 	MailContactImport:       {module: "mail", name: "导入联系人"},
 	MailContactList:         {module: "mail", name: "联系人列表"},
+	MailContactSave:         {module: "mail", name: "保存联系人"},
 	MailContactStatus:       {module: "mail", name: "修改联系人状态"},
+	MailContactTag:          {module: "mail", name: "批量打标签"},
 	MailTemplateDelete:      {module: "mail", name: "删除邮件模板"},
 	MailTemplateList:        {module: "mail", name: "邮件模板列表"},
 	MailTemplateSave:        {module: "mail", name: "保存邮件模板"},

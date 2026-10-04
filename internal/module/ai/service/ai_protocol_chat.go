@@ -31,21 +31,25 @@ func buildChatCompletionsBody(model, input string, maxOutputTokens int64) ([]byt
 }
 
 // parseChatCompletionsReply 从 /chat/completions 的响应体里取出回复正文
-// （choices[0].message.content）。形状不对、或正文为空，归口 ErrInternal。
-func parseChatCompletionsReply(body []byte) (string, error) {
+// （choices[0].message.content）与用量（usage）。形状不对、或正文为空，归口 ErrInternal。
+//
+// usage 缺失不算错：它只影响调用流水的用量列（Reported=false），正文该回还是要回 ——
+// 把「这家没报 usage」判成失败会让一次成功的对话看起来像挂了。
+func parseChatCompletionsReply(body []byte) (string, ReplyUsage, error) {
 	var root map[string]any
 	if err := json.Unmarshal(body, &root); err != nil {
-		return "", ErrInternal
+		return "", ReplyUsage{}, ErrInternal
 	}
+	usage := usageFromJSON(root["usage"])
 	choices, _ := root["choices"].([]any)
 	if len(choices) == 0 {
-		return "", ErrInternal
+		return "", usage, ErrInternal
 	}
 	first, _ := choices[0].(map[string]any)
 	msg, _ := first["message"].(map[string]any)
 	text, _ := msg["content"].(string)
 	if text == "" {
-		return "", ErrInternal
+		return "", usage, ErrInternal
 	}
-	return text, nil
+	return text, usage, nil
 }

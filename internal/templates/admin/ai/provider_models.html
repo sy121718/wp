@@ -28,9 +28,13 @@
             <button type="submit" form="ai-models-form-{{p.ID}}" formaction="/admin/ai/providers/models/restore" class="btn btn-sm">{{tr("admin.ai.models.restore", "恢复默认模型")}}</button>
             {{end}}
             {{if canFetch}}
-            {* 「获取可用模型」刻意放在**独立 form**里、不走 htmx：它回的是整页（渲染候选弹窗），
-               若走 htmx 会把整页 HTML 塞进 models 宿主。csrf 与 version 在这里重带一份。 *}
-            <form method="post" action="/admin/ai/providers/models/candidates" class="inline-form">
+            {* 「获取可用模型」走 htmx：回的**就是**候选弹窗片段（provider_picker.html），
+               插进页面底部的 #ai-picker-host。两个页面合成一个之后不需要整页重渲染 ——
+               整页刷新会把用户在同一页其它卡片里刚填的密钥冲掉。
+               原生 method/action 保留：没有 JS 时回退成整页跳转（服务端对非 htmx 请求 302）。 *}
+            <form method="post" action="/admin/ai/providers/models/candidates" class="inline-form"
+                  hx-post="/admin/ai/providers/models/candidates"
+                  hx-target="#ai-picker-host" hx-swap="innerHTML">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="providerId" value="{{p.ID}}">
                 <input type="hidden" name="version" value="{{p.Version}}">

@@ -136,7 +136,9 @@ func TestMailPageRendersWithData(t *testing.T) {
 		t.Fatalf("页面状态码 %d，正文前 300 字：%s", recorder.Code, firstN(recorder.Body.String(), 300))
 	}
 	body := recorder.Body.String()
-	for _, want := range []string{"邮箱设置", "系统通知", "mail.clker.cn", "register_verify", "注册验证", "已配置"} {
+	// H1 是「发信账号」（H1 描述页面内容，侧栏菜单标题仍是「邮箱管理」）；
+	// 模板相关的断言随模板表拆到 /admin/mail/templates（见 mail_templates 用例）。
+	for _, want := range []string{"发信账号", "系统通知", "mail.clker.cn", "已配置"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("页面缺少 %q；正文长度 %d，前 600 字：\n%s", want, len(body), firstN(body, 600))
 		}

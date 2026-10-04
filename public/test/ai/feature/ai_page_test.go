@@ -90,14 +90,113 @@ func pageBaseData(title string) gin.H {
 	}
 }
 
-// TestAIProvidersPageRenders 供应商页渲染完整、且有可用的新建入口。
-func TestAIProvidersPageRenders(t *testing.T) {
-	data := pageBaseData("模型")
+// sessionPageData 会话页模板的完整数据键（与 aihttp.SessionPageHandle 的装配同形）。
+//
+// 会话页比别的页面多三组键：看板（Usage / Trend）、筛选候选（FilterOptions）、
+// 模型标签（ProviderCards / Presets / BuiltinKeys）。模板按真实 handler 的输出写，
+// 少一个键 Jet 就中断整页（.Filter 这种点号访问在 map 上缺键是硬错误，不是空串），
+// 所以这里宁可摆一串零值，也不让用例去猜哪些键「反正用不到」。
+func sessionPageData() gin.H {
+	data := pageBaseData("AI 会话")
+	data["Rows"] = []gin.H{}
+	data["Total"] = 0
+	data["Page"] = 1
+	data["PageSize"] = 20
+	data["TotalPages"] = 1
+	data["HasPrev"] = false
+	data["HasNext"] = false
+	data["PrevURL"] = ""
+	data["NextURL"] = ""
+	data["Keyword"] = ""
+	data["Status"] = -1
+	data["Tab"] = "sessions"
+	data["IsModels"] = false
+	data["Filter"] = aidto.SessionQuery{Status: -1}
+	data["Usage"] = aidto.SessionUsage{}
+	data["Trend"] = aidto.SessionTrend{}
+	// 标签级权限：两个都开，默认用例覆盖「两个标签都渲染」。
+	data["CanViewModels"] = true
+	data["CanViewSessions"] = true
+	data["FilterOptions"] = aidto.SessionFilterOptions{Providers: []string{}, Models: []string{}, Creators: []int64{}}
+	data["ProviderCards"] = []gin.H{}
 	data["Providers"] = []aidto.Provider{}
+	data["Presets"] = aiservice.BuiltinPresets()
 	data["BuiltinKeys"] = aiservice.BuiltinProviderKeys()
 	data["ProtocolOptions"] = aienums.ProtocolOptions
-	data["Presets"] = aiservice.BuiltinPresets()
-	body := renderAITemplate(t, "admin/ai/providers", data)
+	return data
+}
+
+// TestAISessionsPageRendersUsageHovercard 列表行的 token 单元格给出按供应商/模型的拆分悬浮卡。
+//
+// 这条路径上有两处容易写坏：① 行数据是 {Session, Usage} 的嵌套结构，模板取错一层就是
+// 运行时整页 500；② 拆分表在 <template> 里 —— Jet 若把它当普通节点渲染，
+// 悬浮卡的内容会直接出现在表格单元格里（页面一打开就摊开）。两点都钉住。
+func TestAISessionsPageRendersUsageHovercard(t *testing.T) {
+	data := sessionPageData()
+	data["Rows"] = []gin.H{{
+		"Session": aidto.Session{
+			ID: 3, SessionKey: "k-3", Title: "会话三", Status: 1,
+			EventCount: 4, ContextTokens: 15,
+		},
+		"Usage": []aidto.SessionModelUsage{
+			{ProviderKey: "opencode-go", ModelID: "muse-spark", Events: 2, Tokens: 12, TokensText: "12"},
+			// 529 之前的历史事件：没有来源可记，展示层要单独成组，不能并进上面那家。
+			{Unrecorded: true, Events: 2, Tokens: 3, TokensText: "3"},
+		},
+		// 流水段：聚合回答「钱花在哪家」，这一段回答「哪一次特别慢 / 哪一次失败了」。
+		// 两条覆盖成功与失败两个分支 —— 失败那一格显示的是**归口后的原因**，
+		// 不是裸 i18n key，也不是一句干巴巴的「失败」。
+		"Calls": aidto.SessionCalls{
+			Total: 7,
+			Rows: []aidto.SessionCallRow{
+				{Time: "10-04 14:12", ProviderKey: "opencode-go", ModelID: "muse-spark", LatencyText: "2.9s", Tokens: 465, TokensText: "465", OK: true},
+				{Time: "10-04 13:40", ProviderKey: "opencode-go", ModelID: "muse-spark", LatencyText: "480ms", Tokens: 0, TokensText: "0", ErrorKey: aienums.ErrInternal, ErrorText: "服务器内部错误，请稍后重试"},
+			},
+		},
+	}}
+	body := renderAITemplate(t, "admin/ai/sessions", data)
+
+	for _, want := range []string{
+		`data-wb-hover`,
+		`class="wb-hover-trigger"`,
+		`<template class="wb-hover-panel">`,
+		`opencode-go`,
+		`muse-spark`,
+		`未记录`,
+		// 流水段：标题、总数（含单位）、以及每一次调用的耗时与状态。
+		"最近调用",
+		"共",
+		"7",
+		"次调用",
+		"2.9s",
+		"480ms",
+		"成功",
+		"服务器内部错误，请稍后重试",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("token 悬浮卡缺少 %q", want)
+		}
+	}
+	// 失败原因必须已经翻译过：裸 i18n key 上页面等于把内部标识透给用户。
+	if strings.Contains(body, aienums.ErrInternal) {
+		t.Fatalf("悬浮卡里出现了未翻译的 i18n key：%s", aienums.ErrInternal)
+	}
+	if got := strings.Count(body, `class="wb-hover-panel"`); got != 1 {
+		t.Fatalf("悬浮面板应恰好一个，实际 %d", got)
+	}
+	if strings.Contains(body, `{{`) {
+		t.Fatal("渲染结果里残留未解析的模板标记")
+	}
+}
+
+// TestAIModelsTabRenders 模型标签渲染完整、且有可用的新建入口。
+//
+// 两个页面合成一个之后（532）模型那块不再有独立模板：它就是 sessions.html 的第一个标签。
+// 标签顺序也在这里钉住 —— 入口叫「大模型管理」，第一屏就该是模型配置。
+func TestAIModelsTabRenders(t *testing.T) {
+	data := sessionPageData()
+	data["IsModels"] = true
+	body := renderAITemplate(t, "admin/ai/sessions", data)
 
 	if !strings.HasSuffix(strings.TrimSpace(body), "</html>") {
 		t.Fatalf("整页没有渲染完（缺 </html>）：模板在某一行中断了")
@@ -112,32 +211,42 @@ func TestAIProvidersPageRenders(t *testing.T) {
 		"第三方模型提供商",
 		"自定义模型 API",
 		"OpenAI",
+		// 候选弹窗的宿主：片段由 htmx 换进这里。
+		"id=\"ai-picker-host\"",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("供应商页缺少 %q", want)
+			t.Fatalf("模型标签缺少 %q", want)
 		}
+	}
+	// 模型标签必须排在会话标签之前。
+	mi := strings.Index(body, "id=\"ai-tab-models\"")
+	si := strings.Index(body, "id=\"ai-tab-sessions\"")
+	if mi < 0 || si < 0 || mi > si {
+		t.Fatalf("标签顺序应为模型在前，实际 models=%d sessions=%d", mi, si)
 	}
 	if strings.Contains(body, `{{`) {
 		t.Fatal("渲染结果里残留未解析的模板标记")
 	}
 }
 
-// TestAIProvidersPageRendersModelPicker 候选弹窗整块渲染（含「已在目录」的 disable 分支）。
+// TestAIModelPickerFragmentRenders 候选弹窗作为**片段**渲染（含「已在目录」的 disable 分支）。
 //
 // 这条路径上最容易写错的是模板里对 map 的取值：`{{existing[id]}}` 与 `isset(...)`
-// 只有真渲一次才知道语法对不对 —— 错了就是运行时整页 500。
-func TestAIProvidersPageRendersModelPicker(t *testing.T) {
+// 只有真渲一次才知道语法对不对 —— 错了就是运行时 500。
+//
+// 页面合并之后（532）它不再靠「重渲染整页 + data-modal-auto-open」，而是被 htmx 换进
+// #ai-picker-host：带整页壳的片段会把 <dialog> 埋进 body 里出不来，所以这里同时钉住「没有整页壳」。
+func TestAIModelPickerFragmentRenders(t *testing.T) {
 	data := pageBaseData("模型")
-	data["Providers"] = []aidto.Provider{}
-	data["BuiltinKeys"] = aiservice.BuiltinProviderKeys()
-	data["ProtocolOptions"] = aienums.ProtocolOptions
-	data["Presets"] = aiservice.BuiltinPresets()
 	data["Picker"] = gin.H{
 		"Provider":   aidto.Provider{ID: 7, ProviderKey: "acme-gateway", DisplayName: "Acme Gateway", Version: 2},
 		"Candidates": []string{"gpt-4o", "already-there"},
 		"Existing":   map[string]bool{"already-there": true},
 	}
-	body := renderAITemplate(t, "admin/ai/providers", data)
+	body := renderAITemplate(t, "admin/ai/provider_picker", data)
+	if strings.Contains(body, "<html") || strings.Contains(body, "<!doctype") {
+		t.Fatal("候选弹窗应是片段，不该带整页壳")
+	}
 
 	for _, want := range []string{
 		"选择要添加的模型",
@@ -220,15 +329,12 @@ func TestAIModelsAppendRejectsEmptySelection(t *testing.T) {
 	}
 }
 
-// TestAISessionsPageRenders 会话页渲染完整（空列表态）。
+// TestAISessionsPageRenders 会话页渲染完整（空列表态）：双标签 + 看板 + 六项筛选 + 8 列明细。
+//
+// 断言清单是按「模板新增了什么」逐条钉的：标签 id、指标卡容器、新筛选控件、列数。
+// 只断言「含 AI 会话」这种词的话，把整个看板删掉也照样绿。
 func TestAISessionsPageRenders(t *testing.T) {
-	data := pageBaseData("AI 会话")
-	data["Rows"] = []aidto.Session{}
-	data["Total"] = 0
-	data["Page"] = 1
-	data["Keyword"] = ""
-	data["Status"] = -1
-	body := renderAITemplate(t, "admin/ai/sessions", data)
+	body := renderAITemplate(t, "admin/ai/sessions", sessionPageData())
 
 	if !strings.HasSuffix(strings.TrimSpace(body), "</html>") {
 		t.Fatalf("整页没有渲染完（缺 </html>）：模板在某一行中断了")
@@ -237,10 +343,103 @@ func TestAISessionsPageRenders(t *testing.T) {
 		`action="/admin/ai/sessions"`,
 		`name="keyword"`,
 		"AI 会话",
+		// 双标签：会话在前、模型在后，两块面板都在（服务端一次渲染完）。
+		`id="ai-tab-sessions"`,
+		`id="ai-tab-models"`,
+		`id="ai-panel-sessions"`,
+		`id="ai-panel-models"`,
+		// 指标卡与趋势卡的容器。
+		`class="stat-grid"`,
+		// 六项筛选：关键词 + 状态 + 供应商 + 模型 + 创建人 + 起止日期。
+		`name="status"`,
+		`name="provider"`,
+		`name="model"`,
+		`name="user"`,
+		`name="from"`,
+		`name="to"`,
+		// 明细 8 列，空态跨列数必须与表头一致。
+		`colspan="7"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("会话页缺少 %q", want)
 		}
+	}
+	// 没有数据时不该出现趋势图（.ai-trend 有定高，空着会留一条 160px 的空白带）。
+	if strings.Contains(body, `class="ai-trend"`) {
+		t.Fatal("趋势为空时不该渲染图表容器")
+	}
+	if !strings.Contains(body, "这段时间还没有事件") {
+		t.Fatal("趋势为空时应给一句说明")
+	}
+}
+
+// TestAISessionsPageRendersTrendAndUsage 看板拿到数据时渲染柱高与指标值。
+//
+// 柱高是服务端算好的百分比（模板不做算术）：这里钉的是「Height 原样进内联样式」
+// 与「Height 为 0 的柱子带 is-empty」，以及指标卡直接用 Service 给好的格式化文本。
+func TestAISessionsPageRendersTrendAndUsage(t *testing.T) {
+	data := sessionPageData()
+	data["Usage"] = aidto.SessionUsage{
+		Sessions: 3, Events: 9, Tokens: 120, Compacts: 1, AvgTokens: 40,
+		TokensText: "120", AvgTokensText: "40",
+	}
+	data["Trend"] = aidto.SessionTrend{
+		From: "2026-10-01", To: "2026-10-03", Peak: 120, PeakText: "120",
+		Series: []aidto.TrendSeries{
+			{ProviderKey: "opencode-go", ModelID: "muse-spark", Total: 100, TotalText: "100",
+				Color: 1, Points: "0,200 500,12 1000,120"},
+			// 529 之前的历史事件：没有来源可记，图例里单独成一条，不能并进上面那家。
+			{Total: 20, TotalText: "20", Color: 2, Points: "0,200 500,180 1000,190"},
+			// 超出上限被合并的那条：明说含几家，否则用户会以为漏了。
+			{OtherCount: 3, Total: 5, TotalText: "5", Color: 8, Points: "0,200 500,199 1000,199"},
+		},
+	}
+	body := renderAITemplate(t, "admin/ai/sessions", data)
+
+	for _, want := range []string{
+		`class="ai-trend"`,
+		`class="ai-trend-svg"`,
+		`points="0,200 500,12 1000,120"`,
+		`stroke: var(--chart-c1)`,
+		`stroke: var(--chart-c8)`,
+		"opencode-go / muse-spark",
+		"未记录",
+		"其他（3）",
+		"2026-10-01 – 2026-10-03",
+		"120",
+		"40",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("趋势/指标卡缺少 %q", want)
+		}
+	}
+}
+
+// TestAISessionsPageModelsTabSelected 带 tab=models 时第二个标签默认展开、第一个隐藏。
+//
+// 两个标签是同一份 HTML 里的两块面板，选中态只体现在 aria-selected / hidden 上 ——
+// 这两处任一处写错，页面上看到的都是「点进去还是第一页」。
+func TestAISessionsPageModelsTabSelected(t *testing.T) {
+	data := sessionPageData()
+	data["IsModels"] = true
+	data["Tab"] = "models"
+	body := renderAITemplate(t, "admin/ai/sessions", data)
+
+	if !strings.Contains(body, `id="ai-tab-models" aria-controls="ai-panel-models" aria-selected="true"`) {
+		t.Fatal("模型标签应为选中态")
+	}
+	if !strings.Contains(body, `id="ai-tab-sessions" aria-controls="ai-panel-sessions" aria-selected="false"`) {
+		t.Fatal("会话标签应为未选中态")
+	}
+	if strings.Contains(body, `id="ai-panel-models" aria-labelledby="ai-tab-models" hidden`) {
+		t.Fatal("模型面板不该被隐藏")
+	}
+	if !strings.Contains(body, `id="ai-panel-sessions" aria-labelledby="ai-tab-sessions" hidden`) {
+		t.Fatal("会话面板应被隐藏")
+	}
+	// 两个标签都在同一份 HTML 里（切标签不重新请求）。
+	if !strings.Contains(body, `id="ai-panel-sessions"`) || !strings.Contains(body, `id="ai-panel-models"`) {
+		t.Fatal("两块面板都必须渲染出来")
 	}
 }
 
@@ -253,8 +452,9 @@ func TestAIProvidersSaveValidationRedirects(t *testing.T) {
 		t.Fatalf("校验失败应 303 回列表页，实际 %d（%s）", rec.Code, strings.TrimSpace(rec.Body.String()))
 	}
 	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/admin/ai/providers?") {
-		t.Fatalf("回跳地址应指向供应商页，实际 %q", loc)
+	// 合并后统一入口是 /admin/ai/sessions（模型是它的第一个标签）。
+	if !strings.HasPrefix(loc, "/admin/ai/sessions?") {
+		t.Fatalf("回跳地址应指向统一入口，实际 %q", loc)
 	}
 	if !strings.Contains(loc, "err=") {
 		t.Fatalf("回跳地址应带 err 提示，实际 %q", loc)

@@ -35,6 +35,12 @@ func (s *SessionService) SetChatPort(p ChatPort) { s.chat = p }
 
 // 发消息这条路的错误哨兵（取值同样是 i18n key，口径见 ai_session_service.go 头注释）。
 var (
+	// ErrUserRequired AI 调用的第一关卡：没有身份就不受理。
+	//
+	// 放在 service 而不是中间件：AI 的页面路由虽然都挂了登录态，但调用方不止一个
+	// （页面表单 / 会话键续写 / 将来的对外接口），把判据放在**唯一写入口**上，
+	// 新增调用方不会漏掉这一关。fail closed：UserID <= 0 一律拒。
+	ErrUserRequired = errors.New(aienums.ErrUserRequired)
 	// ErrSessionChatUnavailable 装配层没有接上对话能力。
 	ErrSessionChatUnavailable = errors.New(aienums.ErrSessionChatUnavailable)
 	// ErrSessionChatInputRequired 消息正文为空。
@@ -56,6 +62,11 @@ var (
 //
 // 失败语义：模型调用失败或回复为空时，user 事件已经落库（这是有意的），assistant 事件不写。
 func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageReq) (*aidto.SendMessageResult, error) {
+	// 第一关卡：没有身份就不准调用模型。放在最前面（比装配检查还前）——
+	// 「谁在调用」是这个功能的准入条件，不是事后的记账字段。
+	if req.UserID <= 0 {
+		return nil, ErrUserRequired
+	}
 	if s.chat == nil {
 		return nil, ErrSessionChatUnavailable
 	}
@@ -104,11 +115,15 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 	}
 
 	// ④ 打一次模型。
+	// 带上会话与发起人：调用流水（ai_call_log）靠这两个字段回答「谁在什么时候烧了谁家的 token」，
+	// 而它们只有这里知道（出站层只认识 provider/model 两个字符串）。
 	chatRes, err := s.chat.Chat(ctx, &aidto.ChatReq{
 		ProviderKey:     providerKey,
 		Model:           model,
 		Input:           buildChatInput(items, input),
 		MaxOutputTokens: req.MaxOutputTokens,
+		SessionID:       sessionID,
+		UserID:          req.UserID,
 	})
 	if err != nil {
 		return nil, err
@@ -122,11 +137,15 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 	}
 
 	// ⑤ 模型回复落成 assistant 事件。
+	// 带上 providerKey/model：这条回复是这两家产生的（529 起事件自带来源），
+	// 用量按供应商/模型拆开时靠的就是它，而不是会话头那份（换模型时会被覆盖）。
 	assistantRes, err := s.AppendEvent(ctx, aidto.AppendEventReq{
-		SessionID: sessionID,
-		Kind:      string(aienums.EventKindAssistant),
-		Content:   output,
-		UserID:    req.UserID,
+		SessionID:   sessionID,
+		Kind:        string(aienums.EventKindAssistant),
+		Content:     output,
+		UserID:      req.UserID,
+		ProviderKey: providerKey,
+		ModelID:     model,
 	})
 	if err != nil {
 		return nil, err

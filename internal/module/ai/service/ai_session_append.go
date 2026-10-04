@@ -22,6 +22,11 @@ import (
 //  4. **只有 append 一个写入口** —— 事件是 append-only 的，改写历史一律靠新事件表达
 //     （surface_op=replace，见 ai_session_compact.go），谁都不能 UPDATE/DELETE 已有事件。
 func (s *SessionService) AppendEvent(ctx context.Context, req aidto.AppendEventReq) (*aidto.AppendEventResult, error) {
+	// 第一关卡：没有身份就不写事件。会话是「谁在什么时候说了什么」的记录，
+	// 允许匿名写入等于允许往别人的审计流水里塞内容。
+	if req.UserID <= 0 {
+		return nil, ErrUserRequired
+	}
 	kind := strings.TrimSpace(req.Kind)
 	if !aienums.IsValidEventKind(aienums.EventKind(kind)) {
 		return nil, ErrEventKindInvalid
@@ -89,7 +94,14 @@ func (s *SessionService) appendInTx(ctx context.Context, req aidto.AppendEventRe
 			SurfaceOp:     string(aienums.SurfaceAppend),
 			Content:       content,
 			ContentTokens: tokens,
-			Meta:          aimodel.JSONMap(req.Meta),
+			// 这一条是谁写的：会话头那份 create_by 记的是「谁开的会话」，
+			// 一条会话可以被多个账号续写，审计要追到每一条的发起人（535 起落库）。
+			UserID: req.UserID,
+			// 同一次追加里带上「这一条是谁产生的」：用量按供应商/模型拆开时只能靠事件上的这两列
+			// （会话头那份会在换模型后被覆盖）。调用方不知道就留空，统计时归入「未记录」。
+			ProviderKey: req.ProviderKey,
+			ModelID:     req.ModelID,
+			Meta:        aimodel.JSONMap(req.Meta),
 		}); err != nil {
 			return err
 		}

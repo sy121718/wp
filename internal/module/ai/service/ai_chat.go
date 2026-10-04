@@ -4,7 +4,7 @@
 //
 //	buildProtocolRequest(ctx, provider, model, input, maxOutputTokens) → 组装一次出站请求，
 //	  内部走 applyProviderHeaders(config_data.headers) 与 Authorization: Bearer <明文密钥>；
-//	parseProtocolReply(protocol, body) → 按协议解析出文本（未实现的协议回 ErrProtocolUnsupported）。
+//	parseProtocolReply(protocol, body) → 按协议解析出文本与用量（未实现的协议回 ErrProtocolUnsupported）。
 //
 // 密钥口径（与 ai_service.go 头注释一致）：明文只在 buildProtocolRequest 内部解密后进请求头，
 // 本文件不接触明文，返回值也不含密钥。
@@ -14,6 +14,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"time"
 
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
@@ -40,6 +41,29 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 		return nil, ErrInvalidParam
 	}
 
+	// 调用流水从这一行开始记账：**成功与失败都要落一条** —— 只记成功的日志在排查故障时等于没有
+	// （「用户说模型报错了」时最需要的恰恰是失败那条）。用 defer 收口是为了不遗漏任何一个 return。
+	//
+	// 归属（session_id / user_id）来自请求，但由服务端填（见 aidto.ChatReq 的注释）；
+	// provider/model 记 trim 后的**实际出站值**，protocol 在取到供应商之后再补。
+	entry := &aimodel.AICallLogEntity{
+		SessionID:   req.SessionID,
+		UserID:      req.UserID,
+		ProviderKey: providerKey,
+		ModelID:     model,
+	}
+	started := time.Now()
+	defer func() {
+		entry.LatencyMs = time.Since(started).Milliseconds()
+		if err != nil {
+			entry.Status = string(aienums.CallStatusError)
+			entry.ErrorKey = callErrorKey(err)
+		} else {
+			entry.Status = string(aienums.CallStatusOK)
+		}
+		s.logCallAsync(ctx, entry)
+	}()
+
 	provider, ferr := s.m.FindByKey(ctx, providerKey)
 	if ferr != nil {
 		return nil, ferr
@@ -47,6 +71,7 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 	if provider == nil || normalizeStatus(provider.Status) != aienums.StatusEnabled {
 		return nil, ErrProviderNotFound
 	}
+	entry.Protocol = provider.Protocol
 
 	// 上限：调用方给了就用它；没给按默认值，但不超过目录里该模型的 max_output_tokens
 	// （目录查不到就用默认值）—— 目录里的 0 表示「未知」，不参与封顶。
@@ -80,15 +105,26 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 		log.Error(rerr, "对话失败：读取响应中断")
 		return nil, ErrInternal
 	}
-	output, perr := parseProtocolReply(provider.Protocol, body)
+	output, usage, perr := parseProtocolReply(provider.Protocol, body)
 	if perr != nil {
 		return nil, perr
 	}
+	// 用量只记上游**上报**的值：这家没报就留 0 + UsageReported=false，
+	// 不在这里估算补齐（估算值混进流水会被当成真用量）。
+	entry.InputTokens = usage.InputTokens
+	entry.OutputTokens = usage.OutputTokens
+	entry.TotalTokens = usage.TotalTokens
+	entry.UsageReported = usage.Reported
+
 	return &aidto.ChatResult{
-		ProviderKey: provider.ProviderKey,
-		Model:       model,
-		Output:      output,
-		Protocol:    provider.Protocol,
+		ProviderKey:   provider.ProviderKey,
+		Model:         model,
+		Output:        output,
+		Protocol:      provider.Protocol,
+		InputTokens:   usage.InputTokens,
+		OutputTokens:  usage.OutputTokens,
+		TotalTokens:   usage.TotalTokens,
+		UsageReported: usage.Reported,
 	}, nil
 }
 

@@ -13,11 +13,8 @@
 package mailhttp
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,13 +22,15 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/web/shell"
-	"go_wp/pkg/logger"
 )
 
 // maxAutomationNodes 表单最多支持多少个节点行。
 //
 // 有上限不是偷懒：表单式编辑器一旦超过十几行就不好用了 —— 那正是该上拖拽的信号。
 const maxAutomationNodes = 12
+
+// mailAutomationPageSize 流程列表每页条数（运行记录页用自己的 mailAutomationRunsPageSize）。
+const mailAutomationPageSize = 50
 
 // mailTr 取词函数签名（shell.TranslateFor(c) 的形态）。
 type mailTr func(key, fallback string) string
@@ -67,7 +66,11 @@ func nodeTypeOptions(tr mailTr) []nodeTypeOption {
 	return opts
 }
 
-// MailAutomationPage 流程列表 + 实例列表。
+// MailAutomationPage 流程列表（只回答「有哪些流程」）。
+//
+// 运行实例搬到 /admin/mail/automation/runs：流程是「配置」，实例是「排障」，
+// 两者读的人不同、看的时机不同（配流程时不需要每次都扫一遍实例列表），
+// 挤在一页时页面下半部常年滚动着几十条与当前操作无关的记录。
 func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	tr := shell.TranslateFor(c)
@@ -75,15 +78,15 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	if page <= 0 {
 		page = 1
 	}
-	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailMarketingPageSize})
+	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailAutomationPageSize})
 	data := gin.H{
-		"title":     mailLabel(tr, mailenums.PageTitleAutomation),
-		"Page":      page,
-		"FilterID":  c.Query("automationId"),
-		"FilterRun": c.Query("runStatus"),
+		"title": mailLabel(tr, mailenums.PageTitleAutomation),
+		"Page":  page,
 		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
 		"Err": mailPageErr(c),
 		"Ok":  mailPageOk(c),
+		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。
+		"Done": mailPageDone(c),
 	}
 	if err != nil {
 		// 取数失败：归口文案 + 空列表。
@@ -106,72 +109,155 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	}
 	data["Automations"] = autoRows
 	data["AutoTotal"] = automations.Total
-
-	// 实例列表（可按流程 / 状态筛）：它是排障入口。
-	runs, rerr := h.mail.ListAutomationRuns(ctx, &maildto.AutomationRunListReq{
-		AutomationID: shell.ParseUint(c.Query("automationId")),
-		Status:       c.Query("runStatus"),
-		Page:         1,
-		PageSize:     mailMarketingPageSize,
-	})
-	if rerr == nil {
-		// 运行文案（error_message）落库时是「key + 参数」编码，到出口才按语言还原。
-		mailRunTexts(tr, runs.Items)
-		data["Runs"] = runs.Items
-		data["RunTotal"] = runs.Total
-		data["Counts"] = runs.Counts
-		data["CountRunning"] = runs.Counts["running"]
-		data["CountWaiting"] = runs.Counts["waiting"]
-		data["CountCompleted"] = runs.Counts["completed"]
-		data["CountFailed"] = runs.Counts["failed"]
-		data["CountStopped"] = runs.Counts["stopped"]
-	}
 	c.HTML(http.StatusOK, "admin/mail/mail_automation.html", shell.Prepare(c, data))
 }
 
+// automationFormValues 编辑页表单当前值。
+//
+// 单独一份而不是直接读 *maildto.AutomationItem：步骤动作（增 / 删 / 移）只回显不保存，
+// 那种请求里没有 item（新建流程时更是一个都没有），但**用户刚填的名称 / 触发方式 / 说明
+// 必须原样留在页面上** —— 点一下「添加一步」就清空表单是最让人恼火的一种「功能」。
+type automationFormValues struct {
+	ID          uint64
+	IsNew       bool
+	Name        string
+	Description string
+	Trigger     string
+	Entry       string
+}
+
+// formValuesFromItem 编辑既有流程时的表单初值。
+func formValuesFromItem(item *maildto.AutomationItem) automationFormValues {
+	entry := strings.TrimSpace(item.Entry)
+	if entry == "" {
+		entry = automationEntryKeyDefault
+	}
+	return automationFormValues{
+		ID:          item.ID,
+		Name:        item.Name,
+		Description: item.Description,
+		Trigger:     item.TriggerType,
+		Entry:       entry,
+	}
+}
+
+// formValuesFromPost 动作回显时取自本次提交（不落库）。
+func formValuesFromPost(c *gin.Context) automationFormValues {
+	id := shell.ParseUint(c.PostForm("id"))
+	trigger := strings.TrimSpace(c.PostForm("trigger_type"))
+	if trigger == "" {
+		trigger = "manual"
+	}
+	entry := strings.TrimSpace(c.PostForm("entry"))
+	if entry == "" {
+		entry = automationEntryKeyDefault
+	}
+	return automationFormValues{
+		ID:          id,
+		IsNew:       id == 0,
+		Name:        strings.TrimSpace(c.PostForm("name")),
+		Description: strings.TrimSpace(c.PostForm("description")),
+		Trigger:     trigger,
+		Entry:       entry,
+	}
+}
+
 // MailAutomationEdit 流程编辑页（?id=N 编辑，缺省为新建）。
+//
+// 页面只讲「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框已从界面消失
+// （用户原话「新建自动化不知道是个什么东西完全没法用」），换算在 mail_automation_form.go。
 func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
-	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
 	id := shell.ParseUint(c.Query("id"))
+	if id == 0 {
+		h.renderAutomationForm(c, automationFormValues{IsNew: true, Trigger: "manual", Entry: automationEntryKeyDefault}, []automationStep{{}}, "")
+		return
+	}
+	item, err := h.mail.GetAutomation(c.Request.Context(), id)
+	if err != nil {
+		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
+		return
+	}
+	if steps, ok := automationStepsFromGraph(item); ok {
+		h.renderAutomationForm(c, formValuesFromItem(item), steps, "")
+		return
+	}
+	// 表单表达不了的图（环 / 非 trigger 入口 / 有节点走不到 / 多条件分支）：只读兜底 ——
+	// 原定义原样留着，用户改不了它，但也不会在下一次保存时被静默改坏。
+	h.renderAutomationFallback(c, item)
+}
+
+// renderAutomationForm 渲染步骤表单（新建 / 编辑 / 动作回显 / 校验失败回显共用）。
+//
+// errText 非空时优先于 ?err= —— 表单校验失败走「200 回显」而不是 302：
+// 用户填的内容（尤其是他刚改过的步骤类型）必须留在页面上。否则「改类型 → 保存 →
+// 报错 → 页面翻回旧类型 → 再报错」就是死循环，而这条链路上用户没有任何出路。
+func (h *mailPageHandle) renderAutomationForm(c *gin.Context, form automationFormValues, steps []automationStep, errText string) {
+	tr := shell.TranslateFor(c)
+	steps = trimAutomationSteps(steps)
+	err := strings.TrimSpace(errText)
+	if err == "" {
+		err = mailPageErr(c)
+	}
 	data := gin.H{
-		"title":    mailLabel(tr, mailenums.PageTitleAutomationEdit),
-		"IsNew":    id == 0,
-		"MaxRow":   maxAutomationNodes,
-		"Types":    nodeTypeOptions(tr),
-		"Triggers": triggerOptions(tr, ""),
-		"Rows":     []gin.H{},
+		"title":        mailLabel(tr, mailenums.PageTitleAutomationEdit),
+		"Form":         form,
+		"IsNew":        form.IsNew,
+		"Rows":         automationStepRows(tr, steps),
+		"Fallback":     false,
+		"FallbackRows": []gin.H{},
+		"Types":        nodeTypeOptions(tr),
+		"Triggers":     triggerOptions(tr, form.Trigger),
+		"CanAddStep":   len(steps) < maxAutomationNodes,
 		// 同列表页：回执文案过白名单（表单校验文案也在候选里，见 mail_err.go）。
-		"Err": mailPageErr(c),
+		"Err": err,
 		"Ok":  mailPageOk(c),
 	}
-	if id > 0 {
-		item, err := h.mail.GetAutomation(ctx, id)
-		if err != nil {
-			c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
-			return
-		}
-		data["A"] = item
-		rows := automationFormRows(tr, item)
-		// 补足空行：Jet 没有 C 风格 for，用一个固定长度的切片当行模板。
-		// 空行在提交时被跳过，所以多给几行是无害的。
-		for len(rows) < maxAutomationNodes {
-			rows = append(rows, emptyAutomationRow(tr, len(rows)+1))
-		}
-		data["Rows"] = rows
-		data["Entry"] = item.Entry
-		data["Triggers"] = triggerOptions(tr, item.TriggerType)
-	}
-	if all, ok := data["Rows"].([]gin.H); ok && len(all) < maxAutomationNodes {
-		for len(all) < maxAutomationNodes {
-			all = append(all, emptyAutomationRow(tr, len(all)+1))
-		}
-		data["Rows"] = all
-	}
-	// 发信节点要选模板：把模板列表给页面（省得用户手敲 key）。
-	templates, _ := h.mail.ListTemplates(ctx, "")
+	// 发信步骤要选模板：把模板列表给页面（省得用户手敲 key）。
+	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
 	data["Templates"] = templates
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", shell.Prepare(c, data))
+}
+
+// renderAutomationFallback 表单表达不了的流程：只读展示原图 + 去画布的入口。
+//
+// 这里**不给可提交的步骤表单**：那份表单渲染出来是空的（还原失败），用户一保存就把
+// 还原不出来的节点整段删掉 —— 旧实现正是如此。宁可让他去画布改。
+func (h *mailPageHandle) renderAutomationFallback(c *gin.Context, item *maildto.AutomationItem) {
+	tr := shell.TranslateFor(c)
+	rows := make([]gin.H, 0, len(item.Nodes))
+	for _, n := range item.Nodes {
+		rows = append(rows, gin.H{
+			"Key": n.Key, "Type": nodeTypeLabelOf(tr, n.Type),
+			"Next": n.Next, "Yes": n.Yes, "No": n.No,
+		})
+	}
+	form := formValuesFromItem(item)
+	data := gin.H{
+		"title":        mailLabel(tr, mailenums.PageTitleAutomationEdit),
+		"Form":         form,
+		"IsNew":        false,
+		"Rows":         []gin.H{},
+		"Fallback":     true,
+		"FallbackRows": rows,
+		"Types":        nodeTypeOptions(tr),
+		"Triggers":     triggerOptions(tr, form.Trigger),
+		"CanAddStep":   false,
+		"Err":          mailPageErr(c),
+		"Ok":           mailPageOk(c),
+	}
+	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
+	data["Templates"] = templates
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", shell.Prepare(c, data))
+}
+
+// nodeTypeLabelOf 节点类型 → 当前语言标签；未知类型原样返回（兜底表要能显示真实取值）。
+func nodeTypeLabelOf(tr mailTr, value string) string {
+	for _, o := range mailenums.AutomationNodeTypes {
+		if o.Value == value {
+			return mailLabel(tr, o.Label)
+		}
+	}
+	return value
 }
 
 // automationTriggerLabels 触发方式的取值与文案（key + 中文兜底的真源在 mailenums）。
@@ -209,80 +295,69 @@ func triggerOptions(tr mailTr, selected string) []gin.H {
 	return opts
 }
 
-// automationRowOptions 为某一行生成类型下拉的选项（带选中态）。
-//
-// 为什么在 Go 里生成而不是模板里嵌套 range：Jet 的内层 range 拿不到外层变量（行本身），
-// 没法判断「这一行选的是哪个类型」。与其在模板里绕，不如把选项摊平交给模板。
-func automationRowOptions(tr mailTr, selected string) []gin.H {
-	nodeTypes := nodeTypeOptions(tr)
-	opts := make([]gin.H, 0, len(nodeTypes)+1)
-	opts = append(opts, gin.H{
-		"Value": "", "Label": mailLabel(tr, mailenums.AutomationRowNone), "Selected": selected == "",
-	})
-	for _, o := range nodeTypes {
-		opts = append(opts, gin.H{"Value": o.Value, "Label": o.Label, "Selected": o.Value == selected})
-	}
-	return opts
-}
-
-// emptyAutomationRow 一行空白表单行。
-func emptyAutomationRow(tr mailTr, index int) gin.H {
-	return gin.H{
-		"Index": index, "Key": "", "Type": "", "Param": "",
-		"Next": "", "Yes": "", "No": "", "Options": automationRowOptions(tr, ""),
-	}
-}
-
-// automationFormRows 把图定义摊成表单行（原样回填，参数按类型还原成文本）。
-func automationFormRows(tr mailTr, item *maildto.AutomationItem) []gin.H {
-	rows := make([]gin.H, 0, len(item.Nodes))
-	for i, n := range item.Nodes {
-		row := gin.H{
-			"Index":   i + 1,
-			"Key":     n.Key,
-			"Type":    n.Type,
-			"Options": automationRowOptions(tr, n.Type),
-			"Next":    n.Next,
-			"Yes":     n.Yes,
-			"No":      n.No,
-			"Param":   "",
-		}
-		switch n.Type {
-		case "delay":
-			if v, ok := n.Params["minutes"]; ok {
-				row["Param"] = fmt.Sprintf("%v", v)
-			}
-		case "email":
-			row["Param"] = strOf(n.Params["template_key"])
-		case "tag":
-			row["Param"] = strings.Join(strSlice(n.Params["add"]), ", ")
-		case "branch":
-			row["Param"] = strings.Join(strSlice(n.Params["conditions"]), ", ")
-		}
-		rows = append(rows, row)
-	}
-	return rows
-}
-
 // MailAutomationSave 保存流程（原生表单 POST → 302 回编辑页）。
+//
+// 同一个地址承载两种请求：步骤动作（增 / 删 / 上移 / 下移）与真正保存。动作优先判，
+// 它不落库、只回显 —— 这样没有 JS 也能排步骤。
 func (h *mailPageHandle) MailAutomationSave(c *gin.Context) {
-	req, err := parseAutomationForm(c)
-	if err != nil {
-		// 表单校验文案由本页组装（「第 3 行：…」），是运营照着改的依据：
-		// 走 mailFormErrText 原样回带（判据见 mail_err.go 里对该函数的说明），不进白名单。
-		h.redirectAutomationEdit(c, shell.ParseUint(c.PostForm("id")), mailFormErrText(err))
+	tr := shell.TranslateFor(c)
+	id := shell.ParseUint(c.PostForm("id"))
+	steps := readAutomationSteps(c)
+
+	if act, ok := stepActionOf(c); ok {
+		h.renderAutomationForm(c, formValuesFromPost(c), applyStepAction(steps, act), "")
 		return
 	}
-	item, err := h.mail.SaveAutomation(c.Request.Context(), req)
+
+	form := formValuesFromPost(c)
+	if form.Name == "" {
+		h.renderAutomationForm(c, form, steps, mailLabel(tr, mailenums.AutomationFormErrNameRequired))
+		return
+	}
+	raw, err := buildAutomationDefinition(tr, c.PostForm("entry"), steps, h.automationNodePositions(c, id))
+	if err != nil {
+		// 表单校验文案由本页组装（「第 3 步：…」），是运营照着改的依据：
+		// 走 mailFormErrText 原样回带（判据见 mail_err.go 里对该函数的说明），不进白名单。
+		h.renderAutomationForm(c, form, steps, mailFormErrText(err))
+		return
+	}
+	item, err := h.mail.SaveAutomation(c.Request.Context(), &maildto.SaveAutomationReq{
+		ID:          id,
+		Name:        form.Name,
+		Description: form.Description,
+		TriggerType: form.Trigger,
+		Definition:  raw,
+	})
 	if err != nil {
 		// 图校验失败（有环 / 悬空边 / 不可达 / 形状不对）走到这里，错误里带定位信息；
 		// 但也可能是数据库错误 —— 所以必须过白名单：命中 → 翻成中文回带，未命中 → 归口文案 + 日志。
-		h.redirectAutomationEdit(c, shell.ParseUint(c.PostForm("id")), mailErrPageText(c, err))
+		h.redirectAutomationEdit(c, id, mailErrPageText(c, err))
 		return
 	}
 	// 与 mail_err.go 的 mailCountedNoticeTemplates[0] 同形（数字归一后可判定）。
 	ok := fmt.Sprintf(mailCountedNoticeTemplates[0], item.Version)
 	c.Redirect(http.StatusFound, fmt.Sprintf("/admin/mail/automation/edit?id=%d&ok=%s", item.ID, urlQueryEscape(ok)))
+}
+
+// automationNodePositions 取原图里各节点的画布坐标（key → X / Y）。
+//
+// 保存只重排连边，不该把用户摆好的画布抹平：丢掉坐标之后，画布页上所有节点会落回原点。
+// 拿不到原图（新建流程 / 读失败）时返回空表 —— 位置是装饰，不能因为它挡住保存。
+func (h *mailPageHandle) automationNodePositions(c *gin.Context, id uint64) map[string][2]float64 {
+	pos := map[string][2]float64{}
+	if id == 0 {
+		return pos
+	}
+	item, err := h.mail.GetAutomation(c.Request.Context(), id)
+	if err != nil {
+		return pos
+	}
+	for _, n := range item.Nodes {
+		if n.Key != "" {
+			pos[n.Key] = [2]float64{n.X, n.Y}
+		}
+	}
+	return pos
 }
 
 func (h *mailPageHandle) redirectAutomationEdit(c *gin.Context, id uint64, msg string) {
@@ -313,6 +388,39 @@ func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape(mailAutomationDeletedText))
 }
 
+// mailAutomationBackParams 批量动作回跳时带回的列表状态（表单字段名 → URL 参数名）。
+// 流程列表没有筛选，只带回页码 —— 批量删完被弹回第 1 页会让人重新翻回去。
+var mailAutomationBackParams = [][2]string{{"returnPage", "page"}}
+
+// MailAutomationsBulkDelete 批量删除自动化流程（POST /admin/mail/automations/bulk-delete）。
+//
+// 单条路径 = DeleteAutomation，权限点复用 /api/mail/automation/delete（不新增权限点、不写迁移）：
+// 逐条走同一条单条路径，失败只计跳过、不中断整批 —— 批量操作不能因为一条被服务端拒绝
+// 就整批回滚（那会让人以为「一条都没做」然后反复重试）。
+func (h *mailPageHandle) MailAutomationsBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/automation", mailAutomationBackParams, "", mailBulkIDsText(c, berr)))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, raw := range ids {
+		id := shell.ParseUint(raw)
+		if id == 0 {
+			skipped++
+			continue
+		}
+		if err := h.mail.DeleteAutomation(c.Request.Context(), id); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	done, warn := mailBulkOutcome("删除", "自动化流程", deleted, skipped)
+	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/automation", mailAutomationBackParams, done, warn))
+}
+
 // MailAutomationRunDetail 实例排障详情页（「这个人卡在哪一步、为什么」）。
 //
 // 缺 id 前置判定见 MailCampaignPage 的说明（审计 P0）：改前「没带 id」与「id 查不到」
@@ -320,12 +428,12 @@ func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 	id, hasID := mailQueryID(c)
 	if !hasID {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailRunIDRequiredText))
+		c.Redirect(http.StatusFound, "/admin/mail/automation/runs?err="+urlQueryEscape(mailRunIDRequiredText))
 		return
 	}
 	detail, err := h.mail.AutomationRunDetail(c.Request.Context(), id)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
+		c.Redirect(http.StatusFound, "/admin/mail/automation/runs?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	// Explain / error_message / 时间线 detail 都是写侧落下的运行文案编码，出口按语言还原。
@@ -338,103 +446,17 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 }
 
 // MailAutomationTick 手工补投一轮延时实例（排障：主路径失效时立刻补）。
+//
+// 按钮在运行记录页上（那是看实例的地方），补投结果也回那一页。
 func (h *mailPageHandle) MailAutomationTick(c *gin.Context) {
 	n, err := h.mail.EnqueueDueRuns(c.Request.Context(), 500)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail/automation?err="+urlQueryEscape(mailErrPageText(c, err)))
+		c.Redirect(http.StatusFound, "/admin/mail/automation/runs?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
 	// 与 mail_err.go 的 mailCountedNoticeTemplates[1] 同形（数字归一后可判定）。
 	ok := fmt.Sprintf(mailCountedNoticeTemplates[1], n)
-	c.Redirect(http.StatusFound, "/admin/mail/automation?ok="+urlQueryEscape(ok))
-}
-
-// parseAutomationForm 把表单行组装成图定义。
-//
-// 校验做在**组装这一层**：哪一行、哪个字段错了要直接说出来。
-// 等到 SaveAutomation 再报错时，用户已经丢失了「第 3 行」这个上下文。
-func parseAutomationForm(c *gin.Context) (*maildto.SaveAutomationReq, error) {
-	name := strings.TrimSpace(c.PostForm("name"))
-	if name == "" {
-		return nil, errors.New("流程名称不能为空")
-	}
-	trigger := strings.TrimSpace(c.PostForm("trigger_type"))
-	if trigger == "" {
-		trigger = "manual"
-	}
-	entry := strings.TrimSpace(c.PostForm("entry"))
-
-	nodes := make([]any, 0, maxAutomationNodes)
-	for i := 1; i <= maxAutomationNodes; i++ {
-		idx := strconv.Itoa(i)
-		key := strings.TrimSpace(c.PostForm("node_key_" + idx))
-		typ := strings.TrimSpace(c.PostForm("node_type_" + idx))
-		if key == "" && typ == "" {
-			continue // 空行跳过：表单给足行数，用户只填需要的
-		}
-		if key == "" || typ == "" {
-			return nil, fmt.Errorf("第 %d 行：节点标识与类型都要填", i)
-		}
-		n := map[string]any{"key": key, "type": typ}
-		param := strings.TrimSpace(c.PostForm("param_" + idx))
-		params := map[string]any{}
-		switch typ {
-		case "delay":
-			mins, cerr := strconv.Atoi(param)
-			if cerr != nil || mins <= 0 {
-				return nil, fmt.Errorf("第 %d 行：等待分钟数要填正整数", i)
-			}
-			params["minutes"] = mins
-		case "email":
-			if param == "" {
-				return nil, fmt.Errorf("第 %d 行：发信节点要选邮件模板", i)
-			}
-			params["template_key"] = param
-		case "branch":
-			conds := splitFormList(param)
-			if len(conds) == 0 {
-				return nil, fmt.Errorf("第 %d 行：条件分支至少填一个条件", i)
-			}
-			params["conditions"] = conds
-		case "tag":
-			tags := splitFormList(param)
-			if len(tags) == 0 {
-				return nil, fmt.Errorf("第 %d 行：标签节点要填要加的标签", i)
-			}
-			params["add"] = tags
-		}
-		if len(params) > 0 {
-			n["params"] = params
-		}
-		if v := strings.TrimSpace(c.PostForm("next_" + idx)); v != "" {
-			n["next"] = v
-		}
-		if v := strings.TrimSpace(c.PostForm("yes_" + idx)); v != "" {
-			n["yes"] = v
-		}
-		if v := strings.TrimSpace(c.PostForm("no_" + idx)); v != "" {
-			n["no"] = v
-		}
-		nodes = append(nodes, n)
-	}
-	if len(nodes) == 0 {
-		return nil, errors.New("至少要填一个节点")
-	}
-	raw, merr := json.Marshal(map[string]any{"entry": entry, "nodes": nodes})
-	if merr != nil {
-		// 理论上不可达（节点只含字符串 / 整数 / 切片），但这一层的返回值会经
-		// mailFormErrText 原样进重定向 —— 所以不把 Go 的原文交出去，换成一句可行动的文案，
-		// 原文只进日志。判据与 mailErrPageText 同源：能进响应的只有受控文案。
-		logger.Scene(mailErrScene).Error(merr, "邮箱自动化表单组装失败")
-		return nil, errors.New("流程定义组装失败，请检查各行的填写内容后重试")
-	}
-	return &maildto.SaveAutomationReq{
-		ID:          shell.ParseUint(c.PostForm("id")),
-		Name:        name,
-		Description: strings.TrimSpace(c.PostForm("description")),
-		TriggerType: trigger,
-		Definition:  raw,
-	}, nil
+	c.Redirect(http.StatusFound, "/admin/mail/automation/runs?ok="+urlQueryEscape(ok))
 }
 
 // splitFormList 逗号 / 中文逗号 / 顿号分隔 → 去空白去空项。

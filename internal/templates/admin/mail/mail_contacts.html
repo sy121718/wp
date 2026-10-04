@@ -1,0 +1,396 @@
+{* admin/mail/mail_contacts.html — 联系人（issue #37 拆页） *}
+{* 一页一职能（评审规则 admin-ui-logic §2）：本页只回答「有哪些联系人、同意状态如何」。
+    拆页前的「邮件营销」页把联系人与群发活动塞在一起，两张表各带自己的批量动作与分页 ——
+    首屏永远看不全，想改一个联系人的同意状态要滚过整张活动表。 *}
+{* 版式遵循后台页面骨架（docs/02-H-admin-page-shell.md §2）与评审规则（admin-ui-logic §7）：
+     · 正文零说明文字 —— 导入格式 / 状态语义 / 同意证据按主题就近进 .help 悬浮；
+     · 主行动（新建 / 导入联系人）进 .page-head，**用抽屉而不是 .section-fold 折叠**：
+       建立名单有两个入口（手工加一条 / 批量导入），藏在折叠里等于把首屏第一个任务做成两步；
+     · 筛选并入列表卡的 .filter-bar（.filter-fields 横向紧凑排列）；
+     · 列表是标准 .data-table + 首列勾选 + 末列 .col-actions，行内表单移到表格外用 form="<id>" 关联；
+     · 抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 data-drawer-open 打开对应模板。 *}
+{{extends "../layout.html"}}
+{{import "../partials/bulk_bar.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
+{* 分页键由 handler 注入在顶层（拆页后每页一张表，不再有 Contacts* / Campaigns* 前缀）。
+    单页或空数据时这个键不存在 —— 取到 nil 不中断渲染，分页片段里的 if 自然跳过。 *}
+{{contactsLinks := .["PaginationLinks"]}}
+{{contactsInfo := .["PaginationInfo"]}}
+{{canImportContact := isset(.PermSet["mail:contact_import"])}}
+{{canUpdateContact := isset(.PermSet["mail:contact_status"])}}
+{* CRUD 与标签各按自己的权限点显隐：能改状态的人不一定能删人，能删人的人不一定能改标签。 *}
+{{canSaveContact := isset(.PermSet["mail:contact_save"])}}
+{{canDeleteContact := isset(.PermSet["mail:contact_delete"])}}
+{{canTagContact := isset(.PermSet["mail:contact_tag"])}}
+{* 标签候选来自全库（handler 经 ListContactTags 注入）：只做输入提示，不限制自由输入。
+    直接手打标签最容易打出近义词（vip / VIP / 贵宾）—— 打岔一个，按标签圈人群就漏人。 *}
+{{tagOptions := .["TagOptions"]}}
+<div class="stack">
+  <header class="page-head">
+    <div class="page-head-main">
+      <div class="page-title-row">
+        <h1>{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}</h1>
+        <span class="help">
+          <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.mail.marketing.help.label", "查看说明") }}" aria-expanded="false">?</button>
+          <span class="help-pop" role="tooltip">
+            {{ .["t"]("admin.mail.marketing.hint.consent.lead", "群发") }}<strong>{{ .["t"]("admin.mail.marketing.hint.consent.strong", "只发给「已订阅」的人") }}</strong>{{ .["t"]("admin.mail.marketing.hint.consent.mid", "。未确认同意的联系人（待确认）不会被发送 —— 未经同意就群发，收件方会标记垃圾邮件，发信域名的声誉会被打烂，之后连注册验证邮件都进垃圾箱。所以导入时问的「这批人是否已同意」不是走形式，而是") }}<strong>{{ .["t"]("admin.mail.marketing.hint.consent.strong_trace", "留痕") }}</strong>{{ .["t"]("admin.mail.marketing.hint.consent.tail", "：谁在什么时候声明过什么。") }}<br>
+            {{ .["t"]("admin.mail.marketing.suppression.lead", "退订 / 投诉 / 硬退信会") }}<strong>{{ .["t"]("admin.mail.marketing.suppression.strong", "同时写入抑制名单") }}</strong>{{ .["t"]("admin.mail.marketing.suppression.tail", " —— 后台点了退订却还能被发出去，比不点退订更糟。") }}
+          </span>
+        </span>
+      </div>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-sm btn-ghost" href="/admin/mail/campaigns">{{ .["t"]("admin.mail.marketing.campaigns.heading", "群发活动") }}</a>
+      {{if canSaveContact}}
+      <button type="button" class="btn btn-primary" data-drawer-open="#tpl-contact-save" data-drawer-title="{{ .["t"]("admin.mail.marketing.contact_form.new", "新建联系人") }}">＋ {{ .["t"]("admin.mail.marketing.contact_form.new", "新建联系人") }}</button>
+      {{end}}
+      {{if canImportContact}}
+      <button type="button" class="btn btn-primary" data-drawer-open="#tpl-contact-import" data-drawer-title="{{ .["t"]("admin.mail.marketing.import.heading", "导入联系人") }}">＋ {{ .["t"]("admin.mail.marketing.import.heading", "导入联系人") }}</button>
+      {{end}}
+    </div>
+  </header>
+
+  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），
+     直接比较会让整页在那一行中断 —— HTTP 仍是 200，之后的列表整块消失。 *}
+  {{if isset(.Err)}}{{if .Err != ""}}
+  <p class="badge badge-warning" role="alert">{{ .["t"]("admin.mail.marketing.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+  {{end}}{{end}}
+  {{if isset(.Ok)}}{{if .Ok != ""}}
+  <p class="badge badge-success" role="status">{{.Ok}}</p>
+  {{end}}{{end}}
+  {* Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。 *}
+  {{if isset(.Done)}}{{if .Done != ""}}
+  <p class="badge badge-info" role="status">{{.Done}}</p>
+  {{end}}{{end}}
+
+  <section class="card list-card">
+    <div class="card-header">
+      <span class="card-title">{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}{{ .["t"]("admin.mail.marketing.contacts.total_lead", "（共 ") }}{{.ContactTotal}}{{ .["t"]("admin.mail.marketing.contacts.total_tail", " 人）") }}</span>
+      <span class="help">
+        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.mail.marketing.import.help.label", "查看说明") }}" aria-expanded="false">?</button>
+        <span class="help-pop" role="tooltip">
+          {{ .["t"]("admin.mail.marketing.import.hint", "导入支持纯文本（每行一个邮箱）或 CSV（表头识别 email / name / tags 三列）。退订过的地址会被自动跳过（导进来也发不出去）；格式非法的行会逐行报出，不影响其余行。") }}<br>
+          {{ .["t"]("admin.mail.marketing.status.hint", "待确认 = 没有同意证据，不会被群发；已订阅 = 可以发；已退订 / 硬退信 / 投诉 = 已进抑制名单。") }}
+        </span>
+      </span>
+    </div>
+
+    <form class="filter-bar" method="get" action="/admin/mail/contacts">
+      <div class="filter-fields">
+        <div class="filter-field">
+          <label for="mk-keyword">{{ .["t"]("admin.mail.marketing.filter.keyword", "关键词") }}</label>
+          <input class="form-input filter-search" id="mk-keyword" type="text" name="keyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}" placeholder="{{ .["t"]("admin.mail.marketing.ph.keyword", "邮箱或姓名") }}">
+        </div>
+        <div class="filter-field">
+          <label for="mk-status">{{ .["t"]("admin.mail.marketing.filter.status", "状态") }}</label>
+          <select class="form-select" id="mk-status" name="status">
+            <option value="">{{ .["t"]("admin.mail.marketing.status.all", "全部状态") }}</option>
+            <option value="pending"{{if .Status == "pending"}} selected{{end}}>{{ .["t"]("admin.mail.marketing.status.pending", "待确认") }}</option>
+            <option value="subscribed"{{if .Status == "subscribed"}} selected{{end}}>{{ .["t"]("admin.mail.marketing.status.subscribed", "已订阅") }}</option>
+            <option value="unsubscribed"{{if .Status == "unsubscribed"}} selected{{end}}>{{ .["t"]("admin.mail.marketing.status.unsubscribed", "已退订") }}</option>
+            <option value="bounced"{{if .Status == "bounced"}} selected{{end}}>{{ .["t"]("admin.mail.marketing.status.bounced", "硬退信") }}</option>
+            <option value="complained"{{if .Status == "complained"}} selected{{end}}>{{ .["t"]("admin.mail.marketing.status.complained", "投诉") }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="mk-tags">{{ .["t"]("admin.mail.marketing.filter.tags", "标签") }}</label>
+          <input class="form-input filter-search" id="mk-tags" type="text" name="tags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}" list="mk-tag-options" placeholder="{{ .["t"]("admin.mail.marketing.ph.tags", "例如 vip（多个用逗号分隔）") }}">
+          {* 候选来自全库去重标签：datalist 只提示已有值，不拦自由输入。
+              用 isset 判存在 —— 缺这个键时 range 会中断整页渲染（探针与失败分支都不带它）。 *}
+          {{if isset(.TagOptions)}}
+          <datalist id="mk-tag-options">{{range _, tg := tagOptions}}<option value="{{tg}}"></option>{{end}}</datalist>
+          {{end}}
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.mail.marketing.action.filter", "查询") }}</button>
+          <a class="btn btn-sm btn-ghost" href="/admin/mail/contacts">{{ .["t"]("admin.common.action.reset", "重置") }}</a>
+        </div>
+      </div>
+    </form>
+
+    {* 批量动作与勾选框同属一个 form（<form> 包 <table> 合法）；admin.js 按「最近的 form」定作用域。
+        隐藏域把当前筛选与页码带回：批量改完被弹回未筛选的第一页，等于让人重新筛一遍。
+        字段名加 return 前缀 —— 表单里的 status 是**目标状态**，与列表筛选参数同名。 *}
+    <form method="post" action="/admin/mail/contacts/bulk-status">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
+      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
+      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
+      <input type="hidden" name="returnPage" value="{{.Page}}">
+      {* 批量条只在有数据时渲染：空表没有可勾选的行。
+          三个批量动作的权限各自独立 —— 只给「打标签」权限的人也该看得到这条，所以条件写「任一为真」。 *}
+      {{if canUpdateContact || canDeleteContact || canTagContact}}{{if len(.Contacts) > 0}}
+      {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
+        {{if canUpdateContact}}
+        <select class="form-select" name="status" aria-label="{{ .["t"]("admin.mail.marketing.contact_status.target", "目标状态") }}" required>
+          <option value="">{{ .["t"]("admin.mail.marketing.contact_status.pick", "（选择目标状态）") }}</option>
+          <option value="subscribed">{{ .["t"]("admin.mail.marketing.contact_status.subscribe", "订阅") }}</option>
+          <option value="pending">{{ .["t"]("admin.mail.marketing.status.pending", "待确认") }}</option>
+          <option value="unsubscribed">{{ .["t"]("admin.mail.marketing.contact_status.unsubscribe", "退订") }}</option>
+        </select>
+        {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_status_submit", "批量改状态"), cls="btn btn-sm", confirm=tr("admin.mail.marketing.bulk_status_confirm", "把选中的联系人改为所选状态？改成「退订」会同时写入抑制名单，之后不会再被群发到。"))}}
+        {{end}}
+        {{if canDeleteContact}}
+        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。"), formaction="/admin/mail/contacts/bulk-delete", danger=true)}}
+        {{end}}
+        {* 批量打标签与「批量改状态」共用同一个 form 与同一批勾选框：抽屉在列表外，
+            里面拿不到被勾选的 id，把它们搬过去要么新增业务 JS 搬运 id、要么让人重抄一遍名单。
+            改标签按钮用 bulk_bar 的 formaction 契约改投 /admin/mail/contacts/bulk-tag。 *}
+        {{if canTagContact}}
+        <input class="form-input" type="text" name="add" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.add", "加上标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.add.ph", "加上标签：vip,华南") }}">
+        <input class="form-input" type="text" name="remove" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.remove", "去掉标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.remove.ph", "去掉标签：vip") }}">
+        {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_tag_submit", "批量打标签"), cls="btn btn-sm", formaction="/admin/mail/contacts/bulk-tag", confirm=tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。"))}}
+        {{end}}
+      {{yield bulkBarClose()}}
+      {{end}}{{end}}
+      <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}">
+      <table class="data-table">
+      <thead><tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.mail.marketing.contacts.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.name", "姓名") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.tags", "标签") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.source", "来源") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.consent_source", "同意来源") }}</th><th class="col-actions">{{ .["t"]("admin.mail.marketing.contacts.col.actions", "操作") }}</th></tr></thead>
+      <tbody>
+      {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 8：
+         勾选 / 邮箱 / 姓名 / 状态 / 标签 / 来源 / 同意来源 / 操作）。 *}
+      {{if len(.Contacts) == 0}}
+      <tr><td colspan="8" class="cell-wrap">
+    <div class="empty-state">
+      {{if .Keyword != "" || .Status != ""}}
+      <p class="empty-title">{{ .["t"]("admin.mail.marketing.contacts.empty.title", "没有匹配的联系人") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.contacts.empty", "可调整筛选条件，或点右上角「导入联系人」批量导入。") }}</p>
+      {* 筛选无结果时清空条件；无筛选时引导建立名单，不重复提供按钮。 *}
+      <div class="empty-actions">
+        <a class="btn" href="/admin/mail/contacts">{{ .["t"]("admin.mail.marketing.contacts.empty.clear", "清空筛选看全部") }}</a>
+      </div>
+      {{else}}
+      <p class="empty-title">{{ .["t"]("admin.mail.marketing.contacts.empty.initial.title", "还没有联系人") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.marketing.contacts.empty.initial", "新建一位联系人手工加一条，或用「导入联系人」批量导入 CSV —— 名单建立起来才能按标签圈人群群发。") }}</p>
+      {* 空态把两个入口一起给出来：文案提到「新建」与「导入」，按钮就都得能点到，
+          否则用户要回到页头再找一个。两个入口各按自己的权限显隐 —— 没有权限的人看不到点了会被 403 的按钮。 *}
+      {{if canSaveContact || canImportContact}}
+      <div class="empty-actions">
+        {{if canSaveContact}}
+        <button type="button" class="btn btn-primary" data-drawer-open="#tpl-contact-save" data-drawer-title="{{ .["t"]("admin.mail.marketing.contact_form.new", "新建联系人") }}">{{ .["t"]("admin.mail.marketing.contact_form.new", "新建联系人") }}</button>
+        {{end}}
+        {{if canImportContact}}
+        <button type="button" class="btn{{if canSaveContact}} btn-ghost{{else}} btn-primary{{end}}" data-drawer-open="#tpl-contact-import" data-drawer-title="{{ .["t"]("admin.mail.marketing.import.heading", "导入联系人") }}">{{ .["t"]("admin.mail.marketing.import.heading", "导入联系人") }}</button>
+        {{end}}
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+      </td></tr>
+      {{else}}
+      {{range _, c := .Contacts}}
+      <tr>
+        <td class="col-check"><input type="checkbox" name="ids" value="{{c.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>
+        <td>{{c.Email}}</td>
+        <td>{{if c.Name == ""}}<span class="text-mute">—</span>{{else}}{{c.Name}}{{end}}</td>
+        <td>
+          {{if c.Status == "subscribed"}}<span class="badge badge-success">{{tr("admin.mail.marketing.status.subscribed", "已订阅")}}</span>
+          {{else if c.Status == "pending"}}<span class="badge badge-mute">{{tr("admin.mail.marketing.status.pending", "待确认")}}</span>
+          {{else if c.Status == "unsubscribed"}}<span class="badge badge-mute">{{tr("admin.mail.marketing.contact_status.unsubscribe", "退订")}}</span>
+          {{else}}<span class="badge badge-warning">{{c.Status}}</span>{{end}}
+        </td>
+        <td>{{if len(c.Tags) == 0}}<span class="text-mute">—</span>{{else}}{{range _, tg := c.Tags}}<span class="badge badge-mute">{{tg}}</span> {{end}}{{end}}</td>
+        <td class="text-mute text-sm">{{if c.Source == ""}}—{{else}}{{c.Source}}{{end}}</td>
+        <td class="text-sm">{{if c.ConsentSource == ""}}<span class="text-mute">—</span>{{else}}{{c.ConsentSource}}{{end}}</td>
+        <td class="col-actions">
+          {{if canUpdateContact}}
+          <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-contact-status-{{c.ID}}" data-drawer-title="{{tr("admin.mail.marketing.action.update", "改同意状态")}} · {{c.Email}}">{{tr("admin.mail.marketing.action.update", "改状态")}}</button>
+          {{end}}
+          {{if canSaveContact}}
+          <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-contact-save-{{c.ID}}" data-drawer-title="{{tr("admin.mail.marketing.contact_form.edit_title", "编辑联系人")}} · {{c.Email}}">{{tr("admin.mail.marketing.contact_form.edit", "编辑")}}</button>
+          {{end}}
+          {* 单条删除走表格外的 hidden-form（form="…" 关联）：按钮本身在本页批量 form 内部，
+              再嵌一层 <form> 是非法嵌套（浏览器会丢弃内层表单，提交变成批量动作）。 *}
+          {{if canDeleteContact}}
+          <button type="submit" form="contact-del-{{c.ID}}" class="btn btn-sm btn-ghost">{{tr("admin.mail.action.delete", "删除")}}</button>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+      {{end}}
+      </tbody>
+      </table>
+      </div>
+    </form>
+    {* 分页条：联系人此前**已按页取数**（handler 传 Page/PageSize），但模板从不渲染翻页控件 ——
+        第 51 个联系人永远点不到。拆页后 handler 注入顶层 PaginationLinks / PaginationInfo。 *}
+    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", contactsLinks, "PaginationInfo", contactsInfo)}}
+  </section>
+
+  {* 行内表单与抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 data-drawer-open 打开。 *}
+  {{range _, c := .Contacts}}
+  <template id="tpl-contact-status-{{c.ID}}">
+    <form method="post" action="/admin/mail/contact/status" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="id" value="{{c.ID}}">
+      <div class="form-field">
+        <label class="form-label" for="ct-status-{{c.ID}}">{{tr("admin.mail.marketing.contacts.col.status", "状态") }}</label>
+        <select class="form-select" id="ct-status-{{c.ID}}" name="status">
+          <option value="subscribed"{{if c.Status == "subscribed"}} selected{{end}}>{{tr("admin.mail.marketing.contact_status.subscribe", "订阅")}}</option>
+          <option value="pending"{{if c.Status == "pending"}} selected{{end}}>{{tr("admin.mail.marketing.status.pending", "待确认")}}</option>
+          <option value="unsubscribed"{{if c.Status == "unsubscribed"}} selected{{end}}>{{tr("admin.mail.marketing.contact_status.unsubscribe", "退订")}}</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="ct-note-{{c.ID}}">{{tr("admin.mail.marketing.ph.note", "来源备注") }}</label>
+        <input class="form-input" id="ct-note-{{c.ID}}" type="text" name="note" placeholder="{{tr("admin.mail.marketing.contact_status.note_ph", "例如：本人电话要求停止发送")}}">
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.action.update", "更新")}}</button>
+      </div>
+    </form>
+  </template>
+  {{if canSaveContact}}
+  {* 编辑抽屉：邮箱是抑制名单的关联键 —— 改邮箱不会把退订记录搬过去（搬了等于让退订者
+      换个地址继续收）。留空 / 有权限的人都按这个语义操作，语义在服务端注释里有完整论证。 *}
+  <template id="tpl-contact-save-{{c.ID}}">
+    <form method="post" action="/admin/mail/contact/save" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="id" value="{{c.ID}}">
+      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
+      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
+      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
+      <input type="hidden" name="returnPage" value="{{.Page}}">
+      <div class="form-field">
+        <label class="form-label" for="ce-email-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
+        <input class="form-input" id="ce-email-{{c.ID}}" type="email" name="email" value="{{c.Email}}" required>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="ce-name-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.name", "姓名") }}</label>
+          <input class="form-input" id="ce-name-{{c.ID}}" type="text" name="name" value="{{c.Name}}">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="ce-tags-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.tags", "标签（逗号分隔）") }}</label>
+          {* 标签用 range 拼成逗号串：多出的尾逗号被服务端的标签清洗去掉（splitTags + 去空去重）。 *}
+          <input class="form-input" id="ce-tags-{{c.ID}}" type="text" name="tags" value="{{range _, tg := c.Tags}}{{tg}},{{end}}" list="mk-tag-options">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="ce-status-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.status", "同意状态") }}</label>
+          <select class="form-select" id="ce-status-{{c.ID}}" name="status">
+            <option value="pending"{{if c.Status == "pending"}} selected{{end}}>{{tr("admin.mail.marketing.status.pending", "待确认")}}</option>
+            <option value="subscribed"{{if c.Status == "subscribed"}} selected{{end}}>{{tr("admin.mail.marketing.contact_status.subscribe", "订阅")}}</option>
+            <option value="unsubscribed"{{if c.Status == "unsubscribed"}} selected{{end}}>{{tr("admin.mail.marketing.contact_status.unsubscribe", "退订")}}</option>
+            {* 硬退信 / 投诉是投递事实，不给人工「改成这个」的入口；但当前值必须留在选中项上 ——
+                否则打开抽屉随手一存，一条投诉记录会被静默降级成待确认。 *}
+            {{if c.Status == "bounced"}}<option value="bounced" selected>{{tr("admin.mail.marketing.status.bounced", "硬退信")}}</option>{{end}}
+            {{if c.Status == "complained"}}<option value="complained" selected>{{tr("admin.mail.marketing.status.complained", "投诉")}}</option>{{end}}
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="ce-consent-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.consent_source", "同意来源") }}</label>
+          <input class="form-input" id="ce-consent-{{c.ID}}" type="text" name="consent_source" value="{{c.ConsentSource}}" placeholder="{{tr("admin.mail.marketing.contact_form.consent_source.ph", "例如：本人在官网表单勾选同意")}}">
+        </div>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.contact_form.save", "保存")}}</button>
+      </div>
+    </form>
+  </template>
+  {{end}}
+  {{if canDeleteContact}}
+  <form id="contact-del-{{c.ID}}" class="hidden-form" method="post" action="/admin/mail/contact/delete"
+        data-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}" data-confirm-danger>
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <input type="hidden" name="id" value="{{c.ID}}">
+    <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
+    <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
+    <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
+    <input type="hidden" name="returnPage" value="{{.Page}}">
+  </form>
+  {{end}}
+  {{end}}
+
+  {{if canSaveContact}}
+  {* 新建抽屉：手工加一条（线下换名片、电话索要、单人补录）。同意状态默认「待确认」——
+      没勾选同意证据就不该直接进可发送名单；要置为已订阅，必须同时写清同意来源（留痕）。 *}
+  <template id="tpl-contact-save">
+    <form method="post" action="/admin/mail/contact/save" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="id" value="0">
+      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
+      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
+      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
+      <input type="hidden" name="returnPage" value="{{.Page}}">
+      <div class="form-field">
+        <label class="form-label" for="cn-email">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
+        <input class="form-input" id="cn-email" type="email" name="email" required placeholder="{{tr("admin.mail.marketing.contact_form.email.ph", "name@example.com")}}">
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="cn-name">{{tr("admin.mail.marketing.contact_form.name", "姓名") }}</label>
+          <input class="form-input" id="cn-name" type="text" name="name">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="cn-tags">{{tr("admin.mail.marketing.contact_form.tags", "标签（逗号分隔）") }}</label>
+          <input class="form-input" id="cn-tags" type="text" name="tags" list="mk-tag-options" placeholder="{{ .["t"]("admin.mail.marketing.import.tags.ph", "vip,华南") }}">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="cn-status">{{tr("admin.mail.marketing.contact_form.status", "同意状态") }}</label>
+          <select class="form-select" id="cn-status" name="status">
+            <option value="pending" selected>{{tr("admin.mail.marketing.status.pending", "待确认")}}</option>
+            <option value="subscribed">{{tr("admin.mail.marketing.contact_status.subscribe", "订阅")}}</option>
+            <option value="unsubscribed">{{tr("admin.mail.marketing.contact_status.unsubscribe", "退订")}}</option>
+          </select>
+          <p class="form-hint">{{tr("admin.mail.marketing.contact_form.status_hint", "待确认不会被群发；置为「已订阅」必须同时填写同意来源（谁在什么时候声明过同意）。")}}</p>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="cn-consent">{{tr("admin.mail.marketing.contact_form.consent_source", "同意来源") }}</label>
+          <input class="form-input" id="cn-consent" type="text" name="consent_source" placeholder="{{tr("admin.mail.marketing.contact_form.consent_source.ph", "例如：本人在官网表单勾选同意")}}">
+        </div>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.contact_form.save", "保存")}}</button>
+      </div>
+    </form>
+  </template>
+  {{end}}
+
+  {{if canImportContact}}
+  {* 导入抽屉：勾选「这批人已同意」才会置为已订阅并记来源。
+      同意声明与批量标签放在同一屏，是为了让操作者一次就把「这批人是谁、凭什么能发」填完。 *}
+  <template id="tpl-contact-import">
+    <form method="post" action="/admin/mail/contact/import" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{csrf}}">
+      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
+      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
+      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
+      <input type="hidden" name="returnPage" value="{{.Page}}">
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="form-label" for="mk-import-tags">{{ .["t"]("admin.mail.marketing.import.tags", "批量标签（逗号分隔）") }}</label>
+          <input class="form-input" id="mk-import-tags" type="text" name="tags" placeholder="{{ .["t"]("admin.mail.marketing.import.tags.ph", "vip,华南") }}">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="mk-import-consent-source">{{ .["t"]("admin.mail.marketing.import.consent_source", "同意来源") }}</label>
+          <input class="form-input" id="mk-import-consent-source" type="text" name="consent_source" placeholder="{{ .["t"]("admin.mail.marketing.import.ph.consent_source", "例如：2026-09 线下展会收集，已获口头同意") }}">
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="checkbox"><input type="checkbox" name="consent_declared"> {{ .["t"]("admin.mail.marketing.import.consent.lead", "这批人") }}<strong>{{ .["t"]("admin.mail.marketing.import.consent.strong", "已同意") }}</strong>{{ .["t"]("admin.mail.marketing.import.consent.tail", "接收营销邮件（勾选后置为「已订阅」并记录来源）") }}</label>
+      </div>
+      <div class="form-field">
+        <label class="checkbox"><input type="checkbox" name="update_existing"> {{ .["t"]("admin.mail.marketing.import.update_existing.lead", "已存在的联系人更新标签（") }}<strong>{{ .["t"]("admin.mail.marketing.import.update_existing.strong", "不会") }}</strong>{{ .["t"]("admin.mail.marketing.import.update_existing.tail", "改动他们的同意状态）") }}</label>
+      </div>
+      <div class="form-field form-field--wide">
+        <label class="form-label" for="mk-import-content">{{ .["t"]("admin.mail.marketing.import.content", "内容") }}</label>
+        <textarea class="form-textarea" id="mk-import-content" name="content" rows="10" placeholder="{{ .["t"]("admin.mail.marketing.import.content.ph", "a@example.com&#10;b@example.com&#10;或 CSV：email,name,tags") }}"></textarea>
+      </div>
+      <div class="action-row">
+        <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+        <button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.marketing.import.submit", "导入") }}</button>
+      </div>
+    </form>
+  </template>
+  {{end}}
+</div>
+{{end}}

@@ -31,13 +31,16 @@ func registerAIMenuSeed() {
 	registerSeed(Seed{
 		Version:   "515-ai-menu",
 		TableName: "sys_menus",
+		// 判据按「语义」而不是按路径：532 把两个入口合并成一条 /admin/ai/sessions 之后，
+		// 旧判据（要求 /admin/ai/providers 有活行）永远不成立 → 本批每次启动都重跑，
+		// 并插回一条 /admin/ai/providers（实测 id=159，13:34 插出）。
+		// 现在判「AI 入口有活行 + 两个权限码都挂在活菜单上」—— 这正是本批想表达的语义。
 		ConditionSQL: "SELECT CASE WHEN " +
-			"(SELECT COUNT(*) FROM sys_menus WHERE path = '/admin/ai/providers' AND deleted_at IS NULL) >= 1 " +
+			"(SELECT COUNT(*) FROM sys_menus WHERE path IN ('/admin/ai/providers', '/admin/ai/sessions') " +
+			"AND deleted_at IS NULL) >= 1 " +
 			"AND (SELECT COUNT(*) FROM sys_menu_permission mp JOIN sys_menus m ON m.id = mp.menu_id " +
-			"WHERE m.path = '/admin/ai/providers' AND mp.permission_code = 'ai:provider_list') >= 1 " +
-			"AND (SELECT COUNT(*) FROM sys_menus WHERE path = '/admin/ai/sessions' AND deleted_at IS NULL) >= 1 " +
-			"AND (SELECT COUNT(*) FROM sys_menu_permission mp JOIN sys_menus m ON m.id = mp.menu_id " +
-			"WHERE m.path = '/admin/ai/sessions' AND mp.permission_code = 'ai:session_list') >= 1 " +
+			"WHERE m.path IN ('/admin/ai/providers', '/admin/ai/sessions') AND m.deleted_at IS NULL " +
+			"AND mp.permission_code IN ('ai:provider_list', 'ai:session_list')) >= 2 " +
 			"THEN 1 ELSE 0 END",
 		SQL: mustSQL("515_ai_menu.sql"),
 	})

@@ -13,10 +13,16 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 		pairs     [][2]string
 	}{
 		{
-			name: "marketing", tpl: "admin/mail/mail_marketing",
+			name: "contacts", tpl: "admin/mail/mail_contacts",
 			data: marketingProbeData(map[string]any{"Keyword": "nobody"}),
 			pairs: [][2]string{
-				{"没有匹配的联系人", "可调整筛选条件，或在下方折叠区批量导入联系人。"},
+				{"没有匹配的联系人", "可调整筛选条件，或点右上角「导入联系人」批量导入。"},
+			},
+		},
+		{
+			name: "campaigns", tpl: "admin/mail/mail_campaigns",
+			data: marketingProbeData(nil),
+			pairs: [][2]string{
 				{"还没有活动", "新建活动后点「启动群发」开始发送。"},
 			},
 		},
@@ -35,10 +41,20 @@ func TestMailEmptyDescriptionsExplainNextStep(t *testing.T) {
 			name: "automation", tpl: "admin/mail/mail_automation",
 			data: map[string]any{
 				"Err": "", "Ok": "", "AutoTotal": 0, "Automations": []any{},
-				"Runs": []any{}, "RunTotal": 0, "FilterID": "", "FilterRun": "",
 			},
 			pairs: [][2]string{
 				{"还没有流程", "先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。"},
+			},
+		},
+		{
+			// 运行实例的空态在拆页后归了运行记录页（流程页只答「有哪些流程」）。
+			name: "automation_runs", tpl: "admin/mail/mail_automation_runs",
+			data: map[string]any{
+				"Err": "", "Ok": "", "Done": "",
+				"Runs": []any{}, "RunTotal": 0, "FilterID": "", "FilterRun": "",
+				"CountRunning": 0, "CountWaiting": 0, "CountCompleted": 0, "CountFailed": 0, "CountStopped": 0,
+			},
+			pairs: [][2]string{
 				{"还没有实例", "流程启用后，满足触发条件的人会自动进入。"},
 			},
 		},

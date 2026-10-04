@@ -1,0 +1,145 @@
+{* admin/mail_automation_runs.html — 自动化运行实例（排障）（issue #37 拆页 / #38） *}
+{* 为什么单独成页（评审规则 admin-ui-logic §2 一页一职能）：
+    流程页回答「有哪些流程、开的还是停的」（配置，一年改几次）；
+    本页回答「哪些实例需要处理」（排障，出事时盯着看）。
+    拆页前两件事挤在一页，排障的人要越过整张流程表才看得到实例。 *}
+{* 版式遵循后台页面骨架规范（docs/02-H-admin-page-shell.md §2）与评审规则（admin-ui-logic §7）：
+     · 正文零说明文字 —— 排障口径（等待中=正常、失败要点进去）进 .help 悬浮；
+     · 主行动（补投到点实例）与流程页入口同行置于 .page-head；
+     · 计数是列表的汇总值，放卡内 list-toolbar，不进列；
+     · 本页不做批量操作（实例由流程驱动，人工批量改状态会破坏「同一步不会做两次」的语义），
+       故无首列勾选、无批量栏、无 .col-check —— 空态 colspan = 7。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+{{tr := .["t"]}}
+{* 分页键由 handler 注入在顶层；单页或空数据时不存在 —— 取到 nil 不中断渲染，
+   分页片段里的 if 自然跳过。 *}
+{{runsLinks := .["PaginationLinks"]}}
+{{runsInfo := .["PaginationInfo"]}}
+<div class="stack">
+  <header class="page-head">
+    <div class="page-head-main">
+      <div class="page-title-row">
+        <h1>{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}</h1>
+        <span class="help">
+          <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+          <span class="help-pop" role="tooltip">
+            {{ .["t"]("admin.mail.automation.runs.hint.lead", "「卡住了」在这里看：") }}<strong>{{ .["t"]("admin.mail.automation.runs.hint.strong_waiting", "等待中") }}</strong>{{ .["t"]("admin.mail.automation.runs.hint.mid", "是正常的（在等延时节点到点），") }}<strong>{{ .["t"]("admin.mail.automation.runs.hint.strong_failed", "失败") }}</strong>{{ .["t"]("admin.mail.automation.runs.hint.tail", "要点进去看原因。若怀疑队列延时丢了，用下面的「补投到点实例」立刻补一轮 —— 重复补投是安全的（同一步不会做两次）。") }}
+          </span>
+        </span>
+      </div>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-sm btn-ghost" href="/admin/mail/automation">{{ .["t"]("admin.mail.automation.heading", "自动化流程") }}</a>
+      <button type="submit" form="automation-tick" class="btn btn-primary">{{ .["t"]("admin.mail.automation.action.tick", "补投到点实例") }}</button>
+    </div>
+  </header>
+
+  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），直接比较会让整页中断。 *}
+  {{if isset(.Err)}}{{if .Err != ""}}
+  <p class="badge badge-warning" role="alert">{{.Err}}</p>
+  {{end}}{{end}}
+  {{if isset(.Ok)}}{{if .Ok != ""}}
+  <p class="badge badge-success" role="status">{{.Ok}}</p>
+  {{end}}{{end}}
+  {{if isset(.Done)}}{{if .Done != ""}}
+  <p class="badge badge-info" role="status">{{.Done}}</p>
+  {{end}}{{end}}
+
+  <section class="card list-card">
+    <div class="card-header">
+      <span class="card-title">{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}</span>
+    </div>
+    <div class="list-toolbar">
+      {* 计数键同样经 isset 包裹：模板也用于单测渲染，那时这些键不存在。 *}
+      {{if isset(.CountRunning)}}
+      <span class="text-mute text-sm">
+        {{ .["t"]("admin.mail.automation.count.running", "运行中") }} {{.CountRunning}} ·
+        {{ .["t"]("admin.mail.automation.count.waiting", "等待中") }} {{.CountWaiting}} ·
+        {{ .["t"]("admin.mail.automation.count.completed", "已完成") }} {{.CountCompleted}} ·
+        {{ .["t"]("admin.mail.automation.count.failed", "失败") }} {{.CountFailed}} ·
+        {{ .["t"]("admin.mail.automation.count.stopped", "已停止") }} {{.CountStopped}}
+      </span>
+      {{end}}
+    </div>
+    <form class="filter-bar" method="get" action="/admin/mail/automation/runs">
+      <div class="filter-fields">
+        <div class="filter-field">
+          <label for="au-filter-id">{{ .["t"]("admin.mail.automation.filter.by_id", "流程 id") }}</label>
+          <input class="form-input" id="au-filter-id" type="text" name="automationId" value="{{.FilterID}}" size="6" inputmode="numeric">
+        </div>
+        <div class="filter-field">
+          <label for="au-filter-status">{{ .["t"]("admin.mail.automation.filter.by_status", "状态") }}</label>
+          <select class="form-select" id="au-filter-status" name="runStatus">
+            <option value="">{{ .["t"]("admin.mail.automation.filter.all", "全部") }}</option>
+            <option value="running"{{if .FilterRun == "running"}} selected{{end}}>{{ .["t"]("admin.mail.automation.count.running", "运行中") }}</option>
+            <option value="waiting"{{if .FilterRun == "waiting"}} selected{{end}}>{{ .["t"]("admin.mail.automation.count.waiting", "等待中") }}</option>
+            <option value="completed"{{if .FilterRun == "completed"}} selected{{end}}>{{ .["t"]("admin.mail.automation.count.completed", "已完成") }}</option>
+            <option value="failed"{{if .FilterRun == "failed"}} selected{{end}}>{{ .["t"]("admin.mail.automation.count.failed", "失败") }}</option>
+            <option value="stopped"{{if .FilterRun == "stopped"}} selected{{end}}>{{ .["t"]("admin.mail.automation.count.stopped", "已停止") }}</option>
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.mail.automation.action.filter", "查询") }}</button>
+          <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/runs">{{ .["t"]("admin.common.action.reset", "重置") }}</a>
+        </div>
+      </div>
+    </form>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测 / 实例查询失败时该键不存在，
+       直接 {{if .Runs}} 会让整页在此中断（HTTP 仍 200，后面的内容整块消失）。 *}
+    {{if isset(.Runs)}}
+    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}">
+      <table class="data-table">
+      <thead><tr><th>{{ .["t"]("admin.mail.automation.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.mail.automation.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.automation.col.node", "当前 / 下一节点") }}</th><th>{{ .["t"]("admin.mail.automation.col.next_run", "下次继续") }}</th><th>{{ .["t"]("admin.mail.automation.col.trigger_event", "触发") }}</th><th>{{ .["t"]("admin.mail.automation.col.detail", "说明") }}</th><th class="col-actions">{{ .["t"]("admin.mail.automation.col.actions", "操作") }}</th></tr></thead>
+      <tbody>
+      {* 空数据也渲染 <table>/<thead>：空态整行落在 tbody 里（colspan = 7：
+         邮箱 / 状态 / 当前 · 下一节点 / 下次继续 / 触发 / 说明 / 操作）。 *}
+      {{if len(.Runs) == 0}}
+      <tr><td colspan="7" class="cell-wrap">
+    <div class="empty-state">
+      <p class="empty-title">{{ .["t"]("admin.mail.automation.runs.empty.title", "还没有实例") }}</p>
+      <p class="empty-desc">{{ .["t"]("admin.mail.automation.runs.empty", "流程启用后，满足触发条件的人会自动进入。") }}</p>
+      {{if .FilterID != "" || .FilterRun != ""}}
+      <div class="empty-actions">
+        <a class="btn btn-ghost" href="/admin/mail/automation/runs">{{ .["t"]("admin.common.action.reset", "重置") }}</a>
+      </div>
+      {{end}}
+    </div>
+      </td></tr>
+      {{else}}
+      {{range _, ri := .Runs}}
+      <tr>
+        <td>{{ri.Email}}</td>
+        <td>
+          {{if ri.Status == "failed"}}<span class="badge badge-warning">{{ri.Status}}</span>
+          {{else if ri.Status == "completed"}}<span class="badge badge-success">{{ri.Status}}</span>
+          {{else}}<span class="badge badge-mute">{{ri.Status}}</span>{{end}}
+        </td>
+        <td class="text-sm">{{if ri.CurrentNode == ""}}<span class="text-mute">—</span>{{else}}{{ri.CurrentNode}}{{end}}</td>
+        <td class="text-mute text-sm">{{if ri.NextRunAt == ""}}—{{else}}{{ri.NextRunAt}}{{end}}</td>
+        <td class="text-mute text-sm">{{if ri.TriggerEvent == ""}}—{{else}}{{ri.TriggerEvent}}{{end}}</td>
+        <td class="text-sm">{{if ri.ErrorMessage == ""}}<span class="text-mute">—</span>{{else}}{{ri.ErrorMessage}}{{end}}</td>
+        <td class="col-actions">
+          <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/run?id={{ri.ID}}">{{tr("admin.mail.automation.run_link", "排障")}}</a>
+        </td>
+      </tr>
+      {{end}}
+      {{end}}
+      </tbody>
+      </table>
+    </div>
+    <div class="card-header"><span class="text-mute text-sm">{{ .["t"]("admin.mail.automation.runs.total_prefix", "共 ") }}{{.RunTotal}}{{ .["t"]("admin.mail.automation.runs.total_suffix", " 个实例。") }}</span></div>
+    {{end}}
+    {* 实例表的分页条（基地址带上筛选：翻页时不能丢掉「在看哪个流程 / 哪个状态」）。 *}
+    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", runsLinks, "PaginationInfo", runsInfo)}}
+  </section>
+
+  {* 补投表单放列表外：HTML 不允许 form 嵌套，页头按钮用 form="<id>" 关联。
+     重复补投是安全的（同一步不会做两次），故不做二次确认。 *}
+  <form id="automation-tick" class="hidden-form" method="post" action="/admin/mail/automation/tick">
+    <input type="hidden" name="csrf_token" value="{{csrf}}">
+  </form>
+</div>
+{{end}}

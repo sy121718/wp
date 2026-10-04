@@ -489,6 +489,21 @@ func (m *MailModel) AddSuppressionTx(ctx context.Context, tx *gorm.DB, e *MailSu
 	return m.txOr(ctx, tx).Clauses(clause.OnConflict{DoNothing: true}).Create(e).Error
 }
 
+// FindSuppressionByEmailTx 按邮箱查抑制名单（大小写不敏感），复用调用方事务。
+//
+// 没有记录时返回 gorm.ErrRecordNotFound（与 GetContactByEmail 同形态）。
+// 抑制记录是**地址级**事实（表上只有 email，没有 contact_id）：判断「这个新地址还能不能发」
+// 只能按地址关联，见 service.UpdateContact 的说明。
+func (m *MailModel) FindSuppressionByEmailTx(ctx context.Context, tx *gorm.DB, email string) (e *MailSuppressionEntity, err error) {
+	addr := strings.TrimSpace(email)
+	if addr == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	e = &MailSuppressionEntity{}
+	err = m.txOr(ctx, tx).Where("lower(email) = lower(?)", addr).First(e).Error
+	return e, err
+}
+
 // ListSuppressions 列抑制名单。
 func (m *MailModel) ListSuppressions(ctx context.Context, reason string, offset, limit int) (list []*MailSuppressionEntity, total int64, err error) {
 	q := m.tx(ctx).Model(&MailSuppressionEntity{})

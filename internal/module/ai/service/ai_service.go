@@ -26,6 +26,9 @@ type Service struct {
 	m            *aimodel.Model
 	cipherSecret string
 	client       *http.Client
+	// calls 调用流水（ai_call_log）的写入端口，装配期注入；未注入时 Chat 照常工作、不记流水。
+	// 详见 ai_call_log.go 的 logCallAsync（协程 + 脱离请求 ctx + panic 不外溢）。
+	calls CallLogWriter
 }
 
 // NewService 构造服务（client 用受限的 ai 出站客户端，见 ai_client.go）。

@@ -43,7 +43,7 @@ func TestAdminEmptyActionI18nKeysSeeded(t *testing.T) {
 		"admin.redirect.empty.action":                     "page_redirects.html",
 		"admin.redirect.pick_project.title":               "page_redirects.html",
 		"admin.redirect.pick_project.action":              "page_redirects.html",
-		"admin.mail.marketing.contacts.empty.clear":       "mail_marketing.html",
+		"admin.mail.marketing.contacts.empty.clear":       "mail_contacts.html",
 	}
 
 	src, err := os.ReadFile(filepath.Join("..", "..", "public", "migrations", "415_i18n_empty_actions.sql"))
@@ -267,7 +267,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 		assertEmptyActions(t, "mail_automation_run", out, 1, `href=""`)
 	})
 
-	t.Run("mail_campaign/链接与收件人都为空→回营销页", func(t *testing.T) {
+	t.Run("mail_campaign/链接与收件人都为空→回群发活动页", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/mail/mail_campaign", map[string]any{
 			"Err": "",
 			"R": map[string]any{
@@ -277,7 +277,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 		})
 		// 两张表的空态各自落在 tbody 里：链接排行 colspan=3、收件人明细 colspan=7。
 		assertEmptyKeepsTableHead(t, "mail_campaign", out, "3", []string{`colspan="7"`})
-		assertEmptyActions(t, "mail_campaign", out, 2, `href="/admin/mail/marketing"`)
+		assertEmptyActions(t, "mail_campaign", out, 2, `href="/admin/mail/campaigns"`)
 	})
 
 	t.Run("page_redirects/列表为空→去页面管理改 URL", func(t *testing.T) {
@@ -296,19 +296,20 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 		}
 	})
 
-	t.Run("mail_marketing/联系人带筛选→清空筛选", func(t *testing.T) {
-		out := renderAdminEmptyProbe(t, "admin/mail/mail_marketing", marketingProbeData(map[string]any{
+	t.Run("mail_contacts/联系人带筛选→清空筛选", func(t *testing.T) {
+		out := renderAdminEmptyProbe(t, "admin/mail/mail_contacts", marketingProbeData(map[string]any{
 			"Contacts": []any{}, "Keyword": "nobody", "Status": "subscribed",
 		}))
-		// 联系人（清空筛选）+ 活动（新建活动）= 2 处。
-		assertEmptyActions(t, "mail_marketing/contacts", out, 2, `href="/admin/mail/marketing"`)
+		// 拆页后联系人与活动各占一页：本页空态只应有一处动作（清空筛选看全部）。
+		assertEmptyActions(t, "mail_contacts/contacts", out, 1, `href="/admin/mail/contacts"`)
 	})
 
-	t.Run("mail_marketing/联系人无筛选→不给动作", func(t *testing.T) {
-		out := renderAdminEmptyProbe(t, "admin/mail/mail_marketing", marketingProbeData(map[string]any{
+	t.Run("mail_contacts/联系人无筛选→不给动作", func(t *testing.T) {
+		out := renderAdminEmptyProbe(t, "admin/mail/mail_contacts", marketingProbeData(map[string]any{
 			"Contacts": []any{},
 		}))
-		// 只剩活动表那一处。
-		assertEmptyActions(t, "mail_marketing/noFilter", out, 1, "")
+		// 无筛选时的下一步（导入）需要 mail:contact_import 权限；探针数据没给这个权限，
+		// 于是这一档必须一条动作都不出现 —— 页面不给一个点了会被 403 挡住的按钮。
+		assertEmptyActions(t, "mail_contacts/noFilter", out, 0, "")
 	})
 }

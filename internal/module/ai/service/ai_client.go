@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -93,16 +94,79 @@ func buildProtocolBody(protocol, model, input string, maxOutputTokens int64) ([]
 	}
 }
 
-// parseProtocolReply 按协议解析响应正文；未实现的协议返回 ErrProtocolUnsupported。
-func parseProtocolReply(protocol string, body []byte) (string, error) {
+// parseProtocolReply 按协议解析响应正文与用量；未实现的协议返回 ErrProtocolUnsupported。
+//
+// 正文与用量一起回：两者来自同一个响应体，分两次解析等于把同一份 JSON 解两遍，
+// 而且「解析失败」的归口口径会被迫写两处（容易分叉）。
+func parseProtocolReply(protocol string, body []byte) (string, ReplyUsage, error) {
 	switch protocol {
 	case aienums.ProtocolOpenAIChatCompletions:
 		return parseChatCompletionsReply(body)
 	case aienums.ProtocolOpenAIResponses:
 		return parseResponsesReply(body)
 	default:
-		return "", ErrProtocolUnsupported
+		return "", ReplyUsage{}, ErrProtocolUnsupported
 	}
+}
+
+// ReplyUsage 一次上游响应里上报的用量。
+//
+// Reported=false 表示这一家**没有上报** usage（不是「用了 0 个 token」）——
+// 调用流水必须把「没上报」与「真的是 0」分开，否则未上报的调用在统计里看起来像没消耗。
+// 解析失败 / 字段缺失一律 Reported=false，**不猜测、不估算**：流水是事实记录。
+type ReplyUsage struct {
+	InputTokens  int64
+	OutputTokens int64
+	TotalTokens  int64
+	Reported     bool
+}
+
+// usageFromJSON 从响应体的 usage 对象里取三个数。
+//
+// 两种协议的字段名不同（chat/completions 是 prompt_tokens / completion_tokens，
+// responses 是 input_tokens / output_tokens），所以候选名一起给、谁在取谁。
+// total 缺失时用 input+output 补齐：上游只报前两个是常见形态。
+//
+// 三个数一个都没有 → Reported=false（「没有 usage 对象」与「usage 全是 0」在观测上等价：
+// 都没告诉我们任何消耗信息）。
+func usageFromJSON(raw any) ReplyUsage {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return ReplyUsage{}
+	}
+	in := firstPositiveInt(obj, "prompt_tokens", "input_tokens")
+	out := firstPositiveInt(obj, "completion_tokens", "output_tokens")
+	total := firstPositiveInt(obj, "total_tokens")
+	if total <= 0 && (in > 0 || out > 0) {
+		total = in + out
+	}
+	if in == 0 && out == 0 && total == 0 {
+		return ReplyUsage{}
+	}
+	return ReplyUsage{InputTokens: in, OutputTokens: out, TotalTokens: total, Reported: true}
+}
+
+// firstPositiveInt 按候选键顺序取第一个正整数值；都没有回 0。
+//
+// 只认正数：JSON 数字解出来是 float64（也可能是 json.Number），负数与 0 都不是「有消耗」的信号。
+func firstPositiveInt(obj map[string]any, keys ...string) int64 {
+	for _, key := range keys {
+		switch v := obj[key].(type) {
+		case float64:
+			if v > 0 {
+				return int64(v)
+			}
+		case int64:
+			if v > 0 {
+				return v
+			}
+		case json.Number:
+			if n, err := v.Int64(); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 // buildProtocolRequest 组装一次对话出站请求：地址拼接 → SSRF 校验 → 请求体 → 头。

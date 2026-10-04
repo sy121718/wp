@@ -67,6 +67,26 @@ var defaultDTOExposureAllow = map[string]string{
 	"SessionDetail.VisibleTokens":    "计量字段：当前窗口内可见内容的 token 数（整型），不是凭据",
 	"SessionEventItem.ContentTokens": "计量字段：单条事件内容长度的 token 计数（整型），不是凭据",
 	"FoldPlanResult.SegmentTokens":   "计量字段：折叠分段各自的 token 数（整型），不是凭据",
+	// 对话结果（ai_chat.go）：上游**上报**的用量。同样命中词根 "token"，同样不是凭据 ——
+	// 它们回答的是「这次调用按 token 计用了多少」，值是上游 usage 里的整数；
+	// UsageReported=false 时三列恒为 0（表示这家没上报），也没有任何字符串通道能承载凭据。
+	"ChatResult.InputTokens":  "计量字段：上游上报的输入 token 数（整型），不是凭据",
+	"ChatResult.OutputTokens": "计量字段：上游上报的输出 token 数（整型），不是凭据",
+	"ChatResult.TotalTokens":  "计量字段：上游上报的总 token 数（整型），不是凭据",
+	// 会话用量看板（ai_session_dto.go）：整数是原始计量值，*Text 是同源的**已格式化展示文本**
+	// （12345678 → "12.3M"，见 service 的 formatTokens）—— 两者都不含凭据。
+	"SessionUsage.Tokens":             "计量字段：这批会话的事件正文 token 累计（整型），不是凭据",
+	"SessionUsage.AvgTokens":          "计量字段：单会话平均 token（Tokens/Sessions 的整除结果，整型），不是凭据",
+	"SessionUsage.TokensText":         "展示文本：把 Tokens 缩成「12.3M」这类短串，与整数同源、不含凭据",
+	"SessionUsage.AvgTokensText":      "展示文本：把 AvgTokens 缩成短串，与整数同源、不含凭据",
+	"SessionTokenUsage.ContextTokens": "计量字段：这条会话此刻仍留在上下文里的 token 数（整型），不是凭据",
+	"SessionTokenRow.Tokens":          "计量字段：某一类事件贡献的 token 数（整型），不是凭据",
+	"SessionModelUsage.Tokens":        "计量字段：某个 (供应商, 模型) 组合消耗的 token 数（整型），不是凭据",
+	"SessionModelUsage.TokensText":    "展示文本：把上面的 Tokens 缩成短串（悬浮卡用），与整数同源、不含凭据",
+	// 调用流水段（悬浮卡的「最近调用」）：与上面的聚合段同源 —— 一个是「总共多少」，
+	// 一个是「这一次多少」，都是上游上报的整数（未上报时为 0，见 ai_call_log.usage_reported）。
+	"SessionCallRow.Tokens":     "计量字段：这一次调用上游上报的总 token 数（整型），不是凭据",
+	"SessionCallRow.TokensText": "展示文本：把上面的 Tokens 缩成短串（悬浮卡用），与整数同源、不含凭据",
 }
 
 // DTOExposureOptions 扫描参数（零值即默认口径：扫 internal 下所有 dto 目录）。

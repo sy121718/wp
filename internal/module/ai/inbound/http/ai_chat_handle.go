@@ -26,6 +26,11 @@ func (h *Handle) Chat(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
 		return
 	}
+	// 归属由服务端定，**不采信请求体**：调用流水里的「谁调用的」如果来自请求参数，
+	// 任何人都能把别人的名字写进审计流水。SessionID 一律清零 —— 这条路由不属于任何会话
+	// （会话页的发消息走 SendMessage，那边由会话层填自己正在续写的那条）。
+	req.UserID = userID(c)
+	req.SessionID = 0
 	result, err := h.svc.Chat(c.Request.Context(), &req)
 	if err != nil {
 		code := http.StatusBadRequest

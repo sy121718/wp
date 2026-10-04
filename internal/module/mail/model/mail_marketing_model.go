@@ -569,6 +569,48 @@ func (m *MailModel) DeleteContact(ctx context.Context, id uint64) (err error) {
 	return m.tx(ctx).Where("id = ?", id).Delete(&MailContactEntity{}).Error
 }
 
+// DeleteContactsByIDsTx 按 id 批量删除联系人（复用调用方事务）。
+//
+// 批删走**一条语句**（WHERE id IN (...)），不是循环调用 DeleteContact：
+// 循环会让「删了 3 个、第 4 个报错」留下半截状态，而调用方看到的是一个错误 ——
+// 它只能把整批当成失败，于是重试时前 3 条已经不存在了。
+//
+// 刻意只有 Tx 变体：删除联系人的语义包含「不动抑制名单」这条边界（由 service 负责写清），
+// 调用方必须自带事务边界；单条删除用 DeleteContact。
+func (m *MailModel) DeleteContactsByIDsTx(ctx context.Context, tx *gorm.DB, ids []uint64) (deleted int64, err error) {
+	uniq := make([]uint64, 0, len(ids))
+	seen := make(map[uint64]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	if len(uniq) == 0 {
+		return 0, nil
+	}
+	res := m.txOr(ctx, tx).Where("id IN ?", uniq).Delete(&MailContactEntity{})
+	return res.RowsAffected, res.Error
+}
+
+// ListContactTags 全库去重后的标签集合（筛选区 datalist 候选）。
+//
+// 标签存在 text[] 数组列里，去重要先 unnest 摊平成行再 DISTINCT。
+// btrim + WHERE <> ” 清掉历史数据里「标签前后带空格」「空标签」这类脏值 ——
+// 与 service 侧 splitTags / mergeTags 的去空白口径一致，否则候选里会出现一个
+// 点了筛不出任何人的标签（因为筛选走 tags @> 精确匹配）。
+func (m *MailModel) ListContactTags(ctx context.Context) (tags []string, err error) {
+	err = m.tx(ctx).Raw(`SELECT DISTINCT btrim(t) AS tag
+FROM mail_contacts, unnest(tags) AS t
+WHERE btrim(t) <> ''
+ORDER BY tag ASC`).Scan(&tags).Error
+	return tags, err
+}
+
 // ---- 活动 ----
 
 // CreateCampaign 新建活动。

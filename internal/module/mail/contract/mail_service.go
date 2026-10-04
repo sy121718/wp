@@ -32,6 +32,16 @@ type MailService interface {
 	ImportContacts(ctx context.Context, req *maildto.ImportContactsReq) (*maildto.ImportContactsResp, error)
 	ListContacts(ctx context.Context, req *maildto.ContactFilterReq) (*maildto.ContactListResp, error)
 	UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) error
+	// CreateContact 新建联系人，返回新行 id（邮箱重复时返回可读错误，不静默成功）。
+	CreateContact(ctx context.Context, req *maildto.SaveContactReq) (id uint64, err error)
+	// UpdateContact 编辑联系人（邮箱变更时按 service 注释处理抑制名单连带）。
+	UpdateContact(ctx context.Context, req *maildto.SaveContactReq) (err error)
+	// DeleteContacts 删除联系人：**只删 mail_contacts**，抑制名单原样保留。
+	DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error)
+	// TagContacts 批量增 / 减标签，返回实际改动条数与跳过条数。
+	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error)
+	// ListContactTags 全库去重后的标签集合（筛选下拉候选）。
+	ListContactTags(ctx context.Context) (tags []string, err error)
 
 	// ---- 群发活动 ----
 	SaveCampaign(ctx context.Context, req *maildto.SaveCampaignReq) (*maildto.CampaignItem, error)

@@ -68,7 +68,7 @@ func TestBuildResponsesBody_RejectsEmptyModel(t *testing.T) {
 
 func TestParseResponsesReply_FromOutputContent(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"pong"}]}]}`)
-	got, err := parseResponsesReply(body)
+	got, _, err := parseResponsesReply(body)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestParseResponsesReply_FromOutputContent(t *testing.T) {
 
 func TestParseResponsesReply_PrefersTopLevelOutputText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output_text":"direct","output":[{"type":"message","content":[{"type":"output_text","text":"nested"}]}]}`)
-	got, err := parseResponsesReply(body)
+	got, _, err := parseResponsesReply(body)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestParseResponsesReply_PrefersTopLevelOutputText(t *testing.T) {
 
 func TestParseResponsesReply_ConcatenatesParts(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"a"},{"type":"output_text","text":"b"}]}]}`)
-	got, err := parseResponsesReply(body)
+	got, _, err := parseResponsesReply(body)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestParseResponsesReply_ConcatenatesParts(t *testing.T) {
 
 func TestParseResponsesReply_RejectsFailedStatus(t *testing.T) {
 	body := []byte(`{"object":"response","status":"failed","output":[]}`)
-	if _, err := parseResponsesReply(body); err == nil {
+	if _, _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("status=failed 应报错")
 	}
 }
@@ -109,7 +109,7 @@ func TestParseResponsesReply_RejectsFailedStatus(t *testing.T) {
 // TestParseResponsesReply_FailedStatusStillRejectedWithText 真失败不因「碰巧有正文」被放行。
 func TestParseResponsesReply_FailedStatusStillRejectedWithText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"failed","output_text":"partial","output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}`)
-	if _, err := parseResponsesReply(body); err == nil {
+	if _, _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("status=failed 即使带正文也应报错")
 	}
 }
@@ -118,7 +118,7 @@ func TestParseResponsesReply_FailedStatusStillRejectedWithText(t *testing.T) {
 // 不是失败：正文已生成就要取回来 —— 把「用户给的上限太小」归口「服务器内部错误」是主 bug。
 func TestParseResponsesReply_IncompleteWithTextReturnsText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"half an answer"}]}]}`)
-	got, err := parseResponsesReply(body)
+	got, _, err := parseResponsesReply(body)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -130,22 +130,86 @@ func TestParseResponsesReply_IncompleteWithTextReturnsText(t *testing.T) {
 // TestParseResponsesReply_IncompleteWithoutTextRejected incomplete 且确实没有正文 → 仍归口错误。
 func TestParseResponsesReply_IncompleteWithoutTextRejected(t *testing.T) {
 	body := []byte(`{"object":"response","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}`)
-	if _, err := parseResponsesReply(body); err == nil {
+	if _, _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("status=incomplete 且无正文片段应报错")
 	}
 }
 
 func TestParseResponsesReply_RejectsWrongObject(t *testing.T) {
 	body := []byte(`{"object":"chat.completion","output_text":"x"}`)
-	if _, err := parseResponsesReply(body); err == nil {
+	if _, _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("object 不是 response 应报错")
 	}
 }
 
 func TestParseResponsesReply_RejectsNoText(t *testing.T) {
 	body := []byte(`{"object":"response","status":"completed","output":[]}`)
-	if _, err := parseResponsesReply(body); err == nil {
+	if _, _, err := parseResponsesReply(body); err == nil {
 		t.Fatal("没有任何文本片段应报错")
+	}
+}
+
+// === 用量（usage）解析 ===
+//
+// 这一段的判据是「没上报」与「真的是 0」必须分得开：调用流水（ai_call_log）里
+// 未上报的调用如果记成 0，看起来就像没消耗，统计会被静默带偏。
+
+func TestParseResponsesReply_ReadsUsage(t *testing.T) {
+	body := []byte(`{"object":"response","status":"completed","output_text":"pong","usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}}`)
+	_, usage, err := parseResponsesReply(body)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !usage.Reported || usage.InputTokens != 11 || usage.OutputTokens != 7 || usage.TotalTokens != 18 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+// TestParseResponsesReply_UsageMissingIsNotReported 没有 usage 对象 → Reported=false（不是 0 消耗）。
+func TestParseResponsesReply_UsageMissingIsNotReported(t *testing.T) {
+	body := []byte(`{"object":"response","status":"completed","output_text":"pong"}`)
+	_, usage, err := parseResponsesReply(body)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if usage.Reported {
+		t.Fatalf("没有 usage 对象时不该报 Reported：%+v", usage)
+	}
+}
+
+// TestParseResponsesReply_UsageTotalFilledFromParts 上游只报前两个数时 total 由本地补齐。
+func TestParseResponsesReply_UsageTotalFilledFromParts(t *testing.T) {
+	body := []byte(`{"object":"response","status":"completed","output_text":"pong","usage":{"input_tokens":3,"output_tokens":4}}`)
+	_, usage, err := parseResponsesReply(body)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if usage.TotalTokens != 7 {
+		t.Fatalf("total 应补齐成 7，实际 %d（%+v）", usage.TotalTokens, usage)
+	}
+}
+
+// TestParseChatCompletionsReply_ReadsUsage chat/completions 的字段名是 prompt/completion_tokens。
+func TestParseChatCompletionsReply_ReadsUsage(t *testing.T) {
+	body := []byte(`{"choices":[{"message":{"content":"pong"}}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`)
+	text, usage, err := parseChatCompletionsReply(body)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if text != "pong" {
+		t.Fatalf("text = %q", text)
+	}
+	if !usage.Reported || usage.InputTokens != 5 || usage.OutputTokens != 2 || usage.TotalTokens != 7 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
+// TestParseChatCompletionsReply_KeepsUsageOnParseFailure 解析失败也要把已读到的 usage 带回去 ——
+// 上游返回了正文之外的坏形状时，用量仍然是有价值的观测数据（调用流水照记）。
+func TestParseChatCompletionsReply_KeepsUsageOnParseFailure(t *testing.T) {
+	body := []byte(`{"choices":[],"usage":{"prompt_tokens":9,"completion_tokens":1}}`)
+	if _, usage, err := parseChatCompletionsReply(body); err == nil || !usage.Reported || usage.TotalTokens != 10 {
+		t.Fatalf("err = %v, usage = %+v", err, usage)
 	}
 }
 

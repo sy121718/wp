@@ -244,7 +244,7 @@ const mailOkToken = "1"
 // mailBulkVerbs / mailBulkNouns 批量结论里的动作与对象（写侧 mailBulkOutcome 的全部取值）。
 var (
 	mailBulkVerbs = []string{"删除", "更新"}
-	mailBulkNouns = []string{"发信账号", "邮件模板", "联系人", "群发活动"}
+	mailBulkNouns = []string{"发信账号", "邮件模板", "联系人", "群发活动", "自动化流程"}
 )
 
 // mailBulkResultTemplates 批量结论文案模板（与写侧 mailBulkOutcome 共用同一份字面量）。
@@ -261,22 +261,31 @@ var mailBulkResultTemplates = []string{
 const (
 	mailTemplateListFailedText = "读取模板列表失败，本次没有删除任何模板。"
 	mailContactStatusBadText   = "目标状态不合法，本次没有处理任何联系人。"
-	mailAutomationDeletedText  = "已删除"
+	// mailContactDeleteBadText 单条删除没拿到 id（表单被裁掉 / 手工构造的请求）。
+	// 自造文案必须同时登记进 mailNoticeTexts：读侧不看代码，只认候选集。
+	mailContactDeleteBadText  = "没有指定要删除的联系人，本次没有删除任何数据。"
+	mailAutomationDeletedText = "已删除"
 )
 
-// mailFormNoticeTemplates 本页自造的表单校验文案模板（parseAutomationForm / 组装层）。
+// mailFormNoticeTemplates 本页自造的表单校验文案模板（步骤式流程编辑器，见 mail_automation_form.go）。
 //
-// 它们带「第 N 行」定位，是运营照着改的依据 —— 判据与 mailErrPageText 同源：
-// 能进响应的只有受控文案；这里的受控性来自「整句都由本页拼出 + 逐条登记」。
-var mailFormNoticeTemplates = []string{
-	"流程名称不能为空",
-	"第 %d 行：节点标识与类型都要填",
-	"第 %d 行：等待分钟数要填正整数",
-	"第 %d 行：发信节点要选邮件模板",
-	"第 %d 行：条件分支至少填一个条件",
-	"第 %d 行：标签节点要填要加的标签",
-	"至少要填一个节点",
-	"流程定义组装失败，请检查各行的填写内容后重试",
+// 带「第 N 步」定位的整句都由本页拼出，是运营照着改的依据 —— 判据与 mailErrPageText 同源：
+// 能进响应的只有受控文案，受控性来自「整句由本页拼 + 逐条登记」。
+//
+// 每条登记**两种形态**：当前语言的词条与代码里的兜底句。只登记词条是不够的 ——
+// 词条还没种上的那一刻（或运营刚改了措辞），用户看到的正是兜底句，读侧不认它就会把回执
+// 吞掉，回落成「系统内部错误」，比不翻译更难解释。所以真源只有 enums 一份，这里只做登记。
+func mailFormNoticeTemplates(c *gin.Context) []string {
+	tr := shell.TranslateFor(c)
+	out := make([]string, 0, len(mailenums.AutomationFormMessages)*2)
+	for _, pair := range mailenums.AutomationFormMessages {
+		text := mailLabel(tr, pair)
+		out = append(out, shell.NoticeTemplate(text))
+		if pair.Fallback != "" && pair.Fallback != text {
+			out = append(out, shell.NoticeTemplate(pair.Fallback))
+		}
+	}
+	return out
 }
 
 // mailCountedNoticeTemplates 带计数的回执文案模板（自动化与营销页）。
@@ -402,6 +411,7 @@ func mailNoticeTexts(c *gin.Context) []string {
 		shell.BulkIDsNoticeTemplate(c),
 		mailTemplateListFailedText,
 		mailContactStatusBadText,
+		mailContactDeleteBadText,
 		mailAutomationDeletedText,
 		// 状态变更回执：与**写侧同一份拼装**（mailAutomationStatusNotice）。
 		// 三条已知状态 + 未知档各生成一条候选 —— 少一条的表现是那一档回执
@@ -419,7 +429,7 @@ func mailNoticeTexts(c *gin.Context) []string {
 	// 缺 id 的引导文案（见 mailIDRequiredTexts）：不登记的话读侧会把它丢掉，
 	// 运营看到的会从「请先从活动列表选择一条活动」退化成「系统内部错误」。
 	out = append(out, mailIDRequiredTexts...)
-	for _, tpl := range mailFormNoticeTemplates {
+	for _, tpl := range mailFormNoticeTemplates(c) {
 		out = append(out, shell.NoticeTemplate(tpl))
 	}
 	for _, tpl := range mailCountedNoticeTemplates {

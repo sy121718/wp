@@ -42,6 +42,11 @@ func newAISessionService(t *testing.T) (*aiservice.SessionService, *gorm.DB) {
 // appendEvent 追加一条事件，失败即终止。
 func appendEvent(t *testing.T, svc *aiservice.SessionService, req aidto.AppendEventReq) *aidto.AppendEventResult {
 	t.Helper()
+	if req.UserID <= 0 {
+		// 会话层的第一关卡要求有身份（ErrUserRequired）；用例默认以一个已登录账号发起，
+		// 需要覆盖「无身份」的用例自己显式传 0 并断言哨兵。
+		req.UserID = 1
+	}
 	res, err := svc.AppendEvent(context.Background(), req)
 	if err != nil {
 		t.Fatalf("追加事件失败：%v", err)

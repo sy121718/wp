@@ -166,3 +166,150 @@ type SendMessageResult struct {
 	UserEvent      SessionEventItem `json:"userEvent"`
 	AssistantEvent SessionEventItem `json:"assistantEvent"`
 }
+
+// —— 会话页的用量统计与多维筛选（后台看板）——
+
+// SessionQuery 会话列表 / 统计的筛选条件（页面 query 解析后的形状）。
+//
+// 时间保持字符串（yyyy-mm-dd）而不在这里转成 time.Time：它直接来自 URL，解析放在 service，
+// 解析失败按「不限」处理 —— 一个手改的脏日期不该把整页打成 500。
+// Status 用 -1 表达「不限状态」：0 是「已归档」这一真实取值，不能让 0 兼任「不限」。
+type SessionQuery struct {
+	Keyword     string
+	Status      int
+	ProviderKey string
+	ModelID     string
+	CreateBy    int64
+	From        string
+	To          string
+}
+
+// SessionUsage 会话用量指标卡。
+//
+// 口径：Tokens 是**事件正文估算 token 之和**（ai_event.content_tokens），与会话头上的
+// context_tokens 不是一回事 —— 前者是这段时间写进来多少，后者是此刻还留在上下文里多少。
+// AvgTokens = Tokens / Sessions（Sessions 为 0 时是 0，不产生 NaN）。
+//
+// *Text 是展示用的短文本（12345678 → "12.3M"），与对应整数同源、由 service 生成：
+// 缩小单位是展示决策，模板不做算术（Jet 没有浮点格式化），而每个用到的地方各拼一遍
+// 必然出现两种写法。原始数字照样给出，title / 详情用得上。
+type SessionUsage struct {
+	Sessions      int64  `json:"sessions"`
+	Events        int64  `json:"events"`
+	Tokens        int64  `json:"tokens"`
+	Compacts      int64  `json:"compacts"`
+	AvgTokens     int64  `json:"avgTokens"`
+	TokensText    string `json:"tokensText"`
+	AvgTokensText string `json:"avgTokensText"`
+}
+
+// TrendSeries 折线图上的一条线（一个「供应商 + 模型」组合）。
+//
+// Points 是 SVG <polyline points="…"> 的现成内容（"x,y x,y …"，坐标系 0..1000 / 0..200）：
+// 坐标换算留在 service，模板只贴字符串 —— 与柱状图那版「模板不做算术」同一条规矩。
+type TrendSeries struct {
+	ProviderKey string `json:"providerKey"`
+	ModelID     string `json:"modelId"`
+	// OtherCount > 0 表示这是把超上限的几家并起来的「其他」线，值是并入的家数。
+	OtherCount int    `json:"otherCount"`
+	Total      int64  `json:"total"`
+	TotalText  string `json:"totalText"`
+	// Color 是 1..8 的调色板序号，模板映射到 --chart-cN。
+	Color  int    `json:"color"`
+	Points string `json:"points"`
+	// Single 表示这条线只有一个数据点：polyline 画不出一个点，模板改用 DotX/DotY 画圆。
+	Single bool `json:"single"`
+	DotX   int  `json:"dotX"`
+	DotY   int  `json:"dotY"`
+}
+
+// SessionTrend 折线图的全部数据：窗口两端、峰值、若干条线。
+type SessionTrend struct {
+	From     string        `json:"from"`
+	To       string        `json:"to"`
+	Peak     int64         `json:"peak"`
+	PeakText string        `json:"peakText"`
+	Series   []TrendSeries `json:"series"`
+}
+
+// SessionFilterOptions 筛选下拉的候选值。
+//
+// 取**全量**而不是当前结果集的取值：筛成 A 供应商后再想切到 B，下拉里必须还有 B，
+// 否则筛一次就再也回不去。
+type SessionFilterOptions struct {
+	Providers []string `json:"providers"`
+	Models    []string `json:"models"`
+	Creators  []int64  `json:"creators"`
+}
+
+// SessionTokenUsage 一个会话的 token 消耗快照（详情抽屉顶部的三个数 + 明细表）。
+//
+// 两个口径刻意分开放：ContextTokens 是**下一轮真的发给模型**的量（折叠后变小），
+// Total 是这个会话从建立到现在写过的事件正文总量（含已折叠的，折叠不会让它变小）。
+// 混成一个数会让人以为折叠没生效。
+type SessionTokenUsage struct {
+	ContextTokens int64  `json:"contextTokens"`
+	Total         int64  `json:"total"`
+	TotalText     string `json:"totalText"`
+	Compacts      int64  `json:"compacts"`
+	// Rows 按事件类型拆开的消耗；HasBreakdown 为 false 时模板不渲染明细表
+	// （一个空表头比没有表更难看，而没有事件本身是正常状态）。
+	Rows         []SessionTokenRow `json:"rows"`
+	HasBreakdown bool              `json:"hasBreakdown"`
+}
+
+// SessionTokenRow 明细里的一行：某类事件贡献了多少 token。
+//
+// 只给 kind 原文，不给中文标签：文案是展示层的事（模板拼 admin.ai.session.kind.<kind>
+// 词条），service 里硬编码一次就要在 i18n 里再维护第二份。
+type SessionTokenRow struct {
+	Kind   string `json:"kind"`
+	Events int64  `json:"events"`
+	Tokens int64  `json:"tokens"`
+}
+
+// SessionModelUsage 一个会话按 (供应商, 模型) 拆开的 token 消耗 —— 列表行悬浮卡的内容。
+//
+// 拆到这一层才有用：「这个会话一共 15 token」看不出钱花在哪，而「opencode-go / muse-spark
+// 12 token、deepseek / chat 3 token」才回答得了「谁在消耗」。
+// SessionCallRow 一次上游调用在会话行悬浮卡里的展示形状（ai_call_log 的一行）。
+//
+// 与 SessionModelUsage 的分工：那个是**聚合**（这条会话在某家模型上总共烧了多少），
+// 这个是**流水**（每一次调用各自多久、多少 token、成没成）。两者都要 ——
+// 聚合回答「钱花在哪家」，流水回答「哪一次特别慢 / 哪一次失败了」。
+type SessionCallRow struct {
+	// Time 已格式化的「01-02 15:04」：格式化留在 service，模板不做时间算术。
+	Time        string `json:"time"`
+	ProviderKey string `json:"providerKey"`
+	ModelID     string `json:"modelId"`
+	// LatencyText 已格式化的耗时（「2.9s」/「480ms」）。
+	LatencyText string `json:"latencyText"`
+	Tokens      int64  `json:"tokens"`
+	TokensText  string `json:"tokensText"`
+	OK          bool   `json:"ok"`
+	// ErrorKey 是失败时的 i18n key（与 enums 哨兵同源），ErrorText 是它未接词条时的中文兜底
+	// （取自 aienums.FacingMessages）。模板写 tr(c.ErrorKey, c.ErrorText)：有词条走词条、
+	// 没词条回落中文 —— 与页面其它错误提示同一口径，失败原因不会退化成一句「失败」。
+	ErrorKey  string `json:"errorKey"`
+	ErrorText string `json:"errorText"`
+}
+
+// SessionCalls 一条会话的调用流水预览：最近若干条 + 总条数。
+//
+// 只给「最近 N 条」而不是全量：悬浮卡是鼠标一停就要出来的东西，跑了三个月的会话
+// 可能有几千次调用。总条数一并给出 —— 读的人得知道自己看到的是不是全部。
+type SessionCalls struct {
+	Total int64            `json:"total"`
+	Rows  []SessionCallRow `json:"rows"`
+}
+
+type SessionModelUsage struct {
+	ProviderKey string `json:"providerKey"`
+	ModelID     string `json:"modelId"`
+	Events      int64  `json:"events"`
+	Tokens      int64  `json:"tokens"`
+	TokensText  string `json:"tokensText"`
+	// Unrecorded 为 true 表示这一组来自 529 之前的历史事件（当时没记来源）。
+	// 必须与真实值分开显示：否则空串会被当成「某个名字为空的供应商」。
+	Unrecorded bool `json:"unrecorded"`
+}

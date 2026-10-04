@@ -3,12 +3,18 @@
 // 与货源管理页同一模式：GET 渲染完整页，POST 处理完 302 回本页
 // （原生表单 + csrf_token 隐藏域），错误经 ?err= 回显。
 //
-// 两页分工：
+// 六页分工（评审规则 admin-ui-logic §2「一页一职能」）：
 //
-//	· /admin/mail            —— 发信账号与邮件模板（配置类）
-//	· /admin/mail/marketing  —— 联系人与群发活动（营销类）
+//	· /admin/mail                 —— 发信账号
+//	· /admin/mail/templates       —— 邮件模板
+//	· /admin/mail/contacts        —— 联系人（含导入）
+//	· /admin/mail/campaigns       —— 群发活动
+//	· /admin/mail/automation      —— 自动化流程
+//	· /admin/mail/automation/runs —— 自动化运行记录
 //
-// 配置与营销放在两页：日常操作营销的人不需要看到 SMTP 密码相关的配置项。
+// 为什么从「两页」拆成「六页」：账号与模板挤在一页、联系人与活动挤在另一页时，
+// 每页承载两个不相干的职能（模板只在发信时被引用、联系人与活动各有自己的批量动作），
+// 完成最常见任务要在同一页里上下找。装不下就拆，不折叠（§2 的判据）。
 //
 // 页面壳层（CSRF / 多语言 / 侧栏 / 权限上下文 / 分页）统一走 internal/web/shell；
 // 页面路由与 API 在同一处装配（mail_router.go → setupMailPageRoutes）。
@@ -18,7 +24,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -46,8 +51,12 @@ func mailPageNumber(raw string) int {
 	return page
 }
 
-// mailListPagination 在域内重写共享分页组件的固定 page 参数，保留另一张表的页码。
-func mailListPagination(total int64, page int, param, base string, otherPage int, tr func(string, string) string) map[string]any {
+// mailListPagination 在域内重写共享分页组件的固定 page 参数为域内页码参数名（account_page）。
+//
+// 为什么还要改参数名：拆页前同一页有两张表、共用一个 ?page=，必须靠 account_page /
+// template_page 区分；拆页后账号表仍沿用 account_page —— 它是既有书签与测试的契约，
+// 而 limit 每页固定，从链接里去掉（避免出现「翻页改条数」这种页面并不支持的操作）。
+func mailListPagination(total int64, page int, param, base string, tr mailTr) map[string]any {
 	pagination := shell.BuildPagination(total, page, mailListPageSize, base, tr)
 	if pagination == nil {
 		return map[string]any{}
@@ -65,11 +74,6 @@ func mailListPagination(total int64, page int, param, base string, otherPage int
 		q.Set(param, q.Get("page"))
 		q.Del("page")
 		q.Del("limit")
-		otherParam := "account_page"
-		if param == "account_page" {
-			otherParam = "template_page"
-		}
-		q.Set(otherParam, strconv.Itoa(otherPage))
 		u.RawQuery = q.Encode()
 		link.URL = u.String()
 	}
@@ -82,7 +86,7 @@ func NewMailPageHandle(mail mailcontract.MailService) *mailPageHandle {
 	return &mailPageHandle{mail: mail}
 }
 
-// MailPage 发信账号 + 邮件模板页。
+// MailPage 发信账号页（只回答「有哪些发信账号」，模板搬到 /admin/mail/templates）。
 func (h *mailPageHandle) MailPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	// 取数失败只回一条归口文案（service 的 i18n key 翻成中文；基础设施错误只进日志）。
@@ -95,31 +99,21 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/mail/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
 		return
 	}
-	templateRows, templateTotal, templatePage, err := h.mail.ListTemplatesPage(ctx, "", mailPageNumber(c.Query("template_page")), mailListPageSize)
-	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
-		return
-	}
 
 	data := shell.Prepare(c, gin.H{
-		"title":     mailLabel(shell.TranslateFor(c), mailenums.PageTitleMail),
-		"Accounts":  accountRows,
-		"Templates": templateRows,
+		"title":    mailLabel(shell.TranslateFor(c), mailenums.PageTitleAccounts),
+		"Accounts": accountRows,
 		// 读侧回执一律经 mail_err.go 的白名单出口：查询参数不是可信边界。
 		"Err": mailPageErr(c),
 		"Ok":  mailPageOk(c),
 		// Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。模板用 isset 认这个可选键。
 		"Done": mailPageDone(c),
 	})
-	// 两张表的分页数据分开命名（Accounts* / Templates*）：模板两次 include 分页片段时
-	// 各自传一份 context（Jet 的 include 传了 context 后，被包含模板的 . 就是它本身）。
-	// TemplateKeys 在「无分页」时返回空 map，因此这两组键在单页时可能不存在 ——
-	// 模板侧用 {{key := .["X"]}} 取值（缺键为 nil，不中断），片段里的 if 自然跳过。
-	for k, v := range mailListPagination(accountTotal, accountPage, "account_page", "/admin/mail", templatePage, shell.TranslateFor(c)) {
-		data["Accounts"+k] = v
-	}
-	for k, v := range mailListPagination(templateTotal, templatePage, "template_page", "/admin/mail", accountPage, shell.TranslateFor(c)) {
-		data["Templates"+k] = v
+	// 分页数据按 TemplateKeys 摊平进 data 顶层：单页 / 空数据时它返回空 map，
+	// 于是 PaginationLinks / PaginationInfo 这两个键不存在 —— 模板侧用
+	// {{key := .["X"]}} 取值（缺键为 nil，不中断），分页片段里的 if 自然跳过。
+	for k, v := range mailListPagination(accountTotal, accountPage, "account_page", "/admin/mail", shell.TranslateFor(c)) {
+		data[k] = v
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail.html", data)
 }
@@ -133,10 +127,9 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 // **title 必须是小写 key**：layout.html 用 {{.title}} 取值，缺它同样会中断。
 func mailPageErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":     mailLabel(shell.TranslateFor(c), mailenums.PageTitleMail),
-		"Err":       mailErrPageText(c, err),
-		"Accounts":  []any{},
-		"Templates": []any{},
+		"title":    mailLabel(shell.TranslateFor(c), mailenums.PageTitleAccounts),
+		"Err":      mailErrPageText(c, err),
+		"Accounts": []any{},
 	}
 }
 
@@ -227,19 +220,42 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 		}
 	}
 	if _, err := h.mail.UpsertTemplate(c.Request.Context(), req); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
+		c.Redirect(http.StatusFound, "/admin/mail/templates?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
+	c.Redirect(http.StatusFound, "/admin/mail/templates?ok=1")
 }
 
 // MailTemplateDelete 删除邮件模板。
 func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
 	if err := h.mail.DeleteTemplate(c.Request.Context(), c.PostForm("template_key"), c.PostForm("locale")); err != nil {
-		c.Redirect(http.StatusFound, "/admin/mail?err="+urlQueryEscape(mailErrPageText(c, err)))
+		c.Redirect(http.StatusFound, "/admin/mail/templates?err="+urlQueryEscape(mailErrPageText(c, err)))
 		return
 	}
-	c.Redirect(http.StatusFound, "/admin/mail?ok=1")
+	c.Redirect(http.StatusFound, "/admin/mail/templates?ok=1")
+}
+
+// MailMarketingRedirect 把旧的「邮件营销」地址引导到拆页后的联系人页。
+//
+// 保留 302 而不是让路径 404：它此前同时是 sys_menus 的菜单项和用户书签，
+// 直接消失会让人以为功能被删了。选 302 不是 301 —— 301 会被浏览器长期缓存，
+// 将来若再调整落点，老客户端永远回不来。
+//
+// 只透传目标页认识的三个参数（keyword / status / page）：带着不认识的参数跳到新页，
+// 用户会以为自己筛过什么，而页面显示的是全量 —— 这比直接丢掉筛选更难排查。
+// 活动类筛选参数（campaign_*）属于另一张表，按裁定丢弃。
+func (h *mailPageHandle) MailMarketingRedirect(c *gin.Context) {
+	query := url.Values{}
+	for _, key := range []string{"keyword", "status", "page"} {
+		if value := strings.TrimSpace(c.Query(key)); value != "" {
+			query.Set(key, value)
+		}
+	}
+	target := "/admin/mail/contacts"
+	if encoded := query.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+	c.Redirect(http.StatusFound, target)
 }
 
 // urlQueryEscape 查询参数转义（重定向回显错误文案 / 导入统计）。
@@ -250,7 +266,8 @@ func urlQueryEscape(value string) string {
 
 // —— 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）——
 //
-// 账号 / 模板的批量端点在配置页，联系人 / 活动的在营销页（mail_marketing_page_handle.go），
+// 账号的批量端点在发信账号页（mail_page_handle.go 上方），模板的在 mail_templates_page_handle.go，
+// 联系人 / 活动的在 mail_contacts_page_handle.go / mail_campaigns_page_handle.go，
 // 但形状是同一个，与产品、订单、优惠码域一致：**逐条走同一条单条路径**，
 // 失败只计跳过、不中断整批 —— 批量操作不能因为一条被服务端拒绝就整批回滚，
 // 那会让人以为「一条都没做」然后反复重试；也不能静默部分成功，所以结论按
@@ -299,7 +316,7 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 	ctx := c.Request.Context()
 	list, err := h.mail.ListTemplates(ctx, "")
 	if err != nil {
-		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "",
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/templates", nil, "",
 			mailTemplateListFailedText))
 		return
 	}
@@ -313,7 +330,7 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, "", mailBulkIDsText(c, berr)))
+		c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/templates", nil, "", mailBulkIDsText(c, berr)))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -330,7 +347,7 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	done, warn := mailBulkOutcome("删除", "邮件模板", deleted, skipped)
-	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail", nil, done, warn))
+	c.Redirect(http.StatusFound, mailBulkLocation(c, "/admin/mail/templates", nil, done, warn))
 }
 
 // mailBulkOutcome 把「成功 N / 跳过 M」折成两条回带文案。

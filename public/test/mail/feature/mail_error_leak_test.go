@@ -70,7 +70,7 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
 	engine.GET("/admin/mail", h.MailPage)
-	engine.GET("/admin/mail/marketing", h.MailMarketingPage)
+	engine.GET("/admin/mail/contacts", h.MailContactsPage)
 	engine.GET("/admin/mail/automation", h.MailAutomationPage)
 	engine.POST("/admin/mail/account/save", h.MailAccountSave)
 	engine.POST("/admin/mail/template/save", h.MailTemplateSave)
@@ -195,12 +195,12 @@ func TestMailAutomationPageHidesInternalError(t *testing.T) {
 	}
 }
 
-// TestMailMarketingPageHidesInternalError 营销页取数失败：同样是归口文案 + 整页渲染完。
+// TestMailContactsPageHidesInternalError 联系人页取数失败：同样是归口文案 + 整页渲染完。
 //
-// 这条同时守住营销页错误分支的**空值注入**：模板在提示条之后就用 .Keyword / .Status /
-// .Page / len(.Contacts) / len(.Campaigns) 取值，只注入 Err 会让 Jet 在那一行中断
+// 这条同时守住联系人页错误分支的**空值注入**：模板在提示条之后就用 .Keyword / .Status /
+// .Page / len(.Contacts) 取值，只注入 Err 会让 Jet 在那一行中断
 // （HTTP 仍是 200、正文整块消失）—— 那种失败看起来像「页面本来就是空的」。
-func TestMailMarketingPageHidesInternalError(t *testing.T) {
+func TestMailContactsPageHidesInternalError(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
@@ -218,15 +218,15 @@ func TestMailMarketingPageHidesInternalError(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/mail/marketing", nil))
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/mail/contacts", nil))
 	body := rec.Body.String()
-	assertMailLeakFree(t, "营销页响应体", body)
+	assertMailLeakFree(t, "联系人页响应体", body)
 	if !strings.Contains(body, mailInternText) {
 		t.Errorf("页面应显示归口文案 %q，实际：%s", mailInternText, mailHead(body))
 	}
 	// 整页渲染完：layout 的收尾标签必须在（Jet 中断时它一定不在）。
 	if !strings.Contains(body, "</html>") {
-		t.Error("营销页渲染被中断（缺少 </html>）—— 错误分支缺模板必需的键")
+		t.Error("联系人页渲染被中断（缺少 </html>）—— 错误分支缺模板必需的键")
 	}
 }
 
@@ -255,11 +255,17 @@ func TestMailBusinessMessageStillVisible(t *testing.T) {
 	}
 	assertMailLeakFree(t, "业务错误重定向", got)
 
-	// ② 本页表单校验文案（parseAutomationForm 组装）：名称必填。
+	// ② 本页表单校验文案：名称必填。校验失败**回显表单（200）**而不是 302 ——
+	// 用户刚改的步骤类型必须留在页面上，302 会把页面翻回存库里的旧状态（改类型就成了死循环）。
 	rec = mailPOST(engine, "/admin/mail/automation/save", url.Values{"name": {""}})
-	got = mailRedirectErr(t, rec)
-	if got != "流程名称不能为空" {
-		t.Errorf("表单校验文案应原样回带「流程名称不能为空」，实际 %q", got)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("表单校验失败应回显表单（200），实际 %d", rec.Code)
 	}
-	assertMailLeakFree(t, "表单校验重定向", got)
+	body := rec.Body.String()
+	if !strings.Contains(body, "流程名称不能为空") {
+		t.Errorf("表单校验文案应回显在页面上，实际：%s", mailHead(body))
+	}
+	if !strings.Contains(body, "</html>") {
+		t.Error("表单校验回显渲染被中断（缺少 </html>）—— 错误分支缺模板必需的键")
+	}
 }

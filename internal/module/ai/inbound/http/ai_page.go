@@ -34,9 +34,12 @@ import (
 
 // 模板名与页面路径。
 const (
-	pageTemplate   = "admin/ai/providers"
+	// modelsTemplate 模型目录片段（每张供应商卡片里那块）。
 	modelsTemplate = "admin/ai/provider_models"
-	pagePath       = "/admin/ai/providers"
+	// pickerTemplate 候选弹窗片段（插进 #ai-picker-host）。
+	pickerTemplate = "admin/ai/provider_picker"
+	// pagePath 统一入口（532 合并后模型与会话共用一个页面），也是各写操作 PRG 的回跳地址。
+	pagePath = "/admin/ai/sessions"
 )
 
 // PageHandle 后台页面的处理器。
@@ -47,40 +50,12 @@ type PageHandle struct {
 // NewPageHandle 构造页面处理器。
 func NewPageHandle(svc aicontract.AIService) *PageHandle { return &PageHandle{svc: svc} }
 
-// ProvidersPage GET /admin/ai/providers → 供应商卡片列表（整页）。
-func (h *PageHandle) ProvidersPage(c *gin.Context) {
-	if err := h.renderPage(c, nil); err != nil {
-		shell.PageError(c, "ai", err)
-		return
-	}
-}
-
-// renderPage 渲染整页（可选附上「选择要添加的模型」弹窗数据）。
+// ProvidersPage GET /admin/ai/providers → 302 到统一入口的模型标签。
 //
-// picker 为 nil 时模板里没有 Picker 键 → 弹窗整块不渲染（isset 判定）。
-func (h *PageHandle) renderPage(c *gin.Context, picker gin.H) error {
-	list, err := h.svc.ListProviders(c.Request.Context())
-	if err != nil {
-		return err
-	}
-	page := shell.Prepare(c, gin.H{
-		"title":           shell.TranslateFor(c)(aienums.AdminProvidersTitle, "模型"),
-		"Presets":         aiservice.BuiltinPresets(),
-		"BuiltinKeys":     aiservice.BuiltinProviderKeys(),
-		"ProtocolOptions": aienums.ProtocolOptions,
-		"Err":             facingQuery(c, "err"),
-		"Done":            facingQuery(c, "done"),
-	})
-	cards := make([]gin.H, 0, len(list))
-	for i := range list {
-		cards = append(cards, cardData(page, list[i], "", false, aiservice.BuiltinBaseURL(list[i].ProviderKey)))
-	}
-	page["Providers"] = cards
-	if picker != nil {
-		page["Picker"] = picker
-	}
-	c.HTML(http.StatusOK, pageTemplate, page)
-	return nil
+// 两个菜单合成一个（532）之后这一页不再有独立模板：留着 302 是为了旧书签与外部链接，
+// 而不是「还有第二条渲染路径」—— 页面本体只有 admin/ai/sessions.html 一份。
+func (h *PageHandle) ProvidersPage(c *gin.Context) {
+	c.Redirect(http.StatusFound, pagePath+"?tab="+sessionTabModels)
 }
 
 // ProviderSave POST /admin/ai/providers/save → 新建 / 更新供应商（PRG）。
@@ -232,14 +207,22 @@ func (h *PageHandle) ModelsCandidates(c *gin.Context) {
 		h.redirectWith(c, "err", aienums.ErrProviderNotFound, nil)
 		return
 	}
-	if err := h.renderPage(c, gin.H{
+	picker := gin.H{
 		"Provider":   result.Provider,
 		"Candidates": result.Candidates,
 		"Existing":   idSet(result.Existing),
-	}); err != nil {
-		shell.PageError(c, "ai", err)
+	}
+	// 两个页面合成一个（532 的菜单合并）之后，弹窗不再靠「重渲染整页 + data-modal-auto-open」，
+	// 而是作为片段插进模型标签底部的 #ai-picker-host —— 整页重渲染会把用户在同一页其它卡片里
+	// 刚填的密钥冲掉。非 htmx 请求（没有 JS）退回整页入口，至少不丢功能。
+	page := shell.Prepare(c, gin.H{
+		"title":  shell.TranslateFor(c)(aienums.AdminLLMTitle, "大模型管理"),
+		"Picker": picker,
+	})
+	if hxFragment(c, pickerTemplate, page) {
 		return
 	}
+	c.Redirect(http.StatusFound, pagePath+"?tab="+sessionTabModels+"&picker="+strconv.FormatInt(providerID, 10))
 }
 
 // ModelsAppend POST /admin/ai/providers/models/append → 把弹窗勾中的模型追加进目录（PRG）。

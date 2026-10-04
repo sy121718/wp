@@ -153,6 +153,30 @@ func init() {
 	registerAIStalePermissionCleanup()
 	// 519：AI 会话页「发消息」词条（见 register_ai_session_chat_i18n.go）。
 	registerAISessionChatI18n()
+	// 527：AI 会话页用量看板（指标卡 / 趋势 / 多维筛选 / 分页）词条（见 register_ai_session_usage_i18n.go）。
+	registerAISessionUsageI18n()
+	// 528：AI 会话详情抽屉的 token 口径词条（见 register_ai_session_usage_notes_i18n.go）。
+	registerAISessionUsageNotesI18n()
+	// 529：ai_event 补记供应商/模型标识（见 register_ai_event_provider_model.go）。
+	registerAIEventProviderModel()
+	// 530：列表行 token 悬浮卡的词条（见 register_ai_session_usage_hover_i18n.go）。
+	registerAISessionUsageHoverI18n()
+	// 531：折线图图例「其他」的词条（见 register_ai_session_trend_other_i18n.go）。
+	registerAISessionTrendOtherI18n()
+	// 532：AI 菜单合并为「大模型管理」（见 register_ai_menu_merge.go）。
+	registerAIMenuMerge()
+	// 533：统一入口的页头说明词条（见 register_ai_lead_i18n.go）。
+	registerAILeadI18n()
+	// 534：532 的收口（见 register_ai_menu_merge_followup.go）。
+	registerAIMenuMergeFollowup()
+	// 535：ai_event 补记 user_id（见 register_ai_event_user.go）。
+	registerAIEventUser()
+	// 536：AI 调用第一关卡的词条 ai.err.userRequired（见 register_ai_user_required_i18n.go）。
+	registerAIUserRequiredI18n()
+	// 537：大模型调用流水表 ai_call_log（见 register_ai_call_log.go）。
+	registerAICallLog()
+	// 538：会话行悬浮卡「最近调用」的词条（见 register_ai_session_calls_i18n.go）。
+	registerAISessionCallsI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

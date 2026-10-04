@@ -46,17 +46,30 @@ func (AISessionEntity) TableName() string { return tableNameAISession }
 
 // AIEventEntity 对应 ai_event 表（append-only：本文件不提供 UPDATE / DELETE 方法）。
 type AIEventEntity struct {
-	ID             int64     `gorm:"column:id;primaryKey"`
-	SessionID      int64     `gorm:"column:session_id"`
-	Seq            int64     `gorm:"column:seq"`
-	Kind           string    `gorm:"column:kind"`
-	SurfaceOp      string    `gorm:"column:surface_op"`
-	ReplaceFromSeq int64     `gorm:"column:replace_from_seq"`
-	ReplaceToSeq   int64     `gorm:"column:replace_to_seq"`
-	Content        string    `gorm:"column:content"`
-	ContentTokens  int64     `gorm:"column:content_tokens"`
-	Meta           JSONMap   `gorm:"column:meta;type:jsonb"`
-	CreateTime     time.Time `gorm:"column:create_time;autoCreateTime"`
+	ID             int64  `gorm:"column:id;primaryKey"`
+	SessionID      int64  `gorm:"column:session_id"`
+	Seq            int64  `gorm:"column:seq"`
+	Kind           string `gorm:"column:kind"`
+	SurfaceOp      string `gorm:"column:surface_op"`
+	ReplaceFromSeq int64  `gorm:"column:replace_from_seq"`
+	ReplaceToSeq   int64  `gorm:"column:replace_to_seq"`
+	Content        string `gorm:"column:content"`
+	ContentTokens  int64  `gorm:"column:content_tokens"`
+	// UserID 这条事件是哪个后台账号写入的（535 起落库）。
+	//
+	// 与会话头上的 create_by 是两回事：那个记「谁开的会话」，这里记「这一条是谁写的」——
+	// 一条会话可以被多个账号续写，审计要能追到每一条的发起人。
+	// 0 表示未记录（535 之前写入的历史事件）。
+	UserID int64 `gorm:"column:user_id"`
+	// ProviderKey / ModelID：这条事件是哪个供应商、哪个模型产生的（529 起落库）。
+	//
+	// 与会话头上的同名字段是两回事：会话可以中途换模型，会话头记的是「当前用的那家」，
+	// 这里记的是「这一条当时用的那家」—— 用量要按供应商/模型拆开，只能靠这两列。
+	// 空串表示未记录（529 之前写入的历史事件），统计时要单独成组，不能并进某个供应商。
+	ProviderKey string    `gorm:"column:provider_key"`
+	ModelID     string    `gorm:"column:model_id"`
+	Meta        JSONMap   `gorm:"column:meta;type:jsonb"`
+	CreateTime  time.Time `gorm:"column:create_time;autoCreateTime"`
 }
 
 // TableName 表名。
@@ -296,4 +309,206 @@ func (m *SessionModel) SumTokensFrom(ctx context.Context, sessionID, fromSeq int
 		return 0, err
 	}
 	return row.Total, nil
+}
+
+// —— 用量统计与多维筛选 ——
+//
+// 这一段的读法与上面的会话 CRUD 不同：它按**维度**汇总（一段时间 / 一家供应商 / 一个模型 /
+// 一个创建人），供后台会话页的指标卡与趋势图使用。两张表仍是同一个聚合（会话 + 它的事件流），
+// 所以 JOIN 只发生在本文件内部，不跨模块。
+
+// SessionQuery 会话列表 / 统计的筛选条件。零值即不过滤，唯一例外是 Status：
+// 用 -1 表达「不限状态」而不是 0（0 是「已归档」这一真实取值）。
+type SessionQuery struct {
+	Keyword     string
+	Status      int
+	ProviderKey string
+	ModelID     string
+	CreateBy    int64
+	From        *time.Time
+	To          *time.Time
+}
+
+// applySessionQuery 把筛选条件落成 WHERE。
+//
+// 每个维度都只在**有值**时才追加条件：把「不限」写成 `provider_key = ”` 会把结果收窄成
+// 「没记供应商的那几条」，与「不过滤」正好相反。时间范围按会话创建时间取闭区间
+// （To 当天 23:59:59 也算在内，实现上是 < To+1 天 —— 用 <= To 会把当天 00:00 之后的都漏掉）。
+func applySessionQuery(q *gorm.DB, f SessionQuery) *gorm.DB {
+	if f.Keyword != "" {
+		like := "%" + f.Keyword + "%"
+		q = q.Where("title ILIKE ? OR session_key ILIKE ?", like, like)
+	}
+	if f.Status >= 0 {
+		q = q.Where("status = ?", f.Status)
+	}
+	if f.ProviderKey != "" {
+		q = q.Where("provider_key = ?", f.ProviderKey)
+	}
+	if f.ModelID != "" {
+		q = q.Where("model_id = ?", f.ModelID)
+	}
+	if f.CreateBy > 0 {
+		q = q.Where("create_by = ?", f.CreateBy)
+	}
+	if f.From != nil {
+		q = q.Where("create_time >= ?", *f.From)
+	}
+	if f.To != nil {
+		q = q.Where("create_time < ?", f.To.AddDate(0, 0, 1))
+	}
+	return q
+}
+
+// ListSessionsFiltered 多条件分页列会话。排序与 ListSessions 保持一致（最近更新在前 + id 兜底），
+// 否则改一次筛选条件就会让同一行在不同页之间跳动。
+func (m *SessionModel) ListSessionsFiltered(ctx context.Context, f SessionQuery, offset, limit int) (rows []AISessionEntity, total int64, err error) {
+	q := applySessionQuery(m.sessions(ctx), f)
+	if err = q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err = q.Order("update_time DESC, id DESC").Offset(offset).Limit(limit).Find(&rows).Error
+	return rows, total, err
+}
+
+// SessionUsage 一批会话的用量汇总（指标卡）。
+type SessionUsage struct {
+	Sessions int64 `gorm:"column:sessions"`
+	Events   int64 `gorm:"column:events"`
+	Tokens   int64 `gorm:"column:tokens"`
+	Compacts int64 `gorm:"column:compacts"`
+}
+
+// SessionUsageOf 汇总匹配会话的：会话数、事件数、累计 token（事件正文估算值之和）、压缩次数。
+//
+// 分两条语句而不是一条 JOIN：会话侧是「一行一票」的计数，事件侧是「一行一条事件」的计数，
+// 并成一个 GROUP BY 会让 SUM(compact_count) 被事件行数放大（一条会话 30 条事件就多算 30 倍）。
+// 两次读之间没有事务 —— 这里是只读看板，某一秒的新增事件造成两个数字轻微不同步是可接受的，
+// 反过来为了对齐而把整个页面包进事务会让长查询长时间持锁。
+func (m *SessionModel) SessionUsageOf(ctx context.Context, f SessionQuery) (out SessionUsage, err error) {
+	var head SessionUsage
+	if err = applySessionQuery(m.sessions(ctx), f).
+		Select("COUNT(*) AS sessions, COALESCE(SUM(compact_count), 0) AS compacts").
+		Take(&head).Error; err != nil {
+		return out, err
+	}
+	var body struct {
+		Events int64 `gorm:"column:events"`
+		Tokens int64 `gorm:"column:tokens"`
+	}
+	if err = m.events(ctx).
+		Where("session_id IN (?)", applySessionQuery(m.sessions(ctx), f).Select("id")).
+		Select("COUNT(*) AS events, COALESCE(SUM(content_tokens), 0) AS tokens").
+		Take(&body).Error; err != nil {
+		return out, err
+	}
+	return SessionUsage{
+		Sessions: head.Sessions,
+		Compacts: head.Compacts,
+		Events:   body.Events,
+		Tokens:   body.Tokens,
+	}, nil
+}
+
+// TrendSeriesRow 折线图上的一个分组点：(供应商, 模型, 天) → token。
+type TrendSeriesRow struct {
+	ProviderKey string
+	ModelID     string
+	Day         time.Time
+	Tokens      int64
+}
+
+// SessionTokenTrendBySeries 按 (供应商, 模型) 分组的逐日 token —— 折线图上的多条线。
+//
+// 折线图必须按来源拆开才看得出「是哪家在消耗」：旧的合计口径（SessionTokenTrend）在
+// 多序列的图上没有位置，已随柱状图一起删除。筛选（同一个 session 子查询）与 trunc 白名单沿用同一套。
+func (m *SessionModel) SessionTokenTrendBySeries(ctx context.Context, f SessionQuery, since time.Time, trunc string) (rows []TrendSeriesRow, err error) {
+	if trunc != "week" {
+		trunc = "day"
+	}
+	err = m.events(ctx).
+		Where("session_id IN (?)", applySessionQuery(m.sessions(ctx), f).Select("id")).
+		Where("create_time >= ?", since).
+		Select("provider_key, model_id, date_trunc('" + trunc + "', create_time)::date AS day, COALESCE(SUM(content_tokens), 0) AS tokens").
+		Group("provider_key, model_id, day").Order("day ASC").Find(&rows).Error
+	return rows, err
+}
+
+// SessionFacets 会话上出现过的筛选取值（供下拉候选）。//
+// 取全量而不是「当前结果集的取值」：筛成 A 供应商后再想切到 B，下拉里必须还有 B
+// —— 否则筛一次就再也回不去（这是筛选器最常见的自锁）。
+type SessionFacets struct {
+	Providers []string
+	Models    []string
+	Creators  []int64
+}
+
+// SessionFacetsOf 取三组候选值，各自去重升序。
+func (m *SessionModel) SessionFacetsOf(ctx context.Context) (out SessionFacets, err error) {
+	if err = m.sessions(ctx).Where("provider_key <> ''").
+		Distinct().Order("provider_key ASC").
+		Pluck("provider_key", &out.Providers).Error; err != nil {
+		return out, err
+	}
+	if err = m.sessions(ctx).Where("model_id <> ''").
+		Distinct().Order("model_id ASC").
+		Pluck("model_id", &out.Models).Error; err != nil {
+		return out, err
+	}
+	err = m.sessions(ctx).Where("create_by > 0").
+		Distinct().Order("create_by ASC").
+		Pluck("create_by", &out.Creators).Error
+	return out, err
+}
+
+// SessionKindUsage 一个会话按事件类型汇总的消耗（抽屉里的 token 明细）。
+type SessionKindUsage struct {
+	Kind   string
+	Events int64
+	Tokens int64
+}
+
+// SessionKindUsageOf 按 kind 分组统计事件数与正文 token。
+//
+// 只查这一个会话：kind 的取值由写入侧白名单约束（user / assistant / tool / compact_* / note），
+// 这里原样返回，译成中文标签是 service 的事 —— model 不认识展示层。
+// 排序按该类型首次出现的序号，让「用户 → 助手 → 工具 → 折叠」这个自然顺序稳定下来
+// （按 kind 字符串排会得到 assistant/tool/user，读起来是乱的）。
+func (m *SessionModel) SessionKindUsageOf(ctx context.Context, sessionID int64) (rows []SessionKindUsage, err error) {
+	err = m.events(ctx).
+		Select("kind, COUNT(*) AS events, COALESCE(SUM(content_tokens), 0) AS tokens").
+		Where("session_id = ?", sessionID).
+		Group("kind").
+		Order("MIN(seq) ASC").
+		Scan(&rows).Error
+	return rows, err
+}
+
+// SessionModelUsage 一个会话里按 (供应商, 模型) 拆开的消耗。
+type SessionModelUsage struct {
+	SessionID   int64
+	ProviderKey string
+	ModelID     string
+	Events      int64
+	Tokens      int64
+}
+
+// SessionModelUsageOf 批量取一组会话的按 (供应商, 模型) 拆分明细。
+//
+// 一次查完整个列表页：列表 20 行逐行查就是 20 次往返，而这块数据的用法是「鼠标一停就要看到」，
+// 不能让悬浮卡在等第 20 次查询。空 provider_key / model_id 归为「未记录」一组 ——
+// 529 之前写入的历史事件就是这一类，不能把它们并进某个供应商的总量里。
+//
+// 排序按消耗降序：最贵的那家排在最上面，这才是打开明细要找的东西。
+func (m *SessionModel) SessionModelUsageOf(ctx context.Context, sessionIDs []int64) (rows []SessionModelUsage, err error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+	err = m.events(ctx).
+		Select("session_id, provider_key, model_id, COUNT(*) AS events, COALESCE(SUM(content_tokens), 0) AS tokens").
+		Where("session_id IN ?", sessionIDs).
+		Group("session_id, provider_key, model_id").
+		Order("session_id ASC, SUM(content_tokens) DESC").
+		Scan(&rows).Error
+	return rows, err
 }

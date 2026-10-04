@@ -67,14 +67,19 @@ func TestMailAutomationPageRenders(t *testing.T) {
 	body := rec.Body.String()
 	// 「补投延时实例」→「补投到点实例」：按钮文案改准确了 —— 补的是**到点的**延时实例，
 	// 不是"补一次投递"。空态同样是「标题 + 一句话」形态。
-	for _, want := range []string{"自动化流程", "新建流程", "运行实例", "补投到点实例", "还没有流程"} {
+	// 「补投到点实例」已随运行实例块搬到 /admin/mail/automation/runs（issue #37）：
+	// 本页只留流程列表，运行实例只由 page-actions 的 ghost 入口进入。
+	for _, want := range []string{"自动化流程", "新建流程", "运行实例", "还没有流程"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("列表页缺少 %q；前 600 字：\n%s", want, firstN(body, 600))
 		}
 	}
 }
 
-// TestMailAutomationEditPageRenders 编辑页渲染（类型下拉与参数说明都在）。
+// TestMailAutomationEditPageRenders 编辑页渲染（步骤表格 + 按类型渲染的控件都在）。
+//
+// 步骤化重做（issue #38 后续）：界面不再出现「标识 / 下一步 / yes / no」四个输入框，
+// 顺序即执行顺序；旧的 7 列版字段（next_1 / yes_1 / no_1 / 入口节点标识）必须消失。
 func TestMailAutomationEditPageRenders(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -87,37 +92,51 @@ func TestMailAutomationEditPageRenders(t *testing.T) {
 		t.Fatalf("状态码 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"新建自动化流程", "触发方式", "入口节点标识", "node_key_1", "node_type_1",
-		"param_1", "next_1", "yes_1", "no_1", "条件分支", "等待", "发邮件", "node_key_12"} {
+	for _, want := range []string{"新建自动化流程", "触发方式", "步骤", "添加一步", "保存",
+		"node_key_1", "node_type_1", "条件分支", "等待", "发邮件"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("编辑页缺少 %q；前 600 字：\n%s", want, firstN(body, 600))
 		}
 	}
+	for _, gone := range []string{"入口节点标识", "next_1", "yes_1", "no_1"} {
+		if strings.Contains(body, gone) {
+			t.Fatalf("编辑页不该再出现旧字段 %q；前 600 字：\n%s", gone, firstN(body, 600))
+		}
+	}
 }
 
-// TestMailAutomationFormSaveRejectsCycle 表单提交的图有环时被拒绝，并带定位信息。
-func TestMailAutomationFormSaveRejectsCycle(t *testing.T) {
+// TestMailAutomationFormSaveRejectsBackwardJump 分支往前跳会被行级校验拦下，
+// 并且**回显 200 保住用户刚填的步骤**（302 会把页面翻回存库里的旧状态，改类型就成了死循环）。
+func TestMailAutomationFormSaveRejectsBackwardJump(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
 	}
 	router := newAutomationRouter(t, f)
 	form := url.Values{
-		"id": {"0"}, "name": {"环流程"}, "trigger_type": {"manual"}, "entry": {"n1"},
-		"node_key_1": {"n1"}, "node_type_1": {"trigger"}, "next_1": {"n2"},
-		"node_key_2": {"n2"}, "node_type_2": {"delay"}, "param_2": {"60"}, "next_2": {"n1"},
+		"id": {"0"}, "name": {"回跳流程"}, "trigger_type": {"manual"}, "entry": {"n1"},
+		"node_key_1": {"n2"}, "node_type_1": {"branch"}, "param_1": {"opened"},
+		"yes_1": {"1"}, "no_1": {"end"},
 	}
 	rec := postAutomationForm(router, "/admin/mail/automation/save", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应 302 回编辑页，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("校验失败应回显表单（200），实际 %d", rec.Code)
 	}
-	loc := rec.Header().Get("Location")
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("有环的图应被拒绝并回带错误，实际跳转 %q", loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, "跳转目标只能选本步之后的步骤") {
+		t.Fatalf("应提示跳转目标不合法；前 600 字：\n%s", firstN(body, 600))
 	}
-	decoded, _ := url.QueryUnescape(loc)
-	if !strings.Contains(decoded, "环") {
-		t.Fatalf("错误里应说明是环，实际 %q", decoded)
+	// 回显必须把用户刚填的东西留在页面上（这正是选 200 回显而不是 302 的全部理由）：
+	// 名称、这一行选的类型、按新类型渲染出来的参数控件，一个都不能丢。
+	for _, want := range []string{
+		`value="回跳流程"`,
+		`<option value="branch" selected>`,
+		`name="param_tag_1"`, `name="yes_1"`, `name="no_1"`,
+		`value="opened" selected`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("回显丢失 %s；前 600 字：\n%s", want, firstN(body, 600))
+		}
 	}
 }
 
@@ -130,15 +149,14 @@ func TestMailAutomationFormSaveThenRunDetailRenders(t *testing.T) {
 	ctx := context.Background()
 	router := newAutomationRouter(t, f)
 
-	// 1. 表单保存一条合法流程（入口 → 打标签 → 结束）。
+	// 1. 表单保存一条合法流程（触发 → 打标签 → 结束）。
 	form := url.Values{
 		"id": {"0"}, "name": {"表单流程"}, "description": {"测试"},
 		"trigger_type": {"manual"}, "entry": {"n1"},
-		"node_key_1": {"n1"}, "node_type_1": {"trigger"}, "next_1": {"n2"},
-		"node_key_2": {"n2"}, "node_type_2": {"tag"}, "param_2": {"vip, hot"}, "next_2": {"n3"},
-		"node_key_3": {"n3"}, "node_type_3": {"end"},
-		// 多填一行空行（表单有 12 行）应被跳过，而不是报错。
-		"node_key_4": {""}, "node_type_4": {""},
+		"node_key_1": {"n2"}, "node_type_1": {"tag"}, "param_1": {"vip, hot"},
+		"node_key_2": {"n3"}, "node_type_2": {"end"},
+		// 多填一行空行（表单固定几行）应被跳过，而不是报错。
+		"node_key_3": {""}, "node_type_3": {""},
 	}
 	rec := postAutomationForm(router, "/admin/mail/automation/save", form)
 	if rec.Code != http.StatusFound {

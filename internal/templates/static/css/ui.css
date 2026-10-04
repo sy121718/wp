@@ -1149,6 +1149,12 @@ details[open] > summary::after { transform: rotate(0deg); }
 .tab-list > [role="tab"]:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: -2px; }
 .tab-panel { min-width: 0; }
 .tab-panel[hidden] { display: none; }
+/* 内边距容器里的页签组：左右缩进交给容器（.card-body / .drawer-body 都是 --ui-sp-xl），
+   页签与面板内容同轴。不归零会出现「页签在 24+16=40px、面板内容在 24px」的错位。
+   容器自身无内边距时不命中这条 —— 如 analytics.html 的 .card.list-card，
+   面板里是表格、该满宽，仍保留 .tab-list 自带的缩进。 */
+.card-body > .tabs > .tab-list,
+.drawer-body > .tabs > .tab-list { padding-inline: 0; }
 
 /* ===== 媒体字段（ui/mediafield.js）=====
    字段结构：预览块 + 一行（输入框 / 媒体库 / 清除）。

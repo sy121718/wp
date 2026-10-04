@@ -42,6 +42,49 @@ type UpdateContactStatusReq struct {
 	OperatorID uint64
 }
 
+// SaveContactReq 新建 / 编辑联系人（ID = 0 新建，否则编辑）。
+//
+// 新建与编辑共用一条请求：两者填的是同一组字段，拆成两个结构只会让字段清单出现两份，
+// 一处加了字段另一处漏掉，表现就是「编辑页保存后某个字段被清空」。
+type SaveContactReq struct {
+	// ID 联系人主键；0 = 新建（语义见 service.SaveContact）。
+	ID uint64
+	// Email 邮箱。唯一键是 lower(email) 表达式索引，写入前一律走 normalizeEmail。
+	Email string
+	Name  string
+	// Tags 完整标签列表（编辑抽屉提交的是全量，不是差量）——
+	// 差量增删走 TagContacts，「保存」这一条路径的语义是「保存后就是这些」。
+	Tags []string
+	// Source 来源。新建为空时落 manual；编辑为空时保持原值
+	// （来源是事实记录，不该因为没在表单里填就被抹掉）。
+	Source string
+	// ConsentSource 同意来源（留痕：谁在什么时候声明过什么）。
+	ConsentSource string
+	// Status 同意状态。为空时新建落 pending —— 没有同意证据的人不进入可发名单。
+	Status     string
+	OperatorID uint64
+}
+
+// DeleteContactsReq 删除联系人（单条与批量共用）。
+//
+// **只删 mail_contacts 行**：抑制名单（mail_suppressions）是地址级的事实记录，
+// 删联系人时一起删掉，下次导入同一个地址就会把退订者复活 —— 见 service.DeleteContacts。
+type DeleteContactsReq struct {
+	IDs        []uint64
+	OperatorID uint64
+}
+
+// TagContactsReq 批量打标签：给这批人加上 Add 里的标签、去掉 Remove 里的标签。
+//
+// 增与减放在同一条请求里（而不是两个端点）：一次「打标签」在运营眼里是一个动作，
+// 分成两次提交就必然出现「加成功、减失败」的半截状态。
+type TagContactsReq struct {
+	IDs        []uint64
+	Add        []string
+	Remove     []string
+	OperatorID uint64
+}
+
 // PullSystemUsersReq 从系统用户拉联系人。
 type PullSystemUsersReq struct {
 	// OnlyEmailNotify 只拉用户侧明确勾选接收营销的人（默认 true）——

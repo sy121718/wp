@@ -1,0 +1,106 @@
+{* admin/ai/provider_create.html — 「新建供应商」抽屉内容（页内 <template>，由页头按钮打开）。
+
+   抽成独立片段是因为**两个页面都要它**：模型配置页（ai/providers.html）与会话页的
+   「AI 模型」标签（ai/sessions.html）。复制一份必然漂移 —— 加了字段只改一处，
+   另一处静默少一个输入框。
+
+   这里的 <template> 第一层直接是 .tabs（不套 .stack）：克隆进 .drawer-body 后靠 ui.css 的
+   `.drawer-body > .tabs > .tab-list { padding-inline: 0 }` 让页签与面板内容同轴。
+
+   调用方需保证上下文里有：csrf_token（隐藏域）、t（翻译）、Presets（内置预设）、ProtocolOptions。
+   数据来自 ai/inbound/http/ai_page.go 的 renderPage 与 ai_session_page.go 的 attachProviderCards。 *}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+<template id="tpl-ai-provider-create">
+    <div class="tabs" data-tabs>
+        <div class="tab-list" role="tablist">
+            <button type="button" role="tab" id="ai-tab-preset" aria-controls="ai-panel-preset" aria-selected="true" tabindex="0">{{tr("admin.ai.tab.preset", "第三方模型提供商")}}</button>
+            <button type="button" role="tab" id="ai-tab-custom" aria-controls="ai-panel-custom" aria-selected="false" tabindex="-1">{{tr("admin.ai.tab.custom", "自定义模型 API")}}</button>
+        </div>
+
+        {* ===== tab1：内置预设提供商（provider_key / 协议 / 默认地址都由预设兜底） ===== *}
+        <div class="tab-panel" role="tabpanel" id="ai-panel-preset" aria-labelledby="ai-tab-preset">
+            <p class="form-hint">{{tr("admin.ai.tab.presetHint", "从内置目录中选择 OpenAI、Anthropic、Kimi 等提供商，填入其 API 密钥即可使用。")}}</p>
+            <form method="post" action="/admin/ai/providers/save">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.field.preset", "提供商")}}</label>
+                    <select class="form-select" name="providerKey" required>
+                        <option value="">{{tr("admin.ai.ph.preset", "选择提供商")}}</option>
+                        {{if isset(.Presets)}}{{range _, o := .Presets}}
+                        <option value="{{o.Key}}">{{o.DisplayName}}（{{o.Key}}）</option>
+                        {{end}}{{end}}
+                    </select>
+                    <p class="form-hint">{{tr("admin.ai.hint.preset", "标识决定「恢复默认模型」读哪份内置清单。默认地址与协议按该提供商的预设填入，可在下面改。")}}</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.apiKey", "API 密钥")}}</label>
+                    <input type="password" class="form-input" name="apiKey" autocomplete="new-password" placeholder="{{tr("admin.ai.ph.apiKeyNew", "填写后加密存储，页面只回是否已配置")}}">
+                </div>
+                <details class="section-fold">
+                    <summary>{{tr("admin.ai.section.custom", "自定义设置")}}</summary>
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.displayName", "显示名称")}}</label>
+                        <input type="text" class="form-input" name="displayName" placeholder="{{tr("admin.ai.ph.displayNamePreset", "留空使用提供商默认名称")}}" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.baseUrl", "API 地址")}}</label>
+                        <input type="text" class="form-input" name="baseUrl" placeholder="{{tr("admin.ai.ph.baseUrl", "提供商默认")}}" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.protocol", "API 协议")}}</label>
+                        <select class="form-select" name="protocol">
+                            <option value="">{{tr("admin.ai.ph.protocolPreset", "按提供商预设")}}</option>
+                            {{range _, o := .ProtocolOptions}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{tr("admin.ai.field.sort", "排序")}}</label>
+                        <input type="number" class="form-input" name="sort" value="0" inputmode="numeric" step="1">
+                    </div>
+                </details>
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">{{tr("admin.ai.create.submitPreset", "添加提供商")}}</button>
+                </div>
+            </form>
+        </div>
+
+        {* ===== tab2：自定义端点（没有任何预设可依据，字段全手填） ===== *}
+        <div class="tab-panel" role="tabpanel" id="ai-panel-custom" aria-labelledby="ai-tab-custom" hidden>
+            <p class="form-hint">{{tr("admin.ai.tab.customHint", "连接中转站、自部署服务或其他兼容 OpenAI / Anthropic 协议的接口，需填写 API 地址、协议和模型。")}}</p>
+            <form method="post" action="/admin/ai/providers/save">
+                <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.field.providerKey", "供应商标识")}}</label>
+                    <input type="text" class="form-input" name="providerKey" placeholder="{{tr("admin.ai.ph.providerKeyCustom", "如 acme-gateway")}}" required autocomplete="off">
+                    <p class="form-hint">{{tr("admin.ai.hint.providerKeyCustom", "以小写字母开头的标识，在请求中唯一标识该提供商，并用于派生凭据名。保存后不可修改，也不参与「恢复默认模型」（自定义端点没有内置清单）。")}}</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.field.displayName", "显示名称")}}</label>
+                    <input type="text" class="form-input" name="displayName" placeholder="{{tr("admin.ai.ph.displayName", "如 DeepSeek")}}" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.field.baseUrl", "API 地址")}}</label>
+                    <input type="text" class="form-input" name="baseUrl" placeholder="{{tr("admin.ai.ph.baseUrlCustom", "如 https://gateway.example.com/v1")}}" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label req">{{tr("admin.ai.field.protocol", "API 协议")}}</label>
+                    <select class="form-select" name="protocol">
+                        {{range _, o := .ProtocolOptions}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.apiKey", "API 密钥")}}</label>
+                    <input type="password" class="form-input" name="apiKey" autocomplete="new-password" placeholder="{{tr("admin.ai.ph.apiKeyNew", "填写后加密存储，页面只回是否已配置")}}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{tr("admin.ai.field.sort", "排序")}}</label>
+                    <input type="number" class="form-input" name="sort" value="0" inputmode="numeric" step="1">
+                </div>
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">{{tr("admin.ai.create.submitCustom", "添加模型 API")}}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</template>

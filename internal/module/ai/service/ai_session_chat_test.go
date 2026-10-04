@@ -63,6 +63,10 @@ func sessionChatUpstream(t *testing.T, svc *aiservice.Service, reply string) <-c
 	return bodies
 }
 
+// testUserID 用例里的「已登录账号」：会话层的第一关卡要求 UserID > 0，
+// 每个请求字面量都要带上它（没有身份 = 不受理，这正是要钉住的行为）。
+const testUserID int64 = 1
+
 // waitBody 取假上游收到的请求正文（超时捏死，避免用例挂住）。
 func waitBody(t *testing.T, bodies <-chan string) string {
 	t.Helper()
@@ -96,6 +100,7 @@ func TestSessionChatSendCreatesSessionAndWritesBothEvents(t *testing.T) {
 		ProviderKey: "sess-chat",
 		Model:       "muse",
 		Input:       "在吗",
+		UserID:      testUserID,
 	})
 	if err != nil {
 		t.Fatalf("发消息失败：%v", err)
@@ -123,7 +128,7 @@ func TestSessionChatSendSendsProjectionToUpstream(t *testing.T) {
 	bodies := sessionChatUpstream(t, svc, "收到")
 	newChatProvider(t, svc, "sess-chat", aienums.ProtocolOpenAIResponses)
 
-	head, err := sess.EnsureSession(context.Background(), "chat-key-2", "sess-chat", "muse", "历史会话", 0)
+	head, err := sess.EnsureSession(context.Background(), "chat-key-2", "sess-chat", "muse", "历史会话", testUserID)
 	if err != nil {
 		t.Fatalf("建会话失败：%v", err)
 	}
@@ -131,6 +136,7 @@ func TestSessionChatSendSendsProjectionToUpstream(t *testing.T) {
 		SessionID: head.ID,
 		Kind:      string(aienums.EventKindUser),
 		Content:   "上一条问题",
+		UserID:    testUserID,
 	}); err != nil {
 		t.Fatalf("追加历史事件失败：%v", err)
 	}
@@ -140,6 +146,7 @@ func TestSessionChatSendSendsProjectionToUpstream(t *testing.T) {
 		ProviderKey: "sess-chat",
 		Model:       "muse",
 		Input:       "接着问",
+		UserID:      testUserID,
 	}); err != nil {
 		t.Fatalf("发消息失败：%v", err)
 	}
@@ -159,7 +166,7 @@ func TestSessionChatSendKeepsUserEventWhenUpstreamFails(t *testing.T) {
 	hits := fakeUpstream(t, svc, http.StatusInternalServerError, `{"error":"boom"}`)
 	newChatProvider(t, svc, "sess-chat", aienums.ProtocolOpenAIResponses)
 
-	head, err := sess.EnsureSession(context.Background(), "chat-key-3", "sess-chat", "muse", "失败会话", 0)
+	head, err := sess.EnsureSession(context.Background(), "chat-key-3", "sess-chat", "muse", "失败会话", testUserID)
 	if err != nil {
 		t.Fatalf("建会话失败：%v", err)
 	}
@@ -168,6 +175,7 @@ func TestSessionChatSendKeepsUserEventWhenUpstreamFails(t *testing.T) {
 		ProviderKey: "sess-chat",
 		Model:       "muse",
 		Input:       "会失败",
+		UserID:      testUserID,
 	})
 	if err == nil {
 		t.Fatal("上游 5xx 时不该返回成功")
@@ -196,7 +204,7 @@ func TestSessionChatSendRejectsEmptyReply(t *testing.T) {
 	_ = sessionChatUpstream(t, svc, "")
 	newChatProvider(t, svc, "sess-chat", aienums.ProtocolOpenAIResponses)
 
-	head, err := sess.EnsureSession(context.Background(), "chat-key-4", "sess-chat", "muse", "空回复", 0)
+	head, err := sess.EnsureSession(context.Background(), "chat-key-4", "sess-chat", "muse", "空回复", testUserID)
 	if err != nil {
 		t.Fatalf("建会话失败：%v", err)
 	}
@@ -205,6 +213,7 @@ func TestSessionChatSendRejectsEmptyReply(t *testing.T) {
 		ProviderKey: "sess-chat",
 		Model:       "muse",
 		Input:       "空回复",
+		UserID:      testUserID,
 	}); err == nil {
 		t.Fatal("上游回空文本时不该返回成功")
 	}
@@ -223,6 +232,7 @@ func TestSessionChatSendWithoutChatPortFails(t *testing.T) {
 		ProviderKey: "sess-chat",
 		Model:       "muse",
 		Input:       "hi",
+		UserID:      testUserID,
 	})
 	if !errors.Is(err, aiservice.ErrSessionChatUnavailable) {
 		t.Fatalf("err = %v，想要 ErrSessionChatUnavailable", err)
@@ -234,10 +244,34 @@ func TestSessionChatSendValidatesInput(t *testing.T) {
 	sess, _ := newSessionChatService(t)
 	ctx := context.Background()
 
-	if _, err := sess.SendMessage(ctx, aidto.SendMessageReq{SessionKey: "k", ProviderKey: "p", Model: "m", Input: "   "}); !errors.Is(err, aiservice.ErrSessionChatInputRequired) {
+	if _, err := sess.SendMessage(ctx, aidto.SendMessageReq{SessionKey: "k", ProviderKey: "p", Model: "m", Input: "   ", UserID: testUserID}); !errors.Is(err, aiservice.ErrSessionChatInputRequired) {
 		t.Fatalf("空输入 err = %v，想要 ErrSessionChatInputRequired", err)
 	}
-	if _, err := sess.SendMessage(ctx, aidto.SendMessageReq{SessionKey: "k", Input: "hi"}); !errors.Is(err, aiservice.ErrSessionChatModelRequired) {
+	if _, err := sess.SendMessage(ctx, aidto.SendMessageReq{SessionKey: "k", Input: "hi", UserID: testUserID}); !errors.Is(err, aiservice.ErrSessionChatModelRequired) {
 		t.Fatalf("缺模型 err = %v，想要 ErrSessionChatModelRequired", err)
+	}
+}
+
+// TestSessionChatSendRequiresUser 没有身份 → 第一关卡直接拒，**连对话端口都不该被调用**。
+//
+// 这一条钉住「准入条件而不是事后记账」：把 UserID 判断挪到写事件之后、或挪到组装回复之后，
+// 都会让匿名请求先把消息写进别人的会话再失败 —— 那时本用例会看到事件表多了一行。
+func TestSessionChatSendRequiresUser(t *testing.T) {
+	sess, svc := newSessionChatService(t)
+	bodies := sessionChatUpstream(t, svc, "不该被调用")
+	newChatProvider(t, svc, "sess-chat", aienums.ProtocolOpenAIResponses)
+
+	if _, err := sess.SendMessage(context.Background(), aidto.SendMessageReq{
+		SessionKey:  "chat-key-anon",
+		ProviderKey: "sess-chat",
+		Model:       "muse",
+		Input:       "匿名请求",
+	}); !errors.Is(err, aiservice.ErrUserRequired) {
+		t.Fatalf("无身份 err = %v，想要 ErrUserRequired", err)
+	}
+	select {
+	case body := <-bodies:
+		t.Fatalf("无身份的请求不该打到上游，实际收到：%s", body)
+	default:
 	}
 }

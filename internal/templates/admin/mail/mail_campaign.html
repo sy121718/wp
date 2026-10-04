@@ -34,7 +34,7 @@
       <p class="page-sub">{{ .["t"]("admin.mail.campaign.status_label", "状态：") }}{{c.Status}} · {{ .["t"]("admin.mail.campaign.subject_label", "主题：") }}{{c.Subject}}</p>
     </div>
     <div class="page-actions">
-      <a class="btn btn-sm btn-ghost" href="/admin/mail/marketing">← {{ .["t"]("admin.mail.campaign.back", "返回营销页") }}</a>
+      <a class="btn btn-sm btn-ghost" href="/admin/mail/campaigns">← {{ .["t"]("admin.mail.campaign.back", "返回群发活动") }}</a>
     </div>
   </header>
 
@@ -80,10 +80,11 @@
     <div class="empty-state">
       <p class="empty-title">{{ .["t"]("admin.mail.campaign.links_empty.title", "还没有点击数据") }}</p>
       <p class="empty-desc">{{ .["t"]("admin.mail.campaign.links_empty", "启动群发后，有收件人点击邮件链接才会显示排行。") }}</p>
-      {* 空态动作：链接排行与投递明细一起为空，九成是活动还没启动（启动在营销页）。
-         所以下一步是回营销页看活动状态 / 启动群发，不是一个本页的「刷新」。 *}
+      {* 空态动作：链接排行与投递明细一起为空，九成是活动还没启动（启动在群发活动页）。
+         所以下一步是回群发活动页看活动状态 / 启动群发，不是一个本页的「刷新」。
+         文案由迁移 523 改写库值；键已存在时 fallback 不生效，此处与库值保持逐字一致。 *}
       <div class="empty-actions">
-        <a class="btn" href="/admin/mail/marketing">{{ .["t"]("admin.mail.campaign.empty.action", "回营销页启动群发") }}</a>
+        <a class="btn" href="/admin/mail/campaigns">{{ .["t"]("admin.mail.campaign.empty.action", "回群发活动页启动") }}</a>
       </div>
     </div>
       </td></tr>
@@ -114,7 +115,7 @@
       <p class="empty-desc">{{ .["t"]("admin.mail.campaign.recipients_empty", "启动群发后，收件人会分批进入投递队列。") }}</p>
       {* 空态动作同上：收件人明细要等活动启动后才会分批展开。 *}
       <div class="empty-actions">
-        <a class="btn" href="/admin/mail/marketing">{{ .["t"]("admin.mail.campaign.empty.action", "回营销页启动群发") }}</a>
+        <a class="btn" href="/admin/mail/campaigns">{{ .["t"]("admin.mail.campaign.empty.action", "回群发活动页启动") }}</a>
       </div>
     </div>
       </td></tr>
