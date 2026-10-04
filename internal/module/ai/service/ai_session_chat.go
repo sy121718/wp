@@ -359,12 +359,12 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 	// 免得下面几个提前 return 各写一遍（漏一个就少一条流水）。
 	fail := func(status aienums.ToolCallStatus) string {
 		text := facingToolText(aienums.ErrToolRunFailed)
-		e := newToolCallLog(sessionID, userID, call.Name, call.Arguments, time.Since(start))
+		e := NewToolCallEntry(sessionID, userID, call.Name, call.Arguments, time.Since(start))
 		e.Status = string(status)
-		e.ErrorKey = toolErrorKeyOf(status)
-		e.ResultSummary = summarizeForLog(text)
+		e.ErrorKey = ToolErrorKeyOf(status)
+		e.ResultSummary = SummarizeForLog(text)
 		e.ResultLen = int64(len([]rune(text)))
-		s.logToolCallAsync(ctx, e)
+		s.toolCalls.Record(ctx, e)
 		return text
 	}
 
@@ -390,7 +390,7 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 	}
 
 	// 剪枝：结果进上下文之前先收一次，剪枝标记一并回给模型（见 pruneToolResult）。
-	text, truncated := pruneToolResult(res.Text)
+	text, truncated := PruneToolResult(res.Text)
 	// 空文本不能作为 tool 消息内容：上游会把它当成「没有内容」，
 	// 而模型看到的是「调用成功了但什么都没返回」—— 与失败无法区分。
 	if strings.TrimSpace(text) == "" {
@@ -398,13 +398,13 @@ func (s *SessionService) runTool(ctx context.Context, sessionID, userID int64, c
 		return fail(status)
 	}
 
-	e := newToolCallLog(sessionID, userID, call.Name, call.Arguments, time.Since(start))
+	e := NewToolCallEntry(sessionID, userID, call.Name, call.Arguments, time.Since(start))
 	e.Status = string(status)
-	e.ErrorKey = toolErrorKeyOf(status)
-	e.ResultSummary = summarizeForLog(text)
+	e.ErrorKey = ToolErrorKeyOf(status)
+	e.ResultSummary = SummarizeForLog(text)
 	e.ResultLen = int64(len([]rune(res.Text)))
 	e.Truncated = truncated
-	s.logToolCallAsync(ctx, e)
+	s.toolCalls.Record(ctx, e)
 	return text
 }
 

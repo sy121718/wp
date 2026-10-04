@@ -27,7 +27,10 @@ import (
 // 不要在这里缓存它的内容（见 ai_tools_wire.go 关于 Specs 的注释）。
 //
 // adminPages 为 nil 时只挂 JSON 接口（用例测试与轻装配场景）。
-func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry) aicontract.AIService {
+// mcpRoot 是**根路由**（不是 /api 下的组）：外部接入点的路径就是 `/mcp`，
+// 且它自带 PAT 鉴权，不走 authorizedAPI 的三层链（会话 / CSRF / Casbin）——
+// 传 nil 表示不暴露外部接入点（装配层的显式选择，而不是「忘了传」）。
+func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterGroup, db *gorm.DB, toolRegistry *mcp.Registry, mcpRoot gin.IRoutes) aicontract.AIService {
 	svc := aiservice.NewService(aimodel.NewAIModel(db))
 	if v, err := config.GetViper(); err == nil && v != nil {
 		svc.SetCipherSecret(v.GetString("app.secret"))
@@ -63,6 +66,14 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	tokenSvc := aiservice.NewAccessTokenService(aimodel.NewAccessTokenModel(db))
 	tokenSvc.SetScopeValidator(func(p string) bool { return permission.Known(permission.Perm(p)) })
 	tokenHandle := NewTokenHandle(tokenSvc)
+
+	// 外部接入点 POST /mcp（MCP over JSON-RPC）：身份是 PAT，权限是「令牌 scope ∩ 账号权限」。
+	// 与工具同源：工具清单来自同一个注册表，所以「站内助手能查的」与「外部能查的」是同一组能力，
+	// 差别只在**谁被允许调哪些**。
+	if mcpRoot != nil && toolRegistry != nil {
+		recorder := aiservice.NewToolCallRecorder(aimodel.NewToolCallLogModel(db))
+		mcpRoot.POST("/mcp", NewMcpEndpoint(tokenSvc, toolRegistry, recorder).Handle)
+	}
 	g := authorizedAPI.Group("/ai")
 
 	// 权限口径：一码一路由（sys_permission 的 permission_code 唯一），配置面按资源逐个列点。

@@ -47,64 +47,79 @@ type ToolCallLogWriter interface {
 	Insert(ctx context.Context, e *aimodel.AIToolCallLogEntity) error
 }
 
-// SetToolCallLogWriter 注入工具调用流水写入端口；未注入时 logToolCallAsync 是空操作（不 panic）。
-func (s *SessionService) SetToolCallLogWriter(w ToolCallLogWriter) { s.toolCalls = w }
+// ToolCallRecorder 工具调用流水的记录器。
+//
+// 独立成类型而不是挂在 SessionService 上：**外部 /mcp 调用也要记同一张表**
+// （session_id = 0），而那条路根本没有会话 —— 把记录能力从会话里拆出来，
+// 两条路才共用同一套「摘要口径 + 异步纪律 + panic 兜底」。
+type ToolCallRecorder struct {
+	w ToolCallLogWriter
+}
 
-// logToolCallAsync 异步落一条工具调用流水。丢弃条件与 panic 兜底同 logCallAsync。
-func (s *SessionService) logToolCallAsync(ctx context.Context, e *aimodel.AIToolCallLogEntity) {
-	if s == nil || s.toolCalls == nil || e == nil {
+// NewToolCallRecorder 构造；w 为 nil 时 Record 是空操作（审计缺失不该让调用失败）。
+func NewToolCallRecorder(w ToolCallLogWriter) *ToolCallRecorder { return &ToolCallRecorder{w: w} }
+
+// Record 异步落一条流水。丢弃条件与 panic 兜底同 logCallAsync。
+func (r *ToolCallRecorder) Record(ctx context.Context, e *aimodel.AIToolCallLogEntity) {
+	if r == nil || r.w == nil || e == nil {
 		return
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	base := context.WithoutCancel(ctx)
+	writer := r.w
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				logger.Scene("ai").With("session", e.SessionID).With("panic", r).
+			if rec := recover(); rec != nil {
+				logger.Scene("ai").With("session", e.SessionID).With("panic", rec).
 					Error(nil, "AI 工具调用流水写入协程发生 panic，已忽略")
 			}
 		}()
 		wctx, cancel := context.WithTimeout(base, toolCallLogTimeout)
 		defer cancel()
-		if err := s.toolCalls.Insert(wctx, e); err != nil {
+		if err := writer.Insert(wctx, e); err != nil {
 			logger.Scene("ai").With("session", e.SessionID).With("tool", e.ToolName).
 				Error(err, "AI 工具调用流水写入失败，已忽略")
 		}
 	}()
 }
 
-// newToolCallLog 组装一条工具调用流水（调用方只需填结论相关的字段）。
+// SetToolCallLogWriter 注入工具调用流水写入端口；未注入时审计是空操作（不 panic）。
+func (s *SessionService) SetToolCallLogWriter(w ToolCallLogWriter) {
+	s.toolCalls = NewToolCallRecorder(w)
+}
+
+// NewToolCallEntry 组装一条工具调用流水（调用方只需填结论相关的字段）。
 //
 // 固定填的几项：会话、账号、工具名、耗时。参数与结果摘要都在这里统一截断 ——
 // 装配点不重复这件事，否则两处口径迟早会分叉。
-func newToolCallLog(sessionID, userID int64, toolName string, args string, latency time.Duration) *aimodel.AIToolCallLogEntity {
+func NewToolCallEntry(sessionID, userID int64, toolName string, args string, latency time.Duration) *aimodel.AIToolCallLogEntity {
 	return &aimodel.AIToolCallLogEntity{
 		SessionID:        sessionID,
 		UserID:           userID,
 		ToolName:         strings.TrimSpace(toolName),
-		ArgumentsSummary: summarizeForLog(args),
+		ArgumentsSummary: SummarizeForLog(args),
 		LatencyMs:        latency.Milliseconds(),
 	}
 }
 
-// summarizeForLog 把一段文本压成审计摘要：折叠换行、去掉首尾空白、超长截断。
+// SummarizeForLog 把一段文本压成审计摘要：折叠换行、去掉首尾空白、超长截断。
 //
 // 折叠换行是必要的：摘要列是 VARCHAR，多行 JSON 直接塞进去在列表里会把一行撑成一片。
-func summarizeForLog(s string) string {
+func SummarizeForLog(s string) string {
 	s = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", " "), "\n", " "))
 	return truncateRunes(s, toolLogSummaryLimit)
 }
 
-// pruneToolResult 把工具结果剪到上下文可承受的长度。
+// PruneToolResult 把工具结果剪到上下文可承受的长度。
 //
 // 返回值 truncated 表示**是否发生了截断**：审计要记这一列，因为模型当时看到的
 // 是剪枝后的版本，排查「模型为什么没用上完整数据」时得先知道这件事。
 //
 // 截断标记必须留给模型看（它是结果的一部分）：只说「已截断」会让模型以为数据就这么多，
 // 说清「原长多少」它才知道可以换个更窄的条件再调一次。
-func pruneToolResult(text string) (string, bool) {
+func PruneToolResult(text string) (string, bool) {
 	if r := []rune(text); len(r) > toolResultLimit {
 		return string(r[:toolResultLimit]) + truncationNotice(len(r)), true
 	}
@@ -125,7 +140,7 @@ func truncateRunes(s string, limit int) string {
 	return string(r[:limit]) + "…"
 }
 
-// toolErrorKeyOf 把结论分类映射到 i18n key（不需要面向用户文案时为空串）。
+// ToolErrorKeyOf 把结论分类映射到 i18n key（不需要面向用户文案时为空串）。
 //
 // 分类到 key 的映射只在这里：调用方（runTool）只报分类，不拼 key，
 // 免得同一个结论在几处各写一个 key 然后慢慢分叉。
@@ -133,7 +148,7 @@ func truncateRunes(s string, limit int) string {
 // args_error 刻意**不映射**：参数错是模型自己改参就能重试的事，
 // 面向用户的文案（「工具执行失败」）在这里会误导 —— 用户什么都没做错。
 // 后台要看这一类，读 status 列即可（它本来就是分类真源）。
-func toolErrorKeyOf(status aienums.ToolCallStatus) string {
+func ToolErrorKeyOf(status aienums.ToolCallStatus) string {
 	switch status {
 	case aienums.ToolCallStatusForbidden:
 		return aienums.ErrToolForbidden

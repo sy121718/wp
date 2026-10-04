@@ -504,7 +504,8 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 工具注册表在这里**先建、后填**：AI 会话层拿到的是同一个指针，各领域模块的工具在它们
 	// 自己装配时注册（见下面订单模块那段）—— 顺序无关，是因为注册表只在**运行期**被读
 	//（第一次读一定晚于全部装配），而不是因为「恰好 AI 排在最后」。
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools())
+	// 第五个参数是根路由：外部接入点挂在 /mcp（不是 /api/mcp），自带 PAT 鉴权。
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router)
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)

@@ -71,9 +71,9 @@ type SessionService struct {
 	// tools 是「模型可调用工具」的能力，装配层用 SetToolProvider 注入（见 ai_session_chat.go）。
 	// 未注入 = 不带工具的一问一答：工具是可选增强，缺了不该让普通对话也用不了。
 	tools ToolProvider
-	// toolCalls 是工具调用流水的写入端口，装配层用 SetToolCallLogWriter 注入
+	// toolCalls 是工具调用流水的记录器，装配层用 SetToolCallLogWriter 注入
 	// （见 ai_tool_call_log.go）。未注入时审计是空操作 —— 审计缺失不该让对话失败。
-	toolCalls ToolCallLogWriter
+	toolCalls *ToolCallRecorder
 }
 
 // NewSessionService 构造。
