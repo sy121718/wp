@@ -54,10 +54,21 @@ lint: ## 格式与静态检查
 	go vet ./...
 
 .PHONY: check
-check: lint ## 静态检查 + CI 同款门禁脚本
-	scripts/check-no-internal-error-leak.sh
-	scripts/check-i18n-coverage.sh
-	scripts/check-service-db-boundary.sh
+check: lint ## 静态检查 + 门禁（scripts/check-all.sh 的统一入口，无外部依赖那一组）
+	bash scripts/check-all.sh
+
+.PHONY: check-db
+check-db: ## 只跑需要 PostgreSQL 的门禁（须先 make migrate；CI 的 integration job 同款）
+	bash scripts/check-all.sh --db-only
+
+.PHONY: check-all
+check-all: ## 门禁全量（无依赖组 + 数据库组）
+	bash scripts/check-all.sh --with-db
+
+.PHONY: test-race
+test-race: ## 竞态检测（CI 目前无 -race，这是手动入口：核心五域）
+	go test -race -p 4 ./pkg/... ./internal/pipeline/... ./internal/builder/... \
+		./internal/module/publication/... ./internal/module/presentation/... -count=1 -timeout 20m
 
 .PHONY: migrate
 # -migrate-only：只执行结构迁移与业务 seed 后退出，不启动 HTTP 服务、不监听端口。

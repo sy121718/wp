@@ -1,0 +1,18 @@
+# 契约包依赖豁免清单 —— scripts/check-contract-deps.sh 读它。
+#
+# 格式：<包路径>  # <理由>      （包路径相对仓库根；理由不得为空）
+# 语义：登记的包若命中禁止依赖，脚本打印「已登记（待修）」而不是违规；
+#       条目一旦**不再命中**（类型下沉完成 / 契约改名 / 包被删），脚本失败并
+#       要求删条目 —— 技债清单只增不减就会掩盖回归。
+#
+# 正常状态下这里是空的。往这里加条目 = 承认破了 AGENTS.md 不变量 7，
+# 必须同时写出「怎么还」的路径，而不是把判据改宽。
+#
+# 2026-09 清零留档（不占条目，仅供回溯）：internal/module/plugin/contract 曾同时有
+# 两条 builder 依赖 ——
+#   ① `type ManifestAlias = plugincomp.Manifest`：直接拖入 builder/plugincomp（连带
+#      builder/core、builder/style）。该别名全仓无消费者，按「删除重导出」处理；
+#   ② `PluginFS []templates.PluginFS`：经 internal/templates/embed_loader.go 间接拖入
+#      builder/core。按「把插件文件系统形状下沉到 internal/builder/source」处理。
+# 两条都落地后实测 `go list -deps ./internal/module/plugin/contract` 只命中
+# builder/source（合法），故条目已删除 —— 这正是「条目不再命中即失败」要守的收口。

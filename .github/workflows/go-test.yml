@@ -22,24 +22,18 @@ jobs:
       - name: Build
         run: go build ./...
       - name: Static checks (no external services)
-        # 纯文件扫描，不需要数据库，秒级完成 ——
-        # 它们拦的是「评审时看不出来」的回归（内部错误直出会让表名/SQL/路径上屏；
-        # 硬编码文案会让后台在非默认语言下显示中文）。这类问题一旦进门，
-        # 就只能靠人工逐页翻，所以宁可让 CI 早失败。
-        run: |
-          scripts/check-no-internal-error-leak.sh
-          scripts/check-i18n-coverage.sh
-          # 「key 被用但没 seed」门禁（批次 2 · FIX-10）：admin. / workbench. 的词条唯一来源是迁移 seed，
-          # 漏 seed 时 t(key, "中文兜底") 静默回落中文 —— 不报错、不 500、日志干净，只有切 en-US 才看得见。
-          # 基线 scripts/i18n-keys-seeded-baseline.txt **只降不升**。
-          scripts/check-i18n-keys-seeded.sh
-          scripts/check-service-db-boundary.sh
-          # 多端硬规则守卫（审计 UI-015）：裸 :hover / 写死 px 宽度 / 有 hover 桶无触屏等价形态 /
-          # clamp 下界超最窄视口。**现在是 error —— 硬门禁**：未豁免违规直接让这一步失败，
-          # 且构建路径上的产物守卫（Compile 内的 guardProductCSS）一并生效。
-          # 例外只有显式豁免（internal/builder/css_verify_exempt.go，每条都要写清「规则为何在此不适用」，
-          # 由测试断言理由非空且不含占位词）—— 不要为了过这一步放宽阈值或删规则。
-          SKY_CSS_GUARD=error scripts/check-multidevice-css.sh
+        # 统一入口：scripts/check-all.sh 的 PLAIN_SCRIPTS 组，与本地 `make check` 是同一份清单。
+        # 之前这里是手写子集（CI 6 个 / Makefile 3 个），而 scripts/ 下还有几个脚本
+        # **从未被任何自动流程调用** —— 没人调用的检查永远不会变红（审计 R-02/R-03）。
+        # 新增脚本只加进 check-all.sh 的数组，不需要回来改这里。
+        #   · no-internal-error-leak：内部错误直出（表名/SQL/路径上屏）
+        #   · i18n-coverage / i18n-keys-seeded：硬编码文案；key 被用但没 seed（唯一来源是迁移 seed，
+        #     漏了只会静默回落中文，切 en-US 才看得见）
+        #   · service-db-boundary：跨模块裸 DB 句柄
+        #   · page-endpoint-authz：页面写端点漏挂 Casbin（审计 H3 —— 页面组没有鉴权判定链）
+        #   · multidevice-css：多端硬规则（入口统一设 SKY_CSS_GUARD=error，未豁免违规即失败）
+        #   · empty-state-table-head / inventory-sku-format / stock-sku-prefix-collisions / workbench
+        run: scripts/check-all.sh
       - name: Unit tests (no external services)
         # 覆盖范围以前是逐个包列举（pkg / builder / pipeline / order/service /
         # page/enums），漏掉了 30 个含测试的包 —— 其中有迁移判据、retention 目录
@@ -48,6 +42,12 @@ jobs:
         run: |
           go test ./pkg/... ./internal/... ./cmd/... ./config/... \
             ./public/migrations/... -count=1 -timeout 10m
+      - name: Race detector (core five areas)
+        # 竞态既不会编译失败也不会让普通 go test 变红 —— 只能靠 -race 抓。
+        # 本机 16 核实测这条命令约 1 分钟（73 包，0 DATA RACE），换来 publication /
+        # presentation 这类多 goroutine 路径的真实覆盖（评审 R-04）。与本地
+        # `make test-race` 是同一组包与参数。
+        run: make test-race
 
   integration:
     runs-on: ubuntu-latest
@@ -84,6 +84,12 @@ jobs:
       GOWP_DATABASE_PASSWORD: root
       GOWP_AUTH_SESSION_SECRET: ci-session-secret-not-for-production-use
       GOWP_APP_SECRET: 9f2c1a7b4e6d8f0a1b3c5d7e9f0a2b4c6d8e0f1a3b5c7d9e0f2a4b6c8d0e1f3a
+      # 「跳过」与「通过」必须可分辨（审计 R-05）：这一层起了真 PostgreSQL + Redis，
+      # 依赖不可用就该红，而不是把整包用例 t.Skip 掉、看着像绿。
+      # public/test/support/require_env.go 据此把 skip 变成 fail（这两个变量未设置时保持原语义，
+      # 所以 unit job 与本地裸跑不受影响）。
+      GOWP_REQUIRE_PG: "1"
+      GOWP_REQUIRE_REDIS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -101,11 +107,12 @@ jobs:
         # config.yaml 里的 wp 库，因此该库必须先有完整结构。此前没有这一步，
         # 这些用例在 CI 上连的是空库，失败被 continue-on-error 吞掉了。
         run: go run ./cmd -migrate-only
-      - name: Permission point audit
+      - name: Database-backed gates
         # 有路由、没有对应权限点 = 含超管在内全员 403（072/077/078/079/151 各踩过一次）。
         # 这条检查要连库比对「运行时装配出来的路由表」与 sys_permission，所以只能在有 PG 的
         # 这一层跑，且必须排在 Migrate 之后（权限点由 seed 写入）。
-        run: bash scripts/check-permission-gaps.sh
+        # 走统一入口的 db 模式：与 `make check-db` 同一条清单，避免本地与 CI 各跑一半。
+        run: bash scripts/check-all.sh --db-only
       - name: Route table snapshot
         # 装配重构（审计 CQ-008）的安全网。SetupRoutes 是约 700 行的线性装配，人眼 review
         # 看不出「少挂了一行中间件」或「某个 group 换了父节点」这类漂移 —— 它们不会编译失败，
@@ -114,4 +121,12 @@ jobs:
         run: WP_DUMP_ROUTES=1 go test ./internal/routers/ -run TestRouteSnapshotStable -count=1
       - name: Full suite (real PostgreSQL + Redis)
         # -p 4：runner 核数少，保守取值。本地 16 核实测 -p 16 约 65s。
-        run: go test -p 4 ./... -count=1 -timeout 30m
+        # 顺带守「跳过 ≠ 通过」：GOWP_REQUIRE_PG/REDIS=1 之下，任何用例因环境不可用被跳过
+        # 都要让这一层红 —— 否则一次环境抖动就会把整批集成用例变成静默空跑（评审 R-05）。
+        run: |
+          set -o pipefail
+          go test -p 4 -v ./... -count=1 -timeout 30m 2>&1 | tee /tmp/integration.log
+          if grep -qE '本地 PostgreSQL 不可用|本地 Redis 不可用|Redis 不可用' /tmp/integration.log; then
+            echo "::error::GOWP_REQUIRE_PG/REDIS 已开启，仍有用例因环境不可用被跳过"
+            exit 1
+          fi

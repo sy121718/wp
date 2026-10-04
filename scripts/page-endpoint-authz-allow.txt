@@ -1,0 +1,54 @@
+# 页面写端点鉴权的豁免清单（scripts/check-page-endpoint-authz.py 的输入）
+#
+# 格式：<go 相对路径> <路由串> TAB <理由>
+# 规则：只登记**确实不需要 Casbin 权限点**的端点；条目一旦不再命中，门禁就会失败
+# （清单只增不减等于没有门禁）。
+#
+# 三类合法豁免：
+#   1. 公开面 —— 无会话依赖，鉴权靠别的手段（验签 / 限流 / 逐能力白名单）；
+#   2. 自助面 —— 组级 requireUser() 已强制登录，改的是调用者自己的东西，无跨用户面；
+#   3. 只读/纯计算 —— 用 POST 传参但不写库不写产物，与所在页面同权。
+#
+# 与 check-permission-gaps.sh 的分工：那条门禁比「路由 ↔ 权限点」的缺口（只覆盖 /api），
+# 这条覆盖页面组 —— 两者都不红，才说明写面鉴权完整。
+
+# ---- 公开面 ----
+internal/routers/routes.go accessUnlockPath	站点守卫解锁页：未登录访客唯一的自救入口，带 IP 限流（10 次/分钟）压 bcrypt 爆破成本
+internal/module/runtimefragment/router.go /_fragments/:type	访客片段面：逐 capability 白名单 + 声明式认证策略（anonymous/session），写状态能力必须自带 CSRF
+internal/module/analytics/inbound/http/analytics_router.go /analytics/collect	访客采集端点：控制面/访问面分离的明文例外
+internal/module/cart/inbound/http/cart_router.go /payment/callback	支付网关回调：调用方不是后台用户，鉴权靠 HMAC 验签（失败只回四条业务 key）
+internal/module/user/inbound/http/user_router.go /register	公开注册（访客自助开户）
+internal/module/user/inbound/http/user_router.go /resend	公开重发激活邮件（带敏感操作限流）
+internal/module/user/inbound/http/user_router.go /login	访客登录（带敏感操作限流）
+internal/module/user/inbound/http/user_router.go /logout	访客登出
+internal/module/user/inbound/http/user_router.go /forgot	公开忘记密码（带敏感操作限流）
+internal/module/user/inbound/http/user_router.go /reset	公开重置密码（带敏感操作限流）
+cmd/builder/main.go /builder/generate	测试构建工具进程：cmd/builder 是独立于主服务的开发/测试辅助进程，不参与主路由装配
+
+# ---- 自助面（登录即授权） ----
+internal/module/user/inbound/http/user_router.go /account/profile	账户中心：组级 requireUser() 已强制登录，改的是自己的资料
+internal/module/user/inbound/http/user_router.go /account/preference	同上：自己的偏好
+internal/module/user/inbound/http/user_router.go /account/password	同上：自己的密码（旧密码校验在 service 内）
+internal/module/user/inbound/http/user_router.go /account/sessions/revoke	同上：撤销自己的会话
+internal/module/user/inbound/http/user_router.go /account/sessions/revoke-others	同上：撤销自己的其他会话
+
+# ---- 只读 / 纯计算（POST 传参，不写库不写产物） ----
+internal/module/workbench/inbound/http/router.go /workbench/preview	工作台预览：渲染草稿，不落库不写产物，与本页 GET 同权
+internal/module/workbench/inbound/http/router.go /workbench/inspector	工作台检查器：只读分析当前文档
+internal/module/workbench/inbound/http/router.go /workbench/outline	工作台大纲：只读结构树
+internal/module/workbench/inbound/http/router.go /workbench/seo-score	工作台 SEO 评分：纯计算
+internal/module/workbench/inbound/http/router.go /workbench/template/preview	模板预览：只读渲染
+internal/module/page/inbound/http/page_router.go /workbench/history	修订历史列表：只读（同组的 /workbench/history/restore 会覆盖草稿，已挂 /api/page/draft/save）
+internal/module/product/inbound/http/product_page_router.go /products/variant/preview	变体预览：只读解析
+internal/module/product/inbound/http/product_page_router.go /products/seo-score	商品 SEO 评分：纯计算
+internal/module/product/inbound/http/product_page_router.go /product-categories/seo-score	分类 SEO 评分：纯计算
+internal/module/product/inbound/http/product_page_router.go /product-brands/seo-score	品牌 SEO 评分：纯计算
+internal/module/product/inbound/http/product_page_router.go /products/bundle/members/resolve	组合商品成员解析：只读
+internal/module/product/inbound/http/product_page_router.go /product-attributes/value-rows	属性值行片段：只读渲染
+internal/module/project/inbound/http/project_router.go /workbench/settings	页面设置表单片段：纯渲染（真正写入走 /admin/settings/save，已挂 /api/project/update）
+internal/module/project/inbound/http/project_router.go /workbench/seo-score-panel	SEO 评分区片段：纯渲染
+internal/module/project/inbound/http/project_router.go /workbench/global	全局设置面板片段：纯渲染（真正写入走 /admin/themes/settings/save）
+internal/module/content/inbound/http/article_router.go /articles/score	文章评分侧栏：纯计算不写库不写产物（代码注释已声明该取舍）
+internal/module/content/inbound/http/article_router.go /articles/link-suggestions	内链建议（SEO-015）：候选来自已上线路径解析端口，只读计算
+internal/module/content/inbound/http/article_router.go /articles/import-preview	导入预览：纯计算（真正创建走 /articles/import-page，已挂 /api/page/create）
+internal/module/admin/inbound/http/admin_pages_router.go /datarules/config-editor	配置编辑器片段：纯渲染不落库（真正写入走 /datarules/update，已挂 /api/datarule/update）

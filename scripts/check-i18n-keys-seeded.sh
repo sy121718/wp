@@ -108,8 +108,10 @@ internal, public, out_path, unpaired_path = sys.argv[1], sys.argv[2], sys.argv[3
 
 # key 形状：小写点分，≥2 个点。≥2 是为了避开 `node.js` / `vimeo.com` / 版本号。
 KEY = re.compile(r'"([a-z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+){2,})"')
-# 只扫「唯一来源是迁移 seed」的两个命名空间。理由见文件头注释。
-SCOPE = ('admin.', 'workbench.')
+# 只扫「唯一来源是迁移 seed」的命名空间。理由见文件头注释。
+# ai. 自 513 起纳入：AI 模块的响应文案 key（ai.msg.* / ai.err.*）同样只能靠迁移 seed，
+# 不纳入就会重演「切到 en-US 页面露出裸 key」的缺口。
+SCOPE = ('admin.', 'workbench.', 'ai.')
 # 中英成对的两侧（AGENTS.md 的要求）。
 PAIR = {'zh-CN', 'en-US'}
 
