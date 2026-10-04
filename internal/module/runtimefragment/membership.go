@@ -35,7 +35,6 @@ import (
 	"fmt"
 	"strings"
 
-	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
 	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
@@ -46,24 +45,6 @@ const (
 	membershipFragmentBadge = "membershipBadge"
 	membershipFragmentPanel = "membershipPanel"
 )
-
-// membershipReader 会员身份读取端口（装配期注入一次；可缺）。
-//
-// 收窄到 Reader：片段层拿不到等级 CRUD、归属写入与重算 —— 越权防护靠接口形状，
-// 不靠调用方自觉（同 cartProvider / sitePageResolver 的手法）。
-var membershipReader membershipcontract.Reader
-
-// SetMembershipReader 注入会员身份读取端口（装配期调用）。
-func SetMembershipReader(reader membershipcontract.Reader) { membershipReader = reader }
-
-// membershipFacing 会员业务错误的文案出口（装配期注入一次；可缺）。
-//
-// 可缺时的降级是「用本地通用文案」而不是直出 err.Error()：内部错误原文
-// （表名 / 约束名 / SQLSTATE）不是可以出现在访客页面上的东西。
-var membershipFacing membershipcontract.FacingTexter
-
-// SetMembershipFacingTexter 注入会员文案出口（装配期调用）。
-func SetMembershipFacingTexter(texter membershipcontract.FacingTexter) { membershipFacing = texter }
 
 func init() {
 	Register(Spec{Type: membershipFragmentBadge, Method: "GET", Auth: AuthAnonymous, Render: renderMembershipBadge})
@@ -162,7 +143,7 @@ func renderMembershipFragment(ctx context.Context, r *Request, capability, templ
 	userID, loggedIn := visitorIDOf(r)
 
 	switch {
-	case membershipReader == nil:
+	case deps.MembershipReader == nil:
 		data.Unavailable = true
 		data.Notice = data.Labels.Unavailable
 	case projectID == "":
@@ -173,7 +154,7 @@ func renderMembershipFragment(ctx context.Context, r *Request, capability, templ
 		data.NeedLogin = true
 		data.Notice = data.Labels.Guest
 	default:
-		member, err := membershipReader.Resolve(ctx, &membershipdto.ResolveReq{
+		member, err := deps.MembershipReader.Resolve(ctx, &membershipdto.ResolveReq{
 			ProjectID: projectID,
 			UserID:    userID,
 		})
@@ -206,10 +187,10 @@ func renderMembershipFragment(ctx context.Context, r *Request, capability, templ
 // 但片段层不押注在调用方一定这么做 —— 一个 nil 会员静默渲染成空面板，
 // 访客会以为是自己的会员没了）。
 func membershipFacingText(r *Request, err error, fallback string) string {
-	if membershipFacing == nil || err == nil {
+	if deps.MembershipFacingTexter == nil || err == nil {
 		return fallback
 	}
-	if text := strings.TrimSpace(membershipFacing.FacingText(r.Lang, err)); text != "" {
+	if text := strings.TrimSpace(deps.MembershipFacingTexter.FacingText(r.Lang, err)); text != "" {
 		return text
 	}
 	return fallback

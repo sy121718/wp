@@ -1,5 +1,7 @@
 # 06-A · 插件生态路线图（规划）
 
+> 内部过程文档（非对外使用）
+
 > 本文回答「哪些能力做进本体、哪些做成插件、按什么顺序做」。
 > 架构依据：[06-plugin-system.md](./06-plugin-system.md)（L0/L1/L2 三级能力 + 双轨制，权威）；
 > 动态能力路径判断见 [04-B-dynamic-development-guide.md](./04-B-dynamic-development-guide.md)。

@@ -54,6 +54,19 @@ var defaultDTOExposureAllow = map[string]string{
 	"WarehouseThirdPartyResp.HasCredential":    "布尔开关：只回答「这个仓配没配过对接凭据」（存了密文或引用名），字段里没有凭据本体",
 	"WarehouseThirdPartyResp.CredentialMasked": "恒为常量掩码占位（inventoryenums.CredentialMask，****），供表单回显「已配置」；服务端不按用户输入回显任何内容",
 	"WarehouseThirdPartyResp.SecretRef":        "凭据的**引用名**（如部署侧的环境变量名）：系统只知道值在别处叫什么、不知道值是什么；名字本身不是秘密，秘密在部署侧",
+	// AI 模块（迁移 511/512）。两类形状，都不是凭据：
+	//   · token 是**数量单位**（上下文窗口占用、事件内容长度、折叠分段大小），字段类型全是整型数字，
+	//     携带的是「这串文本按 token 计有多长」，与凭据无关 —— 敏感词命中的是词根"token"。
+	//   · HasAPIKey 是布尔开关，与 EndpointItem.HasSecret 同形：只回答「配没配过密钥」。
+	//     供应商密钥以 AES-GCM 密文落库（pkg/crypto），服务端**没有任何读回明文的接口**，
+	//     出参只有这个布尔值；密钥一旦更换或 API 地址变更即失效，也不出密文。
+	"ModelEntry.MaxOutputTokens":     "计量字段：模型声明的最大输出 token 数（整型），不是凭据",
+	"Provider.HasAPIKey":             "布尔开关：只回答「这个供应商配没配过密钥」。密钥以 AES-GCM 密文落库、无任何读回明文的接口（连密文都不出），响应用 HasAPIKey 而不是回显密钥物",
+	"Session.ContextTokens":          "计量字段：上下文窗口已占用的 token 数（整型），不是凭据",
+	"SessionItem.Tokens":             "计量字段：会话消息累计 token 数（整型），不是凭据",
+	"SessionDetail.VisibleTokens":    "计量字段：当前窗口内可见内容的 token 数（整型），不是凭据",
+	"SessionEventItem.ContentTokens": "计量字段：单条事件内容长度的 token 计数（整型），不是凭据",
+	"FoldPlanResult.SegmentTokens":   "计量字段：折叠分段各自的 token 数（整型），不是凭据",
 }
 
 // DTOExposureOptions 扫描参数（零值即默认口径：扫 internal 下所有 dto 目录）。

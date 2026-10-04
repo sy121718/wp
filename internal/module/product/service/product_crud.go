@@ -14,7 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
@@ -626,12 +626,12 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 // 宁可拒绝，也不静默退化成「拿前端给的字符串自造编码」—— 那正是「服务端不信任前端」
 // 要防的形态。未给编码 / 未接库存能力时给 ErrWarehouseSKURequired；
 // 该仓没有这条编码时给 ErrWarehouseSKUNotFound（由库存用例判定）。
-func (s *Service) pickWarehouseSKU(ctx context.Context, projectID string, ref *productcontract.WarehouseRef, warehouseSKU string) (res *inventorydto.WarehouseSKUResp, err error) {
+func (s *Service) pickWarehouseSKU(ctx context.Context, projectID string, ref *productcontract.WarehouseRef, warehouseSKU string) (res *inventorycontract.WarehouseSKUResp, err error) {
 	code := strings.TrimSpace(warehouseSKU)
 	if code == "" || s.invSvc == nil || ref == nil {
 		return nil, errors.New(inventoryenums.ErrWarehouseSKURequired)
 	}
-	return s.invSvc.GetWarehouseSKU(ctx, &inventorydto.GetWarehouseSKUReq{
+	return s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
 		ProjectID: projectID, WarehouseID: ref.ID, SKUCode: code,
 	})
 }
@@ -696,7 +696,7 @@ func (s *Service) warehouseCodeExists(ctx context.Context, projectID, warehouseI
 	if s.invSvc == nil || strings.TrimSpace(skuCode) == "" {
 		return false, nil
 	}
-	_, gerr := s.invSvc.GetWarehouseSKU(ctx, &inventorydto.GetWarehouseSKUReq{
+	_, gerr := s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
 		ProjectID: projectID, WarehouseID: warehouseID, SKUCode: skuCode,
 	})
 	if gerr == nil {

@@ -40,7 +40,7 @@ func TestResolveRequestLang(t *testing.T) {
 	orig := i18n.GetDefaultLang()
 	defer func() {
 		i18n.SetDefaultLang(orig)
-		SetFragmentProject(nil)
+		deps.FragmentProject = nil
 	}()
 	i18n.SetDefaultLang("zh-CN")
 
@@ -62,7 +62,7 @@ func TestResolveRequestLang(t *testing.T) {
 		{"默认语言查询失败才用请求值", &stubProjectLocales{defErr: errStub}, "p1", "fr-FR", "fr-FR"},
 	}
 	for _, tc := range cases {
-		SetFragmentProject(tc.project)
+		deps.FragmentProject = tc.project
 		if got := resolveRequestLang(context.Background(), tc.projectID, tc.raw); got != tc.want {
 			t.Errorf("%s: 期望 %q 实际 %q", tc.name, tc.want, got)
 		}
@@ -82,8 +82,8 @@ func (errStubType) Error() string { return "语言清单查询失败" }
 // 「英文站点翻到第 2 页」的请求就不再带语言，片段回落工程默认语言 ——
 // 现象是「一翻页列表自己变回中文」，而两次请求都是 200、都渲染成功。
 func TestRenderProductListKeepsLangInPager(t *testing.T) {
-	defer SetCollectionResolver(nil)
-	SetCollectionResolver(&stubPager{total: 50})
+	defer func() { deps.CollectionResolver = nil }()
+	deps.CollectionResolver = &stubPager{total: 50}
 
 	out, err := renderProductList(context.Background(), &Request{
 		Type: "productList",
@@ -136,8 +136,8 @@ func TestFragmentEndpointBodyFollowsLang(t *testing.T) {
 		"site.fragment.cart.empty": {"zh-CN": "购物车是空的", "en-US": "Your cart is empty"},
 	}, nil)
 	defer i18n.InjectForTest(map[string]map[string]string{}, nil)
-	SetFragmentProject(&stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"})
-	defer SetFragmentProject(nil)
+	deps.FragmentProject = &stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"}
+	defer func() { deps.FragmentProject = nil }()
 
 	r := newRouter()
 	en := doGet(t, r, "/_fragments/"+probe+"?projectId=p1&lang=en-US")
@@ -169,8 +169,8 @@ func TestLoginPanelFollowsLang(t *testing.T) {
 		"site.fragment.login_panel.continue_shopping": {"zh-CN": "继续购物", "en-US": "Continue shopping"},
 	}, nil)
 	defer i18n.InjectForTest(map[string]map[string]string{}, nil)
-	SetFragmentProject(&stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"})
-	defer SetFragmentProject(nil)
+	deps.FragmentProject = &stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"}
+	defer func() { deps.FragmentProject = nil }()
 
 	r := newRouter()
 	en := doGet(t, r, "/_fragments/loginPanel?projectId=p1&lang=en-US")
@@ -195,8 +195,8 @@ func TestLoginPanelFollowsLang(t *testing.T) {
 func TestLoginPanelFallsBackToSourceText(t *testing.T) {
 	i18n.InjectForTest(map[string]map[string]string{}, nil)
 	defer i18n.InjectForTest(map[string]map[string]string{}, nil)
-	SetFragmentProject(&stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"})
-	defer SetFragmentProject(nil)
+	deps.FragmentProject = &stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"}
+	defer func() { deps.FragmentProject = nil }()
 
 	w := doGet(t, newRouter(), "/_fragments/loginPanel?projectId=p1&lang=en-US")
 	body := w.Body.String()
@@ -236,8 +236,8 @@ func TestOrderFragmentURLEscapesLang(t *testing.T) {
 // 同一个语言维度走了两条路径：容器再触发一次 load 就回落工程默认语言。
 // 断言只看容器那条 URL（不看整段 HTML），免得被翻页链接里的 lang 蒙混过去。
 func TestRenderProductListSetsLangInRenderContext(t *testing.T) {
-	defer SetCollectionResolver(nil)
-	SetCollectionResolver(&stubPager{total: 50})
+	defer func() { deps.CollectionResolver = nil }()
+	deps.CollectionResolver = &stubPager{total: 50}
 
 	out, err := renderProductList(context.Background(), &Request{
 		Type: "productList",

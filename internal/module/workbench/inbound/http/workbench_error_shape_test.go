@@ -2,9 +2,11 @@ package workbenchhttp
 
 // workbench_error_shape_test.go — 两个「错误出口形状」的守卫（形态与文案来源的判据见下）。
 //
-//	① inspector_handle.go 的两个 500 出口：**形态**保持 text/plain（前端 fetch → r.text() →
+//	① inspector_handle.go 的 500 出口：**形态**保持 text/plain（前端 fetch → r.text() →
 //	   morphHTML，不检查 r.ok），但**文案来源**必须是归口译文 —— `c.String` 不经过
-//	   pkg/response 的翻译层，直接写 workbenchenums.MsgInternalError 时浏览器里就是那串英文 key；
+//	   pkg/response 的翻译层，直接写 workbenchenums.MsgInternalError 时浏览器里就是那串英文 key。
+//	   （检查器段落装配已下沉 service：取数失败在那边以 error 返回，handler 只剩一个出口，
+//	   所以下面的计数与 `exits` 对齐，而不是钉死数字。）
 //	② workbench_instance.go 的 InstanceSave 503 出口：必须是 JSON —— 前端 api.js 的 send()
 //	   无条件 r.json()，正文是 text/plain 时解析抛异常、then 链断掉，用户看不到任何提示。
 //
@@ -81,7 +83,7 @@ func TestPageInternalTextIsControlledText(t *testing.T) {
 // TestInspectorHandleInternalErrorExitsAreControlled inspector_handle.go 的每个 500 出口
 // 都必须走归口取词，且整个文件不得再出现裸 key。
 //
-// 两个出口本身不可达（见文件头），所以只能按源码钉形状：这里扫的是**出口实参**，
+// 这个出口在正常环境里不可达（见文件头），所以只能按源码钉形状：这里扫的是**出口实参**，
 // 不是「文件里出现过某个字面量」—— 将来再加 500 出口而忘了走归口，这条会红。
 func TestInspectorHandleInternalErrorExitsAreControlled(t *testing.T) {
 	src, err := os.ReadFile("inspector_handle.go")
@@ -112,8 +114,10 @@ func TestInspectorHandleInternalErrorExitsAreControlled(t *testing.T) {
 	if strings.Contains(src2, "MsgInternalError") {
 		t.Error("inspector_handle.go 不得再出现 MsgInternalError（裸 key 不能进响应）")
 	}
-	if n := strings.Count(src2, "shell.PageInternalText(c)"); n < 2 {
-		t.Errorf("归口取词只出现 %d 次，期望 2 个 500 出口都有", n)
+	// 与出口数对齐而不是钉死数字：出口个数是实现细节（取数失败合并或拆分都会变），
+	// 「每个 500 出口都有归口取词」才是判据 —— 新增出口却忘了走归口，这条仍然会红。
+	if n := strings.Count(src2, "shell.PageInternalText(c)"); n < len(exits) {
+		t.Errorf("归口取词只出现 %d 次，少于 %d 个 500 出口", n, len(exits))
 	}
 }
 

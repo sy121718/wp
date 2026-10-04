@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	productservice "go_wp/internal/module/product/service"
 )
 
@@ -38,7 +38,7 @@ func (h *productPageHandle) warehouseSKUOptions(ctx context.Context, projectID s
 		if strings.TrimSpace(id) == "" {
 			continue
 		}
-		rows, lerr := h.inventories.ListWarehouseSKUs(ctx, &inventorydto.ListWarehouseSKUReq{
+		rows, lerr := h.inventories.ListWarehouseSKUs(ctx, &inventorycontract.ListWarehouseSKUReq{
 			ProjectID: projectID, WarehouseID: id, Size: warehouseSKUOptionSize,
 		})
 		if lerr != nil {

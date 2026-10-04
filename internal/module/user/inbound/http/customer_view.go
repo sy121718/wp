@@ -7,7 +7,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	ordercontract "go_wp/internal/module/order/contract"
-	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
@@ -60,7 +59,7 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 // 四个「给运营看的说明」都是显式布尔 + 文案，而不是让模板去判断 nil：
 // Jet 里判断一个可能为 nil 的接口值很容易写成「看起来对、渲染出来是空块」。
 func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcontract.ProjectResp,
-	selected string, summary *orderdto.CustomerOrderSummaryResp,
+	selected string, summary *ordercontract.CustomerOrderSummaryResp,
 	projectsFailed, summaryFailed bool, pageErr, pageOk string, c *gin.Context) gin.H {
 	data := gin.H{
 		"title":           userLabelOf(shell.TranslateFor(c), customerDetailPageTitleLabel),

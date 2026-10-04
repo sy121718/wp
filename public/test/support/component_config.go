@@ -16,6 +16,7 @@ func NewComponentTestConfig(t *testing.T) string {
 	t.Helper()
 	env, err := AcquireTestEnv(t)
 	if err != nil {
+		FailIfRequiredPG(t, err)
 		t.Skipf("测试依赖不可用：%v", err)
 	}
 	db, err := newTestDatabase(t, env.PG, true, false)

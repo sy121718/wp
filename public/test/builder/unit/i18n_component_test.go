@@ -60,6 +60,7 @@ func setupI18nUnitEnv(t *testing.T) *gorm.DB {
 
 	admin, err := gorm.Open(postgres.Open(i18nUnitTestDSN("postgres")), &gorm.Config{})
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := admin.Exec("CREATE DATABASE " + dbName).Error; err != nil {

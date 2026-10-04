@@ -1,0 +1,330 @@
+package navigationservice
+
+// navigation_crud.go — 导航项 CRUD（Create / Update / Delete / Get / List）。
+// 写路径先校验父引用与来源三件套、再落库并派发失效；Update/Delete 定位一律带工程作用域。
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	navigationdto "go_wp/internal/module/navigation/dto"
+	navigationenums "go_wp/internal/module/navigation/enums"
+	navigationmodel "go_wp/internal/module/navigation/model"
+)
+
+// Create 新建导航项：校验 kind/path 基础规则 + 同工程同 kind 同 path 唯一。
+func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res *navigationdto.NavigationResp, err error) {
+	if req == nil {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	title := strings.TrimSpace(req.Title)
+	path := strings.TrimSpace(req.Path)
+	kind := strings.TrimSpace(req.Kind)
+	if projectID == "" {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	if err = validateField(title, path, kind); err != nil {
+		return nil, err
+	}
+	parentID := normalizeParentID(req.ParentID)
+	// 父引用先校验：不存在的父 / 跨工程父 / 跨类型父都会让该节点在构建期树装配时
+	// 成为孤儿（永远挂不上根，产物里静默消失）。
+	if verr := s.validateParent(ctx, projectID, kind, "", parentID); verr != nil {
+		return nil, verr
+	}
+	sourceType, sourceID, target, err := normalizeSource(req.SourceType, req.SourceID, req.Target)
+	if err != nil {
+		return nil, err
+	}
+	panelBlockID, panelWidth, perr := normalizePanel(req.PanelBlockID, req.PanelWidth)
+	if perr != nil {
+		return nil, perr
+	}
+
+	exists, err := s.m.ExistsPath(ctx, projectID, kind, path, "")
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, errors.New(navigationenums.ErrPathTaken)
+	}
+
+	// 排序：未显式指定（0）时追加到同级末尾，保证同级 sort_order 唯一，
+	// 管理页的「上移/下移」才能稳定交换。
+	sortOrder := req.SortOrder
+	if sortOrder == 0 {
+		maxOrder, merr := s.m.MaxSortOrder(ctx, projectID, kind, parentID)
+		if merr != nil {
+			return nil, merr
+		}
+		sortOrder = maxOrder + 1
+	}
+
+	now := time.Now().UTC()
+	e := &navigationmodel.NavigationEntity{
+		ID: uuid.NewString(), ProjectID: projectID, Title: title, Path: path,
+		Kind: kind, ParentID: parentID, SortOrder: sortOrder,
+		SourceType: sourceType, SourceID: sourceID, Target: target,
+		PanelBlockID: panelBlockID, PanelWidth: panelWidth,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err = s.m.Create(ctx, e); err != nil {
+		return nil, err
+	}
+	// 失效派发（写已提交之后）：新菜单项会改变该位置产出的 HTML；按项引用的页面
+	//（页眉只放某一支）只登记了 navigation:{itemID}，故两条键都要派发。
+	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
+	// 回读一次再返回（与 Update 同形）：库列是 timestamptz（微秒精度），而这里内存里的
+	// time.Now() 带纳秒 —— 直接 toResp(e) 会把纳秒精度的 update_time 当乐观锁 token 发出去，
+	// 调用方原样回带时与库内值不等（SaveWithExpected 是 WHERE update_time = ?），
+	// 表现为「刚建好就报版本冲突」。
+	//
+	// 为什么不用「把内存值截断到微秒」这条捷径：PG 对 timestamptz(6) 的纳秒是**四舍五入**
+	// 而不是截断，截断会差 1 微秒、token 照样比不中。回读是唯一可靠的做法。
+	//
+	// 取舍（有意保留，与 Update 同形）：写已提交，回读失败仍返回 error —— 调用方若据此重试
+	// 会新建第二条。这里选「宁可报一次错，也不发一个可能比不中的 token」：发错 token 的后果
+	// 是该条目此后每次保存都误报版本冲突，比一次可见的失败更难排查。
+	created, gerr := s.m.Get(ctx, e.ProjectID, e.ID)
+	if gerr != nil {
+		return nil, gerr
+	}
+	return toResp(created), nil
+}
+
+// Update 更新导航项：仅更新传入的非空字段，变更 path/kind 时重校验唯一性。
+func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res *navigationdto.NavigationResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	// 定位这一跳逐工程探测归属（请求只给 id）。拿到实体后**全程带工程作用域**：
+	// 唯一性校验（ExistsPath）、写入（Save）与回读（Get）都用 e.ProjectID，
+	// 一律受 navigations 的 FORCE 策略约束（DB-009）。原先的「不限工程」定位在换
+	// 非超级角色后是静默的 ErrNotFound —— 表现为「导航项明明在却报不存在」。
+	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New(navigationenums.ErrNotFound)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{"update_time": time.Now().UTC()}
+	title, path, kind := e.Title, e.Path, e.Kind
+
+	if req.Title != nil {
+		title = strings.TrimSpace(*req.Title)
+		updates["title"] = title
+	}
+	if req.Path != nil {
+		path = strings.TrimSpace(*req.Path)
+		updates["path"] = path
+	}
+	if req.Kind != nil {
+		kind = strings.TrimSpace(*req.Kind)
+		updates["kind"] = kind
+	}
+	if err = validateField(title, path, kind); err != nil {
+		return nil, err
+	}
+	if req.ParentID != nil {
+		newParent := normalizeParentID(req.ParentID)
+		// 自引用、或挂到自己的后代下都会成环：构建期树装配永远到不了根节点，
+		// 整棵子树从产物里静默消失（后台列表仍显示正常）。
+		if verr := s.validateParent(ctx, e.ProjectID, kind, e.ID, newParent); verr != nil {
+			return nil, verr
+		}
+		updates["parent_id"] = newParent
+	}
+	if req.SortOrder != nil {
+		updates["sort_order"] = *req.SortOrder
+	}
+	// 来源与打开方式：三字段联动校验（来源切到非 custom 时必须同时给出来源实体）。
+	if req.SourceType != nil || req.SourceID != nil || req.Target != nil {
+		sourceType := e.SourceType
+		if req.SourceType != nil {
+			sourceType = *req.SourceType
+		}
+		sourceID := e.SourceID
+		if req.SourceID != nil {
+			sourceID = normalizeSourceID(req.SourceID)
+		}
+		target := e.Target
+		if req.Target != nil {
+			target = *req.Target
+		}
+		st, sid, tg, serr := normalizeSource(sourceType, sourceID, target)
+		if serr != nil {
+			return nil, serr
+		}
+		updates["source_type"], updates["source_id"], updates["target"] = st, sid, tg
+	}
+	// 悬浮面板（超级菜单）：nil = 不改动；PanelBlockID 指向空串 = 清除面板。
+	if req.PanelBlockID != nil {
+		updates["panel_block_id"] = normalizePanelBlockID(req.PanelBlockID)
+	}
+	if req.PanelWidth != nil {
+		w, werr := normalizePanelWidth(*req.PanelWidth)
+		if werr != nil {
+			return nil, werr
+		}
+		updates["panel_width"] = w
+	}
+
+	// path/kind 任一变化时重校验同工程同 kind 同 path 唯一（排除自身）。
+	if req.Path != nil || req.Kind != nil {
+		exists, err := s.m.ExistsPath(ctx, e.ProjectID, kind, path, e.ID)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, errors.New(navigationenums.ErrPathTaken)
+		}
+	}
+
+	// 乐观锁（两个入口的并发保护）：ExpectedUpdatedAt 非空时，库内 update_time 必须仍是
+	// 调用方手上的那个值，否则整条更新不落库并回可定位的错误。
+	// 不自动合并、不追加后缀、不丢弃其中一方 —— 「两边同时改」这件事只有人能裁决。
+	expected, perr := parseExpectedUpdatedAt(req.ExpectedUpdatedAt)
+	if perr != nil {
+		return nil, perr
+	}
+	if expected == nil {
+		if err = s.m.Save(ctx, e.ProjectID, e.ID, updates); err != nil {
+			return nil, err
+		}
+	} else {
+		// 受影响行数 0：实体上一步已定位过（不存在会在上面返回 ErrNotFound），
+		// 所以这里只可能是「库内 update_time 已经不是期望值」——另一处入口改过这一项。
+		rows, serr := s.m.SaveWithExpected(ctx, e.ProjectID, e.ID, updates, *expected)
+		if serr != nil {
+			return nil, serr
+		}
+		if rows == 0 {
+			return nil, errors.New(staleVersionMessage(s.staleTitle(ctx, e)))
+		}
+	}
+	// 失效派发放在写成功之后、回读之前：回读失败不该让「已经提交的导航变更」漏掉派发。
+	// 位置可能被一起改（header ↔ footer），新旧两个位置都要失效 —— 旧位置的产物里
+	// 同样烘着这份菜单，只失效新位置会让旧页面上留着已经改掉的菜单项。
+	s.invalidateMenu(ctx, e.ProjectID, kind)
+	if e.Kind != kind {
+		s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	}
+	// 按项引用：改标题/来源/链接/子项都会改变「以该项为根」的产物字节。
+	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
+	updated, err := s.m.Get(ctx, e.ProjectID, e.ID)
+	if err != nil {
+		return nil, err
+	}
+	return toResp(updated), nil
+}
+
+// Get 按 ID 查询导航项。
+func (s *Service) Get(ctx context.Context, req *navigationdto.GetReq) (res *navigationdto.NavigationResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	// 导航项详情只有 id 可依（请求不带工程）：逐工程探测出归属，再在本工程作用域内读。
+	// 原先的「不限工程」形态在换非超级角色后是静默的 ErrNotFound，且没有任何错误日志。
+	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New(navigationenums.ErrNotFound)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toResp(e), nil
+}
+
+// List 按工程（可选 kind）列出导航项，sort_order 升序。
+func (s *Service) List(ctx context.Context, req *navigationdto.ListReq) (list []*navigationdto.NavigationResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New(navigationenums.ErrInvalidParam)
+	}
+	kind := strings.TrimSpace(req.Kind)
+	if kind != "" && !isValidKind(kind) {
+		return nil, errors.New(navigationenums.ErrInvalidKind)
+	}
+	rows, err := s.m.List(ctx, strings.TrimSpace(req.ProjectID), kind)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*navigationdto.NavigationResp, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, toResp(r))
+	}
+	return out, nil
+}
+
+// Delete 删除导航项及其全部子项（导航树是一个聚合：留下孤儿节点会被渲染成顶级项）。
+func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return errors.New(navigationenums.ErrInvalidParam)
+	}
+	id := strings.TrimSpace(req.ID)
+	// 定位这一跳逐工程探测归属（请求只给 id）；拿到实体后的磁盘动作全部带工程作用域：
+	// 列表与批量删除都在本工程内，删到别的工程的行在换角色后会被策略拒绝（DB-009）。
+	e, err := s.locateNavigation(ctx, id)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errors.New(navigationenums.ErrNotFound)
+	}
+	if err != nil {
+		return err
+	}
+	rows, err := s.m.List(ctx, e.ProjectID, e.Kind)
+	if err != nil {
+		return err
+	}
+	if derr := s.m.DeleteMany(ctx, e.ProjectID, navDescendantIDs(rows, id)); derr != nil {
+		return derr
+	}
+	// 失效派发（删除已提交之后）：被删的整棵子树会从该位置的产物里消失；按项引用
+	// 该项的页面同样要重建（它现在渲染不出根了）。
+	s.invalidateMenu(ctx, e.ProjectID, e.Kind)
+	s.invalidateNavigation(ctx, e.ProjectID, e.ID)
+	return nil
+}
+
+// navDescendantIDs 返回自身 + 全部子孙 ID（深度优先）。
+func navDescendantIDs(rows []*navigationmodel.NavigationEntity, rootID string) []string {
+	children := make(map[string][]string, len(rows))
+	for _, r := range rows {
+		if r.ParentID != nil && *r.ParentID != "" {
+			children[*r.ParentID] = append(children[*r.ParentID], r.ID)
+		}
+	}
+	out := make([]string, 0, 4)
+	stack := []string{rootID}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		out = append(out, cur)
+		stack = append(stack, children[cur]...)
+	}
+	return out
+}
+
+// toResp 实体 → 响应。
+//
+// UpdatedAt 是乐观锁 token（RFC3339Nano，UpdateReq.ExpectedUpdatedAt 原样回带），与树节点
+// NavigationNode.UpdatedAt 同义 —— 同一个值、同一个口径（这里原先发的是分钟展示串，
+// 与树节点同名两义，正是「拿展示串当 token」那个陷阱的温床）。
+//
+// 要求 e 是库内真值：Create 因此回读后再转换（纳秒精度的内存值比不中微秒列）。
+func toResp(e *navigationmodel.NavigationEntity) *navigationdto.NavigationResp {
+	return &navigationdto.NavigationResp{
+		ID: e.ID, ProjectID: e.ProjectID, Title: e.Title, Path: e.Path,
+		Kind: e.Kind, ParentID: e.ParentID, SortOrder: e.SortOrder,
+		SourceType: e.SourceType, SourceID: e.SourceID, Target: e.Target,
+		PanelBlockID: e.PanelBlockID, PanelWidth: e.PanelWidth,
+		UpdatedAt: e.UpdatedAt.Format(time.RFC3339Nano),
+	}
+}

@@ -60,12 +60,14 @@ func AcquireTestEnv(t *testing.T) (*TestEnv, error) {
 	env := &TestEnv{}
 	pgEP, pgSource, pgErr := acquirePG(t)
 	if pgErr != nil {
+		FailIfRequiredPG(t, pgErr)
 		return nil, pgErr
 	}
 	env.PG, env.PGSource = pgEP, pgSource
 
 	redisAddr, redisSource, redisErr := acquireRedis(t)
 	if redisErr != nil {
+		FailIfRequiredRedis(t, redisErr)
 		return nil, redisErr
 	}
 	env.RedisAddr, env.RedisSource = redisAddr, redisSource
@@ -76,14 +78,18 @@ func AcquireTestEnv(t *testing.T) (*TestEnv, error) {
 // 返回端点、来源（local/container）；两级失败时返回包装 ErrEnvUnavailable 的错误。
 func AcquirePG(t *testing.T) (PGEndpoint, string, error) {
 	t.Helper()
-	return acquirePG(t)
+	ep, source, err := acquirePG(t)
+	FailIfRequiredPG(t, err)
+	return ep, source, err
 }
 
 // AcquireRedis 仅获取 Redis 测试环境（只依赖 Redis 的测试用）。
 // 返回地址、来源（local/container）；两级失败时返回包装 ErrEnvUnavailable 的错误。
 func AcquireRedis(t *testing.T) (string, string, error) {
 	t.Helper()
-	return acquireRedis(t)
+	addr, source, err := acquireRedis(t)
+	FailIfRequiredRedis(t, err)
+	return addr, source, err
 }
 
 func acquirePG(t *testing.T) (PGEndpoint, string, error) {

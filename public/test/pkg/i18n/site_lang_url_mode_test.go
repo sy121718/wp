@@ -21,6 +21,7 @@ import (
 	"go_wp/pkg/i18n"
 
 	"github.com/spf13/viper"
+	"go_wp/public/test/support"
 )
 
 // ensureI18nDB 保证 i18n.Init 首次调用时缓存可加载（本测试独立于包内其他用例的
@@ -39,6 +40,7 @@ func ensureI18nDB(t *testing.T) {
 	cfg.Set("database.max_open_conns", 1)
 	if err := database.Init(cfg); err != nil {
 		if _, gerr := database.GetDB(); gerr != nil {
+			support.FailIfRequiredPG(t, err)
 			t.Skipf("本地 PostgreSQL 不可用，跳过：%v", err)
 		}
 	}

@@ -86,11 +86,11 @@ func (a *assembly) buildPublishingModules() {
 	// 商品列表片段（issue #27）：访问面的筛选/排序/分页局部刷新出口需要同一份集合解析器 ——
 	// 片段渲染调 builder.RenderNodeHTML 复用构建期组件，取数自然也要走同一个注册表，
 	// 否则「点筛选得到的」与「静态产物里的」会是两批数据。
-	runtimefragment.SetCollectionResolver(collectionResolver)
+	a.fragDeps.CollectionResolver = collectionResolver
 	marks.mark(portRuntimeFragCollectionResolver)
 	// 商品构建期数据源（issue #35）：组件直连受限接口，不再只靠按名路由。
 	// ProductService 嵌入了 ProductDataSource，装配处拿到的契约天然能传。
-	runtimefragment.SetProductDataSource(productSvc)
+	a.fragDeps.ProductDataSource = productSvc
 	marks.mark(portRuntimeFragProductDataSource)
 	// 站内搜索片段（BIZ-2）：两条检索端口 + 一条「实体 → 已上线路径」解析端口。
 	//
@@ -103,19 +103,19 @@ func (a *assembly) buildPublishingModules() {
 	if !ok {
 		panic("内容模块未实现检索端口（SearchPort）")
 	}
-	runtimefragment.SetContentSearchProvider(contentSearch)
+	a.fragDeps.ContentSearchProvider = contentSearch
 	marks.mark(portRuntimeFragContentSearch)
 	productSearch, ok := productSvc.(productcontract.SearchPort)
 	if !ok {
 		panic("商品模块未实现检索端口（SearchPort）")
 	}
-	runtimefragment.SetProductSearchProvider(productSearch)
+	a.fragDeps.ProductSearchProvider = productSearch
 	marks.mark(portRuntimeFragProductSearch)
 	publishedLocator, ok := presentationSvc.(presentationcontract.PublishedEntityLocator)
 	if !ok {
 		panic("自动发布模块未实现已上线路径解析端口（PublishedEntityLocator）")
 	}
-	runtimefragment.SetPublishedEntityLocator(publishedLocator)
+	a.fragDeps.PublishedEntityLocator = publishedLocator
 	marks.mark(portRuntimeFragPublishedLocator)
 	// 商品侧同一端口（集合项 url 字段）：原写法是「命中即注入、未命中静默跳过」，
 	// 跳过的表现是「商品集合项的 url 全空、列表页商品没有链接」—— 静默降级（审计 CQ-019）。
@@ -353,33 +353,33 @@ func (a *assembly) wirePublishingPorts() {
 	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
 	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
 	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
-	runtimefragment.SetSitePageResolver(pageService)
+	a.fragDeps.SitePageResolver = pageService
 	marks.mark(portRuntimeFragSitePageResolver)
-	runtimefragment.SetFragmentProject(projectService)
+	a.fragDeps.FragmentProject = projectService
 	marks.mark(portRuntimeFragProject)
 	// 访客订单片段（BIZ-1）：片段端点按访客会话取自己的订单。传的是 orderSvc ——
 	// 它嵌入了只读的 VisitorOrderReader，写路径（建单 / 状态流转 / 优惠码管理）
 	// 那部分能力传不进片段层。归属校验在 order 模块的 SQL 条件里，不在这层。
-	runtimefragment.SetVisitorOrderReader(a.orderSvc)
+	a.fragDeps.VisitorOrderReader = a.orderSvc
 	marks.mark(portRuntimeFragVisitorOrderReader)
 	// 访客订单地址里的国家/地区名（迁移 501 存的是代码快照）：同一份系统字典只读口，
 	// 与后台订单页共用实例（缓存也只有一份）。未注入时片段照常渲染、国家显示代码 ——
 	// 所以它不是 required-port，这里的注入不是为了「能力可用」而是为了「显示是人话」。
-	runtimefragment.SetCountryLabelReader(a.sysConfigDict)
+	a.fragDeps.CountryLabelReader = a.sysConfigDict
 	marks.mark(portRuntimeFragCountryLabel)
 	// 访客退货片段（RMA）：orderSvc 嵌入了收窄的 VisitorReturnPort（只读申请面，
 	// 拿不到「后台审核 / 入库 / 退款」）。此端口此前**从未被任何地方注入** ——
 	// 退货申请片段因此恒返回「退货功能暂不可用」（审计 CQ-019：静默降级窗口）。
-	runtimefragment.SetVisitorReturnProvider(a.orderSvc)
+	a.fragDeps.VisitorReturnProvider = a.orderSvc
 	marks.mark(portRuntimeFragVisitorReturn)
 	// 访客身份解析中间件：片段端点需要知道「这个请求是谁」。
 	// 它与后台的 SessionAuthMiddleware 是两套身份（不同 cookie、不同存储），
 	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。
-	runtimefragment.SetVisitorIdentityMiddleware(userhttp.VisitorIdentityMiddleware(a.userSvc))
+	a.fragDeps.VisitorIdentityMiddleware = userhttp.VisitorIdentityMiddleware(a.userSvc)
 	marks.mark(portRuntimeFragVisitorIdentity)
 	// 账号中心片段（资料 / 偏好 / 改密码 / 登录设备）：只注入**收窄后的**只读端口 ——
 	// 片段层拿不到注册、改密码、踢出设备这些写能力，越权防护靠接口形状。
-	runtimefragment.SetVisitorAccountPort(a.userSvc)
+	a.fragDeps.VisitorAccountPort = a.userSvc
 	marks.mark(portRuntimeFragVisitorAccount)
 	// 访问面守卫的登录态探针（PIPE-6 AccessGuard，「登录用户可见」）。
 	// 传的是收窄后的 UserService（只用到 ResolveVisitorID 一条只读能力）：
@@ -696,6 +696,9 @@ func (a *assembly) mountAdminPages() {
 // 可选端口未接入写进启动日志 —— 降级必须可见，而不是只在代码注释里写一句「未注入时降级」。
 func (a *assembly) runSelfCheck() {
 	mustAllPortsWired(a.marks)
+	// 必需端口全部到位之后才提交片段层依赖快照：顺序保证「自检不过 → 快照根本不提交」，
+	// 不会留下一个「装了一半」的包级依赖供后续代码误读。
+	runtimefragment.SetDependencies(a.fragDeps)
 	// 权限点声明同步（审计 SEC-011）：路由装配完成后，把声明表幂等 upsert 进库
 	// （只补缺失的权限点与超管策略，不动人工的角色 / 用户授权，见 internal/permission/sync.go）。
 	syncDeclaredPermissions(a.db)

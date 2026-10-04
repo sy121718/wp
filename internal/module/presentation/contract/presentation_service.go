@@ -34,10 +34,13 @@ type PresentationService interface {
 	// 直接取消激活（与手工页面 page.Service.UpdateURL 同一语义）。
 	// 详情页 URL 因此不再需要「删实例再重建」才能改。
 	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
-	// SaveOverrideDocument 保存实例级文档覆盖并按其重建发布（迁移 281，docs/04-C-instance-override.md）：
-	// workbench 实例模式的保存通道；只改本实例，不影响共享模板与同模板的其他实例。
-	SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error)
+	// DetailTemplateModePort 双轨能力（迁移 281 / 282）：独立文档、重新套用预设、
+	// 两类回滚与影响面计数。六条动作的声明在 detail_template_mode.go —— 那里是同一条
+	// 收窄端口（后台商品详情页只拿得到这六条）。主服务嵌它，装配层持有的本接口值
+	//（静态类型 PresentationService）因此直接满足那条端口，注入无需运行期断言。
+	DetailTemplateModePort
 	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
+	// 语义等同端口的 ReapplyPreset，保留它是因为既有调用点用这个名字。
 	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)
 	// MarkStaleByRegistryVersion 把「当前产物由旧组件产出」的自动发布实例标记为待重建，
 	// 返回本次真正命中的实例 id（RETURNING 回读，不是入参回显）。
@@ -87,6 +90,44 @@ type PresentationService interface {
 type ArchiveInstanceEnsurer interface {
 	EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error)
 }
+
+// === 跨模块形状：调用方要传进来、要收回去的类型 ===
+
+// 跨模块调用方使用的**形状重导出**（与 order 契约同一手法）：调用方只依赖 contract，
+// 不直接 import presentation/dto。
+//
+// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
+// （建实例入参 / 实例视图就是它对外的语义），json/form 标签只影响 HTTP 绑定，不改变语义。
+// 另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」换成
+// 「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
+//
+// 边界：本模块内部（service / inbound）继续用 presentationdto 作为实现形状；重导出只服务于
+// 跨模块调用方（当前是 product 的详情页模板链路）。
+type (
+	// 建实例 / 重建 / 按实体查询（商品详情页的绑定与重建链路）。
+	CreateInstanceReq = presentationdto.CreateInstanceReq
+	InstanceResp      = presentationdto.InstanceResp
+	RebuildReq        = presentationdto.RebuildReq
+	GetByEntityReq    = presentationdto.GetByEntityReq
+	// 发布前预览（后台「详情页模板」页与商品保存前的预览）。
+	PreviewInstanceReq  = presentationdto.PreviewInstanceReq
+	PreviewInstanceResp = presentationdto.PreviewInstanceResp
+	// 改线上路径 / 确保归档页存在（分类、标签、品牌这类实体的归档页）。
+	UpdateURLReq     = presentationdto.UpdateURLReq
+	EnsureArchiveReq = presentationdto.EnsureArchiveReq
+	// 双轨能力（DetailTemplateModePort）：重新套用预设、两类回滚、快照清单与影响面计数。
+	ReapplyPresetReq    = presentationdto.ReapplyPresetReq
+	RollbackDocumentReq = presentationdto.RollbackDocumentReq
+	RollbackArtifactReq = presentationdto.RollbackArtifactReq
+	ListSnapshotsReq    = presentationdto.ListSnapshotsReq
+	CountByTemplateReq  = presentationdto.CountByTemplateReq
+)
+
+// 实例的文档来源模式（跟随共享模板 / 实例独立文档），真源在 presentationdto。
+const (
+	RenderModeTemplate = presentationdto.RenderModeTemplate
+	RenderModeDocument = presentationdto.RenderModeDocument
+)
 
 // BuildQueueEnqueuer 自动重建任务的入队端口（PERF-020）。
 //

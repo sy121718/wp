@@ -20,35 +20,13 @@ import (
 	"strconv"
 	"strings"
 
-	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	pageenums "go_wp/internal/module/page/enums"
-	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/templates"
 
 	"github.com/google/uuid"
 )
-
-// visitorOrders 访客订单查询能力（装配期注入）。
-//
-// 装配自检（审计 CQ-019）：判为 required-port —— 实现（orderSvc）在 routes.go 里
-// 恒定可得，为空只可能是装配被改坏。nil 分支仅服务单测，表现为订单列表 / 详情
-// 永远只显示「服务暂不可用」，与「今天订单服务挂了」在页面上无法区分。
-var visitorOrders ordercontract.VisitorOrderReader
-
-// SetVisitorOrderReader 注入访客订单查询能力（装配期调用；**必须注入**，见字段注释）。
-func SetVisitorOrderReader(r ordercontract.VisitorOrderReader) { visitorOrders = r }
-
-// countryLabelDict 系统字典只读口（sysconfig 的 DictReader）：把订单快照里的
-// 国家/地区代码显示成访客界面语言的名称。
-//
-// 与 visitorOrders 的关键差别：这是**可选**依赖 —— 未注入时订单详情照常渲染，
-// 只是地址里的国家显示代码。一个展示标签的字典读不到，不该让访客的订单页失败。
-var countryLabelDict sysconfigcontract.DictReader
-
-// SetCountryLabelReader 注入国家字典只读口（装配期调用；未注入 = 显示代码）。
-func SetCountryLabelReader(dict sysconfigcontract.DictReader) { countryLabelDict = dict }
 
 func init() {
 	Register(Spec{Type: "ordersList", Method: "GET", Auth: AuthAnonymous, Render: renderOrdersList})
@@ -203,12 +181,12 @@ func renderOrdersList(ctx context.Context, r *Request) (string, error) {
 		data.NeedLogin = true
 		return templates.RenderFragment("order_list", data)
 	}
-	if visitorOrders == nil {
+	if deps.VisitorOrderReader == nil {
 		data.Notice = labels.ReaderUnavailable
 		return templates.RenderFragment("order_list", data)
 	}
 	offset := ordersOffsetOf(r)
-	res, err := visitorOrders.ListVisitorOrders(ctx, &orderdto.VisitorOrderListReq{
+	res, err := deps.VisitorOrderReader.ListVisitorOrders(ctx, &orderdto.VisitorOrderListReq{
 		ProjectID: projectID,
 		Status:    data.Status,
 		Offset:    offset,
@@ -276,7 +254,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 		data.NeedLogin = true
 		return templates.RenderFragment("order_detail", data)
 	}
-	if visitorOrders == nil {
+	if deps.VisitorOrderReader == nil {
 		data.Notice = labels.ReaderUnavailable
 		return templates.RenderFragment("order_detail", data)
 	}
@@ -285,7 +263,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 		data.Notice = fragmentUserMessage(r, orderenums.ErrInvalidParam)
 		return templates.RenderFragment("order_detail", data)
 	}
-	res, err := visitorOrders.GetVisitorOrder(ctx, &orderdto.VisitorOrderDetailReq{
+	res, err := deps.VisitorOrderReader.GetVisitorOrder(ctx, &orderdto.VisitorOrderDetailReq{
 		OrderID:   orderID,
 		ProjectID: projectID,
 		UserID:    uid,
@@ -326,8 +304,8 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 	}
 	// 退货区（BIZ-1）：可退数量按行取，已有申请按状态列出。
 	// 读不到就当作「不可退」—— 页面少一个区块，胜过整段详情 500。
-	if visitorReturns != nil {
-		if rb, rerr := visitorReturns.ReturnableOfOrder(ctx, &orderdto.VisitorOrderDetailReq{
+	if deps.VisitorReturnProvider != nil {
+		if rb, rerr := deps.VisitorReturnProvider.ReturnableOfOrder(ctx, &orderdto.VisitorOrderDetailReq{
 			OrderID: orderID, ProjectID: projectID, UserID: uid,
 		}); rerr == nil && rb != nil {
 			byItem := make(map[uint64]*orderdto.ReturnableItem, len(rb.Items))
@@ -342,7 +320,7 @@ func renderOrderDetailWith(ctx context.Context, r *Request, noticeOK string) (st
 			}
 			data.ReturnableTotal = rb.ReturnableTotal
 		}
-		if list, lerr := visitorReturns.ListVisitorReturns(ctx, &orderdto.VisitorReturnListReq{
+		if list, lerr := deps.VisitorReturnProvider.ListVisitorReturns(ctx, &orderdto.VisitorReturnListReq{
 			ProjectID: projectID, OrderID: orderID, UserID: uid, Limit: 20,
 		}); lerr == nil && list != nil {
 			for _, rt := range list.List {
@@ -521,7 +499,7 @@ func orderAddressOf(ctx context.Context, r *Request, o *orderdto.OrderResp) stri
 // 归一到 zh / en 两档由字典侧完成 —— 片段层不复制那套判据。
 func countryLabelOf(ctx context.Context, r *Request, code string) string {
 	code = strings.TrimSpace(code)
-	if code == "" || countryLabelDict == nil {
+	if code == "" || deps.CountryLabelReader == nil {
 		return code
 	}
 	lang := ""
@@ -531,7 +509,7 @@ func countryLabelOf(ctx context.Context, r *Request, code string) string {
 			lang = strings.TrimSpace(paramOf(r, fragmentLangParam))
 		}
 	}
-	if label := strings.TrimSpace(countryLabelDict.CountryLabel(ctx, lang, code)); label != "" {
+	if label := strings.TrimSpace(deps.CountryLabelReader.CountryLabel(ctx, lang, code)); label != "" {
 		return label
 	}
 	return code

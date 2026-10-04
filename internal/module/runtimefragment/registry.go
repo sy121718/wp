@@ -14,28 +14,18 @@ import (
 	"strings"
 	"sync"
 
-	pagecontract "go_wp/internal/module/page/contract"
 	"go_wp/pkg/logger"
 )
-
-// sitePageResolver 系统页面槽位解析器（装配期注入一次）。
-//
-// 与 cartProvider 同模式：片段层只依赖 page 模块的**受限读接口**（SitePageResolver），
-// 拿不到发布 / 删除 / 改 URL 的能力 —— 越权防护靠接口形状。
-var sitePageResolver pagecontract.SitePageResolver
-
-// SetSitePageResolver 注入系统页面槽位解析器（装配期调用；未注入时槽位一律为空）。
-func SetSitePageResolver(r pagecontract.SitePageResolver) { sitePageResolver = r }
 
 // resolveSitePages 解析「槽位 → 当前语言线上路径」。
 //
 // 失败时返回 nil 并记日志、**不让片段渲染失败**：槽位决定的是「链接能不能点」，
 // 不是片段能否渲染的前提 —— 为它把整个购物车片段打成 500，损失远大于收益。
 func resolveSitePages(ctx context.Context, projectID, lang string) map[string]string {
-	if sitePageResolver == nil || strings.TrimSpace(projectID) == "" {
+	if deps.SitePageResolver == nil || strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	pages, err := sitePageResolver.ResolveSitePages(ctx, projectID, lang)
+	pages, err := deps.SitePageResolver.ResolveSitePages(ctx, projectID, lang)
 	if err != nil {
 		logger.Scene("fragment").Error(err, "系统页面槽位解析失败")
 		return nil

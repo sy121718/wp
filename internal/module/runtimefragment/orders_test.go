@@ -75,8 +75,8 @@ func callFragment(t *testing.T, typeName, query string, visitorID uint64) string
 // TestOrdersFragmentWithoutLoginShowsGuide 未登录：给引导，不报 401。
 func TestOrdersFragmentWithoutLoginShowsGuide(t *testing.T) {
 	fake := &fakeVisitorOrders{}
-	SetVisitorOrderReader(fake)
-	t.Cleanup(func() { SetVisitorOrderReader(nil) })
+	deps.VisitorOrderReader = fake
+	t.Cleanup(func() { deps.VisitorOrderReader = nil })
 
 	body := callFragment(t, "ordersList", "projectId=proj-1", 0)
 	if !strings.Contains(body, "登录后可以查看你的订单") {
@@ -96,8 +96,8 @@ func TestOrdersFragmentPassesVisitorIdentity(t *testing.T) {
 			Total: 12345, CreateTime: utils.NewJSONTime(time.Date(2026, 1, 1, 10, 30, 0, 0, time.UTC)),
 		}},
 	}}
-	SetVisitorOrderReader(fake)
-	t.Cleanup(func() { SetVisitorOrderReader(nil) })
+	deps.VisitorOrderReader = fake
+	t.Cleanup(func() { deps.VisitorOrderReader = nil })
 
 	body := callFragment(t, "ordersList", "projectId=proj-1&limit=20&status=paid", 77)
 	if fake.listReq == nil {
@@ -126,8 +126,8 @@ func TestOrderDetailFragmentKeepsOwnershipArgs(t *testing.T) {
 			UnitPrice: 100, Quantity: 1, LineTotal: 100,
 		}},
 	}}
-	SetVisitorOrderReader(fake)
-	t.Cleanup(func() { SetVisitorOrderReader(nil) })
+	deps.VisitorOrderReader = fake
+	t.Cleanup(func() { deps.VisitorOrderReader = nil })
 
 	body := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9", 5)
 	if fake.detailReq == nil || fake.detailReq.OrderID != 9 || fake.detailReq.UserID != 5 {
@@ -142,7 +142,7 @@ func TestOrderDetailFragmentKeepsOwnershipArgs(t *testing.T) {
 
 // TestOrdersFragmentWithoutReaderShowsUnavailable 未接入时给可见提示，而不是空壳。
 func TestOrdersFragmentWithoutReaderShowsUnavailable(t *testing.T) {
-	SetVisitorOrderReader(nil)
+	deps.VisitorOrderReader = nil
 	body := callFragment(t, "ordersList", "projectId=proj-1", 7)
 	if !strings.Contains(body, msgOrdersUnavailable) {
 		t.Fatalf("未接入应渲染提示；实际：%s", body)
@@ -152,8 +152,8 @@ func TestOrdersFragmentWithoutReaderShowsUnavailable(t *testing.T) {
 // TestOrdersFragmentRejectsNonNumericOrderID 非数字的订单 id 直接给结论，不打到下游。
 func TestOrdersFragmentRejectsNonNumericOrderID(t *testing.T) {
 	fake := &fakeVisitorOrders{}
-	SetVisitorOrderReader(fake)
-	t.Cleanup(func() { SetVisitorOrderReader(nil) })
+	deps.VisitorOrderReader = fake
+	t.Cleanup(func() { deps.VisitorOrderReader = nil })
 	body := callFragment(t, "orderDetail", "projectId=proj-1&orderId=abc", 5)
 	if fake.detailReq != nil {
 		t.Fatal("非法 id 不该传到订单域（会让 PostgreSQL 的 uuid/bigint 解析报错）")
@@ -203,11 +203,11 @@ func TestOrderDetailRendersCountryName(t *testing.T) {
 			CreateTime: utils.NewJSONTime(time.Now()),
 		},
 	}
-	SetVisitorOrderReader(&fakeVisitorOrders{detail: detail})
-	SetCountryLabelReader(&fakeCountryDict{})
+	deps.VisitorOrderReader = &fakeVisitorOrders{detail: detail}
+	deps.CountryLabelReader = &fakeCountryDict{}
 	t.Cleanup(func() {
-		SetVisitorOrderReader(nil)
-		SetCountryLabelReader(nil)
+		deps.VisitorOrderReader = nil
+		deps.CountryLabelReader = nil
 	})
 
 	zh := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
@@ -228,7 +228,7 @@ func TestOrderDetailRendersCountryName(t *testing.T) {
 	}
 
 	// 未接入字典：显示代码，页面照常。
-	SetCountryLabelReader(nil)
+	deps.CountryLabelReader = nil
 	noDict := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
 	if !strings.Contains(noDict, "ZZ 深圳市") {
 		t.Fatalf("未接入字典时应回落显示代码；实际：%s", noDict)

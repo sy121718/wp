@@ -10,7 +10,7 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	pagecontract "go_wp/internal/module/page/contract"
-	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	seoscore "go_wp/internal/seo"
@@ -278,7 +278,7 @@ func (h *productPageHandle) instancePath(ctx context.Context, entityType, entity
 	if h.instances == nil || strings.TrimSpace(entityID) == "" {
 		return ""
 	}
-	inst, err := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
+	inst, err := h.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
 		EntityType: entityType, EntityID: entityID,
 	})
 	if err != nil || inst == nil {

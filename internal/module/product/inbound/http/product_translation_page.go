@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go_wp/internal/middleware/builtin"
 	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
@@ -71,19 +72,21 @@ func (h *productTranslationHandle) port() (productTranslationPort, error) {
 
 // SetupProductTranslationRoutes 注册商品域翻译页路由（挂 /admin 页面组）。
 //
-// saveGuard 由调用方传入（页面组层需要挂 Casbin 权限点中间件），与页面翻译工作台
-// 同一口径：保存改的是商品的展示文本，复用商品更新权限点；GET 属安全方法，
-// 页面组已有 Session + CSRF。
-func SetupProductTranslationRoutes(adminPages *gin.RouterGroup, saveGuard gin.HandlerFunc,
+// 保存端点的鉴权在函数内挂定：页面组（internal/routers/assembly.go 的 adminPages）
+// 只有 Session + CSRF + 权限上下文，没有鉴权判定能力 —— 页面写端点必须各自显式挂
+// Casbin 中间件。保存改的是商品的展示文本，复用商品更新权限点（与页面翻译工作台
+// 同一口径）；GET 属安全方法，页面组已有 Session + CSRF。
+//
+// 这里刻意不再接受「由调用方注入 guard」的参数：审计发现参数为 nil 时会静默注册成
+// 「登录即可写」的 fail-open 分支，而静态门禁也看不见参数化注入的真实取值。
+// 权限点定死在函数内，漏挂无处可藏。
+func SetupProductTranslationRoutes(adminPages *gin.RouterGroup,
 	products productcontract.ProductService, projects projectcontract.ProjectService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *productTranslationHandle {
 	handle := NewProductTranslationHandle(products, projects, pages, instances)
 	adminPages.GET("/products/translations", handle.ProductTranslations)
-	if saveGuard != nil {
-		adminPages.POST("/products/translations/save", saveGuard, handle.SaveProductTranslations)
-		return handle
-	}
-	adminPages.POST("/products/translations/save", handle.SaveProductTranslations)
+	adminPages.POST("/products/translations/save",
+		builtin.CasbinMiddlewareForPath("/api/product/update"), handle.SaveProductTranslations)
 	return handle
 }
 

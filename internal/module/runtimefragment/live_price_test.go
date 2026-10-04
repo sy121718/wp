@@ -56,10 +56,10 @@ func (s *stubSnapshots) VariantSnapshots(_ context.Context, ids []string, projec
 
 // TestRenderProductLivePriceChanged 构建期价与当前价不一致 → 明确交代当前价。
 func TestRenderProductLivePriceChanged(t *testing.T) {
-	SetVariantSnapshotProvider(&stubSnapshots{all: []*productcontract.VariantSnapshot{
+	deps.VariantSnapshotProvider = &stubSnapshots{all: []*productcontract.VariantSnapshot{
 		{VariantID: liveVariantA, Price: 12900, Enabled: true},
-	}})
-	defer SetVariantSnapshotProvider(nil)
+	}}
+	defer func() { deps.VariantSnapshotProvider = nil }()
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA, "currency": "币",
@@ -78,10 +78,10 @@ func TestRenderProductLivePriceChanged(t *testing.T) {
 
 // TestRenderProductLivePriceUnchanged 价格一致时不说话：目标节点留空，页面保留产物里的价。
 func TestRenderProductLivePriceUnchanged(t *testing.T) {
-	SetVariantSnapshotProvider(&stubSnapshots{all: []*productcontract.VariantSnapshot{
+	deps.VariantSnapshotProvider = &stubSnapshots{all: []*productcontract.VariantSnapshot{
 		{VariantID: liveVariantA, Price: 9900, Enabled: true},
-	}})
-	defer SetVariantSnapshotProvider(nil)
+	}}
+	defer func() { deps.VariantSnapshotProvider = nil }()
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
@@ -97,7 +97,7 @@ func TestRenderProductLivePriceUnchanged(t *testing.T) {
 // TestRenderProductLivePriceFallbacks 四种「说不清」的情况都要沉默且不报错。
 func TestRenderProductLivePriceFallbacks(t *testing.T) {
 	// ① 端口未接入。
-	SetVariantSnapshotProvider(nil)
+	deps.VariantSnapshotProvider = nil
 	if out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
 	}}); err != nil || strings.TrimSpace(out) != "" {
@@ -109,8 +109,8 @@ func TestRenderProductLivePriceFallbacks(t *testing.T) {
 	}
 	// ③ 非 uuid 形状的 id：入口丢弃，绝不能流进 uuid 列的查询。
 	stub := &stubSnapshots{}
-	SetVariantSnapshotProvider(stub)
-	defer SetVariantSnapshotProvider(nil)
+	deps.VariantSnapshotProvider = stub
+	defer func() { deps.VariantSnapshotProvider = nil }()
 	if out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": "not-a-uuid,12345", "prices": "9900,9900", "projectId": liveProjectA,
 	}}); err != nil || strings.TrimSpace(out) != "" {
@@ -120,9 +120,9 @@ func TestRenderProductLivePriceFallbacks(t *testing.T) {
 		t.Fatalf("非法 id 不得传给端口（会让 PG 报 22P02 打成 500），实际传了 %+v", stub.seen)
 	}
 	// ④ 没烘构建期价（prices 缺失）→ 无从对比，沉默（展示当前价会让页面上出现两个价）。
-	SetVariantSnapshotProvider(&stubSnapshots{all: []*productcontract.VariantSnapshot{
+	deps.VariantSnapshotProvider = &stubSnapshots{all: []*productcontract.VariantSnapshot{
 		{VariantID: liveVariantA, Price: 12900, Enabled: true},
-	}})
+	}}
 	if out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "projectId": liveProjectA,
 	}}); err != nil || strings.TrimSpace(out) != "" {
@@ -136,10 +136,10 @@ func TestRenderProductLivePriceFallbacks(t *testing.T) {
 
 // TestRenderProductLivePriceDisabled 已下架是产物里没有的事实，独立提示。
 func TestRenderProductLivePriceDisabled(t *testing.T) {
-	SetVariantSnapshotProvider(&stubSnapshots{all: []*productcontract.VariantSnapshot{
+	deps.VariantSnapshotProvider = &stubSnapshots{all: []*productcontract.VariantSnapshot{
 		{VariantID: liveVariantA, Price: 9900, Enabled: false},
-	}})
-	defer SetVariantSnapshotProvider(nil)
+	}}
+	defer func() { deps.VariantSnapshotProvider = nil }()
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
@@ -154,8 +154,8 @@ func TestRenderProductLivePriceDisabled(t *testing.T) {
 
 // TestRenderProductLivePricePortError 端口报错要上抛（端点转 500，而不是静默假装价格一致）。
 func TestRenderProductLivePricePortError(t *testing.T) {
-	SetVariantSnapshotProvider(&stubSnapshots{err: errors.New("数据库不可用")})
-	defer SetVariantSnapshotProvider(nil)
+	deps.VariantSnapshotProvider = &stubSnapshots{err: errors.New("数据库不可用")}
+	defer func() { deps.VariantSnapshotProvider = nil }()
 	if _, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,
 	}}); err == nil {
@@ -172,8 +172,8 @@ func TestRenderProductLivePriceRequiresProject(t *testing.T) {
 	stub := &stubSnapshots{all: []*productcontract.VariantSnapshot{
 		{VariantID: liveVariantA, Price: 12900, Enabled: true},
 	}}
-	SetVariantSnapshotProvider(stub)
-	defer SetVariantSnapshotProvider(nil)
+	deps.VariantSnapshotProvider = stub
+	defer func() { deps.VariantSnapshotProvider = nil }()
 
 	_, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900",
@@ -198,8 +198,8 @@ func TestRenderProductLivePricePassesProjectToPort(t *testing.T) {
 	stub := &stubSnapshots{all: []*productcontract.VariantSnapshot{
 		{VariantID: liveVariantA, Price: 12900, Enabled: true},
 	}}
-	SetVariantSnapshotProvider(stub)
-	defer SetVariantSnapshotProvider(nil)
+	deps.VariantSnapshotProvider = stub
+	defer func() { deps.VariantSnapshotProvider = nil }()
 
 	out, err := renderProductLivePrice(context.Background(), &Request{Params: map[string]string{
 		"variantIds": liveVariantA, "prices": "9900", "projectId": liveProjectA,

@@ -15,8 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
-	presentationdto "go_wp/internal/module/presentation/dto"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 )
 
 // detailTemplatePanel 组装详情页模板面板的数据（docs/04-C-instance-override.md §5）。
@@ -30,7 +30,7 @@ func (h *productPageHandle) detailTemplatePanel(ctx context.Context, selected, p
 		return tplPanel
 	}
 	tplPanel["Avail"] = true
-	if inst, ierr := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
+	if inst, ierr := h.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
 		EntityType: productEntityType, EntityID: productID, ProjectID: selected,
 	}); ierr == nil && inst != nil {
 		tplPanel["InstanceID"] = inst.ID
@@ -43,10 +43,10 @@ func (h *productPageHandle) detailTemplatePanel(ctx context.Context, selected, p
 		// document：可进入自定义、可重新套用预设、可按历史快照回滚；
 		// template：布局的正确修改位置是模板 —— 按钮写成「编辑模板（影响 N 个商品）」，
 		// 影响面用真实计数（含该模板下 template 模式的实例数），不写就让用户凭猜。
-		isDoc := inst.RenderMode == presentationdto.RenderModeDocument
-		tplPanel["RenderMode"] = presentationdto.RenderModeTemplate
+		isDoc := inst.RenderMode == presentationcontract.RenderModeDocument
+		tplPanel["RenderMode"] = presentationcontract.RenderModeTemplate
 		if isDoc {
-			tplPanel["RenderMode"] = presentationdto.RenderModeDocument
+			tplPanel["RenderMode"] = presentationcontract.RenderModeDocument
 		}
 		tplPanel["IsDocumentMode"] = isDoc
 		// 「预设有新版本」：document 模式不会自动跟随模板，只能靠快照记录的
@@ -57,7 +57,7 @@ func (h *productPageHandle) detailTemplatePanel(ctx context.Context, selected, p
 				tplPanel["PresetUpdated"] = true
 			}
 			if h.modePort != nil {
-				if snaps, serr := h.modePort.ListSnapshots(ctx, &presentationdto.ListSnapshotsReq{
+				if snaps, serr := h.modePort.ListSnapshots(ctx, &presentationcontract.ListSnapshotsReq{
 					InstanceID: inst.ID, ProjectID: selected, Limit: 8,
 				}); serr == nil {
 					tplPanel["Snapshots"] = snaps
@@ -65,14 +65,14 @@ func (h *productPageHandle) detailTemplatePanel(ctx context.Context, selected, p
 			}
 		}
 		if h.modePort != nil {
-			if counts, cerr := h.modePort.CountByTemplate(ctx, &presentationdto.CountByTemplateReq{
+			if counts, cerr := h.modePort.CountByTemplate(ctx, &presentationcontract.CountByTemplateReq{
 				TemplateID: inst.TemplateID, ProjectID: selected,
 			}); cerr == nil && counts != nil {
 				tplPanel["AffectedCount"] = counts.TemplateMode
 			}
 		}
 	}
-	if rows, terr := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType}); terr == nil {
+	if rows, terr := h.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: productEntityType}); terr == nil {
 		tplPanel["Templates"] = rows
 	}
 	return tplPanel

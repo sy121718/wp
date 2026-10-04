@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	ordercontract "go_wp/internal/module/order/contract"
-	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
@@ -293,7 +292,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		selected = projects[0].ID
 	}
 
-	var summary *orderdto.CustomerOrderSummaryResp
+	var summary *ordercontract.CustomerOrderSummaryResp
 	summaryErr := ""
 	switch {
 	case h.orders == nil:
@@ -302,7 +301,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		// 没有工程就没有订单可算 —— 这是「还没建站点工程」的正常状态，不是错误。
 		summaryErr = ""
 	default:
-		res, oerr := h.orders.CustomerOrderSummaryOf(ctx, &orderdto.CustomerOrderSummaryReq{
+		res, oerr := h.orders.CustomerOrderSummaryOf(ctx, &ordercontract.CustomerOrderSummaryReq{
 			ProjectID: selected,
 			UserID:    id,
 		})

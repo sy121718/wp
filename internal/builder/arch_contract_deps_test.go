@@ -41,13 +41,12 @@ var allowedBuilderImports = map[string]bool{
 
 // exemptedBuilderImports 显式豁免（每一项都要写清理由，豁免不得扩大）。
 //
-// plugincomp 承载 manifest 的模块间传递形态（plugin 契约里的 ManifestAlias）。
-// 它自身依赖 core 与 style，因此这是一条**指向内核的传递依赖**，属待解耦项
-// （把 manifest 形状同样下沉到零依赖包即可删除本豁免）。豁免存在的前提是
-// ManifestAlias 当前全仓无消费者；一旦它被真正使用，解耦优先级要提上来。
-var exemptedBuilderImports = map[string]bool{
-	"go_wp/internal/builder/plugincomp": true,
-}
+// 正常状态下这张表是**空的**：契约包只允许依赖 internal/builder/source。
+// 历史上曾豁免 go_wp/internal/builder/plugincomp —— plugin 契约用 ManifestAlias
+// 暴露 manifest 形状，而 plugincomp 依赖 core 与 style，构成一条指向内核的传递依赖。
+// 该别名全仓无消费者（豁免注释当时的自述），已随本次整改直接删除，依赖随之消失、
+// 豁免同步清零。新增条目 = 承认破了 AGENTS.md 不变量 7，必须同时写清「怎么还」。
+var exemptedBuilderImports = map[string]bool{}
 
 // knownContracts 必须被扫到的已知契约包（防「扫描路径写错 → 测试永远绿」）。
 var knownContracts = []string{"content", "product", "plugin"}

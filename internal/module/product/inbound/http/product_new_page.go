@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 
 	"github.com/gin-gonic/gin"
 
@@ -49,12 +49,12 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 		return
 	}
 	// 模板清单与默认模板：卡片展示用；未装配模板能力时右侧给降级提示。
-	var tplRows []*contenttemplatedto.TemplateResp
+	var tplRows []*contenttemplatecontract.TemplateResp
 	defaultID := ""
 	tplAvail := false
 	if h.templates != nil {
 		tplAvail = true
-		if rows, terr := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType}); terr == nil {
+		if rows, terr := h.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: productEntityType}); terr == nil {
 			tplRows = rows
 		}
 		if tpl, rerr := h.templates.ResolveTemplate(ctx, productEntityType); rerr == nil {

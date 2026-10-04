@@ -1,10 +1,9 @@
-// Package workbenchenums 承载可视化工作台（编辑器本体）的后台页面入口：
+// Package workbenchhttp 承载可视化工作台（编辑器本体）的后台页面入口：
 // 编辑器外壳 / 预览编译直出 / 结构树 / 检查器 / SEO 评分 / 编辑器桥接。
 package workbenchhttp
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sort"
 	"time"
@@ -23,6 +22,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	workbenchservice "go_wp/internal/module/workbench/service"
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
@@ -37,27 +37,24 @@ type Handle struct {
 	pages pagecontract.PageService
 	// projects 站点工程契约（页面挂接主题的 settings 读取）。
 	projects projectcontract.ProjectService
-	// blocks 全局块契约（块编辑模式 / 块预览 / 全局块分组）。
-	blocks blockcontract.BlockService
-	// plugins 插件契约（组件库摘要与区块预设，可空降级）。
-	plugins plugincontract.PluginService
 	// collection 集合内容解析器（装配位；预览编译下沉 page 模块后本包不直接消费，
 	// 保留字段维持装配签名稳定）。
 	collection core.CollectionResolver
-	// contenttemplates 内容模板契约（EDT-001 模板编辑模式）。
-	contenttemplates contenttemplatecontract.ContentTemplateService
 	// templatePreview 模板预览实例端口（presentation 的最窄能力）。
 	templatePreview TemplatePreviewPort
 	// instances 实例编辑模式端口（docs/04-C：?instance= 画布改覆盖文档）。
 	instances presentationcontract.PresentationService
-	// navigations 导航菜单项下拉数据源（检查器 entityref,navigation；docs/04-C 批 1）。
-	navigations NavigationPickerPort
 	// blueprints 蓝图候选端口（可空降级；当前编辑器本体未消费，装配位保留）。
 	blueprints blueprintcontract.BlueprintService
-	// products 商品构建期数据源（检查器 entityref 下拉，可空降级）。
-	products productcontract.ProductDataSource
 	// contentStore 内容译文读写端口（可空降级；当前编辑器本体未消费，装配位保留）。
 	contentStore ContentTranslationPort
+	// svc 本模块编排服务：跨模块取数（页面 / 主题 / 块 / 模板 / 导航 / 商品 / 插件）、
+	// 检查器面板与结构树的 HTML 拼装、预览编译分类全在它里面。
+	//
+	// handler 与它的分工：handler 解析请求 → 调 svc → 渲染；svc 不认识 gin。
+	// 除了下面几个「未下沉的装配位」（collection / blueprints / contentStore 与
+	// templatePreview / instances 两个端口），其余跨模块能力一律经 svc 取用。
+	svc *workbenchservice.Service
 }
 
 // TemplatePreviewPort 模板工作台预览所需的最窄 presentation 能力。
@@ -81,25 +78,13 @@ func New(pages pagecontract.PageService, projects projectcontract.ProjectService
 	blocks blockcontract.BlockService, plugins plugincontract.PluginService,
 	collection core.CollectionResolver, contenttemplates contenttemplatecontract.ContentTemplateService,
 	templatePreview TemplatePreviewPort) *Handle {
-	return &Handle{pages: pages, projects: projects, blocks: blocks, plugins: plugins,
-		collection: collection, contenttemplates: contenttemplates, templatePreview: templatePreview}
-}
-
-// pageOf 按 id 读取页面（画布 / 预览共用同一取数口径）。
-//
-// Detail 把 projectID 当**必填的越权防护 scope**（少它只会得到「参数缺失」，
-// 看起来像「页面不存在」）。画布路由手上只有 pageId，所以先用只读的
-// ProjectOfPage 问「这个页面属于谁」，再按 scope 取详情。
-func (h *Handle) pageOf(c *gin.Context, pageID string) (*pagecontract.PageResp, error) {
-	if h.pages == nil {
-		return nil, errors.New("页面服务未装配")
-	}
-	ctx := c.Request.Context()
-	projectID, err := h.pages.ProjectOfPage(ctx, pageID)
-	if err != nil {
-		return nil, err
-	}
-	return h.pages.Detail(ctx, &pagecontract.DetailReq{ProjectID: projectID, ID: pageID})
+	// 签名保持不变（测试与外部装配直构该函数）；参数按归属拆给 svc 与 Handle 自留的端口。
+	// products / navigations 不在签名里：前者由装配侧经 svc.SetProducts 注入，
+	// 后者经 Handle.SetNavigationPicker 转发。
+	svc := workbenchservice.New(pages, projects, blocks, contenttemplates, nil, nil)
+	svc.SetPlugins(plugins)
+	return &Handle{pages: pages, projects: projects, collection: collection,
+		templatePreview: templatePreview, svc: svc}
 }
 
 // Dashboard 仪表盘首页（模板 admin/dashboard.html 由 internal/templates 集中管理）。
@@ -205,11 +190,15 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	contentStore ContentTranslationPort,
 ) *Handle {
 	h := &Handle{
-		pages: pages, projects: projects, blocks: blocks, plugins: plugins,
-		collection: collection, contenttemplates: contenttemplates,
+		pages: pages, projects: projects,
+		collection:      collection,
 		templatePreview: presentations, blueprints: blueprints,
-		products: products, contentStore: contentStore,
+		contentStore: contentStore,
 	}
+	// 编排服务的构造与 Handle 同源：装配签名不变，注入点（SetInstanceOverrideDeps /
+	// SetNavigationPicker）也照旧 —— 只是后者现在转发给 svc。
+	h.svc = workbenchservice.New(pages, projects, blocks, contenttemplates, products, nil)
+	h.svc.SetPlugins(plugins)
 	g := workbenchPages
 	// 仪表盘只挂 /admin。
 	//
@@ -235,7 +224,15 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	g.GET("/workbench/template/preview", h.TemplatePreview)
 	g.POST("/workbench/template/preview", h.TemplatePreviewDraft)
 	// 实例编辑模式保存（docs/04-C）：覆盖文档 + 重编译发布，只改本实例。
-	g.POST("/workbench/instance/save", h.InstanceSave)
+	//
+	// Casbin 必须在这里显式挂（与下一行 navigation/create 同一形态）：workbenchPages
+	// 组只挂了 Session+CSRF+权限上下文（internal/routers/assembly.go），组链里**没有**
+	// 鉴权判定 —— 漏挂的后果是任意已登录账号（含只读角色）都能写。
+	//
+	// 权限点复用 API 侧的 presentation:rebuild：本端点与 POST /api/presentation/rebuild
+	// 是同一件事（改实例文档并重编译发布），而「页面写端点复用 API 权限点」是全仓库的
+	// 既定口径（11 个模块都这么做），新增独立权限点会让「权限点 ↔ 路由」多一份重复真源。
+	g.POST("/workbench/instance/save", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), h.InstanceSave)
 	// 检查器内就地新建菜单项（nav 组件的「具体菜单项」字段）：写回走 navigation 契约的
 	// Create，权限点沿用既有 /api/navigation/create —— workbenchPages 组只挂了
 	// Session+CSRF+权限上下文，Casbin 要在这里显式挂，否则是「页面没挂鉴权」。

@@ -52,12 +52,13 @@ func SetupProductPages(pages *gin.RouterGroup,
 	productPages.SetDetailTemplateDeps(contentTemplates, presentations)
 	// 归属仓下拉（issue #15）：建商品与新增变体时可选仓库（不选即默认仓）。
 	productPages.SetInventoryDeps(inventories)
+	// 双轨能力（迁移 282）：接口由 presentation 的 contract 声明
+	//（presentationcontract.DetailTemplateModePort），且 presentation service 侧有编译期
+	// 断言保证它真的实现该端口，故这里直接注入 —— 没有运行期类型断言，也就没有
+	// 「断言失败 → 静默降级」这条路径。presentations 的静态类型 PresentationService
+	// 已嵌入该端口，接口→接口赋值成立。
+	productPages.SetDetailTemplateModePort(presentations)
 	// 编辑期 title 唯一性检查的全站数据源（审计 SEO-018）：页面草稿与文章标题
-	// 双轨能力（迁移 282）：presentation 的 contract 未声明这些方法（另一批工作正在
-	// 维护它），故运行时断言注入；断言失败时详情页只显示基础面板（降级可见）。
-	if modePort, ok := presentations.(ProductDetailTemplateModePort); ok {
-		productPages.SetDetailTemplateModePort(modePort)
-	}
 	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
@@ -194,8 +195,8 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/product-pricing/apply", builtin.CasbinMiddlewareForPath("/api/product/pricing/apply"), productPages.ProductPricingApply)
 
 	// 商品域翻译工作台（issue #12）：入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。
-	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权复用商品更新权限点（同一改动面）。
-	SetupProductTranslationRoutes(pages,
-		builtin.CasbinMiddlewareForPath("/api/product/update"), products, projects, pageSvc, presentations)
+	// 保存写 sys_translation（engine=manual）并标记待重建，鉴权由 SetupProductTranslationRoutes
+	// 在函数内挂定商品更新权限点（同一改动面）。
+	SetupProductTranslationRoutes(pages, products, projects, pageSvc, presentations)
 	return productPages
 }

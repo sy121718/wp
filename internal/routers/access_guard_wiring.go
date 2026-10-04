@@ -7,7 +7,7 @@ package routers
 // middleware/builtin（访客 cookie 会话复用 builtin.EnsureCSRFTokenWith），
 // 同包再 import 回去就是环。
 //
-// 所以按仓库既有的端口注入形态接线（同 runtimefragment.SetVisitorIdentityMiddleware）：
+// 所以按仓库既有的端口注入形态接线（同 runtimefragment.Deps.VisitorIdentityMiddleware）：
 // 模块提供能力，装配层决定接给谁。未注入时守卫对 members 类型**恒判未登录**
 // （fail closed）：表现为「已登录访客也只看到守卫页」，而不是「谁都能看」。
 //

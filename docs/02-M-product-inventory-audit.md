@@ -1,5 +1,7 @@
 # 商品与库存域 操作逻辑审计
 
+> 内部过程文档（非对外使用）
+
 > 审计对象：`/admin` 下商品域（product）与库存域（product/inventory）全部后台页面。
 > 判据来源：`docs/02-J-admin-ui-structure-checklist.md` §A–§H、`docs/02-L-admin-rework-worklist.md`、
 > `admin-ui-logic` 技能（信息架构 / 布局效率 / 操作逻辑 / 认知负担）。

@@ -19,7 +19,7 @@
 
 ## P2 中
 ### 3. ActivateTheme 事务第二步 UPDATE 目标行不匹配时静默成功，工程落入「无激活主题」
-- 位置：internal/module/project/model/theme_model.go:77-86；service theme_service.go:152-164
+- 位置：internal/module/project/model/theme_model.go:77-86；service/theme_crud.go:156 起（ActivateTheme；2026-10 按能力域拆分后位置，拆分前为 theme_service.go:152-164）
 - 证据：tx.Model(&ThemeEntity{}).Where("id = ? AND project_id = ?", themeID, projectID).Updates(...).Error // L83-84 不检查 RowsAffected
 - 问题：事务先全量取消激活再激活目标。若目标主题在 service GetTheme（L156）之后被并发删除，第二步 UPDATE 匹配 0 行不报错，事务提交成功 → API 返回成功但全工程 is_active 全 false。「激活成功」与实际状态不符。
 - 建议：检查第二步 RowsAffected，为 0 时 return error 回滚，service 映射 ErrThemeNotFound。
@@ -95,7 +95,7 @@
 ### 19. project/theme/locale 细节问题
 - theme_http.go:63,136 用驼峰 Query 参数 projectId（全项目 snake_case 惯例不一致）；theme_http.go:121-132 Delete 复用 ThemeActivateReq
 - project_handle.go:30-32：Create 绑定失败（含 settings 非法）统一返回 ErrInvalidName 文案，误导排障
-- theme_service.go:68-107 CreateTheme 不校验 ProjectID 存在（靠 FK 报 500）；locale_service.go:77-79 SaveLocales 不校验工程存在且 project_locales（064）无 FK → 可写孤儿语言清单
+- service/theme_crud.go:71 起 CreateTheme 不校验 ProjectID 存在（靠 FK 报 500；拆分前为 theme_service.go:68-107）；locale_service.go:77-79 SaveLocales 不校验工程存在且 project_locales（064）无 FK → 可写孤儿语言清单
 - theme_model.go:97-107 查重 LOWER(name) 而 DB 唯一索引 uq_themes_project_name（020:16）精确匹配 → 并发下可建 "Foo"/"foo" 两主题
 - locale_service.go:42-47/60-64 EnabledLangs/DefaultLocale 吞一切查询错误（含 ctx 取消）回退默认语言（存疑：注释声明是为不阻断构建的有意设计，但会掩盖 DB 故障）
 

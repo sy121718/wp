@@ -19,6 +19,7 @@ import (
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -39,38 +40,7 @@ func (h *Handle) SetNavigationPicker(p NavigationPickerPort) {
 	if h == nil {
 		return
 	}
-	h.navigations = p
-}
-
-// navigationInspectorOptions 列出本工程全部菜单项（按位置分组排序）。
-//
-// 标签带位置前缀：同一个工程里「产品」这类标题在页眉与移动端各有一条，
-// 只显示标题会让检查器里出现两个一模一样的选项，选错就静默绑到另一端的菜单上。
-func navigationInspectorOptions(ctx context.Context, h *Handle, projectID, selected string, tr func(key string) string) []inspectorOption {
-	out := []inspectorOption{{Value: "", Label: tr(workbenchenums.InspectorNavAny), Selected: selected == ""}}
-	if h == nil || h.navigations == nil || projectID == "" {
-		return out
-	}
-	rows, err := h.navigations.List(ctx, &navigationdto.ListReq{ProjectID: projectID})
-	if err != nil {
-		return out
-	}
-	for _, row := range rows {
-		if row == nil || row.ID == "" {
-			continue
-		}
-		// 只列根项：按项引用时渲染的是「该项及其子树」，挂到子项上也合法，
-		// 但下拉里给全部项会让列表过长且层级难辨；子项可另用「按位置」模式取整棵树。
-		if row.ParentID != nil && *row.ParentID != "" {
-			continue
-		}
-		out = append(out, inspectorOption{
-			Value:    row.ID,
-			Label:    navigationKindLabel(row.Kind, tr) + " · " + row.Title,
-			Selected: row.ID == selected,
-		})
-	}
-	return out
+	h.svc.SetNavigationPicker(p)
 }
 
 // InspectorNavigationCreate POST /workbench/navigation/create
@@ -87,7 +57,7 @@ func navigationInspectorOptions(ctx context.Context, h *Handle, projectID, selec
 //	· 错误文案经 navigation 契约的 FacingText（命中白名单 → 可行动文案；未命中 → 归口
 //	  文案 + 日志），不直出 err.Error()。
 func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
-	if h == nil || h.navigations == nil {
+	if h == nil || h.svc == nil || h.svc.NavigationPicker() == nil {
 		// 归口译文：c.JSON 的 message 不经过模板取词层，直接写 MsgInternalError（裸 key）
 		// 会让前端弹出一串 "MsgInternalError"。
 		response.ErrorWithMessage(c, http.StatusServiceUnavailable, shell.PageInternalText(c))
@@ -101,7 +71,7 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 		response.ParamError(c)
 		return
 	}
-	created, err := h.navigations.Create(c.Request.Context(), &navigationdto.CreateReq{
+	created, err := h.svc.NavigationPicker().Create(c.Request.Context(), &navigationdto.CreateReq{
 		ProjectID: projectID, Title: title, Path: path, Kind: kind,
 	})
 	if err != nil || created == nil {
@@ -112,7 +82,7 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	}
 	response.Success(c, gin.H{
 		"id": created.ID, "title": created.Title, "path": created.Path,
-		"kind": created.Kind, "label": navigationKindLabel(created.Kind, workbenchTrFunc(c)) + " · " + created.Title,
+		"kind": created.Kind, "label": workbenchservice.NavigationKindLabel(created.Kind, workbenchTrFunc(c)) + " · " + created.Title,
 	})
 }
 
@@ -122,33 +92,8 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 // 取词）；未实现时落归口文案 —— **绝不**直出 err.Error()（那会把 PostgreSQL 原文
 // 漏到检查器面板上）。
 func (h *Handle) navigationFacingText(c *gin.Context, err error) string {
-	if t, ok := h.navigations.(navigationcontract.FacingTexter); ok {
+	if t, ok := h.svc.NavigationPicker().(navigationcontract.FacingTexter); ok {
 		return t.FacingText(response.RequestLanguage(c), err)
 	}
 	return workbenchenums.MsgInternalError
-}
-
-// navigationKindOptions 新建菜单项时的位置选项（与导航管理页的四个位置一致）。
-func navigationKindOptions(tr func(key string) string) []inspectorOption {
-	return []inspectorOption{
-		{Value: "header", Label: navigationKindLabel("header", tr), Selected: true},
-		{Value: "header_mobile", Label: navigationKindLabel("header_mobile", tr)},
-		{Value: "footer", Label: navigationKindLabel("footer", tr)},
-		{Value: "footer_mobile", Label: navigationKindLabel("footer_mobile", tr)},
-	}
-}
-
-// navigationKindLabel 位置名（与 admin 导航页的选项文案同义，按请求语言取词）。
-func navigationKindLabel(kind string, tr func(key string) string) string {
-	switch kind {
-	case "header":
-		return tr(workbenchenums.InspectorNavKindHeader)
-	case "header_mobile":
-		return tr(workbenchenums.InspectorNavKindHeaderMobile)
-	case "footer":
-		return tr(workbenchenums.InspectorNavKindFooter)
-	case "footer_mobile":
-		return tr(workbenchenums.InspectorNavKindFooterMobile)
-	}
-	return kind
 }

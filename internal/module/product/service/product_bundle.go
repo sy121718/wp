@@ -27,7 +27,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
@@ -578,7 +578,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 			skus = skus[:BundleMemberResolveLimit]
 		}
 		for _, code := range skus {
-			picked, perr := s.invSvc.GetWarehouseSKU(ctx, &inventorydto.GetWarehouseSKUReq{
+			picked, perr := s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
 				ProjectID: projectID, WarehouseID: warehouseID, SKUCode: code,
 			})
 			if perr != nil {

@@ -30,34 +30,11 @@ import (
 	"strings"
 
 	contentcontract "go_wp/internal/module/content/contract"
-	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
-
-// 检索来源端口（装配期注入；未注入 = 该类来源不可用，走降级文案而不是报错）。
-//
-// 装配自检（审计 CQ-019）：三条都判为 required-contract —— 提供方必须是内容 / 商品
-// 模块里实现了 SearchPort 的那个实现，routes.go 断言失败即 panic。
-// （片段层的降级文案保留给单测：未注入时访客看到「搜索功能暂未接入，请稍后再试」。）
-var (
-	contentSearchProvider  contentcontract.SearchPort
-	productSearchProvider  productcontract.SearchPort
-	publishedEntityLocator presentationcontract.PublishedEntityLocator
-)
-
-// SetContentSearchProvider 注入内容检索端口（装配期调用；传 nil 表示未接入）。
-func SetContentSearchProvider(port contentcontract.SearchPort) { contentSearchProvider = port }
-
-// SetProductSearchProvider 注入商品检索端口（装配期调用；传 nil 表示未接入）。
-func SetProductSearchProvider(port productcontract.SearchPort) { productSearchProvider = port }
-
-// SetPublishedEntityLocator 注入「实体 → 已上线路径」解析端口（装配期调用；传 nil 表示未接入）。
-func SetPublishedEntityLocator(port presentationcontract.PublishedEntityLocator) {
-	publishedEntityLocator = port
-}
 
 func init() {
 	Register(Spec{
@@ -115,7 +92,7 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 		view.HasMessage, view.Message = true, r.tr(rfenums.SearchEmptyQuery, "请输入搜索关键词")
 		return templates.RenderFragment("search_results", view)
 	}
-	if contentSearchProvider == nil && productSearchProvider == nil {
+	if deps.ContentSearchProvider == nil && deps.ProductSearchProvider == nil {
 		view.HasMessage, view.Message = true, r.tr(rfenums.SearchDegraded, "搜索功能暂未接入，请稍后再试")
 		return templates.RenderFragment("search_results", view)
 	}
@@ -123,8 +100,8 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 	lang := searchLang(r)
 	limit := searchResultLimit(r.Params[searchParamLimit])
 
-	if contentSearchProvider != nil {
-		hits, err := contentSearchProvider.SearchArticles(ctx, query, limit)
+	if deps.ContentSearchProvider != nil {
+		hits, err := deps.ContentSearchProvider.SearchArticles(ctx, query, limit)
 		if err != nil {
 			return "", err
 		}
@@ -132,8 +109,8 @@ func renderSearchResults(ctx context.Context, r *Request) (string, error) {
 	}
 	// 商品检索需要工程上下文（商品表按工程隔离）：没有工程 id 就不搜，
 	// 而不是跨工程搜一批别人的商品出来。
-	if productSearchProvider != nil && projectID != "" {
-		hits, err := productSearchProvider.SearchPublishedProducts(ctx, projectID, query, limit)
+	if deps.ProductSearchProvider != nil && projectID != "" {
+		hits, err := deps.ProductSearchProvider.SearchPublishedProducts(ctx, projectID, query, limit)
 		if err != nil {
 			return "", err
 		}
@@ -238,10 +215,10 @@ func searchLang(r *Request) string {
 // 解析失败只记日志并返回空表：链接是增强，不是搜索能否出结果的前提 ——
 // 为它把整个搜索打成 500，损失远大于收益（与槽位解析同一条口径）。
 func searchPublishedPaths(ctx context.Context, projectID, entityType, lang string, ids []string) map[string]string {
-	if publishedEntityLocator == nil || strings.TrimSpace(projectID) == "" || len(ids) == 0 {
+	if deps.PublishedEntityLocator == nil || strings.TrimSpace(projectID) == "" || len(ids) == 0 {
 		return nil
 	}
-	paths, err := publishedEntityLocator.PublishedEntityPaths(ctx, projectID, entityType, lang, ids)
+	paths, err := deps.PublishedEntityLocator.PublishedEntityPaths(ctx, projectID, entityType, lang, ids)
 	if err != nil {
 		logger.Scene("fragment").Error(err, "站内搜索：解析实体的线上路径失败")
 		return nil

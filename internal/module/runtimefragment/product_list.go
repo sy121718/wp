@@ -37,27 +37,12 @@ import (
 	"go_wp/internal/templates"
 )
 
-// 片段依赖（装配期注入）。
+// 模板集合缓存（首次渲染时惰性装载）。
 var (
-	collectionResolver core.CollectionResolver
 	productListSet     *jet.Set
 	productListSetErr  error
 	productListSetOnce sync.Once
 )
-
-// productDataSource 商品构建期数据源（issue #35）。
-//
-// 装配自检（审计 CQ-019）：判为 required-port —— 实现（productSvc）在 routes.go 里
-// 恒定可得。nil 分支仅服务单测，表现为组件回退按名路由（取数口径与集合源不一致）。
-var productDataSource productcontract.ProductDataSource
-
-// SetProductDataSource 注入商品构建期数据源（issue #35，装配期调用）。
-//
-// 片段路径渲染商品列表时优先用它（受限接口：只有读集合 / 元数据 / 可筛值）。
-func SetProductDataSource(ds productcontract.ProductDataSource) { productDataSource = ds }
-
-// SetCollectionResolver 注入集合解析器（装配期调用）。
-func SetCollectionResolver(r core.CollectionResolver) { collectionResolver = r }
 
 func init() {
 	Register(Spec{
@@ -145,7 +130,7 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 	if r == nil {
 		return "", fmt.Errorf("片段请求为空")
 	}
-	if collectionResolver == nil {
+	if deps.CollectionResolver == nil {
 		return "", fmt.Errorf("集合解析器未接入（装配缺陷）")
 	}
 	nodeID := strings.TrimSpace(r.Params[productListParamNodeID])
@@ -207,8 +192,8 @@ func renderProductList(ctx context.Context, r *Request) (string, error) {
 		// 值与下方槽位解析取的是同一个 r.Lang（请求解析结果：?lang → 工程默认语言），
 		// 不是这里凭空补一个语言 —— 语言仍由 URL 显式表达，只是如实传给渲染层。
 		Lang:       r.Lang,
-		Collection: collectionResolver,
-		Product:    productDataSource,
+		Collection: deps.CollectionResolver,
+		Product:    deps.ProductDataSource,
 	}
 	// 系统页面槽位（BIZ-2）：列表里的「全部商品」链接按站点槽位取路径，构建期与片段期
 	// 必须是同一份解析（各解一次迟早分叉：静态页上的链接能点、片段刷新后变 404）。

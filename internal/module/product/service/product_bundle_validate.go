@@ -12,6 +12,7 @@ import (
 	"errors"
 	"strings"
 
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 )
@@ -185,7 +186,14 @@ func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, var
 	return out, nil
 }
 
-// 编译期断言：片段侧只需要两个方法，单独一个窄接口（见 contract/product_bundle.go）。
-var _ interface {
-	BundleConfiguratorData(ctx context.Context, productID string) (*productdto.BundleConfigResp, error)
-} = (*Service)(nil)
+// 编译期断言：本文件同时是契约端口 BundleConfiguratorPort 与片段侧窄接口的实现处。
+//
+// 契约端口这条必须有：装配层（internal/routers/assembly.go）拿到的是接口值，
+// 只能做运行时类型断言 —— 少了这里的编译期断言，端口漂移要到进程启动才炸。
+var (
+	_ productcontract.BundleConfiguratorPort = (*Service)(nil)
+	// 片段侧只需要一个方法，单独一个窄接口（见 contract/product_bundle.go）。
+	_ interface {
+		BundleConfiguratorData(ctx context.Context, productID string) (*productdto.BundleConfigResp, error)
+	} = (*Service)(nil)
+)

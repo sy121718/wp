@@ -20,20 +20,11 @@ import (
 	"fmt"
 	"strings"
 
-	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/templates"
 )
 
 // AvailabilityLowStockThreshold 低库存阈值（<= 这个数就提示「仅剩 N 件」）。
 const AvailabilityLowStockThreshold = 5
-
-// variantAvailabilityProvider 可用量查询依赖（装配期注入；nil = 未接入，走降级文案）。
-var variantAvailabilityProvider productcontract.VariantAvailabilityLookupPort
-
-// SetVariantAvailabilityProvider 注入可用量查询能力（装配期调用；传 nil 表示未接入）。
-func SetVariantAvailabilityProvider(port productcontract.VariantAvailabilityLookupPort) {
-	variantAvailabilityProvider = port
-}
 
 func init() {
 	Register(Spec{
@@ -84,8 +75,8 @@ func renderVariantAvailability(ctx context.Context, r *Request) (string, error) 
 		return "", fmt.Errorf("缺少参数 %s", variantAvailabilityParamProjectID)
 	}
 	avail := map[string]int{}
-	if variantAvailabilityProvider != nil {
-		got, err := variantAvailabilityProvider.VariantAvailabilities(ctx, projectID, ids)
+	if deps.VariantAvailabilityProvider != nil {
+		got, err := deps.VariantAvailabilityProvider.VariantAvailabilities(ctx, projectID, ids)
 		if err != nil {
 			return "", err
 		}

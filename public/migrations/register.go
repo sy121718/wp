@@ -137,4 +137,16 @@ func init() {
 	// 507：分区子表的工程隔离对账（审计 DB-02，见 register_partition_rls_reconcile.go）。
 	// 目标是一个**动态集合**（当时库里有哪些分区），同样不能带 TableName。
 	registerPartitionRLSReconcile()
+	// 511：AI 供应商 / 模型配置表（见 register_ai.go）。
+	registerAIProvider()
+	// 512：AI 会话与事件日志（见 register_ai_session.go）。
+	registerAISession()
+	// 513：AI 模块词条（配置层页面 + ai.* 通用文案，见 register_ai_i18n.go）。
+	registerAII18n()
+	// 515：AI 模块后台菜单入口（见 register_ai_menu.go）。
+	registerAIMenu()
+	// 516：AI 会话页词条（见 register_ai_session_i18n.go）。
+	registerAISessionI18n()
+	// 517：AI 预设双 tab 与选模型弹窗词条（见 register_ai_preset_i18n.go）。
+	registerAIPresetI18n()
 }

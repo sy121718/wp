@@ -3,19 +3,14 @@ package workbenchhttp
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 
-	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
-	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	workbenchservice "go_wp/internal/module/workbench/service"
 
 	"go_wp/pkg/logger"
 
@@ -52,7 +47,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	// 走统一出口 pageOf：Detail 的 projectID 是必填的越权防护 scope，只传 ID 会被
 	// 契约层判为「参数缺失」，而这里把它显示成「页面不存在」—— 一个真实的 404 与
 	// 一个漏传 scope 的调用，在页面上长得一模一样。
-	page, err := h.pageOf(c, pageID)
+	page, err := h.svc.PageByID(c.Request.Context(), pageID)
 	if err != nil {
 		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
 		return
@@ -65,7 +60,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	// 启用插件的组件库摘要与区块预设（palette 注入，docs/06 §5/§5.2）。
 	var pluginComponents []plugincontract.ComponentSummary
 	var pluginPresets []plugincontract.PresetSummary
-	asm := h.pluginAssembly(c)
+	asm := h.svc.PluginAssembly(c.Request.Context())
 	if asm != nil {
 		pluginComponents = asm.Components
 		pluginPresets = asm.Presets
@@ -83,10 +78,10 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"draftPath": page.DraftPath,
 		"version":   page.DraftVersion,
 		// 全局块引用（core.globalref）候选：本工程全部块（组件库「全局块」分组）。
-		"blocks": h.blockSummaries(c, page.ProjectID),
+		"blocks": h.svc.BlockSummaries(c.Request.Context(), page.ProjectID),
 		// 全局设置面板：页面挂接的主题与当前设置（颜色/字体），可就地修改保存。
-		"themeId":       h.themeIDOf(c, page),
-		"themeSettings": h.themeSettingsOf(c, page),
+		"themeId":       workbenchservice.ThemeIDOf(page),
+		"themeSettings": h.svc.ThemeSettingsOf(c.Request.Context(), page),
 		// 启用插件组件（组件库「插件组件」分组，type/label/hint/初始 props）。
 		"plugins": pluginComponents,
 		// 启用插件区块预设（组件库「区块预设」分组，id/label/category/thumbnail/document）。
@@ -115,7 +110,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		return
 	}
 	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
-		"title":     workbenchTitle(c, page),
+		"title":     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
 		"pageId":    page.ID,
 		"isBlock":   false,
 		"draftPath": page.DraftPath,
@@ -123,38 +118,14 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"document":  shell.JsonSafe(string(documentJSON)),
 		"meta":      shell.JsonSafe(string(metaJSON)),
 		"schemas":   shell.JsonSafe(string(schemasJSON)),
-		"jsVer":     workbenchJsVer(),
+		"jsVer":     workbenchservice.StaticJSVersion(),
 	}))
-}
-
-// workbenchJsVer 工作台脚本缓存版本：取拆分后模块目录（static/js/workbench/**）
-// 下所有 .js 的最新 mtime。任一模块改动都会让入口 URL 的 ?v= 变化，配合
-// StaticCacheMiddleware 的协商缓存，浏览器不会再执行旧模块。
-func workbenchJsVer() string {
-	root := filepath.Join("internal", "templates", "static", "js", "workbench")
-	var latest int64
-	err := filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return nil // 目录缺失/权限问题不阻断渲染，版本退化为 0
-		}
-		if fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
-			return nil
-		}
-		if m := fi.ModTime().Unix(); m > latest {
-			latest = m
-		}
-		return nil
-	})
-	if err != nil || latest == 0 {
-		return "0"
-	}
-	return strconv.FormatInt(latest, 10)
 }
 
 // workbenchBlock 全局块编辑模式：复用工作台画布与检查器，
 // 保存走 /api/block/update（无发布链、无 URL），meta.saveBase 指示前端切换接口前缀。
 func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
-	block, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: blockID})
+	block, err := h.svc.BlockByID(c.Request.Context(), blockID)
 	if err != nil || block == nil {
 		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrBlockNotFound))
 		return
@@ -206,7 +177,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"document": shell.JsonSafe(string(documentJSON)),
 		"meta":     shell.JsonSafe(string(metaJSON)),
 		"schemas":  shell.JsonSafe(string(schemasJSON)),
-		"jsVer":    workbenchJsVer(),
+		"jsVer":    workbenchservice.StaticJSVersion(),
 	}))
 }
 
@@ -220,11 +191,12 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 //   - 内容实体模板（product / article / …）→ 仍**必须**有样例实体：字段绑定要按一条
 //     真实记录解析，缺它只能看到空白组件（这正是这条校验存在的理由）。
 func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
-	if h.contenttemplates == nil {
+	if !h.svc.ContentTemplatesReady() {
 		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
 		return
 	}
-	tpl, err := h.contenttemplates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
+	// projectID 留空：这里只按 id 取模板（工程作用域由预览入口 previewTemplateTarget 负责）。
+	tpl, err := h.svc.TemplateByID(c.Request.Context(), templateID, "")
 	if err != nil {
 		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrTemplateNotFound))
 		return
@@ -289,7 +261,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
 		return
 	}
-	previewQS := templatePreviewQuery(tpl.ID, entityType, entityID, projectID)
+	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
 	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
 		"title":      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
 		"pageId":     tpl.ID,
@@ -302,44 +274,17 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		"meta":                shell.JsonSafe(string(metaJSON)),
 		"schemas":             shell.JsonSafe(string(schemasJSON)),
 		"previewQS":           previewQS,
-		"jsVer":               workbenchJsVer(),
+		"jsVer":               workbenchservice.StaticJSVersion(),
 	}))
-}
-
-// templatePreviewQuery 模板画布 iframe 与「新标签预览」共用的查询串。
-//
-// entityId 为空（结构模板的无实体模式）时不带该参数：空串参数与服务端「缺参数」在
-// 日志与排查里长得一样，少一个无意义的空参数省一次误判。
-func templatePreviewQuery(templateID, entityType, entityID, projectID string) string {
-	q := url.Values{}
-	q.Set("template", templateID)
-	q.Set("entityType", entityType)
-	if entityID != "" {
-		q.Set("entityId", entityID)
-	}
-	q.Set("editor", "1")
-	if projectID != "" {
-		q.Set("projectId", projectID)
-	}
-	return q.Encode()
-}
-
-// templateByID 按模板 id 取预览目标：优先用画布自己带过来的工程作用域
-// （content_templates 带 FORCE 策略，作用域缺省时只能靠「工程唯一」解析）。
-func (h *Handle) templateByID(c *gin.Context, templateID, projectID string) (*contenttemplatedto.TemplateResp, error) {
-	if pid := strings.TrimSpace(projectID); pid != "" {
-		return h.contenttemplates.GetScoped(c.Request.Context(), pid, templateID)
-	}
-	return h.contenttemplates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
 }
 
 // previewTemplateTarget 取预览目标模板；模板不存在时已写响应并返回 ok=false。
 func (h *Handle) previewTemplateTarget(c *gin.Context, templateID, projectID string) (tpl *contenttemplatedto.TemplateResp, ok bool) {
-	if h.contenttemplates == nil {
+	if !h.svc.ContentTemplatesReady() {
 		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
 		return nil, false
 	}
-	tpl, err := h.templateByID(c, templateID, projectID)
+	tpl, err := h.svc.TemplateByID(c.Request.Context(), templateID, projectID)
 	if err != nil {
 		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrTemplateNotFound))
 		return nil, false
@@ -440,7 +385,7 @@ func (h *Handle) renderStructureTemplatePreview(c *gin.Context, document json.Ra
 		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrTemplateDocumentEmpty))
 		return
 	}
-	h.renderPreview(c, document, projectID, "", withEditorBridge, previewDocStructureTemplate)
+	h.renderPreview(c, document, projectID, "", withEditorBridge, workbenchservice.PreviewDocStructureTemplate)
 }
 
 func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, entityID, projectID string,
@@ -454,8 +399,8 @@ func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, e
 		// 编译器的错误里带节点路径与模板片段，直接铺在页面上等于把内部结构公开。
 		logger.Scene("content_template").With("path", c.Request.URL.Path).Error(err, "模板编译失败")
 		// 可归因的几类（模板类型串用 / 字段绑定越界 / 工程作用域没定下来）给能照着做的文案，
-		// 其余归口：分类判据见 workbench_err.go 的 templatePreviewFacingKey。
-		if key, ok := templatePreviewFacingKey(err.Error()); ok {
+		// 其余归口：分类判据见 service.TemplatePreviewFacingKey。
+		if key, ok := workbenchservice.TemplatePreviewFacingKey(err.Error()); ok {
 			if text := workbenchFacingText(c, key); text != "" {
 				c.String(http.StatusUnprocessableEntity, text)
 				return
@@ -469,38 +414,4 @@ func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, e
 		html = injectEditorBridge(html, shell.TranslateFor(c))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
-}
-
-// blockSummaries 工程块列表的轻量投影（id/name/kind/category/reuseMode，不含文档大字段）。
-// category 供 workbench 全局块按分类分组；reuseMode 供「引用/复制」双动作分流（docs/02-D §5.3）。
-func (h *Handle) blockSummaries(c *gin.Context, projectID string) []gin.H {
-	blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: projectID})
-	if err != nil {
-		return []gin.H{}
-	}
-	out := make([]gin.H, 0, len(blocks))
-	for _, b := range blocks {
-		out = append(out, gin.H{"id": b.ID, "name": b.Name, "kind": b.Kind, "category": b.Category, "reuseMode": b.ReuseMode})
-	}
-	return out
-}
-
-// themeIDOf 页面挂接的主题 ID（未挂接返回空串）。
-func (h *Handle) themeIDOf(c *gin.Context, page *pagecontract.PageResp) string {
-	if page.ThemeID == "" {
-		return ""
-	}
-	return page.ThemeID
-}
-
-// themeSettingsOf 页面挂接主题的 settings（colors/fontFamily 等），未挂接或查询失败返回 nil。
-func (h *Handle) themeSettingsOf(c *gin.Context, page *pagecontract.PageResp) json.RawMessage {
-	if page.ThemeID == "" {
-		return nil
-	}
-	theme, err := h.projects.GetTheme(c.Request.Context(), page.ThemeID)
-	if err != nil || theme == nil {
-		return nil
-	}
-	return theme.Settings
 }

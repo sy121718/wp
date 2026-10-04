@@ -41,18 +41,6 @@ import (
 	"go_wp/internal/templates"
 )
 
-// cartService 购物车依赖（装配期注入）。
-//
-// 装配自检（审计 CQ-019）：判为 required-port —— 实现由 routes.go 在同一个函数里
-// 构造（cartservice.NewService）后立即注入，本进程内恒定可得，不存在「合法地不接」的
-// 部署形态；为空只可能是有人删掉了注入行。
-// nil 分支保留给单测，其表现是购物车六个能力一律渲染「暂不可用」文案 ——
-// 那是把装配缺陷伪装成服务故障，不能当生产降级路径。
-var cartService cartcontract.CartService
-
-// SetCartProvider 注入购物车能力（装配期调用；**必须注入**，理由见字段注释）。
-func SetCartProvider(svc cartcontract.CartService) { cartService = svc }
-
 func init() {
 	Register(Spec{Type: "cartSummary", Method: "GET", Auth: AuthAnonymous, Render: renderCartSummary})
 	Register(Spec{Type: "cartView", Method: "GET", Auth: AuthAnonymous, Render: renderCartView})
@@ -103,8 +91,8 @@ type checkoutFragmentData struct {
 // （页面看起来坏了）。工程未配置、cookie 损坏、服务未接入一律落到 0。
 func renderCartSummary(ctx context.Context, r *Request) (string, error) {
 	count := 0
-	if cartService != nil {
-		snap, err := cartService.View(ctx, &cartdto.CartViewReq{
+	if deps.CartProvider != nil {
+		snap, err := deps.CartProvider.View(ctx, &cartdto.CartViewReq{
 			ProjectID: cartProjectID(r),
 			Cookie:    cartCookieValue(r),
 		})
@@ -117,10 +105,10 @@ func renderCartSummary(ctx context.Context, r *Request) (string, error) {
 
 // renderCartView 渲染购物车。
 func renderCartView(ctx context.Context, r *Request) (string, error) {
-	if cartService == nil {
+	if deps.CartProvider == nil {
 		return renderCartNotice(r, msgCartUnavailable)
 	}
-	snap, err := cartService.View(ctx, &cartdto.CartViewReq{
+	snap, err := deps.CartProvider.View(ctx, &cartdto.CartViewReq{
 		ProjectID: cartProjectID(r),
 		Cookie:    cartCookieValue(r),
 	})
@@ -132,14 +120,14 @@ func renderCartView(ctx context.Context, r *Request) (string, error) {
 
 // renderCartAdd 加入购物车（同变体累加）。
 func renderCartAdd(ctx context.Context, r *Request) (string, error) {
-	if cartService == nil {
+	if deps.CartProvider == nil {
 		return renderCartNotice(r, msgCartUnavailable)
 	}
 	quantity, qerr := cartAddQuantity(r)
 	if qerr != nil {
 		return renderCartNotice(r, cartUserMessage(r, qerr))
 	}
-	snap, err := cartService.Add(ctx, &cartdto.CartAddReq{
+	snap, err := deps.CartProvider.Add(ctx, &cartdto.CartAddReq{
 		ProjectID: cartProjectID(r),
 		VariantID: cartVariantID(r),
 		Quantity:  quantity,
@@ -154,7 +142,7 @@ func renderCartAdd(ctx context.Context, r *Request) (string, error) {
 
 // renderCartSetQty 设置数量（0 = 移除）。
 func renderCartSetQty(ctx context.Context, r *Request) (string, error) {
-	if cartService == nil {
+	if deps.CartProvider == nil {
 		return renderCartNotice(r, msgCartUnavailable)
 	}
 	// 这个能力**不接受缺省值**：数量输入框没填出一个数字时静默按 1 件处理，
@@ -163,7 +151,7 @@ func renderCartSetQty(ctx context.Context, r *Request) (string, error) {
 	if qerr != nil {
 		return renderCartNotice(r, cartUserMessage(r, qerr))
 	}
-	snap, err := cartService.SetQuantity(ctx, &cartdto.CartSetQuantityReq{
+	snap, err := deps.CartProvider.SetQuantity(ctx, &cartdto.CartSetQuantityReq{
 		ProjectID: cartProjectID(r),
 		VariantID: cartVariantID(r),
 		Quantity:  quantity,
@@ -178,10 +166,10 @@ func renderCartSetQty(ctx context.Context, r *Request) (string, error) {
 
 // renderCartClear 清空购物车。
 func renderCartClear(ctx context.Context, r *Request) (string, error) {
-	if cartService == nil {
+	if deps.CartProvider == nil {
 		return renderCartNotice(r, msgCartUnavailable)
 	}
-	snap, err := cartService.Clear(ctx, &cartdto.CartViewReq{
+	snap, err := deps.CartProvider.Clear(ctx, &cartdto.CartViewReq{
 		ProjectID: cartProjectID(r),
 		Cookie:    cartCookieValue(r),
 	})
@@ -198,10 +186,10 @@ func renderCartClear(ctx context.Context, r *Request) (string, error) {
 // email / name / phone / country / province / city / district / address / zip /
 // remark / requestId / locale，账单地址用 bill* 前缀（缺省与收货地址相同）。
 func renderCheckout(ctx context.Context, r *Request) (string, error) {
-	if cartService == nil {
+	if deps.CartProvider == nil {
 		return renderCartNotice(r, msgCheckoutUnavailable)
 	}
-	res, err := cartService.Checkout(ctx, &cartdto.CartCheckoutReq{
+	res, err := deps.CartProvider.Checkout(ctx, &cartdto.CartCheckoutReq{
 		ProjectID: cartProjectID(r),
 		Cookie:    cartCookieValue(r),
 		Email:     paramOf(r, "email"),

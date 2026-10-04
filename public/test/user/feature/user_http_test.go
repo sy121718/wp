@@ -57,8 +57,11 @@ func newUserHTTPEnv(t *testing.T) *userHTTPEnv {
 	// 而「当前访客是谁」由访客身份中间件从签名 cookie 里解出来。
 	// 这里接的是与生产同一条链（同一中间件、同一收窄端口）：
 	// 单测直接调 handler 时手工塞 context，看不到「中间件到底挂没挂上」。
-	runtimefragment.SetVisitorIdentityMiddleware(userhttp.VisitorIdentityMiddleware(svc))
-	runtimefragment.SetVisitorAccountPort(svc)
+	// 不接管还原函数：这两个端口的注入一直保留到进程结束，与逐个 setter 时代相同。
+	runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
+		d.VisitorIdentityMiddleware = userhttp.VisitorIdentityMiddleware(svc)
+		d.VisitorAccountPort = svc
+	})
 	runtimefragment.SetupFragmentRoutes(router)
 	return &userHTTPEnv{router: router, db: db, mail: mail}
 }

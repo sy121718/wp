@@ -16,17 +16,16 @@ import (
 
 	orderdto "go_wp/internal/module/order/dto"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 )
 
 // fakeCountryDict 国家字典替身：只认 CN（按语言给中英名），其余回落代码本身。
 type fakeCountryDict struct{ calls int }
 
-func (f *fakeCountryDict) ListDictOptions(context.Context, string) ([]sysconfigdto.DictOption, error) {
+func (f *fakeCountryDict) ListDictOptions(context.Context, string) ([]sysconfigcontract.DictOption, error) {
 	return nil, nil
 }
 
-func (f *fakeCountryDict) ListCountryOptions(context.Context, string) ([]sysconfigdto.CountryOption, error) {
+func (f *fakeCountryDict) ListCountryOptions(context.Context, string) ([]sysconfigcontract.CountryOption, error) {
 	return nil, nil
 }
 

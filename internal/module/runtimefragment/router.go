@@ -16,18 +16,6 @@ const (
 	fragmentRateWindow = time.Minute
 )
 
-// visitorIdentityMiddleware 访客身份解析中间件（装配期注入，可缺）。
-//
-// 可缺是刻意的：片段层与 user 模块互相独立，单元测试与最小装配下
-// 没有它也能跑（只是所有能力看到的 UserID 都是空）。漏接的表现是
-// 「访客订单永远显示未登录」，属于功能缺失而不是安全缺口。
-var visitorIdentityMiddleware func(c *gin.Context)
-
-// SetVisitorIdentityMiddleware 注入访客身份中间件（装配期调用）。
-func SetVisitorIdentityMiddleware(mw func(c *gin.Context)) {
-	visitorIdentityMiddleware = mw
-}
-
 // SetupFragmentRoutes 注册片段端点路由（挂载到引擎根路径）。
 func SetupFragmentRoutes(router *gin.Engine) {
 	if router == nil {
@@ -36,8 +24,8 @@ func SetupFragmentRoutes(router *gin.Engine) {
 	handlers := []gin.HandlerFunc{
 		builtin.RequestRateLimitMiddleware(fragmentRateLimit, fragmentRateWindow),
 	}
-	if visitorIdentityMiddleware != nil {
-		handlers = append(handlers, visitorIdentityMiddleware)
+	if deps.VisitorIdentityMiddleware != nil {
+		handlers = append(handlers, deps.VisitorIdentityMiddleware)
 	}
 	handlers = append(handlers, FragmentEndpoint)
 	// GET /_fragments/{type}：白名单校验 + 认证策略 + 处理器。

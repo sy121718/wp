@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -280,7 +280,7 @@ func (h *productPageHandle) warehouseOptions(ctx context.Context, projectID stri
 	if h.inventories == nil || projectID == "" {
 		return out, nil
 	}
-	rows, lerr := h.inventories.ListWarehouses(ctx, &inventorydto.ListWarehouseReq{ProjectID: projectID})
+	rows, lerr := h.inventories.ListWarehouses(ctx, &inventorycontract.ListWarehouseReq{ProjectID: projectID})
 	if lerr != nil {
 		return nil, lerr
 	}

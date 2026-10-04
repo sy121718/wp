@@ -1,5 +1,7 @@
 package source
 
+import "io/fs"
+
 // plugin.go — 插件组件编译规格的**共享形状**（审计 CQ-001）。
 //
 // 与 collection.go 同一个动机：这些类型原先住在 builder/core，而插件契约包
@@ -92,4 +94,19 @@ type PluginComponentSpec struct {
 // 确定性：同一插件版本集构建的 resolver 查询结果恒定。
 type PluginResolver interface {
 	LookupPluginComponent(typeName string) (*PluginComponentSpec, bool)
+}
+
+// PluginFS 单个启用插件的模板文件系统视图（插件模板复合加载的输入形状）。
+// 英文入口：docs/plugin-development.en.md。
+//
+// 为什么在本包而不是 internal/templates：插件契约（internal/module/plugin/contract）
+// 要用它声明 Assembly.PluginFS，而契约包不得反向依赖 builder 内核 —— templates 包自身
+// 依赖 builder/core（组件自带模板注册表 core.OwnedTemplate*），契约经它就把 core 拖了进来。
+// 剥到本包后：契约只依赖本包（零依赖），templates 侧改为**类型别名**继续消费同一份定义
+// （templates.PluginFS 写法不变，见 internal/templates/plugin_loader.go）。
+type PluginFS struct {
+	// ID 插件 ID（manifest.id，路由键）。
+	ID string
+	// FS 插件包根目录（components/ 位于其下；os.DirFS(解包目录)）。
+	FS fs.FS
 }

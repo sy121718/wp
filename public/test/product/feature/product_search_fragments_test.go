@@ -84,14 +84,11 @@ func TestSearchResultsFragmentLinksOnlyPublished(t *testing.T) {
 	seedArticle(t, f, "帆布鞋护理指南", "shoe-care", "怎么洗才不掉色")
 
 	contentSvc := contentservice.NewService(contentmodel.NewModel(f.db))
-	runtimefragment.SetContentSearchProvider(contentSvc)
-	runtimefragment.SetProductSearchProvider(f.products)
-	runtimefragment.SetPublishedEntityLocator(f.pres)
-	t.Cleanup(func() {
-		runtimefragment.SetContentSearchProvider(nil)
-		runtimefragment.SetProductSearchProvider(nil)
-		runtimefragment.SetPublishedEntityLocator(nil)
-	})
+	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
+		d.ContentSearchProvider = contentSvc
+		d.ProductSearchProvider = f.products
+		d.PublishedEntityLocator = f.pres
+	}))
 
 	body := fragmentGet(t, "searchResults", url.Values{"q": {"帆布鞋"}, "projectId": {f.projectID}})
 	if !strings.Contains(body, "帆布鞋") {
@@ -144,12 +141,10 @@ func TestSearchResultsEscapesLikeWildcards(t *testing.T) {
 		t.Fatalf("上架商品失败: %v", err)
 	}
 
-	runtimefragment.SetProductSearchProvider(f.products)
-	runtimefragment.SetPublishedEntityLocator(f.pres)
-	t.Cleanup(func() {
-		runtimefragment.SetProductSearchProvider(nil)
-		runtimefragment.SetPublishedEntityLocator(nil)
-	})
+	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
+		d.ProductSearchProvider = f.products
+		d.PublishedEntityLocator = f.pres
+	}))
 
 	body := fragmentGet(t, "searchResults", url.Values{"q": {"100%"}, "projectId": {f.projectID}})
 	if !strings.Contains(body, "纯棉 100% 毛巾") {
@@ -174,8 +169,9 @@ func TestProductLivePriceFragment(t *testing.T) {
 	}
 	variant := detail.Variants[0]
 
-	runtimefragment.SetVariantSnapshotProvider(f.products)
-	t.Cleanup(func() { runtimefragment.SetVariantSnapshotProvider(nil) })
+	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
+		d.VariantSnapshotProvider = f.products
+	}))
 
 	// ① 产物里的价与库里一致 → 沉默（页面保留产物里的价）。
 	body := fragmentGet(t, "productLivePrice", url.Values{

@@ -102,6 +102,31 @@
 
 ---
 
+## 2026-10-03 第七批修订（契约依赖硬门禁 · 大型文件按能力域拆分 · 契约端口上收）
+
+- **契约包依赖方向硬门禁**（AGENTS.md 不变量 7 的机器化）：`scripts/check-contract-deps.sh` 对每个 `internal/module/*/contract` 跑 `go list -deps`（传递闭包），命中 `builder/core | builder/style | builder/plugincomp` 即违规；豁免走 `scripts/contract-deps-allow.txt`（条目必须带理由，且「曾经登记、如今不再命中」同样判失败 —— 技债只许减不许增）。落地同时把最后一条存量清零：删掉无消费者的 `plugin/contract` 里 `type ManifestAlias = plugincomp.Manifest`，并把 `PluginFS` 形状下沉到零依赖的 `internal/builder/source`（`templates.PluginFS` 改为该形状的别名）。**当前 26 个契约包、豁免 0 条。**
+- **不可变 DTO 形状盘点**（warn-only）：`scripts/check-dto-immutability.sh` 扫 `internal/module/*/dto/*.go` 中 `*Resp | *Response` 里字面含 `map[ / [] / 裸指针` 的字段（首轮 173 条：slice 111 / map 6 / pointer 56）。默认每模块只列前 5 条，`--detail` 列全。升级硬门禁前须先定基线（既有命中多是刻意设计，如 `*utils.JSONTime` 表示可空标量）。
+- **门禁单一入口**：`scripts/check-all.sh`（plain 组 12 个脚本）供本地与 CI 共用，新增的两条脚本一并接入。
+- **大型文件按能力域拆分**（纯搬运：函数签名与包内行为零变化，等价性以「全目录 func 集合 + 函数体指纹」机械比对）：
+  · `admin/inbound/http/admin_pages_handle.go` 1848 → 177 行，拆出 9 个 `admin_pages_<领域>.go`（admin / role / perm / menu / dept / datarule / i18n / lang / login）；
+  · `navigation/service/navigation_service.go` 821 → 67（crud / tree / validate / lock / source / facing）；
+  · `contenttemplate/service/contenttemplate_service.go` 734 → 117（crud / query / resolve / document / scope）；
+  · `webhook/service/webhook_service.go` 496 → 55（endpoint / delivery / worker / dispatch）；
+  · `block/service/block_service.go` 486 → 49（crud / reference / stale / ast / normalize）；
+  · `project/service/theme_service.go` 339 → 42（crud / list / default）。
+- **契约端口上收与编译期断言**：`presentation/contract` 新增收窄端口 `DetailTemplateModePort`（6 方法）并让 `PresentationService` 内嵌之 → product 侧 `SetDetailTemplateModePort(presentations)` 从运行期类型断言变为**编译期闭合**（product 侧以 `ProductDetailTemplateModePort` 别名重导出稳住既有调用点）；`inventory/outbound/orderstock/warehouse_source.go` 补 `var _`；`product` 侧补 `BundleConfiguratorPort` / `VariantAvailabilityLookupPort` 两条接口断言。
+- 待办（后续批次）：契约 DTO 别名重导出与消费侧收敛、`runtimefragment` 包级依赖收敛为一次性 `SetDependencies`、`workbench` 补 service 层。
+
+## 2026-10-04 第八批修订（AI 模块落地）
+
+- **新模块 `ai/`**（目录 `internal/module/ai`），两层职责：
+  · **配置层** —— 供应商（`ai_provider`，迁移 511）+ 模型目录（`config_data.models`）：密钥**只存密文**（`pkg/crypto`，装配期注入口令），页面与接口只回 `HasAPIKey` 布尔，任何出口都不回明文；「获取可用模型」会带着密钥出站，因此**改 API 地址即作废旧密钥**（不配套给新密钥就拒绝保存，`ai.err.apiKeyRequiredOnBaseUrlChange`），出站另过 SSRF 校验（只挡内网）。供应商标识先查后插是 TOCTOU，唯一约束兜底并归口成 `ai.err.providerKeyExists`。
+  · **会话层** —— `ai_session` / `ai_event`（迁移 512）。事件日志 **append-only**；「当前上下文」是**投影重算**出来的（不落第二份真源）：`surface_op=append` 进上下文，`surface_op=replace` 的折叠块占一格并盖掉 `[replace_from_seq, replace_to_seq]` 整段，`compact_start` / `compact_end` 是记账事件不进上下文；原文永远留在日志里（可审计、可重放）。折叠（`Fold`）在**一个事务**里连写三条事件（start → summary → end），序号由事务内 `NextSeqTx` 分配，落定后用**绝对值**重算 `context_tokens` 并 `compact_count + 1`。
+  · 投影排序键不是事件 `seq`：折叠块的 `seq` 排在它盖掉的区间**之后**，必须用 `replace_from_seq` 当排序键，否则摘要会跑到上下文末尾（实测回归，已由 `ai_session_project.go` 钉住）。
+- **装配与权限**：`aihttp.SetupAIRoutes(authorizedAPI, adminPages, db)` 一处接线（`internal/routers/assembly.go`，紧跟 sysconfig）；权限点按资源逐个声明（`ai:provider_list` / `ai:provider_save` / `ai:session_list` … 共 17 个 —— `sys_permission.permission_code` 唯一，一个码只能挂一条路由，聚合码会被 SyncToDB 反复改写 `api_path`），由装配末尾 `permission.SyncToDB` 幂等 upsert 落库，**菜单必须 SQL seed**（迁移 515：`/admin/ai/providers`、`/admin/ai/sessions`）。页面路由的对象用 API 权限点路径（`builtin.CasbinMiddlewareForPath…`）。
+- **i18n**：迁移 513（配置层 49 + 会话层之外的 enums 词条）与 516（会话页 49 条）成对 INSERT，判据取本批代表 key；门禁 `scripts/check-i18n-keys-seeded.sh` 的扫描前缀已扩到 `ai.`（基线 0）。
+- **测试**：`public/test/ai/feature`（配置链路 + 会话层投影/折叠/并发 + 页面渲染与 PRG 三态）、`public/test/ai/unit`。表结构一律来自生产迁移（`support.NewMigratedPGTestDB` + `migrations.RunSeeds`），不手抄 CREATE TABLE。
+
 ## 附：模块细则（原 `internal/module/CLAUDE.md` 条目）
 
 > 与上表内容有重叠但不完全相同（此处更贴近模块内部实现与装配口径），

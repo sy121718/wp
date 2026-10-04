@@ -15,6 +15,7 @@ import (
 
 	"go_wp/internal/builder"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/logger"
 
@@ -85,7 +86,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		//（页面 / 块 / 模板）都给，唯独这里漏了。漏掉的后果与缺陷 B1 同一类，但更早 ——
 		// 模板第 17 行就取它，于是实例编辑器整页在 <head> 里中断，只回 445 字节。
 		// 回归守卫：public/test/workbench/feature/workbench_layout_render_test.go 的「实例模式」。
-		"jsVer": workbenchJsVer(),
+		"jsVer": workbenchservice.StaticJSVersion(),
 	}))
 }
 
@@ -130,10 +131,10 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 		}
 		// 其余失败：编译/校验原文带节点路径与模板片段，只进日志。
 		// 能归因的（编译失败 / 工程作用域没定下来）给一条说清「没写入」与「怎么修」的文案，
-		// 归不了因的给归口文案 —— 判据见 workbench_err.go 的 instanceSaveFacingKey。
+		// 归不了因的给归口文案 —— 判据见 service.InstanceSaveFacingKey。
 		logger.Scene("workbench").With("path", c.Request.URL.Path).Error(err, "实例文档保存失败")
 		message := workbenchCompileFallbackText(c)
-		if key, ok := instanceSaveFacingKey(err.Error()); ok {
+		if key, ok := workbenchservice.InstanceSaveFacingKey(err.Error()); ok {
 			if text := workbenchFacingText(c, key); text != "" {
 				message = text
 			}

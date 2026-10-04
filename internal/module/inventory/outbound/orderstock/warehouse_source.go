@@ -17,6 +17,9 @@ type WarehouseSource struct {
 	svc inventorycontract.InventoryService
 }
 
+// 编译期断言：适配器必须满足订单侧的退货仓库端口（与同包的 Operator 同一手法）。
+var _ ordercontract.ReturnWarehouseSource = (*WarehouseSource)(nil)
+
 // NewWarehouseSource 构造；svc 为库存契约（只用到仓库列表一条能力）。
 func NewWarehouseSource(svc inventorycontract.InventoryService) *WarehouseSource {
 	return &WarehouseSource{svc: svc}

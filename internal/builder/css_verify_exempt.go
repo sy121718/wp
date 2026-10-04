@@ -82,6 +82,15 @@ var cssGuardExemptions = []cssGuardExemption{
 			"行不是点击目标（可点的是行内链接与按钮，它们自身有反馈），触屏用户靠斑马纹区分行；" +
 			"给行补按压反馈会让「点行任意位置」看起来像有行为。",
 	},
+	{
+		Rule:  ruleFixedWidth,
+		Match: ".filter-field",
+		Reason: "筛选行控件的绝对宽度是这条规则在本位置不适用的写法（theme.css 该区块注释已论证过）：" +
+			".filter-field 是「label 固定 + 剩余空间给控件」的 flex 项，改成 min(100%, Npx) 会把下限与容器宽度" +
+			"绑成互相依赖 —— 父等控件的固有尺寸、控件又等下界，单元被压窄时反而更容易把控件顶出单元。" +
+			"现写法是绝对宽度 + min-width: 0（允许收缩到固有宽度以下）+ max-width: 100%（窄视口收口），" +
+			"命中规则的是「值里是纯 px」这一形态，而规则要防的后果（撑宽文档）已被 max-width 兜住。",
+	},
 }
 
 // applyCSSGuardExemptions 把豁免命中的违规挑出来，返回（保留的违规, 被豁免的违规）。

@@ -77,7 +77,9 @@ go vet ./...
 6. **冻结边界不可越权**：模块、组件、协议各有明确的「负责 / 禁止」边界，见 `docs/01-overview.md` §5。
 7. **构建期数据源的依赖方向**（issue #35）：共享形状放 `internal/builder/source`（零依赖）；业务模块在
    **自己的契约包**里声明**受限数据源接口**（只有读集合 / 元数据 / 可筛值，写方法不进接口）；
-   `builder/core` 直接持有这些契约。**契约包不得反向 import `builder/core`**（反向即成环）。
+   `builder/core` 直接持有这些契约。**契约包不得反向 import `builder/core`**（反向即成环；也不得经
+   `templates` 等中间包间接引入 —— 已由 `scripts/check-contract-deps.sh` 按 `go list -deps` 传递闭包判定，
+   豁免须在 `scripts/contract-deps-allow.txt` 写明理由，且「曾登记、如今不再命中」同样判失败）。
    接入六步见 [`docs/04-B-dynamic-development-guide.md`](docs/04-B-dynamic-development-guide.md) §1.4。
 
 ### 控制面与访问面

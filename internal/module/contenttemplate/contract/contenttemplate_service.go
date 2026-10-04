@@ -125,6 +125,27 @@ type ContentTemplateService interface {
 	Impact(ctx context.Context, req *contenttemplatedto.ImpactReq) (res *contenttemplatedto.ImpactResp, err error)
 }
 
+// === 跨模块形状：调用方要传进来、要收回去的类型 ===
+
+// 跨模块调用方使用的**形状重导出**（与 order 契约同一手法）：调用方只依赖 contract，
+// 不直接 import contenttemplate/dto。
+//
+// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
+// （模板 CRUD 的入参与视图就是它对外的语义），json/form 标签只影响 HTTP 绑定，不改变语义。
+// 另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」换成
+// 「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
+//
+// 边界：本模块内部（service / inbound）继续用 contenttemplatedto 作为实现形状；重导出只服务于
+// 跨模块调用方（当前是 product 的详情页模板选择链路）。
+type (
+	// 模板 CRUD：新建、按 ID 查询与按类型列表。
+	CreateReq = contenttemplatedto.CreateReq
+	GetReq    = contenttemplatedto.GetReq
+	ListReq   = contenttemplatedto.ListReq
+	// 模板视图（列表 / 详情的只读投影）。
+	TemplateResp = contenttemplatedto.TemplateResp
+)
+
 // TemplateImpactPort 模板引用反查端口（消费者侧最窄接口）。
 //
 // 只表达「这个工程里谁引用了模板」这一件事：调用方（contenttemplate）不需要知道

@@ -216,39 +216,76 @@ func ValidateRegistry() error {
 	return nil
 }
 
-func apply(db *gorm.DB, m Migration) error {
-	checkSQL := m.CheckSQL
-	if checkSQL == "" {
-		checkSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?"
-	}
+const defaultMigrationCheckSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?"
 
-	var count int64
-	// 自定义 CheckSQL 不一定用 ? 占位符（例如按 pg_constraint / pg_indexes 检查对象是否已建），
-	// 而无条件传参会让这类检查直接报 "expected 0 arguments, got 1"，迁移永远跑不起来。
-	// 只在 SQL 里真的出现占位符时才传表名。
-	check := db.Raw(checkSQL)
-	if strings.Contains(checkSQL, "?") {
-		check = db.Raw(checkSQL, m.TableName)
+func apply(db *gorm.DB, m Migration) error {
+	// CheckSQL 空值的兜底放在 ApplyStatements 内（导出函数必须自带兜底，见那里注释）。
+	return ApplyStatements(db, m.Version, m.TableName, m.CheckSQL, SplitStatements(m.SQL))
+}
+
+// ApplyStatements 在**单个事务**内执行一条迁移：先在事务里做存在性检查，再逐条执行语句。
+//
+// 为什么必须同一个事务（审计 R-01）：
+//
+//	① 一条迁移的多条语句要么全生效、要么全不生效。此前是逐条 db.Exec 且没有外层事务：
+//	   中途失败会留下半成品对象，而重跑时存在性检查只看**主对象**是否已建 → 打印
+//	   「迁移对象已存在，跳过」直接返回 nil，剩下的 DDL 永远不再执行，且没有任何告警。
+//	   全仓 381 个迁移里 262 个是多语句，触发面不是边角。
+//	② 检查与执行同事务还消掉了 TOCTOU：检查通过之后被并发会话插入同名对象的情形不再可能。
+//
+// 为什么可以整体事务化：PostgreSQL 的 DDL 是事务性的，而本仓库的迁移**不含**不可事务语句
+// （无 CREATE INDEX CONCURRENTLY / DROP INDEX CONCURRENTLY / ALTER TYPE … ADD VALUE /
+// REINDEX / CLUSTER / VACUUM —— 由 public/test/architecture 的迁移语句扫描用例守着，
+// 命中即红）。因此不需要「逐条退出的开关」：一旦出现不可事务语句，正确做法是改那条迁移，
+// 而不是给引擎开后门。
+//
+// 导出是给外部测试包用的（public/migrations 的用例在 migrations_test 包里，而 apply 依赖
+// 注册表）：用例要断言的是「失败不留半成品」这条性质，不需要动注册表 —— 与既有
+// SplitStatements / Fingerprint 的导出口径一致。
+func ApplyStatements(db *gorm.DB, version, tableName, checkSQL string, parts []string) error {
+	// 空 CheckSQL = 用默认的「主对象是否已建」检查。这里必须自带兜底：
+	// 空 SQL 交给 GORM 会得到一句 `SELECT * FROM ` + nil 参数，报
+	// "unsupported data type: <nil>" —— 那是调用者的入参错误伪装成数据库故障。
+	if strings.TrimSpace(checkSQL) == "" {
+		checkSQL = defaultMigrationCheckSQL
 	}
-	if err := check.Scan(&count).Error; err != nil {
+	executed := false
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		// 自定义 CheckSQL 不一定用 ? 占位符（例如按 pg_constraint / pg_indexes 检查对象是否已建），
+		// 而无条件传参会让这类检查直接报 "expected 0 arguments, got 1"，迁移永远跑不起来。
+		// 只在 SQL 里真的出现占位符时才传表名。
+		check := tx.Raw(checkSQL)
+		if strings.Contains(checkSQL, "?") {
+			check = tx.Raw(checkSQL, tableName)
+		}
+		if err := check.Scan(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			if err := tx.Exec(part).Error; err != nil {
+				return fmt.Errorf("执行 %s (%s) 失败: %w", version, tableName, err)
+			}
+		}
+		executed = true
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	if count > 0 {
-		logger.Scene("init").With("version", m.Version).With("table", m.TableName).Info("迁移对象已存在，跳过")
-		return nil
-	}
 
-	parts := SplitStatements(m.SQL)
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		if err := db.Exec(part).Error; err != nil {
-			return fmt.Errorf("执行 %s (%s) 失败: %w", m.Version, m.TableName, err)
-		}
+	scene := logger.Scene("init").With("version", version).With("table", tableName)
+	if executed {
+		scene.Info("迁移完成")
+	} else {
+		scene.Info("迁移对象已存在，跳过")
 	}
-
-	logger.Scene("init").With("version", m.Version).With("table", m.TableName).Info("迁移完成")
 	return nil
 }
 

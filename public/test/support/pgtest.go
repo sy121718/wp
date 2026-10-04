@@ -89,14 +89,20 @@ func localPGEndpoint() PGEndpoint {
 // Cleanup 通过 t.Cleanup 注册：DROP SCHEMA ... CASCADE 并回收连接。
 func NewPGTestDB(t *testing.T) (*gorm.DB, error) {
 	t.Helper()
-	return newTestDatabase(t, localPGEndpoint(), false, false)
+	db, err := newTestDatabase(t, localPGEndpoint(), false, false)
+	// GOWP_REQUIRE_PG=1 时 PG 不可用直接判失败：调用方的 t.Skip 分支不会被走到，
+	// 「跳过」不再可能伪装成「通过」（审计 R-05）。
+	FailIfRequiredPG(t, err)
+	return db, err
 }
 
 // NewPGTestDBAt 与 NewPGTestDB 相同，但使用显式端点
 // （support/testenv.go 的容器回退路径复用；行为与原函数完全一致）。
 func NewPGTestDBAt(t *testing.T, ep PGEndpoint) (*gorm.DB, error) {
 	t.Helper()
-	return newTestDatabase(t, ep, false, false)
+	db, err := newTestDatabase(t, ep, false, false)
+	FailIfRequiredPG(t, err)
+	return db, err
 }
 
 // newTestDatabase 建一个隔离的测试库并返回连接（每个测试独占一个库，Cleanup 时 DROP）。

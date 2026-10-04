@@ -39,7 +39,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
@@ -367,7 +366,7 @@ type countryOptionView struct {
 //
 // 读失败**不升级成整页错误**：国家是选填项，下拉空着页面照常可用、订单照常可建 ——
 // 与「工程列表装载失败 → 空列表 + 归口提示 + 200」同一档处理（真因由 sysconfig 侧记日志）。
-func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigdto.CountryOption {
+func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigcontract.CountryOption {
 	if h.dict == nil {
 		return nil
 	}
@@ -389,7 +388,7 @@ func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigdto.Count
 // 已提交但字典里没有的码会**原样补进列表并选中**：运营在页面上看到的就是会被落库的值，
 // 而不是「下拉里没有这一项，于是浏览器悄悄改选了第一项」—— 后者是「改了一个字段、
 // 另一个字段跟着变了」这类事故里最难查的一种。
-func countryOptionViews(tr translate, countries []sysconfigdto.CountryOption, submitted string) []countryOptionView {
+func countryOptionViews(tr translate, countries []sysconfigcontract.CountryOption, submitted string) []countryOptionView {
 	selected := orderdto.NormalizeCountryCode(submitted)
 	if selected == "" {
 		selected = orderdto.NormalizeCountryCode(i18n.GetDefaultCountry())

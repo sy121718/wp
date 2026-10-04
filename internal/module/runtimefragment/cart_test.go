@@ -116,8 +116,8 @@ func TestCartAddWritesHttpOnlyLaxCookie(t *testing.T) {
 		Cookie: "signed-payload.signature", ItemCount: 2, LineCount: 1, TotalLabel: "¥60.00",
 		Items: []*cartdto.CartItem{{VariantID: "v1", ProductName: "商品", Quantity: 2}},
 	}}
-	SetCartProvider(fake)
-	defer SetCartProvider(nil)
+	deps.CartProvider = fake
+	defer func() { deps.CartProvider = nil }()
 
 	form := url.Values{"projectId": {"p1"}, "variantId": {"v1"}, "quantity": {"2"}}
 	c, w := newFragmentCtx(t, http.MethodPost, "cartAdd", form, map[string]string{cartcontract.CartCookieName: "old.cookie"})
@@ -152,8 +152,8 @@ func TestCartAddWritesHttpOnlyLaxCookie(t *testing.T) {
 
 // TestCartBusinessErrorRendersNoticeNot500 业务错误（比如库存不足）要看得见，而不是 500。
 func TestCartBusinessErrorRendersNoticeNot500(t *testing.T) {
-	SetCartProvider(&fakeCart{err: errors.New(cartenums.ErrOutOfStock)})
-	defer SetCartProvider(nil)
+	deps.CartProvider = &fakeCart{err: errors.New(cartenums.ErrOutOfStock)}
+	defer func() { deps.CartProvider = nil }()
 
 	form := url.Values{"projectId": {"p1"}, "variantId": {"v1"}, "quantity": {"5"}}
 	c, w := newFragmentCtx(t, http.MethodPost, "cartAdd", form, nil)
@@ -173,8 +173,8 @@ func TestCartBusinessErrorRendersNoticeNot500(t *testing.T) {
 
 // TestFragmentErrorCollapsesToGenericMessage 白名单外的错误收口到通用文案，不泄漏内部信息。
 func TestFragmentErrorCollapsesToGenericMessage(t *testing.T) {
-	SetCartProvider(&fakeCart{err: errors.New("pq: relation \"orders\" does not exist")})
-	defer SetCartProvider(nil)
+	deps.CartProvider = &fakeCart{err: errors.New("pq: relation \"orders\" does not exist")}
+	defer func() { deps.CartProvider = nil }()
 
 	form := url.Values{"projectId": {"p1"}, "variantId": {"v1"}, "quantity": {"1"}}
 	c, w := newFragmentCtx(t, http.MethodPost, "cartAdd", form, nil)
@@ -195,8 +195,8 @@ func TestCheckoutPassesTrackingCookiesAndClientInfo(t *testing.T) {
 		OrderID: 7, OrderNo: "GWP20260101ABCDEF", Paid: true, TotalLabel: "¥30.00",
 		Email: "buyer@example.com", Cookie: "empty.cart",
 	}}
-	SetCartProvider(fake)
-	defer SetCartProvider(nil)
+	deps.CartProvider = fake
+	defer func() { deps.CartProvider = nil }()
 
 	form := url.Values{
 		"projectId": {"p1"}, "email": {"buyer@example.com"}, "name": {"张三"},
@@ -254,8 +254,8 @@ func TestCheckoutPassesTrackingCookiesAndClientInfo(t *testing.T) {
 
 // TestCartSummaryNeverFails 角标计数在最坏情况下也要渲染出数字（不能把页头搞坏）。
 func TestCartSummaryNeverFails(t *testing.T) {
-	SetCartProvider(&fakeCart{err: errors.New("db down")})
-	defer SetCartProvider(nil)
+	deps.CartProvider = &fakeCart{err: errors.New("db down")}
+	defer func() { deps.CartProvider = nil }()
 
 	c, w := newFragmentCtx(t, http.MethodGet, "cartSummary", url.Values{"projectId": {"p1"}}, nil)
 	FragmentEndpoint(c)
@@ -270,8 +270,8 @@ func TestCartSummaryNeverFails(t *testing.T) {
 
 // TestCartSetQtyRequiresExplicitQuantity 改数量必须显式给值（缺省静默按 1 件是改单）。
 func TestCartSetQtyRequiresExplicitQuantity(t *testing.T) {
-	SetCartProvider(&fakeCart{snap: &cartdto.CartSnapshot{Cookie: "x.y"}})
-	defer SetCartProvider(nil)
+	deps.CartProvider = &fakeCart{snap: &cartdto.CartSnapshot{Cookie: "x.y"}}
+	defer func() { deps.CartProvider = nil }()
 
 	form := url.Values{"projectId": {"p1"}, "variantId": {"v1"}}
 	c, w := newFragmentCtx(t, http.MethodPost, "cartSetQty", form, nil)
@@ -290,8 +290,8 @@ func TestCartSetQtyRequiresExplicitQuantity(t *testing.T) {
 
 // TestCartMethodMismatchRejected GET 能力不接受 POST（反之亦然）。
 func TestCartMethodMismatchRejected(t *testing.T) {
-	SetCartProvider(&fakeCart{})
-	defer SetCartProvider(nil)
+	deps.CartProvider = &fakeCart{}
+	defer func() { deps.CartProvider = nil }()
 
 	c, w := newFragmentCtx(t, http.MethodPost, "cartView", url.Values{}, nil)
 	FragmentEndpoint(c)
@@ -305,8 +305,8 @@ func TestCheckoutBindsCountryCodes(t *testing.T) {
 	fake := &fakeCart{checkoutResp: &cartdto.CheckoutResp{
 		OrderID: 1, OrderNo: "GWP20260101ABCDEF", Cookie: "empty.cart",
 	}}
-	SetCartProvider(fake)
-	defer SetCartProvider(nil)
+	deps.CartProvider = fake
+	defer func() { deps.CartProvider = nil }()
 
 	form := url.Values{
 		"projectId": {"p1"}, "email": {"buyer@example.com"},

@@ -52,15 +52,12 @@ func setupCommentService(t *testing.T) (*commentservice.Service, *gorm.DB) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	svc := commentservice.NewService(commentmodel.NewModel(db), commentTypes())
-	runtimefragment.SetCommentPort(svc)
-	runtimefragment.SetCommentFacingTexter(svc)
 	// 哈希函数由装配层注入（算法与盐留在评论模块）；测试里给一个可辨认的实现。
-	runtimefragment.SetCommentSourceHasher(func(ip string) string { return "hash:" + ip })
-	t.Cleanup(func() {
-		runtimefragment.SetCommentPort(nil)
-		runtimefragment.SetCommentFacingTexter(nil)
-		runtimefragment.SetCommentSourceHasher(nil)
-	})
+	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
+		d.CommentPort = svc
+		d.CommentFacingTexter = svc
+		d.CommentSourceHasher = func(ip string) string { return "hash:" + ip }
+	}))
 	return svc, db
 }
 

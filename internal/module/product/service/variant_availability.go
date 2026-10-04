@@ -21,7 +21,15 @@ package productservice
 import (
 	"context"
 	"strings"
+
+	productcontract "go_wp/internal/module/product/contract"
 )
+
+// 编译期断言：本文件是契约端口 VariantAvailabilityLookupPort 的实现处。
+//
+// 装配层（internal/routers/assembly.go）持有的是接口值，只能做运行时类型断言 ——
+// 端口签名漂移要靠这里的断言在编译期拦住，而不是等到进程启动 panic。
+var _ productcontract.VariantAvailabilityLookupPort = (*Service)(nil)
 
 // VariantAvailabilityLookupMaxIDs 单次查询上界（片段参数长度与查询 IN 列表的双重保护）。
 const VariantAvailabilityLookupMaxIDs = 100

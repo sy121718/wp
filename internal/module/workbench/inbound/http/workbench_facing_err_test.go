@@ -29,6 +29,7 @@ import (
 
 	pagecontract "go_wp/internal/module/page/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
+	workbenchservice "go_wp/internal/module/workbench/service"
 )
 
 // 结构文档夹具：settings 合法，只有 root 不同。
@@ -45,50 +46,50 @@ func TestPreviewCompileFacingKey(t *testing.T) {
 	cases := []struct {
 		name    string
 		doc     string
-		kind    previewDocKind
+		kind    workbenchservice.PreviewDocKind
 		wantKey string
 		wantOK  bool
 	}{
 		{
 			// 本任务的核心场景：结构模板里带了字段绑定（画布拖入 heading 后填了绑定字段）。
 			name: "结构模板含 heading 字段绑定", doc: facingStructureHeaderBinding,
-			kind:    previewDocStructureTemplate,
+			kind:    workbenchservice.PreviewDocStructureTemplate,
 			wantKey: workbenchenums.ErrStructureTemplateFieldBinding, wantOK: true,
 		},
 		{
 			// 自报型组件（FieldBindingProvider）走的是另一条收集路径，必须同样命中。
 			name: "结构模板含商品卡字段绑定（自报型组件）", doc: facingStructureProductCardBinding,
-			kind:    previewDocStructureTemplate,
+			kind:    workbenchservice.PreviewDocStructureTemplate,
 			wantKey: workbenchenums.ErrStructureTemplateFieldBinding, wantOK: true,
 		},
 		{
 			name: "页面含字段绑定按页面口径", doc: facingStructureHeaderBinding,
-			kind:    previewDocPage,
+			kind:    workbenchservice.PreviewDocPage,
 			wantKey: workbenchenums.ErrPreviewFieldBindingUnsupported, wantOK: true,
 		},
 		{
 			name: "全局块含字段绑定按页面口径", doc: facingStructureHeaderBinding,
-			kind:    previewDocBlock,
+			kind:    workbenchservice.PreviewDocBlock,
 			wantKey: workbenchenums.ErrPreviewFieldBindingUnsupported, wantOK: true,
 		},
 		{
 			name: "文档没过校验", doc: facingInvalidSettingsDoc,
-			kind:    previewDocPage,
+			kind:    workbenchservice.PreviewDocPage,
 			wantKey: workbenchenums.ErrPreviewDocumentInvalid, wantOK: true,
 		},
 		{
 			// 干净文档但编译失败 = 归不了因（装配缺失 / 组件模板加载失败），走归口文案。
 			name: "干净文档归口", doc: facingCleanDoc,
-			kind: previewDocPage, wantKey: "", wantOK: false,
+			kind: workbenchservice.PreviewDocPage, wantKey: "", wantOK: false,
 		},
 		{
 			name: "非法 JSON 归口", doc: "{",
-			kind: previewDocPage, wantKey: "", wantOK: false,
+			kind: workbenchservice.PreviewDocPage, wantKey: "", wantOK: false,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotKey, gotOK := previewCompileFacingKey([]byte(tc.doc), tc.kind)
+			gotKey, gotOK := workbenchservice.PreviewCompileFacingKey([]byte(tc.doc), tc.kind)
 			if gotOK != tc.wantOK || gotKey != tc.wantKey {
 				t.Fatalf("分类不符：got (%q, %v)，want (%q, %v)", gotKey, gotOK, tc.wantKey, tc.wantOK)
 			}
@@ -113,7 +114,7 @@ func TestTemplatePreviewFacingKey(t *testing.T) {
 		{"实例构建失败: 模板片段解析失败", "", false},
 	}
 	for _, tc := range cases {
-		gotKey, gotOK := templatePreviewFacingKey(tc.raw)
+		gotKey, gotOK := workbenchservice.TemplatePreviewFacingKey(tc.raw)
 		if gotOK != tc.wantOK || gotKey != tc.wantKey {
 			t.Fatalf("%q 分类不符：got (%q, %v)，want (%q, %v)", tc.raw, gotKey, gotOK, tc.wantKey, tc.wantOK)
 		}
@@ -132,7 +133,7 @@ func TestInstanceSaveFacingKey(t *testing.T) {
 		{"ErrNotFound", "", false},
 	}
 	for _, tc := range cases {
-		gotKey, gotOK := instanceSaveFacingKey(tc.raw)
+		gotKey, gotOK := workbenchservice.InstanceSaveFacingKey(tc.raw)
 		if gotOK != tc.wantOK || gotKey != tc.wantKey {
 			t.Fatalf("%q 分类不符：got (%q, %v)，want (%q, %v)", tc.raw, gotKey, gotOK, tc.wantKey, tc.wantOK)
 		}
@@ -239,25 +240,25 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	cases := []struct {
 		name     string
 		doc      string
-		kind     previewDocKind
+		kind     workbenchservice.PreviewDocKind
 		err      error
 		wantBody string
 		// notContains 该场景下**不得**出现的文本。
 		notContains []string
 	}{
 		{
-			name: "级别①类型标记：组件校验提示带原文透出", doc: facingCleanDoc, kind: previewDocPage, err: problemErr,
+			name: "级别①类型标记：组件校验提示带原文透出", doc: facingCleanDoc, kind: workbenchservice.PreviewDocPage, err: problemErr,
 			wantBody:    "预览编译失败：节点 acc1: 手风琴至少需要一个折叠项（把组件拖入内部）",
 			notContains: []string{"workbench.err."},
 		},
 		{
 			name: "级别②文档事实：结构模板字段绑定给可归因文案", doc: facingStructureHeaderBinding,
-			kind: previewDocStructureTemplate, err: bindingErr,
+			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
 			wantBody:    workbenchFacingFallbacks[workbenchenums.ErrStructureTemplateFieldBinding],
 			notContains: []string{"编译上下文缺少内容解析器", "post.title", "页面编译失败", "workbench.err."},
 		},
 		{
-			name: "级别③归口：内部错误只给归口文案", doc: facingCleanDoc, kind: previewDocPage, err: internalErr,
+			name: "级别③归口：内部错误只给归口文案", doc: facingCleanDoc, kind: workbenchservice.PreviewDocPage, err: internalErr,
 			wantBody:    workbenchCompileFallback,
 			notContains: []string{"装配未注入", "导航解析器", "nav1", "页面编译失败"},
 		},

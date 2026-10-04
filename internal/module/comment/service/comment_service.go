@@ -80,7 +80,7 @@ func NewService(db *commentmodel.Model, entityTypes []commentcontract.EntityType
 
 // SetEntityPolicy 注入差异化规则端口（装配期调用；可缺，未注入即放行）。
 //
-// 形态与 cart.SetMembershipReader / runtimefragment.SetSitePageResolver 一致：
+// 形态与 cart.SetMembershipReader / runtimefragment.Deps.SitePageResolver 一致：
 // setter + 调用方判空。装配层负责在未注入时留一条 Warn（见 wiring.go 的清单条目）。
 func (s *Service) SetEntityPolicy(p commentcontract.EntityPolicy) { s.policy = p }
 

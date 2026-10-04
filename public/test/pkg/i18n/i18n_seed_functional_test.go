@@ -97,6 +97,7 @@ func columnCount(t *testing.T, db *gorm.DB, table string, columns ...string) int
 func TestI18nEnumsSeedSchemaAndIdempotency(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 
@@ -752,6 +753,7 @@ func TestI18nEnumsSeedResponseTranslation(t *testing.T) {
 	dbName := "go_test_i18n_" + randomSuffix()
 	admin, err := gorm.Open(postgres.Open(i18nTestDSN("postgres")), &gorm.Config{})
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := admin.Exec("CREATE DATABASE " + dbName).Error; err != nil {

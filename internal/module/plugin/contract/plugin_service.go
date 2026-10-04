@@ -4,11 +4,9 @@ package plugincontract
 import (
 	"context"
 
-	"go_wp/internal/builder/plugincomp"
 	"go_wp/internal/builder/source"
 	admincontract "go_wp/internal/module/admin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
-	"go_wp/internal/templates"
 )
 
 // 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import plugin/dto。
@@ -65,7 +63,9 @@ type Assembly struct {
 	// 不能把空串当成一个合法版本（否则所有实例会共享同一个缓存槽）。
 	Fingerprint string
 	// PluginFS 插件模板文件系统（templates.NewCompositeSet 的输入）。
-	PluginFS []templates.PluginFS
+	// 形状定义在 internal/builder/source（AGENTS.md 不变量 7）：契约包不得经 templates
+	// 间接依赖 builder 内核，故形状下沉、此处只引用零依赖包。
+	PluginFS []source.PluginFS
 	// Specs 组件规格（构建 resolver 的素材，键 = 完整类型标识）。
 	//
 	// 类型取 source.PluginComponentSpec（零依赖共享形状包）而不是 core 里的同名类型：
@@ -83,10 +83,6 @@ type Assembly struct {
 	// 构建期经 WithExtraCSS 注入产物主 CSS 之后，docs/06 §5.1 资产规范）。
 	ExtraCSS []string
 }
-
-// ManifestAlias manifest 类型的模块间传递形态（详情接口暴露）。
-// 英文入口：docs/plugin-development.en.md。
-type ManifestAlias = plugincomp.Manifest
 
 // pluginSpecResolver 实现 source.PluginResolver：按类型标识查组件规格。
 type pluginSpecResolver map[string]*source.PluginComponentSpec

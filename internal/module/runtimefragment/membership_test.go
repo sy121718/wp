@@ -57,13 +57,12 @@ func callMembershipFragment(t *testing.T, typeName, query string, visitorID uint
 	return w.Code, w.Body.String()
 }
 
-// withMembershipPorts 临时注入端口并在测试结束时还原（包级变量，测试之间不能互相污染）。
+// withMembershipPorts 临时注入端口并在测试结束时还原（包级状态，测试之间不能互相污染）。
 func withMembershipPorts(t *testing.T, reader membershipcontract.Reader, texter membershipcontract.FacingTexter) {
 	t.Helper()
-	prevReader, prevFacing := membershipReader, membershipFacing
-	t.Cleanup(func() { membershipReader, membershipFacing = prevReader, prevFacing })
-	SetMembershipReader(reader)
-	SetMembershipFacingTexter(texter)
+	t.Cleanup(MutateDepsForTest(func(d *Deps) {
+		d.MembershipReader, d.MembershipFacingTexter = reader, texter
+	}))
 }
 
 // TestMembershipFragmentsRenderTier 已登录 + 有等级：两个片段都渲染等级与权益。

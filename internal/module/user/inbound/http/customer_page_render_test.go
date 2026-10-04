@@ -25,7 +25,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	ordercontract "go_wp/internal/module/order/contract"
-	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
@@ -121,11 +120,11 @@ func (f *fakeCustomerAdmin) UnlockCustomer(_ context.Context, req *userdto.Custo
 var _ usercontract.CustomerAdminPort = (*fakeCustomerAdmin)(nil)
 
 type fakeOrderSummaryReader struct {
-	res *orderdto.CustomerOrderSummaryResp
+	res *ordercontract.CustomerOrderSummaryResp
 	err error
 }
 
-func (f fakeOrderSummaryReader) CustomerOrderSummaryOf(_ context.Context, _ *orderdto.CustomerOrderSummaryReq) (*orderdto.CustomerOrderSummaryResp, error) {
+func (f fakeOrderSummaryReader) CustomerOrderSummaryOf(_ context.Context, _ *ordercontract.CustomerOrderSummaryReq) (*ordercontract.CustomerOrderSummaryResp, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

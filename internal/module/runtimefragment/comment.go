@@ -28,9 +28,9 @@ package runtimefragment
 //
 // # 端口与降级
 //
-//	commentPort    —— 评论模块的收窄契约（只读列表 + 提交，拿不到审核能力）
-//	commentFacing  —— 把评论模块的业务错误转成可展示文案（片段层拿不到它的 enums 白名单）
-//	commentSourceHasher —— 来源 IP 的带盐哈希函数（**算法与盐都留在评论模块**，装配期注入）
+//	deps.CommentPort    —— 评论模块的收窄契约（只读列表 + 提交，拿不到审核能力）
+//	deps.CommentFacingTexter  —— 把评论模块的业务错误转成可展示文案（片段层拿不到它的 enums 白名单）
+//	deps.CommentSourceHasher —— 来源 IP 的带盐哈希函数（**算法与盐都留在评论模块**，装配期注入）
 //
 // 任一端口未注入或参数缺失一律渲染**可见文案**，绝不 500：片段端点把 error 变成
 // 500 + 一句「片段渲染失败」，对访客没有任何信息量（同 membership.go / cart.go 的取舍）。
@@ -41,7 +41,6 @@ import (
 	"strconv"
 	"strings"
 
-	commentcontract "go_wp/internal/module/comment/contract"
 	commentdto "go_wp/internal/module/comment/dto"
 	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
@@ -67,45 +66,12 @@ const commentMaxBodyLen = 2000
 // 两处不一致时的表现只是「片段一页显示的条数与后台列表不同」，不是缺陷。
 const commentPageSize = 20
 
-// commentPort 评论读写端口（装配期注入一次；可缺）。
-//
-// 收窄到 FragmentPort：片段层拿不到后台审核（通过 / 驳回）与审核队列 ——
-// 越权防护靠接口形状，不靠调用方自觉（同 cartService / membershipReader 的手法）。
-var commentPort commentcontract.FragmentPort
-
-// SetCommentPort 注入评论读写端口（装配期调用）。
-func SetCommentPort(p commentcontract.FragmentPort) { commentPort = p }
-
-// commentFacing 评论业务错误的文案出口（装配期注入一次；可缺）。
-//
-// 可缺时的降级是「用本地通用文案」而不是直出 err.Error()：
-// 内部错误原文（表名 / 约束名 / SQLSTATE）不是能出现在访客页面上的东西。
-var commentFacing commentcontract.FacingTexter
-
-// SetCommentFacingTexter 注入评论文案出口（装配期调用）。
-func SetCommentFacingTexter(t commentcontract.FacingTexter) { commentFacing = t }
-
-// commentSourceHasher 来源 IP → 带盐哈希（装配期注入；可缺）。
-//
-// 为什么做成**注入的函数**而不是在本包算：哈希口径（盐从哪来、怎么拼、用什么摘要）属于
-// 评论模块 —— 本包 import 它的 service 会被架构门禁拦下
-// （internal/architecture 的 TestNoCrossModuleServiceModelImport：跨模块只允许 contract）。
-// 装配层把 `commentservice.HashSourceIP(salt, ip)` 包成一个函数传进来，
-// 算法与密钥都留在各自的模块里（同 sitePageResolver 的注入形态）。
-//
-// 未注入时落**空哈希**（不是明文、也不是假哈希）：调用方据此略过来源维度的限流与取证，
-// 而「拿不到来源」与「来源是空串」在库里必须分得开（后者会让所有请求共用一个来源额度）。
-var commentSourceHasher func(ip string) string
-
-// SetCommentSourceHasher 注入来源 IP 哈希函数（装配期调用）。
-func SetCommentSourceHasher(hasher func(ip string) string) { commentSourceHasher = hasher }
-
 // commentSourceHash 算来源哈希（未注入时给空串）。
 func commentSourceHash(ip string) string {
-	if commentSourceHasher == nil {
+	if deps.CommentSourceHasher == nil {
 		return ""
 	}
-	return commentSourceHasher(ip)
+	return deps.CommentSourceHasher(ip)
 }
 
 func init() {
@@ -251,7 +217,7 @@ func renderCommentList(ctx context.Context, r *Request) (string, error) {
 
 	// 降级顺序即优先级：端口没接（运维）> 页面没配（编辑）> 读失败（可重试）。
 	switch {
-	case commentPort == nil:
+	case deps.CommentPort == nil:
 		data.Unavailable = true
 		data.Notice = data.Labels.Unavailable
 	case strings.TrimSpace(data.ProjectID) == "":
@@ -261,7 +227,7 @@ func renderCommentList(ctx context.Context, r *Request) (string, error) {
 		data.ConfigMissing = true
 		data.Notice = data.Labels.EntityMissing
 	default:
-		res, err := commentPort.ListApproved(ctx, &commentdto.ListReq{
+		res, err := deps.CommentPort.ListApproved(ctx, &commentdto.ListReq{
 			ProjectID:  data.ProjectID,
 			EntityType: data.EntityType,
 			EntityID:   data.EntityID,
@@ -326,7 +292,7 @@ func renderCommentSubmit(ctx context.Context, r *Request) (string, error) {
 	// 未登录的访客本来就不该填评论，先告诉他去登录比先告诉他「页面过期」更有用。
 	userID, loggedIn := visitorIDOf(r)
 	switch {
-	case commentPort == nil:
+	case deps.CommentPort == nil:
 		data.Notice = labels.Unavailable
 	case !loggedIn:
 		data.Notice = labels.Guest
@@ -335,7 +301,7 @@ func renderCommentSubmit(ctx context.Context, r *Request) (string, error) {
 		// 跨站 POST 连 cookie 都不带），所以正常提交必然命中；命中不了的一律拒绝。
 		data.Notice = labels.CSRFExpired
 	default:
-		res, err := commentPort.Submit(ctx, &commentdto.SubmitReq{
+		res, err := deps.CommentPort.Submit(ctx, &commentdto.SubmitReq{
 			ProjectID:  projectID,
 			EntityType: entityType,
 			EntityID:   entityID,
@@ -380,10 +346,10 @@ func validCommentCSRF(r *Request) bool {
 // 但片段层不押注在调用方一定这么做 —— 一个 nil 结果静默渲染成空列表，
 // 访客会以为评论被删了）。
 func commentFacingText(r *Request, err error, fallback string) string {
-	if commentFacing == nil || err == nil {
+	if deps.CommentFacingTexter == nil || err == nil {
 		return fallback
 	}
-	if text := strings.TrimSpace(commentFacing.FacingText(r.Lang, err)); text != "" {
+	if text := strings.TrimSpace(deps.CommentFacingTexter.FacingText(r.Lang, err)); text != "" {
 		return text
 	}
 	return fallback

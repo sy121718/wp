@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -148,7 +148,7 @@ func (s *Service) fillProductStock(ctx context.Context, projectID string, resps 
 	if err != nil {
 		return
 	}
-	byProduct := make(map[string][]inventorydto.ProductWarehouseStock, len(ids))
+	byProduct := make(map[string][]inventorycontract.ProductWarehouseStock, len(ids))
 	for _, row := range rows {
 		byProduct[row.ProductID] = append(byProduct[row.ProductID], row)
 	}
@@ -174,7 +174,7 @@ func (s *Service) fillProductStock(ctx context.Context, projectID string, resps 
 //
 // 抽成函数而不是内联：商品级与「分仓」两处用的是**同一条**口径，
 // 各写一遍必然分叉（一处求和、一处显示 ∞，页面上两行数字对不上）。
-func aggregateStockState(rows []inventorydto.ProductWarehouseStock) (state string, total int) {
+func aggregateStockState(rows []inventorycontract.ProductWarehouseStock) (state string, total int) {
 	if len(rows) == 0 {
 		return productenums.StockStateNone, 0
 	}
@@ -192,9 +192,9 @@ func aggregateStockState(rows []inventorydto.ProductWarehouseStock) (state strin
 // 一行一个仓：同一仓里多规格多行时，该仓的 State / Quantity 是**归并后的结论**
 // （同一条 aggregateStockState 口径）；SKUCode 与 CostPrice 取该仓第一条有值的
 // （SKU 串只用于展示与对账，身份恒为 variantId；成本是 (仓库, SKU) 维度的事实）。
-func warehouseStockRows(rows []inventorydto.ProductWarehouseStock) []*productdto.ProductWarehouseStockResp {
+func warehouseStockRows(rows []inventorycontract.ProductWarehouseStock) []*productdto.ProductWarehouseStockResp {
 	order := make([]string, 0, len(rows))
-	grouped := make(map[string][]inventorydto.ProductWarehouseStock, len(rows))
+	grouped := make(map[string][]inventorycontract.ProductWarehouseStock, len(rows))
 	for _, r := range rows {
 		if _, ok := grouped[r.WarehouseID]; !ok {
 			order = append(order, r.WarehouseID)

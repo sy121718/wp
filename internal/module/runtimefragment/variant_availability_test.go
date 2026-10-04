@@ -34,8 +34,8 @@ const projectID = "3f0b1c62-9d5a-4a1e-8f77-2c1d0e5a7b41"
 // TestRenderVariantAvailability 四种结论各出现一次，且按请求顺序输出。
 func TestRenderVariantAvailability(t *testing.T) {
 	stub := &stubAvailability{avail: map[string]int{"v1": 9, "v2": 3, "v3": 0}}
-	SetVariantAvailabilityProvider(stub)
-	defer SetVariantAvailabilityProvider(nil)
+	deps.VariantAvailabilityProvider = stub
+	defer func() { deps.VariantAvailabilityProvider = nil }()
 
 	out, err := renderVariantAvailability(context.Background(), &Request{
 		Type:   "productVariantAvailability",
@@ -67,7 +67,7 @@ func TestRenderVariantAvailability(t *testing.T) {
 
 // TestRenderVariantAvailabilityDegraded 端口未接入：整体降级为「以结算时库存为准」，不报错。
 func TestRenderVariantAvailabilityDegraded(t *testing.T) {
-	SetVariantAvailabilityProvider(nil)
+	deps.VariantAvailabilityProvider = nil
 	out, err := renderVariantAvailability(context.Background(), &Request{
 		Params: map[string]string{"variantIds": "v1", "projectId": projectID},
 	})
@@ -81,8 +81,8 @@ func TestRenderVariantAvailabilityDegraded(t *testing.T) {
 
 // TestRenderVariantAvailabilityErrors 参数缺失与端口报错都要上抛（片段端点转 400/500）。
 func TestRenderVariantAvailabilityErrors(t *testing.T) {
-	SetVariantAvailabilityProvider(nil)
-	defer SetVariantAvailabilityProvider(nil)
+	deps.VariantAvailabilityProvider = nil
+	defer func() { deps.VariantAvailabilityProvider = nil }()
 	if _, err := renderVariantAvailability(context.Background(), &Request{Params: map[string]string{}}); err == nil {
 		t.Fatalf("缺参数应报错")
 	}
@@ -95,7 +95,7 @@ func TestRenderVariantAvailabilityErrors(t *testing.T) {
 	}); err == nil {
 		t.Fatalf("缺 projectId 应报错")
 	}
-	SetVariantAvailabilityProvider(&stubAvailability{err: errors.New("数据库不可用")})
+	deps.VariantAvailabilityProvider = &stubAvailability{err: errors.New("数据库不可用")}
 	if _, err := renderVariantAvailability(context.Background(), &Request{
 		Params: map[string]string{"variantIds": "v1", "projectId": projectID},
 	}); err == nil {

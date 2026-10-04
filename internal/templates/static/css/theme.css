@@ -1035,8 +1035,9 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .filter-field .wbd {
     width: 300px; min-width: 0; max-width: 100%;
 }
-/* 关键词是筛选行的主输入（订单号 / 邮箱要能看全），比下拉宽一档。 */
-.filter-field .form-input.filter-search { width: 240px; }
+/* 关键词是筛选行的主输入（订单号 / 邮箱要能看全），比下拉宽一档。
+   与上面两条同款：绝对宽度 + min-width: 0 参与收缩 + max-width: 100% 兜底收口。 */
+.filter-field .form-input.filter-search { width: 240px; min-width: 0; max-width: 100%; }
 /* 区间条件（时间区间、金额区间）的分隔符：不属于任何控件，只做视觉连接。 */
 .filter-sep { flex: none; color: var(--sky-c-text-mute, #6b7280); font-size: 13px; }
 .filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm); }
@@ -1540,3 +1541,16 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .edit-fold > summary::-webkit-details-marker { display: none; }
 .edit-fold > summary::after { margin-left: auto; }
 .edit-fold[open] > summary { margin-bottom: .75rem; }
+
+/* AI 候选模型弹窗（templates/admin/ai/provider_picker.html）。
+   候选可能有几百条（openrouter 386 / vercel-ai-gateway 246），列表靠 .wb-modal-body 自身滚动；
+   顶部「搜索 + 全选」一行在窄屏折行，宽度用 min() 封顶，不做横向溢出。
+   .ai-picker-row 刻意不用 .var-value：那是按钮状控件，几百行按钮会把列表压成一片灰。 */
+.ai-picker-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ai-picker-bar .form-input { flex: 1 1 min(100%, 220px); min-width: 0; }
+.ai-picker-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.ai-picker-row code { overflow-wrap: anywhere; }
+/* 悬停反馈包在 hover 桶里：触屏上没有 hover，粘滞背景会让「勾过的那行」看起来像被选中。 */
+@media (hover: hover) {
+    .ai-picker-row:hover { background: var(--sky-c-primary-bg, #eceef1); }
+}

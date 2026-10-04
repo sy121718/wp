@@ -38,18 +38,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// variantSnapshotProvider 变体当前事实（价格 / 启用态）的只读端口。
-//
-// 直接复用订单域的 VariantSnapshotPort：它是「按变体 id（分单位）读当前事实」的收窄
-// 只读能力，正是本片段需要的形状 —— 不为「读个价」再造一条几乎相同的端口，
-// 端口数量本身就是维护成本。未注入（nil）时走降级：不提示。
-var variantSnapshotProvider productcontract.VariantSnapshotPort
-
-// SetVariantSnapshotProvider 注入变体快照端口（装配期调用；传 nil 表示未接入）。
-func SetVariantSnapshotProvider(port productcontract.VariantSnapshotPort) {
-	variantSnapshotProvider = port
-}
-
 func init() {
 	Register(Spec{
 		Type:   "productLivePrice",
@@ -114,7 +102,7 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 	if currency == "" {
 		currency = livePriceDefaultCurrency
 	}
-	if variantSnapshotProvider == nil {
+	if deps.VariantSnapshotProvider == nil {
 		// 端口未接入：无从核对。降级为「不说话」，绝不把未知说成「价格没变」。
 		return "", nil
 	}
@@ -126,7 +114,7 @@ func renderProductLivePrice(ctx context.Context, r *Request) (string, error) {
 	// 也带上工程，供下游任何按 core.BuildProjectID(ctx) 取数的路径使用 —— 一处读、一处传，
 	// 不让「工程从哪来」在调用链上分叉。
 	scoped := core.WithBuildProjectID(ctx, projectID)
-	snaps, err := variantSnapshotProvider.VariantSnapshots(scoped, ids, projectID)
+	snaps, err := deps.VariantSnapshotProvider.VariantSnapshots(scoped, ids, projectID)
 	if err != nil {
 		return "", err
 	}

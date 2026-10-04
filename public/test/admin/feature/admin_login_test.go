@@ -183,6 +183,7 @@ func TestAdminLoginSuccessReturnsCSRFToken(t *testing.T) {
 
 	// 登录成功链路写 Redis 用户会话；Redis 不可用时跳过而非误报
 	if err := cache.Init(viper.New()); err != nil {
+		support.FailIfRequiredRedis(t, err)
 		t.Skipf("跳过（Redis 不可用）: %v", err)
 	}
 	t.Cleanup(func() { _ = cache.Close() })

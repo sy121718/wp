@@ -16,15 +16,17 @@ import (
 	"sync"
 
 	"github.com/CloudyKit/jet/v6"
+
+	"go_wp/internal/builder/source"
 )
 
 // PluginFS 单个启用插件的模板文件系统视图。
-type PluginFS struct {
-	// ID 插件 ID（manifest.id，路由键）。
-	ID string
-	// FS 插件包根目录（components/ 位于其下；os.DirFS(解包目录)）。
-	FS fs.FS
-}
+//
+// 形状定义已下沉到 internal/builder/source（共享形状包，见该包 plugin.go 的说明）：
+// 插件契约包（internal/module/plugin/contract）要用它声明 Assembly.PluginFS，而契约包
+// 不得反向依赖 builder 内核 —— 本包依赖 builder/core（组件自带模板注册表），契约经本包
+// 就把 core 间接拖了进来。别名指向同一份定义，本包与消费方写法不变。
+type PluginFS = source.PluginFS
 
 // compositeLoader 命名空间复合加载器：内置 embed + 插件路由。
 type compositeLoader struct {

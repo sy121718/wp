@@ -85,7 +85,12 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 
 ## service
 
-- `xxx_service.go` 只放 `Service` / `NewService()`；业务用例拆到 `xxx_<action>.go`
+- `xxx_service.go` 只放 `Service` / `NewService()` 与跨用例共享面（错误哨兵、实体↔响应转换）；
+  业务用例拆到 `xxx_<能力域>.go`
+- 拆分信号：主文件超过 ~150 行，或单个文件里契约方法 ≥3 个（2026-10 按此把
+  navigation / contenttemplate / webhook / block / theme 五个主文件从 339–821 行降到 42–117 行；
+  拆完留等价性证据：**全目录** `func` 集合一致 + 函数体指纹不变 —— 对比集合要覆盖整个目录，
+  只比新文件会连带既有文件、算出假差异）
 - `Service` struct 只持有本模块 `model` + 契约接口，**不持有 `*gorm.DB`**
 - 构造函数直接传参，不用 `Deps` 结构体（参数 ≤6 时直传）
 - 返回 `error`，业务错误消息统一取 `enums`；使用命名返回值

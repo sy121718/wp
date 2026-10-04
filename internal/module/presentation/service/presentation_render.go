@@ -436,21 +436,35 @@ func (s *Service) resolveLang(ctx context.Context, projectID string) string {
 
 // resolveProjectID 解析实例所属工程：显式传入优先（校验存在），
 // 否则经 project 契约取唯一工程；无工程或多工程时要求显式指定。
+//
+// 归属校验的边界（评审 H1-b 的取证结论，改这里之前先读完这段）：
+//   - 应用层**没有**「这个工程属于谁」这个事实：projects 表只有 id/name/settings/时间戳
+//     （public/migrations/init_builder_schema.sql），没有所有者列；会话里也没有「当前工程」
+//     （全仓 active_project / currentProject 零命中）；Casbin 策略的 obj 是 API 路径、没有工程维度。
+//     所以这里能校验的只有「工程存在」—— 凭空写一段 owner 判断只会得到一个假的授权检查。
+//   - membership 模块不是这里的答案：public/migrations/462_membership.sql 的三张表是面向**顾客**的
+//     会员体系（membership_tiers 等级 / membership_entitlements 权益 / membership_assignments
+//     把 user_id 分配到等级），描述「谁买了什么」，不描述「后台账号能操作哪个工程」。
+//   - 「谁能调写面」由 Casbin 权限点承担：POST /workbench/instance/save 挂
+//     /api/presentation/rebuild（builtin.CasbinMiddlewareForPath），页面写端点复用 API 权限点。
+//   - 「写入只能落在当前作用域的工程行」由 RLS 在数据库层承担：presentation_instances 在
+//     迁移 215 的隔离清单内，model 的 *Tx 变体内部调 rls.ScopeTx（护栏见
+//     public/test/rls/rls_presentation_scope_test.go 的「事务变体必须自己带上作用域」）。
+//   - 因此契约缺失时**不能放行**：原写法是「project != nil 才校验」，缺契约时任意 projectID
+//     都跳过存在性校验直达写入 —— 装配缺口不该变成授权缺口，这里一律 fail closed。
 func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string, error) {
-	if id := strings.TrimSpace(explicit); id != "" {
-		if s.project != nil {
-			ok, err := s.project.Exists(ctx, id)
-			if err != nil {
-				return "", err
-			}
-			if !ok {
-				return "", errors.New(presentationenums.ErrProjectNotFound)
-			}
-		}
-		return id, nil
-	}
 	if s.project == nil {
 		return "", errors.New(presentationenums.ErrProjectRequired)
+	}
+	if id := strings.TrimSpace(explicit); id != "" {
+		ok, err := s.project.Exists(ctx, id)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", errors.New(presentationenums.ErrProjectNotFound)
+		}
+		return id, nil
 	}
 	list, err := s.project.List(ctx)
 	if err != nil {

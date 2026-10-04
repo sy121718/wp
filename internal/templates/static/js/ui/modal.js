@@ -20,6 +20,9 @@
  *   data-modal-static        点遮罩不关闭（危险操作 / 必填表单）
  *   data-modal-nokeyboard    Esc 不关闭
  *   data-modal-autofocus     打开后聚焦的选择器（缺省按可聚焦顺序取第一个）
+ *   data-modal-auto-open     扫描到就地打开（服务端渲染的「结果弹窗」用：整页渲染完
+ *                            直接弹出来，不需要页面再写一句 JS 去开它）。打开后属性被摘掉，
+ *                            后续 htmx 扫描不会把用户刚关掉的窗重新弹开。
  *
  * 代码调用：
  *   WBUI.modal.open('ml-cat-modal')     WBUI.modal.close('ml-cat-modal')
@@ -138,8 +141,20 @@
         }
     });
 
+    // autoOpen 打开声明了 data-modal-auto-open 的弹窗（用一次即摘属性）。
+    // 摘属性是必须的：WBUI.scan 在每次 htmx:afterSwap 后都会重跑这个注册回调，
+    // 留着属性等于「用户关一次、下一次局部刷新又给他弹回来」。
+    function autoOpen(dlg) {
+        if (!dlg.hasAttribute('data-modal-auto-open')) { return; }
+        dlg.removeAttribute('data-modal-auto-open');
+        open(dlg);
+    }
+
     WBUI.register(function (scope) {
-        WBUI.each(WBUI.$$('[data-modal]', scope || document), enhance);
+        WBUI.each(WBUI.$$('[data-modal]', scope || document), function (dlg) {
+            enhance(dlg);
+            autoOpen(dlg);
+        });
     });
 
     WBUI.modal = { open: open, close: close };

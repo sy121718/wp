@@ -54,14 +54,13 @@ func (s *stubCommentFacing) FacingText(string, error) string { return s.text }
 
 var _ commentcontract.FacingTexter = (*stubCommentFacing)(nil)
 
-// withCommentPorts 临时注入端口并在测试结束时还原（包级变量，测试之间不能互相污染）。
+// withCommentPorts 临时注入端口并在测试结束时还原（包级状态，测试之间不能互相污染）。
 func withCommentPorts(t *testing.T, port commentcontract.FragmentPort, facing commentcontract.FacingTexter) {
 	t.Helper()
-	prevPort, prevFacing, prevHasher := commentPort, commentFacing, commentSourceHasher
-	t.Cleanup(func() { commentPort, commentFacing, commentSourceHasher = prevPort, prevFacing, prevHasher })
-	SetCommentPort(port)
-	SetCommentFacingTexter(facing)
-	SetCommentSourceHasher(func(ip string) string { return "hash:" + ip })
+	t.Cleanup(MutateDepsForTest(func(d *Deps) {
+		d.CommentPort, d.CommentFacingTexter = port, facing
+		d.CommentSourceHasher = func(ip string) string { return "hash:" + ip }
+	}))
 }
 
 // callCommentFragment 调一次评论片段，返回（状态码, 响应体）。

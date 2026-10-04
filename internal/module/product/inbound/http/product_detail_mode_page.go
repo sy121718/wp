@@ -23,7 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 )
 
@@ -35,7 +35,7 @@ var errModeUnavailable = errors.New("详情页双轨能力未装配")
 // 实例定位一律经 GetByEntity（工程作用域内），失败按 ErrNotFound 回带 —— 与
 // 详情页其它写动作的失败口径一致（用户看到的是「商品不存在」，而不是内部错误）。
 func (h *productPageHandle) modeWriteTarget(c *gin.Context) (
-	projectID, productID string, inst *presentationdto.InstanceResp, err error) {
+	projectID, productID string, inst *presentationcontract.InstanceResp, err error) {
 	if h.modePort == nil || h.templates == nil || h.instances == nil {
 		return "", "", nil, errModeUnavailable
 	}
@@ -44,7 +44,7 @@ func (h *productPageHandle) modeWriteTarget(c *gin.Context) (
 	if projectID == "" || productID == "" {
 		return projectID, productID, nil, errors.New(presentationenums.ErrInvalidParam)
 	}
-	inst, ierr := h.instances.GetByEntity(c.Request.Context(), &presentationdto.GetByEntityReq{
+	inst, ierr := h.instances.GetByEntity(c.Request.Context(), &presentationcontract.GetByEntityReq{
 		EntityType: productEntityType, EntityID: productID, ProjectID: projectID,
 	})
 	if ierr != nil || inst == nil {
@@ -69,7 +69,7 @@ func (h *productPageHandle) ProductsReapplyPreset(c *gin.Context) {
 		modeRedirect(c, projectID, productID, err)
 		return
 	}
-	_, err = h.modePort.ReapplyPreset(c.Request.Context(), &presentationdto.ReapplyPresetReq{
+	_, err = h.modePort.ReapplyPreset(c.Request.Context(), &presentationcontract.ReapplyPresetReq{
 		InstanceID: inst.ID, ProjectID: projectID,
 		// 可选：同时换一套模板（换底稿）。留空 = 沿用当前绑定。
 		TemplateID: strings.TrimSpace(c.PostForm("templateId")),
@@ -89,7 +89,7 @@ func (h *productPageHandle) ProductsRollbackDocument(c *gin.Context) {
 		modeRedirect(c, projectID, productID, errors.New(presentationenums.ErrInvalidParam))
 		return
 	}
-	_, err = h.modePort.RollbackDocument(c.Request.Context(), &presentationdto.RollbackDocumentReq{
+	_, err = h.modePort.RollbackDocument(c.Request.Context(), &presentationcontract.RollbackDocumentReq{
 		InstanceID: inst.ID, ProjectID: projectID, SnapshotID: snapshotID,
 	})
 	modeRedirect(c, projectID, productID, err)
@@ -107,7 +107,7 @@ func (h *productPageHandle) ProductsRollbackArtifact(c *gin.Context) {
 		modeRedirect(c, projectID, productID, errors.New(presentationenums.ErrInvalidParam))
 		return
 	}
-	_, err = h.modePort.RollbackArtifact(c.Request.Context(), &presentationdto.RollbackArtifactReq{
+	_, err = h.modePort.RollbackArtifact(c.Request.Context(), &presentationcontract.RollbackArtifactReq{
 		InstanceID: inst.ID, ProjectID: projectID, TargetHash: targetHash,
 	})
 	modeRedirect(c, projectID, productID, err)

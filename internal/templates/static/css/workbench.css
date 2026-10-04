@@ -673,7 +673,10 @@ button.wb-palette-group:hover { color: var(--sky-c-primary, #3d444f); }
     cursor: pointer;
     transition: border-color 150ms var(--ui-ease-out), color 150ms var(--ui-ease-out);
 }
-.wb-access-apply:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
+/* 悬停反馈只在真有指针时生效：触屏上 :hover 会粘住，按钮会一直停在「已悬停」配色。 */
+@media (hover: hover) {
+    .wb-access-apply:hover { border-color: var(--sky-c-primary, #3d444f); color: var(--sky-c-primary, #3d444f); }
+}
 .wb-field-err { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--sky-c-warn, #b45309); }
 
 /* 原生 select 兜底（repeater 等非 wb-field 容器）：去 UA 灰底，统一观感。 */
@@ -1106,8 +1109,7 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 
 /* 块面板里「已被站点结构占用」的页眉 / 页脚块：置灰并禁用拖拽。
    触屏没有 hover，禁用态必须靠底色与文字表达，不能只写 :hover。 */
-.wb-palette-item.is-slot-locked,
-.wb-palette-item.is-slot-locked:hover { opacity: .6; cursor: not-allowed; }
+.wb-palette-item.is-slot-locked { opacity: .6; cursor: not-allowed; }
 @media (hover: none) {
     .wb-palette-item.is-slot-locked { background: var(--sky-c-bg-soft, #f3f4f6); }
 }

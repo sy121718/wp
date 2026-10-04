@@ -24,6 +24,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	aihttp "go_wp/internal/module/ai/inbound/http"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticshttp "go_wp/internal/module/analytics/inbound/http"
 	artifactcontract "go_wp/internal/module/artifact/contract"
@@ -219,6 +220,14 @@ type assembly struct {
 	// 但排在交易域之后便于阅读（评论是内容侧的横切能力，独立模块）。
 	// 片段层用的是它的**收窄接口**（commentcontract.FragmentPort），见 wireRuntimeAccessFace。
 	commentSvc commentcontract.CommentService
+
+	// fragDeps 片段层依赖快照（internal/module/runtimefragment）。
+	//
+	// 为什么要先攒着、最后一次性提交（见 runSelfCheck）：片段层的依赖散落在多个装配段
+	// （商品端口 / 访问面 / 发布端口），它们的提供方要到各自段落才构造完成；攒进一个
+	// 结构体后一次提交，既保住「依赖一次到齐」的语义，又不必为凑一次调用而重排装配顺序
+	// （装配顺序本身承载依赖关系，重排的风险远大于这里多攒几行）。
+	fragDeps runtimefragment.Deps
 }
 
 // dataRuleSnapshotPort 装配期消费的数据权限快照端口（admin 实现，只取装配需要的四条）。
@@ -471,6 +480,11 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 复用上面那个已是 ValueLoader 的实例 —— 保存后的主动刷新（i18n.Invalidate）走的就是它。
 	sysconfighttp.SetupSysConfigRoutes(authorizedAPI, a.adminPages, a.sysConfigSvc)
 
+	// AI 模块（配置面 /api/ai/* + 后台页 /admin/ai/providers，会话面 /api/ai/session/* + /admin/ai/sessions）：
+	// 装配期把 app.secret 交给服务层当密文密钥（api_key_cipher 只存密文，接口只回「是否已配置」）；
+	// 权限点 ai:provider_* / ai:session_* 由装配末尾的 permission.SyncToDB 幂等落库，无需在本迁移里 seed。
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db)
+
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)
 	blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
@@ -524,7 +538,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// product ↔ inventory 是循环依赖：product 的 Setup 要 inventory 契约，而库存页面
 	// 要 product 契约做「商品 → 变体」下拉，任何固定顺序都装配不出来。
 	// 所以 products 不进参数表，改为后置注入（装配期写一次、之后只读；
-	// 与 runtimefragment.SetBundleProvider 同一手法），handler 侧对 nil 降级为下拉为空。
+	// 与 runtimefragment.Deps.BundleProvider 同一手法），handler 侧对 nil 降级为下拉为空。
 	inventoryhttp.SetProductCatalog(productSvc)
 	marks.mark(portInventoryProductCatalog)
 	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
@@ -760,6 +774,15 @@ func (a *assembly) wireProductInventoryPorts() {
 	// 成本价写回端口（issue #18）：与 VariantStockCachePort 同向（product 实现、inventory 调用）——
 	// 采购收货 / 生产入库登记后把单价写进 product_variants.cost_price。同一手法：断言 + 注入，
 	// 任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露）。
+	//
+	// 关于下列「运行时类型断言 + fail-fast」为什么保留而不是删掉：
+	// 端口形状已由**实现侧的编译期断言**钉住（product/service/product_service.go、
+	// product_bundle_validate.go、variant_availability.go、product_variant_snapshot.go 与
+	// inventory/service/inventory_service.go 各自的 `var _ xcontract.Xxx = (*Service)(nil)`），
+	// 签名漂移现在编译期就报错。但 productSvc / inventorySvc 的静态类型是**接口**
+	//（product/inbound/http 与 inventory/inbound/http 的 Setup 返回接口），装配层拿不到具体类型 ——
+	// 换实现、注入测试替身都会绕过服务包内的断言。所以这一段保留为装配层的兜底，
+	// 而不是删成裸类型转换：裸转换失败只会得到一个无上下文的运行时 panic。
 	variantCostPort, ok := productSvc.(productcontract.VariantCostPort)
 	if !ok {
 		panic("商品模块未实现成本价写回端口（VariantCostPort）")
@@ -796,6 +819,7 @@ func (a *assembly) wireProductInventoryPorts() {
 	// 且只读 inventory_stocks 真源 —— 读 product_variants.stock_total 缓存会直接变成超卖。
 	// 方向与 VariantStockPort 相同（inventory 实现、product 调用）：断言 + 注入，
 	// 任一未实现即 fail-fast（漏接的表现是「校验拿不到可用量」，会把套餐卖爆）。
+	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 inventory/service/inventory_service.go。
 	availabilityPort, ok := inventorySvc.(productcontract.VariantAvailabilityPort)
 	if !ok {
 		panic("库存模块未实现可用量端口（VariantAvailabilityPort）")
@@ -811,32 +835,35 @@ func (a *assembly) wireProductInventoryPorts() {
 	// 捆绑配置器片段（issue #20）：前台配置器走访问面的 /_fragments 端点，
 	// 经商品模块的窄契约（BundleConfiguratorPort）读配置与整单校验 ——
 	// 访问面不经过后台鉴权链，也不认识商品表。装配期注入，未注入即 fail-closed。
+	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 product/service/product_bundle_validate.go。
 	bundlePort, ok := productSvc.(productcontract.BundleConfiguratorPort)
 	if !ok {
 		panic("商品模块未实现捆绑配置器端口（BundleConfiguratorPort）")
 	}
-	runtimefragment.SetBundleProvider(bundlePort)
+	a.fragDeps.BundleProvider = bundlePort
 	marks.mark(portRuntimeFragBundle)
 	// 商品变体可用量片段（issue #24）：商品详情规格选择器旁的「实时库存」走访问面片段端点。
 	// 同一份注入模式：product 模块实现 VariantAvailabilityLookupPort（内部再调 inventory 的
 	// VariantAvailabilityPort 读真源），片段层只管渲染结论。与库存端口一样 fail-fast ——
 	// 漏接的表现是「页面上永远显示以结算时库存为准」，比启动时报错隐蔽得多。
+	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 product/service/variant_availability.go。
 	availabilityLookup, ok := productSvc.(productcontract.VariantAvailabilityLookupPort)
 	if !ok {
 		panic("商品模块未实现变体可用量查询端口（VariantAvailabilityLookupPort）")
 	}
-	runtimefragment.SetVariantAvailabilityProvider(availabilityLookup)
+	a.fragDeps.VariantAvailabilityProvider = availabilityLookup
 	a.availabilityLookup = availabilityLookup
 	marks.mark(portRuntimeFragVariantAvailability)
 	// 商品实时价格核对片段（BIZ-2）：定价工具改价只落库、不进构建管线，所以产物里的价
 	// 与库里的当前价在时间窗内可能不一致；片段读**当前事实**并在不一致时给访客一句交代。
 	// 端口直接复用订单域的 VariantSnapshotPort（按变体 id 读当前价 / 启用态，收窄只读），
 	// 不为「读个价」再造一条几乎相同的端口。断言 + 注入，与上面同模式。
+	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 product/service/product_variant_snapshot.go。
 	variantSnapshots, ok := productSvc.(productcontract.VariantSnapshotPort)
 	if !ok {
 		panic("商品模块未实现变体快照端口（VariantSnapshotPort）")
 	}
-	runtimefragment.SetVariantSnapshotProvider(variantSnapshots)
+	a.fragDeps.VariantSnapshotProvider = variantSnapshots
 	marks.mark(portRuntimeFragVariantSnapshot)
 }
 
@@ -916,13 +943,13 @@ func (a *assembly) wireRuntimeAccessFace() {
 		logger.Scene("init").Warn("project 模块未提供站点运费规则读取端口（ShippingPolicyReader）：" +
 			"结算运费恒为 0 —— 站点级基础运费与满额免运费都不会生效")
 	}
-	runtimefragment.SetCartProvider(cartSvc)
+	a.fragDeps.CartProvider = cartSvc
 	marks.mark(portRuntimeFragCart)
 	// 片段层的会员身份（BIZ-3）：两个新能力（membershipBadge / membershipPanel）的读取端口
 	// 与文案出口。可选降级 —— 未注入时片段渲染「会员信息暂时不可用」这句**可见文案**，
 	// 而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
-	runtimefragment.SetMembershipReader(a.membershipSvc)
-	runtimefragment.SetMembershipFacingTexter(a.membershipFacing)
+	a.fragDeps.MembershipReader = a.membershipSvc
+	a.fragDeps.MembershipFacingTexter = a.membershipFacing
 	marks.mark(portRuntimeFragMembershipTexter)
 	marks.mark(portRuntimeFragMembership)
 	// 商品评论差异化规则的**输入**（order → product）：把「某访客买过某商品吗」交给
@@ -947,16 +974,16 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 来源 IP 哈希的盐。**可选降级** —— 未注入时片段渲染「评论功能暂时不可用」这句
 	// 可见文案，而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
 	if a.commentSvc != nil {
-		runtimefragment.SetCommentPort(a.commentSvc)
-		runtimefragment.SetCommentFacingTexter(a.commentSvc)
+		a.fragDeps.CommentPort = a.commentSvc
+		a.fragDeps.CommentFacingTexter = a.commentSvc
 		marks.mark(portRuntimeFragCommentTexter)
 		// 哈希口径留在评论模块（本包 import 它的 service 会被架构门禁拦下），
 		// 装配层只把「盐从哪来」这件事接上：按用途分离密钥（同 cart cookie / 支付回调的
 		// 既有手法），未配置时回退会话密钥并告警（resolvePurposeSecret 内部记 Warn）。
 		commentSalt := resolvePurposeSecret("comment.ip_pepper", "评论来源 IP 哈希", sessionSecret)
-		runtimefragment.SetCommentSourceHasher(func(ip string) string {
+		a.fragDeps.CommentSourceHasher = func(ip string) string {
 			return commentservice.HashSourceIP(commentSalt, ip)
-		})
+		}
 		marks.mark(portRuntimeFragCommentHasher)
 		marks.mark(portRuntimeFragComment)
 		// 差异化规则的提供方（「商品评论必须买过」这类）：由**拥有该实体的模块**实现。

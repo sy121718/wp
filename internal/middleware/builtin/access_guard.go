@@ -87,7 +87,7 @@ const (
 //
 // 为什么走注入而不是直接 import user 模块：middleware 被 user 模块的
 // inbound/http 反向依赖（访客 cookie 会话用 builtin.EnsureCSRFTokenWith），
-// 同一包再 import 回去就是环。注入点与 runtimefragment.SetVisitorIdentityMiddleware
+// 同一包再 import 回去就是环。注入点与 runtimefragment.Deps.VisitorIdentityMiddleware
 // 同一形态：模块提供能力，装配层决定接线。
 //
 // 未注入（nil）时 members 类型**恒判未登录**（fail closed）—— 配置了

@@ -34,7 +34,8 @@ func newBundleFragmentEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	runtimefragment.SetBundleProvider(f.products)
+	// 不接管还原函数：注入保留到进程结束，与逐个 setter 时代相同。
+	runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) { d.BundleProvider = f.products })
 	runtimefragment.SetupFragmentRoutes(engine)
 	return engine, f
 }

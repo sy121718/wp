@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	sysconfigdto "go_wp/internal/module/sysconfig/dto"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 )
 
 func TestCountryOptionViews(t *testing.T) {
-	countries := []sysconfigdto.CountryOption{{Code: "CN", Label: "中国"}, {Code: "US", Label: "美国"}}
+	countries := []sysconfigcontract.CountryOption{{Code: "CN", Label: "中国"}, {Code: "US", Label: "美国"}}
 	tr := func(_, fallback string) string { return fallback }
 
 	selectedCode := func(views []countryOptionView) string {
@@ -28,7 +28,7 @@ func TestCountryOptionViews(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		countries []sysconfigdto.CountryOption
+		countries []sysconfigcontract.CountryOption
 		submitted string
 		want      string
 	}{

@@ -40,4 +40,4 @@ Report skipped tests and environment-dependent gaps. A zero exit code does not p
 
 A review should be able to identify the affected contract, the evidence for current behavior, the focused tests, and the repository-wide build/vet result. If a prerequisite in the issue differs from the implementation, stop and document the mismatch rather than manufacturing a compatible-looking change.
 
-The repository is still defining its license and public security-reporting process. Do not infer terms from implementation files; follow the project maintainers' published repository metadata when those processes are added.
+The repository is licensed under the MIT License — see `LICENSE` — and publishes its security-reporting process in `SECURITY.md`. Follow those files rather than inferring terms from implementation code.

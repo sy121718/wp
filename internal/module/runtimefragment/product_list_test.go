@@ -44,8 +44,8 @@ func idOf(slug string) string { return "id-" + slug }
 // TestRenderProductListFragment 参数 → props → 过滤条件 → HTML 的完整链路。
 func TestRenderProductListFragment(t *testing.T) {
 	stub := &stubCollection{items: []map[string]any{listItem("summer-shirt", "夏季衬衫")}}
-	SetCollectionResolver(stub)
-	defer SetCollectionResolver(nil)
+	deps.CollectionResolver = stub
+	defer func() { deps.CollectionResolver = nil }()
 
 	out, err := renderProductList(context.Background(), &Request{
 		Type: "productList",
@@ -91,8 +91,8 @@ func TestRenderProductListFragment(t *testing.T) {
 // 片段里对属性键排序就是为了这个，这里把它钉住。
 func TestRenderProductListFragmentDeterministic(t *testing.T) {
 	stub := &stubCollection{items: []map[string]any{listItem("summer-shirt", "夏季衬衫")}}
-	SetCollectionResolver(stub)
-	defer SetCollectionResolver(nil)
+	deps.CollectionResolver = stub
+	defer func() { deps.CollectionResolver = nil }()
 	params := map[string]string{
 		"nodeId": "list-1", "projectId": "proj-1",
 		"titleField": "item.name", "option.color": "red", "option.size": "m",
@@ -125,8 +125,8 @@ func TestRenderProductListFragmentDeterministic(t *testing.T) {
 // TestRenderProductListFragmentRejectsBadField 字段槽位必须过商品字段白名单
 // （构建期保存校验管不到运行期请求，这一层是运行期的等价防线）。
 func TestRenderProductListFragmentRejectsBadField(t *testing.T) {
-	SetCollectionResolver(&stubCollection{})
-	defer SetCollectionResolver(nil)
+	deps.CollectionResolver = &stubCollection{}
+	defer func() { deps.CollectionResolver = nil }()
 	_, err := renderProductList(context.Background(), &Request{
 		Params: map[string]string{
 			"nodeId": "list-1", "projectId": "proj-1",
@@ -140,12 +140,12 @@ func TestRenderProductListFragmentRejectsBadField(t *testing.T) {
 
 // TestRenderProductListFragmentRequiresContext 缺依赖与缺参数都要明确报错。
 func TestRenderProductListFragmentRequiresContext(t *testing.T) {
-	SetCollectionResolver(nil)
+	deps.CollectionResolver = nil
 	if _, err := renderProductList(context.Background(), &Request{Params: map[string]string{"nodeId": "n"}}); err == nil {
 		t.Fatalf("集合解析器未接入应报错")
 	}
-	SetCollectionResolver(&stubCollection{})
-	defer SetCollectionResolver(nil)
+	deps.CollectionResolver = &stubCollection{}
+	defer func() { deps.CollectionResolver = nil }()
 	if _, err := renderProductList(context.Background(), &Request{Params: map[string]string{}}); err == nil {
 		t.Fatalf("缺 nodeId 应报错")
 	}
@@ -181,8 +181,8 @@ func (s *stubPager) ResolveCollectionPage(_ context.Context, _ string, q core.Co
 // SQL 侧的 offset 下推一次也走不到。
 func TestRenderProductListFragmentPushesPageToSource(t *testing.T) {
 	stub := &stubPager{total: 50}
-	SetCollectionResolver(stub)
-	defer SetCollectionResolver(nil)
+	deps.CollectionResolver = stub
+	defer func() { deps.CollectionResolver = nil }()
 	out, err := renderProductList(context.Background(), &Request{
 		Params: map[string]string{
 			"nodeId": "list-1", "projectId": "proj-1",
@@ -216,13 +216,13 @@ func TestRenderProductListFragmentPushesPageToSource(t *testing.T) {
 //
 // 分页控件的产物只可能是合法值，手工改坏 URL 该回到第 1 页，而不是把整块列表打成 500。
 func TestRenderProductListFragmentDropsBadPage(t *testing.T) {
-	defer SetCollectionResolver(nil)
+	defer func() { deps.CollectionResolver = nil }()
 	for _, kv := range []map[string]string{
 		{"page": "0"}, {"page": "-3"}, {"page": "abc"}, {"page": "999"},
 		{"pageSize": "9999"}, {"pageSize": "-1"}, {"pageSize": "x"},
 	} {
 		stub := &stubPager{total: 50}
-		SetCollectionResolver(stub)
+		deps.CollectionResolver = stub
 		params := map[string]string{
 			"nodeId": "list-1", "projectId": "proj-1", "titleField": "item.name",
 			"pageSize": "4", "page": "2",

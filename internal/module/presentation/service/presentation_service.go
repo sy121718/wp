@@ -188,6 +188,10 @@ func (s *Service) newContentTranslator(ctx context.Context, projectID, lang stri
 // 编译期契约断言。
 var _ presentationcontract.PresentationService = (*Service)(nil)
 
+// 双轨能力端口断言（迁移 281 / 282）：让「presentation 提不提供这条端口」在编译期成立 ——
+// 后台商品详情页按 presentationcontract.DetailTemplateModePort 直接注入，缺一条方法即构建失败。
+var _ presentationcontract.DetailTemplateModePort = (*Service)(nil)
+
 // 依赖扇出契约断言（pipeline.Fanout 的失效目标 + 自动重建实现）。
 var _ pipeline.DependencyTarget = (*Service)(nil)
 var _ pipeline.StaleRebuilder = (*Service)(nil)

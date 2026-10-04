@@ -213,6 +213,10 @@ type (
 	SessionInfo = orderdto.SessionInfo
 	DeviceInfo  = orderdto.DeviceInfo
 	TrailPage   = orderdto.TrailPage
+
+	// 客户维度订单聚合（后台客户管理页的「下过几单 / 累计消费 / 最近一单」）。
+	CustomerOrderSummaryReq  = orderdto.CustomerOrderSummaryReq
+	CustomerOrderSummaryResp = orderdto.CustomerOrderSummaryResp
 )
 
 // ErrOrderNotFound 订单不存在（错误文案取自 enums，供调用方做错误判定而不 import enums）。

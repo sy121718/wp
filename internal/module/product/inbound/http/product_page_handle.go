@@ -21,7 +21,7 @@ import (
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	pagecontract "go_wp/internal/module/page/contract"
-	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -59,12 +59,13 @@ type productPageHandle struct {
 	// 未注入时该页给出装配提示，不影响商品列表页与既有测试的构造签名。
 	templates contenttemplatecontract.ContentTemplateService
 	instances ProductDetailTemplatePort
+	// modePort 双轨能力（迁移 282）：独立文档 / 重新套用预设 / 回滚 / 影响面计数。
+	// 单独字段而不是并入 instances：这六条动作属于另一条收窄端口
+	//（presentationcontract.DetailTemplateModePort），装配期直接注入（实参
+	// presentationSvc 已嵌入该端口，无需断言）；未注入时降级为只有基础面板。
+	modePort ProductDetailTemplateModePort
 	// inventories 仓库清单（issue #15）：变体新增表单的「归属仓」下拉，
 	// 「不选」即兜底该工程的默认仓。经 SetInventoryDeps 注入 —— 未注入时
-	// modePort 双轨能力（迁移 282）：独立文档 / 重新套用预设 / 回滚 / 影响面计数。
-	// 单独字段而不是并入 instances：presentation 的 contract 未声明这些方法，
-	// 由装配期类型断言注入，未注入时页面降级为只有基础面板。
-	modePort ProductDetailTemplateModePort
 	// 表单不带仓库下拉（商品页其余功能一字不变，既有测试构造签名也不受影响）。
 	inventories inventorycontract.InventoryService
 	// seoPages / seoContents 编辑期 title 唯一性检查的另外两个数据源（审计 SEO-018）：
@@ -1473,7 +1474,7 @@ func (h *productPageHandle) ProductPreviewFrame(c *gin.Context) {
 		productPreviewFrameNotice(c, tr("admin.products.preview.unavailable", "预览不可用：发布能力未装配。"))
 		return
 	}
-	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
+	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
 		EntityType: entityTypeProduct, EntityID: id, ProjectID: projectID,
 	})
 	if err != nil {

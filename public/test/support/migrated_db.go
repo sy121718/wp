@@ -21,6 +21,7 @@ func NewMigratedPGTestDB(t *testing.T) *gorm.DB {
 	// 结构同样只由生产迁移产生（模板库就是这么建出来的），但每个用例约 65ms 而非约 1.1s。
 	db, err := newTestDatabase(t, localPGEndpoint(), true, false)
 	if err != nil {
+		FailIfRequiredPG(t, err)
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return nil
 	}
@@ -36,6 +37,7 @@ func NewMigratedPGTestDBTranslateError(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := newTestDatabase(t, localPGEndpoint(), true, true)
 	if err != nil {
+		FailIfRequiredPG(t, err)
 		t.Skipf("本地 PostgreSQL 不可用，跳过测试：%v", err)
 		return nil
 	}

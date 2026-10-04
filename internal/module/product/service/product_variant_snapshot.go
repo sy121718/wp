@@ -8,7 +8,7 @@ import (
 	"math"
 	"strings"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	productcontract "go_wp/internal/module/product/contract"
 )
 
@@ -55,9 +55,9 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, pro
 	// 规则 —— 默认仓）的当前成本。成本搬到仓库之后，变体级 product_variants.cost_price
 	// 不再是订单成本快照的来源（docs/14 §9.3 的 ⚠️：沿用变体级会让订单利润与仓库侧
 	// 对不上，且改价后历史利润会漂移）。
-	refs := make([]inventorydto.VariantWarehouseCostRef, 0, len(variants))
+	refs := make([]inventorycontract.VariantWarehouseCostRef, 0, len(variants))
 	for _, v := range variants {
-		refs = append(refs, inventorydto.VariantWarehouseCostRef{VariantID: v.ID})
+		refs = append(refs, inventorycontract.VariantWarehouseCostRef{VariantID: v.ID})
 	}
 	costs := s.variantWarehouseCosts(ctx, projectID, refs)
 
@@ -143,7 +143,7 @@ func costOf(costs map[string]int64, variantID string) *int64 {
 //
 // 注意**读的是当前成本**：这不是「历史成本」，历史成本由出库流水的 unit_cost 留痕
 // （迁移 256）；本函数只负责下单那一刻的取值。
-func (s *Service) variantWarehouseCosts(ctx context.Context, projectID string, refs []inventorydto.VariantWarehouseCostRef) map[string]int64 {
+func (s *Service) variantWarehouseCosts(ctx context.Context, projectID string, refs []inventorycontract.VariantWarehouseCostRef) map[string]int64 {
 	out := make(map[string]int64, len(refs))
 	if len(refs) == 0 {
 		return out

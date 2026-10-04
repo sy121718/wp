@@ -22,7 +22,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -104,7 +104,7 @@ func (s *Service) syncCategoryArchive(ctx context.Context, projectID, categoryID
 	if s.archiveEnsurer == nil {
 		return
 	}
-	resp, err := s.archiveEnsurer.EnsureArchiveInstance(ctx, &presentationdto.EnsureArchiveReq{
+	resp, err := s.archiveEnsurer.EnsureArchiveInstance(ctx, &presentationcontract.EnsureArchiveReq{
 		ProjectID: projectID, EntityType: productcontract.EntityTypeCategory, EntityID: categoryID, Slug: slug,
 	})
 	if err != nil {

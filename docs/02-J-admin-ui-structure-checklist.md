@@ -1,5 +1,7 @@
 # 后台 UI 结构布局检测清单（子代理专用）
 
+> 内部过程文档（非对外使用）
+
 > 用途：对 `/admin` 下每个页面做**结构性**检测，产出可验证的问题清单。
 > 判据源自 `admin-ui-logic` 技能 + `docs/02-H-admin-page-shell.md` + `docs/02-I-admin-model.md`。
 >

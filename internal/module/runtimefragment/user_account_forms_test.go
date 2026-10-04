@@ -48,11 +48,10 @@ func (f *fakeVisitorAccount) SessionsOf(_ context.Context, userID uint64, curren
 	return f.sessions, nil
 }
 
-// withAccountPort 临时替换账号端口，用例结束后恢复（包级变量，测试不并行）。
+// withAccountPort 临时替换账号端口，用例结束后恢复（依赖快照是包级状态，测试不并行）。
 func withAccountPort(t *testing.T, p usercontract.VisitorAccountPort) {
 	t.Helper()
-	visitorAccountPort = p
-	t.Cleanup(func() { visitorAccountPort = nil })
+	t.Cleanup(MutateDepsForTest(func(d *Deps) { d.VisitorAccountPort = p }))
 }
 
 // callAccountForm 直接调片段端点，返回响应体（注入访客身份 / CSRF token / 会话令牌）。

@@ -107,8 +107,8 @@ func TestFragmentRenderEscapes(t *testing.T) {
 //     （见 resolveRequestLang），声明一个不参与内容选择的请求头会让 CDN 为同一份
 //     字节建多个缓存桶（写错 Vary 比不写更糟）。
 func TestFragmentEndpointLangHeader(t *testing.T) {
-	SetFragmentProject(&stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"})
-	defer SetFragmentProject(nil)
+	deps.FragmentProject = &stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"}
+	defer func() { deps.FragmentProject = nil }()
 	r := newRouter()
 
 	cases := []struct {
@@ -152,8 +152,8 @@ func TestRegistryTypes(t *testing.T) {
 // 上限只有 10 时这些请求被自己拒成 400（「参数过多」），而且只在真实 HTTP 路径上发生 ——
 // 单测直调处理器看不见，正是它一直没被发现的原因 —— 所以这条走完整端点。
 func TestFragmentEndpointProductListParamBudget(t *testing.T) {
-	SetCollectionResolver(&stubCollection{items: []map[string]any{listItem("shirt", "衬衫")}})
-	defer SetCollectionResolver(nil)
+	deps.CollectionResolver = &stubCollection{items: []map[string]any{listItem("shirt", "衬衫")}}
+	defer func() { deps.CollectionResolver = nil }()
 	params := url.Values{}
 	for k, v := range map[string]string{
 		// 实例配置：由产物烘入（productlist 侧 fragmentQuery 的白名单）。

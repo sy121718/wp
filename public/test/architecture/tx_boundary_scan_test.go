@@ -241,7 +241,7 @@ var txBoundaryAllow = map[string]string{
 	// —— 2026-09-19 第七批（导航乐观锁引入 SaveWithExpected 后新命中）——
 	// 同一个方法里出现两条写路径：有 expected token 走 SaveWithExpected（条件 UPDATE），
 	// 没有则走 Save。二者是**互斥分支**，单次调用只执行一支。
-	"internal/module/navigation/service/navigation_service.go#Update": "误报：Save 与 SaveWithExpected 是「有 / 无乐观锁 token」的互斥分支（req.ExpectedUpdatedAt 为空走 Save、非空走 SaveWithExpected），单次调用只执行一支；SaveWithExpected 本身是条件 UPDATE（WHERE update_time = expected），原子性由 SQL 保证，不存在半截状态 —— 与 mail_campaign.go#SaveCampaign 同形。",
+	"internal/module/navigation/service/navigation_crud.go#Update": "误报：Save 与 SaveWithExpected 是「有 / 无乐观锁 token」的互斥分支（req.ExpectedUpdatedAt 为空走 Save、非空走 SaveWithExpected），单次调用只执行一支；SaveWithExpected 本身是条件 UPDATE（WHERE update_time = expected），原子性由 SQL 保证，不存在半截状态 —— 与 mail_campaign.go#SaveCampaign 同形。",
 }
 
 func TestServiceWritePathsHaveTransactionBoundary(t *testing.T) {

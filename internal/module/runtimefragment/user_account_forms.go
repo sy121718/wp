@@ -21,19 +21,9 @@ import (
 	"strings"
 
 	pageenums "go_wp/internal/module/page/enums"
-	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	"go_wp/internal/templates"
 )
-
-// visitorAccountPort 访客账号事实的读取端口（装配期注入一次）。
-//
-// 未注入时渲染「账号功能暂不可用」的可见文案，而不是 500：
-// 与 sitePageResolver / variantAvailability 同一口径 —— 缺失的能力降级成一句人话。
-var visitorAccountPort usercontract.VisitorAccountPort
-
-// SetVisitorAccountPort 注入访客账号读取端口（装配期调用）。
-func SetVisitorAccountPort(p usercontract.VisitorAccountPort) { visitorAccountPort = p }
 
 // 账号中心四个片段能力名。
 const (
@@ -163,12 +153,12 @@ func renderAccountForm(fragment string) func(ctx context.Context, r *Request) (s
 			data.NeedLogin = true
 			return render(data)
 		}
-		if visitorAccountPort == nil {
+		if deps.VisitorAccountPort == nil {
 			data.Unavailable = true
 			return render(data)
 		}
 		if spec.needAccount {
-			acc, err := visitorAccountPort.AccountOf(ctx, userID)
+			acc, err := deps.VisitorAccountPort.AccountOf(ctx, userID)
 			if err != nil {
 				// 读账号失败是**服务端故障**，不降级成「你的账号没有资料」——
 				// 后者会让故障表现成数据问题，排查方向直接跑偏。
@@ -181,7 +171,7 @@ func renderAccountForm(fragment string) func(ctx context.Context, r *Request) (s
 			data.Account = acc
 		}
 		if spec.needSessions {
-			items, err := visitorAccountPort.SessionsOf(ctx, userID, strings.TrimSpace(r.VisitorToken))
+			items, err := deps.VisitorAccountPort.SessionsOf(ctx, userID, strings.TrimSpace(r.VisitorToken))
 			if err != nil {
 				return "", err
 			}

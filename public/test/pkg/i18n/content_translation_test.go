@@ -69,6 +69,7 @@ func insertTranslation(t *testing.T, db *gorm.DB, sourceText, contextName, lang,
 func TestSysTranslationMigrationIdempotency(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 
@@ -149,6 +150,7 @@ func TestSysTranslationMigrationIdempotency(t *testing.T) {
 func TestContentBatchQuerySingleSQL(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := migrations.Run(db); err != nil {
@@ -207,6 +209,7 @@ func TestContentBatchQuerySingleSQL(t *testing.T) {
 func TestContentTranslateHitFallbackAndSkipRule(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := migrations.Run(db); err != nil {
@@ -261,6 +264,7 @@ func TestContentTranslateHitFallbackAndSkipRule(t *testing.T) {
 func TestContentTranslationTableMissingFallsBack(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	// 刻意不跑迁移：该隔离 schema 里没有 sys_translation。
@@ -288,6 +292,7 @@ func TestContentTranslationTableMissingFallsBack(t *testing.T) {
 func TestContentHashChangeInvalidatesOldTranslation(t *testing.T) {
 	db, err := support.NewPGTestDB(t)
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := migrations.Run(db); err != nil {
@@ -336,6 +341,7 @@ func TestContentDefaultStoreAgainstGlobalDB(t *testing.T) {
 	dbName := "go_test_content_" + randomSuffix()
 	admin, err := gorm.Open(postgres.Open(i18nTestDSN("postgres")), &gorm.Config{})
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := admin.Exec("CREATE DATABASE " + dbName).Error; err != nil {
@@ -402,6 +408,7 @@ func TestContentRevisionTracksWrites(t *testing.T) {
 	dbName := "go_test_content_rev_" + randomSuffix()
 	admin, err := gorm.Open(postgres.Open(i18nTestDSN("postgres")), &gorm.Config{})
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("跳过：本地 PostgreSQL 不可用: %v", err)
 	}
 	if err := admin.Exec("CREATE DATABASE " + dbName).Error; err != nil {

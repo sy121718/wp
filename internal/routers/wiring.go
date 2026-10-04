@@ -29,6 +29,18 @@
 // optional-degraded；说不清（只能说出「功能没了」）的就是 required-port。
 // 新增端口时按这条判据填表，不要凭「感觉它不重要」写进 optional。
 //
+// 这张表**不登记**什么（两条边界，省得把它当成「全部装配期依赖」的清单）：
+//
+//	构造参数注入的契约依赖不登记。像
+//	  SetupProductRoutes(rg, db, project projectcontract.ProjectService)
+//	  这类把收窄契约直接当构造参数传的依赖，没有「未注入」这个状态：装配点必须显式
+//	  交出一个实现，传 nil 是编译得过、一调用就炸的假装配。它的后果不呈现为「用户看到
+//	  什么」，而呈现为「装配点有没有写对」——与 optional/required 不是同一个维度，
+//	  硬塞进来只会让 Consequence 一栏写成假话。
+//	Consequence 故意保持自然语言，不要改成枚举。它是这张表的唯一价值所在（见
+//	  wiringEntry 的注释）：写不出一句「未注入 → 看到什么」的人话，就说明这个端口不该
+//	  存在，或者不该留在 optional。枚举能让人勾一个 other 绕过去，人话绕不过去。
+//
 // 刻意**不做** fail-fast 的两处（评估过，判定保持现状，理由写在这里免得反复讨论）：
 //
 //	默认主题补齐失败（routes.go）：幂等补齐动作，不影响已有工程，新建工程仍即时
@@ -84,10 +96,10 @@ const (
 	portI18nValueLoader               = "i18n.SetValueLoader"
 	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
-	portRuntimeFragMembershipTexter   = "runtimefragment.SetMembershipFacingTexter"
-	portRuntimeFragCommentTexter      = "runtimefragment.SetCommentFacingTexter"
-	portRuntimeFragCommentHasher      = "runtimefragment.SetCommentSourceHasher"
-	portRuntimeFragCountryLabel       = "runtimefragment.SetCountryLabelReader"
+	portRuntimeFragMembershipTexter   = "runtimefragment.SetDependencies.MembershipFacingTexter"
+	portRuntimeFragCommentTexter      = "runtimefragment.SetDependencies.CommentFacingTexter"
+	portRuntimeFragCommentHasher      = "runtimefragment.SetDependencies.CommentSourceHasher"
+	portRuntimeFragCountryLabel       = "runtimefragment.SetDependencies.CountryLabelReader"
 	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
 	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
 	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
@@ -95,46 +107,49 @@ const (
 	// —— 换图失效通知（媒体变体的缓存与失效）——
 	// media 索要的端口（契约见 mediacontract.StaleMarker），由 page / presentation
 	// 各自实现一条收窄实现后经 media.SetStaleMarkers 注入。
-	portMediaStaleMarkerPage           = "media.SetStaleMarker(page)"
-	portMediaStaleMarkerPresentation   = "media.SetStaleMarker(presentation)"
-	portPresentationBuildQueue         = "presentation.SetBuildQueue"
-	portPresentationProductDataSource  = "presentation.SetProductDataSource"
-	portPresentationCheckoutCountries  = "presentation.SetCheckoutCountries"
-	portPresentationSiteAssembly       = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
-	portPipelinePageRebuilder          = "pipeline.Fanout.SetRebuilder(page)"
-	portPipelinePresentationRebuilder  = "pipeline.Fanout.SetRebuilder(presentation)"
-	portContentDependencyInvalidator   = "content.SetDependencyInvalidator"
-	portProductDependencyInvalidator   = "product.SetDependencyInvalidator"
-	portContentTemplateInvalidator     = "contenttemplate.SetInvalidator"
-	portNavigationSourceResolver       = "navigation.SetSourceResolver"
-	portNavigationMenuDispatcher       = "navigation.SetMenuStaleDispatcher"
-	portDashboardBlueprints            = "dashboard.SetBlueprints"
-	portRuntimeFragBundle              = "runtimefragment.SetBundleProvider"
-	portRuntimeFragVariantAvailability = "runtimefragment.SetVariantAvailabilityProvider"
-	portRuntimeFragVariantSnapshot     = "runtimefragment.SetVariantSnapshotProvider"
-	portRuntimeFragCart                = "runtimefragment.SetCartProvider"
-	portRuntimeFragCollectionResolver  = "runtimefragment.SetCollectionResolver"
-	portRuntimeFragProductDataSource   = "runtimefragment.SetProductDataSource"
-	portRuntimeFragContentSearch       = "runtimefragment.SetContentSearchProvider"
-	portRuntimeFragProductSearch       = "runtimefragment.SetProductSearchProvider"
-	portRuntimeFragPublishedLocator    = "runtimefragment.SetPublishedEntityLocator"
-	portRuntimeFragSitePageResolver    = "runtimefragment.SetSitePageResolver"
-	portRuntimeFragProject             = "runtimefragment.SetFragmentProject"
-	portRuntimeFragVisitorOrderReader  = "runtimefragment.SetVisitorOrderReader"
-	portRuntimeFragVisitorReturn       = "runtimefragment.SetVisitorReturnProvider"
-	portRuntimeFragVisitorIdentity     = "runtimefragment.SetVisitorIdentityMiddleware"
-	portRuntimeFragVisitorAccount      = "runtimefragment.SetVisitorAccountPort"
+	portMediaStaleMarkerPage          = "media.SetStaleMarker(page)"
+	portMediaStaleMarkerPresentation  = "media.SetStaleMarker(presentation)"
+	portPresentationBuildQueue        = "presentation.SetBuildQueue"
+	portPresentationProductDataSource = "presentation.SetProductDataSource"
+	portPresentationCheckoutCountries = "presentation.SetCheckoutCountries"
+	portPresentationSiteAssembly      = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
+	portPipelinePageRebuilder         = "pipeline.Fanout.SetRebuilder(page)"
+	portPipelinePresentationRebuilder = "pipeline.Fanout.SetRebuilder(presentation)"
+	portContentDependencyInvalidator  = "content.SetDependencyInvalidator"
+	portProductDependencyInvalidator  = "product.SetDependencyInvalidator"
+	portContentTemplateInvalidator    = "contenttemplate.SetInvalidator"
+	portNavigationSourceResolver      = "navigation.SetSourceResolver"
+	portNavigationMenuDispatcher      = "navigation.SetMenuStaleDispatcher"
+	portDashboardBlueprints           = "dashboard.SetBlueprints"
+	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
+	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
+	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
+	portRuntimeFragBundle              = "runtimefragment.SetDependencies.BundleProvider"
+	portRuntimeFragVariantAvailability = "runtimefragment.SetDependencies.VariantAvailabilityProvider"
+	portRuntimeFragVariantSnapshot     = "runtimefragment.SetDependencies.VariantSnapshotProvider"
+	portRuntimeFragCart                = "runtimefragment.SetDependencies.CartProvider"
+	portRuntimeFragCollectionResolver  = "runtimefragment.SetDependencies.CollectionResolver"
+	portRuntimeFragProductDataSource   = "runtimefragment.SetDependencies.ProductDataSource"
+	portRuntimeFragContentSearch       = "runtimefragment.SetDependencies.ContentSearchProvider"
+	portRuntimeFragProductSearch       = "runtimefragment.SetDependencies.ProductSearchProvider"
+	portRuntimeFragPublishedLocator    = "runtimefragment.SetDependencies.PublishedEntityLocator"
+	portRuntimeFragSitePageResolver    = "runtimefragment.SetDependencies.SitePageResolver"
+	portRuntimeFragProject             = "runtimefragment.SetDependencies.FragmentProject"
+	portRuntimeFragVisitorOrderReader  = "runtimefragment.SetDependencies.VisitorOrderReader"
+	portRuntimeFragVisitorReturn       = "runtimefragment.SetDependencies.VisitorReturnProvider"
+	portRuntimeFragVisitorIdentity     = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
+	portRuntimeFragVisitorAccount      = "runtimefragment.SetDependencies.VisitorAccountPort"
 	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
 	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
 	// —— BIZ-3 会员体系的消费侧接线（本批）——
 	portOrderMembershipReader    = "order.SetMembershipReader"
 	portMembershipPurchaseSource = "membership.SetPurchaseSource"
 	portCartMembershipReader     = "cart.SetMembershipReader"
-	portRuntimeFragMembership    = "runtimefragment.SetMembershipReader"
+	portRuntimeFragMembership    = "runtimefragment.SetDependencies.MembershipReader"
 	// —— 站点级基础运费（BIZ-3 的后续小批）——
 	portCartShippingPolicy = "cart.SetShippingPolicyReader"
 	// —— 评论（BIZ-5）——
-	portRuntimeFragComment  = "runtimefragment.SetCommentPort"
+	portRuntimeFragComment  = "runtimefragment.SetDependencies.CommentPort"
 	portCommentEntityPolicy = "comment.SetEntityPolicy"
 )
 

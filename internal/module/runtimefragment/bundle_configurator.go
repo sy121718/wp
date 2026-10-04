@@ -20,20 +20,11 @@ import (
 	"strconv"
 	"strings"
 
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	rfenums "go_wp/internal/module/runtimefragment/enums"
 	"go_wp/internal/templates"
 )
-
-// bundleProvider 捆绑配置器依赖（装配期注入）。
-var bundleProvider productcontract.BundleConfiguratorPort
-
-// SetBundleProvider 注入捆绑配置器能力（装配期调用；传 nil 表示未接入）。
-func SetBundleProvider(port productcontract.BundleConfiguratorPort) {
-	bundleProvider = port
-}
 
 func init() {
 	Register(Spec{
@@ -100,14 +91,14 @@ type bundleResultItemView struct {
 
 // renderBundleConfigurator 渲染配置器（GET /_fragments/bundleConfigurator?productId=…）。
 func renderBundleConfigurator(ctx context.Context, r *Request) (string, error) {
-	if bundleProvider == nil {
+	if deps.BundleProvider == nil {
 		return "", errors.New("捆绑配置器未接入商品模块")
 	}
 	productID := strings.TrimSpace(r.Params["productId"])
 	if productID == "" {
 		return "", errors.New("缺少 productId")
 	}
-	data, err := bundleProvider.BundleConfiguratorData(ctx, productID)
+	data, err := deps.BundleProvider.BundleConfiguratorData(ctx, productID)
 	if err != nil {
 		return "", err
 	}
@@ -145,7 +136,7 @@ func renderBundleConfigurator(ctx context.Context, r *Request) (string, error) {
 // 校验失败不是「片段渲染失败」：它是**业务结论**，要渲染成页面上的提示（200 + 提示文案），
 // 而不是 500。只有依赖未接入 / 参数结构不可解析才算真正的渲染失败。
 func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, error) {
-	if bundleProvider == nil {
+	if deps.BundleProvider == nil {
 		return "", errors.New("捆绑配置器未接入商品模块")
 	}
 	productID := strings.TrimSpace(r.Params["productId"])
@@ -172,7 +163,7 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 		}
 		items = append(items, productdto.BundleSelectItem{VariantID: strings.TrimSpace(vid), Qty: qty})
 	}
-	res, err := bundleProvider.ValidateBundleSelection(ctx, &productdto.ValidateBundleSelectionReq{
+	res, err := deps.BundleProvider.ValidateBundleSelection(ctx, &productdto.ValidateBundleSelectionReq{
 		ProductID: productID,
 		Items:     items,
 	})

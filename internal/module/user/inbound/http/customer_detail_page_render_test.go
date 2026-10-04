@@ -13,13 +13,13 @@ import (
 	"strings"
 	"testing"
 
-	orderdto "go_wp/internal/module/order/dto"
+	ordercontract "go_wp/internal/module/order/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
 // detailSummary 一个正常的订单摘要（已付款 2 单、累计 198 元、最近一单 SO20260920001）。
-func detailSummary() *orderdto.CustomerOrderSummaryResp {
-	return &orderdto.CustomerOrderSummaryResp{
+func detailSummary() *ordercontract.CustomerOrderSummaryResp {
+	return &ordercontract.CustomerOrderSummaryResp{
 		UserID: 42, ProjectID: "p1",
 		OrderCount: 3, PaidOrderCount: 2, TotalAmount: 19800, TotalAmountLabel: "198.00",
 		LastOrderID: 900, LastOrderNo: "SO20260920001", LastOrderStatus: "paid",
@@ -52,7 +52,7 @@ func TestCustomerDetailTemplateRenders(t *testing.T) {
 
 // TestCustomerDetailTemplateNoOrders 没下过单是正常状态，不是错误。
 func TestCustomerDetailTemplateNoOrders(t *testing.T) {
-	summary := &orderdto.CustomerOrderSummaryResp{UserID: 42, ProjectID: "p1"}
+	summary := &ordercontract.CustomerOrderSummaryResp{UserID: 42, ProjectID: "p1"}
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", summary,
 		false, false, "", "", nil)
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))

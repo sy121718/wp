@@ -68,13 +68,13 @@ func (s *stubPublishedLocator) PublishedEntityPaths(_ context.Context, _, _, _ s
 // resetSearchProviders 清空三条端口（测试之间不互相污染）。
 func resetSearchProviders(t *testing.T) {
 	t.Helper()
-	SetContentSearchProvider(nil)
-	SetProductSearchProvider(nil)
-	SetPublishedEntityLocator(nil)
+	deps.ContentSearchProvider = nil
+	deps.ProductSearchProvider = nil
+	deps.PublishedEntityLocator = nil
 	t.Cleanup(func() {
-		SetContentSearchProvider(nil)
-		SetProductSearchProvider(nil)
-		SetPublishedEntityLocator(nil)
+		deps.ContentSearchProvider = nil
+		deps.ProductSearchProvider = nil
+		deps.PublishedEntityLocator = nil
 	})
 }
 
@@ -90,7 +90,7 @@ func searchRequest(q string) *Request {
 // TestSearchResultsEmptyQuery 空关键词：提示而不是报错（搜索框还没输入就会触发请求）。
 func TestSearchResultsEmptyQuery(t *testing.T) {
 	resetSearchProviders(t)
-	SetContentSearchProvider(&stubContentSearch{})
+	deps.ContentSearchProvider = &stubContentSearch{}
 	out, err := renderSearchResults(context.Background(), searchRequest("   "))
 	if err != nil {
 		t.Fatalf("空关键词不该报错: %v", err)
@@ -115,10 +115,10 @@ func TestSearchResultsDegraded(t *testing.T) {
 // TestSearchResultsDropsUnpublishedContent 内容命中但没有已上线路径 → 整条丢弃。
 func TestSearchResultsDropsUnpublishedContent(t *testing.T) {
 	resetSearchProviders(t)
-	SetContentSearchProvider(&stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
+	deps.ContentSearchProvider = &stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
 		{ID: "a1", Slug: "draft", Title: "还没发布的草稿", Excerpt: "内部预览用"},
-	}})
-	SetPublishedEntityLocator(&stubPublishedLocator{paths: map[string]string{}})
+	}}
+	deps.PublishedEntityLocator = &stubPublishedLocator{paths: map[string]string{}}
 
 	out, err := renderSearchResults(context.Background(), searchRequest("草稿"))
 	if err != nil {
@@ -135,10 +135,10 @@ func TestSearchResultsDropsUnpublishedContent(t *testing.T) {
 // TestSearchResultsContentWithPath 有已上线路径 → 输出可点链接，路径逐字来自发布面。
 func TestSearchResultsContentWithPath(t *testing.T) {
 	resetSearchProviders(t)
-	SetContentSearchProvider(&stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
+	deps.ContentSearchProvider = &stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
 		{ID: "a1", Slug: "hello", Title: "你好，世界", Excerpt: "第一篇"},
-	}})
-	SetPublishedEntityLocator(&stubPublishedLocator{paths: map[string]string{"a1": "/blog/hello/"}})
+	}}
+	deps.PublishedEntityLocator = &stubPublishedLocator{paths: map[string]string{"a1": "/blog/hello/"}}
 
 	out, err := renderSearchResults(context.Background(), searchRequest("hello"))
 	if err != nil {
@@ -155,10 +155,10 @@ func TestSearchResultsContentWithPath(t *testing.T) {
 // TestSearchResultsProductWithoutPath 商品已上架但还没有详情页 → 输出条目但不给链接。
 func TestSearchResultsProductWithoutPath(t *testing.T) {
 	resetSearchProviders(t)
-	SetProductSearchProvider(&stubProductSearch{hits: []*productcontract.ProductSearchHit{
+	deps.ProductSearchProvider = &stubProductSearch{hits: []*productcontract.ProductSearchHit{
 		{ID: "11111111-1111-1111-1111-111111111111", Name: "帆布鞋", Subtitle: "轻便透气"},
-	}})
-	SetPublishedEntityLocator(&stubPublishedLocator{paths: map[string]string{}})
+	}}
+	deps.PublishedEntityLocator = &stubPublishedLocator{paths: map[string]string{}}
 
 	out, err := renderSearchResults(context.Background(), searchRequest("鞋"))
 	if err != nil {
@@ -175,8 +175,8 @@ func TestSearchResultsProductWithoutPath(t *testing.T) {
 // TestSearchResultsEscapesQuery 关键词是用户输入：回显时必须被模板转义。
 func TestSearchResultsEscapesQuery(t *testing.T) {
 	resetSearchProviders(t)
-	SetContentSearchProvider(&stubContentSearch{})
-	SetPublishedEntityLocator(&stubPublishedLocator{})
+	deps.ContentSearchProvider = &stubContentSearch{}
+	deps.PublishedEntityLocator = &stubPublishedLocator{}
 
 	out, err := renderSearchResults(context.Background(), searchRequest("<script>alert(1)</script>"))
 	if err != nil {
@@ -196,10 +196,10 @@ func TestSearchResultsPassesLangToLocator(t *testing.T) {
 	langSeen := ""
 	loc := &stubPublishedLocator{paths: map[string]string{"a1": "/en/blog/hello"}}
 	locHook := &langCapturingLocator{inner: loc, lang: &langSeen}
-	SetContentSearchProvider(&stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
+	deps.ContentSearchProvider = &stubContentSearch{hits: []*contentcontract.ArticleSearchHit{
 		{ID: "a1", Slug: "hello", Title: "Hello"},
-	}})
-	SetPublishedEntityLocator(locHook)
+	}}
+	deps.PublishedEntityLocator = locHook
 
 	req := &Request{
 		Type: "searchResults", Lang: "en-US",
@@ -233,7 +233,7 @@ func (l *langCapturingLocator) PublishedEntityPaths(ctx context.Context, project
 // TestSearchResultsPortError 检索端口报错要上抛（端点转 500）。
 func TestSearchResultsPortError(t *testing.T) {
 	resetSearchProviders(t)
-	SetContentSearchProvider(&stubContentSearch{err: errors.New("数据库不可用")})
+	deps.ContentSearchProvider = &stubContentSearch{err: errors.New("数据库不可用")}
 	if _, err := renderSearchResults(context.Background(), searchRequest("x")); err == nil {
 		t.Fatalf("端口报错应上抛")
 	}

@@ -210,3 +210,28 @@ type InventoryService interface {
 	// projectID 必填：流水表带工程策略，缺作用域时计数恒 0（守卫静默失效）。
 	VariantHasStockMovement(ctx context.Context, projectID, variantID string) (exists bool, err error)
 }
+
+// === 跨模块形状：调用方要传进来、要收回去的类型 ===
+
+// 跨模块调用方使用的**形状重导出**（与 order 契约同一手法）：调用方只依赖 contract，
+// 不直接 import inventory/dto。
+//
+// 为什么是重导出而不是另造一组「契约自有入参类型」：本模块的 dto 与对外契约形状是同一件事
+// （仓库 / 仓库 SKU 的查询入参与库存投影就是它对外的语义），form 标签只影响 HTTP 绑定，
+// 不改变语义。另造一组形状意味着两份必须逐字段保持等价的定义 —— 那是把「一处改、调用方编译错」
+// 换成「一处改、另一处静默分叉」：耦合没有减少，出错面反而变大。
+//
+// 边界：本模块内部（service / inbound）继续用 inventorydto 作为实现形状；重导出只服务于
+// 跨模块调用方（当前是 product：商品列表的库存投影、新建商品的「从仓库选」、变体成本快照）。
+type (
+	// 商品列表的库存投影（一行一个仓，跨仓求和在调用方做）。
+	ProductWarehouseStock = inventorydto.ProductWarehouseStock
+	// 成本快照的一行入参：哪个变体、在哪个仓（空 = 按归属仓解析）。
+	VariantWarehouseCostRef = inventorydto.VariantWarehouseCostRef
+	// 「从仓库选」：候选项查询入参与该行的只读投影。
+	ListWarehouseSKUReq = inventorydto.ListWarehouseSKUReq
+	GetWarehouseSKUReq  = inventorydto.GetWarehouseSKUReq
+	WarehouseSKUResp    = inventorydto.WarehouseSKUResp
+	// 仓库列表（工程维度）。
+	ListWarehouseReq = inventorydto.ListWarehouseReq
+)

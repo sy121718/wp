@@ -66,23 +66,31 @@ func SetupRedisForTestAt(t *testing.T, addr string) error {
 	cfg.Set("auth.session_secret", "sky-feature-test-session-secret")
 
 	if err := cache.Init(cfg); err != nil {
-		return fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		wrapped := fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		FailIfRequiredRedis(t, wrapped)
+		return wrapped
 	}
 	if err := auth.Init(cfg); err != nil {
 		_ = cache.Close()
-		return fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		wrapped := fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		FailIfRequiredRedis(t, wrapped)
+		return wrapped
 	}
 
 	client, err := cache.GetRedis()
 	if err != nil {
 		teardownRedisTest(t)
-		return fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		wrapped := fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		FailIfRequiredRedis(t, wrapped)
+		return wrapped
 	}
 	pingCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
 		teardownRedisTest(t)
-		return fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		wrapped := fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
+		FailIfRequiredRedis(t, wrapped)
+		return wrapped
 	}
 
 	t.Cleanup(func() { teardownRedisTest(t) })

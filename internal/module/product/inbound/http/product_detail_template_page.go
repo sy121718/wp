@@ -28,9 +28,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
-	presentationdto "go_wp/internal/module/presentation/dto"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -77,30 +76,34 @@ type ProductPagePorts interface {
 //
 // 只列本页真正用到的四个方法：读绑定、预览、首次发布、切换模板重新发布。
 type ProductDetailTemplatePort interface {
-	GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error)
-	PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error)
-	CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error)
-	Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error)
+	GetByEntity(ctx context.Context, req *presentationcontract.GetByEntityReq) (res *presentationcontract.InstanceResp, err error)
+	PreviewInstance(ctx context.Context, req *presentationcontract.PreviewInstanceReq) (res *presentationcontract.PreviewInstanceResp, err error)
+	CreateInstance(ctx context.Context, req *presentationcontract.CreateInstanceReq) (res *presentationcontract.InstanceResp, err error)
+	Rebuild(ctx context.Context, req *presentationcontract.RebuildReq) (res *presentationcontract.InstanceResp, err error)
 	// UpdateURL 改 URL（发布后换路径）：新路径激活 + 旧路径 301 / 取消激活。
-	UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error)
+	UpdateURL(ctx context.Context, req *presentationcontract.UpdateURLReq) (res *presentationcontract.InstanceResp, err error)
 }
 
-// ProductDetailTemplateModePort 双轨能力（迁移 282）：独立文档保存、重新套用预设、
-// 两类回滚与「编辑模板影响 N 个商品」的影响面计数。
+// ProductDetailTemplateModePort 双轨能力（迁移 282）在 product 侧的**重导出**：
+// 接口由 presentation 的 contract 声明（presentationcontract.DetailTemplateModePort，
+// 独立成文件的收窄端口，理由与 published_locator.go 相同：让消费方在类型上够不着
+// 创建 / 重建 / 删除）。这里只保留别名，既有调用点（handle 字段、下面的 setter、
+// 页面测试）一字不改。
 //
-// 为什么单独一个接口 + 运行时断言注入：presentation 的 contract 接口正由另一批
-// 工作维护（MarkStaleForI18n 等），本批不改它；缺失时详情页降级为「只有基础面板」
-// （绑定 / 预览 / 发布），不 panic、不静默 —— 降级必须可见。
-type ProductDetailTemplateModePort interface {
-	SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error)
-	ReapplyPreset(ctx context.Context, req *presentationdto.ReapplyPresetReq) (res *presentationdto.InstanceResp, err error)
-	RollbackDocument(ctx context.Context, req *presentationdto.RollbackDocumentReq) (res *presentationdto.InstanceResp, err error)
-	RollbackArtifact(ctx context.Context, req *presentationdto.RollbackArtifactReq) (res *presentationdto.InstanceResp, err error)
-	ListSnapshots(ctx context.Context, req *presentationdto.ListSnapshotsReq) (list []*presentationdto.SnapshotSummary, err error)
-	CountByTemplate(ctx context.Context, req *presentationdto.CountByTemplateReq) (res *presentationdto.CountByTemplateResp, err error)
-}
+// 早先的形态是「本模块自定义同形接口 + 装配期运行期类型断言注入」，理由是当时
+// presentation 的 contract 正由另一批工作维护；那批工作已落地（contract 声明了该端口，
+// presentation service 侧有编译期断言 var _ …DetailTemplateModePort = (*Service)(nil)），
+// 因此运行期断言已删除：「presentation 提不提供这个能力」现在由编译器回答，
+// 缺失是构建失败，不再存在静默降级的路径。
+//
+// 跨模块形状不在这里另造一份（两份逐字段等价的定义经不起「一处改、另一处静默分叉」）。
+type ProductDetailTemplateModePort = presentationcontract.DetailTemplateModePort
 
-// SetDetailTemplateModePort 注入双轨能力（可空降级；装配期在类型断言成功时调用）。
+// SetDetailTemplateModePort 注入双轨能力（装配期调用）。
+//
+// 实参静态类型 presentationcontract.PresentationService 已嵌入该端口，装配处直接传值、
+// 无需类型断言。仍然保留 setter：页面测试按两参数构造商品页 handle，
+// 不注入时详情页降级为只有基础面板（绑定 / 预览 / 发布），降级可见。
 func (h *productPageHandle) SetDetailTemplateModePort(port ProductDetailTemplateModePort) {
 	h.modePort = port
 }
@@ -153,7 +156,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	}
 	// 模板清单（多套命名模板）与当前默认模板：默认模板 = 该类型当前解析到的那套，
 	// 实例未显式绑定模板时商品就发布在它上面。
-	rows, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: productEntityType})
+	rows, err := h.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: productEntityType})
 	if err != nil {
 		shell.PageError(c, "product_detail_template", err)
 		return
@@ -166,7 +169,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	instanceExists := false
 	instanceStatus := ""
 	instanceURL := ""
-	if inst, ierr := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
+	if inst, ierr := h.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
 		EntityType: productEntityType, EntityID: productID,
 	}); ierr == nil && inst != nil {
 		instanceExists, boundID = true, inst.TemplateID
@@ -231,7 +234,7 @@ func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
 		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateTemplateErrText(c, err)))
 		return
 	}
-	if _, err = h.templates.Create(c.Request.Context(), &contenttemplatedto.CreateReq{
+	if _, err = h.templates.Create(c.Request.Context(), &contenttemplatecontract.CreateReq{
 		EntityType: productEntityType, Name: name, DraftDocument: doc, ProjectID: projectID,
 	}); err != nil {
 		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateTemplateErrText(c, err)))
@@ -250,7 +253,7 @@ func (h *productPageHandle) templateDocument(ctx context.Context, projectID, tem
 		}
 		id = tpl.TemplateID
 	}
-	res, gerr := h.templates.Get(ctx, &contenttemplatedto.GetReq{ID: id})
+	res, gerr := h.templates.Get(ctx, &contenttemplatecontract.GetReq{ID: id})
 	if gerr != nil {
 		return nil, gerr
 	}
@@ -266,7 +269,7 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 	}
 	projectID := c.PostForm("projectId")
 	productID := c.PostForm("productId")
-	req := &presentationdto.CreateInstanceReq{
+	req := &presentationcontract.CreateInstanceReq{
 		ProjectID: projectID, EntityType: productEntityType, EntityID: productID,
 		TemplateID: strings.TrimSpace(c.PostForm("templateId")),
 		URLPath:    strings.TrimSpace(c.PostForm("urlPath")),
@@ -307,7 +310,7 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 			shell.TranslateFor(c)(productDetailTemplatePathRequiredKey, productDetailTemplatePathRequiredFallback)))
 		return
 	}
-	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationdto.UpdateURLReq{
+	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationcontract.UpdateURLReq{
 		EntityType:   productEntityType,
 		EntityID:     productID,
 		NewPath:      newPath,
@@ -328,7 +331,7 @@ func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 	}
 	projectID := c.PostForm("projectId")
 	productID := c.PostForm("productId")
-	if _, err := h.instances.Rebuild(c.Request.Context(), &presentationdto.RebuildReq{
+	if _, err := h.instances.Rebuild(c.Request.Context(), &presentationcontract.RebuildReq{
 		EntityID: productID, TemplateID: strings.TrimSpace(c.PostForm("templateId")),
 	}); err != nil {
 		c.Redirect(http.StatusFound, h.detailTemplateBackURL(projectID, productID, detailTemplateFacingError(c, err)))
@@ -347,7 +350,7 @@ func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
-	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
+	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
 		ProjectID: c.PostForm("projectId"), EntityType: productEntityType,
 		EntityID: c.PostForm("productId"), TemplateID: strings.TrimSpace(c.PostForm("templateId")),
 	})

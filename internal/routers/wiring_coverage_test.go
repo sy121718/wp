@@ -97,3 +97,76 @@ func TestEverySetterCallIsInWiringManifest(t *testing.T) {
 	}
 	t.Logf("已核对 %d 个 Set* 调用；manifest 端口 %d 条", len(found), len(wiringManifest))
 }
+
+// TestRuntimeFragDepsFieldsMatchWiringManifest — runtimefragment 收敛（N setter → 1 SetDependencies）
+// 的配套判据，补上上面那条扫描看不见的那一半。
+//
+// 收敛把 21 个 `runtimefragment.SetXxxProvider(v)` 调用换成了 `a.fragDeps.X = v` **赋值语句**，
+// 而上面的扫描只看 CallExpr。于是出现一个新空洞：若将来「加了 Deps 字段 + manifest 条目 +
+// marks.mark，却忘了在装配里赋值」，启动自检（marks 齐）会通过，直到运行到该片段才 nil panic。
+// 本测试把这段覆盖补回来：
+//
+//	① manifest 里 `runtimefragment.SetDependencies.<字段>` 的字段集合
+//	   ↔ 装配代码里真正被赋值的 `a.fragDeps.<字段>` 集合，**双向一致**；
+//	② 两侧都必须非空 —— 一侧被清空时判据必须报错，不许静默通过（判据失效比判据不全更糟）。
+func TestRuntimeFragDepsFieldsMatchWiringManifest(t *testing.T) {
+	const prefix = "runtimefragment.SetDependencies."
+
+	manifest := map[string]bool{}
+	for _, e := range wiringManifest {
+		if strings.HasPrefix(e.Port, prefix) {
+			manifest[strings.TrimPrefix(e.Port, prefix)] = true
+		}
+	}
+
+	assigned := map[string]string{} // 字段名 → 首次出现的文件
+	fset := token.NewFileSet()
+	for _, f := range []string{"assembly.go", "assembly_publish.go"} {
+		parsed, perr := parser.ParseFile(fset, f, nil, 0)
+		if perr != nil {
+			t.Fatalf("解析 %s 失败: %v", f, perr)
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for _, lhs := range assign.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+				recv, ok := sel.X.(*ast.SelectorExpr)
+				if !ok || recv.Sel.Name != "fragDeps" {
+					continue
+				}
+				if _, seen := assigned[sel.Sel.Name]; !seen {
+					assigned[sel.Sel.Name] = f
+				}
+			}
+			return true
+		})
+	}
+
+	if len(manifest) == 0 || len(assigned) == 0 {
+		t.Fatalf("判据失效：manifest 侧 %d 条、装配侧 %d 条（两侧都必须非空）", len(manifest), len(assigned))
+	}
+	var missing, extra []string
+	for field := range manifest {
+		if _, ok := assigned[field]; !ok {
+			missing = append(missing, prefix+field)
+		}
+	}
+	for field, file := range assigned {
+		if !manifest[field] {
+			extra = append(extra, field+" ("+file+")")
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	if len(missing) > 0 || len(extra) > 0 {
+		t.Fatalf("runtimefragment 端口注入与 manifest 不一致：\n  manifest 有、装配里未赋值：%v\n  装配里赋了值、manifest 没有：%v",
+			missing, extra)
+	}
+	t.Logf("已核对 %d 个 runtimefragment 端口字段（manifest ↔ a.fragDeps.<字段> 双向一致）", len(manifest))
+}

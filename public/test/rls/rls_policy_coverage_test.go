@@ -24,6 +24,7 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/public/migrations"
+	"go_wp/public/test/support"
 )
 
 // noRLSPolicyTables 允许「有 project_id 但不装 RLS」的表，逐条写理由。
@@ -109,16 +110,19 @@ func coverageFixture(t *testing.T) *gorm.DB {
 	t.Helper()
 	admin, err := gorm.Open(postgres.Open(pgDSN(pgEnv("PGDATABASE", "wp_test"))), &gorm.Config{})
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return nil
 	}
 	adminSQL, err := admin.DB()
 	if err != nil {
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("取管理连接失败：%v", err)
 		return nil
 	}
 	if err := adminSQL.Ping(); err != nil {
 		adminSQL.Close()
+		support.FailIfRequiredPG(t, err)
 		t.Skipf("本地 PostgreSQL 不可用：%v", err)
 		return nil
 	}

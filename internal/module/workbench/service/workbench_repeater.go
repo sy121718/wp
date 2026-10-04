@@ -1,6 +1,6 @@
-package workbenchhttp
+package service
 
-// inspector_repeater.go — 重复项面板的服务端骨架（折叠项 / 页签）。
+// workbench_repeater.go — 重复项面板的服务端骨架（折叠项 / 页签）。
 //
 // 面板 HTML 在这里生成，不再由浏览器拼 DOM：结构只有一处定义。客户端只做事件委托
 // （改条目名、上移、下移、删除、添加）；需要读写文档 AST 的那一半（对齐语义 ——
@@ -70,11 +70,11 @@ func repeaterRowsOf(props map[string]any, spec *core.AlignedRepeaterSpec) []repe
 // panelCount 是画布上对应的面板节点数：两者不一致时给红色提示（历史脏数据或直接在
 // 画布上增删面板都可能造成不一致），让用户保存前就知道会被校验拦下。
 //
-// tr 是「key → 当前语言文案」的取词函数（workbenchTrFunc）：本文件的 HTML 由 Go 拼串产出，
+// tr 是「key → 当前语言文案」的取词函数：本文件的 HTML 由 Go 拼串产出，
 // 模板只做 `|unsafe` 插槽，所以按钮提示与数量说明必须在这里取词。
 // spec.Noun（项名，如「折叠项」）来自组件声明（builder/core），不属于本模块的文案，
 // 作为占位符 {noun} 填进已翻译的句子 —— 译文语序与中文不同也不会错位。
-func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int, tr func(key string) string) string {
+func renderRepeaterHTML(spec *core.AlignedRepeaterSpec, rows []repeaterRow, panelCount int, tr Translate) string {
 	var b strings.Builder
 	b.WriteString(`<div class="wb-repeater" data-wb-rep="` + html.EscapeString(spec.Type) +
 		`" data-wb-rep-field="` + html.EscapeString(spec.Field) + `">`)
@@ -145,10 +145,10 @@ func repeaterButton(text, title, op string, index int, to, cls string) string {
 	return s + ` title="` + html.EscapeString(title) + `">` + html.EscapeString(text) + `</button>`
 }
 
-// appendRepeaterPanel 把重复项面板的服务端骨架挂进「内容」分组末尾。
+// AppendRepeaterPanel 把重复项面板的服务端骨架挂进「内容」分组末尾。
 //
 // 只出结构 —— 行为留在客户端（repeater.js 的 bindRepeaterPanel）。
-func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[string]any, tab string, tr func(key string) string) []inspectorSection {
+func AppendRepeaterPanel(sections []InspectorSection, node *DocNode, props map[string]any, tab string, tr Translate) []InspectorSection {
 	if tab == "style" || tab == "motion" {
 		return sections
 	}
@@ -156,7 +156,7 @@ func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[s
 	if spec == nil {
 		return sections
 	}
-	field := inspectorField{
+	field := InspectorField{
 		Key:  "__repeater",
 		HTML: renderRepeaterHTML(spec, repeaterRowsOf(props, spec), len(node.Children), tr),
 	}
@@ -169,5 +169,5 @@ func appendRepeaterPanel(sections []inspectorSection, node *docNode, props map[s
 	// 组件没有内容分组时补一个：tabs 的字段全在样式里（竖向 / 对齐 / 配色），
 	// 但「页签列表」本身是内容 —— 挂在样式分组里位置不对。
 	// content 是分组顺序表 inspectorSectionOrder 的第一项，前置插入即可。
-	return append([]inspectorSection{{Key: "content", Title: tr(workbenchenums.InspectorSectionContent), Open: true, Fields: []inspectorField{field}}}, sections...)
+	return append([]InspectorSection{{Key: "content", Title: tr(workbenchenums.InspectorSectionContent), Open: true, Fields: []InspectorField{field}}}, sections...)
 }
