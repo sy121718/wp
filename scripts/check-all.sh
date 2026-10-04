@@ -42,6 +42,7 @@ PLAIN_SCRIPTS=(
   check-workbench.sh
   check-contract-deps.sh
   check-dto-immutability.sh
+  check-static-scans.sh
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。
