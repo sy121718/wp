@@ -183,6 +183,10 @@ func init() {
 	registerDashboardOverviewI18n()
 	// 541：模型工具调用流水表 ai_tool_call_log（见 register_ai_tool_call_log.go）。
 	registerAIToolCallLog()
+	// 542：对外访问令牌表 ai_access_token（见 register_ai_access_token.go）。
+	registerAIAccessToken()
+	// 543：对外访问令牌的词条（见 register_ai_token_i18n.go）。
+	registerAITokenI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

@@ -58,6 +58,11 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	// 调用流水的读侧（悬浮卡的「最近调用」）。
 	sessionSvc.SetCallLogReader(callLog)
 	sessionHandle := NewSessionHandle(sessionSvc)
+	// 对外访问令牌（PAT）：签发 / 列表 / 撤销。
+	// 权限点的**存在性**校验由装配层注入（service 层不 import permission 包，与工具判权限同纪律）。
+	tokenSvc := aiservice.NewAccessTokenService(aimodel.NewAccessTokenModel(db))
+	tokenSvc.SetScopeValidator(func(p string) bool { return permission.Known(permission.Perm(p)) })
+	tokenHandle := NewTokenHandle(tokenSvc)
 	g := authorizedAPI.Group("/ai")
 
 	// 权限口径：一码一路由（sys_permission 的 permission_code 唯一），配置面按资源逐个列点。
@@ -87,6 +92,11 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 
 	// 对话入口：一次请求一个模型，权限点独立。
 	g.POST("/chat", permission.AIChat, handle.Chat)
+
+	// 对外访问令牌：一码一路由（列表 / 签发 / 撤销各一个权限点）。
+	g.GET("/token/list", permission.AITokenList, tokenHandle.List)
+	g.POST("/token/create", permission.AITokenCreate, tokenHandle.Create)
+	g.POST("/token/revoke", permission.AITokenRevoke, tokenHandle.Revoke)
 
 	if adminPages != nil {
 		page := NewPageHandle(svc)

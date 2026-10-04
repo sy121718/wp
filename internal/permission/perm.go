@@ -103,6 +103,57 @@ func Declare(method, path string, p Perm) {
 	declared = append(declared, RouteSpec{Method: method, Path: path, Perm: p, Module: s.module, Name: s.name})
 }
 
+// Known 判断权限点是否已在常量表（codes.go 的 specs）里登记。
+//
+// 用途：**外部输入**里的权限点要先过这一关 —— 令牌的 scope、配置里的权限点清单都来自
+// 字符串数组，拼错的字面量（"order:lst"）或已下线的旧值必须当场拒掉。
+// 静默忽略的代价是「生成了一个比申请人以为的更弱的令牌」，问题要到第一次调用时才暴露。
+//
+// 注意它不看声明表（declared）：声明发生在装配期，而这一步是**校验输入**，
+// 判据应该是「这个权限点存在吗」而不是「它现在挂上路由了吗」。
+func Known(p Perm) bool {
+	if p == Exempt {
+		return false
+	}
+	_, ok := specs[p]
+	return ok
+}
+
+// Label 返回权限点的中文名与所属模块（未登记时 ok=false）。
+//
+// 供后台把权限点渲染成可读的选项（令牌 scope 选择器、角色授权树）——
+// 让调用方去读 codes.go 的私有 map 是不可能的，而把中文名抄进调用方就是第二份真源。
+func Label(p Perm) (module, name string, ok bool) {
+	sp, ok := specs[p]
+	if !ok {
+		return "", "", false
+	}
+	return sp.module, sp.name, true
+}
+
+// All 返回全部已登记的权限点（按模块 + 中文名排序，顺序稳定）。
+//
+// 排序固定是为了**展示与比对都可复现**：渲染成选项列表时顺序不该随 map 遍历变化，
+// 用例断言清单时也不该需要先排序。
+func All() []Perm {
+	out := make([]Perm, 0, len(specs))
+	for p := range specs {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		mi, ni, _ := Label(out[i])
+		mj, nj, _ := Label(out[j])
+		if mi != mj {
+			return mi < mj
+		}
+		if ni != nj {
+			return ni < nj
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
 // RoutesOf 返回声明了权限点 p 的路由（按 路径 + 方法 排序，结果稳定）。
 //
 // 用途：**没有 HTTP 请求上下文**的调用点（AI 工具、后台任务、导出）手里只有权限点，

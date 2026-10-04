@@ -706,6 +706,12 @@ const (
 	AISessionFold Perm = "ai:session_fold"
 	// AI 对话入口（POST /api/ai/chat）
 	AIChat Perm = "ai:chat"
+	// 外部访问令牌列表（GET /api/ai/tokens）
+	AITokenList Perm = "ai:token_list"
+	// 签发外部访问令牌（POST /api/ai/tokens）
+	AITokenCreate Perm = "ai:token_create"
+	// 撤销外部访问令牌（POST /api/ai/tokens/revoke）
+	AITokenRevoke Perm = "ai:token_revoke"
 )
 
 // specs 权限点元数据：中文名与所属模块。启动期 upsert 时写进 sys_permission 的
@@ -1084,4 +1090,7 @@ var specs = map[Perm]spec{
 	AISessionArchive:        {module: "ai", name: "归档会话"},
 	AISessionFold:           {module: "ai", name: "折叠会话"},
 	AIChat:                  {module: "ai", name: "对话入口"},
+	AITokenList:             {module: "ai", name: "外部访问令牌查看"},
+	AITokenCreate:           {module: "ai", name: "外部访问令牌签发"},
+	AITokenRevoke:           {module: "ai", name: "外部访问令牌撤销"},
 }
