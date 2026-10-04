@@ -506,7 +506,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 自己装配时注册（见下面订单模块那段）—— 顺序无关，是因为注册表只在**运行期**被读
 	//（第一次读一定晚于全部装配），而不是因为「恰好 AI 排在最后」。
 	// 第五个参数是根路由：外部接入点挂在 /mcp（不是 /api/mcp），自带 PAT 鉴权。
-	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router)
+	aihttp.SetupAIRoutes(authorizedAPI, a.adminPages, db, a.tools(), router, a.sysConfigSvc)
 
 	mediaSvc := mediahttp.SetupMediaRoutes(authorizedAPI, db)
 	projectService := projecthttp.SetupProjectRoutes(authorizedAPI, db, a.sysConfigDict)

@@ -13,6 +13,7 @@
 package aihttp
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -24,8 +25,10 @@ import (
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aiservice "go_wp/internal/module/ai/service"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
 	"go_wp/internal/web/shell"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
 
@@ -41,12 +44,19 @@ const (
 type McpPageHandle struct {
 	tokens   *aiservice.AccessTokenService
 	registry *mcp.Registry
+	config   sysconfigcontract.Service
 }
 
 // NewMcpPageHandle 构造。
 func NewMcpPageHandle(tokens *aiservice.AccessTokenService, registry *mcp.Registry) *McpPageHandle {
 	return &McpPageHandle{tokens: tokens, registry: registry}
 }
+
+// SetConfigService 注入配置读写口（开关对外接入点用）。
+//
+// 用完整 Service 而不是只读口：这一页既要**显示**开关状态，也要**改**它。
+// 端点那边只拿只读口（它只需要判断可达性）—— 同一个模块的两处边界不必一样宽。
+func (h *McpPageHandle) SetConfigService(s sysconfigcontract.Service) { h.config = s }
 
 // Page GET /admin/ai/mcp → 整页。
 func (h *McpPageHandle) Page(c *gin.Context) {
@@ -118,8 +128,15 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 	}
 
 	// 整页进入时用 query 回执（页面 URL 可分享、刷新不丢）；片段进入时由调用方直接给。
-	if doneText == "" && c.Query("done") == "1" {
-		doneText = t("admin.ai.mcp.token.revokeDone", "已撤销该令牌（立即失效）")
+	if doneText == "" {
+		switch c.Query("done") {
+		case "1":
+			doneText = t("admin.ai.mcp.token.revokeDone", "已撤销该令牌（立即失效）")
+		case "on":
+			doneText = t("admin.ai.mcp.switch.onDone", "已开启对外接入点（最迟 5 秒后生效）")
+		case "off":
+			doneText = t("admin.ai.mcp.switch.offDone", "已关闭对外接入点（最晚 5 秒后对任何请求回 404）")
+		}
 	}
 	if q := strings.TrimSpace(c.Query("err")); q != "" && errText == "" {
 		errText = t(q, q)
@@ -138,7 +155,68 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 		"NewToken":     newToken,
 		"ErrText":      errText,
 		"DoneText":     doneText,
+		"McpEnabled":   h.mcpEnabled(ctx),
 	})
+}
+
+// mcpEnabled 读对外接入点的当前开关（读不到按关闭 —— 与端点那边的判定同一口径）。
+//
+// 页面**必须**如实显示：这里是运维判断「外面能不能进来」的唯一地方，
+// 显示成「已开启」而实际关闭（或反过来）比不显示更糟。
+func (h *McpPageHandle) mcpEnabled(ctx context.Context) bool {
+	if h.config == nil {
+		return false
+	}
+	g, err := h.config.GetGroup(ctx, sysconfigcontract.GroupAI)
+	if err != nil || g == nil {
+		return false
+	}
+	on, _ := g.Data[sysconfigcontract.KeyMCPEnabled].(bool)
+	return on
+}
+
+// McpToggle POST /admin/ai/mcp/toggle：开关对外接入点。
+//
+// 走 PRG：这个动作改变的是**全站**的可达性，重放一次语义完全不同
+// （「再关一次」和「关掉」在用户眼里是两件事），所以不留在 POST 的响应里。
+//
+// 读-改-写整组：只改 mcp_enabled 这一个键，其余键原样带回（这一组将来还会有别的开关），
+// 并带上读到的 Version 走乐观锁 —— 两个人同时点，后一个会被拒绝而不是覆盖对方。
+func (h *McpPageHandle) McpToggle(c *gin.Context) {
+	if h.config == nil {
+		c.Redirect(http.StatusFound, mcpPagePath+"?err="+aienums.ErrInternal)
+		return
+	}
+	on := c.PostForm("enabled") == "1"
+	ctx := c.Request.Context()
+	g, err := h.config.GetGroup(ctx, sysconfigcontract.GroupAI)
+	if err != nil {
+		c.Redirect(http.StatusFound, mcpPagePath+"?err="+aienums.ErrInternal)
+		return
+	}
+	data := make(map[string]any, len(g.Data)+1)
+	for k, v := range g.Data {
+		data[k] = v
+	}
+	data[sysconfigcontract.KeyMCPEnabled] = on
+	if _, err := h.config.SetGroup(ctx, &sysconfigcontract.SetGroupReq{
+		GroupKey: sysconfigcontract.GroupAI,
+		Data:     data,
+		Version:  g.Version,
+		UpdateBy: userID(c),
+	}); err != nil {
+		// 内部错误只进日志：它可能带表名、SQL 与约束名，而它会出现在 URL 上
+		// （浏览器历史、访问日志、Referer 都留一份）。对外给归口文案 ——
+		// 用户此刻要做的是刷新重试，不是读一段数据库报错。
+		logger.Scene("ai").With("group", sysconfigcontract.GroupAI).Error(err, "保存对外接入点开关失败")
+		c.Redirect(http.StatusFound, mcpPagePath+"?err="+aienums.ErrInternal)
+		return
+	}
+	if on {
+		c.Redirect(http.StatusFound, mcpPagePath+"?done=on")
+		return
+	}
+	c.Redirect(http.StatusFound, mcpPagePath+"?done=off")
 }
 
 // mcpEndpointURL 拼出接入地址（用当前请求的 scheme + host）。

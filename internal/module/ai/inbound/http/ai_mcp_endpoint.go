@@ -29,6 +29,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,7 @@ import (
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 )
@@ -68,12 +70,26 @@ const (
 // 与 ToolProvider / ScopeValidator 同一纪律 —— 装配层才知道用哪套权限系统。
 type AccountAuthorizer func(ctx context.Context, userID int64, perm permission.Perm) (bool, error)
 
+// mcpEnabledTTL 开关判定的缓存时长。
+//
+// 为什么缓存：这是每个请求都要做的一次判断，而它改动的频率是「人手点一下」。
+// 5 秒意味着关掉开关后最坏 5 秒生效 —— 比一次库查询便宜得多，也不至于让「刚关掉」看起来没生效。
+// 不做推送式即时失效：多副本部署下那需要一条广播通道，收益配不上复杂度。
+const mcpEnabledTTL = 5 * time.Second
+
 // McpEndpoint 外部接入点。
 type McpEndpoint struct {
 	tokens    *aiservice.AccessTokenService
 	registry  *mcp.Registry
 	recorder  *aiservice.ToolCallRecorder
 	authorize AccountAuthorizer
+	config    sysconfigcontract.ConfigReader
+
+	// 开关判定的短缓存（见 mcpEnabledTTL）。锁只护这两个字段，不进任何 I/O 的临界区
+	// —— 锁里做的唯一一件事是读配置，而它是我们自己的库查询。
+	enabledMu    sync.Mutex
+	enabledValue bool
+	enabledUntil time.Time
 }
 
 // NewMcpEndpoint 构造；tokens / registry 任一为 nil 时端点回 503（装配缺陷要看得见，而不是静默空工具集）。
@@ -83,6 +99,35 @@ func NewMcpEndpoint(tokens *aiservice.AccessTokenService, registry *mcp.Registry
 
 // SetAccountAuthorizer 替换账号权限判定端口（默认走 Casbin；用例与测试环境注入替身）。
 func (e *McpEndpoint) SetAccountAuthorizer(a AccountAuthorizer) { e.authorize = a }
+
+// SetConfigReader 注入配置读取口。
+//
+// **不注入 = 关闭**：外部接入点没有「默认开着」这一说。装配漏了这一句，
+// 结果是「端点不可达」，而不是「端点对全网可达」—— 这两种失败方式的代价差着量级。
+func (e *McpEndpoint) SetConfigReader(r sysconfigcontract.ConfigReader) { e.config = r }
+
+// enabled 读「对外接入点是否启用」。
+//
+// fail closed 的四处：没注入读取口 / 组读不到 / 组里没有这个键 / 值不是布尔 true —— 全按关闭。
+// 任何一处「读不出来就当成开着」的写法，都会把一次配置读取故障变成一次对外暴露。
+func (e *McpEndpoint) enabled(ctx context.Context) bool {
+	if e.config == nil {
+		return false
+	}
+	e.enabledMu.Lock()
+	defer e.enabledMu.Unlock()
+	if time.Now().Before(e.enabledUntil) {
+		return e.enabledValue
+	}
+	on := false
+	if g, err := e.config.GetGroup(ctx, sysconfigcontract.GroupAI); err == nil && g != nil {
+		if v, ok := g.Data[sysconfigcontract.KeyMCPEnabled].(bool); ok {
+			on = v
+		}
+	}
+	e.enabledValue, e.enabledUntil = on, time.Now().Add(mcpEnabledTTL)
+	return on
+}
 
 // rpcRequest 一条 JSON-RPC 请求。ID 用 RawMessage 原样保留（数字/字符串都要能回对）。
 type rpcRequest struct {
@@ -101,6 +146,12 @@ type rpcError struct {
 
 // Handle POST /mcp。
 func (e *McpEndpoint) Handle(c *gin.Context) {
+	// 开关先于认证：关着的时候连「令牌对不对」都不回答。
+	// 回 404 而不是 403 —— 探测者不该从响应里知道「这里有个可以打开的东西」。
+	if !e.enabled(c.Request.Context()) {
+		c.Status(http.StatusNotFound)
+		return
+	}
 	// 认证：先于协议解析。未认证的请求不该得到「方法不存在」这类协议层信息。
 	identity, err := e.authenticate(c)
 	if err != nil {

@@ -12,6 +12,7 @@ package feature
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
 	"go_wp/public/test/support"
 )
@@ -46,7 +48,14 @@ func echoTool() mcp.Tool {
 // newMCPEngine 挂一个 /mcp 端点，返回 engine 与**一次性明文令牌**。
 //
 // accountAllowed 是「账号自身是否仍有某权限点」的替身（真实装配下走 Casbin）。
+// newMCPEngine 协议用例的起点：开关**已开启**（默认是关闭的，见 ai_router.go 的注入）。
 func newMCPEngine(t *testing.T, scopes []string, accountAllowed func(permission.Perm) bool) (*gin.Engine, string) {
+	t.Helper()
+	return newMCPEngineCfg(t, scopes, accountAllowed, stubMCPConfig{enabled: true})
+}
+
+// newMCPEngineCfg 与 newMCPEngine 同，但开关由调用方给。
+func newMCPEngineCfg(t *testing.T, scopes []string, accountAllowed func(permission.Perm) bool, cfg sysconfigcontract.ConfigReader) (*gin.Engine, string) {
 	t.Helper()
 	db := support.NewMigratedPGTestDB(t)
 	// 模板库只含**结构迁移**（seed 建的表不在里面），要按应用启动路径再跑一遍种子 ——
@@ -71,6 +80,12 @@ func newMCPEngine(t *testing.T, scopes []string, accountAllowed func(permission.
 	endpoint.SetAccountAuthorizer(func(_ context.Context, _ int64, perm permission.Perm) (bool, error) {
 		return accountAllowed(perm), nil
 	})
+	// 开关：默认关闭，所以协议用例要显式打开它才测得到协议本身。
+	// 用假 reader 而不是真 sysconfig：这一组用例测的是端点协议，配置读写是另一批的事。
+	// cfg 为 nil 就是「不注入」，走的是「装配漏了」那条路径。
+	if cfg != nil {
+		endpoint.SetConfigReader(cfg)
+	}
 
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -297,4 +312,80 @@ func errorMessage(out map[string]any) string {
 	}
 	msg, _ := errObj["message"].(string)
 	return msg
+}
+
+// stubMCPConfig 假配置读取口：只回答「对外接入点开没开」。
+//
+// 端点只依赖 ConfigReader 这一条窄口（见 ai_mcp_endpoint.go 的 SetConfigReader），
+// 所以这里给一个假的就够，不必为测协议起一整套配置读写。
+type stubMCPConfig struct {
+	enabled bool
+	// failing 为真时 GetGroup 报错，用来钉住「读配置失败 = 关闭」这条 fail-closed。
+	failing bool
+}
+
+func (s stubMCPConfig) GetGroup(_ context.Context, key string) (*sysconfigcontract.Group, error) {
+	if key != sysconfigcontract.GroupAI {
+		return nil, sysconfigcontract.ErrGroupNotFound
+	}
+	if s.failing {
+		return nil, errors.New("配置读取故障")
+	}
+	return &sysconfigcontract.Group{
+		Key:  key,
+		Data: map[string]any{sysconfigcontract.KeyMCPEnabled: s.enabled},
+	}, nil
+}
+
+// newMCPEngineNoConfig 与 newMCPEngine 同，但**不注入**配置读取口。
+func newMCPEngineNoConfig(t *testing.T, scopes []string, accountAllowed func(permission.Perm) bool) (*gin.Engine, string) {
+	t.Helper()
+	return newMCPEngineCfg(t, scopes, accountAllowed, nil)
+}
+
+// TestMCPEndpointClosedByDefault 没注入读取口时端点不可达，且**回 404 无体**。
+//
+// 这是 docs/17 P8 那句「`/mcp` 默认关闭，显式开启才生效」的机械保证：
+// 装配漏了 SetConfigReader，代价必须是「打不开」，而不是「对全网开着」。
+// 回 404 而不是 403 且不带正文：探测者不该从响应里知道这里有个可以打开的东西。
+func TestMCPEndpointClosedByDefault(t *testing.T) {
+	e, token := newMCPEngineCfg(t, []string{string(permission.OrderList)}, func(permission.Perm) bool { return true }, stubMCPConfig{})
+	if !closedByDefault(t, e, token) {
+		t.Fatal("未注入配置读取口时端点必须不可达")
+	}
+
+	// 不注入的形态单独走一遍（上面用的是「注入了但值为 false」）。
+	e2, token2 := newMCPEngineNoConfig(t, []string{string(permission.OrderList)}, func(permission.Perm) bool { return true })
+	if !closedByDefault(t, e2, token2) {
+		t.Fatal("不注入配置读取口时端点必须不可达")
+	}
+}
+
+// TestMCPEndpointClosedWhenConfigFails 读配置出错也按关闭（fail closed）。
+func TestMCPEndpointClosedWhenConfigFails(t *testing.T) {
+	e, token := newMCPEngineCfg(t, []string{string(permission.OrderList)}, func(permission.Perm) bool { return true }, stubMCPConfig{failing: true})
+	if !closedByDefault(t, e, token) {
+		t.Fatal("配置读取失败时必须按关闭处理")
+	}
+}
+
+// closedByDefault 断言端点对已认证请求回 404 且无体。
+func closedByDefault(t *testing.T, e *gin.Engine, token string) bool {
+	t.Helper()
+	code, _ := rpcCall(t, e, token, `{"jsonrpc":"2.0","id":1,"method":"initialize"}`)
+	if code != http.StatusNotFound {
+		t.Errorf("关闭时应回 404，实得 %d", code)
+		return false
+	}
+	// 复跑一次拿原始体（rpcCall 会把空体当 {}）。
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if strings.TrimSpace(w.Body.String()) != "" {
+		t.Errorf("关闭时不该回任何内容：%s", w.Body.String())
+		return false
+	}
+	return true
 }

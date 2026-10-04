@@ -111,6 +111,22 @@ const (
 	// 订单与购物车的金额口径仍是固定人民币，多币种是独立特性（见
 	// pkg/i18n.RuntimeValues.DefaultCurrency 的注释）。
 	GroupTrade = "trade"
+	// GroupAI AI 模块的全局开关组。
+	//
+	// 为什么走 sysconfig 而不是 config.yaml：这里放的是**安全开关**（对外接入点 /
+	// 外部工具调用），发现异常流量时第一反应是关掉它 —— 而改 config.yaml 要重启进程，
+	// 关窗口的代价不该是一次重启。
+	GroupAI = "ai"
+)
+
+// ai 组的组内键名。
+const (
+	// KeyMCPEnabled 是否对外暴露 MCP 接入点（POST /mcp）。
+	//
+	// **默认关闭**：它是本站数据对外的出口，必须由人显式打开才可达 ——
+	// 读不到配置、组不存在、值不是 true，一律按关闭处理（fail closed）。
+	// 关闭时端点回 404 而不是 403：探测者不该从响应里知道「这里有个可以打开的东西」。
+	KeyMCPEnabled = "mcp_enabled"
 )
 
 // i18n 组的组内键名（业务语义键，由消费方解释）。

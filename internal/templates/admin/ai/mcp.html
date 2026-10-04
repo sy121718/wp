@@ -34,6 +34,20 @@
             <p><code>{{.Endpoint}}</code></p>
             <p class="form-hint">{{tr("admin.ai.mcp.endpoint.auth", "请求头：Authorization: Bearer 你的令牌")}}</p>
             <p class="form-hint">{{tr("admin.ai.mcp.scope.hint", "令牌只能调用它声明、且账号自身仍有权限的工具；两者取交集，缺一不可。")}}</p>
+
+            {* 开关：默认关闭。它是本站数据对外的出口，必须由人显式打开 ——
+               关闭时端点对任何请求都回 404（不是 403：探测者不该知道这里有个可以打开的东西）。 *}
+            <div class="action-row">
+                <span class="badge{{if .McpEnabled}} badge-success{{else}} badge-mute{{end}}">{{if .McpEnabled}}{{tr("admin.ai.mcp.switch.on", "已开启")}}{{else}}{{tr("admin.ai.mcp.switch.off", "已关闭")}}{{end}}</span>
+                <form method="post" action="/admin/ai/mcp/toggle">
+                    <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
+                    <input type="hidden" name="enabled" value="{{if .McpEnabled}}0{{else}}1{{end}}">
+                    <button type="submit" class="btn btn-sm{{if .McpEnabled}} btn-danger{{else}} btn-primary{{end}}"{{if not .McpEnabled}} data-confirm="{{tr("admin.ai.mcp.switch.confirm", "确认开启对外接入？开启后，持有令牌的外部客户端可以读取本站业务数据。")}}"{{end}}>
+                        {{if .McpEnabled}}{{tr("admin.ai.mcp.switch.disable", "关闭接入")}}{{else}}{{tr("admin.ai.mcp.switch.enable", "开启接入")}}{{end}}
+                    </button>
+                </form>
+            </div>
+            <p class="form-hint">{{tr("admin.ai.mcp.switch.hint", "默认关闭。开关改动最迟 5 秒后对请求生效；关闭后端点对任何请求都返回 404。")}}</p>
         </div>
     </section>
 

@@ -46,6 +46,9 @@ func pageDataFor(tokens []tokenRow, tools []toolRow, newToken string) gin.H {
 		"NewToken":     newToken,
 		"ErrText":      "",
 		"DoneText":     "",
+		// 开关默认关闭：这是 P8 的口径（「`/mcp` 默认关闭，显式开启才生效」），
+		// 用例要测开启态就自己把它改成 true。
+		"McpEnabled": false,
 	}
 }
 
@@ -180,4 +183,39 @@ func TestScopeOptionsDedupAndSort(t *testing.T) {
 		t.Errorf("registry 为空应返回空列表: %+v", opt)
 	}
 	var _ = json.RawMessage(nil)
+}
+
+// TestMcpPageRendersSwitch 开关状态如实渲染。
+//
+// 这一页是运维判断「外面能不能进来」的唯一地方：显示成「已开启」而实际关闭
+// （或反过来）比不显示更糟 —— 所以两个态各断言一遍，并且断言状态确实传到了表单里
+// （按钮提交的 enabled 值必须与当前状态相反，否则点一下等于什么都不做）。
+func TestMcpPageRendersSwitch(t *testing.T) {
+	off := renderPage(t, "admin/ai/mcp", pageDataFor(nil, nil, ""))
+	for _, want := range []string{
+		`action="/admin/ai/mcp/toggle"`,
+		"已关闭",
+		"开启接入",
+		`name="enabled" value="1"`, // 关闭态 → 点下去是开启
+		"data-confirm",             // 开启会带来对外暴露，必须先确认
+	} {
+		if !strings.Contains(off, want) {
+			t.Errorf("关闭态缺少 %q", want)
+		}
+	}
+
+	onData := pageDataFor(nil, nil, "")
+	onData["McpEnabled"] = true
+	on := renderPage(t, "admin/ai/mcp", onData)
+	for _, want := range []string{"已开启", "关闭接入", `name="enabled" value="0"`} {
+		if !strings.Contains(on, want) {
+			t.Errorf("开启态缺少 %q", want)
+		}
+	}
+	if strings.Contains(on, "开启接入") {
+		t.Error("开启态不该渲染「开启接入」按钮（状态传错了）")
+	}
+	if strings.Contains(on, "data-confirm") {
+		t.Error("关闭动作不需要二次确认（它只收紧权限）")
+	}
 }

@@ -195,6 +195,10 @@ func init() {
 	registerAIMcpI18nAuth()
 	// 547：会话详情区的词条（见 register_ai_session_detail_i18n.go）。
 	registerAISessionDetailI18n()
+	// 548：AI 模块的全局开关组（见 register_ai_config_group.go）。
+	registerAIConfigGroup()
+	// 549：对外接入点开关的词条（见 register_ai_mcp_switch_i18n.go）。
+	registerAIMcpSwitchI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
