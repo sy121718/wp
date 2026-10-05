@@ -921,6 +921,21 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(productTools...); err != nil {
 		panic("商品工具注册失败：" + err.Error())
 	}
+	// 变体（SKU）的三个写工具（variant_create / variant_update / variant_delete）。
+	//
+	// 与商品主体分开：products 一行是「这东西是什么」，product_variants 一行是
+	// 「它的哪个版本、卖多少钱、库存挂哪」—— 用户说「加个蓝色的」「改成 99 块」
+	// 说的都是变体。窄接口刻意不含 GenerateVariants（按属性笛卡尔积批量造变体，
+	// 会覆盖既有 SKU 的价格与库存口径）与 UpdateVariantCost（连锁影响毛利与定价规则）。
+	variantWriter, variantWriteOK := a.productSvc.(productmcp.VariantWriter)
+	if !variantWriteOK {
+		panic("商品模块未实现变体写工具所需的三个方法，装配缺陷")
+	}
+	if variantTools, err := productmcp.VariantWriteTools(variantWriter); err != nil {
+		panic("商品变体写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(variantTools...); err != nil {
+		panic("商品变体写工具注册失败：" + err.Error())
+	}
 	// 媒体模块的工具（搜 + 读 + 改信息 + 删）。
 	//
 	// 没有「上传」与「换图」：那两条收的是 multipart 文件，模型给不出。
