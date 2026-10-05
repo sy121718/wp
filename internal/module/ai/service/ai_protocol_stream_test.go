@@ -167,3 +167,49 @@ func TestStreamResponsesEvents(t *testing.T) {
 		t.Fatalf("结束事件的用量没读到：%+v", reply.Usage)
 	}
 }
+
+// TestStreamResponsesCollectsToolCalls 钉住一处**静默**缺陷：responses 族的工具调用
+// 在 response.completed 的 response.output[] 里，不在顶层。
+//
+// 只在顶层找 output 的症状是：模型说一句「正在为你定位本店工程，查到后立即跟进」
+// 然后就没有下文 —— 会话层看到的这一轮「没有任何工具调用」，于是直接收尾。
+// 不报错、日志干净、界面正常，唯一的现象是它从来不真的查数。
+func TestStreamResponsesCollectsToolCalls(t *testing.T) {
+	acc := newStreamAccumulator()
+	feed := func(event, data string) {
+		feedResponsesEvent(event, []byte(data), acc)
+	}
+	feed("response.output_item.added", `{"type":"response.output_item.added","item":{"type":"function_call","name":"site_projects","call_id":"c1"}}`)
+	feed(responsesEventTextDelta, `{"type":"response.output_text.delta","delta":"正在查…"}`)
+	// 真实负载的形状：数据在 response 子对象里，usage 也在那里（不在顶层）。
+	feed(responsesEventCompleted, `{"type":"response.completed","response":{`+
+		`"output":[`+
+		`{"type":"function_call","name":"order_find","call_id":"c1","arguments":"{\"projectId\":\"p1\"}"},`+
+		`{"type":"function_call","name":"order_get","call_id":"c2","arguments":"{\"orderNo\":\"N1\"}"}`+
+		`],`+
+		`"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`)
+
+	reply := acc.Reply()
+	if len(reply.ToolCalls) != 2 {
+		t.Fatalf("应收到 2 个工具调用，实得 %d：%+v", len(reply.ToolCalls), reply.ToolCalls)
+	}
+	if reply.ToolCalls[0].Name != "order_find" || reply.ToolCalls[0].ID != "c1" {
+		t.Errorf("第一个调用拼错了：%+v", reply.ToolCalls[0])
+	}
+	if reply.ToolCalls[0].Arguments != `{"projectId":"p1"}` {
+		t.Errorf("第一个调用的参数没取到：%+v", reply.ToolCalls[0])
+	}
+	if reply.ToolCalls[1].Name != "order_get" {
+		t.Errorf("第二个调用拼错了：%+v", reply.ToolCalls[1])
+	}
+	if reply.Content != "正在查…" {
+		t.Errorf("正文应当照常累加，实得 %q", reply.Content)
+	}
+	// 用量同样在 response 子对象里：只读顶层会让「用量」这一列永远空着。
+	if !reply.Usage.Reported || reply.Usage.TotalTokens != 15 {
+		t.Errorf("用量应从 response.usage 读出，实得 %+v", reply.Usage)
+	}
+	if !acc.done {
+		t.Error("completed 之后 done 应当为真")
+	}
+}

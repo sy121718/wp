@@ -48,6 +48,11 @@ type OrderService interface {
 	OrderRangeSummaryReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
 	OrderOverviewReader
+	// OrderQueryReader 按线索查订单（单号 / 客户名 / 邮箱 / 状态 / 时间段）。
+	//
+	// 与上面的聚合接口并列而不是并入其中：聚合回答「一共 / 每天 / 谁最好」，
+	// 这一条回答「这一单现在到哪了」—— 两类问题的入参与返回形状都不同。
+	OrderQueryReader
 
 	// CreateOrder 访客结算建单，来源固定 checkout。
 	CreateOrder(ctx context.Context, req *orderdto.CreateOrderReq) (res *orderdto.CreateOrderResp, err error)
@@ -238,6 +243,26 @@ type OrderOverviewReader interface {
 // 这是刻意的（见 PayOrderReq 注释），两者之间需要这一层翻译。
 type OrderNoReader interface {
 	GetOrderByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderResp, err error)
+}
+
+// OrderQueryReader 按线索（单号 / 客户名 / 邮箱 / 状态 / 时间段）查订单。
+//
+// 与 ListOrders 分开：那个返回全站状态计数与一整页列表（列表页要的），
+// 而这里服务的是「用户说了一个线索，把它指向的订单连细节一起找出来」——
+// 订单 20261005001 到哪了、张三那单发了没。两类问题的形状不同，混在一个入口里
+// 会让双方各自将就。
+//
+// 越权防护靠接口形状：ProjectID 必填；FindOrders 的窗口可空（用户问「张三的单」
+// 时通常没提时间），但给了就按 UTC 日界解释。两个方法都是只读 —— mcp 层拿到的
+// 是这条窄接口，手里没有 ChangeStatus / RefundOrder。
+type OrderQueryReader interface {
+	FindOrders(ctx context.Context, req *orderdto.FindOrderReq) (res *orderdto.FindOrderResp, err error)
+	// GetOrderDetailByNo 按商户单号取详情（含商品行与状态流水）。
+	//
+	// 与 OrderNoReader.GetOrderByNo 的分工：那个是支付通道回调的路径，只回订单头
+	//（回调只关心「付款成功了吗」）；被问「这单到哪了」时要的是流水，
+	// 只看头部的 status 字段答不出「到哪了」。
+	GetOrderDetailByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderDetailResp, err error)
 }
 
 // VisitorOrderReader 访客自助查询自己订单的能力。

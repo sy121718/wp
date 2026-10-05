@@ -12,7 +12,9 @@ package aiservice
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 
 	"strings"
@@ -30,6 +32,68 @@ import (
 // 一次性吐出的大段工具参数）。超限时 Scanner 直接报 bufio.ErrTooLong 并停止 ——
 // 表现为「回答到一半就断了、并且没有任何错误提示」，很难联想到行太长。
 const streamScanBufMax = 1 << 20
+
+// streamRawCap 留样本的上限：只为「上游其实回了非流式」这一种情况兜底，
+// 一份正常回答远小于它；超过就说明这不是我们要救的那类响应。
+const streamRawCap = 2 << 20
+
+// headSample 取一段可读的响应开头（写日志用）。
+//
+// 换行与超长都截掉：日志要的是一眼能看出「这是什么」，不是全文。
+func headSample(body []byte) string {
+	const cap = 240
+	s := strings.TrimSpace(string(body))
+	if idx := strings.IndexAny(s, "\r\n"); idx >= 0 && idx < cap {
+		s = s[:idx]
+	}
+	if len(s) > cap {
+		s = s[:cap] + "…"
+	}
+	return s
+}
+
+// rescueNonStream 试着把一段**没被 SSE 解析器认出任何事件**的响应体当非流式解析。
+//
+// 两种形态都接受：整段就是一份 JSON（网关直接把非流式结果回给我们），
+// 以及「有 data: 前缀但只有一片」的 SSE（`data: {整份结果}`）。
+// 回 false 时调用方应当按错误处理 —— 这里绝不猜，猜错会把「上游报错」变成「空回答」。
+func rescueNonStream(body []byte, protocol string) (ProtocolReply, bool) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return ProtocolReply{}, false
+	}
+	payload := trimmed
+	if !json.Valid(payload) {
+		// 退一步：把全部 data: 行拼起来再看。
+		var sb strings.Builder
+		for _, line := range strings.Split(string(trimmed), "\n") {
+			line = strings.TrimRight(line, "\r")
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			piece := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if piece == "" || piece == streamDoneMarker {
+				continue
+			}
+			sb.WriteString(piece)
+		}
+		payload = []byte(sb.String())
+		if len(payload) == 0 || !json.Valid(payload) {
+			return ProtocolReply{}, false
+		}
+	}
+	var reply ProtocolReply
+	var err error
+	if protocol == aienums.ProtocolOpenAIResponses {
+		reply, err = parseResponsesReply(payload)
+	} else {
+		reply, err = parseChatCompletionsReply(payload)
+	}
+	if err != nil {
+		return ProtocolReply{}, false
+	}
+	return reply, true
+}
 
 // ChatStream 走 SSE 流式调用，逐片回调 onDelta；返回与非流式同形的结果。
 //
@@ -119,11 +183,33 @@ func (s *Service) ChatStream(ctx context.Context, req *aidto.ChatReq, onDelta fu
 	}
 
 	acc := newStreamAccumulator()
-	if rerr := readStreamBody(resp.Body, provider.Protocol, acc, onDelta); rerr != nil {
+	// 边读边留一份原始字节：上游有时**不按流式回**（严格做 content negotiation 的
+	// 网关会把整段回答一次性给出来），此时 SSE 解析器一个事件都认不出来 ——
+	// 症状是「前面的工具调用都成功了，最后一轮却整轮失败」。留样本才可能把它救回来
+	// （下面 rescueNonStream）以及把真相写进日志。
+	var raw bytes.Buffer
+	body := io.TeeReader(io.LimitReader(resp.Body, streamRawCap), &raw)
+	if rerr := readStreamBody(body, provider.Protocol, acc, onDelta); rerr != nil {
 		// **已经产出的部分不丢**：错误往上抛，但调用方手里仍有已回调出去的正文。
 		// 这里不把累积结果塞进返回值 —— 那会让「失败的调用」看起来有结果。
 		log.Error(rerr, "流式对话失败：读取响应中断")
 		return fail(ErrInternal)
+	}
+	if acc.isSilent() {
+		// 一整轮下来什么都没收到：要么上游没按流式回，要么它回了一个我们不认识的事件名。
+		// 两种都先试着按非流式解一遍；解不出来才把样本写进日志（这条分支以前什么都不说，
+		// 排查时连响应的样子都看不到）。
+		if rescued, ok := rescueNonStream(raw.Bytes(), provider.Protocol); ok {
+			log.With("bytes", raw.Len()).Error(ErrInternal, "流式对话失败：上游回了非流式响应，已按非流式解析")
+			acc.adoptProtocolReply(rescued)
+			onDelta(StreamDelta{Text: rescued.Content, Reasoning: rescued.Reasoning})
+		} else {
+			log.With("bytes", raw.Len()).
+				With("contentType", resp.Header.Get("Content-Type")).
+				With("head", headSample(raw.Bytes())).
+				Error(ErrInternal, "流式对话失败：整轮没有任何可识别的事件")
+			return fail(ErrInternal)
+		}
 	}
 
 	reply := acc.Reply()

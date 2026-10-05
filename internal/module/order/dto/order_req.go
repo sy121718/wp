@@ -302,3 +302,30 @@ type CouponRedemptionListReq struct {
 	Offset    int    `form:"offset" json:"offset"`
 	Limit     int    `form:"limit" json:"limit"`
 }
+
+// FindOrderReq 按「一个线索」查订单（AI 工具的只读入口）。
+//
+// 与 ListOrderReq 分开而不是加字段：后者是列表页的入参（带 offset/limit 分页与
+// 全站状态计数），而这里要的是「用户说了个线索（单号 / 客户名 / 邮箱 / 状态 / 时间段），
+// 把它指向的订单找出来」。混在一体会让列表页的筛选语义与工具语义互相将就。
+type FindOrderReq struct {
+	ProjectID string `json:"projectId"`
+	// Keyword 单号 / 客户邮箱 / 客户姓名，三者任一命中即算（由 model 层的 ILIKE 收口）。
+	Keyword string `json:"keyword"`
+	Status  string `json:"status"`
+	// From / To 都是 YYYY-MM-DD 的**日界**（UTC），可选；两个要么都给要么都不给 ——
+	// 只给一边的半开窗口说不清是「从这天起」还是「到这天止」。
+	From  string `json:"from"`
+	To    string `json:"to"`
+	Limit int    `json:"limit"`
+}
+
+// FindOrderResp 找到的订单（不含全站状态计数 —— 那是列表页的东西，工具不需要）。
+type FindOrderResp struct {
+	List  []*OrderResp `json:"list"`
+	Total int64        `json:"total"`
+	// From / To 回显**实际生效**的窗口：调用方给了非法日期时这里是空的，
+	// 而不是把用户给的原样抄回来（那会让「已按 X 到 Y 查」这句话变成假话）。
+	From string `json:"from"`
+	To   string `json:"to"`
+}

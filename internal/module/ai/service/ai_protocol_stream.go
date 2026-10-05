@@ -82,6 +82,32 @@ func (a *streamAccumulator) Reply() ProtocolReply {
 	}
 }
 
+// isSilent 判断这一轮**什么都没收到**：没有结束标记、也没有任何正文/思考/工具调用。
+//
+// 这是「上游其实回了非流式」与「上游换了我们不认识的事件名」共同的形状，
+// 两者都不能当成「模型没话说」静默收场 —— 前者可以救回来，后者必须报错。
+func (a *streamAccumulator) isSilent() bool {
+	return !a.done && a.text.Len() == 0 && a.reasoning.Len() == 0 && len(a.calls) == 0
+}
+
+// adoptProtocolReply 把一份非流式解析结果灌进累积器（见 rescueNonStream）。
+//
+// 只用于「流式什么都没读出来、但整段响应其实是一份完整 JSON」这一种情况：
+// 早退标记一并置上，免得后续的「流没结束」判断再把它判成失败。
+func (a *streamAccumulator) adoptProtocolReply(reply ProtocolReply) {
+	a.text.Reset()
+	a.text.WriteString(reply.Content)
+	a.reasoning.Reset()
+	a.reasoning.WriteString(reply.Reasoning)
+	for i, c := range reply.ToolCalls {
+		a.mergeCallPart(i, c.ID, c.Name, c.Arguments)
+	}
+	if reply.Usage.Reported {
+		a.usage = reply.Usage
+	}
+	a.done = true
+}
+
 // mergeCallPart 把一片工具调用增量并进累积器。
 //
 // index 是归位的唯一依据（上游不保证 id/name 与 arguments 出现在同一片里）。
@@ -192,7 +218,17 @@ func feedResponsesEvent(event string, data []byte, acc *streamAccumulator) (Stre
 	if event == "" {
 		event, _ = root["type"].(string)
 	}
-	if raw, ok := root["usage"]; ok && raw != nil {
+	// responses 把真正的数据放在 response 子对象里：
+	// {"type":"response.completed","response":{...,"output":[...],"usage":{...}}}。
+	// 只在顶层找 usage / output 会同时丢掉两样东西 —— 用量永远「未上报」，
+	// 以及**所有工具调用**（模型给的 function_call 就在 output 里）。
+	// 后者不报错、不告警，症状只是模型说了一句「正在拉取…」就没有下文：
+	// 会话层看到的是「这一轮没有任何工具调用」，于是直接收尾。
+	payload := root
+	if sub, ok := root["response"].(map[string]any); ok {
+		payload = sub
+	}
+	if raw, ok := payload["usage"]; ok && raw != nil {
 		if u := usageFromJSON(raw); u.Reported {
 			acc.usage = u
 		}
@@ -200,6 +236,14 @@ func feedResponsesEvent(event string, data []byte, acc *streamAccumulator) (Stre
 
 	switch event {
 	case responsesEventCompleted:
+		// 工具调用只在 completed 的负载里解析一次：output[] 是完整的一份，
+		// 顺手处理 output_item.done 反而会与这里重复收集（同一个 call 进两次，
+		// 结果是模型收到两份一样的工具结果）。
+		if output, ok := payload["output"].([]any); ok {
+			for i, c := range parseResponsesToolCalls(output) {
+				acc.mergeCallPart(i, c.ID, c.Name, c.Arguments)
+			}
+		}
 		acc.done = true
 		return StreamDelta{Done: true, Usage: acc.usage}, true
 	case responsesEventTextDelta:

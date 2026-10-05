@@ -79,6 +79,7 @@ import (
 	productmcp "go_wp/internal/module/product/inbound/mcp"
 	projectcontract "go_wp/internal/module/project/contract"
 	projecthttp "go_wp/internal/module/project/inbound/http"
+	projectmcp "go_wp/internal/module/project/inbound/mcp"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
@@ -700,6 +701,23 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("订单概览工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(overviewTools...); err != nil {
 		panic("订单概览工具注册失败：" + err.Error())
+	}
+	// 站点工程清单（site_projects）：其它模块的工具都要求 projectId，而用户在
+	// 概览页这类跨工程的页面上看不到也说不清有哪些工程 —— 实测模型会停在这里
+	//（「这两个工具都必须带 projectId，我拿不到当前是哪个工程，不能代填」）。
+	// 它是「按工程查数」这条链的入口，所以与上面的工具一起注册。
+	if projectTools, err := projectmcp.Tools(a.projectService); err != nil {
+		panic("站点工程工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(projectTools...); err != nil {
+		panic("站点工程工具注册失败：" + err.Error())
+	}
+	// 「按线索查订单」的两个只读工具（order_find / order_get）。
+	// 与上面两批分开装配的理由同样成立：它服务的是「一个线索指向一单」这类问题
+	//（订单 20261005001 到哪了），与聚合（一共多少 / 每天多少 / 谁最好）是两种形状。
+	if queryTools, err := ordermcp.QueryTools(orderSvc); err != nil {
+		panic("订单查询工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(queryTools...); err != nil {
+		panic("订单查询工具注册失败：" + err.Error())
 	}
 	// AI 模块自己的工具（展示指令）：它不拥有业务表，只把模型的展示意图收敛成受校验的 spec；
 	// 真正的取数发生在会话层（那里才有调用者身份，权限逐块判）。
