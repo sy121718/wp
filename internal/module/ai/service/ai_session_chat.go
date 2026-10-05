@@ -215,6 +215,7 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 		SessionID:   sessionID,
 		Kind:        string(aienums.EventKindUser),
 		Content:     input,
+		Meta:        userEventMeta(&req),
 		UserID:      req.UserID,
 		ProviderKey: providerKey,
 		ModelID:     model,
@@ -395,6 +396,21 @@ func emitToolEvent(emit func(StreamEvent), call aidto.ToolCall) {
 // 读侧各取各的。用常量而不是字面量，是因为它有两个消费者（会话详情页与悬浮球），
 // 拼错一处不会报错、只会让那一边永远看不到思考过程。
 const eventMetaReasoning = "reasoning"
+
+// eventMetaUserText 事件 meta 里放「用户原话」的键（见 userEventMeta）。
+const eventMetaUserText = "userText"
+
+// userEventMeta 给用户事件附上原话（与注入过上下文的 Content 分开放）。
+//
+// 两者相同或调用方没给原话时返回 nil —— meta 不是空的就不写，
+// 免得每条事件都挂一个没有信息的对象。
+func userEventMeta(req *aidto.SendMessageReq) map[string]any {
+	text := strings.TrimSpace(req.UserText)
+	if text == "" || text == strings.TrimSpace(req.Input) {
+		return nil
+	}
+	return map[string]any{eventMetaUserText: text}
+}
 
 // appendToolEvent 落一条工具事件；phase 为 toolPhaseCall 时正文是调用摘要。
 func (s *SessionService) appendToolEvent(

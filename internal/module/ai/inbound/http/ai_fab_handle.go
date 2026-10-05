@@ -75,6 +75,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		ProviderKey: providerKey,
 		Model:       model,
 		Input:       composeFabInput(c, input),
+		UserText:    input,
 		UserID:      userID(c),
 	})
 	if err != nil {

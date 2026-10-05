@@ -39,6 +39,7 @@
          · 根上多一个 data-ai-fab-dock，ask() 时会加 .is-asking 把它沉到页面底部。
        面板恒展开（不是 hidden），因为在这个页面上它本身就是主内容。 *}
     <section class="dash-ai" data-ai-fab data-ai-fab-dock
+             data-think-label="{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}"
              data-thinking-label="{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}"
              data-error-label="{{ .["t"]("admin.ai.fab.failed", "这次没能拿到回答，请稍后再试。") }}"
              aria-label="{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}">
@@ -48,11 +49,7 @@
                 <a class="dash-ai-more" href="/admin/ai/sessions">{{ .["t"]("admin.ai.fab.history", "全部会话") }}</a>
             </div>
             <div class="ai-fab-body" data-ai-fab-body>
-                <details class="ai-fab-think" data-ai-fab-think hidden>
-                    <summary>{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}</summary>
-                    <div class="ai-fab-think-body" data-ai-fab-think-body></div>
-                </details>
-                <div class="ai-fab-answer" data-ai-fab-answer></div>
+                <div class="ai-fab-turns" data-ai-fab-turns></div>
                 <p class="ai-fab-state" data-ai-fab-state hidden aria-live="polite"></p>
             </div>
             <form class="dash-ai-form" data-ai-fab-form onsubmit="return false">

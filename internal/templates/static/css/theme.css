@@ -1875,6 +1875,27 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 
 /* 回答要保留换行：模型经常给编号列表，pre-wrap 是唯一不丢结构又不需要 markdown 渲染器的做法。 */
 .ai-fab-answer { white-space: pre-wrap; word-break: break-word; }
+.ai-turn-answer { white-space: pre-wrap; word-break: break-word; }
+
+/* 轮次列表：每问一次追加一轮（提问 + 回答），提问不再清空面板。
+   提问靠右、回答靠左 —— 一眼就分得清谁说的，这是「对话」与「表单」的区别。 */
+/* 轮次容器：空的时候不占位 —— 首访（还没有任何历史）时面板里只该有输入框。 */
+.ai-fab-turns { display: block; }
+.ai-fab-turns:empty { display: none; }
+.ai-turn { display: flex; flex-direction: column; gap: var(--sp-sm); }
+.ai-turn + .ai-turn { margin-top: var(--sp-lg); }
+.ai-turn-user {
+    align-self: flex-end;
+    max-width: 86%;
+    padding: 6px var(--sp-md);
+    border-radius: var(--r-md);
+    background: var(--sky-c-primary);
+    color: #fff;
+    font-size: var(--fs-sm);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
 .ai-fab-error { color: var(--sky-c-danger); }
 .ai-fab-note,
 .ai-fab-empty { color: var(--sky-c-text-mute); font-size: 13px; }

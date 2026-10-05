@@ -6,6 +6,7 @@
    有与 ui_blocks.html 的 include 契约 —— 在 JS 里拼第二份必然与这里分叉。
    骨架常驻、面板 hidden，代价是几十个字节的 HTML，换来的是「一处定义」。 *}
 <div class="ai-fab" data-ai-fab
+     data-think-label="{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}"
      data-thinking-label="{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}"
      data-error-label="{{ .["t"]("admin.ai.fab.failed", "这次没能拿到回答，请稍后再试。") }}">
     <button type="button" class="ai-fab-btn" data-ai-fab-toggle
@@ -29,11 +30,11 @@
            三个节点各司其职：思考过程（可折叠，默认收起）、正文、状态行。
            状态行放最后：它是过程信息，位置固定就不会与回答抢注意力。 *}
         <div class="ai-fab-body" data-ai-fab-body>
-            <details class="ai-fab-think" data-ai-fab-think hidden>
-                <summary>{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}</summary>
-                <div class="ai-fab-think-body" data-ai-fab-think-body></div>
-            </details>
-            <div class="ai-fab-answer" data-ai-fab-answer></div>
+            {* 轮次容器：每问一次往里追加一轮（用户的提问 + 这一轮的回答）。
+               提问不再清空面板 —— 界面上要看得见「这是一段对话」（见 ai-fab.js 的
+               beginTurn / loadHistory），否则服务端明明连着历史，用户看到的
+               只是一个一次性的搜索框。 *}
+            <div class="ai-fab-turns" data-ai-fab-turns></div>
             <p class="ai-fab-state" data-ai-fab-state hidden aria-live="polite"></p>
         </div>
         <form class="ai-fab-form" data-ai-fab-form onsubmit="return false">

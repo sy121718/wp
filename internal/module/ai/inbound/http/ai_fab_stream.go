@@ -22,6 +22,7 @@ import (
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aiservice "go_wp/internal/module/ai/service"
+	"go_wp/pkg/response"
 )
 
 // fabStreamChunk 推给浏览器的一条 SSE 数据。
@@ -93,6 +94,7 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		ProviderKey: providerKey,
 		Model:       model,
 		Input:       composeFabInput(c, input),
+		UserText:    input,
 		UserID:      userID(c),
 	}, func(ev aiservice.StreamEvent) {
 		flush(fabStreamChunk{Kind: ev.Kind, Text: ev.Text})
@@ -117,6 +119,26 @@ func fabDoneNote(res *aidto.SendMessageResult, truncated bool) string {
 		parts = append(parts, fabText(aienums.MsgFabToolsPrefix)+strconv.Itoa(n)+fabText(aienums.MsgFabToolsSuffix))
 	}
 	return strings.Join(parts, " ")
+}
+
+// FabHistory GET /admin/ai/fab/history：把这条会话已有的对话交给界面。
+//
+// 存在的理由：悬浮球与概览页的提问框都是单次问答的渲染形态 —— 关掉面板、刷新页面、
+// 切到另一个后台页，界面上就只剩一个空输入框，看起来像搜索引擎；而服务端一直是
+// 同一条会话在续写（fabSessionKey 固定，历史进 stablePrefix）。模型记得上一轮，
+// 用户却看不见，于是「它是个搜索框」这个印象来自界面而不是能力。
+//
+// 只读、不建会话：首访（还没问过任何问题）回空数组而不是 404。
+func (h *SessionPageHandle) FabHistory(c *gin.Context) {
+	turns, err := h.svc.RecentDialogue(c.Request.Context(), fabSessionKey, 0)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
+		return
+	}
+	if turns == nil {
+		turns = []aidto.DialogueTurn{}
+	}
+	response.Success(c, gin.H{"items": turns})
 }
 
 // writeFabStreamError 以一条 error 事件结束（状态码仍是 200，理由见 FabAskStream）。

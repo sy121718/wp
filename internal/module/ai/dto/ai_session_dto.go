@@ -153,11 +153,17 @@ type RenameSessionReq struct {
 // 这里不带 binding:"required"：空值与「没选模型」都要回可翻译的业务 key（见 service 的校验），
 // 交给框架的 required 会变成不可控的绑定错误文本。
 type SendMessageReq struct {
-	SessionID       int64  `json:"sessionId" form:"sessionId"`
-	SessionKey      string `json:"sessionKey" form:"sessionKey"`
-	ProviderKey     string `json:"providerKey" form:"providerKey" binding:"max=50"`
-	Model           string `json:"model" form:"model" binding:"max=200"`
-	Input           string `json:"input" form:"input" binding:"max=200000"`
+	SessionID   int64  `json:"sessionId" form:"sessionId"`
+	SessionKey  string `json:"sessionKey" form:"sessionKey"`
+	ProviderKey string `json:"providerKey" form:"providerKey" binding:"max=50"`
+	Model       string `json:"model" form:"model" binding:"max=200"`
+	Input       string `json:"input" form:"input" binding:"max=200000"`
+	// UserText 用户真正敲进去的那句话（不含注入的页面上下文）。
+	//
+	// Input 是**发给模型**的形态：悬浮球会往里拼「（当前页面：仪表盘 /admin）」这类
+	// 上下文。那段注记模型需要，界面回填历史时却不该显示 —— 否则面板里每条提问前面
+	// 都顶着一行系统注记，看起来像日志而不是对话。留空时按 Input 处理。
+	UserText        string `json:"-"`
 	MaxOutputTokens int64  `json:"maxOutputTokens" form:"maxOutputTokens"`
 	UserID          int64  `json:"-"`
 }
@@ -347,4 +353,15 @@ type SessionModelUsage struct {
 	// Unrecorded 为 true 表示这一组来自 529 之前的历史事件（当时没记来源）。
 	// 必须与真实值分开显示：否则空串会被当成「某个名字为空的供应商」。
 	Unrecorded bool `json:"unrecorded"`
+}
+
+// DialogueTurn 一轮对话里的一个角色发言。
+//
+// 只带「谁说的 + 说了什么 + 当时的思考过程」三样：回填历史是为了让用户看见
+// 「这是一段对话」而不是「一个一次性的搜索框」，展示指令（render）不进历史 ——
+// 那一轮当时的卡片是那一轮的产物，重放它们会把旧的数字当成现在的。
+type DialogueTurn struct {
+	Role      string `json:"role"` // user | assistant
+	Text      string `json:"text"`
+	Reasoning string `json:"reasoning,omitempty"`
 }

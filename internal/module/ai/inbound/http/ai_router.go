@@ -160,6 +160,9 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 		// 流式版本：同一份权限点、同一个会话键。两条路径**并存**而不是替换 ——
 		// 浏览器不支持流式读取（或 JS 被拦）时非流式那条仍能用。
 		adminPages.POST("/ai/ask/stream", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAskStream)
+		// 历史回填：读的是会话事件，借会话事件查询的 casbin obj（不新增权限点）——
+		// 能看到这条会话历史的，与能看会话日志的是同一批人。
+		adminPages.GET("/ai/fab/history", builtin.CasbinMiddlewareForPathAs("/api/ai/session/events", http.MethodGet), sessionPage.FabHistory)
 	}
 
 	return svc
