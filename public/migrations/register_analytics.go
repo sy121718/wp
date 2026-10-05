@@ -61,14 +61,23 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL: mustSQL("152_customer_admin_permissions.sql"),
 	})
 
-	// 153：客户管理后台菜单入口（幂等 seed）。
-	// 侧栏真源是代码配置（nav_menu.go 的「系统」组），本 seed 服务于后台「菜单管理」页。
-	registerSeed(Seed{
-		Version:      "153-customer-admin-menu",
-		TableName:    "sys_menus",
-		ConditionSQL: "SELECT COUNT(*) FROM sys_menus WHERE type = 2 AND deleted_at IS NULL AND title = '客户管理'",
-		SQL:          mustSQL("153_customer_admin_menu.sql"),
-	})
+	// 153：客户管理后台菜单入口 —— **已注销**（2026-10，P7 客户目录收口）。
+	//
+	// 注销的原因不是「不想要这个菜单」，而是它的**判据与对象在 P7 之后互相抵消**：
+	//   · 本 seed 的 ConditionSQL 是「表里有没有 title='客户管理' 的行」，
+	//     SQL 是「没有就插一行 path='/customers'」—— 两者合起来是「被删掉就重插」；
+	//   · 而 P7 的 555 把那套菜单整体重做了：把客户菜单改名「客户列表」（path 改成
+	//     '/admin/customers'）并挂进新建的一级分组「客户」。于是原来那行**永远不会再出现**，
+	//     本 seed 判据恒为 0 → **每次启动都插一行孤立的 path='/customers'**。
+	//
+	// 后果不是多一行垃圾菜单，而是三个**幂等性**测试全红：它们断言「重放种子后
+	// sys_menus 不变」，而每次启动都多一行。这类失败的形态特别隐蔽 ——
+	// 页面看起来完全正常（侧栏真源是 nav_menu.go，根本不读这一行），
+	// 只有断言「表没变」的测试会红，很容易被当成测试本身过时。
+	//
+	// 接手方是 555（`register_customer_catalog.go`）：它按 path 判定，判据与对象一致。
+	// SQL 文件 `153_customer_admin_menu.sql` 保留在仓库里作为历史记录，不再执行。
+	// 同一个手法在本仓用过（220 / 221 / 140 三个 seed 连注册带 SQL 注销）。
 
 	// 154：详情页改 URL 权限点（1 条）+ 超管策略。
 	//

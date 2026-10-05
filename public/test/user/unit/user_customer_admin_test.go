@@ -414,13 +414,23 @@ func TestCustomerAdminPermissionSeed(t *testing.T) {
 	}
 
 	// 菜单 seed（只服务「菜单管理」页；侧栏真源是 nav_menu.go）。
+	//
+	// 判据按 **P7 之后的形态**（2026-10 客户目录收口）：那套菜单由 555 重做 ——
+	// 标题是「客户列表」、path 是 '/admin/customers'，并挂在一级分组「客户」下。
+	// 原来断言 title='客户管理' 的那一版锚定的是 153 seed 的行，而 153 已注销
+	//（原因见 register_analytics.go 里那段注释：它的判据在 P7 之后恒为 0，
+	//  每次启动重插一行，让三个幂等性测试红）。
+	//
+	// 这里按 **path** 判定而不是按标题：path 是这一行在系统里的身份
+	//（权限码、路由、菜单树都按它对齐），标题是可改的展示名 —— 押标题会让
+	// 下一次改名时这条断言再次变成假红。
 	var menus int64
 	if err := db.WithContext(ctx).Table("sys_menus").
-		Where("title = ? AND type = 2 AND deleted_at IS NULL", "客户管理").
+		Where("path = ? AND type = 2 AND deleted_at IS NULL", "/admin/customers").
 		Count(&menus).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
 	if menus != 1 {
-		t.Errorf("后台菜单「客户管理」应 seed 恰好 1 条，实得 %d", menus)
+		t.Errorf("后台菜单 /admin/customers 应 seed 恰好 1 条，实得 %d", menus)
 	}
 }
