@@ -16,6 +16,7 @@ package aiservice_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -28,6 +29,7 @@ import (
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
+	aiprompt "go_wp/internal/module/ai/prompt"
 	aiservice "go_wp/internal/module/ai/service"
 )
 
@@ -50,7 +52,10 @@ func sessionChatUpstream(t *testing.T, svc *aiservice.Service, reply string) <-c
 		bodies <- string(raw)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"object":"response","output_text":"` + reply + `"}`))
+		// 同时给两种协议的正文位置：用例会按协议各取所需，
+		// 假上游只仿一种会让另一种协议的用例以「内部错误」失败（看不出是上游的锅）。
+		_, _ = w.Write([]byte(`{"object":"response","output_text":"` + reply + `",` +
+			`"choices":[{"message":{"role":"assistant","content":"` + reply + `"}}]}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -274,4 +279,88 @@ func TestSessionChatSendRequiresUser(t *testing.T) {
 		t.Fatalf("无身份的请求不该打到上游，实际收到：%s", body)
 	default:
 	}
+}
+
+// TestSessionChatSendsSystemPrefixFirst 上游收到的请求里，常驻规则真的被发出去了。
+//
+// 这是 docs/16 §3 的端到端那一半：静态断言只证明「拼装函数稳定」，这一条证明
+// 「稳定前缀真的到了上游」。分两层的原因很实在 —— 拼装函数写对了而调用点忘了用它
+// （或把它排在历史后面），静态断言依然全绿。
+//
+// **两种协议的位置不同，两条路径都要测**：chat/completions 把 system 放在 messages[0]；
+// responses 放在顶层 instructions（它的 input[] 只接受 user / assistant，
+// 塞 system 进去会被上游 400 拒掉）。只测一种协议时，另一种的第一次调用就会失败，
+// 而错误信息只会说「请求体不合法」。
+func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
+	cases := []struct {
+		name     string
+		protocol string
+	}{
+		{"chat_completions", aienums.ProtocolOpenAIChatCompletions},
+		{"responses", aienums.ProtocolOpenAIResponses},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sess, svc := newSessionChatService(t)
+			bodies := sessionChatUpstream(t, svc, "在的")
+			newChatProvider(t, svc, "sess-prefix", tc.protocol)
+
+			if _, err := sess.SendMessage(context.Background(), aidto.SendMessageReq{
+				SessionKey:  "prefix-key-" + tc.name,
+				ProviderKey: "sess-prefix",
+				Model:       "muse",
+				Input:       "这周卖得最好的是什么",
+				UserID:      testUserID,
+			}); err != nil {
+				t.Fatalf("发消息失败：%v", err)
+			}
+
+			body := waitBody(t, bodies)
+			var payload struct {
+				Instructions string `json:"instructions"`
+				Messages     []struct {
+					Role    string `json:"role"`
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal([]byte(body), &payload); err != nil {
+				t.Fatalf("请求正文不是 JSON：%v", err)
+			}
+			if tc.protocol == aienums.ProtocolOpenAIResponses {
+				if payload.Instructions != aiprompt.SiteRules() {
+					t.Errorf("responses 协议的常驻规则必须放在顶层 instructions，实得 %q", truncateForLog(payload.Instructions))
+				}
+				// input 里不得残留 system 条目（会被上游 400 拒）。
+				if strings.Contains(body, `"role":"system"`) {
+					t.Error("responses 协议的 input[] 里出现了 system 条目 —— 上游不接受这个角色")
+				}
+				if !strings.Contains(body, "这周卖得最好的是什么") {
+					t.Error("本轮输入不在 input 里")
+				}
+				return
+			}
+			if len(payload.Messages) < 2 {
+				t.Fatalf("请求里只有 %d 条消息，至少要有 system + user", len(payload.Messages))
+			}
+			if payload.Messages[0].Role != "system" {
+				t.Errorf("第一条必须是 system（排在后面就不是前缀，缓存命中不了），实得 %q", payload.Messages[0].Role)
+			}
+			if payload.Messages[0].Content != aiprompt.SiteRules() {
+				t.Error("system 的内容必须就是常驻规则原文")
+			}
+			// 第二段是「历史 + 本轮输入」：模型真正要回答的东西必须在里面。
+			if payload.Messages[1].Role != "user" || !strings.Contains(payload.Messages[1].Content, "这周卖得最好的是什么") {
+				t.Errorf("第二条应是带本轮输入的 user 消息，实得 %q/%q", payload.Messages[1].Role, payload.Messages[1].Content)
+			}
+		})
+	}
+}
+
+// truncateForLog 失败信息里截断长文本（规则全文几千字节，直接打出来会淹掉用例输出）。
+func truncateForLog(s string) string {
+	r := []rune(s)
+	if len(r) > 60 {
+		return string(r[:60]) + "…"
+	}
+	return s
 }

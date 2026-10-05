@@ -12,10 +12,13 @@ import (
 
 // 对话角色（两个协议共用同一套名字）。
 //
-// system 目前没有来源：后台的常驻规则与模块手册是拼进历史文本的（buildChatMessages），
-// 不单独占一条 system 消息 —— 那样会让「规则变了 → 前缀全变 → 缓存整段作废」，
-// 而规则恰恰是改得最频繁的那一层。
+// system 的来源是 ai/prompt 包的常驻规则（SiteRules），由会话层放在消息列表**最前**：
+// 它与会话历史一起构成稳定前缀，同一会话里反复发消息时逐字节不变（docs/16 §3）。
+// 曾经这里写着「规则拼进历史文本、不单独占 system 消息」，理由是怕规则变化作废缓存 ——
+// 那条注释对应的实现从未存在（`buildChatMessages` 是个幽灵名字），而且理由本身是错位的：
+// 规则改得**不频繁**，作废一次缓存可以接受；真正每轮都变的是历史与输入，它们本来就该在尾部。
 const (
+	roleSystem    = "system"
 	roleUser      = "user"
 	roleAssistant = "assistant"
 	roleTool      = "tool"

@@ -43,6 +43,12 @@ const (
 //     这条路径覆盖了现在所有的调用（一问一答），字节不变就保住了上游的前缀缓存（docs/16 §3）；
 //   - 出现工具往返时写成数组，让 function_call / function_call_output 能与 message 并列。
 //
+// **system 消息不走 input**：本协议把它放在顶层 `instructions`。这不是风格选择 ——
+// input[] 里的合法角色是 user / assistant（工具条目另算），塞一个 system 进去会被服务端
+// 400 拒掉。这个坑此前不会暴露，因为在这条改动之前**根本不存在 system 消息**
+// （常驻规则那一段是刚加进会话层的）—— 也就是说，加了规则却不同时改这里，
+// 第一次请求就会失败，而错误信息只会说请求体不合法。
+//
 // max_output_tokens 只在 > 0 时写入 —— 服务端对缺省值有自己的默认，塞 0 会被当成
 // 「最多生成 0 个 token」而立刻截断。
 func buildResponsesBody(model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64) ([]byte, error) {
@@ -53,7 +59,16 @@ func buildResponsesBody(model string, msgs []aidto.ChatMessage, tools []aidto.To
 	if len(msgs) == 0 {
 		return nil, ErrInvalidParam
 	}
-	payload := map[string]any{"model": model, "input": responsesInput(msgs)}
+	instructions, rest := splitSystemMessages(msgs)
+	// 抽走 system 之后 input 不能为空：上游要求 input 存在。
+	// （正常路径下总会剩一条 user；真为空时按参数错误打回，而不是发一个必然被拒的请求体。）
+	if len(rest) == 0 {
+		return nil, ErrInvalidParam
+	}
+	payload := map[string]any{"model": model, "input": responsesInput(rest)}
+	if instructions != "" {
+		payload["instructions"] = instructions
+	}
 	if len(tools) > 0 {
 		payload["tools"] = responsesTools(tools)
 		payload["tool_choice"] = toolChoiceAuto
@@ -62,6 +77,32 @@ func buildResponsesBody(model string, msgs []aidto.ChatMessage, tools []aidto.To
 		payload["max_output_tokens"] = maxOutputTokens
 	}
 	return json.Marshal(payload)
+}
+
+// splitSystemMessages 把序列里的 system 消息抽出来（按原顺序、换行相连），其余原样保留。
+//
+// 多个 system 段用 `\n\n` 相连而不是覆盖：常驻规则与将来可能加的模块手册是两段独立文本，
+// 覆盖会让后一段静默吃掉前一段（规则看着还在，实际只剩一半）。
+// 顺序保持原样 —— 稳定前缀的字节稳定性依赖它（docs/16 §3）。
+func splitSystemMessages(msgs []aidto.ChatMessage) (string, []aidto.ChatMessage) {
+	var b strings.Builder
+	rest := make([]aidto.ChatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Role == roleSystem {
+			// 刻意**不**做 TrimSpace：调用方给的就是要原样发出去的文本，
+			// trim 会让「发出去的」与「调用方手里的」差一个尾换行 ——
+			// 语义上没差，但前缀的字节稳定性就是由这种细节定义的（docs/16 §3）。
+			if m.Content != "" {
+				if b.Len() > 0 {
+					b.WriteString("\n\n")
+				}
+				b.WriteString(m.Content)
+			}
+			continue
+		}
+		rest = append(rest, m)
+	}
+	return b.String(), rest
 }
 
 // responsesInput 把消息序列翻成 responses 的 input。

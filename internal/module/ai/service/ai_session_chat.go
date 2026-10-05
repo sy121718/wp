@@ -19,6 +19,7 @@ import (
 
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
+	aiprompt "go_wp/internal/module/ai/prompt"
 	"go_wp/internal/uispec"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -193,8 +194,7 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 	toolEvents := make([]aidto.SessionEventItem, 0, 4)
 	specs := s.toolSpecs()
 	for round := 0; round < maxToolRounds; round++ {
-		msgs := make([]aidto.ChatMessage, 0, 1+len(rounds))
-		msgs = append(msgs, aidto.ChatMessage{Role: roleUser, Content: history})
+		msgs := stablePrefix(history)
 		msgs = append(msgs, rounds...)
 
 		// 带上会话与发起人：调用流水（ai_call_log）靠这两个字段回答
@@ -510,4 +510,23 @@ func sentEventItem(res *aidto.AppendEventResult, kind, content string) aidto.Ses
 		item.Seq = res.Seq
 	}
 	return item
+}
+
+// stablePrefix 构造请求的**稳定前缀**（docs/16 §3）：system（常驻规则）+ 本轮输入。
+//
+// 抽成函数是为了能被单测直接断言（同一会话两次请求逐字节一致），而不必去跑一次真实的
+// 上游调用。**顺序即契约**：
+//  1. system —— 常驻规则（ai/prompt 包，编译进二进制，内容恒定）；
+//  2. user —— 「历史 + 本轮输入」拼成的一条消息。
+//
+// 两段的**内容**在同一会话里逐字节不变（历史只追加、规则是常量），provider 侧才能命中
+// 前缀缓存。**不要**往这里拼时间戳 / 用户名 / 会话 id / 模型名：那会让每轮都 miss 一次
+// 整段前缀，而症状只是账单变贵 —— 没有任何报错，也没有任何页面会显示异常。
+//
+// 本轮的工具往返（rounds）**不在**前缀里：它每轮都在变，属于尾部。
+func stablePrefix(history string) []aidto.ChatMessage {
+	return []aidto.ChatMessage{
+		{Role: roleSystem, Content: aiprompt.SiteRules()},
+		{Role: roleUser, Content: history},
+	}
 }

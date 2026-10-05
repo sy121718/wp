@@ -41,7 +41,8 @@ type ChatReq struct {
 // 只描述「发出去的那一刻」，**不是持久化形状**：事件日志（ai_event）是通用真源
 // （docs/16 §7 不做 provider 专有格式持久化），这里是出站时的一次性翻译结果。
 type ChatMessage struct {
-	// Role 取值 user / assistant / tool（system 目前没有来源：常驻规则走历史文本，见 buildChatMessages）。
+	// Role 取值 system / user / assistant / tool。
+	// system 是常驻规则（ai/prompt 包），由会话层放在列表最前，与会话历史一起构成稳定前缀。
 	Role    string `json:"role"`
 	Content string `json:"content"`
 	// ToolCalls 仅 assistant 消息使用：模型要求调用的工具。
