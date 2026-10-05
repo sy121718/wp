@@ -773,6 +773,17 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(stockWriteTools...); err != nil {
 		panic("库存写工具注册失败：" + err.Error())
 	}
+	// 变动原因字典的写工具与动账的写工具分开装配：一个是动账、一个是动字典，
+	// 风险性质不同（见 inventorycontract.ReasonWriter 的说明）。
+	reasonWriter, reasonWriteOK := inventorySvc.(inventorycontract.ReasonWriter)
+	if !reasonWriteOK {
+		panic("库存模块未实现写工具所需的变动原因能力，装配缺陷")
+	}
+	if reasonTools, err := inventorymcp.ReasonTools(reasonWriter); err != nil {
+		panic("变动原因工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(reasonTools...); err != nil {
+		panic("变动原因工具注册失败：" + err.Error())
+	}
 	if memberTools, err := membershipmcp.Tools(membershipSvc); err != nil {
 		panic("会员工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(memberTools...); err != nil {

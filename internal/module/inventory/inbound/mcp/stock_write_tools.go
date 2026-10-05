@@ -122,7 +122,12 @@ func reasonsText(direction string, list []*inventorydto.ReasonResp) string {
 		if it.IsBuiltin {
 			kind = "内置"
 		}
-		fmt.Fprintf(&b, "- %s（%s，%s）\n", it.Code, reasonName(it), kind)
+		// id 必须给出来：inventory_reason_update 要的是 id 而不是 code，
+		// 不印在这里，模型下一步就只能停下来问用户要（实测它说的正是
+		// 「刚才 stock_reasons 返回里没给出它的 reasonId，我不能拿 code 代填」）。
+		// 工具的输出里要带上**下一步动作需要的参数**，这条在 stock_find 漏 variantId
+		// 那次已经吃过一回。
+		fmt.Fprintf(&b, "- %s（%s，%s，id=%s）\n", it.Code, reasonName(it), kind, strings.TrimSpace(it.ID))
 	}
 	if truncated > 0 {
 		fmt.Fprintf(&b, "……另有 %d 个未列出（原因很多时先按方向筛一次）。\n", truncated)

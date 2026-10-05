@@ -271,3 +271,18 @@ type StockWriter interface {
 	// ChangeStock 一次库存变动（in / out / adjust 三个方向，批量多行同事务）。
 	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
 }
+
+// ReasonWriter 自定义变动原因的增改（给 AI 工具的写侧窄门）。
+//
+// 与 StockWriter 分开：两者不是同一件事 —— 改库存是**动账**，建原因是**动字典**。
+// 合成一个接口会让「只想调库存」的地方顺手拿到改字典的能力，而字典的改动会影响
+// 之后每一次变动的解释（方向一经确定不可改），风险性质不同。
+//
+// 没有 DeleteReason：原因被历史流水引用，删掉会让旧记录的 reasonCode 变成悬空字符串。
+// 停用（UpdateReason 的 status）已经覆盖了「不想再看到它」这个真实诉求。
+type ReasonWriter interface {
+	// CreateReason 新建自定义变动原因（code 工程内唯一，方向一经确定不可改）。
+	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
+	// UpdateReason 改名 / 启停 / 排序（内置原因只允许启停与排序）。
+	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
+}

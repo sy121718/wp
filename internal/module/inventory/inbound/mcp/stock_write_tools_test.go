@@ -359,3 +359,17 @@ func TestReasonNameNeverLeaksI18nKey(t *testing.T) {
 		t.Errorf("自建原因名应当原样保留，实得 %q", reasonName(custom))
 	}
 }
+
+// 原因列表必须带出 id：inventory_reason_update 要的是 id 不是 code，
+// 不印出来模型下一步只能停下来问用户要。
+// 实测原话：「刚才 stock_reasons 返回里没给出它的 reasonId，我不能拿 code 代填」。
+func TestReasonsTextCarriesID(t *testing.T) {
+	list := []*inventorydto.ReasonResp{
+		{ID: "10", Code: "store_pickup_out", Name: "门店自提出库", Direction: "out"},
+		{ID: "3", Code: "sale_out", Name: "inventory.reason.sale_out", Direction: "out", IsBuiltin: true},
+	}
+	text := reasonsText("out", list)
+	if !strings.Contains(text, "id=10") || !strings.Contains(text, "id=3") {
+		t.Errorf("原因列表缺 id：\n%s", text)
+	}
+}
