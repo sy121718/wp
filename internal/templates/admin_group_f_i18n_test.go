@@ -103,6 +103,13 @@ var groupFRetiredKeys = map[string]bool{
 	"admin.dashboard.stat.pending_note": true, "admin.dashboard.stat.published_note": true, "admin.dashboard.status.disabled": true,
 	"admin.dashboard.status.disabled_row": true, "admin.dashboard.status.enabled": true, "admin.dashboard.status.pending": true,
 	"admin.dashboard.subtitle": true,
+	// 「站点内容」与「最近更新的页面」两块随 2026-10 的概览页改版下线：
+	// 这一页的主内容改成 AI 提问框 + 三卡 + 趋势/榜单，站点内容的四个数字
+	// （工程 / 页面总数 / 已发布 / 草稿）与最近更新的表格不再出现在概览页 ——
+	// 它们各自的详情页（/admin/pages、工程列表）才是更合适的落点。
+	"admin.dashboard.stat.published": true,
+	"admin.dashboard.col.status":     true,
+	"admin.dashboard.col.actions":    true,
 }
 
 // groupFCallRe 匹配两种取词写法：{{ .["t"]("k","兜底") }} 与 range 内的 {{tr("k","兜底")}}。
@@ -271,9 +278,10 @@ func TestGroupFDashboardRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("仪表盘渲染失败: %v", err)
 	}
+	// base 里没有 Overview 键，走的是「只渲染外壳」那条路径：页头 + AI 提问区。
+	// 概览数据块的渲染判据在 admin_dashboard_overview_test.go（那里注入 Overview）。
 	for _, want := range []string{
-		"仪表盘", "站点工程", "页面总数", "已发布", "草稿 / 待发布",
-		"最近更新的页面", "/about", "有更新未发布", "编辑",
+		"仪表盘", "问 AI（经营数据）", "全部会话", "发送", "停止", "思考过程",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("仪表盘缺少 %q（模板可能中途中断）", want)
@@ -281,10 +289,8 @@ func TestGroupFDashboardRenders(t *testing.T) {
 	}
 
 	en := map[string]string{
-		"admin.dashboard.title":         "Dashboard",
-		"admin.dashboard.stat.projects": "Site projects",
-		"admin.dashboard.col.actions":   "Actions",
-		"admin.dashboard.recent.title":  "Recently updated pages",
+		"admin.dashboard.title":    "Dashboard",
+		"admin.dashboard.ai.title": "Ask AI (business data)",
 	}
 	enData := map[string]any{}
 	for k, v := range base {
@@ -304,7 +310,7 @@ func TestGroupFDashboardRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("仪表盘英文渲染失败: %v", err)
 	}
-	for _, want := range []string{"Dashboard", "Site projects", "Actions", "Recently updated pages"} {
+	for _, want := range []string{"Dashboard", "Ask AI (business data)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("仪表盘英文渲染缺少 %q", want)
 		}

@@ -112,13 +112,9 @@ func TestAdminEmptyStateKeepsTableHead(t *testing.T) {
 		assertEmptyKeepsTableHead(t, "navigations", out, "6", []string{"这个位置还没有菜单项"})
 	})
 
-	t.Run("dashboard→colspan7", func(t *testing.T) {
-		out := renderAdminEmptyProbe(t, "admin/dashboard", map[string]any{
-			"RecentPages":  []any{},
-			"ProjectCount": 3, "PageTotal": 9, "PagePublished": 4, "PageDraft": 5, "PageStale": 1,
-		})
-		assertEmptyKeepsTableHead(t, "dashboard", out, "7", []string{"还没有页面", "先建一个站点工程", "去建页面"})
-	})
+	// dashboard 自 2026-10 改版后不再有列表卡（「最近更新的页面」整块下线，
+	// 空态与它的 colspan 判据随之退役）—— 这一页现在没有 <table> 空态，
+	// 它的表格只有排行榜那两张，且没有「无数据整行」形态。
 }
 
 // TestAdminDataFormUnchanged 有数据形态：不出现空态、数据行照常渲染（防「修空态把正常行改坏」）。
@@ -150,17 +146,5 @@ func TestAdminDataFormUnchanged(t *testing.T) {
 		}
 	})
 
-	t.Run("dashboard", func(t *testing.T) {
-		row := map[string]any{"ID": "p1", "Project": "官网", "Path": "/about", "Kind": "page", "Published": true, "Stale": false, "Version": 2, "UpdatedAt": "2026-09-18 09:00:00"}
-		out := renderAdminEmptyProbe(t, "admin/dashboard", map[string]any{
-			"RecentPages":  []any{row},
-			"ProjectCount": 3, "PageTotal": 9, "PagePublished": 4, "PageDraft": 5, "PageStale": 1,
-		})
-		if strings.Contains(out, `class="empty-state"`) {
-			t.Error("dashboard 有数据时不应出现空态")
-		}
-		if !strings.Contains(out, "/about") {
-			t.Error("dashboard 有数据时行没渲染")
-		}
-	})
+	// dashboard 无列表卡（见上一条的说明），不再纳入「有数据形态」覆盖。
 }

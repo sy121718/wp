@@ -1070,21 +1070,27 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     gap: var(--ui-sp-md);
 }
 .stat-card { padding: var(--ui-sp-md) var(--ui-sp-lg); }
-/* 六格 KPI：auto-fit 在 1248 宽下排成 5+1 —— 最后一张孤零零占一整行，
+/* 三格 KPI（仪表盘）：auto-fit 在中等宽度下会排成 2+1 —— 最后一张孤零零占一整行，
    看起来像「多出来的一张」而不是「第二行的第一张」。
-   只作用于显式加了类的网格（仪表盘的六格），其它页面的 .stat-grid 不受影响；
+   只作用于显式加了类的网格，其它页面的 .stat-grid 不受影响；
    960px 以下回到 auto-fit，窄屏该换行就换行。 */
 @media (min-width: 960px) {
-    .stat-grid.stat-grid-six { grid-template-columns: repeat(3, 1fr); }
+    .stat-grid.stat-grid-three { grid-template-columns: repeat(3, 1fr); }
 }
+/* 销售数据卡内部的三个数字排成一行（同一个「已付款」口径的四个侧面）。
+   窄屏落行，不要横向挤压数值 —— 数字挤在一起就扫不了。 */
+.stat-inline-row {
+    display: flex; flex-wrap: wrap; gap: var(--ui-sp-md);
+    margin-top: var(--ui-sp-xxs);
+}
+.stat-inline-row .stat-card-inline { flex: 1 1 auto; }
 .stat-label { font-size: 13px; color: var(--sky-c-text-mute, #6b7280); }
 .stat-value {
     margin-top: var(--ui-sp-xxs); font-size: 26px; font-weight: 600;
     line-height: 1.2; letter-spacing: -0.02em; color: var(--sky-c-text, #1a1d21);
 }
 .stat-note { margin-top: 2px; font-size: 12px; color: var(--sky-c-text-mute, #6b7280); }
-.stat-note.tone-warn { color: var(--sky-c-warning, #8a6d3b); }
-.stat-note.tone-ok { color: var(--sky-c-success, #3f6b4f); }
+
 
 /* ── 11.1 概览页的并排块与趋势图 ──────────────────────────────────────
    两个并排块在窄屏落成上下两屏（minmax 的下界给足，不靠媒体查询）；
@@ -1092,9 +1098,14 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    admin_dashboard_ui012 那条「模板里不许出现内联 style 属性」的判据。 */
 .grid-split {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    grid-template-columns: 7fr 3fr;
     gap: var(--ui-sp-md);
     align-items: start;
+}
+/* 七三开只在宽屏成立：窄屏按 7:3 会把榜单压成一条 100px 的缝，
+   表格内容全被 .table-scroll 横着藏起来。960px 以下落成上下两块。 */
+@media (max-width: 959px) {
+    .grid-split { grid-template-columns: 1fr; }
 }
 .trend-chart { display: block; width: 100%; height: auto; }
 .trend-chart .trend-bar { fill: var(--sky-c-primary, #2563eb); }
@@ -1102,12 +1113,36 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .trend-chart .trend-axis { stroke: var(--sky-c-border, #e5e7eb); stroke-width: 1; }
 .trend-chart .trend-day { fill: var(--sky-c-text-mute, #6b7280); font-size: 11px; }
 .trend-chart .trend-val { fill: var(--sky-c-text-secondary, #4b5563); font-size: 11px; }
-/* 站点内容小节的数字：与顶部 KPI 同形但更小 —— 它是次要信息，不该抢 KPI 的视线。 */
 .stat-card-inline { min-width: 0; }
 .stat-value-sm {
     margin-top: 2px; font-size: 18px; font-weight: 600;
     line-height: 1.2; letter-spacing: -0.01em; color: var(--sky-c-text, #1a1d21);
 }
+
+/* ── 11.3 概览页的 AI 提问区 ──────────────────────────────────────────
+   结构与悬浮球同构（同一组 data-ai-fab-* 钩子，见 partials/ai_fab.html），
+   .ai-fab-body / .ai-fab-think / .ai-fab-answer / .ai-fab-state 的样式直接沿用 §12.4。
+   这里只补本页特有的三件：
+     · 未提问时居中占位 —— 一团空白会让人以为页面还没加载完；
+     · 提问后沉到页面底部（.is-asking 由 ai-fab.js 在 ask() 里加）；
+     · 回答区限高可滚 —— 否则一次长回答会把下面所有内容顶出屏幕。 */
+.dash-ai {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 42vh;
+}
+.dash-ai-inner { width: 100%; max-width: 720px; min-width: 0; }
+.dash-ai-head { display: flex; align-items: baseline; gap: var(--ui-sp-sm); margin-bottom: var(--ui-sp-xs); }
+.dash-ai-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, #1a1d21); }
+.dash-ai-more { font-size: 13px; color: var(--sky-c-primary, #2563eb); text-decoration: none; }
+.dash-ai-form { display: flex; flex-direction: column; gap: var(--ui-sp-xs); }
+.dash-ai-input { width: 100%; }
+/* 提问后沉到页面底部：.stack 是 flex column，order 足以换位置；
+   回答长在输入框上方（DOM 顺序本来就是 body 在 form 之前，无需额外规则）。 */
+.dash-ai.is-asking {
+    order: 99; min-height: 0; align-items: flex-end; margin-top: var(--ui-sp-sm);
+}
+.dash-ai.is-asking .dash-ai-inner { max-width: 860px; }
+.dash-ai .ai-fab-body { max-height: 52vh; overflow-y: auto; }
 
 /* ── 11.2 概览页的时间筛选条 ──────────────────────────────────────────
    排在三块（KPI / 趋势 / 榜单）之前：「这一页的数字是哪一段的」必须先于数字被读到。
@@ -1905,3 +1940,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     justify-content: flex-end;
 }
 .ai-fab-actions .btn { flex: 0 0 auto; }
+/* [hidden] 必须显式压过 .btn 的 display: inline-flex（浏览器默认的 [hidden]{display:none}
+   输给类选择器）——不写这条，「停止」按钮在没有请求在跑的时候也是可见的，
+   而它按下去什么都不会发生。仓库里同类写法见 .bulk-bar[hidden]、.perm-node[hidden]。 */
+.ai-fab-actions [hidden] { display: none; }

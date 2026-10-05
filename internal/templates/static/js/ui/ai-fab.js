@@ -88,8 +88,10 @@
     function appendText(el, text) {
         if (!el || !text) { return; }
         el.appendChild(document.createTextNode(text));
-        var panel = el.closest('.ai-fab-panel');
-        if (panel) { panel.scrollTop = panel.scrollHeight; }
+        // 滚到最新：两个宿主（悬浮球的 .ai-fab-panel、概览页的 .dash-ai .ai-fab-body）
+        // 的可滚容器不同，按最近的祖先找 —— 不滚的话长回答一超出就得手动往下拖。
+        var scroller = el.closest('[data-ai-fab-body], .ai-fab-panel');
+        if (scroller) { scroller.scrollTop = scroller.scrollHeight; }
     }
 
     // handleChunk 处理一条 SSE 数据。
@@ -180,6 +182,10 @@
         var draft = text;
 
         reset(root);
+        // 带 data-ai-fab-dock 的实例（概览页那只会常驻的提问框）：一开始提问就把它
+        // 沉到页面底部（.is-asking），回答长在输入框上方。不沉的话它留在页面中段，
+        // 一边出回答一边把下面的卡片往下挤。
+        if (root.hasAttribute('data-ai-fab-dock')) { root.classList.add('is-asking'); }
         setState(root, root.getAttribute('data-thinking-label') || '');
         setBusy(root, true);
         // 先清空再发：见文件头第 1 条。

@@ -1,10 +1,13 @@
-{* admin/dashboard.html — 仪表盘：经营概览（今日 KPI / 近 7 天趋势与热销 / 站点内容 / 最近更新） *}
+{* admin/dashboard.html — 仪表盘：经营概览（AI 提问框 / KPI / 趋势 / 热销与页面榜） *}
 {* 版式遵循列表页标准骨架（评审规则见 ~/.dsh/skills/admin-ui-logic §2.1/§7）：
      · 正文零说明文字，口径说明进 .help 悬浮；
      · 统计卡只放契约能查到的真实值 —— 本页曾整页是静态演示数据（假管理员 128 人、
        假表单、组件展台），运营会把示例数字当真实统计，属 P0 缺陷。
      · 概览数据源未接线时整块换成一句提示：显示一片 0 同样会被当成真实统计
-       （「今天一单都没有」），而这个页面是登录后的第一跳，它的数字有人真的会照着做决定。 *}
+       （「今天一单都没有」），而这个页面是登录后的第一跳，它的数字有人真的会照着做决定。
+     · 页面结构：AI 提问框在顶（未提问时居中占位），KPI / 趋势 / 榜单在它下面。
+       提问后 AI 区沉到页面最底部（.dash-ai.is-asking，由 ai-fab.js 加类），
+       回答长在输入框上方 —— 与主流对话页一致。 *}
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
@@ -28,6 +31,42 @@
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.dashboard.loadError", "概览数据暂时读不到：") }}{{.Err}}</p>
     {{end}}{{end}}
+
+    {* AI 提问框：结构与 partials/ai_fab.html 同构（同一组 data-ai-fab-* 钩子），
+       所以 ai-fab.js 的那套流式逻辑直接复用 —— 它按 [data-ai-fab] 遍历多实例，
+       本页只是多挂一个根。差异只有两点：
+         · 没有悬浮按钮 [data-ai-fab-toggle]（js 对该节点判空，不会报错）；
+         · 根上多一个 data-ai-fab-dock，ask() 时会加 .is-asking 把它沉到页面底部。
+       面板恒展开（不是 hidden），因为在这个页面上它本身就是主内容。 *}
+    <section class="dash-ai" data-ai-fab data-ai-fab-dock
+             data-thinking-label="{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}"
+             data-error-label="{{ .["t"]("admin.ai.fab.failed", "这次没能拿到回答，请稍后再试。") }}"
+             aria-label="{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}">
+        <div class="dash-ai-inner">
+            <div class="dash-ai-head">
+                <span class="dash-ai-title">{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}</span>
+                <a class="dash-ai-more" href="/admin/ai/sessions">{{ .["t"]("admin.ai.fab.history", "全部会话") }}</a>
+            </div>
+            <div class="ai-fab-body" data-ai-fab-body>
+                <details class="ai-fab-think" data-ai-fab-think hidden>
+                    <summary>{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}</summary>
+                    <div class="ai-fab-think-body" data-ai-fab-think-body></div>
+                </details>
+                <div class="ai-fab-answer" data-ai-fab-answer></div>
+                <p class="ai-fab-state" data-ai-fab-state hidden aria-live="polite"></p>
+            </div>
+            <form class="dash-ai-form" data-ai-fab-form onsubmit="return false">
+                <textarea class="form-textarea dash-ai-input" name="input" rows="2" required
+                          data-ai-fab-input
+                          placeholder="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？（Enter 发送，Shift+Enter 换行）") }}"
+                          aria-label="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？（Enter 发送，Shift+Enter 换行）") }}"></textarea>
+                <div class="ai-fab-actions">
+                    <button type="button" class="btn btn-primary" data-ai-fab-send>{{ .["t"]("admin.ai.fab.send", "发送") }}</button>
+                    <button type="button" class="btn" data-ai-fab-stop hidden>{{ .["t"]("admin.ai.fab.stop", "停止") }}</button>
+                </div>
+            </form>
+        </div>
+    </section>
 
     {* 概览数据块整体用 isset 守卫：本模板也被「只渲染外壳」的测试直接加载，
        那些数据里没有统计键 —— 直接取用缺失键会让整页在此中断（HTTP 仍 200）。 *}
@@ -56,23 +95,31 @@
         {{if .Overview.Range.Clamped}}{{ .["t"]("admin.dashboard.range.clamped", "（区间已按上限截取）") }}{{end}}
     </p>
 
-    {* KPI 卡可点击跳订单页（口径闸门）。带得上的筛选参数就带上：销售额与待发货都落在
-       「已付款」这一档上，订单页用自己的 status 参数表达同一件事。 *}
-    <div class="stat-grid stat-grid-six">
-        <a class="card stat-card stat-card-link" href="/admin/orders">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.orders", "订单数") }}</div>
-            <div class="stat-value">{{.Overview.KPI.RangeOrders}}</div>
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.ordersNote", "区间内创建的全部订单（含取消）") }}</div>
-        </a>
+    {* 三张卡：销售数据（四个数字合一）/ 新客户 / 页面浏览。
+       原先六张卡各占一格，其中「订单数」「净销售额」「待发货」「待付款」本是同一件事的
+       四个侧面（都在「已付款」这一档上），拆成四张卡让页面上四张卡讲一句话、
+       还挤掉了真正独立的两项（新客、浏览）。合并后销售数据卡内部用 .stat-card-inline
+       排成一行，点任一数字进订单页（带得上的 status 筛选就带上）。 *}
+    <div class="stat-grid stat-grid-three">
         <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.sales", "净销售额") }}</div>
-            <div class="stat-value">{{.Overview.KPI.RangeSalesLabel}}</div>
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.salesNote", "净额（已扣已收货退款）") }}</div>
-        </a>
-        <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.items", "商品销售总量") }}</div>
-            <div class="stat-value">{{.Overview.KPI.RangeItems}}</div>
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.itemsNote", "件数，只算计入消费的订单") }}</div>
+            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.salesData", "销售数据") }}</div>
+            <div class="stat-inline-row">
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.orders", "订单数") }}</div>
+                    <div class="stat-value-sm">{{.Overview.KPI.RangeOrders}}</div>
+                    <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.ordersNote", "区间内创建的全部订单（含取消）") }}</div>
+                </div>
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.sales", "净销售额") }}</div>
+                    <div class="stat-value-sm">{{.Overview.KPI.RangeSalesLabel}}</div>
+                    <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.salesNote", "净额（已扣已收货退款）") }}</div>
+                </div>
+                <div class="stat-card-inline">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.shipPending", "待发货") }}</div>
+                    <div class="stat-value-sm">{{.Overview.KPI.ShipPendingCount}}</div>
+                    <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pendingNote", "待付款：") }}{{.Overview.KPI.PendingCount}}</div>
+                </div>
+            </div>
         </a>
         {* 新客：与客户概览页同一个聚合、同一个区间，两处显示的必须是同一个数。
            链接把当前区间带过去（?range=…）：不带的话点进去是那页自己的默认档，
@@ -90,13 +137,11 @@
             {* 文章页那部分是路径排行的下界（只取前 N 条路径），措辞用「其中」而不是「其中全部」。 *}
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pageViewsNote", "全站路径；其中文章页：") }}{{.Overview.KPI.ArticleViews}}</div>
         </div>
-        <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
-            <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.shipPending", "待发货") }}</div>
-            <div class="stat-value">{{.Overview.KPI.ShipPendingCount}}</div>
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pendingNote", "待付款：") }}{{.Overview.KPI.PendingCount}}</div>
-        </a>
     </div>
 
+    {* 趋势图与排行榜并排：图表占七成、榜单占三成 —— 趋势是「看形状」，榜单是「看名字」，
+       形状需要横向空间（柱子多了挤在一起就读不出峰谷），名字只需要一列宽。
+       窄屏（<960px）落成上下两块（见 theme.css 的 .grid-split 媒体查询）。 *}
     <div class="grid-split">
         <section class="card">
             <div class="card-header">
@@ -253,100 +298,6 @@
     {{else}}
     <p class="badge badge-warning">{{ .["t"]("admin.dashboard.overview.unavailable", "部分概览数据暂不可用（对应模块未接线）。") }}</p>
     {{end}}
-    {{end}}
-
-    {{if isset(.RecentPages)}}
-    <section class="card">
-        <div class="card-header">
-            <span class="card-title">{{ .["t"]("admin.dashboard.content.title", "站点内容") }}</span>
-        </div>
-        <div class="card-body">
-            <div class="stat-grid">
-                <div class="stat-card-inline">
-                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.projects", "站点工程") }}</div>
-                    <div class="stat-value-sm">{{.ProjectCount}}</div>
-                </div>
-                <div class="stat-card-inline">
-                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.pages", "页面总数") }}</div>
-                    <div class="stat-value-sm">{{.PageTotal}}</div>
-                </div>
-                <div class="stat-card-inline">
-                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.published", "已发布") }}</div>
-                    <div class="stat-value-sm">{{.PagePublished}}</div>
-                    <div class="stat-note tone-ok">{{ .["t"]("admin.dashboard.stat.publishedNote", "线上可访问") }}</div>
-                </div>
-                <div class="stat-card-inline">
-                    <div class="stat-label">{{ .["t"]("admin.dashboard.stat.draft", "草稿 / 待发布") }}</div>
-                    <div class="stat-value-sm">{{.PageDraft}}</div>
-                    {{if isset(.PageStale)}}{{if .PageStale}}
-                    <div class="stat-note tone-warn">{{ .["t"]("admin.dashboard.stat.staleLead", "其中 ") }}{{.PageStale}}{{ .["t"]("admin.dashboard.stat.staleTail", " 个有更新未发布") }}</div>
-                    {{else}}
-                    <div class="stat-note">{{ .["t"]("admin.dashboard.stat.staleNone", "没有待发布的改动") }}</div>
-                    {{end}}{{end}}
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="card list-card">
-        {* 这一行是列表卡的**标题行**，不是筛选栏：里面只有一个标题和一个链接，没有任何筛选控件。
-           原先借 .filter-bar（那类名承诺的是「筛选栏」）会让后续按 .filter-bar 做统一布局 /
-           间距调整时误伤这一页 —— 与 analytics.html 的列表卡标题同形（.card-header + .card-title）。 *}
-        <div class="card-header">
-            <span class="card-title">{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}</span>
-            <a class="btn btn-sm" href="/admin/pages">{{ .["t"]("admin.dashboard.recent.all", "查看全部") }}</a>
-        </div>
-        {* 空数据也渲染 <table>/<thead>：用户得先看见「最近更新的页面」有哪些列才谈得上认知。
-           空态落在 tbody 的整行里（本表无勾选列，colspan 固定 7）。 *}
-        <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.dashboard.recent.title", "最近更新的页面") }}">
-            <table class="data-table">
-                <thead>
-                <tr>
-                    <th>{{ .["t"]("admin.dashboard.col.path", "页面路径") }}</th>
-                    <th>{{ .["t"]("admin.dashboard.col.project", "所属工程") }}</th>
-                    <th>{{ .["t"]("admin.dashboard.col.kind", "类型") }}</th>
-                    <th>{{ .["t"]("admin.dashboard.col.status", "状态") }}</th>
-                    <th>{{ .["t"]("admin.dashboard.col.version", "草稿版本") }}</th>
-                    <th>{{ .["t"]("admin.dashboard.col.updated", "更新时间") }}</th>
-                    <th class="col-actions">{{ .["t"]("admin.dashboard.col.actions", "操作") }}</th>
-                </tr>
-                </thead>
-                <tbody>
-                {{if len(.RecentPages) == 0}}
-                {* 空态整行：colspan = 7 列（页面路径 / 所属工程 / 类型 / 状态 / 草稿版本 / 更新时间 / 操作）。 *}
-                <tr><td colspan="7" class="cell-wrap">
-                    <div class="empty-state">
-                        <p class="empty-title">{{ .["t"]("admin.dashboard.recent.emptyTitle", "还没有页面") }}</p>
-                        <p class="empty-desc">{{ .["t"]("admin.dashboard.recent.emptyDesc", "先建一个站点工程，再建页面；页面在画布编辑后发布，线上才可访问。") }}</p>
-                        <div class="empty-actions">
-                            <a class="btn btn-primary" href="/admin/pages">＋ {{ .["t"]("admin.dashboard.recent.create", "去建页面") }}</a>
-                        </div>
-                    </div>
-                </td></tr>
-                {{else}}
-                {{range _, p := .RecentPages}}
-                <tr>
-                    <td class="text-mono">{{p.Path}}</td>
-                    <td>{{p.Project}}</td>
-                    <td>{{p.Kind}}</td>
-                    <td>
-                        {{if p.Published}}
-                        <span class="badge badge-success">{{ .["t"]("admin.dashboard.status.published", "已发布") }}</span>
-                        {{if p.Stale}}<span class="badge badge-warning">{{ .["t"]("admin.dashboard.status.stale", "有更新未发布") }}</span>{{end}}
-                        {{else}}<span class="badge badge-mute">{{ .["t"]("admin.dashboard.status.draft", "草稿") }}</span>{{end}}
-                    </td>
-                    <td>v{{p.Version}}</td>
-                    <td class="text-mute text-sm">{{p.UpdatedAt}}</td>
-                    <td class="col-actions">
-                        <a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{ .["t"]("admin.common.action.edit", "编辑") }}</a>
-                    </td>
-                </tr>
-                {{end}}
-                {{end}}
-                </tbody>
-            </table>
-        </div>
-    </section>
     {{end}}
 </div>
 {{end}}

@@ -130,8 +130,14 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"订单数", "净销售额", "CNY 1,234.50", "商品销售总量", "23",
+		"订单数", "净销售额", "CNY 1,234.50",
 		"页面浏览", "456", "全站路径；其中文章页：", "88", "待发货",
+		// 六卡合并成三卡后新增的卡标题与卡内横排容器（订单数 / 净销售额 / 待发货
+		// 三项同属「已付款」口径，拆成三张卡等于用三张卡讲同一句话）。
+		"销售数据", "stat-grid-three", "stat-inline-row",
+		// AI 提问区：结构与悬浮球同构（同一组 data-ai-fab-* 钩子），
+		// 多出来的 data-ai-fab-dock 是「提问后沉到页面底部」的开关。
+		"dash-ai", "data-ai-fab-dock", "data-ai-fab-input", "问 AI（经营数据）",
 		"趋势（按天）", "排行榜（当前区间）", "热销商品", "热门页面", "TEO 香水 50ml", "TEO-50-01", "09-29",
 		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
 		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",
@@ -143,7 +149,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		`name="from"`, `value="2026-09-29"`,
 		// KPI 卡可点击跳订单页（带口径的链接）。
 		"stat-card-link", `href="/admin/orders"`,
-		// 第 6 张卡：新客（区间口径）。链接把当前区间带给客户概览页 ——
+		// 新客卡（区间口径）。链接把当前区间带给客户概览页 ——
 		// 不带的话点进去是那页自己的默认档，两页会显示两段不同时间的新客数而都像对的。
 		"新客户", "7", `href="/admin/customers/overview?range=week"`,
 		// 图表两个 Tab：面板全部渲染在服务端，切换由 admin.js 的 data-tabs 接管。
@@ -164,6 +170,13 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 	if strings.Contains(out, "（区间已按上限截取）") {
 		t.Error("未发生收敛时不该显示截取提示")
+	}
+	// 已下线的两块内容不许回潮：用户明确要求取消「商品销售总量」卡、
+	// 删掉「站点内容」与「最近更新的页面」两个区块。
+	for _, gone := range []string{"商品销售总量", "站点工程", "页面总数", "最近更新的页面"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("已下线的区块 %q 又出现在概览页上", gone)
+		}
 	}
 	// 两个面板：销售额那个默认可见，浏览量那个带 hidden（由 JS 按 aria-selected 切换）。
 	if !strings.Contains(out, `id="dash-panel-views" role="tabpanel" aria-labelledby="dash-tab-views" hidden`) {

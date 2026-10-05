@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"strings"
 
-	aiprompt "go_wp/internal/module/ai/prompt"
 	"go_wp/internal/mcp"
+	aiprompt "go_wp/internal/module/ai/prompt"
 	"go_wp/internal/permission"
 )
 

@@ -83,15 +83,14 @@ func TestDashboardRendersInjectedDataOnly(t *testing.T) {
 	data := adminShellData()
 	// 每个数字都刻意取成旧演示页没有用过的值：若模板里还留着写死的示例，
 	// 下面的「注入值必须出现」会失败，而「示例值不得出现」也守住了回潮。
+	// 页面在 2026-10 改版：删掉了「站点内容」与「最近更新的页面」两块，
+	// 所以 ProjectCount / PageTotal / RecentPages 这批注入值已不在页面上。
+	// 本用例的立意没变（模板里不许出现写死的演示值），只是「注入值必须出现」
+	// 那一半改由渲染 AI 区与三卡的静态结构承担 —— 真实数字的渲染判据见
+	// admin_dashboard_overview_test.go（那里注入的是 Overview 结构）。
 	data["ProjectCount"] = 7
 	data["PageTotal"] = 42
-	data["PagePublished"] = 30
-	data["PageDraft"] = 12
-	data["PageStale"] = 3
-	data["RecentPages"] = []map[string]any{{
-		"ID": "p1", "Project": "官网", "Path": "/about", "Kind": "page",
-		"Published": true, "Stale": false, "Version": 2, "UpdatedAt": "2026-09-18 09:00:00",
-	}}
+	data["RecentPages"] = []map[string]any{}
 
 	out, err := render(t, newAdminTestSet(), "admin/dashboard", data)
 	if err != nil {
@@ -103,7 +102,7 @@ func TestDashboardRendersInjectedDataOnly(t *testing.T) {
 	if strings.Contains(out, "style=\"") {
 		t.Error("仪表盘渲染结果里仍有内联 style 属性")
 	}
-	for _, want := range []string{">7<", ">42<", ">30<", ">12<", "/about", "最近更新的页面"} {
+	for _, want := range []string{"dash-ai", "data-ai-fab-input", "data-ai-fab-send", "问 AI（经营数据）"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("仪表盘缺少注入的数据 %q（页面可能在渲染写死的示例值）", want)
 		}

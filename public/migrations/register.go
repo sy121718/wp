@@ -242,6 +242,8 @@ func init() {
 	registerAIToolIdempotency()
 	// 570：悬浮球的「思考中」与「思考过程」词条（见 register_ai_fab_thinking_i18n.go）。
 	registerAIFabThinkingI18n()
+	// 571：概览页的 AI 提问区与「销售数据」卡词条（见 register_dashboard_ai_box_i18n.go）。
+	registerDashboardAIBoxI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

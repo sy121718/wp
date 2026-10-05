@@ -5,7 +5,6 @@ package workbenchhttp
 import (
 	"context"
 	"net/http"
-	"sort"
 	"time"
 
 	"go_wp/internal/builder/core"
@@ -15,7 +14,6 @@ import (
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	pagecontract "go_wp/internal/module/page/contract"
-	pagedto "go_wp/internal/module/page/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -26,7 +24,6 @@ import (
 
 	"go_wp/internal/web/shell"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -122,59 +119,12 @@ func (h *Handle) Dashboard(c *gin.Context) {
 		return
 	}
 
-	type dashRow struct {
-		updated time.Time
-		data    gin.H
-	}
-	var (
-		pageTotal, pagePublished, pageStale int
-		rows                                []dashRow
-	)
-	for _, p := range projects {
-		list, lerr := h.pages.List(ctx, &pagedto.ListReq{ProjectID: p.ID})
-		if lerr != nil {
-			// 单个工程读失败不让整个概览不可用：跳过它，其余照常汇总。
-			continue
-		}
-		for _, pg := range list {
-			published := pg.ActiveArtifactID != nil || pg.ActivePath != nil
-			pageTotal++
-			if published {
-				pagePublished++
-			}
-			if pg.Stale {
-				pageStale++
-			}
-			rows = append(rows, dashRow{
-				updated: pg.UpdatedAt.Time(),
-				data: gin.H{
-					"ID": pg.ID, "Project": p.Name, "Path": pg.DraftPath, "Kind": pg.Kind,
-					"Published": published, "Stale": pg.Stale, "Version": pg.DraftVersion,
-					"UpdatedAt": pg.UpdatedAt.Time().Format(utils.LayoutSecond),
-				},
-			})
-		}
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].updated.After(rows[j].updated) })
-	// 概览只列最近的一屏：更早的走 /admin/pages 的完整列表与筛选。
-	const recentLimit = 8
-	recentPages := make([]gin.H, 0, recentLimit)
-	for i, r := range rows {
-		if i >= recentLimit {
-			break
-		}
-		recentPages = append(recentPages, r.data)
-	}
-
+	// 2026-10 改版：页面统计（工程 / 页面总数 / 已发布 / 草稿 / 最近更新）整块下线 ——
+	// 那些数字的落点是 /admin/pages 与工程列表，而概览页每渲染一次都要为全部工程
+	// 逐个 List 一遍页面，这几百毫秒在「登录后的第一跳」上是纯浪费。
 	c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
-		"title":         workbenchenums.MsgDashboardTitle,
-		"menu":          "dashboard",
-		"ProjectCount":  len(projects),
-		"PageTotal":     pageTotal,
-		"PagePublished": pagePublished,
-		"PageDraft":     pageTotal - pagePublished,
-		"PageStale":     pageStale,
-		"RecentPages":   recentPages,
+		"title": workbenchenums.MsgDashboardTitle,
+		"menu":  "dashboard",
 		// 区间在 handler 里解析（query → from/to），三块（KPI / 趋势 / 榜单）共用同一个窗口。
 		"Overview": withPresets(c, h.collectOverview(ctx, projectIDs(projects), parseOverviewRange(c, time.Now().UTC()))),
 	}))
