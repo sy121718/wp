@@ -84,12 +84,12 @@ func protocolPath(protocol string) (string, error) {
 }
 
 // buildProtocolBody 按协议构造请求体（responses / chat_completions 各一份实现）。
-func buildProtocolBody(protocol, model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64) ([]byte, error) {
+func buildProtocolBody(protocol, model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64, stream bool) ([]byte, error) {
 	switch protocol {
 	case aienums.ProtocolOpenAIChatCompletions:
-		return buildChatCompletionsBody(model, msgs, tools, maxOutputTokens)
+		return buildChatCompletionsBody(model, msgs, tools, maxOutputTokens, stream)
 	case aienums.ProtocolOpenAIResponses:
-		return buildResponsesBody(model, msgs, tools, maxOutputTokens)
+		return buildResponsesBody(model, msgs, tools, maxOutputTokens, stream)
 	default:
 		return nil, ErrProtocolUnsupported
 	}
@@ -230,6 +230,12 @@ type protocolRequestInput struct {
 	Messages        []aidto.ChatMessage
 	Tools           []aidto.ToolSpec
 	MaxOutputTokens int64
+	// Stream 走 SSE 流式（请求体里 stream=true）。
+	//
+	// 它是**请求层面**的开关，所以放在这个结构体而不是另开一条构造路径：
+	// 地址拼接、SSRF 校验、密钥解密、自定义头这四步与非流式完全一样，
+	// 复制一份出来必然会在下次改这四步时漏掉流式那条分支。
+	Stream bool
 }
 
 // buildProtocolRequest 组装一次对话出站请求：地址拼接 → SSRF 校验 → 请求体 → 头。
@@ -255,7 +261,7 @@ func (s *Service) buildProtocolRequest(ctx context.Context, provider *aimodel.AI
 	if verr := validateURL(endpoint); verr != nil {
 		return nil, verr
 	}
-	body, berr := buildProtocolBody(provider.Protocol, in.Model, in.Messages, in.Tools, in.MaxOutputTokens)
+	body, berr := buildProtocolBody(provider.Protocol, in.Model, in.Messages, in.Tools, in.MaxOutputTokens, in.Stream)
 	if berr != nil {
 		return nil, berr
 	}
@@ -268,7 +274,14 @@ func (s *Service) buildProtocolRequest(ctx context.Context, provider *aimodel.AI
 		return nil, ErrURLMalformed
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	if in.Stream {
+		// 流式的响应不是 JSON 而是一串 SSE 事件。请求 accept 上写 application/json
+		// 会让部分网关（严格实现 content negotiation 的）按非流式回 —— 而调用方
+		// 已经在按流读，症状是「一直没有增量、最后一次性拿到全部」。
+		req.Header.Set("Accept", "text/event-stream")
+	} else {
+		req.Header.Set("Accept", "application/json")
+	}
 	// 自定义头来自**服务端保存的供应商配置**（config_data.headers，管理员写入），
 	// 不是调用方参数 —— 调用方没有注入任意头的通道。
 	applyProviderHeaders(req, providerHeaders(provider.ConfigData))

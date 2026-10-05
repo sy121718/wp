@@ -57,7 +57,7 @@ const (
 //
 // max_output_tokens 只在 > 0 时写入 —— 服务端对缺省值有自己的默认，塞 0 会被当成
 // 「最多生成 0 个 token」而立刻截断。
-func buildResponsesBody(model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64) ([]byte, error) {
+func buildResponsesBody(model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64, stream bool) ([]byte, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return nil, ErrInvalidParam
@@ -72,6 +72,12 @@ func buildResponsesBody(model string, msgs []aidto.ChatMessage, tools []aidto.To
 		return nil, ErrInvalidParam
 	}
 	payload := map[string]any{"model": model, "input": responsesInput(rest)}
+	if stream {
+		// 这一族的流式也走 SSE，但事件名自带语义（response.output_text.delta 等）；
+		// 它**没有** chat 那种 stream_options.include_usage ——用量在
+		// response.completed 事件的负载里，无需额外开关。
+		payload["stream"] = true
+	}
 	if instructions != "" {
 		payload["instructions"] = instructions
 	}

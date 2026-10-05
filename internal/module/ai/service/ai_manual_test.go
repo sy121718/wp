@@ -56,8 +56,9 @@ func TestManualRejectsBadNames(t *testing.T) {
 // TestSalesManualPointsAtTheTool P1 闸门那条链路的闭环检查。
 //
 // 「本店这周卖得最好的是什么」要想被答对，模型得先知道：
-//   · 这件事属于哪个领域（目录里有 sales）；
-//   · 那个领域里该用哪个工具（sales 手册里点名 orders_top_products）。
+//
+//	· 这件事属于哪个领域（目录里有 sales）；
+//	· 那个领域里该用哪个工具（sales 手册里点名 orders_top_products）。
 //
 // 断言工具名出现在手册里，而不是断言某句话 —— 手册措辞可以改，
 // 但「手册必须把领域引到具体工具上」这条不能破，否则手册就只是一篇散文。

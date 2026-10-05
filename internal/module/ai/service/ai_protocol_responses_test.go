@@ -35,7 +35,7 @@ func decodeBody(t *testing.T, b []byte) map[string]any {
 // === responses 请求体 ===
 
 func TestBuildResponsesBody_Fields(t *testing.T) {
-	body, err := buildResponsesBody("muse-spark-1.3-contributor", userMsgs("ping"), nil, 16)
+	body, err := buildResponsesBody("muse-spark-1.3-contributor", userMsgs("ping"), nil, 16, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestBuildResponsesBody_Fields(t *testing.T) {
 }
 
 func TestBuildResponsesBody_OmitsMaxTokensWhenNonPositive(t *testing.T) {
-	body, err := buildResponsesBody("m", userMsgs("x"), nil, 0)
+	body, err := buildResponsesBody("m", userMsgs("x"), nil, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestBuildResponsesBody_OmitsMaxTokensWhenNonPositive(t *testing.T) {
 }
 
 func TestBuildResponsesBody_RejectsEmptyModel(t *testing.T) {
-	if _, err := buildResponsesBody("   ", userMsgs("x"), nil, 1); err == nil {
+	if _, err := buildResponsesBody("   ", userMsgs("x"), nil, 1, false); err == nil {
 		t.Fatal("空 model 应报错")
 	}
 }
@@ -252,7 +252,7 @@ func TestProtocolPath_RejectsUnimplemented(t *testing.T) {
 }
 
 func TestBuildProtocolBody_RejectsUnimplemented(t *testing.T) {
-	if _, err := buildProtocolBody(aienums.ProtocolGeminiGenerateContent, "m", userMsgs("x"), nil, 1); err == nil {
+	if _, err := buildProtocolBody(aienums.ProtocolGeminiGenerateContent, "m", userMsgs("x"), nil, 1, false); err == nil {
 		t.Fatal("未实现的协议必须报错")
 	}
 }

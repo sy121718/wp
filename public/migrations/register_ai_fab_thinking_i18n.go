@@ -14,8 +14,9 @@ func registerAIFabThinkingI18nSeed() {
 		Version:   "570-ai-fab-thinking-i18n",
 		TableName: "sys_i18n",
 		SQL:       mustSQL("570_ai_fab_thinking_i18n.sql"),
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE item_key IN ('admin.ai.fab.thinking', 'ai.fab.thinkLabel') " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 10 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE item_key IN ('admin.ai.fab.thinking', 'ai.fab.thinkLabel', " +
+			"'admin.ai.fab.stop', 'admin.ai.fab.failed', 'admin.ai.fab.thinkLabel') " +
 			"AND lang IN ('zh-CN', 'en-US')",
 	})
 }

@@ -157,6 +157,9 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 		// 全局悬浮球（每个后台页面都有入口）：同样借对话入口的 casbin obj。
 		// 返回的是**片段**而不是重定向 —— 回答要出现在球旁边，不是把用户弹到另一个页面。
 		adminPages.POST("/ai/ask", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAsk)
+		// 流式版本：同一份权限点、同一个会话键。两条路径**并存**而不是替换 ——
+		// 浏览器不支持流式读取（或 JS 被拦）时非流式那条仍能用。
+		adminPages.POST("/ai/ask/stream", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAskStream)
 	}
 
 	return svc

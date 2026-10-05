@@ -74,3 +74,18 @@ func orEmptyJSONObject(args string) string {
 	}
 	return args
 }
+
+// 流式（SSE）相关的常量。
+//
+// 两族协议的结束方式不同：chat 用一行**字面量** [DONE]（不是 JSON），
+// responses 用 response.completed 事件。用常量而不是散落的字面量，
+// 是因为它们各有两处消费者（解析与请求构造），拼错一处不会报错、
+// 只会让流永远不结束（表现为「一直转圈」）。
+const (
+	streamDoneMarker = "[DONE]"
+
+	// responses 族的事件名。
+	responsesEventCompleted      = "response.completed"
+	responsesEventTextDelta      = "response.output_text.delta"
+	responsesEventReasoningDelta = "response.reasoning_summary_text.delta"
+)

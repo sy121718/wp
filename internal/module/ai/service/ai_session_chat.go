@@ -54,7 +54,38 @@ const (
 // 装配处一行 SetChatPort 把两者接上，两层的编译期依赖保持单向。
 type ChatPort interface {
 	Chat(ctx context.Context, req *aidto.ChatReq) (*aidto.ChatResult, error)
+	// ChatStream 走 SSE 流式并把每个增量回调出去。
+	//
+	// 放在**同一个接口**而不是新开一个：会话层要么全程流式、要么全程非流式，
+	// 两个端口会让「注入了一个、漏了另一个」变成本可以编译通过的错误，
+	// 而它的症状是流式路径静默退化成非流式（用户看到「一直没有字，最后一次性冒出来」）。
+	ChatStream(ctx context.Context, req *aidto.ChatReq, onDelta func(StreamDelta)) (*aidto.ChatResult, error)
 }
+
+// StreamEvent 流式过程中推给调用方的一条事件。
+//
+// 分 Kind 而不是只给字符串：消费者对三类的处理完全不同（思考过程进折叠区、
+// 正文进回答区、工具进展进状态行），合成一类再让调用方猜，等于把分类知识
+// 复制到每个消费者里。
+type StreamEvent struct {
+	// Kind 取值见 streamEvent* 常量。
+	Kind string
+	// Text 本条的文本（工具事件里是「正在查询 xxx…」这类整句）。
+	Text string
+}
+
+// 流式事件的类别。
+const (
+	// streamEventReasoning 思考过程增量。
+	streamEventReasoning = "reasoning"
+	// streamEventText 正文增量。
+	streamEventText = "text"
+	// streamEventTool 工具进展（整句，不是增量）。
+	//
+	// 为什么要推它：一次任务里最长的等待往往发生在「模型要求调工具 → 结果回来」这段，
+	// 那段时间没有正文也没有思考过程，用户只能看到一个没反应的界面。
+	streamEventTool = "tool"
+)
 
 // ToolRunResult 一次工具执行的结论。
 //
@@ -131,6 +162,22 @@ var (
 // 失败语义：模型调用失败或回复为空时，user 事件已经落库（这是有意的），assistant 事件不写。
 // 工具往返的事件**已经落下的部分不回滚** —— 审计要能看到它试过什么。
 func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageReq) (*aidto.SendMessageResult, error) {
+	return s.sendMessage(ctx, req, nil)
+}
+
+// SendMessageStream 与 SendMessage 同一套语义，只是把过程中的增量推给 emit。
+//
+// emit 为 nil 时行为与 SendMessage 完全一致（但**仍走流式通道**）——
+// 两条路径共用下面的实现，所以「流式下工具调用丢了」这类只在一条路径上出现的
+// 缺陷没有生存空间。
+//
+// emit 由调用方在自己的 goroutine 里同步调用，必须足够快（写响应流），
+// 不得阻塞、不得回头调用本服务。
+func (s *SessionService) SendMessageStream(ctx context.Context, req aidto.SendMessageReq, emit func(StreamEvent)) (*aidto.SendMessageResult, error) {
+	return s.sendMessage(ctx, req, emit)
+}
+
+func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageReq, emit func(StreamEvent)) (*aidto.SendMessageResult, error) {
 	// 第一关卡：没有身份就不准调用模型。放在最前面（比装配检查还前）——
 	// 「谁在调用」是这个功能的准入条件，不是事后的记账字段。
 	if req.UserID <= 0 {
@@ -203,7 +250,7 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 		// 带上会话与发起人：调用流水（ai_call_log）靠这两个字段回答
 		// 「谁在什么时候烧了谁家的 token」，而它们只有这里知道
 		//（出站层只认识 provider/model 两个字符串）。
-		chatRes, err := s.chat.Chat(ctx, &aidto.ChatReq{
+		chatReq := &aidto.ChatReq{
 			ProviderKey:     providerKey,
 			Model:           model,
 			Messages:        msgs,
@@ -211,7 +258,11 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 			MaxOutputTokens: req.MaxOutputTokens,
 			SessionID:       sessionID,
 			UserID:          req.UserID,
-		})
+		}
+		// 有 emit 就走流式。**两族的增量在这里翻译成同一种事件**：
+		// 协议差异（chat 的 delta 与 responses 的事件名）已经在出站层抹平，
+		// 会话层不该再认识它们。
+		chatRes, err := s.chatWithEmit(ctx, chatReq, emit)
 		if err != nil {
 			return nil, err
 		}
@@ -234,6 +285,9 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 
 		// 有工具调用：逐个执行并把「调用 / 结果」成对落库。
 		for _, call := range chatRes.ToolCalls {
+			// 先推一条进展再落库：跑工具是整条链路里最长的等待，
+			// 而那段时间既没有正文也没有思考过程（模型此刻无话可说）。
+			emitToolEvent(emit, call)
 			callRes, err := s.appendToolEvent(ctx, sessionID, req, providerKey, model, call, toolPhaseCall, "", nil)
 			if err != nil {
 				return nil, err
@@ -299,6 +353,40 @@ func (s *SessionService) finishReply(
 		AssistantEvent: sentEventItem(assistantRes, string(aienums.EventKindAssistant), output),
 		ToolEvents:     toolEvents,
 	}, nil
+}
+
+// chatWithEmit 按有没有 emit 选择流式或非流式出站，并把增量翻成会话层事件。
+//
+// emit 为 nil 时退回非流式：非流式那条路径是长时间验证过的（含 usage 上报口径），
+// 没有消费者要看增量时不必让它多绕一圈 SSE 解析。两条路径的结果结构完全同形
+// （都汇合到 ProtocolReply），所以上层逻辑不必知道走的是哪条。
+func (s *SessionService) chatWithEmit(ctx context.Context, req *aidto.ChatReq, emit func(StreamEvent)) (*aidto.ChatResult, error) {
+	if emit == nil {
+		return s.chat.Chat(ctx, req)
+	}
+	return s.chat.ChatStream(ctx, req, func(d StreamDelta) {
+		if d.Reasoning != "" {
+			emit(StreamEvent{Kind: streamEventReasoning, Text: d.Reasoning})
+		}
+		if d.Text != "" {
+			emit(StreamEvent{Kind: streamEventText, Text: d.Text})
+		}
+	})
+}
+
+// emitToolEvent 把「模型要求调某个工具」翻成一条给人看的进展。
+//
+// 只说工具名与参数摘要，不说「正在思考」—— 用户此刻想知道的是「它在查什么」，
+// 而这句话里最有信息量的就是工具名。
+func emitToolEvent(emit func(StreamEvent), call aidto.ToolCall) {
+	if emit == nil {
+		return
+	}
+	text := toolCallText(call)
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	emit(StreamEvent{Kind: streamEventTool, Text: text})
 }
 
 // eventMetaReasoning 事件 meta 里放思考过程的键。

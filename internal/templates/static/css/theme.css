@@ -1863,22 +1863,10 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     .ai-fab-panel { width: calc(100vw - var(--sp-md) * 2); }
 }
 
-/* §12.3 思考中与思考过程（用户反馈：提交后页面上没有任何进展信号）
-   三条规则对应三件事：
-     · .ai-fab-thinking 默认不显示，请求期间由 htmx 的 .htmx-request 打开 ——
-       它是「正在跑」的唯一可见信号。放在 body 外面（见 ai_fab.html 的说明）。
-     · aria-live="polite" 让读屏用户也听得到，不然那块区域对无障碍用户等于不存在。
-     · .ai-fab-think 用原生 <details>，键盘与读屏语义由浏览器给。 */
-.ai-fab-thinking {
-    display: none;
-    margin: 0;
-    padding: var(--sp-sm) var(--sp-md);
-    font-size: var(--fs-sm);
-    color: var(--sky-c-text-mute);
-    border-left: 2px solid var(--sky-c-primary);
-    background: var(--sky-c-surface);
-}
-.ai-fab-thinking.htmx-request { display: block; }
+/* §12.3 思考过程（用户反馈：思考过程没输出给用户）
+   「正在思考」那句与「正在查询 xxx」共用 .ai-fab-state（§12.4）—— 面板改成
+   fetch + SSE 之后不再有 htmx 的 .htmx-request 状态，两句话也不需要各留一块。
+   .ai-fab-think 用原生 <details>，键盘与读屏语义由浏览器给。 */
 .ai-fab-think {
     margin: 0 0 var(--sp-sm);
     border: 1px solid var(--sky-c-border);
@@ -1898,3 +1886,22 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     white-space: pre-wrap;
     border-top: 1px solid var(--sky-c-border);
 }
+
+/* §12.4 流式回答的状态行、停止按钮与动作行。
+   状态行（.ai-fab-state）承载「正在查询 xxx」这类过程信息，它随每一条工具
+   事件变化 —— 用 align 而不是固定高度，避免多行时把回答挤下去。 */
+.ai-fab-state {
+    margin: 0;
+    padding: var(--sp-sm) var(--sp-md);
+    font-size: var(--fs-sm);
+    color: var(--sky-c-text-mute);
+    border-left: 2px solid var(--sky-c-primary);
+    background: var(--sky-c-surface);
+    white-space: pre-wrap;
+}
+.ai-fab-actions {
+    display: flex;
+    gap: var(--sp-sm);
+    justify-content: flex-end;
+}
+.ai-fab-actions .btn { flex: 0 0 auto; }

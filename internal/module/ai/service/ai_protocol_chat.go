@@ -22,7 +22,7 @@ import (
 // 排查「模型为什么不调工具」时不必再去翻服务端的默认值。
 //
 // max_tokens 只在 > 0 时写入：0 会被服务端当成「最多生成 0 个 token」直接截断。
-func buildChatCompletionsBody(model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64) ([]byte, error) {
+func buildChatCompletionsBody(model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64, stream bool) ([]byte, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return nil, ErrInvalidParam
@@ -45,6 +45,13 @@ func buildChatCompletionsBody(model string, msgs []aidto.ChatMessage, tools []ai
 		out = append(out, item)
 	}
 	payload := map[string]any{"model": model, "messages": out}
+	if stream {
+		payload["stream"] = true
+		// stream_options.include_usage：**不加它，流式响应里根本没有 usage 对象**，
+		// 于是计量那三个数（命中率 / 压缩开销）在流式下全部退化成「未上报」。
+		// 这不是可选优化，是流式与计量能同时成立的前提。
+		payload["stream_options"] = map[string]any{"include_usage": true}
+	}
 	if len(tools) > 0 {
 		payload["tools"] = chatTools(tools)
 		payload["tool_choice"] = toolChoiceAuto

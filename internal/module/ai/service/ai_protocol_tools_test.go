@@ -54,7 +54,7 @@ func at(t *testing.T, list any, i int) map[string]any {
 // === chat/completions ===
 
 func TestBuildChatCompletionsBody_WithTools(t *testing.T) {
-	body, err := buildChatCompletionsBody("m", userMsgs("有多少单"), []aidto.ToolSpec{toolSpec("orders_summary")}, 0)
+	body, err := buildChatCompletionsBody("m", userMsgs("有多少单"), []aidto.ToolSpec{toolSpec("orders_summary")}, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestBuildChatCompletionsBody_WithTools(t *testing.T) {
 // 多写这两个字段会让本来「只是问一句话」的调用也被模型当成可能调工具的轮次，
 // 而且给稳定前缀平白加了一段会随工具集变化的字节（docs/16 §3）。
 func TestBuildChatCompletionsBody_WithoutToolsOmitsToolFields(t *testing.T) {
-	body, err := buildChatCompletionsBody("m", userMsgs("你好"), nil, 0)
+	body, err := buildChatCompletionsBody("m", userMsgs("你好"), nil, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestBuildChatCompletionsBody_WithoutToolsOmitsToolFields(t *testing.T) {
 }
 
 func TestBuildChatCompletionsBody_ToolRoundTrip(t *testing.T) {
-	body, err := buildChatCompletionsBody("m", toolRoundMessages(), []aidto.ToolSpec{toolSpec("orders_summary")}, 0)
+	body, err := buildChatCompletionsBody("m", toolRoundMessages(), []aidto.ToolSpec{toolSpec("orders_summary")}, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestBuildChatCompletionsBody_EmptyArgumentsBecomeObject(t *testing.T) {
 		{Role: roleUser, Content: "x"},
 		{Role: roleAssistant, ToolCalls: []aidto.ToolCall{{ID: "c1", Name: "noop"}}},
 	}
-	body, err := buildChatCompletionsBody("m", msgs, nil, 0)
+	body, err := buildChatCompletionsBody("m", msgs, nil, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestParseChatCompletionsReply_NamelessToolCallDoesNotRescueEmptyReply(t *te
 // === responses ===
 
 func TestBuildResponsesBody_ToolRoundTrip(t *testing.T) {
-	body, err := buildResponsesBody("m", toolRoundMessages(), []aidto.ToolSpec{toolSpec("orders_summary")}, 0)
+	body, err := buildResponsesBody("m", toolRoundMessages(), []aidto.ToolSpec{toolSpec("orders_summary")}, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestBuildResponsesBody_KeepsAssistantTextWithCalls(t *testing.T) {
 		{Role: roleUser, Content: "x"},
 		{Role: roleAssistant, Content: "我先查一下", ToolCalls: []aidto.ToolCall{{ID: "c1", Name: "orders_summary", Arguments: "{}"}}},
 	}
-	body, err := buildResponsesBody("m", msgs, nil, 0)
+	body, err := buildResponsesBody("m", msgs, nil, 0, false)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
