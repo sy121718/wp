@@ -159,6 +159,36 @@ Jet v6 支持**三元表达式与算术**，所以「折叠卡 summary 带计数
   `.card-body`（**不带 `card`**）是「无边框无背景、但保留 `.card-body > h2` 小节标题样式」的写法 ——
   卡里分小节时用它，避免「卡中卡」。
 
+## `range` 里调全局函数必须用 `{{range _, r := …}}` 形式
+
+`{{range .Items}}…{{end}}` 会把**点号**指向当前项，于是循环体里任何 `.["x"]` 都是在**当前项上找字段**，
+而不是在根数据上找键。症状取决于它找的是什么：
+
+```jet
+{{range .Overview.Presets}}
+  {{ .["t"](r.LabelKey, r.Label) }}   {* ✗ Jet Runtime Error *)
+{{end}}
+{* can't use t as field name in struct type templates.tmplRangePreset *}
+```
+
+报错文本说的是「t 不是结构体字段」，而 `t` 明明是 layout 注入的全局函数 —— 这句话很容易被读成
+「t 没注入」或「模板注册有问题」，从而去查 `shell.Prepare` 那条链，方向就错了：根因是 `range` 换了点号。
+
+**两种修法，选一种并保持一致**：
+
+```jet
+{{range _, r := .Overview.Presets}}      {* ✅ 点号仍指根数据；用 r.X 取项 *)
+  <a href="{{r.URL}}">{{ .["t"](r.LabelKey, r.Label) }}</a>
+{{end}}
+
+{{range $ := .Overview.Presets}}         {* 也可以，但仓库里没有先例 *)
+```
+
+**这个写法是既有约定，不是新发明** —— `internal/templates/admin/dashboard.html` 的筛选条预设按钮
+（`.Overview.Presets`）与趋势图粒度按钮（`.Overview.GranularityPresets`）都写 `{{range _, x := …}}`。
+新写 range 时照抄这个形状；已经写了 `{{range .Foo}}` 的，只要循环体里出现 `.["t"]`、`.["csrf_token"]`
+或其它**根级键**，就必须改。
+
 ## 表格列数：数据行的 `td` 数必须与表头列数一致
 
 表头写了 N 列、数据行只写 N-1 个 `<td>` 时，浏览器**不报错**，而是把缺的那列补在**行尾** → 整表**左移一列**
