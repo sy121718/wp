@@ -59,7 +59,11 @@ type PageDraftResp struct {
 // model.ListPageTitles），语义与 resolver 解析单个页面来源时的标题口径一致：
 // 空串表示作者没在文档 SEO 段填标题，**读侧不替它编一个名字**，由调用方决定回退（通常是路径）。
 type PageTitleResp struct {
-	ID        string `json:"id"`
+	ID string `json:"id"`
+	// Kind 页面类型（home / archive / search / notFound / page / article / tag）。
+	// 列表要带它才能回答「站点有哪些功能页」—— 只给标题与路径分不出来，
+	// 而建功能页之前正需要先确认有没有同用途的那一张。
+	Kind      string `json:"kind"`
 	DraftPath string `json:"draftPath"`
 	// ActivePath 最近发布语言的线上路径；未发布为 nil（调用方回退草稿路径）。
 	ActivePath *string `json:"activePath,omitempty"`

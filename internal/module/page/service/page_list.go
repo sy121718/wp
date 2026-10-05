@@ -51,6 +51,7 @@ func (s *Service) ListPageTitles(ctx context.Context, projectID string) (res []p
 	for i := range rows {
 		res = append(res, pagedto.PageTitleResp{
 			ID:         rows[i].ID,
+			Kind:       rows[i].Kind,
 			DraftPath:  rows[i].DraftPath,
 			ActivePath: rows[i].ActivePath,
 			SEOTitle:   rows[i].SEOTitle,

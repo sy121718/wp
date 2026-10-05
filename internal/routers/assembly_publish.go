@@ -164,6 +164,17 @@ func (a *assembly) buildPublishingModules() {
 	} else if err := a.tools().RegisterAll(pageTools...); err != nil {
 		panic("页面工具注册失败：" + err.Error())
 	}
+	// 页面的骨架与上线动作（建页 / 发布 / 改网址 / 删页）。
+	//
+	// **刻意不含页面文档编辑**（草稿 AST 的读写属于「可视化页面选组件」）：
+	// 那套编辑器的语义是拖拽、块树、槽位绑定，不是一段 JSON 参数能表达清楚的 ——
+	// 让模型盲写 AST，产物在编辑器里打开时往往是一片无法维护的结构。
+	// 建页时一律给空文档，内容留给编辑器。
+	if pageWriteTools, err := pagemcp.WriteTools(pageService); err != nil {
+		panic("页面写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(pageWriteTools...); err != nil {
+		panic("页面写工具注册失败：" + err.Error())
+	}
 
 	// 结构模板（页眉 / 页脚）→ page 构建路径的模板解析端口。
 	//

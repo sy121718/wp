@@ -163,9 +163,36 @@ func matchRank(p pagedto.PageTitleResp, kw string) int {
 
 func writePageRows(b *strings.Builder, rows []pagedto.PageTitleResp) {
 	for i, p := range rows {
-		fmt.Fprintf(b, "%d. id=%s「%s」· 线上 %s · 草稿 %s\n",
-			i+1, p.ID, emptyAsDash(p.SEOTitle), activePathText(p), emptyAsDash(p.DraftPath))
+		fmt.Fprintf(b, "%d. id=%s「%s」· 类型 %s · 线上 %s · 草稿 %s\n",
+			i+1, p.ID, emptyAsDash(p.SEOTitle), kindText(p.Kind),
+			activePathText(p), emptyAsDash(p.DraftPath))
 	}
+}
+
+// kindText 页面类型的中文说法。
+//
+// 列表必须带类型：只给标题与路径分不出「这是首页还是普通页」，
+// 而 page_create 只能建功能页、建之前要先确认有没有同用途的那一张。
+// 普通内容页（page / article / tag）也标出来 —— 它们跟着内容走，
+// 看到它们就知道「这类页面不是在这里建的」。
+func kindText(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "home":
+		return "首页"
+	case "archive":
+		return "归档页"
+	case "search":
+		return "搜索结果页"
+	case "notFound":
+		return "404 页"
+	case "page":
+		return "普通页（绑定内容）"
+	case "article":
+		return "文章页（绑定文章）"
+	case "tag":
+		return "标签页（绑定标签）"
+	}
+	return emptyAsDash(kind)
 }
 
 // activePathText 线上路径。未发布时**明说未发布**而不是回退成草稿路径 ——

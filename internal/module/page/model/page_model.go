@@ -132,6 +132,7 @@ func (m *Model) ListAll(ctx context.Context, projectID, themeID string) (list []
 // PageTitleRow 页面标题投影行：id + 路径 + 文档 SEO 标题（**不含** draft_document）。
 type PageTitleRow struct {
 	ID         string  `gorm:"column:id"`
+	Kind       string  `gorm:"column:kind"`
 	DraftPath  string  `gorm:"column:draft_path"`
 	ActivePath *string `gorm:"column:active_path"`
 	SEOTitle   string  `gorm:"column:seo_title"`
@@ -160,7 +161,7 @@ func (m *Model) ListPageTitles(ctx context.Context, projectID string) (rows []Pa
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageEntity{}).
-			Select("id", "draft_path", "active_path",
+			Select("id", "kind", "draft_path", "active_path",
 				"COALESCE(draft_document->'settings'->'seo'->>'title', '') AS seo_title").
 			Where("project_id = ? AND deleted_at IS NULL", projectID).
 			Order("update_time DESC, id DESC").
