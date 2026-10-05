@@ -721,13 +721,25 @@ func (a *assembly) buildIdentityAndCommerce() {
 	//
 	// 用户的提问是模糊的（「张三是不是注册过」「谁这周注册的」「有多少人邮箱没验证」），
 	// 所以工具收的是线索而不是 id：customer_find 的 keyword 同时匹配邮箱 / 用户名 /
-	// 昵称 / 展示名。依赖收窄到 CustomerQueryReader —— 手里没有 SetCustomerStatus，
-	// AI 停用不了任何账号。
+	// 昵称 / 展示名。
+	//
+	// 读与写分开装配：读走 CustomerQueryReader，写走 CustomerWriter（只有
+	// SetCustomerStatus / UnlockCustomer）。合成一个接口会让「只想加个查询」顺手把
+	// 停用能力也带进来，而两者的权限点、确认要求、可逆性都不是一回事。
 	if userAdminOK {
 		if customerTools, err := usermcp.QueryTools(userAdminSvc); err != nil {
 			panic("客户工具装配失败：" + err.Error())
 		} else if err := a.tools().RegisterAll(customerTools...); err != nil {
 			panic("客户工具注册失败：" + err.Error())
+		}
+		customerWriter, ok := userAdminSvc.(usercontract.CustomerWriter)
+		if !ok {
+			panic("user: 后台服务未实现 CustomerWriter（装配期接线错误）")
+		}
+		if customerWriteTools, err := usermcp.WriteTools(customerWriter); err != nil {
+			panic("客户写工具装配失败：" + err.Error())
+		} else if err := a.tools().RegisterAll(customerWriteTools...); err != nil {
+			panic("客户写工具注册失败：" + err.Error())
 		}
 	}
 	// 库存（stock_find / warehouse_list）与会员（member_tiers / member_find）。
