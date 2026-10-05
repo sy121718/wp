@@ -789,6 +789,18 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(memberTools...); err != nil {
 		panic("会员工具注册失败：" + err.Error())
 	}
+	// 会员写工具（手工设级 / 取消锁定 / 等级增改删）与只读工具分开装配：
+	// 一个改全站门槛、一个只改一个人的等级，权限点与审计口径都不是一回事
+	//（见 membershipcontract.Writer 的说明）。
+	memberWriter, memberWriteOK := membershipSvc.(membershipcontract.Writer)
+	if !memberWriteOK {
+		panic("会员模块未实现写工具所需的 Writer，装配缺陷")
+	}
+	if memberWriteTools, err := membershipmcp.WriteTools(memberWriter); err != nil {
+		panic("会员写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(memberWriteTools...); err != nil {
+		panic("会员写工具注册失败：" + err.Error())
+	}
 	// 营销（邮件）的三个只读工具：contact_find / campaign_list / campaign_stats。
 	//
 	// 用户说的「运营营销」就是它：订阅名单、群发记录、单次活动的打开率与点击率。

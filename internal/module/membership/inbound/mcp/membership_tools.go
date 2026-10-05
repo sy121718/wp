@@ -22,6 +22,7 @@ import (
 	"go_wp/internal/mcp"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
+	membershipenums "go_wp/internal/module/membership/enums"
 	"go_wp/internal/permission"
 	"go_wp/pkg/utils"
 )
@@ -101,10 +102,27 @@ func defaultSuffix(isDefault bool) string {
 	return ""
 }
 
+// entitlementsText 权益清单（kind + 取值）。
+//
+// 必须带上取值：只写 kind 的话「折扣」这条权益完全看不出力度 ——
+// 20 是打八折、80 是打两折，两者在正文里长得一模一样，
+// 用户据它做判断就会错。
 func entitlementsText(list []membershipdto.EntitlementResp) string {
 	parts := make([]string, 0, len(list))
 	for _, e := range list {
-		parts = append(parts, strings.TrimSpace(e.Kind))
+		switch strings.TrimSpace(e.Kind) {
+		case membershipenums.KindFreeShipping:
+			parts = append(parts, "免运费")
+		case membershipenums.KindDiscount:
+			// value_int 是**扣减百分比**：20 = 打八折。直译成「折扣 20」会被读成 20% 折扣，
+			// 与实际相反，所以两种说法都给出来。
+			// 用 %g 而不是 %.0f：value_int=95 时是 0.5 折，取整会写成「打 1 折」——
+			// 一句比实际更优惠的话，而运营会拿它去答复用户。
+			parts = append(parts, fmt.Sprintf("打 %g 折（减免 %d%%）",
+				float64(100-e.ValueInt)/10, e.ValueInt))
+		default:
+			parts = append(parts, fmt.Sprintf("%s=%d", strings.TrimSpace(e.Kind), e.ValueInt))
+		}
 	}
 	return strings.Join(parts, "、")
 }

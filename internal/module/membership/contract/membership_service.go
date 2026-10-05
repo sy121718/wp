@@ -152,3 +152,15 @@ type QueryReader interface {
 	// ListAssignments 按工程 / 等级 / 来源 / 客户列归属记录。
 	ListAssignments(ctx context.Context, req *membershipdto.ListAssignmentsReq) (list []*membershipdto.AssignmentResp, err error)
 }
+
+// Writer 会员写能力（给 AI 工具的窄门）。
+//
+// = Assigner + TierAdminPort —— 不新造方法，只是把工具需要的两组能力收在一个名字下，
+// 免得装配处写两次断言。刻意**不含** SaveEntitlements 与 RecalcPort，也**不含**
+// 任何读方法（读走同包的 QueryReader）：改权益是全量覆盖（清单即最终状态，
+// 没列出的 kind 会被删），把它交给模型意味着一次「顺手补个折扣」会静默删掉其它权益；
+// 重算则是全站级的批处理，不该由对话触发。
+type Writer interface {
+	Assigner
+	TierAdminPort
+}
