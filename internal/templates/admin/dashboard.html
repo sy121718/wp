@@ -12,7 +12,7 @@
        与回答抢地方）。「收起回答」按钮把这一页交还给数据。 *}
 {{extends "layout.html"}}
 {{block body()}}
-<div class="stack">
+<div class="stack dash-page">
     <header class="page-head">
         <div class="page-head-main">
             <div class="page-title-row">
@@ -52,7 +52,10 @@
              aria-label="{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}">
         <div class="dash-ai-inner">
             <div class="dash-ai-head">
-                <span class="dash-ai-title">{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}</span>
+                <span class="dash-ai-title"><span aria-hidden="true">✦</span>{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}</span>
+                {* 一行说明：用户第一次看到这个框时的唯一提示 —— 设计稿把它放在徽章右边。
+                   aria-hidden 不给：它是这页的主要能力说明，读屏用户也该听到。 *}
+                <span class="dash-ai-hint">{{ .["t"]("admin.dashboard.ai.hint", "直接问，它会自己查订单、商品、客户与流量数据。") }}</span>
                 <a class="dash-ai-more" href="/admin/ai/sessions">{{ .["t"]("admin.ai.fab.history", "全部会话") }}</a>
                 {* 收起回答：把这一页交还给概览数据（清空轮次 + 去掉 .is-asking，
                    那三块数据随之展开回来）。它只在提问之后显示 —— 没有回答时
@@ -65,18 +68,33 @@
             </div>
             <form class="dash-ai-form" data-ai-fab-form onsubmit="return false">
                 <div class="ai-fab-attach" data-ai-fab-attach hidden></div>
-                <textarea class="form-textarea dash-ai-input" name="input" rows="2" required
-                          data-ai-fab-input
-                          placeholder="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？（Enter 发送，Shift+Enter 换行）") }}"
-                          aria-label="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？（Enter 发送，Shift+Enter 换行）") }}"></textarea>
-                <div class="ai-fab-actions">
+                {* 输入框与发送并排（设计稿的 .ai-row）。输入框是 textarea 而不是 input：
+                   它要支持换行与多行粘贴；但 rows="1" 且高度由 js 随内容撑开，
+                   空着时就是一行 42px —— 之前固定两行加上 34vh 的居中占位，
+                   把下面的卡片整个挤出了视口。 *}
+                <div class="dash-ai-row">
                     <button type="button" class="ai-fab-pick" data-ai-fab-pick
                             title="{{ .["t"]("admin.ai.fab.pickImage", "加图片") }}"
                             aria-label="{{ .["t"]("admin.ai.fab.pickImage", "加图片") }}"><span aria-hidden="true">📎</span></button>
                     <input type="file" accept="image/*" multiple hidden data-ai-fab-file
                            aria-hidden="true" tabindex="-1">
+                    <textarea class="form-textarea dash-ai-input" name="input" rows="1" required
+                              data-ai-fab-input
+                              placeholder="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？") }}"
+                              aria-label="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？") }}"></textarea>
                     <button type="button" class="btn btn-primary" data-ai-fab-send>{{ .["t"]("admin.ai.fab.send", "发送") }}</button>
+                </div>
+                <div class="ai-fab-actions">
                     <button type="button" class="btn" data-ai-fab-stop hidden>{{ .["t"]("admin.ai.fab.stop", "停止") }}</button>
+                </div>
+                {* 快捷提问（设计稿的 .suggestions）。四条都对应真实存在的工具，
+                   点了就填进输入框（不直接提交 —— 用户应当能改措辞再发）。 *}
+                <div class="dash-ai-chips">
+                    <button type="button" class="dash-ai-chip" data-ai-fab-chip>{{ .["t"]("admin.dashboard.ai.chip1", "这两周卖得怎么样？") }}</button>
+                    <button type="button" class="dash-ai-chip" data-ai-fab-chip>{{ .["t"]("admin.dashboard.ai.chip2", "哪几单还没发货？") }}</button>
+                    <button type="button" class="dash-ai-chip" data-ai-fab-chip>{{ .["t"]("admin.dashboard.ai.chip3", "这个后台有多少客户？") }}</button>
+                    <button type="button" class="dash-ai-chip" data-ai-fab-chip>{{ .["t"]("admin.dashboard.ai.chip4", "这周流量怎么样？") }}</button>
+                    <button type="button" class="dash-ai-chip" data-ai-fab-chip>{{ .["t"]("admin.dashboard.ai.chip5", "有哪些评论在等审核？") }}</button>
                 </div>
             </form>
         </div>
@@ -104,7 +122,7 @@
             <button type="submit" class="btn btn-sm">{{ .["t"]("admin.dashboard.range.apply", "应用") }}</button>
         </form>
     </div>
-    <p class="text-mute text-sm">
+    <p class="text-mute text-sm dash-range-note">
         {{.Overview.Range.From}} ~ {{.Overview.Range.To}}
         {{if .Overview.Range.Clamped}}{{ .["t"]("admin.dashboard.range.clamped", "（区间已按上限截取）") }}{{end}}
     </p>
@@ -116,6 +134,7 @@
        排成一行，点任一数字进订单页（带得上的 status 筛选就带上）。 *}
     <div class="stat-grid stat-grid-three">
         <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
+            <span class="stat-icon" aria-hidden="true">⌁</span>
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.salesData", "销售数据") }}</div>
             <div class="stat-inline-row">
                 <div class="stat-card-inline">
@@ -141,11 +160,13 @@
            custom 档客户概览页不认（它会回落默认档）—— 这是刻意的：那页只有预设，
            与其在两个页面里各维护一套自定义区间收敛规则，不如让链接退化到默认。 *}
         <a class="card stat-card stat-card-link" href="/admin/customers/overview?range={{.Overview.Range.Key}}">
+            <span class="stat-icon" aria-hidden="true">＋</span>
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.newCustomers", "新客户") }}</div>
             <div class="stat-value">{{.Overview.KPI.NewCustomers}}</div>
             <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.newCustomersNote", "首次下单落在这段时间") }}</div>
         </a>
         <div class="card stat-card">
+            <span class="stat-icon" aria-hidden="true">◉</span>
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.pageViews", "页面浏览") }}</div>
             <div class="stat-value">{{.Overview.KPI.PageViews}}</div>
             {* 文章页那部分是路径排行的下界（只取前 N 条路径），措辞用「其中」而不是「其中全部」。 *}

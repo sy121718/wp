@@ -27,6 +27,18 @@
     function panelOf(root) { return root.querySelector('[data-ai-fab-panel]'); }
     function buttonOf(root) { return root.querySelector('[data-ai-fab-toggle]'); }
     function inputOf(root) { return root.querySelector('[data-ai-fab-input]'); }
+
+    // autoGrow 让多行输入框随内容长高（上限 40vh，由 CSS 的 max-height 兜底）。
+    //
+    // 先把高度归零再读 scrollHeight：不归零时 scrollHeight 取「内容高度」与
+    // 「当前高度」的较大者，于是删掉几行之后框**不会缩回去** —— 用户看到的是
+    // 一个删空了却还占着半屏的输入框。
+    function autoGrow(input) {
+        if (!input || input.tagName !== 'TEXTAREA') { return; }
+        input.style.height = 'auto';
+        var max = Math.round(global.innerHeight * 0.4);
+        input.style.height = Math.min(input.scrollHeight, max) + 'px';
+    }
     function sendOf(root) { return root.querySelector('[data-ai-fab-send]'); }
     function stopOf(root) { return root.querySelector('[data-ai-fab-stop]'); }
     function stateOf(root) { return root.querySelector('[data-ai-fab-state]'); }
@@ -246,6 +258,13 @@
             .then(function (body) {
                 var items = body && body.data && body.data.items;
                 if (!items || !items.length) { return; }
+                // 概览页的宿主：有历史回答就把数据块收起来。
+                //
+                // is-asking 是内存态 —— 刷新、或从别的页面跳回来时它不在，
+                // 而回答会由本函数回填。两者叠加的样子就是「回答铺开着、
+                // 卡片与图表也铺开着」，看起来像 AI 区把概览挤到了下面；
+                // 实际上它们是同一页的两段，后者该让位。
+                if (root.hasAttribute('data-ai-fab-dock')) { root.classList.add('is-asking'); }
                 // 一条提问后面可能没有回答（上一轮中断了）：那就只画提问，
                 // 不要凭空造一个空回答块。
                 var pending = null;
@@ -423,8 +442,10 @@
         }
         setState(root, root.getAttribute('data-thinking-label') || '');
         setBusy(root, true);
-        // 先清空再发：见文件头第 1 条。
+        // 先清空再发：见文件头第 1 条。高度一并收回去 —— 否则发完还占着
+        // 刚才那份长文本的高度，看起来像输入框里还有东西。
         input.value = '';
+        autoGrow(input);
 
         var controller = new AbortController();
         root.__fabAbort = controller;
@@ -462,7 +483,7 @@
                 answer.appendChild(p);
             }
             // 失败时把草稿填回去：一次网络抖动不该让用户刚写的那段话没了。
-            if (!input.value) { input.value = draft; }
+            if (!input.value) { input.value = draft; autoGrow(input); }
         }
 
         global.fetch('/admin/ai/ask/stream', {
@@ -592,7 +613,22 @@
                     e.preventDefault();
                     ask(root);
                 });
+                // 输入框随内容增高（概览页把它压到一行高，长问题要能自己撑开）。
+                input.addEventListener('input', function () { autoGrow(input); });
+                autoGrow(input);
             }
+
+            // 快捷提问：点了**填进输入框**，不直接发出去。
+            // 直接发的话用户没有机会改措辞，而这些示例只是起点。
+            Array.prototype.forEach.call(root.querySelectorAll('[data-ai-fab-chip]'), function (chip) {
+                chip.addEventListener('click', function () {
+                    var input = inputOf(root);
+                    if (!input) { return; }
+                    input.value = (chip.textContent || '').trim();
+                    autoGrow(input);
+                    input.focus();
+                });
+            });
 
             // Esc 关面板：与后台的抽屉 / 弹窗同一套键盘约定。
             root.addEventListener('keydown', function (e) {

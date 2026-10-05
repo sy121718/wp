@@ -1157,7 +1157,9 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .dash-ai.is-asking { min-height: 0; align-items: stretch; }
 .dash-ai .ai-fab-body { max-height: 56vh; overflow-y: auto; }
 
-/* 数据块（时间筛选条 / KPI 卡 / 趋势图 / 排行榜）在提问期间整块收起。
+/* 数据块（时间筛选条 + 区间说明 / KPI 卡 / 趋势图 / 排行榜）在提问期间整块收起。
+   区间说明那一行也要算进来：它单独留在页面上时，下面什么都没有却写着「2026-10-05 ~
+   2026-10-05」，看起来像页面加载坏了。
    max-height 过渡而不是 display 切换：要的是「让开位置」这个动作被看见，
    直接消失会让人以为页面跳了。6000px 是内容高度的上限估值 ——
    max-height 过渡必须给具体数值，给不了 auto。
@@ -1165,6 +1167,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    .dash-ai 的兄弟，包 wrapper 得改动 {{if}} 的配对（模板里同一层有多个 {{end}}），
    而这里一行选择器就够了。 */
 .dash-ai.is-asking ~ .range-bar,
+.dash-ai.is-asking ~ .dash-range-note,
 .dash-ai.is-asking ~ .stat-grid,
 .dash-ai.is-asking ~ .grid-split {
     overflow: hidden;
@@ -1173,6 +1176,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     pointer-events: none;
 }
 .range-bar,
+.dash-range-note,
 .stat-grid,
 .grid-split {
     opacity: 1;
@@ -2079,3 +2083,291 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     gap: var(--sp-xs);
     margin-top: var(--sp-xs);
 }
+
+/* ==========================================================================
+   §11.5 概览页版式（设计稿 go_wp_ai_dashboard.html）
+   --------------------------------------------------------------------------
+   为什么单开一段并加 .dash-page 作用域：这一套只服务仪表盘，不改其它页面。
+
+   要解决的问题不是「配色不好看」，是**没有层次**：此前页面底与卡片同为纯白，
+   只靠 #e5e7eb 的描边分开，整页读起来是一片灰。设计稿的解法是三层 ——
+   浅灰页面底（--dash-bg）、纯白卡片（--dash-panel）、极浅描边（--dash-line）
+   加一层几乎看不见的阴影（--dash-shadow-card）。三者叠加才有「卡片浮在底上」。
+
+   亮暗两套都要给：只给亮色时暗色主题下会变成白底黑字（变量回落到继承值）。
+   ========================================================================== */
+.stack.dash-page {
+    /* 亮色（默认）—— 取值逐字来自设计稿的 :root */
+    --dash-bg: #f5f6f8;
+    --dash-panel: #ffffff;
+    --dash-text: #17191c;
+    --dash-muted: #737981;
+    --dash-line: #e8eaed;
+    --dash-accent: #111827;
+    --dash-accent-soft: #f0f2f5;
+    --dash-green: #16845b;
+    --dash-green-bg: #e9f7f0;
+    --dash-orange: #b86b08;
+    --dash-orange-bg: #fff4df;
+    --dash-shadow: 0 8px 28px rgba(20, 25, 35, 0.06);
+    --dash-shadow-card: 0 2px 8px rgba(20, 25, 35, 0.025);
+    --dash-ai-grad: linear-gradient(135deg, #ffffff 0%, #f8f9fb 100%);
+    --dash-ai-border: #e2e5e9;
+    --dash-input-border: #dfe2e6;
+
+    /* 铺满内容区：负 margin 抵消 .admin-content 的内边距，否则页面底只铺到卡片边缘，
+       四周会留一圈白 —— 那圈白正好抵消掉「底色与卡片不同」想建立的层次。 */
+    margin: calc(var(--sp-xl) * -1);
+    /* 内边距与行距取设计稿 .main 的 18px / 22px / 14px —— 不是随手收的：
+       一页要在一屏里放完（AI 区 + 筛选条 + 三卡 + 图表 + 榜单），
+       默认的 --sp-xl(24px) 内边距与 --sp-lg(16px) 行距加起来就是多出来的那一屏。 */
+    padding: 18px 22px 20px;
+    gap: 14px;
+    background: var(--dash-bg);
+    min-height: 100%;
+    color: var(--dash-text);
+}
+[data-theme="dark"] .stack.dash-page {
+    --dash-bg: #0f1216;
+    --dash-panel: #171b21;
+    --dash-text: #e8eaed;
+    --dash-muted: #8a9199;
+    --dash-line: #232830;
+    --dash-accent: #e8eaed;
+    --dash-accent-soft: #1f242b;
+    --dash-green: #5fae83;
+    --dash-green-bg: #16281f;
+    --dash-orange: #d09a4e;
+    --dash-orange-bg: #2a2114;
+    --dash-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    --dash-shadow-card: 0 2px 8px rgba(0, 0, 0, 0.25);
+    --dash-ai-grad: linear-gradient(135deg, #1b2027 0%, #151920 100%);
+    --dash-ai-border: #2a3138;
+    --dash-input-border: #333b44;
+}
+
+/* 概览页的页头：标题 23px、副标题一行 —— 与设计稿的 .head 对齐。
+   其它页面的 .page-head 不动。 */
+.stack.dash-page .page-head .page-title-row h1 { font-size: 23px; letter-spacing: -0.04em; }
+
+/* ── AI 区 ────────────────────────────────────────────────────────────────
+   从「居中占位 + 多行输入框」改成设计稿的紧凑卡片：
+   徽章 + 一行输入 + 快捷提问。它不再用 min-height 占位置 ——
+   此前 34vh 的占位把下面的卡片挤出视口，用户看到的正是这个。 */
+.stack.dash-page .dash-ai {
+    display: block;
+    align-items: stretch;
+    justify-content: flex-start;
+    min-height: 0;
+    padding: 13px 14px 11px;
+    background: var(--dash-ai-grad);
+    border: 1px solid var(--dash-ai-border);
+    border-radius: 16px;
+    box-shadow: var(--dash-shadow);
+}
+.stack.dash-page .dash-ai-inner { max-width: none; width: 100%; }
+/* 头部一行：徽章 + 说明 + 右侧链接。徽章用深底白字（设计稿的 .ai-badge）。 */
+.stack.dash-page .dash-ai-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 9px;
+}
+.stack.dash-page .dash-ai-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 8px;
+    background: var(--dash-accent);
+    color: var(--dash-bg);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.stack.dash-page .dash-ai-hint {
+    font-size: 12px;
+    color: var(--dash-muted);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.stack.dash-page .dash-ai-more { margin-left: auto; font-size: 12px; }
+.stack.dash-page .dash-ai-dismiss { font-size: 12px; }
+
+/* 输入行：输入框与发送并排（设计稿的 .ai-row）。
+   输入框默认一行高、自动增高 —— 它是 textarea（要支持换行与多行粘贴），
+   但空着的时候不该占两行，那正是「输入框区域太大」的一半来源。 */
+.stack.dash-page .dash-ai-form { gap: 0; }
+.stack.dash-page .dash-ai-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+.stack.dash-page .dash-ai-input {
+    flex: 1;
+    min-width: 0;
+    height: 42px;
+    min-height: 42px;
+    max-height: 40vh;
+    padding: 10px 13px;
+    font-size: 13px;
+    line-height: 20px;
+    border: 1px solid var(--dash-input-border);
+    border-radius: 10px;
+    background: var(--dash-panel);
+    color: var(--dash-text);
+    resize: none;
+    overflow-y: auto;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.stack.dash-page .dash-ai-input::placeholder { color: var(--dash-muted); }
+.stack.dash-page .dash-ai-input:focus {
+    outline: none;
+    border-color: var(--sky-c-primary, #aeb4bd);
+    box-shadow: 0 0 0 3px var(--dash-accent-soft);
+}
+/* 发送按钮跟输入框同一行、同一高度（设计稿的 .ai-send）。 */
+.stack.dash-page .dash-ai-row .btn {
+    height: 42px;
+    padding: 0 17px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+/* 输入行里的回形针：与输入框同高、方形。放左边（设计稿没有它，
+   但「加图片」是必须保留的能力；放在发送旁边会让两个按钮连在一起，
+   用户容易点错，放左边与输入框形成「附件在内容之前」的自然顺序）。 */
+.stack.dash-page .dash-ai-row .ai-fab-pick {
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--dash-input-border);
+    border-radius: 10px;
+    background: var(--dash-panel);
+}
+@media (hover: hover) {
+    .stack.dash-page .dash-ai-row .ai-fab-pick:hover { border-color: var(--dash-input-border); color: var(--dash-text); }
+}
+/* 操作行只剩「停止」（发送与回形针都在输入行里），它出现时靠右、
+   不占位（hidden 由 .ai-fab-actions [hidden] 兜住）。 */
+.stack.dash-page .ai-fab-actions { margin-top: 6px; }
+.stack.dash-page .ai-fab-actions .btn { height: 30px; padding: 0 12px; font-size: 12px; }
+.stack.dash-page .ai-fab-turns { max-height: none; }
+/* 回答区在提问后展开：留出可读高度，但不超过视口的一半——
+   否则一屏只剩回答、输入框被推到屏幕外。 */
+.stack.dash-page .dash-ai.is-asking .ai-fab-body {
+    max-height: 52vh;
+    overflow-y: auto;
+    margin-bottom: var(--sp-sm);
+    padding-right: 4px;
+}
+
+/* 快捷提问 chips（设计稿的 .suggestions）。只在没有轮次时显示：
+   一旦进入对话，它们就成了页面上的噪音。 */
+.stack.dash-page .dash-ai-chips {
+    display: flex;
+    gap: 7px;
+    margin-top: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.stack.dash-page .dash-ai-chips::-webkit-scrollbar { display: none; }
+.stack.dash-page .dash-ai-chip {
+    flex: none;
+    border: 1px solid var(--dash-line);
+    background: var(--dash-panel);
+    border-radius: 999px;
+    padding: 5px 9px;
+    color: var(--dash-muted);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+@media (hover: hover) {
+    .stack.dash-page .dash-ai-chip:hover { color: var(--dash-text); border-color: var(--dash-input-border); }
+}
+.stack.dash-page .dash-ai.is-asking .dash-ai-chips { display: none; }
+
+/* ── KPI 卡 ───────────────────────────────────────────────────────────────
+   白底 + 13px 圆角 + 极浅描边 + 一层几乎看不见的阴影（设计稿的 .kpi / .card）。 */
+.stack.dash-page .stat-grid { gap: 14px; }
+.stack.dash-page .stat-card {
+    position: relative;
+    padding: 12px 15px;
+    background: var(--dash-panel);
+    border: 1px solid var(--dash-line);
+    border-radius: 13px;
+    box-shadow: var(--dash-shadow-card);
+}
+.stack.dash-page .stat-card-link { transition: box-shadow 0.18s ease, border-color 0.18s ease; }
+@media (hover: hover) {
+    .stack.dash-page .stat-card-link:hover {
+        border-color: var(--dash-input-border);
+        box-shadow: 0 6px 18px rgba(20, 25, 35, 0.07);
+    }
+}
+.stack.dash-page .stat-label { font-size: 11px; color: var(--dash-muted); }
+.stack.dash-page .stat-value {
+    font-size: 25px;
+    font-weight: 750;
+    letter-spacing: -0.04em;
+    margin-top: 5px;
+    color: var(--dash-text);
+}
+.stack.dash-page .stat-value-sm {
+    font-size: 20px;
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    margin-top: 4px;
+    color: var(--dash-text);
+}
+.stack.dash-page .stat-note { font-size: 10px; margin-top: 5px; color: var(--dash-muted); }
+/* 卡片右上角的浅底图标（设计稿的 .kpi-icon）。纯装饰，aria-hidden。 */
+.stack.dash-page .stat-icon {
+    position: absolute;
+    right: 13px;
+    top: 13px;
+    width: 25px;
+    height: 25px;
+    border-radius: 7px;
+    background: var(--dash-accent-soft);
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: var(--dash-muted);
+}
+
+/* ── 趋势图 / 排行榜面板 ──────────────────────────────────────────────── */
+.stack.dash-page .card {
+    background: var(--dash-panel);
+    border: 1px solid var(--dash-line);
+    border-radius: 13px;
+    box-shadow: var(--dash-shadow-card);
+}
+.stack.dash-page .card-header { padding: 12px 15px 0; margin-bottom: 8px; }
+/* .card-body 的上下内边距也收一档（图表卡的高度直接来自它 + svg）。 */
+.stack.dash-page .card-body { padding: 0 15px 12px; }
+.stack.dash-page .card-title { font-size: 13px; font-weight: 700; }
+.stack.dash-page .grid-split { gap: 14px; align-items: start; }
+/* 趋势图的 svg 按宽度等比缩放：图表卡占七成宽时它会撑到 400px 以上，
+   把页面顶出视口。给它一个上限、让它自己按比例缩（preserveAspectRatio 由模板里的
+   viewBox 决定，这里只管高度）。 */
+.stack.dash-page .grid-split svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+}
+/* 时间筛选条：设计稿把区间控件放在页头右侧，这里保持原位（它是详情不是摘要），
+   只把胶囊与日期框的描边换成同一套变量的描边。 */
+.stack.dash-page .range-chip { border-color: var(--dash-line); background: var(--dash-panel); }
+.stack.dash-page .range-chip.is-active {
+    background: var(--dash-accent);
+    border-color: var(--dash-accent);
+    color: var(--dash-bg);
+}
+.stack.dash-page .dash-range-note { color: var(--dash-muted); }

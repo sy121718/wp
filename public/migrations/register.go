@@ -246,6 +246,7 @@ func init() {
 	registerDashboardAIBoxI18n()
 	registerAIFabImageI18n()
 	registerAIFabDismissI18n()
+	registerDashboardAIChipsI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }
