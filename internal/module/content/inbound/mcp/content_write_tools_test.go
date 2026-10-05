@@ -23,6 +23,7 @@ type fakeContent struct {
 	updated  []*contentdto.UpdateReq
 	deleted  []string
 	getCalls int
+	listReq  *contentdto.ListReq
 }
 
 func (f *fakeContent) Create(_ context.Context, req *contentdto.CreateReq) (*contentdto.ContentResp, error) {
@@ -38,6 +39,13 @@ func (f *fakeContent) Update(_ context.Context, req *contentdto.UpdateReq) (*con
 func (f *fakeContent) Delete(_ context.Context, req *contentdto.DeleteReq) error {
 	f.deleted = append(f.deleted, req.ID)
 	return nil
+}
+
+func (f *fakeContent) List(_ context.Context, req *contentdto.ListReq) ([]*contentdto.ContentResp, error) {
+	f.listReq = req
+	return []*contentdto.ContentResp{
+		{ID: "id-1", EntityType: "article", Slug: "quit-smoking", Data: map[string]any{"title": "如何戒烟"}},
+	}, nil
 }
 
 func (f *fakeContent) Get(_ context.Context, req *contentdto.GetReq) (*contentdto.ContentResp, error) {
@@ -75,14 +83,52 @@ func TestContentToolsIncludeReaderWithWriters(t *testing.T) {
 	for _, tl := range list {
 		names[tl.Name()] = true
 	}
-	for _, want := range []string{"content_get", "content_create", "content_update", "content_delete"} {
+	for _, want := range []string{"content_find", "content_get", "content_create", "content_update", "content_delete"} {
 		if !names[want] {
 			t.Errorf("缺少工具 %s", want)
 		}
 	}
-	if len(list) != 4 {
-		t.Errorf("工具条数应为 4，实得 %d", len(list))
+	if len(list) != 5 {
+		t.Errorf("工具条数应为 5，实得 %d", len(list))
 	}
+}
+
+// TestContentFindTurnsNameIntoID 搜索工具是「用户说名字」这条路的唯一入口。
+//
+// 没有它时模型只有两条路：向用户索要 uuid（用户给不出），或者猜一个
+// （猜出来的 id 不存在，报错会归到「内容不存在」，看起来像数据问题）。
+func TestContentFindTurnsNameIntoID(t *testing.T) {
+	f := &fakeContent{}
+	list, err := Tools(f, f, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := call2(t, toolByName(t, list, "content_find"), `{"keyword":"戒烟"}`)
+	if f.listReq == nil || f.listReq.Keyword != "戒烟" {
+		t.Fatalf("关键词没传下去：%+v", f.listReq)
+	}
+	if !strings.Contains(res.Text, "如何戒烟") || !strings.Contains(res.Text, "id-1") {
+		t.Fatalf("结果要同时给出标题与 id（模型下一步要用 id），实得：%s", res.Text)
+	}
+}
+
+// TestContentGetPointsAtFind get 的说明要把「先 find」写出来。
+func TestContentGetPointsAtFind(t *testing.T) {
+	f := &fakeContent{}
+	list, _ := Tools(f, f, nil)
+	if !strings.Contains(toolByName(t, list, "content_get").Description(), "content_find") {
+		t.Fatal("content_get 的说明里要指出 id 从哪来")
+	}
+}
+
+// call2 content 侧的统一调用助手。
+func call2(t *testing.T, tool mcp.Tool, body string) mcp.Result {
+	t.Helper()
+	res, err := tool.Invoke(context.Background(), json.RawMessage(body))
+	if err != nil {
+		t.Fatalf("%s 调用失败：%v", tool.Name(), err)
+	}
+	return res
 }
 
 // TestContentUpdateMergesOnServer 合并必须发生在服务端。

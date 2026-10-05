@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"go_wp/internal/mcp"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -29,9 +30,10 @@ type ContentWriter interface {
 	Delete(ctx context.Context, req *contentdto.DeleteReq) error
 }
 
-// ContentReader 读单条内容（`content_update` 的前置）。
+// ContentReader 读内容（单条 + 列表）。
 type ContentReader interface {
 	Get(ctx context.Context, req *contentdto.GetReq) (*contentdto.ContentResp, error)
+	List(ctx context.Context, req *contentdto.ListReq) ([]*contentdto.ContentResp, error)
 }
 
 // Tools 返回内容模块的全部工具。
@@ -45,12 +47,65 @@ func Tools(w ContentWriter, r ContentReader, store mcp.IdempotencyStore) ([]mcp.
 		return nil, errors.New("contentmcp: 内容读写服务依赖缺失（装配期接线错误）")
 	}
 	return []mcp.Tool{
+		contentFind(r),
 		contentGet(r),
 		contentCreate(w, store),
 		contentUpdate(w, r, store),
 		contentDelete(w, store),
 	}, nil
 }
+
+// contentFindArgs content_find 的入参。
+type contentFindArgs struct {
+	EntityType string `json:"entityType"`
+	Keyword    string `json:"keyword"`
+}
+
+// contentFind 按关键词找内容。
+//
+// **这一环是必需的**：用户说的是「把那篇讲戒烟的文章标题改一下」，他不会念 uuid，
+// 而 uuid 是其余工具的唯一入口。没有它，模型只能向用户索要 uuid（用户给不出）
+// 或者猜一个（猜出来的 id 不存在，报错会归到「内容不存在」，看起来像数据问题）。
+func contentFind(r ContentReader) mcp.Tool {
+	return mcp.New("content_find", "搜索内容",
+		"按关键词搜索内容（匹配标题与 slug），返回 id 与标题。**用户只会说文章名**，"+
+			"所以要先用它把名字换成 id，再去调 content_get / content_update / content_delete。"+
+			"不传关键词则列出该类型最近的内容。",
+		permission.ContentList,
+		mcp.Object("搜索参数", map[string]mcp.Schema{
+			"entityType": mcp.Enum("内容类型（留空则不限类型）", contentcontract.ContentTypes()...),
+			"keyword":    mcp.String("标题的一部分或 slug（可为空，空则列出最近的内容）"),
+		}),
+		func(ctx context.Context, args contentFindArgs) (mcp.Result, error) {
+			list, err := r.List(ctx, &contentdto.ListReq{
+				EntityType: args.EntityType, Keyword: args.Keyword, Limit: contentFindLimit,
+			})
+			if err != nil {
+				return mcp.Result{}, err
+			}
+			if len(list) == 0 {
+				return mcp.Result{Text: "没有匹配的内容（关键词：" + strings.TrimSpace(args.Keyword) + "）。" +
+					"换个词试试，或者先问用户标题的准确写法。"}, nil
+			}
+			var b strings.Builder
+			b.WriteString("匹配到 " + strconv.Itoa(len(list)) + " 条：\n")
+			for _, item := range list {
+				title, _ := item.Data["title"].(string)
+				if strings.TrimSpace(title) == "" {
+					title = "（标题为空）"
+				}
+				b.WriteString("- " + title + "（id=" + item.ID + "，slug=" + item.Slug + "）\n")
+			}
+			if len(list) >= contentFindLimit {
+				b.WriteString("（只列了前 " + strconv.Itoa(contentFindLimit) + " 条；换个更具体的关键词能缩小范围。）\n")
+			}
+			return mcp.Result{Text: b.String()}, nil
+		},
+	)
+}
+
+// contentFindLimit 搜索返回的条数上限（与商品侧同口径）。
+const contentFindLimit = 20
 
 // contentGetArgs content_get 的入参。
 type contentGetArgs struct {
@@ -60,6 +115,7 @@ type contentGetArgs struct {
 func contentGet(r ContentReader) mcp.Tool {
 	return mcp.New("content_get", "读取内容",
 		"按 id 读出一条内容的全部字段（用于看清现状，或核对改动结果）。"+
+			"**id 要先经 content_find 拿到**（用户通常只说标题）。"+
 			"注意：返回值可能被剪枝（很长的正文只保留开头），所以它**不是** content_update 的输入 ——"+
 			"content_update 只传要改的字段就够了。",
 		permission.ContentGet,
