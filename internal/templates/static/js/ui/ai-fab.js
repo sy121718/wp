@@ -16,6 +16,12 @@
 (function (global) {
     'use strict';
 
+    // CONTINUE_KEY 一条 sessionStorage 记录：用户在概览页提过问。
+    // 用它把「页内提问框」与「悬浮球」串成同一个入口 —— 跳页之后球自动展开、
+    // 会话接上。用 sessionStorage 而不是 localStorage：它是「这一次会话里
+    // 接着看」的意思，关掉标签页就该忘掉。
+    var CONTINUE_KEY = 'aiFabContinue';
+
     function fabOf(root) { return root; }
 
     function panelOf(root) { return root.querySelector('[data-ai-fab-panel]'); }
@@ -405,10 +411,16 @@
         var imageLabels = pendingImages.map(function (it) { return it.label; });
 
         var cur = beginTurn(root, draft, imageLabels);
-        // 带 data-ai-fab-dock 的实例（概览页那只会常驻的提问框）：一开始提问就把它
-        // 沉到页面底部（.is-asking），回答长在输入框上方。不沉的话它留在页面中段，
-        // 一边出回答一边把下面的卡片往下挤。
-        if (root.hasAttribute('data-ai-fab-dock')) { root.classList.add('is-asking'); }
+        // 带 data-ai-fab-dock 的实例（概览页那只会常驻的提问框）：提问期间给根加
+        // .is-asking —— 它的作用是**收起下面那三块数据**（CSS 里的相邻兄弟选择器），
+        // 而不是把这个提问框挪到页面底部。挪位置的做法会把卡片与图表留在视口里
+        // 跟回答抢地方，用户说的「一直占着概览卡片和图标的空间」就是它。
+        if (root.hasAttribute('data-ai-fab-dock')) {
+            root.classList.add('is-asking');
+            // 记一笔「刚在概览页提过问」：用户随后点进订单 / 商品页时，
+            // 悬浮球要自动展开并把同一段会话接上（见 init 里的 CONTINUE_KEY 分支）。
+            try { global.sessionStorage.setItem(CONTINUE_KEY, '1'); } catch (e) { /* 隐私模式下忽略 */ }
+        }
         setState(root, root.getAttribute('data-thinking-label') || '');
         setBusy(root, true);
         // 先清空再发：见文件头第 1 条。
@@ -480,15 +492,47 @@
             if (root.getAttribute('data-ai-fab-ready') === '1') { return; }
             root.setAttribute('data-ai-fab-ready', '1');
 
+            // 概览页不显示悬浮球：那一页自己有常驻的提问框（[data-ai-fab-dock]）。
+            // 两个入口同时出现会让人以为是两段会话，而它们本质上是同一个 ——
+            // 同一个会话键、同一个历史接口，只是一个在页面里、一个浮在角落。
+            // 从其它页回到概览页时球藏起来、页内框接上，是同一个道理的另一半。
+            if ((scope || global.document).querySelector('[data-ai-fab-dock]')
+                && !root.hasAttribute('data-ai-fab-dock')) {
+                root.hidden = true;
+                return;
+            }
+
+            // 从概览页提问后跳到别的页面：这条记录让悬浮球自动展开、会话接着上一轮，
+            // 用户不需要再点一下球才知道「它还记着我刚问的」。
+            var continued = false;
+            try {
+                continued = global.sessionStorage.getItem(CONTINUE_KEY) === '1';
+                if (continued) { global.sessionStorage.removeItem(CONTINUE_KEY); }
+            } catch (e) { /* 隐私模式下忽略 */ }
+
             // 铺历史：会话在服务端一直是连着的，界面每次却从空白开始 ——
             // 把已有的对话放回来，用户才知道它记得上一轮（见 loadHistory）。
             loadHistory(root);
+            if (continued) { open(root); }
 
             var btn = buttonOf(root);
             if (btn) {
                 btn.addEventListener('click', function () {
                     var panel = panelOf(root);
                     if (panel && panel.hidden) { open(root); } else { close(root); }
+                });
+            }
+            // 概览页的「关闭回答」：把这一页交还给概览数据（收起回答 + 用
+            // 去掉 .is-asking 让那三块数据展开回来）。
+            // 只收界面、**不删会话** —— 再问一句就是接着上一轮。
+            var dismiss = root.querySelector('[data-ai-fab-dismiss]');
+            if (dismiss) {
+                dismiss.addEventListener('click', function () {
+                    var turns = turnsOf(root);
+                    if (turns) { turns.innerHTML = ''; }
+                    root.classList.remove('is-asking');
+                    var input = inputOf(root);
+                    if (input) { input.focus(); }
                 });
             }
             var closer = root.querySelector('[data-ai-fab-close]');

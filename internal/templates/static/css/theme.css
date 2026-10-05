@@ -1124,25 +1124,61 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    .ai-fab-body / .ai-fab-think / .ai-fab-answer / .ai-fab-state 的样式直接沿用 §12.4。
    这里只补本页特有的三件：
      · 未提问时居中占位 —— 一团空白会让人以为页面还没加载完；
-     · 提问后沉到页面底部（.is-asking 由 ai-fab.js 在 ask() 里加）；
-     · 回答区限高可滚 —— 否则一次长回答会把下面所有内容顶出屏幕。 */
+     · **不限定宽度**：它是这一页的主要入口，缩成 720px 的一条会让宽屏上两侧空出
+       一大片，而回答里的表格与卡片本来就需要横向空间；
+     · 提问后**收起下面的数据块**（.dash-data，见下），而不是把 AI 区压到页面底部 ——
+       压到底的做法会把卡片与图表留在视口里跟回答抢位置，用户说「一直占着概览卡片
+       和图标的空间」说的就是它。 */
 .dash-ai {
     display: flex; align-items: center; justify-content: center;
-    min-height: 42vh;
+    min-height: 34vh;
 }
-.dash-ai-inner { width: 100%; max-width: 720px; min-width: 0; }
+.dash-ai-inner { width: 100%; min-width: 0; }
 .dash-ai-head { display: flex; align-items: baseline; gap: var(--ui-sp-sm); margin-bottom: var(--ui-sp-xs); }
 .dash-ai-title { font-size: 15px; font-weight: 600; color: var(--sky-c-text, #1a1d21); }
 .dash-ai-more { font-size: 13px; color: var(--sky-c-primary, #2563eb); text-decoration: none; }
+/* 关闭回答：把这一页交还给概览数据（收起回答 + 展开数据块）。
+   只在提问之后显示 —— 没有回答时它没有可关的东西。 */
+.dash-ai-dismiss {
+    margin-left: auto; display: none;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-size: 13px; font-family: inherit; color: var(--sky-c-text-mute, #6b7280);
+}
+/* :hover 必须包在 (hover: hover) 里：触屏上点击后 :hover 会粘住，表现为
+   「这个按钮一直是深色」（门禁 check-multidevice-css.sh 会判红）。 */
+@media (hover: hover) {
+    .dash-ai-dismiss:hover { color: var(--sky-c-text, #1a1d21); }
+}
+.dash-ai.is-asking .dash-ai-dismiss { display: inline-block; }
 .dash-ai-form { display: flex; flex-direction: column; gap: var(--ui-sp-xs); }
 .dash-ai-input { width: 100%; }
-/* 提问后沉到页面底部：.stack 是 flex column，order 足以换位置；
-   回答长在输入框上方（DOM 顺序本来就是 body 在 form 之前，无需额外规则）。 */
-.dash-ai.is-asking {
-    order: 99; min-height: 0; align-items: flex-end; margin-top: var(--ui-sp-sm);
+/* 提问后不再换位置，只是把居中占位收掉 —— 回答长在输入框上方
+   （DOM 顺序本来就是 body 在 form 之前，无需额外规则）。 */
+.dash-ai.is-asking { min-height: 0; align-items: stretch; }
+.dash-ai .ai-fab-body { max-height: 56vh; overflow-y: auto; }
+
+/* 数据块（时间筛选条 / KPI 卡 / 趋势图 / 排行榜）在提问期间整块收起。
+   max-height 过渡而不是 display 切换：要的是「让开位置」这个动作被看见，
+   直接消失会让人以为页面跳了。6000px 是内容高度的上限估值 ——
+   max-height 过渡必须给具体数值，给不了 auto。
+   用相邻兄弟选择器而不是给模板包一层 wrapper：那三块在 .stack 里本来就是
+   .dash-ai 的兄弟，包 wrapper 得改动 {{if}} 的配对（模板里同一层有多个 {{end}}），
+   而这里一行选择器就够了。 */
+.dash-ai.is-asking ~ .range-bar,
+.dash-ai.is-asking ~ .stat-grid,
+.dash-ai.is-asking ~ .grid-split {
+    overflow: hidden;
+    opacity: 0;
+    max-height: 0;
+    pointer-events: none;
 }
-.dash-ai.is-asking .dash-ai-inner { max-width: 860px; }
-.dash-ai .ai-fab-body { max-height: 52vh; overflow-y: auto; }
+.range-bar,
+.stat-grid,
+.grid-split {
+    opacity: 1;
+    max-height: 6000px;
+    transition: opacity 0.28s ease, max-height 0.38s ease;
+}
 
 /* ── 11.2 概览页的时间筛选条 ──────────────────────────────────────────
    排在三块（KPI / 趋势 / 榜单）之前：「这一页的数字是哪一段的」必须先于数字被读到。
@@ -1854,6 +1890,12 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     box-shadow: var(--shadow-lg);
     overflow: hidden;
 }
+
+/* [hidden] 必须显式压过上面的 display: flex —— 浏览器默认的 [hidden]{display:none}
+   输给类选择器，于是 close(root) 里 panel.hidden = true 设了也白设：
+   面板收不起来（用户报的就是这个）。仓库里同类写法见 .bulk-bar[hidden]、
+   .ai-fab-actions [hidden]。 */
+.ai-fab-panel[hidden] { display: none; }
 
 .ai-fab-head {
     display: flex;

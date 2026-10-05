@@ -6,8 +6,10 @@
      · 概览数据源未接线时整块换成一句提示：显示一片 0 同样会被当成真实统计
        （「今天一单都没有」），而这个页面是登录后的第一跳，它的数字有人真的会照着做决定。
      · 页面结构：AI 提问框在顶（未提问时居中占位），KPI / 趋势 / 榜单在它下面。
-       提问后 AI 区沉到页面最底部（.dash-ai.is-asking，由 ai-fab.js 加类），
-       回答长在输入框上方 —— 与主流对话页一致。 *}
+       提问后 AI 区留在原位并**收起下面那三块**（.dash-ai.is-asking 由 ai-fab.js
+       加类，theme.css 用相邻兄弟选择器把 range-bar / stat-grid / grid-split 收掉）——
+       回答独占这一页，卡片与图表让开；不是把提问框压到页面底部（那会留下卡片
+       与回答抢地方）。「收起回答」按钮把这一页交还给数据。 *}
 {{extends "layout.html"}}
 {{block body()}}
 <div class="stack">
@@ -34,10 +36,14 @@
 
     {* AI 提问框：结构与 partials/ai_fab.html 同构（同一组 data-ai-fab-* 钩子），
        所以 ai-fab.js 的那套流式逻辑直接复用 —— 它按 [data-ai-fab] 遍历多实例，
-       本页只是多挂一个根。差异只有两点：
+       本页只是多挂一个根。差异只有三点：
          · 没有悬浮按钮 [data-ai-fab-toggle]（js 对该节点判空，不会报错）；
-         · 根上多一个 data-ai-fab-dock，ask() 时会加 .is-asking 把它沉到页面底部。
-       面板恒展开（不是 hidden），因为在这个页面上它本身就是主内容。 *}
+         · 根上多一个 data-ai-fab-dock：提问时给根加 .is-asking，**收起下面那三块
+           数据**（见 theme.css 的相邻兄弟选择器），而不是把它自己挪到页面底部 ——
+           挪位置会把卡片与图表留在视口里跟回答抢地方；
+         · 多一个「收起回答」按钮，把这一页交还给概览数据。
+       面板恒展开（不是 hidden），因为在这个页面上它本身就是主内容。
+       本页有它的时候，全局悬浮球会自动隐藏（同一段会话的两个入口不该同时出现）。 *}
     <section class="dash-ai" data-ai-fab data-ai-fab-dock
              data-think-label="{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}"
              data-thinking-label="{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}"
@@ -48,6 +54,10 @@
             <div class="dash-ai-head">
                 <span class="dash-ai-title">{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}</span>
                 <a class="dash-ai-more" href="/admin/ai/sessions">{{ .["t"]("admin.ai.fab.history", "全部会话") }}</a>
+                {* 收起回答：把这一页交还给概览数据（清空轮次 + 去掉 .is-asking，
+                   那三块数据随之展开回来）。它只在提问之后显示 —— 没有回答时
+                   没有可关的东西。会话不删，再问一句就是接着上一轮。 *}
+                <button type="button" class="dash-ai-dismiss" data-ai-fab-dismiss>{{ .["t"]("admin.dashboard.ai.dismiss", "收起回答") }}</button>
             </div>
             <div class="ai-fab-body" data-ai-fab-body>
                 <div class="ai-fab-turns" data-ai-fab-turns></div>

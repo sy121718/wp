@@ -22,6 +22,11 @@
         <header class="ai-fab-head">
             <span class="ai-fab-title">{{ .["t"]("admin.ai.fab.title", "问 AI（当前页面）") }}</span>
             <a class="ai-fab-more" href="/admin/ai/sessions">{{ .["t"]("admin.ai.fab.history", "全部会话") }}</a>
+            {* 回概览继续：概览页的提问框与这个球是**同一个会话**（同一个会话键、
+               同一个历史接口）。在别的页面上问完想接着看经营数据，从这里回去，
+               页内框会把同一段对话铺出来 —— 不必再点一次球、也不必重问。
+               概览页自己会藏起这个球，所以这条链接在概览页上不会出现。 *}
+            <a class="ai-fab-more" href="/admin" data-ai-fab-back>{{ .["t"]("admin.ai.fab.backToDashboard", "回概览继续") }}</a>
             <button type="button" class="ai-fab-close" data-ai-fab-close
                     aria-label="{{ .["t"]("shell.action.close", "关闭") }}"
                     title="{{ .["t"]("shell.action.close", "关闭") }}">✕</button>
