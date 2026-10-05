@@ -72,6 +72,7 @@ import (
 	membershipmcp "go_wp/internal/module/membership/inbound/mcp"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
+	navigationmcp "go_wp/internal/module/navigation/inbound/mcp"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	ordermcp "go_wp/internal/module/order/inbound/mcp"
@@ -992,6 +993,17 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("属性工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(attributeTools...); err != nil {
 		panic("属性工具注册失败：" + err.Error())
+	}
+	// 站点导航（页眉 / 页脚菜单）：1 读树 + 3 写。
+	//
+	// 菜单是嵌套结构（parentId 指向父项），所以「先读树」不是可选的便利步骤 ——
+	// parentId 与要改的 id 只能从树里拿，而挂错父项会让一整块菜单跑到别人下面去。
+	// kind 的白名单由工具层自己校验：service 会把不认识的 kind 静默默认成 header，
+	// 「以为加在页脚、结果长在页眉上」这种错看起来很正常。
+	if navigationTools, err := navigationmcp.Tools(a.navigationSvc, a.navigationSvc); err != nil {
+		panic("导航工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(navigationTools...); err != nil {
+		panic("导航工具注册失败：" + err.Error())
 	}
 	// 媒体模块的工具（搜 + 读 + 改信息 + 删）。
 	//
