@@ -960,6 +960,21 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(taxonomyWriteTools...); err != nil {
 		panic("分类维度写工具注册失败：" + err.Error())
 	}
+	// 属性组（规格）：1 读 + 3 写。
+	//
+	// 属性组与标签是两回事：标签是运营打的标记，属性组是商品本身的规格
+	//（颜色 / 尺码），决定前台怎么筛选，且 IsVariation=true 的那些是**变体的来源**。
+	// 窄接口刻意不含 SetAttributeValues —— 它是「全量替换」语义，模型漏写一个取值
+	// 就等于删掉它，而它可能正被变体引用着。
+	attributeWriter, attributeWriteOK := a.productSvc.(productmcp.AttributeWriter)
+	if !attributeWriteOK {
+		panic("商品模块未实现属性写工具所需的四个方法，装配缺陷")
+	}
+	if attributeTools, err := productmcp.AttributeTools(attributeWriter); err != nil {
+		panic("属性工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(attributeTools...); err != nil {
+		panic("属性工具注册失败：" + err.Error())
+	}
 	// 媒体模块的工具（搜 + 读 + 改信息 + 删）。
 	//
 	// 没有「上传」与「换图」：那两条收的是 multipart 文件，模型给不出。
