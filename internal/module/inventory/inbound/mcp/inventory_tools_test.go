@@ -35,6 +35,10 @@ func (s *stubReader) ListStocks(_ context.Context, req *inventorydto.ListStockRe
 	return s.stockRes, s.err
 }
 
+func (s *stubReader) ListReasons(_ context.Context, _ *inventorydto.ListReasonReq) ([]*inventorydto.ReasonResp, error) {
+	return nil, s.err
+}
+
 func (s *stubReader) ListWarehouses(_ context.Context, req *inventorydto.ListWarehouseReq) ([]*inventorydto.WarehouseResp, error) {
 	s.gotWarehouses = req
 	return s.warehouseRes, s.err
@@ -188,5 +192,27 @@ func TestWarehouseListTextMarksDefault(t *testing.T) {
 func TestWarehouseListTextEmpty(t *testing.T) {
 	if got := warehouseListText(nil); !strings.Contains(got, "还没有建仓库") {
 		t.Fatalf("空清单应直说：%s", got)
+	}
+}
+
+// 库存行必须给出 variantId。
+//
+// 实测踩到过：模型用 product_find 找到商品、用 stock_find 找到库存行，
+// 但正文里只有 SKU 与数量 —— 它要调 stock_change（必填 variantId）时
+// 拿不到这个 id，只能停下来说「你给我一下变体 id」。
+// 「工具的输出要让下一步动作有可能完成」，在这一行上就是这句话的全部含义。
+func TestStockFindTextCarriesVariantID(t *testing.T) {
+	const variantID = "9a4583f1-5ea5-41d1-afe9-c75f445fed78"
+	stub := &stubReader{stockRes: []*inventorydto.StockResp{
+		{VariantID: variantID, ProductID: "prod-1", SKUCode: "SZ_DUPX", Quantity: 0, TrackQuantity: true, WarehouseName: "苏州仓"},
+	}}
+	tool := mustTools(t, stub)["stock_find"]
+	raw, _ := json.Marshal(map[string]any{"projectId": "p-1", "skuCode": "SZ_DUPX"})
+	res, err := tool.Invoke(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("不该报错: %v", err)
+	}
+	if !strings.Contains(res.Text, variantID) {
+		t.Errorf("正文必须带 variantId（stock_change 的必填项）：\n%s", res.Text)
 	}
 }

@@ -98,6 +98,15 @@ func stockListText(list []*inventorydto.StockResp, args stockFindArgs) string {
 	for i, s := range list {
 		fmt.Fprintf(&b, "%d. %s · %s · %s%s\n",
 			i+1, emptyAsDash(s.SKUCode), warehouseLabel(s), quantityText(s), externalSkuSuffix(s))
+		// 这一行必须给出 **variantId**：它是下一个动作的钥匙，而且只能从库存行上拿到。
+		// 实测踩到过 —— 模型用 product_find 找到商品、用 stock_find 找到库存行，
+		// 但正文里只有 SKU 没有变体 id，于是它只能停下来说「你给我一下变体 id」。
+		// 「工具的输出要让下一步动作有可能完成」在这里就是这一行。
+		ids := "      变体 " + emptyAsDash(s.VariantID)
+		if s.ProductID != "" {
+			ids += " · 商品 " + s.ProductID
+		}
+		b.WriteString(ids + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

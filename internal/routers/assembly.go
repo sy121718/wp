@@ -741,6 +741,26 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(stockTools...); err != nil {
 		panic("库存工具注册失败：" + err.Error())
 	}
+	// 库存的写工具（stock_change）+ 变动原因字典（stock_reasons）。
+	//
+	// 上面的注释说「不该由模型驱动库存调整」，本条把这句改成了**有条件的**：
+	// 用户明确要求「仓库入库」这类操作能由 AI 做，而库存变动的性质与「改价格」
+	// 不同 —— 每一次变动都写一条不可删除的流水（谁、何时、因为什么、前后各多少），
+	// 写错了能照流水改回来，事后也查得到。所以放开写口的同时把两件事钉住：
+	//   · 权限点用 InventoryStockChange（与后台库存变动页同一个）；
+	//   · 确认位与幂等键由 mcp.NewWrite 兜底，工具作者无法绕过。
+	// 仍然**不**给 SetStockTracking（库存页的行内编辑，两处持久化写入同事务）
+	// 与 RestockStock（语义是订单归还，走 stockPolicyRestore）—— 见 StockWriter 的注释。
+	stockWriter, stockWriteOK := inventorySvc.(inventorycontract.StockWriter)
+	if !stockWriteOK {
+		panic("库存模块未实现写工具所需的 ChangeStock，装配缺陷")
+	}
+	if stockWriteTools, err := inventorymcp.WriteTools(stockWriter, inventorySvc,
+		aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))); err != nil {
+		panic("库存写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(stockWriteTools...); err != nil {
+		panic("库存写工具注册失败：" + err.Error())
+	}
 	if memberTools, err := membershipmcp.Tools(membershipSvc); err != nil {
 		panic("会员工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(memberTools...); err != nil {

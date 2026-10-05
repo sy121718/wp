@@ -251,4 +251,23 @@ type StockReader interface {
 	ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error)
 	// ListWarehouses 按工程列仓库。
 	ListWarehouses(ctx context.Context, req *inventorydto.ListWarehouseReq) (list []*inventorydto.WarehouseResp, err error)
+	// ListReasons 变动原因字典（工程自定义 + 全部内置）。
+	//
+	// 放在读口而不是写口：入库/出库必须给一个**方向匹配的** reasonCode，
+	// 而 code 有哪些只有服务端知道（内置 + 各工程自建）。模型要先能读到它，
+	// 否则只能猜 —— 猜错的表现是「原因与方向不符」这类看不出所以然的拒绝。
+	ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error)
+}
+
+// StockWriter 库存变动（AI 工具用）。
+//
+// 只有 ChangeStock 一个方法，且**刻意不含 RestockStock**：后者的语义是「归还」
+// （走 stockPolicyRestore，订单取消/退货入库那条路），拿它当通用入库用会让流水里
+// 的原因与方向对不上 —— 而流水是审计依据。入库就是 direction=in 的 ChangeStock。
+//
+// 也不含 SetStockTracking：那是库存页的行内编辑（数量清零 + 关跟踪开关两处
+// 持久化写入必须同事务），模型没有「在表格里改一格」这个语境。
+type StockWriter interface {
+	// ChangeStock 一次库存变动（in / out / adjust 三个方向，批量多行同事务）。
+	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
 }
