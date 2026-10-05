@@ -936,6 +936,30 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(variantTools...); err != nil {
 		panic("商品变体写工具注册失败：" + err.Error())
 	}
+	// 分类维度的三个只读清单（brand_list / category_list / tag_list）+ 九个写工具。
+	//
+	// 清单工具的存在理由是**给写路径递参数**：category_create 要 parentId、
+	// brand_delete / tag_delete 要先看有没有在用，这些 id 只能从清单里拿。
+	// 「工具的输出里要带上下一步动作需要的参数」这条已在 stock_find 漏 variantId、
+	// stock_reasons 漏 id、建活动缺 accountId 上吃过三回，这次提前补上。
+	taxonomyWriter, taxonomyWriteOK := a.productSvc.(productmcp.TaxonomyWriter)
+	if !taxonomyWriteOK {
+		panic("商品模块未实现分类维度写工具所需的九个方法，装配缺陷")
+	}
+	taxonomyReader, taxonomyReadOK := a.productSvc.(productmcp.TaxonomyReader)
+	if !taxonomyReadOK {
+		panic("商品模块未实现分类维度清单工具所需的三个方法，装配缺陷")
+	}
+	if taxonomyTools, err := productmcp.TaxonomyTools(taxonomyReader); err != nil {
+		panic("分类维度清单工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(taxonomyTools...); err != nil {
+		panic("分类维度清单工具注册失败：" + err.Error())
+	}
+	if taxonomyWriteTools, err := productmcp.TaxonomyWriteTools(taxonomyWriter); err != nil {
+		panic("分类维度写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(taxonomyWriteTools...); err != nil {
+		panic("分类维度写工具注册失败：" + err.Error())
+	}
 	// 媒体模块的工具（搜 + 读 + 改信息 + 删）。
 	//
 	// 没有「上传」与「换图」：那两条收的是 multipart 文件，模型给不出。
