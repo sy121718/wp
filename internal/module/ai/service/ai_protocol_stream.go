@@ -234,6 +234,11 @@ func feedResponsesEvent(event string, data []byte, acc *streamAccumulator) (Stre
 		}
 	}
 
+	// fillerText / fillerThink 记录本次 completed 事件补进来的内容：
+	// 事件本身要把它一并推给调用方，否则界面上是「接口返回了正文、
+	// 前端直到结束都没显示过它」（只在校准那一步可见，观感是突然冒出来）。
+	var fillerText, fillerThink string
+
 	switch event {
 	case responsesEventCompleted:
 		// 工具调用只在 completed 的负载里解析一次：output[] 是完整的一份，
@@ -243,9 +248,25 @@ func feedResponsesEvent(event string, data []byte, acc *streamAccumulator) (Stre
 			for i, c := range parseResponsesToolCalls(output) {
 				acc.mergeCallPart(i, c.ID, c.Name, c.Arguments)
 			}
+			// 这一族在流式下**并非一定**发 output_text.delta 事件 ——
+			// 实测遇到过一次「只有 completed、正文全在 output[] 里」：只认累积器的
+			// 实现会拿到空回答，用户看到「这次没能拿到回答」而模型其实答了。
+			// 只在累积器空的时候补，避免与 delta 拼出来的那份重复。
+			if acc.text.Len() == 0 {
+				if full := strings.TrimSpace(parseResponsesOutputText(output)); full != "" {
+					acc.text.WriteString(full)
+					fillerText = full
+				}
+			}
+			if acc.reasoning.Len() == 0 {
+				if think := strings.TrimSpace(parseResponsesReasoning(output)); think != "" {
+					acc.reasoning.WriteString(think)
+					fillerThink = think
+				}
+			}
 		}
 		acc.done = true
-		return StreamDelta{Done: true, Usage: acc.usage}, true
+		return StreamDelta{Text: fillerText, Reasoning: fillerThink, Done: true, Usage: acc.usage}, true
 	case responsesEventTextDelta:
 		text, _ := root["delta"].(string)
 		if text == "" {

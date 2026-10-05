@@ -213,3 +213,73 @@ func TestStreamResponsesCollectsToolCalls(t *testing.T) {
 		t.Error("completed 之后 done 应当为真")
 	}
 }
+
+// 只有 response.completed、没有 output_text.delta 的流式响应。
+//
+// 实测遇到过一次：模型返回了 221 个输出 token，正文全在 completed 的 output[] 里，
+// 一个 delta 事件都没发。只认增量累积器的实现拿到空回答，用户看到
+// 「这次没能拿到回答，请稍后再试」—— 模型明明答了。
+// 判据：completed 到达时累积器是空的，就用 output[] 那一份填上。
+func TestStreamResponsesBackfillsTextFromCompleted(t *testing.T) {
+	acc := newStreamAccumulator()
+	delta, done := feedResponsesEvent(responsesEventCompleted, []byte(`{"type":"response.completed","response":{`+
+		`"output":[`+
+		`{"type":"reasoning","summary":[{"type":"summary_text","text":"先看看能做什么"}]},`+
+		`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"我可以查订单、客户、库存和流量。"}]}`+
+		`],`+
+		`"usage":{"input_tokens":100,"output_tokens":221,"total_tokens":321}}}`), acc)
+
+	if !done {
+		t.Fatal("completed 应标记流程结束")
+	}
+	reply := acc.Reply()
+	if !strings.Contains(reply.Content, "我可以查订单") {
+		t.Fatalf("正文应从 output[] 回填，实得 %q", reply.Content)
+	}
+	if !strings.Contains(reply.Reasoning, "先看看能做什么") {
+		t.Fatalf("思考过程也应回填，实得 %q", reply.Reasoning)
+	}
+	// 回填的那份要一并推给界面，否则前端直到结束都没显示过它。
+	if !strings.Contains(delta.Text, "我可以查订单") {
+		t.Errorf("回填的正文应随事件推出去，实得 %q", delta.Text)
+	}
+	if !strings.Contains(delta.Reasoning, "先看看能做什么") {
+		t.Errorf("回填的思考应随事件推出去，实得 %q", delta.Reasoning)
+	}
+}
+
+// 有 delta 时不能重复回填 —— 否则正文会出现两遍。
+func TestStreamResponsesDoesNotDuplicateWhenDeltaPresent(t *testing.T) {
+	acc := newStreamAccumulator()
+	feed := func(event, data string) { feedResponsesEvent(event, []byte(data), acc) }
+	feed(responsesEventTextDelta, `{"type":"response.output_text.delta","delta":"一遍"}`)
+	feed(responsesEventCompleted, `{"type":"response.completed","response":{`+
+		`"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"一遍"}]}],`+
+		`"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`)
+
+	if got := acc.Reply().Content; got != "一遍" {
+		t.Fatalf("有 delta 时不该重复回填，实得 %q", got)
+	}
+}
+
+// parseResponsesOutputText 抽取规则：只认 message 里的 output_text 段。
+func TestParseResponsesOutputTextSkipsOtherParts(t *testing.T) {
+	output := []any{
+		map[string]any{"type": "reasoning", "summary": []any{map[string]any{"text": "想"}}},
+		map[string]any{"type": "function_call", "name": "order_find", "arguments": "{}"},
+		map[string]any{"type": "message", "content": []any{
+			map[string]any{"type": "output_text", "text": "第一段"},
+			map[string]any{"type": "refusal", "text": "不该出现"},
+		}},
+		map[string]any{"type": "message", "content": []any{
+			map[string]any{"type": "output_text", "text": "第二段"},
+		}},
+	}
+	got := parseResponsesOutputText(output)
+	if got != "第一段\n第二段" {
+		t.Fatalf("应只拼 output_text 段并以换行连接，实得 %q", got)
+	}
+	if strings.Contains(got, "想") || strings.Contains(got, "不该出现") {
+		t.Errorf("不该把思考或拒答段混进正文：%q", got)
+	}
+}

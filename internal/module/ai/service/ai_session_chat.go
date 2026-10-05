@@ -301,11 +301,24 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 		// 没有工具调用 = 这一轮就是最终回答。
 		if len(chatRes.ToolCalls) == 0 {
 			output := strings.TrimSpace(chatRes.Output)
+			think := strings.Join(reasonings, "\n\n")
 			if output == "" {
-				return nil, ErrSessionChatEmptyReply
+				// 模型只给了思考过程、没给正文。把思考当成回答交出去，而不是报「空回答」。
+				//
+				// 实测过一次：上游返回了 221 个输出 token，全部落在思考段里，
+				// 正文是空的；那时用户看到的是「这次没能拿到回答，请稍后再试」——
+				// 明明有内容，却被当成失败。把思考铺出来至少让人看到它在想什么，
+				// 并且**这一段确实来自模型**，不是我们编的。
+				// 只有连思考都没有时，才真的是空回复。
+				if strings.TrimSpace(think) == "" {
+					return nil, ErrSessionChatEmptyReply
+				}
+				// 已经当正文了就不再重复写进 meta.reasoning。
+				return s.finishReply(ctx, sessionID, req, providerKey, model, think, userRes, input,
+					toolEvents, "")
 			}
 			return s.finishReply(ctx, sessionID, req, providerKey, model, output, userRes, input,
-				toolEvents, strings.Join(reasonings, "\n\n"))
+				toolEvents, think)
 		}
 
 		// 有工具调用：逐个执行并把「调用 / 结果」成对落库。

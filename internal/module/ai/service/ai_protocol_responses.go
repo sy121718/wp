@@ -271,6 +271,24 @@ func parseResponsesReply(body []byte) (ProtocolReply, error) {
 		return ProtocolReply{Content: text, Reasoning: reasoning, ToolCalls: calls, Usage: usage}, nil
 	}
 
+	text := parseResponsesOutputText(output)
+	if strings.TrimSpace(text) == "" && len(calls) == 0 {
+		return ProtocolReply{Usage: usage}, ErrInternal
+	}
+	return ProtocolReply{Content: text, Reasoning: reasoning, ToolCalls: calls, Usage: usage}, nil
+}
+
+// parseResponsesOutputText 从 output[] 里抽出助手说给用户的话。
+//
+// 抽出来单独成函数，是因为它有**两个**消费方：非流式的 parseResponsesReply，
+// 以及流式的 response.completed 兜底。
+//
+// 流式那条为什么要兜底：这一族协议在流式下**并非一定**发
+// `response.output_text.delta` 事件 —— 实测遇到过一次「只有 completed 事件、
+// 里面 output[] 带着完整正文」，而那时只认 delta 的累积器是空的，
+// 于是模型明明答了、系统却报「没能拿到回答」。
+// 判据：completed 到达时若累积器是空的，就用这一份填上。
+func parseResponsesOutputText(output []any) string {
 	var sb strings.Builder
 	for _, item := range output {
 		msg, ok := item.(map[string]any)
@@ -297,11 +315,7 @@ func parseResponsesReply(body []byte) (ProtocolReply, error) {
 			}
 		}
 	}
-	text := sb.String()
-	if strings.TrimSpace(text) == "" && len(calls) == 0 {
-		return ProtocolReply{Usage: usage}, ErrInternal
-	}
-	return ProtocolReply{Content: text, Reasoning: reasoning, ToolCalls: calls, Usage: usage}, nil
+	return sb.String()
 }
 
 // parseResponsesToolCalls 从 output[] 里收集 function_call 条目。
