@@ -2127,6 +2127,14 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     min-height: 100%;
     color: var(--dash-text);
 }
+/* `.stack.dash-page` 的 min-height:100% 要解析成「内容区可视高度」，前提是那个容器
+   自己有界。`.admin-content` 默认 `min-height: auto`，会被内容撑高 —— 于是这里的 100%
+   等于内容高度（无约束），页面比视口高一截、`overflow-y: auto` 也从不生效
+   （1526 行的手写主题页记的是同一件事，它走的是另一个 workaround）。
+   只对概览页开这个口：`:has()` 之外的内容区行为一律不变。 */
+.admin-content:has(> .stack.dash-page) {
+    min-height: 0;
+}
 [data-theme="dark"] .stack.dash-page {
     --dash-bg: #0f1216;
     --dash-panel: #171b21;
@@ -2356,21 +2364,27 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    grid item，拉高的是它自己，里面的 .card-body 仍是内容高度，空态文案还是贴在顶上。
    所以卡片要转成纵向 flex、body 吃剩余空间，再给 body 一个下限 —— 没有数据时
    图表区也留下一块空白，而不是整排塌掉。 */
-.stack.dash-page .grid-split { gap: 14px; align-items: stretch; }
+.stack.dash-page .grid-split { gap: 14px; align-items: stretch; flex: 1 1 auto; min-height: 0; }
 .stack.dash-page .grid-split > .card { display: flex; flex-direction: column; }
 .stack.dash-page .grid-split > .card > .card-body { flex: 1 1 auto; min-height: 200px; }
 /* 有数据时两栏走的都是 .tabs（列表/表格在里面），空态才直接给 .card-body ——
    上面那条选择器只覆盖后者，所以 tab 里的空态要单独给下限，否则右栏明明被拉到
    289px，里面的一行「这段时间没有已付款的订单」还是贴在顶边、下面空一大块。 */
 .stack.dash-page .grid-split .tab-panel > .card-body { flex: 1 1 auto; min-height: 200px; }
-/* 趋势图的 svg 按宽度等比缩放：图表卡占七成宽时它会撑到 400px 以上，
-   把页面顶出视口。给它一个上限、让它自己按比例缩（preserveAspectRatio 由模板里的
-   viewBox 决定，这里只管高度）。 */
+/* 图表卡要能把多出来的高度用掉：卡片转纵向 flex、tab 与面板逐层 flex:1，
+   svg 才会跟着长高。`[hidden]` 那条必须补 —— display:flex 会盖掉浏览器默认的
+   [hidden]{display:none}，切到「页面浏览」时两张图会同时显示。 */
+.stack.dash-page .grid-split .tabs { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.stack.dash-page .grid-split .tab-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.stack.dash-page .grid-split .tab-panel[hidden] { display: none; }
+/* 趋势图的 svg 按宽度等比缩放（viewBox 490×160）：七成宽的图表卡里它会自然长到
+   290px 上下，正好把卡片填满。这里的上限只用来兜住极端宽屏，不要压到 200px ——
+   那样卡片再高图也只有 200px，卡片下半截全是空白。 */
 .stack.dash-page .grid-split svg {
     display: block;
     width: 100%;
     height: auto;
-    max-height: 200px;
+    max-height: 340px;
 }
 /* 时间筛选条：设计稿把区间控件放在页头右侧，这里保持原位（它是详情不是摘要），
    只把胶囊与日期框的描边换成同一套变量的描边。 */
