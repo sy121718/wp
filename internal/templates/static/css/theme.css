@@ -2351,7 +2351,18 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 /* .card-body 的上下内边距也收一档（图表卡的高度直接来自它 + svg）。 */
 .stack.dash-page .card-body { padding: 0 15px 12px; }
 .stack.dash-page .card-title { font-size: 13px; font-weight: 700; }
-.stack.dash-page .grid-split { gap: 14px; align-items: start; }
+/* 两栏等高：`align-items: start` 会让右栏（排行榜）塌成内容高度 —— 一行「暂无数据」
+   时右栏只剩几十像素，同一排的两张卡看着像没画完。默认的 stretch 也不够：卡片是
+   grid item，拉高的是它自己，里面的 .card-body 仍是内容高度，空态文案还是贴在顶上。
+   所以卡片要转成纵向 flex、body 吃剩余空间，再给 body 一个下限 —— 没有数据时
+   图表区也留下一块空白，而不是整排塌掉。 */
+.stack.dash-page .grid-split { gap: 14px; align-items: stretch; }
+.stack.dash-page .grid-split > .card { display: flex; flex-direction: column; }
+.stack.dash-page .grid-split > .card > .card-body { flex: 1 1 auto; min-height: 200px; }
+/* 有数据时两栏走的都是 .tabs（列表/表格在里面），空态才直接给 .card-body ——
+   上面那条选择器只覆盖后者，所以 tab 里的空态要单独给下限，否则右栏明明被拉到
+   289px，里面的一行「这段时间没有已付款的订单」还是贴在顶边、下面空一大块。 */
+.stack.dash-page .grid-split .tab-panel > .card-body { flex: 1 1 auto; min-height: 200px; }
 /* 趋势图的 svg 按宽度等比缩放：图表卡占七成宽时它会撑到 400px 以上，
    把页面顶出视口。给它一个上限、让它自己按比例缩（preserveAspectRatio 由模板里的
    viewBox 决定，这里只管高度）。 */
