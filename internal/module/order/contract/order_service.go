@@ -226,6 +226,11 @@ type OrderRangeSummaryReader interface {
 type OrderOverviewReader interface {
 	// DailySeries 区间内逐日连续的订单数据（空天已补零）。
 	DailySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error)
+	// HourlySeries 区间内逐小时连续的订单数据（没有订单的小时为 0）。
+	//
+	// 与 DailySeries 同窗口同口径，只换桶宽；区间超过 service 的 maxHourlyRangeDays 时
+	// 返回参数错误（不自动降级成按天 —— 那会让调用方以为拿到的是小时数据）。
+	HourlySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error)
 	// TopProducts 区间内销量最高的若干商品（含名次，已按销量降序）。
 	TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error)
 	// StatusCounts 各状态的订单条数与几个已解释过的口径（待付款 / 待发货 / 总数）。

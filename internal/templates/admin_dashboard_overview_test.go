@@ -55,8 +55,19 @@ type tmplRange struct {
 	From    string
 	To      string
 	Days    int
-	Weekly  bool
-	Clamped bool
+	// Granularity 走服务端算好的标题（模板不再 if/else 四档，Jet 没有 switch）。
+	Granularity         string
+	GranularityTitleKey string
+	GranularityTitle    string
+	Clamped             bool
+}
+
+type tmplGranularityPreset struct {
+	Key      string
+	LabelKey string
+	Label    string
+	URL      string
+	Active   bool
 }
 
 type tmplRangePreset struct {
@@ -77,13 +88,14 @@ type tmplTopPage struct {
 }
 
 type tmplOverview struct {
-	PortsReady bool
-	Range      tmplRange
-	Presets    []tmplRangePreset
-	KPI        tmplOverviewKPI
-	Trend      []tmplTrendPoint
-	Top        []tmplTopProduct
-	TopPages   []tmplTopPage
+	PortsReady         bool
+	Range              tmplRange
+	Presets            []tmplRangePreset
+	GranularityPresets []tmplGranularityPreset
+	KPI                tmplOverviewKPI
+	Trend              []tmplTrendPoint
+	Top                []tmplTopProduct
+	TopPages           []tmplTopPage
 }
 
 func TestDashboardRendersOverviewBlocks(t *testing.T) {
@@ -100,10 +112,21 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	data["RecentPages"] = []map[string]any{}
 	data["Overview"] = tmplOverview{
 		PortsReady: true,
-		Range:      tmplRange{Key: "week", From: "2026-09-29", To: "2026-10-05", Days: 7},
+		Range: tmplRange{
+			Key: "week", From: "2026-09-29", To: "2026-10-05", Days: 7,
+			Granularity:         "day",
+			GranularityTitleKey: "admin.dashboard.trend.title.day",
+			GranularityTitle:    "趋势（按天）",
+		},
 		Presets: []tmplRangePreset{
 			{Key: "week", LabelKey: "admin.dashboard.range.week", Label: "本周", URL: "/admin?range=week", Active: true},
 			{Key: "month", LabelKey: "admin.dashboard.range.month", Label: "本月", URL: "/admin?range=month"},
+		},
+		GranularityPresets: []tmplGranularityPreset{
+			{Key: "hour", LabelKey: "admin.dashboard.trend.granularity.hour", Label: "小时", URL: "/admin?range=week&granularity=hour"},
+			{Key: "day", LabelKey: "admin.dashboard.trend.granularity.day", Label: "天", URL: "/admin?range=week&granularity=day", Active: true},
+			{Key: "week", LabelKey: "admin.dashboard.trend.granularity.week", Label: "周", URL: "/admin?range=week&granularity=week"},
+			{Key: "month", LabelKey: "admin.dashboard.trend.granularity.month", Label: "月", URL: "/admin?range=week&granularity=month"},
 		},
 		KPI: tmplOverviewKPI{
 			RangeOrders: 12, RangeSalesLabel: "¥1,234.50",
@@ -141,6 +164,14 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		// 多出来的 data-ai-fab-dock 是「提问后沉到页面底部」的开关。
 		"dash-ai", "data-ai-fab-dock", "data-ai-fab-input", "问 AI（经营数据）",
 		"趋势（按天）", "排行榜（当前区间）", "热销商品", "热门页面", "TEO 香水 50ml", "TEO-50-01", "09-29",
+		// 粒度切换：四个档位都要在页面上（缺一档 = 那个粒度没有入口，而默认值掩盖不了它），
+		// 且选中档带 is-active —— 没有它用户看不出自己在看哪个粒度。
+		"gran-bar", "小时", ">天<", ">周<", ">月<",
+		`class="gran-btn is-active"`,
+		// 链接里的 & 会被 HTML 转义成 &amp;（模板安全转义，写死原文会测不到）。
+		`range=week&amp;granularity=day`,
+		// 标题走服务端算好的词条键（模板里没有 if/else 四档）。
+		"granularity=hour", "granularity=week", "granularity=month",
 		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
 		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",
 		`<input type="hidden" name="range" value="custom">`,

@@ -23,6 +23,13 @@ import (
 // 收口成一份需要跨模块依赖（order 不该依赖 analytics），所以这里显式声明并在注释里对齐。
 const maxRangeDays = 366
 
+// maxHourlyRangeDays 按小时取趋势的区间上限（含首尾）。
+//
+// 一天的按小时序列是 24 个桶（形状读得出来），30 天就是 720 个 —— 柱宽不足 1px、
+// 日期标签也放不下，那已经是按天 / 按周的粒度该干的事。超限时 HourlySeries 返回
+// 参数错误（而不是自动降级）：静默换粒度会让调用方以为拿到的是小时数据。
+const maxHourlyRangeDays = 2
+
 // SummaryByRange 取区间订单摘要（概览页 KPI 与只读聚合共用）。
 //
 // 错误只回 enums 里的可翻译 key：本模块的响应文案统一由 XxxFacingMessages 白名单收口，

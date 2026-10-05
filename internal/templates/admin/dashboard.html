@@ -181,7 +181,16 @@
     <div class="grid-split">
         <section class="card">
             <div class="card-header">
-                <span class="card-title">{{if .Overview.Range.Weekly}}{{ .["t"]("admin.dashboard.trend.titleWeekly", "趋势（按周）") }}{{else}}{{ .["t"]("admin.dashboard.trend.title", "趋势（按天）") }}{{end}}</span>
+                <span class="card-title">{{ .["t"](.Overview.Range.GranularityTitleKey, .Overview.Range.GranularityTitle) }}</span>
+                {* 粒度切换：默认跟着区间走（短区间按小时、长区间按周），这排按钮是**覆盖**。
+                   每个链接都带着当前区间（自定义区间带上 from/to），所以换粒度不换窗口。
+                   区间按钮则相反 —— 它不保留粒度，见 rangePresetURL 的注释。 *}
+                <div class="gran-bar" role="group" aria-label="{{ .["t"]("admin.dashboard.trend.granularity", "聚合粒度") }}">
+                    {{range _, g := .Overview.GranularityPresets}}
+                    <a class="gran-btn{{if g.Active}} is-active{{end}}" href="{{g.URL}}"
+                       {{if g.Active}}aria-current="true"{{end}}>{{ .["t"](g.LabelKey, g.Label) }}</a>
+                    {{end}}
+                </div>
                 <span class="text-mute text-sm">{{.Overview.Range.From}} ~ {{.Overview.Range.To}}</span>
             </div>
             <div class="card-body">

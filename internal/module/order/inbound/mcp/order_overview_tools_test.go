@@ -37,6 +37,14 @@ func (s *stubOverview) DailySeries(_ context.Context, req *orderdto.OrderDailySe
 	return s.dailyRes, s.err
 }
 
+// HourlySeries 属于 ordercontract.OrderOverviewReader，但**没有**对应的 MCP 工具
+// （按小时的趋势只在概览页的粒度切换里用）。它必须在这里实现，否则 *stubOverview
+// 不满足那个接口，整个包编译不过。
+func (s *stubOverview) HourlySeries(_ context.Context, req *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error) {
+	s.gotDaily = req
+	return s.dailyRes, s.err
+}
+
 func (s *stubOverview) TopProducts(_ context.Context, req *orderdto.OrderTopProductsReq) (*orderdto.OrderTopProductsResp, error) {
 	s.gotTop = req
 	return s.topRes, s.err

@@ -74,3 +74,46 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 	})
 	return rows, err
 }
+
+// orderHourlySQL 区间内按小时聚合。
+//
+// 与 orderDailySQL 逐项同口径（状态名单、净额表达式、半开区间），只有 date_trunc 的
+// 单位不同 —— 两份 SQL 的差异必须**只有这一处**，任何一处口径分叉都会让「区间汇总 =
+// 各桶之和」这条不变量在某个粒度下失效，而失效的表现是图上柱子加起来对不上 KPI。
+//
+// 小时的桶**也是 UTC**：按天用 UTC 而按小时用本地时区，会让「今日」这根柱子归属到
+// 昨天，且两个粒度切换时同一天的形状对不上。
+//
+// 用小时的前提是区间足够短（见 trendHourlyMaxDays）：一天 24 根柱子读得出形状，
+// 一个月 720 根连标签都放不下。
+const orderHourlySQL = `SELECT date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AS day,
+       COUNT(*) AS order_count,
+       COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count,
+       COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales
+  FROM orders o
+ WHERE o.project_id = ?
+   AND o.create_time >= ?
+   AND o.create_time < ?
+ GROUP BY 1
+ ORDER BY 1`
+
+// HourlyByRange 取区间 [from, to) 内按小时聚合的订单数据。
+//
+// 复用 OrderDailyPoint：桶的语义从「某天」变成「某小时」，其余字段含义完全一致。
+// 为此另开一个只有 gorm column 不同的类型，只会让调用方多一层无意义的转换。
+func (m *OrderModel) HourlyByRange(ctx context.Context, projectID string, from, to time.Time) (rows []OrderDailyPoint, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, ErrProjectRequired
+	}
+	if from.IsZero() || to.IsZero() {
+		return nil, ErrRangeRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Raw(orderHourlySQL,
+			strings.Join(paidStatuses, ","),
+			strings.Join(ReturnedStatuses, ","),
+			strings.Join(paidStatuses, ","),
+			projectID, from, to).Scan(&rows).Error
+	})
+	return rows, err
+}

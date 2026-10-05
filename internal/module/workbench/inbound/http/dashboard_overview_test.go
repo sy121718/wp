@@ -74,6 +74,12 @@ func (s *stubOrderPort) DailySeries(_ context.Context, req *orderdto.OrderDailyS
 	return &orderdto.OrderDailySeriesResp{ProjectID: req.ProjectID}, nil
 }
 
+// HourlySeries 与 DailySeries 共用 daily 夹具：两者的差别只是桶宽，
+// 夹具里再分一份只会让「同一条数据在两种粒度下都必须出现」的断言写两遍。
+func (s *stubOrderPort) HourlySeries(_ context.Context, req *orderdto.OrderDailySeriesReq) (*orderdto.OrderDailySeriesResp, error) {
+	return s.DailySeries(context.Background(), req)
+}
+
 func (s *stubOrderPort) TopProducts(_ context.Context, req *orderdto.OrderTopProductsReq) (*orderdto.OrderTopProductsResp, error) {
 	if s.failWith != nil {
 		return nil, s.failWith

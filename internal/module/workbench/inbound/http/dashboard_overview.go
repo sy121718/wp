@@ -48,6 +48,8 @@ const (
 type OverviewOrderPort interface {
 	SummaryByRange(ctx context.Context, req *orderdto.OrderRangeSummaryReq) (res *orderdto.OrderRangeSummaryResp, err error)
 	DailySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error)
+	// HourlySeries 按小时的趋势（粒度切到「小时」时走它）。
+	HourlySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error)
 	TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error)
 	StatusCounts(ctx context.Context, req *orderdto.OrderStatusCountsReq) (res *orderdto.OrderStatusCountsResp, err error)
 	SoldQuantityByRange(ctx context.Context, req *orderdto.OrderSoldQuantityReq) (res *orderdto.OrderSoldQuantityResp, err error)
@@ -176,8 +178,10 @@ type overviewSnapshot struct {
 	Range overviewRange
 	// Presets 筛选条上的一排预设按钮（URL 已拼好，模板不拼 query）。
 	Presets []rangePreset
-	KPI     overviewKPI
-	Trend   []overviewTrendPoint
+	// GranularityPresets 趋势图右上角的粒度按钮（小时 / 天 / 周 / 月）。
+	GranularityPresets []granularityPreset
+	KPI                overviewKPI
+	Trend              []overviewTrendPoint
 	Top     []overviewTopProduct
 	// TopPages 页面排行（浏览量降序，跨工程合并）。
 	TopPages []overviewTopPage
@@ -246,7 +250,7 @@ func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng o
 	h.collectViews(ctx, projectIDs, rng, &snap, viewsByDay, viewsByPath)
 	// 趋势图在收完两块数据之后一次装配：两张图共用一根日期轴，
 	// 各画各的柱子（销售额图与浏览量图），所以合并只做一次。
-	snap.Trend = buildTrend(byDay, viewsByDay, rng.Weekly, h.currencySymbol(ctx))
+	snap.Trend = buildTrend(byDay, viewsByDay, rng.Granularity, h.currencySymbol(ctx))
 	snap.KPI.RangeSalesLabel = moneyLabel(snap.KPI.RangeSalesCents, h.currencySymbol(ctx))
 	snap.PortsReady = snap.OrdersReady && snap.AnalyticsReady
 	return snap
@@ -305,9 +309,7 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 			snap.KPI.PendingCount += res.PendingCount
 		}
 
-		if res, err := h.overviewOrders.DailySeries(ctx, &orderdto.OrderDailySeriesReq{
-			ProjectID: pid, From: rng.From, To: rng.To,
-		}); err != nil {
+		if res, err := h.trendSeries(ctx, pid, rng); err != nil {
 			snap.fail("order", pid, err)
 		} else {
 			for _, p := range res.Points {
@@ -338,6 +340,19 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 	return byDay
 }
 
+// trendSeries 按当前粒度取订单趋势。
+//
+// 只有「小时」需要向下的专门查询；天 / 周 / 月共用按天数据，合并发生在 buildTrend。
+// 这样粒度切换的成本是「多一次按天查询」，而不是「每种粒度一条 SQL」——
+// 后者会把「周与月的分桶规则」复制到 SQL 里，而分桶规则一改就该只改一处。
+func (h *Handle) trendSeries(ctx context.Context, projectID string, rng overviewRange) (*orderdto.OrderDailySeriesResp, error) {
+	req := &orderdto.OrderDailySeriesReq{ProjectID: projectID, From: rng.From, To: rng.To}
+	if rng.Granularity == trendGranularityHour {
+		return h.overviewOrders.HourlySeries(ctx, req)
+	}
+	return h.overviewOrders.DailySeries(ctx, req)
+}
+
 // collectViews 统计**区间内**的页面浏览（全站总量 + 其中文章页那部分）。
 //
 // 两步而非一步：analytics 只认 path，判断「这个路径是不是文章页」要靠 page 模块
@@ -356,6 +371,10 @@ func (h *Handle) collectViews(ctx context.Context, projectIDs []string, rng over
 	for _, pid := range projectIDs {
 		res, err := h.overviewAnalytics.Summary(ctx, &analyticsdto.SummaryReq{
 			ProjectID: pid, From: rng.From, To: rng.To, PathLimit: overviewPathLimit,
+			// 粒度必须跟趋势一致：小时粒度下订单侧给的是 YYYY-MM-DDTHH:00 的桶，
+			// 浏览侧若仍按天回 YYYY-MM-DD，两者会被 buildTrend 归进不同的桶 ——
+			// 图上多出一根来路不明的柱子，且两张图（销售额 / 浏览量）的横坐标对不上。
+			Granularity: rng.Granularity,
 		})
 		if err != nil {
 			snap.fail("analytics", pid, err)
@@ -426,23 +445,23 @@ const (
 	trendLabelMax = 12
 )
 
-// buildTrend 把「天 → 点」的映射整理成升序序列，并算好每根柱子的位置与高度。
+// buildTrend 把「桶键 → 点」的映射整理成升序序列，并算好每根柱子的位置与高度。
 //
-// weekly 为真时先按**周**合并（每根柱子是一周，Day 取那一周的周一）：
-// 按天画一年会得到 365 根不到 1px 的柱子 —— 读者什么也看不出来，只会以为图没加载。
+// granularity 决定怎么把上游的桶再合并一层：
+//   - hour：上游（订单 / 浏览）已经是小时桶，原样用；
+//   - day：原样用（订单与浏览的天然粒度）；
+//   - week：按 ISO 周合并（Day 取那一周的周一）；
+//   - month：按自然月合并（Day 取 YYYY-MM）。
+//
 // 合并放在这里而不是让上游换一种查询：上游回的是**事实**（每天多少单），
-// 「怎么画」是展示层的取舍。
+// 「怎么画」是展示层的取舍。按天画一年会得到 365 根不到 1px 的柱子 ——
+// 读者什么也看不出来，只会以为图没加载。
 //
 // 柱宽由**点数**决定（早先是固定步长 70）：固定步长在 30 天的区间上会画到 viewBox
 // 之外被裁掉，用户看到的是半张图而页面不会报任何错。
-func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int64, weekly bool, symbol string) []overviewTrendPoint {
+func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int64, granularity string, symbol string) []overviewTrendPoint {
 	buckets := make(map[string]*overviewTrendPoint, len(byDay)+len(viewsByDay))
-	bucketKey := func(day string) string {
-		if weekly {
-			return weekStartOf(day)
-		}
-		return day
-	}
+	bucketKey := func(day string) string { return trendBucketKey(day, granularity) }
 	// at 取（必要时新建）某一天的桶。**两侧都要走它**：订单与浏览量各自只覆盖
 	// 一部分日期，谁先到都要能落进同一根柱子 —— 否则「有一半天只有浏览没有订单」时，
 	// 那几天的浏览量会被静默丢掉（图短一截，且没有任何报错）。
@@ -480,16 +499,52 @@ func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int6
 	}
 	for i := range points {
 		points[i].SalesLabel = moneyLabel(points[i].NetSales, symbol)
-		if len(points[i].Day) >= 10 {
-			points[i].DayLabel = points[i].Day[5:10]
-		} else {
-			points[i].DayLabel = points[i].Day
-		}
+		points[i].DayLabel = trendLabel(points[i].Day, granularity)
 		points[i].SalesHeightPct = barHeightPct(points[i].NetSales, maxSales)
 		points[i].ViewsHeightPct = barHeightPct(points[i].Views, maxViews)
 	}
 	layoutTrendBars(points)
 	return points
+}
+
+// trendBucketKey 把一个上游桶键折成当前粒度下的桶键（幂等：已经是该粒度的桶就原样回）。
+//
+// 上游的桶键有两种形态：按天 `YYYY-MM-DD`、按小时 `YYYY-MM-DDTHH:00`（见 utils.LayoutDay /
+// LayoutHour）。这里只做**字符串截取**，不做时间解析 —— 解析一次要多一层错误分支，
+// 而截取在两种形态上都是单调的（前缀相同时桶相同）。
+func trendBucketKey(bucket, granularity string) string {
+	switch granularity {
+	case trendGranularityWeek:
+		return weekStartOf(bucket[:min(10, len(bucket))])
+	case trendGranularityMonth:
+		if len(bucket) >= 7 {
+			return bucket[:7]
+		}
+		return bucket
+	default:
+		return bucket
+	}
+}
+
+// trendLabel 桶键 → 图上的人读标签。
+//
+// 按小时给 `10:00`（区间最多两天，日期由外层标题交代）、按月给 `2026-10`、
+// 其余给 `10-05`。反过来的错法（按小时给完整日期时间）会让标签宽到重叠，
+// 稀疏化只能减到几个，读者反而看不出时段。
+func trendLabel(bucket, granularity string) string {
+	switch granularity {
+	case trendGranularityHour:
+		if len(bucket) >= 16 {
+			return bucket[11:16]
+		}
+	case trendGranularityMonth:
+		return bucket
+	default:
+		if len(bucket) >= 10 {
+			return bucket[5:10]
+		}
+	}
+	return bucket
 }
 
 // barHeightPct 把某个值归一成 0~100 的柱高。

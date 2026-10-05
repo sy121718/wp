@@ -52,9 +52,52 @@ const rangeMaxDays = 366
 // trendDailyMaxDays 超过这个天数，趋势就按**周**聚合。
 //
 // 按天画 365 根柱子在页面上既看不清也没意义（每根不足 1px），按周聚合后最多 53 根，
-// 形状仍然读得出来。粒度跟着区间走而不是给用户一个「粒度」下拉：那等于让人自己
-// 算一遍「多长的区间该用什么粒度」，而他本来只想看「这个月的走势」。
+// 形状仍然读得出来。
 const trendDailyMaxDays = 31
+
+// trendHourlyMaxDays 不超过这个天数时，默认按**小时**聚合。
+//
+// 这是「今天/昨天」区间唯一的正确粒度：按天看一天只有一根柱子 —— 形状、峰值、
+// 时段分布全都读不出来，而用户打开「今日」想看的正是这些。
+const trendHourlyMaxDays = 2
+
+// 趋势粒度（也是 URL 参数 granularity 的白名单）。
+const (
+	trendGranularityHour  = "hour"
+	trendGranularityDay   = "day"
+	trendGranularityWeek  = "week"
+	trendGranularityMonth = "month"
+)
+
+// granularityLabelKeys 粒度按钮的词条键（顺序即页面上的顺序）。
+var trendGranularityKeys = []string{
+	trendGranularityHour,
+	trendGranularityDay,
+	trendGranularityWeek,
+	trendGranularityMonth,
+}
+
+// granularityLabelKey 粒度 → 词条键。
+func granularityLabelKey(g string) string {
+	return "admin.dashboard.trend.granularity." + g
+}
+
+// defaultGranularity 区间长度对应的默认粒度。
+//
+// 默认跟着区间走（短区间按小时、长区间按周），但用户可以显式覆盖 —— 早先这里刻意
+// 不给下拉，理由是「那等于让人自己算一遍多长的区间该用什么粒度」；实测下来这个理由
+// 只对「默认值」成立：真正想按小时看一整周、或按天看一年的人，没有入口就只能换区间，
+// 而他想要的恰恰是「这个区间 + 那个粒度」。所以默认值仍按区间算，但可覆盖。
+func defaultGranularity(days int) string {
+	switch {
+	case days <= trendHourlyMaxDays:
+		return trendGranularityHour
+	case days > trendDailyMaxDays:
+		return trendGranularityWeek
+	default:
+		return trendGranularityDay
+	}
+}
 
 // overviewRange 一个已生效的区间（含首尾两端）。
 type overviewRange struct {
@@ -65,8 +108,18 @@ type overviewRange struct {
 	To   string
 	// Days 区间天数（含首尾）：1 表示就是一天。
 	Days int
-	// Weekly 为真时趋势按周聚合（见 trendDailyMaxDays）。
-	Weekly bool
+	// Granularity 趋势的聚合粒度（hour / day / week / month）。
+	//
+	// 默认由区间长度算出（见 defaultGranularity），URL 的 granularity 参数可覆盖。
+	Granularity string
+	// GranularityPresets 粒度切到其它档时的按钮（保留当前区间与其它筛选）。
+	GranularityPresets []granularityPreset
+	// GranularityTitleKey / GranularityTitle 趋势卡标题（随粒度变：按小时 / 按天 / 按周 / 按月）。
+	//
+	// 在服务端算好而不是在模板里 if/else 四档：Jet 没有 switch，四个分支写在模板里
+	// 会让「有哪些粒度」这件事同时存在于模板与白名单两处，加一档就得记得改两边。
+	GranularityTitleKey string
+	GranularityTitle    string
 	// Clamped 为真表示请求的区间被收敛过（超长 / 未来日期 / 反向）。
 	//
 	// 页面据此提示一句「已按最长 366 天截取」：静默改口径比报错更糟 ——
@@ -97,27 +150,74 @@ func parseOverviewRange(c *gin.Context, today time.Time) overviewRange {
 	}
 	day := func(t time.Time) string { return t.Format(utils.LayoutDay) }
 
+	var r overviewRange
 	switch key {
 	case rangeToday:
 		d := day(today)
-		return newRange(rangeToday, d, d, false)
+		r = newRange(rangeToday, d, d, false)
 	case rangeYesterday:
 		d := day(today.AddDate(0, 0, -1))
-		return newRange(rangeYesterday, d, d, false)
+		r = newRange(rangeYesterday, d, d, false)
 	case rangeWeek:
-		return defaultRange(today)
+		r = defaultRange(today)
 	case rangeMonth:
 		first := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
-		return newRange(rangeMonth, day(first), day(today), false)
+		r = newRange(rangeMonth, day(first), day(today), false)
 	case rangeYear:
 		first := time.Date(today.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
-		return newRange(rangeYear, day(first), day(today), false)
+		r = newRange(rangeYear, day(first), day(today), false)
 	case rangeCustom:
-		return parseCustomRange(c, today)
+		r = parseCustomRange(c, today)
 	default:
 		// 认不出的键按默认走（老链接、手改的 URL）：不报错、也不猜语义。
-		return defaultRange(today)
+		r = defaultRange(today)
 	}
+	return applyGranularity(r, c.Query("granularity"))
+}
+
+// granularityTitleKey 粒度 → 趋势卡标题词条键。
+func granularityTitleKey(g string) string {
+	return "admin.dashboard.trend.title." + g
+}
+
+// granularityTitle 粒度 → 标题中文兜底。
+func granularityTitle(g string) string {
+	switch g {
+	case trendGranularityHour:
+		return "趋势（按小时）"
+	case trendGranularityWeek:
+		return "趋势（按周）"
+	case trendGranularityMonth:
+		return "趋势（按月）"
+	default:
+		return "趋势（按天）"
+	}
+}
+
+// applyGranularity 用 URL 参数覆盖默认粒度（不合法就保持默认）。
+//
+// 「按小时」超出区间上限时**回落到默认粒度**而不是把请求发下去：service 会回参数错误，
+// 而页面把它渲染成「趋势取数失败」—— 用户看到的是一块错误，而他能接受的结果
+// （这段区间按天看）本来就在手边。这与「区间收敛」是同一条原则。
+func applyGranularity(r overviewRange, raw string) overviewRange {
+	if g := strings.TrimSpace(raw); isTrendGranularity(g) {
+		if g != trendGranularityHour || r.Days <= trendHourlyMaxDays {
+			r.Granularity = g
+		}
+	}
+	r.GranularityTitleKey = granularityTitleKey(r.Granularity)
+	r.GranularityTitle = granularityTitle(r.Granularity)
+	return r
+}
+
+// isTrendGranularity 粒度白名单（未知值一律忽略，与 range 的未知键同一条处理）。
+func isTrendGranularity(g string) bool {
+	for _, k := range trendGranularityKeys {
+		if k == g {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultRange 默认区间（本周）。
@@ -172,12 +272,70 @@ func newRange(key, from, to string, clamped bool) overviewRange {
 		}
 	}
 	return overviewRange{
-		Key:     key,
-		From:    from,
-		To:      to,
-		Days:    days,
-		Weekly:  days > trendDailyMaxDays,
-		Clamped: clamped,
+		Key:         key,
+		From:        from,
+		To:          to,
+		Days:        days,
+		Granularity: defaultGranularity(days),
+		Clamped:     clamped,
+	}
+}
+
+// granularityPreset 粒度切换条上的一个按钮。
+type granularityPreset struct {
+	Key      string
+	LabelKey string
+	Label    string
+	URL      string
+	Active   bool
+}
+
+// granularityPresetURL 拼一个粒度按钮的地址：保留区间（含自定义的 from/to）与工程。
+//
+// 自定义区间必须把 from/to 一起带走 —— 否则「自定义 + 按小时」点一下就掉回默认区间，
+// 而用户只是想换个粒度看同一段数据。
+func granularityPresetURL(c *gin.Context, g string, active overviewRange) string {
+	q := url.Values{}
+	if p := strings.TrimSpace(c.Query("project")); p != "" {
+		q.Set("project", p)
+	}
+	q.Set("range", active.Key)
+	if active.Key == rangeCustom {
+		q.Set("from", active.From)
+		q.Set("to", active.To)
+	}
+	q.Set("granularity", g)
+	return dashboardPath + "?" + q.Encode()
+}
+
+// granularityPresets 粒度按钮（顺序 = trendGranularityKeys）。
+func granularityPresets(c *gin.Context, active overviewRange) []granularityPreset {
+	out := make([]granularityPreset, 0, len(trendGranularityKeys))
+	for _, g := range trendGranularityKeys {
+		out = append(out, granularityPreset{
+			Key:      g,
+			LabelKey: granularityLabelKey(g),
+			Label:    granularityLabel(g),
+			URL:      granularityPresetURL(c, g, active),
+			Active:   active.Granularity == g,
+		})
+	}
+	return out
+}
+
+// granularityLabel 粒度按钮的中文兜底文案。
+func granularityLabel(g string) string {
+	switch g {
+	case trendGranularityHour:
+		return "小时"
+	case trendGranularityDay:
+		return "天"
+	case trendGranularityWeek:
+		return "周"
+	case trendGranularityMonth:
+		return "月"
+	default:
+		return g
 	}
 }
 
@@ -185,6 +343,10 @@ func newRange(key, from, to string, clamped bool) overviewRange {
 //
 // 逐参数白名单而不是把原 query 整串拼回去：那样会把 from/to 一起带到预设链接里，
 // 于是「点本周」带着上次的自定义区间一起提交，页面回到 custom。
+//
+// **刻意不保留 granularity**：换区间时粒度回到该区间的默认值。保留会让「小时 + 点本月」
+// 得到一个 720 桶的请求（service 直接拒），而用户的本意是「看本月」。粒度按钮自己
+// 则保留区间（见 granularityPresetURL），两个方向的需求不对称，链接的拼法也不同。
 func rangePresetURL(c *gin.Context, key, from, to string) string {
 	q := url.Values{}
 	if p := strings.TrimSpace(c.Query("project")); p != "" {
@@ -248,5 +410,6 @@ func rangePresetLabel(key string) string {
 // 而不是「数据算错」，两件事不该绑在一次调用里。
 func withPresets(c *gin.Context, snap overviewSnapshot) overviewSnapshot {
 	snap.Presets = rangePresets(c, snap.Range)
+	snap.GranularityPresets = granularityPresets(c, snap.Range)
 	return snap
 }

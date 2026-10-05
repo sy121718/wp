@@ -111,6 +111,25 @@ func (m *Model) CountByDay(ctx context.Context, projectID string, from, to time.
 	return rows, err
 }
 
+// CountByHour 按 UTC 小时聚合（升序）。
+//
+// 与 CountByDay 逐项同口径（UTC 桶、同一个 PV/UV 表达式、同一个半开窗口），
+// 只有 date_trunc 的单位不同 —— 两处口径分叉会让同一段数据在「按天」与「按小时」
+// 两个粒度下加起来对不上。
+//
+// **只走明细表，不读预聚合**：`page_views_daily` 的最小粒度就是天（rollup 每天跑一次），
+// 小时粒度在它里面没有对应的行。代价是扫描原始明细，所以调用方要自己限制区间
+// （概览页在 1~2 天的窗口内才用小时）。
+func (m *Model) CountByHour(ctx context.Context, projectID string, from, to time.Time) (rows []DayRow, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&PageViewEntity{}).
+			Select("date_trunc('hour', viewed_at AT TIME ZONE 'UTC') AS day, "+colViews+", "+colVisitors).
+			Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
+			Group("day").Order("day ASC").Scan(&rows).Error
+	})
+	return rows, err
+}
+
 // CountPathTotal 窗口内出现过的不同路径数（按路径聚合的分页总数）。
 func (m *Model) CountPathTotal(ctx context.Context, projectID string, from, to time.Time) (total int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

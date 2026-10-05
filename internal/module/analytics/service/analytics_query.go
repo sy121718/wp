@@ -32,6 +32,16 @@ const (
 // dateLayout 请求与响应里的日期格式（后台表单与 JSON 同一格式）。
 const dateLayout = "2006-01-02"
 
+// granularityHour 小时粒度的取值（SummaryReq.Granularity）。
+//
+// 与 utils.LayoutHour 同形但不是同一个东西：那个是**桶键的格式**，这个是**请求里的档位名**。
+// 档位名是接口契约（前端与 URL 都用它），格式是展示细节，两者将来都可能各自变。
+const granularityHour = "hour"
+
+// hourLayout 小时桶键的格式，与 utils.LayoutHour 保持一致（此处不复用常量是为了
+// 让 analytics 不为了一个字符串去依赖 utils —— 它的按天口径同样是本地字面量）。
+const hourLayout = "2006-01-02T15:00"
+
 // Summary 按天与按路径聚合浏览数。
 //
 // 聚合是**纯读**：没有任何写入口，也不缓存（缓存会让「刚发生的访问看不到」
@@ -75,7 +85,11 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 	if cerr != nil {
 		return nil, cerr
 	}
-	if !to.After(dayStart(s.now())) && windowDays > 0 && int64(windowDays) == rolledDays {
+	// 小时粒度**必须走明细**：预聚合表 page_views_daily 的最小粒度就是天，
+	// 小时在它里面没有对应的行。用汇总行去凑小时桶会得到「每天 24 个空桶 +
+	// 一个总量塞在某一个小时」，形状全错而数字看着还对。
+	useHour := req.Granularity == granularityHour
+	if !useHour && !to.After(dayStart(s.now())) && windowDays > 0 && int64(windowDays) == rolledDays {
 		source = analyticsdto.SourceSummary
 		if views, visitors, err = s.m.RollupTotals(ctx, projectID, from, to); err != nil {
 			return nil, err
@@ -100,7 +114,12 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 		if views, visitors, err = s.m.CountRange(ctx, projectID, from, to); err != nil {
 			return nil, err
 		}
-		if dayRows, err = s.m.CountByDay(ctx, projectID, from, to); err != nil {
+		if useHour {
+			dayRows, err = s.m.CountByHour(ctx, projectID, from, to)
+		} else {
+			dayRows, err = s.m.CountByDay(ctx, projectID, from, to)
+		}
+		if err != nil {
 			return nil, err
 		}
 		if pathTotal, err = s.m.CountPathTotal(ctx, projectID, from, to); err != nil {
@@ -149,9 +168,13 @@ func (s *Service) Summary(ctx context.Context, req *analyticsdto.SummaryReq) (re
 	}
 
 	daily := make([]analyticsdto.DailyCount, 0, len(dayRows))
+	layout := dateLayout
+	if useHour {
+		layout = hourLayout
+	}
 	for _, row := range dayRows {
 		daily = append(daily, analyticsdto.DailyCount{
-			Day:      row.Day.UTC().Format(dateLayout),
+			Day:      row.Day.UTC().Format(layout),
 			Views:    row.Views,
 			Visitors: row.Visitors,
 		})

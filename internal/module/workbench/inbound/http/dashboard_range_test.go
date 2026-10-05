@@ -40,17 +40,24 @@ func TestParseOverviewRangePresets(t *testing.T) {
 		wantFrom  string
 		wantTo    string
 		wantDays  int
-		wantWeekl bool
+		wantGran  string
 	}{
-		{"?range=today", rangeToday, "2026-10-05", "2026-10-05", 1, false},
-		{"?range=yesterday", rangeYesterday, "2026-10-04", "2026-10-04", 1, false},
-		{"?range=week", rangeWeek, "2026-10-05", "2026-10-05", 1, false},
-		{"?range=month", rangeMonth, "2026-10-01", "2026-10-05", 5, false},
+		// 1~2 天的区间默认按小时：按天看一天只有一根柱子，形状和时段分布都读不出来。
+		{"?range=today", rangeToday, "2026-10-05", "2026-10-05", 1, trendGranularityHour},
+		{"?range=yesterday", rangeYesterday, "2026-10-04", "2026-10-04", 1, trendGranularityHour},
+		{"?range=week", rangeWeek, "2026-10-05", "2026-10-05", 1, trendGranularityHour},
+		{"?range=month", rangeMonth, "2026-10-01", "2026-10-05", 5, trendGranularityDay},
 		// 本年 278 天 > 31 → 按周聚合（278 根柱子画不出来）。
-		{"?range=year", rangeYear, "2026-01-01", "2026-10-05", 278, true},
+		{"?range=year", rangeYear, "2026-01-01", "2026-10-05", 278, trendGranularityWeek},
 		// 认不出的键（老链接、手改的 URL）按默认走：不报错，也不猜语义。
-		{"?range=bogus", rangeWeek, "2026-10-05", "2026-10-05", 1, false},
-		{"", rangeWeek, "2026-10-05", "2026-10-05", 1, false},
+		{"?range=bogus", rangeWeek, "2026-10-05", "2026-10-05", 1, trendGranularityHour},
+		{"", rangeWeek, "2026-10-05", "2026-10-05", 1, trendGranularityHour},
+		// 显式覆盖：本月虽然默认按天，但可以要求按周。
+		{"?range=month&granularity=week", rangeMonth, "2026-10-01", "2026-10-05", 5, trendGranularityWeek},
+		// 白名单外忽略（保持默认），不报错。
+		{"?range=month&granularity=bogus", rangeMonth, "2026-10-01", "2026-10-05", 5, trendGranularityDay},
+		// 按小时超出区间上限（> 2 天）→ 回落默认粒度，而不是把请求发下去让 service 报错。
+		{"?range=month&granularity=hour", rangeMonth, "2026-10-01", "2026-10-05", 5, trendGranularityDay},
 	}
 	for _, tc := range cases {
 		got := parseOverviewRange(rangeCtx("/admin/dashboard"+tc.query), today)
@@ -61,8 +68,8 @@ func TestParseOverviewRangePresets(t *testing.T) {
 		if got.Days != tc.wantDays {
 			t.Errorf("%q：天数 = %d，期望 %d", tc.query, got.Days, tc.wantDays)
 		}
-		if got.Weekly != tc.wantWeekl {
-			t.Errorf("%q：Weekly = %v，期望 %v", tc.query, got.Weekly, tc.wantWeekl)
+		if got.Granularity != tc.wantGran {
+			t.Errorf("%q：粒度 = %q，期望 %q", tc.query, got.Granularity, tc.wantGran)
 		}
 		if got.Clamped {
 			t.Errorf("%q：预设区间不该标为收敛", tc.query)
@@ -138,17 +145,22 @@ func TestCustomRangeMaxDays(t *testing.T) {
 
 func TestNewRangeGranularity(t *testing.T) {
 	cases := []struct {
-		days       int
-		wantWeekly bool
+		days     int
+		wantGran string
 	}{
-		{1, false}, {31, false}, {32, true}, {366, true},
+		// 1~2 天按小时（一天的按天图只有一根柱子）。
+		{1, trendGranularityHour}, {2, trendGranularityHour},
+		// 3~31 天按天。
+		{3, trendGranularityDay}, {31, trendGranularityDay},
+		// 超过 31 天按周。
+		{32, trendGranularityWeek}, {366, trendGranularityWeek},
 	}
 	for _, tc := range cases {
 		from := "2026-01-01"
 		to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, tc.days-1).Format("2006-01-02")
 		got := newRange(rangeCustom, from, to, false)
-		if got.Weekly != tc.wantWeekly {
-			t.Errorf("%d 天：Weekly = %v，期望 %v", tc.days, got.Weekly, tc.wantWeekly)
+		if got.Granularity != tc.wantGran {
+			t.Errorf("%d 天：粒度 = %q，期望 %q", tc.days, got.Granularity, tc.wantGran)
 		}
 	}
 }
@@ -239,7 +251,7 @@ func TestBuildTrendWeeklyMergesViews(t *testing.T) {
 	}
 	views := map[string]int64{"2026-09-29": 10, "2026-10-01": 5}
 
-	got := buildTrend(byDay, views, true, "¥")
+	got := buildTrend(byDay, views, trendGranularityWeek, "¥")
 	if len(got) != 1 {
 		t.Fatalf("同一 ISO 周的三天应合并成 1 根柱子，实得 %d：%+v", len(got), got)
 	}
@@ -256,7 +268,7 @@ func TestBuildTrendWeeklyMergesViews(t *testing.T) {
 	}
 
 	// 按天时三天各一根。
-	daily := buildTrend(byDay, views, false, "¥")
+	daily := buildTrend(byDay, views, trendGranularityDay, "¥")
 	if len(daily) != 3 {
 		t.Errorf("按天应得到 3 根柱子（订单两天 + 只有浏览的一天），实得 %d", len(daily))
 	}

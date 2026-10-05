@@ -5,9 +5,14 @@ package orderdto
 // 三块都只回**结论**：金额整数分 + 展示用 Label，状态计数回已经解释过的口径字段。
 // 页面与 AI 都不做算术，也不解释状态名（解释散在渲染层就会出现「页面算一套、AI 说一套」）。
 
-// OrderDailyPointDTO 某一天的订单事实。
+// OrderDailyPointDTO 一个时间桶的订单事实。
+//
+// 同一套字段服务两种粒度（按天 / 按小时）：桶的形状由 Day 的格式决定，
+// 三个数字的口径与含义与粒度无关。为此另立一份只有 Day 格式不同的类型，
+// 只会让消费方多一层无意义的转换。
 type OrderDailyPointDTO struct {
-	// Day YYYY-MM-DD，**UTC 日桶**（与访问统计的按天口径一致）。
+	// Day 桶键：按天是 YYYY-MM-DD，按小时是 YYYY-MM-DDTHH:00（**均为 UTC 桶**，
+	// 与访问统计的口径一致）。展示层再按粒度切成人读标签。
 	Day string `json:"day"`
 	// OrderCount 当天创建的全部订单（含取消与退款）。
 	OrderCount int64 `json:"orderCount"`

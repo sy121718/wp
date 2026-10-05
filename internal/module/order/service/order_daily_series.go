@@ -64,3 +64,56 @@ func fillDailyPoints(from, to time.Time, rows []ordermodel.OrderDailyPoint) []or
 	}
 	return points
 }
+
+// HourlySeries 取区间内逐小时连续的订单数据（含没有订单的那些小时，值为 0）。
+//
+// 与 DailySeries 的关系：同一个窗口、同一套口径，只有桶的宽度不同。放在同一个文件里
+// 是因为它们是同一条展示需求的两种粒度 —— 任何一处口径改动都要同时落到两边，
+// 拆到两个文件只会让它更晚被发现（症状是切换粒度后柱子加起来对不上 KPI）。
+//
+// 上界 maxHourlyRangeDays：一天的按小时序列是 24 个桶（形状读得出来），
+// 30 天就是 720 个（柱宽不足 1px，标签也放不下 —— 那是按天/按周的粒度该干的事）。
+// 这里**报错而不是自动降级**：静默换粒度会让调用方以为拿到的是小时数据。
+func (s *Service) HourlySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error) {
+	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
+		return nil, errors.New(orderenums.ErrProjectRequired)
+	}
+	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if to.Sub(from) > time.Duration(maxHourlyRangeDays)*24*time.Hour {
+		return nil, errors.New(orderenums.ErrInvalidParam)
+	}
+	rows, err := s.orders.HourlyByRange(ctx, req.ProjectID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return &orderdto.OrderDailySeriesResp{
+		ProjectID: req.ProjectID,
+		From:      from.Format(utils.LayoutDay),
+		To:        to.AddDate(0, 0, -1).Format(utils.LayoutDay),
+		Points:    fillHourlyPoints(from, to, rows),
+	}, nil
+}
+
+// fillHourlyPoints 把「有数据的那些小时」铺成区间内每小时一个点（升序）。
+func fillHourlyPoints(from, to time.Time, rows []ordermodel.OrderDailyPoint) []orderdto.OrderDailyPointDTO {
+	byHour := make(map[string]ordermodel.OrderDailyPoint, len(rows))
+	for _, r := range rows {
+		byHour[r.Day.Format(utils.LayoutHour)] = r
+	}
+	points := make([]orderdto.OrderDailyPointDTO, 0, maxHourlyRangeDays*24)
+	for h := from; h.Before(to); h = h.Add(time.Hour) {
+		key := h.Format(utils.LayoutHour)
+		row := byHour[key]
+		points = append(points, orderdto.OrderDailyPointDTO{
+			Day:            key,
+			OrderCount:     row.OrderCount,
+			PaidOrderCount: row.PaidOrderCount,
+			NetSales:       row.NetSales,
+			NetSalesLabel:  centsToYuanLabel(row.NetSales),
+		})
+	}
+	return points
+}

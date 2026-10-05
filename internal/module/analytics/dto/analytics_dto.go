@@ -51,6 +51,12 @@ type SummaryReq struct {
 	// 来源域远少于路径数），Top-N 已经覆盖运营要看的部分；给三个榜各配一套游标
 	// 只会让调用方多维护三份翻页状态，换不到任何东西。
 	RankLimit int `form:"rankLimit" json:"rankLimit"`
+	// Granularity 逐点聚合的粒度：空 / "day" 按天，"hour" 按小时。
+	//
+	// 按小时时 Daily 里的 Day 变成 YYYY-MM-DDTHH:00（见 service 的 hourLayout），
+	// 且**强制走明细表** —— 预聚合表 page_views_daily 的最小粒度就是天。
+	// 未知取值按天处理（与「空 = 默认」同一收敛策略）。
+	Granularity string `form:"granularity" json:"granularity"`
 }
 
 // 统计取数来源（响应回显，便于确认「这次数字是明细还是预聚合给的」）。
