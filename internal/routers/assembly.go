@@ -62,6 +62,7 @@ import (
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	mediacontract "go_wp/internal/module/media/contract"
 	mediahttp "go_wp/internal/module/media/inbound/http"
+	mediamcp "go_wp/internal/module/media/inbound/mcp"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershiphttp "go_wp/internal/module/membership/inbound/http"
 	navigationcontract "go_wp/internal/module/navigation/contract"
@@ -75,6 +76,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
+	productmcp "go_wp/internal/module/product/inbound/mcp"
 	projectcontract "go_wp/internal/module/project/contract"
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	pubcontract "go_wp/internal/module/publication/contract"
@@ -729,6 +731,44 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic("内容模块工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(contentTools...); err != nil {
 		panic("内容工具注册失败：" + err.Error())
+	}
+	// 商品模块的工具（商品主体：一个读 + 三个写）。
+	//
+	// 只覆盖 products 一行 —— 属性 / 品牌 / 分类 / 捆绑配置各自是独立的数据形态，
+	// 混进同一批会让「商品」在工具列表里指五样东西（模型分不清时会挑一个最像的调下去）。
+	// 断言成收窄的读写端口：ProductService 同时握着 SetBundleConfig / UpdateVariantCost /
+	// CreateAttribute，工具层握着它们时「顺手调个价」会从「显式加一个工具」退化成「随手就能做」。
+	productWriter, prodWriteOK := a.productSvc.(productmcp.ProductWriter)
+	if !prodWriteOK {
+		panic("商品模块未实现写工具所需的三个方法（Create / Update / Delete），装配缺陷")
+	}
+	productReader, prodReadOK := a.productSvc.(productmcp.ProductReader)
+	if !prodReadOK {
+		panic("商品模块未实现 product_get 所需的 Get，装配缺陷")
+	}
+	if productTools, err := productmcp.Tools(productReader, productWriter,
+		aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))); err != nil {
+		panic("商品模块工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(productTools...); err != nil {
+		panic("商品工具注册失败：" + err.Error())
+	}
+	// 媒体模块的工具（搜 + 读 + 改信息 + 删）。
+	//
+	// 没有「上传」与「换图」：那两条收的是 multipart 文件，模型给不出。
+	// 这一点写进了 media_update 的说明 —— 免得模型对着「换张图」的请求硬凑一个调用。
+	mediaWriter, mediaWriteOK := a.mediaSvc.(mediamcp.MediaWriter)
+	if !mediaWriteOK {
+		panic("媒体模块未实现写工具所需的两个方法（UpdateAttachment / Delete），装配缺陷")
+	}
+	mediaReader, mediaReadOK := a.mediaSvc.(mediamcp.MediaReader)
+	if !mediaReadOK {
+		panic("媒体模块未实现 media_find / media_get 所需的 List 与 Detail，装配缺陷")
+	}
+	if mediaTools, err := mediamcp.Tools(mediaReader, mediaWriter,
+		aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))); err != nil {
+		panic("媒体模块工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(mediaTools...); err != nil {
+		panic("媒体工具注册失败：" + err.Error())
 	}
 	marks.mark(portWebhookDispatcher)
 
