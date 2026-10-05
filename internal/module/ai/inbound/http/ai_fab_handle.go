@@ -51,14 +51,14 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		// 没有可用模型时**直说**，不要让请求走到出站层再失败：
 		// 那里的错误是「模型调用失败」，用户会去查网络，而真正的原因是没配供应商。
 		h.renderFab(c, gin.H{
-			"FabError":  aienums.MsgFabNoModel,
+			"FabError":  fabText(aienums.MsgFabNoModel),
 			"FabAskKey": c.PostForm("ctxPath"),
 		})
 		return
 	}
 	if input == "" {
 		h.renderFab(c, gin.H{
-			"FabError":  aienums.MsgFabEmptyInput,
+			"FabError":  fabText(aienums.MsgFabEmptyInput),
 			"FabAskKey": c.PostForm("ctxPath"),
 		})
 		return
@@ -79,7 +79,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 	})
 	if err != nil {
 		h.renderFab(c, gin.H{
-			"FabError":  aienums.MsgFabFailed,
+			"FabError":  fabText(aienums.MsgFabFailed),
 			"FabAskKey": c.PostForm("ctxPath"),
 		})
 		return
@@ -100,15 +100,15 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		data["FabViewsCtx"] = gin.H{"Views": views}
 	}
 	if truncated {
-		data["FabTruncatedText"] = aienums.MsgFabTruncated
+		data["FabTruncatedText"] = fabText(aienums.MsgFabTruncated)
 	}
 	if n := len(res.ToolEvents); n > 0 {
-		data["FabToolsText"] = aienums.MsgFabToolsPrefix + strconv.Itoa(n) + aienums.MsgFabToolsSuffix
+		data["FabToolsText"] = fabText(aienums.MsgFabToolsPrefix) + strconv.Itoa(n) + fabText(aienums.MsgFabToolsSuffix)
 	}
 	// 既没有话、也没有取过数：可能是模型只调了工具但工具全失败。
 	// 这句要说清「可以去看详情」—— 详情里有工具名与参数，那才是排查的入口。
 	if answer == "" && len(res.ToolEvents) == 0 {
-		data["FabEmptyText"] = aienums.MsgFabEmpty
+		data["FabEmptyText"] = fabText(aienums.MsgFabEmpty)
 	}
 	h.renderFab(c, data)
 }
@@ -203,4 +203,21 @@ func composeFabInput(c *gin.Context, input string) string {
 	}
 	b.WriteString(input)
 	return b.String()
+}
+
+// fabText 把 key 换成面向用户的文案。
+//
+// **必须走这一步**：`aienums.MsgFab*` 是 **key**（`ai.fab.tools` 这种），
+// 文案在 `FacingMessages` 里。直接把常量塞进模板的结果是把 key 原样渲染给用户 ——
+// 实测真跑一次时页面上出现 `ai.fab.tools2ai.fab.toolsUnit`，而那轮恰好是
+// 「模型要求补上下文」的正常回答，看起来像模板坏了（这个缺陷只有真调模型才会暴露，
+// 假上游的用例断言的是「渲染出了那句提示」，不会去看那句提示长什么样）。
+//
+// 取不到时回 key 本身（可见的降级）：这一层是异常路径的最后兜底，
+// 宁可显示一个 `ai.fab.xxx` 也不要显示空白 —— 空白会被当成「按钮没生效」。
+func fabText(key string) string {
+	if v, ok := aienums.FacingText(key); ok {
+		return v
+	}
+	return key
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	aidto "go_wp/internal/module/ai/dto"
+	aienums "go_wp/internal/module/ai/enums"
 )
 
 // fabForm 造一个带指定表单字段的 gin.Context（只用到 PostForm）。
@@ -102,5 +103,29 @@ func TestFabDefaultModelNoneAvailable(t *testing.T) {
 	empty := &SessionPageHandle{}
 	if _, _, ok := empty.defaultModel(context.Background()); ok {
 		t.Fatal("端口缺席时应回 false")
+	}
+}
+
+// TestFabTextResolvesKeysToMessages 文案查表必须命中，不能把 key 渲染给用户。
+//
+// 真跑一次才暴露的缺陷：原先 handler 里直接把 `aienums.MsgFabToolsPrefix` 这类
+// **key 常量**塞进模板，页面上就出现了 `ai.fab.tools2ai.fab.toolsUnit`。
+// 这条断言把它钉死 —— 它检查的是「拿到的不是 key」。
+func TestFabTextResolvesKeysToMessages(t *testing.T) {
+	for _, key := range []string{
+		aienums.MsgFabNoModel, aienums.MsgFabEmptyInput, aienums.MsgFabFailed,
+		aienums.MsgFabTruncated, aienums.MsgFabToolsPrefix, aienums.MsgFabToolsSuffix,
+		aienums.MsgFabEmpty,
+	} {
+		got := fabText(key)
+		if got == "" {
+			t.Errorf("%s 没有文案", key)
+		}
+		if got == key {
+			t.Errorf("%s 没查到文案（会把 key 渲染给用户）", key)
+		}
+		if strings.Contains(got, "ai.fab.") {
+			t.Errorf("%s 的文案里混进了 key：%q", key, got)
+		}
 	}
 }
