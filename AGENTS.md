@@ -357,6 +357,10 @@ MCP / 客户页）只拿结论、不参与计算（`order_range_model.go` / `ord
 - GitHub 操作优先 `gh` CLI；Go 项目发版优先 GoReleaser
 - 语言运行时版本由 vfox 管理（`~/.vfox`），禁止 Homebrew/apt/系统包安装运行时；Node.js 依赖优先 pnpm，
   Python 用 uv
+- **用 `run_code` 拼 Go 代码时不要套 JS 模板字符串**：Go 的 struct tag 与原始字符串都用反引号，
+  而反引号会**提前终止**模板串。报错是 `Expected ';', '}' or <eof>` / `Expected ',', got '{'`
+  这类语法错，看不出与反引号有关（本仓实测连续三次踩到，每次都先怀疑别的原因）。改用 `write` /
+  `edit` 工具直接写文件 —— 它们的参数是 JSON，反引号安全；批量改动再考虑脚本。
 
 ## 文档导航
 
