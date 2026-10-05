@@ -101,6 +101,24 @@ type MailQueryReader interface {
 	ListCampaigns(ctx context.Context, req *maildto.CampaignListReq) (res *maildto.CampaignListResp, err error)
 	// CampaignReport 单个活动的效果报表（去重人数与百分比口径见类型说明）。
 	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (res *maildto.CampaignReport, err error)
+	// ListTemplates 邮件模板：key 为空时列全部。**活动存的是 template_id 而不是 key**，
+	// 所以工具必须能把 id 给出来，否则模型建不了活动（只能停下来问用户要 id）。
+	ListTemplates(ctx context.Context, key string) (res []*maildto.TemplateItem, err error)
+	// ListAccounts 发信账号：purpose 为空时列全部。建活动要 accountId，同理必须带 id。
+	ListAccounts(ctx context.Context, purpose string) (res []*maildto.AccountItem, err error)
+}
+
+// CampaignWriter 群发活动的写能力（给 AI 工具的窄门）。
+//
+// StartCampaign 是**本仓唯一会向站外真实收件人批量发信的动作**，所以它单独成方法、
+// 单独一个权限点，描述里也写死了「必须先把收件规模念给用户确认」。
+type CampaignWriter interface {
+	// SaveCampaign 新建（ID=0）或编辑草稿（仅草稿可改）。
+	SaveCampaign(ctx context.Context, req *maildto.SaveCampaignReq) (res *maildto.CampaignItem, err error)
+	// StartCampaign 启动群发（真发信）。
+	StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (res *maildto.StartCampaignResp, err error)
+	// DeleteCampaign 删除活动（正在发送中的删不掉）。
+	DeleteCampaign(ctx context.Context, id uint64) (err error)
 }
 
 // ContactWriter 营销联系人的写能力（给 AI 工具的窄门）。

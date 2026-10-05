@@ -30,6 +30,8 @@ type stubQuery struct {
 	contactRes  *maildto.ContactListResp
 	campaignRes *maildto.CampaignListResp
 	reportRes   *maildto.CampaignReport
+	templates   []*maildto.TemplateItem
+	accounts    []*maildto.AccountItem
 	err         error
 }
 
@@ -47,6 +49,16 @@ func (s *stubQuery) CampaignReport(_ context.Context, id uint64, _, pageSize int
 	s.gotReportID = id
 	s.gotReportLim = pageSize
 	return s.reportRes, s.err
+}
+
+// ListTemplates / ListAccounts 是为建活动铺路的发信配置清单（见 campaign_write_tools.go）。
+// 这里给最小实现 —— 本文件测的是查询与报表，不关心它们的内容。
+func (s *stubQuery) ListTemplates(_ context.Context, _ string) ([]*maildto.TemplateItem, error) {
+	return s.templates, nil
+}
+
+func (s *stubQuery) ListAccounts(_ context.Context, _ string) ([]*maildto.AccountItem, error) {
+	return s.accounts, nil
 }
 
 func mustRaw(t *testing.T, v any) json.RawMessage {

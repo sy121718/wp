@@ -820,6 +820,26 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(contactWriteTools...); err != nil {
 		panic("联系人写工具注册失败：" + err.Error())
 	}
+	// 发信配置清单（mail_accounts / mail_templates）。
+	// 它们读的是账号与模板，但存在的理由是**给写路径递参数**：
+	// saveCampaign 必填 accountId 与 templateId，而在此之前没有任何工具能给出这两个数字。
+	if setupTools, err := mailmcp.MailSetupTools(mailSvc); err != nil {
+		panic("发信配置工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(setupTools...); err != nil {
+		panic("发信配置工具注册失败：" + err.Error())
+	}
+	// 群发活动写工具（campaign_save / campaign_start / campaign_delete）。
+	// campaign_start 会向站外真实收件人批量发信且不可撤销，所以它单独一个权限点，
+	// 描述里也把「先把收件规模念给用户确认」写死。
+	campaignWriter, campaignWriteOK := mailSvc.(mailcontract.CampaignWriter)
+	if !campaignWriteOK {
+		panic("营销模块未实现写工具所需的 CampaignWriter，装配缺陷")
+	}
+	if campaignWriteTools, err := mailmcp.CampaignWriteTools(campaignWriter); err != nil {
+		panic("群发活动写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(campaignWriteTools...); err != nil {
+		panic("群发活动写工具注册失败：" + err.Error())
+	}
 	// 「按线索查订单」的两个只读工具（order_find / order_get）。
 	// 与上面两批分开装配的理由同样成立：它服务的是「一个线索指向一单」这类问题
 	//（订单 20261005001 到哪了），与聚合（一共多少 / 每天多少 / 谁最好）是两种形状。
