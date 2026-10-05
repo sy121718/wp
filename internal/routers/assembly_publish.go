@@ -15,8 +15,11 @@ import (
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	aimodel "go_wp/internal/module/ai/model"
+	aiservice "go_wp/internal/module/ai/service"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockhttp "go_wp/internal/module/block/inbound/http"
+	blockmcp "go_wp/internal/module/block/inbound/mcp"
 	blueprintcontract "go_wp/internal/module/blueprint/contract"
 	buildcontract "go_wp/internal/module/build/contract"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -174,6 +177,24 @@ func (a *assembly) buildPublishingModules() {
 		panic("页面写工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(pageWriteTools...); err != nil {
 		panic("页面写工具注册失败：" + err.Error())
+	}
+
+	// 全局块（页眉 / 页脚 / 公告条这类跨页面复用的结构片段）。
+	//
+	// 与页面写工具同一条边界：**只做块的元数据**（名称、分类、复用模式），
+	// 块里的结构由可视化编辑器维护。复用模式这两个词光看名字分不出区别，
+	// 描述与回执都按后果说明（global 改一次全站跟着变 / template 只是复制来源）。
+	// 删块默认拒绝处理被引用的块，force 会让引用页少掉这个块并标待重建。
+	if blockQueryTools, err := blockmcp.QueryTools(blockSvc); err != nil {
+		panic("全局块工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(blockQueryTools...); err != nil {
+		panic("全局块工具注册失败：" + err.Error())
+	}
+	if blockWriteTools, err := blockmcp.WriteTools(blockSvc, blockSvc,
+		aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))); err != nil {
+		panic("全局块写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(blockWriteTools...); err != nil {
+		panic("全局块写工具注册失败：" + err.Error())
 	}
 
 	// 结构模板（页眉 / 页脚）→ page 构建路径的模板解析端口。

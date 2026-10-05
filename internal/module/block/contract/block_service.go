@@ -77,3 +77,20 @@ var (
 	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。
 	ErrBlockInUse = errors.New(blockenums.ErrBlockInUse)
 )
+
+// BlockReader / BlockWriter 是 AI 工具用的窄接口。
+//
+// 刻意不直接复用 BlockService：它上面还有 CloneAST（编辑器动作）与
+// ListBlockSourceRefs（删除保护的判据来源），两者都不是「让模型读/改块的元数据」
+// 这件事需要的能力。只读的 List/Detail 单独声明，改写能力也只有这三个 ——
+// 复用宽接口会让「这个工具能做什么」变得看不出来。
+type BlockReader interface {
+	List(ctx context.Context, req *blockdto.ListReq) (res []blockdto.BlockResp, err error)
+	Detail(ctx context.Context, req *blockdto.DetailReq) (res *blockdto.BlockResp, err error)
+}
+
+type BlockWriter interface {
+	Create(ctx context.Context, req *blockdto.CreateReq) (res *blockdto.BlockResp, err error)
+	Update(ctx context.Context, req *blockdto.UpdateReq) (res *blockdto.BlockResp, err error)
+	Delete(ctx context.Context, req *blockdto.DeleteReq) (err error)
+}
