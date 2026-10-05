@@ -27,6 +27,8 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimcp "go_wp/internal/module/ai/inbound/mcp"
+	aimodel "go_wp/internal/module/ai/model"
+	aiservice "go_wp/internal/module/ai/service"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticshttp "go_wp/internal/module/analytics/inbound/http"
 	artifactcontract "go_wp/internal/module/artifact/contract"
@@ -46,6 +48,7 @@ import (
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenthttp "go_wp/internal/module/content/inbound/http"
+	contentmcp "go_wp/internal/module/content/inbound/mcp"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	inventorycontract "go_wp/internal/module/inventory/contract"
@@ -705,6 +708,27 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 不注入任何模块端口，所以不会因为某个模块没装配而消失。
 	if err := a.tools().RegisterAll(aimcp.GuideTools()...); err != nil {
 		panic("AI 手册工具注册失败：" + err.Error())
+	}
+	// 内容模块的工具：一个读 + 三个写。**同批上**（见 contentmcp.Tools 的注释）——
+	// content_update 是整份替换，没有 content_get 的写入口等于让模型凭记忆拼字段集。
+	//
+	// 写工具的幂等台账落在 ai 模块的表上（迁移 569），但**接口在 mcp 层**
+	// （mcp.IdempotencyStore）：工具层不该认识 ai 模块，adapter 在 service 里做转换。
+	// 断言成收窄的读写端口而不是直接传整个 ContentService：工具层握着 Publish /
+	// RegisterEntityTypes 时，「AI 顺手发一版」会从「显式加一个工具」退化成「随手就能做」。
+	contentWriter, writerOK := a.contentSvc.(contentmcp.ContentWriter)
+	if !writerOK {
+		panic("内容模块未实现写工具所需的三个方法（Create / Update / Delete），装配缺陷")
+	}
+	contentReader, readerOK := a.contentSvc.(contentmcp.ContentReader)
+	if !readerOK {
+		panic("内容模块未实现 content_get 所需的 Get，装配缺陷")
+	}
+	if contentTools, err := contentmcp.Tools(contentWriter, contentReader,
+		aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))); err != nil {
+		panic("内容模块工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(contentTools...); err != nil {
+		panic("内容工具注册失败：" + err.Error())
 	}
 	marks.mark(portWebhookDispatcher)
 

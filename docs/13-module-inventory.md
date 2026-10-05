@@ -230,3 +230,39 @@
     **各自调用与结果同 `callId` 成对**，链路是「先查手册口径再取数」；
   - P4 的「写操作可追」当前不适用（工具层全是只读，docs/17 §7），审计由 `ai_call_log` +
     `ai_tool_call_log` 承载。
+
+## 2026-10-05 第十一批修订（工具层的写操作：确认 + 幂等 + 服务端合并）
+
+- **写工具的通用地基**（`internal/mcp/write.go`，docs/17 D8 / §P4）：`NewWrite` 在作者给的
+  schema 上**追加** `confirm` 与 `idempotencyKey` 两个字段并放进 required，执行体按
+  「确认位 → 幂等键 → 业务校验 → 幂等命中查 → 执行 → 记幂等」的顺序走。
+  - 两项检查由地基统一做，而不是让每个工具自己记得：漏声明的失败模式是「这个工具
+    没有确认位」，而它在接口列表里与别人长得一模一样。
+  - `confirm` 是**参数**而不是 UI 确认框：工具层看不到对话，「等客户端弹框」对
+    外部 `/mcp` 消费者不成立。显式参数的好处是它**留在调用流水里**，可追、可审。
+  - `idempotencyKey` **由调用方给**：生成权在服务端的话每次重试都会拿到新键，等于没有幂等。
+  - 命中幂等时返回上次**成功**的结果并附一句「本次没有重复写入」（不附的话模型会向
+    用户汇报两次改动）；**失败不落幂等**，让重试能真的重试。
+  - 台账落 `ai_tool_idempotency`（迁移 569，`(tool_name, idem_key)` 唯一，24 小时窗口，
+    `ON CONFLICT DO NOTHING`）。放库里而不是进程内存：调用方的重试恰恰发生在超时之后，
+    而那正是最可能重启的时刻。接口在 `internal/mcp`（`IdempotencyStore`），
+    adapter 在 `internal/module/ai/service/ai_tool_idempotency.go` —— 工具层不认识 ai 模块。
+- **内容模块的四个工具**（`internal/module/content/inbound/mcp/content_write_tools.go`）：
+  `content_get` / `content_create` / `content_update` / `content_delete`，权限点复用
+  `content:get|create|update|delete`；`content_create` 的 `entityType` 取值与 `data` 的属性名
+  分别来自契约新增的 `ContentTypes()` / `AllFields()`（不手抄 —— 手抄清单在契约加字段时
+  不会跟着变）。依赖断言成收窄的读写端口而不是整个 `ContentService`：工具层握着
+  `RegisterEntityTypes` / `Publish` 时，「AI 顺手发一版」会从「显式加一个工具」退化成「随手就能做」。
+- **`content_update` 是增量语义，合并在服务端做**（本批最要紧的一条）。
+  最初写的是「模型自己 content_get 取全量再写回」，真调一次模型才暴露它走不通：
+  `content_get` 的结果会被剪枝（`body` 12323 字只回来前 4000 字），模型**正确地**拒绝写入
+  并要用户确认 —— 判断没错，但这个死结该由工具解开：模型的意图是「改这个字段」，
+  不是「提交整份文档」。改成工具层先 `Get`、合并、再 `Update` 全量写回。
+  - 实测（真实模型 + 真库）：模型调 `content_update`（`confirm=true`）只传 `title`，
+    **`body` 长度 11803 保持不变**，`revision` 递增到 2，`ai_tool_idempotency` 落一行。
+  - 对照：改之前模型自己发现 `body` 被截断而拒绝写入 —— 那说明「工具结果剪枝」
+    与「整份替换式更新」在结构上不兼容，两个设计各自都对，凑在一起就无解。
+- **`content_get` 与三个写工具同批上线**：读入口不在时，写入口的正确用法在工具集里
+  根本不成立。测试把这一点钉成形状断言（只上写工具会当场变红）。
+- **一条说明文案写反的代价**：`content_update` 的说明如果写成「只传要改的字段」而实现是
+  整份替换，模型会照说明做、然后把没提的字段抹掉 —— 那次调用成功返回，看起来完成得很好。

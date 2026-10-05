@@ -96,6 +96,42 @@ func IsValidField(entityType, field string) bool {
 	return false
 }
 
+// ContentTypes 列出全部内容类型（升序）。
+//
+// 为什么要有它：工具层要给模型一个**取值清单**（schema 的 enum），
+// 而 `IsValidType` 只能判单个值 —— 没有这个函数时工具层就只能把类型名再手抄一遍，
+// 于是「契约里加了新类型」与「工具认识它」这两件事永远不会同步。
+func ContentTypes() []string {
+	out := make([]string, 0, len(fieldWhitelist))
+	for t := range fieldWhitelist {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// AllFields 列出全部类型字段名的并集（升序、去重）。
+//
+// 给工具层的 schema 用：**工具声明的 schema 是静态的**（模型看到的是声明期的那一份，
+// 不能按参数变），而字段白名单是按类型分的 —— 所以工具那边只能声明并集，
+// 逐类型的严格判定仍然留在 service（`validateData` → `IsValidField`）。
+// 两层各司其职：schema 告诉模型「哪些字段名是可能的」，service 是最终判据。
+func AllFields() []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 8)
+	for _, fields := range fieldWhitelist {
+		for _, f := range fields {
+			if seen[f] {
+				continue
+			}
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // FieldWhitelist 返回该类型的字段白名单（只读拷贝，防调用方篡改）。
 func FieldWhitelist(entityType string) []string {
 	fields := fieldWhitelist[entityType]
