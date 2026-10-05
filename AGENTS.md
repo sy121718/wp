@@ -303,6 +303,15 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   纯内部流水与字典用 **bigint identity**；两套并存是设计。只增的分区流水表用 **UUIDv7**
   （`utils.NewTimeOrderedID()`），对外实体继续 v4（v7 的时间前缀会透露创建时间）。
   判据只约束新表，**存量按现状为准**。
+- **界面上出现的枚举类取值，先查字典表再写代码**：货币符号、国家名、语言名这类
+  「运营会增删的取值」已经有表（`sys_dict`，按 `dict_type` 分组：`currency` / `language`，
+  每行带 `symbol` / `url_code` / `ui_available`），**不要在代码里另建一份映射**。
+  两条真源必然漂移，而漂移的表现是「后台加了港币、页面上仍显示三字母代码」——
+  不报错、测试也不红，且没人知道该改哪一处。取数走 `sysconfig` 的 `ListDictOptions(ctx, dictType)`
+  （`DictOption` 已带 `Code` / `Label` / `Symbol`），**不要从 `Label` 里切**
+  （标签格式「CNY ¥」一改就静默切错）。
+  读不到时降级而不是报错：金额照常显示、只是没有符号前缀 —— 把整张卡打空比少一个符号糟得多。
+
 - **数据域（datarule）白名单由拥有该表的实体声明**：字段上写 `datarule:"label=…;ops=…"`，经
   `pkg/datarule.DomainFromEntity` 派生，装配入口注册（且在注册路由之前）。**没有 tag 的字段不在白名单里**
   （fail-closed）—— 不要另抄一份字段表。
