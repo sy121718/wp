@@ -243,6 +243,13 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   `declareMailPageObjects()`。
 - **只读接口一律单独声明**，绝不复用带写方法的既有 port（`CustomerQueryReader` 而不是
   `CustomerAdminPort`，后者还带 `SetCustomerStatus`）。
+- **「可视化页面选组件」这条边界要按「必填参数是不是 AST」判**，不是按模块名判：
+  page 的 `draftDocument`、block 的 `document`、contenttemplate 的 `DraftDocument` 都是
+  编辑器维护的结构 —— 让模型盲写只会产出编辑器里打不开的东西。同类模块的工具只做
+  **元数据**（名称、分类、复用模式、发布、改网址），建的时候给一个能被编辑器打开的空文档，
+  改的时候把读回来的 document 原样带回去。空文档的形状与 `builder.Page` 对齐：
+  `{"settings":{},"root":[]}`（**settings 是对象、root 是数组**，写成 `{"root":{...}}`
+  会在解析期失败，而工具侧只看得到「执行失败」四个字）。
 - 测试传参一律 `map[string]any` —— Go 结构体序列化会把零值写成 `""`，而 `mcp.Enum` 的
   白名单**拒绝空串**（模型不传可选参数时 JSON 里根本没有那个键，两者不是一回事）。
   `mcp.ArgsError` 是 **struct**（写 `&mcp.ArgsError{Msg: …}`）；`mcp.Tool` 的调用方法是
