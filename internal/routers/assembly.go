@@ -45,6 +45,7 @@ import (
 	cartservice "go_wp/internal/module/cart/service"
 	commentcontract "go_wp/internal/module/comment/contract"
 	commenthttp "go_wp/internal/module/comment/inbound/http"
+	commentmcp "go_wp/internal/module/comment/inbound/mcp"
 	commentservice "go_wp/internal/module/comment/service"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contentcontract "go_wp/internal/module/content/contract"
@@ -880,6 +881,13 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 新增一种可评论实体 = 在这里加一行 + 拥有者模块的常量已存在，不改 comment 模块。
 	commentSvc := commenthttp.SetupCommentRoutes(authorizedAPI, a.adminPages, db, a.projectService, commentEntityTypes())
 	a.commentSvc = commentSvc
+	// 评论工具放在这里而不是与其它工具同一批：commentSvc 到这一行才存在
+	// （前面那些模块的 service 更早建好）。放在别处会得到 undefined: commentSvc。
+	if commentTools, err := commentmcp.QueryTools(commentSvc); err != nil {
+		panic(err)
+	} else if err := a.tools().RegisterAll(commentTools...); err != nil {
+		panic(err)
+	}
 
 	a.mailSvc = mailSvc
 	a.userSvc = userSvc
