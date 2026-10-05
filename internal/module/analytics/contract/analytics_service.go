@@ -32,3 +32,13 @@ type AnalyticsService interface {
 	// Summary 按天 / 按路径聚合浏览数（后台只读，时间范围与分页由请求指定）。
 	Summary(ctx context.Context, req *analyticsdto.SummaryReq) (res *analyticsdto.SummaryResp, err error)
 }
+
+// TrafficReader 访问统计的只读视图：给 AI 工具的窄门。
+//
+// 为什么不直接复用 AnalyticsService：那一把钥匙里还有 Collect —— 它是**写入**入口
+// （虽然只写统计流水）。工具由模型驱动，给它写入能力意味着「AI 往统计里塞一条」
+// 在某次无关改动里变得可能，而统计数据是事实流水，被污染的计数等于没有计数。
+type TrafficReader interface {
+	// Summary 按天 / 按路径聚合浏览数（后台只读）。
+	Summary(ctx context.Context, req *analyticsdto.SummaryReq) (res *analyticsdto.SummaryResp, err error)
+}

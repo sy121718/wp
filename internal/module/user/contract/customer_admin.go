@@ -30,3 +30,19 @@ type CustomerAdminPort interface {
 	// UnlockCustomer 解除登录锁定（清 locked_until_time 与失败计数）。
 	UnlockCustomer(ctx context.Context, req *userdto.CustomerUnlockReq) (res *userdto.CustomerUnlockResp, err error)
 }
+
+// CustomerQueryReader 客户只读视图：给 AI 工具的窄门。
+//
+// 为什么不直接复用 CustomerAdminPort：那一把钥匙还能**停用账号**与**解除锁定**。
+// 工具由模型驱动 —— 给它写能力就等于让「顺手把这人停用了」在某次无关改动里
+// 悄悄变得可能，而这条路径上没有任何页面会问它为什么。越权防护靠接口形状，
+// 不靠调用方自觉（与 CustomerAdminPort 文件头同一条理由，只是这次收得更紧）。
+//
+// 只读这一点也决定了它**不需要**额外的方法：客户事实全在 CustomerResp 里，
+// 订单维度的事实归订单模块（order_find 已经能按客户名/邮箱反查）。
+type CustomerQueryReader interface {
+	// ListCustomers 客户列表：分页 + 关键词 / 状态 / 邮箱验证 / 注册时间范围筛选。
+	ListCustomers(ctx context.Context, req *userdto.CustomerListReq) (res *userdto.CustomerListResp, err error)
+	// GetCustomer 单个客户的资料与登录事实。
+	GetCustomer(ctx context.Context, customerID uint64) (res *userdto.CustomerResp, err error)
+}

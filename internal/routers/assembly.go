@@ -31,6 +31,7 @@ import (
 	aiservice "go_wp/internal/module/ai/service"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticshttp "go_wp/internal/module/analytics/inbound/http"
+	analyticsmcp "go_wp/internal/module/analytics/inbound/mcp"
 	artifactcontract "go_wp/internal/module/artifact/contract"
 	artifacthttp "go_wp/internal/module/artifact/inbound/http"
 	blockcontract "go_wp/internal/module/block/contract"
@@ -90,6 +91,7 @@ import (
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	usercontract "go_wp/internal/module/user/contract"
 	userhttp "go_wp/internal/module/user/inbound/http"
+	usermcp "go_wp/internal/module/user/inbound/mcp"
 	webhookcontract "go_wp/internal/module/webhook/contract"
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/permission"
@@ -711,6 +713,19 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(projectTools...); err != nil {
 		panic("站点工程工具注册失败：" + err.Error())
 	}
+	// 「按模糊线索查客户」的两个只读工具（customer_find / customer_get）。
+	//
+	// 用户的提问是模糊的（「张三是不是注册过」「谁这周注册的」「有多少人邮箱没验证」），
+	// 所以工具收的是线索而不是 id：customer_find 的 keyword 同时匹配邮箱 / 用户名 /
+	// 昵称 / 展示名。依赖收窄到 CustomerQueryReader —— 手里没有 SetCustomerStatus，
+	// AI 停用不了任何账号。
+	if userAdminOK {
+		if customerTools, err := usermcp.QueryTools(userAdminSvc); err != nil {
+			panic("客户工具装配失败：" + err.Error())
+		} else if err := a.tools().RegisterAll(customerTools...); err != nil {
+			panic("客户工具注册失败：" + err.Error())
+		}
+	}
 	// 「按线索查订单」的两个只读工具（order_find / order_get）。
 	// 与上面两批分开装配的理由同样成立：它服务的是「一个线索指向一单」这类问题
 	//（订单 20261005001 到哪了），与聚合（一共多少 / 每天多少 / 谁最好）是两种形状。
@@ -1155,6 +1170,18 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 等于把明文换个写法存下来。
 	analyticsSvc := analyticshttp.SetupAnalyticsRoutes(authorizedAPI, router, db, sessionSecret, a.adminPages, a.projectService)
 	a.analyticsSvc = analyticsSvc
+	// 访问统计工具（traffic_summary）：用户说的「页面浏览 / 运营数据」就是它。
+	//
+	// 注册点在这里而不是与其它工具并列：它依赖刚刚建出来的 analyticsSvc，
+	// 而那个变量到这一行才存在（工具装配的其余部分在主函数前段）。
+	// 与订单那批并列的理由仍是成立的 —— 两边的「天」都是 UTC 日界，
+	// 模型可以把「这周几单、多少人看」并排放在一起答，而它们来自两次独立取数、
+	// 互不污染口径。依赖收窄到 TrafficReader —— 手里没有 Collect。
+	if trafficTools, err := analyticsmcp.TrafficTools(analyticsSvc); err != nil {
+		panic("访问统计工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(trafficTools...); err != nil {
+		panic("访问统计工具注册失败：" + err.Error())
+	}
 	// 商品实体类型注册（issue #6）：注册后商品可作为内容模板的数据源
 	// （类型合法性 + 字段白名单由注册表判定），构建期经注册表取商品字段解析器。
 	// 与内容模块同样 fail-fast：注册失败即装配缺陷。
