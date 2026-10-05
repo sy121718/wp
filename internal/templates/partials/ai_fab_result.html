@@ -14,6 +14,15 @@
 {{if isset(.FabError)}}
 <p class="ai-fab-error" role="alert">{{.FabError}}</p>
 {{else}}
+{* 思考过程放在**回答之前**且默认折叠：它是过程不是结论，展开会盖过真正的答复。
+   用 <details> 而不是自己做展开 —— 键盘可达与读屏语义是浏览器给的。 *}
+{{if isset(.FabReasoning)}}
+<details class="ai-fab-think">
+    <summary>{{.FabThinkLabel}}</summary>
+    <div class="ai-fab-think-body">{{.FabReasoning}}</div>
+</details>
+{{end}}
+
 {{if isset(.FabAnswer)}}
 <div class="ai-fab-answer">{{.FabAnswer}}</div>
 {{end}}

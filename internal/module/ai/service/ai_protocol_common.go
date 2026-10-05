@@ -44,6 +44,13 @@ const (
 type ProtocolReply struct {
 	// Content 模型说的话；要求调工具时通常为空。
 	Content string
+	// Reasoning 模型的思考过程（部分上游在正文之外单独返回，字段名两家不同：
+	// reasoning_content / reasoning）。
+	//
+	// 它**不是模型说的话**，所以不进对话历史；它的用途只有一个 —— 展示给用户
+	// 「它在想什么」。一次要跑工具的任务里正文可能几十秒不出字，那段时间用户
+	// 只看到一个没反应的按钮，只能猜是不是卡死了。
+	Reasoning string
 	// ToolCalls 模型要求执行的工具调用（可能多个，按上游给的顺序执行）。
 	ToolCalls []aidto.ToolCall
 	// Usage 上游上报的用量（未上报时 Reported=false）。

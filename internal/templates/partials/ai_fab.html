@@ -26,11 +26,18 @@
            换入的是**片段**（admin/partials/ai_fab_result），不是整页 —— 换整页会把
            用户当前页面整块替换掉，那是「问一句就把人踢走」。 *}
         <div class="ai-fab-body" data-ai-fab-body></div>
+        {* 「正在思考」放在 body **外面**：body 是 htmx 的替换目标，放进去的话
+           请求期间它显示、请求一回来连它一起被换掉 —— 而换回来的内容要不要它，
+           取决于这次是成功还是失败，于是「思考中」会在最需要它的时刻消失。
+           htmx 在请求期间给 hx-indicator 指向的元素加 .htmx-request 类，
+           显示与隐藏都由 CSS 决定（初始不显示，不给一段会闪的默认文案）。 *}
+        <p class="ai-fab-thinking" id="ai-fab-thinking" aria-live="polite">{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}</p>
         {* CSRF 由 layout 的 hx-headers 全局带上，不必在这里再放一个隐藏域：
            两处各写一份 token，泄漏面与失配面都翻倍，而 htmx 的全局头本来就已经生效。 *}
         <form class="ai-fab-form" data-ai-fab-form
               hx-post="/admin/ai/ask" hx-target="[data-ai-fab-body]" hx-swap="innerHTML"
-              hx-disabled-elt="find button[type=submit]">
+              hx-disabled-elt="find button[type=submit]"
+              hx-indicator="#ai-fab-thinking">
             <textarea class="form-textarea ai-fab-input" name="input" rows="2" required
                       data-ai-fab-input
                       placeholder="{{ .["t"]("admin.ai.fab.placeholder", "问点什么…（Enter 发送，Shift+Enter 换行）") }}"

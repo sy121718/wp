@@ -40,6 +40,7 @@ const (
 	MsgFabToolsPrefix = "ai.fab.tools"
 	MsgFabToolsSuffix = "ai.fab.toolsUnit"
 	MsgFabEmpty       = "ai.fab.empty"
+	MsgFabThinkLabel  = "ai.fab.thinkLabel"
 
 	ErrInvalidParam        = "ai.err.invalidParam"
 	ErrProviderNotFound    = "ai.err.providerNotFound"
@@ -130,6 +131,7 @@ var FacingMessages = map[string]string{
 	MsgFabToolsPrefix: "这轮查了数据",
 	MsgFabToolsSuffix: " 次。",
 	MsgFabEmpty:       "没有拿到回答。可以到「全部会话」里看这一轮的详情。",
+	MsgFabThinkLabel:  "思考过程",
 }
 
 // 页面标题（layout 的 <title>）：值与模板 h1 同源，已在迁移 513 / 516 seed，

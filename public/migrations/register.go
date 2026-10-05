@@ -240,6 +240,8 @@ func init() {
 	registerAIFabI18n()
 	// 569：写工具的幂等台账（见 register_ai_tool_idempotency.go）。
 	registerAIToolIdempotency()
+	// 570：悬浮球的「思考中」与「思考过程」词条（见 register_ai_fab_thinking_i18n.go）。
+	registerAIFabThinkingI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

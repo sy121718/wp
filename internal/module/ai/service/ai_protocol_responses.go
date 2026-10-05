@@ -23,6 +23,12 @@ import (
 const (
 	responsesObjectName   = "response"
 	responsesTextPartType = "output_text"
+	// responsesReasoningPartType 思考过程条目（output[] 里独立一项）。
+	//
+	// 在这一族协议里思维链不是 message 的一个字段，而是与 message 并列的一种条目：
+	// output: [{type:"reasoning", summary:[{type:"summary_text", text:"..."}]}, {type:"message", ...}]。
+	// 只读 content 会漏掉整段思考（而它恰恰是跑工具那几十秒里唯一的进展信号）。
+	responsesReasoningPartType = "reasoning"
 	// responsesCallPartType 工具调用条目（output[] 里独立一项）。
 	responsesCallPartType = "function_call"
 	// responsesCallOutputType 工具结果条目（input[] 里独立一项）。
@@ -182,6 +188,41 @@ func responsesTools(tools []aidto.ToolSpec) []map[string]any {
 // status=incomplete（截断 / content_filter）**不提前返回**：它只说明这轮没跑到 completed，
 // 正文可能照样生成，继续走下面的取值路径；真取不到片段时落到末尾唯一的「无正文」出口。
 // 提前把 incomplete 归口 ErrInternal 会把「用户给的上限太小」伪装成「服务器内部错误」。
+// parseResponsesReasoning 收集 output[] 里所有 reasoning 条目的文本。
+//
+// 两种承载都读：summary（这一族协议的常见形态）与 content（部分网关直接给 content）。
+// 多段用换行相连 —— 模型一次可能给出多段思考，丢掉后面的会让用户只看到开头。
+func parseResponsesReasoning(output []any) string {
+	var parts []string
+	for _, item := range output {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if kind, _ := obj["type"].(string); kind != responsesReasoningPartType {
+			continue
+		}
+		for _, key := range []string{"summary", "content"} {
+			for _, seg := range asAnyList(obj[key]) {
+				if m, ok := seg.(map[string]any); ok {
+					parts = append(parts, firstNonEmptyString(m, "text", "summary_text"))
+				} else if s, ok := seg.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, s)
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+// asAnyList 把可能是数组的字段摊成 []any（不是数组时回 nil）。
+func asAnyList(v any) []any {
+	if list, ok := v.([]any); ok {
+		return list
+	}
+	return nil
+}
+
 func parseResponsesReply(body []byte) (ProtocolReply, error) {
 	var root map[string]any
 	if err := json.Unmarshal(body, &root); err != nil {
@@ -198,9 +239,10 @@ func parseResponsesReply(body []byte) (ProtocolReply, error) {
 
 	output, _ := root["output"].([]any)
 	calls := parseResponsesToolCalls(output)
+	reasoning := parseResponsesReasoning(output)
 
 	if text, ok := root["output_text"].(string); ok && text != "" {
-		return ProtocolReply{Content: text, ToolCalls: calls, Usage: usage}, nil
+		return ProtocolReply{Content: text, Reasoning: reasoning, ToolCalls: calls, Usage: usage}, nil
 	}
 
 	var sb strings.Builder
@@ -233,7 +275,7 @@ func parseResponsesReply(body []byte) (ProtocolReply, error) {
 	if strings.TrimSpace(text) == "" && len(calls) == 0 {
 		return ProtocolReply{Usage: usage}, ErrInternal
 	}
-	return ProtocolReply{Content: text, ToolCalls: calls, Usage: usage}, nil
+	return ProtocolReply{Content: text, Reasoning: reasoning, ToolCalls: calls, Usage: usage}, nil
 }
 
 // parseResponsesToolCalls 从 output[] 里收集 function_call 条目。

@@ -84,6 +84,37 @@
             // （包括后台各页面的表单）都多带三个字段。
             var form = root.querySelector('[data-ai-fab-form]');
             if (form) {
+                // 请求结束（无论成败）后处理草稿与焦点：
+                //   · 失败（网络层错误、5xx）→ 把草稿填回输入框；
+                //   · 成功但片段里带 .ai-fab-error（业务失败，我们一律回 200）→ 同样填回。
+                // 两条都要：只判其中一条时，另一条路径上用户的话就没了。
+                // 清空输入框：**必须挂在 htmx 的事件上，不能写进 submit()**。
+                // 实测踩到：`submit()` 只有 Enter 那条路径会调，点「发送」按钮时
+                // htmx 自己提交、根本不经过它 —— 于是「按 Enter 会清空、点按钮不会清空」，
+                // 而按钮才是多数人用的那一个（现象是问题发出去了、字还在框里）。
+                // 选 beforeRequest 而不是 configRequest：前者在所有参数都已经收齐之后，
+                // 清空不会影响这次请求带出去的内容。
+                form.addEventListener('htmx:beforeRequest', function () {
+                    var input = inputOf(root);
+                    if (!input || !input.value) { return; }
+                    // 草稿留在 dataset 上，请求失败时填回去 ——
+                    // 否则一次网络抖动就让用户刚写的那段话没了。
+                    input.dataset.aiFabDraft = input.value;
+                    input.value = '';
+                });
+                form.addEventListener('htmx:afterRequest', function (e) {
+                    var input = inputOf(root);
+                    if (!input) { return; }
+                    var failed = !e.detail.successful;
+                    if (!failed) {
+                        var body = root.querySelector('[data-ai-fab-body]');
+                        failed = !!(body && body.querySelector('.ai-fab-error'));
+                    }
+                    if (failed && input.dataset.aiFabDraft) {
+                        input.value = input.dataset.aiFabDraft;
+                    }
+                    delete input.dataset.aiFabDraft;
+                });
                 form.addEventListener('htmx:configRequest', function (e) {
                     var fields = contextFields();
                     for (var k in fields) {

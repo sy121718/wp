@@ -134,6 +134,7 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 		ProviderKey:   provider.ProviderKey,
 		Model:         model,
 		Output:        reply.Content,
+		Reasoning:     reply.Reasoning,
 		ToolCalls:     reply.ToolCalls,
 		Protocol:      provider.Protocol,
 		InputTokens:   usage.InputTokens,

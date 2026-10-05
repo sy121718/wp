@@ -88,7 +88,12 @@ type ChatResult struct {
 	ProviderKey string `json:"provider_key"`
 	Model       string `json:"model"`
 	Output      string `json:"output"`
-	Protocol    string `json:"protocol"`
+	// Reasoning 模型这一轮的思考过程（部分上游单独返回；没有就是空串）。
+	//
+	// **它不进对话历史**：那不是模型对用户说的话，回灌会给下一轮制造一段
+	// 「模型说自己想过了什么」的伪上下文。它的用途只有展示。
+	Reasoning string `json:"reasoning,omitempty"`
+	Protocol  string `json:"protocol"`
 
 	// ToolCalls 模型这一轮要求调用的工具。
 	//

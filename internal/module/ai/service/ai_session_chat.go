@@ -192,6 +192,9 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 	// ④ 带工具的循环。
 	rounds := make([]aidto.ChatMessage, 0, 8)
 	toolEvents := make([]aidto.SessionEventItem, 0, 4)
+	// 逐轮收集思考过程。**不是只留最后一轮**：一次要跑几个工具的任务里，
+	// 「它为什么选这个工具」恰恰在前面几轮的思考里，末轮只有收尾。
+	var reasonings []string
 	specs := s.toolSpecs()
 	for round := 0; round < maxToolRounds; round++ {
 		msgs := stablePrefix(history)
@@ -215,6 +218,9 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 		if chatRes == nil {
 			return nil, ErrSessionChatEmptyReply
 		}
+		if r := strings.TrimSpace(chatRes.Reasoning); r != "" {
+			reasonings = append(reasonings, r)
+		}
 
 		// 没有工具调用 = 这一轮就是最终回答。
 		if len(chatRes.ToolCalls) == 0 {
@@ -222,7 +228,8 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 			if output == "" {
 				return nil, ErrSessionChatEmptyReply
 			}
-			return s.finishReply(ctx, sessionID, req, providerKey, model, output, userRes, input, toolEvents)
+			return s.finishReply(ctx, sessionID, req, providerKey, model, output, userRes, input,
+				toolEvents, strings.Join(reasonings, "\n\n"))
 		}
 
 		// 有工具调用：逐个执行并把「调用 / 结果」成对落库。
@@ -253,7 +260,11 @@ func (s *SessionService) SendMessage(ctx context.Context, req aidto.SendMessageR
 	return nil, ErrSessionToolRoundsExceeded
 }
 
-// finishReply 落 assistant 事件并组装返回（循环的唯二出口之一）。
+// finishReply 落 assistant 事件并组装返回（带工具循环的正常出口）。
+//
+// reasoning 是这一轮多轮往返里模型给出的思考过程（可能为空：并非所有上游都返回）。
+// 它写进事件的 meta 而不是 content —— content 是**模型对用户说的话**，
+// 两者混在一起会让对话历史里凭空多出一段「模型说自己想过了什么」的伪上下文。
 func (s *SessionService) finishReply(
 	ctx context.Context,
 	sessionID int64,
@@ -262,13 +273,19 @@ func (s *SessionService) finishReply(
 	userRes *aidto.AppendEventResult,
 	input string,
 	toolEvents []aidto.SessionEventItem,
+	reasoning string,
 ) (*aidto.SendMessageResult, error) {
 	// 带上 providerKey/model：这条回复是这两家产生的（529 起事件自带来源），
 	// 用量按供应商/模型拆开时靠的就是它，而不是会话头那份（换模型时会被覆盖）。
+	var meta map[string]any
+	if strings.TrimSpace(reasoning) != "" {
+		meta = map[string]any{eventMetaReasoning: reasoning}
+	}
 	assistantRes, err := s.AppendEvent(ctx, aidto.AppendEventReq{
 		SessionID:   sessionID,
 		Kind:        string(aienums.EventKindAssistant),
 		Content:     output,
+		Meta:        meta,
 		UserID:      req.UserID,
 		ProviderKey: providerKey,
 		ModelID:     model,
@@ -283,6 +300,13 @@ func (s *SessionService) finishReply(
 		ToolEvents:     toolEvents,
 	}, nil
 }
+
+// eventMetaReasoning 事件 meta 里放思考过程的键。
+//
+// 与渲染数据（meta["render"]）并列存在同一个 meta 对象里：两个键互不影响，
+// 读侧各取各的。用常量而不是字面量，是因为它有两个消费者（会话详情页与悬浮球），
+// 拼错一处不会报错、只会让那一边永远看不到思考过程。
+const eventMetaReasoning = "reasoning"
 
 // appendToolEvent 落一条工具事件；phase 为 toolPhaseCall 时正文是调用摘要。
 func (s *SessionService) appendToolEvent(

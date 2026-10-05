@@ -99,6 +99,13 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		// `unexpected token '{'`），所以这个包装必须在 Go 侧做好。
 		data["FabViewsCtx"] = gin.H{"Views": views}
 	}
+	// 思考过程：从助手事件的 meta 里取（会话层在 finishReply 写进去的）。
+	// 直接取 res.AssistantEvent.Meta —— 那是**本次**这一轮的助手事件，
+	// 而不是从事件列表里找最后一条（列表可能因为折叠/重放而不含它）。
+	if r := fabReasoningOf(res); r != "" {
+		data["FabReasoning"] = r
+		data["FabThinkLabel"] = fabText(aienums.MsgFabThinkLabel)
+	}
 	if truncated {
 		data["FabTruncatedText"] = fabText(aienums.MsgFabTruncated)
 	}
@@ -127,6 +134,19 @@ func (h *SessionPageHandle) renderFab(c *gin.Context, data gin.H) {
 // 取的是**工具事件**而不是助手事件：视图是取数工具挂上去的（ai_session_render.go 的
 // 逐块取数），助手事件只有文本。多个工具各出几张视图时按发生顺序拼起来，
 // 与它们在会话页时间线里的顺序一致 —— 两处顺序不同会让人怀疑自己看的是不是同一次回答。
+// fabReasoningOf 取本次回答的思考过程（没有则空串）。
+//
+// meta 是 map[string]any，值可能是 string 也可能是别的（将来改结构时）；
+// 只认 string，不认就回空 —— 与「上游没返回思考过程」等价，
+// 都属于「不显示这一段」，而不是让整个回答失败。
+func fabReasoningOf(res *aidto.SendMessageResult) string {
+	if res == nil || res.AssistantEvent.Meta == nil {
+		return ""
+	}
+	s, _ := res.AssistantEvent.Meta["reasoning"].(string)
+	return strings.TrimSpace(s)
+}
+
 func fabViewsOf(res *aidto.SendMessageResult) []uispec.View {
 	if res == nil {
 		return nil

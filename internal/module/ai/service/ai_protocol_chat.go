@@ -113,10 +113,26 @@ func parseChatCompletionsReply(body []byte) (ProtocolReply, error) {
 	msg, _ := first["message"].(map[string]any)
 	text, _ := msg["content"].(string)
 	calls := parseChatToolCalls(msg["tool_calls"])
+	// 思考过程两家字段名不同：DeepSeek 系用 reasoning_content，另一些用 reasoning。
+	// 都试一遍 —— 只认一个时，换一家供应商这个功能就静默消失（页面上看不出区别，
+	// 只是「正在思考」那一段永远不出现）。
+	reasoning := firstNonEmptyString(msg, "reasoning_content", "reasoning")
+	// 空判断**不含 reasoning**：只有思考过程、没有正文也没有工具调用，等于这轮没产出。
+	// 把它当成功会让外层拿一个空回答去写会话事件。
 	if strings.TrimSpace(text) == "" && len(calls) == 0 {
 		return ProtocolReply{Usage: usage}, ErrInternal
 	}
-	return ProtocolReply{Content: text, ToolCalls: calls, Usage: usage}, nil
+	return ProtocolReply{Content: text, Reasoning: reasoning, ToolCalls: calls, Usage: usage}, nil
+}
+
+// firstNonEmptyString 按顺序取第一个非空的字符串字段。
+func firstNonEmptyString(obj map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := obj[k].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // parseChatToolCalls 解析 message.tool_calls。
