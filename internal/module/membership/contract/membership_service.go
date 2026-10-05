@@ -136,3 +136,19 @@ type MembershipService interface {
 	TierAdminPort
 	RecalcPort
 }
+
+// QueryReader 会员等级与归属的只读视图：给 AI 工具的窄门。
+//
+// 为什么不直接用 MembershipService：那个接口上有等级增删改、权益保存、
+// 归属重算 —— 工具由模型驱动，给它写能力意味着「AI 顺手改了一个等级的升级门槛」
+// 在某次无关改动里变得可能，而门槛一改会牵动后续所有人的升降级。
+//
+// 两个方法对应两类用户提问：
+//   - ListTiers：「我们有几个会员等级」「金卡要花多少钱」；
+//   - ListAssignments：「这个等级里有多少人」「某人是不是会员」。
+type QueryReader interface {
+	// ListTiers 按工程列等级（含门槛金额与权益），按高低排序。
+	ListTiers(ctx context.Context, req *membershipdto.ListTiersReq) (list []*membershipdto.TierResp, err error)
+	// ListAssignments 按工程 / 等级 / 来源 / 客户列归属记录。
+	ListAssignments(ctx context.Context, req *membershipdto.ListAssignmentsReq) (list []*membershipdto.AssignmentResp, err error)
+}

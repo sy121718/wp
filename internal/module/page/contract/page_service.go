@@ -479,3 +479,19 @@ type PageService interface {
 	// 与 PurgeRetention 的「后台手动触发与定时任务共用」同一形状。
 	RunDueSchedules(ctx context.Context) (res *pagedto.ScheduleRunResp, err error)
 }
+
+// PageQueryReader 页面标题的只读视图：给 AI 工具的窄门。
+//
+// 为什么只要一个方法而不是整个 PageService：那个接口上有发布、回滚、删除页面、
+// 改路径 —— 工具由模型驱动，给它写能力意味着「AI 顺手把一个页面下线了」在某次
+// 无关改动里变得可能。越权防护靠接口形状。
+//
+// 为什么是「列出全部标题」而不是「按关键词查」：页面列表通道（service.List）
+// 只按工程与主题筛，没有关键词参数，而它的返回体带着整份草稿文档（每个页面几百 KB）。
+// 对「用户说个名字，找出那个页面」这件事，标题清单已经够用 —— 关键词匹配放在
+// 工具层做（页面数量是百级，一次全拉进内存比对比给列表通道加一套关键词查询便宜得多，
+// 也不必为它在 model 层开一条只为 AI 服务的索引）。
+type PageQueryReader interface {
+	// ListPageTitles 列出一个工程的全部页面标题（含草稿路径与线上路径）。
+	ListPageTitles(ctx context.Context, projectID string) (res []pagedto.PageTitleResp, err error)
+}

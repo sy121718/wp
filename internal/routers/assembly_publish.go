@@ -32,6 +32,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pagehttp "go_wp/internal/module/page/inbound/http"
+	pagemcp "go_wp/internal/module/page/inbound/mcp"
 	pageservice "go_wp/internal/module/page/service"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginhttp "go_wp/internal/module/plugin/inbound/http"
@@ -154,6 +155,15 @@ func (a *assembly) buildPublishingModules() {
 	marks.mark(portProductFragmentCacheBumper)
 	// navigationSvc 注入 page 装配：core.nav 绑定菜单位置时构建期解析菜单项。
 	pageService := pagehttp.SetupPageRoutes(authorizedAPI, db, artifactSvc, publicationSvc, projectService, blockSvc, pluginSvc, collectionResolver, navigationSvc, mediaSvc, a.adminPages, a.workbenchPages)
+	// 页面工具（page_find）：注册点在这里而不是与其它工具并列 —— pageService
+	// 是这一层的局部变量（它依赖构建 / 发布链路，装配顺序靠后），主装配函数里拿不到。
+	// 依赖收窄到 PageQueryReader（只有 ListPageTitles）：手里没有发布 / 回滚 / 删除，
+	// 「AI 顺手把一个页面下线了」不会在某次改动里变得可能。
+	if pageTools, err := pagemcp.Tools(pageService); err != nil {
+		panic("页面工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(pageTools...); err != nil {
+		panic("页面工具注册失败：" + err.Error())
+	}
 
 	// 结构模板（页眉 / 页脚）→ page 构建路径的模板解析端口。
 	//

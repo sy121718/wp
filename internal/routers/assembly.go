@@ -54,6 +54,7 @@ import (
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
+	inventorymcp "go_wp/internal/module/inventory/inbound/mcp"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
 	inventoryservice "go_wp/internal/module/inventory/service"
@@ -67,6 +68,7 @@ import (
 	mediamcp "go_wp/internal/module/media/inbound/mcp"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershiphttp "go_wp/internal/module/membership/inbound/http"
+	membershipmcp "go_wp/internal/module/membership/inbound/mcp"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	ordercontract "go_wp/internal/module/order/contract"
@@ -726,6 +728,22 @@ func (a *assembly) buildIdentityAndCommerce() {
 		} else if err := a.tools().RegisterAll(customerTools...); err != nil {
 			panic("客户工具注册失败：" + err.Error())
 		}
+	}
+	// 库存（stock_find / warehouse_list）与会员（member_tiers / member_find）。
+	//
+	// 用户说的「整个系统的数据」里，这两块此前对 AI 完全不可见：问「VIT-C 还有多少货」
+	// 或「金卡门槛多少」时它只会说没有这个工具。两边的依赖都收窄成只读契约 ——
+	// 手里没有 AdjustStock、没有 SaveTier：库存调整会改可卖量、等级门槛会牵动
+	// 后续所有人的升降级，这两件事不该由模型驱动。
+	if stockTools, err := inventorymcp.Tools(inventorySvc); err != nil {
+		panic("库存工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(stockTools...); err != nil {
+		panic("库存工具注册失败：" + err.Error())
+	}
+	if memberTools, err := membershipmcp.Tools(membershipSvc); err != nil {
+		panic("会员工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(memberTools...); err != nil {
+		panic("会员工具注册失败：" + err.Error())
 	}
 	// 营销（邮件）的三个只读工具：contact_find / campaign_list / campaign_stats。
 	//

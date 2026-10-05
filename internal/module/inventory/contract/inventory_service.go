@@ -235,3 +235,20 @@ type (
 	// 仓库列表（工程维度）。
 	ListWarehouseReq = inventorydto.ListWarehouseReq
 )
+
+// StockReader 库存的只读视图：给 AI 工具的窄门。
+//
+// 为什么不直接复用 InventoryService：那个接口上有 AdjustStock / 采购单写入 /
+// 仓库增删 —— 工具由模型驱动，给它写入能力意味着「AI 顺手调一次库存」在某次
+// 无关改动里变得可能，而库存调整会直接改可卖量。越权防护靠接口形状。
+//
+// 两个方法对应两类用户提问：
+//   - ListStocks：「VIT-C 还有多少货」「哪个仓缺货」；
+//   - ListWarehouses：「有几个仓库」「默认仓是哪个」—— 库存行的仓库名已经带了，
+//     但用户会直接问仓库本身（还没建任何库存时也有答案）。
+type StockReader interface {
+	// ListStocks 按工程 / 仓库 / 商品 / SKU 查库存行（一行 = 一个仓的一个 SKU）。
+	ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error)
+	// ListWarehouses 按工程列仓库。
+	ListWarehouses(ctx context.Context, req *inventorydto.ListWarehouseReq) (list []*inventorydto.WarehouseResp, err error)
+}
