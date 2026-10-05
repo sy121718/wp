@@ -221,6 +221,37 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   样板见 `internal/module/admin/inbound/http/admin_err.go`、`navigation_err.go`、`orderFacingText`。
 - 判据是**形状**不是字面量：新增 handler 先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名。
 
+### AI 工具（MCP）开发
+
+工具定义在 `internal/module/<mod>/inbound/mcp/`，读用 `mcp.New`、写用 `mcp.NewWrite`
+（后者自动往 schema 追加 `confirm` 与 `idempotencyKey` 并置 required —— **工具作者不要
+在自己的入参结构体里重复声明**）。装配点在 `internal/routers/assembly.go`，
+**注意局部变量的可见性**：`analyticsSvc` / `commentSvc` 这类要等到建它的那一行之后才存在，
+`pageService` 只在 `assembly_publish.go` 里可见（放错位置报 `undefined: xxxSvc`）。
+
+- **工具的输出必须带上下一步动作所需的必填参数**（本仓实测出现 6 次）：`stock_find` 漏
+  `variantId`、`stock_reasons` 漏 `id`、建活动缺 `accountId`、分类写工具缺 `parentId`、
+  `page_find` 漏 `kind`、退货详情缺明细 —— 症状都是**模型停在原地问用户要**，而它本可以
+  自己走完。落地做法：**写工具之前先把清单工具补上**，不要等真机暴露。
+- **只有 `mcp.Result.Text` 会回到模型**（`internal/module/ai/service/ai_session_chat.go` 取
+  `runRes.Text`；`Data` 只进审计事件）—— 所有细节（id、金额、时间、状态）都要写进 `Text`。
+- **权限点先查有没有带 `permission.X` 参数的路由**：`rg -n 'permission\.XxxYyy'
+  internal/module/<mod>/inbound/http/*.go`。`CasbinMiddlewareForPath(obj)` **只做中间件、
+  不登记权限声明**，于是 `permission.RoutesOf` 返回空 → 工具调用一律 forbidden
+  （`ai.err.toolForbidden`），**而页面本身完全正常**。没有路由 = 没有权限点 = fail closed，
+  不要凑一个相近的权限点。样板：`internal/module/mail/inbound/http/mail_page_router.go` 的
+  `declareMailPageObjects()`。
+- **只读接口一律单独声明**，绝不复用带写方法的既有 port（`CustomerQueryReader` 而不是
+  `CustomerAdminPort`，后者还带 `SetCustomerStatus`）。
+- 测试传参一律 `map[string]any` —— Go 结构体序列化会把零值写成 `""`，而 `mcp.Enum` 的
+  白名单**拒绝空串**（模型不传可选参数时 JSON 里根本没有那个键，两者不是一回事）。
+  `mcp.ArgsError` 是 **struct**（写 `&mcp.ArgsError{Msg: …}`）；`mcp.Tool` 的调用方法是
+  `Invoke` 不是 `Call`，取 schema 是 `SchemaJSON()`。
+- 真机验证记 `ai_tool_call_log`（状态在 `status` 列，**没有 `ok` 列**）；判断新二进制是否
+  生效要 `pkill -x gowp-dev` 后**轮询等进程真退出**，否则端口被旧进程占着、新进程起不来
+  而 `curl` 照样 200。
+
+
 ## 数据库
 
 论证、实测数据与操作步骤见 [`docs/rules/database.md`](docs/rules/database.md)。
