@@ -154,6 +154,9 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 		adminPages.POST("/ai/sessions/fold", builtin.CasbinMiddlewareForPath("/api/ai/session/fold"), sessionPage.SessionFold)
 		// 发消息借对话入口的 casbin obj（发消息本质是一次对话），不新增权限点。
 		adminPages.POST("/ai/sessions/send", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.SessionSend)
+		// 全局悬浮球（每个后台页面都有入口）：同样借对话入口的 casbin obj。
+		// 返回的是**片段**而不是重定向 —— 回答要出现在球旁边，不是把用户弹到另一个页面。
+		adminPages.POST("/ai/ask", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAsk)
 	}
 
 	return svc

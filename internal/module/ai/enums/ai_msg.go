@@ -22,6 +22,25 @@ const (
 	// 由 FormatFacing 填充（PRG 的 query 回执与 HTMX 片段共用同一条 key）。
 	MsgModelsFetchedDetail = "ai.msg.modelsFetchedDetail"
 
+	// —— 全局悬浮球（docs/17 §1.1 第 3 项）——
+	//
+	// **命名空间是 `ai.` 而不是模板侧的 `admin.ai.fab.`**：契约测试
+	//（public/test/ai/unit 的 TestAIFacingMessagesComplete）要求 FacingMessages 的 key
+	// 一律以 `ai.` 开头 —— 这一层的 key 是**后端自造的**，它们由 enums 直接给出中文兜底、
+	// 不经 sys_i18n（模板侧那 5 个才 seed 词条）。
+	//
+	// 所以这批文案**不跟着语言走**：它们只在异常路径出现（没配模型 / 没写问题 /
+	// 这轮失败 / 截断），而悬浮球的回答片段是单独渲染的（不走 shell.Prepare 的 i18n 注入）。
+	// 要让它跟着语言走，得把片段渲染也接上 i18n 注入 —— 独立的一批，
+	// 见 inbound/http/ai_fab_handle.go 顶部注释。
+	MsgFabNoModel     = "ai.fab.noModel"
+	MsgFabEmptyInput  = "ai.fab.emptyInput"
+	MsgFabFailed      = "ai.fab.failed"
+	MsgFabTruncated   = "ai.fab.truncated"
+	MsgFabToolsPrefix = "ai.fab.tools"
+	MsgFabToolsSuffix = "ai.fab.toolsUnit"
+	MsgFabEmpty       = "ai.fab.empty"
+
 	ErrInvalidParam        = "ai.err.invalidParam"
 	ErrProviderNotFound    = "ai.err.providerNotFound"
 	ErrProviderKeyRequired = "ai.err.providerKeyRequired"
@@ -97,6 +116,20 @@ var FacingMessages = map[string]string{
 	ErrUserRequired: "请先登录后再使用 AI 功能",
 
 	ErrInternal: "服务器内部错误，请稍后重试",
+
+	// —— 全局悬浮球（docs/17 §1.1 第 3 项）——
+	//
+	// **只有中文**：这几句由 handler 选出来（模板片段单独渲染、不经过 shell 的 i18n 注入），
+	// 所以它们在英文界面下也显示中文。它们只在异常路径出现（没配模型 / 没写问题 /
+	// 这轮失败 / 输入被截断），且 key 与模板侧同名前缀 `admin.ai.fab.*`，
+	// 将来要让它们跟着语言走，把片段渲染也接上 i18n 注入即可（见 ai_fab_handle.go 的注释）。
+	MsgFabNoModel:     "还没有可用的模型。请先在「大模型管理」里配置供应商与 API 密钥。",
+	MsgFabEmptyInput:  "还没写问题。",
+	MsgFabFailed:      "这次提问没有成功，请稍后再试，或到「全部会话」里看详情。",
+	MsgFabTruncated:   "问题太长，已按前 4000 字截断。",
+	MsgFabToolsPrefix: "这轮查了数据",
+	MsgFabToolsSuffix: " 次。",
+	MsgFabEmpty:       "没有拿到回答。可以到「全部会话」里看这一轮的详情。",
 }
 
 // 页面标题（layout 的 <title>）：值与模板 h1 同源，已在迁移 513 / 516 seed，

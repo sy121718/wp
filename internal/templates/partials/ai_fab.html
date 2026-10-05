@@ -1,0 +1,41 @@
+{* ===== 全局 AI 悬浮球 =====
+   每个后台页面都渲染它（layout.html 末尾 include），所以这里**只能有骨架**：
+   面板内容一律靠 htmx 从 /admin/ai/ask 取。
+
+   为什么不是「点开才创建 DOM」：那要 JS 建大量结构，而这段结构里有 i18n 文案、
+   有与 ui_blocks.html 的 include 契约 —— 在 JS 里拼第二份必然与这里分叉。
+   骨架常驻、面板 hidden，代价是几十个字节的 HTML，换来的是「一处定义」。 *}
+<div class="ai-fab" data-ai-fab>
+    <button type="button" class="ai-fab-btn" data-ai-fab-toggle
+            aria-expanded="false" aria-controls="ai-fab-panel"
+            aria-label="{{ .["t"]("admin.ai.fab.toggle", "问 AI") }}"
+            title="{{ .["t"]("admin.ai.fab.toggle", "问 AI") }}">
+        <span aria-hidden="true">✦</span>
+    </button>
+
+    <section class="ai-fab-panel" id="ai-fab-panel" data-ai-fab-panel hidden
+             aria-label="{{ .["t"]("admin.ai.fab.title", "问 AI（当前页面）") }}">
+        <header class="ai-fab-head">
+            <span class="ai-fab-title">{{ .["t"]("admin.ai.fab.title", "问 AI（当前页面）") }}</span>
+            <a class="ai-fab-more" href="/admin/ai/sessions">{{ .["t"]("admin.ai.fab.history", "全部会话") }}</a>
+            <button type="button" class="ai-fab-close" data-ai-fab-close
+                    aria-label="{{ .["t"]("shell.action.close", "关闭") }}"
+                    title="{{ .["t"]("shell.action.close", "关闭") }}">✕</button>
+        </header>
+        {* 回答区：htmx 把 /admin/ai/ask 的片段换进来。
+           换入的是**片段**（admin/partials/ai_fab_result），不是整页 —— 换整页会把
+           用户当前页面整块替换掉，那是「问一句就把人踢走」。 *}
+        <div class="ai-fab-body" data-ai-fab-body></div>
+        {* CSRF 由 layout 的 hx-headers 全局带上，不必在这里再放一个隐藏域：
+           两处各写一份 token，泄漏面与失配面都翻倍，而 htmx 的全局头本来就已经生效。 *}
+        <form class="ai-fab-form" data-ai-fab-form
+              hx-post="/admin/ai/ask" hx-target="[data-ai-fab-body]" hx-swap="innerHTML"
+              hx-disabled-elt="find button[type=submit]">
+            <textarea class="form-textarea ai-fab-input" name="input" rows="2" required
+                      data-ai-fab-input
+                      placeholder="{{ .["t"]("admin.ai.fab.placeholder", "问点什么…（Enter 发送，Shift+Enter 换行）") }}"
+                      aria-label="{{ .["t"]("admin.ai.fab.placeholder", "问点什么…（Enter 发送，Shift+Enter 换行）") }}"></textarea>
+            <button type="submit" class="btn btn-primary ai-fab-send">{{ .["t"]("admin.ai.fab.send", "发送") }}</button>
+        </form>
+    </section>
+</div>

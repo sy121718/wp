@@ -236,6 +236,8 @@ func init() {
 	registerAICallLogCachedTokens()
 	// 567：会话页「验收数字」三张卡的词条（见 register_ai_usage_metrics_i18n.go）。
 	registerAIUsageMetricsI18n()
+	// 568：全局 AI 悬浮球的词条（见 register_ai_fab_i18n.go）。
+	registerAIFabI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

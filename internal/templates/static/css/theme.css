@@ -1764,3 +1764,101 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 
 /* 路径下面那枚类型标签（只有 page 模块能给出类型时才渲染）。 */
 .cell-path > .badge { margin-top: var(--sp-xs); }
+
+/* ===== §12 全局 AI 悬浮球（admin/partials/ai_fab.html + ui/ai-fab.js）=====
+
+   层级约定：与全局抽屉同级（都在 .admin-shell 之上），但**低于**遮罩
+   （抽屉打开时悬浮球不该压住遮罩，否则用户会点到一个被盖住的球）。
+   用令牌而不是硬编码色值：主题切换与灰度打印都靠它们。 */
+.ai-fab {
+    position: fixed;
+    right: var(--sp-lg);
+    bottom: var(--sp-lg);
+    z-index: 60;
+}
+
+.ai-fab-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: var(--sky-c-primary);
+    /* 主色上的文字色写 #fff 与 ui.css 的 .btn-primary 同款：后台的别名段里
+       只有「文字 / 背景 / 边框」三族令牌，**没有**「主色上的前景」这一槽
+       （门禁 TestBackendStaticCSSTokensHaveSupplier 会拦下自造令牌）。
+       深色主题下 primary 仍是深色，白字照旧可读。 */
+    color: #fff;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+}
+
+/* :hover 必须包在 (hover: hover) 里：触屏上点击后 :hover 会粘住，
+   视觉上表现为「球一直是高亮状态」（门禁 check-multidevice-css.sh 会判红）。 */
+@media (hover: hover) {
+    .ai-fab-btn:hover { background: var(--sky-c-primary-deep); }
+}
+
+.ai-fab-btn:focus-visible {
+    outline: 2px solid var(--sky-c-primary);
+    outline-offset: 2px;
+}
+
+.ai-fab-panel {
+    position: absolute;
+    right: 0;
+    bottom: calc(48px + var(--sp-sm));
+    width: min(420px, calc(100vw - var(--sp-lg) * 2));
+    max-height: min(70vh, 560px);
+    display: flex;
+    flex-direction: column;
+    background: var(--sky-c-surface);
+    border: 1px solid var(--sky-c-border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.ai-fab-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+    padding: var(--sp-sm) var(--sp-md);
+    border-bottom: 1px solid var(--sky-c-border);
+}
+
+.ai-fab-title { font-weight: 600; }
+.ai-fab-more { margin-left: auto; font-size: 13px; }
+.ai-fab-close { background: none; border: none; cursor: pointer; font-size: 14px; color: var(--sky-c-text-mute); }
+
+.ai-fab-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: var(--sp-md);
+}
+
+/* 回答要保留换行：模型经常给编号列表，pre-wrap 是唯一不丢结构又不需要 markdown 渲染器的做法。 */
+.ai-fab-answer { white-space: pre-wrap; word-break: break-word; }
+.ai-fab-error { color: var(--sky-c-danger); }
+.ai-fab-note,
+.ai-fab-empty { color: var(--sky-c-text-mute); font-size: 13px; }
+.ai-fab-views { margin-top: var(--sp-md); }
+
+.ai-fab-form {
+    display: flex;
+    gap: var(--sp-sm);
+    padding: var(--sp-sm) var(--sp-md);
+    border-top: 1px solid var(--sky-c-border);
+}
+
+.ai-fab-input { flex: 1 1 auto; resize: none; }
+.ai-fab-send { flex: 0 0 auto; align-self: flex-end; }
+
+/* 窄屏：面板贴满可用宽度，球与面板的间距收小。
+   用 max-width 而不是改 position —— 固定定位在窄屏上继续贴右下角是对的，
+   要改的只是面板的宽度上限。 */
+@media (max-width: 480px) {
+    .ai-fab { right: var(--sp-md); bottom: var(--sp-md); }
+    .ai-fab-panel { width: calc(100vw - var(--sp-md) * 2); }
+}

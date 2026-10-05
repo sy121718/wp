@@ -119,6 +119,10 @@
             </header>
             <div class="drawer-body" data-drawer-body></div>
         </aside>
+        {* 全局悬浮球：每个后台页面都能随手问一句（docs/17 §1.1 第 3 项）。
+           放在抽屉之后、脚本之前：它的面板层级要与抽屉同级，而脚本要先能拿到这段 DOM。 *}
+        {{include "../partials/ai_fab.html"}}
+
         {{include "../partials/ui_scripts.html"}}
 <script src="/static/js/admin.js"></script>
     </div>

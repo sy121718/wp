@@ -1,0 +1,43 @@
+{* ===== 悬浮球的回答片段（htmx 换进 [data-ai-fab-body]）=====
+   三种状态（回答 / 提示 / 失败）都在这一个片段里，因为它们的**容器是同一个**：
+   分成三个模板会让「换目标」在不同状态下指向不同元素，而目标选择器写在悬浮球骨架里
+   （只有一处），两边对不上时表现为「点了没反应」。
+
+   **本片段整体由 c.HTML 单独渲染，不走 shell.Prepare** —— 所以这里拿不到 `t` 函数，
+   一句话都不能在这里拼。所有文案（含「已截断」「查了几次数据」这类带数字的）
+   由 Go 侧造好整句传进来（见 ai_fab_handle.go 的 renderFab 调用点）。
+
+   判断一律走 `isset`：Jet 对 map 上**缺席**的键求值会抛运行时错误
+   （`there is no field or method 'FabError'`，整段 500），而 `isset` 对缺席安全。
+   会话页的 DetailErr/EventsErr 用的是同一形态。 *}
+
+{{if isset(.FabError)}}
+<p class="ai-fab-error" role="alert">{{.FabError}}</p>
+{{else}}
+{{if isset(.FabAnswer)}}
+<div class="ai-fab-answer">{{.FabAnswer}}</div>
+{{end}}
+
+{{if isset(.FabTruncatedText)}}
+<p class="ai-fab-note">{{.FabTruncatedText}}</p>
+{{end}}
+
+{{if isset(.FabToolsText)}}
+<p class="ai-fab-note">{{.FabToolsText}}</p>
+{{end}}
+
+{* 图表：与 AI 会话页共用同一个片段（ui_blocks.html）。
+   **必须传「带 Views 键的上下文」而不是切片本身** —— 那个片段自己 `{{range .Views}}`，
+   传切片进去它会在片段内部报运行时错误，而错误信息只有模板行号，看不出是调用方传参问题。
+   那个上下文由 Go 侧包好（FabViewsCtx）：Jet 的 include 只接受变量表达式，
+   写 `gin.H{...}` 字面量会在**解析期**就报 unexpected token '{'（本批实测）。 *}
+{{if isset(.FabViewsCtx)}}
+<div class="ai-fab-views">
+    {{include "../admin/ai/ui_blocks.html" .FabViewsCtx}}
+</div>
+{{end}}
+
+{{if isset(.FabEmptyText)}}
+<p class="ai-fab-empty">{{.FabEmptyText}}</p>
+{{end}}
+{{end}}
