@@ -84,9 +84,17 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 // 小时的桶**也是 UTC**：按天用 UTC 而按小时用本地时区，会让「今日」这根柱子归属到
 // 昨天，且两个粒度切换时同一天的形状对不上。
 //
-// 用小时的前提是区间足够短（见 trendHourlyMaxDays）：一天 24 根柱子读得出形状，
-// 一个月 720 根连标签都放不下。
-const orderHourlySQL = `SELECT date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AS day,
+// **`AT TIME ZONE 'UTC'` 必须写两遍**（第二遍不能省）：第一遍把 timestamptz 折成
+// 「UTC 挂钟时间的 timestamp」（无时区），而驱动把无时区 timestamp 读成 `time.Time`
+// 时会**按本地时区贴位置** —— 在本机（+08）读出来是 `2026-10-05T01:00+08`，
+// `fillHourlyPoints` 拿它 `.Format(LayoutHour)` 得到 `2026-10-04T17:00`，
+// 与循环生成的 `2026-10-05T01:00` 对不上 → **那一小时的订单静默变 0**。
+// 第二遍把它标回 timestamptz，驱动给出的才是正确时刻。
+//
+// 对照：`orderDailySQL` 用 `::date`，返回 `date` 类型 —— 语义就是「某一天」，
+// 驱动给 UTC 零点，`.Format(LayoutDay)` 正确。判据：**返回 `timestamp` 的聚合列
+// 一定要贴回 UTC；`date` 不用**。
+const orderHourlySQL = `SELECT (date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day,
        COUNT(*) AS order_count,
        COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count,
        COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales

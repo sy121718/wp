@@ -232,6 +232,26 @@ func TestLayoutTrendBarsFitsChart(t *testing.T) {
 		if !points[0].ShowLabel || !points[n-1].ShowLabel {
 			t.Errorf("%d 根柱子：首尾必须带标签（区间两端是读者最想确认的）", n)
 		}
+		// 标签锚点必须落在画布内：桶多时（24 个按小时）step ≈ 20px，
+		// 首尾标签若仍用 middle 对齐，5 个字符的「00:00」会有一半越出 viewBox 被裁掉
+		// （页面上是「.7:00」这种缺半个字的标签，不报错、也不影响任何计数断言）。
+		for _, i := range []int{0, n - 1} {
+			p := points[i]
+			if p.LabelX < 0 || p.LabelX > trendChartWidth {
+				t.Errorf("%d 根柱子：第 %d 个标签锚点 x=%d 超出画布", n, i, p.LabelX)
+			}
+		}
+		if n > 1 {
+			if points[0].LabelAnchor != trendAnchorStart {
+				t.Errorf("%d 根柱子：首个标签应对齐 start，实得 %q", n, points[0].LabelAnchor)
+			}
+			if points[n-1].LabelAnchor != trendAnchorEnd {
+				t.Errorf("%d 根柱子：末个标签应对齐 end，实得 %q", n, points[n-1].LabelAnchor)
+			}
+		} else if points[0].LabelAnchor != trendAnchorMiddle {
+			// 只有一个点时那根柱子本就在中间，靠边对齐反而把它推到画布边缘。
+			t.Errorf("单点时标签应居中，实得 %q", points[0].LabelAnchor)
+		}
 	}
 }
 

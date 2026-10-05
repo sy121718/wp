@@ -117,13 +117,24 @@ func (m *Model) CountByDay(ctx context.Context, projectID string, from, to time.
 // 只有 date_trunc 的单位不同 —— 两处口径分叉会让同一段数据在「按天」与「按小时」
 // 两个粒度下加起来对不上。
 //
+// **`AT TIME ZONE 'UTC'` 写了两遍，第二遍不能省**：第一遍把 timestamptz 折成
+// 「UTC 挂钟时间的 timestamp」（无时区），而 PG 驱动把无时区 timestamp 读成
+// `time.Time` 时会**按本地时区贴位置** —— 于是同一行在本机（+08）读出来是
+// `2026-10-05T01:00+08`，调用方再 `.UTC()` 就变成 `2026-10-04T17:00`，
+// 桶键整整偏掉一个时区（图上多出一根「昨天 17 点」的柱子，而那条记录其实在
+// 今天 1 点）。第二遍把它标回 timestamptz，驱动给出的才是正确时刻。
+//
+// `CountByDay` 没有这个问题：它 `::date` 返回的是 `date`，无时区但语义就是「某一天」，
+// 驱动给 UTC 零点，`.UTC()` 是恒等变换。判据可以记成一句：**聚合列返回 `date` 且
+// 只做 map 查找就没问题；返回 `timestamp` 一定要贴回 UTC**。
+//
 // **只走明细表，不读预聚合**：`page_views_daily` 的最小粒度就是天（rollup 每天跑一次），
 // 小时粒度在它里面没有对应的行。代价是扫描原始明细，所以调用方要自己限制区间
 // （概览页在 1~2 天的窗口内才用小时）。
 func (m *Model) CountByHour(ctx context.Context, projectID string, from, to time.Time) (rows []DayRow, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.Model(&PageViewEntity{}).
-			Select("date_trunc('hour', viewed_at AT TIME ZONE 'UTC') AS day, "+colViews+", "+colVisitors).
+			Select("(date_trunc('hour', viewed_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day, "+colViews+", "+colVisitors).
 			Where("project_id = ? AND viewed_at >= ? AND viewed_at < ?", projectID, from, to).
 			Group("day").Order("day ASC").Scan(&rows).Error
 	})

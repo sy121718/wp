@@ -40,6 +40,9 @@ type tmplTrendPoint struct {
 	X              int
 	BarWidth       int
 	ShowLabel      bool
+	// LabelX / LabelAnchor 标签自身的锚点与对齐（首尾靠边对齐，避免桶多时标签越出画布）。
+	LabelX      int
+	LabelAnchor string
 }
 
 type tmplTopProduct struct {

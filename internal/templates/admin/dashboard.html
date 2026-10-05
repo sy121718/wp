@@ -225,8 +225,8 @@
                                 <title>{{p.Day}} · {{p.Orders}} {{ .["t"]("admin.dashboard.trend.ordersUnit", "单") }} · {{p.SalesLabel}}</title>
                             </rect>
                             {{if p.ShowLabel}}
-                            <text class="trend-day" x="{{p.X + p.BarWidth / 2}}" y="140" text-anchor="middle">{{p.DayLabel}}</text>
-                            <text class="trend-val" x="{{p.X + p.BarWidth / 2}}" y="154" text-anchor="middle">{{p.Orders}}</text>
+                            <text class="trend-day" x="{{p.LabelX}}" y="140" text-anchor="{{p.LabelAnchor}}">{{p.DayLabel}}</text>
+                            <text class="trend-val" x="{{p.LabelX}}" y="154" text-anchor="{{p.LabelAnchor}}">{{p.Orders}}</text>
                             {{end}}
                             {{end}}
                             <line class="trend-axis" x1="0" y1="120" x2="490" y2="120"></line>
@@ -242,8 +242,8 @@
                                 <title>{{p.Day}} · {{p.Views}} {{ .["t"]("admin.dashboard.chart.viewsUnit", "浏览") }}</title>
                             </rect>
                             {{if p.ShowLabel}}
-                            <text class="trend-day" x="{{p.X + p.BarWidth / 2}}" y="140" text-anchor="middle">{{p.DayLabel}}</text>
-                            <text class="trend-val" x="{{p.X + p.BarWidth / 2}}" y="154" text-anchor="middle">{{p.Views}}</text>
+                            <text class="trend-day" x="{{p.LabelX}}" y="140" text-anchor="{{p.LabelAnchor}}">{{p.DayLabel}}</text>
+                            <text class="trend-val" x="{{p.LabelX}}" y="154" text-anchor="{{p.LabelAnchor}}">{{p.Views}}</text>
                             {{end}}
                             {{end}}
                             <line class="trend-axis" x1="0" y1="120" x2="490" y2="120"></line>

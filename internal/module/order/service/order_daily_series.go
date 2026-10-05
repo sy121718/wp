@@ -42,17 +42,20 @@ func (s *Service) DailySeries(ctx context.Context, req *orderdto.OrderDailySerie
 
 // fillDailyPoints 把「有数据的那些天」铺成区间内每天一个点（升序）。
 //
-// 日期键用行上的 Day 直接格式化，**不做时区换算**：PG 的 date 经驱动回来时已经是那一天的零点
-// （UTC），再 .UTC() 一次在非 UTC 环境里反而可能整体挪一天。
-// 循环用的 from 是 normalizeRangeWindow 给的 UTC 日界，两边键的生成方式天然一致。
+// 桶键统一 `.UTC()` 后再格式化：**循环生成的键**来自 normalizeRangeWindow 给的
+// UTC 日界，而**行上的键**来自 PG —— 两者位置不一致时 Format 出来的字符串也不同
+// （同一个时刻，UTC 位置格式化成 `05:00`、本地位置格式化成 `13:00`），map 查找
+// 静默落空、那一格变 0。`::date` 走驱动回来是 UTC 零点，`.UTC()` 是恒等变换；
+// 但类型一换成 timestamp（按小时那侧）驱动就会贴本地时区，所以这条对两个函数
+// 一视同仁地写上，不要靠「这个类型应该是 UTC」的假设。
 func fillDailyPoints(from, to time.Time, rows []ordermodel.OrderDailyPoint) []orderdto.OrderDailyPointDTO {
 	byDay := make(map[string]ordermodel.OrderDailyPoint, len(rows))
 	for _, r := range rows {
-		byDay[r.Day.Format(utils.LayoutDay)] = r
+		byDay[r.Day.UTC().Format(utils.LayoutDay)] = r
 	}
 	points := make([]orderdto.OrderDailyPointDTO, 0, maxRangeDays)
 	for d := from; d.Before(to); d = d.AddDate(0, 0, 1) {
-		key := d.Format(utils.LayoutDay)
+		key := d.UTC().Format(utils.LayoutDay)
 		row := byDay[key]
 		points = append(points, orderdto.OrderDailyPointDTO{
 			Day:            key,
@@ -98,14 +101,19 @@ func (s *Service) HourlySeries(ctx context.Context, req *orderdto.OrderDailySeri
 }
 
 // fillHourlyPoints 把「有数据的那些小时」铺成区间内每小时一个点（升序）。
+//
+// 两侧的桶键都要 `.UTC()`（理由见 fillDailyPoints）：按小时的聚合列是
+// `date_trunc(...)` 返回的 **timestamp**，驱动读 `time.Time` 时按本地时区贴位置 ——
+// 本机（+08）拿到的是 `13:00+08`，格式化出来是 `13:00`，而循环生成的
+// UTC 键是 `05:00`，两边对不上 → **那一小时的订单静默变 0**。
 func fillHourlyPoints(from, to time.Time, rows []ordermodel.OrderDailyPoint) []orderdto.OrderDailyPointDTO {
 	byHour := make(map[string]ordermodel.OrderDailyPoint, len(rows))
 	for _, r := range rows {
-		byHour[r.Day.Format(utils.LayoutHour)] = r
+		byHour[r.Day.UTC().Format(utils.LayoutHour)] = r
 	}
 	points := make([]orderdto.OrderDailyPointDTO, 0, maxHourlyRangeDays*24)
 	for h := from; h.Before(to); h = h.Add(time.Hour) {
-		key := h.Format(utils.LayoutHour)
+		key := h.UTC().Format(utils.LayoutHour)
 		row := byHour[key]
 		points = append(points, orderdto.OrderDailyPointDTO{
 			Day:            key,

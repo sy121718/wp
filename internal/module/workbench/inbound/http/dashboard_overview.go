@@ -136,6 +136,14 @@ type overviewTrendPoint struct {
 	BarWidth int
 	// ShowLabel 是否画日期标签（标签稀疏化，见 trendLabelMax）。
 	ShowLabel bool
+	// LabelX / LabelAnchor 标签自身的横坐标与对齐方式（见 layoutTrendBars）。
+	//
+	// 与柱子的 X 分开：柱子的中心在线宽上是对的，但**首尾标签**用它做锚点会越出
+	// viewBox —— 按小时 24 个桶时 step≈20px，第一个标签居中在 x≈10 而 5 个字符要
+	// 占 25px，左半边被裁掉（页面上是「.7:00」这种缺半个字的标签，不报错、也不影响
+	// 任何计数断言）。首尾改成 start / end 对齐后锚点落到柱子边缘，标签收回画布内。
+	LabelX      int
+	LabelAnchor string
 }
 
 // overviewTopProduct 榜单的一行（跨工程合并后重排名次）。
@@ -588,13 +596,47 @@ func layoutTrendBars(points []overviewTrendPoint) {
 		barWidth = trendBarMaxWidth
 	}
 	labelEvery := (n + trendLabelMax - 1) / trendLabelMax
+	// 标签横坐标按对齐方式取柱子的左边缘 / 中心 / 右边缘。抽成闭包而不是让模板
+	// 跟着 anchor 分支算：模板里改一处漏一处，会得到「首标签靠左对齐但坐标仍取中心」
+	// 这种半对半错的位置，而它只是看着有点怪、不会报错。
+	labelX := func(x, w int, anchor string) int {
+		switch anchor {
+		case trendAnchorStart:
+			return x
+		case trendAnchorEnd:
+			return x + w
+		default:
+			return x + w/2
+		}
+	}
 	for i := range points {
 		points[i].X = i*step + (step-barWidth)/2
 		points[i].BarWidth = barWidth
 		// 首尾都标：区间两端的日期是读者最想确认的那两个。
 		points[i].ShowLabel = i%labelEvery == 0 || i == n-1
+		// 首尾靠边对齐，其余居中。全部居中的话，桶多时（按小时 24 个 → step≈20px）
+		// 第一个标签的中心落在 x≈10，而 5 个字符的「00:00」要占 25px —— 左半边被
+		// viewBox 裁掉，页面上看到的是「.7:00」这种缺半个字的标签。SVG 默认裁掉溢出
+		// 内容，不报错、也不影响任何计数断言，只有看图才发现。
+		//
+		// 只有一个点时保持居中（那根柱子本来就在中间，不存在越界）。
+		anchor := trendAnchorMiddle
+		if n > 1 && i == 0 {
+			anchor = trendAnchorStart
+		} else if n > 1 && i == n-1 {
+			anchor = trendAnchorEnd
+		}
+		points[i].LabelAnchor = anchor
+		points[i].LabelX = labelX(points[i].X, barWidth, anchor)
 	}
 }
+
+// 标签对齐方式（SVG text-anchor 的取值）。
+const (
+	trendAnchorStart  = "start"
+	trendAnchorMiddle = "middle"
+	trendAnchorEnd    = "end"
+)
 
 // weekStartOf 一天的 ISO 周一（YYYY-MM-DD）；解析失败原样返回（宁可少合并，不要丢点）。
 func weekStartOf(day string) string {
