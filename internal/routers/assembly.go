@@ -879,6 +879,14 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(orderWriteTools...); err != nil {
 		panic("订单写工具注册失败：" + err.Error())
 	}
+	// 订单状态机（改状态 / 取消 / 后台备注）：只吃 orderId ——
+	// 工程作用域由 service 自己逐工程探测（locateOrderProject / resolveOrderProject），
+	// 让调用方传 projectId 反而会踩 orders 表的 FORCE 策略（传错工程 = 静默匹配 0 行）。
+	if orderStatusTools, err := ordermcp.StatusWriteTools(orderSvc); err != nil {
+		panic("订单状态工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(orderStatusTools...); err != nil {
+		panic("订单状态工具注册失败：" + err.Error())
+	}
 	if queryTools, err := ordermcp.QueryTools(orderSvc); err != nil {
 		panic("订单查询工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(queryTools...); err != nil {
