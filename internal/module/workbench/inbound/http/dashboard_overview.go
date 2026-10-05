@@ -414,6 +414,11 @@ const (
 	trendChartWidth = 490
 	// trendBarGap 柱间隙：相邻两根贴在一起会被读成一根。
 	trendBarGap = 2
+	// trendBarMaxWidth 单根柱子的最大宽度（viewBox 单位，490 宽的画布上约 10%）。
+	//
+	// 柱宽原本只由点数决定：点数少时 step 会很大，1 个点时 step = 490 ——
+	// 整张图只有一根贯穿全宽的横杠，「有数据」和「坐标轴画歪了」在屏幕上长得一样。
+	trendBarMaxWidth = 48
 	// trendLabelMax 最多显示几个月/日标签。
 	//
 	// 30 根柱子每个都带日期会重叠成一团黑 —— 稀疏到 12 个以内仍然能读出「这是哪一段」，
@@ -520,6 +525,12 @@ func layoutTrendBars(points []overviewTrendPoint) {
 		// 点极多时宁可让柱子贴在一起，也不要宽度为 0 的矩形（它不渲染，
 		// 表现为「图里少了几天」，而那天其实有单）。
 		barWidth = 2
+	}
+	// 上限：点数少时 step 会很大（今天 1 个点 → step=490），柱子被拉成一条贯穿
+	// 全图的横杠，看起来既不像柱子也不像坐标轴。封顶之后柱子回到柱子的宽度，
+	// 并靠下面的居中算式停在格子中间。
+	if barWidth > trendBarMaxWidth {
+		barWidth = trendBarMaxWidth
 	}
 	labelEvery := (n + trendLabelMax - 1) / trendLabelMax
 	for i := range points {
