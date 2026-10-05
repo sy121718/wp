@@ -779,6 +779,23 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 「按线索查订单」的两个只读工具（order_find / order_get）。
 	// 与上面两批分开装配的理由同样成立：它服务的是「一个线索指向一单」这类问题
 	//（订单 20261005001 到哪了），与聚合（一共多少 / 每天多少 / 谁最好）是两种形状。
+	// 订单的写工具（后台代客建单）。
+	//
+	// 只开一条，理由见 ordercontract.OrderWriter 的注释：建单与后台手工建单页是
+	// 同一件事（来源都记 admin），而发货 / 退款 / 改单是对既有订单的不可逆或
+	// 涉资金动作，留在人手里。断言成 OrderWriter 而不是直接用 orderSvc：
+	// 工具层握着 ChangeStatus 或 Refund 时，「AI 顺手把这单发了」会从
+	// 「显式加一个工具」退化成「随手就能做」。
+	orderWriter, orderWriteOK := orderSvc.(ordercontract.OrderWriter)
+	if !orderWriteOK {
+		panic("订单模块未实现写工具所需的 CreateAdminOrder，装配缺陷")
+	}
+	if orderWriteTools, err := ordermcp.WriteTools(orderWriter,
+		aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))); err != nil {
+		panic("订单写工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(orderWriteTools...); err != nil {
+		panic("订单写工具注册失败：" + err.Error())
+	}
 	if queryTools, err := ordermcp.QueryTools(orderSvc); err != nil {
 		panic("订单查询工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(queryTools...); err != nil {
