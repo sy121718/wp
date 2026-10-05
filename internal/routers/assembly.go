@@ -840,6 +840,24 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(campaignWriteTools...); err != nil {
 		panic("群发活动写工具注册失败：" + err.Error())
 	}
+	// 邮件模板（template_get / template_save / template_delete）。
+	//
+	// 模板的身份是 (templateKey, locale) 这一对：同一个 key 中英各一版，
+	// 删错 locale 会删掉另一版；save 是 **upsert**（同 key 同 locale 直接覆盖），
+	// 所以 template_get 是必需的 —— 不知道原文就改一个字等于把剩下的内容全丢了。
+	//
+	// 刻意不含「用模板发一封」：service 里确实有 SendTemplate，但它没有任何 HTTP 路由，
+	// 因此没有对应权限点，而工具权限是 fail closed 的 —— 凑一个相近的权限点
+	//（如 MailTemplateSave）等于用「能改模板」去换「能发信」。发信请走群发活动。
+	templateWriter, templateWriteOK := mailSvc.(mailmcp.TemplateWriter)
+	if !templateWriteOK {
+		panic("营销模块未实现模板写工具所需的方法，装配缺陷")
+	}
+	if templateTools, err := mailmcp.TemplateTools(templateWriter, mailSvc); err != nil {
+		panic("邮件模板工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(templateTools...); err != nil {
+		panic("邮件模板工具注册失败：" + err.Error())
+	}
 	// 「按线索查订单」的两个只读工具（order_find / order_get）。
 	// 与上面两批分开装配的理由同样成立：它服务的是「一个线索指向一单」这类问题
 	//（订单 20261005001 到哪了），与聚合（一共多少 / 每天多少 / 谁最好）是两种形状。
