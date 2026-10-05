@@ -187,3 +187,46 @@
 - `analytics/` — 站点访问统计（BIZ-8）：**唯一由访客浏览器写库的路径**（访问面静态直出，计数只能来自客户端 —— AGENTS.md 不变量第 1 条的例外）。公开面 `POST /analytics/collect`（直挂引擎，能力收窄到「只写一条记录」，64 KiB 报文上限，一律 204、坏输入不记日志、写库失败只记日志）；后台只读 `GET /api/analytics/summary`（三层链，权限点 `analytics:view`）。落库只存匿名派生值（IP / 会话 / 访客标识带盐哈希，UA 只存粗粒度分类）。GA4 / gtag 注入属同组：真源 `projects.settings.ga4MeasurementId`，构建期经 `builder.WithGA4MeasurementID` 进 head，空值 / 非法值零字节注入。后台页 `/admin/analytics`（按天 / 按路径 / 来源域 / 设备分类 / 语言五组数字，路径榜支持游标深分页；**维度排行恒读明细**，`breakdownSource` 恒为 `detail`）。保留期按工程配置逐工程清理明细（`internal/retention/catalog.go` 登记的任务），汇总表保留。迁移 147/148/149
 - `webhook/` — 外部集成通道（OSS-006 / SEC-015）：`webhook_endpoints` 预注册白名单（事件类型 × 目标 URL，**发布方没有指定 URL 的入口**）+ `webhook_deliveries` 投递日志（入队建 pending，worker 按**投递时刻**的端点数据签名回写，改 URL / 停用即时生效）。密钥 HMAC-SHA256 加密存储（明文只在保存那一刻出现，响应只给 `HasSecret`）；出站过 SSRF 校验（写入与投递都查内网 IP）。异步走 `pkg/queue`（MaxRetry 3）。派发口 `contract.Dispatcher` 是 **best-effort**：调用方事务提交后调、失败只记日志；首个派发点接在 `order.PayOrder` 的 `order.paid`（**只在真正跃迁时派发**，幂等分支不派发 —— 重复通知会让对端重复发货）。管理面 `contract.EndpointService` 经 `/api/webhook/*` 挂三层链（迁移 213 补 6 个权限点与超管策略）。**（2026-09-19 第四批）投递状态四态化**（`pending` / `delivering` / `delivered` / `failed`）：`delivering` 是**抢占态** + 租约（`ClaimDelivery` 条件更新；第二个 worker 拿到 0 行、不发请求），落定只认 `status='delivering'`，重放同时收口「陈旧 pending」与「租约过期的 delivering」并**单独计数抢占**（抢占意味着那一次请求可能已经发出去过）。迁移 199/212/213
 - `runtimefragment/` — 白名单动态片段（无 contract，直挂访问面路由）：能力按文件分组注册（`cart.go` 六条购物车 / 结算、`product_list.go` 列表筛选分页、`variant_availability.go` 实时可用量、`live_price.go` 实时价格核对、`search_results.go` 站内搜索、`orders.go` 访客订单、`returns.go` 退货申请、`bundle_configurator.go` 套餐配置与整单校验、`user_forms.go` + `user_account_forms.go` 访客账号九种表单形态、`capability.go` loginPanel）。跨模块依赖一律经**收窄只读端口**在装配期注入（`SetVariantAvailabilityProvider` / `SetVariantSnapshotProvider` / `SetVisitorOrderReader` / `SetVisitorAccountPort` / `SetContentSearchProvider` / `SetProductSearchProvider` / `SetPublishedEntityLocator` / `SetSitePageResolver`），未注入时降级为可见文案或空片段而不是 500；`Request` 里的身份与令牌只由访客身份中间件写入（`VisitorContextKey` / `VisitorCSRFContextKey` / `VisitorTokenContextKey`），**令牌只许作端口入参、不许进输出**
+
+## 2026-10-05 第十批修订（AI 消费端收口：计量验收数字 · 全局悬浮球）
+
+- **ai / 计量**（docs/16 §3.1 的三个验收数字，落两个）：
+  - **命中率**的数据源只能是上游上报的 `cached_tokens`（`ai_call_log.cached_tokens` +
+    `cached_reported`，迁移 566）。`CachedReported` 与 `CachedTokens=0` **必须分开**：
+    「没报」与「报了 0」都表现为 0，但前者什么也不说明，把它算进分母会让命中率凭空掉一截，
+    而失真的方向恰好是「看起来更差」——看到难看数字的人会去调提示词，不会想到是上游没报。
+    页面上「没数据」显示 `—`、「确实报了 0」显示 `0.0%`。
+  - **压缩开销** = 摘要事件 token / 全部事件 token。口径与 docs/16 原文**不同**（原文含
+    「摘要那次模型调用 + 重写前缀」的成本），因为本仓的摘要由人填进表单（`FoldReq.Summary`）、
+    **不产生模型调用**；摘要改成模型生成时这个数要一并改，否则它恒偏小。
+  - **每次折叠净收益未做**：折叠前后的 `context_tokens` 没有落库，拿不到实测差值；
+    不拿 `FoldPlan.EstimatedSave` 冒充（估算回答「要不要折」，净收益回答「折了值不值」）。
+  - **迁移与种子的顺序**：566 先写成 `register`（Migration）→ 跑在建表（537 是 Seed）之前 →
+    `relation "ai_call_log" does not exist`。**Migrations 先跑、Seeds 后跑**，
+    跨批依赖要落成 Seed 且判据落在**结果**上（本批是「这两列在不在」，
+    不是「表在不在」——表一直在，用表存在当判据会永远判为已完成）。
+- **ai / 悬浮球**（docs/17 §1.1 第 3 项、D9）：每个后台页面右下角一个球，
+  点开在当前页面问一句。上下文只注入 `path + query + 页面标题`（不注入 DOM 与页面数据 ——
+  列表页每一行都是别人的数据）。不选模型（取第一个启用 + 有密钥 + 目录非空的供应商）；
+  返回片段而非重定向，一律 200（htmx 默认不替换 4xx/5xx）。会话键 `admin-fab`。
+- **三条模板层的实测坑（都写进了注释）**：
+  1. Jet 的 `include` **只接受变量表达式**，写 `gin.H{...}` 字面量在**解析期**就报
+     `unexpected token '{'`；
+  2. Jet 对 map 上**缺席**的键求值会抛运行时错误（`there is no field or method 'X'`，整段 500），
+     判断必须走 `isset`；
+  3. 片段要放 `templates/partials/`（顶层那个），放 `templates/admin/partials/` 会让
+     `layout.html` 报 `partials/ai_fab.html could not be found`。
+- **自造令牌会被拦**：`--sky-c-on-primary` 不在后台别名段（那里只有文字 / 背景 / 边框三族），
+  `TestBackendStaticCSSTokensHaveSupplier` 判红 → 用与 ui.css 的 `.btn-primary` 同款的 `#fff`。
+- **种子判据里的 key 必须是本批 SQL 里逐字存在的**：判据原本写 `admin.ai.fab.noModel`，
+  而它属于 handler 侧、命名空间是 `ai.fab.noModel` → 判据恒不满足 → 每次启动重插 →
+  `uk_sys_i18n_key_lang` 冲突。失败形态是「幂等性测试红」，与改动本身看起来毫无关系。
+  「我以为它会叫这个名字」不算判据。
+- **真模型验证（P1 / P3 闸门，本机真库 + 真供应商）**：
+  - P1（不知道 schema 也能定位工具）：模型准确说出 `orders_top_products`、
+    口径（`paid/shipped/completed` 上榜、`pending/cancelled` 不榜、金额是行实付合计不含退款分摊）、
+    必填参数（`projectId + from + to`），并在缺参数时**先问不要编**；
+  - P3（≥2 工具且成对）：事件日志里 `guide`（seq 4/5）与 `orders_top_products`（seq 8/9）
+    **各自调用与结果同 `callId` 成对**，链路是「先查手册口径再取数」；
+  - P4 的「写操作可追」当前不适用（工具层全是只读，docs/17 §7），审计由 `ai_call_log` +
+    `ai_tool_call_log` 承载。
