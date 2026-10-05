@@ -83,6 +83,10 @@ var defaultDTOExposureAllow = map[string]string{
 	"ChatResult.InputTokens":  "计量字段：上游上报的输入 token 数（整型），不是凭据",
 	"ChatResult.OutputTokens": "计量字段：上游上报的输出 token 数（整型），不是凭据",
 	"ChatResult.TotalTokens":  "计量字段：上游上报的总 token 数（整型），不是凭据",
+	// CachedTokens 是「输入里有多少命中了上游的前缀缓存」（docs/16 §3.1 命中率的分子）。
+	// 它同样是上游 usage 里的整数，且只在**输入侧**：缓存命中的是请求前缀，
+	// 与任何密钥无关（密钥从不进请求正文，只进出站 header）。
+	"ChatResult.CachedTokens": "计量字段：上游上报的缓存命中 token 数（整型），不是凭据",
 	// 会话用量看板（ai_session_dto.go）：整数是原始计量值，*Text 是同源的**已格式化展示文本**
 	// （12345678 → "12.3M"，见 service 的 formatTokens）—— 两者都不含凭据。
 	"SessionUsage.Tokens":             "计量字段：这批会话的事件正文 token 累计（整型），不是凭据",

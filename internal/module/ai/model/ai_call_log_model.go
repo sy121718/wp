@@ -33,10 +33,17 @@ type AICallLogEntity struct {
 	ModelID     string `gorm:"column:model_id"`
 	Protocol    string `gorm:"column:protocol"`
 	// 上游上报的用量。UsageReported=false 时三列恒为 0，语义是「这家没上报」而不是「用了 0 个」。
-	InputTokens   int64 `gorm:"column:input_tokens"`
-	OutputTokens  int64 `gorm:"column:output_tokens"`
-	TotalTokens   int64 `gorm:"column:total_tokens"`
-	UsageReported bool  `gorm:"column:usage_reported"`
+	InputTokens  int64 `gorm:"column:input_tokens"`
+	OutputTokens int64 `gorm:"column:output_tokens"`
+	TotalTokens  int64 `gorm:"column:total_tokens"`
+	// CachedTokens 输入里命中上游前缀缓存的 token 数（迁移 566）。
+	//
+	// 它是 docs/16 §3.1 第一个验收数字（命中率 95–97%）的唯一数据源 —— 本地算不出来，
+	// 只能采信上游。CachedReported 与它分开的原因见 service 层 ReplyUsage 的注释：
+	// 「没报」与「报了 0」必须能分开，否则命中率会把没报的调用算成未命中。
+	CachedTokens   int64 `gorm:"column:cached_tokens"`
+	CachedReported bool  `gorm:"column:cached_reported"`
+	UsageReported  bool  `gorm:"column:usage_reported"`
 	// LatencyMs 从发起到拿到响应的墙钟耗时（含 SSRF 校验与解析），排查慢调用用。
 	LatencyMs int64 `gorm:"column:latency_ms"`
 	// Status 取值见 aienums.CallStatus；ErrorKey 是失败时的 i18n key（与 enums 哨兵同源）。
@@ -127,4 +134,61 @@ func (m *CallLogModel) ListBySession(ctx context.Context, sessionID int64, limit
 	}
 	err = m.logs(ctx).Where("session_id = ?", sessionID).Order("id DESC").Limit(limit).Find(&rows).Error
 	return rows, err
+}
+
+// SessionTokenAggregate 一条会话的 token 侧聚合（docs/16 §3.1 的命中率要用它）。
+//
+// 分成「报了缓存字段的调用」与「全部调用」两组计数，而不是一个总数：
+// 命中率的分母只能是**报了**的那些（见 ReplyUsage.CachedReported 的注释）——
+// 把没报的算进分母会把命中率拉低一大截，而失真的方向恰好是「看起来更差」，
+// 看到难看数字的人会去调提示词，不会想到是上游没报。
+type SessionTokenAggregate struct {
+	// Calls 全部调用条数（含没报用量的）。
+	Calls int64 `gorm:"column:calls"`
+	// UsageReportedCalls 上报了用量的调用条数（命中率与开销的可用性判据）。
+	UsageReportedCalls int64 `gorm:"column:usage_reported_calls"`
+	// InputTokens / OutputTokens 全部上报的用量之和。
+	InputTokens  int64 `gorm:"column:input_tokens"`
+	OutputTokens int64 `gorm:"column:output_tokens"`
+	// CachedCalls 报了缓存字段的调用条数。
+	CachedCalls int64 `gorm:"column:cached_calls"`
+	// CachedInputTokens 那些调用的输入之和（命中率的分母）。
+	CachedInputTokens int64 `gorm:"column:cached_input_tokens"`
+	// CachedTokens 那些调用命中的 token 之和（命中率的分子）。
+	CachedTokens int64 `gorm:"column:cached_tokens"`
+}
+
+// AggregateTokensBySession 批量取一组会话的 token 聚合。
+//
+// 一次查完整批：会话列表每行都要显示命中率，逐行查就是 20 次往返。
+// 空入参直接回空 map（不查库、也不返回 nil 让调用方判空指针）。
+func (m *CallLogModel) AggregateTokensBySession(ctx context.Context, sessionIDs []int64) (map[int64]SessionTokenAggregate, error) {
+	out := make(map[int64]SessionTokenAggregate, len(sessionIDs))
+	if len(sessionIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		SessionID int64 `gorm:"column:session_id"`
+		SessionTokenAggregate
+	}
+	err := m.db.WithContext(ctx).Raw(
+		`SELECT session_id,
+		        COUNT(*) AS calls,
+		        COUNT(*) FILTER (WHERE usage_reported) AS usage_reported_calls,
+		        COALESCE(SUM(input_tokens) FILTER (WHERE usage_reported), 0) AS input_tokens,
+		        COALESCE(SUM(output_tokens) FILTER (WHERE usage_reported), 0) AS output_tokens,
+		        COUNT(*) FILTER (WHERE cached_reported) AS cached_calls,
+		        COALESCE(SUM(input_tokens) FILTER (WHERE cached_reported), 0) AS cached_input_tokens,
+		        COALESCE(SUM(cached_tokens) FILTER (WHERE cached_reported), 0) AS cached_tokens
+		   FROM ai_call_log
+		  WHERE session_id IN ?
+		  GROUP BY session_id`, sessionIDs,
+	).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.SessionID] = r.SessionTokenAggregate
+	}
+	return out, nil
 }

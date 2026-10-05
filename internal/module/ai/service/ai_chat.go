@@ -126,6 +126,8 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 	entry.InputTokens = usage.InputTokens
 	entry.OutputTokens = usage.OutputTokens
 	entry.TotalTokens = usage.TotalTokens
+	entry.CachedTokens = usage.CachedTokens
+	entry.CachedReported = usage.CachedReported
 	entry.UsageReported = usage.Reported
 
 	return &aidto.ChatResult{
@@ -137,6 +139,7 @@ func (s *Service) Chat(ctx context.Context, req *aidto.ChatReq) (res *aidto.Chat
 		InputTokens:   usage.InputTokens,
 		OutputTokens:  usage.OutputTokens,
 		TotalTokens:   usage.TotalTokens,
+		CachedTokens:  usage.CachedTokens,
 		UsageReported: usage.Reported,
 	}, nil
 }

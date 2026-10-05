@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	aienums "go_wp/internal/module/ai/enums"
 )
 
 const (
@@ -377,6 +379,14 @@ type SessionUsage struct {
 	Events   int64 `gorm:"column:events"`
 	Tokens   int64 `gorm:"column:tokens"`
 	Compacts int64 `gorm:"column:compacts"`
+
+	// —— 以下来自**调用流水**（ai_call_log）与摘要事件，口径与上面的 Tokens 不同 ——
+	Calls              int64 `gorm:"column:calls"`
+	UsageReportedCalls int64 `gorm:"column:usage_reported_calls"`
+	CachedCalls        int64 `gorm:"column:cached_calls"`
+	CachedInputTokens  int64 `gorm:"column:cached_input_tokens"`
+	CachedTokens       int64 `gorm:"column:cached_tokens"`
+	SummaryTokens      int64 `gorm:"column:summary_tokens"`
 }
 
 // SessionUsageOf 汇总匹配会话的：会话数、事件数、累计 token（事件正文估算值之和）、压缩次数。
@@ -402,12 +412,58 @@ func (m *SessionModel) SessionUsageOf(ctx context.Context, f SessionQuery) (out 
 		Take(&body).Error; err != nil {
 		return out, err
 	}
-	return SessionUsage{
+	out = SessionUsage{
 		Sessions: head.Sessions,
 		Compacts: head.Compacts,
 		Events:   body.Events,
 		Tokens:   body.Tokens,
-	}, nil
+	}
+	// 调用流水侧：命中率要用上游上报的 input / cached（事件表上没有这两个数）。
+	//
+	// 单独一条查询而不是并进上面：它们的**筛选口径相同但数据源不同** ——
+	// 把两张表 join 起来算会让「没有调用流水的会话」从结果里消失，
+	// 而那种会话恰恰要显示成「无数据」而不是「0 次调用」。
+	var calls struct {
+		Calls              int64 `gorm:"column:calls"`
+		UsageReportedCalls int64 `gorm:"column:usage_reported_calls"`
+		CachedCalls        int64 `gorm:"column:cached_calls"`
+		CachedInputTokens  int64 `gorm:"column:cached_input_tokens"`
+		CachedTokens       int64 `gorm:"column:cached_tokens"`
+	}
+	if err = m.db.WithContext(ctx).Raw(
+		`SELECT COUNT(*) AS calls,
+		        COUNT(*) FILTER (WHERE usage_reported) AS usage_reported_calls,
+		        COUNT(*) FILTER (WHERE cached_reported) AS cached_calls,
+		        COALESCE(SUM(input_tokens) FILTER (WHERE cached_reported), 0) AS cached_input_tokens,
+		        COALESCE(SUM(cached_tokens) FILTER (WHERE cached_reported), 0) AS cached_tokens
+		   FROM ai_call_log
+		  WHERE session_id IN (?)`,
+		applySessionQuery(m.sessions(ctx), f).Select("id"),
+	).Scan(&calls).Error; err != nil {
+		return out, err
+	}
+	out.Calls = calls.Calls
+	out.UsageReportedCalls = calls.UsageReportedCalls
+	out.CachedCalls = calls.CachedCalls
+	out.CachedInputTokens = calls.CachedInputTokens
+	out.CachedTokens = calls.CachedTokens
+
+	// 摘要占的上下文：compact_summary 事件的内容 token 之和。
+	//
+	// 用 kind 而不是 surface_op 判：surface_op=replace 的事件只可能是摘要，
+	// 但 kind 是更稳的判据（将来若有别的 replace 形态，用 surface_op 会让它们一起被算进来）。
+	var summary struct {
+		SummaryTokens int64 `gorm:"column:summary_tokens"`
+	}
+	if err = m.events(ctx).
+		Where("session_id IN (?)", applySessionQuery(m.sessions(ctx), f).Select("id")).
+		Where("kind = ?", string(aienums.EventKindCompactSummary)).
+		Select("COALESCE(SUM(content_tokens), 0) AS summary_tokens").
+		Take(&summary).Error; err != nil {
+		return out, err
+	}
+	out.SummaryTokens = summary.SummaryTokens
+	return out, nil
 }
 
 // TrendSeriesRow 折线图上的一个分组点：(供应商, 模型, 天) → token。

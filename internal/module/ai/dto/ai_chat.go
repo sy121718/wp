@@ -102,8 +102,16 @@ type ChatResult struct {
 	// UsageReported=false 表示**这一家没有上报**，此时三列恒为 0 —— 语义是「不知道」而不是
 	// 「用了 0 个 token」。调用流水里必须把这两种情况分开，否则未上报的调用会看起来像没消耗。
 	// 刻意不做本地估算兜底：流水是事实记录，估算值混进去会被当成真用量。
-	InputTokens   int64 `json:"input_tokens"`
-	OutputTokens  int64 `json:"output_tokens"`
-	TotalTokens   int64 `json:"total_tokens"`
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
+	TotalTokens  int64 `json:"total_tokens"`
+	// CachedTokens 输入里命中上游前缀缓存的 token 数（docs/16 §3.1 命中率的唯一数据源）。
+	//
+	// 不另设 CachedReported：**这个结构体是出站层的返回值，不是落库行**——
+	// 上游没报时它是 0，而下游要判「有没有报」看的是 UsageReported（usage 对象在不在）。
+	// 分不清的只有一种情况：usage 在、但里面没有 details 子对象。那种情况下
+	// 这一列记 0 而 UsageReported=true，计量侧会把它算成「未命中」——偏差方向是
+	// 「命中率看起来更低」，不会让问题被掩盖。
+	CachedTokens  int64 `json:"cached_tokens"`
 	UsageReported bool  `json:"usage_reported"`
 }

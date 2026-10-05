@@ -119,7 +119,20 @@ type ReplyUsage struct {
 	InputTokens  int64
 	OutputTokens int64
 	TotalTokens  int64
-	Reported     bool
+	// CachedTokens 上游报告「这次输入里有多少 token 命中了它侧的前缀缓存」。
+	//
+	// 它是 docs/16 §3.1 第一个验收数字（命中率 95–97%）的**唯一**数据来源：
+	// 本地算不出来这个数（要让本地算出「哪些 token 命中了」等于重新实现一遍上游的分词与
+	// 前缀匹配），所以上游不报时只能记 0 —— 而 0 与「这次真的没命中」在观测上无法区分，
+	// 因此还需要 Reported 之外的一个独立标记（见 CachedReported）。
+	CachedTokens int64
+	// CachedReported 上游这次是否报告了缓存命中数。
+	//
+	// **必须与 CachedTokens=0 分开**：只有真正报过 0，才能说「这次确实没命中」；
+	// 没报过时那个 0 什么也不说明，把它算进分母会让命中率看起来比实际低一大截，
+	// 而症状只是「命中率数字难看」——没有人会去查是不是上游没报。
+	CachedReported bool
+	Reported       bool
 }
 
 // usageFromJSON 从响应体的 usage 对象里取三个数。
@@ -144,7 +157,45 @@ func usageFromJSON(raw any) ReplyUsage {
 	if in == 0 && out == 0 && total == 0 {
 		return ReplyUsage{}
 	}
-	return ReplyUsage{InputTokens: in, OutputTokens: out, TotalTokens: total, Reported: true}
+	cached, cachedOK := firstPositiveIntOK(obj,
+		[]string{"prompt_tokens_details", "input_tokens_details"}, "cached_tokens")
+	return ReplyUsage{
+		InputTokens:  in,
+		OutputTokens: out,
+		TotalTokens:  total,
+		CachedTokens: cached,
+		// 报过（含报 0）才算「有信息」。见 CachedReported 的注释：把「没报」当成 0
+		// 会让命中率失真，而失真的方向恰好是「看起来更差」。
+		CachedReported: cachedOK,
+		Reported:       true,
+	}
+}
+
+// firstPositiveIntOK 在嵌套对象里按候选键顺序取第一个**存在**的整数值。
+//
+// 与 firstPositiveInt 的差别在于「存在」与「为正」是两件事：缓存命中数报 0 是一个有效
+// 观测（这次确实没命中），而字段缺失不是。返回的 ok 表达的是「字段在不在」。
+//
+// 嵌套形态两家不同但对称：chat/completions 是 usage.prompt_tokens_details.cached_tokens，
+// responses 是 usage.input_tokens_details.cached_tokens。
+func firstPositiveIntOK(obj map[string]any, detailsKeys []string, field string) (int64, bool) {
+	for _, dk := range detailsKeys {
+		details, ok := obj[dk].(map[string]any)
+		if !ok {
+			continue
+		}
+		switch v := details[field].(type) {
+		case float64:
+			return int64(v), true
+		case int64:
+			return v, true
+		case json.Number:
+			if n, err := v.Int64(); err == nil {
+				return n, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // firstPositiveInt 按候选键顺序取第一个正整数值；都没有回 0。

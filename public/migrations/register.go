@@ -232,6 +232,10 @@ func init() {
 	registerCustomerRfmFilterI18n()
 	// 565：客户列表「会员等级」筛选词条（见 register_customer_tier_filter_i18n.go）。
 	registerCustomerTierFilterI18n()
+	// 566：ai_call_log 的缓存命中两列（见 register_ai_call_log_cached_tokens.go）。
+	registerAICallLogCachedTokens()
+	// 567：会话页「验收数字」三张卡的词条（见 register_ai_usage_metrics_i18n.go）。
+	registerAIUsageMetricsI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

@@ -211,6 +211,31 @@ type SessionUsage struct {
 	AvgTokens     int64  `json:"avgTokens"`
 	TokensText    string `json:"tokensText"`
 	AvgTokensText string `json:"avgTokensText"`
+
+	// —— 下面三组是 docs/16 §3.1 的验收数字（命中率 / 压缩开销 / 折叠净收益）——
+	//
+	// 它们与上面的 Tokens 口径**不同**，别当成同一件事：
+	//   Tokens 是**事件**的 content_tokens 之和（上下文投影的占用）；
+	//   命中率来自**调用流水**（ai_call_log）里上游上报的 input/cached。
+	// 一个衡量「上下文有多大」，一个衡量「发出去时省了多少」。
+	//
+	// HitRateReady=false 时 HitRateText 是「—」而不是「0%」：这家供应商没报缓存字段时
+	// 那个 0 什么也不说明，显示成 0% 会让人以为前缀纪律失效了。
+	HitRateReady bool    `json:"hitRateReady"`
+	HitRatePct   float64 `json:"hitRatePct"`
+	HitRateText  string  `json:"hitRateText"`
+	// CachedCalls / UsageReportedCalls 支撑命中率的分母构成（「几次调用里几次报了缓存」）。
+	CachedCalls        int64 `json:"cachedCalls"`
+	UsageReportedCalls int64 `json:"usageReportedCalls"`
+	// CompactCostPct 折叠摘要占整个上下文的比重（%）。
+	//
+	// **口径**：Σ(compact_summary 事件的 content_tokens) / Σ(全部事件 content_tokens)。
+	// docs/16 §3.1 的原始表述含「摘要那次模型调用 + 重写前缀」的成本，而本仓当前的
+	// 摘要由人填进表单（FoldReq.Summary），**不产生模型调用** —— 所以这里记的是
+	// 纯上下文口径。哪天摘要改成模型生成，这里要一并改成含模型成本，否则这个数会
+	// 恒偏小，而它恰恰是用来判断「压得值不值」的。
+	CompactCostPct  float64 `json:"compactCostPct"`
+	CompactCostText string  `json:"compactCostText"`
 }
 
 // TrendSeries 折线图上的一条线（一个「供应商 + 模型」组合）。

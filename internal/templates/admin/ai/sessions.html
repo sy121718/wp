@@ -95,7 +95,9 @@
             {* 指标卡：只放列表里看不出来的聚合。口径都写在下方小字里 ——「累计 token」与列里的
                「上下文 token」是两回事，不写清楚会被当成同一个数。
                刻意不做「压缩次数」「平均每会话」：前者是列表里已有的列，后者是能一眼除出来的
-               派生值，摆成指标卡只是把同一份信息重复三遍。 *}
+               派生值，摆成指标卡只是把同一份信息重复三遍。
+               但**验收数字不是派生值**（见下面三张卡）：它们的数据源在调用流水里，
+               上面这几张卡无论怎么组合都算不出来。 *}
             <div class="stat-grid">
                 <div class="card stat-card">
                     <div class="stat-label">{{tr("admin.ai.session.stat.sessions", "会话数")}}</div>
@@ -109,6 +111,32 @@
                     <div class="stat-label">{{tr("admin.ai.session.stat.tokens", "累计 token")}}</div>
                     <div class="stat-value">{{u.TokensText}}</div>
                     <div class="stat-note">{{tr("admin.ai.session.stat.tokens.note", "按事件正文估算，非当前上下文")}}</div>
+                </div>
+                {* 下面三张不是「派生值」，是 docs/16 §3.1 的验收数字 —— 它们的数据源在
+                   **调用流水**（上游上报的 input / cached）而不在事件表上，上面那三张算不出来。
+                   两张**总是渲染**（没有数据时显示「—」而不是消失）：卡片消失与「这个功能
+                   不存在」在页面上无法区分，而「这家供应商没报缓存字段」正是需要被看见的那种状态 ——
+                   它让命中率无从判断，而不是「命中率是 0」。 *}
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.ai.session.stat.hitRate", "前缀缓存命中率")}}</div>
+                    <div class="stat-value">{{u.HitRateText}}</div>
+                    <div class="stat-note">
+                        {{if u.HitRateReady}}
+                        {{tr("admin.ai.session.stat.hitRate.note", "命中 / 上报缓存的调用输入；健康区间 95–97%")}}
+                        {{else}}
+                        {{tr("admin.ai.session.stat.hitRate.noData", "供应商没有上报缓存字段，算不出命中率")}}
+                        {{end}}
+                    </div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.ai.session.stat.compactCost", "摘要占用上下文")}}</div>
+                    <div class="stat-value">{{u.CompactCostText}}</div>
+                    <div class="stat-note">{{tr("admin.ai.session.stat.compactCost.note", "折叠摘要的 token / 全部事件 token；长期超过 2% 说明压得太频繁")}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.ai.session.stat.cachedCalls", "上报缓存的调用")}}</div>
+                    <div class="stat-value">{{u.CachedCalls}}</div>
+                    <div class="stat-note">{{tr("admin.ai.session.stat.cachedCalls.note", "分母：命中率只在这些调用上成立，未上报的不计入")}}</div>
                 </div>
             </div>
 

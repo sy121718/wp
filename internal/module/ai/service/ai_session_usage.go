@@ -51,7 +51,45 @@ func (s *SessionService) SessionUsageOf(ctx context.Context, f aidto.SessionQuer
 	}
 	out.TokensText = formatTokens(out.Tokens)
 	out.AvgTokensText = formatTokens(out.AvgTokens)
+
+	// —— docs/16 §3.1 的三个验收数字 ——
+	//
+	// 命中率的分母只取**报了缓存字段**的那些调用（CachedInputTokens）：
+	// 把没报的算进分母会让命中率凭空掉一大截，而「难看」这个症状会被归因到提示词上，
+	// 没人会想到是上游没报。一条都没报时 HitRateReady=false，页面显示「—」而不是 0%。
+	out.HitRateReady = raw.CachedInputTokens > 0
+	out.HitRatePct = percentage(raw.CachedTokens, raw.CachedInputTokens)
+	out.HitRateText = percentText(out.HitRatePct, out.HitRateReady)
+	out.CachedCalls = raw.CachedCalls
+	out.UsageReportedCalls = raw.UsageReportedCalls
+
+	// 压缩开销：摘要占的上下文比重。分母用**事件**的 token 之和（不是调用流水）——
+	// 这个数问的是「压缩后的上下文里，摘要本身占了多大一块」，所以两侧必须同源。
+	out.CompactCostPct = percentage(raw.SummaryTokens, raw.Tokens)
+	out.CompactCostText = percentText(out.CompactCostPct, raw.Tokens > 0)
 	return out, nil
+}
+
+// percentage 求分子占分母的百分比（一位小数）；分母 <= 0 时回 0。
+//
+// 回 0 而不是 NaN：NaN 会一路渲染成「NaN%」，且不报错、不进日志。
+func percentage(part, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return float64(part) * 100 / float64(total)
+}
+
+// percentText 百分比展示串。ready=false 时回「—」。
+//
+// **不能用 0% 表示「没数据」**：0% 命中率是一个严重的信号（前缀每轮都在变），
+// 而「这家没报这个字段」完全不是一回事。把两者显示成同一个字符，
+// 等于把最有价值的一条观测信息抹掉。
+func percentText(pct float64, ready bool) string {
+	if !ready {
+		return "—"
+	}
+	return strconv.FormatFloat(pct, 'f', 1, 64) + "%"
 }
 
 // SessionFilterOptions 筛选下拉的候选值（供应商 / 模型 / 创建人）。
