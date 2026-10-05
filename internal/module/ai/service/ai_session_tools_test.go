@@ -67,6 +67,12 @@ func responsesFunctionCall(callID, tool, args string) string {
 		callID + `","name":"` + tool + `","arguments":` + jsonString(args) + `}]}`
 }
 
+// responsesAssistantText 一份「只给正文、不要求调工具」的 responses 响应。
+func responsesAssistantText(text string) string {
+	return `{"object":"response","status":"completed","output":[{"type":"message","role":"assistant",` +
+		`"content":[{"type":"output_text","text":` + jsonString(text) + `}]}]}`
+}
+
 // jsonString 把一段文本编成 JSON 字符串字面量（避免在用例里手写转义）。
 func jsonString(s string) string {
 	b, err := json.Marshal(s)
@@ -179,7 +185,9 @@ func TestSessionChatToolRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSessionChatToolRoundsCapped 模型一直要调工具 → 撞上轮次上限，但事件全部保留。
+// TestSessionChatToolRoundsCapped 模型一直要调工具 → 撞上轮次上限，但事件全部保留，
+// 且**末轮必须收回工具**：到上限时若还让它调，用户拿到的是一句失败，
+// 而它前面几轮已经改动过真实数据（见 maxToolRounds 的注释）。
 func TestSessionChatToolRoundsCapped(t *testing.T) {
 	sess, svc := newSessionChatService(t)
 	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
@@ -188,7 +196,6 @@ func TestSessionChatToolRoundsCapped(t *testing.T) {
 
 	// 假上游永远只回「要调工具」——这正是需要上限兜住的形态。
 	bodies := sessionChatUpstreamSeq(t, svc, responsesFunctionCall("call_x", "orders_summary", `{}`))
-	_ = bodies
 
 	_, err := sess.SendMessage(context.Background(), aidto.SendMessageReq{
 		SessionKey:  "tools-key-cap",
@@ -201,7 +208,8 @@ func TestSessionChatToolRoundsCapped(t *testing.T) {
 		t.Fatalf("应回轮次超限，实得 %v", err)
 	}
 
-	// 上限是 4 轮：每轮一次调用 + 一次结果，事件必须都在（审计要看到它试了什么）。
+	// 上限是 10 轮（与 maxToolRounds 同步）：每轮一次调用 + 一次结果，事件必须都在
+	//（审计要看到它试了什么、改了什么）。
 	events := listSessionEvents(t, sess, 1)
 	toolEvents := 0
 	for _, e := range events {
@@ -209,14 +217,69 @@ func TestSessionChatToolRoundsCapped(t *testing.T) {
 			toolEvents++
 		}
 	}
-	if toolEvents != 8 {
-		t.Fatalf("工具事件应为 4 轮 × 2 = 8 条，实际 %d 条（事件：%d）", toolEvents, len(events))
+	if toolEvents != 20 {
+		t.Fatalf("工具事件应为 10 轮 × 2 = 20 条，实际 %d 条（事件：%d）", toolEvents, len(events))
 	}
 	// 没有 assistant 事件：这一轮没有答案。
 	for _, e := range events {
 		if e.Kind == "assistant" {
 			t.Fatal("超限时不该写入 assistant 事件")
 		}
+	}
+
+	// 末轮请求里不能带工具：这是「宁可答案含糊也不要让已落库的改动以失败收场」的那一半。
+	var last string
+	for {
+		select {
+		case b := <-bodies:
+			last = b
+			continue
+		default:
+		}
+		break
+	}
+	if last == "" {
+		t.Fatal("没有捕获到末轮请求体")
+	}
+	if strings.Contains(last, `"tools"`) {
+		t.Errorf("末轮必须收回工具，实得请求体：%s", last)
+	}
+}
+
+// TestSessionChatManyToolsStillAnswers 回归：上游一次只调一个工具时，
+// 一个 5 步任务（找商品 → 看详情 → 查库存 → 建单 → 作答）必须能走到作答。
+//
+// 真机上的症状是「工具全部成功、订单已经建好，界面却报提问失败」——
+// 旧上限 4 轮恰好卡在第 5 次调用之前，用户以为没成功，其实数据已经改了。
+func TestSessionChatManyToolsStillAnswers(t *testing.T) {
+	sess, svc := newSessionChatService(t)
+	newChatProvider(t, svc, "sess-tools", aienums.ProtocolOpenAIResponses)
+	tools := &stubToolProvider{specs: []aidto.ToolSpec{ordersSummarySpec()}, text: "查到了"}
+	sess.SetToolProvider(tools)
+
+	// 前 5 次都要求调工具，第 6 次给正文。
+	payloads := make([]string, 0, 6)
+	for i := 0; i < 5; i++ {
+		payloads = append(payloads, responsesFunctionCall("call_x", "orders_summary", `{}`))
+	}
+	payloads = append(payloads, responsesAssistantText("今天 5 单"))
+	sessionChatUpstreamSeq(t, svc, payloads...)
+
+	res, err := sess.SendMessage(context.Background(), aidto.SendMessageReq{
+		SessionKey:  "tools-key-many",
+		ProviderKey: "sess-tools",
+		Model:       "muse-spark-1.3-contributor",
+		Input:       "今天有多少单",
+		UserID:      testUserID,
+	})
+	if err != nil {
+		t.Fatalf("5 步任务不该失败：%v", err)
+	}
+	if !strings.Contains(res.AssistantEvent.Content, "今天 5 单") {
+		t.Errorf("没有拿到最终回答：%+v", res.AssistantEvent)
+	}
+	if len(res.ToolEvents) != 10 {
+		t.Errorf("5 次工具往返应有 10 条事件，实得 %d", len(res.ToolEvents))
 	}
 }
 

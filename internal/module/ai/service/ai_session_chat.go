@@ -34,9 +34,16 @@ const chatTitleRunes = 60
 // maxToolRounds 一次发消息里最多允许几轮「模型要求调工具」。
 //
 // 必须有上限：模型陷入「调工具 → 结果不满意 → 再调同一个」时，没有上限就是
-// 一次请求把额度烧光，而用户看到的是界面一直转。4 轮足够覆盖
-// 「查一个维度 → 发现要换区间 → 再查一次 → 作答」这类真实链路。
-const maxToolRounds = 4
+// 一次请求把额度烧光，而用户看到的是界面一直转。
+//
+// 取 10 而不是 4：本仓的上游**一次只要求调一个工具**（不并行），所以「找商品 →
+// 看商品详情 → 查库存 → 建单 → 作答」这种很普通的代客下单要占满 5 轮。4 轮时
+// 真机上出现过「工具全部成功执行、库存与订单都已落库，界面却报提问失败」——
+// 循环到上限退出，用户拿到的是一句失败，而他真正的订单已经建好了。
+//
+// 最后一轮的兜底见循环里的 roundTail：到上限时不再给工具，强制它用已有结果作答，
+// 宁可答案不完整，也不能让一个已经改动了数据的请求以「失败」收场。
+const maxToolRounds = 10
 
 // 工具事件的两种相位（kind 恒为 tool，用 meta.phase 区分）。
 //
@@ -254,6 +261,17 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 		msgs := stablePrefix(history, roundImages)
 		msgs = append(msgs, rounds...)
 
+		// 末轮收回工具：这一步是**兜底而不是优化**。
+		//
+		// 已经执行过的工具都改过了真实数据（订单建了、库存动了），此时若因为
+		// 「模型还想再查一次」就整轮报错，用户看到的是失败，而数据已经变了 ——
+		// 他没法从界面上知道到底发生了什么，也不知道要不要重来。收回工具后
+		// 模型只能用现有结果说话，最差是答案含糊，不会让改动无法解释。
+		roundSpecs := specs
+		if round == maxToolRounds-1 {
+			roundSpecs = nil
+		}
+
 		// 带上会话与发起人：调用流水（ai_call_log）靠这两个字段回答
 		// 「谁在什么时候烧了谁家的 token」，而它们只有这里知道
 		//（出站层只认识 provider/model 两个字符串）。
@@ -261,7 +279,7 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 			ProviderKey:     providerKey,
 			Model:           model,
 			Messages:        msgs,
-			Tools:           specs,
+			Tools:           roundSpecs,
 			MaxOutputTokens: req.MaxOutputTokens,
 			SessionID:       sessionID,
 			UserID:          req.UserID,
@@ -317,7 +335,8 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 		}
 	}
 
-	// 到达上限：本轮已发生的事件全部保留（审计要看到它试了什么），但这条消息没有答案。
+	// 到这里说明末轮（已收回工具）之后模型还是空的、或又要求了工具。
+	// 事件全部保留 —— 审计要看到它试了什么、改了什么；但这条消息没有答案。
 	return nil, ErrSessionToolRoundsExceeded
 }
 
