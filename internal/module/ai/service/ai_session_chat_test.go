@@ -327,8 +327,14 @@ func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
 				t.Fatalf("请求正文不是 JSON：%v", err)
 			}
 			if tc.protocol == aienums.ProtocolOpenAIResponses {
-				if payload.Instructions != aiprompt.SiteRules() {
-					t.Errorf("responses 协议的常驻规则必须放在顶层 instructions，实得 %q", truncateForLog(payload.Instructions))
+				// instructions 是**多段 system 用空行拼起来**的：规则在前、手册目录在后。
+				// 断言用前缀而不是相等 —— 相等会把「加第二段 system」变成假红，
+				// 而那恰恰是这个改动要支持的事。
+				if !strings.HasPrefix(payload.Instructions, aiprompt.SiteRules()) {
+					t.Errorf("responses 协议的常驻规则必须放在顶层 instructions 的开头，实得 %q", truncateForLog(payload.Instructions))
+				}
+				if catalog := aiprompt.ManualCatalog(); catalog != "" && !strings.Contains(payload.Instructions, catalog) {
+					t.Error("手册目录没有进 instructions")
 				}
 				// input 里不得残留 system 条目（会被上游 400 拒）。
 				if strings.Contains(body, `"role":"system"`) {
@@ -348,9 +354,20 @@ func TestSessionChatSendsSystemPrefixFirst(t *testing.T) {
 			if payload.Messages[0].Content != aiprompt.SiteRules() {
 				t.Error("system 的内容必须就是常驻规则原文")
 			}
-			// 第二段是「历史 + 本轮输入」：模型真正要回答的东西必须在里面。
-			if payload.Messages[1].Role != "user" || !strings.Contains(payload.Messages[1].Content, "这周卖得最好的是什么") {
-				t.Errorf("第二条应是带本轮输入的 user 消息，实得 %q/%q", payload.Messages[1].Role, payload.Messages[1].Content)
+			// 最后一条是「历史 + 本轮输入」：模型真正要回答的东西必须在里面。
+			last := payload.Messages[len(payload.Messages)-1]
+			if last.Role != "user" || !strings.Contains(last.Content, "这周卖得最好的是什么") {
+				t.Errorf("最后一条应是带本轮输入的 user 消息，实得 %q/%q", last.Role, truncateForLog(last.Content))
+			}
+			// 手册目录也要在（它是第二段 system）—— 与规则一样属于稳定前缀。
+			if catalog := aiprompt.ManualCatalog(); catalog != "" {
+				joined := ""
+				for _, m := range payload.Messages {
+					joined += m.Content
+				}
+				if !strings.Contains(joined, catalog) {
+					t.Error("手册目录没有进 messages")
+				}
 			}
 		})
 	}

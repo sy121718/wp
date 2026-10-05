@@ -41,15 +41,20 @@ func TestStablePrefixOrderAndStability(t *testing.T) {
 	const history = "user: 这周卖得最好的是什么"
 	first := stablePrefix(history)
 	second := stablePrefix(history)
-	if len(first) != 2 || len(second) != 2 {
-		t.Fatalf("稳定前缀应为两条消息（system + user），实得 %d / %d", len(first), len(second))
+	// 两段 system（规则 + 手册目录）+ 一条 user。目录为空时是两段 —— 两种情况都合法，
+	// 所以判据写成「至少两段、最后一段是 user」，而不是写死条数。
+	if len(first) < 2 || len(first) != len(second) {
+		t.Fatalf("稳定前缀至少要有 system + user 两段，且两次构造条数一致，实得 %d / %d", len(first), len(second))
 	}
-	// 顺序：system 必须在最前 —— 放在后面就不是「前缀」，缓存命中不了。
-	if first[0].Role != roleSystem {
-		t.Errorf("第一条必须是 system，实得 %q", first[0].Role)
+	// 顺序：system 全部在前 —— 任何一个排在 user 之后就不是「前缀」，缓存命中不了。
+	last := first[len(first)-1]
+	if last.Role != roleUser {
+		t.Errorf("最后一条必须是 user，实得 %q", last.Role)
 	}
-	if first[1].Role != roleUser {
-		t.Errorf("第二条必须是 user，实得 %q", first[1].Role)
+	for i := 0; i < len(first)-1; i++ {
+		if first[i].Role != roleSystem {
+			t.Errorf("第 %d 条应为 system（所有 system 必须在 user 之前），实得 %q", i, first[i].Role)
+		}
 	}
 	for i := range first {
 		if first[i].Role != second[i].Role || first[i].Content != second[i].Content {
@@ -58,10 +63,10 @@ func TestStablePrefixOrderAndStability(t *testing.T) {
 		}
 	}
 	if first[0].Content != aiprompt.SiteRules() {
-		t.Error("system 的内容必须就是常驻规则原文（不要在拼接时加包裹文本，那会让规则改动的影响面翻倍）")
+		t.Error("第一段 system 必须就是常驻规则原文（不要在拼接时加包裹文本，那会让规则改动的影响面翻倍）")
 	}
-	if first[1].Content != history {
-		t.Error("第二条必须是「历史 + 本轮输入」原文，不得改写")
+	if last.Content != history {
+		t.Error("最后一条必须是「历史 + 本轮输入」原文，不得改写")
 	}
 }
 

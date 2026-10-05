@@ -512,12 +512,17 @@ func sentEventItem(res *aidto.AppendEventResult, kind, content string) aidto.Ses
 	return item
 }
 
-// stablePrefix 构造请求的**稳定前缀**（docs/16 §3）：system（常驻规则）+ 本轮输入。
+// stablePrefix 构造请求的**稳定前缀**（docs/16 §3）：两段 system + 本轮输入。
 //
 // 抽成函数是为了能被单测直接断言（同一会话两次请求逐字节一致），而不必去跑一次真实的
 // 上游调用。**顺序即契约**：
 //  1. system —— 常驻规则（ai/prompt 包，编译进二进制，内容恒定）；
-//  2. user —— 「历史 + 本轮输入」拼成的一条消息。
+//  2. system —— 手册目录（同样恒定：它是从手册文件本身生成的，不手写）；
+//  3. user —— 「历史 + 本轮输入」拼成的一条消息。
+//
+// **目录进前缀、正文按需取**（guide 工具）：手册正文加起来体积可观，而一次对话通常只
+// 碰到一两个领域。全量进前缀会让每轮都为所有领域付费，而手册正是会被频繁修订的那类文本
+// —— 改一次就作废一次缓存。
 //
 // 两段的**内容**在同一会话里逐字节不变（历史只追加、规则是常量），provider 侧才能命中
 // 前缀缓存。**不要**往这里拼时间戳 / 用户名 / 会话 id / 模型名：那会让每轮都 miss 一次
@@ -525,8 +530,11 @@ func sentEventItem(res *aidto.AppendEventResult, kind, content string) aidto.Ses
 //
 // 本轮的工具往返（rounds）**不在**前缀里：它每轮都在变，属于尾部。
 func stablePrefix(history string) []aidto.ChatMessage {
-	return []aidto.ChatMessage{
-		{Role: roleSystem, Content: aiprompt.SiteRules()},
-		{Role: roleUser, Content: history},
+	// 目录为空时**不占一条消息**：空 system 消息在部分上游会被当成无效消息拒掉，
+	// 而在没有手册时（例如裁剪过的部署）它本身就是多余的。
+	msgs := []aidto.ChatMessage{{Role: roleSystem, Content: aiprompt.SiteRules()}}
+	if catalog := aiprompt.ManualCatalog(); catalog != "" {
+		msgs = append(msgs, aidto.ChatMessage{Role: roleSystem, Content: catalog})
 	}
+	return append(msgs, aidto.ChatMessage{Role: roleUser, Content: history})
 }

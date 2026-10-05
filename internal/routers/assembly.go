@@ -701,6 +701,11 @@ func (a *assembly) buildIdentityAndCommerce() {
 	if err := a.tools().RegisterAll(aimcp.UIRenderTools()...); err != nil {
 		panic("AI 展示工具注册失败：" + err.Error())
 	}
+	// 领域手册（口径与注意事项）。它同样零依赖 —— 读的是编译进二进制的文本，
+	// 不注入任何模块端口，所以不会因为某个模块没装配而消失。
+	if err := a.tools().RegisterAll(aimcp.GuideTools()...); err != nil {
+		panic("AI 手册工具注册失败：" + err.Error())
+	}
 	marks.mark(portWebhookDispatcher)
 
 	// —— 会员 ↔ 订单的端口对接（BIZ-3 消费侧）——
