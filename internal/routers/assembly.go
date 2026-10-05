@@ -887,6 +887,20 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(orderStatusTools...); err != nil {
 		panic("订单状态工具注册失败：" + err.Error())
 	}
+	// 优惠券与退货审阅：两者都带不可逆的钱货后果（券一建就挂上活动、
+	// 同意退货会入库并退款），描述里逐条写明口径与后果。
+	// 退款额是按明细算的、券的 percent 是「减免百分比」——这两条最容易被填反。
+	orderToolStore := aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))
+	if couponTools, err := ordermcp.CouponTools(orderSvc, orderSvc, orderToolStore); err != nil {
+		panic("优惠券工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(couponTools...); err != nil {
+		panic("优惠券工具注册失败：" + err.Error())
+	}
+	if returnTools, err := ordermcp.ReturnTools(orderSvc, orderSvc, orderToolStore); err != nil {
+		panic("退货工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(returnTools...); err != nil {
+		panic("退货工具注册失败：" + err.Error())
+	}
 	if queryTools, err := ordermcp.QueryTools(orderSvc); err != nil {
 		panic("订单查询工具装配失败：" + err.Error())
 	} else if err := a.tools().RegisterAll(queryTools...); err != nil {
