@@ -1,17 +1,18 @@
 package commentcontract
 
-// comment_query.go — 评论模块的**只读**查询契约（AI 工具用）。
+// comment_query.go — 评论模块的查询与审核契约（AI 工具用）。
 //
-// 为什么不直接复用 CommentService：那个接口里还有 Submit / Review —— 前者要 IP 哈希、
-// 后者是审核动作。AI 工具手里只该有「读后台审核队列」这一件事，把审核动作留在
-// 管理页面上：本模块的审核是**人做出的判断**（谁在什么时刻放行了哪条评论是审计事实），
-// 交给模型执行会让这条留痕失去意义。
+// 为什么不直接复用 CommentService：那个接口里还有 Submit（要 IP 哈希、面向公开面），
+// 工具手里只该有「读后台审核队列」与「改一条评论的审核状态」这两件事。
 //
-// 与 comment_admin.go 的 CommentAdminPort 的关系（两者都读后台队列，看似重复）：
-// CommentAdminPort 面向后台**页面**，返回的是页面渲染需要的形态（带分页游标、
-// 供 tab 计数用）；这里的 QueryReader 面向工具，只需要「按工程 + 条件列出条目与总数」。
-// 合成一个接口的话，页面要的东西会变成工具的强制依赖 —— 工具不需要分页游标，
-// 但它会随页面一起漂移。
+// 关于**审核动作要不要交给模型**（这里推翻过一版判断，留痕备查）：
+// 初版把它排除在外，理由是「审核是人做出的判断，交给模型会让这条留痕失去意义」。
+// 这个理由站不住 —— 判断是谁做出的，取决于**谁让模型去做的**，而不是谁点了按钮：
+// ReviewerID 取自当前登录会话（工具从 context 拿，参数里没有这个字段），
+// 后台管理员点「通过」与让助手点「通过」是同一次由人授权的操作，留痕同样成立。
+// 真正需要守住的是别的东西，所以 Review 这一侧只有两条约束：
+//   · 目标状态只允许 approved / rejected（service 已经在白名单里把关）；
+//   · 必填 projectId —— 评论按工程隔离，不带工程的批量改动是危险的越界。
 
 import (
 	"context"
@@ -26,4 +27,12 @@ type QueryReader interface {
 	// **ProjectID 必填**：评论按工程隔离，不填就返回不了「这个站点的评论」——
 	// 工具层把这一点写进 schema 的必填项，而不是让它悄悄查全部工程。
 	AdminList(ctx context.Context, req *commentdto.AdminListReq) (res *commentdto.AdminListResp, err error)
+}
+
+// ReviewWriter 评论的审核状态变更能力（只暴露 Review，不暴露 Submit）。
+type ReviewWriter interface {
+	// Review 批量把评论置为 approved / rejected。
+	//
+	// ReviewerID 由调用方（工具层）从 context 里的登录身份填入，**不由模型提供**。
+	Review(ctx context.Context, req *commentdto.ReviewReq) (res *commentdto.ReviewResp, err error)
 }

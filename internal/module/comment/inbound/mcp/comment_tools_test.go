@@ -208,12 +208,13 @@ func TestCommentFindPropagatesReaderError(t *testing.T) {
 	}
 }
 
-// 工具描述里必须出现「只读」与「审核去后台做」这层意思：模型据描述决定说什么，
-// 缺了它会有「我帮你把这批评论通过了」这种回答 —— 而工具根本没有这个能力。
+// 工具描述里必须说清「本工具只读、改状态用 comment_review」：
+// 模型据描述决定说什么，缺了它会有「我帮你把这批评论通过了」这种回答 ——
+// 而 comment_find 根本没有这个能力（能力在另一个工具上，且要用户先确认）。
 func TestCommentFindDescriptionStatesReadOnly(t *testing.T) {
 	tool := mustQueryTools(t, &stubQuery{})["comment_find"]
 	desc := tool.Description()
-	for _, want := range []string{"只读", "后台"} {
+	for _, want := range []string{"只读", "comment_review"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("描述里缺 %q：\n%s", want, desc)
 		}

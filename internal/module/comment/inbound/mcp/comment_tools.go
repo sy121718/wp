@@ -8,9 +8,12 @@ package commentmcp
 // （不该逼用户先说出实体 id），后者是**正文关键词**。底层一直是齐的：
 // service.AdminList 支持工程 + 状态 + 实体类型 + 正文关键词 + 分页。
 //
-// 只读：依赖收窄到 commentcontract.QueryReader（一个方法），手里没有 Review ——
-// 「AI 顺手把这批评论通过了」不会在某次改动里悄悄变得可能。审核是人的判断，
-// 它要在审计里留下审核人是谁，模型代替不了这个位置。
+// 只读面与写面分开成两个文件：本文件只有 QueryReader（一个方法），
+// 审核在 comment_review_tools.go 里另走 WriteTools —— 两者的依赖、权限点、
+// 变更风险都不是一回事，混在一个装配函数里会让「只想加个查询」顺手把审核也带进来。
+//
+//（本文初版写的「审核是人的判断，模型代替不了这个位置」已被推翻：判断是谁做出的
+// 取决于谁授权的，而 ReviewerID 取自登录身份、不由模型提供。详见 review 文件头。）
 
 import (
 	"context"
@@ -59,7 +62,7 @@ func commentFind(query commentcontract.QueryReader) mcp.Tool {
 			"keyword 匹配**评论正文**（模糊，不区分大小写），所以用户随口提的一个词就能用来筛。\n"+
 			"status / entityType 都可以不传：不传 status 就是全部状态（含待审、垃圾），\n"+
 			"不传 entityType 就是所有可评论的实体类型。\n"+
-			"注意：本工具只读。审核（通过 / 驳回）要在后台评论页上由人做 —— 回答里请告诉用户去哪操作，不要说要帮他改。",
+			"本工具只读；要改状态（通过 / 驳回）用 comment_review。",
 		permission.CommentList,
 		mcp.Object("按线索查评论参数", map[string]mcp.Schema{
 			"projectId":  mcp.String("站点工程 id（uuid，必填：评论按工程隔离）"),

@@ -925,6 +925,17 @@ func (a *assembly) buildIdentityAndCommerce() {
 	} else if err := a.tools().RegisterAll(commentTools...); err != nil {
 		panic(err)
 	}
+	// 审核写工具与查询工具分开装配：依赖（ReviewWriter）与权限点（CommentReview）
+	// 都不是一回事，见 comment_review_tools.go 的文件头。
+	commentWriter, ok := commentSvc.(commentcontract.ReviewWriter)
+	if !ok {
+		panic("comment: 服务未实现 ReviewWriter（装配期接线错误）")
+	}
+	if commentWriteTools, err := commentmcp.WriteTools(commentWriter); err != nil {
+		panic(err)
+	} else if err := a.tools().RegisterAll(commentWriteTools...); err != nil {
+		panic(err)
+	}
 
 	a.mailSvc = mailSvc
 	a.userSvc = userSvc

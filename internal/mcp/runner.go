@@ -88,5 +88,6 @@ func (r *Runner) Run(ctx context.Context, userID int64, name, arguments string) 
 	if len(body) == 0 {
 		body = json.RawMessage("{}")
 	}
-	return tool.Invoke(ctx, body)
+	// 带上调用者身份：写工具里「谁操作的」只能从这里来（见 identity.go）。
+	return tool.Invoke(WithUserID(ctx, userID), body)
 }
