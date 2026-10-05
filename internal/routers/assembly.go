@@ -59,6 +59,7 @@ import (
 	inventoryservice "go_wp/internal/module/inventory/service"
 	mailcontract "go_wp/internal/module/mail/contract"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
+	mailmcp "go_wp/internal/module/mail/inbound/mcp"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatahttp "go_wp/internal/module/masterdata/inbound/http"
 	mediacontract "go_wp/internal/module/media/contract"
@@ -725,6 +726,16 @@ func (a *assembly) buildIdentityAndCommerce() {
 		} else if err := a.tools().RegisterAll(customerTools...); err != nil {
 			panic("客户工具注册失败：" + err.Error())
 		}
+	}
+	// 营销（邮件）的三个只读工具：contact_find / campaign_list / campaign_stats。
+	//
+	// 用户说的「运营营销」就是它：订阅名单、群发记录、单次活动的打开率与点击率。
+	// 依赖收窄到 MailQueryReader —— 手里没有 StartCampaign、没有 UpdateContactStatus，
+	// AI 既不能替人退订、也不能把某个活动启动起来。
+	if mailTools, err := mailmcp.QueryTools(mailSvc); err != nil {
+		panic("营销工具装配失败：" + err.Error())
+	} else if err := a.tools().RegisterAll(mailTools...); err != nil {
+		panic("营销工具注册失败：" + err.Error())
 	}
 	// 「按线索查订单」的两个只读工具（order_find / order_get）。
 	// 与上面两批分开装配的理由同样成立：它服务的是「一个线索指向一单」这类问题

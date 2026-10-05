@@ -82,6 +82,27 @@ type MailService interface {
 	UnsubscribeByToken(ctx context.Context, token, ip, ua string) (string, error)
 }
 
+// MailQueryReader 营销数据的只读视图：给 AI 工具的窄门。
+//
+// 为什么不直接复用 MailService：那个接口有四十多个方法，其中大半是**写**
+//（发信、启停活动、改联系人状态、删模板、推进自动化实例）。工具由模型驱动 ——
+// 给它整个 MailService 就等于让「AI 顺手把某个活动启动起来」「把联系人退订了」
+// 在某次无关改动里变得可能，而这条路径上没有任何页面会问它为什么。
+// 越权防护靠接口形状，不靠调用方自觉（与本文件 TransactionalSender 同一手法）。
+//
+// 三个方法对应三类用户提问：
+//   - ListContacts：「某某邮箱订阅了吗」「这批标签里有多少人」；
+//   - ListCampaigns：「最近发过哪些邮件」「那次发了多少人」；
+//   - CampaignReport：「那封邮件的打开率怎么样」（打开 / 点击 / 退订 / 退信）。
+type MailQueryReader interface {
+	// ListContacts 联系人列表：关键词（email / name 模糊）+ 状态 + 标签。
+	ListContacts(ctx context.Context, req *maildto.ContactFilterReq) (res *maildto.ContactListResp, err error)
+	// ListCampaigns 营销活动列表：状态筛选 + 分页，含投递进度快照。
+	ListCampaigns(ctx context.Context, req *maildto.CampaignListReq) (res *maildto.CampaignListResp, err error)
+	// CampaignReport 单个活动的效果报表（去重人数与百分比口径见类型说明）。
+	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (res *maildto.CampaignReport, err error)
+}
+
 // TransactionalSender 事务邮件发送端口 —— 按模板 key + 语言发**一封**事务邮件。
 //
 // 单独一个接口而不是并进 MailService：事务链路的调用方（注册验证 / 密码重置 / 访客开号）
