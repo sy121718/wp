@@ -175,7 +175,7 @@ func (m *AttachmentModel) HardDelete(ctx context.Context, id uint64) error {
 }
 
 // List 分页查询附件，支持按文件类型和分类过滤。
-func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID *uint64, search string, offset, limit int) ([]AttachmentEntity, int64, error) {
+func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID *uint64, uncategorized bool, search string, offset, limit int) ([]AttachmentEntity, int64, error) {
 	q := m.attrDB(ctx).Where("status = ?", AttachmentStatusEnabled)
 	if fileType != "" {
 		q = q.Where("file_type = ?", fileType)
@@ -183,16 +183,33 @@ func (m *AttachmentModel) List(ctx context.Context, fileType string, categoryID 
 	if categoryID != nil && *categoryID > 0 {
 		q = q.Where("category_id = ?", *categoryID)
 	}
+	if uncategorized {
+		q = q.Where("category_id IS NULL")
+	}
 	if search != "" {
 		// LIKE 通配符转义：_ / % 按字面匹配（ESCAPE '\'）。
-		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
+		//
+		// 用 ILIKE 而不是 LIKE：商品与内容两处都已经是 ILIKE，只有这里区分大小写 ——
+		// 用户说「logo」时查不到 Logo.png，而工具说明写的是「按文件名搜索」，
+		// 他会以为这个文件不存在。文件名的大小写不是用户要记的东西。
+		q = q.Where("file_name ILIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
+	}
+
+	// uncategorized：只取**没有分类**的那些（category_id IS NULL）。
+	//
+	// 不能靠「传 categoryID=0」表达这件事：上面那条分支的判据是 `*categoryID > 0`，
+	// 所以 0 等于**不过滤**（返回全部），与调用方想说的「未分类」正好相反 ——
+	// 而 media_update 里 0 又表示「移入未分类」，同一个 0 在两个工具里语义相反，
+	// 模型按字面理解必然踩中其中一个。
+	if uncategorized {
+		q = q.Where("category_id IS NULL")
 	}
 
 	return m.listPage(q, offset, limit, nil, 0)
 }
 
 // ListAfter 按创建时间和 ID 的复合键取下一页，避免深分页扫描并丢弃大量行。
-func (m *AttachmentModel) ListAfter(ctx context.Context, fileType string, categoryID *uint64, search string, after time.Time, afterID uint64, limit int) ([]AttachmentEntity, int64, error) {
+func (m *AttachmentModel) ListAfter(ctx context.Context, fileType string, categoryID *uint64, uncategorized bool, search string, after time.Time, afterID uint64, limit int) ([]AttachmentEntity, int64, error) {
 	q := m.attrDB(ctx).Where("status = ?", AttachmentStatusEnabled)
 	if fileType != "" {
 		q = q.Where("file_type = ?", fileType)
@@ -200,8 +217,11 @@ func (m *AttachmentModel) ListAfter(ctx context.Context, fileType string, catego
 	if categoryID != nil && *categoryID > 0 {
 		q = q.Where("category_id = ?", *categoryID)
 	}
+	if uncategorized {
+		q = q.Where("category_id IS NULL")
+	}
 	if search != "" {
-		q = q.Where("file_name LIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
+		q = q.Where("file_name ILIKE ? ESCAPE '\\'", "%"+database.EscapeLikePattern(search)+"%")
 	}
 	return m.listPage(q, 0, limit, &after, afterID)
 }

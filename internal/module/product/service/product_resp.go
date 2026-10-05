@@ -272,6 +272,11 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductResp {
 	resp := &productdto.ProductResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
+		// SKUCode 与 Type 必须在这里带出来：列表行是**逐字段拷贝**，
+		// 少拷一个字段不会报错，只会让响应里那一列恒为空 ——
+		// 而 product_find 的输出格式里写着「SKU=…，类型=…」，
+		// 用户看到的是两个空值，模型也无从据此判断这条是不是他要找的商品。
+		SKUCode: e.SKUCode, Type: e.Type,
 		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
 		ImageAlts: decodeStrings(e.ImageAlts),
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),

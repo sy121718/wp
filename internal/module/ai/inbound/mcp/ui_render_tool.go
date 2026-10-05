@@ -15,6 +15,29 @@ import (
 	"go_wp/internal/uispec"
 )
 
+// unknownSource 找出第一个不是已注册工具的 source（没有则回空串）。
+//
+// 跳过 ui_render 自身与 guide：两者都不是数据源（前者是展示指令的入口、
+// 后者是手册查询），拿它们当 source 只会渲染出一片空白。
+func unknownSource(spec *uispec.Spec, known func(string) bool) string {
+	for _, b := range spec.Blocks {
+		src := strings.TrimSpace(b.Source)
+		if src == "" || src == ToolNameUIRender || src == ToolNameGuide {
+			continue
+		}
+		if !known(src) {
+			return src
+		}
+	}
+	return ""
+}
+
+// knownSourceHints 回给模型的候选数据源（它据此改名重试，比一句「不存在」有用得多）。
+func knownSourceHints() []string {
+	return []string{"orders_summary", "orders_daily", "orders_top_products", "orders_status_counts",
+		"product_find", "content_find", "media_find"}
+}
+
 // ui_render 的工具名。
 //
 // 会话层按这个名字认「需要渲染的结果」（`ai_session_chat.go` 的 runTool）——
@@ -22,8 +45,12 @@ import (
 const ToolNameUIRender = "ui_render"
 
 // UIRenderTools ai 模块提供的工具。
-func UIRenderTools() []mcp.Tool {
-	return []mcp.Tool{uiRenderTool()}
+//
+// known 用来校验每个积木的 source 是不是**真实存在的已注册工具**（传 nil 则不校验，
+// 只保留字符集检查）。它必须是一个**运行时查询**而不是一份快照：本函数在装配期被调用，
+// 而那一刻其它模块的工具可能还没注册完 —— 拿快照会把一大半合法数据源误判成不存在。
+func UIRenderTools(known func(name string) bool) []mcp.Tool {
+	return []mcp.Tool{uiRenderTool(known)}
 }
 
 // uiRenderArgs ui_render 的入参。
@@ -34,7 +61,7 @@ type uiRenderArgs struct {
 }
 
 // uiRenderTool 声明 ui_render。
-func uiRenderTool() mcp.Tool {
+func uiRenderTool(known func(name string) bool) mcp.Tool {
 	return mcp.New("ui_render", "渲染展示组件",
 		"把一段展示指令渲染成指标卡 / 表格 / 列表 / 手风琴放进回答里。**只描述结构，不要写数字**："+
 			"每个积木用 type（stat / table / list / accordion）+ source（数据源名字，就是本清单里其它工具的名字）"+
@@ -55,6 +82,19 @@ func uiRenderTool() mcp.Tool {
 						"展示指令被拒绝（%s，位置 %s）：%s", rej.Kind, orRoot(rej.Where), rej.Msg)}
 				}
 				return mcp.Result{}, &mcp.ArgsError{Msg: err.Error()}
+			}
+			// source 必须真的是一个已注册工具。
+			//
+			// 声明期只校验了名字的**字符集**（uispec.validate 的长度与非法字符），
+			// 于是模型写一个不存在的名字（比如把 orders_range_summary 当成 orders_summary）
+			// 时这里会回「展示指令已接受」，它在下一轮就按「已经展示给用户了」继续编话 ——
+			// 而真正渲染时只有一句软失败提示，不会让任何人发现整个回答是建立在幻觉上的。
+			if known != nil {
+				if bad := unknownSource(spec, known); bad != "" {
+					return mcp.Result{}, &mcp.ArgsError{Msg: fmt.Sprintf(
+						"数据源 %q 不是已注册的工具名。source 只能填工具清单里的名字；"+
+							"可用的一批是：%s", bad, strings.Join(knownSourceHints(), "、"))}
+				}
 			}
 			return mcp.Result{Text: uiRenderText(spec), Data: spec}, nil
 		})

@@ -292,10 +292,10 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	// （fail closed 不报错），是比裸查更难排查的静默失效。
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&ProductEntity{}).
-			Select("id, project_id, name, slug, status, images, sort, default_image, create_time, update_time")
-		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
-		}
+			// sku_code 必须在 Select 里：列表少取它时，工具返回的「SKU=」永远是空串 ——
+			// 而工具说明承诺了会给出 SKU（见 product_tools.go 的 product_find）。
+			Select("id, project_id, name, slug, sku_code, type, status, images, sort, default_image, create_time, update_time")
+		q = productKeywordFilter(q, keyword)
 		if status != "" {
 			q = q.Where("status = ?", status)
 		}
@@ -554,13 +554,26 @@ func (m *Model) CountForCollection(ctx context.Context, f CollectionFilter) (n i
 	return n, err
 }
 
+// productKeywordFilter 商品列表的关键词过滤（List 与 Count 共用同一份）。
+//
+// 两个字段一起搜：商品名（用户说「那个保温杯」）与 SKU 编码（用户说
+// 「SKU 是 W1_A123 那个」）。只搜 name 时后一类问题**查不到任何结果**，
+// 而工具说明又承诺了能按 SKU 找 —— 模型会以为自己查过了，然后编一个答案。
+//
+// 抽成函数而不是在两处各写一遍：List 与 Count 的过滤条件一旦分叉，
+// 分页的总数徽章会与实际能翻到的条数对不上（那种偏差看起来只是「数字不准」）。
+func productKeywordFilter(q *gorm.DB, keyword string) *gorm.DB {
+	if keyword == "" {
+		return q
+	}
+	pattern := "%" + keyword + "%"
+	return q.Where("name ILIKE ? OR sku_code ILIKE ?", pattern, pattern)
+}
+
 // Count 列表总数（与 List 同过滤条件）。
 func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := tx.WithContext(ctx).Model(&ProductEntity{})
-		if keyword != "" {
-			q = q.Where("name ILIKE ?", "%"+keyword+"%")
-		}
+		q := productKeywordFilter(tx.WithContext(ctx).Model(&ProductEntity{}), keyword)
 		if status != "" {
 			q = q.Where("status = ?", status)
 		}

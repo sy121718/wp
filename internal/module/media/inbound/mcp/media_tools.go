@@ -58,6 +58,11 @@ type mediaFindArgs struct {
 	Search   string  `json:"search"`
 	FileType string  `json:"fileType"`
 	Category *uint64 `json:"categoryId"`
+	// Uncategorized 只看没有分类的附件。
+	//
+	// 不能靠 categoryId=0 表达：ListReq.CategoryID 的判据是「> 0 才过滤」，
+	// 传 0 等于不过滤 —— 用户问「还有哪些图没归类」时会拿到全部媒体。
+	Uncategorized bool `json:"uncategorized"`
 }
 
 func mediaFind(r MediaReader) mcp.Tool {
@@ -66,14 +71,16 @@ func mediaFind(r MediaReader) mcp.Tool {
 			"所以要先用它把名字换成 id，再去调 media_get / media_update / media_delete。",
 		permission.MediaList,
 		mcp.Object("搜索参数", map[string]mcp.Schema{
-			"search":     mcp.String("文件名的一部分（可为空，空则列出最近的媒体）"),
-			"fileType":   mcp.Enum("限定文件类型（可选）", "image", "video", "audio", "document", "other"),
-			"categoryId": mcp.Integer("限定分类 id（可选）"),
+			"search":        mcp.String("文件名的一部分（可为空，空则列出最近的媒体）"),
+			"fileType":      mcp.Enum("限定文件类型（可选）", "image", "video", "audio", "document", "other"),
+			"categoryId":    mcp.Integer("限定分类 id（可选）"),
+			"uncategorized": mcp.Boolean("只看**没有分类**的附件（可选；与 categoryId 互斥，同时传时按未分类处理）"),
 		}),
 		func(ctx context.Context, args mediaFindArgs) (mcp.Result, error) {
 			res, err := r.List(ctx, &mediadto.ListReq{
 				Search: args.Search, FileType: args.FileType, CategoryID: args.Category,
-				Page: 1, Limit: mediaFindLimit,
+				Uncategorized: args.Uncategorized,
+				Page:          1, Limit: mediaFindLimit,
 			})
 			if err != nil {
 				return mcp.Result{}, err
@@ -87,8 +94,13 @@ func mediaFind(r MediaReader) mcp.Tool {
 				strconv.FormatInt(res.Total, 10) + " 个）：\n")
 			for i := range res.List {
 				a := &res.List[i]
+				// 地址必须给：用户最常要的就是「把这张图的地址给我」（贴到页面/邮件里），
+				// 而工具说明承诺了「返回 id、文件名、类型与地址」—— 之前只给到 alt，
+				// 模型只能让用户自己去后台翻。URL 由 service 的 entityToResp 派生好，
+				// 这里只是把已有的字段输出出来。
 				b.WriteString("- " + a.FileName + "（id=" + strconv.FormatUint(a.ID, 10) +
-					"，类型=" + a.FileType + "，" + mediaMetaBrief(a.ExtraInfo) + "）\n")
+					"，类型=" + a.FileType + "，" + mediaMetaBrief(a.ExtraInfo) + "）\n" +
+					"  地址: " + a.URL + "\n")
 			}
 			return mcp.Result{Text: b.String()}, nil
 		},

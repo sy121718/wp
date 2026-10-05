@@ -140,6 +140,9 @@ func contentGet(r ContentReader) mcp.Tool {
 func describeContent(res *contentdto.ContentResp) string {
 	out := "内容 " + res.EntityType + " / " + res.Slug + "（id=" + res.ID +
 		"，revision=" + strconv.FormatInt(res.Revision, 10) + "）\n"
+	// 更新时间要带上：用户会问「这篇什么时候改过」，而 content_update 拿到的
+	// revision 只有变大才知道改过 —— 时间是他真正用来判断的那条线索。
+	out += "- 更新时间: " + emptyAsDash(res.UpdatedAt) + "\n"
 	for _, f := range contentcontract.FieldWhitelist(res.EntityType) {
 		v, ok := res.Data[f]
 		if !ok {
@@ -149,6 +152,15 @@ func describeContent(res *contentdto.ContentResp) string {
 		out += "- " + f + ": " + stringify(v) + "\n"
 	}
 	return out
+}
+
+// emptyAsDash 空值显示成「（空）」而不是留白（与商品侧的 writeLine 同一口径：
+// 模型要靠「存在但为空」与「不存在」区分不同情况）。
+func emptyAsDash(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "（空）"
+	}
+	return v
 }
 
 // stringify 把字段值摊成一行文本（字符串原样，其余走 JSON）。

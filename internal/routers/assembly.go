@@ -703,7 +703,12 @@ func (a *assembly) buildIdentityAndCommerce() {
 	}
 	// AI 模块自己的工具（展示指令）：它不拥有业务表，只把模型的展示意图收敛成受校验的 spec；
 	// 真正的取数发生在会话层（那里才有调用者身份，权限逐块判）。
-	if err := a.tools().RegisterAll(aimcp.UIRenderTools()...); err != nil {
+	// 传的是**运行时查询**：ui_render 的积木靠 source 指名数据源，而这个名字必须在
+	// 真正调用时才能判断存不存在（装配顺序上其它模块的工具未必已经注册完）。
+	if err := a.tools().RegisterAll(aimcp.UIRenderTools(func(name string) bool {
+		_, ok := a.tools().Lookup(name)
+		return ok
+	})...); err != nil {
 		panic("AI 展示工具注册失败：" + err.Error())
 	}
 	// 领域手册（口径与注意事项）。它同样零依赖 —— 读的是编译进二进制的文本，

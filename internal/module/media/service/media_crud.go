@@ -229,13 +229,13 @@ func (s *Service) List(ctx context.Context, req *mediato.ListReq) (*mediato.List
 	var total int64
 	var err error
 	if req.Cursor == "" {
-		list, total, err = s.am.List(ctx, req.FileType, req.CategoryID, req.Search, req.GetOffset(), limit)
+		list, total, err = s.am.List(ctx, req.FileType, req.CategoryID, req.Uncategorized, req.Search, req.GetOffset(), limit)
 	} else {
 		after, afterID, decodeErr := decodeMediaCursor(req.Cursor)
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
-		list, total, err = s.am.ListAfter(ctx, req.FileType, req.CategoryID, req.Search, after, afterID, limit)
+		list, total, err = s.am.ListAfter(ctx, req.FileType, req.CategoryID, req.Uncategorized, req.Search, after, afterID, limit)
 	}
 	if err != nil {
 		return nil, err

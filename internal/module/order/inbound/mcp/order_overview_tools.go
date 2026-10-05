@@ -10,11 +10,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
 	"go_wp/internal/mcp"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/internal/permission"
 )
 
@@ -137,8 +140,11 @@ func topProductsText(res *orderdto.OrderTopProductsResp) string {
 	}
 	parts := make([]string, 0, len(res.Items))
 	for _, it := range res.Items {
-		parts = append(parts, fmt.Sprintf("%d) %s（SKU %s）%d 件 / %s",
-			it.Rank, it.ProductName, it.SKU, it.Quantity, it.AmountLabel))
+		// productId 必须带上：榜单是模型最常接着追问的对象（「第一名那个商品的详情」），
+		// 而商品类工具的唯一入口是 id。只给名字时它只能再调一次 product_find 去猜，
+		// 名字有重名或含特殊字符时还会猜错。
+		parts = append(parts, fmt.Sprintf("%d) %s（SKU %s，productId=%s）%d 件 / %s",
+			it.Rank, it.ProductName, it.SKU, it.ProductID, it.Quantity, it.AmountLabel))
 	}
 	b.WriteString(strings.Join(parts, "；") + "。")
 	return b.String()
@@ -147,6 +153,15 @@ func topProductsText(res *orderdto.OrderTopProductsResp) string {
 // ordersStatusCountsArgs orders_status_counts 的入参（只有工程，没有时间窗）。
 type ordersStatusCountsArgs struct {
 	ProjectID string `json:"projectId"`
+}
+
+// statusLabelText 状态名 → 中文短标签（「已完成」而不是 "completed"）。
+//
+// 用 order 模块自己的映射而不是在工具里再写一份：那份映射是词条 key 的唯一来源，
+// 两处各写一份时，加一个状态只改一边，另一边就会把英文枚举值直接甩给用户。
+func statusLabelText(status string) string {
+	_, fallback := orderenums.OrderStatusLabel(status)
+	return fallback
 }
 
 func ordersStatusCounts(overview ordercontract.OrderOverviewReader) mcp.Tool {
@@ -162,9 +177,24 @@ func ordersStatusCounts(overview ordercontract.OrderOverviewReader) mcp.Tool {
 			if err != nil {
 				return mcp.Result{}, err
 			}
+			// 逐状态列全：`Counts` 之前只进了 Data，而 **Data 不会回灌给模型**
+			//（ai_session_chat.go 只取 Result.Text）。于是模型只看得见三个数，
+			// 用户问「已完成多少单」「这个月取消几单」时它答不出来 —— 而这几个数
+			// 明明就在它手上的结构体里。工具名承诺的是「统计当前各状态」。
+			lines := make([]string, 0, len(res.Counts))
+			for status, n := range res.Counts {
+				lines = append(lines, statusLabelText(status)+" "+strconv.FormatInt(n, 10))
+			}
+			// 状态顺序由地图迭代决定，必须先排序：同一份数据两次调用给出不同顺序，
+			// 模型会把「顺序变了」读成「情况变了」。
+			sort.Strings(lines)
+			head := fmt.Sprintf("当前订单共 %d 笔。待付款 %d 笔、待发货 %d 笔。",
+				res.TotalCount, res.PendingCount, res.ShipPendingCount)
+			if len(lines) == 0 {
+				return mcp.Result{Text: head, Data: res}, nil
+			}
 			return mcp.Result{
-				Text: fmt.Sprintf("当前订单：待付款 %d 笔、待发货 %d 笔、共 %d 笔。",
-					res.PendingCount, res.ShipPendingCount, res.TotalCount),
+				Text: head + "\n各状态明细：" + strings.Join(lines, "；") + "。",
 				Data: res,
 			}, nil
 		})

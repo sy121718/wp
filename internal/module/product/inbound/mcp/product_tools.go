@@ -19,6 +19,7 @@ import (
 
 	"go_wp/internal/mcp"
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/permission"
 )
 
@@ -62,6 +63,10 @@ func projectIDArg() mcp.Schema {
 type productFindArgs struct {
 	ProjectID string `json:"projectId"`
 	Keyword   string `json:"keyword"`
+	// Status 可选状态过滤（空串 = 全部状态）。取值域与 schema 的 Enum 同源，
+	// 两处都从 productenums 取 —— 写死字面量时枚举一改，工具就静默接受一个
+	// 底层不认识的值，而 List 的 status 条件会把它当成「没有这个状态」查出 0 条。
+	Status string `json:"status"`
 }
 
 // productFind 按关键词找商品。
@@ -74,17 +79,22 @@ type productFindArgs struct {
 // 实测正是如此：给它一个 uuid 它会正确要求补 projectId，但**没人会那样说话**。
 func productFind(r ProductReader) mcp.Tool {
 	return mcp.New("product_find", "搜索商品",
-		"按关键词搜索商品，返回匹配项的 id、名称、SKU 与状态。**用户只会说商品名**，"+
-			"所以要先用它把名字换成 id，再去调 product_get / product_update / product_delete。"+
-			"关键词匹配商品名称与 SKU；不传关键词则列出该工程最近的商品。",
+		"按关键词搜索商品，返回匹配项的 id、名称、SKU、类型与状态。"+
+			"**用户说的可能是商品名，也可能是 SKU**（「SKU 是 W1_CUP001 那个」），"+
+			"两种情况都用这一个工具：关键词同时匹配商品名称与 SKU。"+
+			"先用它把「用户说的那个」换成 id，再去调 product_get / product_update / product_delete。"+
+			"要按状态缩小范围就传 status；都不传则按排序值列出前若干个（不是按创建时间）。",
 		permission.ProductGet,
 		mcp.Object("搜索参数", map[string]mcp.Schema{
 			"projectId": projectIDArg(),
-			"keyword":   mcp.String("商品名的一部分或 SKU（可为空，空则列出最近的商品）"),
+			"keyword":   mcp.String("商品名的一部分或 SKU（可为空，空则按排序值列出前若干个）"),
+			"status": mcp.Enum("只看某个状态的商品（可选；不传则全部状态）",
+				string(productenums.StatusDraft), string(productenums.StatusPublished), string(productenums.StatusArchived)),
 		}, "projectId"),
 		func(ctx context.Context, args productFindArgs) (mcp.Result, error) {
 			list, err := r.List(ctx, &productdto.ListReq{
-				ProjectID: args.ProjectID, Keyword: args.Keyword, Page: 1, Size: productFindLimit,
+				ProjectID: args.ProjectID, Keyword: args.Keyword, Status: args.Status,
+				Page: 1, Size: productFindLimit,
 			})
 			if err != nil {
 				return mcp.Result{}, err
@@ -269,7 +279,41 @@ func describeProduct(res *productdto.ProductResp) string {
 	writeLine(&b, "类型", res.Type)
 	writeLine(&b, "状态", res.Status)
 	writeLine(&b, "SKU 编码", res.SKUCode)
+	// 价格与库存是用户最常追问的两件事（「多少钱」「还有货吗」），而它们都已由
+	// toResp 填好 —— 之前只列了六个字段，模型答不了这两问只能让用户自己去后台看。
+	//
+	// 区间用「最低~最高」；只有一个价位时两侧相同，写成区间会让答案读起来啰嗦。
+	if res.PriceMin == res.PriceMax {
+		writeLine(&b, "价格", formatPrice(res.PriceMin))
+	} else {
+		writeLine(&b, "价格区间", formatPrice(res.PriceMin)+" ~ "+formatPrice(res.PriceMax))
+	}
+	b.WriteString("- 变体数: " + strconv.Itoa(res.VariantCount) + "\n")
+	// 库存是**查询期聚合**（真源在 inventory_stocks），三态必须原样交代：
+	//   infinite = 至少一个仓不跟踪库存（等价于「要多少有多少」）；
+	//   tracked  = 全部仓都跟踪，后面那个数才有意义；
+	//   none     = 任何仓都没有库存行，**不等于 0**（「没入库」与「入库了但没货」是两回事）。
+	switch res.StockState {
+	case productenums.StockStateInfinite:
+		writeLine(&b, "库存", "不限（至少一个仓库不跟踪库存）")
+	case productenums.StockStateTracked:
+		writeLine(&b, "库存", strconv.Itoa(res.StockTotal)+"（各仓合计）")
+	default:
+		writeLine(&b, "库存", "未入库（任何仓库都没有该商品的库存行）")
+	}
+	// 上架时间：用户会问「什么时候上的架」，而「新品」的判断也靠它。
+	writeLine(&b, "创建时间", res.CreatedAt)
+	writeLine(&b, "上架时间", res.PublishedAt)
 	return b.String()
+}
+
+// formatPrice 把概览用的金额格式化成便于阅读的形态。
+//
+// 不做货币符号也不做千分位：**这个工具不知道工程用哪种货币**（货币是站点/工程级配置，
+// 商品本身不存），凭空写个 ¥ 会在非人民币站点上给出错误答案。保留两位小数即可，
+// 需要符号时让模型去问用户或查站点配置。
+func formatPrice(v float64) string {
+	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
 // writeLine 写一行「字段: 值」，空值也写（标出「本字段为空」）。
