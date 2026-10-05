@@ -103,6 +103,30 @@ type MailQueryReader interface {
 	CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (res *maildto.CampaignReport, err error)
 }
 
+// ContactWriter 营销联系人的写能力（给 AI 工具的窄门）。
+//
+// 刻意**不含** ImportContacts 与从系统用户拉人：那两个动作一次把成百上千人拉进名单，
+// 正确性取决于「谁同意接收」这条政策判断 —— 那是人做的决定。
+// 助手能做的是用户已经决定之后帮他改一个人、打一批标签。
+type ContactWriter interface {
+	// CreateContact 新建联系人，返回新 id。
+	//
+	// Status 为空时落 pending（**不可发**）：没有同意证据的人不进可发名单。
+	CreateContact(ctx context.Context, req *maildto.SaveContactReq) (id uint64, err error)
+	// UpdateContact 编辑联系人（Tags 是**全量覆盖**，没列出的会被去掉）。
+	UpdateContact(ctx context.Context, req *maildto.SaveContactReq) (err error)
+	// UpdateContactStatus 改同意状态（置 subscribed 会触发订阅类自动化）。
+	UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) (err error)
+	// DeleteContacts 批量删除（真删除；「不再发信」应当用退订而不是删）。
+	DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error)
+	// TagContacts 批量增减标签（增与减同一次完成，避免半截状态）。
+	//
+	// 返回值与 MailService 的同名方法一致：changed 与 skipped 分开报。
+	// 签名必须逐字相同 —— Go 不允许一个类型有两个同名方法，签名对不上就
+	// 无法从同一个 service 实例断言出这个接口（编译期直接失败，不是运行时才炸）。
+	TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error)
+}
+
 // TransactionalSender 事务邮件发送端口 —— 按模板 key + 语言发**一封**事务邮件。
 //
 // 单独一个接口而不是并进 MailService：事务链路的调用方（注册验证 / 密码重置 / 访客开号）

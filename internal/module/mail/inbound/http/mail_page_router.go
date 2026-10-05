@@ -12,6 +12,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	mailcontract "go_wp/internal/module/mail/contract"
+	"go_wp/internal/permission"
 )
 
 // setupMailPageRoutes 注册邮箱后台页（pages = /admin 页面组）。
@@ -24,6 +25,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 		return
 	}
 	mailPage := NewMailPageHandle(svc)
+	declareMailPageObjects()
 
 	// —— 发信账号 ——
 	pages.GET("/mail", mailPage.MailPage)
@@ -81,4 +83,37 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	pages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
 	pages.POST("/mail/automations/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationsBulkDelete)
 	pages.POST("/mail/automation/tick", builtin.CasbinMiddlewareForPath("/api/mail/automation/tick"), mailPage.MailAutomationTick)
+}
+
+// declareMailPageObjects 把本模块后台页面入口的鉴权对象登记进权限声明表。
+//
+// 为什么必须显式做这一步：本模块的页面写操作复用的是**对应 API 的路径**当 obj
+// （见文件头），而权限声明表（permission.declared）只由「带 permission.X 参数的路由注册」
+// 填充 —— 页面路由走的是 CasbinMiddlewareForPath，登记不了自己。
+//
+// 实测后果：AI 工具的权限判定走 permission.RoutesOf(perm)，而这些权限点一个路由都查不到，
+// 于是 casbinAuthorizer fail closed，工具调用一律 forbidden —— 而页面本身完全正常，
+// 排查时会往「AI 权限配错了」的方向找，真正的原因在这里。
+//
+// 重复声明同值安全（Declare 遇到同 key 同权限点直接 return）；与 API 侧已声明的
+// /api/mail/contact/status 等重叠也走这条路径。
+func declareMailPageObjects() {
+	permission.Declare("POST", "/api/mail/account/save", permission.MailAccountSave)
+	permission.Declare("POST", "/api/mail/account/delete", permission.MailAccountDelete)
+	permission.Declare("POST", "/api/mail/account/default", permission.MailAccountDefault)
+	permission.Declare("POST", "/api/mail/account/test", permission.MailAccountTest)
+	permission.Declare("POST", "/api/mail/template/save", permission.MailTemplateSave)
+	permission.Declare("POST", "/api/mail/template/delete", permission.MailTemplateDelete)
+	permission.Declare("POST", "/api/mail/contact/import", permission.MailContactImport)
+	permission.Declare("POST", "/api/mail/contact/status", permission.MailContactStatus)
+	permission.Declare("POST", "/api/mail/contact/save", permission.MailContactSave)
+	permission.Declare("POST", "/api/mail/contact/delete", permission.MailContactDelete)
+	permission.Declare("POST", "/api/mail/contact/tag", permission.MailContactTag)
+	permission.Declare("POST", "/api/mail/campaign/save", permission.MailCampaignSave)
+	permission.Declare("POST", "/api/mail/campaign/start", permission.MailCampaignStart)
+	permission.Declare("POST", "/api/mail/campaign/delete", permission.MailCampaignDelete)
+	permission.Declare("POST", "/api/mail/automation/save", permission.MailAutomationSave)
+	permission.Declare("POST", "/api/mail/automation/status", permission.MailAutomationStatus)
+	permission.Declare("POST", "/api/mail/automation/delete", permission.MailAutomationDelete)
+	permission.Declare("POST", "/api/mail/automation/tick", permission.MailAutomationTick)
 }
