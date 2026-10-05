@@ -52,11 +52,13 @@ type Handle struct {
 	// 除了下面几个「未下沉的装配位」（collection / blueprints / contentStore 与
 	// templatePreview / instances 两个端口），其余跨模块能力一律经 svc 取用。
 	svc *workbenchservice.Service
-	// overviewOrders / overviewAnalytics / overviewPageKinds 概览页的三个跨模块只读端口
-	//（经 SetOverviewPorts 注入；任一为 nil 时对应块按空态渲染，见 dashboard_overview.go）。
-	overviewOrders    OverviewOrderPort
-	overviewAnalytics OverviewAnalyticsPort
-	overviewPageKinds OverviewPageKindPort
+	// overviewOrders / overviewAnalytics / overviewPageKinds / overviewCurrencies 概览页的
+	// 四个跨模块只读端口（经 SetOverviewPorts 注入；任一为 nil 时对应块按空态渲染，
+	// 见 dashboard_overview.go）。overviewCurrencies 缺省时金额不带符号前缀。
+	overviewOrders     OverviewOrderPort
+	overviewAnalytics  OverviewAnalyticsPort
+	overviewPageKinds  OverviewPageKindPort
+	overviewCurrencies OverviewCurrencyPort
 }
 
 // TemplatePreviewPort 模板工作台预览所需的最窄 presentation 能力。

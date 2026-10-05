@@ -22,6 +22,7 @@ import (
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	orderdto "go_wp/internal/module/order/dto"
 	pageenums "go_wp/internal/module/page/enums"
+	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -66,6 +67,15 @@ type OverviewAnalyticsPort interface {
 // OverviewPageKindPort 路径 → 页面类型（判断哪些浏览发生在文章页上）。
 type OverviewPageKindPort interface {
 	KindsOfPaths(ctx context.Context, projectID string, paths []string) (map[string]string, error)
+}
+
+// OverviewCurrencyPort 货币符号来源（后台数据字典的 currency 类型）。
+//
+// 符号的**唯一来源是那张字典表**（sys_dict，运营可增删货币），不要在代码里
+// 另建一份代码→符号的映射：两份会漂移，而漂移的表现是「后台加了港币、
+// 概览页显示的仍是三字母代码」，不报错、也没人知道该改哪一处。
+type OverviewCurrencyPort interface {
+	ListDictOptions(ctx context.Context, dictType string) ([]sysconfigdto.DictOption, error)
 }
 
 // overviewKPI KPI 卡片的数字（除「待发货 / 待付款」两个状态计数外，全部为**当前区间**口径）。
@@ -188,10 +198,40 @@ type overviewSnapshot struct {
 // 用 setter 而不是加 SetupWorkbenchRoutes 的形参：那个签名已被装配层与测试多处调用，
 // 加参数会波及所有调用点（而这里注入的是「概览页专有的三个可选依赖」）。
 // 任一参数为 nil 表示该块不可用，页面按空态渲染（不 panic、不 500）。
-func (h *Handle) SetOverviewPorts(orders OverviewOrderPort, analytics OverviewAnalyticsPort, pageKinds OverviewPageKindPort) {
+func (h *Handle) SetOverviewPorts(orders OverviewOrderPort, analytics OverviewAnalyticsPort,
+	pageKinds OverviewPageKindPort, currencies OverviewCurrencyPort) {
 	h.overviewOrders = orders
 	h.overviewAnalytics = analytics
 	h.overviewPageKinds = pageKinds
+	h.overviewCurrencies = currencies
+}
+
+// currencySymbol 取默认货币的符号（取不到时回落到货币代码本身）。
+//
+// 每次进概览页读一次字典：这张表运营可能随时改（加货币、改符号），
+// 而概览页本来就在做十几次跨模块查询，多这一次可以忽略；缓存反而会让
+// 「刚在后台把 ¥ 改成 ￥」这件事在界面上不生效，且不知道要等多久。
+func (h *Handle) currencySymbol(ctx context.Context) string {
+	code := strings.TrimSpace(i18n.GetDefaultCurrency())
+	if h.overviewCurrencies == nil || code == "" {
+		return code
+	}
+	opts, err := h.overviewCurrencies.ListDictOptions(ctx, "currency")
+	if err != nil {
+		// 读不到字典不是错误：金额照常显示，只是没有符号前缀。
+		// 把整张卡打空比少一个符号糟得多。
+		return code
+	}
+	for _, o := range opts {
+		if !strings.EqualFold(strings.TrimSpace(o.Code), code) {
+			continue
+		}
+		if sym := strings.TrimSpace(o.Symbol); sym != "" {
+			return sym
+		}
+		return code
+	}
+	return code
 }
 
 // collectOverview 汇总全部工程的概览数据（任一模块失败只影响它自己的块）。
@@ -206,8 +246,8 @@ func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng o
 	h.collectViews(ctx, projectIDs, rng, &snap, viewsByDay, viewsByPath)
 	// 趋势图在收完两块数据之后一次装配：两张图共用一根日期轴，
 	// 各画各的柱子（销售额图与浏览量图），所以合并只做一次。
-	snap.Trend = buildTrend(byDay, viewsByDay, rng.Weekly)
-	snap.KPI.RangeSalesLabel = moneyLabel(snap.KPI.RangeSalesCents)
+	snap.Trend = buildTrend(byDay, viewsByDay, rng.Weekly, h.currencySymbol(ctx))
+	snap.KPI.RangeSalesLabel = moneyLabel(snap.KPI.RangeSalesCents, h.currencySymbol(ctx))
 	snap.PortsReady = snap.OrdersReady && snap.AnalyticsReady
 	return snap
 }
@@ -390,7 +430,7 @@ const (
 //
 // 柱宽由**点数**决定（早先是固定步长 70）：固定步长在 30 天的区间上会画到 viewBox
 // 之外被裁掉，用户看到的是半张图而页面不会报任何错。
-func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int64, weekly bool) []overviewTrendPoint {
+func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int64, weekly bool, symbol string) []overviewTrendPoint {
 	buckets := make(map[string]*overviewTrendPoint, len(byDay)+len(viewsByDay))
 	bucketKey := func(day string) string {
 		if weekly {
@@ -434,7 +474,7 @@ func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int6
 		}
 	}
 	for i := range points {
-		points[i].SalesLabel = moneyLabel(points[i].NetSales)
+		points[i].SalesLabel = moneyLabel(points[i].NetSales, symbol)
 		if len(points[i].Day) >= 10 {
 			points[i].DayLabel = points[i].Day[5:10]
 		} else {
@@ -576,18 +616,22 @@ func buildTop(products []overviewTopProduct) []overviewTopProduct {
 	return products
 }
 
-// moneyLabel 分 → 展示串（默认货币 + 两位小数 + 千分位）。
+// moneyLabel 分 → 展示串（货币符号 + 两位小数 + 千分位）。
+//
+// symbol 由调用方从后台字典取（见 currencySymbol），本函数只负责拼。
 //
 // 与 order/cart 的两处换算不是同一件事：那边一个给「X 元」拼句用（裸数字）、
 // 一个给购物车行用（¥ 前缀无千分位），这里是概览 KPI 的展示形态。
 // 跨工程求和必须在本层重算 —— 上游给的是**单个工程**的 label，直接相加是错的。
-func moneyLabel(cents int64) string {
-	currency := strings.TrimSpace(i18n.GetDefaultCurrency())
+func moneyLabel(cents int64, symbol string) string {
 	raw := formatCents(cents)
-	if currency == "" {
+	sym := strings.TrimSpace(symbol)
+	if sym == "" {
 		return raw
 	}
-	return currency + " " + raw
+	// 符号紧贴数字（¥300.50），不留空格 —— 符号与代码不是一类东西：
+	// 「CNY 300.50」是把口径标识当符号用，人读的是符号，数字紧跟符号才是金额的样子。
+	return sym + raw
 }
 
 // formatCents 分 → 千分位 + 两位小数（纯数字，不含货币）。

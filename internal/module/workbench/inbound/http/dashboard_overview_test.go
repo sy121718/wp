@@ -9,11 +9,13 @@ package workbenchhttp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	orderdto "go_wp/internal/module/order/dto"
 	pageenums "go_wp/internal/module/page/enums"
+	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 )
 
 type stubOrderPort struct {
@@ -173,7 +175,7 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	}}
 
 	h := &Handle{}
-	h.SetOverviewPorts(orders, analytics, kinds)
+	h.SetOverviewPorts(orders, analytics, kinds, nil)
 	snap := h.collectOverview(context.Background(), []string{"p1", "p2"}, testRange())
 
 	if !snap.PortsReady {
@@ -185,7 +187,10 @@ func TestCollectOverviewAggregatesAcrossProjects(t *testing.T) {
 	if snap.KPI.RangeSalesCents != 30050 {
 		t.Errorf("区间销售额 = %d 分，期望 30050", snap.KPI.RangeSalesCents)
 	}
-	if snap.KPI.RangeSalesLabel != "CNY 300.50" && snap.KPI.RangeSalesLabel != "300.50" {
+	// 符号取自后台数据字典；本用例没注入字典，回落的形态是「货币代码紧贴数字」
+	//（不带空格 —— 代码是口径标识，界面上不该出现「CNY 300.50」这种把标识当符号的写法）。
+	// 注入字典后这里会是 ¥300.50，见 TestOverviewSalesLabelUsesDictSymbol。
+	if snap.KPI.RangeSalesLabel != "CNY300.50" && snap.KPI.RangeSalesLabel != "300.50" {
 		t.Errorf("销售额展示串 = %q（货币由站点默认货币决定）", snap.KPI.RangeSalesLabel)
 	}
 	if snap.KPI.ShipPendingCount != 5 || snap.KPI.PendingCount != 1 {
@@ -292,7 +297,7 @@ func TestCollectOverviewKeepsOtherBlocksWhenOneFails(t *testing.T) {
 	kinds := &stubPageKindPort{byProject: map[string]map[string]string{"p1": {"/blog/a": "article"}}}
 
 	h := &Handle{}
-	h.SetOverviewPorts(orders, analytics, kinds)
+	h.SetOverviewPorts(orders, analytics, kinds, nil)
 	snap := h.collectOverview(context.Background(), []string{"p1"}, testRange())
 
 	if snap.KPI.RangeOrders != 0 || len(snap.Trend) != 0 || len(snap.Top) != 0 {
@@ -372,7 +377,7 @@ func TestOverviewKPIIncludesNewCustomers(t *testing.T) {
 		"p2": {ProjectID: "p2", NewCustomers: 3},
 	}}
 	h := &Handle{}
-	h.SetOverviewPorts(orders, nil, nil)
+	h.SetOverviewPorts(orders, nil, nil, nil)
 	rng := testRange()
 	snap := h.collectOverview(context.Background(), []string{"p1", "p2"}, rng)
 
@@ -385,5 +390,50 @@ func TestOverviewKPIIncludesNewCustomers(t *testing.T) {
 	if orders.growthReq.From != rng.From || orders.growthReq.To != rng.To {
 		t.Errorf("传下去的区间应与页面区间一致：got %s~%s, want %s~%s",
 			orders.growthReq.From, orders.growthReq.To, rng.From, rng.To)
+	}
+}
+
+// stubCurrencyPort 只给 currency 字典供数。
+type stubCurrencyPort struct {
+	opts []sysconfigdto.DictOption
+	err  error
+}
+
+func (s *stubCurrencyPort) ListDictOptions(context.Context, string) ([]sysconfigdto.DictOption, error) {
+	return s.opts, s.err
+}
+
+// 金额前缀用**字典里的符号**，不是货币代码。
+//
+// 判据：界面上写「CNY 300.50」是把口径标识当符号用 —— 人读的是 ¥。
+// 而符号的唯一来源是后台那张字典表（运营可增删货币），代码里另建一份映射必然漂移，
+// 漂移的表现是「后台加了港币、概览页仍显示三字母代码」，不报错也没人知道改哪。
+func TestOverviewSalesLabelUsesDictSymbol(t *testing.T) {
+	orders := &stubOrderPort{summary: map[string]*orderdto.OrderRangeSummaryResp{
+		"p1": {OrderCount: 1, NetSales: 12345, NetSalesLabel: "123.45"},
+	}}
+	h := &Handle{}
+	h.SetOverviewPorts(orders, nil, nil, &stubCurrencyPort{opts: []sysconfigdto.DictOption{
+		{Code: "CNY", Label: "CNY ¥", Symbol: "¥"},
+	}})
+	snap := h.collectOverview(context.Background(), []string{"p1"}, testRange())
+	if snap.KPI.RangeSalesLabel != "¥123.45" {
+		t.Fatalf("销售额应用字典里的符号，实得 %q", snap.KPI.RangeSalesLabel)
+	}
+}
+
+// 字典读不到时金额照常显示（只是没有符号）—— 不能因为查字典失败把整张卡打空。
+func TestOverviewSalesLabelSurvivesDictFailure(t *testing.T) {
+	orders := &stubOrderPort{summary: map[string]*orderdto.OrderRangeSummaryResp{
+		"p1": {OrderCount: 1, NetSales: 12345, NetSalesLabel: "123.45"},
+	}}
+	h := &Handle{}
+	h.SetOverviewPorts(orders, nil, nil, &stubCurrencyPort{err: errors.New("字典暂时读不到")})
+	snap := h.collectOverview(context.Background(), []string{"p1"}, testRange())
+	if snap.KPI.RangeSalesLabel == "" {
+		t.Fatal("字典失败不该让销售额为空")
+	}
+	if !strings.Contains(snap.KPI.RangeSalesLabel, "123.45") {
+		t.Errorf("金额本身要照常显示，实得 %q", snap.KPI.RangeSalesLabel)
 	}
 }

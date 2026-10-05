@@ -239,7 +239,7 @@ func TestBuildTrendWeeklyMergesViews(t *testing.T) {
 	}
 	views := map[string]int64{"2026-09-29": 10, "2026-10-01": 5}
 
-	got := buildTrend(byDay, views, true)
+	got := buildTrend(byDay, views, true, "¥")
 	if len(got) != 1 {
 		t.Fatalf("同一 ISO 周的三天应合并成 1 根柱子，实得 %d：%+v", len(got), got)
 	}
@@ -256,7 +256,7 @@ func TestBuildTrendWeeklyMergesViews(t *testing.T) {
 	}
 
 	// 按天时三天各一根。
-	daily := buildTrend(byDay, views, false)
+	daily := buildTrend(byDay, views, false, "¥")
 	if len(daily) != 3 {
 		t.Errorf("按天应得到 3 根柱子（订单两天 + 只有浏览的一天），实得 %d", len(daily))
 	}

@@ -134,24 +134,25 @@
        还挤掉了真正独立的两项（新客、浏览）。合并后销售数据卡内部用 .stat-card-inline
        排成一行，点任一数字进订单页（带得上的 status 筛选就带上）。 *}
     <div class="stat-grid stat-grid-three">
+        {* 口径说明一律走 title 悬浮，不在卡面上再占一行 ——
+           卡片要读的是数字，注解是「想知道才看」的第二层信息。
+           注意 title 挂的是**每一格的容器**而不是整张卡：一格一个口径，
+           挂到卡上会让三格共用一句说不清的说明。 *}
         <a class="card stat-card stat-card-link" href="/admin/orders?status=paid">
             <span class="stat-icon" aria-hidden="true">⌁</span>
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.salesData", "销售数据") }}</div>
             <div class="stat-inline-row">
-                <div class="stat-card-inline">
+                <div class="stat-card-inline" title="{{ .["t"]("admin.dashboard.kpi.ordersNote", "区间内创建的全部订单（含取消）") }}">
                     <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.orders", "订单数") }}</div>
                     <div class="stat-value-sm">{{.Overview.KPI.RangeOrders}}</div>
-                    <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.ordersNote", "区间内创建的全部订单（含取消）") }}</div>
                 </div>
-                <div class="stat-card-inline">
-                    <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.sales", "净销售额") }}</div>
+                <div class="stat-card-inline" title="{{ .["t"]("admin.dashboard.kpi.salesNote", "已扣掉已收货退款的部分") }}">
+                    <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.sales", "销售额") }}</div>
                     <div class="stat-value-sm">{{.Overview.KPI.RangeSalesLabel}}</div>
-                    <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.salesNote", "净额（已扣已收货退款）") }}</div>
                 </div>
-                <div class="stat-card-inline">
+                <div class="stat-card-inline" title="{{ .["t"]("admin.dashboard.kpi.pendingNote", "待付款：") }}{{.Overview.KPI.PendingCount}}">
                     <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.shipPending", "待发货") }}</div>
                     <div class="stat-value-sm">{{.Overview.KPI.ShipPendingCount}}</div>
-                    <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pendingNote", "待付款：") }}{{.Overview.KPI.PendingCount}}</div>
                 </div>
             </div>
         </a>
@@ -160,18 +161,17 @@
            两页会显示两段不同时间的新客数，而看起来都像对的。
            custom 档客户概览页不认（它会回落默认档）—— 这是刻意的：那页只有预设，
            与其在两个页面里各维护一套自定义区间收敛规则，不如让链接退化到默认。 *}
-        <a class="card stat-card stat-card-link" href="/admin/customers/overview?range={{.Overview.Range.Key}}">
+        <a class="card stat-card stat-card-link" href="/admin/customers/overview?range={{.Overview.Range.Key}}"
+           title="{{ .["t"]("admin.dashboard.kpi.newCustomersNote", "首次下单落在这段时间") }}">
             <span class="stat-icon" aria-hidden="true">＋</span>
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.newCustomers", "新客户") }}</div>
             <div class="stat-value">{{.Overview.KPI.NewCustomers}}</div>
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.newCustomersNote", "首次下单落在这段时间") }}</div>
         </a>
-        <div class="card stat-card">
+        <div class="card stat-card"
+             title="{{ .["t"]("admin.dashboard.kpi.pageViewsNote", "全站路径；其中文章页：") }}{{.Overview.KPI.ArticleViews}}">
             <span class="stat-icon" aria-hidden="true">◉</span>
             <div class="stat-label">{{ .["t"]("admin.dashboard.kpi.pageViews", "页面浏览") }}</div>
             <div class="stat-value">{{.Overview.KPI.PageViews}}</div>
-            {* 文章页那部分是路径排行的下界（只取前 N 条路径），措辞用「其中」而不是「其中全部」。 *}
-            <div class="stat-note">{{ .["t"]("admin.dashboard.kpi.pageViewsNote", "全站路径；其中文章页：") }}{{.Overview.KPI.ArticleViews}}</div>
         </div>
     </div>
 

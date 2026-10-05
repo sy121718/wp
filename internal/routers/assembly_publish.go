@@ -747,7 +747,9 @@ func (a *assembly) mountAdminPages() {
 	// 概览页的跨模块只读数据：订单聚合（KPI / 趋势 / 榜单）、访问统计（浏览量）、
 	// 页面类型（判断哪些浏览发生在文章页上）。三者在此处都已装配完毕
 	//（buildAPIAndCoreCRUD → buildIdentityAndCommerce → wireRuntimeAccessFace → 本步）。
-	workbenchHandle.SetOverviewPorts(a.orderSvc, a.analyticsSvc, a.pageService)
+	// 第四个参数是货币符号的来源（后台数据字典的 currency 类型）——
+	// 界面上写「CNY 300.50」是把口径标识当符号用；符号只有那一张表说了算。
+	workbenchHandle.SetOverviewPorts(a.orderSvc, a.analyticsSvc, a.pageService, a.sysConfigDict)
 	marks.mark(portDashboardOverview)
 	// 蓝图（审计 VIS-010）已作为 workbench Setup 的参数传入，端口标记保留。
 	marks.mark(portDashboardBlueprints)

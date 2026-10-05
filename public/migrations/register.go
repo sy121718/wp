@@ -248,6 +248,7 @@ func init() {
 	registerAIFabDismissI18n()
 	registerDashboardAIChipsI18n()
 	registerDashboardAIResumeI18n()
+	registerDashboardKPIWordingI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

@@ -2325,7 +2325,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     margin-top: 4px;
     color: var(--dash-text);
 }
-.stack.dash-page .stat-note { font-size: 10px; margin-top: 5px; color: var(--dash-muted); }
 /* 卡片右上角的浅底图标（设计稿的 .kpi-icon）。纯装饰，aria-hidden。 */
 .stack.dash-page .stat-icon {
     position: absolute;
@@ -2385,4 +2384,18 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 }
 .stack.dash-page .dash-ai[data-ai-fab-has-history]:not(.is-asking) .dash-ai-resume {
     display: inline-block;
+}
+
+/* 概览页 KPI 卡片：口径说明改走 title 悬浮后，卡面只剩标签与数字。
+   原生 tooltip 没有任何「这里还能看」的视觉提示，所以给带 title 的元素
+   补一个虚线下划线 —— 有提示但不占位，与「注解不该占卡面」这条不冲突。 */
+.stack.dash-page .stat-card[title],
+.stack.dash-page .stat-card-inline[title] {
+    cursor: help;
+}
+.stack.dash-page .stat-card[title] .stat-label,
+.stack.dash-page .stat-card-inline[title] .stat-label {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
 }

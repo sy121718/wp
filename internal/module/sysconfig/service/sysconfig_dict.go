@@ -28,15 +28,17 @@ func (s *Service) ListDictOptions(ctx context.Context, dictType string) (res []s
 	for i := range rows {
 		r := rows[i]
 		label := r.Code
+		symbol := ""
 		if dictType == sysconfigmodel.DictTypeCurrency {
 			if sym := strings.TrimSpace(r.Symbol); sym != "" {
 				label = r.Code + " " + sym
+				symbol = sym
 			}
 		} else if url := strings.TrimSpace(r.URLCode); url != "" && url != r.Code {
 			// 语言：短码与 code 不同时带上（运营要能看出 URL 里会出现什么）。
 			label = r.Code + "（/" + url + "）"
 		}
-		res = append(res, sysconfigdto.DictOption{Code: r.Code, Label: label, UIAvailable: r.UIAvailable})
+		res = append(res, sysconfigdto.DictOption{Code: r.Code, Label: label, Symbol: symbol, UIAvailable: r.UIAvailable})
 	}
 	return res, nil
 }

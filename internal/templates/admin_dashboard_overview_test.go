@@ -106,7 +106,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 			{Key: "month", LabelKey: "admin.dashboard.range.month", Label: "本月", URL: "/admin?range=month"},
 		},
 		KPI: tmplOverviewKPI{
-			RangeOrders: 12, RangeSalesLabel: "CNY 1,234.50",
+			RangeOrders: 12, RangeSalesLabel: "¥1,234.50",
 			RangeItems: 23, PageViews: 456,
 			ArticleViews: 88, NewCustomers: 7, ShipPendingCount: 3, PendingCount: 2,
 		},
@@ -114,7 +114,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 			// 09-29：有单但金额为 0（金额口径与件数不同），浏览量那套柱高不为 0 ——
 			// 两条数据放在一起才能证明两张图各用各的字段。
 			{Day: "2026-09-29", DayLabel: "09-29", Orders: 1, SalesLabel: "CNY 0.00", Views: 40, SalesHeightPct: 4, ViewsHeightPct: 66, X: 1, BarWidth: 68, ShowLabel: true},
-			{Day: "2026-10-05", DayLabel: "10-05", Orders: 12, SalesLabel: "CNY 1,234.50", Views: 60, SalesHeightPct: 100, ViewsHeightPct: 100, X: 71, BarWidth: 68, ShowLabel: true},
+			{Day: "2026-10-05", DayLabel: "10-05", Orders: 12, SalesLabel: "¥1,234.50", Views: 60, SalesHeightPct: 100, ViewsHeightPct: 100, X: 71, BarWidth: 68, ShowLabel: true},
 		},
 		Top: []tmplTopProduct{
 			{Rank: 1, ProductName: "TEO 香水 50ml", SKU: "TEO-50-01", Quantity: 5, AmountLabel: "CNY 400.00"},
@@ -130,9 +130,11 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"订单数", "净销售额", "CNY 1,234.50",
+		// 金额用**货币符号**紧贴数字（¥1,234.50），不是货币代码加空格 ——
+		// 「CNY 300.50」是把口径标识当符号用；符号来自后台字典的 symbol 列。
+		"订单数", "销售额", "¥1,234.50",
 		"页面浏览", "456", "全站路径；其中文章页：", "88", "待发货",
-		// 六卡合并成三卡后新增的卡标题与卡内横排容器（订单数 / 净销售额 / 待发货
+		// 六卡合并成三卡后新增的卡标题与卡内横排容器（订单数 / 销售额 / 待发货
 		// 三项同属「已付款」口径，拆成三张卡等于用三张卡讲同一句话）。
 		"销售数据", "stat-grid-three", "stat-inline-row",
 		// AI 提问区：结构与悬浮球同构（同一组 data-ai-fab-* 钩子），
