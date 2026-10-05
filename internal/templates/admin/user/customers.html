@@ -25,6 +25,8 @@
 {{fSegmentTo := .FilterSegmentTo}}
 {{fMinOrders := .FilterMinOrders}}
 {{fRfm := .FilterRfm}}
+{{fTier := .FilterTier}}
+{{tiers := .TierOptions}}
 {{fPage := .Page}}
 {{fLimit := .Limit}}
 <div class="stack customers-page">
@@ -119,6 +121,14 @@
                         <option value="low_value"{{if fRfm == "low_value"}} selected{{end}}>{{ .["t"]("admin.customers.rfm.low_value", "一般") }}</option>
                     </select>
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.rfm.note", "分段按所选时间段内的 RFM 总分划分（≥12 高价值 / ≥8 潜力）；三项分数都是相对分，换个时间段会变。与上面的「消费分段」同时选时两个条件都要成立。") }}</span>
+                    <label for="customers-filter-tier">{{ .["t"]("admin.customers.field.tier", "会员等级") }}</label>
+                    <select class="form-select" id="customers-filter-tier" name="tier">
+                        <option value=""{{if fTier == ""}} selected{{end}}>{{ .["t"]("admin.customers.tier.none", "不限等级") }}</option>
+                        {{range _, t := tiers}}
+                        <option value="{{t.ID}}"{{if fTier == t.ID}} selected{{end}}>{{t.Name}}</option>
+                        {{end}}
+                    </select>
+                    <span class="text-mute text-sm">{{ .["t"]("admin.customers.tier.note", "等级由会员模块按消费门槛自动评定（或后台手工指定）；与上面几个条件同时选时全部都要成立。") }}</span>
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.segment.note", "不选时间就是本月；只统计已付款及以后的订单，游客单不计入。") }}</span>
                 </div>
                 <div class="filter-field">
@@ -166,6 +176,7 @@
             <input type="hidden" name="segment" value="{{fSegment}}">
             <input type="hidden" name="minOrders" value="{{fMinOrders}}">
             <input type="hidden" name="rfm" value="{{fRfm}}">
+            <input type="hidden" name="tier" value="{{fTier}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
@@ -282,6 +293,7 @@
             <input type="hidden" name="segment" value="{{fSegment}}">
             <input type="hidden" name="minOrders" value="{{fMinOrders}}">
             <input type="hidden" name="rfm" value="{{fRfm}}">
+            <input type="hidden" name="tier" value="{{fTier}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">
@@ -301,6 +313,7 @@
             <input type="hidden" name="segment" value="{{fSegment}}">
             <input type="hidden" name="minOrders" value="{{fMinOrders}}">
             <input type="hidden" name="rfm" value="{{fRfm}}">
+            <input type="hidden" name="tier" value="{{fTier}}">
             <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
             <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
             <input type="hidden" name="page" value="{{fPage}}">

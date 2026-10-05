@@ -230,6 +230,8 @@ func init() {
 	registerCustomerMinOrdersI18n()
 	// 564：客户列表「RFM 分段」筛选词条（见 register_customer_rfm_filter_i18n.go）。
 	registerCustomerRfmFilterI18n()
+	// 565：客户列表「会员等级」筛选词条（见 register_customer_tier_filter_i18n.go）。
+	registerCustomerTierFilterI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

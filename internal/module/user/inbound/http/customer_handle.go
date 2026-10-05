@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	membershipcontract "go_wp/internal/module/membership/contract"
+	membershipdto "go_wp/internal/module/membership/dto"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -182,6 +183,20 @@ type customerPageHandle struct {
 	rfm ordercontract.CustomerRfmReader
 	// cohort 群组留存矩阵（Cohort 分析页）。
 	cohort ordercontract.CustomerCohortReader
+	// membershipAdmin / membershipTiers 会员等级维度的筛选（客户列表 ?tier=）。
+	//
+	// **与上面的 membership（Reader）是两个不同的端口**：Reader 读某一个人的等级，
+	// 这两个是「按等级反查一批人」（归属列表）与「列出可选等级」（等级配置）。
+	// 收窄到这两个只读接口 —— 客户列表不该有改等级 / 解锁 / 重算的能力。
+	membershipAdmin membershipcontract.AssignmentAdminPort
+	membershipTiers membershipcontract.TierAdminPort
+}
+
+// SetMembershipFilters 注入会员等级筛选的两个只读端口（允许为 nil：页面据此
+// 渲染「按等级筛选暂时不可用」，而不是静默不筛）。
+func (h *customerPageHandle) SetMembershipFilters(admin membershipcontract.AssignmentAdminPort, tiers membershipcontract.TierAdminPort) {
+	h.membershipAdmin = admin
+	h.membershipTiers = tiers
 }
 
 // SetCustomerCohort 注入群组留存端口（允许为 nil：分析页会明确说「暂时不可用」，
@@ -241,6 +256,11 @@ type customerFilter struct {
 	// 它单独存在（而不是并进 Segment）：「下过 ≥3 单的客户」本身就是完整的一句话，
 	// 不选分段也该能筛。给了次数不选分段时，订单模块按「复购」处理（同一段代码）。
 	MinOrders int
+	// TierID 会员等级（0 = 不限）。
+	//
+	// 这一维问的是「会员模块怎么给这个人定的级」，与订单行为、RFM 都不相干 ——
+	// 三个筛选同时给出时必须**同时**成立（见 CustomersPage 的两两求交）。
+	TierID int64
 	// RfmSegment RFM 分段：""（全部）/ vip / potential / low_value。
 	//
 	// **与 Segment 是两套不同的分段**：那三个看下单行为（新客 / 回头客 / 复购），
@@ -288,6 +308,25 @@ func customerPageRfmSegment(v string) string {
 		return trimmed
 	}
 	return ""
+}
+
+// customerPageTierID 等级查询值 → 等级 ID（认不出或非正数一律回落 0 = 不限）。
+//
+// **与「等级已被删除」的情形刻意区分开**：URL 里带着一个下拉框中已不存在的 id 时，
+// 这里照旧把它当筛选条件传下去（结果是零个人），而不是回落成「不限等级」。
+// 后者会让页面显示全部客户 —— 用户以为筛过了，实际筛选已被静默取消。
+// 下拉框此时会显示「不限等级」（浏览器找不到匹配项就选第一项），与 URL 不一致，
+// 但那是「这个等级没了」的正确表现：结果为零，用户会去看原因。
+//
+// 这里**不能**像分段那样查白名单表：等级是运营自己建的，ID 事先不知道。
+// 回落 0 而不是报错（URL 可编辑），但真正的归属判定在会员模块 ——
+// 一个不存在的 id 查出来就是零个人，那是正确结果。
+func customerPageTierID(v string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }
 
 // customerPageMinOrders 次数查询值 → 已知档位（认不出一律回落 0）。
@@ -401,6 +440,7 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		SegmentTo:      strings.TrimSpace(c.Query("segmentTo")),
 		MinOrders:      customerPageMinOrders(c.Query("minOrders")),
 		RfmSegment:     customerPageRfmSegment(c.Query("rfm")),
+		TierID:         customerPageTierID(c.Query("tier")),
 	}
 
 	// 回显走 customerPageFacingText（判定 + 取译文）：白名单里是 item_key，
@@ -423,7 +463,12 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	if rfmErr != "" {
 		pageErr = customerFirstNonEmpty(pageErr, rfmErr)
 	}
-	filterIDs := intersectCustomerIDs(segIDs, rfmIDs)
+	// 会员等级是**第三维**：三维都要成立，所以逐次求交（每步都保留 nil/空切片 的区别）。
+	tierIDs, tierErr := h.tierCustomerIDs(ctx, filter)
+	if tierErr != "" {
+		pageErr = customerFirstNonEmpty(pageErr, tierErr)
+	}
+	filterIDs := intersectCustomerIDs(intersectCustomerIDs(segIDs, rfmIDs), tierIDs)
 
 	var list *userdto.CustomerListResp
 	switch {
@@ -434,10 +479,12 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		// 分段没取到就不查列表：查出来的是「全部客户」，而页面上写着「新客」。
 		_ = segErr
 	case rfmErr != "":
-		// RFM 分段同理。**两个分支都要有**：只挡消费分段时，RFM 那一维失败会
-		// 一路走到 default 查出全部客户，而页面上写着「高价值」——
+		// RFM 分段同理。**每一个「会取 id 的维度」都要有自己的分支**：漏一个，
+		// 那一维失败就会一路走到 default 查出全部客户，而页面上写着那个筛选条件 ——
 		// 这正是「筛不出来显示成全部客户」最容易被相信的形态。
 		_ = rfmErr
+	case tierErr != "":
+		_ = tierErr
 	default:
 		res, err := h.users.ListCustomers(ctx, &userdto.CustomerListReq{
 			Keyword:        filter.Keyword,
@@ -457,7 +504,11 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		}
 	}
 
-	data := shell.Prepare(c, customerListPageData(tr, list, filter, page, limit, pageErr, pageOk, h.users == nil))
+	data := customerListPageData(tr, list, filter, page, limit, pageErr, pageOk, h.users == nil)
+	// 等级下拉的选项要现场取（等级是运营自建的，不是常量表）：
+	// 取不到时给空切片，页面渲染成只有「不限等级」一项 —— 而不是整个下拉消失。
+	data["TierOptions"] = h.membershipTierOptions(ctx)
+	data = shell.Prepare(c, data)
 	// 批量动作的结果摘要经 ?done= 回带（单条动作仍走 ?ok= / ?err=，见 customerBulkRedirect）。
 	// 读侧过受控出口（customerPageDone）：查询参数是用户可编辑的，未命中落空串。
 	// 可选键：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。
@@ -965,6 +1016,92 @@ func intersectCustomerIDs(a, b []int64) []int64 {
 		if inA[id] {
 			out = append(out, id)
 		}
+	}
+	return out
+}
+
+// 会员等级筛选的边界。
+const (
+	// membershipFilterPageSize 一次向会员模块要多少人（200 是会员模块自己的单页上限）。
+	membershipFilterPageSize = 200
+	// membershipFilterMaxPages 最多翻几页。
+	//
+	// 客户列表把这一批 id 当过滤条件用，所以要尽量取全；但「取全」在极端情况下
+	// （某等级几万人）会变成一次几十页的循环。翻到上限时**必须明说**，不能静静地
+	// 只筛前 N 个人 —— 那种结果看起来完全正常，只是少了一批人。
+	membershipFilterMaxPages = 5
+)
+
+// membershipFilterTruncatedText 达到翻页上限时的归口文案。
+//
+// 达到上限时**整维当作失败**（不交出那部分 id）：交出一半 id 会让页面显示一个
+// 看起来正常、只是少了一批人的列表 —— 而用户无从知道少了。明说「筛不了、请收窄」
+// 是唯一不会静默出错的形态。
+const membershipFilterTruncatedText = "该会员等级的人数超过筛选上限，无法作为筛选项使用。请配合其它条件一起筛。"
+
+// tierCustomerIDs 把「会员等级」换成一批客户 id（三态同 segmentCustomerIDs）。
+func (h *customerPageHandle) tierCustomerIDs(ctx context.Context, f customerFilter) ([]int64, string) {
+	if f.TierID <= 0 {
+		return nil, ""
+	}
+	if h.membershipAdmin == nil || h.projects == nil {
+		return nil, membershipFilterUnavailableText
+	}
+	list, perr := h.projects.List(ctx)
+	if perr != nil {
+		return nil, membershipFilterUnavailableText
+	}
+	if len(list) == 0 {
+		// 还没建站点工程：没有任何归属可算 —— 正常状态，结果是「零个人」。
+		return []int64{}, ""
+	}
+	ids := make([]int64, 0, membershipFilterPageSize)
+	for page := 1; page <= membershipFilterMaxPages; page++ {
+		rows, err := h.membershipAdmin.ListAssignments(ctx, &membershipdto.ListAssignmentsReq{
+			ProjectID: list[0].ID,
+			TierID:    f.TierID,
+			Page:      page,
+			Size:      membershipFilterPageSize,
+		})
+		if err != nil {
+			return nil, membershipFilterUnavailableText
+		}
+		for _, row := range rows {
+			ids = append(ids, int64(row.UserID))
+		}
+		if len(rows) < membershipFilterPageSize {
+			return ids, ""
+		}
+	}
+	// 翻满上限还没取完：整维作失败（见 membershipFilterTruncatedText 的说明）。
+	return nil, membershipFilterTruncatedText
+}
+
+// membershipFilterUnavailableText 会员等级筛选不可用时的归口文案。
+const membershipFilterUnavailableText = "按会员等级筛选暂时不可用（会员模块没接上），请先用其它条件。"
+
+// membershipTierOptions 客户列表的等级下拉（按 id 升序，与会员模块的展示顺序一致）。
+//
+// 取不到时返回空切片（页面渲染成只有一个「不限等级」的选项），**不返回 nil** ——
+// 模板会 range 它，而 Jet 对 nil 求 range 是运行时错误（整页 500）。
+func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []gin.H {
+	out := []gin.H{}
+	if h.membershipTiers == nil || h.projects == nil {
+		return out
+	}
+	list, perr := h.projects.List(ctx)
+	if perr != nil || len(list) == 0 {
+		return out
+	}
+	tiers, err := h.membershipTiers.ListTiers(ctx, &membershipdto.ListTiersReq{ProjectID: list[0].ID})
+	if err != nil {
+		return out
+	}
+	for _, t := range tiers {
+		// ID 也做成字符串：模板里要与 FilterTier（字符串）比较，
+		// 而 Jet 对 int64 与 string 的 `==` 不会隐式转换（比出来恒为 false，
+		// 表现是「选中态永远停在第一项」，页面不报错）。
+		out = append(out, gin.H{"ID": strconv.FormatInt(t.ID, 10), "Name": t.Name})
 	}
 	return out
 }

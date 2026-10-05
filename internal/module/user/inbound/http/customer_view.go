@@ -53,6 +53,13 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 		"FilterSegmentTo":   filter.SegmentTo,
 		"FilterMinOrders":   customerMinOrdersQueryValue(filter.MinOrders),
 		"FilterRfm":         filter.RfmSegment,
+		"FilterTier":        customerTierQueryValue(filter.TierID),
+		// TierOptions 在这里给空切片兜底（handler 会覆盖成真实选项）。
+		// 渲染测试直接调本函数，而模板 `{{range _, t := tiers}}` 对缺席键（nil）
+		// 是**运行时错误** → 整页 500，错误信息只有模板行号。
+		// 同一个坑在客户概览/群组留存的 Columns 上踩过一次：模板会 range / len 的键，
+		// 组装函数必须给零值，不能指望调用方记得设。
+		"TierOptions":       []gin.H{},
 		"CapabilityMissing": capabilityMissing,
 		"Err":               pageErr,
 		"Ok":                pageOk,
@@ -337,9 +344,18 @@ func customerFilterValues(filter customerFilter) map[string]string {
 		"segment":     filter.Segment,
 		"minOrders":   customerMinOrdersQueryValue(filter.MinOrders),
 		"rfm":         filter.RfmSegment,
+		"tier":        customerTierQueryValue(filter.TierID),
 		"segmentFrom": filter.SegmentFrom,
 		"segmentTo":   filter.SegmentTo,
 	}
+}
+
+// customerTierQueryValue 会员等级 → 查询参数值（不筛就不写进 URL）。
+func customerTierQueryValue(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
 }
 
 // customerMinOrdersQueryValue 复购次数档位 → 查询参数值（不筛就不写进 URL）。

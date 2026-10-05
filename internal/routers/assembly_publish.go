@@ -25,6 +25,7 @@ import (
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
 	mediacontract "go_wp/internal/module/media/contract"
 	mediahttp "go_wp/internal/module/media/inbound/http"
+	membershipcontract "go_wp/internal/module/membership/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
@@ -672,8 +673,20 @@ func (a *assembly) mountAdminPages() {
 	// 与同一页的订单摘要用同一个选定工程。
 	// 最后两个参数是客户域的订单侧聚合：区间增长（客户概览页用）与分段取 id
 	//（列表按「新客 / 回头客 / 复购」筛选用）。两者都在 orderSvc 上。
+	// 客户列表的「会员等级」筛选要两个只读端口（按等级反查归属 / 列出可选等级），
+	// 它们都在 MembershipService 上：断言失败是装配缺陷（少一个方法），当场 panic
+	// 而不是传 nil —— 传 nil 会让筛选静默失效，而页面看起来完全正常。
+	membershipAdmin, membershipAdminOK := a.membershipSvc.(membershipcontract.AssignmentAdminPort)
+	if !membershipAdminOK {
+		panic("会员模块未实现 AssignmentAdminPort（客户列表按等级筛选依赖它），装配缺陷")
+	}
+	membershipTiers, membershipTiersOK := a.membershipSvc.(membershipcontract.TierAdminPort)
+	if !membershipTiersOK {
+		panic("会员模块未实现 TierAdminPort（客户列表的等级下拉依赖它），装配缺陷")
+	}
 	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
-		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc)
+		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc,
+		membershipAdmin, membershipTiers)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)

@@ -42,7 +42,9 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	growth ordercontract.CustomerGrowthReader,
 	segments ordercontract.CustomerSegmentReader,
 	rfm ordercontract.CustomerRfmReader,
-	cohort ordercontract.CustomerCohortReader) {
+	cohort ordercontract.CustomerCohortReader,
+	membershipAdmin membershipcontract.AssignmentAdminPort,
+	membershipTiers membershipcontract.TierAdminPort) {
 	if pages == nil {
 		return
 	}
@@ -58,6 +60,7 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h.SetCustomerSegments(segments)
 	h.SetCustomerRfm(rfm)
 	h.SetCustomerCohort(cohort)
+	h.SetMembershipFilters(membershipAdmin, membershipTiers)
 	pages.GET("/customers", h.CustomersPage)
 	// 客户概览：目录（客户）下的第一项。只读，走 /admin 组认证即可 ——
 	// 与列表页同源（同一张 users 表的两种看法），不另立权限点。

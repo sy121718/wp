@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	membershipdto "go_wp/internal/module/membership/dto"
 	orderdto "go_wp/internal/module/order/dto"
 )
 
@@ -373,5 +374,145 @@ func TestCustomersPageRfmWithoutPortShowsNotice(t *testing.T) {
 	}
 	if admin.lastListRe != nil {
 		t.Error("筛不了时不该照常列出全部客户 —— 「筛不出来」会显示成「全部客户」")
+	}
+}
+
+// fakeAssignments 会员归属列表（只实现客户列表用得上的两个方法所在的接口）。
+type fakeAssignments struct {
+	rows  []*membershipdto.AssignmentResp
+	err   error
+	got   *membershipdto.ListAssignmentsReq
+	calls int
+}
+
+func (f *fakeAssignments) ListAssignments(_ context.Context, req *membershipdto.ListAssignmentsReq) ([]*membershipdto.AssignmentResp, error) {
+	f.calls++
+	f.got = req
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.rows, nil
+}
+
+func (f *fakeAssignments) CountAssignments(_ context.Context, _ *membershipdto.CountAssignmentsReq) (int64, error) {
+	return int64(len(f.rows)), nil
+}
+
+// TestCustomersPageTierFiltersByIDList 按会员等级筛：把该等级的访客 id 交给客户列表。
+func TestCustomersPageTierFiltersByIDList(t *testing.T) {
+	assignments := &fakeAssignments{rows: []*membershipdto.AssignmentResp{
+		{UserID: 501}, {UserID: 502},
+	}}
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	h.SetMembershipFilters(assignments, nil)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?tier=7", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if assignments.got == nil {
+		t.Fatal("选了等级却没有向会员模块取归属")
+	}
+	if assignments.got.TierID != 7 || assignments.got.ProjectID == "" {
+		t.Errorf("传给会员模块的等级/工程不对：%+v", assignments.got)
+	}
+	if admin.lastListRe == nil || len(admin.lastListRe.UserIDs) != 2 {
+		t.Errorf("id 列表应原样传给客户列表，实得 %+v", admin.lastListRe)
+	}
+	// 一页装得下时不该多翻（翻页次数直接关系到每次打开列表的查询量）。
+	if assignments.calls != 1 {
+		t.Errorf("未满一页时应只查一次，实得 %d 次", assignments.calls)
+	}
+	if !strings.Contains(rec.Body.String(), "tier=7") {
+		t.Error("翻页/计数链接应保留 tier")
+	}
+}
+
+// TestCustomersPageTierPageSizeReachesModuleLimit 每页 200 是会员模块自己的单页上限：
+// 传更大的值会被它夹回 200，于是「翻页判满」的判据永远不成立（死循环取同一页）。
+func TestCustomersPageTierPageSizeReachesModuleLimit(t *testing.T) {
+	assignments := &fakeAssignments{}
+	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
+	h.SetMembershipFilters(assignments, nil)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?tier=3", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if assignments.got == nil || assignments.got.Size != 200 {
+		t.Errorf("每页必须是会员模块的上限 200，实得 %+v", assignments.got)
+	}
+}
+
+// TestCustomersPageTierOverflowIsNotSilentlyPartial 超过翻页上限时整维失败，
+// **不能**只交出一部分 id —— 那会显示一个看起来正常、只是少了一批人的列表。
+func TestCustomersPageTierOverflowIsNotSilentlyPartial(t *testing.T) {
+	rows := make([]*membershipdto.AssignmentResp, 200)
+	for i := range rows {
+		rows[i] = &membershipdto.AssignmentResp{UserID: uint64(1000 + i)}
+	}
+	assignments := &fakeAssignments{rows: rows}
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	h.SetMembershipFilters(assignments, nil)
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?tier=9", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if assignments.calls != 5 {
+		t.Errorf("应翻满 5 页才放弃，实得 %d 页", assignments.calls)
+	}
+	if !strings.Contains(rec.Body.String(), "超过筛选上限") {
+		t.Error("达到上限时应明说筛不了，而不是静默给一半结果")
+	}
+	if admin.lastListRe != nil {
+		t.Error("整维失败时不该照常列出全部客户")
+	}
+}
+
+// TestCustomersPageTierWithoutPortShowsNotice 会员模块没接上时明说「筛不了」。
+func TestCustomersPageTierWithoutPortShowsNotice(t *testing.T) {
+	admin := &fakeCustomerAdmin{list: customerListSample()}
+	h := NewCustomerPageHandle(admin, nil, fakeProjects{items: detailProjects()})
+	engine := newCustomerTestEngine(h)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?tier=7", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("响应 %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "按会员等级筛选暂时不可用") {
+		t.Error("端口缺席时应显示「暂时不可用」的说明")
+	}
+	if admin.lastListRe != nil {
+		t.Error("筛不了时不该照常列出全部客户")
+	}
+}
+
+// TestCustomersPageTierUnknownValueIgnored 手改出来的非法等级值回落「不限等级」。
+func TestCustomersPageTierUnknownValueIgnored(t *testing.T) {
+	assignments := &fakeAssignments{}
+	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
+	h.SetMembershipFilters(assignments, nil)
+	engine := newCustomerTestEngine(h)
+
+	for _, bad := range []string{"0", "-1", "abc", ""} {
+		assignments.calls = 0
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers?tier="+bad, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("tier=%q 不该让整页报错，实得 %d", bad, rec.Code)
+		}
+		if assignments.calls != 0 {
+			t.Errorf("tier=%q 应回落成「不限等级」，实际却去查了会员模块", bad)
+		}
 	}
 }
