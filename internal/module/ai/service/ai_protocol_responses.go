@@ -151,14 +151,34 @@ func responsesInput(msgs []aidto.ChatMessage) any {
 			})
 			continue
 		}
-		out = append(out, map[string]any{"role": m.Role, "content": m.Content})
+		out = append(out, map[string]any{"role": m.Role, "content": responsesMessageContent(m)})
 	}
 	return out
 }
 
+// responsesMessageContent 与 chatMessageContent 同职，但分片形状不同：
+// 这一族的图片是 {"type":"input_image","image_url":"<url 字符串>"}（**不是对象**），
+// 文本是 {"type":"input_text","text":...}。把 url 写成对象会被服务端按未知结构忽略，
+// 表现同样是「模型看不到图片」而请求 200。
+func responsesMessageContent(m aidto.ChatMessage) any {
+	if len(m.Images) == 0 {
+		return m.Content
+	}
+	parts := make([]map[string]any, 0, len(m.Images)+1)
+	if text := strings.TrimSpace(m.Content); text != "" {
+		parts = append(parts, map[string]any{"type": "input_text", "text": m.Content})
+	}
+	for _, url := range m.Images {
+		parts = append(parts, map[string]any{"type": "input_image", "image_url": url})
+	}
+	return parts
+}
+
 // isPlainMessage 判断一条消息能否用字符串形态表达。
 func isPlainMessage(m aidto.ChatMessage) bool {
-	return m.Role == roleUser && m.ToolCallID == "" && len(m.ToolCalls) == 0 && m.Name == ""
+	// 带图的消息不能退成裸字符串：那样图片会被静默丢掉（上游收到一个字符串，
+	// 它不知道里面该有图），而请求本身是 200。
+	return m.Role == roleUser && m.ToolCallID == "" && len(m.ToolCalls) == 0 && m.Name == "" && len(m.Images) == 0
 }
 
 // responsesTools 把工具声明翻成 responses 的 tools 形状（**扁平**，没有 chat/completions 的

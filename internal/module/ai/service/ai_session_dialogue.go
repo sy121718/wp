@@ -64,13 +64,34 @@ func (s *SessionService) RecentDialogue(ctx context.Context, key string, limit i
 			if v, ok := rows[i].Meta[eventMetaReasoning].(string); ok {
 				turn.Reasoning = v
 			}
-		} else if v, ok := rows[i].Meta[eventMetaUserText].(string); ok && strings.TrimSpace(v) != "" {
+		} else if labels := imageLabelsOf(rows[i].Meta); len(labels) > 0 {
+			turn.ImageLabels = labels
+		}
+		if v, ok := rows[i].Meta[eventMetaUserText].(string); ok && strings.TrimSpace(v) != "" {
 			// 原话优先：Content 是注入过页面上下文的那份，界面回填只该显示用户敲进去的。
 			turn.Text = strings.TrimSpace(v)
 		}
 		turns = append(turns, turn)
 	}
 	return tailDialogueTurns(turns, limit), nil
+}
+
+// imageLabelsOf 从事件 meta 里取图片标识。
+//
+// meta 是 JSON 往返过的，数组元素只会是 any（不是 string）—— 直接断言 []string
+// 永远失败，而失败的方向正是「历史里明明有图却一张都不显示」。
+func imageLabelsOf(meta map[string]any) []string {
+	raw, ok := meta[eventMetaImageLabels].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // tailDialogueTurns 只保留最后 limit 轮（从末尾往前数 limit 个 user 行）。

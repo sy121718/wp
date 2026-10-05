@@ -1965,3 +1965,75 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    输给类选择器）——不写这条，「停止」按钮在没有请求在跑的时候也是可见的，
    而它按下去什么都不会发生。仓库里同类写法见 .bulk-bar[hidden]、.perm-node[hidden]。 */
 .ai-fab-actions [hidden] { display: none; }
+
+/* 待发送图片的缩略图条（粘贴或选文件后出现在输入框上方）。
+   flex-wrap 是必须的：四张图横排会超出面板宽度，不换行就只剩最后一张可见。 */
+.ai-fab-attach {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-xs);
+    padding-bottom: var(--sp-xs);
+}
+.ai-fab-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-xs);
+    max-width: 100%;
+    padding: 2px 4px 2px 2px;
+    border: 1px solid var(--sky-c-border);
+    border-radius: var(--r-sm);
+    background: var(--sky-c-bg-soft);
+    font-size: var(--fs-sm);
+}
+.ai-fab-chip-thumb {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    object-fit: cover;
+    border-radius: var(--r-xs);
+}
+/* 名字超长时省略号截断：文件名可以是几十个字符，撑开面板会让输入框变形。 */
+.ai-fab-chip-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ai-fab-chip-del {
+    flex: 0 0 auto;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: var(--sky-c-text-mute);
+    cursor: pointer;
+}
+/* hover 一律包在 @media (hover: hover) 里：触屏上它不会消失，会**粘滞**在
+   上一次点过的那个元素上（删掉一张图之后，旁边那张看起来像被选中了）。 */
+@media (hover: hover) {
+    .ai-fab-chip-del:hover { color: var(--sky-c-danger); }
+}
+/* 只有标识、没有缩略图的那种 chip（历史轮次里的图片标识）。 */
+.ai-fab-chip-plain { padding: 2px var(--sp-sm); }
+.ai-fab-chip-icon { flex: 0 0 auto; }
+/* 选图按钮留在操作行最左：发送/停止靠右是既有约定，附件属于输入侧。 */
+.ai-fab-pick {
+    margin-right: auto;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: transparent;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+@media (hover: hover) {
+    .ai-fab-pick:hover { background: var(--sky-c-bg-soft); }
+}
+/* 一轮提问下的图片标识行：与用户气泡同侧（靠右）。 */
+.ai-turn-images {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--sp-xs);
+    margin-top: var(--sp-xs);
+}

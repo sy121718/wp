@@ -39,8 +39,8 @@ func TestSiteRulesAreByteStable(t *testing.T) {
 // TestStablePrefixOrderAndStability 前缀的顺序是契约，且两次构造逐字节一致。
 func TestStablePrefixOrderAndStability(t *testing.T) {
 	const history = "user: 这周卖得最好的是什么"
-	first := stablePrefix(history)
-	second := stablePrefix(history)
+	first := stablePrefix(history, nil)
+	second := stablePrefix(history, nil)
 	// 两段 system（规则 + 手册目录）+ 一条 user。目录为空时是两段 —— 两种情况都合法，
 	// 所以判据写成「至少两段、最后一段是 user」，而不是写死条数。
 	if len(first) < 2 || len(first) != len(second) {
@@ -75,7 +75,7 @@ func TestStablePrefixOrderAndStability(t *testing.T) {
 // 模型在会话中途是可以换的（换模型本来就会作废前缀缓存，docs/16 §3 要求把这件事单独
 // 归因）；但如果模型名被拼进前缀，换模型的影响会被误记成「缓存过期」。
 func TestStablePrefixExcludesModelName(t *testing.T) {
-	msgs := stablePrefix("user: hi")
+	msgs := stablePrefix("user: hi", nil)
 	joined := msgs[0].Content
 	for _, banned := range []string{"gpt-", "claude-", "deepseek-", "session_id", "sessionId"} {
 		if strings.Contains(joined, banned) {

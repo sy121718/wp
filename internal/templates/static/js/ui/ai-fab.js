@@ -27,6 +27,104 @@
     function answerOf(root) { return root.querySelector('[data-ai-fab-answer]'); }
     function thinkOf(root) { return root.querySelector('[data-ai-fab-think]'); }
     function thinkBodyOf(root) { return root.querySelector('[data-ai-fab-think-body]'); }
+    function attachOf(root) { return root.querySelector('[data-ai-fab-attach]'); }
+    function pickOf(root) { return root.querySelector('[data-ai-fab-pick]'); }
+    function fileOf(root) { return root.querySelector('[data-ai-fab-file]'); }
+
+    // fabImageFallbackLabel 与 ai_fab_image.go 里的同名常量对应：没有文件名时
+    // 界面上画什么。两边都写死「图片」而不是空串 —— 空串会让标识行变成
+    // 「📎 」这样一句没头没尾的话，看起来像渲染坏了。
+    var fabImageFallbackLabel = '图片';
+
+    // imagesOf 当前待发送的图片（{label, uri}），存在 root 上而不是闭包里：
+    // 一个页面上可能有两个悬浮球宿主（概览页那个常驻输入框 + 右下角球），
+    // 闭包变量会让它们互相串图。
+    function imagesOf(root) { return root.__fabImages || []; }
+
+    function clearImages(root) {
+        root.__fabImages = [];
+        renderAttach(root);
+    }
+
+    // addImageFiles 把选中的 / 粘贴的文件读成 data URI 并挂到待发送列表上。
+    //
+    // 为什么在前端读 base64 而不是上传到媒体库再传地址：上游模型在另一台机器上，
+    // 站内相对地址它取不到；而让服务端去「按地址取图」等于凭空开一个 SSRF 面
+    //（用户可控的 URL 能指到内网）。图片只给模型看，一次性的像素没必要落库。
+    function addImageFiles(root, files) {
+        if (!files || !files.length) { return; }
+        var list = imagesOf(root).slice();
+        var pending = files.length;
+        Array.prototype.forEach.call(files, function (file) {
+            if (!file || file.type.indexOf('image/') !== 0) {
+                pending -= 1;
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function () {
+                list.push({ label: file.name || fabImageFallbackLabel, uri: String(reader.result || '') });
+                pending -= 1;
+                if (pending <= 0) {
+                    root.__fabImages = list;
+                    renderAttach(root);
+                }
+            };
+            // 读失败不进列表：宁可少一张也不要塞一个空 uri 进去（那会被服务端
+            // 整批拒掉，用户看到的是「图片格式不认识」而图明明是他刚选的）。
+            reader.onerror = function () {
+                pending -= 1;
+                if (pending <= 0) {
+                    root.__fabImages = list;
+                    renderAttach(root);
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // renderAttach 画待发送图片的缩略图条。没有图时整块 hidden（不占高度）。
+    function renderAttach(root) {
+        var box = attachOf(root);
+        if (!box) { return; }
+        var list = imagesOf(root);
+        box.textContent = '';
+        if (!list.length) {
+            box.hidden = true;
+            return;
+        }
+        list.forEach(function (item, idx) {
+            var chip = document.createElement('span');
+            chip.className = 'ai-fab-chip';
+
+            var thumb = document.createElement('img');
+            thumb.className = 'ai-fab-chip-thumb';
+            thumb.src = item.uri;
+            thumb.alt = item.label;
+            chip.appendChild(thumb);
+
+            var name = document.createElement('span');
+            name.className = 'ai-fab-chip-name';
+            name.textContent = item.label;
+            chip.appendChild(name);
+
+            var del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'ai-fab-chip-del';
+            del.setAttribute('aria-label', root.getAttribute('data-image-remove-label') || '');
+            del.title = del.getAttribute('aria-label');
+            del.textContent = '✕';
+            del.addEventListener('click', function () {
+                var next = imagesOf(root).slice();
+                next.splice(idx, 1);
+                root.__fabImages = next;
+                renderAttach(root);
+            });
+            chip.appendChild(del);
+
+            box.appendChild(chip);
+        });
+        box.hidden = false;
+    }
 
     function csrfToken() {
         var meta = document.querySelector('meta[name="csrf-token"]');
@@ -67,7 +165,7 @@
     //
     // 结构化写法（turns 容器）与旧写法（面板里单个 [data-ai-fab-answer]）都支持：
     // htmx 那条非流式路径渲染的是 partials/ai_fab_result.html，它没有 turns 容器。
-    function beginTurn(root, userText) {
+    function beginTurn(root, userText, imageLabels) {
         var turns = turnsOf(root);
         if (!turns) {
             var plain = { answer: answerOf(root), think: thinkOf(root), thinkBody: thinkBodyOf(root) };
@@ -85,6 +183,14 @@
         q.className = 'ai-turn-user';
         q.textContent = userText;
         turn.appendChild(q);
+
+        // 图片标识：这一轮带了哪几张。**只画标识不画像素** —— 历史回填时像素
+        // 早已不在（图片是前端一次性读的，没落库），而用户要看的是「我当时发了图」，
+        // 不是那张图本身。本轮刚发出去的图同理：发完就把缩略图条清掉了，
+        // 留一行标识才不会让提问看起来什么附件都没带。
+        if (imageLabels && imageLabels.length) {
+            turn.appendChild(imageRow(imageLabels));
+        }
 
         // 思考过程每轮一个折叠块：几轮之后只看最后一轮的思考等于丢掉「它为什么
         // 选这个工具」——那部分恰恰在前面几轮里。
@@ -110,8 +216,8 @@
 
     // appendTurn 往面板里补一轮完整对话（用于历史回填：历史是「一条提问、
     // 一条回答」两条记录，界面上要合回一轮）。
-    function appendTurn(root, userText, answerText, reasoning) {
-        var cur = beginTurn(root, userText);
+    function appendTurn(root, userText, answerText, reasoning, imageLabels) {
+        var cur = beginTurn(root, userText, imageLabels);
         if (reasoning) {
             if (cur.think) { cur.think.hidden = false; }
             appendText(cur.thinkBody, reasoning);
@@ -143,16 +249,40 @@
                         return;
                     }
                     if (pending === null) { pending = ''; }
-                    appendTurn(root, pending, it.text, it.reasoning || '');
+                    appendTurn(root, pending, it.text, it.reasoning || '', it.imageLabels || null);
                     pending = null;
                 });
-                if (pending !== null) { beginTurn(root, pending); }
+                if (pending !== null) { beginTurn(root, pending, null); }
                 var scroller = root.querySelector('[data-ai-fab-body]');
                 if (scroller) { scroller.scrollTop = scroller.scrollHeight; }
             })
             .catch(function () {
                 // 历史读不到不是错误：面板照常可用，用户照样能提问。
             });
+    }
+
+    // imageRow 一轮提问下的图片标识行。
+    function imageRow(labels) {
+        var row = document.createElement('div');
+        row.className = 'ai-turn-images';
+        labels.forEach(function (label) {
+            var chip = document.createElement('span');
+            chip.className = 'ai-fab-chip ai-fab-chip-plain';
+
+            var icon = document.createElement('span');
+            icon.className = 'ai-fab-chip-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = '🖼';
+            chip.appendChild(icon);
+
+            var name = document.createElement('span');
+            name.className = 'ai-fab-chip-name';
+            name.textContent = label;
+            chip.appendChild(name);
+
+            row.appendChild(chip);
+        });
+        return row;
     }
 
     function setState(root, text) {
@@ -267,7 +397,14 @@
         if (!text) { return; }
         var draft = text;
 
-        var cur = beginTurn(root, draft);
+        // 图片在**发出去之前**先取快照，且必须取在 beginTurn 之前：
+        // 气泡上的标识行由 beginTurn 画，而 finish() 里会 clearImages 把列表清掉。
+        // 取晚了（或忘了提升）的表现是——图发得出去、模型也答对了，只有气泡下
+        // 少一行标识，看起来像「这条消息本来就没带图」。
+        var pendingImages = imagesOf(root);
+        var imageLabels = pendingImages.map(function (it) { return it.label; });
+
+        var cur = beginTurn(root, draft, imageLabels);
         // 带 data-ai-fab-dock 的实例（概览页那只会常驻的提问框）：一开始提问就把它
         // 沉到页面底部（.is-asking），回答长在输入框上方。不沉的话它留在页面中段，
         // 一边出回答一边把下面的卡片往下挤。
@@ -285,11 +422,20 @@
         params.set('ctxPath', location.pathname);
         params.set('ctxQuery', location.search);
         params.set('ctxTitle', document.title);
+        if (pendingImages.length) {
+            // form 里传数组只能是 JSON 字符串（URLSearchParams 对数组会摊成重复键，
+            // 而服务端读的是单个字段）。
+            params.set('images', JSON.stringify(pendingImages.map(function (it) { return it.uri; })));
+            params.set('imageLabels', JSON.stringify(imageLabels));
+        }
 
         function finish() {
             root.__fabAbort = null;
             setBusy(root, false);
             setState(root, '');
+            // 发出去就把待发送列表清掉：不清的话下一句提问会把同一批图再发一遍，
+            // 而用户以为自己只附了一次。图本身的标识已经画在那一轮的气泡上了。
+            clearImages(root);
             // 焦点回到输入框：连着问两句是常见用法，让用户还得再点一次很烦。
             input.focus();
         }
@@ -366,8 +512,35 @@
                 });
             }
 
+            var pick = pickOf(root);
+            var file = fileOf(root);
+            if (pick && file) {
+                pick.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    file.click();
+                });
+                file.addEventListener('change', function () {
+                    addImageFiles(root, file.files);
+                    // 清空 value：不然连选同一个文件两次时第二次不触发 change
+                    //（值没变），表现是「再选一次没反应」。
+                    file.value = '';
+                });
+            }
+
             var input = inputOf(root);
             if (input) {
+                // 粘贴图片：与选文件等价的一条路，且是用户最自然的动作。
+                // 剪贴板里同时有文字与图片时**不拦默认行为** —— 文字照常进输入框，
+                // 两种内容一起收到才是用户预期的结果。
+                input.addEventListener('paste', function (e) {
+                    var dt = e.clipboardData;
+                    if (!dt || !dt.files || !dt.files.length) { return; }
+                    var picked = [];
+                    Array.prototype.forEach.call(dt.files, function (f) {
+                        if (f && f.type && f.type.indexOf('image/') === 0) { picked.push(f); }
+                    });
+                    if (picked.length) { addImageFiles(root, picked); }
+                });
                 input.addEventListener('keydown', function (e) {
                     // Enter 发送、Shift+Enter 换行。中文输入法组字期间要放过 ——
                     // 否则用拼音打字时每按一次选词键都会把半截问题发出去。

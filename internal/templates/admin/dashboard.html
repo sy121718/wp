@@ -42,6 +42,7 @@
              data-think-label="{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}"
              data-thinking-label="{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}"
              data-error-label="{{ .["t"]("admin.ai.fab.failed", "这次没能拿到回答，请稍后再试。") }}"
+             data-image-remove-label="{{ .["t"]("admin.ai.fab.imageRemove", "移除这张图") }}"
              aria-label="{{ .["t"]("admin.dashboard.ai.title", "问 AI（经营数据）") }}">
         <div class="dash-ai-inner">
             <div class="dash-ai-head">
@@ -53,11 +54,17 @@
                 <p class="ai-fab-state" data-ai-fab-state hidden aria-live="polite"></p>
             </div>
             <form class="dash-ai-form" data-ai-fab-form onsubmit="return false">
+                <div class="ai-fab-attach" data-ai-fab-attach hidden></div>
                 <textarea class="form-textarea dash-ai-input" name="input" rows="2" required
                           data-ai-fab-input
                           placeholder="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？（Enter 发送，Shift+Enter 换行）") }}"
                           aria-label="{{ .["t"]("admin.dashboard.ai.placeholder", "问点什么：这两周卖得怎么样？哪几单还没发货？（Enter 发送，Shift+Enter 换行）") }}"></textarea>
                 <div class="ai-fab-actions">
+                    <button type="button" class="ai-fab-pick" data-ai-fab-pick
+                            title="{{ .["t"]("admin.ai.fab.pickImage", "加图片") }}"
+                            aria-label="{{ .["t"]("admin.ai.fab.pickImage", "加图片") }}"><span aria-hidden="true">📎</span></button>
+                    <input type="file" accept="image/*" multiple hidden data-ai-fab-file
+                           aria-hidden="true" tabindex="-1">
                     <button type="button" class="btn btn-primary" data-ai-fab-send>{{ .["t"]("admin.ai.fab.send", "发送") }}</button>
                     <button type="button" class="btn" data-ai-fab-stop hidden>{{ .["t"]("admin.ai.fab.stop", "停止") }}</button>
                 </div>

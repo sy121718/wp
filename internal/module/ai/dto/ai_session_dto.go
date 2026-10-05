@@ -163,9 +163,20 @@ type SendMessageReq struct {
 	// Input 是**发给模型**的形态：悬浮球会往里拼「（当前页面：仪表盘 /admin）」这类
 	// 上下文。那段注记模型需要，界面回填历史时却不该显示 —— 否则面板里每条提问前面
 	// 都顶着一行系统注记，看起来像日志而不是对话。留空时按 Input 处理。
-	UserText        string `json:"-"`
-	MaxOutputTokens int64  `json:"maxOutputTokens" form:"maxOutputTokens"`
-	UserID          int64  `json:"-"`
+	UserText string `json:"-"`
+	// Images 本轮随提问一起发出去的图片，每个元素是**完整的 data URI**。
+	//
+	// 只有当前轮带图：历史那一轮存的是标识（ImageRefs），不是像素 ——
+	// 否则每问一句都要把前面所有图重发一遍，上下文与账单都跟着涨。
+	Images []string `json:"images,omitempty"`
+	// ImageLabels 同一批图片的**标识**（文件名），与 Images 一图对一图。
+	//
+	// 分工：Images 给模型看（data URI —— 上游在另一台机器上，站内相对路径对它毫无意义），
+	// ImageLabels 给人看（界面上画「📎 图片：xxx.png」这类标识，也进事件 meta）。
+	// 不存站内地址：图片只给模型看，不必进媒体库，于是也没有一个长期有效的地址可存。
+	ImageLabels     []string `json:"imageLabels,omitempty"`
+	MaxOutputTokens int64    `json:"maxOutputTokens" form:"maxOutputTokens"`
+	UserID          int64    `json:"-"`
 }
 
 // SendMessageResult 一次「发消息」的结果：会话头 + 落下来的两条事件（用户输入 / 模型回复）。
@@ -364,4 +375,7 @@ type DialogueTurn struct {
 	Role      string `json:"role"` // user | assistant
 	Text      string `json:"text"`
 	Reasoning string `json:"reasoning,omitempty"`
+	// ImageLabels 这一轮用户带的图的标识（文件名）。回填历史时画标识用 ——
+	// 历史不带像素（那会让每轮回填都重发一遍图），只带「当时有这几张」。
+	ImageLabels []string `json:"imageLabels,omitempty"`
 }

@@ -244,6 +244,7 @@ func init() {
 	registerAIFabThinkingI18n()
 	// 571：概览页的 AI 提问区与「销售数据」卡词条（见 register_dashboard_ai_box_i18n.go）。
 	registerDashboardAIBoxI18n()
+	registerAIFabImageI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

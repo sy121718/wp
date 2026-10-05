@@ -65,6 +65,13 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		truncated = true
 	}
 
+	// 图片：前端把文件读成 data URI 传上来（服务端不去取任何地址，理由见 ai_fab_image.go）。
+	images, imageLabels, imgErr := parseFabImages(c.PostForm("images"), c.PostForm("imageLabels"))
+	if imgErr != nil {
+		writeFabStreamError(c, fabText(imgErr.Key))
+		return
+	}
+
 	// 先写头再写第一个字节：不预热的话 gin 会等第一次 Write 才发头，
 	// 而那之前的几十毫秒浏览器拿不到任何响应（表现为「点了没反应」）。
 	// X-Accel-Buffering: no 关掉反向代理的响应缓冲 —— 开着的话整个流会被
@@ -95,6 +102,8 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		Model:       model,
 		Input:       composeFabInput(c, input),
 		UserText:    input,
+		Images:      images,
+		ImageLabels: imageLabels,
 		UserID:      userID(c),
 	}, func(ev aiservice.StreamEvent) {
 		flush(fabStreamChunk{Kind: ev.Kind, Text: ev.Text})

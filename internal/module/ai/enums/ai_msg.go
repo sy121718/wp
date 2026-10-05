@@ -41,6 +41,11 @@ const (
 	MsgFabToolsSuffix = "ai.fab.toolsUnit"
 	MsgFabEmpty       = "ai.fab.empty"
 	MsgFabThinkLabel  = "ai.fab.thinkLabel"
+	// 图片相关的三条：都在服务端拦下（前端只负责把文件读成 data URI）。
+	// 详见 internal/module/ai/inbound/http/ai_fab_image.go 里对上限的解释。
+	MsgFabImageBadFormat = "ai.fab.imageBadFormat"
+	MsgFabImageTooMany   = "ai.fab.imageTooMany"
+	MsgFabImageTooLarge  = "ai.fab.imageTooLarge"
 
 	ErrInvalidParam        = "ai.err.invalidParam"
 	ErrProviderNotFound    = "ai.err.providerNotFound"
@@ -124,14 +129,17 @@ var FacingMessages = map[string]string{
 	// 所以它们在英文界面下也显示中文。它们只在异常路径出现（没配模型 / 没写问题 /
 	// 这轮失败 / 输入被截断），且 key 与模板侧同名前缀 `admin.ai.fab.*`，
 	// 将来要让它们跟着语言走，把片段渲染也接上 i18n 注入即可（见 ai_fab_handle.go 的注释）。
-	MsgFabNoModel:     "还没有可用的模型。请先在「大模型管理」里配置供应商与 API 密钥。",
-	MsgFabEmptyInput:  "还没写问题。",
-	MsgFabFailed:      "这次提问没有成功，请稍后再试，或到「全部会话」里看详情。",
-	MsgFabTruncated:   "问题太长，已按前 4000 字截断。",
-	MsgFabToolsPrefix: "这轮查了数据",
-	MsgFabToolsSuffix: " 次。",
-	MsgFabEmpty:       "没有拿到回答。可以到「全部会话」里看这一轮的详情。",
-	MsgFabThinkLabel:  "思考过程",
+	MsgFabNoModel:        "还没有可用的模型。请先在「大模型管理」里配置供应商与 API 密钥。",
+	MsgFabEmptyInput:     "还没写问题。",
+	MsgFabFailed:         "这次提问没有成功，请稍后再试，或到「全部会话」里看详情。",
+	MsgFabTruncated:      "问题太长，已按前 4000 字截断。",
+	MsgFabToolsPrefix:    "这轮查了数据",
+	MsgFabToolsSuffix:    " 次。",
+	MsgFabEmpty:          "没有拿到回答。可以到「全部会话」里看这一轮的详情。",
+	MsgFabThinkLabel:     "思考过程",
+	MsgFabImageBadFormat: "图片格式不认识，只支持直接粘贴或选择的图片文件。",
+	MsgFabImageTooMany:   "一次最多带 4 张图。",
+	MsgFabImageTooLarge:  "有图片太大了（单张上限约 3MB），请换一张小的。",
 }
 
 // 页面标题（layout 的 <title>）：值与模板 h1 同源，已在迁移 513 / 516 seed，

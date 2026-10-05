@@ -8,7 +8,8 @@
 <div class="ai-fab" data-ai-fab
      data-think-label="{{ .["t"]("admin.ai.fab.thinkLabel", "思考过程") }}"
      data-thinking-label="{{ .["t"]("admin.ai.fab.thinking", "正在思考…（这一步可能要跑几次数据查询，请稍等）") }}"
-     data-error-label="{{ .["t"]("admin.ai.fab.failed", "这次没能拿到回答，请稍后再试。") }}">
+     data-error-label="{{ .["t"]("admin.ai.fab.failed", "这次没能拿到回答，请稍后再试。") }}"
+     data-image-remove-label="{{ .["t"]("admin.ai.fab.imageRemove", "移除这张图") }}">
     <button type="button" class="ai-fab-btn" data-ai-fab-toggle
             aria-expanded="false" aria-controls="ai-fab-panel"
             aria-label="{{ .["t"]("admin.ai.fab.toggle", "问 AI") }}"
@@ -38,11 +39,23 @@
             <p class="ai-fab-state" data-ai-fab-state hidden aria-live="polite"></p>
         </div>
         <form class="ai-fab-form" data-ai-fab-form onsubmit="return false">
+            {* 待发送的图片：粘贴或选文件后在这里显示缩略图，发送时随请求带上。
+               放在 textarea **之前**（视觉上在输入框上方）：图片是这条消息的附件，
+               附属信息排在正文之前才符合「先看到带了什么、再看到说了什么」。
+               区域本身 hidden，没有图时不占高度。 *}
+            <div class="ai-fab-attach" data-ai-fab-attach hidden></div>
             <textarea class="form-textarea ai-fab-input" name="input" rows="2" required
                       data-ai-fab-input
                       placeholder="{{ .["t"]("admin.ai.fab.placeholder", "问点什么…（Enter 发送，Shift+Enter 换行）") }}"
                       aria-label="{{ .["t"]("admin.ai.fab.placeholder", "问点什么…（Enter 发送，Shift+Enter 换行）") }}"></textarea>
             <div class="ai-fab-actions">
+                {* 选图按钮：与「粘贴」等价的一条路。没有它的话，触屏设备上没有任何
+                   办法附图片（那些设备没有 Ctrl+V）。 *}
+                <button type="button" class="ai-fab-pick" data-ai-fab-pick
+                        title="{{ .["t"]("admin.ai.fab.pickImage", "加图片") }}"
+                        aria-label="{{ .["t"]("admin.ai.fab.pickImage", "加图片") }}"><span aria-hidden="true">📎</span></button>
+                <input type="file" accept="image/*" multiple hidden data-ai-fab-file
+                       aria-hidden="true" tabindex="-1">
                 <button type="button" class="btn btn-primary ai-fab-send" data-ai-fab-send>{{ .["t"]("admin.ai.fab.send", "发送") }}</button>
                 <button type="button" class="btn ai-fab-stop" data-ai-fab-stop hidden>{{ .["t"]("admin.ai.fab.stop", "停止") }}</button>
             </div>

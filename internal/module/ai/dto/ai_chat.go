@@ -45,6 +45,15 @@ type ChatMessage struct {
 	// system 是常驻规则（ai/prompt 包），由会话层放在列表最前，与会话历史一起构成稳定前缀。
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Images 这条消息附带的图片（仅 user 消息使用）。
+	//
+	// 每个元素是**完整的 data URI**（`data:image/png;base64,...`），不是站内相对地址：
+	// 上游服务在另一台机器上，`/uploads/xxx.png` 对它毫无意义 —— 发相对路径过去，
+	// 表现是「模型说看不到图片」，而请求本身 200。
+	//
+	// 只在**本轮**的 user 消息上带图：历史里那一轮回填的是图片标识（文字），
+	// 不是像素 —— 否则每问一句都要把前面所有图重发一遍，上下文与账单都跟着涨。
+	Images []string `json:"images,omitempty"`
 	// ToolCalls 仅 assistant 消息使用：模型要求调用的工具。
 	ToolCalls []ToolCall `json:"toolCalls,omitempty"`
 	// ToolCallID 仅 tool 消息使用：这条结果对应哪一次调用。

@@ -245,7 +245,13 @@ func (s *SessionService) sendMessage(ctx context.Context, req aidto.SendMessageR
 	var reasonings []string
 	specs := s.toolSpecs()
 	for round := 0; round < maxToolRounds; round++ {
-		msgs := stablePrefix(history)
+		// 图片只在**第一轮**带：后面几轮是工具往返，模型已经看过这些图，
+		// 每轮重发一遍会让一次多工具任务的输入凭空多出几份图片的体积。
+		var roundImages []string
+		if round == 0 {
+			roundImages = req.Images
+		}
+		msgs := stablePrefix(history, roundImages)
 		msgs = append(msgs, rounds...)
 
 		// 带上会话与发起人：调用流水（ai_call_log）靠这两个字段回答
@@ -400,16 +406,28 @@ const eventMetaReasoning = "reasoning"
 // eventMetaUserText 事件 meta 里放「用户原话」的键（见 userEventMeta）。
 const eventMetaUserText = "userText"
 
+// eventMetaImageLabels 事件 meta 里放「本轮带了哪些图」的键（标识数组，如文件名）。
+//
+// 存标识而不是发给模型的 data URI：data URI 是 base64 的像素，落进事件日志
+// 会把库撑大好几个数量级，而它想表达的只有「这一轮有图」这一件事。
+const eventMetaImageLabels = "imageLabels"
+
 // userEventMeta 给用户事件附上原话（与注入过上下文的 Content 分开放）。
 //
 // 两者相同或调用方没给原话时返回 nil —— meta 不是空的就不写，
 // 免得每条事件都挂一个没有信息的对象。
 func userEventMeta(req *aidto.SendMessageReq) map[string]any {
-	text := strings.TrimSpace(req.UserText)
-	if text == "" || text == strings.TrimSpace(req.Input) {
+	meta := map[string]any{}
+	if text := strings.TrimSpace(req.UserText); text != "" && text != strings.TrimSpace(req.Input) {
+		meta[eventMetaUserText] = text
+	}
+	if len(req.ImageLabels) > 0 {
+		meta[eventMetaImageLabels] = req.ImageLabels
+	}
+	if len(meta) == 0 {
 		return nil
 	}
-	return map[string]any{eventMetaUserText: text}
+	return meta
 }
 
 // appendToolEvent 落一条工具事件；phase 为 toolPhaseCall 时正文是调用摘要。
@@ -657,12 +675,14 @@ func sentEventItem(res *aidto.AppendEventResult, kind, content string) aidto.Ses
 // 整段前缀，而症状只是账单变贵 —— 没有任何报错，也没有任何页面会显示异常。
 //
 // 本轮的工具往返（rounds）**不在**前缀里：它每轮都在变，属于尾部。
-func stablePrefix(history string) []aidto.ChatMessage {
+func stablePrefix(history string, images []string) []aidto.ChatMessage {
 	// 目录为空时**不占一条消息**：空 system 消息在部分上游会被当成无效消息拒掉，
 	// 而在没有手册时（例如裁剪过的部署）它本身就是多余的。
 	msgs := []aidto.ChatMessage{{Role: roleSystem, Content: aiprompt.SiteRules()}}
 	if catalog := aiprompt.ManualCatalog(); catalog != "" {
 		msgs = append(msgs, aidto.ChatMessage{Role: roleSystem, Content: catalog})
 	}
-	return append(msgs, aidto.ChatMessage{Role: roleUser, Content: history})
+	// 图片挂在本轮那条 user 消息上（不是拼进 history 文本）：协议上的图片是
+	// content 分片，拼成文字只能是路径，而模型读不出路径里的像素。
+	return append(msgs, aidto.ChatMessage{Role: roleUser, Content: history, Images: images})
 }

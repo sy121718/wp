@@ -22,6 +22,32 @@ import (
 // 排查「模型为什么不调工具」时不必再去翻服务端的默认值。
 //
 // max_tokens 只在 > 0 时写入：0 会被服务端当成「最多生成 0 个 token」直接截断。
+// chatMessageContent 把一条消息翻成 content 字段的取值：纯文本用字符串，带图用分片数组。
+//
+// 为什么不能一律用数组：纯文本消息用**字符串**是这条协议最稳的形态，某些网关对
+// 纯文本数组的处理不如字符串（表现是「模型收到的正文变成 [object]」这类怪事）。
+// 所以只在真的有图时才升格成数组。
+//
+// 两族的图片分片形状**不一样**（chat 的 image_url 是对象、responses 的 image_url 是字符串），
+// 各写各的，不抽公共函数 —— 抽出来就只能靠一个 protocol 参数分叉，
+// 那和两份独立实现一样容易错，却更难看出错在哪一边。
+func chatMessageContent(m aidto.ChatMessage) any {
+	if len(m.Images) == 0 {
+		return m.Content
+	}
+	parts := make([]map[string]any, 0, len(m.Images)+1)
+	if text := strings.TrimSpace(m.Content); text != "" {
+		parts = append(parts, map[string]any{"type": "text", "text": m.Content})
+	}
+	for _, url := range m.Images {
+		parts = append(parts, map[string]any{
+			"type":      "image_url",
+			"image_url": map[string]any{"url": url},
+		})
+	}
+	return parts
+}
+
 func buildChatCompletionsBody(model string, msgs []aidto.ChatMessage, tools []aidto.ToolSpec, maxOutputTokens int64, stream bool) ([]byte, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -32,7 +58,7 @@ func buildChatCompletionsBody(model string, msgs []aidto.ChatMessage, tools []ai
 	}
 	out := make([]map[string]any, 0, len(msgs))
 	for _, m := range msgs {
-		item := map[string]any{"role": m.Role, "content": m.Content}
+		item := map[string]any{"role": m.Role, "content": chatMessageContent(m)}
 		if len(m.ToolCalls) > 0 {
 			item["tool_calls"] = chatToolCalls(m.ToolCalls)
 		}
