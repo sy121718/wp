@@ -258,13 +258,17 @@
             .then(function (body) {
                 var items = body && body.data && body.data.items;
                 if (!items || !items.length) { return; }
-                // 概览页的宿主：有历史回答就把数据块收起来。
+                // 概览页的宿主：有历史回答时**只亮出「继续上次对话」入口，不自动展开**。
                 //
-                // is-asking 是内存态 —— 刷新、或从别的页面跳回来时它不在，
-                // 而回答会由本函数回填。两者叠加的样子就是「回答铺开着、
-                // 卡片与图表也铺开着」，看起来像 AI 区把概览挤到了下面；
-                // 实际上它们是同一页的两段，后者该让位。
-                if (root.hasAttribute('data-ai-fab-dock')) { root.classList.add('is-asking'); }
+                // 曾经这里是直接加 is-asking 的，理由是「回答回填了、卡片图表得让位」。
+                // 但 is-asking 是内存态：关掉浏览器重新登录进来，用户期待看到的是
+                // **概览**（卡片与图表），而历史回填把页面变成一屏聊天记录 ——
+                // 看起来像「登录后进错了页」。
+                // 让位这件事本身是对的，错的是**由页面加载来触发**：
+                // 展开回答应该是用户主动的选择（提问、或点继续上次对话）。
+                if (root.hasAttribute('data-ai-fab-dock')) {
+                    root.setAttribute('data-ai-fab-has-history', '1');
+                }
                 // 一条提问后面可能没有回答（上一轮中断了）：那就只画提问，
                 // 不要凭空造一个空回答块。
                 var pending = null;
@@ -534,13 +538,27 @@
             // 铺历史：会话在服务端一直是连着的，界面每次却从空白开始 ——
             // 把已有的对话放回来，用户才知道它记得上一轮（见 loadHistory）。
             loadHistory(root);
-            if (continued) { open(root); }
+            // 跨页接续只对**悬浮球**有效：概览页那个常驻框是页面的一部分，
+            // 它跟着页面一起加载，没有「球要不要弹开」这回事 —— 由它去读这个键
+            // 会把「刷新概览页」误当成「从别页跳回来」。
+            if (continued && !root.hasAttribute('data-ai-fab-dock')) { open(root); }
 
             var btn = buttonOf(root);
             if (btn) {
                 btn.addEventListener('click', function () {
                     var panel = panelOf(root);
                     if (panel && panel.hidden) { open(root); } else { close(root); }
+                });
+            }
+            // 概览页的「继续上次对话」：把上一轮回答重新铺开（加 is-asking，
+            // 那三块数据随之让位）。它是 loadHistory 不自动展开之后的对应入口 ——
+            // 历史仍然加载着，只是要用户点一下才显示。
+            var resume = root.querySelector('[data-ai-fab-resume]');
+            if (resume) {
+                resume.addEventListener('click', function () {
+                    root.classList.add('is-asking');
+                    var scroller = root.querySelector('[data-ai-fab-body]');
+                    if (scroller) { scroller.scrollTop = scroller.scrollHeight; }
                 });
             }
             // 概览页的「关闭回答」：把这一页交还给概览数据（收起回答 + 用

@@ -60,6 +60,7 @@
                 {* 收起回答：把这一页交还给概览数据（清空轮次 + 去掉 .is-asking，
                    那三块数据随之展开回来）。它只在提问之后显示 —— 没有回答时
                    没有可关的东西。会话不删，再问一句就是接着上一轮。 *}
+                <button type="button" class="dash-ai-resume" data-ai-fab-resume>{{ .["t"]("admin.dashboard.ai.resume", "继续上次对话") }}</button>
                 <button type="button" class="dash-ai-dismiss" data-ai-fab-dismiss>{{ .["t"]("admin.dashboard.ai.dismiss", "收起回答") }}</button>
             </div>
             <div class="ai-fab-body" data-ai-fab-body>

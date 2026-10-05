@@ -2371,3 +2371,18 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     color: var(--dash-bg);
 }
 .stack.dash-page .dash-range-note { color: var(--dash-muted); }
+
+/* 概览页默认只显示「问 AI」这一行：历史回答要用户点「继续上次对话」才铺开。
+   为什么不是有历史就自动展开：is-asking 是内存态，关掉浏览器重新登录进来时它不在，
+   自动展开会把整页变成一屏聊天记录，看起来像「登录后进错了页」。
+   判据：收起态下 [data-ai-fab-turns] 必须不可见（回答不占位、卡片图表正常铺开）。 */
+.stack.dash-page .dash-ai:not(.is-asking) [data-ai-fab-turns] {
+    display: none;
+}
+.dash-ai-resume {
+    display: none;
+    margin-left: auto;
+}
+.stack.dash-page .dash-ai[data-ai-fab-has-history]:not(.is-asking) .dash-ai-resume {
+    display: inline-block;
+}
