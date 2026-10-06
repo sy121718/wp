@@ -54,8 +54,8 @@ const orderNetTotalSQLExpr = "GREATEST(o.total - COALESCE((SELECT SUM(r.refund_a
 // 而它是本模块净额语义的唯一真源（KPI / 客户摘要 / 会员分档三处共用）。
 // FROM / WHERE / GROUP BY 与参数绑定全部归 GORM。
 //
-// 参数顺序（按 ? 在文本里出现的顺序）：退货状态名单（orderNetTotalSQLExpr 里的那个）、
-// 计入消费的订单状态名单（paidStatuses）。
+// 实参只有**一个**：退货状态名单，对应 orderNetTotalSQLExpr 里唯一那处 ?。
+// 「计入消费的订单状态」不在这里 —— 它在 WHERE 的 o.status 条件上（见 SpentTotalsByProject）。
 const spentTotalsSelect = "o.user_id, COALESCE(SUM(" + orderNetTotalSQLExpr + "), 0) AS amount"
 
 // SpentTotalsByProject 返回本工程「有可计入消费」的访客 → 累计消费额（**分**）。
@@ -88,11 +88,10 @@ func (m *OrderModel) SpentTotalsByProject(ctx context.Context, projectID string)
 		Amount int64  `gorm:"column:amount"`
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Table(OrderEntity{}.TableName()+" AS o").
-			Select(spentTotalsSelect,
-				// 两个实参对应 spentTotalsSelect 里 ? 的出现顺序。
-				strings.Join(ReturnedStatuses, ","),
-				strings.Join(paidStatuses, ",")).
+		q := tx.Table(OrderEntity{}.TableName() + " AS o")
+		// 经 selectExpr 而不是 Select：它先校验 ? 个数与实参个数相等（本处最初就是
+		// 1 个 ? 配 2 个实参，GORM 静默把实参当列名拼出了坏 SQL）。
+		return selectExpr(q, spentTotalsSelect, strings.Join(ReturnedStatuses, ",")).
 			Where("o.project_id = ?", projectID).
 			Where("o.user_id IS NOT NULL").
 			Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ",")).

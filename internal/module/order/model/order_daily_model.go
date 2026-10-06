@@ -104,7 +104,7 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 // 一定要贴回 UTC；`date` 不用**。这条由 `TestDayAndHourBucketsReturnUTCWakeClock`
 // 钉住（两种粒度都断言读回来的桶键 UTC 挂钟 == 插入时刻的那个小时/那一天，
 // 去掉第二遍、或把 `::date` 顺手改成 `date_trunc`，该测试都会变红）。
-	const orderHourlyBucketSelect = "(date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day, " + orderBucketSelect
+const orderHourlyBucketSelect = "(date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day, " + orderBucketSelect
 
 // HourlyByRange 取区间 [from, to) 内按小时聚合的订单数据。
 //

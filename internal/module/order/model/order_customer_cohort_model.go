@@ -44,7 +44,7 @@ import (
 // 而口径仍然只有本函数一处定义。
 func orderCohortScope(tx *gorm.DB, projectID string, from, to time.Time) (cohort, sizes *gorm.DB) {
 	statuses := strings.Join(paidStatuses, ",")
-	firsts := tx.Table(OrderEntity{}.TableName() + " AS o").
+	firsts := tx.Table(OrderEntity{}.TableName()+" AS o").
 		Select("o.user_id, MIN(o.create_time) AS first_at").
 		Where("o.project_id = ?", projectID).
 		Where("o.status = ANY(string_to_array(?, ',')::text[])", statuses).
@@ -106,7 +106,7 @@ func (m *OrderModel) CohortRetention(ctx context.Context, projectID string, from
 			// 两处必须用同一个口径：一个是群月份、一个是活跃月份，两者相减得到「第 N 个月」，
 			// 口径不一致时留存矩阵会整体错位一格。
 			Select("c.cohort_month, (date_trunc('month', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS activity_month, o.user_id").
-			Joins("JOIN " + OrderEntity{}.TableName() + " AS o ON o.user_id = c.user_id").
+			Joins("JOIN "+OrderEntity{}.TableName()+" AS o ON o.user_id = c.user_id").
 			Where("o.project_id = ?", projectID).
 			Where("o.status = ANY(string_to_array(?, ',')::text[])", statuses)
 		// 结果**稀疏**（没有活跃客户的月份不出行）：铺成矩阵是 service 的事 ——

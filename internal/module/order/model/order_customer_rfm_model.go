@@ -59,14 +59,14 @@ import (
 // 因此必须来自同一次执行（见 rfmRowColumns 的说明）。
 //
 // `a.freq > 0` 把窗口内没有下单的人剔掉：F=0 的人不该出现在「客户价值」报表里
-//（他在这段时间没有价值贡献，而 NTILE 会照样给他一个分位）。
+// （他在这段时间没有价值贡献，而 NTILE 会照样给他一个分位）。
 //
 // 参数顺序（按 ? 出现顺序）：F 的窗口起止 → 净额表达式里的退货状态名单 → M 的窗口起止
 // → project_id → 订单状态名单。**参数错位不报错，只是数字全错**，所以这里用一条
 // Select 一次绑定完，不留手写的 []any 切片给调用方去数。
 func orderRfmScored(tx *gorm.DB, projectID string, from, to time.Time) *gorm.DB {
 	statuses := strings.Join(paidStatuses, ",")
-	agg := tx.Table(OrderEntity{}.TableName() + " AS o").
+	agg := tx.Table(OrderEntity{}.TableName()+" AS o").
 		Select("o.user_id, MAX(o.create_time) AS last_at, "+
 			"COUNT(*) FILTER (WHERE o.create_time >= ? AND o.create_time < ?) AS freq, "+
 			"COALESCE(SUM("+orderNetTotalSQLExpr+") FILTER (WHERE o.create_time >= ? AND o.create_time < ?), 0) AS monetary",

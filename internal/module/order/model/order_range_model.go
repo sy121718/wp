@@ -23,7 +23,7 @@ import (
 // 而每一处单独看都对（与 SummaryByUser 收敛成一条的理由相同）。
 //
 // **为什么 SELECT 里还有一段拼串**：`orderNetTotalSQLExpr` 是一个**含子查询的口径表达式**
-//（`GREATEST(o.total - COALESCE((SELECT SUM(r.refund_amount) ...), 0), 0)`），
+// （`GREATEST(o.total - COALESCE((SELECT SUM(r.refund_amount) ...), 0), 0)`），
 // 它是本模块「净额」语义的唯一真源、被 KPI / 客户摘要 / 会员分档三处共用。
 // GORM 没有「把表达式当列」的链式写法（`Select("expr")` 也是传字符串），
 // 所以这里保留三处拼接：共享的净额表达式 + 两个 `FILTER (WHERE ...)` 名单。

@@ -130,9 +130,10 @@ func (m *OrderModel) CustomerGrowthByRange(ctx context.Context, projectID string
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		ranged, firsts := orderCustomerScope(tx, projectID, from, to)
-		return tx.Table("(?) AS r", ranged).
-			Joins("JOIN (?) AS f ON f.user_id = r.user_id", firsts).
-			Select(orderCustomerGrowthSelect, from, from, from).
+		q := tx.Table("(?) AS r", ranged).
+			Joins("JOIN (?) AS f ON f.user_id = r.user_id", firsts)
+		// 三个实参对应 orderCustomerGrowthSelect 里 ? 的出现顺序；个数必须相等（见 selectExpr）。
+		return selectExpr(q, orderCustomerGrowthSelect, from, from, from).
 			Scan(&row).Error
 	})
 	return row, err

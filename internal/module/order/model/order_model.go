@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -408,6 +409,22 @@ type CustomerOrderSummaryRow struct {
 	LastOrderTime   *time.Time `gorm:"column:last_order_time"`
 }
 
+// selectExpr 绑定「列表达式 + 参数」，并先要求两边个数严格相等。
+//
+// 为什么不直接写 Select(expr, args...)：GORM 用 `strings.Count(v, "?") >= len(args)`
+// 决定分派 —— 表达式里 `?` 少于实参时它**不报错**，而是把实参当**追加列名**拼到
+// SELECT 列表末尾（`... AS amount,received,completed,paid`），于是一个参数都没绑上、
+// SQL 直接语法错。而错误现场离这里很远（PG 的一句 syntax error，看不出是谁拼的）。
+//
+// 参数对不上属于**编程错误**（不是数据问题），所以这里直接 panic：写对了永远不触发，
+// 写错了在第一次跑到就炸，而不是等到某个字段恰好为空时才露出。
+func selectExpr(tx *gorm.DB, expr string, args ...any) *gorm.DB {
+	if n := strings.Count(expr, "?"); n != len(args) {
+		panic(fmt.Sprintf("order/model: 列表达式含 %d 个 ? 但有 %d 个实参（必须相等）：%s", n, len(args), expr))
+	}
+	return tx.Select(expr, args...)
+}
+
 // customerOrderSummarySelect 客户订单摘要的外层取数列（窗口函数，见 SummaryByUser 的说明）。
 //
 // total_amount 拼的是**订单净消费额表达式** orderNetTotalSQLExpr（定义在 order_spent_model.go）——
@@ -447,7 +464,7 @@ func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		// 内层：只取「最近一单」那一行，外加三个 OVER () 窗口聚合（整个过滤结果集的
 		// 事实，与被取回的是哪一行无关）。
-		inner := tx.Table(OrderEntity{}.TableName() + " AS o").
+		inner := tx.Table(OrderEntity{}.TableName()+" AS o").
 			Select(customerOrderSummaryInnerSelect,
 				// 三个实参对应 customerOrderSummaryInnerSelect 里 ? 的出现顺序。
 				strings.Join(paidStatuses, ","),
