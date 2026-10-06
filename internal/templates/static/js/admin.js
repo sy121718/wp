@@ -376,11 +376,21 @@
     });
 
     // 鼠标路径也校正一次对齐：CSS :hover 展开时没有 data-open，只有这一次机会量。
+    //
+    // **必须等一帧**：mouseover 与 :hover 生效的先后由浏览器决定，立刻量到的往往还是
+    // display:none 的盒（宽高 0、right 0），于是「不需要左翻」这个误判被 helpAligned
+    // 标记固化下来，此后每次 hover 都不再校正 —— 贴着右边缘的那一列浮层永远伸出视口。
+    // rAF 在样式计算之后执行，此时 :hover 已经生效，量到的是真实盒。
+    // 窗口尺寸变了旧结论就不成立，所以 resize 时清掉标记重来。
     document.addEventListener('mouseover', function (e) {
         var host = e.target && e.target.closest ? e.target.closest('.help') : null;
-        if (!host || host.hasAttribute('data-align') || host.dataset.helpAligned) return;
+        if (!host || host.dataset.helpAligned) return;
         host.dataset.helpAligned = '1';
-        align(host);
+        requestAnimationFrame(function () { align(host); });
+    });
+    window.addEventListener('resize', function () {
+        var hosts = document.querySelectorAll('.help[data-help-aligned]');
+        for (var i = 0; i < hosts.length; i++) delete hosts[i].dataset.helpAligned;
     });
 })();
 
