@@ -260,6 +260,8 @@ func init() {
 	registerOrderSalesGroupI18n()
 	// 583：销售概览改折线图后的词条调整（见 register_order_sales_trend_line_i18n.go）。
 	registerOrderSalesTrendLineI18n()
+	// 584：后台统一时间筛选条的词条（见 register_date_filter_i18n.go）。
+	registerDateFilterI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

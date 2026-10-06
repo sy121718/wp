@@ -1,0 +1,64 @@
+{* admin/partials/date_filter.html — 时间筛选条（快捷区间下拉 + 两个原生 date + 提交键）。
+
+   后台所有「按时间筛」的页面共用这一处。为什么要有它：改这条筛选条之前，仓里有四种形态
+   （仪表盘的胶囊 + 两个裸 date / 销售概览的裸 date / analytics、客户、会话的 .wbd 日历弹层 /
+   库存的两个裸 date 分散在各自的 filter-field），而「今日 / 本周」这类常见区间只在仪表盘有，
+   其它页面得手点两次日历。形态多了以后改一处样式要改四处，每多一处就多一次漏改的机会。
+
+   **字段名一律由调用方传入，组件里不统一**：from/to、since/until、timeFrom/timeTo、
+   segmentFrom/segmentTo 都是各页已发布 URL 的一部分，改名会静默废掉别人的书签与外部链接。
+
+   **文案在组件内部取**（不用调用方传）：调用方传进来的 data 是 map(...) 造的字面量，
+   而 Jet 不允许在 map 的参数位置写 .["t"]（实测报 "unexpected node type .[\"t\"] in
+   unary expression evaluating"）。所以「开始日期 / 结束日期 / 查询 / 重置」这几处
+   由组件自己取词，顺带把各页原本不一致的叫法（起始日 / 起始日期 / 筛选 / 应用）统一掉。
+
+   参数（Jet 的 map(...) 传；除 resetHref / hint 外全部必传，组件不做隐式默认 ——
+   隐式默认会让漏传参数时渲染出一个「看起来正常但没有名字」的控件，那种缺陷只有提交后才发现）：
+
+     t           调用方的取词函数（传 .["t"]），组件内所有文案都经它
+     idPrefix    同页多组区间时区分 id 的前缀（如 "dash"、"an"）；决定 label[for] 与两个 date 的 id
+     formAction  表单 action；空串则组件不渲染 <form>（调用方已有外层表单时用）
+     fromName    起始 date 的表单字段名
+     toName      结束 date 的表单字段名
+     from        起始值（ISO 日期，可空）
+     to          结束值（ISO 日期，可空）
+     presetName  快捷区间下拉的 name
+     resetHref   重置链接（可传空串，此时不渲染重置键）
+     hint        区间回显文案（可传空串，此时不渲染回显行）
+
+   快捷下拉是**渐进增强**：初始 hidden，由 ui/datepreset.js 去掉 —— 无 JS 时它不该出现，
+   因为「选了一个不填日期的下拉」比「没有这个下拉」更让人困惑；两个原生 date 始终可见可编辑，
+   所以无 JS 时整条筛选条仍然完全可用。 *}
+{{if .["fromName"]}}
+{{if .["formAction"]}}
+<form method="get" action="{{ .["formAction"] }}">
+    {{end}}
+<div class="date-filter">
+    <label class="sr-only" for="{{ .["idPrefix"] + "-preset" }}">{{ .["t"]("admin.common.filter.preset", "快捷区间") }}</label>
+    <select class="form-select date-filter-preset" id="{{ .["idPrefix"] + "-preset" }}" name="{{ .["presetName"] }}"
+            data-date-preset data-date-from="{{ .["idPrefix"] + "-from" }}" data-date-to="{{ .["idPrefix"] + "-to" }}" hidden>
+        <option value="custom" selected>{{ .["t"]("admin.common.filter.preset.custom", "自定义") }}</option>
+        <option value="today">{{ .["t"]("admin.common.filter.preset.today", "今日") }}</option>
+        <option value="yesterday">{{ .["t"]("admin.common.filter.preset.yesterday", "昨日") }}</option>
+        <option value="week">{{ .["t"]("admin.common.filter.preset.week", "本周") }}</option>
+        <option value="month">{{ .["t"]("admin.common.filter.preset.month", "本月") }}</option>
+        <option value="lastMonth">{{ .["t"]("admin.common.filter.preset.lastMonth", "上月") }}</option>
+        <option value="days7">{{ .["t"]("admin.common.filter.preset.days7", "最近 7 天") }}</option>
+        <option value="days30">{{ .["t"]("admin.common.filter.preset.days30", "最近 30 天") }}</option>
+        <option value="year">{{ .["t"]("admin.common.filter.preset.year", "本年") }}</option>
+    </select>
+    <label class="date-filter-label" for="{{ .["idPrefix"] + "-from" }}">{{ .["t"]("admin.common.filter.from", "开始日期") }}</label>
+    <input type="date" class="form-input date-filter-date" id="{{ .["idPrefix"] + "-from" }}"
+           name="{{ .["fromName"] }}" value="{{ .["from"] }}">
+    <span class="filter-sep" aria-hidden="true">~</span>
+    <input type="date" class="form-input date-filter-date" id="{{ .["idPrefix"] + "-to" }}"
+           name="{{ .["toName"] }}" value="{{ .["to"] }}" aria-label="{{ .["t"]("admin.common.filter.to", "结束日期") }}">
+    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "查询") }}</button>
+    {{if .["resetHref"]}}<a class="btn btn-sm btn-ghost" href="{{ .["resetHref"] }}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>{{end}}
+</div>
+{{if .["formAction"]}}
+</form>
+{{end}}
+{{if .["hint"]}}<p class="filter-hint">{{ .["hint"] }}</p>{{end}}
+{{end}}

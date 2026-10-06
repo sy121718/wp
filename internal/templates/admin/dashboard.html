@@ -106,23 +106,19 @@
     {{if isset(.Overview)}}
     {{if .Overview.PortsReady}}
     {* 时间筛选条排在三块之前：「这一页的数字是哪一段的」必须比数字本身先读到。
-       三块（KPI / 趋势 / 榜单）共用同一个窗口，所以它属于页面而不是某一块。
-       预设链接由服务端拼好（带上其它筛选），模板不拼 query。 *}
-    <div class="range-bar">
-        {{range _, r := .Overview.Presets}}
-        <a class="range-chip{{if r.Active}} is-active{{end}}" href="{{r.URL}}">{{ .["t"](r.LabelKey, r.Label) }}</a>
-        {{end}}
-        {* action 必须是 /admin：仪表盘注册在 workbench 的根级前缀组（router.go 的
-           SetupWorkbenchRoutes 里 g.GET("/admin", h.Dashboard)），写成 /admin/dashboard 会 404。
-           预设链接（r.URL）由服务端按同一个常量拼好，两处同源由
-           TestAdminDashboardFormActionMatchesRoute 钉住。 *}
-        <form method="get" action="/admin" class="range-custom">
-            <input type="hidden" name="range" value="custom">
-            <input type="date" name="from" class="form-input range-date" value="{{.Overview.Range.From}}" aria-label="{{ .["t"]("admin.dashboard.range.from", "起始日") }}">
-            <input type="date" name="to" class="form-input range-date" value="{{.Overview.Range.To}}" aria-label="{{ .["t"]("admin.dashboard.range.to", "结束日") }}">
-            <button type="submit" class="btn btn-sm">{{ .["t"]("admin.dashboard.range.apply", "应用") }}</button>
-        </form>
-    </div>
+        三块（KPI / 趋势 / 榜单）共用同一个窗口，所以它属于页面而不是某一块。
+        形态是后台统一的时间筛选条（admin/partials/date_filter.html）：快捷区间下拉
+        + 两个原生 date + 应用。原先这里是一排胶囊 <a>（服务端按预设拼好 URL），
+        换成下拉后区间由前端算，不必再让服务端为每个预设拼一条带着全部其它筛选的链。 *}
+    {{include "partials/date_filter.html" map(
+        "t", .["t"],
+        "idPrefix", "dash",
+        "formAction", "/admin",
+        "fromName", "from", "toName", "to",
+        "from", .Overview.Range.From, "to", .Overview.Range.To,
+        "presetName", "range",
+        "resetHref", "/admin",
+        "hint", "")}}
     <p class="text-mute text-sm dash-range-note">
         {{.Overview.Range.From}} ~ {{.Overview.Range.To}}
         {{if .Overview.Range.Clamped}}{{ .["t"]("admin.dashboard.range.clamped", "（区间已按上限截取）") }}{{end}}

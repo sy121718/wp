@@ -175,14 +175,17 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		`range=week&amp;granularity=day`,
 		// 标题走服务端算好的词条键（模板里没有 if/else 四档）。
 		"granularity=hour", "granularity=week", "granularity=month",
-		// 时间筛选条：预设按钮、选中态、自定义区间的日期框（口径必须可见）。
-		"range-bar", "range-chip", `href="/admin?range=week"`, "本周",
-		`<input type="hidden" name="range" value="custom">`,
+		// 时间筛选条：换成了后台统一的时间筛选条（admin/partials/date_filter.html）——
+		// 快捷区间下拉 + 两个原生 date + 应用。原先那一排预设胶囊（服务端拼 URL 的
+		// .range-chip）已经下线，所以这里不再断言胶囊，改为钉住组件的三件东西：
+		// 下拉、两个日期框的 name、以及 form 的 action。
+		"date-filter", "date-filter-preset", "name=\"range\"",
 		// 日期框带基座类（外观只有一个真源）+ 本页的尺寸类。
-		`class="form-input range-date"`,
+		`class="form-input date-filter-date"`,
 		// 分开断言而不是连成 `name="from" value="..."`：属性之间还夹着 aria-label，
 		// 连写会把「属性顺序」也变成判据，而顺序不是这里要钉的东西。
-		`name="from"`, `value="2026-09-29"`,
+		`name="from"`, `value="2026-09-29"`, `name="to"`, `value="2026-10-05"`,
+		`action="/admin"`,
 		// KPI 卡可点击跳订单页（带口径的链接）。
 		"stat-card-link", `href="/admin/orders"`,
 		// 新客卡（区间口径）。链接把当前区间带给客户概览页 ——
@@ -200,10 +203,8 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 			t.Errorf("渲染结果应含 %q", want)
 		}
 	}
-	// 选中态只该落在当前区间那一个按钮上（两个预设，一个 active）。
-	if n := strings.Count(out, "range-chip is-active"); n != 1 {
-		t.Errorf("选中的胶囊应恰好 1 个，实得 %d", n)
-	}
+	// （原先这里还断言「选中的胶囊恰好 1 个」。筛选条改成统一组件后胶囊已下线，
+	// 选中态改为由前端按当前区间回填下拉，不再有服务端渲染的选中态可断言。）
 	if strings.Contains(out, "（区间已按上限截取）") {
 		t.Error("未发生收敛时不该显示截取提示")
 	}
@@ -290,14 +291,18 @@ func TestDashboardOverviewDegradesWhenPortsMissing(t *testing.T) {
 //
 // 服务端那一半（预设胶囊的链接）由 workbenchhttp 的 dashboardPath 常量给出，
 // 本用例额外禁止全文出现 /admin/dashboard，保证两处不会各自漂移。
+//
+// 断言源文件而不是渲染产物：form 的建筑材料现在在共用组件
+// internal/templates/admin/partials/date_filter.html 里，本页只传 formAction，
+// 而「传的值是不是 /admin」这件事在渲染产物上会被组件展开淹没（产物里到处是 action）。
 func TestAdminDashboardFormActionMatchesRoute(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("admin/dashboard.html"))
 	if err != nil {
 		t.Fatalf("读取模板失败：%v", err)
 	}
 	src0 := src
-	if !strings.Contains(string(src0), `action="/admin"`) {
-		t.Error(`筛选条的 form action 应为 "/admin"（仪表盘的真实路由）`)
+	if !strings.Contains(string(src0), `"formAction", "/admin"`) {
+		t.Error(`筛选条的 formAction 应为 "/admin"（仪表盘的真实路由）`)
 	}
 	// 带前引号匹配**属性值**：说明文字里可以（也应当）写出错误路径长什么样，
 	// 那正是这条注释存在的意义；要拦的是真把它写进 action / href。
