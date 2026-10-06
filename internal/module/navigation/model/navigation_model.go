@@ -55,22 +55,6 @@ func (m *Model) DB(ctx context.Context) *gorm.DB {
 	return m.db.WithContext(ctx).Model(&NavigationEntity{})
 }
 
-// ListAllProjectIDs 列出全部站点工程 id（只带 id 的入口做逐工程定位时的兜底清单）。
-//
-// 为什么 navigation model 要读 projects 表（DB-009）：「按 id 更新 / 查询 / 删除」这三个
-// 入口的请求里只有 id，而 navigations 在迁移 215 里带 FORCE 策略 —— 作用域只能落到某个
-// 具体工程，归属就必须先探测出来。探测要枚举工程清单，清单来自 project 契约；契约未注入时
-// （测试装配，或将来某个装配点漏接）定位会整体失败，表现为「导航项明明在却报不存在」，
-// 而日志里什么都没有。page / order model 的 ListAllProjectIDs 是同一处境的同形兜底。
-//
-// projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的策略名单里，
-// 读它不涉及任何被隔离数据。正确做法仍是装配点注入 project 契约（生产装配已注入）。
-func (m *Model) ListAllProjectIDs(ctx context.Context) (ids []string, err error) {
-	err = m.db.WithContext(ctx).
-		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
-	return ids, err
-}
-
 // Create 新增导航项。
 // RLS（迁移 215）：navigations 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *Model) Create(ctx context.Context, e *NavigationEntity) error {

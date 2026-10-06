@@ -21,6 +21,8 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
+	projectmodel "go_wp/internal/module/project/model"
+	projectservice "go_wp/internal/module/project/service"
 	"go_wp/pkg/rls"
 )
 
@@ -144,6 +146,9 @@ func TestRLS_CouponAuditServiceFanout(t *testing.T) {
 		ordermodel.NewCouponModel(db), nil,
 		nil, nil, nil, nil,
 	)
+	// 全站对账（ProjectID 为空）要逐工程扇出，工程清单来自 project 契约 ——
+	// 与生产装配同形（analytics/order 的 SetProjects 都收同一个实例）。
+	svc.SetProjects(projectservice.NewService(projectmodel.NewProjectModel(db)))
 	res, err := svc.AuditCouponCounts(ctx, &orderdto.CouponCountAuditReq{ProjectID: "", Limit: 100})
 	if err != nil {
 		t.Fatalf("全站对账失败: %v", err)

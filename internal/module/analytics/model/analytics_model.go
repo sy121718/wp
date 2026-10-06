@@ -154,20 +154,6 @@ func (m *Model) CountPathTotal(ctx context.Context, projectID string, from, to t
 	return total, err
 }
 
-// RetentionPolicy 工程级访问明细保留策略。
-type RetentionPolicy struct {
-	ProjectID              string `gorm:"column:project_id"`
-	AnalyticsRetentionDays int    `gorm:"column:analytics_retention_days"`
-}
-
-// ListRetentionPolicies 列出启用自动清理的工程（analytics_retention_days > 0）。
-func (m *Model) ListRetentionPolicies(ctx context.Context) (list []RetentionPolicy, err error) {
-	err = m.db.WithContext(ctx).
-		Raw(`SELECT id AS project_id, analytics_retention_days FROM projects WHERE analytics_retention_days > 0`).
-		Scan(&list).Error
-	return list, err
-}
-
 // DeleteViewsBefore 删除某工程在 cutoff 之前的访问明细，返回删除行数。
 func (m *Model) DeleteViewsBefore(ctx context.Context, projectID string, cutoff time.Time) (int64, error) {
 	var res *gorm.DB

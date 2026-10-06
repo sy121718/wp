@@ -27,9 +27,8 @@ import (
 
 // SetProjects 注入工程契约（装配期调用）。
 //
-// 注入口径：契约只用来「列出工程 id」。未注入时 projectIDs 回退到
-// OrderModel.ListAllProjectIDs（直接读 projects 表的兜底路径）——
-// 兜底能工作，但它是本模块唯一一处跨模块表读取，正确做法是装配点注入（落点见报告）。
+// 注入口径：契约只用来「列出工程 id」，而这个清单的所有权在 project 模块 —— 本模块的
+// model 层不读 projects 表。未注入时 projectIDs 直接失败（不再回退到直接读表）。
 func (s *Service) SetProjects(projects projectcontract.ProjectService) {
 	if s == nil {
 		return
@@ -42,29 +41,18 @@ func (s *Service) SetProjects(projects projectcontract.ProjectService) {
 // 工程表为空时显式失败：静默返回空清单会把「读不到工程表」伪装成「没有超时订单 /
 // 订单不存在」，那正是本批要消灭的 fail-silent。
 func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
-	if s == nil || s.orders == nil {
+	if s == nil || s.orders == nil || s.projects == nil {
 		return nil, errors.New(orderenums.ErrProjectRequired)
 	}
-	if s.projects != nil {
-		list, err := s.projects.List(ctx)
-		if err != nil {
-			return nil, err
-		}
-		ids := make([]string, 0, len(list))
-		for i := range list {
-			if id := strings.TrimSpace(list[i].ID); id != "" {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) == 0 {
-			return nil, errors.New(orderenums.ErrProjectRequired)
-		}
-		return ids, nil
-	}
-	// 契约未注入的兜底：见 SetProjects 与 OrderModel.ListAllProjectIDs 的注释。
-	ids, err := s.orders.ListAllProjectIDs(ctx)
+	list, err := s.projects.List(ctx)
 	if err != nil {
 		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		if id := strings.TrimSpace(list[i].ID); id != "" {
+			ids = append(ids, id)
+		}
 	}
 	if len(ids) == 0 {
 		return nil, errors.New(orderenums.ErrProjectRequired)

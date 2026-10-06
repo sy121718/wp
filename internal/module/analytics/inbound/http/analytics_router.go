@@ -41,6 +41,12 @@ func SetupAnalyticsRoutes(rg *permission.RouteGroup, router *gin.Engine, db *gor
 	sessionSecret string, pages *gin.RouterGroup,
 	projects projectcontract.ProjectService) analyticscontract.AnalyticsService {
 	svc := analyticsservice.NewService(analyticsmodel.NewModel(db), resolveAnonSalt(sessionSecret))
+	// 注入必须排在两个调度器**之前**：StartAnalyticsRetentionScheduler 与
+	// StartAnalyticsRollupScheduler 都会先跑一次再进定时循环，晚一步注入的话首跑就落在
+	// 「契约缺失」上 —— 保留期清理与汇总各少一轮，而日志里只会有一条错误，很容易被当成
+	// 一次性抖动。同一个实例既提供「列出全部工程」（汇总扇出用），也提供「各工程的访问明细
+	// 保留几天」（保留期清理用）—— 后者由 SetProjects 内部按窄接口取。
+	svc.SetProjects(projects)
 	analyticsservice.StartAnalyticsRetentionScheduler(svc)
 	// 按天预聚合（审计 DB-005 / IDX-010）：历史窗口的统计查询读汇总表，
 	// 成本与明细行数脱钩。与保留期任务同形：先跑一次再每小时一次。

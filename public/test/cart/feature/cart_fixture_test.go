@@ -150,6 +150,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		users,
 		nil, // webhooks：本用例不接线外部集成通道
 	)
+	orders.SetProjects(projects)
 	cart := cartservice.NewService(orders, products, products, gateway, cartTestSecret)
 	// 站点运费规则端口（本项目新增）：与生产装配（routers.assembly 的 wireRuntimeAccessFace）
 	// 逐字一致 —— 结算的基准运费来自 projects.settings，不再由调用方传入。

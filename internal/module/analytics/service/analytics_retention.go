@@ -2,8 +2,11 @@ package analyticsservice
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	analyticsenums "go_wp/internal/module/analytics/enums"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -13,16 +16,16 @@ func (s *Service) PurgeExpiredViews(ctx context.Context) error {
 	if s == nil || s.m == nil {
 		return nil
 	}
-	projects, err := s.m.ListRetentionPolicies(ctx)
+	policies, err := s.retentionPolicies(ctx)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	for _, p := range projects {
-		if p.AnalyticsRetentionDays <= 0 {
+	for _, p := range policies {
+		if p.RetentionDays <= 0 {
 			continue
 		}
-		cutoff := now.AddDate(0, 0, -p.AnalyticsRetentionDays)
+		cutoff := now.AddDate(0, 0, -p.RetentionDays)
 		n, derr := s.m.DeleteViewsBefore(ctx, p.ProjectID, cutoff)
 		if derr != nil {
 			logger.Scene("analytics").With("project_id", p.ProjectID).Error(derr, "清理过期访问明细失败")
@@ -33,6 +36,18 @@ func (s *Service) PurgeExpiredViews(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// retentionPolicies 工程的访问明细保留策略。
+//
+// 经 project 契约取：保留期那一列（`projects.analytics_retention_days`）长在 project 模块的
+// 表上，读它的方法就该住在那个模块里（`projectmodel.ListRetentionPolicies`）—— 本模块原来
+// 直接 `SELECT ... FROM projects WHERE analytics_retention_days > 0`，是越界读表。
+func (s *Service) retentionPolicies(ctx context.Context) ([]projectcontract.RetentionPolicyResp, error) {
+	if s == nil || s.retention == nil {
+		return nil, errors.New(analyticsenums.ErrInvalidParam)
+	}
+	return s.retention.ListRetentionPolicies(ctx)
 }
 
 const analyticsRetentionInterval = 24 * time.Hour

@@ -350,21 +350,6 @@ func (m *OrderModel) UpdateFieldsTx(ctx context.Context, tx *gorm.DB, projectID 
 // 绝不退回「不限工程」—— 那在换角色后就是「待付款单永不超时取消」且无任何日志。
 var ErrProjectRequired = errors.New("order: 需要显式工程作用域")
 
-// ListAllProjectIDs 列出全部站点工程 id（超时取消扫描的扇出清单）。
-//
-// 这是订单模块唯一一处读 projects 表，理由要写清楚：
-//   - orders 带 FORCE 策略，扫描必须逐工程设作用域；
-//   - 工程清单只能来自 projects 表，而订单模块的装配点（routers 的 SetupOrderRoutes）
-//     拿不到 project 契约（且属于并行批次的禁用区，不能改签名注入）；
-//   - projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的 53 个对象里，
-//     读它不涉及任何被隔离数据。analytics model 读同一张表有先例
-//     （internal/module/analytics/model/analytics_model.go 的保留期结算）。
-func (m *OrderModel) ListAllProjectIDs(ctx context.Context) (ids []string, err error) {
-	err = m.db.WithContext(ctx).
-		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
-	return ids, err
-}
-
 // ListPendingCreatedBefore 列出**指定工程内**创建时间早于 cutoff 的待付款订单（超时取消扫描用）。
 //
 // projectID 必填（DB-009 第三批）：本方法原是「全表扫描」，而 orders 带 FORCE 策略 ——

@@ -26,6 +26,8 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	ordermodel "go_wp/internal/module/order/model"
 	orderservice "go_wp/internal/module/order/service"
+	projectmodel "go_wp/internal/module/project/model"
+	projectservice "go_wp/internal/module/project/service"
 	"go_wp/pkg/rls"
 )
 
@@ -101,12 +103,20 @@ func TestRLS_OrderScope_MissingProjectRejected(t *testing.T) {
 	}
 }
 
-// TestRLS_OrderScope_ListAllProjectIDsCoversProjects 扇出清单能列出全部工程。
-func TestRLS_OrderScope_ListAllProjectIDsCoversProjects(t *testing.T) {
-	_, m, pA, pB := orderFixture(t)
-	ids, err := m.ListAllProjectIDs(context.Background())
+// TestRLS_ProjectScope_FanoutListCoversProjects 扇出清单能列出全部工程。
+//
+// 清单的真源是 project 契约（`ProjectService.List`）：order / page / block / navigation 的
+// model 都已不再读 projects 表，所以这条断言落在契约本身上 —— 它同时也是「契约能列出全部
+// 工程」这个前提的守卫，扇出与逐工程定位都建在它之上。
+func TestRLS_ProjectScope_FanoutListCoversProjects(t *testing.T) {
+	db, _, pA, pB := orderFixture(t)
+	list, err := projectservice.NewService(projectmodel.NewProjectModel(db)).List(context.Background())
 	if err != nil {
 		t.Fatalf("取工程清单失败: %v", err)
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		ids = append(ids, list[i].ID)
 	}
 	seen := map[string]bool{}
 	for _, id := range ids {
@@ -190,6 +200,7 @@ func TestRLS_OrderScope_ChangeStatusLocatesProject(t *testing.T) {
 	svc := orderservice.NewService(
 		ordermodel.NewOrderModel(db), nil, ordermodel.NewOrderStatusLogModel(db),
 		nil, nil, nil, nil, nil, nil)
+	svc.SetProjects(projectservice.NewService(projectmodel.NewProjectModel(db)))
 	idB := seedOrder(t, db, pB, "CHG-B", ordermodel.OrderStatusPending, time.Hour)
 
 	if err := svc.ChangeStatus(ctx, &orderdto.ChangeStatusReq{

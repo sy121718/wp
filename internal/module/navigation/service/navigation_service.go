@@ -57,7 +57,7 @@ type Service struct {
 
 // NewService 构造（model 与工程契约注入，不持有 *gorm.DB）。
 //
-// projects 允许为 nil：漏接装配时逐工程定位回退到 NavigationModel.ListAllProjectIDs
+// projects 必填：漏接装配时逐工程定位直接失败（不再回退到直读 projects 表）
 // 的只读清单（见 navigation_scope.go 的 projectIDs），并记 warning。
 func NewService(m *navigationmodel.Model, projects projectcontract.ProjectService) *Service {
 	return &Service{m: m, projects: projects}

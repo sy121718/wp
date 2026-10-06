@@ -117,6 +117,7 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 		users,
 		nil, // webhooks：本用例不接线外部集成通道
 	)
+	orders.SetProjects(projects)
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
 		db: db, projectID: project.ID, warehouse: wh.ID,

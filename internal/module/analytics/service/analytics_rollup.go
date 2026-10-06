@@ -52,7 +52,13 @@ func (s *Service) RollupRecent(ctx context.Context) (projects int, err error) {
 	if s == nil || s.m == nil {
 		return 0, nil
 	}
-	ids, err := s.m.ListProjectsWithViews(ctx)
+	// 候选工程清单经 project 契约取，再交给 model 逐工程在作用域内探测明细 ——
+	// 「有哪些工程」的真源在 project 模块，本模块的 model 只查 page_views（自己那张表）。
+	candidates, err := s.projectIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	ids, err := s.m.ListProjectsWithViews(ctx, candidates)
 	if err != nil {
 		return 0, err
 	}

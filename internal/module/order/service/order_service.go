@@ -37,7 +37,7 @@ type Service struct {
 	webhooks webhookcontract.Dispatcher
 	// projects 工程清单来源（DB-009 第四批）：orders/epc 带 FORCE 策略，一批只带 id 的
 	// 入口（后台订单操作、支付回调、超时扫描）需要先逐工程探测出归属。
-	// 允许为 nil：装配点尚未注入时回退到 OrderModel.ListAllProjectIDs 的只读清单
+	// 必填：装配点尚未注入时逐工程定位直接失败（不再回退到直读 projects 表）
 	//（那条路径的落点与消除办法见 order_scope.go 的注释与 DB-009 报告）。
 	projects projectcontract.ProjectService
 	// membership 会员身份读取端口（BIZ-3 消费侧接入，装配期经 SetMembershipReader 注入）。

@@ -105,23 +105,19 @@ func (m *Model) RollupDay(ctx context.Context, projectID string, day, from, to t
 	})
 }
 
-// ListProjectsWithViews 列出有访问明细的工程（汇总任务的输入）。
+// ListProjectsWithViews 在给定候选工程里筛出**有访问明细**的工程（汇总任务的输入）。
 //
-// 取「有访问的工程」而不是 projects 全表：没有访问的工程不需要汇总行，
+// 候选清单由调用方传入（来自 project 契约）：`projects` 表的所有权在 project 模块，
+// 本 model 只查 page_views（自己那张表）。
+//
+// 取「有访问的工程」而不是全部工程：没有访问的工程不需要汇总行，
 // 汇总任务也不该被空工程拖着跑。
 //
-// 实现形状（DB-009 第七批）：工程清单取自 projects 表 —— 它是隔离的**主体**
-// （没有 project_id 列、不在迁移 215 的策略名单里），读它不涉及任何被隔离数据 ——
-// 再**逐工程在作用域内**探测明细是否存在。原来的写法是
-// SELECT DISTINCT project_id FROM page_views，而 page_views 带 FORCE 策略、
-// 谓词读会话变量 app.project_id：没有作用域时那条 SELECT 恒返回空集（fail closed 不报错）。
-// 失效形态是最难发现的一种 —— 汇总任务照常每小时跑，RollupRecent 返回 projects=0，
-// 日志里一行异常都没有，站点只是「历史窗口的数字一直比明细少」。
-func (m *Model) ListProjectsWithViews(ctx context.Context) (ids []string, err error) {
-	candidates, err := m.listAllProjectIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
+// 逐工程在作用域内探测：page_views 带 FORCE 策略、谓词读会话变量 app.project_id，
+// 没有作用域时直查恒返回空集（fail closed 且不报错）。失效形态是最难发现的一种 ——
+// 汇总任务照常每小时跑，RollupRecent 返回 projects=0，日志里一行异常都没有，
+// 站点只是「历史窗口的数字一直比明细少」。
+func (m *Model) ListProjectsWithViews(ctx context.Context, candidates []string) (ids []string, err error) {
 	ids = make([]string, 0, len(candidates))
 	for _, pid := range candidates {
 		if cerr := ctx.Err(); cerr != nil {
@@ -139,16 +135,6 @@ func (m *Model) ListProjectsWithViews(ctx context.Context) (ids []string, err er
 		}
 	}
 	return ids, nil
-}
-
-// listAllProjectIDs 全部站点工程 id（逐工程扇出的清单来源）。
-//
-// 读 projects 表不需要工程作用域：那是隔离的主体而不是被隔离的数据。
-// analytics 侧已有先例（ListRetentionPolicies 同样直读 projects），落点与口径一致。
-func (m *Model) listAllProjectIDs(ctx context.Context) (ids []string, err error) {
-	err = m.db.WithContext(ctx).
-		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
-	return ids, err
 }
 
 // rollupScope 汇总表的查询入口（本 model 内部使用：汇总表与明细表同属访问统计）。

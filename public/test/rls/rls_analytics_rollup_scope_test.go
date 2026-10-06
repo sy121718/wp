@@ -51,7 +51,8 @@ func TestRLS_AnalyticsRollupProjectsScoped(t *testing.T) {
 	seedPageView(t, db, pB, "/b")
 
 	m := analyticsmodel.NewModel(db)
-	ids, err := m.ListProjectsWithViews(ctx)
+	// 候选清单由调用方传入（来自 project 契约）：本用例造的就是这三个工程。
+	ids, err := m.ListProjectsWithViews(ctx, []string{pA, pB, pC})
 	if err != nil {
 		t.Fatalf("取有访问的工程清单失败: %v", err)
 	}
@@ -87,7 +88,8 @@ func TestRLS_AnalyticsRollupSingleProject(t *testing.T) {
 	seedProject(t, db, pA, "唯一工程")
 	seedPageView(t, db, pA, "/only")
 
-	ids, err := analyticsmodel.NewModel(db).ListProjectsWithViews(ctx)
+	// 候选清单由调用方传入：本用例只造了一个工程。
+	ids, err := analyticsmodel.NewModel(db).ListProjectsWithViews(ctx, []string{pA})
 	if err != nil {
 		t.Fatalf("取清单失败: %v", err)
 	}

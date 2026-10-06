@@ -9,20 +9,34 @@ import (
 
 // 请求/响应 DTO 重导出：跨模块调用方只依赖 contract，不直接 import project/dto。
 type (
-	CreateReq        = projectdto.CreateReq
-	UpdateReq        = projectdto.UpdateReq
-	DetailReq        = projectdto.DetailReq
-	ProjectResp      = projectdto.ProjectResp
-	ThemeCreateReq   = projectdto.ThemeCreateReq
-	ThemeUpdateReq   = projectdto.ThemeUpdateReq
-	ThemeActivateReq = projectdto.ThemeActivateReq
-	ThemeResp        = projectdto.ThemeResp
-	LocaleItem       = projectdto.LocaleItem
-	LocalesSaveReq   = projectdto.LocalesSaveReq
-	LocaleResp       = projectdto.LocaleResp
+	CreateReq           = projectdto.CreateReq
+	UpdateReq           = projectdto.UpdateReq
+	DetailReq           = projectdto.DetailReq
+	ProjectResp         = projectdto.ProjectResp
+	RetentionPolicyResp = projectdto.RetentionPolicyResp
+	ThemeCreateReq      = projectdto.ThemeCreateReq
+	ThemeUpdateReq      = projectdto.ThemeUpdateReq
+	ThemeActivateReq    = projectdto.ThemeActivateReq
+	ThemeResp           = projectdto.ThemeResp
+	LocaleItem          = projectdto.LocaleItem
+	LocalesSaveReq      = projectdto.LocalesSaveReq
+	LocaleResp          = projectdto.LocaleResp
 	// SiteSettings 站点级设置的结构化视图（构建期读取 GA4 测量 ID 等站点级字段）。
 	SiteSettings = projectdto.SiteSettings
 )
+
+// RetentionPolicyReader 工程级数据保留策略读取。
+//
+// 单独开一个接口，而不是把方法塞进 ProjectService：ProjectService 的实现方遍布测试
+//（二十多个 fake），加一个方法会让它们全部编译失败，而它们里没有一个碰保留期。
+// 装配层注入的具体类型（*projectservice.Service）同时满足两个接口，消费方按需取窄的那个。
+//
+// 保留期那一列（`projects.analytics_retention_days`，迁移 161）长在本模块的表上，
+// 所以读它的方法留在这里；analytics 的保留期清理经本接口取值，不再直查 projects 表。
+type RetentionPolicyReader interface {
+	// ListRetentionPolicies 列出启用自动清理的工程（保留期 > 0），按创建时间排序。
+	ListRetentionPolicies(ctx context.Context) (res []projectdto.RetentionPolicyResp, err error)
+}
 
 // ParseSiteSettings 解析 projects.settings JSON（缺失 / 非对象按零值处理）。
 var ParseSiteSettings = projectdto.ParseSiteSettings

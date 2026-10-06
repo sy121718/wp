@@ -31,22 +31,6 @@ const (
 	tableNamePageRevisions = "page_revisions"
 )
 
-// ListAllProjectIDs 列出全部站点工程 id（跨工程扇出的兜底清单）。
-//
-// 为什么 page model 要读 projects 表（DB-009 第四批）：一批跨工程扇出入口（整站标记、
-// 全站草稿扫描、按依赖源标记）的工程清单来自 project 契约 —— 契约未注入时（测试装配、
-// 或将来某个装配点漏接）扇出会整体失败，表现为「译文改了页面不被标记」这类静默失效。
-// projects 是隔离的**主体**：它没有 project_id 列、不在迁移 215 的策略名单里，
-// 读它不涉及任何被隔离数据。order model 的 ListAllProjectIDs 是同一处境的同形兜底。
-//
-// 正确的修法是装配点注入 project 契约（生产装配已注入，见 routers 的 SetupPageRoutes；
-// 漏的是两处测试装配 —— 落点见 DB-009 第四批报告）。
-func (m *Model) ListAllProjectIDs(ctx context.Context) (ids []string, err error) {
-	err = m.db.WithContext(ctx).
-		Raw("SELECT id::text FROM projects ORDER BY create_time ASC, id ASC").Scan(&ids).Error
-	return ids, err
-}
-
 // PageEntity 对应 pages 表的手工 Page 字段。
 type PageEntity struct {
 	ID        string `gorm:"column:id;primaryKey"`

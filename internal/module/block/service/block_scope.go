@@ -26,7 +26,6 @@ import (
 	"gorm.io/gorm"
 
 	blockmodel "go_wp/internal/module/block/model"
-	"go_wp/pkg/logger"
 )
 
 // projectIDs 定位用的工程清单。
@@ -36,28 +35,24 @@ func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 	if s == nil || s.model == nil {
 		return nil, ErrProjectRequired
 	}
-	var ids []string
-	if s.projects != nil {
-		list, err := s.projects.List(ctx)
-		if err != nil {
-			return nil, err
+	// 契约未注入就是装配漏接，直接失败。
+	//
+	// 这里原来回退到 `model.ListAllProjectIDs`（直接读 projects 表）。它能工作，但
+	// **工程清单的所有权在 project 模块**，block 的 model 层只该碰本模块的表；回退还会
+	// 让漏接表现为「一切正常」，于是同一份「列出全部工程」的 SQL 在 block / page /
+	// order / navigation 里各存一份，四份将来会各自漂移。
+	if s.projects == nil {
+		return nil, ErrProjectRequired
+	}
+	list, err := s.projects.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		if id := strings.TrimSpace(list[i].ID); id != "" {
+			ids = append(ids, id)
 		}
-		ids = make([]string, 0, len(list))
-		for i := range list {
-			if id := strings.TrimSpace(list[i].ID); id != "" {
-				ids = append(ids, id)
-			}
-		}
-	} else {
-		// 契约未注入的兜底：漏接一处装配就会让「按 id 更新 / 删除 / 复制」整体静默失效
-		//（表现为「块明明在却报不存在」），那正是本批要消灭的失败形态。
-		// 兜底路径记一条 warn：装配缺失应当被看见，而不是靠运气正常工作。
-		logger.Scene("block").Warn("project 契约未注入，逐工程定位回退到 projects 表清单（请检查装配点）")
-		list, err := s.model.ListAllProjectIDs(ctx)
-		if err != nil {
-			return nil, err
-		}
-		ids = list
 	}
 	if len(ids) == 0 {
 		// 一个工程都没有：不是「块不存在」，而是没有可作用域的工程。

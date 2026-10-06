@@ -26,7 +26,6 @@ import (
 	"gorm.io/gorm"
 
 	pagemodel "go_wp/internal/module/page/model"
-	"go_wp/pkg/logger"
 )
 
 // fanoutProjectIDs 返回逐工程扇出要用的工程清单。
@@ -36,29 +35,26 @@ func (s *Service) fanoutProjectIDs(ctx context.Context) ([]string, error) {
 	if s == nil || s.model == nil {
 		return nil, ErrProjectRequired
 	}
-	var ids []string
-	if s.project != nil {
-		list, err := s.project.List(ctx)
-		if err != nil {
-			return nil, err
+	// 契约未注入就是装配漏接，直接失败。
+	//
+	// 这里原来回退到 `model.ListAllProjectIDs`（直接读 projects 表）：它能工作，但
+	// **工程清单的所有权在 project 模块**，page 的 model 层只该碰本模块的表。更糟的是
+	// 回退让漏接表现为「一切正常」，而 warn 日志没人看 —— 于是同一份「列出全部工程」
+	// 的 SQL 在 page / order / block / navigation 里各存一份，四份将来会各自漂移
+	// （比如某个模块开始按 create_time 排序、另一个按 id）。漏接时整站标记 / 全站扫描 /
+	// 依赖扇出会整体失效，那本来就该是一次响亮的失败。
+	if s.project == nil {
+		return nil, ErrProjectRequired
+	}
+	list, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		if id := strings.TrimSpace(list[i].ID); id != "" {
+			ids = append(ids, id)
 		}
-		ids = make([]string, 0, len(list))
-		for i := range list {
-			if id := strings.TrimSpace(list[i].ID); id != "" {
-				ids = append(ids, id)
-			}
-		}
-	} else {
-		// 契约未注入的兜底（DB-009 第四批）：工程清单直接取自 projects 表。
-		// 不这样做的话，漏接一处装配（当前是两处测试装配）就会让整站标记 / 全站扫描 /
-		// 依赖扇出**整体静默失效** —— 那正是本批要消灭的失败形态。
-		// 兜底路径记一条 warn：装配缺失应当被看见，而不是靠运气正常工作。
-		logger.Scene("page").Warn("project 契约未注入，跨工程扇出回退到 projects 表清单（请检查装配点）")
-		list, err := s.model.ListAllProjectIDs(ctx)
-		if err != nil {
-			return nil, err
-		}
-		ids = list
 	}
 	if len(ids) == 0 {
 		// 一个工程都没有：不是「没有受影响页面」，而是没有可作用域的工程。

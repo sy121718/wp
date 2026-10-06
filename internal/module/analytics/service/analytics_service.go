@@ -6,6 +6,7 @@
 package analyticsservice
 
 import (
+	"context"
 	"crypto/hkdf"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,7 @@ import (
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsenums "go_wp/internal/module/analytics/enums"
 	analyticsmodel "go_wp/internal/module/analytics/model"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 var _ analyticscontract.AnalyticsService = (*Service)(nil)
@@ -39,6 +41,57 @@ type Service struct {
 	pepper string
 	// now 取当前时间（测试注入固定时钟；生产为 UTC 当下）。
 	now func() time.Time
+	// projects 工程契约（装配期注入）。
+	//
+	// 用途只有一个：拿「有哪些工程」与「各工程的访问明细保留几天」。这两件事的真源都在
+	// project 模块（`projects` 表是它的），本模块的 model 只碰 page_views / 汇总表 ——
+	// 越过模块边界直查 projects 的后果是同一份「列出全部工程」的 SQL 在多个模块各存一份，
+	// 各自演化出不同的排序与过滤。
+	//
+	// 未注入时逐工程扇出与保留期清理都会失败，而不是静默退化成「没有工程」。
+	projects projectcontract.ProjectService
+	// retention 工程保留策略读取（装配期注入，与 projects 同源）。
+	//
+	// 单独一个字段而不是复用 projects：契约里这是两个接口（`ProjectService` 太宽，
+	// 往它加方法会波及二十多个测试 fake），装配层注入的同一个实例同时满足两者。
+	retention projectcontract.RetentionPolicyReader
+}
+
+// SetProjects 注入工程契约（装配期调用）。
+//
+// 同一个实例同时满足两个接口（`ProjectService` 与 `RetentionPolicyReader`），所以一次注入
+// 就把两者都接上。第二次断言失败只可能是「注入的是一份只实现 ProjectService 的替身」
+// （测试装配常见）—— 那时留空，保留期清理会以「契约缺失」显式失败，而不是静默跳过。
+func (s *Service) SetProjects(projects projectcontract.ProjectService) {
+	if s == nil || projects == nil {
+		return
+	}
+	s.projects = projects
+	s.retention, _ = projects.(projectcontract.RetentionPolicyReader)
+}
+
+// projectIDs 全部站点工程 id（逐工程扇出 / 保留期清理的清单来源）。
+//
+// 取不到工程就显式失败：静默返回空清单会把「装配漏接」伪装成「没有工程需要汇总 /
+// 没有工程需要清理」，那正是最难发现的一类失效（定时任务照常跑、日志一行异常都没有）。
+func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
+	if s == nil || s.projects == nil {
+		return nil, errors.New(analyticsenums.ErrInvalidParam)
+	}
+	list, err := s.projects.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		if id := strings.TrimSpace(list[i].ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, errors.New(analyticsenums.ErrInvalidParam)
+	}
+	return ids, nil
 }
 
 // NewService 创建统计服务。

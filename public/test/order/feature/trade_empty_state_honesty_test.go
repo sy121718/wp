@@ -85,6 +85,7 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 		ordermodel.NewReturnModel(db),
 		nil, nil, nil, nil,
 	)
+	orders.SetProjects(projects)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
