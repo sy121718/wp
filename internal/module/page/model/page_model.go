@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -292,17 +293,34 @@ func (m *Model) UpdateStructureSnapshot(ctx context.Context, projectID, pageID s
 // projectID 必填（DB-009 第三批）：themeID 只说明「哪套主题」，说不出「哪个工程」；
 // pages 带 FORCE 策略，漏作用域时这条 UPDATE 在非超级角色下匹配 0 行且不报错 ——
 // 现象是「换了主题设置但页面不被标记待重建」，站点上一直跑旧产物。
+// pageIDsOf 从「UPDATE … RETURNING id」写回的实体里取 id 列表。
+//
+// 写成助手而不是各处循环：这是 GORM 多行 RETURNING 的**唯一可用形态** ——
+// 必须 `Model(&rows)`（切片）配 `Clauses(clause.Returning{...})`。换成
+// `Table(name).Clauses(...).Scan(&rows)` 会在 GORM 内部 panic
+// （`reflect.Value.Addr of unaddressable value`）；`Model(&单结构体)` 则只留最后一行。
+func pageIDsOf(rows []PageEntity) []string {
+	ids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
 func (m *Model) MarkStaleForTheme(ctx context.Context, projectID, themeID string) (ids []string, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"UPDATE pages SET stale = true, update_time = ? "+
-				"WHERE project_id = ? AND theme_id = ? AND deleted_at IS NULL "+
-				"RETURNING id",
-			time.Now().UTC(), projectID, themeID,
-		).Scan(&ids).Error
+		var rows []PageEntity
+		if err := tx.Model(&rows).
+			Where("project_id = ? AND theme_id = ? AND deleted_at IS NULL", projectID, themeID).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+			Updates(map[string]any{"stale": true, "update_time": time.Now().UTC()}).Error; err != nil {
+			return err
+		}
+		ids = pageIDsOf(rows)
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -345,12 +363,16 @@ func (m *Model) MarkStaleForI18n(ctx context.Context, projectID string) (ids []s
 // 两处各写一遍 SQL 的话，改动时漏一处会让「自带事务」与「透传事务」两条路径
 // 对同一批页面产生不同的标记结果，而两者在调用方眼里是同一个语义。
 func (m *Model) markStaleForI18nIn(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) (ids []string, err error) {
-	err = tx.Raw(
-		"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL "+
-			"RETURNING id",
-		at, projectID,
-	).Scan(&ids).Error
-	return ids, err
+	var rows []PageEntity
+	err = tx.WithContext(ctx).
+		Model(&rows).
+		Where("project_id = ? AND deleted_at IS NULL", projectID).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+		Updates(map[string]any{"stale": true, "update_time": at}).Error
+	if err != nil {
+		return nil, err
+	}
+	return pageIDsOf(rows), nil
 }
 
 // MarkStaleByIDs 在**指定工程作用域内**按页面 ID 列表标记待重建，返回**本次真正命中**的页面 ID。
@@ -390,12 +412,18 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 		return nil, nil
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"UPDATE pages SET stale = true WHERE project_id = ? AND deleted_at IS NULL "+
-				"AND id = ANY(string_to_array(?, ',')::uuid[]) "+
-				"RETURNING id",
-			projectID, strings.Join(ids, ","),
-		).Scan(&marked).Error
+		var rows []PageEntity
+		// UpdateColumns 而不是 Updates：前者跳过 GORM 的自动时间戳填充，本方法
+		// 的语义是「只改 stale，不动 update_time」（at 参数留给将来用）。
+		if err := tx.Model(&rows).
+			Where("project_id = ? AND deleted_at IS NULL AND id = ANY(string_to_array(?, ',')::uuid[])",
+				projectID, strings.Join(ids, ",")).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+			UpdateColumns(map[string]any{"stale": true}).Error; err != nil {
+			return err
+		}
+		marked = pageIDsOf(rows)
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -484,15 +512,18 @@ func (m *Model) ListBlockSourceRefs(ctx context.Context, projectID, blockID stri
 		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"SELECT id::text AS id, draft_path, ("+blockRefMatchCond+") AS in_document, ("+blockStructureMatchCond+") AS in_structure "+
-				"FROM pages WHERE project_id = ? AND deleted_at IS NULL AND ("+
-				"("+blockRefMatchCond+") OR ("+blockStructureMatchCond+")) "+
-				"ORDER BY draft_path ASC, id ASC",
-			blockID, blockID, blockID, blockID, // SELECT：文档树 1 + 结构 3
-			projectID,
-			blockID, blockID, blockID, blockID, // WHERE：文档树 1 + 结构 3
-		).Scan(&rows).Error
+		// Select 里两个条件都是**列表达式**（jsonb 路径匹配 + settings.structure 的三个槽位），
+		// GORM 没有「把表达式当列」的链式写法，所以表达式本身仍是常量；
+		// FROM / WHERE / ORDER BY 与参数绑定全部交给 GORM。
+		// 实参个数必须与各自串里的 ? 个数相等：SELECT 4（文档树 1 + 结构 3），
+		// WHERE 5（project_id 1 + 文档树 1 + 结构 3）。
+		return tx.Table(tableNamePages).
+			Select("id::text AS id, draft_path, ("+blockRefMatchCond+") AS in_document, ("+blockStructureMatchCond+") AS in_structure",
+				blockID, blockID, blockID, blockID).
+			Where("project_id = ? AND deleted_at IS NULL AND (("+blockRefMatchCond+") OR ("+blockStructureMatchCond+"))",
+				projectID, blockID, blockID, blockID, blockID).
+			Order("draft_path ASC, id ASC").
+			Find(&rows).Error
 	})
 	return rows, err
 }
@@ -522,14 +553,13 @@ func (m *Model) ListBlockRevisionRefs(ctx context.Context, projectID, blockID st
 		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"SELECT r.page_id::text AS page_id, p.draft_path, r.version "+
-				"FROM page_revisions r JOIN pages p ON p.id = r.page_id "+
-				"WHERE p.project_id = ? AND p.deleted_at IS NULL "+
-				"AND jsonb_path_query_array(r.draft_document, '$.**.blockId') @> jsonb_build_array(?::text) "+
-				"ORDER BY p.draft_path ASC, r.version ASC",
-			projectID, blockID,
-		).Scan(&rows).Error
+		return tx.Table(tableNamePages+" AS p").
+			Select("r.page_id::text AS page_id, p.draft_path, r.version").
+			Joins("JOIN "+tableNamePageRevisions+" r ON r.page_id = p.id").
+			Where("p.project_id = ? AND p.deleted_at IS NULL", projectID).
+			Where("jsonb_path_query_array(r.draft_document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+			Order("p.draft_path ASC, r.version ASC").
+			Find(&rows).Error
 	})
 	return rows, err
 }
@@ -552,12 +582,16 @@ func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string
 		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND deleted_at IS NULL AND ("+
-				blockRefMatchCond+" OR "+blockStructureMatchCond+") "+
-				"RETURNING id",
-			time.Now().UTC(), projectID, blockID, blockID, blockID, blockID,
-		).Scan(&ids).Error
+		var rows []PageEntity
+		if err := tx.Model(&rows).
+			Where("project_id = ? AND deleted_at IS NULL AND ("+blockRefMatchCond+" OR "+blockStructureMatchCond+")",
+				projectID, blockID, blockID, blockID, blockID).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+			Updates(map[string]any{"stale": true, "update_time": time.Now().UTC()}).Error; err != nil {
+			return err
+		}
+		ids = pageIDsOf(rows)
+		return nil
 	})
 	if err != nil {
 		return nil, err
