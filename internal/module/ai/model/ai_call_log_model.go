@@ -111,16 +111,17 @@ func (m *CallLogModel) RecentCallsBySession(ctx context.Context, sessionIDs []in
 	// SQL 写成**一个**原始字符串字面量（不跨行拼 +）：拼接式续行时 Go 不会补空格，
 	// 上一段的末尾与下一段的开头会粘在一起（实测把 `AS rn` 与 `FROM` 拼成 `rnFROM`），
 	// 而这类错误只在真跑一次查询时才会暴露。
-	err = m.db.WithContext(ctx).Raw(
-		`SELECT * FROM (
-			SELECT c.*,
-			       COUNT(*) OVER (PARTITION BY c.session_id) AS total,
-			       ROW_NUMBER() OVER (PARTITION BY c.session_id ORDER BY c.id DESC) AS rn
-			FROM ai_call_log c
-			WHERE c.session_id IN ?
-		) t WHERE t.rn <= ? ORDER BY t.session_id ASC, t.rn ASC`,
-		sessionIDs, perSession,
-	).Scan(&rows).Error
+	inner := m.db.WithContext(ctx).
+		Table(tableNameAICallLog+" AS c").
+		Select("c.*, COUNT(*) OVER (PARTITION BY c.session_id) AS total, "+
+			"ROW_NUMBER() OVER (PARTITION BY c.session_id ORDER BY c.id DESC) AS rn").
+		Where("c.session_id IN ?", sessionIDs)
+	// FROM 子查询：`Table("(?) AS t", inner)` 是 GORM 里表达「套一层再过滤」的正规出口。
+	err = m.db.WithContext(ctx).
+		Table("(?) AS t", inner).
+		Where("t.rn <= ?", perSession).
+		Order("t.session_id ASC, t.rn ASC").
+		Scan(&rows).Error
 	return rows, err
 }
 
@@ -171,19 +172,18 @@ func (m *CallLogModel) AggregateTokensBySession(ctx context.Context, sessionIDs 
 		SessionID int64 `gorm:"column:session_id"`
 		SessionTokenAggregate
 	}
-	err := m.db.WithContext(ctx).Raw(
-		`SELECT session_id,
+	err := m.db.WithContext(ctx).Model(&AICallLogEntity{}).
+		Select(`session_id,
 		        COUNT(*) AS calls,
 		        COUNT(*) FILTER (WHERE usage_reported) AS usage_reported_calls,
 		        COALESCE(SUM(input_tokens) FILTER (WHERE usage_reported), 0) AS input_tokens,
 		        COALESCE(SUM(output_tokens) FILTER (WHERE usage_reported), 0) AS output_tokens,
 		        COUNT(*) FILTER (WHERE cached_reported) AS cached_calls,
 		        COALESCE(SUM(input_tokens) FILTER (WHERE cached_reported), 0) AS cached_input_tokens,
-		        COALESCE(SUM(cached_tokens) FILTER (WHERE cached_reported), 0) AS cached_tokens
-		   FROM ai_call_log
-		  WHERE session_id IN ?
-		  GROUP BY session_id`, sessionIDs,
-	).Scan(&rows).Error
+		        COALESCE(SUM(cached_tokens) FILTER (WHERE cached_reported), 0) AS cached_tokens`).
+		Where("session_id IN ?", sessionIDs).
+		Group("session_id").
+		Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

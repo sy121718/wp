@@ -10,11 +10,11 @@ package aimodel
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	aienums "go_wp/internal/module/ai/enums"
 )
@@ -193,17 +193,22 @@ func (m *SessionModel) ListSessions(ctx context.Context, keyword string, status 
 // （唯一约束只兜底、不参与正常路径），service 不需要写「重试到不撞车」的循环。
 // 也因为它与事件插入同事务，失败回滚不会留下空号。会话不存在时返回 (0, false, nil)，与底层错误区分开。
 func (m *SessionModel) NextSeqTx(tx *gorm.DB, sessionID int64) (seq int64, found bool, err error) {
-	row := tx.Raw(
-		"UPDATE ai_session SET next_seq = next_seq + 1 WHERE id = ? RETURNING next_seq - 1",
-		sessionID,
-	).Row()
-	if scanErr := row.Scan(&seq); scanErr != nil {
-		if errors.Is(scanErr, sql.ErrNoRows) {
-			return 0, false, nil
-		}
-		return 0, false, scanErr
+	var sess AISessionEntity
+	// UpdateColumn（不是 Update）：本方法只该推进 next_seq，不能顺手改 update_time ——
+	// 会话头的 update_time 反映的是「用户/系统动了会话元数据」，追加一条消息不算。
+	res := tx.Model(&sess).
+		Where("id = ?", sessionID).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "next_seq"}}}).
+		UpdateColumn("next_seq", gorm.Expr("next_seq + 1"))
+	if res.Error != nil {
+		return 0, false, res.Error
 	}
-	return seq, true, nil
+	if res.RowsAffected == 0 {
+		// 会话不存在：与底层错误区分开（调用方据此回 ErrSessionNotFound 而不是 500）。
+		return 0, false, nil
+	}
+	// RETURNING 给的是自增**之后**的值，分配到的序号是它减一。
+	return sess.NextSeq - 1, true, nil
 }
 
 // UpdateSessionWithVersion 带乐观锁更新会话头（title / provider_key / model_id / status）。
@@ -430,16 +435,14 @@ func (m *SessionModel) SessionUsageOf(ctx context.Context, f SessionQuery) (out 
 		CachedInputTokens  int64 `gorm:"column:cached_input_tokens"`
 		CachedTokens       int64 `gorm:"column:cached_tokens"`
 	}
-	if err = m.db.WithContext(ctx).Raw(
-		`SELECT COUNT(*) AS calls,
+	if err = m.db.WithContext(ctx).Model(&AICallLogEntity{}).
+		Select(`COUNT(*) AS calls,
 		        COUNT(*) FILTER (WHERE usage_reported) AS usage_reported_calls,
 		        COUNT(*) FILTER (WHERE cached_reported) AS cached_calls,
 		        COALESCE(SUM(input_tokens) FILTER (WHERE cached_reported), 0) AS cached_input_tokens,
-		        COALESCE(SUM(cached_tokens) FILTER (WHERE cached_reported), 0) AS cached_tokens
-		   FROM ai_call_log
-		  WHERE session_id IN (?)`,
-		applySessionQuery(m.sessions(ctx), f).Select("id"),
-	).Scan(&calls).Error; err != nil {
+		        COALESCE(SUM(cached_tokens) FILTER (WHERE cached_reported), 0) AS cached_tokens`).
+		Where("session_id IN (?)", applySessionQuery(m.sessions(ctx), f).Select("id")).
+		Scan(&calls).Error; err != nil {
 		return out, err
 	}
 	out.Calls = calls.Calls
