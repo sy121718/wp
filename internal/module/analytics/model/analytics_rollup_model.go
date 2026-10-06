@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -48,42 +49,47 @@ type DailyStatEntity struct {
 // TableName 表名。
 func (DailyStatEntity) TableName() string { return tableNameDailyStats }
 
-// 聚合 SQL：与明细口径逐字一致（COUNT(*) 与 COUNT(DISTINCT NULLIF(visitor_hash,”))）。
+// 聚合口径：与明细逐字一致（COUNT(*) 与 COUNT(DISTINCT NULLIF(visitor_hash,”))）。
 // 一致性是这套方案的前提 —— 汇总与明细算的是两套公式的话，
 // 「切到汇总之后数字变了」就会变成一个没人能解释的现象。
+//
+// all 行即使当天 0 访问也要写一行 views=0（而不是只在有明细时才写）：
+// 否则「这一天汇总过没有」无从判断，查询侧就只能保守地退回明细（性能白优化）。
 const (
-	// all 行用 VALUES + 标量子查询而不是 INSERT ... SELECT：后者在「当天 0 访问」时
-	// 一行都不写，于是「这一天汇总过没有」无从判断，查询侧就只能保守地退回明细
-	// （性能白优化）。写一行 views=0 让「已汇总」成为一个可判定的状态。
-	rollupAllSQL = `INSERT INTO page_views_daily (project_id, day, scope, path, views, visitors, rolled_at)
-		VALUES (?,
-		        ?::date,
-		        'all',
-		        '',
-		        (SELECT COUNT(*) FROM page_views WHERE project_id = ? AND viewed_at >= ? AND viewed_at < ?),
-		        (SELECT COUNT(DISTINCT NULLIF(visitor_hash, '')) FROM page_views WHERE project_id = ? AND viewed_at >= ? AND viewed_at < ?),
-		        now())
-		ON CONFLICT (project_id, day, scope, path)
-		DO UPDATE SET views = EXCLUDED.views, visitors = EXCLUDED.visitors, rolled_at = now()`
-
-	rollupPathSQL = `INSERT INTO page_views_daily (project_id, day, scope, path, views, visitors, rolled_at)
-		SELECT ?, ?::date, 'path', path, COUNT(*), COUNT(DISTINCT NULLIF(visitor_hash, '')), now()
-		FROM page_views
-		WHERE project_id = ? AND viewed_at >= ? AND viewed_at < ?
-		GROUP BY path
-		ON CONFLICT (project_id, day, scope, path)
-		DO UPDATE SET views = EXCLUDED.views, visitors = EXCLUDED.visitors, rolled_at = now()`
-
-	// 清理重算后已不存在的路径行：明细被清理（保留期到期）后，汇总里对应的路径行
-	// 若不删就会永远留着，路径排行里出现一个点不开、也查不到明细的幽灵条目。
-	rollupCleanupSQL = `DELETE FROM page_views_daily s
-		WHERE s.project_id = ? AND s.day = ?::date AND s.scope = 'path'
-		  AND NOT EXISTS (
-		    SELECT 1 FROM page_views v
-		    WHERE v.project_id = s.project_id AND v.path = s.path
-		      AND v.viewed_at >= ? AND v.viewed_at < ?)
-	`
+	dailyStatViewWindow      = "project_id = ? AND viewed_at >= ? AND viewed_at < ?"
+	dailyStatViewCountSelect = "COUNT(*) AS views, COUNT(DISTINCT NULLIF(visitor_hash, '')) AS visitors"
 )
+
+// upsertDailyStats 按四列主键幂等覆盖（ON CONFLICT DO UPDATE）。
+//
+// 汇总的正确性靠「全量重算 + 幂等覆盖」而不是增量累加：某一天被重算多少次，
+// 结果都等于从明细重新算一遍的值。
+func upsertDailyStats(tx *gorm.DB, rows []DailyStatEntity) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return tx.Model(&DailyStatEntity{}).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "project_id"}, {Name: "day"}, {Name: "scope"}, {Name: "path"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{"views", "visitors", "rolled_at"}),
+		}).
+		Create(&rows).Error
+}
+
+// cleanupVanishedPaths 清理重算后已不存在的路径行。
+//
+// 明细被清理（保留期到期）后，汇总里对应的路径行若不删就会永远留着，
+// 路径排行里出现一个点不开、也查不到明细的幽灵条目。
+func cleanupVanishedPaths(tx *gorm.DB, projectID string, day, from, to time.Time) error {
+	views := PageViewEntity{}.TableName()
+	return tx.Model(&DailyStatEntity{}).
+		Where("project_id = ? AND day = ?::date AND scope = ?", projectID, day, ScopePath).
+		Where("NOT EXISTS (SELECT 1 FROM "+views+" v WHERE v.project_id = "+tableNameDailyStats+".project_id"+
+			" AND v.path = "+tableNameDailyStats+".path AND v.viewed_at >= ? AND v.viewed_at < ?)", from, to).
+		Delete(&DailyStatEntity{}).Error
+}
 
 // RollupDay 重算某一天（UTC 日界）的汇总，from/to 是该日的半开区间。
 //
@@ -93,15 +99,45 @@ func (m *Model) RollupDay(ctx context.Context, projectID string, day, from, to t
 	// 工程作用域里跑：汇总写入若被策略挡下，水位（LastRolledDay）却推进了 —— 会留下
 	// 一整段「已汇总但数字为 0」的历史，且没有任何报错。
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		if err := tx.Exec(rollupAllSQL, projectID, day, projectID, from, to, projectID, from, to).Error; err != nil {
-			return err
+		var all struct {
+			Views    int64 `gorm:"column:views"`
+			Visitors int64 `gorm:"column:visitors"`
 		}
-		if err := tx.Exec(rollupPathSQL, projectID, day, projectID, from, to).Error; err != nil {
-			return err
+		if qerr := tx.Model(&PageViewEntity{}).
+			Select(dailyStatViewCountSelect).
+			Where(dailyStatViewWindow, projectID, from, to).
+			Scan(&all).Error; qerr != nil {
+			return qerr
 		}
-		// 参数与占位符逐个对齐：cleanup 里的 project_id 只出现一次（子查询用 s.project_id 关联），
-		// 多传一个会得到「mismatched param and argument count」——那种错误不会指认是哪条语句。
-		return tx.Exec(rollupCleanupSQL, projectID, day, from, to).Error
+		var paths []struct {
+			Path     string `gorm:"column:path"`
+			Views    int64  `gorm:"column:views"`
+			Visitors int64  `gorm:"column:visitors"`
+		}
+		if qerr := tx.Model(&PageViewEntity{}).
+			Select("path, "+dailyStatViewCountSelect).
+			Where(dailyStatViewWindow, projectID, from, to).
+			Group("path").
+			Scan(&paths).Error; qerr != nil {
+			return qerr
+		}
+		// rolled_at 由应用侧统一取一次：同一次重算的所有行标记同一时刻。
+		at := time.Now().UTC()
+		rows := make([]DailyStatEntity, 0, len(paths)+1)
+		rows = append(rows, DailyStatEntity{
+			ProjectID: projectID, Day: day, Scope: ScopeAll, Path: "",
+			Views: all.Views, Visitors: all.Visitors, RolledAt: at,
+		})
+		for _, p := range paths {
+			rows = append(rows, DailyStatEntity{
+				ProjectID: projectID, Day: day, Scope: ScopePath, Path: p.Path,
+				Views: p.Views, Visitors: p.Visitors, RolledAt: at,
+			})
+		}
+		if uerr := upsertDailyStats(tx, rows); uerr != nil {
+			return uerr
+		}
+		return cleanupVanishedPaths(tx, projectID, day, from, to)
 	})
 }
 
