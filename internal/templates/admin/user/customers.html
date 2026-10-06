@@ -131,26 +131,31 @@
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.tier.note", "等级由会员模块按消费门槛自动评定（或后台手工指定）；与上面几个条件同时选时全部都要成立。") }}</span>
                     <span class="text-mute text-sm">{{ .["t"]("admin.customers.segment.note", "不选时间就是本月；只统计已付款及以后的订单，游客单不计入。") }}</span>
                 </div>
+                {* 两组区间都走后台统一的时间筛选条（admin/partials/date_filter.html）：
+                   下单时间（segmentFrom/segmentTo）与注册时间（registeredFrom/registeredTo）。
+                   第二组传 showActions "0" —— 同一个表单只该有一个提交键，两个都能提交
+                   同一个表单时用户看不出该点哪个。 *}
                 <div class="filter-field">
-                    <label for="segmentFrom">{{ .["t"]("admin.customers.field.segment_from", "下单时间（起）") }}</label>
-                    <input type="date" class="form-input" id="segmentFrom" name="segmentFrom" value="{{fSegmentFrom}}">
-                    <label for="segmentTo">{{ .["t"]("admin.customers.field.segment_to", "下单时间（止）") }}</label>
-                    <input type="date" class="form-input" id="segmentTo" name="segmentTo" value="{{fSegmentTo}}">
+                    {{include "../partials/date_filter.html" map(
+                        "t", .["t"],
+                        "idPrefix", "seg",
+                        "formAction", "",
+                        "fromName", "segmentFrom", "toName", "segmentTo",
+                        "from", fSegmentFrom, "to", fSegmentTo,
+                        "presetName", "segPreset",
+                        "resetHref", "", "hint", "",
+                        "showActions", "0")}}
                 </div>
-                {* 注册时间是一个**区间**：容器加 data-wb-daterange 后由 ui/daterange.js 接管
-                   （审计 02-O G5 / 02-K §3）。两个原生 date 仍留在 DOM 里参与表单提交
-                   （name/value/label[for] 全部照旧），区间控件只做渐进增强。 *}
                 <div class="filter-field">
-                    <div class="wbd" data-wb-daterange data-wb-clear="{{ .["t"]("admin.common.media.clear", "清除") }}">
-                        <label for="registeredFrom">{{ .["t"]("admin.customers.field.registered_at", "注册时间（起）") }}</label>
-                        <input type="date" class="form-input" id="registeredFrom" name="registeredFrom" value="{{fFrom}}">
-                        <label for="registeredTo">{{ .["t"]("admin.customers.field.registered_to", "注册时间（止）") }}</label>
-                        <input type="date" class="form-input" id="registeredTo" name="registeredTo" value="{{fTo}}">
-                    </div>
-                </div>
-                <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.customers.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/customers">{{ .["t"]("admin.customers.filter.reset", "重置") }}</a>
+                    {{include "../partials/date_filter.html" map(
+                        "t", .["t"],
+                        "idPrefix", "reg",
+                        "formAction", "",
+                        "fromName", "registeredFrom", "toName", "registeredTo",
+                        "from", fFrom, "to", fTo,
+                        "presetName", "regPreset",
+                        "resetHref", "/admin/customers",
+                        "hint", "")}}
                 </div>
             </form>
         </div>

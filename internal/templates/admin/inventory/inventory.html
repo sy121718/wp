@@ -105,18 +105,19 @@
                         {{end}}
                     </select>
                 </div>
-                <div class="filter-field">
-                    <label for="mv-time-from">{{ .["t"]("admin.inventory.filter.timeFrom", "起始时间") }}</label>
-                    <input type="date" class="form-input" id="mv-time-from" name="timeFrom" value="{{filterTimeFrom}}">
-                </div>
-                <div class="filter-field">
-                    <label for="mv-time-to">{{ .["t"]("admin.inventory.filter.timeTo", "截止时间") }}</label>
-                    <input type="date" class="form-input" id="mv-time-to" name="timeTo" value="{{filterTimeTo}}">
-                </div>
-                <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{ .["t"]("admin.inventory.filter.submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/inventory?project={{selectedProject}}">{{ .["t"]("admin.inventory.filter.reset", "重置") }}</a>
-                </div>
+                {* 区间走后台统一的时间筛选条（admin/partials/date_filter.html）。
+                   本页字段名是 timeFrom / timeTo（已发布 URL 的一部分），由调用方传入 ——
+                   组件不猜名字：改成 from/to 会静默废掉书签与外部链接。
+                   提交键与重置键由组件渲染，本页原来的 .filter-actions 同步删掉。 *}
+                {{include "../partials/date_filter.html" map(
+                    "t", .["t"],
+                    "idPrefix", "mv",
+                    "formAction", "",
+                    "fromName", "timeFrom", "toName", "timeTo",
+                    "from", filterTimeFrom, "to", filterTimeTo,
+                    "presetName", "preset",
+                    "resetHref", "/admin/inventory?project=" + selectedProject,
+                    "hint", "")}}
             </form>
         </div>
 

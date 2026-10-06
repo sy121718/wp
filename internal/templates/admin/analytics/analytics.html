@@ -139,18 +139,19 @@
             <input type="hidden" name="project" value="{{selectedProject}}">
             <input type="hidden" name="view" value="{{viewMode}}">
             <div class="filter-fields">
-                <div class="filter-field">
-                    <div class="wbd" data-wb-daterange data-wb-clear="{{ .["t"]("admin.common.media.clear", "清除") }}">
-                        <label for="an-from">{{ .["t"]("admin.analytics.range.from", "起始日期") }}</label>
-                        <input type="date" class="form-input" id="an-from" name="from" value="{{.FilterFrom}}">
-                        <label for="an-to">{{ .["t"]("admin.analytics.range.to", "结束日期") }}</label>
-                        <input type="date" class="form-input" id="an-to" name="to" value="{{.FilterTo}}">
-                    </div>
-                </div>
-            </div>
-            <div class="filter-actions">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.analytics.range.submit", "查询") }}</button>
-                <a class="btn btn-ghost" href="/admin/analytics?project={{selectedProject}}&view={{viewMode}}">{{ .["t"]("admin.analytics.range.last30", "最近 30 天") }}</a>
+                {* 区间走后台统一的时间筛选条（admin/partials/date_filter.html）。
+                   formAction 传空串：外层这个 form 已经把 project / view 包在同一份查询里。
+                   提交键与重置键由组件渲染，「最近 30 天」也在组件的快捷下拉里，
+                   所以本页原来的 .filter-actions 整块去掉 —— 否则同一个表单会有两个提交键。 *}
+                {{include "../partials/date_filter.html" map(
+                    "t", .["t"],
+                    "idPrefix", "an",
+                    "formAction", "",
+                    "fromName", "from", "toName", "to",
+                    "from", .FilterFrom, "to", .FilterTo,
+                    "presetName", "preset",
+                    "resetHref", "/admin/analytics?project=" + selectedProject + "&view=" + viewMode,
+                    "hint", "")}}
             </div>
         </form>
         {* 徽章是**结果摘要**（含「实际统计窗口」这个非法日期的兜底可见性），不是筛选控件，

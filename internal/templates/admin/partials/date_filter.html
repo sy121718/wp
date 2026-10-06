@@ -26,6 +26,13 @@
      presetName  快捷区间下拉的 name
      resetHref   重置链接（可传空串，此时不渲染重置键）
      hint        区间回显文案（可传空串，此时不渲染回显行）
+     showActions 传 "0" 时不渲染提交键与重置键（默认渲染）。同页有两组区间时（客户列表的
+                 「下单时间」+「注册时间」）只需要一个提交键 —— 两个都能提交同一个表单，
+                 用户看不出该点哪个。
+
+    判据写成 `!= "0"` 而不是取布尔：调用方传的是 map 字面量，Jet 里没有真正的布尔字面量，
+     传 false 会得到非空字符串从而判真；而未传 showActions 时它是 nil，`nil != "0"` 成立 ——
+     这正是「默认渲染」想要的语义。
 
    快捷下拉是**渐进增强**：初始 hidden，由 ui/datepreset.js 去掉 —— 无 JS 时它不该出现，
    因为「选了一个不填日期的下拉」比「没有这个下拉」更让人困惑；两个原生 date 始终可见可编辑，
@@ -54,8 +61,10 @@
     <span class="filter-sep" aria-hidden="true">~</span>
     <input type="date" class="form-input date-filter-date" id="{{ .["idPrefix"] + "-to" }}"
            name="{{ .["toName"] }}" value="{{ .["to"] }}" aria-label="{{ .["t"]("admin.common.filter.to", "结束日期") }}">
+    {{if .["showActions"] != "0"}}
     <button type="submit" class="btn btn-sm">{{ .["t"]("admin.common.filter.submit", "查询") }}</button>
     {{if .["resetHref"]}}<a class="btn btn-sm btn-ghost" href="{{ .["resetHref"] }}">{{ .["t"]("admin.common.filter.reset", "重置") }}</a>{{end}}
+    {{end}}
 </div>
 {{if .["formAction"]}}
 </form>

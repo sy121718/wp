@@ -89,18 +89,19 @@
                     <label for="md-operator">{{ .["t"]("admin.masterdata.col.operator", "操作人") }}</label>
                     <input class="form-input" id="md-operator" type="text" name="operatorId" value="{{.FilterOperatorID}}" placeholder="{{ .["t"]("admin.masterdata.ph.operator", "用户名") }}" autocomplete="off">
                 </div>
-                {* 时间区间是一个条件（两个端点），不是两个条件：拆成「起」「止」两个字段时，
-                   标签本身没有信息量（谁的起？谁的止？），合并成一个区间标签 + 箭头更清楚。 *}
-                <div class="filter-field">
-                    <label for="md-since">{{ .["t"]("admin.masterdata.label.range", "时间区间") }}</label>
-                    <input class="form-input" id="md-since" type="date" name="since" value="{{.FilterSince}}">
-                    <span class="filter-sep" aria-hidden="true">→</span>
-                    <input class="form-input" id="md-until" type="date" name="until" value="{{.FilterUntil}}" aria-label="{{ .["t"]("admin.masterdata.ph.until", "结束日期") }}">
-                </div>
-            </div>
-            <div class="filter-actions">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.masterdata.action.filter", "筛选") }}</button>
-                <a class="btn btn-ghost" href="/admin/masterdata/changes?project={{selectedProject}}">{{ .["t"]("admin.masterdata.action.reset", "重置") }}</a>
+                {* 区间走后台统一的时间筛选条（admin/partials/date_filter.html）。
+                   本页字段名是 since / until（已发布 URL 的一部分），由调用方传入 ——
+                   组件不猜名字：改成 from/to 会静默废掉书签与外部链接。
+                   提交键与重置键由组件渲染，本页原来的 .filter-actions 同步删掉。 *}
+                {{include "../partials/date_filter.html" map(
+                    "t", .["t"],
+                    "idPrefix", "md",
+                    "formAction", "",
+                    "fromName", "since", "toName", "until",
+                    "from", .FilterSince, "to", .FilterUntil,
+                    "presetName", "preset",
+                    "resetHref", "/admin/masterdata/changes?project=" + selectedProject,
+                    "hint", "")}}
             </div>
         </form>
 

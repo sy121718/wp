@@ -237,8 +237,11 @@ func TestAnalyticsPaginationLinksCarryViewPaths(t *testing.T) {
 	if got := strings.Count(body, `name="view" value="langs"`); got != 2 {
 		t.Errorf("工程选择与时间范围两个表单都应回带当前视图，实际 %d 处", got)
 	}
-	if !strings.Contains(body, "&view=langs") {
-		t.Error("「最近 30 天」链接没有回带当前视图")
+	// 时间筛选条的重置链接（由 admin/partials/date_filter.html 渲染）也要回带视图。
+	// 只断言 `view=langs` 而不带前导 `&`：href 里那个分隔符会被 HTML 转义成 `&amp;`，
+	// 写 "&view=langs" 会永远匹配不到（是断言写错了，不是链接错了）。
+	if !strings.Contains(body, "view=langs") {
+		t.Error("时间筛选条的重置链接没有回带当前视图")
 	}
 }
 
