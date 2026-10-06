@@ -299,10 +299,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
      · 只读页面：没有写表单，也没有任何编辑 / 删除入口；
      · 触屏只需原生控件，按压反馈走 .btn:active（不带媒体查询）；
      · 键盘：原生控件 Tab 序即视觉序，表格横向滚动容器保留 tabindex，方向键可滚。 */
-.masterdata-page .form-inline input[type="text"],
-.masterdata-page .form-inline input[type="date"],
-.masterdata-page .form-inline select,
-.masterdata-page .form-inline .wbs { width: min(100%, 220px); }
 .masterdata-meta { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; word-break: break-all; }
 .masterdata-page-table { table-layout: fixed; }
 /* white-space 必须显式复位：ui.css 的 .data-table tbody td 默认 nowrap（列多时靠横向滚动），
@@ -326,10 +322,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
         content: attr(data-label) " ";
         color: var(--sky-c-text-mute, #6b7280); font-size: 12px;
     }
-    .masterdata-page .form-inline input[type="text"],
-    .masterdata-page .form-inline input[type="date"],
-    .masterdata-page .form-inline select,
-    .masterdata-page .form-inline .wbs { width: 100%; }
     .masterdata-page .action-row .btn { width: 100%; }
 }
 

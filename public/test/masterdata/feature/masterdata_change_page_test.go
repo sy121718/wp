@@ -199,17 +199,21 @@ func TestMasterDataChangePageMultiDeviceContract(t *testing.T) {
 		}
 	}
 
-	// 样式表契约：断点内的堆叠块（含列名回显）+ 宽度 min(100%, …)。
+	// 样式表契约：断点内的堆叠块（含列名回显）+ 宽度约束。
+	// 宽度那条从 `.masterdata-page .form-inline input[type="text"]` 换成了 `.filter-field .form-input`：
+	// 本页的时间筛选条已接入统一组件（admin/partials/date_filter.html），筛选行改用后台通行的
+	// `.filter-field` 容器，那个 masterdata 专属的 `.form-inline` 约束连同选择器一起下线。
+	// 断言的是「宽度有一个绝对上限 + 窄屏放开」这个**形状**，不是某一个具体选择器。
 	raw, err := os.ReadFile(templateRoot() + "/static/css/theme.css")
 	if err != nil {
 		t.Fatalf("读样式表失败: %v", err)
 	}
 	css := string(raw)
 	for _, want := range []string{
-		`.masterdata-page .form-inline input[type="text"]`,
+		".filter-field .form-input",
 		".masterdata-page-table",
 		".masterdata-meta",
-		"width: min(100%, 220px)",
+		"width: 200px; min-width: 0; max-width: 100%;",
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("样式表缺少变更记录页规则 %s", want)
