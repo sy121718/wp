@@ -33,6 +33,10 @@ import (
 // batchSize 单条 SQL 携带的声明行数（避免 274 行声明拼出一条几十 KB 的语句）。
 const batchSize = 80
 
+// tableSysPermission 权限点目录表。本包是它的**声明生产者**（见文件头），
+// admin 模块的 PermissionEntity 是同一张表的管理面消费者。
+const tableSysPermission = "sys_permission"
+
 // SyncResult 一次同步的结果（写启动日志用：能说清「这次启动补了什么」）。
 type SyncResult struct {
 	// Declared 本次装配声明的授权路由数。
@@ -188,13 +192,18 @@ func listUnmanagedPermissions(tx *gorm.DB, rows []RouteSpec) ([]string, error) {
 	for _, r := range rows {
 		managed[string(r.Perm)] = true
 	}
+	// 表名用字面量：本包（internal/permission）是权限点声明的**生产者**，admin 模块的
+	// PermissionEntity 只是同一张表的管理面消费者；反向 import admin/model 会成环
+	// （admin 的装配链调用本包）。
 	var found []struct {
-		Code   string
-		Method string
-		Path   string
+		Code   string `gorm:"column:code"`
+		Method string `gorm:"column:method"`
+		Path   string `gorm:"column:path"`
 	}
-	if err := tx.Raw("SELECT permission_code AS code, api_method AS method, api_path AS path " +
-		"FROM sys_permission WHERE status = 1 AND api_path <> ''").Scan(&found).Error; err != nil {
+	if err := tx.Table(tableSysPermission).
+		Select("permission_code AS code, api_method AS method, api_path AS path").
+		Where("status = 1 AND api_path <> ''").
+		Scan(&found).Error; err != nil {
 		return nil, err
 	}
 	out := make([]string, 0)
