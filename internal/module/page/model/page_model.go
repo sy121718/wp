@@ -225,11 +225,12 @@ func (m *Model) UpdateThemeSnapshot(ctx context.Context, projectID, pageID strin
 		return ErrProjectRequired
 	}
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Exec(
-			"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), update_time = ? "+
-				"WHERE id = ? AND project_id = ? AND deleted_at IS NULL",
-			themeJSON, time.Now().UTC(), pageID, projectID,
-		).Error
+		return tx.Model(&PageEntity{}).
+			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+			UpdateColumns(map[string]any{
+				"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,theme}', ?, true)", themeJSON),
+				"update_time":    time.Now().UTC(),
+			}).Error
 	})
 }
 
@@ -274,11 +275,12 @@ func (m *Model) UpdateStructureSnapshot(ctx context.Context, projectID, pageID s
 		return ErrProjectRequired
 	}
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Exec(
-			"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), update_time = ? "+
-				"WHERE id = ? AND project_id = ? AND deleted_at IS NULL",
-			structureJSON, time.Now().UTC(), pageID, projectID,
-		).Error
+		return tx.Model(&PageEntity{}).
+			Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+			UpdateColumns(map[string]any{
+				"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,structure}', ?, true)", structureJSON),
+				"update_time":    time.Now().UTC(),
+			}).Error
 	})
 }
 
@@ -603,10 +605,9 @@ func (m *Model) MarkStaleForBlock(ctx context.Context, projectID, blockID string
 // 工程首个主题创建时回填历史页面（迁移 020 的运行时兜底）。
 func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID string) (err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&PageEntity{}).Exec(
-			"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND theme_id IS NULL AND deleted_at IS NULL",
-			themeID, time.Now().UTC(), projectID,
-		).Error
+		return tx.Model(&PageEntity{}).
+			Where("project_id = ? AND theme_id IS NULL AND deleted_at IS NULL", projectID).
+			UpdateColumns(map[string]any{"theme_id": themeID, "update_time": time.Now().UTC()}).Error
 	})
 	return err
 }
@@ -616,10 +617,9 @@ func (m *Model) AttachThemeToUnassigned(ctx context.Context, projectID, themeID 
 // 才能以该主题为键命中整站页面。不改 draft_document 内容，也不 bump 版本。
 func (m *Model) ReattachProjectPagesToTheme(ctx context.Context, projectID, themeID string) (err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Model(&PageEntity{}).Exec(
-			"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
-			themeID, time.Now().UTC(), projectID,
-		).Error
+		return tx.Model(&PageEntity{}).
+			Where("project_id = ? AND deleted_at IS NULL", projectID).
+			UpdateColumns(map[string]any{"theme_id": themeID, "update_time": time.Now().UTC()}).Error
 	})
 	return err
 }
@@ -719,6 +719,11 @@ func (m *Model) DeleteStaleRevisions(ctx context.Context, projectID string, keep
 		return 0, nil
 	}
 	// ctid 定位：PostgreSQL 的 DELETE 不支持 LIMIT，用子查询挑出本批目标。
+	//
+	// 这段保留裸 SQL 是**有理由的例外**（AGENTS.md「数据库」节）：它同时用到
+	// `ctid`（物理行位置，不是 Entity 的列）、窗口函数 `row_number() OVER (PARTITION BY …)`
+	// 与 `DELETE … LIMIT` 三者，GORM 这三样都没有对应能力 —— 用 `Table()` 拼出来的
+	// 仍是同一段串，只是换个地方写。删的是保留期兜底的批量行，不是业务实体。
 	const q = `DELETE FROM page_revisions WHERE ctid IN (
 		SELECT ctid FROM (
 			SELECT ctid, row_number() OVER (PARTITION BY page_id ORDER BY version DESC) AS rn, create_time, page_id
