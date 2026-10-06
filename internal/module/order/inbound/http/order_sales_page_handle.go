@@ -198,17 +198,18 @@ func salesStatusLabel(tr func(key, fallback string) string, status string) strin
 }
 
 // salesOverviewEmptyView 没有可用工程时的空态视图（与有数据时同名同义的键）。
+//
+// **键集必须与 salesOverviewView 一致**：模板先判 LoadFailed、再判 HasData，
+// 所以这里的键当前读不到；但一旦分支顺序变化（例如把趋势块提到 HasData 之前），
+// 缺的 Trend 就会让 Jet 在 `{{if .Trend.HasData}}` 上求值 nil 而**中断整页渲染**。
 func salesOverviewEmptyView(projects []projectdto.ProjectResp, filter salesFilterView) map[string]any {
 	return map[string]any{
 		"Projects":        projects,
 		"SelectedProject": filter.Project,
 		"Filter":          filter,
 		"HasData":         false,
-		"HasMonthly":      false,
-		"MonthlyPoints":   []map[string]any{},
-		"MonthlyMaxSales": int64(0),
+		"Trend":           salesTrendChart{},
 		"Cards":           []salesCardView{},
-		"Clients":         []salesCardView{},
 		"Compare":         []salesCompareRowView{},
 	}
 }
