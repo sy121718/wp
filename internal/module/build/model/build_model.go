@@ -114,7 +114,7 @@ func (m *Model) Enqueue(ctx context.Context, e *Entity) (created bool, err error
 	return res.RowsAffected > 0, nil
 }
 
-// claimSQL 取一条待办任务、置为 running 并**原子发出租约令牌**。
+// Claim 取一条待办任务、置为 running 并**原子发出租约令牌**。
 //
 // 五个要点，少一个都会出错（前三者是原实现，后两者是审计 DB-01 的整改）：
 //   - FOR UPDATE SKIP LOCKED：多个 worker 同时取任务时各拿各的，不排队、不重复；
@@ -128,29 +128,21 @@ func (m *Model) Enqueue(ctx context.Context, e *Entity) (created bool, err error
 //   - lease_token / lease_expires_time / attempt 在同一条语句里产生：
 //     令牌由数据库生成，认领与发令牌之间没有应用层窗口；到期时间只看租约时长，
 //     与 jobTimeout 解耦（执行超时由 worker 侧的 context 负责）。
-const claimSQL = `UPDATE build_jobs
-	SET status = 'running',
-	    started_at = now(),
-	    lease_token = gen_random_uuid(),
-	    lease_expires_time = now() + make_interval(secs => ?),
-	    attempt = attempt + 1,
-	    error_message = NULL
-	WHERE id = (
-	    SELECT b.id FROM build_jobs b
-	    WHERE b.status = 'pending'
-	      AND NOT EXISTS (
-	          SELECT 1 FROM build_jobs r
-	          WHERE r.status = 'running'
-	            AND r.source_type = b.source_type
-	            AND r.source_id = b.source_id
-	      )
-	    ORDER BY b.create_time ASC, b.id ASC
-	    LIMIT 1
-	    FOR UPDATE SKIP LOCKED
-	)
-	RETURNING id, source_type, source_id, project_id, lang, intent,
-	          draft_version, build_input_hash, status, attempt,
-	          lease_token, lease_expires_time, create_time, started_at`
+//
+// claimCandidates 候选子查询：本来源当前没有 running 的最早一条待办。
+//
+// `FOR UPDATE SKIP LOCKED` 加在**候选子查询**上（原 SQL 的位置一致）：锁的是被挑中的
+// 那条候选行，而不是外层 UPDATE 要改的目标行 —— 多个 worker 同时进来时各拿各的，
+// 不排队、不重复。相关子查询里用**表名**引用外层行（这里没有别名）。
+func (m *Model) claimCandidates(ctx context.Context) *gorm.DB {
+	return m.DB(ctx).
+		Select("id").
+		Where("status = ?", StatusPending).
+		Where("NOT EXISTS (SELECT 1 FROM build_jobs r WHERE r.status = ? AND r.source_type = build_jobs.source_type AND r.source_id = build_jobs.source_id)", StatusRunning).
+		Order("create_time ASC, id ASC").
+		Limit(1).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+}
 
 // claimMaxRetries 认领撞上「同来源已有 running」时的重试次数。
 //
@@ -171,7 +163,23 @@ func (m *Model) Claim(ctx context.Context, leaseTTL time.Duration) (e *Entity, e
 	var lastErr error
 	for i := 0; i < claimMaxRetries; i++ {
 		var row Entity
-		serr := m.db.WithContext(ctx).Raw(claimSQL, leaseTTL.Seconds()).Scan(&row).Error
+		// 候选子查询与外层 UPDATE 在同一条语句里：取与置位之间没有窗口
+		// （否则两个 worker 可能都读到同一条 pending —— 看得到、抢不到的那种重复消费）。
+		// Model(&row) 让 RETURNING * 的结果扫回 row；没有匹配行时 row 保持零值。
+		res := m.db.WithContext(ctx).Model(&row).
+			Where("id IN (?)", m.claimCandidates(ctx)).
+			Clauses(clause.Returning{}).
+			Updates(map[string]any{
+				"status":     StatusRunning,
+				"started_at": gorm.Expr("now()"),
+				// 令牌由数据库生成：认领与发令牌之间没有应用层窗口。
+				"lease_token": gorm.Expr("gen_random_uuid()"),
+				// 到期时间只看租约时长，与 jobTimeout 解耦（执行超时由 worker 侧的 context 负责）。
+				"lease_expires_time": gorm.Expr("now() + make_interval(secs => ?)", leaseTTL.Seconds()),
+				"attempt":            gorm.Expr("attempt + 1"),
+				"error_message":      nil,
+			})
+		serr := res.Error
 		if serr == nil {
 			if row.ID == 0 {
 				return nil, nil

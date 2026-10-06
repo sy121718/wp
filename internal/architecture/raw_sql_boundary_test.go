@@ -57,6 +57,14 @@ var rawSQLAllowedList = []rawSQLEntry{
 		Reason: "NextOutboxRevisionTx 的 pg_advisory_xact_lock(hashtext(?))：" +
 			"无表、无 Entity 可映射的 PG 顾问锁函数调用，GORM 没有对应表达能力",
 	},
+	{
+		File: "internal/module/build/model/build_model.go",
+		Max:  1,
+		Reason: "ReclaimStale 的回收语句：CTE 里的候选 SELECT 带 FOR UPDATE SKIP LOCKED（锁的是候选行），" +
+			"外层 UPDATE … FROM stale s 再按 CTE 的 has_pending 列**逐行**决定 status / started_at / completed_at / error_message。" +
+			"GORM 无 CTE API，且 Updates 只能写统一值；把 CASE 表达式塞进值位置能表达分支，" +
+			"但 UPDATE 上无法保留 SKIP LOCKED（PG 的 FOR UPDATE 只对 SELECT 有效）—— 去掉它就从「跳过被锁行」退化成「等锁」，语义不等价",
+	},
 }
 
 // rawSQLDebtList 待还的存量：登记「此刻的处数」，改完必须把条目删掉（处数与登记不符即失败）。
@@ -67,7 +75,6 @@ var rawSQLDebtList = []rawSQLEntry{
 	{File: "internal/module/ai/model/ai_session_model.go", Max: 2},
 	{File: "internal/module/ai/model/ai_tool_idempotency_model.go", Max: 2},
 	{File: "internal/module/analytics/model/analytics_rollup_model.go", Max: 3},
-	{File: "internal/module/build/model/build_model.go", Max: 2},
 	{File: "internal/module/mail/model/mail_account_model.go", Max: 2},
 	{File: "internal/module/mail/model/mail_marketing_model.go", Max: 5},
 	{File: "internal/module/presentation/model/presentation_mode_model.go", Max: 1},
