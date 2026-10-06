@@ -16,19 +16,28 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// orderItemScopeSQL 订单行聚合的公共筛选条件（热销榜与商品销售总量共用）。
+// orderItemScope 订单行聚合的公共筛选条件（热销榜与商品销售总量共用）。
 //
-// 抽成常量而不是各写一份：「哪些单计入消费」是一条口径，两份 WHERE 各自维护的失败模式
-// 是榜单排除了取消单、总量忘了排除 —— 两个数字摆在同一个页面上互相矛盾，而每一处单独看都对。
+// 抽成一个作用域函数而不是各写一份：「哪些单计入消费」是一条口径，两份 WHERE 各自维护
+// 的失败模式是榜单排除了取消单、总量忘了排除 —— 两个数字摆在同一个页面上互相矛盾，
+// 而每一处单独看都对。
 //
-// 参数顺序（按 ? 在文本里出现的顺序）：project_id、from、to、状态名单。
-const orderItemScopeSQL = `
-  WHERE o.project_id = ?
-    AND o.create_time >= ?
-    AND o.create_time < ?
-    AND o.status = ANY(string_to_array(?, ',')::text[])`
+// `o` 别名由调用方在 Table(...) 里给出（见 SalesOverviewByRange 的同类写法）。
+func orderItemScope(q *gorm.DB, projectID string, from, to time.Time) *gorm.DB {
+	return q.
+		Where("o.project_id = ?", projectID).
+		Where("o.create_time >= ?", from).
+		Where("o.create_time < ?", to).
+		Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ","))
+}
 
-// orderTopProductsSQL 区间内按销量排序的商品榜。
+// orderSoldQuantitySelect 区间内售出的商品总件数与贡献订单数。
+//
+// 顺带把贡献订单数一起取：运营看到「38 件」的下一个问题是「几个单贡献的」，
+// 分两次查会在两次查询之间落进新单而互相矛盾（与区间摘要一次取三个数同理）。
+const orderSoldQuantitySelect = "COALESCE(SUM(i.quantity), 0) AS quantity, COUNT(DISTINCT i.order_id) AS order_count"
+
+// orderTopProductsSelect 榜单的取数列。
 //
 // **商品名与 SKU 取订单行上的快照**（order_items.product_name / sku），不是关联商品表现取：
 // 表隔离下订单模块读不到商品表；而且即便读得到，展示的也该是「下单那一刻它叫什么」——
@@ -37,38 +46,8 @@ const orderItemScopeSQL = `
 // **金额口径是行实付合计**（line_total），**不含退款分摊**：退款是订单级的，摊到商品级
 // 需要按退货单逐行匹配，本批不做。所以它与「净销售额」在有大额退款时会不一样 ——
 // 这就是两处标签必须分别叫「销售额」与「净销售额」的原因（同名会让运营以为其中一个算错了）。
-//
-// **只统计计入消费的订单**（paidStatuses）：把取消/退款的单算进榜单会让「热销」
-// 变成「下单最多的」（用户点了付款又取消也上榜），而那不是运营想看的。
-//
-// 排序用 quantity DESC 主序、amount DESC 次序、product_id 收尾：前两个相等时若没有
-// 第三个键，同一次查询在两台机器上可能给出不同顺序 —— 榜单会随机抖动，测试也会偶发。
-//
-// 参数顺序：project_id、from、to、状态名单、limit（末位那个是本条自己的）。
-const orderTopProductsSQL = `SELECT i.product_id,
-       i.product_name,
-       i.sku,
-       SUM(i.quantity) AS quantity,
-       COALESCE(SUM(i.line_total), 0) AS amount
-  FROM order_items i
-  JOIN orders o ON o.id = i.order_id` + orderItemScopeSQL + `
- GROUP BY i.product_id, i.product_name, i.sku
- ORDER BY quantity DESC, amount DESC, i.product_id
- LIMIT ?`
-
-// orderSoldQuantitySQL 区间内售出的商品总件数（Σ order_items.quantity）。
-//
-// 与榜单**同一个筛选条件**（orderItemScopeSQL）：这里回答「一共卖了多少件」，
-// 榜单回答「哪些商品卖得多」，两者必须自洽。
-//
-// 顺带把贡献订单数一起回：运营看到「38 件」的下一个问题是「几个单贡献的」，
-// 分两次查会在两次查询之间落进新单而互相矛盾（与区间摘要用一条 SQL 取三个数同理）。
-//
-// 参数顺序：project_id、from、to、状态名单。
-const orderSoldQuantitySQL = `SELECT COALESCE(SUM(i.quantity), 0) AS quantity,
-       COUNT(DISTINCT i.order_id) AS order_count
-  FROM order_items i
-  JOIN orders o ON o.id = i.order_id` + orderItemScopeSQL
+const orderTopProductsSelect = "i.product_id, i.product_name, i.sku, " +
+	"SUM(i.quantity) AS quantity, COALESCE(SUM(i.line_total), 0) AS amount"
 
 // MaxTopProductLimit 榜单最多能取多少行。
 //
@@ -106,11 +85,21 @@ func (m *OrderModel) SoldQuantityByRange(ctx context.Context, projectID string, 
 		return row, ErrRangeRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(orderSoldQuantitySQL,
-			projectID, from, to,
-			strings.Join(paidStatuses, ",")).Scan(&row).Error
+		return orderItemScope(orderSalesItemsJoin(tx), projectID, from, to).
+			Select(orderSoldQuantitySelect).
+			Scan(&row).Error
 	})
-	return row, err
+	return row, nil
+}
+
+// orderSalesItemsJoin 明细表 JOIN 订单表（热销榜与商品销售总量共用的 FROM 骨架）。
+//
+// `i` 是本模块内的表（order_items），`o` 是同模块的 orders —— 同模块 JOIN 在
+// 本仓 model 层规则里是允许的（禁止的是跨模块）。JOIN 条件用 TableName() 拼，
+// 表名有真源。
+func orderSalesItemsJoin(tx *gorm.DB) *gorm.DB {
+	return tx.Table(OrderItemEntity{}.TableName() + " AS i").
+		Joins("JOIN " + OrderEntity{}.TableName() + " AS o ON o.id = i.order_id")
 }
 
 // TopProductsByRange 取区间 [from, to) 内销量最高的若干商品。
@@ -128,10 +117,14 @@ func (m *OrderModel) TopProductsByRange(ctx context.Context, projectID string, f
 		limit = MaxTopProductLimit
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(orderTopProductsSQL,
-			projectID, from, to,
-			strings.Join(paidStatuses, ","),
-			limit).Scan(&rows).Error
+		return orderItemScope(orderSalesItemsJoin(tx), projectID, from, to).
+			Select(orderTopProductsSelect).
+			Group("i.product_id, i.product_name, i.sku").
+			// 排序用 quantity DESC 主序、amount DESC 次序、product_id 收尾：前两个相等时若没有
+			// 第三个键，同一次查询在两台机器上可能给出不同顺序 —— 榜单会随机抖动，测试也会偶发。
+			Order("quantity DESC, amount DESC, i.product_id").
+			Limit(limit).
+			Scan(&rows).Error
 	})
-	return rows, err
+	return rows, nil
 }
