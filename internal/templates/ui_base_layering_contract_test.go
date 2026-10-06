@@ -29,7 +29,7 @@ import (
 
 // baseSharedClasses 共享外观组的成员；baseStateSuffixes 状态层后缀。
 var (
-	baseSharedClasses = []string{".form-input", ".form-select", ".form-textarea", ".wbs-trigger", ".wbd-trigger"}
+	baseSharedClasses = []string{".form-input", ".form-select", ".form-textarea", ".wbs-trigger"}
 	baseStateSuffixes = []string{":focus-visible", ":focus", ":disabled", `[aria-invalid="true"]`, "::placeholder"}
 )
 
@@ -48,16 +48,16 @@ var sizeProps = []string{
 
 // TestBaseAppearanceGroupIsSingleSource 控件外观只有一个真源：五个类在同一条规则里。
 //
-// 防的真实缺陷：同一份外观被写两遍、值还漂了 —— `.wbs-trigger` 与 `.wbd-trigger`
+// 防的真实缺陷：同一份外观被写两遍、值还漂了 —— `.wbs-trigger` 曾与已下线的 `.wbd-trigger`
 // 曾经各自写死 `padding: 8px 10px`，而基座走 token 是 `8px 12px`（同一份 UI 里三种内边距）。
 // 白名单是**闭集**：往共享组里塞原生 select 专属属性（background-image 等）会被打回，
 // 否则自绘触发器也会长出浏览器原生那枚箭头。
 func TestBaseAppearanceGroupIsSingleSource(t *testing.T) {
 	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
-	re := regexp.MustCompile(`(?m)^\.form-input,\s*\n\.form-select,\s*\n\.form-textarea,\s*\n\.wbs-trigger,\s*\n\.wbd-trigger\s*\{([^}]*)\}`)
+	re := regexp.MustCompile(`(?m)^\.form-input,\s*\n\.form-select,\s*\n\.form-textarea,\s*\n\.wbs-trigger\s*\{([^}]*)\}`)
 	m := re.FindStringSubmatch(src)
 	if m == nil {
-		t.Fatal("共享外观组不是「.form-input, .form-select, .form-textarea, .wbs-trigger, .wbd-trigger」这一条规则：" +
+		t.Fatal("共享外观组不是「.form-input, .form-select, .form-textarea, .wbs-trigger」这一条规则：" +
 			"控件外观被拆成多处真源（两个自绘触发器都曾因此与基座内边距漂了 2px）")
 	}
 	props := cssPropNames(m[1])
@@ -79,7 +79,7 @@ func TestBaseAppearanceGroupIsSingleSource(t *testing.T) {
 		}
 	}
 	// 触发器特有的排布仍然只声明在它自己那段里（两个触发器同一口径）。
-	for _, trigSel := range []string{".wbs-trigger", ".wbd-trigger"} {
+	for _, trigSel := range []string{".wbs-trigger"} {
 		trig, ok := cssRuleBlock(src, trigSel)
 		if !ok {
 			t.Fatalf("ui.css 缺少 %s 规则块", trigSel)
@@ -195,9 +195,9 @@ func TestNoContainerSuppliedControlChrome(t *testing.T) {
 		"height", "min-height", "font-size", "font-family", "color",
 	}
 	// 基座类：出现在选择器里即视为「按基座类命名，不是容器兜底」。
-	// .wbs-native / .wbd-native 是两套自研控件（自绘下拉 / 日期区间）里那枚视觉隐藏的
+	// .wbs-native 是自绘下拉里那枚视觉隐藏的
 	// 原生控件 —— 外观由各自的触发器承担，与文本类控件遵守同一条纪律。
-	baseClasses := []string{".form-input", ".form-select", ".form-textarea", ".wbs-native", ".wbd-native", ".wbs-trigger"}
+	baseClasses := []string{".form-input", ".form-select", ".form-textarea", ".wbs-native", ".wbs-trigger"}
 	elementRe := regexp.MustCompile(`(^|[\s,>+~])(input|select|textarea)($|[\s,.:\[>+~])`)
 	// 非文本类控件自带宿主样式（复选框 / 单选 / 取色器 / 滑块 / 文件域…）：
 	// 基座外观组管的是**文本类**控件（输入框 / 下拉 / 多行文本），按 type 显式豁免。
@@ -308,7 +308,7 @@ type cssRule struct {
 //
 // 防的真实缺陷：ui.css 会被注入到**没有 theme.css** 的前台产物里，那里的 --sky-c-primary
 // 直接取兜底值。兜底写成深色主题的主色（这里曾经是 #aeb6c0）会让产物里的焦点环偏浅，
-// 而同页的自绘控件（.wbd-day / .wbc-swatch…）取的是浅色真值 #3d444f —— 同一份 UI 两套焦点环。
+// 而同页的自绘控件（.wbs-trigger / .wbc-swatch…）取的是浅色真值 #3d444f —— 同一份 UI 两套焦点环。
 // 与上一批修掉的 5 处 `var(--sky-c-text-secondary, #c2c8cf)` 是同一类缺陷。
 func TestPrimaryFallbacksUseLightThemeValues(t *testing.T) {
 	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))

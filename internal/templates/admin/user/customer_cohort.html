@@ -17,12 +17,18 @@
         </div>
     </header>
 
-    {* 时间筛选条：与仪表盘、客户概览、RFM 同一批档位、同一批词条。 *}
-    <div class="range-bar">
-        {{range _, p := .Presets}}
-        <a class="range-chip{{if p.Active}} is-active{{end}}" href="{{p.URL}}">{{ .["t"](p.LabelKey, p.Key) }}</a>
-        {{end}}
-    </div>
+    {* 时间筛选条走后台统一组件（admin/partials/date_filter.html），与客户概览 / RFM 同一份实现。
+       原来那排 .range-bar 胶囊（服务端拼 URL）已删除。回显行走组件的 hint —— 本页原本没有回显，
+       而群组表是按自然月分列的，看不出实际用了哪个窗口。 *}
+    {{include "../partials/date_filter.html" map(
+        "t", .["t"],
+        "idPrefix", "ch",
+        "formAction", "/admin/customers/cohort",
+        "fromName", "from", "toName", "to",
+        "from", .Range.From, "to", .Range.To,
+        "presetName", "range",
+        "resetHref", "/admin/customers/cohort",
+        "hint", .Range.From + " ~ " + .Range.To)}}
 
     <section class="card list-card">
         <div class="table-scroll">

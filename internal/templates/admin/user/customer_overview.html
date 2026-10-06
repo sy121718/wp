@@ -17,14 +17,20 @@
         </div>
     </header>
 
-    {* 时间筛选条：与仪表盘同一批档位、同一批词条（两页的「本周」必须是同一个意思）。 *}
-    {* 链接由服务端拼好（URL/LabelKey 都在 Go 侧），模板不拼 query 字符串。 *}
-    <div class="range-bar">
-        {{range _, p := .Presets}}
-        <a class="range-chip{{if p.Active}} is-active{{end}}" href="{{p.URL}}">{{ .["t"](p.LabelKey, p.Key) }}</a>
-        {{end}}
-    </div>
-    <p class="text-mute text-sm">{{.Range.From}} ~ {{.Range.To}}</p>
+    {* 时间筛选条走后台统一组件（admin/partials/date_filter.html）：档位下拉的九个档位
+       与 ui/datepreset.js 的分支同名，选完由脚本把两个 date 填好再提交；服务端
+       customerOverviewRangeOf 以 from/to 为先（?range= 只服务于老书签）。
+       原来那排 .range-bar 胶囊（服务端拼 URL）已随之删除。
+       注意 action 不带 project：本页原有胶囊也不带（点一下就丢工程上下文），本批不扩大范围。 *}
+    {{include "../partials/date_filter.html" map(
+        "t", .["t"],
+        "idPrefix", "co",
+        "formAction", "/admin/customers/overview",
+        "fromName", "from", "toName", "to",
+        "from", .Range.From, "to", .Range.To,
+        "presetName", "range",
+        "resetHref", "/admin/customers/overview",
+        "hint", .Range.From + " ~ " + .Range.To)}}
 
     {{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>

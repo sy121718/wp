@@ -49,7 +49,7 @@ func TestCustomerOverviewRangeOfPresets(t *testing.T) {
 		{"year", "2026-01-01", "2026-10-05", "year"},
 	}
 	for _, c := range cases {
-		got := customerOverviewRangeOf(c.key, now)
+		got := customerOverviewRangeOf(c.key, "", "", now)
 		if got.Key != c.wantKey || got.From != c.wantFrom || got.To != c.wantTo {
 			t.Errorf("%s: got %+v, want from=%s to=%s key=%s", c.key, got, c.wantFrom, c.wantTo, c.wantKey)
 		}
@@ -60,7 +60,7 @@ func TestCustomerOverviewRangeOfPresets(t *testing.T) {
 // 起点差一天不会报错，只会让「本周新客」与订单页的「本周」对不上。
 func TestCustomerOverviewRangeWeekStartsMonday(t *testing.T) {
 	wed := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC) // 周三
-	got := customerOverviewRangeOf("week", wed)
+	got := customerOverviewRangeOf("week", "", "", wed)
 	if got.From != "2026-10-05" {
 		t.Errorf("周三的「本周」应回溯到周一 2026-10-05，实际 %s", got.From)
 	}
@@ -70,7 +70,7 @@ func TestCustomerOverviewRangeWeekStartsMonday(t *testing.T) {
 func TestCustomerOverviewRangeUnknownFallsBack(t *testing.T) {
 	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	for _, key := range []string{"", "custom", "last-year", "<script>"} {
-		got := customerOverviewRangeOf(key, now)
+		got := customerOverviewRangeOf(key, "", "", now)
 		if got.Key != customerOverviewDefaultPreset {
 			t.Errorf("%q 应回落 %s，实际 %s", key, customerOverviewDefaultPreset, got.Key)
 		}
@@ -85,38 +85,71 @@ func TestCustomerOverviewRangeUnknownFallsBack(t *testing.T) {
 func TestCustomerOverviewRangeUsesUTCDayBoundary(t *testing.T) {
 	// 本地时间比 UTC 早 8 小时时，UTC 仍是 10-05 的 23:00。
 	now := time.Date(2026, 10, 5, 23, 0, 0, 0, time.UTC)
-	got := customerOverviewRangeOf("today", now)
+	got := customerOverviewRangeOf("today", "", "", now)
 	if got.To != "2026-10-05" {
 		t.Errorf("结束日应按 UTC 计，实际 %s", got.To)
 	}
 }
 
-// —— 预设链接 ——
+// —— 显式区间（时间筛选条提交的路径） ——
 
-func TestCustomerOverviewPresetLinksMarksActiveAndBuildsPath(t *testing.T) {
-	links := customerOverviewPresetLinks("week")
-	if len(links) != len(customerOverviewPresets) {
-		t.Fatalf("预设链接数 %d，期望 %d", len(links), len(customerOverviewPresets))
+// TestCustomerOverviewRangeExplicitWinsOverPreset 组件总会把两个 date 填好再提交，
+// 所以 from/to 必须压过 ?range=。压不过就会「用户选了 10-01~10-03，页面按本月算」——
+// 界面上筛选条写着那两个日期，数字却是别的区间，且没有任何报错。
+func TestCustomerOverviewRangeExplicitWinsOverPreset(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	got := customerOverviewRangeOf("month", "2026-10-01", "2026-10-03", now)
+	if got.Key != "custom" || got.From != "2026-10-01" || got.To != "2026-10-03" {
+		t.Errorf("显式区间应压过档位名，实际 %+v", got)
 	}
-	active := 0
-	for _, l := range links {
-		key, _ := l["Key"].(string)
-		if want := customerOverviewPath + "?range=" + key; l["URL"] != want {
-			t.Errorf("%s 的 URL 为 %v，期望 %s", key, l["URL"], want)
-		}
-		// 词条 key 必须在服务端拼全（模板不拼字符串）。
-		if want := "admin.dashboard.range." + key; l["LabelKey"] != want {
-			t.Errorf("%s 的 LabelKey 为 %v，期望 %s", key, l["LabelKey"], want)
-		}
-		if l["Active"] == true {
-			active++
-			if key != "week" {
-				t.Errorf("选中的应是 week，实际 %s", key)
-			}
+}
+
+// TestCustomerOverviewRangeExplicitSanitises 越界输入收敛而不是报错（都是「给一个能看的结果」）。
+func TestCustomerOverviewRangeExplicitSanitises(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name       string
+		fromQ, toQ string
+		wantFrom   string
+		wantTo     string
+	}{
+		{"只给起点：终点补今天", "2026-09-01", "", "2026-09-01", "2026-10-05"},
+		{"只给终点：起点补今天", "", "2026-10-05", "2026-10-05", "2026-10-05"},
+		{"选反了对调", "2026-10-03", "2026-10-01", "2026-10-01", "2026-10-03"},
+		{"终点超今天收敛到今天", "2026-10-01", "2026-12-31", "2026-10-01", "2026-10-05"},
+		{"起点在未来拉到终点", "2026-12-01", "2026-12-31", "2026-10-05", "2026-10-05"},
+		{"跨度超上限收起点（366 天）", "2020-01-01", "2026-10-05", "2025-10-05", "2026-10-05"},
+		// 坏的一端当没传 → 起点补今天(10-05)；起点反超终点 → 对调，于是窗口是 10-03 ~ 10-05。
+		{"坏的一端当没传（补今天后对调）", "not-a-date", "2026-10-03", "2026-10-03", "2026-10-05"},
+	}
+	for _, c := range cases {
+		got := customerOverviewRangeOf("month", c.fromQ, c.toQ, now)
+		if got.From != c.wantFrom || got.To != c.wantTo {
+			t.Errorf("%s: got %s ~ %s, want %s ~ %s", c.name, got.From, got.To, c.wantFrom, c.wantTo)
 		}
 	}
-	if active != 1 {
-		t.Errorf("应恰好有一个选中项，实际 %d", active)
+}
+
+// TestCustomerOverviewRangeBothEndsBrokenFallsBack 两端都坏时走档位名，而不是把整页变错误页。
+func TestCustomerOverviewRangeBothEndsBrokenFallsBack(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	got := customerOverviewRangeOf("week", "x", "y", now)
+	if got.Key != "week" || got.From != "2026-10-05" {
+		t.Errorf("两端都解析不出时应回落档位名，实际 %+v", got)
+	}
+}
+
+// TestCustomerRangeQueryCarriesExplicitRange 同页其它链接回带的是**显式区间**，不是档位名。
+//
+// 用 ?range=custom 回带等于什么都没带：翻页 / 切分段时会静默变回默认区间，
+// 而代码看上去「有回带区间」、也不报错。
+func TestCustomerRangeQueryCarriesExplicitRange(t *testing.T) {
+	got := customerRangeQuery(customerOverviewRange{Key: "custom", From: "2026-10-01", To: "2026-10-03"})
+	if got != "from=2026-10-01&to=2026-10-03" {
+		t.Errorf("区间 query 片段应为 from=…&to=…，实际 %s", got)
+	}
+	if strings.Contains(got, "range=") {
+		t.Errorf("不应回带档位名：%s", got)
 	}
 }
 
@@ -126,7 +159,7 @@ func TestCustomerOverviewPageDataWithoutGrowth(t *testing.T) {
 	data := customerOverviewPageData(
 		templates.TranslateFunc("zh-CN"),
 		customerOverviewRange{Key: "month", From: "2026-10-01", To: "2026-10-05"},
-		nil, nil, "客户管理能力没有接进来")
+		nil, "客户管理能力没有接进来")
 	if data["GrowthReady"] != false {
 		t.Error("没拿到数据时 GrowthReady 必须是 false（模板据此渲染空态而不是一片 0）")
 	}
@@ -141,7 +174,6 @@ func TestCustomerOverviewPageDataCarriesGrowth(t *testing.T) {
 	data := customerOverviewPageData(
 		templates.TranslateFunc("zh-CN"),
 		customerOverviewRange{Key: "month", From: "2026-10-01", To: "2026-10-05"},
-		nil,
 		&orderdto.CustomerGrowthResp{
 			OrderingCustomers: 8, NewCustomers: 3, ReturningCustomers: 5,
 			Repurchasers: 4, NewRepurchasers: 1, RepurchaseRateLabel: "50.0%",
@@ -221,7 +253,10 @@ func TestCustomerOverviewPageRendersGrowth(t *testing.T) {
 	if strings.TrimSpace(body) == "" {
 		t.Fatal("响应体为空 —— handler 里的模板名很可能与模板文件对不上")
 	}
-	for _, want := range []string{"50.0%", "区间下单客户", "新客", "回头客", "复购率", "/admin/customers/overview?range=week"} {
+	// 时间筛选条已换成组件：断言它的两个 date 字段名与 form action，
+	// 不再断旧胶囊的 URL（那个形态已经没有渲染路径了）。
+	for _, want := range []string{"50.0%", "区间下单客户", "新客", "回头客", "复购率",
+		`name="from"`, `name="to"`, `action="/admin/customers/overview"`, "date-filter-preset"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("概览页缺少 %q", want)
 		}

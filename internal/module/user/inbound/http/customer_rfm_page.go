@@ -68,13 +68,12 @@ type customerRfmRow struct {
 
 // customerRfmPageData 组装渲染数据（纯函数：不取数、不依赖 gin.Context）。
 func customerRfmPageData(tr func(key, fallback string) string, rng customerOverviewRange,
-	presets []gin.H, res *orderdto.CustomerRfmResp, rows []customerRfmRow,
+	res *orderdto.CustomerRfmResp, rows []customerRfmRow,
 	segment string, page, limit int, total int64, errText string) gin.H {
 	data := gin.H{
 		"title":   userLabelOf(tr, customerRfmTitleLabel),
 		"Path":    customerRfmPath,
 		"Range":   rng,
-		"Presets": presets,
 		"Segment": segment,
 		"Err":     errText,
 		"Rows":    rows,
@@ -102,7 +101,7 @@ func customerRfmSegmentTabs(tr func(key, fallback string) string, res *orderdto.
 		return nil
 	}
 	mk := func(key, labelKey, label string, count int64) gin.H {
-		url := customerRfmPath + "?range=" + rng.Key
+		url := customerRfmPath + "?" + customerRangeQuery(rng)
 		if key != "" {
 			url += "&segment=" + key
 		}
@@ -146,7 +145,7 @@ func customerRfmPageSegment(v string) string {
 func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	tr := shell.TranslateFor(c)
-	rng := customerOverviewRangeOf(c.Query("range"), time.Now())
+	rng := customerOverviewRangeOf(c.Query("range"), c.Query("from"), c.Query("to"), time.Now())
 	segment := customerRfmPageSegment(c.Query("segment"))
 	page, limit := shell.PageParams(c)
 	if limit > 0 && limit > rfmMaxPageSize {
@@ -191,11 +190,11 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 	if res != nil {
 		total = res.Total
 	}
-	data := shell.Prepare(c, customerRfmPageData(tr, rng, customerOverviewPresetLinks(rng.Key), res,
+	data := shell.Prepare(c, customerRfmPageData(tr, rng, res,
 		rows, segment, page, limit, total, errText))
 	data["SegmentTabs"] = customerRfmSegmentTabs(tr, res, segment, rng)
 	// 分页链接保留区间与分段：不带的话翻页会静默变成「全部区间 + 全部分段」。
-	base := customerRfmPath + "?range=" + rng.Key
+	base := customerRfmPath + "?" + customerRangeQuery(rng)
 	if segment != "" {
 		base += "&segment=" + segment
 	}

@@ -44,7 +44,7 @@ var customerCohortUnavailableLabel = userLabel{
 func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	tr := shell.TranslateFor(c)
-	rng := customerOverviewRangeOf(c.Query("range"), time.Now())
+	rng := customerOverviewRangeOf(c.Query("range"), c.Query("from"), c.Query("to"), time.Now())
 
 	// 工程：与客户概览页逐字同规则 —— 先看 ?project=，没有就用第一个；
 	// 本页同样不渲染工程切换器（这一页的工程由从列表页带过来的上下文决定）。
@@ -80,7 +80,7 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 		}
 	}
 
-	data := customerOverviewPageData(tr, rng, customerOverviewPresetLinks(rng.Key), nil, "")
+	data := customerOverviewPageData(tr, rng, nil, "")
 	data["Path"] = customerCohortPath
 	data["title"] = userLabelOf(tr, customerCohortTitleLabel)
 	data["Err"] = errText

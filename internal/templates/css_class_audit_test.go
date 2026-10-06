@@ -37,7 +37,7 @@ package templates
 //   · A 方向收窄为「属于定义侧已存在的类家族」才判红（见 auditFamilyDefined）：
 //     完全新家族的无样式钩子（media-detail-form / customers-page-table 这类结构类）不判红，
 //     因为「无外观需求」是它们的常态，判红只会制造噪声；
-//     而「往既有家族里加了个没定义的变体」（form-input--x / btn-huge / wbd-month）仍然判红 ——
+//     而「往既有家族里加了个没定义的变体」（form-input--x / btn-huge / wbs-month）仍然判红 ——
 //     那才是「想加样式却漏了定义」的高发形态。
 //     「JS 动态生成控件漏带基座类」那类真缺陷不靠本方向抓，它由 media_admin_js_base_test.go 的 JS 侧判据覆盖。
 //   · 只扫 internal/templates/static/css + static/vendor 的 CSS 与模板内联 <style>。

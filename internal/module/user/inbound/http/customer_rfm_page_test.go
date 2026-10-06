@@ -157,15 +157,24 @@ func TestCustomerRfmPageTabURLsKeepRange(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=year", nil))
 	body := rec.Body.String()
+	// 回带的是**显式区间**（from/to），不是档位名 —— 页面上的时间筛选条（date_filter.html）
+	// 总会把两个 date 填好再提交，所以 rng.Key 在正常路径上恒为 "custom"；
+	// 用 range=custom 回带等于什么都没带，翻页 / 切分段会静默变回默认区间。
+	// 不断具体日期：?range=year 这条兜底路径算出的窗口跟着「今天」走（本周期至今）。
 	for _, want := range []string{
-		`href="/admin/customers/rfm?range=year"`,
-		`href="/admin/customers/rfm?range=year&amp;segment=vip"`,
-		`href="/admin/customers/rfm?range=year&amp;segment=potential"`,
-		`href="/admin/customers/rfm?range=year&amp;segment=low_value"`,
+		`href="/admin/customers/rfm?from=`,
+		`&amp;segment=vip"`,
+		`&amp;segment=potential"`,
+		`&amp;segment=low_value"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("分段徽章链接缺少 %q", want)
 		}
+	}
+	// 断 href 而不是全页的 "?range="：layout 里有一个 name="redirect" 的隐藏域，
+	// 它的 value 就是当前 URL（含 ?range=year），会假阳性。
+	if strings.Contains(body, `href="/admin/customers/rfm?range=`) {
+		t.Error("分段徽章链接不应回带档位名：?from=&to= 才是生效窗口的真源")
 	}
 }
 

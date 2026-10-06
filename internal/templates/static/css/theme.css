@@ -1029,12 +1029,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .filter-field .form-select, .filter-field .form-input, .filter-field .form-textarea, .filter-field .wbs {
     width: 200px; min-width: 0; max-width: 100%;
 }
-/* 日期范围控件（ui/daterange.js）比单个 date 宽一档：区间文本（两个日期 + 分隔符）比
-   一个日期长。与上面同款用**绝对宽度**，理由同上 —— .filter-field 是内容决定宽度的
-   flex 项，百分比宽度在这里会形成「父等控件、控件又等父」的循环。 */
-.filter-field .wbd {
-    width: 300px; min-width: 0; max-width: 100%;
-}
 /* 关键词是筛选行的主输入（订单号 / 邮箱要能看全），比下拉宽一档。
    与上面两条同款：绝对宽度 + min-width: 0 参与收缩 + max-width: 100% 兜底收口。 */
 .filter-field .form-input.filter-search { width: 240px; min-width: 0; max-width: 100%; }
@@ -1173,7 +1167,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    用相邻兄弟选择器而不是给模板包一层 wrapper：那三块在 .stack 里本来就是
    .dash-ai 的兄弟，包 wrapper 得改动 {{if}} 的配对（模板里同一层有多个 {{end}}），
    而这里一行选择器就够了。 */
-.dash-ai.is-asking ~ .range-bar,
 .dash-ai.is-asking ~ .dash-range-note,
 .dash-ai.is-asking ~ .stat-grid,
 .dash-ai.is-asking ~ .grid-split {
@@ -1182,7 +1175,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     max-height: 0;
     pointer-events: none;
 }
-.range-bar,
 .dash-range-note,
 .stat-grid,
 .grid-split {
@@ -1198,9 +1190,10 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    为什么是下拉不是胶囊：六个胶囊每个 50~70px，一行之内就把筛选条撑满、窄屏必然折行；
    而「选哪个区间」是低频动作，为它常驻六个按钮不划算（原先只有仪表盘有胶囊，
    其余页面得手点两次日历）。
-   胶囊样式（.range-bar / .range-chip / .range-custom）暂时保留：客户概览 / 客户群组 /
-   客户 RFM 三个页面仍在用它（它们只有预设、没有自定义日期，接入方式与有 date 的页面
-   不同）。这三个页面接入后一并删除，不要长期并存两套容器样式。 */
+   胶囊那套（`.range-bar` / `.range-chip` / `.range-custom` / `.form-input.range-date`）已随
+   「后台全局统一到本组件」一并删除：仪表盘 → 销售概览 → 访问统计 / 客户列表 / AI 会话 /
+   变更记录 / 库存流水 → 客户概览 / 客户群组 / 客户 RFM，最后一个使用点在客户 RFM 页
+   （原先只有预设、没有自定义日期）接入时消失。不要重新引入第二种容器形态。 */
 .date-filter {
     display: flex; flex-wrap: wrap; gap: var(--ui-sp-xs); align-items: center;
     margin-bottom: var(--ui-sp-xs);
@@ -1306,7 +1299,6 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (max-width: 560px) {
     .filter-field { flex: 1 1 100%; }
     .filter-field .form-select, .filter-field .form-input, .filter-field .wbs,
-    .filter-field .wbd,
     .filter-field .form-input.filter-search { width: 100%; }
 }
 
@@ -2451,14 +2443,8 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     height: auto;
     max-height: 340px;
 }
-/* 时间筛选条：设计稿把区间控件放在页头右侧，这里保持原位（它是详情不是摘要），
-   只把胶囊与日期框的描边换成同一套变量的描边。 */
-.stack.dash-page .range-chip { border-color: var(--dash-line); background: var(--dash-panel); }
-.stack.dash-page .range-chip.is-active {
-    background: var(--dash-accent);
-    border-color: var(--dash-accent);
-    color: var(--dash-bg);
-}
+/* 时间筛选条：设计稿把区间控件放在页头右侧，这里保持原位（它是详情不是摘要）。
+   胶囊那两条（.range-chip / .is-active）已随统一下线，日期框的描边由基座类承担。 */
 .stack.dash-page .dash-range-note { color: var(--dash-muted); }
 
 /* 概览页默认只显示「问 AI」这一行：历史回答要用户点「继续上次对话」才铺开。

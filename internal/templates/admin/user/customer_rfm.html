@@ -20,12 +20,17 @@
         </div>
     </header>
 
-    {* 时间筛选条：与仪表盘、客户概览同一批档位、同一批词条。 *}
-    <div class="range-bar">
-        {{range _, p := .Presets}}
-        <a class="range-chip{{if p.Active}} is-active{{end}}" href="{{p.URL}}">{{ .["t"](p.LabelKey, p.Key) }}</a>
-        {{end}}
-    </div>
+    {* 时间筛选条走后台统一组件（admin/partials/date_filter.html），与客户概览 / 群组同一份实现。
+       原来那排 .range-bar 胶囊（服务端拼 URL）已删除。 *}
+    {{include "../partials/date_filter.html" map(
+        "t", .["t"],
+        "idPrefix", "rf",
+        "formAction", "/admin/customers/rfm",
+        "fromName", "from", "toName", "to",
+        "from", .Range.From, "to", .Range.To,
+        "presetName", "range",
+        "resetHref", "/admin/customers/rfm",
+        "hint", .Range.From + " ~ " + .Range.To)}}
 
     {* 分段徽章既是统计也是筛选：点一下只看那一段。计数为 0 的照样可点（点进去看到空态是合理预期）。 *}
     <div class="filter-bar">
