@@ -214,6 +214,43 @@ Jet v6 支持**三元表达式与算术**，所以「折叠卡 summary 带计数
 会把 `<td>` 内绝对定位的悬浮层裁掉（表头 `th` 在容器顶部、向下展开才有空间）。实测：`customers.html` 把
 三句说明从行内 `colspan` 提示行移到**状态列表头的 `.help`** 才显示正常 —— 顺带解决了「同一句在每一行重复」。
 
+**③ 说明文字一律走 `.help-pop`，不用原生 `title`（2026-10 实测，第二次犯）。**
+口径 / 领域说明只有一个通行形态：
+
+```html
+<span class="help">
+  <button type="button" class="help-btn" aria-label="{{ tr("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+  <span class="help-pop" role="tooltip">{{ tr("…hint", "一句话说明") }}</span>
+</span>
+```
+
+`admin.js` 已把 hover / 键盘聚焦（`:focus-within`）/ Esc / 点外部关闭 / **贴右边缘自动左翻** 全做完了，
+写模板时不需要任何 JS。
+
+原生 `title` 的问题不是「不好看」而是**位置不可控**：实测悬浮时它盖住相邻卡片，看上去就是
+「说明文字直接显示在卡面上」——被当成「把注释写进了前端」。它还不受 `z-index`、看不见键盘焦点、
+触屏不出现。
+
+**例外（只有一类）**：**纯图标按钮的无障碍名字**（关闭 / 切换主题 / 语言 / 站点，以及柱图的
+按月 tooltip）继续用 `title` —— 它们没有可见文字，改成浮层反而要点一次才读得到。
+
+**④ 卡片口径改浮层时必须同时放开 `.card` 的 `overflow`，且必须用双类。**
+`.card` 基座带 `overflow: hidden`（`ui.css:551`），浮层是从标签往下展开的绝对定位元素，
+不放开会**被卡片边界切掉一截**（实测「销售额 ÷ 订单数」右半句没了）。写成单类 `.sales-card`
+与 `.card` **同层**（都 (0,1,0)），胜负就落到「`ui.css` 在 `theme.css` 之后加载」这个与规则无关的
+事实上（`layout.html:25-27`），一重排就静默失效 —— 正是 `ui_base_layering_contract_test.go` 记录的那类
+缺陷。正确写法是 `.card.sales-card { overflow: visible; }`（(0,2,0)）。
+
+闸门：`bash scripts/check-help-popover.sh`（模板里的卡片 / 统计卡上出现 `title` 即失败，
+白名单见该脚本的 `ALLOW`）。
+
+### 改 UI 之前先过设计技能（流程硬要求）
+
+新增后台页面、或改动既有页面的外观之前，**先加载技能**：`frontend-design`（方向与手艺）
++ `ui-refit`（改造协议：先审计 → 声明 preserve list → 按切片改 → 收尾带校验器输出）。
+产品 UI / dashboard / admin 走 Emil 品味 + craft-floor，**不要**套 taste-skill 的营销页规则。
+先审计再动手，别先改样式再回头找问题。
+
 ## admin/ 的目录结构：按后端模块分组
 
 `admin/` 下**按后端模块分子目录**，不再平铺（2026-09 重构，判据与实测见
