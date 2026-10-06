@@ -111,8 +111,32 @@ type SalesMonthlyPointDTO struct {
 	OrderCount int64 `json:"orderCount"`
 	// Sales 该月销售额（分）。
 	Sales int64 `json:"sales"`
-	// Customers 该月下单客户数。
+	// Customers 该月下单客户数（按账号去重，不含游客单）。
 	Customers int64 `json:"customers"`
+
+	// ── 按客户类型的拆分（口径见 SalesOverviewResp 的说明）────────────────
+	//
+	// **三段之和恒等于上面的总量**：NewXxx + ReturningXxx + GuestXxx == Xxx。
+	// 这是本页唯一一条「拆开的数字必须能拼回去」的判据，由
+	// TestMonthlyCustomerMixSumsToTotal 钉住 —— 只断言各段的值时，
+	// 改一段的判据、漏掉另一段，测试仍然全绿。
+
+	// NewOrderCount 该月新客订单数（客户首单落在这个自然月）。
+	NewOrderCount int64 `json:"newOrderCount"`
+	// ReturningOrderCount 该月回头客订单数。
+	ReturningOrderCount int64 `json:"returningOrderCount"`
+	// GuestOrderCount 该月游客订单数（没有账号，既非新客也非回头客）。
+	GuestOrderCount int64 `json:"guestOrderCount"`
+	// NewSales 该月新客订单销售额（分）。
+	NewSales int64 `json:"newSales"`
+	// ReturningSales 该月回头客订单销售额（分）。
+	ReturningSales int64 `json:"returningSales"`
+	// GuestSales 该月游客订单销售额（分）。
+	GuestSales int64 `json:"guestSales"`
+	// NewCustomers 该月下过单的新客数。
+	NewCustomers int64 `json:"newCustomers"`
+	// ReturningCustomers 该月下过单的回头客数。
+	ReturningCustomers int64 `json:"returningCustomers"`
 }
 
 // SalesCompareDTO 与上一段等长区间的对比。

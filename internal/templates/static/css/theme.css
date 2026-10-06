@@ -2516,16 +2516,47 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 /* 高度 = salesChartMaxHeight（Go 侧常量，模板把像素高度写进 style），
    所以这里的高度必须与那个常量一致 —— 改一处要改两处，写在同一段注释旁边。 */
 .sales-bar-wrap { display: flex; align-items: flex-end; height: 160px; width: 100%; }
-.sales-bar {
+
+/* 堆叠柱：自底向上 新客 / 回头客 / 游客。
+   column-reverse 让**第一段在底部** —— 模板按「新客、回头客、游客」的顺序写 div，
+   不加这个就变成游客在最下面。 */
+.sales-stack {
+    display: flex;
+    flex-direction: column-reverse;
     width: 100%;
     max-width: 48px;
     margin: 0 auto;
+    /* 圆角开在容器上而不是最后一段上：最上面那段可能是任意一段
+       （游客为 0 时顶就是回头客），写死在某一类上会让圆角时有时无。 */
+    overflow: hidden;
     border-radius: var(--ui-r-sm) var(--ui-r-sm) 0 0;
-    background: var(--sky-c-primary);
     min-height: 1px;
 }
+.sales-seg { width: 100%; min-height: 1px; }
+/* 三段颜色表达「钱从哪一类的客户来」，不表达好坏：
+   新客=成功色（新增）、回头客=主色（存量）、游客=描边色（没有客户身份）。 */
+.sales-seg-new { background: var(--sky-c-success); }
+.sales-seg-returning { background: var(--sky-c-primary); }
+.sales-seg-guest { background: var(--sky-c-border-strong); }
 /* 值为 0 时画一根基线柱而不是不画：空位会被读成「漏渲染」。 */
-.sales-bar.is-zero { background: var(--sky-c-border); }
+.sales-stack.is-zero { background: var(--sky-c-border); }
+
+/* 图例：柱上不写字，颜色必须在图例里解释一次（含口径那句话）。 */
+.sales-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ui-sp-sm);
+    margin-bottom: var(--ui-sp-sm);
+    font-size: 0.75rem;
+    color: var(--sky-c-text-secondary);
+}
+.sales-legend-item { display: inline-flex; align-items: center; gap: var(--ui-sp-xxs); }
+.sales-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.sales-dot-new { background: var(--sky-c-success); }
+.sales-dot-returning { background: var(--sky-c-primary); }
+.sales-dot-guest { background: var(--sky-c-border-strong); }
+.sales-legend-note { color: var(--sky-c-text-mute); }
 .sales-col-label {
     font-size: 0.75rem;
     color: var(--sky-c-text-mute);

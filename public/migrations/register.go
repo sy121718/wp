@@ -254,6 +254,8 @@ func init() {
 	registerOrderSalesOverviewI18n()
 	// 580：订单目录的「销售概览」菜单（见 register_order_overview_menu.go）。
 	registerOrderOverviewMenu()
+	// 581：销售概览「月度趋势按客户类型拆分」的词条（见 register_order_sales_customer_mix_i18n.go）。
+	registerOrderSalesCustomerMixI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

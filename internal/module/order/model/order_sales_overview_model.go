@@ -47,16 +47,62 @@ const orderSalesOverviewSelect = `COUNT(DISTINCT o.id) AS order_count,
        COALESCE(SUM(i.line_total), 0) AS sales,
        COUNT(DISTINCT o.user_id) AS customers`
 
-// orderSalesMonthlySelect 按月聚合的销售趋势（同一套筛选条件）。
+// orderSalesMonthlyInnerSelect 月度趋势的**内层**投影（逐行：月桶 + 金额 + 客户类型）。
 //
 // 月桶用 `::date` 而不是 `date_trunc(...)` 直接返回：`date_trunc` 返回**无时区
 // timestamp**，驱动按本地时区贴位置会让桶键整体偏一个时区（AGENTS.md
 // 「桶键读回来必须还是同一个时刻」）。`::date` 的语义就是「某一天」，
 // 驱动给 UTC 零点，`.Format` 出来就是 2026-10-01。
-const orderSalesMonthlySelect = `(date_trunc('month', o.create_time AT TIME ZONE 'UTC'))::date AS ` + orderSalesMonthColumn + `,
-       COUNT(DISTINCT o.id) AS order_count,
-       COALESCE(SUM(i.line_total), 0) AS sales,
-       COUNT(DISTINCT o.user_id) AS customers`
+//
+// 新客 / 回头客 / 游客的拆分见 orderSalesMonthlyOuterSelect —— 客户类型要在
+// **内层子查询**里算一次（orderSalesCustomerKind），外层只按它分组聚合：
+// 把 CASE 表达式在三段聚合里各抄一遍，改一处漏两处时三段之和就不再等于总量。
+const orderSalesMonthlyInnerSelect = `(date_trunc('month', o.create_time AT TIME ZONE 'UTC'))::date AS ` + orderSalesMonthColumn + `,
+       o.id AS order_id,
+       o.user_id AS user_id,
+       i.line_total AS line_total,
+       ` + orderSalesCustomerKind + ` AS customer_kind`
+
+// orderSalesMonthlyOuterSelect 按客户类型拆分的月度聚合。
+//
+// **三段之和恒等于总量**（new + returning + guest = total），这是本页唯一一条
+// 「拆开的数字必须能拼回去」的判据（AGENTS.md「这条要有会变红的判据」）：
+// 判据是 TestMonthlyCustomerMixSumsToTotal。
+//
+// **为什么要 guest 这一段**：本仓按 `user_id` 认客户（游客单 user_id 为空），
+// 而 laravel CRM 那边按邮箱分组、每个人都有邮箱，所以它只有 new / returning 两段。
+// 本仓若也只留两段，游客单的销售额就**无处可去** —— 表现为两段之和小于总额，
+// 而每一段单独看都对（这正是「同一张页面上的两个数字必须同源」要防的形状）。
+const orderSalesMonthlyOuterSelect = orderSalesMonthColumn + `,
+       COUNT(DISTINCT order_id) AS order_count,
+       COALESCE(SUM(line_total), 0) AS sales,
+       COUNT(DISTINCT user_id) AS customers,
+       COUNT(DISTINCT CASE WHEN customer_kind = 'new' THEN order_id END) AS new_order_count,
+       COUNT(DISTINCT CASE WHEN customer_kind = 'returning' THEN order_id END) AS returning_order_count,
+       COUNT(DISTINCT CASE WHEN customer_kind = 'guest' THEN order_id END) AS guest_order_count,
+       COALESCE(SUM(CASE WHEN customer_kind = 'new' THEN line_total ELSE 0 END), 0) AS new_sales,
+       COALESCE(SUM(CASE WHEN customer_kind = 'returning' THEN line_total ELSE 0 END), 0) AS returning_sales,
+       COALESCE(SUM(CASE WHEN customer_kind = 'guest' THEN line_total ELSE 0 END), 0) AS guest_sales,
+       COUNT(DISTINCT CASE WHEN customer_kind = 'new' THEN user_id END) AS new_customers,
+       COUNT(DISTINCT CASE WHEN customer_kind = 'returning' THEN user_id END) AS returning_customers`
+
+// orderSalesCustomerKind 客户类型的判据（new / returning / guest）。
+//
+// **新客 = 这个客户的首单落在与当前订单同一个 UTC 月内**（口径搬自 laravel CRM 的
+// MonthlyTrendService::calculateMonthStats：「首购时间是否在本月」）。
+//
+// 与那边的**唯一差别**：那边用「区间裁剪后的当月起止」判（查 10-05~11-20 时，
+// 首购在 10-01 的人不算 10 月新客），本仓用**自然月**判。取自然月是因为前者会让
+// 同一个客户的新老身份随**查询区间**漂移 —— 同一个人查长区间是新客、查短区间变回头客，
+// 而「一个人是不是新客」与运营把日期框拉到哪里无关。
+//
+// `f.first_at IS NULL` 只可能是**游客单**（user_id 为空，LEFT JOIN 不命中）——
+// 有账号的人一定有首单（当前这一单本身就是）。
+const orderSalesCustomerKind = `CASE
+           WHEN f.first_at IS NULL THEN 'guest'
+           WHEN date_trunc('month', f.first_at AT TIME ZONE 'UTC') = date_trunc('month', o.create_time AT TIME ZONE 'UTC') THEN 'new'
+           ELSE 'returning'
+       END`
 
 // orderSalesMonthColumn 月度趋势的桶列别名。
 //
@@ -108,8 +154,31 @@ type OrderSalesMonthlyRow struct {
 	OrderCount int64 `gorm:"column:order_count"`
 	// Sales 该月的行实付合计（分）。
 	Sales int64 `gorm:"column:sales"`
-	// Customers 该月的下单客户数。
+	// Customers 该月的下单客户数（按 user_id 去重，不含游客单）。
 	Customers int64 `gorm:"column:customers"`
+
+	// ── 按客户类型的拆分（三段之和恒等于上面的总量）──────────────────
+	//
+	// 「新客」= 该客户的**首单**落在这个月（自然月，见 orderSalesCustomerKind）。
+	// 「游客」= 没有账号的订单（user_id 为空），它既不是新客也不是回头客，
+	// 但它的钱必须出现在某一段里 —— 否则两段之和小于总量。
+
+	// NewOrderCount 该月新客订单数。
+	NewOrderCount int64 `gorm:"column:new_order_count"`
+	// ReturningOrderCount 该月回头客订单数。
+	ReturningOrderCount int64 `gorm:"column:returning_order_count"`
+	// GuestOrderCount 该月游客订单数。
+	GuestOrderCount int64 `gorm:"column:guest_order_count"`
+	// NewSales 该月新客订单的行实付合计（分）。
+	NewSales int64 `gorm:"column:new_sales"`
+	// ReturningSales 该月回头客订单的行实付合计（分）。
+	ReturningSales int64 `gorm:"column:returning_sales"`
+	// GuestSales 该月游客订单的行实付合计（分）。
+	GuestSales int64 `gorm:"column:guest_sales"`
+	// NewCustomers 该月下过单的新客数。
+	NewCustomers int64 `gorm:"column:new_customers"`
+	// ReturningCustomers 该月下过单的回头客数。
+	ReturningCustomers int64 `gorm:"column:returning_customers"`
 }
 
 // salesScope 应用销售概览与月度趋势**共用**的筛选条件。
@@ -150,6 +219,12 @@ func (m *OrderModel) SalesOverviewByRange(ctx context.Context, projectID string,
 //
 // 排序显式写出来：不写 ORDER BY 时 PG 的行序不保证，趋势图的折线会随机抖动，
 // 测试也会偶发。
+//
+// **首单子查询不受区间裁剪**（`firsts` 只带 project_id，没有 from/to）：判新客看的是
+// 「这个人的第一次下单」，区间一裁，区间内的第一单就会被误判成新客，
+// 于是「近半年」与「近一个月」里的同一个客户会得到两种身份。
+// 别名用 `f0` 而不是 `o`：外层 FROM 已经是 `orders AS o`，同名会让 PG 报
+// `table name "o" specified more than once`（子查询不构成独立的名字空间）。
 func (m *OrderModel) SalesMonthlyByRange(ctx context.Context, projectID string, from, to time.Time, f OrderSalesFilter) (rows []OrderSalesMonthlyRow, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
@@ -158,14 +233,35 @@ func (m *OrderModel) SalesMonthlyByRange(ctx context.Context, projectID string, 
 		return nil, ErrRangeRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := tx.Table(orderSalesFrom).
-			Joins(orderSalesJoin).
-			Select(orderSalesMonthlySelect).
+		// 每个客户在本工程**全历史**的首单时刻；游客单（user_id 为空）不进这张表，
+		// 它们在下面按 LEFT JOIN 未命中的那一支归到 guest。
+		firsts := tx.Table(OrderEntity{}.TableName()+" AS f0").
+			Select("f0.user_id AS user_id, MIN(f0.create_time) AS first_at").
+			Where("f0.project_id = ?", projectID).
+			// user_id 是 bigint 且可空（游客单为 NULL）：只能判 IS NOT NULL，
+			// 不能写成 `<> ''` —— bigint 与空串比较是**运行期类型错**（SQLSTATE 22P02），
+			// 而且只有真跑到这条查询才会暴露（编译与单测都过）。
+			Where("f0.user_id IS NOT NULL").
+			Group("f0.user_id")
+
+		// 内层：逐行算出「月桶 + 金额 + 客户类型」，客户类型只在这里算**一次**。
+		inner := salesScope(
+			tx.Table(orderSalesFrom).
+				Joins(orderSalesJoin).
+				Joins("LEFT JOIN (?) AS f ON f.user_id = o.user_id", firsts).
+				Select(orderSalesMonthlyInnerSelect),
+			projectID, from, to, f,
+		)
+
+		// 外层：按桶聚合。Table("(?) AS t", inner) 是 GORM 表达 FROM 子查询的写法；
+		// WHERE 留在内层（口径与卡片共用 salesScope），外层只负责聚合与排序。
+		return tx.Table("(?) AS t", inner).
+			Select(orderSalesMonthlyOuterSelect).
 			// 按**输出列名**分组，不写 `Group("1")`：GORM 会把裸数字转义成 `"1"`，
 			// 而 PG 读成「名为 1 的列不存在」（实测 SQLSTATE 42703）。
 			Group(orderSalesMonthColumn).
-			Order(orderSalesMonthColumn)
-		return salesScope(q, projectID, from, to, f).Scan(&rows).Error
+			Order(orderSalesMonthColumn).
+			Scan(&rows).Error
 	})
 	return rows, err
 }

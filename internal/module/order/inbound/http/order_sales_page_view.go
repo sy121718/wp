@@ -262,15 +262,27 @@ func salesChangeUp(pct *float64) *bool {
 	return nil
 }
 
-// salesMonthlyPointView 趋势图的一个柱（含按最高值归一化的高度）。
+// salesMonthlyPointView 趋势图的一个柱。
 //
-// 高度在这里算而不是在模板里：Jet 的算术能力有限，而 `h = sales / max * H`
-// 这种式子写在模板里出错时不会报错、只会画出一根高度诡异的柱子。
+// **柱高按累计位置算，不按各段独立算**：段高 = 相邻两个累计位置之差，
+// 于是 New + Returning + Guest **恒等于**整根柱高。各段独立算 height 时三次舍入
+// 各偏一点，图上会出现「三段拼起来比柱子本体高/矮一个像素」的缝或溢出 ——
+// 而每一段单独看都算得「差不多对」，这正是最容易被当成渲染 bug 而查错方向的一类缺陷。
+// 判据：TestMonthlyStackHeightsSumToBarHeight。
+//
+// 自底向上的顺序是 new → returning → guest（模板用 flex-direction: column-reverse）。
+// 游客放最上：它回答的是「这部分钱没有客户身份」，不是客户结构的一部分。
 func salesMonthlyPointView(p orderdto.SalesMonthlyPointDTO, cur string, maxSales int64) map[string]any {
-	height := 0
-	if maxSales > 0 && p.Sales > 0 {
-		height = int(p.Sales * int64(salesChartMaxHeight) / maxSales)
+	pos := func(cents int64) int {
+		if maxSales <= 0 || cents <= 0 {
+			return 0
+		}
+		return int(cents * int64(salesChartMaxHeight) / maxSales)
 	}
+	// 后一段按「前两段的累计」定位，最后一段直接取整根柱高 —— 三段的终点**就是**柱顶。
+	newTop := pos(p.NewSales)
+	retTop := pos(p.NewSales + p.ReturningSales)
+	height := pos(p.Sales)
 	return map[string]any{
 		"Month":      p.Month,
 		"Label":      salesMonthLabel(p.Month),
@@ -278,6 +290,16 @@ func salesMonthlyPointView(p orderdto.SalesMonthlyPointDTO, cur string, maxSales
 		"Sales":      orderMoneyLabel(p.Sales, cur),
 		"Customers":  p.Customers,
 		"Height":     height,
+		// 三段的高度与图例文案（图例值让鼠标悬停就能读出「新客 / 回头客 / 游客各多少」）。
+		"NewHeight":       newTop,
+		"ReturningHeight": retTop - newTop,
+		"GuestHeight":     height - retTop,
+		"HasMix":          p.NewSales > 0 || p.ReturningSales > 0 || p.GuestSales > 0,
+		"NewSales":        orderMoneyLabel(p.NewSales, cur),
+		"ReturningSales":  orderMoneyLabel(p.ReturningSales, cur),
+		"GuestSales":      orderMoneyLabel(p.GuestSales, cur),
+		"NewOrderCount":   p.NewOrderCount,
+		"NewCustomers":    p.NewCustomers,
 		// Zero 为真时模板画一根 1px 的基线柱（而不是完全不画）：
 		// 某个整月是 0 时，读者需要看到「这里有个柱子，只是它是 0」，
 		// 而不是怀疑那一格漏渲染了。

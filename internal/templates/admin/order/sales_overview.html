@@ -153,7 +153,9 @@
     </section>
     {{end}}
 
-    {* ===== 月度趋势（纯 CSS 柱图，无 JS）===== *}
+    {* ===== 月度趋势（纯 CSS 堆叠柱图，无 JS）=====
+       每根柱自底向上分三段：新客 / 回头客 / 游客。三段在视图层按**累计位置**切分，
+       命中「段高之和 == 柱高」——各段独立算 height 时三次舍入会拼出一道缝或溢出。 *}
     {{if .HasMonthly}}
     <section class="card">
         <div class="card-header">
@@ -161,13 +163,24 @@
             <span class="card-sub">{{ .["t"]("admin.order.sales.monthlyHint", "固定回看，与上面的筛选区间无关") }}</span>
         </div>
         <div class="card-body">
+            {* 图例：颜色 -> 段。柱上没有文字，颜色必须在这里解释一次。 *}
+            <div class="sales-legend">
+                <span class="sales-legend-item"><i class="sales-dot sales-dot-new"></i>{{ .["t"]("admin.order.sales.mix.new", "新客") }}</span>
+                <span class="sales-legend-item"><i class="sales-dot sales-dot-returning"></i>{{ .["t"]("admin.order.sales.mix.returning", "回头客") }}</span>
+                <span class="sales-legend-item"><i class="sales-dot sales-dot-guest"></i>{{ .["t"]("admin.order.sales.mix.guest", "游客单") }}</span>
+                <span class="sales-legend-note">{{ .["t"]("admin.order.sales.mix.hint", "新客 = 该客户首单落在本自然月（与查询区间无关）") }}</span>
+            </div>
             <div class="sales-chart">
                 {{range _, p := .MonthlyPoints}}
-                <div class="sales-col" title="{{p.Month}}｜{{p.Sales}}｜{{p.OrderCount}}">
+                <div class="sales-col" title="{{p.Month}}｜{{ .["t"]("admin.order.sales.monthly.total", "合计") }} {{p.Sales}}｜{{ .["t"]("admin.order.sales.mix.new", "新客") }} {{p.NewSales}}｜{{ .["t"]("admin.order.sales.mix.returning", "回头客") }} {{p.ReturningSales}}｜{{ .["t"]("admin.order.sales.mix.guest", "游客单") }} {{p.GuestSales}}">
                     <div class="sales-bar-wrap">
                         {* Zero 时画一根 1px 基线柱：读者需要看到「这里有个柱子，只是它是 0」，
                            而不是怀疑那一格漏渲染了。 *}
-                        <div class="sales-bar{{if p.Zero}} is-zero{{end}}" style="height:{{p.Height}}px"></div>
+                        <div class="sales-stack{{if p.Zero}} is-zero{{end}}" style="height:{{p.Height}}px">
+                            {{if p.NewHeight > 0}}<div class="sales-seg sales-seg-new" style="height:{{p.NewHeight}}px"></div>{{end}}
+                            {{if p.ReturningHeight > 0}}<div class="sales-seg sales-seg-returning" style="height:{{p.ReturningHeight}}px"></div>{{end}}
+                            {{if p.GuestHeight > 0}}<div class="sales-seg sales-seg-guest" style="height:{{p.GuestHeight}}px"></div>{{end}}
+                        </div>
                     </div>
                     <div class="sales-col-label">{{p.Label}}</div>
                     <div class="sales-col-value">{{p.Sales}}</div>

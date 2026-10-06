@@ -214,6 +214,14 @@ func (s *Service) salesMonthlyPoints(ctx context.Context, projectID string, mont
 			p.OrderCount = r.OrderCount
 			p.Sales = r.Sales
 			p.Customers = r.Customers
+			p.NewOrderCount = r.NewOrderCount
+			p.ReturningOrderCount = r.ReturningOrderCount
+			p.GuestOrderCount = r.GuestOrderCount
+			p.NewSales = r.NewSales
+			p.ReturningSales = r.ReturningSales
+			p.GuestSales = r.GuestSales
+			p.NewCustomers = r.NewCustomers
+			p.ReturningCustomers = r.ReturningCustomers
 		}
 		points = append(points, p)
 	}

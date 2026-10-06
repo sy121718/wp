@@ -94,10 +94,20 @@ func salesOverviewTemplateData() map[string]any {
 		{Label: "下单客户", Prev: "0", Change: "", NoBase: true},
 	}
 	data["MonthlyPoints"] = []map[string]any{
-		{"Month": "2026-09", "Label": "2026-09", "OrderCount": 10, "Sales": "¥900.00", "Customers": 8, "Height": 120, "Zero": false},
+		// 三段高度由视图层按**累计位置**算，之和恒等于 Height（这里逐一给出一致的数据）。
+		{"Month": "2026-09", "Label": "2026-09", "OrderCount": 10, "Sales": "¥900.00", "Customers": 8,
+			"Height": 120, "NewHeight": 50, "ReturningHeight": 40, "GuestHeight": 30,
+			"NewSales": "¥400.00", "ReturningSales": "¥300.00", "GuestSales": "¥200.00",
+			"NewOrderCount": 4, "NewCustomers": 3, "HasMix": true, "Zero": false},
 		// 零值月：高度 0 + Zero=true，模板要给它 is-zero（画基线柱而不是留空位）。
-		{"Month": "2026-10", "Label": "2026-10", "OrderCount": 12, "Sales": "¥1,234.50", "Customers": 9, "Height": 160, "Zero": false},
-		{"Month": "2026-08", "Label": "2026-08", "OrderCount": 0, "Sales": "¥0.00", "Customers": 0, "Height": 0, "Zero": true},
+		{"Month": "2026-10", "Label": "2026-10", "OrderCount": 12, "Sales": "¥1,234.50", "Customers": 9,
+			"Height": 160, "NewHeight": 70, "ReturningHeight": 60, "GuestHeight": 30,
+			"NewSales": "¥600.00", "ReturningSales": "¥500.00", "GuestSales": "¥134.50",
+			"NewOrderCount": 6, "NewCustomers": 5, "HasMix": true, "Zero": false},
+		{"Month": "2026-08", "Label": "2026-08", "OrderCount": 0, "Sales": "¥0.00", "Customers": 0,
+			"Height": 0, "NewHeight": 0, "ReturningHeight": 0, "GuestHeight": 0,
+			"NewSales": "¥0.00", "ReturningSales": "¥0.00", "GuestSales": "¥0.00",
+			"NewOrderCount": 0, "NewCustomers": 0, "HasMix": false, "Zero": true},
 	}
 	data["HasMonthly"] = true
 	data["MonthlyMaxSales"] = int64(123450)
@@ -152,20 +162,45 @@ func TestSalesOverviewRendersCompare(t *testing.T) {
 	}
 }
 
-// 趋势柱：高度写进 style，零值月有 is-zero。
+// 趋势柱：三段高度写进 style，零值月有 is-zero。
 func TestSalesOverviewRendersMonthlyBars(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
 
 	if !strings.Contains(out, "height:120px") || !strings.Contains(out, "height:160px") {
 		t.Error("趋势柱高度没有写进 style")
 	}
-	if !strings.Contains(out, "sales-bar is-zero") {
+	if !strings.Contains(out, "sales-stack is-zero") {
 		t.Error("零值月没有 is-zero（会被读成漏渲染）")
 	}
 	for _, want := range []string{"2026-09", "2026-10", "2026-08"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("横轴缺少刻度 %q", want)
 		}
+	}
+}
+
+// 趋势柱的客户类型堆叠：三段各自的类名与高度都要落到 DOM 上。
+//
+// **判据是「三段之和 == 柱高」**：只断言三个 div 都存在时，把某一段的高度算错
+// （例如三段各自独立取整）测试仍然全绿，而图上会出现拼不齐的缝或溢出。
+func TestSalesOverviewRendersCustomerMixSegments(t *testing.T) {
+	out := renderSalesOverview(t, salesOverviewTemplateData())
+
+	for _, want := range []string{
+		// 视图层算好的段高（2026-09：50 / 40 / 30，和 = 120 = 柱高）。
+		"sales-seg sales-seg-new", "sales-seg sales-seg-returning", "sales-seg sales-seg-guest",
+		"height:50px", "height:40px", "height:30px",
+		// 图例：颜色必须有解释，否则三色柱读不出含义。
+		"sales-legend", "sales-dot-new", "sales-dot-returning", "sales-dot-guest",
+		"新客", "回头客", "游客单",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("客户类型堆叠缺少 %q", want)
+		}
+	}
+	// column-reverse 是「第一段在底部」的实现方式：改了它，图上三段的上下顺序就反了。
+	if !strings.Contains(out, "sales-stack") {
+		t.Error("堆叠容器类名缺失")
 	}
 }
 
