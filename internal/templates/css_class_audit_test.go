@@ -352,7 +352,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 	"accent-": {
 		site:   "admin/order/sales_overview.html:100 与 :110 `class=\"stat-card sales-card accent-{{c.Accent}}\"`",
 		values: []string{"primary", "success", "info", "mute"},
-		note:   "取值域是 orderhttp.salesCardViews / salesClientViews 写死的 Accent 字面量（各四张卡，合计只可能出现这四个值）；对应 theme.css 的 .accent-primary / .accent-success / .accent-info / .accent-mute —— 四者都是卡片左侧的维度色，不表达好坏",
+		note:   "取值域是 orderhttp.salesCardViews 写死的 Accent 字面量（一排四张卡，只可能出现这四个值）；对应 theme.css 的 .accent-primary / .accent-success / .accent-info / .accent-mute —— 四者都是卡片左侧的维度色，不表达好坏",
 	},
 }
 

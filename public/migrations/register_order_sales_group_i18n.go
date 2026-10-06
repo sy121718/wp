@@ -18,11 +18,12 @@ func registerOrderSalesGroupI18nSeed() {
 		Version:   "582-order-sales-group-i18n",
 		TableName: "sys_i18n",
 		SQL:       mustSQL("582_order_sales_group_i18n.sql"),
-		// 3 个 key × 2 语言 = 6 行。
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 6 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE item_key IN (" +
-			"'admin.order.sales.group.sales'," +
-			"'admin.order.sales.group.customers'," +
-			"'admin.order.sales.monthly.empty')",
+		// 1 个 key × 2 语言 = 2 行。
+		//
+		// **门槛必须与 SQL 里的 INSERT 同一批收窄**：582 原本还种了「销售 / 客户」两个
+		// 分组标题 key，583 把它们删了（卡片合成一排四张后没有分组标题）。若这里仍按
+		// 3 个 key 计数，门槛永远不满足 —— 每次启动都会重跑 582，把删掉的两条插回来。
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 2 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE item_key = 'admin.order.sales.monthly.empty'",
 	})
 }

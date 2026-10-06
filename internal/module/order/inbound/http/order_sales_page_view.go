@@ -19,6 +19,7 @@ package orderhttp
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	orderdto "go_wp/internal/module/order/dto"
@@ -30,6 +31,10 @@ import (
 const (
 	salesLabelPrefix = "admin.order.sales.label."
 	salesNotePrefix  = "admin.order.sales.note."
+	// salesMixPrefix / salesMonthlyPrefix 是既有的两组 key（迁移 581）：
+	// 客户类型拆分与月度合计在柱图那版就种好了，这里只换图的形态，不另立词条。
+	salesMixPrefix     = "admin.order.sales.mix."
+	salesMonthlyPrefix = "admin.order.sales.monthly."
 )
 
 // salesCurrency 本页金额的币种（与建单页、订单列表页同一个来源）。
@@ -79,20 +84,6 @@ func salesOverviewView(
 	tr func(key, fallback string) string,
 ) map[string]any {
 	cur := salesCurrency()
-	points := make([]map[string]any, 0, len(res.MonthlyPoints))
-	maxSales := int64(0)
-	anySales := false
-	for _, p := range res.MonthlyPoints {
-		if p.Sales > maxSales {
-			maxSales = p.Sales
-		}
-		if p.Sales > 0 {
-			anySales = true
-		}
-	}
-	for _, p := range res.MonthlyPoints {
-		points = append(points, salesMonthlyPointView(p, cur, maxSales))
-	}
 	return map[string]any{
 		"Projects":        projects,
 		"SelectedProject": selected,
@@ -105,24 +96,23 @@ func salesOverviewView(
 		"HasData": res.OrderCount > 0 || res.Monthly > 0,
 
 		"Cards":   salesCardViews(res, cur, tr),
-		"Clients": salesClientViews(res, cur, tr),
 		"Compare": salesCompareView(res.Compare, cur, tr),
-
-		"MonthlyPoints": points,
-		"HasMonthly":    len(points) > 0,
-		// HasMonthlyData 与 HasMonthly 是两件事：前者问「有没有柱子」，
-		// 后者问「柱子有没有高度」。回看窗口天生总有月份（补零过），所以 HasMonthly
-		// 几乎恒真；只按它渲染时，一个整月没生意的站点会得到一块 160px 高的空白 ——
-		// 那不是「趋势平缓」，是「没数据」，两者的读法完全不同。
-		"HasMonthlyData":  anySales,
-		"MonthlyMaxSales": maxSales,
+		"Trend":   salesTrendView(res.MonthlyPoints, cur, tr),
 	}
 }
 
-// salesCardViews 四张销售卡（订单 / 销售额 / 平均订单价值 / 平均每单件数）。
+// salesCardView 之外，本页只有一条趋势图 —— 详情见 salesTrendView。
+
+// salesCardViews 四张卡：订单数 / 销售额 / 平均订单价值 / 平均客户价值。
 //
-// 卡的顺序是**从「一共多少」到「单笔多大」**：先总量、后均值的读法是报表的通行约定，
+// 卡的顺序是**从「一共多少」到「单笔 / 单人多大」**：先总量、后均值的读法是报表的通行约定，
 // 反过来（先 AOV 再总量）会让读的人先看到一个需要上下文才能判断大小的数。
+//
+// **为什么只留这四张**：本页讲的是「卖了多少钱」，客户侧只有 ACV 是金额口径。
+// 下单客户 / 新客户 / 回头客户是「人数」，与前三张不同量纲、也不回答本页的问题；
+// 平均每单件数更是商品侧的口径。它们挤在同一排里会让「八张卡讲一件事」变成
+// 「八张卡各讲各的」，读的人反而看不出重点。
+// 账号维度的客户数没有消失 —— 环比区块里仍有「下单客户」那一行，趋势图也有客户类型拆分。
 func salesCardViews(res *orderdto.SalesOverviewResp, cur string, tr func(key, fallback string) string) []salesCardView {
 	return []salesCardView{
 		{
@@ -144,41 +134,6 @@ func salesCardViews(res *orderdto.SalesOverviewResp, cur string, tr func(key, fa
 			Accent: "info",
 		},
 		{
-			Label: tr(salesLabelPrefix+"units", "平均每单件数"),
-			Value: fmt.Sprintf("%.2f", res.AvgItemsPerOrder),
-			Note: fmt.Sprintf(tr(salesNotePrefix+"units", "商品明细行数 ÷ 订单数；不等于件数（一行可能多件），本区间共 %d 件"),
-				res.Units),
-			Accent: "mute",
-		},
-	}
-}
-
-// salesClientViews 四张客户卡（下单客户 / 新客户 / 回头客户 / 平均客户价值）。
-//
-// 「复购率」不做成第五张卡而是并进回头客那张的说明里：它与回头客是同一个问题的两面
-// （一个给人数、一个给比例），并成两张卡会让读的人以为是两组不同的人。
-func salesClientViews(res *orderdto.SalesOverviewResp, cur string, tr func(key, fallback string) string) []salesCardView {
-	return []salesCardView{
-		{
-			Label:  tr(salesLabelPrefix+"customers", "下单客户"),
-			Value:  fmt.Sprintf("%d", res.Customers),
-			Note:   tr(salesNotePrefix+"customers", "按账号去重；游客单不计入（没有账号可归）"),
-			Accent: "primary",
-		},
-		{
-			Label:  tr(salesLabelPrefix+"new", "新客户"),
-			Value:  fmt.Sprintf("%d", res.NewCustomers),
-			Note:   tr(salesNotePrefix+"new", "首单落在本区间内（不看注册时间）"),
-			Accent: "success",
-		},
-		{
-			Label: tr(salesLabelPrefix+"returning", "回头客户"),
-			Value: fmt.Sprintf("%d", res.ReturningCustomers),
-			Note: fmt.Sprintf(tr(salesNotePrefix+"returning", "首单在区间之前、区间内又下单；复购率 %.1f%%（%d 人下了 2 单以上）"),
-				res.RepurchaseRatePct, res.Repurchasers),
-			Accent: "info",
-		},
-		{
 			Label:  tr(salesLabelPrefix+"acv", "平均客户价值"),
 			Value:  orderMoneyLabel(res.AvgCustomerValue, cur),
 			Note:   tr(salesNotePrefix+"acv", "销售额 ÷ 下单客户数（ACV）；分母是人不是单，与 AOV 不同"),
@@ -187,6 +142,172 @@ func salesClientViews(res *orderdto.SalesOverviewResp, cur string, tr func(key, 
 	}
 }
 
+// ── 月度趋势（折线图）────────────────────────────────────────────────────
+//
+// 坐标一律在这里算完，模板只贴字符串 —— 与 AI 会话页的 token 趋势同一套规矩，
+// 两处共用 .chart-trend-* 的样式（viewBox 1000×200 + preserveAspectRatio="none"）。
+
+const (
+	// salesTrendViewW / salesTrendViewH 与模板里的 viewBox 一致。
+	salesTrendViewW = 1000
+	salesTrendViewH = 200
+	// salesTrendPadX 左右各留一点：x=0 的点描边有一半落在 viewBox 外，会被裁掉半条线。
+	salesTrendPadX = 6
+	// salesTrendPadTop 顶部留白：峰值那一点不能贴到上边界。
+	salesTrendPadTop = 12
+	// salesTrendAxisH 底部月份刻度占的高度（绘图区必须让开，否则曲线会压在刻度上）。
+	salesTrendAxisH = 40
+)
+
+// salesTrendSeries 折线图上的一条线。
+type salesTrendSeries struct {
+	// Label 线名（已译）。
+	Label string
+	// Color 1..8 的调色板序号，模板映射到 --chart-cN。
+	Color int
+	// Points 是 `<polyline points="…">` 的现成内容（"x,y x,y …"）。
+	Points string
+	// Total 区间合计（已格式化），图例右侧显示。
+	Total string
+	// Dots 每个数据点的命中块 + 悬停文案。
+	//
+	// 为什么要有它：`<polyline>` 只能挂一个 `<title>`，整条线一句话说不清「这个月多少」。
+	// 而这是本页唯一的读数入口 —— 没有它，图上就只有形状没有数字。
+	// 块取 14×14 而不是 hover 描边命中：折线本身细，鼠标要精确压在 2px 上才触发。
+	Dots []salesTrendDot
+}
+
+// salesTrendDot 折线上的一个数据点（命中块中心 + 悬停文案）。
+type salesTrendDot struct {
+	X     int
+	Y     int
+	Title string
+}
+
+// salesTrendAxis 横轴的一个刻度。
+type salesTrendAxis struct {
+	X     int
+	Label string
+	// Anchor text-anchor：首尾两个刻度贴边会出界，往内收。
+	Anchor string
+}
+
+// salesTrendView 组装折线图（没有月份时 HasData=false，模板不渲染画布）。
+type salesTrendChart struct {
+	HasData bool
+	// HasSales 任一月份有销售额。与 HasData 是两件事：回看窗口天生总有月份（补零过），
+	// 所以 HasData 几乎恒真；一笔销售都没有时画一块空画布会被读成「趋势平缓」。
+	HasSales bool
+	Series   []salesTrendSeries
+	Axis     []salesTrendAxis
+	// Peak/PeakLabel 峰值与其格式化金额（纵轴上限的读数）。
+	Peak      int64
+	PeakLabel string
+}
+
+func salesTrendView(points []orderdto.SalesMonthlyPointDTO, cur string, tr func(key, fallback string) string) salesTrendChart {
+	out := salesTrendChart{}
+	if len(points) == 0 {
+		return out
+	}
+	out.HasData = true
+
+	// 纵轴上限取「单月总额」的最大值（不是三段各自的最大值）：
+	// 三条线共用一个刻度才可比 —— 各自归一化会让「游客单比新客高」这种事实看不出来。
+	var peak int64
+	for _, p := range points {
+		if p.Sales > peak {
+			peak = p.Sales
+		}
+		if p.Sales > 0 {
+			out.HasSales = true
+		}
+	}
+	out.Peak = peak
+	out.PeakLabel = orderMoneyLabel(peak, cur)
+
+	plotH := salesTrendViewH - salesTrendPadTop - salesTrendAxisH
+	xOf := func(i int) int {
+		if len(points) == 1 {
+			return salesTrendViewW / 2
+		}
+		return salesTrendPadX + i*(salesTrendViewW-2*salesTrendPadX)/(len(points)-1)
+	}
+	yOf := func(cents int64) int {
+		if peak <= 0 || cents <= 0 {
+			return salesTrendPadTop + plotH
+		}
+		return salesTrendPadTop + plotH - int(cents*int64(plotH)/peak)
+	}
+
+	type seg struct {
+		label string
+		color int
+		value func(orderdto.SalesMonthlyPointDTO) int64
+	}
+	segs := []seg{
+		{
+			label: tr(salesMixPrefix+"new", "新客"),
+			color: 3,
+			value: func(p orderdto.SalesMonthlyPointDTO) int64 { return p.NewSales },
+		},
+		{
+			label: tr(salesMixPrefix+"returning", "回头客"),
+			color: 1,
+			value: func(p orderdto.SalesMonthlyPointDTO) int64 { return p.ReturningSales },
+		},
+		{
+			label: tr(salesMixPrefix+"guest", "游客单"),
+			color: 8,
+			value: func(p orderdto.SalesMonthlyPointDTO) int64 { return p.GuestSales },
+		},
+	}
+
+	out.Series = make([]salesTrendSeries, 0, len(segs))
+	for _, s := range segs {
+		pts := make([]string, 0, len(points))
+		dots := make([]salesTrendDot, 0, len(points))
+		var total int64
+		for i, p := range points {
+			v := s.value(p)
+			total += v
+			x, y := xOf(i), yOf(v)
+			pts = append(pts, strconv.Itoa(x)+","+strconv.Itoa(y))
+			dots = append(dots, salesTrendDot{
+				X: x,
+				Y: y,
+				Title: fmt.Sprintf("%s｜%s %s｜%s %s",
+					salesMonthLabel(p.Month), s.label, orderMoneyLabel(v, cur),
+					tr(salesMonthlyPrefix+"total", "合计"), orderMoneyLabel(p.Sales, cur)),
+			})
+		}
+		out.Series = append(out.Series, salesTrendSeries{
+			Label:  s.label,
+			Color:  s.color,
+			Points: strings.Join(pts, " "),
+			Total:  orderMoneyLabel(total, cur),
+			Dots:   dots,
+		})
+	}
+
+	out.Axis = make([]salesTrendAxis, 0, len(points))
+	for i, p := range points {
+		anchor := "middle"
+		if i == 0 {
+			anchor = "start"
+		} else if i == len(points)-1 {
+			anchor = "end"
+		}
+		out.Axis = append(out.Axis, salesTrendAxis{
+			X:      xOf(i),
+			Label:  salesMonthLabel(p.Month),
+			Anchor: anchor,
+		})
+	}
+	return out
+}
+
+// salesCardViews 之外的客户侧口径：账号维度的客户数只在环比区块与趋势图里出现。
 // salesCompareRowView 环比的一个指标（上一期绝对值 + 变化率 + 方向）。
 //
 // **只给上一期的绝对值**，本期值不重复塞进来：本期三个数已经在上面那排卡片里
@@ -271,51 +392,6 @@ func salesChangeUp(pct *float64) *bool {
 	return nil
 }
 
-// salesMonthlyPointView 趋势图的一个柱。
-//
-// **柱高按累计位置算，不按各段独立算**：段高 = 相邻两个累计位置之差，
-// 于是 New + Returning + Guest **恒等于**整根柱高。各段独立算 height 时三次舍入
-// 各偏一点，图上会出现「三段拼起来比柱子本体高/矮一个像素」的缝或溢出 ——
-// 而每一段单独看都算得「差不多对」，这正是最容易被当成渲染 bug 而查错方向的一类缺陷。
-// 判据：TestMonthlyStackHeightsSumToBarHeight。
-//
-// 自底向上的顺序是 new → returning → guest（模板用 flex-direction: column-reverse）。
-// 游客放最上：它回答的是「这部分钱没有客户身份」，不是客户结构的一部分。
-func salesMonthlyPointView(p orderdto.SalesMonthlyPointDTO, cur string, maxSales int64) map[string]any {
-	pos := func(cents int64) int {
-		if maxSales <= 0 || cents <= 0 {
-			return 0
-		}
-		return int(cents * int64(salesChartMaxHeight) / maxSales)
-	}
-	// 后一段按「前两段的累计」定位，最后一段直接取整根柱高 —— 三段的终点**就是**柱顶。
-	newTop := pos(p.NewSales)
-	retTop := pos(p.NewSales + p.ReturningSales)
-	height := pos(p.Sales)
-	return map[string]any{
-		"Month":      p.Month,
-		"Label":      salesMonthLabel(p.Month),
-		"OrderCount": p.OrderCount,
-		"Sales":      orderMoneyLabel(p.Sales, cur),
-		"Customers":  p.Customers,
-		"Height":     height,
-		// 三段的高度与图例文案（图例值让鼠标悬停就能读出「新客 / 回头客 / 游客各多少」）。
-		"NewHeight":       newTop,
-		"ReturningHeight": retTop - newTop,
-		"GuestHeight":     height - retTop,
-		"HasMix":          p.NewSales > 0 || p.ReturningSales > 0 || p.GuestSales > 0,
-		"NewSales":        orderMoneyLabel(p.NewSales, cur),
-		"ReturningSales":  orderMoneyLabel(p.ReturningSales, cur),
-		"GuestSales":      orderMoneyLabel(p.GuestSales, cur),
-		"NewOrderCount":   p.NewOrderCount,
-		"NewCustomers":    p.NewCustomers,
-		// Zero 为真时模板画一根 1px 的基线柱（而不是完全不画）：
-		// 某个整月是 0 时，读者需要看到「这里有个柱子，只是它是 0」，
-		// 而不是怀疑那一格漏渲染了。
-		"Zero": p.Sales == 0,
-	}
-}
-
 // salesMonthLabel 横轴刻度（原样返回 `2026-10`）。
 //
 // **刻意不做成「10月」或「2026年10月」**：中文年月会让英文界面显示中文，
@@ -328,6 +404,3 @@ func salesMonthLabel(month string) string {
 	}
 	return month
 }
-
-// salesChartMaxHeight 趋势柱的最大像素高度（与模板里 svg 的绘图区高度一致）。
-const salesChartMaxHeight = 160

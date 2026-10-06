@@ -94,52 +94,29 @@
     </section>
     {{else}}
 
-    {* ===== 卡片：销售维度 / 客户维度 =====
-       两排各带一行小标题：八张同形卡排在一起时，没有分组标识就读不出
-       「前四张是钱、后四张是人」——而这正是本页要说的一件事。
+    {* ===== 四张销售卡 =====
+       只有一排、没有分组标题：本页讲的是「卖了多少钱」，四张卡同一个量纲，
+       再分「销售 / 客户」两组反而让人以为这是两块不同的东西。
 
        口径说明走 `.help-pop` 浮层（标签旁的 ? 按钮），**一律不用 title**：
        原生 tooltip 的位置与样式由浏览器决定，实测会压住相邻卡片；
        而 .help-pop 在 admin.js 里已处理 hover / 键盘聚焦 / Esc / 点外部关闭 /
        贴边自动翻转，也是仓内其它页面的通行形态。 *}
-    <section class="sales-group">
-        <h2 class="sales-group-title">{{ .["t"]("admin.order.sales.group.sales", "销售") }}</h2>
-        <div class="stat-grid sales-cards">
-            {{range _, c := .Cards}}
-            <div class="card stat-card sales-card accent-{{c.Accent}}">
-                <div class="stat-label">
-                    {{c.Label}}
-                    {{if c.Note}}
-                    <span class="help">
-                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{c.Note}}</span>
-                    </span>
-                    {{end}}
-                </div>
-                <div class="stat-value">{{c.Value}}</div>
+    <section class="stat-grid sales-cards">
+        {{range _, c := .Cards}}
+        <div class="card stat-card sales-card accent-{{c.Accent}}">
+            <div class="stat-label">
+                {{c.Label}}
+                {{if c.Note}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{c.Note}}</span>
+                </span>
+                {{end}}
             </div>
-            {{end}}
+            <div class="stat-value">{{c.Value}}</div>
         </div>
-    </section>
-
-    <section class="sales-group">
-        <h2 class="sales-group-title">{{ .["t"]("admin.order.sales.group.customers", "客户") }}</h2>
-        <div class="stat-grid sales-cards">
-            {{range _, c := .Clients}}
-            <div class="card stat-card sales-card accent-{{c.Accent}}">
-                <div class="stat-label">
-                    {{c.Label}}
-                    {{if c.Note}}
-                    <span class="help">
-                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                        <span class="help-pop" role="tooltip">{{c.Note}}</span>
-                    </span>
-                    {{end}}
-                </div>
-                <div class="stat-value">{{c.Value}}</div>
-            </div>
-            {{end}}
-        </div>
+        {{end}}
     </section>
 
     {* ===== 环比：只给上一期绝对值 + 变化率（本期值在上面那排卡片里，不重复放两份）===== *}
@@ -181,45 +158,59 @@
     </section>
     {{end}}
 
-    {* ===== 月度趋势（纯 CSS 堆叠柱图，无 JS）=====
-       每根柱自底向上分三段：新客 / 回头客 / 游客。三段在视图层按**累计位置**切分，
-       命中「段高之和 == 柱高」——各段独立算 height 时三次舍入会拼出一道缝或溢出。 *}
-    {{if .HasMonthly}}
+    {* ===== 月度趋势（折线图，坐标由服务端算好，无 JS）=====
+       三条线：新客 / 回头客 / 游客。共用同一个纵轴刻度（单月总额的峰值）——
+       各自归一化时每条线单独看都「有起伏」，但三条线的高低关系全错。 *}
+    {{if .Trend.HasData}}
     <section class="card">
         <div class="card-header">
             <h2 class="card-title">{{ .["t"]("admin.order.sales.monthly", "月度趋势") }}</h2>
             <span class="card-sub">{{ .["t"]("admin.order.sales.monthlyHint", "固定回看，与上面的筛选区间无关") }}</span>
         </div>
         <div class="card-body">
-            {* 图例：颜色 -> 段。柱上没有文字，颜色必须在这里解释一次。 *}
-            <div class="sales-legend">
-                <span class="sales-legend-item"><i class="sales-dot sales-dot-new"></i>{{ .["t"]("admin.order.sales.mix.new", "新客") }}</span>
-                <span class="sales-legend-item"><i class="sales-dot sales-dot-returning"></i>{{ .["t"]("admin.order.sales.mix.returning", "回头客") }}</span>
-                <span class="sales-legend-item"><i class="sales-dot sales-dot-guest"></i>{{ .["t"]("admin.order.sales.mix.guest", "游客单") }}</span>
-                <span class="sales-legend-note">{{ .["t"]("admin.order.sales.mix.hint", "新客 = 该客户首单落在本自然月（与查询区间无关）") }}</span>
-            </div>
-            {* 回看窗口里的月份是补零出来的，所以「有柱子」几乎恒真；没有一笔销售时
+            {* 折线而不是柱状：柱状图一个月只有一根、一个高度，三条线（新客 / 回头客 / 游客）
+               只能堆叠或并排 —— 堆叠看不出单条趋势，并排又把一个月切成一簇细柱。
+               坐标全部在服务端算好（.Trend.Series[].Points 就是 polyline 的现成内容），
+               样式与 AI 会话页的 token 趋势共用 .chart-trend-*。 *}
+            {* 回看窗口里的月份是补零出来的，所以「有数据」几乎恒真；一笔销售都没有时
                整块画布会是一片空白 —— 那不是「趋势平缓」，是「没数据」。 *}
-            {{if .HasMonthlyData}}
-            <div class="sales-chart">
-                {{range _, p := .MonthlyPoints}}
-                <div class="sales-col" title="{{p.Month}}｜{{ .["t"]("admin.order.sales.monthly.total", "合计") }} {{p.Sales}}｜{{ .["t"]("admin.order.sales.mix.new", "新客") }} {{p.NewSales}}｜{{ .["t"]("admin.order.sales.mix.returning", "回头客") }} {{p.ReturningSales}}｜{{ .["t"]("admin.order.sales.mix.guest", "游客单") }} {{p.GuestSales}}">
-                    <div class="sales-bar-wrap">
-                        {* Zero 时画一根 1px 基线柱：读者需要看到「这里有个柱子，只是它是 0」，
-                           而不是怀疑那一格漏渲染了。 *}
-                        <div class="sales-stack{{if p.Zero}} is-zero{{end}}" style="height:{{p.Height}}px">
-                            {{if p.NewHeight > 0}}<div class="sales-seg sales-seg-new" style="height:{{p.NewHeight}}px"></div>{{end}}
-                            {{if p.ReturningHeight > 0}}<div class="sales-seg sales-seg-returning" style="height:{{p.ReturningHeight}}px"></div>{{end}}
-                            {{if p.GuestHeight > 0}}<div class="sales-seg sales-seg-guest" style="height:{{p.GuestHeight}}px"></div>{{end}}
-                        </div>
-                    </div>
-                    <div class="sales-col-label">{{p.Label}}</div>
-                    <div class="sales-col-value">{{p.Sales}}</div>
-                </div>
-                {{end}}
+            {{if .Trend.HasSales}}
+            <div class="chart-trend">
+                <svg class="chart-trend-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img"
+                     aria-label="{{ .["t"]("admin.order.sales.monthly.title", "月度销售额趋势") }} {{.From}} – {{.To}}">
+                    {{range _, s := .Trend.Series}}
+                    <polyline class="chart-trend-line" points="{{s.Points}}" style="stroke: var(--chart-c{{s.Color}})"></polyline>
+                    {{end}}
+                    {* 每个数据点一个 14×14 的命中块：polyline 只能挂一个 title，
+                       整条线一句话说不清「这个月多少」，而这是本页唯一的读数入口。
+                       方块而不是圆：viewBox 被 preserveAspectRatio="none" 横向拉伸，
+                       圆会变成椭圆（宽高比随容器变），方块只变胖一点。 *}
+                    {{range _, s := .Trend.Series}}
+                    {{range _, d := s.Dots}}
+                    <rect class="chart-trend-point" x="{{d.X}}" y="{{d.Y}}" width="14" height="14" rx="3"
+                          transform="translate(-7,-7)" fill="transparent">
+                        <title>{{d.Title}}</title>
+                    </rect>
+                    {{end}}
+                    {{end}}
+                    {* 横轴刻度：首尾两个贴边会出界，anchor 往内收（服务端给）。 *}
+                    {{range _, a := .Trend.Axis}}
+                    <text class="chart-trend-axis" x="{{a.X}}" y="190" text-anchor="{{a.Anchor}}">{{a.Label}}</text>
+                    {{end}}
+                </svg>
             </div>
+            <ul class="chart-trend-legend">
+                {{range _, s := .Trend.Series}}
+                <li class="chart-trend-legend-item">
+                    <span class="chart-trend-swatch" style="background: var(--chart-c{{s.Color}})"></span>
+                    <span class="chart-trend-legend-label">{{s.Label}}</span>
+                    <span class="chart-trend-legend-value">{{s.Total}}</span>
+                </li>
+                {{end}}
+                <li class="chart-trend-legend-note">{{ .["t"]("admin.order.sales.mix.hint", "新客 = 该客户首单落在本自然月（与查询区间无关）") }}</li>
+            </ul>
             {{else}}
-            <p class="sales-chart-empty">{{ .["t"]("admin.order.sales.monthly.empty", "这段时间没有计入消费的订单，趋势暂无可画的柱子。") }}</p>
+            <p class="sales-chart-empty">{{ .["t"]("admin.order.sales.monthly.empty", "这段时间没有计入消费的订单，趋势暂无可画的线。") }}</p>
             {{end}}
         </div>
     </section>

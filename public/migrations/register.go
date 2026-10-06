@@ -256,8 +256,10 @@ func init() {
 	registerOrderOverviewMenu()
 	// 581：销售概览「月度趋势按客户类型拆分」的词条（见 register_order_sales_customer_mix_i18n.go）。
 	registerOrderSalesCustomerMixI18n()
-	// 582：销售概览的分组标题与趋势空态词条（见 register_order_sales_group_i18n.go）。
+	// 582：销售概览的趋势空态词条（见 register_order_sales_group_i18n.go）。
 	registerOrderSalesGroupI18n()
+	// 583：销售概览改折线图后的词条调整（见 register_order_sales_trend_line_i18n.go）。
+	registerOrderSalesTrendLineI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

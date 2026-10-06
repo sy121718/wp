@@ -145,34 +145,34 @@
                 {{if len(.Trend.Series) == 0}}
                 <p class="form-hint">{{tr("admin.ai.session.trend.empty", "这段时间还没有事件。")}}</p>
                 {{else}}
-                <div class="ai-trend">
+                <div class="chart-trend">
                     {* 折线而不是柱状：柱状图一天只有一根、一个高度，多序列只能堆叠或并排 ——
                        堆叠看不出单条趋势，并排又把一天切成一簇细柱。viewBox 固定 + preserveAspectRatio="none"
                        让图自适应容器宽度，描边靠 CSS 的 non-scaling-stroke 保住 2px。 *}
-                    <svg class="ai-trend-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img"
+                    <svg class="chart-trend-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img"
                          aria-label="{{tr("admin.ai.session.trend.title", "Token 用量趋势")}} {{.Trend.From}} – {{.Trend.To}}">
                         {{range _, s := .Trend.Series}}
                         {{if s.Single}}
                         {* 单点用方块而不是圆：viewBox 被 preserveAspectRatio="none" 横向拉伸，
                            圆会被拉成椭圆（宽高比随容器变），方块只是变胖一点。 *}
-                        <rect class="ai-trend-point" x="{{s.DotX}}" y="{{s.DotY}}" width="14" height="14" rx="3"
+                        <rect class="chart-trend-point" x="{{s.DotX}}" y="{{s.DotY}}" width="14" height="14" rx="3"
                               transform="translate(-7,-7)" style="fill: var(--chart-c{{s.Color}})"></rect>
                         {{else}}
-                        <polyline class="ai-trend-line" points="{{s.Points}}" style="stroke: var(--chart-c{{s.Color}})"></polyline>
+                        <polyline class="chart-trend-line" points="{{s.Points}}" style="stroke: var(--chart-c{{s.Color}})"></polyline>
                         {{end}}
                         {{end}}
                     </svg>
                 </div>
-                <ul class="ai-trend-legend">
+                <ul class="chart-trend-legend">
                     {{range _, s := .Trend.Series}}
-                    <li class="ai-trend-legend-item">
-                        <span class="ai-trend-swatch" style="background: var(--chart-c{{s.Color}})"></span>
-                        <span class="ai-trend-legend-label">
+                    <li class="chart-trend-legend-item">
+                        <span class="chart-trend-swatch" style="background: var(--chart-c{{s.Color}})"></span>
+                        <span class="chart-trend-legend-label">
                             {{if s.OtherCount > 0}}{{tr("admin.ai.session.trend.other", "其他")}}（{{s.OtherCount}}）
                             {{else if s.ProviderKey == ""}}{{tr("admin.ai.session.usage.unrecorded", "未记录")}}
                             {{else}}{{s.ProviderKey}}{{if s.ModelID != ""}} / {{s.ModelID}}{{end}}{{end}}
                         </span>
-                        <span class="ai-trend-legend-value">{{s.TotalText}}</span>
+                        <span class="chart-trend-legend-value">{{s.TotalText}}</span>
                     </li>
                     {{end}}
                 </ul>

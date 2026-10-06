@@ -2,10 +2,12 @@ package templates
 
 // order_sales_overview_test.go — 销售概览页（/admin/orders/overview）的渲染判据。
 //
-// 为什么要单独测：这一页是**新增的整页模板**，它的键名（Filter.* / Cards / Clients /
-// Compare / MonthlyPoints）与视图层 map 里的键是**字符串对齐**的 ——
-// 模板里把 `.Filter.StatusLabel` 写成 `.Filter.Status`、把 `.Zero` 写成 `.IsZero`，
-// Jet 不会报错（取到 nil）、页面也不 500，只在生产上表现为「那一块是空的」。
+// 为什么要单独测：这一页是**新增的整页模板**，它的键名（Filter.* / Cards / Compare /
+// Trend.*）与视图层 map 里的键是**字符串对齐**的 ——
+// 模板里把 `.Filter.StatusLabel` 写成 `.Filter.Status`、把 `.Trend.HasSales` 写成
+// `.HasMonthlyData`，Jet 不会报错（取到 nil）、页面也不 500，只在生产上表现为
+// 「那一块是空的」；而布尔键缺了更糟，`if` 要求 bool、缺失键求值成 nil 会**中断整页渲染**
+// （实测命中过一次，报 `there is no field or method … in map[string]interface {}`）。
 //
 // 用本地结构体而不是 orderhttp 的未导出类型：Jet 的字段访问只认名字，
 // 两边同形即可；这也让本包不必依赖订单模块的 inbound 包。
@@ -49,11 +51,42 @@ type tmplSalesProject struct {
 	Name string
 }
 
+// 折线图的四个类型与 orderhttp 的同名类型逐字段对齐（Jet 只认名字）。
+type tmplSalesTrendDot struct {
+	X     int
+	Y     int
+	Title string
+}
+
+type tmplSalesTrendSeries struct {
+	Label  string
+	Color  int
+	Points string
+	Total  string
+	Dots   []tmplSalesTrendDot
+}
+
+type tmplSalesTrendAxis struct {
+	X      int
+	Label  string
+	Anchor string
+}
+
+type tmplSalesTrendChart struct {
+	HasData   bool
+	HasSales  bool
+	Series    []tmplSalesTrendSeries
+	Axis      []tmplSalesTrendAxis
+	Peak      int64
+	PeakLabel string
+}
+
 func boolPtr(b bool) *bool { return &b }
 
 // salesOverviewTemplateData 一份「有数据」的整页数据。
 //
-// 键名逐一对齐 orderhttp.salesOverviewView 的返回值 —— 少一个键，模板对应块静默为空。
+// 键名逐一对齐 orderhttp.salesOverviewView 的返回值 —— 少一个键，模板对应块静默为空；
+// 少一个**布尔**键则整页渲染中断。
 func salesOverviewTemplateData() map[string]any {
 	data := adminShellData()
 	data["menu"] = "orders"
@@ -75,16 +108,13 @@ func salesOverviewTemplateData() map[string]any {
 	data["Status"] = ""
 	data["Monthly"] = 6
 	data["HasData"] = true
+	// 只有四张卡：本页讲的是「卖了多少钱」，客户侧只留 ACV（金额口径）。
+	// 人数类的卡（下单客户 / 新客户 / 回头客户）与件数类的（平均每单件数）
+	// 已从卡面移除 —— 它们同名口径仍在环比表与趋势图里。
 	data["Cards"] = []tmplSalesCard{
 		{Label: "订单数", Value: "12", Note: "含没有商品明细的订单；共 23 行明细", Accent: "primary"},
 		{Label: "销售额", Value: "¥1,234.50", Note: "商品行实付合计", Accent: "success"},
 		{Label: "平均订单价值", Value: "¥102.88", Note: "销售额 ÷ 订单数（AOV）", Accent: "info"},
-		{Label: "平均每单件数", Value: "1.92", Note: "商品明细行数 ÷ 订单数", Accent: "mute"},
-	}
-	data["Clients"] = []tmplSalesCard{
-		{Label: "下单客户", Value: "9", Note: "按账号去重", Accent: "primary"},
-		{Label: "新客户", Value: "5", Note: "首单落在本区间内", Accent: "success"},
-		{Label: "回头客户", Value: "4", Note: "复购率 25.0%（2 人下了 2 单以上）", Accent: "info"},
 		{Label: "平均客户价值", Value: "¥137.17", Note: "销售额 ÷ 下单客户数（ACV）", Accent: "mute"},
 	}
 	data["Compare"] = []tmplSalesCompareRow{
@@ -93,50 +123,49 @@ func salesOverviewTemplateData() map[string]any {
 		// 无基期：Change 空串 + NoBase，模板必须显示「上期无数据」而不是一个空箭头位。
 		{Label: "下单客户", Prev: "0", Change: "", NoBase: true},
 	}
-	data["MonthlyPoints"] = []map[string]any{
-		// 三段高度由视图层按**累计位置**算，之和恒等于 Height（这里逐一给出一致的数据）。
-		{"Month": "2026-09", "Label": "2026-09", "OrderCount": 10, "Sales": "¥900.00", "Customers": 8,
-			"Height": 120, "NewHeight": 50, "ReturningHeight": 40, "GuestHeight": 30,
-			"NewSales": "¥400.00", "ReturningSales": "¥300.00", "GuestSales": "¥200.00",
-			"NewOrderCount": 4, "NewCustomers": 3, "HasMix": true, "Zero": false},
-		// 零值月：高度 0 + Zero=true，模板要给它 is-zero（画基线柱而不是留空位）。
-		{"Month": "2026-10", "Label": "2026-10", "OrderCount": 12, "Sales": "¥1,234.50", "Customers": 9,
-			"Height": 160, "NewHeight": 70, "ReturningHeight": 60, "GuestHeight": 30,
-			"NewSales": "¥600.00", "ReturningSales": "¥500.00", "GuestSales": "¥134.50",
-			"NewOrderCount": 6, "NewCustomers": 5, "HasMix": true, "Zero": false},
-		{"Month": "2026-08", "Label": "2026-08", "OrderCount": 0, "Sales": "¥0.00", "Customers": 0,
-			"Height": 0, "NewHeight": 0, "ReturningHeight": 0, "GuestHeight": 0,
-			"NewSales": "¥0.00", "ReturningSales": "¥0.00", "GuestSales": "¥0.00",
-			"NewOrderCount": 0, "NewCustomers": 0, "HasMix": false, "Zero": true},
+	// 两条线、两个月，坐标是视图层算好的「x,y」串 —— 模板只贴字符串，不做算术。
+	data["Trend"] = tmplSalesTrendChart{
+		HasData: true, HasSales: true,
+		Peak: 123450, PeakLabel: "¥1,234.50",
+		Series: []tmplSalesTrendSeries{
+			{
+				Label: "新客", Color: 3, Points: "6,66 994,20", Total: "¥1,000.00",
+				Dots: []tmplSalesTrendDot{
+					{X: 6, Y: 66, Title: "2026-09｜新客 ¥400.00｜合计 ¥900.00"},
+					{X: 994, Y: 20, Title: "2026-10｜新客 ¥600.00｜合计 ¥1,234.50"},
+				},
+			},
+			{
+				Label: "游客单", Color: 8, Points: "6,140 994,138", Total: "¥334.50",
+				Dots: []tmplSalesTrendDot{
+					{X: 6, Y: 140, Title: "2026-09｜游客单 ¥200.00｜合计 ¥900.00"},
+					{X: 994, Y: 138, Title: "2026-10｜游客单 ¥134.50｜合计 ¥1,234.50"},
+				},
+			},
+		},
+		Axis: []tmplSalesTrendAxis{
+			{X: 6, Label: "2026-09", Anchor: "start"},
+			{X: 994, Label: "2026-10", Anchor: "end"},
+		},
 	}
-	data["HasMonthly"] = true
-	// HasMonthlyData 与 HasMonthly 是两件事：前者「有没有柱子」，后者「柱子有没有高度」。
-	// **这个键漏了会让整页渲染中断**（Jet 的 if 要求 bool，缺失的 map 键求值成 nil，
-	// 报 `there is no field or method 'HasMonthlyData' in map[string]interface {}`，
-	// 实测命中过一次）——本文件所有用例都走 renderSalesOverview，所以缺键会让它们全红。
-	data["HasMonthlyData"] = true
-	data["MonthlyMaxSales"] = int64(123450)
 	return data
 }
 
-// 回看窗口里一笔销售都没有时的空态：不给 160px 高的空白画布。
+// 回看窗口里一笔销售都没有时的空态：不给一块空画布。
 //
-// 判据是**负向的**：这一支必须同时满足「没有sales-chart」与「有那句空态文案」。
-// 只断言文案会出现时，把空态分支接错（例如条件写成 HasMonthly）测试仍然全绿。
+// 判据是**负向的**：这一支必须同时满足「没有折线画布」与「有那句空态文案」。
+// 只断言文案会出现时，把空态分支接错（例如条件写成 HasData）测试仍然全绿 ——
+// 而 HasData 在补零过的回看窗口里几乎恒真，等于空态永远不显示。
 func TestSalesOverviewMonthlyEmptyState(t *testing.T) {
 	data := salesOverviewTemplateData()
-	data["HasMonthlyData"] = false
+	data["Trend"] = tmplSalesTrendChart{HasData: true, HasSales: false}
 
 	out := renderSalesOverview(t, data)
-	if strings.Contains(out, `class="sales-chart"`) {
-		t.Error("没有数据时不该画出图表画布（一片空白会被读成趋势平缓）")
+	if strings.Contains(out, `class="chart-trend-svg"`) {
+		t.Error("没有销售时不该画出折线画布（一片空白会被读成趋势平缓）")
 	}
-	if !strings.Contains(out, "趋势暂无可画的柱子") {
-		t.Error("没有数据时缺少空态文案")
-	}
-	// 图例仍在：它解释的是颜色语义，与有没有数据无关。
-	if !strings.Contains(out, "sales-legend") {
-		t.Error("空态下不应丢掉图例")
+	if !strings.Contains(out, "趋势暂无可画的线") {
+		t.Error("没有销售时缺少空态文案")
 	}
 }
 
@@ -147,14 +176,13 @@ func renderSalesOverview(t *testing.T, data map[string]any) string {
 	return renderAdminPage(t, "admin/order/sales_overview.html", data)
 }
 
-// 有数据时：八张卡的标题与值都出现，且口径说明进的是 title（不占卡面）。
+// 四张卡的标题与值都出现，且口径说明进的是 .help-pop 浮层（不占卡面）。
 func TestSalesOverviewRendersCards(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
 
 	for _, want := range []string{
-		"订单数", "销售额", "平均订单价值", "平均每单件数",
-		"下单客户", "新客户", "回头客户", "平均客户价值",
-		"¥1,234.50", "¥102.88", "¥137.17", "1.92",
+		"订单数", "销售额", "平均订单价值", "平均客户价值",
+		"¥1,234.50", "¥102.88", "¥137.17",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("页面缺少 %q", want)
@@ -179,6 +207,29 @@ func TestSalesOverviewRendersCards(t *testing.T) {
 	}
 }
 
+// 卡片只有一排四张：人数类的三张与件数类的那张已移除，也不再有「销售 / 客户」分组标题。
+//
+// 判据是负向的：这些词在页面上**别处也出现**（环比表的「下单客户」、卡片的「销售额」），
+// 所以不能用「页面里含不含这几个字」，只能钉**已删掉的形状**——
+// 卡面值（"1.92"）与分组标题的类名。
+func TestSalesOverviewCardsAreSingleRowWithoutGroupTitles(t *testing.T) {
+	out := renderSalesOverview(t, salesOverviewTemplateData())
+
+	if strings.Contains(out, "1.92") {
+		t.Error("「平均每单件数」卡还在（它已从卡面移除，同名口径不再显示）")
+	}
+	if strings.Contains(out, `class="sales-group-title"`) {
+		t.Error("出现了分组标题（卡片合成一排四张后不该再有「销售 / 客户」分组）")
+	}
+	// 一圈卡片只该有一个 .sales-cards 网格。两排的写法会让它出现两次。
+	if n := strings.Count(out, `class="stat-grid sales-cards"`); n != 1 {
+		t.Errorf("卡片网格应恰好 1 个，实际 %d 个", n)
+	}
+	if n := strings.Count(out, `class="card stat-card sales-card`); n != 4 {
+		t.Errorf("卡片应恰好 4 张，实际 %d 张", n)
+	}
+}
+
 // 环比：有基期给变化率与方向类名；无基期给「上期无数据」且不染方向色。
 func TestSalesOverviewRendersCompare(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
@@ -198,45 +249,55 @@ func TestSalesOverviewRendersCompare(t *testing.T) {
 	}
 }
 
-// 趋势柱：三段高度写进 style，零值月有 is-zero。
-func TestSalesOverviewRendersMonthlyBars(t *testing.T) {
+// 趋势是折线（不是柱状）：每条线一个 polyline，颜色取 --chart-cN，横轴刻度带锚点。
+//
+// **判据里刻意钉住「没有柱状骨架」**：柱状那版的类名（.sales-stack / .sales-seg /
+// .sales-col / .sales-bar-wrap）如果还留在 DOM 里，说明模板改了一半 ——
+// 那种状态下页面能渲染、测试若只断言「折线在」也会全绿。
+func TestSalesOverviewRendersTrendLines(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
 
-	if !strings.Contains(out, "height:120px") || !strings.Contains(out, "height:160px") {
-		t.Error("趋势柱高度没有写进 style")
+	if !strings.Contains(out, `class="chart-trend-svg"`) {
+		t.Error("缺少折线画布")
 	}
-	if !strings.Contains(out, "sales-stack is-zero") {
-		t.Error("零值月没有 is-zero（会被读成漏渲染）")
-	}
-	for _, want := range []string{"2026-09", "2026-10", "2026-08"} {
+	for _, want := range []string{
+		`class="chart-trend-line" points="6,66 994,20" style="stroke: var(--chart-c3)"`,
+		`class="chart-trend-line" points="6,140 994,138" style="stroke: var(--chart-c8)"`,
+		// 图例：颜色必须在这里解释一次，否则线读不出是谁。
+		`class="chart-trend-legend-item"`, `新客`, `游客单`, "¥1,000.00", "¥334.50",
+		// 横轴刻度（首尾贴边往内收，anchor 由服务端给）。
+		`text-anchor="start"`, `text-anchor="end"`, "2026-09", "2026-10",
+	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("横轴缺少刻度 %q", want)
+			t.Errorf("折线图缺少 %q", want)
+		}
+	}
+	for _, banned := range []string{
+		`class="sales-stack`, `class="sales-seg`, `class="sales-col`, `class="sales-bar-wrap`,
+	} {
+		if strings.Contains(out, banned) {
+			t.Errorf("模板里还留着柱状骨架 %q（折线改造只改了一半）", banned)
 		}
 	}
 }
 
-// 趋势柱的客户类型堆叠：三段各自的类名与高度都要落到 DOM 上。
+// 折线的每个数据点都要带读数：polyline 只能挂一个 title，整条线说不清「这个月多少」。
 //
-// **判据是「三段之和 == 柱高」**：只断言三个 div 都存在时，把某一段的高度算错
-// （例如三段各自独立取整）测试仍然全绿，而图上会出现拼不齐的缝或溢出。
-func TestSalesOverviewRendersCustomerMixSegments(t *testing.T) {
+// 判据是**数量对齐**：点数 == 线数 × 月数。只断言「有 title」时，
+// 少画一条线或漏一个月的点都会漏过去 —— 而那时图上就有个月份没有数字可读。
+func TestSalesOverviewTrendDotsCarryReadings(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
 
-	for _, want := range []string{
-		// 视图层算好的段高（2026-09：50 / 40 / 30，和 = 120 = 柱高）。
-		"sales-seg sales-seg-new", "sales-seg sales-seg-returning", "sales-seg sales-seg-guest",
-		"height:50px", "height:40px", "height:30px",
-		// 图例：颜色必须有解释，否则三色柱读不出含义。
-		"sales-legend", "sales-dot-new", "sales-dot-returning", "sales-dot-guest",
-		"新客", "回头客", "游客单",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("客户类型堆叠缺少 %q", want)
-		}
+	if !strings.Contains(out, `class="chart-trend-point"`) {
+		t.Fatal("折线点没有渲染（图上没有任何可读的数字）")
 	}
-	// column-reverse 是「第一段在底部」的实现方式：改了它，图上三段的上下顺序就反了。
-	if !strings.Contains(out, "sales-stack") {
-		t.Error("堆叠容器类名缺失")
+	want := len(salesOverviewTemplateData()["Trend"].(tmplSalesTrendChart).Series) *
+		len(salesOverviewTemplateData()["Trend"].(tmplSalesTrendChart).Axis)
+	if n := strings.Count(out, `class="chart-trend-point"`); n != want {
+		t.Errorf("折线点应 %d 个（线数 × 月数），实际 %d 个", want, n)
+	}
+	if !strings.Contains(out, "<title>2026-10｜新客 ¥600.00｜合计 ¥1,234.50</title>") {
+		t.Error("折线点缺少悬停读数")
 	}
 }
 
@@ -265,10 +326,8 @@ func TestSalesOverviewLoadFailedHidesReport(t *testing.T) {
 	data["LoadFailed"] = true
 	data["Err"] = "数据没能读出来，稍后重试。"
 	data["Cards"] = []tmplSalesCard{}
-	data["Clients"] = []tmplSalesCard{}
 	data["Compare"] = []tmplSalesCompareRow{}
-	data["MonthlyPoints"] = []map[string]any{}
-	data["HasMonthly"] = false
+	data["Trend"] = tmplSalesTrendChart{}
 	data["HasData"] = false
 
 	out := renderSalesOverview(t, data)
@@ -286,11 +345,8 @@ func TestSalesOverviewEmptyState(t *testing.T) {
 	data := salesOverviewTemplateData()
 	data["HasData"] = false
 	data["Cards"] = []tmplSalesCard{}
-	data["Clients"] = []tmplSalesCard{}
 	data["Compare"] = []tmplSalesCompareRow{}
-	data["MonthlyPoints"] = []map[string]any{}
-	data["HasMonthly"] = false
-	data["MonthlyMaxSales"] = int64(0)
+	data["Trend"] = tmplSalesTrendChart{}
 
 	out := renderSalesOverview(t, data)
 

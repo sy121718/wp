@@ -364,8 +364,8 @@ func TestAISessionsPageRenders(t *testing.T) {
 			t.Fatalf("会话页缺少 %q", want)
 		}
 	}
-	// 没有数据时不该出现趋势图（.ai-trend 有定高，空着会留一条 160px 的空白带）。
-	if strings.Contains(body, `class="ai-trend"`) {
+	// 没有数据时不该出现趋势图（.chart-trend 有定高，空着会留一条 160px 的空白带）。
+	if strings.Contains(body, `class="chart-trend"`) {
 		t.Fatal("趋势为空时不该渲染图表容器")
 	}
 	if !strings.Contains(body, "这段时间还没有事件") {
@@ -397,8 +397,8 @@ func TestAISessionsPageRendersTrendAndUsage(t *testing.T) {
 	body := renderAITemplate(t, "admin/ai/sessions", data)
 
 	for _, want := range []string{
-		`class="ai-trend"`,
-		`class="ai-trend-svg"`,
+		`class="chart-trend"`,
+		`class="chart-trend-svg"`,
 		`points="0,200 500,12 1000,120"`,
 		`stroke: var(--chart-c1)`,
 		`stroke: var(--chart-c8)`,
