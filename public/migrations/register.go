@@ -252,6 +252,8 @@ func init() {
 	registerDashboardTrendGranularityI18n()
 	// 579：销售概览页词条（见 register_order_sales_overview_i18n.go）。
 	registerOrderSalesOverviewI18n()
+	// 580：订单目录的「销售概览」菜单（见 register_order_overview_menu.go）。
+	registerOrderOverviewMenu()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

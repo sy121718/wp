@@ -392,6 +392,15 @@ const (
 	OrderLogList Perm = "order:log_list"
 	// 订单备注（POST /api/order/note）
 	OrderNote Perm = "order:note"
+	// 销售概览（GET /admin/orders/overview，整页只读报表）
+	//
+	// **这一条不挂在 authorizedAPI 组上**：它是后台整页（/admin 组只走 Session + CSRF），
+	// 声明它不是为了拦访问，而是为了让「这个页面」成为可授权的对象：
+	//   · 菜单 sys_menus 的 permission_code 指向它 → 角色分权时按 menu_ids 收集得到它 → Casbin 策略有据可依；
+	//   · permission.RoutesOf(OrderOverview) 因此非空 —— 空集会被工具侧按 fail closed 处理（一律 forbidden）。
+	// 与 order:list 的关系是「看哪一屏」而不是「能不能看订单」：列表页管单条订单的处置，
+	// 概览页管口径聚合，两者授权可以分开。
+	OrderOverview Perm = "order:overview"
 	// 订单退款（POST /api/order/refund）
 	OrderRefund Perm = "order:refund"
 	// 同意退货（POST /api/order/return/approve）
@@ -924,6 +933,7 @@ var specs = map[Perm]spec{
 	OrderList:             {module: "order", name: "订单列表"},
 	OrderLogList:          {module: "order", name: "状态流转流水"},
 	OrderNote:             {module: "order", name: "订单备注"},
+	OrderOverview:         {module: "order", name: "销售概览"},
 	OrderRefund:           {module: "order", name: "订单退款"},
 	OrderReturnApprove:    {module: "order", name: "同意退货"},
 	OrderReturnGet:        {module: "order", name: "退货申请详情"},

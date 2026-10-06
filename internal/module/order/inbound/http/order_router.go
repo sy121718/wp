@@ -127,6 +127,12 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		// 与 /orders 同样的只读页待遇 —— 靠 /admin 组的 Session + CSRF 与侧栏入口控制。
 		salesPages := NewOrderSalesPageHandle(svc, projects)
 		pages.GET("/orders/overview", salesPages.SalesOverviewPage)
+		// 但这一页**要有一个权限点**：声明它不为拦请求（页面组不过 Casbin），而是为了
+		// 让它成为可授权的对象 —— 侧栏菜单绑 order:overview，角色分权经 menu_ids 收集到它，
+		// 而 permission.RoutesOf 也才有非空结果（空集会被工具侧按 fail closed 一律 forbidden）。
+		// 声明放在这里（与路由同一处），启动期 SyncToDB 幂等 upsert 进 sys_permission，
+		// **不写权限点 seed 迁移**（AGENTS.md §数据库：新增权限点加常量 + 在路由注册处声明）。
+		permission.Declare(http.MethodGet, "/admin/orders/overview", permission.OrderOverview)
 		// 后台代客建单页（docs/02-W-admin-order-create.md）：独立整页，页头与空态两个入口
 		// 都指向它（同一个 URL）。写动作复用 order:create —— 与上面几条同手法，
 		// **不新增权限点、不写 seed 迁移**；权限点路径一个字符都不能改。
