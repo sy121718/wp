@@ -33,40 +33,11 @@ func adminMenuTreeHas(nodes []admindto.MenuTreeNode, id uint64) bool {
 
 // --- 菜单 menus（树） ---
 
-// adminMenuRow 菜单树展平行。
-type adminMenuRow struct {
-	ID        uint64
-	Title     string
-	Path      string
-	Type      int
-	TypeLabel string
-	ParentID  uint64
-	Status    int
-	SortOrder int
-	Remark    string
-	Indent    string
-	Icon      string
-}
-
-// flattenAdminMenuTree 深度优先展平菜单树为带缩进的行（Indent 控制前端层级展示）。
-//
-// 注意：菜单管理页（menus.html）自己按 m.Type 取词渲染徽章，本函数目前**没有调用方**。
-// 保留并按同一形态取词，是为了它将来接上模板时不会退回中文硬编码。
-func flattenAdminMenuTree(tr adminLabelTranslate, nodes []admindto.MenuTreeNode, depth int, out *[]adminMenuRow) {
-	indent := strings.Repeat("　", (depth-1)*2)
-	for _, n := range nodes {
-		*out = append(*out, adminMenuRow{
-			ID: n.ID, Title: n.Title, Path: n.Path, Type: n.Type, TypeLabel: adminMenuTypeLabel(tr, n.Type),
-			ParentID: n.ParentID, Status: n.Status, SortOrder: n.SortOrder,
-			Remark: n.Remark, Indent: indent, Icon: n.Icon,
-		})
-		if len(n.Children) > 0 {
-			flattenAdminMenuTree(tr, n.Children, depth+1, out)
-		}
-	}
-}
-
 // MenusPage 菜单管理页（GET /admin/menus）。
+//
+// 列表是**树状分页**：Rows 已经按 DFS 前序摊平（顶级行 + 其子树），
+// 层级用 Depth 表达、初始可见性用 Hidden/Expanded 表达（见 service.MenuPage）。
+// 本页不再自己展平菜单树 —— 摊平与可见性都归 service，模板只渲染。
 func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 	page, limit := shell.PageParams(c)
 	keyword := strings.TrimSpace(c.Query("keyword"))
@@ -79,6 +50,8 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
 		"FilterKeyword": keyword,
 		"Err":           adminErrOrLoad(c, err), "Done": adminPageDone(c, c.Query("done")),
+		// SearchMode 让模板切到搜索态（给命中行标「匹配」、给祖先标「上级路径」）。
+		"SearchMode": keyword != "",
 		// 新建抽屉内嵌在本页，它的权限点候选也在这里给（新建时没有任何已绑码）。
 		"PermChoices": h.buildPermChoices(c, nil),
 	})
@@ -107,9 +80,24 @@ func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", shell.Prepare(c, gin.H{
-		"MenuEdit": row, "PermChoices": h.buildPermChoices(c, row.PermissionCodes),
-	}))
+	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", shell.Prepare(c, menuEditData(c, h, row, nil)))
+}
+
+// menuEditData 组装编辑抽屉的模板数据（正常打开与保存失败回显共用）。
+//
+// 候选取不到时**不传 Parents**，模板随之退化成 hidden parent_id：
+// 编辑抽屉缺了上级下拉只是少一项能力，而缺了 parent_id 提交就会把菜单搬到顶级 ——
+// 一个读失败不该换来一次静默的数据改动。
+func menuEditData(c *gin.Context, h *AdminPagesHandle, row *admindto.MenuDetailResp,
+	echo gin.H) gin.H {
+	data := gin.H{"MenuEdit": row, "PermChoices": h.buildPermChoices(c, row.PermissionCodes)}
+	if parents, err := h.menus.MenuParentOptions(c.Request.Context(), row.ID); err == nil {
+		data["Parents"] = parents
+	}
+	for k, v := range echo {
+		data[k] = v
+	}
+	return data
 }
 
 // --- 菜单绑定权限点（一个菜单可以挂多个码，迁移 470）---
@@ -181,18 +169,26 @@ func (h *AdminPagesHandle) menuEditFail(c *gin.Context, msg string) {
 		adminDrawerRedirect(c, adminPageErrURL("/admin/menus", msg))
 		return
 	}
-	data := gin.H{"MenuEdit": row, "MenuEditErr": msg, "MenuEditEcho": map[string]string{
-		"title": c.PostForm("title"), "parent_id": c.PostForm("parent_id"),
-		"type": c.PostForm("type"), "status": c.PostForm("status"),
-		"path": c.PostForm("path"), "icon": c.PostForm("icon"),
-		"sort_order": c.PostForm("sort_order"), "remark": c.PostForm("remark"),
-	},
-		// 权限码是多值，塞不进上面那个 map[string]string；模板优先用它回显用户刚勾的那一屏，
-		// 否则保存失败后勾选会退回库里的旧值，而用户正需要在这里改掉那个错误重试。
-		// 候选项也要按**本次提交**重算勾选态，否则错误响应里的清单和回显的码对不上。
+	// 权限码是多值，塞不进上面那个 map[string]string；模板优先用它回显用户刚勾的那一屏，
+	// 否则保存失败后勾选会退回库里的旧值，而用户正需要在这里改掉那个错误重试。
+	// 候选项也要按**本次提交**重算勾选态，否则错误响应里的清单和回显的码对不上。
+	// PermChoices 放在 echo 里覆盖 menuEditData 的默认值（后者按库里的码算），
+	// 否则「保存失败 → 回显」会把用户刚勾的那一屏换回旧值。
+	echo := gin.H{
+		"MenuEditErr": msg,
+		"MenuEditEcho": map[string]string{
+			"title": c.PostForm("title"), "parent_id": c.PostForm("parent_id"),
+			"type": c.PostForm("type"), "status": c.PostForm("status"),
+			"path": c.PostForm("path"), "icon": c.PostForm("icon"),
+			"sort_order": c.PostForm("sort_order"), "remark": c.PostForm("remark"),
+		},
 		"MenuEditEchoCodes": menuPermissionCodes(c),
-		"PermChoices":       h.buildPermChoices(c, menuPermissionCodes(c))}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", shell.Prepare(c, data))
+		"PermChoices":       h.buildPermChoices(c, menuPermissionCodes(c)),
+		// 上级下拉的选中值按 uint64 另给一份：MenuEditEcho 里是表单原始字符串，
+		// 拿它跟候选 ID（uint64）比恒不相等，回显会让下拉跳回「（根菜单）」。
+		"MenuEditParent": shell.ParseUint(c.PostForm("parent_id")),
+	}
+	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", shell.Prepare(c, menuEditData(c, h, row, echo)))
 }
 
 // menuPermissionCodes 读取表单里的权限码集合（多选控件提交 permission_codes 的多个值）。
@@ -243,11 +239,29 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 		return
 	}
 	sortOrder, _ := strconv.Atoi(shell.FieldValue(c, "sort_order"))
+	// 库里原值：表单只提交它**真正提供了编辑入口**的字段（标题 / 上级菜单 / 类型 / 状态 /
+	// 路径 / 权限点 / 图标 / 排序 / 备注），其余列必须从原值带过来 —— MenuUpdate 是全量替换，
+	// menuUpdateColumns 又把这几列显式写回，零值同样会落库。少了这一步，一次「只改上级菜单」
+	// 的保存会悄悄清空外链地址 / 标题键 / 隐藏与公开标记，而界面上看不出任何异常。
+	row, err := h.menus.MenuDetail(c.Request.Context(), &admindto.MenuDetailReq{ID: id})
+	if err != nil || row == nil || row.ID != id {
+		if adminDrawerHX(c) {
+			h.menuEditFail(c, adminErrParam(c, errors.New(adminenums.ErrMenuNotFound)))
+			return
+		}
+		adminPageWriteFail(c, "/admin/menus", errors.New(adminenums.ErrMenuNotFound))
+		return
+	}
 	if err := h.menus.MenuUpdate(c.Request.Context(), &admindto.MenuUpdateReq{
 		ID: id, Title: title, ParentID: shell.ParseUint(c.PostForm("parent_id")),
 		Type: shell.ParseStatus(c.PostForm("type")), Path: shell.FieldValue(c, "path"),
 		Status: shell.ParseStatus(c.PostForm("status")), SortOrder: sortOrder, Remark: shell.FieldValue(c, "remark"),
 		PermissionCodes: menuPermissionCodes(c),
+		// 图标有 hidden 输入（图标组件维护它的值），提交空串就是「去掉图标」，不做原值兜底。
+		Icon: shell.FieldValue(c, "icon"),
+		// 组件路径在这个界面没有编辑入口：类型未变时 service 整段跳过它（不校验、不写入）。
+		TitleKey: row.TitleKey, ExternalURL: row.ExternalURL,
+		IsHidden: row.IsHidden, IsPublic: row.IsPublic,
 	}); err != nil {
 		if adminDrawerHX(c) {
 			h.menuEditFail(c, adminErrParam(c, err))

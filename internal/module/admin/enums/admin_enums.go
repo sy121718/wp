@@ -40,8 +40,7 @@ var AdminFacingMessages = []string{
 	// 菜单
 	ErrMenuNotFound, ErrMenuHasChildren, ErrMenuIsSystem, ErrMenuCircle,
 	ErrMenuParentNotFound, ErrMenuParentMustBeDir, ErrMenuDepthExceeded,
-	ErrCodeNotBindable, ErrCodeRequired, ErrCodeNotEnabled, ErrComponentRequired,
-	ErrComponentNotAllowed, ErrComponentInvalid,
+	ErrCodeNotBindable, ErrCodeRequired, ErrCodeNotEnabled,
 	// 权限点
 	ErrPermissionNotFound, ErrCodeExists, ErrCodeImmutable, ErrInvalidMethod,
 	ErrPermissionAssigned, ErrMenuReferenced,
@@ -98,9 +97,6 @@ const (
 	ErrCodeNotBindable     = "ErrCodeNotBindable"     // 目录、iframe 和外链不能绑定权限编码
 	ErrCodeRequired        = "ErrCodeRequired"        // 菜单和按钮类型必须绑定权限编码
 	ErrCodeNotEnabled      = "ErrCodeNotEnabled"      // 绑定的权限编码不存在或未启用
-	ErrComponentRequired   = "ErrComponentRequired"   // 菜单类型必须填写组件路径
-	ErrComponentNotAllowed = "ErrComponentNotAllowed" // 只有菜单类型可以填写组件路径
-	ErrComponentInvalid    = "ErrComponentInvalid"    // 组件路径格式不正确（如 layout.base / view.xxx 或 /src/views/xxx/index.vue）
 )
 
 // --- 权限点 ---

@@ -1038,6 +1038,16 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     cursor: pointer; accent-color: var(--sky-c-primary, #3d444f);
 }
 .data-table tbody tr.is-selected { background: var(--sky-c-bg-active, #eceff2); }
+/* ── 10.1 树状列表行（菜单管理）：缩进 + 折叠三角 + 名称 ────────────────
+   层级由服务端算好的 Depth 以行内 padding-inline-start 给出（模板里写，逻辑不重复）；
+   这里只管这一格内部的横向排布：折叠三角 / 折角 / 名称依次贴左 ——
+   表格单元格默认居中，那样缩进出来的层级会被居中抹平，一眼看不出从属关系。 */
+.data-table td .tree-cell { display: flex; align-items: center; gap: 4px; text-align: start; }
+.data-table td .tree-cell .row-title-link { min-width: 0; }
+/* 权限树的三角旋转挂在父容器 .perm-node.is-collapsed 上；树表的父级是 <tr>，
+   这里改按按钮自身的 aria-expanded 定态 —— 折叠态只有一个真源：按钮的可访问状态，
+   脚本不必再额外维护一个类（两处状态迟早会不一致）。 */
+.data-table .perm-toggle[aria-expanded="false"] .caret { transform: rotate(-90deg); }
 .bulk-bar {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-sp-sm);
     padding: var(--ui-sp-sm) var(--ui-sp-lg);

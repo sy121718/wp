@@ -198,7 +198,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{
 			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"menu:create": true},
 		})
-		assertEmptyKeepsTableHead(t, "menus", out, "10", []string{"还没有菜单"})
+		assertEmptyKeepsTableHead(t, "menus", out, "9", []string{"还没有菜单"})
 		assertEmptyActions(t, "menus", out, 1, `data-drawer-open="#tpl-menu-create"`)
 	})
 

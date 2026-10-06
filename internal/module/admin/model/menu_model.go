@@ -49,7 +49,6 @@ type MenuEntity struct {
 	ParentID        uint64   `gorm:"column:parent_id;default:0"`
 	Type            int      `gorm:"column:type;default:2"`
 	Path            string   `gorm:"column:path"`
-	Component       string   `gorm:"column:component"`
 	ExternalURL     string   `gorm:"column:external_url"`
 	Icon            string   `gorm:"column:icon"`
 	// Status 不带 gorm default tag：避免 gorm 把显式 0（禁用）改写为 1（见 SysRuleEntity.Status 注释）。
@@ -143,29 +142,253 @@ type MenuParentOption struct {
 	SortOrder int
 }
 
-// ListPage counts and fetches matching live menus without materializing the entire tree.
-func (m *MenuModel) ListPage(ctx context.Context, page, limit int, keyword string) (int64, []MenuEntity, error) {
-	query := m.DB(ctx).Where("deleted_at IS NULL")
-	if keyword != "" {
-		pattern := "%" + database.EscapeLikePattern(keyword) + "%"
-		query = query.Where("title LIKE ? ESCAPE '\\' OR path LIKE ? ESCAPE '\\' OR remark LIKE ? ESCAPE '\\'", pattern, pattern, pattern)
+// MenuPageRow 是菜单管理树列表的读投影：菜单实体 + 两条**按本次读出的行集合**算出来的标记。
+//
+// HasChildren 与 Matched 都不是表里的列（gorm:"-"）：menuRowsOf 从集合推算，
+// 理由是「本批行里有没有以它为前提的子行」在集合内看就等于全局，不必再查一次库。
+type MenuPageRow struct {
+	MenuEntity
+	// HasChildren 表示**本批行里**有以它为前提的子行。搜索态的命中项通常为假
+	// （搜索结果只带命中项与祖先路径，不带命中项的子树），前端据此不渲染折叠三角 ——
+	// 渲染一个点开什么都没有的三角，比没有三角更糟。
+	HasChildren bool `gorm:"-"`
+	// Matched 是搜索命中项（浏览态恒为假）；其余行是「仅供定位」的祖先路径。
+	Matched bool `gorm:"-"`
+}
+
+// menuRootFilter 菜单管理树「算作根」的判定：没有父级，**或父级已不在**（被软删 / 行已不存在）。
+//
+// 后半句是必需的：父级被软删的子菜单既不是根、也不在任何可见父节点的子树里 ——
+// 逐层展开的树会整个漏掉它，列表上表现为「整行消失」（用户既看不到也改不了）。
+// 旧的行分页没有这个问题（行照常读出来，只是上级列为空），所以这是树状分页**新增**的责任。
+const menuRootFilter = `deleted_at IS NULL AND (parent_id = 0 OR NOT EXISTS (
+				SELECT 1 FROM sys_menus p
+				WHERE p.id = sys_menus.parent_id AND p.deleted_at IS NULL
+			))`
+
+// ListMenuRootsPage 读一页**顶级菜单的完整子树**（分页单位是顶级菜单）。
+//
+// 与旧的行分页不只是换了个排序：分页单位从「行」变成「顶级节点」，
+// 一棵树不会被切在两页之间（子孙跟着它的顶级节点走），列表才谈得上按树渲染。
+//
+// 页码越界回落到最后一页（而不是给一张空表）：列表页删到只剩一页时，
+// 用户手上的 ?page=5 链接会停在一张空表上，看起来像「数据全没了」。
+func (m *MenuModel) ListMenuRootsPage(ctx context.Context, page, limit int) (rows []MenuPageRow, total int64, err error) {
+	if limit < 1 {
+		limit = 1
 	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return 0, nil, err
+	if page < 1 {
+		page = 1
 	}
-	var rows []MenuEntity
+	if err = m.DB(ctx).Where(menuRootFilter).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	if total > 0 && int64(page-1) > (total-1)/int64(limit) {
 		page = int((total-1)/int64(limit)) + 1
 	}
-	err := query.Order("sort_order ASC, id ASC").Offset((page - 1) * limit).Limit(limit).Find(&rows).Error
+	var roots []MenuEntity
+	if err = m.DB(ctx).Where(menuRootFilter).Order("sort_order ASC, id ASC").
+		Offset((page - 1) * limit).Limit(limit).Find(&roots).Error; err != nil {
+		return nil, 0, err
+	}
+	all, err := m.menuTreeDescendants(ctx, roots)
 	if err != nil {
-		return 0, nil, err
+		return nil, 0, err
 	}
-	if err := m.fillPermissionCodes(ctx, rows); err != nil {
-		return 0, nil, err
+	rows = menuRowsOf(all, nil)
+	if err = m.fillRowPermissionCodes(ctx, rows); err != nil {
+		return nil, 0, err
 	}
-	return total, rows, nil
+	return rows, total, nil
+}
+
+// menuTreeMaxDepth 逐层收子树 / 逐层取祖先的层数上限。
+//
+// 写入侧有 maxNavDepth（目录链 + 菜单 = 3 级）拦截，但历史数据可能更深，
+// 且环数据必须停得下来 —— 这个上限是「一定停得下来」的兜底，不是业务规则。
+const menuTreeMaxDepth = 8
+
+// menuTreeDescendants 从给定的根节点出发逐层读出全部子孙（含根自身）。
+//
+// 为什么不用 WITH RECURSIVE：GORM 没有 CTE API（clause.With 是空结构体），
+// 而 model 层的裸 SQL 已被门禁禁止（internal/architecture/raw_sql_boundary_test.go）。
+// 树深实际 2~3 层，查询次数 = 树深，代价可忽略。
+// seen 集合同时承担防环与「同一行不出现两次」：表里若有父子指向自身或成环的数据，两条都靠它停住。
+func (m *MenuModel) menuTreeDescendants(ctx context.Context, roots []MenuEntity) ([]MenuEntity, error) {
+	all := make([]MenuEntity, 0, len(roots))
+	seen := make(map[uint64]struct{}, len(roots))
+	layer := make([]uint64, 0, len(roots))
+	for _, r := range roots {
+		if _, ok := seen[r.ID]; ok {
+			continue
+		}
+		seen[r.ID] = struct{}{}
+		all = append(all, r)
+		layer = append(layer, r.ID)
+	}
+	for depth := 0; depth < menuTreeMaxDepth && len(layer) > 0; depth++ {
+		var children []MenuEntity
+		if err := m.DB(ctx).Where("deleted_at IS NULL AND parent_id IN ?", layer).
+			Order("sort_order ASC, id ASC").Find(&children).Error; err != nil {
+			return nil, err
+		}
+		next := make([]uint64, 0, len(children))
+		for _, c := range children {
+			if _, ok := seen[c.ID]; ok {
+				continue
+			}
+			seen[c.ID] = struct{}{}
+			all = append(all, c)
+			next = append(next, c.ID)
+		}
+		layer = next
+	}
+	return all, nil
+}
+
+// ListSubtreeIDs 读一棵子树（**含根自身**）的 ID 集合。
+//
+// 编辑菜单时要拿它把「自己 + 自己的子孙」标成不可选：那些选择必然成环
+// （选自己 → MenuUpdate 报 ErrMenuCircle；选子孙 → 把子树断成两截，
+// 子孙连同它的子树一起从原位置消失）。
+//
+// 复用 menuTreeDescendants 而不是在 service 里照 parent 链内存推算：
+// 软删过滤、环保护、深度上限只在这一处定义，分叉出第二套判断迟早对不上。
+// rootID 为 0（新建）或根自身已不存在时返回空集合，调用方拿到的是「没有不可选项」。
+func (m *MenuModel) ListSubtreeIDs(ctx context.Context, rootID uint64) (map[uint64]bool, error) {
+	if rootID == 0 {
+		return map[uint64]bool{}, nil
+	}
+	root, err := m.GetByID(ctx, rootID)
+	if err != nil {
+		return nil, err
+	}
+	if root == nil {
+		return map[uint64]bool{}, nil
+	}
+	nodes, err := m.menuTreeDescendants(ctx, []MenuEntity{*root})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uint64]bool, len(nodes))
+	for _, n := range nodes {
+		out[n.ID] = true
+	}
+	return out, nil
+}
+
+// ListMenuSearchForest 读「命中项 + 各自到根的祖先路径」，交给调用方按根分页。
+//
+// 分页单位是**根节点**而不是命中条数：一条命中必须连着它的上级路径一起显示，
+// 按命中分页会让同一棵树在多页里重复出现。返回行里 Matched 标出命中项、
+// 其余是「仅供定位」的祖先 —— 页面靠这个标记区分两者，不另报命中条数
+// （页面上写「匹配 N 条」既要说清 N 是什么，又与分页数不是一回事，索性不报）。
+//
+// 关键词匹配四个面：标题 / 路径 / 备注 / **权限码**。权限码走子查询而不是 join ——
+// sys_menu_permission 是菜单聚合的一部分（读写在 MenuModel 内编排，见文件头），
+// 而「按权限码找菜单」是授权排查里最常做的一次查找，列表本来就有这一列。
+func (m *MenuModel) ListMenuSearchForest(ctx context.Context, keyword string) ([]MenuPageRow, error) {
+	pattern := "%" + database.EscapeLikePattern(keyword) + "%"
+	perm := m.db.WithContext(ctx).Table(tableNameSysMenuPermission).Select("menu_id").
+		Where(`permission_code LIKE ? ESCAPE '\'`, pattern)
+	var picked []MenuEntity
+	if err := m.DB(ctx).Where("deleted_at IS NULL").
+		Where(`(title LIKE ? ESCAPE '\' OR path LIKE ? ESCAPE '\' OR remark LIKE ? ESCAPE '\' OR id IN (?))`,
+			pattern, pattern, pattern, perm).
+		Order("sort_order ASC, id ASC").Find(&picked).Error; err != nil {
+		return nil, err
+	}
+	matched := make(map[uint64]bool, len(picked))
+	all := make([]MenuEntity, 0, len(picked))
+	seen := make(map[uint64]struct{}, len(picked))
+	// layer 是「下一批要向上取的父 id」。命中的顶级节点没有父级，不进 layer。
+	layer := make([]uint64, 0, len(picked))
+	for _, p := range picked {
+		matched[p.ID] = true
+		if _, ok := seen[p.ID]; ok {
+			continue
+		}
+		seen[p.ID] = struct{}{}
+		all = append(all, p)
+		if p.ParentID != 0 {
+			layer = append(layer, p.ParentID)
+		}
+	}
+	// 逐层向上取祖先（每一步拿上一层的 parent_id），到「没有父级 / 父级已软删」为止。
+	for steps := 0; steps < menuTreeMaxDepth && len(layer) > 0; steps++ {
+		uniq := make([]uint64, 0, len(layer))
+		for _, id := range layer {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			uniq = append(uniq, id)
+		}
+		if len(uniq) == 0 {
+			break
+		}
+		var parents []MenuEntity
+		if err := m.DB(ctx).Where("deleted_at IS NULL AND id IN ?", uniq).
+			Order("sort_order ASC, id ASC").Find(&parents).Error; err != nil {
+			return nil, err
+		}
+		layer = layer[:0]
+		for _, p := range parents {
+			if _, ok := seen[p.ID]; ok {
+				continue
+			}
+			seen[p.ID] = struct{}{}
+			all = append(all, p)
+			if p.ParentID != 0 {
+				layer = append(layer, p.ParentID)
+			}
+		}
+	}
+	rows := menuRowsOf(all, matched)
+	if err := m.fillRowPermissionCodes(ctx, rows); err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// menuRowsOf 把实体集合投影成页面行，并算出**集合内**的 has_children。
+func menuRowsOf(all []MenuEntity, matched map[uint64]bool) []MenuPageRow {
+	hasChild := make(map[uint64]struct{}, len(all))
+	for _, m := range all {
+		if m.ParentID != 0 {
+			hasChild[m.ParentID] = struct{}{}
+		}
+	}
+	out := make([]MenuPageRow, 0, len(all))
+	for i := range all {
+		_, has := hasChild[all[i].ID]
+		out = append(out, MenuPageRow{
+			MenuEntity:  all[i],
+			HasChildren: has,
+			Matched:     matched != nil && matched[all[i].ID],
+		})
+	}
+	return out
+}
+
+// fillRowPermissionCodes 给页行补权限码集合。
+//
+// 先把内嵌实体抽出来交给 fillPermissionCodes，再写回 —— 复用同一份实现，
+// 不另写一遍「查关联表 + 回填」的逻辑（两份实现迟早分叉）。
+func (m *MenuModel) fillRowPermissionCodes(ctx context.Context, rows []MenuPageRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	entities := make([]MenuEntity, len(rows))
+	for i := range rows {
+		entities[i] = rows[i].MenuEntity
+	}
+	if err := m.fillPermissionCodes(ctx, entities); err != nil {
+		return err
+	}
+	for i := range rows {
+		rows[i].MenuEntity = entities[i]
+	}
+	return nil
 }
 
 // ListParentOptions reads only the columns required to keep the selector complete.
@@ -225,7 +448,6 @@ var menuUpdateColumns = []string{
 	"parent_id",
 	"type",
 	"path",
-	"component",
 	"external_url",
 	"icon",
 	"status",

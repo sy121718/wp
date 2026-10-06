@@ -31,7 +31,7 @@ func TestAdminRoutesBuild(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "菜单A", Type: adminmodel.MenuTypeMenu, Path: "/routes/a",
-		Component: "view.routesA", PermissionCodes: []string{menuCode}, ParentID: dir.ID, Status: 1,
+		PermissionCodes: []string{menuCode}, ParentID: dir.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -74,8 +74,8 @@ func TestAdminRoutesBuild(t *testing.T) {
 		t.Fatalf("目录下应有菜单A: %d", len(root.Children))
 	}
 	menuNode := root.Children[0]
-	if menuNode.Component != "view.routesA" {
-		t.Fatalf("菜单组件不符: %s", menuNode.Component)
+	if menuNode.Path != "/routes/a" {
+		t.Fatalf("菜单路径不符: %s", menuNode.Path)
 	}
 	// 按钮权限应进入菜单节点的 auths
 	foundBtn := false
@@ -112,7 +112,7 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	// 两个菜单（type=2）
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "AM菜单A", Type: adminmodel.MenuTypeMenu, Path: "/am/a",
-		Component: "view.amA", PermissionCodes: []string{codeA}, Status: 1,
+		PermissionCodes: []string{codeA}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestAdminMenuListDirectAndEffective(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "AM菜单B", Type: adminmodel.MenuTypeMenu, Path: "/am/b",
-		Component: "view.amB", PermissionCodes: []string{codeB}, Status: 1,
+		PermissionCodes: []string{codeB}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	}
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "授权菜单", Type: adminmodel.MenuTypeMenu, Path: "/authz/m",
-		Component: "view.authzM", PermissionCodes: []string{code}, ParentID: dir.ID, Status: 1,
+		PermissionCodes: []string{code}, ParentID: dir.ID, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	createPerm(t, e, otherCode, "/api/noauth")
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
 		Title: "未授权菜单", Type: adminmodel.MenuTypeMenu, Path: "/noauth",
-		Component: "view.noAuth", PermissionCodes: []string{otherCode}, Status: 1,
+		PermissionCodes: []string{otherCode}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}

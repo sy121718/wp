@@ -30,12 +30,24 @@
     {{end}}{{end}}
 
     <section class="card list-card">
-        {* 筛选进入 SQL，分页链接保留关键词；重置回全量第一页。 *}
+        {* 筛选进入 SQL，分页链接保留关键词；重置回全量第一页。
+           关键词四个面（标题 / 路径 / 备注 / 权限码）由后端判定 —— 页面上不做第二套前端匹配：
+           权限码匹配需要 join 权限表，前端拿不到那份数据，两套规则的差异会表现为
+           「页面上搜不到、但库里明明有」。 *}
         <div class="filter-bar">
             <form class="filter-row" method="get" action="/admin/menus">
-                <input type="text" name="keyword" value="{{if isset(.FilterKeyword)}}{{.FilterKeyword}}{{end}}" placeholder="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注…") }}" aria-label="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注…") }}" class="form-input filter-search">
+                <input type="text" name="keyword" value="{{if isset(.FilterKeyword)}}{{.FilterKeyword}}{{end}}" placeholder="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注 / 权限点…") }}" aria-label="{{ .["t"]("admin.menus.filter_placeholder", "筛选：标题 / 路径 / 备注 / 权限点…") }}" class="form-input filter-search">
                 <button type="submit" class="btn">{{tr("admin.admins.action.filter", "筛选")}}</button>
                 <a class="btn btn-ghost" href="/admin/menus">{{tr("admin.common.action.reset", "重置")}}</a>
+                {* 展开 / 折叠全部：列表默认只显示顶级（子行折叠），一次看全树的唯一入口就是这里。
+                   有数据时才渲染 —— 空表上这两个按钮点了什么都不会发生。
+                   type=button：它们在 GET 筛选表单里，不能顺手把表单提交掉。 *}
+                {{if len(.Rows) > 0}}
+                <span class="filter-actions">
+                    <button type="button" class="btn btn-sm btn-ghost" data-tree-expand-all>{{tr("admin.menus.tree.expandAll", "展开全部")}}</button>
+                    <button type="button" class="btn btn-sm btn-ghost" data-tree-collapse-all>{{tr("admin.menus.tree.collapseAll", "折叠全部")}}</button>
+                </span>
+                {{end}}
             </form>
         </div>
 
@@ -52,15 +64,18 @@
         {{yield bulkBarClose()}}
         {{end}}{{end}}
         <div class="table-wrap table-scroll" tabindex="0" role="region">
-            <table class="data-table">
+            {* data-tree-table 是控件（static/js/ui/tree-table.js）的锚点：行折叠用 tr.hidden 表达，
+               与批量选择模块（admin.js）认的「隐藏行不参与全选」是同一个约定。 *}
+            <table class="data-table" data-tree-table>
                 <thead>
-                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th class="col-icon">{{ .["t"]("admin.menus.col.icon", "图标") }}</th><th>{{ .["t"]("admin.menus.col.title", "标题") }}</th><th>{{ .["t"]("admin.menus.field.parent", "上级菜单") }}</th><th>{{ .["t"]("admin.menus.col.type", "类型") }}</th><th>{{ .["t"]("admin.menus.col.permissions", "权限点") }}</th><th>{{ .["t"]("admin.menus.col.path", "路径") }}</th><th>{{ .["t"]("admin.menus.col.status", "状态") }}</th><th>{{ .["t"]("admin.menus.col.sort", "排序") }}</th><th>{{ .["t"]("admin.menus.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.menus.col.actions", "操作") }}</th></tr>
+                <tr>{{if canDelete}}<th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th>{{end}}<th class="col-icon">{{ .["t"]("admin.menus.col.icon", "图标") }}</th><th>{{ .["t"]("admin.menus.col.title", "标题") }}</th><th>{{ .["t"]("admin.menus.col.type", "类型") }}</th><th>{{ .["t"]("admin.menus.col.permissions", "权限点") }}</th><th>{{ .["t"]("admin.menus.col.path", "路径") }}</th><th>{{ .["t"]("admin.menus.col.status", "状态") }}</th><th>{{ .["t"]("admin.menus.col.sort", "排序") }}</th><th>{{ .["t"]("admin.menus.col.remark", "备注") }}</th><th class="col-actions">{{ .["t"]("admin.menus.col.actions", "操作") }}</th></tr>
                 </thead>
                 <tbody>
                 {{if len(.Rows) == 0}}
-                {* 空态整行：colspan = 10 个业务列（图标 / 标题 / 上级 / 类型 / 权限点 / 路径 / 状态 / 排序 / 备注 / 操作）
-                   + 有删除权限时多出来的勾选框列。 *}
-                <tr><td colspan="{{if canDelete}}11{{else}}10{{end}}" class="cell-wrap">
+                {* 空态整行：colspan = 9 个业务列（图标 / 标题 / 类型 / 权限点 / 路径 / 状态 / 排序 / 备注 / 操作）
+                   + 有删除权限时多出来的勾选框列。
+                   没有「上级菜单」列：树状列表里父级就是上一行，缩进已经说明了从属关系。 *}
+                <tr><td colspan="{{if canDelete}}10{{else}}9{{end}}" class="cell-wrap">
                     <div class="empty-state">
                         {{keyword := ""}}{{if isset(.FilterKeyword)}}{{keyword = .FilterKeyword}}{{end}}
                         {{if keyword}}<p class="empty-title">{{tr("admin.menus.filter_empty", "没有匹配的菜单项。")}}</p>{{else}}<p class="empty-title">{{ .["t"]("admin.menus.empty", "还没有菜单，点右上「新建菜单」创建一个。") }}</p>{{end}}
@@ -74,12 +89,18 @@
                 </td></tr>
                 {{else}}
                 {{range _, m := .Rows}}
-                <tr data-filter-text="{{m.Title}} {{m.Path}} {{m.Remark}}">
+                {* 树状行：Depth 决定缩进，HasChildren 决定有没有折叠三角，Hidden 是初始「被祖先折叠」态
+                   （服务端算好初始态，脚本只负责切换，禁用 JS 时退回服务端渲染的那一屏）。
+                   isset 包裹全部可选键：本页的单测用手写 map 造行数据，缺键会让整页渲染中断。 *}
+                {{rowDepth := 0}}{{if isset(m.Depth)}}{{rowDepth = m.Depth}}{{end}}
+                {{rowHidden := false}}{{if isset(m.Hidden)}}{{rowHidden = m.Hidden}}{{end}}
+                {{rowHasKids := false}}{{if isset(m.HasChildren)}}{{rowHasKids = m.HasChildren}}{{end}}
+                {{rowExpanded := false}}{{if isset(m.Expanded)}}{{rowExpanded = m.Expanded}}{{end}}
+                <tr data-filter-text="{{m.Title}} {{m.Path}} {{m.Remark}}" data-tree-id="{{m.ID}}" data-tree-parent="{{m.ParentID}}" data-tree-depth="{{rowDepth}}" aria-level="{{rowDepth + 1}}"{{if rowHidden}} hidden{{end}}>
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{m.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 {* 图标由 admin.js 在图标库加载后填充 SVG（data-icon-name 为图标库键名） *}
                 <td class="col-icon"><span class="menu-icon" data-icon-name="{{if m.Icon}}{{m.Icon}}{{end}}"></span></td>
-                <td>{{if isset(.PermSet["menu:update"])}}<button type="button" class="row-title-link" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{m.Title}}</button>{{else}}{{m.Title}}{{end}}</td>
-                <td class="text-mute">{{if m.ParentTitle}}{{m.ParentTitle}}{{else}}—{{end}}</td>
+                <td><div class="tree-cell" style="padding-inline-start:calc({{rowDepth}} * 1.5rem)">{{if rowHasKids}}<button type="button" class="perm-toggle" data-tree-toggle aria-expanded="{{if rowExpanded}}true{{else}}false{{end}}" aria-label="{{tr("admin.roles.perm.toggle", "展开 / 收起子项")}}"><span class="caret" aria-hidden="true"></span></button>{{else}}<span class="perm-toggle is-leaf" aria-hidden="true"></span>{{end}}{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if isset(.PermSet["menu:update"])}}<button type="button" class="row-title-link" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{m.Title}}</button>{{else}}{{m.Title}}{{end}}{{if isset(.SearchMode)}}{{if .SearchMode}}{{if isset(m.Matched)}}{{if m.Matched}} <span class="badge badge-info">{{tr("admin.menus.search.matched", "匹配")}}</span>{{else}} <span class="text-mute">{{tr("admin.menus.search.ancestor", "上级路径")}}</span>{{end}}{{end}}{{end}}{{end}}</div></td>
                 <td>{{if m.Type == 1}}<span class="badge badge-mute">{{tr("admin.menus.type.dir", "目录")}}</span>{{else if m.Type == 2}}<span class="badge">{{tr("admin.menus.type.menu", "菜单")}}</span>{{else if m.Type == 3}}<span class="badge badge-mute">{{tr("admin.menus.type.button", "按钮")}}</span>{{else if m.Type == 4}}<span class="badge badge-mute">iframe</span>{{else if m.Type == 5}}<span class="badge badge-mute">{{tr("admin.menus.type.link", "外链")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.menus.type.unknown", "未知")}}</span>{{end}}</td>
                 {* 权限点：一个菜单可以挂多个码（迁移 470），逐个渲染成 code 徽标；
                    没绑的显示破折号（目录 / iframe / 外链是常态，不是缺陷）。 *}

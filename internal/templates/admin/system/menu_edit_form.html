@@ -4,19 +4,33 @@
 {{title := m.Title}}{{parent := m.ParentID}}{{kind := m.Type}}{{status := m.Status}}
 {{path := m.Path}}{{icon := m.Icon}}{{sort := m.SortOrder}}{{remark := m.Remark}}
 {{if isset(.MenuEditEcho)}}
-{{title = .MenuEditEcho.title}}{{parent = .MenuEditEcho.parent_id}}{{kind = .MenuEditEcho.type}}
+{{title = .MenuEditEcho.title}}{{kind = .MenuEditEcho.type}}
 {{status = .MenuEditEcho.status}}{{path = .MenuEditEcho.path}}{{icon = .MenuEditEcho.icon}}
 {{sort = .MenuEditEcho.sort_order}}{{remark = .MenuEditEcho.remark}}
 {{end}}
+{{if isset(.MenuEditParent)}}{{parent = .MenuEditParent}}{{end}}
 <div data-drawer-fragment>
     {{if isset(.MenuEditErr)}}{{if .MenuEditErr != ""}}<p class="badge badge-warning" role="alert">{{.MenuEditErr}}</p>{{end}}{{end}}
     <form method="post" action="/admin/menus/update" hx-post="/admin/menus/update" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{m.ID}}">
-        <input type="hidden" name="parent_id" value="{{parent}}">
         <div class="form-group">
             <label class="form-label req">{{tr("admin.menus.field.title", "菜单标题")}}</label>
             <input type="text" name="title" class="form-input" required maxlength="50" value="{{title}}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">{{tr("admin.menus.field.parent", "上级菜单")}}</label>
+            {{if isset(.Parents)}}
+            <select name="parent_id" class="form-select">
+                <option value="0"{{if parent == 0}} selected{{end}}>{{tr("admin.menus.parent_root", "（根菜单）")}}</option>
+                {{range _, p := .Parents}}
+                <option value="{{p.ID}}" data-type="{{p.Type}}"{{if p.Disabled}} data-self="1" disabled{{end}}{{if p.ID == parent}} selected{{end}}>{{p.Indent}}{{p.Title}}</option>
+                {{end}}
+            </select>
+            <p class="form-hint">{{tr("admin.menus.field.parent_hint", "选「（根菜单）」或留空表示顶级菜单；灰色项是它自己与它的子孙，选了会形成循环。")}}</p>
+            {{else}}
+            <input type="hidden" name="parent_id" value="{{parent}}">
+            {{end}}
         </div>
         <div class="form-row">
             <div class="form-group">

@@ -114,6 +114,10 @@ func TestAdminDepartmentMenuPagePagination(t *testing.T) {
 			}
 			tc.seed(t, db)
 			engine := newDepartmentMenuPageEngine(t, db)
+			if tc.path == "/admin/menus" {
+				assertMenuTreePagination(t, engine, tc.path, tc.prefix, tc.parent)
+				return
+			}
 			for _, p := range []struct {
 				page, first, info string
 				count             int
@@ -159,5 +163,50 @@ func TestAdminDepartmentMenuPagePagination(t *testing.T) {
 				t.Fatal("无匹配时分页应消失，但父级下拉仍应完整")
 			}
 		})
+	}
+}
+
+// assertMenuTreePagination 钉住菜单页的树状分页语义 —— 与部门页（平铺行分页）**不同**：
+// 分页单位是顶级节点，一页里渲染的是「若干棵完整的树」。
+// 本用例的 5 条菜单里只有「分页菜单00」是顶级，其余 4 条都是它的子，所以任何页码
+// 都会一次渲染整棵树（5 行），而标题里的总数报的是顶级数 1 —— 这是刻意的：
+// 若按行分页，第 2 页只会看到 4 个没有父级的孤儿行，用户无法判断它们属于谁。
+func assertMenuTreePagination(t *testing.T, engine *gin.Engine, path, prefix, parent string) {
+	t.Helper()
+	for _, page := range []string{"1", "2", "999"} {
+		body := fetchDepartmentMenuPage(t, engine, path+"?page="+page+"&limit=2")
+		rows := pageTableBody(t, body)
+		if got := strings.Count(rows, "data-filter-text="); got != 5 {
+			t.Fatalf("第 %s 页应一次渲染整棵树（5 行），实得 %d", page, got)
+		}
+		if !strings.Contains(body, "（共 1）") {
+			t.Fatalf("第 %s 页总数应为顶级节点数 1", page)
+		}
+		for i := 0; i < 5; i++ {
+			if !strings.Contains(rows, fmt.Sprintf(`data-filter-text="%s%02d`, prefix, i)) {
+				t.Fatalf("第 %s 页缺少 %s%02d", page, prefix, i)
+			}
+		}
+		if !strings.Contains(body, prefix+"04</option>") {
+			t.Fatal("父级下拉应包含跨页节点")
+		}
+	}
+
+	// 搜索命中子级时要把它所属的祖先一并带出来，否则那一行没有上下文。
+	body := fetchDepartmentMenuPage(t, engine, path+"?keyword="+url.QueryEscape(prefix+"02"))
+	rows := pageTableBody(t, body)
+	if !strings.Contains(rows, `data-filter-text="`+prefix+"02") {
+		t.Fatal("搜索应命中子级")
+	}
+	if !strings.Contains(rows, `data-filter-text="`+prefix+"00") || !strings.Contains(rows, parent) {
+		t.Fatal("搜索子级应带出父级并显示其名称")
+	}
+
+	body = fetchDepartmentMenuPage(t, engine, path+"?keyword="+url.QueryEscape("不存在的关键字"))
+	if !strings.Contains(pageTableBody(t, body), "没有匹配") || !strings.Contains(body, "共 0") {
+		t.Fatal("无匹配时应区分过滤空态和真正没有数据，标题显示匹配总数 0")
+	}
+	if strings.Contains(body, `class="pagination"`) || !strings.Contains(body, prefix+"04</option>") {
+		t.Fatal("无匹配时分页应消失，但父级下拉仍应完整")
 	}
 }

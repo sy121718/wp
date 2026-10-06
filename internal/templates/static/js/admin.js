@@ -19,7 +19,9 @@
     });
 
     /* 上级菜单候选过滤：按当前「类型」只列出合法父级（事前预防，与后端 validateMenuPlacement 双保险）。
-       目录只能挂目录下；菜单/iframe/外链可挂目录或菜单下（父级菜单可有子菜单）；按钮挂菜单下。 */
+       目录只能挂目录下；菜单/iframe/外链可挂目录或菜单下（父级菜单可有子菜单）；按钮挂菜单下。
+       data-self="1"（编辑抽屉标出的「它自己与它的子孙」）永远不合法 —— 那类选择必然成环，
+       服务端 MenuParentOptions 已经标好，这里只需认这个标记，别用类型规则去猜。 */
     function applyParentFilter(scope) {
         var typeSel = scope.querySelector('select[name="type"]');
         var parentSel = scope.querySelector('select[name="parent_id"]');
@@ -29,7 +31,7 @@
             var allow = (t === 1) ? ['1'] : (t === 3 ? ['2'] : ['1', '2']);
             Array.prototype.forEach.call(parentSel.querySelectorAll('option'), function (o) {
                 if (o.value === '0') return;
-                var ok = allow.indexOf(o.getAttribute('data-type')) >= 0;
+                var ok = o.getAttribute('data-self') !== '1' && allow.indexOf(o.getAttribute('data-type')) >= 0;
                 o.hidden = !ok;
                 o.disabled = !ok;
                 if (!ok && o.selected) parentSel.value = '0';

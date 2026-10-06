@@ -3,7 +3,7 @@ package adminservice
 import (
 	"context"
 	"errors"
-	"regexp"
+	"sort"
 	"strings"
 
 	admindto "go_wp/internal/module/admin/dto"
@@ -11,25 +11,67 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 )
 
-// MenuPage keeps the management page bounded while retaining the complete parent selector.
+// MenuPage 菜单管理列表（**树状分页**）。
+//
+// 分页单位是顶级菜单，不是行：
+//   - 浏览态：读一页顶级节点 + 它们的完整子树（model.ListMenuRootsPage），
+//     列表默认只显示最上级（子行折叠，见 flattenMenuPageRows）；
+//   - 搜索态：读「命中项 + 各自到根的祖先路径」（model.ListMenuSearchForest），
+//     在内存里按顶级节点分页 —— 一条命中必须连着它的上级路径显示，
+//     按命中分页会让同一棵树在多页里重复出现。
+//
+// 为什么不逐层懒加载：菜单一百多条、树深 3 级，整棵读完的代价远小于为每层各留一套
+// 分页与展开态（YAGNI）。真正决定「看得见多少」的是折叠，不是取数。
 func (s *Service) MenuPage(ctx context.Context, page, limit int, keyword string) (*admindto.MenuPageResp, error) {
 	parents, err := s.mm.ListParentOptions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	total, list, err := s.mm.ListPage(ctx, page, limit, keyword)
+	resp := &admindto.MenuPageResp{
+		Rows:    []admindto.MenuPageRow{},
+		Parents: buildMenuParentChoices(parents, nil),
+	}
+	if keyword == "" {
+		rows, total, err := s.mm.ListMenuRootsPage(ctx, page, limit)
+		if err != nil {
+			return nil, err
+		}
+		resp.Total = total
+		resp.Rows = flattenMenuPageRows(buildMenuPageForest(rows, nil))
+		return resp, nil
+	}
+	rows, err := s.mm.ListMenuSearchForest(ctx, keyword)
 	if err != nil {
 		return nil, err
 	}
+	matched := make(map[uint64]bool, len(rows))
+	for _, r := range rows {
+		if r.Matched {
+			matched[r.ID] = true
+		}
+	}
+	roots := buildMenuPageForest(rows, matched)
+	resp.Total = int64(len(roots))
+	resp.Rows = flattenMenuPageRows(paginateMenuRoots(roots, page, limit))
+	return resp, nil
+}
+
+// buildMenuParentChoices 上级菜单下拉候选：按父链深度算缩进，让下拉里看得出层级。
+//
+// 保留全量与既有语义（不分页）：缺项会直接表现为「建子菜单时选不到父级」。
+// disabled 里的 ID 标成不可选（新建态传 nil）；判定用 map 而不是切片，
+// 因为候选是逐条判的、按 ID 查是 O(1)，且这里没有「先后顺序」的语义。
+func buildMenuParentChoices(parents []adminmodel.MenuParentOption, disabled map[uint64]bool) []admindto.MenuParentChoice {
 	byID := make(map[uint64]adminmodel.MenuParentOption, len(parents))
 	for _, p := range parents {
 		byID[p.ID] = p
 	}
-	resp := &admindto.MenuPageResp{Total: total, Rows: make([]admindto.MenuPageRow, 0, len(list)), Parents: make([]admindto.MenuParentChoice, 0, len(parents))}
+	out := make([]admindto.MenuParentChoice, 0, len(parents))
 	for _, p := range parents {
 		depth := 0
 		seen := map[uint64]bool{p.ID: true}
-		for id := p.ParentID; id != 0 && depth < 8; {
+		// 深度上限与树展开同一口径（防环数据把这里变成死循环）。
+		for id := p.ParentID; id != 0 && depth < menuParentMaxDepth; {
 			parent, ok := byID[id]
 			if !ok || seen[id] {
 				break
@@ -38,24 +80,177 @@ func (s *Service) MenuPage(ctx context.Context, page, limit int, keyword string)
 			depth++
 			id = parent.ParentID
 		}
-		resp.Parents = append(resp.Parents, admindto.MenuParentChoice{ID: p.ID, Title: p.Title, Type: p.Type, Indent: strings.Repeat("　", depth)})
-	}
-	for _, item := range list {
-		parentTitle := ""
-		if parent, ok := byID[item.ParentID]; ok {
-			parentTitle = parent.Title
-		}
-		remark := ""
-		if item.Remark != nil {
-			remark = *item.Remark
-		}
-		resp.Rows = append(resp.Rows, admindto.MenuPageRow{
-			ID: item.ID, Title: item.Title, Path: item.Path, Type: item.Type, ParentID: item.ParentID,
-			ParentTitle: parentTitle, Status: item.Status, SortOrder: item.SortOrder, Remark: remark, Icon: item.Icon,
-			PermissionCodes: item.PermissionCodes,
+		out = append(out, admindto.MenuParentChoice{
+			ID: p.ID, Title: p.Title, Type: p.Type, Indent: strings.Repeat("　", depth),
+			Disabled: disabled[p.ID],
 		})
 	}
-	return resp, nil
+	return out
+}
+
+// MenuParentOptions 是编辑抽屉的上级菜单候选：全量候选，其中「自己 + 自己的子孙」标不可选。
+//
+// 为什么这段判定不交给模板或 UI 的 JS 去算：成环与否是**数据关系**，
+// 前端手里的候选行里没有可靠的 parent 链（缩进只是显示用的空格），
+// 由后端给出唯一答案，UI 才能只负责渲染。
+//
+// excludeID 为 0（或该菜单已不存在）时与新建态等价：没有任何不可选项。
+func (s *Service) MenuParentOptions(ctx context.Context, excludeID uint64) ([]admindto.MenuParentChoice, error) {
+	parents, err := s.mm.ListParentOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	disabled, err := s.mm.ListSubtreeIDs(ctx, excludeID)
+	if err != nil {
+		return nil, err
+	}
+	return buildMenuParentChoices(parents, disabled), nil
+}
+
+// menuParentMaxDepth 上级菜单下拉算缩进时的向上追溯上限（与 model 的展开上限同量级）。
+const menuParentMaxDepth = 8
+
+// menuPageNode 是建树过程中的临时节点，只在本文件内流转。
+type menuPageNode struct {
+	row      adminmodel.MenuPageRow
+	children []*menuPageNode
+	// matched：本节点自身命中；subtreeMatched：以它为根的子树里有命中（含自身）。
+	// 搜索态下 subtreeMatched 决定节点初始展开 —— 否则命中行会被折叠的祖先挡住，
+	// 用户搜到了东西却什么都看不见。
+	matched        bool
+	subtreeMatched bool
+}
+
+// buildMenuPageForest 把平铺的行集合组装成森林（父不在集合里的行按根处理）。
+//
+// 排序在这里做而不是在 SQL 里：逐层读回来的集合顺序是「根 → 第一层 → 第二层」的
+// BFS 序，同层兄弟必须按 sort_order / id 定序，才对得上用户在表单里看到的顺序。
+func buildMenuPageForest(rows []adminmodel.MenuPageRow, matched map[uint64]bool) []*menuPageNode {
+	sorted := make([]adminmodel.MenuPageRow, len(rows))
+	copy(sorted, rows)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].SortOrder != sorted[j].SortOrder {
+			return sorted[i].SortOrder < sorted[j].SortOrder
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
+	nodes := make(map[uint64]*menuPageNode, len(sorted))
+	for _, r := range sorted {
+		nodes[r.ID] = &menuPageNode{row: r, matched: matched != nil && matched[r.ID]}
+	}
+	roots := make([]*menuPageNode, 0, len(sorted))
+	for _, r := range sorted {
+		node := nodes[r.ID]
+		// ParentID 为 0、父不在集合里、指向自身、或父子成环（坏数据）：
+		// 一律按根处理。这几种情况下「挂到父上」都会让行从页面上消失 ——
+		// 坏数据最不该表现成「列表里少了东西」（那看起来像数据被删了）。
+		if r.ParentID != 0 && !menuPageParentCyclic(nodes, r) {
+			if parent, ok := nodes[r.ParentID]; ok {
+				parent.children = append(parent.children, node)
+				continue
+			}
+		}
+		roots = append(roots, node)
+	}
+	var mark func(n *menuPageNode) bool
+	mark = func(n *menuPageNode) bool {
+		hit := n.matched
+		for _, c := range n.children {
+			if mark(c) {
+				hit = true
+			}
+		}
+		n.subtreeMatched = hit
+		return hit
+	}
+	for _, r := range roots {
+		mark(r)
+	}
+	return roots
+}
+
+// menuPageParentCyclic 判断把 r 挂到它的父上是否会形成环（沿 parent 链向上，边看边记）。
+//
+// 环数据（a.parent=b、b.parent=a）在树里无处安放：不管挂给谁，两条都会从根集合里消失 ——
+// 表现为「列表突然短了」。这类行统一按根处理，用户至少看得见、能在界面上改掉它。
+func menuPageParentCyclic(nodes map[uint64]*menuPageNode, r adminmodel.MenuPageRow) bool {
+	seen := map[uint64]bool{r.ID: true}
+	for id := r.ParentID; id != 0; {
+		if seen[id] {
+			return true
+		}
+		seen[id] = true
+		parent, ok := nodes[id]
+		if !ok {
+			return false
+		}
+		id = parent.row.ParentID
+	}
+	return false
+}
+
+// paginateMenuRoots 按顶级节点分页（页码越界回落到最后一页，与 model 的浏览态同一口径）。
+func paginateMenuRoots(roots []*menuPageNode, page, limit int) []*menuPageNode {
+	if limit < 1 {
+		limit = 1
+	}
+	if page < 1 {
+		page = 1
+	}
+	total := len(roots)
+	if total == 0 {
+		return nil
+	}
+	if last := (total-1)/limit + 1; page > last {
+		page = last
+	}
+	lo := (page - 1) * limit
+	hi := lo + limit
+	if hi > total {
+		hi = total
+	}
+	return roots[lo:hi]
+}
+
+// flattenMenuPageRows 把森林按 DFS 前序摊平成表格行，并算好 Depth / HasChildren / Hidden / Expanded。
+//
+// 初始可见性在这里一次算清（服务端给初始态、前端只负责切换，前端不做第二套父子规则）：
+//   - 浏览态：所有带子行的节点都折叠 —— 列表默认只显示最上级；
+//   - 搜索态：命中路径上的祖先展开，命中行才露得出来；命中项自己的子树没读出来
+//     （HasChildren 为假），于是也不会渲染一个点开什么都没有的折叠三角。
+func flattenMenuPageRows(roots []*menuPageNode) []admindto.MenuPageRow {
+	out := make([]admindto.MenuPageRow, 0, len(roots))
+	var walk func(nodes []*menuPageNode, depth int, hiddenByAncestor bool)
+	walk = func(nodes []*menuPageNode, depth int, hiddenByAncestor bool) {
+		for _, n := range nodes {
+			hasChildren := len(n.children) > 0
+			expanded := hasChildren && n.subtreeMatched
+			out = append(out, menuPageRowDTO(n.row, depth, hasChildren, hiddenByAncestor, expanded, n.matched))
+			if hasChildren {
+				walk(n.children, depth+1, hiddenByAncestor || !expanded)
+			}
+		}
+	}
+	walk(roots, 0, false)
+	return out
+}
+
+// menuPageRowDTO 把 model 的页行连同算好的层级与可见性搬进 dto。
+//
+// matched 由调用方从建树节点取，而不是再从 r.Matched 读一遍：展开判断用的就是节点上那个值，
+// 两处各取一次迟早会不一致 —— 那时页面会出现「行标着「匹配」但祖先没展开」这种自相矛盾的画面。
+func menuPageRowDTO(r adminmodel.MenuPageRow, depth int, hasChildren, hidden, expanded, matched bool) admindto.MenuPageRow {
+	remark := ""
+	if r.Remark != nil {
+		remark = *r.Remark
+	}
+	return admindto.MenuPageRow{
+		ID: r.ID, ParentID: r.ParentID, Title: r.Title, Path: r.Path, Type: r.Type,
+		Status: r.Status, SortOrder: r.SortOrder, Remark: remark, Icon: r.Icon,
+		PermissionCodes: r.PermissionCodes,
+		Depth:           depth, HasChildren: hasChildren, Hidden: hidden,
+		Expanded: expanded, Matched: matched,
+	}
 }
 
 // MenuDetail 查询单个菜单详情。
@@ -73,10 +268,6 @@ func (s *Service) MenuDetail(ctx context.Context, req *admindto.MenuDetailReq) (
 
 // MenuCreate 新建菜单。
 func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) error {
-	req.Component = strings.TrimSpace(req.Component)
-	if err := validateComponentBinding(req.Type, req.Component); err != nil {
-		return err
-	}
 	if err := s.validatePermissionBinding(req.Type, req.PermissionCodes, ctx); err != nil {
 		return err
 	}
@@ -90,7 +281,6 @@ func (s *Service) MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) e
 		ParentID:    req.ParentID,
 		Type:        req.Type,
 		Path:        req.Path,
-		Component:   req.Component,
 		ExternalURL: req.ExternalURL,
 		Icon:        req.Icon,
 		Status:      menuDefaultStatus(req.Status),
@@ -136,10 +326,6 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 		}
 	}
 
-	req.Component = strings.TrimSpace(req.Component)
-	if err := validateComponentBinding(req.Type, req.Component); err != nil {
-		return err
-	}
 	if err := s.validatePermissionBinding(req.Type, req.PermissionCodes, ctx); err != nil {
 		return err
 	}
@@ -152,7 +338,6 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 	entity.ParentID = req.ParentID
 	entity.Type = req.Type
 	entity.Path = req.Path
-	entity.Component = req.Component
 	entity.ExternalURL = req.ExternalURL
 	entity.Icon = req.Icon
 	entity.Status = req.Status
@@ -203,29 +388,6 @@ func (s *Service) MenuDelete(ctx context.Context, req *admindto.MenuDeleteReq) e
 		return err
 	}
 	invalidateMenuCache()
-	return nil
-}
-
-// component 兼容三种格式：
-//   - soybean 目录：layout.base
-//   - soybean 叶子页面：view.xxx
-//   - 旧 vue-pure-admin 路径：/src/views/xxx/index.vue
-var componentPathPattern = regexp.MustCompile(`^(?:layout\.(?:base|blank)|view\.[A-Za-z0-9_-]+|/src/views/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.vue)$`)
-
-// validateComponentBinding 校验菜单类型与前端组件路径的绑定关系。
-func validateComponentBinding(menuType int, component string) error {
-	if menuType != adminmodel.MenuTypeMenu {
-		if component != "" {
-			return errors.New(adminenums.ErrComponentNotAllowed)
-		}
-		return nil
-	}
-	if component == "" {
-		return errors.New(adminenums.ErrComponentRequired)
-	}
-	if !componentPathPattern.MatchString(component) {
-		return errors.New(adminenums.ErrComponentInvalid)
-	}
 	return nil
 }
 
@@ -348,7 +510,6 @@ func menuEntityToDetailResp(e *adminmodel.MenuEntity) *admindto.MenuDetailResp {
 		ParentID:        e.ParentID,
 		Type:            e.Type,
 		Path:            e.Path,
-		Component:       e.Component,
 		ExternalURL:     e.ExternalURL,
 		Icon:            e.Icon,
 		Status:          e.Status,
@@ -440,7 +601,6 @@ func menuEntityToNode(m adminmodel.MenuEntity) admindto.MenuTreeNode {
 		ParentID:        m.ParentID,
 		Type:            m.Type,
 		Path:            m.Path,
-		Component:       m.Component,
 		ExternalURL:     m.ExternalURL,
 		Icon:            m.Icon,
 		Status:          m.Status,

@@ -61,6 +61,9 @@ type PermService interface {
 // MenuService 菜单领域业务能力。
 type MenuService interface {
 	MenuPage(ctx context.Context, page, limit int, keyword string) (*admindto.MenuPageResp, error)
+	// MenuParentOptions 返回编辑抽屉的上级菜单候选：excludeID 自己及其子孙标为不可选
+	// （选它们必然成环）。excludeID 为 0 时即新建态，无不可选项。
+	MenuParentOptions(ctx context.Context, excludeID uint64) ([]admindto.MenuParentChoice, error)
 	MenuTree(ctx context.Context, req *admindto.MenuTreeReq) ([]admindto.MenuTreeNode, error)
 	MenuDetail(ctx context.Context, req *admindto.MenuDetailReq) (*admindto.MenuDetailResp, error)
 	MenuCreate(ctx context.Context, req *admindto.MenuCreateReq) error

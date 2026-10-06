@@ -432,7 +432,6 @@ func createMenuWithPerm(t *testing.T, e *env, _ uint64, code string) uint64 {
 		Title:           "测试菜单 " + uniq(""),
 		Type:            adminmodel.MenuTypeMenu,
 		Path:            "/test/menu",
-		Component:       "view.testMenu",
 		PermissionCodes: []string{code},
 		Status:          1,
 	})

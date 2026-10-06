@@ -83,16 +83,16 @@ func TestAdminEmptyStateKeepsTableHead(t *testing.T) {
 		assertEmptyKeepsTableHead(t, "departments+delete", out, "8", []string{"还没有部门", "data-check-all"})
 	})
 
-	t.Run("menus/无删除权限→colspan10", func(t *testing.T) {
+	t.Run("menus/无删除权限→colspan9", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{"Rows": []any{}, "Parents": []any{}})
-		assertEmptyKeepsTableHead(t, "menus", out, "10", []string{"还没有菜单"})
+		assertEmptyKeepsTableHead(t, "menus", out, "9", []string{"还没有菜单"})
 	})
 
-	t.Run("menus/有删除权限→colspan11", func(t *testing.T) {
+	t.Run("menus/有删除权限→colspan10", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{
 			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"menu:delete": true},
 		})
-		assertEmptyKeepsTableHead(t, "menus+delete", out, "11", []string{"还没有菜单", "data-check-all"})
+		assertEmptyKeepsTableHead(t, "menus+delete", out, "10", []string{"还没有菜单", "data-check-all"})
 	})
 
 	t.Run("i18n→colspan7", func(t *testing.T) {

@@ -201,11 +201,22 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 		{
 			name: "admin/system/menus",
 			data: map[string]any{
-				"Rows": []map[string]any{{
-					"ID": "m1", "ParentID": "0", "Title": "内容管理", "Path": "/admin/pages",
-					"Remark": "站点结构", "Icon": "folder", "Type": 1, "Status": 1,
-					"SortOrder": 1, "Indent": "", "PermissionCodes": []string{"page:list"},
-				}},
+				// 树状行：Depth / HasChildren / Hidden / Expanded / Matched 由 service 算好交给模板
+				// （浏览态 Depth=0 的顶级行 + 一个被折叠的子行；搜索态的空态另有一组测试）。
+				"Rows": []map[string]any{
+					{
+						"ID": "m1", "ParentID": "0", "Title": "内容管理", "Path": "/admin/pages",
+						"Remark": "站点结构", "Icon": "folder", "Type": 1, "Status": 1,
+						"SortOrder": 1, "Indent": "", "PermissionCodes": []string{"page:list"},
+						"Depth": 0, "HasChildren": true, "Hidden": false, "Expanded": false, "Matched": false,
+					},
+					{
+						"ID": "m2", "ParentID": "m1", "Title": "页面管理", "Path": "/admin/pages/list",
+						"Remark": "", "Icon": "", "Type": 2, "Status": 1,
+						"SortOrder": 2, "Indent": "", "PermissionCodes": []string{"page:list"},
+						"Depth": 1, "HasChildren": false, "Hidden": true, "Expanded": false, "Matched": false,
+					},
+				},
 				"Parents": []map[string]any{{"ID": "m0", "Title": "根", "Type": 1, "Indent": ""}},
 				"PermSet": map[string]any{"menu:create": true, "menu:update": true, "menu:delete": true},
 			},

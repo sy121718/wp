@@ -294,8 +294,10 @@ func (s *Service) BuildAuthorizedRoutes(ctx context.Context, codes []string, lan
 }
 
 // buildRouteNodes 递归构建动态路由树。
-// parentName 用于拼接子路由 name（如 Menu200_Menu201），保持与 soybean 多级路由命名一致，
-// 使子路由 component（view.xxx）能作为目录（layout.base）的 children 正常挂载。
+//
+// parentName 用于拼接子路由 name（如 Menu200_Menu201）—— 这套命名是从 soybean-admin
+// 沿用下来的多级路由约定，前端（若将来有）靠 name 做嵌套挂载。
+// 节点里**没有 component**：后台已是 HTMX + Jet SSR，页面路由只认 Path。
 func buildRouteNodes(nodes []admindto.MenuTreeNode, buttonAuths map[uint64][]string, parentName, lang string) []admindto.RouteNode {
 	routes := make([]admindto.RouteNode, 0, len(nodes))
 	for _, node := range nodes {
@@ -310,9 +312,8 @@ func buildRouteNodes(nodes []admindto.MenuTreeNode, buttonAuths map[uint64][]str
 			routeName = parentName + "_" + routeName
 		}
 		route := admindto.RouteNode{
-			Path:      node.Path,
-			Name:      routeName,
-			Component: node.Component,
+			Path: node.Path,
+			Name: routeName,
 			Meta: admindto.RouteMeta{
 				Title:    translateMenuTitle(node.TitleKey, node.Title, lang),
 				TitleKey: node.TitleKey,

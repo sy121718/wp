@@ -213,8 +213,9 @@ func (h *AdminPagesHandle) AdministratorRolesSave(c *gin.Context) {
 // 「这个勾是直接给的，还是角色给的」，复用一个结构会让「哪些字段只对其中一处有意义」
 // 变得不可判读。展平方式（DFS + depth + PadLeft）与角色分权一致，理由见 flattenPermissionTree。
 //
-// 与同包的 adminMenuRow / flattenAdminMenuTree 也不是同一个东西：那一份是**菜单管理视角**
-// 的展平（路径 / 状态 / 排序 / 备注，供列表页用），本函数是**授权视角**（勾选态 + 继承标记）。
+// 与菜单管理页的展平（service.MenuPage 的 flattenMenuPageRows + 列表模板）也不是同一个东西：
+// 那一份是**菜单管理视角**（路径 / 状态 / 排序 / 备注，供列表页用，且要带折叠态），
+// 本函数是**授权视角**（勾选态 + 继承标记）。
 // 两者的字段没有交集，不要为了「少一个函数」把它们合并。
 type adminMenuTreeRow struct {
 	ID        uint64

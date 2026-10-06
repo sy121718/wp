@@ -263,6 +263,11 @@ func init() {
 	registerRemoveOrphanFilterI18n()
 	// 584：后台统一时间筛选条的词条（见 register_date_filter_i18n.go）。
 	registerDateFilterI18n()
+	// 586：菜单管理树状分页的新词条 + 筛选占位文案修正（见 register_menus_tree_page_i18n.go）。
+	registerMenusTreePageI18n()
+	// 587：component（组件路径）字段退役的收尾 —— 列注释 + 三条悬空错误词条
+	// （见 register_menu_component_retire.go）。
+	registerMenuComponentRetire()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

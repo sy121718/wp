@@ -45,7 +45,7 @@ func TestMenuHoldsMultiplePermissionCodes(t *testing.T) {
 	// 第三个码与第一个重复：去重是写入侧的职责（唯一索引只是兜底），
 	// 表单里多点一下不该变成一次写入失败。
 	wantErr(t, e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: title, Type: adminmodel.MenuTypeMenu, Path: "/mpm/" + uniq(""), Component: "view.mpm",
+		Title: title, Type: adminmodel.MenuTypeMenu, Path: "/mpm/" + uniq(""),
 		PermissionCodes: []string{codeA, codeB, codeA}, Status: 1,
 	}), "")
 
@@ -74,7 +74,7 @@ func TestRoleMenuSaveCollectsEveryCodeOfMenu(t *testing.T) {
 
 	title := "角色多码菜单 " + uniq("")
 	wantErr(t, e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: title, Type: adminmodel.MenuTypeMenu, Path: "/mpm/role/" + uniq(""), Component: "view.mpmRole",
+		Title: title, Type: adminmodel.MenuTypeMenu, Path: "/mpm/role/" + uniq(""),
 		PermissionCodes: []string{codeA, codeB}, Status: 1,
 	}), "")
 
@@ -117,7 +117,7 @@ func TestPermissionReferenceCountDedupesByMenuAndDeleteClearsLinks(t *testing.T)
 
 	title := "计数菜单 " + uniq("")
 	wantErr(t, e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: title, Type: adminmodel.MenuTypeMenu, Path: "/mpm/count/" + uniq(""), Component: "view.mpmCount",
+		Title: title, Type: adminmodel.MenuTypeMenu, Path: "/mpm/count/" + uniq(""),
 		PermissionCodes: []string{codeA, codeB}, Status: 1,
 	}), "")
 
