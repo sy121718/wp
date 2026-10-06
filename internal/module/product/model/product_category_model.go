@@ -167,28 +167,94 @@ func (m *Model) ListCategoryRootsPage(ctx context.Context, projectID string, lim
 		if e := countQ.Count(&total).Error; e != nil {
 			return e
 		}
-		// path 只用于把递归结果停在 64 层并防住环，排序交给调用方
-		// （按 sort / create_time / id 建树，SQL 的顺序在这里没有语义）。
-		return tx.WithContext(ctx).Raw(`WITH RECURSIVE roots AS (
-				SELECT id FROM product_categories
-				WHERE `+categoryRootFilter+`
-				ORDER BY sort, create_time, id
-				LIMIT ? OFFSET ?
-			), tree AS (
-				SELECT c.id, ARRAY[c.id] AS path, 0 AS depth
-				FROM product_categories c JOIN roots r ON r.id = c.id
-				UNION ALL
-				SELECT child.id, t.path || child.id, t.depth + 1
-				FROM product_categories child JOIN tree t ON child.parent_id = t.id
-				WHERE child.project_id = ? AND t.depth < 64 AND NOT child.id = ANY(t.path)
-			)
-			SELECT c.*, EXISTS (SELECT 1 FROM product_categories ch
-					WHERE ch.project_id = ? AND ch.parent_id = c.id) AS has_children,
-				FALSE AS matched
-			FROM tree t JOIN product_categories c ON c.id = t.id`,
-			projectID, projectID, limit, offset, projectID, projectID).Scan(&rows).Error
+		// 原是一条 WITH RECURSIVE（roots → tree，UNION ALL 递归 + 数组路径防环 + depth < 64）。
+		// GORM 没有 CTE API（v1.31.1 实测：clause.With 是空结构体，gorm 内部零使用），
+		// 递归 CTE 也无法用子查询等价替代 —— 而分类是**人工维护的品类表**（一个工程几十条，
+		// 见文件头），所以改成 Go 侧逐层展开：查询次数 = 树深（实际 2~3 层），
+		// 环由 visited 集合挡（原 SQL 用 path 数组挡）。
+		//
+		// 顺序：原 SQL 只在 roots 子查询里 ORDER BY sort, create_time, id，最终 SELECT 无排序
+		//（排序语义交给调用方建树）。这里每层都带上同一排序，层内顺序与原来一致。
+		var roots []ProductCategoryEntity
+		if e := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Where(categoryRootFilter, projectID, projectID).
+			Order("sort, create_time, id").
+			Limit(limit).Offset(offset).
+			Find(&roots).Error; e != nil {
+			return e
+		}
+		all, e := categoryTreeDescendants(ctx, tx, projectID, roots)
+		if e != nil {
+			return e
+		}
+		rows = categoryRowsOf(all, nil)
+		return nil
 	})
 	return rows, total, err
+}
+
+// categoryTreeMaxDepth 递归展开的层数上限（与原 SQL 的 `t.depth < 64` 对齐）。
+const categoryTreeMaxDepth = 64
+
+// categoryTreeDescendants 从给定的根节点出发逐层读出全部子孙（本工程内、含根自身）。
+//
+// seen 集合同时承担两件事：原 SQL 的 `NOT child.id = ANY(t.path)` 防环，以及
+// 「同一行不出现在结果里两次」—— 迁移前若有环或父子指向自身，两条都要靠它停住。
+func categoryTreeDescendants(ctx context.Context, tx *gorm.DB, projectID string, roots []ProductCategoryEntity) ([]ProductCategoryEntity, error) {
+	all := make([]ProductCategoryEntity, 0, len(roots))
+	seen := make(map[string]struct{}, len(roots))
+	layer := make([]string, 0, len(roots))
+	for _, r := range roots {
+		if _, ok := seen[r.ID]; ok {
+			continue
+		}
+		seen[r.ID] = struct{}{}
+		all = append(all, r)
+		layer = append(layer, r.ID)
+	}
+	for depth := 0; depth < categoryTreeMaxDepth && len(layer) > 0; depth++ {
+		var children []ProductCategoryEntity
+		if err := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Where("project_id = ? AND parent_id IN ?", projectID, layer).
+			Order("sort, create_time, id").
+			Find(&children).Error; err != nil {
+			return nil, err
+		}
+		next := make([]string, 0, len(children))
+		for _, c := range children {
+			if _, ok := seen[c.ID]; ok {
+				continue
+			}
+			seen[c.ID] = struct{}{}
+			all = append(all, c)
+			next = append(next, c.ID)
+		}
+		layer = next
+	}
+	return all, nil
+}
+
+// categoryRowsOf 把实体列表投影成页面行，并算出 has_children（原 SQL 的 EXISTS 子查询）。
+//
+// `all` 是完整的子树（已递归到叶子）或完整的祖先链，「本工程内还有以它为父的行」
+// 在集合内看就等于全局 —— 不需要再查一次库。
+func categoryRowsOf(all []ProductCategoryEntity, matched map[string]bool) []*CategoryPageRow {
+	hasChild := make(map[string]struct{}, len(all))
+	for _, c := range all {
+		if c.ParentID != nil && *c.ParentID != "" {
+			hasChild[*c.ParentID] = struct{}{}
+		}
+	}
+	out := make([]*CategoryPageRow, 0, len(all))
+	for i := range all {
+		_, has := hasChild[all[i].ID]
+		out = append(out, &CategoryPageRow{
+			ProductCategoryEntity: all[i],
+			HasChildren:           has,
+			Matched:               matched != nil && matched[all[i].ID],
+		})
+	}
+	return out
 }
 
 // ListCategorySearchForest 读「命中项 + 各自到根的祖先路径」，交给调用方按根分页。
@@ -207,25 +273,66 @@ func (m *Model) ListCategorySearchForest(ctx context.Context, projectID, keyword
 		if e := matchQ.Count(&matchTotal).Error; e != nil {
 			return e
 		}
-		// 与旧查询同一条路径跟踪：历史数据里若有环，递归停住而不是打转。
-		return tx.WithContext(ctx).Raw(`WITH RECURSIVE picked AS (
-				SELECT id FROM product_categories
-				WHERE project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')
-			), family AS (
-				SELECT c.id, c.parent_id, ARRAY[c.id] AS path, 0 AS steps, TRUE AS matched
-				FROM product_categories c JOIN picked p ON p.id = c.id
-				UNION ALL
-				SELECT parent.id, parent.parent_id, child.path || parent.id, child.steps + 1, FALSE
-				FROM product_categories parent JOIN family child ON child.parent_id = parent.id
-				WHERE parent.project_id = ? AND child.steps < 64 AND NOT parent.id = ANY(child.path)
-			), keep AS (
-				SELECT id, bool_or(matched) AS matched FROM family GROUP BY id
-			)
-			SELECT c.*, EXISTS (SELECT 1 FROM product_categories ch
-					WHERE ch.project_id = ? AND ch.parent_id = c.id) AS has_children,
-				keep.matched
-			FROM keep JOIN product_categories c ON c.id = keep.id`,
-			projectID, pattern, pattern, projectID, projectID).Scan(&rows).Error
+		// 同为递归 CTE，改 Go 侧展开（理由见 ListCategoryRootsPage）。这一条是**向上**走：
+		// 从命中项出发逐层取父节点，直到「父级不在本工程」或没有父级 —— 与原 SQL 的
+		// `parent.project_id = ? AND child.steps < 64` 同一判定，环由 seen 挡。
+		var picked []ProductCategoryEntity
+		if e := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+			Where(`project_id = ? AND (name ILIKE ? ESCAPE '\' OR slug ILIKE ? ESCAPE '\')`, projectID, pattern, pattern).
+			Order("sort, create_time, id").
+			Find(&picked).Error; e != nil {
+			return e
+		}
+		matched := make(map[string]bool, len(picked))
+		all := make([]ProductCategoryEntity, 0, len(picked))
+		seen := make(map[string]struct{}, len(picked))
+		for _, p := range picked {
+			matched[p.ID] = true
+			if _, ok := seen[p.ID]; ok {
+				continue
+			}
+			seen[p.ID] = struct{}{}
+			all = append(all, p)
+		}
+		// 逐层向上取祖先（每一步拿上一层的 parent_id）。
+		layer := make([]string, 0, len(picked))
+		for _, p := range picked {
+			if p.ParentID != nil && *p.ParentID != "" {
+				layer = append(layer, *p.ParentID)
+			}
+		}
+		for steps := 0; steps < categoryTreeMaxDepth && len(layer) > 0; steps++ {
+			uniq := make([]string, 0, len(layer))
+			for _, id := range layer {
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				uniq = append(uniq, id)
+			}
+			if len(uniq) == 0 {
+				break
+			}
+			var parents []ProductCategoryEntity
+			if e := tx.WithContext(ctx).Model(&ProductCategoryEntity{}).
+				Where("project_id = ? AND id IN ?", projectID, uniq).
+				Order("sort, create_time, id").
+				Find(&parents).Error; e != nil {
+				return e
+			}
+			layer = layer[:0]
+			for _, p := range parents {
+				if _, ok := seen[p.ID]; ok {
+					continue
+				}
+				seen[p.ID] = struct{}{}
+				all = append(all, p)
+				if p.ParentID != nil && *p.ParentID != "" {
+					layer = append(layer, *p.ParentID)
+				}
+			}
+		}
+		rows = categoryRowsOf(all, matched)
+		return nil
 	})
 	return rows, matchTotal, err
 }

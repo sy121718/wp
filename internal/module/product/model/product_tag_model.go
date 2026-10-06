@@ -281,13 +281,16 @@ func (m *Model) CountProductsByTagIDs(ctx context.Context, projectID string, tag
 	// wanted 把标签 id 列表展开成行（jsonb 数组参数展开，避免动态拼 IN 列表）。
 	// 用 LEFT JOIN 而不是 JOIN：INNER JOIN 会把「一个商品都没命中」的标签整个丢掉，
 	// 调用方就分不清「0 个商品」与「这次没查到」。
-	const q = "SELECT w.tag_id::text AS tag_id, COUNT(p.id) AS total " +
-		"FROM (SELECT (jsonb_array_elements_text(?::jsonb))::uuid AS tag_id) w " +
-		"LEFT JOIN products p ON p.project_id = ? AND p.tag_ids @> jsonb_build_array(w.tag_id::text) " +
-		"GROUP BY w.tag_id"
+	// wanted 是「把 jsonb 数组参数展开成行」的表表达式（集合函数只在 FROM 位置可用，
+	// 没有 Entity 可映射），Join / Group / 参数绑定全归 GORM。
 	var rows []TagHitCount
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Raw(q, string(probe), projectID).Scan(&rows).Error
+		return tx.WithContext(ctx).
+			Table("(SELECT (jsonb_array_elements_text(?::jsonb))::uuid AS tag_id) AS w", string(probe)).
+			Select("w.tag_id::text AS tag_id, COUNT(p.id) AS total").
+			Joins("LEFT JOIN products p ON p.project_id = ? AND p.tag_ids @> jsonb_build_array(w.tag_id::text)", projectID).
+			Group("w.tag_id").
+			Scan(&rows).Error
 	})
 	if err != nil {
 		return nil, err
@@ -315,9 +318,12 @@ func (m *Model) ReplaceTagProductsTx(tx *gorm.DB, tagID, projectID string, produ
 		return merr
 	}
 	// 摘：本工程下带这个 tag id 的行全部去掉它。
-	if err = tx.Exec(
-		"UPDATE products SET tag_ids = tag_ids - ?::text, update_time = ? WHERE project_id = ? AND tag_ids @> ?::jsonb",
-		tagID, now, projectID, string(probe)).Error; err != nil {
+	if err = tx.Model(&ProductEntity{}).
+		Where("project_id = ? AND tag_ids @> ?::jsonb", projectID, string(probe)).
+		UpdateColumns(map[string]any{
+			"tag_ids":     gorm.Expr("tag_ids - ?::text", tagID),
+			"update_time": now,
+		}).Error; err != nil {
 		return err
 	}
 	if len(productIDs) == 0 {
@@ -328,10 +334,12 @@ func (m *Model) ReplaceTagProductsTx(tx *gorm.DB, tagID, projectID string, produ
 	if merr != nil {
 		return merr
 	}
-	return tx.Exec(
-		"UPDATE products SET tag_ids = tag_ids || ?::jsonb, update_time = ? "+
-			"WHERE project_id = ? AND id IN (SELECT (jsonb_array_elements_text(?::jsonb))::uuid)",
-		string(probe), now, projectID, string(ids)).Error
+	return tx.Model(&ProductEntity{}).
+		Where("project_id = ? AND id IN (SELECT (jsonb_array_elements_text(?::jsonb))::uuid)", projectID, string(ids)).
+		UpdateColumns(map[string]any{
+			"tag_ids":     gorm.Expr("tag_ids || ?::jsonb", string(probe)),
+			"update_time": now,
+		}).Error
 }
 
 // ListProductIDsByTagTx 列出本工程下**带该标签**的商品 id（升序）。
@@ -345,10 +353,21 @@ func (m *Model) ListProductIDsByTagTx(tx *gorm.DB, tagID, projectID string) (ids
 	if merr != nil {
 		return nil, merr
 	}
-	err = tx.Raw(
-		"SELECT id::text FROM products WHERE project_id = ? AND tag_ids @> ?::jsonb ORDER BY id",
-		projectID, string(probe)).Scan(&ids).Error
-	return ids, err
+	var rows []struct {
+		ID string `gorm:"column:id"`
+	}
+	if err = tx.Model(&ProductEntity{}).
+		Select("id::text AS id").
+		Where("project_id = ? AND tag_ids @> ?::jsonb", projectID, string(probe)).
+		Order("id").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	ids = make([]string, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	return ids, nil
 }
 
 // RemoveTagFromProductsTx 在给定事务里摘掉本工程所有商品上的某标签（删除标签前调用）。
@@ -357,13 +376,14 @@ func (m *Model) RemoveTagFromProductsTx(tx *gorm.DB, tagID, projectID string, no
 	if merr != nil {
 		return merr
 	}
-	q := "UPDATE products SET tag_ids = tag_ids - ?::text, update_time = ? WHERE tag_ids @> ?::jsonb"
-	args := []any{tagID, now, string(probe)}
+	upd := tx.Model(&ProductEntity{}).Where("tag_ids @> ?::jsonb", string(probe))
 	if projectID != "" {
-		q += " AND project_id = ?"
-		args = append(args, projectID)
+		upd = upd.Where("project_id = ?", projectID)
 	}
-	return tx.Exec(q, args...).Error
+	return upd.UpdateColumns(map[string]any{
+		"tag_ids":     gorm.Expr("tag_ids - ?::text", tagID),
+		"update_time": now,
+	}).Error
 }
 
 // ListProductsByIDs 批量取商品行（引用校验、工程过滤用，避免 N+1）。

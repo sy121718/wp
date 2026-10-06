@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // OutboxEventEntity 一条待消费的失效事件（一行 = 一个依赖键）。
@@ -43,14 +44,17 @@ func (OutboxEventEntity) TableName() string { return "product_outbox_events" }
 // 正确」的计数器便宜。（锁在事务提交/回滚时自动释放，不需要手工清理。）
 func (m *Model) NextOutboxRevisionTx(ctx context.Context, tx *gorm.DB, entityType, entityID string) (int64, error) {
 	// 锁键取「实体类型:实体 id」的哈希：不同实体互不阻塞，同一实体串行。
+	// 这一句保留 gorm 的 Exec：pg_advisory_xact_lock 是无表、无 Entity 可映射的
+	// 数据库函数调用，GORM 没有对应表达能力（门禁登记在 rawSQLAllowedList）。
 	if err := tx.WithContext(ctx).Exec(
 		"SELECT pg_advisory_xact_lock(hashtext(?))", entityType+":"+entityID).Error; err != nil {
 		return 0, err
 	}
 	var next int64
-	if err := tx.WithContext(ctx).Raw(
-		"SELECT COALESCE(MAX(entity_revision), 0) + 1 FROM product_outbox_events "+
-			"WHERE entity_type = ? AND entity_id = ?", entityType, entityID).Scan(&next).Error; err != nil {
+	if err := tx.WithContext(ctx).Model(&OutboxEventEntity{}).
+		Select("COALESCE(MAX(entity_revision), 0) + 1").
+		Where("entity_type = ? AND entity_id = ?", entityType, entityID).
+		Scan(&next).Error; err != nil {
 		return 0, err
 	}
 	return next, nil
@@ -77,21 +81,27 @@ func (m *Model) ClaimPendingOutbox(ctx context.Context, lease time.Duration, lim
 	if secs <= 0 {
 		secs = 1
 	}
-	err = m.db.WithContext(ctx).Raw(`
-		UPDATE product_outbox_events e
-		   SET claimed_time = now(), attempts = e.attempts + 1
-		 WHERE e.id IN (
-		       SELECT id FROM product_outbox_events
-		        WHERE processed_time IS NULL
-		          AND (claimed_time IS NULL OR claimed_time < now() - (? * interval '1 second'))
-		        ORDER BY id
-		        LIMIT ?
-		        FOR UPDATE SKIP LOCKED
-		 )
-		RETURNING e.id, e.project_id, e.entity_type, e.entity_id, e.entity_revision,
-		          e.dependency_kind, e.dependency_key, e.create_time, e.claimed_time,
-		          e.processed_time, e.attempts, e.last_error`, secs, limit).Scan(&rows).Error
-	return rows, err
+	// 与 page_schedule_model.go 的 ClaimDueSchedules 同一形态：候选行由子查询选出并加
+	// FOR UPDATE SKIP LOCKED，外层 UPDATE 只按 id 命中这些行并用 RETURNING 写回实体。
+	var claimed []OutboxEventEntity
+	candidates := m.db.WithContext(ctx).Model(&OutboxEventEntity{}).
+		Select("id").
+		Where("processed_time IS NULL").
+		Where("claimed_time IS NULL OR claimed_time < now() - (? * interval '1 second')", secs).
+		Order("id").
+		Limit(limit).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+	err = m.db.WithContext(ctx).Model(&claimed).
+		Where("id IN (?)", candidates).
+		Clauses(clause.Returning{}).
+		Updates(map[string]any{
+			"claimed_time": gorm.Expr("now()"),
+			"attempts":     gorm.Expr("attempts + 1"),
+		}).Error
+	if err != nil {
+		return nil, err
+	}
+	return claimed, nil
 }
 
 // MarkOutboxProcessed 把已成功消费的事件标记为处理完成。
