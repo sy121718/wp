@@ -14,6 +14,7 @@ package i18n
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -36,11 +37,15 @@ func Revision() string {
 	if err = db.Table("sys_i18n_revision").Select("revision").Where("id = ?", 1).Scan(&rev).Error; err == nil && rev.Revision > 0 {
 		return fmt.Sprintf("i18n-rev-%d", rev.Revision)
 	}
-	var latest *time.Time
-	if err = db.Table("sys_i18n").Select("max(update_time) AS latest").Scan(&latest).Error; err != nil || latest == nil {
+	// 空表时 max(update_time) 是 NULL —— 必须用 sql.NullTime 承接：
+	// GORM 的 Scan 对 *time.Time 遇到 NULL 会报
+	// `unsupported Scan, storing driver.Value type <nil> into type *time.Time`，
+	// 于是「空表返回空串」这条兜底路径每查一次就刷一行错误日志（实测单次启动 1200+ 行）。
+	var latest sql.NullTime
+	if err = db.Table("sys_i18n").Select("max(update_time) AS latest").Scan(&latest).Error; err != nil || !latest.Valid {
 		return ""
 	}
-	return "i18n-max-" + latest.UTC().Format(time.RFC3339Nano)
+	return "i18n-max-" + latest.Time.UTC().Format(time.RFC3339Nano)
 }
 
 // ContentRevisionForProject 返回**指定工程视角**的内容译文资源版本号（DB-009 第五批）。
@@ -64,16 +69,16 @@ func ContentRevisionForProject(ctx context.Context, projectID string) string {
 	if err != nil || db == nil {
 		return ""
 	}
-	var latest *time.Time
+	var latest sql.NullTime
 	// 作用域用 pkg/rls 建立（事务内 set_config，事务结束自动还原）。
 	// 这里不额外写 project_id 条件：策略谓词本身就是「本工程行或全局行」，
 	// 取最大 update_time 的语义与 ContentRevision 一致 —— 差别只在「看得见哪些行」。
 	if err = rls.InProjectScope(ctx, db, projectID, func(tx *gorm.DB) error {
 		return tx.Table("sys_translation").Select("max(update_time) AS latest").Scan(&latest).Error
-	}); err != nil || latest == nil {
+	}); err != nil || !latest.Valid {
 		return ""
 	}
-	return "trans-max-" + latest.UTC().Format(time.RFC3339Nano)
+	return "trans-max-" + latest.Time.UTC().Format(time.RFC3339Nano)
 }
 
 // ContentRevision 返回内容译文资源版本号（多语言 P5b，docs/06-D §7.3/§9）。
@@ -89,9 +94,9 @@ func ContentRevision() string {
 	if err != nil || db == nil {
 		return ""
 	}
-	var latest *time.Time
-	if err = db.Table("sys_translation").Select("max(update_time) AS latest").Scan(&latest).Error; err != nil || latest == nil {
+	var latest sql.NullTime
+	if err = db.Table("sys_translation").Select("max(update_time) AS latest").Scan(&latest).Error; err != nil || !latest.Valid {
 		return ""
 	}
-	return "trans-max-" + latest.UTC().Format(time.RFC3339Nano)
+	return "trans-max-" + latest.Time.UTC().Format(time.RFC3339Nano)
 }
