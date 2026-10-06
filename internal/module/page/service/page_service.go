@@ -37,6 +37,10 @@ type Service struct {
 	model     *pagemodel.Model
 	project   projectcontract.ProjectService
 	artifacts artifactcontract.ArtifactService
+	// pageArtifacts 页面产物元数据的只读视图（artifact 契约的另一个窄接口）。
+	// 与 artifacts 是**同一个对象**的两种能力：ArtifactService 管记录/GC/状态，
+	// PageArtifactReader 管「按 id 反查 hash / 产物挂在哪张页面」这类 page 模块要的读。
+	pageArtifacts artifactcontract.PageArtifactReader
 	// buildQueue 构建队列端口（审计 DB-007）：超出单次上限的自动重建交给它。
 	// 未注入 = 没有队列，超出部分保持 stale 并记告警（既有行为）。
 	buildQueue pagecontract.BuildQueueEnqueuer
@@ -137,6 +141,13 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 		// 容量 1：同一时刻只留一个待处理信号，多次写入合并成一次收敛。
 		convergeWake: make(chan struct{}, 1),
 	}
+	// 页面产物只读视图从同一个 artifacts 实例派生：它们本来就是同一个对象的两种能力
+	// （ArtifactService ∋ 记录/GC/状态，PageArtifactReader ∋ 按 id 反查 hash / 产物挂在哪张
+	// 页面）。派生而不是再要一个构造参数，是为了不让二十多个建服务的地方各漏接一次 ——
+	// 漏接的表现是「构建期依赖归属校验失败」，而它与调用方要验的东西毫无关系。
+	if r, ok := artifacts.(artifactcontract.PageArtifactReader); ok {
+		s.pageArtifacts = r
+	}
 	// 依赖提供者：把文案词条资源版本号写进 Manifest.dependencies
 	// （DependencyKind=i18n，改文案触发重建，docs/06-D §10.4）。
 	s.publisher = pipeline.NewPublisher(store, publication, pipeline.WithDependencies(s.buildDependencies))
@@ -148,6 +159,14 @@ func NewService(model *pagemodel.Model, artifacts artifactcontract.ArtifactServi
 //
 // 未注入（或某套模板解析失败）时结构槽位回退块绑定：漏接的表现是「主题里配了
 // 页眉结构模板，站点上却还是旧块」—— 不会报错，故装配层按必需端口断言（见 assembly_publish.go）。
+// SetPageArtifacts 注入页面产物元数据只读视图（装配期调用一次，与 artifacts 同源）。
+//
+// 未注入时依赖归属校验与孤儿对账会以「契约缺失」显式失败，而不是退回直读 page_artifacts
+// —— 那张表属 artifact 模块，读它的列名等于把列名变成跨模块接口。
+func (s *Service) SetPageArtifacts(reader artifactcontract.PageArtifactReader) {
+	s.pageArtifacts = reader
+}
+
 func (s *Service) SetStructureTemplatePort(port pipeline.StructureTemplatePort) {
 	s.structureTemplates = port
 }

@@ -15,7 +15,7 @@ import (
 
 // SetExternalArtifactOwners 注入「其它模块认领的产物 hash」提供者（装配期调用一次）。
 //
-// 传 nil 表示没有其它产物来源：此时只按本模块的 page_artifacts 判定归属，
+// 传 nil 表示没有其它产物来源：此时只按本模块认领的产物（经 artifact 契约取）判定归属，
 // 别的模块的产物会被报成孤儿 —— 所以装配层应当把 presentation 的清单接进来。
 func (s *Service) SetExternalArtifactOwners(provider func(ctx context.Context) ([]string, error)) {
 	s.externalArtifactOwners = provider
@@ -28,7 +28,7 @@ func (s *Service) auditOrphanArtifacts(ctx context.Context) (orphans []pagedto.O
 	}
 	owners := []pipeline.OwnerProvider{
 		func(ctx context.Context) ([]string, error) {
-			return s.model.ListArtifactHashes(ctx)
+			return s.pageArtifactHashes(ctx)
 		},
 	}
 	if s.externalArtifactOwners != nil {

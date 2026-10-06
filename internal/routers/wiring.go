@@ -80,6 +80,7 @@ const (
 	portPluginAdminAuthz           = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire        = "project.SetLocaleRetirePort"
 	portPageExternalArtifactOwners = "page.SetExternalArtifactOwners"
+	portPageArtifactReader         = "page.SetPageArtifacts"
 	portPageBlueprints             = "page.SetBlueprints"
 	portPageBuildQueue             = "page.SetBuildQueue"
 	portPageProductDataSource      = "page.SetProductDataSource"
@@ -239,6 +240,8 @@ var wiringManifest = []wiringEntry{
 		"改了词条 / 译文后自动发布实例不跟进重建（商品页继续渲染旧字节，且**没有任何报错**）"},
 	{portPageExternalArtifactOwners, "presentation", "page", wiringRequiredPort,
 		"反向产物对账把自动发布实例的产物误报成孤儿（一份看不出真假的对账结果）"},
+	{portPageArtifactReader, "artifact", "page", wiringRequiredPort,
+		"依赖归属校验直接失败（构建被打回，而不是把依赖记到别的工程的产物上）；孤儿对账退化为只按本模块清单判定"},
 	{portPageBlueprints, "blueprint", "page", wiringRequiredPort,
 		"「从蓝图建页」静默建出空白页（要等编辑者打开画布才发现）"},
 	{portI18nValueLoader, "sysconfig", "pkg/i18n（全局默认值）", wiringRequiredPort,

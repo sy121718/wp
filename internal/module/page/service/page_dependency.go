@@ -15,6 +15,7 @@ package pageservice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -150,7 +151,12 @@ func (s *Service) persistDependencies(ctx context.Context, projectID, pageID, ar
 	if rerr != nil {
 		return
 	}
-	if err := s.model.ReplaceDependencies(ctx, projectID, artifactID, rows); err != nil {
+	if err := s.requireArtifactPage(ctx, pageID, artifactID); err != nil {
+		logger.Scene("dependency").With("page_id", pageID).With("artifact_id", artifactID).
+			Error(err, "依赖记录的产物归属校验失败（已降级，不影响构建结果）")
+		return
+	}
+	if err := s.model.ReplaceDependencies(ctx, projectID, pageID, artifactID, rows); err != nil {
 		logger.Scene("dependency").With("page_id", pageID).With("artifact_id", artifactID).
 			Error(err, "依赖记录写入失败（已降级，不影响构建结果）")
 	}
@@ -166,7 +172,49 @@ func (s *Service) persistDependenciesTx(ctx context.Context, tx *gorm.DB, projec
 	if rerr != nil {
 		return rerr
 	}
-	return s.model.ReplaceDependenciesTx(ctx, tx, projectID, artifactID, rows)
+	if err := s.requireArtifactPage(ctx, pageID, artifactID); err != nil {
+		return err
+	}
+	return s.model.ReplaceDependenciesTx(ctx, tx, projectID, pageID, artifactID, rows)
+}
+
+// requireArtifactPage 校验「产物行确实挂在这张页面上」。
+//
+// 这一步原来在 model 的 requireArtifactOwned 里，与「页面属于本工程」合成一条 SQL，
+// 于是同时读了 page_artifacts（artifact 模块的表）与 pages。现在两半分开：产物行 → 页面
+// 问 artifact 契约，页面 → 工程留在 model —— 每个模块只读自己的表。
+//
+// 两次读之间产物行理论上可能被删，但依赖表本来就只记 artifact_id，那只让该行指向一个
+// 不存在的产物（GC 与构建期都会发现），不会造成越权写；反过来把它并进调用方事务则需要
+// 契约接口接收外部 tx，而那会让「谁的表谁负责」重新糊掉。
+func (s *Service) requireArtifactPage(ctx context.Context, pageID, artifactID string) error {
+	if s.pageArtifacts == nil {
+		return errors.New("page: artifact 契约未注入，无法校验产物归属")
+	}
+	got, err := s.pageArtifacts.PageArtifactPageID(ctx, artifactID)
+	if err != nil {
+		return err
+	}
+	if got == "" || got != pageID {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// pageArtifactHashes 经契约取「认领中的产物 hash」清单（契约未注入时返回错误而非 panic）。
+func (s *Service) pageArtifactHashes(ctx context.Context) ([]string, error) {
+	if s.pageArtifacts == nil {
+		return nil, errors.New("page: artifact 契约未注入，孤儿对账退化为只按本模块清单判定")
+	}
+	return s.pageArtifacts.ListPageArtifactHashes(ctx)
+}
+
+// pageArtifactHashByID 经契约按产物行 id 取 hash（不存在时返回空串）。
+func (s *Service) pageArtifactHashByID(ctx context.Context, id string) (string, error) {
+	if s.pageArtifacts == nil {
+		return "", errors.New("page: artifact 契约未注入")
+	}
+	return s.pageArtifacts.PageArtifactHashByID(ctx, id)
 }
 
 // dependencyRows 把 Manifest 的依赖集合转成依赖行（去重 + 过滤空值）。

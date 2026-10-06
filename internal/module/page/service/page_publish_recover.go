@@ -331,7 +331,7 @@ func (s *Service) ensureUpdateURLArtifactRow(ctx context.Context, page *pagemode
 // 证据不足一律走回滚分支（只结案、不动数据库）——判定错会写出错误的活跃指针。
 func (s *Service) recoverSwitchActiveReceipt(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
 	actualHash := s.activeArtifactHashAt(item.Path)
-	expectedHash, herr := s.model.ArtifactHashByID(ctx, item.ToArtifactID)
+	expectedHash, herr := s.pageArtifactHashByID(ctx, item.ToArtifactID)
 	if herr != nil {
 		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
 		return false, nil
@@ -422,7 +422,7 @@ func (s *Service) recoverUpdateURLReceipt(ctx context.Context, item pubcontract.
 // recoverRollbackReceipt 补齐「回滚：FS 已切回历史产物、DB 没跟上」的回执。
 func (s *Service) recoverRollbackReceipt(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
 	actualHash := s.activeArtifactHashAt(item.Path)
-	expectedHash, herr := s.model.ArtifactHashByID(ctx, item.ToArtifactID)
+	expectedHash, herr := s.pageArtifactHashByID(ctx, item.ToArtifactID)
 	if herr != nil {
 		s.abortPublishReceipt(ctx, item.ID, "读取回执产物失败")
 		return false, nil

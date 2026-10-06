@@ -115,3 +115,18 @@ type ContentObjectGCResp struct {
 	FailedRate float64                   `json:"failedRate"`
 	Items      []OrphanContentObjectResp `json:"items"`
 }
+
+// PageArtifactMissRow 一个（页面 × 语言）最新产物的缺译计数。
+//
+// **两个量的量纲不同，不能相除**：Candidates 是去重后的可翻译字段数，
+// Misses 是渲染期取词未命中的**调用次数**（同一字段渲染多次就计多次），
+// 因此展示只给条数、不给百分比（misses > candidates 是正常的）。
+//
+// 不含 draft_path：那个列在 pages 表（调用方自己的表），本模块不替它读。
+type PageArtifactMissRow struct {
+	PageID     string
+	Lang       string
+	Version    int64
+	Misses     int64
+	Candidates int64
+}

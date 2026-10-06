@@ -25,6 +25,8 @@ import (
 	mediaservice "go_wp/internal/module/media/service"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
+	projectmodel "go_wp/internal/module/project/model"
+	projectservice "go_wp/internal/module/project/service"
 	"go_wp/pkg/rls"
 
 	"go_wp/public/test/support"
@@ -132,7 +134,7 @@ func TestReplaceMarksReferencingPageStale(t *testing.T) {
 	// 装配口径：page 实现 media 索要的端口，注入 media；presentation 那一类这里用
 	// 最小实现占位（本用例只验证 page 侧真实标记；缺任一类都会被 SetStaleMarkers 拦下）。
 	pageSvc := pageservice.NewService(pagemodel.NewPageModel(db),
-		nil, nil, nil, nil, nil, nil, nil, nil)
+		nil, nil, projectservice.NewService(projectmodel.NewProjectModel(db)), nil, nil, nil, nil, nil)
 	mediaSvc.SetStaleMarkers(pageSvc, stubStaleMarker{kind: mediacontract.RefKindPresentation})
 
 	if pageIsStale(t, db, referencingPage) {

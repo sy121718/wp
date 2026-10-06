@@ -17,6 +17,7 @@ import (
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
+	artifactcontract "go_wp/internal/module/artifact/contract"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockhttp "go_wp/internal/module/block/inbound/http"
 	blockmcp "go_wp/internal/module/block/inbound/mcp"
@@ -327,6 +328,22 @@ func (a *assembly) wirePublishingPorts() {
 	}
 	artifactOwnerSetter.SetExternalArtifactOwners(presentationSvc.ListArtifactHashes)
 	marks.mark(portPageExternalArtifactOwners)
+	// 页面产物元数据的只读视图（模块边界）：page 模块此前直接读 page_artifacts 表，
+	// 而那张表的 Entity 在 artifact 模块 —— 表名与列名因此成了跨模块接口，改一列不会有
+	// 编译错误、只会在 page 那边静默读到空值。这里把「按 id 反查 hash / 产物挂在哪张页面 /
+	// 属主 hash 清单」三项读经契约接过去。漏接的表现是显式失败（契约缺失），不是静默放行。
+	artifactReader, ok := a.artifactSvc.(artifactcontract.PageArtifactReader)
+	if !ok {
+		panic("产物模块未实现页面产物只读视图（PageArtifactReader）")
+	}
+	pageArtifactSetter, ok := pageService.(interface {
+		SetPageArtifacts(artifactcontract.PageArtifactReader)
+	})
+	if !ok {
+		panic("页面模块未提供页面产物只读视图注入点（SetPageArtifacts）")
+	}
+	pageArtifactSetter.SetPageArtifacts(artifactReader)
+	marks.mark(portPageArtifactReader)
 	// 蓝图契约接线（审计 VIS-010）：「从蓝图新建页面」此前只有能力没有调用方 ——
 	// routes.go 在这里长期挂着一行 _ = blueprintSvc，新建页面流程始终传的是空文档。
 	// 蓝图是「用完即弃」的初始化输入：NewPage 那一刻复制 AST 并重生成节点 ID，

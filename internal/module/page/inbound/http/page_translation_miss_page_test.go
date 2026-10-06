@@ -8,6 +8,7 @@ package pagehttp_test
 // （门禁 check-empty-state-table-head.sh 的判据在渲染层面的对应）。
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	artifactcontract "go_wp/internal/module/artifact/contract"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
@@ -27,7 +29,8 @@ import (
 // seedMissFixture 一个工程 + 一个页面 + 一条带 translationMisses 的产物行。
 //
 // project 端口一律传 nil（下面 NewService / NewPagesAdminHandle 两处）：本用例只走报告页
-// 渲染，该页读的是 page 自己的 model 与产物清单，不经 project 服务。跨模块构造真实
+// 渲染，该页读的是 page 自己的 model 与产物清单（产物那半经 artifact 契约，见下方
+// NewService 的第二个实参），不经 project 服务。跨模块构造真实
 // project/service 会被 architecture 门禁判违规（跨模块只允许 contract）；传 nil 一旦真被
 // 读到就是 panic，不会静默通过。
 func seedMissFixture(t *testing.T) (svc *pageservice.Service, projectID, projectEmpty string) {
@@ -54,7 +57,58 @@ func seedMissFixture(t *testing.T) (svc *pageservice.Service, projectID, project
 	// 没有缺失的语言（misses=0）不应出现。
 	insertMissArtifact(t, db, pageID, "ja", 1, `{"misses": 0, "candidates": 12, "policy": "fallback"}`)
 
-	return pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil), projectID, projectEmpty
+	svc = pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetPageArtifacts(stubPageArtifacts{db: db})
+	return svc, projectID, projectEmpty
+}
+
+// stubPageArtifacts 只实现 page 模块要的那个读：按页面取「每个 (page_id, lang) 最新产物」
+// 的缺译计数。
+//
+// 刻意手写而不引 artifact 模块的 model/service：架构门禁 TestNoCrossModuleServiceModelImport
+// 禁止 page 模块依赖别的模块的 model/service 包（只允许 contract）。而本用例要验的是
+// **报告页的渲染**（少一个模板分支、键名与 gin.H 对不上、colspan 数错，这三样都只在
+// 渲染期才炸）；artifact 侧真正的查询与排序由 artifact 模块自己的测试覆盖。
+type stubPageArtifacts struct{ db *gorm.DB }
+
+func (stubPageArtifacts) ListPageArtifactHashes(context.Context) ([]string, error) { return nil, nil }
+func (stubPageArtifacts) PageArtifactHashByID(context.Context, string) (string, error) {
+	return "", nil
+}
+func (stubPageArtifacts) PageArtifactPageID(context.Context, string) (string, error) { return "", nil }
+
+func (s stubPageArtifacts) TranslationMisses(ctx context.Context, pageIDs []string) (rows []artifactcontract.PageArtifactMissRow, err error) {
+	if len(pageIDs) == 0 {
+		return nil, nil
+	}
+	var raw []struct {
+		PageID     string `gorm:"column:page_id"`
+		Lang       string `gorm:"column:lang"`
+		Version    int64  `gorm:"column:version"`
+		Misses     int64  `gorm:"column:misses"`
+		Candidates int64  `gorm:"column:candidates"`
+	}
+	err = s.db.WithContext(ctx).Raw(
+		`SELECT DISTINCT ON (page_id, lang) page_id, lang, version,
+		        COALESCE((manifest->'translationMisses'->>'misses')::bigint, 0) AS misses,
+		        COALESCE((manifest->'translationMisses'->>'candidates')::bigint, 0) AS candidates
+		   FROM page_artifacts
+		  WHERE page_id = ANY(string_to_array(?, ',')::uuid[])
+		  ORDER BY page_id, lang, version DESC`,
+		strings.Join(pageIDs, ",")).Scan(&raw).Error
+	if err != nil {
+		return nil, err
+	}
+	rows = make([]artifactcontract.PageArtifactMissRow, 0, len(raw))
+	for i := range raw {
+		if raw[i].Misses > 0 {
+			rows = append(rows, artifactcontract.PageArtifactMissRow{
+				PageID: raw[i].PageID, Lang: raw[i].Lang, Version: raw[i].Version,
+				Misses: raw[i].Misses, Candidates: raw[i].Candidates,
+			})
+		}
+	}
+	return rows, nil
 }
 
 // insertMissArtifact 插一条带 translationMisses 的产物行（只给 NOT NULL 列 + manifest）。

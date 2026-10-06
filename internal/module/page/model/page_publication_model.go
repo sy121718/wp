@@ -12,7 +12,6 @@ package pagemodel
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -246,33 +245,6 @@ func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err e
 //
 // 供产物 GC 使用：这些产物一旦丢了文件，线上立即 404 或下次发布直接失败。
 // 三张表都属本模块，单条 SQL UNION 完成，不跨模块。
-// ListArtifactHashes 列出本模块认领的全部产物 hash（IDX-015 反向对账的属主清单）。
-//
-// 不过滤 payload_state：只要元数据行还在就说明「这个 hash 有名有姓」，删不删由 GC
-// 按引用与保留期决定 —— 对账只回答「有没有人认领」。
-func (m *Model) ListArtifactHashes(ctx context.Context) (hashes []string, err error) {
-	hashes = []string{}
-	err = m.db.WithContext(ctx).Raw(
-		"SELECT DISTINCT artifact_hash FROM page_artifacts WHERE artifact_hash <> ''",
-	).Scan(&hashes).Error
-	return hashes, err
-}
-
-// ArtifactHashByID 按产物行 id 取 hash（发布回执恢复用：回执只记 id，判定要拿 hash）。
-func (m *Model) ArtifactHashByID(ctx context.Context, id string) (hash string, err error) {
-	if strings.TrimSpace(id) == "" {
-		return "", nil
-	}
-	var row struct{ ArtifactHash string }
-	err = m.db.WithContext(ctx).Raw(
-		"SELECT artifact_hash FROM page_artifacts WHERE id = ?", id,
-	).Scan(&row).Error
-	if err != nil {
-		return "", err
-	}
-	return row.ArtifactHash, nil
-}
-
 func (m *Model) ListProtectedArtifactIDs(ctx context.Context) (ids []string, err error) {
 	ids = []string{}
 	err = m.db.WithContext(ctx).Raw(`

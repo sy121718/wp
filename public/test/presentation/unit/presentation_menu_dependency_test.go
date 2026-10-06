@@ -21,6 +21,8 @@ import (
 	navigationmodel "go_wp/internal/module/navigation/model"
 	navigationservice "go_wp/internal/module/navigation/service"
 	presentationdto "go_wp/internal/module/presentation/dto"
+	projectmodel "go_wp/internal/module/project/model"
+	projectservice "go_wp/internal/module/project/service"
 
 	"go_wp/internal/pipeline"
 )
@@ -37,7 +39,8 @@ func TestPresentationMenuDependencyAndStale(t *testing.T) {
 	ctx := context.Background()
 
 	// 导航服务：projects 传 nil（服务内回退 projects 表清单，只用于逐工程定位）。
-	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db), nil)
+	navSvc := navigationservice.NewService(navigationmodel.NewModel(f.db),
+		projectservice.NewService(projectmodel.NewProjectModel(f.db)))
 	if _, err := navSvc.Create(ctx, &navigationdto.CreateReq{
 		ProjectID: f.projectID, Title: "旧菜单", Path: "/old-menu", Kind: "header",
 	}); err != nil {

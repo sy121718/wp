@@ -17,6 +17,8 @@ type (
 
 	GCCandidateResp = artifactdto.GCCandidateResp
 
+	PageArtifactMissRow = artifactdto.PageArtifactMissRow
+
 	ContentObjectGCReq  = artifactdto.ContentObjectGCReq
 	ContentObjectGCResp = artifactdto.ContentObjectGCResp
 )
@@ -66,4 +68,31 @@ type ArtifactService interface {
 	// DryRun 默认 true，真删必须显式传 false；外部引用来源未接时按「没有外部引用」处理，
 	// 接上后查询失败即整轮放弃（宁可不回收也不误删）。
 	GarbageCollectContentObjects(ctx context.Context, req *artifactdto.ContentObjectGCReq) (res *artifactdto.ContentObjectGCResp, err error)
+}
+
+// PageArtifactReader 页面产物元数据的只读视图。
+//
+// `page_artifacts` 是**本模块的表**（Entity 在 artifact/model），但它的读者主要在 page
+// 模块：发布回执恢复要按 id 反查 hash、孤儿对账要属主 hash 清单、依赖表归属校验要先知道
+// 产物挂在哪张页面。让另一个模块拿着裸表名去查，等于把这张表的列名变成跨模块接口 ——
+// 改一列不会有编译错误，只会在那边静默读到空值。所以这些读全部收在这里。
+//
+// 它不是 ArtifactService 的一部分，单独成接口：`ArtifactService` 有二十多个测试替身，
+// 往里加方法会全部编译失败，而它们里没有一个碰页面产物元数据。
+type PageArtifactReader interface {
+	// ListPageArtifactHashes 列出全部认领中的产物 hash（IDX-015 反向对账的属主清单）。
+	ListPageArtifactHashes(ctx context.Context) (hashes []string, err error)
+	// PageArtifactHashByID 按产物行 id 取 hash（发布回执只记 id，判定要拿 hash）。
+	// 该 id 不存在时返回空串、不报错。
+	PageArtifactHashByID(ctx context.Context, id string) (hash string, err error)
+	// PageArtifactPageID 取产物行挂在哪张页面上。
+	// 本表没有 project_id 列，归属由调用方拿 page_id 回自己的 pages 表判断。
+	// 该 id 不存在时返回空串、不报错。
+	PageArtifactPageID(ctx context.Context, id string) (pageID string, err error)
+	// TranslationMisses 取给定页面「每个 (page_id, lang) 最新产物」的 manifest 缺译计数，
+	// 只含 misses > 0；pageIDs 为空返回空。
+	//
+	// 依据是**产物自己的 Manifest**（构建期写入）而不是实时重算：缺失是「这一份已产出的
+	// 字节里有多少取词没命中」，实时算会得出与线上字节不一致的第二份真相。
+	TranslationMisses(ctx context.Context, pageIDs []string) (rows []artifactdto.PageArtifactMissRow, err error)
 }

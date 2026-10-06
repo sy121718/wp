@@ -16,6 +16,8 @@ package pageservice
 
 import (
 	"context"
+	"errors"
+	"sort"
 	"strings"
 
 	pagedto "go_wp/internal/module/page/dto"
@@ -32,7 +34,23 @@ func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (
 	if pid == "" {
 		return nil, ErrInvalidParam
 	}
-	raw, err := s.model.ListTranslationMisses(ctx, pid)
+	// 两步取数：先用自己的 pages 表算出「本工程有哪些页面」，把 page_id 清单交给
+	// artifact 契约去问 page_artifacts（那张表属它）。合在一条 SQL 里时会 JOIN 到别人的表上，
+	// 而「哪些页面属于本工程」本来就是本模块最清楚的事。
+	titles, err := s.model.ListPageTitles(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(titles))
+	pathOf := make(map[string]string, len(titles))
+	for i := range titles {
+		ids = append(ids, titles[i].ID)
+		pathOf[titles[i].ID] = titles[i].DraftPath
+	}
+	if s.pageArtifacts == nil {
+		return nil, errors.New("page: artifact 契约未注入，无法读取产物缺译计数")
+	}
+	raw, err := s.pageArtifacts.TranslationMisses(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -47,10 +65,21 @@ func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (
 			continue
 		}
 		rows = append(rows, pagedto.TranslationMissRow{
-			PageID: r.PageID, DraftPath: r.DraftPath, Lang: r.Lang,
+			PageID: r.PageID, DraftPath: pathOf[r.PageID], Lang: r.Lang,
 			Misses: r.Misses, Candidates: r.Candidates,
 		})
 	}
+	// 排序口径与原 SQL 一致（misses 降序，再 draft_path / lang 升序）——契约只保证
+	// 「每页每语言一行」，顺序由调用方按展示需要定，那里才有 draft_path。
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Misses != rows[j].Misses {
+			return rows[i].Misses > rows[j].Misses
+		}
+		if rows[i].DraftPath != rows[j].DraftPath {
+			return rows[i].DraftPath < rows[j].DraftPath
+		}
+		return rows[i].Lang < rows[j].Lang
+	})
 	return rows, nil
 }
 
@@ -79,6 +108,7 @@ func (s *Service) excludedLangsOfProject(ctx context.Context, projectID string) 
 	return out, nil
 }
 
-// 编译期用途说明：本文件只用 model 的具名查询方法（ListTranslationMisses / ListAll），
+// 编译期用途说明：本文件只用 model 的具名查询方法（ListPageTitles / ListAll），
 // 不碰裸句柄 —— service 层的数据访问边界由 scripts/check-service-db-boundary.sh 守门。
-var _ = pagemodel.TranslationMissRow{}
+// 缺译计数本身经 artifact 契约取（page_artifacts 属 artifact 模块）。
+var _ = pagemodel.PageTitleRow{}

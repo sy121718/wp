@@ -321,6 +321,99 @@ func (m *Model) ListStalePageIDs(ctx context.Context, current string, artifactID
 	return ids, err
 }
 
+// ---- 页面产物元数据的跨模块只读视图（page 模块经契约读取） ----
+//
+// page_artifacts 的 Entity 在本模块，读者却多数在 page 模块（发布回执恢复、孤儿对账、
+// 依赖归属校验）。下面三个方法就是那些读者需要的全部 —— 表名与列名只在这里出现一次，
+// 换了列不会让另一个模块静默读到空值。
+
+// ListPageArtifactHashes 列出全部认领中的产物 hash（IDX-015 反向对账的属主清单）。
+//
+// 不过滤 payload_state：只要元数据行还在就说明「这个 hash 有名有姓」，删不删由 GC 按
+// 引用与保留期决定 —— 对账只回答「有没有人认领」。
+func (m *Model) ListPageArtifactHashes(ctx context.Context) (hashes []string, err error) {
+	hashes = []string{}
+	err = m.DB(ctx).Where("artifact_hash <> ''").Distinct().Order("artifact_hash").
+		Pluck("artifact_hash", &hashes).Error
+	return hashes, err
+}
+
+// PageArtifactHashByID 按产物行 id 取 hash（发布回执只记 id，判定要拿 hash）。
+//
+// 无此行时返回空串而非 ErrRecordNotFound：调用方要区分的是「回执里的 id 已不存在」
+// 与「查库失败」—— 前者是数据状态，后者是故障，混成一个错误就分不出来了。
+func (m *Model) PageArtifactHashByID(ctx context.Context, id string) (hash string, err error) {
+	if strings.TrimSpace(id) == "" {
+		return "", nil
+	}
+	var row struct {
+		ArtifactHash string `gorm:"column:artifact_hash"`
+	}
+	if err = m.DB(ctx).Select("artifact_hash").Where("id = ?", id).Scan(&row).Error; err != nil {
+		return "", err
+	}
+	return row.ArtifactHash, nil
+}
+
+// PageArtifactPageID 取产物行挂在哪张页面上。
+//
+// 本表**没有 project_id 列**，所以「这个产物属于哪个工程」必须再查一次 pages ——
+// 那一步由拥有 pages 的模块拿这个 page_id 自己做，跨表因此只发生一次、且发生在表主那里。
+func (m *Model) PageArtifactPageID(ctx context.Context, id string) (pageID string, err error) {
+	if strings.TrimSpace(id) == "" {
+		return "", nil
+	}
+	var row struct {
+		PageID string `gorm:"column:page_id"`
+	}
+	if err = m.DB(ctx).Select("page_id").Where("id = ?", id).Scan(&row).Error; err != nil {
+		return "", err
+	}
+	return row.PageID, nil
+}
+
+// pageArtifactMissRow 缺译计数的扫描行（每个 (page_id, lang) 一行）。
+type pageArtifactMissRow struct {
+	PageID     string `gorm:"column:page_id"`
+	Lang       string `gorm:"column:lang"`
+	Version    int64  `gorm:"column:version"`
+	Misses     int64  `gorm:"column:misses"`
+	Candidates int64  `gorm:"column:candidates"`
+}
+
+// TranslationMisses 取给定页面「每个 (page_id, lang) 最新产物」的 manifest 缺译计数。
+//
+// 原先这条查询写在 page 模块里，并且 JOIN 了它自己的 pages 表来按工程过滤 —— 一张 SQL
+// 横跨两个模块的表。现在工程过滤由调用方先用自己的表算出 page_id 清单，本方法只碰
+// page_artifacts。
+//
+// DISTINCT ON (page_id, lang) 是「同一语言有多份历史产物，只报最新那份」的唯一实现方式：
+// 全列出来会让同一语言在报告里出现多次，运营无法判断「现在到底缺多少」。它必须配
+// `ORDER BY page_id, lang, version DESC`（PG 要求 DISTINCT ON 的列是 ORDER BY 前缀），
+// 所以 misses > 0 的过滤只能放到 Go 侧做 —— 原 SQL 也是先挑最新、后过滤，语义不变。
+func (m *Model) TranslationMisses(ctx context.Context, pageIDs []string) (rows []pageArtifactMissRow, err error) {
+	if len(pageIDs) == 0 {
+		return nil, nil
+	}
+	err = m.DB(ctx).
+		Select("DISTINCT ON (page_id, lang) page_id, lang, version, "+
+			"COALESCE((manifest->'translationMisses'->>'misses')::bigint, 0) AS misses, "+
+			"COALESCE((manifest->'translationMisses'->>'candidates')::bigint, 0) AS candidates").
+		Where("page_id = ANY(string_to_array(?, ',')::uuid[])", strings.Join(pageIDs, ",")).
+		Order("page_id, lang, version DESC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	kept := make([]pageArtifactMissRow, 0, len(rows))
+	for i := range rows {
+		if rows[i].Misses > 0 {
+			kept = append(kept, rows[i])
+		}
+	}
+	return kept, nil
+}
+
 // ListByPage 按版本倒序读取页面的产物记录列表（跨语言，含每个语言的各版本行）。
 // 有意不按语言过滤：这是「本页产物全景」视图，语言维度由每行 Lang 自带；
 // 需要单语言切片时按 GetByPageVersion 或调用方自行过滤。

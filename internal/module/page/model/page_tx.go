@@ -218,11 +218,11 @@ func (m *Model) MarkStagedLangTx(ctx context.Context, tx *gorm.DB, projectID, pa
 }
 
 // ReplaceDependenciesTx 在外部事务内全量替换某产物的依赖记录（delete + insert）。
-func (m *Model) ReplaceDependenciesTx(ctx context.Context, tx *gorm.DB, projectID, artifactID string, rows []DependencyEntity) error {
+func (m *Model) ReplaceDependenciesTx(ctx context.Context, tx *gorm.DB, projectID, pageID, artifactID string, rows []DependencyEntity) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err
 	}
-	if err := m.requireArtifactOwned(ctx, tx, projectID, artifactID); err != nil {
+	if err := m.requirePageOwned(ctx, tx, projectID, pageID); err != nil {
 		return err
 	}
 	if derr := tx.WithContext(ctx).Where("artifact_id = ?", artifactID).Delete(&DependencyEntity{}).Error; derr != nil {

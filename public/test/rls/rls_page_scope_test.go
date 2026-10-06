@@ -277,7 +277,7 @@ func TestRLS_PageWritePathsRejectMissingScope(t *testing.T) {
 		&pagemodel.RevisionEntity{ID: uuid.NewString(), PageID: id, Version: 2}); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("SaveDraftWithRevision 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
-	if err := m.ReplaceDependencies(ctx, "", uuid.NewString(), nil); !errors.Is(err, pagemodel.ErrProjectRequired) {
+	if err := m.ReplaceDependencies(ctx, "", id, uuid.NewString(), nil); !errors.Is(err, pagemodel.ErrProjectRequired) {
 		t.Fatalf("ReplaceDependencies 缺工程应 ErrProjectRequired，实际 %v", err)
 	}
 	if _, err := m.CountDependenciesByKind(ctx, "", id, "direct_content"); !errors.Is(err, pagemodel.ErrProjectRequired) {
