@@ -1194,9 +1194,22 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    变更记录 / 库存流水 → 客户概览 / 客户群组 / 客户 RFM，最后一个使用点在客户 RFM 页
    （原先只有预设、没有自定义日期）接入时消失。不要重新引入第二种容器形态。 */
 .date-filter {
-    display: flex; flex-wrap: wrap; gap: var(--ui-sp-xs); align-items: center;
+    /* gap 取 6px 而不是全局的 --ui-sp-xs(8px)：这一条本身就是一个「字段」，
+       在 .filter-fields 里与其它字段并排时它是最宽的那个 —— 内部 6 个间隙各差 2px
+       就是 12px，正好是「最后一个字段被顶到第二行」与「一行放得下」的分界
+       （实测 1440 下 591+24+260+24+150 = 1049 而容器只有 1047）。 */
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
     margin-bottom: var(--ui-sp-xs);
 }
+/* 含时间筛选条的卡片必须放开 overflow。快捷区间下拉（.wbs-menu）是从触发器**向下展开**的
+   绝对定位层，而 .card 基座是 overflow: hidden（ui.css:430）—— 被裁之后用户只看得到
+   展开菜单的头两三项（实测销售概览页：「自定义 / 今日 / 昨日」之后就没了），
+   页面不报错、也没有任何测试会红。
+   写成 :has(.date-filter) 而不是给每个页面加类：这是**组件的自带要求**，
+   漏加一个页面的表现是「下拉被裁一截」，而漏加的页面只有点到那个下拉才看得出来 ——
+   靠人记住「包住组件时要加类」一定会漏。:has() 的特异性 (0,2,0) 也正好压过 .card (0,1,0)，
+   与加载顺序无关（同 .card.sales-card 的那条理由）。 */
+.card:has(.date-filter) { overflow: visible; }
 .date-filter-label {
     font-size: 13px; line-height: 1.6;
     color: var(--sky-c-text-secondary, #4b5563); white-space: nowrap;
@@ -1209,11 +1222,12 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    写成 .form-input.date-filter-date（两个类）而不是单类：基座类与它同为单类选择器，
    谁赢取决于两张样式表的加载顺序 —— 实测 ui.css 在后，单类的 width:auto 会被
    form-input 的 width:100% 盖掉（页面表现是日期框竖排，没有任何报错）。 */
-.form-input.date-filter-date { width: auto; min-width: 9.5rem; }
+/* 8.5rem（136px）刚够「2026/10/06」+ 日历图标；原先的 9.5rem 是留了余量的估计值。 */
+.form-input.date-filter-date { width: auto; min-width: 8.5rem; }
 /* 原生 select 上也要收回来：select.js 未加载或未接管时（无 JS、脚本出错、htmx 刚换进来
    的瞬间）它是直接可见的，基座的 width:100% 会把整行撑满。有 JS 时它被视觉隐藏，
    真正决定宽度的是下面那条 .wbs 规则。 */
-.form-select.date-filter-preset { width: auto; min-width: 8rem; }
+.form-select.date-filter-preset { width: auto; min-width: 7rem; }
 /* 下拉的宽度由包着它的那个容器决定：ui/select.js 会把原生 select 视觉隐藏、
    换成自绘的 .wbs 结构（div.wbs > button.wbs-trigger + 菜单），而 .wbs 的基座是
    width:100%（见 ui.css:15）。所以只收窄原生 select 是没用的 —— 实测几何量：
@@ -1221,7 +1235,7 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
    原生 select 的 computed width 看起来也「正常」。
    判据：量 .date-filter 各子元素的 top 是否互相重叠（同一行），不是比 top 是否相等
    —— 高度不同的元素在 align-items:center 下 top 本来就不同。 */
-.date-filter .wbs { flex: none; width: auto; min-width: 8rem; }
+.date-filter .wbs { flex: none; width: auto; min-width: 7rem; }
 /* KPI 卡可点击时保持卡片外观：<a> 默认的下划线与蓝字会把「统计卡」变成「链接」。 */
 .stat-card-link { display: block; text-decoration: none; color: inherit; }
 

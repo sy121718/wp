@@ -58,11 +58,21 @@
 .wbs-menu {
     position: absolute; z-index: 60; inset-inline: 0; margin: 4px 0 0; padding: 4px;
     list-style: none; max-height: 260px; overflow: auto;
+    /* 菜单宽度不能等于触发器宽度。inset-inline: 0 会把菜单拉到与触发器同宽，
+       而触发器为了不占满整行只给 min-width: 8rem（128px）—— 选项放不下就**换行**，
+       表现为「某一项被挤成两行」（英文 "Last 30 days" 必现，中文「最近 30 天」贴着边）。
+       min-width: max-content 让菜单至少容纳最长的那一项；上限按视口收口，
+       免得靠近右边缘时整块被推出屏幕。 */
+    min-width: max-content;
+    max-width: calc(100vw - 2rem);
     background: var(--sky-c-surface, #fff);
     border: 1px solid var(--sky-c-border, #e5e7eb);
     border-radius: 10px; box-shadow: 0 8px 24px rgba(16, 20, 26, .12);
 }
-.wbs-option { padding: 7px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+/* white-space: nowrap 与上面菜单的 min-width: max-content 是一对：光让菜单够宽还不够，
+   选项自身仍会在窄容器里折行（「最近 30 天」掉一个「天」到第二行）。两者缺任何一个，
+   症状都是「某一项被挤成两行」，而页面上不会有任何报错。 */
+.wbs-option { padding: 7px 10px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .wbs-option.is-active { background: var(--sky-c-primary-bg, #eceef1); }
 @media (hover: hover) {
     .wbs-option:not([aria-disabled="true"]):hover { background: var(--sky-c-primary-bg, #eceef1); }
