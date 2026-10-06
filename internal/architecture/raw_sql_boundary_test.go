@@ -51,6 +51,12 @@ var rawSQLAllowedList = []rawSQLEntry{
 		Reason: "PruneRevisions 的批量 DELETE 同时用到 ctid（物理行位置）、" +
 			"row_number() OVER (PARTITION BY …) 与 DELETE … LIMIT，GORM 三者都没有对应能力",
 	},
+	{
+		File: "internal/module/product/model/product_outbox_model.go",
+		Max:  1,
+		Reason: "NextOutboxRevisionTx 的 pg_advisory_xact_lock(hashtext(?))：" +
+			"无表、无 Entity 可映射的 PG 顾问锁函数调用，GORM 没有对应表达能力",
+	},
 }
 
 // rawSQLDebtList 待还的存量：登记「此刻的处数」，改完必须把条目删掉（处数与登记不符即失败）。
@@ -69,9 +75,6 @@ var rawSQLDebtList = []rawSQLEntry{
 	{File: "internal/module/presentation/model/presentation_mode_model.go", Max: 1},
 	{File: "internal/module/presentation/model/presentation_model.go", Max: 4},
 	{File: "internal/module/presentation/model/presentation_publication_model.go", Max: 1},
-	{File: "internal/module/product/model/product_category_model.go", Max: 2},
-	{File: "internal/module/product/model/product_outbox_model.go", Max: 3},
-	{File: "internal/module/product/model/product_tag_model.go", Max: 5},
 }
 
 // TestNoNewRawSQL 守住 internal/module 下的裸 SQL 只减不增。
