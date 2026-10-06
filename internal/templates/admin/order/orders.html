@@ -51,6 +51,10 @@
             {{if canCreate}}
             <a class="btn btn-primary" href="/admin/orders/new?project={{selectedProject}}">＋ {{ .["t"]("admin.orders.action.create", "代客建单") }}</a>
             {{end}}
+            {* 销售概览入口。放在「＋ 代客建单」**之后**：读数据是看，建单是改，
+               主行动永远靠右贴边（与页面上其它双动作页一致）。
+               带着当前工程过去 —— 否则概览页会落回第一个工程，而运营刚才看的是另一个站点。 *}
+            <a class="btn btn-ghost" href="/admin/orders/overview?project={{selectedProject}}">{{ .["t"]("admin.order.sales.title", "销售概览") }}</a>
         </div>
     </header>
 
