@@ -327,11 +327,25 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   `artifactcontract.PageArtifactReader`）。
   · `page_artifacts` **没有 `project_id` 列**，所以「产物属于哪个工程」必须经 `page_id` 再查 `pages` ——
   这一步拆成两次读：产物行 → 页面问 artifact 契约，页面 → 工程留在 page 模块（各自只读自己的表）。
-  · 例外：PG **系统表**查询（`partition/partition.go` 的 `pg_class` / `pg_inherits` 与 RLS 覆盖统计）
-  没有 Entity 可映射，保持裸 SQL。
+  · 例外：PG **系统表**查询没有 Entity 可映射，保持裸 SQL —— 在 `internal/module/` 之外的是
+  `internal/partition/partition.go`（`pg_class` / `pg_inherits` 与两处 RLS 覆盖统计），
+  在范围内的有 `internal/module/plugin/model/plugin_model.go`（`pg_namespace` + `pg_class`，
+  外加两处插件 schema 的 DDL）。
   · 门禁是 `internal/architecture/module_boundary_test.go` 的 `TestNoCrossModuleServiceModelImport`
   —— **它连 `internal/module/<X>/**` 下的 `_test.go` 一起查**：测试里要造跨模块的读时，写一个实现该
   contract 的 stub，不要去 import 对方的 model / service 包。
+
+- **裸 SQL 只减不增**：`internal/module/` 的生产代码不得出现 gorm 的 `Raw(` / `Exec(`
+  （`internal/architecture/raw_sql_boundary_test.go` 守门）。列名表名写成字符串就没有编译期保护，
+  `selectExpr` 那类参数守卫也只在链式路径上生效。
+  · 登记表两张：`rawSQLAllowedList`（设计上不该 GORM 化，如 PG 系统表与 schema DDL）、
+  `rawSQLDebtList`（待还存量，**登记的是此刻的处数**）。**两个方向都失败** —— 处数变多（新写裸 SQL）、
+  处数变少却没同步删条目。**改完一个文件就删掉它那一条**，别让登记表退化成注释。
+  · 判据只认 `CallExpr` 且排除接收者以 `.m` 结尾的调用：前者是为了不把 `r.Index.Raw`
+  这类「字段名恰好叫 Raw」的读法算进来，后者是为了不把 model 自己包装的
+  `func (m *Model) Exec(ctx, sql string) error`（service 侧写 `s.m.Exec(…)`）当成 gorm 调用。
+  · 存量清单（本次整改推进中，改完同步删条目）：admin/model 2、ai/model 6、analytics/model 3、
+  build/model 2、contenttemplate/model 1、mail/model 7、presentation/model 6、product/model 10。
 
 - **数据域（datarule）白名单由拥有该表的实体声明**：字段上写 `datarule:"label=…;ops=…"`，经
   `pkg/datarule.DomainFromEntity` 派生，装配入口注册（且在注册路由之前）。**没有 tag 的字段不在白名单里**
