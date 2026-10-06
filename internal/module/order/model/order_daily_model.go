@@ -93,7 +93,9 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 //
 // 对照：`orderDailySQL` 用 `::date`，返回 `date` 类型 —— 语义就是「某一天」，
 // 驱动给 UTC 零点，`.Format(LayoutDay)` 正确。判据：**返回 `timestamp` 的聚合列
-// 一定要贴回 UTC；`date` 不用**。
+// 一定要贴回 UTC；`date` 不用**。这条由 `TestDayAndHourBucketsReturnUTCWakeClock`
+// 钉住（两种粒度都断言读回来的桶键 UTC 挂钟 == 插入时刻的那个小时/那一天，
+// 去掉第二遍、或把 `::date` 顺手改成 `date_trunc`，该测试都会变红）。
 const orderHourlySQL = `SELECT (date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day,
        COUNT(*) AS order_count,
        COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count,

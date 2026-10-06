@@ -126,7 +126,9 @@ func (m *Model) CountByDay(ctx context.Context, projectID string, from, to time.
 //
 // `CountByDay` 没有这个问题：它 `::date` 返回的是 `date`，无时区但语义就是「某一天」，
 // 驱动给 UTC 零点，`.UTC()` 是恒等变换。判据可以记成一句：**聚合列返回 `date` 且
-// 只做 map 查找就没问题；返回 `timestamp` 一定要贴回 UTC**。
+// 只做 map 查找就没问题；返回 `timestamp` 一定要贴回 UTC**。这条由
+// `TestViewBucketsReturnUTCWakeClock` 钉住（两种粒度都断言桶键的 UTC 挂钟，
+// 并断言桶不越出查询窗口 —— 漂出去的那根柱子在图上会被当成新桶并进去）。
 //
 // **只走明细表，不读预聚合**：`page_views_daily` 的最小粒度就是天（rollup 每天跑一次），
 // 小时粒度在它里面没有对应的行。代价是扫描原始明细，所以调用方要自己限制区间
