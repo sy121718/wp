@@ -17,28 +17,30 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// orderDailySQL 区间内按天聚合。
+// orderBucketSelect 按桶聚合的三个列表达式（天/小时逐字共用）。
 //
-// **没有任何订单的那天不会出现**：这里只负责「有数据的那些天」，补齐空天由调用方做。
-// 在 SQL 里补零要 generate_series，而那会让「哪些天属于这个区间」这件事同时存在于
-// SQL 与 Go 两处 —— 时区与边界一改就分叉，且分叉表现为「图上少一天/多一天」，
-// 不会报错。
+// **把它抽成常量正是为了让「两个粒度只有 date_trunc 不同」变成编译期事实**：
+// 两份 SQL 各写一遍这三个列时，某次只改其中一份就会让「区间汇总 = 各桶之和」
+// 在其中一个粒度下失效，而失效的表现是图上柱子加起来对不上 KPI（不报错）。
+//
+// 拼串只发生在列表达式上（净额表达式含子查询，见 orderNetTotalSQLExpr 的说明）；
+// FROM / WHERE / GROUP BY / ORDER BY 与参数绑定全部归 GORM。
+//
+// 参数顺序（按 ? 在文本里出现的顺序）：paid_order_count 的状态名单、
+// orderNetTotalSQLExpr 内部的退货状态名单、net_sales 的 FILTER 状态名单。
+const orderBucketSelect = "COUNT(*) AS order_count, " +
+	"COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count, " +
+	"COALESCE(SUM(" + orderNetTotalSQLExpr + ") FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales"
+
+// orderDailyBucketSelect 天的桶键 + 三个聚合列。
 //
 // 日的口径是 **UTC**（date_trunc 前先 AT TIME ZONE 'UTC'）：全站的按天聚合都是 UTC 的 day 桶
 // （analytics 的按天统计就是），混用本地时区会让同一页面上两根柱子错开一个时区。
 //
-// 参数顺序（按 ? 在文本里出现的顺序）：paid_order_count 的状态名单、
-// orderNetTotalSQLExpr 内部的退货状态名单、net_sales 的 FILTER 状态名单、project_id、from、to。
-const orderDailySQL = `SELECT date_trunc('day', o.create_time AT TIME ZONE 'UTC')::date AS day,
-       COUNT(*) AS order_count,
-       COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count,
-       COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales
-  FROM orders o
- WHERE o.project_id = ?
-   AND o.create_time >= ?
-   AND o.create_time < ?
- GROUP BY 1
- ORDER BY 1`
+// 桶键的列名统一叫 `day`（小时粒度也叫 day，见 HourlyByRange 的说明）—— GORM 的
+// `Group` 不接受 `Group("1")`（会被转义成 `"1"` 而 PG 报 column "1" does not exist），
+// 所以必须按输出列名分组；两处同名才能共用同一个常量。
+const orderDailyBucketSelect = "date_trunc('day', o.create_time AT TIME ZONE 'UTC')::date AS day, " + orderBucketSelect
 
 // OrderDailyPoint 某一天的订单事实。
 //
@@ -66,11 +68,17 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 		return nil, ErrRangeRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(orderDailySQL,
-			strings.Join(paidStatuses, ","),
-			strings.Join(ReturnedStatuses, ","),
-			strings.Join(paidStatuses, ","),
-			projectID, from, to).Scan(&rows).Error
+		return tx.Table(OrderEntity{}.TableName()+" AS o").
+			Select(orderDailyBucketSelect,
+				strings.Join(paidStatuses, ","),
+				strings.Join(ReturnedStatuses, ","),
+				strings.Join(paidStatuses, ",")).
+			Where("o.project_id = ?", projectID).
+			Where("o.create_time >= ?", from).
+			Where("o.create_time < ?", to).
+			Group("day").
+			Order("day").
+			Scan(&rows).Error
 	})
 	return rows, err
 }
@@ -96,16 +104,7 @@ func (m *OrderModel) DailyByRange(ctx context.Context, projectID string, from, t
 // 一定要贴回 UTC；`date` 不用**。这条由 `TestDayAndHourBucketsReturnUTCWakeClock`
 // 钉住（两种粒度都断言读回来的桶键 UTC 挂钟 == 插入时刻的那个小时/那一天，
 // 去掉第二遍、或把 `::date` 顺手改成 `date_trunc`，该测试都会变红）。
-const orderHourlySQL = `SELECT (date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day,
-       COUNT(*) AS order_count,
-       COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count,
-       COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales
-  FROM orders o
- WHERE o.project_id = ?
-   AND o.create_time >= ?
-   AND o.create_time < ?
- GROUP BY 1
- ORDER BY 1`
+	const orderHourlyBucketSelect = "(date_trunc('hour', o.create_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS day, " + orderBucketSelect
 
 // HourlyByRange 取区间 [from, to) 内按小时聚合的订单数据。
 //
@@ -119,11 +118,17 @@ func (m *OrderModel) HourlyByRange(ctx context.Context, projectID string, from, 
 		return nil, ErrRangeRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(orderHourlySQL,
-			strings.Join(paidStatuses, ","),
-			strings.Join(ReturnedStatuses, ","),
-			strings.Join(paidStatuses, ","),
-			projectID, from, to).Scan(&rows).Error
+		return tx.Table(OrderEntity{}.TableName()+" AS o").
+			Select(orderHourlyBucketSelect,
+				strings.Join(paidStatuses, ","),
+				strings.Join(ReturnedStatuses, ","),
+				strings.Join(paidStatuses, ",")).
+			Where("o.project_id = ?", projectID).
+			Where("o.create_time >= ?", from).
+			Where("o.create_time < ?", to).
+			Group("day").
+			Order("day").
+			Scan(&rows).Error
 	})
 	return rows, err
 }

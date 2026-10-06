@@ -16,31 +16,28 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// orderRangeSummarySQL 区间订单摘要：一条 SQL 取回三个数。
+// orderRangeSummarySelect 区间订单摘要的三个聚合列。
 //
-// **为什么一条 SQL 而不是三条**：三个数回答的是「同一批订单」的三件事实，拆开之后
+// **为什么一条语句而不是三条**：三个数回答的是「同一批订单」的三件事实，拆开之后
 // 两条查询之间落的新单会让「10 单 / 500 元」这种自相矛盾的组合漏到页面上，
 // 而每一处单独看都对（与 SummaryByUser 收敛成一条的理由相同）。
 //
-// **时间窗是半开区间 [from, to)**：上界不含。日期参数天生是「哪一天」（含当天），
+// **为什么 SELECT 里还有一段拼串**：`orderNetTotalSQLExpr` 是一个**含子查询的口径表达式**
+//（`GREATEST(o.total - COALESCE((SELECT SUM(r.refund_amount) ...), 0), 0)`），
+// 它是本模块「净额」语义的唯一真源、被 KPI / 客户摘要 / 会员分档三处共用。
+// GORM 没有「把表达式当列」的链式写法（`Select("expr")` 也是传字符串），
+// 所以这里保留三处拼接：共享的净额表达式 + 两个 `FILTER (WHERE ...)` 名单。
+// **拼的只有列表达式，FROM / WHERE / 参数绑定全部归 GORM** —— 这条分界线是本轮整改的判据。
+//
+// 时间窗是半开区间 [from, to)：上界不含。日期参数天生是「哪一天」（含当天），
 // 而 timestamptz 带微秒 —— 用 `<= 当日 23:59:59` 会丢掉 23:59:59.5 的单，
 // 且写不出「含当天」这个语义。调用方把上界算成**次日零点**传进来（service 负责）。
-// 订单列表（order_model.go 的 listLocked）目前用 `<= CreatedTo`，因为它还没有时间筛选的
-// 调用者；给列表加时间筛选时必须与本条一起统一，否则概览 KPI 与列表条数会对不上。
-//
-// **金额取净额**（orderNetTotalSQLExpr，定义在 order_spent_model.go）：与客户页订单摘要、
-// 会员候选聚合共用同一个常量 —— 概览页的「销售额」、客户页的「累计消费」、会员分档的
-// 「消费额」在业务上是同一件事的三种视图，各写一份表达式就是三个数字静默分叉。
 //
 // 参数顺序（按 ? 在文本里出现的顺序）：paid_order_count 的状态名单、
-// orderNetTotalSQLExpr 内部的退货状态名单、net_sales 的 FILTER 状态名单、project_id、from、to。
-const orderRangeSummarySQL = `SELECT COUNT(*) AS order_count,
-       COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count,
-       COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales
-  FROM orders o
- WHERE o.project_id = ?
-   AND o.create_time >= ?
-   AND o.create_time < ?`
+// orderNetTotalSQLExpr 内部的退货状态名单、net_sales 的 FILTER 状态名单。
+const orderRangeSummarySelect = "COUNT(*) AS order_count, " +
+	"COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) AS paid_order_count, " +
+	"COALESCE(SUM(" + orderNetTotalSQLExpr + ") FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])), 0) AS net_sales"
 
 // OrderRangeSummaryRow 区间订单摘要的三个事实。
 //
@@ -73,12 +70,16 @@ func (m *OrderModel) SummaryByRange(ctx context.Context, projectID string, from,
 		return row, ErrRangeRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(orderRangeSummarySQL,
-			// 三个实参对应 SQL 文本里 ? 的出现顺序（见 orderRangeSummarySQL 的注释）。
-			strings.Join(paidStatuses, ","),
-			strings.Join(ReturnedStatuses, ","),
-			strings.Join(paidStatuses, ","),
-			projectID, from, to).Scan(&row).Error
+		return tx.Table(OrderEntity{}.TableName()+" AS o").
+			Select(orderRangeSummarySelect,
+				// 三个实参对应 orderRangeSummarySelect 里 ? 的出现顺序。
+				strings.Join(paidStatuses, ","),
+				strings.Join(ReturnedStatuses, ","),
+				strings.Join(paidStatuses, ",")).
+			Where("o.project_id = ?", projectID).
+			Where("o.create_time >= ?", from).
+			Where("o.create_time < ?", to).
+			Scan(&row).Error
 	})
 	return row, err
 }

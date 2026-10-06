@@ -48,16 +48,15 @@ const orderNetTotalSQLExpr = "GREATEST(o.total - COALESCE((SELECT SUM(r.refund_a
 	"FROM order_returns r WHERE r.order_id = o.id AND r.project_id = o.project_id " +
 	"AND r.status = ANY(string_to_array(?, ',')::text[])), 0), 0)"
 
-// spentTotalsSQL 消费额聚合：**净额口径**（订单金额 − 已经实际收货的退款额）。
+// spentTotalsSelect 消费额聚合的取数列（净额口径，见 orderNetTotalSQLExpr）。
 //
-// 参数顺序（按 ? 在文本里出现的顺序）：
-// 退货状态名单（orderNetTotalSQLExpr 里的那个）、project_id、计入消费的订单状态名单（paidStatuses）。
-const spentTotalsSQL = `SELECT o.user_id, COALESCE(SUM(` + orderNetTotalSQLExpr + `), 0) AS amount
-  FROM orders o
- WHERE o.project_id = ?
-   AND o.user_id IS NOT NULL
-   AND o.status = ANY(string_to_array(?, ',')::text[])
- GROUP BY o.user_id`
+// 拼串只发生在**列表达式**上：净额表达式含子查询，GORM 没有「把表达式当列」的链式写法，
+// 而它是本模块净额语义的唯一真源（KPI / 客户摘要 / 会员分档三处共用）。
+// FROM / WHERE / GROUP BY 与参数绑定全部归 GORM。
+//
+// 参数顺序（按 ? 在文本里出现的顺序）：退货状态名单（orderNetTotalSQLExpr 里的那个）、
+// 计入消费的订单状态名单（paidStatuses）。
+const spentTotalsSelect = "o.user_id, COALESCE(SUM(" + orderNetTotalSQLExpr + "), 0) AS amount"
 
 // SpentTotalsByProject 返回本工程「有可计入消费」的访客 → 累计消费额（**分**）。
 //
@@ -89,11 +88,16 @@ func (m *OrderModel) SpentTotalsByProject(ctx context.Context, projectID string)
 		Amount int64  `gorm:"column:amount"`
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(spentTotalsSQL,
-			strings.Join(ReturnedStatuses, ","),
-			projectID,
-			strings.Join(paidStatuses, ","),
-		).Scan(&rows).Error
+		return tx.Table(OrderEntity{}.TableName()+" AS o").
+			Select(spentTotalsSelect,
+				// 两个实参对应 spentTotalsSelect 里 ? 的出现顺序。
+				strings.Join(ReturnedStatuses, ","),
+				strings.Join(paidStatuses, ",")).
+			Where("o.project_id = ?", projectID).
+			Where("o.user_id IS NOT NULL").
+			Where("o.status = ANY(string_to_array(?, ',')::text[])", strings.Join(paidStatuses, ",")).
+			Group("o.user_id").
+			Scan(&rows).Error
 	})
 	if err != nil {
 		return nil, err

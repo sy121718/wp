@@ -423,33 +423,28 @@ type CustomerOrderSummaryRow struct {
 	LastOrderTime   *time.Time `gorm:"column:last_order_time"`
 }
 
-// customerOrderSummarySQL 客户订单摘要的单条查询（窗口函数，见 SummaryByUser 的说明）。
+// customerOrderSummarySelect 客户订单摘要的外层取数列（窗口函数，见 SummaryByUser 的说明）。
 //
 // total_amount 拼的是**订单净消费额表达式** orderNetTotalSQLExpr（定义在 order_spent_model.go）——
 // 与会员候选聚合 SpentTotalsByProject **同一个常量**，而不是同一套口径抄两遍：
 // 会员按净额分档、客户页按总额显示是两个数字静默分叉，而两边都不报错。
-// 改那个表达式会同时改变这里的参数顺序，见下。
+//
+// 拼串只发生在**列表达式**上（净额表达式与两个 `FILTER (WHERE ...)` 名单）；
+// 内层的 FROM / WHERE / ORDER BY / LIMIT 与参数绑定全部归 GORM（见 SummaryByUser 的构建）。
 //
 // 参数顺序（按 ? 在文本里出现的顺序）：paid_order_count 名单、
-// orderNetTotalSQLExpr 里的退货状态名单、total_amount 的 FILTER 名单、project_id、user_id。
-const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order_count,
-       COALESCE(w.paid_order_count, 0) AS paid_order_count,
-       COALESCE(w.total_amount, 0)     AS total_amount,
-       w.id          AS last_order_id,
-       w.order_no    AS last_order_no,
-       w.status      AS last_order_status,
-       w.create_time AS last_order_time
-  FROM (SELECT 1) AS anchor
-  LEFT JOIN (
-        SELECT o.id, o.order_no, o.status, o.create_time,
-               COUNT(*) OVER () AS order_count,
-               COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) OVER () AS paid_order_count,
-               COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) OVER (), 0) AS total_amount
-          FROM orders o
-         WHERE o.project_id = ? AND o.user_id = ?
-         ORDER BY o.id DESC
-         LIMIT 1
-  ) AS w ON TRUE`
+// orderNetTotalSQLExpr 里的退货状态名单、total_amount 的 FILTER 名单。
+const customerOrderSummarySelect = "COALESCE(w.order_count, 0) AS order_count, " +
+	"COALESCE(w.paid_order_count, 0) AS paid_order_count, " +
+	"COALESCE(w.total_amount, 0) AS total_amount, " +
+	"w.id AS last_order_id, w.order_no AS last_order_no, " +
+	"w.status AS last_order_status, w.create_time AS last_order_time"
+
+// customerOrderSummaryInnerSelect 内层窗口聚合的列表达式（同上，只有列是拼的）。
+const customerOrderSummaryInnerSelect = "o.id, o.order_no, o.status, o.create_time, " +
+	"COUNT(*) OVER () AS order_count, " +
+	"COUNT(*) FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) OVER () AS paid_order_count, " +
+	"COALESCE(SUM(" + orderNetTotalSQLExpr + ") FILTER (WHERE o.status = ANY(string_to_array(?, ',')::text[])) OVER (), 0) AS total_amount"
 
 // SummaryByUser 按「工程 + 客户」一次取回订单摘要（聚合三值 + 最近一单）。
 //
@@ -465,14 +460,25 @@ const customerOrderSummarySQL = `SELECT COALESCE(w.order_count, 0)      AS order
 // 「查不到这个客户」—— 而页面正是靠 HasOrders 分支的。
 func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID uint64) (row CustomerOrderSummaryRow, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(customerOrderSummarySQL,
-			// 五个实参对应 SQL 文本里五个 ? 的出现顺序（见 customerOrderSummarySQL 的注释）：
-			// paid_order_count 名单 → 净额表达式里的退货状态名单 → total_amount 的 FILTER 名单
-			// → project_id → user_id。
-			strings.Join(paidStatuses, ","),
-			strings.Join(ReturnedStatuses, ","),
-			strings.Join(paidStatuses, ","),
-			projectID, userID).
+		// 内层：只取「最近一单」那一行，外加三个 OVER () 窗口聚合（整个过滤结果集的
+		// 事实，与被取回的是哪一行无关）。
+		inner := tx.Table(OrderEntity{}.TableName() + " AS o").
+			Select(customerOrderSummaryInnerSelect,
+				// 三个实参对应 customerOrderSummaryInnerSelect 里 ? 的出现顺序。
+				strings.Join(paidStatuses, ","),
+				strings.Join(ReturnedStatuses, ","),
+				strings.Join(paidStatuses, ",")).
+			Where("o.project_id = ?", projectID).
+			Where("o.user_id = ?", userID).
+			Order("o.id DESC").
+			Limit(1)
+
+		// 外层 LEFT JOIN 到单行哨兵 (SELECT 1)：零订单的客户在窗口聚合下不产生任何行，
+		// 没有哨兵就分不清「一单没下」与「查不到这个客户」—— 而页面正是靠
+		// LastOrderID 是否为 nil 分支的。
+		return tx.Table("(SELECT 1) AS anchor").
+			Select(customerOrderSummarySelect).
+			Joins("LEFT JOIN (?) AS w ON TRUE", inner).
 			Scan(&row).Error
 	})
 	return row, err
