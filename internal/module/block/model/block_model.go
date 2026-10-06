@@ -195,13 +195,14 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"SELECT id::text AS id, name FROM blocks "+
-				"WHERE project_id = ? AND id::text <> ?::text "+
-				"AND jsonb_path_query_array(document, '$.**.blockId') @> jsonb_build_array(?::text) "+
-				"ORDER BY name ASC, id ASC",
-			projectID, blockID, blockID,
-		).Scan(&rows).Error
+		// JSONB 路径判定写成 GORM 的 Where 参数（表达式是条件，不是整条 SQL）。
+		return tx.Table(BlockEntity{}.TableName()).
+			Select("id::text AS id, name").
+			Where("project_id = ?", projectID).
+			Where("id::text <> ?::text", blockID).
+			Where("jsonb_path_query_array(document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+			Order("name ASC, id ASC").
+			Scan(&rows).Error
 	})
 	return rows, err
 }

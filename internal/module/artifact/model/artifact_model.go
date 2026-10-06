@@ -448,17 +448,6 @@ func (m *Model) ListStillOrphanHashes(ctx context.Context, hashes []string, befo
 	return list, nil
 }
 
-// deleteOrphanContentObjectsSQL 硬删除孤儿内容对象。
-//
-// 刻意写原生 DELETE 而不是走 GORM 的 Delete：ContentObjectEntity 有 DeletedAt 字段，
-// GORM 会把它当软删除列，Delete 会退化成 UPDATE deleted_at —— 那样"GC 之后仍能查到
-// 这些行"，标记清除也就白做了。这里要的是真删。
-const deleteOrphanContentObjectsSQL = `DELETE FROM content_objects
-	WHERE content_hash IN ?
-	  AND create_time < ?
-	  AND ` + orphanContentObjectFilter + `
-	RETURNING content_hash`
-
 // DeleteOrphanContentObjects 删除给定 hash 中**此刻仍是孤儿**的内容对象，
 // 返回真正删掉的 hash 列表（RETURNING）。
 //
@@ -466,23 +455,35 @@ const deleteOrphanContentObjectsSQL = `DELETE FROM content_objects
 // 内容对象，两者之间的窗口会让「先查后删」删掉刚被引用的行 —— 语句内 NOT EXISTS
 // 交给数据库做原子判定。返回集合而不是行数，是为了让调用方能逐条给出「删了 / 被认领了」
 // 的准确结论（只报行数时，差值既可能是并发认领也可能是别的意外）。
+// 下面这条 Delete 走的是 GORM 的**硬删除**，但这一点依赖一个容易被改掉的细节：
+// ContentObjectEntity.DeletedAt 声明为 `*time.Time`，而 GORM v2 只把 `gorm.DeletedAt`
+// 类型的字段当软删除标记 —— 类型是裸 `*time.Time` 时它不参与软删除判定，Delete 发出的
+// 就是真正的 `DELETE`。若哪天有人把它改成 `gorm.DeletedAt`（看起来更"规范"），
+// 这条语句会**静默退化成 UPDATE deleted_at**：GC 之后行还在、「标记清除」白做，
+// 而调用方仍然收到一份看起来正常的返回值。
+//
+// 这个假设由 TestDeleteOrphanContentObjectsReturnsDeletedHashes 兜底（它断言删除后
+// 表里剩下的行数），改成软删会立刻变红。
+//
+// 历史注记：此处原先是手写 `DELETE ... RETURNING` 的 Raw 常量，注释里写着「无论谁怎么改
+// 都得是硬删」；改成 GORM 链式后那条注释已不成立，故删除并在实体侧说明依赖。
 func (m *Model) DeleteOrphanContentObjects(ctx context.Context, hashes []string, before time.Time) (deleted []string, err error) {
 	if len(hashes) == 0 {
 		return nil, nil
 	}
-	rows, err := m.db.WithContext(ctx).Raw(deleteOrphanContentObjectsSQL, hashes, before, PayloadStateDeleted).Rows()
+	// 复用 orphanContentObjectScope（与「看候选」「数候选」同一条判定），
+	// RETURNING 走 clause.Returning —— 结果写回传给 Delete 的 slice。
+	var gone []ContentObjectEntity
+	err = m.orphanContentObjectScope(ctx, before, hashes).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "content_hash"}}}).
+		Delete(&gone).Error
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var h string
-		if serr := rows.Scan(&h); serr != nil {
-			return deleted, serr
-		}
-		deleted = append(deleted, h)
+	for i := range gone {
+		deleted = append(deleted, gone[i].ContentHash)
 	}
-	return deleted, rows.Err()
+	return deleted, nil
 }
 
 // MarkPayloadState 批量更新负载状态（gc_pending / deleted），返回受影响行数。

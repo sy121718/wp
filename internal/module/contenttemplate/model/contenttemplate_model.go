@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -377,19 +378,43 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 		return nil, ErrProjectRequired
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"SELECT t.id::text AS id, t.name, 0::bigint AS version, false AS from_version "+
-				"FROM content_templates t "+
-				"WHERE t.project_id = ? "+
-				"AND jsonb_path_query_array(t.draft_document, '$.**.blockId') @> jsonb_build_array(?::text) "+
-				"UNION ALL "+
-				"SELECT t.id::text, t.name, v.version, true "+
-				"FROM content_template_versions v JOIN content_templates t ON t.id = v.template_id "+
-				"WHERE t.project_id = ? "+
-				"AND jsonb_path_query_array(v.document, '$.**.blockId') @> jsonb_build_array(?::text) "+
-				"ORDER BY 2 ASC, 1 ASC, 3 ASC",
-			projectID, blockID, projectID, blockID,
-		).Scan(&rows).Error
+		// **GORM v2 没有 UNION 链式 API**（没有 Union / UnionAll 方法），所以这里
+		// 分两次查、在 Go 层合并排序，而不是退回 Raw 拼整条 SQL（UnionAll 写不出来，
+		// 而 `Table("(?) UNION ALL (?)", a, b)` 生成的是两个并列子查询、别名放不进去，
+		// 不是合法 SQL）。
+		//
+		// 代价是两条查询不在同一快照里：最坏情况是刚好在两次之间新建的引用漏判一次，
+		// 而删除动作本身还有引用复查与构建期兜底。这个场景下可接受 —— 换成单语句
+		// UNION 换不到实质的并发保证，却要拿回一条手写 SQL。
+		var draft []BlockDocRefRow
+		if err = tx.Table("content_templates AS t").
+			Select("t.id::text AS id, t.name, 0::bigint AS version, false AS from_version").
+			Where("t.project_id = ?", projectID).
+			Where("jsonb_path_query_array(t.draft_document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+			Scan(&draft).Error; err != nil {
+			return err
+		}
+		var hist []BlockDocRefRow
+		if err = tx.Table("content_template_versions AS v").
+			Select("t.id::text AS id, t.name, v.version AS version, true AS from_version").
+			Joins("JOIN content_templates AS t ON t.id = v.template_id").
+			Where("t.project_id = ?", projectID).
+			Where("jsonb_path_query_array(v.document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+			Scan(&hist).Error; err != nil {
+			return err
+		}
+		rows = append(draft, hist...)
+		// 原 SQL 的 `ORDER BY 2 ASC, 1 ASC, 3 ASC` = name, id, version。
+		sort.SliceStable(rows, func(i, j int) bool {
+			if rows[i].Name != rows[j].Name {
+				return rows[i].Name < rows[j].Name
+			}
+			if rows[i].ID != rows[j].ID {
+				return rows[i].ID < rows[j].ID
+			}
+			return rows[i].Version < rows[j].Version
+		})
+		return nil
 	})
 	return rows, err
 }

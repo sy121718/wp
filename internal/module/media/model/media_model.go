@@ -11,6 +11,7 @@ import (
 	"go_wp/pkg/database"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -156,16 +157,25 @@ func (m *AttachmentModel) GetByMD5AndType(ctx context.Context, md5 string, fileT
 // 返回错误现状，去重键与依赖重建判定双双失真，且没有自愈路径。
 // 单条 UPDATE 把这个窗口压到一次语句提交，并用 RETURNING 取回新代数。
 func (m *AttachmentModel) ReplaceContentMeta(ctx context.Context, id uint64, md5hex string, size int64, mimeType string, updatedAt time.Time) (int, error) {
-	var gen int
-	err := m.db.WithContext(ctx).Raw(
-		"UPDATE "+tableNameSysAttachment+
-			" SET generation = generation + 1, md5 = ?, file_size = ?, mime_type = ?, update_time = ?"+
-			" WHERE id = ? RETURNING generation",
-		md5hex, size, mimeType, updatedAt, id).Scan(&gen).Error
+	// 自增表达式 `generation + 1` 与 RETURNING 都走 GORM 子句：前者是列表达式
+	// （gorm.Expr 是 GORM 自己的转义出口，不是给整条 SQL 拼串），后者由
+	// clause.Returning 声明 —— 结果会写回被 Updates 的那个 model。
+	var updated AttachmentEntity
+	err := m.db.WithContext(ctx).
+		Model(&updated).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "generation"}}}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"generation":  gorm.Expr("generation + 1"),
+			"md5":         md5hex,
+			"file_size":   size,
+			"mime_type":   mimeType,
+			"update_time": updatedAt,
+		}).Error
 	if err != nil {
 		return 0, err
 	}
-	return gen, nil
+	return updated.Generation, nil
 }
 
 // HardDelete 物理删除附件记录（上传两阶段登记失败时的回滚动作；
