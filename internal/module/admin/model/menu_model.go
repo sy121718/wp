@@ -372,7 +372,7 @@ func (m *MenuModel) SoftDeleteWithPermissionCodes(ctx context.Context, ids []uin
 		if affected == 0 {
 			return nil
 		}
-		return tx.Exec("DELETE FROM "+tableNameSysMenuPermission+" WHERE menu_id IN ?", ids).Error
+		return tx.Table(tableNameSysMenuPermission).Where("menu_id IN ?", ids).Delete(nil).Error
 	})
 	return affected, err
 }
@@ -391,7 +391,7 @@ type menuPermissionRow struct {
 // replaceMenuPermissionCodes 全量替换一个菜单的权限码集合（DELETE + INSERT）。
 // 调用方保证在事务内 —— 它自己不开事务，因为「先删后插」中间态不可见是调用方的责任。
 func replaceMenuPermissionCodes(tx *gorm.DB, menuID uint64, codes []string) error {
-	if err := tx.Exec("DELETE FROM "+tableNameSysMenuPermission+" WHERE menu_id = ?", menuID).Error; err != nil {
+	if err := tx.Table(tableNameSysMenuPermission).Where("menu_id = ?", menuID).Delete(nil).Error; err != nil {
 		return err
 	}
 	if len(codes) == 0 {

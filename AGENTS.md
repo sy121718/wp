@@ -344,8 +344,8 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   · 判据只认 `CallExpr` 且排除接收者以 `.m` 结尾的调用：前者是为了不把 `r.Index.Raw`
   这类「字段名恰好叫 Raw」的读法算进来，后者是为了不把 model 自己包装的
   `func (m *Model) Exec(ctx, sql string) error`（service 侧写 `s.m.Exec(…)`）当成 gorm 调用。
-  · 存量清单（本次整改推进中，改完同步删条目）：admin/model 2、ai/model 6、analytics/model 3、
-  build/model 2、contenttemplate/model 1、mail/model 7、presentation/model 6。
+  · 存量清单（本次整改推进中，改完同步删条目）：ai/model 6、analytics/model 3、
+  build/model 2、mail/model 7、presentation/model 6。
 
 - **数据域（datarule）白名单由拥有该表的实体声明**：字段上写 `datarule:"label=…;ops=…"`，经
   `pkg/datarule.DomainFromEntity` 派生，装配入口注册（且在注册路由之前）。**没有 tag 的字段不在白名单里**

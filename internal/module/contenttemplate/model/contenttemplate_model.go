@@ -315,8 +315,9 @@ func (m *Model) DeleteWithHistory(ctx context.Context, projectID, id string) err
 	// content_templates 带 FORCE 策略：本工程作用域既约束模板行，也让同事务里两张
 	// 无 project_id 的从表操作走同一条连接。
 	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		// 表名是包内常量（无外部输入），id 参数化 —— 组件锁定表没有实体，用 Exec 直删。
-		if err := tx.Exec("DELETE FROM "+tableNameContentTemplatePins+" WHERE template_id = ?", id).Error; err != nil {
+		// 组件锁定表没有实体结构体（只用于删除与去重比对），Table + Where 已足够；
+		// GORM 的 Delete 需要显式目标，这里传 nil 表示「按 Table 指定的表删」。
+		if err := tx.Table(tableNameContentTemplatePins).Where("template_id = ?", id).Delete(nil).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("template_id = ?", id).Delete(&VersionEntity{}).Error; err != nil {

@@ -63,13 +63,11 @@ var rawSQLAllowedList = []rawSQLEntry{
 //
 // 这些不是「允许」，是**还没做**。整改顺序按模块推进；每改完一个文件就删掉它这一条。
 var rawSQLDebtList = []rawSQLEntry{
-	{File: "internal/module/admin/model/menu_model.go", Max: 2},
 	{File: "internal/module/ai/model/ai_call_log_model.go", Max: 2},
 	{File: "internal/module/ai/model/ai_session_model.go", Max: 2},
 	{File: "internal/module/ai/model/ai_tool_idempotency_model.go", Max: 2},
 	{File: "internal/module/analytics/model/analytics_rollup_model.go", Max: 3},
 	{File: "internal/module/build/model/build_model.go", Max: 2},
-	{File: "internal/module/contenttemplate/model/contenttemplate_model.go", Max: 1},
 	{File: "internal/module/mail/model/mail_account_model.go", Max: 2},
 	{File: "internal/module/mail/model/mail_marketing_model.go", Max: 5},
 	{File: "internal/module/presentation/model/presentation_mode_model.go", Max: 1},
