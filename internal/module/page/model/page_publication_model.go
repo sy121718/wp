@@ -227,13 +227,22 @@ func (m *Model) DeleteStagings(ctx context.Context, pageID string) (err error) {
 //
 // UNION 自带去重；两张表都没有 project_id（不在迁移 215 的清单里），无需工程作用域。
 func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err error) {
-	ids = []string{}
-	err = m.db.WithContext(ctx).Raw(`
-		SELECT artifact_id::text FROM page_publications WHERE artifact_id IS NOT NULL
-		UNION
-		SELECT artifact_id::text FROM page_stagings
-	`).Scan(&ids).Error
-	return ids, err
+	// 原来是单条 SQL 的 UNION。GORM 没有 UNION 链式 API（v1.31.1 实测：整个包
+	// 没有 union 相关代码），而 UNION 在这里只承担**去重** —— 所以拆成两次查询 +
+	// Go 侧合并去重，语义等价（id 集合，顺序无关）。
+	var pubs, stagings []artifactIDRow
+	if err = m.db.WithContext(ctx).Table(tableNamePagePublications).
+		Select("artifact_id::text AS id").
+		Where("artifact_id IS NOT NULL").
+		Find(&pubs).Error; err != nil {
+		return nil, err
+	}
+	if err = m.db.WithContext(ctx).Table(tableNamePageStagings).
+		Select("artifact_id::text AS id").
+		Find(&stagings).Error; err != nil {
+		return nil, err
+	}
+	return dedupeStrings(artifactIDsOf(pubs, stagings)), nil
 }
 
 // ListProtectedArtifactIDs 返回「当前仍被引用、绝不可回收」的产物行 ID 集合。
@@ -246,17 +255,62 @@ func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err e
 // 供产物 GC 使用：这些产物一旦丢了文件，线上立即 404 或下次发布直接失败。
 // 三张表都属本模块，单条 SQL UNION 完成，不跨模块。
 func (m *Model) ListProtectedArtifactIDs(ctx context.Context) (ids []string, err error) {
-	ids = []string{}
-	err = m.db.WithContext(ctx).Raw(`
-		SELECT active_artifact_id::text FROM pages
-		 WHERE deleted_at IS NULL AND active_artifact_id IS NOT NULL
-		UNION
-		SELECT staged_artifact_id::text FROM pages
-		 WHERE deleted_at IS NULL AND staged_artifact_id IS NOT NULL
-		UNION
-		SELECT artifact_id::text FROM page_publications WHERE artifact_id IS NOT NULL
-		UNION
-		SELECT artifact_id::text FROM page_stagings
-	`).Scan(&ids).Error
-	return ids, err
+	// 四条来源各查一次再合并去重（原为单条 SQL 的四个 UNION 段）。GORM 无 UNION API，
+	// 而这里 UNION 的作用只是去重。四张表都属本模块。
+	var active, staged, pubs, stagings []artifactIDRow
+	if err = m.db.WithContext(ctx).Model(&PageEntity{}).
+		Select("active_artifact_id::text AS id").
+		Where("deleted_at IS NULL AND active_artifact_id IS NOT NULL").
+		Find(&active).Error; err != nil {
+		return nil, err
+	}
+	if err = m.db.WithContext(ctx).Model(&PageEntity{}).
+		Select("staged_artifact_id::text AS id").
+		Where("deleted_at IS NULL AND staged_artifact_id IS NOT NULL").
+		Find(&staged).Error; err != nil {
+		return nil, err
+	}
+	if err = m.db.WithContext(ctx).Table(tableNamePagePublications).
+		Select("artifact_id::text AS id").
+		Where("artifact_id IS NOT NULL").
+		Find(&pubs).Error; err != nil {
+		return nil, err
+	}
+	if err = m.db.WithContext(ctx).Table(tableNamePageStagings).
+		Select("artifact_id::text AS id").
+		Find(&stagings).Error; err != nil {
+		return nil, err
+	}
+	return dedupeStrings(artifactIDsOf(active, staged, pubs, stagings)), nil
+}
+
+// artifactIDRow 只取一列 id 的临时行：多段查询合并去重时用（替代 UNION 的自带去重）。
+type artifactIDRow struct {
+	ID *string `gorm:"column:id"`
+}
+
+func artifactIDsOf(lists ...[]artifactIDRow) []string {
+	out := make([]string, 0)
+	for _, list := range lists {
+		for _, r := range list {
+			if r.ID != nil && *r.ID != "" {
+				out = append(out, *r.ID)
+			}
+		}
+	}
+	return out
+}
+
+// dedupeStrings 保序去重（UNION 的去重语义；顺序不保证，调用方只当集合用）。
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }

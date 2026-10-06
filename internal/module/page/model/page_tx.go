@@ -291,24 +291,7 @@ func (m *Model) MarkStaleByDependencyTx(ctx context.Context, tx *gorm.DB, projec
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return nil, err
 	}
-	err = tx.WithContext(ctx).Raw(
-		"WITH affected AS (\n"+
-			"\tSELECT DISTINCT d.page_id AS page_id\n"+
-			"\tFROM page_dependencies d\n"+
-			"\tJOIN pages p ON p.id = d.page_id\n"+
-			"\tWHERE d.dependency_kind = ?\n"+
-			"\t  AND d.dependency_key = ?\n"+
-			"\t  AND p.project_id = ?\n"+
-			"\t  AND p.deleted_at IS NULL\n"+
-			"\t  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM page_publications WHERE page_id = p.id UNION SELECT artifact_id FROM page_stagings WHERE page_id = p.id))\n"+
-			")\n"+
-			"UPDATE pages SET stale = true, update_time = ?\n"+
-			"WHERE project_id = ? AND deleted_at IS NULL AND id IN (SELECT page_id FROM affected)\n"+
-			"RETURNING id", kind, key, projectID, at, projectID).Scan(&ids).Error
-	if err != nil {
-		return nil, err
-	}
-	return ids, nil
+	return markStaleByDependencyIn(ctx, tx, projectID, kind, key, at)
 }
 
 // ClearPublicationLangTx 在外部事务内退役某页面某语言的发布状态（PIPE-7 定时下线用）。

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -111,25 +112,42 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 		// 影响面摘要不走这条语句：标题 / 路径的取数口径在 service 的 StaleImpactOfIDs
 		// （按返回的 ids 反查），让「标 stale」与「读摘要」各自保持单一职责 ——
 		// 在这里 JOIN 标题会把两条口径焊死在一条 SQL 里，改任何一个都得动另一个。
-		return tx.Raw(`
-			WITH affected AS (
-				SELECT DISTINCT d.page_id AS page_id
-				FROM page_dependencies d
-				JOIN pages p ON p.id = d.page_id
-				WHERE d.dependency_kind = ?
-				  AND d.dependency_key = ?
-				  AND p.project_id = ?
-				  AND p.deleted_at IS NULL
-				  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM page_publications WHERE page_id = p.id UNION SELECT artifact_id FROM page_stagings WHERE page_id = p.id))
-			)
-			UPDATE pages SET stale = true, update_time = ?
-			WHERE project_id = ? AND deleted_at IS NULL AND id IN (SELECT page_id FROM affected)
-			RETURNING id`, kind, key, projectID, at, projectID).Scan(&ids).Error
+		ids, err = markStaleByDependencyIn(ctx, tx, projectID, kind, key, at)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return ids, nil
+}
+
+// markStaleByDependencyIn 影响面标记的语句本体：MarkStaleByDependency（自带事务）与
+// MarkStaleByDependencyTx（在调用方事务内，见 page_tx.go）两条入口共用 —— 两处各写一遍
+// 时，改动漏一处会让「自带事务」与「透传事务」两条路径对同一批页面产生不同的标记结果，
+// 而两者在调用方眼里是同一个语义。
+//
+// 原为 `WITH affected AS (…) UPDATE … RETURNING id`。GORM 没有 CTE API（v1.31.1 实测：
+// clause.With 是空结构体，且在 gorm 内部零使用），而行内子查询是等价替代（affected 只被
+// 引用一次）；`IN (SELECT a … UNION SELECT b …)` 展开成两个 `IN` 用 OR 连接，
+// UNION 在 IN 里只承担去重，两处都不改变语义。
+func markStaleByDependencyIn(ctx context.Context, tx *gorm.DB, projectID, kind, key string, at time.Time) (ids []string, err error) {
+	affected := tx.WithContext(ctx).
+		Table(tableNamePageDependencies+" AS d").
+		Select("DISTINCT d.page_id").
+		Joins("JOIN "+tableNamePages+" p ON p.id = d.page_id").
+		Where("d.dependency_kind = ? AND d.dependency_key = ?", kind, key).
+		Where("p.project_id = ? AND p.deleted_at IS NULL", projectID).
+		Where("d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id)" +
+			" OR d.artifact_id IN (SELECT artifact_id FROM " + tableNamePagePublications + " WHERE page_id = p.id)" +
+			" OR d.artifact_id IN (SELECT artifact_id FROM " + tableNamePageStagings + " WHERE page_id = p.id)")
+	var rows []PageEntity
+	if err := tx.WithContext(ctx).Model(&rows).
+		Where("project_id = ? AND deleted_at IS NULL AND id IN (?)", projectID, affected).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+		Updates(map[string]any{"stale": true, "update_time": at}).Error; err != nil {
+		return nil, err
+	}
+	return pageIDsOf(rows), nil
 }
 
 // CountDependenciesByKind 统计某页面当前活跃产物声明的依赖条数（诊断/测试用）。
