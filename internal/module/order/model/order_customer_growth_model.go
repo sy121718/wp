@@ -25,33 +25,45 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// orderCustomerCTEs 区间客户口径的**唯一**定义（两个 CTE）。
+// orderCustomerScope 区间客户口径的**唯一**定义（两个子查询）。
 //
-// 抽成常量而不是让两个查询各写一份：客户概览页的「新客 12」与客户列表按「新客」筛出来的
+// 抽成一个函数而不是让两个查询各写一份：客户概览页的「新客 12」与客户列表按「新客」筛出来的
 // 条数必须相等（docs/17 §P7 的对账闸门）。各写一份 SQL 时，改一处滤条件（比如把
 // `>=` 改成 `>`）不会让另一处变红，只会让两个页面的数字悄悄差一个人 ——
 // 而差一个人是最难被发现的那种错。
 //
-// 参数顺序（按 ? 出现顺序）：ranged 的 project_id / from / to / 状态名单，
-// 再是 firsts 的 project_id / 状态名单。
-const orderCustomerCTEs = `WITH ranged AS (
-    SELECT o.user_id, COUNT(*) AS order_count
-      FROM orders o
-     WHERE o.project_id = ?
-       AND o.create_time >= ?
-       AND o.create_time < ?
-       AND o.status = ANY(string_to_array(?, ',')::text[])
-       AND o.user_id IS NOT NULL
-     GROUP BY o.user_id
-),
-firsts AS (
-    SELECT o.user_id, MIN(o.create_time) AS first_at
-      FROM orders o
-     WHERE o.project_id = ?
-       AND o.status = ANY(string_to_array(?, ',')::text[])
-       AND o.user_id IS NOT NULL
-     GROUP BY o.user_id
-)`
+// **为什么是子查询而不是 WITH**：本仓不准写裸 SQL，必须走 GORM 链式；
+// GORM 没有 CTE 的链式构造，而 `Table("(?) AS x", sub)` / `Joins("JOIN (?) AS y ON ...", sub)`
+// 展开成子查询在语义上与 CTE 等价（这两个都是被引用一次的非 VOLATILE 查询，
+// PG 12+ 对两者的处理相同）。差别只在文本形态，而口径由本函数一处给出。
+//
+// 两个子查询的分工：
+//   - ranged：区间内每个客户下了几单（只算计入消费的、排除 user_id 为空的游客单）；
+//   - firsts：每个客户的**首单时刻**（不限区间，扫该工程全部消费单）——
+//     「是不是新客」只有把历史一起看了才能回答。
+//
+// firsts 是全表范围内按客户分组，是本条里唯一可能贵的部分；它只需要
+// (project_id, user_id, create_time) 上的索引即可走 index-only scan。
+// 客户数到达十万级时应当改成按客户维度的预聚合表。
+func orderCustomerScope(tx *gorm.DB, projectID string, from, to time.Time) (ranged, firsts *gorm.DB) {
+	statuses := strings.Join(paidStatuses, ",")
+	orders := OrderEntity{}.TableName() + " AS o"
+	ranged = tx.Table(orders).
+		Select("o.user_id, COUNT(*) AS order_count").
+		Where("o.project_id = ?", projectID).
+		Where("o.create_time >= ?", from).
+		Where("o.create_time < ?", to).
+		Where("o.status = ANY(string_to_array(?, ',')::text[])", statuses).
+		Where("o.user_id IS NOT NULL").
+		Group("o.user_id")
+	firsts = tx.Table(orders).
+		Select("o.user_id, MIN(o.create_time) AS first_at").
+		Where("o.project_id = ?", projectID).
+		Where("o.status = ANY(string_to_array(?, ',')::text[])", statuses).
+		Where("o.user_id IS NOT NULL").
+		Group("o.user_id")
+	return ranged, firsts
+}
 
 // 三个分段条件（只有这三个，白名单常量拼进 SQL，不接受任何调用方字符串）。
 //
@@ -68,37 +80,25 @@ const (
 	customerSegmentWhereRepurchasing = "r.order_count >= 2"
 )
 
-// orderCustomerGrowthSQL 一条 SQL 取回区间内客户增长的五个数。
+// orderCustomerGrowthSQL 区间客户增长的五个列表达式（列表达式拼串，FROM/JOIN 归 GORM）。
 //
-// **为什么一条而不是五条**：五个数描述的是同一批订单（区间内下单的人），
+// **为什么五个数一条查询而不是五条**：它们描述的是同一批订单（区间内下单的人），
 // 拆开之后两条之间落的新单会让「下单客户 40 人 / 新客 12 人 / 回头客 30 人」
 // 这种自相矛盾的组合漏到页面上 —— 与区间订单摘要收敛成一条是同一个理由。
-//
-// **两个 CTE 的分工**：
-//   - ranged：区间内每个客户下了几单（只算计入消费的、排除 user_id 为空的游客单）；
-//   - firsts：每个客户的**首单时刻**（不限区间，扫该工程全部消费单）——
-//     「是不是新客」只有把历史一起看了才能回答。
-//
-// 第二个 CTE 是全表范围内按客户分组，是本条里唯一可能贵的部分；它只需要
-// (project_id, user_id, create_time) 上的索引即可走 index-only scan，
-// 不需要读订单其它列。客户数到达十万级时应当改成按客户维度的预聚合表。
 //
 // **复购率的分子分母都在这里出**：分子 = 新客里复购的 + 老客下单的（老客只要下单
 // 就算「回来的」，不必再复购一次），分母 = 区间内下单客户数。这个式子写在 service 里
 // 一处，页面与 AI 都不重算（两个消费方各算一次必然分叉）。
 //
-// 参数顺序（按 ? 出现顺序）：见 orderCustomerCTEs，随后三个 FILTER 的区间上界各一次。
-//
 // `customerRepurchaseWhere(0)` 在包初始化时求值（纯函数，回落默认门槛）：
 // 「什么算复购」因此与列表筛选共用同一个定义，而不是两处各写一个 2。
-var orderCustomerGrowthSQL = orderCustomerCTEs + `
-SELECT COUNT(*) AS ordering_customers,
-       COUNT(*) FILTER (WHERE f.first_at >= ?) AS new_customers,
-       COUNT(*) FILTER (WHERE f.first_at < ? AND ` + customerRepurchaseWhere(0) + `) AS new_repurchasers,
-       COUNT(*) FILTER (WHERE ` + customerRepurchaseWhere(0) + `) AS repurchasers,
-       COUNT(*) FILTER (WHERE f.first_at < ?) AS returning_customers
-  FROM ranged r
-  JOIN firsts f ON f.user_id = r.user_id`
+//
+// 参数顺序（按 ? 出现顺序）：三个 FILTER 的区间上界各一次。
+var orderCustomerGrowthSelect = "COUNT(*) AS ordering_customers, " +
+	"COUNT(*) FILTER (WHERE f.first_at >= ?) AS new_customers, " +
+	"COUNT(*) FILTER (WHERE f.first_at < ? AND " + customerRepurchaseWhere(0) + ") AS new_repurchasers, " +
+	"COUNT(*) FILTER (WHERE " + customerRepurchaseWhere(0) + ") AS repurchasers, " +
+	"COUNT(*) FILTER (WHERE f.first_at < ?) AS returning_customers"
 
 // OrderCustomerGrowthRow 区间内的客户增长事实。
 //
@@ -128,12 +128,12 @@ func (m *OrderModel) CustomerGrowthByRange(ctx context.Context, projectID string
 	if from.IsZero() || to.IsZero() {
 		return row, ErrRangeRequired
 	}
-	statuses := strings.Join(paidStatuses, ",")
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(orderCustomerGrowthSQL,
-			projectID, from, to, statuses,
-			projectID, statuses,
-			from, from, from).Scan(&row).Error
+		ranged, firsts := orderCustomerScope(tx, projectID, from, to)
+		return tx.Table("(?) AS r", ranged).
+			Joins("JOIN (?) AS f ON f.user_id = r.user_id", firsts).
+			Select(orderCustomerGrowthSelect, from, from, from).
+			Scan(&row).Error
 	})
 	return row, err
 }

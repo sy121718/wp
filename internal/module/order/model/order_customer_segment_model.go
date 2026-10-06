@@ -76,19 +76,12 @@ func customerSegmentWhere(segment CustomerSegment, minOrders int) (where string,
 	return "", false, false
 }
 
-// customerSegmentIDsSQL 分段内的 user_id + 过滤后的总数。
+// customerSegmentSelect 分段列表的取数列。
 //
 // 总数用 `COUNT(*) OVER ()` 而不是另跑一条 COUNT：分页窗口与总数必须来自**同一次**执行，
 // 否则两条之间落的新单会让「共 12 条」与「列出来的 11 条」同时为真，而用户只看到列表少了人。
 // 窗口函数在 LIMIT 之前求值，所以这个数是过滤后的全量，不受 limit 影响。
-//
-// ORDER BY r.user_id 是分页正确性的前提：没有稳定排序时 PostgreSQL 每次可以给出不同的
-// 前 N 行，翻页会漏人（而不报错）。
-const customerSegmentIDsSQL = orderCustomerCTEs + `
-SELECT r.user_id, COUNT(*) OVER () AS total
-  FROM ranged r
-  JOIN firsts f ON f.user_id = r.user_id
- WHERE `
+const customerSegmentSelect = "r.user_id, COUNT(*) OVER () AS total"
 
 // CustomerSegmentIDsByRange 取分段内的 user_id（按 user_id 升序分页）。
 //
@@ -108,23 +101,26 @@ func (m *OrderModel) CustomerSegmentIDsByRange(ctx context.Context, projectID st
 	if limit <= 0 {
 		return nil, 0, ErrRangeRequired
 	}
-	statuses := strings.Join(paidStatuses, ",")
-
-	// 参数顺序：CTE 的 6 个（见 orderCustomerCTEs）→ 分段条件的区间上界（若有）→ limit / offset。
-	args := []any{projectID, from, to, statuses, projectID, statuses}
-	if needsFrom {
-		args = append(args, from)
-	}
-	args = append(args, limit, offset)
-
 	type row struct {
 		UserID int64 `gorm:"column:user_id"`
 		Total  int64 `gorm:"column:total"`
 	}
 	var rows []row
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(customerSegmentIDsSQL+where+" ORDER BY r.user_id LIMIT ? OFFSET ?", args...).
-			Scan(&rows).Error
+		ranged, firsts := orderCustomerScope(tx, projectID, from, to)
+		q := tx.Table("(?) AS r", ranged).
+			Joins("JOIN (?) AS f ON f.user_id = r.user_id", firsts).
+			Select(customerSegmentSelect)
+		// 分段条件由白名单给出（customerSegmentWhere）；needsFrom 为真时它含一个 ?，
+		// 参数必须与条件一起传 —— 让调用方自己数参数个数迟早会数错（见该函数的说明）。
+		if needsFrom {
+			q = q.Where(where, from)
+		} else {
+			q = q.Where(where)
+		}
+		// ORDER BY r.user_id 是分页正确性的前提：没有稳定排序时 PostgreSQL 每次可以给出不同的
+		// 前 N 行，翻页会漏人（而不报错）。
+		return q.Order("r.user_id").Limit(limit).Offset(offset).Scan(&rows).Error
 	})
 	if err != nil {
 		return nil, 0, err

@@ -47,41 +47,52 @@ import (
 // ① ② F 的窗口起止 → ③ 净额表达式里的退货状态名单 → ④ ⑤ M 的窗口起止
 // → ⑥ project_id → ⑦ 订单状态名单。用 orderCustomerRfmArgs 统一构造，
 // 调用方不要手写这个切片：参数错位不报错，只是数字全错。
-const rfmScoredCTE = `WITH agg AS (
-    SELECT o.user_id,
-           MAX(o.create_time) AS last_at,
-           COUNT(*) FILTER (WHERE o.create_time >= ? AND o.create_time < ?) AS freq,
-           COALESCE(SUM(` + orderNetTotalSQLExpr + `) FILTER (WHERE o.create_time >= ? AND o.create_time < ?), 0) AS monetary
-      FROM orders o
-     WHERE o.project_id = ?
-       AND o.status = ANY(string_to_array(?, ',')::text[])
-       AND o.user_id IS NOT NULL
-     GROUP BY o.user_id
-),
-scored AS (
-    SELECT a.user_id, a.last_at, a.freq, a.monetary,
-           6 - NTILE(5) OVER (ORDER BY a.last_at DESC, a.user_id) AS r_score,
-           NTILE(5) OVER (ORDER BY a.freq ASC, a.user_id) AS f_score,
-           NTILE(5) OVER (ORDER BY a.monetary ASC, a.user_id) AS m_score
-      FROM agg a
-     WHERE a.freq > 0
-)`
+// orderRfmScored 客户 RFM 打分的两层子查询（agg → scored）。
+//
+// **为什么是子查询而不是 WITH**：本仓不准写裸 SQL，必须走 GORM 链式，而 GORM 没有
+// CTE 构造；`Table("(?) AS a", sub)` 展开成子查询在语义上与 CTE 等价（只被引用一次）。
+//
+// 第一层 agg 按客户聚合（R = 最近一次下单、F = 窗口内单数、M = 窗口内净额）；
+// 第二层 scored 用 NTILE(5) 把三列各自切成五分位 → 1..5 分。
+//
+// **打分是相对的（五分位）**，所以两次执行之间来了新客户会改变分档 —— 明细与总数
+// 因此必须来自同一次执行（见 rfmRowColumns 的说明）。
+//
+// `a.freq > 0` 把窗口内没有下单的人剔掉：F=0 的人不该出现在「客户价值」报表里
+//（他在这段时间没有价值贡献，而 NTILE 会照样给他一个分位）。
+//
+// 参数顺序（按 ? 出现顺序）：F 的窗口起止 → 净额表达式里的退货状态名单 → M 的窗口起止
+// → project_id → 订单状态名单。**参数错位不报错，只是数字全错**，所以这里用一条
+// Select 一次绑定完，不留手写的 []any 切片给调用方去数。
+func orderRfmScored(tx *gorm.DB, projectID string, from, to time.Time) *gorm.DB {
+	statuses := strings.Join(paidStatuses, ",")
+	agg := tx.Table(OrderEntity{}.TableName() + " AS o").
+		Select("o.user_id, MAX(o.create_time) AS last_at, "+
+			"COUNT(*) FILTER (WHERE o.create_time >= ? AND o.create_time < ?) AS freq, "+
+			"COALESCE(SUM("+orderNetTotalSQLExpr+") FILTER (WHERE o.create_time >= ? AND o.create_time < ?), 0) AS monetary",
+			from, to, strings.Join(ReturnedStatuses, ","), from, to).
+		Where("o.project_id = ?", projectID).
+		Where("o.status = ANY(string_to_array(?, ',')::text[])", statuses).
+		Where("o.user_id IS NOT NULL").
+		Group("o.user_id")
+	return tx.Table("(?) AS a", agg).
+		Select("a.user_id, a.last_at, a.freq, a.monetary, " +
+			"6 - NTILE(5) OVER (ORDER BY a.last_at DESC, a.user_id) AS r_score, " +
+			"NTILE(5) OVER (ORDER BY a.freq ASC, a.user_id) AS f_score, " +
+			"NTILE(5) OVER (ORDER BY a.monetary ASC, a.user_id) AS m_score").
+		Where("a.freq > 0")
+}
 
 // rfmSegmentExpr 总分 → 分段（与 CRM 的 classifySegment 同阈值）。
 const rfmSegmentExpr = `CASE WHEN (r_score + f_score + m_score) >= 12 THEN 'vip'
                              WHEN (r_score + f_score + m_score) >= 8 THEN 'potential'
                              ELSE 'low_value' END`
 
-// orderCustomerRfmArgs 按 rfmScoredCTE 的 ? 顺序构造参数（见该常量的参数顺序注释）。
-func orderCustomerRfmArgs(projectID string, from, to time.Time) []any {
-	return []any{
-		from, to, // ① F 的窗口
-		strings.Join(ReturnedStatuses, ","), // ③ 净额表达式里的退货状态
-		from, to,                            // ④ M 的窗口
-		projectID,                       // ⑥
-		strings.Join(paidStatuses, ","), // ⑦
-	}
-}
+// rfmSummarySelect 分段计数的列表达式（列表达式拼串，FROM 归 GORM）。
+const rfmSummarySelect = "COUNT(*) AS customers, " +
+	"COUNT(*) FILTER (WHERE segment = 'vip') AS vip, " +
+	"COUNT(*) FILTER (WHERE segment = 'potential') AS potential, " +
+	"COUNT(*) FILTER (WHERE segment = 'low_value') AS low_value"
 
 // RFM 分段名（与 CRM 的 classifySegment 同阈值口径）。
 const (
@@ -136,14 +147,12 @@ func (m *OrderModel) CustomerRfmSummary(ctx context.Context, projectID string, f
 	if from.IsZero() || to.IsZero() {
 		return row, ErrRangeRequired
 	}
-	sql := rfmScoredCTE + `
-SELECT COUNT(*) AS customers,
-       COUNT(*) FILTER (WHERE segment = 'vip') AS vip,
-       COUNT(*) FILTER (WHERE segment = 'potential') AS potential,
-       COUNT(*) FILTER (WHERE segment = 'low_value') AS low_value
-  FROM (SELECT ` + rfmRowColumns + ` FROM scored) s`
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(sql, orderCustomerRfmArgs(projectID, from, to)...).Scan(&row).Error
+		scored := orderRfmScored(tx, projectID, from, to)
+		inner := tx.Table("(?) AS scored", scored).Select(rfmRowColumns)
+		return tx.Table("(?) AS s", inner).
+			Select(rfmSummarySelect).
+			Scan(&row).Error
 	})
 	return row, err
 }
@@ -170,20 +179,6 @@ func (m *OrderModel) CustomerRfmList(ctx context.Context, projectID string, from
 	if limit <= 0 {
 		return nil, 0, ErrRangeRequired
 	}
-	sql := rfmScoredCTE + `
-SELECT` + rfmRowColumns + `, COUNT(*) OVER () AS total
-  FROM scored`
-	args := orderCustomerRfmArgs(projectID, from, to)
-	if segment != "" {
-		// 分段是**结果列**，不能在 WHERE 里直接引用（SQL 不允许）—— 包一层子查询。
-		sql = rfmScoredCTE + `
-SELECT *, COUNT(*) OVER () AS total
-  FROM (SELECT ` + rfmRowColumns + ` FROM scored) s
- WHERE segment = ?`
-		args = append(args, segment)
-	}
-	sql += ` ORDER BY total_score DESC, user_id LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
 
 	// 显式列全部字段（不用嵌入 struct）：GORM 对嵌入字段的列名推断依赖命名策略，
 	// 在这里多一层猜测没有收益，而猜错的后果是某一列永远是零值。
@@ -201,7 +196,15 @@ SELECT *, COUNT(*) OVER () AS total
 	}
 	var raw []listRow
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(sql, args...).Scan(&raw).Error
+		scored := orderRfmScored(tx, projectID, from, to)
+		inner := tx.Table("(?) AS scored", scored).Select(rfmRowColumns)
+		q := tx.Table("(?) AS s", inner).Select("*, COUNT(*) OVER () AS total")
+		if segment != "" {
+			// 分段是**结果列**，不能在 WHERE 里直接引用（SQL 不允许）—— 上面那层
+			// `Table("(?) AS s", inner)` 正是为此存在的包装子查询。
+			q = q.Where("s.segment = ?", segment)
+		}
+		return q.Order("s.total_score DESC, s.user_id").Limit(limit).Offset(offset).Scan(&raw).Error
 	})
 	if err != nil {
 		return nil, 0, err
@@ -242,19 +245,20 @@ func (m *OrderModel) CustomerRfmSegmentIDs(ctx context.Context, projectID string
 		return nil, 0, ErrRangeRequired
 	}
 	// 分段是**结果列**，不能在 WHERE 里直接引用（SQL 不允许）—— 包一层子查询（同 CustomerRfmList）。
-	const sql = rfmScoredCTE + `
-SELECT user_id, COUNT(*) OVER () AS total
-  FROM (SELECT ` + rfmRowColumns + ` FROM scored) s
- WHERE segment = ?
- ORDER BY total_score DESC, user_id LIMIT ? OFFSET ?`
 	type idRow struct {
 		UserID int64 `gorm:"column:user_id"`
 		Total  int64 `gorm:"column:total"`
 	}
 	var raw []idRow
-	args := append(orderCustomerRfmArgs(projectID, from, to), segment, limit, offset)
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(sql, args...).Scan(&raw).Error
+		scored := orderRfmScored(tx, projectID, from, to)
+		inner := tx.Table("(?) AS scored", scored).Select(rfmRowColumns)
+		return tx.Table("(?) AS s", inner).
+			Select("s.user_id, COUNT(*) OVER () AS total").
+			Where("s.segment = ?", segment).
+			Order("s.total_score DESC, s.user_id").
+			Limit(limit).Offset(offset).
+			Scan(&raw).Error
 	})
 	if err != nil {
 		return nil, 0, err
