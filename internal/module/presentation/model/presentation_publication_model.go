@@ -132,9 +132,22 @@ func (m *Model) FindInstanceByActivePath(ctx context.Context, projectID, path, e
 // 批次未收敛时滞后的旧指针重新变成误标来源。
 func (m *Model) ListCurrentArtifactIDs(ctx context.Context) (ids []string, err error) {
 	ids = []string{}
-	err = m.db.WithContext(ctx).Raw(
-		"SELECT artifact_id::text FROM presentation_publications WHERE artifact_id IS NOT NULL",
-	).Scan(&ids).Error
+	var rows []struct {
+		ArtifactID *string `gorm:"column:artifact_id"`
+	}
+	err = m.db.WithContext(ctx).Model(&PublicationEntity{}).
+		Select("artifact_id").
+		Where("artifact_id IS NOT NULL").
+		Distinct().
+		Scan(&rows).Error
+	if err != nil {
+		return ids, err
+	}
+	for _, r := range rows {
+		if r.ArtifactID != nil {
+			ids = append(ids, *r.ArtifactID)
+		}
+	}
 	return ids, err
 }
 

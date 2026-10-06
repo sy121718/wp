@@ -76,9 +76,6 @@ var rawSQLDebtList = []rawSQLEntry{
 	{File: "internal/module/ai/model/ai_tool_idempotency_model.go", Max: 2},
 	{File: "internal/module/mail/model/mail_account_model.go", Max: 2},
 	{File: "internal/module/mail/model/mail_marketing_model.go", Max: 5},
-	{File: "internal/module/presentation/model/presentation_mode_model.go", Max: 1},
-	{File: "internal/module/presentation/model/presentation_model.go", Max: 4},
-	{File: "internal/module/presentation/model/presentation_publication_model.go", Max: 1},
 }
 
 // TestNoNewRawSQL 守住 internal/module 下的裸 SQL 只减不增。

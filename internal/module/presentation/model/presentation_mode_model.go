@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -109,24 +110,22 @@ func (m *Model) MarkStaleTemplateModeByDependency(ctx context.Context, projectID
 	if kind == "" || key == "" {
 		return nil, nil
 	}
+	var rows []InstanceEntity
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(`
-		WITH affected AS (
-			SELECT DISTINCT d.presentation_id AS presentation_id
-			FROM presentation_dependencies d
-			JOIN presentation_instances p ON p.id = d.presentation_id
-			WHERE d.dependency_kind = ?
-			  AND d.dependency_key = ?
-			  AND p.deleted_at IS NULL
-			  AND (COALESCE(p.render_mode, 'template') = 'template' OR d.dependency_key <> 'content_template:' || p.template_id::text)
-			  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM presentation_publications WHERE presentation_id = p.id))
-		)
-		UPDATE presentation_instances SET stale = true, update_time = ?
-		WHERE deleted_at IS NULL AND project_id = ? AND id IN (SELECT presentation_id FROM affected)
-		RETURNING id`, kind, key, at, projectID).Scan(&ids).Error
+		affected := presentationDepScope(tx, kind, key).
+			Where("(COALESCE(p.render_mode, 'template') = 'template' OR d.dependency_key <> 'content_template:' || p.template_id::text)").
+			Where("(d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM " + tableNamePresentationPublications + " WHERE presentation_id = p.id))")
+		return tx.Model(&rows).
+			Where("deleted_at IS NULL AND project_id = ?", projectID).
+			Where("id IN (?)", affected).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+			Updates(map[string]any{"stale": true, "update_time": at}).Error
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, r := range rows {
+		ids = append(ids, r.ID)
 	}
 	return ids, nil
 }

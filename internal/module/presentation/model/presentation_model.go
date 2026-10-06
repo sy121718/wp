@@ -15,10 +15,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -313,16 +315,22 @@ func (m *Model) MarkStaleByIDs(ctx context.Context, projectID string, ids []stri
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	var rows []InstanceEntity
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(
-			"UPDATE presentation_instances SET stale = true, update_time = ? "+
-				"WHERE project_id = ? AND deleted_at IS NULL "+
-				"AND id = ANY(string_to_array(?, ',')::uuid[]) RETURNING id",
-			at, projectID, strings.Join(ids, ","),
-		).Scan(&marked).Error
+		// 多行 RETURNING 的唯一可用形态：Model 的目标是**切片**，GORM 把 RETURNING 结果扫进去。
+		// （Updates 之后再 .Scan(&marked) 会另发一条 SELECT —— 实测报
+		// `Scan error on column index 0, name "id": destination not a pointer`，而语句文本是
+		// `SELECT * FROM "presentation_instances" ...`：UPDATE 的结果根本没被读。）
+		return tx.Model(&rows).
+			Where("project_id = ? AND deleted_at IS NULL AND id IN ?", projectID, ids).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+			Updates(map[string]any{"stale": true, "update_time": at}).Error
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, r := range rows {
+		marked = append(marked, r.ID)
 	}
 	return marked, nil
 }
@@ -476,9 +484,10 @@ func (m *Model) NextArtifactVersion(ctx context.Context, instanceID string) (v i
 // 不过滤状态：元数据行在即视为有人认领，能否回收由 GC 决定。
 func (m *Model) ListArtifactHashes(ctx context.Context) (hashes []string, err error) {
 	hashes = []string{}
-	err = m.db.WithContext(ctx).Raw(
-		"SELECT DISTINCT artifact_hash FROM presentation_artifacts WHERE artifact_hash <> ''",
-	).Scan(&hashes).Error
+	err = m.db.WithContext(ctx).Model(&ArtifactEntity{}).
+		Where("artifact_hash <> ''").
+		Distinct().
+		Pluck("artifact_hash", &hashes).Error
 	return hashes, err
 }
 
@@ -714,6 +723,21 @@ func (m *Model) ListDependencies(ctx context.Context, artifactID string) (list [
 	return list, err
 }
 
+// presentationDepScope 依赖表里命中 (kind,key) 且实例未删除的实例 id 集合（去重）。
+//
+// 原实现是一条 `WITH affected AS (…) UPDATE … WHERE id IN (SELECT … FROM affected)`：
+// GORM 无 CTE API，改成行内子查询 —— 两段各自只承担「筛出实例 id」这一件事，
+// 外层 UPDATE 的原子性不受影响。
+//
+// 两个调用方的差异只有一个条件：模板模式的标记要额外排除「文档模式下的正文模板」
+// （detail 页脱离自身模板后，改正文模板不该再标它），所以那个条件由调用方追加。
+func presentationDepScope(tx *gorm.DB, kind, key string) *gorm.DB {
+	return tx.Table(tableNamePresentationDependencies+" AS d").
+		Select("DISTINCT d.presentation_id").
+		Joins("JOIN "+tableNamePresentationInstances+" p ON p.id = d.presentation_id").
+		Where("d.dependency_kind = ? AND d.dependency_key = ? AND p.deleted_at IS NULL", kind, key)
+}
+
 // MarkStaleByDependency 按依赖源 (kind,key) 精确标记受影响实例待重建，
 // 返回受影响的实例 ID（去重、升序）。
 //
@@ -726,23 +750,21 @@ func (m *Model) MarkStaleByDependency(ctx context.Context, projectID, kind, key 
 	if kind == "" || key == "" {
 		return nil, nil
 	}
+	var rows []InstanceEntity
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(`
-		WITH affected AS (
-			SELECT DISTINCT d.presentation_id AS presentation_id
-			FROM presentation_dependencies d
-			JOIN presentation_instances p ON p.id = d.presentation_id
-			WHERE d.dependency_kind = ?
-			  AND d.dependency_key = ?
-			  AND p.deleted_at IS NULL
-			  AND (d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM presentation_publications WHERE presentation_id = p.id))
-		)
-		UPDATE presentation_instances SET stale = true, update_time = ?
-		WHERE deleted_at IS NULL AND project_id = ? AND id IN (SELECT presentation_id FROM affected)
-		RETURNING id`, kind, key, at, projectID).Scan(&ids).Error
+		affected := presentationDepScope(tx, kind, key).
+			Where("(d.artifact_id IN (p.active_artifact_id, p.staged_artifact_id) OR d.artifact_id IN (SELECT artifact_id FROM " + tableNamePresentationPublications + " WHERE presentation_id = p.id))")
+		return tx.Model(&rows).
+			Where("deleted_at IS NULL AND project_id = ?", projectID).
+			Where("id IN (?)", affected).
+			Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+			Updates(map[string]any{"stale": true, "update_time": at}).Error
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, r := range rows {
+		ids = append(ids, r.ID)
 	}
 	return ids, nil
 }
@@ -771,20 +793,37 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 		return nil, errors.New("project id is required")
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw(`
-			SELECT i.id::text AS instance_id, i.url_path, i.entity_type, i.entity_id, false AS from_snapshot
-			FROM presentation_instances i
-			WHERE i.project_id = ? AND i.deleted_at IS NULL
-			  AND jsonb_path_query_array(i.override_document, '$.**.blockId') @> jsonb_build_array(?::text)
-			UNION ALL
-			SELECT i.id::text, i.url_path, i.entity_type, i.entity_id, true
-			FROM presentation_instances i
-			JOIN document_snapshots s ON s.presentation_instance_id = i.id
-			WHERE i.project_id = ? AND i.deleted_at IS NULL
-			  AND jsonb_path_query_array(s.document, '$.**.blockId') @> jsonb_build_array(?::text)
-			ORDER BY 2 ASC, 1 ASC, 5 ASC`,
-			projectID, blockID, projectID, blockID,
-		).Scan(&rows).Error
+		// 两段各自查询、Go 侧 UNION ALL 合并：GORM v1.31.1 无 UNION API，而 UNION ALL
+		// 在这两段之间**不去重**（同一实例既可能命中覆盖文档、也可能命中快照，两行都该返回）。
+		var fromOverride []BlockDocRefRow
+		if qerr := tx.Model(&InstanceEntity{}).
+			Select("id::text AS instance_id, url_path, entity_type, entity_id, false AS from_snapshot").
+			Where("project_id = ? AND deleted_at IS NULL", projectID).
+			Where("jsonb_path_query_array(override_document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+			Scan(&fromOverride).Error; qerr != nil {
+			return qerr
+		}
+		var fromSnapshot []BlockDocRefRow
+		if qerr := tx.Table(tableNameDocumentSnapshots+" AS s").
+			Select("i.id::text AS instance_id, i.url_path, i.entity_type, i.entity_id, true AS from_snapshot").
+			Joins("JOIN "+tableNamePresentationInstances+" i ON i.id = s.presentation_instance_id").
+			Where("i.project_id = ? AND i.deleted_at IS NULL", projectID).
+			Where("jsonb_path_query_array(s.document, '$.**.blockId') @> jsonb_build_array(?::text)", blockID).
+			Scan(&fromSnapshot).Error; qerr != nil {
+			return qerr
+		}
+		rows = append(fromOverride, fromSnapshot...)
+		// 原 SQL 的 ORDER BY 2 ASC, 1 ASC, 5 ASC → url_path, instance_id, from_snapshot（false 在前）。
+		sort.SliceStable(rows, func(i, j int) bool {
+			if rows[i].URLPath != rows[j].URLPath {
+				return rows[i].URLPath < rows[j].URLPath
+			}
+			if rows[i].InstanceID != rows[j].InstanceID {
+				return rows[i].InstanceID < rows[j].InstanceID
+			}
+			return !rows[i].FromSnapshot && rows[j].FromSnapshot
+		})
+		return nil
 	})
 	return rows, err
 }
