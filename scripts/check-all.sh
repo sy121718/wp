@@ -45,6 +45,7 @@ PLAIN_SCRIPTS=(
   check-static-scans.sh
   check-go-vet.sh
   check-page-title.sh
+  check-help-popover.py
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。

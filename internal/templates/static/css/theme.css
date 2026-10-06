@@ -1070,6 +1070,13 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     gap: var(--ui-sp-md);
 }
 .stat-card { padding: var(--ui-sp-md) var(--ui-sp-lg); }
+/* KPI 卡的口径说明走 .help-pop 浮层，而 .card 基座带 overflow: hidden（ui.css）——
+   不放开会把从标签往下展开的浮层裁掉一截。必须用双类：单类 `.stat-card` 与 `.card`
+   同层 (0,1,0)，胜负落到「ui.css 在 theme.css 之后加载」这个与规则无关的事实上，
+   一重排就静默失效（同 .card.sales-card，见 internal/templates/CLAUDE.md §改 UI 硬要求）。 */
+.card.stat-card { overflow: visible; }
+/* 标签 + ? 按钮同排：说明按钮跟着标题走，不单独占一格。 */
+.card.stat-card .stat-label { display: flex; align-items: center; gap: var(--ui-sp-xs); }
 /* 三格 KPI（仪表盘）：auto-fit 在中等宽度下会排成 2+1 —— 最后一张孤零零占一整行，
    看起来像「多出来的一张」而不是「第二行的第一张」。
    只作用于显式加了类的网格，其它页面的 .stat-grid 不受影响；
