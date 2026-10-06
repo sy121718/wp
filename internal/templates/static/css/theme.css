@@ -1100,7 +1100,14 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (max-width: 959px) {
     .grid-split { grid-template-columns: 1fr; }
 }
-.trend-chart { display: block; width: 100%; height: auto; }
+/* 趋势图的高度必须**固定**（不能用 height: auto）：
+   auto 时 SVG 按 viewBox 等比缩放，而卡宽 ≈ 900 对 viewBox 宽 900 —— 看着没问题，
+   但视口一变（或卡片被 grid 拉宽）整张图连同里面的 11px 文字一起被放大；实测 1200px
+   宽时字号被放大到约 27px，横轴最右侧的两个刻度直接叠在一起。
+   固定 180px + preserveAspectRatio="none"：纵向锁死，横向变化只让图变宽/变窄，
+   文字不会跟着放大。viewBox 的宽高比（900×180）刻意贴着 1440 视口下的实际卡宽，
+   这样常态下横向缩放也接近 1，文字既不放大也不被明显拉扁。 */
+.trend-chart { display: block; width: 100%; height: 180px; }
 .trend-chart .trend-bar { fill: var(--sky-c-primary, #2563eb); }
 .trend-chart .trend-bar.is-zero { fill: var(--sky-c-border, #e5e7eb); }
 .trend-chart .trend-axis { stroke: var(--sky-c-border, #e5e7eb); stroke-width: 1; }

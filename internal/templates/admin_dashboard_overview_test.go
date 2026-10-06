@@ -54,10 +54,10 @@ type tmplTopProduct struct {
 }
 
 type tmplRange struct {
-	Key     string
-	From    string
-	To      string
-	Days    int
+	Key  string
+	From string
+	To   string
+	Days int
 	// Granularity 走服务端算好的标题（模板不再 if/else 四档，Jet 没有 switch）。
 	Granularity         string
 	GranularityTitleKey string
@@ -196,7 +196,7 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		`id="dash-panel-sales"`, `id="dash-panel-views"`,
 		"销售额与订单", "页面浏览", "排行维度", "热销商品", "热门页面",
 		// 柱状图是内联 SVG，柱高走属性（不是 style）。
-		"<svg", "trend-bar", "height=\"120\"",
+		"<svg", "trend-bar", "height=\"135\"",
 		// 未接线提示在这条路径上不该出现。
 	} {
 		if !strings.Contains(out, want) {
@@ -244,13 +244,15 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 	if strings.Contains(out, `class="badge badge-mute">`+"/about") {
 		t.Error("KindKey 为空的行不该渲染类型标签")
 	}
-	// 两张图各用各的柱高字段：浏览量图里 09-29 的柱高来自 ViewsHeightPct（66 -> 79），
-	// 而销售额图里同一天是 SalesHeightPct（4 -> 4）。两个高度都必须在页面上出现。
-	if !strings.Contains(out, `height="79.2"`) {
-		t.Error("浏览量图应出现 ViewsHeightPct 折算出的柱高（66% -> 79.2px），说明它没借用销售额的归一化")
+	// 两张图各用各的柱高字段：浏览量图里 09-29 的柱高来自 ViewsHeightPct（66 -> 89.1），
+	// 而销售额图里同一天是 SalesHeightPct（4 -> 5.4）。两个高度都必须在页面上出现。
+	// 系数是 135/100（画布高 180、基线 135），不是 12/10 —— 画布从 490×160 改成
+	// 900×180 时同步换过，这里跟着改，别让断言停在上一个画布尺寸上。
+	if !strings.Contains(out, `height="89.1"`) {
+		t.Error("浏览量图应出现 ViewsHeightPct 折算出的柱高（66% -> 89.1px），说明它没借用销售额的归一化")
 	}
-	if !strings.Contains(out, `height="4.8"`) {
-		t.Error("销售额图应出现 SalesHeightPct 折算出的柱高（4% -> 4.8px）")
+	if !strings.Contains(out, `height="5.4"`) {
+		t.Error("销售额图应出现 SalesHeightPct 折算出的柱高（4% -> 5.4px）")
 	}
 	if strings.Contains(out, "暂不可用") {
 		t.Error("端口已就绪时不该显示「暂不可用」提示")

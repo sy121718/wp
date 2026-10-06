@@ -242,37 +242,37 @@
                            长区间上把柱子推出 viewBox，而 SVG 默认裁掉溢出内容 —— 页面不报错，
                            用户看到的只是半张图。y/height 仍是这里的定值算术（与点数无关）。
                            日期标签稀疏化（ShowLabel）：30 根柱子每个都带日期会糊成一团。 *}
-                        <svg class="trend-chart" viewBox="0 0 490 160" role="img"
+                        <svg class="trend-chart" viewBox="0 0 900 180" preserveAspectRatio="none" role="img"
                              aria-label="{{ .["t"]("admin.dashboard.trend.aria", "销售趋势柱状图") }}">
                             {{range _, p := .Overview.Trend}}
                             <rect class="trend-bar{{if p.SalesHeightPct == 0}} is-zero{{end}}"
-                                  x="{{p.X}}" y="{{120 - p.SalesHeightPct * 12 / 10}}"
-                                  width="{{p.BarWidth}}" height="{{p.SalesHeightPct * 12 / 10}}" rx="4">
+                                  x="{{p.X}}" y="{{135 - p.SalesHeightPct * 135 / 100}}"
+                                  width="{{p.BarWidth}}" height="{{p.SalesHeightPct * 135 / 100}}" rx="4">
                                 <title>{{p.Day}} · {{p.Orders}} {{ .["t"]("admin.dashboard.trend.ordersUnit", "单") }} · {{p.SalesLabel}}</title>
                             </rect>
                             {{if p.ShowLabel}}
-                            <text class="trend-day" x="{{p.LabelX}}" y="140" text-anchor="{{p.LabelAnchor}}">{{p.DayLabel}}</text>
-                            <text class="trend-val" x="{{p.LabelX}}" y="154" text-anchor="{{p.LabelAnchor}}">{{p.Orders}}</text>
+                            <text class="trend-day" x="{{p.LabelX}}" y="157" text-anchor="{{p.LabelAnchor}}">{{p.DayLabel}}</text>
+                            <text class="trend-val" x="{{p.LabelX}}" y="173" text-anchor="{{p.LabelAnchor}}">{{p.Orders}}</text>
                             {{end}}
                             {{end}}
-                            <line class="trend-axis" x1="0" y1="120" x2="490" y2="120"></line>
+                            <line class="trend-axis" x1="0" y1="135" x2="900" y2="135"></line>
                         </svg>
                     </div>
                     <div class="tab-panel" id="dash-panel-views" role="tabpanel" aria-labelledby="dash-tab-views" hidden>
-                        <svg class="trend-chart" viewBox="0 0 490 160" role="img"
+                        <svg class="trend-chart" viewBox="0 0 900 180" preserveAspectRatio="none" role="img"
                              aria-label="{{ .["t"]("admin.dashboard.chart.viewsAria", "页面浏览柱状图") }}">
                             {{range _, p := .Overview.Trend}}
                             <rect class="trend-bar{{if p.ViewsHeightPct == 0}} is-zero{{end}}"
-                                  x="{{p.X}}" y="{{120 - p.ViewsHeightPct * 12 / 10}}"
-                                  width="{{p.BarWidth}}" height="{{p.ViewsHeightPct * 12 / 10}}" rx="4">
+                                  x="{{p.X}}" y="{{135 - p.ViewsHeightPct * 135 / 100}}"
+                                  width="{{p.BarWidth}}" height="{{p.ViewsHeightPct * 135 / 100}}" rx="4">
                                 <title>{{p.Day}} · {{p.Views}} {{ .["t"]("admin.dashboard.chart.viewsUnit", "浏览") }}</title>
                             </rect>
                             {{if p.ShowLabel}}
-                            <text class="trend-day" x="{{p.LabelX}}" y="140" text-anchor="{{p.LabelAnchor}}">{{p.DayLabel}}</text>
-                            <text class="trend-val" x="{{p.LabelX}}" y="154" text-anchor="{{p.LabelAnchor}}">{{p.Views}}</text>
+                            <text class="trend-day" x="{{p.LabelX}}" y="157" text-anchor="{{p.LabelAnchor}}">{{p.DayLabel}}</text>
+                            <text class="trend-val" x="{{p.LabelX}}" y="173" text-anchor="{{p.LabelAnchor}}">{{p.Views}}</text>
                             {{end}}
                             {{end}}
-                            <line class="trend-axis" x1="0" y1="120" x2="490" y2="120"></line>
+                            <line class="trend-axis" x1="0" y1="135" x2="900" y2="135"></line>
                         </svg>
                     </div>
                 </div>

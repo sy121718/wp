@@ -190,7 +190,7 @@ type overviewSnapshot struct {
 	GranularityPresets []granularityPreset
 	KPI                overviewKPI
 	Trend              []overviewTrendPoint
-	Top     []overviewTopProduct
+	Top                []overviewTopProduct
 	// TopPages 页面排行（浏览量降序，跨工程合并）。
 	TopPages []overviewTopPage
 	// PortsReady 三个跨模块端口是否都已接线。
@@ -438,14 +438,14 @@ func (s *overviewSnapshot) fail(block, projectID string, err error) {
 
 // 趋势图的画布参数（viewBox 宽度与模板保持一致）。
 const (
-	trendChartWidth = 490
+	trendChartWidth = 900
 	// trendBarGap 柱间隙：相邻两根贴在一起会被读成一根。
-	trendBarGap = 2
-	// trendBarMaxWidth 单根柱子的最大宽度（viewBox 单位，490 宽的画布上约 10%）。
+	trendBarGap = 4
+	// trendBarMaxWidth 单根柱子的最大宽度（viewBox 单位，900 宽的画布上约 10%）。
 	//
-	// 柱宽原本只由点数决定：点数少时 step 会很大，1 个点时 step = 490 ——
+	// 柱宽原本只由点数决定：点数少时 step 会很大，1 个点时 step = 900 ——
 	// 整张图只有一根贯穿全宽的横杠，「有数据」和「坐标轴画歪了」在屏幕上长得一样。
-	trendBarMaxWidth = 48
+	trendBarMaxWidth = 88
 	// trendLabelMax 最多显示几个月/日标签。
 	//
 	// 30 根柱子每个都带日期会重叠成一团黑 —— 稀疏到 12 个以内仍然能读出「这是哪一段」，
@@ -589,13 +589,19 @@ func layoutTrendBars(points []overviewTrendPoint) {
 		// 表现为「图里少了几天」，而那天其实有单）。
 		barWidth = 2
 	}
-	// 上限：点数少时 step 会很大（今天 1 个点 → step=490），柱子被拉成一条贯穿
+	// 上限：点数少时 step 会很大（今天 1 个点 → step=900），柱子被拉成一条贯穿
 	// 全图的横杠，看起来既不像柱子也不像坐标轴。封顶之后柱子回到柱子的宽度，
 	// 并靠下面的居中算式停在格子中间。
 	if barWidth > trendBarMaxWidth {
 		barWidth = trendBarMaxWidth
 	}
 	labelEvery := (n + trendLabelMax - 1) / trendLabelMax
+	// 末尾那个点要不要补标签，取决于它离**上一个会打标签的点**还有多远。
+	// 无条件补末尾（`|| i == n-1`）在区间长度不是 labelEvery 的整数倍时会造出一对挤在
+	// 一起的标签 —— 实测「按小时 + 跨两天」共 49 个桶、labelEvery=5，末尾 20:00 与
+	// 23:00 相隔 3 个桶（约 55px）而标签本身宽约 60px，直接叠在一起。
+	// 判据取半个步长：够远就补（读者需要知道区间右端在哪），太近就不补（它会盖住前一个）。
+	lastThinned := ((n - 1) / labelEvery) * labelEvery
 	// 标签横坐标按对齐方式取柱子的左边缘 / 中心 / 右边缘。抽成闭包而不是让模板
 	// 跟着 anchor 分支算：模板里改一处漏一处，会得到「首标签靠左对齐但坐标仍取中心」
 	// 这种半对半错的位置，而它只是看着有点怪、不会报错。
@@ -612,8 +618,8 @@ func layoutTrendBars(points []overviewTrendPoint) {
 	for i := range points {
 		points[i].X = i*step + (step-barWidth)/2
 		points[i].BarWidth = barWidth
-		// 首尾都标：区间两端的日期是读者最想确认的那两个。
-		points[i].ShowLabel = i%labelEvery == 0 || i == n-1
+		points[i].ShowLabel = i%labelEvery == 0 ||
+			(i == n-1 && i-lastThinned >= labelEvery/2)
 		// 首尾靠边对齐，其余居中。全部居中的话，桶多时（按小时 24 个 → step≈20px）
 		// 第一个标签的中心落在 x≈10，而 5 个字符的「00:00」要占 25px —— 左半边被
 		// viewBox 裁掉，页面上看到的是「.7:00」这种缺半个字的标签。SVG 默认裁掉溢出
