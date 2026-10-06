@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableNamePageSchedules = "page_schedules"
@@ -98,48 +99,26 @@ type ScheduleUpsert struct {
 	CreateBy int64
 }
 
-// claimDueSQL 取一批到期待办、置为 running 并**原子发出租约令牌**。
+// ClaimDueSchedules 认领一批到点的待办、置为 running 并**原子发出租约令牌**。
 //
-// 五个要点（前三者与 build_jobs 的 claimSQL 同形，后两者是本表特有的）：
-//   - FOR UPDATE SKIP LOCKED：多个实例同时扫描时各拿各的，不排队、不重复；
+// 原为一条手写 SQL，现用 GORM 链式拼出**同一条语句**（外层 UPDATE + 候选子查询），
+// 五个要点逐条对应：
+//   - `clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}` 加在**候选子查询**上
+//     （与原 SQL 的位置一致：锁的是被挑中的候选行，不是外层 UPDATE 的目标行），
+//     多个实例同时扫描时各拿各的，不排队、不重复；
 //   - ORDER BY scheduled_at, id：先到点先执行，否则早该上线的排定会被一直插队；
-//   - 同一语句里 SELECT + UPDATE：取与置位之间没有窗口，两个执行者不会都读到同一条
+//   - 候选子查询与 UPDATE 同属一条语句：取与置位之间没有窗口，两个执行者不会都读到同一条
 //     pending（「看得到、抢不到」的重复消费）；
-//   - **同键互斥前置过滤**（NOT EXISTS）：只挑「同 (page_id, lang, action) 当前没有
+//   - **同键互斥前置过滤**（NOT EXISTS 子查询）：只挑「同 (page_id, lang, action) 当前没有
 //     running」的待办。SKIP LOCKED 只锁待办行，锁不到「同一个页面的同一个动作」这个概念 ——
 //     把同键的两条交给两个执行者，两次符号链接切换会在同一个路径上互相覆盖。
 //     数据库层的最终保证是 uq_page_schedules_active（迁移 460）；
-//   - lease_token / lease_expires_time / attempts 在同一条语句里产生：令牌由数据库生成，
-//     认领与发令牌之间没有应用层窗口。attempts 自增是「这条到底试过几次」的唯一证据。
+//   - lease_token / lease_expires_time / attempts 在同一条语句里产生：令牌由数据库生成
+//     （gen_random_uuid()），认领与发令牌之间没有应用层窗口。attempts 自增是「这条到底
+//     试过几次」的唯一证据。
 //
-// 参数：租约秒数、单批上限。
-const claimDueSQL = `UPDATE page_schedules s
-	SET status = 'running',
-	    lease_token = gen_random_uuid(),
-	    lease_expires_time = now() + make_interval(secs => ?),
-	    attempts = attempts + 1,
-	    last_error = NULL,
-	    update_time = now()
-	WHERE s.id IN (
-	    SELECT c.id FROM page_schedules c
-	     WHERE c.status = 'pending'
-	       AND c.scheduled_at <= now()
-	       AND NOT EXISTS (
-	           SELECT 1 FROM page_schedules r
-	            WHERE r.status = 'running'
-	              AND r.page_id = c.page_id
-	              AND r.lang = c.lang
-	              AND r.action = c.action
-	       )
-	     ORDER BY c.scheduled_at ASC, c.id ASC
-	     LIMIT ?
-	     FOR UPDATE SKIP LOCKED
-	)
-	RETURNING id, page_id, lang, action, scheduled_at, status, artifact_id,
-	          draft_version, redirect_path, lease_token, lease_expires_time,
-	          attempts, last_error, create_by, create_time, update_time`
-
-// ClaimDueSchedules 认领一批到点的待办并发出租约；无到期项时返回空切片。
+// 数据库侧的时间一律用 now() 而不是 Go 的 time.Now()，与原 SQL 保持一致。
+// 返回的是**真正被认领的行**（RETURNING * 写回）。
 //
 // leaseTTL 为本次租约时长（service 按常量传入）；limit 为单批上限（<=0 时按 1 处理，
 // 避免 LIMIT 0 变成「永远扫不到」这种看起来正常实则不工作的状态）。
@@ -150,8 +129,29 @@ func (m *Model) ClaimDueSchedules(ctx context.Context, leaseTTL time.Duration, l
 	if limit <= 0 {
 		limit = 1
 	}
-	err = m.db.WithContext(ctx).Raw(claimDueSQL, leaseTTL.Seconds(), limit).Scan(&list).Error
-	if err != nil {
+	db := m.db.WithContext(ctx)
+	candidates := db.Table(tableNamePageSchedules+" AS c").
+		Select("c.id").
+		Where("c.status = ?", ScheduleStatusPending).
+		Where("c.scheduled_at <= now()").
+		Where("NOT EXISTS (?)", db.Table(tableNamePageSchedules+" AS r").
+			Select("1").
+			Where("r.status = ?", ScheduleStatusRunning).
+			Where("r.page_id = c.page_id AND r.lang = c.lang AND r.action = c.action")).
+		Order("c.scheduled_at ASC, c.id ASC").
+		Limit(limit).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+	if err = db.Model(&list).
+		Where("id IN (?)", candidates).
+		Clauses(clause.Returning{}).
+		Updates(map[string]any{
+			"status":             ScheduleStatusRunning,
+			"lease_token":        gorm.Expr("gen_random_uuid()"),
+			"lease_expires_time": gorm.Expr("now() + make_interval(secs => ?)", leaseTTL.Seconds()),
+			"attempts":           gorm.Expr("attempts + 1"),
+			"last_error":         nil,
+			"update_time":        gorm.Expr("now()"),
+		}).Error; err != nil {
 		return nil, err
 	}
 	return list, nil
@@ -243,31 +243,32 @@ func (m *Model) ReleaseScheduleForRetry(ctx context.Context, id int64, leaseToke
 	return nil
 }
 
-// reclaimExpiredSQL 回收超时未结案的 running 行。
+// ReclaimExpiredSchedules 回收超时未结案的 running 行，返回被回收的行数（含判失败的那些）。
 //
 // attempts 已达上限的直接判 failed（否则一条永远执行不完的排定会被无限重试：
 // 每一次回收都把它退回 pending，再被认领，再超时 —— 后台看到的「待执行」永不减少）。
 // 一条语句而不是两条：两条各自提交会留下「已回收成 pending、但 attempts 已超限」
 // 的中间态，下一轮它又会被认领一次。
-const reclaimExpiredSQL = `UPDATE page_schedules
-	SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
-	    last_error = CASE WHEN attempts >= ? THEN COALESCE(last_error, ?) ELSE last_error END,
-	    lease_token = NULL,
-	    lease_expires_time = NULL,
-	    update_time = now()
-	WHERE status = 'running'
-	  AND lease_expires_time IS NOT NULL
-	  AND lease_expires_time < now()`
-
-// ReclaimExpiredSchedules 回收超时的 running 行，返回被回收的行数（含判失败的那些）。
 //
-// maxAttempts 为允许的认领次数上限（service 按常量传入）；expiredMessage 是达上限时
-// 写入 last_error 的归口 key。
+// status 与 last_error 都用一个 CASE 表达式按同一个阈值分派（maxAttempts），
+// 原为手写 SQL，现经 gorm.Expr 作为**值**传入（GORM 的正规出口）。
 func (m *Model) ReclaimExpiredSchedules(ctx context.Context, maxAttempts int, expiredMessage string) (reclaimed int64, err error) {
 	if maxAttempts <= 0 {
 		maxAttempts = 1
 	}
-	res := m.db.WithContext(ctx).Exec(reclaimExpiredSQL, maxAttempts, maxAttempts, expiredMessage)
+	res := m.db.WithContext(ctx).Model(&ScheduleEntity{}).
+		Where("status = ?", ScheduleStatusRunning).
+		Where("lease_expires_time IS NOT NULL").
+		Where("lease_expires_time < now()").
+		UpdateColumns(map[string]any{
+			"status": gorm.Expr("CASE WHEN attempts >= ? THEN ? ELSE ? END",
+				maxAttempts, ScheduleStatusFailed, ScheduleStatusPending),
+			"last_error": gorm.Expr("CASE WHEN attempts >= ? THEN COALESCE(last_error, ?) ELSE last_error END",
+				maxAttempts, expiredMessage),
+			"lease_token":        nil,
+			"lease_expires_time": nil,
+			"update_time":        gorm.Expr("now()"),
+		})
 	if res.Error != nil {
 		return 0, res.Error
 	}

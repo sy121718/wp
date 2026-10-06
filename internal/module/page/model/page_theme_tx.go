@@ -22,10 +22,9 @@ func (m *Model) ReattachProjectPagesToThemeTx(ctx context.Context, tx *gorm.DB, 
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err
 	}
-	return tx.WithContext(ctx).Exec(
-		"UPDATE pages SET theme_id = ?, update_time = ? WHERE project_id = ? AND deleted_at IS NULL",
-		themeID, time.Now().UTC(), projectID,
-	).Error
+	return tx.WithContext(ctx).Model(&PageEntity{}).
+		Where("project_id = ? AND deleted_at IS NULL", projectID).
+		UpdateColumns(map[string]any{"theme_id": themeID, "update_time": time.Now().UTC()}).Error
 }
 
 func (m *Model) ListThemePageSnapshotsTx(ctx context.Context, tx *gorm.DB, projectID, themeID string) ([]ThemePageSnapshot, error) {
@@ -55,10 +54,12 @@ func (m *Model) UpdateThemeSnapshotTx(ctx context.Context, tx *gorm.DB, projectI
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err
 	}
-	return tx.WithContext(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,theme}', ?, true), update_time = ? WHERE id = ? AND project_id = ? AND deleted_at IS NULL",
-		themeJSON, at, pageID, projectID,
-	).Error
+	return tx.WithContext(ctx).Model(&PageEntity{}).
+		Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+		UpdateColumns(map[string]any{
+			"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,theme}', ?, true)", themeJSON),
+			"update_time":    at,
+		}).Error
 }
 
 func (m *Model) ListThemePageStructureSnapshotsTx(ctx context.Context, tx *gorm.DB, projectID, themeID string) ([]ThemePageStructureSnapshot, error) {
@@ -88,18 +89,19 @@ func (m *Model) UpdateStructureSnapshotTx(ctx context.Context, tx *gorm.DB, proj
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err
 	}
-	return tx.WithContext(ctx).Exec(
-		"UPDATE pages SET draft_document = jsonb_set(draft_document, '{settings,structure}', ?, true), update_time = ? WHERE id = ? AND project_id = ? AND deleted_at IS NULL",
-		structureJSON, at, pageID, projectID,
-	).Error
+	return tx.WithContext(ctx).Model(&PageEntity{}).
+		Where("id = ? AND project_id = ? AND deleted_at IS NULL", pageID, projectID).
+		UpdateColumns(map[string]any{
+			"draft_document": gorm.Expr("jsonb_set(draft_document, '{settings,structure}', ?, true)", structureJSON),
+			"update_time":    at,
+		}).Error
 }
 
 func (m *Model) MarkStaleForThemeTx(ctx context.Context, tx *gorm.DB, projectID, themeID string, at time.Time) error {
 	if err := rls.ScopeTx(tx, projectID); err != nil {
 		return err
 	}
-	return tx.WithContext(ctx).Exec(
-		"UPDATE pages SET stale = true, update_time = ? WHERE project_id = ? AND theme_id = ? AND deleted_at IS NULL",
-		at, projectID, themeID,
-	).Error
+	return tx.WithContext(ctx).Model(&PageEntity{}).
+		Where("project_id = ? AND theme_id = ? AND deleted_at IS NULL", projectID, themeID).
+		UpdateColumns(map[string]any{"stale": true, "update_time": at}).Error
 }
