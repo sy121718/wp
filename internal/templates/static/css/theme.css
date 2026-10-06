@@ -2230,6 +2230,8 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 }
 .stack.dash-page .dash-ai-more { margin-left: auto; font-size: 12px; }
 .stack.dash-page .dash-ai-dismiss { font-size: 12px; }
+/* 概览页三个页头操作的字号必须一致（13px 是其它页的默认值，这一页统一收 12px）。 */
+.stack.dash-page .dash-ai-resume { font-size: 12px; }
 
 /* 输入行：输入框与发送并排（设计稿的 .ai-row）。
    输入框默认一行高、自动增高 —— 它是 textarea（要支持换行与多行粘贴），
@@ -2467,9 +2469,24 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 .stack.dash-page .dash-ai:not(.is-asking) [data-ai-fab-turns] {
     display: none;
 }
+/* 与 .dash-ai-dismiss 同族：都是页头右侧的行内文字按钮，外观必须一致。
+   这条规则原先只有 display:none + margin-left:auto —— 没有 background/border/
+   padding/cursor/font/color，于是有历史回答的用户看到的是一颗**浏览器默认按钮**
+   （灰底方框），和左边的「收起回答」「全部会话」完全不是一套。
+   为什么一直没人发现：它默认 display:none，只有 [data-ai-fab-has-history] 时才
+   显示，而门禁只看「类名有没有被定义」、不看「外观是否完整」——
+   TestCSSClassesUsedButUndefined 对这种「定义了但不完整」的类永远不报。 */
 .dash-ai-resume {
     display: none;
     margin-left: auto;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-size: 13px; font-family: inherit;
+    color: var(--sky-c-text-mute, #6b7280);
+}
+/* :hover 包在 (hover: hover) 里：触屏上点击后 :hover 会粘住
+   （门禁 check-multidevice-css.sh 会判红），与 .dash-ai-dismiss 同一条理由。 */
+@media (hover: hover) {
+    .dash-ai-resume:hover { color: var(--sky-c-text, #1a1d21); }
 }
 .stack.dash-page .dash-ai[data-ai-fab-has-history]:not(.is-asking) .dash-ai-resume {
     display: inline-block;
