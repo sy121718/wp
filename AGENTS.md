@@ -311,6 +311,27 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   （`DictOption` 已带 `Code` / `Label` / `Symbol`），**不要从 `Label` 里切**
   （标签格式「CNY ¥」一改就静默切错）。
   读不到时降级而不是报错：金额照常显示、只是没有符号前缀 —— 把整张卡打空比少一个符号糟得多。
+- **列表达式与实参用 `selectExpr` 绑定，个数必须相等**（`internal/module/order/model/order_model.go` 的
+  `selectExpr`）：GORM 的 `Select(串, 实参...)` 用 `strings.Count(v, "?") >= len(args)` 决定分派 ——
+  `?` 少于实参时它**不报错**，而是把实参当**追加列名**拼到 SELECT 列表末尾，生成
+  `... AS amount,received,completed,paid` 这种语法错的 SQL 且**一个参数都没绑上**；错误现场离拼串处很远
+  （PG 的一句 syntax error）。实测：`spentTotalsSelect` 1 个 `?` 配 2 个实参，报的是
+  `syntax error at or near ","`。
+  · 反过来也不能改用 `gorm.Expr` / `clause.Expr` 传给 `Select`：GORM 的 `Select` 只认 `string` 与
+  `[]string`，传表达式会得到 `unsupported select args`（实测）。
+  · 参数对不上属于**编程错误**（不是数据问题），所以 `selectExpr` 直接 panic —— 写对了永不触发，
+  写错了第一次跑到就炸，而不是等某个字段恰好为空才露出来。
+- **一张表只有一个模块读写它**：别的模块要它的数据走**契约**（`internal/module/<X>/contract`），
+  不要在 model 里写别人的表名 —— 表名与列名一旦被第二个模块引用就成了跨模块接口，改一列不会有编译错误、
+  只会在那边静默读到空值。已改：`projects`（6 处 → project 契约）、`page_artifacts`（4 处 →
+  `artifactcontract.PageArtifactReader`）。
+  · `page_artifacts` **没有 `project_id` 列**，所以「产物属于哪个工程」必须经 `page_id` 再查 `pages` ——
+  这一步拆成两次读：产物行 → 页面问 artifact 契约，页面 → 工程留在 page 模块（各自只读自己的表）。
+  · 例外：PG **系统表**查询（`partition/partition.go` 的 `pg_class` / `pg_inherits` 与 RLS 覆盖统计）
+  没有 Entity 可映射，保持裸 SQL。
+  · 门禁是 `internal/architecture/module_boundary_test.go` 的 `TestNoCrossModuleServiceModelImport`
+  —— **它连 `internal/module/<X>/**` 下的 `_test.go` 一起查**：测试里要造跨模块的读时，写一个实现该
+  contract 的 stub，不要去 import 对方的 model / service 包。
 
 - **数据域（datarule）白名单由拥有该表的实体声明**：字段上写 `datarule:"label=…;ops=…"`，经
   `pkg/datarule.DomainFromEntity` 派生，装配入口注册（且在注册路由之前）。**没有 tag 的字段不在白名单里**
