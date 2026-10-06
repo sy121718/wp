@@ -2468,3 +2468,87 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     text-underline-offset: 3px;
     text-decoration-thickness: 1px;
 }
+
+/* ===== 销售概览页（admin/order/sales_overview.html） =====
+   四张销售卡 + 四张客户卡排成两排；趋势是纯 CSS 柱图（服务端算好高度，无 JS）。
+   卡片口径走 title 悬浮，所以卡面上没有说明文字 —— 这里只需要把它排整齐。 */
+.sales-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+/* 宽屏固定 4 列：auto-fit 在 1100px 附近会排成 3+1，最后一张孤零零占一整行。 */
+@media (min-width: 1100px) {
+    .sales-cards { grid-template-columns: repeat(4, 1fr); }
+}
+/* 左侧 3px 强调色只用于区分维度，不表达好坏；值本身的好坏由 .is-up / .is-down 表达。 */
+.sales-card { border-left: 3px solid var(--sky-c-border); }
+.sales-card.accent-primary { border-left-color: var(--sky-c-primary); }
+.sales-card.accent-success { border-left-color: var(--sky-c-success); }
+.sales-card.accent-info { border-left-color: var(--sky-c-warning); }
+.sales-card.accent-mute { border-left-color: var(--sky-c-text-faint); }
+.sales-card .stat-value { font-variant-numeric: tabular-nums; }
+
+/* 筛选条：生效区间回显。放在 .filter-bar 之内、表单之外，
+   因为它描述的是「服务端实际用了什么」，不是可编辑的输入。 */
+.filter-hint {
+    margin: var(--ui-sp-xs) 0 0;
+    font-size: 0.8125rem;
+    color: var(--sky-c-text-mute);
+    font-variant-numeric: tabular-nums;
+}
+/* 趋势月数只是 1~24 的整数，占满整行会把日期输入挤到换行。 */
+.filter-field-narrow .form-input { max-width: 6rem; }
+
+/* 柱图：底部对齐的一排柱子。容器高度固定 = 柱高上限 + 留白，
+   这样「某个月是 0」时那一格仍然占据位置（读者看到的是空柱位，不是漏渲染）。 */
+.sales-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--ui-sp-sm);
+    overflow-x: auto;
+    padding-bottom: var(--ui-sp-xs);
+}
+.sales-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ui-sp-xxs);
+    min-width: 52px;
+    flex: 1 1 0;
+}
+/* 高度 = salesChartMaxHeight（Go 侧常量，模板把像素高度写进 style），
+   所以这里的高度必须与那个常量一致 —— 改一处要改两处，写在同一段注释旁边。 */
+.sales-bar-wrap { display: flex; align-items: flex-end; height: 160px; width: 100%; }
+.sales-bar {
+    width: 100%;
+    max-width: 48px;
+    margin: 0 auto;
+    border-radius: var(--ui-r-sm) var(--ui-r-sm) 0 0;
+    background: var(--sky-c-primary);
+    min-height: 1px;
+}
+/* 值为 0 时画一根基线柱而不是不画：空位会被读成「漏渲染」。 */
+.sales-bar.is-zero { background: var(--sky-c-border); }
+.sales-col-label {
+    font-size: 0.75rem;
+    color: var(--sky-c-text-mute);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.sales-col-value {
+    font-size: 0.75rem;
+    color: var(--sky-c-text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* 环比方向色：值是涨/跌，不是强调色。 */
+.is-up { color: var(--sky-c-success); font-variant-numeric: tabular-nums; }
+.is-down { color: var(--sky-c-danger); font-variant-numeric: tabular-nums; }
+
+
+/* 卡片标题旁的次要说明（与 .card-title 同一行，弱化显示）。
+   名字不叫 text-mute：那个类在本仓不存在，而「弱化文字」的语义属于卡片头部这一处。 */
+.card-sub {
+    margin-left: var(--ui-sp-sm);
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--sky-c-text-mute);
+}

@@ -250,6 +250,8 @@ func init() {
 	registerDashboardAIResumeI18n()
 	registerDashboardKPIWordingI18n()
 	registerDashboardTrendGranularityI18n()
+	// 579：销售概览页词条（见 register_order_sales_overview_i18n.go）。
+	registerOrderSalesOverviewI18n()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
 }

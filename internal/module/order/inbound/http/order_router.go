@@ -122,6 +122,11 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 		// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
 		orderPages := NewOrderPageHandle(svc, projects, dict)
 		pages.GET("/orders", orderPages.OrdersPage)
+		// 销售概览页（GET /admin/orders/overview）：整页只读报表，**没有任何写动作**，
+		// 所以不需要 builtin.CasbinMiddlewareForPath（那几个是给页面上的写按钮用的），
+		// 与 /orders 同样的只读页待遇 —— 靠 /admin 组的 Session + CSRF 与侧栏入口控制。
+		salesPages := NewOrderSalesPageHandle(svc, projects)
+		pages.GET("/orders/overview", salesPages.SalesOverviewPage)
 		// 后台代客建单页（docs/02-W-admin-order-create.md）：独立整页，页头与空态两个入口
 		// 都指向它（同一个 URL）。写动作复用 order:create —— 与上面几条同手法，
 		// **不新增权限点、不写 seed 迁移**；权限点路径一个字符都不能改。

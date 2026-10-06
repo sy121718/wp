@@ -1,0 +1,183 @@
+{* admin/order/sales_overview.html — 销售概览页（GET /admin/orders/overview）。
+
+   整页只读报表，**没有任何写动作**（无表单 POST、无 csrf 隐藏域）：筛选是普通 GET 表单，
+   图表是服务端渲染的 HTML/CSS 柱图（无 JS 也能用）。
+
+   三条模板侧约定：
+   1. 文案走 `.["t"](key, fallback)`；**已译好的串（卡片 Label / Note、状态快捷项 Label）
+      直接渲染**，不再套一层 t（套了会把译文当 key 再查一次，查不到时回落成 key 本身）。
+   2. 模板不做任何算术：金额、百分比、柱高全部由视图层算好（模板算术出错不报错，只静默画错）。
+   3. `{{range}}` 里 `.` 会被换成当前项，所以循环外先用 `:=` 取好要比较的值
+      （本页是 selectedProject），循环里再引用 —— 否则 `p.ID == .SelectedProject` 取不到。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+
+<div class="stack sales-page">
+    <header class="page-head">
+        <div class="page-head-main">
+        <div class="page-title-row">
+            <h1 class="page-title">{{ .["t"]("admin.order.sales.title", "销售概览") }}</h1>
+        </div>
+            <p class="page-desc">{{ .["t"]("admin.order.sales.desc", "按区间看销量、客单与客户结构。") }}</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-ghost" href="/admin/orders?project={{.SelectedProject}}">{{ .["t"]("admin.order.sales.toOrders", "订单列表") }}</a>
+        </div>
+    </header>
+
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err，缺键会让整页在此中断（HTTP 仍 200）。 *}
+    {{if isset(.Err) && .Err != ""}}
+    <p class="badge badge-danger" role="alert">{{.Err}}</p>
+    {{end}}
+
+    {* ===== 筛选条：工程 + 起止日期 + 状态 + 趋势月数 ===== *}
+    <section class="card">
+        <div class="filter-bar">
+            <form method="get" action="/admin/orders/overview" class="filter-fields">
+                {{if len(.Projects) > 1}}
+                <div class="filter-field">
+                    <label for="sales-project">{{ .["t"]("admin.orders.field.project", "站点工程") }}</label>
+                    {{selectedProject := .SelectedProject}}
+                    <select class="form-select" id="sales-project" name="project">
+                        {{range _, p := .Projects}}
+                        <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{else}}
+                <input type="hidden" name="project" value="{{.SelectedProject}}">
+                {{end}}
+                <div class="filter-field">
+                    <label for="sales-from">{{ .["t"]("admin.order.sales.field.from", "开始日期") }}</label>
+                    <input type="date" class="form-input" id="sales-from" name="from" value="{{.Filter.From}}">
+                </div>
+                <div class="filter-field">
+                    <label for="sales-to">{{ .["t"]("admin.order.sales.field.to", "结束日期") }}</label>
+                    <input type="date" class="form-input" id="sales-to" name="to" value="{{.Filter.To}}">
+                </div>
+                <div class="filter-field">
+                    <label for="sales-status">{{ .["t"]("admin.order.sales.field.status", "订单状态") }}</label>
+                    <select class="form-select" id="sales-status" name="status">
+                        {{range _, s := .StatusQuick}}
+                        <option value="{{s.Value}}" {{if s.Active}}selected{{end}}>{{s.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field filter-field-narrow">
+                    <label for="sales-monthly">{{ .["t"]("admin.order.sales.field.monthly", "趋势月数") }}</label>
+                    <input type="number" class="form-input" id="sales-monthly" name="monthly" min="1" max="24" value="{{.Filter.Monthly}}">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.order.sales.filter.submit", "应用") }}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/orders/overview?project={{.SelectedProject}}">{{ .["t"]("admin.orders.filter.reset", "重置") }}</a>
+                </div>
+            </form>
+            {* 生效区间回显：上界晚于明天会被收敛、跨度 > 366 天会被拒，
+               而这两种情况下「筛选没生效」是读的人的第一反应 —— 把实际用的区间摊出来。 *}
+            <p class="filter-hint">{{.From}} ~ {{.To}}{{if .Status}} · {{.Filter.StatusLabel}}{{end}}</p>
+        </div>
+    </section>
+
+    {* ===== 装载失败 / 无数据：与「这个区间没有销售」明确区分 ===== *}
+    {{if .LoadFailed}}
+    <section class="card">
+        <div class="card-body">
+            <p class="empty-desc">{{ .["t"]("admin.order.sales.loadFailed", "数据没能读出来，稍后重试。") }}</p>
+        </div>
+    </section>
+    {{else if !.HasData}}
+    <section class="card">
+        <div class="card-body">
+            <p class="empty-desc">{{ .["t"]("admin.order.sales.empty", "这段时间没有计入消费的订单。") }}</p>
+            <p class="empty-hint">{{ .["t"]("admin.order.sales.emptyHint", "换一个区间，或把状态筛成「全部」。") }}</p>
+        </div>
+    </section>
+    {{else}}
+
+    {* ===== 销售卡：口径走 title 悬浮，不占卡面（与概览页 KPI 卡同一手法）===== *}
+    <section class="stat-grid sales-cards">
+        {{range _, c := .Cards}}
+        <div class="stat-card sales-card accent-{{c.Accent}}" {{if c.Note}}title="{{c.Note}}"{{end}}>
+            <div class="stat-label">{{c.Label}}</div>
+            <div class="stat-value">{{c.Value}}</div>
+        </div>
+        {{end}}
+    </section>
+
+    {* ===== 客户卡 ===== *}
+    <section class="stat-grid sales-cards">
+        {{range _, c := .Clients}}
+        <div class="stat-card sales-card accent-{{c.Accent}}" {{if c.Note}}title="{{c.Note}}"{{end}}>
+            <div class="stat-label">{{c.Label}}</div>
+            <div class="stat-value">{{c.Value}}</div>
+        </div>
+        {{end}}
+    </section>
+
+    {* ===== 环比：只给上一期绝对值 + 变化率（本期值在上面那排卡片里，不重复放两份）===== *}
+    {{if len(.Compare) > 0}}
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{ .["t"]("admin.order.sales.compare", "环比上一段等长区间") }}</h2>
+            <span class="card-sub">{{ .["t"]("admin.order.sales.compareHint", "上一段与本段同样长，不与自然月对比") }}</span>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>{{ .["t"]("admin.order.sales.compare.metric", "指标") }}</th>
+                        <th>{{ .["t"]("admin.order.sales.compare.prev", "上一期") }}</th>
+                        <th>{{ .["t"]("admin.order.sales.compare.change", "变化") }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range _, r := .Compare}}
+                    <tr>
+                        <td>{{r.Label}}</td>
+                        <td>{{r.Prev}}</td>
+                        <td>
+                            {* 无基期（上一期为 0）时**不显示 0%**：那会让「上期一单没卖」
+                               看起来像「持平」。Up 为 nil 时也不画箭头。 *}
+                            {{if r.NoBase}}
+                            <span class="text-mute">{{ .["t"]("admin.order.sales.compare.noBase", "上期无数据") }}</span>
+                            {{else if r.Up}}<span class="is-up">{{r.Change}}</span>
+                            {{else if r.Change == ""}}<span class="text-mute">{{r.Change}}</span>
+                            {{else}}<span class="is-down">{{r.Change}}</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {{end}}
+
+    {* ===== 月度趋势（纯 CSS 柱图，无 JS）===== *}
+    {{if .HasMonthly}}
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{ .["t"]("admin.order.sales.monthly", "月度趋势") }}</h2>
+            <span class="card-sub">{{ .["t"]("admin.order.sales.monthlyHint", "固定回看，与上面的筛选区间无关") }}</span>
+        </div>
+        <div class="card-body">
+            <div class="sales-chart">
+                {{range _, p := .MonthlyPoints}}
+                <div class="sales-col" title="{{p.Month}}｜{{p.Sales}}｜{{p.OrderCount}}">
+                    <div class="sales-bar-wrap">
+                        {* Zero 时画一根 1px 基线柱：读者需要看到「这里有个柱子，只是它是 0」，
+                           而不是怀疑那一格漏渲染了。 *}
+                        <div class="sales-bar{{if p.Zero}} is-zero{{end}}" style="height:{{p.Height}}px"></div>
+                    </div>
+                    <div class="sales-col-label">{{p.Label}}</div>
+                    <div class="sales-col-value">{{p.Sales}}</div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </section>
+    {{end}}
+
+    {{end}}
+</div>
+{{end}}

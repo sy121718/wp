@@ -46,6 +46,13 @@ type OrderService interface {
 	CustomerCohortReader
 	// OrderRangeSummaryReader 概览页 KPI 与只读聚合的区间摘要（只读，一条方法）。
 	OrderRangeSummaryReader
+	// OrderSalesOverviewReader 销售概览页的取数（卡片 + 客户 + 环比 + 月度趋势，只读一条方法）。
+	//
+	// 与 OrderRangeSummaryReader 并列而不是并进去：区间摘要回答「这段时间一共多少钱」，
+	// 它是**单个数字**的口径；销售概览回答「这段时间卖得怎么样」—— 一屏派生指标
+	// （AOV / ACV / 平均每单 / 复购率 / 环比）加一条趋势线，且自带状态筛选与月份回看参数。
+	// 合成一个会让只想在概览卡上要一个数的调用方也被迫接受这四个参数。
+	OrderSalesOverviewReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
 	OrderOverviewReader
 	// OrderQueryReader 按线索查订单（单号 / 客户名 / 邮箱 / 状态 / 时间段）。
@@ -214,6 +221,17 @@ type OrderRangeSummaryReader interface {
 	// SummaryByRange 区间口径（哪些状态算消费、时间窗怎么取）由订单模块决定，
 	// 调用方只拿到结论，不参与计算。
 	SummaryByRange(ctx context.Context, req *orderdto.OrderRangeSummaryReq) (res *orderdto.OrderRangeSummaryResp, err error)
+}
+
+// OrderSalesOverviewReader 销售概览页的取数（只读，一条方法）。
+//
+// 越权防护同样靠接口形状：工程与区间都必填，状态筛选在订单模块内过白名单
+//（调用方传什么都不会得到「把取消单也算进来」的口径），趋势的月份回看数也有上下限。
+// 派生值（AOV / ACV / 平均每单 / 平均每件 / 复购率 / 环比）全部由订单模块算好 ——
+// 调用方拿到的是结论，不参与计算，也不做第二份金额换算。
+type OrderSalesOverviewReader interface {
+	// SalesOverview 取销售概览；状态筛选非法时回落全量（回显生效值），不报错。
+	SalesOverview(ctx context.Context, req *orderdto.SalesOverviewReq) (res *orderdto.SalesOverviewResp, err error)
 }
 
 // OrderOverviewReader 概览页的其余只读聚合（趋势 / 榜单 / 状态计数）。

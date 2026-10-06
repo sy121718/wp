@@ -349,6 +349,11 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: nil,
 		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
 	},
+	"accent-": {
+		site:   "admin/order/sales_overview.html:100 与 :110 `class=\"stat-card sales-card accent-{{c.Accent}}\"`",
+		values: []string{"primary", "success", "info", "mute"},
+		note:   "取值域是 orderhttp.salesCardViews / salesClientViews 写死的 Accent 字面量（各四张卡，合计只可能出现这四个值）；对应 theme.css 的 .accent-primary / .accent-success / .accent-info / .accent-mute —— 四者都是卡片左侧的维度色，不表达好坏",
+	},
 }
 
 // TestDynamicClassEvidenceIsCurrent 放行证据必须与代码同步：
