@@ -355,10 +355,10 @@ func (m *MailModel) DeleteLogsBefore(ctx context.Context, cutoff time.Time, limi
 	if limit < 1 {
 		return 0, nil
 	}
-	const q = `DELETE FROM mail_logs WHERE id IN (
-		SELECT id FROM mail_logs WHERE create_time < ? ORDER BY id LIMIT ?
-	)`
-	res := m.tx(ctx).Exec(q, cutoff, limit)
+	// 分批：候选 id 子查询 + 一条 DELETE，GORM 无 DELETE … LIMIT，用 id IN (子查询) 等价表达。
+	sub := m.tx(ctx).Model(&MailLogEntity{}).
+		Select("id").Where("create_time < ?", cutoff).Order("id").Limit(limit)
+	res := m.tx(ctx).Model(&MailLogEntity{}).Where("id IN (?)", sub).Delete(&MailLogEntity{})
 	return res.RowsAffected, res.Error
 }
 
@@ -370,10 +370,10 @@ func (m *MailModel) DeleteNodeLogsBefore(ctx context.Context, cutoff time.Time, 
 	if limit < 1 {
 		return 0, nil
 	}
-	const q = `DELETE FROM mail_automation_node_logs WHERE id IN (
-		SELECT id FROM mail_automation_node_logs WHERE create_time < ? ORDER BY id LIMIT ?
-	)`
-	res := m.tx(ctx).Exec(q, cutoff, limit)
+	sub := m.tx(ctx).Model(&MailAutomationNodeLogEntity{}).
+		Select("id").Where("create_time < ?", cutoff).Order("id").Limit(limit)
+	res := m.tx(ctx).Model(&MailAutomationNodeLogEntity{}).
+		Where("id IN (?)", sub).Delete(&MailAutomationNodeLogEntity{})
 	return res.RowsAffected, res.Error
 }
 

@@ -604,10 +604,14 @@ func (m *MailModel) DeleteContactsByIDsTx(ctx context.Context, tx *gorm.DB, ids 
 // 与 service 侧 splitTags / mergeTags 的去空白口径一致，否则候选里会出现一个
 // 点了筛不出任何人的标签（因为筛选走 tags @> 精确匹配）。
 func (m *MailModel) ListContactTags(ctx context.Context) (tags []string, err error) {
-	err = m.tx(ctx).Raw(`SELECT DISTINCT btrim(t) AS tag
-FROM mail_contacts, unnest(tags) AS t
-WHERE btrim(t) <> ''
-ORDER BY tag ASC`).Scan(&tags).Error
+	// 集合函数展开写在 FROM 位置（`mail_contacts, unnest(tags) AS t`），
+	// 表别名与函数别名一起作为 Table 的字面量。
+	err = m.tx(ctx).
+		Table(MailContactEntity{}.TableName() + ", unnest(tags) AS t").
+		Select("DISTINCT btrim(t) AS tag").
+		Where("btrim(t) <> ''").
+		Order("tag ASC").
+		Scan(&tags).Error
 	return tags, err
 }
 
@@ -701,9 +705,13 @@ func (m *MailModel) ListCampaignsWithExpiredEvents(ctx context.Context, cutoff t
 	if limit < 1 {
 		return nil, nil
 	}
-	const q = `SELECT campaign_id FROM mail_campaign_events
-		GROUP BY campaign_id HAVING MAX(create_time) < ? ORDER BY campaign_id LIMIT ?`
-	err = m.tx(ctx).Raw(q, cutoff, limit).Scan(&ids).Error
+	err = m.tx(ctx).Model(&MailCampaignEventEntity{}).
+		Select("campaign_id").
+		Group("campaign_id").
+		Having("MAX(create_time) < ?", cutoff).
+		Order("campaign_id").
+		Limit(limit).
+		Pluck("campaign_id", &ids).Error
 	return ids, err
 }
 
@@ -715,10 +723,10 @@ func (m *MailModel) SetCampaignEventTotalsIfUnset(ctx context.Context, campaignI
 	if campaignID == 0 {
 		return 0, nil
 	}
-	res := m.tx(ctx).Exec(
-		"UPDATE mail_campaigns SET open_count = ?, click_count = ? WHERE id = ? AND open_count = 0 AND click_count = 0",
-		openCount, clickCount, campaignID,
-	)
+	// 守卫写在 WHERE（「两列都为 0 才固化」），受影响 0 行即「已固化过」—— 不做读-改-写。
+	res := m.tx(ctx).Model(&MailCampaignEntity{}).
+		Where("id = ? AND open_count = 0 AND click_count = 0", campaignID).
+		UpdateColumns(map[string]any{"open_count": openCount, "click_count": clickCount})
 	return res.RowsAffected, res.Error
 }
 
@@ -730,10 +738,10 @@ func (m *MailModel) DeleteEventsBefore(ctx context.Context, cutoff time.Time, li
 	if limit < 1 {
 		return 0, nil
 	}
-	const q = `DELETE FROM mail_campaign_events WHERE id IN (
-		SELECT id FROM mail_campaign_events WHERE create_time < ? ORDER BY id LIMIT ?
-	)`
-	res := m.tx(ctx).Exec(q, cutoff, limit)
+	sub := m.tx(ctx).Model(&MailCampaignEventEntity{}).
+		Select("id").Where("create_time < ?", cutoff).Order("id").Limit(limit)
+	res := m.tx(ctx).Model(&MailCampaignEventEntity{}).
+		Where("id IN (?)", sub).Delete(&MailCampaignEventEntity{})
 	return res.RowsAffected, res.Error
 }
 

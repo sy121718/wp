@@ -58,6 +58,15 @@ var rawSQLAllowedList = []rawSQLEntry{
 			"无表、无 Entity 可映射的 PG 顾问锁函数调用，GORM 没有对应表达能力",
 	},
 	{
+		File: "internal/module/mail/model/mail_marketing_model.go",
+		Max:  1,
+		Reason: "BatchUpdateContactImportFields 的 UPDATE mail_contacts AS c SET … FROM (SELECT … FROM jsonb_array_elements(?::jsonb) AS r) AS v WHERE lower(c.email) = lower(v.email) RETURNING lower(c.email)：" +
+			"GORM 没有 UPDATE … FROM 支持，而这条语句的三点语义都不能丢 —— " +
+			"① 一条语句原子更新整批（方法注释里写明「为什么不再逐条」：N 次往返比 INSERT 更贵）；" +
+			"② name / tags 用 COALESCE 只在本行给了非空值时覆盖；" +
+			"③ 只更新**已存在**的行、不新增（改用 INSERT … ON CONFLICT 会把未命中的邮箱插进联系人表，语义就变了）",
+	},
+	{
 		File: "internal/module/build/model/build_model.go",
 		Max:  1,
 		Reason: "ReclaimStale 的回收语句：CTE 里的候选 SELECT 带 FOR UPDATE SKIP LOCKED（锁的是候选行），" +
@@ -70,10 +79,7 @@ var rawSQLAllowedList = []rawSQLEntry{
 // rawSQLDebtList 待还的存量：登记「此刻的处数」，改完必须把条目删掉（处数与登记不符即失败）。
 //
 // 这些不是「允许」，是**还没做**。整改顺序按模块推进；每改完一个文件就删掉它这一条。
-var rawSQLDebtList = []rawSQLEntry{
-	{File: "internal/module/mail/model/mail_account_model.go", Max: 2},
-	{File: "internal/module/mail/model/mail_marketing_model.go", Max: 5},
-}
+var rawSQLDebtList = []rawSQLEntry{}
 
 // TestNoNewRawSQL 守住 internal/module 下的裸 SQL 只减不增。
 func TestNoNewRawSQL(t *testing.T) {
