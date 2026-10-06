@@ -81,9 +81,13 @@ func salesOverviewView(
 	cur := salesCurrency()
 	points := make([]map[string]any, 0, len(res.MonthlyPoints))
 	maxSales := int64(0)
+	anySales := false
 	for _, p := range res.MonthlyPoints {
 		if p.Sales > maxSales {
 			maxSales = p.Sales
+		}
+		if p.Sales > 0 {
+			anySales = true
 		}
 	}
 	for _, p := range res.MonthlyPoints {
@@ -104,8 +108,13 @@ func salesOverviewView(
 		"Clients": salesClientViews(res, cur, tr),
 		"Compare": salesCompareView(res.Compare, cur, tr),
 
-		"MonthlyPoints":   points,
-		"HasMonthly":      len(points) > 0,
+		"MonthlyPoints": points,
+		"HasMonthly":    len(points) > 0,
+		// HasMonthlyData 与 HasMonthly 是两件事：前者问「有没有柱子」，
+		// 后者问「柱子有没有高度」。回看窗口天生总有月份（补零过），所以 HasMonthly
+		// 几乎恒真；只按它渲染时，一个整月没生意的站点会得到一块 160px 高的空白 ——
+		// 那不是「趋势平缓」，是「没数据」，两者的读法完全不同。
+		"HasMonthlyData":  anySales,
 		"MonthlyMaxSales": maxSales,
 	}
 }
@@ -135,8 +144,8 @@ func salesCardViews(res *orderdto.SalesOverviewResp, cur string, tr func(key, fa
 			Accent: "info",
 		},
 		{
-			Label:  tr(salesLabelPrefix+"units", "平均每单件数"),
-			Value:  fmt.Sprintf("%.2f", res.AvgItemsPerOrder),
+			Label: tr(salesLabelPrefix+"units", "平均每单件数"),
+			Value: fmt.Sprintf("%.2f", res.AvgItemsPerOrder),
 			Note: fmt.Sprintf(tr(salesNotePrefix+"units", "商品明细行数 ÷ 订单数；不等于件数（一行可能多件），本区间共 %d 件"),
 				res.Units),
 			Accent: "mute",

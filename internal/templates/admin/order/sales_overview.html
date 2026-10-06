@@ -94,24 +94,52 @@
     </section>
     {{else}}
 
-    {* ===== 销售卡：口径走 title 悬浮，不占卡面（与概览页 KPI 卡同一手法）===== *}
-    <section class="stat-grid sales-cards">
-        {{range _, c := .Cards}}
-        <div class="stat-card sales-card accent-{{c.Accent}}" {{if c.Note}}title="{{c.Note}}"{{end}}>
-            <div class="stat-label">{{c.Label}}</div>
-            <div class="stat-value">{{c.Value}}</div>
+    {* ===== 卡片：销售维度 / 客户维度 =====
+       两排各带一行小标题：八张同形卡排在一起时，没有分组标识就读不出
+       「前四张是钱、后四张是人」——而这正是本页要说的一件事。
+
+       口径说明走 `.help-pop` 浮层（标签旁的 ? 按钮），**一律不用 title**：
+       原生 tooltip 的位置与样式由浏览器决定，实测会压住相邻卡片；
+       而 .help-pop 在 admin.js 里已处理 hover / 键盘聚焦 / Esc / 点外部关闭 /
+       贴边自动翻转，也是仓内其它页面的通行形态。 *}
+    <section class="sales-group">
+        <h2 class="sales-group-title">{{ .["t"]("admin.order.sales.group.sales", "销售") }}</h2>
+        <div class="stat-grid sales-cards">
+            {{range _, c := .Cards}}
+            <div class="card stat-card sales-card accent-{{c.Accent}}">
+                <div class="stat-label">
+                    {{c.Label}}
+                    {{if c.Note}}
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{c.Note}}</span>
+                    </span>
+                    {{end}}
+                </div>
+                <div class="stat-value">{{c.Value}}</div>
+            </div>
+            {{end}}
         </div>
-        {{end}}
     </section>
 
-    {* ===== 客户卡 ===== *}
-    <section class="stat-grid sales-cards">
-        {{range _, c := .Clients}}
-        <div class="stat-card sales-card accent-{{c.Accent}}" {{if c.Note}}title="{{c.Note}}"{{end}}>
-            <div class="stat-label">{{c.Label}}</div>
-            <div class="stat-value">{{c.Value}}</div>
+    <section class="sales-group">
+        <h2 class="sales-group-title">{{ .["t"]("admin.order.sales.group.customers", "客户") }}</h2>
+        <div class="stat-grid sales-cards">
+            {{range _, c := .Clients}}
+            <div class="card stat-card sales-card accent-{{c.Accent}}">
+                <div class="stat-label">
+                    {{c.Label}}
+                    {{if c.Note}}
+                    <span class="help">
+                        <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                        <span class="help-pop" role="tooltip">{{c.Note}}</span>
+                    </span>
+                    {{end}}
+                </div>
+                <div class="stat-value">{{c.Value}}</div>
+            </div>
+            {{end}}
         </div>
-        {{end}}
     </section>
 
     {* ===== 环比：只给上一期绝对值 + 变化率（本期值在上面那排卡片里，不重复放两份）===== *}
@@ -170,6 +198,9 @@
                 <span class="sales-legend-item"><i class="sales-dot sales-dot-guest"></i>{{ .["t"]("admin.order.sales.mix.guest", "游客单") }}</span>
                 <span class="sales-legend-note">{{ .["t"]("admin.order.sales.mix.hint", "新客 = 该客户首单落在本自然月（与查询区间无关）") }}</span>
             </div>
+            {* 回看窗口里的月份是补零出来的，所以「有柱子」几乎恒真；没有一笔销售时
+               整块画布会是一片空白 —— 那不是「趋势平缓」，是「没数据」。 *}
+            {{if .HasMonthlyData}}
             <div class="sales-chart">
                 {{range _, p := .MonthlyPoints}}
                 <div class="sales-col" title="{{p.Month}}｜{{ .["t"]("admin.order.sales.monthly.total", "合计") }} {{p.Sales}}｜{{ .["t"]("admin.order.sales.mix.new", "新客") }} {{p.NewSales}}｜{{ .["t"]("admin.order.sales.mix.returning", "回头客") }} {{p.ReturningSales}}｜{{ .["t"]("admin.order.sales.mix.guest", "游客单") }} {{p.GuestSales}}">
@@ -187,6 +218,9 @@
                 </div>
                 {{end}}
             </div>
+            {{else}}
+            <p class="sales-chart-empty">{{ .["t"]("admin.order.sales.monthly.empty", "这段时间没有计入消费的订单，趋势暂无可画的柱子。") }}</p>
+            {{end}}
         </div>
     </section>
     {{end}}

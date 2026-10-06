@@ -35,7 +35,7 @@ import (
 // salesStatusQuick 筛选条上给出的状态快捷项（值 + 文案来源）。
 //
 // 与白名单同源：这里的每一项都必须在 model 的销售白名单里，否则点了会回落全量
-//（服务端刻意**不报错**，于是「点了没反应」是唯一的症状）。空值那一项表示「全部计入消费的状态」。
+// （服务端刻意**不报错**，于是「点了没反应」是唯一的症状）。空值那一项表示「全部计入消费的状态」。
 //
 // **非空状态不在这里写 i18n key 字面量**，而是交给 orderStatusLabel → orderenums.OrderStatusLabel
 // 这个真源（与订单列表页同一处）。两条理由：① 状态词条将来改名只需改 enums 一处；
@@ -162,7 +162,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 // salesStatusQuickView 状态快捷项（含选中态与链接）。
 //
 // 链接保留当前区间与工程：点一下状态就把区间丢回默认，是本页最容易让人困惑的交互
-//（「我明明选的是上个月」）。
+// （「我明明选的是上个月」）。
 func salesStatusQuickView(tr func(key, fallback string) string, current string) []map[string]any {
 	out := make([]map[string]any, 0, len(salesStatusQuick))
 	for _, s := range salesStatusQuick {

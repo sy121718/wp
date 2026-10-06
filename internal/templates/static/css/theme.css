@@ -2477,13 +2477,39 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
 @media (min-width: 1100px) {
     .sales-cards { grid-template-columns: repeat(4, 1fr); }
 }
-/* 左侧 3px 强调色只用于区分维度，不表达好坏；值本身的好坏由 .is-up / .is-down 表达。 */
-.sales-card { border-left: 3px solid var(--sky-c-border); }
+/* 两排卡片各带一行小标题：八张同形卡没有分组标识时读不出「前四张是钱、后四张是人」。 */
+.sales-group { display: flex; flex-direction: column; gap: var(--ui-sp-sm); }
+.sales-group-title {
+    margin: 0;
+    font-size: 13px; font-weight: 600; line-height: 1.4;
+    color: var(--sky-c-text-secondary);
+}
+
+/* 卡片基座来自 .card（面 + 描边 + 阴影 + 圆角，见 ui.css），本页只加左侧 3px 强调色。
+   **overflow 必须用双类放开**：口径说明的浮层（.help-pop）是从标签往下展开的绝对定位元素，
+   而 .card 基座的 overflow:hidden 会把它裁掉 —— 实测表现是浮层右侧被卡片边界切掉一截。
+   这里不能写成单类 `.sales-card`（(0,1,0)）跟 `.card` 同层，胜负就落到「ui.css 在 theme.css
+   之后加载」这个与规则无关的事实上（layout.html:25-27），一重排就静默失效 —— 正是
+   ui_base_layering_contract_test.go 记录的那类缺陷。双类 (0,2,0) 才是稳定的赢法。
+   左侧竖线是刻意保留的维度标记，不表达好坏（好坏由 .is-up / .is-down 表达）。 */
+.card.sales-card { overflow: visible; border-left: 3px solid var(--sky-c-border); }
 .sales-card.accent-primary { border-left-color: var(--sky-c-primary); }
 .sales-card.accent-success { border-left-color: var(--sky-c-success); }
 .sales-card.accent-info { border-left-color: var(--sky-c-warning); }
 .sales-card.accent-mute { border-left-color: var(--sky-c-text-faint); }
 .sales-card .stat-value { font-variant-numeric: tabular-nums; }
+/* 标签行：文字与「?」按钮同排（.help 是 inline-flex，垂直居中已由它自己管）。 */
+.sales-card .stat-label { display: flex; align-items: center; gap: var(--ui-sp-xs); }
+
+/* 回看窗口里没有一笔销售时的空态：160px 的空白画布会被读成「趋势平缓」，
+   而这与「没数据」是两件事。高度取图表的一半，页面不至于在两种状态间跳。 */
+.sales-chart-empty {
+    margin: 0;
+    padding: var(--ui-sp-xl) 0;
+    font-size: 0.875rem;
+    color: var(--sky-c-text-mute);
+    text-align: center;
+}
 
 /* 筛选条：生效区间回显。放在 .filter-bar 之内、表单之外，
    因为它描述的是「服务端实际用了什么」，不是可编辑的输入。 */

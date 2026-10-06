@@ -226,7 +226,7 @@ type OrderRangeSummaryReader interface {
 // OrderSalesOverviewReader 销售概览页的取数（只读，一条方法）。
 //
 // 越权防护同样靠接口形状：工程与区间都必填，状态筛选在订单模块内过白名单
-//（调用方传什么都不会得到「把取消单也算进来」的口径），趋势的月份回看数也有上下限。
+// （调用方传什么都不会得到「把取消单也算进来」的口径），趋势的月份回看数也有上下限。
 // 派生值（AOV / ACV / 平均每单 / 平均每件 / 复购率 / 环比）全部由订单模块算好 ——
 // 调用方拿到的是结论，不参与计算，也不做第二份金额换算。
 type OrderSalesOverviewReader interface {

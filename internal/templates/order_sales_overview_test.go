@@ -110,8 +110,34 @@ func salesOverviewTemplateData() map[string]any {
 			"NewOrderCount": 0, "NewCustomers": 0, "HasMix": false, "Zero": true},
 	}
 	data["HasMonthly"] = true
+	// HasMonthlyData 与 HasMonthly 是两件事：前者「有没有柱子」，后者「柱子有没有高度」。
+	// **这个键漏了会让整页渲染中断**（Jet 的 if 要求 bool，缺失的 map 键求值成 nil，
+	// 报 `there is no field or method 'HasMonthlyData' in map[string]interface {}`，
+	// 实测命中过一次）——本文件所有用例都走 renderSalesOverview，所以缺键会让它们全红。
+	data["HasMonthlyData"] = true
 	data["MonthlyMaxSales"] = int64(123450)
 	return data
+}
+
+// 回看窗口里一笔销售都没有时的空态：不给 160px 高的空白画布。
+//
+// 判据是**负向的**：这一支必须同时满足「没有sales-chart」与「有那句空态文案」。
+// 只断言文案会出现时，把空态分支接错（例如条件写成 HasMonthly）测试仍然全绿。
+func TestSalesOverviewMonthlyEmptyState(t *testing.T) {
+	data := salesOverviewTemplateData()
+	data["HasMonthlyData"] = false
+
+	out := renderSalesOverview(t, data)
+	if strings.Contains(out, `class="sales-chart"`) {
+		t.Error("没有数据时不该画出图表画布（一片空白会被读成趋势平缓）")
+	}
+	if !strings.Contains(out, "趋势暂无可画的柱子") {
+		t.Error("没有数据时缺少空态文案")
+	}
+	// 图例仍在：它解释的是颜色语义，与有没有数据无关。
+	if !strings.Contains(out, "sales-legend") {
+		t.Error("空态下不应丢掉图例")
+	}
 }
 
 // renderSalesOverview 渲染整页模板（渲染期错误即失败）。
@@ -134,12 +160,22 @@ func TestSalesOverviewRendersCards(t *testing.T) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
-	// 口径说明必须落在 title 属性里 —— 卡面上出现它就意味着占了一行。
-	if !strings.Contains(out, `title="销售额 ÷ 订单数（AOV）"`) {
-		t.Error("AOV 的口径说明没有渲染成 title 悬浮")
+	// 口径说明必须落在 .help-pop 浮层里，卡面上不留一个字。
+	//
+	// 曾经用原生 `title` —— 位置与样式由浏览器决定，实测悬浮时会压住相邻卡片
+	// （页面上「直接出现一段说明文字」）。仓内其它页面用的是 .help-pop 浮层
+	// （admin.js 已处理 hover / 键盘聚焦 / Esc / 点外部关闭 / 贴边自动翻转）。
+	if !strings.Contains(out, `<span class="help-pop" role="tooltip">销售额 ÷ 订单数（AOV）</span>`) {
+		t.Error("AOV 的口径说明没有渲染进 .help-pop 浮层")
+	}
+	if strings.Contains(out, `title="销售额`) || strings.Contains(out, `title="含没有商品明细`) {
+		t.Error("口径说明仍在用原生 title 悬浮（会盖住相邻卡片）")
+	}
+	if !strings.Contains(out, `class="help-btn"`) {
+		t.Error("卡片标签旁缺少 ? 说明按钮（浮层就打不开了）")
 	}
 	if strings.Contains(out, `<p class="stat-note">`) {
-		t.Error("卡面上出现了说明段落（口径应走 title 悬浮）")
+		t.Error("卡面上出现了说明段落（口径应藏在浮层里）")
 	}
 }
 
