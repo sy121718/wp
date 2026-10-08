@@ -276,4 +276,6 @@ func init() {
 	registerMenuButtonCode()
 	// 591：导航菜单页写动作提示页的成功回执词条（见 register_navigation_jump_i18n.go）。
 	registerNavigationJumpI18n()
+	// 592：页面鉴权/菜单码收口带出的 4 条提示文案词条（见 register_admin_ui_new_keys_i18n.go）。
+	registerAdminUINewKeysI18n()
 }

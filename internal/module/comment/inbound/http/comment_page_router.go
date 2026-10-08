@@ -16,6 +16,7 @@ import (
 
 	"go_wp/internal/middleware/builtin"
 	commentcontract "go_wp/internal/module/comment/contract"
+	"go_wp/internal/shell"
 )
 
 // SetupCommentPages 注册评论审核页；pages 为 nil 时整体跳过。
@@ -25,7 +26,7 @@ func SetupCommentPages(pages *gin.RouterGroup, svc commentcontract.CommentServic
 		return
 	}
 	pageHandle := NewCommentPageHandle(svc, projects)
-	pages.GET("/comments", pageHandle.CommentsPage)
+	pages.GET("/comments", shell.PageAuthz("/api/comment/list"), pageHandle.CommentsPage)
 	pages.POST("/comments/review",
 		builtin.CasbinMiddlewareForPath("/api/comment/review"), pageHandle.Review)
 }

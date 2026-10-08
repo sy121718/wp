@@ -18,6 +18,7 @@ import (
 	"go_wp/internal/module/navigation/contract"
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
@@ -37,7 +38,7 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	h := NewNavigationPageHandle(navigations, projects)
 	// 面板块能力（超级菜单）：装配期注入；未注入时面板入口降级可见（PanelAvail=false）。
 	h.SetBlockPanelPort(blocks)
-	adminPages.GET("/navigations", h.NavigationsPage)
+	adminPages.GET("/navigations", shell.PageAuthz("/api/navigation/list"), h.NavigationsPage)
 	// GET 读编辑表单，但代理真正 POST /api/navigation/update 的权限动作。
 	adminPages.GET("/navigations/edit", builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost), h.NavigationEditFragment)
 	// 面板设置复用 navigation:update；新建面板块是**块的创建**，故挂 block:create。
@@ -70,6 +71,6 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	if invalidator, ok := navigations.(navTranslationMenuInvalidator); ok {
 		translations.SetMenuInvalidator(invalidator)
 	}
-	adminPages.GET("/navigations/translations", translations.NavigationTranslations)
+	adminPages.GET("/navigations/translations", shell.PageAuthz("/api/navigation/list"), translations.NavigationTranslations)
 	adminPages.POST("/navigations/translations/save", builtin.CasbinMiddlewareForPath("/api/navigation/update"), translations.SaveNavigationTranslations)
 }

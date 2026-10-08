@@ -20,6 +20,7 @@ import (
 	aicontract "go_wp/internal/module/ai/contract"
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	"go_wp/internal/shell"
 )
 
 // SetupAIPages 注册 AI 后台页面与悬浮球；adminPages 为 nil 时整体跳过。
@@ -38,14 +39,14 @@ func SetupAIPages(adminPages *gin.RouterGroup, svc aicontract.AIService,
 	mcpPage := NewMcpPageHandle(tokenSvc, toolRegistry)
 	// 开关状态与切换都走 sysconfig（GroupAI / mcp_enabled）；与服务端可达性判定同源。
 	mcpPage.SetConfigService(aiConfig)
-	adminPages.GET("/ai/mcp", builtin.CasbinMiddlewareForPathAs("/api/ai/token/list", http.MethodGet), mcpPage.Page)
+	adminPages.GET("/ai/mcp", shell.PageAuthz("/api/ai/token/list"), mcpPage.Page)
 	adminPages.POST("/ai/mcp/token/create", builtin.CasbinMiddlewareForPath("/api/ai/token/create"), mcpPage.TokenCreate)
 	adminPages.POST("/ai/mcp/token/revoke", builtin.CasbinMiddlewareForPath("/api/ai/token/revoke"), mcpPage.TokenRevoke)
 	// 开关键：改的是全站可达性，复用「管理令牌」那个权限点 —— 能给外部发令牌的人
 	// 本来就是决定「外部能不能进来」的人，多一个权限点只会让两处授权状态有机会不一致。
 	adminPages.POST("/ai/mcp/toggle", builtin.CasbinMiddlewareForPath("/api/ai/token/create"), mcpPage.McpToggle)
 	// 页面路径与权限点路径不同，必须显式指定 casbin obj（口径见 sysconfig 页面路由）。
-	adminPages.GET("/ai/providers", builtin.CasbinMiddlewareForPathAs("/api/ai/provider/list", http.MethodGet), page.ProvidersPage)
+	adminPages.GET("/ai/providers", shell.PageAuthz("/api/ai/provider/list"), page.ProvidersPage)
 
 	adminPages.POST("/ai/providers/save", builtin.CasbinMiddlewareForPath("/api/ai/provider/save"), page.ProviderSave)
 	adminPages.POST("/ai/providers/delete", builtin.CasbinMiddlewareForPath("/api/ai/provider/delete"), page.ProviderDelete)
@@ -64,7 +65,7 @@ func SetupAIPages(adminPages *gin.RouterGroup, svc aicontract.AIService,
 
 	// 会话页：路径与权限点路径不一致，逐个显式指定 casbin obj（口径同上）。
 	sessionPage := NewSessionPageHandle(sessionSvc, svc)
-	adminPages.GET("/ai/sessions", builtin.CasbinMiddlewareForPathAs("/api/ai/session/list", http.MethodGet), sessionPage.SessionsPage)
+	adminPages.GET("/ai/sessions", shell.PageAuthz("/api/ai/session/list"), sessionPage.SessionsPage)
 	adminPages.POST("/ai/sessions/append", builtin.CasbinMiddlewareForPath("/api/ai/session/append"), sessionPage.SessionAppend)
 	adminPages.POST("/ai/sessions/rename", builtin.CasbinMiddlewareForPath("/api/ai/session/rename"), sessionPage.SessionRename)
 	adminPages.POST("/ai/sessions/archive", builtin.CasbinMiddlewareForPath("/api/ai/session/archive"), sessionPage.SessionArchive)

@@ -17,6 +17,7 @@ import (
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
+	"go_wp/internal/shell"
 )
 
 // SetupAdminPages 注册 admin 六领域管理页 + 文案词条页 + 语言切换。
@@ -42,7 +43,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	}
 	handle := NewAdminPagesHandle(admins, roles, perms, menus, depts, rules)
 
-	adminPages.GET("/administrators", builtin.CasbinMiddlewareForPath("/api/admin/list"), handle.AdministratorsPage)
+	adminPages.GET("/administrators", shell.PageAuthz("/api/admin/list"), handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
 	adminPages.POST("/administrators/delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsDelete)
@@ -60,7 +61,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"), handle.AdministratorMenusDrawer)
 	adminPages.POST("/administrators/menus/save", builtin.CasbinMiddlewareForPath("/api/admin/menu/save"), handle.AdministratorMenusSave)
 
-	adminPages.GET("/roles", builtin.CasbinMiddlewareForPath("/api/role/list"), handle.RolesPage)
+	adminPages.GET("/roles", shell.PageAuthz("/api/role/list"), handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
@@ -73,28 +74,28 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"), handle.RolePermissionsDrawer)
 	adminPages.POST("/roles/permissions/save", builtin.CasbinMiddlewareForPath("/api/role/menu/save"), handle.RolePermissionsSave)
 
-	adminPages.GET("/menus", builtin.CasbinMiddlewareForPath("/api/menu/tree"), handle.MenusPage)
+	adminPages.GET("/menus", shell.PageAuthz("/api/menu/tree"), handle.MenusPage)
 	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"), handle.MenusEditFragment)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
 	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
-	adminPages.GET("/permissions", builtin.CasbinMiddlewareForPath("/api/permission/list"), handle.PermissionsPage)
+	adminPages.GET("/permissions", shell.PageAuthz("/api/permission/list"), handle.PermissionsPage)
 	adminPages.GET("/permissions/edit", builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"), handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
 	adminPages.POST("/permissions/update", builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
 	adminPages.POST("/permissions/bulk-delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsBulkDelete)
 
-	adminPages.GET("/departments", builtin.CasbinMiddlewareForPath("/api/dept/tree"), handle.DepartmentsPage)
+	adminPages.GET("/departments", shell.PageAuthz("/api/dept/tree"), handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
 	adminPages.POST("/departments/update", builtin.CasbinMiddlewareForPath("/api/dept/update"), handle.DepartmentsUpdate)
 	adminPages.POST("/departments/delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsDelete)
 	adminPages.POST("/departments/bulk-delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsBulkDelete)
 
-	adminPages.GET("/datarules", builtin.CasbinMiddlewareForPath("/api/datarule/list"), handle.DatarulesPage)
-	adminPages.GET("/datarules/edit", builtin.CasbinMiddlewareForPath("/api/datarule/detail"), handle.DatarulesEditPage)
+	adminPages.GET("/datarules", shell.PageAuthz("/api/datarule/list"), handle.DatarulesPage)
+	adminPages.GET("/datarules/edit", shell.PageAuthz("/api/datarule/detail"), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
@@ -121,7 +122,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 而页面本身完全正常（AGENTS.md §AI 工具记过这一类）。样板：mail 的 declareMailPageObjects。
 	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
 	permission.Declare(http.MethodPost, "/api/i18n/save", permission.I18nManage)
-	adminPages.GET("/i18n", builtin.CasbinMiddlewareForPath("/api/i18n/list"), i18nPages.I18nEntriesPage)
+	adminPages.GET("/i18n", shell.PageAuthz("/api/i18n/list"), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"), i18nPages.I18nEntryEditFragment)
 	adminPages.POST("/i18n/update", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryUpdate)
 	adminPages.POST("/i18n/save", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntrySave)

@@ -20,6 +20,7 @@ import (
 	"go_wp/internal/module/product/contract"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
+	"go_wp/internal/shell"
 )
 
 // SetupContentTemplatePages 注册内容模板后台页面（/admin 组，中间件链由装配层统一挂好）。
@@ -38,8 +39,8 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 		return
 	}
 	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
-	pages.GET("/content-templates", contentTemplatePages.ContentTemplatesPage)
-	pages.GET("/content-templates/edit", contentTemplatePages.ContentTemplateEditPage)
+	pages.GET("/content-templates", shell.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplatesPage)
+	pages.GET("/content-templates/edit", shell.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
 	// 切换生效：权限点 contenttemplate:activate（迁移 288 seed）。必须用独立权限点映射 ——
 	// Casbin 中间件按**实际请求路径** enforce，复用 update 时这条路径没有策略匹配 → 全员 403
 	//（含超管）。这里把页面入口映射到 JSON 接口的授权路径，两个入口共用同一条策略。

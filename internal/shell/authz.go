@@ -33,6 +33,12 @@ func PageAuthz(obj string) gin.HandlerFunc {
 	return builtin.PageCasbinMiddleware(obj, RejectPageRequest)
 }
 
+// PageAuthzAs 同 PageAuthz，但显式指定 act —— 只给「页面是 GET，而该页菜单绑的权限点
+// 声明为 POST」这类存量特例用（见 builtin.PageCasbinMiddlewareAs 的说明）。
+func PageAuthzAs(obj, act string) gin.HandlerFunc {
+	return builtin.PageCasbinMiddlewareAs(obj, act, RejectPageRequest)
+}
+
 // RejectPageRequest 页面被拒时的整页出口（详情只进日志，对外给通用文案 —— 与 PageError 同一取舍）。
 func RejectPageRequest(c *gin.Context, status int, key string) {
 	if status == http.StatusUnauthorized {

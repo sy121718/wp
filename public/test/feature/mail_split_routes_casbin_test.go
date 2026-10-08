@@ -351,11 +351,14 @@ func TestMailSplitRoutesLegacyMarketingIsRedirectOnly(t *testing.T) {
 	})
 }
 
-// TestMailSplitPageGETHasNoCasbinButPOSTDoes 读页面裸注册、写操作挂 Casbin。
+// TestMailSplitPageGETRequiresCasbinPolicy 页面 GET 与写操作走**同一条** Casbin 链。
 //
-// GET 页面无 Casbin 是项目既有约定（侧栏按权限渲染、但页面本身不拦），本用例不把它判成缺陷，
-// 只是**钉住这个差异**：读放行、写必须 403。若哪天一页写操作漏挂了 Casbin，这里变红。
-func TestMailSplitPageGETHasNoCasbinButPOSTDoes(t *testing.T) {
+// 本用例的前身（TestMailSplitPageGETHasNoCasbinButPOSTDoes）钉的是旧口径「GET 页面不挂
+// Casbin，只靠侧栏按权限渲染」—— 那条约定已被 docs/02-Z §4.3 判定为缺陷：菜单隐藏不是
+// 访问控制，任何登录账号直输 URL 就能进。现在页面 GET 借**该页菜单绑定的读权限点**
+// enforce（shell.PageAuthz），与 /api/* 共用同一批策略，所以「无策略 → 403」「补策略 → 200」
+// 与写操作完全同构。
+func TestMailSplitPageGETRequiresCasbinPolicy(t *testing.T) {
 	env := newMailSplitRoutesEnv(t)
 
 	// 前置：反例主体必须真的没有该写操作的策略。
@@ -385,11 +388,27 @@ func TestMailSplitPageGETHasNoCasbinButPOSTDoes(t *testing.T) {
 			profile.Code, mailSplitRoutesHead(profile.Body.String(), 300))
 	}
 
+	// 1) 无读策略的普通管理员：六个页面全部被拒，且**页面没有被渲染**（403 里不能出现
+	//    列表页痕迹）—— 菜单隐藏不是访问控制，直输 URL 必须同样被拦。
 	for _, tc := range mailSplitRoutesPageCases() {
 		recorder := mailSplitRoutesGET(t, env, env.PlainAdmin, tc.path)
-		if recorder.Code != http.StatusOK {
-			t.Errorf("无 mail 策略的普通管理员打开 %s 应 200（GET 页面不挂 Casbin）: got=%d",
+		if recorder.Code != http.StatusForbidden {
+			t.Errorf("无读策略的普通管理员打开 %s 应 403（页面 GET 与 API 同一条链）: got=%d",
 				tc.path, recorder.Code)
+			continue
+		}
+		if body := recorder.Body.String(); strings.Contains(body, `<table class="data-table">`) {
+			t.Errorf("%s 的 403 响应里出现了列表页表格 —— 页面被渲染了: %s",
+				tc.path, mailSplitRoutesHead(body, 300))
+		}
+	}
+
+	// 2) 超管对照：六个页面全部可打开（超管策略由 seed 通道动态补全）。
+	for _, tc := range mailSplitRoutesPageCases() {
+		recorder := mailSplitRoutesGET(t, env, env.SuperAdmin, tc.path)
+		if recorder.Code != http.StatusOK {
+			t.Errorf("超管打开 %s 应 200: got=%d body=%s",
+				tc.path, recorder.Code, mailSplitRoutesHead(recorder.Body.String(), 300))
 		}
 	}
 
@@ -414,6 +433,27 @@ func TestMailSplitPageGETHasNoCasbinButPOSTDoes(t *testing.T) {
 	if allowed.Code == http.StatusForbidden {
 		t.Fatalf("补上策略后不应再 403（说明 403 由该条 Casbin 路径决定）: body=%s",
 			mailSplitRoutesHead(allowed.Body.String(), 300))
+	}
+
+	// 4) 读侧同一条反证：只补「发信账号」这一条读策略 → /admin/mail 立刻 200，而别的页仍 403
+	//    —— 证明拒绝由该页借用的那条权限点决定，不是一把总开关。
+	if err := env.DB.Exec(`INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
+		VALUES ('p', ?, ?, 'GET', 'mail:account_list')
+		ON CONFLICT (ptype, v0, v1, v2, v3, v4, v5) DO NOTHING`,
+		subject, "/api/mail/account/list").Error; err != nil {
+		t.Fatalf("补写 /api/mail/account/list 策略失败: %v", err)
+	}
+	if err := pkgcasbin.ReloadPolicy(); err != nil {
+		t.Fatalf("重载 Casbin 策略失败: %v", err)
+	}
+	pageAllowed := mailSplitRoutesGET(t, env, env.PlainAdmin, "/admin/mail")
+	if pageAllowed.Code != http.StatusOK {
+		t.Fatalf("补上读策略后 /admin/mail 应 200: got=%d body=%s",
+			pageAllowed.Code, mailSplitRoutesHead(pageAllowed.Body.String(), 300))
+	}
+	otherPage := mailSplitRoutesGET(t, env, env.PlainAdmin, "/admin/mail/contacts")
+	if otherPage.Code != http.StatusForbidden {
+		t.Fatalf("只补一条读策略不应放行别的页：/admin/mail/contacts got=%d", otherPage.Code)
 	}
 }
 

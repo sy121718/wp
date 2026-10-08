@@ -20,6 +20,7 @@ import (
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/user/contract"
+	"go_wp/internal/shell"
 )
 
 // SetupCustomerPages 注册后台客户管理页（pages = /admin 后台页面组）。
@@ -60,17 +61,16 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h.SetCustomerRfm(rfm)
 	h.SetCustomerCohort(cohort)
 	h.SetMembershipFilters(membershipAdmin, membershipTiers)
-	pages.GET("/customers", h.CustomersPage)
-	// 客户概览：目录（客户）下的第一项。只读，走 /admin 组认证即可 ——
-	// 与列表页同源（同一张 users 表的两种看法），不另立权限点。
-	pages.GET("/customers/overview", h.CustomerOverviewPage)
-	// RFM 分析：客户目录下的第三项。只读，与列表页同源（同一张表的另一种看法），
-	// 不另立权限点 —— 与客户概览同一条口径。
-	pages.GET("/customers/rfm", h.CustomerRfmPage)
-	// 群组留存：客户目录下的第四项。同样只读、同样复用列表权限点 ——
-	// 它是同一批客户按时间的另一种看法，不是另一份数据。
-	pages.GET("/customers/cohort", h.CustomerCohortPage)
-	pages.GET("/customers/detail", h.CustomerDetailPage)
+	pages.GET("/customers", shell.PageAuthz("/api/customer/list"), h.CustomersPage)
+	// 客户概览：目录（客户）下的第一项。只读 —— 只读不等于不鉴权，菜单隐藏不是访问控制
+	//（docs/02-Z §4.3）。与列表页同源（同一张 users 表的两种看法），借同一个读权限点。
+	pages.GET("/customers/overview", shell.PageAuthz("/api/customer/list"), h.CustomerOverviewPage)
+	// RFM 分析：客户目录下的第三项。与列表页同源（同一张表的另一种看法），同一个读权限点。
+	pages.GET("/customers/rfm", shell.PageAuthz("/api/customer/list"), h.CustomerRfmPage)
+	// 群组留存：客户目录下的第四项。同一批客户按时间的另一种看法，不是另一份数据。
+	pages.GET("/customers/cohort", shell.PageAuthz("/api/customer/list"), h.CustomerCohortPage)
+	// 客户详情：二级页面（菜单表没有它），但它是整页导航目标 —— 直输 URL 必须同样被拦。
+	pages.GET("/customers/detail", shell.PageAuthz("/api/customer/list"), h.CustomerDetailPage)
 	pages.POST("/customers/status",
 		builtin.CasbinMiddlewareForPath("/api/customer/status"), h.CustomerStatusSave)
 	pages.POST("/customers/unlock",

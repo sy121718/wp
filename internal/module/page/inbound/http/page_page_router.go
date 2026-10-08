@@ -18,6 +18,7 @@ import (
 	blockcontract "go_wp/internal/module/block/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 )
 
 // SetupPageAdminPages 注册页面域后台页面与编辑器修订历史面板。
@@ -29,7 +30,7 @@ func SetupPageAdminPages(pages, workbenchPages *gin.RouterGroup, svc pagecontrac
 	projectService projectcontract.ProjectService, blocks blockcontract.BlockService, handle *Handle) {
 	adminHandle := NewPagesAdminHandle(svc, projectService, blocks, nil)
 	if pages != nil {
-		pages.GET("/pages", adminHandle.PagesList)
+		pages.GET("/pages", shell.PageAuthz("/api/page/list"), adminHandle.PagesList)
 		pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
 		// 单条删除与批量删除复用「删除页面」权限点（/api/page/delete，迁移 151）：
 		// 两者走同一个 svc.Delete —— 权限点、拒绝规则、访问面下线动作都不会分叉。
@@ -45,7 +46,7 @@ func SetupPageAdminPages(pages, workbenchPages *gin.RouterGroup, svc pagecontrac
 		pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), handle.RedirectBulkDelete)
 		// 翻译工作台（多语言 P5c，docs/06-D §7.8）：入口在页面列表行内「多语言」按钮。
 		// 保存写 sys_translation（engine=manual）并触发全站标记待重建，鉴权复用「保存草稿」权限点。
-		pages.GET("/pages/translations", adminHandle.PageTranslations)
+		pages.GET("/pages/translations", shell.PageAuthz("/api/page/list"), adminHandle.PageTranslations)
 		// 定时上下线的面板与表单（PIPE-7）：面板是 HTMX 片段（列表页行内「定时」按钮的落点），
 		// 两个 POST 是原生表单（form-urlencoded + 隐藏 csrf_token 域），鉴权复用 API 的权限点路径
 		// —— 页面路径与权限点路径不一致，直接按页面路径 enforce 会因权限点表无此路径而拒绝所有用户
@@ -90,7 +91,7 @@ func setupSiteSlotPageRoutes(pages *gin.RouterGroup, svc pagecontract.PageServic
 		return
 	}
 	h := NewSiteSlotPageHandle(svc, projects)
-	pages.GET("/site-slots", h.SiteSlotsPage)
+	pages.GET("/site-slots", shell.PageAuthz("/api/page/list"), h.SiteSlotsPage)
 	pages.POST("/site-slots/bind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/bind"), h.SiteSlotBind)
 	pages.POST("/site-slots/unbind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/unbind"), h.SiteSlotUnbind)
 }

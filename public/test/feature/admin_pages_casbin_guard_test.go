@@ -348,12 +348,17 @@ func TestAdminPagesReadOnlyPageForbiddenWithoutPolicy(t *testing.T) {
 			recorder.Code, http.StatusForbidden, body)
 	}
 	t.Logf("无策略时 /admin/administrators 的 403 响应体: %s", body)
+	// 拒绝形态是**整页提示**（jump 形态），不是 JSON 报文 —— 直接输 URL 的人要看得懂
+	// 发生了什么、知道去找谁开权限（docs/02-Z §4.3）。所以判据不是「响应里没有 </html>」
+	//（那是旧的 JSON 403 形态），而是**列表页没有被渲染**：表格结构与管理员 PII 一个都不能出现。
+	if !strings.Contains(body, "</html>") {
+		t.Fatalf("403 应是完整提示页（缺 </html>，模板中途中断）: %s", body)
+	}
 	for _, leaked := range []string{
 		adminPagesProbeAdminUsername, // 识别性用户名
 		adminPagesProbeAdminEmail,    // 识别性邮箱
 		support.TestAdminUsername,    // 超管用户名
 		`<table class="data-table">`, // 列表页被渲染过的痕迹
-		"</html>",                    // 整页渲染完成
 	} {
 		if strings.Contains(body, leaked) {
 			t.Fatalf("403 响应里出现了 %q —— 管理员列表页被渲染了（用户名/邮箱泄漏）: %s", leaked, body)

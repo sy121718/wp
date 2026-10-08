@@ -20,6 +20,7 @@ import (
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/presentation/contract"
 	"go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
@@ -47,7 +48,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	if loc, ok := any(instances).(presentationcontract.PublishedEntityLocator); ok {
 		articlePages.SetArticleLinkLocator(loc)
 	}
-	pages.GET("/articles", articlePages.ArticlesPage)
+	pages.GET("/articles", shell.PageAuthz("/api/content/list"), articlePages.ArticlesPage)
 	// 待重建影响面清单（只读抽屉片段）：与页头徽章同一个查询，徽章给数、抽屉给清单。
 	// 鉴权复用列表页的读权限点 —— 片段里就是全站待重建页面清单，不挂鉴权等于把它
 	// 露给任何登录账号（菜单隐藏不是访问控制）。GET 与 /api/content/list 的策略动词一致。
@@ -61,7 +62,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	// 两者不匹配 → 含超管在内全员 403（实测缺陷，页面完全不可达）。这里显式声明
 	// 「本页面入口按 POST 语义鉴权」，让动词不匹配这件事在代码里可见。
 	pages.GET("/articles/new", builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost), articlePages.ArticleNewPage)
-	pages.GET("/articles/edit", articlePages.ArticleEditPage)
+	pages.GET("/articles/edit", shell.PageAuthz("/api/content/list"), articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
 	pages.POST("/articles/delete", builtin.CasbinMiddlewareForPath("/api/content/delete"), articlePages.ArticleDelete)
@@ -79,7 +80,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	if writer, werr := i18n.NewContentWriterDefault(); werr == nil {
 		articleTranslations.SetContentWriter(writer)
 	}
-	pages.GET("/articles/translations", articleTranslations.ArticleTranslations)
+	pages.GET("/articles/translations", shell.PageAuthz("/api/content/list"), articleTranslations.ArticleTranslations)
 	pages.POST("/articles/translations/save", builtin.CasbinMiddlewareForPath("/api/content/update"), articleTranslations.SaveArticleTranslations)
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。

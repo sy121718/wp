@@ -42,6 +42,7 @@ PLAIN_SCRIPTS=(
   check-workbench.sh
   check-contract-deps.sh
   check-dto-immutability.sh
+  check-template-presentation.sh
   check-static-scans.sh
   check-go-vet.sh
   check-page-title.sh
@@ -54,6 +55,7 @@ DB_SCRIPTS=(
   check-permission-gaps.sh
   check-menu-page-binding.sh
   check-button-code-binding.sh
+  check-page-get-authz.sh
 )
 
 declare -a SELECTED=()

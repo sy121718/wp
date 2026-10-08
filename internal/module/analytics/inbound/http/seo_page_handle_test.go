@@ -118,8 +118,14 @@ func TestSEORouteIsRegisteredOnAuthenticatedAdminGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取 analytics 页面路由失败：%v", err)
 	}
-	if !strings.Contains(body, `pages.GET("/seo", seoPages.SEOPage)`) {
+	if !strings.Contains(body, `pages.GET("/seo",`) {
 		t.Fatal("SEO 页面必须注册在已认证的 admin 页面组")
+	}
+	// 页面 GET 的鉴权（docs/02-Z §4.3）：只读不等于不鉴权，菜单隐藏不是访问控制。
+	// obj 取该页菜单绑的码 seo:audit 声明的路径，而它声明为 POST（存量口径不一致），
+	// 故用 As 变体显式指定 act。
+	if !strings.Contains(body, `shell.PageAuthzAs("/api/seo/audit", http.MethodPost)`) {
+		t.Fatal("SEO 页面 GET 必须按菜单绑定的 seo:audit 鉴权")
 	}
 	if !strings.Contains(body, `NewSEOPageHandle(analytics, projects)`) {
 		t.Fatal("SEO 页面必须复用 analytics 与 project 契约")

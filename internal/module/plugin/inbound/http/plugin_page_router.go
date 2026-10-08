@@ -12,6 +12,7 @@ package pluginhttp
 import (
 	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +25,7 @@ func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.Plugin
 		return
 	}
 	h := &pluginPageHandle{plugins: plugins}
-	adminPages.GET("/plugins", h.PluginsPage)
+	adminPages.GET("/plugins", shell.PageAuthz("/api/plugin/list"), h.PluginsPage)
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), h.PluginsInstall)
 	adminPages.POST("/plugins/toggle", builtin.CasbinMiddlewareForPath("/api/plugin/toggle"), h.PluginsToggle)
 	adminPages.POST("/plugins/uninstall", builtin.CasbinMiddlewareForPath("/api/plugin/uninstall"), h.PluginsUninstall)

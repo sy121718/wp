@@ -44,8 +44,17 @@ type PageRejectFunc func(c *gin.Context, status int, key string)
 // sys_permission.api_path），否则会出现「菜单可见、点进去被拒」。门禁
 // scripts/check-page-get-authz.sh 双向守这条。
 func PageCasbinMiddleware(obj string, reject PageRejectFunc) gin.HandlerFunc {
+	return PageCasbinMiddlewareAs(obj, http.MethodGet, reject)
+}
+
+// PageCasbinMiddlewareAs 同 PageCasbinMiddleware，但显式指定 act。
+//
+// 只给「页面是 GET，而该页菜单绑的权限点声明为 POST」这类存量特例用（如 /admin/seo →
+// seo:audit → POST /api/seo/audit）：enforce 的码必须与菜单绑定的码一致，否则菜单可见、
+// 点进去被拒。新页面一律用 PageCasbinMiddleware（act 固定 GET）。
+func PageCasbinMiddlewareAs(obj, act string, reject PageRejectFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status, key := CasbinDecide(c, obj, http.MethodGet)
+		status, key := CasbinDecide(c, obj, act)
 		if status == 0 {
 			c.Next()
 			return

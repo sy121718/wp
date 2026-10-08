@@ -10,6 +10,8 @@ package producthttp
 // 页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
@@ -20,6 +22,7 @@ import (
 	"go_wp/internal/module/presentation/contract"
 	"go_wp/internal/module/product/contract"
 	"go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 )
 
 func SetupProductPages(pages *gin.RouterGroup,
@@ -57,17 +60,17 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
-	pages.GET("/products", productPages.ProductsPage)
+	pages.GET("/products", shell.PageAuthz("/api/product/list"), productPages.ProductsPage)
 	// 商品新建整页（docs/04-C §5，弃抽屉）：左表单右模板卡片。
-	pages.GET("/products/new", productPages.ProductNewPage)
+	pages.GET("/products/new", shell.PageAuthzAs("/api/product/create", http.MethodPost), productPages.ProductNewPage)
 	// 商品详情页：变体与评分是某个商品的子资源，连同四个商品级表单一起从列表页拆出来。
 	// 页面 GET 同样走页面组（Session+CSRF，无 Casbin）；页内写动作复用各自既有权限点。
-	pages.GET("/products/detail", productPages.ProductDetailPage)
+	pages.GET("/products/detail", shell.PageAuthz("/api/product/list"), productPages.ProductDetailPage)
 	// 商品基本字段编辑页（名称 / URL 段 / SKU / 状态 / 价格 / 单位 / 重量 / SEO / 图集）
 	// 与商品域翻译工作台（多语言）的入口：详情页是子资源维护页，基本字段此前只有创建时能填。
 	// 页面 GET 走页面组（Session + CSRF，无 Casbin）；写动作复用商品更新权限点
 	//（与 /products/attributes、/products/taxonomy 同一改动面：改的都是这个商品本身）。
-	pages.GET("/products/edit", productPages.ProductEditPage)
+	pages.GET("/products/edit", shell.PageAuthzAs("/api/product/update", http.MethodPost), productPages.ProductEditPage)
 	pages.POST("/products/update", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsUpdate)
 	pages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	pages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
@@ -120,13 +123,13 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 商品发布时可选一套、发布前可预览（预览只读渲染，不落库不激活）。
 	// 写动作分别复用内容模板创建 / 实例创建 / 实例重建 / 实例预览四个 API 权限点。
 	// 捆绑配置（issue #20）：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
-	pages.GET("/products/bundle", productPages.ProductBundlePage)
+	pages.GET("/products/bundle", shell.PageAuthz("/api/product/list"), productPages.ProductBundlePage)
 	pages.POST("/products/bundle/save", builtin.CasbinMiddlewareForPath("/api/product/bundle/set"), productPages.ProductBundleSave)
 	// 成员来源解析（docs/14 §1.2 的三种来源，本批）：只解析、**不落库** ——
 	// 与 /products/variant/preview 同一先例（页面组已有 Session + CSRF，端点落不了任何库），
 	// 因此不叠加 Casbin 权限点，也就不会出现「有路由、无权限点」的全员 403。
 	pages.POST("/products/bundle/members/resolve", productPages.ProductsBundleMembersResolve)
-	pages.GET("/products/template", productPages.ProductDetailTemplatePage)
+	pages.GET("/products/template", shell.PageAuthz("/api/product/get"), productPages.ProductDetailTemplatePage)
 	pages.POST("/products/template/create", builtin.CasbinMiddlewareForPath("/api/contenttemplate/create"), productPages.ProductDetailTemplateCreate)
 	pages.POST("/products/template/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), productPages.ProductDetailTemplatePublish)
 	pages.POST("/products/template/apply", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), productPages.ProductDetailTemplateApply)
@@ -137,7 +140,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 
 	// 商品属性管理页（issue #7）：属性组与属性值可跨商品复用，故独立页面。
 	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
-	pages.GET("/product-attributes", productPages.ProductAttributesPage)
+	pages.GET("/product-attributes", shell.PageAuthz("/api/product/attribute/list"), productPages.ProductAttributesPage)
 	pages.POST("/product-attributes/create", builtin.CasbinMiddlewareForPath("/api/product/attribute/create"), productPages.ProductAttributesCreate)
 	pages.POST("/product-attributes/update", builtin.CasbinMiddlewareForPath("/api/product/attribute/update"), productPages.ProductAttributesUpdate)
 	pages.POST("/product-attributes/set-values", builtin.CasbinMiddlewareForPath("/api/product/attribute/set-values"), productPages.ProductAttributesSetValues)
@@ -150,14 +153,14 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 商品分类与品牌管理页（issue #10）：分类是树（父子层级 / 排序 / slug / SEO 字段），
 	// 列表一次渲染整棵树，按树根分页 —— 没有「子级懒加载」端点。
 	// 品牌是独立实体（logo / 描述 / slug / SEO 字段）。写动作复用商品 API 权限点做 Casbin 鉴权。
-	pages.GET("/product-categories", productPages.ProductCategoriesPage)
-	pages.GET("/product-categories/parents", productPages.ProductCategoryParents)
+	pages.GET("/product-categories", shell.PageAuthz("/api/product/category/list"), productPages.ProductCategoriesPage)
+	pages.GET("/product-categories/parents", shell.PageAuthz("/api/product/category/list"), productPages.ProductCategoryParents)
 	pages.POST("/product-categories/create", builtin.CasbinMiddlewareForPath("/api/product/category/create"), productPages.ProductCategoriesCreate)
 	pages.POST("/product-categories/update", builtin.CasbinMiddlewareForPath("/api/product/category/update"), productPages.ProductCategoriesUpdate)
 	pages.POST("/product-categories/delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesDelete)
 	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
 	pages.POST("/product-categories/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesBulkDelete)
-	pages.GET("/product-brands", productPages.ProductBrandsPage)
+	pages.GET("/product-brands", shell.PageAuthz("/api/product/brand/list"), productPages.ProductBrandsPage)
 	pages.POST("/product-brands/create", builtin.CasbinMiddlewareForPath("/api/product/brand/create"), productPages.ProductBrandsCreate)
 	pages.POST("/product-brands/update", builtin.CasbinMiddlewareForPath("/api/product/brand/update"), productPages.ProductBrandsUpdate)
 	pages.POST("/product-brands/delete", builtin.CasbinMiddlewareForPath("/api/product/brand/delete"), productPages.ProductBrandsDelete)
@@ -168,12 +171,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 
 	// 商品标签管理页（issue #11）：手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
 	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
-	pages.GET("/product-tags", productPages.ProductTagsPage)
+	pages.GET("/product-tags", shell.PageAuthz("/api/product/tag/list"), productPages.ProductTagsPage)
 	// 命中商品片段（审计 PERF-02）：标签页首屏不再逐标签内联命中商品，展开时按页取。
 	// 只读渲染、不落库，故与同组的 /products/seo-score、/products/variant/preview 同一先例
 	// 不叠加 Casbin（页面组已有 Session + CSRF；凭空加权限点反而会造出「有路由无权限点 ⇒
 	// 含超管全员 403」那种缺口）。
-	pages.GET("/product-tags/hits", productPages.ProductTagHitsFragment)
+	pages.GET("/product-tags/hits", shell.PageAuthz("/api/product/tag/list"), productPages.ProductTagHitsFragment)
 	pages.POST("/product-tags/create", builtin.CasbinMiddlewareForPath("/api/product/tag/create"), productPages.ProductTagsCreate)
 	pages.POST("/product-tags/update", builtin.CasbinMiddlewareForPath("/api/product/tag/update"), productPages.ProductTagsUpdate)
 	pages.POST("/product-tags/delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsDelete)
@@ -185,7 +188,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 
 	// 定价工具（issue #13）：四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集
 	// 批量改价。试算走预览权限点（不落库），应用走应用权限点（落库 + 留痕）。
-	pages.GET("/product-pricing", productPages.ProductPricingPage)
+	pages.GET("/product-pricing", shell.PageAuthz("/api/product/list"), productPages.ProductPricingPage)
 	pages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), productPages.ProductPricingPreview)
 	pages.POST("/product-pricing/apply", builtin.CasbinMiddlewareForPath("/api/product/pricing/apply"), productPages.ProductPricingApply)
 
@@ -210,7 +213,7 @@ func SetupProductTranslationRoutes(adminPages *gin.RouterGroup,
 	products productcontract.ProductService, projects projectcontract.ProjectService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *productTranslationHandle {
 	handle := NewProductTranslationHandle(products, projects, pages, instances)
-	adminPages.GET("/products/translations", handle.ProductTranslations)
+	adminPages.GET("/products/translations", shell.PageAuthz("/api/product/list"), handle.ProductTranslations)
 	adminPages.POST("/products/translations/save",
 		builtin.CasbinMiddlewareForPath("/api/product/update"), handle.SaveProductTranslations)
 	return handle

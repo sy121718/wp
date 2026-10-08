@@ -17,6 +17,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	"go_wp/internal/shell"
 )
 
 // SetupProjectPages 注册主题 / 站点设置页面（adminPages）与编辑器面板（workbenchPages）。
@@ -26,16 +27,16 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 	dict sysconfigcontract.DictReader) {
 	if adminPages != nil {
 		themes := &themeAdminHandle{projects: svc, pages: pages, blocks: blocks}
-		adminPages.GET("/themes", themes.ThemeManage)
+		adminPages.GET("/themes", shell.PageAuthz("/api/theme/list"), themes.ThemeManage)
 		adminPages.POST("/themes/create", builtin.CasbinMiddlewareForPath("/api/theme/create"), themes.CreateTheme)
 		adminPages.POST("/themes/activate", builtin.CasbinMiddlewareForPath("/api/theme/activate"), themes.ActivateTheme)
 		adminPages.POST("/themes/delete", builtin.CasbinMiddlewareForPath("/api/theme/delete"), themes.DeleteTheme)
-		adminPages.GET("/themes/settings", themes.ThemeSettings)
+		adminPages.GET("/themes/settings", shell.PageAuthz("/api/theme/list"), themes.ThemeSettings)
 		adminPages.POST("/themes/settings/save", builtin.CasbinMiddlewareForPath("/api/theme/update"), themes.SaveThemeSettings)
 		adminPages.GET("/theme", themes.ThemeRedirect)
 
 		settings := &siteSettingsAdminHandle{projects: svc, pages: pages, dict: dict}
-		adminPages.GET("/settings", settings.SiteSettings)
+		adminPages.GET("/settings", shell.PageAuthz("/api/project/detail"), settings.SiteSettings)
 		adminPages.POST("/settings/save", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.SaveSiteSettings)
 		adminPages.POST("/settings/locales/rows", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.LocaleRowsFragment)
 		adminPages.POST("/settings/locales/save", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.SaveSiteLocales)

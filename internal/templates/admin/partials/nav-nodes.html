@@ -6,16 +6,16 @@
     {{if len(n.Children) > 0}}
     <div class="tree-node has-children{{if n.Open}} is-open{{end}}" data-depth="{{depth}}">
         {{if n.Path != ""}}
-        <a class="tree-link{{if n.Active}} is-active{{end}}" href="{{n.Path}}" style="padding-left:{{8 + (depth > 3 ? 36 : depth * 12)}}px"><span class="dot"></span>{{n.Title}}</a>
+        <a class="tree-link{{if n.Active}} is-active{{end}}" href="{{n.Path}}" style="--tree-depth:{{depth}}"><span class="dot"></span>{{n.Title}}</a>
         {{else}}
-        <span class="tree-link is-group" style="padding-left:{{8 + (depth > 3 ? 36 : depth * 12)}}px"><span class="dot"></span>{{n.Title}}</span>
+        <span class="tree-link is-group" style="--tree-depth:{{depth}}"><span class="dot"></span>{{n.Title}}</span>
         {{end}}
         {* 文案走 sys_i18n（shell.nav.*）：block 内 . 仍指向根数据，故用 .["t"](...) 而非裸 t(...)。 *}
         <button type="button" class="tree-toggle" title="{{ .["t"]("shell.nav.toggle_children", "展开 / 收起子菜单") }}"><span class="caret"></span></button>
         <div class="tree-branch-body">{{yield navNodes(nodes=n.Children, depth=depth + 1)}}</div>
     </div>
     {{else}}
-    <a class="tree-link{{if n.Active}} is-active{{end}}" href="{{n.Path}}" style="padding-left:{{8 + (depth > 3 ? 36 : depth * 12)}}px" data-depth="{{depth}}"><span class="dot"></span>{{n.Title}}</a>
+    <a class="tree-link{{if n.Active}} is-active{{end}}" href="{{n.Path}}" style="--tree-depth:{{depth}}" data-depth="{{depth}}"><span class="dot"></span>{{n.Title}}</a>
     {{end}}
     {{end}}
 {{end}}

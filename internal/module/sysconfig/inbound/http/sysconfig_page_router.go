@@ -11,11 +11,10 @@ package sysconfighttp
 // *_router.go，门禁 scripts/check-route-registration-placement.sh 守这条。
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/shell"
 )
 
 // SetupSysConfigPages 注册系统设置页（adminPages = /admin 后台页面组）。
@@ -24,6 +23,6 @@ func SetupSysConfigPages(adminPages *gin.RouterGroup, h *AdminHandle) {
 	if adminPages == nil || h == nil {
 		return
 	}
-	adminPages.GET("/system", builtin.CasbinMiddlewareForPathAs("/api/sysconfig/get", http.MethodGet), h.SystemPage)
+	adminPages.GET("/system", shell.PageAuthz("/api/sysconfig/get"), h.SystemPage)
 	adminPages.POST("/system/save", builtin.CasbinMiddlewareForPath("/api/sysconfig/save"), h.SystemSave)
 }

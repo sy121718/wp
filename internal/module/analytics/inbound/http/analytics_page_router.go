@@ -11,10 +11,13 @@ package analyticshttp
 // 函数保持**不导出**：装配层只调 SetupAnalyticsRoutes，页面注册由它在同一位置调用。
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/module/analytics/contract"
 	"go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 )
 
 // setupAnalyticsPageRoutes 注册访问统计页与 SEO 控制台（pages = /admin 页面组；
@@ -26,8 +29,11 @@ func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 		return
 	}
 	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
-	pages.GET("/analytics", analyticsPages.AnalyticsPage)
+	pages.GET("/analytics", shell.PageAuthz("/api/analytics/summary"), analyticsPages.AnalyticsPage)
 
 	seoPages := NewSEOPageHandle(analytics, projects)
-	pages.GET("/seo", seoPages.SEOPage)
+	// SEO 控制台的 obj 是它的体检权限点 seo:audit（菜单 /admin/seo 绑的就是它），
+	// 而该权限点声明为 POST /api/seo/audit —— 页面是 GET，故用 As 变体显式指定 act。
+	// 存量口径不一致（页面 GET 借一个 POST 权限点），归一与 02-Z 第二刀同批。
+	pages.GET("/seo", shell.PageAuthzAs("/api/seo/audit", http.MethodPost), seoPages.SEOPage)
 }

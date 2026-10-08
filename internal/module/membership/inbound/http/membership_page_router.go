@@ -17,6 +17,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 )
 
 // SetupMembershipPages 注册会员等级与归属页；pages 为 nil 时整体跳过。
@@ -26,8 +27,8 @@ func SetupMembershipPages(pages *gin.RouterGroup, svc membershipcontract.Members
 		return
 	}
 	pageHandle := NewMembershipPageHandle(svc, projects)
-	pages.GET("/membership", pageHandle.MembershipPage)
-	pages.GET("/membership/assignments", pageHandle.MembershipAssignmentsPage)
+	pages.GET("/membership", shell.PageAuthz("/api/membership/tier/list"), pageHandle.MembershipPage)
+	pages.GET("/membership/assignments", shell.PageAuthz("/api/membership/assign/list"), pageHandle.MembershipAssignmentsPage)
 	// 写动作复用接口权限点（真源在 membership_router.go 的 rg 注册动作）。
 	// CasbinMiddlewareForPath 的参数就是那条 api 路由的路径，与注册动作算出来的绝对路径逐字一致。
 	pages.POST("/membership/tier/create",

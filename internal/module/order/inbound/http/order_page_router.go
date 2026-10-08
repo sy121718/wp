@@ -21,6 +21,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
+	"go_wp/internal/shell"
 )
 
 // ——— 后台页面（/admin/*，BIZ-1 销售侧）———
@@ -40,14 +41,15 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 状态合法性不在这里判断：服务端状态机拒绝哪条边，页面就把哪条边藏起来 ——
 	// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
 	orderPages := NewOrderPageHandle(svc, projects, dict)
-	pages.GET("/orders", orderPages.OrdersPage)
-	// 销售概览页（GET /admin/orders/overview）：整页只读报表，**没有任何写动作**，
-	// 所以不需要 builtin.CasbinMiddlewareForPath（那几个是给页面上的写按钮用的），
-	// 与 /orders 同样的只读页待遇 —— 靠 /admin 组的 Session + CSRF 与侧栏入口控制。
+	pages.GET("/orders", shell.PageAuthz("/api/order/list"), orderPages.OrdersPage)
+	// 销售概览页（GET /admin/orders/overview）：整页只读报表 —— 只读不等于不鉴权，
+	// 菜单隐藏不是访问控制（docs/02-Z §4.3）。obj 取该页菜单绑的码 order:overview 声明的
+	// api_path，而它恰好就是这条页面路径本身（**存量特例**：绝大多数页面的 obj 是 `/api/*`
+	// 形态，见 internal/middleware/builtin/page_authz.go 的说明），归一与 02-Z 第二刀同批。
 	salesPages := NewOrderSalesPageHandle(svc, projects)
-	pages.GET("/orders/overview", salesPages.SalesOverviewPage)
-	// 但这一页**要有一个权限点**：声明它不为拦请求（页面组不过 Casbin），而是为了
-	// 让它成为可授权的对象 —— 侧栏菜单绑 order:overview，角色分权经 menu_ids 收集到它，
+	pages.GET("/orders/overview", shell.PageAuthz("/admin/orders/overview"), salesPages.SalesOverviewPage)
+	// 这个权限点同时仍是可授权对象：声明它不只是为了拦请求 —— 侧栏菜单绑 order:overview，
+	// 角色分权经 menu_ids 收集到它，
 	// 而 permission.RoutesOf 也才有非空结果（空集会被工具侧按 fail closed 一律 forbidden）。
 	// 声明放在这里（与路由同一处），启动期 SyncToDB 幂等 upsert 进 sys_permission，
 	// **不写权限点 seed 迁移**（AGENTS.md §数据库：新增权限点加常量 + 在路由注册处声明）。
@@ -59,7 +61,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 这一页是整页表单（字段 20+、明细可多行），失败一律**就地重渲 200 + 回填**，
 	// 不走 303 + ?err= 回跳：303 之后是 GET，没有 PostForm，几十个字段必然全丢。
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
-	pages.GET("/orders/new", orderCreate.OrderCreatePage)
+	pages.GET("/orders/new", shell.PageAuthz("/api/order/list"), orderCreate.OrderCreatePage)
 	pages.POST("/orders/create", builtin.CasbinMiddlewareForPath("/api/order/create"), orderCreate.OrderCreateSubmit)
 	pages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)
 	pages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
@@ -74,7 +76,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 	// **先入库、后退款**的强顺序由 service 的 ReceiveReturn 保证。
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
-	pages.GET("/returns", returnPages.ReturnsPage)
+	pages.GET("/returns", shell.PageAuthz("/api/order/return/list"), returnPages.ReturnsPage)
 	pages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
 	pages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
 	pages.POST("/returns/receive", builtin.CasbinMiddlewareForPath("/api/order/return/receive"), returnPages.ReturnReceive)
@@ -85,7 +87,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 优惠码管理页：列表 + 新建 + 修改（含停用 / 启用）+ 删除 + 核销记录。
 	// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果（核销明细是真源）。
 	couponPages := NewCouponPageHandle(svc, projects)
-	pages.GET("/coupons", couponPages.CouponsPage)
+	pages.GET("/coupons", shell.PageAuthz("/api/order/coupon/list"), couponPages.CouponsPage)
 	pages.GET("/coupons/edit-form", builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost), couponPages.CouponEditForm)
 	pages.POST("/coupons/create", builtin.CasbinMiddlewareForPath("/api/order/coupon/create"), couponPages.CouponCreate)
 	pages.POST("/coupons/update", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponUpdate)
