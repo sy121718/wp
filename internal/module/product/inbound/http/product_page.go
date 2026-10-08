@@ -178,8 +178,8 @@ import (
 	"go_wp/internal/pipeline"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
-	"go_wp/internal/siteurl"
 	"go_wp/internal/shell"
+	"go_wp/internal/siteurl"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
@@ -4581,6 +4581,7 @@ func pricingLineRows(lines []*productdto.PricingLineResp) []gin.H {
 			"Diff":   formatSignedAmount(l.NewPrice - l.OldPrice),
 			"Status": l.Status, "StatusLabel": l.StatusLabel,
 			"IsChanged":   l.Status == productenums.PricingLineChanged,
+			"StatusTone":  pricingLineTone(l.Status),
 			"IsSkipped":   l.Status == productenums.PricingLineSkipped,
 			"ReasonLabel": l.ReasonLabel,
 		})
@@ -5556,6 +5557,7 @@ func tagPageRow(tr func(key, fallback string) string, t *productdto.TagResp) gin
 	row := gin.H{
 		"ID": t.ID, "Name": t.Name, "Slug": t.Slug, "Kind": t.Kind,
 		"KindLabel": tagKindLabel(tr, t.Kind), "IsRule": t.Kind == productenums.TagKindRule,
+		"KindTone": tagKindTone(t.Kind),
 		"RuleType": t.RuleType, "RuleLabel": t.RuleLabel,
 		"RecalcAt":     recalcLabel(tr, t.RecalcAt),
 		"ProductCount": t.ProductCount, "Sort": t.Sort,
@@ -5576,6 +5578,24 @@ func tagProductRows(items []*productdto.TagProductResp) []gin.H {
 		out = append(out, gin.H{"ID": p.ID, "Name": p.Name, "Slug": p.Slug, "Status": p.Status})
 	}
 	return out
+}
+
+// pricingLineTone 价格行状态 → 徽标分档。
+//
+// 判据与「IsChanged」同源（productenums.PricingLineChanged）：改过的价格行要人复核 → info。
+func pricingLineTone(status string) string {
+	if status == productenums.PricingLineChanged {
+		return "info"
+	}
+	return "mute"
+}
+
+// tagKindTone 标签类型 → 徽标分档（规则型标签 → info，普通标签中性）。
+func tagKindTone(kind string) string {
+	if kind == productenums.TagKindRule {
+		return "info"
+	}
+	return "mute"
 }
 
 // tagKindLabel 标签类型 → 当前语言标签。
@@ -6748,6 +6768,9 @@ type productTranslationRow struct {
 	Target     string
 	Engine     string
 	Translated bool
+	// EngineTone 译文来源的徽标分档（i18n.ContentEngineTone）：模板据此选 class，
+	// 不在模板里写 engine == "ai"（字符串字面量只该出现在常量定义处）。
+	EngineTone string
 	// Rich 富文本 / 多段文本字段（描述、属性值数组）：译文需与原文同形。
 	Rich bool
 }
@@ -6993,6 +7016,7 @@ func groupCandidates(tr func(key, fallback string) string, cands []productcontra
 			Source: c.SourceText, SourceHash: c.SourceHash,
 			Target: info.TargetText, Engine: info.Engine,
 			Translated: info.TargetText != "",
+			EngineTone: i18n.ContentEngineTone(info.Engine),
 			Rich:       c.Field == "description",
 		})
 	}

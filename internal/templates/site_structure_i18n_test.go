@@ -64,6 +64,9 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"Err": "", "Ok": "", "SelectedProject": "p1",
 				"Projects":   []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"BoundCount": 1, "Total": 1, "UnpublishedCount": 0, "DeletedCount": 0,
+				// 分档由组装侧给（page 模块的 unpublishedSlotsTone / deletedSlotsTone）：
+				// 这里计数都是 0 → 两档都是中性，模板读 badge-{{.UnpublishedTone}}。
+				"UnpublishedTone": "mute", "DeletedTone": "mute",
 				"NoPages": false,
 				"Rows": []map[string]any{{
 					"SlotName": "结算页", "Slot": "checkout", "Badge": "badge-mute", "StateLabel": "已绑定",

@@ -9,7 +9,9 @@
 #
 # 判据（都是纯文本可判定的）：
 #   1. `style="` 里出现**颜色字面量**（#hex / rgb( / rgba( / hsl(）—— 外观值进模板；
-#      用调色板变量（`var(--x)`）不算违规：那是引用语义变量，不是写死颜色。
+#      用调色板变量（`var(--x)`）不算违规：那是引用语义变量，不是写死颜色；
+#      带兜底值的变量（`var(--x, #fff)`）**仍算违规** —— 那个 #fff 就是写进模板的颜色值，
+#      兜底链放在 CSS 的变量定义处（theme.css 的 `--sky-c-surface: var(--c-surface, #fff)` 那样）。
 #   2. `{{if …}}` 直接产出 badge 语义类（badge-danger/success/warning/mute/info）
 #      —— 业务阈值进模板（`{{if .EmailVerified}}badge-success{{end}}` 是规则，不是渲染）。
 #   3. `style="` 里**做算术**（`{{… + …}}` / 三元 / `calc({{…}} * …)`）—— 布局数值在模板里算

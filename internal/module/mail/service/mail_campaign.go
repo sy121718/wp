@@ -884,10 +884,23 @@ func (s *Service) CampaignReport(ctx context.Context, campaignID uint64, page, p
 			if r.ErrorKind != nil {
 				item.ErrorKind = *r.ErrorKind
 			}
+			item.StatusTone = recipientStatusTone(item.ErrorKind)
 			res.Recipients = append(res.Recipients, item)
 		}
 	}
 	return res, nil
+}
+
+// recipientStatusTone 收件人投递状态 → 徽标分档。
+//
+// 分档而不是让模板写 {{if p.ErrorKind != ""}}badge-warning{{else}}badge-mute{{end}}：
+// 「什么算异常」是这一层的语义（errorKind 是渲染/投递失败的分类），颜色是 CSS 的事
+// （见 docs/rules/template-boundary.md §语义 vs 外观）。
+func recipientStatusTone(errorKind string) string {
+	if errorKind != "" {
+		return "warn"
+	}
+	return "mute"
 }
 
 func round1(v float64) float64 {

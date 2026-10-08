@@ -158,8 +158,8 @@ import (
 	"go_wp/internal/module/page/service"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/project/dto"
-	"go_wp/internal/templates"
 	"go_wp/internal/shell"
+	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -601,19 +601,59 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 		"SelectedProject": "",
 		"Total":           0,
 		"EffectiveCount":  0,
-		"MultiHopCount":   0,
-		"LoopCount":       0,
 	}
+	// 计数与分档成对写（setRedirectCounts）：多跳 / 成环的档位跟计数走，
+	// 分两处手写迟早漏一处 —— 那时页面上会同时出现「计数 3」和中性色。
+	setRedirectCounts(data, 0, 0)
 	if res != nil {
 		data["Projects"] = res.Projects
 		data["SelectedProject"] = res.ProjectID
 		data["Items"] = res.Items
 		data["Total"] = res.Total
 		data["EffectiveCount"] = res.EffectiveCount
-		data["MultiHopCount"] = res.MultiHopCount
-		data["LoopCount"] = res.LoopCount
+		setRedirectCounts(data, res.MultiHopCount, res.LoopCount)
 	}
 	return data
+}
+
+// setRedirectCounts 写重定向统计的计数与徽标分档。
+func setRedirectCounts(data gin.H, multiHop, loop int) {
+	data["MultiHopCount"] = multiHop
+	data["LoopCount"] = loop
+	data["MultiHopTone"] = redirectMultiHopTone(multiHop)
+	data["LoopTone"] = redirectLoopTone(loop)
+}
+
+// redirectMultiHopTone 多跳计数 → 徽标分档（有就是 warn：链子不干净，访客要多跳一次）。
+func redirectMultiHopTone(n int) string {
+	if n > 0 {
+		return "warn"
+	}
+	return "mute"
+}
+
+// redirectLoopTone 成环计数 → 徽标分档（有就是 danger：访客会撞上「重定向次数过多」）。
+func redirectLoopTone(n int) string {
+	if n > 0 {
+		return "danger"
+	}
+	return "mute"
+}
+
+// unpublishedSlotsTone 未发布绑定计数 → 徽标分档（有就是 warn：绑定好了但还没发布，是待办）。
+func unpublishedSlotsTone(n int) string {
+	if n != 0 {
+		return "warn"
+	}
+	return "mute"
+}
+
+// deletedSlotsTone 已删除页面计数 → 徽标分档（有就是 danger：绑定的页面没了，数据坏了）。
+func deletedSlotsTone(n int) string {
+	if n != 0 {
+		return "danger"
+	}
+	return "mute"
 }
 
 // redirectErrKey 业务错误 → 词条 key。
@@ -1083,6 +1123,9 @@ type translationRow struct {
 	Target     string
 	Engine     string
 	Translated bool
+	// EngineTone 译文来源的徽标分档（i18n.ContentEngineTone）：模板据此选 class，
+	// 不在模板里写 engine == "ai"（字符串字面量只该出现在常量定义处）。
+	EngineTone string
 	Rich       bool
 	Limit      int
 	// ReusePages 除本页外还用到该 (原文, 语境) 的页面数（0 = 仅本页）。
@@ -2095,6 +2138,9 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 		"Total":            total,
 		"UnpublishedCount": unpublished,
 		"DeletedCount":     deleted,
+		// 分档与计数同源（判据就是「有没有」）：绑定没发布是待办，绑定的页面被删是数据坏了。
+		"UnpublishedTone": unpublishedSlotsTone(unpublished),
+		"DeletedTone":     deletedSlotsTone(deleted),
 		"Err":              pageErr,
 		// NoProjectEmpty 「还没有站点工程」空态：工程列表为空 **且** 本次没有出错。
 		//
@@ -2593,6 +2639,9 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 			row.Engine = info.Engine
 			row.Translated = true
 		}
+		// 分档与 Engine 同源，且放在分支**外**：没有译文时 engine 为空 → 中性档。
+		// 模板读 badge-{{r.EngineTone}}，留空会渲染出一个没有样式的 badge（不报错，只是难看）。
+		row.EngineTone = i18n.ContentEngineTone(row.Engine)
 		if site != nil {
 			row.ReusePages, row.ReuseTotal, row.ReuseHint = reuseHint(site.reusePathsOf(key), page.DraftPath, tr)
 		}

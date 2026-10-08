@@ -13,27 +13,11 @@
 #   · 颜色字面量：换成调色板变量（`var(--border)` 这类）。
 
 # ── 判据 2：{{if}} 直接选 badge 语义类（业务阈值进模板）──────────────────────────
-admin/order/orders.html              # 3 处 Status=="pending" → 待收敛
-admin/order/returns.html             # 4 处退货状态组 → 待收敛
-admin/order/coupons.html             # State=="enabled" → 待收敛
-admin/page/page_redirects.html        # MultiHopCount/LoopCount > 0 → 待收敛
-admin/page/site_slots.html            # UnpublishedCount/DeletedCount != 0 → 待收敛
-admin/page/page_translations.html     # r.Engine=="ai" → info → 待收敛
-admin/product/product_translations.html  # r.Engine=="ai" → info → 待收敛
-admin/product/product_pricing.html    # IsChanged → 待收敛
-admin/product/product_tags.html       # IsRule → 待收敛
-admin/product/product_detail.html     # IsVariation → 待收敛
-admin/ai/mcp.html                     # McpEnabled → 待收敛
-admin/ai/provider_card.html           # p.Status==1 / ModelsNoticeErr → 待收敛
-admin/ai/provider_models.html         # noticeErr → 待收敛
-admin/mail/mail_campaign.html         # ErrorKind != "" → 待收敛
-admin/inventory/inventory_purchases.html  # l.Open → 待收敛
-admin/user/customer_detail.html       # EmailVerified → 待收敛
-
 # ── 判据 3：布局数值 —— 已全部收敛（2026-10-08）────────────────────────────
 # nav-nodes / menus / product_categories 改走 CSS 变量（theme.css 的 --tree-depth + calc）；
 # role_permissions / admin_menu_drawer / navigations 用的是 Go 算好的值（模板没做计算），
 # 判据修正后不再命中；ai/sessions 的 var(--chart-c{{.Color}}) 同理。这一节现已清空。
 
-# ── 判据 1：style=" 里写死颜色───────────────────────────────────────────────
-admin/content/article_new.html        # background:#fff / border:#d0d7de → 改调色板变量
+# ── 判据 1：style=" 里写死颜色 ───────────────────────────────────────────────
+# article_new.html 的 background:#fff / border → 已换调色板变量（--sky-c-surface / --sky-c-border），
+# 这一节现已清空。三条判据目前都无存量豁免 —— 新写的模板违规直接红。

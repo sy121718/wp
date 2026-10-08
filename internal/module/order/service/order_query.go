@@ -188,7 +188,8 @@ func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrde
 func toOrderResp(e *ordermodel.OrderEntity) *orderdto.OrderResp {
 	r := &orderdto.OrderResp{
 		ID: e.ID, ProjectID: e.ProjectID, OrderNo: e.OrderNo, Status: e.Status,
-		UserID: e.UserID, CustomerEmail: e.CustomerEmail, CustomerName: e.CustomerName,
+		StatusTone: orderenums.OrderStatusTone(e.Status),
+		UserID:     e.UserID, CustomerEmail: e.CustomerEmail, CustomerName: e.CustomerName,
 		CustomerPhone: e.CustomerPhone, Currency: e.Currency,
 		Subtotal: e.Subtotal, DiscountTotal: e.DiscountTotal,
 		ShippingTotal: e.ShippingTotal, TaxTotal: e.TaxTotal, Total: e.Total,

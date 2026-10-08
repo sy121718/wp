@@ -239,7 +239,7 @@
                     </div>
                 </td>
                 <td data-label="{{tr("admin.customers.col.status", "状态")}}">
-                    <span class="badge {{r.StatusBadge}}">{{if isset(r.StatusLabelKey)}}{{tr(r.StatusLabelKey, r.StatusLabelFallback)}}{{end}}</span>
+                    <span class="badge badge-{{r.StatusTone}}">{{if isset(r.StatusLabelKey)}}{{tr(r.StatusLabelKey, r.StatusLabelFallback)}}{{end}}</span>
                     {{if r.Locked}}
                     <div class="hint"><span class="badge badge-warning">{{tr("admin.customers.status.locked", "已锁定")}}</span>{{tr("admin.customers.status.locked_until", " 至 ")}}{{r.LockedUntilText}}</div>
                     {{end}}

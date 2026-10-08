@@ -37,7 +37,9 @@ type ReturnResp struct {
 	ReturnNo    string `json:"returnNo"`
 	Status      string `json:"status"`
 	StatusLabel string `json:"statusLabel"`
-	Reason      string `json:"reason"`
+	// StatusTone 状态徽标分档（只给服务端模板用，json:"-"）：由 orderenums.ReturnStatusTone 唯一给出。
+	StatusTone string `json:"-"`
+	Reason     string `json:"reason"`
 	// RefundAmount 整单的退款额（明细之和），单位分。
 	RefundAmount  int64             `json:"refundAmount"`
 	RefundLabel   string            `json:"refundLabel"`

@@ -395,6 +395,7 @@ func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEnti
 		ID: e.ID, ProjectID: e.ProjectID,
 		OrderID: e.OrderID, OrderNo: e.OrderNo, ReturnNo: e.ReturnNo,
 		Status:        e.Status,
+		StatusTone:    orderenums.ReturnStatusTone(e.Status),
 		Reason:        e.Reason,
 		RefundAmount:  e.RefundAmount,
 		RefundLabel:   yuanText(e.RefundAmount),

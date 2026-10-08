@@ -150,8 +150,8 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		// 求和放这里一行，模板只取结果。
 		"CountsAll": countsAll(counts),
 		"Detail":    detail,
-		// 状态徽章行的取值白名单（含空串 = 全部）+ 当前生效值。
-		"StatusValues":  returnStatusValues,
+		// 状态徽章行的「取值 + 分档」（含空串 = 全部）+ 当前生效值。
+		"StatusTabs":    returnStatusTabs(),
 		"FilterStatus":  filter.Status,
 		"FilterKeyword": filter.Keyword,
 		"FilterOrderID": filter.OrderID,

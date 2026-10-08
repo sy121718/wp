@@ -82,6 +82,26 @@
 `commentStatusClass`（`internal/module/comment/inbound/http/comment_page.go:340`）、
 `sessionEventTone`（`internal/module/ai/inbound/http/ai_page.go:1643`）。
 
+### tone 词表与别名（2026-10-08 收敛完成）
+
+模板表现层的存量违规已清零（`scripts/template-presentation-allow.txt` 现为空清单，22 个门禁全绿）。
+收敛后的约定：
+
+- **Go 侧一律出语义档**，取值域固定为 `ok / warn / danger / mute / info`（空串 = 不带档）。
+  实现都是「值 → 档」的小纯函数，就近放在数据来源处：`orderenums.OrderStatusTone` /
+  `ReturnStatusTone` / `CouponStateTone`、`i18n.ContentEngineTone`（放常量旁边 ——
+  否则字符串字面量 `"ai"` 会散进模板，常量值一改页面就静默失色）、`customerStatusTone`、
+  `mcpSwitchTone`、`variationTone` 等。
+- **模板只写 `badge badge-{{.XxxTone}}`**：不判条件、不拼档位、不比较状态值。
+- **`.badge-<tone>` 别名是「语义 → 外观」的唯一映射点**（`internal/templates/static/css/ui.css`）：
+  `.badge-ok` / `.badge-warn` 与既有的 `.badge-success` / `.badge-warning` 指向同一组变量。
+  换一套视觉（改色、换图标、换成圆点）只改这里，Go 与模板都不动。
+- **筛选行把「取值 + 档位」一起给模板**（`orderStatusTabs()` / `returnStatusTabs()`）：
+  之前模板 `{{if sv == "pending"}}…{{end}}` 把同一套映射在筛选行、列表行、详情头各写一遍
+  （orders.html 三处、returns.html 四处的由来）—— 现在一处在 Go。
+- **DTO 上的 tone 一律 `json:"-"`**：分档是「怎么显示」不是数据，接口契约不该因为它变样；
+  页面与 JSON 接口共用同一个 DTO 时，出网的那份不带它。
+
 **为什么不全推到前端 JS 算**：①业务码含义泄漏（前端要知道 `status===3` 是逾期）；
 ②SSR 首屏会闪一下（FOUC）；③禁用 JS 就没了 —— 而后台首屏必须无 JS 可用。
 htmx 管的是**取片段/换 DOM**，不是算颜色：它换进来的片段自带语义类，CSS 照常生效。

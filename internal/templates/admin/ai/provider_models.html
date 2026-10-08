@@ -14,11 +14,9 @@
 {{canManage := isset(.Buttons["ai.provider_models_save"])}}
 {{canRestore := isset(.Buttons["ai.provider_models_restore"])}}
 {{canFetch := isset(.Buttons["ai.provider_models_fetch"])}}
-{{noticeErr := false}}
-{{if isset(.ModelsNoticeErr)}}{{noticeErr = .ModelsNoticeErr}}{{end}}
 <div class="ai-models" data-ai-models-host>
     {{if isset(.ModelsNotice)}}{{if .ModelsNotice != ""}}
-    <p class="badge {{if noticeErr}}badge-warning{{else}}badge-success{{end}}" role="{{if noticeErr}}alert{{else}}status{{end}}">{{.ModelsNotice}}</p>
+    <p class="badge badge-{{.ModelsNoticeTone}}" role="{{.ModelsNoticeRole}}">{{.ModelsNotice}}</p>
     {{end}}{{end}}
 
     <div class="card-header ai-models-head">

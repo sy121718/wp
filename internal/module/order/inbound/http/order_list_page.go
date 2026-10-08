@@ -163,8 +163,9 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"Counts": counts,
 		"Total":  total,
 		"Detail": detail,
-		// 状态徽章行的取值白名单（含空串 = 全部）+ 当前生效值。
-		"StatusValues": orderStatusValues,
+		// 状态徽章行的「取值 + 分档」+ 当前生效值。
+		// 分档与取值一起给（orderStatusTabs）：模板不再逐个判状态选 badge 类。
+		"StatusTabs": orderStatusTabs(),
 		// 「全部」徽章的计数（各状态之和）：模板里跨类型累加不值得押注，求和放这里一行。
 		"CountsAll": countsAll(counts),
 		// 状态 → 当前语言标签（enums 的 (key, fallback) 是两返回值，模板接不住，

@@ -142,7 +142,7 @@
                     </td>
                     <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{t.Name}}</strong></button>{{else}}<strong>{{t.Name}}</strong>{{end}}</td>
                     <td>{{if t.Slug != ""}}<code>{{t.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td><span class="badge {{if t.IsRule}}badge-info{{else}}badge-mute{{end}}">{{t.KindLabel}}</span></td>
+                    <td><span class="badge badge-{{t.KindTone}}">{{t.KindLabel}}</span></td>
                     <td>{{if t.RuleLabel != ""}}{{t.RuleLabel}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     {* 命中数按需展开（审计 PERF-02）：首屏只给数量（一次批量聚合算出），
                        点它才去片段端点取这一页商品 —— 首屏 SQL 条数与标签数无关，

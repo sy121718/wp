@@ -133,7 +133,7 @@
                     <td><strong>{{l.NewPrice}}</strong></td>
                     <td>{{l.Diff}}</td>
                     <td>
-                        <span class="badge {{if l.IsChanged}}badge-info{{else}}badge-mute{{end}}">{{l.StatusLabel}}</span>
+                        <span class="badge badge-{{l.StatusTone}}">{{l.StatusLabel}}</span>
                         {{if l.ReasonLabel != ""}}<span class="hint">{{l.ReasonLabel}}</span>{{end}}
                     </td>
                 </tr>

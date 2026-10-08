@@ -123,7 +123,7 @@
       <tr>
         <td>{{p.Email}}</td>
         <td>{{if p.Name == ""}}<span class="text-mute">—</span>{{else}}{{p.Name}}{{end}}</td>
-        <td><span class="badge {{if p.ErrorKind != ""}}badge-warning{{else}}badge-mute{{end}}">{{p.Status}}</span></td>
+        <td><span class="badge badge-{{p.StatusTone}}">{{p.Status}}</span></td>
         <td class="text-mute text-sm">{{if p.SentAt == ""}}—{{else}}{{p.SentAt}}{{end}}</td>
         <td>{{p.Opened}}</td>
         <td>{{p.Clicked}}</td>

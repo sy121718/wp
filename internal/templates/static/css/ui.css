@@ -842,6 +842,14 @@ details[open] > summary::after { transform: rotate(0deg); }
 .badge-info { background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f); }
 .badge-mute    { background: var(--sky-c-bg-hover, #ececec);   color: var(--sky-c-text-mute, #5f6670); }
 
+/* 语义名 → 外观的映射点。Go 侧一律出**语义** tone（ok / warn / danger / mute / info，
+   见 docs/rules/template-boundary.md §语义 vs 外观），颜色只在这两个别名里定义：
+   换一套视觉（改色、换图标、换成圆点）改这里，Go 与模板不动。
+   别名而不是把 Go 的 return 改成 success/warning：通用词在语义层更稳，且 "ok/warn"
+   这组说法已被 sessionEventTone 用着（ai/sessions 的事件徽标）。 */
+.badge-ok   { background: var(--sky-c-success-bg, #eef4ef); color: var(--sky-c-success, #3f6b4f); }
+.badge-warn { background: var(--sky-c-warning-bg, #fbf9f3); color: var(--sky-c-warning, #8a6d3b); }
+
 /* 徽章当筛选器用时的「当前项」：把整行计数徽章做成可点击筛选之后（见 admin-ui-logic §2），
    选中态必须一眼可辨 —— 只靠一个 ✓ 前缀在 12px 的 pill 里几乎看不出来。
    aria-current 是语义标记（屏幕阅读器读得到），这里是它的视觉对应。

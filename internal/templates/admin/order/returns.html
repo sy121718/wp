@@ -16,7 +16,7 @@
 {{selectedProject := .SelectedProject}}
 {{returns := .Returns}}
 {{listQuery := .ListQuery}}
-{{statusValues := .StatusValues}}
+{{statusTabs := .StatusTabs}}
 {{statusLabel := .StatusLabel}}
 <div class="stack returns-page">
     <header class="page-head">
@@ -58,7 +58,7 @@
     {{if .Detail}}
     {{d := .Detail}}{{r := d.Return}}{{o := d.Order}}
     <section class="card card-body">
-        <h2>{{tr("admin.returns.detail.heading", "退货单详情")}} <code>{{r.ReturnNo}}</code> <span class="badge {{if r.Status == "requested" || r.Status == "approved" || r.Status == "received"}}badge-warning{{else if r.Status == "completed"}}badge-success{{else}}badge-mute{{end}}">{{statusLabel(r.Status)}}</span></h2>
+        <h2>{{tr("admin.returns.detail.heading", "退货单详情")}} <code>{{r.ReturnNo}}</code> <span class="badge badge-{{r.StatusTone}}">{{statusLabel(r.Status)}}</span></h2>
         <dl class="kv">
             <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><a href="/admin/orders?{{listQuery}}&orderId={{r.OrderID}}"><code>{{r.OrderNo}}</code></a></dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.detail.customer", "客户")}}</dt><dd>{{r.CustomerName}} · {{r.CustomerEmail}}</dd></div>
@@ -108,7 +108,7 @@
         <h3>{{tr("admin.returns.order_summary.heading", "订单摘要")}}</h3>
         {{if o}}
         <dl class="kv">
-            <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><strong>{{o.OrderNo}}</strong> <span class="badge {{if o.Status == "pending"}}badge-warning{{else if o.Status == "paid" || o.Status == "shipped"}}badge-info{{else if o.Status == "completed"}}badge-success{{else if o.Status == "refunded"}}badge-danger{{else}}badge-mute{{end}}">{{ .OrderStatusLabel(o.Status) }}</span></dd></div>
+            <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><strong>{{o.OrderNo}}</strong> <span class="badge badge-{{o.StatusTone}}">{{ .OrderStatusLabel(o.Status) }}</span></dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.order_summary.total", "订单总额")}}</dt><dd>{{money(o.Total, currencyPrefix(o.Currency))}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.order_summary.created_at", "下单时间")}}</dt><dd>{{dateTime(o.CreateTime)}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.order_summary.customer", "客户")}}</dt><dd>{{o.CustomerName}} · {{o.CustomerEmail}}</dd></div>
@@ -201,9 +201,10 @@
                选中项用 ✓ 前缀 + is-active 做形态区分（不只靠颜色深浅），并对读屏标注 aria-current；
                计数为 0 的徽章照样可点（点进去看到空态是合理预期），不禁用。 *}
             <div class="filter-row">
-                {{range _, sv := statusValues}}
+                {{range _, tab := statusTabs}}
+                {{sv := tab.Value}}
                 {{cnt := (sv == "" ? .CountsAll : .Counts[sv])}}
-                <a class="badge {{if sv == "requested" || sv == "approved" || sv == "received"}}badge-warning{{else if sv == "completed"}}badge-success{{else}}badge-mute{{end}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/returns?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{if sv == "requested" || sv == "received"}}<strong>{{cnt}}</strong>{{else}}{{cnt}}{{end}}</a>
+                <a class="badge badge-{{tab.Tone}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/returns?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{if sv == "requested" || sv == "received"}}<strong>{{cnt}}</strong>{{else}}{{cnt}}{{end}}</a>
                 {{end}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.returns.help.label", "查看说明")}}" aria-expanded="false">?</button>
@@ -293,7 +294,7 @@
                 <td data-label="{{tr("admin.returns.col.return_no", "退货单号")}}"><a class="row-title-link" href="/admin/returns?{{listQuery}}&returnId={{rt.ID}}"><code>{{rt.ReturnNo}}</code></a></td>
                 <td data-label="{{tr("admin.returns.col.order_no", "订单号")}}"><code>{{rt.OrderNo}}</code></td>
                 <td data-label="{{tr("admin.returns.col.customer", "客户")}}">{{rt.CustomerName}} <span class="hint">{{rt.CustomerEmail}}</span></td>
-                <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge {{if rt.Status == "requested" || rt.Status == "approved" || rt.Status == "received"}}badge-warning{{else if rt.Status == "completed"}}badge-success{{else}}badge-mute{{end}}">{{statusLabel(rt.Status)}}</span></td>
+                <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge badge-{{rt.StatusTone}}">{{statusLabel(rt.Status)}}</span></td>
                 <td data-label="{{tr("admin.returns.col.refund_amount", "退款金额")}}"><strong>{{rt.RefundLabel}}</strong></td>
                 <td data-label="{{tr("admin.returns.col.created_at", "申请时间")}}">{{dateTime(rt.CreateTime)}}</td>
                 <td data-label="{{tr("admin.returns.col.actions", "操作")}}" class="col-actions">

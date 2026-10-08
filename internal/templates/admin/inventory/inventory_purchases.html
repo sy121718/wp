@@ -200,7 +200,7 @@
                    是四个独立字段，拼起来既扫不动也没法单独对齐（评审：单元格是值不是句子）。 *}
                 <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.qty", "采购数量") }} {{l.Quantity}}</span>
                 <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.received", "已入库") }} {{l.ReceivedQuantity}}</span>
-                <span class="badge {{if l.Open}}badge-warning{{else}}badge-success{{end}}">{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }} {{l.OutstandingQuantity}}</span>
+                <span class="badge badge-{{l.OutstandingTone}}">{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }} {{l.OutstandingQuantity}}</span>
                 <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }} {{l.UnitPrice}}</span>
             </div>
             {{if l.Open}}

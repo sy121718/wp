@@ -64,9 +64,10 @@
                选中项用 ✓ 前缀 + is-active 做形态区分（不只靠颜色深浅），并对读屏标注 aria-current。 *}
             {{allCount := 0}}{{range _, v := .Counts}}{{allCount = allCount + v}}{{end}}
             <div class="filter-row">
-                {{range _, sv := .StatusValues}}
+                {{range _, tab := .StatusTabs}}
+                {{sv := tab.Value}}
                 {{cnt := (sv == "" ? .CountsAll : .Counts[sv])}}
-                <a class="badge {{if sv == "pending"}}badge-warning{{else if sv == "paid" || sv == "shipped"}}badge-info{{else if sv == "completed"}}badge-success{{else if sv == "refunded"}}badge-danger{{else}}badge-mute{{end}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{cnt}}</a>
+                <a class="badge badge-{{tab.Tone}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{cnt}}</a>
                 {{end}}
             </div>
             <form method="get" action="/admin/orders" class="filter-fields">
@@ -154,7 +155,7 @@
             <tr>
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{o.ID}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行")}}"></td>
                 <td data-label="{{tr("admin.orders.col.order_no", "订单号")}}"><a class="row-title-link" href="/admin/orders?{{listQuery}}&orderId={{o.ID}}"><code>{{o.OrderNo}}</code></a></td>
-                <td data-label="{{tr("admin.orders.col.status", "状态")}}"><span class="badge {{if o.Status == "pending"}}badge-warning{{else if o.Status == "paid" || o.Status == "shipped"}}badge-info{{else if o.Status == "completed"}}badge-success{{else if o.Status == "refunded"}}badge-danger{{else}}badge-mute{{end}}">{{statusLabel(o.Status)}}</span></td>
+                <td data-label="{{tr("admin.orders.col.status", "状态")}}"><span class="badge badge-{{o.StatusTone}}">{{statusLabel(o.Status)}}</span></td>
                 <td data-label="{{tr("admin.orders.col.customer", "客户")}}">{{o.CustomerName}} <span class="hint">{{o.CustomerEmail}}</span></td>
                 <td data-label="{{tr("admin.orders.col.amount", "金额")}}"><strong>{{money(o.Total, currencyPrefix(o.Currency))}}</strong></td>
                 <td data-label="{{tr("admin.orders.col.payment", "支付方式")}}">{{if o.PaymentMethodTitle}}{{o.PaymentMethodTitle}}{{if o.PaymentMethod}}（{{o.PaymentMethod}}）{{end}}{{else}}{{if o.PaymentMethod}}{{o.PaymentMethod}}{{else}}—{{end}}{{end}}</td>
@@ -182,7 +183,7 @@
     {{head := .Detail.Head}}
     {{cur := currencyPrefix(head.Currency)}}
     <section class="card card-body">
-        <h2>{{tr("admin.orders.detail.heading", "订单详情")}} <code>{{head.OrderNo}}</code> <span class="badge {{if head.Status == "pending"}}badge-warning{{else if head.Status == "paid" || head.Status == "shipped"}}badge-info{{else if head.Status == "completed"}}badge-success{{else if head.Status == "refunded"}}badge-danger{{else}}badge-mute{{end}}">{{statusLabel(head.Status)}}</span></h2>
+        <h2>{{tr("admin.orders.detail.heading", "订单详情")}} <code>{{head.OrderNo}}</code> <span class="badge badge-{{head.StatusTone}}">{{statusLabel(head.Status)}}</span></h2>
         {* 详情头部：标签 + 值走 .kv 网格，扫读替代原来的一串段落。 *}
         <dl class="kv">
             <div class="kv-item"><dt>{{tr("admin.orders.detail.customer", "客户")}}</dt><dd>{{joinNonEmpty(" · ", head.CustomerName, head.CustomerEmail, head.CustomerPhone)}}</dd></div>

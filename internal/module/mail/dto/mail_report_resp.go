@@ -19,6 +19,11 @@ type RecipientItem struct {
 	ErrorKind string `json:"errorKind"`
 	Opened    int64  `json:"opened"`
 	Clicked   int64  `json:"clicked"`
+
+	// StatusTone 投递状态徽标分档（ok / warn / danger / mute / info），**只给服务端模板用**。
+	// json:"-" 是刻意的：分档是「怎么显示」不是数据，接口契约（含保留的 ReportJSON）
+	// 不该因为这个字段变样 —— 同一份数据给外部客户端时，人家自己决定怎么上色。
+	StatusTone string `json:"-"`
 }
 
 // CampaignReport 活动报表。

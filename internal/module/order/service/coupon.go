@@ -343,6 +343,10 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 		return nil
 	}
 	// 时间窗的解释口径随券一起返回（审计 TX-011）：界面上必须能看出「填的是哪个时区」。
+	//
+	// 口径状态先算一次再进结构体：它同时是展示标签与徽标分档的输入 ——
+	// 算两次会在「跨过生效边界的那一瞬间」渲染出标签与颜色不一致的行。
+	state := couponState(e, now)
 	return &orderdto.CouponResp{
 		TimeZone: couponWindowLocation.String(),
 		ID:       e.ID, ProjectID: e.ProjectID,
@@ -357,7 +361,8 @@ func toCouponResp(e *ordermodel.CouponEntity, now time.Time) *orderdto.CouponRes
 		StartsAt:         utils.NewJSONTimePtr(e.StartsAt),
 		EndsAt:           utils.NewJSONTimePtr(e.EndsAt),
 		Status:           e.Status,
-		State:            couponState(e, now),
+		State:            state,
+		StateTone:        orderenums.CouponStateTone(state),
 		StatusLabel:      couponStatusLabel(e, now),
 		Remark:           e.Remark,
 		CreateTime:       utils.NewJSONTime(e.CreateTime),

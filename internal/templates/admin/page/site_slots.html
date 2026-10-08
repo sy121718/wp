@@ -42,8 +42,8 @@
             {{end}}
             <span class="sr-only">{{ .["t"]("admin.site_slots.overview.title", "概览") }}</span>
             <span class="badge badge-mute">{{ .["t"]("admin.site_slots.bound_count", "已绑定") }} {{.BoundCount}} / {{.Total}}</span>
-            <span class="badge {{if .UnpublishedCount != 0}}badge-warning{{else}}badge-mute{{end}}">{{ .["t"]("admin.site_slots.unpublished_count", "已绑定但未发布") }} {{.UnpublishedCount}}</span>
-            <span class="badge {{if .DeletedCount != 0}}badge-danger{{else}}badge-mute{{end}}">{{ .["t"]("admin.site_slots.deleted_count", "绑定的页面已被删除") }} {{.DeletedCount}}</span>
+            <span class="badge badge-{{.UnpublishedTone}}">{{ .["t"]("admin.site_slots.unpublished_count", "已绑定但未发布") }} {{.UnpublishedCount}}</span>
+            <span class="badge badge-{{.DeletedTone}}">{{ .["t"]("admin.site_slots.deleted_count", "绑定的页面已被删除") }} {{.DeletedCount}}</span>
         </div>
     </header>
 

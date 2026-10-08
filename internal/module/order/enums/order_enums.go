@@ -230,6 +230,29 @@ func OrderStatusLabel(status string) (key, fallback string) {
 	}
 }
 
+// OrderStatusTone 订单状态 → 徽标分档（ok / warn / danger / mute / info）。
+//
+// 放在 enums、与 OrderStatusLabel 并列：**同一个状态在列表行、详情头与筛选徽章上必须是同一档**——
+// 原先这套映射在 orders.html 里逐行写了三遍（筛选行 / 列表行 / 详情头），
+// 加一个状态要改三处，漏一处就是「同一单在两处颜色不一样」。
+//
+// 分档口径：待付款 → warn（在等钱）；已付款 / 已发货 → info（在流程里、不需要人工动作）；
+// 已完成 → ok；已退款 → danger（钱退回去了，是异常收尾）；已取消 / 认不出的值 → mute。
+func OrderStatusTone(status string) string {
+	switch strings.TrimSpace(status) {
+	case "pending":
+		return "warn"
+	case "paid", "shipped":
+		return "info"
+	case "completed":
+		return "ok"
+	case "refunded":
+		return "danger"
+	default:
+		return "mute"
+	}
+}
+
 // 退货申请状态的词条 key（后台退货页与访客片段共用）。
 const (
 	ReturnStatusKeyRequested = "admin.returns.status.requested"
@@ -265,6 +288,21 @@ func ReturnStatusLabel(status string) (key, fallback string) {
 	}
 }
 
+// ReturnStatusTone 退货申请状态 → 徽标分档。
+//
+// 待审核 / 待收货 / 待退款 都是**有人在等着处理**的中间态 → warn（这三档要在长列表里抢到注意力）；
+// 已完成 → ok；已拒绝 / 已撤销 / 认不出的值 → mute（终态、不需要动作）。
+func ReturnStatusTone(status string) string {
+	switch strings.TrimSpace(status) {
+	case "requested", "approved", "received":
+		return "warn"
+	case "completed":
+		return "ok"
+	default:
+		return "mute"
+	}
+}
+
 // 优惠码的**展示口径状态**（由生效时间与已用次数算出来，不是 coupons.status 列）。
 //
 // 光看 status 列分不出「启用但是已过期」与「正在生效」：过期、未开始、用尽都是时间的函数，
@@ -296,6 +334,23 @@ func CouponStateLabel(state string) (key, fallback string) {
 		return "", "—"
 	default:
 		return "", state
+	}
+}
+
+// CouponStateTone 优惠码口径状态 → 徽标分档。
+//
+// 生效中 → ok；已过期 / 已用完 → danger（这两档最容易在客服侧答错：「券还在列表里」不等于能用）；
+// 未开始 → warn（还没到时间）；已停用 / 认不出的值 → mute。
+func CouponStateTone(state string) string {
+	switch strings.TrimSpace(state) {
+	case CouponStateEnabled:
+		return "ok"
+	case CouponStateExpired, CouponStateExhausted:
+		return "danger"
+	case CouponStateNotStarted:
+		return "warn"
+	default:
+		return "mute"
 	}
 }
 

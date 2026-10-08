@@ -40,8 +40,8 @@ import (
 	"go_wp/internal/module/order/dto"
 	"go_wp/internal/module/order/enums"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/templates"
 	"go_wp/internal/shell"
+	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
 

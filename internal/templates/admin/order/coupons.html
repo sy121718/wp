@@ -172,7 +172,7 @@
                 <td data-label="{{tr("admin.coupons.col.window", "时间窗")}}">{{if cp.StartsAt || cp.EndsAt}}{{if cp.StartsAt}}{{dateTime(cp.StartsAt)}}{{else}}{{unlimited}}{{end}} ~ {{if cp.EndsAt}}{{dateTime(cp.EndsAt)}}{{else}}{{unlimited}}{{end}}{{else}}{{unlimited}}{{end}}</td>
                 {* 徽章颜色按**口径值**判（不是展示文案）：文案会随词条与语言变，拿它当键等于
                    「后台改一句词条 → 徽章静默变灰」。 *}
-                <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge {{if cp.State == "enabled"}}badge-success{{else if cp.State == "not_started"}}badge-warning{{else if cp.State == "disabled"}}badge-danger{{else}}badge-mute{{end}}">{{if cp.State}}{{tr("admin.coupons.status." + cp.State, cp.State)}}{{else}}—{{end}}</span></td>
+                <td data-label="{{tr("admin.coupons.col.status", "状态")}}"><span class="badge badge-{{cp.StateTone}}">{{if cp.State}}{{tr("admin.coupons.status." + cp.State, cp.State)}}{{else}}—{{end}}</span></td>
                 <td data-label="{{tr("admin.coupons.col.remark", "备注")}}">{{if cp.Remark}}{{cp.Remark}}{{else}}—{{end}}</td>
                 <td class="col-actions" data-label="{{tr("admin.coupons.col.actions", "操作")}}">
                     {{if canUpdate}}

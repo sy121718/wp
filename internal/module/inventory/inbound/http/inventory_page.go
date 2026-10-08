@@ -990,6 +990,18 @@ func directionLabel(tr func(key, fallback string) string, direction string) stri
 	}
 }
 
+// outstandingTone 采购行「未入库数量」→ 徽标分档。
+//
+// 还有没收的量 → warn（要人去收货）；收满 → ok（这一行不用管了）。
+// 判据与同一行的 Open 同源（都来自 OutstandingQuantity）：按钮的可用性与徽标的档位
+// 不该各判一次 —— 两处判据分叉就会出现「按钮说还能收、徽标说收满了」。
+func outstandingTone(outstanding int) string {
+	if outstanding > 0 {
+		return "warn"
+	}
+	return "ok"
+}
+
 // statusLabel 启停状态 → 当前语言展示文案（仓库 / 盘点原因 / 货源三处共用）。
 //
 // 三处原先各写一份**函数体逐字相同**的实现（warehouseStatusLabel / reasonStatusLabel /
@@ -2059,7 +2071,8 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectI
 				"UnitPrice":           strconv.FormatFloat(l.UnitPrice, 'f', 2, 64),
 				"Remark":              l.Remark,
 				// 还能收的行才给提交按钮：收满的行不再受理（服务端同样拒绝）。
-				"Open": l.OutstandingQuantity > 0,
+				"Open":            l.OutstandingQuantity > 0,
+				"OutstandingTone": outstandingTone(l.OutstandingQuantity),
 			})
 		}
 		out = append(out, gin.H{

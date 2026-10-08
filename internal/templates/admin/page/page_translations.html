@@ -151,7 +151,7 @@
                     </td>
                     <td>
                         {{if r.Engine}}
-                        <span class="badge{{if r.Engine == "ai"}} badge-info{{else}} badge-mute{{end}}">{{r.Engine}}</span>
+                        <span class="badge badge-{{r.EngineTone}}">{{r.Engine}}</span>
                         {{else}}
                         <span class="text-mute">—</span>
                         {{end}}

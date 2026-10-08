@@ -41,10 +41,10 @@
 
     {{if .HasDetail}}
     <section class="card card-body">
-        <h2>{{.DisplayLabel}} <span class="badge {{.StatusBadge}}">{{if isset(.StatusLabelKey)}}{{ .["t"](.StatusLabelKey, .StatusLabelFallback) }}{{end}}</span></h2>
+        <h2>{{.DisplayLabel}} <span class="badge badge-{{.StatusTone}}">{{if isset(.StatusLabelKey)}}{{ .["t"](.StatusLabelKey, .StatusLabelFallback) }}{{end}}</span></h2>
         <dl class="kv">
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.username", "登录名") }}</dt><dd>{{.Username}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge {{if .EmailVerified}}badge-success{{else}}badge-warning{{end}}">{{if isset(.EmailVerifiedKey)}}{{ .["t"](.EmailVerifiedKey, .EmailVerifiedFallback) }}{{end}}</span></dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge badge-{{.EmailVerifiedTone}}">{{if isset(.EmailVerifiedKey)}}{{ .["t"](.EmailVerifiedKey, .EmailVerifiedFallback) }}{{end}}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.registered_at", "注册时间") }}</dt><dd>{{.RegisteredAtText}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.register_source", "注册来源") }}</dt><dd>{{.RegisterIP}}{{if .RegisterLocation}} · {{.RegisterLocation}}{{end}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login", "最近登录") }}</dt><dd>{{.LastLoginTimeText}}</dd></div>

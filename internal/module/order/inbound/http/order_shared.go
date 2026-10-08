@@ -42,6 +42,28 @@ func countsFilled(counts map[string]int64, keys []string) map[string]int64 {
 	return out
 }
 
+// orderStatusTabs 订单状态筛选行的「取值 + 分档」。
+//
+// 取值与分档一起给模板：原先模板自己拿 sv 逐个判状态选 badge 类，
+// 同一套判据在筛选行、列表行、详情头各写一遍（见 orderenums.OrderStatusTone 的说明）。
+// 顺序仍是 orderStatusValues 的顺序 —— 徽章行从左到右就是这个顺序。
+func orderStatusTabs() []gin.H {
+	tabs := make([]gin.H, 0, len(orderStatusValues))
+	for _, v := range orderStatusValues {
+		tabs = append(tabs, gin.H{"Value": v, "Tone": orderenums.OrderStatusTone(v)})
+	}
+	return tabs
+}
+
+// returnStatusTabs 退货状态筛选行（同上，取值白名单是 returnStatusValues）。
+func returnStatusTabs() []gin.H {
+	tabs := make([]gin.H, 0, len(returnStatusValues))
+	for _, v := range returnStatusValues {
+		tabs = append(tabs, gin.H{"Value": v, "Tone": orderenums.ReturnStatusTone(v)})
+	}
+	return tabs
+}
+
 // bulkSummary 批量动作的结果文案（成功 N 个 / 跳过 M 个）；订单与退货申请共用。
 //
 // 「跳过」必须出现在文案里：只报成功数会让「选了 10 个、实际改了 6 个」看起来像全做完了，

@@ -349,6 +349,31 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: nil,
 		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
 	},
+	"badge-": {
+		site: "admin/ai/mcp.html:41 `badge-{{.McpTone}}`；admin/ai/provider_card.html:15 `badge-{{.StatusTone}}`；" +
+			"admin/ai/provider_card.html:31 与 admin/ai/provider_models.html:19 `badge-{{.ModelsNoticeTone}}`；" +
+			"admin/user/customer_detail.html:44 `badge-{{.StatusTone}}`、:47 `badge-{{.EmailVerifiedTone}}`；" +
+			"admin/user/customers.html:242 `badge-{{r.StatusTone}}`；admin/mail/mail_campaign.html:126 `badge-{{p.StatusTone}}`；" +
+			"admin/page/page_translations.html:154 与 admin/product/product_translations.html:149 `badge-{{r.EngineTone}}`；" +
+			"admin/product/product_pricing.html:136 `badge-{{l.StatusTone}}`；admin/product/product_tags.html:145 `badge-{{t.KindTone}}`；" +
+			"admin/product/product_detail.html:66 `badge-{{a.VariationTone}}`；" +
+			"admin/order/orders.html:69 `badge-{{tab.Tone}}`、:157 `badge-{{o.StatusTone}}`、:185 `badge-{{head.StatusTone}}`；" +
+			"admin/order/returns.html:61 `{{r.StatusTone}}`、:111 `{{o.StatusTone}}`、:206 `{{tab.Tone}}`、:296 `{{rt.StatusTone}}`；" +
+			"admin/order/coupons.html:175 `badge-{{cp.StateTone}}`；" +
+			"admin/page/page_redirects.html:86/87 `{{.MultiHopTone}}`/`{{.LoopTone}}`；" +
+			"admin/page/site_slots.html:45/46 `{{.UnpublishedTone}}`/`{{.DeletedTone}}`；" +
+			"admin/inventory/inventory_purchases.html:203 `badge-{{l.OutstandingTone}}`",
+		values: []string{"ok", "warn", "danger", "mute", "info"},
+		note: "取值域 = 各 Go helper 的返回值并集（语义档，见 docs/rules/template-boundary.md §语义 vs 外观）：" +
+			"mcpSwitchTone{ok,mute}、providerStatusTone{ok,warn}、noticeTone{ok,warn}、" +
+			"customerStatusTone{ok,warn,danger,mute}、emailVerifiedTone{ok,warn}、recipientStatusTone{warn,mute}、" +
+			"i18n.ContentEngineTone{info,mute}、pricingLineTone/tagKindTone/variationTone{info,mute}、" +
+			"orderenums.OrderStatusTone{warn,info,ok,danger,mute}、ReturnStatusTone{warn,ok,mute}、" +
+			"CouponStateTone{ok,danger,warn,mute}、redirectMultiHopTone{warn,mute}、redirectLoopTone{danger,mute}、" +
+			"unpublishedSlotsTone{warn,mute}、deletedSlotsTone{danger,mute}、outstandingTone{warn,ok}、" +
+			"sessionEventTone{info,ok,warn} —— 并集 {ok,warn,danger,mute,info}。" +
+			"颜色映射在 ui.css 的 `.badge-<tone>` 别名（.badge-ok/.badge-warn 是新增别名，其余沿用既有类名）",
+	},
 }
 
 // TestDynamicClassEvidenceIsCurrent 放行证据必须与代码同步：

@@ -13,10 +13,15 @@ import (
 
 // OrderResp 订单头视图。
 type OrderResp struct {
-	ID            uint64  `json:"id"`
-	ProjectID     string  `json:"projectId"`
-	OrderNo       string  `json:"orderNo"`
-	Status        string  `json:"status"`
+	ID        uint64 `json:"id"`
+	ProjectID string `json:"projectId"`
+	OrderNo   string `json:"orderNo"`
+	Status    string `json:"status"`
+	// StatusTone 状态徽标分档（ok / warn / danger / mute / info）—— **只给服务端模板用**。
+	//
+	// json:"-"：分档是「怎么显示」不是数据，接口契约不该因为它变样；且它由
+	// orderenums.OrderStatusTone 唯一给出，模板不必（也不该）自己判状态值。
+	StatusTone    string  `json:"-"`
 	UserID        *uint64 `json:"userId"`
 	CustomerEmail string  `json:"customerEmail"`
 	CustomerName  string  `json:"customerName"`
@@ -186,11 +191,14 @@ type CouponResp struct {
 	// 都是时间与次数的函数（光看 status=1 看不出券其实已经过期）。展示层要按口径值
 	// 挑徽章样式，拿已翻译的 StatusLabel 去反查样式表的话，运营在后台改一句词条
 	// 就会让徽章静默失效（不报错、测试也不红）。
-	State       string         `json:"state"`
-	StatusLabel string         `json:"statusLabel"`
-	Remark      string         `json:"remark"`
-	CreateTime  utils.JSONTime `json:"createTime"`
-	UpdateTime  utils.JSONTime `json:"updateTime"`
+	State       string `json:"state"`
+	StatusLabel string `json:"statusLabel"`
+	// StateTone 口径状态的徽标分档（只给服务端模板用，json:"-"）。
+	// 与 State 同源（orderenums.CouponStateTone）：模板不再拿已翻译的 StatusLabel 反查样式表。
+	StateTone  string         `json:"-"`
+	Remark     string         `json:"remark"`
+	CreateTime utils.JSONTime `json:"createTime"`
+	UpdateTime utils.JSONTime `json:"updateTime"`
 }
 
 // CouponListResp 列表结果。

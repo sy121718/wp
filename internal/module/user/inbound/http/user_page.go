@@ -1843,8 +1843,9 @@ func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcont
 		// 模板取词（tr(key, fallback)）——给中文值就等于英文界面永远中文。
 		data["StatusLabelKey"] = row["StatusLabelKey"]
 		data["StatusLabelFallback"] = row["StatusLabelFallback"]
-		data["StatusBadge"] = row["StatusBadge"]
+		data["StatusTone"] = row["StatusTone"]
 		data["EmailVerified"] = detail.EmailVerified
+		data["EmailVerifiedTone"] = emailVerifiedTone(detail.EmailVerified)
 		data["EmailVerifiedKey"] = row["EmailVerifiedKey"]
 		data["EmailVerifiedFallback"] = row["EmailVerifiedFallback"]
 		data["RegisteredAtText"] = detail.RegisteredAtText
@@ -1912,7 +1913,7 @@ func customerRow(item *userdto.CustomerResp) gin.H {
 		"Status":                item.Status,
 		"StatusLabelKey":        statusKey,
 		"StatusLabelFallback":   statusFallback,
-		"StatusBadge":           customerStatusBadge(item.Status),
+		"StatusTone":            customerStatusTone(item.Status),
 		"EmailVerified":         item.EmailVerified,
 		"EmailVerifiedKey":      verifyKey,
 		"EmailVerifiedFallback": verifyFallback,
@@ -2139,23 +2140,36 @@ func customerStatusMessage(status int) string {
 	return userenums.MsgCustomerDisabled
 }
 
-// customerStatusBadge 状态 → 徽章样式（未知值给中性徽章：宁可显示得平淡，
+// customerStatusTone 状态 → 徽标分档（未知值给中性档：宁可显示得平淡，
 // 也不要把一个不认识的状态渲染成成功或失败）。
 //
 // **按状态值查，不按文案查**：同仓反例是 order 的 couponStatusBadge(statusLabel string)——
 // 拿已翻译 / 已格式化的文案反查样式表，改一句词条就让样式静默失效（不报错、测试也不红）。
-// 展示细节（类名）留在这里，不进 enums：enums 管「枚举 → 展示名」，管不了 CSS。
-func customerStatusBadge(status int) string {
+//
+// 出**语义档**（ok / warn / danger / mute）而不是类名（badge-success）：类名是外观，
+// 映射归 ui.css 的 `.badge-<tone>` 别名（见 docs/rules/template-boundary.md §语义 vs 外观）。
+func customerStatusTone(status int) string {
 	switch status {
 	case customerStatusActive:
-		return "badge-success"
+		return "ok"
 	case customerStatusDisabled:
-		return "badge-danger"
+		return "danger"
 	case customerStatusPending:
-		return "badge-warning"
+		return "warn"
 	default:
-		return "badge-mute"
+		return "mute"
 	}
+}
+
+// emailVerifiedTone 邮箱验证状态 → 徽标分档。
+//
+// 与 userenums.EmailVerifiedLabel 同源：那个给展示名，这个给分档 ——
+// 「未验证」不是错误但也不是正常态，所以是 warn 而不是 danger 或 mute。
+func emailVerifiedTone(verified bool) string {
+	if verified {
+		return "ok"
+	}
+	return "warn"
 }
 
 // customerDisplayLabel 客户的展示名（展示名 → 昵称 → 登录名）。

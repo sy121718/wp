@@ -83,8 +83,8 @@
                     <span class="sr-only">{{tr("admin.redirect.overview.title", "概览")}}</span>
                     <span class="badge badge-mute">{{tr("admin.redirect.stat.total", "重定向")}} {{.Total}}</span>
                     <span class="badge badge-mute">{{tr("admin.redirect.stat.effective", "已生效")}} {{.EffectiveCount}}</span>
-                    <span class="badge {{if .MultiHopCount > 0}}badge-warning{{else}}badge-mute{{end}}">{{tr("admin.redirect.stat.multihop", "多跳")}} {{.MultiHopCount}}</span>
-                    <span class="badge {{if .LoopCount > 0}}badge-danger{{else}}badge-mute{{end}}">{{tr("admin.redirect.stat.loop", "成环")}} {{.LoopCount}}</span>
+                    <span class="badge badge-{{.MultiHopTone}}">{{tr("admin.redirect.stat.multihop", "多跳")}} {{.MultiHopCount}}</span>
+                    <span class="badge badge-{{.LoopTone}}">{{tr("admin.redirect.stat.loop", "成环")}} {{.LoopCount}}</span>
                 </div>
                 {{if .MultiHopCount > 0}}
                 <p class="badge badge-warning">{{tr("admin.redirect.chain.notice", "检测到多跳链：A 到 B、B 再到 C 会让访客多跳一次，点该行的「合并」让它直达终点。")}}</p>

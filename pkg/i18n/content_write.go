@@ -43,6 +43,21 @@ const (
 	ContentEnginePO     = "po"
 )
 
+// ContentEngineTone 译文来源 → 徽标分档（模板据此选 class，见 docs/rules/template-boundary.md）。
+//
+// 放在常量旁边而不是各页面各写一份：分档的判据就是「是不是 ContentEngineAI」这一个比较 ——
+// 以前它写在模板里（`{{if r.Engine == "ai"}}badge-info{{else}}badge-mute{{end}}`，页面工作台与
+// 商品工作台各一处），**字符串字面量因此散到了模板里**：哪天常量值改了，页面会静默失色
+// （渲染成没有样式的 badge，不报错、测试也不红）。
+//
+// AI 生成是「需要人复核」的状态 → info；manual / po / 空值都是中性档。
+func ContentEngineTone(engine string) string {
+	if engine == ContentEngineAI {
+		return "info"
+	}
+	return "mute"
+}
+
 // 写入层错误（调用方按 errors.Is 分类；文案可直接展示给编辑者）。
 var (
 	// ErrContentWriteUnavailable 写入器未绑定数据库句柄 / 数据库未初始化。

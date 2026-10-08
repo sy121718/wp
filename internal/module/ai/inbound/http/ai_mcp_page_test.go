@@ -48,7 +48,11 @@ func pageDataFor(tokens []tokenRow, tools []toolRow, newToken string) gin.H {
 		"DoneText":     "",
 		// 开关默认关闭：这是 P8 的口径（「`/mcp` 默认关闭，显式开启才生效」），
 		// 用例要测开启态就自己把它改成 true。
+		//
+		// 分档跟着开关一起给：模板读 `badge-{{.McpTone}}`，map 缺键会渲染失败（Jet 严格）；
+		// 这里调**真 helper** 而不是写死 "mute" —— 分档规则改了，这份测试数据跟着走。
 		"McpEnabled": false,
+		"McpTone":    mcpSwitchTone(false),
 	}
 }
 
@@ -206,6 +210,7 @@ func TestMcpPageRendersSwitch(t *testing.T) {
 
 	onData := pageDataFor(nil, nil, "")
 	onData["McpEnabled"] = true
+	onData["McpTone"] = mcpSwitchTone(true)
 	on := renderPage(t, "admin/ai/mcp", onData)
 	for _, want := range []string{"已开启", "关闭接入", `name="enabled" value="0"`} {
 		if !strings.Contains(on, want) {

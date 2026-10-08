@@ -68,8 +68,8 @@ import (
 	aiservice "go_wp/internal/module/ai/service"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
-	"go_wp/internal/uispec"
 	"go_wp/internal/shell"
+	"go_wp/internal/uispec"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -389,6 +389,9 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 	// 不再经 ?err= / ?done= 回带），片段进入时是刚算出的成品文案。
 
 	title := t("admin.ai.mcp.title", "MCP 与外部访问")
+	// 开关只读一次：页面要如实显示它（这里是运维判断「外面能不能进来」的唯一地方），
+	// 徽标分档与文案必须同源 —— 读两次若中间被改，会出现「文字说已开启、颜色说已关闭」。
+	enabled := h.mcpEnabled(ctx)
 	return shell.Prepare(c, gin.H{
 		// title（小写）是 layout 壳读的键（与同后台其它页面一致）；页面正文自己再取一次做 h1。
 		"title":        title,
@@ -401,8 +404,20 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 		"NewToken":     newToken,
 		"ErrText":      errText,
 		"DoneText":     doneText,
-		"McpEnabled":   h.mcpEnabled(ctx),
+		"McpEnabled":   enabled,
+		"McpTone":      mcpSwitchTone(enabled),
 	})
+}
+
+// mcpSwitchTone 对外接入开关 → 徽标分档。
+//
+// 分档而不是让模板写 {{if .McpEnabled}}badge-success{{else}}…：阈值（什么算「开」）
+// 是这片代码的语义，颜色是 CSS 的事 —— 模板只把分档写进 class（见 docs/rules/template-boundary.md）。
+func mcpSwitchTone(enabled bool) string {
+	if enabled {
+		return "ok"
+	}
+	return "mute"
 }
 
 // mcpEnabled 读对外接入点的当前开关（读不到按关闭 —— 与端点那边的判定同一口径）。
@@ -945,6 +960,10 @@ func (h *PageHandle) modelsData(c *gin.Context, provider aidto.Provider, rows []
 		"Rows":            modelRows(rows),
 		"ModelsNotice":    facingTextParams(c, noticeKey, params),
 		"ModelsNoticeErr": isErr,
+		// 分档与无障碍角色在**这一份**数据里也要给全：provider_models.html 有两条渲染路径
+		//（整页 include 走 cardData、htmx 片段单独渲染走这里），只补一处会渲染出 `badge badge-`。
+		"ModelsNoticeTone": noticeTone(isErr),
+		"ModelsNoticeRole": noticeRole(isErr),
 	})
 }
 
@@ -1097,10 +1116,42 @@ func cardData(base gin.H, provider aidto.Provider, notice string, isErr bool, de
 		"BuiltinKeys":     builtinProviderKeys(),
 		"ModelsNotice":    notice,
 		"ModelsNoticeErr": isErr,
-		"csrf_token":      base["csrf_token"],
-		"t":               base["t"],
-		"PermSet":         base["PermSet"],
+		// 卡片上两处徽标的分档：启停与「模型目录读取结果」。阈值留在这里，
+		// 模板只把分档写进 class（原先两处都是 {{if}} 在模板里选 badge-*）。
+		"StatusTone":       providerStatusTone(provider.Status),
+		"ModelsNoticeTone": noticeTone(isErr),
+		"ModelsNoticeRole": noticeRole(isErr),
+		"csrf_token":       base["csrf_token"],
+		"t":                base["t"],
+		"PermSet":          base["PermSet"],
 	}
+}
+
+// providerStatusTone 供应商启停状态 → 徽标分档。
+func providerStatusTone(status int) string {
+	if status == 1 {
+		return "ok"
+	}
+	return "warn"
+}
+
+// noticeTone 一句「拉取结果」提示 → 徽标分档（失败 warn、正常 ok）。
+func noticeTone(isErr bool) string {
+	if isErr {
+		return "warn"
+	}
+	return "ok"
+}
+
+// noticeRole 同一句提示的无障碍角色（失败是 alert、正常是 status）。
+//
+// 与 tone 分开两个键而不是让模板判 isErr：role 是语义（要不要打断读屏），
+// tone 是外观 —— 两者都从同一个布尔来，模板不该再学一遍这个布尔。
+func noticeRole(isErr bool) string {
+	if isErr {
+		return "alert"
+	}
+	return "status"
 }
 
 // parseModelRows 从表单解析模型目录（表单字段同名多值，按出现顺序与行对齐）。
