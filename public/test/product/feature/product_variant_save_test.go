@@ -533,6 +533,8 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 保存成功走 shell.RenderJump，没有渲染器会在 c.HTML 处 panic。
+	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
 	engine.POST("/admin/products/variant/save", handle.ProductsVariantSave)
@@ -580,15 +582,10 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {f.warehouse.ID},
 		"rows": {string(rowsJSON)},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("保存应 302 回编辑页，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	loc := rec.Header().Get("Location")
-	if !strings.Contains(loc, "done=") {
-		t.Fatalf("保存结果应经 ?done= 回带（页面上可见），实际 Location=%q", loc)
-	}
-	if !strings.Contains(loc, url.QueryEscape("新增 2 个")) {
-		t.Fatalf("回带文案应含新增计数，实际 Location=%q", loc)
+	body := rec.Body.String()
+	assertJumpOK(t, rec)
+	if !strings.Contains(body, "新增 2 个") {
+		t.Fatalf("回执文案应含新增计数，body=%s", body)
 	}
 	if got := f.variantsOf(t, p.ID); len(got) != 2 {
 		t.Fatalf("保存后应有 2 个变体，实际 %d", len(got))

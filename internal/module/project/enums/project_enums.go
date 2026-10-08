@@ -53,7 +53,8 @@ const (
 	// MsgThemeSettingsInvalid 主题设置未通过校验（IsSafeCSSValue 白名单）。
 	//
 	// 原先散在 theme_settings_admin_pages.go 的本地常量里，本轮随页面出口改造收进 enums：
-	// 它是**响应文案**（会进 ?err= 与模板错误槽），而本地常量让读侧白名单够不着它。
+	// 它是**响应文案**（会进整页提示与模板错误槽），而本地常量让 projectWriteTextKeys
+	// 的迁移登记守卫够不着它。
 	MsgThemeSettingsInvalid = "MsgThemeSettingsInvalid" // 主题设置不合法
 
 	// MsgThemeSettingsRefreshFailed 「保存已成功、整站刷新失败」的部分成功提示。
@@ -82,6 +83,23 @@ const (
 	// 不指明是哪一个的提示等于让用户自己猜（而他要猜的那两个框长得几乎一样）。
 	ErrShippingBaseFeeInvalid       = "ErrShippingBaseFeeInvalid"       // 基础运费金额不合法（负数 / 非数字 / 超上限）
 	ErrShippingFreeThresholdInvalid = "ErrShippingFreeThresholdInvalid" // 满额免运费门槛金额不合法（同上）
+
+	// MsgSiteSettingsSaved 站点设置保存成功的回执（词条 058 zh-CN / 447 en-US）。
+	//
+	// 迁移 447 把它记为「058 遗留词条，Go 侧无引用」。本批写动作出口改成整页提示
+	//（shell.RenderJump）后需要一个成功回执，遂收编为常量 —— 不新增词条。
+	MsgSiteSettingsSaved = "MsgSiteSettingsSaved" // 站点设置已保存
+)
+
+// 后台页写动作的成功回执（整页提示，shell.RenderJump）。
+//
+// 主题设置 / 语言清单 / 站点设置复用既有词条（迁移 451 / 187 / 058），只有主题的
+// 新建 / 激活 / 删除三条是本批新增（迁移 590）。取值是点分 key（新式），与上面那批
+// `ErrXxx = "ErrXxx"` 分开成组。
+const (
+	ThemeOKCreated   = "admin.theme.ok.created"   // 主题已创建
+	ThemeOKActivated = "admin.theme.ok.activated" // 主题已激活
+	ThemeOKDeleted   = "admin.theme.ok.deleted"   // 主题已删除
 )
 
 // —— 点分 key 常量（新式）——

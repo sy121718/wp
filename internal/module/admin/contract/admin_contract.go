@@ -30,7 +30,6 @@ type AdminService interface {
 	AdminRoleSave(ctx context.Context, req *admindto.AdminRoleSaveReq) (*admindto.AdminRoleSaveResp, error)
 	AdminMenuList(ctx context.Context, req *admindto.AdminMenuListReq) (*admindto.AdminMenuListResp, error)
 	AdminMenuSave(ctx context.Context, req *admindto.AdminMenuSaveReq) (*admindto.AdminMenuSaveResp, error)
-	AdminRoutes(ctx context.Context, userID uint64, lang string) (*admindto.AdminRoutesResp, error)
 }
 
 // RoleService 角色领域业务能力。
@@ -100,11 +99,15 @@ type AuthzContextService interface {
 	ListByCodes(ctx context.Context, codes []string) ([]admindto.PermBrief, error)
 	// ExistsEnabledCode 指定权限点编码是否存在且启用。
 	ExistsEnabledCode(ctx context.Context, code string) (bool, error)
-	// BuildAuthorizedRoutes 根据权限 codes 构建当前用户可见路由树。
-	BuildAuthorizedRoutes(ctx context.Context, codes []string, lang string) ([]admindto.RouteNode, error)
 	// EffectivePermissionCodes 用户全部有效权限码（直接 + 角色继承）。
 	// 渲染层据此做菜单 / 按钮 / 字段可见性过滤，与 Casbin API 鉴权同源。
 	EffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error)
+	// AuthorizedButtonCodes 返回当前用户有权触发的**按钮码**集合。
+	//
+	// 按钮码是 type=3 节点的 title_key（迁移 589）：模板据此判断按钮 / 字段级显隐，
+	// 于是模板层只出现菜单体系的词汇、不出现权限码（docs/02-Z §4.4）。
+	// 判据与菜单可见性同源（matchedMenuCodes）：节点绑的**任一**码在用户有效码集合里即算可用。
+	AuthorizedButtonCodes(ctx context.Context, codes []string) ([]string, error)
 	// BuildAuthorizedTree 根据权限 codes 构建后台导航树：只含目录（type=1）与菜单（type=2），
 	// 自动补齐可见子项的祖先目录，排除按钮 / iframe / 外链；is_public=1 的空权限项照常可见。
 	// 后台侧栏直接消费它 —— 菜单真源是 sys_menus 表，各页面不再有 Go 侧硬编码菜单表。

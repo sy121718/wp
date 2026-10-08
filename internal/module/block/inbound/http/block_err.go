@@ -1,21 +1,23 @@
 package blockhttp
 
-// block_err.go — 全局块页**读侧**回执文案（?err= / ?done=）的收口。
+// block_err.go — 全局块页写动作的**出口归口**（错误文案三件套 + 整页提示）。
 //
-// 写侧早就是把错误收敛过的（blockErrText / shell.BulkIDsFacingText），但列表页把它
-// **原样**从 query 读回来渲染（BlocksList 的 `Err: strings.TrimSpace(c.Query("err"))`）：
-// 任何人手拼一个 /admin/blocks?err=任意文案 就能在页面上塞一条顶着「上一次操作未完成」
-// 样式的伪造消息（Jet 已做 HTML 转义，所以不是 XSS —— 问题是「看起来像系统说的话」）。
-// 查询参数与响应体、模板数据一样**不是可信边界**。
+// 三件套（AGENTS.md §响应与错误处理）：
 //
-// 收口形状照抄订单页的样板（order_page_handle.go:169）：
+//	① 白名单 —— blockErrSentinels（= blockcontract 的 sentinel，值即 i18n key，见 block_page.go）；
+//	② 归口文案 —— 未命中时返回 shell.MsgInternalError（可翻译 key + 中文兜底）；
+//	③ 结构化日志 —— 原文只进日志，带 user_id / path（在各写路径的调用点记）。
 //
-//	pageErr := shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), 判定)
+// 传输通道：写动作的结论由 shell.RenderJump 渲染成整页提示（对应 ThinkPHP 的
+// success() / error()），**不再**经 302 + `?err=` / `?done=` 回带列表页。
 //
-// 判定 = shell.FacingNotice（受控形状：逐字相等 / 数字归一相等 / 文案 + "：" + 定位信息），
-// 候选文案由本页**自己的**白名单派生（blockErrSentinels + shell 的批量上限模板 +
-// 批量结论文案模板）。未命中：?err= 落 shell.PageInternalText(c)（页面显示「系统内部错误」
-// 而不是什么都不显示），?done= 落空串（成功提示未命中的唯一正确表现是「没有这条提示」）。
+// **读侧（?err= / ?done= 的受控文案集合与判定）已整批删除**：那条通道的代价是每个模块
+// 都要维护一份「受控文案 + 数字归一模板」来证明提示出自本仓（blockNoticeTexts /
+// blockPageErr / blockPageDone 就是那套），而查询参数不是可信边界。文案走响应体之后，
+// 那套判定随之不需要了。
+//
+// 本文件剩下的都是**写侧**：把 service 的错误 / 计数结论渲染成可展示的成品文案，
+// 以及回跳地址（shell.BackPath 从表单 action 的 query 读回筛选上下文）。
 
 import (
 	"strconv"
@@ -26,15 +28,14 @@ import (
 
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
-// blockRefDetailMaxBytes 引用明细允许占用的字节上限。
+// blockRefDetailMaxBytes 引用明细允许占用的字节上限（**展示封顶**）。
 //
-// 整串（受控文案 + "：" + 明细）要能通过读侧的形状判定（shell.NoticeMaxBytes = 512），
-// 所以明细自己必须封顶 —— 超长的 ?err= 会被读侧判成伪造消息，页面反而显示
-// 「系统内部错误」，把一次**有定位信息**的拒绝变成一句看不懂的兜底话。
+// 提示页正文太长会挤掉「立即前往」的链接与其它提示；这里按可读性封顶。
+// （原先是按读侧 shell.NoticeMaxBytes 的 URL 形状判定反推出来的，那条判定已删除。）
 const blockRefDetailMaxBytes = 420
 
 // blockUsageKindKey 引用类别 → i18n key（真文案在 sys_i18n，迁移 297）。
@@ -115,26 +116,15 @@ func truncateRunes(s string, maxBytes int) string {
 	return s[:cut] + "…"
 }
 
-// blockBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
+// blockBulkResultTemplates 批量删除的结论文案模板（{count} 等是命名占位符）。
 //
-// **写侧与读侧共用这一份**（key + 中文兜底各一份）：写侧 blocksBulkDeleteResult 经
-// blockBulkTextOf 取当前语言模板后 Sprintf 出文案，读侧 blockNoticeTexts 用**同一个取法**
-// 拿到当前语言模板、经 shell.NoticeTemplate 归一后判定 URL 回显。
-// 各写一份的后果是静默的 —— 写侧改了措辞，读侧白名单不再命中，运营看到的
-// 就从「已删除 3 个块。」退化成「系统内部错误」。
+// 单条删除的成功回执也复用这里的 allDeleted（count=1），所以「删一个块」与「批量删一个块」
+// 说的是同一句话 —— 两处各写一句的下场是同一个动作在两种入口下措辞不同。
 var blockBulkResultTemplates = []blockText{
 	{"admin.blocks.bulkResult.noneSelected", "没有选中任何块，列表未改动。"},
 	{"admin.blocks.bulkResult.allDeleted", "已删除 {count} 个块。"},
 	{"admin.blocks.bulkResult.allSkipped", "{count} 个块都未能删除，列表未改动。"},
 	{"admin.blocks.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。"},
-}
-
-// blockBulkTextOf 取一条批量结论文案的当前语言**模板**（写侧与读侧**共用这一个取法**）。
-//
-// 返回的是模板而不是成品句子：写侧要把 {count} 填成真实计数，读侧要把占位符填成占位符
-// 再归一比对（见 blockNoticeTexts）。
-func blockBulkTextOf(c *gin.Context, t blockText) string {
-	return shell.TranslateFor(c)(t.Key, t.Fallback)
 }
 
 // blockBulkFilled 把批量结论文案模板填成成品句子（占位符命名形态，见 pkg/i18n/placeholder.go）。
@@ -144,9 +134,7 @@ func blockBulkFilled(c *gin.Context, t blockText, params map[string]string) stri
 
 // blockRefErrText 块删除被拒时的页面文案：受控文案 + "：" + 引用明细。
 //
-// 明细是可定位的数据（哪一类引用、哪些实体），受控文案是白名单的来源 ——
-// 形状「候选文案 + ：+ 定位」正是 shell.FacingNotice 的形态 3，读侧才能原样放行；
-// 长度封顶同样必须由写侧做（读侧超 512 字节一律判伪造，页面会退化成「系统内部错误」）。
+// 明细是可定位的数据（哪一类引用、哪些实体），受控文案来自白名单；整串按展示上限封顶。
 func blockRefErrText(c *gin.Context, err error) string {
 	msg := blockErrText(c, err)
 	if detail := blockRefUsageText(c, err); detail != "" {
@@ -170,40 +158,42 @@ func blockRefSkipDetail(c *gin.Context, name string, err error) string {
 	return strings.TrimSpace(name) + "：" + reason
 }
 
-// blockNoticeTexts 本页可以原样展示的回执文案（当前语言）。
+// blockListPath 全局块列表页路径（写动作失败时的回跳目标）。
+const blockListPath = "/admin/blocks"
+
+// blockBackText 提示页那个链接的文字（复用页面标题词条，不新增全站词条）。
+func blockBackText(c *gin.Context) string {
+	return shell.TranslateFor(c)(blockenums.MsgBlockTitle, "全局块")
+}
+
+// blockListBack 回列表页的回跳地址：从**本次请求的 query** 读回工程筛选。
 //
-// 三类来源，与写侧的取值一一对应：
-//  1. blockErrSentinels 的译文（blockErrText 的产物）；
-//  2. 归口文案（tr(shell.MsgInternalError, ...) —— blockErrText 未命中时给的就是它）
-//     与 shell 的批量上限提示模板（shell.BulkIDsFacingText 的产物）；
-//  3. 批量结论文案模板（数字归一后与实际文案可比）。
-func blockNoticeTexts(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0, len(blockErrSentinels)+len(blockBulkResultTemplates)+2)
-	for _, sentinel := range blockErrSentinels {
-		key := sentinel.Error()
-		out = append(out, tr(key, key))
-	}
-	out = append(out, tr(shell.MsgInternalError, blockErrInternalFallback))
-	out = append(out, shell.BulkIDsNoticeTemplate(c))
-	for _, tpl := range blockBulkResultTemplates {
-		// 占位符先填成 "0"（写侧填的是真实计数，数字归一后两者可比），
-		// 再走 shell.NoticeTemplate 的 %s/%d 归一 —— 两种占位形态在这一步合流。
-		out = append(out, shell.NoticeTemplate(i18n.ZeroNamedPlaceholders(blockBulkTextOf(c, tpl))))
-	}
-	return out
+// 上下文随表单 action 的 query 一起提交（`action="/admin/blocks/delete?project=…"`），
+// 服务端按调用点显式列出的键读回来 —— 不再从隐藏域读整串返回 URL，也不再由 Go 拼 ?err=。
+func blockListBack(c *gin.Context) string {
+	return shell.BackPath(c, blockListPath, "project")
 }
 
-// blockPageErr 列表页 ?err= 的统一出口（写侧两条通道都走它判定）。
-func blockPageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, blockNoticeTexts(c))
-	})
+// blockPageJump 页面写动作的统一出口：整页提示（回列表页）。
+//
+// 取代原先的 303 + `?err=` / `?done=`：那条通道要求读侧再判一次「这条提示是不是本仓给的」
+// （blockNoticeTexts 的候选集合），而查询参数不是可信边界。现在文案走响应体，读侧判定随之删除。
+//
+// 提示文本必须**已过本模块白名单 / 已归口**（blockErrText / blockRefErrText /
+// shell.BulkIDsFacingText / blockBulkFilled 的产物），原文只进日志 ——
+// 换个页面呈现不等于可以把 err.Error() 铺在页面上。
+//
+// 失败不自动跳转（Seconds=0）：运营要看清楚原因。成功 1 秒后自动回列表页
+// （与 sysconfig / plugin / order 同一取舍）。
+func blockPageJump(c *gin.Context, ok bool, msg, back string) {
+	blockJump(c, ok, msg, back, blockBackText(c))
 }
 
-// blockPageDone 列表页 ?done= 的统一出口（成功提示：未命中落空串）。
-func blockPageDone(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, blockNoticeTexts(c))
-	})
+// blockJump 带自定义链接文字的提示页出口（新建成功要跳工作台，链接文字不是「全局块」）。
+func blockJump(c *gin.Context, ok bool, msg, back, backText string) {
+	if ok {
+		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
+		return
+	}
+	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
 }

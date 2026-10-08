@@ -133,26 +133,27 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 		t.Error("结构模板的编辑入口不该带样例实体参数（无实体模式）")
 	}
 
-	// 切换：把第一套设为生效 → 302 回列表（带 done 回执）。
-	form := url.Values{"id": {first.ID}, "projectId": {env.projectID}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/content-templates/activate", strings.NewReader(form.Encode()))
+	// 切换：把第一套设为生效 → 提示页（HTTP 200，成功态），回跳链接保留工程筛选。
+	form := url.Values{"id": {first.ID}}
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/content-templates/activate?project="+env.projectID+"&entityType=header",
+		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("切换生效应 302，实际 %d，body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("切换生效应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	loc := rec.Header().Get("Location")
-	assertNoContentTemplateInternalLeak(t, "302 Location", loc)
-	u, perr := url.Parse(loc)
-	if perr != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", perr, loc)
+	jumpBody := rec.Body.String()
+	assertNoContentTemplateInternalLeak(t, "切换成功提示页", jumpBody)
+	if !strings.Contains(jumpBody, `data-jump-state="ok"`) {
+		t.Fatalf("切换成功应渲染成功态提示页，body=%s", jumpBody)
 	}
-	if u.Query().Get("done") == "" {
-		t.Fatalf("切换成功应回带 ?done=，实际 %s", loc)
+	if !strings.Contains(jumpBody, "已切换生效模板") {
+		t.Fatalf("切换成功提示页应含成功文案，body=%s", jumpBody)
 	}
-	if u.Query().Get("project") != env.projectID {
-		t.Fatalf("回跳应保留工程筛选，实际 %s", loc)
+	if !strings.Contains(jumpBody, "project="+env.projectID) {
+		t.Fatalf("提示页回跳链接应保留工程筛选，body=%s", jumpBody)
 	}
 
 	// 落库校验：生效的那套换了，旧的必须已经置 false（同一类型只有一套生效）。
@@ -175,17 +176,21 @@ func TestContentTemplatesActivateRejectsMissingID(t *testing.T) {
 	if env == nil {
 		return
 	}
-	req := httptest.NewRequest(http.MethodPost, "/admin/content-templates/activate",
-		strings.NewReader(url.Values{"projectId": {env.projectID}}.Encode()))
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/content-templates/activate?project="+env.projectID,
+		strings.NewReader(url.Values{}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("缺 id 应 302 回列表，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("缺 id 应渲染提示页（200），实际 %d", rec.Code)
 	}
-	loc := rec.Header().Get("Location")
-	assertNoContentTemplateInternalLeak(t, "302 Location", loc)
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("缺 id 应回带 ?err=，实际 %s", loc)
+	body := rec.Body.String()
+	assertNoContentTemplateInternalLeak(t, "缺 id 提示页", body)
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("缺 id 应渲染失败态提示页，body=%s", body)
+	}
+	if !strings.Contains(body, "缺少模板 id") {
+		t.Fatalf("缺 id 提示页应含原因文案，body=%s", body)
 	}
 }

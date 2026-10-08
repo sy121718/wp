@@ -16,7 +16,7 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// documentedEdges 与 order_status.go 顶部注释逐条对应的合法边。
+// documentedEdges 与 order.go 里状态机注释逐条对应的合法边。
 var documentedEdges = map[string][]string{
 	ordermodel.OrderStatusPending:   {ordermodel.OrderStatusPaid, ordermodel.OrderStatusCancelled},
 	ordermodel.OrderStatusPaid:      {ordermodel.OrderStatusShipped, ordermodel.OrderStatusCancelled, ordermodel.OrderStatusRefunded},

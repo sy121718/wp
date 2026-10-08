@@ -7,6 +7,8 @@
 > 盘点时间：2026-09（以当前工作区代码为事实来源核对）。
 > 结论口径：文档说「未做」但代码已存在的，一律标注 **文档滞后-代码已有**，避免按旧结论重复施工。
 >
+> **2026-10 过程文档已删**：`09-session-handoff.md`、`component-jet-migration-plan.md`。表内对它们的引用是历史出处，条目以「现状」列的代码路径为准。
+>
 > **2026-09 回填状态（第 0 步已执行）**：DOC-1 / DOC-2 / DOC-3 已修，另同步修正 DOC-8 / DOC-13 / INF-3 与 I18N-1 的现状口径。改动文档：\`01-overview.md\`（§1.1 术语、§1.4 非目标、§4 目录树与模块表、§5 冻结边界）、\`05-implementation-plan.md\`（当前状态表 + 阶段 4–7 任务与验收门禁）、\`02-domain.md\`（§4.2/§4.3 补实现归属）、\`02-B-media-center.md\`（§6 实现映射 + §7 表结构）、\`09-session-handoff.md\`（§1.3/§1.6/§4 + 新增 §5 回填记录）。本次只改 \`docs/\`，未动代码。
 >
 > **2026-09-26 现状列复核（本批次，只改本文档）**：对全部 104 条的「现状」列逐条回代码核验，**「未开始」判定的过期率很高** —— 本轮改判 **12 条为「已落地」**（SEO-1 / SEO-2 / SEO-3 / SEO-7 / SEO-9 / I18N-3 / I18N-6 / I18N-7 / I18N-12 / PIPE-2 / INF-8 / BIZ-9）、**4 条为「部分完成」**（CMP-7 / I18N-10 / PIPE-1 / PIPE-12）、**1 条为「文档滞后-代码已有」**（CMP-5）；另有 **11 条引用的 \`文件:行\` 已失效**（I18N-1 / I18N-2 / I18N-4 / SEO-6 / PIPE-11 / CMP-9 / CMP-10 / CMP-11 / CMP-13 / INF-4 / INF-7 —— 逐条见各行）与 **2 条引用了不存在的路径/函数名**（INF-1 的 \`nav_menu.go\`、I18N-2 的 \`compileBlockFragment\`）。
@@ -28,7 +30,7 @@
 
 ### 0.2 方法
 
-1. **全文读取**重点文档：\`05-implementation-plan.md\`、\`06-A\`、\`06-B\`、\`06-plugin-system.md\`、\`03-pipeline.md\`（§4.4/§7/§8）、\`06-D-site-i18n.md\`（§13/§14/§15 全部小节）、\`09-session-handoff.md\`、\`02-E\`、\`04-B\`、\`04-A\`、\`0-A2\`、\`02-D\`、\`03-A-workbench\`、\`06-C\`、\`jet-and-go-libs-plan\`、\`component-jet-migration-plan\`、\`media-variants-recon\`。
+1. **全文读取**重点文档：\`05-implementation-plan.md\`、\`06-A\`、\`06-B\`、\`06-plugin-system.md\`、\`03-pipeline.md\`（§4.4/§7/§8）、\`06-D-site-i18n.md\`（§13/§14/§15 全部小节）、\`02-E\`、\`04-B\`、\`04-A\`、\`0-A2\`、\`02-D\`、\`03-A-workbench\`、\`06-C\`、\`jet-and-go-libs-plan\`、\`media-variants-recon\`。
 2. **关键词定位**其余文档：\`规划|待实现|待做|TODO|未做|未实现|尚未|后续|暂不|预留|待决策|缺口\`，命中 206 处，逐条归并。
 3. **代码交叉核对**：对每条待办用 \`grep\`/\`glob\`/\`ls\` 核对 \`internal/\`、\`public/migrations/\`、\`internal/templates/\` 是否已有对应文件/函数/表/迁移。
 
@@ -113,8 +115,8 @@
 |---|---|---|---|---|---|
 | CMP-1 | \`component\` 模块（Global Component 版本 + \`immutable/auto-update/pinned\` 策略 + Registry manifest） | \`05-implementation-plan.md\` 阶段 5（L230）、\`01-overview.md\` 模块表（L286）、\`02-domain.md\` §4.2/§4.3（L406-472） | 未开始（\`internal/module/\` 无 component；当前由 \`block\` 模块 \`reuse_mode=global\` 承担复用语义） | 中 | 概念需先对齐（见 §9 DOC-13） |
 | CMP-2 | Jet 三层 Set 隔离 + \`AddGlobalFunc\` 注入 | \`jet-and-go-libs-plan.md\` 待办表 P1（L216）、§3（L47-58） | 文档滞后-代码已有：\`templates/jet_render.go\`（admin/workbench）、\`component_set.go\`（构建期）、\`fragment_render.go\`（片段）、\`plugin_loader.go\`（插件）各自 Set + \`injectGlobals\` | — | 无 |
-| CMP-3 | \`builder/core\` 抽库（拆 \`internal\`，开源复用） | \`jet-and-go-libs-plan.md\` 待办表 P3（L220）、\`component-jet-migration-plan.md\` §八（L196） | 未开始 | 低 | 无 |
-| CMP-4 | Jet 模板 IDE 高亮/校验插件选型 | \`component-jet-migration-plan.md\` §八（L197） | 未开始 | 低 | 无 |
+| CMP-3 | \`builder/core\` 抽库（拆 \`internal\`，开源复用） | \`jet-and-go-libs-plan.md\` 待办表 P3 | 未开始 | 低 | 无 |
+| CMP-4 | Jet 模板 IDE 高亮/校验插件选型 | 事项仍未开始（过程文档已删） | 未开始 | 低 | 无 |
 | CMP-5 | \`card\` 组件缺标题/正文排版字段（当前只能靠通用层） | \`09-session-handoff.md\` §4（L384） | **文档滞后-代码已有（字段面，2026-09-26 复核）**：\`internal/builder/components/card/card.go:19\` \`Title\`（\`ct:"text,maxlen=200"\`）、\`:22\` \`TitleTag\`（\`ct:"select"\`，h2~h5 白名单，专为避免标题跳级）、\`:24\` \`Text\`（\`ct:"richtext,maxlen=1000"\`）；渲染侧 \`internal/builder/components/card/jet.go:55-62\` 做白名单回落（非 h2~h5 一律 h3）。**原记录「card.go 仅 title/text/buttonText/buttonLink」已过时**（另有 \`imageSrc\` / \`loading\` / \`fetchPriority\` / \`advanced\`）。**仍成立的一半**：字号 / 对齐 / 间距这类**排版**项仍走通用层 \`Advanced core.AdvancedProps\`（\`:36\`） | 低 | 无 |
 | CMP-6 | \`core.text\` \`ct:maxlen\` 与清洗硬上限不一致 | \`09-session-handoff.md\` §4（L385） | 文档滞后-代码已有：\`core.MaxRichLen\` 已统一为 30000，与 \`ct:"richtext,maxlen=30000"\` 一致 | — | 无 |
 | CMP-7 | 富文本图片（Trix \`figure/img\`）未接媒体变体与 caption | \`09-session-handoff.md\` §4（L386） | **部分完成（2026-09-26 复核）**：**caption 侧已落地** —— 清洗白名单保留 \`figure\` / \`figcaption\`（\`internal/builder/core/richtext.go:57\`），并用 \`figcaption\` 纯文本回填同级 \`<img>\` 的 \`alt\`（\`:476\` \`backfillFigureAlt\`，调用点 \`:110\`；原注释 \`:86\` 说明动机）。**仍缺**：正文 \`img\` 不走 \`srcset\`（媒体变体目前只在 image 组件侧接入）。**原记录「未开始」已过时**（caption 已做） | 中 | 无 |

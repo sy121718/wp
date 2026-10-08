@@ -88,8 +88,8 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/page/translations", handle.PageTranslations)
-	router.POST("/admin/page/translations/save", handle.SavePageTranslations)
+	router.GET("/admin/pages/translations", handle.PageTranslations)
+	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
 	return router, db, project.ID, pageID, header.ID
 }
 
@@ -126,7 +126,7 @@ func TestPageTranslationsListsBlockText(t *testing.T) {
 // TestSaveBlockTextTranslation 保存块内译文 → 落库 + 全站标记待重建。
 func TestSaveBlockTextTranslation(t *testing.T) {
 	router, db, _, pageID, _ := newBlockTranslationEnv(t)
-	saved := postForm(t, router, "/admin/page/translations/save", url.Values{
+	saved := postForm(t, router, "/admin/pages/translations/save", url.Values{
 		"pageId":     {pageID},
 		"lang":       {"en-US"},
 		"rowContext": {"core.button.text"},
@@ -134,11 +134,11 @@ func TestSaveBlockTextTranslation(t *testing.T) {
 		"rowHash":    {i18n.ContentHash("页眉按钮")},
 		"rowTarget":  {"Header button"},
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存块内译文应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK {
+		t.Fatalf("保存块内译文应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
 	}
-	if loc := saved.Header().Get("Location"); !strings.Contains(loc, "n=1") {
-		t.Fatalf("应写入 1 条译文，实际回跳 %q", loc)
+	if body := saved.Body.String(); !strings.Contains(body, "已保存 1 条译文") {
+		t.Fatalf("应写入 1 条译文，实际提示 %s", body)
 	}
 	target, engine := translationTargetOf(t, db, "页眉按钮", "core.button.text", "en-US")
 	if target != "Header button" || engine != i18n.ContentEngineManual {

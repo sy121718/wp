@@ -175,7 +175,7 @@ func marketingProbeData(over map[string]any) map[string]any {
 		"Page": 1, "Keyword": "", "Status": "",
 		// 有「新建活动」权限：活动表的空态才带动作 —— 这样「联系人不给动作」那两条用例
 		// 数出来的 .empty-actions 就只可能来自活动表。
-		"PermSet": map[string]any{"mail:campaign_save": true},
+		"Buttons": map[string]any{"mail.campaign_save": true},
 	}, over)
 }
 
@@ -183,7 +183,7 @@ func marketingProbeData(over map[string]any) map[string]any {
 func TestAdminEmptyStateHasActions(t *testing.T) {
 	t.Run("departments/有新建权限→新建部门按钮", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/departments", map[string]any{
-			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"dept:create": true},
+			"Rows": []any{}, "Parents": []any{}, "Buttons": map[string]any{"dept.create": true},
 		})
 		assertEmptyKeepsTableHead(t, "departments", out, "7", []string{"还没有部门"})
 		assertEmptyActions(t, "departments", out, 1, `data-drawer-open="#tpl-dept-create"`)
@@ -196,7 +196,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 
 	t.Run("menus/有新建权限→新建菜单按钮", func(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/system/menus", map[string]any{
-			"Rows": []any{}, "Parents": []any{}, "PermSet": map[string]any{"menu:create": true},
+			"Rows": []any{}, "Parents": []any{}, "Buttons": map[string]any{"menu.create": true},
 		})
 		assertEmptyKeepsTableHead(t, "menus", out, "9", []string{"还没有菜单"})
 		assertEmptyActions(t, "menus", out, 1, `data-drawer-open="#tpl-menu-create"`)
@@ -213,7 +213,7 @@ func TestAdminEmptyStateHasActions(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/analytics/seo", map[string]any{
 			"Projects":        []any{map[string]any{"ID": "pr1", "Name": "官网"}},
 			"SelectedProject": "pr1", "Paths": []any{}, "HasPaths": false,
-			"AnalyticsError": false, "PermSet": map[string]any{"seo:audit": true},
+			"AnalyticsError": false, "Buttons": map[string]any{"seo.audit": true},
 		})
 		// 体检占位那一处刻意不给动作，所以合计恰好 1 处（热门路径的）。
 		assertEmptyActions(t, "seo", out, 1, `href="/admin/analytics?project=pr1"`)

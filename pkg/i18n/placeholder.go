@@ -110,7 +110,7 @@ func FillNamedPlaceholders(tpl string, params map[string]string) (string, bool) 
 
 // ZeroNamedPlaceholders 把全部 `{name}` 占位符替换成字面量 "0"。
 //
-// 用途是**受控回执的读侧归一**（internal/web/shell 的 NoticeTemplate 只认 %s/%d）：
+// 用途是**受控回执的读侧归一**（internal/shell 的 NoticeTemplate 只认 %s/%d）：
 // 写侧把真实计数填进 {count} 得到的句子，与「占位符全填 0」的候选模板做数字归一后
 // 逐字相等，才说明整句出自本仓库 —— 手拼的 query 参数不可能命中。
 func ZeroNamedPlaceholders(tpl string) string {

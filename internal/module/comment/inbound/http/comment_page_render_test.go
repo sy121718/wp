@@ -29,7 +29,7 @@ import (
 	commentdto "go_wp/internal/module/comment/dto"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/utils"
 )
 
@@ -97,6 +97,7 @@ func renderCommentsPage(t *testing.T, svc *stubCommentSvc, projects stubProjects
 		// 权限集合由 shell.PermContextMiddleware 注入；这一步单独设，
 		// 是为了让渲染测试不依赖 admin 权限契约与完整装配链路。
 		c.Set(shell.PermSetKey, perm)
+		c.Set(shell.ButtonsKey, buttonsOf(perm))
 		h.CommentsPage(c)
 	})
 	rec := httptest.NewRecorder()
@@ -221,4 +222,14 @@ func TestCommentsPageDegradesOnLoadFailure(t *testing.T) {
 	if !strings.Contains(body, "</html>") {
 		t.Fatal("降级分支也要渲染完整页面（缺 key 会整页 500）")
 	}
+}
+
+// buttonsOf 把「权限码集合」转成「按钮码集合」（按钮码 = 权限码的 slug 形式，见迁移 589）。
+// 测试直接给权限码更贴近业务语义；模板读的是按钮码，所以两条都注入。
+func buttonsOf(perms map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(perms))
+	for code := range perms {
+		out[strings.ReplaceAll(code, ":", ".")] = true
+	}
+	return out
 }

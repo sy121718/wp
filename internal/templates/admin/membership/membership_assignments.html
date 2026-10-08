@@ -8,6 +8,7 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{{listQuery := .ListQuery}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -35,15 +36,14 @@
     </header>
 
     {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.loadFailed", "工程列表没读出来，本页数据未加载，请稍后重试。") }}</p>{{end}}
-    {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.lastError", "上一次操作未完成：") }}{{.Err}}</p>{{end}}
-    {{if .Done != ""}}<p class="badge badge-success" role="status">{{.Done}}</p>{{end}}
+    {{if .LoadErr != ""}}<p class="badge badge-warning" role="alert">{{.LoadErr}}</p>{{end}}
     {{if !.RecalcAvailable}}<p class="badge" role="status">{{ .["t"]("admin.membership.assign.recalcUnavailable", "自动升级尚未启用：消费额数据源（订单侧的批量聚合）还没接入，日结不会运行；这里的归属只能手工维护。") }}</p>{{end}}
 
     {* ===== 手工指定 ===== *}
-    {{if isset(.PermSet["membership:assign_set"])}}
+    {{if isset(.Buttons["membership.assign_set"])}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.assign.setTitle", "手工指定等级") }}</span></div>
-        <form method="post" action="/admin/membership/assign/set" class="form-stack">
+        <form method="post" action="/admin/membership/assign/set?{{listQuery}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-row">
@@ -123,8 +123,8 @@
                 <td>{{r.AssignedAt}}</td>
                 <td class="col-actions">
                     {{if r.IsManual}}
-                    {{if isset(.PermSet["membership:assign_unlock"])}}
-                    <form method="post" action="/admin/membership/assign/unlock">
+                    {{if isset(.Buttons["membership.assign_unlock"])}}
+                    <form method="post" action="/admin/membership/assign/unlock?{{listQuery}}">
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="userId" value="{{r.UserID}}">

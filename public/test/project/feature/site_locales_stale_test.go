@@ -119,8 +119,8 @@ func TestSaveSiteLocalesMarksStaleOnChange(t *testing.T) {
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0", "1"},
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("保存成功应 200 渲染成功提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	live := pageStaleOf(t, db, "11111111-1111-1111-1111-111111111111")
 	if !live.Stale {
@@ -143,8 +143,8 @@ func TestSaveSiteLocalesMarksStaleOnDefaultChange(t *testing.T) {
 		"defaultIndex": {"1"}, // 默认语言改为 en-US
 		"enabledIndex": {"0", "1"},
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("保存成功应 200 渲染成功提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	if row := pageStaleOf(t, db, "33333333-3333-3333-3333-333333333333"); !row.Stale {
 		t.Fatalf("默认语言变化后页面应 stale=true，实际 %+v", row)
@@ -164,8 +164,8 @@ func TestSaveSiteLocalesSkipsStaleWhenUnchanged(t *testing.T) {
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0", "1"},
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("保存成功应 200 渲染成功提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	after := pageStaleOf(t, db, "44444444-4444-4444-4444-444444444444")
 	if after.Stale {

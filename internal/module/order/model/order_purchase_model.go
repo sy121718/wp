@@ -31,7 +31,7 @@ import (
 //     工程归属由订单决定，明细行随其所属订单进入工程。子查询里的 orders 同样受
 //     迁移 215 的 FORCE 策略压制，rls.InProjectScope 设的 app.project_id 对它生效。
 //
-// 入参形状由 service 入口校验（见 order_purchase.go），这里不重复判：
+// 入参形状由 service 的 HasPurchasedProduct 校验，这里不重复判：
 // 非法 uuid 到 PG 会报类型语法错，那是调用方该在入口挡住的事，不该沉到仓储层。
 func (m *OrderModel) HasPurchasedProduct(ctx context.Context, projectID string, userID uint64, productID string) (purchased bool, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

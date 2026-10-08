@@ -6,8 +6,8 @@
 {{if fill}}{{echo = .FormEcho}}{{end}}
 <div data-inventory-reason-host>
     {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
-    <form method="post" action="/admin/inventory/reason/{{if edit}}update{{else}}create{{end}}" class="form-stack"
-          hx-post="/admin/inventory/reason/{{if edit}}update{{else}}create{{end}}" hx-target="closest [data-inventory-reason-host]" hx-swap="outerHTML">
+    <form method="post" action="/admin/inventory/reason/{{if edit}}update{{else}}create{{end}}?{{ .ListQuery }}" class="form-stack"
+          hx-post="/admin/inventory/reason/{{if edit}}update{{else}}create{{end}}?{{ .ListQuery }}" hx-target="closest [data-inventory-reason-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{if fill}}{{echo.projectId}}{{else}}{{.SelectedProject}}{{end}}">
         {{if edit}}<input type="hidden" name="id" value="{{echo.id}}"><input type="hidden" name="builtin" value="{{echo.builtin}}">{{if echo.status != ""}}<input type="hidden" name="status" value="{{echo.status}}">{{end}}{{end}}

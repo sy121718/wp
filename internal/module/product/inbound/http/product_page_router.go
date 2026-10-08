@@ -1,32 +1,27 @@
-// product_page_router.go — 商品域后台页面路由（原 dashboard/inbound/http/router_catalog.go）。
-//
-// 页面组由装配层创建（Session 认证 + CSRF + 权限上下文），模块只往上面挂路由：
-// 页面 GET 走页面组（无 Casbin），写动作**原样复用商品 API 的权限点**
-// （builtin.CasbinMiddlewareForPath(...)，权限点路径逐字未改）。
 package producthttp
+
+// product_page_router.go — product 域后台页面（/admin 组）的注册落点。
+//
+// 只做注册：`/admin` 组的中间件链（Session + CSRF + 权限上下文）由装配层统一挂好，
+// handler 在 product_page.go / product_handle.go。路由注册只出现在 *_router.go，门禁
+// scripts/check-route-registration-placement.sh 守这条。
+//
+// 写动作一律复用商品 API 的权限点（builtin.CasbinMiddlewareForPath(...)，路径逐字未改）；
+// 页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
 
 import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	contentcontract "go_wp/internal/module/content/contract"
-	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	inventorycontract "go_wp/internal/module/inventory/contract"
-	pagecontract "go_wp/internal/module/page/contract"
-	presentationcontract "go_wp/internal/module/presentation/contract"
-	productcontract "go_wp/internal/module/product/contract"
-	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/module/content/contract"
+	"go_wp/internal/module/contenttemplate/contract"
+	"go_wp/internal/module/inventory/contract"
+	"go_wp/internal/module/page/contract"
+	"go_wp/internal/module/presentation/contract"
+	"go_wp/internal/module/product/contract"
+	"go_wp/internal/module/project/contract"
 )
 
-// setupProductPages 注册商品域后台页面：商品 / 变体 / 评分、属性、分类与品牌、标签、
-// 定价、捆绑、详情页模板、翻译工作台与 SEO 评分面板。
-//
-// 依赖与页面一一对应（都只读其他模块的 contract，不碰它们的 service/model）：
-//   - contentTemplates / presentations：详情页模板页（清单 / 绑定 / 预览 / 发布 / 改 URL）
-//     与翻译保存后的实例 stale 标记；
-//   - inventories：建商品与新增变体的「归属仓」下拉；
-//   - pageSvc / contentSvc：编辑期 title 唯一性检查的另外两个数据源，同时 pageSvc
-//     还供译文保存后标记手工页面待重建。
 func SetupProductPages(pages *gin.RouterGroup,
 	products productcontract.ProductService,
 	projects projectcontract.ProjectService,
@@ -98,7 +93,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
 	// 双轨写动作（迁移 282，docs/04-C-instance-override.md）：只改这一个商品的呈现。
 	// 权限复用商品更新（同一改动面：改的都是这个商品详情页的内容），不新增权限点。
-	// 成功不写 ?done=（页面上的模式徽标就是结果），失败走 ?err= 白名单。
+	// 成功不写额外回执（页面上的模式徽标就是结果），失败走白名单文案 + 整页提示。
 	pages.POST("/products/reapply-preset", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsReapplyPreset)
 	pages.POST("/products/rollback-document", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackDocument)
 	pages.POST("/products/rollback-artifact", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackArtifact)
@@ -199,4 +194,24 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 在函数内挂定商品更新权限点（同一改动面）。
 	SetupProductTranslationRoutes(pages, products, projects, pageSvc, presentations)
 	return productPages
+}
+
+// SetupProductTranslationRoutes 注册商品域翻译页路由（挂 /admin 页面组）。
+//
+// 保存端点的鉴权在函数内挂定：页面组（internal/routers/assembly.go 的 adminPages）
+// 只有 Session + CSRF + 权限上下文，没有鉴权判定能力 —— 页面写端点必须各自显式挂
+// Casbin 中间件。保存改的是商品的展示文本，复用商品更新权限点（与页面翻译工作台
+// 同一口径）；GET 属安全方法，页面组已有 Session + CSRF。
+//
+// 这里刻意不再接受「由调用方注入 guard」的参数：审计发现参数为 nil 时会静默注册成
+// 「登录即可写」的 fail-open 分支，而静态门禁也看不见参数化注入的真实取值。
+// 权限点定死在函数内，漏挂无处可藏。
+func SetupProductTranslationRoutes(adminPages *gin.RouterGroup,
+	products productcontract.ProductService, projects projectcontract.ProjectService, pages pagecontract.PageService,
+	instances ProductTranslationInstancePort) *productTranslationHandle {
+	handle := NewProductTranslationHandle(products, projects, pages, instances)
+	adminPages.GET("/products/translations", handle.ProductTranslations)
+	adminPages.POST("/products/translations/save",
+		builtin.CasbinMiddlewareForPath("/api/product/update"), handle.SaveProductTranslations)
+	return handle
 }

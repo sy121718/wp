@@ -129,7 +129,7 @@ func TestSiteSettingsTemplateRendersSiteScriptsEcho(t *testing.T) {
 
 // TestSiteSettingsTemplateRendersScriptsErrorSlot 校验失败时就地回渲染：错误提示与用户输入同时在场。
 //
-// 这是 PIPE-8 选定的失败出口（不回 303 + ?err=）：两个字段装的是几百字节脚本，
+// 这是 PIPE-8 选定的失败出口（不回整页提示）：两个字段装的是几百字节脚本，
 // 303 一跳表单就空了，用户刚贴的代码跟着丢。这条用例钉住「提示可见 + 输入还在」。
 func TestSiteSettingsTemplateRendersScriptsErrorSlot(t *testing.T) {
 	data := siteSettingsScriptsData()

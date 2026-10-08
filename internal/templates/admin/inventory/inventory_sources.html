@@ -26,7 +26,7 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if isset(.PermSet["inventory:source_create"])}}
+            {{if isset(.Buttons["inventory.source_create"])}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-source-create" data-drawer-title="{{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}">＋ {{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}</button>
             {{end}}
             {{if len(.Projects) > 1}}
@@ -42,16 +42,12 @@
         </div>
     </header>
 
+    {* 提示条只剩一处来源：本页取数失败（工程列表 / 货源列表 / 统计）。
+       写动作的结论不在本页回显 —— 它由 shell.RenderJump 渲染成提示页（见 inventory_jump.go），
+       结论走响应体、不再经 ?err= / ?ok= / ?done= 回列表页。 *}
     {{if isset(.Err) && .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.inventory_sources.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory_sources.lastOk", "上一次操作已完成。") }}</p>
-    {{end}}
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
 
     <section class="card list-card">
         <div class="filter-bar">
@@ -109,11 +105,11 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接
            带上所有勾中的 ids。行内删除表单因此挪到表格外 —— HTML 不允许 form 嵌套，
            嵌套时浏览器会丢弃内层 form 的开始标签。 *}
-        <form method="post" action="/admin/inventory/sources/bulk-delete">
+        <form method="post" action="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
-            {{if isset(.PermSet["inventory:source_delete"])}}{{if len(.Sources) > 0}}
+            {{if isset(.Buttons["inventory.source_delete"])}}{{if len(.Sources) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.inventory_sources.bulkDeleteConfirm", "删除选中的货源？此操作不可撤销；仍被采购单或历史流水引用的会被跳过。"), danger=true)}}
             {{yield bulkBarClose()}}
@@ -156,7 +152,7 @@
                     {{else}}
                     <p class="empty-title">{{ .["t"]("admin.inventory_sources.list.emptyTitle", "还没有货源") }}</p>
                     <p class="empty-desc">{{ .["t"]("admin.inventory_sources.list.emptyNew", "建一个货源 —— 采购单的来源就来自这里。") }}</p>
-                    {{if isset(.PermSet["inventory:source_create"])}}
+                    {{if isset(.Buttons["inventory.source_create"])}}
                     <div class="empty-actions">
                         <button type="button" class="btn btn-primary" data-drawer-open="#tpl-source-create" data-drawer-title="{{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}">＋ {{ .["t"]("admin.inventory_sources.create.title", "新建货源") }}</button>
                     </div>
@@ -170,7 +166,7 @@
                 <td class="col-check">
                     <input type="checkbox" name="ids" value="{{s.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                 </td>
-                <td data-label="{{ .["t"]("admin.inventory_sources.col.name", "名称") }}">{{if isset(.PermSet["inventory:source_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-source-edit-{{s.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{s.Name}}</strong></button>{{else}}<strong>{{s.Name}}</strong>{{end}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_sources.col.name", "名称") }}">{{if isset(.Buttons["inventory.source_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-source-edit-{{s.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{s.Name}}</strong></button>{{else}}<strong>{{s.Name}}</strong>{{end}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.code", "编码") }}"><code>{{s.Code}}</code></td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}"><span class="badge badge-mute">{{s.TypeLabel}}</span></td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.related", "关联方") }}">
@@ -183,10 +179,10 @@
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_sources.col.settlePrice", "结算价") }}">{{if s.HasSettlePrice}}{{s.SettlePrice}}{{else}}—{{end}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
-                    {{if isset(.PermSet["inventory:source_update"])}}
+                    {{if isset(.Buttons["inventory.source_update"])}}
                     <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-source-edit-{{s.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                     {{end}}
-                    {{if isset(.PermSet["inventory:source_delete"])}}
+                    {{if isset(.Buttons["inventory.source_delete"])}}
                     <button type="submit" form="src-del-{{s.ID}}" class="btn btn-sm btn-danger"
                             data-confirm="{{ .["t"]("admin.inventory_sources.list.deleteConfirm", "删除该货源？此操作不可撤销。") }}" data-confirm-danger>{{ .["t"]("admin.inventory.action.delete", "删除") }}</button>
                     {{end}}
@@ -200,8 +196,8 @@
         </form>
         {* 行内删除表单放表格外（同一个 form 内不能再嵌 form），按钮用 form="<id>" 关联。 *}
         {{range _, s := .Sources}}
-        {{if isset(.PermSet["inventory:source_delete"])}}
-        <form id="src-del-{{s.ID}}" method="post" action="/admin/inventory/sources/delete" class="hidden-form">
+        {{if isset(.Buttons["inventory.source_delete"])}}
+        <form id="src-del-{{s.ID}}" method="post" action="/admin/inventory/sources/delete?{{ .ListQuery }}" class="hidden-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">
@@ -254,10 +250,10 @@
     {{end}}
 
     {* ===== 新建货源（抽屉表单模板） ===== *}
-    {{if isset(.PermSet["inventory:source_create"])}}
+    {{if isset(.Buttons["inventory.source_create"])}}
     <template id="tpl-source-create">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/create" class="form-stack" hx-post="/admin/inventory/sources/create" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/sources/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -309,7 +305,7 @@
     {{range _, s := .Sources}}
     <template id="tpl-source-edit-{{s.ID}}">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/update" class="form-stack" hx-post="/admin/inventory/sources/update" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/sources/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">

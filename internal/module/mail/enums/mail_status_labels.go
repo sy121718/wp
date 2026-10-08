@@ -3,13 +3,12 @@ package mailenums
 // mail_status_labels.go — mail 模块**状态类**展示标签与状态回执的真源。
 //
 // 与 mail_ui_labels.go 同一形态（LabelPair = i18n key + 中文兜底）、同一去向（调用点取词）。
-// 单独成文件是因为它们的消费面多一层：状态回执与测试发送回执会被**写侧**拼进 302 的
-// query（`?ok=` / `?err=`），**读侧**再按当前语言重新拼一份候选集做整句比对
-// （见 inbound/http/mail_err.go 的 mailNoticeTexts 与 shell.FacingNotice）。
+// 单独成文件是因为它们的消费面多一层：状态回执与测试发送回执由**写侧**在响应体里渲染
+//（shell.RenderJump 整页提示，见 inbound/http/mail_jump.go）。
 //
-// 于是这两组取值有一条硬约束：**写侧与读侧必须引用同一份拼装**。两侧各写一份字面量时，
-// 改了其中一侧的表现是「运营点完按钮，页面上什么都没有」或一句「系统内部错误」——
-// 静默失配，不报错、不留痕。所以句子外壳也在这里给 key，不在 handler 里拼字面量。
+// 硬约束：**状态标签与句子外壳必须引用同一份拼装**（AutomationStatusLabel +
+// AutomationStatusChanged）。两处各写一份字面量时，改了其中一侧的表现是英文后台
+// 半句中文、半句英文 —— 不报错、不留痕。所以句子外壳也在这里给 key，不在 handler 里拼字面量。
 
 import "strings"
 

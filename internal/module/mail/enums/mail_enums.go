@@ -80,7 +80,7 @@ const (
 //
 // ErrInternal 本身不进白名单：它是未命中时的返回值，不是业务文案。
 var MailFacingMessages = []string{
-	// 成功回执（response.Success 的 message，也可能经 ?ok= 回显）
+	// 成功回执（response.Success 的 message）
 	MsgSendSuccess, MsgSaveSuccess, MsgDeleteSuccess, MsgImportSuccess,
 	MsgTestSent, MsgCampaignStarted, MsgAutomationStarted,
 	// 业务错误

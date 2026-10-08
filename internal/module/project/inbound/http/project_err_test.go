@@ -2,26 +2,22 @@ package projecthttp
 
 // project_err_test.go — 项目域页面错误归口的判据守卫（就近单测，不碰数据库）。
 //
-// 守两件事，都是「错了会静默」的那种：
-//  1. 判定表把哨兵映射到哪一对 (状态码, key) —— 映射错了就是「用户能自己修的问题被说成系统故障」；
-//  2. 读侧候选是否覆盖了写侧全部产物 —— 漏一个 key 的症状是「写侧发了提示、页面上什么都不显示」，
-//     既不报错也不记日志，只能靠这条对账发现。
+// 守一件事，且是「错了会静默」的那种：判定表把哨兵映射到哪一对 (状态码, key) ——
+// 映射错了就是「用户能自己修的问题被说成系统故障」。
 //
-// 页面级的「装载失败仍渲染完整页」「写失败 303 + ?err=」在
-// public/test/project/feature/project_page_err_test.go（需要真实装配与模板渲染）。
+// 读侧（?err= 的受控文案集合与判定）已随写动作出口改造整批删除：结论改由
+// shell.RenderJump 渲染整页提示（见 project_jump.go），不再经查询参数回带，
+// 所以「写侧产物必须被读侧白名单覆盖」那条对账不再需要 —— 换成「写侧 key 必须在
+// 迁移里登记」（project_err_i18n_test.go 的 projectWriteTextKeys 对账）。
 
 import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	projectenums "go_wp/internal/module/project/enums"
 	service "go_wp/internal/module/project/service"
-
-	"github.com/gin-gonic/gin"
 )
 
 // TestProjectErrStatusTextMapsSentinels 判定表逐个哨兵的对账。
@@ -66,61 +62,40 @@ func TestProjectErrStatusTextMapsSentinels(t *testing.T) {
 	}
 }
 
-// TestProjectPageErrKeysCoverStatusTextOutputs 读侧候选必须覆盖判定表的**全部**产物。
+// TestProjectWriteTextKeysCoverStatusTextOutputs 写侧 key 登记表必须覆盖判定表的**全部**产物。
 //
-// 这是「写侧与读侧两处不同步」的唯一自动守卫：读侧未登记的 key 会被 shell.FacingNotice
-// 判成伪造而落空串 —— 写侧明明回带了提示，页面上却什么都没有，且没有任何日志。
-func TestProjectPageErrKeysCoverStatusTextOutputs(t *testing.T) {
+// 判定表产物（业务文案 key）会被渲染到提示页上，漏登记的表现是「页面显示裸 key」——
+// 不报错、不记日志，只有人眼能发现（真正的「必须在迁移里登记」由
+// project_err_i18n_test.go 的 projectWriteTextKeys 对账钉住，这里先保证登记表本身完整）。
+func TestProjectWriteTextKeysCoverStatusTextOutputs(t *testing.T) {
 	sentinels := []error{
 		service.ErrThemeNotFound, service.ErrProjectNotFound,
 		service.ErrThemeIsActive, service.ErrThemeNameRequired,
 		service.ErrThemeDuplicateName, service.ErrThemeProjectIDEmpty,
 		service.ErrInvalidThemeSettings, service.ErrThemeProjectRequired,
 		service.ErrInvalidName, service.ErrInvalidSettings, service.ErrInvalidParam,
+		service.ErrLocaleNoTranslations,
 	}
-	registered := make(map[string]bool, len(projectPageErrKeys))
-	for _, k := range projectPageErrKeys {
+	registered := make(map[string]bool, len(projectWriteTextKeys))
+	for _, k := range projectWriteTextKeys {
 		registered[k] = true
 	}
-	// 两个域的归口文案也在候选里（default 分支落到哪一个取决于调用方）。
+	// 两个域的归口文案也在登记表里（default 分支落到哪一个取决于调用方）。
 	for _, fallback := range []string{projectenums.ErrThemeInternal, projectenums.ErrProjectInternal} {
 		if !registered[fallback] {
-			t.Errorf("归口文案 %q 不在 projectPageErrKeys 里：装载失败降级渲染的提示会被读侧判成伪造", fallback)
+			t.Errorf("归口文案 %q 不在 projectWriteTextKeys 里：装载失败降级渲染的提示会显示裸 key", fallback)
 		}
 		_, key := projectErrStatusText(errors.New("boom"), fallback)
 		if !registered[key] {
-			t.Errorf("判定表产物 %q（fallback=%s）不在 projectPageErrKeys 里", key, fallback)
+			t.Errorf("判定表产物 %q（fallback=%s）不在 projectWriteTextKeys 里", key, fallback)
 		}
 	}
 	for _, err := range sentinels {
 		for _, fallback := range []string{projectenums.ErrThemeInternal, projectenums.ErrProjectInternal} {
 			_, key := projectErrStatusText(err, fallback)
 			if !registered[key] {
-				t.Errorf("判定表产物 %q（err=%v）不在 projectPageErrKeys 里", key, err)
+				t.Errorf("判定表产物 %q（err=%v）不在 projectWriteTextKeys 里", key, err)
 			}
-		}
-	}
-}
-
-// TestProjectPageErrTextRejectsForgedNotice 读侧整体匹配：手拼的 ?err= 一律落空串。
-//
-// 判据不是 strings.Contains —— 只要夹带一段已知文案就能塞任意前缀后缀，
-// 所以这里特意用「已知 key + 后缀」构造一个应当被拒的串。
-func TestProjectPageErrTextRejectsForgedNotice(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, raw := range []string{
-		"",
-		"   ",
-		"这条提示是我手写的",
-		// 前缀伪造：候选本身可能命中（见下方说明），但夹带后必须是空串
-		"系统内部错误，请稍后重试 附带一段伪造内容",
-		// 带控制字符：Jet 已做 HTML 转义，但换行能把一行提示拆成两条「系统消息」的观感
-		"伪造\n第二行",
-	} {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		c.Request = httptest.NewRequest(http.MethodGet, "/admin/themes?err="+url.QueryEscape(raw), nil)
-		if got := projectPageErrText(c, raw); got != "" {
-			t.Errorf("projectPageErrText(%q) = %q, 期望空串（未命中白名单）", raw, got)
 		}
 	}
 }

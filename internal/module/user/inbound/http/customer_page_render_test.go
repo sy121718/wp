@@ -187,7 +187,7 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 func TestCustomersListTemplateRenders(t *testing.T) {
 	data := customerListPageData(nil, customerListSample(), customerFilter{
 		Keyword: "alice", Status: customerStatusAll,
-	}, 1, 20, "", "", false)
+	}, 1, 20, "", false)
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
 	for _, want := range []string{
@@ -196,7 +196,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		"/admin/customers/detail?id=42", "/admin/customers/status",
 		"邮箱已验证 1", "user:customer_status",
 		// 首列勾选 + 批量条 + 两个批量端点（缺一整套批量都是摆设）
-		`action="/admin/customers/bulk-status"`, "/admin/customers/bulk-unlock",
+		`action="/admin/customers/bulk-status?`, "/admin/customers/bulk-unlock",
 		"data-check-all", "data-check-item", "data-bulk-bar", `name="ids" value="42"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -207,7 +207,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 	// 结构顺序：批量 form 包住表格，行内写操作表单必须在它**外面**。
 	// HTML 不允许 form 嵌套 —— 嵌套时解析器会丢掉内层 form 标签，
 	// 表现是「行内的停用 / 解除锁定按钮点了没反应」，且只有真实浏览器才暴露。
-	bulkForm := strings.Index(body, `action="/admin/customers/bulk-status"`)
+	bulkForm := strings.Index(body, `action="/admin/customers/bulk-status?`)
 	table := strings.Index(body, `customers-page-table`)
 	rowForm := strings.Index(body, `id="customer-status-42"`)
 	if bulkForm < 0 || table < 0 || rowForm < 0 || !(bulkForm < table && table < rowForm) {
@@ -228,7 +228,7 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 		Counters: userdto.CustomerCounters{Total: 1, Pending: 1, Unverified: 1}}
 
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
+		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", false)))
 
 	if strings.Contains(body, "/admin/customers/status") {
 		t.Errorf("待激活账号不应渲染停用按钮")
@@ -258,7 +258,7 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 		Counters: userdto.CustomerCounters{Total: 1, Active: 1, Locked: 1}}
 
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
+		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", false)))
 
 	for _, want := range []string{"/admin/customers/unlock", "已锁定", "2026-09-20 09:00", "连续登录失败"} {
 		if !strings.Contains(body, want) {
@@ -274,13 +274,13 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 // 用同一句话兜住，运营会以为站点里没人注册过（admin-ui-logic §7）。
 func TestCustomersListTemplateEmptyState(t *testing.T) {
 	plain := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20, "", "", false)))
+		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20, "", false)))
 	if !strings.Contains(plain, "还没有客户") {
 		t.Errorf("无筛选的空列表应当说明「还没有客户」")
 	}
 
 	filtered := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", "", false)))
+		customerListPageData(nil, nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", false)))
 	if !strings.Contains(filtered, "该筛选条件下暂时没有账号") {
 		t.Errorf("带筛选的空列表应当说明「该筛选条件下暂时没有账号」")
 	}
@@ -290,7 +290,7 @@ func TestCustomersListTemplateEmptyState(t *testing.T) {
 func TestCustomersListTemplateCapabilityMissing(t *testing.T) {
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
 		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20,
-			customerUnavailableLabel.fallback, "", true)))
+			customerUnavailableLabel.fallback, true)))
 	for _, want := range []string{customerUnavailableLabel.fallback, "装配问题"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("能力未装配时应渲染 %q", want)
@@ -320,22 +320,27 @@ func TestCustomersPageHandlerRendersList(t *testing.T) {
 	}
 }
 
-// TestCustomersPageHandlerWhitelistsQueryText ?err= 是用户可编辑的，不能原样显示。
-func TestCustomersPageHandlerWhitelistsQueryText(t *testing.T) {
+// TestCustomersPageIgnoresForgedNoticeQuery 写结论不再经查询参数回显：手拼 ?err= / ?ok= /
+// ?done= 一律不出现在页面上（读侧判定已随「结论走 shell.RenderJump」整批删除）。
+func TestCustomersPageIgnoresForgedNoticeQuery(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()},
 		fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
-		"/admin/customers?err="+url.QueryEscape("<script>alert(1)</script>"), nil))
+		"/admin/customers?err="+url.QueryEscape("<script>alert(1)</script>")+
+			"&ok="+url.QueryEscape("伪造的成功提示")+
+			"&done="+url.QueryEscape("伪造的批量摘要"), nil))
 
-	body := rec.Body.String()
-	if strings.Contains(body, "<script>alert(1)</script>") {
-		t.Fatal("查询参数里的脚本被原样渲染到页面上")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("列表页返回 %d", rec.Code)
 	}
-	if !strings.Contains(body, "系统内部错误") {
-		t.Errorf("未命中白名单的提示应落到统一文案")
+	body := rec.Body.String()
+	for _, forged := range []string{"<script>alert(1)</script>", "伪造的成功提示", "伪造的批量摘要"} {
+		if strings.Contains(body, forged) {
+			t.Fatalf("伪造的提示 %q 被渲染到页面上 —— 读侧判定没有删干净", forged)
+		}
 	}
 }
 
@@ -369,51 +374,65 @@ func TestCustomersPageHandlerFiltersAreParsed(t *testing.T) {
 
 // —— 状态写（POST）——
 
-// TestCustomersStatusSaveUsesToStatusAndKeepsFilters 目标状态取自 toStatus，
-// 而 status 只用于保留筛选 —— 两者同名会让回跳后的列表看起来「筛选没了」。
-func TestCustomersStatusSaveUsesToStatusAndKeepsFilters(t *testing.T) {
+// TestCustomersStatusSaveRendersJumpAndKeepsFilters 目标状态取自 toStatus；成功走整页提示
+// （HTTP 200 + data-jump-state="ok"），回跳地址从表单 action 的 query 读回筛选上下文。
+func TestCustomersStatusSaveRendersJumpAndKeepsFilters(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{
-		"customerId": {"42"}, "toStatus": {"0"},
-		"keyword": {"alice"}, "status": {"1"}, "page": {"2"}, "limit": {"20"},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/status", strings.NewReader(form.Encode()))
+	form := url.Values{"customerId": {"42"}, "toStatus": {"0"}}
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/customers/status?keyword=alice&status=1&page=2&limit=20",
+		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusFound {
-		t.Fatalf("写操作应 302 回列表页，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("写操作应渲染提示页（200），实际 %d", rec.Code)
 	}
 	if fake.statusReq == nil || fake.statusReq.Status != customerStatusDisabled {
 		t.Fatalf("目标状态没有从 toStatus 解析出来：%+v", fake.statusReq)
 	}
-	loc := rec.Header().Get("Location")
-	for _, want := range []string{"keyword=alice", "status=1", "ok="} {
-		if !strings.Contains(loc, want) {
-			t.Errorf("回跳地址缺少 %q：%s", want, loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Errorf(`成功提示页应有 data-jump-state="ok"`)
+	}
+	if !strings.Contains(body, "账号已停用") {
+		t.Errorf("成功提示页应含回执文案")
+	}
+	for _, want := range []string{"keyword=alice", "status=1", "page=2"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("回跳地址缺少 %q", want)
 		}
 	}
 }
 
-// TestCustomerStatusSaveRedirectsToDetail 带 customerId 的表单回详情页
-// （运营是在那个客户页面上点的按钮，把他弹回列表第一页等于让他重新找一遍）。
-func TestCustomerStatusSaveRedirectsToDetail(t *testing.T) {
+// TestCustomerStatusSaveFromDetailReturnsToDetail 详情页表单（action 的 query 带 id）的
+// 提示页回跳目标是详情页 —— 运营是在那个客户页面上点的按钮，把他弹回列表第一页
+// 等于让他重新找一遍那个客户。
+func TestCustomerStatusSaveFromDetailReturnsToDetail(t *testing.T) {
 	fake := &fakeCustomerAdmin{}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"customerId": {"42"}, "toStatus": {"1"}, "project": {"p1"}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/status", strings.NewReader(form.Encode()))
+	form := url.Values{"customerId": {"42"}, "toStatus": {"1"}}
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/customers/status?id=42&project=p1", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	if loc := rec.Header().Get("Location"); !strings.HasPrefix(loc, "/admin/customers/detail?") {
-		t.Errorf("应回详情页，实际 %s", loc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应渲染提示页（200），实际 %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Errorf(`成功提示页应有 data-jump-state="ok"`)
+	}
+	if !strings.Contains(body, "/admin/customers/detail?id=42") {
+		t.Errorf("应回详情页，实际响应未含详情链接")
 	}
 }
 
@@ -433,24 +452,27 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 	if fake.statusReq != nil {
 		t.Fatalf("非法目标状态不应调用 service：%+v", fake.statusReq)
 	}
-	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "err=") {
-		t.Errorf("应当带错误提示回跳，实际 %s", loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Errorf(`应当渲染失败提示页，实际状态 %d`, rec.Code)
+	}
+	if !strings.Contains(body, "账号状态取值不合法") {
+		t.Errorf("提示页应含「账号状态取值不合法」")
 	}
 }
 
-// 断言用 enums 常量而不是字面量（审计 I18N-002）：回执 URL 里带的是 i18n key，
-// 翻译发生在页面渲染时。写死中文会让「改词条」这件事被测试当成回归。
 // TestCustomerUnlockDistinguishesOutcomes 三种解锁结果各有各的说法：
 // 「刚解锁」「没锁但清了失败计数」「本来就没事」—— 合成一句会让运营以为按钮坏了。
 func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 	cases := []struct {
 		name string
 		res  *userdto.CustomerUnlockResp
+		// want 是词条缺失时回落的中文兜底（单测不起库，取词函数据 fallback 原样返回）。
 		want string
 	}{
-		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true}, userenums.MsgCustomerUnlocked},
-		{"清了残留计数", &userdto.CustomerUnlockResp{CustomerID: 42, Cleared: true}, userenums.MsgCustomerFailuresCleared},
-		{"本来就没事", &userdto.CustomerUnlockResp{CustomerID: 42}, userenums.MsgCustomerNotLocked},
+		{"真的解除了", &userdto.CustomerUnlockResp{CustomerID: 42, Unlocked: true}, "账号已解除锁定"},
+		{"清了残留计数", &userdto.CustomerUnlockResp{CustomerID: 42, Cleared: true}, "账号未处于锁定状态，登录失败计数已清零"},
+		{"本来就没事", &userdto.CustomerUnlockResp{CustomerID: 42}, "该账号没有处于锁定状态，无需解除"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -463,12 +485,15 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 			rec := httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)
 
-			loc := rec.Header().Get("Location")
-			if !strings.Contains(loc, "ok=") {
-				t.Fatalf("解锁后应带成功回执，实际 %s", loc)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("解锁后应渲染提示页（200），实际 %d", rec.Code)
 			}
-			if !strings.Contains(loc, tc.want) && !strings.Contains(loc, url.QueryEscape(tc.want)) {
-				t.Errorf("回执文案应含 %q，实际 %s", tc.want, loc)
+			body := rec.Body.String()
+			if !strings.Contains(body, `data-jump-state="ok"`) {
+				t.Errorf(`解锁后应有 data-jump-state="ok"`)
+			}
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("回执文案应含 %q", tc.want)
 			}
 		})
 	}
@@ -490,8 +515,12 @@ func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 	if len(fake.statusIDs) != 0 {
 		t.Fatalf("非法目标状态不应调用 service：%v", fake.statusIDs)
 	}
-	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "err=") {
-		t.Errorf("应当带错误提示回跳，实际 %s", loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Errorf("应当渲染失败提示页，实际状态 %d", rec.Code)
+	}
+	if !strings.Contains(body, "账号状态取值不合法") {
+		t.Errorf("提示页应含「账号状态取值不合法」")
 	}
 }
 
@@ -510,16 +539,12 @@ func TestCustomersBulkNothingSelected(t *testing.T) {
 	if len(fake.statusIDs) != 0 {
 		t.Fatalf("没有勾选时不应调用 service：%v", fake.statusIDs)
 	}
-	loc := rec.Header().Get("Location")
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatalf("回跳地址不可解析：%s", loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Errorf("没有勾选应渲染失败提示页，实际状态 %d", rec.Code)
 	}
-	if u.Query().Get("done") != "" {
-		t.Errorf("没有勾选不应回带成功摘要：%s", loc)
-	}
-	if u.Query().Get("err") == "" {
-		t.Errorf("没有勾选应给出提示，实际 %s", loc)
+	if !strings.Contains(body, "没有勾选任何账号") {
+		t.Errorf("没有勾选应给出提示")
 	}
 }
 
@@ -539,15 +564,16 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	loc := rec.Header().Get("Location")
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatalf("回跳地址不可解析：%s", loc)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批量解锁应渲染提示页（200），实际 %d", rec.Code)
 	}
-	done := u.Query().Get("done")
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Errorf(`批量解锁应有 data-jump-state="ok"`)
+	}
 	for _, want := range []string{"已解除锁定 1 个", "1 个本来就未锁定"} {
-		if !strings.Contains(done, want) {
-			t.Errorf("回带的结果应含 %q，实际 %q", want, done)
+		if !strings.Contains(body, want) {
+			t.Errorf("提示页应含 %q", want)
 		}
 	}
 }
@@ -558,7 +584,7 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 // 只动自己那个维度，其他条件保留；当前生效的那个带 aria-current 与图标。
 func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
 	data := customerListPageData(nil, customerListSample(),
-		customerFilter{Status: customerStatusActive}, 1, 20, "", "", false)
+		customerFilter{Status: customerStatusActive}, 1, 20, "", false)
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
 	for _, want := range []string{"aria-current=\"true\"", "✓"} {
@@ -616,37 +642,37 @@ func TestCustomersPageHandlerParsesLockedFilter(t *testing.T) {
 //
 // 整批回滚是这里最要命的错误实现：运营看到「一条都没做」会反复重试，
 // 而每次重试都会把已经成功的那些再做一遍（重复写库、update_time 反复变化）。
+// 结论渲染进提示页（HTTP 200），回跳地址从表单 action 的 query 读回筛选上下文。
 func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 	fake := &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}}
 	h := NewCustomerPageHandle(fake, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
-	form := url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}, "keyword": {"alice"}, "page": {"2"}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-status", strings.NewReader(form.Encode()))
+	form := url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}}
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/customers/bulk-status?keyword=alice&page=2", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusFound {
-		t.Fatalf("批量动作应 302 回列表页，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批量动作应渲染提示页（200），实际 %d", rec.Code)
 	}
 	if len(fake.statusIDs) != 3 {
 		t.Fatalf("三条都应逐条走到单条写入路径，实际 %v", fake.statusIDs)
 	}
-	loc := rec.Header().Get("Location")
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatalf("回跳地址不可解析：%s", loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Errorf("批量完成应渲染成功提示页")
 	}
-	done := u.Query().Get("done")
 	for _, want := range []string{"已停用 2 个", "1 个未处理"} {
-		if !strings.Contains(done, want) {
-			t.Errorf("回带的结果应含 %q，实际 %q", want, done)
+		if !strings.Contains(body, want) {
+			t.Errorf("提示页应含结果摘要 %q", want)
 		}
 	}
 	for _, want := range []string{"keyword=alice", "page=2"} {
-		if !strings.Contains(loc, want) {
-			t.Errorf("回跳应保留筛选 %q：%s", want, loc)
+		if !strings.Contains(body, want) {
+			t.Errorf("回跳应保留筛选 %q", want)
 		}
 	}
 }
@@ -676,7 +702,7 @@ func TestCustomersLabelsGoThroughI18n(t *testing.T) {
 	}
 
 	listData := customerTestLayoutData(customerListPageData(nil, customerListSample(),
-		customerFilter{Status: customerStatusAll}, 1, 20, "", "", false))
+		customerFilter{Status: customerStatusAll}, 1, 20, "", false))
 	listData["t"] = fakeTr
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", listData)
 	for _, want := range []string{"Active", "Email verified"} {
@@ -689,7 +715,7 @@ func TestCustomersLabelsGoThroughI18n(t *testing.T) {
 	}
 
 	detailData := customerTestLayoutData(customerDetailPageData(customerSample(), detailProjects(),
-		"p1", detailSummary(), false, false, "", "", nil))
+		"p1", detailSummary(), false, false, "", nil))
 	detailData["t"] = fakeTr
 	body = renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", detailData)
 	for _, want := range []string{"Active", "Email verified", "Paid"} {

@@ -24,7 +24,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // grantProductPerms 让测试以「有写权限的用户」身份渲染页面。
@@ -39,6 +39,12 @@ func grantProductPerms(engine *gin.Engine) {
 			"product:variant_create": true, "product:variant_generate": true,
 			"product:variant_delete": true, "product:delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.create": true, "product.update": true,
+			"product.variant_create": true, "product.variant_generate": true,
+			"product.variant_delete": true, "product.delete": true,
+		})
+
 		c.Next()
 	})
 }
@@ -156,20 +162,17 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	rec := postForm(engine, "/admin/products/variant/generate", url.Values{
 		"projectId": {f.projectID}, "productId": {product.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应 302 回编辑页，实际 %d", rec.Code)
-	}
-	// 被拒也留在编辑页（用户就在这一页操作），错误经 ?err= 回显（中文按 URL 编码）。
-	loc := rec.Header().Get("Location")
-	assertEditRedirect(t, loc, f.projectID, product.ID)
+	body := assertJumpErr(t, rec)
+	// 被拒也留在编辑页（用户就在这一页操作），错误走提示页正文。
+	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product.ID)
 	// 提示必须**可读**：这里原先断言 Location 里带 enums 裸 key（ErrVariationSelectionEmpty），
 	// 而那正是「把 enums 常量铺到页面上」的形态（第三波 CQ-009 形态②）。
 	// 现在 handler 统一经 productErrText 取词，断言的是中文文案 + 不再出现裸 key。
-	if !strings.Contains(loc, url.QueryEscape("未勾选任何属性值")) {
-		t.Fatalf("未勾选应提示「未勾选任何属性值」，实际 Location=%q", loc)
+	if !strings.Contains(body, "未勾选任何属性值") {
+		t.Fatalf("未勾选应提示「未勾选任何属性值」，body=%s", body)
 	}
-	if strings.Contains(loc, productenums.ErrVariationSelectionEmpty) {
-		t.Fatalf("Location 不应出现 enums 裸 key，实际 Location=%q", loc)
+	if strings.Contains(body, productenums.ErrVariationSelectionEmpty) {
+		t.Fatalf("提示页不应出现 enums 裸 key，body=%s", body)
 	}
 	if got, _ := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID}); got.VariantCount != 1 {
 		t.Fatalf("拒绝时不应写入变体，实际 %d 个", got.VariantCount)
@@ -180,10 +183,8 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 		"projectId": {f.projectID}, "productId": {product.ID}, "mode": {"selected"},
 		"attr:" + attr.ID: {attr.Values[0].ID, attr.Values[1].ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("勾选生成应 302 回编辑页，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, product.ID)
+	assertJumpOK(t, rec)
+	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product.ID)
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -191,9 +192,9 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	if detail.VariantCount != 2 {
 		t.Fatalf("勾选两个值应生成 2 个组合，实际 %d", detail.VariantCount)
 	}
-	body := getProductDetailPage(engine, f.projectID, product.ID)
+	detailBody := getProductDetailPage(engine, f.projectID, product.ID)
 	for _, want := range []string{"颜色 RED", "颜色 BLUE"} {
-		if !strings.Contains(body, want) {
+		if !strings.Contains(detailBody, want) {
 			t.Fatalf("页面缺少规格文本 %q", want)
 		}
 	}
@@ -211,10 +212,8 @@ func TestProductsVariantGenerateAllMode(t *testing.T) {
 	rec := postForm(engine, "/admin/products/variant/generate", url.Values{
 		"projectId": {f.projectID}, "productId": {product.ID}, "mode": {"all"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("全部生成应 302 回编辑页，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, product.ID)
+	assertJumpOK(t, rec)
+	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product.ID)
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

@@ -60,10 +60,6 @@
     </div>
     {{end}}
 
-    {{if .Saved}}
-    <p class="badge badge-info" role="status">{{.SavedNote}}</p>
-    {{end}}
-
     {{if isset(.NoTargetLang) && .NoTargetLang}}
     {* 可行动空态：站点只有源语言一种启用语言，翻译无从下手 —— 说明原因并直接给出
        语言清单入口（站点设置）。这一步必须发生在「没有可翻译文本」之前：否则用户看到的是

@@ -80,7 +80,7 @@ func TestInventoryPurchaseCreateFailedSubmission(t *testing.T) {
 		status   int
 	}{
 		{"htmx", "true", http.StatusOK},
-		{"native", "", http.StatusFound},
+		{"native", "", http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, rec := purchaseCreateContext(t, tc.hx, values)
@@ -94,8 +94,13 @@ func TestInventoryPurchaseCreateFailedSubmission(t *testing.T) {
 				t.Fatalf("提交到服务的采购行 = %+v，want 两行（中间空行跳过）", svc.got)
 			}
 			if tc.hx == "" {
-				if !strings.HasPrefix(rec.Header().Get("Location"), inventoryPurchasesPath+"?") {
-					t.Errorf("原生回跳应保持采购页，实际 %q", rec.Header().Get("Location"))
+				// 原生失败：渲染失败提示页（取代原先的 302 + ?err=），内部错误只进日志。
+				body := rec.Body.String()
+				if !strings.Contains(body, `data-jump-state="err"`) || !strings.Contains(body, "系统内部错误") {
+					t.Errorf("原生失败应渲染失败提示页，实际 %s", body)
+				}
+				if strings.Contains(body, "duplicate purchase code") {
+					t.Error("内部错误原文不应进入提示页")
 				}
 				return
 			}
@@ -142,27 +147,30 @@ func TestInventoryPurchaseCreateFailedSubmission(t *testing.T) {
 func TestInventoryPurchaseCreateSuccessRedirect(t *testing.T) {
 	for _, tc := range []struct {
 		name, hx string
-		status   int
 	}{
-		{"htmx", "true", http.StatusOK},
-		{"native", "", http.StatusFound},
+		{"htmx", "true"},
+		{"native", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, rec := purchaseCreateContext(t, tc.hx, url.Values{"projectId": {"project-1"}})
 			(&inventoryPurchasePageHandle{inventory: &purchaseCreateFailService{}}).InventoryPurchaseCreate(c)
 			c.Writer.WriteHeaderNow()
-			if rec.Code != tc.status {
-				t.Errorf("状态码 = %d，want %d", rec.Code, tc.status)
+			if rec.Code != http.StatusOK {
+				t.Errorf("状态码 = %d，want 200", rec.Code)
 			}
-			target := rec.Header().Get("Location")
 			if tc.hx != "" {
-				target = rec.Header().Get("HX-Redirect")
+				if got := rec.Header().Get("HX-Redirect"); got != inventoryPurchasesPath {
+					t.Errorf("htmx 成功跳转 = %q，want %q", got, inventoryPurchasesPath)
+				}
 				if rec.Header().Get("Location") != "" {
 					t.Error("htmx 成功不应使用 Location")
 				}
+				return
 			}
-			if target != inventoryPurchasesPath+"?project=project-1&ok=1" {
-				t.Errorf("跳转目标 = %q", target)
+			// 原生成功：渲染成功提示页（取代原先的 302 + ?ok=），链接回列表页。
+			body := rec.Body.String()
+			if !strings.Contains(body, `data-jump-state="ok"`) || !strings.Contains(body, `href="`+inventoryPurchasesPath+`"`) {
+				t.Errorf("原生成功应渲染成功提示页并带回列表链接，实际 %s", body)
 			}
 		})
 	}

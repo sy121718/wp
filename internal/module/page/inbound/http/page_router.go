@@ -1,25 +1,27 @@
 package pagehttp
 
+// 页面挂在装配层传入的 /admin 组上：该组已有 Session + CSRF + 权限上下文中间件
+// （见 internal/routers/assembly.go 的 adminPages）。写动作额外按**对应 API 的路径**
+// 走 Casbin 权限点 —— 与 /api/page/site-slot/* 的权限点完全同源，一个字符都不改。
+// pages 为 nil 时跳过注册：模块装配不因缺少页面组而失败，与 rg 的既有语义同构。
+
 import (
-	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/permission"
-
-	blockcontract "go_wp/internal/module/block/contract"
-
-	"go_wp/internal/builder/core"
-	mediacontract "go_wp/internal/module/media/contract"
-	navigationcontract "go_wp/internal/module/navigation/contract"
-	pagecontract "go_wp/internal/module/page/contract"
-	pagemodel "go_wp/internal/module/page/model"
-	pageservice "go_wp/internal/module/page/service"
-	plugincontract "go_wp/internal/module/plugin/contract"
-	projectcontract "go_wp/internal/module/project/contract"
-
-	artifactcontract "go_wp/internal/module/artifact/contract"
-	pubcontract "go_wp/internal/module/publication/contract"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"go_wp/internal/builder/core"
+	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/module/artifact/contract"
+	"go_wp/internal/module/block/contract"
+	"go_wp/internal/module/media/contract"
+	"go_wp/internal/module/navigation/contract"
+	"go_wp/internal/module/page/contract"
+	"go_wp/internal/module/page/model"
+	"go_wp/internal/module/page/service"
+	"go_wp/internal/module/plugin/contract"
+	"go_wp/internal/module/project/contract"
+	"go_wp/internal/module/publication/contract"
+	"go_wp/internal/permission"
 )
 
 // SetupPageRoutes 自装配 page 模块并注册草稿、修订与发布路由。
@@ -69,62 +71,8 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 后台页面（/admin/site-slots）：壳层与权限点见 router_site_slot.go。
 	// 页面不在 /api 下 —— /api 那组的三层链是给接口用的，后台页面组由装配层预先挂好。
 	setupSiteSlotPageRoutes(pages, svc, projectService)
-
-	// 页面列表与翻译工作台（从 dashboard 回迁）：/admin/pages、/admin/page/translations。
-	// 恢复复用 pagesAdminHandle（见 pages_handle.go）；写操作复用对应 API 权限点做
-	// Casbin 鉴权（页面路径与权限点路径不一致，直接按页面路径 enforce 会因权限点表
-	// 无此路径而拒绝所有用户）。
-	adminHandle := NewPagesAdminHandle(svc, projectService, blocks, nil)
-	if pages != nil {
-		pages.GET("/pages", adminHandle.PagesList)
-		pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
-		// 单条删除与批量删除复用「删除页面」权限点（/api/page/delete，迁移 151）：
-		// 两者走同一个 svc.Delete —— 权限点、拒绝规则、访问面下线动作都不会分叉。
-		// 批量删除不能自成一个权限点：它只是单条删除的加速器，不是另一件事。
-		pages.POST("/pages/delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), adminHandle.DeletePage)
-		pages.POST("/pages/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/delete"), adminHandle.PagesBulkDelete)
-		// 重定向的批量删除挂**后台页面组**、而不是 /api 组：
-		// authorizedAPI 组统一按实际请求路径 enforce（scripts/check-permission-gaps.sh 专盯这条），
-		// 新路径在 sys_permission 里没有条目 → 含超管在内一律 403；而补一条权限点必须写迁移，
-		// 批量删除只是单条删除的加速器，不值得为它单开权限点。
-		// 于是与商品 / 导航 / 文案三个域的批量端点同构：挂 /admin 组（Session + CSRF 已具备）
-		// + 显式复用单条删除的权限点路径 /api/page/redirect/delete。
-		pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), handle.RedirectBulkDelete)
-		// 翻译工作台（多语言 P5c，docs/06-D §7.8）：入口在页面列表行内「多语言」按钮。
-		// 保存写 sys_translation（engine=manual）并触发全站标记待重建，鉴权复用「保存草稿」权限点。
-		pages.GET("/page/translations", adminHandle.PageTranslations)
-		// 定时上下线的面板与表单（PIPE-7）：面板是 HTMX 片段（列表页行内「定时」按钮的落点），
-		// 两个 POST 是原生表单（form-urlencoded + 隐藏 csrf_token 域），鉴权复用 API 的权限点路径
-		// —— 页面路径与权限点路径不一致，直接按页面路径 enforce 会因权限点表无此路径而拒绝所有用户
-		// （与 /pages/page-redirects/bulk-delete 同一手法）。
-		pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"), adminHandle.SchedulePanel)
-		pages.POST("/page-schedules/set", builtin.CasbinMiddlewareForPath("/api/page/schedule/set"), adminHandle.ScheduleSet)
-		pages.POST("/page-schedules/cancel", builtin.CasbinMiddlewareForPath("/api/page/schedule/cancel"), adminHandle.ScheduleCancel)
-		pages.POST("/page/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.SavePageTranslations)
-		// 页面级语言排除（迁移 491）：面板展示本页各语言的产出范围（默认语言 / 已发布 /
-		// 已排除），可排除与恢复。**排除会真的下线该语言产物**（pageservice.ExcludePageLang
-		// 在同一事务里清发布/暂存/路由/计划），因此鉴权复用「发布页面」权限点；
-		// 恢复只改产出范围（不自动重新发布），鉴权同一条 —— 两者都是「这一页发不发这种语言」
-		// 的同一件事，不该拆成两个权限点。
-		pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"), adminHandle.PageLangsPanel)
-		pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangExclude)
-		pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRestore)
-		// 显式重新发布（V4）：恢复排除只解除限制、不自动上线 —— 译好后要真的回到线上，
-		// 需要一个一次点击的入口（同步 Build + Publish，结果当场可见）。权限点同上。
-		pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRepublish)
-		// 缺译报告（U2）：按 页面 × 语言 列出内容缺译，操作列直接调 ExcludePageLang（不另写下线逻辑）。
-		// 挂后台页面组（与 /page-schedules/* 同形），写操作显式复用「发布页面」权限点。
-		pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"), adminHandle.TranslationMissesPage)
-		pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.TranslationMissCancel)
-		pages.POST("/projects/create", builtin.CasbinMiddlewareForPath("/api/project/create"), adminHandle.CreateProject)
-	}
-	// 修订历史列表与恢复（HTMX 化，docs/09 §3）：挂编辑器根级页面组。
-	// 恢复修订会覆盖页面草稿（写操作），权限点复用「保存草稿」——
-	// 否则任何仅登录后台的低权限用户都能覆盖任意页面草稿。
-	if workbenchPages != nil {
-		workbenchPages.POST("/workbench/history", adminHandle.HistoryPanel)
-		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
-	}
+	// 后台页面与编辑器修订历史：注册在 page_page_router.go（同一入口调用，装配顺序不变）。
+	SetupPageAdminPages(pages, workbenchPages, svc, projectService, blocks, handle)
 
 	// 灾难恢复：按产物元数据重建丢失的产物文件 + 激活面巡检。
 	g.POST("/artifact/rebuild", permission.PageArtifactRebuild, handle.RebuildArtifact)

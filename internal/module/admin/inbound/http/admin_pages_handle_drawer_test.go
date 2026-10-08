@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"github.com/CloudyKit/jet/v6"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

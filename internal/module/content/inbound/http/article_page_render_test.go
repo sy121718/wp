@@ -36,7 +36,7 @@ func articleLayoutData(base gin.H) gin.H {
 	base["lang_redirect"] = "/admin/articles"
 	// 新建入口进抽屉后按权限显隐，抽屉 <template> 只在有权限时渲染 —— 测试数据给全集
 	//（运行时由 shell.Prepare 注入该用户拥有的权限码）。
-	base["PermSet"] = map[string]any{"content:create": true, "content:update": true, "content:delete": true}
+	base["Buttons"] = map[string]any{"content.create": true, "content.update": true, "content.delete": true}
 	return base
 }
 
@@ -63,7 +63,7 @@ func TestArticlesListTemplateRenders(t *testing.T) {
 		{ID: "a2", Slug: "second-post", Revision: 1, UpdatedAt: "2026-09-12 09:00",
 			Data: map[string]any{"title": "第二篇"}},
 	}
-	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "", "")
+	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "")
 	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 
 	for _, want := range []string{
@@ -119,7 +119,12 @@ func TestArticlesPageKeywordFiltersBeforePagination(t *testing.T) {
 		t.Errorf("列表应按筛选后的总数收敛页码并取第二页: %+v", contents.listReq)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`name="keyword" value="needle"`, `name="limit" value="1"`, `href="/admin/articles?keyword=needle&amp;page=1&amp;limit=1"`, `href="/admin/articles?limit=1"`, "第二篇匹配"} {
+	for _, want := range []string{`name="keyword" value="needle"`, `name="limit" value="1"`, `href="/admin/articles?keyword=needle&amp;page=1&amp;limit=1"`, `href="/admin/articles?limit=1"`, "第二篇匹配",
+		// 写动作的表单 action 带上本次筛选（BackPath 从这次请求的 query 读回）：删完 / 批量删完
+		// 回列表页时关键词与每页条数不丢。
+		`action="/admin/articles/bulk-delete?keyword=needle&amp;limit=1"`,
+		`action="/admin/articles/delete?keyword=needle&amp;limit=1"`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("搜索列表缺少 %q", want)
 		}
@@ -160,7 +165,7 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 			"seoTitle": "SEO 标题", "seoDescription": "SEO 描述", "focusKeyword": "关键词",
 			"featuredImage": "/storage/image/cover.webp",
 		}}
-	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "", "zh-CN")
+	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "zh-CN")
 	body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{
@@ -276,7 +281,7 @@ func TestArticleEditPublishStates(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &articlePageHandle{}
-			data := articleEditPageData(context.Background(), h, item, "a1", "", "", "zh-CN")
+			data := articleEditPageData(context.Background(), h, item, "a1", "", "zh-CN")
 			for k, v := range tc.view {
 				data[k] = v
 			}

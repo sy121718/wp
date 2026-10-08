@@ -20,7 +20,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/templates"
+	"go_wp/internal/shell"
 )
 
 // sourceBulkOverLimitForm 造一份超过 shell.MaxBulkIDs 的批量表单。
@@ -32,11 +33,12 @@ func sourceBulkOverLimitForm() url.Values {
 	return form
 }
 
-// TestInventorySourcesBulkDeleteOverLimitUsesControlledText 超限时 302 回带受控文案，
+// TestInventorySourcesBulkDeleteOverLimitUsesControlledText 超限时渲染受控提示页，
 // 两个数字（上限 / 本次条数）都在，且不含内部细节指纹。
 func TestInventorySourcesBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventorySourcePageHandle(nil, nil)
 	engine.POST("/admin/inventory/sources/bulk-delete", handle.InventorySourcesBulkDelete)
 
@@ -54,25 +56,12 @@ func TestInventorySourcesBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("超限应 302 回列表页，实际 %d，body=%s", rec.Code, rec.Body.String())
-	}
-	rawLocation := rec.Header().Get("Location")
-	loc, err := url.Parse(rawLocation)
-	if err != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", err, rawLocation)
-	}
-	got := loc.Query().Get("err")
-	if !strings.Contains(got, "一次最多操作") {
-		t.Fatalf("应回带受控提示，实际 ?err=%q", got)
-	}
-	over := strconv.Itoa(shell.MaxBulkIDs + 1)
-	if !strings.Contains(got, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(got, over) {
-		t.Fatalf("受控提示应带上限 %d 与本次条数 %s，实际 ?err=%q", shell.MaxBulkIDs, over, got)
-	}
+	// 超限：整批拒绝并渲染受控失败提示页（取代原先的 302 + ?err=）。
+	assertInventoryJump(t, rec, "err", "一次最多操作",
+		strconv.Itoa(shell.MaxBulkIDs), strconv.Itoa(shell.MaxBulkIDs+1))
 	for _, tok := range []string{"SQLSTATE", "constraint", "uq_", "pg_"} {
-		if strings.Contains(rawLocation, tok) {
-			t.Errorf("Location 泄漏内部细节 %q：%s", tok, rawLocation)
+		if strings.Contains(rec.Body.String(), tok) {
+			t.Errorf("提示页泄漏内部细节 %q：%s", tok, rec.Body.String())
 		}
 	}
 }

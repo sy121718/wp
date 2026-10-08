@@ -19,14 +19,15 @@ func TestInventoryReasonEditFailureFragmentRenders(t *testing.T) {
 			data := map[string]any{
 				"csrf_token": "csrf", "t": func(_, fallback string) string { return fallback },
 				"Edit": true, "SelectedProject": "p1", "SubmitErr": "校验失败",
-				"FormEcho": map[string]any{"projectId": "p1", "id": "7", "builtin": tc.builtin, "name": "  用户原值  ", "sort": " 9 ", "status": ""},
+				"ListQuery": "",
+				"FormEcho":  map[string]any{"projectId": "p1", "id": "7", "builtin": tc.builtin, "name": "  用户原值  ", "sort": " 9 ", "status": ""},
 			}
 			rec := httptest.NewRecorder()
 			if err := renderer.Instance("admin/inventory/inventory_reason_form.html", data).Render(rec); err != nil {
 				t.Fatal(err)
 			}
 			body := rec.Body.String()
-			for _, expected := range []string{"校验失败", `value=" 9 "`, `name="id"`, `hx-post="/admin/inventory/reason/update"`} {
+			for _, expected := range []string{"校验失败", `value=" 9 "`, `name="id"`, `hx-post="/admin/inventory/reason/update?`} {
 				if !strings.Contains(body, expected) {
 					t.Errorf("missing %q: %s", expected, body)
 				}

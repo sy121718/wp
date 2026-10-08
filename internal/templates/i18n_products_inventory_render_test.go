@@ -19,7 +19,12 @@ import (
 
 func groupDSet(t *testing.T) *jet.Set {
 	t.Helper()
-	return jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	// 与生产渲染器（NewJetHTMLRender）保持同一套全局函数：模板里用的 money / fill / formValue
+	// 这些在测试里也必须在 —— 否则「测试外壳与生产渲染器不一致」会让新写法只能在真机验证，
+	// 而这里的测试正是用来提前发现模板写错的。
+	injectGlobals(set)
+	return set
 }
 
 func groupDData(extra map[string]any) map[string]any {
@@ -29,28 +34,30 @@ func groupDData(extra map[string]any) map[string]any {
 		// 列表页的新建/编辑入口改走抽屉后，按钮按权限显隐（运行时由 shell.Prepare 注入，
 		// 测试外壳给一份全集）：否则每加一个入口就要往各页数据里补一个权限码，
 		// 漏补的表现是「按钮不渲染、wants 断言红」，与模板本身无关。
-		"PermSet": map[string]any{
-			"contenttemplate:create": true, "contenttemplate:update": true,
-			"product:create": true, "product:update": true,
+		"Buttons": map[string]any{
+			"contenttemplate.create": true, "contenttemplate.update": true,
+			"product.create": true, "product.update": true,
 			// 变体入口（新建变体 / 生成组合）在商品详情页，权限码与列表页时期相同：
 			// 测试外壳给全集，避免每挪一个入口就要往各页数据里补一个权限码。
-			"product:variant_create": true, "product:variant_generate": true,
-			"product:brand_create": true, "product:category_create": true,
-			"product:tag_create": true, "product:attribute_create": true,
-			"product:brand_update": true, "product:category_update": true,
-			"product:tag_update": true, "product:attribute_update": true,
-			"product:brand_delete": true, "product:category_delete": true,
-			"product:tag_delete": true, "product:attribute_delete": true,
-			"inventory:warehouse_create": true, "inventory:source_create": true,
-			"inventory:warehouse_update": true, "inventory:source_update": true,
-			"inventory:warehouse_delete": true, "inventory:source_delete": true,
-			"inventory:purchase_create": true, "inventory:reason_create": true,
-			"order:coupon_create": true,
+			"product.variant_create": true, "product.variant_generate": true,
+			"product.brand_create": true, "product.category_create": true,
+			"product.tag_create": true, "product.attribute_create": true,
+			"product.brand_update": true, "product.category_update": true,
+			"product.tag_update": true, "product.attribute_update": true,
+			"product.brand_delete": true, "product.category_delete": true,
+			"product.tag_delete": true, "product.attribute_delete": true,
+			"inventory.warehouse_create": true, "inventory.source_create": true,
+			"inventory.warehouse_update": true, "inventory.source_update": true,
+			"inventory.warehouse_delete": true, "inventory.source_delete": true,
+			"inventory.purchase_create": true, "inventory.reason_create": true,
+			"order.coupon_create": true,
 		},
 		// 商品列表页的筛选与分页键（handler 总会注入；测试外壳给一份中性值）。
 		// 直接渲染模板时缺键会让 Jet 在那一行**中断**（HTTP 仍 200，后半截整块消失）——
 		// 本文件存在的理由就是盯住这件事，故这些键必须显式给全。
 		"FilterKeyword": "", "FilterStatus": "", "Page": 1, "Limit": 20, "Total": 0,
+		// 库存域写表单 action 上带的筛选上下文（handler 的渲染路径一定给；测试补齐）。
+		"ListQuery": "",
 		"Statuses": []map[string]any{
 			{"Value": "", "Label": "全部状态", "Selected": true},
 			{"Value": "draft", "Label": "草稿", "Selected": false},
@@ -523,7 +530,7 @@ func TestGroupDWarehousesPageRenders(t *testing.T) {
 	out := assertGroupDPage(t, "inventory_warehouses", data,
 		"仓库管理", "苏州仓", "保存仓库", "设为默认仓", "删除", "批量删除")
 	for _, want := range []string{
-		`action="/admin/inventory/warehouses/bulk-delete"`,
+		`action="/admin/inventory/warehouses/bulk-delete?`,
 		`name="ids"`, "data-check-all", "data-check-item", "data-bulk-bar",
 		`form="wh-del-w1"`, `id="wh-del-w1"`,
 	} {
@@ -615,7 +622,7 @@ func TestGroupDSourcesPageRenders(t *testing.T) {
 	out := assertGroupDPage(t, "inventory_sources", data,
 		"货源管理", "货源总数", "新建货源", "筛选", "保存货源", "删除", "批量删除")
 	for _, want := range []string{
-		`action="/admin/inventory/sources/bulk-delete"`,
+		`action="/admin/inventory/sources/bulk-delete?`,
 		`name="ids"`, "data-check-all", "data-check-item", "data-bulk-bar",
 		`form="src-del-s1"`, `id="src-del-s1"`,
 	} {

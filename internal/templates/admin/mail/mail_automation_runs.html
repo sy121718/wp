@@ -36,15 +36,10 @@
     </div>
   </header>
 
-  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），直接比较会让整页中断。 *}
+  {* Err 只来自**取数失败**分支（写动作的结论走 shell.RenderJump 提示页，见 mail_jump.go）——
+     可选键一律 isset 包裹：直接比较会让整页中断。 *}
   {{if isset(.Err)}}{{if .Err != ""}}
   <p class="badge badge-warning" role="alert">{{.Err}}</p>
-  {{end}}{{end}}
-  {{if isset(.Ok)}}{{if .Ok != ""}}
-  <p class="badge badge-success" role="status">{{.Ok}}</p>
-  {{end}}{{end}}
-  {{if isset(.Done)}}{{if .Done != ""}}
-  <p class="badge badge-info" role="status">{{.Done}}</p>
   {{end}}{{end}}
 
   <section class="card list-card">
@@ -138,7 +133,7 @@
 
   {* 补投表单放列表外：HTML 不允许 form 嵌套，页头按钮用 form="<id>" 关联。
      重复补投是安全的（同一步不会做两次），故不做二次确认。 *}
-  <form id="automation-tick" class="hidden-form" method="post" action="/admin/mail/automation/tick">
+  <form id="automation-tick" class="hidden-form" method="post" action="/admin/mail/automation/tick{{ .["RunsQuery"] }}">
     <input type="hidden" name="csrf_token" value="{{csrf}}">
   </form>
 </div>

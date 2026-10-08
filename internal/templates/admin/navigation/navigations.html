@@ -13,8 +13,8 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{kind := .Kind}}
-{{canUpdate := isset(.PermSet["navigation:update"])}}
-{{canDelete := isset(.PermSet["navigation:delete"])}}
+{{canUpdate := isset(.Buttons["navigation.update"])}}
+{{canDelete := isset(.Buttons["navigation.delete"])}}
 {* 面板块保存后回跳时要点开的那一项（?menu=<id>）：只参与行比对，从不进 HTML。
    用链索引取值：直接渲染模板的单测不带该键，点号取值会让整页在那行中断。 *}
 {{menuFocus := .["MenuID"]}}
@@ -74,21 +74,15 @@
         </div>
     </header>
 
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err / Done，
-       缺失键会让整页在这一行中断（HTTP 仍 200，后半部分整块消失）。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.navigations.last_error", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
+    {* 操作结论不再经 query 回带（PRG）：写动作由 shell.RenderJump 渲染整页提示，
+       列表页没有 Err / Done 数据键 —— 任何人手拼 ?err= 也塞不进提示条。 *}
 
     {* ===== 添加菜单项（抽屉）=====
        原为常驻卡（占 119px 正文高度），改抽屉后菜单结构表回到首屏 0.26 屏。
        字段与 action 一个字符未改，只换承载形态。 *}
     {{if canUpdate}}
     <template id="tpl-nav-create">
-        <form method="post" action="/admin/navigations/create" class="form-stack">
+        <form method="post" action="/admin/navigations/create?project={{selectedProject}}&amp;kind={{kind}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="kind" value="{{kind}}">
@@ -141,7 +135,7 @@
         {{range _, g := .SourceGroups}}
         <details class="nav-source-group" open>
             <summary class="nav-source-summary">{{g.Title}}（{{len(g.Items)}}）</summary>
-            <form method="post" action="/admin/navigations/add-source" class="form-stack">
+            <form method="post" action="/admin/navigations/add-source?project={{selectedProject}}&amp;kind={{kind}}" class="form-stack">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="kind" value="{{kind}}">
@@ -201,7 +195,7 @@
            所以上移/下移/删除的行内表单放表格外、按钮用 form="<id>" 关联）。
            form 只包 .table-wrap 而不是整张 .list-card：.list-toolbar 必须保持
            .list-card 的直接子元素（样式与脚本按此定位）。 *}
-        <form method="post" action="/admin/navigations/bulk-delete">
+        <form method="post" action="/admin/navigations/bulk-delete?project={{selectedProject}}&amp;kind={{kind}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="kind" value="{{kind}}">
@@ -263,21 +257,21 @@
 
     {* 行内表单与编辑抽屉放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
     {{range _, r := .Rows}}
-    <form id="nav-up-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move">
+    <form id="nav-up-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move?project={{selectedProject}}&amp;kind={{kind}}&amp;menu={{r.ID}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="kind" value="{{kind}}">
         <input type="hidden" name="id" value="{{r.ID}}">
         <input type="hidden" name="dir" value="up">
     </form>
-    <form id="nav-down-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move">
+    <form id="nav-down-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move?project={{selectedProject}}&amp;kind={{kind}}&amp;menu={{r.ID}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="kind" value="{{kind}}">
         <input type="hidden" name="id" value="{{r.ID}}">
         <input type="hidden" name="dir" value="down">
     </form>
-    <form id="nav-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/delete"
+    <form id="nav-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/delete?project={{selectedProject}}&amp;kind={{kind}}"
           data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">

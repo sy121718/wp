@@ -11,12 +11,12 @@
 ```text
 module_name/
 ├── contract/                   # 本模块对外暴露契约（<module>_service.go）
-├── inbound/http/               # <module>_handle.go + <module>_router.go（自装配 + 路由注册）
+├── inbound/http/               # router 只注册路由；handle 做绑定、装配、Jet 渲染
 ├── outbound/<适配谁>/          # 按需：形状翻译层（见下方判据；顺手能满足端口就留 service 同包）
-├── service/                    # <module>_service.go + <module>_<action>.go
+├── service/                    # 同目录多文件。一个关注点一个文件，不按方法拆，下面不再开子目录
 ├── model/                      # <module>_model.go
 ├── dto/                        # <module>_req.go + <module>_resp.go
-└── enums/                      # 必选：响应消息与错误消息
+└── enums/                      # 必选：用户可见文案（响应消息、错误消息、展示标签）
 ```
 
 - `contract/` — **跨模块可见的东西都放这里**，三段分工：
@@ -29,28 +29,30 @@ module_name/
   判据：**跨模块可见即入契约**；只在本模块内流转的实现形状不进。
   跨契约引用（契约 import 别的模块契约）**只允许用于传递形状**（如 `blockcontract.BlockUsage` 作返回类型）；
   要把对方的能力接口直接透出自定义方法签名时必须写明理由并确认它是收窄过的。
-- **契约的文件怎么分**：默认一个文件（`<module>_service.go`）；**独立成文件的唯一理由是「它是另一条契约」**：
+- **契约的文件怎么分**服从下面「文件怎么分」。契约包里多一个文件，只因为那是另一条契约：
   · **收窄端口**（给某个窄消费方的越权防护面）：`content/search.go`（匿名检索）、`user/customer_admin.go`
     （后台客户管理，不并进访客侧的 UserService）、`user/visitor_account.go`、`presentation/published_locator.go`
-    —— 文件名就是那条边界的名字。**不要**为了「少一个文件」把它们并回主服务：并回去等于让片段层在主接口上看见写方法；
+    —— 文件名就是那条边界的名字。并回主服务等于让片段层在主接口上看见写方法；
   · **构建期数据源**：`data_source.go` 是各模块统一的约定落点（issue #35）；
   · **能力域**：会独立演进的一组形状 + 接口，如 `product/variant_stock.go`、`product/variant_cost.go`。
-  · **不要按「类型」开文件** —— 错误哨兵、单个类型定义各占一个文件属于「给主文件减行数」：读一个能力要翻两个文件，
-    而它们从不独立演进（`block/contract/block_errors.go` 与 `page/contract/page_preview_problem.go` 已按此并回主文件）。
-    规模线：≤200 行且不属于上面三类 → 不拆。
-  · 单文件内部按三段顺序排列（对外能力 → 跨模块形状 → 索要的端口）；超过 ~300 行时给每段加 `// ===` 分区标题
-    （`order/contract` / `page/contract` 是样板）。**不必为整齐回填式重拆**已有包。
+  · 错误哨兵、单个类型定义留在所属契约文件里。按「类型」再开一个文件，读一个能力要翻两个文件。
+  · 单文件内部按三段顺序排列（对外能力 → 跨模块形状 → 索要的端口）。一个文件里有多段时用 `// ===` 分段
+    （`order/contract` / `page/contract` 是样板）。
 - `inbound` — 承接外部调用 · `service` — 实现本模块契约 · `model` — 持久化与表访问
 - `outbound/<适配谁>/` — **非必需**，是**形状翻译层**，判据是「要不要翻译」而不是「依不依赖外部」：
   · 需要**翻译**（换字段 / 拼多个来源 / 换数据源 / 换实现）→ 独立子包，目录名说清适配谁
     （`outbound/orderstock` = 给订单的库存适配、`outbound/source` = 菜单项的来源解析）；
   · 只是**顺手满足**对方端口（签名对得上、用的还是自己的 model）→ **留在 `service` 同包** + 编译期断言
-    （`order/service/order_purchase.go` 实现 `productcontract.PurchaseChecker` 就是这类，多包一层反而要暴露内部）；
+    （`order/service` 里 `HasPurchasedProduct` 实现 `productcontract.PurchaseChecker` 就是这类，多包一层反而要暴露内部）；
   · 同一契约的**多个实现**（假通道 / 真通道）→ 一个实现一个子包（`cart/outbound/mockpaypal`，真通道来了加兄弟目录，service 不动）。
   纯 RPC / HTTP / MQ / SDK 客户端同此判据。**不要把所有适配器并进一个 `outbound` 包**：包名会退化成位置词，
   「适配谁」这条信息从目录名里消失，且不同性质的适配同包互相可见。
-- `dto` — 请求/响应结构，数据流 `inbound -> service -> inbound`
-- `enums` — **必须存在**，统一管理响应消息
+- `dto` — 请求/响应结构，数据流 `inbound -> service -> inbound`。
+  金额、折扣、状态的**展示串**在 service 组装响应时写进 dto（`Label` / `State`）。
+  页面、片段、MCP 文案只读这些字段：分与元的换算、「现在算不算生效」的解释，不在 inbound 再做一遍。
+  币种符号取 `sys_dict`，不写死在代码里。
+  同一份字段表只保留一份。MCP 入参与 dto 逐字段重合时直接用 dto；形状不同才在 mcp 包另声明。
+- `enums` — **必须存在**，只放用户可见文案
 
 ## 核心关系
 
@@ -59,10 +61,38 @@ module_name/
   `var _ <contract>.XXXService = (*Service)(nil)`
 - 实现依赖契约时（outbound 适配器）同样要加编译期断言
 
+## 文件怎么分
+
+`contract` / `service` / `inbound` 用同一条。
+
+**一个文件 = 一个关注点。** 关注点看两件事：谁消费它，以及改一处时另一处是否必须一起改。
+同一批调用方、被同一条口径绑在一起的方法，放同一个文件。
+
+**同包 = 同一目录。** Go 里子目录就是另一个包，调用必须 `import`，做不到「同包直接调用、只是换个目录存放」。
+本层复用的函数放在该层目录的另一个文件里。单独成包只有两种情况：包外也要调用，或者必须零依赖才能避免成环
+（先例 `internal/builder/source`）。
+
+这些都不是拆文件的理由：
+
+- 原始行数。注释和空行算进行数，按行数拆等于奖励删掉设计理由。
+- 一个文件里有几个方法。三个各一百行、同一个关注点的方法留在一个文件里。
+- 一个方法很长。长方法是内部混了步骤，在同文件里抽成函数，不搬到新文件。
+
+新开一个文件，是因为它是另一条业务用例。一个方法一个文件，默认就是拆错了，要并回去。
+实现别的模块声明的端口也并进对应用例，不单独占文件。
+
+拆文件时留等价性证据：全目录 `func` 集合一致、函数体指纹不变。对比范围是整个目录，
+只比新文件会把没动过的文件算成差异。
+
 ## inbound/http
 
-- `router.go` 自行获取 `db`、创建 `model` 与 `service`、注册路由
-- `handle` 只负责参数绑定、调用 service、输出响应；响应消息统一取 `enums`
+- `*_router.go` 获取 `db`、创建 `model` 与 `service`、注册路由。路由注册（`.GET(` / `.POST(`）只出现在 router 文件里。
+- `handle` 负责参数绑定、调用 service、**输出响应**。Jet 渲染在 handle，不在 router。
+  页面视图形状和回填字段清单留在 handle（它们和模板做双向断言），不进 `enums`，不进 `dto`。
+- 一个页面的 handler、查询、视图、回填在同一个文件里。方法短不是再拆文件的理由。
+  多个页面共用的展示映射可以单独一个文件。JSON API 与页面分开，各自一个文件，不再按域拆。
+- `inbound/mcp` 一个模块一个文件：工具注册、入参、回给模型的文案都在里面。
+- 响应消息统一取 `enums`
 - 取当前操作人一律用 `shell.CurrentUserID(c)` / `shell.CurrentUserIDText(c)`（内部走 `builtin.GetUserID`，
   带类型断言保护 —— 裸断言在类型异常时会把请求打成 500）。只有确实要区分「未登录 → 401」与
   「会话值类型异常 → 500」时才直接读 `c.Get("user_id")`，并写明理由。
@@ -85,12 +115,9 @@ func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
 
 ## service
 
-- `xxx_service.go` 只放 `Service` / `NewService()` 与跨用例共享面（错误哨兵、实体↔响应转换）；
-  业务用例拆到 `xxx_<能力域>.go`
-- 拆分信号：主文件超过 ~150 行，或单个文件里契约方法 ≥3 个（2026-10 按此把
-  navigation / contenttemplate / webhook / block / theme 五个主文件从 339–821 行降到 42–117 行；
-  拆完留等价性证据：**全目录** `func` 集合一致 + 函数体指纹不变 —— 对比集合要覆盖整个目录，
-  只比新文件会连带既有文件、算出假差异）
+- `xxx_service.go` 只放 `Service` / `NewService()` 与全用例共享的工程定位。
+  业务按用例整合，一条用例一个文件：建单与状态、查询、概览、客户、优惠券、退货。
+  一个方法一个文件要并回它所属的用例。
 - `Service` struct 只持有本模块 `model` + 契约接口，**不持有 `*gorm.DB`**
 - 构造函数直接传参，不用 `Deps` 结构体（参数 ≤6 时直传）
 - 返回 `error`，业务错误消息统一取 `enums`；使用命名返回值
@@ -202,14 +229,8 @@ DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,
 
 ## enums
 
-- `enums/` 是**必须目录**；所有响应内容都走模块 `enums`
-- 包括：成功消息、参数错误消息、未授权消息、业务错误消息
-- `handle` 和 `service` **不直接硬编码响应文案**
+- `enums/` 是**必须目录**，只放**用户可见文案**：成功消息、参数错误、未授权、业务错误，以及状态 / 分段的展示标签
+- 展示标签的形状是 `XxxLabel(value) (key, fallback string)`：i18n key + 中文兜底都要有，key 必须能在 seed 里找到
+- 不放这些：表单字段清单（在 handle）、长度上限（在做校验的 service）、值域白名单（在拥有该值的 model）
+- `handle` 和 `service` 不直接硬编码响应文案
 - 未接好 `i18n` 时，`ErrXxx` / `MsgXxx` 直接等于中文常量
-
-## 管理面大模块（admin）
-
-管理面六领域（管理员 / 角色 / 权限 / 菜单 / 部门 / 数据权限）已合并为 `admin` 大模块：每个领域占
-model/dto/handle/service 下的一个文件（如 `role_model.go`、`role_crud.go`），service 层同包互调、无 setter
-注入；`contract/` 预留对外能力。**admin 的 service 层经 `DB(ctx)` 直查有明文豁免**（边界见 `AGENTS.md`）。
-新增管理面领域时沿用此模式。

@@ -1,12 +1,12 @@
 package feature
 
-// page_bulk_notice_e2e_test.go — 批量删除的受控回执（真库端到端）。
+// page_bulk_notice_e2e_test.go — 批量删除的结论文案（真库端到端）。
 //
-// 判据是**操作者能看到什么**：一次「成功 2 / 跳过 1」的批量删除，回跳 URL 里必须带上
-// 三个受控参数（key + n=2 + m=1），且页面把它渲染成一句含两个计数的话。
+// 判据是**操作者能看到什么**：一次「成功 2 / 跳过 1」的批量删除，响应必须是整页提示
+// （HTTP 200 + data-jump-state="err"），且文案里两个计数都在 —— 只报「操作完成」会把
+// 部分成功静默成全部成功。
 //
-// 为什么在 feature 层而不是模块内：它要真库 + 装配出 page 与 project 两个模块
-//（page_bulk_notice.go 的读侧只认状态码与文案，写侧要断言真实的重定向 URL），
+// 为什么在 feature 层而不是模块内：它要真库 + 装配出 page 与 project 两个模块，
 // 而模块内测试不允许跨模块 import service/model（internal/architecture 的
 // TestNoCrossModuleServiceModelImport 守着这条），feature 层没有这个限制。
 
@@ -59,33 +59,26 @@ func TestBulkDeleteNoticeCarriesCounts(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.POST("/admin/pages/bulk-delete", h.PagesBulkDelete)
-	engine.GET("/admin/pages", h.PagesList)
 
 	form := url.Values{"ids": ids}
 	req := httptest.NewRequest(http.MethodPost, "/admin/pages/bulk-delete", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("批量删除应 303 回列表页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批量删除应渲染提示页（200），实际 %d（body=%s）", rec.Code, rec.Body.String())
 	}
-	loc := rec.Header().Get("Location")
-	for _, want := range []string{"errwarnKey=admin.pages.bulk.partial", "errwarnN=2", "errwarnM=1"} {
-		if !strings.Contains(loc, want) {
-			t.Fatalf("回执缺少 %s：%s", want, loc)
+	body := rec.Body.String()
+	// 有跳过 → 失败档（不自动跳，运营要看清剩下哪些没删掉）。
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf(`有跳过应走失败提示页（data-jump-state="err"）：%s`, body)
+	}
+	for _, want := range []string{"已删除 2 个", "1 个未能删除"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("提示页缺少计数文案 %q（body 片段：%s）", want, firstN(body, 600))
 		}
 	}
-	t.Logf("批量删除（成功 2 / 跳过 1）→ Location: %s", loc)
-
-	// 渲染列表页：回执出现在页面上（badge），且两个计数都在。
-	rec2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodGet, loc, nil)
-	engine.ServeHTTP(rec2, req2)
-	body := rec2.Body.String()
-	if !strings.Contains(body, "已删除 2 个页面") || !strings.Contains(body, "跳过 1 个") {
-		t.Fatalf("列表页没有渲染出带计数的回执（body 片段：%s）", firstN(body, 400))
-	}
-	t.Log("列表页渲染：含「已删除 2 个页面，跳过 1 个」")
+	t.Log("提示页渲染：含「已删除 2 个，1 个未能删除」")
 }
 
 func firstN(s string, n int) string {

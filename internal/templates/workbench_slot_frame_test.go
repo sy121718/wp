@@ -18,8 +18,11 @@ import (
 )
 
 // TestWorkbenchSlotFrameBridgeContract 桥接层：槽位可识别、不可拖、上报槽位选中。
+//
+// 桥接脚本住在 workbench_page.go（原先的 editor_bridge.go 已在上游重构里并入该文件）——
+// 断言的仍是同一批标记，改文件不改判据。
 func TestWorkbenchSlotFrameBridgeContract(t *testing.T) {
-	bridge := readTemplateFile(t, "../module/workbench/inbound/http/editor_bridge.go")
+	bridge := readTemplateFile(t, "../module/workbench/inbound/http/workbench_page.go")
 
 	for _, want := range []string{
 		"[data-sky-slot]",        // 识别槽位元素（含降级占位）

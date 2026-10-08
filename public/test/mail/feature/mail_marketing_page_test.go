@@ -19,7 +19,7 @@ import (
 
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,7 +46,10 @@ func newMarketingPageRouter(t *testing.T) (*gin.Engine, *mailFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(func(c *gin.Context) { c.Set(shell.PermSetKey, marketingPagePerms) })
+	router.Use(func(c *gin.Context) {
+		c.Set(shell.PermSetKey, marketingPagePerms)
+		c.Set(shell.ButtonsKey, buttonsOf(marketingPagePerms))
+	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := mailhttp.NewMailPageHandle(f.svc)
 	router.GET("/admin/mail/contacts", handle.MailContactsPage)
@@ -151,7 +154,9 @@ func TestMailContactsPageRendersEmpty(t *testing.T) {
 				"<thead><tr>", "<th>邮箱</th>", `<td colspan="8" class="cell-wrap">`,
 				`<p class="empty-title">` + tc.title + `</p>`,
 				`<p class="empty-desc">` + tc.description + `</p>`,
-				`action="/admin/mail/contact/import"`, "</table>", "</html>",
+				// 导入表单 action 现在带筛选上下文（服务端拼、回跳由 shell.BackPath 读回），
+				// 所以只断言落点前缀，不断言闭合引号。
+				`action="/admin/mail/contact/import`, "</table>", "</html>",
 			} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("空状态页面缺少 %q；前 600 字：\n%s", want, firstN(body, 600))

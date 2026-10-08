@@ -2,10 +2,10 @@ package projectenums
 
 // site_scripts_keys.go — 站点自定义注入代码（PIPE-8）的**就地提示**文案 key。
 //
-// 为什么与 project_enums.go 分开、且单开一个文件：这两条文案**不进 ?err= 通道**。
-// ?err= 的候选集（project_err.go 的 projectPageErrKeys）有一条硬约束 ——
+// 为什么与 project_enums.go 分开、且单开一个文件：这两条文案**不进整页提示通道**
+// （shell.RenderJump）。projectWriteTextKeys（project_err.go）有一条硬约束 ——
 // 其中每个 key 都必须在迁移 SQL 里登记，由
-// TestProjectPageErrKeysAreRegisteredInMigrations 逐条钉住；
+// TestProjectWriteTextKeysAreRegisteredInMigrations 逐条钉住；
 // 而本批的约束是「不新增数据库迁移」。
 //
 // 于是这里的校验失败走**就地回渲染**（与语言清单的 LocaleError 同一条路：

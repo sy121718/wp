@@ -2576,3 +2576,45 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     font-weight: 400;
     color: var(--sky-c-text-mute);
 }
+
+/* ===== 提示页（admin/jump.html）=====
+   写操作完成后的整页提示。作用域用 .stack.jump-page（与 .stack.dash-page 同一手法）：
+   这一套只服务这一页，不参与其它页面的层叠。
+   状态只用图标着色表达（成功 / 失败），三层视觉层次照基座走（页面底 + 白卡 + 描边），
+   不额外加底色 —— 提示页只有一张卡，加底色反而与其它页面不同源。 */
+.stack.jump-page {
+    display: flex;
+    justify-content: center;
+    padding-top: var(--ui-sp-xxl, 32px);
+}
+.stack.jump-page .jump-card {
+    width: min(100%, 520px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ui-sp-md);
+    padding: var(--ui-sp-xxl, 32px) var(--ui-sp-xl);
+    text-align: center;
+}
+.stack.jump-page .jump-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--sky-c-bg-soft);
+    color: var(--sky-c-text-mute);
+    font-size: 22px;
+    line-height: 1;
+}
+.stack.jump-page .jump-card[data-jump-state="ok"] .jump-icon { color: var(--sky-c-success); }
+.stack.jump-page .jump-card[data-jump-state="err"] .jump-icon { color: var(--sky-c-danger); }
+.stack.jump-page .jump-msg {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--sky-c-text);
+    overflow-wrap: anywhere;
+}
+.stack.jump-page .jump-actions { margin: 0; }

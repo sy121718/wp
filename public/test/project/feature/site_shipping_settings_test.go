@@ -74,8 +74,11 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 		"shippingBaseFee":       "8.00",
 		"shippingFreeThreshold": "100",
 	})
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("保存应 303 回跳，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存应 200 渲染成功提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", rec.Body.String())
 	}
 
 	// ① 库内是**分**（与 orders 同口径）。
@@ -121,7 +124,7 @@ func TestSiteSettingsShippingSaveAndReadBack(t *testing.T) {
 	}
 }
 
-// TestSiteSettingsShippingRejectsInvalidWithoutWriting 非法金额**不落库**，且提示经 ?err= 回带。
+// TestSiteSettingsShippingRejectsInvalidWithoutWriting 非法金额**不落库**，且渲染失败提示页。
 //
 // 「不落库」是这条的核心断言：把非法值静默归零（或存成负数）都不报错，
 // 而前者让运营以为自己配的运费生效了（实际从没生效过），后者是倒贴钱。
@@ -132,7 +135,7 @@ func TestSiteSettingsShippingRejectsInvalidWithoutWriting(t *testing.T) {
 	// 先存一份合法配置，用来验证「被拒绝时库里的旧值原样不动」。
 	if rec := submitShippingSettings(t, router, projectID, map[string]string{
 		"shippingBaseFee": "8.00",
-	}); rec.Code != http.StatusSeeOther {
+	}); rec.Code != http.StatusOK {
 		t.Fatalf("前置保存失败：%d", rec.Code)
 	}
 
@@ -148,12 +151,12 @@ func TestSiteSettingsShippingRejectsInvalidWithoutWriting(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := submitShippingSettings(t, router, projectID, tc.extra)
-			if rec.Code != http.StatusSeeOther {
-				t.Fatalf("非法值应 303 回带提示，实际 %d", rec.Code)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("非法值应 200 渲染失败提示页，实际 %d", rec.Code)
 			}
-			loc := rec.Header().Get("Location")
-			if !strings.Contains(loc, "err=") {
-				t.Fatalf("回跳地址没有 err= 提示：用户看不到任何原因（%q）", loc)
+			body := rec.Body.String()
+			if !strings.Contains(body, `data-jump-state="err"`) {
+				t.Fatalf("响应不是失败提示页（缺 data-jump-state=\"err\"）：用户看不到任何原因\n%s", body)
 			}
 			detail, err := projects.Detail(ctx, &projectdto.DetailReq{ID: projectID})
 			if err != nil {

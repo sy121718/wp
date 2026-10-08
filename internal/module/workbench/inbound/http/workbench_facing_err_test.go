@@ -226,7 +226,7 @@ func TestWorkbenchFacingFallbacksCoverExpectedKeys(t *testing.T) {
 func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// 模拟 page/service 的包装形状：页面编译失败: <PreviewProblem>（见 page_assemble.go 的
+	// 模拟 page/service 的包装形状：页面编译失败: <PreviewProblem>（见 page_document.go 的
 	// builder.Compile 失败分支），外层再由 CompilePreview 包上 ErrPreviewCompileFailed。
 	problem := pagecontract.NewPreviewProblem(
 		"节点 acc1: 手风琴至少需要一个折叠项（把组件拖入内部）", errors.New("页面编译失败"))

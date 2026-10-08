@@ -28,6 +28,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectenums "go_wp/internal/module/project/enums"
+	"go_wp/internal/templates"
 
 	"github.com/gin-gonic/gin"
 )
@@ -58,6 +59,9 @@ func postSiteSettingsSave(t *testing.T, projects projectcontract.ProjectService,
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	// 写动作的结论由 shell.RenderJump 渲染整页提示（HTTP 200），需要真实模板渲染器；
+	// 旧形态（303）不需要，所以这里在改造时补上。
+	router.HTMLRender = templates.NewJetHTMLRender(siteSettingsScriptsTemplateDir, true)
 	h := NewSiteSettingsAdminHandle(projects, nil, nil)
 	router.POST("/admin/settings/save", h.SaveSiteSettings)
 
@@ -114,15 +118,42 @@ func TestSaveSiteSettingsShippingFeeToCents(t *testing.T) {
 		"shippingBaseFee":       "8.00",
 		"shippingFreeThreshold": "100",
 	}))
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("合法保存应 303 回跳，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	obj := settingsOf(t, projects)
 	if got := int64Of(t, obj, "shippingBaseFee"); got != 800 {
 		t.Errorf("8.00 元应落库为 800 分，实际 %d", got)
 	}
 	if got := int64Of(t, obj, "shippingFreeThreshold"); got != 10000 {
 		t.Errorf("100 元门槛应落库为 10000 分，实际 %d", got)
+	}
+}
+
+// assertJumpOK 断言响应是**整页成功提示**（HTTP 200 + data-jump-state="ok"）。
+//
+// 取代原先的「303 + Location 带 ?err= / ?ok=」：写动作的结论改由 shell.RenderJump
+// 渲染整页提示（文案走响应体、不进 URL）。
+func assertJumpOK(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("成功应 200 渲染提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", rec.Body.String())
+	}
+}
+
+// assertJumpErr 断言响应是**整页失败提示**（HTTP 200 + data-jump-state="err"），且含给定文案。
+func assertJumpErr(t *testing.T, rec *httptest.ResponseRecorder, wantSub string) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("失败应 200 渲染提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("响应不是失败提示页（缺 data-jump-state=\"err\"）:\n%s", body)
+	}
+	if !strings.Contains(body, wantSub) {
+		t.Fatalf("提示页缺少文案 %q:\n%s", wantSub, body)
 	}
 }
 
@@ -133,55 +164,30 @@ func TestSaveSiteSettingsShippingFeeToCents(t *testing.T) {
 // 否则用户对着两个几乎一样的输入框猜是哪一个填错了。
 func TestSaveSiteSettingsShippingFeeRejectsInvalid(t *testing.T) {
 	cases := []struct {
-		name      string
-		field     string
-		value     string
-		wantErrBy string // 期望的错误 key（读侧白名单里的那条）
+		name    string
+		field   string
+		value   string
+		wantSub string // 期望的错误文案里能区分字段的那一段（词条缺失时的中文兜底）
 	}{
-		{"基础运费负数", "shippingBaseFee", "-1", projectenums.ErrShippingBaseFeeInvalid},
-		{"基础运费非数字", "shippingBaseFee", "八元", projectenums.ErrShippingBaseFeeInvalid},
-		{"基础运费三位小数", "shippingBaseFee", "1.234", projectenums.ErrShippingBaseFeeInvalid},
-		{"基础运费超上限", "shippingBaseFee", "20000", projectenums.ErrShippingBaseFeeInvalid},
-		{"门槛负数", "shippingFreeThreshold", "-0.01", projectenums.ErrShippingFreeThresholdInvalid},
-		{"门槛非数字", "shippingFreeThreshold", "满100", projectenums.ErrShippingFreeThresholdInvalid},
-		{"门槛超上限", "shippingFreeThreshold", "10000.01", projectenums.ErrShippingFreeThresholdInvalid},
+		{"基础运费负数", "shippingBaseFee", "-1", "基础运费"},
+		{"基础运费非数字", "shippingBaseFee", "八元", "基础运费"},
+		{"基础运费三位小数", "shippingBaseFee", "1.234", "基础运费"},
+		{"基础运费超上限", "shippingBaseFee", "20000", "基础运费"},
+		{"门槛负数", "shippingFreeThreshold", "-0.01", "满额免运费"},
+		{"门槛非数字", "shippingFreeThreshold", "满100", "满额免运费"},
+		{"门槛超上限", "shippingFreeThreshold", "10000.01", "满额免运费"},
 	}
-	var seen []string
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			projects := &fakeShippingProjects{settings: json.RawMessage(`{}`)}
 			rec := postSiteSettingsSave(t, projects, shippingSaveForm(map[string]string{
 				tc.field: tc.value,
 			}))
-			if rec.Code != http.StatusSeeOther {
-				t.Fatalf("非法值应 303 回带提示，实际 %d", rec.Code)
-			}
-			loc := rec.Header().Get("Location")
-			if !strings.HasPrefix(loc, "/admin/settings?project=p1") {
-				t.Fatalf("回跳地址丢失工程上下文: %q", loc)
-			}
-			// ?err= 的取值：无 i18n 资源时 TranslateMessage 返回 key 原文，
-			// 有词条时返回当前语言译文 —— 两者都非空，且都必须是**这个字段**的那一条。
-			parsed, perr := url.Parse(loc)
-			if perr != nil {
-				t.Fatalf("回跳地址不可解析: %v", perr)
-			}
-			got := parsed.Query().Get("err")
-			if got == "" {
-				t.Fatal("回带提示为空：用户看不到任何原因（写侧的翻译链断了）")
-			}
-			if !strings.Contains(got, tc.wantErrBy) {
-				t.Fatalf("提示未指向 %s 字段那条 key（得到 %q）", tc.field, got)
-			}
+			assertJumpErr(t, rec, tc.wantSub)
 			if projects.updates != 0 {
 				t.Fatal("非法值不得落库（更不得静默归零）")
 			}
-			seen = append(seen, got)
 		})
-	}
-	// 两个字段各有各的提示：合成同一条就等于让用户自己猜是哪一个输入框填错了。
-	if seen[0] == seen[4] {
-		t.Fatalf("基础运费与门槛的提示相同（%q）：两个字段无法区分", seen[0])
 	}
 }
 
@@ -195,9 +201,7 @@ func TestSaveSiteSettingsShippingZeroDeletesKeys(t *testing.T) {
 		"shippingBaseFee":       "0",
 		"shippingFreeThreshold": "",
 	}))
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("清空应视为合法保存，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	obj := settingsOf(t, projects)
 	for _, key := range []string{"shippingBaseFee", "shippingFreeThreshold"} {
 		if _, ok := obj[key]; ok {
@@ -212,9 +216,7 @@ func TestSaveSiteSettingsShippingKeepsOtherKeys(t *testing.T) {
 		settings: json.RawMessage(`{"unknownKey":"别家模块写的","siteDesc":"旧简介"}`),
 	}
 	rec := postSiteSettingsSave(t, projects, shippingSaveForm(map[string]string{"shippingBaseFee": "8"}))
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("应保存成功，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	obj := settingsOf(t, projects)
 	if _, ok := obj["unknownKey"]; !ok {
 		t.Error("本页不认识的键被整份覆盖删掉了 —— 那种丢失在页面上看不出来")
@@ -253,39 +255,39 @@ func TestSiteSettingsTemplateRendersShippingFields(t *testing.T) {
 	}
 }
 
-// TestSiteSettingsWriteKeysAreWhitelisted 写侧产出的错误 key 必须全在读侧白名单里。
+// TestSiteSettingsWriteKeysAreRegistered 写侧产出的错误 key 必须全在 projectWriteTextKeys 里。
 //
-// 漏登记的后果是**静默的**：写侧 303 带上了提示，读侧 projectPageErrText 因为不在
-// 白名单里把它判成伪造、落空串 —— 页面上什么都没有，日志里也没有。
-// 判据从源码里提取（而不是手工列一遍），这样新增一条 TranslateMessage 就自动纳入守卫。
-func TestSiteSettingsWriteKeysAreWhitelisted(t *testing.T) {
+// 漏登记的后果是**静默的**：写侧渲染提示页时 key 没有词条，页面上显示的是**裸 key**
+// （如 `ErrGA4IDInvalid`），不报错、不记日志。
+// 判据从源码里提取（而不是手工列一遍），这样新增一条 projectText 就自动纳入守卫。
+func TestSiteSettingsWriteKeysAreRegistered(t *testing.T) {
 	// 判据依赖「本模块 enums 的常量值 == 常量名」这条既有约定（projectenums 头部明文如此）。
-	// 先自检这条前提仍成立 —— 否则提取出的名字与白名单里的值对不上，断言会退化成永远通过。
+	// 先自检这条前提仍成立 —— 否则提取出的名字与登记表里的值对不上，断言会退化成永远通过。
 	if projectenums.ErrGA4IDInvalid != "ErrGA4IDInvalid" || projectenums.ErrProjectInternal != "ErrProjectInternal" {
 		t.Fatal("enums 常量值不再等于常量名：本判据的前提失效，需改为「名字 → 值」的显式映射")
 	}
-	src, err := os.ReadFile("site_settings_admin_pages.go")
+	src, err := os.ReadFile("project_page.go")
 	if err != nil {
 		t.Fatalf("读取站点设置页源码失败（路径假设变了要同步改）: %v", err)
 	}
-	re := regexp.MustCompile(`response\.TranslateMessage\(c,\s*projectenums\.([A-Za-z0-9_]+)\)`)
+	re := regexp.MustCompile(`projectText\(c,\s*projectenums\.([A-Za-z0-9_]+),`)
 	matches := re.FindAllStringSubmatch(string(src), -1)
 	if len(matches) == 0 {
 		t.Fatal("没有从源码里提取到任何受控文案出口：判据的空转形态（正则或调用形态变了）")
 	}
-	registered := make(map[string]bool, len(projectPageErrKeys))
-	for _, k := range projectPageErrKeys {
+	registered := make(map[string]bool, len(projectWriteTextKeys))
+	for _, k := range projectWriteTextKeys {
 		registered[k] = true
 	}
 	for _, m := range matches {
 		if !registered[m[1]] {
-			t.Errorf("写侧出口 %s 不在 projectPageErrKeys 里：提示会被读侧判成伪造而落空串（不报错）", m[1])
+			t.Errorf("写侧出口 %s 不在 projectWriteTextKeys 里：key 没有词条时页面会显示裸 key（不报错）", m[1])
 		}
 	}
-	// 反向：运费那两条必须真的在金里面（正例，防判据整体失效）。
+	// 反向：运费那两条必须真的在登记表里（正例，防判据整体失效）。
 	for _, key := range []string{projectenums.ErrShippingBaseFeeInvalid, projectenums.ErrShippingFreeThresholdInvalid} {
 		if !registered[key] {
-			t.Errorf("运费提示 %s 未登记进白名单", key)
+			t.Errorf("运费提示 %s 未登记进 projectWriteTextKeys", key)
 		}
 	}
 }

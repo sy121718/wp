@@ -21,9 +21,9 @@
    现在每页一张表，键名回归到 partials/pagination.html 读的那两个。 *}
 {{accLinks := .["PaginationLinks"]}}
 {{accInfo := .["PaginationInfo"]}}
-{{canSaveAccount := isset(.PermSet["mail:account_save"])}}
+{{canSaveAccount := isset(.Buttons["mail.account_save"])}}
 {* 批量动作复用对应单条动作的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
-{{canDeleteAccount := isset(.PermSet["mail:account_delete"])}}
+{{canDeleteAccount := isset(.Buttons["mail.account_delete"])}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -47,17 +47,10 @@
     </div>
   </header>
 
-  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），
-     直接比较会让整页在那一行中断 —— HTTP 仍是 200，之后的列表整块消失。 *}
+  {* Err 只来自**取数失败**分支（写动作的结论走 shell.RenderJump 提示页，见 mail_jump.go）——
+     可选键一律 isset 包裹：直接比较会让整页在那一行中断（HTTP 仍是 200，之后的列表整块消失）。 *}
   {{if isset(.Err)}}{{if .Err != ""}}
   <p class="badge badge-warning" role="alert">{{ .["t"]("admin.mail.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-  {{end}}{{end}}
-  {{if isset(.Ok)}}{{if .Ok != ""}}
-  <p class="badge badge-success" role="status">{{ .["t"]("admin.mail.ok_done", "上一次操作已完成。") }}</p>
-  {{end}}{{end}}
-  {* Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。 *}
-  {{if isset(.Done)}}{{if .Done != ""}}
-  <p class="badge badge-info" role="status">{{.Done}}</p>
   {{end}}{{end}}
 
   <section class="card list-card">

@@ -1,23 +1,22 @@
 package producthttp
 
-// product_bulk_i18n_language_test.go — 批量结论文案的**当前语言一致性**回归。
+// product_bulk_i18n_language_test.go — 批量结论文案的**当前语言一致性**回归（写侧）。
 //
-// 为什么必须有这一条：写侧（各页 BulkDelete / bulkPricingResultMsg / variantSaveNotice）与
-// 读侧（productNoticeTexts / productVariantNoticeMatches）共用 productBulkTextOf 这一个取法，
-// 但「共用」是结构事实、不是可观测事实 —— 只要有人把读侧候选重新写成中文常量（或忘了带 c），
-// 中文环境下一切正常，英文页面上真实的回执却被判成伪造而**静默消失**
-//（?done= 落空串、?err= 落归口文案），既没有报错也没有日志。
+// 为什么必须有这一条：写侧各页 BulkDelete / bulkPricingResultMsg / variantSaveNotice 都经
+// productBulkTextOf 取当前语言模板再 Sprintf。只要有人把某一处重新写成中文常量（或忘了带 c），
+// 中文环境下一切正常，英文页面上那条回执就**静默变回中文** —— 不报错、不记日志。
 //
 // 用 pkg/i18n.InjectForTest 直接塞内存词条，不建库、不起装配。
+// 读侧判定（productNoticeTexts / productVariantNoticeMatches）已随「结论走 shell.RenderJump」
+// 整批删除，本文件不再涉及它们。
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
+	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/i18n"
 
@@ -47,53 +46,41 @@ var productBulkInjectedEntries = map[string]map[string]string{
 	productenums.BulkVariantSkipped:      {"zh-CN": "跳过 %s 个：%s", "en-US": "EN-VARIANT-SKIP %s %s"},
 }
 
-// productBulkLangCtx 构造一个绑定了 Accept-Language、且 done/err 都带同一个值的上下文。
-func productBulkLangCtx(t *testing.T, lang, raw string) *gin.Context {
+// productBulkLangCtx 构造一个绑定了 Accept-Language 的上下文。
+func productBulkLangCtx(t *testing.T, lang string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	q := url.Values{}
-	if raw != "" {
-		q.Set("done", raw)
-		q.Set("err", raw)
-	}
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodGet, "/admin/products?"+q.Encode(), nil)
+	c.Request = httptest.NewRequest(http.MethodPost, "/admin/products", nil)
 	if lang != "" {
 		c.Request.Header.Set("Accept-Language", lang)
 	}
 	return c
 }
 
-// TestProductBulkNoticeFollowsRequestLanguage 每个批量结论都随当前语言，且读侧认得。
+// TestProductBulkNoticeFollowsRequestLanguage 每个批量结论都随当前语言拼装。
 func TestProductBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(productBulkInjectedEntries, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	en := productBulkLangCtx(t, "en-US", "")
+	en := productBulkLangCtx(t, "en-US")
 
-	// 1) 十个批量删除模板：渲染出来的实例读侧必须认得（否则英文页面上回执静默消失）。
-	for _, tpl := range productBulkResultTemplates {
+	// 1) 十个批量删除模板：写侧取到的必须是英文模板。
+	for _, tpl := range []productBulkText{
+		productTagBulkPartial, productTagBulkDone,
+		productAttrBulkPartial, productAttrBulkDone,
+		productCategoryBulkPartial, productCategoryBulkDone,
+		productBrandBulkPartial, productBrandBulkDone,
+		productBulkPartial, productBulkDone,
+	} {
 		text := productBulkTextOf(en, tpl)
 		if !strings.HasPrefix(text, "EN-") {
 			t.Errorf("%s 没有取到英文词条，实际 %q", tpl.key, text)
-			continue
-		}
-		args := make([]any, strings.Count(text, "%s"))
-		for i := range args {
-			args[i] = "3"
-		}
-		rendered := fmt.Sprintf(text, args...)
-		if got := productPageDone(productBulkLangCtx(t, "en-US", rendered)); got != rendered {
-			t.Errorf("%s：英文回执被读侧判成伪造：got %q want %q", tpl.key, got, rendered)
 		}
 	}
 
-	// 2) 批量改价的四个分支（写侧 bulkPricingResultMsg → 读侧 productPageErr / Done）。
-	//
-	// 跳过原因必须是**受控原因**（productReasonTexts 的取值之一）—— 读侧带跳过原因的两种形态
-	// 是「模板 × 每一种受控原因」逐条组合出来的，随便造一个 "REASON" 当然对不上
-	//（那正是这条链路的设计：原因也是白名单的一部分）。
-	reason := productReasonTexts(en)[0]
+	// 2) 批量改价的四个分支（写侧 bulkPricingResultMsg）。
+	reason := "EN-REASON"
 	pricing := []struct {
 		name                        string
 		changed, unchanged, skipped int
@@ -109,30 +96,36 @@ func TestProductBulkNoticeFollowsRequestLanguage(t *testing.T) {
 		msg := bulkPricingResultMsg(en, tc.changed, tc.unchanged, tc.skipped, tc.reason)
 		if msg != tc.want {
 			t.Errorf("批量改价「%s」应按当前语言拼装，got %q want %q", tc.name, msg, tc.want)
-			continue
-		}
-		if got := productPageErr(productBulkLangCtx(t, "en-US", msg)); got != msg {
-			t.Errorf("批量改价「%s」的英文回执被读侧判成伪造：got %q want %q", tc.name, got, msg)
 		}
 	}
 
-	// 3) 变体清单保存：模板 + 跳过段的前缀 + 无变化分支都要按当前语言。
-	saved := fmt.Sprintf(productBulkTextOf(en, productVariantSaveSaved), "1", "2", "3")
+	// 3) 变体清单保存：模板 + 跳过段前缀都要按当前语言。
+	saved := variantSaveNotice(en, &productdto.SaveVariantListResp{Created: 1, Updated: 2, Deleted: 3})
 	if saved != "EN-VARIANT 1 2 3" {
 		t.Errorf("变体清单保存应按当前语言拼装，实际 %q", saved)
 	}
-	if !productVariantNoticeMatches(en, saved) {
-		t.Errorf("变体清单保存的英文回执被专用判定拒掉：%q", saved)
+	withSkip := variantSaveNotice(en, &productdto.SaveVariantListResp{
+		Created: 1,
+		Skipped: []productdto.VariantSaveSkip{{Reason: productenums.VariantSkipHasStock}},
+	})
+	if !strings.HasPrefix(withSkip, "EN-VARIANT 1 0 0 EN-VARIANT-SKIP 1 ") {
+		t.Errorf("变体清单保存（含跳过）应按当前语言拼装，实际 %q", withSkip)
 	}
-	if got := productPageDone(productBulkLangCtx(t, "en-US", saved)); got != saved {
-		t.Errorf("变体清单保存的英文回执被读侧判成伪造：got %q want %q", got, saved)
-	}
-	if noChange := productBulkTextOf(en, productVariantSaveNoChange); !productVariantNoticeMatches(en, noChange) {
-		t.Errorf("「没有需要保存的变化」的英文回执被专用判定拒掉：%q", noChange)
+	noChange := variantSaveNotice(en, &productdto.SaveVariantListResp{})
+	if noChange != "EN-VARIANT-NOCHANGE" {
+		t.Errorf("「没有需要保存的变化」应按当前语言，实际 %q", noChange)
 	}
 
-	// 4) 中文请求走中文词条。
-	zh := productBulkLangCtx(t, "zh-CN", "")
+	// 4) 批量删除结论（productBulkDeleteResult）。
+	if _, msg := productBulkDeleteResult(en, 3, 0, productTagBulkPartial, productTagBulkDone); msg != "EN-TAG 3" {
+		t.Errorf("批量删除结论应按当前语言，实际 %q", msg)
+	}
+	if _, msg := productBulkDeleteResult(en, 3, 2, productTagBulkPartial, productTagBulkDone); msg != "EN-TAG-PART 3 2" {
+		t.Errorf("批量删除部分成功结论应按当前语言，实际 %q", msg)
+	}
+
+	// 5) 中文请求走中文词条。
+	zh := productBulkLangCtx(t, "zh-CN")
 	if text := productBulkTextOf(zh, productTagBulkDone); text != "已删除 %s 个标签" {
 		t.Errorf("中文请求应取中文词条，实际 %q", text)
 	}

@@ -7,7 +7,7 @@ package runtimefragment
 //
 // 为什么匿名可用：访客在登录之前就要能加购。放进会话等于「没账号不能逛」，
 // 把加购变成了一道注册门槛。购物车状态因此放在**客户端签名 cookie** 里
-// （见 cart 模块的 cart_cookie.go），服务端不持久化任何购物车状态。
+// （见 cart 模块的 cart.go），服务端不持久化任何购物车状态。
 //
 // 这类「有副作用 + anonymous」的写能力凭什么不是 CSRF 缺口（判定条件见 endpoint.go）：
 //   · 状态是客户端签名 cookie —— 攻击者既无法预置受害者浏览器里的购物车
@@ -238,7 +238,7 @@ func renderCheckout(ctx context.Context, r *Request) (string, error) {
 		// 运费刻意**不从表单取**：结算表单的字段全部来自请求参数（上面逐个 paramOf），
 		// 而运费是收银台上的一笔钱 —— 让客户端填它等于让客人自己免单。
 		// 基准运费由服务端提供（当前系统无站点级运费策略，故为 0）；
-		// 会员的 free_shipping 权益在 cart 侧作用在这一笔上（见 cart 模块的 cart_shipping.go）。
+		// 会员的 free_shipping 权益在 cart 侧作用在这一笔上（见 cart 模块的 cart.go）。
 	})
 	if err != nil {
 		// 订单没建出来：把模块给的原因原样透出（「库存不足」必须让访客看到），

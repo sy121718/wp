@@ -6,8 +6,11 @@
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
+{* 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath 读回）。
+   可选键一律 isset 包裹：直接渲染模板的单测不带它，缺失键会让整页在此中断。 *}
+{{lq := ""}}{{if isset(.ListQuery)}}{{lq = .ListQuery}}{{end}}
 {* 首列勾选与批量删除：权限点复用单条删除的 /api/role/delete（页面侧不新增权限点）。 *}
-{{canDelete := isset(.PermSet["role:delete"])}}
+{{canDelete := isset(.Buttons["role.delete"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -16,17 +19,14 @@
             </div>
         </div>
         <div class="page-actions">
-            {{include "../partials/toolbar_create.html" map("allowed", isset(.PermSet["role:create"]), "tpl", "#tpl-role-create", "title", tr("admin.roles.action.create", "新建角色"), "label", tr("admin.roles.action.create", "新建角色"))}}
+            {{include "../partials/toolbar_create.html" map("allowed", isset(.Buttons["role.create"]), "tpl", "#tpl-role-create", "title", tr("admin.roles.action.create", "新建角色"), "label", tr("admin.roles.action.create", "新建角色"))}}
         </div>
     </header>
 
-    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
-       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
+       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
     <section class="card list-card">
@@ -43,7 +43,7 @@
            也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1），
            <form> 依旧包住 <table>（批量动作与勾选框必须同属一个 form：提交时浏览器直接带上
            所有勾中的 ids，不需要在提交前注入隐藏域；admin.js 与 theme.css 也依赖这个结构）。 *}
-        <form method="post" action="/admin/roles/bulk-delete">
+        <form method="post" action="/admin/roles/bulk-delete{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if canDelete}}{{if len(.Rows) > 0}}
@@ -64,7 +64,7 @@
                     <div class="empty-state">
                         <p class="empty-title">{{ .["t"]("admin.roles.empty.title", "还没有角色") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.roles.empty", "角色决定管理员能看到哪些菜单、能调用哪些接口。") }}</p>
-                        {{if isset(.PermSet["role:create"])}}
+                        {{if isset(.Buttons["role.create"])}}
                         <div class="empty-actions">
                             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-role-create" data-drawer-title="{{ .["t"]("admin.roles.action.create", "新建角色") }}">＋ {{ .["t"]("admin.roles.action.create", "新建角色") }}</button>
                         </div>
@@ -76,7 +76,7 @@
                 <tr data-filter-text="{{r.RoleCode}} {{r.RoleName}} {{r.Remark}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 <td class="text-mute">{{r.RoleCode}}{{if r.IsSystem == 1}} <span class="badge badge-mute">{{tr("admin.roles.badge.system", "系统")}}</span>{{end}}</td>
-                <td>{{if isset(.PermSet["role:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{r.RoleName}}</button>{{else}}{{r.RoleName}}{{end}}</td>
+                <td>{{if isset(.Buttons["role.update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{r.RoleName}}</button>{{else}}{{r.RoleName}}{{end}}</td>
                 <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.roles.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.roles.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{r.SortOrder}}</td>
                 <td class="col-fill">{{if r.Remark}}{{r.Remark}}{{end}}</td>
@@ -84,9 +84,9 @@
                     {* 权限分配走抽屉按需拉片段（data-drawer-url）：它勾的是目录 / 菜单 / 按钮三层，
                        抽屉一次只装一个角色的树，比给每行预渲染一棵树省掉 N 倍节点。
                        片段由 RolePermissionsDrawer 渲染，保存回同页（不回新页面）。 *}
-                    {{if isset(.PermSet["role:menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/roles/permissions/drawer?role_id={{r.ID}}" data-drawer-title="{{tr("admin.roles.perm.title", "权限分配：")}}{{r.RoleName}}">{{tr("admin.roles.action.permissions", "权限分配")}}</button>{{end}}
-                    {{if isset(.PermSet["role:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{tr("admin.roles.action.edit", "编辑")}}</button>{{end}}
-                    {{if isset(.PermSet["role:delete"])}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.roles.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.Buttons["role.menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/roles/permissions/drawer?role_id={{r.ID}}" data-drawer-title="{{tr("admin.roles.perm.title", "权限分配：")}}{{r.RoleName}}">{{tr("admin.roles.action.permissions", "权限分配")}}</button>{{end}}
+                    {{if isset(.Buttons["role.update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-role-edit-{{r.ID}}" data-drawer-title="{{tr("admin.roles.edit.title", "编辑角色：")}}{{r.RoleName}}">{{tr("admin.roles.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.Buttons["role.delete"])}}<button type="submit" form="role-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.roles.action.delete", "删除")}}</button>{{end}}
                 </td>
                 </tr>
                 {{end}}
@@ -100,8 +100,8 @@
 
     {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
     {{range _, r := .Rows}}
-    {{if isset(.PermSet["role:delete"])}}
-    <form id="role-del-{{r.ID}}" method="post" action="/admin/roles/delete" class="hidden-form"
+    {{if isset(.Buttons["role.delete"])}}
+    <form id="role-del-{{r.ID}}" method="post" action="/admin/roles/delete{{if lq}}?{{lq}}{{end}}" class="hidden-form"
           data-confirm="{{tr("admin.roles.confirm.delete", "确认删除？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{r.ID}}">
@@ -112,7 +112,7 @@
 
 {* ===== 新建角色（抽屉表单模板） ===== *}
 <template id="tpl-role-create">
-    <form method="post" action="/admin/roles/create">
+    <form method="post" action="/admin/roles/create{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.roles.field.code", "角色编码") }}</label>
@@ -149,7 +149,7 @@
 {* ===== 编辑角色（每行一份抽屉表单模板，服务端回显） ===== *}
 {{range _, r := .Rows}}
 <template id="tpl-role-edit-{{r.ID}}">
-    <form method="post" action="/admin/roles/update">
+    <form method="post" action="/admin/roles/update{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{r.ID}}">
         <div class="form-group">

@@ -15,7 +15,6 @@ package producthttp
 
 import (
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,22 +43,23 @@ func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
 		t.Errorf("htmx 失败档不该发 HX-Redirect（要原地重渲染片段），实际 %q", loc)
 	}
 
-	// 原生档：302 + ?err= 回本页。
-	c2, rec2 := newHXContext(t, "", "name=DRAFT")
+	// 原生档：整页提示（200 + err 态）回新建页，取代原先的 302 + ?err=。
+	c2, rec2 := newProductJumpContext(t, "", "project=pr1", "name=DRAFT")
 	h.productCreateFail(c2, "pr1", msg)
 	c2.Writer.WriteHeaderNow()
-	if rec2.Code != http.StatusFound {
-		t.Fatalf("原生档状态码 = %d，want 302", rec2.Code)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("原生档状态码 = %d，want 200（提示页）", rec2.Code)
 	}
-	loc := rec2.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/admin/products/new?") {
-		t.Errorf("原生档应回新建页（表单所在处），实际 %q", loc)
+	body := rec2.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("原生档应渲染 err 态提示页，body=%s", body)
 	}
-	if !strings.Contains(loc, "project=pr1") {
-		t.Errorf("原生档重定向 %q 应带上工程上下文", loc)
+	if !strings.Contains(body, msg) {
+		t.Fatalf("提示页应含受控文案 %q，body=%s", msg, body)
 	}
-	if !strings.Contains(loc, "err="+url.QueryEscape(msg)) {
-		t.Errorf("原生档重定向 %q 应带 ?err=<文案>（products_new.html 的错误槽读它）", loc)
+	// 回跳目标必须回**新建页**（表单所在处），而不是列表页。
+	if !strings.Contains(body, "/admin/products/new?") || !strings.Contains(body, "project=pr1") {
+		t.Fatalf("提示页回跳应回新建页并带上工程，body=%s", body)
 	}
 }
 

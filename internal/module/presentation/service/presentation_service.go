@@ -1,3 +1,5 @@
+package presentationservice
+
 // Package presentationservice presentation 模块业务实现（0-A2）。
 //
 // 自动发布：内容实体 + ContentTemplate → 派生快照 → 同一 Publish Compiler
@@ -12,14 +14,31 @@
 // 编译时经 ContentResolver 解析为字面量——而非领域模型 §3.3 的「快照已
 // 解析为字面量」。收益：复用 builder.WithContentResolver 注入，避免遍历
 // AST 预解析的组件耦合；实体更新后 Rebuild 重编译即得新数据。
-package presentationservice
+
+// 与 page 模块同名方法同义（page_lang.go §MarkStaleForI18n）：两者都是「构建期取词注入
+// 字节」的产物，词条或译文一变，已发布产物就过期。缺这条的表现是「改了译文，商品页
+// 还是旧字节」，而且日志里什么都没有（本项目反复吃过这类静默失效）。
+//
+// 逐工程扇出（DB-009 第三批）：presentation_instances 带 FORCE 策略，调用方（后台
+// 翻译页）没有工程上下文，因此「全站」必须由 service 层逐工程拼出来；不做无作用域的全表 UPDATE。
+
+// 搜索片段拿到的只有实体 id：cms 内容与商品的「有没有线上页面」不在它们自己的表上，
+// 而在这里（presentation_instances 的 active 指针）。这条收窄端口把那个事实读出来，
+// 顺带给调用方一个**可用的路径** —— 没有它，搜索结果就只能是不带链接的一堆标题。
 
 import (
 	"context"
+	"errors"
 	"hash/fnv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+
+	"go_wp/internal/builder/core"
 	blockcontract "go_wp/internal/module/block/contract"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	mediacontract "go_wp/internal/module/media/contract"
@@ -28,14 +47,11 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationmodel "go_wp/internal/module/presentation/model"
+	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
-
-	"go_wp/internal/builder/core"
 	"go_wp/internal/pipeline"
 	"go_wp/pkg/i18n"
-
-	productcontract "go_wp/internal/module/product/contract"
 )
 
 // systemCreator 产物行 created_by 的占位（NOT NULL uuid 列不接受空串）。
@@ -102,7 +118,7 @@ type Service struct {
 	// convergeWake 发布回执收敛的进程内快通道（容量 1）。
 	//
 	// 主链写路径在**事务落定之后**非阻塞地推一下，正常路径毫秒级收敛；
-	// 通道满时丢弃信号，由定时器兜底（详见 presentation_converge.go）。
+	// 通道满时丢弃信号，由定时器兜底（详见 ConvergePendingReceipts）。
 	convergeWake chan struct{}
 	// lastConvergeAt 最近一次收敛运行时刻（Unix 秒；0 = 本进程还没跑过）。
 	//
@@ -223,3 +239,86 @@ func (s *Service) SetMediaProbe(probe func(ctx context.Context, url string) []me
 
 // SetPluginService 注入插件装配（EDT-003，装配期调用）。
 func (s *Service) SetPluginService(plugins plugincontract.PluginService) { s.plugins = plugins }
+
+// MarkStaleForI18n 把各工程内的全部自动发布实例标记为待重建。
+func (s *Service) MarkStaleForI18n(ctx context.Context) (err error) {
+	if s.project == nil {
+		return nil
+	}
+	projects, err := s.project.List(ctx)
+	if err != nil {
+		return err
+	}
+	at := time.Now().UTC()
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			break
+		}
+		if _, merr := s.m.MarkStaleForI18n(ctx, p.ID, at); merr != nil {
+			return merr
+		}
+	}
+	return nil
+}
+
+// MarkStaleForI18nTx 在**调用方的事务**内标记该工程的实例（page 侧 I18nStalePeer 的 Tx 变体）。
+//
+// 与 MarkStaleForI18n 是同一批失效判定，差别是事务边界：page 的 MarkStaleForI18n 把
+// 「pages 标记 + 本来源标记」放进同一个事务（同库跨模块的写，AGENTS.md「写操作的事务与
+// 回滚」），任一步失败整体回滚 —— 不再停在「页面已标、实例未标」的半截状态上等下一次
+// 词条保存。本方法**不枚举工程**：工程由调用方给定（它自己逐工程扇出），作用域由 model
+// 在传入的 tx 上设置。
+//
+// 与 MarkStaleForI18n 的另一个差别：不检查 s.project —— 那个检查存在的原因是自足版本
+// 要靠 project 契约枚举工程；这里工程已是入参，缺契约不该把标记静默变成 no-op。
+// tx 为 nil / 工程非法交给 model 报错（rls.ScopeTx 会拒非事务句柄），不在这一层吞掉。
+func (s *Service) MarkStaleForI18nTx(ctx context.Context, tx *gorm.DB, projectID string) (err error) {
+	if s == nil || s.m == nil {
+		return errors.New("presentation: 实例仓储未装配，无法标记实例失效")
+	}
+	if _, merr := s.m.MarkStaleForI18nTx(ctx, tx, projectID, time.Now().UTC()); merr != nil {
+		return merr
+	}
+	return nil
+}
+
+// 编译期断言：本 service 提供访问面解析线上路径需要的只读能力。
+var _ presentationcontract.PublishedEntityLocator = (*Service)(nil)
+
+// PublishedEntityPaths 按实体 id 批量解析已上线详情页的线上路径。
+//
+// 实现只做两件事：形状过滤（uuid）与查询下推；「已上线」的判定在 SQL 条件里
+// （active_artifact_id IS NOT NULL），不在这里二次过滤。
+func (s *Service) PublishedEntityPaths(ctx context.Context, projectID, entityType, lang string, entityIDs []string) (map[string]string, error) {
+	ids := normalizeLocatorIDs(entityIDs)
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	if strings.TrimSpace(lang) == "" {
+		lang = pipeline.DefaultLocale(ctx, s.project, projectID)
+	}
+	return s.m.ListActiveURLPaths(ctx, projectID, entityType, lang, ids)
+}
+
+// normalizeEntityIDs 去空、去重、**形状过滤**（uuid），保持首次出现顺序。
+//
+// 形状过滤是必需的而不是防御性洁癖：实体 id 来自片段 URL（任何人可构造），
+// 非 uuid 的字符串带进 entity_id（uuid 列）的比较会让 PostgreSQL 直接报
+// invalid input syntax for type uuid（SQLSTATE 22P02）—— 一个搜索请求就能把页面打成 500。
+// 非法 id 在这里被丢弃，调用方按「查不到」处理（与真的没发布同一条路）。
+func normalizeLocatorIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}

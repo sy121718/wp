@@ -154,7 +154,7 @@ func TestTranslationMissesPageRenders(t *testing.T) {
 	for _, want := range []string{
 		"/about", "zh-CN", "48", // 最新版本那条（version=2）
 		`name="csrf_token"`, // 取消表单必须带 CSRF
-		`action="/admin/page-translation-misses/cancel"`,
+		`action="/admin/page-translation-misses/cancel?project=`,
 		"取词未命中",          // 文案有兜底
 		`name="project"`, // W4：工程选择器（GET 表单 + select，照页面列表页形态）
 	} {

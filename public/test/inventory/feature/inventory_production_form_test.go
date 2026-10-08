@@ -38,9 +38,12 @@ var productionFormControls = []string{
 }
 
 // renderedFormBlock 取整页 HTML 里 action=<action> 的那个原生表单的原文。
+//
+// 只匹配到 action 前缀（不带结尾引号）：写表单的 action 现在带筛选上下文
+// （`?project=…`，见 shell.BackPath），带引号的整串匹配会找不到。
 func renderedFormBlock(t *testing.T, body, action string) string {
 	t.Helper()
-	marker := `action="` + action + `"`
+	marker := `action="` + action
 	idx := strings.Index(body, marker)
 	if idx < 0 {
 		t.Fatalf("渲染出的页面里没有 action=%q 的表单（表单没补回页面？）", action)
@@ -214,19 +217,15 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 	firstRequestID := fields.Get("requestId")
 
 	// 只补用户要填的三个值，其余字段全部来自渲染结果；SKU 这一段故意送**商品侧的带前缀编码**，
-	// 入库入口负责幂等剥成裸码（inventory_stock_sku.go 是唯一落点）。
+	// 入库入口负责幂等剥成裸码（inventory_stock.go 是唯一落点）。
 	form := copyForm(fields)
 	form.Set("lineSku", v.ID+"|"+p.ID+"|"+v.SKUCode)
 	form.Set("quantity", "2")
 	form.Set("unitCost", "3.5")
 	form.Set("remark", "自家工厂试产")
 	rec := postForm(engine, productionFormAction, form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("生产入库表单应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "ok=1") {
-		t.Fatalf("成功提交应带 ok=1 回列表，实际 %q", loc)
-	}
+	// 成功：提示页 1 秒后自动回列表（取代原先的 302 + ?ok=）。
+	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 2 {
 		t.Fatalf("生产入库 2 后真源应为 2，实际 %d", got)
 	}
@@ -253,9 +252,7 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 
 	// ① 重复提交同一份表单（浏览器双击 / 回退重发）：幂等键挡住，库存只加一次。
 	rec = postForm(engine, productionFormAction, form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("重复提交应安静回列表（幂等命中），实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 2 {
 		t.Fatalf("重复提交不应二次加库存，实际 %d", got)
 	}
@@ -277,18 +274,10 @@ func TestProductionInboundFormRenderedAndSubmitted(t *testing.T) {
 	noSku.Set("unitCost", "1")
 	noSku.Del("lineSku")
 	rec = postForm(engine, productionFormAction, noSku)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("缺 SKU 的生产入库应回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	loc := rec.Header().Get("Location")
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("缺 SKU 的生产入库应带错误提示，实际 %q", loc)
-	}
-	if !strings.Contains(loc, url.QueryEscape("生产入库必须给出 SKU 变体")) {
-		t.Fatalf("业务错误的文案应原样可见（中文兜底），实际 %q", loc)
-	}
-	if strings.Contains(loc, inventoryenums.ErrProductionVariantRequired) {
-		t.Fatalf("回显里不该出现裸 key %q：%q", inventoryenums.ErrProductionVariantRequired, loc)
+	// 失败：提示页（不自动跳转），文案是中文兜底、且不含裸 key。
+	assertInventoryJump(t, rec, "err", "生产入库必须给出 SKU 变体")
+	if strings.Contains(rec.Body.String(), inventoryenums.ErrProductionVariantRequired) {
+		t.Fatalf("提示页不该出现裸 key %q：%s", inventoryenums.ErrProductionVariantRequired, rec.Body.String())
 	}
 	if got := f.stockQty(t, v.ID, wh.ID); got != 2 {
 		t.Fatalf("被拒绝的生产入库不应动库存，实际 %d", got)

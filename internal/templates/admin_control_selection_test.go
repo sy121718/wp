@@ -16,11 +16,13 @@ package templates
 // 与 public/test/order/feature/coupon_window_timezone_test.go（真实 service 落库）。
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // adminTemplatePath 短名 → 在 admin/ 下的实际路径（模板已按后端模块分进子目录）。
@@ -175,8 +177,8 @@ func TestCouponEditDrawerEveryFieldIsLabelled(t *testing.T) {
 	}
 
 	// 只读的券码字段也在这条契约里（它同样需要一个字段名）。
-	// id 里的 {{ceId}} 是片段的局部变量（首屏=行 id、失败档=提交的 id，两条路径同一个 id 池）。
-	if !strings.Contains(drawer, `for="coupon-{{ceId}}-code"`) {
+	// id 来自 .Coupon.ID（片段是多实例模板，id 带券 id 才不依赖「只有一份在 DOM 里」）。
+	if !strings.Contains(drawer, `for="coupon-{{id}}-code"`) {
 		t.Error("只读的券码字段缺少 label 关联")
 	}
 }
@@ -337,43 +339,61 @@ func renderAdminPage(t *testing.T, name string, data map[string]any) string {
 // 键清单照 coupon_page_view.go 的 row / edit 视图给全：这是「直接渲染模板」的必付成本 ——
 // 缺键会让 Jet 在那一行中断，而症状是「后半截页面凭空消失」（HTTP 仍是 200）。
 func couponPageData() map[string]any {
-	form := map[string]any{
-		"ID": "7", "Name": "双十一全场券", "DiscountType": "percent", "DiscountValue": int64(20),
-		"MinSubtotal": int64(9900), "MaxUses": 100, "PerUserLimit": 1,
-		"StartsAt": "2026-01-01T09:00", "EndsAt": "2026-01-31T23:59",
-		"Remark": "国庆活动", "StatusValue": "1",
-	}
+	// 时间用 *time.Time（与 dto 的 *utils.JSONTime 同类：指针），模板的 dateTime / dateTimeLocal
+	// 都认它 —— 传裸 nil 会让 Jet 认为「参数不是有效值」而报错，这与生产里的空指针不是一回事。
+	starts := time.Date(2026, 1, 1, 9, 0, 0, 0, time.Local)
+	ends := time.Date(2026, 1, 31, 23, 59, 0, 0, time.Local)
 	return groupDData(map[string]any{
-		"SelectedProject": "pr1",
-		"Projects":        groupDProjects(),
-		"PermSet":         map[string]any{"order:coupon_create": true, "order:coupon_update": true},
-		"Err":             "", "Ok": "", "Done": "",
-		"Total": 1, "CreateBack": "project=pr1",
-		"FilterOptions": []map[string]any{{"Value": "1", "Label": "生效中"}},
-		"TypeOptions":   []map[string]any{{"Value": "percent", "Label": "按比例"}, {"Value": "fixed", "Label": "固定金额"}},
-		"StatusOptions": []map[string]any{{"Value": "1", "Label": "启用"}, {"Value": "0", "Label": "停用"}},
-		"HasDetail":     false, "Detail": map[string]any{}, "Redemptions": []map[string]any{},
-		"RedemptionTotal": 0, "RedemptionLimit": 20,
-		"Rows": []map[string]any{{
-			"Code": "SAVE20", "Name": "双十一全场券", "DiscountLabel": "减 20%",
-			"MinSubtotalLabel": "99.00", "UsageLabel": "3 / 100", "PerUserLabel": "1",
-			"WindowLabel": "2026-01-01 09:00 ~ 2026-01-31 23:59", "StatusLabel": "生效中",
-			"Badge": "badge-success", "Remark": "国庆活动", "EditURL": "/admin/coupons?couponId=7",
-			"CollapseURL": "/admin/coupons", "Expanded": false, "ToggleStatus": "0", "ToggleLabel": "停用",
-			"Form": form, "Back": "project=pr1",
+		"menu": "coupons", "Projects": groupDProjects(), "SelectedProject": "pr1",
+		// 数据就是 dto 的字段名：模板直接读 cp.Code / cp.MaxUses / cp.StartsAt，
+		// Go 侧没有「行视图映射」这一层，所以测试数据也照 dto 的形状给。
+		"Coupons": []map[string]any{{
+			"ID": uint64(7), "ProjectID": "pr1", "Code": "SAVE20", "Name": "双十一全场券",
+			"DiscountType": "percent", "DiscountValue": int64(20), "MinSubtotal": int64(9900),
+			"MaxUses": 100, "UsedCount": 3, "PerUserLimit": 1,
+			"StartsAt": &starts, "EndsAt": &ends, "Status": 1, "State": "enabled",
+			"Remark": "国庆活动",
 		}},
+		"Total": int64(1),
+		// 筛选：白名单值（模板据此画下拉，文案由 key 前缀拼出来取词）+ 生效值 + 原值。
+		"StatusValues": []string{"enabled", "disabled", "expired", "exhausted"},
+		"FilterStatus": "", "FilterStatusValid": false,
+		"LoadErr": "",
+		// 列表上下文（表单 action 的 query）与新建表单的回填槽。
+		"ListQuery": "project=pr1", "Echo": url.Values{}, "SubmitErr": "",
+		// 展开态：核销记录区与「收起」链接只在 Expanded 非空时渲染，所以给一份展开数据 ——
+		// 这条分支不覆盖就等于「改坏了核销记录区也发现不了」。
+		"Expanded": map[string]any{
+			"ID": uint64(7), "Code": "SAVE20", "Name": "双十一全场券", "State": "enabled",
+			"DiscountType": "percent", "DiscountValue": int64(20), "MinSubtotal": int64(9900),
+			"MaxUses": 100, "UsedCount": 3, "PerUserLimit": 1, "Status": 1, "Remark": "国庆活动",
+			"StartsAt": &starts, "EndsAt": &ends,
+		},
+		"Redemptions": []map[string]any{{
+			"ID": uint64(9), "OrderNo": "SO20260101001", "UserID": uint64(42),
+			"DiscountAmount": int64(2000), "CreateTime": starts,
+		}},
+		"RedemptionTotal": int64(1), "RedemptionLimit": 50,
+		// 编辑入口按权限显隐（groupDData 的权限全集里没有 coupon_update）。
+		"Buttons": map[string]any{"order.coupon_create": true, "order.coupon_update": true},
 	})
 }
 
 // TestCouponPageRendersDateTimeControlsWithMatchingLabels 按需编辑后，列表仅下发新建抽屉；
-// 编辑抽屉由 /admin/coupons/edit 返回独立片段，不能把旧 4 控件断言降格为 2 控件。
+// 编辑抽屉由 /admin/coupons/edit-form 返回独立片段，不能把旧 4 控件断言降格为 2 控件。
 func couponEditFragmentData() map[string]any {
-	echo := map[string]any{"id": "7", "projectId": "pr1", "returnQuery": "project=pr1", "name": "双十一全场券",
-		"discountType": "percent", "discountValue": "20", "minSubtotal": "99", "maxUses": "100",
-		"perUserLimit": "1", "status": "1", "startsAt": "2026-01-01T09:00",
-		"endsAt": "2026-01-31T23:59", "remark": "国庆活动"}
-	return groupDData(map[string]any{"FormEcho": echo, "EditCode": "SAVE20",
-		"TypeOptions": []any{}, "StatusOptions": []any{}, "SubmitErr": ""})
+	starts := time.Date(2026, 1, 1, 9, 0, 0, 0, time.Local)
+	ends := time.Date(2026, 1, 31, 23, 59, 0, 0, time.Local)
+	return groupDData(map[string]any{
+		// 首屏（抽屉按需 GET）：初始值来自 dto，Echo 为空 → 模板的 formValue 自动用 dto 的值。
+		"Coupon": map[string]any{
+			"ID": uint64(7), "ProjectID": "pr1", "Code": "SAVE20", "Name": "双十一全场券",
+			"DiscountType": "percent", "DiscountValue": int64(20), "MinSubtotal": int64(9900),
+			"MaxUses": 100, "PerUserLimit": 1, "Status": 1, "Remark": "国庆活动",
+			"StartsAt": &starts, "EndsAt": &ends,
+		},
+		"Echo": url.Values{}, "SubmitErr": "", "ListQuery": "project=pr1",
+	})
 }
 
 func TestCouponPageRendersDateTimeControlsWithMatchingLabels(t *testing.T) {

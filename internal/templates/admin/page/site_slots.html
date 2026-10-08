@@ -6,8 +6,8 @@
      · 绑定面板放在表格外（HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格）。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；map 取值用 ["key"]；range 内访问外层值先在 block 顶部存变量。 *}
 {* 无 JS 也能用：工程切换是原生 form GET，绑定面板是原生 form GET 进入、原生 form POST 提交
-   （带 csrf_token 隐藏域），解绑同样是原生表单 POST；提交后服务端 302 回本页，
-   结论经 ?ok= / ?err= 回显（两者都过服务端白名单）。 *}
+   （带 csrf_token 隐藏域），解绑同样是原生表单 POST；提交后服务端渲染整页提示
+   （shell.RenderJump，成功 1 秒后自动回本页）。 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "../layout.html"}}
 {{block body()}}
@@ -47,14 +47,13 @@
         </div>
     </header>
 
-    {* 可选键一律 isset 包裹（internal/templates/CLAUDE.md 硬约定）：模板是磁盘热读文件，
+    {* Err 只剩**取数失败**这一条来源（工程列表 / 页面候选 / 槽位清单读不到）；
+       写动作的结论走 shell.RenderJump 渲染提示页，不再经 ?ok= / ?err= 回显。
+       可选键一律 isset 包裹（internal/templates/CLAUDE.md 硬约定）：模板是磁盘热读文件，
        而 Go 侧改动要等 air 重编译，两边会短暂不同步 —— 缺键直接参与判断会让**整页中断**
        （HTTP 200 + 后面整块 HTML 消失）。 *}
     {{if isset(.Err) && .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.site_slots.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
-    {{if isset(.Ok) && .Ok != ""}}
-    <p class="badge badge-success" role="status">{{.Ok}}</p>
     {{end}}
     {* 「还没有站点工程」提示由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有出错）。
        装载失败时工程列表同样是空的，但那时该说的是「这一页没读出来」而不是「去建一个工程」——
@@ -182,7 +181,7 @@
             <span class="text-mute text-sm"><code>{{.BindSlot}}</code></span>
         </div>
         <div class="card-body">
-            <form method="post" action="/admin/site-slots/bind">
+            <form method="post" action="/admin/site-slots/bind?project={{selectedProject}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="slot" value="{{.BindSlot}}">
@@ -214,7 +213,7 @@
     {{if selectedProject != ""}}
     {{range _, r := rows}}
     {{if r.Bound}}
-    <form id="slot-unbind-{{r.Slot}}" class="hidden-form" method="post" action="/admin/site-slots/unbind"
+    <form id="slot-unbind-{{r.Slot}}" class="hidden-form" method="post" action="/admin/site-slots/unbind?project={{selectedProject}}"
           data-confirm="{{tr("admin.site_slots.confirm.unbind", "解绑这个槽位？指向它的链接将不再生成（页面本身不受影响）。")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">

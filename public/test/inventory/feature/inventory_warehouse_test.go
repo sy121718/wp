@@ -38,7 +38,7 @@ import (
 
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -500,19 +500,15 @@ func TestInventoryAdminPage(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// 表单建仓 → 302 回列表。
+	// 表单建仓 → 成功提示页（取代原先的 302 回列表）。
 	rec := postForm(engine, "/admin/inventory/warehouse/create", url.Values{
 		"projectId": {f.projectID}, "code": {"SZ"}, "name": {"苏州仓"}, "isDefault": {"1"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建仓应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertInventoryJump(t, rec, "ok")
 	rec = postForm(engine, "/admin/inventory/warehouse/create", url.Values{
 		"projectId": {f.projectID}, "code": {"SH"}, "name": {"上海仓"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建第二个仓应 302，实际 %d", rec.Code)
-	}
+	assertInventoryJump(t, rec, "ok")
 
 	// 商品 + 变体（不指定仓库 → 默认仓 SZ），并在第二个仓补一行 —— 制造「多仓」场景。
 	p, err := f.products.Create(ctx, &productdto.CreateReq{ProjectID: f.projectID, Name: "Tee", Slug: "tee"})
@@ -584,21 +580,17 @@ func TestInventoryAdminPage(t *testing.T) {
 	rec = postForm(engine, "/admin/inventory/warehouse/default", url.Values{
 		"projectId": {f.projectID}, "id": {shID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 设默认仓应 302，实际 %d", rec.Code)
-	}
+	assertInventoryJump(t, rec, "ok")
 	after, err := f.inventory.ListWarehouses(ctx, &inventorydto.ListWarehouseReq{ProjectID: f.projectID})
 	if err != nil || !after[0].IsDefault || after[0].ID != shID {
 		t.Fatalf("设默认仓未生效：%v %+v", err, after)
 	}
 
-	// 删除默认仓被拒绝（错误经 ?err= 回显）。
+	// 删除默认仓被拒绝：渲染失败提示页（取代原先的 302 + ?err=）。
 	rec = postForm(engine, "/admin/inventory/warehouse/delete", url.Values{
 		"projectId": {f.projectID}, "id": {shID},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("删除默认仓应回列表并带错误提示，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err")
 }
 
 // TestProductPageWarehouseSelect 验收 2（后台表单路径）：
@@ -623,6 +615,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	// 列表页的新建入口按权限渲染；多仓勾选表单在独立新建页。
 	engine.Use(func(c *gin.Context) {
 		c.Set(shell.PermSetKey, map[string]bool{"product:create": true})
+		c.Set(shell.ButtonsKey, map[string]bool{"product.create": true})
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
@@ -787,6 +780,12 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 			"inventory:warehouse_delete": true, "inventory:reason_create": true,
 			// 库存调整入口（盘点 / 报损）与原因启停：两者都按权限显隐，测试外壳给全集。
 			"inventory:stock_change": true, "inventory:reason_update": true,
+		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"inventory.warehouse_create": true, "inventory.warehouse_update": true,
+			"inventory.warehouse_delete": true, "inventory.reason_create": true,
+			// 库存调整入口（盘点 / 报损）与原因启停：两者都按权限显隐，测试外壳给全集。
+			"inventory.stock_change": true, "inventory.reason_update": true,
 		})
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)

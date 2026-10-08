@@ -43,8 +43,11 @@ func TestNavigationTranslationsFilterPreservesCrossKindInvalidation(t *testing.T
 }
 
 func TestNavigationTranslationFilteredLocationPreservesQuery(t *testing.T) {
-	location := navigationTranslationFilteredLocation("project-1", "en-US", "导航 & 菜单", 2)
-	for _, part := range []string{"project=project-1", "lang=en-US", "keyword=", "saved=1", "n=2"} {
+	location := navigationTranslationFilteredLocation("project-1", "en-US", "导航 & 菜单")
+	if strings.Contains(location, "saved=") || strings.Contains(location, "n=") {
+		t.Fatalf("回跳地址不应再带结论文案：%s", location)
+	}
+	for _, part := range []string{"project=project-1", "lang=en-US", "keyword="} {
 		if !strings.Contains(location, part) {
 			t.Fatalf("保存回跳遗失 %q: %s", part, location)
 		}

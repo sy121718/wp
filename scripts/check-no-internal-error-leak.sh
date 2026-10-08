@@ -70,7 +70,7 @@ SHAPE3_RE='(Errors|Errors:)'
 # 更早收敛的：navigation 的 5 处（Create/Update/Delete/List/Detail）与 shell.BulkIDs 的原豁免批，
 # 消息统一走 internal/module/navigation/inbound/http/navigation_err.go 的归口助手。
 # 回归用例：public/test/{admin,navigation,inventory,order,user,mail}/** 的批量超限路径用例，
-# 以及 internal/web/shell/bulk_test.go 的类型与受控文案守卫。
+# 以及 internal/shell/bulk_test.go 的类型与受控文案守卫。
 declare -A EXEMPT=()
 
 # 候选 = inbound/http 下所有 .Error() 行（logger 的 .Error(err, msg) 带参数，不会被 \\.Error\\(\\) 匹配到）。
@@ -116,7 +116,7 @@ if [ -n "$BLOCKING" ]; then
   echo "✗ 后台 handler 直出了内部错误（会泄露表名 / SQL / 路径）：" >&2
   printf '%b' "$BLOCKING" >&2
   echo "" >&2
-  echo "  改用 internal/web/shell 的 shell.PageError(c, scene, err)（页面）" >&2
+  echo "  改用 internal/shell 的 shell.PageError(c, scene, err)（页面）" >&2
   echo "  或模块级归口助手 / pkg/response.ErrorAuto（JSON）：详情记日志，对外只给 enums 文案。" >&2
   exit 1
 fi

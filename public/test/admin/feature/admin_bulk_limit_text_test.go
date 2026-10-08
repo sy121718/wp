@@ -2,11 +2,13 @@ package feature
 
 // admin_bulk_limit_text_test.go — admin 六领域批量删除的 id 超限路径：文案走 shell 的受控出口。
 //
-// 背景（本批）：shell.BulkIDs 的超限错误此前是 fmt.Errorf 拼出来的字符串，七个批量入口
-// 直传 berr.Error() 只能靠「已知受控」的注释 + 门禁豁免放行。现在它是**带 sentinel 的类型**
-//（shell.ErrBulkIDsTooMany / *shell.BulkIDsError，值域只有 Count/Max 两个整数），页面统一走
-// shell.BulkIDsFacingText —— 本文件是那条收口的回归门禁，同时钉住「收口不能过头」：
-// 受控提示必须仍然可见，且必须带着两个数字（上限与本次条数）。
+// 背景：shell.BulkIDs 的超限错误是**带 sentinel 的类型**（shell.ErrBulkIDsTooMany /
+// *shell.BulkIDsError，值域只有 Count/Max 两个整数），页面统一走 shell.BulkIDsFacingText ——
+// 本文件是那条收口的回归门禁，同时钉住「收口不能过头」：受控提示必须仍然可见，
+// 且必须带着两个数字（上限与本次条数）。
+//
+// 出口形态：本批改成**整页提示**（shell.RenderJump）—— 超限提示渲染在提示页的响应体里，
+// 不再经 `?err=` 回带（见 internal/shell/jump.go 的文件头）。
 //
 // 与 admin_page_err_param_test.go 的分工：那一份是**静态扫描**（谁都不许再直传原文），
 // 这一份是**接口级**（超限时页面上到底显示了什么）。
@@ -24,7 +26,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	adminhttp "go_wp/internal/module/admin/inbound/http"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/templates"
+	"go_wp/internal/shell"
 )
 
 // adminBulkOverLimitForm 造一份超过 shell.MaxBulkIDs 的批量表单（多给一条即触发上限）。
@@ -53,7 +56,7 @@ func adminBulkProbeRawError(t *testing.T) error {
 	return rawErr
 }
 
-// TestAdminBulkDeleteOverLimitUsesControlledText 七个批量入口在 id 超限时都回带受控文案：
+// TestAdminBulkDeleteOverLimitUsesControlledText 七个批量入口在 id 超限时都渲染受控提示：
 // 「一次最多操作 N 项，当前 M 项，请分批进行」—— 两个数字都在，且不含任何内部细节指纹。
 //
 // 两个数字都要断言：只断言「一次最多操作」会让「当前 M 项 丢了」这种退化悄悄通过，
@@ -61,6 +64,8 @@ func adminBulkProbeRawError(t *testing.T) error {
 func TestAdminBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 超限提示现在渲染整页（shell.RenderJump → c.HTML），必须有渲染器。
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := adminhttp.NewAdminPagesHandle(nil, nil, nil, nil, nil, nil)
 	engine.POST("/admin/administrators/bulk-delete", h.AdministratorsBulkDelete)
 	engine.POST("/admin/roles/bulk-delete", h.RolesBulkDelete)
@@ -96,23 +101,22 @@ func TestAdminBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusSeeOther && rec.Code != http.StatusFound {
-			t.Fatalf("%s 超限应重定向回列表页，实际 %d，body=%s", path, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s 超限应渲染整页提示（200），实际 %d，body=%s", path, rec.Code, rec.Body.String())
 		}
-		rawLocation := rec.Header().Get("Location")
-		loc, err := url.Parse(rawLocation)
-		if err != nil {
-			t.Fatalf("%s 的 Location 无法解析：%v（%s）", path, err, rawLocation)
+		body := rec.Body.String()
+		if !strings.Contains(body, `data-jump-state="err"`) {
+			t.Fatalf("%s 超限提示页应带 data-jump-state=\"err\"：%s", path, body)
 		}
-		got := loc.Query().Get("err")
+		got := jumpMsgFromBody(body)
 		if !strings.Contains(got, "一次最多操作") {
-			t.Errorf("%s 应回带受控提示，实际 ?err=%q", path, got)
+			t.Errorf("%s 应显示受控提示，实际 msg=%q", path, got)
 		}
 		if !strings.Contains(got, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(got, over) {
-			t.Errorf("%s 的受控提示应带上限 %d 与本次条数 %s（「当前 M 项」由类型给回），实际 ?err=%q",
+			t.Errorf("%s 的受控提示应带上限 %d 与本次条数 %s（「当前 M 项」由类型给回），实际 msg=%q",
 				path, shell.MaxBulkIDs, over, got)
 		}
-		assertPageNoLeak(t, path, rawLocation)
+		assertPageNoLeak(t, path, body)
 	}
 }
 

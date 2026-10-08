@@ -11,19 +11,23 @@ package membershiphttp
 // 用真实 Jet 渲染器与真实模板文件（不是含内联模板的假 engine）。
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
+	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
+	membershipenums "go_wp/internal/module/membership/enums"
 	membershipmodel "go_wp/internal/module/membership/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // membershipRenderData 渲染两个页面所需的公共外壳键（与 shell.Prepare 注入的键同集）。
@@ -35,10 +39,10 @@ func membershipRenderData(lang string) gin.H {
 		"lang": lang, "t": templates.TranslateFunc(lang),
 		"langs": templates.LanguageOptions(lang), "lang_redirect": "/admin/membership",
 		"csrf_token": "test-token",
-		"PermSet": map[string]bool{
-			"membership:tier_create": true, "membership:tier_update": true,
-			"membership:tier_delete": true, "membership:assign_set": true,
-			"membership:assign_unlock": true,
+		"Buttons": map[string]bool{
+			"membership.tier_create": true, "membership.tier_update": true,
+			"membership.tier_delete": true, "membership.assign_set": true,
+			"membership.assign_unlock": true,
 		},
 		"NavGroups": []any{}, "SidebarOpen": false, "SidebarPinned": false, "HasSubnav": false,
 	}
@@ -87,7 +91,7 @@ func tiersPageFixture(over map[string]any) map[string]any {
 		"HasTiers":              true,
 		"KindFreeShippingValue": "free_shipping", "KindDiscountValue": "discount",
 		"KindFreeShippingLabel": "免运费", "KindDiscountLabel": "折扣",
-		"Err": "", "Done": "", "LoadFailed": false,
+		"ListQuery": "", "LoadErr": "", "LoadFailed": false,
 	}
 	for k, v := range over {
 		data[k] = v
@@ -155,7 +159,7 @@ func TestMembershipTiersPageEmptyAndLoadFailed(t *testing.T) {
 	fallback := renderMembershipPage(t, "admin/membership/membership.html", tiersPageFixture(map[string]any{
 		"Projects": []projectcontract.ProjectResp{}, "SelectedProject": "",
 		"Tiers": []membershipTierRow{}, "HasTiers": false,
-		"LoadFailed": true, "Err": "工程列表没读出来",
+		"LoadFailed": true, "LoadErr": "工程列表没读出来",
 	}))
 	if !strings.Contains(fallback, "工程列表没读出来") {
 		t.Errorf("降级分支的提示缺失")
@@ -183,8 +187,8 @@ func assignmentsPageFixture(over map[string]any) map[string]any {
 			{ID: 9, UserID: 1024, TierID: 2, TierName: "白银会员", Source: "manual",
 				SourceText: "手工指定", IsManual: true, AssignedAt: "2026-09-26 10:00:00"},
 		},
-		"Total": int64(1),
-		"Err":   "", "Done": "", "LoadFailed": false, "RecalcAvailable": false,
+		"Total":     int64(1),
+		"ListQuery": "", "LoadErr": "", "LoadFailed": false, "RecalcAvailable": false,
 		"PaginationInfo": "", "PaginationLinks": nil,
 	}
 	for k, v := range over {
@@ -261,14 +265,116 @@ func TestMembershipSourceOptionsCarryAllValue(t *testing.T) {
 	}
 }
 
-// TestMembershipPageErrRejectsForgedNotice 查询参数不是可信边界：伪造的 ?err= 必须被丢掉。
-func TestMembershipPageErrRejectsForgedNotice(t *testing.T) {
-	c, rec := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodGet, "/admin/membership?err=%E4%BC%AA%E9%80%A0%E6%96%87%E6%A1%88", nil)
-	got := membershipPageErr(c)
-	_ = rec
-	if strings.Contains(got, "伪造文案") {
-		t.Errorf("伪造文案被原样透出：%q", got)
+// stubMembershipService 只实现被测写路径用到的方法，其余经嵌入的 nil 接口满足契约。
+//
+// 嵌入接口（而不是实现全部方法）让「被测路径意外调用到别的方法」直接 panic ——
+// 那正是我们要的：静默零值会让测试假绿。
+type stubMembershipService struct {
+	membershipcontract.MembershipService
+	createErr error
+}
+
+func (s *stubMembershipService) CreateTier(_ context.Context, req *membershipdto.CreateTierReq) (*membershipdto.TierResp, error) {
+	if s.createErr != nil {
+		return nil, s.createErr
+	}
+	return &membershipdto.TierResp{ID: 1, ProjectID: req.ProjectID, Name: req.Name}, nil
+}
+
+// renderTierCreate 经真实 Jet 渲染器跑一次 TierCreate 写路径（普通 POST，非 htmx）。
+//
+// 回跳上下文随表单 action 的 query 一起提交（页面渲染时拼进去的那一段），
+// 服务端由 shell.BackPath 读回来 —— 这里模拟的就是浏览器提交后的那个请求。
+func renderTierCreate(t *testing.T, svc membershipcontract.MembershipService, form url.Values, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.POST("/admin/membership/tier/create", NewMembershipPageHandle(svc, nil).TierCreate)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/membership/tier/create"+query, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestMembershipTierCreateSuccessRendersJump 写成功渲染整页提示
+// （HTTP 200 + 成功态 + 1 秒后自动回跳），取代原先断言 303 + ?done= 的读侧通道。
+func TestMembershipTierCreateSuccessRendersJump(t *testing.T) {
+	rec := renderTierCreate(t, &stubMembershipService{},
+		url.Values{"name": {"白银会员"}, "thresholdYuan": {"1000"}, "projectId": {"p-1"}}, "?project=p-1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("写成功应渲染提示页（200），实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) || !strings.Contains(body, "</html>") {
+		t.Fatalf("写成功应给整页成功提示，实际：%s", body)
+	}
+	if !strings.Contains(body, `http-equiv="refresh"`) {
+		t.Fatalf("成功提示应 1 秒后自动回跳")
+	}
+	// 回执文案（词条缺失时回落中文兜底）与回跳链接上的筛选上下文都要出现在页面上。
+	if !strings.Contains(body, "等级已创建") {
+		t.Fatalf("成功提示缺少回执文案：%s", body)
+	}
+	if !strings.Contains(body, `href="/admin/membership?project=p-1"`) {
+		t.Fatalf("回跳链接应带工程上下文：%s", body)
+	}
+}
+
+// TestMembershipTierCreateFailureRendersJump 写失败渲染失败态提示（200，不自动跳转）。
+//
+// 测试环境未接 i18n，业务文案按 key 原样渲染（生产由 462a 的 seed 翻成中文）——
+// 这里断言的是「白名单文案确实进了响应体」，而不是某句具体译文。
+func TestMembershipTierCreateFailureRendersJump(t *testing.T) {
+	rec := renderTierCreate(t, &stubMembershipService{createErr: errString(membershipenums.ErrTierNameTaken)},
+		url.Values{"name": {"白银会员"}, "projectId": {"p-1"}}, "?project=p-1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("写失败应渲染提示页（200），实际 %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) || !strings.Contains(body, "</html>") {
+		t.Fatalf("写失败应给整页失败提示，实际：%s", body)
+	}
+	if strings.Contains(body, `http-equiv="refresh"`) {
+		t.Fatalf("失败提示不应自动回跳（运营要看原因）")
+	}
+	if !strings.Contains(body, membershipenums.ErrTierNameTaken) {
+		t.Fatalf("失败提示缺少业务文案：%s", body)
+	}
+}
+
+// TestMembershipTierCreateInternalErrorNotLeaked 内部错误只给归口文案，原文不进响应体。
+func TestMembershipTierCreateInternalErrorNotLeaked(t *testing.T) {
+	rec := renderTierCreate(t, &stubMembershipService{
+		createErr: errString(`pq: duplicate key value violates unique constraint "uq_membership_tiers_name"`),
+	}, url.Values{"name": {"x"}, "projectId": {"p-1"}}, "")
+	body := rec.Body.String()
+	if strings.Contains(body, "uq_membership_tiers_name") || strings.Contains(body, "pq:") {
+		t.Fatalf("内部错误原文泄漏到页面：%s", body)
+	}
+	if !strings.Contains(body, "操作失败，请稍后重试（细节只进日志）") {
+		t.Fatalf("内部错误应给归口文案：%s", body)
+	}
+}
+
+// TestMembershipPageIgnoresForgedErrQuery 查询参数不是可信边界：伪造的 ?err= 不再有任何读侧通道，
+// 页面必须把它当普通 query 丢掉（原读侧判定已整批删除，这条覆盖改指新目标）。
+func TestMembershipPageIgnoresForgedErrQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.GET("/admin/membership", NewMembershipPageHandle(&stubMembershipService{}, nil).MembershipPage)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/membership?err=%E4%BC%AA%E9%80%A0%E6%96%87%E6%A1%88", nil)
+	engine.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("页面应正常渲染，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "伪造文案") {
+		t.Fatalf("伪造的 ?err= 不应进入页面")
 	}
 }
 

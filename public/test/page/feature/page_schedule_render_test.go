@@ -94,7 +94,7 @@ func TestPagesListRendersScheduleBadges(t *testing.T) {
 	router.GET("/admin/pages", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/page/pages", map[string]any{
 			"title": "页面管理", "menu": "pages", "t": templates.TranslateFunc("zh-CN"),
-			"PermSet":  map[string]any{"project:create": true, "page:create": true},
+			"Buttons":  map[string]any{"project.create": true, "page.create": true},
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{
 				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo",
@@ -138,7 +138,7 @@ func TestPagesListToleratesMissingScheduleKeys(t *testing.T) {
 	router.GET("/admin/pages", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/page/pages", map[string]any{
 			"title": "页面管理", "menu": "pages", "t": templates.TranslateFunc("zh-CN"),
-			"PermSet":  map[string]any{},
+			"Buttons":  map[string]any{},
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{
 				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo",

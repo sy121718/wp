@@ -1,7 +1,7 @@
 # Jet v6 全面解析与融入方案 + Go 库规划
 
 > 本文回答两个问题：① Jet v6 能力全貌及如何完整融入 go_wp；② 项目 Go 依赖库的审计与规划。
-> 与 `docs/component-jet-migration-plan.md` 互补：那份是「组件渲染迁移的具体步骤」，这份是「Jet 能力地基 + 依赖面治理」。
+> 组件渲染已全部改为 Jet 模板；本文是 Jet 能力地基与依赖面治理。
 
 ---
 
@@ -212,7 +212,7 @@ Gin / http.Server
 
 | 优先级 | 事项 | 依据 | 状态 |
 |---|---|---|---|
-| P0 | 组件渲染 Jet 化（迁移计划 Phase 0~3） | 架构回归 CLAUDE.md 约定 | ✅ 已完成（18 组件全 Jet，见 component-jet-migration-plan） |
+| P0 | 组件渲染 Jet 化 | 架构回归 CLAUDE.md 约定 | ✅ 已完成（18 组件全 Jet） |
 | P1 | 三层 Set 隔离 + AddGlobalFunc 注入 | Jet 融入地基 | 待办 |
 | P1 | 数据库文档口径统一（PostgreSQL） | 三处矛盾 | ✅ 已执行（go.mod / driver 面已按决策收敛） |
 | P2 | JWT→Session 迁移收尾 + 清 jwt 依赖 | CLAUDE.md 已定 | ✅ 已完成（golang-jwt 已不在 go.mod / go.sum） |

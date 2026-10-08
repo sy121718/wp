@@ -35,12 +35,12 @@ func rangeTodayUTC() time.Time {
 func TestParseOverviewRangePresets(t *testing.T) {
 	today := rangeTodayUTC()
 	cases := []struct {
-		query     string
-		wantKey   string
-		wantFrom  string
-		wantTo    string
-		wantDays  int
-		wantGran  string
+		query    string
+		wantKey  string
+		wantFrom string
+		wantTo   string
+		wantDays int
+		wantGran string
 	}{
 		// 1~2 天的区间默认按小时：按天看一天只有一根柱子，形状和时段分布都读不出来。
 		{"?range=today", rangeToday, "2026-10-05", "2026-10-05", 1, trendGranularityHour},

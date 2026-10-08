@@ -7,9 +7,9 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{p := .Provider}}
-{{canSave := isset(.PermSet["ai:provider_save"])}}
-{{canToggle := isset(.PermSet["ai:provider_status"])}}
-{{canDelete := isset(.PermSet["ai:provider_delete"])}}
+{{canSave := isset(.Buttons["ai.provider_save"])}}
+{{canToggle := isset(.Buttons["ai.provider_status"])}}
+{{canDelete := isset(.Buttons["ai.provider_delete"])}}
 <details class="card ai-provider" data-ai-provider="{{p.ID}}">
     <summary class="card-header ai-provider-head">
         <span class="badge {{if p.Status == 1}}badge-success{{else}}badge-warning{{end}}">{{if p.Status == 1}}{{tr("admin.ai.status.enabled", "启用")}}{{else}}{{tr("admin.ai.status.disabled", "停用")}}{{end}}</span>

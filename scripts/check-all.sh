@@ -46,11 +46,14 @@ PLAIN_SCRIPTS=(
   check-go-vet.sh
   check-page-title.sh
   check-help-popover.py
+  check-route-registration-placement.sh
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。
 DB_SCRIPTS=(
   check-permission-gaps.sh
+  check-menu-page-binding.sh
+  check-button-code-binding.sh
 )
 
 declare -a SELECTED=()

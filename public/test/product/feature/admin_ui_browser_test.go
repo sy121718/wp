@@ -14,7 +14,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,6 +63,12 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 			"product:category_create": true, "product:category_update": true, "product:category_delete": true,
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.brand_create": true, "product.brand_update": true, "product.brand_delete": true,
+			"product.category_create": true, "product.category_update": true, "product.category_delete": true,
+			"product.tag_create": true, "product.tag_update": true, "product.tag_delete": true,
+		})
+
 	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(f.svc, f.projects)

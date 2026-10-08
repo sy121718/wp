@@ -20,7 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -51,6 +51,11 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 			"inventory:purchase_create":     true,
 			"inventory:purchase_production": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"inventory.purchase_create":     true,
+			"inventory.purchase_production": true,
+		})
+
 	})
 	handle := inventoryhttp.NewInventoryPurchasePageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory/purchases", handle.InventoryPurchasesPage)
@@ -124,8 +129,8 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	for _, want := range []string{
 		"采购入库", "新建采购单",
 		"name=\"csrf_token\"",
-		"action=\"/admin/inventory/purchases/create\"",
-		"action=\"/admin/inventory/purchases/production\"",
+		"action=\"/admin/inventory/purchases/create?",
+		"action=\"/admin/inventory/purchases/production?",
 		"data-drawer-open=\"#tpl-purchase-create\"",
 	} {
 		if !strings.Contains(body, want) {
@@ -172,9 +177,8 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	form.Add("lineQuantity", "4")
 	form.Add("lineUnitPrice", "6.5")
 	rec = postForm(engine, "/admin/inventory/purchases/create", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("建单表单应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	// 成功：提示页（取代原先的 302 + ?ok=）。
+	assertInventoryJump(t, rec, "ok")
 	orders, err := f.inventory.ListPurchaseOrders(ctx, &inventorydto.ListPurchaseOrderReq{ProjectID: f.projectID})
 	if err != nil || len(orders) != 1 {
 		t.Fatalf("表单应建出一张采购单：%v %+v", err, orders)
@@ -191,22 +195,20 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		t.Fatalf("采购行快照不正确（SKU 必须是仓库侧裸码 %q）：%+v", bare, order.Lines[0])
 	}
 	// 表单没提交该字段时（例如有人只改了模板、或外部直接构造请求）不再是「空串静默通过」：
-	// 服务端当场拒绝，并把可行动的原因经 ?err= 回显。
+	// 服务端当场拒绝，并把可行动的原因渲染成失败提示页。
 	rec = postForm(engine, "/admin/inventory/purchases/create", url.Values{
 		"csrf_token": {"test-csrf"}, "projectId": {f.projectID}, "code": {"po-page-empty"},
 		"sourceId": {ext.ID}, "warehouseId": {wh.ID},
 		"lineQuantity": {"1"}, "lineUnitPrice": {"1"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("缺 SKU 字段的建单应回列表并带错误提示，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err", "采购单至少要有一行")
 	if got, lerr := f.inventory.ListPurchaseOrders(ctx, &inventorydto.ListPurchaseOrderReq{ProjectID: f.projectID}); lerr != nil || len(got) != 1 {
 		t.Fatalf("被拒绝的建单不应留下采购单：%v %+v", lerr, got)
 	}
 
 	// 有单据后重新渲染：每一行都带「登记入库」原生表单（幂等键来自页面的隐藏域）。
 	rec = httptestGet(engine, "/admin/inventory/purchases?project="+f.projectID)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "action=\"/admin/inventory/purchases/receipt\"") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "action=\"/admin/inventory/purchases/receipt?") {
 		t.Fatalf("有采购单后页面应渲染收货表单，实际 %d", rec.Code)
 	}
 
@@ -216,9 +218,7 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		"lineId": {order.Lines[0].ID}, "quantity": {"4"}, "requestId": {"PAGE-RECV-1"},
 	}
 	rec = postForm(engine, "/admin/inventory/purchases/receipt", receiptForm)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("收货表单应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 4 {
 		t.Fatalf("表单收货后真源应为 4，实际 %d", got)
 	}
@@ -227,9 +227,7 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	}
 	// 同一份表单被重复提交（浏览器双击 / 回退重发）：幂等键挡住，库存只加一次。
 	rec = postForm(engine, "/admin/inventory/purchases/receipt", receiptForm)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("重复提交应安静返回列表（幂等命中），实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 4 {
 		t.Fatalf("重复提交不应二次加库存，实际 %d", got)
 	}
@@ -246,9 +244,7 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 	prodForm.Set("quantity", "2")
 	prodForm.Set("unitCost", "3.5")
 	rec = postForm(engine, productionFormAction, prodForm)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("生产入库表单应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 6 {
 		t.Fatalf("生产入库 2 后真源应为 6，实际 %d", got)
 	}
@@ -272,16 +268,12 @@ func TestPurchasePageRendersAndWrites(t *testing.T) {
 		}
 	}
 
-	// 业务错误经 ?err= 回显（这里已收满的单再收一次）。
+	// 业务错误渲染失败提示页（这里已收满的单再收一次）：文案是中文、不是裸 key。
 	rec = postForm(engine, "/admin/inventory/purchases/receipt", url.Values{
 		"csrf_token": {"test-csrf"}, "projectId": {f.projectID}, "orderId": {order.ID},
 		"lineId": {order.Lines[0].ID}, "quantity": {"1"}, "requestId": {"PAGE-RECV-2"},
 	})
-	// 业务错误的**文案**（不是裸 key）经 ?err= 回显：回显已收口到 inventoryErrText。
-	if rec.Code != http.StatusFound ||
-		!strings.Contains(rec.Header().Get("Location"), url.QueryEscape("采购单已全部入库，无需再收")) {
-		t.Fatalf("业务错误应经 ?err= 回显为中文文案，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err", "采购单已全部入库，无需再收")
 }
 
 // TestPurchasePageMultiDeviceContract 多端 / 多输入适配的结构契约。

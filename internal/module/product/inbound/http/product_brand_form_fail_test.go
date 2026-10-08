@@ -32,21 +32,34 @@ func TestBrandDrawerFailureEchoAndRedirect(t *testing.T) {
 			}
 		})
 	}
-	c, rec, _ := newAttrCaptureContext(t, "", values.Encode())
+
+	// 原生失败：整页提示（200 + err 态）回品牌页，取代原先的 302 + ?err=。
+	c, rec := newProductJumpContext(t, "", "project=p1", values.Encode())
 	h.brandFormFail(c, "update", "duplicate")
 	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/product-brands?project=p1&err=") {
-		t.Fatalf("native failure: %d %v", rec.Code, rec.Header())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="err"`) {
+		t.Fatalf("native failure: %d %q", rec.Code, rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "/admin/product-brands?") || !strings.Contains(rec.Body.String(), "project=p1") {
+		t.Fatalf("native failure 回跳应回品牌页并带上工程，body=%s", rec.Body.String())
+	}
+
+	// 成功出口：htmx 走 HX-Redirect（XHR 会跟随 302，读不到 Location），原生渲染 ok 态提示页。
 	for _, hx := range []string{"true", ""} {
-		c, rec, _ := newAttrCaptureContext(t, hx, values.Encode())
+		if hx == "true" {
+			c, rec, _ := newAttrCaptureContext(t, hx, values.Encode())
+			brandFormSuccess(c, "p1")
+			c.Writer.WriteHeaderNow()
+			if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("HX-Redirect"), "/admin/product-brands") {
+				t.Errorf("HX success: %d %v", rec.Code, rec.Header())
+			}
+			continue
+		}
+		c, rec := newProductJumpContext(t, "", "project=p1", values.Encode())
 		brandFormSuccess(c, "p1")
 		c.Writer.WriteHeaderNow()
-		if hx == "true" && (rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != "/admin/product-brands?project=p1") {
-			t.Errorf("HX success: %d %v", rec.Code, rec.Header())
-		}
-		if hx == "" && (rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/product-brands?project=p1") {
-			t.Errorf("native success: %d %v", rec.Code, rec.Header())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+			t.Errorf("native success: %d %q", rec.Code, rec.Body.String())
 		}
 	}
 }

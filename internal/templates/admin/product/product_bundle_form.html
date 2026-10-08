@@ -11,7 +11,7 @@
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
         <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
-        <form method="post" action="/admin/products/bundle/save" hx-post="/admin/products/bundle/save" hx-target="closest [data-bundle-form-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/products/bundle/save{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-post="/admin/products/bundle/save{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-bundle-form-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="productId" value="{{selectedProduct}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">

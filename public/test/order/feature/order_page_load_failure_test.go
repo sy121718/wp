@@ -9,6 +9,12 @@ package feature
 // 本批改成降级渲染：空列表 + 归口提示 + HTTP 200 + 页面结构完好（判据与 project 域
 // theme_admin_pages.go 的 ThemeManage、admin 六页同一形状）。
 //
+// 新契约（架构改造后）：页面**不再读取 `?err=`** —— 那条「写动作结论经 URL 回带」的通道
+// 连同读侧白名单整批删除，写动作的结论改由 shell.RenderJump 渲染提示页。
+// 装载失败的原因由 handler 算好后进模板的 `.LoadErr`，模板据此渲染**一条 `role="alert"`
+// 的 badge** + 空态段落「这一页的数据没能读出来」。所以本文件的断言落在 `.LoadErr` 上，
+// 不再依赖已删除的 `Err` / `Ok` / `Done` 三个键，也不再有「压过旧 ?err=」这件事。
+//
 // 本文件钉住三件事，都是「错了会静默」的那种：
 //  1. 装载失败仍渲染**完整页面**（响应体含 </html>），页头与筛选框都在；
 //  2. 提示条是**受控归口文案**（当前语言的译文），驱动原文一个片段都不进响应体；
@@ -206,14 +212,17 @@ func TestOrderPageLoadFailureKeepsEmptyStateHonest(t *testing.T) {
 	}
 }
 
-// TestOrderPageLoadFailureBeatsStaleErrParam 装载失败压过 URL 里那条旧的 ?err=。
+// TestOrderPageLoadFailureIgnoresStaleErrParam 页面不再读取 ?err=：伪造的旧提示既不能上提示条、
+// 也不能出现在正文任何位置。
 //
-// 两条提示可能同时存在：上一次写失败回带 ?err=、这一次列表又读不出来。装载失败是**当前这次请求
-// 真实发生的事**，必须盖住旧提示，否则页面显示的是一条与本次无关的话。
-func TestOrderPageLoadFailureBeatsStaleErrParam(t *testing.T) {
+// 旧契约下这里守的是「装载失败压过 URL 里那条旧的 ?err=」（两条提示可能同时存在）。
+// 新契约把「写动作结论经 URL 回带」这条通道整块删掉了：页面只认 `.LoadErr`（本次请求真实发生
+// 的事），`?err=` 连读都不读。于是判据从「装载失败优先」升级为「伪造参数完全不可见」——
+// 手拼一个「看起来像业务文案」的串，它一个字都上不了页面。
+func TestOrderPageLoadFailureIgnoresStaleErrParam(t *testing.T) {
 	engine := newOrderPageEngine(t, &fakeOrderProjectService{err: errors.New(orderPageLoadErrText)})
-	// 这条是写侧真实产出过的业务文案（在 orderenums.UserFacingMessages 白名单里），
-	// 用它证明压过它的不是「白名单拒绝」而是装载失败优先。
+	// 这条是写侧真实产出过的业务文案（在 orderenums.UserFacingMessages 白名单里）——
+	// 旧契约下它会被当成可信回显；新契约下它必须一个字都上不了页面。
 	stale := "订单不存在" // order.err.orderNotFound 的 zh-CN 译文，由 180 的 seed 写入
 	for _, tc := range orderPageCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -221,10 +230,12 @@ func TestOrderPageLoadFailureBeatsStaleErrParam(t *testing.T) {
 
 			alert := orderPageAlert(body)
 			if !strings.Contains(alert, orderPageInternalText) {
-				t.Errorf("%s 装载失败应盖过 ?err= 旧提示，got %q", tc.path, alert)
+				t.Errorf("%s 装载失败应显示归口文案，got %q", tc.path, alert)
 			}
-			if strings.Contains(alert, stale) {
-				t.Errorf("%s 旧提示占据了提示条：%q", tc.path, alert)
+			// 伪造的 ?err= 不得出现在正文任何位置（不只是提示条）——「查询参数不是可信边界」
+			// 这条判据的形态从「过白名单」升级为「整块删掉读取路径」。
+			if strings.Contains(body, stale) {
+				t.Errorf("%s 正文里出现了伪造的 ?err= 文案 %q —— 页面不应再读取该参数", tc.path, stale)
 			}
 		})
 	}
@@ -247,8 +258,9 @@ func TestOrderPageEmptyStateStillShownWhenLoadSucceeds(t *testing.T) {
 			if strings.Contains(body, orderPageLoadFailedTitle) {
 				t.Errorf("%s 装载成功时不得显示装载失败空态", tc.path)
 			}
+			// 装载成功且页面不读 ?err=，因此不应有任何提示条（.LoadErr 为空）。
 			if orderPageAlert(body) != "" {
-				t.Errorf("%s 装载成功且无 ?err= 时不应有提示条，got %q", tc.path, orderPageAlert(body))
+				t.Errorf("%s 装载成功时不应有提示条，got %q", tc.path, orderPageAlert(body))
 			}
 		})
 	}

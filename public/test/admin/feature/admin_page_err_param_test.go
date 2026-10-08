@@ -1,16 +1,16 @@
 package feature
 
-// admin_page_err_param_test.go — admin 页面路径错误文案的两道守卫（第三波泄漏面的第一块）。
+// admin_page_err_param_test.go — admin 页面路径错误文案的两道守卫。
 //
 // 背景：JSON 出口（adminFail / adminErrParam）收口之后，页面路径还有一条独立出口 ——
-// 写操作失败时 c.Redirect 回列表页并把原因放进 ?err= / ?errored=，模板直接把它渲染成提示条。
-// 这条路**不经过** response 的 translate，所以 err.Error() 一旦直传，PostgreSQL 原文
-//（表名 sys_i18n、约束名 uq_…、SQLSTATE 23505）就摆在后台页面上，与 JSON body 里的泄漏等价。
+// 写操作失败时把原因渲染给运营。本批之前它是「303 回列表页 + `?err=` / `?errored=` 文案，
+// 由读侧白名单放行后渲染提示条」；本批改成 **整页提示**（shell.RenderJump，见
+// internal/shell/jump.go）—— 文案走响应体，不再经查询参数。
 //
-// 两道守卫分工：
-//   1) 静态扫描（TestAdminPageHandlersDoNotInlineErrorText）—— 钉住「谁都不许再写回去」，
-//      与 scripts/check-no-internal-error-leak.sh 同一判据的页面路径版本；
-//   2) 接口级（TestAdminI18nPageRedirect*）—— 钉住两个方向都没有跑偏：
+// 无论哪种传输通道，泄漏面都成立：err.Error() 一旦直传，PostgreSQL 原文（表名 sys_i18n、
+// 约束名 uk_…、SQLSTATE 23505）就会摆在后台页面上。两道守卫分工：
+//   1) 静态扫描（TestAdminPageHandlersDoNotInlineErrorText）—— 钉住「谁都不许再写回去」；
+//   2) 接口级（TestAdminI18nPageJump*）—— 钉住两个方向都没有跑偏：
 //      业务错误（少填字段）文案仍**可见**，基础设施错误走归口文案且不含任何原文片段。
 //
 // 归口文案与业务文案都有「key / zh-CN / en-US」三种可能形态（未加载 i18n 时就是 key 本身），
@@ -27,6 +27,7 @@ import (
 
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
+	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/public/test/support"
 
@@ -43,15 +44,13 @@ var pageInternalCopyForms = map[string]bool{
 // pageRequiredCopyForms MsgFieldRequired（通用必填提示）的全部可能形态。
 //
 // 它在本文件里只剩一个用途：作为**反向参照** —— 词条表单的三个缺项各有具体文案，
-// 断言它们「不再是这句话」。通用提示本身仍被同文件其它表单（管理员/角色/菜单等）使用。
+// 断言它们「不再是这句话」。
 var pageRequiredCopyForms = map[string]bool{
 	"MsgFieldRequired": true,
 	"必填字段不能为空":         true,
 }
 
 // pageI18nEmptyCopyForms 词条表单三条缺项文案的全部可能形态（key / zh-CN / en-US）。
-//
-// 三种形态按集合断言、不依赖某个具体译文：i18n 是否已初始化在同一个包内先后顺序不固定。
 var pageI18nEmptyCopyForms = map[string]map[string]bool{
 	adminenums.ErrI18nKeyEmpty: {
 		adminenums.ErrI18nKeyEmpty: true,
@@ -109,17 +108,16 @@ func adminPageHandlerFiles(t *testing.T) []string {
 	return files
 }
 
-// TestAdminPageHandlersDoNotInlineErrorText 页面路径不许把 err.Error() 拼进重定向或模板数据。
+// TestAdminPageHandlersDoNotInlineErrorText 页面路径不许把 err.Error() 拼进响应或模板数据。
 //
 // 判据（照 AGENTS.md「不许直出内部错误」的三种形态取页面路径的两种）：
-// 同一行里同时出现 .Error() 与「重定向出口」（?err= / ?errored= / adminI18nBackURL( / c.Redirect(）
+// 同一行里同时出现 .Error() 与「查询参数出口」（?err= / ?errored= / adminI18nBackURL( / c.Redirect(）
 // 或「模板数据键」（"Err" / "Errors" / "Errored"）即命中。
 //
 // 例外：无。批量超限此前靠「变量名 berr」放行（那时 shell.BulkIDs 的错误是字符串，
-// 受控性只能靠注释说明）；本批把那条豁免连同脚本里的 EXEMPT 条目一起删掉了 ——
-// shell.BulkIDs 现在返回**带 sentinel 的类型**（shell.ErrBulkIDsTooMany / *shell.BulkIDsError，
-// 值域只有 Count/Max 两个整数），页面统一走 shell.BulkIDsFacingText。
-// 批量超限路径的文案回归见同目录 admin_bulk_limit_text_test.go。
+// 受控性只能靠注释说明）；后来把它改成**带 sentinel 的类型**（shell.ErrBulkIDsTooMany /
+// *shell.BulkIDsError），页面统一走 shell.BulkIDsFacingText。批量超限路径的文案回归见
+// 同目录 admin_bulk_limit_text_test.go。
 func TestAdminPageHandlersDoNotInlineErrorText(t *testing.T) {
 	redirectForms := []string{"?err=", "?errored=", "adminI18nBackURL(", "c.Redirect("}
 	templateKeys := []string{`"Err"`, `"Errors"`, `"Errored"`}
@@ -156,18 +154,21 @@ func TestAdminPageHandlersDoNotInlineErrorText(t *testing.T) {
 }
 
 // newAdminI18nPageEngine 只挂文案词条页的两个写接口（页面 handler 的裸路由，不带中间件）。
+//
+// 必须挂真 Jet 渲染器：写失败现在渲染整页提示（shell.RenderJump → c.HTML）。
 func newAdminI18nPageEngine(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	h := adminhttp.NewAdminI18nEntryHandle()
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.POST("/admin/i18n/save", h.I18nEntrySave)
 	engine.POST("/admin/i18n/delete", h.I18nEntryDelete)
 	return engine
 }
 
-// postAdminI18nPage 提交一个表单，返回 302 的 Location 与解析后的 query。
-func postAdminI18nPage(t *testing.T, engine *gin.Engine, path string, form url.Values) (string, url.Values) {
+// postAdminI18nPageJump 提交一个表单，返回提示页响应体与状态码。
+func postAdminI18nPageJump(t *testing.T, engine *gin.Engine, path string, form url.Values) (string, int) {
 	t.Helper()
 	recorder, err := support.SendRequest(engine, support.RequestOptions{
 		Method:  http.MethodPost,
@@ -178,30 +179,22 @@ func postAdminI18nPage(t *testing.T, engine *gin.Engine, path string, form url.V
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
-	if recorder.Code != http.StatusFound {
-		t.Fatalf("页面写操作失败应 302 回列表页，got %d body=%s", recorder.Code, recorder.Body.String())
-	}
-	loc := recorder.Header().Get("Location")
-	u, perr := url.Parse(loc)
-	if perr != nil {
-		t.Fatalf("Location 无法解析: %q", loc)
-	}
-	return loc, u.Query()
+	return recorder.Body.String(), recorder.Code
 }
 
-// TestAdminI18nPageRedirectBusinessTextVisible 少填字段是**业务**错误，文案必须仍然可见。
+// TestAdminI18nPageJumpBusinessTextVisible 少填字段是**业务**错误，文案必须仍然可见。
 //
 // 这一条防的是「一刀切成通用提示」的反向缺陷：把 key/lang/内容为空的提示也归口成
 // 「操作失败，请稍后重试」，运营就只能反复猜测到底哪一项没填。校验留在 handler
-// （与同文件其它表单一致），所以这里连数据库都不需要。
-func TestAdminI18nPageRedirectBusinessTextVisible(t *testing.T) {
+//（与同文件其它表单一致），所以这里连数据库都不需要。
+func TestAdminI18nPageJumpBusinessTextVisible(t *testing.T) {
 	engine := newAdminI18nPageEngine(t)
 
 	cases := []struct {
 		name string
 		path string
 		form url.Values
-		want string // 期望命中的 enums key（本任务：按具体缺项返回具体文案）
+		want string // 期望命中的 enums key（按具体缺项返回具体文案）
 	}{
 		{"保存时 key 为空", "/admin/i18n/save", url.Values{"key": {""}, "lang": {"zh-CN"}, "value": {"x"}}, adminenums.ErrI18nKeyEmpty},
 		{"保存时语言为空", "/admin/i18n/save", url.Values{"key": {"a.b"}, "lang": {""}, "value": {"x"}}, adminenums.ErrI18nLangEmpty},
@@ -211,15 +204,18 @@ func TestAdminI18nPageRedirectBusinessTextVisible(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			loc, q := postAdminI18nPage(t, engine, tc.path, tc.form)
-			if q.Get("saved") != "" {
-				t.Fatalf("校验失败不应回带 saved：%s", loc)
+			body, code := postAdminI18nPageJump(t, engine, tc.path, tc.form)
+			if code != http.StatusOK {
+				t.Fatalf("校验失败应渲染提示页（200），got %d body=%s", code, body)
 			}
-			got := q.Get("errored")
+			if !strings.Contains(body, `data-jump-state="err"`) {
+				t.Fatalf("失败提示页应带 data-jump-state=\"err\"：%s", body)
+			}
+			got := jumpMsgFromBody(body)
 			if !pageI18nEmptyCopyForms[tc.want][got] {
-				t.Fatalf("业务错误的文案必须可见且具体到缺哪一项（期望 %s），got %q loc=%s", tc.want, got, loc)
+				t.Fatalf("业务错误的文案必须可见且具体到缺哪一项（期望 %s），got %q", tc.want, got)
 			}
-			assertPageNoLeak(t, tc.name, loc)
+			assertPageNoLeak(t, tc.name, body)
 		})
 	}
 }
@@ -245,10 +241,10 @@ func TestAdminI18nEmptyFieldTextsAreDistinct(t *testing.T) {
 
 	seen := map[string]string{} // 文案 → 缺哪一项
 	for _, field := range []string{"key", "lang", "value"} {
-		loc, q := postAdminI18nPage(t, engine, "/admin/i18n/save", forms[field])
-		got := q.Get("errored")
+		body, _ := postAdminI18nPageJump(t, engine, "/admin/i18n/save", forms[field])
+		got := jumpMsgFromBody(body)
 		if !pageI18nEmptyCopyForms[wantKey[field]][got] {
-			t.Fatalf("缺 %s 应返回 %s 的具体文案，got %q loc=%s", field, wantKey[field], got, loc)
+			t.Fatalf("缺 %s 应返回 %s 的具体文案，got %q", field, wantKey[field], got)
 		}
 		if pageRequiredCopyForms[got] {
 			t.Fatalf("缺 %s 仍返回通用必填提示，运营还是不知道缺哪一项：%q", field, got)
@@ -257,31 +253,29 @@ func TestAdminI18nEmptyFieldTextsAreDistinct(t *testing.T) {
 			t.Fatalf("缺 %s 与缺 %s 的文案完全相同（%q）—— 拆成三条等于没拆", field, prev, got)
 		}
 		seen[got] = field
-		assertPageNoLeak(t, "缺 "+field, loc)
+		assertPageNoLeak(t, "缺 "+field, body)
 	}
 }
 
-// TestAdminI18nPageRedirectInternalErrorCollected 基础设施错误走归口文案，且 Location 里没有原文。
+// TestAdminI18nPageJumpInternalErrorCollected 基础设施错误走归口文案，且响应体里没有原文。
 //
 // 前置条件：database 组件**未初始化** —— 这样 i18n.SaveEntry 会稳定地返回
 // ErrI18nUnavailable（归口分支），而不是真的写一次库。若同包其它用例已经初始化过组件
-// （admin_shell_i18n_test.go 会），本用例会跳过：那种情况下再跑就是往开发库里插数据，
-// 归口分支本身已由 internal/module/admin/inbound/http/admin_err_param_test.go 用
-// PostgreSQL 形态的原文钉死。
-func TestAdminI18nPageRedirectInternalErrorCollected(t *testing.T) {
+// （admin_shell_i18n_test.go 会），本用例会跳过。
+func TestAdminI18nPageJumpInternalErrorCollected(t *testing.T) {
 	if database.IsInited() {
 		t.Skip("database 组件已被同包其它用例初始化，跳过（避免真的写库）；归口分支由 internal 单测覆盖")
 	}
 	engine := newAdminI18nPageEngine(t)
-	loc, q := postAdminI18nPage(t, engine, "/admin/i18n/save", url.Values{
+	body, code := postAdminI18nPageJump(t, engine, "/admin/i18n/save", url.Values{
 		"key": {"page.err.test"}, "lang": {"zh-CN"}, "value": {"测试"},
 	})
-	if q.Get("saved") != "" {
-		t.Fatalf("存储不可用时不应回带 saved：%s", loc)
+	if code != http.StatusOK {
+		t.Fatalf("存储不可用应渲染提示页（200），got %d body=%s", code, body)
 	}
-	got := q.Get("errored")
+	got := jumpMsgFromBody(body)
 	if !pageInternalCopyForms[got] {
-		t.Fatalf("内部错误的文案应是归口形态，got %q loc=%s", got, loc)
+		t.Fatalf("内部错误的文案应是归口形态，got %q", got)
 	}
-	assertPageNoLeak(t, "基础设施错误", loc)
+	assertPageNoLeak(t, "基础设施错误", body)
 }

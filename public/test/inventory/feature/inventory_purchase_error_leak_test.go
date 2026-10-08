@@ -55,28 +55,13 @@ func TestPurchaseBusinessErrorStillVisible(t *testing.T) {
 		"csrf_token": {"t"}, "projectId": {f.projectID}, "orderId": {order.ID},
 		"lineId": {order.Lines[0].ID}, "quantity": {"1"}, "requestId": {"ERR-LEAK-2"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("收货失败应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
+	// 失败：提示页（200 + err 态），业务文案原样可见、不含内部细节、不含裸 key。
+	assertInventoryJump(t, rec, "err", "采购单已全部入库，无需再收")
+	body := rec.Body.String()
+	assertNoInternalTokens(t, "收货失败提示页", body)
+	if strings.Contains(body, inventoryenums.ErrReceiptOrderDone) {
+		t.Fatalf("提示页不该出现裸 key %q", inventoryenums.ErrReceiptOrderDone)
 	}
-	loc := rec.Header().Get("Location")
-	assertNoInternalTokens(t, "收货失败的重定向", loc)
-	if !strings.Contains(loc, url.QueryEscape("采购单已全部入库，无需再收")) {
-		t.Fatalf("业务错误的文案必须原样可见（中文），实际 %q", loc)
-	}
-	if strings.Contains(loc, inventoryenums.ErrReceiptOrderDone) {
-		t.Fatalf("回显里不该出现裸 key %q：%q", inventoryenums.ErrReceiptOrderDone, loc)
-	}
-
-	// 回跳页把同一句话渲染成提示条：整页正文同样不许出现内部细节。
-	page := httptestGet(engine, loc)
-	if page.Code != http.StatusOK {
-		t.Fatalf("回跳的采购入库页应 200，实际 %d", page.Code)
-	}
-	body := page.Body.String()
-	if !strings.Contains(body, "采购单已全部入库，无需再收") {
-		t.Fatalf("业务错误的文案在页面上不可见（被压成通用提示？）")
-	}
-	assertNoInternalTokens(t, "收货失败回显页", body)
 
 	// 建单路径的同一判据（两条都是业务错误，文案都必须原样可见）：
 	//   a) 完全不提交 SKU 字段 —— 模板与 handler 的字段名对不上时就是这个形态：整行被跳过，
@@ -105,17 +90,11 @@ func TestPurchaseBusinessErrorStillVisible(t *testing.T) {
 			form.Set("lineSku", tc.sku)
 		}
 		rec = postForm(engine, "/admin/inventory/purchases/create", form)
-		if rec.Code != http.StatusFound {
-			t.Fatalf("%s：建单失败应 302 回列表，实际 %d：%s", tc.name, rec.Code, rec.Body.String())
+		assertInventoryJump(t, rec, "err", tc.wantText)
+		if strings.Contains(rec.Body.String(), tc.forbidden) {
+			t.Fatalf("%s：提示页不该出现裸 key %q", tc.name, tc.forbidden)
 		}
-		loc = rec.Header().Get("Location")
-		assertNoInternalTokens(t, tc.name+"的建单重定向", loc)
-		if !strings.Contains(loc, url.QueryEscape(tc.wantText)) {
-			t.Fatalf("%s：业务错误的文案应原样可见，实际 %q", tc.name, loc)
-		}
-		if strings.Contains(loc, tc.forbidden) {
-			t.Fatalf("%s：回显里不该出现裸 key %q：%q", tc.name, tc.forbidden, loc)
-		}
+		assertNoInternalTokens(t, tc.name+"的建单提示页", rec.Body.String())
 	}
 	// 被拒绝的两次建单一张都没落库（半截状态不允许存在）。
 	if n := purchaseOrderCount(t, f); n != 1 {

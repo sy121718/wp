@@ -10,6 +10,7 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{{listQuery := .ListQuery}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -23,7 +24,7 @@
         </div>
         <div class="page-actions">
             <a class="btn btn-ghost" href="/admin/membership/assignments?project={{selectedProject}}">{{ .["t"]("admin.membership.link.assignments", "会员归属") }}</a>
-            {{if isset(.PermSet["membership:tier_create"])}}
+            {{if isset(.Buttons["membership.tier_create"])}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tier-create" data-drawer-title="{{ .["t"]("admin.membership.tier.create", "新建等级") }}">＋ {{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
             {{end}}
             {{if len(.Projects) > 1}}
@@ -40,14 +41,13 @@
     </header>
 
     {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.loadFailed", "工程列表没读出来，本页数据未加载，请稍后重试。") }}</p>{{end}}
-    {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.lastError", "上一次操作未完成：") }}{{.Err}}</p>{{end}}
-    {{if .Done != ""}}<p class="badge badge-success" role="status">{{.Done}}</p>{{end}}
+    {{if .LoadErr != ""}}<p class="badge badge-warning" role="alert">{{.LoadErr}}</p>{{end}}
 
     {* ===== 编辑区（?edit=<id>）——服务端渲染，字段全部回填 ===== *}
     {{if isset(.Edit)}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.tier.editTitle", "编辑等级") }}：{{ .Edit.Name }}</span></div>
-        <form method="post" action="/admin/membership/tier/update" class="form-stack">
+        <form method="post" action="/admin/membership/tier/update?{{listQuery}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{ .Edit.ID }}">
@@ -81,7 +81,7 @@
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.entitlement.title", "权益") }}</span></div>
         <p class="form-hint">{{ .["t"]("admin.membership.entitlement.hint", "清单即最终状态：这里没勾选 / 没填写的权益会被删掉。免运费与折扣相加扣减，与优惠码各自独立计账。") }}</p>
-        <form method="post" action="/admin/membership/entitlement/save" class="form-stack">
+        <form method="post" action="/admin/membership/entitlement/save?{{listQuery}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
@@ -106,8 +106,8 @@
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.tier.dangerTitle", "危险操作") }}</span></div>
         <div class="action-row">
             {{if !.Edit.IsDefault}}
-            {{if isset(.PermSet["membership:tier_update"])}}
-            <form method="post" action="/admin/membership/tier/default">
+            {{if isset(.Buttons["membership.tier_update"])}}
+            <form method="post" action="/admin/membership/tier/default?{{listQuery}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{ .Edit.ID }}">
@@ -115,8 +115,8 @@
             </form>
             {{end}}
             {{end}}
-            {{if isset(.PermSet["membership:tier_delete"])}}
-            <form method="post" action="/admin/membership/tier/delete">
+            {{if isset(.Buttons["membership.tier_delete"])}}
+            <form method="post" action="/admin/membership/tier/delete?{{listQuery}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="id" value="{{ .Edit.ID }}">
@@ -174,9 +174,9 @@
     </section>
 </div>
 
-{{if isset(.PermSet["membership:tier_create"])}}
+{{if isset(.Buttons["membership.tier_create"])}}
 <template id="tpl-tier-create">
-    <form method="post" action="/admin/membership/tier/create" class="form-stack">
+    <form method="post" action="/admin/membership/tier/create?{{listQuery}}" class="form-stack">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <div class="form-group">

@@ -4,11 +4,9 @@ import "testing"
 
 // 状态类展示标签的取值覆盖：key 与中文兜底逐字稳定。
 //
-// 这一组比别处更要紧：它们的句子会被**写侧**拼进 302 的 query、**读侧**再用同一份
-// 取值重拼候选集做整句比对（见 inbound/http/mail_err.go 的 mailNoticeTexts）。
-// key 或兜底漂一个字，表现就是「运营点完按钮，页面上什么都没有」——
-// 服务端不报错、日志里也看不出来（inbound/http 的 TestMailNoticeWriteSideMatchesReadSide
-// 钉的是拼装一致，这里钉的是取值本身）。
+// 这一组比别处更要紧：状态回执的整句由 AutomationStatusLabel + AutomationStatusChanged
+// 拼成，再由 shell.RenderJump 直接渲染（见 inbound/http/mail_jump.go）。key 或兜底漂一个字，
+// 表现就是英文后台半句中文、半句英文 —— 服务端不报错、日志里也看不出来。
 func TestAutomationStatusLabels(t *testing.T) {
 	cases := []struct {
 		status, key, fallback string

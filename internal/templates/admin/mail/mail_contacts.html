@@ -18,15 +18,22 @@
     单页或空数据时这个键不存在 —— 取到 nil 不中断渲染，分页片段里的 if 自然跳过。 *}
 {{contactsLinks := .["PaginationLinks"]}}
 {{contactsInfo := .["PaginationInfo"]}}
-{{canImportContact := isset(.PermSet["mail:contact_import"])}}
-{{canUpdateContact := isset(.PermSet["mail:contact_status"])}}
+{{canImportContact := isset(.Buttons["mail.contact_import"])}}
+{{canUpdateContact := isset(.Buttons["mail.contact_status"])}}
 {* CRUD 与标签各按自己的权限点显隐：能改状态的人不一定能删人，能删人的人不一定能改标签。 *}
-{{canSaveContact := isset(.PermSet["mail:contact_save"])}}
-{{canDeleteContact := isset(.PermSet["mail:contact_delete"])}}
-{{canTagContact := isset(.PermSet["mail:contact_tag"])}}
+{{canSaveContact := isset(.Buttons["mail.contact_save"])}}
+{{canDeleteContact := isset(.Buttons["mail.contact_delete"])}}
+{{canTagContact := isset(.Buttons["mail.contact_tag"])}}
 {* 标签候选来自全库（handler 经 ListContactTags 注入）：只做输入提示，不限制自由输入。
     直接手打标签最容易打出近义词（vip / VIP / 贵宾）—— 打岔一个，按标签圈人群就漏人。 *}
 {{tagOptions := .["TagOptions"]}}
+{* 写动作表单 action 的筛选上下文（服务端拼、回跳由 shell.BackPath 读回）：
+    批量改完不会被弹回未筛选的第 1 页。可选键用 chain 索引取（缺键为 nil，不中断）。 *}
+{{listQuery := ""}}{{if isset(.ListQuery)}}{{listQuery = .ListQuery}}{{end}}
+{* 批量按钮的 formaction 会**整体覆盖** form 的 action（含 query），所以三个端点各自带上 listQuery。 *}
+{{bulkStatusAction := "/admin/mail/contacts/bulk-status" + listQuery}}
+{{bulkDeleteAction := "/admin/mail/contacts/bulk-delete" + listQuery}}
+{{bulkTagAction := "/admin/mail/contacts/bulk-tag" + listQuery}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -52,17 +59,10 @@
     </div>
   </header>
 
-  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），
-     直接比较会让整页在那一行中断 —— HTTP 仍是 200，之后的列表整块消失。 *}
+  {* Err 只来自**取数失败**分支（写动作的结论走 shell.RenderJump 提示页，见 mail_jump.go）——
+     可选键一律 isset 包裹：直接比较会让整页在那一行中断（HTTP 仍是 200，之后的列表整块消失）。 *}
   {{if isset(.Err)}}{{if .Err != ""}}
   <p class="badge badge-warning" role="alert">{{ .["t"]("admin.mail.marketing.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-  {{end}}{{end}}
-  {{if isset(.Ok)}}{{if .Ok != ""}}
-  <p class="badge badge-success" role="status">{{.Ok}}</p>
-  {{end}}{{end}}
-  {* Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。 *}
-  {{if isset(.Done)}}{{if .Done != ""}}
-  <p class="badge badge-info" role="status">{{.Done}}</p>
   {{end}}{{end}}
 
   <section class="card list-card">
@@ -111,14 +111,11 @@
     </form>
 
     {* 批量动作与勾选框同属一个 form（<form> 包 <table> 合法）；admin.js 按「最近的 form」定作用域。
-        隐藏域把当前筛选与页码带回：批量改完被弹回未筛选的第一页，等于让人重新筛一遍。
-        字段名加 return 前缀 —— 表单里的 status 是**目标状态**，与列表筛选参数同名。 *}
-    <form method="post" action="/admin/mail/contacts/bulk-status">
+        筛选上下文放在 **action 的 query** 上（listQuery），服务端用 shell.BackPath 读回 ——
+        不再用 return* 隐藏域：字段名与列表筛选同名也不必加前缀，因为 query 与 body 是两处
+        （表单里的 status 是**目标状态**，query 里的 status 是列表筛选）。 *}
+    <form method="post" action="{{bulkStatusAction}}">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
-      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
-      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
-      <input type="hidden" name="returnPage" value="{{.Page}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。
           三个批量动作的权限各自独立 —— 只给「打标签」权限的人也该看得到这条，所以条件写「任一为真」。 *}
       {{if canUpdateContact || canDeleteContact || canTagContact}}{{if len(.Contacts) > 0}}
@@ -133,7 +130,7 @@
         {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_status_submit", "批量改状态"), cls="btn btn-sm", confirm=tr("admin.mail.marketing.bulk_status_confirm", "把选中的联系人改为所选状态？改成「退订」会同时写入抑制名单，之后不会再被群发到。"))}}
         {{end}}
         {{if canDeleteContact}}
-        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。"), formaction="/admin/mail/contacts/bulk-delete", danger=true)}}
+        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。"), formaction=bulkDeleteAction, danger=true)}}
         {{end}}
         {* 批量打标签与「批量改状态」共用同一个 form 与同一批勾选框：抽屉在列表外，
             里面拿不到被勾选的 id，把它们搬过去要么新增业务 JS 搬运 id、要么让人重抄一遍名单。
@@ -141,7 +138,7 @@
         {{if canTagContact}}
         <input class="form-input" type="text" name="add" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.add", "加上标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.add.ph", "加上标签：vip,华南") }}">
         <input class="form-input" type="text" name="remove" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.remove", "去掉标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.remove.ph", "去掉标签：vip") }}">
-        {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_tag_submit", "批量打标签"), cls="btn btn-sm", formaction="/admin/mail/contacts/bulk-tag", confirm=tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。"))}}
+        {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_tag_submit", "批量打标签"), cls="btn btn-sm", formaction=bulkTagAction, confirm=tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。"))}}
         {{end}}
       {{yield bulkBarClose()}}
       {{end}}{{end}}
@@ -222,7 +219,7 @@
   {* 行内表单与抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 data-drawer-open 打开。 *}
   {{range _, c := .Contacts}}
   <template id="tpl-contact-status-{{c.ID}}">
-    <form method="post" action="/admin/mail/contact/status" class="form-stack">
+    <form method="post" action="/admin/mail/contact/status{{listQuery}}" class="form-stack">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="{{c.ID}}">
       <div class="form-field">
@@ -247,13 +244,9 @@
   {* 编辑抽屉：邮箱是抑制名单的关联键 —— 改邮箱不会把退订记录搬过去（搬了等于让退订者
       换个地址继续收）。留空 / 有权限的人都按这个语义操作，语义在服务端注释里有完整论证。 *}
   <template id="tpl-contact-save-{{c.ID}}">
-    <form method="post" action="/admin/mail/contact/save" class="form-stack">
+    <form method="post" action="/admin/mail/contact/save{{listQuery}}" class="form-stack">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="{{c.ID}}">
-      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
-      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
-      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
-      <input type="hidden" name="returnPage" value="{{.Page}}">
       <div class="form-field">
         <label class="form-label" for="ce-email-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
         <input class="form-input" id="ce-email-{{c.ID}}" type="email" name="email" value="{{c.Email}}" required>
@@ -295,14 +288,10 @@
   </template>
   {{end}}
   {{if canDeleteContact}}
-  <form id="contact-del-{{c.ID}}" class="hidden-form" method="post" action="/admin/mail/contact/delete"
+  <form id="contact-del-{{c.ID}}" class="hidden-form" method="post" action="/admin/mail/contact/delete{{listQuery}}"
         data-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}" data-confirm-danger>
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{c.ID}}">
-    <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
-    <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
-    <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
-    <input type="hidden" name="returnPage" value="{{.Page}}">
   </form>
   {{end}}
   {{end}}
@@ -311,13 +300,9 @@
   {* 新建抽屉：手工加一条（线下换名片、电话索要、单人补录）。同意状态默认「待确认」——
       没勾选同意证据就不该直接进可发送名单；要置为已订阅，必须同时写清同意来源（留痕）。 *}
   <template id="tpl-contact-save">
-    <form method="post" action="/admin/mail/contact/save" class="form-stack">
+    <form method="post" action="/admin/mail/contact/save{{listQuery}}" class="form-stack">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       <input type="hidden" name="id" value="0">
-      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
-      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
-      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
-      <input type="hidden" name="returnPage" value="{{.Page}}">
       <div class="form-field">
         <label class="form-label" for="cn-email">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
         <input class="form-input" id="cn-email" type="email" name="email" required placeholder="{{tr("admin.mail.marketing.contact_form.email.ph", "name@example.com")}}">
@@ -359,12 +344,8 @@
   {* 导入抽屉：勾选「这批人已同意」才会置为已订阅并记来源。
       同意声明与批量标签放在同一屏，是为了让操作者一次就把「这批人是谁、凭什么能发」填完。 *}
   <template id="tpl-contact-import">
-    <form method="post" action="/admin/mail/contact/import" class="form-stack">
+    <form method="post" action="/admin/mail/contact/import{{listQuery}}" class="form-stack">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <input type="hidden" name="returnKeyword" value="{{if isset(.Keyword)}}{{.Keyword}}{{end}}">
-      <input type="hidden" name="returnStatus" value="{{if isset(.Status)}}{{.Status}}{{end}}">
-      <input type="hidden" name="returnTags" value="{{if isset(.Tags)}}{{.Tags}}{{end}}">
-      <input type="hidden" name="returnPage" value="{{.Page}}">
       <div class="form-grid">
         <div class="form-field">
           <label class="form-label" for="mk-import-tags">{{ .["t"]("admin.mail.marketing.import.tags", "批量标签（逗号分隔）") }}</label>

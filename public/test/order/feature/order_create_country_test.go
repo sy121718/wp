@@ -13,8 +13,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -22,23 +20,13 @@ import (
 	"go_wp/pkg/i18n"
 )
 
-// orderHeadFromCreate 从建单成功后的 302 回跳地址取订单 id，回读订单头。
+// orderHeadFromCreate 从建单成功后的提示页回跳链接取订单 id，回读订单头。
 //
 // 走回跳地址而不是按邮箱之类反查：那条路径本身就是「运营建完单被送回列表页」的真实链路，
 // 顺带钉住「回跳地址里必须带 orderId」（少了它，运营看不到刚建的单）。
 func orderHeadFromCreate(t *testing.T, env *orderCreatePageEnv, rec *httptest.ResponseRecorder) *orderdto.OrderResp {
 	t.Helper()
-	if rec.Code != http.StatusFound {
-		t.Fatalf("建单成功应 302 回列表页，实际 %d（%s）", rec.Code, rec.Body.String())
-	}
-	loc, err := url.Parse(rec.Header().Get("Location"))
-	if err != nil {
-		t.Fatalf("回跳地址不合法：%v", err)
-	}
-	id, err := strconv.ParseUint(loc.Query().Get("orderId"), 10, 64)
-	if err != nil || id == 0 {
-		t.Fatalf("回跳地址里没有订单 id：%q", rec.Header().Get("Location"))
-	}
+	id := orderIDFromCreate(t, rec)
 	detail, err := env.fixture.orders.GetOrder(context.Background(), &orderdto.GetOrderReq{
 		ProjectID: env.project, OrderID: id,
 	})

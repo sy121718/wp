@@ -40,7 +40,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"go_wp/public/test/support"
 )
@@ -113,6 +113,10 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 		c.Set(shell.PermSetKey, map[string]bool{
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.tag_create": true, "product.tag_update": true, "product.tag_delete": true,
+		})
+
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(svc, projects)

@@ -1,107 +1,79 @@
 package userhttp
 
-// customer_notice_test.go — 客户列表页 ?done=（批量摘要）读侧受控出口的回归。
+// customer_notice_test.go — 批量结论渲染进提示页（shell.RenderJump）的回归。
 //
-// 为什么必须有：这条通道此前**只靠 Jet 的 HTML 转义** —— 转义只挡「脚本执行」，
-// 不挡「伪造系统提示」：手拼 ?done=<任意文案> 会以系统口吻显示在页面上，
-// 与直出内部错误同级（都是「响应不是可信边界」）。
-//
-// 而它的判定又比同批其它页面难：别的 ?done= 是固定 token 或单句文案，
-// 这里是**带计数的动态整句**（「批量操作：已停用 3 个，1 个未处理（…）。」），
-// 最容易在收口时被顺手放过。所以两侧都要钉：
-//   · 写侧真实产出的每一种句子都必须被放行（否则成功回执**静默消失**）；
-//   · 手拼的一律落空串。
+// 取代原先对 ?done= 读侧受控出口（customerPageDone / customerBulkNoticeCandidates）的回归：
+// 写结论不再经查询参数回带，手拼 ?done= 也无从注入 —— 这里钉住的是**写侧真实产出的每一种
+// 句子都被渲染进响应体**。此前那条通道最容易出的错就是「成功回执静默消失」
+// （写侧改了措辞、读侧再也认不出，不报错、日志里也没有），现在文案走响应体，这条风险随之消失。
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 
-	"go_wp/internal/web/shell"
-
-	"github.com/gin-gonic/gin"
+	userdto "go_wp/internal/module/user/dto"
 )
 
-func customerDoneCtx(raw string) *gin.Context {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest("GET", "/admin/user/customers?done="+url.QueryEscape(raw), nil)
-	return c
-}
-
-// TestCustomerPageDoneAcceptsEveryWriterShape 写侧每一种分支都必须被读侧认出。
-func TestCustomerPageDoneAcceptsEveryWriterShape(t *testing.T) {
-	counts := []int{0, 1, 3, 128}
-	var shapes []string
-	// 批量结论按当前语言生成：读侧候选与写侧文案取同一批词条，测试在同一上下文中比对。
-	ctx := customerDoneCtx("")
-	// 空结果两支。
-	shapes = append(shapes, customerBulkSummary(ctx, "", 0, 0), customerBulkUnlockSummary(ctx, 0, 0, 0))
-	for _, status := range []int{customerStatusActive, customerStatusDisabled} {
-		verb := customerStatusActionVerb(ctx, status)
-		for _, done := range counts {
-			for _, skipped := range counts {
-				shapes = append(shapes, customerBulkSummary(ctx, verb, done, skipped))
+// TestCustomerBulkJumpRendersEveryWriterShape 批量动作的每一种分支都渲染进提示页。
+func TestCustomerBulkJumpRendersEveryWriterShape(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		path   string
+		form   url.Values
+		fake   *fakeCustomerAdmin
+		states []string
+	}{
+		{
+			name:   "批量停用（部分未处理）",
+			path:   "/admin/customers/bulk-status",
+			form:   url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}},
+			fake:   &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}},
+			states: []string{`data-jump-state="ok"`, "已停用 2 个", "1 个未处理"},
+		},
+		{
+			name:   "批量启用",
+			path:   "/admin/customers/bulk-status",
+			form:   url.Values{"ids": {"42", "43"}, "toStatus": {"1"}},
+			fake:   &fakeCustomerAdmin{},
+			states: []string{`data-jump-state="ok"`, "已启用 2 个"},
+		},
+		{
+			name: "批量解锁（解开 / 本来就没事）",
+			path: "/admin/customers/bulk-unlock",
+			form: url.Values{"ids": {"42", "43"}},
+			fake: &fakeCustomerAdmin{unlockByID: map[uint64]*userdto.CustomerUnlockResp{
+				42: {CustomerID: 42, Unlocked: true},
+				43: {CustomerID: 43, Unlocked: false},
+			}},
+			states: []string{`data-jump-state="ok"`, "已解除锁定 1 个", "1 个本来就未锁定"},
+		},
+		{
+			name:   "批量一条都没勾",
+			path:   "/admin/customers/bulk-status",
+			form:   url.Values{"toStatus": {"0"}},
+			fake:   &fakeCustomerAdmin{},
+			states: []string{`data-jump-state="err"`, "没有勾选任何账号"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewCustomerPageHandle(tc.fake, fakeOrderSummaryReader{}, fakeProjects{})
+			engine := newCustomerTestEngine(h)
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("应渲染提示页（200），实际 %d", rec.Code)
 			}
-		}
-	}
-	for _, unlocked := range counts {
-		for _, noop := range counts {
-			for _, skipped := range counts {
-				shapes = append(shapes, customerBulkUnlockSummary(ctx, unlocked, noop, skipped))
+			body := rec.Body.String()
+			for _, want := range tc.states {
+				if !strings.Contains(body, want) {
+					t.Errorf("提示页应含 %q", want)
+				}
 			}
-		}
-	}
-	for _, s := range shapes {
-		if got := customerPageDone(customerDoneCtx(s)); got != strings.TrimSpace(s) {
-			t.Fatalf("写侧产出的摘要必须被读侧放行，实际被拒：%q（读侧得到 %q）", s, got)
-		}
-	}
-}
-
-// TestCustomerPageDoneRejectsForged 手拼的必须一律落空串。
-func TestCustomerPageDoneRejectsForged(t *testing.T) {
-	forged := []string{
-		"",
-		"   ",
-		"系统内部错误，请稍后重试",
-		"已删除 3 个商品。",   // 别的模块的文案
-		"批量操作：已启用 3 个", // 少了句号：必须整体相等
-		// 注意：「批量操作：已启用 3 个。」**不是**伪造 —— 那是写侧 done=3 / skipped=0 的正常输出，
-		// 已归在上一条用例的「必须放行」里。把合法输出写进伪造清单会让这条测试自相矛盾。
-		"批量操作：已启用 3 个，1 个未处理（账号不存在）。",                  // 括号里的理由串错了（那是解锁动作的理由）
-		"批量解除锁定：已解除锁定 2 个，2 个未处理（账号不存在，或当前状态不允许这个动作）。", // 理由串串了通道
-		"批量操作：已启用 3 个，9 个未处理（账号不存在，或当前状态不允许这个动作）。脚本",   // 后缀夹带
-		"<script>alert(1)</script>批量操作：已启用 1 个。",       // 前缀夹带
-		strings.Repeat("批量操作：已启用 1 个。", 80),            // 超长（>512 字节）
-	}
-	for _, raw := range forged {
-		if got := customerPageDone(customerDoneCtx(raw)); got != "" {
-			t.Fatalf("伪造回执不该命中，实际放行 %q（输入 %q）", got, raw)
-		}
-	}
-}
-
-// TestCustomerPageDoneCandidatesAreDerivedNotHandWritten 候选集合必须由写侧派生。
-//
-// 手抄一份候选的下场是「写侧改了措辞、读侧再也认不出」，而那表现为成功回执**静默消失**
-// （不报错、日志里也没有）。这里断言候选里确实含有写侧每种动词的输出 ——
-// 有人把候选改成硬编码清单并漏了一个动词时，这条会红。
-func TestCustomerPageDoneCandidatesAreDerivedNotHandWritten(t *testing.T) {
-	ctx := customerDoneCtx("")
-	for _, status := range []int{customerStatusActive, customerStatusDisabled} {
-		verb := customerStatusActionVerb(ctx, status)
-		want := shell.NoticeTemplate(customerBulkSummary(ctx, verb, 2, 0))
-		found := false
-		for _, cand := range customerBulkNoticeCandidates(ctx) {
-			if cand == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("候选集合缺少动词 %q 的写侧输出（%q）—— 候选必须由写侧函数派生", verb, want)
-		}
+		})
 	}
 }

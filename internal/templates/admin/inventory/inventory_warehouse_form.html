@@ -7,8 +7,8 @@
 {{if fill}}{{echo = .FormEcho}}{{end}}
 <div data-inventory-warehouse-host>
     {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
-    <form method="post" action="{{if edit}}/admin/inventory/warehouse/update{{else}}/admin/inventory/warehouse/create{{end}}"
-          hx-post="{{if edit}}/admin/inventory/warehouse/update{{else}}/admin/inventory/warehouse/create{{end}}"
+    <form method="post" action="{{if edit}}/admin/inventory/warehouse/update{{else}}/admin/inventory/warehouse/create{{end}}?{{ .ListQuery }}"
+          hx-post="{{if edit}}/admin/inventory/warehouse/update{{else}}/admin/inventory/warehouse/create{{end}}?{{ .ListQuery }}"
           hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{if fill}}{{echo.projectId}}{{else}}{{.SelectedProject}}{{end}}">

@@ -119,13 +119,6 @@ type AdminMenuSaveResp struct {
 	UserID uint64 `json:"user_id"`
 }
 
-// AdminRoutesResp 动态路由权限投影响应。
-type AdminRoutesResp struct {
-	Routes          []RouteNode `json:"routes"`           // 当前用户可见的动态路由树
-	Roles           []string    `json:"roles"`            // 角色编码列表
-	PermissionCodes []string    `json:"permission_codes"` // 有效权限编码列表
-}
-
 // AdminListByDeptIDResp 按部门查管理员列表响应。
 type AdminListByDeptIDResp struct {
 	Total int64           `json:"total"`

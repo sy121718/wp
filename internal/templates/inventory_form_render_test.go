@@ -21,6 +21,8 @@ func TestInventoryFailedFormFragmentsRender(t *testing.T) {
 				"csrf_token": "csrf", "t": func(_, fallback string) string { return fallback },
 				"IsEdit": tc.name != "reason", "Row": map[string]any{}, "FormEcho": tc.fields,
 				"SubmitErr": "校验失败", "SelectedProject": "p1",
+				// 写表单 action 上带的筛选上下文（handler 的 fail 分支一定给；测试补齐）。
+				"ListQuery":      "",
 				"WarehouseTypes": []map[string]any{{"Value": "third_party", "Label": "第三方仓"}},
 				"Directions":     []map[string]any{{"Value": "out", "Label": "出库"}},
 				"TypeOptions":    []map[string]any{{"Value": "internal", "Label": "内部"}},

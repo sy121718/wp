@@ -94,7 +94,8 @@ func TestBundlePageSlimFormContract(t *testing.T) {
 	}
 	body := rec.Body.String()
 	t.Logf("页面样本：%d bytes，%d 个 option", len(body), strings.Count(body, "<option"))
-	if !strings.Contains(body, `name="csrf_token"`) || !strings.Contains(body, `action="/admin/products/bundle/save"`) {
+	// action 后面可以带页面 query（project / product），所以不要求引号紧跟 save。
+	if !strings.Contains(body, `name="csrf_token"`) || !strings.Contains(body, `action="/admin/products/bundle/save`) {
 		t.Fatal("原生表单及 CSRF 契约丢失")
 	}
 	beforeTemplate, _, _ := strings.Cut(body, "<template data-bundle-member-tpl>")

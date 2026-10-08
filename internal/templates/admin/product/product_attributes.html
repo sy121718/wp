@@ -15,9 +15,9 @@
    直接 {{.FilterKeyword}} 在缺键时会报错中断整页（HTTP 仍 200，后面整块 HTML 消失）。 *}
 {{fKeyword := .["FilterKeyword"]}}
 {{fVariation := .["FilterVariation"]}}
-{{canCreate := isset(.PermSet["product:attribute_create"])}}
-{{canUpdate := isset(.PermSet["product:attribute_update"])}}
-{{canDelete := isset(.PermSet["product:attribute_delete"])}}
+{{canCreate := isset(.Buttons["product.attribute_create"])}}
+{{canUpdate := isset(.Buttons["product.attribute_update"])}}
+{{canDelete := isset(.Buttons["product.attribute_delete"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -45,14 +45,6 @@
             {{end}}
         </div>
     </header>
-
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_attributes.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
 
     <section class="card card-body">
         <h2 class="card-title mb-lg">{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}</h2>
@@ -89,7 +81,7 @@
            工程里真的没有属性组 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        <form method="post" action="/admin/product-attributes/bulk-delete">
+        <form method="post" action="/admin/product-attributes/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
@@ -176,7 +168,7 @@
     {* 行内删除表单与抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。 *}
     {{range _, a := .Attributes}}
     {{if canDelete}}
-    <form id="attr-del-{{a.ID}}" class="hidden-form" method="post" action="/admin/product-attributes/delete"
+    <form id="attr-del-{{a.ID}}" class="hidden-form" method="post" action="/admin/product-attributes/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
           data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">

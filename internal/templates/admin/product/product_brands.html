@@ -15,9 +15,9 @@
 {{selectedProject := .SelectedProject}}
 {* chain 索引取筛选回显：模板单测可能不带该键，缺键时 chain 给 nil（不中断渲染）。 *}
 {{fKeyword := .["FilterKeyword"]}}
-{{canCreate := isset(.PermSet["product:brand_create"])}}
-{{canUpdate := isset(.PermSet["product:brand_update"])}}
-{{canDelete := isset(.PermSet["product:brand_delete"])}}
+{{canCreate := isset(.Buttons["product.brand_create"])}}
+{{canUpdate := isset(.Buttons["product.brand_update"])}}
+{{canDelete := isset(.Buttons["product.brand_delete"])}}
 {* 富文本字段的资源：Trix 走本地 vendor（零 CDN），rich-editor 是本项目在 Trix 上的扩展。
    样式在这里引一次；trix.umd.js 与扩展入口在文件末尾引（见「资源」段）。 *}
 <link rel="stylesheet" href="/static/vendor/trix/trix.css">
@@ -50,13 +50,8 @@
         </div>
     </header>
 
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_brands.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页）；ListQuery 把筛选上下文
+       随表单 query 提交，回跳时由 shell.BackPath 恢复。 *}
 
     <section class="card list-card">
         {* 筛选栏（审计 D12）：普通 GET 表单（零 JS），提交后条件留在控件上；
@@ -83,7 +78,7 @@
            工程里真的没有品牌 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        <form method="post" action="/admin/product-brands/bulk-delete">
+        <form method="post" action="/admin/product-brands/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
@@ -166,7 +161,7 @@
        提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
     {{range _, b := .Brands}}
     {{if canDelete}}
-    <form id="brand-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/product-brands/delete"
+    <form id="brand-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/product-brands/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
           data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -175,7 +170,7 @@
     {{end}}
     {{if canUpdate}}
     <template id="tpl-brand-edit-{{b.ID}}">
-        <form method="post" action="/admin/product-brands/update">
+        <form method="post" action="/admin/product-brands/update{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{b.ID}}">
@@ -215,7 +210,7 @@
 
     {{if canCreate}}
     <template id="tpl-brand-create">
-        <form method="post" action="/admin/product-brands/create" class="form-stack">
+        <form method="post" action="/admin/product-brands/create{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">

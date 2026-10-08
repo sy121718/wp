@@ -25,7 +25,7 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // mailCrudLeakTokens 回执里不该出现的东西：驱动名、SQL 状态码、表名、语句片段。
@@ -49,6 +49,7 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 	if perms != nil {
 		router.Use(func(c *gin.Context) {
 			c.Set(shell.PermSetKey, perms)
+			c.Set(shell.ButtonsKey, buttonsOf(perms))
 			c.Next()
 		})
 	}
@@ -80,33 +81,40 @@ func mailCrudGet(t *testing.T, router *gin.Engine, path string) *httptest.Respon
 	return rec
 }
 
-// mailCrudRedirect 解出 302 的落点与回执参数（PRG 的全部对外契约都在这里）。
-func mailCrudRedirect(t *testing.T, rec *httptest.ResponseRecorder, label string) (string, url.Values) {
+// mailCrudAssertOK 断言成功提示页，并校验回跳落点是联系人列表。
+//
+// PRG 的对外契约已从「302 + Location 上的 ok=1」换成「200 + 提示页」：结论文案在响应体里，
+// 回跳地址在 meta refresh / 链接上（见 internal/module/mail/inbound/http/mail_jump.go）。
+func mailCrudAssertOK(t *testing.T, rec *httptest.ResponseRecorder, label string) {
 	t.Helper()
-	if rec.Code != http.StatusFound {
-		t.Fatalf("%s：期望 302，实际 %d，正文前 300 字：%s", label, rec.Code, firstN(rec.Body.String(), 300))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s：期望提示页 200，实际 %d，正文前 300 字：%s", label, rec.Code, firstN(rec.Body.String(), 300))
 	}
-	loc := rec.Header().Get("Location")
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatalf("%s：Location %q 无法解析：%v", label, loc, err)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Fatalf("%s：期望成功提示页；正文前 600 字：\n%s", label, firstN(body, 600))
 	}
-	return u.Path, u.Query()
+	if back := mailJumpBack(t, rec); !strings.HasPrefix(back, "/admin/mail/contacts") {
+		t.Fatalf("%s：成功提示应回联系人列表，实际回跳 %q", label, back)
+	}
 }
 
-// mailCrudFacingText 取失败回执文本，并断言没有内部细节漏出去。
-func mailCrudFacingText(t *testing.T, q url.Values, label string) string {
+// mailCrudFailText 断言失败提示页，返回正文（并断言没有内部细节漏出去）。
+func mailCrudFailText(t *testing.T, rec *httptest.ResponseRecorder, label string) string {
 	t.Helper()
-	text := q.Get("err")
-	if text == "" {
-		t.Fatalf("%s：期望失败回执 err=，实际参数 %v", label, q)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s：期望提示页 200，实际 %d，正文前 300 字：%s", label, rec.Code, firstN(rec.Body.String(), 300))
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("%s：期望失败提示页；正文前 600 字：\n%s", label, firstN(body, 600))
 	}
 	for _, token := range mailCrudLeakTokens {
-		if strings.Contains(text, token) {
-			t.Fatalf("%s：回执泄漏了内部细节 %q：%q", label, token, text)
+		if strings.Contains(body, token) {
+			t.Fatalf("%s：提示页泄漏了内部细节 %q", label, token)
 		}
 	}
-	return text
+	return body
 }
 
 // mailCrudFacingContains 回执必须命中候选之一（i18n 未初始化时回的是 key，有词条时是译文，
@@ -135,10 +143,7 @@ func TestMailContactCrudSaveCreatesThenUpdates(t *testing.T) {
 		"id": {"0"}, "email": {"QA.New@Example.invalid"}, "name": {"测试新人"},
 		"tags": {"vip, 华南"}, "status": {"subscribed"}, "consent_source": {"官网表单勾选同意"},
 	})
-	path, q := mailCrudRedirect(t, rec, "新建联系人")
-	if path != "/admin/mail/contacts" || q.Get("ok") != "1" {
-		t.Fatalf("新建回跳应为 /admin/mail/contacts?ok=1，实际 %s?", path+"?"+q.Encode())
-	}
+	mailCrudAssertOK(t, rec, "新建联系人")
 	row, err := m.GetContactByEmail(ctx, "qa.new@example.invalid")
 	if err != nil {
 		t.Fatalf("新建后按邮箱查不到联系人：%v", err)
@@ -161,10 +166,7 @@ func TestMailContactCrudSaveCreatesThenUpdates(t *testing.T) {
 		"id": {strconv.FormatUint(row.ID, 10)}, "email": {"qa.renamed@example.invalid"},
 		"name": {"改名"}, "tags": {"vip"}, "status": {""}, "consent_source": {""},
 	})
-	path, q = mailCrudRedirect(t, rec, "编辑联系人")
-	if path != "/admin/mail/contacts" || q.Get("ok") != "1" {
-		t.Fatalf("编辑回跳应为 /admin/mail/contacts?ok=1，实际 %s?%s", path, q.Encode())
-	}
+	mailCrudAssertOK(t, rec, "编辑联系人")
 	updated, err := m.GetContactByEmail(ctx, "qa.renamed@example.invalid")
 	if err != nil {
 		t.Fatalf("改邮箱后按新邮箱查不到：%v", err)
@@ -201,11 +203,7 @@ func TestMailContactCrudSaveDuplicateEmailIsReadable(t *testing.T) {
 	rec := mailCrudPost(t, router, "/admin/mail/contact/save", url.Values{
 		"id": {"0"}, "email": {"QA.Taken@Example.invalid"}, "name": {"重复"}, "tags": {""}, "status": {""},
 	})
-	path, q := mailCrudRedirect(t, rec, "重复邮箱新建")
-	if path != "/admin/mail/contacts" {
-		t.Fatalf("失败也应回列表页，实际 %q", path)
-	}
-	mailCrudFacingContains(t, mailCrudFacingText(t, q, "重复邮箱新建"), "重复邮箱新建",
+	mailCrudFacingContains(t, mailCrudFailText(t, rec, "重复邮箱新建"), "重复邮箱新建",
 		"contactEmailExists", "该邮箱已存在")
 
 	var n int64
@@ -246,9 +244,7 @@ func TestMailContactCrudEmailChangeRespectsSuppression(t *testing.T) {
 		"id": {strconv.FormatUint(row.ID, 10)}, "email": {"qa.blocked@example.invalid"},
 		"name": {"迁移的人"}, "tags": {""}, "status": {""},
 	})
-	if path, q := mailCrudRedirect(t, rec, "改邮箱撞抑制名单"); path != "/admin/mail/contacts" || q.Get("ok") != "1" {
-		t.Fatalf("期望回 /admin/mail/contacts?ok=1，实际 %s?%s", path, q.Encode())
-	}
+	mailCrudAssertOK(t, rec, "改邮箱撞抑制名单")
 	moved, err := m.GetContactByEmail(ctx, "qa.blocked@example.invalid")
 	if err != nil {
 		t.Fatalf("新邮箱应已落到该行：%v", err)
@@ -293,9 +289,7 @@ func TestMailContactCrudDeleteKeepsSuppression(t *testing.T) {
 	rec := mailCrudPost(t, router, "/admin/mail/contact/delete", url.Values{
 		"id": {strconv.FormatUint(row.ID, 10)},
 	})
-	if path, q := mailCrudRedirect(t, rec, "删除联系人"); path != "/admin/mail/contacts" || q.Get("ok") != "1" {
-		t.Fatalf("期望回 /admin/mail/contacts?ok=1，实际 %s?%s", path, q.Encode())
-	}
+	mailCrudAssertOK(t, rec, "删除联系人")
 	if _, err := m.GetContactByEmail(ctx, "qa.keep@example.invalid"); err == nil {
 		t.Fatal("联系人应已删除")
 	}
@@ -317,11 +311,7 @@ func TestMailContactCrudDeleteWithoutIDIsReadable(t *testing.T) {
 	router := newMailContactCrudRouter(t, f.svc, nil)
 
 	rec := mailCrudPost(t, router, "/admin/mail/contact/delete", url.Values{"id": {""}})
-	path, q := mailCrudRedirect(t, rec, "删除缺 id")
-	if path != "/admin/mail/contacts" {
-		t.Fatalf("失败也应回列表页，实际 %q", path)
-	}
-	mailCrudFacingText(t, q, "删除缺 id")
+	mailCrudFailText(t, rec, "删除缺 id")
 }
 
 // TestMailContactCrudBulkDelete 批量删除：不存在的 id 计入跳过，其余照删。
@@ -359,12 +349,12 @@ func TestMailContactCrudBulkDelete(t *testing.T) {
 			"qa-not-a-number",                    // 非法 id：也应计入跳过
 		},
 	})
-	path, q := mailCrudRedirect(t, rec, "批量删除")
-	if path != "/admin/mail/contacts" {
-		t.Fatalf("批量删除应回列表页，实际 %q", path)
+	body := mailCrudFailText(t, rec, "批量删除")
+	if !strings.Contains(body, "被跳过") {
+		t.Fatalf("批量删除应带回执（已删除 / 跳过）；正文前 600 字：\n%s", firstN(body, 600))
 	}
-	if q.Get("done") == "" && q.Get("err") == "" {
-		t.Fatalf("批量删除应带回执（已删除 / 跳过），实际参数 %v", q)
+	if back := mailJumpBack(t, rec); !strings.HasPrefix(back, "/admin/mail/contacts") {
+		t.Fatalf("批量删除提示应回列表页，实际回跳 %q", back)
 	}
 	if _, err := m.GetContactByEmail(ctx, "qa.bulk1@example.invalid"); err == nil {
 		t.Fatal("qa.bulk1 应已删除")
@@ -406,13 +396,7 @@ func TestMailContactCrudBulkTag(t *testing.T) {
 		"add":    {"VIP2, 华南"},
 		"remove": {"vip"},
 	})
-	path, q := mailCrudRedirect(t, rec, "批量打标签")
-	if path != "/admin/mail/contacts" {
-		t.Fatalf("批量打标签应回列表页，实际 %q", path)
-	}
-	if q.Get("done") == "" && q.Get("err") == "" {
-		t.Fatalf("批量打标签应带回执，实际参数 %v", q)
-	}
+	mailCrudAssertOK(t, rec, "批量打标签")
 
 	got1, err := m.GetContactByEmail(ctx, "qa.tag1@example.invalid")
 	if err != nil {
@@ -451,11 +435,7 @@ func TestMailContactCrudBulkTagEmptyDeltaIsReadable(t *testing.T) {
 	rec := mailCrudPost(t, router, "/admin/mail/contacts/bulk-tag", url.Values{
 		"ids": {strconv.FormatUint(row.ID, 10)}, "add": {""}, "remove": {""},
 	})
-	path, q := mailCrudRedirect(t, rec, "空标签批量打标签")
-	if path != "/admin/mail/contacts" {
-		t.Fatalf("失败也应回列表页，实际 %q", path)
-	}
-	mailCrudFacingContains(t, mailCrudFacingText(t, q, "空标签批量打标签"), "空标签批量打标签",
+	mailCrudFacingContains(t, mailCrudFailText(t, rec, "空标签批量打标签"), "空标签批量打标签",
 		"contactTagEmpty", "标签")
 
 	got, err := m.GetContactByEmail(ctx, "qa.tagempty@example.invalid")
@@ -586,11 +566,7 @@ func TestMailContactCrudSubscribedRequiresConsentSource(t *testing.T) {
 			"id": {"0"}, "email": {"qa.consent-new@example.invalid"}, "name": {"缺来源"},
 			"tags": {""}, "status": {"subscribed"}, "consent_source": {""},
 		})
-		path, q := mailCrudRedirect(t, rec, "新建 subscribed 缺来源")
-		if path != "/admin/mail/contacts" {
-			t.Fatalf("失败也应回列表页，实际 %q", path)
-		}
-		mailCrudFacingContains(t, mailCrudFacingText(t, q, "新建 subscribed 缺来源"), "新建 subscribed 缺来源",
+		mailCrudFacingContains(t, mailCrudFailText(t, rec, "新建 subscribed 缺来源"), "新建 subscribed 缺来源",
 			"consentSourceRequired", "同意来源")
 		if _, err := m.GetContactByEmail(ctx, "qa.consent-new@example.invalid"); err == nil {
 			t.Fatal("被拒绝的新建不该落库")
@@ -609,11 +585,7 @@ func TestMailContactCrudSubscribedRequiresConsentSource(t *testing.T) {
 			"id": {strconv.FormatUint(row.ID, 10)}, "email": {row.Email}, "name": {"待确认"},
 			"tags": {""}, "status": {"subscribed"}, "consent_source": {""},
 		})
-		path, q := mailCrudRedirect(t, rec, "编辑改订阅缺来源")
-		if path != "/admin/mail/contacts" {
-			t.Fatalf("失败也应回列表页，实际 %q", path)
-		}
-		mailCrudFacingContains(t, mailCrudFacingText(t, q, "编辑改订阅缺来源"), "编辑改订阅缺来源",
+		mailCrudFacingContains(t, mailCrudFailText(t, rec, "编辑改订阅缺来源"), "编辑改订阅缺来源",
 			"consentSourceRequired", "同意来源")
 		after, err := m.GetContactByEmail(ctx, "qa.consent-edit@example.invalid")
 		if err != nil {
@@ -633,10 +605,7 @@ func TestMailContactCrudSubscribedRequiresConsentSource(t *testing.T) {
 			"id": {strconv.FormatUint(row.ID, 10)}, "email": {row.Email}, "name": {"待确认"},
 			"tags": {""}, "status": {"subscribed"}, "consent_source": {"2026-10 线下展会，本人书面同意"},
 		})
-		path, q := mailCrudRedirect(t, rec, "编辑改订阅带来源")
-		if path != "/admin/mail/contacts" || q.Get("ok") != "1" {
-			t.Fatalf("带来源应成功，实际 %s?%s", path, q.Encode())
-		}
+		mailCrudAssertOK(t, rec, "编辑改订阅带来源")
 		after, err := m.GetContactByEmail(ctx, "qa.consent-edit@example.invalid")
 		if err != nil {
 			t.Fatal(err)
@@ -669,10 +638,7 @@ func TestMailContactCrudSubscribedRequiresConsentSource(t *testing.T) {
 			"id": {strconv.FormatUint(row.ID, 10)}, "email": {"qa.consent-blocked@example.invalid"},
 			"name": {"迁移"}, "tags": {""}, "status": {"subscribed"}, "consent_source": {""},
 		})
-		path, q := mailCrudRedirect(t, rec, "改邮箱撞抑制名单")
-		if path != "/admin/mail/contacts" || q.Get("ok") != "1" {
-			t.Fatalf("最终状态被降级成终态时不该要求同意来源，实际 %s?%s", path, q.Encode())
-		}
+		mailCrudAssertOK(t, rec, "改邮箱撞抑制名单")
 		after, err := m.GetContactByEmail(ctx, "qa.consent-blocked@example.invalid")
 		if err != nil {
 			t.Fatal(err)
@@ -681,4 +647,14 @@ func TestMailContactCrudSubscribedRequiresConsentSource(t *testing.T) {
 			t.Fatalf("抑制名单里的新邮箱应落到 unsubscribed，实际 %q", after.Status)
 		}
 	})
+}
+
+// buttonsOf 把「权限码集合」转成「按钮码集合」（按钮码 = 权限码的 slug 形式，见迁移 589）。
+// 测试直接给权限码更贴近业务语义；模板读的是按钮码，所以两条都注入。
+func buttonsOf(perms map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(perms))
+	for code := range perms {
+		out[strings.ReplaceAll(code, ":", ".")] = true
+	}
+	return out
 }

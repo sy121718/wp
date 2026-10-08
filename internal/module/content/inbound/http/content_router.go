@@ -1,17 +1,24 @@
 package contenthttp
 
-// content_router.go — content 模块路由自装配（0-A2）。
+// 与原 dashboard 版 router_article.go 的差异只有两处：
+//   - 内容模板页（/admin/content-templates*）归 contenttemplate 模块，不在这里注册；
+//   - 页面注册从「模块 Setup 内部」提到独立导出函数，并落到 content_page_router.go。
+//
+// 权限点一个字符都没动：页面注册见 content_page_router.go（页面 GET 的 Casbin 待补，
+// 见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3），写动作复用既有
+// content:* / page:create / presentation:* 权限点（迁移 033）。
+
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
 
 import (
+	"gorm.io/gorm"
+
 	"go_wp/internal/builder/core"
-	contentcontract "go_wp/internal/module/content/contract"
-	contentmodel "go_wp/internal/module/content/model"
-	contentservice "go_wp/internal/module/content/service"
+	"go_wp/internal/module/content/contract"
+	"go_wp/internal/module/content/model"
+	"go_wp/internal/module/content/service"
 	"go_wp/internal/permission"
 	"go_wp/pkg/i18n"
-
-	"gorm.io/gorm"
 )
 
 // SetupContentRoutes 装配 content 模块路由，返回模块契约。

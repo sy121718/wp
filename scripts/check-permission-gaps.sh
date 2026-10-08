@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# check-permission-gaps.sh — 审计「有路由、但没有对应权限点」的接口。
+# check-permission-gaps.sh — 审计「路由表 ↔ 权限点表」双向同源（docs/02-Y-permission-source-of-truth.md）。
+#
+# 判据两个方向都要过：
+#   A. 每条 /api/* 路由都要有权限点 —— 否则那条路由挂了 Casbin 却没有任何策略能匹配，
+#      **含超管在内全员 403**（072/077/078/079/151 各踩过一次）；
+#   B. 每条权限点的 api_path 都要在路由表里 —— 否则授权界面上勾了它也没用（那个端点不存在），
+#      而它看起来完全正常。
+#
+# 两个方向都是**硬失败**：权限点与路由漂移的两种表现都必须在 CI 就拦住。
 #
 # 为什么需要这条命令：authorizedAPI 组统一挂了 CasbinMiddleware()，它按**实际请求路径**
 # enforce。权限点表里没有对应条目 → 没有任何策略能匹配 → **含超管在内全员 403**，
@@ -19,7 +27,6 @@ cd "$(dirname "$0")/.."
 # 往这里加之前先回答一句：这个接口被任意登录用户随便调，会不会出事？
 EXEMPT=(
     "GET /api/admin/profile"
-    "GET /api/admin/routes"
     "GET /api/captcha"
     "POST /api/admin/login"
     "POST /api/admin/logout"
@@ -51,7 +58,8 @@ DB_NAME="${DB_NAME:-${GOWP_DATABASE_DBNAME:-$(yaml_db dbname)}}"
 
 tmp_routes=$(mktemp); tmp_raw=$(mktemp); tmp_perms=$(mktemp); tmp_exempt=$(mktemp); tmp_gap=$(mktemp)
 tmp_declared=$(mktemp); tmp_codes=$(mktemp); tmp_perm_codes=$(mktemp); tmp_undeclared=$(mktemp)
-trap 'rm -f "$tmp_routes" "$tmp_raw" "$tmp_perms" "$tmp_exempt" "$tmp_gap" "$tmp_declared" "$tmp_codes" "$tmp_perm_codes" "$tmp_undeclared"' EXIT
+tmp_all_routes=$(mktemp); tmp_reachable=$(mktemp)
+trap 'rm -f "$tmp_routes" "$tmp_raw" "$tmp_perms" "$tmp_exempt" "$tmp_gap" "$tmp_declared" "$tmp_codes" "$tmp_perm_codes" "$tmp_undeclared" "$tmp_all_routes" "$tmp_reachable"' EXIT
 
 echo "→ 装配路由表（会初始化一次组件，需要数据库 ${DB_HOST}:${DB_PORT}/${DB_NAME}）…"
 # 装配输出一次拿全：路由行（"METHOD /path"）与声明行（"DECLARED METHOD /path code" /
@@ -71,17 +79,6 @@ PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAM
 
 printf '%s\n' "${EXEMPT[@]}" | sort -u > "$tmp_exempt"
 
-# 兜底 A（审计 SEC-011）：声明式注册采集出来的路由，必须与运行时路由表逐条对上。
-# 这一条理论上不可能失败（声明是注册动作的产物），留在这里是为了让「机制悄悄失效」
-# （例如有人绕过 RouteGroup 直接往授权组上挂 gin 的 GET/POST）当场暴露。
-if [ -s "$tmp_declared" ]; then
-    comm -23 "$tmp_declared" "$tmp_routes" > "$tmp_undeclared" || true
-    if [ -s "$tmp_undeclared" ]; then
-        echo "✗ 声明了权限点、但运行时路由表里不存在的接口（声明式注册被绕过或被改写）：" >&2
-        sed "s/^/    /" "$tmp_undeclared" >&2
-        exit 1
-    fi
-fi
 comm -23 "$tmp_routes" "$tmp_perms" | comm -23 - "$tmp_exempt" > "$tmp_gap" || true
 
 echo "  路由 $(wc -l < "$tmp_routes") 条 / 权限点 $(wc -l < "$tmp_perms") 条 / 已豁免 $(wc -l < "$tmp_exempt") 条"
@@ -99,28 +96,27 @@ fi
 
 echo "✓ 没有缺口"
 
-# —— 兜底 B：库里有、代码没声明的权限点（信息级，不影响退出码）——
-# 声明式注册接管的是「路由 → 权限点」这一侧；库里多出来的条目要么是历史 seed 的残留，
-# 要么是页面路由 / CasbinMiddlewareForPath 按指定路径 enforce 时用的权限点 —— 保留不动，
-# 但把清单摆出来，双轨期的漂移（代码里删了权限点、库里还在）才看得见。
-if [ -s "$tmp_codes" ]; then
-    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
-        "SELECT permission_code FROM sys_permission WHERE status = 1 AND api_path <> '';" \
-        | sed "s/^[[:space:]]*//;s/[[:space:]]*$//" | grep -v "^$" | sort -u > "$tmp_perm_codes"
+# —— 方向 B：权限点行的 api_path 必须在运行时路由表里存在（硬失败）——
+#
+# 为什么必须硬失败：一条指向不存在端点的权限点看起来完全正常（授权界面列得出、勾得上），
+# 但勾了之后那个功能照样打不开（端点不在），而排查的人会先去怀疑角色与策略 —— 方向全错。
+# 实测来源：页面路由搬走后权限点还指着旧路径（mail 的联系人写动作）、
+# 页面路径被当成权限点但页面组不声明（/admin/orders/overview）。
+grep -E "^[A-Z]+ /" "$tmp_raw" | sort -u > "$tmp_all_routes"
+# 判据是「运行时路由 ∪ 已声明的 Casbin 对象」：**页面借用的对象没有对应 API 路由**
+# （如 /api/i18n/save 只是词条页的 Casbin obj、/api/seo/audit 是 seo-audit 路由额外校验的
+# 第二条策略）—— 它们由 permission.Declare 在注册处显式声明，勾了确实有用，
+# 所以不能只拿路由表比。缺了声明的那几条仍然会被抓住（declared 里没有它）。
+cat "$tmp_all_routes" "$tmp_declared" | sort -u > "$tmp_reachable"
+comm -23 "$tmp_perms" "$tmp_reachable" > "$tmp_undeclared" || true
+if [ -s "$tmp_undeclared" ]; then
     echo
-    echo "· 声明式注册覆盖 $(wc -l < "$tmp_codes") 条权限点"
-    # 运行时豁免（挂在 Casbin 组下但显式不声明权限点）与脚本上面的 EXEMPT 名单是**两份**：
-    # 这里的几条是代码里显式写 permission.Exempt 的路由；EXEMPT 里还多出几条根本不经过
-    # 声明式注册的公开路由（如 /api/captcha，它挂在没有 Casbin 的组上）。两份都摆出来便于核对。
-    if grep -qE "^EXEMPT " "$tmp_raw"; then
-        echo "· 代码中显式豁免的路由（permission.Exempt）："
-        grep -E "^EXEMPT " "$tmp_raw" | awk '{print "    "$2" "$3}' | sort -u
-    fi
-    comm -23 "$tmp_perm_codes" "$tmp_codes" > "$tmp_undeclared" || true
-    if [ -s "$tmp_undeclared" ]; then
-        echo "· 库中存在但代码未声明的权限点（历史 seed 或页面路由入口，保留不动）："
-        sed "s/^/    /" "$tmp_undeclared"
-    fi
-else
-    echo "· 未采集到声明清单（装配输出里没有 DECLARED 行）—— 声明式注册可能未生效，请检查 internal/permission 的接入"
+    echo "✗ 以下权限点指向的路径不在运行时路由表里 —— 授权界面勾了也没用（端点不存在）："
+    sed "s/^/    /" "$tmp_undeclared"
+    echo
+    echo "  修法：路由改名/搬走后同步改 sys_permission.api_path 与 sys_casbin_rule.v1（一条迁移），"
+    echo "  或者删掉这条权限点（功能已经下线）。"
+    exit 1
 fi
+
+echo "✓ 权限点与路由双向同源"

@@ -253,8 +253,7 @@ Jet v6 支持**三元表达式与算术**，所以「折叠卡 summary 带计数
 
 ## admin/ 的目录结构：按后端模块分组
 
-`admin/` 下**按后端模块分子目录**，不再平铺（2026-09 重构，判据与实测见
-`docs/02-U-admin-template-restructure.md`）：
+`admin/` 下按后端模块分子目录：
 
 - 根只留 `layout.html` / `login.html` / `dashboard.html` 三个壳页面；
 - `partials/` 只放**跨模块 / 通用**片段（bulk_bar / pagination / toolbar_create / rich_editor / sidebar /

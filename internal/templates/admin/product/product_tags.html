@@ -20,9 +20,9 @@
 {{ruleTypes := .RuleTypes}}
 {* chain 索引取筛选回显：模板单测可能不带该键，缺键时 chain 给 nil（不中断渲染）。 *}
 {{fKeyword := .["FilterKeyword"]}}
-{{canCreate := isset(.PermSet["product:tag_create"])}}
-{{canUpdate := isset(.PermSet["product:tag_update"])}}
-{{canDelete := isset(.PermSet["product:tag_delete"])}}
+{{canCreate := isset(.Buttons["product.tag_create"])}}
+{{canUpdate := isset(.Buttons["product.tag_update"])}}
+{{canDelete := isset(.Buttons["product.tag_delete"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -52,16 +52,9 @@
         </div>
     </header>
 
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_tags.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
-
-    {* 页级重算表单：与上面的「重算本工程全部自动标签」按钮用 form="<id>" 关联。 *}
-    <form id="tag-recalc-all" class="hidden-form" method="post" action="/admin/product-tags/recalc">
+    {* 页级重算表单：与上面的「重算本工程全部自动标签」按钮用 form="<id>" 关联。
+       action 上的 ListQuery 把筛选上下文随 query 提交，提示页回跳时恢复。 *}
+    <form id="tag-recalc-all" class="hidden-form" method="post" action="/admin/product-tags/recalc{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
@@ -93,7 +86,7 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的。
            勾选列只加在标签表上；下面的「命中的商品」是标签 × 商品的关系表（只读展示），
            它的删除入口属于商品，不在这里批量。 *}
-        <form method="post" action="/admin/product-tags/bulk-delete">
+        <form method="post" action="/admin/product-tags/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
@@ -227,14 +220,14 @@
     {* 行内表单与抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。 *}
     {{range _, t := .Tags}}
     {{if t.IsRule}}
-    <form id="tag-recalc-{{t.ID}}" class="hidden-form" method="post" action="/admin/product-tags/recalc">
+    <form id="tag-recalc-{{t.ID}}" class="hidden-form" method="post" action="/admin/product-tags/recalc{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="tagId" value="{{t.ID}}">
     </form>
     {{end}}
     {{if canDelete}}
-    <form id="tag-del-{{t.ID}}" class="hidden-form" method="post" action="/admin/product-tags/delete"
+    <form id="tag-del-{{t.ID}}" class="hidden-form" method="post" action="/admin/product-tags/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
           data-confirm="{{ .["t"]("admin.product_tags.list.deleteConfirm", "删除该标签？商品上的这个标签会被一并解绑。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">

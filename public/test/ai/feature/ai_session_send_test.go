@@ -30,7 +30,7 @@ import (
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // sessionSendBaseURL 全局单播的 documentation 网段字面量（只为过 SSRF 门禁）。
@@ -122,13 +122,10 @@ func TestAISessionSendPageRedirectsAndAppendsTwoEvents(t *testing.T) {
 
 	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=你好")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("状态码 = %d，想要 303；body=%s", rec.Code, rec.Body.String())
-	}
-	loc := rec.Header().Get("Location")
+	assertAIJump(t, rec, true, "消息已发送，模型已回复")
 	// 回跳不再带 id：详情已经是抽屉，那句 id 只会让列表页白查一次详情，而页面并不渲染它。
-	if !strings.HasPrefix(loc, "/admin/ai/sessions?") || strings.Contains(loc, "id=") || !strings.Contains(loc, "done="+aienums.MsgSessionSent) {
-		t.Fatalf("重定向地址不对：%s", loc)
+	if !strings.Contains(rec.Body.String(), `href="/admin/ai/sessions"`) {
+		t.Fatalf("回跳地址不对：%s", rec.Body.String())
 	}
 
 	events, _, err := sess.ListEvents(context.Background(), head.ID, 1, 100)
@@ -193,9 +190,7 @@ func TestAISessionSendWritesCallLog(t *testing.T) {
 
 	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=你好")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("状态码 = %d，想要 303；body=%s", rec.Code, rec.Body.String())
-	}
+	assertAIJump(t, rec, true, "消息已发送，模型已回复")
 
 	row := awaitCallLog(t, db, head.ID)
 	if row.Status != string(aienums.CallStatusOK) {
@@ -230,6 +225,10 @@ func serveSessionsPage(t *testing.T, ph *aihttp.SessionPageHandle) *httptest.Res
 		c.Set(shell.PermSetKey, map[string]bool{
 			"ai:provider_list": true, "ai:session_list": true, "ai:chat": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"ai.provider_list": true, "ai.session_list": true, "ai.chat": true,
+		})
+
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
@@ -257,9 +256,7 @@ func TestAISessionSendPageShowsRecentCalls(t *testing.T) {
 	}
 	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=你好")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("状态码 = %d，想要 303", rec.Code)
-	}
+	assertAIJump(t, rec, true, "消息已发送，模型已回复")
 	// 等流水落库之后再打开页面：异步写意味着「发完立刻查」可能还没写进去，
 	// 而这里要验的是「页面上看得见」，不是「写得够快」。
 	awaitCallLog(t, db, head.ID)
@@ -296,9 +293,7 @@ func TestAISessionSendWritesFailedCallLog(t *testing.T) {
 
 	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=会失败")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("状态码 = %d，想要 303", rec.Code)
-	}
+	assertAIJump(t, rec, false, "")
 
 	row := awaitCallLog(t, db, head.ID)
 	if row.Status != string(aienums.CallStatusError) {
@@ -315,7 +310,7 @@ func TestAISessionSendWritesFailedCallLog(t *testing.T) {
 	}
 }
 
-// TestAISessionSendPageRedirectsErrOnEmptyInput 空输入 → 303，提示以 key 形式挂在 err 槽。
+// TestAISessionSendPageRedirectsErrOnEmptyInput 空输入 → 失败提示页，不落事件。
 func TestAISessionSendPageRedirectsErrOnEmptyInput(t *testing.T) {
 	ph, sess, svc, _ := newSessionSendEnv(t)
 	newSessionSendProvider(t, svc)
@@ -327,12 +322,7 @@ func TestAISessionSendPageRedirectsErrOnEmptyInput(t *testing.T) {
 
 	rec := serveSessionSend(t, ph, "/admin/ai/sessions/send",
 		"csrf_token=test-token&sessionId="+strconv.FormatInt(head.ID, 10)+"&providerKey=sess-page&model=muse&input=")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("状态码 = %d，想要 303", rec.Code)
-	}
-	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "err="+aienums.ErrSessionChatInputRequired) {
-		t.Fatalf("重定向地址没带 err key：%s", loc)
-	}
+	assertAIJump(t, rec, false, "请输入消息内容")
 	if events, _, err := sess.ListEvents(context.Background(), head.ID, 1, 100); err != nil || len(events) != 0 {
 		t.Fatalf("空输入不该落事件：n=%d err=%v", len(events), err)
 	}

@@ -1,7 +1,10 @@
 package analyticshttp
 
-// analytics_router.go — analytics 模块路由自装配。
-//
+// 页面挂在装配层传入的 /admin 组上（Session + CSRF + 权限上下文已由装配层挂好）。
+// 这里没有写操作，因此不挂 CasbinMiddlewareForPath —— 权限点 analytics:view 用在
+// 菜单过滤与只读 API 的 Casbin 策略上。
+// 注意：i18n 文案词条页仍归 dashboard，不随本次搬迁移动。
+
 // 公开打点直挂引擎（与 mail 的追踪端点、cart 的支付回调同一位置与同一理由）：
 // 访客浏览器不会带后台会话与 CSRF token，把它挂进 /api 三层链只会得到 401/403。
 // 后台只读聚合挂 authorizedAPI（Session + CSRF + Casbin，权限点 analytics:view）。
@@ -14,13 +17,12 @@ import (
 
 	"go_wp/config"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/module/analytics/contract"
+	"go_wp/internal/module/analytics/model"
+	"go_wp/internal/module/analytics/service"
+	"go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
-
-	analyticscontract "go_wp/internal/module/analytics/contract"
-	analyticsmodel "go_wp/internal/module/analytics/model"
-	analyticsservice "go_wp/internal/module/analytics/service"
-	projectcontract "go_wp/internal/module/project/contract"
 )
 
 const (

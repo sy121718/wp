@@ -30,7 +30,7 @@ type ShippingPolicyReader interface {
 	//
 	// 工程不存在、存储值非法时返回**零值**（= 不收运费）而不报错：这两种情形下
 	// 「这单该收多少运费」的正确答案就是「不知道」，而编造一个金额比按 0 走更糟 ——
-	// 详见 cart 侧 cart_shipping.go 的失效方向判据。error 只留给基础设施故障，
+	// 详见 cart 侧 cart.go 的失效方向判据。error 只留给基础设施故障，
 	// 由调用方决定失效方向。
 	ShippingPolicyOf(ctx context.Context, projectID string) (policy ShippingPolicy, err error)
 }

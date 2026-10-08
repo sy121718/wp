@@ -179,8 +179,9 @@ var AutomationConditions = []AutomationConditionOption{
 
 // AutomationFormErr* 编辑页的表单校验文案（B5 十二条口径）。
 //
-// 具名而不是按下标访问 AutomationFormMessages：插一条就全错位，而错位的表现是
+// 具名而不是按下标访问：插一条就全错位，而错位的表现是
 // 「第 3 步报的是第 5 步的错」—— 用户照着改永远改不对。
+// 文案由 mailFormErrText 原样回带（校验失败走 200 回显，见 mail_page.go 的 renderAutomationForm）。
 var (
 	AutomationFormErrNameRequired     = LabelPair{"admin.mail.automation_edit.err.name_required", "流程名称不能为空"}
 	AutomationFormErrStepsRequired    = LabelPair{"admin.mail.automation_edit.err.steps_required", "至少要排一个步骤"}
@@ -200,26 +201,11 @@ var (
 	AutomationFormErrAssemble           = LabelPair{"admin.mail.automation_edit.err.assemble_failed", "流程保存失败，请检查各步的填写内容后重试"}
 )
 
-// AutomationFormMessages 上面全部校验文案（读侧白名单按当前语言展开它）。
+// AutomationFormMessages 已随「写动作结论走 shell.RenderJump」删除：
 //
-// 与 mail_err.go 的 mailFormNoticeTemplates 是一对：那份**不是**第二份真源，
-// 只是把这个切片取词后交给 shell.NoticeTemplate 归一。写侧拼译文、读侧只认中文的话，
-// 运营看到的会从「第 3 步：请选择步骤类型」退化成「系统内部错误」。
-var AutomationFormMessages = []LabelPair{
-	AutomationFormErrNameRequired,
-	AutomationFormErrStepsRequired,
-	AutomationFormErrStepTypeRequired,
-	AutomationFormErrStepTemplate,
-	AutomationFormErrStepDelayValue,
-	AutomationFormErrStepDelayUnit,
-	AutomationFormErrStepCondition,
-	AutomationFormErrStepTag,
-	AutomationFormErrStepTargetBackward,
-	AutomationFormErrStepTargetInvalid,
-	AutomationFormErrStepsTooMany,
-	AutomationFormErrEndNotLast,
-	AutomationFormErrAssemble,
-}
+// 它只服务于读侧白名单（mailFormNoticeTemplates 把切片取词后交给 shell.NoticeTemplate 归一），
+// 而结论现在直接渲染进响应体、不再经查询参数回带，读侧判定整批消失。
+// 校验文案的真源仍是上面的 AutomationFormErr* 具名常量（写侧 mailLabel 取词后 Sprintf）。
 
 // 编辑页的控件文案（下拉空选项 / 行内只读标签）。
 //

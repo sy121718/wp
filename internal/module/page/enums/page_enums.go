@@ -79,33 +79,31 @@ const (
 // --- 批量操作的结论文案（页面回执，不是错误白名单）---
 //
 // 与其它模块的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀** ——
-// 这几句是 handler 按计数拼出的整句回执（进 ?done= / ?err=），不是 service 错误，
-// 因此不进 pageFacingKeys（那一张是「业务错误能不能原样透出」的白名单）。
+// 这几句是 handler 按计数拼出的整句回执（经 shell.RenderJump 渲染进整页提示），
+// 不是 service 错误，因此不进错误白名单。
 //
-// 中文原文留在 inbound/http/page_err.go 与 page_redirect_handle.go
-// （与写读共用的那份模板结构体绑在一起），这里只声明 key。
+// 中文原文留在 inbound/http/page_err.go 与 pages_handle.go
+// （与写侧取词用的那份模板结构体绑在一起），这里只声明 key。
 const (
-	// 页面列表批量删除的四个结论分支（四条都是读侧候选，走 ?done= / ?err=）。
+	// 页面列表批量删除的四个结论分支。
 	BulkPageNoneSelected = "page.bulk.pageNoneSelected"
 	BulkPageAllDeleted   = "page.bulk.pageAllDeleted"
 	BulkPageAllSkipped   = "page.bulk.pageAllSkipped"
 	BulkPagePartial      = "page.bulk.pagePartial"
-	// BulkPageMissingID 单条删除时缺少页面 id（?err= 上的参数级提示）。
+	// BulkPageMissingID 单条删除时缺少页面 id（参数级提示）。
 	BulkPageMissingID = "page.bulk.pageMissingID"
 
-	// 页面表单的必填校验回执（handler 自造、进 ?err=，同样**不是** service 错误）。
+	// 页面表单的必填校验回执（handler 自造，同样**不是** service 错误）。
 	//
-	// 中文原文留在 inbound/http/page_err.go 的候选结构体里（写侧取词与读侧候选共用那一份，
-	// 两处各抄一份的下场是词条一改措辞候选就静默失配）。
+	// 中文原文留在 inbound/http/page_err.go 的结构体里（写侧取词的唯一一份）。
 	//
 	// PageFormProjectNameRequired 新建站点工程时名称为空。
 	PageFormProjectNameRequired = "page.form.projectNameRequired"
 	// PageFormPathRequired 新建页面时路径为空。
 	PageFormPathRequired = "page.form.pathRequired"
 
-	// 重定向批量删除的四个结论分支。它走的是 ?ok=bulk&dn=N&sk=M 计数回带
-	//（文案由服务端按计数重拼），伪造面比列表页的 ?done= 少一层，但同样要 key 化 ——
-	// 否则英文界面上这四个分支永远显示中文。
+	// 重定向批量删除的四个结论分支（文案由服务端按计数重拼，进整页提示）——
+	// key 化是为了让英文界面不永远显示中文。
 	BulkRedirectNoneSelected = "page.bulk.redirectNoneSelected"
 	BulkRedirectAllDeleted   = "page.bulk.redirectAllDeleted"
 	BulkRedirectAllSkipped   = "page.bulk.redirectAllSkipped"

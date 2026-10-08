@@ -25,7 +25,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
@@ -49,6 +49,10 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 		c.Set(shell.PermSetKey, map[string]bool{
 			"product:attribute_create": true, "product:attribute_update": true, "product:attribute_delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.attribute_create": true, "product.attribute_update": true, "product.attribute_delete": true,
+		})
+
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
@@ -168,9 +172,7 @@ func TestAttributePageCreateAndSetValues(t *testing.T) {
 	form.Set("values[0].label", "原味")
 	form.Set("values[1].label", "香辣")
 	rec := postForm(engine, "/admin/product-attributes/create", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST create 应 302 回列表，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 
 	list, err := f.svc.ListAttributes(t.Context(), &productdto.ListAttributeReq{ProjectID: f.projectID})
 	if err != nil {
@@ -186,9 +188,7 @@ func TestAttributePageCreateAndSetValues(t *testing.T) {
 	form2.Set("id", list[0].ID)
 	form2.Set("values[0].label", "原味")
 	rec = postForm(engine, "/admin/product-attributes/set-values", form2)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST set-values 应 302 回列表，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	got, err := f.svc.GetAttribute(t.Context(), &productdto.GetAttributeReq{ID: list[0].ID})
 	if err != nil {
 		t.Fatalf("读属性组失败: %v", err)

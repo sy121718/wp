@@ -7,8 +7,11 @@
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
+{* 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath 读回）。
+   可选键一律 isset 包裹：直接渲染模板的单测不带它，缺失键会让整页在此中断。 *}
+{{lq := ""}}{{if isset(.ListQuery)}}{{lq = .ListQuery}}{{end}}
 {* 首列勾选与批量删除：权限点复用单条删除的 /api/datarule/delete（页面侧不新增权限点）。 *}
-{{canDelete := isset(.PermSet["datarule:delete"])}}
+{{canDelete := isset(.Buttons["datarule.delete"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -17,17 +20,14 @@
             </div>
         </div>
         <div class="page-actions">
-            {{include "../partials/toolbar_create.html" map("allowed", isset(.PermSet["datarule:create"]), "tpl", "#tpl-rule-create", "title", tr("admin.datarules.action.create", "新建数据规则"), "label", tr("admin.datarules.action.create_short", "新建规则"))}}
+            {{include "../partials/toolbar_create.html" map("allowed", isset(.Buttons["datarule.create"]), "tpl", "#tpl-rule-create", "title", tr("admin.datarules.action.create", "新建数据规则"), "label", tr("admin.datarules.action.create_short", "新建规则"))}}
         </div>
     </header>
 
-    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
-       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
+       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
     <section class="card list-card">
@@ -44,7 +44,7 @@
            也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1），
            <form> 依旧包住 <table>（批量动作与勾选框必须同属一个 form：提交时浏览器直接带上
            所有勾中的 ids，不需要在提交前注入隐藏域；admin.js 与 theme.css 也依赖这个结构）。 *}
-        <form method="post" action="/admin/datarules/bulk-delete">
+        <form method="post" action="/admin/datarules/bulk-delete{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if canDelete}}{{if len(.Rows) > 0}}
@@ -65,7 +65,7 @@
                     <div class="empty-state">
                         <p class="empty-title">{{ .["t"]("admin.datarules.empty.title", "还没有数据规则") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.datarules.empty", "规则按数据域限制可见的行与字段；建好后在编辑页配置屏蔽字段与过滤条件。") }}</p>
-                        {{if isset(.PermSet["datarule:create"])}}
+                        {{if isset(.Buttons["datarule.create"])}}
                         <div class="empty-actions">
                             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-rule-create" data-drawer-title="{{ .["t"]("admin.datarules.action.create", "新建数据规则") }}">＋ {{ .["t"]("admin.datarules.action.create_short", "新建规则") }}</button>
                         </div>
@@ -76,14 +76,14 @@
                 {{range _, r := .Rows}}
                 <tr data-filter-text="{{r.RuleName}} {{r.Domain}} {{r.Remark}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
-                <td>{{if isset(.PermSet["datarule:update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{r.RuleName}}</button>{{else}}{{r.RuleName}}{{end}}</td>
+                <td>{{if isset(.Buttons["datarule.update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{r.RuleName}}</button>{{else}}{{r.RuleName}}{{end}}</td>
                 <td class="text-mute">{{r.Domain}}</td>
                 <td>{{if r.Status == 1}}<span class="badge badge-success">{{tr("admin.datarules.status.enabled", "启用")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.datarules.status.disabled", "禁用")}}</span>{{end}}</td>
                 <td>{{if r.Remark}}{{r.Remark}}{{end}}</td>
                 <td class="text-mute">{{if r.UpdateTime}}{{r.UpdateTime}}{{else}}{{r.CreateTime}}{{end}}</td>
                 <td class="col-actions">
-                    {{if isset(.PermSet["datarule:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{tr("admin.datarules.action.edit", "编辑")}}</button>{{end}}
-                    {{if isset(.PermSet["datarule:delete"])}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.datarules.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.Buttons["datarule.update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-rule-edit-{{r.ID}}" data-drawer-title="{{tr("admin.datarules.edit.title", "编辑规则：")}}{{r.RuleName}}">{{tr("admin.datarules.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.Buttons["datarule.delete"])}}<button type="submit" form="rule-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.datarules.action.delete", "删除")}}</button>{{end}}
                 </td>
                 </tr>
                 {{end}}
@@ -97,8 +97,8 @@
 
     {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
     {{range _, r := .Rows}}
-    {{if isset(.PermSet["datarule:delete"])}}
-    <form id="rule-del-{{r.ID}}" method="post" action="/admin/datarules/delete" class="hidden-form"
+    {{if isset(.Buttons["datarule.delete"])}}
+    <form id="rule-del-{{r.ID}}" method="post" action="/admin/datarules/delete{{if lq}}?{{lq}}{{end}}" class="hidden-form"
           data-confirm="{{tr("admin.datarules.confirm.delete", "确认删除？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{r.ID}}">
@@ -109,7 +109,7 @@
 
 {* ===== 新建数据规则（抽屉表单模板） ===== *}
 <template id="tpl-rule-create">
-    <form method="post" action="/admin/datarules/create">
+    <form method="post" action="/admin/datarules/create{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.datarules.field.name", "规则名称") }}</label>
@@ -152,7 +152,7 @@
    后端 DatarulesUpdate 在未提交 config 时沿用库中原配置，保存基础字段不会清空规则配置。 *}
 {{range _, r := .Rows}}
 <template id="tpl-rule-edit-{{r.ID}}">
-    <form method="post" action="/admin/datarules/update">
+    <form method="post" action="/admin/datarules/update{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{r.ID}}">
         <div class="form-group">

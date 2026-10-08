@@ -23,11 +23,11 @@
         </div>
     </header>
 
+    {* 提示条只剩一个来源：本页自己的取数失败（工程列表 / 订单摘要）。写动作的结论走
+       shell.RenderJump 渲染整页提示，不再经 ?err= / ?ok= 回带 —— 前缀「上一次操作未完成：」
+       随之退役（它描述的正是那条已被删除的通道）。 *}
     {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.customer_detail.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{.Ok}}</p>
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
     {{end}}
 
     {{if not .HasDetail}}
@@ -155,11 +155,10 @@
             </span>
         </h2>
         {{if .Actionable}}
-        <form method="post" action="/admin/customers/status" class="form-inline">
+        <form method="post" action="/admin/customers/status?id={{.ID}}&project={{.SelectedProject}}" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
             <input type="hidden" name="toStatus" value="{{.NextStatus}}">
-            <input type="hidden" name="project" value="{{.SelectedProject}}">
             {* 动词与后缀两段都走词条：原先前半句是服务端硬编码中文（「停用」），
                英文界面上与 i18n 的 account_suffix 拼起来就是「Disable这个账号」式中英混排。
                现在中英各自成句（zh「停用」+「这个账号」/ en "Disable" + " this account"）。 *}
@@ -173,10 +172,9 @@
         </p>
         {{end}}
         {{if .Locked}}
-        <form method="post" action="/admin/customers/unlock" class="form-inline">
+        <form method="post" action="/admin/customers/unlock?id={{.ID}}&project={{.SelectedProject}}" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
-            <input type="hidden" name="project" value="{{.SelectedProject}}">
             <button type="submit" class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
         </form>
         {{else}}

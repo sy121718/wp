@@ -1,5 +1,6 @@
-// masterdata_router.go — masterdata 模块路由自装配（issue #19）。
-// 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
+// masterdata_router.go — masterdata 模块的 **API** 装配（issue #19）。
+// 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）；
+// 后台「变更记录」页的注册在 masterdata_page_router.go。
 package masterdatahttp
 
 import (
@@ -35,12 +36,8 @@ func SetupMasterDataRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db
 	g.GET("/change/entities", permission.MasterdataChangeEntities, handle.ListEntities)
 	g.GET("/change/entity", permission.MasterdataChangeEntity, handle.EntityTimeline)
 
-	// 后台「变更记录」页（issue #19 验收 3 / 4）：只读页面，没有写表单 ——
-	// 记录由业务模块在写操作里经本模块契约追加，后台不提供「手工补一条」的口子。
-	if pages != nil {
-		changePages := NewMasterDataChangePageHandle(svc, project)
-		pages.GET("/masterdata/changes", changePages.MasterDataChangesPage)
-	}
+	// 后台「变更记录」页：注册在 masterdata_page_router.go（同一入口调用，装配顺序不变）。
+	SetupMasterDataPages(pages, svc, project)
 
 	return svc
 }

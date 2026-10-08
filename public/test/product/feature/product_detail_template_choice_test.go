@@ -33,7 +33,7 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"github.com/google/uuid"
 )
@@ -472,6 +472,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	// 不走鉴权中间件：注入一份全权限，让用例聚焦页面本身的行为。
 	engine.Use(func(c *gin.Context) {
 		c.Set(shell.PermSetKey, map[string]bool{"contenttemplate:create": true})
+		c.Set(shell.ButtonsKey, map[string]bool{"contenttemplate.create": true})
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
@@ -540,9 +541,7 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 		"projectId": {f.projectID}, "productId": {productID},
 		"name": {"节庆详情页"}, "copyFrom": {first.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("新建模板应 302 回页面，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertJumpOK(t, rec)
 	list, err := f.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: "product"})
 	if err != nil {
 		t.Fatalf("列模板失败: %v", err)
@@ -555,9 +554,7 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	rec = postForm(engine, "/admin/products/template/publish", url.Values{
 		"projectId": {f.projectID}, "productId": {productID}, "templateId": {first.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("页面发布应 302 回页面，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertJumpOK(t, rec)
 	if !strings.Contains(activeHTML(t, "/products/summer-shirt"), "活动版式") {
 		t.Fatalf("页面发布应使用选中模板")
 	}
@@ -580,9 +577,7 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	rec = postForm(engine, "/admin/products/template/apply", url.Values{
 		"projectId": {f.projectID}, "productId": {productID}, "templateId": {second.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("切换模板应 302 回页面，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertJumpOK(t, rec)
 	html := activeHTML(t, "/products/summer-shirt")
 	if !strings.Contains(html, "极简版式") || strings.Contains(html, "活动版式") {
 		t.Fatalf("切换后产物应换成第二套模板: %s", html)

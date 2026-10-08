@@ -101,7 +101,7 @@ import (
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"

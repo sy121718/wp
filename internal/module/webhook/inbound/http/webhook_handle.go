@@ -1,4 +1,3 @@
-// webhook_handle.go — webhook 模块 HTTP 承接层：只做参数绑定 / 调 service / 输出响应。
 package webhookhttp
 
 import (
@@ -7,9 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	webhookcontract "go_wp/internal/module/webhook/contract"
-	webhookdto "go_wp/internal/module/webhook/dto"
-	webhookenums "go_wp/internal/module/webhook/enums"
+	"go_wp/internal/module/webhook/contract"
+	"go_wp/internal/module/webhook/dto"
+	"go_wp/internal/module/webhook/enums"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
@@ -123,4 +123,17 @@ func parseID(raw string) uint64 {
 		return 0
 	}
 	return id
+}
+
+// webhookDeliveryTexts 把投递日志里的 last_error 编码按请求语言还原（原地改写）。
+//
+// 历史行不受影响：FormatDeliveryErr 对中文原文 / 出站客户端原文原样返回。
+func webhookDeliveryTexts(lang string, items []*webhookdto.DeliveryItem) {
+	tr := i18n.TranslateFunc(lang)
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		it.LastError = webhookenums.FormatDeliveryErr(tr, it.LastError)
+	}
 }

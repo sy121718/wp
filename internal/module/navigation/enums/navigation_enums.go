@@ -32,8 +32,8 @@ const (
 	//
 	// 后台菜单页与工作台检查器是同一份数据的两个入口，两处同时改此前是静默覆盖
 	//（last-write-wins）。冲突一律**打回给人**：不自动合并、不加后缀、不丢弃其中一方。
-	// 文案后接「：<菜单项标题>」的定位信息（形态与 shell.FacingNotice 的形态 3 对齐：
-	// 页面路径经 ?err= 回带时靠「候选文案 + ：」命中，所以本词条内不带 %s 占位符）。
+	// 文案后接「：<菜单项标题>」的定位信息（页面出口经 enums.SplitFacingDetail 拆出
+	// key 与定位、只翻 key，所以本词条内不带 %s 占位符）。
 	ErrStaleVersion = "ErrStaleVersion"
 	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名 / 文件路径等）对外归口文案。
 	//

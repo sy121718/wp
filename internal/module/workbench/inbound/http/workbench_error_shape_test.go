@@ -27,7 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	workbenchenums "go_wp/internal/module/workbench/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // internalErrorZhText 从 058 种子迁移里读 MsgInternalError 的 zh-CN 词条值。
@@ -86,11 +86,17 @@ func TestPageInternalTextIsControlledText(t *testing.T) {
 // 这个出口在正常环境里不可达（见文件头），所以只能按源码钉形状：这里扫的是**出口实参**，
 // 不是「文件里出现过某个字面量」—— 将来再加 500 出口而忘了走归口，这条会红。
 func TestInspectorHandleInternalErrorExitsAreControlled(t *testing.T) {
-	src, err := os.ReadFile("inspector_handle.go")
+	src, err := os.ReadFile("workbench_page.go")
 	if err != nil {
-		t.Fatalf("读 inspector_handle.go 失败：%v", err)
+		t.Fatalf("读 workbench_page.go 失败：%v", err)
 	}
 	text := string(src)
+	start := strings.Index(text, "func (h *Handle) InspectorPanel")
+	end := strings.Index(text, "func (h *Handle) OutlineTree")
+	if start < 0 || end < start {
+		t.Fatal("检查器方法不在 workbench_page.go 里，守卫扫不到出口")
+	}
+	text = text[start:end]
 	// 只扫非注释行：注释里解释「旧写法为什么是缺陷」时会提旧常量名，那不算泄漏。
 	var code strings.Builder
 	for _, line := range strings.Split(text, "\n") {

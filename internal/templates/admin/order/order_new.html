@@ -10,11 +10,16 @@
      · 提交失败由服务端**就地重渲整页**（200 + 回填 + 出错字段标红），所以模板里
        `aria-invalid` 与 `.form-error` 都读本次提交的字段级错误，而不是只提示在页顶。
 
-   字段级错误的两个键：
-     · .Invalid.<字段名>（map[string]bool，**handler 全量预填**）—— 判要不要标红；
-     · .FieldErrors.<字段名>（map[string]string，同样全量预填）—— 行内错误文案。
-   两者都必须由 handler 预填每一个模板读到的键：Jet 读 map 里缺失的键会让整页渲染失败
-   （渲染器丢弃半成品内容并走 500），而这不是「页面截断」那么容易被看见。 *}
+   回填与字段级错误（本页改造后的写法，其余页面照此）：
+     · 回填一律 `formValue(.Echo, "字段名", .Form.X)` —— .Echo 是本次提交的原始表单
+       （url.Values），.Form 是初始值。判据是「字段在不在提交里」，不是「值是不是空」：
+       用户刻意清空的字段必须回显成空，否则表现是「这个字段删不掉」。
+     · 复选框用 `formChecked(.Echo, "字段名", .Form.X)`：**不勾选就是不提交**，
+       缺键要回落到初始值，不能当成 false（否则失败重渲后用户勾的选项没了）。
+     · 字段级错误只有 **.FieldErrors 一个稀疏 map**（只放真的出错的那几个字段），
+       模板用 **chain 索引** `{{if .FieldErrors["customerEmail"]}}` 读 —— 缺键求值成 nil（falsy），
+       不中断渲染；有文案即标红。于是不再需要「handler 全量预填 + 字段清单 + 双向断言」那三层，
+       字段名只出现在模板里。 *}
 {{extends "../layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
@@ -115,21 +120,21 @@
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="project" value="{{selectedProject}}">
         {* 幂等键：同一份表单重复提交（含失败后刷新重放）只落一单。 *}
-        <input type="hidden" name="requestId" value="{{.FormEchoRequestID}}">
+        <input type="hidden" name="requestId" value="{{formValue(.Echo, "requestId", .Form.RequestID)}}">
         <input type="hidden" name="candidateKeyword" value="{{candidateKeyword}}">
 
         <section class="card card-body">
             <h2>{{ .["t"]("admin.order_new.section.customer", "客户") }}</h2>
             <div class="form-stack">
                 <label class="form-label" for="order-new-email">{{ .["t"]("admin.order_new.field.email", "客户邮箱（必填）") }}</label>
-                <input type="email" class="form-input" id="order-new-email" name="customerEmail" value="{{.FormEchoEmail}}" aria-invalid="{{if .Invalid.customerEmail}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.email", "客户联系用邮箱，如 customer@example.com") }}" autocomplete="off">
-                {{if .Invalid.customerEmail}}<p class="form-error">{{.FieldErrors.customerEmail}}</p>{{end}}
+                <input type="email" class="form-input" id="order-new-email" name="customerEmail" value="{{formValue(.Echo, "customerEmail", .Form.Email)}}" aria-invalid="{{if .FieldErrors["customerEmail"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.email", "客户联系用邮箱，如 customer@example.com") }}" autocomplete="off">
+                {{if .FieldErrors["customerEmail"]}}<p class="form-error">{{.FieldErrors["customerEmail"]}}</p>{{end}}
                 <label class="form-label" for="order-new-name">{{ .["t"]("admin.order_new.field.customer_name", "客户姓名") }}</label>
-                <input type="text" class="form-input" id="order-new-name" name="customerName" value="{{.FormEchoCustomerName}}" aria-invalid="{{if .Invalid.customerName}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.customer_name", "电话单 / 线下单建议填上，列表的「客户」列才认得出人") }}" autocomplete="off">
-                {{if .Invalid.customerName}}<p class="form-error">{{.FieldErrors.customerName}}</p>{{end}}
+                <input type="text" class="form-input" id="order-new-name" name="customerName" value="{{formValue(.Echo, "customerName", .Form.CustomerName)}}" aria-invalid="{{if .FieldErrors["customerName"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.customer_name", "电话单 / 线下单建议填上，列表的「客户」列才认得出人") }}" autocomplete="off">
+                {{if .FieldErrors["customerName"]}}<p class="form-error">{{.FieldErrors["customerName"]}}</p>{{end}}
                 <label class="form-label" for="order-new-phone">{{ .["t"]("admin.order_new.field.customer_phone", "客户电话") }}</label>
-                <input type="text" class="form-input" id="order-new-phone" name="customerPhone" value="{{.FormEchoCustomerPhone}}" aria-invalid="{{if .Invalid.customerPhone}}true{{end}}" autocomplete="off">
-                {{if .Invalid.customerPhone}}<p class="form-error">{{.FieldErrors.customerPhone}}</p>{{end}}
+                <input type="text" class="form-input" id="order-new-phone" name="customerPhone" value="{{formValue(.Echo, "customerPhone", .Form.CustomerPhone)}}" aria-invalid="{{if .FieldErrors["customerPhone"]}}true{{end}}" autocomplete="off">
+                {{if .FieldErrors["customerPhone"]}}<p class="form-error">{{.FieldErrors["customerPhone"]}}</p>{{end}}
             </div>
         </section>
 
@@ -163,7 +168,7 @@
             {{if len(candidates) == 0}}
             <p class="hint">{{ .["t"]("admin.order_new.items.no_candidate", "当前关键词下没有可选的变体 —— 请在上面调整关键词，或先去商品管理启用变体。") }}</p>
             {{end}}
-            {{if .Invalid.items}}<p class="form-error">{{.FieldErrors.items}}</p>{{end}}
+            {{if .FieldErrors["items"]}}<p class="form-error">{{.FieldErrors["items"]}}</p>{{end}}
             <div class="action-row">
             {{if len(rows) < .MaxRows}}
             <a class="btn btn-sm btn-ghost" href="{{.RowAddURL}}">＋ {{ .["t"]("admin.order_new.items.add_row", "添加明细行") }}</a>
@@ -183,26 +188,26 @@
                     {{range .ShipCountries}}<option value="{{.Code}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
                 </select>{{end}}
                 <label class="form-label" for="order-new-ship-name">{{ .["t"]("admin.order_new.field.ship_name", "收货人") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-name" name="shipName" value="{{.FormEchoShipName}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-name" name="shipName" value="{{formValue(.Echo, "shipName", .Form.Ship.Name)}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-phone">{{ .["t"]("admin.order_new.field.ship_phone", "收货人电话") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-phone" name="shipPhone" value="{{.FormEchoShipPhone}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-phone" name="shipPhone" value="{{formValue(.Echo, "shipPhone", .Form.Ship.Phone)}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-province">{{ .["t"]("admin.order_new.field.province", "省") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-province" name="shipProvince" value="{{.FormEchoShipProvince}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-province" name="shipProvince" value="{{formValue(.Echo, "shipProvince", .Form.Ship.Province)}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-city">{{ .["t"]("admin.order_new.field.city", "市") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-city" name="shipCity" value="{{.FormEchoShipCity}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-city" name="shipCity" value="{{formValue(.Echo, "shipCity", .Form.Ship.City)}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-district">{{ .["t"]("admin.order_new.field.district", "区 / 县") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-district" name="shipDistrict" value="{{.FormEchoShipDistrict}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-district" name="shipDistrict" value="{{formValue(.Echo, "shipDistrict", .Form.Ship.District)}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-address">{{ .["t"]("admin.order_new.field.address", "详细地址") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-address" name="shipAddress" value="{{.FormEchoShipAddress}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-address" name="shipAddress" value="{{formValue(.Echo, "shipAddress", .Form.Ship.Address)}}" autocomplete="off">
                 <label class="form-label" for="order-new-ship-zip">{{ .["t"]("admin.order_new.field.zip", "邮编") }}</label>
-                <input type="text" class="form-input" id="order-new-ship-zip" name="shipZip" value="{{.FormEchoShipZip}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-ship-zip" name="shipZip" value="{{formValue(.Echo, "shipZip", .Form.Ship.Zip)}}" autocomplete="off">
             </div>
         </section>
 
         <section class="card card-body">
             <h2>{{ .["t"]("admin.order_new.section.billing", "账单地址") }}</h2>
             <label class="checkbox" for="order-new-same-billing">
-                <input type="checkbox" id="order-new-same-billing" name="sameBilling" value="1" {{if .FormEchoSameBilling}}checked{{end}}>
+                <input type="checkbox" id="order-new-same-billing" name="sameBilling" value="1" {{if formChecked(.Echo, "sameBilling", .Form.SameBilling)}}checked{{end}}>
                 <span>{{ .["t"]("admin.order_new.field.same_billing", "同收货地址（勾选后下面的账单地址不适用，服务端按收货地址落库）") }}</span>
             </label>
             <div class="form-stack">
@@ -212,19 +217,19 @@
                     {{range .BillCountries}}<option value="{{.Code}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
                 </select>{{end}}
                 <label class="form-label" for="order-new-bill-name">{{ .["t"]("admin.order_new.field.bill_name", "账单联系人") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-name" name="billName" value="{{.FormEchoBillName}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-name" name="billName" value="{{formValue(.Echo, "billName", .Form.Bill.Name)}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-phone">{{ .["t"]("admin.order_new.field.bill_phone", "账单电话") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-phone" name="billPhone" value="{{.FormEchoBillPhone}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-phone" name="billPhone" value="{{formValue(.Echo, "billPhone", .Form.Bill.Phone)}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-province">{{ .["t"]("admin.order_new.field.province", "省") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-province" name="billProvince" value="{{.FormEchoBillProvince}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-province" name="billProvince" value="{{formValue(.Echo, "billProvince", .Form.Bill.Province)}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-city">{{ .["t"]("admin.order_new.field.city", "市") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-city" name="billCity" value="{{.FormEchoBillCity}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-city" name="billCity" value="{{formValue(.Echo, "billCity", .Form.Bill.City)}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-district">{{ .["t"]("admin.order_new.field.district", "区 / 县") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-district" name="billDistrict" value="{{.FormEchoBillDistrict}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-district" name="billDistrict" value="{{formValue(.Echo, "billDistrict", .Form.Bill.District)}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-address">{{ .["t"]("admin.order_new.field.address", "详细地址") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-address" name="billAddress" value="{{.FormEchoBillAddress}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-address" name="billAddress" value="{{formValue(.Echo, "billAddress", .Form.Bill.Address)}}" autocomplete="off">
                 <label class="form-label" for="order-new-bill-zip">{{ .["t"]("admin.order_new.field.zip", "邮编") }}</label>
-                <input type="text" class="form-input" id="order-new-bill-zip" name="billZip" value="{{.FormEchoBillZip}}" autocomplete="off">
+                <input type="text" class="form-input" id="order-new-bill-zip" name="billZip" value="{{formValue(.Echo, "billZip", .Form.Bill.Zip)}}" autocomplete="off">
             </div>
         </section>
 
@@ -237,11 +242,11 @@
             </h2>
             <div class="form-stack">
                 <label class="form-label" for="order-new-shipping-total">{{ .["t"]("admin.order_new.field.shipping_total", "运费（单位：分）") }}</label>
-                <input type="number" class="form-input" id="order-new-shipping-total" name="shippingTotal" min="0" value="{{.FormEchoShippingTotal}}" aria-invalid="{{if .Invalid.shippingTotal}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.shipping_total", "如 1500 表示 15.00 元；留空按 0") }}" autocomplete="off">
-                {{if .Invalid.shippingTotal}}<p class="form-error">{{.FieldErrors.shippingTotal}}</p>{{end}}
+                <input type="number" class="form-input" id="order-new-shipping-total" name="shippingTotal" min="0" value="{{formValue(.Echo, "shippingTotal", .Form.ShippingTotal)}}" aria-invalid="{{if .FieldErrors["shippingTotal"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.shipping_total", "如 1500 表示 15.00 元；留空按 0") }}" autocomplete="off">
+                {{if .FieldErrors["shippingTotal"]}}<p class="form-error">{{.FieldErrors["shippingTotal"]}}</p>{{end}}
                 <label class="form-label" for="order-new-coupon">{{ .["t"]("admin.order_new.field.coupon", "优惠码") }}</label>
-                <input type="text" class="form-input" id="order-new-coupon" name="couponCode" value="{{.FormEchoCouponCode}}" aria-invalid="{{if .Invalid.couponCode}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.coupon", "可选；填了以服务端试算为准") }}" autocomplete="off">
-                {{if .Invalid.couponCode}}<p class="form-error">{{.FieldErrors.couponCode}}</p>{{end}}
+                <input type="text" class="form-input" id="order-new-coupon" name="couponCode" value="{{formValue(.Echo, "couponCode", .Form.CouponCode)}}" aria-invalid="{{if .FieldErrors["couponCode"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.coupon", "可选；填了以服务端试算为准") }}" autocomplete="off">
+                {{if .FieldErrors["couponCode"]}}<p class="form-error">{{.FieldErrors["couponCode"]}}</p>{{end}}
             </div>
         </section>
 
@@ -249,24 +254,24 @@
             <h2>{{ .["t"]("admin.order_new.section.payment", "支付与备注") }}</h2>
             <div class="form-stack">
                 <label class="form-label" for="order-new-pay-method">{{ .["t"]("admin.order_new.field.pay_method", "支付方式（码）") }}</label>
-                <input type="text" class="form-input" id="order-new-pay-method" name="paymentMethod" value="{{.FormEchoPaymentMethod}}" aria-invalid="{{if .Invalid.paymentMethod}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.pay_method", "如 paypal") }}" autocomplete="off">
-                {{if .Invalid.paymentMethod}}<p class="form-error">{{.FieldErrors.paymentMethod}}</p>{{end}}
+                <input type="text" class="form-input" id="order-new-pay-method" name="paymentMethod" value="{{formValue(.Echo, "paymentMethod", .Form.PayMethod)}}" aria-invalid="{{if .FieldErrors["paymentMethod"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.pay_method", "如 paypal") }}" autocomplete="off">
+                {{if .FieldErrors["paymentMethod"]}}<p class="form-error">{{.FieldErrors["paymentMethod"]}}</p>{{end}}
                 <label class="form-label" for="order-new-pay-title">{{ .["t"]("admin.order_new.field.pay_title", "支付方式（展示名）") }}</label>
-                <input type="text" class="form-input" id="order-new-pay-title" name="paymentMethodTitle" value="{{.FormEchoPaymentMethodTitle}}" aria-invalid="{{if .Invalid.paymentMethodTitle}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.pay_title", "如 PayPal（模拟）") }}" autocomplete="off">
-                {{if .Invalid.paymentMethodTitle}}<p class="form-error">{{.FieldErrors.paymentMethodTitle}}</p>{{end}}
+                <input type="text" class="form-input" id="order-new-pay-title" name="paymentMethodTitle" value="{{formValue(.Echo, "paymentMethodTitle", .Form.PayTitle)}}" aria-invalid="{{if .FieldErrors["paymentMethodTitle"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.pay_title", "如 PayPal（模拟）") }}" autocomplete="off">
+                {{if .FieldErrors["paymentMethodTitle"]}}<p class="form-error">{{.FieldErrors["paymentMethodTitle"]}}</p>{{end}}
                 <label class="form-label" for="order-new-remark">{{ .["t"]("admin.order_new.field.remark", "客户备注") }}</label>
-                <textarea class="form-input" id="order-new-remark" name="remark" rows="2" maxlength="500" aria-invalid="{{if .Invalid.remark}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.remark", "客户说的话（可选）") }}">{{.FormEchoRemark}}</textarea>
-                {{if .Invalid.remark}}<p class="form-error">{{.FieldErrors.remark}}</p>{{end}}
+                <textarea class="form-input" id="order-new-remark" name="remark" rows="2" maxlength="500" aria-invalid="{{if .FieldErrors["remark"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.remark", "客户说的话（可选）") }}">{{formValue(.Echo, "remark", .Form.Remark)}}</textarea>
+                {{if .FieldErrors["remark"]}}<p class="form-error">{{.FieldErrors["remark"]}}</p>{{end}}
                 <label class="form-label" for="order-new-admin-note">{{ .["t"]("admin.order_new.field.admin_note", "后台备注") }}</label>
-                <textarea class="form-input" id="order-new-admin-note" name="adminNote" rows="2" maxlength="500" aria-invalid="{{if .Invalid.adminNote}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.admin_note", "这单的来龙去脉（如「电话单，客户要求顺丰」）") }}">{{.FormEchoAdminNote}}</textarea>
-                {{if .Invalid.adminNote}}<p class="form-error">{{.FieldErrors.adminNote}}</p>{{end}}
+                <textarea class="form-input" id="order-new-admin-note" name="adminNote" rows="2" maxlength="500" aria-invalid="{{if .FieldErrors["adminNote"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.admin_note", "这单的来龙去脉（如「电话单，客户要求顺丰」）") }}">{{formValue(.Echo, "adminNote", .Form.AdminNote)}}</textarea>
+                {{if .FieldErrors["adminNote"]}}<p class="form-error">{{.FieldErrors["adminNote"]}}</p>{{end}}
             </div>
         </section>
 
         <section class="card card-body">
             <h2>{{ .["t"]("admin.order_new.section.account", "客户账号") }}</h2>
             <label class="checkbox" for="order-new-provision">
-                <input type="checkbox" id="order-new-provision" name="provisionGuestAccount" value="1" {{if .FormEchoProvisionAccount}}checked{{end}}>
+                <input type="checkbox" id="order-new-provision" name="provisionGuestAccount" value="1" {{if formChecked(.Echo, "provisionGuestAccount", .Form.ProvisionAccount)}}checked{{end}}>
                 <span>{{ .["t"]("admin.order_new.field.provision", "同时给客户开号，并把初始密码发到这个邮箱") }}</span>
             </label>
             <p class="hint">{{ .["t"]("admin.order_new.provision.off_hint", "默认不开号：订单照常落库，客户不会收到任何邮件，也无法在账户中心看到这单（需要人工告知进度）。勾选后系统才会给该邮箱建号并发初始密码；邮箱已有账号时只把这单关联过去，绝不会改密码、也不会重复发信。") }}</p>

@@ -69,16 +69,14 @@ func productsPageBody(t *testing.T, engine *gin.Engine, projectID, extra string)
 	return rec.Body.String()
 }
 
-// postRatingForm 提交一个评分表单并断言 302，返回 Location。
+// postRatingForm 提交一个评分表单并断言**成功态提示页**，返回回跳地址。
 //
-// 底层的 postForm（返回 recorder）在商品属性页测试里已有，这里只加「必须重定向」这一层断言。
+// 底层的 postForm（返回 recorder）在商品属性页测试里已有，这里只加「必须成功」这一层断言。
 func postRatingForm(t *testing.T, engine *gin.Engine, path string, form url.Values) string {
 	t.Helper()
 	rec := postForm(engine, path, form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("表单提交应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	return rec.Header().Get("Location")
+	assertJumpOK(t, rec)
+	return jumpBackHref(t, rec)
 }
 
 // TestProductRatingPageShowsDetailAndProjection 页面渲染评分：
@@ -173,13 +171,14 @@ func TestProductRatingPageRejectsInvalidScore(t *testing.T) {
 	ctx := context.Background()
 
 	for _, bad := range []string{"9", "-1", "abc", ""} {
-		loc := postRatingForm(t, engine, "/admin/products/rating/add", url.Values{
+		rec := postForm(engine, "/admin/products/rating/add", url.Values{
 			"projectId": {f.projectID}, "productId": {product}, "score": {bad},
 		})
-		// 失败也留在编辑页（用户就在这一页操作），只把错误经 ?err= 带回。
-		assertEditRedirect(t, loc, f.projectID, product)
-		if !strings.Contains(loc, "err=") {
-			t.Fatalf("非法分值 %q 应带错误回显，实际 %s", bad, loc)
+		// 失败也留在编辑页（用户就在这一页操作），错误走提示页正文。
+		body := assertJumpErr(t, rec)
+		assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product)
+		if strings.TrimSpace(body) == "" {
+			t.Fatalf("非法分值 %q 应带错误回显，body=%s", bad, body)
 		}
 	}
 	res, err := f.products.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: product})

@@ -18,10 +18,7 @@
 {{pagePath := .PagePath}}
 {{csrfToken := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
-{{okKey := .OkKey}}
 {{errKey := .ErrKey}}
-{{done := .Done}}
-{{errText := .ErrText}}
 {{createSource := .["CreateSource"]}}
 {{createTarget := .["CreateTarget"]}}
 {{createFailed := .["CreateFailed"]}}
@@ -69,20 +66,11 @@
                 </div>
             </header>
 
-            {{if okKey != ""}}
-            <p class="badge badge-success" role="status">{{ .["t"](okKey, "操作完成")}}</p>
-            {{end}}
             {{if errKey != "" && (!createFailed || selectedProject == "")}}
             <p class="badge badge-danger" role="alert">{{ .["t"](errKey, "操作未完成")}}</p>
             {{end}}
-            {* 批量删除的结果：全成功走 Done，有跳过走 ErrText —— 两句都由服务端按 dn / sk
-               计数拼装（受控文本 + ParseInt 过的数字），不是从 query 直接回显的自由文本。 *}
-            {{if done != ""}}
-            <p class="badge badge-info" role="status">{{done}}</p>
-            {{end}}
-            {{if errText != ""}}
-            <p class="badge badge-warning" role="alert">{{errText}}</p>
-            {{end}}
+            {* 写动作的结论（成功 / 批量删除计数）走 shell.RenderJump 渲染提示页，
+               不再经 ?ok= / ?err= / ?done= 回显 —— 这里只剩「新建失败后原地回填输入」的 ErrKey。 *}
             {{if len(projects) == 0}}
             <p class="badge badge-warning">{{tr("admin.redirect.no_project", "还没有站点工程 —— 先去页面管理建一个工程，重定向是挂在工程下的。")}}</p>
             {{end}}
@@ -105,7 +93,7 @@
                 <p class="badge badge-danger">{{tr("admin.redirect.loop.notice", "有重定向处在环里（互相指向），访客会撞上「重定向次数过多」：请删除或修正其中一条。")}}</p>
                 {{end}}
 
-                <form method="post" action="/admin/page-redirects/bulk-delete"
+                <form method="post" action="/admin/page-redirects/bulk-delete?project={{selectedProject}}"
                       data-confirm="{{tr("admin.redirect.bulk_delete_confirm", "删除选中的重定向？它们指向的旧路径会直接返回 404（页面与产物不受影响，可以再手动加回来）。")}}" data-confirm-danger>
                     <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                     <input type="hidden" name="project" value="{{selectedProject}}">
@@ -194,14 +182,14 @@
 
             {* 行内表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
             {{range i, it := items}}
-            <form id="redirect-del-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/delete"
+            <form id="redirect-del-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/delete?project={{selectedProject}}"
                   data-confirm="{{tr("admin.redirect.msg.delete_confirm", "删除这条重定向？旧路径将直接返回 404（可以再手动加回来）。")}}" data-confirm-danger>
                 <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <input type="hidden" name="path" value="{{it.SourcePath}}">
             </form>
             {{if it.MultiHop}}
-            <form id="redirect-merge-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/merge">
+            <form id="redirect-merge-{{i}}" class="hidden-form" method="post" action="{{pagePath}}/merge?project={{selectedProject}}">
                 <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                 <input type="hidden" name="project" value="{{selectedProject}}">
                 <input type="hidden" name="path" value="{{it.SourcePath}}">
@@ -230,7 +218,7 @@
                     {{if createFailed}}
                     <p class="badge badge-danger" role="alert">{{tr(errKey, "操作未完成")}}</p>
                     {{end}}
-                    <form method="post" action="{{pagePath}}/create">
+                    <form method="post" action="{{pagePath}}/create?project={{selectedProject}}">
                         <input type="hidden" name="csrf_token" value="{{csrfToken}}">
                         <input type="hidden" name="project" value="{{selectedProject}}">
                         <div class="form-row"><div class="form-group">

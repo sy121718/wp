@@ -5,9 +5,9 @@
    参数用 Jet 内置 map() 构造的单个 context 传入（include 传了 context 之后，被包含模板
    的 . 就是它本身，读不到外层键，需要的值必须显式传进来）：
 
-     allowed  是否渲染（调用点写 isset(.PermSet["<权限码>"])）。
-              必须包 isset：PermSet 是「该用户拥有的权限码」集合，不是全集预填 ——
-              无权限时键不存在，直接 .PermSet["x"] 求值成 nil，而 Jet 的 if 要求 bool，
+     allowed  是否渲染（调用点写 isset(.Buttons["<按钮码>"])，按钮码见 docs/02-Z §4.4）。
+              必须包 isset：Buttons 是「该用户有权触发的按钮码」集合，不是全集预填 ——
+              无权限时键不存在，直接 .Buttons["x"] 求值成 nil，而 Jet 的 if 要求 bool，
               结果是整页渲染中断（状态码仍 200、后半内容整块消失），不是「按钮不显示」。
      tpl      抽屉 <template> 的 id 选择器
      title    data-drawer-title 的文案

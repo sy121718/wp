@@ -1,21 +1,23 @@
 package pluginhttp
 
 // plugin_page_handle.go — 后台插件管理页（/admin/plugins，Jet + HTMX，docs/06）。
-// 自 dashboard 迁回本模块：页面路由（Session + CSRF，无 Casbin——页面路由约定）；
+// 自 dashboard 迁回本模块：页面路由（Session + CSRF）由装配层挂好，注册落点在
+// plugin_page_router.go；页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3），
+// 写动作已按 /api/plugin/* 的权限点 enforce。
 // 数据经 /api/plugin/* 业务 API（三层链）或本模块直调契约（页面渲染需要）。
 //
-// 失败出口统一走 plugin_err.go：303 回本页 + ?err=<受控文案>，**不再** c.String 直出
-// `pluginenums.ErrXxx`（那会让浏览器停在 POST 路径上，只剩一行英文标识符，连导航都没有）。
+// 失败出口统一走 plugin_err.go 的 pluginPageJump：渲染整页提示（文案走响应体），
+// **不再** c.String 直出 `pluginenums.ErrXxx`（那会让浏览器停在 POST 路径上，
+// 只剩一行英文标识符，连导航都没有）。
 // 本模块 enums 的值保持 i18n key 形态（JSON 出口的形态判据要用），页面侧由出口翻译成中文。
 
 import (
 	"io"
 	"net/http"
 
-	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginenums "go_wp/internal/module/plugin/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +29,7 @@ type pluginsPageData struct {
 	Menu    string
 	Plugins []*plugincontract.PluginResp
 	// Error 页面提示条（模板 admin/plugins.html:21-23 的 {{if .Error}}）：
-	// 来源只有两处 —— 写失败回带的 ?err=（经 pluginPageErr 白名单收敛）与列表取数失败的固定文案。
+	// 只剩一处来源 —— 列表取数失败的固定文案。写动作的结论不再回带（走 shell.RenderJump）。
 	Error string
 	// ArtifactPatrol 插件三处产物的对账巡检结果（只读）。见 service/plugin_patrol.go：
 	// 报告孤儿 schema / 缺 schema 的注册行 / 孤儿存储目录 / 目录缺失的注册行四类不一致。
@@ -57,16 +59,15 @@ func emptyPatrol() *plugincontract.PatrolResp {
 // PluginsPage 插件管理列表页。
 func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 	// 标题在这里就翻成当前语言：shell.Prepare 对 data 的 title 做的是 t(title, title)，
-	// 已翻译的值不是 key、会原样返回（见 internal/web/shell/shell.go）。写成裸中文的话，
+	// 已翻译的值不是 key、会原样返回（见 internal/shell/shell.go）。写成裸中文的话，
 	// 英文站点的浏览器标题与面包屑恒为中文。
 	data := &pluginsPageData{
 		Title:          shell.TranslateFor(c)(pluginenums.TitlePlugins, "插件管理"),
 		Menu:           "plugins",
 		ArtifactPatrol: emptyPatrol(),
 	}
-	// 写操作失败会 303 回本页并带 ?err=（见 plugin_err.go）；读侧只认受控文案，未命中落统一提示。
-	// 先当默认值放进去，下面若本页取数也失败则覆盖它 —— 用户当下看到的是列表没加载出来。
-	data.Error = pluginPageErr(c)
+	// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 plugin_err.go），
+	// 所以提示条只由本页取数失败填充 —— 用户当下看到的是列表没加载出来。
 	if h.plugins != nil {
 		list, err := h.plugins.List(c.Request.Context())
 		if err != nil {
@@ -93,31 +94,31 @@ const pluginsUploadMax = 52 << 20
 
 // PluginsInstall 上传安装插件（multipart 表单，HTMX 提交）。
 //
-// 失败一律 303 回列表页 + ?err=（见 plugin_err.go）：直出 c.String 时浏览器停在 POST 路径上，
-// 用户看到的是 `ErrInstallParse` 这样一行英文标识符，而**已选的文件也白选了** ——
+// 失败一律走 pluginPageJump 渲染提示页（见 plugin_err.go）：直出 c.String 时浏览器停在
+// POST 路径上，用户看到的是 `ErrInstallParse` 这样一行英文标识符，而**已选的文件也白选了** ——
 // 所以安装路径的每条文案都经 pluginInstallFailText 补一句「请重新选择文件」。
 func (h *pluginPageHandle) PluginsInstall(c *gin.Context) {
 	if h.plugins == nil {
-		pluginPageFail(c, pluginFacingText(c, pluginNoticeModuleUnwired))
+		pluginPageJump(c, false, pluginFacingText(c, pluginNoticeModuleUnwired))
 		return
 	}
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
-		pluginPageFail(c, pluginInstallFailText(c, pluginFacingText(c, pluginNoticeNoFile)))
+		pluginPageJump(c, false, pluginInstallFailText(c, pluginFacingText(c, pluginNoticeNoFile)))
 		return
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, pluginsUploadMax+1))
 	if err != nil || len(data) == 0 || len(data) > pluginsUploadMax {
-		pluginPageFail(c, pluginInstallFailText(c, pluginFacingText(c, pluginNoticeUnreadable)))
+		pluginPageJump(c, false, pluginInstallFailText(c, pluginFacingText(c, pluginNoticeUnreadable)))
 		return
 	}
 	if _, err := h.plugins.Install(c.Request.Context(), data); err != nil {
 		logger.Scene("plugin").Error(err, "插件安装失败")
-		pluginPageFail(c, pluginInstallFailText(c, pluginErrParam(c, err)))
+		pluginPageJump(c, false, pluginInstallFailText(c, pluginErrParam(c, err)))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, pluginPagePath)
+	pluginPageJump(c, true, shell.TranslateFor(c)(pluginenums.MsgInstallSuccess, "插件安装成功"))
 }
 
 // PluginsToggle 启停插件（表单 POST）。
@@ -126,44 +127,29 @@ func (h *pluginPageHandle) PluginsInstall(c *gin.Context) {
 // 没有导航也没有返回，用户只能按后退键（而 POST 之后的后退会重发表单）。
 func (h *pluginPageHandle) PluginsToggle(c *gin.Context) {
 	if h.plugins == nil {
-		pluginPageFail(c, pluginFacingText(c, pluginNoticeModuleUnwired))
+		pluginPageJump(c, false, pluginFacingText(c, pluginNoticeModuleUnwired))
 		return
 	}
 	req := &plugincontract.ToggleReq{ID: c.PostForm("id"), Enabled: c.PostForm("enabled") == "true" || c.PostForm("enabled") == "on"}
 	if err := h.plugins.Toggle(c.Request.Context(), req); err != nil {
 		logger.Scene("plugin").With("plugin_id", req.ID).Error(err, "插件状态更新失败")
-		pluginPageFail(c, pluginErrParam(c, err))
+		pluginPageJump(c, false, pluginErrParam(c, err))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, pluginPagePath)
+	pluginPageJump(c, true, shell.TranslateFor(c)(pluginenums.MsgToggleSuccess, "插件状态更新成功"))
 }
 
 // PluginsUninstall 卸载插件（表单 POST，二次确认由前端 confirm 承担）。
 func (h *pluginPageHandle) PluginsUninstall(c *gin.Context) {
 	if h.plugins == nil {
-		pluginPageFail(c, pluginFacingText(c, pluginNoticeModuleUnwired))
+		pluginPageJump(c, false, pluginFacingText(c, pluginNoticeModuleUnwired))
 		return
 	}
 	req := &plugincontract.UninstallReq{ID: c.PostForm("id")}
 	if err := h.plugins.Uninstall(c.Request.Context(), req); err != nil {
 		logger.Scene("plugin").With("plugin_id", req.ID).Error(err, "插件卸载失败")
-		pluginPageFail(c, pluginErrParam(c, err))
+		pluginPageJump(c, false, pluginErrParam(c, err))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, pluginPagePath)
-}
-
-// SetupPluginPages 注册插件管理页（/admin 组，中间件链由装配层统一挂好）。
-// 函数名沿用 SetupXxxPages 先例：本包已有 REST 路由的 SetupPluginRoutes，不能同名。
-// 插件安装/卸载/启停为写动作，权限点路径逐字保留（/api/plugin/*，迁移 032 seed）。
-// adminPages 为 nil 时整体跳过。
-func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.PluginService) {
-	if adminPages == nil {
-		return
-	}
-	h := &pluginPageHandle{plugins: plugins}
-	adminPages.GET("/plugins", h.PluginsPage)
-	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), h.PluginsInstall)
-	adminPages.POST("/plugins/toggle", builtin.CasbinMiddlewareForPath("/api/plugin/toggle"), h.PluginsToggle)
-	adminPages.POST("/plugins/uninstall", builtin.CasbinMiddlewareForPath("/api/plugin/uninstall"), h.PluginsUninstall)
+	pluginPageJump(c, true, shell.TranslateFor(c)(pluginenums.MsgUninstallSuccess, "插件已卸载"))
 }

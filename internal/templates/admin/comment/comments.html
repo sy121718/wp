@@ -11,13 +11,14 @@
 
    批量动作走同一个表单：按钮用 name=status value=approved|rejected 带目标状态，
    选中的 id 由 data-bulk-template 的复选组提交（admin.js 的批量条约定）。
-   权限：没有 comment:review 的账号看不到批量按钮（PermSet 由 shell.Prepare 注入）。 *}
+   权限：没有 comment:review 的账号看不到批量按钮（按钮码 comment.review 由 shell.Prepare 注入）。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{{listQuery := .ListQuery}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -43,9 +44,8 @@
         </div>
     </header>
 
-    {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.load_failed", "评论列表暂时读不出来 —— 稍后重试。") }}</p>{{end}}
-    {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.lastError", "上一次操作未完成：") }}{{.Err}}</p>{{end}}
-    {{if .Done != ""}}<p class="badge badge-success" role="status">{{.Done}}</p>{{end}}
+    {* 写动作的结论不在这里：它由提示页在响应体里渲染（shell.RenderJump）。这一条只报「这次没读出来」。 *}
+    {{if .LoadErr != ""}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.load_failed", "评论列表暂时读不出来 —— 稍后重试。") }}{{.LoadErr}}</p>{{end}}
     {{if .NoProject}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.no_project", "还没有站点工程：评论按工程隔离，先建一个工程再看这一页。") }}</p>{{end}}
 
     {* ===== 筛选 ===== *}
@@ -77,13 +77,11 @@
         <div class="card-header">
             <span class="card-title">{{ tr("admin.comment.menu", "评论审核") }}{{if .Total > 0}}（{{.Total}}）{{end}}</span>
         </div>
-        <form method="post" action="/admin/comments/review">
+        {* 回跳上下文走 action 的 query（服务端 shell.BackPath 按白名单读回），不再用隐藏域。 *}
+        <form method="post" action="/admin/comments/review?{{listQuery}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="filterStatus" value="{{.FilterStatus}}">
-            <input type="hidden" name="filterEntityType" value="{{.FilterEntity}}">
-            <input type="hidden" name="filterKeyword" value="{{.FilterKeyword}}">
-            {{if isset(.PermSet["comment:review"])}}
+            {{if isset(.Buttons["comment.review"])}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {{yield bulkBtn(label=tr("admin.comment.action.approve", "通过"), cls="btn btn-sm", name="status", value="approved")}}
                 {{yield bulkBtn(label=tr("admin.comment.action.reject", "驳回"), cls="btn btn-sm", name="status", value="rejected", confirm=tr("admin.comment.confirmReject", "驳回选中的评论？驳回后它们不会出现在公开页面上。"), danger=true)}}
@@ -92,7 +90,7 @@
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide">
                 <thead><tr>
-                    {{if isset(.PermSet["comment:review"])}}<th class="col-check"><span class="sr-only">{{ tr("admin.common.bulk.selectAll", "全选") }}</span></th>{{end}}
+                    {{if isset(.Buttons["comment.review"])}}<th class="col-check"><span class="sr-only">{{ tr("admin.common.bulk.selectAll", "全选") }}</span></th>{{end}}
                     <th>{{ tr("admin.comment.col.body", "内容") }}</th>
                     <th>{{ tr("admin.comment.col.entity", "评论对象") }}</th>
                     <th>{{ tr("admin.comment.col.author", "评论人") }}</th>
@@ -102,7 +100,7 @@
                 </tr></thead>
                 <tbody>
                 {{if len(.Rows) == 0}}
-                <tr><td colspan="{{if isset(.PermSet["comment:review"])}}7{{else}}6{{end}}" class="cell-wrap">
+                <tr><td colspan="{{if isset(.Buttons["comment.review"])}}7{{else}}6{{end}}" class="cell-wrap">
                     <div class="empty-state">
                         <p class="empty-title">{{ tr("admin.comment.empty", "没有符合条件的评论。") }}</p>
                         <p class="empty-desc">{{ tr("admin.comment.empty_hint", "换一个筛选条件，或等访客提交新的评论。") }}</p>
@@ -111,7 +109,7 @@
                 {{end}}
                 {{range _, r := .Rows}}
                 <tr>
-                    {{if isset(.PermSet["comment:review"])}}
+                    {{if isset(.Buttons["comment.review"])}}
                     <td class="col-check"><input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ tr("admin.common.bulk.selectRow", "选择该行") }}"></td>
                     {{end}}
                     <td class="cell-wrap">

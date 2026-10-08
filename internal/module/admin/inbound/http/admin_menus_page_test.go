@@ -201,8 +201,11 @@ func TestMenusUpdateParentKeepsUneditedColumns(t *testing.T) {
 		"permission_codes": {"product:tag_list"},
 	}
 	rec := serveMenusUpdate(t, handle, form)
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("保存应重定向回列表，实际 %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存成功应渲染整页提示（200，见 admin_jump.go），实际 %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("成功提示页应带 data-jump-state=\"ok\"：%s", rec.Body.String())
 	}
 
 	row, err := m.GetByID(ctx, child)

@@ -1,14 +1,17 @@
-// mail_router.go — 邮箱模块路由自装配（issue #37）。
 package mailhttp
+
+// 后台页面的注册与鉴权对象声明在 mail_page_router.go，由本文件的 SetupMailRoutes
+// 在同一位置调用 —— 落点分开、装配顺序不变。pages 为 nil 时跳过页面注册，
+// 与 rg == nil 早退同构：模块装配不因缺少页面组而失败。
 
 import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"go_wp/config"
-	mailcontract "go_wp/internal/module/mail/contract"
+	"go_wp/internal/module/mail/contract"
 	mailmodel "go_wp/internal/module/mail/model"
-	mailservice "go_wp/internal/module/mail/service"
+	"go_wp/internal/module/mail/service"
 	"go_wp/internal/permission"
 )
 

@@ -1,33 +1,45 @@
 {* admin/order/sales_overview.html — 销售概览页（GET /admin/orders/overview）。
 
-   整页只读报表，**没有任何写动作**（无表单 POST、无 csrf 隐藏域）：筛选是普通 GET 表单，
-   图表是服务端渲染的 HTML/CSS 柱图（无 JS 也能用）。
+   整页只读报表：没有任何写动作（无表单 POST、无 csrf 隐藏域），筛选是普通 GET 表单，
+   图表是服务端渲染的 SVG（无 JS 也能用）。
 
-   三条模板侧约定：
-   1. 文案走 `.["t"](key, fallback)`；**已译好的串（卡片 Label / Note、状态快捷项 Label）
-      直接渲染**，不再套一层 t（套了会把译文当 key 再查一次，查不到时回落成 key 本身）。
-   2. 模板不做任何算术：金额、百分比、柱高全部由视图层算好（模板算术出错不报错，只静默画错）。
-   3. `{{range}}` 里 `.` 会被换成当前项，所以循环外先用 `:=` 取好要比较的值
-      （本页是 selectedProject），循环里再引用 —— 否则 `p.ID == .SelectedProject` 取不到。 *}
+   本页的「计算在模板里」写得最满，所以把界线写在这里：
+
+   - **业务数字一律来自 service**（销售额、AOV / ACV、环比基期、月度点位）——
+     这些数错了看不出来，必须有一处可测的真源；
+   - **几何坐标在模板里算**（折线的 x/y、纵轴上限、刻度位置）—— 它们是纯算术，
+     且与标记里的 viewBox 常量绑在一起（把 1000×200 拆到 Go 与模板两处才是漂移源）。
+     几何错了看得见（线歪了/贴边），所以「模板算术静默出错」这条风险在这里是可接受的。
+     判据见 internal/templates/order_sales_trend_render_test.go：固定输入断言折线点位。
+
+   坐标口径（与标记里的 viewBox="0 0 1000 200" 对齐，改一处必须改另一处）：
+     W=1000 H=200 padX=6 padTop=12 axisH=40 → 绘图区高 148
+     xOf(i) = padX + i*(W-2*padX)/(n-1)（只有一个点时居中）
+     yOf(v) = padTop + 148 - v*148/peak（peak<=0 或 v<=0 时贴底）
+   Jet 的除法**会产生小数**（实测 133200/2500=53.28），SVG 坐标接受小数，
+   与旧实现的整数截断相差不到 1px。 *}
 {{extends "../layout.html"}}
 {{block body()}}
-
+{{tr := .["t"]}}
+{{selectedProject := .SelectedProject}}
+{{listQuery := .ListQuery}}
+{{o := .Overview}}
+{{cur := o ? currencyPrefix(o.Currency) : "¥"}}
 <div class="stack sales-page">
     <header class="page-head">
         <div class="page-head-main">
         <div class="page-title-row">
-            <h1 class="page-title">{{ .["t"]("admin.order.sales.title", "销售概览") }}</h1>
+            <h1 class="page-title">{{tr("admin.order.sales.title", "销售概览")}}</h1>
         </div>
-            <p class="page-desc">{{ .["t"]("admin.order.sales.desc", "按区间看销量、客单与客户结构。") }}</p>
+            <p class="page-desc">{{tr("admin.order.sales.desc", "按区间看销量、客单与客户结构。")}}</p>
         </div>
         <div class="page-actions">
-            <a class="btn btn-ghost" href="/admin/orders?project={{.SelectedProject}}">{{ .["t"]("admin.order.sales.toOrders", "订单列表") }}</a>
+            <a class="btn btn-ghost" href="/admin/orders?project={{selectedProject}}">{{tr("admin.order.sales.toOrders", "订单列表")}}</a>
         </div>
     </header>
 
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err，缺键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Err) && .Err != ""}}
-    <p class="badge badge-danger" role="alert">{{.Err}}</p>
+    {{if .LoadErr != ""}}
+    <p class="badge badge-danger" role="alert">{{.LoadErr}}</p>
     {{end}}
 
     {* ===== 筛选条：工程 + 起止日期 + 状态 + 趋势月数 ===== *}
@@ -36,8 +48,7 @@
             <form method="get" action="/admin/orders/overview" class="filter-fields">
                 {{if len(.Projects) > 1}}
                 <div class="filter-field">
-                    <label for="sales-project">{{ .["t"]("admin.orders.field.project", "站点工程") }}</label>
-                    {{selectedProject := .SelectedProject}}
+                    <label for="sales-project">{{tr("admin.orders.field.project", "站点工程")}}</label>
                     <select class="form-select" id="sales-project" name="project">
                         {{range _, p := .Projects}}
                         <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
@@ -45,176 +56,244 @@
                     </select>
                 </div>
                 {{else}}
-                <input type="hidden" name="project" value="{{.SelectedProject}}">
+                <input type="hidden" name="project" value="{{selectedProject}}">
                 {{end}}
                 {* 日期区间走后台统一的时间筛选条（admin/partials/date_filter.html）。
-                   formAction 传空串：本页的外层 <form class="filter-fields"> 已经把
-                   工程 / 状态 / 月数 都包在同一份查询里，组件再渲染一个 form 会嵌套。
-                   提交键与重置键也由组件渲染 —— 否则页面上会出现两个提交按钮
-                   （组件的「筛选」+ 本页原来的「应用」），两个都能提交同一个表单。 *}
+                   formAction 传空串：本页的外层表单已经把工程 / 状态 / 月数包在同一份查询里。 *}
                 {{include "../partials/date_filter.html" map(
                     "t", .["t"],
                     "idPrefix", "sales",
                     "formAction", "",
                     "fromName", "from", "toName", "to",
-                    "from", .Filter.From, "to", .Filter.To,
+                    "from", .FilterFrom, "to", .FilterTo,
                     "presetName", "preset",
-                    "resetHref", "/admin/orders/overview?project=" + .SelectedProject,
+                    "resetHref", "/admin/orders/overview?project=" + selectedProject,
                     "hint", "")}}
                 <div class="filter-field">
-                    <label for="sales-status">{{ .["t"]("admin.order.sales.field.status", "订单状态") }}</label>
+                    <label for="sales-status">{{tr("admin.order.sales.field.status", "订单状态")}}</label>
                     <select class="form-select" id="sales-status" name="status">
-                        {{range _, s := .StatusQuick}}
-                        <option value="{{s.Value}}" {{if s.Active}}selected{{end}}>{{s.Label}}</option>
+                        {{range _, sv := .StatusQuickValues}}
+                        <option value="{{sv}}" {{if sv == .FilterStatus}}selected{{end}}>{{if sv == ""}}{{tr("admin.order.sales.status.all", "全部")}}{{else}}{{ .OrderStatusLabel(sv) }}{{end}}</option>
                         {{end}}
                     </select>
                 </div>
                 <div class="filter-field filter-field-narrow">
-                    <label for="sales-monthly">{{ .["t"]("admin.order.sales.field.monthly", "趋势月数") }}</label>
-                    <input type="number" class="form-input" id="sales-monthly" name="monthly" min="1" max="24" value="{{.Filter.Monthly}}">
+                    <label for="sales-monthly">{{tr("admin.order.sales.field.monthly", "趋势月数")}}</label>
+                    <input type="number" class="form-input" id="sales-monthly" name="monthly" min="1" max="24" value="{{.Monthly}}">
                 </div>
-                {* 提交键与重置键都已在组件里渲染（见上方的 resetHref），这里不再放第二份：
-                   两个提交按钮都能提交同一个表单，而用户看不出该点哪个。 *}
             </form>
             {* 生效区间回显：上界晚于明天会被收敛、跨度 > 366 天会被拒，
                而这两种情况下「筛选没生效」是读的人的第一反应 —— 把实际用的区间摊出来。 *}
-            <p class="filter-hint">{{.From}} ~ {{.To}}{{if .Status}} · {{.Filter.StatusLabel}}{{end}}</p>
+            <p class="filter-hint">{{.FilterFrom}} ~ {{.FilterTo}}{{if .FilterStatus}} · {{if .FilterStatus == ""}}{{else}}{{ .OrderStatusLabel(.FilterStatus) }}{{end}}{{end}}</p>
         </div>
     </section>
 
     {* ===== 装载失败 / 无数据：与「这个区间没有销售」明确区分 ===== *}
-    {{if .LoadFailed}}
+    {{if .LoadErr != ""}}
     <section class="card">
         <div class="card-body">
-            <p class="empty-desc">{{ .["t"]("admin.order.sales.loadFailed", "数据没能读出来，稍后重试。") }}</p>
+            <p class="empty-desc">{{tr("admin.order.sales.loadFailed", "数据没能读出来，稍后重试。")}}</p>
         </div>
     </section>
-    {{else if !.HasData}}
+    {{else if !o || (o.OrderCount == 0 && o.Monthly == 0)}}
     <section class="card">
         <div class="card-body">
-            <p class="empty-desc">{{ .["t"]("admin.order.sales.empty", "这段时间没有计入消费的订单。") }}</p>
-            <p class="empty-hint">{{ .["t"]("admin.order.sales.emptyHint", "换一个区间，或把状态筛成「全部」。") }}</p>
+            <p class="empty-desc">{{tr("admin.order.sales.empty", "这段时间没有计入消费的订单。")}}</p>
+            <p class="empty-hint">{{tr("admin.order.sales.emptyHint", "换一个区间，或把状态筛成「全部」。")}}</p>
         </div>
     </section>
     {{else}}
 
     {* ===== 四张销售卡 =====
-       只有一排、没有分组标题：本页讲的是「卖了多少钱」，四张卡同一个量纲，
-       再分「销售 / 客户」两组反而让人以为这是两块不同的东西。
-
-       口径说明走 `.help-pop` 浮层（标签旁的 ? 按钮），**一律不用 title**：
-       原生 tooltip 的位置与样式由浏览器决定，实测会压住相邻卡片；
-       而 .help-pop 在 admin.js 里已处理 hover / 键盘聚焦 / Esc / 点外部关闭 /
-       贴边自动翻转，也是仓内其它页面的通行形态。 *}
+       顺序是「从一共多少到单笔 / 单人多大」：先总量、后均值是报表的通行读法。
+       口径说明走 .help-pop 浮层（标签旁的 ? 按钮），一律不用原生 title。 *}
     <section class="stat-grid sales-cards">
-        {{range _, c := .Cards}}
-        <div class="card stat-card sales-card accent-{{c.Accent}}">
+        <div class="card stat-card sales-card accent-primary">
             <div class="stat-label">
-                {{c.Label}}
-                {{if c.Note}}
+                {{tr("admin.order.sales.label.orders", "订单数")}}
                 <span class="help">
-                    <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{c.Note}}</span>
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{fill(tr("admin.order.sales.note.orders", "含没有商品明细的订单；共 %d 行明细"), "value", o.ItemRows)}}</span>
                 </span>
-                {{end}}
             </div>
-            <div class="stat-value">{{c.Value}}</div>
+            <div class="stat-value">{{o.OrderCount}}</div>
         </div>
-        {{end}}
+        <div class="card stat-card sales-card accent-success">
+            <div class="stat-label">
+                {{tr("admin.order.sales.label.sales", "销售额")}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.sales", "商品行实付合计，不含退款分摊（净销售额是另一个口径）")}}</span>
+                </span>
+            </div>
+            <div class="stat-value">{{money(o.Sales, cur)}}</div>
+        </div>
+        <div class="card stat-card sales-card accent-info">
+            <div class="stat-label">
+                {{tr("admin.order.sales.label.aov", "平均订单价值")}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.aov", "销售额 ÷ 订单数（AOV）")}}</span>
+                </span>
+            </div>
+            <div class="stat-value">{{money(o.AvgOrderValue, cur)}}</div>
+        </div>
+        <div class="card stat-card sales-card accent-mute">
+            <div class="stat-label">
+                {{tr("admin.order.sales.label.acv", "平均客户价值")}}
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.acv", "销售额 ÷ 下单客户数（ACV）；分母是人不是单，与 AOV 不同")}}</span>
+                </span>
+            </div>
+            <div class="stat-value">{{money(o.AvgCustomerValue, cur)}}</div>
+        </div>
     </section>
 
     {* ===== 环比：只给上一期绝对值 + 变化率（本期值在上面那排卡片里，不重复放两份）===== *}
-    {{if len(.Compare) > 0}}
+    {{if o.Compare}}
     <section class="card">
         <div class="card-header">
-            <h2 class="card-title">{{ .["t"]("admin.order.sales.compare", "环比上一段等长区间") }}</h2>
-            <span class="card-sub">{{ .["t"]("admin.order.sales.compareHint", "上一段与本段同样长，不与自然月对比") }}</span>
+            <h2 class="card-title">{{tr("admin.order.sales.compare", "环比上一段等长区间")}}</h2>
+            <span class="card-sub">{{tr("admin.order.sales.compareHint", "上一段与本段同样长，不与自然月对比")}}</span>
         </div>
         <div class="card-body">
             <table class="table">
                 <thead>
                     <tr>
-                        <th>{{ .["t"]("admin.order.sales.compare.metric", "指标") }}</th>
-                        <th>{{ .["t"]("admin.order.sales.compare.prev", "上一期") }}</th>
-                        <th>{{ .["t"]("admin.order.sales.compare.change", "变化") }}</th>
+                        <th>{{tr("admin.order.sales.compare.metric", "指标")}}</th>
+                        <th>{{tr("admin.order.sales.compare.prev", "上一期")}}</th>
+                        <th>{{tr("admin.order.sales.compare.change", "变化")}}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {{range _, r := .Compare}}
+                    {* 三行都是同一套：上一期绝对值 + 变化率 + 方向。
+                       无基期（上一期为 nil）时说「上期无数据」而不是 0% ——
+                       0% 会让「上期一单没卖」看起来像「持平」；恰好 0 走 flat（不染涨跌色）。 *}
+                    {{cmp := o.Compare}}
                     <tr>
-                        <td>{{r.Label}}</td>
-                        <td>{{r.Prev}}</td>
+                        <td>{{tr("admin.order.sales.label.orders", "订单数")}}</td>
+                        <td>{{cmp.OrderCount}}</td>
+                        {{dir := percentChangeDir(cmp.OrderCountChangePct)}}
                         <td>
-                            {* 无基期（上一期为 0）时**不显示 0%**：那会让「上期一单没卖」
-                               看起来像「持平」。Up 为 nil 时也不画箭头。 *}
-                            {{if r.NoBase}}
-                            <span class="text-mute">{{ .["t"]("admin.order.sales.compare.noBase", "上期无数据") }}</span>
-                            {{else if r.Up}}<span class="is-up">{{r.Change}}</span>
-                            {{else if r.Change == ""}}<span class="text-mute">{{r.Change}}</span>
-                            {{else}}<span class="is-down">{{r.Change}}</span>
-                            {{end}}
+                            {{if dir == "none"}}<span class="text-mute">{{tr("admin.order.sales.compare.noBase", "上期无数据")}}</span>
+                            {{else if dir == "up"}}<span class="is-up">{{percentChange(cmp.OrderCountChangePct, 1)}}</span>
+                            {{else if dir == "down"}}<span class="is-down">{{percentChange(cmp.OrderCountChangePct, 1)}}</span>
+                            {{else}}<span class="text-mute">{{percentChange(cmp.OrderCountChangePct, 1)}}</span>{{end}}
                         </td>
                     </tr>
-                    {{end}}
+                    <tr>
+                        <td>{{tr("admin.order.sales.label.sales", "销售额")}}</td>
+                        <td>{{money(cmp.Sales, cur)}}</td>
+                        {{dir := percentChangeDir(cmp.SalesChangePct)}}
+                        <td>
+                            {{if dir == "none"}}<span class="text-mute">{{tr("admin.order.sales.compare.noBase", "上期无数据")}}</span>
+                            {{else if dir == "up"}}<span class="is-up">{{percentChange(cmp.SalesChangePct, 1)}}</span>
+                            {{else if dir == "down"}}<span class="is-down">{{percentChange(cmp.SalesChangePct, 1)}}</span>
+                            {{else}}<span class="text-mute">{{percentChange(cmp.SalesChangePct, 1)}}</span>{{end}}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{tr("admin.order.sales.label.customers", "下单客户")}}</td>
+                        <td>{{cmp.Customers}}</td>
+                        {{dir := percentChangeDir(cmp.CustomersChangePct)}}
+                        <td>
+                            {{if dir == "none"}}<span class="text-mute">{{tr("admin.order.sales.compare.noBase", "上期无数据")}}</span>
+                            {{else if dir == "up"}}<span class="is-up">{{percentChange(cmp.CustomersChangePct, 1)}}</span>
+                            {{else if dir == "down"}}<span class="is-down">{{percentChange(cmp.CustomersChangePct, 1)}}</span>
+                            {{else}}<span class="text-mute">{{percentChange(cmp.CustomersChangePct, 1)}}</span>{{end}}
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         </div>
     </section>
     {{end}}
 
-    {* ===== 月度趋势（折线图，坐标由服务端算好，无 JS）=====
+    {* ===== 月度趋势（折线图，坐标在模板里算，无 JS）=====
        三条线：新客 / 回头客 / 游客。共用同一个纵轴刻度（单月总额的峰值）——
        各自归一化时每条线单独看都「有起伏」，但三条线的高低关系全错。 *}
-    {{if .Trend.HasData}}
+    {{if len(o.MonthlyPoints) > 0}}
+    {{points := o.MonthlyPoints}}
+    {{n := len(points)}}
+    {{peak := 0}}{{range _, p := points}}{{if p.Sales > peak}}{{peak = p.Sales}}{{end}}{{end}}
+    {{hasSales := false}}{{range _, p := points}}{{if p.Sales > 0}}{{hasSales = true}}{{end}}{{end}}
     <section class="card">
         <div class="card-header">
-            <h2 class="card-title">{{ .["t"]("admin.order.sales.monthly", "月度趋势") }}</h2>
-            <span class="card-sub">{{ .["t"]("admin.order.sales.monthlyHint", "固定回看，与上面的筛选区间无关") }}</span>
+            <h2 class="card-title">{{tr("admin.order.sales.monthly", "月度趋势")}}</h2>
+            <span class="card-sub">{{tr("admin.order.sales.monthlyHint", "固定回看，与上面的筛选区间无关")}}</span>
         </div>
         <div class="card-body">
-            {* 折线而不是柱状：柱状图一个月只有一根、一个高度，三条线（新客 / 回头客 / 游客）
-               只能堆叠或并排 —— 堆叠看不出单条趋势，并排又把一个月切成一簇细柱。
-               坐标全部在服务端算好（.Trend.Series[].Points 就是 polyline 的现成内容），
-               样式与 AI 会话页的 token 趋势共用 .chart-trend-*。 *}
             {* 回看窗口里的月份是补零出来的，所以「有数据」几乎恒真；一笔销售都没有时
                整块画布会是一片空白 —— 那不是「趋势平缓」，是「没数据」。 *}
-            {{if .Trend.HasSales}}
+            {{if !hasSales}}
+            <p class="sales-chart-empty">{{tr("admin.order.sales.monthly.empty", "这段时间没有计入消费的订单，趋势暂无可画的线。")}}</p>
+            {{else}}
+            {* 三条线的点位先算出来（折线用），点位的命中块在下面单独一轮循环里画。 *}
+            {{ptsNew := ""}}{{totNew := 0}}
+            {{ptsReturning := ""}}{{totReturning := 0}}
+            {{ptsGuest := ""}}{{totGuest := 0}}
+            {{range i, p := points}}
+            {{x := (n == 1) ? 500 : (6 + i*(1000-12)/(n-1))}}
+            {{yNew := (peak > 0 && p.NewSales > 0) ? (12 + 148 - p.NewSales*148/peak) : 160}}
+            {{yRet := (peak > 0 && p.ReturningSales > 0) ? (12 + 148 - p.ReturningSales*148/peak) : 160}}
+            {{yGst := (peak > 0 && p.GuestSales > 0) ? (12 + 148 - p.GuestSales*148/peak) : 160}}
+            {{ptsNew = ptsNew + x + "," + yNew + " "}}
+            {{ptsReturning = ptsReturning + x + "," + yRet + " "}}
+            {{ptsGuest = ptsGuest + x + "," + yGst + " "}}
+            {{totNew = totNew + p.NewSales}}{{totReturning = totReturning + p.ReturningSales}}{{totGuest = totGuest + p.GuestSales}}
+            {{end}}
             <div class="chart-trend">
                 <svg class="chart-trend-svg" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img"
-                     aria-label="{{ .["t"]("admin.order.sales.monthly.title", "月度销售额趋势") }} {{.From}} – {{.To}}">
-                    {{range _, s := .Trend.Series}}
-                    <polyline class="chart-trend-line" points="{{s.Points}}" style="stroke: var(--chart-c{{s.Color}})"></polyline>
-                    {{end}}
+                     aria-label="{{tr("admin.order.sales.monthly.title", "月度销售额趋势")}} {{.FilterFrom}} – {{.FilterTo}}">
+                    <polyline class="chart-trend-line" points="{{ptsNew}}" style="stroke: var(--chart-c3)"></polyline>
+                    <polyline class="chart-trend-line" points="{{ptsReturning}}" style="stroke: var(--chart-c1)"></polyline>
+                    <polyline class="chart-trend-line" points="{{ptsGuest}}" style="stroke: var(--chart-c8)"></polyline>
                     {* 每个数据点一个 14×14 的命中块：polyline 只能挂一个 title，
                        整条线一句话说不清「这个月多少」，而这是本页唯一的读数入口。
                        方块而不是圆：viewBox 被 preserveAspectRatio="none" 横向拉伸，
                        圆会变成椭圆（宽高比随容器变），方块只变胖一点。 *}
-                    {{range _, s := .Trend.Series}}
-                    {{range _, d := s.Dots}}
-                    <rect class="chart-trend-point" x="{{d.X}}" y="{{d.Y}}" width="14" height="14" rx="3"
-                          transform="translate(-7,-7)" fill="transparent">
-                        <title>{{d.Title}}</title>
+                    {{range i, p := points}}
+                    {{x := (n == 1) ? 500 : (6 + i*(1000-12)/(n-1))}}
+                    {{yNew := (peak > 0 && p.NewSales > 0) ? (12 + 148 - p.NewSales*148/peak) : 160}}
+                    {{yRet := (peak > 0 && p.ReturningSales > 0) ? (12 + 148 - p.ReturningSales*148/peak) : 160}}
+                    {{yGst := (peak > 0 && p.GuestSales > 0) ? (12 + 148 - p.GuestSales*148/peak) : 160}}
+                    <rect class="chart-trend-point" x="{{x}}" y="{{yNew}}" width="14" height="14" rx="3" transform="translate(-7,-7)" fill="transparent">
+                        <title>{{p.Month}}｜{{tr("admin.order.sales.mix.new", "新客")}} {{money(p.NewSales, cur)}}｜{{tr("admin.order.sales.monthly.total", "合计")}} {{money(p.Sales, cur)}}</title>
+                    </rect>
+                    <rect class="chart-trend-point" x="{{x}}" y="{{yRet}}" width="14" height="14" rx="3" transform="translate(-7,-7)" fill="transparent">
+                        <title>{{p.Month}}｜{{tr("admin.order.sales.mix.returning", "回头客")}} {{money(p.ReturningSales, cur)}}｜{{tr("admin.order.sales.monthly.total", "合计")}} {{money(p.Sales, cur)}}</title>
+                    </rect>
+                    <rect class="chart-trend-point" x="{{x}}" y="{{yGst}}" width="14" height="14" rx="3" transform="translate(-7,-7)" fill="transparent">
+                        <title>{{p.Month}}｜{{tr("admin.order.sales.mix.guest", "游客单")}} {{money(p.GuestSales, cur)}}｜{{tr("admin.order.sales.monthly.total", "合计")}} {{money(p.Sales, cur)}}</title>
                     </rect>
                     {{end}}
-                    {{end}}
-                    {* 横轴刻度：首尾两个贴边会出界，anchor 往内收（服务端给）。 *}
-                    {{range _, a := .Trend.Axis}}
-                    <text class="chart-trend-axis" x="{{a.X}}" y="190" text-anchor="{{a.Anchor}}">{{a.Label}}</text>
+                    {* 横轴刻度：首尾两个贴边会出界，anchor 往内收。 *}
+                    {{range i, p := points}}
+                    {{x := (n == 1) ? 500 : (6 + i*(1000-12)/(n-1))}}
+                    {{anchor := (i == 0) ? "start" : ((i == n-1) ? "end" : "middle")}}
+                    <text class="chart-trend-axis" x="{{x}}" y="190" text-anchor="{{anchor}}">{{p.Month}}</text>
                     {{end}}
                 </svg>
             </div>
             <ul class="chart-trend-legend">
-                {{range _, s := .Trend.Series}}
                 <li class="chart-trend-legend-item">
-                    <span class="chart-trend-swatch" style="background: var(--chart-c{{s.Color}})"></span>
-                    <span class="chart-trend-legend-label">{{s.Label}}</span>
-                    <span class="chart-trend-legend-value">{{s.Total}}</span>
+                    <span class="chart-trend-swatch" style="background: var(--chart-c3)"></span>
+                    <span class="chart-trend-legend-label">{{tr("admin.order.sales.mix.new", "新客")}}</span>
+                    <span class="chart-trend-legend-value">{{money(totNew, cur)}}</span>
                 </li>
-                {{end}}
-                <li class="chart-trend-legend-note">{{ .["t"]("admin.order.sales.mix.hint", "新客 = 该客户首单落在本自然月（与查询区间无关）") }}</li>
+                <li class="chart-trend-legend-item">
+                    <span class="chart-trend-swatch" style="background: var(--chart-c1)"></span>
+                    <span class="chart-trend-legend-label">{{tr("admin.order.sales.mix.returning", "回头客")}}</span>
+                    <span class="chart-trend-legend-value">{{money(totReturning, cur)}}</span>
+                </li>
+                <li class="chart-trend-legend-item">
+                    <span class="chart-trend-swatch" style="background: var(--chart-c8)"></span>
+                    <span class="chart-trend-legend-label">{{tr("admin.order.sales.mix.guest", "游客单")}}</span>
+                    <span class="chart-trend-legend-value">{{money(totGuest, cur)}}</span>
+                </li>
+                <li class="chart-trend-legend-note">{{tr("admin.order.sales.mix.hint", "新客 = 该客户首单落在本自然月（与查询区间无关）")}}</li>
             </ul>
-            {{else}}
-            <p class="sales-chart-empty">{{ .["t"]("admin.order.sales.monthly.empty", "这段时间没有计入消费的订单，趋势暂无可画的线。") }}</p>
             {{end}}
         </div>
     </section>

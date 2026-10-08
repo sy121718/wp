@@ -1,21 +1,19 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{entry := .I18nEdit}}
-{{back := .I18nEditBack}}
+{* 列表筛选由服务端拼进表单 action 的 query（POST 回来由 shell.BackPath 读回）：
+   原先靠 _keyword/_lang/_category/_page 四个隐藏域塞整串返回上下文，已删除。 *}
+{{lq := ""}}{{if isset(.I18nListQuery)}}{{lq = .I18nListQuery}}{{end}}
 {{value := entry.Value}}{{category := entry.Category}}{{remark := entry.Remark}}
 {{if isset(.I18nEditEcho)}}
 {{value = .I18nEditEcho.value}}{{category = .I18nEditEcho.category}}{{remark = .I18nEditEcho.remark}}
 {{end}}
 <div data-drawer-fragment>
     {{if isset(.I18nEditErr)}}{{if .I18nEditErr != ""}}<p class="badge badge-warning" role="alert">{{.I18nEditErr}}</p>{{end}}{{end}}
-    <form method="post" action="/admin/i18n/update" hx-post="/admin/i18n/update" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+    <form method="post" action="/admin/i18n/update{{if lq}}?{{lq}}{{end}}" hx-post="/admin/i18n/update{{if lq}}?{{lq}}{{end}}" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="key" value="{{entry.Key}}">
         <input type="hidden" name="lang" value="{{entry.Lang}}">
-        <input type="hidden" name="_keyword" value="{{back._keyword}}">
-        <input type="hidden" name="_lang" value="{{back._lang}}">
-        <input type="hidden" name="_category" value="{{back._category}}">
-        <input type="hidden" name="_page" value="{{back._page}}">
         <div class="form-grid">
             <div class="form-field">
                 <label class="form-label">key</label>

@@ -41,6 +41,9 @@
     .hx-progress > span { width: 100%; animation: none; opacity: .5; }
 }
 </style>
+{* 页面可选的 head 追加点（默认空）：提示页用它挂 meta refresh 自动跳转，
+   其它页面不需要就不覆盖 —— 空块不输出任何字节。 *}
+{{block head()}}{{end}}
 </head>
 {* hx-headers 全局注入 CSRF token（HTMX 2.0 属性继承，页面内所有 hx-post 自动携带 X-CSRF-Token）。
    渲染数据未传 csrf_token 时输出空串（chain 索引写法对 map 缺 key 安全，不会渲染报错），

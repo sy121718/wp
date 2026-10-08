@@ -75,7 +75,7 @@ var knownCrossModuleServiceModelDebt = []struct {
 	{
 		from: "presentation",
 		deny: "go_wp/internal/module/contenttemplate/model",
-		note: "presentation/service/presentation_archive.go 直接 import contenttemplate/model（应经 contenttemplate/contract）；审计 CQ 系列范围外，2026-09 由本测试检出",
+		note: "presentation/service/presentation_instance.go 直接 import contenttemplate/model（应经 contenttemplate/contract）；审计 CQ 系列范围外，2026-09 由本测试检出",
 	},
 }
 

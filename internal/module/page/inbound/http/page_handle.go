@@ -8,7 +8,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 

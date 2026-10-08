@@ -237,12 +237,8 @@ func TestAdminRolePermissionsSaveParsesMenuIDs(t *testing.T) {
 
 	recorder := postRolePermissions(t, engine, form, false)
 
-	if recorder.Code != http.StatusSeeOther {
-		t.Fatalf("保存应 303，实际 %d，体: %s", recorder.Code, recorder.Body.String())
-	}
-	// 成功回角色列表：抽屉形态下没有可回的独立分配页。
-	if loc := recorder.Header().Get("Location"); loc != "/admin/roles" {
-		t.Fatalf("保存后跳转目标不符: %q", loc)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("保存成功应渲染成功提示页（200），实际 %d，体: %s", recorder.Code, recorder.Body.String())
 	}
 	if svc.lastMenuSave == nil {
 		t.Fatal("没有调用服务层")
@@ -276,8 +272,8 @@ func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 
 	recorder := postRolePermissions(t, engine, form, false)
 
-	if recorder.Code != http.StatusSeeOther {
-		t.Fatalf("空提交应 303，实际 %d", recorder.Code)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("空提交应渲染成功提示页（200），实际 %d，体: %s", recorder.Code, recorder.Body.String())
 	}
 	if svc.lastMenuSave == nil {
 		t.Fatal("空提交也必须调用服务层（否则清空权限无从生效）")
@@ -287,9 +283,9 @@ func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 	}
 }
 
-// TestAdminRolePermissionsSaveRejectsMissingRoleID 缺 role_id 时 303 回列表 + ?err=，不落库。
+// TestAdminRolePermissionsSaveRejectsMissingRoleID 缺 role_id 时渲染失败提示页，不落库。
 //
-// 页面写失败从 400 + JSON 改为 303 + `?err=`（见 admin_page_write_failed_test.go 文件头）。
+// 页面写失败从 400 + JSON 改为「整页提示」（见 admin_page_write_failed_test.go 文件头）。
 // **核心意图不变**：参数不合法时绝不调用服务层（不落库）。
 func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
 	svc := &fakeRoleService{}
@@ -297,19 +293,8 @@ func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
 
 	recorder := postRolePermissions(t, engine, url.Values{"menu_ids": {"3"}}, false)
 
-	if recorder.Code != http.StatusSeeOther {
-		t.Fatalf("缺 role_id 应 303 回列表页，实际 %d（body=%s）", recorder.Code, recorder.Body.String())
-	}
-	loc := recorder.Header().Get("Location")
-	u, err := url.Parse(loc)
-	if err != nil {
-		t.Fatalf("回跳地址无法解析: %q", loc)
-	}
-	if u.Path != "/admin/roles" {
-		t.Fatalf("缺 role_id 应回角色列表（没有可返回的抽屉），实际 %q", loc)
-	}
-	if errText := u.Query().Get("err"); errText == "" {
-		t.Fatalf("回跳必须带 ?err= 说明原因（否则是静默失败）：Location=%q", loc)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-jump-state="err"`) {
+		t.Fatalf("缺 role_id 应渲染失败提示页（200），实际 %d（body=%s）", recorder.Code, recorder.Body.String())
 	}
 	if svc.lastMenuSave != nil {
 		t.Fatal("缺 role_id 不应调用服务层")
@@ -331,7 +316,7 @@ func TestAdminRolePermissionsSaveMissingRoleIDHtmxStillRedirects(t *testing.T) {
 		t.Fatalf("htmx 分支应 200 + HX-Redirect，实际 %d", recorder.Code)
 	}
 	loc := recorder.Header().Get("HX-Redirect")
-	if !strings.HasPrefix(loc, "/admin/roles?err=") {
+	if loc != "/admin/roles" {
 		t.Fatalf("htmx 回跳目标不符: %q", loc)
 	}
 	if svc.lastMenuSave != nil {
@@ -392,7 +377,7 @@ func TestAdminRolePermissionsSaveHtmxFailureFallsBackToList(t *testing.T) {
 		t.Fatalf("htmx 分支应 200 + HX-Redirect，实际 %d", recorder.Code)
 	}
 	loc := recorder.Header().Get("HX-Redirect")
-	if !strings.HasPrefix(loc, "/admin/roles?err=") {
+	if loc != "/admin/roles" {
 		t.Fatalf("htmx 回跳目标不符: %q", loc)
 	}
 	if strings.Contains(recorder.Body.String(), "没有可分配的菜单") {

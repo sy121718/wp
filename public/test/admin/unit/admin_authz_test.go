@@ -9,93 +9,74 @@ import (
 	pkgcasbin "go_wp/pkg/casbin"
 )
 
-// TestAdminRoutesBuild 用户动态路由：角色继承 + 直接权限合并，目录自动补齐。
-func TestAdminRoutesBuild(t *testing.T) {
+// TestEffectivePermissionCodesMergesRoleAndDirect 有效权限码：角色继承 + 直接权限合并去重。
+//
+// 这条判据原先挂在已删除的 GET /api/admin/routes（Vue 时代的动态路由投影）上。
+// 那个端点的唯一真实用途是「算有效权限码」，而这件事现在由 EffectivePermissionCodes
+// 独立承担（侧栏菜单过滤与按钮显隐都读它）—— 判据随之搬到函数上，覆盖不减。
+func TestEffectivePermissionCodesMergesRoleAndDirect(t *testing.T) {
 	e := setupEnv(t)
 	ctx := context.Background()
 
-	// 数据：目录(1) → 菜单A(code_a)；按钮(code_btn) 挂在菜单A下
-	menuCode := "routes_menu_" + uniq("")
-	btnCode := "routes_btn_" + uniq("")
-	createPerm(t, e, menuCode, "/api/routes")
-	createPerm(t, e, btnCode, "/api/btn")
+	menuCode := "eff_menu_" + uniq("")
+	btnCode := "eff_btn_" + uniq("")
+	createPerm(t, e, menuCode, "/api/eff_menu")
+	createPerm(t, e, btnCode, "/api/eff_btn")
 
 	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: "路由目录", Type: adminmodel.MenuTypeDirectory, Path: "/routes", Status: 1, SortOrder: 1,
-	}); err != nil {
-		t.Fatalf("创建目录失败: %v", err)
-	}
-	var dir adminmodel.MenuEntity
-	if err := e.db.Where("title = ?", "路由目录").First(&dir).Error; err != nil {
-		t.Fatalf("查询目录失败: %v", err)
-	}
-	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: "菜单A", Type: adminmodel.MenuTypeMenu, Path: "/routes/a",
-		PermissionCodes: []string{menuCode}, ParentID: dir.ID, Status: 1,
+		Title: "有效码菜单", Type: adminmodel.MenuTypeMenu, Path: "/eff/a",
+		PermissionCodes: []string{menuCode}, Status: 1,
 	}); err != nil {
 		t.Fatalf("创建菜单失败: %v", err)
 	}
-	var menuA adminmodel.MenuEntity
-	if err := e.db.Where("title = ?", "菜单A").First(&menuA).Error; err != nil {
+	var menu adminmodel.MenuEntity
+	if err := e.db.Where("title = ?", "有效码菜单").First(&menu).Error; err != nil {
 		t.Fatalf("查询菜单失败: %v", err)
 	}
-	if err := e.svc.MenuCreate(ctx, &admindto.MenuCreateReq{
-		Title: "按钮X", Type: adminmodel.MenuTypeButton, Path: "",
-		PermissionCodes: []string{btnCode}, ParentID: menuA.ID, Status: 1,
-	}); err != nil {
-		t.Fatalf("创建按钮失败: %v", err)
-	}
 
-	// 角色绑定菜单A权限 + 用户绑定角色
-	roleCode := "routes_role_" + uniq("")
-	roleID := createRole(t, e, roleCode, "路由角色")
-	_, err := e.svc.RoleMenuSave(ctx, &admindto.RoleMenuSaveReq{RoleID: roleID, MenuIDs: []uint64{menuA.ID}})
-	wantErr(t, err, "")
-	userID := uint64(4242)
+	// 角色绑定菜单权限 + 用户绑定角色（继承侧）
+	roleCode := "eff_role_" + uniq("")
+	roleID := createRole(t, e, roleCode, "有效码角色")
+	if _, err := e.svc.RoleMenuSave(ctx, &admindto.RoleMenuSaveReq{RoleID: roleID, MenuIDs: []uint64{menu.ID}}); err != nil {
+		t.Fatalf("角色授权失败: %v", err)
+	}
+	userID := uint64(5252)
 	if err := pkgcasbin.ReplaceUserRoleBindings(idStr(userID), []string{roleCode}); err != nil {
 		t.Fatalf("绑定角色失败: %v", err)
 	}
-	// 用户直接权限：按钮
-	if err := pkgcasbin.ReplaceUserPermissions(idStr(userID), [][3]string{{"/api/btn", "GET", btnCode}}); err != nil {
+	// 用户直接权限（直接侧）
+	if err := pkgcasbin.ReplaceUserPermissions(idStr(userID), [][3]string{{"/api/eff_btn", "GET", btnCode}}); err != nil {
 		t.Fatalf("写入用户直接权限失败: %v", err)
 	}
 
-	res, err := e.svc.AdminRoutes(ctx, userID, "zh-CN")
+	codes, err := e.svc.EffectivePermissionCodes(ctx, userID)
 	wantErr(t, err, "")
-	// 这里不再断言「路由树恰好 1 个根」：库里的菜单由迁移 seed（如 229 从「商品与库存」
-	// 拆出的一级目录「库存」），根的数量由环境数据决定，不是本测试的契约 ——
-	// 按标题定位本测试造的那个目录。本测试守的是「按授权过滤」：
-	// 本测试的目录要出现、子结构正确，未被授权的节点不出现（见下面的子节点与 auths 断言）。
-	root := findRouteByTitle(res.Routes, "路由目录")
-	if root == nil {
-		t.Fatalf("授权目录应出现在路由树里: %+v", res.Routes)
+	got := map[string]bool{}
+	for _, c := range codes {
+		got[c] = true
 	}
-	if len(root.Children) != 1 {
-		t.Fatalf("目录下应有菜单A: %d", len(root.Children))
+	if !got[menuCode] {
+		t.Fatalf("角色继承的码应出现在有效权限集里: %v", codes)
 	}
-	menuNode := root.Children[0]
-	if menuNode.Path != "/routes/a" {
-		t.Fatalf("菜单路径不符: %s", menuNode.Path)
+	if !got[btnCode] {
+		t.Fatalf("用户直接授权的码应出现在有效权限集里: %v", codes)
 	}
-	// 按钮权限应进入菜单节点的 auths
-	foundBtn := false
-	for _, auth := range menuNode.Meta.Auths {
-		if auth == btnCode {
-			foundBtn = true
+	// 去重：两个来源都授权同一个码时只出现一次
+	if err := pkgcasbin.ReplaceUserPermissions(idStr(userID), [][3]string{
+		{"/api/eff_btn", "GET", btnCode}, {"/api/eff_menu", "GET", menuCode},
+	}); err != nil {
+		t.Fatalf("写入重复直接权限失败: %v", err)
+	}
+	codes2, err := e.svc.EffectivePermissionCodes(ctx, userID)
+	wantErr(t, err, "")
+	seen := 0
+	for _, c := range codes2 {
+		if c == menuCode {
+			seen++
 		}
 	}
-	if !foundBtn {
-		t.Fatalf("按钮权限应出现在菜单 auths: %v", menuNode.Meta.Auths)
-	}
-
-	hasMenu := false
-	for _, code := range res.PermissionCodes {
-		if code == menuCode {
-			hasMenu = true
-		}
-	}
-	if !hasMenu {
-		t.Fatalf("PermissionCodes 应含菜单权限: %v", res.PermissionCodes)
+	if seen != 1 {
+		t.Fatalf("角色与直接权限重叠时应去重，实际出现 %d 次: %v", seen, codes2)
 	}
 }
 
@@ -225,17 +206,6 @@ func TestBuildAuthorizedTree(t *testing.T) {
 	if hasMenuNodeTitle(tree, "未授权菜单") {
 		t.Fatalf("未授权菜单不应出现在授权树里: %+v", tree)
 	}
-}
-
-// findRouteByTitle 在动态路由树里按标题定位节点。
-// 测试库带着迁移 seed 的菜单数据，结果里不止测试自己造的那一个根，所以按标题找而非取下标。
-func findRouteByTitle(routes []admindto.RouteNode, title string) *admindto.RouteNode {
-	for i := range routes {
-		if routes[i].Meta.Title == title {
-			return &routes[i]
-		}
-	}
-	return nil
 }
 
 // findMenuNodeByTitle 在菜单树里按标题定位节点（同上：不依赖「根只有一个」）。

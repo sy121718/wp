@@ -21,6 +21,12 @@ const (
 	ErrBlockInUse            = "ErrBlockInUse"            // 全局块已被页面或主题引用，无法删除或切换为一次性复制；可强制删除（引用页面将退化为无该块）
 
 	MsgBlockCloned = "MsgBlockCloned" // 已复制块内容，副本与源块独立
+	// MsgBlockCreated 新建块成功后的提示页正文（成功后自动进工作台编辑内容）。
+	//
+	// 新增常量按未迁形态取值（值 = 常量名）：它同时被 pkg/response 的形态判据接受，
+	// 也不在 check-i18n-keys-seeded.sh 的 `admin.*` 扫描范围内。词条尚未 seed 时页面走
+	// fallback 中文兜底（与 plugin 新增 notice key 的过渡做法一致）。
+	MsgBlockCreated = "MsgBlockCreated" // 块已创建，正在打开编辑器
 
 	// 有效源码引用的类别文案（审计 ARCH-02，块删除保护的定位提示）。
 	//

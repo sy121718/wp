@@ -37,10 +37,6 @@
         </div>
     </header>
 
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.products.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-
     {{if !.HasProduct}}
     <section class="card card-body">
         <div class="empty-state">

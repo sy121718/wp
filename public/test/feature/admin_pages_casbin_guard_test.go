@@ -50,7 +50,7 @@ import (
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/public/migrations"

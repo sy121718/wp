@@ -50,7 +50,7 @@ func SetupPresentationRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 按符号链接的实际指向补齐路由登记并结案（判据不足则结案为未生效）。
 	//
 	// 入口只有一个：调度器内部先做一次全量启动恢复（不限批 + 5 分钟预算），
-	// 之后由 ticker 与写路径快通道共同驱动（见 presentation/service/presentation_converge.go）。
+	// 之后由 ticker 与写路径快通道共同驱动（见 presentation/service/presentation_publish.go 的 ConvergePendingReceipts）。
 	// 不再另起一个裸启动恢复 goroutine —— 同一段实现有两个「启动时跑一次」的驱动源，
 	// 启动瞬间会有两个 goroutine 并发重放同一批回执。
 	presentationservice.StartPendingReceiptConvergenceScheduler(svc)

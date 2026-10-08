@@ -15,7 +15,7 @@
 {{keyword := ""}}{{if isset(.Keyword)}}{{keyword = .Keyword}}{{end}}
 {{limit := 20}}{{if isset(.Limit)}}{{limit = .Limit}}{{end}}
 {{clearFilterURL := "/admin/articles"}}{{if isset(.ClearFilterURL)}}{{clearFilterURL = .ClearFilterURL}}{{end}}
-{{canCreate := isset(.PermSet["content:create"])}}
+{{canCreate := isset(.Buttons["content.create"])}}
 <div class="stack articles-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -46,17 +46,13 @@
         </div>
     </header>
 
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done / Err / Ok，缺失键会让整页
+    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Err，缺失键会让整页
        在这一行中断（HTTP 仍 200、之后的 HTML 整块消失）。删掉 isset 只是让渲染路径
-       变窄 —— 线上由 articleListPageData 总给这三个键，所以它坏起来不会有任何征兆。 *}
+       变窄 —— 线上由 articleListPageData 总给这个键，所以它坏起来不会有任何征兆。
+       写动作的结论（成功 / 失败 / 批量）不再回带列表页：走 shell.RenderJump 的整页提示，
+       所以这里只剩**列表取数失败**这一条提示。 *}
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.list.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Ok)}}{{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{.Ok}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
     {* 有 stale 时**什么都不渲染**：清单在抽屉里，页头徽章就是入口 ——
@@ -97,8 +93,10 @@
         </div>
         {{end}}
         {* 勾选框与批量动作同属一个 form（<form> 包 <table> 是合法的）：提交时浏览器直接带上
-           所有勾中的 ids，不需要在提交前注入隐藏域。批量条默认 hidden，选中后才显形。 *}
-        <form method="post" action="/admin/articles/bulk-delete">
+           所有勾中的 ids，不需要在提交前注入隐藏域。批量条默认 hidden，选中后才显形。
+           action 上带本次筛选（FilterQuery 是 Go 预编码的成品 query 串）：写动作失败/成功后
+           回跳列表页时由 shell.BackPath 从这次请求的 query 读回，翻页与筛选不会丢。 *}
+        <form method="post" action="/admin/articles/bulk-delete{{ .["FilterQuery"] }}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if !.Empty}}
@@ -183,10 +181,11 @@
 
     </section>
 
-    {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
+    {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
+       action 同样带本次筛选，回跳时由 shell.BackPath 读回。 *}
     {{if !.Empty}}
     {{range _, r := rows}}
-    <form id="article-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/articles/delete"
+    <form id="article-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/articles/delete{{ .["FilterQuery"] }}"
           data-confirm="{{ .["t"]("admin.article.list.deleteConfirm", "删除这篇文章？引用它的页面会在下次构建时失去内容。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{r.ID}}">

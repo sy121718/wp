@@ -716,11 +716,10 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 		"rowTarget": {"Summer Shirt"},
 	}
 	saved := postForm(engine, "/admin/products/translations/save", form)
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
-	}
-	if loc := saved.Header().Get("Location"); !strings.Contains(loc, "saved=1") || !strings.Contains(loc, "n=1") {
-		t.Fatalf("回跳 URL 应带写入条数 n=1，实际 %q", loc)
+	savedBody := saved.Body.String()
+	assertJumpOK(t, saved)
+	if !strings.Contains(savedBody, "1 条译文") {
+		t.Fatalf("成功回执应含写入条数，body=%s", savedBody)
 	}
 	// 原文与译文分列存放（验收 1）。
 	target, engineName := trTranslationOf(t, f.db, "夏季衬衫", "product.name", "en-US")
@@ -741,11 +740,10 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
 	again := postForm(engine, "/admin/products/translations/save", form)
-	if again.Code != http.StatusSeeOther {
-		t.Fatalf("重复保存应 303，实际 %d：%s", again.Code, again.Body.String())
-	}
-	if loc := again.Header().Get("Location"); !strings.Contains(loc, "n=0") {
-		t.Fatalf("幂等保存应写入 0 条，实际回跳 %q", loc)
+	againBody := again.Body.String()
+	assertJumpOK(t, again)
+	if !strings.Contains(againBody, "没有需要写入的变化") {
+		t.Fatalf("幂等保存应给「没有变化」回执，body=%s", againBody)
 	}
 	if trPageStale(t, f.db, pageID) {
 		t.Fatal("译文未变化不应触发重建标记")
@@ -797,9 +795,7 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
 		"rowTarget": {"Summer Shirt"},
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
-	}
+	assertJumpOK(t, saved)
 	if !trInstanceStale(t, f.db, inst.ID) {
 		t.Fatalf("译文变更应标记该商品的自动发布实例待重建")
 	}

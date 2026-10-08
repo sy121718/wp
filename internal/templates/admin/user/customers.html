@@ -6,7 +6,8 @@
      · 列表进 .table-scroll（表头吸顶 + 高度封顶），空数据改 .empty-state。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；range 内访问外层值先在 block 顶部存变量。 *}
 {* 无 JS 也能用：筛选是普通 GET 表单；写操作是原生表单 POST + csrf_token 隐藏域， *}
-{* 提交后 302 回本页并把结论经 ?ok= / ?err= 回显（回显同样过服务端白名单）。 *}
+{* 提交后由 shell.RenderJump 渲染整页提示（对应 success()/error()）；回跳地址上的筛选 *}
+{* 上下文由表单 action 的 query 携带，服务端经 shell.BackPath 读回。 *}
 {* 注意：写操作的目标状态字段叫 toStatus，与「保留筛选」的 status 分开 —— *}
 {* 同名的话回跳时会把目标状态当成筛选条件，列表看起来像是「筛选没了」。 *}
 {{extends "../layout.html"}}
@@ -15,6 +16,12 @@
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
 {{rows := .Rows}}
+{{listQuery := .["ListQuery"]}}
+{* 写动作表单的 action：上下文（筛选 / 翻页）随 query 一起提交，服务端经 shell.BackPath 读回。 *}
+{{bulkStatusAction := "/admin/customers/bulk-status?" + listQuery}}
+{{bulkUnlockAction := "/admin/customers/bulk-unlock?" + listQuery}}
+{{statusAction := "/admin/customers/status?" + listQuery}}
+{{unlockAction := "/admin/customers/unlock?" + listQuery}}
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 {{fVerified := .FilterVerified}}
@@ -43,17 +50,12 @@
         </div>
     </header>
 
+    {* 提示条只剩一个来源：本页自己的取数 / 筛选失败。写动作的结论走 shell.RenderJump
+       渲染整页提示，不再经 ?err= / ?ok= / ?done= 回带 —— 前缀「上一次操作未完成：」随之退役
+       （它描述的正是那条已被删除的通道），文案本身已是完整句子。 *}
     {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.customers.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    <p class="badge badge-warning" role="alert">{{.Err}}</p>
     {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{.Ok}}</p>
-    {{end}}
-    {* 批量动作的结果摘要（已处理 N 个 / 未处理 M 个）。可选键一律 isset 包裹：
-       直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
     {{if .CapabilityMissing}}
     <p class="badge badge-warning" role="alert">
         {{ .["t"]("admin.customers.capability_missing", "客户管理能力没有接进来（装配问题），下面只有页面框架。请联系开发确认用户模块的后台契约是否已注入 —— 页面本身没有问题。") }}
@@ -165,27 +167,12 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（admin.js 只做计数与显隐，不注入字段）。
            行内写操作表单必须留在 </form> 之后 —— HTML 不允许 form 嵌套。 *}
-        <form method="post" action="/admin/customers/bulk-status">
+        <form method="post" action="{{bulkStatusAction}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            {* 保留筛选与翻页（与行内表单同一组字段）：回跳后列表位置不变。
+            {* 筛选与翻页不再塞隐藏域：上下文随 action 的 query 一起提交，服务端经
+               shell.BackPath 从本次请求的 query 读回（回跳后列表位置不变）。
                注意 status 与批量目标状态 toStatus 是两个字段 —— 同名会让回跳后的列表
                把「目标状态」当成筛选条件，看起来像「筛选没了」。 *}
-            <input type="hidden" name="keyword" value="{{fKeyword}}">
-            <input type="hidden" name="status" value="{{if fStatus >= 0}}{{fStatus}}{{end}}">
-            <input type="hidden" name="emailVerified" value="{{if fVerified > 0}}{{fVerified}}{{end}}">
-            <input type="hidden" name="locked" value="{{if .FilterLocked}}1{{end}}">
-            <input type="hidden" name="registeredFrom" value="{{fFrom}}">
-            <input type="hidden" name="registeredTo" value="{{fTo}}">
-            {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
-               列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
-            <input type="hidden" name="segment" value="{{fSegment}}">
-            <input type="hidden" name="minOrders" value="{{fMinOrders}}">
-            <input type="hidden" name="rfm" value="{{fRfm}}">
-            <input type="hidden" name="tier" value="{{fTier}}">
-            <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
-            <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
-            <input type="hidden" name="page" value="{{fPage}}">
-            <input type="hidden" name="limit" value="{{fLimit}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(rows) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -193,7 +180,7 @@
                     解除锁定用 formaction 改投另一个端点，勾选状态与筛选字段照旧带上。 *}
                 {{yield bulkBtn(label=tr("admin.customers.bulk.enable", "批量启用"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.enableConfirm", "启用选中的客户？启用后他们可以重新登录。"), name="toStatus", value="1")}}
                 {{yield bulkBtn(label=tr("admin.customers.bulk.disable", "批量停用"), confirm=tr("admin.customers.bulk.disableConfirm", "停用选中的客户？停用后他们立刻登不上去，且不会自动恢复。"), danger=true, name="toStatus", value="0")}}
-                {{yield bulkBtn(label=tr("admin.customers.bulk.unlock", "批量解除锁定"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.unlockConfirm", "解除选中客户的登录锁定？只清登录失败计数与锁定时间，不改账号状态。"), formaction="/admin/customers/bulk-unlock")}}
+                {{yield bulkBtn(label=tr("admin.customers.bulk.unlock", "批量解除锁定"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.unlockConfirm", "解除选中客户的登录锁定？只清登录失败计数与锁定时间，不改账号状态。"), formaction=bulkUnlockAction)}}
             {{yield bulkBarClose()}}
             {{end}}
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
@@ -281,48 +268,20 @@
             </div>
         </form>
         {* 行内写操作表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
-           按钮用 form="<id>" 关联；表单带齐筛选与翻页字段，提交后 302 回本页时列表位置不变。 *}
+           按钮用 form="<id>" 关联；筛选与翻页上下文随 action 的 query 提交，服务端经
+           shell.BackPath 读回，提示页的「返回」链接因此回到原来看的那一屏。 *}
         {{range _, r := rows}}
         {{if r.Actionable}}
-        <form id="customer-status-{{r.ID}}" class="hidden-form" method="post" action="/admin/customers/status">
+        <form id="customer-status-{{r.ID}}" class="hidden-form" method="post" action="{{statusAction}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{r.ID}}">
             <input type="hidden" name="toStatus" value="{{r.NextStatus}}">
-            <input type="hidden" name="keyword" value="{{fKeyword}}">
-            <input type="hidden" name="status" value="">
-            <input type="hidden" name="emailVerified" value="{{fVerified}}">
-            <input type="hidden" name="registeredFrom" value="{{fFrom}}">
-            <input type="hidden" name="registeredTo" value="{{fTo}}">
-            {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
-               列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
-            <input type="hidden" name="segment" value="{{fSegment}}">
-            <input type="hidden" name="minOrders" value="{{fMinOrders}}">
-            <input type="hidden" name="rfm" value="{{fRfm}}">
-            <input type="hidden" name="tier" value="{{fTier}}">
-            <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
-            <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
-            <input type="hidden" name="page" value="{{fPage}}">
-            <input type="hidden" name="limit" value="{{fLimit}}">
         </form>
         {{end}}
         {{if r.Locked}}
-        <form id="customer-unlock-{{r.ID}}" class="hidden-form" method="post" action="/admin/customers/unlock">
+        <form id="customer-unlock-{{r.ID}}" class="hidden-form" method="post" action="{{unlockAction}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{r.ID}}">
-            <input type="hidden" name="keyword" value="{{fKeyword}}">
-            <input type="hidden" name="emailVerified" value="{{fVerified}}">
-            <input type="hidden" name="registeredFrom" value="{{fFrom}}">
-            <input type="hidden" name="registeredTo" value="{{fTo}}">
-            {* 分段三个字段也要带：不带的话批量停用之后回跳会丢掉分段筛选，
-               列表突然多出一批本来不该显示的人，而页面上没有任何提示。 *}
-            <input type="hidden" name="segment" value="{{fSegment}}">
-            <input type="hidden" name="minOrders" value="{{fMinOrders}}">
-            <input type="hidden" name="rfm" value="{{fRfm}}">
-            <input type="hidden" name="tier" value="{{fTier}}">
-            <input type="hidden" name="segmentFrom" value="{{fSegmentFrom}}">
-            <input type="hidden" name="segmentTo" value="{{fSegmentTo}}">
-            <input type="hidden" name="page" value="{{fPage}}">
-            <input type="hidden" name="limit" value="{{fLimit}}">
         </form>
         {{end}}
         {{end}}

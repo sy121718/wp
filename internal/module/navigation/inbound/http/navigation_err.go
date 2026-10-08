@@ -12,12 +12,21 @@ package navigationhttp
 // → 原样透出（前端要据此提示「哪一项不合法」）；未命中 → 记结构化日志（场景 + user_id
 // + 原始错误）并返回 navigationenums.ErrInternal。状态码语义不变，仍由
 // navigationErrorStatus 决定（业务错误 400/404、内部错误 500）。
+//
+// 本文件同时承载**页面写路径**的文案归口（navigationErrPageText / navInvalidParamText）
+// 与提示页要用的写侧文案（navText / 批量结论模板）：页面与接口共用同一份白名单，
+// 「同一个错误在接口与页面上说法一致」因此不是靠两边各写一遍。
+//
+// **读侧回执（?err= / ?done= 的受控文案集合与判定）已随本批整批删除**：写动作的结论
+// 改由 shell.RenderJump 渲染整页提示（文案走响应体，见 navigation_jump.go），
+// 那套「证明这条提示出自本仓」的判定（navigationNoticeTexts / navigationPageErr /
+// navigationPageDone）不再需要。
 
 import (
 	"strings"
 
 	navigationenums "go_wp/internal/module/navigation/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -123,16 +132,15 @@ func navigationErrPageText(c *gin.Context, err error) string {
 // 页壳** —— DOM 里只有那个 JSON 节点，没有标题栏与左侧菜单，地址栏停在 POST 路径，
 // 用户只能手改地址栏回列表页。参数级失败与业务失败一样是「页面请求」，出口就该是页面。
 //
-// 同域已做对的页面（page 的 pagesBackURL / content 的 articleRedirectList /
-// block 的 siteSlotRedirect）在同样场景下一律 303 回列表页 + ?err= 回带原因，本模块照此收口；
-// 回跳地址仍由 navListURLMenu（本页唯一的列表 URL 构造点）给出。
+// 同域页面（page 的 pagesBackURL / content 的 articleRedirectList / block 的 siteSlotRedirect）
+// 同样把参数级失败当页面请求处理，本模块的出口是**整页提示**（shell.RenderJump）：
+// 文案走响应体，回跳地址由 shell.BackPath 从表单 action 的 query 读回（见 navigation_jump.go）。
 
 // navInvalidParamText 参数级校验失败的可展示文案（当前语言）。
 //
 // 参数级失败没有 error 对象（判定就在 handle 里），因此走不了 navigationErrPageText；
-// 但文案必须落在 navigationNoticeTexts 的候选里 —— 读侧 navigationPageErr 按形状**整体**
-// 匹配，未命中的 query 参数会被当伪造文案丢掉（页面上什么都不显示，也没有任何日志）。
-// ErrInvalidParam 本来就在 enums 白名单里，key 形态与译文形态都是候选，这一层天然成立。
+// 文案直接进提示页响应体（不再是 ?err= 的候选集合 —— 读侧判定已随本批删除）。
+// ErrInvalidParam 在 enums 白名单里，经取词层给当前语言译文。
 func navInvalidParamText(c *gin.Context) string {
 	return shell.TranslateFor(c)(navigationenums.ErrInvalidParam, "参数错误")
 }
@@ -140,20 +148,19 @@ func navInvalidParamText(c *gin.Context) string {
 // navNoticeNoSourcePicked 「从已有内容添加」一项都没勾时的提示。
 //
 // 这是该抽屉最常见的一条路径（候选复选框默认全不勾，用户直接点「加入菜单」）。
-// 文案与 navigationsBulkResultTemplates 同形：key + 中文兜底、**写侧与读侧共用这一份**，
-// 读侧经 shell.NoticeTemplate 归一后整体比对（另抄一份中文的失配是静默的 —— 提示发出来了，
-// 页面上却不显示）。模板侧另有「本组没有可加入项时按钮置灰」，这里是服务端兜底。
+// 文案与 navigationsBulkResultTemplates 同形：key + 中文兜底，经 navTextOf 取当前语言。
+// 模板侧另有「本组没有可加入项时按钮置灰」，这里是服务端兜底。
 var navNoticeNoSourcePicked = navText{
 	Key: "admin.navigations.notice.noSourcePicked", Fallback: "请至少勾选一项要加入菜单的内容。",
 }
 
-// —— 读侧回执的收口（?err= / ?done=）——
+// —— 写侧文案（提示页用）——
 //
-// 写侧早就是受控的（NavigationCreate/Update/Delete 走 response 出口；批量删除走
-// shell.BulkIDsFacingText 与 navigationsBulkDeleteResult），但列表页此前把 query 参数
-// **原样**塞进渲染数据（navigationsPageData 的 Err / Done）：任何人手拼一个
-// /admin/navigations?err=任意文案 就能在页面上塞一条顶着「上一次操作未完成」样式的伪造消息。
-// 查询参数与响应体、模板数据一样**不是可信边界**。
+// 读侧回执（?err= / ?done=）已随本批**整批删除**：写动作的结论由 shell.RenderJump 渲染成
+// 整页提示（文案走响应体，见 navigation_jump.go），列表页不再从 query 读任何结论。
+// 此前列表页把 query 参数原样塞进渲染数据（navigationsPageData 的 Err / Done），
+// 任何人手拼 /admin/navigations?err=任意文案 就能塞一条伪造消息 —— 查询参数不是可信边界。
+// 这里只保留写侧要用的文案类型与批量结论模板。
 
 // navText 一条待取词文案：i18n key + 中文兜底（兜底同时是词条缺失时的显示值）。
 //
@@ -166,11 +173,10 @@ func navTextOf(c *gin.Context, t navText) string {
 	return shell.TranslateFor(c)(t.Key, t.Fallback)
 }
 
-// navigationsBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
+// navigationsBulkResultTemplates 批量删除的结论文案模板（占位符是命名形态 `{count}` 等）。
 //
-// **写侧与读侧共用这一份**（key + 中文兜底各一份）：写侧 navigationsBulkDeleteResult 用它
-// Sprintf，读侧 navigationNoticeTexts 用它（经 shell.NoticeTemplate 归一）判定 URL 回显。
-// 两侧都经 navTextOf 取当前语言模板，所以语言切到英文时读写仍然一致。
+// 写侧 navigationsBulkDeleteResult 用它填成成品句子，直接进提示页响应体 ——
+// 不再需要读侧做归一比对（读侧判定已随本批删除）。
 var navigationsBulkResultTemplates = []navText{
 	{"admin.navigations.bulkResult.noneSelected", "没有勾选任何菜单项，列表未改动。"},
 	{"admin.navigations.bulkResult.allDeleted", "已删除 {count} 个菜单项。"},
@@ -182,44 +188,4 @@ var navigationsBulkResultTemplates = []navText{
 // 不用 Sprintf：词条可被运营在后台改，裸 % 与中英参数错位都会让它输出乱码）。
 func navBulkFilled(c *gin.Context, t navText, params map[string]string) string {
 	return i18n.FillTranslate(shell.TranslateFor(c), t.Key, t.Fallback, params)
-}
-
-// navigationNoticeTexts 本页可以原样展示的回执文案（当前语言）。
-//
-// 与写侧的取值一一对应：① 本模块 enums 白名单的 key 与其译文（navigationErrPageText
-// 的产物，key 形态与译文形态都收）；② 归口文案与 shell 的批量上限提示模板；
-// ③ 批量结论文案模板。
-func navigationNoticeTexts(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0, len(navigationenums.NavigationFacingMessages)*2+8)
-	for _, key := range navigationenums.NavigationFacingMessages {
-		out = append(out, key, tr(key, key))
-	}
-	out = append(out,
-		tr(navigationenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）"),
-		shell.BulkIDsNoticeTemplate(c),
-	)
-	// 参数级提示：navInvalidParamText 的产物（ErrInvalidParam 的译文）已在上面 enums
-	// 白名单里；「未勾选」是本地常量，与批量结论模板同一读法（归一后整体比对）。
-	out = append(out, shell.NoticeTemplate(navTextOf(c, navNoticeNoSourcePicked)))
-	for _, tpl := range navigationsBulkResultTemplates {
-		// 占位符先填成 "0"（写侧填的是真实计数，数字归一后两者可比），
-		// 再走 shell.NoticeTemplate 的 %s/%d 归一 —— 两种占位形态在这一步合流。
-		out = append(out, shell.NoticeTemplate(i18n.ZeroNamedPlaceholders(navTextOf(c, tpl))))
-	}
-	return out
-}
-
-// navigationPageErr 列表页 ?err= 的统一出口（未命中落归口文案）。
-func navigationPageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, navigationNoticeTexts(c))
-	})
-}
-
-// navigationPageDone 列表页 ?done= 的统一出口（成功提示：未命中落空串）。
-func navigationPageDone(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, navigationNoticeTexts(c))
-	})
 }

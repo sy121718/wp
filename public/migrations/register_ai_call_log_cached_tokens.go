@@ -8,7 +8,7 @@ import "sync"
 // （AGENTS.md「数据库」一节记着这条，076/058 上各栽过一次）。而 537（建 ai_call_log 表）
 // 是个 Seed —— 把本批写成 Migration 就会让 `ALTER TABLE ai_call_log` 跑在**建表之前**，
 // 报 `relation "ai_call_log" does not exist`。实测：写成 Migration 时
-// internal/web/shell 的导航菜单用例直接死在迁移阶段。
+// internal/shell 的导航菜单用例直接死在迁移阶段。
 //
 // 跨批依赖的判据要落在**结果**上：本批的判据是「这两列在不在」，
 // 而不是「我执行的这条语句有没有报错」。

@@ -28,14 +28,12 @@ import (
 	"go_wp/internal/templates"
 )
 
-// editSaveLocation 提交编辑表单并返回 302 的 Location（PRG 回编辑页）。
+// editSaveLocation 提交编辑表单并返回提示页的回跳地址（成功走 shell.RenderJump，不再 302）。
 func editSaveLocation(t *testing.T, engine *gin.Engine, form url.Values) string {
 	t.Helper()
 	rec := postForm(engine, "/admin/products/update", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("保存应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	return rec.Header().Get("Location")
+	assertJumpOK(t, rec)
+	return jumpBackHref(t, rec)
 }
 
 // TestProductEditPageRoundTrip 回填 → 保存 → 落库 → 多选字段整体替换。
@@ -78,12 +76,9 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 		"images":       {"https://cdn.example.com/a.jpg\nhttps://cdn.example.com/b.jpg"},
 		"imageAlts":    {"图一\n图二"},
 	})
-	// PRG：回编辑页（而不是回列表）并带成功回执（?done= 已过读侧白名单）。
+	// 提示页回跳落点是编辑页（而不是列表）并带上商品 id；成功回执走响应体，不再带 ?done=。
 	if !strings.HasPrefix(loc, "/admin/products/edit?") || !strings.Contains(loc, "product="+created.ID) {
-		t.Fatalf("保存成功应 302 回编辑页，实际 %s", loc)
-	}
-	if !strings.Contains(loc, "done=") {
-		t.Fatalf("保存成功应带回执（?done=），实际 %s", loc)
+		t.Fatalf("保存成功应回编辑页，实际 %s", loc)
 	}
 
 	got, gerr := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
@@ -165,16 +160,13 @@ func TestProductEditPageRejectsEmptyName(t *testing.T) {
 		"id":        {created.ID},
 		"name":      {"   "},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("校验失败应 302 回页面，实际 %d：%s", rec.Code, rec.Body.String())
+	body := assertJumpErr(t, rec)
+	if back := jumpBackHref(t, rec); !strings.Contains(back, "/admin/products/edit?") {
+		t.Fatalf("空名称应回编辑页，实际回跳 %s", back)
 	}
-	loc := rec.Header().Get("Location")
-	if !strings.Contains(loc, "/admin/products/edit?") || !strings.Contains(loc, "err=") {
-		t.Fatalf("空名称应回编辑页并带错误原因，实际 %s", loc)
-	}
-	// 错误文案必须过读侧白名单：裸 key 或内部报错都不算。
-	if strings.Contains(loc, productenums.ErrNameRequired) {
-		t.Fatalf("错误回显不该是裸 key：%s", loc)
+	// 错误文案必须过白名单：裸 key 或内部报错都不算。
+	if strings.Contains(body, productenums.ErrNameRequired) {
+		t.Fatalf("提示页不该出现裸 key：%s", body)
 	}
 	got, gerr := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
 	if gerr != nil {

@@ -1,0 +1,27 @@
+{* admin/jump.html — 写操作完成后的整页提示（ThinkPHP 的 success() / error() 对应物）。
+
+   数据由 shell.RenderJump 给（一个 jumpView struct + title），**本页不取词**：
+   文案是调用点已经过白名单的成品串，页面只负责摆位置 —— 所以这里没有 .["t"](...) 调用，
+   也不会有「词条缺失 → 静默空串」那条路。
+
+   三条形态约定：
+   1. 状态只用**字形 + 颜色**表达（✓ / !），不写「操作成功」这类全站文案 ——
+      避免为一次提示新增一条全站词条，也避免借别的模块的词条（借了会随对方改动漂移）；
+   2. 自动跳转走 **meta refresh**（挂在 layout 的 head 块上），不引入 JS：
+      无 JS 时链接照常可点，有 JS 时也不需要额外脚本；
+   3. 链接文字由调用点给（空则不渲染链接，仍会自动跳转）—— 调用点本来就有一句现成的话。 *}
+{{extends "layout.html"}}
+
+{{block head()}}{{if .Jump.Seconds > 0}}<meta http-equiv="refresh" content="{{.Jump.Seconds}};url={{.Jump.Back}}">{{end}}{{end}}
+
+{{block body()}}
+<div class="stack jump-page">
+    <div class="card jump-card" data-jump-state="{{if .Jump.OK}}ok{{else}}err{{end}}">
+        <span class="jump-icon" aria-hidden="true">{{if .Jump.OK}}✓{{else}}!{{end}}</span>
+        <p class="jump-msg">{{.Jump.Msg}}</p>
+        {{if .Jump.BackText != ""}}
+        <p class="jump-actions"><a class="btn btn-primary" href="{{.Jump.Back}}">{{.Jump.BackText}}</a></p>
+        {{end}}
+    </div>
+</div>
+{{end}}

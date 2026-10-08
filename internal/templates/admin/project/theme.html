@@ -40,7 +40,7 @@
                注意 hx-headers 只对 htmx 请求生效，原生表单必须自带 csrf_token 隐藏域。 *}
             {* 新建入口只在有工程时给：主题必须挂在工程下，抽屉表单的 projectId 取的是当前选中工程，
                 无工程时会提交一个空归属；那种情况下空态里的「去页面管理」才是正确的下一步。 *}
-            {{if len(.Projects) > 0}}{{if isset(.PermSet["project:theme_create"])}}
+            {{if len(.Projects) > 0}}{{if isset(.Buttons["project.theme_create"])}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
             {{end}}{{end}}
         </div>
@@ -63,9 +63,10 @@
     </section>
     {{else}}
 
-    {* 失败提示条：写操作（新建 / 激活 / 删除）失败后 303 回到本页并带 ?err=，
-       或本页装载失败时由 handler 直接给 —— 两种情况读侧都已过白名单（手拼的 ?err= 落空串）。
-       放在页头之后、列表之前：用户一眼看到「刚才那一下为什么没成」，列表本身照常可读。 *}
+    {* 失败提示条：本页**装载失败**时由 handler 直接给（空串 = 无提示）。
+       写操作（新建 / 激活 / 删除）的结论不再回带本页 —— 走 shell.RenderJump 渲染
+       整页提示（见 project_jump.go），所以这条只由工程 / 主题列表取数失败填充。
+       放在页头之后、列表之前：用户一眼看到「是这一页没读出来」，列表本身照常可读。 *}
     {{if isset(.Err) && .Err != ""}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
     {{end}}
@@ -89,7 +90,7 @@
                 并不存在 —— 新建入口是页头 .page-actions 的抽屉按钮（G2：文案指向的控件必须存在）。 *}
             <p class="empty-title">{{ .["t"]("admin.theme.empty_title", "还没有主题") }}</p>
             <p class="empty-desc">{{ .["t"]("admin.theme.empty_desc", "主题决定站点前端的全局颜色、字体与页眉页脚；创建的第一个主题会自动激活。") }}</p>
-            {{if isset(.PermSet["project:theme_create"])}}
+            {{if isset(.Buttons["project.theme_create"])}}
             <div class="empty-actions">
                 <button type="button" class="btn btn-primary" data-drawer-open="#tpl-theme-create" data-drawer-title="{{ .["t"]("admin.theme.create", "新建主题") }}">＋ {{ .["t"]("admin.theme.create", "新建主题") }}</button>
             </div>
@@ -125,7 +126,7 @@
     {* 行内表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套在 <td> 里）。 *}
     {{range _, t := .Themes}}
     {{if !t.IsActive}}
-    <form id="theme-act-{{t.ID}}" method="post" action="/admin/themes/activate" class="hidden-form">
+    <form id="theme-act-{{t.ID}}" method="post" action="/admin/themes/activate?project={{t.ProjectID}}" class="hidden-form">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{t.ID}}">
         <input type="hidden" name="projectId" value="{{t.ProjectID}}">
@@ -136,7 +137,7 @@
        ③ pages.theme_id 的 FK 是 ON DELETE SET NULL，handler 随后把该工程内**未挂主题**的页面
           转挂到当前激活主题（工程没有激活主题时保持未挂，由下次建主题回填）。
        这一行的按钮只在 !IsActive 时渲染，但用户会以为是「正在用的这套」在删，故把 ① 一并写明。 *}
-    <form id="theme-del-{{t.ID}}" method="post" action="/admin/themes/delete" class="hidden-form"
+    <form id="theme-del-{{t.ID}}" method="post" action="/admin/themes/delete?project={{t.ProjectID}}" class="hidden-form"
           data-confirm="{{tr("admin.theme.confirm_delete_prefix", "确定删除主题「")}}{{t.Name|safeJs}}{{tr("admin.theme.confirm_delete_suffix", "」？")}}{{tr("admin.theme.confirm_delete_note", "该主题的颜色 / 字体 / 页眉页脚设置会一并删除；挂在这套主题下的页面会自动改挂到当前激活主题。激活中的主题不能删除，请先切换到其它主题。") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{t.ID}}">
@@ -145,11 +146,11 @@
     {{end}}
     {{end}}
     {{end}}
-    {{if len(.Projects) > 0}}{{if isset(.PermSet["project:theme_create"])}}
+    {{if len(.Projects) > 0}}{{if isset(.Buttons["project.theme_create"])}}
     {* 抽屉表单：字段容器用通用的 .form-row（等宽自动列数 + 窄屏堆叠），不写页面级 CSS。
         无工程时不渲染：表单的 projectId 会是空值，提交必然失败（入口条件同上）。 *}
     <template id="tpl-theme-create">
-        <form method="post" action="/admin/themes/create">
+        <form method="post" action="/admin/themes/create?project={{selectedProject}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-row">

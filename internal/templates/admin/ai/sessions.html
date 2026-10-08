@@ -10,7 +10,7 @@
      Filter（aidto.SessionQuery，筛选项回填）、FilterOptions（三个下拉的候选）
      Usage（指标卡）、Trend（aidto.SessionTrend：From / To / PeakText / Series，折线图）
      ProviderCards / Presets / BuiltinKeys / ProtocolOptions（模型标签）
-     Detail / DetailErr / Events / FoldPlan（带 ?id= 时的详情）、Err / Done（PRG 回执，渲染时才翻译）
+     Detail / DetailErr / Events / FoldPlan（带 ?id= 时的详情）
 
    图表自绘（内联 SVG 折线，坐标由 service 算成 points 字符串）：项目没有图表基座，
    为一个趋势图引第三方库不划算。按 (供应商, 模型) 分多序列 —— 柱状图一天只有一根、
@@ -19,7 +19,7 @@
    形态决策：会话是「一列短实体 + 一个不断增长的事件流」，用列表 + 同页详情，
    避免为每条会话开一个路由；详情里的几段用 <details> 折叠收起，窄屏不会一次铺三张表。
 
-   回执槽 done/err 放的是 i18n key，经 facingQuery 按请求语言翻译 —— 译文不进 URL。
+   写动作的结论由提示页渲染，不在本页回显。
 
    前端：所有控件是原生 form / select / button（鼠标 / 滚轮 / 触摸板 / 触屏 / 键盘天然可用）；
    列表用 .data-table（窄屏横向可滚），表单用 .form-grid（桌面两列、窄屏一列）。 *}
@@ -27,13 +27,13 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{{canRename := isset(.PermSet["ai:session_rename"])}}
-{{canArchive := isset(.PermSet["ai:session_archive"])}}
-{{canFold := isset(.PermSet["ai:session_fold"])}}
-{{canAppend := isset(.PermSet["ai:session_append"])}}
+{{canRename := isset(.Buttons["ai.session_rename"])}}
+{{canArchive := isset(.Buttons["ai.session_archive"])}}
+{{canFold := isset(.Buttons["ai.session_fold"])}}
+{{canAppend := isset(.Buttons["ai.session_append"])}}
 {* 发消息是对话，走 ai:chat 权限点（页面路由借 /api/ai/chat 的 casbin obj）。 *}
-{{canSend := isset(.PermSet["ai:chat"])}}
-{{canManage := isset(.PermSet["ai:provider_save"])}}
+{{canSend := isset(.Buttons["ai.chat"])}}
+{{canManage := isset(.Buttons["ai.provider_save"])}}
 {* 标签级权限：没权限的标签连按钮带面板一起不渲染 —— 一个点进去全是 403 的入口
    比没有入口更糟。两个都没有时页面走空态（见文末）。 *}
 {{canViewModels := .CanViewModels}}
@@ -65,13 +65,6 @@
             </div>
         </div>
     </header>
-
-    {{if isset(.Err)}}{{if .Err}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
 
     <div class="tabs ai-tabs" data-tabs>
         <div class="tab-list" role="tablist">

@@ -14,7 +14,7 @@ func TestRedirectCreateDrawer(t *testing.T) {
 		`data-drawer-body`,
 		`/static/js/ui/drawer.js`,
 		`/static/js/ui/confirm.js`,
-		`method="post" action="/api/page/redirect/create"`,
+		`method="post" action="/api/page/redirect/create?project=pr1"`,
 		`name="csrf_token"`,
 		`name="project" value="pr1"`,
 		`for="redirect-source"`,
@@ -28,12 +28,12 @@ func TestRedirectCreateDrawer(t *testing.T) {
 	if strings.Contains(out, `class="filter-bar"`) {
 		t.Error("创建写表单仍伪装成筛选栏")
 	}
-	form := out[strings.Index(out, `<form method="post" action="/api/page/redirect/create"`):]
+	form := out[strings.Index(out, `<form method="post" action="/api/page/redirect/create?project=pr1"`):]
 	form = form[:strings.Index(form, "</form>")]
 	if strings.Contains(form, "data-confirm") {
 		t.Error("普通创建误加二次确认")
 	}
-	if !strings.Contains(out, `data-confirm-danger`) || !strings.Contains(out, `action="/admin/page-redirects/bulk-delete"`) {
+	if !strings.Contains(out, `data-confirm-danger`) || !strings.Contains(out, `action="/admin/page-redirects/bulk-delete?project=pr1"`) {
 		t.Error("删除确认或原有批量删除路由丢失")
 	}
 }
@@ -56,7 +56,7 @@ func TestRedirectCreateFailureEcho(t *testing.T) {
 		"Projects": []any{}, "SelectedProject": "", "CreateFailed": true,
 		"ErrKey": "admin.redirect.err.invalid",
 	}))
-	if strings.Contains(withoutProject, `<template id="tpl-redirect-create">`) || strings.Contains(withoutProject, `action="/api/page/redirect/create"`) {
+	if strings.Contains(withoutProject, `<template id="tpl-redirect-create">`) || strings.Contains(withoutProject, `/api/page/redirect/create`) {
 		t.Error("没有工程时不应渲染可提交的创建表单")
 	}
 	if !strings.Contains(withoutProject, `role="alert"`) {

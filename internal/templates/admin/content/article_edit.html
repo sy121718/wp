@@ -90,11 +90,10 @@
         </div>
     </header>
 
+    {* Err 只剩一处写侧：保存失败原地重渲时带回的保存错误（articleUpdateFailure）。
+       成功回执不再进模板（走 shell.RenderJump 的整页提示，见 content_err.go）。 *}
     {{if .Err != ""}}
     <p class="badge badge-warning" role="alert" id="article-edit-error">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{.Ok}}</p>
     {{end}}
     {{if .EditUnavailable}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.unavailable", "文章信息暂时不可用；以下是本次提交内容，请保留后返回列表重新打开文章。") }}</p>

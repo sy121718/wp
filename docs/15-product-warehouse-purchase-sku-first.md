@@ -485,7 +485,7 @@ bundle 类型分支：**不生成变体、不建库存行**；主体 SKU 必填�
 - 订单建单的 `StockLine` 只填 `ProductID / VariantID / SKUCode / Quantity`，`WarehouseID` 留空 → 库存侧按归属仓解析规则落到**该工程默认仓**。
 - 多仓运营因此没有「发货仓选择 / 就近仓 / 按仓分单 / 缺货自动改仓」的能力；各仓库存的销售占用也区分不出来（流水里能看到 warehouse_id，但那是默认仓）。
 - 对照主流：Shopify 的 location、Magento MSI 的 source selection 都把这层做成了可配置/可算法化的能力。
-- 证据：`order_create_persist.go` 的 `deductStockTx`、`ordercontract.StockLine`（`WarehouseID` 注释：「为空表示按该 SKU 的归属仓由库存域解析」）。
+- 证据：`service/order.go` 的 `deductStockTx`、`ordercontract.StockLine`（`WarehouseID` 注释：「为空表示按该 SKU 的归属仓由库存域解析」）。
 
 ### B2. 没有调拨单据能力
 

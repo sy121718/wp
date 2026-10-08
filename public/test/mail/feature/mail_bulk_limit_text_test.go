@@ -21,7 +21,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mailhttp "go_wp/internal/module/mail/inbound/http"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/templates"
+	"go_wp/internal/shell"
 )
 
 // mailBulkOverLimitForm 造一份超过 shell.MaxBulkIDs 的批量表单（发信账号批量删除）。
@@ -33,11 +34,12 @@ func mailBulkOverLimitForm() url.Values {
 	return form
 }
 
-// TestMailAccountsBulkDeleteOverLimitUsesControlledText 超限时 302 回带受控文案，
+// TestMailAccountsBulkDeleteOverLimitUsesControlledText 超限时渲染失败提示页，
 // 且**「当前 M 项」确实回来了** —— 这条正是本批对 mail/order/user 的目的。
 func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := mailhttp.NewMailPageHandle(nil)
 	engine.POST("/admin/mail/accounts/bulk-delete", handle.MailAccountsBulkDelete)
 
@@ -55,24 +57,16 @@ func TestMailAccountsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("超限应 302 回列表页，实际 %d，body=%s", rec.Code, rec.Body.String())
-	}
-	rawLocation := rec.Header().Get("Location")
-	loc, err := url.Parse(rawLocation)
-	if err != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", err, rawLocation)
-	}
-	got := loc.Query().Get("err")
-	if !strings.Contains(got, "一次最多操作") {
-		t.Fatalf("应回带受控提示，实际 ?err=%q", got)
-	}
+
+	// 超限整批拒绝 → 失败提示页（不再 302 回列表页带 ?err=）。
+	body := rec.Body.String()
+	mailAssertJump(t, rec, false, "一次最多操作")
 	over := strconv.Itoa(shell.MaxBulkIDs + 1)
-	if !strings.Contains(got, strconv.Itoa(shell.MaxBulkIDs)) {
-		t.Fatalf("受控提示应带上限 %d，实际 ?err=%q", shell.MaxBulkIDs, got)
+	if !strings.Contains(body, strconv.Itoa(shell.MaxBulkIDs)) {
+		t.Fatalf("受控提示应带上限 %d；正文前 600 字：\n%s", shell.MaxBulkIDs, firstN(body, 600))
 	}
-	if !strings.Contains(got, over) {
-		t.Fatalf("受控提示应带本次条数 %s（旧的模块重组实现丢掉的正是这个数），实际 ?err=%q", over, got)
+	if !strings.Contains(body, over) {
+		t.Fatalf("受控提示应带本次条数 %s（旧的模块重组实现丢掉的正是这个数）；正文前 600 字：\n%s", over, firstN(body, 600))
 	}
-	assertMailLeakFree(t, "批量删除超限的 ?err=", got)
+	assertMailLeakFree(t, "批量删除超限的提示页", body)
 }

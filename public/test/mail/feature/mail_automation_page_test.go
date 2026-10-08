@@ -159,27 +159,24 @@ func TestMailAutomationFormSaveThenRunDetailRenders(t *testing.T) {
 		"node_key_3": {""}, "node_type_3": {""},
 	}
 	rec := postAutomationForm(router, "/admin/mail/automation/save", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应 302，实际 %d", rec.Code)
+	// 成功走整页提示（不再 302 + Location 带 ok / id）：文案「已保存（版本 N）」+ 回编辑页。
+	mailAssertJump(t, rec, true, "已保存")
+	back := mailJumpBack(t, rec)
+	if !strings.Contains(back, "/admin/mail/automation/edit") {
+		t.Fatalf("成功提示应回编辑页，实际回跳 %q", back)
 	}
-	loc := rec.Header().Get("Location")
-	decoded, _ := url.QueryUnescape(loc)
-	if strings.Contains(decoded, "err=") {
-		t.Fatalf("合法表单不该报错: %q", decoded)
+	if strings.Contains(back, "err=") {
+		t.Fatalf("合法表单不该报错: %q", back)
 	}
-	// 从 Location 里取新 id。
-	idStr := ""
-	if i := strings.Index(decoded, "id="); i >= 0 {
-		rest := decoded[i+3:]
-		if j := strings.IndexAny(rest, "&"); j >= 0 {
-			idStr = rest[:j]
-		} else {
-			idStr = rest
-		}
+	// 从回跳地址里取新 id。
+	parsed, err := url.Parse(back)
+	if err != nil {
+		t.Fatalf("回跳地址不可解析: %v（%s）", err, back)
 	}
+	idStr := parsed.Query().Get("id")
 	id, _ := strconv.ParseUint(idStr, 10, 64)
 	if id == 0 {
-		t.Fatalf("保存后应跳回编辑页并带 id，实际 %q", decoded)
+		t.Fatalf("保存后应跳回编辑页并带 id，实际 %q", back)
 	}
 
 	// 2. 流程是草稿：启用后建实例。

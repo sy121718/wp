@@ -2,7 +2,7 @@ package unit
 
 // navigation_panel_preview_script_test.go — 菜单项悬浮面板预览（admin.js）两条交互缺陷的回归钉。
 //
-// 背景（见 docs/agents/interaction-verification-2026-09-19.md 的 F1 / F2）：
+// 背景（两条交互缺陷）：
 //   · F1 —— 有 hover 能力的设备上 mouseover 已经先把浮层打开，而 click 分支是
 //     「is-open 取反」的纯开关，于是用户「移上去看到浮层 → 点一下」得到的必然是「关掉」
 //     （触屏合成点击因为鼠标已在按钮上，也会落进同一条路径）。

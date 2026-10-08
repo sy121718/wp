@@ -1,23 +1,20 @@
 package sysconfighttp
 
-// sysconfig_router.go — sysconfig 模块路由（API + 后台页面）。
+// sysconfig_router.go — sysconfig 模块的 **API** 装配（挂 authorizedAPI 三层链）。
 //
-// 页面写操作复用 API 权限点（AGENTS：加常量 + 在路由注册处声明，不写 seed 迁移）：
-// 页面前缀 /admin/system 与权限点路径 /api/sysconfig/* 不一致，必须用
-// CasbinMiddlewareForPath 显式指定 obj —— 直接按页面路径 enforce 会全员 403
-// （权限点表里没有页面路径）。
+// 后台页面（/admin/system）的注册在 sysconfig_page_router.go，由本文件的
+// SetupSysConfigRoutes 在同一位置调用 —— 落点分开、装配顺序不变。
 
 import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/middleware/builtin"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	"go_wp/internal/permission"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 )
 
@@ -31,9 +28,8 @@ func SetupSysConfigRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.
 	g.GET("/get", permission.SysConfigGet, h.APIList)
 	g.POST("/save", permission.SysConfigSave, h.APISave)
 
-	// 后台页面：Session + CSRF（adminPages 组）已具备。
-	adminPages.GET("/system", builtin.CasbinMiddlewareForPathAs("/api/sysconfig/get", http.MethodGet), h.SystemPage)
-	adminPages.POST("/system/save", builtin.CasbinMiddlewareForPath("/api/sysconfig/save"), h.SystemSave)
+	// 后台页面：注册在 sysconfig_page_router.go（同一入口调用，装配顺序不变）。
+	SetupSysConfigPages(adminPages, h)
 }
 
 // APIList GET /api/sysconfig/get：列出分组（JSON 出口，供其它消费方读取）。

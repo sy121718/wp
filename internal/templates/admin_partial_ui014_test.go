@@ -59,7 +59,7 @@ func TestToolbarCreatePartialKeepsBehaviour(t *testing.T) {
 	withPerm["title"] = "管理员列表"
 	withPerm["Total"] = 1
 	withPerm["Rows"] = rows
-	withPerm["PermSet"] = map[string]bool{"admin:create": true}
+	withPerm["Buttons"] = map[string]bool{"admin.create": true}
 	out, err := render(t, newAdminTestSet(), "admin/system/administrators", withPerm)
 	if err != nil {
 		t.Fatalf("有权限时渲染失败: %v", err)
@@ -78,7 +78,7 @@ func TestToolbarCreatePartialKeepsBehaviour(t *testing.T) {
 	noPerm["title"] = "管理员列表"
 	noPerm["Total"] = 1
 	noPerm["Rows"] = rows
-	noPerm["PermSet"] = map[string]bool{}
+	noPerm["Buttons"] = map[string]bool{}
 	out, err = render(t, newAdminTestSet(), "admin/system/administrators", noPerm)
 	if err != nil {
 		t.Fatalf("无权限时渲染失败: %v", err)

@@ -161,7 +161,7 @@ const (
 // 这一组与上面那些常量同形（值 = sys_i18n 的 item_key），但**刻意不带 Err / Msg 前缀**：
 // admin_enums_test.go 按前缀逐个常量对账 AdminFacingMessages，而那张白名单管的是
 // 「service 返回的错误能不能透出」。批量结论是 handler 按计数自己拼出的整句回执
-// （进 ?done= / ?err=），既不是 service 错误、也不该进错误白名单 ——
+// （进提示页的响应体），既不是 service 错误、也不该进错误白名单 ——
 // 误加进去会让「读侧候选必须能由写侧复现」那条对账用例变红。
 //
 // 为什么 key 放 enums 而不是 handler 包：模块的对外文案 key 一律以 enums 为唯一登记处，

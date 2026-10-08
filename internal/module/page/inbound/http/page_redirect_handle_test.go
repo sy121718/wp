@@ -83,17 +83,29 @@ func TestRedirectCreateFailedRequestKeepsInput(t *testing.T) {
 	}
 }
 
-func TestRedirectCreateSuccessKeepsPRG(t *testing.T) {
+func TestRedirectCreateSuccessRendersJump(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &redirectCreateStub{}
 	router := gin.New()
+	router.HTMLRender = newPageErrTestRender(t)
 	router.POST("/api/page/redirect/create", NewHandle(stub).RedirectCreate)
 	form := url.Values{"project": {"p1"}, "sourcePath": {"/old"}, "targetPath": {"/new"}}
-	req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create?project=p1", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/api/page/redirect?ok=created&project=p1" || stub.created != 1 {
-		t.Fatalf("成功路径的 PRG 回跳改变了：状态=%d Location=%q created=%d", rec.Code, rec.Header().Get("Location"), stub.created)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("成功应渲染提示页（200），实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if stub.created != 1 {
+		t.Fatalf("应调用一次 CreateRedirect，实际 %d", stub.created)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Fatalf(`成功提示页应有 data-jump-state="ok"：%s`, body)
+	}
+	// 回跳地址由服务端从表单 action 的 query 读回（project 筛选上下文），不再走 ?ok=。
+	if !strings.Contains(body, "/api/page/redirect?project=p1") {
+		t.Fatalf("提示页应给回本页（带 project）的链接：%s", body)
 	}
 }

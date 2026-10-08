@@ -6,8 +6,11 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
+{* 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath 读回）。
+   可选键一律 isset 包裹：直接渲染模板的单测不带它，缺失键会让整页在此中断。 *}
+{{lq := ""}}{{if isset(.ListQuery)}}{{lq = .ListQuery}}{{end}}
 {* 首列勾选与批量删除：权限点复用单条删除的 /api/menu/delete（页面侧不新增权限点）。 *}
-{{canDelete := isset(.PermSet["menu:delete"])}}
+{{canDelete := isset(.Buttons["menu.delete"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -16,17 +19,14 @@
             </div>
         </div>
         <div class="page-actions">
-            {{include "../partials/toolbar_create.html" map("allowed", isset(.PermSet["menu:create"]), "tpl", "#tpl-menu-create", "title", tr("admin.menus.create_drawer_title", "新建菜单"), "label", tr("admin.menus.create", "新建菜单"))}}
+            {{include "../partials/toolbar_create.html" map("allowed", isset(.Buttons["menu.create"]), "tpl", "#tpl-menu-create", "title", tr("admin.menus.create_drawer_title", "新建菜单"), "label", tr("admin.menus.create", "新建菜单"))}}
         </div>
     </header>
 
-    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
-       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
+       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
     <section class="card list-card">
@@ -55,7 +55,7 @@
            「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1）。
            批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接带上所有勾中的 ids，
            不需要在提交前注入隐藏域。行内删除表单留在表格外（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联。 *}
-        <form method="post" action="/admin/menus/bulk-delete">
+        <form method="post" action="/admin/menus/bulk-delete{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if canDelete}}{{if len(.Rows) > 0}}
@@ -80,7 +80,7 @@
                         {{keyword := ""}}{{if isset(.FilterKeyword)}}{{keyword = .FilterKeyword}}{{end}}
                         {{if keyword}}<p class="empty-title">{{tr("admin.menus.filter_empty", "没有匹配的菜单项。")}}</p>{{else}}<p class="empty-title">{{ .["t"]("admin.menus.empty", "还没有菜单，点右上「新建菜单」创建一个。") }}</p>{{end}}
                         {* 空态动作：与页头主行动同一件事，理由见 departments.html 的注释（窄屏下按钮会被滚出视口）。 *}
-                        {{if isset(.PermSet["menu:create"])}}
+                        {{if isset(.Buttons["menu.create"])}}
                         <div class="empty-actions">
                             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-menu-create" data-drawer-title="{{tr("admin.menus.create_drawer_title", "新建菜单")}}">＋ {{tr("admin.menus.create", "新建菜单")}}</button>
                         </div>
@@ -100,7 +100,7 @@
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{m.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 {* 图标由 admin.js 在图标库加载后填充 SVG（data-icon-name 为图标库键名） *}
                 <td class="col-icon"><span class="menu-icon" data-icon-name="{{if m.Icon}}{{m.Icon}}{{end}}"></span></td>
-                <td><div class="tree-cell" style="padding-inline-start:calc({{rowDepth}} * 1.5rem)">{{if rowHasKids}}<button type="button" class="perm-toggle" data-tree-toggle aria-expanded="{{if rowExpanded}}true{{else}}false{{end}}" aria-label="{{tr("admin.roles.perm.toggle", "展开 / 收起子项")}}"><span class="caret" aria-hidden="true"></span></button>{{else}}<span class="perm-toggle is-leaf" aria-hidden="true"></span>{{end}}{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if isset(.PermSet["menu:update"])}}<button type="button" class="row-title-link" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{m.Title}}</button>{{else}}{{m.Title}}{{end}}{{if isset(.SearchMode)}}{{if .SearchMode}}{{if isset(m.Matched)}}{{if m.Matched}} <span class="badge badge-info">{{tr("admin.menus.search.matched", "匹配")}}</span>{{else}} <span class="text-mute">{{tr("admin.menus.search.ancestor", "上级路径")}}</span>{{end}}{{end}}{{end}}{{end}}</div></td>
+                <td><div class="tree-cell" style="padding-inline-start:calc({{rowDepth}} * 1.5rem)">{{if rowHasKids}}<button type="button" class="perm-toggle" data-tree-toggle aria-expanded="{{if rowExpanded}}true{{else}}false{{end}}" aria-label="{{tr("admin.roles.perm.toggle", "展开 / 收起子项")}}"><span class="caret" aria-hidden="true"></span></button>{{else}}<span class="perm-toggle is-leaf" aria-hidden="true"></span>{{end}}{{if rowDepth > 0}}<span class="tree-elbow" aria-hidden="true">└</span>{{end}}{{if isset(.Buttons["menu.update"])}}<button type="button" class="row-title-link" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{m.Title}}</button>{{else}}{{m.Title}}{{end}}{{if isset(.SearchMode)}}{{if .SearchMode}}{{if isset(m.Matched)}}{{if m.Matched}} <span class="badge badge-info">{{tr("admin.menus.search.matched", "匹配")}}</span>{{else}} <span class="text-mute">{{tr("admin.menus.search.ancestor", "上级路径")}}</span>{{end}}{{end}}{{end}}{{end}}</div></td>
                 <td>{{if m.Type == 1}}<span class="badge badge-mute">{{tr("admin.menus.type.dir", "目录")}}</span>{{else if m.Type == 2}}<span class="badge">{{tr("admin.menus.type.menu", "菜单")}}</span>{{else if m.Type == 3}}<span class="badge badge-mute">{{tr("admin.menus.type.button", "按钮")}}</span>{{else if m.Type == 4}}<span class="badge badge-mute">iframe</span>{{else if m.Type == 5}}<span class="badge badge-mute">{{tr("admin.menus.type.link", "外链")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.menus.type.unknown", "未知")}}</span>{{end}}</td>
                 {* 权限点：一个菜单可以挂多个码（迁移 470），逐个渲染成 code 徽标；
                    没绑的显示破折号（目录 / iframe / 外链是常态，不是缺陷）。 *}
@@ -113,8 +113,8 @@
                 <td>{{m.SortOrder}}</td>
                 <td>{{if m.Remark}}{{m.Remark}}{{end}}</td>
                 <td class="col-actions">
-                    {{if isset(.PermSet["menu:update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{tr("admin.menus.action.edit", "编辑")}}</button>{{end}}
-                    {{if isset(.PermSet["menu:delete"])}}<button type="submit" form="menu-del-{{m.ID}}" class="btn btn-sm btn-danger">{{tr("admin.menus.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.Buttons["menu.update"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/menus/edit?id={{m.ID}}" data-drawer-title="{{tr("admin.menus.edit_drawer_prefix", "编辑菜单：")}}{{m.Title}}">{{tr("admin.menus.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.Buttons["menu.delete"])}}<button type="submit" form="menu-del-{{m.ID}}" class="btn btn-sm btn-danger">{{tr("admin.menus.action.delete", "删除")}}</button>{{end}}
                 </td>
                 </tr>
                 {{end}}
@@ -128,8 +128,8 @@
 
     {* 行内删除表单放表格外，按钮用 form="<id>" 关联（form 不能嵌套）。 *}
     {{range _, m := .Rows}}
-    {{if isset(.PermSet["menu:delete"])}}
-    <form id="menu-del-{{m.ID}}" method="post" action="/admin/menus/delete" class="hidden-form"
+    {{if isset(.Buttons["menu.delete"])}}
+    <form id="menu-del-{{m.ID}}" method="post" action="/admin/menus/delete{{if lq}}?{{lq}}{{end}}" class="hidden-form"
           data-confirm="{{tr("admin.menus.confirm_delete", "确认删除？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{m.ID}}">
@@ -140,7 +140,7 @@
 
 {* ===== 新建菜单（抽屉表单模板） ===== *}
 <template id="tpl-menu-create">
-    <form method="post" action="/admin/menus/create">
+    <form method="post" action="/admin/menus/create{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.menus.field.title", "菜单标题") }}</label>

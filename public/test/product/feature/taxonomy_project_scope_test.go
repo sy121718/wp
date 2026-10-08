@@ -1,15 +1,15 @@
 package feature
 
 import (
-	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/templates"
+
+	"github.com/gin-gonic/gin"
 )
 
 // 两个工程时不能靠 service 的单工程回退；表单读到的 projectId 必须贯穿写入契约。
@@ -24,6 +24,8 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	}
 	h := producthttp.NewProductPageHandle(f.svc, f.projects)
 	router := gin.New()
+	// 写成功走 shell.RenderJump，没有渲染器会在 c.HTML 处 panic。
+	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	router.POST("/brand/update", h.ProductBrandsUpdate)
 	router.POST("/brand/delete", h.ProductBrandsDelete)
 	router.POST("/category/update", h.ProductCategoriesUpdate)
@@ -47,9 +49,8 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 			for _, action := range []string{"update", "delete"} {
 				form := url.Values{"projectId": {f.projectID}, "id": {tc.id}, "name": {"修改后"}, "slug": {"scope-" + tc.kind}, "kind": {"manual"}, "seoTitle": {"修改后的标题"}}
 				rec := postForm(router, "/"+tc.kind+"/"+action, form)
-				if rec.Code != http.StatusFound || strings.Contains(rec.Header().Get("Location"), "err=") {
-					t.Fatalf("多工程 %s %s 失败：%d %s", tc.kind, action, rec.Code, rec.Header().Get("Location"))
-				}
+				// 写动作的结论走 shell.RenderJump：成功态提示页（不再 302 + ?err=）。
+				assertJumpOK(t, rec)
 			}
 		})
 	}

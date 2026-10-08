@@ -10,10 +10,13 @@ package pluginhttp
 //   · 直出违反 AGENTS.md「后台页面 handler 禁止 c.String 直出内部错误」的形态①；
 //   · 安装是 multipart 上传，一旦不回列表页，用户已选的文件就白选了（浏览器不会重传）。
 //
-// 页面出口（303 + ?err=）的三件套，样板见 admin 的 admin_err.go 与 mail 的 mail_err.go：
+// 页面出口的三件套，样板见 admin 的 admin_err.go 与 mail 的 mail_err.go：
 //  ① 白名单 —— 只有本模块 enums 声明的业务文案才允许透出，且**经翻译层取词**；
 //  ② 归口文案 —— 未命中（PostgreSQL 原文 / zip 驱动原文 / 路径）只进日志，页面给统一提示；
-//  ③ 读侧收敛 —— ?err= 是查询参数，不是可信边界，必须整体命中受控文案集合才渲染。
+//  ③ 出口渲染 —— 结论由 shell.RenderJump 渲染成整页提示（文案走响应体）。
+//
+// **读侧（?err= 的受控文案集合与判定）已整批删除**：写动作的结论不再经查询参数回带，
+// 那套「证明这条提示出自本仓」的判定（pluginNoticeTexts / pluginPageErr）随之不需要了。
 //
 // **为什么 enums 的常量值不动（plugin_enums.go 保持 key 形态）**：
 // 那些常量同时是 JSON 接口（/api/plugin/*）的响应消息，而 `pkg/response.IsBusinessError`
@@ -28,14 +31,12 @@ package pluginhttp
 // 「插件包解析失败」，词条缺失时还有本文件的中文兜底。
 
 import (
-	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	pluginenums "go_wp/internal/module/plugin/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 )
 
@@ -101,8 +102,7 @@ var (
 	pluginNoticeNoFile        = pluginFacingMessage{pluginenums.ErrInstallNoFile, "没有收到插件包文件"}
 	pluginNoticeUnreadable    = pluginFacingMessage{pluginenums.ErrPackageUnreadable, "插件包读取失败，或文件超过 52MB 上限"}
 
-	// pluginNoticeListFailed 列表取数失败的提示（只进模板数据，不经 ?err= 回带，所以不在
-	// pluginNoticeTexts 的候选里：它不是查询参数的产物，放进候选只会给手拼 URL 多一个可伪造的句子）。
+	// pluginNoticeListFailed 列表取数失败的提示（只进模板数据的提示条）。
 	pluginNoticeListFailed = pluginFacingMessage{pluginenums.ErrListFailed, "插件列表加载失败"}
 
 	// pluginReselectHint 安装路径的补充提示：回跳会丢掉用户已选的文件。
@@ -114,9 +114,6 @@ var (
 )
 
 // pluginInstallFailText 给安装路径的失败文案补上「重新选择文件」提示（提示取当前语言文本）。
-//
-// 写侧（pluginPageFail 的调用点）与读侧（pluginNoticeTexts 的候选）**共用这一个函数**：
-// 读侧另拼一份的话，写侧文案一改，?err= 就会静默失配，表现是「失败但页面上没有任何提示」。
 func pluginInstallFailText(c *gin.Context, text string) string {
 	return text + "；" + pluginFacingText(c, pluginReselectHint)
 }
@@ -154,49 +151,23 @@ func pluginErrParam(c *gin.Context, err error) string {
 	return shell.PageInternalText(c)
 }
 
-// pluginNoticeTexts 页面 ?err= **可以原样渲染**的受控文案集合（当前语言）。
+// pluginPageJump 页面写动作的统一出口：整页提示（对应 ThinkPHP 的 success() / error()）。
 //
-// 它是写侧全部出口的镜像：改了写侧文案就要在这里同步 —— 漏了不会报错，
-// 只会让运营看到「提交失败但页面上什么都没说」（读侧未命中落空串，见 pluginPageErr）。
-// 候选同时覆盖「基础文案」与「基础文案 + 重选提示」两种形态（安装路径会产出后者）。
-func pluginNoticeTexts(c *gin.Context) []string {
-	base := make([]string, 0, len(pluginFacingMessages)+3)
-	for _, m := range pluginFacingMessages {
-		base = append(base, pluginFacingText(c, m))
+// 取代原先的 303 + `?err=`：那条通道要求读侧再判一次「这条提示是不是本仓给的」
+// （pluginNoticeTexts 的候选集合），而查询参数不是可信边界。现在文案走响应体，
+// 读侧判定（pluginPageErr / pluginNoticeTexts）随之整批删除。
+//
+// 提示文本必须**已过本模块白名单 / 已归口**（pluginFacingText / pluginErrParam 的产物），
+// 原文只进日志 —— 换个页面呈现不等于可以把 err.Error() 铺在页面上。
+//
+// 失败不自动跳转（Seconds=0）：运营要看清楚原因，安装路径还带着「请重新选择文件」这句
+// 必须读到的补充提示。成功 1 秒后自动回列表页（与 sysconfig / order 同一取舍）。
+func pluginPageJump(c *gin.Context, ok bool, text string) {
+	back := pluginPagePath
+	backText := shell.TranslateFor(c)(pluginenums.TitlePlugins, "插件管理")
+	if ok {
+		shell.RenderJump(c, shell.Jump{OK: true, Msg: text, Back: back, BackText: backText, Seconds: 1})
+		return
 	}
-	base = append(base,
-		pluginFacingText(c, pluginNoticeModuleUnwired),
-		pluginFacingText(c, pluginNoticeNoFile),
-		pluginFacingText(c, pluginNoticeUnreadable),
-		shell.PageInternalText(c),
-	)
-
-	out := make([]string, 0, len(base)*2)
-	out = append(out, base...)
-	for _, text := range base {
-		out = append(out, pluginInstallFailText(c, text))
-	}
-	return out
-}
-
-// pluginPageErr 页面 ?err= 的统一出口：形状清洗 + 整体命中受控文案，未命中落归口文案。
-//
-// 未命中落归口文案（而不是像 ?done= 那样落空串）：这是**错误**通道，写侧每次失败都会
-// 给出一句话，「必须说点什么」由写侧保证；真出现未命中也说明运营遇到了失败，
-// 给一句通用提示比什么都不说更接近真实情况。
-func pluginPageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, pluginNoticeTexts(c))
-	})
-}
-
-// pluginPageFail 页面写失败的统一出口：303 回插件列表页，原因经 ?err= 受控文案回带。
-//
-// 为什么是 303 而不是 302：POST 之后必须换成 GET 才回页面（否则刷新会重发表单），
-// 与同文件成功路径（c.Redirect(http.StatusSeeOther, …)）同一取舍。
-//
-// 回带的值必须**已经**是受控文案（pluginFacingText 的译文 / 本文件登记的常量），
-// 不接受 err.Error() —— 门禁 scripts/check-no-internal-error-leak.sh 的形态②正是这一条。
-func pluginPageFail(c *gin.Context, text string) {
-	c.Redirect(http.StatusSeeOther, pluginPagePath+"?err="+url.QueryEscape(text))
+	shell.RenderJump(c, shell.Jump{Msg: text, Back: back, BackText: backText})
 }

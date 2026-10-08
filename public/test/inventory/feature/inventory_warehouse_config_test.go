@@ -233,7 +233,7 @@ func TestInventoryAdjustEntryOnPage(t *testing.T) {
 	// 页面：调整入口在（唯一写入口），内联的入库 / 生产入库表单不在。
 	body := httptestGet(engine, "/admin/inventory?project="+f.projectID).Body.String()
 	for _, want := range []string{
-		"库存调整（盘点 / 报损）", "action=\"/admin/inventory/stock/change\"",
+		"库存调整（盘点 / 报损）", "action=\"/admin/inventory/stock/change?",
 		"name=\"timeFrom\"", "name=\"timeTo\"", "盘点（填目标绝对量）", "报损（填本次减少量）",
 	} {
 		if !strings.Contains(body, want) {

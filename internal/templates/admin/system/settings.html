@@ -1,7 +1,7 @@
 {* admin/system/settings.html — 系统设置（全局默认值）。
    数据见 sysconfig/inbound/http/sysconfig_admin_pages.go 的 SystemPage：
      I18N / Trade（groupView：Key / Version / Data）、LangOptions / CurrencyOptions /
-     CountryOptions（字典下拉）、ModeOptions、Err / Done。
+     CountryOptions（字典下拉）、ModeOptions、LoadErr。
    与「站点设置」（/admin/settings，工程级 projects.settings）分工不同：本页是**全局默认**，
    工程级覆盖仍走站点设置；读取链是「工程值 > 全局默认（本页）> 启动兜底（代码常量）」。
    前端：四字段用 .form-grid（桌面两列、窄屏一列，宽度 min(100%, …)），控件全是原生
@@ -21,11 +21,9 @@
         </div>
     </header>
 
-    {{if isset(.Err)}}{{if .Err}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
+    {* 写动作的结论由提示页在响应体里渲染（shell.RenderJump）；这一条只报「这次没读出来」。 *}
+    {{if isset(.LoadErr)}}{{if .LoadErr}}
+    <p class="badge badge-warning" role="alert">{{.LoadErr}}</p>
     {{end}}{{end}}
 
     <form method="post" action="/admin/system/save" class="card card-body">

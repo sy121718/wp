@@ -388,7 +388,7 @@ func ordersOffsetOf(r *Request) int {
 
 // orderReturnableStatus 允许申请退货的订单状态。
 //
-// 与 order 模块同一口径（见 return_request.go 的 returnableOrderStatuses）：
+// 与 order 模块同一口径（见 orderservice 的 returnableOrderStatuses）：
 // 片段层不能 import 订单模块的 model，所以这里再写一份 —— 代价是新增状态要改两处，
 // 收益是这条依赖方向不会被打穿（与状态标签同一取舍）。
 func orderReturnableStatus(status string) bool {

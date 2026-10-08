@@ -59,7 +59,7 @@ export const historyMethods = {
                 };
             },
 
-            // 修订历史：列表与恢复均由服务端渲染（loadHistoryHtmx），旧 DOM 拼装路径已删除。
+            // 修订历史：列表与恢复均由服务端渲染（loadHistoryHtmx）。
             loadHistory() { this.loadHistoryHtmx(); },
 
             markTreeSelection() {

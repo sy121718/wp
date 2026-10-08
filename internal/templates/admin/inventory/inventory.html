@@ -53,12 +53,8 @@
         </div>
     </header>
 
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.inventory.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory.lastOk", "上一次操作已完成。") }}</p>
-    {{end}}
+    {* 写动作的结论不在本页回显：它由 shell.RenderJump 渲染成提示页（见 inventory_jump.go），
+       结论走响应体、不再经 ?err= / ?ok= 回列表页。 *}
 
     <section class="card list-card">
         {* 列表标题行用 .card-header，不借 .filter-bar（审计 02-O §38 / §40）。
@@ -145,7 +141,7 @@
                    能否提交由服务端中间件按 inventory:stock_change 判定，页面不自行判断权限。
                    isset 包裹：直接渲染模板的单测数据可能没有这些键，缺键会让整页在此中断。 *}
                 <td>
-                    <form method="post" action="/admin/inventory/external-sku" class="form-inline">
+                    <form method="post" action="/admin/inventory/external-sku?{{ .ListQuery }}" class="form-inline">
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="skuCode" value="{{selectedSKU}}">
@@ -168,7 +164,7 @@
                        要写就得用户自己打出来。联动用一行内联事件（与页面上「选工程即提交」同一手法，
                        不引入自定义 JS 文件）。未入库的行没有可编辑对象，这里给提示而不是表单。 *}
                     {{if isset(r.Present)}}{{if r.Present}}
-                    <form method="post" action="/admin/inventory/stock/tracking" class="form-inline">
+                    <form method="post" action="/admin/inventory/stock/tracking?{{ .ListQuery }}" class="form-inline">
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="skuCode" value="{{selectedSKU}}">
@@ -251,7 +247,7 @@
     {* 抽屉常驻渲染（入口按钮按权限显隐）：提交路径由服务端 Casbin 中间件按
        inventory:stock_change 授权，未授权用户即便看到表单也会被拒绝。 *}
     <template id="tpl-stock-adjust">
-        <form method="post" action="/admin/inventory/stock/change" class="form-stack">
+        <form method="post" action="/admin/inventory/stock/change?{{ .ListQuery }}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">

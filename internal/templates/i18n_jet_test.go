@@ -443,7 +443,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	base := map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"), "title": "文案词条",
 		"t": TranslateFunc("zh-CN"), "csrf_token": "tok",
-		"PermSet": map[string]bool{"i18n:manage": true},
+		"Buttons": map[string]bool{"i18n.manage": true},
 		"Keyword": "", "LangFilter": "", "CatFilter": "",
 		"I18nEditURLs": []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"},
 		"Saved":        "site.component.gallery.prev · en-US", "Errored": "",
@@ -497,7 +497,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	for k, v := range base {
 		readonly[k] = v
 	}
-	readonly["PermSet"] = map[string]bool{}
+	readonly["Buttons"] = map[string]bool{}
 	out, err = render(t, set, "admin/system/i18n", readonly)
 	if err != nil {
 		t.Fatalf("无管理权限渲染失败: %v", err)
@@ -552,7 +552,7 @@ func TestArticleTranslationsPageRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("文章翻译页渲染失败: %v", err)
 	}
-	for _, want := range []string{"保存译文", "rowContext", "rowHash", "rowTarget", "<textarea", "已保存 1 条译文"} {
+	for _, want := range []string{"保存译文", "rowContext", "rowHash", "rowTarget", "<textarea"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("文章翻译页缺少 %q（模板可能中途中断或语法写错）", want)
 		}

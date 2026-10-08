@@ -9,7 +9,7 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
-{{canCreateTemplate := isset(.PermSet["contenttemplate:create"])}}
+{{canCreateTemplate := isset(.Buttons["contenttemplate.create"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -41,10 +41,6 @@
             {{end}}
         </div>
     </header>
-
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_detail_template.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
 
     {{if !.Ready}}
     <section class="card card-body">

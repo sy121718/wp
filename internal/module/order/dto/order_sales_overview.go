@@ -49,6 +49,11 @@ type SalesOverviewResp struct {
 	Status string `json:"status"`
 	// Monthly 实际生效的趋势回看月数。
 	Monthly int `json:"monthly"`
+	// Currency 本报表金额的币种代码（来自站点默认币种）。
+	//
+	// 报表必须说清自己用哪种币种：金额一律是整数分，不带币种前缀的「1234.50」在
+	// 多币种站点上无法解读。页面据此拼前缀（`money(cents, currencyPrefix(currency))`）。
+	Currency string `json:"currency"`
 
 	// ── 销售维度（区间内）────────────────────────────────────────────
 

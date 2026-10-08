@@ -260,7 +260,7 @@ export const panelsMethods = {
                 walk(nodes);
                 return found;
             },
-            // 页面设置：表单与评分均由服务端渲染（renderSettingsPanelHtmx），旧 DOM 拼装路径已删除。
+            // 页面设置：表单与评分均由服务端渲染（renderSettingsPanelHtmx）。
             renderSettingsPanel() { this.renderSettingsPanelHtmx(); },
 
 
@@ -383,7 +383,7 @@ export const panelsMethods = {
                 o[parts[parts.length - 1]] = value;
             },
 
-            // 全局设置：字段表与渲染在服务端（renderGlobalPanelHtmx），旧 DOM 拼装路径已删除。
+            // 全局设置：字段表与渲染在服务端（renderGlobalPanelHtmx）。
             renderGlobalPanel() { this.renderGlobalPanelHtmx(); },
 
 };

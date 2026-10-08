@@ -7,7 +7,7 @@ import (
 
 	pubenums "go_wp/internal/module/publication/enums"
 	pubservice "go_wp/internal/module/publication/service"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 

@@ -115,23 +115,29 @@ func TestInventoryFormFailurePreservesRawInput(t *testing.T) {
 	}
 }
 
-func TestInventoryFormSuccessRedirectAndNativeFailure(t *testing.T) {
+func TestInventoryFormSuccessJumpAndNativeFailure(t *testing.T) {
+	back := inventoryWarehousesPath + "?project=p1"
+	// 成功：htmx 档走 HX-Redirect，原生档渲染提示页（结论走响应体，不再是 302 + ?ok=）。
 	for _, hx := range []bool{true, false} {
-		c, rec, _ := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
-		redirectWhere(c, inventoryURL(inventoryWarehousesPath, "p1", nil))
+		c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
+		inventoryJump(c, true, "操作已完成", back, "仓库管理")
 		c.Writer.WriteHeaderNow()
-		if hx && (rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != "/admin/inventory/warehouses?project=p1") {
-			t.Fatalf("HX redirect: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
+		if hx {
+			if rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != back {
+				t.Fatalf("HX 成功跳转: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
+			}
+			continue
 		}
-		if !hx && (rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/inventory/warehouses?project=p1") {
-			t.Fatalf("native redirect: %d %q", rec.Code, rec.Header().Get("Location"))
+		if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
+			t.Fatalf("原生成功提示页: %d %q", rec.Code, view.name)
 		}
 	}
-	c, rec, _ := inventoryFormContext(t, url.Values{"projectId": {"p1"}, "code": {"bad"}}, false)
+	// 原生失败：渲染失败提示页（不再是 302 + ?err=）。
+	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}, "code": {"bad"}}, false)
 	(&inventoryPageHandle{}).warehouseFormFail(c, false, errors.New(inventoryenums.ErrWarehouseCodeTaken))
 	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "project=p1") || !strings.HasPrefix(rec.Header().Get("Location"), inventoryWarehousesPath+"?") {
-		t.Fatalf("native failure: %d %q", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
+		t.Fatalf("原生失败提示页: %d %q", rec.Code, view.name)
 	}
 }
 func TestInventoryFormEchoFieldsMatchFragments(t *testing.T) {

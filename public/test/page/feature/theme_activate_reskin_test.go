@@ -36,6 +36,7 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	pubmodel "go_wp/internal/module/publication/model"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/internal/templates"
 
 	"go_wp/public/test/support"
 
@@ -112,8 +113,8 @@ func TestActivateThemeReskinsWholeSite(t *testing.T) {
 
 	// 通过 dashboard handler 激活主题 B（POST /admin/themes/activate），
 	// 走真实 ActivateTheme → reskinProjectPages 编排。
-	if code := activateThemeHTTP(t, svc, projects, themeB.ID); code != http.StatusSeeOther {
-		t.Fatalf("激活主题应重定向：status=%d", code)
+	if code := activateThemeHTTP(t, svc, projects, themeB.ID); code != http.StatusOK {
+		t.Fatalf("激活主题应渲染提示页：status=%d", code)
 	}
 
 	// 断言：整站页面已转挂 B、快照为 B 的外观、全部标记待重建。
@@ -160,8 +161,8 @@ func TestActivateThemeThenSaveKeepsNewTheme(t *testing.T) {
 	page := createJsonbPage(t, svc, projectID, "/reskin-save", reskinDoc)
 	db.Table("pages").Where("id = ?", page.ID).Update("stale", false)
 
-	if code := activateThemeHTTP(t, svc, projects, themeB.ID); code != http.StatusSeeOther {
-		t.Fatalf("激活主题应重定向：status=%d", code)
+	if code := activateThemeHTTP(t, svc, projects, themeB.ID); code != http.StatusOK {
+		t.Fatalf("激活主题应渲染提示页：status=%d", code)
 	}
 	// 再保存一次：保存时快照取当前激活主题（B），应保持 B 的偏色。
 	saved, err := svc.SaveDraft(ctx, &pagedto.SaveDraftReq{
@@ -181,8 +182,10 @@ func activateThemeHTTP(t *testing.T, svc pagecontract.PageService, projects *pro
 	t.Helper()
 	// ActivateTheme 的换皮编排已随页面回 project 模块（themeAdminHandle）：
 	// 直挂 handler（不经 SetupProjectPages —— 那里带 Casbin 中间件，裸测试引擎没有鉴权链）。
+	// 结论由 shell.RenderJump 渲染整页提示（取代原先的 303 PRG），所以必须挂真实渲染器。
 	themes := projecthttp.NewThemeAdminHandle(projects, svc, nil)
 	router := gin.New()
+	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.POST("/admin/themes/activate", themes.ActivateTheme)
 
 	form := url.Values{"id": {themeID}}

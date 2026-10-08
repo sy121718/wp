@@ -11,6 +11,9 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
+{* 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath 读回）。
+   可选键一律 isset 包裹：直接渲染模板的单测不带它，缺失键会让整页在此中断。 *}
+{{lq := ""}}{{if isset(.ListQuery)}}{{lq = .ListQuery}}{{end}}
 {{entries := .Entries}}
 {{editURLs := .["I18nEditURLs"]}}
 {{hasEditURLs := false}}
@@ -21,7 +24,7 @@
 {{catFilter := .CatFilter}}
 {{langFilter := .LangFilter}}
 {{canManage := false}}
-{{if isset(.PermSet["i18n:manage"])}}{{canManage = true}}{{end}}
+{{if isset(.Buttons["i18n.manage"])}}{{canManage = true}}{{end}}
 {{hasFilter := false}}
 {{if .Keyword != ""}}{{hasFilter = true}}{{end}}
 {{if langFilter != ""}}{{hasFilter = true}}{{end}}
@@ -45,16 +48,8 @@
         {{end}}
     </header>
 
-    {{if .Saved != ""}}<p class="badge badge-success" role="status">{{ .["t"]("admin.i18n.saved", "已保存：") }}{{.Saved}}</p>{{end}}
-    {{if .Errored != ""}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.i18n.unsaved", "未保存：") }}{{.Errored}}</p>{{end}}
-    {* 批量删除的结果条（?done= / ?err=）。可选键一律 isset 包裹：直接渲染模板的单测
-       不带这两个键，缺失键会让整页在这一行中断（HTTP 仍 200，后半部分整块消失）。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论不再经 ?saved=/?errored=/?done=/?err= 回带（走 shell.RenderJump 的整页提示，
+       见 admin_jump.go）；本页不再有查询参数喂进来的提示条。 *}
 
     {* 主区：筛选工具行 + 列表，同一张卡。 *}
     <section class="card list-card">
@@ -87,11 +82,8 @@
            所以行内删除表单放表格外、按钮用 form="<id>" 关联）。
            勾选值带 (key, lang) 复合键：词条唯一标识是二元组，只带 key 会把其它语言的
            同名词条一起删掉 —— 分隔符与解析见 handler 的 adminI18nEntryKeySeparator。 *}
-        <form method="post" action="/admin/i18n/bulk-delete">
+        <form method="post" action="/admin/i18n/bulk-delete{{if lq}}?{{lq}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="_keyword" value="{{.Keyword}}">
-            <input type="hidden" name="_lang" value="{{.LangFilter}}">
-            <input type="hidden" name="_category" value="{{.CatFilter}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canManage}}{{if len(entries) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -149,14 +141,11 @@
            只在有数据时渲染：空表没有可删除的行，分页条同理（没有数据就没有页可翻）。 *}
         {{if len(entries) > 0}}
         {{range i, e := entries}}
-        <form id="i18n-del-{{i}}" class="hidden-form" method="post" action="/admin/i18n/delete"
+        <form id="i18n-del-{{i}}" class="hidden-form" method="post" action="/admin/i18n/delete{{if lq}}?{{lq}}{{end}}"
               data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="key" value="{{e.Key}}">
             <input type="hidden" name="lang" value="{{e.Lang}}">
-            <input type="hidden" name="_keyword" value="{{.Keyword}}">
-            <input type="hidden" name="_lang" value="{{.LangFilter}}">
-            <input type="hidden" name="_category" value="{{.CatFilter}}">
         </form>
         {{end}}
         {{include "../partials/pagination.html"}}
@@ -166,11 +155,8 @@
     {* 新建抽屉：按钮在页头，模板本体留在文档末尾（<template> 不参与渲染）。 *}
     {{if canManage}}
     <template id="tpl-i18n-create">
-        <form method="post" action="/admin/i18n/save">
+        <form method="post" action="/admin/i18n/save{{if lq}}?{{lq}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="_keyword" value="{{.Keyword}}">
-            <input type="hidden" name="_lang" value="{{.LangFilter}}">
-            <input type="hidden" name="_category" value="{{.CatFilter}}">
             <div class="form-grid">
                 <div class="form-field">
                     <label class="form-label">key</label>

@@ -270,4 +270,10 @@ func init() {
 	registerMenuComponentRetire()
 	// 520：后台整页标题词条（见 register_page_title_i18n.go）。
 	registerPageTitleI18n()
+	// 588：三条「能力节点」菜单清空假的 path（见 register_menu_dead_path.go）。
+	registerMenuDeadPath()
+	// 589：按钮码 —— type=3 节点的 title_key 补齐（见 register_menu_button_code.go）。
+	registerMenuButtonCode()
+	// 591：导航菜单页写动作提示页的成功回执词条（见 register_navigation_jump_i18n.go）。
+	registerNavigationJumpI18n()
 }

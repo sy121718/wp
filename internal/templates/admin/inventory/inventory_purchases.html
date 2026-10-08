@@ -31,7 +31,7 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if isset(.PermSet["inventory:purchase_create"])}}
+            {{if isset(.Buttons["inventory.purchase_create"])}}
             {{if len(.Sources) > 0}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-purchase-create" data-drawer-title="{{ .["t"]("admin.inventory_purchases.create.title", "新建采购单") }}">＋ {{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
             {{else}}
@@ -42,7 +42,7 @@
                表单原先两处模板互相指向对方而谁都没渲染 —— 本批补回本页动作区。
                未选内部货源时按钮禁用并说明去哪建：生产入库只认内部货源，
                外部供应商走采购单（服务端同样拒绝，见 ErrProductionSourceNotInternal）。 *}
-            {{if isset(.PermSet["inventory:purchase_production"])}}
+            {{if isset(.Buttons["inventory.purchase_production"])}}
             {{if len(.InternalSources) > 0}}
             <button type="button" class="btn" data-drawer-open="#tpl-production-inbound" data-drawer-title="{{ .["t"]("admin.inventory_purchases.production.title", "生产入库（自家工厂）") }}">＋ {{ .["t"]("admin.inventory_purchases.production.open", "生产入库") }}</button>
             {{else}}
@@ -62,15 +62,14 @@
         </div>
     </header>
 
-    {* 错误回显：.Err 已经由 handler 经 inventoryErrText 翻好 —— 业务错误的 key 查词条、
+    {* 错误回显：提示条只剩一处来源 —— 本页取数失败（工程列表 / 采购单列表）。
+       .Err 已经由 handler 经 inventoryErrText 翻好 —— 业务错误的 key 查词条、
        查不到用中文兜底，非业务错误（表名 / SQL / 约束名那类）只给归口文案，原文进日志。
        模板**不再**对 .Err 二次取词：那会把已译好的整句再当 key 查一遍，等于把
-       「页面上显示的到底是不是译文」这件事又交回给模板。 *}
+       「页面上显示的到底是不是译文」这件事又交回给模板。
+       写动作的结论不在本页回显 —— 它由 shell.RenderJump 渲染成提示页（见 inventory_jump.go）。 *}
     {{if isset(.Err) && .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.inventory_purchases.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory_purchases.lastOk", "上一次操作已完成。") }}</p>
     {{end}}
 
     <section class="card list-card">
@@ -146,7 +145,7 @@
                 <div class="empty-state">
                     <p class="empty-title">{{ .["t"]("admin.inventory_purchases.list.emptyHeading", "没有符合条件的采购单") }}</p>
                     <p class="empty-desc">{{ .["t"]("admin.inventory_purchases.list.empty", "没有符合条件的采购单。用右上角「新建采购单」建一张，收货仓缺省用默认仓。") }}</p>
-                    {{if isset(.PermSet["inventory:purchase_create"])}}
+                    {{if isset(.Buttons["inventory.purchase_create"])}}
                     <div class="empty-actions">
                         <button type="button" class="btn btn-primary" data-drawer-open="#tpl-purchase-create" data-drawer-title="{{ .["t"]("admin.inventory_purchases.create.title", "新建采购单") }}">＋ {{ .["t"]("admin.inventory_purchases.create.submit", "新建采购单") }}</button>
                     </div>
@@ -205,7 +204,7 @@
                 <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }} {{l.UnitPrice}}</span>
             </div>
             {{if l.Open}}
-            <form method="post" action="/admin/inventory/purchases/receipt" class="form-inline">
+            <form method="post" action="/admin/inventory/purchases/receipt?{{ .ListQuery }}" class="form-inline">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="orderId" value="{{o.ID}}">
@@ -225,7 +224,7 @@
     {{end}}
 
     {* ===== 新建采购单（抽屉模板） ===== *}
-    {{if isset(.PermSet["inventory:purchase_create"])}}
+    {{if isset(.Buttons["inventory.purchase_create"])}}
     <template id="tpl-purchase-create">
         {{include "inventory_purchase_create_form.html"}}
     </template>
@@ -237,9 +236,9 @@
        原生下拉只能提交一个值，而这三个快照列必须同源（否则会出现「选了 A 的变体、
        却写 B 的编码」）；handler 也按同一个字段名解析（parsePurchaseSkuRef）。
        成本价必填且非负（服务端同样拒绝：ErrProductionCostInvalid），数量为正整数。 *}
-    {{if isset(.PermSet["inventory:purchase_production"])}}
+    {{if isset(.Buttons["inventory.purchase_production"])}}
     <template id="tpl-production-inbound">
-        <form method="post" action="/admin/inventory/purchases/production" class="form-stack">
+        <form method="post" action="/admin/inventory/purchases/production?{{ .ListQuery }}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="requestId" value="{{.ProductionRequestID}}">

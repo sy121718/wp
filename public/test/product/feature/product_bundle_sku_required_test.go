@@ -13,7 +13,7 @@ package feature
 
 import (
 	"context"
-	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -50,46 +50,39 @@ func newBundleSKUEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	return engine, f
 }
 
-// bsCreateBundle 走页面表单建一个捆绑商品，返回 302 的 Location。
-func bsCreateBundle(t *testing.T, engine *gin.Engine, projectID string, form url.Values) string {
+// bsCreateBundle 走页面表单建一个捆绑商品，返回响应记录器。
+func bsCreateBundle(t *testing.T, engine *gin.Engine, projectID string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	base := url.Values{"projectId": {projectID}, "name": {"捆绑套餐"}, "type": {"bundle"}, "defaultPrice": {"199"}}
 	for key, values := range form {
 		base[key] = values
 	}
-	rec := postForm(engine, "/admin/products/create", base)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("新建捆绑应 302（成功进详情、失败回列表），实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	return rec.Header().Get("Location")
+	return postForm(engine, "/admin/products/create", base)
 }
 
 // TestBundleCreateWithoutSKUReportsChineseAndKeepsNothing 验收 1：
-// 不带 sku 建 bundle 被拒，回列表页并给出中文结论 —— 不是裸 key，也不是「系统内部错误」。
+// 不带 sku 建 bundle 被拒，渲染整页提示回新建页并给出中文结论 —— 不是裸 key，也不是「系统内部错误」。
 func TestBundleCreateWithoutSKUReportsChineseAndKeepsNothing(t *testing.T) {
 	engine, f := newBundleSKUEngine(t)
 	if engine == nil {
 		return
 	}
-	loc := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"no-sku-bundle"}})
-	// 失败落点已从「回列表页」改为「回**新建页自身**」（批 1）：表单就在那一页、页头有 ?err=
-	// 渲染位；回列表页会让用户以为「提交成功才跳走的」，还要重新找一遍新建入口（docs/02-T §5）。
-	if !strings.HasPrefix(loc, "/admin/products/new?") {
-		t.Fatalf("新建失败应回新建页（表单所在页），实际 Location=%q", loc)
-	}
-	msg := locationQuery(t, loc, "err")
-	if msg == "" {
-		t.Fatalf("缺少可展示的错误结论：%q", loc)
+	rec := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"no-sku-bundle"}})
+	body := assertJumpErr(t, rec)
+	// 失败落点已从「回列表页」改为「回**新建页自身**」（批 1）：表单就在那一页；
+	// 回列表页会让用户以为「提交成功才跳走的」，还要重新找一遍新建入口（docs/02-T §5）。
+	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/new?") {
+		t.Fatalf("新建失败应回新建页（表单所在页），实际回跳=%q", back)
 	}
 	// 关键判据三条：是中文可读文案、不是裸 key、不是兜底的「系统内部错误」。
-	if strings.Contains(msg, productenums.ErrBundleSKURequired) {
-		t.Fatalf("列表页不该出现裸 key，实际 %q", msg)
+	if strings.Contains(body, productenums.ErrBundleSKURequired) {
+		t.Fatalf("提示页不该出现裸 key，body=%s", body)
 	}
-	if strings.Contains(msg, "系统内部错误") {
-		t.Fatalf("业务错误被当成系统错误兜底了（sentinel 白名单漏登记），实际 %q", msg)
+	if strings.Contains(body, "系统内部错误") {
+		t.Fatalf("业务错误被当成系统错误兜底了（sentinel 白名单漏登记），body=%s", body)
 	}
-	if !strings.Contains(msg, "必须填写主体 SKU") {
-		t.Fatalf("错误提示应说明「捆绑商品必须填写主体 SKU」，实际 %q", msg)
+	if !strings.Contains(body, "必须填写主体 SKU") {
+		t.Fatalf("错误提示应说明「捆绑商品必须填写主体 SKU」，body=%s", body)
 	}
 	// 被拒的商品不落库：静默半截状态（商品在、编码空）是最难排查的一种。
 	list, err := f.svc.List(t.Context(), &productdto.ListReq{ProjectID: f.projectID, Size: 100})
@@ -117,14 +110,15 @@ func TestBundleCreateWithSKUKeepsValueAndSuffix(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.input, func(t *testing.T) {
-			loc := bsCreateBundle(t, engine, f.projectID, url.Values{
+			rec := bsCreateBundle(t, engine, f.projectID, url.Values{
 				"slug": {"bundle-" + strings.ToLower(strings.ReplaceAll(c.input, "_", "-"))},
 				"sku":  {c.input},
 			})
-			if !strings.HasPrefix(loc, "/admin/products/edit?") {
-				t.Fatalf("带 sku 的捆绑应建成功并进编辑页，实际 Location=%q", loc)
+			assertJumpOK(t, rec)
+			if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/edit?") {
+				t.Fatalf("带 sku 的捆绑应建成功并进编辑页，实际回跳=%q", back)
 			}
-			productID := locationQuery(t, loc, "product")
+			productID := jumpBackQuery(t, rec, "product")
 			detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 			if err != nil {
 				t.Fatalf("读商品失败: %v", err)
@@ -149,10 +143,11 @@ func TestVariantCreateWithoutSKUStillDerives(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"留空主体"}, "slug": {"variant-empty"},
 		"type": {"variant"}, "defaultPrice": {"19.9"},
 	})
-	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/products/edit?") {
-		t.Fatalf("变体商品不带 sku 仍应建成功，实际 %d %q", rec.Code, rec.Header().Get("Location"))
+	assertJumpOK(t, rec)
+	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/edit?") {
+		t.Fatalf("变体商品不带 sku 仍应建成功并进编辑页，实际回跳=%q", back)
 	}
-	productID := locationQuery(t, rec.Header().Get("Location"), "product")
+	productID := jumpBackQuery(t, rec, "product")
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -175,20 +170,16 @@ func TestBundleUpdateWithoutSKUKeyIsNotBlocked(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	loc := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"update-bundle"}, "sku": {"KEEP_B"}})
-	productID := locationQuery(t, loc, "product")
+	rec := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"update-bundle"}, "sku": {"KEEP_B"}})
+	assertJumpOK(t, rec)
+	productID := jumpBackQuery(t, rec, "product")
 
 	// ① HTTP 页面路径：不带 sku 键的更新不被必填规则拦住。
-	rec := postForm(engine, "/admin/products/taxonomy", url.Values{
+	upd := postForm(engine, "/admin/products/taxonomy", url.Values{
 		"projectId": {f.projectID}, "id": {productID}, "primaryCategoryId": {""}, "brandId": {""},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("不带 sku 的更新应 302，实际 %d", rec.Code)
-	}
-	target := rec.Header().Get("Location")
-	if errMsg := locationQuery(t, target, "err"); errMsg != "" {
-		t.Fatalf("不改 SKU 的更新不该被必填规则拦住，实际回带 %q", errMsg)
-	}
+	// 成功 → 成功态提示页；不改 SKU 的更新不该被必填规则拦住（页面上不该出现错误文案）。
+	assertJumpOK(t, upd)
 	detail, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

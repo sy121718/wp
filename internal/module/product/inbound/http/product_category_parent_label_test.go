@@ -157,7 +157,7 @@ func TestCategoryRowOutOfScopeBadgeRendered(t *testing.T) {
 				"ParentID": parentLabelParentID, "Depth": 0, "SearchMode": false,
 				"ParentOutOfScope": outOfScope,
 			}},
-			"PermSet": map[string]any{},
+			"Buttons": map[string]any{},
 			"Err":     "",
 		}))
 	}

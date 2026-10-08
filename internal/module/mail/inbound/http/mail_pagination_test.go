@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // TestMailListPaginationLinks 列表翻页链接只带自己的页码参数。

@@ -22,13 +22,12 @@ package mailhttp
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	mailenums "go_wp/internal/module/mail/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/mailer"
@@ -62,16 +61,16 @@ func mailFacingText(err error) (string, bool) {
 	return "", false
 }
 
-// mailErrPageText 页面路径（?err= 回带、渲染数据 Err、302 回跳）的错误文案归口。
+// mailErrPageText 页面路径（提示页正文、列表取数失败的 Err 提示条）的错误文案归口。
 //
 // 命中白名单 → 把 i18n key 翻成当前语言的文案后返回；
 // 未命中 → 记一条结构化日志，返回 mailenums.ErrInternal 的归口译文。
 //
-// 为什么必须翻译：页面提示是**直接渲染的文本**（模板 {{.Err}} 与 ?err= 都不经过
+// 为什么必须翻译：页面提示是**直接渲染的文本**（提示页正文与模板 {{.Err}} 都不经过
 // pkg/response 的 translate）。不翻的话运营会看到 mail.err.accountNotFound 这样的裸 key。
 //
 // 为什么不能让调用点直传 err.Error()：service 一旦把 PostgreSQL / SMTP 原文上抛，
-// 它就会随 302 的 Location 或页面正文摆到运营面前，与 JSON body 一样不是可信边界。
+// 它就会随提示页正文摆到运营面前，与 JSON body 一样不是可信边界。
 func mailErrPageText(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
@@ -92,8 +91,8 @@ func mailErrPageText(c *gin.Context, err error) string {
 //
 // `key: 明细` 只翻能识别的部分：key 取词条，明细按 i18n.ErrorDetail 协议取词并填 {name}。
 // **明细不是 ErrorDetail 词条就丢弃并落日志** —— 改造前这里是 `text + ": " + detail`
-// （原样拼回 service 的中文原文），英文界面上必然中英混排，而那句话会经 302 的 ?err=
-// 进页面与浏览器历史（见 mail_automation.go 的 graphInvalidError 调用点）。
+// （原样拼回 service 的中文原文），英文界面上必然中英混排，而那句话会进提示页正文
+// （见 mail_automation.go 的 graphInvalidError 调用点）。
 func translateMailFacing(translate func(key, fallback string) string, msg string) string {
 	key, detail, hasDetail := strings.Cut(msg, ": ")
 	// 兜底给 key 本身：词条缺失时页面显示的是 key（一眼可见），而不是把整句吞掉。
@@ -169,7 +168,7 @@ func mailBulkIDsText(c *gin.Context, err error) string {
 //
 // 这一段的消费者与上面**完全不同**，判据也不同：
 //
-//	· 上面（mailErrPageText 等）面向登录后的运营：有后台壳、有 ?err=、有归口文案；
+//	· 上面（mailErrPageText 等）面向登录后的运营：有后台壳、有提示页、有归口文案；
 //	· 这里面向**收件人**：邮件客户端里点开链接，浏览器直接打开 /_t/c/{token} 或
 //	  /_t/u/{token} —— 无登录态、无后台页面壳、也没有任何表单可改。
 //
@@ -223,70 +222,26 @@ func mailVisitorLogError(c *gin.Context, err error, msg string) {
 		Error(err, msg)
 }
 
-// —— 读侧回执的收口（?err= / ?ok= / ?done=）——
+// mailBulkResultTemplates 批量结论文案模板（写侧 mailBulkOutcome 唯一的字面量来源）。
 //
-// 写侧早已把错误收敛过（mailErrPageText / mailBulkIDsText / mailBulkOutcome），但页面
-// 此前是把 query 参数**原样**塞进渲染数据（`"Err": c.Query("err")`）：任何人手拼一个
-// /admin/mail?err=任意文案 就能在页面上塞一条顶着「上一次操作未完成」样式的伪造消息。
-// 查询参数与响应体、模板数据一样**不是可信边界**。
-//
-// 判定用 shell.FacingNotice（受控形状：逐字相等 / 数字归一相等 / 文案 + "：" + 定位信息），
-// 候选文案由 mailNoticeTexts 给出 —— 它是写侧全部出口的**镜像**：
-// 改了写侧文案就要在这里同步，否则运营看到的会从「已删除 3 个发信账号。」退化成
-// 「系统内部错误」（错误通道）或什么都不显示（成功通道）。
-
-// mailOkToken 单条写动作成功时回带的固定 token（/admin/mail?ok=1）。
-//
-// 它对运营没有意义（页面上会渲染成一个裸 "1"），所以读侧把它**收敛成一句翻译过的
-// 成功文案**再进模板 —— 这正是「已经是内部 token 的那条路」：不让 raw 原样透出。
-const mailOkToken = "1"
-
-// mailBulkVerbs / mailBulkNouns 批量结论里的动作与对象（写侧 mailBulkOutcome 的全部取值）。
-var (
-	mailBulkVerbs = []string{"删除", "更新"}
-	mailBulkNouns = []string{"发信账号", "邮件模板", "联系人", "群发活动", "自动化流程"}
-)
-
-// mailBulkResultTemplates 批量结论文案模板（与写侧 mailBulkOutcome 共用同一份字面量）。
+// 读侧（?done= / ?err= 的候选集与判定）已随「结论走 shell.RenderJump」整批删除：
+// 文案现在直接渲染进响应体，不再经查询参数，也就不需要一份「证明这条提示出自本仓」的镜像。
 var mailBulkResultTemplates = []string{
 	"已%s %d 个%s。",
 	"0 个%s被%s：%d 个被跳过（不存在或被服务端拒绝）。",
 	"已%s %d 个%s，另有 %d 个被跳过（不存在或被服务端拒绝）。",
 }
 
-// mail自造回执文案（不是 enums key、也不来自 shell —— 但它们会进 ?err= / ?ok=）。
+// mail自造回执文案（不是 enums key、也不来自 shell —— 它们由本模块写出，受控）。
 //
-// 状态标签与测试发送文案**不在这里**：那两组是 (key, 中文兜底) 形态，真源在
-// mailenums（mail_status_labels.go）—— 因为它们的读侧白名单要用同一份取值重拼候选集。
+// 与改造前同一份取值：判据是「整句由本页拼」，而不是「它是不是 error」。
 const (
 	mailTemplateListFailedText = "读取模板列表失败，本次没有删除任何模板。"
 	mailContactStatusBadText   = "目标状态不合法，本次没有处理任何联系人。"
 	// mailContactDeleteBadText 单条删除没拿到 id（表单被裁掉 / 手工构造的请求）。
-	// 自造文案必须同时登记进 mailNoticeTexts：读侧不看代码，只认候选集。
 	mailContactDeleteBadText  = "没有指定要删除的联系人，本次没有删除任何数据。"
 	mailAutomationDeletedText = "已删除"
 )
-
-// mailFormNoticeTemplates 本页自造的表单校验文案模板（步骤式流程编辑器，见 mail_automation_form.go）。
-//
-// 带「第 N 步」定位的整句都由本页拼出，是运营照着改的依据 —— 判据与 mailErrPageText 同源：
-// 能进响应的只有受控文案，受控性来自「整句由本页拼 + 逐条登记」。
-//
-// 每条登记**两种形态**：当前语言的词条与代码里的兜底句。只登记词条是不够的 ——
-// 词条还没种上的那一刻（或运营刚改了措辞），用户看到的正是兜底句，读侧不认它就会把回执
-// 吞掉，回落成「系统内部错误」，比不翻译更难解释。所以真源只有 enums 一份，这里只做登记。
-func mailFormNoticeTemplates(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0, len(mailenums.AutomationFormMessages)*2)
-	for _, pair := range mailenums.AutomationFormMessages {
-		text := mailLabel(tr, pair)
-		out = append(out, shell.NoticeTemplate(text))
-		if pair.Fallback != "" && pair.Fallback != text {
-			out = append(out, shell.NoticeTemplate(pair.Fallback))
-		}
-	}
-	return out
-}
 
 // mailCountedNoticeTemplates 带计数的回执文案模板（自动化与营销页）。
 var mailCountedNoticeTemplates = []string{
@@ -315,9 +270,8 @@ func mailTestSendFailedLabel(kind string) mailenums.LabelPair {
 
 // mailTestSendFailedText 测试发送失败的受控回执 + 结构化日志。
 //
-// 文案按当前语言取词：这一句既会进 302 的 ?err=，也会作为读侧白名单的候选参与比对
-// （mailNoticeTexts 调它生成候选）—— 两边都必须走这里，否则英文后台写侧写英文、
-// 读侧认中文，运营看到的是「系统内部错误」。
+// 文案按当前语言取词：结论由 shell.RenderJump 直接渲染进响应体（见 mail_jump.go），
+// 取词必须走这里，否则英文后台会拿到中文分类标签。
 func mailTestSendFailedText(c *gin.Context, kind, detail string) string {
 	if strings.TrimSpace(detail) != "" {
 		logger.Scene(mailErrScene).
@@ -345,23 +299,15 @@ func mailTestSendFailedText(c *gin.Context, kind, detail string) string {
 //	  自动化流程不存在）—— 那句话是对的，缺的是前面那一档。
 //
 // 为什么这三句是中文硬编码而不是 mailenums 的 i18n key：与上面的
-// mailTemplateListFailedText / mailContactStatusBadText 同一取舍 —— 它们是**本页自造**
-// 的受控文案（不是 service 上抛、也不来自 shell），受控性来自「整句由本模块写出 +
-// 逐条登记进 mailNoticeTexts」。**漏登记的后果是读侧把它丢弃**（shell.FacingNotice
-// 未命中 → shell.PageInternalText），运营看到的是「系统内部错误」——
-// 新增回执文案时务必同步登记，这是上一批踩过的点。
+// mailTemplateListFailedText / mailContactStatusBadText 同一取舍 —— 它们是**本模块自造**
+// 的受控文案（不是 service 上抛、也不来自 shell），受控性来自「整句由本模块写出」。
+// 结论由 shell.RenderJump 直接渲染（见 mail_jump.go），不再经查询参数回带，
+// 所以也不需要一份「读侧候选集」来证明这条提示出自本仓。
 const (
 	mailCampaignIDRequiredText   = "请先从活动列表选择一条活动，再查看它的报表。"
 	mailRunIDRequiredText        = "请先从实例列表选择一条实例，再查看它的排障详情。"
 	mailAutomationIDRequiredText = "请先从流程列表选择一个流程，再查看它的画布。"
 )
-
-// mailIDRequiredTexts 上面三句的集合（mailNoticeTexts 登记用；新增一句必须加进来）。
-var mailIDRequiredTexts = []string{
-	mailCampaignIDRequiredText,
-	mailRunIDRequiredText,
-	mailAutomationIDRequiredText,
-}
 
 // mailQueryID 读取 ?id= 并区分「没给」与「给了」——第二返回值 false 表示**缺参**。
 //
@@ -385,90 +331,12 @@ func mailQueryID(c *gin.Context) (uint64, bool) {
 
 // mailAutomationStatusNotice 状态变更回执（当前语言）。
 //
-// **写侧与读侧共用这一份**：写侧（MailAutomationStatus）把它拼进 302 的 ?ok=，
-// 读侧（mailNoticeTexts）用它生成白名单候选 —— 两边只要有一处自己拼字面量，
-// 就会出现「写侧写了个读侧不认的值」：运营点完按钮，页面上什么都没有，
-// 而服务端不报错、日志里也看不出来。
-//
 // 整句外壳也是词条（AutomationStatusChanged）：只把状态标签词条化的话，
 // 英文界面会显示成「状态已更新为 Enabled.」—— 半句中文比全句中文更像渲染故障。
+// 结论由 shell.RenderJump 渲染进响应体（见 mail_jump.go），不再经 ?ok= 回带。
 func mailAutomationStatusNotice(c *gin.Context, status string) string {
 	tr := shell.TranslateFor(c)
 	return i18n.FillTranslate(tr,
 		mailenums.AutomationStatusChanged, mailenums.AutomationStatusChangedFallback,
 		map[string]string{"status": mailLabel(tr, mailenums.AutomationStatusLabel(status))})
-}
-
-// mailNoticeTexts 本页可以原样展示的回执文案（当前语言）。
-func mailNoticeTexts(c *gin.Context) []string {
-	translate := shell.TranslateFor(c)
-	out := make([]string, 0, len(mailenums.MailFacingMessages)+32)
-	for _, key := range mailenums.MailFacingMessages {
-		out = append(out, translate(key, key))
-	}
-	out = append(out,
-		translate(mailenums.ErrInternal, "操作失败，请稍后重试"),
-		shell.BulkIDsNoticeTemplate(c),
-		mailTemplateListFailedText,
-		mailContactStatusBadText,
-		mailContactDeleteBadText,
-		mailAutomationDeletedText,
-		// 状态变更回执：与**写侧同一份拼装**（mailAutomationStatusNotice）。
-		// 三条已知状态 + 未知档各生成一条候选 —— 少一条的表现是那一档回执
-		// 在页面上静默消失（成功通道未命中回落空串）。
-		mailAutomationStatusNotice(c, "active"),
-		mailAutomationStatusNotice(c, "paused"),
-		mailAutomationStatusNotice(c, "draft"),
-		mailAutomationStatusNotice(c, ""),
-		mailTestSendFailedText(c, string(mailer.KindTemporary), ""),
-		mailTestSendFailedText(c, string(mailer.KindPermanent), ""),
-		mailTestSendFailedText(c, string(mailer.KindConfiguration), ""),
-		// 未分类档（Kind 为空 / 取值漂移）：写侧会落到它，读侧不登记就会把那条回执丢掉。
-		mailTestSendFailedText(c, "", ""),
-	)
-	// 缺 id 的引导文案（见 mailIDRequiredTexts）：不登记的话读侧会把它丢掉，
-	// 运营看到的会从「请先从活动列表选择一条活动」退化成「系统内部错误」。
-	out = append(out, mailIDRequiredTexts...)
-	for _, tpl := range mailFormNoticeTemplates(c) {
-		out = append(out, shell.NoticeTemplate(tpl))
-	}
-	for _, tpl := range mailCountedNoticeTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
-	}
-	for _, verb := range mailBulkVerbs {
-		for _, noun := range mailBulkNouns {
-			out = append(out,
-				shell.NoticeTemplate(fmt.Sprintf(mailBulkResultTemplates[0], verb, 0, noun)),
-				shell.NoticeTemplate(fmt.Sprintf(mailBulkResultTemplates[1], noun, verb, 0)),
-				shell.NoticeTemplate(fmt.Sprintf(mailBulkResultTemplates[2], verb, 0, noun, 0)),
-			)
-		}
-	}
-	return out
-}
-
-// mailPageErr 页面 ?err= 的统一出口（未命中落归口文案）。
-func mailPageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, mailNoticeTexts(c))
-	})
-}
-
-// mailPageOk 页面 ?ok= 的统一出口（固定 token 收敛成一句成功文案；其余过白名单，未命中落空串）。
-func mailPageOk(c *gin.Context) string {
-	raw := strings.TrimSpace(c.Query("ok"))
-	if raw == "" {
-		return ""
-	}
-	if raw == mailOkToken {
-		return shell.TranslateFor(c)(mailenums.MsgSaveSuccess, "保存成功")
-	}
-	return shell.FacingNotice(raw, mailNoticeTexts(c))
-}
-
-// mailPageDone 页面 ?done= 的统一出口（成功提示：未命中落空串）。
-func mailPageDone(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, mailNoticeTexts(c))
-	})
 }

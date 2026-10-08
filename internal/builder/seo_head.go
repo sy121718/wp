@@ -247,7 +247,7 @@ const schemaOrgContext = "https://schema.org"
 
 // siteBaseURLEnv 站点公开根地址的环境变量名。
 //
-// 与 sitemap / robots.txt（internal/module/page/service/page_publish_url.go）、
+// 与 sitemap / robots.txt（internal/module/page/service/page_publish.go）、
 // 语言切换链接（internal/pipeline/site_lang.go）读的是同一个变量：结构化数据里的
 // 站点 url 必须与 sitemap 的 <loc> 指向同一域名，否则站点对外宣称了两个实体。
 // 变量可带路径前缀（开发环境就是 http://127.0.0.1:8080/site），这里保留前缀。

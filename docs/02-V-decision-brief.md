@@ -67,8 +67,8 @@ internal/module/order/inbound/http/order_router.go
 - `internal/permission/codes.go`：`OrderCreate Perm = "order:create"`，中文名 **「新建订单」**（权限点已存在、已声明、无需新迁移）；
 - `Handle.CreateOrder`（`order_handle.go`）：`operatorFromContext(c)` 取到操作人时**自动把 `CreatedVia` 置为 `"admin"`**，并落 `CreateBy`；
 - `CreateOrderReq`（`dto/order_req.go`）：`CreatedVia` 注释写「checkout / admin / api」；`AdminNote` 注释写「自建订单（createdVia=admin）与代发订单的填写位置」；`Attribution` 注释写「允许为 nil（**后台代客下单**没有访客上下文）」；
-- `service/order_create.go` 的 `operatorTypeOf(createdVia)`：`CreatedViaAdmin → OperatorTypeAdmin`，进状态流转记录的 `operator_type`；
-- `service/order_create_persist.go` 用 `operatorTypeOf(d.head.CreatedVia)` 落库。
+- `service/order.go` 的 `operatorTypeOf(createdVia)`：`CreatedViaAdmin → OperatorTypeAdmin`，进状态流转记录的 `operator_type`；
+- `service/order.go` 的 `persistOrderTx` 用 `operatorTypeOf(d.head.CreatedVia)` 落库。
 
 `public/test/order/feature/trade_empty_state_honesty_test.go` 的 `TestOrdersEmptyCopyMatchesRoutes`
 判据 ① 只扫 `routes.snapshot` 里 **`/admin/orders` 前缀**（`/create`、`/new`、`/place`、`/draft`），
@@ -171,7 +171,7 @@ internal/module/order/inbound/http/order_router.go
 - 代价：**L**（1 个新页面 + 1 个新控件 + 3~4 个测试文件 + 1 条回调迁移）。量级与「商品新建整页」同档。
 - 影响面：订单模块 handler/路由/模板/测试；`routes.snapshot`；`02-O` orders 任务 1 的结论反转。
 - 风险（**这一条是必须先定的产品语义，不是代码细节**）：
-  - `service/order_create_draft.go` 的 `buildOrderDraft` **无条件**调用 `ensureGuestAccount`；
+  - `service/order.go` 的 `buildOrderDraft` **无条件**调用 `ensureGuestAccount`；
     `ensureGuestAccount` 只看 `req.UserID != nil`，**不看 `CreatedVia`** → 后台代客建单时若客户邮箱
     没有账号，会**自动开号并发初始密码邮件**给客户。代客建单的真实场景（电话单、老客户、线下单）
     里这可能是误发。**补 UI 之前必须先定：admin 入口是否跳过开号 / 是否跳过发信。**

@@ -151,6 +151,15 @@ const (
 	// 部门用户分配（POST /api/dept/user/save）
 	DeptUserSave Perm = "dept:user_save"
 
+	// —— i18n（2）——
+	// 文案词条查看（GET /api/i18n/list）。**没有对应的 API 路由** —— 它是后台页
+	// /admin/i18n 的 Casbin 对象（页面经 CasbinMiddlewareForPath 借用），
+	// 因此必须在页面注册处显式 Declare，否则 permission.RoutesOf 查不到它、
+	// AI 工具按 fail closed 一律 forbidden（见 AGENTS.md §AI 工具）。
+	I18nView Perm = "i18n:view"
+	// 文案词条管理（POST /api/i18n/save）。同上：后台页的增删改与批量删除都借这一个对象。
+	I18nManage Perm = "i18n:manage"
+
 	// —— inventory（30）——
 	// 查看物料清单（GET /api/inventory/bom/get）
 	InventoryBomGet Perm = "inventory:bom_get"
@@ -654,6 +663,12 @@ const (
 	// 角色用户分配（POST /api/role/user/save）
 	RoleUserSave Perm = "role:user_save"
 
+	// —— seo（1）——
+	// 产物 SEO 体检（POST /api/seo/audit）。**没有对应的 API 路由**：真实路由是
+	// /api/publication/seo-audit（声明 publication:seo_audit），本对象是它额外校验的
+	// 第二条既有策略（迁移 183 的 seo:audit）。在注册处显式 Declare，理由同 i18n。
+	SEOAudit Perm = "seo:audit"
+
 	// —— user（4）——
 	// 查看客户详情（GET /api/customer/get）
 	UserCustomerDetail Perm = "user:customer_detail"
@@ -804,6 +819,10 @@ var specs = map[Perm]spec{
 	DeptUpdate:   {module: "dept", name: "更新部门"},
 	DeptUserList: {module: "dept", name: "部门用户查看"},
 	DeptUserSave: {module: "dept", name: "部门用户分配"},
+
+	// —— i18n ——
+	I18nView:   {module: "i18n", name: "文案词条查看"},
+	I18nManage: {module: "i18n", name: "文案词条管理"},
 
 	// —— inventory ——
 	InventoryBomGet:             {module: "inventory", name: "查看物料清单"},
@@ -1067,6 +1086,9 @@ var specs = map[Perm]spec{
 	RoleUpdate:   {module: "role", name: "更新角色"},
 	RoleUserList: {module: "role", name: "角色用户查看"},
 	RoleUserSave: {module: "role", name: "角色用户分配"},
+
+	// —— seo ——
+	SEOAudit: {module: "seo", name: "产物 SEO 体检"},
 
 	// —— user ——
 	UserCustomerDetail: {module: "user", name: "查看客户详情"},

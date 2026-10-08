@@ -29,10 +29,8 @@
     {{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.content.templates.errorLead", "提示：") }}{{.Err}}</p>
     {{end}}
-    {* 可选键一律 isset 包裹：缺失键会让整页在此中断（HTTP 仍 200，列表整块消失）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论不在本页回显（走 shell.RenderJump 提示页，见 content_template_err.go），
+       提示条只由「列表取数失败」填充（见上面的降级分支）。 *}
     {{if !.Ready}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.content.templates.notReady", "内容模板能力未装配，本页暂不可用。") }}</p>
     {{end}}
@@ -88,10 +86,9 @@
         {* 勾选框与批量动作同属一个 form（<form> 包 <table> 是合法的）：提交时浏览器直接带上
            所有勾中的 ids，不需要在提交前注入隐藏域。「设为生效」是这个 form 里的第二个动作，
            用按钮的 formaction 改投端点（与批量条上的批量按钮同一手法），不嵌套第二个 form。 *}
-        <form method="post" action="/admin/content-templates/bulk-delete">
+        {* 回跳上下文走 action 的 query（服务端 shell.BackPath 按白名单读回），不再用隐藏域。 *}
+        <form method="post" action="/admin/content-templates/bulk-delete?project={{selectedProject}}&entityType={{ .EntityType }}">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="entityType" value="{{ .EntityType }}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if .TemplateCount > 0}}
         {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -154,7 +151,7 @@
                         {{else}}
                         {* 同一（工程, 类型）下只允许一套生效：切换是 POST，与 JSON 接口共用权限点
                            contenttemplate:activate（页面入口经 CasbinMiddlewareForPath 映射）。 *}
-                        <button type="submit" class="btn btn-sm" formaction="/admin/content-templates/activate"
+                        <button type="submit" class="btn btn-sm" formaction="/admin/content-templates/activate?project={{selectedProject}}&entityType={{ .EntityType }}"
                                 name="id" value="{{t.ID}}">{{tr("admin.content.templates.activate", "设为生效")}}</button>
                         {{end}}
                     </td>
@@ -183,7 +180,7 @@
                     <td class="col-actions">
                         {{if t.EditURL != ""}}
                         <a class="btn btn-sm" href="{{t.EditURL}}">{{tr("admin.content.templates.visualEdit", "可视化编辑") }}</a>
-                        <a class="btn btn-sm btn-ghost" href="/admin/content-templates/edit?id={{t.ID}}&projectId={{selectedProject}}">{{tr("admin.content.templates.editEntry", "编辑入口") }}</a>
+                        <a class="btn btn-sm btn-ghost" href="/admin/content-templates/edit?id={{t.ID}}&project={{selectedProject}}">{{tr("admin.content.templates.editEntry", "编辑入口") }}</a>
                         {{else}}
                         {* 没有编辑入口时只给一句短话 + 悬停看原因：完整说明（缺样例实体）铺在单元格里
                            会把操作列撑成整表最宽的一列，反而挤掉了「状态 / 引用」两列。 *}

@@ -43,7 +43,7 @@ func pluginsPatrolData(patrol any) map[string]any {
 	return map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
 		"title": "插件管理", "menu": "plugins", "t": TranslateFunc("zh-CN"), "csrf_token": "tok",
-		"PermSet": map[string]any{},
+		"Buttons": map[string]any{},
 		"Plugins": []map[string]any{
 			{"ID": "hello", "Name": "示例插件", "Version": "1.0.0", "ComponentCount": 2,
 				"Enabled": true, "InstalledAt": "2026-01-01 00:00:00"},

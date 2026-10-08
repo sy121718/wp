@@ -120,7 +120,7 @@ var writeCalls = map[string]bool{
 // page/mail/analytics 的 PurgeRetention / PurgeExpiredViews 全部漏扫）。
 // **加完立刻跑一遍全量命中，逐条核实结果**：
 //
-//	· Save*：新命中 1 条 —— page/service/page_publish_kernel.go#syncKernel（3 处 SaveDraftInput，
+//	· Save*：新命中 1 条 —— page/service/page_publish.go#syncKernel（3 处 SaveDraftInput，
 //	  互斥分支，已进允许清单并写明理由）。其余 SaveXxx 调用点要么自带 Tx 后缀、要么在事务标记内。
 //	· Persist*：零新命中 —— persistDependencies / persistDependenciesTx / persistDependenciesFromManifest /
 //	  persistMultiLangArtifacts / persistOrder 都在事务标记内或本身就是 …Tx 变体。
@@ -200,12 +200,12 @@ var txBoundaryAllow = map[string]string{
 	// public/test/page/unit/page_publish_ledger_test.go 与 page_url_rollback_ledger_test.go。
 	// 媒体批的两条已修（Upload / GenerateVariants 从本清单移出）：DB 段已收进同一事务，
 	// 扫描器不再把它们算作候选（条目过期即失败，所以必须删掉而不是留着）。
-	"internal/module/plugin/service/plugin_install.go#Install": "待修（中）：L1 迁移（已提交）+ 落盘 + registry 写入；失败会留孤儿 schema，需巡检或补偿。归插件批",
+	"internal/module/plugin/service/plugin.go#Install": "待修（中）：L1 迁移（已提交）+ 落盘 + registry 写入；失败会留孤儿 schema，需巡检或补偿。归插件批",
 	// —— 已知可接受（写明「为什么天然独立」，不是待办）——
-	"internal/module/build/service/build_worker.go#execute":                         "误报：MarkFailed / MarkSucceeded 是 if/else 互斥分支，同一执行路径只会触发一支，不存在半截状态",
-	"internal/module/page/service/page_artifact_rebuild.go#GarbageCollectArtifacts": "可接受：产物文件删除（DeleteArtifact，第六批新识别；另有 defer 里的孤儿内容对象回收）+ MarkPayloadState 逐条记录失败原因，且能按 source_document 重建 —— 幂等可重跑",
+	"internal/module/build/service/build_worker.go#execute":                "误报：MarkFailed / MarkSucceeded 是 if/else 互斥分支，同一执行路径只会触发一支，不存在半截状态",
+	"internal/module/page/service/page_publish.go#GarbageCollectArtifacts": "可接受：产物文件删除（DeleteArtifact，第六批新识别；另有 defer 里的孤儿内容对象回收）+ MarkPayloadState 逐条记录失败原因，且能按 source_document 重建 —— 幂等可重跑",
 	// —— 2026-09-26 定时上下线批（PIPE-7）新命中的两条，逐条核实结论 ——
-	"internal/module/page/service/page_retention.go#PurgeRetention":  "可接受：保留期清理任务 —— 两个 retention.Task 各按时间阈值成批删**不同表**（page_revisions 的历史快照 / page_schedules 的终态排定），幂等可重跑、部分失败仅告警（retention.RunAll 逐任务收口）。两处写之间没有跨行不变量：一张表删成功、另一张失败时，前者的成果不该被回滚（下次运行会继续收敛）。与 mail_retention.go#PurgeRetention 同形 —— 包成一个大事务反而让行锁横跨两张表的成批 DELETE",
+	"internal/module/page/service/page_service.go#PurgeRetention":    "可接受：保留期清理任务 —— 两个 retention.Task 各按时间阈值成批删**不同表**（page_revisions 的历史快照 / page_schedules 的终态排定），幂等可重跑、部分失败仅告警（retention.RunAll 逐任务收口）。两处写之间没有跨行不变量：一张表删成功、另一张失败时，前者的成果不该被回滚（下次运行会继续收敛）。与 mail_retention.go#PurgeRetention 同形 —— 包成一个大事务反而让行锁横跨两张表的成批 DELETE",
 	"internal/module/page/service/page_schedule.go#applyOneSchedule": "误报：三处写（MarkScheduleDone / MarkScheduleFailed / ReleaseScheduleForRetry）是**按执行结果三选一**的互斥分支，同一路径只落一支；且都必须是**单行条件更新**（WHERE id AND status='running' AND lease_token=?）—— 完成归属依赖租约令牌，写错要被 ErrScheduleLeaseLost 挡下。刻意不包事务：到点扫描逐条独立结案，一条排定的失败不该把同批其它排定的结案一起回滚（「单条失败不中断整批」正是这条扫描的设计），而认领与结案都必须跑在 autocommit 上（同 build_jobs 的 claim 注释：事务里一条语句失败后整个事务已中止，重试没有意义）",
 
 	"internal/module/presentation/service/presentation_stale.go#MarkStaleByDependency": "误报：两处写是互斥分支（模板换代只标 template 模式，其余依赖源两种模式都标），单次调用只执行一支；跨工程循环内每工程各一条带 RLS 作用域的 UPDATE，无需合并事务。",
@@ -213,15 +213,15 @@ var txBoundaryAllow = map[string]string{
 	// 这三条是「扩了识别表才看得见」的：Update*/Incr* 此前不在表里，它们一个都不会被扫到。
 	"internal/module/mail/service/mail_campaign.go#SaveCampaign":  "误报：CreateCampaign 与 UpdateCampaignFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支，不存在半截状态 —— 与 build_worker.go#execute 同形",
 	"internal/module/mail/service/mail_campaign.go#StartCampaign": "可接受：两处 UpdateCampaignFields 是「置为发送中」与「降级也失败时退回草稿」的**补偿**，成功路径只写一次；补偿原先被 `_ =` 吞掉，本轮已改为结构化日志留痕（带 campaign_id）。队列是跨系统（Redis/asynq），按 AGENTS.md 的跨库条款处理：补偿幂等（写固定状态值）+ 留痕 + 可在后台重新保存收敛",
-	"internal/module/admin/service/admin_login.go#AdminLogin":     "可接受：同一行上的两个**互相独立**的属性 —— 失败计数清零（ResetLoginFailure，原子 UPDATE）与最近登录时间 / IP 戳（Updates）。各自单独成立、没有跨行不变量，中间失败不会被误读（下次登录自然收敛）；失败分支在写之前就 return，两条路径不会同时发生。可以合并成一条 UPDATE，但收益只是少一次往返，不值得为此改动登录代码",
+	"internal/module/admin/service/admin.go#AdminLogin":           "可接受：同一行上的两个**互相独立**的属性 —— 失败计数清零（ResetLoginFailure，原子 UPDATE）与最近登录时间 / IP 戳（Updates）。各自单独成立、没有跨行不变量，中间失败不会被误读（下次登录自然收敛）；失败分支在写之前就 return，两条路径不会同时发生。可以合并成一条 UPDATE，但收益只是少一次往返，不值得为此改动登录代码",
 
 	// —— 2026-09-19 第四批（识别表补漏后新命中的一条，逐条核实结论）——
 	// Save* 前缀是本批新加的；它让这个方法第一次被扫到 —— 此前识别表只认精确的 Save / SaveConfig，
 	// 看不出 publisher.SaveDraftInput 是一次持久化写入。
-	"internal/module/page/service/page_publish_kernel.go#syncKernel": "误报：3 处 SaveDraftInput 落在**互斥分支**里 —— ErrPageNotFound 分支、路径/语言落后分支各自写完就 return，只有两个前置条件都不成立时才走第三处。同一执行路径最多写一次，不存在半截状态 —— 与 build_worker.go#execute（MarkFailed / MarkSucceeded 二选一）同形",
+	"internal/module/page/service/page_publish.go#syncKernel": "误报：3 处 SaveDraftInput 落在**互斥分支**里 —— ErrPageNotFound 分支、路径/语言落后分支各自写完就 return，只有两个前置条件都不成立时才走第三处。同一执行路径最多写一次，不存在半截状态 —— 与 build_worker.go#execute（MarkFailed / MarkSucceeded 二选一）同形",
 
 	// —— 2026-09-19 第五批（识别表补进 5 个保留期 Delete 后唯一的新命中，逐条核实结论）——
-	"internal/module/mail/service/mail_retention.go#PurgeRetention": "可接受：保留期清理任务 —— 先固化（EnsureCampaignTotals，SetCampaignEventTotalsIfUnset 幂等 IfUnset、单条失败跳过留痕），再按 retention.Task 逐表成批删「早于 cutoff 的历史行」（DeleteEventsBefore / DeleteLogsBefore / DeleteNodeLogsBefore，各表独立任务、按时间阈值成批删、幂等可重跑，部分失败仅告警）。四处写之间没有跨行不变量：固化失败时明确「跳过该活动的固化但继续清理」是设计选择（明细可按保留期内数据重算）；包进一个大事务反而让行锁横跨三张表的成批 DELETE。analytics 的同类保留期函数（DeleteViewsBefore 所在函数）只有 1 处写，本轮不构成候选；page 的同类函数（PurgeRetention）2026-09 接入定时上下线的终态清理后变成 2 处写，已在下方向单列一条（与本条同形）",
+	"internal/module/mail/service/mail_campaign.go#PurgeRetention": "可接受：保留期清理任务 —— 先固化（EnsureCampaignTotals，SetCampaignEventTotalsIfUnset 幂等 IfUnset、单条失败跳过留痕），再按 retention.Task 逐表成批删「早于 cutoff 的历史行」（DeleteEventsBefore / DeleteLogsBefore / DeleteNodeLogsBefore，各表独立任务、按时间阈值成批删、幂等可重跑，部分失败仅告警）。四处写之间没有跨行不变量：固化失败时明确「跳过该活动的固化但继续清理」是设计选择（明细可按保留期内数据重算）；包进一个大事务反而让行锁横跨三张表的成批 DELETE。analytics 的同类保留期函数（DeleteViewsBefore 所在函数）只有 1 处写，本轮不构成候选；page 的同类函数（PurgeRetention）2026-09 接入定时上下线的终态清理后变成 2 处写，已在下方向单列一条（与本条同形）",
 
 	// —— 2026-09-19 第六批（Delete* / Update* 成为前缀后识别表第一次看见的候选）——
 	// 取舍变了：不再像第五批那样「发现一个写变体就按精确名补一条」，改用前缀（实测误报 0，见 writePrefixes）。
@@ -233,15 +233,15 @@ var txBoundaryAllow = map[string]string{
 	// 待修 b —— **本批之前就红**（i18n 扇出那次提交引入），与 Delete/Update 前缀无关，一并登记。
 
 	// 下列五条是**误报 / 可接受**，不是待办。
-	"internal/module/admin/service/admin_crud.go#AdminEdit":                              "可接受：两处是**不同存储边界** —— sys_admin 行更新（Updates，DB）与会话失效（auth.DeleteUserSession，Redis）。Redis 不在数据库事务的覆盖范围内，本函数已按该边界写成「先提交 DB 主操作、再撤会话、撤失败只记结构化日志」，重登 / 再次编辑自然收敛",
-	"internal/module/mail/service/mail_account.go#TestSend":                              "误报：两处 UpdateAccountFields 是 sendErr 的 if/else **互斥分支**（成功写 last_check_error=nil、失败写错误原因），同一路径只执行一支；写的是同一行上的「最近检查结果」诊断字段，无跨行不变量",
-	"internal/module/mail/service/mail_automation.go#SaveAutomation":                     "误报：CreateAutomation 与 UpdateAutomationFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支 —— 与 mail_campaign.go#SaveCampaign 同形",
-	"internal/module/mail/service/mail_automation_run.go#RunAutomation":                  "误报：两处 UpdateRunFields 落在不同节点类型的分支里（delay 节点写完 waiting 即挂起返回 / email 节点发信失败写 error 后重试），同一次调用只落一支。发信与入队是跨系统边界（不可回滚），本函数按「一步一提交 + node_logs 幂等判重（NodeLogExists）+ 游标先推进」设计，包成一个大事务反而让行锁横跨 SMTP 往返",
-	"internal/module/presentation/service/presentation_archive.go#EnsureArchiveInstance": "可接受：**幂等可重跑** —— CreateInstance 对「同实体同角色」自身幂等（presentation_instance.go:51 已有实例即返回），第二处 UpdateURL 只在 slug 变化时把归档页迁到新路径；失败后重跑会走幂等分支再修正。且 CreateInstance 内部含编译 + 发布 + 文件系统激活（跨系统），包进一个 DB 事务不现实",
+	"internal/module/admin/service/admin.go#AdminEdit":                                    "可接受：两处是**不同存储边界** —— sys_admin 行更新（Updates，DB）与会话失效（auth.DeleteUserSession，Redis）。Redis 不在数据库事务的覆盖范围内，本函数已按该边界写成「先提交 DB 主操作、再撤会话、撤失败只记结构化日志」，重登 / 再次编辑自然收敛",
+	"internal/module/mail/service/mail_account.go#TestSend":                               "误报：两处 UpdateAccountFields 是 sendErr 的 if/else **互斥分支**（成功写 last_check_error=nil、失败写错误原因），同一路径只执行一支；写的是同一行上的「最近检查结果」诊断字段，无跨行不变量",
+	"internal/module/mail/service/mail_automation.go#SaveAutomation":                      "误报：CreateAutomation 与 UpdateAutomationFields 是**新建 / 更新二选一的互斥分支**（req.ID > 0 走更新、否则走新建），同一次调用只执行一支 —— 与 mail_campaign.go#SaveCampaign 同形",
+	"internal/module/mail/service/mail_automation.go#RunAutomation":                       "误报：两处 UpdateRunFields 落在不同节点类型的分支里（delay 节点写完 waiting 即挂起返回 / email 节点发信失败写 error 后重试），同一次调用只落一支。发信与入队是跨系统边界（不可回滚），本函数按「一步一提交 + node_logs 幂等判重（NodeLogExists）+ 游标先推进」设计，包成一个大事务反而让行锁横跨 SMTP 往返",
+	"internal/module/presentation/service/presentation_instance.go#EnsureArchiveInstance": "可接受：**幂等可重跑** —— CreateInstance 对「同实体同角色」自身幂等（presentation_instance.go:51 已有实例即返回），第二处 UpdateURL 只在 slug 变化时把归档页迁到新路径；失败后重跑会走幂等分支再修正。且 CreateInstance 内部含编译 + 发布 + 文件系统激活（跨系统），包进一个 DB 事务不现实",
 	// —— 2026-09-19 第七批（导航乐观锁引入 SaveWithExpected 后新命中）——
 	// 同一个方法里出现两条写路径：有 expected token 走 SaveWithExpected（条件 UPDATE），
 	// 没有则走 Save。二者是**互斥分支**，单次调用只执行一支。
-	"internal/module/navigation/service/navigation_crud.go#Update": "误报：Save 与 SaveWithExpected 是「有 / 无乐观锁 token」的互斥分支（req.ExpectedUpdatedAt 为空走 Save、非空走 SaveWithExpected），单次调用只执行一支；SaveWithExpected 本身是条件 UPDATE（WHERE update_time = expected），原子性由 SQL 保证，不存在半截状态 —— 与 mail_campaign.go#SaveCampaign 同形。",
+	"internal/module/navigation/service/navigation.go#Update": "误报：Save 与 SaveWithExpected 是「有 / 无乐观锁 token」的互斥分支（req.ExpectedUpdatedAt 为空走 Save、非空走 SaveWithExpected），单次调用只执行一支；SaveWithExpected 本身是条件 UPDATE（WHERE update_time = expected），原子性由 SQL 保证，不存在半截状态 —— 与 mail_campaign.go#SaveCampaign 同形。",
 }
 
 func TestServiceWritePathsHaveTransactionBoundary(t *testing.T) {

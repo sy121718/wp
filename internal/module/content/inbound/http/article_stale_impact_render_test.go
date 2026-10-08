@@ -31,7 +31,7 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 		{ID: "a1", Slug: "hello-world", Revision: 1, UpdatedAt: "2026-09-13 10:00",
 			Data: map[string]any{"title": "第一篇"}},
 	}
-	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "", "")
+	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "")
 	data["StaleImpact"] = gin.H{
 		"Available": true,
 		"Pages":     []gin.H{{"ID": "pg1", "Path": "/zh/stale-only-page", "ProjectID": "prj", "ProjectName": "站点"}},

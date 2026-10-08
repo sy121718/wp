@@ -1,18 +1,22 @@
 package adminhttp
 
-// admin_pages_router.go — admin 模块页面路由入口（自 dashboard 模块搬回）。
-//
 // 两个独立入口，装配层按需调用（见 internal/routers/assembly.go）：
 //   - SetupAdminPages：/admin 前缀的认证页面组（Session + CSRF + 权限上下文由装配层挂好）；
 //   - SetupAdminShellPages：引擎根级注册（登录页，无认证）。
+//
+// 页面注册与 /api 路由分文件：鉴权扫描按「文件里有没有组级 Casbin」判断整份文件。
+// API 路由组挂了 CasbinMiddleware，页面组没有；合在一个文件里，不挂 Casbin 的页面写端点会被扫成已鉴权。
 
 import (
-	"go_wp/internal/middleware/builtin"
-	admincontract "go_wp/internal/module/admin/contract"
-	pagecontract "go_wp/internal/module/page/contract"
-	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/module/admin/contract"
+	"go_wp/internal/module/page/contract"
+	"go_wp/internal/module/sysconfig/contract"
+	"go_wp/internal/permission"
 )
 
 // SetupAdminPages 注册 admin 六领域管理页 + 文案词条页 + 语言切换。
@@ -42,7 +46,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
 	adminPages.POST("/administrators/delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsDelete)
-	// 批量删除：逐条走上面的单条删除路径，单条失败不整批回滚（结果经 ?done=/?err= 回带）。
+	// 批量删除：逐条走上面的单条删除路径，单条失败不整批回滚（结果由提示页给出，见 admin_jump.go）。
 	// 权限点复用单条删除的业务 API，不新增权限点。
 	adminPages.POST("/administrators/bulk-delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsBulkDelete)
 
@@ -112,6 +116,11 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
 	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
 	i18nPages.SetPageMarker(pages)
+	// 两个 Casbin 对象都没有对应的 API 路由（词条页只有页面路由），必须在**注册处显式声明**：
+	// 否则 permission.RoutesOf 查不到这两条权限点，AI 工具按 fail closed 一律 forbidden，
+	// 而页面本身完全正常（AGENTS.md §AI 工具记过这一类）。样板：mail 的 declareMailPageObjects。
+	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
+	permission.Declare(http.MethodPost, "/api/i18n/save", permission.I18nManage)
 	adminPages.GET("/i18n", builtin.CasbinMiddlewareForPath("/api/i18n/list"), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"), i18nPages.I18nEntryEditFragment)
 	adminPages.POST("/i18n/update", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryUpdate)

@@ -23,8 +23,7 @@ import (
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
-	"go_wp/internal/permission"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
@@ -42,22 +41,6 @@ type CustomerHandle struct {
 // NewCustomerHandle 构造。
 func NewCustomerHandle(svc usercontract.CustomerAdminPort) *CustomerHandle {
 	return &CustomerHandle{svc: svc}
-}
-
-// SetupCustomerAdminRoutes 挂载后台客户管理路由（挂 authorizedAPI 组）。
-//
-// svc 为 nil 时直接不注册：装配缺陷应该由调用方（routes.go 的断言）炸掉，
-// 而不是在这里注册一批「一调就 500」的接口。
-func SetupCustomerAdminRoutes(rg *permission.RouteGroup, svc usercontract.CustomerAdminPort) {
-	if rg == nil || svc == nil {
-		return
-	}
-	h := NewCustomerHandle(svc)
-	g := rg.Group("/customer")
-	g.GET("/list", permission.UserCustomerList, h.ListCustomers)
-	g.GET("/get", permission.UserCustomerDetail, h.GetCustomer)
-	g.POST("/status", permission.UserCustomerStatus, h.SetCustomerStatus)
-	g.POST("/unlock", permission.UserCustomerUnlock, h.UnlockCustomer)
 }
 
 // localizeCustomerLabels 客户状态标签的出口取词（原处：service 只给状态取值）。

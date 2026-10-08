@@ -88,9 +88,8 @@ func settingsRenderData(projects []map[string]any, selected string) map[string]a
 		"ShippingBaseFeeYuan":       "",
 		"ShippingFreeThresholdYuan": "",
 		"Locales":                   []map[string]any{},
-		// 三个可选键按模板既有写法直接参与 {{if}}，缺失会让渲染在那一行中断。
+		// 两个可选键按模板既有写法直接参与 {{if}}，缺失会让渲染在那一行中断。
 		"LocaleError":       "",
-		"LocaleSaved":       false,
 		"LangURLOffWarning": false,
 	}
 }

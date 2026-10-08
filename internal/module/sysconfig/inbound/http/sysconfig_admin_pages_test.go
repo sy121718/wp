@@ -163,8 +163,13 @@ func TestSystemSettingsSavePreservesUnexposedKeys(t *testing.T) {
 		"defaultCurrency": {"CNY"},
 	}
 	rec := serve(t, handle, http.MethodPost, "/admin/system/save", form.Encode())
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回本页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+	// 写动作的结论走**响应体**（整页提示，shell.RenderJump）：200 + 成功态 + 1 秒后自动回本页。
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存成功应渲染提示页（200），实际 %d（body=%s）", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `data-jump-state="ok"`) ||
+		!strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "</html>") {
+		t.Fatalf("保存成功应给整页提示（成功态 + 自动回跳），实际：%s", body)
 	}
 
 	after, err := svc.GetGroup(ctx, "i18n")
@@ -198,18 +203,22 @@ func TestSystemSettingsSaveRejectsStaleVersion(t *testing.T) {
 		"defaultCurrency": {"CNY"},
 	}
 	rec := serve(t, handle, http.MethodPost, "/admin/system/save", form.Encode())
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("冲突应 303 回本页并带 ?err=，实际 %d", rec.Code)
+	// 失败也是整页提示（200 + 失败态），但不自动回跳 —— 用户要看清原因。
+	if rec.Code != http.StatusOK {
+		t.Fatalf("冲突应渲染提示页（200），实际 %d", rec.Code)
 	}
-	loc := rec.Header().Get("Location")
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("冲突没有带回可读提示：Location=%s", loc)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) || !strings.Contains(body, "</html>") {
+		t.Fatalf("冲突应给整页失败提示，实际：%s", body)
+	}
+	if strings.Contains(body, `http-equiv="refresh"`) {
+		t.Fatalf("失败提示不应自动回跳（用户要看原因）")
 	}
 	after, _ := svc.GetGroup(ctx, "i18n")
 	if after.Version != group.Version {
 		t.Fatalf("冲突提交不该写库：版本从 %d 变成了 %d", group.Version, after.Version)
 	}
-	t.Logf("旧版本提交被拒：Location=%s（版本仍为 %d）", loc, after.Version)
+	t.Logf("旧版本提交被拒：提示页失败态，版本仍为 %d", after.Version)
 }
 
 func tradeVersion(t *testing.T, svc *sysconfigservice.Service) int64 {

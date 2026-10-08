@@ -9,8 +9,7 @@
 > seo / analytics / site_slots。**截至归档时这 45 个任务一个都没有实施**（本轮只做了「空态吃掉表头」那一类）。
 > theme_settings 是本域的 P0 集中页（2.21 屏、0 行数据）。
 >
-> 与其它审核报告的关系：第四轮逐页改造见 `02-J-admin-page-refit-round4.md`（55 页四维评审）、
-> 商品与库存域见 `02-M-product-inventory-audit.md`、逐域修复记录见 `02-L-admin-rework-worklist.md`。
+> 与其它审核报告的关系：商品与库存域见 `02-M-product-inventory-audit.md`、逐域修复记录见 `02-L-admin-rework-worklist.md`。
 
 
 > 检测环境：独立 Chrome 实例（`/tmp/verify/harness.js` + 自建 `lcs-trade/{cases,dump,extra}.js`，未改 harness.js）

@@ -89,6 +89,28 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 	return r
 }
 
+// assertNavigationJump 断言响应是整页提示（200 + data-jump-state + 布局尾部 + 文案）。
+//
+// 取代原先对 303 + ?err= 的断言：写动作的结论由 shell.RenderJump 渲染，不再是重定向。
+func assertNavigationJump(t *testing.T, rec *httptest.ResponseRecorder, state string, wants ...string) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("提示页应为 200（不再是 303 + ?err=），实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="`+state+`"`) {
+		t.Fatalf("提示页缺少 data-jump-state=%q：%s", state, body)
+	}
+	if !strings.Contains(body, "</html>") {
+		t.Fatal("提示页未渲染到布局尾部（模板在某一行中断）")
+	}
+	for _, want := range wants {
+		if !strings.Contains(body, want) {
+			t.Errorf("提示页缺少 %q", want)
+		}
+	}
+}
+
 func TestNavigationEditFragment(t *testing.T) {
 	item := &navigationdto.NavigationResp{ID: "row-1", ProjectID: "project-1", Kind: "header", Title: "旧标题", Path: "/old", Target: "self", UpdatedAt: "2026-09-01T12:00:00.123456Z"}
 	svc := &editNavigationStub{item: item}
@@ -124,7 +146,7 @@ func TestNavigationEditFragment(t *testing.T) {
 			if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || rec.Header().Get("Cache-Control") != "no-store" {
 				t.Fatalf("headers=%v", rec.Header())
 			}
-			for _, want := range []string{`data-drawer-fragment`, `name="csrf_token" value="`, `name="expectedUpdatedAt" value="2026-09-01T12:00:00.123456Z"`, `name="projectId" value="project-1"`, `旧标题`, `面板一`, `hx-post="/admin/navigations/update"`} {
+			for _, want := range []string{`data-drawer-fragment`, `name="csrf_token" value="`, `name="expectedUpdatedAt" value="2026-09-01T12:00:00.123456Z"`, `name="projectId" value="project-1"`, `旧标题`, `面板一`, `hx-post="/admin/navigations/update?`} {
 				if !strings.Contains(body, want) {
 					t.Errorf("片段缺少 %q: %s", want, body)
 				}
@@ -175,7 +197,8 @@ func TestNavigationUpdateHTMXRetainsSubmittedValues(t *testing.T) {
 	values := url.Values{"id": {"row-1"}, "projectId": {"project-1"}, "kind": {"header"}, "title": {"我写的标题"}, "path": {"/submitted"}, "target": {"blank"}, "expectedUpdatedAt": {"old-token"}}
 	request := func(hx bool) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/admin/navigations/update", strings.NewReader(values.Encode()))
+		// 表单 action 上带筛选上下文（shell.BackPath 从它读回回跳地址）。
+		req := httptest.NewRequest(http.MethodPost, "/admin/navigations/update?project=project-1&kind=header&menu=row-1", strings.NewReader(values.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if hx {
 			req.Header.Set("HX-Request", "true")
@@ -199,8 +222,10 @@ func TestNavigationUpdateHTMXRetainsSubmittedValues(t *testing.T) {
 		t.Fatalf("乐观锁未传递: %+v", svc.lastUpdate)
 	}
 	native := request(false)
-	if native.Code != http.StatusSeeOther || native.Header().Get("HX-Redirect") != "" {
-		t.Fatalf("原生提交行为变更: %d %v", native.Code, native.Header())
+	// 原生提交：失败提示页（200 + err 态），不再是 303 + ?err=。
+	assertNavigationJump(t, native, "err")
+	if native.Header().Get("HX-Redirect") != "" || native.Header().Get("Location") != "" {
+		t.Fatalf("原生提交不应有跳转头: %v", native.Header())
 	}
 	svc.updateErr = nil
 	success := request(true)
@@ -226,18 +251,20 @@ func TestNavigationEditPostRequiresVersionToken(t *testing.T) {
 	}
 }
 
-func TestNavigationPanelCreateUsesNativeRedirect(t *testing.T) {
+func TestNavigationPanelCreateJumpsToWorkbench(t *testing.T) {
 	svc := &editNavigationStub{item: &navigationdto.NavigationResp{ID: "row-1", ProjectID: "project-1", Kind: "header"}}
 	h := NewNavigationPageHandle(svc, nil)
 	h.SetBlockPanelPort(&editBlocksStub{created: &blockcontract.BlockResp{ID: "block-1"}})
 	r := editRouter(t, h)
 	values := url.Values{"id": {"row-1"}, "projectId": {"project-1"}, "kind": {"header"}, "title": {"我的菜单"}}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/admin/navigations/panel/create", strings.NewReader(values.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/admin/navigations/panel/create?project=project-1&kind=header&menu=row-1", strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "/workbench?block=block-1") || rec.Header().Get("HX-Redirect") != "" {
-		t.Fatalf("新建块应走原生 POST 跳转: %d %v", rec.Code, rec.Header())
+	// 成功提示页：1 秒后自动跳到块编辑器，returnUrl 指回本列表并重新展开该项。
+	assertNavigationJump(t, rec, "ok", "/workbench?block=block-1", "returnUrl=")
+	if rec.Header().Get("Location") != "" || rec.Header().Get("HX-Redirect") != "" {
+		t.Fatalf("新建块不应走 303 跳转: %v", rec.Header())
 	}
 }
 
@@ -255,7 +282,8 @@ func TestNavigationPanelHTMXRetainsExplicitClear(t *testing.T) {
 		"panelBlockId": {""}, "panelWidth": {"auto"}, "expectedUpdatedAt": {"old-token"}}
 	request := func(hx bool) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/admin/navigations/panel", strings.NewReader(values.Encode()))
+		// 表单 action 上带筛选上下文（shell.BackPath 从它读回回跳地址）。
+		req := httptest.NewRequest(http.MethodPost, "/admin/navigations/panel?project=project-1&kind=header&menu=row-1", strings.NewReader(values.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if hx {
 			req.Header.Set("HX-Request", "true")
@@ -279,8 +307,10 @@ func TestNavigationPanelHTMXRetainsExplicitClear(t *testing.T) {
 	if svc.lastUpdate == nil || svc.lastUpdate.PanelBlockID == nil || *svc.lastUpdate.PanelBlockID != "" {
 		t.Fatalf("面板清空未传给服务: %+v", svc.lastUpdate)
 	}
-	if native := request(false); native.Code != http.StatusSeeOther {
+	if native := request(false); native.Code != http.StatusOK {
 		t.Fatalf("原生失败: %d", native.Code)
+	} else {
+		assertNavigationJump(t, native, "err")
 	}
 	svc.updateErr = nil
 	if success := request(true); success.Code != http.StatusOK || success.Header().Get("HX-Redirect") == "" {

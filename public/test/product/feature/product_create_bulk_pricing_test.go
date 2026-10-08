@@ -13,7 +13,6 @@ package feature
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -83,20 +82,17 @@ func TestProductCreateBundleTypeAndGoToDetail(t *testing.T) {
 		// 捆绑主体 SKU 必填（2026-09-19）：抽屉会预填建议值，这里直接给一个。
 		"sku": {"SUMMER-BUNDLE"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("新建应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	loc := rec.Header().Get("Location")
+	assertJumpOK(t, rec)
 	// 新建表单只有几个字段，全量录入在编辑页 —— 创建成功必须直接落到那一页。
-	if !strings.HasPrefix(loc, "/admin/products/edit?") {
-		t.Fatalf("新建成功后应进该商品的编辑页继续录入，实际 Location=%q", loc)
+	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/edit?") {
+		t.Fatalf("新建成功后应进该商品的编辑页继续录入，实际回跳=%q", back)
 	}
-	if locProject := locationQuery(t, loc, "project"); locProject != f.projectID {
-		t.Fatalf("编辑页回跳丢了工程上下文：%q", loc)
+	if locProject := jumpBackQuery(t, rec, "project"); locProject != f.projectID {
+		t.Fatalf("编辑页回跳丢了工程上下文：%q", jumpBackHref(t, rec))
 	}
-	productID := locationQuery(t, loc, "product")
+	productID := jumpBackQuery(t, rec, "product")
 	if productID == "" {
-		t.Fatalf("详情页回跳缺少商品 id：%q", loc)
+		t.Fatalf("编辑页回跳缺少商品 id：%q", jumpBackHref(t, rec))
 	}
 
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
@@ -132,20 +128,16 @@ func TestProductCreateBundleWithoutPriceReportsChinese(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"无价套餐"}, "slug": {"no-price-bundle"},
 		"type": {"bundle"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("被拒也应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	loc := rec.Header().Get("Location")
+	body := assertJumpErr(t, rec)
 	// 失败落点已从「回列表页」改为「回**新建页自身**」（批 1，见 docs/02-T §5）。
-	if !strings.HasPrefix(loc, "/admin/products/new?") {
-		t.Fatalf("新建失败应回新建页（表单所在页），实际 Location=%q", loc)
+	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/new?") {
+		t.Fatalf("新建失败应回新建页（表单所在页），实际回跳=%q", back)
 	}
-	msg := locationQuery(t, loc, "err")
-	if !strings.Contains(msg, "捆绑商品必须自定价") {
-		t.Fatalf("错误提示应是中文文案，实际 %q（原始 key 直出即 %s）", msg, productenums.ErrBundlePriceRequired)
+	if !strings.Contains(body, "捆绑商品必须自定价") {
+		t.Fatalf("错误提示应是中文文案，body=%s", body)
 	}
-	if strings.Contains(msg, productenums.ErrBundlePriceRequired) {
-		t.Fatalf("列表页不该出现裸 key，实际 %q", msg)
+	if strings.Contains(body, productenums.ErrBundlePriceRequired) {
+		t.Fatalf("页面不该出现裸 key，body=%s", body)
 	}
 	list, err := f.svc.List(t.Context(), &productdto.ListReq{ProjectID: f.projectID, Size: 100})
 	if err != nil {
@@ -180,10 +172,8 @@ func TestProductCreateAttributeSelection(t *testing.T) {
 		"type":         {"variant"},
 		"attributeIds": {color.ID, size.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("新建应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	productID := locationQuery(t, rec.Header().Get("Location"), "product")
+	assertJumpOK(t, rec)
+	productID := jumpBackQuery(t, rec, "product")
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -241,8 +231,8 @@ func TestProductsBulkPricing(t *testing.T) {
 	none := postForm(engine, "/admin/products/bulk-pricing", url.Values{
 		"projectId": {f.projectID}, "ruleType": {productenums.PricingRuleCostMultiple}, "multiplier": {"2"},
 	})
-	if none.Code != http.StatusFound || !strings.Contains(locationQuery(t, none.Header().Get("Location"), "err"), "没有勾选") {
-		t.Fatalf("未勾选应回列表页并明确提示，实际 %d %q", none.Code, none.Header().Get("Location"))
+	if body := assertJumpErr(t, none); !strings.Contains(body, "没有勾选") {
+		t.Fatalf("未勾选应渲染提示页并明确提示，body=%s", body)
 	}
 
 	rec := postForm(engine, "/admin/products/bulk-pricing", url.Values{
@@ -253,17 +243,13 @@ func TestProductsBulkPricing(t *testing.T) {
 		"rounding":   {productenums.PricingRoundingNone},
 		"note":       {"批量改价：成本翻倍"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("批量改价应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
+	// 有跳过 → 走失败态提示页（更显眼），并说清跳过几个（不静默的部分成功）。
+	body := assertJumpErr(t, rec)
+	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products?") {
+		t.Fatalf("批量改价应回商品列表，实际回跳=%q", back)
 	}
-	loc := rec.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/admin/products?") {
-		t.Fatalf("批量改价应回商品列表，实际 Location=%q", loc)
-	}
-	// 有跳过 → 走 err= 并说清跳过几个（不静默的部分成功）。
-	msg := locationQuery(t, loc, "err")
-	if !strings.Contains(msg, "1 个商品被跳过") || !strings.Contains(msg, "捆绑容器只有容器价") {
-		t.Fatalf("捆绑容器没有变体应被计入跳过并说明原因，实际结论 %q", msg)
+	if !strings.Contains(body, "1 个商品被跳过") || !strings.Contains(body, "捆绑容器只有容器价") {
+		t.Fatalf("捆绑容器没有变体应被计入跳过并说明原因，body=%s", body)
 	}
 
 	got1, serr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p1.ID})
@@ -325,10 +311,8 @@ func TestProductCreateSKUInputAndEcho(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"运营填编码"}, "slug": {"picked-sku"},
 		"type": {"variant"}, "sku": {"OPS-9001"}, "defaultPrice": {"19.9"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("新建应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	productID := locationQuery(t, rec.Header().Get("Location"), "product")
+	assertJumpOK(t, rec)
+	productID := jumpBackQuery(t, rec, "product")
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -350,17 +334,17 @@ func TestProductCreateSKUInputAndEcho(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"未填编码套餐"}, "slug": {"summer-set"},
 		"type": {"bundle"}, "defaultPrice": {"99"},
 	})
-	// 失败落点已从「回列表页」改为「回**新建页自身**」：表单就在那一页、页头有 ?err= 渲染位；
+	// 失败落点已从「回列表页」改为「回**新建页自身**」：表单就在那一页、页头有错误位；
 	// 回列表页会让用户以为「提交成功才跳走的」，还要重新找一遍新建入口（批 1，见 docs/02-T §5）。
-	if bundleRec.Code != http.StatusFound || !strings.HasPrefix(bundleRec.Header().Get("Location"), "/admin/products/new?") {
-		t.Fatalf("没填编码的捆绑应被拒并回新建页，实际 %d %q", bundleRec.Code, bundleRec.Header().Get("Location"))
+	bundleBody := assertJumpErr(t, bundleRec)
+	if back := jumpBackHref(t, bundleRec); !strings.HasPrefix(back, "/admin/products/new?") {
+		t.Fatalf("没填编码的捆绑应被拒并回新建页，实际回跳=%q", back)
 	}
-	bundleMsg := locationQuery(t, bundleRec.Header().Get("Location"), "err")
-	if !strings.Contains(bundleMsg, "必须填写主体 SKU") {
-		t.Fatalf("拒绝理由应是中文文案，实际 %q", bundleMsg)
+	if !strings.Contains(bundleBody, "必须填写主体 SKU") {
+		t.Fatalf("拒绝理由应是中文文案，body=%s", bundleBody)
 	}
-	if strings.Contains(bundleMsg, productenums.ErrBundleSKURequired) {
-		t.Fatalf("页面不该出现裸 key，实际 %q", bundleMsg)
+	if strings.Contains(bundleBody, productenums.ErrBundleSKURequired) {
+		t.Fatalf("页面不该出现裸 key，body=%s", bundleBody)
 	}
 
 	// ④ 中文 URL 段 + 运营显式填了编码：编码与 URL 段无关，照样建成功（原样落库）。
@@ -368,10 +352,11 @@ func TestProductCreateSKUInputAndEcho(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"中文套餐"}, "slug": {"中文套餐"},
 		"type": {"bundle"}, "defaultPrice": {"99"}, "sku": {"CN-BUNDLE"},
 	})
-	if cn.Code != http.StatusFound || !strings.HasPrefix(cn.Header().Get("Location"), "/admin/products/edit?") {
-		t.Fatalf("填了编码的捆绑应建成功，实际 %d %q", cn.Code, cn.Header().Get("Location"))
+	assertJumpOK(t, cn)
+	if back := jumpBackHref(t, cn); !strings.HasPrefix(back, "/admin/products/edit?") {
+		t.Fatalf("填了编码的捆绑应建成功并进编辑页，实际回跳=%q", back)
 	}
-	cnID := locationQuery(t, cn.Header().Get("Location"), "product")
+	cnID := jumpBackQuery(t, cn, "product")
 	bundle, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: cnID})
 	if err != nil {
 		t.Fatalf("读捆绑商品失败: %v", err)

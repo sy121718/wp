@@ -45,9 +45,8 @@
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_pricing.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}{{end}}
-    {{if isset(.Applied)}}{{if .Applied != ""}}
-    <p class="badge badge-info" role="status">{{ .["t"]("admin.product_pricing.applied.lead", "已应用调价：本次改动 ") }}{{.Applied}}{{ .["t"]("admin.product_pricing.applied.tail", " 个变体，明细见下方留痕台账。") }}</p>
-    {{end}}{{end}}
+    {* 应用调价的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
+       本页的 Err 只剩「试算失败原地重渲染」这一条来源。 *}
 
     {* ===== 主区：改价表单 + 试算预览（预览是提交的直接结果，同卡紧邻） ===== *}
     <section class="card card-body">
@@ -92,7 +91,7 @@
             </div>
             <div class="action-row">
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.preview", "预览试算（不落库）") }}</button>
-                <button type="submit" class="btn" formaction="/admin/product-pricing/apply"
+                <button type="submit" class="btn" formaction="/admin/product-pricing/apply{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
                         data-confirm="{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
             </div>
         </form>

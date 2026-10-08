@@ -287,9 +287,7 @@ func TestBundleMemberSourceResolveEndpoint(t *testing.T) {
 		"memberWarehouseSku": {"PANEL-SKU-10"},
 		"memberExternalSku":  {memberPanelExternalSKU},
 	})
-	if written.Code != http.StatusFound {
-		t.Fatalf("保存应 302，实际 %d：%s", written.Code, written.Body.String())
-	}
+	assertJumpOK(t, written)
 	detail, err := f.products.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{
 		ProductID: bundle.ID, ProjectID: f.projectID,
 	})

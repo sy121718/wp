@@ -157,7 +157,7 @@ func FacingText(key string) (string, bool) {
 
 // FormatFacing 把文案里的 `{name}` 占位符替换成 params 的值。
 //
-// 形态与 internal/web/shell 的 notice_param.go 一致（`{n}` / `{m}`）—— 页面提示里的
+// 形态与 internal/shell 的 notice_param.go 一致（`{n}` / `{m}`）—— 页面提示里的
 // 计数一律走参数化，不把数字拼进中文串（拼出来的串不在白名单里，PRG 回执会被丢弃）。
 // params 里没有的占位符保持原样；params 为空直接返回原文。
 func FormatFacing(text string, params map[string]string) string {

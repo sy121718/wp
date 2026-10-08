@@ -25,9 +25,8 @@
     </div>
   </header>
 
-  {{if .Err != ""}}
-  <p class="badge badge-warning" role="alert">{{.Err}}</p>
-  {{end}}
+  {* 写动作的结论不在本页回显（走 shell.RenderJump 提示页，见 mail_jump.go）；
+     本页也没有取数失败分支（失败已在 handler 里渲染提示页），故无 Err 提示条。 *}
 
   {* 基本信息是键值汇总（行数固定、不分页），不是滚动列表 → 用 .card-body 的整块内边距，
      撑满视口的滚动区留给下面的时间线。 *}

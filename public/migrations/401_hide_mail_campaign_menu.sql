@@ -9,7 +9,7 @@
 -- 为什么是「隐藏」而不是「删除行」（对齐 224 第 7 段的既有范式）：
 --   角色授权按 menu_id 收集 permission_code（GetPermissionCodesByIDs），
 --   删行会让已授权角色**静默缩权**。隐藏的行仍参与授权收集，只是不进侧栏
---   （internal/web/shell/nav.go 丢掉 is_hidden=1 的条目）。
+--   （internal/shell/nav.go 丢掉 is_hidden=1 的条目）。
 --
 -- 为什么下线它不会少掉任何可授权项：本项的 permission_code 与「邮件营销」
 --   （/admin/mail/marketing）**完全相同**，两条菜单登记的是同一个权限码。

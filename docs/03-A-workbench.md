@@ -65,7 +65,7 @@ Node 新字段均过白名单后持久化，编译输出零影响。
 | Live Preview 新标签页 | 未做 | 预览仍在 iframe 内 |
 | 多选、完整快捷键矩阵 | 部分 | 见 `methods/shortcuts.js` |
 
-后端 AST/编译契约（§1）始终有效；前端以 ES modules + HTMX 为主路径（见 `docs/09-session-handoff.md` §3）。
+后端 AST/编译契约（§1）始终有效；前端以 ES modules + HTMX 为主路径。
 
 ### 2.1 检查器控件的双轨分工（审计 EDT-009）
 

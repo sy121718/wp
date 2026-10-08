@@ -214,12 +214,7 @@ func TestBundleProductsBundlePage(t *testing.T) {
 		"minQty":      {"1", "1"},
 		"maxQty":      {"3", "0"},
 	})
-	if written.Code != http.StatusFound {
-		t.Fatalf("保存应 302 回本页，实际 %d body=%s", written.Code, written.Body.String())
-	}
-	if loc := written.Header().Get("Location"); strings.Contains(loc, "err=") {
-		t.Fatalf("保存不应带错误回跳，实际 %q", loc)
-	}
+	assertJumpOK(t, written)
 	detail, err := f.products.GetBundleConfig(context.Background(), &productdto.GetBundleConfigReq{ProductID: main.ID})
 	if err != nil {
 		t.Fatalf("读回配置失败: %v", err)

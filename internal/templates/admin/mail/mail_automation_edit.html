@@ -35,8 +35,9 @@
     </div>
   </header>
 
-  {{if .Err != ""}}<p class="badge badge-warning" role="alert">{{.Err}}</p>{{end}}
-  {{if .Ok != ""}}<p class="badge badge-success" role="status">{{.Ok}}</p>{{end}}
+  {* Err 只来自本页的表单校验（写动作结论走 shell.RenderJump 提示页，见 mail_jump.go）；
+     可选键用 isset 包裹，避免只读兜底分支不带该键时整页中断。 *}
+  {{if isset(.Err)}}{{if .Err != ""}}<p class="badge badge-warning" role="alert">{{.Err}}</p>{{end}}{{end}}
 
   {{if .Fallback}}
   {* 只读兜底：这条流程的图超出表单能表达的范围（环 / 入口不是触发节点 / 有步骤走不到 / 多个条件）。

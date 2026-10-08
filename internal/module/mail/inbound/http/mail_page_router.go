@@ -1,17 +1,21 @@
 package mailhttp
 
-// mail_page_router.go — 邮箱后台页路由（原 dashboard 的 router_mail.go）。
+// mail_page_router.go — 邮箱后台六页（/admin/mail*）的注册落点与鉴权对象声明。
 //
-// 页面挂在装配层传入的 /admin 组上：该组已有 SessionAuth + CSRF + 权限上下文中间件
-// （见 internal/routers/assembly.go 的 adminPages）。写操作额外按**对应 API 的路径**
-// 走 Casbin 权限点，权限点路径与 API 完全同源（一个字符都不改）。
-// pages 为 nil 时跳过页面注册 —— 与 rg == nil 早退同构：模块装配不因缺少页面组而失败。
+// 只做注册：`/admin` 组的中间件链（SessionAuth + CSRF + 权限上下文）由装配层统一挂好，
+// handler 在 mail_page.go。路由注册只出现在 *_router.go，门禁
+// scripts/check-route-registration-placement.sh 守这条。
+//
+// 写操作额外按**对应 API 的路径**走 Casbin 权限点，权限点路径与 API 完全同源（一个字符都不改）。
+// 页面 GET 的 Casbin 待补（见 docs/02-Z §4.3）。
+//
+// 函数保持**不导出**：装配层只调 SetupMailRoutes，页面注册由它在同一位置调用。
 
 import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	mailcontract "go_wp/internal/module/mail/contract"
+	"go_wp/internal/module/mail/contract"
 	"go_wp/internal/permission"
 )
 

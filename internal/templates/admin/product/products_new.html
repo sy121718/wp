@@ -16,9 +16,8 @@
             <a class="btn btn-ghost" href="/admin/products?project={{selectedProject}}">← {{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a>
         </div>
     </header>
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
+       只有 htmx 失败回填片段仍带 SubmitErr（原地留住输入，见 product_create_form.html）。 *}
     <div style="display:grid;grid-template-columns:minmax(0,3fr) minmax(280px,2fr);gap:16px;align-items:start">
         <section class="card card-body">
             <h2 class="card-title mb-lg">{{ .["t"]("admin.products.create.title", "基础信息") }}</h2>

@@ -36,7 +36,7 @@ import (
 
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 )
 

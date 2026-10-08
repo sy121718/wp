@@ -1,30 +1,53 @@
 package pageservice
 
+// 一批 page 入口的签名里没有工程参数：契约由 workbench 等消费方编译期依赖（改签名会连带动
+// 一大片），pipeline.DependencyTarget 也只带 (kind,key)。它们的语义本来就是跨工程的
+// （整站标记待重建、按主题/块标记、全站草稿扫描），而 pages 在迁移 215 里带 FORCE 策略，
+// 作用域只能落到某一个具体工程。
+//
+// 处理办法：枚举工程表后**逐工程独立作用域**执行（每个工程各自一次 set_config + 事务），
+// 再合并结果。这不是「退化为不限工程」—— 每个事务的 app.project_id 都取确定值，
+// 换非超级角色后每条语句都真的受策略约束。
+//
+// 为什么不合并成一次查询：RLS 的作用域是**单值**会话变量，把多个工程的 id 并进一次
+// 查询只能靠放宽谓词，那等于取消隔离。presentation 的 MarkStaleByDependency（第二批）
+// 是同一形状的样板。
+//
+// 工程表为空或读不到时**显式失败**：静默返回空结果会把「读不到工程表」伪装成
+// 「没有受影响的页面」—— 那正是这一步要消灭的 fail-silent。
+
+// 两件事：历史快照收敛（保存时顺手做一次 + 定时兜底）与产物 GC 定时化。
+// 保留期都写成常量并从声明处引用：此前「产物 GC 默认 dryRun 且没有定时任务、修订快照
+// 完全不清理」的根因不是写不出清理，而是**没有任何地方承诺保留期**。
+
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
-
-	"go_wp/internal/builder/core"
-	blockcontract "go_wp/internal/module/block/contract"
-	blueprintcontract "go_wp/internal/module/blueprint/contract"
-	mediacontract "go_wp/internal/module/media/contract"
-	navigationcontract "go_wp/internal/module/navigation/contract"
-	pagecontract "go_wp/internal/module/page/contract"
-	pagemodel "go_wp/internal/module/page/model"
-	plugincontract "go_wp/internal/module/plugin/contract"
-	projectcontract "go_wp/internal/module/project/contract"
-
-	"go_wp/internal/pipeline"
-
-	artifactcontract "go_wp/internal/module/artifact/contract"
-	pubcontract "go_wp/internal/module/publication/contract"
-
-	"go_wp/pkg/i18n"
+	"time"
 
 	"gorm.io/gorm"
 
-	productcontract "go_wp/internal/module/product/contract"
+	"go_wp/internal/builder/core"
+	"go_wp/internal/module/artifact/contract"
+	"go_wp/internal/module/block/contract"
+	"go_wp/internal/module/blueprint/contract"
+	"go_wp/internal/module/media/contract"
+	"go_wp/internal/module/navigation/contract"
+	"go_wp/internal/module/page/contract"
+	"go_wp/internal/module/page/dto"
+	"go_wp/internal/module/page/enums"
+	"go_wp/internal/module/page/model"
+	"go_wp/internal/module/plugin/contract"
+	"go_wp/internal/module/product/contract"
+	"go_wp/internal/module/project/contract"
+	"go_wp/internal/module/publication/contract"
+	"go_wp/internal/pipeline"
+	"go_wp/internal/retention"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 var _ pagecontract.PageService = (*Service)(nil)
@@ -62,7 +85,7 @@ type Service struct {
 	//
 	// 消费者侧最窄端口（pipeline.StructureTemplatePort）：本模块不需要 contenttemplate
 	// 的 DTO / 版本表 / 类型校验，只要「一份文档」。未注入时模板槽位一律回退块绑定 ——
-	// 存量站点行为与改造前逐字节一致（见 page_assemble.go 的装配注释）。
+	// 存量站点行为与改造前逐字节一致（见 page_document.go 的装配注释）。
 	structureTemplates pipeline.StructureTemplatePort
 	// contentStore 内容译文读取端口（多语言 P5b）：为 nil 时用 pkg/i18n 默认存储
 	// （sys_translation 表 + 默认数据库）。测试经 SetContentTranslationStore 注入
@@ -231,4 +254,246 @@ func (s *Service) SetPublishWindowFault(fn func() error) {
 		return
 	}
 	s.publishWindowFault = fn
+}
+
+// fanoutProjectIDs 返回逐工程扇出要用的工程清单。
+//
+// 数量级很小（站点工程），逐个设一次作用域比在数据层引入 BYPASSRLS 连接便宜得多。
+func (s *Service) fanoutProjectIDs(ctx context.Context) ([]string, error) {
+	if s == nil || s.model == nil {
+		return nil, ErrProjectRequired
+	}
+	// 契约未注入就是装配漏接，直接失败。
+	//
+	// 这里原来回退到 `model.ListAllProjectIDs`（直接读 projects 表）：它能工作，但
+	// **工程清单的所有权在 project 模块**，page 的 model 层只该碰本模块的表。更糟的是
+	// 回退让漏接表现为「一切正常」，而 warn 日志没人看 —— 于是同一份「列出全部工程」
+	// 的 SQL 在 page / order / block / navigation 里各存一份，四份将来会各自漂移
+	// （比如某个模块开始按 create_time 排序、另一个按 id）。漏接时整站标记 / 全站扫描 /
+	// 依赖扇出会整体失效，那本来就该是一次响亮的失败。
+	if s.project == nil {
+		return nil, ErrProjectRequired
+	}
+	list, err := s.project.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(list))
+	for i := range list {
+		if id := strings.TrimSpace(list[i].ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		// 一个工程都没有：不是「没有受影响页面」，而是没有可作用域的工程。
+		return nil, ErrProjectRequired
+	}
+	return ids, nil
+}
+
+// locatePageInProjects 按页面 id 定位页面：逐工程独立作用域按 id 取，命中即返回。
+//
+// 页面 id 是主键（跨工程不会重复），所以逐工程探测的结果是确定的；反过来，
+// 「不设作用域按 id 直查」在换非超级角色后是静默 ErrRecordNotFound ——
+// 那种形态会让「页面明明在，却报不存在」。全部未命中返回 gorm.ErrRecordNotFound。
+func (s *Service) locatePageInProjects(ctx context.Context, id string) (*pagemodel.PageEntity, error) {
+	ids, err := s.fanoutProjectIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var lastErr error = gorm.ErrRecordNotFound
+	for _, projectID := range ids {
+		if ctx.Err() != nil {
+			break
+		}
+		page, gerr := s.model.GetByID(ctx, id, projectID)
+		if gerr == nil {
+			return page, nil
+		}
+		lastErr = gerr
+		if !errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return nil, gerr
+		}
+	}
+	return nil, lastErr
+}
+
+// 本包 sentinel error（审计项「page 错误码靠中文文案 strings.Contains 匹配」）。
+//
+// 修复前：service 各处 errors.New(pageenums.ErrXxx) 生成普通字符串错误，
+// handler 用 strings.Contains(err.Error(), 文案) 分类映射 HTTP 状态码——
+// 文案改动/拼接前缀即失效，属于脆弱的字符串耦合。
+// 修复后：service 统一返回下方包级 sentinel（Error() 文案与 pageenums 一致，
+// 前端响应文案不变），handler 通过 errors.Is 精确分类。
+//
+// pipeline 内核错误（internal/pipeline/publisher.go 已定义 ErrPageNotFound /
+// ErrVersionConflict / ErrNoStagedArtifact / ErrRollbackPathMismatch 等 sentinel）
+// 由 mapPublishError 归一到本包 sentinel（见 page_publish.go）；
+// pipeline 侧尚未 sentinel 化的字符串错误暂以 default 分支原样透传，
+// 待 pipeline 后续 sentinel 化后统一 %w 收敛。
+var (
+	// ErrInvalidParam 请求本身不合法（nil 请求、空/空白 ID 等），与资源存在性无关。
+	ErrInvalidParam    = errors.New(pageenums.ErrInvalidParam)
+	ErrPageNotFound    = errors.New(pageenums.ErrPageNotFound)
+	ErrProjectNotFound = errors.New(pageenums.ErrProjectNotFound)
+	// ErrProjectRequired 跨工程扇出入口无法确定工程作用域（DB-009 第三批）。
+	// 只用于「工程表读不到 / 一个工程都没有」这类真实异常：正常多工程部署下这些入口
+	// 会逐工程设作用域执行，不会走到这里。
+	ErrProjectRequired      = errors.New(pageenums.ErrProjectRequired)
+	ErrInvalidKind          = errors.New(pageenums.ErrInvalidKind)
+	ErrInvalidDocument      = errors.New(pageenums.ErrInvalidDocument)
+	ErrInvalidPath          = errors.New(pageenums.ErrInvalidPath)
+	ErrDraftVersionConflict = errors.New(pageenums.ErrDraftVersionConflict)
+	ErrPathOccupied         = errors.New(pageenums.ErrPathOccupied)
+	ErrNoStagedArtifact     = errors.New(pageenums.ErrNoStagedArtifact)
+	ErrRollbackTargetMiss   = errors.New(pageenums.ErrRollbackTargetMiss)
+	ErrRebuildRequired      = errors.New(pageenums.ErrRebuildRequired)
+
+	// 重定向管理（审计 SEO-025）。ErrRedirectUnavailable 覆盖「装配期未注入路由契约」
+	// 这一种明确异常：此时新增/删除重定向只会产生「线上生效但账上没有」的半成品，
+	// 宁可显式失败也不静默跳过。
+	ErrRedirectUnavailable = errors.New(pageenums.ErrRedirectUnavailable)
+	ErrRedirectNotFound    = errors.New(pageenums.ErrRedirectNotFound)
+	ErrRedirectOccupied    = errors.New(pageenums.ErrRedirectOccupied)
+	ErrRedirectTargetMiss  = errors.New(pageenums.ErrRedirectTargetMiss)
+	ErrRedirectLoop        = errors.New(pageenums.ErrRedirectLoop)
+
+	// 定时上下线（PIPE-7）。到点执行失败**不走这些 sentinel**：那条路径的失败要落进
+	// page_schedules.last_error（业务 key），而不是抛给某个请求的调用方。
+	ErrScheduleNotFound      = errors.New(pageenums.ErrScheduleNotFound)
+	ErrScheduleInPast        = errors.New(pageenums.ErrScheduleInPast)
+	ErrScheduleActionInvalid = errors.New(pageenums.ErrScheduleActionInvalid)
+	ErrScheduleRunning       = errors.New(pageenums.ErrScheduleRunning)
+	ErrScheduleOccupied      = errors.New(pageenums.ErrScheduleOccupied)
+)
+
+const (
+	// pageRevisionKeep 每页保留的历史快照条数。
+	pageRevisionKeep = 20
+	// pageRevisionRetainDays 历史快照保留期：超出条数**且**早于该窗口才清理。
+	pageRevisionRetainDays = 90
+	// artifactRetentionDays 产物保留窗口：早于它且不再被任何指针引用的产物可回收。
+	artifactRetentionDays = 30
+	// pageRetentionInterval 保留期任务的运行间隔。
+	pageRetentionInterval = 24 * time.Hour
+	// pageRetentionBatch 单批删除行数：批次存在的意义是不制造长事务与锁表。
+	pageRetentionBatch = 500
+)
+
+// pruneRevisions 保存草稿后收敛该页的历史快照。
+//
+// 放在保存路径上是刻意的：定时任务一天只跑一次，高频编辑的页面在这之间照样能堆出
+// 成百上千份完整文档快照。失败只记日志 —— 清理不该让一次保存失败。
+// projectID 必填（DB-009 第四批）：修订表没有 project_id 列、不受策略约束，
+// 归属经 pages 判断 —— 缺它这条清理会删到别的工程页面的历史版本。
+func (s *Service) pruneRevisions(ctx context.Context, projectID, pageID string) {
+	if s == nil || s.model == nil {
+		return
+	}
+	n, err := s.model.PruneRevisions(ctx, projectID, pageID, pageRevisionKeep)
+	if err != nil {
+		logger.Scene("page").With("pageId", pageID).Error(err, "收敛页面历史快照失败")
+		return
+	}
+	if n > 0 {
+		logger.Scene("page").With("pageId", pageID).With("deleted", n).Info("已收敛页面历史快照")
+	}
+}
+
+// PurgeRetention 执行一次保留期清理：历史快照（分批删）+ 产物 GC（真删）。
+//
+// 产物 GC 的顺序是「先确认不在保护集合（已激活/已暂存）→ 删 DB 行 → 删磁盘」，
+// 磁盘删除失败只记日志：孤儿文件由反向对账（IDX-015）暴露，不需要在这里回滚 DB。
+func (s *Service) PurgeRetention(ctx context.Context) (deletedRevisions int64, err error) {
+	if s == nil || s.model == nil {
+		return 0, nil
+	}
+	now := time.Now().UTC()
+	revisions := retention.Task{
+		Name: "page_revisions", Table: "page_revisions", TimeColumn: "create_time",
+		Retain: pageRevisionRetainDays * 24 * time.Hour, BatchSize: pageRetentionBatch,
+		Note: "每页保留最近若干版本；只有既超出条数、又早于保留期的才删（回退需要近期版本）",
+		Sweep: func(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+			// 逐工程（DB-009 第四批）：修订表不受策略约束，「全库清理」必须由调用方
+			// 逐工程展开，否则这条 DELETE 会跨工程删历史快照，而且一句日志都不报。
+			projects, perr := s.fanoutProjectIDs(ctx)
+			if perr != nil {
+				return 0, perr
+			}
+			var total int64
+			for _, pid := range projects {
+				if ctx.Err() != nil {
+					break
+				}
+				n, derr := s.model.DeleteStaleRevisions(ctx, pid, pageRevisionKeep, cutoff, limit)
+				if derr != nil {
+					return total, derr
+				}
+				total += n
+			}
+			return total, nil
+		},
+	}
+	// 定时上下线的排定记录（PIPE-7）：只清**终态**且到点时刻超保留期的行。
+	// 保留期常量取自 retention 包（与 internal/retention/catalog.go 的声明同一个数字）——
+	// 两处各写一份的下场是「声明说留 90 天、实际清了 30 天」且没人会去比。
+	schedules := retention.Task{
+		Name: "page_schedules", Table: "page_schedules", TimeColumn: "scheduled_at",
+		Retain: retention.RetainPageScheduleDays * 24 * time.Hour, BatchSize: pageRetentionBatch,
+		Note: "只清终态（done/failed/canceled）且到点时刻早于保留期的行；待执行 / 执行中一律保留",
+		Sweep: func(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+			return s.model.DeleteFinishedSchedules(ctx, cutoff, limit)
+		},
+	}
+	outcomes := retention.RunAll(ctx, []retention.Task{revisions, schedules}, now)
+	total, failed := retention.Summary(outcomes)
+	if len(failed) > 0 {
+		logger.Scene("page").With("failed", failed).Warn("保留期任务部分失败")
+	}
+	if total > 0 {
+		logger.Scene("page").With("deleted", total).Info("已清理超期页面历史快照")
+	}
+
+	// 产物 GC：显式传 dryRun=false 才会真删（安全默认仍在接口侧保留）。
+	notDryRun := false
+	res, err := s.GarbageCollectArtifacts(ctx, &pagedto.GCArtifactsReq{
+		RetentionDays: artifactRetentionDays, DryRun: &notDryRun,
+	})
+	if err != nil {
+		logger.Scene("page").Error(err, "定时回收产物失败")
+		// 产物回收失败不算整个保留期任务失败：历史快照那一半已经做完了。
+		return total, err
+	}
+	if res != nil && (res.Deleted > 0 || res.Failed > 0) {
+		logger.Scene("page").
+			With("scanned", res.Scanned).With("deleted", res.Deleted).With("failed", res.Failed).
+			Info("已回收超期产物")
+	}
+	return total, nil
+}
+
+// StartPageRetentionScheduler 启动每日保留期清理（IDX-004 / IDX-005）。
+//
+// 进程内 goroutine + ticker，与 analytics / order 的既有调度同形（先跑一次再等间隔）：
+// 单实例部署够用；多实例部署下重复执行是安全的（删除按时间分界幂等）。
+func StartPageRetentionScheduler(svc *Service) {
+	if utils.IsTestProcess() {
+		return // 测试进程不启动：调度首跑会动真实库与存储，测试的行为必须由用例自己触发（见 utils.IsTestProcess）。
+	}
+	if svc == nil {
+		return
+	}
+	go func() {
+		run := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			_, _ = svc.PurgeRetention(ctx)
+		}
+		run()
+		ticker := time.NewTicker(pageRetentionInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
 }

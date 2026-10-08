@@ -7,7 +7,7 @@
 --
 -- 覆盖三块（同一批、同一张表，故合成一条迁移）：
 --   1. admin.ai.*            49 条：配置层页面（providers / provider_card / provider_models）；
---   2. admin.customers.bulk.result.disabled 1 条：存量欠账（internal/web/shell/notice_param.go
+--   2. admin.customers.bulk.result.disabled 1 条：存量欠账（internal/shell/notice_param.go
 --      注释块里的示例 key 被门禁按字面量扫到，属 FIX-24 机制范围，此处一并补齐）；
 --   3. ai.msg.* / ai.err.*   27 条：enums 里登记的服务端响应 key（配置层 26 + 通知 1），
 --      含会话层的 11 条（ai_session_msg.go）—— 本批把 `ai.` 并入门禁扫描前缀，故一并落库。
@@ -117,7 +117,7 @@ VALUES
 ('admin.ai.input.image', 'zh-CN', '图片', 200, 'admin', 'admin/ai/provider_models.html: 输入类型选项', 1, now(), now()),
 ('admin.ai.input.image', 'en-US', 'Images', 200, 'admin', 'admin/ai/provider_models.html: input type option', 1, now(), now()),
 
--- —— 2. 存量欠账（internal/web/shell/notice_param.go 的批量操作回执；占位符 {n}/{m}）——
+-- —— 2. 存量欠账（internal/shell/notice_param.go 的批量操作回执；占位符 {n}/{m}）——
 ('admin.customers.bulk.result.disabled', 'zh-CN', '批量操作：已停用 {n} 个，{m} 个未处理。', 200, 'admin', 'shell/notice_param.go: 批量操作回执（FIX-24 机制）', 1, now(), now()),
 ('admin.customers.bulk.result.disabled', 'en-US', 'Bulk action: disabled {n} item(s), {m} left unprocessed.', 200, 'admin', 'shell/notice_param.go: bulk action receipt (FIX-24)', 1, now(), now()),
 

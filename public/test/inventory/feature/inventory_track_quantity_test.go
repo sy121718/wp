@@ -33,7 +33,7 @@ import (
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/public/test/support"
 )
 
@@ -632,6 +632,7 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine.Use(func(c *gin.Context) {
 		// 仅供渲染（shell.Prepare 读 PermSetKey）；拦截由路由上的 Casbin 中间件负责。
 		c.Set(shell.PermSetKey, map[string]bool{"inventory:stock_change": true})
+		c.Set(shell.ButtonsKey, map[string]bool{"inventory.stock_change": true})
 	})
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", handle.InventoryPage)
@@ -684,7 +685,7 @@ func TestInventoryPageRendersThreeQuantityStates(t *testing.T) {
 	}
 
 	// 行内表单：两个仓有库存行 ⇒ 两个表单；未入库的仓没有表单。
-	if n := strings.Count(body, `action="/admin/inventory/stock/tracking"`); n != 2 {
+	if n := strings.Count(body, `action="/admin/inventory/stock/tracking?`); n != 2 {
 		t.Fatalf("应只有 2 个可编辑的行（SZ / SH），实际 %d 个跟踪表单", n)
 	}
 
@@ -714,6 +715,8 @@ func TestInventoryPageRendersThreeQuantityStates(t *testing.T) {
 }
 
 // postTracking 提交行内编辑表单（字段与模板里那份表单一一对应）。
+//
+// 提交地址带筛选上下文（页面渲染时 action 上的 `?{{ .ListQuery }}`），服务端 BackPath 从它读回。
 func postTracking(engine *gin.Engine, projectID, warehouseID, variantID, skuCode string,
 	track bool, quantity string) *httptest.ResponseRecorder {
 	form := url.Values{}
@@ -728,7 +731,8 @@ func postTracking(engine *gin.Engine, projectID, warehouseID, variantID, skuCode
 	if quantity != "" {
 		form.Set("quantity", quantity)
 	}
-	return postForm(engine, "/admin/inventory/stock/tracking", form)
+	path := "/admin/inventory/stock/tracking?project=" + url.QueryEscape(projectID) + "&sku=" + url.QueryEscape(skuCode)
+	return postForm(engine, path, form)
 }
 
 // TestInventoryPageTrackingToggle 判据 3/6 的写路径：
@@ -745,11 +749,8 @@ func TestInventoryPageTrackingToggle(t *testing.T) {
 	sku := stockSKUOf(t, f, v.ID, wh.ID)
 
 	// ① 无限 → 跟踪 + 数量 7：走变动契约（手工调整），留一条流水。
-	if rec := postTracking(engine, f.projectID, wh.ID, v.ID, sku, true, "7"); rec.Code != http.StatusFound {
-		t.Fatalf("行内编辑应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	} else if !strings.Contains(rec.Header().Get("Location"), "done=1") {
-		t.Fatalf("成功回跳应带回 done=1，实际 %q", rec.Header().Get("Location"))
-	}
+	// 成功渲染提示页（取代原先的 302 + ?done=）。
+	assertInventoryJump(t, postTracking(engine, f.projectID, wh.ID, v.ID, sku, true, "7"), "ok")
 	if !stockTrack(t, f, v.ID, wh.ID) {
 		t.Fatalf("提交跟踪 + 数量后该行应变跟踪")
 	}
@@ -761,11 +762,7 @@ func TestInventoryPageTrackingToggle(t *testing.T) {
 	}
 
 	// ② 跟踪 → 无限：先把数量清成 0（同样留流水），再关开关。
-	if rec := postTracking(engine, f.projectID, wh.ID, v.ID, sku, false, ""); rec.Code != http.StatusFound {
-		t.Fatalf("置为无限应 302 回列表，实际 %d", rec.Code)
-	} else if !strings.Contains(rec.Header().Get("Location"), "done=1") {
-		t.Fatalf("置为无限应回带 done=1，实际 %q", rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, postTracking(engine, f.projectID, wh.ID, v.ID, sku, false, ""), "ok")
 	if stockTrack(t, f, v.ID, wh.ID) {
 		t.Fatalf("置为无限后 track_quantity 应为 false")
 	}
@@ -778,16 +775,7 @@ func TestInventoryPageTrackingToggle(t *testing.T) {
 
 	// ③ 无限行提交非 0 数量：拒绝（不静默按 0 处理），真源不动。
 	rec := postTracking(engine, f.projectID, wh.ID, v.ID, sku, false, "5")
-	if rec.Code != http.StatusFound {
-		t.Fatalf("被拒也要 302 回列表（PRG），实际 %d", rec.Code)
-	}
-	loc := rec.Header().Get("Location")
-	if strings.Contains(loc, "done=1") {
-		t.Fatalf("无限行带数量不该成功，实际 %q", loc)
-	}
-	if errText := errTextOf(t, loc); !strings.Contains(errText, "不跟踪") {
-		t.Fatalf("错误文案应是中文业务提示（不跟踪的行不允许带数量），实际 %q", errText)
-	}
+	assertInventoryJump(t, rec, "err", "不跟踪")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 0 {
 		t.Fatalf("被拒后真源不该被写，实际 %d", got)
 	}
@@ -796,14 +784,7 @@ func TestInventoryPageTrackingToggle(t *testing.T) {
 	}
 
 	// ④ 跟踪态留空数量：拒绝（留空不等于 0，0 必须自己打）。
-	rec = postTracking(engine, f.projectID, wh.ID, v.ID, sku, true, "")
-	loc = rec.Header().Get("Location")
-	if strings.Contains(loc, "done=1") {
-		t.Fatalf("跟踪态留空数量不该成功，实际 %q", loc)
-	}
-	if errText := errTextOf(t, loc); !strings.Contains(errText, "必须填写数量") {
-		t.Fatalf("错误文案应是中文业务提示（跟踪时必须填数量），实际 %q", errText)
-	}
+	assertInventoryJump(t, postTracking(engine, f.projectID, wh.ID, v.ID, sku, true, ""), "err", "必须填写数量")
 }
 
 // TestTrackQuantityI18nSeeded 迁移 263 的词条真的落库了（中英成对）。

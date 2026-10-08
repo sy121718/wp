@@ -2,7 +2,7 @@
 
 > 目的：记录 htmx 官方扩展对本项目的适用性，避免「能用现成能力却手写 JS」。
 > 状态：开发期评估，逐个按需引入、本地托管、单独提交。
-> 相关：`AGENTS.md` §交互方式（HTMX）、`docs/06-plugin-system.md`、`docs/09-session-handoff.md`
+> 相关：`AGENTS.md` §交互方式（HTMX）、`docs/06-plugin-system.md`
 
 ## 一、体积基线
 

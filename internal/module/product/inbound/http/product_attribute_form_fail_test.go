@@ -29,7 +29,7 @@ import (
 	ginrender "github.com/gin-gonic/gin/render"
 
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // —— 渲染捕获（把失败出口真正交给模板的那份 data 截下来）——
@@ -137,19 +137,22 @@ func TestAttrGroupFormFailSplitsByRequestKind(t *testing.T) {
 		t.Fatalf("片段 data 类型 = %T，want gin.H（片段的 FormEcho* 靠 map 键存在与否门控）", cap.data)
 	}
 
-	// 原生档：302 + ?err= 回列表（既有行为）。
-	c2, rec2, _ := newAttrCaptureContext(t, "", "projectId=pr1&name=颜色")
+	// 原生档：整页提示（200 + err 态），取代原先的 302 + ?err= 回列表。
+	c2, rec2 := newProductJumpContext(t, "", "project=pr1", "projectId=pr1&name=颜色")
 	h.attrGroupFormFail(c2, attrGroupModeCreate, "pr1", "new", msg)
 	c2.Writer.WriteHeaderNow()
-	if rec2.Code != http.StatusFound {
-		t.Fatalf("原生档状态码 = %d，want 302", rec2.Code)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("原生档状态码 = %d，want 200（提示页）", rec2.Code)
 	}
-	loc := rec2.Header().Get("Location")
-	if !strings.Contains(loc, "project=pr1") {
-		t.Errorf("原生档重定向 %q 应带上工程上下文", loc)
+	body := rec2.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("原生档应渲染 err 态提示页，body=%s", body)
 	}
-	if !strings.Contains(loc, "err="+url.QueryEscape(msg)) {
-		t.Errorf("原生档重定向 %q 应带 ?err=<文案>", loc)
+	if !strings.Contains(body, msg) {
+		t.Fatalf("提示页应含受控文案 %q，body=%s", msg, body)
+	}
+	if !strings.Contains(body, "/admin/product-attributes?") || !strings.Contains(body, "project=pr1") {
+		t.Fatalf("提示页回跳应回属性页并带上工程，body=%s", body)
 	}
 }
 
@@ -167,14 +170,18 @@ func TestAttrValuesFormFailSplitsByRequestKind(t *testing.T) {
 		t.Errorf("htmx 档渲染的片段 = %q，want %q", cap.name, attrValuesFormTemplate)
 	}
 
-	c2, rec2, _ := newAttrCaptureContext(t, "", attrValuesSubmitBody())
+	c2, rec2 := newProductJumpContext(t, "", "project=pr1", attrValuesSubmitBody())
 	h.attrValuesFormFail(c2, "pr1", "a1", "属性值标识重复")
 	c2.Writer.WriteHeaderNow()
-	if rec2.Code != http.StatusFound {
-		t.Fatalf("原生档状态码 = %d，want 302", rec2.Code)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("原生档状态码 = %d，want 200（提示页）", rec2.Code)
 	}
-	if loc := rec2.Header().Get("Location"); !strings.Contains(loc, "project=pr1") {
-		t.Errorf("原生档重定向 %q 应带上工程上下文", loc)
+	body := rec2.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("原生档应渲染 err 态提示页，body=%s", body)
+	}
+	if !strings.Contains(body, "/admin/product-attributes?") || !strings.Contains(body, "project=pr1") {
+		t.Fatalf("提示页回跳应回属性页并带上工程，body=%s", body)
 	}
 }
 
@@ -480,18 +487,18 @@ func TestAttrFormDataShapeMatchesFirstPaint(t *testing.T) {
 	// 属性组：新建形态（首屏 attrCreateDrawerForm ↔ 失败 attrGroupFormFail(create)）。
 	c, _, cap := newAttrCaptureContext(t, "true", attrGroupSubmitBody())
 	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "失败")
-	compare(t, "属性组/新建", attrCreateDrawerForm("tok", "pr1", tr), capturedData(t, cap))
+	compare(t, "属性组/新建", attrCreateDrawerForm("tok", "pr1", "", tr), capturedData(t, cap))
 
 	// 属性组：编辑形态（首屏 attrRowDrawerForms ↔ 失败 attrGroupFormFail(edit)）。
 	c2, _, cap2 := newAttrCaptureContext(t, "true", "id=a1&name=颜色&key=color&inDrawer=1")
 	h.attrGroupFormFail(c2, attrGroupModeEdit, "pr1", "a1", "失败")
-	editFirst, _ := attrRowDrawerForms("tok", "pr1", tr, attributeRespForTest("a1"))
+	editFirst, _ := attrRowDrawerForms("tok", "pr1", "", tr, attributeRespForTest("a1"))
 	compare(t, "属性组/编辑", editFirst, capturedData(t, cap2))
 
 	// 属性值（首屏 attrValuesFormData ↔ 失败 attrValuesFormFail）。
 	c3, _, cap3 := newAttrCaptureContext(t, "true", attrValuesSubmitBody())
 	h.attrValuesFormFail(c3, "pr1", "a1", "失败")
-	_, valuesFirst := attrRowDrawerForms("tok", "pr1", tr, attributeRespForTest("a1"))
+	_, valuesFirst := attrRowDrawerForms("tok", "pr1", "", tr, attributeRespForTest("a1"))
 	compare(t, "属性值", valuesFirst, capturedData(t, cap3))
 }
 

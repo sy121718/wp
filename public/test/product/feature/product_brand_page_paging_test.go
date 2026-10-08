@@ -31,7 +31,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"go_wp/public/test/support"
 )
@@ -54,6 +54,10 @@ func newBrandPagingEnv(t *testing.T) (*gin.Engine, *gorm.DB, *projectservice.Ser
 		c.Set(shell.PermSetKey, map[string]bool{
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.brand_create": true, "product.brand_update": true, "product.brand_delete": true,
+		})
+
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(svc, projects)

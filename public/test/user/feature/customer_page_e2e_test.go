@@ -201,8 +201,15 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 			"customerId": {strconv.FormatUint(customer.ID, 10)},
 			"toStatus":   {strconv.Itoa(usermodel.UserStatusDisabled)},
 		})
-		if rec.Code != http.StatusFound {
-			t.Fatalf("停用应 302 回列表页，实际 %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("停用应渲染提示页（200），实际 %d", rec.Code)
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, `data-jump-state="ok"`) {
+			t.Errorf(`停用后应有 data-jump-state="ok"`)
+		}
+		if !strings.Contains(body, "账号已停用") {
+			t.Errorf("停用后提示页应含「账号已停用」")
 		}
 		stored, err := env.users.GetByID(context.Background(), customer.ID)
 		if err != nil {
@@ -224,12 +231,15 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 		rec := env.post(t, "/admin/customers/unlock", url.Values{
 			"customerId": {strconv.FormatUint(customer.ID, 10)},
 		})
-		if rec.Code != http.StatusFound {
-			t.Fatalf("解锁应 302 回列表页，实际 %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("解锁应渲染提示页（200），实际 %d", rec.Code)
 		}
-		loc := rec.Header().Get("Location")
-		if !strings.Contains(loc, "ok=") {
-			t.Errorf("解锁后应带成功回执：%s", loc)
+		body := rec.Body.String()
+		if !strings.Contains(body, `data-jump-state="ok"`) {
+			t.Errorf(`解锁后应有 data-jump-state="ok"`)
+		}
+		if !strings.Contains(body, "账号已解除锁定") {
+			t.Errorf("解锁后提示页应含「账号已解除锁定」")
 		}
 		stored, err := env.users.GetByID(ctx, customer.ID)
 		if err != nil {

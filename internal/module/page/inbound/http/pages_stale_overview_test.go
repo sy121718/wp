@@ -28,7 +28,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
 
 // staleOverviewHandle 组装句柄：工程列表就绪，页面列表为空，stale 取数按参数给定。

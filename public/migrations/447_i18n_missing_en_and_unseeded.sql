@@ -9,7 +9,7 @@
 --   http_code=200、category='ui'。
 --
 --   remark **不复用 058 的路径** —— 那是 `internal/module/dashboard/enums/dashboard_enums.go`，
---   而 dashboard 模块早已随页面回迁删除（`internal/web/shell/errors.go` 有注明）。照抄旧路径
+--   而 dashboard 模块早已随页面回迁删除（`internal/shell/errors.go` 有注明）。照抄旧路径
 --   会把后来人指向不存在的文件，故本批逐个核实了每个 key 的真实定义位置（常量值即 key 名）：
 --     · MsgAdministratorsTitle / MsgRolesTitle / MsgMenusTitle / MsgPermissionsTitle /
 --       MsgDepartmentsTitle / MsgDatarulesTitle → internal/module/admin/inbound/http/admin_pages_handle.go:39-45

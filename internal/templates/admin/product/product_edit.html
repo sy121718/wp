@@ -19,9 +19,9 @@
 {{tr := .["t"]}}
 {{selectedProject := .SelectedProject}}
 {{warehouseOptions := .WarehouseOptions}}
-{{canUpdate := isset(.PermSet["product:update"])}}
-{{canVariantCreate := isset(.PermSet["product:variant_create"])}}
-{{canVariantGenerate := isset(.PermSet["product:variant_generate"])}}
+{{canUpdate := isset(.Buttons["product.update"])}}
+{{canVariantCreate := isset(.Buttons["product.variant_create"])}}
+{{canVariantGenerate := isset(.Buttons["product.variant_generate"])}}
 {{editBlocked := false}}
 {{if isset(.EditBlocked)}}{{editBlocked = .EditBlocked}}{{end}}
 {* 富文本（商品描述）要的三个资源由**调用方页面**引：片段只出结构与扩展入口。
@@ -62,9 +62,8 @@
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.products.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{ .["t"]("admin.products.lastNotice", "上一次保存结果：") }}{{.Done}}</p>
-    {{end}}{{end}}
+    {* 保存成功等写动作结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
+       本页的 Err 只剩「表单校验失败原地重渲染」这一条来源。 *}
 
     {{if !.HasProduct}}
     <section class="card card-body">

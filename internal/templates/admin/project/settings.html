@@ -43,16 +43,19 @@
         {{end}}{{end}}
     </header>
 
-    {* 页面级保存失败提示（站点信息 / GA4 / GSC / 404 页 / 语言 URL 方案）：失败后 303 回本页并带 ?err=。
-       与下面语言清单的 LocaleError 分工不同 —— 那是就地回渲（回显用户输入的那几行），
-       这一条是整页保存失败的一句受控提示。读侧白名单同 projectPageErrText。 *}
+    {* 页面级**装载失败**提示：本页取数失败时由 handler 直接给（空串 = 无提示）。
+       写动作的结论不再回带本页（走 shell.RenderJump 渲染提示页，见 project_jump.go），
+       所以这条只由 buildSiteSettingsData 的取数失败填充。
+       与下面语言清单的 LocaleError 分工不同 —— 那是就地回渲（回显用户输入的那几行）。 *}
     {{if isset(.Err)}}{{if .Err}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
     {{end}}{{end}}
 
     {{if .Selected != ""}}
-    {* 基础站点信息编辑（走 project Update，保存 SiteSettings） *}
-    <form method="post" action="/admin/settings/save" class="card card-body">
+    {* 基础站点信息编辑（走 project Update，保存 SiteSettings）。
+       action 上带 ?project=：写动作的结论改由提示页在响应体里渲染，回跳地址由
+       shell.BackPath 从本次请求的 query 读回（服务端自己拼，不读隐藏域里的整串 URL）。 *}
+    <form method="post" action="/admin/settings/save?project={{.Selected}}" class="card card-body">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="projectId" value="{{.Selected}}">
 
@@ -241,13 +244,10 @@
         {{if isset(.LocaleError)}}{{if .LocaleError}}
         <p class="badge badge-warning" role="alert">{{ .["t"](.LocaleError, "语言清单不合法：至少保留一种语言；至多一个默认语言且必须启用；语言码只能包含字母、数字与连字符") }}</p>
         {{end}}{{end}}
-        {{if isset(.LocaleSaved)}}{{if .LocaleSaved}}
-        <p class="badge badge-info" role="status">{{ .["t"]("admin.settings.locales.saved", "语言清单已保存。") }}</p>
-        {{end}}{{end}}
         {{if isset(.LangURLOffWarning)}}{{if .LangURLOffWarning}}
         <p class="badge badge-warning" role="alert">{{ .["t"]("MsgSiteLangURLOffWarning", "当前多语言访问路径方案为 off：各语言映射到同一路径，语言切换器不会渲染；如需多语言独立 URL，请在下方「多语言访问路径方案」切换为 default_plain 或 all_prefix 并保存") }}</p>
         {{end}}{{end}}
-        <form id="locale-form" method="post" action="/admin/settings/locales/save" class="form-inline">
+        <form id="locale-form" method="post" action="/admin/settings/locales/save?project={{.Selected}}" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="projectId" value="{{.Selected}}">
             <div id="locale-rows">

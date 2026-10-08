@@ -14,19 +14,23 @@ package contenttemplatehttp
 //
 // 三件套（与 admin 的 admin_err.go / navigation 的 navigation_err.go 同形）：
 //
-//	① 白名单   —— contenttemplateenums 常量（enums 的值就是 i18n key）+ 一条**受控提示**
-//	              前缀（shell.BulkIDs 的上限拒绝：整句由本仓库拼出、带可行动数字）；
+//	① 白名单   —— contenttemplateenums 常量（enums 的值就是 i18n key）；
 //	② 归口文案 —— shell.MsgInternalError 词条（缺词条回落中文原文）；
 //	③ 结构化日志 —— logger.Scene + user_id + 原始错误（原文只进日志）。
+//
+// 传输通道：写动作的结论**不再经查询参数回带**（原先 303 + `?err=` / `?done=`），
+// 改由 contentTemplateJump 渲染整页提示（shell.RenderJump，文案走响应体）。那条通道要求
+// 读侧再判一次「这条提示是不是本仓给的」（contentTemplateNoticeTexts 的候选集合），
+// 而查询参数不是可信边界 —— 现在读侧判定（contentTemplatePageErr / contentTemplatePageDone /
+// contentTemplateNoticeTexts / contentTemplateLocalNotices）整批删除。
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 )
 
@@ -55,29 +59,6 @@ var contentTemplateFacingMessages = map[string]string{
 	contenttemplateenums.ErrProjectNotFound:        "选择的站点工程不存在，请刷新后重试。",
 }
 
-// contentTemplateControlledPrefixes 受控提示的前缀白名单。
-//
-// 目前只有一条：shell.BulkIDs 的上限拒绝「一次最多操作 N 项，当前 M 项，请分批进行」。
-// 它由本仓库自己拼出、带可行动数字、不含库表信息。按**前缀**判而不是按来源直接透出：
-// 上游将来改成上抛别的错误时前缀不再命中，自动退回归口文案。
-var contentTemplateControlledPrefixes = []string{
-	fmt.Sprintf("一次最多操作 %d 项", shell.MaxBulkIDs),
-}
-
-// contentTemplateControlledText 受控提示 → 原样透出；未命中返回空串。
-func contentTemplateControlledText(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	for _, prefix := range contentTemplateControlledPrefixes {
-		if strings.HasPrefix(raw, prefix) {
-			return raw
-		}
-	}
-	return ""
-}
-
 // contentTemplateInternalText 未命中任何白名单时的统一出口（错误文案三件套的第三件）：
 // 原文只进日志（场景 + user_id + 原始错误），对外只给归口文案。
 func contentTemplateInternalText(c *gin.Context, err error) string {
@@ -98,9 +79,6 @@ func contentTemplateErrText(c *gin.Context, err error) string {
 		return ""
 	}
 	raw := strings.TrimSpace(err.Error())
-	if msg := contentTemplateControlledText(raw); msg != "" {
-		return msg
-	}
 	if msg, ok := contentTemplateFacingMessages[raw]; ok {
 		return shell.TranslateFor(c)(msg, msg)
 	}
@@ -118,7 +96,7 @@ func contentTemplateErrText(c *gin.Context, err error) string {
 // hint 是**可行动提示**（依赖没装配 / 工程内还没有可预览的实体 / 不支持该实体类型），
 // 原样可见；err 是依赖错误（products.List / contents.List 上抛，可能是 PG 原文）→
 // 记日志 + 归口文案。两者分开是这一页的关键：样例实体要读两个别的模块的表，
-// 那些错误里带着表名与 SQLSTATE，而这一页的提示位（?err= / SampleErr）都会被原样渲染。
+// 那些错误里带着表名与 SQLSTATE，而这一页的提示位（SampleErr / 编辑入口提示页）都会被原样渲染。
 func sampleErrText(c *gin.Context, hint string, err error) string {
 	if h := strings.TrimSpace(hint); h != "" {
 		return h
@@ -129,10 +107,10 @@ func sampleErrText(c *gin.Context, hint string, err error) string {
 	return contentTemplateInternalText(c, err)
 }
 
-// —— 读侧回执的收口（?err= / ?done=）——
+// —— 页面自造回执与写动作出口 ——
 
-// 本页自造的回执文案（不是 enums 白名单，也不来自 shell）：它们会进 ?err=，
-// 因此必须同时登记在 contentTemplateLocalNotices 里 —— 自造文案不登记就会在回显时被自己吞掉。
+// 本页自造的回执文案（不是 enums 白名单，也不来自 shell）：作为提示页正文，
+// 经 contentTemplateJumpText 取词（无 seed 词条时原样返回中文）。
 const (
 	contentTemplateMissingIDText      = "缺少模板 id"
 	contentTemplateNotFoundText       = "模板不存在"
@@ -142,7 +120,7 @@ const (
 	contentTemplateHintNoProduct      = "工程内还没有商品，无法预览商品详情模板"
 	contentTemplateHintNoArticle      = "工程内还没有文章，无法预览文章详情模板"
 	contentTemplateHintEntityTypeMiss = "暂不支持该实体类型的预览样例自动选取（本页只支持商品与文章）"
-	// 切换生效的成功回执（进 ?done=）。生效的那套换了意味着引用它的产物过期，
+	// 切换生效的成功回执。生效的那套换了意味着引用它的产物过期，
 	// 回执把这件事说出来，免得有人以为「只是改了个标记」。
 	contentTemplateActivateDoneText = "已切换生效模板，引用它的页面与实例会重新构建。"
 	// 引用反查未装配时的提示。刻意**不写成「系统内部错误」**：正确读法是「查不出来」，
@@ -168,28 +146,13 @@ func contentTemplateImpactLoadFailedText(c *gin.Context) string {
 
 // contentTemplateImpactUnparsableTemplate 影响面可能不完整的提示（%d = 无法解析的文档数）。
 //
-// 带占位符的受控文案（与批量结论同一形态），读侧经 shell.NoticeTemplate 归一后参与回显判定。
+// 带占位符的受控文案（与批量结论同一形态），只在页面数据（ImpactNote）里渲染。
 const contentTemplateImpactUnparsableTemplate = "有 %d 份文档无法解析，影响面可能不完整（这些文档仍可能引用本模板）。"
-
-// contentTemplateLocalNotices 本页自造、可原样展示的回执文案。
-var contentTemplateLocalNotices = []string{
-	contentTemplatesNotReadyText,
-	contentTemplateMissingIDText,
-	contentTemplateNotFoundText,
-	contentTemplateSampleMissingText,
-	contentTemplateHintProductNoMod,
-	contentTemplateHintContentNoMod,
-	contentTemplateHintNoProduct,
-	contentTemplateHintNoArticle,
-	contentTemplateHintEntityTypeMiss,
-	contentTemplateActivateDoneText,
-	contentTemplateImpactUnavailableText,
-}
 
 // contentTemplatesBulkResultTemplates 批量删除的结论文案模板（%d 是计数字段）。
 //
-// **写侧与读侧共用这一份字面量**：写侧 contentTemplatesBulkDeleteResult 用它 Sprintf，
-// 读侧 contentTemplateNoticeTexts 用它（经 shell.NoticeTemplate 归一）判定 URL 回显。
+// 只在写侧使用：contentTemplatesBulkDeleteResult 用它 Sprintf 出整句，结论随提示页渲染
+// （不再经 ?done=，读侧那套「模板归一后比对回显」已整批删除）。
 var contentTemplatesBulkResultTemplates = []string{
 	"没有选中任何模板，列表未改动。",
 	"已删除 %d 个模板。",
@@ -197,39 +160,40 @@ var contentTemplatesBulkResultTemplates = []string{
 	"已删除 %d 个，%d 个未能删除（仍被页面、实例或其它模板引用的模板不能删除）。",
 }
 
-// contentTemplateNoticeTexts 本页可以原样展示的回执文案（当前语言）。
+// contentTemplateBackTextKey / Fallback 提示页「立即前往」链接的文字（复用列表页标题词条，不新增全站词条）。
+const (
+	contentTemplateBackTextKey      = "admin.content.templates.heading"
+	contentTemplateBackTextFallback = "内容模板"
+)
+
+// contentTemplateJumpText 页面自造回执的取词（key + 中文兜底）。
 //
-// 三类来源与写侧一一对应：① enums 白名单的展示文案（contentTemplateErrText 的产物）；
-// ② 本页自造文案 + 归口文案 + shell 的批量上限提示；③ 批量结论文案模板。
-func contentTemplateNoticeTexts(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0,
-		len(contentTemplateFacingMessages)+len(contentTemplateLocalNotices)+len(contentTemplatesBulkResultTemplates)+2)
-	for _, msg := range contentTemplateFacingMessages {
-		out = append(out, tr(msg, msg))
-	}
-	out = append(out, contentTemplateLocalNotices...)
-	out = append(out,
-		shell.BulkIDsNoticeTemplate(c),
-		tr(shell.MsgInternalError, contentTemplateErrInternalFallback),
-	)
-	for _, tpl := range contentTemplatesBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(tpl))
-	}
-	out = append(out, shell.NoticeTemplate(contentTemplateImpactUnparsableTemplate))
-	return out
+// 这几条回执（缺 id / 模板不存在 / 能力未装配 / 切换生效完成）目前没有 seed 词条，
+// 因此 key 与兜底同为中文 —— 取词原样返回中文，与改造前一致；走 TranslateFor 是为了
+// 与业务文案共用同一条降级链（将来补词条时只改这一处，调用点不动）。
+func contentTemplateJumpText(c *gin.Context, text string) string {
+	return shell.TranslateFor(c)(text, text)
 }
 
-// contentTemplatePageErr 列表页 ?err= 的统一出口（未命中落归口文案）。
-func contentTemplatePageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, contentTemplateNoticeTexts(c))
-	})
-}
+// contentTemplateJumpKeys 写动作回跳要透传的筛选键（与表单 action / 编辑链接上的键一致）。
+var contentTemplateJumpKeys = []string{"project", "entityType"}
 
-// contentTemplatePageDone 列表页 ?done= 的统一出口（成功提示：未命中落空串）。
-func contentTemplatePageDone(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, contentTemplateNoticeTexts(c))
-	})
+// contentTemplateJump 页面写动作 / 编辑入口的统一出口：整页提示（对应 ThinkPHP 的 success() / error()）。
+//
+// 取代原先的 303 + `?err=` / `?done=`：那条通道要求读侧再判一次「这条提示是不是本仓给的」
+// （contentTemplateNoticeTexts 的候选集合），而查询参数不是可信边界。现在文案走响应体，
+// 读侧判定（contentTemplatePageErr / contentTemplatePageDone / contentTemplateNoticeTexts）随之整批删除。
+//
+// msg 必须**已过本模块白名单 / 已归口**（contentTemplateErrText / contentTemplateInternalText 的产物），
+// 原文只进日志 —— 换个页面呈现不等于可以把 err.Error() 铺在页面上。
+// 回跳地址由 shell.BackPath 从表单 action 的 query 按白名单读回（不再用隐藏域塞整串 URL）。
+// 失败不自动跳转（Seconds=0）：运营要看清楚原因；成功 1 秒后回列表页。
+func contentTemplateJump(c *gin.Context, ok bool, msg string) {
+	back := shell.BackPath(c, contentTemplatesListPath, contentTemplateJumpKeys...)
+	backText := shell.TranslateFor(c)(contentTemplateBackTextKey, contentTemplateBackTextFallback)
+	if ok {
+		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
+		return
+	}
+	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
 }

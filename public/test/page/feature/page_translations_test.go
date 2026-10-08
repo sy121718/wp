@@ -78,8 +78,8 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/page/translations", handle.PageTranslations)
-	router.POST("/admin/page/translations/save", handle.SavePageTranslations)
+	router.GET("/admin/pages/translations", handle.PageTranslations)
+	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
 	router.GET("/admin/pages", handle.PagesList)
 	return router, handle, db, project.ID, pageID
 }
@@ -132,7 +132,7 @@ func pageStale(t *testing.T, db *gorm.DB, id string) bool {
 func getTranslationPage(t *testing.T, router *gin.Engine, pageID, lang string) string {
 	t.Helper()
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/admin/page/translations?pageId="+pageID+"&lang="+lang, nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/pages/translations?pageId="+pageID+"&lang="+lang, nil)
 	// 界面语言显式钉成中文（Cookie 优先级最高，协商顺序见 pkg/response.requestLanguage）。
 	// 背景：本会话把后台模板全面 t() 化（admin.* 词条，迁移 192/195）之后，界面语言改按请求协商，
 	// 而本 URL 上的 lang=en-US 是**翻译目标语言**，会被协商一并当成界面语言 —— 词条缓存已加载时
@@ -243,7 +243,7 @@ func TestPagesListShowsTranslationsEntry(t *testing.T) {
 		t.Fatalf("GET /admin/pages -> %d", recorder.Code)
 	}
 	body := recorder.Body.String()
-	if !strings.Contains(body, "/admin/page/translations?pageId="+pageID) {
+	if !strings.Contains(body, "/admin/pages/translations?pageId="+pageID) {
 		t.Fatalf("页面列表缺少「多语言」入口链接\n%s", body)
 	}
 	if !strings.Contains(body, ">多语言</a>") {
@@ -257,18 +257,18 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 	insertTranslationPage(t, db, "cccccccc-0000-0000-0000-000000000003", projectID, "/other",
 		"{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"bt2\",\"type\":\"core.button\",\"props\":{\"text\":\"联系我们\"}}]}")
 
-	saved := postForm(t, router, "/admin/page/translations/save", url.Values{
+	saved := postForm(t, router, "/admin/pages/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"en-US"},
 		"rowContext": {"core.button.text", "core.text.text"},
 		"rowSource":  {"联系我们", "<p>我们成立于 2010 年</p>"},
 		"rowHash":    {i18n.ContentHash("联系我们"), i18n.ContentHash("<p>我们成立于 2010 年</p>")},
 		"rowTarget":  {"Contact us", "<p>Founded in 2010</p>"},
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK {
+		t.Fatalf("保存成功应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
 	}
-	if loc := saved.Header().Get("Location"); !strings.Contains(loc, "saved=1") || !strings.Contains(loc, "n=2") {
-		t.Fatalf("回跳 URL 应带写入条数 n=2，实际 %q", loc)
+	if body := saved.Body.String(); !strings.Contains(body, `data-jump-state="ok"`) || !strings.Contains(body, "已保存 2 条译文") {
+		t.Fatalf("提示页应含「已保存 2 条译文」：%s", body)
 	}
 	if n := translationRowCount(t, db, "en-US"); n != 2 {
 		t.Fatalf("应写入 2 条译文，实际 %d", n)
@@ -378,12 +378,12 @@ func TestSavePageTranslationsFromRenderedForm(t *testing.T) {
 		t.Fatal("没有非空输入，用例失去意义")
 	}
 
-	saved := postForm(t, router, "/admin/page/translations/save", form)
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	saved := postForm(t, router, "/admin/pages/translations/save", form)
+	if saved.Code != http.StatusOK {
+		t.Fatalf("保存应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
 	}
-	if loc := saved.Header().Get("Location"); !strings.Contains(loc, "n="+strconv.Itoa(nonEmpty)) {
-		t.Fatalf("非空输入 %d 条与回执 saved 计数不符：%q", nonEmpty, loc)
+	if body := saved.Body.String(); !strings.Contains(body, "已保存 "+strconv.Itoa(nonEmpty)+" 条译文") {
+		t.Fatalf("非空输入 %d 条与回执计数不符：%s", nonEmpty, body)
 	}
 	if n := translationRowCount(t, db, "en-US"); n != int64(nonEmpty) {
 		t.Fatalf("落库 %d 条 != 非空输入数 %d", n, nonEmpty)
@@ -400,8 +400,8 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 		"rowHash":    {i18n.ContentHash("联系我们")},
 		"rowTarget":  {"Contact us"},
 	}
-	if saved := postForm(t, router, "/admin/page/translations/save", form); saved.Code != http.StatusSeeOther {
-		t.Fatalf("首次保存应 303，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved := postForm(t, router, "/admin/pages/translations/save", form); saved.Code != http.StatusOK {
+		t.Fatalf("首次保存应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
 	}
 	var firstUpdated time.Time
 	if err := db.Raw("SELECT update_time FROM sys_translation").Scan(&firstUpdated).Error; err != nil {
@@ -412,12 +412,12 @@ func TestSavePageTranslationsIdempotent(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 
-	again := postForm(t, router, "/admin/page/translations/save", form)
-	if again.Code != http.StatusSeeOther {
-		t.Fatalf("重复保存应 303，实际 %d：%s", again.Code, again.Body.String())
+	again := postForm(t, router, "/admin/pages/translations/save", form)
+	if again.Code != http.StatusOK {
+		t.Fatalf("重复保存应渲染提示页（200），实际 %d：%s", again.Code, again.Body.String())
 	}
-	if loc := again.Header().Get("Location"); !strings.Contains(loc, "n=0") {
-		t.Fatalf("幂等保存应写入 0 条，实际回跳 %q", loc)
+	if body := again.Body.String(); !strings.Contains(body, "已保存 0 条译文") {
+		t.Fatalf("幂等保存应写入 0 条，实际提示 %s", body)
 	}
 	var secondUpdated time.Time
 	if err := db.Raw("SELECT update_time FROM sys_translation").Scan(&secondUpdated).Error; err != nil {
@@ -450,7 +450,7 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 		{"跳过规则原文", "core.text.text", "2024", i18n.ContentHash("2024"), "2024", "不参与翻译"},
 	}
 	for _, tc := range cases {
-		recorder := postForm(t, router, "/admin/page/translations/save", url.Values{
+		recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
 			"pageId": {pageID}, "lang": {"en-US"},
 			"rowContext": {tc.context}, "rowSource": {tc.source},
 			"rowHash": {tc.hash}, "rowTarget": {tc.target},
@@ -473,16 +473,16 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 // TestSavePageTranslationsEmptyTargetSkips 空译文 → 本行不写入（也不触发重建）。
 func TestSavePageTranslationsEmptyTargetSkips(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
-	recorder := postForm(t, router, "/admin/page/translations/save", url.Values{
+	recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"en-US"},
 		"rowContext": {"core.button.text"}, "rowSource": {"联系我们"},
 		"rowHash": {i18n.ContentHash("联系我们")}, "rowTarget": {"   "},
 	})
-	if recorder.Code != http.StatusSeeOther {
-		t.Fatalf("空译文应正常回跳（不写库），实际 %d", recorder.Code)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("空译文应正常渲染提示页（不写库），实际 %d", recorder.Code)
 	}
-	if loc := recorder.Header().Get("Location"); !strings.Contains(loc, "n=0") {
-		t.Fatalf("空译文不应写入，实际回跳 %q", loc)
+	if body := recorder.Body.String(); !strings.Contains(body, "已保存 0 条译文") {
+		t.Fatalf("空译文不应写入，实际提示 %s", body)
 	}
 	if n := translationRowCount(t, db, "en-US"); n != 0 {
 		t.Fatalf("空译文不应落库，实际 %d 行", n)
@@ -495,7 +495,7 @@ func TestSavePageTranslationsEmptyTargetSkips(t *testing.T) {
 // TestSavePageTranslationsLangNotEnabled 未启用的语言 → 拒绝写入。
 func TestSavePageTranslationsLangNotEnabled(t *testing.T) {
 	router, _, db, _, pageID := newTranslationEnv(t)
-	recorder := postForm(t, router, "/admin/page/translations/save", url.Values{
+	recorder := postForm(t, router, "/admin/pages/translations/save", url.Values{
 		"pageId": {pageID}, "lang": {"ja"},
 		"rowContext": {"core.button.text"}, "rowSource": {"联系我们"},
 		"rowHash": {i18n.ContentHash("联系我们")}, "rowTarget": {"お問い合わせ"},

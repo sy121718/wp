@@ -29,27 +29,20 @@
         </div>
     </header>
 
-    {* 保存失败提示。两条路径都回到这里，但形态不同（见 handler 的 themeSettingsFailPage）：
-       · 校验不通过 / 落库失败 → **就地重渲**（200，同一响应里带回错误槽 + 全部已填值 + 出错字段标红）；
-       · 整站刷新失败（部分成功）→ 303 回本页并带 ?err=（设置已经落库，回表单没有意义）。
-       后者走 ?err= 读侧白名单，手拼的 ?err= 落空串 —— 不会出现「顶着系统样式的伪造消息」。
+    {* 保存失败提示（**就地重渲**，200，同一响应里带回错误槽 + 全部已填值 + 出错字段标红）。
+       「部分成功」（整站刷新失败）不再回带本页 —— 走 shell.RenderJump 渲染整页提示（见 project_jump.go）。
        isset 包裹是硬要求：本模板会被不带该键的渲染路径复用（如模板结构测试）。 *}
     {{if isset(.Err)}}{{if .Err}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-
-    {* 保存成功回执：成功时 303 回本页并带 ?ok=。保存的后果是「该主题下页面全部标记待重建」，
-       而页面与保存前逐字相同 —— 没有这条回执，用户无法确认刚才那一下到底成了没有。
-       读侧白名单在 themeSettingsPageOK（与写侧共用同一份字面量），手拼的 ?ok= 落空串。 *}
-    {{if isset(.OK)}}{{if .OK}}
-    <p class="badge badge-success" role="status">{{.OK}}</p>
     {{end}}{{end}}
 
     <section class="card card-body">
         {* 完整 ThemeSettings JSON 供前端按点分键回显（11 色 + typography + button + surface + motion）。
            用了 unsafe 输出真实 JSON 到 application/json 脚本块；服务端已由 ParseThemeSettings 校验过值安全。 *}
         <script type="application/json" id="theme-settings-json">{{ .ThemeSettings | unsafe }}</script>
-        <form method="post" action="/admin/themes/settings/save" class="theme-form form-stack" id="theme-settings-form">
+        {* action 上带 ?id=<主题>：保存成功 / 部分成功的回跳地址由 shell.BackPath 从本次请求的
+           query 读回（服务端自己拼，不读隐藏域里的整串 URL）。 *}
+        <form method="post" action="/admin/themes/settings/save?id={{.ThemeID}}" class="theme-form form-stack" id="theme-settings-form">
             <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
             <input type="hidden" name="id" value="{{.ThemeID}}">
 

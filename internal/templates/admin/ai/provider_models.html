@@ -11,9 +11,9 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{p := .Provider}}
-{{canManage := isset(.PermSet["ai:provider_models_save"])}}
-{{canRestore := isset(.PermSet["ai:provider_models_restore"])}}
-{{canFetch := isset(.PermSet["ai:provider_models_fetch"])}}
+{{canManage := isset(.Buttons["ai.provider_models_save"])}}
+{{canRestore := isset(.Buttons["ai.provider_models_restore"])}}
+{{canFetch := isset(.Buttons["ai.provider_models_fetch"])}}
 {{noticeErr := false}}
 {{if isset(.ModelsNoticeErr)}}{{noticeErr = .ModelsNoticeErr}}{{end}}
 <div class="ai-models" data-ai-models-host>

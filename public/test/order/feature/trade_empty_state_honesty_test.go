@@ -43,7 +43,7 @@ import (
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -94,6 +94,7 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 	// 页头与空态的建单入口都按它渲染（模板里 canCreate := isset(.PermSet["order:create"])）。
 	engine.Use(func(c *gin.Context) {
 		c.Set(shell.PermSetKey, map[string]bool{"order:create": true})
+		c.Set(shell.ButtonsKey, map[string]bool{"order.create": true})
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
@@ -291,6 +292,9 @@ func TestOrdersEmptyCopyMatchesRoutes(t *testing.T) {
 // 原先 ErrReturnNotFound 不在本页白名单里 → 落归口文案「系统内部错误，请稍后重试」：
 // 有反馈，但把「单不存在」说成了「系统故障」，用户会去重试而不是回列表。
 //
+// 新契约：缺详情的原因进模板的 `.LoadErr`（一条 `role="alert"` 的 badge），页面**降级渲染
+// 完整页面 200** —— 不再有 `?err=` 回带，也不再由 `c.String(500, …)` 拿走整页。
+//
 // 词条在这里显式注入（pkg/i18n.InjectForTest）：本测试的引擎不建 i18n 组件，
 // 不注入的话取词会回落 fallback（key 本身），断言就只能停在「放行了 key」这一步。
 // 「库里真的有这条词条」由 TestTradePagesI18nValuesAreActuallyUpdated 查库覆盖 ——
@@ -305,7 +309,20 @@ func TestReturnsMissingDetailSaysNotFound(t *testing.T) {
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	body := env.get(t, "/admin/returns?project="+env.project+"&returnId=999999")
+	// 这里刻意**不用 env.get**：它的语义是「非 200 直接 Fatal」，会把「500」与「渲染中断」
+	// 混成一句话。缺详情的正确形态是 200 + 提示条 —— 若仍是 500，那是控制器/模板侧的生产
+	// 缺陷（本测试不改生产代码），断言要把这一点说清楚。
+	rec := httptest.NewRecorder()
+	env.engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/admin/returns?project="+env.project+"&returnId=999999", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("缺详情时应降级渲染（200 + 提示条），实际 %d —— "+
+			"returnId 指向不存在的单把整页打成 500 是生产缺陷（控制器/模板侧），不在本测试修", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "</html>") {
+		t.Fatalf("缺详情时渲染中断（缺 </html>）")
+	}
 	alert := orderPageAlert(body)
 	if !strings.Contains(alert, "退货申请不存在") {
 		t.Errorf("缺详情时的提示应是「退货申请不存在」，实际 %q", alert)
@@ -376,8 +393,11 @@ func TestTradePagesI18nValuesAreActuallyUpdated(t *testing.T) {
 // 平铺在「操作」标题下方时，对已经会用的人是每次访问都付的噪声，也把真正的操作表单往下推；
 // 而且它此前是 Go 侧硬编码中文，英文界面整块露中文。
 //
-// 判据：模板里正文没有那一行、悬浮里有取词；六条词条中英成对（查库那半在
-// TestTradePagesI18nValuesAreActuallyUpdated）。
+// 新契约：Go 侧不再给 key（`detail.NoteKey` 已删）—— 说明改为在**模板里按状态内联取词**
+// （六个分支 `tr("admin.returns.note.<status>", "…")`），整块收进「操作」标题的 `.help-pop`。
+// 所以判据从「Go 给了 NoteKey」变成「模板里有六条取词、且确实在 .help-pop 内」。
+//
+// 六条词条中英成对（查库那半在 TestTradePagesI18nValuesAreActuallyUpdated）。
 //
 // 路径：模板已按后端模块分目录（admin/order/returns.html），本用例原先读的是分目录前的
 // 旧落点 admin/returns.html —— 文件不存在，它不是断言失败而是直接 Fatal（读不到就无从判）。
@@ -388,24 +408,65 @@ func TestReturnsStatusNoteMovedIntoHelp(t *testing.T) {
 	}
 	html := string(src)
 
-	if strings.Contains(html, `class="hint">{{detail.Note}}`) {
-		t.Error("状态说明仍在正文里（<p class=\"hint\">{{detail.Note}}</p>）—— 应移进「操作」标题的 .help 悬浮")
+	// ① 六个状态各有一条取词（少一条 → 那个状态的说明整块消失，英文界面会露中文兜底）。
+	for _, key := range []string{
+		"admin.returns.note.requested", "admin.returns.note.approved", "admin.returns.note.received",
+		"admin.returns.note.completed", "admin.returns.note.rejected", "admin.returns.note.cancelled",
+	} {
+		if !strings.Contains(html, key) {
+			t.Errorf("模板缺少状态说明取词 %s —— 该状态的说明会整块消失", key)
+		}
 	}
-	if !strings.Contains(html, "detail.NoteKey") {
-		t.Error("模板没有取 detail.NoteKey —— 说明没有走词条，英文界面会露中文")
+	// ② 旧形态必须消失：Go 侧不再给 NoteKey，正文里也不再有 detail.Note。
+	if strings.Contains(html, "NoteKey") {
+		t.Error("模板仍在取 NoteKey —— 状态说明没有改成模板内联取词")
 	}
-	if !strings.Contains(html, `role="tooltip"`) {
-		t.Error("「操作」标题的 .help 悬浮不见了")
+	if strings.Contains(html, "detail.Note") {
+		t.Error("模板仍在正文里渲染 detail.Note —— 状态说明应整块收进 .help 悬浮")
+	}
+	// ③ 取词确实在「操作」标题的 .help-pop 内（不是平铺回正文）。
+	i := strings.Index(html, "admin.returns.actions.heading")
+	if i < 0 {
+		t.Fatal("模板里找不到「操作」标题的取词 admin.returns.actions.heading")
+	}
+	rest := html[i:]
+	j := strings.Index(rest, `class="help-pop" role="tooltip"`)
+	k := strings.Index(rest, "admin.returns.note.requested")
+	if j < 0 || k < 0 || k < j {
+		t.Error("「操作」标题的 .help-pop 里没有按状态取词的说明（admin.returns.note.requested）—— 说明没有收进悬浮")
 	}
 }
 
-// TestOrdersPageErrShowsTranslationNotRawKey 页面上的 ?err= / ?ok= 显示**译文**，不是 item_key。
+// orderPageVisibleText 去掉语言切换表单里那条「原样回带当前 URL」的隐藏域。
 //
-// 这一条钉的是本轮修掉的根因：白名单里存的是 item_key（order.err.orderNotFound），
-// 而 API 出口把 key 交给 pkg/response 翻译、页面出口是**直接渲染**（模板里的 {{.Err}}），
-// 于是同样命中白名单，页面显示的却是 `order.err.orderNotFound` 这一串裸 key ——
-// 「订单不存在」这句现成的译文永远到不了运营眼前。
-func TestOrdersPageErrShowsTranslationNotRawKey(t *testing.T) {
+// 它是 URL 回带、不是提示：布局里的语言切换会把**当前请求 URL**（含查询串）放进
+// `<input name="redirect">`，好让切语言后回到同一页。于是 `?err=…` 会作为 URL 的一部分
+// 出现在这个隐藏域里 —— 那是「保留上下文」，不是「把查询参数当提示渲染」。
+// 「伪造参数不得上页面」这条判据因此要在**可见正文**上判（提示面另有 alert 判据）：
+// 不剥掉它，判据会把 URL 原样回带误判成伪造文案上了页面。
+func orderPageVisibleText(body string) string {
+	const open = `<form class="lang-switch"`
+	i := strings.Index(body, open)
+	if i < 0 {
+		return body
+	}
+	j := strings.Index(body[i:], "</form>")
+	if j < 0 {
+		return body
+	}
+	return body[:i] + body[i+j+len("</form>"):]
+}
+
+// TestOrdersPageErrParamIsIgnored 页面不再读取 ?err=：裸 key、白名单 key 与伪造文案都上不了页面。
+//
+// 旧契约下这条守的是「?err= 命中白名单时显示译文、伪造的落归口文案」—— 它依赖页面**读取**
+// ?err= 并按白名单判定。新契约把「写动作结论经 URL 回带」这条通道整块删掉了（结论改由
+// shell.RenderJump 渲染提示页），页面根本不读 ?err=。于是判据升级为**更强**的一条：
+// 这个参数在**可见正文**里完全不可见（唯一可能残留的是语言切换隐藏域里的 URL 回带，
+// 见 orderPageVisibleText）—— 伪造面被整块删掉，而不是「靠白名单把它挡在归口文案上」。
+//
+// 词条仍显式注入：即便词条存在（旧契约下会被翻译出来），也不该出现在页面上。
+func TestOrdersPageErrParamIsIgnored(t *testing.T) {
 	env := newTradePageEnv(t)
 	if env == nil {
 		return
@@ -415,19 +476,30 @@ func TestOrdersPageErrShowsTranslationNotRawKey(t *testing.T) {
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	body := env.get(t, "/admin/orders?project="+env.project+"&err="+orderenums.ErrOrderNotFound)
-	alert := orderPageAlert(body)
-	if !strings.Contains(alert, "订单不存在") {
-		t.Errorf("?err= 命中白名单时应显示当前语言的译文，实际 %q", alert)
-	}
-	if strings.Contains(alert, orderenums.ErrOrderNotFound) {
-		t.Errorf("提示条上出现了裸 key：%q", alert)
-	}
+	for _, forged := range []string{
+		orderenums.ErrOrderNotFound,          // 白名单 key（旧契约会翻译成「订单不存在」）
+		url.QueryEscape("订单不存在"),             // 伪造的成品文案
+		url.QueryEscape(`relation "orders"`), // 伪造的内部细节指纹
+	} {
+		body := env.get(t, "/admin/orders?project="+env.project+"&err="+forged)
+		visible := orderPageVisibleText(body)
 
-	// 反面：手拼一个「看起来像业务文案」的值仍落归口文案（读侧白名单不能被绕过）。
-	forged := orderPageAlert(env.get(t, "/admin/orders?project="+env.project+"&err="+url.QueryEscape("订单不存在")))
-	if !strings.Contains(forged, "系统内部错误") {
-		t.Errorf("伪造的 ?err= 应落归口文案，实际 %q", forged)
+		if strings.Contains(visible, "订单不存在") {
+			t.Errorf("?err=%s 的文案出现在了可见正文里 —— 页面不应再读取该参数", forged)
+		}
+		if strings.Contains(visible, orderenums.ErrOrderNotFound) {
+			t.Errorf("?err=%s 的裸 key 出现在了可见正文里", forged)
+		}
+		if strings.Contains(visible, `relation "orders"`) {
+			t.Errorf("?err=%s 的内部细节出现在了可见正文里", forged)
+		}
+		// 页面必须照常渲染完整页面（200 已由 env.get 断言），且不产生任何提示条。
+		if !strings.Contains(body, "</html>") {
+			t.Errorf("?err=%s 让渲染中断了（缺 </html>）", forged)
+		}
+		if orderPageAlert(body) != "" {
+			t.Errorf("?err=%s 不应产生任何提示条，got %q", forged, orderPageAlert(body))
+		}
 	}
 }
 
@@ -480,6 +552,7 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		c.Set(shell.PermSetKey, map[string]bool{"order:create": true})
+		c.Set(shell.ButtonsKey, map[string]bool{"order.create": true})
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
@@ -652,10 +725,7 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 
 	// —— 默认档：不勾开号 ——
 	rec := env.post(t, adminOrderCreateForm(env.project, variantID, "off@example.com", "req-off-1"))
-	if rec.Code != http.StatusFound {
-		t.Fatalf("合法提交应 302 回列表页，实际 %d", rec.Code)
-	}
-	orderID := orderIDFromLocation(t, rec.Header().Get("Location"))
+	orderID := orderIDFromCreate(t, rec)
 	if orderID == 0 {
 		t.Fatal("成功跳转应带上新单的 orderId（回列表页时详情是展开的）")
 	}
@@ -682,10 +752,7 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 	optIn := adminOrderCreateForm(env.project, variantID, "on@example.com", "req-on-1")
 	optIn.Set("provisionGuestAccount", "1")
 	rec = env.post(t, optIn)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("勾选开号的合法提交应 302，实际 %d", rec.Code)
-	}
-	orderID = orderIDFromLocation(t, rec.Header().Get("Location"))
+	orderID = orderIDFromCreate(t, rec)
 	if err := f.db.Raw("SELECT user_id FROM orders WHERE id = ?", orderID).Scan(&uid).Error; err != nil {
 		t.Fatalf("读订单 user_id 失败: %v", err)
 	}
@@ -712,14 +779,31 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 	}
 }
 
-// orderIDFromLocation 从 302 的 Location 里取 orderId（列表页靠它展开新单）。
-func orderIDFromLocation(t *testing.T, loc string) uint64 {
+// orderIDFromCreate 从建单成功提示页的回跳链接里取 orderId（列表页靠它展开新单）。
+func orderIDFromCreate(t *testing.T, rec *httptest.ResponseRecorder) uint64 {
 	t.Helper()
-	u, err := url.Parse(loc)
+	body := strings.ReplaceAll(rec.Body.String(), "&amp;", "&")
+	if rec.Code != http.StatusOK || !strings.Contains(body, `data-jump-state="ok"`) {
+		t.Fatalf("建单成功应渲染成功提示页，实际 %d（%s）", rec.Code, rec.Body.String())
+	}
+	const marker = `href="/admin/orders?`
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("提示页没有回列表的链接：%s", rec.Body.String())
+	}
+	rest := body[i+len(`href="`):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("回跳链接没有结束引号：%s", rest)
+	}
+	u, err := url.Parse(rest[:end])
 	if err != nil {
-		t.Fatalf("解析跳转地址失败: %v", err)
+		t.Fatalf("解析回跳地址失败: %v", err)
 	}
 	id, _ := strconv.ParseUint(u.Query().Get("orderId"), 10, 64)
+	if id == 0 {
+		t.Fatal("成功提示应带上新单的 orderId（回列表页时详情是展开的）")
+	}
 	return id
 }
 

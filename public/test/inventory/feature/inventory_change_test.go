@@ -806,20 +806,17 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 		"direction": {"adjust"}, "quantity": {"8"}, "reasonCode": {"stocktake_adjust"},
 		"sourceType": {"stocktake"}, "sourceRef": {"PO-PAGE-1"}, "remark": {"盘点：后台调整"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "ok=1") {
-		t.Fatalf("后台盘点调整应 302 并带 ok=1，实际 %d %s：%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
-	}
+	// 成功：提示页（取代原先的 302 + ?ok=1）。
+	assertInventoryJump(t, rec, "ok")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 8 {
 		t.Fatalf("盘点调整到 8 后真源应为 8，实际 %d", got)
 	}
-	// 入库方向在本页被拒绝（入库必须走单据）：整批不生效，并回带可读的错误。
+	// 入库方向在本页被拒绝（入库必须走单据）：整批不生效，并给出可读的错误提示页。
 	rec = postForm(engine, "/admin/inventory/stock/change", url.Values{
 		"projectId": {f.projectID}, "variantId": {v.ID}, "warehouseId": {wh.ID},
 		"direction": {"in"}, "quantity": {"5"}, "reasonCode": {"purchase_in"}, "remark": {"试图直接入库"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("库存管理页不应接受入库方向，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err")
 	if got := f.stockQty(t, v.ID, wh.ID); got != 8 {
 		t.Fatalf("被拒绝的入库不应改动真源，实际 %d", got)
 	}
@@ -828,25 +825,19 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 		"projectId": {f.projectID}, "variantId": {v.ID}, "direction": {"adjust"},
 		"quantity": {"9"}, "reasonCode": {"stocktake_adjust"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("缺备注的调整应被拒绝并回带错误，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err")
 
-	// 后台表单新建自定义原因 → 302。
+	// 后台表单新建自定义原因 → 成功提示页。
 	rec = postForm(engine, "/admin/inventory/reason/create", url.Values{
 		"projectId": {f.projectID}, "code": {"gift_out"}, "name": {"赠品出库"}, "direction": {"out"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("后台新建原因应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	// 失败路径：用字典外的原因 → 302 且带 err=（错误回显到页面，不 500）。
+	assertInventoryJump(t, rec, "ok")
+	// 失败路径：用字典外的原因 → 失败提示页（错误回显到页面，不 500）。
 	rec = postForm(engine, "/admin/inventory/stock/change", url.Values{
 		"projectId": {f.projectID}, "variantId": {v.ID}, "direction": {"out"},
 		"quantity": {"1"}, "reasonCode": {"不存在的自由文本"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("自由文本原因应回列表并带错误提示，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err")
 
 	// 页面：三块新内容 + 流水 + 原因字典 + csrf_token。
 	// 库存页的 SKU 筛选就是仓库侧维度：用裸码查（流水 / 库存行存的都是裸码）。
@@ -916,9 +907,7 @@ func TestInventoryChangeHTTPAndAdminPage(t *testing.T) {
 	rec = postForm(engine, "/admin/inventory/reason/update", url.Values{
 		"projectId": {f.projectID}, "id": {customReasonID}, "status": {"disabled"},
 	})
-	if rec.Code != http.StatusFound || strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("停用自定义原因应成功并回列表，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "ok")
 	var reasonStatus string
 	if err := f.db.Raw("SELECT status FROM inventory_change_reasons WHERE id = ?", customReasonID).Scan(&reasonStatus).Error; err != nil {
 		t.Fatalf("读原因状态失败: %v", err)

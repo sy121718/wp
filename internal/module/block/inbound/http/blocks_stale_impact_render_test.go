@@ -34,7 +34,7 @@ func blocksLayoutData(base gin.H) gin.H {
 	base["t"] = templates.TranslateFunc(lang)
 	base["langs"] = templates.LanguageOptions(lang)
 	base["lang_redirect"] = "/admin/blocks"
-	base["PermSet"] = map[string]any{"block:create": true, "block:delete": true}
+	base["Buttons"] = map[string]any{"block.create": true, "block.delete": true}
 	return base
 }
 
@@ -77,7 +77,6 @@ func blocksBaseData(rows bool) gin.H {
 		"title": "区块管理", "menu": "blocks",
 		"Projects": []gin.H{{"ID": "prj", "Name": "站点"}}, "SelectedProject": "prj",
 		"Headers": []gin.H{}, "Footers": []gin.H{}, "Blocks": []gin.H{},
-		"Err": "", "Done": "",
 	}
 	if rows {
 		data["Headers"] = []gin.H{blocksRow("b1", "站点页眉", "页眉", "引用")}
@@ -139,7 +138,7 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 	body := renderBlocksPage(t, blocksBaseData(true))
 
 	for _, want := range []string{
-		`action="/admin/blocks/bulk-delete"`, // 勾选框所在的批量表单
+		`action="/admin/blocks/bulk-delete`, // 勾选框所在的批量表单（action 上带工程筛选）
 		`name="ids"`, "data-check-item", "data-bulk-bar", "data-bulk-count",
 		"data-filter-input", "data-filter-text", "data-filter-empty",
 	} {

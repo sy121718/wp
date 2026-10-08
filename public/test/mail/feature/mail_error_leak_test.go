@@ -78,26 +78,13 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	return engine
 }
 
-// mailPOST 发一个表单 POST 并回响应（页面路径靠 302 + Location 表达结果）。
+// mailPOST 发一个表单 POST 并回响应（页面路径靠提示页在响应体里表达结果）。
 func mailPOST(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
-}
-
-// mailRedirectErr 取重定向 Location 上的 err 参数（页面就是这样把它渲染出来的）。
-func mailRedirectErr(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应回 302，实际 %d，body=%s", rec.Code, mailHead(rec.Body.String()))
-	}
-	loc, err := url.Parse(rec.Header().Get("Location"))
-	if err != nil {
-		t.Fatalf("Location 不可解析: %v", err)
-	}
-	return loc.Query().Get("err")
 }
 
 // TestMailPageHidesInternalError 发信账号列表取数失败（表被删 = 真实 PG 错误）：
@@ -132,7 +119,7 @@ func TestMailPageHidesInternalError(t *testing.T) {
 }
 
 // TestMailAccountSaveRedirectHidesInternalError 保存发信账号撞上基础设施错误：
-// 302 的 ?err= 只带归口文案。
+// 提示页只带归口文案。
 func TestMailAccountSaveRedirectHidesInternalError(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -161,11 +148,9 @@ func TestMailAccountSaveRedirectHidesInternalError(t *testing.T) {
 		"purpose":    {"marketing"},
 		"password":   {"secret"},
 	})
-	got := mailRedirectErr(t, rec)
-	assertMailLeakFree(t, "保存发信账号的重定向 ?err=", got)
-	if got != mailInternText {
-		t.Errorf("?err= 应为归口文案 %q，实际 %q", mailInternText, got)
-	}
+	body := rec.Body.String()
+	assertMailLeakFree(t, "保存发信账号的提示页", body)
+	mailAssertJump(t, rec, false, mailInternText)
 }
 
 // TestMailAutomationPageHidesInternalError 自动化列表取数失败：渲染数据里的 Err 同样收口。
@@ -246,22 +231,21 @@ func TestMailBusinessMessageStillVisible(t *testing.T) {
 
 	// ① 业务错误（service 产出，命中白名单）：TemplateKey 为空 → mail.err.invalidParam。
 	rec := mailPOST(engine, "/admin/mail/template/save", url.Values{"locale": {"zh-CN"}})
-	got := mailRedirectErr(t, rec)
-	if got != mailenums.ErrInvalidParam {
-		t.Errorf("白名单业务错误应原样回带 %q，实际 %q", mailenums.ErrInvalidParam, got)
-	}
-	if got == mailInternText {
+	body := rec.Body.String()
+	assertMailLeakFree(t, "业务错误提示页", body)
+	// 白名单业务错误照原样渲染（测试进程未初始化 i18n，取词回落 key）。
+	mailAssertJump(t, rec, false, mailenums.ErrInvalidParam)
+	if strings.Contains(body, mailInternText) {
 		t.Error("白名单业务错误被误吞成归口文案 —— 运营再也看不到「哪一项不合法」")
 	}
-	assertMailLeakFree(t, "业务错误重定向", got)
 
-	// ② 本页表单校验文案：名称必填。校验失败**回显表单（200）**而不是 302 ——
-	// 用户刚改的步骤类型必须留在页面上，302 会把页面翻回存库里的旧状态（改类型就成了死循环）。
+	// ② 本页表单校验文案：名称必填。校验失败**回显表单（200）**而不是提示页 ——
+	// 用户刚改的步骤类型必须留在页面上，提示页会把页面翻回存库里的旧状态（改类型就成了死循环）。
 	rec = mailPOST(engine, "/admin/mail/automation/save", url.Values{"name": {""}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("表单校验失败应回显表单（200），实际 %d", rec.Code)
 	}
-	body := rec.Body.String()
+	body = rec.Body.String()
 	if !strings.Contains(body, "流程名称不能为空") {
 		t.Errorf("表单校验文案应回显在页面上，实际：%s", mailHead(body))
 	}

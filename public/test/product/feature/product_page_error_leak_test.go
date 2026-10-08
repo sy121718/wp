@@ -2,13 +2,11 @@ package feature
 
 // product_page_error_leak_test.go — 商品后台页不直出内部错误（第三波 CQ-009 形态 ②）。
 //
-// 形态②（?err= 回带）与 JSON body 一样不是可信边界：页面把它原样渲染
-// （admin/products.html 的 {{.Err}} / admin/product_detail.html 的同一渲染位）。
-//
-// 本文件制造一个**真实的基础设施错误** —— 把 products 表改名，查询立刻报
-// relation "products" does not exist (SQLSTATE 42P01) —— 而不是手搓一个长得像
-// PG 原文的字符串：先反证 service 层的原始错误确实带表名与 SQLSTATE，
-// 再断言 302 的 Location 里没有它、只有归口文案。
+// 传输通道已改为 shell.RenderJump 渲染整页提示（对应 ThinkPHP 的 success() / error()）：
+// 写动作的结论走响应体，**不再**经 302 + ?err= 回带列表页。本文件制造一个**真实的
+// 基础设施错误** —— 把 products 表改名，查询立刻报 relation "products" does not exist
+// (SQLSTATE 42P01) —— 先反证 service 层的原始错误确实带表名与 SQLSTATE，
+// 再断言提示页里没有它们、只有归口文案。
 //
 // 同时断言**业务错误文案仍然原样可见**：归口助手不是「一律吞成通用文案」，
 // 否则运营再也看不到「哪一项不合法」。
@@ -19,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -26,7 +25,8 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/templates"
+	"go_wp/internal/shell"
 )
 
 // productInternalLeakTokens 内部细节指纹：出现任一即视为泄漏。
@@ -45,18 +45,60 @@ func assertNoProductInternalLeak(t *testing.T, where, text string) {
 	}
 }
 
-// productRedirectErr 取 302 Location 上的 ?err=（已解码）与原始 Location。
-func productRedirectErr(t *testing.T, rec *httptest.ResponseRecorder) (errText, rawLocation string) {
+// productNoticeBody 断言响应是**失败态整页提示**（HTTP 200 + data-jump-state="err"）并返回正文。
+//
+// 取代原先的 productRedirectErr（读 302 Location 上的 ?err=）：结论不再进 URL。
+func productNoticeBody(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应为 302，实际 %d，body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	rawLocation = rec.Header().Get("Location")
-	u, perr := url.Parse(rawLocation)
-	if perr != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", perr, rawLocation)
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("应渲染失败态提示页，body=%s", body)
 	}
-	return u.Query().Get("err"), rawLocation
+	return body
+}
+
+// assertJumpOK 断言响应是**成功态整页提示**（写动作的结论走 shell.RenderJump，不再 302）。
+func assertJumpOK(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应为成功态提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("应为成功态提示页（data-jump-state=ok），body=%s", rec.Body.String())
+	}
+}
+
+// assertJumpErr 断言响应是**失败态整页提示**并返回正文（取代读 302 Location 上的 ?err=）。
+func assertJumpErr(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	return productNoticeBody(t, rec)
+}
+
+// jumpBackHref 从提示页里取回跳链接的 href（提示页一定有：失败与成功都渲染它）。
+//
+// Jet 会把属性值里的 & 转义成 &amp;，这里先还原再交给 url.Parse。
+func jumpBackHref(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	body := strings.ReplaceAll(rec.Body.String(), "&amp;", "&")
+	re := regexp.MustCompile(`href="(/[^"]*\?[^"]*)"`)
+	m := re.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("提示页里找不到带 query 的回跳链接：body=%s", rec.Body.String())
+	}
+	return m[1]
+}
+
+// jumpBackQuery 从提示页的回跳链接里取查询参数（取代原先读 302 Location）。
+func jumpBackQuery(t *testing.T, rec *httptest.ResponseRecorder, key string) string {
+	t.Helper()
+	u, err := url.Parse(jumpBackHref(t, rec))
+	if err != nil {
+		t.Fatalf("回跳链接无法解析：%v", err)
+	}
+	return u.Query().Get(key)
 }
 
 // postProductForm 发一个原生表单 POST（后台页写操作的唯一形态）。
@@ -68,7 +110,7 @@ func postProductForm(engine *gin.Engine, path string, form url.Values) *httptest
 	return rec
 }
 
-// newProductErrorLeakEnv 装配只挂两个写端点的测试引擎（真实 service + 真实 PG）。
+// newProductErrorLeakEnv 装配只挂三个写端点的测试引擎（真实 service + 真实 PG）。
 func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -77,6 +119,7 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
 	engine.POST("/admin/products/delete", handle.ProductsDelete)
 	engine.POST("/admin/products/tags/create", handle.ProductTagsCreate)
@@ -85,7 +128,7 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 }
 
 // TestProductPageHidesInternalError 真实基础设施错误（products 表不存在）只进日志：
-// ?err= 必须是归口文案，不含表名 / SQLSTATE / 约束名。
+// 提示页必须是归口文案，不含表名 / SQLSTATE / 约束名。
 func TestProductPageHidesInternalError(t *testing.T) {
 	engine, f := newProductErrorLeakEnv(t)
 	if engine == nil {
@@ -106,11 +149,11 @@ func TestProductPageHidesInternalError(t *testing.T) {
 		t.Fatalf("反证失败：原始错误不含表名 / SQLSTATE：%v", rawErr)
 	}
 
-	errText, rawLocation := productRedirectErr(t, postProductForm(engine, "/admin/products/delete",
+	body := productNoticeBody(t, postProductForm(engine, "/admin/products/delete",
 		url.Values{"projectId": {f.projectID}, "id": {pid}}))
-	assertNoProductInternalLeak(t, "302 Location", rawLocation)
-	if !strings.Contains(errText, "系统内部错误") {
-		t.Fatalf("内部错误应给归口文案，实际 ?err=%q", errText)
+	assertNoProductInternalLeak(t, "提示页", body)
+	if !strings.Contains(body, "系统内部错误") {
+		t.Fatalf("内部错误应给归口文案，body=%s", body)
 	}
 }
 
@@ -121,11 +164,11 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 		return
 	}
 	// 标签名为空 → service 返回 productenums.ErrTagNameRequired（在白名单里）。
-	errText, rawLocation := productRedirectErr(t, postProductForm(engine, "/admin/products/tags/create",
+	body := productNoticeBody(t, postProductForm(engine, "/admin/products/tags/create",
 		url.Values{"projectId": {f.projectID}, "name": {""}}))
-	assertNoProductInternalLeak(t, "302 Location", rawLocation)
-	if !strings.Contains(errText, "标签名称必填") {
-		t.Fatalf("业务文案必须原样可见，实际 ?err=%q", errText)
+	assertNoProductInternalLeak(t, "提示页", body)
+	if !strings.Contains(body, "标签名称必填") {
+		t.Fatalf("业务文案必须原样可见，body=%s", body)
 	}
 }
 
@@ -141,9 +184,9 @@ func TestProductPageKeepsBulkLimitText(t *testing.T) {
 	for i := 0; i < shell.MaxBulkIDs+1; i++ {
 		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
-	errText, rawLocation := productRedirectErr(t, postProductForm(engine, "/admin/products/bulk-delete", form))
-	assertNoProductInternalLeak(t, "302 Location", rawLocation)
-	if !strings.Contains(errText, "一次最多操作") {
-		t.Fatalf("受控提示应保持可见，实际 ?err=%q", errText)
+	body := productNoticeBody(t, postProductForm(engine, "/admin/products/bulk-delete", form))
+	assertNoProductInternalLeak(t, "提示页", body)
+	if !strings.Contains(body, "一次最多操作") {
+		t.Fatalf("受控提示应保持可见，body=%s", body)
 	}
 }

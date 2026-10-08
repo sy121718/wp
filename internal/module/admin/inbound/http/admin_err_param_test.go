@@ -2,11 +2,11 @@ package adminhttp
 
 // admin_err_param_test.go — 页面路径错误文案归口（adminErrParam）的单测。
 //
-// 为什么单独钉这一层：页面路径不能返回 JSON，错误只能以「重定向 query（?err= / ?errored=）」
+// 为什么单独钉这一层：页面路径不能返回 JSON，错误只能以「整页提示（shell.RenderJump）」
 // 或「模板数据」的形态出网，而这两条路都**不经过** response 的 translate —— 一旦把 err.Error()
 // 直传，PostgreSQL 原文（表名 sys_i18n、约束名、SQLSTATE 23505）就会被渲染在后台页面上，
 // 与 JSON body 里的泄漏面完全等价。本文件把「命中白名单原样、未命中归口」钉死，
-// 页面级的重定向断言在 public/test/admin/feature/admin_page_err_param_test.go。
+// 页面级的提示页断言在 public/test/admin/feature/admin_page_err_param_test.go。
 
 import (
 	"errors"

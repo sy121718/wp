@@ -99,7 +99,7 @@ type CartCheckoutReq struct {
 	// 这里**刻意没有运费入参**（本批移除了曾经存在的 ShippingTotal 字段）。
 	//
 	// 运费由 cart 自己现算：站点级运费规则经 project 的 ShippingPolicyReader 读出，
-	// 商品小计按商品域真源现算（两者都由服务端读，见 service/cart_shipping.go），
+	// 商品小计按商品域真源现算（两者都由服务端读，见 service/cart.go），
 	// 取值链集中在 shippingTotalOf 一处 —— 基础运费 → 满额免运费门槛 → 会员免运费。
 	//
 	// 为什么不保留一个「服务端写入」的字段：它在本链路里恒为 0（没有任何调用方写入），

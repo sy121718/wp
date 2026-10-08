@@ -39,17 +39,17 @@ internal/module/workbench/inbound/http/router.go /workbench/inspector	工作台�
 internal/module/workbench/inbound/http/router.go /workbench/outline	工作台大纲：只读结构树
 internal/module/workbench/inbound/http/router.go /workbench/seo-score	工作台 SEO 评分：纯计算
 internal/module/workbench/inbound/http/router.go /workbench/template/preview	模板预览：只读渲染
-internal/module/page/inbound/http/page_router.go /workbench/history	修订历史列表：只读（同组的 /workbench/history/restore 会覆盖草稿，已挂 /api/page/draft/save）
+internal/module/page/inbound/http/page_page_router.go /workbench/history	修订历史列表：只读（同组的 /workbench/history/restore 会覆盖草稿，已挂 /api/page/draft/save）
 internal/module/product/inbound/http/product_page_router.go /products/variant/preview	变体预览：只读解析
 internal/module/product/inbound/http/product_page_router.go /products/seo-score	商品 SEO 评分：纯计算
 internal/module/product/inbound/http/product_page_router.go /product-categories/seo-score	分类 SEO 评分：纯计算
 internal/module/product/inbound/http/product_page_router.go /product-brands/seo-score	品牌 SEO 评分：纯计算
 internal/module/product/inbound/http/product_page_router.go /products/bundle/members/resolve	组合商品成员解析：只读
 internal/module/product/inbound/http/product_page_router.go /product-attributes/value-rows	属性值行片段：只读渲染
-internal/module/project/inbound/http/project_router.go /workbench/settings	页面设置表单片段：纯渲染（真正写入走 /admin/settings/save，已挂 /api/project/update）
-internal/module/project/inbound/http/project_router.go /workbench/seo-score-panel	SEO 评分区片段：纯渲染
-internal/module/project/inbound/http/project_router.go /workbench/global	全局设置面板片段：纯渲染（真正写入走 /admin/themes/settings/save）
-internal/module/content/inbound/http/article_router.go /articles/score	文章评分侧栏：纯计算不写库不写产物（代码注释已声明该取舍）
-internal/module/content/inbound/http/article_router.go /articles/link-suggestions	内链建议（SEO-015）：候选来自已上线路径解析端口，只读计算
-internal/module/content/inbound/http/article_router.go /articles/import-preview	导入预览：纯计算（真正创建走 /articles/import-page，已挂 /api/page/create）
+internal/module/project/inbound/http/project_page_router.go /workbench/settings	页面设置表单片段：纯渲染（真正写入走 /admin/settings/save，已挂 /api/project/update）
+internal/module/project/inbound/http/project_page_router.go /workbench/seo-score-panel	SEO 评分区片段：纯渲染
+internal/module/project/inbound/http/project_page_router.go /workbench/global	全局设置面板片段：纯渲染（真正写入走 /admin/themes/settings/save）
+internal/module/content/inbound/http/content_page_router.go /articles/score	文章评分侧栏：纯计算不写库不写产物（代码注释已声明该取舍）
+internal/module/content/inbound/http/content_page_router.go /articles/link-suggestions	内链建议（SEO-015）：候选来自已上线路径解析端口，只读计算
+internal/module/content/inbound/http/content_page_router.go /articles/import-preview	导入预览：纯计算（真正创建走 /articles/import-page，已挂 /api/page/create）
 internal/module/admin/inbound/http/admin_pages_router.go /datarules/config-editor	配置编辑器片段：纯渲染不落库（真正写入走 /datarules/update，已挂 /api/datarule/update）

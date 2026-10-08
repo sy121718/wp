@@ -22,7 +22,7 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"

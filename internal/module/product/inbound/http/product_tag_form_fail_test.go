@@ -67,25 +67,34 @@ func TestTagDrawerFailureEcho(t *testing.T) {
 	}
 }
 
-// TestTagDrawerNativeFailureAndSuccess 原生失败 302 回本页带 err；成功两档：
-// htmx 走 HX-Redirect（XHR 会跟随 302，读不到 Location，整页 HTML 会被塞进片段位）。
+// TestTagDrawerNativeFailureAndSuccess 原生失败渲染整页提示（取代原先的 302 + ?err=）；
+// 成功两档：htmx 走 HX-Redirect（XHR 会跟随 302，读不到 Location），原生渲染 ok 态提示页。
 func TestTagDrawerNativeFailureAndSuccess(t *testing.T) {
 	h := &productPageHandle{products: &tagRuleTypesStub{types: tagRuleTypesForTest()}}
-	c, rec, _ := newAttrCaptureContext(t, "", "projectId=p1&name=Draft")
+	c, rec := newProductJumpContext(t, "", "project=p1", "projectId=p1&name=Draft")
 	h.tagFormFail(c, "create", errors.New(productenums.ErrTagSlugTaken))
 	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/product-tags?project=p1&err=") {
-		t.Fatalf("native failure: %d %q", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="err"`) {
+		t.Fatalf("native failure: %d %q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "/admin/product-tags?") || !strings.Contains(rec.Body.String(), "project=p1") {
+		t.Fatalf("native failure 回跳应回标签页并带上工程，body=%s", rec.Body.String())
 	}
 	for _, hx := range []string{"true", ""} {
-		c, rec, _ := newAttrCaptureContext(t, hx, "projectId=p1")
+		if hx == "true" {
+			c, rec, _ := newAttrCaptureContext(t, hx, "projectId=p1")
+			tagFormSuccess(c, "p1")
+			c.Writer.WriteHeaderNow()
+			if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("HX-Redirect"), "/admin/product-tags") {
+				t.Errorf("HX success: %d headers=%v", rec.Code, rec.Header())
+			}
+			continue
+		}
+		c, rec := newProductJumpContext(t, "", "project=p1", "projectId=p1")
 		tagFormSuccess(c, "p1")
 		c.Writer.WriteHeaderNow()
-		if hx == "true" && (rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != "/admin/product-tags?project=p1") {
-			t.Errorf("HX success: %d headers=%v", rec.Code, rec.Header())
-		}
-		if hx == "" && (rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/product-tags?project=p1") {
-			t.Errorf("native success: %d headers=%v", rec.Code, rec.Header())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+			t.Errorf("native success: %d headers=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
 		}
 	}
 }

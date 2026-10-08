@@ -179,7 +179,7 @@ CSRF：HTMX 请求经 `<body hx-headers='{"X-CSRF-Token":"{{ .["csrf_token"] }}"
 | 路由组 | Session | CSRF | Casbin |
 |---|---|---|---|
 | `/api/captcha`、`/api/admin/login` | 豁免 | 豁免 | 豁免（login 另挂 IP 限流） |
-| `/api/admin/{logout,profile,routes}` | ✅ | ✅ | 豁免（声明 `permission.Exempt`） |
+| `/api/admin/{logout,profile}` | ✅ | ✅ | 豁免（声明 `permission.Exempt`） |
 | `/api/*` 其余业务接口（`authorizedAPI` 组） | ✅ | ✅ | ✅ |
 | `/admin/*` 页面、`/`、`/workbench*` | ✅ | ✅ | —（页面路由） |
 | `/_fragments/{type}`、`/analytics/collect`、`/payment/callback` | 公开面（各自判定） | 公开面 | 不走 |
@@ -233,7 +233,7 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   `variantId`、`stock_reasons` 漏 `id`、建活动缺 `accountId`、分类写工具缺 `parentId`、
   `page_find` 漏 `kind`、退货详情缺明细 —— 症状都是**模型停在原地问用户要**，而它本可以
   自己走完。落地做法：**写工具之前先把清单工具补上**，不要等真机暴露。
-- **只有 `mcp.Result.Text` 会回到模型**（`internal/module/ai/service/ai_session_chat.go` 取
+- **只有 `mcp.Result.Text` 会回到模型**（`internal/module/ai/service/ai_session.go` 取
   `runRes.Text`；`Data` 只进审计事件）—— 所有细节（id、金额、时间、状态）都要写进 `Text`。
 - **权限点先查有没有带 `permission.X` 参数的路由**：`rg -n 'permission\.XxxYyy'
   internal/module/<mod>/inbound/http/*.go`。`CasbinMiddlewareForPath(obj)` **只做中间件、
@@ -250,8 +250,11 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   改的时候把读回来的 document 原样带回去。空文档的形状与 `builder.Page` 对齐：
   `{"settings":{},"root":[]}`（**settings 是对象、root 是数组**，写成 `{"root":{...}}`
   会在解析期失败，而工具侧只看得到「执行失败」四个字）。
+- 工具入参与本模块 dto **逐字段重合**时直接用 dto。形状不同（筛选维度、必填集不同）才在 mcp 包另声明。
+  同一份字段表不抄第二遍。
 - 测试传参一律 `map[string]any` —— Go 结构体序列化会把零值写成 `""`，而 `mcp.Enum` 的
   白名单**拒绝空串**（模型不传可选参数时 JSON 里根本没有那个键，两者不是一回事）。
+  因此「复用 dto」之前先看零值会不会被白名单拒绝。
   `mcp.ArgsError` 是 **struct**（写 `&mcp.ArgsError{Msg: …}`）；`mcp.Tool` 的调用方法是
   `Invoke` 不是 `Call`，取 schema 是 `SchemaJSON()`。
 - 真机验证记 `ai_tool_call_log`（状态在 `status` 列，**没有 `ok` 列**）；判断新二进制是否

@@ -80,8 +80,8 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"SelectedProject": "p1",
 				"Projects":        []map[string]any{{"ID": "p1", "Name": "官网"}},
 				// 新建走抽屉后按钮显隐依赖权限集合（shell.Prepare 一定注入，测试数据补齐）。
-				"PermSet": map[string]any{"theme:create": true},
-				// Err 是「上一次写操作失败」的提示槽（?err= 回带 / 装载失败降级都写它）。
+				"Buttons": map[string]any{"theme.create": true},
+				// Err 是「本页装载失败」的降级提示槽（写动作的结论不再回带本页）。
 				// handler 的 templateMap 一定给（空串 = 无提示），测试数据补齐。
 				"Err": "",
 				"Themes": []map[string]any{{
@@ -119,7 +119,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				"Projects":   []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"Blueprints": []map[string]any{{"ID": "b1", "Name": "落地页"}},
 				// 一页两个创建入口 → 两个权限码都要给（缺一个按钮就不渲染，wants 会红）。
-				"PermSet": map[string]any{"project:create": true, "page:create": true},
+				"Buttons": map[string]any{"project.create": true, "page.create": true},
 				"Pages": []map[string]any{{
 					"ID": "pg1", "DraftPath": "/about", "Kind": "page", "Active": true,
 					"Stale": true, "Staged": false, "Version": 3, "UpdatedAt": "2026-01-02",
@@ -130,7 +130,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 		{
 			name: "admin/page/page_translations",
 			data: map[string]any{
-				"PagePath": "/about", "Errors": []string{}, "Saved": true, "SavedCount": 1,
+				"PagePath": "/about", "Errors": []string{},
 				"PageID": "pg1", "Lang": "en-US",
 				"Langs":    []map[string]any{{"Code": "en-US", "Label": "English", "Active": true}},
 				"PageDone": 1, "PageTotal": 2, "SiteNote": "", "SiteDone": 1, "SiteTotal": 2,
@@ -145,14 +145,14 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					}},
 				}},
 			},
-			wants: []string{"多语言 · ", "已保存 ", "切换语言", "本页完成度", "全站完成度", "筛选：", "全部", "只看缺失", "只看人工", "只看 AI 翻译", "组件", "字段", "富文本", "填写译文", "上限 ", "缺失", "保存全部", "还用在另外 "},
+			wants: []string{"多语言 · ", "切换语言", "本页完成度", "全站完成度", "筛选：", "全部", "只看缺失", "只看人工", "只看 AI 翻译", "组件", "字段", "富文本", "填写译文", "上限 ", "缺失", "保存全部", "还用在另外 "},
 		},
 		{
 			name: "admin/block/blocks",
 			data: map[string]any{
 				"SelectedProject": "p1",
 				"Projects":        []map[string]any{{"ID": "p1", "Name": "官网"}},
-				"PermSet":         map[string]any{"block:create": true},
+				"Buttons":         map[string]any{"block.create": true},
 				"Headers":         []map[string]any{{"ID": "b1", "Name": "站点页眉", "UpdatedAt": "2026-01-02"}},
 				"Footers":         []map[string]any{{"ID": "b2", "Name": "站点页脚", "UpdatedAt": "2026-01-02"}},
 				"Blocks":          []map[string]any{{"ID": "b3", "Name": "商品卡", "KindLabel": "区块", "ReuseModeLabel": "一次性复制", "UpdatedAt": "2026-01-02"}},
@@ -167,7 +167,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 			name: "admin/navigation/navigations",
 			data: map[string]any{
 				"SelectedProject": "p1", "Kind": "header",
-				"PermSet":       map[string]any{"navigation:update": true, "navigation:create": true},
+				"Buttons":       map[string]any{"navigation.update": true, "navigation.create": true},
 				"Projects":      []map[string]any{{"ID": "p1", "Name": "官网"}},
 				"ParentOptions": []map[string]any{{"ID": "n1", "Title": "商品"}},
 				"SourceGroups": []map[string]any{{
@@ -218,7 +218,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					},
 				},
 				"Parents": []map[string]any{{"ID": "m0", "Title": "根", "Type": 1, "Indent": ""}},
-				"PermSet": map[string]any{"menu:create": true, "menu:update": true, "menu:delete": true},
+				"Buttons": map[string]any{"menu.create": true, "menu.update": true, "menu.delete": true},
 			},
 			// 编辑表单按需从 /admin/menus/edit 获取；列表只交付编辑入口和新建表单。
 			wants: []string{"菜单管理", "新建菜单", "筛选：", "图标", "标题", "类型", "权限点", "路径", "状态", "排序", "备注", "操作", "目录", "启用", "创建菜单", "确认删除？", "data-drawer-url", "page:list"},

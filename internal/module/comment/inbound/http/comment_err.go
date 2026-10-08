@@ -13,18 +13,20 @@
 // 形态与 membership_err.go 同源，差别只在模块前缀与「不做定位信息拼接」——
 // 评论的业务错误不带定位数据（哪一条被拒是日志的事，页面上不需要逐条回带），
 // 所以这里没有 SplitFacingDetail / facingSep 那一套。
+//
+// **读侧（?err= / ?done= 白名单与回跳 URL）已整批删除**：写动作的结论由 shell.RenderJump
+// 渲染成提示页（文案走响应体），回跳地址由 shell.BackPath 从表单 action 的 query 读回 ——
+// 查询参数不再承载文案，那套「证明这条提示出自本仓」的判定随之不需要了。
 package commenthttp
 
 import (
 	"errors"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	commentenums "go_wp/internal/module/comment/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -92,85 +94,6 @@ func commentErrStatus(err error) int {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
-}
-
-// commentNoticeTexts 本模块页面上可以原样展示的回执文案（当前语言）。
-//
-// 写侧（?err= / ?done= 回带）与读侧共用这一份：读侧按形状**整体**匹配，
-// 未命中的 query 参数会被当伪造文案丢掉（查询参数不是可信边界）。
-func commentNoticeTexts(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0, (len(commentenums.CommentFacingMessages)+2)*2)
-	for _, key := range commentenums.CommentFacingMessages {
-		out = append(out, key, tr(key, key))
-	}
-	out = append(out,
-		tr(commentenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）"),
-		shell.BulkIDsNoticeTemplate(c),
-	)
-	return out
-}
-
-// commentPageErr 列表页 ?err= 的统一出口（未命中落归口文案）。
-func commentPageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, commentNoticeTexts(c))
-	})
-}
-
-// commentPageDone 列表页 ?done= 的统一出口（成功提示：未命中落空串）。
-func commentPageDone(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, commentNoticeTexts(c))
-	})
-}
-
-// commentErrURL 页面写失败的回跳地址（带 ?err= 业务文案）。
-//
-// 回带的是**已过白名单的成品文案**（commentErrPageText），不是 err.Error()：
-// 内部错误因此只以归口文案出现在 URL 里，原文留在日志。
-func commentErrURL(c *gin.Context, f commentFilterValues, err error) string {
-	return commentErrURLText(f, commentErrPageText(c, err))
-}
-
-// commentErrURLText 同上，但文案已由调用点备好（如 shell.BulkIDsFacingText 的成品文案）。
-func commentErrURLText(f commentFilterValues, text string) string {
-	q := filterQuery(f)
-	q.Set("err", strings.TrimSpace(text))
-	return commentsPath + "?" + q.Encode()
-}
-
-// commentOKURL 页面写成功的回跳地址（带 ?done= 成品回执）。
-//
-// 筛选条件**整组保留**：审核完要回到「同一个视图」继续处理下一条，
-// 被弹回「全部状态、第 1 页」会让人每处理一批就得重新点一遍筛选。
-func commentOKURL(f commentFilterValues, notice string) string {
-	q := filterQuery(f)
-	if notice != "" {
-		q.Set("done", notice)
-	}
-	if len(q) == 0 {
-		return commentsPath
-	}
-	return commentsPath + "?" + q.Encode()
-}
-
-// filterQuery 把当前筛选条件转成查询参数（回跳与分页共用同一份口径）。
-func filterQuery(f commentFilterValues) url.Values {
-	q := url.Values{}
-	if f.Project != "" {
-		q.Set("project", f.Project)
-	}
-	if f.Status != "" {
-		q.Set("status", f.Status)
-	}
-	if f.EntityType != "" {
-		q.Set("entityType", f.EntityType)
-	}
-	if f.Keyword != "" {
-		q.Set("keyword", f.Keyword)
-	}
-	return q
 }
 
 // errCommentParam 参数级校验失败（判定就在 handle 里，没有 error 对象）。

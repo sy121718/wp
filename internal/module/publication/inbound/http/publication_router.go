@@ -46,6 +46,10 @@ func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.
 	// 的解析在毫秒级 —— 引入任务队列只会让「点了按钮没反应」成为新的排查对象。
 	// 真实路由需要 publication:seo_audit，额外校验迁移 183 的 seo:audit；
 	// 两条既有策略都必须命中，页面动作仍按 seo:audit 展示。
+	// 这条路由上挂了**两条** Casbin 策略：声明式那条按真实路径（publication:seo_audit），
+	// 中间件那条额外校验迁移 183 的 seo:audit（/api/seo/audit 是虚拟对象、没有独立路由）——
+	// 显式声明后者，否则 permission.RoutesOf 查不到 seo:audit，AI 工具按 fail closed 一律 forbidden。
+	permission.Declare(http.MethodPost, "/api/seo/audit", permission.SEOAudit)
 	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"), seoAuditHandler(svc.RunSEOAudit))
 	return svc
 }

@@ -33,7 +33,7 @@ import (
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/public/test/support"
 )
 
@@ -110,24 +110,23 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusFound {
-			t.Fatalf("%s 应回 302，实际 %d", tc.path, rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s 应渲染提示页（200），实际 %d", tc.path, rec.Code)
 		}
-		loc, err := url.Parse(rec.Header().Get("Location"))
-		if err != nil {
-			t.Fatalf("Location 不可解析：%v", err)
+		body := rec.Body.String()
+		if !strings.Contains(body, `data-jump-state="err"`) {
+			t.Errorf("%s 应渲染失败提示页", tc.path)
 		}
-		got := loc.Query().Get("err")
-		if !strings.Contains(got, "一次最多操作") {
-			t.Errorf("%s 应回带「一次最多操作」的受控文案，实际 %q", tc.path, got)
+		if !strings.Contains(body, "一次最多操作") {
+			t.Errorf("%s 应显示「一次最多操作」的受控文案", tc.path)
 		}
 		// 结构性断言（本批改向）：文案由**受控类型**给出，两个数字（上限 / 本次条数）都要在。
 		// 旧实现能对上「一次最多操作」，却恰好丢了「当前 M 项」—— 所以少了 M 就是退化。
-		if !strings.Contains(got, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(got, over) {
-			t.Errorf("%s 的 ?err= 应带上限 %d 与本次条数 %s（由受控类型给回），实际 %q",
-				tc.path, shell.MaxBulkIDs, over, got)
+		if !strings.Contains(body, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(body, over) {
+			t.Errorf("%s 的提示页应带上限 %d 与本次条数 %s（由受控类型给回）",
+				tc.path, shell.MaxBulkIDs, over)
 		}
-		assertCustomerLeakFree(t, tc.path+" 的 ?err=", got)
+		assertCustomerLeakFree(t, tc.path+" 的提示页", body)
 	}
 }
 

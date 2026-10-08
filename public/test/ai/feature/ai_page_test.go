@@ -10,8 +10,8 @@ package feature
 //
 // 钉住三件事：
 //  1. 模板与数据键对不上会在渲染期炸（缺键 → 整页中断，只得到半截 HTML）；
-//  2. 成功提交走 PRG（303）且真的落库；
-//  3. 校验失败走 PRG（303）回列表页，提示以 i18n key 形式挂在 query 上。
+//  2. 成功提交渲染成功提示页且真的落库；
+//  3. 校验失败渲染失败提示页（文案在响应体里，不再挂在 query 上）。
 
 import (
 	"net/http"
@@ -38,6 +38,25 @@ func newAIPageEnv(t *testing.T) (*aihttp.PageHandle, *aiservice.Service, *gorm.D
 }
 
 // serveAIPage 把请求交给页面 handler（真实 Jet 引擎）。
+// assertAIJump 断言写动作渲染了提示页（200 + 成功/失败态 + 文案）。
+func assertAIJump(t *testing.T, rec *httptest.ResponseRecorder, ok bool, msg string) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应为提示页 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	state := "err"
+	if ok {
+		state = "ok"
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="`+state+`"`) {
+		t.Fatalf("提示页状态应为 %s，body=%s", state, body)
+	}
+	if msg != "" && !strings.Contains(body, msg) {
+		t.Fatalf("提示页缺少文案 %q，body=%s", msg, body)
+	}
+}
+
 func serveAIPage(t *testing.T, ph *aihttp.PageHandle, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -75,15 +94,15 @@ func pageBaseData(title string) gin.H {
 		"csrf_token": "test-token",
 		"t":          func(key, fallback string) string { return fallback },
 		// 页面测试要能渲出全部按钮，故把所有 AI 权限点都置 true（一码一路由，见 internal/permission/codes.go）。
-		"PermSet": map[string]bool{
-			"ai:provider_list": true, "ai:provider_get": true, "ai:provider_models_list": true,
-			"ai:provider_save": true, "ai:provider_delete": true, "ai:provider_status": true,
-			"ai:provider_models_save": true, "ai:provider_models_restore": true, "ai:provider_models_fetch": true,
-			"ai:session_list": true, "ai:session_get": true, "ai:session_events": true,
-			"ai:session_fold_plan": true, "ai:session_append": true, "ai:session_rename": true,
-			"ai:session_archive": true, "ai:session_fold": true,
+		"Buttons": map[string]bool{
+			"ai.provider_list": true, "ai.provider_get": true, "ai.provider_models_list": true,
+			"ai.provider_save": true, "ai.provider_delete": true, "ai.provider_status": true,
+			"ai.provider_models_save": true, "ai.provider_models_restore": true, "ai.provider_models_fetch": true,
+			"ai.session_list": true, "ai.session_get": true, "ai.session_events": true,
+			"ai.session_fold_plan": true, "ai.session_append": true, "ai.session_rename": true,
+			"ai.session_archive": true, "ai.session_fold": true,
 			// 会话页的发消息区按对话入口的权限点渲染（页面路由借 /api/ai/chat 的 casbin obj）。
-			"ai:chat": true,
+			"ai.chat": true,
 		},
 		"Err":  "",
 		"Done": "",
@@ -290,9 +309,7 @@ func TestAIModelsAppendKeepsExistingRows(t *testing.T) {
 
 	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/models/append",
 		"providerId="+strconv.FormatInt(p.ID, 10)+"&modelIds=existing&modelIds=new-a&modelIds=new-a&modelIds=")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("追加应走 PRG（303），实际 %d（body=%s）", rec.Code, rec.Body.String())
-	}
+	assertAIJump(t, rec, true, "已添加 1 个模型。")
 
 	after, err := svc.GetProvider(ctx, p.ID)
 	if err != nil {
@@ -321,12 +338,7 @@ func TestAIModelsAppendRejectsEmptySelection(t *testing.T) {
 	}
 	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/models/append",
 		"providerId="+strconv.FormatInt(p.ID, 10)+"&modelIds=&modelIds=++")
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("空选择应走 PRG（303），实际 %d", rec.Code)
-	}
-	if !strings.Contains(rec.Header().Get("Location"), "err="+aienums.ErrNoModelSelected) {
-		t.Fatalf("空选择应回 %s，实际 Location=%s", aienums.ErrNoModelSelected, rec.Header().Get("Location"))
-	}
+	assertAIJump(t, rec, false, "请先勾选要添加的模型。")
 }
 
 // TestAISessionsPageRenders 会话页渲染完整（空列表态）：双标签 + 看板 + 六项筛选 + 8 列明细。
@@ -443,40 +455,22 @@ func TestAISessionsPageModelsTabSelected(t *testing.T) {
 	}
 }
 
-// TestAIProvidersSaveValidationRedirects 校验失败：303 回列表页，提示挂在 ?err= 上。
+// TestAIProvidersSaveValidationRedirects 校验失败：失败提示页，回跳指向统一入口。
 func TestAIProvidersSaveValidationRedirects(t *testing.T) {
 	ph, _, _ := newAIPageEnv(t)
 	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/save", "providerKey=&displayName=")
-
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("校验失败应 303 回列表页，实际 %d（%s）", rec.Code, strings.TrimSpace(rec.Body.String()))
-	}
-	loc := rec.Header().Get("Location")
-	// 合并后统一入口是 /admin/ai/sessions（模型是它的第一个标签）。
-	if !strings.HasPrefix(loc, "/admin/ai/sessions?") {
-		t.Fatalf("回跳地址应指向统一入口，实际 %q", loc)
-	}
-	if !strings.Contains(loc, "err=") {
-		t.Fatalf("回跳地址应带 err 提示，实际 %q", loc)
-	}
-	if strings.HasSuffix(loc, "err=") {
-		t.Fatal("err 提示为空：错误出口没有落地")
+	assertAIJump(t, rec, false, "请填写显示名称")
+	if !strings.Contains(rec.Body.String(), `href="/admin/ai/sessions"`) {
+		t.Fatal("回跳应指向大模型管理页")
 	}
 }
 
-// TestAIProvidersSaveSuccessRedirectsAndPersists 成功：303 + done 提示 + 真落库。
+// TestAIProvidersSaveSuccessRedirectsAndPersists 成功：成功提示页 + 真落库。
 func TestAIProvidersSaveSuccessRedirectsAndPersists(t *testing.T) {
 	ph, svc, _ := newAIPageEnv(t)
 	rec := serveAIPage(t, ph, http.MethodPost, "/admin/ai/providers/save",
 		"providerKey=deepseek&displayName=深度求索&apiKey=sk-ai-test-plain-0123456789abcdef")
-
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("成功提交应 303 回列表页，实际 %d（%s）", rec.Code, strings.TrimSpace(rec.Body.String()))
-	}
-	loc := rec.Header().Get("Location")
-	if !strings.Contains(loc, "done=") {
-		t.Fatalf("成功回跳应带 done 提示，实际 %q", loc)
-	}
+	assertAIJump(t, rec, true, "已保存")
 	rows, err := svc.ListProviders(t.Context())
 	if err != nil {
 		t.Fatalf("回读供应商失败：%v", err)

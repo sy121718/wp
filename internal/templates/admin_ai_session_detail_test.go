@@ -41,7 +41,7 @@ func sessionPageBase() map[string]any {
 	data["CanViewSessions"] = true
 	// 页面壳把这些键绑成局部变量后逐字段访问，缺一个就是运行时错误（Jet 不会容忍 nil 解引用）。
 	// 给零值而不是让它们缺席 —— 零值渲染成空看板，正是「这一页没有数据」的样子。
-	data["PermSet"] = map[string]bool{}
+	data["Buttons"] = map[string]bool{}
 	data["Filter"] = aidto.SessionQuery{}
 	data["Usage"] = aidto.SessionUsage{}
 	data["Trend"] = aidto.SessionTrend{}

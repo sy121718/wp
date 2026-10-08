@@ -58,7 +58,7 @@ func TestArticleNewTemplateRenders(t *testing.T) {
 
 func TestArticlesListHasNoCreateDrawer(t *testing.T) {
 	list := []*contentdto.ContentResp{}
-	data := articleListPageData(list, map[string]string{}, "", "")
+	data := articleListPageData(list, map[string]string{}, "")
 	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 
 	if !strings.Contains(body, "/admin/articles/new") {
@@ -74,7 +74,7 @@ func TestArticlesListHasNoCreateDrawer(t *testing.T) {
 func TestArticleEditRendersPreviewAndImport(t *testing.T) {
 	item := &contentdto.ContentResp{ID: "a1", Slug: "hello-world", Revision: 1,
 		Data: map[string]any{"title": "第一篇", "body": "<p>正文</p>"}}
-	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "", "zh-CN")
+	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "zh-CN")
 	body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{

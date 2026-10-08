@@ -35,7 +35,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"go_wp/public/migrations"
 )
@@ -560,17 +560,14 @@ func TestSourceAdminPage(t *testing.T) {
 		"settlePrice": {"12.50"}, "sort": {"1"},
 		"config": {`{"erp":"sap","warehouseCode":"SZ01"}`},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建货源应 302 回列表，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	// 成功：提示页（取代原先的 302 + ?ok=）。
+	assertInventoryJump(t, rec, "ok")
 	// 外部供应商（表单路径，不标记关联方 —— 它同时是「关联方筛选要排除掉的那一类」）。
 	rec = postForm(engine, "/admin/inventory/sources/create", url.Values{
 		"projectId": {f.projectID}, "code": {"EXT_A"}, "name": {"外部供应商甲"},
 		"type": {inventoryenums.SourceTypeExternal}, "relatedParty": {""},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建外部货源应 302，实际 %d", rec.Code)
-	}
+	assertInventoryJump(t, rec, "ok")
 	// 列表落库校验（走契约读，不直查表）。
 	all := listSources(t, f, &inventorydto.ListSourceReq{IncludeDisabled: true})
 	if len(all) != 2 {
@@ -622,9 +619,7 @@ func TestSourceAdminPage(t *testing.T) {
 		"status": {inventoryenums.SourceStatusDisabled}, "settlePrice": {""}, "sort": {"3"},
 		"config": {`{"erp":"kingdee"}`},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 改货源应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
+	assertInventoryJump(t, rec, "ok")
 	got, err := f.inventory.GetSource(ctx, &inventorydto.GetSourceReq{ID: internal.ID})
 	if err != nil {
 		t.Fatalf("读改后的货源失败: %v", err)
@@ -652,16 +647,14 @@ func TestSourceAdminPage(t *testing.T) {
 		t.Fatalf("按「已停用」筛选应列出该货源：%d", rec.Code)
 	}
 
-	// 内部货源关掉关联方：错误经 ?err= 回显，且落库值不变。
+	// 内部货源关掉关联方：渲染失败提示页，且落库值不变。
 	rec = postForm(engine, "/admin/inventory/sources/update", url.Values{
 		"projectId": {f.projectID}, "id": {internal.ID},
 		"code": {"GROUP_CO"}, "name": {"集团内采购中心（已改名）"},
 		"type": {inventoryenums.SourceTypeInternal}, "relatedParty": {"false"},
 		"status": {inventoryenums.SourceStatusActive}, "settlePrice": {""},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("取消内部货源关联方标记应回列表并带错误提示，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertInventoryJump(t, rec, "err")
 	got, _ = f.inventory.GetSource(ctx, &inventorydto.GetSourceReq{ID: internal.ID})
 	if !got.RelatedParty {
 		t.Fatalf("失败的更新不应改动关联方标志")
@@ -671,9 +664,7 @@ func TestSourceAdminPage(t *testing.T) {
 	rec = postForm(engine, "/admin/inventory/sources/delete", url.Values{
 		"projectId": {f.projectID}, "id": {internal.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 删货源应 302，实际 %d", rec.Code)
-	}
+	assertInventoryJump(t, rec, "ok")
 	if got := listSources(t, f, &inventorydto.ListSourceReq{IncludeDisabled: true}); len(got) != 1 {
 		t.Fatalf("删除后应剩 1 条，实际 %d", len(got))
 	}
@@ -814,6 +805,10 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 		c.Set(shell.PermSetKey, map[string]bool{
 			"inventory:source_create": true, "inventory:source_update": true, "inventory:source_delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"inventory.source_create": true, "inventory.source_update": true, "inventory.source_delete": true,
+		})
+
 	})
 	handle := inventoryhttp.NewInventorySourcePageHandle(f.inventory, f.projects)
 	engine.GET("/admin/inventory/sources", handle.InventorySourcesPage)

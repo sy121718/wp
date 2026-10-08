@@ -1,13 +1,17 @@
 package feature
 
-// admin_page_err_render_test.go — ?err= 进模板前的受控化（页面级断言）。
+// admin_page_err_render_test.go — 列表页提示条的**唯一来源**与「?err= 不再进页面」的回归。
 //
-// 与 admin_page_err_param_test.go 的分工：那一条守的是「服务端写进 ?err= 的**文案**是否受控
-// （必须是本模块白名单里的业务文案）」，本文件守的是另一半 ——「从 ?err= 读回来的**任意串**
-// 能不能渲染」。第四批起判据升级为**白名单整体匹配**：只有写侧真实产出过的文案才渲染，
-// 其余一律空串。这正是本文件存在的理由 —— 前者拦不住直接手写 URL 的人：
-//   GET /admin/roles?err=任意文本
-// 过去一样会把内容渲染在提示条里（Jet 已做 HTML 转义，所以不是 XSS；问题是「看起来像系统说的话」）。
+// 历史：这里曾钉住「?err= 读回来的任意串能不能渲染」——第四批起判据升级为**白名单整体匹配**
+//（只有写侧真实产出过的文案才渲染，其余一律空串），因为查询参数不是可信边界：
+//
+//	GET /admin/roles?err=任意文本
+//
+// 本批把写动作的结论改成由 shell.RenderJump 渲染整页提示（见 internal/shell/jump.go）
+// 之后，查询参数与页面提示条之间**不再有数据通路**：`?err=` 连一条空白提示都造不出来。
+// 所以本文件的两条判据变成：
+//  1. `?err=` 的任何取值都不渲染提示条（本文件上半）；
+//  2. 列表页提示条只剩一个来源 —— **列表取数失败**（归口文案 + 完整页壳），下半。
 //
 // 走真实链路：gin 路由 → RolesPage → shell.Prepare → Jet 模板 → 响应体。
 // 角色服务用同包的假实现（返回空列表），本用例只关心 Err 这一个模板键。
@@ -65,7 +69,7 @@ func fetchRolesPageErr(t *testing.T, engine *gin.Engine, raw string) string {
 	return recorder.Body.String()
 }
 
-// rolesPageAlert 取出角色页提示条（role="alert"）里的文本。
+// rolesPageAlert 取出角色页提示条（role="alert"）里的文本（没有提示条时返回空串）。
 //
 // 为什么不能对整页做 Contains：顶部语言切换表单的 redirect 隐藏域会回填当前请求 URL，
 // 于是 ?err= 的原串也出现在页面里（Jet 已 HTML 转义，但那不是"显示给运营看的提示"）。
@@ -83,53 +87,51 @@ func rolesPageAlert(body string) string {
 	return rest
 }
 
-// TestAdminRolesPageErrParamIsSanitized ?err= 的四种构造：白名单文案 / 超限提示 / 超长 / 伪造。
+// TestAdminRolesPageErrQueryNoLongerRenders ?err= 不再喂给页面：任何取值都不渲染提示条。
 //
-// 断言的是第四批之后的契约：**只有写侧真实产出过的文案才渲染，其余一律空串**。
-// 旧契约（清洗后原样透出）在 2026-09-19 第四批被判定为伪造面 —— 手拼 URL 就能
-// 往页面上塞一条顶着「系统提示」样式的消息。
-func TestAdminRolesPageErrParamIsSanitized(t *testing.T) {
+// 旧契约下这是「白名单整体匹配」（只有写侧真实产出过的文案才渲染）；本批把结论改成
+// 整页提示后，查询参数与页面提示条之间不再有数据通路 —— 手拼 URL 连一条空白提示都造不出来。
+func TestAdminRolesPageErrQueryNoLongerRenders(t *testing.T) {
 	engine := newAdminRolesPageEngine(t)
 
-	t.Run("写侧真实产出的批量结论原样渲染", func(t *testing.T) {
-		// adminBulkResultURL 在 skipped > 0 时的真实产出（数字归一后整体匹配）。
-		want := "已删除 3 个角色，2 个未能删除（受保护或被引用）"
-		got := rolesPageAlert(fetchRolesPageErr(t, engine, want))
-		if got != want {
-			t.Fatalf("写侧真实产出的文案应原样显示，got %q", got)
+	for _, raw := range []string{
+		"已删除 3 个角色，2 个未能删除（受保护或被引用）", // 旧契约下会被放行的真实文案
+		"一次最多操作 200 项，当前 201 项，请分批进行",
+		"已保存\n系统提示：权限已提升\t<ok>", // 换行 + 制表 + 一条像「第二条系统消息」的行
+		strings.Repeat("A", 5000),
+		"<script>alert(1)</script>",
+	} {
+		if got := rolesPageAlert(fetchRolesPageErr(t, engine, raw)); got != "" {
+			t.Errorf("?err= 不应再渲染任何提示（结论走整页提示），got %q（raw=%q）", got, raw)
 		}
-	})
-
-	t.Run("批量 id 超限提示原样渲染", func(t *testing.T) {
-		// shell.BulkIDsFacingText 的产出，读侧候选取的是同一份模板。
-		want := "一次最多操作 200 项，当前 201 项，请分批进行"
-		got := rolesPageAlert(fetchRolesPageErr(t, engine, want))
-		if got != want {
-			t.Fatalf("批量超限提示应原样显示，got %q", got)
-		}
-	})
-
-	t.Run("超长参数不再渲染", func(t *testing.T) {
-		// 旧契约截断到 200 字节照常显示；新契约下截断后的串对不上任何候选 → 空串。
-		got := rolesPageAlert(fetchRolesPageErr(t, engine, strings.Repeat("A", 5000)))
-		if got != "" {
-			t.Fatalf("超长参数不应渲染任何内容，got %q", got)
-		}
-	})
-
-	t.Run("伪造串（含控制字符）不再渲染", func(t *testing.T) {
-		// 换行 + 制表 + 一个看起来像「第二条系统消息」的行 —— 过去会被清洗后照常显示。
-		got := rolesPageAlert(fetchRolesPageErr(t, engine, "已保存\n系统提示：权限已提升\t<ok>"))
-		if got != "" {
-			t.Fatalf("伪造串不应渲染任何内容（系统文案必须是系统说过的话），got %q", got)
-		}
-	})
+	}
 }
 
 // 泄漏断言用同包既有的 pageLeakMarkers / assertPageNoLeak（admin_page_err_param_test.go）：
 // 那份清单是照「不可信原文」设计的（驱动前缀 + SQLSTATE + 库表名前缀 uq_ / sys_ / pg_），
 // 比照 JSON 响应体设计的 leakMarkers 更适合整页断言 —— 后者的 "sort_order" / "cannot unmarshal"
 // 恰好也是正常页面的一部分（角色页就有 name="sort_order" 的输入框），对整页断言会误报。
+
+// TestAdminRolesPageFormActionsCarryFilters 列表页写表单的 action 上带筛选上下文。
+//
+// 同一份键表服务两条路径：渲染时拼进 action 的 query、POST 回来由 shell.BackPath 读回。
+// 两处分叉的表现是「写完跳回去筛选静默丢了」——页面不报错、日志也干净，所以必须钉住。
+func TestAdminRolesPageFormActionsCarryFilters(t *testing.T) {
+	engine := newAdminRolesPageEngine(t)
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/roles?keyword=editor&page=2", nil))
+	body := recorder.Body.String()
+
+	for _, want := range []string{
+		// Jet 会把查询串里的 & 转义成 &amp;（属性值里的实体）。
+		`action="/admin/roles/bulk-delete?keyword=editor&amp;page=2"`,
+		`action="/admin/roles/create?keyword=editor&amp;page=2"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("写表单 action 应带筛选上下文 %q：%s", want, body)
+		}
+	}
+}
 
 // TestAdminRolesPageListLoadFailureKeepsPage 列表**装载失败**时页面必须还在。
 //
@@ -159,23 +161,22 @@ func TestAdminRolesPageListLoadFailureKeepsPage(t *testing.T) {
 	assertPageNoLeak(t, "角色列表装载失败", body)
 }
 
-// TestAdminRolesPageListLoadFailureBeatsStaleErr 装载失败要压过 URL 里那条旧的 ?err=。
+// TestAdminRolesPageLoadFailureIsTheOnlyAlertSource 列表提示条只由装载失败填充。
 //
-// 两条提示可能同时存在：上一次写失败回带 ?err=、这一次列表又查不出来。装载失败是**当前这次
-// 请求真实发生的事**，必须盖住旧提示，否则页面显示的是一条与本次无关的话。
-func TestAdminRolesPageListLoadFailureBeatsStaleErr(t *testing.T) {
+// 装载失败与 URL 里带一条旧 ?err= 可能同时出现：旧 ?err= 不再进页面（结论走整页提示），
+// 所以提示条必须**恰好**是装载失败那条，且页面里不出现旧提示的任何文本。
+func TestAdminRolesPageLoadFailureIsTheOnlyAlertSource(t *testing.T) {
 	engine := newAdminRolesPageEngineWith(t, &fakeRoleService{err: errors.New(dbErrText)})
-	// 这条本身是合法文案（在白名单里），用来证明压过它的不是「白名单拒绝」而是装载失败优先。
+	// 这条在旧契约下是合法文案（在白名单里），用来证明它不再有任何渲染通路。
 	stale := "已删除 3 个角色，2 个未能删除（受保护或被引用）"
 	body := fetchRolesPageErr(t, engine, stale)
 
 	const wantAlert = "操作失败，请稍后重试"
-	got := rolesPageAlert(body)
-	if got != wantAlert {
-		t.Fatalf("装载失败应盖过 ?err= 旧提示，got %q", got)
+	if got := rolesPageAlert(body); got != wantAlert {
+		t.Fatalf("提示条应只由装载失败填充，got %q", got)
 	}
-	if strings.Contains(body, stale) && got == stale {
-		t.Fatal("旧提示不应占据提示条")
+	if strings.Contains(body, stale) && rolesPageAlert(body) == stale {
+		t.Fatal("旧 ?err= 不应占据提示条")
 	}
 	assertPageNoLeak(t, "角色列表装载失败（带旧 ?err=）", body)
 }

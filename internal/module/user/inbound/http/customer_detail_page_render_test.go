@@ -33,7 +33,7 @@ func detailProjects() []projectcontract.ProjectResp {
 
 func TestCustomerDetailTemplateRenders(t *testing.T) {
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", detailSummary(),
-		false, false, "", "", nil)
+		false, false, "", nil)
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	for _, want := range []string{
@@ -54,7 +54,7 @@ func TestCustomerDetailTemplateRenders(t *testing.T) {
 func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 	summary := &ordercontract.CustomerOrderSummaryResp{UserID: 42, ProjectID: "p1"}
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", summary,
-		false, false, "", "", nil)
+		false, false, "", nil)
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "还没有下过单") {
@@ -67,7 +67,7 @@ func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 
 // TestCustomerDetailTemplateNoProjects 没有站点工程时给说明，而不是渲染一个没用的工程下拉。
 func TestCustomerDetailTemplateNoProjects(t *testing.T) {
-	data := customerDetailPageData(customerSample(), nil, "", nil, false, false, "", "", nil)
+	data := customerDetailPageData(customerSample(), nil, "", nil, false, false, "", nil)
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "还没有站点工程，因此没有订单可统计") {
@@ -81,7 +81,7 @@ func TestCustomerDetailTemplateNoProjects(t *testing.T) {
 // TestCustomerDetailTemplateSummaryFailed 摘要读不出来时给说明，客户资料照常显示。
 func TestCustomerDetailTemplateSummaryFailed(t *testing.T) {
 	data := customerDetailPageData(customerSample(), detailProjects(), "p1", nil,
-		false, true, "", "", nil)
+		false, true, "", nil)
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "订单摘要暂时读不出来") {
@@ -97,7 +97,7 @@ func TestCustomerDetailTemplatePendingHasNoStatusAction(t *testing.T) {
 	item := customerSample()
 	item.Status = 2
 	item.StatusLabel = "待激活"
-	data := customerDetailPageData(item, nil, "", nil, false, false, "", "", nil)
+	data := customerDetailPageData(item, nil, "", nil, false, false, "", nil)
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if strings.Contains(body, "/admin/customers/status") {
@@ -133,32 +133,43 @@ func TestCustomerDetailPageHandlerRendersOrderSummary(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailPageRedirectsWhenMissing 客户不存在时回列表页并带原因，不渲染空详情页
-// （详情页的每个动作都要求一个存在的客户，渲染出来只是一堆必然失败的按钮）。
-func TestCustomerDetailPageRedirectsWhenMissing(t *testing.T) {
+// TestCustomerDetailPageMissingRendersJump 客户不存在时渲染提示页（HTTP 200 +
+// data-jump-state="err"），而不是空详情页 —— 详情页的每个动作都要求一个存在的客户。
+func TestCustomerDetailPageMissingRendersJump(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: nil}, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/detail?id=42", nil))
 
-	if rec.Code != http.StatusFound {
-		t.Fatalf("客户不存在时应 302 回列表页，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("客户不存在时应渲染提示页（200），实际 %d", rec.Code)
 	}
-	if !strings.Contains(rec.Header().Get("Location"), "/admin/customers?") {
-		t.Errorf("回跳地址不对：%s", rec.Header().Get("Location"))
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Errorf(`提示页应有 data-jump-state="err"`)
+	}
+	if !strings.Contains(body, "/admin/customers") {
+		t.Errorf("提示页应给出回客户列表的链接")
 	}
 }
 
-// TestCustomerDetailPageWithoutIDRedirects 没带 id 一律回列表页（不渲染一个「空客户」）。
-func TestCustomerDetailPageWithoutIDRedirects(t *testing.T) {
+// TestCustomerDetailPageWithoutIDRendersJump 没带 id 一律渲染提示页（不渲染一个「空客户」）。
+func TestCustomerDetailPageWithoutIDRendersJump(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: customerSample()}, fakeOrderSummaryReader{}, fakeProjects{})
 	engine := newCustomerTestEngine(h)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/detail", nil))
 
-	if rec.Code != http.StatusFound {
-		t.Fatalf("没带 id 时应 302 回列表页，实际 %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("没带 id 时应渲染提示页（200），实际 %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Errorf(`提示页应有 data-jump-state="err"`)
+	}
+	if !strings.Contains(body, "客户编号不合法") {
+		t.Errorf("提示页应含「客户编号不合法」")
 	}
 }

@@ -17,9 +17,12 @@
     取到 nil 不中断渲染，分页片段里的 if 自然跳过。 *}
 {{campaignsLinks := .["PaginationLinks"]}}
 {{campaignsInfo := .["PaginationInfo"]}}
-{{canSaveCampaign := isset(.PermSet["mail:campaign_save"])}}
+{{canSaveCampaign := isset(.Buttons["mail.campaign_save"])}}
 {* 批量动作复用对应单条动作的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
-{{canDeleteCampaign := isset(.PermSet["mail:campaign_delete"])}}
+{{canDeleteCampaign := isset(.Buttons["mail.campaign_delete"])}}
+{* 批量删除表单 action 的筛选上下文（服务端拼、回跳由 shell.BackPath 读回）：
+    批量删完不会被弹回第 1 页。可选键用 isset 兜底成空串（Jet 无 ??）。 *}
+{{listQuery := ""}}{{if isset(.ListQuery)}}{{listQuery = .ListQuery}}{{end}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -42,17 +45,10 @@
     </div>
   </header>
 
-  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），
-     直接比较会让整页在那一行中断 —— HTTP 仍是 200，之后的列表整块消失。 *}
+  {* Err 只来自**取数失败**分支（写动作的结论走 shell.RenderJump 提示页，见 mail_jump.go）——
+     可选键一律 isset 包裹：直接比较会让整页在那一行中断（HTTP 仍是 200，之后的列表整块消失）。 *}
   {{if isset(.Err)}}{{if .Err != ""}}
   <p class="badge badge-warning" role="alert">{{ .["t"]("admin.mail.marketing.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
-  {{end}}{{end}}
-  {{if isset(.Ok)}}{{if .Ok != ""}}
-  <p class="badge badge-success" role="status">{{.Ok}}</p>
-  {{end}}{{end}}
-  {* Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。 *}
-  {{if isset(.Done)}}{{if .Done != ""}}
-  <p class="badge badge-info" role="status">{{.Done}}</p>
   {{end}}{{end}}
 
   <section class="card list-card">
@@ -64,9 +60,8 @@
     </div>
     {* 活动表自己的批量 form：发送中的活动由服务端拒绝、只计入跳过
         （删掉发送中的活动，后台分批展开的收件人任务会在中途找不到活动，留下一批半截记录）。 *}
-    <form method="post" action="/admin/mail/campaigns/bulk-delete">
+    <form method="post" action="/admin/mail/campaigns/bulk-delete{{listQuery}}">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
-      <input type="hidden" name="returnPage" value="{{.Page}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
       {{if canDeleteCampaign}}{{if len(.Campaigns) > 0}}
       {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}

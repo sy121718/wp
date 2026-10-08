@@ -13,7 +13,7 @@
 //	    **以清单为准落库**：新增清单里库里没有的、更新被编辑过的 SKU、
 //	    删除库里存在但清单里没有的既有变体（有库存 / 被引用时跳过逐条回带）。
 //
-// 本文件只放形状；判定与落库在 service（product_variant_generate.go）。
+// 本文件只放形状；判定与落库在 service（product_variant.go）。
 package productdto
 
 import "encoding/json"
@@ -89,9 +89,8 @@ type SaveVariantListReq struct {
 // OptionValues 原样带回，供页面把跳过的那一行拼成可读规格文本。
 //
 // Detail 是**可定位明细**（引用面 / 涉及的工程与商品 id，审计 DB-03 §5.1 第 2 条）：
-// 它与 Reason 分两个字段是刻意的 —— Reason 会经 ?done= 回带到页面，读侧的
-// productVariantNoticeMatches 要求每个原因**逐字**等于受控文案，把自由文本拼进 Reason
-// 会让整条回执被判成伪造而消失。需要看明细的调用方读 Detail（JSON 响应）。
+// 它与 Reason 分两个字段是刻意的 —— Reason 会经提示页展示，只应承载受控原因枚举；
+// 把自由文本拼进 Reason 会让提示页出现不可控内容。需要看明细的调用方读 Detail（JSON 响应）。
 type VariantSaveSkip struct {
 	VariantID    string          `json:"variantId"`
 	SKUCode      string          `json:"skuCode"`

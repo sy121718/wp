@@ -36,21 +36,33 @@ func TestCategoryDrawerFailureEcho(t *testing.T) {
 
 func TestCategoryDrawerNativeFailureAndSuccess(t *testing.T) {
 	h := &productPageHandle{}
-	c, rec, _ := newAttrCaptureContext(t, "", "projectId=p1&name=Draft")
+	// 原生失败：整页提示（200 + err 态）回分类页，取代原先的 302 + ?err=。
+	c, rec := newProductJumpContext(t, "", "project=p1", "projectId=p1&name=Draft")
 	h.categoryFormFail(c, "create", "duplicate")
 	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/admin/product-categories?project=p1&err=") {
-		t.Fatalf("native failure: %d %q", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="err"`) {
+		t.Fatalf("native failure: %d %q", rec.Code, rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "/admin/product-categories?") || !strings.Contains(rec.Body.String(), "project=p1") {
+		t.Fatalf("native failure 回跳应回分类页并带上工程，body=%s", rec.Body.String())
+	}
+
+	// 成功出口：htmx 走 HX-Redirect，原生渲染 ok 态提示页。
 	for _, hx := range []string{"true", ""} {
-		c, rec, _ := newAttrCaptureContext(t, hx, "projectId=p1")
+		if hx == "true" {
+			c, rec, _ := newAttrCaptureContext(t, hx, "projectId=p1")
+			categoryFormSuccess(c, "p1")
+			c.Writer.WriteHeaderNow()
+			if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("HX-Redirect"), "/admin/product-categories") {
+				t.Errorf("HX success: %d headers=%v", rec.Code, rec.Header())
+			}
+			continue
+		}
+		c, rec := newProductJumpContext(t, "", "project=p1", "projectId=p1")
 		categoryFormSuccess(c, "p1")
 		c.Writer.WriteHeaderNow()
-		if hx == "true" && (rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != "/admin/product-categories?project=p1") {
-			t.Errorf("HX success: %d headers=%v", rec.Code, rec.Header())
-		}
-		if hx == "" && (rec.Code != http.StatusFound || rec.Header().Get("Location") != "/admin/product-categories?project=p1") {
-			t.Errorf("native success: %d headers=%v", rec.Code, rec.Header())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+			t.Errorf("native success: %d headers=%v body=%s", rec.Code, rec.Header(), rec.Body.String())
 		}
 	}
 }

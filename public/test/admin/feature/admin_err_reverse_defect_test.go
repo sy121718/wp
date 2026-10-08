@@ -84,11 +84,8 @@ func (f *fakeAdminService) AdminMenuList(context.Context, *admindto.AdminMenuLis
 func (f *fakeAdminService) AdminMenuSave(context.Context, *admindto.AdminMenuSaveReq) (*admindto.AdminMenuSaveResp, error) {
 	return nil, f.err
 }
-func (f *fakeAdminService) AdminRoutes(context.Context, uint64, string) (*admindto.AdminRoutesResp, error) {
-	return nil, f.err
-}
 
-// withStubSession 给 AdminProfile / AdminRoutes 补一个会话主体（它们直接读 c.Get("user_id")）。
+// withStubSession 给 AdminProfile 补一个会话主体（它直接读 c.Get("user_id")）。
 func withStubSession() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("user_id", int64(1))
@@ -219,7 +216,7 @@ func TestAdminListSortParamErrorIsNowVisible(t *testing.T) {
 // 「服务端文案是不是来自拥有白名单的模块」）。
 func TestAdminListSortBridgeIsEnums(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(support.RepoRoot(t),
-		"internal", "module", "admin", "service", "admin_crud.go"))
+		"internal", "module", "admin", "service", "admin.go"))
 	if err != nil {
 		t.Fatalf("读取 admin_crud.go 失败: %v", err)
 	}

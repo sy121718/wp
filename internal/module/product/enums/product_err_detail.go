@@ -36,7 +36,7 @@ const (
 	DetailTagPriceOrderWrong = "admin.product_tags.detail.priceOrderWrong"
 	DetailTagUnknownRuleType = "admin.product_tags.detail.unknownRuleType"
 
-	// —— 变体组合（service/product_variant_generate.go / product_bundle.go）——
+	// —— 变体组合（service/product_variant.go / product_bundle.go）——
 	DetailVariationCountExceed           = "admin.products.detail.variationCountExceed"
 	DetailVariationDimensionExceed       = "admin.products.detail.variationDimensionExceed"
 	DetailVariationAttributeUnreferenced = "admin.products.detail.variationAttributeUnreferenced"

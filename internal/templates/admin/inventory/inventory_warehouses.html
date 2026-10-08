@@ -22,7 +22,7 @@
             </div>
         </div>
         <div class="page-actions">
-            {{if isset(.PermSet["inventory:warehouse_create"])}}
+            {{if isset(.Buttons["inventory.warehouse_create"])}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-warehouse-create" data-drawer-title="{{ .["t"]("admin.inventory.create.title", "新建仓库") }}">＋ {{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
             {{end}}
             {{if len(.Projects) > 1}}
@@ -38,16 +38,8 @@
         </div>
     </header>
 
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.inventory.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
-    {{if .Ok != ""}}
-    <p class="badge badge-success" role="status">{{ .["t"]("admin.inventory.lastOk", "上一次操作已完成。") }}</p>
-    {{end}}
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
+    {* 写动作的结论不在本页回显：它由 shell.RenderJump 渲染成提示页（见 inventory_jump.go），
+       结论走响应体、不再经 ?err= / ?ok= / ?done= 回列表页。 *}
 
     <section class="card list-card">
         {* 列表标题行用 .card-header，不借 .filter-bar（审计 02-O §38 的 02-I #29：.filter-bar 承诺的是
@@ -62,11 +54,11 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接
            带上所有勾中的 ids。行内表单（设为默认仓 / 删除）因此挪到表格外 ——
            HTML 不允许 form 嵌套，嵌套时浏览器会丢弃内层 form 的开始标签。 *}
-        <form method="post" action="/admin/inventory/warehouses/bulk-delete">
+        <form method="post" action="/admin/inventory/warehouses/bulk-delete?{{ .ListQuery }}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
-            {{if isset(.PermSet["inventory:warehouse_delete"])}}{{if len(.Warehouses) > 0}}
+            {{if isset(.Buttons["inventory.warehouse_delete"])}}{{if len(.Warehouses) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.inventory.warehouses.bulkDeleteConfirm", "删除选中的仓库？默认仓或仓内仍有非零库存的会被跳过，其余照常删除。"), danger=true)}}
             {{yield bulkBarClose()}}
@@ -97,7 +89,7 @@
                     {* 旧文案写「用上面的表单建一个」，但页面上方只有列表标题、没有表单 ——
                        新建在页头抽屉里。补 .empty-actions 的同时把这句改成与按钮一致。 *}
                     <p class="empty-desc">{{ .["t"]("admin.inventory.list.emptyNew", "这个工程还没有仓库。点下面的「新建仓库」建一个 —— 建商品与变体时的归属仓就来自这里。") }}</p>
-                    {{if isset(.PermSet["inventory:warehouse_create"])}}
+                    {{if isset(.Buttons["inventory.warehouse_create"])}}
                     <div class="empty-actions">
                         <button type="button" class="btn btn-primary" data-drawer-open="#tpl-warehouse-create" data-drawer-title="{{ .["t"]("admin.inventory.create.title", "新建仓库") }}">＋ {{ .["t"]("admin.inventory.create.submit", "新建仓库") }}</button>
                     </div>
@@ -111,7 +103,7 @@
                     <input type="checkbox" name="ids" value="{{w.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory.label.name", "仓库名称") }}">
-                    {{if isset(.PermSet["inventory:warehouse_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{w.Name}}</button>{{else}}{{w.Name}}{{end}}
+                    {{if isset(.Buttons["inventory.warehouse_update"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{w.Name}}</button>{{else}}{{w.Name}}{{end}}
                     {{if w.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.inventory.defaultWarehouse", "默认仓") }}</span>{{end}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory.col.type", "类型") }}">{{w.TypeLabel}}{{if w.HasThirdParty}}{{if w.Provider}} <span class="move-meta">{{w.Provider}}</span>{{end}}{{end}}</td>
@@ -119,13 +111,13 @@
                 <td data-label="{{ .["t"]("admin.inventory.col.status", "状态") }}">{{w.StatusLabel}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.ph.sort", "排序") }}">{{w.Sort}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
-                    {{if isset(.PermSet["inventory:warehouse_update"])}}
+                    {{if isset(.Buttons["inventory.warehouse_update"])}}
                     <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                     {{end}}
                     {{if not w.IsDefault}}
                     <button type="submit" form="wh-default-{{w.ID}}" class="btn btn-sm">{{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}</button>
                     {{end}}
-                    {{if isset(.PermSet["inventory:warehouse_delete"])}}
+                    {{if isset(.Buttons["inventory.warehouse_delete"])}}
                     <button type="submit" form="wh-del-{{w.ID}}" class="btn btn-sm btn-danger"
                             data-confirm="{{ .["t"]("admin.inventory.list.deleteConfirm", "删除该仓库？默认仓或仓内仍有非零库存时会被拒绝。") }}" data-confirm-danger>{{ .["t"]("admin.inventory.action.delete", "删除") }}</button>
                     {{end}}
@@ -141,14 +133,14 @@
            —— 与 product_categories / menus 同一手法。 *}
         {{range _, w := .Warehouses}}
         {{if not w.IsDefault}}
-        <form id="wh-default-{{w.ID}}" method="post" action="/admin/inventory/warehouse/default" class="hidden-form">
+        <form id="wh-default-{{w.ID}}" method="post" action="/admin/inventory/warehouse/default?{{ .ListQuery }}" class="hidden-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">
         </form>
         {{end}}
-        {{if isset(.PermSet["inventory:warehouse_delete"])}}
-        <form id="wh-del-{{w.ID}}" method="post" action="/admin/inventory/warehouse/delete" class="hidden-form">
+        {{if isset(.Buttons["inventory.warehouse_delete"])}}
+        <form id="wh-del-{{w.ID}}" method="post" action="/admin/inventory/warehouse/delete?{{ .ListQuery }}" class="hidden-form">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">
@@ -158,10 +150,10 @@
     </section>
 
     {* ===== 新建仓库（抽屉表单模板） ===== *}
-    {{if isset(.PermSet["inventory:warehouse_create"])}}
+    {{if isset(.Buttons["inventory.warehouse_create"])}}
     <template id="tpl-warehouse-create">
         <div data-inventory-warehouse-host>
-        <form method="post" action="/admin/inventory/warehouse/create" hx-post="/admin/inventory/warehouse/create" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -229,7 +221,7 @@
     {{range _, w := .Warehouses}}
     <template id="tpl-warehouse-edit-{{w.ID}}">
         <div data-inventory-warehouse-host>
-        <form method="post" action="/admin/inventory/warehouse/update" hx-post="/admin/inventory/warehouse/update" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">

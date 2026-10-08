@@ -26,7 +26,7 @@
             </div>
         </div>
         <div class="page-actions">
-            <form class="page-context" method="get" action="/admin/page/translations">
+            <form class="page-context" method="get" action="/admin/pages/translations">
                 <label class="sr-only" for="pt-lang">{{ .["t"]("admin.page_translations.lang_label", "语言") }}</label>
                 <input type="hidden" name="pageId" value="{{.PageID}}">
                 <select class="form-select" id="pt-lang" name="lang" onchange="this.form.submit()">
@@ -60,12 +60,6 @@
     </div>
     {{end}}
 
-    {{if .Saved}}
-    <p class="badge badge-success" role="status">
-        {{ .["t"]("admin.page_translations.saved_lead", "已保存 ") }}{{.SavedCount}}{{ .["t"]("admin.page_translations.saved_mid", " 条译文。") }}{{if .SavedCount}}{{ .["t"]("admin.page_translations.saved_tail", "译文变更已标记全站待重建（下次构建生效）。") }}{{end}}
-    </p>
-    {{end}}
-
     {{if len(.Groups) == 0}}
     {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知。
        本页的表是「一张表按组件分段」，表头在 {{else}} 分支里提不出来 ——
@@ -96,21 +90,21 @@
         </div>
     </section>
     {{else}}
-    <form id="page-translations-form" method="post" action="/admin/page/translations/save">
+    <form id="page-translations-form" method="post" action="/admin/pages/translations/save?pageId={{.PageID}}&amp;lang={{.Lang}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="pageId" value="{{.PageID}}">
         <input type="hidden" name="lang" value="{{.Lang}}">
 
         <section class="card list-card">
             <div class="filter-bar">
-                <form class="filter-row" method="get" action="/admin/page/translations">
+                <form class="filter-row" method="get" action="/admin/pages/translations">
                     <input type="hidden" name="pageId" value="{{.PageID}}">
                     <input type="hidden" name="lang" value="{{.Lang}}">
                     <span class="text-mute text-sm">{{ .["t"]("admin.page_translations.filter_label", "筛选：") }}</span>
-                    <a class="btn btn-sm" href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=all">{{ .["t"]("admin.page_translations.filter.all", "全部") }}</a>
-                    <a class="btn btn-sm btn-ghost" href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=missing">{{ .["t"]("admin.page_translations.filter.missing", "只看缺失") }}</a>
-                    <a class="btn btn-sm btn-ghost" href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=manual">{{ .["t"]("admin.page_translations.filter.manual", "只看人工") }}</a>
-                    <a class="btn btn-sm btn-ghost" href="/admin/page/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=ai">{{ .["t"]("admin.page_translations.filter.ai", "只看 AI 翻译") }}</a>
+                    <a class="btn btn-sm" href="/admin/pages/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=all">{{ .["t"]("admin.page_translations.filter.all", "全部") }}</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/pages/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=missing">{{ .["t"]("admin.page_translations.filter.missing", "只看缺失") }}</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/pages/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=manual">{{ .["t"]("admin.page_translations.filter.manual", "只看人工") }}</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/pages/translations?pageId={{.PageID}}&amp;lang={{.Lang}}&amp;filter=ai">{{ .["t"]("admin.page_translations.filter.ai", "只看 AI 翻译") }}</a>
                     <span class="text-mute text-sm">{{ .["t"]("admin.page_translations.filter.count_prefix", "（当前显示 ") }}{{.RowCount}}{{ .["t"]("admin.page_translations.filter.count_suffix", " 行）") }}</span>
                 </form>
             </div>

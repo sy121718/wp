@@ -1,18 +1,17 @@
-// ai_router.go — ai 模块自装配：建 model / service、注册 JSON 接口与后台页面路由。
+// ai_router.go — ai 模块自装配：建 model / service、注册 JSON 接口（含公开的 /mcp 接入点）。
+//
+// 后台页面与悬浮球的注册在 ai_page_router.go，由本文件在同一位置调用 —— 落点分开、装配顺序不变。
 //
 // 装配口径与 inventory / webhook 一致：本模块自己取 db 造仓储与服务；密钥来源沿用项目
 // 既有配置项 `app.secret`（与 webhook / mail / inventory 同源），不新造配置项。
 package aihttp
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
 	"go_wp/config"
 	"go_wp/internal/mcp"
-	"go_wp/internal/middleware/builtin"
 	aicontract "go_wp/internal/module/ai/contract"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
@@ -114,56 +113,8 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	g.POST("/token/create", permission.AITokenCreate, tokenHandle.Create)
 	g.POST("/token/revoke", permission.AITokenRevoke, tokenHandle.Revoke)
 
-	if adminPages != nil {
-		page := NewPageHandle(svc)
-		// MCP 与外部访问页：读权限点用 token/list（与菜单的 permission_code 同一个值 ——
-		// 两处不一致会出现「菜单看得见、点进去 403」），两个写操作各用自己的权限点。
-		mcpPage := NewMcpPageHandle(tokenSvc, toolRegistry)
-		// 开关状态与切换都走 sysconfig（GroupAI / mcp_enabled）；与服务端可达性判定同源。
-		mcpPage.SetConfigService(aiConfig)
-		adminPages.GET("/ai/mcp", builtin.CasbinMiddlewareForPathAs("/api/ai/token/list", http.MethodGet), mcpPage.Page)
-		adminPages.POST("/ai/mcp/token/create", builtin.CasbinMiddlewareForPath("/api/ai/token/create"), mcpPage.TokenCreate)
-		adminPages.POST("/ai/mcp/token/revoke", builtin.CasbinMiddlewareForPath("/api/ai/token/revoke"), mcpPage.TokenRevoke)
-		// 开关键：改的是全站可达性，复用「管理令牌」那个权限点 —— 能给外部发令牌的人
-		// 本来就是决定「外部能不能进来」的人，多一个权限点只会让两处授权状态有机会不一致。
-		adminPages.POST("/ai/mcp/toggle", builtin.CasbinMiddlewareForPath("/api/ai/token/create"), mcpPage.McpToggle)
-		// 页面路径与权限点路径不同，必须显式指定 casbin obj（口径见 sysconfig 页面路由）。
-		adminPages.GET("/ai/providers", builtin.CasbinMiddlewareForPathAs("/api/ai/provider/list", http.MethodGet), page.ProvidersPage)
-
-		adminPages.POST("/ai/providers/save", builtin.CasbinMiddlewareForPath("/api/ai/provider/save"), page.ProviderSave)
-		adminPages.POST("/ai/providers/delete", builtin.CasbinMiddlewareForPath("/api/ai/provider/delete"), page.ProviderDelete)
-		adminPages.POST("/ai/providers/status", builtin.CasbinMiddlewareForPath("/api/ai/provider/status"), page.ProviderStatus)
-
-		adminPages.POST("/ai/providers/models/save", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/save"), page.ModelsSave)
-		adminPages.POST("/ai/providers/models/restore", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/restore"), page.ModelsRestore)
-		adminPages.POST("/ai/providers/models/fetch", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/fetch"), page.ModelsFetch)
-		// 增删行不改库，只重渲染目录区，沿用保存的权限点。
-		adminPages.POST("/ai/providers/models/row/add", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/save"), page.ModelsRowAdd)
-		adminPages.POST("/ai/providers/models/row/delete", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/save"), page.ModelsRowDelete)
-		// 候选拉取沿用 fetch 权限点（同一能力：谁能拉候选，谁就能走旧的直接拉取）；
-		// 勾选后追加沿用 save 权限点（落到目录里的写操作只有一个口径）。
-		adminPages.POST("/ai/providers/models/candidates", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/fetch"), page.ModelsCandidates)
-		adminPages.POST("/ai/providers/models/append", builtin.CasbinMiddlewareForPath("/api/ai/provider/models/save"), page.ModelsAppend)
-
-		// 会话页：路径与权限点路径不一致，逐个显式指定 casbin obj（口径同上）。
-		sessionPage := NewSessionPageHandle(sessionSvc, svc)
-		adminPages.GET("/ai/sessions", builtin.CasbinMiddlewareForPathAs("/api/ai/session/list", http.MethodGet), sessionPage.SessionsPage)
-		adminPages.POST("/ai/sessions/append", builtin.CasbinMiddlewareForPath("/api/ai/session/append"), sessionPage.SessionAppend)
-		adminPages.POST("/ai/sessions/rename", builtin.CasbinMiddlewareForPath("/api/ai/session/rename"), sessionPage.SessionRename)
-		adminPages.POST("/ai/sessions/archive", builtin.CasbinMiddlewareForPath("/api/ai/session/archive"), sessionPage.SessionArchive)
-		adminPages.POST("/ai/sessions/fold", builtin.CasbinMiddlewareForPath("/api/ai/session/fold"), sessionPage.SessionFold)
-		// 发消息借对话入口的 casbin obj（发消息本质是一次对话），不新增权限点。
-		adminPages.POST("/ai/sessions/send", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.SessionSend)
-		// 全局悬浮球（每个后台页面都有入口）：同样借对话入口的 casbin obj。
-		// 返回的是**片段**而不是重定向 —— 回答要出现在球旁边，不是把用户弹到另一个页面。
-		adminPages.POST("/ai/ask", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAsk)
-		// 流式版本：同一份权限点、同一个会话键。两条路径**并存**而不是替换 ——
-		// 浏览器不支持流式读取（或 JS 被拦）时非流式那条仍能用。
-		adminPages.POST("/ai/ask/stream", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAskStream)
-		// 历史回填：读的是会话事件，借会话事件查询的 casbin obj（不新增权限点）——
-		// 能看到这条会话历史的，与能看会话日志的是同一批人。
-		adminPages.GET("/ai/fab/history", builtin.CasbinMiddlewareForPathAs("/api/ai/session/events", http.MethodGet), sessionPage.FabHistory)
-	}
+	// 后台页面：注册在 ai_page_router.go（同一入口调用，装配顺序不变）。
+	SetupAIPages(adminPages, svc, sessionSvc, tokenSvc, toolRegistry, aiConfig)
 
 	return svc
 }

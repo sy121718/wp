@@ -24,9 +24,9 @@
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 {{fPage := .Page}}
-{{canCreate := isset(.PermSet["product:create"])}}
-{{canDelete := isset(.PermSet["product:delete"])}}
-{{canUpdate := isset(.PermSet["product:update"])}}
+{{canCreate := isset(.Buttons["product.create"])}}
+{{canDelete := isset(.Buttons["product.delete"])}}
+{{canUpdate := isset(.Buttons["product.update"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -54,14 +54,6 @@
             {{end}}
         </div>
     </header>
-
-    {* 可选键一律 isset 包裹：直接渲染模板的单测不带 Done，缺失键会让整页在此中断（HTTP 仍 200）。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.products.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
 
     <section class="card list-card">
         <h2 class="card-title">{{ .["t"]("admin.products.list.title", "商品列表") }}</h2>
@@ -98,9 +90,9 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
            操作列里的按钮都带 form="<id>"，不会误触发这个批量表单。
-           隐藏域把「用户当时在看什么」（关键词 / 状态 / 页码）一并带走：
-           批量动作成功后回跳列表时，筛选与页码才不会丢。 *}
-        <form method="post" action="/admin/products/bulk-delete">
+           action 上的 ListQuery 把「用户当时在看什么」（关键词 / 状态 / 页码）随 query 提交：
+           写动作的结论由 shell.RenderJump 渲染提示页，回跳列表时按它恢复筛选与页码。 *}
+        <form method="post" action="/admin/products/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="keyword" value="{{fKeyword}}">
@@ -251,14 +243,10 @@
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">
     </form>
-    <form id="product-del-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/delete"
+    <form id="product-del-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
           data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
-        {* 筛选与页码一并带回：从筛过的列表里删掉一条，回列表仍是原来那一屏。 *}
-        <input type="hidden" name="keyword" value="{{fKeyword}}">
-        <input type="hidden" name="status" value="{{fStatus}}">
-        <input type="hidden" name="page" value="{{fPage}}">
         <input type="hidden" name="id" value="{{p.ID}}">
     </form>
     {{end}}
@@ -283,8 +271,8 @@
        筛选条件（keyword / status / page）用 hx-include 一并带上：服务端据此回跳原列表视图。 *}
     {{if canUpdate}}
     <template id="tpl-product-pricing">
-        <form class="form-stack" method="post" action="/admin/products/bulk-pricing"
-              hx-post="/admin/products/bulk-pricing" hx-include="[name='ids'],[name='keyword'],[name='status'],[name='page']" hx-swap="none">
+        <form class="form-stack" method="post" action="/admin/products/bulk-pricing{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
+              hx-post="/admin/products/bulk-pricing{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-include="[name='ids']" hx-swap="none">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="keyword" value="{{fKeyword}}">

@@ -2,22 +2,24 @@ package contenthttp
 
 // article_bulk_i18n_language_test.go — 批量结论文案的**当前语言一致性**回归。
 //
-// 为什么必须有这一条：写侧（articleBulkDeleteResult）与读侧（articleDoneTexts）共用
-// articleBulkTextOf 这一个取法，但「共用」是结构事实、不是可观测事实 —— 只要有人把读侧候选
-// 重新写成中文常量（或忘了带 c），中文环境下一切正常，英文页面上真实的回执却被
-// shell.FacingNotice 判成伪造而**静默消失**（?done= 落空串），既没有报错也没有日志。
-//
-// 用 pkg/i18n.InjectForTest 直接塞内存词条，不建库、不起装配。
+// 为什么必须有这一条：写侧（articleBulkDeleteResult）经 articleBulkTextOf 取词，
+// 提示页的正文也经 shell.TranslateFor 渲染 —— 只要有人把候选写死成中文常量（或忘了带 c），
+// 中文环境下一切正常，英文页面上运营看到的却是中文。用 pkg/i18n.InjectForTest 直接塞内存
+// 词条，不建库、不起装配。
 
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	contentenums "go_wp/internal/module/content/enums"
-	"go_wp/pkg/i18n"
-
 	"github.com/gin-gonic/gin"
+
+	contentenums "go_wp/internal/module/content/enums"
+	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 )
 
 // articleBulkInjectedEntries 注入的词条（中英都注：只注英文会被 cache 的
@@ -41,7 +43,7 @@ func articleBulkLangCtx(t *testing.T, lang string) *gin.Context {
 	return c
 }
 
-// TestArticleBulkNoticeFollowsRequestLanguage 四个分支都随当前语言，且读侧认得。
+// TestArticleBulkNoticeFollowsRequestLanguage 四个分支都随当前语言，且提示页照此渲染。
 func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	i18n.InjectForTest(articleBulkInjectedEntries, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
@@ -62,11 +64,25 @@ func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 		msg := articleBulkDeleteResult(en, tc.deleted, tc.skipped)
 		if msg != tc.want {
 			t.Errorf("%s：应按当前语言拼装，got %q want %q", tc.name, msg, tc.want)
-			continue
 		}
-		if got := articlePageDone(en, msg); got != msg {
-			t.Errorf("%s：英文页面上这条回执被读侧判成伪造（会静默消失）：got %q want %q", tc.name, got, msg)
-		}
+	}
+
+	// 提示页正文也随当前语言（不是只有纯函数取词对）：直接打 handler。
+	gin.SetMode(gin.TestMode)
+	e := gin.New()
+	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	e.POST("/admin/articles/bulk-delete", (&articlePageHandle{contents: &articleBulkDeleteStub{}}).ArticlesBulkDelete)
+	form := url.Values{"ids": {"a", "b", "c"}}
+	req := httptest.NewRequest(http.MethodPost, "/admin/articles/bulk-delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept-Language", "en-US")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("提示页状态 %d", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "EN-ALL 3") {
+		t.Errorf("提示页正文未按当前语言渲染：%s", body[:min(len(body), 240)])
 	}
 
 	zh := articleBulkLangCtx(t, "zh-CN")

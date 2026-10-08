@@ -28,7 +28,8 @@
     <a href="/admin/mail/automation">← {{ .["t"]("admin.mail.automation_canvas.back", "返回列表") }}</a>
   </div>
 
-  {{if .Err != ""}}<p class="auto-warn" role="alert">{{.Err}}</p>{{end}}
+  {* 写动作的结论不在本页回显（走 shell.RenderJump 提示页，见 mail_jump.go）；
+     本页也没有取数失败分支（缺 id / 取数失败已在 handler 里渲染提示页），故无 Err 提示条。 *}
 
   <div class="auto-main">
     <div class="auto-canvas" id="autoCanvas" tabindex="0" role="application"

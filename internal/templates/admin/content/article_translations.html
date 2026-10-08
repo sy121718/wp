@@ -64,7 +64,6 @@
         </div>
     </form>
 
-    {{if .Saved}}<p class="badge badge-success" role="status">{{.SavedNote}}</p>{{end}}
     {{if len(errors) > 0}}
     <div class="tr-alert" role="alert">
         <ul class="list-reset">{{range _, e := errors}}<li>{{e}}</li>{{end}}</ul>

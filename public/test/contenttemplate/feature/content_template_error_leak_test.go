@@ -6,7 +6,8 @@ package feature
 //   - 形态③：模板数据的 SampleErr（admin/content_templates.html 的 {{t.SampleErr}}）——
 //     它来自 sampleEntityID 去读**别的模块**的表（products / contents），那些错误
 //     带着表名与 SQLSTATE；
-//   - 形态②：?err= 回带（含 shell.BulkIDs 的受控上限提示）。
+//   - 形态②：批量删除的受控上限提示（shell.BulkIDs）—— 改由提示页在响应体里渲染，
+//     本文件断言它保持可见且不夹带驱动原文。
 //
 // 本文件把 products 表改名制造真实故障（relation "products" does not exist，SQLSTATE 42P01），
 // 先反证 service 层原始错误确实带这些指纹，再断言页面里没有它们、只有归口文案，
@@ -35,7 +36,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/public/test/support"
 )
 
@@ -173,25 +174,26 @@ func TestContentTemplatesBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	if env == nil {
 		return
 	}
-	form := url.Values{"projectId": {env.projectID}}
+	form := url.Values{}
 	// 用高于上限一条即触发整批拒绝（不依赖 @10 这类经验数字）。
 	for i := 0; i < shell.MaxBulkIDs+1; i++ {
 		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
-	req := httptest.NewRequest(http.MethodPost, "/admin/content-templates/bulk-delete", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost,
+		"/admin/content-templates/bulk-delete?project="+env.projectID,
+		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应为 302，实际 %d，body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("超限应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	raw := rec.Header().Get("Location")
-	assertNoContentTemplateInternalLeak(t, "302 Location", raw)
-	u, perr := url.Parse(raw)
-	if perr != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", perr, raw)
+	body := rec.Body.String()
+	assertNoContentTemplateInternalLeak(t, "批量超限提示页", body)
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("超限应渲染失败态提示页，body=%s", body)
 	}
-	if got := u.Query().Get("err"); !strings.Contains(got, "一次最多操作") {
-		t.Fatalf("受控提示应保持可见，实际 ?err=%q", got)
+	if !strings.Contains(body, "一次最多操作") {
+		t.Fatalf("受控提示应保持可见，body=%s", body)
 	}
 }

@@ -415,19 +415,13 @@ func TestProductPageCreateContainerSKUTakenChineseError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("业务失败应 302 回列表页，实际 %d", rec.Code)
-	}
-	location, derr := url.QueryUnescape(rec.Header().Get("Location"))
-	if derr != nil {
-		t.Fatalf("回跳地址解码失败: %v", derr)
-	}
-	if !strings.Contains(location, "已被其它商品占用") {
-		t.Fatalf("页面应给出可读的中文业务文案，实际 %s", location)
+	body := assertJumpErr(t, rec)
+	if !strings.Contains(body, "已被其它商品占用") {
+		t.Fatalf("页面应给出可读的中文业务文案，body=%s", body)
 	}
 	for _, leak := range []string{"uq_products", "23505", "SQLSTATE", "ErrContainerSKUTaken", "duplicate key"} {
-		if strings.Contains(location, leak) {
-			t.Fatalf("回跳地址不得泄漏内部细节 %q：%s", leak, location)
+		if strings.Contains(body, leak) {
+			t.Fatalf("提示页不得泄漏内部细节 %q：%s", leak, body)
 		}
 	}
 }
@@ -594,12 +588,9 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("创建应 302（成功去编辑页），实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	location := rec.Header().Get("Location")
-	if !strings.Contains(location, "/admin/products/edit") {
-		t.Fatalf("成功应去商品编辑页，实际 %s", location)
+	assertJumpOK(t, rec)
+	if back := jumpBackHref(t, rec); !strings.Contains(back, "/admin/products/edit") {
+		t.Fatalf("成功应去商品编辑页，实际回跳 %s", back)
 	}
 	var productID string
 	if derr := f.db.Raw("SELECT id FROM products WHERE slug = ?", "form-multi-wh").Scan(&productID).Error; derr != nil {
@@ -646,8 +637,9 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "/admin/products/edit") {
-			t.Fatalf("创建 %s 失败：%d %s", name, rec.Code, rec.Header().Get("Location"))
+		assertJumpOK(t, rec)
+		if back := jumpBackHref(t, rec); !strings.Contains(back, "/admin/products/edit") {
+			t.Fatalf("创建 %s 失败：回跳 %s", name, back)
 		}
 	}
 	productIDOf := func(slug string) string {
@@ -683,9 +675,7 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(bad.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	engine.ServeHTTP(rec, req)
-	if strings.Contains(rec.Header().Get("Location"), "/admin/products/detail") {
-		t.Fatalf("负数数量应被拒绝，实际去了详情页: %s", rec.Header().Get("Location"))
-	}
+	assertJumpErr(t, rec)
 	if id := productIDOf("form-neg"); id != "" {
 		t.Fatalf("被拒的请求不该落库，实际商品 %s", id)
 	}

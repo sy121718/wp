@@ -21,7 +21,7 @@ import (
 	commentcontract "go_wp/internal/module/comment/contract"
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 )
 

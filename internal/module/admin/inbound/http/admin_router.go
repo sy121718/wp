@@ -3,12 +3,12 @@ package adminhttp
 import (
 	"time"
 
-	"go_wp/internal/middleware/builtin"
-	admincontract "go_wp/internal/module/admin/contract"
-	adminservice "go_wp/internal/module/admin/service"
-	"go_wp/internal/permission"
-
 	"gorm.io/gorm"
+
+	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/module/admin/contract"
+	"go_wp/internal/module/admin/service"
+	"go_wp/internal/permission"
 )
 
 // 登录接口按 IP 限流参数：与验证码限流 + 失败计数原子锁定构成三层防线，
@@ -50,7 +50,6 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 	{
 		auth.POST("/logout", permission.Exempt, handle.AdminLogout)
 		auth.GET("/profile", permission.Exempt, handle.AdminProfile)
-		auth.GET("/routes", permission.Exempt, handle.AdminRoutes)
 	}
 
 	authorized := admin.Group("").Use(

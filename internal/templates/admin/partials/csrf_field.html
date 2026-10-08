@@ -1,0 +1,23 @@
+{* admin/partials/csrf_field.html — 原生表单的 CSRF 隐藏域（唯一写法）。
+
+   为什么要有它：同一个 1 行的隐藏域，全仓手写了 **234 处、9 种拼法**
+   （`{{csrf}}` 182 处、直取 chain 28 处、`{{ .CSRFToken }}` 9 处、
+   `{{csrfToken}}` 5 处、`{{.Csrf}}` 5 处，以及并行改动时为避让同名而生的
+   `cfCsrf` / `ceCsrf` / `ccCsrf`）—— 那三个前缀就是「没有共用片段」的直接代价。
+
+   取值的真源是 shell.Prepare 注入的数据键 csrf_token（后台页面与访客页面都走它）；
+   `fragments/*.jet` 的数据是 struct，字段名是 CSRFToken，**不能用本片段**，
+   它们照旧写点号取字段。
+
+   用法：子目录页面 import 相对路径 ../partials/csrf_field.html，根下页面写
+   partials/csrf_field.html；然后在表单里 yield csrfField()。
+   只有原生 form POST 需要它 —— HTMX 请求经 body[hx-headers] 继承，不用加。
+
+   为什么用 chain 索引而不是点号取字段：缺键时 chain 索引给空串（页面照常渲染，
+   提交被 CSRF 中间件拒），点号取字段会抛错 → 整页 500。同一条判据见 AGENTS.md「模板渲染」。
+
+   注意 Jet 的注释块不能嵌套：本文件的注释里刻意不写内层定界符（写成 delimiters
+   而不是字面符号），写了会让注释提前终止、文件尾解析报 unexpected EOF，
+   而 i18n 门禁按「非贪婪」剥注释，也会因此把注释后半段当成未 key 化的中文文案。 *}
+
+{{block csrfField()}}<input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">{{end}}

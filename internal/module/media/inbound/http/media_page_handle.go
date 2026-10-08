@@ -10,18 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 )
-
-// SetupMediaPages 注册媒体库页面（/admin 组，中间件链由装配层统一挂好）。
-// 函数名沿用 SetupXxxPages 先例：本包已有 REST 路由的 SetupMediaRoutes，不能同名。
-// adminPages 为 nil 时整体跳过。
-func SetupMediaPages(adminPages *gin.RouterGroup) {
-	if adminPages == nil {
-		return
-	}
-	adminPages.GET("/media", MediaPage)
-}
 
 // MediaPage 媒体库页面（左树右库：无限级分类筛选 + WP 式媒体网格/列表）。
 // 页面骨架由模板渲染，数据与交互由 media-admin.js 驱动（复用 /api/media/*）。

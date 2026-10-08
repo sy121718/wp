@@ -15,6 +15,6 @@
 
 INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 VALUES
-    ('shell.err.bulkIdsTooMany', 'zh-CN', '一次最多操作 %s 项，当前 %s 项，请分批进行', 400, 'error', 'internal/web/shell/bulk.go', 1, now(), now()),
-    ('shell.err.bulkIdsTooMany', 'en-US', 'At most %s items can be operated at once; %s selected, please split into batches.', 400, 'error', 'internal/web/shell/bulk.go', 1, now(), now())
+    ('shell.err.bulkIdsTooMany', 'zh-CN', '一次最多操作 %s 项，当前 %s 项，请分批进行', 400, 'error', 'internal/shell/bulk.go', 1, now(), now()),
+    ('shell.err.bulkIdsTooMany', 'en-US', 'At most %s items can be operated at once; %s selected, please split into batches.', 400, 'error', 'internal/shell/bulk.go', 1, now(), now())
 ON CONFLICT (item_key, lang) DO NOTHING;

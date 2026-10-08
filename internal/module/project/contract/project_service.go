@@ -28,7 +28,7 @@ type (
 // RetentionPolicyReader 工程级数据保留策略读取。
 //
 // 单独开一个接口，而不是把方法塞进 ProjectService：ProjectService 的实现方遍布测试
-//（二十多个 fake），加一个方法会让它们全部编译失败，而它们里没有一个碰保留期。
+// （二十多个 fake），加一个方法会让它们全部编译失败，而它们里没有一个碰保留期。
 // 装配层注入的具体类型（*projectservice.Service）同时满足两个接口，消费方按需取窄的那个。
 //
 // 保留期那一列（`projects.analytics_retention_days`，迁移 161）长在本模块的表上，

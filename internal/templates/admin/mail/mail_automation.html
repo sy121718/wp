@@ -14,7 +14,10 @@
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
 {* 批量删除复用单条删除的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
-{{canDeleteAutomation := isset(.PermSet["mail:automation_delete"])}}
+{{canDeleteAutomation := isset(.Buttons["mail.automation_delete"])}}
+{* 批量删除表单 action 的筛选上下文（服务端拼、回跳由 shell.BackPath 读回）：
+    批量删完不会被弹回第 1 页。可选键用 isset 兜底成空串（Jet 无 ??）。 *}
+{{listQuery := ""}}{{if isset(.ListQuery)}}{{listQuery = .ListQuery}}{{end}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -34,17 +37,10 @@
     </div>
   </header>
 
-  {* 可选键一律 isset 包裹：取数失败的分支只注入 Err（不带 Ok / Done），
-     直接比较会让整页在此中断（HTTP 仍 200、正文整块消失）。 *}
+  {* Err 只来自**取数失败**分支（写动作的结论走 shell.RenderJump 提示页，见 mail_jump.go）——
+     可选键一律 isset 包裹：直接比较会让整页在此中断（HTTP 仍 200、正文整块消失）。 *}
   {{if isset(.Err)}}{{if .Err != ""}}
   <p class="badge badge-warning" role="alert">{{.Err}}</p>
-  {{end}}{{end}}
-  {{if isset(.Ok)}}{{if .Ok != ""}}
-  <p class="badge badge-success" role="status">{{.Ok}}</p>
-  {{end}}{{end}}
-  {* Done：批量动作的结论（全成功走 ?done=，有跳过走 ?err=）。 *}
-  {{if isset(.Done)}}{{if .Done != ""}}
-  <p class="badge badge-info" role="status">{{.Done}}</p>
   {{end}}{{end}}
 
   <section class="card list-card">
@@ -53,7 +49,7 @@
     </div>
     {* 批量删除 form：勾选框提交流程主键 id，handler 逐条走单条删除路径
        （单条失败不中断整批，结论按「成功 N / 跳过 M」回带）。 *}
-    <form method="post" action="/admin/mail/automations/bulk-delete">
+    <form method="post" action="/admin/mail/automations/bulk-delete{{listQuery}}">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
       {{if canDeleteAutomation}}{{if len(.Automations) > 0}}

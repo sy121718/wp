@@ -92,7 +92,7 @@ func TestSiteSettingsRendersLocaleGroup(t *testing.T) {
 	// 标题层级因此从 h2 变成 .fold-title；分组还是同一个分组。
 	for _, want := range []string{
 		`<span class="fold-title">语言</span>`,
-		`action="/admin/settings/locales/save"`,
+		`action="/admin/settings/locales/save?project=`,
 		`id="locale-rows"`,
 		`name="langs" value="zh-CN"`,
 		`name="langs" value="en-US"`,
@@ -151,7 +151,7 @@ func TestLocaleRowsFragmentAddAndRemove(t *testing.T) {
 	}
 }
 
-// TestSaveSiteLocalesPersists 全量保存：303 回跳 + 落库 + 回读一致。
+// TestSaveSiteLocalesPersists 全量保存：整页成功提示 + 落库 + 回读一致。
 func TestSaveSiteLocalesPersists(t *testing.T) {
 	router, projects, projectID, _ := newSiteLocalesEnv(t)
 
@@ -161,11 +161,11 @@ func TestSaveSiteLocalesPersists(t *testing.T) {
 		"defaultIndex": {"0"},
 		"enabledIndex": {"0", "1"}, // ja 禁用
 	})
-	if saved.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回跳，实际 %d：%s", saved.Code, saved.Body.String())
+	if saved.Code != http.StatusOK {
+		t.Fatalf("保存成功应 200 渲染提示页，实际 %d：%s", saved.Code, saved.Body.String())
 	}
-	if loc := saved.Header().Get("Location"); !strings.Contains(loc, "locales_saved=1") {
-		t.Fatalf("回跳地址应带保存标记，实际 %q", loc)
+	if !strings.Contains(saved.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("响应不是成功提示页（缺 data-jump-state=\"ok\"）:\n%s", saved.Body.String())
 	}
 
 	rows := localeLangs(t, projects, projectID)
@@ -177,13 +177,6 @@ func TestSaveSiteLocalesPersists(t *testing.T) {
 	}
 	if rows[2].Lang != "ja" || rows[2].Enabled {
 		t.Fatalf("ja 应为禁用状态：%+v", rows[2])
-	}
-
-	// 页面回显保存成功提示。
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/admin/settings?project="+projectID+"&locales_saved=1", nil))
-	if !strings.Contains(recorder.Body.String(), "语言清单已保存") {
-		t.Fatal("回跳页应显示保存成功提示")
 	}
 }
 

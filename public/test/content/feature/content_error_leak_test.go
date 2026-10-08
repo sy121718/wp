@@ -2,9 +2,10 @@ package feature
 
 // content_error_leak_test.go — 文章后台页不直出内部错误（第三波 CQ-009 形态 ②③）。
 //
-// 形态③（模板数据）与形态②（?err= 回带）都不是可信边界：
+// 形态③（模板数据）与形态②（写动作结论）都不是可信边界：
 //   - GET /admin/articles/translations 把读取失败写进 data.Errors，模板直接渲染；
-//   - POST /admin/articles/bulk-delete 把结论文案拼进 ?err=，列表页回显。
+//   - POST /admin/articles/delete 与 /bulk-delete 的结论由 shell.RenderJump 渲染成
+//     整页提示（原先 302 + ?err= 回带列表页，那条通道已整批删除）。
 //
 // 本文件制造一个**真实的基础设施错误** —— 把 contents 表改名，查询立刻报
 // relation "contents" does not exist (SQLSTATE 42P01) —— 先反证 service 层的原始错误
@@ -27,7 +28,7 @@ import (
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/public/test/support"
 )
 
@@ -113,21 +114,19 @@ func TestArticleDeleteKeepsBusinessErrorText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应为 302，实际 %d，body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应渲染整页提示（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	raw := rec.Header().Get("Location")
-	assertNoContentInternalLeak(t, "302 Location", raw)
-	u, perr := url.Parse(raw)
-	if perr != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", perr, raw)
+	body := rec.Body.String()
+	assertNoContentInternalLeak(t, "文章删除提示页 HTML", body)
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("业务失败应是 err 态提示页：%s", body[:min(len(body), 240)])
 	}
-	got := u.Query().Get("err")
-	if strings.Contains(got, "系统内部错误") {
-		t.Fatalf("业务错误被吞成归口文案：?err=%q", got)
+	if !strings.Contains(body, "这篇文章不存在") {
+		t.Fatalf("业务文案应原样可见（文章不存在）：%s", body[:min(len(body), 400)])
 	}
-	if !strings.Contains(got, "这篇文章不存在") {
-		t.Fatalf("业务文案应原样可见（文章不存在），实际 ?err=%q", got)
+	if strings.Contains(body, "系统内部错误") {
+		t.Fatalf("业务错误被吞成归口文案")
 	}
 }
 
@@ -146,16 +145,15 @@ func TestArticlesBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应为 302，实际 %d，body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("应渲染整页提示（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	raw := rec.Header().Get("Location")
-	assertNoContentInternalLeak(t, "302 Location", raw)
-	u, perr := url.Parse(raw)
-	if perr != nil {
-		t.Fatalf("Location 无法解析：%v（%s）", perr, raw)
+	body := rec.Body.String()
+	assertNoContentInternalLeak(t, "批量删除提示页 HTML", body)
+	if !strings.Contains(body, `data-jump-state="err"`) {
+		t.Fatalf("超限应是 err 态提示页：%s", body[:min(len(body), 240)])
 	}
-	if got := u.Query().Get("err"); !strings.Contains(got, "一次最多操作") {
-		t.Fatalf("受控提示应保持可见，实际 ?err=%q", got)
+	if !strings.Contains(body, "一次最多操作") {
+		t.Fatalf("受控提示应保持可见：%s", body[:min(len(body), 400)])
 	}
 }

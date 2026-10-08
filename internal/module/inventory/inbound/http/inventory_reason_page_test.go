@@ -10,9 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
-	"go_wp/internal/web/shell"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	"go_wp/internal/shell"
 )
 
 type reasonUpdateSpy struct {
@@ -31,14 +34,14 @@ func (s *reasonUpdateSpy) UpdateReason(_ context.Context, req *inventorydto.Upda
 
 func TestInventoryReasonsBulkStatus(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		values      url.Values
-		failID      string
-		wantCalls   int
-		wantMessage string
+		name      string
+		values    url.Values
+		failID    string
+		wantCalls int
+		wantTitle string
 	}{
 		{"partial", url.Values{"projectId": {"p1"}, "status": {"disabled"}, "ids": {"1", "2", "1"}}, "2", 2, "已更新"},
-		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, "err="},
+		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, inventoryenums.ErrReasonStatusInvalid},
 		{"empty selection", url.Values{"projectId": {"p1"}, "status": {"active"}}, "", 0, "请选择要操作的原因"},
 		{"limit", func() url.Values {
 			v := url.Values{"projectId": {"p1"}, "status": {"active"}}
@@ -49,16 +52,21 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 		}(), "", 0, "一次最多操作"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, rec, _ := inventoryFormContext(t, tc.values, false)
+			c, rec, view := inventoryFormContext(t, tc.values, false)
 			spy := &reasonUpdateSpy{failID: tc.failID}
 			(&inventoryPageHandle{inventory: spy}).InventoryReasonsBulkStatus(c)
 			c.Writer.WriteHeaderNow()
-			if rec.Code != http.StatusFound {
-				t.Fatalf("status %d", rec.Code)
+			// 结论由提示页在响应体里渲染（取代原先的 302 + ?err= / ?done=）。
+			if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
+				t.Fatalf("状态码 %d 模板 %q，want 200 admin/jump.html", rec.Code, view.name)
 			}
-			location := rec.Header().Get("Location")
-			if !strings.Contains(location, tc.wantMessage) && !strings.Contains(location, url.QueryEscape(tc.wantMessage)) {
-				t.Errorf("location %s lacks %q", location, tc.wantMessage)
+			data, ok := view.data.(gin.H)
+			if !ok {
+				t.Fatalf("提示页数据 %T", view.data)
+			}
+			title, _ := data["title"].(string)
+			if !strings.Contains(title, tc.wantTitle) {
+				t.Errorf("提示文案 %q 缺少 %q", title, tc.wantTitle)
 			}
 			if len(spy.calls) != tc.wantCalls {
 				t.Fatalf("calls = %d, want %d", len(spy.calls), tc.wantCalls)
@@ -73,7 +81,7 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 }
 
 func TestInventoryReasonBulkUsesUpdatePermission(t *testing.T) {
-	body, err := os.ReadFile("inventory_router.go")
+	body, err := os.ReadFile("inventory_page_router.go")
 	if err != nil {
 		t.Fatal(err)
 	}

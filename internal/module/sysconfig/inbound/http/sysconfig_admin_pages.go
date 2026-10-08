@@ -21,7 +21,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -109,10 +109,6 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 			errText = sysconfigErrText(c, coerr)
 		}
 	}
-	doneText := ""
-	if c.Query("done") == "1" {
-		doneText = shell.TranslateFor(c)("admin.system.saved", "系统设置已保存（全局默认值立即对读取方生效）")
-	}
 	c.HTML(http.StatusOK, "admin/system/settings", shell.Prepare(c, gin.H{
 		"title":           shell.TranslateFor(c)(sysconfigenums.AdminSystemTitle, "系统设置"),
 		"I18N":            i18nGroup,
@@ -121,8 +117,7 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 		"CurrencyOptions": currencies,
 		"CountryOptions":  countries,
 		"ModeOptions":     siteLangURLModeValues,
-		"Err":             errText,
-		"Done":            doneText,
+		"LoadErr":         errText,
 	}))
 }
 
@@ -137,18 +132,18 @@ func (h *AdminHandle) SystemSave(c *gin.Context) {
 	tradeVersion := parseVersion(c.PostForm("tradeVersion"))
 
 	if msg := h.validateOptions(c, lang, mode, country, currency); msg != "" {
-		sysconfigRedirect(c, msg)
+		sysconfigJump(c, false, msg)
 		return
 	}
 
 	i18nGroup, errText := h.loadGroup(c, groupI18N)
 	if errText != "" {
-		sysconfigRedirect(c, errText)
+		sysconfigJump(c, false, errText)
 		return
 	}
 	tradeGroup, errText := h.loadGroup(c, groupTrade)
 	if errText != "" {
-		sysconfigRedirect(c, errText)
+		sysconfigJump(c, false, errText)
 		return
 	}
 	// 版本以**页面提交的**为准（乐观锁前置条件），而不是刚读出来的当前值 ——
@@ -167,10 +162,10 @@ func (h *AdminHandle) SystemSave(c *gin.Context) {
 		UpdateBy: int64(shell.CurrentUserID(c)),
 	}); err != nil {
 		logger.Scene("sysconfig").With("path", c.Request.URL.Path).Error(err, "系统设置保存失败")
-		sysconfigRedirect(c, sysconfigErrText(c, err))
+		sysconfigJump(c, false, sysconfigErrText(c, err))
 		return
 	}
-	c.Redirect(http.StatusSeeOther, "/admin/system?done=1")
+	sysconfigJump(c, true, shell.TranslateFor(c)("admin.system.saved", "系统设置已保存（全局默认值立即对读取方生效）"))
 }
 
 // loadGroup 读一组配置；组不存在返回可读提示（本页不凭空建组）。

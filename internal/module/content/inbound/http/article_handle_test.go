@@ -146,11 +146,25 @@ func TestArticleUpdateMissingIDAndMetadataFailure(t *testing.T) {
 	}
 }
 
-func TestArticleUpdateSuccessRetainsRedirect(t *testing.T) {
+// TestArticleUpdateSuccessRendersJumpPage 成功不再 302 + ?ok=，改由提示页渲染整页提示。
+//
+// 断言的是**新的传输通道**：HTTP 200 + data-jump-state="ok" + 归口文案 + 回编辑页地址，
+// 而不是旧的 Location 头（那条通道的读侧判定已整批删除）。
+func TestArticleUpdateSuccessRendersJumpPage(t *testing.T) {
 	s := &articleUpdateContentStub{item: &contentdto.ContentResp{ID: "a1"}}
 	rec := articleUpdatePost(articleUpdateTestEngine(s), url.Values{"id": {"a1"}, "title": {"更新"}})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "/admin/articles/edit?id=a1") {
-		t.Fatalf("成功跳转变化: status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("成功应渲染提示页（200），实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`data-jump-state="ok"`,
+		"已保存", // articleFacingMessages[articleSavedText] 的中文兜底
+		"/admin/articles/edit?id=a1",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("成功提示页缺少 %q：%s", want, body[:min(len(body), 240)])
+		}
 	}
 	if s.getCalls != 0 {
 		t.Errorf("成功路径不应为回填读取数据库: %d", s.getCalls)

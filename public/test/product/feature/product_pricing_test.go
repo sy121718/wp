@@ -717,7 +717,7 @@ func TestPricingHasNoBuildPipelineDependency(t *testing.T) {
 		"go_wp/internal/module/artifact",
 		"go_wp/internal/module/publication",
 	}
-	for _, name := range []string{"product_pricing.go", "product_pricing_rule.go"} {
+	for _, name := range []string{"product_pricing.go"} {
 		raw, err := os.ReadFile(filepath.Join(serviceDir, name))
 		if err != nil {
 			t.Fatalf("读定价源码失败（%s）: %v", name, err)
@@ -891,14 +891,13 @@ func TestPricingAdminPages(t *testing.T) {
 		t.Fatalf("页面上不应出现 enums 裸 key，实际 %s", rec.Body.String())
 	}
 
-	// 应用：302 回列表并带 applied=1，价格落库、留痕可见。
+	// 应用：成功态提示页（回执含本次改动数），价格落库、留痕可见。
 	form.Set("note", "后台改价")
 	rec = postForm(engine, "/admin/product-pricing/apply", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("应用应 302，实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "applied=1") {
-		t.Fatalf("应用后应带 applied=1 回跳，实际 %s", loc)
+	appliedBody := rec.Body.String()
+	assertJumpOK(t, rec)
+	if !strings.Contains(appliedBody, "1 个变体") {
+		t.Fatalf("应用成功回执应含本次改动数，body=%s", appliedBody)
 	}
 	if got := pfPriceOf(t, f, pfGetProduct(t, f, p.ID).Variants[0].SKUCode); got != 66.99 {
 		t.Fatalf("应用后库里应为 66.99，实际 %v", got)
@@ -911,9 +910,7 @@ func TestPricingAdminPages(t *testing.T) {
 		}
 	}
 
-	// 无改动时应用：302 回列表并带 err=（不写空台账）。
+	// 无改动时应用：失败态提示页（不写空台账）。
 	rec = postForm(engine, "/admin/product-pricing/apply", form)
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("无改动应用应带 err 回跳，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertJumpErr(t, rec)
 }

@@ -141,7 +141,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Categories": []gin.H{{"ID": "c1", "Name": "男装", "Slug": "men", "Label": "男装", "Sort": 0,
 			"SEOTitle": "", "SEODescription": "", "Description": "", "Image": "", "ParentID": ""}},
 		// SEO 按钮在每行的编辑抽屉里，而抽屉由权限决定显隐 —— 不给权限时整块不渲染。
-		"PermSet": map[string]any{"product:category_update": true},
+		"Buttons": map[string]any{"product.category_update": true},
 		"Err":     "",
 	}))
 	for _, want := range []string{"hx-post=\"/admin/product-categories/seo-score\"", "id=\"category-seo-score-c1\""} {
@@ -155,7 +155,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
 		"Brands": []gin.H{{"ID": "b1", "Name": "示例品牌", "Slug": "demo", "Sort": 0,
 			"Logo": "", "SEOTitle": "", "SEODescription": "", "Description": ""}},
-		"PermSet": map[string]any{"product:brand_update": true},
+		"Buttons": map[string]any{"product.brand_update": true},
 		"Err":     "",
 	}))
 	for _, want := range []string{"hx-post=\"/admin/product-brands/seo-score\"", "id=\"brand-seo-score-b1\""} {

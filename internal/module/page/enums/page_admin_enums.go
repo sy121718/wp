@@ -52,11 +52,8 @@ const (
 
 // —— 重定向管理页的错误码（`admin.redirect.err.*`）——
 //
-// 同一批 key 有两个取用者：把 query 带回的 code **收敛到白名单**（redirectErrKeyFromCode）
-// 与把业务错误**映射成 key**（redirectErrKey）。两者原先各写一份字面量 —— 新增一个错误码
-// 只改一处就会「写得出来、读不回来」：映射给出的 key 不在白名单里，回跳后提示静默消失。
-// 常量共用同一份，两处形态（白名单 / 映射）各自保留。
-// 中文兜底留在调用点（词条缺失时的回落），不在这里。
+// 业务错误经 redirectErrKey **映射成 key**，再由 redirectErrText 取当前语言文案渲染进
+// 整页提示（shell.RenderJump）。中文兜底留在调用点（词条缺失时的回落），不在这里。
 const (
 	// RedirectErrOccupied 目标路径已被占用（页面路径或既有重定向）。
 	RedirectErrOccupied = "admin.redirect.err.occupied"

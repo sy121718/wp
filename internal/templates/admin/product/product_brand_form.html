@@ -3,7 +3,7 @@
 {{fill := isset(.FormEcho)}}{{tr := .["t"]}}{{create := .Mode == "create"}}
 <div data-brand-form-host>
     {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
-    <form method="post" action="/admin/product-brands/{{if create}}create{{else}}update{{end}}" class="form-stack" hx-post="/admin/product-brands/{{if create}}create{{else}}update{{end}}" hx-target="closest [data-brand-form-host]" hx-swap="outerHTML">
+    <form method="post" action="/admin/product-brands/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" class="form-stack" hx-post="/admin/product-brands/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-brand-form-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{.Csrf}}">
         <input type="hidden" name="projectId" value="{{if fill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
         {{if !create}}<input type="hidden" name="id" value="{{if fill}}{{.FormEcho.id}}{{else}}{{.ID}}{{end}}">{{end}}

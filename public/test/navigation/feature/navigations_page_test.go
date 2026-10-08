@@ -19,7 +19,7 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +31,7 @@ func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string,
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/navigations", func(c *gin.Context) {
 		c.Set(shell.PermSetKey, perms)
+		c.Set(shell.ButtonsKey, buttonsOf(perms))
 		page(c)
 	})
 
@@ -57,6 +58,17 @@ func TestNavigationsPageRenders(t *testing.T) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
+	// 写动作的表单 action 带上本次筛选：回跳地址由 shell.BackPath 从它读回（结论走提示页响应体）。
+	for _, want := range []string{
+		"/admin/navigations/create?project=" + projectID + "&amp;kind=header",
+		"/admin/navigations/bulk-delete?project=" + projectID + "&amp;kind=header",
+		"/admin/navigations/move?project=" + projectID + "&amp;kind=header",
+		"/admin/navigations/delete?project=" + projectID + "&amp;kind=header",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("写表单 action 未带筛选上下文：%q", want)
+		}
+	}
 }
 
 // TestNavigationsPageShowsSourceCandidates 管理页展示来源候选（按来源分组勾选添加）。
@@ -80,6 +92,9 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
+	if want := "/admin/navigations/add-source?project=" + projectID + "&amp;kind=header"; !strings.Contains(body, want) {
+		t.Errorf("来源抽屉 action 未带筛选上下文：%q", want)
+	}
 
 	withoutUpdate := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{})
 	if !strings.Contains(withoutUpdate, "导航菜单") {
@@ -93,4 +108,14 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 			t.Errorf("无更新权限时页面仍出现操作 %q", forbidden)
 		}
 	}
+}
+
+// buttonsOf 把「权限码集合」转成「按钮码集合」（按钮码 = 权限码的 slug 形式，见迁移 589）。
+// 测试直接给权限码更贴近业务语义；模板读的是按钮码，所以两条都注入。
+func buttonsOf(perms map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(perms))
+	for code := range perms {
+		out[strings.ReplaceAll(code, ":", ".")] = true
+	}
+	return out
 }

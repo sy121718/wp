@@ -18,7 +18,6 @@
   background: var(--ui-surface-2, #eef1f5); color: var(--ui-text-2, #556);
 }
 .auto-status { font-size: 13px; color: var(--ui-text-2, #556); }
-.auto-warn { color: #b3261e; }
 .auto-hint { font-size: 13px; color: var(--ui-text-2, #556); line-height: 1.6; }
 .auto-hint kbd {
   font: inherit; font-size: 12px; padding: 0 5px; border-radius: 4px;

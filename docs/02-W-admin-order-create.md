@@ -83,7 +83,7 @@ service 只需为「开号策略」加一个显式开关。
 
 ## 2. 表单字段：`CreateOrderReq` 全字段与必填性
 
-### 现状（回代码，dto/order_req.go + service/order_create.go + order_create_draft.go）
+### 现状（回代码，dto/order_req.go + service/order.go 的 createOrder / buildOrderDraft）
 
 必填只有三处形状校验（`validateCreateOrderReq`，不碰数据库）：
 
@@ -202,7 +202,7 @@ service 只需为「开号策略」加一个显式开关。
 ### 现状（回代码，逐条精确）
 
 ```text
-buildOrderDraft（order_create_draft.go）
+buildOrderDraft（service/order.go）
   └── 无条件调用 s.ensureGuestAccount(ctx, req)           ← 不看 CreatedVia
 
 ensureGuestAccount
@@ -266,7 +266,7 @@ user.Service.EnsureGuestAccount（user_guest_account.go）
 
 ### 影响面 / 风险
 
-- 影响面：`dto/order_req.go`（1 字段）、`service/order_create_draft.go`（`ensureGuestAccount` 出入口判定）、
+- 影响面：`dto/order_req.go`（1 字段）、`service/order.go`（`buildOrderDraft` 出入口判定）、
   新页面模板、`public/test/order/feature/order_guest_account_test.go`（新增用例，不改既有两条）。
 - 风险：**`user_id` 为空的订单在账户中心不可见**（B/C 的共同代价）。建议同批在 `docs/10-todo.md`
   记一条后继需求「客户登录后按邮箱认领历史订单」，并在客服可见处（订单详情）显示「客户账号：未关联」。
@@ -444,5 +444,5 @@ SKU / 商品 / 规格 / 价格 / **可用量**（服务端走 `VariantAvailabili
 | `operatorFromContext` 会置 `CreatedVia="admin"` 并落 `CreateBy` | ✅ `order_handle.go` 的 `CreateOrder`（仅在 `CreatedVia == ""` 时补，且要求取到操作人） |
 | `AdminNote` 注释写明「自建订单（createdVia=admin）」 | ✅ `dto/order_req.go` |
 | `Attribution` 允许 nil | ✅ `marshalAttribution` nil → `{}`（列 NOT NULL） |
-| `operatorTypeOf` 有 `CreatedViaAdmin → OperatorTypeAdmin` | ✅ `order_create.go`，并在 `order_create_persist.go` 落进状态流转日志 |
+| `operatorTypeOf` 有 `CreatedViaAdmin → OperatorTypeAdmin` | ✅ `service/order.go` 的 `operatorTypeOf`，并在 `persistOrderTx` 落进状态流转日志 |
 | 缺的只是后台 UI：`/admin/orders` 无建单入口 | ✅ 页面路由仅 GET + 5 个 POST 写动作；`routes.snapshot` 侧由 `TestOrdersEmptyCopyMatchesRoutes` 的判据 ① 钉着 |

@@ -26,6 +26,8 @@ func TestAdminI18nEditDrawerExactPairAndWrite(t *testing.T) {
 			pages.Use(func(c *gin.Context) {
 				c.Set("user_id", int64(99123))
 				c.Set("perm_set", map[string]bool{"i18n:manage": true})
+				// 模板读的是按钮码（shell.ButtonsKey），权限码集合只留给 Go 侧判断。
+				c.Set("button_set", map[string]bool{"i18n.manage": true})
 				c.Next()
 			})
 			adminhttp.SetupAdminPages(pages, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -84,10 +86,15 @@ func TestAdminI18nEditDrawerExactPairAndWrite(t *testing.T) {
 		t.Fatalf("GET: %d %v %s", found.Code, found.Header(), found.Body.String())
 	}
 	html := strings.TrimSpace(found.Body.String())
-	for _, want := range []string{"<div data-drawer-fragment>", `action="/admin/i18n/update"`, `hx-post="/admin/i18n/update"`, `name="csrf_token"`, `name="key" value="drawer.exact.test"`, `name="lang" value="en-US"`, `name="_keyword" value="drawer"`, `name="_lang" value="en-US"`, `name="_page" value="2"`, "Old English"} {
+	for _, want := range []string{"<div data-drawer-fragment>", `action="/admin/i18n/update?`, `hx-post="/admin/i18n/update?`, `name="csrf_token"`, `name="key" value="drawer.exact.test"`, `name="lang" value="en-US"`, "keyword=drawer", "lang=en-US", "page=2", "Old English"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("GET missing %q: %s", want, html)
 		}
+	}
+	// 列表筛选随表单 action 的 query 提交（服务端渲染时拼、POST 回来由 shell.BackPath 读回）：
+	// 原先的 _keyword/_lang/_category/_page 隐藏域已删除，不能再用它承载返回上下文。
+	if strings.Contains(html, `name="_keyword"`) || strings.Contains(html, `name="_page"`) {
+		t.Fatalf("隐藏域式返回上下文应已删除：%s", html)
 	}
 	if strings.Contains(html, "旧中文") || strings.Contains(html, "<html") || !strings.HasSuffix(html, "</div>") {
 		t.Fatalf("GET not exact single fragment: %s", html)
@@ -136,7 +143,7 @@ func TestAdminI18nEditDrawerExactPairAndWrite(t *testing.T) {
 	}
 	form.Set("value", "New <translation> & user text")
 	saved := request(http.MethodPost, "/admin/i18n/update", form, true)
-	if saved.Code != 200 || !strings.HasPrefix(saved.Header().Get("HX-Redirect"), "/admin/i18n?") || saved.Header().Get("Location") != "" {
+	if saved.Code != 200 || !strings.HasPrefix(saved.Header().Get("HX-Redirect"), "/admin/i18n") || saved.Header().Get("Location") != "" {
 		t.Fatalf("HX success: %d %v %s", saved.Code, saved.Header(), saved.Body.String())
 	}
 	entry, err := i18n.GetEntry(t.Context(), "drawer.exact.test", "en-US")
@@ -149,12 +156,12 @@ func TestAdminI18nEditDrawerExactPairAndWrite(t *testing.T) {
 	}
 	form.Set("value", "")
 	nativeFailed := request(http.MethodPost, "/admin/i18n/update", form, false)
-	if nativeFailed.Code != http.StatusFound || !strings.Contains(nativeFailed.Header().Get("Location"), "errored=") {
-		t.Fatalf("native failure: %d %v", nativeFailed.Code, nativeFailed.Header())
+	if nativeFailed.Code != http.StatusOK || !strings.Contains(nativeFailed.Body.String(), `data-jump-state="err"`) {
+		t.Fatalf("native failure 应渲染失败提示页：%d %v %s", nativeFailed.Code, nativeFailed.Header(), nativeFailed.Body.String())
 	}
 	form.Set("value", "Native saved")
 	native := request(http.MethodPost, "/admin/i18n/update", form, false)
-	if native.Code != http.StatusSeeOther || native.Header().Get("HX-Redirect") != "" || !strings.HasPrefix(native.Header().Get("Location"), "/admin/i18n?") {
-		t.Fatalf("native success: %d %v", native.Code, native.Header())
+	if native.Code != http.StatusOK || native.Header().Get("HX-Redirect") != "" || !strings.Contains(native.Body.String(), `data-jump-state="ok"`) {
+		t.Fatalf("native success 应渲染成功提示页：%d %v %s", native.Code, native.Header(), native.Body.String())
 	}
 }

@@ -51,9 +51,9 @@ func TestSourcePageMultiDeviceContract(t *testing.T) {
 		t.Fatalf("货源页模板不应引入自定义 JS（交互由原生表单完成）")
 	}
 	expectedForms := []string{
-		`action="/admin/inventory/sources/create"`,
-		`action="/admin/inventory/sources/update"`,
-		`action="/admin/inventory/sources/delete"`,
+		`action="/admin/inventory/sources/create?`,
+		`action="/admin/inventory/sources/update?`,
+		`action="/admin/inventory/sources/delete?`,
 	}
 	for _, want := range expectedForms {
 		if !strings.Contains(body, want) {

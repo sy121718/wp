@@ -1,14 +1,15 @@
-// product_router.go — product 模块路由自装配（issue #5 / T3a）。
-// 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。
 package producthttp
+
+// product_router.go — product 模块 **API** 装配（挂 authorizedAPI 三层链：
+// SessionAuth + CSRF + Casbin）。后台页面装配在 product_page_router.go。
 
 import (
 	"gorm.io/gorm"
 
-	productcontract "go_wp/internal/module/product/contract"
-	productmodel "go_wp/internal/module/product/model"
-	productservice "go_wp/internal/module/product/service"
-	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/module/product/contract"
+	"go_wp/internal/module/product/model"
+	"go_wp/internal/module/product/service"
+	"go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
 	"go_wp/pkg/i18n"
 )

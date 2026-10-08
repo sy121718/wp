@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"go_wp/pkg/casbin"
+	"go_wp/pkg/enums"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -76,47 +77,57 @@ func validHTTPMethod(m string) bool {
 // 但动词不一致的场景（见 CasbinMiddlewareForPathAs）。
 func casbinMiddleware(forcedObj, forcedAct string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, exists := c.Get("user_id")
-		if !exists {
-			response.ErrorWithMessage(c, 401, "未获取到用户信息")
+		status, key := CasbinDecide(c, forcedObj, forcedAct)
+		if status != 0 {
+			response.ErrorWithMessage(c, status, key)
 			c.Abort()
 			return
 		}
-
-		obj := forcedObj
-		if obj == "" {
-			obj = c.Request.URL.Path
-		}
-		act := forcedAct
-		if act == "" {
-			act = c.Request.Method
-		}
-		sub := strconv.FormatInt(userID.(int64), 10)
-
-		enforcer := casbin.GetEnforcer()
-		if enforcer == nil {
-			response.ErrorWithMessage(c, 500, "权限系统未初始化")
-			c.Abort()
-			return
-		}
-
-		ok, err := enforcer.Enforce(sub, obj, act)
-		if err != nil {
-			logger.Scene("middleware").With("sub", sub).With("obj", obj).With("act", act).Error(err, "鉴权失败")
-			response.ErrorWithMessage(c, 500, "权限验证失败")
-			c.Abort()
-			return
-		}
-
-		if !ok {
-			logger.Scene("middleware").With("sub", sub).With("obj", obj).With("act", act).Warn("鉴权失败")
-			response.ErrorWithMessage(c, 403, "无权限访问")
-			c.Abort()
-			return
-		}
-
 		c.Next()
 	}
+}
+
+// CasbinDecide 只做鉴权判定、**不写任何响应** —— 「什么算通过」在本包只有这一份实现。
+//
+// 返回值 status 为 0 表示放行；非 0 时 key 是给调用方的建议文案（取 pkg/enums 的 key，
+// 由 response 层翻译）。**响应形态由调用方决定**：API 与页面写操作走 JSON
+// （casbinMiddleware / CasbinMiddlewareForPath*），后台页面 GET 走整页提示
+// （shell.PageCasbinMiddleware，docs/02-Z §4.3）。
+//
+// 为什么把响应从判定里剥出来：页面被拒时回 JSON，直接输 URL 的人只在浏览器里看到一坨
+// 报文，不知道该找谁开权限；而判定逻辑若各写一份，两处「什么算通过」迟早分叉 ——
+// 那是最难发现的一类缺陷（两条链各自看都对，只有某个账号在某条链上被随机放行/拒绝）。
+//
+// 未登录按 GetUserID（带类型断言保护）判为 0：会话值类型异常降级成「未登录」，
+// 而不是让裸断言把请求打成 500。
+func CasbinDecide(c *gin.Context, obj, act string) (status int, key string) {
+	userID := GetUserID(c)
+	if userID <= 0 {
+		return http.StatusUnauthorized, enums.ErrUserInfoMissing
+	}
+	if obj == "" {
+		obj = c.Request.URL.Path
+	}
+	if act == "" {
+		act = c.Request.Method
+	}
+	sub := strconv.FormatInt(userID, 10)
+
+	enforcer := casbin.GetEnforcer()
+	if enforcer == nil {
+		return http.StatusInternalServerError, enums.ErrAuthzNotReady
+	}
+
+	ok, err := enforcer.Enforce(sub, obj, act)
+	if err != nil {
+		logger.Scene("middleware").With("sub", sub).With("obj", obj).With("act", act).Error(err, "鉴权失败")
+		return http.StatusInternalServerError, enums.ErrAuthzFailed
+	}
+	if !ok {
+		logger.Scene("middleware").With("sub", sub).With("obj", obj).With("act", act).Warn("鉴权失败")
+		return http.StatusForbidden, enums.ErrPermissionDenied
+	}
+	return 0, ""
 }
 
 // GetUserID 从 gin.Context 中提取已认证的用户 ID。

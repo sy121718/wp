@@ -198,7 +198,7 @@ func TestCustomersPageWithoutSegmentDoesNotQuerySegment(t *testing.T) {
 // TestCustomersPageMinOrdersFiltersByIDList 只给次数（没给分段）也要能筛。
 //
 // 「下过 ≥5 单的客户」本身就是完整的一句话，不选分段也该成立；订单模块收到的是
-// 空 segment + 次数，由它按「复购」处理（同一段代码，见 order_customer_segment.go）。
+// 空 segment + 次数，由它按「复购」处理（同一段代码，见 CustomerSegmentIDsByRange）。
 func TestCustomersPageMinOrdersFiltersByIDList(t *testing.T) {
 	seg := &fakeSegmentReader{ids: []int64{41, 42}}
 	admin := &fakeCustomerAdmin{list: customerListSample()}

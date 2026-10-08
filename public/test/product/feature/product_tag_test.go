@@ -31,7 +31,7 @@ import (
 
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"go_wp/public/migrations"
 )
@@ -472,6 +472,11 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
 			"product:update": true, "product:variant_create": true, "product:variant_generate": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.tag_create": true, "product.tag_update": true, "product.tag_delete": true,
+			"product.update": true, "product.variant_create": true, "product.variant_generate": true,
+		})
+
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
@@ -500,29 +505,23 @@ func TestTagAdminPages(t *testing.T) {
 	rec := postForm(engine, "/admin/product-tags/create", url.Values{
 		"projectId": {f.projectID}, "name": {"清仓"}, "slug": {"clearance"}, "kind": {"manual"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建手工标签应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	rec = postForm(engine, "/admin/product-tags/create", url.Values{
 		"projectId": {f.projectID}, "name": {"新品"}, "slug": {"new-arrival"},
 		"kind": {"rule"}, "ruleType": {productenums.TagRuleNewArrival}, "days": {"30"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建自动标签应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	tags, err := f.svc.ListTags(context.Background(), &productdto.ListTagReq{ProjectID: f.projectID})
 	if err != nil || len(tags) != 2 {
 		t.Fatalf("应建成 2 个标签，实际 %v %+v", err, tags)
 	}
 
-	// 非法规则参数经表单提交 → 302 带 err 回显，且不落库。
+	// 非法规则参数经表单提交 → 失败态提示页，且不落库。
 	rec = postForm(engine, "/admin/product-tags/create", url.Values{
 		"projectId": {f.projectID}, "name": {"错误规则"}, "kind": {"rule"},
 		"ruleType": {productenums.TagRuleNewArrival}, "days": {"999"},
 	})
-	if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "err=") {
-		t.Fatalf("越界参数应带 err 回跳，实际 %d %s", rec.Code, rec.Header().Get("Location"))
-	}
+	assertJumpErr(t, rec)
 	tags, _ = f.svc.ListTags(context.Background(), &productdto.ListTagReq{ProjectID: f.projectID})
 	if len(tags) != 2 {
 		t.Fatalf("被拒的标签不应落库，实际 %d 个", len(tags))
@@ -541,11 +540,9 @@ func TestTagAdminPages(t *testing.T) {
 	rec = postForm(engine, "/admin/products/tags", url.Values{
 		"projectId": {f.projectID}, "id": {p.ID}, "tagIds": {manualID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 商品挂标签应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	// 保存后留在该商品的**编辑页**（表单隐藏域是 id，其值就是商品 id）。
-	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, p.ID)
+	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, p.ID)
 
 	// 标签页：标签名、类型、规则描述、重算时间都要渲染出来；命中商品**不在首屏**
 	// （审计 PERF-02）：首屏只给数量与展开入口，商品行由片段端点按需给。
@@ -603,17 +600,13 @@ func TestTagAdminPages(t *testing.T) {
 	rec = postForm(engine, "/admin/product-tags/recalc", url.Values{
 		"projectId": {f.projectID}, "tagId": {tagIDByName(t, f, "新品")},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 重算应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 
-	// 删除标签：302 且连同引用一起解绑。
+	// 删除标签：成功提示页且连同引用一起解绑。
 	rec = postForm(engine, "/admin/product-tags/delete", url.Values{
 		"projectId": {f.projectID}, "id": {manualID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 删除标签应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	if _, err = f.svc.GetTag(context.Background(), &productdto.GetTagReq{ProjectID: f.projectID, ID: manualID}); err == nil {
 		t.Fatalf("删除后标签应不存在")
 	}

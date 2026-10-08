@@ -15,18 +15,8 @@
         </div>
     </header>
 
-    {* 上一次提交失败的回带（handler 把提交失败改成 303 回本页并带 ?err=）：
-       没有这个槽位时，用户从本页提交失败后被跳回本页，看到的是「什么都没发生」——
-       字段还在、错误没了，很容易以为保存成功（实测改前 errSlot:false）。
-       可选键一律 isset 包裹：直接渲染模板的单测不带该键，缺键会让整页在此中断
-       （现象是 HTTP 200 但这一行之后的 HTML 整块消失）。
-       文案不套 t()：本页新增的 key 必须同批 seed 词条才中英成对，而本批改动只拥有两个模板
-       （词条 seed 在 public/migrations，越范围）；Err 的内容由 handler 的白名单文案或归口
-       文案给出，直接透出与同批的 role_permissions.html 一致。
-       role="alert" 让读屏在页面加载后播报它，否则失败提示对键盘/读屏用户等于不存在。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
+    {* 保存失败不再回本页并带 ?err=（写动作的结论走 shell.RenderJump 的整页提示，见 admin_jump.go）：
+       提示页会把原因说清楚，并提供回编辑页的链接。本页因此没有错误槽位。 *}
 
     <section class="card card-body">
         {* 不用 form-inline：它是 flex 容器，会把 .form-row 压成内容宽（grid 的 auto-fit 因此

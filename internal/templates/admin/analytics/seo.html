@@ -43,7 +43,7 @@
                 <span class="help-pop" role="tooltip">{{ .["t"]("admin.seo.audit.intro", "体检读取已激活的 HTML 产物，检查标题、描述、canonical、图片替代文本、内部链接与 hreflang。") }}</span>
             </span>
         </h2>
-        {{if isset(.PermSet["seo:audit"])}}
+        {{if isset(.Buttons["seo.audit"])}}
         <form method="post" action="/api/publication/seo-audit" data-seo-audit-action
               hx-post="/api/publication/seo-audit" hx-target="[data-seo-audit-result]" hx-swap="innerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">

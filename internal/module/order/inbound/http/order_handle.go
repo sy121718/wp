@@ -15,7 +15,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 )
 

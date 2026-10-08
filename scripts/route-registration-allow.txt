@@ -1,0 +1,9 @@
+# 路由注册落点的豁免清单（scripts/check-route-registration-placement.sh 的输入）
+#
+# 格式：<go 相对路径> TAB <理由>
+# 规则：只登记**确实不能**把注册搬进 router 文件的文件；条目一旦不再命中，门禁就会失败
+# （清单只增不减等于没有门禁）。
+#
+# 目前为空：2026-10-07 重新基线时把 10 个非 router 文件的注册全部搬进了对应的
+# *_router.go / *_page_router.go / *_public_router.go，没有需要豁免的点位。
+# 新增条目之前先回答一句：为什么这条注册不能和它的 Setup 函数一起搬进 router 文件？

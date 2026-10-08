@@ -19,7 +19,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"go_wp/internal/middleware/builtin"
 	commentcontract "go_wp/internal/module/comment/contract"
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
@@ -45,14 +44,8 @@ func SetupCommentRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db *g
 	// 批量通过 / 驳回（写）。
 	g.POST("/review", permission.CommentReview, handle.Review)
 
-	if pages != nil {
-		pageHandle := NewCommentPageHandle(svc, projects)
-		pages.GET("/comments", pageHandle.CommentsPage)
-		// 写动作复用接口权限点（真源在上一段）。CasbinMiddlewareForPath 的参数就是那条
-		// api 路由的路径，与注册动作算出来的绝对路径逐字一致。
-		pages.POST("/comments/review",
-			builtin.CasbinMiddlewareForPath("/api/comment/review"), pageHandle.Review)
-	}
+	// 后台页面：注册在 comment_page_router.go（同一入口调用，装配顺序不变）。
+	SetupCommentPages(pages, svc, projects)
 
 	return svc
 }

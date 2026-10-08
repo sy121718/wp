@@ -30,7 +30,7 @@ import (
 
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 
 	"go_wp/public/migrations"
 )
@@ -465,6 +465,11 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
 			"product:category_create": true, "product:category_update": true, "product:category_delete": true,
 		})
+		c.Set(shell.ButtonsKey, map[string]bool{
+			"product.brand_create": true, "product.brand_update": true, "product.brand_delete": true,
+			"product.category_create": true, "product.category_update": true, "product.category_delete": true,
+		})
+
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
@@ -492,9 +497,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"男装"}, "slug": {"men"},
 		"seoTitle": {"男装 SEO"}, "description": {"描述"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建分类应 302 回列表，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	tree, err := f.svc.ListCategories(t.Context(), &productdto.ListCategoryReq{ProjectID: f.projectID})
 	if err != nil || len(tree) != 1 {
 		t.Fatalf("表单建分类失败: %v %+v", err, tree)
@@ -503,10 +506,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	rec = postForm(engine, "/admin/product-categories/create", url.Values{
 		"projectId": {f.projectID}, "name": {"衬衫"}, "slug": {"shirts"}, "parentId": {rootID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建子分类应 302，实际 %d", rec.Code)
-	}
-
+	assertJumpOK(t, rec)
 	rec = httptestGet(engine, "/admin/product-categories?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("分类页应 200，实际 %d：%s", rec.Code, rec.Body.String())
@@ -533,9 +533,7 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		"projectId": {f.projectID}, "name": {"山野"}, "slug": {"shanye"},
 		"logo": {"/img/logo.svg"}, "seoTitle": {"山野 SEO"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 建品牌应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	rec = httptestGet(engine, "/admin/product-brands?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("品牌页应 200，实际 %d", rec.Code)
@@ -562,11 +560,9 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	childID := treeIDByName(t, f, "衬衫")
 	form.Set("primaryCategoryId", childID)
 	rec = postForm(engine, "/admin/products/taxonomy", form)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 商品分类品牌应 302，实际 %d", rec.Code)
-	}
+	assertJumpOK(t, rec)
 	// 保存后留在该商品的**编辑页**（表单隐藏域是 id，其值就是商品 id）。
-	assertEditRedirect(t, rec.Header().Get("Location"), f.projectID, p.ID)
+	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, p.ID)
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

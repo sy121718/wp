@@ -126,7 +126,8 @@ func TestWorkbenchReuseInsertActions(t *testing.T) {
 	}
 
 	// 后端入口必须真的存在：前端调的接口没有路由时，错误只在浏览器控制台里出现。
-	router := readTemplateFile(t, "../module/block/inbound/http/block_http.go")
+	// 路由注册落点是 block_router.go（handler 与错误映射在 block_handle.go，见 docs/02-X）。
+	router := readTemplateFile(t, "../module/block/inbound/http/block_router.go")
 	if !strings.Contains(router, "\"/clone\"") {
 		t.Fatalf("block 路由应注册 /clone（前端 insertBlockClone 的目标接口）")
 	}

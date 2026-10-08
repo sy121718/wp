@@ -1,5 +1,5 @@
-// inventory_change.go — 按 SKU 增减库存 + 流水（issue #16 验收 1/2/3/5）。
-//
+package inventoryservice
+
 // 三条不可动摇的语义：
 //
 //  1. **判定只读真源**：可用量在 inventory_stocks 的行锁之内判定，绝不读
@@ -11,7 +11,29 @@
 //     调整到与当前值相同的行不写流水（没有变动）。
 //
 // 缓存同步发生在事务**提交之后**（见 inventory_cache.go）：跨模块写不塞进同一事务。
-package inventoryservice
+
+// 物料清单是「父 SKU → 子项 SKU × 用量」的派生物：扣减父 SKU 时把它展开成
+// 若干子项 SKU，各子项各自的真源行上加锁扣减（整体一个事务、整体成功或整体拒绝）。
+//
+// 三条规则：
+//
+//	· 全量替换而非追加：同一父 SKU 的清单一次给全，先删后写（聚合内原子组合）；
+//	· 空清单 = 清空：之后扣减该 SKU 就按它自己扣；
+//	· 成环在维护入口就拒绝（A→B→A 会让展开无限递归），展开时另设层数上限兜底。
+
+// 「变动原因覆盖出 / 入 / 调整各枚举，含自定义原因（引用可维护字典，不用自由文本）」：
+//
+//	· 内置原因：迁移 103 seed，project_id IS NULL（全工程可见，**只读**：不可改名、
+//	  不可删除，只能停用 / 启用 —— 名称由系统按 code 派生 i18n key，见迁移 241）；
+//	· 自定义原因：工程内 code 唯一，可改名 / 停用（停用后不再能被新变动引用，
+//	  历史流水不受影响 —— 流水里存的是 code 快照）。
+//
+// 变动入口只接受字典里存在的 code，且原因方向必须与本次变动方向一致。
+//
+// 文案不算本模块的数据（2026-09 收口）：inventory_change_reasons.name 存的是 **i18n key**，
+// 真文案在 sys_i18n（内容 → 文案词条，全站唯一真源）。本模块只负责「有哪些原因、方向、启停」，
+// 自定义原因保存时把运营填的文案写成 sys_i18n 的一条词条 —— 运营改文案、加语言都在同一个地方，
+// 而不是回到库存模块里再维护一份平行的名称表。
 
 import (
 	"context"
@@ -26,9 +48,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
-	inventoryenums "go_wp/internal/module/inventory/enums"
-	inventorymodel "go_wp/internal/module/inventory/model"
+	"go_wp/internal/module/inventory/dto"
+	"go_wp/internal/module/inventory/enums"
+	"go_wp/internal/module/inventory/model"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
 
@@ -902,6 +926,425 @@ func toMovementRespFromEntity(m *inventorymodel.MovementEntity) *inventorydto.Mo
 	}
 	if m.ParentVariantID != nil {
 		resp.ParentVariantID = *m.ParentVariantID
+	}
+	return resp
+}
+
+// SetBOM 全量替换某个父 SKU 的物料清单（验收 5）。
+func (s *Service) SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res *inventorydto.BOMResp, err error) {
+	if req == nil {
+		return nil, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	parentVariantID := strings.TrimSpace(req.ParentVariantID)
+	if parentVariantID == "" {
+		return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	seen := make(map[string]bool, len(req.Items))
+	rows := make([]*inventorymodel.BOMItemEntity, 0, len(req.Items))
+	for _, item := range req.Items {
+		componentID := strings.TrimSpace(item.ComponentVariantID)
+		if componentID == "" {
+			return nil, errors.New(inventoryenums.ErrBOMComponentRequired)
+		}
+		if componentID == parentVariantID {
+			return nil, errors.New(inventoryenums.ErrBOMSelfReference)
+		}
+		if item.Quantity <= 0 {
+			return nil, errors.New(inventoryenums.ErrBOMQuantityInvalid)
+		}
+		if seen[componentID] {
+			return nil, errors.New(inventoryenums.ErrBOMDuplicateComponent)
+		}
+		seen[componentID] = true
+		rows = append(rows, &inventorymodel.BOMItemEntity{
+			ID: uuid.NewString(), ProjectID: projectID,
+			ParentVariantID: parentVariantID, ParentSKUCode: strings.TrimSpace(req.ParentSKUCode),
+			ComponentVariantID: componentID, ComponentSKUCode: strings.TrimSpace(item.ComponentSKUCode),
+			Quantity: item.Quantity, CreatedAt: now, UpdatedAt: now,
+		})
+	}
+	// 成环检测与全量替换都在工程作用域内（inventory_bom_items 在迁移 215 名单里）：
+	// 检测读不到父链会**放行成环**，替换缺作用域则静默 0 行。两处都用调用方已解析出的
+	// projectID，不依赖「唯一工程兜底」——那在多工程下会退化成 ErrInvalidParam。
+	if err = s.assertBOMNoCycle(ctx, parentVariantID, projectID, rows); err != nil {
+		return nil, err
+	}
+	if err = s.m.ReplaceBOM(ctx, parentVariantID, projectID, rows); err != nil {
+		return nil, err
+	}
+	return s.GetBOM(ctx, &inventorydto.GetBOMReq{ProjectID: projectID, ParentVariantID: parentVariantID})
+}
+
+// GetBOM 某个父 SKU 的物料清单（无清单返回空 items，不是错误）。
+func (s *Service) GetBOM(ctx context.Context, req *inventorydto.GetBOMReq) (res *inventorydto.BOMResp, err error) {
+	if req == nil {
+		return nil, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	parentVariantID := strings.TrimSpace(req.ParentVariantID)
+	if parentVariantID == "" {
+		return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.m.ListBOMItems(ctx, parentVariantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	res = &inventorydto.BOMResp{
+		ParentVariantID: parentVariantID,
+		Items:           make([]*inventorydto.BOMItemResp, 0, len(rows)),
+	}
+	for _, r := range rows {
+		res.ProjectID = r.ProjectID
+		res.ParentSKUCode = r.ParentSKUCode
+		res.UpdatedAt = r.UpdatedAt.Format(time.RFC3339)
+		res.Items = append(res.Items, &inventorydto.BOMItemResp{
+			ID: r.ID, ComponentVariantID: r.ComponentVariantID,
+			ComponentSKUCode: r.ComponentSKUCode, Quantity: r.Quantity,
+		})
+	}
+	return res, nil
+}
+
+// assertBOMNoCycle 成环检测（作用域由调用方给）：新增 P → C 会成环，当且仅当「C 已经能走到 P」
+// （即 P 是 C 的祖先）。判定办法是从 P 沿「谁把 X 当子项」一路上行，
+// 若途中撞到任何一个新子项 C，就说明存在 C → … → P 的既有路径，加上 P → C 即成环。
+//
+// 方向很容易写反：从子项向上找到的是「C 的祖先」，那只能说明 P → … → C 早已存在，
+// 再加 P → C 只是多了一条通路，并不成环 —— 这样的清单会被放行，展开时直接死循环。
+//
+// projectID 必须传：inventory_bom_items 带 FORCE 策略，缺作用域时 ListBOMParents 读到空
+// 父链 —— 判定于是「一路都没撞到新子项」，**成环被静默放行**。这不是查不到数据，
+// 而是把该拒绝的写入放行（清单已经落库，靠下游 maxBOMDepth 才表现出来）。
+func (s *Service) assertBOMNoCycle(ctx context.Context, parentVariantID, projectID string,
+	rows []*inventorymodel.BOMItemEntity) (err error) {
+	components := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		components[r.ComponentVariantID] = true
+	}
+	visited := make(map[string]bool, len(rows)+1)
+	stack := []string{parentVariantID}
+	for len(stack) > 0 {
+		current := stack
+		stack = nil
+		for _, id := range current {
+			if visited[id] {
+				continue
+			}
+			visited[id] = true
+			parents, perr := s.m.ListBOMParents(ctx, id, projectID)
+			if perr != nil {
+				return perr
+			}
+			for _, p := range parents {
+				if components[p.ParentVariantID] {
+					return errors.New(inventoryenums.ErrBOMCycle)
+				}
+				stack = append(stack, p.ParentVariantID)
+			}
+		}
+	}
+	return nil
+}
+
+// expandBOM 按物料清单把「父 SKU 变动项」展开成「叶子 SKU 变动项」（验收 5）。
+//
+// 逐层展开（BFS）：有清单的 SKU 换成子项（用量 = 子项用量 × 请求量），
+// 没有清单的 SKU 就是叶子，按自身扣减。子项沿用**父项解析出的仓库**，
+// 这样一次扣减的仓库口径唯一；祖先链随节点携带，出现环即拒绝。
+//
+// projectID 是 inventory_bom_items 的作用域（迁移 215）：缺它时每层都读到空子项，
+// 有清单的 SKU 全被当成叶子 —— 扣减静默少扣子项料，且不报错。
+func (s *Service) expandBOM(ctx context.Context, projectID string, items []changeItem) (out []changeItem, err error) {
+	type node struct {
+		item  changeItem
+		chain map[string]bool
+	}
+	frontier := make([]node, 0, len(items))
+	for _, it := range items {
+		frontier = append(frontier, node{item: it, chain: map[string]bool{it.key.variantID: true}})
+	}
+	out = make([]changeItem, 0, len(items))
+	for depth := 0; depth < maxBOMDepth; depth++ {
+		if len(frontier) == 0 {
+			return out, nil
+		}
+		parents := make([]string, 0, len(frontier))
+		for _, n := range frontier {
+			parents = append(parents, n.item.key.variantID)
+		}
+		rows, lerr := s.m.ListBOMItemsByParents(ctx, parents, projectID)
+		if lerr != nil {
+			return nil, lerr
+		}
+		children := make(map[string][]*inventorymodel.BOMItemEntity, len(rows))
+		for _, r := range rows {
+			children[r.ParentVariantID] = append(children[r.ParentVariantID], r)
+		}
+		next := make([]node, 0, len(frontier))
+		for _, n := range frontier {
+			kids := children[n.item.key.variantID]
+			if len(kids) == 0 {
+				out = append(out, n.item)
+				continue
+			}
+			for _, kid := range kids {
+				if n.chain[kid.ComponentVariantID] {
+					return nil, errors.New(inventoryenums.ErrBOMCycle)
+				}
+				chain := make(map[string]bool, len(n.chain)+1)
+				for id := range n.chain {
+					chain[id] = true
+				}
+				chain[kid.ComponentVariantID] = true
+				child := n.item
+				child.key = stockKey{variantID: kid.ComponentVariantID, warehouseID: n.item.key.warehouseID}
+				child.quantity = n.item.quantity * kid.Quantity
+				child.skuCode = kid.ComponentSKUCode
+				// 子项的商品 id 由真源快照解析（建行时才会用到），不在这里猜。
+				child.productID = ""
+				child.parentVariantID = n.item.key.variantID
+				next = append(next, node{item: child, chain: chain})
+			}
+		}
+		frontier = next
+	}
+	if len(frontier) > 0 {
+		// 列表里不可能有环（维护入口已拒绝），这是数据异常的第二道防线。
+		return nil, errors.New(inventoryenums.ErrBOMDepthExceeded)
+	}
+	return out, nil
+}
+
+// maxReasonCodeLen 原因 code 长度上限。
+const maxReasonCodeLen = 32
+
+// reasonI18nPrefix 原因词条的 key 前缀（内置：inventory.reason.<code>）。
+const reasonI18nPrefix = "inventory.reason."
+
+// builtinReasonKey 内置原因的 i18n key（形如 inventory.reason.purchase_in）。
+//
+// 内置原因全工程共用一条词条，因此 key 里不带工程 —— 文案改了所有工程一起变，
+// 这正是内置的含义（它是产品预置的取值范围，不是某个工程的自定义项）。
+func builtinReasonKey(code string) string { return reasonI18nPrefix + strings.ToLower(code) }
+
+// customReasonKey 自定义原因的 i18n key。
+//
+// key 里带工程 id：sys_i18n 是全局表，两个工程各建一个同 code 的自定义原因时，
+// 不带工程 id 的 key 会互相覆盖（后建的工程把前一个的文案悄悄改掉）。
+func customReasonKey(projectID, code string) string {
+	return reasonI18nPrefix + "custom." + strings.ToLower(strings.TrimSpace(projectID)) + "." + strings.ToLower(code)
+}
+
+// reasonTextCategory sys_i18n 里的分类（后台词条页按它筛选）。
+const reasonTextCategory = "inventory"
+
+// saveReasonText 把原因文案写进 sys_i18n（该 key 的 zh-CN 一行），并重载词条缓存。
+//
+// 失败**不阻断**原因本身的写入，只记一条日志：原因是业务数据（流水要引用它的 code），
+// 文案是展示层；把「i18n 组件不可用」（纯库存单测 / 未初始化）升级成「原因建不了」
+// 是拿一个更贵的故障换一个更便宜的。en-US 不写 —— 按项目约定，新词条不伪造译文，
+// 英文界面取不到时按默认语言（zh-CN）回退。
+func saveReasonText(ctx context.Context, key, text string) (err error) {
+	return i18n.SaveEntry(ctx, i18n.Entry{
+		Key:      key,
+		Lang:     "zh-CN",
+		Value:    text,
+		Category: reasonTextCategory,
+		Remark:   "internal/module/inventory/service/inventory_change.go",
+	})
+}
+
+// writeReasonText 写词条并吞掉失败（记日志），返回是否写入成功。
+func writeReasonText(ctx context.Context, key, text string) (ok bool) {
+	if err := saveReasonText(ctx, key, text); err != nil {
+		logger.Scene("inventory").With("key", key).With("err", err).Warn("变动原因文案写入 sys_i18n 失败")
+		return false
+	}
+	return true
+}
+
+// ListReasons 变动原因列表（工程自定义 + 全部内置）。
+func (s *Service) ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error) {
+	if req == nil {
+		return nil, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	filter := inventorymodel.ReasonFilter{
+		Keyword:         strings.TrimSpace(req.Keyword),
+		IncludeDisabled: req.IncludeDisabled,
+	}
+	if filter.Direction, err = normalizeDirectionOrEmpty(req.Direction); err != nil {
+		return nil, err
+	}
+	if filter.ProjectID, err = s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID)); err != nil {
+		return nil, err
+	}
+	rows, err := s.m.ListReasons(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	list = make([]*inventorydto.ReasonResp, 0, len(rows))
+	for _, r := range rows {
+		list = append(list, toReasonResp(r))
+	}
+	return list, nil
+}
+
+// CreateReason 新建自定义变动原因（code 工程内唯一，方向一经确定不可改）。
+func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error) {
+	if req == nil {
+		return nil, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, errors.New(inventoryenums.ErrReasonNameRequired)
+	}
+	code, err := normalizeReasonCode(req.Code)
+	if err != nil {
+		return nil, err
+	}
+	direction, err := normalizeDirection(req.Direction)
+	if err != nil {
+		return nil, errors.New(inventoryenums.ErrReasonDirectionInvalid)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	// 内置原因占用同一命名空间：自定义 code 不能与内置撞名（否则解析结果不确定）。
+	if taken, cerr := s.m.ReasonCodeExists(ctx, projectID, code, 0); cerr != nil {
+		return nil, cerr
+	} else if taken {
+		return nil, errors.New(inventoryenums.ErrReasonCodeTaken)
+	}
+	// 原因行只存 i18n key，运营填的文案写成 sys_i18n 的一条词条。
+	// 顺序「先词条、后原因」：反过来会出现「原因已能选、页面却显示裸 key」的窗口。
+	key := customReasonKey(projectID, code)
+	writeReasonText(ctx, key, name)
+	now := time.Now().UTC()
+	pid := projectID
+	e := &inventorymodel.ReasonEntity{
+		ProjectID: &pid, Code: code, Name: key, Direction: direction,
+		IsBuiltin: false, Status: inventoryenums.StatusActive, Sort: req.Sort,
+		CreateTime: now, UpdatedAt: now,
+	}
+	if err = s.m.CreateReason(ctx, e); err != nil {
+		return nil, err
+	}
+	return toReasonResp(e), nil
+}
+
+// UpdateReason 修改自定义变动原因（内置原因一律拒绝）。
+func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, errors.New(inventoryenums.ErrInvalidParam)
+	}
+	rid, perr := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
+	if perr != nil {
+		return nil, errors.New(inventoryenums.ErrReasonNotFound)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	e, err := s.m.GetReason(ctx, rid, projectID)
+	if err != nil {
+		return nil, mapReasonNotFound(err)
+	}
+	// 内置原因只读：它的名称就是系统按 code 派生的 key（inventory.reason.<code>），
+	// 允许改文案等于让「内置」名不副实 —— 停用 / 排序则允许（那是使用范围，不是身份）。
+	if e.IsBuiltin && req.Name != nil {
+		return nil, errors.New(inventoryenums.ErrReasonBuiltin)
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return nil, errors.New(inventoryenums.ErrReasonNameRequired)
+		}
+		// key 不变（它派生自 code 与工程），改的是词条的值。
+		writeReasonText(ctx, e.Name, name)
+	}
+	if req.Status != nil {
+		status := strings.ToLower(strings.TrimSpace(*req.Status))
+		if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
+			return nil, errors.New(inventoryenums.ErrReasonStatusInvalid)
+		}
+		e.Status = status
+	}
+	if req.Sort != nil {
+		e.Sort = *req.Sort
+	}
+	e.UpdatedAt = time.Now().UTC()
+	if err = s.m.UpdateReason(ctx, e); err != nil {
+		return nil, err
+	}
+	return toReasonResp(e), nil
+}
+
+// resolveReason 解析变动原因：必须是字典里的 active 条目，且方向与本次变动一致。
+func (s *Service) resolveReason(ctx context.Context, projectID, code, direction string) (r *inventorymodel.ReasonEntity, err error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, errors.New(inventoryenums.ErrStockReasonRequired)
+	}
+	e, ferr := s.m.FindReasonByCode(ctx, projectID, code)
+	if ferr != nil {
+		return nil, mapReasonNotFound(ferr)
+	}
+	if e.Direction != direction {
+		return nil, errors.New(inventoryenums.ErrReasonDirectionMismatch)
+	}
+	return e, nil
+}
+
+// normalizeReasonCode 归一并校验原因 code：小写字母 / 数字 / 下划线，1..maxReasonCodeLen。
+func normalizeReasonCode(code string) (out string, err error) {
+	out = strings.ToLower(strings.TrimSpace(code))
+	if out == "" {
+		return "", errors.New(inventoryenums.ErrReasonCodeRequired)
+	}
+	if len(out) > maxReasonCodeLen {
+		return "", errors.New(inventoryenums.ErrReasonCodeInvalid)
+	}
+	for _, r := range out {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '_':
+		default:
+			return "", errors.New(inventoryenums.ErrReasonCodeInvalid)
+		}
+	}
+	return out, nil
+}
+
+// mapReasonNotFound 行不存在 → 业务错误，其余原样透出。
+func mapReasonNotFound(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errors.New(inventoryenums.ErrReasonNotFound)
+	}
+	return err
+}
+
+// toReasonResp 实体 → 响应。
+func toReasonResp(e *inventorymodel.ReasonEntity) *inventorydto.ReasonResp {
+	if e == nil {
+		return nil
+	}
+	resp := &inventorydto.ReasonResp{
+		ID: strconv.FormatInt(e.ID, 10), Code: e.Code, Name: e.Name, Direction: e.Direction,
+		IsBuiltin: e.IsBuiltin, Status: e.Status, Sort: e.Sort,
+		CreatedAt: e.CreateTime.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+	}
+	if e.ProjectID != nil {
+		resp.ProjectID = *e.ProjectID
 	}
 	return resp
 }

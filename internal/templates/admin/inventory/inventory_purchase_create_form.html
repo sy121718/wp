@@ -12,8 +12,8 @@
     {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
     <p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>
     {{end}}{{end}}
-    <form method="post" action="/admin/inventory/purchases/create" class="form-stack"
-          hx-post="/admin/inventory/purchases/create" hx-target="closest [data-purchase-create-host]" hx-swap="outerHTML">
+    <form method="post" action="/admin/inventory/purchases/create?{{ .ListQuery }}" class="form-stack"
+          hx-post="/admin/inventory/purchases/create?{{ .ListQuery }}" hx-target="closest [data-purchase-create-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="projectId" value="{{pcProject}}">
         <div class="form-group">

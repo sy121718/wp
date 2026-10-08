@@ -384,9 +384,9 @@ const (
 // --- 批量操作的结论文案（页面回执，不是错误白名单）---
 //
 // 与 admin / order 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀**。
-// 这些句子是 handler 按计数拼出的整句回执（进 ?done= / ?err=），不是 service 返回的错误，
-// 因此不进 productErrFallbacks / productErrSentinels 那套错误白名单 ——
-// 它们走的是 product_err.go 的 productNoticeTexts 回执白名单。
+// 这些句子是 handler 按计数拼出的整句回执（由 shell.RenderJump 渲染成整页提示），
+// 不是 service 返回的错误，因此不进 productErrFallbacks / productErrSentinels 那套错误白名单 ——
+// 它们的取词在 product_err.go 的 productBulkTextOf。
 //
 // 中文原文全部留在 inbound/http/product_err.go（与写侧共用的那份 bulkTemplate 表绑在一起），
 // 这里的常量只声明 key。
@@ -417,7 +417,6 @@ const (
 
 	// 商品编辑页保存成功的回执（无占位符）。
 	//
-	// 与批量结论文案同一套读侧白名单：?done= 是查询串，不是可信边界 ——
-	// 不登记就会在页面上退化成「没有这条提示」，用户保存后看不到任何反馈。
+	// 由 shell.RenderJump 渲染成整页提示；取词见 product_err.go 的 productSaved。
 	MsgProductSaved = "product.msg.saved"
 )

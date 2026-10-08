@@ -16,6 +16,12 @@ package pagehttp
 //	              前缀（shell.BulkIDs 的上限拒绝：整句由本仓库拼出、带可行动数字）；
 //	② 归口文案 —— shell.PageInternalText(c)（词条键 MsgInternalError，缺词条回落中文原文）；
 //	③ 结构化日志 —— logger.Scene("page") + user_id + 原始错误（原文只进日志）。
+//
+// **传输通道已换**：写动作的结论由 shell.RenderJump 渲染成整页提示（见 page_jump.go），
+// 不再经 302/303 + `?err=` / `?done=` 回带列表页。读侧那套判定（pagePageErr /
+// pagePageDone / pageNoticeTexts / pageFacingKeys / pagesLocalNotices）随之整批删除 ——
+// 查询参数不是可信边界，文案走响应体之后就不需要再证明「这条提示出自本仓」。
+// 本文件只剩**写侧出口的归口**：命中白名单给业务文案，未命中落归口文案 + 日志。
 
 import (
 	"errors"
@@ -27,7 +33,7 @@ import (
 
 	"go_wp/internal/builder"
 	pageenums "go_wp/internal/module/page/enums"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -39,7 +45,7 @@ const pageErrScene = "page"
 //
 // 它们不是 enums key（所以进不了 pageErrorStatus 的 sentinel 分类），但整句都由本仓库
 // 自己拼出：不含表名 / SQLSTATE / 路径，且带着运营照着做的数字。目前只有一条 ——
-// shell.BulkIDs 的上限拒绝「一次最多操作 N 项，当前 M 项，请分批进行」（internal/web/shell/bulk.go）。
+// shell.BulkIDs 的上限拒绝「一次最多操作 N 项，当前 M 项，请分批进行」（internal/shell/bulk.go）。
 //
 // 按**前缀**判而不是按来源直接透出：来源受控这件事会随上游改变。前缀不再命中时
 // 自动退回「记日志 + 归口文案」，不会把不认识的原文顺出去。
@@ -65,7 +71,7 @@ func pageControlledText(raw string) string {
 //
 // 判据是 pageErrorStatus：它逐个 errors.Is 分类 pageservice 的 sentinel，default 落到 500。
 // 业务错误的取值就是 pageenums 常量，而 **enums 的值即 i18n key**（迁移 058 已 seed
-// ErrPageNotFound → 「页面不存在」），所以这里翻一次再返回：?err= 与模板数据都是
+// ErrPageNotFound → 「页面不存在」），所以这里翻一次再返回：提示页与 JSON 出口都是
 // 直接渲染的文本，不经过 pkg/response 的翻译层 —— 不翻的话运营看到的是 ErrPageNotFound。
 //
 // 「key：明细」形态（service 用 fmt.Errorf("%w: <ErrorDetail 编码>") 包过）只翻能识别的部分：
@@ -181,22 +187,13 @@ func pageTranslationRowText(c *gin.Context, err error) string {
 	return pageErrPageText(c, err)
 }
 
-// —— 读侧回执的收口（?err= / ?done=）——
-//
-// 页面管理页此前把 query 参数**原样**塞进模板数据（PagesList 的
-// `Err: strings.TrimSpace(c.Query("err"))`）：写侧虽然已经受控，读侧仍是一条无界通道 ——
-// 任何人手拼 /admin/pages?err=任意文案 就能在页面上塞一条顶着「上一次操作未完成」
-// 样式的伪造消息。查询参数与响应体、模板数据一样**不是可信边界**。
-
 // pageBulkText 批量结论文案的一条模板 / 自造回执（i18n key + 中文原文）。
 //
-// **key 与中文原文只有这一份**：写侧 pagesBulkDeleteResult / 单条删除路径拿它 Sprintf 出整句，
-// 读侧 pageNoticeTexts 拿**同一个值**、经同一处取词（pageBulkTextOf）得到当前语言模板再归一比对。
-// 读侧另抄一份中文的后果是静默的 —— 写侧改了措辞候选就失配，页面上变成
-// 「上一次操作未完成」的归口文案（?err=）或什么都不显示（?done=）。
+// **key 与中文原文只有这一份**：写侧 pagesBulkDeleteResult / 单条删除路径 / 重定向批量
+// 拿它 Sprintf 出整句（经 shell.RenderJump 直接渲染进响应体）。
 type pageBulkText struct{ key, fallback string }
 
-// pageBulkTextOf 取一条批量结论文案的当前语言文本（写侧与读侧**共用这一个取法**）。
+// pageBulkTextOf 取一条批量结论文案的当前语言文本。
 //
 // 词条混进 %d 之类协议外占位符时回落中文原文（本批的模板一律只允许 %s，
 // 数字先经 strconv.Itoa）—— 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
@@ -210,8 +207,7 @@ func pageBulkTextOf(c *gin.Context, t pageBulkText) string {
 
 // pagesBulkResultTemplates 批量删除的结论文案模板（%s 是计数字段）。
 //
-// 写侧 pagesBulkDeleteResult 用它 Sprintf，读侧 pageNoticeTexts 用它（经 shell.NoticeTemplate 归一）
-// 判定 URL 回显 —— 四条**同时**是读侧候选（写读共用这一份）。
+// 写侧 pagesBulkDeleteResult 用它 Sprintf 出整句（经 shell.RenderJump 渲染）。
 var pagesBulkResultTemplates = []pageBulkText{
 	{pageenums.BulkPageNoneSelected, "没有勾选任何页面，列表未改动。"},
 	{pageenums.BulkPageAllDeleted, "已删除 %s 个页面。"},
@@ -219,24 +215,24 @@ var pagesBulkResultTemplates = []pageBulkText{
 	{pageenums.BulkPagePartial, "已删除 %s 个，%s 个未能删除（可能已被删除或路径清理失败）。"},
 }
 
-// pagesLocalNotices 页面管理页自造、可原样展示的回执文案。
+// 页面管理页自造、可原样展示的回执文案（经 shell.RenderJump 渲染进整页提示）。
 var (
 	pagesLocalNoticeMissingID = pageBulkText{pageenums.BulkPageMissingID, "缺少页面 id，未执行删除。"}
 	// pagesLocalNoticeMissingPageID 翻译工作台保存时缺页面 id
-	// （POST /admin/page/translations/save 的 pageId 为空）。
+	// （POST /admin/pages/translations/save 的 pageId 为空）。
 	//
 	// 该分支原先 `c.String(400, pageenums.MsgFieldRequired)`：响应体只有 i18n 的 **key 本身**
 	// （16 字节的 "MsgFieldRequired"）—— 用户看到的是内部标识符，而不是给运营看的文案，
-	// 而且脱离页壳。key 复用通用必填词条（词条值就是「必填字段不能为空」），回跳沿用同文件
-	// 其它失败分支的 303 → /admin/pages，原因经 ?err= 回带（读侧 pagePageErr 白名单放行）。
+	// 而且脱离页壳。key 复用通用必填词条（词条值就是「必填字段不能为空」），
+	// 结论由 shell.RenderJump 渲染成整页提示（见 page_jump.go）。
 	pagesLocalNoticeMissingPageID = pageBulkText{pageenums.MsgFieldRequired, "必填字段不能为空，未保存。"}
 
 	// pagesLocalNoticeProjectNameRequired 新建站点工程时名称为空
 	// （POST /admin/projects/create 的 name 为空）。
 	//
 	// 原先这里是 `c.String(400, "项目名称不能为空")`：浏览器里只剩一行纯文本，
-	// 侧栏 / 页头 / 抽屉 / 用户刚填的内容全没了（AGENTS.md 形态 ①）。改成 303 回列表页
-	// + ?err=<当前语言文案>，读侧走 pagePageErr 白名单。
+	// 侧栏 / 页头 / 抽屉 / 用户刚填的内容全没了（AGENTS.md 形态 ①）。改成整页提示
+	// （shell.RenderJump）回带原因。
 	//
 	// 为什么不复用通用词条 MsgFieldRequired：这条回执要说清「哪一条没填」。
 	// 通用句「必填字段不能为空」在页面上等于什么都没说 —— 用户要自己把抽屉再开一遍才知道。
@@ -250,18 +246,6 @@ var (
 	pagesLocalNoticePathRequired = pageBulkText{pageenums.PageFormPathRequired, "页面路径不能为空，未创建。"}
 )
 
-// pagesLocalNotices 页面管理页自造、可原样展示的回执文案（**读侧候选的来源**）。
-//
-// 写侧每新增一条自造回执，必须同时加进这里 —— 漏登记的症状是「写侧发了提示、
-// 页面上静默无提示」（?err= 整体匹配不上候选、被判成伪造），既不报错也不记日志。
-// page_page_err_test.go 的写侧标识符对账用例钉住这一点。
-var pagesLocalNotices = []pageBulkText{
-	pagesLocalNoticeMissingID,
-	pagesLocalNoticeMissingPageID,
-	pagesLocalNoticeProjectNameRequired,
-	pagesLocalNoticePathRequired,
-}
-
 // pageFacingKey 取一条**本域 enums 文案 key** 的当前语言文本（handler 侧已知它可展示时用）。
 //
 // 与 pageFacingText 的分工：那里的入参是 error（来源要在运行期判定、未命中要记日志），
@@ -271,76 +255,4 @@ var pagesLocalNotices = []pageBulkText{
 // 「操作失败」在页面上**完全不可见** —— 用户以为操作成功了。
 func pageFacingKey(c *gin.Context, key string) string {
 	return shell.TranslateFor(c)(key, key)
-}
-
-// pageFacingKeys 可以原样展示给运营的 page 业务错误 key。
-//
-// 取值与 pageErrorStatus（page_handle.go）逐条对应：那一份按 errors.Is 把 sentinel 分类成
-// 400/404/409，default 才是 500 —— 这里列的正是**不是 500** 的那些。
-// enums 的值就是常量名（也是 i18n key），key 形态与译文形态都被接受。
-var pageFacingKeys = []string{
-	pageenums.ErrInvalidParam,
-	pageenums.ErrInvalidKind,
-	pageenums.ErrInvalidDocument,
-	pageenums.ErrInvalidPath,
-	pageenums.ErrProjectRequired,
-	pageenums.ErrPageNotFound,
-	pageenums.ErrProjectNotFound,
-	pageenums.ErrRollbackTargetMiss,
-	pageenums.ErrDraftVersionConflict,
-	pageenums.ErrPathOccupied,
-	pageenums.ErrRebuildRequired,
-	pageenums.ErrNoStagedArtifact,
-	// 定时上下线（PIPE-7）。
-	pageenums.ErrScheduleNotFound,
-	pageenums.ErrScheduleInPast,
-	pageenums.ErrScheduleActionInvalid,
-	pageenums.ErrScheduleRunning,
-	pageenums.ErrScheduleOccupied,
-	pageenums.ErrScheduleApplyFailed,
-}
-
-// pageNoticeTexts 页面管理页可以原样展示的回执文案（当前语言）。
-func pageNoticeTexts(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0, len(pageFacingKeys)*2+len(pagesLocalNotices)+len(pagesBulkResultTemplates)+3)
-	for _, key := range pageFacingKeys {
-		out = append(out, key, tr(key, key))
-	}
-	out = append(out,
-		shell.PageInternalText(c),
-		shell.BulkIDsNoticeTemplate(c),
-	)
-	for _, notice := range pagesLocalNotices {
-		out = append(out, pageBulkTextOf(c, notice))
-	}
-	for _, tpl := range pagesBulkResultTemplates {
-		out = append(out, shell.NoticeTemplate(pageBulkTextOf(c, tpl)))
-	}
-	return out
-}
-
-// pagePageErr 页面管理页 ?err= 的统一出口（未命中落归口文案）。
-func pagePageErr(c *gin.Context) string {
-	// 受控回执优先（批量操作的「有跳过」走这条）：先看警告槽，命中即用它。
-	// fallback 传空串而不是归口文案：这一层只说「受控槽位里有没有东西」，
-	// 归口文案由下面的旧路径按语义决定（否则任何请求都会显示一条「内部错误」）。
-	if text := pageBulkNoticeText(c, pageBulkNoticeErr); text != "" {
-		return text
-	}
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, pageNoticeTexts(c))
-	})
-}
-
-// pagePageDone 页面管理页 ?done= 的统一出口（成功提示：未命中落空串）。
-func pagePageDone(c *gin.Context) string {
-	// 受控回执优先（批量操作走这条）：URL 里只有白名单 key + 有上限的计数。
-	if text := pageBulkNoticeText(c, pageBulkNoticeDone); text != "" {
-		return text
-	}
-	// 回退旧形态（单独删除 / 排期 / 重定向等入口仍用它）：语义一个字没改。
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, pageNoticeTexts(c))
-	})
 }

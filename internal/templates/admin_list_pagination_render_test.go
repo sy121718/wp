@@ -14,7 +14,7 @@ package templates
 //     「键名与渲染位置一一对应」这条判据要留着守 —— 对错位置同样是用户看不见分页）；
 //  3. 分页链接保留筛选参数（翻页不能把用户的筛选条件丢掉）。
 //
-// 为什么这里用本地的 `pageLinkProbe` 而不是 shell.PageLink：`internal/web/shell` 反向 import 了
+// 为什么这里用本地的 `pageLinkProbe` 而不是 shell.PageLink：`internal/shell` 反向 import 了
 // 本包（shell.TranslateFor → templates.TranslateFunc），本包再 import shell 就成环。
 // 探针的字段名与 shell.PageLink 逐字相同（Label / URL / Active / Disabled）——
 // 那边一旦改名，Jet 取字段会直接报 `no field or method Label`，本文件立刻变红。

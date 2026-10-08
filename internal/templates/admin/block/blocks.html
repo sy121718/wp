@@ -16,8 +16,8 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .["SelectedProject"]}}
-{{canCreate := isset(.PermSet["block:create"])}}
-{{canDelete := isset(.PermSet["block:delete"])}}
+{{canCreate := isset(.Buttons["block.create"])}}
+{{canDelete := isset(.Buttons["block.delete"])}}
 <div class="stack">
     {{if len(.Projects) == 0}}
     <section class="card list-card">
@@ -71,10 +71,8 @@
         </div>
     </header>
 
-    {* 可选键一律 isset 包裹：缺失键会让整页在此中断（HTTP 仍 200，列表整块消失）。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.blocks.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
+    {* 写动作的回执不再回带本页：结论由 shell.RenderJump 渲染成整页提示页
+       （原先这里是「上一次操作未完成」提示条，读 ?err=）。 *}
 
     {* 有 stale 时**什么都不渲染**：清单在抽屉里，页头徽章就是入口。
        这里只保留另外两档 —— 「没有待重建」与「读不到」是两类结论，
@@ -90,12 +88,10 @@
     {{end}}
     {{end}}
 
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
-    {{end}}{{end}}
-
     <template id="tpl-block-create">
-        <form method="post" action="/admin/blocks/create">
+        {* action 上带工程筛选：写动作失败时由服务端 shell.BackPath 读回，渲染成整页提示页
+           （结论走响应体，不再经 ?err= 回列表页）。 *}
+        <form method="post" action="/admin/blocks/create{{if selectedProject}}?project={{selectedProject}}{{end}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-row">
@@ -145,7 +141,7 @@
        （admin.js 的 scopeOf = closest('form')）。form 包在 .list-card 外层而不是内层：
        admin.js 与 theme.css 都用「.list-card 的直接子元素」定位卡片结构，插一层 form
        会让卡内的 .filter-bar 与表格失去边框衔接。 *}
-    <form method="post" action="/admin/blocks/bulk-delete">
+    <form method="post" action="/admin/blocks/bulk-delete{{if selectedProject}}?project={{selectedProject}}{{end}}">
     <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="projectId" value="{{selectedProject}}">
     <section class="card list-card">
@@ -270,27 +266,24 @@
        删除确认文案按类型分两种：绑定了主题的页眉/页脚删除后主题下页面会重建，
        其余块只影响引用它的页面 —— 说清楚才好让人决定点不点。 *}
     {{range _, b := .Headers}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete{{if selectedProject}}?project={{selectedProject}}{{end}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{b.ID}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
     {{end}}
     {{range _, b := .Footers}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete{{if selectedProject}}?project={{selectedProject}}{{end}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{b.ID}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
     {{end}}
     {{range _, b := .Blocks}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete"
+    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete{{if selectedProject}}?project={{selectedProject}}{{end}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{b.ID}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
     {{end}}
     {{end}}

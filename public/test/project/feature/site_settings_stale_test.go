@@ -27,6 +27,7 @@ import (
 	projecthttp "go_wp/internal/module/project/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	"go_wp/internal/templates"
 	"go_wp/public/test/support"
 )
 
@@ -65,13 +66,15 @@ func TestSaveSiteSettingsMarksStaleOnlyWhenChanged(t *testing.T) {
 		}
 		gin.SetMode(gin.TestMode)
 		engine := gin.New()
+		// 写动作的结论由 shell.RenderJump 渲染整页提示（HTTP 200），需要真实模板渲染器。
+		engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 		engine.POST("/admin/settings/save", h.SaveSiteSettings)
 		req := httptest.NewRequest(http.MethodPost, "/admin/settings/save", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusSeeOther {
-			t.Fatalf("保存应 303 回本页，实际 %d（body=%s）", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
+			t.Fatalf("保存应 200 渲染成功提示页，实际 %d（body=%s）", rec.Code, rec.Body.String())
 		}
 	}
 

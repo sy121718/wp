@@ -8,8 +8,11 @@
 {* range 内取词要先取 t 函数（Jet 不在 range 内做 := 赋值，且 range 内 . 指向当前元素）。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
+{* 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath 读回）。
+   可选键一律 isset 包裹：直接渲染模板的单测不带它，缺失键会让整页在此中断。 *}
+{{lq := ""}}{{if isset(.ListQuery)}}{{lq = .ListQuery}}{{end}}
 {* 首列勾选与批量删除：权限点复用单条删除的 /api/admin/delete（页面侧不新增权限点）。 *}
-{{canDelete := isset(.PermSet["admin:delete"])}}
+{{canDelete := isset(.Buttons["admin.delete"])}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -18,17 +21,14 @@
             </div>
         </div>
         <div class="page-actions">
-            {{include "../partials/toolbar_create.html" map("allowed", isset(.PermSet["admin:create"]), "tpl", "#tpl-admin-create", "title", tr("admin.admins.action.create", "新建管理员"), "label", tr("admin.admins.action.create", "新建管理员"))}}
+            {{include "../partials/toolbar_create.html" map("allowed", isset(.Buttons["admin.create"]), "tpl", "#tpl-admin-create", "title", tr("admin.admins.action.create", "新建管理员"), "label", tr("admin.admins.action.create", "新建管理员"))}}
         </div>
     </header>
 
-    {* 批量动作结果回带：?done= 全成功 / ?err= 有跳过（部分成功也照实报出成功条数）。
-       可选键一律 isset 包裹：直接渲染模板的单测不带这两个键，缺失键会让整页在此中断（HTTP 仍 200）。 *}
+    {* 写动作的结论不再经 ?done=/?err= 回带（走 shell.RenderJump 的整页提示，见 admin_jump.go）；
+       本页提示条只剩一个来源 —— 列表取数失败的归口文案。 *}
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
-    {{if isset(.Done)}}{{if .Done != ""}}
-    <p class="badge badge-info" role="status">{{.Done}}</p>
     {{end}}{{end}}
 
     <section class="card list-card">
@@ -46,7 +46,7 @@
            也才能判断「是不是筛选条件太窄」。空态落在 tbody 的整行里（colspan 随 canDelete ±1），
            <form> 依旧包住 <table>（批量动作与勾选框必须同属一个 form：提交时浏览器直接带上
            所有勾中的 ids，不需要在提交前注入隐藏域；admin.js 与 theme.css 也依赖这个结构）。 *}
-        <form method="post" action="/admin/administrators/bulk-delete">
+        <form method="post" action="/admin/administrators/bulk-delete{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if canDelete}}{{if len(.Rows) > 0}}
@@ -67,7 +67,7 @@
                     <div class="empty-state">
                         <p class="empty-title">{{ .["t"]("admin.admins.empty.title", "还没有管理员") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.admins.empty", "创建后可在「角色」里分配权限；停用或封禁某个账号，直接在列表里操作。") }}</p>
-                        {{if isset(.PermSet["admin:create"])}}
+                        {{if isset(.Buttons["admin.create"])}}
                         <div class="empty-actions">
                             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-admin-create" data-drawer-title="{{ .["t"]("admin.admins.action.create", "新建管理员") }}">＋ {{ .["t"]("admin.admins.action.create", "新建管理员") }}</button>
                         </div>
@@ -79,7 +79,7 @@
                 <tr data-filter-text="{{a.ID}} {{a.Username}} {{if a.Name}}{{a.Name}}{{end}} {{if a.Email}}{{a.Email}}{{end}} {{if a.Phone}}{{a.Phone}}{{end}}">
                 {{if canDelete}}<td class="col-check"><input type="checkbox" name="ids" value="{{a.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}"></td>{{end}}
                 <td class="text-mute">{{a.ID}}</td>
-                <td>{{if isset(.PermSet["admin:edit"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{a.Username}}</button>{{else}}{{a.Username}}{{end}}</td>
+                <td>{{if isset(.Buttons["admin.edit"])}}<button type="button" class="row-title-link" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{a.Username}}</button>{{else}}{{a.Username}}{{end}}</td>
                 <td>{{if a.Name}}{{a.Name}}{{end}}</td>
                 <td>{{if a.Email}}{{a.Email}}{{end}}</td>
                 <td>{{if a.Phone}}{{a.Phone}}{{end}}</td>
@@ -91,10 +91,10 @@
                 </td>
                 <td class="col-actions">
                     {* 授权分配走抽屉按需拉片段（data-drawer-url）：一次只装一个人的授权集合。 *}
-                    {{if isset(.PermSet["admin:role_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/roles/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.role.title", "分配角色：")}}{{a.Username}}">{{tr("admin.admins.role.action", "分配角色")}}</button>{{end}}
-                    {{if isset(.PermSet["admin:menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/menus/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.menu.title", "菜单权限：")}}{{a.Username}}">{{tr("admin.admins.menu.action", "菜单权限")}}</button>{{end}}
-                    {{if isset(.PermSet["admin:edit"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{tr("admin.admins.action.edit", "编辑")}}</button>{{end}}
-                    {{if isset(.PermSet["admin:delete"])}}<button type="submit" form="admin-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.admins.action.delete", "删除")}}</button>{{end}}
+                    {{if isset(.Buttons["admin.role_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/roles/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.role.title", "分配角色：")}}{{a.Username}}">{{tr("admin.admins.role.action", "分配角色")}}</button>{{end}}
+                    {{if isset(.Buttons["admin.menu_list"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-url="/admin/administrators/menus/drawer?user_id={{a.ID}}" data-drawer-title="{{tr("admin.admins.menu.title", "菜单权限：")}}{{a.Username}}">{{tr("admin.admins.menu.action", "菜单权限")}}</button>{{end}}
+                    {{if isset(.Buttons["admin.edit"])}}<button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-admin-edit-{{a.ID}}" data-drawer-title="{{tr("admin.admins.edit.title", "编辑管理员：")}}{{a.Username}}">{{tr("admin.admins.action.edit", "编辑")}}</button>{{end}}
+                    {{if isset(.Buttons["admin.delete"])}}<button type="submit" form="admin-del-{{a.ID}}" class="btn btn-sm btn-danger">{{tr("admin.admins.action.delete", "删除")}}</button>{{end}}
                 </td>
                 </tr>
                 {{end}}
@@ -109,8 +109,8 @@
     {* 行内删除表单必须放在表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器
        提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
     {{range _, a := .Rows}}
-    {{if isset(.PermSet["admin:delete"])}}
-    <form id="admin-del-{{a.ID}}" method="post" action="/admin/administrators/delete" class="hidden-form"
+    {{if isset(.Buttons["admin.delete"])}}
+    <form id="admin-del-{{a.ID}}" method="post" action="/admin/administrators/delete{{if lq}}?{{lq}}{{end}}" class="hidden-form"
           data-confirm="{{tr("admin.admins.confirm.delete", "确认删除？")}}" data-confirm-danger>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{a.ID}}">
@@ -121,7 +121,7 @@
 
 {* ===== 新建管理员（抽屉表单模板） ===== *}
 <template id="tpl-admin-create">
-    <form method="post" action="/admin/administrators/create">
+    <form method="post" action="/admin/administrators/create{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <div class="form-group">
             <label class="form-label req">{{ .["t"]("admin.admins.field.username", "用户名") }}</label>
@@ -153,7 +153,7 @@
 {* ===== 编辑管理员（每行一份抽屉表单模板，服务端回显） ===== *}
 {{range _, a := .Rows}}
 <template id="tpl-admin-edit-{{a.ID}}">
-    <form method="post" action="/admin/administrators/update">
+    <form method="post" action="/admin/administrators/update{{if lq}}?{{lq}}{{end}}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{a.ID}}">
         <div class="form-group">

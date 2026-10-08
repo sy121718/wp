@@ -1,4 +1,4 @@
-// membership_err.go — membership 模块的错误响应归口（错误文案三件套的读侧）。
+// membership_err.go — membership 模块的错误响应归口（错误文案三件套）。
 //
 // 三件套（AGENTS.md §响应与错误处理）：
 //
@@ -10,6 +10,11 @@
 // SQLSTATE），它会随 500 原样直出给前端。响应不是可信边界。
 // 门禁：scripts/check-no-internal-error-leak.sh。
 //
+// 页面写动作的结论由 membershipJump 渲染成**整页提示**（对应 ThinkPHP 的 success() / error()），
+// 不再经 302 + `?err=` / `?done=` 回带 —— 那条通道要求读侧再判一次「这条提示是不是本仓给的」，
+// 而查询参数不是可信边界；读侧判定（membershipNoticeTexts / membershipPageErr / membershipPageDone）
+// 与回跳 URL 拼装（membershipErrURL / membershipOKURL）随之整批删除。
+//
 // 与 navigation_err.go 同形（同一套三种形态的判据），差别只在模块前缀：
 //   - 整串相等   → 白名单命中，按当前语言取词；
 //   - `key|param` → 带参协议，交给 response 的取词；
@@ -18,16 +23,14 @@
 package membershiphttp
 
 import (
-	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	membershipenums "go_wp/internal/module/membership/enums"
 	membershipmodel "go_wp/internal/module/membership/model"
-	"go_wp/internal/web/shell"
+	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -124,78 +127,48 @@ func membershipErrStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
-// membershipNoticeTexts 本模块页面上可以原样展示的回执文案（当前语言）。
+// membershipTierBackKeys / membershipAssignBackKeys 写动作回跳要带回来的筛选上下文。
 //
-// 写侧（?err= / ?done= 回带）与读侧共用这一份：读侧按形状**整体**匹配，
-// 未命中的 query 参数会被当伪造文案丢掉（查询参数不是可信边界）。
-func membershipNoticeTexts(c *gin.Context) []string {
-	tr := shell.TranslateFor(c)
-	out := make([]string, 0, (len(membershipenums.MembershipFacingMessages)+3)*2)
-	for _, key := range membershipenums.MembershipFacingMessages {
-		out = append(out, key, tr(key, key))
-	}
-	out = append(out,
-		tr(membershipenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）"),
-		// 逐条成功回执的译文：写侧回带的是译文，读侧必须能认出来。
-		tr(membershipenums.MsgTierCreated, membershipenums.MsgTierCreated),
-		tr(membershipenums.MsgTierUpdated, membershipenums.MsgTierUpdated),
-		tr(membershipenums.MsgTierDeleted, membershipenums.MsgTierDeleted),
-		tr(membershipenums.MsgEntitlementSaved, membershipenums.MsgEntitlementSaved),
-		tr(membershipenums.MsgAssignSet, membershipenums.MsgAssignSet),
-		tr(membershipenums.MsgAssignUnlocked, membershipenums.MsgAssignUnlocked),
-		shell.BulkIDsNoticeTemplate(c),
-	)
-	return out
-}
-
-// membershipPageErr 列表页 ?err= 的统一出口（未命中落归口文案）。
-func membershipPageErr(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("err"), shell.PageInternalText(c), func(raw string) string {
-		return shell.FacingNotice(raw, membershipNoticeTexts(c))
-	})
-}
-
-// membershipPageDone 列表页 ?done= 的统一出口（成功提示：未命中落空串）。
-func membershipPageDone(c *gin.Context) string {
-	return shell.FacingQueryText(c.Query("done"), "", func(raw string) string {
-		return shell.FacingNotice(raw, membershipNoticeTexts(c))
-	})
-}
-
-// membershipErrURL 页面写失败的回跳地址（带 ?err= 业务文案）。
+// 与模板里表单 action 的 query 逐键对应（页面渲染时拼进 action，POST 回来由
+// shell.BackPath 从本次请求的 query 读回）—— 两处必须是同一份，否则会出现
+// 「页面把某个筛选拼进去了、回跳时又丢掉」这种只在特定筛选下才暴露的差异。
 //
-// 回带的是**已过白名单的成品文案**（membershipErrPageText），不是 err.Error()：
-// 内部错误因此只以归口文案出现在 URL 里，原文留在日志。
-func membershipErrURL(c *gin.Context, base, projectID string, err error) string {
-	target := base
-	if projectID != "" {
-		target += "?project=" + url.QueryEscape(projectID) + "&err=" + url.QueryEscape(membershipErrPageText(c, err))
-		return target
-	}
-	return target + "?err=" + url.QueryEscape(membershipErrPageText(c, err))
-}
+// 层级页的上下文只有工程；归属页还有等级 / 来源 / 访客 / 页码四维筛选。
+var (
+	membershipTierBackKeys   = []string{"project"}
+	membershipAssignBackKeys = []string{"project", "tierId", "source", "userId", "page"}
+)
 
-// membershipOKURL 页面写成功的回跳地址（带 ?done= 成品回执）。
-func membershipOKURL(base, projectID, notice string) string {
-	target := base
-	if projectID != "" {
-		target += "?project=" + url.QueryEscape(projectID)
-		if notice != "" {
-			target += "&done=" + url.QueryEscape(notice)
-		}
-		return target
-	}
-	if notice != "" {
-		target += "?done=" + url.QueryEscape(notice)
-	}
-	return target
-}
-
-// errMembershipParam 参数级校验失败（判定就在 handle 里，没有 error 对象）。
+// membershipJump 页面写动作的统一出口：整页提示（对应 ThinkPHP 的 success() / error()）。
 //
-// 与 navigation 的同名助手同一理由：参数级失败也要落在白名单的候选里，
-// 否则读侧会把回带的文案当伪造文案丢掉（页面上什么都不显示，也没有任何日志）。
-func errMembershipParam() error { return errors.New(membershipenums.ErrInvalidParam) }
+// 取代原先的 302 + `?err=` / `?done=`：那条通道要求读侧再判一次「这条提示是不是本仓给的」
+// （membershipNoticeTexts 的候选集合），而查询参数不是可信边界。现在文案走响应体，
+// 读侧判定与回跳 URL 拼装随之整批删除。
+//
+// 提示文本必须**已过本模块白名单 / 已归口**（membershipErrPageText / membershipNotice 的产物），
+// 原文只进日志 —— 换个页面呈现不等于可以把 err.Error() 铺在页面上。
+//
+// 失败不自动跳转（Seconds=0）：运营要看清楚原因。成功 1 秒后自动回列表页
+// （与 sysconfig / order / plugin 同一取舍）。
+func membershipJump(c *gin.Context, ok bool, text, back, backText string) {
+	if ok {
+		shell.RenderJump(c, shell.Jump{OK: true, Msg: text, Back: back, BackText: backText, Seconds: 1})
+		return
+	}
+	shell.RenderJump(c, shell.Jump{Msg: text, Back: back, BackText: backText})
+}
+
+// membershipTierBackText / membershipAssignBackText 提示页链接的文字。
+//
+// 复用两个页面的标题词条而不是新造 `*.action.back`：新增词条要走 seed 迁移，
+// 而这一句的语义就是「去这一页」（同 order 的 couponBackText）。
+func membershipTierBackText(c *gin.Context) string {
+	return shell.TranslateFor(c)(membershipenums.PageTiersTitle, "会员等级与权益")
+}
+
+func membershipAssignBackText(c *gin.Context) string {
+	return shell.TranslateFor(c)(membershipenums.PageAssignmentsTitle, "会员归属")
+}
 
 // membershipSourceLabelKey 归属来源的展示用词条 key。
 //

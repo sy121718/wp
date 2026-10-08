@@ -58,12 +58,18 @@ var groupFRetiredKeys = map[string]bool{
 	// 词条由 228 seed（历史迁移保持原样），留在库里只占一行、不被任何模板取用。
 	"admin.roles.perm.back": true,
 	// admin/i18n.html 从「三张卡」改为「页头 + 列表卡」：分页文字说明改由 shell 的分页条
-	// 承担（shell.pagination.info，见 internal/web/shell/pagination.go），页尾那张
+	// 承担（shell.pagination.info，见 internal/shell/pagination.go），页尾那张
 	// 「新增 / 编辑」卡片由页头的新建按钮取代。
 	"admin.i18n.pager.total_pre":  true,
 	"admin.i18n.pager.total_post": true,
 	"admin.i18n.pager.page_post":  true,
 	"admin.i18n.form.title":       true,
+	// 词条页的写动作结论从「查询参数回带 + 页面提示条」改为「整页提示」（shell.RenderJump）：
+	// 模板里的「已保存：/ 未保存：」提示条整批删除。
+	//   · admin.i18n.saved 仍被取用，只是改由 Go 侧（admin_jump.go 的 adminI18nSavedText）取词；
+	//   · admin.i18n.unsaved 不再有任何取用点（失败原因由提示页承载）。
+	"admin.i18n.saved":   true,
+	"admin.i18n.unsaved": true,
 	// admin/masterdata_changes.html：「记录表 / 实体汇总表」改为按视图二选一，
 	// 两个表头里的「（共 N 条 / 个）」计数随之退役 —— 记录视图的总数改由分页条给出，
 	// 实体视图只在被截断时才提示，标题不再拼计数（标题拼计数会让表头长度随数据变化）。
@@ -351,7 +357,7 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 	}
 	admins["title"] = "管理员列表"
 	admins["Total"] = 2
-	admins["PermSet"] = map[string]any{"admin:create": true, "admin:edit": true, "admin:delete": true}
+	admins["Buttons"] = map[string]any{"admin.create": true, "admin.edit": true, "admin.delete": true}
 	admins["Rows"] = []adminRow{
 		{ID: 1, Username: "admin", Name: "甲", Email: "a@example.com", Phone: "138", Status: 1},
 		{ID: 2, Username: "editor01", Status: 3},
@@ -378,7 +384,7 @@ func TestGroupFRangeTranslatePath(t *testing.T) {
 		i18nData[k] = v
 	}
 	i18nData["title"] = "文案词条"
-	i18nData["PermSet"] = map[string]any{"i18n:manage": true}
+	i18nData["Buttons"] = map[string]any{"i18n.manage": true}
 	i18nData["Keyword"] = ""
 	i18nData["LangFilter"] = ""
 	i18nData["CatFilter"] = ""

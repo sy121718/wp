@@ -8,7 +8,7 @@ package cartservice
 //   · product 的 VariantAvailabilityLookupPort（只读可用量，可缺）
 //   · cartcontract.PaymentGateway（收窄到「一个通道」：开通、标题、扣款）
 //
-// 不持有 *gorm.DB，也没有自己的表：购物车状态在客户端 cookie 里（见 cart_cookie.go）。
+// 不持有 *gorm.DB，也没有自己的表：购物车状态在客户端 cookie 里（见 cart.go）。
 // 「无持久化的模块」是有意的 —— 服务端存购物车要先解决「没登录的访客是谁」，
 // 而那正是我们想避开的注册门槛。
 
@@ -35,7 +35,7 @@ type Service struct {
 	// membership 会员身份读取端口（BIZ-3 消费侧接入，装配期经 SetMembershipReader 注入）。
 	//
 	// 允许为 nil：未注入即「会员权益未开启」，结算运费与接入前逐字一致
-	//（见 cart_shipping.go 的判据）。收窄到 Reader —— 购物车只要「免不免运费」这一条。
+	//（见 cart.go 里运费判据）。收窄到 Reader —— 购物车只要「免不免运费」这一条。
 	membership membershipcontract.Reader
 	// shippingPolicy 站点运费规则读取端口（站点级基础运费 + 满额免运费门槛，装配期经
 	// SetShippingPolicyReader 注入）。

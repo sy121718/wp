@@ -13,7 +13,7 @@ import (
 // 再也没人引用，却留在表里。保留期任务跑一趟必须把它清掉 —— 同时不能碰仍在用的对象。
 //
 // 用例刻意不制造任何「受保护产物指针」：产物 GC 会因此在保护集合为空时提前返回，
-// 而内容对象回收仍必须执行（它不依赖产物的保护集合，见 page_artifact_rebuild.go 的 defer）。
+// 而内容对象回收仍必须执行（它不依赖产物的保护集合，见 page_publish_recover.go 的 defer）。
 func TestPurgeRetentionCollectsOrphanContentObjects(t *testing.T) {
 	db, svc, _, projectID := newPageService(t)
 	ctx := context.Background()
