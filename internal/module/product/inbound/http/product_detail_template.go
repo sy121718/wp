@@ -754,15 +754,15 @@ func (h *productPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Contex
 
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
 func (h *productPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
-	// 取词交 adminui.PrepareFragment：片段不经整份 Prepare，但模板要 t —— 漏注入时 Jet 把
+	// 取词交 adminui.PrepareBare：片段不经整份 Prepare，但模板要 t —— 漏注入时 Jet 把
 	// 取词调用求值成空串（不报错、不 500、不记日志），整片提示会变成空白。
-	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareFragment(c,
+	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c,
 		gin.H{"Score": h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID)}))
 }
 
 // renderScoreView 渲染评分片段（空态与结果共用同一份模板：片段按 Score.OK 分流）。
 func renderScoreView(c *gin.Context, sv productdto.ScoreView) {
-	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareFragment(c, gin.H{"Score": sv}))
+	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c, gin.H{"Score": sv}))
 }
 
 // entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。

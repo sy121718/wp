@@ -88,7 +88,7 @@ func TestPageErrorBadRequestHidesRawError(t *testing.T) {
 	}
 }
 
-// TestPageErrorInternalIsInternalExit 片段端点的内部错误出口：500 + 通用文案，原文只进日志。
+// TestPageErrorInternalIsInternalExit 局部端点的内部错误出口：500 + 通用文案，原文只进日志。
 //
 // 两个反向断言都很重要：原始错误不得进响应体（这是出口存在的理由）；**传 nil err 也必须写出
 // 500** —— 调用方常常是「拿不到细节」的失败分支，一个不存在的错误不该让出口退化成「什么都没写」。
@@ -98,7 +98,7 @@ func TestPageErrorInternalIsInternalExit(t *testing.T) {
 	PageErrorInternal(c, "coupon-edit-form", errors.New(secret))
 
 	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("片段内部错误出口应是 500，got %d", recorder.Code)
+		t.Fatalf("局部内部错误出口应是 500，got %d", recorder.Code)
 	}
 	body := recorder.Body.String()
 	if !strings.Contains(body, MsgInternalError) {
@@ -118,7 +118,7 @@ func TestPageErrorInternalIsInternalExit(t *testing.T) {
 // TestPageErrorInternalKeepsShellProtocol 迁家**不改协议**：状态码 / Content-Type / body 与
 // pkg/response.ErrorWithMessage(500, MsgInternalError) 逐字节相同。
 //
-// 消费者是 coupon 片段端点（浏览器拿不到页壳、前端按这个形状解 JSON），所以这里不放宽成
+// 消费者是 coupon 局部端点（浏览器拿不到页壳、前端按这个形状解 JSON），所以这里不放宽成
 // 「contains key」—— 一旦有人给它加个字段或换文案，这条会红。
 func TestPageErrorInternalKeepsShellProtocol(t *testing.T) {
 	wantCtx, wantRecorder := newPageExitContext("/admin/coupons/edit")

@@ -444,7 +444,7 @@ func capturedData(t *testing.T, cap *captureRender) gin.H {
 
 // rowsCtxRows 取回填的值行。
 //
-// RowsCtx 自身也是 gin.H（取词函数 t/tf 由 adminui.PrepareFragment 注入，见 attrRowsCtxData）——
+// RowsCtx 自身也是 gin.H（取词函数 t/tf 由 adminui.PrepareBare 注入，见 attrRowsCtxData）——
 // 用结构体时 Jet 取不到 `.["t"]`，于是控制器得替它取词；换成 gin.H 就是为了把取词放回渲染期。
 func rowsCtxRows(t *testing.T, data gin.H) []productdto.AttrValueFormRow {
 	t.Helper()

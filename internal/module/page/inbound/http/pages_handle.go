@@ -819,7 +819,7 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
 	// Error 交的是**事实**（key + 中文兜底），取词在片段模板里做 —— 片段不经
 	// adminui.Prepare，所以必须显式补 t / tf（漏了不会报错：模板取到 nil，整片取词变空串）。
-	data := adminui.PrepareFragment(c, gin.H{"Revisions": []pagedto.HistoryRow{}, "Error": pageMsg{}})
+	data := adminui.PrepareBare(c, gin.H{"Revisions": []pagedto.HistoryRow{}, "Error": pageMsg{}})
 	if pageID != "" && h.pages != nil {
 		revs, err := h.pages.ListRevisions(c.Request.Context(), &pagecontract.RevisionReq{PageID: pageID})
 		if err != nil {

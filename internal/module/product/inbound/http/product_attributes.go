@@ -86,7 +86,7 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	rows := []gin.H{}
 	// 抽屉表单片段需要的数据：csrf 与取词函数 —— 片段是**带参数 include** 的
 	//（数据是每个抽屉自己的数据类，不是页面 data），取不到 adminui.Prepare 注入的页面键。
-	// csrf 由 attrFormCSRF 显式给；取词函数由每个子 data 各自经 adminui.PrepareFragment 注入
+	// csrf 由 attrFormCSRF 显式给；取词函数由每个子 data 各自经 adminui.PrepareBare 注入
 	//（见 attrGroupFormData / attrValuesFormData）—— 控制器不再自己取词。
 	csrf := attrFormCSRF(c)
 	// 筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 从它读回，
@@ -283,10 +283,10 @@ func splitIDs(raw string) []string {
 // 返回值、抽屉表单 include 传 .RowsCtx）都要**按请求语言取词**，而 Jet 在 struct 上不支持
 // `.["t"]`（渲染时报 can't use t as field name in struct type）。曾经这里给 struct 挂
 // `Tr func(key, fallback string) string` 字段由控制器填 shell.TranslateFor(c) —— 那是
-// 控制器取词。改成 gin.H 之后 t / tf 由 adminui.PrepareFragment 注入，取词统一回到渲染期
+// 控制器取词。改成 gin.H 之后 t / tf 由 adminui.PrepareBare 注入，取词统一回到渲染期
 // （与 values_form / group_form 两个片段同形）。
 func attrRowsCtxData(c *gin.Context, groupID string, rows []productdto.AttrValueFormRow) gin.H {
-	return adminui.PrepareFragment(c, gin.H{"GroupID": groupID, "Rows": rows})
+	return adminui.PrepareBare(c, gin.H{"GroupID": groupID, "Rows": rows})
 }
 
 // attrRowsFromForm 从表单的 values[n].* 字段构造写入请求（空行忽略、数值解析）。
@@ -507,15 +507,15 @@ type attrGroupFormOpts struct {
 //   - 回填三键（FormEcho / FormEchoChecked / FormEchoMulti）—— 只在失败重渲染时并入
 //     （见 attrGroupFormFail），片段以 `gfFill := isset(.FormEcho)` 区分首屏与回填。
 //
-// t / tf 由 adminui.PrepareFragment 注入：片段是**带参数 include** 的（数据是每个抽屉
+// t / tf 由 adminui.PrepareBare 注入：片段是**带参数 include** 的（数据是每个抽屉
 // 自己的数据类，不是页面 data），拿不到 adminui.Prepare 注入的页面键 —— 缺了 t 片段里的
 // `.["t"](...)` 静默变空串（200、日志干净），缺了 tf 则是渲染中断（500，htmx 不 swap）。
-// **不注入 csrf_token**（PrepareFragment 只管多语言），token 仍由 Csrf 键显式带。
+// **不注入 csrf_token**（PrepareBare 只管多语言），token 仍由 Csrf 键显式带。
 //
 // InDrawer 恒为 true：属性页的表单**只**存在于抽屉里（页面上没有行内属性表单）。
 // 失败重渲染时若表单没申报抽屉形态，它会由 attrGroupFormFail 删掉。
 func attrGroupFormData(c *gin.Context, o attrGroupFormOpts) gin.H {
-	return adminui.PrepareFragment(c, gin.H{
+	return adminui.PrepareBare(c, gin.H{
 		"Csrf": o.Csrf, "Project": o.ProjectID,
 		"Mode": o.Mode, "Action": withListQuery(attrGroupFormAction(o.Mode), o.ListQuery),
 		"GroupID": o.GroupID, "IsCreate": o.Mode == attrGroupModeCreate,
@@ -543,9 +543,9 @@ type attrValuesFormOpts struct {
 //
 // 回填的**主体是 RowsCtx**（用户刚编辑的那几行，由 attrEchoRowsFromForm 保留位置和原值）；
 // FormEcho* 三键只承载 projectId / id / groupId 这几个隐藏域 —— 值表单的可见字段
-// 全是 values[n].*，没有单值字段可回填。t / tf 同 attrGroupFormData（PrepareFragment 注入）。
+// 全是 values[n].*，没有单值字段可回填。t / tf 同 attrGroupFormData（PrepareBare 注入）。
 func attrValuesFormData(c *gin.Context, o attrValuesFormOpts) gin.H {
-	return adminui.PrepareFragment(c, gin.H{
+	return adminui.PrepareBare(c, gin.H{
 		"Csrf": o.Csrf, "Project": o.ProjectID,
 		"GroupID": o.GroupID, "Action": withListQuery(attrValuesAction, o.ListQuery),
 		"RowsCtx": o.RowsCtx, "InDrawer": true,

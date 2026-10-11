@@ -1206,10 +1206,10 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	nodeID := strings.TrimSpace(c.PostForm("nodeId"))
 	node, err := workbenchservice.FindDocNode(json.RawMessage(c.PostForm("document")), nodeID)
 	if err != nil || node == nil {
-		// 空态分支同样经 PrepareFragment：片段模板里的取词（workbench.ui.inspector.empty 等）
+		// 空态分支同样经 PrepareBare：片段模板里的取词（workbench.ui.inspector.empty 等）
 		// 靠它注入的 t —— 漏注入时 Jet **静默**输出空串（不是报错、状态码 200、日志干净），
 		// 空面板会变成一句话都没有。两条分支走同一个入口，不各写一份。
-		c.HTML(http.StatusOK, "fragments/inspector_panel", adminui.PrepareFragment(c, gin.H{
+		c.HTML(http.StatusOK, "fragments/inspector_panel", adminui.PrepareBare(c, gin.H{
 			"NodeID": "",
 		}))
 		return
@@ -1226,11 +1226,11 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 		c.String(http.StatusInternalServerError, adminui.PageInternalText(c))
 		return
 	}
-	// 取词函数由 adminui.PrepareFragment 注入（片段不经 Prepare 页壳，见该函数注释）：
+	// 取词函数由 adminui.PrepareBare 注入（片段不经 Prepare 页壳，见该函数注释）：
 	// 模板里的 workbench.ui.inspector.* 由渲染期按请求语言取，控制器不再提前取词。
 	// 注意本片段的**面板正文**仍是 service 拼串产出的 HTML（Sections[].HTML / Title 等），
 	// 那部分的取词留在 service —— 它没有模板槽位可放（见 workbench/service 文件头）。
-	c.HTML(http.StatusOK, "fragments/inspector_panel", adminui.PrepareFragment(c, gin.H{
+	c.HTML(http.StatusOK, "fragments/inspector_panel", adminui.PrepareBare(c, gin.H{
 		"NodeID": nodeID, "NodeType": node.Type,
 		"Sections": sections,
 	}))
@@ -1246,11 +1246,11 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 	}
 	selectedID := strings.TrimSpace(c.PostForm("selectedId"))
 	filter := strings.ToLower(strings.TrimSpace(c.PostForm("filter")))
-	// PrepareFragment：与同目录另一个片段（inspector_panel）走同一个入口，片段自带取词函数
+	// PrepareBare：与同目录另一个片段（inspector_panel）走同一个入口，片段自带取词函数
 	// 才有统一的形状。**本片段今天并不消费 t/tf** —— 树 HTML 整块由
 	// workbenchservice.RenderOutlineHTML 拼串产出（Go 拼串，取词在 service 侧经 tr 完成），
 	// 模板只有一句 {{ .HTML | unsafe }}。注入在这里是为了「模板侧新增取词」时不必再想起它。
-	c.HTML(http.StatusOK, "fragments/outline_tree", adminui.PrepareFragment(c, gin.H{
+	c.HTML(http.StatusOK, "fragments/outline_tree", adminui.PrepareBare(c, gin.H{
 		"HTML": workbenchservice.RenderOutlineHTML(page.Root, selectedID, filter, workbenchTrFunc(c)),
 	}))
 }

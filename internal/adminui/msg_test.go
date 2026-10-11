@@ -4,7 +4,7 @@ package adminui
 //
 // 同一个事实（facing.Msg）会在两条路上被渲染：
 //   - 模板：注入的 `tf`（internal/templates 的 tl 函数）+ `tr`；
-//   - Go 侧：MsgText —— 给 JSON 出口、拼串 HTML、以及还没有模板槽位的片段用。
+//   - Go 侧：MsgText —— 给 JSON 出口、拼串 HTML、以及还没有模板槽位的局部渲染用。
 //
 // 两条路曾经分叉：MsgText 在 Key 为空时**直接返回 Fallback**（跳过 `%s` 填充），
 // 而 tf 无论 Key 是否为空都走 TranslateArgs（先取词、再按 `%s` 填充）。

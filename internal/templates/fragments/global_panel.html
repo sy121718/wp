@@ -1,7 +1,7 @@
 {* fragments/global_panel.html — 全局设置（站点主题）面板（HTMX 服务端渲染，docs/09 §3）
    数据：ThemeID / Groups（分组 → 字段）
    约定：普通字段带 name（提交键）与 value；color 字段输出槽，客户端用取色器增强并注入 hidden input。
-   取词：本片段不经 PrepareFragment，t / tf 由数据注入（Go 侧经 adminui.Prepare）；
+   取词：本片段不经 PrepareBare，t / tf 由数据注入（Go 侧经 adminui.Prepare）；
    分组标题 / 字段 label / 选项 label 收的是**事实**（TitleKey+TitleFallback 这类两字段），
    取词在本片段做（tr）—— 控制器只交 key + 中文兜底。
    noTheme 复用迁移 452 的词条（与工作台画布 layout.html 的空态同一句）。 *}

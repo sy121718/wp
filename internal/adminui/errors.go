@@ -3,7 +3,7 @@ package adminui
 // errors.go — 后台**页面侧**的错误出口与受控文本 helper（task-92 批 2b-1 自 internal/shell 迁入；
 // task-114 收口最后两个：`PageError` → 本文件的 PageErrorInternal、`PageInternalText` 转发删除）。
 //
-// 为什么归这里：这些入口的消费者全是后台页面 handler（整页失败、片段写失败、参数校验失败），
+// 为什么归这里：这些入口的消费者全是后台页面 handler（整页失败、局部写失败、参数校验失败），
 // 与「外壳装配 / 页面表现」同属一层；留在 internal/shell 会让壳层长期背着页面出口，而
 // internal/shell 的终局是被整体删除（迁移计划见 internal/shell/shell_migration_test.go）。
 //
@@ -13,7 +13,7 @@ package adminui
 //     那边自带场景日志与「业务错误 / 内部错误」判别。JSON handler 默认不要 import 本文件。
 //
 // 唯一例外（两条，都是**刻意的**，别当成漏网之鱼去「顺手统一」）：
-//   - `PageErrorInternal`：带壳页面的**片段端点**的 500 JSON 出口（task-114 自 shell.PageError
+//   - `PageErrorInternal`：带壳页面的**局部端点**的 500 JSON 出口（task-114 自 shell.PageError
 //     原样迁入，响应体逐字节不变）；
 //   - `workbench_handle.go:64` 的 503 直接调 `PageInternalText`。
 // 这两处都不能换成 pkg/response 的入口：那边不经过模板取词层，缺词条时会把**裸 key**
@@ -50,11 +50,11 @@ func PageErrorBadRequest(c *gin.Context, scene string, err error) {
 	response.ErrorWithMessage(c, http.StatusBadRequest, MsgInternalError)
 }
 
-// PageErrorInternal 页面（片段）端点的内部错误出口：记日志 + 对外通用提示（HTTP 500，JSON 体）。
+// PageErrorInternal 页面（局部）端点的内部错误出口：记日志 + 对外通用提示（HTTP 500，JSON 体）。
 //
 // 与 PageErrorBadRequest 是一对（500 / 400），取舍一致：**原文只进日志**。它是 task-114 从
 // internal/shell 的 `PageError` 原样迁入的 —— 状态码、Content-Type、body 形状与日志形态
-// （scene + `path` 字段 + 固定 message「后台页面处理失败」）逐字节不变：消费者是 coupon 片段
+// （scene + `path` 字段 + 固定 message「后台页面处理失败」）逐字节不变：消费者是 coupon 的局部端点
 // 端点（`internal/module/order/inbound/http/coupon_page.go` 两处，浏览器拿不到页壳、只收 JSON），
 // 搬家不该顺手换协议。
 //
@@ -93,7 +93,7 @@ func AdminWriteFailedText(c *gin.Context, text string) {
 // PageInternalText 统一内部错误文案（走当前语言的译文，缺词条回退中文原文）。
 //
 // 它是**受控文本 helper**，不是出口：只产文案，写不写响应、写什么状态码由调用方决定
-// （整页 500、片段 500、跳转提示、JSON 体都用它）。
+// （整页 500、局部 500、跳转提示、JSON 体都用它）。
 //
 // 中文兜底与 058 的 zh-CN 词条**逐字相同**，所以「命中词条」与「回落兜底」返回同一个
 // 字符串；只有兜底被改措辞、或词条被改成别的说法时才会不等 —— 那正是该被测试拦下的漂移。

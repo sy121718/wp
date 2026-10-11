@@ -1,12 +1,12 @@
 package adminui
 
-// render.go — 页面/片段的**渲染出口**：控制器最后一步只该是一行渲染。
+// render.go — 后台的**渲染出口**（整页与不带页壳两条）：控制器最后一步只该是一行渲染。
 //
 // 为什么需要它：控制器的终局是「绑定并校验请求 → 调 service → 渲染」四步（见
 // internal/module/CLAUDE.md §inbound/http）。渲染这一步如果每个 handler 自己写，就会重复三件事：
 //   · HTTP 分档（200 / 400 参数不合法 / 500 取数失败）；
 //   · no-store（失败页不该被缓存，否则重试看到的是缓存的失败页）；
-//   · 取词函数注入（PrepareView / PrepareFragmentView，漏了是**静默**空串）。
+//   · 取词函数注入（PrepareView / PrepareBareView，漏了是**静默**空串）。
 // 这三件事的判据都属于「这一屏的结论」，所以由**视图**给出（实现 PageResult），渲染出口只读它 ——
 // handler 因此不再需要 `if errors.Is(...) { status = 400 }` 这类分档代码。
 //
@@ -48,15 +48,18 @@ func RenderPage(c *gin.Context, tpl string, view any) {
 	c.HTML(status, tpl, PrepareView(c, view))
 }
 
-// RenderFragment 后台片段渲染出口（htmx 局部更新）：只注入取词函数，不带页壳。
+// RenderBare 后台**不带页壳**的渲染出口（htmx 局部更新）：只注入取词函数，页壳那套键不给。
 //
-// 片段**一律 200**：htmx 2.0.4 把 5xx 判成 `swap:false`，失败片段返回 500 等于「用户点了没反应」。
+// 它与 RenderPage 不是两条渲染路径：同一份模板、同一份视图，区别只在套不套页壳 ——
+// 局部更新换掉页面里的一块，套上页壳就是把整页塞进那一块里。
+//
+// 这条出口**一律 200**：htmx 2.0.4 把 5xx 判成 `swap:false`，失败返回 500 等于「用户点了没反应」。
 // 失败因此表达在视图的失败槽里（同 internal/templates/CLAUDE.md 的实测记录）。
-func RenderFragment(c *gin.Context, tpl string, view any) {
-	c.HTML(http.StatusOK, tpl, PrepareFragmentView(c, view))
+func RenderBare(c *gin.Context, tpl string, view any) {
+	c.HTML(http.StatusOK, tpl, PrepareBareView(c, view))
 }
 
-// PrepareFragmentView 片段版的视图渲染入口：ViewMap + PrepareFragment。
-func PrepareFragmentView(c *gin.Context, view any) gin.H {
-	return PrepareFragment(c, ViewMap(view))
+// PrepareBareView 不带页壳版的视图渲染入口：ViewMap + PrepareBare。
+func PrepareBareView(c *gin.Context, view any) gin.H {
+	return PrepareBare(c, ViewMap(view))
 }

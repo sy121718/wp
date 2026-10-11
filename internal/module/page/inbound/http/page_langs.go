@@ -108,7 +108,7 @@ func (h *pagesAdminHandle) pageLangsPanelOrJump(c *gin.Context, pageID string, e
 // 缺 key 会在运行期报错并让整段片段消失）。
 //
 // errMsg / doneMsg 是**事实**（key + 中文兜底 + 参数），取词由片段模板做 ——
-// 数据在返回前经 adminui.PrepareFragment 注入 t / tf（片段不走 Prepare，见该函数注释）。
+// 数据在返回前经 adminui.PrepareBare 注入 t / tf（片段不走 Prepare，见该函数注释）。
 func (h *pagesAdminHandle) pageLangsPanelData(c *gin.Context, pageID string, errMsg, doneMsg pageMsg) gin.H {
 	token, terr := builtin.GetCSRFToken(c)
 	if terr != nil {
@@ -150,7 +150,7 @@ func (h *pagesAdminHandle) pageLangsPanelData(c *gin.Context, pageID string, err
 			}
 		}
 	}
-	return adminui.PrepareFragment(c, gin.H{
+	return adminui.PrepareBare(c, gin.H{
 		"CSRFToken": token,
 		"PageID":    pid,
 		"Path":      path,

@@ -25,8 +25,8 @@ import (
 // Tr 是取词函数：该片段的 data 是**结构体**（Jet 在 struct 上不支持 `.["t"]`，
 // 只有 func 字段可调），取词函数因此随数据类一起传 —— 形状与 handle 的 attrRowsCtx.Tr 一致。
 func attrRowsCtxData(groupID string, rows []map[string]any) map[string]any {
-	// t / tf 是**事实取词**的那两个函数：生产路径由 adminui.PrepareFragment 注入
-	// （attrRowsCtxData 现在就是 PrepareFragment 的返回），这里给等价的一份。
+	// t / tf 是**事实取词**的那两个函数：生产路径由 adminui.PrepareBare 注入
+	// （attrRowsCtxData 现在就是 PrepareBare 的返回），这里给等价的一份。
 	return map[string]any{
 		"GroupID": groupID,
 		"Rows":    rows,

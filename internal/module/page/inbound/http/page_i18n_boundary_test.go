@@ -14,7 +14,7 @@ var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\
 //
 // 判据：控制器只交**文案事实**（`adminui.Msg{Key, Fallback, Args}`），取词在模板里 ——
 // 后台是 Go 渲染、词条在库里，控制器里写「错误 → 文案」的映射等于加一门语言要回头改控制器。
-// 片段一律走 `adminui.PrepareFragment`，手工塞 `"t": shell.TranslateFor(c)` 是旧写法。
+// 片段一律走 `adminui.PrepareBare`，手工塞 `"t": shell.TranslateFor(c)` 是旧写法。
 //
 // 允许保留的只有下表这几处（各属于四类例外之一）。清单**只减不增**，两个方向都判失败：
 //

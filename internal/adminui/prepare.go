@@ -153,19 +153,19 @@ func ViewMap(view any) gin.H {
 	return out
 }
 
-// PrepareFragment 为后台**片段**模板注入取词函数（lang / t / tf），页壳那套键一概不注入。
+// PrepareBare 为**不带页壳**的后台模板注入取词函数（lang / t / tf），页壳那套键一概不注入。
 //
-// 为什么单独一个入口：片段不带页壳，Prepare 里的 CSRF 隐藏域 / 权限码 / 导航树 / 侧栏
-// cookie 对它是白算；但片段同样要按请求语言取词，而 t/tf **只能经 data 注入** ——
+// 为什么单独一个入口：这些模板不带页壳，Prepare 里的 CSRF 隐藏域 / 权限码 / 导航树 / 侧栏
+// cookie 对它是白算；但它同样要按请求语言取词，而 t/tf **只能经 data 注入** ——
 // 语言是请求级的，Set.AddGlobal 的全局函数拿不到当前请求的语言（见 injectI18n 的说明）。
 //
-// 调用点：所有 `c.HTML(..., "fragments/xxx", data)` 的后台片段渲染。
+// 调用点：htmx 局部更新（adminui.RenderBare）与任何 `c.HTML(..., data)` 的不带页壳渲染。
 //
-// 漏注入的后果是**静默**的：模板里 `{{tr := .["t"]}}` 拿到 nil，该片段所有取词一起变
+// 漏注入的后果是**静默**的：模板里 `{{tr := .["t"]}}` 拿到 nil，该模板所有取词一起变
 // 空串 —— 页面结构完整、状态码 200、日志干净（见 internal/templates/CLAUDE.md 的实测记录）。
 // 控制器因此被迫在 Go 侧提前取词、把成品串塞进槽位；接上本函数之后槽位可以只放事实
 // （adminui.Msg），取词统一回到渲染期。
-func PrepareFragment(c *gin.Context, data gin.H) gin.H {
+func PrepareBare(c *gin.Context, data gin.H) gin.H {
 	if data == nil {
 		data = gin.H{}
 	}

@@ -5,7 +5,7 @@
    被三处复用：页面设置面板、文章编辑页、商品 / 分类 / 品牌页（审计 SEO-016）。
    共用同一份模板是刻意的：同一份评分结果不该有三种呈现方式 ——
    「哪些检查项算未达标」在三个地方各写一遍，很快会给出三种答案。
-   取词：本片段不经整份 shell.Prepare，但模板要 t —— 调用点一律经 adminui.PrepareFragment
+   取词：本片段不经整份 shell.Prepare，但模板要 t —— 调用点一律经 adminui.PrepareBare
    注入（product / content 已切；project 仍手工塞 `"t": templates.TranslateFunc(...)`）。
    漏注入不报错：取词调用求值成空串、200、日志干净，整片文案静默变空白。 *}
 {{tr := .["t"]}}

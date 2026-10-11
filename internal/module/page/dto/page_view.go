@@ -29,7 +29,7 @@ type PageLangRow struct {
 	// StatusKey / StatusFallback 状态文案的**事实**（已排除 / 已发布 / 未发布）。
 	//
 	// 行上放事实而不是成品串：语言是请求级的，控制器提前翻等于在这里替渲染期做决定；
-	// 片段模板拿到 adminui.PrepareFragment 注入的 tr，按当前请求语言取词。
+	// 片段模板拿到 adminui.PrepareBare 注入的 tr，按当前请求语言取词。
 	StatusKey      string
 	StatusFallback string
 	// CanRepublish 可以点「重新发布」（未排除即可；已排除的要先恢复）。
@@ -51,7 +51,7 @@ type ScheduleRow struct {
 	// NoteKey / NoteFallback 失败原因的**事实**（写侧只写 key，读侧按 key 取词）。
 	//
 	// 为什么行上不放成品串：与 Note 一起交出去的还有「用哪种语言说」这个决定，
-	// 而语言是请求级的 —— 取词放在模板（片段拿到 adminui.PrepareFragment 注入的 tr）。
+	// 而语言是请求级的 —— 取词放在模板（片段拿到 adminui.PrepareBare 注入的 tr）。
 	NoteKey      string
 	NoteFallback string
 	// CanCancel 只有 pending 能取消（running 已在执行、终态没有可取消的东西）。

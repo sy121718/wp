@@ -4,7 +4,7 @@
    （只有一处），两边对不上时表现为「点了没反应」。
 
    **本片段整体由 c.HTML 单独渲染，不走 shell.Prepare** —— 取词函数由数据注入，
-   装配处是 adminui.PrepareFragment（见 ai_page.go 的 renderFab）：它只注入 lang / t / tf，
+   装配处是 adminui.PrepareBare（见 ai_page.go 的 renderFab）：它只注入 lang / t / tf，
    不注入页壳那套。片段模板因此**自己取词**，Go 侧只给事实。
 
    槽位收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数），不是拼好的句子 ——

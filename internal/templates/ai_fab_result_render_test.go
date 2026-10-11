@@ -3,7 +3,7 @@ package templates
 // ai_fab_result_render_test.go — 悬浮球回答片段（P5 渲染数据通道的消费侧）。
 //
 // 这个片段**单独渲染**（c.HTML，不经 adminui.Prepare），所以取词函数靠数据注入 ——
-// 装配处是 adminui.PrepareFragment（见 ai_page.go 的 renderFab）。本文件钉两件事：
+// 装配处是 adminui.PrepareBare（见 ai_page.go 的 renderFab）。本文件钉两件事：
 //
 //	① 槽位收的是**事实**（key + 兜底），文案在渲染期由 tf 取 —— 不是 Go 侧塞成品串；
 //	② 漏注入 tf 时是**静默空串**（不是 500、不是报错），所以「注入」这件事只能靠
@@ -29,7 +29,7 @@ type fabFact struct {
 	Args     []string
 }
 
-// fabTF 模拟 PrepareFragment 注入的 tf：缺词条回落中文兜底，有参数时按 `%s` 填充。
+// fabTF 模拟 PrepareBare 注入的 tf：缺词条回落中文兜底，有参数时按 `%s` 填充。
 //
 // 真链路的取词与语言解析在 adminui.TranslateArgs（按请求语言查 sys_i18n），
 // 本文件只验模板形状，所以这里只把「key 查不到 → 用兜底」这一条简化实现。
@@ -44,7 +44,7 @@ func fabTF(_ string, fallback string, args []string) string {
 	return fmt.Sprintf(fallback, vals...)
 }
 
-// renderFabResult 渲染一次片段（带上 PrepareFragment 会注入的 tf）。
+// renderFabResult 渲染一次片段（带上 PrepareBare 会注入的 tf）。
 func renderFabResult(t *testing.T, data map[string]any) string {
 	t.Helper()
 	if data == nil {
@@ -177,7 +177,7 @@ func TestFabResultTranslatesAtRenderTime(t *testing.T) {
 // TestFabResultWithoutTFIsSilent 漏注入 tf 时是**静默空串**，不是 500。
 //
 // 这条把「片段自己取词」的代价写成会变红的检查：渲染不报错、结构完整、日志干净，
-// 只有文案整片消失 —— 所以装配必须统一走 adminui.PrepareFragment，别在调用点手填。
+// 只有文案整片消失 —— 所以装配必须统一走 adminui.PrepareBare，别在调用点手填。
 func TestFabResultWithoutTFIsSilent(t *testing.T) {
 	body := renderFabResultRaw(t, map[string]any{
 		"FabError": fabFact{Key: "ai.fab.failed", Fallback: "这句应该消失"},

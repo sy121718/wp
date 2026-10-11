@@ -179,7 +179,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 
 // renderFab 渲染悬浮球的结果片段。
 //
-// 数据装配处经 adminui.PrepareFragment 注入取词函数：片段不经 Prepare 页壳
+// 数据装配处经 adminui.PrepareBare 注入取词函数：片段不经 Prepare 页壳
 // （CSRF / 权限码 / 导航树对它是白算），但**文案要按请求语言取** —— 注入链只有这一条
 // （语言是请求级的，全局函数拿不到）。漏注入的后果是静默的：`{{tf := .["tf"]}}` 拿到 nil，
 // 该片段所有取词一起变空串，而状态码 200、日志干净（见 internal/templates/CLAUDE.md）。
@@ -191,7 +191,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 // 而 htmx 默认不替换 4xx/5xx 的响应 —— 用状态码表达业务结果会让用户点了按钮
 // 看到面板毫无变化。真正的内部错误（模板渲染失败）由框架自己回 500，那才是 5xx 的位置。
 func (h *SessionPageHandle) renderFab(c *gin.Context, data gin.H) {
-	c.HTML(http.StatusOK, "partials/ai_fab_result", adminui.PrepareFragment(c, data))
+	c.HTML(http.StatusOK, "partials/ai_fab_result", adminui.PrepareBare(c, data))
 }
 
 // fabViewsOf 从本轮的工具事件里收集可渲染视图（P5 的渲染数据通道）。

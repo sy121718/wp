@@ -113,7 +113,7 @@ func TestRejectUnauthorizedBranches(t *testing.T) {
 }
 
 // TestRejectForbiddenAndErrorRenderWholePage 403/500 档：真实状态码 + no-store + 整页提示；
-// htmx 档换 HX-Redirect（htmx 对 4xx 不 swap，整页 HTML 塞进片段位置是坏页面）。
+// htmx 档换 HX-Redirect（htmx 对 4xx 不 swap，整页 HTML 塞进局部更新的位置是坏页面）。
 func TestRejectForbiddenAndErrorRenderWholePage(t *testing.T) {
 	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
 		// 归口文案：用一个必然不存在的词条 key，证明回落的是调用点原文而不是空串。

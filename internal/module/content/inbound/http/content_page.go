@@ -536,13 +536,13 @@ func articleBulkDeleteResult(deleted, skipped int) articleMsg {
 // 各写一份模板只会让「哪些检查项算未达标」的呈现方式慢慢分叉。
 func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	data := articleFormOf(c).data()
-	// 片段模板的取词函数（t / tf）由 PrepareFragment 统一注入 —— 手工塞 "t" 的写法漏一处
+	// 片段模板的取词函数（t / tf）由 PrepareBare 统一注入 —— 手工塞 "t" 的写法漏一处
 	// 就是静默空白：模板拿到 nil 时所有取词一起变空串（不报错、不 500、不记日志）。
 	//
 	// Score 里的文案**仍由 Go 侧取词**：这份视图是 fragments/seo_score.html 的渲染契约，
 	// 而该模板由内容 / 商品 / 工程三处共用、且不在本模块写权限内，三份同形 Go 视图必须与
 	// 模板同批取词化；本批保持原样（已在报告里登记为待办）。
-	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareFragment(c,
+	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c,
 		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c))}))
 }
 
@@ -736,20 +736,20 @@ var articleImportActionLabels = map[richdoc.WarningAction]articleImportText{
 func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	item, err := h.articleByID(c)
 	if err != nil {
-		c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareFragment(c,
+		c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareBare(c,
 			gin.H{"Preview": articleImportPreviewView{}, "Err": articleImportErrMsg(c, err)}))
 		return
 	}
 	res, err := richdoc.HTMLToNodes(articleStr(item.Data, "body"))
 	if err != nil {
-		c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareFragment(c,
+		c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareBare(c,
 			gin.H{"Preview": articleImportPreviewView{}, "Err": articleImportErrMsg(c, err)}))
 		return
 	}
-	// 片段的取词函数（t / tf）由 PrepareFragment 统一注入：手工塞 "t" 的写法漏一处就是
+	// 片段的取词函数（t / tf）由 PrepareBare 统一注入：手工塞 "t" 的写法漏一处就是
 	// 静默空白（模板拿到 nil 时所有取词一起变空串，不报错、不 500）。
 	// Err 交的是**事实**（key + 中文兜底），模板按当前语言取词。
-	c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareFragment(c,
+	c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareBare(c,
 		gin.H{"Preview": articleImportPreviewViewOf(res, shell.TranslateFor(c)), "Err": articleMsg{}}))
 }
 
@@ -2038,7 +2038,7 @@ func scoreViewFromResult(res *scoring.Result, trs ...func(key, fallback string) 
 //
 // 本视图仍在 Go 侧取词：字段集与语义是 fragments/seo_score.html 的渲染契约，而该模板
 // 由内容 / 商品 / 工程三处共用（各自持一份同形 scoreView），取词化要三份视图与模板同批改 ——
-// 模板不在本模块写权限内，本批只把数据注入统一到 PrepareFragment（已登记待办）。
+// 模板不在本模块写权限内，本批只把数据注入统一到 PrepareBare（已登记待办）。
 func articleScoreViewOf(data map[string]any, articleURL, lang string,
 	trs ...func(key, fallback string) string) scoreView {
 	tr := articlePublishTr(trs)

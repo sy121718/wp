@@ -2,7 +2,7 @@
    数据（由 page/inbound/http/page_schedule.go 的 schedulePanelData 注入，**全部键总是存在**）：
      t / tf（取词函数，由数据注入）/ CSRFToken / PageID / Path / Items（[]scheduleRowView）/ Err / Done / DefaultAt
    字段全部来自**数据库**（page_schedules），不从页面文档猜 —— 文档里没有「排定」这件事。
-   取词：本片段不经 Prepare，t / tf 由数据注入（Go 侧经 adminui.PrepareFragment）。
+   取词：本片段不经 Prepare，t / tf 由数据注入（Go 侧经 adminui.PrepareBare）。
    槽位收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）而不是拼好的句子 ——
    控制器不取词，语言由这里的 tr / tf 按当前请求决定。 *}
 {{tr := .["t"]}}

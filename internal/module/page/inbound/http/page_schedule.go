@@ -149,7 +149,7 @@ func scheduleFailureText(tr func(key, fallback string) string, key string) strin
 // 键一律**总是注入**（空串 / 空切片而不是缺失）：后台片段模板用点号访问 map 键，
 // 缺 key 会在运行期报错并让整段片段消失（inert 的失败，页面上只是少了东西）。
 // errMsg / doneMsg 是**事实**（key + 中文兜底 + 参数），取词由片段模板做；
-// 数据在返回前经 adminui.PrepareFragment 注入 t / tf（片段不走 Prepare）。
+// 数据在返回前经 adminui.PrepareBare 注入 t / tf（片段不走 Prepare）。
 func (h *pagesAdminHandle) schedulePanelData(c *gin.Context, pageID string, errMsg, doneMsg pageMsg) gin.H {
 	// token 拿不到不阻断渲染：提交会被 CSRF 中间件拒（与其它后台页一致）。
 	token, terr := builtin.GetCSRFToken(c)
@@ -189,7 +189,7 @@ func (h *pagesAdminHandle) schedulePanelData(c *gin.Context, pageID string, errM
 			}
 		}
 	}
-	return adminui.PrepareFragment(c, gin.H{
+	return adminui.PrepareBare(c, gin.H{
 		"CSRFToken": token,
 		"PageID":    pageID,
 		"Path":      path,

@@ -1,6 +1,6 @@
 {* fragments/history_list.html — 修订历史列表（HTMX 服务端渲染，docs/09 §3）
    数据：Revisions（Version/Path/CreatedAt）、Error（事实：key + 中文兜底 + `%s` 参数）
-   取词：本片段不经 adminui.Prepare，t / tf 由调用点经 adminui.PrepareFragment 注入。
+   取词：本片段不经 adminui.Prepare，t / tf 由调用点经 adminui.PrepareBare 注入。
    模板侧只认事实（`tr`/`tf` 取词），Go 侧不产出成品串 —— 否则中英混排会从「某句话没词条」
    变成「整片文案锁死在中文」。 *}
 {{tr := .["t"]}}

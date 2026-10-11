@@ -214,22 +214,22 @@ func TestRenderPageDefaultsToOK(t *testing.T) {
 	}
 }
 
-// TestRenderFragmentAlwaysOK 片段一律 200，且只注入取词函数。
+// TestRenderBareAlwaysOK 这条出口一律 200，且只注入取词函数。
 //
-// 判据：htmx 2.0.4 把 5xx 判成 swap:false —— 失败片段返回 500 等于「用户点了没反应」，
-// 所以失败必须表达在视图的失败槽里，状态码恒 200。片段也不该带页壳键（csrf/PermSet/NavGroups）。
-func TestRenderFragmentAlwaysOK(t *testing.T) {
+// 判据：htmx 2.0.4 把 5xx 判成 swap:false —— 失败回填返回 500 等于「用户点了没反应」，
+// 所以失败必须表达在视图的失败槽里，状态码恒 200。这条出口也不该带页壳键（csrf/PermSet/NavGroups）。
+func TestRenderBareAlwaysOK(t *testing.T) {
 	c, rec, renderer := newRenderContext(t, "/admin/products/new")
-	RenderFragment(c, "admin/product/product_create_form.html", pageViewFixture{Title: "失败片段"})
+	RenderBare(c, "admin/product/product_create_form.html", pageViewFixture{Title: "失败表单"})
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("片段必须恒 200（htmx 不 swap 5xx），实际 %d", rec.Code)
+		t.Fatalf("这条出口必须恒 200（htmx 不 swap 5xx），实际 %d", rec.Code)
 	}
 	data := renderer.data.(gin.H)
 	if _, ok := data["tf"]; !ok {
-		t.Fatalf("片段必须注入 tf（模板用 tf 填占位符，缺了是 500）")
+		t.Fatalf("这条出口必须注入 tf（模板用 tf 填占位符，缺了是 500）")
 	}
 	if _, ok := data["csrf_token"]; ok {
-		t.Fatalf("片段不该注入页壳键（csrf_token 属整页渲染）")
+		t.Fatalf("这条出口不该注入页壳键（csrf_token 属整页渲染）")
 	}
 }

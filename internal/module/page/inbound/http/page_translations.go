@@ -1207,7 +1207,7 @@ func (h *pagesAdminHandle) TranslationMissCancel(c *gin.Context) {
 
 // translationMissPageData 报告页模板数据（键一律总是存在）。
 //
-// 本页是不走 layout 的整页（自带 <!DOCTYPE html>），因此用 PrepareFragment 补 t / tf ——
+// 本页是不走 layout 的整页（自带 <!DOCTYPE html>），因此用 PrepareBare 补 t / tf ——
 // 与 adminui.Prepare 的区别只是少了 layout 需要的那些键（sidebarmenus / permset 等）。
 func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID string, rows []pagedto.TranslationMissRow, errFact pageMsg) gin.H {
 	token, terr := builtin.GetCSRFToken(c)
@@ -1222,7 +1222,7 @@ func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID str
 			projects = list
 		}
 	}
-	return adminui.PrepareFragment(c, gin.H{
+	return adminui.PrepareBare(c, gin.H{
 		"csrf_token":      token,
 		"Projects":        projects,
 		"SelectedProject": projectID,

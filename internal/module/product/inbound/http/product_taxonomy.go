@@ -165,7 +165,7 @@ func (h *productPageHandle) ProductCategoryParents(c *gin.Context) {
 		}
 	}
 	c.HTML(http.StatusOK, "admin/product/product_category_parent_options.html",
-		adminui.PrepareFragment(c, gin.H{"Options": options}))
+		adminui.PrepareBare(c, gin.H{"Options": options}))
 }
 
 func (h *productPageHandle) categoryProjectExists(c *gin.Context, projectID string) bool {
@@ -713,7 +713,7 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 		data["Sort"], data["Image"], data["Description"] = 0, "", ""
 		data["SEOTitle"], data["SEODescription"] = "", ""
 	}
-	return adminui.PrepareFragment(c, data)
+	return adminui.PrepareBare(c, data)
 }
 
 func (h *productPageHandle) categoryFormFail(c *gin.Context, mode string, msg productMsg) {
@@ -757,7 +757,7 @@ func brandDrawerData(c *gin.Context, mode, projectID string, row *productdto.Bra
 		data["ID"], data["Name"], data["Slug"], data["Logo"] = "", "", "", ""
 		data["Sort"], data["Description"], data["SEOTitle"], data["SEODescription"] = 0, "", "", ""
 	}
-	return adminui.PrepareFragment(c, data)
+	return adminui.PrepareBare(c, data)
 }
 
 func (h *productPageHandle) brandFormFail(c *gin.Context, mode string, msg productMsg) {
@@ -1263,7 +1263,7 @@ func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
 
 // tagDrawerData 装配标签编辑片段数据（create 时 row 为 nil）。
 // ruleTypes 由调用方传入：页面装配时取一次全行共享，失败分支自己取一次，
-// 不在片段装配里重复查契约。取词走 adminui.PrepareFragment（片段不经整份
+// 不在片段装配里重复查契约。取词走 adminui.PrepareBare（片段不经整份
 // Prepare，但模板要 t/tf；漏注入不报错 —— 取词全变空串、200、日志干净）。
 func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row gin.H, ruleTypes []*productdto.TagRuleTypeResp) gin.H {
 	csrf, _ := builtin.GetCSRFToken(c)
@@ -1280,7 +1280,7 @@ func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 			data[key] = row[key]
 		}
 	}
-	return adminui.PrepareFragment(c, data)
+	return adminui.PrepareBare(c, data)
 }
 
 // tagFormFail 写失败分档：htmx 请求 200 + 片段自身（错误槽 + 原值回填），

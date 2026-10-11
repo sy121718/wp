@@ -4,7 +4,7 @@
    hx-include 带上整个表单（hx-include 不会把按钮自身算进去），
    服务端重建有序行数据后回渲染，替换容器 innerHTML。 *}
 {* 取词：本片段两条渲染路径（HTMX 片段端点 / 抽屉表单的 include）的渲染数据都由
-   adminui.PrepareFragment 注入 t（handler 的 attrRowsCtxData）—— 这里按 chain 索引取，
+   adminui.PrepareBare 注入 t（handler 的 attrRowsCtxData）—— 这里按 chain 索引取，
    不再走「struct 自带 Tr 函数字段」那套写法（struct 上的 `.["t"]` 会报 can't use t as
    field name in struct type，数据改成 gin.H 之后这条限制就不存在了）。 *}
 {{groupId := .GroupID}}
