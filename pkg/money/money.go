@@ -33,3 +33,14 @@ func FormatYuan(v float64) string {
 func CentsToYuanText(cents int64) string {
 	return FormatYuan(float64(cents) / 100)
 }
+
+// FormatYuanOrDash 可空金额（单位元）→ 展示文本，空值显示为 —。
+//
+// 「空显示什么」是一条展示口径而不是各页各自的细节：后台多张表（定价留痕、捆绑来源、
+// 变体价目）都列可空金额，各写一份时改了一处就会出现两种空值文本。
+func FormatYuanOrDash(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return FormatYuan(*v)
+}

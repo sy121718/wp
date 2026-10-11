@@ -93,8 +93,8 @@ type productPageReaderStub struct {
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
 
-	// 列表页 / 详情页 / 编辑页 / 建表单的桩：同一个接口的另外四个方法，用例各自只填自己那一份。
-	// **五个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
+	// 列表页 / 详情页 / 编辑页 / 建表单的桩：同一个接口的另外五个方法，用例各自只填自己那一份。
+	// **六个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
 	listView *productdto.ProductListPageView
 	listErr  error
 	listReqs []*productdto.ProductListPageReq
@@ -110,6 +110,10 @@ type productPageReaderStub struct {
 	createFormView *productdto.ProductCreateFormView
 	createFormErr  error
 	createFormReqs []*productdto.ProductCreateFormReq
+
+	pricingView *productdto.ProductPricingPageView
+	pricingErr  error
+	pricingReqs []*productdto.ProductPricingPageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -135,6 +139,11 @@ func (s *productPageReaderStub) ProductEditPage(_ context.Context, req *productd
 func (s *productPageReaderStub) ProductCreateForm(_ context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
 	s.createFormReqs = append(s.createFormReqs, req)
 	return s.createFormView, s.createFormErr
+}
+
+func (s *productPageReaderStub) ProductPricingPage(_ context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
+	s.pricingReqs = append(s.pricingReqs, req)
+	return s.pricingView, s.pricingErr
 }
 
 // ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时
@@ -250,6 +259,21 @@ func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormView)) *
 		mutate(v)
 	}
 	return v
+}
+
+// productPricingPageViewStub 定价页视图的最小形状：本页三处取数各自降级、没有失败档，
+// 所以默认档就是 200 + 空集合（键要给齐 —— 控制器不再补任何键，缺一个就是渲染中断）。
+func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageView)) *productdto.ProductPricingPageView {
+	view := &productdto.ProductPricingPageView{
+		Title: productenums.ProductPricingTitle, Menu: "product-pricing",
+		Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
+		PreviewRows: []map[string]any{}, History: []map[string]any{},
+		HTTPStatus: http.StatusOK,
+	}
+	if mutate != nil {
+		mutate(view)
+	}
+	return view
 }
 
 // productPageRequest 挂上三个整页 GET（真 Jet + 真模板）并发一个 GET，返回 recorder。

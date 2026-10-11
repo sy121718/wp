@@ -103,7 +103,7 @@ func (s *editorStub) Get(context.Context, *productdto.GetReq) (*productdto.Produ
 }
 
 // 读模型接口（ProductPageReader）是一个整体：编辑页虽然只用到 ProductEditPage，
-// 但**另外三屏的方法必须在**，少一个就是类型断言失败 → 整包走 500 兜底页
+// 但**另外几屏的方法必须在**，少一个就是类型断言失败 → 整包走 500 兜底页
 // （症状是「控制器根本没被调到」，calls 为空）。这三条在本文件里不会被调用，
 // 存在只是为了让 editorStub 满足接口。
 func (s *editorStub) ProductNewPage(context.Context, *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -124,6 +124,11 @@ func (s *editorStub) ProductDetailPage(context.Context, *productdto.ProductDetai
 func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
 	s.record("ProductCreateForm")
 	return productCreateFormViewStub(nil), nil
+}
+
+func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
+	s.record("ProductPricingPage")
+	return productPricingPageViewStub(nil), nil
 }
 
 func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {

@@ -5,7 +5,7 @@
 
    —— 提交失败的「原地留住输入」分档（路径 A 渐进增强）——
    表单保留原生 method/action（无 JS 时也能提交），另加 hx-post：htmx 优先拦住 submit，
-   服务端按 HX-Request 分档（见 product_new_page.go 的 productCreateFail）：
+   服务端按 HX-Request 分档（见 product_core.go 的 productCreateFail）：
 
      · htmx 请求：200 + **本片段自身**（错误槽 + 回填后的表单）—— 换掉 data-product-create-host；
      · 原生请求：302 + ?err= 回**本页**（错误显示在表单上方，不跳到别处）。

@@ -377,7 +377,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: []string{"ok", "warn", "danger", "mute", "info"},
 		note: "取值域 = 各产出点返回值的并集（语义档，见 docs/rules/template-boundary.md §语义 vs 外观）：" +
 			"Go 侧 —— mcpSwitchTone{ok,mute}、providerStatusTone{ok,warn}、noticeTone{ok,warn}、" +
-			"recipientStatusTone{warn,mute}、i18n.ContentEngineTone{info,mute}（product 的译文来源档，internal/module/product/inbound/http/product_page.go 产出）、pricingLineTone/tagKindTone/variationTone{info,mute}、" +
+			"recipientStatusTone{warn,mute}、i18n.ContentEngineTone{info,mute}（product 的译文来源档，internal/module/product/inbound/http/product_translations.go 产出）、pricingLineTone（internal/module/product/service/product_pricing_page.go）/tagKindTone/variationTone{info,mute}、" +
 			"orderenums.OrderStatusTone{warn,info,ok,danger,mute}、ReturnStatusTone{warn,ok,mute}、" +
 			"CouponStateTone{ok,danger,warn,mute}、" +
 			"outstandingTone{warn,ok}、" +

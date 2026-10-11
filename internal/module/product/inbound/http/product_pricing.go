@@ -1,19 +1,22 @@
 package producthttp
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
+
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -23,25 +26,11 @@ import (
 // 预览与应用的输入是同一份表单解析（readPricingForm），只是前者不落库 —— 两条路径
 // 各解析一次的话，「预览说会变成 9.9、应用后变成 10.0」这种分叉不会报错。
 
-// pricingHistoryLimit 后台留痕台账展示的批次数（每批再取一次明细）。
 // 与属性 / 分类 / 品牌页同一模式：GET 渲染完整页，POST 处理完渲染整页提示
 // （shell.RenderJump，原生表单 + csrf_token 隐藏域）。只用 GET/POST。
 //
-// 本页承载本票的验收 1 / 2 / 4：
-//
-//	· 建手工标签并挂到商品（挂载表单在商品**详情页**的「商品标签」区块 ——
-//	  标签归属是商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）；
-//	· 自动标签只给内置规则类型 + 白名单参数（规则类型下拉来自 service 的注册表，
-//	  参数输入框固定三格：days / minPrice / maxPrice，服务端按规则类型取值并严格校验）；
-//	· 标签列表用标准表格（标签 / URL 段 / 类型 / 规则 / 命中 / 重算时间 / 操作），
-//	  规则标签额外显示规则描述与重算时间；「命中的商品」按需加载（审计 PERF-02）：
-//	  首屏只给数量，展开某个标签才按页取片段，见 ProductTagHitsFragment。
-//
-// 重算时机在页面上写明（商品/变体写操作后、标签定义变更后、这里的「重算」按钮）。
 //
 // 接口面（原先的 product_handle.go 定价段）在前，后台页面在后。
-
-const pricingHistoryLimit = 10
 
 // ProductPricingPage 定价工具页：规则参考表 + 改价表单 + 留痕台账。
 func (h *productPageHandle) ProductPricingPage(c *gin.Context) {
@@ -86,144 +75,51 @@ func (h *productPageHandle) ProductPricingApply(c *gin.Context) {
 		strconv.Itoa(res.ChangedCount) + tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。")})
 }
 
+// productPricingPageTemplate 定价页模板名（与「提示页出口」同处本文件）。
+const productPricingPageTemplate = "admin/product/product_pricing.html"
+
 // renderPricingPageWith 定价页的统一渲染入口（form / preview / errMsg 三者可空）。
+//
+// 取数编排（工程清单 / 规则参考表 / 改价表单初值 / 留痕台账）与视图装配都在 service 的读模型
+// （`ProductService.ProductPricingPage`）—— 这里只剩三件事：读参数、调读模型、渲染。
+//
+// form / preview / errMsg 是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果
+// 带回来）。service 不认识 gin.Context，所以由这里读出来经 Req 传进去。
 func (h *productPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) {
-	ctx := c.Request.Context()
-	projects := h.pricingProjects(ctx)
-	selected := strings.TrimSpace(c.Query("project"))
-	if form != nil && form.ProjectID != "" {
-		selected = form.ProjectID
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配缺陷：读模型没接上（老装配 / 桩）。本页三处取数各自降级、没有取数失败档，
+		// 所以这是**唯一**的非 200 来源 —— 渲染成 500 而不是静默给空页面：空的参考表与
+		// 「根本没接上」长得一模一样，而后者要有人去看装配。
+		logger.Scene("product").Error(errors.New("商品页面读模型未注入（装配缺陷）"), "定价页取数无处可去")
+		adminui.RenderPage(c, productPricingPageTemplate, &productdto.ProductPricingPageView{
+			Title: productenums.ProductPricingTitle, Menu: "product-pricing",
+			Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
+			PreviewRows: []map[string]any{}, History: []map[string]any{},
+			HTTPStatus: http.StatusInternalServerError,
+		})
+		return
 	}
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	rules := h.products.ListPricingRuleTypes(ctx)
-	roundings := h.products.ListPricingRoundingOptions(ctx)
-	view := defaultPricingForm(rules, roundings)
-	if form != nil {
-		view = *form
-	}
-	if view.ProjectID == "" {
-		view.ProjectID = selected
-	}
-	c.HTML(http.StatusOK, "admin/product/product_pricing.html", adminui.Prepare(c, gin.H{
-		"title":           productenums.ProductPricingTitle,
-		"menu":            "product-pricing",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Rules":           rules,
-		"Roundings":       roundings,
-		"Form":            view,
-		"HasPreview":      preview != nil,
-		"PreviewSummary":  pricingPreviewSummary(preview),
-		"PreviewRows":     pricingLineRows(previewLines(preview)),
-		"History":         h.pricingHistory(ctx, selected),
-		// Err 只剩**试算失败原地重渲染**这一条来源（errMsg 是本页 handler 的产物，
-		// 已过 productErrText）；写动作（应用调价）的结论走 shell.RenderJump 渲染提示页，
-		// 原先 ?err= / ?applied= 的读侧已整批删除（见 product_jump.go）。
-		"Err": errMsg,
-		// 页面上下文（表单 action 的 query）：应用调价的提示页由 shell.BackPath 读回。
-		"ListQuery": productQueryFromRequest(c, productPricingBackKeys...),
-	}))
-}
-
-// pricingProjects 工程列表（读失败时返回空列表：定价页不该因为一个下拉整页打不开）。
-func (h *productPageHandle) pricingProjects(ctx context.Context) (projects []projectdto.ProjectResp) {
-	list, err := h.projects.List(ctx)
-	if err != nil {
-		return []projectdto.ProjectResp{}
-	}
-	return list
-}
-
-// pricingHistory 调价留痕（批次 + 逐变体明细）。
-func (h *productPageHandle) pricingHistory(ctx context.Context, projectID string) (rows []gin.H) {
-	rows = []gin.H{}
-	if strings.TrimSpace(projectID) == "" {
-		return rows
-	}
-	list, err := h.products.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{
-		ProjectID: projectID, Limit: pricingHistoryLimit,
+	view, err := reader.ProductPricingPage(c.Request.Context(), &productdto.ProductPricingPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Form:      form,
+		Preview:   preview,
+		ErrMsg:    errMsg,
 	})
+	if view == nil {
+		view = &productdto.ProductPricingPageView{
+			Title: productenums.ProductPricingTitle, Menu: "product-pricing",
+			HTTPStatus: http.StatusInternalServerError,
+		}
+	}
 	if err != nil {
-		return rows
+		// 契约上本页恒不返回 error（三处取数各自降级）：真出现时按失败档渲染并留日志。
+		logger.Scene("product").Error(err, "定价页取数失败")
+		view.HTTPStatus = http.StatusInternalServerError
 	}
-	for _, a := range list {
-		detail, derr := h.products.GetPriceAdjustment(ctx, &productdto.GetPriceAdjustmentReq{ID: a.ID})
-		if derr != nil {
-			// 单条明细读失败不该让整页打不开：退回批次本身的汇总。
-			rows = append(rows, pricingHistoryRow(a))
-			continue
-		}
-		rows = append(rows, pricingHistoryRow(detail))
-	}
-	return rows
-}
-
-// pricingHistoryRow 批次 → 模板行（时间压成可读文本，明细逐条列出原价与新价）。
-func pricingHistoryRow(a *productdto.PriceAdjustmentResp) gin.H {
-	items := make([]gin.H, 0, len(a.Items))
-	for _, it := range a.Items {
-		items = append(items, gin.H{
-			"ProductName": it.ProductName, "SKUCode": it.SKUCode,
-			"OldPrice": formatAmount(it.OldPrice), "NewPrice": formatAmount(it.NewPrice),
-			"Diff": formatSignedAmount(it.Diff),
-		})
-	}
-	return gin.H{
-		"ID": a.ID, "RuleLabel": a.RuleLabel, "ScopeLabel": a.ScopeLabel,
-		"RoundingLabel": a.RoundingLabel, "FilterLabel": a.FilterLabel,
-		"ChangedCount": a.ChangedCount, "VariantCount": a.VariantCount,
-		"Note": a.Note, "OperatorID": a.OperatorID,
-		"CreatedAtText": pricingTimeLabel(a.CreatedAt),
-		"Items":         items,
-	}
-}
-
-// pricingLineRows 试算行 → 模板行（金额与状态标签由服务端算好）。
-func pricingLineRows(lines []*productdto.PricingLineResp) []gin.H {
-	rows := make([]gin.H, 0, len(lines))
-	for _, l := range lines {
-		if l == nil {
-			continue
-		}
-		rows = append(rows, gin.H{
-			"ProductName": l.ProductName, "SKUCode": l.SKUCode,
-			"CostPrice": formatNullableAmount(l.CostPrice),
-			"OldPrice":  formatAmount(l.OldPrice), "NewPrice": formatAmount(l.NewPrice),
-			"Diff":   formatSignedAmount(l.NewPrice - l.OldPrice),
-			"Status": l.Status, "StatusLabel": l.StatusLabel,
-			"IsChanged":   l.Status == productenums.PricingLineChanged,
-			"StatusTone":  pricingLineTone(l.Status),
-			"IsSkipped":   l.Status == productenums.PricingLineSkipped,
-			"ReasonLabel": l.ReasonLabel,
-		})
-	}
-	return rows
-}
-
-// pricingPreviewSummary 试算结果的汇总行（模板只做展示，不做计算 —— 也避免模板解指针）。
-func pricingPreviewSummary(p *productdto.PricingPreviewResp) gin.H {
-	if p == nil {
-		return gin.H{}
-	}
-	return gin.H{
-		"RuleLabel":      p.RuleLabel,
-		"RoundingLabel":  p.RoundingLabel,
-		"ScopeLabel":     p.ScopeLabel,
-		"TargetCount":    p.TargetCount,
-		"ChangedCount":   p.ChangedCount,
-		"UnchangedCount": p.UnchangedCount,
-		"SkippedCount":   p.SkippedCount,
-	}
-}
-
-// previewLines 试算结果的明细（nil 安全）。
-func previewLines(p *productdto.PricingPreviewResp) []*productdto.PricingLineResp {
-	if p == nil {
-		return nil
-	}
-	return p.Lines
+	// 表单 action 的 query：应用调价的提示页由 pkg/backpath 读回 —— URL 形状属 HTTP 边界。
+	view.ListQuery = productQueryFromRequest(c, productPricingBackKeys...)
+	adminui.RenderPage(c, productPricingPageTemplate, view)
 }
 
 // readPricingForm 读定价表单并归一为 service 入参。
@@ -305,50 +201,6 @@ func pricingParamsFromForm(form productdto.PricingForm) json.RawMessage {
 		return json.RawMessage("{}")
 	}
 	return raw
-}
-
-// defaultPricingForm 表单初值：第一条规则 + 第一种尾数处理 + 筛选集范围（批量改价的典型用法）。
-func defaultPricingForm(rules []*productdto.PricingRuleTypeResp, roundings []*productdto.PricingRoundingOptionResp) productdto.PricingForm {
-	form := productdto.PricingForm{
-		Rounding: productenums.PricingRoundingNone,
-		Scope:    productenums.PricingScopeFilter,
-	}
-	if len(rules) > 0 && rules[0] != nil {
-		form.RuleType = rules[0].Type
-	}
-	if len(roundings) > 0 && roundings[0] != nil {
-		form.Rounding = roundings[0].Value
-	}
-	return form
-}
-
-// pricingTimeLabel RFC3339 → 后台展示文本（同样的压轴规则见标签页的 recalcLabel）。
-func pricingTimeLabel(at string) string {
-	if strings.TrimSpace(at) == "" {
-		return "—"
-	}
-	if t, err := time.Parse(time.RFC3339, at); err == nil {
-		return t.Local().Format("2006-01-02 15:04")
-	}
-	return at
-}
-
-// formatSignedAmount 差值文本（正数带 + 号）。
-func formatSignedAmount(v float64) string {
-	if v > 0 {
-		return "+" + formatAmount(v)
-	}
-	return formatAmount(v)
-}
-
-// pricingLineTone 价格行状态 → 徽标分档。
-//
-// 判据与「IsChanged」同源（productenums.PricingLineChanged）：改过的价格行要人复核 → info。
-func pricingLineTone(status string) string {
-	if status == productenums.PricingLineChanged {
-		return "info"
-	}
-	return "mute"
 }
 
 // ==========================================================================

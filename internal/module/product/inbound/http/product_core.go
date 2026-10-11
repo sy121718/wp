@@ -266,7 +266,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// 三处的工具都被别的页面用着（分类标签页 / 详情页回显 / 独立定价页），所以留在本包。
 	view.Flat = flattenCategoryTree(view.Categories)
 	view.Statuses = productStatusOptions(view.FilterStatus)
-	view.Form = defaultPricingForm(view.Rules, view.Roundings)
+	view.Form = productservice.DefaultPricingForm(view.Rules, view.Roundings)
 	// 成品行：一行一个 productRow（它与详情页、只读页共用一份组装）。**取数失败时不装配** ——
 	// 那时 RowDetails 可能是半截的（逐行取详情失败会 break），渲染它只会得到一张残表。
 	if err == nil {

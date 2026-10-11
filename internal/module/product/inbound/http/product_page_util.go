@@ -155,7 +155,7 @@ func (e formEcho) checked(name string) bool {
 //
 // **键名必须带 FormEcho 前缀**：片段与页面共用同一份渲染 data，而页面自己的键空间里
 // 早已有同名键 —— 商品列表页的 `Form` 是**批量改价的 productdto.PricingForm 结构体**
-// （product_page_handle.go 的 `"Form": defaultPricingForm(...)`）。沿用裸 `Form` 会让片段里的
+// （product_core.go 的 `"Form": productservice.DefaultPricingForm(...)`）。沿用裸 `Form` 会让片段里的
 // `{{.Form.name}}` 命中结构体，Jet 报 `can't use name as field name in struct type` 并
 // **从那一行截断整页**（HTTP 仍 200）—— 而且只在列表页那条渲染路径上炸，新建整页看不出来。
 //
@@ -268,13 +268,10 @@ func specLabel(raw json.RawMessage, attrs []*productdto.AttributeResp) string {
 // 逐字节重复）。保留本名字是因为同包多个后台页面文件共用它。
 func formatAmount(v float64) string { return money.FormatYuan(v) }
 
-// formatNullableAmount 可空数值 → 展示文本（空显示为 —）。
-func formatNullableAmount(v *float64) string {
-	if v == nil {
-		return "—"
-	}
-	return formatAmount(*v)
-}
+// formatNullableAmount 可空数值 → 展示文本。
+//
+// 唯一实现在 pkg/money.FormatYuanOrDash（与 formatAmount 同一处理：本名是同包多个后台页共用）。
+func formatNullableAmount(v *float64) string { return money.FormatYuanOrDash(v) }
 
 // formatScore 评分统一两位小数（4.5 → 4.50）。
 //

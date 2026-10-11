@@ -1078,6 +1078,18 @@ type tagForm struct {
 	sort     int
 }
 
+// 本页承载本票的验收 1 / 2 / 4：
+//
+//	· 建手工标签并挂到商品（挂载表单在商品**详情页**的「商品标签」区块 ——
+//	  标签归属是商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）；
+//	· 自动标签只给内置规则类型 + 白名单参数（规则类型下拉来自 service 的注册表，
+//	  参数输入框固定三格：days / minPrice / maxPrice，服务端按规则类型取值并严格校验）；
+//	· 标签列表用标准表格（标签 / URL 段 / 类型 / 规则 / 命中 / 重算时间 / 操作），
+//	  规则标签额外显示规则描述与重算时间；「命中的商品」按需加载（审计 PERF-02）：
+//	  首屏只给数量，展开某个标签才按页取片段，见 ProductTagHitsFragment。
+//
+// 重算时机在页面上写明（商品/变体写操作后、标签定义变更后、这里的「重算」按钮）。
+
 // ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
 func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	ctx := c.Request.Context()

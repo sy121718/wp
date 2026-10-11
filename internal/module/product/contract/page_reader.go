@@ -10,11 +10,12 @@
 // 写动作仍然只走各自的用例方法。
 //
 // 实现方是本模块 service（编译期断言 `var _ ProductPageReader = (*Service)(nil)`
-// 在 `service/product_page.go`）；消费方是 `inbound/http/` 的四个整页控制器
-// （新建 / 列表 / 详情 / 编辑），那里只能是**运行期**断言 —— 控制器持有的是 `ProductService`，
-// 读模型不在它的能力面上（放上去等于把页面的形状变成跨模块契约的一部分，见上）。
+// 在 `service/product_page.go`）；消费方是 `inbound/http/` 的整页控制器
+// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具），那里只能是**运行期**断言 ——
+// 控制器持有的是 `ProductService`，读模型不在它的能力面上（放上去等于把页面的形状
+// 变成跨模块契约的一部分，见上）。
 //
-// **四个方法必须在同一个接口里**：控制器一次断言拿到整份读模型，少实现一个就是断言失败 →
+// **这些方法必须在同一个接口里**：控制器一次断言拿到整份读模型，少实现一个就是断言失败 →
 // 整页走 500 兜底页（症状是「这一屏的取数根本没被调到」，桩与中间层的包装类型都踩过）。
 package productcontract
 
@@ -76,4 +77,14 @@ type ProductPageReader interface {
 	// 契约同上面四条（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus），但没有三档：
 	// 主数据读不到就是这个表单撑不起来，调用方退回整页提示 —— 不留半个表单给用户重填。
 	ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (res *productdto.ProductCreateFormView, err error)
+
+	// ProductPricingPage 定价工具页的读模型：工程清单 → 规则与尾数处理参考表 →
+	// 改价表单初值（或本次提交的回显值）→ 试算结果 → 留痕台账。
+	//
+	// 与上面五条**不同：这一屏没有失败档** —— 三处取数各自降级（工程清单读不到 → 空下拉；
+	// 参考表是注册表快照、本身无 error；台账读不到 → 空台账），页面主体（改价表单）始终
+	// 撑得起来，所以视图不实现 PageResult，渲染出口按 200 + 可缓存处理。
+	//
+	// Form / Preview / ErrMsg 由控制器填（它们是写路径的产物，读模型不认识 gin.Context）。
+	ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (res *productdto.ProductPricingPageView, err error)
 }

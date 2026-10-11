@@ -597,3 +597,67 @@ func (v ProductCreateFormView) PageStatus() int { return v.HTTPStatus }
 func (v ProductCreateFormView) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
+
+// ProductPricingPageReq 定价工具页的取数入参。
+//
+// 三个字段都是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果带回来）：
+// 读模型不认识 gin.Context，提交值只能由控制器读出来后经这里传进去 —— 与编辑页的表单回显
+// 同一分工（service 只认数据，不认请求）。
+type ProductPricingPageReq struct {
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	// Form.ProjectID 非空时以表单为准（试算/应用路径带着它提交）。
+	ProjectID string
+	// Form 表单回显（试算路径给本次提交值；首次 GET 为 nil = 用默认初值）。
+	Form *PricingForm
+	// Preview 试算结果（只有试算路径给；nil = 还没试算过）。
+	Preview *PricingPreviewResp
+	// ErrMsg 试算失败的**成品串**（例外形态：这一句来自 productErrText，已按当前语言翻好，
+	// 与「提示页出口」同类 —— 表单要留在眼前，所以不跳转）。
+	ErrMsg string
+}
+
+// ProductPricingPageView 定价工具页的渲染视图（本模块第六个读模型）。
+//
+// 这一屏**没有失败档**：三处取数各自降级（工程清单读不到 → 空下拉；规则与尾数处理是
+// 注册表快照，本身无 error；留痕台账读不到 → 空台账），页面主体（改价表单）始终撑得起来。
+// 但仍实现 adminui.PageResult：装配缺陷那一条 500 要靠它传出去
+// （PageStatus 返回 0 时渲染出口按 200 处理，所以正常档不必显式设码）。
+type ProductPricingPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+
+	// Rules / Roundings 参考表；Form 是表单初值（首次 GET）或本次提交的回显值（试算失败）。
+	Rules     []*PricingRuleTypeResp
+	Roundings []*PricingRoundingOptionResp
+	Form      PricingForm
+
+	// HasPreview 为假 = 还没试算过（模板整块跳过）；摘要与明细都在 service 算好，
+	// 模板只做展示（也避免模板解指针）。
+	HasPreview     bool
+	PreviewSummary map[string]any
+	PreviewRows    []map[string]any
+
+	// History 调价留痕台账（批次 + 逐变体明细）；Err 是试算失败的成品串。
+	History []map[string]any
+	Err     string
+
+	// ListQuery 页面上下文（表单 action 的 query，写动作的提示页由 pkg/backpath 读回）：
+	// URL 形状属 HTTP，由控制器填。
+	ListQuery string
+
+	// HTTPStatus 这一屏的档位：正常恒 200（本页三处取数各自降级，没有取数失败档）。
+	// 唯一的非 200 来源是**装配缺陷**（控制器断言不到读模型）——那时给 500，
+	// 让「没接上」与「这一屏本来就没数据」在页面上看得出区别。
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductPricingPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 装配缺陷页不该被缓存：重试必须真的回到服务端。
+func (v ProductPricingPageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}

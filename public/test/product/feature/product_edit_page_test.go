@@ -205,7 +205,7 @@ func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *pr
 	return view, err
 }
 
-// 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，另外三条也必须在 —— 少一条就是
+// 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，其余几条也必须在 —— 少一条就是
 // 类型断言失败 → 整页走 500 兜底页（症状是「属性组故障档根本没被渲染」，而断言只会说状态码不对）。
 func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
 	return s.reader.ProductNewPage(ctx, req)
@@ -221,6 +221,10 @@ func (s failedAttributeListService) ProductDetailPage(ctx context.Context, req *
 
 func (s failedAttributeListService) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
 	return s.reader.ProductCreateForm(ctx, req)
+}
+
+func (s failedAttributeListService) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
+	return s.reader.ProductPricingPage(ctx, req)
 }
 
 func TestProductEditPageRejectsInvalidNumbersWithoutPartialWrite(t *testing.T) {

@@ -6,8 +6,8 @@
 //
 // **本方法只搬取数，不搬纯函数**。列表页还要四样东西：页码归一（productPageNumber）、
 // 状态下拉（productStatusOptions）、分类树扁平化（flattenCategoryTree）、改价表单初值
-// （defaultPricingForm）—— 它们各自还被别的页面用着（属性页 / 分类标签页 / 详情页回显 /
-// 独立定价页），都在 `inbound/http` 里。把它们搬进本包等于让那几页各留一份或反向
+// （DefaultPricingForm）—— 前三个各自还被别的页面用着（属性页 / 分类标签页 /
+// 详情页回显），都在 `inbound/http` 里；表单初值已随定价页一起下沉进本包。把它们搬进本包等于让那几页各留一份或反向
 // import 控制器包，两条路都比留在原地差；所以这里给**原料**（分类树而不是扁平行、
 // 规则清单而不是表单初值），控制器用自己那份工具加工 —— 一份实现，两个页面共用。
 //
@@ -211,8 +211,8 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	}
 
 	// 批量改价抽屉的规则清单：抽屉与独立定价页共用同一个规则表单片段，键名或取值来源
-	// 分叉会让其中一处渲染成空下拉。**表单初值不在这里算** —— defaultPricingForm 还服务
-	// 独立定价页，控制器拿 Rules / Roundings 自己算（一份实现，两页共用）。
+	// 分叉会让其中一处渲染成空下拉。**表单初值不在这里算** —— 控制器拿 Rules / Roundings
+	// 调 DefaultPricingForm 自己算（一份实现：独立定价页与批量改价抽屉共用）。
 	view.Rules = s.ListPricingRuleTypes(ctx)
 	view.Roundings = s.ListPricingRoundingOptions(ctx)
 
