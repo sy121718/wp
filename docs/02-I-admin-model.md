@@ -308,7 +308,7 @@ guaranteed-invalid 会让整条声明失效）；别名选择器用 `[data-theme
 | 原判断 | 实测结论 | 教训 |
 |---|---|---|
 | `blocks` 三段表格全选框「段间漏选」 | **不成立** —— 三段同处一个 `<form>`，`admin.js:522` 按 `closest('form')` 取作用域，全选正常 | 从源码结构推断运行时行为**必须用浏览器实测复核**（`AGENTS.md` 已记录过同类教训） |
-| `products_new` 「缺分类/品牌/标签/属性入口」 | **不成立** —— `products_new.html:21` 用 `{{include "partials/product_create_form.html"}}` 引入 148 行共享表单（注释明确「两处各抄一份必然分叉」） | 统计字段必须**跟进 include 的片段** |
+| `products_new` 「缺分类/品牌/标签/属性入口」 | **不成立** —— `products_new.html:51` 用 `{{include "product_create_form.html"}}` 引入共享表单（注释明确「两处各抄一份必然分叉」） | 统计字段必须**跟进 include 的片段** |
 | `product_edit` 「三段只有标题没有表单」 | **不成立** —— 三段全在 `/admin/products/update` 表单内（60 行开、197 行闭） | 统计字段必须**解析 form 边界**，不能只看 action 列表 |
 
 > 三条误判的共同根因：**用静态文本统计代替结构解析**。已写入 `02-J` §H 作为方法论约束。

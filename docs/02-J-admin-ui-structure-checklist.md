@@ -88,7 +88,7 @@ grep -nE '<form|</form>' internal/templates/admin/<file>.html
 
 **H2. 统计字段必须跟进 `{{include}}` 引入的片段。**
 误判实例：`products_new.html` 全文只有 48 行、行内看不到几个 `name=`，
-但第 21 行 `{{include "partials/product_create_form.html"}}` 引入了 148 行的共享表单
+但第 51 行 `{{include "product_create_form.html"}}` 引入了共享表单
 （注释明确写着「与列表页抽屉共用同一份建表单片段」）。
 只看调用页会得出「只有基础字段」的错误结论。
 

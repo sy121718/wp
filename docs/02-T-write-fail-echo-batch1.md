@@ -36,8 +36,8 @@
 
 | 文件 | 改动 |
 |---|---|
-| `internal/templates/admin/partials/product_create_form.html` | 顶层包 `<div data-product-create-host>`；表单加 `hx-post` / `hx-target="closest [data-product-create-host]"` / `hx-swap="outerHTML"`；错误槽（`role="alert"` + `data-create-err`）；13 个字段回填；局部变量改由片段自己从页面数据键取（不再依赖调用点声明） |
-| `internal/module/product/inbound/http/product_new_page.go` | 新增 `productCreateFormFields` / `productCreateFormData` / `productCreateFail` / `productNewURL` |
+| `internal/templates/admin/product/product_create_form.html` | 顶层包 `<div data-product-create-host>`；表单加 `hx-post` / `hx-target="closest [data-product-create-host]"` / `hx-swap="outerHTML"`；错误槽（`role="alert"` + `data-create-err`）；13 个字段回填；局部变量改由片段自己从页面数据键取（不再依赖调用点声明）。**路径**：原 `admin/partials/` 下，模板按后端模块分目录后移入 `admin/product/` |
+| `internal/module/product/inbound/http/product_core.go`（原 `product_new_page.go`，控制器按功能合并后并入） | `productCreateFormFields` / `productCreateFormView`（**原 `productCreateFormData`**：取数已下沉到 `service.ProductCreateForm`，控制器只剩回填值与出口）/ `productCreateFail` / `productNewURL` |
 | `internal/module/product/inbound/http/product_page_handle.go` | `ProductsCreate` 三个失败出口 → `productCreateFail`；两个成功出口 → `redirectWhere` |
 | `internal/module/product/inbound/http/product_page_util.go` | `formEchoData` 键名加 `FormEcho` 前缀（撞名判据见上） |
 | `internal/module/product/inventory/inbound/http/inventory_page_util.go` | 同签名同步改键名 |
