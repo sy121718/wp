@@ -1410,14 +1410,6 @@ func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
 	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
 }
 
-// listTags 取某工程的标签列表（工程为空时返回空列表）。
-func (h *productPageHandle) listTags(ctx context.Context, projectID string) (out []*productdto.TagResp, err error) {
-	if projectID == "" {
-		return []*productdto.TagResp{}, nil
-	}
-	return h.products.ListTags(ctx, &productdto.ListTagReq{ProjectID: projectID})
-}
-
 // readTagForm 读标签表单。
 //
 // 规则参数只在 kind=rule 时构造：手工标签即使表单里残留了 days / 价格输入也不带过去，
