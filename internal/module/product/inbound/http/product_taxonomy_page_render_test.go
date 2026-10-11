@@ -12,7 +12,11 @@ package producthttp
 //	                          工程被删除或并发变化会让旧链接的工程失效，那时 400 是准确的事实。
 //	                          本批四页没有单资源参数，因此没有 404 档）
 //
-// 这四页此前把每一次取数失败都交给 shell.PageError：浏览器收到 `{"code":500,…}`，
+// 属性页（第四个入口）已随第一批取数下沉改走读模型，它的失败档判据见
+// product_attributes_page_render_test.go 与 service 的 product_attributes_page_test.go；
+// 本文件现在钉的是**还没下沉的三页**（标签 / 分类 / 品牌）。
+//
+// 这三页此前把每一次取数失败都交给 shell.PageError：浏览器收到 `{"code":500,…}`，
 // DOM 里没有标题栏与左侧菜单，用户只能手改地址栏回去 —— 形状合法，静态门禁看不见，
 // 只有把真实模板渲染出来才看得见。
 //
@@ -120,7 +124,7 @@ func (s *taxonomyStub) GetCategory(context.Context, *productdto.GetCategoryReq) 
 	return nil, errors.New("product.category.notFound")
 }
 
-// taxonomyRequest 把四页挂到一个最小引擎上，用**真实 Jet 渲染器**跑完整个请求。
+// taxonomyRequest 把四页挂到一个最小引擎上（属性页已不再走这条路径，留着路由无副作用），用**真实 Jet 渲染器**跑完整个请求。
 func taxonomyRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -156,18 +160,6 @@ type taxonomyPage struct {
 }
 
 var taxonomyPages = []taxonomyPage{
-	{
-		name:             "属性页",
-		path:             "/admin/product-attributes",
-		mainDataCalls:    []string{"CountAttributes", "ListAttributes"},
-		mainFailCalls:    []string{"CountAttributes"},
-		breakMain:        func(s *taxonomyStub) { s.countErr = errors.New(taxonomyDriverText) },
-		breakSecond:      func(s *taxonomyStub) { s.listErr = errors.New(taxonomyDriverText) },
-		secondStageCalls: []string{"CountAttributes", "ListAttributes"},
-		seed: func(s *taxonomyStub) {
-			s.attrs = []*productdto.AttributeResp{{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色"}}
-		},
-	},
 	{
 		name:             "标签页",
 		path:             "/admin/product-tags",

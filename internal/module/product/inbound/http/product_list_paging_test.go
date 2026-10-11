@@ -10,7 +10,8 @@ package producthttp
 //     两个 page 参数（浏览器取第一个），表现是「点了下一页没反应」，而且不会报错。
 //
 // 属性页已不在 listPageSlice 上（它的请求类型自带 Page/Size，分页整条链下推到 service，
-// 总数来自契约的 CountAttributes），故这里同时钉住它用的 clampPageToTotal：
+// 总数来自契约的 CountAttributes），故这里同时钉住控制器那份 clampPageToTotal（它委托给
+// service 的 ClampPageToTotal，属性页下沉后两份实现并成一处）：
 // **取数之前**的收敛才能避免「空表格 + 分页条显示第 N 页」。
 //
 // 位置：放模块内就近单测（internal/module/**），与项目「纯逻辑就近跑」的分层一致。

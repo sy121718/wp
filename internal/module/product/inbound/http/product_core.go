@@ -457,9 +457,12 @@ func maxInt(a, b int) int {
 
 // productListPageSize 商品列表每页条数（服务端分页）。
 //
+// 唯一实现在 service 的 ProductListPageSize：列表页取数已下沉进读模型，两处各写一个 20
+// 时改一处会让「共 N 条」的推算与实际取回的行数对不上。
+//
 // 20 与后台其它列表页同一量级：列表行要逐个取商品详情组装视图，
 // 一页取太多等于把「翻页」换成「一屏卡顿」。
-const productListPageSize = 20
+const productListPageSize = productservice.ProductListPageSize
 
 // productPageNumber 解析页码：空值 / 非数字 / 越界一律退回第 1 页。
 //

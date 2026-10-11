@@ -93,8 +93,8 @@ type productPageReaderStub struct {
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
 
-	// 列表页 / 详情页 / 编辑页 / 建表单的桩：同一个接口的另外五个方法，用例各自只填自己那一份。
-	// **六个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
+	// 列表页 / 详情页 / 编辑页 / 建表单的桩：同一个接口的另外六个方法，用例各自只填自己那一份。
+	// **七个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
 	listView *productdto.ProductListPageView
 	listErr  error
 	listReqs []*productdto.ProductListPageReq
@@ -114,6 +114,10 @@ type productPageReaderStub struct {
 	pricingView *productdto.ProductPricingPageView
 	pricingErr  error
 	pricingReqs []*productdto.ProductPricingPageReq
+
+	attributesPageView *productdto.ProductAttributesPageView
+	attributesPageErr  error
+	attributesPageReqs []*productdto.ProductAttributesPageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -144,6 +148,11 @@ func (s *productPageReaderStub) ProductCreateForm(_ context.Context, req *produc
 func (s *productPageReaderStub) ProductPricingPage(_ context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
 	s.pricingReqs = append(s.pricingReqs, req)
 	return s.pricingView, s.pricingErr
+}
+
+func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
+	s.attributesPageReqs = append(s.attributesPageReqs, req)
+	return s.attributesPageView, s.attributesPageErr
 }
 
 // ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时
@@ -276,6 +285,19 @@ func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageView))
 	return view
 }
 
+// productAttributesPageViewStub 属性库视图的最小形状：取数结果给空集合、装配产物留空
+// （控制器会补 Title / Menu / Attributes / AttrCreateForm / Pagination / ListQuery）。
+func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPageView)) *productdto.ProductAttributesPageView {
+	view := &productdto.ProductAttributesPageView{
+		Projects: []projectdto.ProjectResp{}, AttributeDetails: []*productdto.AttributeResp{},
+		Limit: 20, HTTPStatus: http.StatusOK,
+	}
+	if mutate != nil {
+		mutate(view)
+	}
+	return view
+}
+
 // productPageRequest 挂上三个整页 GET（真 Jet + 真模板）并发一个 GET，返回 recorder。
 func productPageRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -285,6 +307,20 @@ func productPageRequest(t *testing.T, h *productPageHandle, target string) *http
 	engine.GET("/admin/products", h.ProductsPage)
 	engine.GET("/admin/products/new", h.ProductNewPage)
 	engine.GET("/admin/products/detail", h.ProductDetailPage)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	return rec
+}
+
+// productPageRequestFor 把**指定路径**挂到一条最小引擎上并发一个 GET（真 Jet 渲染器）。
+//
+// 与 productPageRequest 同一手法，区别只在注册的路径：属性页等已下沉的屏不在那三条固定路由里。
+func productPageRequestFor(t *testing.T, h *productPageHandle, route, target string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.GET(route, h.ProductAttributesPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

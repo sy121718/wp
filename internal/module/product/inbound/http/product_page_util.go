@@ -392,34 +392,17 @@ func productTranslateMiddleware() gin.HandlerFunc {
 
 // productSubListPageSize 商品域后台子列表的每页条数。
 //
-// 20 与商品列表（productListPageSize）同一量级：这四页的表格都带行内抽屉与批量勾选，
-// 一页塞太多等于把「翻页」换成「滚动回去找刚才那一行」。
-const productSubListPageSize = 20
+// 唯一实现在 service 的 ProductSubListPageSize：属性页的分页已随取数下沉进读模型，
+// 两处各写一个 20 时改一处会让同一批子列表页出现两种每页条数。
+const productSubListPageSize = productservice.ProductSubListPageSize
 
 // clampPageToTotal 把页码收敛到实际总页数以内（total=0 时收敛到第 1 页）。
 //
-// 为什么在取数**之前**收敛：越界页码（手输 URL、书签失效、上一次筛选后的页码）传给
-// 取数层时，service 会老老实实返回一个空页，而分页条按收敛后的页码渲染 ——
-// 「表格为空、分页条却显示第 2 页」这种自相矛盾的组合就是这样产生的
-// （product_list_paging_test.go 的 TestListPageSlice 钉的是同一条判据）。
-//
-// 与 pkg/pagination.BuildPagination 内部的收敛同一条规则（总页数由 total 与 size 算出），
-// 差别只在于这里发生在取数之前。
+// 唯一实现在 service 的 ClampPageToTotal（那条注释写明了「为什么在取数之前收敛」）：
+// 属性页已随取数下沉用上服务侧那一份，这里留着本名字是因为同包还有几页（标签 / 分类 / 品牌）
+// 在控制器里做取数 —— 两份实现会让同一条判据在其中一页上悄悄失效。
 func clampPageToTotal(page, size int, total int64) int {
-	if size < 1 {
-		size = productSubListPageSize
-	}
-	if page < 1 {
-		page = 1
-	}
-	pages := int((total + int64(size) - 1) / int64(size))
-	if pages < 1 {
-		return 1
-	}
-	if page > pages {
-		return pages
-	}
-	return page
+	return productservice.ClampPageToTotal(page, size, total)
 }
 
 // listFilterQuery 列表页筛选条件的查询串（筛选表单与分页基地址共用同一份口径）。

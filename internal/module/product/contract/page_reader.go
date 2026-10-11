@@ -11,7 +11,7 @@
 //
 // 实现方是本模块 service（编译期断言 `var _ ProductPageReader = (*Service)(nil)`
 // 在 `service/product_page.go`）；消费方是 `inbound/http/` 的整页控制器
-// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具），那里只能是**运行期**断言 ——
+// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具 / 属性库），那里只能是**运行期**断言 ——
 // 控制器持有的是 `ProductService`，读模型不在它的能力面上（放上去等于把页面的形状
 // 变成跨模块契约的一部分，见上）。
 //
@@ -87,4 +87,14 @@ type ProductPageReader interface {
 	//
 	// Form / Preview / ErrMsg 由控制器填（它们是写路径的产物，读模型不认识 gin.Context）。
 	ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (res *productdto.ProductPricingPageView, err error)
+	// ProductAttributesPage 属性库整页的读模型：工程清单 → 工程存在性校验 → 计数 →
+	// 页码收敛 → 取页，并给出这一屏的档位。
+	//
+	// 契约同上（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus / 失败后不发派生取数），
+	// 另加一条**先计数再取页**：反过来时越界页码会让取数层返回空页，而分页条按收敛后的
+	// 页码渲染 ——「表格为空、分页条却显示第 2 页」是自相矛盾的组合。
+	//
+	// 行装配不在这里：每行的两个抽屉表单要 csrf 与取词函数（gin.Context 的产物），
+	// 所以只交原料（AttributeDetails），成品行由控制器装（同 ProductListPage）。
+	ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (res *productdto.ProductAttributesPageView, err error)
 }

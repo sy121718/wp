@@ -59,11 +59,6 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 		base string
 	}{
 		{
-			name: "属性页",
-			path: "/admin/product-attributes?project=p1&keyword=pg&variation=1",
-			base: "/admin/product-attributes?keyword=pg&project=p1&variation=1",
-		},
-		{
 			name: "标签页",
 			path: "/admin/product-tags?project=p1&keyword=pg",
 			base: "/admin/product-tags?keyword=pg&project=p1",
@@ -79,6 +74,39 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 			base: "/admin/product-brands?keyword=pg&project=p1",
 		},
 	}
+	// 属性页已随第一批取数下沉改走读模型：它的分页事实由 service 给、控制器只补基地址，
+	// 桩因此给**视图**（不再 mock CountAttributes / ListAttributes）。其余三页仍走 taxonomyStub。
+	t.Run("属性页", func(t *testing.T) {
+		h := &productPageHandle{
+			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+				v.SelectedProject = "p1"
+				v.Total = rows
+				v.FilterKeyword = "pg"
+				v.FilterVariation = "1"
+			})},
+		}
+		rec := productPageRequestFor(t, h, "/admin/product-attributes", "/admin/product-attributes?project=p1&keyword=pg&variation=1")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("成功档应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+		}
+		body := rec.Body.String()
+		for _, want := range []string{
+			paginationElement("/admin/product-attributes?keyword=pg&project=p1&variation=1", 2, 20),
+			`<span class="pagination-btn is-active">1</span>`,
+			`<span class="pagination-btn is-disabled">上一页</span>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("属性页分页条里没有整段元素 %q", want)
+			}
+		}
+		for _, bad := range []string{"PaginationLinks", "PaginationInfo"} {
+			if strings.Contains(body, bad) {
+				t.Errorf("属性页仍出现旧键 %q", bad)
+			}
+		}
+	})
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := &taxonomyStub{projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}}
@@ -132,7 +160,6 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 		name string
 		path string
 	}{
-		{name: "属性页", path: "/admin/product-attributes?project=p1"},
 		{name: "标签页", path: "/admin/product-tags?project=p1"},
 		{name: "分类页", path: "/admin/product-categories?project=p1"},
 		{name: "品牌页", path: "/admin/product-brands?project=p1"},
@@ -147,6 +174,21 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 			}
 		})
 	}
+
+	// 属性页同一条判据（读模型给的总数只有 3 条 → Facts 的 HasPagination 为假 → 控制器不注入）。
+	t.Run("属性页", func(t *testing.T) {
+		h := &productPageHandle{
+			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+				v.SelectedProject = "p1"
+				v.Total = 3
+			})},
+		}
+		body := productPageRequestFor(t, h, "/admin/product-attributes", "/admin/product-attributes?project=p1").Body.String()
+		if strings.Contains(body, `class="pagination"`) {
+			t.Fatalf("单页不该渲染分页条")
+		}
+	})
 }
 
 // TestProductsPagePaginationFactsRenderLinks 商品列表页：三个筛选参数与 limit 都在链接里。

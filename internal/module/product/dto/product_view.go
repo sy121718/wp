@@ -654,6 +654,73 @@ type ProductPricingPageView struct {
 	HTTPStatus int
 }
 
+// ProductAttributesPageReq 属性库整页的取数入参（四个都是查询串参数）。
+//
+// Variation 的归一不在这里（`?variation=yes` 会被归一成「全部」，见 service 的读模型）：
+// 归一写在控制器时，筛选回显与过滤条件会各拿一份原始串。
+type ProductAttributesPageReq struct {
+	ProjectID string
+	Keyword   string
+	Variation string
+	// Page 已由控制器归一（productPageNumber 是跨页共用工具）；读模型还会按总数收敛一次。
+	Page int
+}
+
+// ProductAttributesPageView 属性库整页的渲染视图。
+//
+// 两类字段分得很清楚：
+//   - **取数结果**（AttributeDetails / Total / Projects …）由 service 写；
+//   - **装配产物**（Attributes / AttrCreateForm / Pagination / ListQuery / LoadError）
+//     由控制器写 —— 行里挂着两个抽屉表单的数据，它们要 csrf 与取词函数（gin.Context 的产物）。
+//
+// 为什么用 AttributeDetails 而不是让 Attributes 直接装 []*AttributeResp：模板读的
+// `.Attributes` 是有 `EditForm` / `ValuesForm` 两键的**成品行**（同 ProductListPageView 的
+// RowDetails → Products 分工）。两个键混用会让「原料」与「成品」在模板里看起来是同一件事。
+type ProductAttributesPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+
+	// FilterKeyword / FilterVariation 回显，Filtered 是空态分档依据（「筛出来是空的」与
+	// 「这个工程本来就没有属性组」必须给不同文案）。
+	FilterKeyword   string
+	FilterVariation string
+	Filtered        bool
+
+	// AttributeDetails 本页每行的属性组（含属性值）：行装配的原料。
+	AttributeDetails []*AttributeResp
+	// Attributes 成品行（模板 `{{range .Attributes}}` 读 ID / Key / Name / IsVariation /
+	// Sort / ValueCount / EditForm / ValuesForm）。`map[string]any` 与 gin.H 同型，
+	// dto 因此不必 import gin。
+	Attributes []map[string]any
+	// AttrCreateForm 「新建属性组」抽屉的表单数据（页头与空态两个入口共用同一份）。
+	AttrCreateForm map[string]any
+
+	// Total / Page / Limit 分页**事实**；Pagination 由控制器按当前请求补基地址后注入。
+	Total      int64
+	Page       int
+	Limit      int
+	Pagination pagination.Page
+
+	// ListQuery 筛选上下文（表单 action 的 query）：写动作失败时由 pkg/backpath 读回，
+	// 回跳列表页不丢关键词 / 变体筛选 / 页码。URL 形状属 HTTP，由控制器填。
+	ListQuery string
+
+	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器按
+	// 当前语言归口后填。HTTPStatus：200 读到 / 400 参数不合法 / 500 主数据没读到。
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductAttributesPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
+func (v ProductAttributesPageView) PageNoStore() bool { return v.LoadFailed }
+
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
 func (v ProductPricingPageView) PageStatus() int { return v.HTTPStatus }
 

@@ -227,6 +227,10 @@ func (s failedAttributeListService) ProductPricingPage(ctx context.Context, req 
 	return s.reader.ProductPricingPage(ctx, req)
 }
 
+func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
+	return s.reader.ProductAttributesPage(ctx, req)
+}
+
 func TestProductEditPageRejectsInvalidNumbersWithoutPartialWrite(t *testing.T) {
 	for _, tc := range []struct {
 		name, field, invalid string

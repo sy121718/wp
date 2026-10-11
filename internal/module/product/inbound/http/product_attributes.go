@@ -2,10 +2,10 @@ package producthttp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -33,98 +33,57 @@ import (
 const attrRowPrefix = "values["
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
+// productAttributesPageTemplate 属性库整页模板名。
+const productAttributesPageTemplate = "admin/product/product_attributes.html"
+
+// ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
-	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
-	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。每个失败点各写一遍
-	//「渲染失败页」等于每页各有一份「失败页长什么样」的实现，改一处必然漏一处。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			// 取数没读到 = 500。参数不合法是另一档（400，见下面的工程校验）。
-			httpStatus = http.StatusInternalServerError
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状。
+		// 这条不可达就说明装配漏了；真出现时也不能把「没接上」说成「没有属性组」。
+		adminui.RenderPage(c, productAttributesPageTemplate, &productdto.ProductAttributesPageView{
+			Title: productenums.ProductAttributesTitle, Menu: "product-attributes",
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		})
+		return
+	}
+	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
+	// 哪条只降级，都是业务结论。见 service.ProductAttributesPage）。
+	view, err := reader.ProductAttributesPage(ctx, &productdto.ProductAttributesPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Keyword:   strings.TrimSpace(c.Query("keyword")),
+		Variation: strings.TrimSpace(c.Query("variation")),
+		// 页码归一用跨页共用的 productPageNumber（商品列表页 / 分类标签页同口径）。
+		Page: productPageNumber(c.Query("page")),
+	})
+	if view == nil {
+		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
+		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
+		view = &productdto.ProductAttributesPageView{
+			Title: productenums.ProductAttributesTitle, Menu: "product-attributes",
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	// 与商品列表页 / 详情页 / 新建页同一份判据（productProjectExists）：?project=<不存在的 id>
-	// 一路渲染下去会得到「这个工程下没有属性组」—— 把「工程不存在」说成了「工程是空的」。
-	// 判据是**本次请求已加载的工程集合**（h.projects.List 返回全量：契约「列出全部站点工程」，
-	// 无 Page/Size 参数、model 只 Order 不 LIMIT/WHERE、projects 根表未开 RLS），且与同一份
-	// pageData 里的工程选择器**同源**。工程被删除或并发变化会让旧链接里的工程失效 ——
-	// 那时 400 正是准确的事实：参数指向的工程已不在可选集合里（不是「工程是空的」）。
-	// 参数级失败仍是**页面请求**：整页 + 400 + no-store。
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	// Variation 取值 ""（全部）/ "1"（参与变体）/ "0"（不参与），与 service 的
-	// ListAttributeReq.Variation 同一套值，也与表格里「变体」列的口径一致。
-	variation := strings.TrimSpace(c.Query("variation"))
-	if variation != "1" && variation != "0" {
-		variation = ""
-	}
-	page := productPageNumber(c.Query("page"))
-	// 属性组列表：分页**下推到 service**（ListAttributeReq 自带 Page/Size），总数由契约的
-	// CountAttributes 给出 —— handler 不再「逐页拉满拿全量再切片」，也不再为了凑出 total
-	// 而多发若干次查询（上一轮的 listAllAttributes）。
-	//
-	// 顺序是**先计数再取页**：反过来（先取第 N 页再数总数）时，越界页码会让 service 返回空页，
-	// 而分页条按收敛后的页码渲染 —— 「表格为空、分页条却显示第 2 页」正是
-	// product_list_paging_test.go 要挡的那种自相矛盾组合。两次查询的条数一样，不额外付代价。
-	total := int64(0)
-	rows := []gin.H{}
-	// 抽屉表单片段需要的数据：csrf 与取词函数 —— 片段是**带参数 include** 的
-	//（数据是每个抽屉自己的数据类，不是页面 data），取不到 adminui.Prepare 注入的页面键。
-	// csrf 由 attrFormCSRF 显式给；取词函数由每个子 data 各自经 adminui.PrepareBare 注入
-	//（见 attrGroupFormData / attrValuesFormData）—— 控制器不再自己取词。
+	// —— 控制器负责的部分 ——
+	view.Title = productenums.ProductAttributesTitle
+	view.Menu = "product-attributes"
+	// 抽屉表单的数据（编辑属性组 / 保存属性值 / 新建属性组）留在控制器：它们要 csrf
+	//（表单隐藏域）与 adminui.PrepareBare 注入的取词函数，读模型不认识 gin.Context。
+	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
 	csrf := attrFormCSRF(c)
-	// 筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 从它读回，
-	// 回跳列表页不丢关键词 / 变体筛选 / 页码。
 	listQuery := productQueryFromRequest(c, productAttrBackKeys...)
-	// 过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size，
-	// 两处口径分叉（关键词 / variation 只归一在一侧）在这里是不可能的。
-	//
-	// 每条取数都套 loadErr == nil：主数据或参数一旦判定失败，后面的派生查询一条都不发 ——
-	// 失败页不需要这些数据，也不该在已被判非法的工程上继续查。
-	var filterReq *productdto.ListAttributeReq
-	list := []*productdto.AttributeResp{}
-	if loadErr == nil && selected != "" {
-		filterReq = &productdto.ListAttributeReq{ProjectID: selected, Keyword: keyword, Variation: variation}
-		if n, cerr := h.products.CountAttributes(ctx, filterReq); cerr != nil {
-			fail(cerr)
-		} else {
-			total = n
-		}
-	}
-	if loadErr == nil && filterReq != nil {
-		page = clampPageToTotal(page, productSubListPageSize, total)
-		listReq := *filterReq
-		listReq.Page, listReq.Size = page, productSubListPageSize
-		if got, lerr := h.products.ListAttributes(ctx, &listReq); lerr != nil {
-			fail(lerr)
-		} else {
-			list = got
-		}
-	}
-	if loadErr == nil && len(list) > 0 {
-		rows = make([]gin.H, 0, len(list))
-		for _, a := range list {
-			// 两个抽屉表单（编辑属性组 / 保存属性值）的实例数据：与失败重渲染**同形**
-			//（同一个 attrRowDrawerForms），本页只负责把它们挂到行上供 <template> 里的
-			// include 取用 —— 两处各拼一份必然分叉，而分叉只会在失败路径上缺键、静默截断整页。
-			editForm, valuesForm := attrRowDrawerForms(c, csrf, selected, listQuery, a)
-			rows = append(rows, gin.H{
+	view.ListQuery = listQuery
+	view.AttrCreateForm = attrCreateDrawerForm(c, csrf, view.SelectedProject, listQuery)
+	rows := make([]map[string]any, 0, len(view.AttributeDetails))
+	if err == nil {
+		for _, a := range view.AttributeDetails {
+			// 两个抽屉的数据与失败重渲染**同形**（同一个 attrRowDrawerForms）——两处各拼
+			// 一份必然分叉，而分叉只会在失败路径上缺键、静默截断整页。
+			editForm, valuesForm := attrRowDrawerForms(c, csrf, view.SelectedProject, listQuery, a)
+			rows = append(rows, map[string]any{
 				"ID": a.ID, "Key": a.Key, "Name": a.Name,
 				"IsVariation": a.IsVariation, "Sort": a.Sort,
 				"ValueCount": a.ValueCount,
@@ -132,42 +91,22 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 			})
 		}
 	}
-	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
-	data := gin.H{
-		"title":           productenums.ProductAttributesTitle,
-		"menu":            "product-attributes",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Attributes":      rows,
-		// 页头与空态两个「新建属性组」入口共用同一个抽屉（tpl-attr-create），
-		// 抽屉内容来自共享片段，本键是它这一实例的数据（见 attrCreateDrawerForm）。
-		"AttrCreateForm": attrCreateDrawerForm(c, csrf, selected, listQuery),
-		// 筛选回显（GET 表单的 value / selected）+ 空态分档依据：
-		// 「筛出来是空的」与「这个工程本来就没有属性组」必须给不同文案。
-		"FilterKeyword":   keyword,
-		"FilterVariation": variation,
-		"Filtered":        keyword != "" || variation != "",
-		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go），
-		// 所以模板里的提示条已整批删除 —— 用户当下看到的是列表本身。
-		"ListQuery": listQuery,
-	}
+	view.Attributes = rows
 	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
-	// admin/partials/pagination.html 用 pkg/pagination.Page + 通用模板函数渲染。
-	// 基地址带上关键词与变体筛选，翻页不丢条件；单页或空数据时 HasPagination() 为假 → 不注入，
-	// 模板据 isset 跳过 —— 与旧 BuildPagination 返回 nil → TemplateKeys 给空 map 同一形态。
-	if pg := pagination.Facts(total, page, productSubListPageSize); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-attributes", attributeListFilterQuery(selected, keyword, variation))
-		data["Pagination"] = pg
+	// admin/partials/pagination.html 渲染。基地址带上筛选条件，翻页不丢条件。
+	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
+		pg.Base = productListBaseURL("/admin/product-attributes",
+			attributeListFilterQuery(view.SelectedProject, view.FilterKeyword, view.FilterVariation))
+		view.Pagination = pg
 	}
-	// 出口只有这一处（页面成败都走它）：失败槽 + no-store 只在这一处加，
-	//「失败页长什么样」因此只有一份实现。
-	if loadErr != nil {
-		data["LoadFailed"] = true
-		data["LoadError"] = productErrPageText(c, loadErr)
-		// 失败页不该被缓存：重试必须真的回到服务端，否则用户看到的是缓存的失败页。
-		c.Header("Cache-Control", "no-store")
+	if err != nil {
+		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
+		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
 	}
-	c.HTML(httpStatus, "admin/product/product_attributes.html", adminui.Prepare(c, data))
+	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
+	adminui.RenderPage(c, productAttributesPageTemplate, view)
 }
 
 // attributeListFilterQuery 属性页的筛选条件（project + keyword + variation）。
