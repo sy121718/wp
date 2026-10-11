@@ -557,7 +557,7 @@ type ProductCreateFormReq struct {
 //
 // 与四个整页视图的两点不同：
 //   - 没有工程清单（不渲染工程下拉）：工程来自表单字段，这里只带 id；
-//   - 多一组 FormEcho* —— 那是**请求边界**的产物（本次提交了什么），不是库里的数据，
+//   - 多一个 FormEcho —— 那是**请求边界**的产物（本次提交了什么），不是库里的数据，
 //     所以由控制器填（同编辑页的表单回显：service 不认识 *gin.Context）。
 type ProductCreateFormView struct {
 	SelectedProject string
@@ -569,25 +569,51 @@ type ProductCreateFormView struct {
 	// SubmitErr 上一次提交的失败文案（当前语言；控制器按出口归口后填）。
 	SubmitErr string
 
-	// FormEcho / FormEchoChecked / FormEchoMulti 回填值：控件名 → 本次提交的值。
-	// 三份分别服务文本输入、单选、复选框组（同名多值）。
+	// FormEcho 回填值（本次提交了什么），nil = **空表单**（首屏 / 首次进入）。
 	//
-	// 类型是 map[string]any 而不是各自的具体类型：三份的**值**语义不同（串 / 布尔 / 串切片），
-	// 由模板判断，与 formEchoData 的产出同型 —— 换的是载体（结构体字段），不是形状。
+	// 字段清单就是 ProductCreateFormEcho 这个结构体本身（原来是一份手写的 []string{13 个 name}）：
+	// 控制器用 adminui.FillForm 按字段名（或 `form:"名字"` 标签）从请求表单填，模板按**导出字段名**读。
+	// 那份手写清单漏一个字段的后果不是「少显示一格」，而是模板读不到键 → 整块渲染失败（500），
+	// 而 htmx 2.0.4 把 5xx 判成 swap:false —— 用户点了保存**什么都看不到**。
 	//
 	// 门控契约（改这里之前先看模板第一行）：模板用 `cfFill := isset(.FormEcho)` 区分
-	// 「空表单」与「回填表单」，靠的是**这个键在不在**。所以：
-	//   · 本视图必须**恒填**这三键（控制器那边无条件赋，哪怕本次没提交任何字段）；
-	//   · 首屏视图（ProductNewPageView）必须**没有**同名字段 —— 它进的是同一份模板。
+	// 「空表单」与「回填表单」—— 判据是**这个字段是不是 nil 指针**。所以：
+	//   · 控制器那边无条件赋一个非 nil 的 &ProductCreateFormEcho{}（哪怕本次没提交任何字段）；
+	//   · 首屏视图（ProductNewPageView）不得有同名的**非 nil** 字段 —— 它进的是同一份模板。
 	// 两边任一被改动，门控就失效，症状是静默的：首屏显示上次提交的值，或失败后回填全丢。
-	FormEcho        map[string]any
-	FormEchoChecked map[string]any
-	FormEchoMulti   map[string]any
+	FormEcho *ProductCreateFormEcho
 
 	// LoadFailed 取数失败：渲染方据此退回整页提示（这一段 HTML 撑不起来时不留半个表单）。
 	// 这里**没有 LoadError** —— 失败不留在这份视图里，驱动原文只走 err 返回值进日志。
 	LoadFailed bool
 	HTTPStatus int
+}
+
+// ProductCreateFormEcho 商品建表单的回填值：**字段清单本身**（模板与提交表单之间的协议）。
+//
+// 三个约定，缺一个都会静默失效：
+//
+//	· `form:"..."` 必须与该控件的 `name=` 逐字一致 —— 它是 FillForm 取值用的键，也是浏览器提交用的键，
+//	  两边不同就会「用户填了、失败后回填成空」，而页面看起来完全正常；
+//	· 类型表达控件形态（string = 文本框/下拉/隐藏域，bool = 复选框，[]string = 同名多值的勾选组）——
+//	  原来这些区别靠三份不同前缀的 map 表达（FormEcho / FormEchoChecked / FormEchoMulti），
+//	  现在由 Go 类型给出，模板不再需要判断「这个值该当串还是当布尔」；
+//	· 每个字段必须被模板真的读到，反之亦然 —— 双向一致性由
+//	  product_create_form_fail_test.go 用反射 + 模板源码对账钉住。
+type ProductCreateFormEcho struct {
+	ProjectID     string   `form:"projectId"`
+	Name          string   `form:"name"`
+	Type          string   `form:"type"`
+	Slug          string   `form:"slug"`
+	SkuSource     string   `form:"skuSource"`
+	SKU           string   `form:"sku"`
+	WarehouseSKU  string   `form:"warehouseSku"`
+	ExternalSKU   string   `form:"externalSku"`
+	DefaultPrice  string   `form:"defaultPrice"`
+	Quantity      string   `form:"quantity"`
+	TrackQuantity bool     `form:"trackQuantity"`
+	AttributeIDs  []string `form:"attributeIds"`
+	WarehouseIDs  []string `form:"warehouseIds"`
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。

@@ -192,11 +192,15 @@ document 兜底）。
 片段自带 host（`<div data-product-create-host>`），表单用 `hx-target="closest [data-product-create-host]"`
 + `hx-swap="outerHTML"`，失败时服务端渲染的就是**这个片段自身**（一个真源，两条路径）。
 
-**字段清单与模板必须正反双向断言**：模板读的每个回填字段都必须在 handler 的清单里，反向也要钉。
-漏列不是「页面截断」，而是渲染失败 → 500 → htmx 不 swap（用户点了保存**什么都看不到**）。
+**字段清单与模板必须正反双向断言**：模板读的每个回填字段都要能对上回填结构体的导出字段，
+反向也要钉（结构体每个字段模板必须真的读）；另外 `form:"..."` 标签必须与该控件的 `name=` 逐字一致。
+对不上不是「页面截断」，而是渲染失败 → 500 → htmx 不 swap（用户点了保存**什么都看不到**）。
 
-样板：`admin/product/product_create_form.html` + `internal/module/product/inbound/http/` 的
-`productCreateFail` / `productCreateFormFields`；判据与浏览器实测见 `docs/02-T-write-fail-echo-batch1.md`。
+样板：`admin/product/product_create_form.html` + `internal/module/product/dto/product_view.go` 的
+`ProductCreateFormEcho`（清单就是结构体本身，`adminui.FillForm` 按 `form:` 标签填）+
+`internal/module/product/inbound/http/` 的 `productCreateFail`；判据与浏览器实测见
+`docs/02-T-write-fail-echo-batch1.md`。
+属性组 / 属性值两个抽屉仍是 `formEchoData(c, 字段名…)` 的三键形态（未随本批改造）。
 
 ## Jet 模板内可以做简单计算
 

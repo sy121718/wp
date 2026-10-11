@@ -556,7 +556,8 @@ func productBrandNameOptions(brands []*productdto.BrandResp) []map[string]any {
 // ==========================================================================
 // 商品新建页与它的表单契约。
 //
-// productCreateFormFields 是**模板读的字段清单**，与模板必须正反双向断言：漏列不是
+// 回填字段清单就是 dto.ProductCreateFormEcho 结构体本身（不再是一份手写的 []string），
+// 与模板的正反双向断言见 product_create_form_fail_test.go：模板读了结构体没有的字段不是
 // 「页面截断」而是渲染失败 → htmx 不 swap（用户点了保存什么都看不到）。
 
 // productNewPageTemplate 新建商品整页模板（失败页与成功页渲染**同一份**模板）。
@@ -617,28 +618,18 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 	adminui.RenderPage(c, productNewPageTemplate, view)
 }
 
-// productCreateFormFields 建表单片段的回填字段清单（片段与 handler 之间的协议）。
-//
-// 改片段里的 `name=` 必须同步改这里：helper 按这份清单给每个字段补零值键，漏列的字段
-// 在失败片段里读不到 —— 而 Jet 读缺失的 map 键会**从那一行截断整页**（HTTP 仍 200，
-// 错误槽之后的表单整块消失），现象是「保存失败后表单没了」，且没有任何报错。
-var productCreateFormFields = []string{
-	"projectId", "name", "type", "slug", "skuSource", "sku", "warehouseSku",
-	"externalSku", "defaultPrice", "quantity", "trackQuantity",
-	"attributeIds", "warehouseIds",
-}
-
-// productCreateFormData 建表单片段的渲染 data（**只在提交失败重渲染时**用）。
-//
-// 首屏（新建整页 / 列表页抽屉）不注入 FormEcho* 三键 —— 片段以 cfFill 开关区分
-// 「空表单」与「回填表单」，两个页面 handler 因此不必为它加键。
 // productCreateFormTemplate 商品建表单模板（**不带页壳**：它被整页 include，也被单独渲染）。
 const productCreateFormTemplate = "admin/product/product_create_form.html"
 
 // productCreateFormView 建表单的渲染视图：取数来自读模型（service.ProductCreateForm），
 // 回填值是**请求边界**的产物（本次提交了什么），所以在这里填 —— service 不认识 *gin.Context。
 //
-// 表单门控：走到这里就是「回填表单」，所以恒填 FormEcho 三键 —— 模板靠 `isset(.FormEcho)`
+// 回填的字段清单就是 dto.ProductCreateFormEcho 那个结构体（原来是一份手写的 13 项 []string）：
+// `adminui.FillForm` 按字段名 / `form:"名字"` 标签从**这次请求的表单值**里填，漏字段在编译期
+// 就不存在。这里喂的是 formEchoFrom 归一化后的值（去首尾空白、丢空项），而不是 c.Request.PostForm
+// 原样 —— 与各抽屉的回填口径保持同一份（否则同一段文字在不同表单里回填出的结果不同）。
+//
+// 表单门控：走到这里就是「回填表单」，所以恒给一个非 nil 的 echo —— 模板靠 `isset(.FormEcho)`
 // 区分空表单与回填表单，门控契约见 dto.ProductCreateFormView。
 func (h *productPageHandle) productCreateFormView(c *gin.Context, projectID, submitErr string) (*productdto.ProductCreateFormView, error) {
 	reader, ok := h.products.(productcontract.ProductPageReader)
@@ -656,11 +647,9 @@ func (h *productPageHandle) productCreateFormView(c *gin.Context, projectID, sub
 		view = &productdto.ProductCreateFormView{}
 	}
 	view.SubmitErr = submitErr
-	// formEchoData 产出的三键与视图字段同型（map[string]any）：换的是载体，不是形状。
-	echo := formEchoData(c, productCreateFormFields...)
-	view.FormEcho = map[string]any(echo["FormEcho"].(gin.H))
-	view.FormEchoChecked = map[string]any(echo["FormEchoChecked"].(gin.H))
-	view.FormEchoMulti = map[string]any(echo["FormEchoMulti"].(gin.H))
+	echo := &productdto.ProductCreateFormEcho{}
+	adminui.FillForm(echo, formEchoFrom(c).values)
+	view.FormEcho = echo
 	return view, nil
 }
 

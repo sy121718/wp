@@ -32,6 +32,17 @@
    后者会把整组选项一次勾满（用户只勾了一个，回填后变成四个）。
 4. **帧内错误槽放在表单之外、host 之内** —— 放进 `<form>` 会被下一次提交一起换掉。
 
+> **后续修订（2026-10-11）**：第 2 条的「三个前缀键」已被**单个回填结构体**取代 ——
+> 建表单的字段清单现在是 `internal/module/product/dto/product_view.go` 的
+> `ProductCreateFormEcho`（`form:"..."` 标签 + Go 类型表达控件形态），控制器用
+> `adminui.FillForm` 按标签从**这次请求**的表单值填，模板按导出字段名读
+> （`.FormEcho.Name`）。手写 `[]string` 清单与 `FormEchoChecked` / `FormEchoMulti` 两个前缀键
+> 在建表单这一屏**已删除**（撞名问题随结构体视图天然消失）；属性组 / 属性值两个抽屉
+> 仍是 `formEchoData(c, 字段名…)` 的三键形态。
+> 双向一致性判据相应从「清单 ↔ 模板」变成「结构体 ↔ 模板 + `form:` 标签 ↔ 控件 `name=`」，
+> 见 `internal/module/product/inbound/http/product_create_form_fail_test.go` 的
+> `TestProductCreateFormEchoMatchesTemplate`。分档契约（第 1、3、4 条）不变。
+
 ## 3. 改动清单
 
 | 文件 | 改动 |

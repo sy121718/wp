@@ -41,28 +41,26 @@ func productCreateFailData() map[string]any {
 		// 直接渲染模板时缺键会让 Jet 在那一行中断，症状是「页面后半截凭空消失」。
 		"Templates": []map[string]any{}, "DefaultTemplateID": "",
 		"SubmitErr": "捆绑商品必须填写套餐价",
+		// FormEcho 现在是 dto.ProductCreateFormEcho 那一个结构体（不再是三个前缀 map）：
+		// 这里用同形状的 map 模拟 ViewMap 摊平后的键，字段名与类型都要与结构体一致
+		// （string = 文本/下拉，bool = 复选框，[]string = 同名多值的勾选组）。
+		// 生产路径上这个键里放的是 *ProductCreateFormEcho，模板按导出字段名读，两者等价。
 		"FormEcho": map[string]any{
-			"projectId": "pr1", "name": "半填的商品", "type": "bundle", "slug": "half",
-			"skuSource": "custom", "sku": "HALF_B", "warehouseSku": "", "externalSku": "EXT-1",
-			"defaultPrice": "19.90", "quantity": "3", "trackQuantity": "1",
-			"attributeIds": "a1", "warehouseIds": "w1",
-		},
-		"FormEchoChecked": map[string]any{"trackQuantity": true, "attributeIds": true, "warehouseIds": true},
-		// 这次提交里只勾了 a1 / w1：另一个选项必须**不**被勾上。
-		"FormEchoMulti": map[string]any{
-			"attributeIds": []string{"a1"},
-			"warehouseIds": []string{"w1"},
+			"ProjectID": "pr1", "Name": "半填的商品", "Type": "bundle", "Slug": "half",
+			"SkuSource": "custom", "SKU": "HALF_B", "WarehouseSKU": "", "ExternalSKU": "EXT-1",
+			"DefaultPrice": "19.90", "Quantity": "3", "TrackQuantity": true,
+			// 这次提交里只勾了 a1 / w1：另一个选项必须**不**被勾上。
+			"AttributeIDs": []string{"a1"},
+			"WarehouseIDs": []string{"w1"},
 		},
 	})
 }
 
-// 首屏数据：handler 不注入 FormEcho* 三键，片段以 cfFill 开关走空表单分支。
+// 首屏数据：handler 不注入 FormEcho，片段以 cfFill 开关走空表单分支。
 func productCreateFirstPaintData() map[string]any {
 	d := productCreateFailData()
 	delete(d, "SubmitErr")
 	delete(d, "FormEcho")
-	delete(d, "FormEchoChecked")
-	delete(d, "FormEchoMulti")
 	return d
 }
 
