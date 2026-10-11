@@ -220,7 +220,7 @@ type ProductDetailPageView struct {
 	WarehouseOptions []WarehouseOptionView
 
 	// —— 行装配原料（Product 成品行由控制器的 productRow 组装）——
-	// Categories 是**分类树**（扁平行由控制器的 flattenCategoryTree 做，分类页也在用它）。
+	// Categories 是**分类树**（扁平行由 service.FlattenCategoryTree 派生）。
 	Detail     *ProductResp
 	Categories []*CategoryResp
 	Brands     []*BrandResp
@@ -285,7 +285,7 @@ type ProductEditPageView struct {
 	AttributeOptions []AttributeOptionView
 
 	// —— 行装配原料（Product 成品行由控制器的 productRow 组装）——
-	// Categories 是**分类树**（扁平行由控制器的 flattenCategoryTree 做）。
+	// Categories 是**分类树**（扁平行由 service.FlattenCategoryTree 派生）。
 	Detail     *ProductResp
 	Categories []*CategoryResp
 	Brands     []*BrandResp
@@ -1000,4 +1000,167 @@ type SaveProductTranslationsReq struct {
 	Contexts  []string
 	Hashes    []string
 	Targets   []string
+}
+
+// CategoryParentInfo 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
+//
+// 拆成两个字段而不是一个拼好的串：跨工程那句说明是文案，必须在渲染期按请求语言取词
+// （en-US 后台下也该是英文）—— 在 Go 里拼串等于把它钉死在中文。
+type CategoryParentInfo struct {
+	Name       string
+	OutOfScope bool
+}
+
+// ProductCategoriesPageReq 分类管理页的取数入参。
+type ProductCategoriesPageReq struct {
+	ProjectID string
+	Keyword   string
+	Page      int
+}
+
+// ProductCategoriesPageView 分类管理页的一屏。
+type ProductCategoriesPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+
+	// FilterKeyword 回显；Filtered 是空态分档依据（「筛出来是空的」与「这个工程还没有分类」
+	// 必须给不同文案）。
+	FilterKeyword string
+	Filtered      bool
+
+	// CategoryDetails 本页的分类树（**已按 DFS 扁平**，父在前、子紧随，模板按 Depth 缩进）：
+	// 行装配的原料。
+	CategoryDetails []*CategoryResp
+	// PickFlat 工程内**全部分类**（已扁平）：父级下拉的原料。
+	// 不是当前这一页 —— 树状列表之后没有面包屑兜底，缺项会直接表现为
+	//「新建子分类时选不到父级」。
+	PickFlat []*CategoryResp
+	// ParentLabels 「父级不在候选列表里」的那些分类 → 父级事实（见 CategoryParentInfo）。
+	// 只对本页里真正缺失的那几个父级查一次库。
+	ParentLabels map[string]CategoryParentInfo
+
+	// MatchTotal 是**命中条数**（提示文案用）；Total（= 命中所属的根分类数）给分页条算总页数。
+	// Categories 成品行（模板 `{{range .Categories}}` 读 ID / Name / Slug / Label / ParentID /
+	// Sort / Depth / HasChildren / Matched / SearchMode / ParentOutOfScope / EditForm）；
+	// CategoryCreateForm 「新建分类」抽屉的表单数据（页头与空态两个入口共用同一份）。
+	// 两者都由控制器装配（抽屉要 csrf 与 adminui.PrepareBare 注入的取词函数）。
+	Categories         []map[string]any
+	CategoryCreateForm map[string]any
+	// Options 父级下拉的选项（本工程分类的扁平列表 + 层级缩进标签）：列表页的筛选区与
+	// 抽屉里都读它。**只收本工程**的分类（见 service.CategoriesInProject）。
+	Options []map[string]any
+
+	MatchTotal int64
+	Total      int64
+	Page       int
+	Limit      int
+	Pagination pagination.Page
+
+	// ListQuery 筛选上下文（表单 action 的 query）：写动作失败时由 pkg/backpath 读回。
+	ListQuery string
+
+	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器按当前
+	// 语言归口后填。HTTPStatus：200 读到 / 400 参数不合法 / 500 主数据没读到。
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductCategoriesPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
+// 404 空态同样标 no-store —— 分类可能刚被建回来，缓存的 404 会把运营挡在门外。
+func (v ProductCategoriesPageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}
+
+// ProductBrandsPageReq 品牌管理页的取数入参。
+type ProductBrandsPageReq struct {
+	ProjectID string
+	Keyword   string
+	Page      int
+}
+
+// ProductBrandsPageView 品牌管理页的一屏。
+type ProductBrandsPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+	FilterKeyword   string
+	Filtered        bool
+
+	// BrandDetails 本页品牌：行装配的原料（每行的编辑抽屉要 csrf 与取词函数，留控制器）。
+	BrandDetails []*BrandResp
+	// Brands 成品行（含每行的 EditForm）；BrandCreateForm 内联新建表单的数据。
+	Brands          []map[string]any
+	BrandCreateForm map[string]any
+
+	Total      int64
+	Page       int
+	Limit      int
+	Pagination pagination.Page
+	ListQuery  string
+
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductBrandsPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
+func (v ProductBrandsPageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}
+
+// ProductTagsPageReq 标签管理页的取数入参。
+type ProductTagsPageReq struct {
+	ProjectID string
+	Keyword   string
+	Page      int
+}
+
+// ProductTagsPageView 标签管理页的一屏。
+type ProductTagsPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+	FilterKeyword   string
+	Filtered        bool
+
+	// TagDetails 本页标签：行装配的原料（行级编辑片段与新建片段留控制器 —— 它们要 csrf
+	// 与取词函数）。命中商品**不在首屏取**（审计 PERF-02），由展开区按页拉片段。
+	TagDetails []*TagResp
+	// RuleTypes 内置规则类型清单：全页只查一次，行级片段 / 页面级新建片段 / 规则说明共享同一份。
+	RuleTypes []*TagRuleTypeResp
+	// Tags 成品行（含每行的 EditForm）；TagCreateForm 新建抽屉的数据（与行级片段同源）。
+	Tags          []map[string]any
+	TagCreateForm map[string]any
+
+	Total      int64
+	Page       int
+	Limit      int
+	Pagination pagination.Page
+	ListQuery  string
+
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductTagsPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
+func (v ProductTagsPageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }

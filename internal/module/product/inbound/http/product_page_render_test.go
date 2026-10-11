@@ -31,6 +31,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
@@ -126,6 +127,18 @@ type productPageReaderStub struct {
 	bundleView *productdto.ProductBundlePageView
 	bundleErr  error
 	bundleReqs []*productdto.ProductBundlePageReq
+
+	categoriesView *productdto.ProductCategoriesPageView
+	categoriesErr  error
+	categoriesReqs []*productdto.ProductCategoriesPageReq
+
+	brandsView *productdto.ProductBrandsPageView
+	brandsErr  error
+	brandsReqs []*productdto.ProductBrandsPageReq
+
+	tagsView *productdto.ProductTagsPageView
+	tagsErr  error
+	tagsReqs []*productdto.ProductTagsPageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -171,6 +184,64 @@ func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req
 func (s *productPageReaderStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
 	s.bundleReqs = append(s.bundleReqs, req)
 	return s.bundleView, s.bundleErr
+}
+
+func (s *productPageReaderStub) ProductCategoriesPage(_ context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
+	s.categoriesReqs = append(s.categoriesReqs, req)
+	return s.categoriesView, s.categoriesErr
+}
+
+func (s *productPageReaderStub) ProductBrandsPage(_ context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
+	s.brandsReqs = append(s.brandsReqs, req)
+	return s.brandsView, s.brandsErr
+}
+
+func (s *productPageReaderStub) ProductTagsPage(_ context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
+	s.tagsReqs = append(s.tagsReqs, req)
+	return s.tagsView, s.tagsErr
+}
+
+// productCategoriesPageViewStub 分类页成功档视图（键给齐，与 service 同型）。
+func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPageView)) *productdto.ProductCategoriesPageView {
+	v := &productdto.ProductCategoriesPageView{
+		Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
+		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
+		CategoryDetails: []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
+		PickFlat:        []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
+		Total:           1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
+}
+
+// productBrandsPageViewStub 品牌页成功档视图。
+func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageView)) *productdto.ProductBrandsPageView {
+	v := &productdto.ProductBrandsPageView{
+		Title: productenums.ProductBrandsTitle, Menu: "product-brands",
+		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
+		BrandDetails: []*productdto.BrandResp{{ID: "b1", Name: "品牌一", Slug: "brand-1"}},
+		Total:        1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
+}
+
+// productTagsPageViewStub 标签页成功档视图。
+func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageView)) *productdto.ProductTagsPageView {
+	v := &productdto.ProductTagsPageView{
+		Title: productenums.ProductTagsTitle, Menu: "product-tags",
+		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
+		TagDetails: []*productdto.TagResp{{ID: "t1", Name: "手工标签", Slug: "manual", Kind: productenums.TagKindManual}},
+		Total:      1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
 }
 
 // productBundlePageViewStub 捆绑配置页的成功档视图（键给齐，与 service 同型）。
@@ -395,7 +466,19 @@ func productPageRequestFor(t *testing.T, h *productPageHandle, route, target str
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET(route, h.ProductAttributesPage)
+	// 按路径分派到对应的整页 handler：调用点只给「这是哪一页」，不必再各自搭一个引擎。
+	switch route {
+	case "/admin/product-attributes":
+		engine.GET(route, h.ProductAttributesPage)
+	case "/admin/product-categories":
+		engine.GET(route, h.ProductCategoriesPage)
+	case "/admin/product-brands":
+		engine.GET(route, h.ProductBrandsPage)
+	case "/admin/product-tags":
+		engine.GET(route, h.ProductTagsPage)
+	default:
+		t.Fatalf("productPageRequestFor 不认识这条路由 %q", route)
+	}
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

@@ -119,7 +119,7 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 
 	// 查询串不是可信边界：`?project=<不存在的 id>` 一路渲染下去会得到「这个工程下没有属性组」
 	// —— 把「工程不存在」说成了「工程是空的」。判据是**本次请求已加载的工程集合**，与页面里的
-	// 工程选择器同源（见 controller 的 productProjectExists 注释）。
+	// 工程选择器同源（判据唯一一份就是下面这个 ProjectExists，各页不再各写一遍）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
 		firstErr = errors.New(productenums.ErrInvalidParam)

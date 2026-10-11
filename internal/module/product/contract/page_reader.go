@@ -11,7 +11,9 @@
 //
 // 实现方是本模块 service（编译期断言 `var _ ProductPageReader = (*Service)(nil)`
 // 在 `service/product_page.go`）；消费方是 `inbound/http/` 的整页控制器
-// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具 / 属性库 / 详情页模板），那里只能是**运行期**断言 ——
+// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具 / 属性库 / 详情页模板 / 捆绑配置 /
+// 分类 / 品牌 / 标签；译文工作台带写方法，单独一条端口见 translation_reader.go），
+// 那里只能是**运行期**断言 ——
 // 控制器持有的是 `ProductService`，读模型不在它的能力面上（放上去等于把页面的形状
 // 变成跨模块契约的一部分，见上）。
 //
@@ -81,9 +83,10 @@ type ProductPageReader interface {
 	// ProductPricingPage 定价工具页的读模型：工程清单 → 规则与尾数处理参考表 →
 	// 改价表单初值（或本次提交的回显值）→ 试算结果 → 留痕台账。
 	//
-	// 与上面五条**不同：这一屏没有失败档** —— 三处取数各自降级（工程清单读不到 → 空下拉；
+	// 与上面五条**不同：这一屏没有取数失败档** —— 三处取数各自降级（工程清单读不到 → 空下拉；
 	// 参考表是注册表快照、本身无 error；台账读不到 → 空台账），页面主体（改价表单）始终
-	// 撑得起来，所以视图不实现 PageResult，渲染出口按 200 + 可缓存处理。
+	// 撑得起来。视图仍实现 PageResult，但 HTTPStatus 非 0 只会来自「读模型没接上」这类
+	// 装配缺陷（控制器那一半给 500 + no-store），正常路径恒 200 且可缓存。
 	//
 	// Form / Preview / ErrMsg 由控制器填（它们是写路径的产物，读模型不认识 gin.Context）。
 	ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (res *productdto.ProductPricingPageView, err error)
@@ -110,6 +113,20 @@ type ProductPageReader interface {
 	//   · 没给 product 参数时置 NoProduct 并**停止取数**（菜单入口形态，控制器据此走
 	//     引导出口；它不是 400 —— 本页本来就有「还没选商品」的入口）。
 	ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (res *productdto.ProductDetailTemplatePageView, err error)
+
+	// ProductCategoriesPage 分类管理页的读模型：工程清单 → 参数档位 → 本页分类树（已 DFS 扁平）
+	// → 工程内全量分类（父级下拉的原料）→ 缺失父级的事实。
+	//
+	// 两块分类原料**分开交**（CategoryDetails 与 PickFlat）：页面表格要本页的树，父级下拉要
+	// 全量 —— 树状列表之后没有面包屑兜底，缺项会直接表现为「新建子分类时选不到父级」。
+	ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (res *productdto.ProductCategoriesPageView, err error)
+
+	// ProductBrandsPage 品牌管理页的读模型：工程清单 → 参数档位 → 计数 → 页码收敛 → 取页。
+	ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (res *productdto.ProductBrandsPageView, err error)
+
+	// ProductTagsPage 标签管理页的读模型：工程清单 → 参数档位 → 规则类型清单（全页一次）→
+	// 计数 → 页码收敛 → 取页。命中商品**不在首屏取**（审计 PERF-02），由展开区按页拉片段。
+	ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (res *productdto.ProductTagsPageView, err error)
 
 	// ProductBundlePage 捆绑配置整页的读模型：工程清单 → 工程存在性校验 → 工程商品 →
 	// 捆绑配置（三档）→ 候选 SKU → 来源属性 / 仓库清单 / 逐仓 SKU 候选，并给出这一屏的档位。

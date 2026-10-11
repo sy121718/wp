@@ -6,8 +6,10 @@ import (
 	"errors"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -24,121 +26,61 @@ import (
 // 三者在界面上分属三个菜单页，但它们是同一类东西：都只被商品**引用**、都参与筛选、
 // 都有 slug / 引用守卫 / 批量删除，改一处口径另两处必须跟着看（用户否掉了「按实体拆文件」）。
 
-func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
-	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
-	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			// 取数没读到 = 500。参数不合法是另一档（400，见下面的工程校验）。
-			httpStatus = http.StatusInternalServerError
-		}
-	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	// 未知工程**原先就在这里被拒**（那时给的是 JSON 出口）：判据不新造，换成共享的
-	// productProjectExists（列表页 / 详情页 / 新建页同一份），出口也换成页面请求该有的
-	// 那一档：整页 + 400 + no-store。
-	// 判据是**本次请求已加载的工程集合**（h.projects.List 返回全量：契约「列出全部站点工程」，
-	// 无 Page/Size 参数、model 只 Order 不 LIMIT/WHERE、projects 根表未开 RLS），且与同一份
-	// pageData 里的工程选择器**同源**。工程被删除或并发变化会让旧链接里的工程失效 ——
-	// 那时 400 正是准确的事实：参数指向的工程已不在可选集合里（不是「工程是空的」）。
+// 三页的模板名：出口只有一处（页面成败都走它）。
+const productCategoriesPageTemplate = "admin/product/product_categories.html"
+const productBrandsPageTemplate = "admin/product/product_brands.html"
+const productTagsPageTemplate = "admin/product/product_tags.html"
 
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
+func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配没接上读模型：整页 + 500 + no-store。真出现时也不能把「没接上」
+		// 说成「这个工程还没有分类」。
+		adminui.RenderPage(c, productCategoriesPageTemplate, &productdto.ProductCategoriesPageView{
+			Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		})
+		return
 	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	page := productPageNumber(c.Query("page"))
-	pageRows := []*productdto.CategoryResp{}
-	pickFlat := []*productdto.CategoryResp{}
-	total, matchTotal := int64(0), int64(0)
-	// 每条取数都套 loadErr == nil：主数据或参数一旦判定失败，后面的派生查询一条都不发。
-	if loadErr == nil && selected != "" {
-		query := &productdto.ListCategoryPageReq{ProjectID: selected, Keyword: keyword, Page: page, Size: productSubListPageSize}
-		result, lerr := h.products.ListCategoryPage(ctx, query)
-		if lerr != nil {
-			fail(lerr)
-		} else {
-			total, matchTotal = result.Total, result.MatchTotal
-			// 越界页码先收敛再重取一页：表格与分页条必须说的是同一件事。
-			if clamped := clampPageToTotal(page, productSubListPageSize, total); clamped != page {
-				page = clamped
-				query.Page = page
-				if again, aerr := h.products.ListCategoryPage(ctx, query); aerr != nil {
-					fail(aerr)
-				} else {
-					result = again
-				}
-			}
-			// 一页的树 → DFS 扁平行（父在前、子紧随，模板按 Depth 缩进）。
-			pageRows = flattenCategoryTree(result.Items)
+	// 取参数 → 调读模型（取数编排在 service：取哪些、按什么顺序、哪条失败算 400 /
+	// 哪条只降级，都是业务结论。见 service.ProductCategoriesPage）。
+	view, err := reader.ProductCategoriesPage(c.Request.Context(), &productdto.ProductCategoriesPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Keyword:   strings.TrimSpace(c.Query("keyword")),
+		Page:      productPageNumber(c.Query("page")),
+	})
+	if view == nil {
+		view = &productdto.ProductCategoriesPageView{
+			Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	// 父级下拉要的是**工程内全部分类**，不是当前这一页 ——
-	// 树状列表之后没有面包屑兜底，缺项会直接表现为「新建子分类时选不到父级」。
-	if loadErr == nil && selected != "" {
-		all, aerr := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected})
-		if aerr != nil {
-			fail(aerr)
-		} else {
-			pickFlat = flattenCategoryTree(all)
-		}
+
+	// —— 控制器负责的部分：行装配与抽屉 ——
+	view.Title = productenums.ProductCategoriesTitle
+	view.Menu = "product-categories"
+	view.ListQuery = productQueryFromRequest(c, productCategoriesBackKeys...)
+	// 候选列表**只收本工程**的分类（判据与理由见 service.CategoriesInProject）。
+	options := categoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
+	view.Options = options
+	view.CategoryCreateForm = categoryDrawerData(c, "create", view.SelectedProject, nil, options, nil)
+	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
+	if err == nil {
+		view.Categories = categoryTreeRows(c, view.SelectedProject, view.CategoryDetails, options, view.Filtered, view.ParentLabels)
+	} else {
+		view.Categories = []map[string]any{}
 	}
-	// 候选列表**只收本工程**的分类：ListCategories 的跨工程可见性由 RLS 决定
-	//（未切非超级角色时策略不生效，别的工程的分类会一起回来），而这里的选择动作是工程内行为 ——
-	// 混进来会让「父级在别的工程」这种坏数据在界面上看起来完全正常。
-	options := categoryPickOptions(filterCategoriesInProject(pickFlat, selected))
-	createForm := categoryDrawerData(c, "create", selected, nil, options, nil)
-	filterQuery := listFilterQuery(selected, keyword)
-	// 父级不在候选列表里（跨工程遗留 / 父级行已不存在）时，抽屉仍要渲染「当前选中的父级」
-	// 那一项，并说明它为什么不在候选里 —— 那是操作者唯一的可见信号。
-	rows := categoryTreeRows(c, selected, pageRows, options, keyword != "", h.missingParentLabels(c, selected, pageRows, options))
-	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言。
-	data := gin.H{
-		"title":           productenums.ProductCategoriesTitle,
-		"menu":            "product-categories",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Categories":      rows,
-		// 父级下拉选项：扁平列表 + 缩进标签（模板里排除自身，避免明显的自环提交）。
-		"Options":    options,
-		"SearchMode": keyword != "",
-		// MatchTotal 是**命中条数**（提示文案用）；分页条按 Total（= 命中所属的根分类数）。
-		"MatchTotal":         matchTotal,
-		"CategoryCreateForm": createForm,
-		// 筛选回显（GET 表单的 value）：提交后条件留在控件上，
-		// 否则用户看不出「现在到底筛了什么」；Filtered 让空态能区分
-		// 「筛出来是空的」与「这个工程还没有分类」。
-		"FilterKeyword": keyword,
-		"Filtered":      keyword != "",
-		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
-		// ListQuery 是筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 读回。
-		"ListQuery": productQueryFromRequest(c, productCategoriesBackKeys...),
+	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染。
+	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
+		pg.Base = productListBaseURL("/admin/product-categories", listFilterQuery(view.SelectedProject, view.FilterKeyword))
+		view.Pagination = pg
 	}
-	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染
-	//（基地址带关键词与工程筛选，翻页不丢条件；单页/空数据不注入）。
-	if pg := pagination.Facts(total, page, productSubListPageSize); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-categories", filterQuery)
-		data["Pagination"] = pg
+	if err != nil {
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
 	}
-	// 出口只有这一处（页面成败都走它）：失败槽 + no-store 只在这一处加。
-	if loadErr != nil {
-		data["LoadFailed"] = true
-		data["LoadError"] = productErrPageText(c, loadErr)
-		c.Header("Cache-Control", "no-store")
-	}
-	c.HTML(httpStatus, "admin/product/product_categories.html", adminui.Prepare(c, data))
+	adminui.RenderPage(c, productCategoriesPageTemplate, view)
 }
 
 // ProductCategoryParents is a bounded, project-scoped parent picker search.
@@ -158,9 +100,9 @@ func (h *productPageHandle) ProductCategoryParents(c *gin.Context) {
 			c.Status(http.StatusInternalServerError)
 			return
 		}
-		for _, item := range flattenCategoryTree(page.Items) {
+		for _, item := range productservice.FlattenCategoryTree(page.Items) {
 			if item.Matched {
-				options = append(options, gin.H{"ID": item.ID, "Label": categoryLabel(item)})
+				options = append(options, gin.H{"ID": item.ID, "Label": productservice.CategoryLabel(item)})
 			}
 		}
 	}
@@ -184,22 +126,33 @@ func (h *productPageHandle) categoryProjectExists(c *gin.Context, projectID stri
 	return false
 }
 
+// categoryOptionIDs 父级候选下拉里出现过的分类 id（MissingParentIDs 的「已知集合」）。
+func categoryOptionIDs(options []map[string]any) map[string]struct{} {
+	known := make(map[string]struct{}, len(options))
+	for _, option := range options {
+		if id, ok := option["ID"].(string); ok {
+			known[id] = struct{}{}
+		}
+	}
+	return known
+}
+
 // categoryTreeRows 分类树 → 列表行；每行带自己的编辑抽屉数据。
 //
-// parentLabels 是「父级不在候选列表里」的分类 → 父级事实（见 missingParentLabels），
+// parentLabels 是「父级不在候选列表里」的分类 → 父级事实（见 service.categoryParentLabels），
 // 只用于抽屉里那一项的回显。传 nil 表示没有这类行（新建表单就走这条路）。
 //
 // ParentOutOfScope 是列表行上的徽章：父级属于别的工程（或父级行已不存在）时置真 ——
 // 这类行的 ParentID 指向本工程之外，操作者只看分类名看不出来，得有个可见标记。
-func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H, searching bool, parentLabels map[string]categoryParentInfo) []gin.H {
+func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []map[string]any, searching bool, parentLabels map[string]productdto.CategoryParentInfo) []map[string]any {
 	// 判据取 missingParentIDs（父级不在候选列表）而**不是** parentLabels：后者只收
 	// 「名称读得到」的那些父级，RLS 切非超级角色后跨工程父级读不到名称会被它漏掉，
 	// 而那时恰恰最该让操作者看见异常。两者共用同一个判定函数，不另起一份候选集合逻辑。
 	outOfScope := make(map[string]struct{})
-	for _, parentID := range missingParentIDs(nodes, options) {
+	for _, parentID := range productservice.MissingParentIDs(nodes, categoryOptionIDs(options)) {
 		outOfScope[parentID] = struct{}{}
 	}
-	rows := make([]gin.H, 0, len(nodes))
+	rows := make([]map[string]any, 0, len(nodes))
 	for _, node := range nodes {
 		_, flagged := outOfScope[node.ParentID]
 		rows = append(rows, gin.H{
@@ -297,106 +250,53 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 
 // ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
 func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
-	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
-	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			// 取数没读到 = 500。参数不合法是另一档（400，见下面的工程校验）。
-			httpStatus = http.StatusInternalServerError
-		}
-	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	// 与商品列表页 / 属性页 / 标签页同一份判据（productProjectExists）：?project=<不存在的 id>
-	// 渲染成「这个工程下没有品牌」是把「工程不存在」说成了「工程是空的」。
-	// 判据是**本次请求已加载的工程集合**（h.projects.List 返回全量：契约「列出全部站点工程」，
-	// 无 Page/Size 参数、model 只 Order 不 LIMIT/WHERE、projects 根表未开 RLS），且与同一份
-	// pageData 里的工程选择器**同源**。工程被删除或并发变化会让旧链接里的工程失效 ——
-	// 那时 400 正是准确的事实：参数指向的工程已不在可选集合里（不是「工程是空的」）。
-
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	// 品牌列表**分页下推到 service**（审计 D12 收口）：请求类型自带 Page/Size，总数由契约的
-	// CountBrands 给出 —— handler 不再「全量取回再切片」，翻到第 N 页也只从库里取那一页。
-	// 关键词过滤仍在查询里（与计数同一份过滤条件）。
-	//
-	// 顺序是**先计数再取页**：反过来（先取第 N 页再数总数）时越界页码会让 service 返回空页，
-	// 而分页条按收敛后的页码渲染 —— 「表格为空、分页条却显示第 2 页」正是
-	// product_list_paging_test.go 要挡的那种自相矛盾组合。两次查询的条数一样，不额外付代价。
-	page := productPageNumber(c.Query("page"))
-	total := int64(0)
-	pageRows := []*productdto.BrandResp{}
-	// 每条取数都套 loadErr == nil：主数据或参数一旦判定失败，后面的派生查询一条都不发
-	//（过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size，
-	// 两处口径分叉（关键词只归一在一侧）在这里是不可能的 —— 与属性页同一手法）。
-	var filterReq *productdto.ListBrandReq
-	if loadErr == nil && selected != "" {
-		filterReq = &productdto.ListBrandReq{ProjectID: selected, Keyword: keyword}
-		if n, cerr := h.products.CountBrands(ctx, filterReq); cerr != nil {
-			fail(cerr)
-		} else {
-			total = n
-		}
-	}
-	if loadErr == nil && filterReq != nil {
-		page = clampPageToTotal(page, productSubListPageSize, total)
-		listReq := *filterReq
-		listReq.Page, listReq.Size = page, productSubListPageSize
-		if got, lerr := h.products.ListBrands(ctx, &listReq); lerr != nil {
-			fail(lerr)
-		} else {
-			pageRows = got
-		}
-	}
-	brands := make([]gin.H, 0, len(pageRows))
-	for _, b := range pageRows {
-		brands = append(brands, gin.H{
-			"ID": b.ID, "Name": b.Name, "Slug": b.Slug, "Logo": b.Logo,
-			"Sort": b.Sort, "Description": b.Description,
-			"UpdatedAt": b.UpdatedAt,
-			"EditForm":  brandDrawerData(c, "update", selected, b),
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		adminui.RenderPage(c, productBrandsPageTemplate, &productdto.ProductBrandsPageView{
+			Title: productenums.ProductBrandsTitle, Menu: "product-brands",
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
 		})
+		return
 	}
-	data := gin.H{
-		"title":           productenums.ProductBrandsTitle,
-		"menu":            "product-brands",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Brands":          brands,
-		"BrandCreateForm": brandDrawerData(c, "create", selected, nil),
-		"FilterKeyword":   keyword,
-		"Filtered":        keyword != "",
-		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
-		// ListQuery 是筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 读回。
-		"ListQuery": productQueryFromRequest(c, productBrandsBackKeys...),
+	view, err := reader.ProductBrandsPage(c.Request.Context(), &productdto.ProductBrandsPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Keyword:   strings.TrimSpace(c.Query("keyword")),
+		Page:      productPageNumber(c.Query("page")),
+	})
+	if view == nil {
+		view = &productdto.ProductBrandsPageView{
+			Title: productenums.ProductBrandsTitle, Menu: "product-brands",
+			HTTPStatus: http.StatusInternalServerError,
+		}
 	}
-	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染
-	//（基地址带关键词与工程筛选，翻页不丢条件；单页/空数据不注入）。
-	if pg := pagination.Facts(total, page, productSubListPageSize); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-brands", listFilterQuery(selected, keyword))
-		data["Pagination"] = pg
+
+	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
+	view.Title = productenums.ProductBrandsTitle
+	view.Menu = "product-brands"
+	view.ListQuery = productQueryFromRequest(c, productBrandsBackKeys...)
+	brands := make([]map[string]any, 0, len(view.BrandDetails))
+	if err == nil {
+		for _, b := range view.BrandDetails {
+			brands = append(brands, gin.H{
+				"ID": b.ID, "Name": b.Name, "Slug": b.Slug, "Logo": b.Logo,
+				"Sort": b.Sort, "Description": b.Description,
+				"UpdatedAt": b.UpdatedAt,
+				"EditForm":  brandDrawerData(c, "update", view.SelectedProject, b),
+			})
+		}
 	}
-	// 出口只有这一处（页面成败都走它）：失败槽 + no-store 只在这一处加。
-	if loadErr != nil {
-		data["LoadFailed"] = true
-		data["LoadError"] = productErrPageText(c, loadErr)
-		c.Header("Cache-Control", "no-store")
+	view.Brands = brands
+	view.BrandCreateForm = brandDrawerData(c, "create", view.SelectedProject, nil)
+	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
+		pg.Base = productListBaseURL("/admin/product-brands", listFilterQuery(view.SelectedProject, view.FilterKeyword))
+		view.Pagination = pg
 	}
-	c.HTML(httpStatus, "admin/product/product_brands.html", adminui.Prepare(c, data))
+	if err != nil {
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
+	}
+	adminui.RenderPage(c, productBrandsPageTemplate, view)
 }
 
 // ProductBrandsCreate 新建品牌。
@@ -512,7 +412,7 @@ func (h *productPageHandle) flatCategories(ctx context.Context, projectID string
 	if err != nil {
 		return nil, err
 	}
-	return flattenCategoryTree(tree), nil
+	return productservice.FlattenCategoryTree(tree), nil
 }
 
 // listBrands 取某工程的品牌列表。
@@ -523,47 +423,28 @@ func (h *productPageHandle) listBrands(ctx context.Context, projectID string) (o
 	return h.products.ListBrands(ctx, &productdto.ListBrandReq{ProjectID: projectID})
 }
 
-// flattenCategoryTree 分类树 → DFS 前序扁平行（父在前、子紧随，模板按 Depth 缩进）。
-func flattenCategoryTree(nodes []*productdto.CategoryResp) []*productdto.CategoryResp {
-	out := make([]*productdto.CategoryResp, 0, len(nodes))
-	var walk func(list []*productdto.CategoryResp)
-	walk = func(list []*productdto.CategoryResp) {
-		for _, n := range list {
-			out = append(out, n)
-			walk(n.Children)
-		}
-	}
-	walk(nodes)
-	return out
-}
-
-// categoryLabel 分类的展示标签（按层级缩进；全角空格在 <option> 与列表里都成立）。
-func categoryLabel(node *productdto.CategoryResp) string {
-	if node.Depth <= 0 {
-		return node.Name
-	}
-	return strings.Repeat("　", node.Depth) + node.Name
-}
-
 // categoryPickOptions 父级下拉选项（Selected 由模板按行的 ParentID 比对得出）。
-func categoryPickOptions(flat []*productdto.CategoryResp) []gin.H {
-	out := make([]gin.H, 0, len(flat))
+//
+// 分类名带层级缩进的真源只有一处（service.CategoryLabel）；树的扁平化同理
+// （service.FlattenCategoryTree，分类页与商品列表页共用）。
+func categoryPickOptions(flat []*productdto.CategoryResp) []map[string]any {
+	out := make([]map[string]any, 0, len(flat))
 	for _, node := range flat {
-		out = append(out, gin.H{"ID": node.ID, "Label": categoryLabel(node)})
+		out = append(out, gin.H{"ID": node.ID, "Label": productservice.CategoryLabel(node)})
 	}
 	return out
 }
 
 // checkedCategoryOptions 商品页的分类勾选框（勾选态由服务端算好，模板不做集合运算）。
-func checkedCategoryOptions(flat []*productdto.CategoryResp, checked []string) []gin.H {
+func checkedCategoryOptions(flat []*productdto.CategoryResp, checked []string) []map[string]any {
 	picked := make(map[string]bool, len(checked))
 	for _, id := range checked {
 		picked[id] = true
 	}
-	out := make([]gin.H, 0, len(flat))
+	out := make([]map[string]any, 0, len(flat))
 	for _, node := range flat {
 		out = append(out, gin.H{
-			"ID": node.ID, "Label": categoryLabel(node), "Checked": picked[node.ID],
+			"ID": node.ID, "Label": productservice.CategoryLabel(node), "Checked": picked[node.ID],
 		})
 	}
 	return out
@@ -589,88 +470,15 @@ func brandNameByID(brands []*productdto.BrandResp, id string) string {
 	return ""
 }
 
-// filterCategoriesInProject 只保留属于 projectID 的分类。
-//
-// 判据是行自己的 ProjectID，**不依赖 RLS**：策略未切非超级角色时 ListCategories 会把别的
-// 工程的分类一起返回，混进「本工程的父级候选」里 —— 分类是工程内实体，不该串门。
-func filterCategoriesInProject(flat []*productdto.CategoryResp, projectID string) []*productdto.CategoryResp {
-	out := make([]*productdto.CategoryResp, 0, len(flat))
-	for _, node := range flat {
-		if node.ProjectID == projectID {
-			out = append(out, node)
-		}
-	}
-	return out
-}
-
 // missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。
 //
 // 纯逻辑部分单独成函数：候选集合的判定（不是 service 读）才是「谁会走模板那条额外分支」
 // 的判据，单测在没有数据库时也能把它钉住。
-func missingParentIDs(nodes []*productdto.CategoryResp, options []gin.H) []string {
-	known := make(map[string]struct{}, len(options))
-	for _, option := range options {
-		if id, ok := option["ID"].(string); ok {
-			known[id] = struct{}{}
-		}
-	}
-	seen := make(map[string]struct{}, len(nodes))
-	var ids []string
-	for _, node := range nodes {
-		parentID := strings.TrimSpace(node.ParentID)
-		if parentID == "" {
-			continue
-		}
-		if _, ok := known[parentID]; ok {
-			continue
-		}
-		if _, ok := seen[parentID]; ok {
-			continue
-		}
-		seen[parentID] = struct{}{}
-		ids = append(ids, parentID)
-	}
-	return ids
-}
-
-// categoryParentInfo 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
+// productdto.CategoryParentInfo 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
 //
 // 拆成两个字段而不是一个拼好的串（原 categoryParentText 的形态）：跨工程那句说明是文案，
 // 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
-type categoryParentInfo struct {
-	Name       string
-	OutOfScope bool
-}
-
-// missingParentLabels 为「父级不在候选列表里」的分类补上父级事实（id → 名称 + 跨工程标记）。
-//
-// 候选列表是**本工程**分类的全集（见 filterCategoriesInProject），父级不在其中的情形有两种：
-// 父级行已不存在，或父级属于别的工程（历史搬迁留下的坏数据）。两种都要让操作者看出来 ——
-// 否则下拉里要么是一串裸 ID、要么看起来像个正常选项，用户以为层级没问题。
-//
-// 跨工程的那一类带上 OutOfScope：模板在名称后面补一句说明（categoryParentOutOfScopeKey 的词条）。
-// 名称都读不到（父级行没了 / RLS 切角色后跨工程行不可见）时**不登记**这一项，模板退回显示原始 ID ——
-// 显示裸 ID 也比编一个父级名安全。逐个父级查一次库：只对本页里真正缺失的那几个发生。
-func (h *productPageHandle) missingParentLabels(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []gin.H) map[string]categoryParentInfo {
-	if h.products == nil {
-		return nil
-	}
-	ids := missingParentIDs(nodes, options)
-	if len(ids) == 0 {
-		return nil
-	}
-	labels := make(map[string]categoryParentInfo, len(ids))
-	for _, parentID := range ids {
-		parent, err := h.products.GetCategory(c.Request.Context(), &productdto.GetCategoryReq{ProjectID: projectID, ID: parentID})
-		if err != nil || parent == nil {
-			continue
-		}
-		labels[parentID] = categoryParentInfo{Name: parent.Name, OutOfScope: parent.ProjectID != projectID}
-	}
-	return labels
-}
-
-func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []gin.H, parentLabels map[string]categoryParentInfo) gin.H {
+func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfo) gin.H {
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.Prepare(c, gin.H{})["csrf_token"],
 		// ListQuery：表单 action 的筛选上下文（失败回跳时 shell.BackPath 读回）。
 		"ListQuery": productQueryFromRequest(c, productCategoriesBackKeys...)}
@@ -692,7 +500,7 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 			// 悬空 parent_id 的分类既不是根（根条件是 parent_id IS NULL）也不在任何可见父节点的子树里，
 			// 整行不进列表；跨工程父级则被 ListCategories 一起带进候选，于是 ParentMissing 恒为 false。
 			// 现在两侧都收口了：根集合兜底读孤儿（model 的 categoryRootFilter）、候选只收本工程分类
-			// （filterCategoriesInProject）—— 分支因此真正走到，文案里还带上「不属于本工程」。
+			// （service.CategoriesInProject）—— 分支因此真正走到，文案里还带上「不属于本工程」。
 			//
 			// 保留理由：RLS 切到非超级角色后（docs/rls-role-cutover.md 的顺序），GetCategory 会因
 			// 作用域读不到跨工程父级 → 名称取不到 → 这里退回模板的「原始 ID」出口。那是兜底，
@@ -726,7 +534,7 @@ func (h *productPageHandle) categoryFormFail(c *gin.Context, mode string, msg pr
 		projectID := c.PostForm("projectId")
 		if page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{ProjectID: projectID, Page: 1, Size: 100}); err == nil {
 			// 列表读的是树，父级下拉要的是扁平行 —— 不摊平的话下拉里只剩顶级分类。
-			options := flattenCategoryTree(page.Items)
+			options := productservice.FlattenCategoryTree(page.Items)
 			parentID := strings.TrimSpace(c.PostForm("parentId"))
 			if parentID != "" {
 				if parent, perr := h.products.GetCategory(c.Request.Context(), &productdto.GetCategoryReq{ProjectID: projectID, ID: parentID}); perr == nil {
@@ -1092,130 +900,54 @@ type tagForm struct {
 
 // ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
 func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
-	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
-	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			// 取数没读到 = 500。参数不合法是另一档（400，见下面的工程校验）。
-			httpStatus = http.StatusInternalServerError
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		adminui.RenderPage(c, productTagsPageTemplate, &productdto.ProductTagsPageView{
+			Title: productenums.ProductTagsTitle, Menu: "product-tags",
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		})
+		return
+	}
+	view, err := reader.ProductTagsPage(c.Request.Context(), &productdto.ProductTagsPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Keyword:   strings.TrimSpace(c.Query("keyword")),
+		Page:      productPageNumber(c.Query("page")),
+	})
+	if view == nil {
+		view = &productdto.ProductTagsPageView{
+			Title: productenums.ProductTagsTitle, Menu: "product-tags",
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	// 与商品列表页 / 属性页同一份判据（productProjectExists）：?project=<不存在的 id>
-	// 渲染成「这个工程下没有标签」是把「工程不存在」说成了「工程是空的」。
-	// 判据是**本次请求已加载的工程集合**（h.projects.List 返回全量：契约「列出全部站点工程」，
-	// 无 Page/Size 参数、model 只 Order 不 LIMIT/WHERE、projects 根表未开 RLS），且与同一份
-	// pageData 里的工程选择器**同源**。工程被删除或并发变化会让旧链接里的工程失效 ——
-	// 那时 400 正是准确的事实：参数指向的工程已不在可选集合里（不是「工程是空的」）。
 
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	// 标签列表**分页下推到 service**（审计 D13 收口）：请求类型自带 Page/Size，总数由契约的
-	// CountTags 给出（与 ListTags 同一份过滤条件），handler 不再「全量取回再切片」。
-	// 命中数仍是 service 的一次批量聚合（审计 PERF-02）——分页后只聚合当页标签，
-	// 页面 SQL 条数与标签总数无关这一条不变。
-	//
-	// 顺序是**先计数再取页**（理由同属性页 / 品牌页）：越界页码先收敛，否则会出现
-	// 「表格为空、分页条却显示第 2 页」。
-	page := productPageNumber(c.Query("page"))
-	total := int64(0)
-	rows := []gin.H{}
-	var tagCreateForm gin.H
-	// RuleTypes 全页只查一次：行级编辑片段、页面级新建片段与页面下拉共享同一份清单，
-	// 逐行各查一遍是纯浪费（audit 同款：命中商品曾因每行一次 GetTag 被打回）。
-	// 规则清单也套守卫：契约上它不带 error（每次查询只是把内置规则表读出来），
-	// 但失败页不该再发任何查询 —— 「失败后零派生查询」因此是一条可断言的整页性质。
-	var ruleTypes []*productdto.TagRuleTypeResp
-	if loadErr == nil {
-		ruleTypes = h.products.ListTagRuleTypes(ctx)
-	}
-	// 每条取数都套 loadErr == nil：主数据或参数一旦判定失败，后面的派生查询一条都不发
-	//（过滤条件只构造一次：计数与列表各自复制、只给列表那份填 Page/Size）。
-	var filterReq *productdto.ListTagReq
-	list := []*productdto.TagResp{}
-	if loadErr == nil && selected != "" {
-		filterReq = &productdto.ListTagReq{ProjectID: selected, Keyword: keyword}
-		if n, cerr := h.products.CountTags(ctx, filterReq); cerr != nil {
-			fail(cerr)
-		} else {
-			total = n
-		}
-	}
-	if loadErr == nil && filterReq != nil {
-		page = clampPageToTotal(page, productSubListPageSize, total)
-		listReq := *filterReq
-		listReq.Page, listReq.Size = page, productSubListPageSize
-		if got, lerr := h.products.ListTags(ctx, &listReq); lerr != nil {
-			fail(lerr)
-		} else {
-			list = got
-		}
-	}
-	if loadErr == nil && filterReq != nil {
-		rows = make([]gin.H, 0, len(list))
-		for _, t := range list {
-			row := tagPageRow(t)
-			row["EditForm"] = h.tagDrawerData(c, "update", selected, row, ruleTypes)
+	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
+	view.Title = productenums.ProductTagsTitle
+	view.Menu = "product-tags"
+	view.ListQuery = productQueryFromRequest(c, productTagsBackKeys...)
+	rows := []map[string]any{}
+	tagCreateForm := gin.H{}
+	if err == nil {
+		rows = make([]map[string]any, 0, len(view.TagDetails))
+		for _, tg := range view.TagDetails {
+			row := tagPageRow(tg)
+			row["EditForm"] = h.tagDrawerData(c, "update", view.SelectedProject, row, view.RuleTypes)
 			rows = append(rows, row)
 		}
 		// 新建抽屉的片段数据与行级片段同源：同一份规则清单、同一份模板。
-		tagCreateForm = h.tagDrawerData(c, "create", selected, nil, ruleTypes)
+		tagCreateForm = h.tagDrawerData(c, "create", view.SelectedProject, nil, view.RuleTypes)
 	}
-	// 命中商品**不在这里取**（审计 PERF-02）：此前对每个标签再调一次 GetTag 拿命中商品，
-	// 页面 SQL 条数随标签数线性增长；而「标签是个位数」只是当时的假设，协议没有使它成立。
-	// 现在首屏只发「工程列表 + 标签总数 + 标签列表（当页）+ 一次批量计数」，命中商品由
-	// 展开区按页拉片段（见 ProductTagHitsFragment）—— 1 / 100 / 1000 个标签的首屏 SQL 条数一样。
-	// 注意不要用「开 goroutine 并发 N 次查询」来掩盖它：那是把 N 条 SQL 并行发出去，
-	// 连接池压力与总条数都没变。
-	//
-	// 总数已由契约的 CountTags 给出（与 ListTags 同一份过滤条件：工程 + kind + 关键词）。
-	// 注意它与「命中商品数」那一列是两回事：那一列是每个标签归属的商品数
-	//（service 里一次批量聚合），本页面的分页只按标签条数算总页数。
-	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
-	// 与其它后台页面同一渲染入口。
-	data := gin.H{
-		"title":           productenums.ProductTagsTitle,
-		"menu":            "product-tags",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Tags":            rows,
-		"TagCreateForm":   tagCreateForm,
-		"RuleTypes":       ruleTypes,
-		// 筛选回显（GET 表单的 value）+ 空态分档依据：见 product_taxonomy_page.go 的同一手法。
-		"FilterKeyword": keyword,
-		"Filtered":      keyword != "",
-		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
-		// ListQuery 是筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 读回。
-		"ListQuery": productQueryFromRequest(c, productTagsBackKeys...),
+	view.Tags = rows
+	view.TagCreateForm = tagCreateForm
+	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
+		pg.Base = productListBaseURL("/admin/product-tags", listFilterQuery(view.SelectedProject, view.FilterKeyword))
+		view.Pagination = pg
 	}
-	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染
-	//（基地址带关键词与工程筛选，翻页不丢条件；单页/空数据不注入）。
-	if pg := pagination.Facts(total, page, productSubListPageSize); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-tags", listFilterQuery(selected, keyword))
-		data["Pagination"] = pg
+	if err != nil {
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
 	}
-	// 出口只有这一处（页面成败都走它）：失败槽 + no-store 只在这一处加。
-	if loadErr != nil {
-		data["LoadFailed"] = true
-		data["LoadError"] = productErrPageText(c, loadErr)
-		c.Header("Cache-Control", "no-store")
-	}
-	c.HTML(httpStatus, "admin/product/product_tags.html", adminui.Prepare(c, data))
+	adminui.RenderPage(c, productTagsPageTemplate, view)
 }
 
 // ProductTagHitsFragment 标签「命中商品」片段（审计 PERF-02 的展开区）。
@@ -1580,12 +1312,12 @@ func ruleParamText(params json.RawMessage, key string) string {
 }
 
 // checkedTagOptions 商品页的手工标签勾选框（勾选态由服务端算好，模板不做集合运算）。
-func checkedTagOptions(tags []*productdto.TagResp, attached []string) []gin.H {
+func checkedTagOptions(tags []*productdto.TagResp, attached []string) []map[string]any {
 	have := map[string]bool{}
 	for _, id := range attached {
 		have[id] = true
 	}
-	out := make([]gin.H, 0, len(tags))
+	out := make([]map[string]any, 0, len(tags))
 	for _, t := range tags {
 		if t == nil || t.Kind != productenums.TagKindManual {
 			continue
@@ -1596,12 +1328,12 @@ func checkedTagOptions(tags []*productdto.TagResp, attached []string) []gin.H {
 }
 
 // attachedAutoTags 商品已归属的自动标签（只读展示：归属由规则重算维护）。
-func attachedAutoTags(tags []*productdto.TagResp, attached []string) []gin.H {
+func attachedAutoTags(tags []*productdto.TagResp, attached []string) []map[string]any {
 	have := map[string]bool{}
 	for _, id := range attached {
 		have[id] = true
 	}
-	out := make([]gin.H, 0, len(tags))
+	out := make([]map[string]any, 0, len(tags))
 	for _, t := range tags {
 		if t == nil || t.Kind != productenums.TagKindRule || !have[t.ID] {
 			continue

@@ -12,7 +12,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
-	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -204,18 +203,6 @@ var _ = http.StatusOK
 // ==========================================================================
 const productListPageTemplate = "admin/product/products.html"
 
-// productProjectExists 工程 id 是否真的在工程清单里。
-//
-// 用于把「工程不存在」与「这个工程下没有商品」分开：前者是请求参数的问题（400），
-// 后者才是空态（200）。两者此前都会渲染成同一张「暂无商品」的页面。
-//
-// 判据唯一一份在 service 的 ProjectExists：列表页、详情页、编辑页、属性页、标签页、
-// 捆绑页、新建页都经这里，两处各写一遍时改一处会让同一个 ?project=xxx 在不同页面
-// 得到不同档位。
-func productProjectExists(projects []projectdto.ProjectResp, id string) bool {
-	return productservice.ProjectExists(projects, id)
-}
-
 // ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
 func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -264,7 +251,7 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	view.Menu = "products"
 	// 分类扁平行（行渲染按「父在前、子紧随」的顺序读 Flat）、状态下拉、改价表单初值：
 	// 三处的工具都被别的页面用着（分类标签页 / 详情页回显 / 独立定价页），所以留在本包。
-	view.Flat = flattenCategoryTree(view.Categories)
+	view.Flat = productservice.FlattenCategoryTree(view.Categories)
 	view.Statuses = productStatusOptions(view.FilterStatus)
 	view.Form = productservice.DefaultPricingForm(view.Rules, view.Roundings)
 	// 成品行：一行一个 productRow（它与详情页、只读页共用一份组装）。**取数失败时不装配** ——
@@ -418,7 +405,7 @@ func categoryCellLabel(flat []*productdto.CategoryResp, attached []string, prima
 // 走的是 i18n.FillTranslate；模板注入的 tf 是 TranslateArgs（只认 `%s`），
 // 拿同一个 key 会在页面上渲染成字面的「{n} 个」。改词条值等于改 seed（运营可能改过的数据），
 // 不属于「控制器不取词」这一步，所以这里保留取词。
-func tagCellLabel(tr func(key, fallback string) string, tagChecks, autoTags []gin.H) string {
+func tagCellLabel(tr func(key, fallback string) string, tagChecks, autoTags []map[string]any) string {
 	const maxTagNames = 3
 	names := make([]string, 0, len(tagChecks)+len(autoTags))
 	for _, t := range tagChecks {
@@ -537,8 +524,8 @@ func productStatusOptions(current string) []productdto.StatusOptionView {
 //
 // data 只放**数据项**：分类侧复用 product_taxonomy.go 的 categoryPickOptions（分类名带层级
 // 缩进的真源只有一处），品牌侧由 productBrandNameOptions 给出同一个形状。
-func productPickOptions(noneKey, noneFallback, selected string, data []gin.H) []gin.H {
-	out := make([]gin.H, 0, len(data)+1)
+func productPickOptions(noneKey, noneFallback, selected string, data []map[string]any) []map[string]any {
+	out := make([]map[string]any, 0, len(data)+1)
 	out = append(out, gin.H{
 		"ID": "", "LabelKey": noneKey, "LabelFallback": noneFallback, "Selected": selected == "",
 	})
@@ -556,8 +543,8 @@ func productPickOptions(noneKey, noneFallback, selected string, data []gin.H) []
 //
 // 与分类侧复用 categoryPickOptions 同一取舍：本函数只交**数据**，
 // 「（不指定品牌）」空项的词条由 productPickOptions 补。
-func productBrandNameOptions(brands []*productdto.BrandResp) []gin.H {
-	out := make([]gin.H, 0, len(brands))
+func productBrandNameOptions(brands []*productdto.BrandResp) []map[string]any {
+	out := make([]map[string]any, 0, len(brands))
 	for _, b := range brands {
 		if b != nil {
 			out = append(out, gin.H{"ID": b.ID, "Label": b.Name})
@@ -855,7 +842,7 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	view.Statuses = productStatusOptions("")
 	// 分类树的扁平行：行装配（productRow 的分类下拉）要的是带层级缩进的平铺序列，
 	// 树本身只有分类选择器用 —— 读模型给树，摊平是渲染前一步的派生值，所以在这里做。
-	view.Flat = flattenCategoryTree(view.Categories)
+	view.Flat = productservice.FlattenCategoryTree(view.Categories)
 	if err == nil && view.HasProduct && view.Detail != nil {
 		// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
 		// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
@@ -907,10 +894,10 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 			// 静默失配（ok=false），症状是校验失败重渲染时勾选态全部丢失 —— 用户以为
 			// 自己刚选的东西被清空了，而页面其余部分（错误文案、回填值）都正常。
 			view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, form.list("attributeIds"))
-			row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]gin.H), form.list("categoryIds"))
-			row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]gin.H), form.list("tagIds"))
-			row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]gin.H), form.value("primaryCategoryId"))
-			row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]gin.H), form.value("brandId"))
+			row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]map[string]any), form.list("categoryIds"))
+			row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]map[string]any), form.list("tagIds"))
+			row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]map[string]any), form.value("primaryCategoryId"))
+			row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]map[string]any), form.value("brandId"))
 		}
 		view.Product = row
 		// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
@@ -930,7 +917,7 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	adminui.RenderPage(c, productEditPageTemplate, view)
 }
 
-func checkedProductEditOptions(options []gin.H, selected []string) []gin.H {
+func checkedProductEditOptions(options []map[string]any, selected []string) []map[string]any {
 	for _, option := range options {
 		id, _ := option["ID"].(string)
 		option["Checked"] = containsString(selected, id)
@@ -938,7 +925,7 @@ func checkedProductEditOptions(options []gin.H, selected []string) []gin.H {
 	return options
 }
 
-func selectedProductEditOptions(options []gin.H, selected string) []gin.H {
+func selectedProductEditOptions(options []map[string]any, selected string) []map[string]any {
 	for _, option := range options {
 		id, _ := option["ID"].(string)
 		option["Selected"] = id == selected
@@ -1196,7 +1183,7 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	// 而且列表页 / 编辑页 / 本页三处共用同一份组装 —— 拆成三份必然分叉。
 	// 失败时不装配：原料可能是半截的，渲染它只会得到一张残页。
 	if err == nil && view.HasProduct && view.Detail != nil {
-		view.Flat = flattenCategoryTree(view.Categories)
+		view.Flat = productservice.FlattenCategoryTree(view.Categories)
 		// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
 		// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
 		product := h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,

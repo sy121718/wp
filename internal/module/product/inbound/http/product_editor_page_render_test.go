@@ -240,6 +240,22 @@ func (s *editorStub) ProductAttributesPage(context.Context, *productdto.ProductA
 	return productAttributesPageViewStub(nil), nil
 }
 
+// 分类 / 品牌 / 标签三页的读模型（同为接口的一部分，见上面那段注释）。
+func (s *editorStub) ProductCategoriesPage(context.Context, *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
+	s.record("ProductCategoriesPage")
+	return productCategoriesPageViewStub(nil), nil
+}
+
+func (s *editorStub) ProductBrandsPage(context.Context, *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
+	s.record("ProductBrandsPage")
+	return productBrandsPageViewStub(nil), nil
+}
+
+func (s *editorStub) ProductTagsPage(context.Context, *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
+	s.record("ProductTagsPage")
+	return productTagsPageViewStub(nil), nil
+}
+
 func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
 	s.record("ProductEditPage")
 	view := s.editView

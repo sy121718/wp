@@ -235,6 +235,18 @@ func (s failedAttributeListService) ProductBundlePage(context.Context, *productd
 	return nil, nil
 }
 
+func (s failedAttributeListService) ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
+	return s.reader.ProductCategoriesPage(ctx, req)
+}
+
+func (s failedAttributeListService) ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
+	return s.reader.ProductBrandsPage(ctx, req)
+}
+
+func (s failedAttributeListService) ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
+	return s.reader.ProductTagsPage(ctx, req)
+}
+
 func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
 	return s.reader.ProductAttributesPage(ctx, req)
 }

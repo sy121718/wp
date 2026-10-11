@@ -3,8 +3,6 @@ package producthttp
 import (
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	productenums "go_wp/internal/module/product/enums"
 )
 
@@ -23,7 +21,7 @@ import (
 // 所以数据行只给 `Label`，**不给空的 LabelKey / LabelFallback 键**；这条判据两个方向都守：
 // 数据行带上键 → 失败；空项没给非空 LabelKey → 也失败。
 func TestDropdownOptionsSeparateFactsFromData(t *testing.T) {
-	data := []gin.H{
+	data := []map[string]any{
 		{"ID": "cat-2", "Label": "衬衫"},
 		{"ID": "cat-3", "Label": "裤装"},
 	}

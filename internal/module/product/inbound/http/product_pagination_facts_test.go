@@ -74,8 +74,8 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 			base: "/admin/product-brands?keyword=pg&project=p1",
 		},
 	}
-	// 属性页已随第一批取数下沉改走读模型：它的分页事实由 service 给、控制器只补基地址，
-	// 桩因此给**视图**（不再 mock CountAttributes / ListAttributes）。其余三页仍走 taxonomyStub。
+	// 四页的取数编排都已下沉读模型：分页事实由 service 给、控制器只补基地址，
+	// 桩因此一律给**视图**（不再 mock Count*/List* 那些方法 —— 它们已不在这条渲染路径上）。
 	t.Run("属性页", func(t *testing.T) {
 		h := &productPageHandle{
 			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
@@ -109,11 +109,22 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			stub := &taxonomyStub{projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}}
-			seedTaxonomyRows(stub, rows)
-			h := &productPageHandle{projects: productPageProjectsStub{rows: stub.projects}, products: stub}
+			h := &productPageHandle{
+				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+				products: &productPageReaderStub{
+					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
+						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
+					}),
+					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageView) {
+						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
+					}),
+					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
+					}),
+				},
+			}
 
-			rec := taxonomyRequest(t, h, tc.path)
+			rec := productPageRequestFor(t, h, tc.path[:strings.Index(tc.path, "?")], tc.path)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("成功档应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
 			}
@@ -143,17 +154,6 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 	}
 }
 
-// seedTaxonomyRows 给四页各铺 rows 行数据（同一份桩服务四页）。
-func seedTaxonomyRows(s *taxonomyStub, rows int) {
-	for i := 0; i < rows; i++ {
-		s.attrs = append(s.attrs, &productdto.AttributeResp{ID: "a", ProjectID: "p1", Key: "k", Name: "属性"})
-		s.tags = append(s.tags, &productdto.TagResp{ID: "t", ProjectID: "p1", Name: "标签", Kind: "manual"})
-		s.brands = append(s.brands, &productdto.BrandResp{ID: "b", ProjectID: "p1", Name: "品牌"})
-		s.categories = append(s.categories, &productdto.CategoryResp{ID: "c", ProjectID: "p1", Name: "分类"})
-		s.pageRows = append(s.pageRows, &productdto.CategoryResp{ID: "c", ProjectID: "p1", Name: "分类"})
-	}
-}
-
 // TestTaxonomyPagesSinglePageRendersNoPagination 单页/空集不渲染分页条（事实键不注入这一档）。
 func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 	for _, tc := range []struct {
@@ -165,10 +165,21 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 		{name: "品牌页", path: "/admin/product-brands?project=p1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stub := &taxonomyStub{projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}}
-			seedTaxonomyRows(stub, 3)
-			h := &productPageHandle{projects: productPageProjectsStub{rows: stub.projects}, products: stub}
-			body := taxonomyRequest(t, h, tc.path).Body.String()
+			h := &productPageHandle{
+				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+				products: &productPageReaderStub{
+					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
+						v.SelectedProject, v.Total = "p1", 3
+					}),
+					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageView) {
+						v.SelectedProject, v.Total = "p1", 3
+					}),
+					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+						v.SelectedProject, v.Total = "p1", 3
+					}),
+				},
+			}
+			body := productPageRequestFor(t, h, tc.path[:strings.Index(tc.path, "?")], tc.path).Body.String()
 			if strings.Contains(body, `class="pagination"`) {
 				t.Fatalf("单页不该渲染分页条")
 			}

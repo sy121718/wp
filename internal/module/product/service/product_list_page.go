@@ -5,7 +5,7 @@
 // 为什么失败之后一条派生取数都不发、为什么不写第二份失败页）在这里同样成立，不重复。
 //
 // **本方法只搬取数，不搬纯函数**。列表页还要四样东西：页码归一（productPageNumber）、
-// 状态下拉（productStatusOptions）、分类树扁平化（flattenCategoryTree）、改价表单初值
+// 状态下拉（productStatusOptions）、分类树扁平化（FlattenCategoryTree）、改价表单初值
 // （DefaultPricingForm）—— 前三个各自还被别的页面用着（属性页 / 分类标签页 /
 // 详情页回显），都在 `inbound/http` 里；表单初值已随定价页一起下沉进本包。把它们搬进本包等于让那几页各留一份或反向
 // import 控制器包，两条路都比留在原地差；所以这里给**原料**（分类树而不是扁平行、
@@ -115,8 +115,8 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	view.Page = page
 
 	// 分类树与品牌列表一次取好：每个商品行都要渲染「挂哪些分类 / 主分类 / 品牌」，
-	// 放在循环里取会变成 2×N 次查询。给**树**而不是扁平行 —— 扁平化是控制器那份
-	// flattenCategoryTree 的事（分类页也在用它）。
+	// 放在循环里取会变成 2×N 次查询。给**树**而不是扁平行 —— 扁平化（FlattenCategoryTree）
+	// 归控制器那一步做，它要的是「分类树 → 渲染前的派生值」。
 	if firstErr == nil {
 		tree, cerr := s.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: selected})
 		if cerr != nil {
