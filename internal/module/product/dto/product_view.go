@@ -946,3 +946,58 @@ func (v ProductBundlePageView) PageStatus() int { return v.HTTPStatus }
 func (v ProductBundlePageView) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
+
+// ProductTranslationsPageReq 商品译文工作台的取数入参（工程 / 商品 / 目标语言，三者都可空）。
+type ProductTranslationsPageReq struct {
+	ProjectID string
+	ProductID string
+	Lang      string
+}
+
+// ProductTranslationsPageView 商品译文工作台的一屏。
+//
+// 取数结果（ProjectOptions / Langs / SourceLang / Groups）与保存结论（Saved / Written /
+// LangInvalid / Errors）合在一份视图里：保存路径**先重建这一屏再校验**，两者本来就是
+// 同一次取数的产物 —— 拆成两份会让「保存失败后重渲的那一页」与「GET 出来的那一页」
+// 慢慢长成两个形状。
+type ProductTranslationsPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+	// ProjectID / ProductID / Lang 实际生效的三个上下文（空工程已回退到第一个工程、
+	// 空语言已落到第一个目标语言）—— 表单回填与保存校验都用它们，不用请求里那个原始值。
+	ProjectID string
+	ProductID string
+	Lang      string
+	Langs     []TranslationLangOption
+	// SourceLang 站点源语言（= 站点默认语言）；判定依据见 service 的 translationSourceLang。
+	SourceLang string
+	// NoTargetLang 没有任何「非源语言」的启用语言：没有可翻译的目标，页面给可行动空态。
+	NoTargetLang   bool
+	Groups         []ProductTranslationGroup
+	RowCount       int
+	Done           int
+	Total          int
+	ProjectOptions []ProjectTranslationOption
+
+	// Errors 逐行 / 页面级错误（校验或写入失败时重渲本页）。元素是**事实**
+	//（哪一行 + 词条 key + 中文兜底），取词留给页面的 tf。
+	Errors []TranslationRowError
+	// LangInvalid 目标语言不在站点启用清单里（保存被拒，页面重渲并列出结论）。
+	LangInvalid bool
+	// Saved 这次保存已经落库（或确认无变化）：控制器据此走提示页出口。
+	Saved bool
+	// Written 本次实际写入条数（0 = 没有需要写入的变化）。
+	Written int
+}
+
+// SaveProductTranslationsReq 保存提交：三组并行数组按行一一对应（与表单字段同形）。
+//
+// 数组原样带过来，长度对齐与逐行校验都在读模型侧做 —— 控制器只负责把表单读成数组。
+type SaveProductTranslationsReq struct {
+	ProjectID string
+	ProductID string
+	Lang      string
+	Contexts  []string
+	Hashes    []string
+	Targets   []string
+}

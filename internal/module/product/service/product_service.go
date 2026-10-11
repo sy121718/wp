@@ -40,6 +40,15 @@ type Service struct {
 	// inv 只读库存事实：查询期投影与删除守卫共用同一份库存真源。
 	// 生产装配必需；未注入时保留纯商品单测的零值路径。
 	inv inventorycontract.ProductStockReader
+	// translationStore 译文工作台的读写端口（装配期注入，可空）。
+	// 与 contentStore 是**两个不同的面**：那个只按 (hash, lang) 读文本（构建期投影用），
+	// 这个要读明细（含 engine，用于徽标与变更判定）并写回 sys_translation。
+	// 未注入时用 pkg/i18n 的默认库写入器。
+	translationStore ProductTranslationStorePort
+	// translationInstances 译文变更后需要失效的自动发布实例端口（可空）。
+	translationInstances ProductTranslationInstancePort
+	// i18nStaleMarker 手工页面的全站 i18n 依赖标记（可空）。
+	i18nStaleMarker I18nStaleMarker
 	// contentStore 内容译文读取端口（装配期注入，可空）。
 	// 构建期商品可翻译字段（name/subtitle/description）按构建语言取译文；
 	// 未注入 / 语言为空 / 查询失败一律回退原文（兜底铁律，绝不报错）。

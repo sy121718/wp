@@ -6,7 +6,6 @@ import (
 	"go_wp/internal/middleware/builtin"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
 	"go_wp/pkg/money"
@@ -301,35 +300,6 @@ func containsString(list []string, want string) bool {
 // parseFloat 解析表单里的金额字段（非法值返回错误，由调用方忽略）。
 func parseFloat(s string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
-}
-
-// translationFact enums key → 一条文案**事实**（不取词；取词在页面模板里做）。
-//
-// 这几个 key 只被商品译文工作台的**页面**消费（Errors 槽位渲染进
-// admin/product/product_translations.html），没有 JSON 出口读它们 —— 所以它们不属于
-// 「JSON 出口的成品串」那条例外，控制器只交 key + 中文兜底，语言由页面的 tf 决定。
-// 曾经这里是 translationMsg / translationMsgs（控制器里 shell.TranslateFor 取词），
-// 后果是英文后台下这几条行级结论永远是中文，且改一句话要动 Go。
-//
-// 空 key 与空兜底同时出现才算「没有这条文案」（模板判空写
-// `{{if x.Key != "" || x.Fallback != ""}}`，结构体恒为真，不能写 `{{if x}}`）。
-func translationFact(msg string) productMsg {
-	msg = strings.TrimSpace(msg)
-	if msg == "" {
-		return productMsg{}
-	}
-	return productMsg{Key: msg, Fallback: productenums.TranslationMsgFallbacks[msg]}
-}
-
-// translationRowErrors 页面级错误（对应不到具体某一行）→ 事实行，顺序即发生顺序。
-func translationRowErrors(keys ...string) []productdto.TranslationRowError {
-	out := make([]productdto.TranslationRowError, 0, len(keys))
-	for _, k := range keys {
-		if fact := translationFact(k); fact.Key != "" || fact.Fallback != "" {
-			out = append(out, productdto.TranslationRowError{Msg: fact})
-		}
-	}
-	return out
 }
 
 // firstNonEmpty 取第一个非空字符串。
