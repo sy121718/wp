@@ -38,10 +38,15 @@ func (s productPageProjectStub) List(context.Context) ([]projectdto.ProjectResp,
 // （在已被判非法的工程上继续查，会把「工程不存在」渲染成「这个工程下没有可选项」）。
 type productPageWarehousePortStub struct {
 	calls int
+	// err 非 nil 时仓库清单读失败：用来钉「失败之后一条派生取数都不发」。
+	err error
 }
 
 func (s *productPageWarehousePortStub) WarehouseOptions(context.Context, string) ([]productdto.WarehouseOptionView, error) {
 	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
 	return []productdto.WarehouseOptionView{}, nil
 }
 

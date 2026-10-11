@@ -20,13 +20,11 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 )
 
 // TestProductCreateFailSplitsByRequestKind 分档判据。
 func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
-	h := &productPageHandle{}
+	h := &productPageHandle{products: &productPageReaderStub{createFormView: productCreateFormViewStub(nil)}}
 	const msg = "捆绑商品必须填写套餐价"
 
 	// htmx 档：200 + 片段，且**不设** HX-Redirect（那是「跳走」的形态，与「原地留住输入」相反）。
@@ -63,65 +61,57 @@ func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
 	}
 }
 
-// TestProductCreateFormDataCarriesEchoKeys 回填 data 的形状（片段与 handler 的协议）。
-func TestProductCreateFormDataCarriesEchoKeys(t *testing.T) {
-	h := &productPageHandle{}
+// TestProductCreateFormViewCarriesEchoKeys 建表单视图的形状（模板与 handler 的协议）。
+//
+// 取数来自读模型（service.ProductCreateForm），回填值由控制器填 —— 视图的选项键与三份回填键
+// 都必须在场：模板用 `cfFill := isset(.FormEcho)` 区分「空表单」与「回填表单」，
+// 键缺失或键在但值为 nil 都会让门控与实际相反（静默：显示上次提交的值，或回填全丢）。
+//
+// 「回填键不能叫 Form」这一条现在是**编译期**保证：视图字段名就是 FormEcho（列表页的 Form
+// 是批量改价的 productdto.PricingForm 结构体，撞名会让模板 {{.Form.name}} 命中结构体而渲染失败）。
+func TestProductCreateFormViewCarriesEchoKeys(t *testing.T) {
+	reader := &productPageReaderStub{createFormView: productCreateFormViewStub(nil)}
+	h := &productPageHandle{products: reader}
 	c, _ := newHXContext(t, "true",
 		"name=DRAFT+SKU&sku=ABC_B&type=bundle&attributeIds=a1&attributeIds=a2&warehouseIds=w1&trackQuantity=1")
 
-	data, err := h.productCreateFormData(c, "", "错误文案")
+	view, err := h.productCreateFormView(c, "p1", "错误文案")
 	if err != nil {
-		t.Fatalf("取回填 data 失败：%v", err)
+		t.Fatalf("取建表单视图失败：%v", err)
 	}
-
-	// 键名必须带 FormEcho 前缀：列表页的 `Form` 是批量改价的 productdto.PricingForm **结构体**，
-	// 撞名时片段里的 `{{.Form.name}}` 命中结构体、Jet 报错并让整个片段渲染失败。
-	if _, exists := data["Form"]; exists {
-		t.Error("回填键不能叫 Form（与列表页批量改价的结构体撞名，会让片段渲染失败）")
+	if view == nil {
+		t.Fatal("视图恒非 nil")
 	}
-
-	echo, ok := data["FormEcho"].(gin.H)
-	if !ok {
-		t.Fatalf("data[\"FormEcho\"] 类型 = %T，want gin.H", data["FormEcho"])
+	// 入参转发：工程 id 读丢了会变成「所有候选都是空列表」，而页面 200、日志干净。
+	if len(reader.createFormReqs) != 1 || reader.createFormReqs[0].ProjectID != "p1" {
+		t.Fatalf("读模型收到的入参 = %+v，want ProjectID=p1", reader.createFormReqs)
 	}
-	if got := echo["name"]; got != "DRAFT SKU" {
-		t.Errorf("FormEcho.name = %v，want 「DRAFT SKU」", got)
+	if got := view.FormEcho["name"]; got != "DRAFT SKU" {
+		t.Errorf("FormEcho[name] = %v，want 「DRAFT SKU」", got)
 	}
-	if got := echo["type"]; got != "bundle" {
-		t.Errorf("FormEcho.type = %v，want bundle（下拉回填要能还原选项）", got)
+	if got := view.FormEcho["type"]; got != "bundle" {
+		t.Errorf("FormEcho[type] = %v，want bundle（下拉回填要能还原选项）", got)
 	}
-	// 清单里列出的字段都必须存在（补零值）：模板读缺失键会让整个片段渲染失败。
+	ids, _ := view.FormEchoMulti["attributeIds"].([]string)
+	if len(ids) != 2 || ids[0] != "a1" || ids[1] != "a2" {
+		t.Errorf("FormEchoMulti[attributeIds] = %v，want [a1 a2]（多选按值命中、保提交顺序）", ids)
+	}
+	if got := view.FormEchoChecked["trackQuantity"]; got != true {
+		t.Errorf("FormEchoChecked[trackQuantity] = %v，want true", got)
+	}
+	// 清单里列出的字段都必须存在（补零值）：模板读缺失键会让整块渲染失败。
 	for _, field := range productCreateFormFields {
-		if _, exists := echo[field]; !exists {
-			t.Errorf("FormEcho 缺字段 %q —— 模板读不到会让失败片段渲染失败（500，htmx 不 swap）", field)
+		if _, exists := view.FormEcho[field]; !exists {
+			t.Errorf("FormEcho 缺字段 %q —— 模板读不到会让失败重渲染整块 500（htmx 不 swap）", field)
 		}
 	}
-
-	multi, ok := data["FormEchoMulti"].(gin.H)
-	if !ok {
-		t.Fatalf("data[\"FormEchoMulti\"] 类型 = %T，want gin.H", data["FormEchoMulti"])
-	}
-	ids, _ := multi["attributeIds"].([]string)
-	if len(ids) != 2 || ids[0] != "a1" || ids[1] != "a2" {
-		t.Errorf("FormEchoMulti.attributeIds = %v，want [a1 a2]（多选回填按值命中、保提交顺序）", ids)
-	}
-
-	checked, ok := data["FormEchoChecked"].(gin.H)
-	if !ok {
-		t.Fatalf("data[\"FormEchoChecked\"] 类型 = %T，want gin.H", data["FormEchoChecked"])
-	}
-	if got := checked["trackQuantity"]; got != true {
-		t.Errorf("FormEchoChecked.trackQuantity = %v，want true", got)
-	}
-
-	if got := data["SubmitErr"]; got != "错误文案" {
+	if got := view.SubmitErr; got != "错误文案" {
 		t.Errorf("SubmitErr = %v，want 错误文案", got)
 	}
-	// 三个可选列表键必须在场（值为空数组也算在场）：片段用 isset + len 判断整块渲染。
-	for _, key := range []string{"WarehouseOptions", "AttributeOptions", "WarehouseSKUOptions"} {
-		if _, exists := data[key]; !exists {
-			t.Errorf("data 缺 %q —— 片段按 isset 判断，缺键与空列表在模板里是两条路", key)
-		}
+	// 三个选项键必须在场且**非 nil**：模板用 isset + len 判断整块渲染，nil 切片会走成「缺数据」。
+	if view.WarehouseOptions == nil || view.AttributeOptions == nil || view.WarehouseSKUOptions == nil {
+		t.Errorf("选项键必须是空切片而不是 nil：仓库=%v 属性=%v SKU=%v",
+			view.WarehouseOptions, view.AttributeOptions, view.WarehouseSKUOptions)
 	}
 }
 

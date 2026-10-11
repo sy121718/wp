@@ -121,6 +121,11 @@ func (s *editorStub) ProductDetailPage(context.Context, *productdto.ProductDetai
 	return productDetailPageViewStub(nil), nil
 }
 
+func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
+	s.record("ProductCreateForm")
+	return productCreateFormViewStub(nil), nil
+}
+
 func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
 	s.record("ProductEditPage")
 	view := s.editView

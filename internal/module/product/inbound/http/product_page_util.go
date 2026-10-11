@@ -32,7 +32,7 @@ import (
 // 那两个 handler 必须读 productId，绝不能走这里的回落。
 // 「提交失败原地留住输入」出口（路径 A 渐进增强）。
 //
-// 形状与口径**照批 1 的商品建表单**（product_new_page.go + partials/product_create_form.html），
+// 形状与口径**照批 1 的商品建表单**（product_core.go 的 productCreateFormView + admin/product/product_create_form.html），
 // 分档判据只有一份（product_page_util.go 的 isHXRequest / hxFragment / formEchoData）：
 //
 //	· htmx 请求：失败返 200 + 片段（错误槽 + 回填后的表单）—— 抽屉原地留住已填内容；

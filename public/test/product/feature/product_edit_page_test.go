@@ -219,6 +219,10 @@ func (s failedAttributeListService) ProductDetailPage(ctx context.Context, req *
 	return s.reader.ProductDetailPage(ctx, req)
 }
 
+func (s failedAttributeListService) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
+	return s.reader.ProductCreateForm(ctx, req)
+}
+
 func TestProductEditPageRejectsInvalidNumbersWithoutPartialWrite(t *testing.T) {
 	for _, tc := range []struct {
 		name, field, invalid string

@@ -542,3 +542,58 @@ type PricingForm struct {
 	TagID      string
 	Note       string
 }
+
+// ProductCreateFormReq 商品建表单的取数入参。
+type ProductCreateFormReq struct {
+	// ProjectID 表单里的工程 id；空串 = 没给，候选一律给空列表（表单照常渲染）。
+	ProjectID string
+}
+
+// ProductCreateFormView 商品建表单的渲染视图（本模块第五个读模型，与四个整页同一形态）。
+//
+// 「表单」不是另一种响应形态：后端给数据、Jet 渲染 HTML —— 这份视图撑的就是**用数据渲染出来的
+// 那一段 HTML**（首屏整页里用，提交失败重渲染时也用同一份），两者共用同一个装配助手，
+// 不另造一套。
+//
+// 与四个整页视图的两点不同：
+//   - 没有工程清单（不渲染工程下拉）：工程来自表单字段，这里只带 id；
+//   - 多一组 FormEcho* —— 那是**请求边界**的产物（本次提交了什么），不是库里的数据，
+//     所以由控制器填（同编辑页的表单回显：service 不认识 *gin.Context）。
+type ProductCreateFormView struct {
+	SelectedProject string
+
+	WarehouseOptions    []WarehouseOptionView
+	AttributeOptions    []AttributeOptionView
+	WarehouseSKUOptions []WarehouseSKUGroupView
+
+	// SubmitErr 上一次提交的失败文案（当前语言；控制器按出口归口后填）。
+	SubmitErr string
+
+	// FormEcho / FormEchoChecked / FormEchoMulti 回填值：控件名 → 本次提交的值。
+	// 三份分别服务文本输入、单选、复选框组（同名多值）。
+	//
+	// 类型是 map[string]any 而不是各自的具体类型：三份的**值**语义不同（串 / 布尔 / 串切片），
+	// 由模板判断，与 formEchoData 的产出同型 —— 换的是载体（结构体字段），不是形状。
+	//
+	// 门控契约（改这里之前先看模板第一行）：模板用 `cfFill := isset(.FormEcho)` 区分
+	// 「空表单」与「回填表单」，靠的是**这个键在不在**。所以：
+	//   · 本视图必须**恒填**这三键（控制器那边无条件赋，哪怕本次没提交任何字段）；
+	//   · 首屏视图（ProductNewPageView）必须**没有**同名字段 —— 它进的是同一份模板。
+	// 两边任一被改动，门控就失效，症状是静默的：首屏显示上次提交的值，或失败后回填全丢。
+	FormEcho        map[string]any
+	FormEchoChecked map[string]any
+	FormEchoMulti   map[string]any
+
+	// LoadFailed 取数失败：渲染方据此退回整页提示（这一段 HTML 撑不起来时不留半个表单）。
+	// 这里**没有 LoadError** —— 失败不留在这份视图里，驱动原文只走 err 返回值进日志。
+	LoadFailed bool
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductCreateFormView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 取数失败时不该被缓存：重试必须真的回到服务端。
+func (v ProductCreateFormView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}

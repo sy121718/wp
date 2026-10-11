@@ -67,4 +67,13 @@ type ProductPageReader interface {
 	// 表单回显也不在这里：校验失败重渲染要用**这次提交的值**覆盖读回来的值，
 	// 而提交值在请求体里 —— 那是控制器的事（inbound/http 的 formEchoFrom）。
 	ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageView, err error)
+
+	// ProductCreateForm 商品建表单的取数：仓库清单 → 属性组候选 → 每仓 SKU 候选。
+	//
+	// 「表单」不是另一种响应形态 —— 后端给数据、Jet 渲染 HTML：这份视图撑的是**用数据渲染出来的
+	// 那一段 HTML**，首屏与提交失败后的重渲染共用同一份装配（所以取数编排只有一处）。
+	//
+	// 契约同上面四条（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus），但没有三档：
+	// 主数据读不到就是这个表单撑不起来，调用方退回整页提示 —— 不留半个表单给用户重填。
+	ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (res *productdto.ProductCreateFormView, err error)
 }

@@ -574,7 +574,7 @@ func productBrandNameOptions(brands []*productdto.BrandResp) []gin.H {
 // 右侧模板卡片区（默认模板 + 候选列表 + 预览入口）；模板绑定与可视化自定义
 // 在创建后的详情页继续（create 不落实例，绑定发生在首次发布）。
 
-// —— 商品建表单的失败分档出口（渐进增强；片段见 partials/product_create_form.html）——
+// —— 商品建表单的失败分档出口（渐进增强；模板见 admin/product/product_create_form.html）——
 //
 // 本节起是原先的 product_create.go（新建页与它的表单字段协议）。
 // ==========================================================================
@@ -642,33 +642,41 @@ var productCreateFormFields = []string{
 //
 // 首屏（新建整页 / 列表页抽屉）不注入 FormEcho* 三键 —— 片段以 cfFill 开关区分
 // 「空表单」与「回填表单」，两个页面 handler 因此不必为它加键。
-func (h *productPageHandle) productCreateFormData(c *gin.Context, projectID, submitErr string) (gin.H, error) {
-	ctx := c.Request.Context()
-	projectID = strings.TrimSpace(projectID)
-	warehouses, err := h.warehouseOptions(ctx, projectID)
-	if err != nil {
-		return nil, err
+// productCreateFormTemplate 商品建表单模板（**不带页壳**：它被整页 include，也被单独渲染）。
+const productCreateFormTemplate = "admin/product/product_create_form.html"
+
+// productCreateFormView 建表单的渲染视图：取数来自读模型（service.ProductCreateForm），
+// 回填值是**请求边界**的产物（本次提交了什么），所以在这里填 —— service 不认识 *gin.Context。
+//
+// 表单门控：走到这里就是「回填表单」，所以恒填 FormEcho 三键 —— 模板靠 `isset(.FormEcho)`
+// 区分空表单与回填表单，门控契约见 dto.ProductCreateFormView。
+func (h *productPageHandle) productCreateFormView(c *gin.Context, projectID, submitErr string) (*productdto.ProductCreateFormView, error) {
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配缺陷：读模型没接上（老装配 / 桩）。调用方据此退回整页提示，不留半个表单。
+		return nil, errors.New("商品页面读模型未注入（装配缺陷）：建表单取数无处可去")
 	}
-	attributes, err := h.attributeOptions(ctx, projectID)
+	view, err := reader.ProductCreateForm(c.Request.Context(), &productdto.ProductCreateFormReq{
+		ProjectID: strings.TrimSpace(projectID),
+	})
 	if err != nil {
-		return nil, err
+		return view, err
 	}
-	skuGroups, err := h.warehouseSKUOptions(ctx, projectID, warehouses)
-	if err != nil {
-		return nil, err
+	if view == nil {
+		view = &productdto.ProductCreateFormView{}
 	}
-	data := formEchoData(c, productCreateFormFields...)
-	data["SelectedProject"] = projectID
-	data["WarehouseOptions"] = warehouses
-	data["AttributeOptions"] = attributes
-	data["WarehouseSKUOptions"] = skuGroups
-	data["SubmitErr"] = submitErr
-	return data, nil
+	view.SubmitErr = submitErr
+	// formEchoData 产出的三键与视图字段同型（map[string]any）：换的是载体，不是形状。
+	echo := formEchoData(c, productCreateFormFields...)
+	view.FormEcho = map[string]any(echo["FormEcho"].(gin.H))
+	view.FormEchoChecked = map[string]any(echo["FormEchoChecked"].(gin.H))
+	view.FormEchoMulti = map[string]any(echo["FormEchoMulti"].(gin.H))
+	return view, nil
 }
 
 // productCreateFail 商品建表单的失败出口（分档口径唯一，别在调用点各写一份头判断）。
 //
-//	· htmx 请求：200 + 片段（错误槽 + 回填后的表单）—— 整页原地留住已填内容；
+//	· htmx 请求：200 + 回填后的表单 HTML —— 整页原地留住已填内容；
 //	· 原生请求：整页提示（shell.RenderJump）回本页（无 JS 环境：不跳走、错误可读）。
 //
 // **成功路径也走同一条出口**（ProductsCreate 用 productEditJump / productListJump）。
@@ -678,15 +686,15 @@ func (h *productPageHandle) productCreateFail(c *gin.Context, projectID string, 
 		productNewJump(c, false, projectID, msg)
 		return
 	}
-	// 片段槽位还没取词化（模板直接输出字符串）：这里取一次文本，报告里已登记。
-	data, err := h.productCreateFormData(c, projectID, productMsgText(c, msg))
+	// 失败槽位还没取词化（模板直接输出字符串）：这里取一次文本，报告里已登记。
+	view, err := h.productCreateFormView(c, projectID, productMsgText(c, msg))
 	if err != nil {
-		// 回填片段取数再失败：退回整页提示（错误仍可读），不把半个片段当成功返回。
-		logger.Scene("product").With("project", projectID).Error(err, "商品新建失败后重建表单片段失败，退回提示页")
+		// 回填表单取数再失败：退回整页提示（错误仍可读），不把半个表单当成功返回。
+		logger.Scene("product").With("project", projectID).Error(err, "商品新建失败后重建表单视图失败，退回提示页")
 		productNewJump(c, false, projectID, msg)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/product/product_create_form.html", adminui.Prepare(c, data))
+	adminui.RenderPage(c, productCreateFormTemplate, view)
 }
 
 // ProductsCreate 新建商品。

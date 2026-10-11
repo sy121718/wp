@@ -2,7 +2,7 @@ package feature
 
 // product_new_page_parity_test.go — 建表单片段的**唯一载体**（新建整页）必须钩子齐全。
 //
-// 建表单片段（internal/templates/admin/partials/product_create_form.html）现在只有一个调用点：
+// 建表单模板（internal/templates/admin/product/product_create_form.html）现在只有一个调用点：
 // 新建整页 `/admin/products/new`。列表页那份抽屉（`<template id="tpl-product-create">`）
 // 没有任何 `data-drawer-open` 指向它，已随「写失败不丢输入」批 1 删除
 // （见 docs/02-T-write-fail-echo-batch1.md §5 P1-2）。

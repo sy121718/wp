@@ -93,8 +93,8 @@ type productPageReaderStub struct {
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
 
-	// 列表页 / 详情页 / 编辑页的桩：同一个接口的另外三个方法，用例各自只填自己那一份。
-	// **四个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
+	// 列表页 / 详情页 / 编辑页 / 建表单的桩：同一个接口的另外四个方法，用例各自只填自己那一份。
+	// **五个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
 	listView *productdto.ProductListPageView
 	listErr  error
 	listReqs []*productdto.ProductListPageReq
@@ -106,6 +106,10 @@ type productPageReaderStub struct {
 	editView *productdto.ProductEditPageView
 	editErr  error
 	editReqs []*productdto.ProductEditPageReq
+
+	createFormView *productdto.ProductCreateFormView
+	createFormErr  error
+	createFormReqs []*productdto.ProductCreateFormReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -126,6 +130,11 @@ func (s *productPageReaderStub) ProductDetailPage(_ context.Context, req *produc
 func (s *productPageReaderStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
 	s.editReqs = append(s.editReqs, req)
 	return s.editView, s.editErr
+}
+
+func (s *productPageReaderStub) ProductCreateForm(_ context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
+	s.createFormReqs = append(s.createFormReqs, req)
+	return s.createFormView, s.createFormErr
 }
 
 // ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时
@@ -220,6 +229,22 @@ func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *prod
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
 		HTTPStatus:       http.StatusOK,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
+}
+
+// productCreateFormViewStub 建表单视图桩（默认「取数成功」档；回填值由调用方填）。
+// 与其它视图桩同一口径：列表键给空列表而不是缺键。
+func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormView)) *productdto.ProductCreateFormView {
+	v := &productdto.ProductCreateFormView{
+		SelectedProject:     "p1",
+		WarehouseOptions:    []productdto.WarehouseOptionView{},
+		AttributeOptions:    []productdto.AttributeOptionView{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
+		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
