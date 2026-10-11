@@ -49,7 +49,7 @@ Jet 的 `if` 要求 bool，而缺失的 map 键求值成 nil —— 类型不符
 
 `tf(key, fallback, args)` 是「取词 + 填 `%s` 占位符」那一个（签名
 `func(key, fallback string, args []string) string`），给带计数的整句用（「已保存 %s 条译文。」）。
-两个都经 `data` 注入 —— `adminui.Prepare`（整页）与 `adminui.PrepareFragment`（片段/整页但不走 layout）
+两个都经 `data` 注入 —— `adminui.Prepare`（整页）与 `adminui.PrepareBare`（同一份模板不带页壳渲染）
 都注入，**语言是请求级的，所以不能挂 `set.AddGlobal`**（并发下 -race 报 DATA RACE）。
 
 两种缺法的后果**不一样，别记混**：
@@ -372,12 +372,12 @@ Jet v6 支持**三元表达式与算术**，所以「折叠卡 summary 带计数
 - **struct 作渲染 data 的模板不能写 `{{ .["t"](…) }}`**：Jet 的 chain 索引在 struct 上会运行时报错
   `can't use t as field name in struct type` —— 与上文 CSRF 的 fragment 特例**同源**，但适用范围更大：
   **任何**以 struct 为渲染 data 的模板都如此（实测 `admin/product/product_attribute_rows.html` 曾收到
-  `attrRowsCtx{GroupID, Rows}`）。**做法：把片段 data 改成 `gin.H` 并走 `adminui.PrepareFragment`**
+  `attrRowsCtx{GroupID, Rows}`）。**做法：把片段 data 改成 `gin.H` 并走 `adminui.PrepareBare`**
   （它注入 `t` / `tf` / `lang`），取词因此留在渲染期，控制器也不需要任何取词函数 ——
   `product/inbound/http/product_attributes.go` 的 `attrRowsCtxData` 是样板：
   ```go
   func attrRowsCtxData(c *gin.Context, groupID string, rows []attrValueFormRow) gin.H {
-      return adminui.PrepareFragment(c, gin.H{"GroupID": groupID, "Rows": rows})
+      return adminui.PrepareBare(c, gin.H{"GroupID": groupID, "Rows": rows})
   }
   ```
   旧写法（给 struct 挂 `Tr func(key, fallback string) string` 字段、由控制器填 `shell.TranslateFor(c)`）

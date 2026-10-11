@@ -147,7 +147,7 @@ module_name/
     同功能内再按屏拆文件 = 拆过头（一个业务域几个屏 = 一个文件）。
 - **控制器只交文案事实，取词在模板**：槽位给 `adminui.Msg{Key, Fallback, Args}`
   （`type XxxMsg = adminui.Msg` 别名），结构体字段用 `XxxKey` / `XxxFallback`，模板用
-  `{{tr := .["t"]}}` / `{{tf := .["tf"]}}` 取词；片段渲染一律经 `adminui.PrepareFragment`
+  `{{tr := .["t"]}}` / `{{tf := .["tf"]}}` 取词；片段渲染一律经 `adminui.PrepareBare`
   （手工塞 `"t": shell.TranslateFor(c)` 是旧写法）。理由是二开：**后台是 Go 渲染、词条在库里**，
   控制器里写「错误 → 文案」的映射，等于加一门语言要回头改控制器。
   只允许四类例外，且每处要在上一行注释写明属于哪一类：
